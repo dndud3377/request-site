@@ -33,9 +33,6 @@ const INITIAL: FormState = {
 
 const REQUIRED_FIELDS: (keyof FormState)[] = [
   'title',
-  'requester_name',
-  'requester_email',
-  'requester_department',
   'product_name',
   'product_type',
   'product_description',
@@ -179,50 +176,6 @@ export default function RequestPage(): React.ReactElement {
       <div className="page-header">
         <h1>{t('request.title')}</h1>
         <p>{t('request.subtitle')}</p>
-      </div>
-
-      {/* Requester */}
-      <div className="form-section">
-        <div className="form-section-title">👤 {t('request.section_requester')}</div>
-        <div className="form-grid">
-          <FormField label={t('request.name')} name="requester_name" required>
-            <input
-              className={`form-control ${errors.requester_name ? 'error' : ''}`}
-              name="requester_name"
-              value={form.requester_name}
-              onChange={handleChange}
-              placeholder={t('request.placeholder_name')}
-            />
-          </FormField>
-          <FormField label={t('request.email')} name="requester_email" required>
-            <input
-              type="email"
-              className={`form-control ${errors.requester_email ? 'error' : ''}`}
-              name="requester_email"
-              value={form.requester_email}
-              onChange={handleChange}
-              placeholder={t('request.placeholder_email')}
-            />
-          </FormField>
-          <FormField label={t('request.department')} name="requester_department" required>
-            <input
-              className={`form-control ${errors.requester_department ? 'error' : ''}`}
-              name="requester_department"
-              value={form.requester_department}
-              onChange={handleChange}
-              placeholder={t('request.placeholder_department')}
-            />
-          </FormField>
-          <FormField label={t('request.position')} name="requester_position">
-            <input
-              className="form-control"
-              name="requester_position"
-              value={form.requester_position}
-              onChange={handleChange}
-              placeholder={t('request.placeholder_position')}
-            />
-          </FormField>
-        </div>
       </div>
 
       {/* Product */}

@@ -1,50 +1,50 @@
-/* ===== CSS Variables - Dark Blue Theme ===== */
+/* ===== CSS Variables - Bright Blue Theme ===== */
 :root {
-  --bg-primary: #0a1628;
-  --bg-secondary: #0f2040;
-  --bg-card: #132238;
-  --bg-card-hover: #1a2d4a;
-  --bg-input: #0d1d35;
-  --bg-modal: #0f2040;
+  --bg-primary: #f0f5ff;
+  --bg-secondary: #e4edff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f5f8ff;
+  --bg-input: #ffffff;
+  --bg-modal: #ffffff;
 
-  --blue-50: #e8f0fe;
-  --blue-100: #c5d8fc;
-  --blue-200: #93b7fa;
-  --blue-300: #5d96f7;
-  --blue-400: #3a7ef5;
-  --blue-500: #1a6cf2;
-  --blue-600: #1558d6;
-  --blue-700: #1147b8;
-  --blue-800: #0d3896;
-  --blue-900: #092b7a;
+  --blue-50: #eff6ff;
+  --blue-100: #dbeafe;
+  --blue-200: #bfdbfe;
+  --blue-300: #93c5fd;
+  --blue-400: #60a5fa;
+  --blue-500: #3b82f6;
+  --blue-600: #2563eb;
+  --blue-700: #1d4ed8;
+  --blue-800: #1e40af;
+  --blue-900: #1e3a8a;
 
-  --accent: #3a7ef5;
-  --accent-hover: #1a6cf2;
-  --accent-light: rgba(58, 126, 245, 0.15);
-  --accent-glow: rgba(58, 126, 245, 0.3);
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-light: rgba(37, 99, 235, 0.1);
+  --accent-glow: rgba(37, 99, 235, 0.25);
 
-  --text-primary: #ffffff;
-  --text-secondary: #a8c0e0;
-  --text-muted: #6b8ab0;
-  --text-disabled: #3a5070;
+  --text-primary: #0f172a;
+  --text-secondary: #334f7a;
+  --text-muted: #6b85ae;
+  --text-disabled: #9db3cc;
 
-  --border: #1e3a5f;
-  --border-light: #2a4a72;
-  --border-accent: #3a7ef5;
+  --border: #c9d9f0;
+  --border-light: #dce8fb;
+  --border-accent: #2563eb;
 
-  --success: #10b981;
-  --success-light: rgba(16, 185, 129, 0.15);
-  --warning: #f59e0b;
-  --warning-light: rgba(245, 158, 11, 0.15);
-  --danger: #ef4444;
-  --danger-light: rgba(239, 68, 68, 0.15);
-  --info: #3b82f6;
-  --info-light: rgba(59, 130, 246, 0.15);
+  --success: #059669;
+  --success-light: rgba(5, 150, 105, 0.1);
+  --warning: #d97706;
+  --warning-light: rgba(217, 119, 6, 0.1);
+  --danger: #dc2626;
+  --danger-light: rgba(220, 38, 38, 0.1);
+  --info: #2563eb;
+  --info-light: rgba(37, 99, 235, 0.1);
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
-  --shadow-glow: 0 0 20px rgba(58, 126, 245, 0.2);
+  --shadow-sm: 0 1px 3px rgba(37, 99, 235, 0.08);
+  --shadow-md: 0 4px 12px rgba(37, 99, 235, 0.12);
+  --shadow-lg: 0 8px 24px rgba(37, 99, 235, 0.18);
+  --shadow-glow: 0 0 20px rgba(37, 99, 235, 0.2);
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -141,7 +141,7 @@ img {
   left: 0;
   right: 0;
   height: 64px;
-  background: rgba(10, 22, 40, 0.95);
+  background: rgba(255, 255, 255, 0.97);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   z-index: 1000;
@@ -615,7 +615,7 @@ select.form-control option {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(15, 23, 42, 0.45);
   backdrop-filter: blur(4px);
   z-index: 2000;
   display: flex;
@@ -724,7 +724,7 @@ select.form-control option {
   display: flex;
   align-items: center;
   overflow: hidden;
-  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, #0d2a50 100%);
+  background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 50%, #e0eaff 100%);
 }
 
 .hero::before {
@@ -732,16 +732,16 @@ select.form-control option {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 60% 50% at 70% 50%, rgba(58, 126, 245, 0.12) 0%, transparent 70%),
-    radial-gradient(ellipse 40% 40% at 20% 80%, rgba(17, 71, 184, 0.1) 0%, transparent 60%);
+    radial-gradient(ellipse 60% 50% at 70% 50%, rgba(37, 99, 235, 0.2) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 40% at 20% 80%, rgba(29, 78, 216, 0.15) 0%, transparent 60%);
 }
 
 .hero-grid {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(58, 126, 245, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(58, 126, 245, 0.06) 1px, transparent 1px);
+    linear-gradient(rgba(37, 99, 235, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37, 99, 235, 0.1) 1px, transparent 1px);
   background-size: 60px 60px;
 }
 
@@ -756,12 +756,12 @@ select.form-control option {
   align-items: center;
   gap: 8px;
   background: var(--accent-light);
-  border: 1px solid rgba(58, 126, 245, 0.3);
+  border: 1px solid rgba(37, 99, 235, 0.35);
   border-radius: 20px;
   padding: 6px 16px;
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--blue-300);
+  color: var(--blue-700);
   margin-bottom: 24px;
 }
 
@@ -773,7 +773,7 @@ select.form-control option {
 }
 
 .hero h1 .highlight {
-  background: linear-gradient(135deg, var(--blue-300), var(--blue-500));
+  background: linear-gradient(135deg, var(--blue-600), var(--blue-800));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
