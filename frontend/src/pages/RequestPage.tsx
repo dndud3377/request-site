@@ -113,8 +113,7 @@ export default function RequestPage(): React.ReactElement {
 
   // Derived booleans for conditional rendering
   const isCopy = detail.request_purpose === '복사';
-  const hasProduct = detail.product_name_select !== '';
-  const hasMapDeviation = detail.map_deviation_change === '변경 있음';
+const hasMapDeviation = detail.map_deviation_change === '변경 있음';
   const hasExceptionZone = detail.exception_zone_change === '변경 있음';
   const hasBoneStew = detail.bone_stew_zone === '존재';
   const isCFamily = detail.only_c_family === 'Yes';
@@ -350,71 +349,70 @@ export default function RequestPage(): React.ReactElement {
             </div>
           )}
 
-          {/* 2. 라인 */}
-          <div className="form-group">
-            <label className="form-label">
-              {t('request.line')} <span className="required">*</span>
-            </label>
-            <select
-              className={`form-control ${errors.line ? 'error' : ''}`}
-              name="line"
-              value={detail.line}
-              onChange={handleDetailChange}
-            >
-              <option value="">{t('request.select_placeholder')}</option>
-              {OPTION_LINE.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-            {errors.line && <span className="form-error">{errors.line}</span>}
-          </div>
+          {/* 2. 라인 / 3. 조합법 선택 / 4. 제품 이름 선택 / 조리법 — 한 줄 */}
+          <div className="form-group full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
 
-          {/* 3. 조합법 선택 */}
-          <div className="form-group">
-            <label className="form-label">
-              {t('request.combination_method')} <span className="required">*</span>
-            </label>
-            <select
-              className={`form-control ${errors.combination_method ? 'error' : ''}`}
-              name="combination_method"
-              value={detail.combination_method}
-              onChange={handleDetailChange}
-            >
-              <option value="">{t('request.select_placeholder')}</option>
-              {OPTION_COMBINATION.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-            {errors.combination_method && <span className="form-error">{errors.combination_method}</span>}
-          </div>
-
-          {/* 4. 제품 이름 선택 */}
-          <div className="form-group">
-            <label className="form-label">
-              {t('request.product_name_select')} <span className="required">*</span>
-            </label>
-            <select
-              className={`form-control ${errors.product_name_select ? 'error' : ''}`}
-              name="product_name_select"
-              value={detail.product_name_select}
-              onChange={handleDetailChange}
-            >
-              <option value="">{t('request.select_placeholder')}</option>
-              {OPTION_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-            {errors.product_name_select && <span className="form-error">{errors.product_name_select}</span>}
-          </div>
-
-          {/* 조리법 (제품 선택 시) */}
-          {hasProduct && (
-            <div className="form-group">
-              <div className="conditional-group">
-                <div className="form-group">
-                  <label className="form-label">{t('request.cooking_method')}</label>
-                  <select className="form-control" name="cooking_method" value={detail.cooking_method} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_COOKING.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-              </div>
+            {/* 라인 */}
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">
+                {t('request.line')} <span className="required">*</span>
+              </label>
+              <select
+                className={`form-control ${errors.line ? 'error' : ''}`}
+                name="line"
+                value={detail.line}
+                onChange={handleDetailChange}
+              >
+                <option value="">{t('request.select_placeholder')}</option>
+                {OPTION_LINE.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+              {errors.line && <span className="form-error">{errors.line}</span>}
             </div>
-          )}
+
+            {/* 조합법 선택 */}
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">
+                {t('request.combination_method')} <span className="required">*</span>
+              </label>
+              <select
+                className={`form-control ${errors.combination_method ? 'error' : ''}`}
+                name="combination_method"
+                value={detail.combination_method}
+                onChange={handleDetailChange}
+              >
+                <option value="">{t('request.select_placeholder')}</option>
+                {OPTION_COMBINATION.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+              {errors.combination_method && <span className="form-error">{errors.combination_method}</span>}
+            </div>
+
+            {/* 제품 이름 선택 */}
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">
+                {t('request.product_name_select')} <span className="required">*</span>
+              </label>
+              <select
+                className={`form-control ${errors.product_name_select ? 'error' : ''}`}
+                name="product_name_select"
+                value={detail.product_name_select}
+                onChange={handleDetailChange}
+              >
+                <option value="">{t('request.select_placeholder')}</option>
+                {OPTION_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+              {errors.product_name_select && <span className="form-error">{errors.product_name_select}</span>}
+            </div>
+
+            {/* 조리법 */}
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">{t('request.cooking_method')}</label>
+              <select className="form-control" name="cooking_method" value={detail.cooking_method} onChange={handleDetailChange}>
+                <option value="">{t('request.select_placeholder')}</option>
+                {OPTION_COOKING.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+
+          </div>
 
           {/* 5. 지도 편차 변경 */}
           <div className="form-group">
