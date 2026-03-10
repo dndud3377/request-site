@@ -1,0 +1,73 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: request_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-requestdb}
+      POSTGRES_USER: ${POSTGRES_USER:-requestuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-requestpass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-requestuser} -d ${POSTGRES_DB:-requestdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: request_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - POSTGRES_HOST=db
+    volumes:
+      - media_data:/app/media
+      - static_data:/app/staticfiles
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: request_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: request_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - static_data:/var/www/static
+      - media_data:/var/www/media
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  postgres_data:
+    driver: local
+  media_data:
+    driver: local
+  static_data:
+    driver: local
