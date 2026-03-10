@@ -24,23 +24,22 @@
 
 ## 빠른 시작
 
-### 1. 환경변수 설정
+### 1. 환경 설정
 
 ```bash
-cp .env.example .env
-# .env 파일을 편집하여 이메일, DB 비밀번호 등을 설정하세요
+cd frontend
+npm install
 ```
 
-### 2. Docker Compose 실행
+### 2. npm 실행
 
 ```bash
-docker-compose up -d --build
+npm start
 ```
 
 ### 3. 접속
 
-- 웹사이트: http://localhost
-- Django Admin: http://localhost/admin
+- 웹사이트: http://localhost:3000
 
 ### Admin 계정 생성
 
