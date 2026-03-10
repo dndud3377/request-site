@@ -1054,3 +1054,130 @@ select.form-control option {
   .table { font-size: 0.8rem; }
   .table th, .table td { padding: 10px 12px; }
 }
+
+/* ===== Conditional Group (indented sub-fields) ===== */
+.conditional-group {
+  border-left: 3px solid var(--accent-light);
+  padding-left: 20px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ===== Radio Group ===== */
+.radio-group {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.radio-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.93rem;
+  color: var(--text-primary);
+}
+
+.radio-item input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* ===== Flow Chart Table ===== */
+.flow-table-wrapper {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.flow-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.flow-table .flow-table-header {
+  background: var(--bg-secondary);
+  display: grid;
+  grid-template-columns: 120px 1fr 180px 40px;
+  border-bottom: 1px solid var(--border);
+}
+
+.flow-table .flow-table-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 180px 40px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.flow-table .flow-table-row:last-child {
+  border-bottom: none;
+}
+
+.flow-table-cell {
+  padding: 8px;
+  display: flex;
+  align-items: center;
+}
+
+.flow-table-cell.header-cell {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.flow-table-cell input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  outline: none;
+  padding: 2px 4px;
+}
+
+.flow-table-cell input:focus {
+  background: var(--accent-light);
+  border-radius: 4px;
+}
+
+.flow-table-add-btn {
+  margin-top: 8px;
+  background: none;
+  border: 1px dashed var(--border-accent);
+  color: var(--accent);
+  font-size: 0.88rem;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  width: 100%;
+  transition: background 0.15s;
+}
+
+.flow-table-add-btn:hover {
+  background: var(--accent-light);
+}
+
+.flow-delete-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  font-size: 1rem;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+
+.flow-delete-btn:hover {
+  color: var(--danger);
+  background: var(--danger-light);
+}
