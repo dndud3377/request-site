@@ -2,23 +2,27 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-export default function Navbar() {
+interface NavLink {
+  to: string;
+  key: string;
+}
+
+const NAV_LINKS: NavLink[] = [
+  { to: '/', key: 'nav.home' },
+  { to: '/intro', key: 'nav.intro' },
+  { to: '/request', key: 'nav.request' },
+  { to: '/approval', key: 'nav.approval' },
+  { to: '/history', key: 'nav.history' },
+  { to: '/voc', key: 'nav.voc' },
+  { to: '/rfg', key: 'nav.rfg' },
+];
+
+export default function Navbar(): React.ReactElement {
   const { t, i18n } = useTranslation();
   const location = useLocation();
 
-  const navLinks = [
-    { to: '/', key: 'nav.home' },
-    { to: '/intro', key: 'nav.intro' },
-    { to: '/request', key: 'nav.request' },
-    { to: '/approval', key: 'nav.approval' },
-    { to: '/history', key: 'nav.history' },
-    { to: '/voc', key: 'nav.voc' },
-    { to: '/rfg', key: 'nav.rfg' },
-  ];
-
-  const switchLang = (lang) => {
-    i18n.changeLanguage(lang);
-  };
+  const isActive = (to: string): boolean =>
+    to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
 
   return (
     <nav className="navbar">
@@ -29,17 +33,13 @@ export default function Navbar() {
         </Link>
 
         <div className="navbar-links">
-          {navLinks.map(({ to, key }) => (
+          {NAV_LINKS.map(({ to, key }) => (
             <Link
               key={to}
               to={to}
-              className={`nav-link ${
-                (to === '/' ? location.pathname === '/' : location.pathname.startsWith(to))
-                  ? 'active'
-                  : ''
-              }`}
+              className={`nav-link ${isActive(to) ? 'active' : ''}`}
             >
-              {t(key)}
+              {t(key as any)}
             </Link>
           ))}
         </div>
@@ -48,13 +48,13 @@ export default function Navbar() {
           <div className="lang-toggle">
             <button
               className={`lang-btn ${i18n.language === 'ko' ? 'active' : ''}`}
-              onClick={() => switchLang('ko')}
+              onClick={() => i18n.changeLanguage('ko')}
             >
               KO
             </button>
             <button
               className={`lang-btn ${i18n.language === 'en' ? 'active' : ''}`}
-              onClick={() => switchLang('en')}
+              onClick={() => i18n.changeLanguage('en')}
             >
               EN
             </button>

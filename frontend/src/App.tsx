@@ -12,7 +12,7 @@ import HistoryPage from './pages/HistoryPage';
 import VOCPage from './pages/VOCPage';
 import RFGPage from './pages/RFGPage';
 
-function Footer() {
+function Footer(): React.ReactElement {
   return (
     <footer className="footer">
       <div className="container">
@@ -22,7 +22,7 @@ function Footer() {
   );
 }
 
-export default function App() {
+export default function App(): React.ReactElement {
   return (
     <BrowserRouter>
       <ToastProvider>

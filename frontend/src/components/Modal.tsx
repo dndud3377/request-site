@@ -1,8 +1,31 @@
-import React from 'react';
+import React, { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export default function Modal({ isOpen, onClose, title, children, footer }) {
-  const { t } = useTranslation();
+interface ModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+  footer?: ReactNode;
+}
+
+interface ConfirmModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  danger?: boolean;
+}
+
+export default function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
+  footer,
+}: ModalProps): React.ReactElement | null {
   if (!isOpen) return null;
 
   return (
@@ -19,7 +42,15 @@ export default function Modal({ isOpen, onClose, title, children, footer }) {
   );
 }
 
-export function ConfirmModal({ isOpen, onClose, onConfirm, title, message, confirmLabel, danger }) {
+export function ConfirmModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  title,
+  message,
+  confirmLabel,
+  danger = false,
+}: ConfirmModalProps): React.ReactElement {
   const { t } = useTranslation();
 
   return (
