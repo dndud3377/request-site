@@ -138,7 +138,11 @@
     "yes": "Yes",
     "no_change": "No Change",
     "has_change": "Has Change",
-    "select_placeholder": "Select..."
+    "select_placeholder": "Select...",
+    "product_type_new": "New Product",
+    "product_type_update": "Product Update",
+    "product_type_add_feature": "Feature Addition",
+    "product_type_change": "Product Change"
   },
   "approval": {
     "title": "Approval Status",
