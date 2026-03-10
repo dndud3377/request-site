@@ -2,30 +2,37 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { documentsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
+import { RequestDocument, ProductType } from '../types';
 
-export default function HistoryPage() {
+const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
+
+export default function HistoryPage(): React.ReactElement {
   const { t } = useTranslation();
-  const [docs, setDocs] = useState([]);
+  const [docs, setDocs] = useState<RequestDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('');
 
   const fetchDocs = useCallback(() => {
     setLoading(true);
-    const params = {};
+    const params: Record<string, string> = {};
     if (search) params.search = search;
     if (filter) params.status = filter;
-    documentsAPI.list(params)
-      .then((r) => setDocs(r.data.results || r.data || []))
+    documentsAPI
+      .list(params)
+      .then((r) => {
+        const data = r.data;
+        setDocs(Array.isArray(data) ? data : (data as any).results ?? []);
+      })
       .catch(() => setDocs([]))
       .finally(() => setLoading(false));
   }, [search, filter]);
 
-  useEffect(() => { fetchDocs(); }, [fetchDocs]);
+  useEffect(() => {
+    fetchDocs();
+  }, [fetchDocs]);
 
-  const formatDate = (d) => d ? new Date(d).toLocaleDateString('ko-KR') : '-';
-
-  const PRODUCT_TYPES = {
+  const PRODUCT_TYPE_LABELS: Record<ProductType, string> = {
     new: t('request.product_type_new'),
     update: t('request.product_type_update'),
     add_feature: t('request.product_type_add_feature'),
@@ -70,7 +77,9 @@ export default function HistoryPage() {
       </div>
 
       {loading ? (
-        <div className="empty-state"><p>{t('common.loading')}</p></div>
+        <div className="empty-state">
+          <p>{t('common.loading')}</p>
+        </div>
       ) : docs.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">📂</div>
@@ -92,14 +101,14 @@ export default function HistoryPage() {
               </tr>
             </thead>
             <tbody>
-              {docs.map((doc, i) => (
+              {docs.map((doc) => (
                 <tr key={doc.id}>
                   <td style={{ color: 'var(--text-muted)' }}>#{doc.id}</td>
                   <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{doc.title}</td>
                   <td>{doc.product_name}</td>
                   <td>
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      {PRODUCT_TYPES[doc.product_type] || doc.product_type}
+                      {PRODUCT_TYPE_LABELS[doc.product_type] ?? doc.product_type}
                     </span>
                   </td>
                   <td>
@@ -108,7 +117,9 @@ export default function HistoryPage() {
                       {doc.requester_department}
                     </div>
                   </td>
-                  <td><StatusBadge status={doc.status} /></td>
+                  <td>
+                    <StatusBadge status={doc.status} />
+                  </td>
                   <td>{formatDate(doc.created_at)}</td>
                   <td>{formatDate(doc.submitted_at)}</td>
                 </tr>

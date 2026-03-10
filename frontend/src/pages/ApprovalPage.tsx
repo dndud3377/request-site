@@ -3,32 +3,44 @@ import { useTranslation } from 'react-i18next';
 import { documentsAPI } from '../api/client';
 import StatusBadge, { PriorityBadge } from '../components/StatusBadge';
 import Modal from '../components/Modal';
+import { RequestDocument } from '../types';
 
-export default function ApprovalPage() {
+interface FilterTab {
+  key: string;
+  label: string;
+}
+
+const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
+
+export default function ApprovalPage(): React.ReactElement {
   const { t } = useTranslation();
-  const [docs, setDocs] = useState([]);
+  const [docs, setDocs] = useState<RequestDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState<RequestDocument | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
   const fetchDocs = useCallback(() => {
     setLoading(true);
-    const params = {};
+    const params: Record<string, string> = {};
     if (filter) params.status = filter;
     if (search) params.search = search;
-    documentsAPI.list(params)
-      .then((r) => setDocs(r.data.results || r.data || []))
+    documentsAPI
+      .list(params)
+      .then((r) => {
+        const data = r.data;
+        setDocs(Array.isArray(data) ? data : (data as any).results ?? []);
+      })
       .catch(() => setDocs([]))
       .finally(() => setLoading(false));
   }, [filter, search]);
 
-  useEffect(() => { fetchDocs(); }, [fetchDocs]);
+  useEffect(() => {
+    fetchDocs();
+  }, [fetchDocs]);
 
-  const formatDate = (d) => d ? new Date(d).toLocaleDateString('ko-KR') : '-';
-
-  const filterTabs = [
+  const filterTabs: FilterTab[] = [
     { key: '', label: t('approval.filter_all') },
     { key: 'submitted', label: t('approval.filter_submitted') },
     { key: 'under_review', label: t('approval.filter_under_review') },
@@ -36,7 +48,10 @@ export default function ApprovalPage() {
     { key: 'rejected', label: t('approval.filter_rejected') },
   ];
 
-  const openDetail = (doc) => { setSelected(doc); setModalOpen(true); };
+  const openDetail = (doc: RequestDocument) => {
+    setSelected(doc);
+    setModalOpen(true);
+  };
 
   return (
     <div className="container page">
@@ -68,7 +83,9 @@ export default function ApprovalPage() {
       </div>
 
       {loading ? (
-        <div className="empty-state"><p>{t('common.loading')}</p></div>
+        <div className="empty-state">
+          <p>{t('common.loading')}</p>
+        </div>
       ) : docs.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">📋</div>
@@ -92,9 +109,7 @@ export default function ApprovalPage() {
             <tbody>
               {docs.map((doc) => (
                 <tr key={doc.id}>
-                  <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-                    {doc.title}
-                  </td>
+                  <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{doc.title}</td>
                   <td>{doc.product_name}</td>
                   <td>
                     <div>{doc.requester_name}</div>
@@ -102,8 +117,12 @@ export default function ApprovalPage() {
                       {doc.requester_department}
                     </div>
                   </td>
-                  <td><StatusBadge status={doc.status} /></td>
-                  <td><PriorityBadge priority={doc.priority} /></td>
+                  <td>
+                    <StatusBadge status={doc.status} />
+                  </td>
+                  <td>
+                    <PriorityBadge priority={doc.priority} />
+                  </td>
                   <td>{formatDate(doc.submitted_at)}</td>
                   <td>{formatDate(doc.deadline)}</td>
                   <td>
@@ -122,7 +141,7 @@ export default function ApprovalPage() {
       <Modal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={selected?.title || ''}
+        title={selected?.title ?? ''}
         footer={
           <button className="btn btn-secondary" onClick={() => setModalOpen(false)}>
             {t('common.close')}
@@ -135,17 +154,32 @@ export default function ApprovalPage() {
               <StatusBadge status={selected.status} />
               <PriorityBadge priority={selected.priority} />
             </div>
-            {[
-              [t('approval.col_product'), selected.product_name],
-              [t('approval.col_requester'), `${selected.requester_name} (${selected.requester_department})`],
-              [t('approval.col_submitted'), formatDate(selected.submitted_at)],
-              [t('approval.col_deadline'), formatDate(selected.deadline)],
-            ].map(([label, val]) => (
+            {(
+              [
+                [t('approval.col_product'), selected.product_name],
+                [
+                  t('approval.col_requester'),
+                  `${selected.requester_name} (${selected.requester_department})`,
+                ],
+                [t('approval.col_submitted'), formatDate(selected.submitted_at)],
+                [t('approval.col_deadline'), formatDate(selected.deadline)],
+              ] as [string, string][]
+            ).map(([label, val]) => (
               <div key={label} style={{ borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+                  {label}
+                </div>
                 <div style={{ color: 'var(--text-primary)' }}>{val}</div>
               </div>
             ))}
+            <div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+                제품 설명
+              </div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.6 }}>
+                {selected.product_description}
+              </div>
+            </div>
           </div>
         )}
       </Modal>
