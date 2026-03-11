@@ -424,8 +424,8 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
 
           {/* 5-7. 지도 편차 변경 / 예외 구역 변경 / 분리 진행 여부 — 한 줄 */}
           <div className="full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-            {/* 지도 편차 변경 — 25% */}
-            <div className="form-group" style={{ flex: 25 }}>
+            {/* 지도 편차 변경 — 20% */}
+            <div className="form-group" style={{ flex: 20 }}>
               <label className="form-label">{t('request.map_deviation_change')}</label>
               <select className="form-control" name="map_deviation_change" value={detail.map_deviation_change} onChange={handleDetailChange}>
                 <option value="변경 없음">{t('request.map_deviation_no_change')}</option>
@@ -439,9 +439,9 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
                 <input className="form-control" name="map_deviation_value" value={detail.map_deviation_value} onChange={handleDetailChange} />
               </div>
             )}
-            {/* 변경 사유 — 20% (변경 있음 시) */}
+            {/* 변경 사유 — 25% (변경 있음 시) */}
             {hasMapDeviation && (
-              <div className="form-group" style={{ flex: 20 }}>
+              <div className="form-group" style={{ flex: 25 }}>
                 <label className="form-label">{t('request.map_deviation_reason')}</label>
                 <input className="form-control" name="map_deviation_reason" value={detail.map_deviation_reason} onChange={handleDetailChange} />
               </div>
