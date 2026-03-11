@@ -20,8 +20,7 @@ const OPTION_BONE_STEW_LOCATION = ['위치1', '위치2', '위치3'] as const;
 const OPTION_BONE_STEW_COMBINATION = ['뼈찜조합A', '뼈찜조합B'] as const;
 const OPTION_BONE_STEW_PRODUCT = ['뼈찜제품A', '뼈찜제품B'] as const;
 const OPTION_BONE_STEW_COOKING = ['뼈찜조리법1', '뼈찜조리법2'] as const;
-const OPTION_C_FAMILY_DIRECTION_DETAIL_NORTH = ['북쪽-세부A', '북쪽-세부B'] as const;
-const OPTION_C_FAMILY_DIRECTION_DETAIL_SOUTH = ['남쪽-세부A', '남쪽-세부B'] as const;
+
 
 const makeRow = (): FlowChartRow => ({
   id: String(Date.now() + Math.random()),
@@ -54,9 +53,16 @@ const INITIAL_DETAIL: DetailFormState = {
   bone_stew_product: '',
   bone_stew_cooking: '',
   only_c_family: 'No',
-  c_family_guide_message: '',
-  c_family_direction: '',
-  c_family_direction_detail: '',
+  c_family_north_line: '',
+  c_family_north_combination: '',
+  c_family_north_product: '',
+  c_family_middle_use: '',
+  c_family_middle_line: '',
+  c_family_middle_combination: '',
+  c_family_middle_product: '',
+  c_family_south_line: '',
+  c_family_south_combination: '',
+  c_family_south_product: '',
   x_mark_change: '없음',
   x_mark_delete_message: '',
   x_mark_image_copy: '',
@@ -523,55 +529,95 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
           </div>
 
           {isCFamily && (
-            <div className="form-group full-width">
-              <div className="conditional-group">
-                <div className="form-group">
-                  <label className="form-label">{t('request.c_family_guide_message')}</label>
-                  <textarea
-                    className="form-control"
-                    name="c_family_guide_message"
-                    value={detail.c_family_guide_message}
-                    onChange={handleDetailChange}
-                    rows={3}
-                  />
+            <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* 북쪽 행 */}
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                <span style={{ width: '40px', paddingTop: '32px', fontWeight: 600 }}>{t('request.c_family_north')}</span>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('request.c_family_line')}</label>
+                  <select className="form-control" name="c_family_north_line" value={detail.c_family_north_line} onChange={handleDetailChange}>
+                    <option value="">{t('request.select_placeholder')}</option>
+                    {OPTION_LINE.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
                 </div>
-                <div className="form-group">
-                  <label className="form-label">{t('request.c_family_direction')}</label>
-                  <div className="radio-group">
-                    <label className="radio-item">
-                      <input
-                        type="radio"
-                        name="c_family_direction"
-                        value="북쪽"
-                        checked={detail.c_family_direction === '북쪽'}
-                        onChange={() => handleRadioChange('c_family_direction', '북쪽')}
-                      />
-                      {t('request.c_family_north')}
-                    </label>
-                    <label className="radio-item">
-                      <input
-                        type="radio"
-                        name="c_family_direction"
-                        value="남쪽"
-                        checked={detail.c_family_direction === '남쪽'}
-                        onChange={() => handleRadioChange('c_family_direction', '남쪽')}
-                      />
-                      {t('request.c_family_south')}
-                    </label>
-                  </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('request.c_family_combination')}</label>
+                  <select className="form-control" name="c_family_north_combination" value={detail.c_family_north_combination} onChange={handleDetailChange}>
+                    <option value="">{t('request.select_placeholder')}</option>
+                    {OPTION_COMBINATION.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
                 </div>
-                {detail.c_family_direction && (
-                  <div className="form-group">
-                    <label className="form-label">{t('request.c_family_direction_detail')}</label>
-                    <select className="form-control" name="c_family_direction_detail" value={detail.c_family_direction_detail} onChange={handleDetailChange}>
-                      <option value="">{t('request.select_placeholder')}</option>
-                      {(detail.c_family_direction === '북쪽'
-                        ? OPTION_C_FAMILY_DIRECTION_DETAIL_NORTH
-                        : OPTION_C_FAMILY_DIRECTION_DETAIL_SOUTH
-                      ).map((v) => <option key={v} value={v}>{v}</option>)}
-                    </select>
-                  </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('request.c_family_product')}</label>
+                  <select className="form-control" name="c_family_north_product" value={detail.c_family_north_product} onChange={handleDetailChange}>
+                    <option value="">{t('request.select_placeholder')}</option>
+                    {OPTION_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* 중간 행 */}
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                <span style={{ width: '40px', paddingTop: '32px', fontWeight: 600 }}>{t('request.c_family_middle')}</span>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('request.c_family_middle_use')}</label>
+                  <select className="form-control" name="c_family_middle_use" value={detail.c_family_middle_use} onChange={handleDetailChange}>
+                    <option value="">{t('request.select_placeholder')}</option>
+                    <option value="사용">사용</option>
+                    <option value="미사용">미사용</option>
+                  </select>
+                </div>
+                {detail.c_family_middle_use === '사용' && (
+                  <>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label className="form-label">{t('request.c_family_line')}</label>
+                      <select className="form-control" name="c_family_middle_line" value={detail.c_family_middle_line} onChange={handleDetailChange}>
+                        <option value="">{t('request.select_placeholder')}</option>
+                        {OPTION_LINE.map((v) => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label className="form-label">{t('request.c_family_combination')}</label>
+                      <select className="form-control" name="c_family_middle_combination" value={detail.c_family_middle_combination} onChange={handleDetailChange}>
+                        <option value="">{t('request.select_placeholder')}</option>
+                        {OPTION_COMBINATION.map((v) => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label className="form-label">{t('request.c_family_product')}</label>
+                      <select className="form-control" name="c_family_middle_product" value={detail.c_family_middle_product} onChange={handleDetailChange}>
+                        <option value="">{t('request.select_placeholder')}</option>
+                        {OPTION_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    </div>
+                  </>
                 )}
+              </div>
+
+              {/* 남쪽 행 */}
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                <span style={{ width: '40px', paddingTop: '32px', fontWeight: 600 }}>{t('request.c_family_south')}</span>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('request.c_family_line')}</label>
+                  <select className="form-control" name="c_family_south_line" value={detail.c_family_south_line} onChange={handleDetailChange}>
+                    <option value="">{t('request.select_placeholder')}</option>
+                    {OPTION_LINE.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('request.c_family_combination')}</label>
+                  <select className="form-control" name="c_family_south_combination" value={detail.c_family_south_combination} onChange={handleDetailChange}>
+                    <option value="">{t('request.select_placeholder')}</option>
+                    {OPTION_COMBINATION.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('request.c_family_product')}</label>
+                  <select className="form-control" name="c_family_south_product" value={detail.c_family_south_product} onChange={handleDetailChange}>
+                    <option value="">{t('request.select_placeholder')}</option>
+                    {OPTION_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
           )}

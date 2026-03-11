@@ -134,9 +134,16 @@ export interface DetailFormState {
 
   // C가문
   only_c_family: string;
-  c_family_guide_message: string;
-  c_family_direction: string;
-  c_family_direction_detail: string;
+  c_family_north_line: string;
+  c_family_north_combination: string;
+  c_family_north_product: string;
+  c_family_middle_use: string;
+  c_family_middle_line: string;
+  c_family_middle_combination: string;
+  c_family_middle_product: string;
+  c_family_south_line: string;
+  c_family_south_combination: string;
+  c_family_south_product: string;
 
   // X표시
   x_mark_change: string;
