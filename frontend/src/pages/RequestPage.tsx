@@ -634,97 +634,79 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
           </div>
 
           {xMarkDeleteMode && (
-            <div className="form-group full-width">
-              <div className="conditional-group">
-                <div className="form-group">
-                  <label className="form-label">{t('request.x_mark_delete_message')}</label>
-                  <textarea
-                    className="form-control"
-                    name="x_mark_delete_message"
-                    value={detail.x_mark_delete_message}
-                    onChange={handleDetailChange}
-                    rows={3}
-                  />
-                </div>
-              </div>
+            <div className="full-width">
+              <p style={{ color: 'red', fontWeight: 600, margin: '4px 0' }}>특정 제품 삭제 필요</p>
             </div>
           )}
 
           {xMarkEditAddMode && (
-            <div className="form-group full-width">
-              <div className="conditional-group">
-                <div className="form-group">
-                  <label className="form-label">{t('request.x_mark_image_copy')}</label>
-                  <textarea
-                    className="form-control"
-                    name="x_mark_image_copy"
-                    value={detail.x_mark_image_copy}
-                    onChange={handleDetailChange}
-                    rows={3}
-                  />
-                </div>
+            <div className="full-width">
+              <div className="form-group" style={{ width: '50%' }}>
+                <label className="form-label">{t('request.x_mark_image_copy')}</label>
+                <textarea
+                  className="form-control"
+                  name="x_mark_image_copy"
+                  value={detail.x_mark_image_copy}
+                  onChange={handleDetailChange}
+                  style={{ aspectRatio: '1 / 1', resize: 'none' }}
+                />
               </div>
             </div>
           )}
 
           {/* 11. 20주년 제품 */}
-          <div className="form-group">
-            <label className="form-label">{t('request.anniversary_20')}</label>
-            <select className="form-control" name="anniversary_20" value={detail.anniversary_20} onChange={handleDetailChange}>
-              <option value="No">No</option>
-              <option value="Yes">Yes</option>
-            </select>
-          </div>
-
-          {isAnniversary && (
-            <div className="form-group">
-              <div className="conditional-group">
-                <div className="form-group">
-                  <label className="form-label">{t('request.anniversary_20_option')}</label>
-                  <div className="radio-group">
-                    {(['옵션A', '옵션B', '옵션C'] as const).map((opt) => (
-                      <label key={opt} className="radio-item">
-                        <input
-                          type="radio"
-                          name="anniversary_20_option"
-                          value={opt}
-                          checked={detail.anniversary_20_option === opt}
-                          onChange={() => handleRadioChange('anniversary_20_option', opt)}
-                        />
-                        {opt}
-                      </label>
-                    ))}
-                  </div>
+          <div className="full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+            <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px' }}>
+              <label className="form-label">{t('request.anniversary_20')}</label>
+              <select className="form-control" name="anniversary_20" value={detail.anniversary_20} onChange={handleDetailChange}>
+                <option value="No">No</option>
+                <option value="Yes">Yes</option>
+              </select>
+            </div>
+            {isAnniversary && (
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">{t('request.anniversary_20_option')}</label>
+                <div className="radio-group">
+                  {(['옵션A', '옵션B', '옵션C'] as const).map((opt) => (
+                    <label key={opt} className="radio-item">
+                      <input
+                        type="radio"
+                        name="anniversary_20_option"
+                        value={opt}
+                        checked={detail.anniversary_20_option === opt}
+                        onChange={() => handleRadioChange('anniversary_20_option', opt)}
+                      />
+                      {opt}
+                    </label>
+                  ))}
                 </div>
               </div>
+            )}
+          </div>
+
+          {/* 12-14. T가문 적용 / 주력 제품 변경 / 설탕 추가 진행 여부 */}
+          <div className="full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">{t('request.t_family_apply')}</label>
+              <select className="form-control" name="t_family_apply" value={detail.t_family_apply} onChange={handleDetailChange}>
+                <option value="미적용">{t('request.t_family_not_applied')}</option>
+                <option value="적용">{t('request.t_family_applied')}</option>
+              </select>
             </div>
-          )}
-
-          {/* 12. T가문 적용 */}
-          <div className="form-group">
-            <label className="form-label">{t('request.t_family_apply')}</label>
-            <select className="form-control" name="t_family_apply" value={detail.t_family_apply} onChange={handleDetailChange}>
-              <option value="미적용">{t('request.t_family_not_applied')}</option>
-              <option value="적용">{t('request.t_family_applied')}</option>
-            </select>
-          </div>
-
-          {/* 13. 주력 제품 변경 */}
-          <div className="form-group">
-            <label className="form-label">{t('request.main_product_change')}</label>
-            <select className="form-control" name="main_product_change" value={detail.main_product_change} onChange={handleDetailChange}>
-              <option value="변경 없음">{t('request.no_change')}</option>
-              <option value="변경 있음">{t('request.has_change')}</option>
-            </select>
-          </div>
-
-          {/* 14. 설탕 추가 진행 여부 */}
-          <div className="form-group">
-            <label className="form-label">{t('request.sugar_add')}</label>
-            <select className="form-control" name="sugar_add" value={detail.sugar_add} onChange={handleDetailChange}>
-              <option value="아니오">{t('request.no')}</option>
-              <option value="예">{t('request.yes')}</option>
-            </select>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">{t('request.main_product_change')}</label>
+              <select className="form-control" name="main_product_change" value={detail.main_product_change} onChange={handleDetailChange}>
+                <option value="변경 없음">{t('request.no_change')}</option>
+                <option value="변경 있음">{t('request.has_change')}</option>
+              </select>
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">{t('request.sugar_add')}</label>
+              <select className="form-control" name="sugar_add" value={detail.sugar_add} onChange={handleDetailChange}>
+                <option value="아니오">{t('request.no')}</option>
+                <option value="예">{t('request.yes')}</option>
+              </select>
+            </div>
           </div>
 
         </div>
