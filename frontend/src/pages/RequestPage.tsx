@@ -350,7 +350,7 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
           )}
 
           {/* 2. 라인 / 3. 조합법 선택 / 4. 제품 이름 선택 / 조리법 — 한 줄 */}
-          <div className="form-group full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+          <div className="full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
 
             {/* 라인 */}
             <div className="form-group" style={{ flex: 1 }}>
