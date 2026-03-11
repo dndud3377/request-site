@@ -238,7 +238,7 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
         <div className="form-grid">
 
           {/* 1. 요청 목적 */}
-          <div className="form-group">
+          <div className="form-group full-width">
             <label className="form-label">
               {t('request.request_purpose')} <span className="required">*</span>
             </label>
@@ -423,28 +423,27 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
           </div>
 
           {/* 5. 지도 편차 변경 */}
-          <div className="form-group">
-            <label className="form-label">{t('request.map_deviation_change')}</label>
-            <select className="form-control" name="map_deviation_change" value={detail.map_deviation_change} onChange={handleDetailChange}>
-              <option value="변경 없음">{t('request.map_deviation_no_change')}</option>
-              <option value="변경 있음">{t('request.map_deviation_has_change')}</option>
-            </select>
-          </div>
-
-          {hasMapDeviation && (
-            <div className="form-group full-width">
-              <div className="conditional-group">
-                <div className="form-group">
-                  <label className="form-label">{t('request.map_deviation_value')}</label>
-                  <input className="form-control" name="map_deviation_value" value={detail.map_deviation_value} onChange={handleDetailChange} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">{t('request.map_deviation_reason')}</label>
-                  <input className="form-control" name="map_deviation_reason" value={detail.map_deviation_reason} onChange={handleDetailChange} />
-                </div>
-              </div>
+          <div className="full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+            <div className="form-group" style={{ flex: 4 }}>
+              <label className="form-label">{t('request.map_deviation_change')}</label>
+              <select className="form-control" name="map_deviation_change" value={detail.map_deviation_change} onChange={handleDetailChange}>
+                <option value="변경 없음">{t('request.map_deviation_no_change')}</option>
+                <option value="변경 있음">{t('request.map_deviation_has_change')}</option>
+              </select>
             </div>
-          )}
+            {hasMapDeviation && (
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">{t('request.map_deviation_value')}</label>
+                <input className="form-control" name="map_deviation_value" value={detail.map_deviation_value} onChange={handleDetailChange} />
+              </div>
+            )}
+            {hasMapDeviation && (
+              <div className="form-group" style={{ flex: 3 }}>
+                <label className="form-label">{t('request.map_deviation_reason')}</label>
+                <input className="form-control" name="map_deviation_reason" value={detail.map_deviation_reason} onChange={handleDetailChange} />
+              </div>
+            )}
+          </div>
 
           {/* 6. 예외 구역 변경 */}
           <div className="form-group">
