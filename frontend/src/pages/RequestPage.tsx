@@ -238,7 +238,7 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
         <div className="form-grid">
 
           {/* 1. 요청 목적 */}
-          <div className="form-group">
+          <div className="form-group full-width">
             <label className="form-label">
               {t('request.request_purpose')} <span className="required">*</span>
             </label>
@@ -422,57 +422,53 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
 
           </div>
 
-          {/* 5. 지도 편차 변경 */}
-          <div className="form-group">
-            <label className="form-label">{t('request.map_deviation_change')}</label>
-            <select className="form-control" name="map_deviation_change" value={detail.map_deviation_change} onChange={handleDetailChange}>
-              <option value="변경 없음">{t('request.map_deviation_no_change')}</option>
-              <option value="변경 있음">{t('request.map_deviation_has_change')}</option>
-            </select>
-          </div>
-
-          {hasMapDeviation && (
-            <div className="form-group full-width">
-              <div className="conditional-group">
-                <div className="form-group">
-                  <label className="form-label">{t('request.map_deviation_value')}</label>
-                  <input className="form-control" name="map_deviation_value" value={detail.map_deviation_value} onChange={handleDetailChange} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">{t('request.map_deviation_reason')}</label>
-                  <input className="form-control" name="map_deviation_reason" value={detail.map_deviation_reason} onChange={handleDetailChange} />
-                </div>
-              </div>
+          {/* 5-7. 지도 편차 변경 / 예외 구역 변경 / 분리 진행 여부 — 한 줄 */}
+          <div className="full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+            {/* 지도 편차 변경 — 25% */}
+            <div className="form-group" style={{ flex: 25 }}>
+              <label className="form-label">{t('request.map_deviation_change')}</label>
+              <select className="form-control" name="map_deviation_change" value={detail.map_deviation_change} onChange={handleDetailChange}>
+                <option value="변경 없음">{t('request.map_deviation_no_change')}</option>
+                <option value="변경 있음">{t('request.map_deviation_has_change')}</option>
+              </select>
             </div>
-          )}
-
-          {/* 6. 예외 구역 변경 */}
-          <div className="form-group">
-            <label className="form-label">{t('request.exception_zone_change')}</label>
-            <select className="form-control" name="exception_zone_change" value={detail.exception_zone_change} onChange={handleDetailChange}>
-              <option value="변경 없음">{t('request.no_change')}</option>
-              <option value="변경 있음">{t('request.has_change')}</option>
-            </select>
-          </div>
-
-          {hasExceptionZone && (
-            <div className="form-group">
-              <div className="conditional-group">
-                <div className="form-group">
-                  <label className="form-label">{t('request.exception_zone_value')}</label>
-                  <input className="form-control" name="exception_zone_value" value={detail.exception_zone_value} onChange={handleDetailChange} />
-                </div>
+            {/* 지도 편차 값 — 7% (변경 있음 시) */}
+            {hasMapDeviation && (
+              <div className="form-group" style={{ flex: 7 }}>
+                <label className="form-label">{t('request.map_deviation_value')}</label>
+                <input className="form-control" name="map_deviation_value" value={detail.map_deviation_value} onChange={handleDetailChange} />
               </div>
+            )}
+            {/* 변경 사유 — 20% (변경 있음 시) */}
+            {hasMapDeviation && (
+              <div className="form-group" style={{ flex: 20 }}>
+                <label className="form-label">{t('request.map_deviation_reason')}</label>
+                <input className="form-control" name="map_deviation_reason" value={detail.map_deviation_reason} onChange={handleDetailChange} />
+              </div>
+            )}
+            {/* 예외 구역 변경 — 20% */}
+            <div className="form-group" style={{ flex: 20 }}>
+              <label className="form-label">{t('request.exception_zone_change')}</label>
+              <select className="form-control" name="exception_zone_change" value={detail.exception_zone_change} onChange={handleDetailChange}>
+                <option value="변경 없음">{t('request.no_change')}</option>
+                <option value="변경 있음">{t('request.has_change')}</option>
+              </select>
             </div>
-          )}
-
-          {/* 7. 분리 진행 여부 */}
-          <div className="form-group">
-            <label className="form-label">{t('request.separation_progress')}</label>
-            <select className="form-control" name="separation_progress" value={detail.separation_progress} onChange={handleDetailChange}>
-              <option value="아니오">{t('request.no')}</option>
-              <option value="예">{t('request.yes')}</option>
-            </select>
+            {/* 예외 구역 값 — 7% (변경 있음 시) */}
+            {hasExceptionZone && (
+              <div className="form-group" style={{ flex: 7 }}>
+                <label className="form-label">{t('request.exception_zone_value')}</label>
+                <input className="form-control" name="exception_zone_value" value={detail.exception_zone_value} onChange={handleDetailChange} />
+              </div>
+            )}
+            {/* 분리 진행 여부 — 21% */}
+            <div className="form-group" style={{ flex: 21 }}>
+              <label className="form-label">{t('request.separation_progress')}</label>
+              <select className="form-control" name="separation_progress" value={detail.separation_progress} onChange={handleDetailChange}>
+                <option value="아니오">{t('request.no')}</option>
+                <option value="예">{t('request.yes')}</option>
+              </select>
+            </div>
           </div>
 
           {/* 8. 뼈찜 조합 영역 */}
