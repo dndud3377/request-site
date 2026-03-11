@@ -126,9 +126,7 @@ export interface DetailFormState {
 
   // 뼈찜
   bone_stew_zone: string;
-  bone_stew_cooking_ref: string;
   bone_stew_location: string;
-  bone_stew_combination: string;
   bone_stew_product: string;
   bone_stew_cooking: string;
 
@@ -147,7 +145,6 @@ export interface DetailFormState {
 
   // X표시
   x_mark_change: string;
-  x_mark_delete_message: string;
   x_mark_image_copy: string;
 
   // 20주년

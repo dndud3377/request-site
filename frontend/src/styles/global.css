@@ -370,12 +370,6 @@ img {
   gap: 20px;
 }
 
-.form-grid-3 {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-}
-
 .form-group {
   display: flex;
   flex-direction: column;
@@ -386,6 +380,10 @@ img {
 .full-width {
   grid-column: 1 / -1;
 }
+
+/* Flex layout utilities */
+.flex-row { display: flex; gap: 16px; align-items: flex-start; }
+.flex-col  { flex: 1; }
 
 .form-label {
   font-size: 0.8rem;

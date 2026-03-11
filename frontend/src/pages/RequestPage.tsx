@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { documentsAPI } from '../api/client';
 import { useToast } from '../components/Toast';
 import { ConfirmModal } from '../components/Modal';
+import FormSelect from '../components/FormSelect';
 import { CreateDocumentInput, DetailFormState, FlowChartRow } from '../types';
 
 // ===== Option Constants =====
@@ -15,13 +16,72 @@ const OPTION_COOKING = ['조리법1', '조리법2', '조리법3'] as const;
 const OPTION_OTHER_PURPOSE = ['목적A', '목적B', '목적C'] as const;
 const OPTION_SOURCE_LOCATION = ['위치A', '위치B', '위치C'] as const;
 const OPTION_SOURCE_PRODUCT = ['원본제품A', '원본제품B', '원본제품C'] as const;
-const OPTION_BONE_STEW_COOKING_REF = ['뼈찜조리법A+참고A', '뼈찜조리법B+참고B'] as const;
 const OPTION_BONE_STEW_LOCATION = ['위치1', '위치2', '위치3'] as const;
-const OPTION_BONE_STEW_COMBINATION = ['뼈찜조합A', '뼈찜조합B'] as const;
 const OPTION_BONE_STEW_PRODUCT = ['뼈찜제품A', '뼈찜제품B'] as const;
 const OPTION_BONE_STEW_COOKING = ['뼈찜조리법1', '뼈찜조리법2'] as const;
 
+// ===== CFamilyRow — 북쪽/중간/남쪽 공통 행 =====
+type CRegion = 'north' | 'middle' | 'south';
+interface CFamilyRowProps {
+  region: CRegion;
+  detail: DetailFormState;
+  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+}
+const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange }) => {
+  const { t } = useTranslation();
+  const showSelects = region !== 'middle' || detail.c_family_middle_use === '사용';
+  return (
+    <div className="flex-row">
+      <span style={{ width: '40px', paddingTop: '32px', fontWeight: 600 }}>
+        {t(`request.c_family_${region}`)}
+      </span>
+      {region === 'middle' && (
+        <FormSelect
+          label={t('request.c_family_middle_use')}
+          name="c_family_middle_use"
+          value={detail.c_family_middle_use}
+          options={['사용', '미사용']}
+          onChange={onChange}
+          placeholder={t('request.select_placeholder')}
+          className="flex-col"
+        />
+      )}
+      {showSelects && (
+        <>
+          <FormSelect
+            label={t('request.c_family_line')}
+            name={`c_family_${region}_line`}
+            value={detail[`c_family_${region}_line` as keyof DetailFormState] as string}
+            options={OPTION_LINE}
+            onChange={onChange}
+            placeholder={t('request.select_placeholder')}
+            className="flex-col"
+          />
+          <FormSelect
+            label={t('request.c_family_combination')}
+            name={`c_family_${region}_combination`}
+            value={detail[`c_family_${region}_combination` as keyof DetailFormState] as string}
+            options={OPTION_COMBINATION}
+            onChange={onChange}
+            placeholder={t('request.select_placeholder')}
+            className="flex-col"
+          />
+          <FormSelect
+            label={t('request.c_family_product')}
+            name={`c_family_${region}_product`}
+            value={detail[`c_family_${region}_product` as keyof DetailFormState] as string}
+            options={OPTION_PRODUCT}
+            onChange={onChange}
+            placeholder={t('request.select_placeholder')}
+            className="flex-col"
+          />
+        </>
+      )}
+    </div>
+  );
+};
 
+// ===== Helpers =====
 const makeRow = (): FlowChartRow => ({
   id: String(Date.now() + Math.random()),
   location: '',
@@ -47,9 +107,7 @@ const INITIAL_DETAIL: DetailFormState = {
   exception_zone_value: '',
   separation_progress: '아니오',
   bone_stew_zone: '없음',
-  bone_stew_cooking_ref: '',
   bone_stew_location: '',
-  bone_stew_combination: '',
   bone_stew_product: '',
   bone_stew_cooking: '',
   only_c_family: 'No',
@@ -64,7 +122,6 @@ const INITIAL_DETAIL: DetailFormState = {
   c_family_south_combination: '',
   c_family_south_product: '',
   x_mark_change: '없음',
-  x_mark_delete_message: '',
   x_mark_image_copy: '',
   anniversary_20: 'No',
   anniversary_20_option: '',
@@ -109,7 +166,7 @@ export default function RequestPage(): React.ReactElement {
   const navigate = useNavigate();
   const addToast = useToast();
 
-  const [form, setForm] = useState<CreateDocumentInput>(INITIAL_FORM);
+  const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
   const [detail, setDetail] = useState<DetailFormState>(INITIAL_DETAIL);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
@@ -119,7 +176,7 @@ export default function RequestPage(): React.ReactElement {
 
   // Derived booleans for conditional rendering
   const isCopy = detail.request_purpose === '복사';
-const hasMapDeviation = detail.map_deviation_change === '변경 있음';
+  const hasMapDeviation = detail.map_deviation_change === '변경 있음';
   const hasExceptionZone = detail.exception_zone_change === '변경 있음';
   const hasBoneStew = detail.bone_stew_zone === '존재';
   const isCFamily = detail.only_c_family === 'Yes';
@@ -268,28 +325,34 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
               <div className="conditional-group">
 
                 {/* 기타 목적 | 원본 위치 | 원본 제품 이름 — 한 행 */}
-                <div style={{ display: 'flex', gap: '16px' }}>
-                  <div className="form-group" style={{ flex: 1 }}>
-                    <label className="form-label">{t('request.other_purpose')}</label>
-                    <select className="form-control" name="other_purpose" value={detail.other_purpose} onChange={handleDetailChange}>
-                      <option value="">{t('request.select_placeholder')}</option>
-                      {OPTION_OTHER_PURPOSE.map((v) => <option key={v} value={v}>{v}</option>)}
-                    </select>
-                  </div>
-                  <div className="form-group" style={{ flex: 1 }}>
-                    <label className="form-label">{t('request.source_location')}</label>
-                    <select className="form-control" name="source_location" value={detail.source_location} onChange={handleDetailChange}>
-                      <option value="">{t('request.select_placeholder')}</option>
-                      {OPTION_SOURCE_LOCATION.map((v) => <option key={v} value={v}>{v}</option>)}
-                    </select>
-                  </div>
-                  <div className="form-group" style={{ flex: 1 }}>
-                    <label className="form-label">{t('request.source_product_name')}</label>
-                    <select className="form-control" name="source_product_name" value={detail.source_product_name} onChange={handleDetailChange}>
-                      <option value="">{t('request.select_placeholder')}</option>
-                      {OPTION_SOURCE_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
-                    </select>
-                  </div>
+                <div className="flex-row">
+                  <FormSelect
+                    label={t('request.other_purpose')}
+                    name="other_purpose"
+                    value={detail.other_purpose}
+                    options={OPTION_OTHER_PURPOSE}
+                    onChange={handleDetailChange}
+                    placeholder={t('request.select_placeholder')}
+                    className="flex-col"
+                  />
+                  <FormSelect
+                    label={t('request.source_location')}
+                    name="source_location"
+                    value={detail.source_location}
+                    options={OPTION_SOURCE_LOCATION}
+                    onChange={handleDetailChange}
+                    placeholder={t('request.select_placeholder')}
+                    className="flex-col"
+                  />
+                  <FormSelect
+                    label={t('request.source_product_name')}
+                    name="source_product_name"
+                    value={detail.source_product_name}
+                    options={OPTION_SOURCE_PRODUCT}
+                    onChange={handleDetailChange}
+                    placeholder={t('request.select_placeholder')}
+                    className="flex-col"
+                  />
                 </div>
 
                 {/* 흐름도 */}
@@ -363,73 +426,54 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
             </div>
           )}
 
-          {/* 2. 라인 / 3. 조합법 선택 / 4. 제품 이름 선택 / 조리법 — 한 줄 */}
-          <div className="full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-
-            {/* 라인 */}
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">
-                {t('request.line')} <span className="required">*</span>
-              </label>
-              <select
-                className={`form-control ${errors.line ? 'error' : ''}`}
-                name="line"
-                value={detail.line}
-                onChange={handleDetailChange}
-              >
-                <option value="">{t('request.select_placeholder')}</option>
-                {OPTION_LINE.map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-              {errors.line && <span className="form-error">{errors.line}</span>}
-            </div>
-
-            {/* 조합법 선택 */}
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">
-                {t('request.combination_method')} <span className="required">*</span>
-              </label>
-              <select
-                className={`form-control ${errors.combination_method ? 'error' : ''}`}
-                name="combination_method"
-                value={detail.combination_method}
-                onChange={handleDetailChange}
-              >
-                <option value="">{t('request.select_placeholder')}</option>
-                {OPTION_COMBINATION.map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-              {errors.combination_method && <span className="form-error">{errors.combination_method}</span>}
-            </div>
-
-            {/* 제품 이름 선택 */}
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">
-                {t('request.product_name_select')} <span className="required">*</span>
-              </label>
-              <select
-                className={`form-control ${errors.product_name_select ? 'error' : ''}`}
-                name="product_name_select"
-                value={detail.product_name_select}
-                onChange={handleDetailChange}
-              >
-                <option value="">{t('request.select_placeholder')}</option>
-                {OPTION_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-              {errors.product_name_select && <span className="form-error">{errors.product_name_select}</span>}
-            </div>
-
-            {/* 조리법 */}
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">{t('request.cooking_method')}</label>
-              <select className="form-control" name="cooking_method" value={detail.cooking_method} onChange={handleDetailChange}>
-                <option value="">{t('request.select_placeholder')}</option>
-                {OPTION_COOKING.map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-            </div>
-
+          {/* 2-4. 라인 / 조합법 선택 / 제품 이름 선택 / 조리법 — 한 줄 */}
+          <div className="full-width flex-row">
+            <FormSelect
+              label={t('request.line')}
+              name="line"
+              value={detail.line}
+              options={OPTION_LINE}
+              onChange={handleDetailChange}
+              placeholder={t('request.select_placeholder')}
+              required
+              error={errors.line}
+              className="flex-col"
+            />
+            <FormSelect
+              label={t('request.combination_method')}
+              name="combination_method"
+              value={detail.combination_method}
+              options={OPTION_COMBINATION}
+              onChange={handleDetailChange}
+              placeholder={t('request.select_placeholder')}
+              required
+              error={errors.combination_method}
+              className="flex-col"
+            />
+            <FormSelect
+              label={t('request.product_name_select')}
+              name="product_name_select"
+              value={detail.product_name_select}
+              options={OPTION_PRODUCT}
+              onChange={handleDetailChange}
+              placeholder={t('request.select_placeholder')}
+              required
+              error={errors.product_name_select}
+              className="flex-col"
+            />
+            <FormSelect
+              label={t('request.cooking_method')}
+              name="cooking_method"
+              value={detail.cooking_method}
+              options={OPTION_COOKING}
+              onChange={handleDetailChange}
+              placeholder={t('request.select_placeholder')}
+              className="flex-col"
+            />
           </div>
 
           {/* 5-6. 지도 편차 변경 / 예외 구역 변경 — 고정 비율 (25:10:30:25:10) */}
-          <div className="full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+          <div className="full-width flex-row">
             {/* 지도 편차 변경 — 25% */}
             <div className="form-group" style={{ flex: 25 }}>
               <label className="form-label">{t('request.map_deviation_change')}</label>
@@ -463,45 +507,45 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
             </div>
           </div>
 
-          {/* 8. 뼈찜 조합 영역 — 한 줄 */}
-          <div className="full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-            {/* 뼈찜 조합 영역 — 25% */}
-            <div className="form-group" style={{ flex: 1 }}>
+          {/* 8. 뼈찜 조합 영역 */}
+          <div className="full-width flex-row">
+            <div className="form-group flex-col">
               <label className="form-label">{t('request.bone_stew_zone')}</label>
               <select className="form-control" name="bone_stew_zone" value={detail.bone_stew_zone} onChange={handleDetailChange}>
                 <option value="없음">{t('request.bone_stew_zone_none')}</option>
                 <option value="존재">{t('request.bone_stew_zone_exists')}</option>
               </select>
             </div>
-            {/* 뼈찜 위치 선택 — 25% (존재 시) */}
             {hasBoneStew && (
-              <div className="form-group" style={{ flex: 1 }}>
-                <label className="form-label">{t('request.bone_stew_location')}</label>
-                <select className="form-control" name="bone_stew_location" value={detail.bone_stew_location} onChange={handleDetailChange}>
-                  <option value="">{t('request.select_placeholder')}</option>
-                  {OPTION_BONE_STEW_LOCATION.map((v) => <option key={v} value={v}>{v}</option>)}
-                </select>
-              </div>
-            )}
-            {/* 뼈찜 제품 이름 선택 — 25% (존재 시) */}
-            {hasBoneStew && (
-              <div className="form-group" style={{ flex: 1 }}>
-                <label className="form-label">{t('request.bone_stew_product')}</label>
-                <select className="form-control" name="bone_stew_product" value={detail.bone_stew_product} onChange={handleDetailChange}>
-                  <option value="">{t('request.select_placeholder')}</option>
-                  {OPTION_BONE_STEW_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
-                </select>
-              </div>
-            )}
-            {/* 뼈찜 조리법 — 25% (존재 시) */}
-            {hasBoneStew && (
-              <div className="form-group" style={{ flex: 1 }}>
-                <label className="form-label">{t('request.bone_stew_cooking')}</label>
-                <select className="form-control" name="bone_stew_cooking" value={detail.bone_stew_cooking} onChange={handleDetailChange}>
-                  <option value="">{t('request.select_placeholder')}</option>
-                  {OPTION_BONE_STEW_COOKING.map((v) => <option key={v} value={v}>{v}</option>)}
-                </select>
-              </div>
+              <>
+                <FormSelect
+                  label={t('request.bone_stew_location')}
+                  name="bone_stew_location"
+                  value={detail.bone_stew_location}
+                  options={OPTION_BONE_STEW_LOCATION}
+                  onChange={handleDetailChange}
+                  placeholder={t('request.select_placeholder')}
+                  className="flex-col"
+                />
+                <FormSelect
+                  label={t('request.bone_stew_product')}
+                  name="bone_stew_product"
+                  value={detail.bone_stew_product}
+                  options={OPTION_BONE_STEW_PRODUCT}
+                  onChange={handleDetailChange}
+                  placeholder={t('request.select_placeholder')}
+                  className="flex-col"
+                />
+                <FormSelect
+                  label={t('request.bone_stew_cooking')}
+                  name="bone_stew_cooking"
+                  value={detail.bone_stew_cooking}
+                  options={OPTION_BONE_STEW_COOKING}
+                  onChange={handleDetailChange}
+                  placeholder={t('request.select_placeholder')}
+                  className="flex-col"
+                />
+              </>
             )}
           </div>
 
@@ -516,95 +560,9 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
 
           {isCFamily && (
             <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {/* 북쪽 행 */}
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-                <span style={{ width: '40px', paddingTop: '32px', fontWeight: 600 }}>{t('request.c_family_north')}</span>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">{t('request.c_family_line')}</label>
-                  <select className="form-control" name="c_family_north_line" value={detail.c_family_north_line} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_LINE.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">{t('request.c_family_combination')}</label>
-                  <select className="form-control" name="c_family_north_combination" value={detail.c_family_north_combination} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_COMBINATION.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">{t('request.c_family_product')}</label>
-                  <select className="form-control" name="c_family_north_product" value={detail.c_family_north_product} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              {/* 중간 행 */}
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-                <span style={{ width: '40px', paddingTop: '32px', fontWeight: 600 }}>{t('request.c_family_middle')}</span>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">{t('request.c_family_middle_use')}</label>
-                  <select className="form-control" name="c_family_middle_use" value={detail.c_family_middle_use} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    <option value="사용">사용</option>
-                    <option value="미사용">미사용</option>
-                  </select>
-                </div>
-                {detail.c_family_middle_use === '사용' && (
-                  <>
-                    <div className="form-group" style={{ flex: 1 }}>
-                      <label className="form-label">{t('request.c_family_line')}</label>
-                      <select className="form-control" name="c_family_middle_line" value={detail.c_family_middle_line} onChange={handleDetailChange}>
-                        <option value="">{t('request.select_placeholder')}</option>
-                        {OPTION_LINE.map((v) => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                    </div>
-                    <div className="form-group" style={{ flex: 1 }}>
-                      <label className="form-label">{t('request.c_family_combination')}</label>
-                      <select className="form-control" name="c_family_middle_combination" value={detail.c_family_middle_combination} onChange={handleDetailChange}>
-                        <option value="">{t('request.select_placeholder')}</option>
-                        {OPTION_COMBINATION.map((v) => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                    </div>
-                    <div className="form-group" style={{ flex: 1 }}>
-                      <label className="form-label">{t('request.c_family_product')}</label>
-                      <select className="form-control" name="c_family_middle_product" value={detail.c_family_middle_product} onChange={handleDetailChange}>
-                        <option value="">{t('request.select_placeholder')}</option>
-                        {OPTION_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* 남쪽 행 */}
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-                <span style={{ width: '40px', paddingTop: '32px', fontWeight: 600 }}>{t('request.c_family_south')}</span>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">{t('request.c_family_line')}</label>
-                  <select className="form-control" name="c_family_south_line" value={detail.c_family_south_line} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_LINE.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">{t('request.c_family_combination')}</label>
-                  <select className="form-control" name="c_family_south_combination" value={detail.c_family_south_combination} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_COMBINATION.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">{t('request.c_family_product')}</label>
-                  <select className="form-control" name="c_family_south_product" value={detail.c_family_south_product} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-              </div>
+              <CFamilyRow region="north"  detail={detail} onChange={handleDetailChange} />
+              <CFamilyRow region="middle" detail={detail} onChange={handleDetailChange} />
+              <CFamilyRow region="south"  detail={detail} onChange={handleDetailChange} />
             </div>
           )}
 
@@ -641,7 +599,7 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
           )}
 
           {/* 11. 20주년 제품 + 분리 진행 여부 */}
-          <div className="full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+          <div className="full-width flex-row">
             <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px' }}>
               <label className="form-label">{t('request.anniversary_20')}</label>
               <select className="form-control" name="anniversary_20" value={detail.anniversary_20} onChange={handleDetailChange}>
@@ -679,22 +637,22 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
           </div>
 
           {/* 12-14. T가문 적용 / 주력 제품 변경 / 설탕 추가 진행 여부 */}
-          <div className="full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-            <div className="form-group" style={{ flex: 1 }}>
+          <div className="full-width flex-row">
+            <div className="form-group flex-col">
               <label className="form-label">{t('request.t_family_apply')}</label>
               <select className="form-control" name="t_family_apply" value={detail.t_family_apply} onChange={handleDetailChange}>
                 <option value="미적용">{t('request.t_family_not_applied')}</option>
                 <option value="적용">{t('request.t_family_applied')}</option>
               </select>
             </div>
-            <div className="form-group" style={{ flex: 1 }}>
+            <div className="form-group flex-col">
               <label className="form-label">{t('request.main_product_change')}</label>
               <select className="form-control" name="main_product_change" value={detail.main_product_change} onChange={handleDetailChange}>
                 <option value="변경 없음">{t('request.no_change')}</option>
                 <option value="변경 있음">{t('request.has_change')}</option>
               </select>
             </div>
-            <div className="form-group" style={{ flex: 1 }}>
+            <div className="form-group flex-col">
               <label className="form-label">{t('request.sugar_add')}</label>
               <select className="form-control" name="sugar_add" value={detail.sugar_add} onChange={handleDetailChange}>
                 <option value="아니오">{t('request.no')}</option>
