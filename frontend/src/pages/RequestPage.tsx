@@ -471,56 +471,47 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
             </div>
           </div>
 
-          {/* 8. 뼈찜 조합 영역 */}
-          <div className="form-group">
-            <label className="form-label">{t('request.bone_stew_zone')}</label>
-            <select className="form-control" name="bone_stew_zone" value={detail.bone_stew_zone} onChange={handleDetailChange}>
-              <option value="없음">{t('request.bone_stew_zone_none')}</option>
-              <option value="존재">{t('request.bone_stew_zone_exists')}</option>
-            </select>
-          </div>
-
-          {hasBoneStew && (
-            <div className="form-group full-width">
-              <div className="conditional-group">
-                <div className="form-group">
-                  <label className="form-label">{t('request.bone_stew_cooking_ref')}</label>
-                  <select className="form-control" name="bone_stew_cooking_ref" value={detail.bone_stew_cooking_ref} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_BONE_STEW_COOKING_REF.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">{t('request.bone_stew_location')}</label>
-                  <select className="form-control" name="bone_stew_location" value={detail.bone_stew_location} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_BONE_STEW_LOCATION.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">{t('request.bone_stew_combination')}</label>
-                  <select className="form-control" name="bone_stew_combination" value={detail.bone_stew_combination} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_BONE_STEW_COMBINATION.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">{t('request.bone_stew_product')}</label>
-                  <select className="form-control" name="bone_stew_product" value={detail.bone_stew_product} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_BONE_STEW_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">{t('request.bone_stew_cooking')}</label>
-                  <select className="form-control" name="bone_stew_cooking" value={detail.bone_stew_cooking} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_BONE_STEW_COOKING.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-              </div>
+          {/* 8. 뼈찜 조합 영역 — 한 줄 */}
+          <div className="full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+            {/* 뼈찜 조합 영역 — 25% */}
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">{t('request.bone_stew_zone')}</label>
+              <select className="form-control" name="bone_stew_zone" value={detail.bone_stew_zone} onChange={handleDetailChange}>
+                <option value="없음">{t('request.bone_stew_zone_none')}</option>
+                <option value="존재">{t('request.bone_stew_zone_exists')}</option>
+              </select>
             </div>
-          )}
+            {/* 뼈찜 위치 선택 — 25% (존재 시) */}
+            {hasBoneStew && (
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">{t('request.bone_stew_location')}</label>
+                <select className="form-control" name="bone_stew_location" value={detail.bone_stew_location} onChange={handleDetailChange}>
+                  <option value="">{t('request.select_placeholder')}</option>
+                  {OPTION_BONE_STEW_LOCATION.map((v) => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+            )}
+            {/* 뼈찜 제품 이름 선택 — 25% (존재 시) */}
+            {hasBoneStew && (
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">{t('request.bone_stew_product')}</label>
+                <select className="form-control" name="bone_stew_product" value={detail.bone_stew_product} onChange={handleDetailChange}>
+                  <option value="">{t('request.select_placeholder')}</option>
+                  {OPTION_BONE_STEW_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+            )}
+            {/* 뼈찜 조리법 — 25% (존재 시) */}
+            {hasBoneStew && (
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">{t('request.bone_stew_cooking')}</label>
+                <select className="form-control" name="bone_stew_cooking" value={detail.bone_stew_cooking} onChange={handleDetailChange}>
+                  <option value="">{t('request.select_placeholder')}</option>
+                  {OPTION_BONE_STEW_COOKING.map((v) => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
 
           {/* 9. Only C가문 제품 */}
           <div className="form-group">
