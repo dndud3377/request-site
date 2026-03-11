@@ -1105,13 +1105,13 @@ select.form-control option {
 .flow-table .flow-table-header {
   background: var(--bg-secondary);
   display: grid;
-  grid-template-columns: 120px 1fr 180px 40px;
+  grid-template-columns: 1fr 1fr 1fr 40px;
   border-bottom: 1px solid var(--border);
 }
 
 .flow-table .flow-table-row {
   display: grid;
-  grid-template-columns: 120px 1fr 180px 40px;
+  grid-template-columns: 1fr 1fr 1fr 40px;
   border-bottom: 1px solid var(--border-light);
 }
 

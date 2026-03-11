@@ -25,9 +25,9 @@ const OPTION_C_FAMILY_DIRECTION_DETAIL_SOUTH = ['남쪽-세부A', '남쪽-세부
 
 const makeRow = (): FlowChartRow => ({
   id: String(Date.now() + Math.random()),
+  location: '',
+  product_name: '',
   step: '',
-  content: '',
-  note: '',
 });
 
 const INITIAL_DETAIL: DetailFormState = {
@@ -260,72 +260,63 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
           {isCopy && (
             <div className="form-group full-width">
               <div className="conditional-group">
-                {/* 기타 목적 */}
-                <div className="form-group">
-                  <label className="form-label">{t('request.other_purpose')}</label>
-                  <select className="form-control" name="other_purpose" value={detail.other_purpose} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_OTHER_PURPOSE.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
+
+                {/* 기타 목적 | 원본 위치 | 원본 제품 이름 — 한 행 */}
+                <div style={{ display: 'flex', gap: '16px' }}>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">{t('request.other_purpose')}</label>
+                    <select className="form-control" name="other_purpose" value={detail.other_purpose} onChange={handleDetailChange}>
+                      <option value="">{t('request.select_placeholder')}</option>
+                      {OPTION_OTHER_PURPOSE.map((v) => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">{t('request.source_location')}</label>
+                    <select className="form-control" name="source_location" value={detail.source_location} onChange={handleDetailChange}>
+                      <option value="">{t('request.select_placeholder')}</option>
+                      {OPTION_SOURCE_LOCATION.map((v) => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">{t('request.source_product_name')}</label>
+                    <select className="form-control" name="source_product_name" value={detail.source_product_name} onChange={handleDetailChange}>
+                      <option value="">{t('request.select_placeholder')}</option>
+                      {OPTION_SOURCE_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
                 </div>
-                {/* 원본 위치 */}
-                <div className="form-group">
-                  <label className="form-label">{t('request.source_location')}</label>
-                  <select className="form-control" name="source_location" value={detail.source_location} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_SOURCE_LOCATION.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-                {/* 원본 제품 이름 */}
-                <div className="form-group">
-                  <label className="form-label">{t('request.source_product_name')}</label>
-                  <select className="form-control" name="source_product_name" value={detail.source_product_name} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_SOURCE_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-                {/* 특이사항·변경 요청 목적 */}
-                <div className="form-group">
-                  <label className="form-label">{t('request.change_purpose_note')}</label>
-                  <textarea
-                    className="form-control"
-                    name="change_purpose_note"
-                    value={detail.change_purpose_note}
-                    onChange={handleDetailChange}
-                    rows={3}
-                  />
-                </div>
+
                 {/* 흐름도 */}
                 <div className="form-group">
                   <label className="form-label">{t('request.flow_chart')}</label>
                   <div className="flow-table-wrapper">
                     <div className="flow-table-header flow-table-row">
+                      <div className="flow-table-cell header-cell">{t('request.flow_location')}</div>
+                      <div className="flow-table-cell header-cell">{t('request.flow_product_name')}</div>
                       <div className="flow-table-cell header-cell">{t('request.flow_step')}</div>
-                      <div className="flow-table-cell header-cell">{t('request.flow_content')}</div>
-                      <div className="flow-table-cell header-cell">{t('request.flow_note')}</div>
                       <div className="flow-table-cell header-cell"></div>
                     </div>
                     {detail.flow_chart.map((row) => (
                       <div key={row.id} className="flow-table-row">
                         <div className="flow-table-cell">
                           <input
+                            value={row.location}
+                            onChange={(e) => handleFlowChange(row.id, 'location', e.target.value)}
+                            placeholder="위치"
+                          />
+                        </div>
+                        <div className="flow-table-cell">
+                          <input
+                            value={row.product_name}
+                            onChange={(e) => handleFlowChange(row.id, 'product_name', e.target.value)}
+                            placeholder="제품 이름"
+                          />
+                        </div>
+                        <div className="flow-table-cell">
+                          <input
                             value={row.step}
                             onChange={(e) => handleFlowChange(row.id, 'step', e.target.value)}
-                            placeholder="단계"
-                          />
-                        </div>
-                        <div className="flow-table-cell">
-                          <input
-                            value={row.content}
-                            onChange={(e) => handleFlowChange(row.id, 'content', e.target.value)}
-                            placeholder="내용"
-                          />
-                        </div>
-                        <div className="flow-table-cell">
-                          <input
-                            value={row.note}
-                            onChange={(e) => handleFlowChange(row.id, 'note', e.target.value)}
-                            placeholder="비고"
+                            placeholder="Step"
                           />
                         </div>
                         <div className="flow-table-cell">
@@ -345,6 +336,19 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
                     {t('request.flow_add_row')}
                   </button>
                 </div>
+
+                {/* 특이사항·변경 요청 목적 */}
+                <div className="form-group">
+                  <label className="form-label">{t('request.change_purpose_note')}</label>
+                  <textarea
+                    className="form-control"
+                    name="change_purpose_note"
+                    value={detail.change_purpose_note}
+                    onChange={handleDetailChange}
+                    rows={3}
+                  />
+                </div>
+
               </div>
             </div>
           )}
