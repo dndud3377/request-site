@@ -25,9 +25,9 @@ const OPTION_C_FAMILY_DIRECTION_DETAIL_SOUTH = ['남쪽-세부A', '남쪽-세부
 
 const makeRow = (): FlowChartRow => ({
   id: String(Date.now() + Math.random()),
+  location: '',
+  product_name: '',
   step: '',
-  content: '',
-  note: '',
 });
 
 const INITIAL_DETAIL: DetailFormState = {
@@ -113,8 +113,7 @@ export default function RequestPage(): React.ReactElement {
 
   // Derived booleans for conditional rendering
   const isCopy = detail.request_purpose === '복사';
-  const hasProduct = detail.product_name_select !== '';
-  const hasMapDeviation = detail.map_deviation_change === '변경 있음';
+const hasMapDeviation = detail.map_deviation_change === '변경 있음';
   const hasExceptionZone = detail.exception_zone_change === '변경 있음';
   const hasBoneStew = detail.bone_stew_zone === '존재';
   const isCFamily = detail.only_c_family === 'Yes';
@@ -261,72 +260,63 @@ export default function RequestPage(): React.ReactElement {
           {isCopy && (
             <div className="form-group full-width">
               <div className="conditional-group">
-                {/* 기타 목적 */}
-                <div className="form-group">
-                  <label className="form-label">{t('request.other_purpose')}</label>
-                  <select className="form-control" name="other_purpose" value={detail.other_purpose} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_OTHER_PURPOSE.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
+
+                {/* 기타 목적 | 원본 위치 | 원본 제품 이름 — 한 행 */}
+                <div style={{ display: 'flex', gap: '16px' }}>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">{t('request.other_purpose')}</label>
+                    <select className="form-control" name="other_purpose" value={detail.other_purpose} onChange={handleDetailChange}>
+                      <option value="">{t('request.select_placeholder')}</option>
+                      {OPTION_OTHER_PURPOSE.map((v) => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">{t('request.source_location')}</label>
+                    <select className="form-control" name="source_location" value={detail.source_location} onChange={handleDetailChange}>
+                      <option value="">{t('request.select_placeholder')}</option>
+                      {OPTION_SOURCE_LOCATION.map((v) => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">{t('request.source_product_name')}</label>
+                    <select className="form-control" name="source_product_name" value={detail.source_product_name} onChange={handleDetailChange}>
+                      <option value="">{t('request.select_placeholder')}</option>
+                      {OPTION_SOURCE_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
                 </div>
-                {/* 원본 위치 */}
-                <div className="form-group">
-                  <label className="form-label">{t('request.source_location')}</label>
-                  <select className="form-control" name="source_location" value={detail.source_location} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_SOURCE_LOCATION.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-                {/* 원본 제품 이름 */}
-                <div className="form-group">
-                  <label className="form-label">{t('request.source_product_name')}</label>
-                  <select className="form-control" name="source_product_name" value={detail.source_product_name} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_SOURCE_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-                {/* 특이사항·변경 요청 목적 */}
-                <div className="form-group">
-                  <label className="form-label">{t('request.change_purpose_note')}</label>
-                  <textarea
-                    className="form-control"
-                    name="change_purpose_note"
-                    value={detail.change_purpose_note}
-                    onChange={handleDetailChange}
-                    rows={3}
-                  />
-                </div>
+
                 {/* 흐름도 */}
                 <div className="form-group">
                   <label className="form-label">{t('request.flow_chart')}</label>
                   <div className="flow-table-wrapper">
                     <div className="flow-table-header flow-table-row">
+                      <div className="flow-table-cell header-cell">{t('request.flow_location')}</div>
+                      <div className="flow-table-cell header-cell">{t('request.flow_product_name')}</div>
                       <div className="flow-table-cell header-cell">{t('request.flow_step')}</div>
-                      <div className="flow-table-cell header-cell">{t('request.flow_content')}</div>
-                      <div className="flow-table-cell header-cell">{t('request.flow_note')}</div>
                       <div className="flow-table-cell header-cell"></div>
                     </div>
                     {detail.flow_chart.map((row) => (
                       <div key={row.id} className="flow-table-row">
                         <div className="flow-table-cell">
                           <input
+                            value={row.location}
+                            onChange={(e) => handleFlowChange(row.id, 'location', e.target.value)}
+                            placeholder="위치"
+                          />
+                        </div>
+                        <div className="flow-table-cell">
+                          <input
+                            value={row.product_name}
+                            onChange={(e) => handleFlowChange(row.id, 'product_name', e.target.value)}
+                            placeholder="제품 이름"
+                          />
+                        </div>
+                        <div className="flow-table-cell">
+                          <input
                             value={row.step}
                             onChange={(e) => handleFlowChange(row.id, 'step', e.target.value)}
-                            placeholder="단계"
-                          />
-                        </div>
-                        <div className="flow-table-cell">
-                          <input
-                            value={row.content}
-                            onChange={(e) => handleFlowChange(row.id, 'content', e.target.value)}
-                            placeholder="내용"
-                          />
-                        </div>
-                        <div className="flow-table-cell">
-                          <input
-                            value={row.note}
-                            onChange={(e) => handleFlowChange(row.id, 'note', e.target.value)}
-                            placeholder="비고"
+                            placeholder="Step"
                           />
                         </div>
                         <div className="flow-table-cell">
@@ -346,75 +336,87 @@ export default function RequestPage(): React.ReactElement {
                     {t('request.flow_add_row')}
                   </button>
                 </div>
-              </div>
-            </div>
-          )}
 
-          {/* 2. 라인 */}
-          <div className="form-group">
-            <label className="form-label">
-              {t('request.line')} <span className="required">*</span>
-            </label>
-            <select
-              className={`form-control ${errors.line ? 'error' : ''}`}
-              name="line"
-              value={detail.line}
-              onChange={handleDetailChange}
-            >
-              <option value="">{t('request.select_placeholder')}</option>
-              {OPTION_LINE.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-            {errors.line && <span className="form-error">{errors.line}</span>}
-          </div>
-
-          {/* 3. 조합법 선택 */}
-          <div className="form-group">
-            <label className="form-label">
-              {t('request.combination_method')} <span className="required">*</span>
-            </label>
-            <select
-              className={`form-control ${errors.combination_method ? 'error' : ''}`}
-              name="combination_method"
-              value={detail.combination_method}
-              onChange={handleDetailChange}
-            >
-              <option value="">{t('request.select_placeholder')}</option>
-              {OPTION_COMBINATION.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-            {errors.combination_method && <span className="form-error">{errors.combination_method}</span>}
-          </div>
-
-          {/* 4. 제품 이름 선택 */}
-          <div className="form-group">
-            <label className="form-label">
-              {t('request.product_name_select')} <span className="required">*</span>
-            </label>
-            <select
-              className={`form-control ${errors.product_name_select ? 'error' : ''}`}
-              name="product_name_select"
-              value={detail.product_name_select}
-              onChange={handleDetailChange}
-            >
-              <option value="">{t('request.select_placeholder')}</option>
-              {OPTION_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-            {errors.product_name_select && <span className="form-error">{errors.product_name_select}</span>}
-          </div>
-
-          {/* 조리법 (제품 선택 시) */}
-          {hasProduct && (
-            <div className="form-group">
-              <div className="conditional-group">
+                {/* 특이사항·변경 요청 목적 */}
                 <div className="form-group">
-                  <label className="form-label">{t('request.cooking_method')}</label>
-                  <select className="form-control" name="cooking_method" value={detail.cooking_method} onChange={handleDetailChange}>
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_COOKING.map((v) => <option key={v} value={v}>{v}</option>)}
-                  </select>
+                  <label className="form-label">{t('request.change_purpose_note')}</label>
+                  <textarea
+                    className="form-control"
+                    name="change_purpose_note"
+                    value={detail.change_purpose_note}
+                    onChange={handleDetailChange}
+                    rows={3}
+                  />
                 </div>
+
               </div>
             </div>
           )}
+
+          {/* 2. 라인 / 3. 조합법 선택 / 4. 제품 이름 선택 / 조리법 — 한 줄 */}
+          <div className="full-width" style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+
+            {/* 라인 */}
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">
+                {t('request.line')} <span className="required">*</span>
+              </label>
+              <select
+                className={`form-control ${errors.line ? 'error' : ''}`}
+                name="line"
+                value={detail.line}
+                onChange={handleDetailChange}
+              >
+                <option value="">{t('request.select_placeholder')}</option>
+                {OPTION_LINE.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+              {errors.line && <span className="form-error">{errors.line}</span>}
+            </div>
+
+            {/* 조합법 선택 */}
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">
+                {t('request.combination_method')} <span className="required">*</span>
+              </label>
+              <select
+                className={`form-control ${errors.combination_method ? 'error' : ''}`}
+                name="combination_method"
+                value={detail.combination_method}
+                onChange={handleDetailChange}
+              >
+                <option value="">{t('request.select_placeholder')}</option>
+                {OPTION_COMBINATION.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+              {errors.combination_method && <span className="form-error">{errors.combination_method}</span>}
+            </div>
+
+            {/* 제품 이름 선택 */}
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">
+                {t('request.product_name_select')} <span className="required">*</span>
+              </label>
+              <select
+                className={`form-control ${errors.product_name_select ? 'error' : ''}`}
+                name="product_name_select"
+                value={detail.product_name_select}
+                onChange={handleDetailChange}
+              >
+                <option value="">{t('request.select_placeholder')}</option>
+                {OPTION_PRODUCT.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+              {errors.product_name_select && <span className="form-error">{errors.product_name_select}</span>}
+            </div>
+
+            {/* 조리법 */}
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">{t('request.cooking_method')}</label>
+              <select className="form-control" name="cooking_method" value={detail.cooking_method} onChange={handleDetailChange}>
+                <option value="">{t('request.select_placeholder')}</option>
+                {OPTION_COOKING.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
+
+          </div>
 
           {/* 5. 지도 편차 변경 */}
           <div className="form-group">

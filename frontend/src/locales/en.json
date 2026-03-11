@@ -85,9 +85,9 @@
     "source_product_name": "Source Product Name",
     "change_purpose_note": "Notes / Change Request Purpose",
     "flow_chart": "Flow Chart",
+    "flow_location": "Location",
+    "flow_product_name": "Product Name",
     "flow_step": "Step",
-    "flow_content": "Content",
-    "flow_note": "Note",
     "flow_add_row": "+ Add Row",
     "cooking_method": "Cooking Method",
     "cooking_1": "Method 1",
@@ -138,7 +138,11 @@
     "yes": "Yes",
     "no_change": "No Change",
     "has_change": "Has Change",
-    "select_placeholder": "Select..."
+    "select_placeholder": "Select...",
+    "product_type_new": "New Product",
+    "product_type_update": "Product Update",
+    "product_type_add_feature": "Feature Addition",
+    "product_type_change": "Product Change"
   },
   "approval": {
     "title": "Approval Status",

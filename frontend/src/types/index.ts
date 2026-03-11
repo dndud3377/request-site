@@ -90,9 +90,9 @@ export interface Stats {
 
 export interface FlowChartRow {
   id: string;
+  location: string;
+  product_name: string;
   step: string;
-  content: string;
-  note: string;
 }
 
 export interface DetailFormState {
