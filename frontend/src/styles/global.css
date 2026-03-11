@@ -1131,6 +1131,8 @@ select.form-control option {
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  justify-content: center;
+  text-align: center;
 }
 
 .flow-table-cell input {
@@ -1144,6 +1146,22 @@ select.form-control option {
 }
 
 .flow-table-cell input:focus {
+  background: var(--accent-light);
+  border-radius: 4px;
+}
+
+.flow-table-cell select {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  outline: none;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+.flow-table-cell select:focus {
   background: var(--accent-light);
   border-radius: 4px;
 }

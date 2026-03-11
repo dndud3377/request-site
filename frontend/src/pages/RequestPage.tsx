@@ -289,7 +289,7 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
                 {/* 흐름도 */}
                 <div className="form-group">
                   <label className="form-label">{t('request.flow_chart')}</label>
-                  <div className="flow-table-wrapper">
+                  <div className="flow-table flow-table-wrapper">
                     <div className="flow-table-header flow-table-row">
                       <div className="flow-table-cell header-cell">{t('request.flow_location')}</div>
                       <div className="flow-table-cell header-cell">{t('request.flow_product_name')}</div>
@@ -299,11 +299,15 @@ const hasMapDeviation = detail.map_deviation_change === '변경 있음';
                     {detail.flow_chart.map((row) => (
                       <div key={row.id} className="flow-table-row">
                         <div className="flow-table-cell">
-                          <input
+                          <select
                             value={row.location}
                             onChange={(e) => handleFlowChange(row.id, 'location', e.target.value)}
-                            placeholder="위치"
-                          />
+                          >
+                            <option value="">위치 선택</option>
+                            <option value="위치A">위치A</option>
+                            <option value="위치B">위치B</option>
+                            <option value="위치C">위치C</option>
+                          </select>
                         </div>
                         <div className="flow-table-cell">
                           <input
