@@ -368,12 +368,17 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // ===== API =====
-  const buildEnrichedForm = (): CreateDocumentInput => ({
-    ...form,
-    title: `[${detail.request_purpose}] ${detail.line} - ${detail.product_name_select}`,
-    product_name: detail.product_name_select,
-    additional_notes: JSON.stringify({ detail, jayerRows, oayerRows, boneStewRows }),
-  });
+  const buildEnrichedForm = (): CreateDocumentInput => {
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+    const title = `${detail.line}(${detail.request_purpose})_${detail.combination_method}_${detail.product_name_select}_${detail.cooking_method}_요청서_${dateStr}`;
+    return {
+      ...form,
+      title,
+      product_name: detail.product_name_select,
+      additional_notes: JSON.stringify({ detail, jayerRows, oayerRows, boneStewRows }),
+    };
+  };
 
   const handleSaveDraft = async () => {
     setSaving(true);
