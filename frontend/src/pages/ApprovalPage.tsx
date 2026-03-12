@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { documentsAPI } from '../api/client';
 import StatusBadge, { PriorityBadge } from '../components/StatusBadge';
 import Modal from '../components/Modal';
-import { RequestDocument } from '../types';
+import { useToast } from '../components/Toast';
+import { RequestDocument, AgentType, ApprovalStepFrontend } from '../types';
 
 interface FilterTab {
   key: string;
@@ -12,14 +13,128 @@ interface FilterTab {
 
 const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
 
+// 현재 결재 대기 단계 표시
+const getCurrentStage = (doc: RequestDocument): string => {
+  const steps = doc.approval_steps ?? [];
+  const pending = steps.filter((s) => s.action === 'pending');
+  if (pending.length === 0 && doc.status === 'approved') return '결재완료';
+  if (pending.length === 0) return '-';
+  return pending.map((s) => `AGENT ${s.agent}`).join(' / ');
+};
+
+// ===== Approval Flow Component =====
+
+interface ApprovalFlowProps {
+  doc: RequestDocument;
+  onApprove: (agent: AgentType) => void;
+  approving: boolean;
+}
+
+function ApprovalFlow({ doc, onApprove, approving }: ApprovalFlowProps): React.ReactElement {
+  const steps = doc.approval_steps ?? [];
+
+  const getStep = (agent: AgentType): ApprovalStepFrontend | undefined =>
+    steps.find((s) => s.agent === agent);
+
+  const rStep = getStep('R');
+  const jStep = getStep('J');
+  const oStep = getStep('O');
+  const eStep = getStep('E');
+
+  // 설탕 추가 여부 판단
+  let sugarAdd = false;
+  try {
+    const parsed = JSON.parse(doc.additional_notes ?? '{}');
+    sugarAdd = parsed?.detail?.sugar_add === '예';
+  } catch {
+    sugarAdd = false;
+  }
+
+  const renderStepBadge = (step: ApprovalStepFrontend | undefined, label: string) => {
+    if (!step) {
+      return (
+        <div className="approval-node approval-node-inactive">
+          <span className="step-agent-label">{label}</span>
+          <span className="step-badge step-badge-future">대기예정</span>
+        </div>
+      );
+    }
+    return (
+      <div className={`approval-node ${step.action === 'approved' ? 'approval-node-done' : step.action === 'rejected' ? 'approval-node-rejected' : ''}`}>
+        <span className="step-agent-label">{label}</span>
+        <span className={`step-badge step-badge-${step.action}`}>
+          {step.action === 'approved' ? '✓ 승인' : step.action === 'rejected' ? '✗ 반려' : '대기중'}
+        </span>
+        {step.acted_at && (
+          <span className="step-acted-at">{formatDate(step.acted_at)}</span>
+        )}
+        {step.action === 'pending' && (
+          <button
+            className="btn btn-primary btn-sm"
+            style={{ marginTop: 6 }}
+            disabled={approving}
+            onClick={() => onApprove(step.agent)}
+          >
+            승인
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="approval-flow">
+      {/* 상신됨 */}
+      <div className="approval-node approval-node-start">
+        <span className="step-agent-label">상신됨</span>
+        <span className="step-badge step-badge-approved">✓</span>
+        {doc.submitted_at && <span className="step-acted-at">{formatDate(doc.submitted_at)}</span>}
+      </div>
+
+      <div className="approval-connector" />
+
+      {/* AGENT R */}
+      {renderStepBadge(rStep, 'AGENT R')}
+
+      <div className="approval-connector" />
+
+      {/* AGENT J + O 병렬 */}
+      <div className="approval-parallel">
+        {renderStepBadge(jStep, 'AGENT J')}
+        {renderStepBadge(oStep, 'AGENT O')}
+      </div>
+
+      <div className="approval-connector" />
+
+      {/* AGENT E (설탕추가=예 또는 이미 스텝이 있는 경우) */}
+      {(sugarAdd || eStep) && (
+        <>
+          {renderStepBadge(eStep, 'AGENT E')}
+          <div className="approval-connector" />
+        </>
+      )}
+
+      {/* 결재완료 */}
+      <div className={`approval-node ${doc.status === 'approved' ? 'approval-node-done' : 'approval-node-inactive'}`}>
+        <span className="step-agent-label">결재완료</span>
+        {doc.status === 'approved' && <span className="step-badge step-badge-approved">✓ 완료</span>}
+      </div>
+    </div>
+  );
+}
+
+// ===== Main Page =====
+
 export default function ApprovalPage(): React.ReactElement {
   const { t } = useTranslation();
+  const addToast = useToast();
   const [docs, setDocs] = useState<RequestDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<RequestDocument | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [approving, setApproving] = useState(false);
 
   const fetchDocs = useCallback(() => {
     setLoading(true);
@@ -51,6 +166,28 @@ export default function ApprovalPage(): React.ReactElement {
   const openDetail = (doc: RequestDocument) => {
     setSelected(doc);
     setModalOpen(true);
+  };
+
+  const handleApproveStep = async (agent: AgentType) => {
+    if (!selected) return;
+    setApproving(true);
+    try {
+      await documentsAPI.approveStep(selected.id, agent);
+      addToast(`AGENT ${agent} 승인 처리되었습니다.`, 'success');
+      // 목록 갱신 후 선택 문서 업데이트
+      const listResult = await documentsAPI.list({});
+      const listData = listResult.data;
+      const newDocs: RequestDocument[] = Array.isArray(listData)
+        ? listData
+        : (listData as any).results ?? [];
+      setDocs(newDocs);
+      const refreshed = newDocs.find((d) => d.id === selected.id);
+      if (refreshed) setSelected(refreshed);
+    } catch {
+      addToast('처리 중 오류가 발생했습니다.', 'error');
+    } finally {
+      setApproving(false);
+    }
   };
 
   return (
@@ -100,6 +237,7 @@ export default function ApprovalPage(): React.ReactElement {
                 <th>{t('approval.col_product')}</th>
                 <th>{t('approval.col_requester')}</th>
                 <th>{t('approval.col_status')}</th>
+                <th>현재 단계</th>
                 <th>{t('approval.col_priority')}</th>
                 <th>{t('approval.col_submitted')}</th>
                 <th>{t('approval.col_deadline')}</th>
@@ -119,6 +257,9 @@ export default function ApprovalPage(): React.ReactElement {
                   </td>
                   <td>
                     <StatusBadge status={doc.status} />
+                  </td>
+                  <td style={{ fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 500 }}>
+                    {getCurrentStage(doc)}
                   </td>
                   <td>
                     <PriorityBadge priority={doc.priority} />
@@ -154,6 +295,21 @@ export default function ApprovalPage(): React.ReactElement {
               <StatusBadge status={selected.status} />
               <PriorityBadge priority={selected.priority} />
             </div>
+
+            {/* 결재 경로 */}
+            <div>
+              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                결재 경로
+              </div>
+              <ApprovalFlow
+                doc={selected}
+                onApprove={handleApproveStep}
+                approving={approving}
+              />
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }} />
+
             {(
               [
                 [t('approval.col_product'), selected.product_name],

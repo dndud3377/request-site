@@ -16,6 +16,17 @@ export type ProductType = 'new' | 'update' | 'add_feature' | 'change';
 export type MapType = 'intro' | 'feature' | 'comparison' | 'roadmap';
 export type VocCategory = 'inquiry' | 'complaint' | 'suggestion' | 'praise';
 
+export type AgentType = 'R' | 'J' | 'O' | 'E';
+export type StepAction = 'pending' | 'approved' | 'rejected';
+
+export interface ApprovalStepFrontend {
+  id: number;
+  agent: AgentType;
+  action: StepAction;
+  acted_at: string | null;
+  is_parallel?: boolean;  // J, O 병렬 표시용
+}
+
 // ===== Domain Models =====
 
 export interface RequestDocument {
@@ -44,11 +55,12 @@ export interface RequestDocument {
   created_at: string;
   updated_at: string;
   submitted_at: string | null;
+  approval_steps?: ApprovalStepFrontend[];
 }
 
 export type CreateDocumentInput = Omit<
   RequestDocument,
-  'id' | 'status' | 'created_at' | 'updated_at' | 'submitted_at'
+  'id' | 'status' | 'created_at' | 'updated_at' | 'submitted_at' | 'approval_steps'
 >;
 
 export type UpdateDocumentInput = Partial<CreateDocumentInput>;
