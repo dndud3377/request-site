@@ -7,6 +7,8 @@ import {
   UpdateDocumentInput,
   CreateVocInput,
   CreateRfgInput,
+  AgentType,
+  ApprovalStepFrontend,
 } from '../types';
 
 // ===== Helpers =====
@@ -54,6 +56,11 @@ const SAMPLE_DOCUMENTS: RequestDocument[] = [
     created_at: dateStr(14),
     updated_at: dateStr(10),
     submitted_at: dateStr(12),
+    approval_steps: [
+      { id: 101, agent: 'R', action: 'approved', acted_at: dateStr(11) },
+      { id: 102, agent: 'J', action: 'approved', acted_at: dateStr(10), is_parallel: true },
+      { id: 103, agent: 'O', action: 'approved', acted_at: dateStr(10), is_parallel: true },
+    ],
   },
   {
     id: 2,
@@ -85,6 +92,9 @@ const SAMPLE_DOCUMENTS: RequestDocument[] = [
     created_at: dateStr(7),
     updated_at: dateStr(5),
     submitted_at: dateStr(5),
+    approval_steps: [
+      { id: 104, agent: 'R', action: 'pending', acted_at: null },
+    ],
   },
   {
     id: 3,
@@ -114,6 +124,11 @@ const SAMPLE_DOCUMENTS: RequestDocument[] = [
     created_at: dateStr(10),
     updated_at: dateStr(8),
     submitted_at: dateStr(9),
+    approval_steps: [
+      { id: 105, agent: 'R', action: 'approved', acted_at: dateStr(9) },
+      { id: 106, agent: 'J', action: 'pending', acted_at: null, is_parallel: true },
+      { id: 107, agent: 'O', action: 'pending', acted_at: null, is_parallel: true },
+    ],
   },
   {
     id: 4,
@@ -143,6 +158,11 @@ const SAMPLE_DOCUMENTS: RequestDocument[] = [
     created_at: dateStr(20),
     updated_at: dateStr(15),
     submitted_at: dateStr(18),
+    approval_steps: [
+      { id: 108, agent: 'R', action: 'approved', acted_at: dateStr(17) },
+      { id: 109, agent: 'J', action: 'rejected', acted_at: dateStr(15), is_parallel: true },
+      { id: 110, agent: 'O', action: 'pending', acted_at: null, is_parallel: true },
+    ],
   },
   {
     id: 5,
@@ -170,6 +190,7 @@ const SAMPLE_DOCUMENTS: RequestDocument[] = [
     created_at: dateStr(2),
     updated_at: dateStr(1),
     submitted_at: null,
+    approval_steps: [],
   },
   {
     id: 6,
@@ -199,6 +220,11 @@ const SAMPLE_DOCUMENTS: RequestDocument[] = [
     created_at: dateStr(30),
     updated_at: dateStr(25),
     submitted_at: dateStr(28),
+    approval_steps: [
+      { id: 111, agent: 'R', action: 'approved', acted_at: dateStr(27) },
+      { id: 112, agent: 'J', action: 'approved', acted_at: dateStr(26), is_parallel: true },
+      { id: 113, agent: 'O', action: 'approved', acted_at: dateStr(26), is_parallel: true },
+    ],
   },
 ];
 
@@ -282,6 +308,7 @@ let rfgs: RFG[] = [...SAMPLE_RFGS];
 let nextDocId = 100;
 let nextVocId = 100;
 let nextRfgId = 100;
+let nextStepId = 200;
 
 // ===== Mock Documents API =====
 
@@ -339,9 +366,21 @@ const mockUpdateDocument = async (id: number, data: UpdateDocumentInput) => {
 
 const mockSubmitDocument = async (id: number) => {
   await delay(500);
+  const initialStep: ApprovalStepFrontend = {
+    id: nextStepId++,
+    agent: 'R',
+    action: 'pending',
+    acted_at: null,
+  };
   documents = documents.map((d) =>
     d.id === id
-      ? { ...d, status: 'submitted' as const, submitted_at: now(), updated_at: now() }
+      ? {
+          ...d,
+          status: 'submitted' as const,
+          submitted_at: now(),
+          updated_at: now(),
+          approval_steps: [initialStep],
+        }
       : d
   );
   const doc = documents.find((d) => d.id === id);
@@ -349,10 +388,59 @@ const mockSubmitDocument = async (id: number) => {
   return {
     data: {
       message: '의뢰서가 성공적으로 상신되었습니다.',
-      email_sent: true, // wireframe: always true
+      email_sent: true,
       document: doc,
     },
   };
+};
+
+const mockApproveStep = async (docId: number, agent: AgentType) => {
+  await delay();
+  const doc = documents.find((d) => d.id === docId);
+  if (!doc) throw new Error(`Document ${docId} not found`);
+
+  const steps: ApprovalStepFrontend[] = [...(doc.approval_steps ?? [])];
+  const stepIdx = steps.findIndex((s) => s.agent === agent && s.action === 'pending');
+  if (stepIdx === -1) throw new Error(`No pending step for agent ${agent}`);
+
+  steps[stepIdx] = { ...steps[stepIdx], action: 'approved', acted_at: now() };
+
+  let newStatus = doc.status;
+
+  if (agent === 'R') {
+    steps.push({ id: nextStepId++, agent: 'J', action: 'pending', acted_at: null, is_parallel: true });
+    steps.push({ id: nextStepId++, agent: 'O', action: 'pending', acted_at: null, is_parallel: true });
+    newStatus = 'under_review';
+  } else if (agent === 'J' || agent === 'O') {
+    const jStep = steps.find((s) => s.agent === 'J');
+    const oStep = steps.find((s) => s.agent === 'O');
+    const bothApproved =
+      jStep?.action === 'approved' && oStep?.action === 'approved';
+    if (bothApproved) {
+      let sugarAdd = false;
+      try {
+        const parsed = JSON.parse(doc.additional_notes ?? '{}');
+        sugarAdd = parsed?.detail?.sugar_add === '예';
+      } catch {
+        sugarAdd = false;
+      }
+      if (sugarAdd) {
+        steps.push({ id: nextStepId++, agent: 'E', action: 'pending', acted_at: null });
+        newStatus = 'under_review';
+      } else {
+        newStatus = 'approved';
+      }
+    }
+  } else if (agent === 'E') {
+    newStatus = 'approved';
+  }
+
+  documents = documents.map((d) =>
+    d.id === docId
+      ? { ...d, status: newStatus, approval_steps: steps, updated_at: now() }
+      : d
+  );
+  return { data: { message: '처리되었습니다.', status: newStatus } };
 };
 
 const mockApproveDocument = async (id: number, data?: { comment?: string }) => {
@@ -457,6 +545,7 @@ export const mockDocumentsAPI = {
   approve: mockApproveDocument,
   reject: mockRejectDocument,
   stats: mockDocumentStats,
+  approveStep: mockApproveStep,
 };
 
 export const mockVocAPI = {

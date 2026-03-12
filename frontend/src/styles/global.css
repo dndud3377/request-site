@@ -1399,3 +1399,104 @@ select.form-control option {
   color: var(--warning);
   margin-bottom: 12px;
 }
+
+/* ===== Approval Flow ===== */
+
+.approval-flow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  padding: 8px 0;
+}
+
+.approval-connector {
+  width: 2px;
+  height: 20px;
+  background: var(--border);
+  margin-left: 28px;
+}
+
+.approval-node {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  min-width: 160px;
+}
+
+.approval-node-start {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+.approval-node-done {
+  border-color: var(--success);
+  background: var(--success-light);
+}
+
+.approval-node-rejected {
+  border-color: var(--danger);
+  background: var(--danger-light);
+}
+
+.approval-node-inactive {
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.step-agent-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.03em;
+}
+
+.step-acted-at {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.step-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.step-badge-approved {
+  background: var(--success-light);
+  color: var(--success);
+  border: 1px solid var(--success);
+}
+
+.step-badge-pending {
+  background: var(--warning-light);
+  color: var(--warning);
+  border: 1px solid var(--warning);
+}
+
+.step-badge-rejected {
+  background: var(--danger-light);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+.step-badge-future {
+  background: var(--bg-secondary);
+  color: var(--text-disabled);
+  border: 1px solid var(--border);
+}
+
+.approval-parallel {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  align-items: flex-start;
+  margin-left: 0;
+}
