@@ -95,6 +95,46 @@ export interface FlowChartRow {
   step: string;
 }
 
+export interface JayerRow {
+  id: string;
+  cooking_method: string;
+  sp: string;
+  sd: string;
+  pp: string;
+  st: string;           // 'O' | 'X' | ''
+  new_or_copy: string;  // '신규' | '복사' | ''
+  product_name: string;
+  step: string;
+  item_id: string;
+  rev: string;
+  drawing_version: string;
+}
+
+export interface OayerRow {
+  id: string;
+  cooking_method: string;
+  sp: string;
+  sd: string;
+  pp: string;
+  st: string;
+  new_or_copy: string;
+  product_name: string;
+  step: string;
+  tt: string;
+}
+
+export interface BoneStewTableRow {
+  id: string;
+  cooking_method: string;
+  ss: string;
+  sd: string;
+  bone_cooking: string;
+  bone_name: string;
+  bone_step: string;
+  bone_ss: string;
+  remark: string;
+}
+
 export interface DetailFormState {
   // 항상 표시
   request_purpose: string;
