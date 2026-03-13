@@ -4,7 +4,6 @@
     "intro": "소개",
     "request": "의뢰서 작성",
     "approval": "결재 현황",
-    "approval_route": "결재 경로",
     "history": "이력 조회",
     "voc": "VOC",
     "rfg": "RFG"
@@ -221,21 +220,5 @@
     "priority_medium": "보통",
     "priority_high": "높음",
     "priority_urgent": "긴급"
-  },
-  "approval_route": {
-    "title": "결재 경로 설정",
-    "subtitle": "결재 경로 및 팀 인원을 관리합니다.",
-    "start": "의뢰서 상신",
-    "team_r_label": "1차 검토",
-    "team_j_label": "J 검토",
-    "team_o_label": "O 검토",
-    "team_e_label": "설탕 추가 검토",
-    "parallel_label": "병렬 처리 (둘 다 승인 필요)",
-    "sugar_condition": "설탕 추가 조건 시 활성화",
-    "add_member": "+ 인원 추가",
-    "add_confirm": "확인",
-    "add_cancel": "취소",
-    "add_placeholder": "인원 이름 입력",
-    "final": "결재완료"
   }
 }

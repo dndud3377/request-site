@@ -9,7 +9,6 @@ import {
   CreateRfgInput,
   AgentType,
   ApprovalStepFrontend,
-  AgentMember,
 } from '../types';
 
 // ===== Helpers =====
@@ -535,43 +534,6 @@ const mockGetRfg = async (id: number) => {
   return { data: rfg };
 };
 
-// ===== Agent Route Members =====
-
-let agentMembers: AgentMember[] = [
-  { id: 'R-RA', name: 'RA', team: 'R' },
-  { id: 'R-RB', name: 'RB', team: 'R' },
-  { id: 'R-RC', name: 'RC', team: 'R' },
-  { id: 'J-JA', name: 'JA', team: 'J' },
-  { id: 'J-JB', name: 'JB', team: 'J' },
-  { id: 'J-JC', name: 'JC', team: 'J' },
-  { id: 'O-OA', name: 'OA', team: 'O' },
-  { id: 'O-OB', name: 'OB', team: 'O' },
-  { id: 'O-OC', name: 'OC', team: 'O' },
-  { id: 'E-EA', name: 'EA', team: 'E' },
-  { id: 'E-EB', name: 'EB', team: 'E' },
-  { id: 'E-EC', name: 'EC', team: 'E' },
-];
-let nextMemberId = 1;
-
-const mockGetAgentMembers = async () => {
-  await delay(200);
-  return { data: [...agentMembers] };
-};
-
-const mockAddAgentMember = async (team: AgentType, name: string) => {
-  await delay(200);
-  const id = `${team}-custom-${nextMemberId++}`;
-  const member: AgentMember = { id, name: name.trim(), team };
-  agentMembers = [...agentMembers, member];
-  return { data: member };
-};
-
-const mockDeleteAgentMember = async (id: string) => {
-  await delay(200);
-  agentMembers = agentMembers.filter((m) => m.id !== id);
-  return { data: { message: '삭제되었습니다.' } };
-};
-
 // ===== Exports =====
 
 export const mockDocumentsAPI = {
@@ -596,10 +558,4 @@ export const mockRfgAPI = {
   list: mockListRfgs,
   create: mockCreateRfg,
   get: mockGetRfg,
-};
-
-export const agentRouteAPI = {
-  getMembers: mockGetAgentMembers,
-  addMember: mockAddAgentMember,
-  deleteMember: mockDeleteAgentMember,
 };
