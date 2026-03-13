@@ -589,7 +589,6 @@ export default function ApprovalPage(): React.ReactElement {
                 <th>{t('approval.col_requester')}</th>
                 <th>{t('approval.col_status')}</th>
                 <th>{t('approval.col_current_stage')}</th>
-                <th>{t('approval.col_priority')}</th>
                 <th>{t('approval.col_submitted')}</th>
                 <th>{t('approval.col_deadline')}</th>
                 <th></th>
@@ -615,7 +614,6 @@ export default function ApprovalPage(): React.ReactElement {
                   <td style={{ fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 500 }}>
                     {getCurrentStage(doc)}
                   </td>
-                  <td><PriorityBadge priority={doc.priority} /></td>
                   <td>{formatDate(doc.submitted_at)}</td>
                   <td>{formatDate(doc.deadline)}</td>
                   <td>

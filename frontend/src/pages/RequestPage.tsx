@@ -5,6 +5,7 @@ import { documentsAPI } from '../api/client';
 import { useToast } from '../components/Toast';
 import { ConfirmModal } from '../components/Modal';
 import FormSelect from '../components/FormSelect';
+import { useAuth } from '../contexts/AuthContext';
 import {
   CreateDocumentInput,
   DetailFormState,
@@ -250,6 +251,7 @@ export default function RequestPage(): React.ReactElement {
   const navigate = useNavigate();
   const location = useLocation();
   const addToast = useToast();
+  const { currentUser } = useAuth();
 
   // 반려 후 재상신 모드: location.state.editDocId 가 있을 때
   const editDocId: number | null = (location.state as any)?.editDocId ?? null;
@@ -396,6 +398,9 @@ export default function RequestPage(): React.ReactElement {
       ...form,
       title,
       product_name: detail.product_name_select,
+      requester_name: currentUser.name,
+      requester_email: currentUser.email,
+      requester_department: currentUser.department,
       additional_notes: JSON.stringify({ detail, jayerRows, oayerRows, boneStewRows }),
     };
   };
