@@ -239,9 +239,9 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
   try {
     const parsed = JSON.parse(doc.additional_notes ?? '{}');
     detail = parsed?.detail ?? {};
-    jayer = parsed?.jayer ?? [];
-    oayer = parsed?.oayer ?? [];
-    boneStew = parsed?.bone_stew ?? [];
+    jayer = parsed?.jayerRows ?? [];
+    oayer = parsed?.oayerRows ?? [];
+    boneStew = parsed?.boneStewRows ?? [];
   } catch { /* noop */ }
 
   const isR = role === 'TE_R' || role === 'MASTER';
@@ -254,12 +254,16 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
   const showBoneStew = isJ || isO;
   const showFlowChart = isJ || isO;
 
-  const basicFields: DetailField[] = [
-    { label: '조합법', value: detail.combination_method, show: true },
-    { label: '제품 이름', value: detail.product_name_select, show: true },
-    { label: '조리법', value: detail.cooking_method, show: true },
-    { label: '라인', value: detail.line, show: true },
-    { label: '요청 목적', value: detail.request_purpose, show: true },
+  // 기본 정보: 요청목적(기타목적) | 라인 | 조합법 | 제품이름 | 조리법 수평 배치
+  const purposeValue = detail.request_purpose
+    ? (detail.other_purpose ? `${detail.request_purpose}(${detail.other_purpose})` : detail.request_purpose)
+    : '-';
+  const basicRow = [
+    { label: '요청목적', value: purposeValue },
+    { label: '라인', value: detail.line || '-' },
+    { label: '조합법', value: detail.combination_method || '-' },
+    { label: '제품이름', value: detail.product_name_select || '-' },
+    { label: '조리법', value: detail.cooking_method || '-' },
   ];
 
   const detailFields: DetailField[] = [
@@ -269,7 +273,6 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
     { label: '분리 진행 여부', value: detail.separation_progress, show: isR },
     { label: '뼈찜 조합 영역', value: detail.bone_stew_zone ? `영역: ${detail.bone_stew_zone} / 위치: ${detail.bone_stew_location ?? ''} / 제품: ${detail.bone_stew_product ?? ''} / 조리법: ${detail.bone_stew_cooking ?? ''}` : undefined, show: isJ || isO },
     { label: 'Only C가문 제품', value: detail.only_c_family, show: isR },
-    { label: '기타 목적', value: detail.other_purpose, show: isR || isJ },
     { label: '원본 위치', value: detail.source_location, show: isR || isJ },
     { label: '원본 제품 이름', value: detail.source_product_name, show: isR || isJ },
     { label: 'X표시 변경 여부', value: detail.x_mark_change, show: isR },
@@ -279,17 +282,76 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
     { label: '설탕 추가 진행 여부', value: detail.sugar_add, show: (isE && !isR && !isJ && !isO) || role === 'MASTER' },
   ];
 
+  const cardStyle: React.CSSProperties = {
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-lg)',
+    padding: '16px 20px',
+    marginBottom: 16,
+  };
+
+  const sectionTitle: React.CSSProperties = {
+    fontSize: '0.85rem', fontWeight: 700, color: 'var(--accent)',
+    marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em',
+    borderBottom: '1px solid var(--border)', paddingBottom: 8,
+  };
+
+  const fieldLabel: React.CSSProperties = {
+    fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 3, fontWeight: 500,
+  };
+
+  const fieldValue: React.CSSProperties = {
+    color: 'var(--text-primary)', fontSize: '0.95rem', whiteSpace: 'pre-wrap', lineHeight: 1.5,
+  };
+
+  const basicCardItem: React.CSSProperties = {
+    flex: '1 1 0',
+    minWidth: 80,
+    background: 'var(--bg-secondary)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-sm)',
+    padding: '10px 12px',
+    textAlign: 'center' as const,
+  };
+
   type Page = { label: string; content: React.ReactNode };
   const pages: Page[] = [
     {
       label: '의뢰 상세',
       content: (
         <div>
-          <DetailSection title="기본 정보" fields={basicFields} />
-          <DetailSection title="상세 정보" fields={detailFields} />
+          {/* 기본 정보: 수평 한줄 */}
+          <div style={cardStyle}>
+            <div style={sectionTitle}>기본 정보</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {basicRow.map((item) => (
+                <div key={item.label} style={basicCardItem}>
+                  <div style={{ ...fieldLabel, textAlign: 'center' }}>{item.label}</div>
+                  <div style={{ ...fieldValue, fontSize: '0.9rem', fontWeight: 600 }}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 상세 정보 */}
+          {detailFields.some((f) => f.show && f.value) && (
+            <div style={cardStyle}>
+              <div style={sectionTitle}>상세 정보</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+                {detailFields.filter((f) => f.show && f.value).map((f) => (
+                  <div key={f.label}>
+                    <div style={fieldLabel}>{f.label}</div>
+                    <div style={fieldValue}>{f.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 흐름도 */}
           {showFlowChart && (detail.flow_chart?.length ?? 0) > 0 && (
-            <div style={{ marginBottom: 20 }}>
-              <div style={SECTION_TITLE_STYLE}>흐름도</div>
+            <div style={cardStyle}>
+              <div style={sectionTitle}>흐름도</div>
               <FlowChartTable rows={detail.flow_chart ?? []} />
             </div>
           )}
@@ -302,8 +364,8 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
     pages.push({
       label: 'J-ayer 정보',
       content: (
-        <div style={{ marginBottom: 20 }}>
-          <div style={SECTION_TITLE_STYLE}>J-ayer 정보</div>
+        <div style={cardStyle}>
+          <div style={sectionTitle}>J-ayer 정보</div>
           <JayerTable rows={jayer} />
         </div>
       ),
@@ -313,8 +375,8 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
     pages.push({
       label: 'O-ayer 정보',
       content: (
-        <div style={{ marginBottom: 20 }}>
-          <div style={SECTION_TITLE_STYLE}>O-ayer 정보</div>
+        <div style={cardStyle}>
+          <div style={sectionTitle}>O-ayer 정보</div>
           <OayerTable rows={oayer} />
         </div>
       ),
@@ -324,8 +386,8 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
     pages.push({
       label: '뼈찜 정보',
       content: (
-        <div style={{ marginBottom: 20 }}>
-          <div style={SECTION_TITLE_STYLE}>뼈찜 정보</div>
+        <div style={cardStyle}>
+          <div style={sectionTitle}>뼈찜 정보</div>
           <BoneStewTable rows={boneStew} />
         </div>
       ),
@@ -336,33 +398,26 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
   const currentPage = pages[safeIdx];
 
   const navBtnStyle = (disabled: boolean): React.CSSProperties => ({
-    background: 'none',
-    border: '1px solid var(--border)',
+    background: disabled ? 'var(--bg-secondary)' : 'var(--accent)',
+    border: 'none',
     borderRadius: 'var(--radius-sm)',
-    padding: '4px 14px',
+    padding: '6px 16px',
     cursor: disabled ? 'default' : 'pointer',
-    color: 'var(--text-primary)',
+    color: disabled ? 'var(--text-muted)' : '#fff',
     fontSize: '1rem',
-    opacity: disabled ? 0.3 : 1,
+    fontWeight: 600,
+    transition: 'opacity 0.15s',
   });
 
   return (
     <div>
       {pages.length > 1 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
-          <button
-            style={navBtnStyle(safeIdx === 0)}
-            disabled={safeIdx === 0}
-            onClick={() => setPageIdx(safeIdx - 1)}
-          >◀</button>
-          <span style={{ flex: 1, textAlign: 'center', fontWeight: 600, color: 'var(--accent)', fontSize: '0.95rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-lg)', padding: '10px 16px' }}>
+          <button style={navBtnStyle(safeIdx === 0)} disabled={safeIdx === 0} onClick={() => setPageIdx(safeIdx - 1)}>◀</button>
+          <span style={{ flex: 1, textAlign: 'center', fontWeight: 700, color: 'var(--accent)', fontSize: '1rem' }}>
             {currentPage.label} ({safeIdx + 1} / {pages.length})
           </span>
-          <button
-            style={navBtnStyle(safeIdx === pages.length - 1)}
-            disabled={safeIdx === pages.length - 1}
-            onClick={() => setPageIdx(safeIdx + 1)}
-          >▶</button>
+          <button style={navBtnStyle(safeIdx === pages.length - 1)} disabled={safeIdx === pages.length - 1} onClick={() => setPageIdx(safeIdx + 1)}>▶</button>
         </div>
       )}
       {currentPage.content}
@@ -590,23 +645,48 @@ export default function ApprovalPage(): React.ReactElement {
         onClose={() => setModalOpen(false)}
         title={selected?.title ?? ''}
         size="lg"
-        footer={
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-            {selected && (isPL || isMaster) && selected.status === 'rejected' && (
-              <button className="btn btn-primary" onClick={() => handleEditResubmit(selected)}>
-                {t('approval.edit_resubmit')}
+        footer={(() => {
+          const userAgent = ROLE_TO_AGENT[currentUser.role];
+          const pendingStep = selected?.approval_steps?.find((s) =>
+            s.action === 'pending' && (isMaster ? true : s.agent === userAgent)
+          );
+          const canAct = !!pendingStep && selected?.status === 'under_review';
+          return (
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              {selected && (isPL || isMaster) && selected.status === 'rejected' && (
+                <button className="btn btn-primary" onClick={() => handleEditResubmit(selected)}>
+                  {t('approval.edit_resubmit')}
+                </button>
+              )}
+              {selected && (isPL || isMaster) && (selected.status === 'under_review' || selected.status === 'rejected') && (
+                <button className="btn btn-secondary" onClick={() => handleWithdraw(selected)} disabled={processing}>
+                  {t('approval.withdraw')}
+                </button>
+              )}
+              {canAct && pendingStep && (
+                <>
+                  <button
+                    className="btn btn-primary"
+                    disabled={processing}
+                    onClick={() => handleAgree(pendingStep.agent)}
+                  >
+                    합의
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    disabled={processing}
+                    onClick={() => handleReject(pendingStep.agent)}
+                  >
+                    반려
+                  </button>
+                </>
+              )}
+              <button className="btn btn-secondary" onClick={() => setModalOpen(false)}>
+                {t('common.close')}
               </button>
-            )}
-            {selected && (isPL || isMaster) && (selected.status === 'under_review' || selected.status === 'rejected') && (
-              <button className="btn btn-secondary" onClick={() => handleWithdraw(selected)} disabled={processing}>
-                {t('approval.withdraw')}
-              </button>
-            )}
-            <button className="btn btn-secondary" onClick={() => setModalOpen(false)}>
-              {t('common.close')}
-            </button>
-          </div>
-        }
+            </div>
+          );
+        })()}
       >
         {selected && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -617,7 +697,6 @@ export default function ApprovalPage(): React.ReactElement {
 
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <StatusBadge status={selected.status} />
-              <PriorityBadge priority={selected.priority} />
             </div>
 
             {/* 페이지 네비게이션 + 의뢰 상세 */}
