@@ -496,7 +496,8 @@ export default function ApprovalPage(): React.ReactElement {
     try {
       await documentsAPI.approveStep(selected.id, agent);
       addToast(`AGENT ${agent} 합의 처리되었습니다.`, 'success');
-      await refreshAndSelect(selected.id);
+      setModalOpen(false);
+      fetchDocs();
     } catch {
       addToast('처리 중 오류가 발생했습니다.', 'error');
     } finally {
