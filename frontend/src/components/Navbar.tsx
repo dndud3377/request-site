@@ -12,6 +12,7 @@ const NAV_LINKS: NavLink[] = [
   { to: '/intro', key: 'nav.intro' },
   { to: '/request', key: 'nav.request' },
   { to: '/approval', key: 'nav.approval' },
+  { to: '/approval-route', key: 'nav.approval_route' },
   { to: '/history', key: 'nav.history' },
   { to: '/voc', key: 'nav.voc' },
   { to: '/rfg', key: 'nav.rfg' },
