@@ -11,13 +11,11 @@ export default function HistoryPage(): React.ReactElement {
   const [docs, setDocs] = useState<RequestDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('');
 
   const fetchDocs = useCallback(() => {
     setLoading(true);
-    const params: Record<string, string> = {};
+    const params: Record<string, string> = { status: 'approved' };
     if (search) params.search = search;
-    if (filter) params.status = filter;
     documentsAPI
       .list(params)
       .then((r) => {
@@ -26,7 +24,7 @@ export default function HistoryPage(): React.ReactElement {
       })
       .catch(() => setDocs([]))
       .finally(() => setLoading(false));
-  }, [search, filter]);
+  }, [search]);
 
   useEffect(() => {
     fetchDocs();
@@ -38,14 +36,6 @@ export default function HistoryPage(): React.ReactElement {
     add_feature: t('request.product_type_add_feature'),
     change: t('request.product_type_change'),
   };
-
-  const filterTabs = [
-    { key: '', label: t('history.filter_all') },
-    { key: 'draft', label: t('common.status_draft') },
-    { key: 'submitted', label: t('common.status_submitted') },
-    { key: 'approved', label: t('common.status_approved') },
-    { key: 'rejected', label: t('common.status_rejected') },
-  ];
 
   return (
     <div className="container page">
@@ -62,17 +52,6 @@ export default function HistoryPage(): React.ReactElement {
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('history.search_placeholder')}
           />
-        </div>
-        <div className="filter-tabs">
-          {filterTabs.map((tab) => (
-            <button
-              key={tab.key}
-              className={`filter-tab ${filter === tab.key ? 'active' : ''}`}
-              onClick={() => setFilter(tab.key)}
-            >
-              {tab.label}
-            </button>
-          ))}
         </div>
       </div>
 

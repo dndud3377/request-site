@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import './i18n';
 import './styles/global.css';
+import { AuthProvider } from './contexts/AuthContext';
 import Navbar from './components/Navbar';
 import { ToastProvider } from './components/Toast';
 import HomePage from './pages/HomePage';
@@ -25,6 +26,7 @@ function Footer(): React.ReactElement {
 export default function App(): React.ReactElement {
   return (
     <BrowserRouter>
+      <AuthProvider>
       <ToastProvider>
         <div className="app-wrapper">
           <Navbar />
@@ -42,6 +44,7 @@ export default function App(): React.ReactElement {
           <Footer />
         </div>
       </ToastProvider>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

@@ -11,6 +11,8 @@ import {
   ApprovalStepFrontend,
 } from '../types';
 
+// MOCK_USERS는 AuthContext에서 관리 (여기서는 import 불필요)
+
 // ===== Helpers =====
 
 const delay = (ms = 300): Promise<void> =>
@@ -88,7 +90,7 @@ const SAMPLE_DOCUMENTS: RequestDocument[] = [
     deadline: '2024-05-15',
     priority: 'urgent',
     additional_notes: '',
-    status: 'submitted',
+    status: 'under_review',
     created_at: dateStr(7),
     updated_at: dateStr(5),
     submitted_at: dateStr(5),
@@ -376,8 +378,8 @@ const mockSubmitDocument = async (id: number) => {
     d.id === id
       ? {
           ...d,
-          status: 'submitted' as const,
-          submitted_at: now(),
+          status: 'under_review' as const,
+          submitted_at: d.submitted_at ?? now(),
           updated_at: now(),
           approval_steps: [initialStep],
         }
@@ -392,6 +394,43 @@ const mockSubmitDocument = async (id: number) => {
       document: doc,
     },
   };
+};
+
+// 반려 후 재상신: 반려한 agent의 step만 reset, 나머지 approved는 유지
+const mockResubmitDocument = async (id: number) => {
+  await delay(500);
+  const doc = documents.find((d) => d.id === id);
+  if (!doc) throw new Error(`Document ${id} not found`);
+  if (doc.status !== 'rejected') throw new Error('반려된 의뢰서만 재상신할 수 있습니다.');
+
+  const steps = [...(doc.approval_steps ?? [])];
+  // 반려된 step 찾기
+  const rejectedIdx = steps.findIndex((s) => s.action === 'rejected');
+  if (rejectedIdx !== -1) {
+    // 반려된 step만 pending으로 리셋
+    steps[rejectedIdx] = { ...steps[rejectedIdx], action: 'pending', acted_at: null };
+  }
+
+  documents = documents.map((d) =>
+    d.id === id
+      ? { ...d, status: 'under_review' as const, updated_at: now(), approval_steps: steps }
+      : d
+  );
+  const updated = documents.find((d) => d.id === id)!;
+  return { data: { message: '재상신되었습니다.', document: updated } };
+};
+
+// 철회: under_review/rejected → draft, approval_steps 초기화
+const mockWithdrawDocument = async (id: number) => {
+  await delay(300);
+  const doc = documents.find((d) => d.id === id);
+  if (!doc) throw new Error(`Document ${id} not found`);
+  documents = documents.map((d) =>
+    d.id === id
+      ? { ...d, status: 'draft' as const, submitted_at: null, updated_at: now(), approval_steps: [] }
+      : d
+  );
+  return { data: { message: '철회되었습니다.' } };
 };
 
 const mockApproveStep = async (docId: number, agent: AgentType) => {
@@ -441,6 +480,26 @@ const mockApproveStep = async (docId: number, agent: AgentType) => {
       : d
   );
   return { data: { message: '처리되었습니다.', status: newStatus } };
+};
+
+// agent 단계 반려: 해당 step을 rejected로 표시, 문서 status → rejected
+const mockRejectStep = async (docId: number, agent: AgentType) => {
+  await delay();
+  const doc = documents.find((d) => d.id === docId);
+  if (!doc) throw new Error(`Document ${docId} not found`);
+
+  const steps = [...(doc.approval_steps ?? [])];
+  const stepIdx = steps.findIndex((s) => s.agent === agent && s.action === 'pending');
+  if (stepIdx !== -1) {
+    steps[stepIdx] = { ...steps[stepIdx], action: 'rejected', acted_at: now() };
+  }
+
+  documents = documents.map((d) =>
+    d.id === docId
+      ? { ...d, status: 'rejected' as const, approval_steps: steps, updated_at: now() }
+      : d
+  );
+  return { data: { message: '반려되었습니다.', status: 'rejected' } };
 };
 
 const mockApproveDocument = async (id: number, data?: { comment?: string }) => {
@@ -542,8 +601,11 @@ export const mockDocumentsAPI = {
   create: mockCreateDocument,
   update: mockUpdateDocument,
   submit: mockSubmitDocument,
+  resubmit: mockResubmitDocument,
+  withdraw: mockWithdrawDocument,
   approve: mockApproveDocument,
   reject: mockRejectDocument,
+  rejectStep: mockRejectStep,
   stats: mockDocumentStats,
   approveStep: mockApproveStep,
 };

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { documentsAPI } from '../api/client';
 import { useToast } from '../components/Toast';
@@ -248,7 +248,12 @@ const WizardIndicator: React.FC<WizardIndicatorProps> = ({ currentStep }) => (
 export default function RequestPage(): React.ReactElement {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const addToast = useToast();
+
+  // 반려 후 재상신 모드: location.state.editDocId 가 있을 때
+  const editDocId: number | null = (location.state as any)?.editDocId ?? null;
+  const isEditMode = !!editDocId;
 
   const [step, setStep] = useState(1);
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
@@ -260,7 +265,22 @@ export default function RequestPage(): React.ReactElement {
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [savedId, setSavedId] = useState<number | null>(null);
+  const [savedId, setSavedId] = useState<number | null>(editDocId);
+
+  // 편집 모드: 기존 문서 데이터 로드
+  useEffect(() => {
+    if (!editDocId) return;
+    documentsAPI.get(editDocId).then((res) => {
+      const doc = res.data;
+      try {
+        const parsed = JSON.parse(doc.additional_notes ?? '{}');
+        if (parsed.detail) setDetail(parsed.detail);
+        if (parsed.jayerRows) setJayerRows(parsed.jayerRows);
+        if (parsed.oayerRows) setOayerRows(parsed.oayerRows);
+        if (parsed.boneStewRows) setBoneStewRows(parsed.boneStewRows);
+      } catch { /* noop */ }
+    }).catch(() => {});
+  }, [editDocId]);
 
   // Derived booleans for Step 1 conditional rendering
   const isCopy = detail.request_purpose === '복사';
@@ -432,10 +452,17 @@ export default function RequestPage(): React.ReactElement {
       } else {
         await documentsAPI.update(docId, enriched);
       }
-      const submitRes = await documentsAPI.submit(docId);
-      addToast(t('request.submit_success'), 'success');
-      if (submitRes.data.email_sent) {
-        setTimeout(() => addToast(t('request.submit_email_sent'), 'info'), 800);
+
+      if (isEditMode && docId) {
+        // 반려 후 재상신: resubmit 호출
+        await documentsAPI.resubmit(docId);
+        addToast('재상신되었습니다.', 'success');
+      } else {
+        const submitRes = await documentsAPI.submit(docId!);
+        addToast(t('request.submit_success'), 'success');
+        if (submitRes.data.email_sent) {
+          setTimeout(() => addToast(t('request.submit_email_sent'), 'info'), 800);
+        }
       }
       setTimeout(() => navigate('/approval'), 1500);
     } catch {
@@ -1027,8 +1054,8 @@ export default function RequestPage(): React.ReactElement {
   return (
     <div className="container page">
       <div className="page-header">
-        <h1>{t('request.title')}</h1>
-        <p>{t('request.subtitle')}</p>
+        <h1>{isEditMode ? '의뢰서 수정·재상신' : t('request.title')}</h1>
+        <p>{isEditMode ? '내용을 수정한 후 재상신하면 반려 단계부터 다시 검토됩니다.' : t('request.subtitle')}</p>
       </div>
 
       <WizardIndicator currentStep={step} />

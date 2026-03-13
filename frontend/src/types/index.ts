@@ -1,3 +1,17 @@
+// ===== Auth / Role Types =====
+
+export type UserRole = 'PL' | 'TE_R' | 'TE_J' | 'TE_O' | 'TE_E' | 'MASTER';
+
+export interface MockUser {
+  id: number;
+  username: string;
+  password: string;
+  name: string;
+  role: UserRole;
+  department: string;
+  email: string;
+}
+
 // ===== Domain Enums / Literal Types =====
 
 export type Status =
