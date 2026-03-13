@@ -8,6 +8,7 @@ import HomePage from './pages/HomePage';
 import IntroPage from './pages/IntroPage';
 import RequestPage from './pages/RequestPage';
 import ApprovalPage from './pages/ApprovalPage';
+import ApprovalRoutePage from './pages/ApprovalRoutePage';
 import HistoryPage from './pages/HistoryPage';
 import VOCPage from './pages/VOCPage';
 import RFGPage from './pages/RFGPage';
@@ -34,6 +35,7 @@ export default function App(): React.ReactElement {
               <Route path="/intro" element={<IntroPage />} />
               <Route path="/request" element={<RequestPage />} />
               <Route path="/approval" element={<ApprovalPage />} />
+              <Route path="/approval-route" element={<ApprovalRoutePage />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/voc" element={<VOCPage />} />
               <Route path="/rfg" element={<RFGPage />} />
