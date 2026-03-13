@@ -391,9 +391,7 @@ export default function RequestPage(): React.ReactElement {
 
   // ===== API =====
   const buildEnrichedForm = (): CreateDocumentInput => {
-    const today = new Date();
-    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-    const title = `${detail.line}(${detail.request_purpose})_${detail.combination_method}_${detail.product_name_select}_${detail.cooking_method}_요청서_${dateStr}`;
+    const title = `${detail.line}(${detail.request_purpose})_${detail.combination_method}_${detail.product_name_select}_${detail.cooking_method}_요청서`;
     return {
       ...form,
       title,
@@ -724,21 +722,22 @@ export default function RequestPage(): React.ReactElement {
         </div>
 
         {/* 9. Only C가문 제품 */}
-        <div className="form-group full-width">
-          <label className="form-label">{t('request.only_c_family')}</label>
-          <select className="form-control" name="only_c_family" value={detail.only_c_family} onChange={handleDetailChange}>
-            <option value="No">No</option>
-            <option value="Yes">Yes</option>
-          </select>
-        </div>
-
-        {isCFamily && (
-          <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <CFamilyRow region="north"  detail={detail} onChange={handleDetailChange} />
-            <CFamilyRow region="middle" detail={detail} onChange={handleDetailChange} />
-            <CFamilyRow region="south"  detail={detail} onChange={handleDetailChange} />
+        <div className="full-width" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+          <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px' }}>
+            <label className="form-label">{t('request.only_c_family')}</label>
+            <select className="form-control" name="only_c_family" value={detail.only_c_family} onChange={handleDetailChange}>
+              <option value="No">No</option>
+              <option value="Yes">Yes</option>
+            </select>
           </div>
-        )}
+          {isCFamily && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <CFamilyRow region="north"  detail={detail} onChange={handleDetailChange} />
+              <CFamilyRow region="middle" detail={detail} onChange={handleDetailChange} />
+              <CFamilyRow region="south"  detail={detail} onChange={handleDetailChange} />
+            </div>
+          )}
+        </div>
 
         {/* 10. X표시 변경 여부 */}
         <div className="form-group full-width">
@@ -749,17 +748,11 @@ export default function RequestPage(): React.ReactElement {
             <option value="수정">{t('request.x_mark_edit')}</option>
             <option value="삭제">{t('request.x_mark_delete')}</option>
           </select>
-        </div>
-
-        {xMarkDeleteMode && (
-          <div className="full-width">
-            <p style={{ color: 'red', fontWeight: 600, margin: '4px 0' }}>특정 제품 삭제 필요</p>
-          </div>
-        )}
-
-        {xMarkEditAddMode && (
-          <div className="full-width">
-            <div className="form-group" style={{ width: '50%' }}>
+          {xMarkDeleteMode && (
+            <p style={{ color: 'red', fontWeight: 600, margin: '8px 0 0 0' }}>특정 제품 삭제 필요</p>
+          )}
+          {xMarkEditAddMode && (
+            <div className="form-group" style={{ width: '50%', marginTop: '8px' }}>
               <label className="form-label">{t('request.x_mark_image_copy')}</label>
               <textarea
                 className="form-control"
@@ -769,8 +762,8 @@ export default function RequestPage(): React.ReactElement {
                 style={{ aspectRatio: '1 / 1', resize: 'none' }}
               />
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* 11. 20주년 제품 + 분리 진행 여부 */}
         <div className="full-width flex-row">

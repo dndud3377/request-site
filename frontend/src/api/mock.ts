@@ -433,7 +433,7 @@ const mockWithdrawDocument = async (id: number) => {
   return { data: { message: '철회되었습니다.' } };
 };
 
-const mockApproveStep = async (docId: number, agent: AgentType) => {
+const mockApproveStep = async (docId: number, agent: AgentType, comment?: string) => {
   await delay();
   const doc = documents.find((d) => d.id === docId);
   if (!doc) throw new Error(`Document ${docId} not found`);
@@ -442,7 +442,7 @@ const mockApproveStep = async (docId: number, agent: AgentType) => {
   const stepIdx = steps.findIndex((s) => s.agent === agent && s.action === 'pending');
   if (stepIdx === -1) throw new Error(`No pending step for agent ${agent}`);
 
-  steps[stepIdx] = { ...steps[stepIdx], action: 'approved', acted_at: now() };
+  steps[stepIdx] = { ...steps[stepIdx], action: 'approved', acted_at: now(), comment };
 
   let newStatus = doc.status;
 
@@ -483,7 +483,7 @@ const mockApproveStep = async (docId: number, agent: AgentType) => {
 };
 
 // agent 단계 반려: 해당 step을 rejected로 표시, 문서 status → rejected
-const mockRejectStep = async (docId: number, agent: AgentType) => {
+const mockRejectStep = async (docId: number, agent: AgentType, comment?: string) => {
   await delay();
   const doc = documents.find((d) => d.id === docId);
   if (!doc) throw new Error(`Document ${docId} not found`);
@@ -491,7 +491,7 @@ const mockRejectStep = async (docId: number, agent: AgentType) => {
   const steps = [...(doc.approval_steps ?? [])];
   const stepIdx = steps.findIndex((s) => s.agent === agent && s.action === 'pending');
   if (stepIdx !== -1) {
-    steps[stepIdx] = { ...steps[stepIdx], action: 'rejected', acted_at: now() };
+    steps[stepIdx] = { ...steps[stepIdx], action: 'rejected', acted_at: now(), comment };
   }
 
   documents = documents.map((d) =>

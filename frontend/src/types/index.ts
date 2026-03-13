@@ -38,6 +38,7 @@ export interface ApprovalStepFrontend {
   agent: AgentType;
   action: StepAction;
   acted_at: string | null;
+  comment?: string;
   is_parallel?: boolean;  // J, O 병렬 표시용
 }
 
