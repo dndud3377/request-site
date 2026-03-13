@@ -723,6 +723,10 @@ select.form-control option {
   box-shadow: var(--shadow-lg);
 }
 
+.modal-lg {
+  max-width: 1100px;
+}
+
 .modal-header {
   padding: 24px 28px 0;
   display: flex;
@@ -750,6 +754,8 @@ select.form-control option {
 
 .modal-body {
   padding: 20px 28px;
+  max-height: 75vh;
+  overflow-y: auto;
 }
 
 .modal-footer {

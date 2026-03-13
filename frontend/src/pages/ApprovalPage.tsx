@@ -217,7 +217,20 @@ function BoneStewTable({ rows }: { rows: BoneStewTableRow[] }) {
   );
 }
 
-function TeamDetailView({ doc, role }: { doc: RequestDocument; role: UserRole }) {
+const SECTION_TITLE_STYLE: React.CSSProperties = {
+  fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent)', marginBottom: 10,
+  textTransform: 'uppercase', letterSpacing: '0.05em',
+  borderBottom: '1px solid var(--border)', paddingBottom: 6,
+};
+
+interface PagedDetailViewProps {
+  doc: RequestDocument;
+  role: UserRole;
+  pageIdx: number;
+  setPageIdx: (idx: number) => void;
+}
+
+function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProps): React.ReactElement {
   let detail: Partial<DetailFormState> = {};
   let jayer: JayerRow[] = [];
   let oayer: OayerRow[] = [];
@@ -236,7 +249,11 @@ function TeamDetailView({ doc, role }: { doc: RequestDocument; role: UserRole })
   const isO = role === 'TE_O' || role === 'MASTER';
   const isE = role === 'TE_E' || role === 'MASTER';
 
-  // 공통 기본 정보 (모든 팀)
+  const showJayer = isR || isJ || isO;
+  const showOayer = isO;
+  const showBoneStew = isJ || isO;
+  const showFlowChart = isJ || isO;
+
   const basicFields: DetailField[] = [
     { label: '조합법', value: detail.combination_method, show: true },
     { label: '제품 이름', value: detail.product_name_select, show: true },
@@ -245,9 +262,8 @@ function TeamDetailView({ doc, role }: { doc: RequestDocument; role: UserRole })
     { label: '요청 목적', value: detail.request_purpose, show: true },
   ];
 
-  // 팀별 상세 정보
   const detailFields: DetailField[] = [
-    { label: '특이사항·변경 요청 목적', value: detail.change_purpose_note, show: isO && !isR && !isJ || role === 'MASTER' },
+    { label: '특이사항·변경 요청 목적', value: detail.change_purpose_note, show: (isO && !isR && !isJ) || role === 'MASTER' },
     { label: '지도 편차 변경', value: detail.map_deviation_change ? `변경: ${detail.map_deviation_change} / 값: ${detail.map_deviation_value ?? ''} / 사유: ${detail.map_deviation_reason ?? ''}` : undefined, show: isR || isO },
     { label: '예외 구역 변경', value: detail.exception_zone_change ? `변경: ${detail.exception_zone_change} / 값: ${detail.exception_zone_value ?? ''}` : undefined, show: isR },
     { label: '분리 진행 여부', value: detail.separation_progress, show: isR },
@@ -260,54 +276,96 @@ function TeamDetailView({ doc, role }: { doc: RequestDocument; role: UserRole })
     { label: '20주년 제품', value: detail.anniversary_20, show: isR },
     { label: 'T가문 적용', value: detail.t_family_apply, show: isR },
     { label: '주력 제품 변경', value: detail.main_product_change, show: isR },
-    { label: '설탕 추가 진행 여부', value: detail.sugar_add, show: isE && !isR && !isJ && !isO || role === 'MASTER' },
+    { label: '설탕 추가 진행 여부', value: detail.sugar_add, show: (isE && !isR && !isJ && !isO) || role === 'MASTER' },
   ];
 
-  const showJayer = isR || isJ || isO;
-  const showOayer = isO;
-  const showBoneStew = isJ || isO;
-  const showFlowChart = isJ || isO;
+  type Page = { label: string; content: React.ReactNode };
+  const pages: Page[] = [
+    {
+      label: '의뢰 상세',
+      content: (
+        <div>
+          <DetailSection title="기본 정보" fields={basicFields} />
+          <DetailSection title="상세 정보" fields={detailFields} />
+          {showFlowChart && (detail.flow_chart?.length ?? 0) > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={SECTION_TITLE_STYLE}>흐름도</div>
+              <FlowChartTable rows={detail.flow_chart ?? []} />
+            </div>
+          )}
+        </div>
+      ),
+    },
+  ];
+
+  if (showJayer) {
+    pages.push({
+      label: 'J-ayer 정보',
+      content: (
+        <div style={{ marginBottom: 20 }}>
+          <div style={SECTION_TITLE_STYLE}>J-ayer 정보</div>
+          <JayerTable rows={jayer} />
+        </div>
+      ),
+    });
+  }
+  if (showOayer) {
+    pages.push({
+      label: 'O-ayer 정보',
+      content: (
+        <div style={{ marginBottom: 20 }}>
+          <div style={SECTION_TITLE_STYLE}>O-ayer 정보</div>
+          <OayerTable rows={oayer} />
+        </div>
+      ),
+    });
+  }
+  if (showBoneStew) {
+    pages.push({
+      label: '뼈찜 정보',
+      content: (
+        <div style={{ marginBottom: 20 }}>
+          <div style={SECTION_TITLE_STYLE}>뼈찜 정보</div>
+          <BoneStewTable rows={boneStew} />
+        </div>
+      ),
+    });
+  }
+
+  const safeIdx = Math.min(pageIdx, pages.length - 1);
+  const currentPage = pages[safeIdx];
+
+  const navBtnStyle = (disabled: boolean): React.CSSProperties => ({
+    background: 'none',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-sm)',
+    padding: '4px 14px',
+    cursor: disabled ? 'default' : 'pointer',
+    color: 'var(--text-primary)',
+    fontSize: '1rem',
+    opacity: disabled ? 0.3 : 1,
+  });
 
   return (
     <div>
-      <DetailSection title="기본 정보" fields={basicFields} />
-      <DetailSection title="상세 정보" fields={detailFields} />
-
-      {showFlowChart && (detail.flow_chart?.length ?? 0) > 0 && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-            흐름도
-          </div>
-          <FlowChartTable rows={detail.flow_chart ?? []} />
+      {pages.length > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+          <button
+            style={navBtnStyle(safeIdx === 0)}
+            disabled={safeIdx === 0}
+            onClick={() => setPageIdx(safeIdx - 1)}
+          >◀</button>
+          <span style={{ flex: 1, textAlign: 'center', fontWeight: 600, color: 'var(--accent)', fontSize: '0.95rem' }}>
+            {currentPage.label} ({safeIdx + 1} / {pages.length})
+          </span>
+          <button
+            style={navBtnStyle(safeIdx === pages.length - 1)}
+            disabled={safeIdx === pages.length - 1}
+            onClick={() => setPageIdx(safeIdx + 1)}
+          >▶</button>
         </div>
       )}
-
-      {showJayer && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-            J-ayer 정보
-          </div>
-          <JayerTable rows={jayer} />
-        </div>
-      )}
-
-      {showOayer && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-            O-ayer 정보
-          </div>
-          <OayerTable rows={oayer} />
-        </div>
-      )}
-
-      {showBoneStew && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-            뼈찜 정보
-          </div>
-          <BoneStewTable rows={boneStew} />
-        </div>
-      )}
+      {currentPage.content}
     </div>
   );
 }
@@ -332,6 +390,7 @@ export default function ApprovalPage(): React.ReactElement {
   const [selected, setSelected] = useState<RequestDocument | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [pageIdx, setPageIdx] = useState(0);
 
   const fetchDocs = useCallback(() => {
     setLoading(true);
@@ -362,6 +421,7 @@ export default function ApprovalPage(): React.ReactElement {
 
   const openDetail = (doc: RequestDocument) => {
     setSelected(doc);
+    setPageIdx(0);
     setModalOpen(true);
   };
 
@@ -529,6 +589,7 @@ export default function ApprovalPage(): React.ReactElement {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         title={selected?.title ?? ''}
+        size="lg"
         footer={
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
             {selected && (isPL || isMaster) && selected.status === 'rejected' && (
@@ -559,46 +620,13 @@ export default function ApprovalPage(): React.ReactElement {
               <PriorityBadge priority={selected.priority} />
             </div>
 
-            {/* 결재 경로 */}
-            <div>
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                {t('approval.section_approval_flow')}
-              </div>
-              <ApprovalFlow
-                doc={selected}
-                onAgree={handleAgree}
-                onReject={handleReject}
-                processing={processing}
-                userRole={currentUser.role}
-              />
-            </div>
-
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }} />
-
-            {/* 기본 의뢰서 정보 */}
-            <div>
-              {([
-                [t('approval.col_product'), selected.product_name],
-                [t('approval.col_requester'), `${selected.requester_name} (${selected.requester_department})`],
-                ['이메일', selected.requester_email],
-                [t('approval.col_submitted'), formatDate(selected.submitted_at)],
-                [t('approval.col_deadline'), formatDate(selected.deadline)],
-              ] as [string, string][]).map(([label, val]) => (
-                <div key={label} style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>
-                  <div style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>{val}</div>
-                </div>
-              ))}
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 2 }}>제품 설명</div>
-                <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.6 }}>{selected.product_description}</div>
-              </div>
-            </div>
-
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }} />
-
-            {/* 팀별 상세 정보 */}
-            <TeamDetailView doc={selected} role={currentUser.role} />
+            {/* 페이지 네비게이션 + 의뢰 상세 */}
+            <PagedDetailView
+              doc={selected}
+              role={currentUser.role}
+              pageIdx={pageIdx}
+              setPageIdx={setPageIdx}
+            />
           </div>
         )}
       </Modal>
