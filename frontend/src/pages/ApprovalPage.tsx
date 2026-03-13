@@ -316,18 +316,18 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
   const buildCFamilyInfo = (): string => {
     const lines: string[] = [];
     if (detail.c_family_north_line || detail.c_family_north_combination || detail.c_family_north_product) {
-      lines.push(`[북] 라인: ${detail.c_family_north_line || '-'} / 조합: ${detail.c_family_north_combination || '-'} / 제품: ${detail.c_family_north_product || '-'}`);
+      lines.push(`[북] ${detail.c_family_north_line || '-'} / ${detail.c_family_north_combination || '-'} / ${detail.c_family_north_product || '-'}`);
     }
     const middleUse = detail.c_family_middle_use;
     if (middleUse) {
       if (middleUse === '미사용') {
         lines.push('[중간] 미사용');
       } else {
-        lines.push(`[중간] 라인: ${detail.c_family_middle_line || '-'} / 조합: ${detail.c_family_middle_combination || '-'} / 제품: ${detail.c_family_middle_product || '-'}`);
+        lines.push(`[중간] ${detail.c_family_middle_line || '-'} / ${detail.c_family_middle_combination || '-'} / ${detail.c_family_middle_product || '-'}`);
       }
     }
     if (detail.c_family_south_line || detail.c_family_south_combination || detail.c_family_south_product) {
-      lines.push(`[남] 라인: ${detail.c_family_south_line || '-'} / 조합: ${detail.c_family_south_combination || '-'} / 제품: ${detail.c_family_south_product || '-'}`);
+      lines.push(`[남] ${detail.c_family_south_line || '-'} / ${detail.c_family_south_combination || '-'} / ${detail.c_family_south_product || '-'}`);
     }
     return lines.join('\n');
   };
@@ -427,32 +427,45 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
               </div>
             )}
 
-            {/* 행 3: X표시 변경 여부 + 서브필드 */}
+            {/* 행 3: X표시 변경 여부 + 서브필드 (통합 카드) */}
             {isR && detail.x_mark_change && (
               <div style={rowStyle}>
-                <Chip label="X표시 변경 여부" value={detail.x_mark_change} />
-                {xMarkIsDelete && (
-                  <div style={{ ...chipBase, border: '1px solid #f5c6cb', background: '#fff0f0' }}>
-                    <div style={{ ...fieldLabel, color: '#dc3545' }}>삭제 안내</div>
-                    <div style={{ ...fieldValue, color: '#dc3545' }}>특정 제품 삭제 필요</div>
+                <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
+                  <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
+                    <div style={fieldLabel}>X표시 변경 여부</div>
+                    <div style={fieldValue}>{detail.x_mark_change}</div>
                   </div>
-                )}
-                {xMarkHasDetail && detail.x_mark_image_copy && (
-                  <Chip label="이미지 복사 위치" value={detail.x_mark_image_copy} style={chipWide} />
-                )}
+                  {xMarkIsDelete && (
+                    <div style={{ flex: 1 }}>
+                      <div style={{ ...fieldLabel, color: '#dc3545' }}>삭제 안내</div>
+                      <div style={{ ...fieldValue, color: '#dc3545' }}>특정 제품 삭제 필요</div>
+                    </div>
+                  )}
+                  {xMarkHasDetail && detail.x_mark_image_copy && (
+                    <div style={{ flex: 1 }}>
+                      <div style={fieldLabel}>이미지 복사 위치</div>
+                      <div style={fieldValue}>{detail.x_mark_image_copy}</div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
-            {/* 행 4: Only C가문 제품 + 서브필드 */}
+            {/* 행 4: Only C가문 제품 + 서브필드 (통합 카드) */}
             {isR && detail.only_c_family && (
               <div style={rowStyle}>
-                <Chip label="Only C가문 제품" value={detail.only_c_family} />
-                {isCFamily && buildCFamilyInfo() && (
-                  <div style={chipFull}>
-                    <div style={{ ...fieldLabel, textAlign: 'left' }}>C가문 세부 정보</div>
-                    <div style={{ ...fieldValue, textAlign: 'left' }}>{buildCFamilyInfo()}</div>
+                <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
+                  <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
+                    <div style={fieldLabel}>Only C가문 제품</div>
+                    <div style={fieldValue}>{detail.only_c_family}</div>
                   </div>
-                )}
+                  {isCFamily && buildCFamilyInfo() && (
+                    <div style={{ flex: 1 }}>
+                      <div style={fieldLabel}>C가문 세부 정보</div>
+                      <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildCFamilyInfo()}</div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
