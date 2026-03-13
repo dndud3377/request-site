@@ -4,7 +4,6 @@
     "intro": "Introduction",
     "request": "New Request",
     "approval": "Approval Status",
-    "approval_route": "Approval Route",
     "history": "History",
     "voc": "VOC",
     "rfg": "RFG"
@@ -221,21 +220,5 @@
     "priority_medium": "Medium",
     "priority_high": "High",
     "priority_urgent": "Urgent"
-  },
-  "approval_route": {
-    "title": "Approval Route Settings",
-    "subtitle": "Manage the approval route and team members.",
-    "start": "Request Submitted",
-    "team_r_label": "Primary Review",
-    "team_j_label": "J Review",
-    "team_o_label": "O Review",
-    "team_e_label": "Sugar Add Review",
-    "parallel_label": "Parallel (both must approve)",
-    "sugar_condition": "Activated when sugar is added",
-    "add_member": "+ Add Member",
-    "add_confirm": "Add",
-    "add_cancel": "Cancel",
-    "add_placeholder": "Enter member name",
-    "final": "Approved"
   }
 }

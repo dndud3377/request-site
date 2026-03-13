@@ -27,12 +27,6 @@ export interface ApprovalStepFrontend {
   is_parallel?: boolean;  // J, O 병렬 표시용
 }
 
-export interface AgentMember {
-  id: string;
-  name: string;
-  team: AgentType;
-}
-
 // ===== Domain Models =====
 
 export interface RequestDocument {
