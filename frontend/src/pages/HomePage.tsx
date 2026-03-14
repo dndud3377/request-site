@@ -3,20 +3,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { documentsAPI } from '../api/client';
 import StatusBadge, { PriorityBadge } from '../components/StatusBadge';
-import { RequestDocument, Stats } from '../types';
-
-interface Feature {
-  icon: string;
-  titleKey: string;
-  descKey: string;
-}
-
-const FEATURES: Feature[] = [
-  { icon: '📝', titleKey: 'home.feature_1_title', descKey: 'home.feature_1_desc' },
-  { icon: '🔍', titleKey: 'home.feature_2_title', descKey: 'home.feature_2_desc' },
-  { icon: '📊', titleKey: 'home.feature_3_title', descKey: 'home.feature_3_desc' },
-  { icon: '📧', titleKey: 'home.feature_4_title', descKey: 'home.feature_4_desc' },
-];
+import { RequestDocument } from '../types';
 
 const formatDate = (dateStr: string | null): string => {
   if (!dateStr) return '-';
@@ -25,11 +12,9 @@ const formatDate = (dateStr: string | null): string => {
 
 export default function HomePage(): React.ReactElement {
   const { t } = useTranslation();
-  const [stats, setStats] = useState<Stats>({ total: 0, by_status: {} });
   const [recent, setRecent] = useState<RequestDocument[]>([]);
 
   useEffect(() => {
-    documentsAPI.stats().then((r) => setStats(r.data)).catch(() => {});
     documentsAPI.list({ page_size: '5' }).then((r) => {
       const data = r.data;
       setRecent(Array.isArray(data) ? data : (data as any).results ?? []);
@@ -62,39 +47,6 @@ export default function HomePage(): React.ReactElement {
       </div>
 
       <div className="container page">
-        {/* Stats */}
-        <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-number">{stats.total}</div>
-            <div className="stat-label">{t('home.stat_total')}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-number">{stats.by_status['submitted'] ?? 0}</div>
-            <div className="stat-label">{t('home.stat_submitted')}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-number">{stats.by_status['approved'] ?? 0}</div>
-            <div className="stat-label">{t('home.stat_approved')}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-number">
-              {(stats.by_status['submitted'] ?? 0) + (stats.by_status['under_review'] ?? 0)}
-            </div>
-            <div className="stat-label">{t('home.stat_pending')}</div>
-          </div>
-        </div>
-
-        {/* Features */}
-        <div className="feature-grid">
-          {FEATURES.map((f) => (
-            <div key={f.icon} className="feature-card">
-              <div className="feature-icon">{f.icon}</div>
-              <div className="feature-title">{t(f.titleKey as any)}</div>
-              <div className="feature-desc">{t(f.descKey as any)}</div>
-            </div>
-          ))}
-        </div>
-
         {/* Recent */}
         {recent.length > 0 && (
           <div>
