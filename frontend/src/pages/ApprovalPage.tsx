@@ -155,7 +155,7 @@ function JayerTable({ rows }: { rows: JayerRow[] }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>조리법</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품명</th><th>Step</th><th>Item ID</th><th>REV</th><th>도면버전</th></tr></thead>
+        <thead><tr><th>조리법</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>ID</th><th>REV 여부</th><th>그림판 version</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}><td>{r.cooking_method}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td><td>{r.rev}</td><td>{r.drawing_version}</td></tr>
@@ -171,7 +171,7 @@ function OayerTable({ rows }: { rows: OayerRow[] }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>조리법</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품명</th><th>Step</th><th>TT</th></tr></thead>
+        <thead><tr><th>조리법</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>TT</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}><td>{r.cooking_method}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td></tr>
@@ -187,7 +187,7 @@ function BoneStewTable({ rows }: { rows: BoneStewTableRow[] }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>조리법</th><th>SS</th><th>SD</th><th>뼈조리법</th><th>뼈이름</th><th>뼈Step</th><th>뼈SS</th><th>비고</th></tr></thead>
+        <thead><tr><th>조리법</th><th>SS</th><th>SD</th><th>뼈찜 조리법</th><th>뼈찜 이름</th><th>뼈찜 STEP</th><th>뼈찜 SS</th><th>비고</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}><td>{r.cooking_method}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bone_cooking}</td><td>{r.bone_name}</td><td>{r.bone_step}</td><td>{r.bone_ss}</td><td>{r.remark}</td></tr>
