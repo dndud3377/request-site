@@ -6,7 +6,6 @@ import { AuthProvider } from './contexts/AuthContext';
 import Navbar from './components/Navbar';
 import { ToastProvider } from './components/Toast';
 import HomePage from './pages/HomePage';
-import IntroPage from './pages/IntroPage';
 import RequestPage from './pages/RequestPage';
 import ApprovalPage from './pages/ApprovalPage';
 import HistoryPage from './pages/HistoryPage';
@@ -33,7 +32,6 @@ export default function App(): React.ReactElement {
           <main className="main-content">
             <Routes>
               <Route path="/" element={<HomePage />} />
-              <Route path="/intro" element={<IntroPage />} />
               <Route path="/request" element={<RequestPage />} />
               <Route path="/approval" element={<ApprovalPage />} />
               <Route path="/history" element={<HistoryPage />} />

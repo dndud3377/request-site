@@ -11,7 +11,6 @@ interface NavLink {
 
 const NAV_LINKS: NavLink[] = [
   { to: '/', key: 'nav.home' },
-  { to: '/intro', key: 'nav.intro' },
   { to: '/request', key: 'nav.request' },
   { to: '/approval', key: 'nav.approval' },
   { to: '/history', key: 'nav.history' },
