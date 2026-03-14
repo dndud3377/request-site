@@ -10,8 +10,6 @@ interface NavLink {
 }
 
 const NAV_LINKS: NavLink[] = [
-  { to: '/', key: 'nav.home' },
-  { to: '/intro', key: 'nav.intro' },
   { to: '/request', key: 'nav.request' },
   { to: '/approval', key: 'nav.approval' },
   { to: '/history', key: 'nav.history' },
@@ -29,7 +27,7 @@ export default function Navbar(): React.ReactElement {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const isActive = (to: string): boolean =>
-    to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
+    location.pathname.startsWith(to);
 
   // 바깥 클릭 시 드롭다운 닫기
   useEffect(() => {

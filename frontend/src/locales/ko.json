@@ -1,45 +1,10 @@
 {
   "nav": {
-    "home": "홈",
-    "intro": "소개",
     "request": "의뢰서 작성",
     "approval": "결재 현황",
     "history": "이력 조회",
     "voc": "VOC",
     "rfg": "RFG"
-  },
-  "home": {
-    "hero_title": "제품 소개 지도",
-    "hero_subtitle": "의뢰 시스템",
-    "hero_desc": "새로운 제품 또는 기존 제품의 변경 사항에 대한\n소개 지도 제작을 의뢰하세요.",
-    "start_request": "의뢰서 작성하기",
-    "view_status": "결재 현황 보기",
-    "recent_title": "최근 의뢰 현황",
-    "view_all": "전체 보기"
-  },
-  "intro": {
-    "title": "시스템 소개",
-    "subtitle": "제품 소개 지도 의뢰 시스템에 오신 것을 환영합니다",
-    "what_title": "무엇인가요?",
-    "what_desc": "본 시스템은 신제품 출시 또는 기존 제품의 업데이트·변경 사항 발생 시, 제품을 소개하는 지도(Introduction Map)를 제작하기 위한 의뢰서를 작성하고 상신하는 플랫폼입니다.",
-    "process_title": "의뢰 프로세스",
-    "process_1": "의뢰서 작성",
-    "process_1_desc": "제품 정보 및 요청사항 입력",
-    "process_2": "검토 및 상신",
-    "process_2_desc": "내용 확인 후 상신",
-    "process_3": "결재 진행",
-    "process_3_desc": "담당자 검토 및 승인",
-    "process_4": "제작 시작",
-    "process_4_desc": "승인 후 지도 제작 진행",
-    "guide_title": "사용 가이드",
-    "guide_1_title": "의뢰서 작성",
-    "guide_1_desc": "상단 메뉴의 '의뢰서 작성'을 클릭하여 새로운 의뢰서를 작성합니다. 제품 정보, 유형, 주요 기능 등을 입력해주세요.",
-    "guide_2_title": "임시 저장",
-    "guide_2_desc": "작성 중 임시저장이 가능합니다. 언제든 돌아와서 이어서 작성할 수 있습니다.",
-    "guide_3_title": "상신하기",
-    "guide_3_desc": "의뢰서 작성 완료 후 '상신하기' 버튼을 클릭하면 담당자에게 이메일로 자동 발송됩니다.",
-    "guide_4_title": "진행 상황 확인",
-    "guide_4_desc": "'결재 현황' 메뉴에서 의뢰서의 승인 진행 상황을 실시간으로 확인할 수 있습니다."
   },
   "request": {
     "title": "의뢰서 작성",
