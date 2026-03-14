@@ -186,20 +186,7 @@
     "submit_success": "VOC가 등록되었습니다."
   },
   "rfg": {
-    "title": "RFG",
-    "subtitle": "Request For Guide - 가이드 제작 요청을 등록합니다",
-    "new_rfg": "RFG 등록",
-    "requester_name": "요청자",
-    "email": "이메일",
-    "product_name": "제품명",
-    "description": "요청 내용",
-    "status": "상태",
-    "status_open": "접수",
-    "status_in_progress": "처리중",
-    "status_resolved": "완료",
-    "submit": "등록하기",
-    "no_data": "등록된 RFG가 없습니다.",
-    "submit_success": "RFG가 등록되었습니다."
+    "title": "RFG"
   },
   "common": {
     "loading": "로딩 중...",

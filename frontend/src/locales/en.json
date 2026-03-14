@@ -145,20 +145,7 @@
     "submit_success": "VOC has been submitted."
   },
   "rfg": {
-    "title": "RFG",
-    "subtitle": "Request For Guide - Submit guide production requests",
-    "new_rfg": "New RFG",
-    "requester_name": "Name",
-    "email": "Email",
-    "product_name": "Product Name",
-    "description": "Description",
-    "status": "Status",
-    "status_open": "Open",
-    "status_in_progress": "In Progress",
-    "status_resolved": "Resolved",
-    "submit": "Submit",
-    "no_data": "No RFG submitted yet.",
-    "submit_success": "RFG has been submitted."
+    "title": "RFG"
   },
   "common": {
     "loading": "Loading...",
