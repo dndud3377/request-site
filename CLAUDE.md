@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-03-14
+
+### — 소개 페이지 삭제 및 RFG 페이지 빈 화면 전환
+**파일:** `frontend/src/pages/IntroPage.tsx` (삭제), `frontend/src/pages/RFGPage.tsx`, `frontend/src/App.tsx`, `frontend/src/components/Navbar.tsx`, `frontend/src/locales/ko.json`, `frontend/src/locales/en.json`
+
+- `IntroPage.tsx` 삭제
+- `App.tsx`: `/intro` 라우트 제거
+- `Navbar.tsx`: 소개 링크 제거
+- `RFGPage.tsx`: 타이틀(`<h1>RFG</h1>`)만 남기고 모든 콘텐츠 제거 (프로그램 삽입 예정 공간)
+- `ko.json` / `en.json`: `intro` 섹션 및 `nav.intro` 키 제거
+
+### — ko.json 미사용 키 제거
+**파일:** `frontend/src/locales/ko.json`
+
+- `home.stat_total`, `home.stat_submitted`, `home.stat_approved`, `home.stat_pending` 제거
+- `home.feature_1_title` ~ `home.feature_4_desc` 제거 (HomePage에서 미사용)
+
+---
+
 ## 2026-03-13
 
 ### 09:47 — ApprovalPage: X표시/C가문 통합 카드 및 C가문 라벨 제거
