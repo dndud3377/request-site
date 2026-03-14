@@ -208,6 +208,7 @@ interface PagedDetailViewProps {
 }
 
 function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProps): React.ReactElement {
+  const { t } = useTranslation();
   let detail: Partial<DetailFormState> = {};
   let jayer: JayerRow[] = [];
   let oayer: OayerRow[] = [];
@@ -523,10 +524,10 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
 
   if (showJayer) {
     pages.push({
-      label: 'J-ayer 정보',
+      label: t('request.section_jayer'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>J-ayer 정보</div>
+          <div style={sectionTitle}>{t('request.section_jayer')}</div>
           <JayerTable rows={jayer} />
         </div>
       ),
@@ -534,10 +535,10 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
   }
   if (showOayer) {
     pages.push({
-      label: 'O-ayer 정보',
+      label: t('request.section_oayer'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>O-ayer 정보</div>
+          <div style={sectionTitle}>{t('request.section_oayer')}</div>
           <OayerTable rows={oayer} />
         </div>
       ),
@@ -545,10 +546,10 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
   }
   if (showBoneStew) {
     pages.push({
-      label: '뼈찜 정보',
+      label: t('request.section_bone_stew'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>뼈찜 정보</div>
+          <div style={sectionTitle}>{t('request.section_bone_stew')}</div>
           <BoneStewTable rows={boneStew} />
         </div>
       ),
