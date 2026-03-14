@@ -155,7 +155,36 @@
     "detail_title": "의뢰서 상세 정보",
     "section_basic": "기본 정보",
     "section_detail": "상세 정보",
-    "section_approval_flow": "결재 경로"
+    "section_approval_flow": "결재 경로",
+    "section_request_info": "의뢰 기본 정보",
+    "step_future": "대기예정",
+    "step_approved": "✓ 합의",
+    "step_rejected": "✗ 반려",
+    "step_pending": "대기중",
+    "step_done": "✓ 완료",
+    "label_requester": "의뢰자",
+    "label_department": "부서",
+    "label_position": "직책",
+    "label_email": "이메일",
+    "label_product_name": "제품명",
+    "label_product_type": "제품유형",
+    "label_version": "버전",
+    "label_deadline": "기한",
+    "label_product_desc": "제품 설명",
+    "label_key_features": "주요 기능",
+    "label_changes": "이전 버전 대비 변경",
+    "x_mark_delete_notice": "삭제 안내",
+    "x_mark_delete_desc": "특정 제품 삭제 필요",
+    "c_family_detail": "C가문 세부 정보",
+    "agree_success": "AGENT {{agent}} 합의 처리되었습니다.",
+    "reject_success": "반려 처리되었습니다.",
+    "modal_agree_title": "AGENT {{agent}} 합의",
+    "modal_reject_title": "AGENT {{agent}} 반려",
+    "comment_agree_label": "합의 이유 (선택)",
+    "comment_reject_label": "반려 이유 (선택)",
+    "comment_agree_placeholder": "합의 이유를 입력하세요...",
+    "comment_reject_placeholder": "반려 이유를 입력하세요...",
+    "current_role": "현재 역할:"
   },
   "history": {
     "title": "이력 조회",
@@ -234,6 +263,8 @@
     "priority_low": "낮음",
     "priority_medium": "보통",
     "priority_high": "높음",
-    "priority_urgent": "긴급"
+    "priority_urgent": "긴급",
+    "no_data": "데이터 없음",
+    "process_error": "처리 중 오류가 발생했습니다."
   }
 }
