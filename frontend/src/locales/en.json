@@ -1,10 +1,20 @@
 {
   "nav": {
+    "home": "Home",
     "request": "New Request",
     "approval": "Approval Status",
     "history": "History",
     "voc": "VOC",
     "rfg": "RFG"
+  },
+  "home": {
+    "hero_title": "Product Introduction Map",
+    "hero_subtitle": "Request System",
+    "hero_desc": "Submit a request to create an introduction map\nfor new or updated products.",
+    "start_request": "Start a Request",
+    "view_status": "View Approval Status",
+    "recent_title": "Recent Requests",
+    "view_all": "View All"
   },
   "request": {
     "title": "New Request",

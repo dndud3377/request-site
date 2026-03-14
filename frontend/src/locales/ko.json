@@ -1,10 +1,20 @@
 {
   "nav": {
+    "home": "홈",
     "request": "의뢰서 작성",
     "approval": "결재 현황",
     "history": "이력 조회",
     "voc": "VOC",
     "rfg": "RFG"
+  },
+  "home": {
+    "hero_title": "제품 소개 지도",
+    "hero_subtitle": "의뢰 시스템",
+    "hero_desc": "새로운 제품 또는 기존 제품의 변경 사항에 대한\n소개 지도 제작을 의뢰하세요.",
+    "start_request": "의뢰서 작성하기",
+    "view_status": "결재 현황 보기",
+    "recent_title": "최근 의뢰 현황",
+    "view_all": "전체 보기"
   },
   "request": {
     "title": "의뢰서 작성",

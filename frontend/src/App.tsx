@@ -1,10 +1,11 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import './i18n';
 import './styles/global.css';
 import { AuthProvider } from './contexts/AuthContext';
 import Navbar from './components/Navbar';
 import { ToastProvider } from './components/Toast';
+import HomePage from './pages/HomePage';
 import RequestPage from './pages/RequestPage';
 import ApprovalPage from './pages/ApprovalPage';
 import HistoryPage from './pages/HistoryPage';
@@ -30,7 +31,7 @@ export default function App(): React.ReactElement {
           <Navbar />
           <main className="main-content">
             <Routes>
-              <Route path="/" element={<Navigate to="/approval" replace />} />
+              <Route path="/" element={<HomePage />} />
               <Route path="/request" element={<RequestPage />} />
               <Route path="/approval" element={<ApprovalPage />} />
               <Route path="/history" element={<HistoryPage />} />
