@@ -214,15 +214,14 @@ const DETAIL_REQUIRED: (keyof DetailFormState)[] = [
 ];
 
 // ===== Wizard Step Indicator =====
-const WIZARD_STEPS = ['의뢰 상세', 'Jayer 정보', 'Oayer 정보', '뼈찜 정보'];
-
 interface WizardIndicatorProps {
   currentStep: number;
+  steps: string[];
 }
 
-const WizardIndicator: React.FC<WizardIndicatorProps> = ({ currentStep }) => (
+const WizardIndicator: React.FC<WizardIndicatorProps> = ({ currentStep, steps }) => (
   <div className="wizard-indicator">
-    {WIZARD_STEPS.map((label, idx) => {
+    {steps.map((label, idx) => {
       const stepNum = idx + 1;
       const isDone = currentStep > stepNum;
       const isActive = currentStep === stepNum;
@@ -236,7 +235,7 @@ const WizardIndicator: React.FC<WizardIndicatorProps> = ({ currentStep }) => (
               {label}
             </span>
           </div>
-          {idx < WIZARD_STEPS.length - 1 && (
+          {idx < steps.length - 1 && (
             <div className={`wizard-connector${isDone ? ' done' : ''}`} />
           )}
         </React.Fragment>
@@ -833,7 +832,7 @@ export default function RequestPage(): React.ReactElement {
 
   const renderStep2 = () => (
     <div className="form-section">
-      <div className="form-section-title">🔷 Jayer 정보</div>
+      <div className="form-section-title">🔷 {t('request.section_jayer')}</div>
       <div className="wizard-table-wrapper">
         <table className="wizard-table">
           <thead>
@@ -911,7 +910,7 @@ export default function RequestPage(): React.ReactElement {
 
   const renderStep3 = () => (
     <div className="form-section">
-      <div className="form-section-title">🔶 Oayer 정보</div>
+      <div className="form-section-title">🔶 {t('request.section_oayer')}</div>
       <div className="wizard-table-wrapper">
         <table className="wizard-table">
           <thead>
@@ -987,7 +986,7 @@ export default function RequestPage(): React.ReactElement {
     const isDisabled = detail.bone_stew_zone === '없음';
     return (
       <div className="form-section">
-        <div className="form-section-title">🦴 뼈찜 정보</div>
+        <div className="form-section-title">🦴 {t('request.section_bone_stew')}</div>
         {isDisabled && (
           <div className="wizard-disabled-notice">
             Step 1에서 '뼈찜 조합 영역'을 <strong>존재</strong>로 설정해야 입력할 수 있습니다.
@@ -1056,7 +1055,15 @@ export default function RequestPage(): React.ReactElement {
         <p>{isEditMode ? '내용을 수정한 후 재상신하면 반려 단계부터 다시 검토됩니다.' : t('request.subtitle')}</p>
       </div>
 
-      <WizardIndicator currentStep={step} />
+      <WizardIndicator
+        currentStep={step}
+        steps={[
+          t('request.section_detail'),
+          t('request.section_jayer'),
+          t('request.section_oayer'),
+          t('request.section_bone_stew'),
+        ]}
+      />
 
       {step === 1 && renderStep1()}
       {step === 2 && renderStep2()}

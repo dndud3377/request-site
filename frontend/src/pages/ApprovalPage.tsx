@@ -12,10 +12,10 @@ import { RequestDocument, AgentType, ApprovalStepFrontend, UserRole, DetailFormS
 
 const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
 
-const getCurrentStage = (doc: RequestDocument): string => {
+const getCurrentStage = (doc: RequestDocument, t: (key: string) => string): string => {
   const steps = doc.approval_steps ?? [];
   const pending = steps.filter((s) => s.action === 'pending');
-  if (pending.length === 0 && doc.status === 'approved') return '결재완료';
+  if (pending.length === 0 && doc.status === 'approved') return t('common.status_approved');
   if (pending.length === 0) return '-';
   return pending.map((s) => `AGENT ${s.agent}`).join(' / ');
 };
@@ -45,6 +45,7 @@ interface ApprovalFlowProps {
 }
 
 function ApprovalFlow({ doc, onAgree, onReject, processing, userRole }: ApprovalFlowProps): React.ReactElement {
+  const { t } = useTranslation();
   const steps = doc.approval_steps ?? [];
 
   const getStep = (agent: AgentType): ApprovalStepFrontend | undefined =>
@@ -66,7 +67,7 @@ function ApprovalFlow({ doc, onAgree, onReject, processing, userRole }: Approval
       return (
         <div className="approval-node approval-node-inactive">
           <span className="step-agent-label">{label}</span>
-          <span className="step-badge step-badge-future">대기예정</span>
+          <span className="step-badge step-badge-future">{t('approval.step_future')}</span>
         </div>
       );
     }
@@ -75,7 +76,7 @@ function ApprovalFlow({ doc, onAgree, onReject, processing, userRole }: Approval
       <div className={`approval-node ${step.action === 'approved' ? 'approval-node-done' : step.action === 'rejected' ? 'approval-node-rejected' : ''}`}>
         <span className="step-agent-label">{label}</span>
         <span className={`step-badge step-badge-${step.action}`}>
-          {step.action === 'approved' ? '✓ 합의' : step.action === 'rejected' ? '✗ 반려' : '대기중'}
+          {step.action === 'approved' ? t('approval.step_approved') : step.action === 'rejected' ? t('approval.step_rejected') : t('approval.step_pending')}
         </span>
         {step.acted_at && <span className="step-acted-at">{formatDate(step.acted_at)}</span>}
         {step.comment && (
@@ -90,14 +91,14 @@ function ApprovalFlow({ doc, onAgree, onReject, processing, userRole }: Approval
               disabled={processing}
               onClick={() => onAgree(step.agent)}
             >
-              합의
+              {t('approval.agree')}
             </button>
             <button
               className="btn btn-danger btn-sm"
               disabled={processing}
               onClick={() => onReject(step.agent)}
             >
-              반려
+              {t('approval.reject')}
             </button>
           </div>
         )}
@@ -108,7 +109,7 @@ function ApprovalFlow({ doc, onAgree, onReject, processing, userRole }: Approval
   return (
     <div className="approval-flow">
       <div className="approval-node approval-node-start">
-        <span className="step-agent-label">상신됨</span>
+        <span className="step-agent-label">{t('common.status_submitted')}</span>
         <span className="step-badge step-badge-approved">✓</span>
         {doc.submitted_at && <span className="step-acted-at">{formatDate(doc.submitted_at)}</span>}
       </div>
@@ -127,8 +128,8 @@ function ApprovalFlow({ doc, onAgree, onReject, processing, userRole }: Approval
         </>
       )}
       <div className={`approval-node ${doc.status === 'approved' ? 'approval-node-done' : 'approval-node-inactive'}`}>
-        <span className="step-agent-label">결재완료</span>
-        {doc.status === 'approved' && <span className="step-badge step-badge-approved">✓ 완료</span>}
+        <span className="step-agent-label">{t('common.status_approved')}</span>
+        {doc.status === 'approved' && <span className="step-badge step-badge-approved">{t('approval.step_done')}</span>}
       </div>
     </div>
   );
@@ -137,10 +138,11 @@ function ApprovalFlow({ doc, onAgree, onReject, processing, userRole }: Approval
 // ===== Table Components =====
 
 function FlowChartTable({ rows }: { rows: FlowChartRow[] }) {
-  if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>데이터 없음</div>;
+  const { t } = useTranslation();
+  if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <table className="table" style={{ fontSize: '0.8rem', marginBottom: 8 }}>
-      <thead><tr><th>위치</th><th>제품 이름</th><th>Step</th></tr></thead>
+      <thead><tr><th>{t('request.flow_location')}</th><th>{t('request.flow_product_name')}</th><th>Step</th></tr></thead>
       <tbody>
         {rows.map((r) => (
           <tr key={r.id}><td>{r.location}</td><td>{r.product_name}</td><td>{r.step}</td></tr>
@@ -151,11 +153,12 @@ function FlowChartTable({ rows }: { rows: FlowChartRow[] }) {
 }
 
 function JayerTable({ rows }: { rows: JayerRow[] }) {
-  if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>데이터 없음</div>;
+  const { t } = useTranslation();
+  if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>조리법</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품명</th><th>Step</th><th>Item ID</th><th>REV</th><th>도면버전</th></tr></thead>
+        <thead><tr><th>{t('request.cooking_method')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>ID</th><th>REV 여부</th><th>그림판 version</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}><td>{r.cooking_method}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td><td>{r.rev}</td><td>{r.drawing_version}</td></tr>
@@ -167,11 +170,12 @@ function JayerTable({ rows }: { rows: JayerRow[] }) {
 }
 
 function OayerTable({ rows }: { rows: OayerRow[] }) {
-  if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>데이터 없음</div>;
+  const { t } = useTranslation();
+  if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>조리법</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품명</th><th>Step</th><th>TT</th></tr></thead>
+        <thead><tr><th>{t('request.cooking_method')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>TT</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}><td>{r.cooking_method}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td></tr>
@@ -183,11 +187,12 @@ function OayerTable({ rows }: { rows: OayerRow[] }) {
 }
 
 function BoneStewTable({ rows }: { rows: BoneStewTableRow[] }) {
-  if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>데이터 없음</div>;
+  const { t } = useTranslation();
+  if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>조리법</th><th>SS</th><th>SD</th><th>뼈조리법</th><th>뼈이름</th><th>뼈Step</th><th>뼈SS</th><th>비고</th></tr></thead>
+        <thead><tr><th>조리법</th><th>SS</th><th>SD</th><th>뼈찜 조리법</th><th>뼈찜 이름</th><th>뼈찜 STEP</th><th>뼈찜 SS</th><th>비고</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}><td>{r.cooking_method}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bone_cooking}</td><td>{r.bone_name}</td><td>{r.bone_step}</td><td>{r.bone_ss}</td><td>{r.remark}</td></tr>
@@ -208,6 +213,7 @@ interface PagedDetailViewProps {
 }
 
 function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProps): React.ReactElement {
+  const { t } = useTranslation();
   let detail: Partial<DetailFormState> = {};
   let jayer: JayerRow[] = [];
   let oayer: OayerRow[] = [];
@@ -305,11 +311,11 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
     ? (detail.other_purpose ? `${detail.request_purpose}(${detail.other_purpose})` : detail.request_purpose)
     : '-';
   const basicRow = [
-    { label: '요청목적', value: purposeValue },
-    { label: '라인', value: detail.line || '-' },
-    { label: '조합법', value: detail.combination_method || '-' },
-    { label: '제품이름', value: detail.product_name_select || '-' },
-    { label: '조리법', value: detail.cooking_method || '-' },
+    { label: t('request.request_purpose'), value: purposeValue },
+    { label: t('request.line'), value: detail.line || '-' },
+    { label: t('request.combination_method'), value: detail.combination_method || '-' },
+    { label: t('request.product_name_select'), value: detail.product_name_select || '-' },
+    { label: t('request.cooking_method'), value: detail.cooking_method || '-' },
   ];
 
   // ===== C가문 서브필드 텍스트 =====
@@ -341,32 +347,32 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
   // ===== PL 전용: 의뢰 기본 정보 카드 =====
   const PLBasicSection = isPL ? (
     <div style={cardStyle}>
-      <div style={sectionTitle}>의뢰 기본 정보</div>
+      <div style={sectionTitle}>{t('approval.section_request_info')}</div>
       <div style={rowStyle}>
-        <Chip label="의뢰자" value={doc.requester_name} />
-        <Chip label="부서" value={doc.requester_department} />
-        <Chip label="직책" value={doc.requester_position} />
-        <Chip label="이메일" value={doc.requester_email} style={chipWide} />
+        <Chip label={t('approval.label_requester')} value={doc.requester_name} />
+        <Chip label={t('approval.label_department')} value={doc.requester_department} />
+        <Chip label={t('approval.label_position')} value={doc.requester_position} />
+        <Chip label={t('approval.label_email')} value={doc.requester_email} style={chipWide} />
       </div>
       <div style={rowStyle}>
-        <Chip label="제품명" value={doc.product_name} />
-        <Chip label="제품유형" value={doc.product_type} />
-        <Chip label="버전" value={doc.product_version} />
-        <Chip label="기한" value={formatDate(doc.deadline)} />
+        <Chip label={t('approval.label_product_name')} value={doc.product_name} />
+        <Chip label={t('approval.label_product_type')} value={doc.product_type} />
+        <Chip label={t('approval.label_version')} value={doc.product_version} />
+        <Chip label={t('approval.label_deadline')} value={formatDate(doc.deadline)} />
       </div>
       {doc.product_description && (
         <div style={rowStyle}>
-          <Chip label="제품 설명" value={doc.product_description} style={chipFull} />
+          <Chip label={t('approval.label_product_desc')} value={doc.product_description} style={chipFull} />
         </div>
       )}
       {doc.key_features && (
         <div style={rowStyle}>
-          <Chip label="주요 기능" value={doc.key_features} style={chipFull} />
+          <Chip label={t('approval.label_key_features')} value={doc.key_features} style={chipFull} />
         </div>
       )}
       {doc.changes_from_previous && (
         <div style={rowStyle}>
-          <Chip label="이전 버전 대비 변경" value={doc.changes_from_previous} style={chipFull} />
+          <Chip label={t('approval.label_changes')} value={doc.changes_from_previous} style={chipFull} />
         </div>
       )}
     </div>
@@ -375,14 +381,14 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
   type Page = { label: string; content: React.ReactNode };
   const pages: Page[] = [
     {
-      label: '의뢰 상세',
+      label: t('request.section_detail'),
       content: (
         <div>
           {PLBasicSection}
 
           {/* 기본 정보 */}
           <div style={cardStyle}>
-            <div style={sectionTitle}>기본 정보</div>
+            <div style={sectionTitle}>{t('approval.section_basic')}</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {basicRow.map((item) => (
                 <div key={item.label} style={chipBase}>
@@ -395,13 +401,13 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
 
           {/* 상세 정보 - 칩 스타일, 지정된 순서 */}
           <div style={cardStyle}>
-            <div style={sectionTitle}>상세 정보</div>
+            <div style={sectionTitle}>{t('approval.section_detail')}</div>
 
             {/* 행 1: 원본 위치, 원본 제품 이름 */}
             {(isR || isJ) && (detail.source_location || detail.source_product_name) && (
               <div style={rowStyle}>
-                <Chip label="원본 위치" value={detail.source_location} />
-                <Chip label="원본 제품 이름" value={detail.source_product_name} />
+                <Chip label={t('request.source_location')} value={detail.source_location} />
+                <Chip label={t('request.source_product_name')} value={detail.source_product_name} />
               </div>
             )}
 
@@ -410,7 +416,7 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
               <div style={rowStyle}>
                 {(isR || isO) && detail.map_deviation_change && (
                   <div style={chipWide}>
-                    <div style={{ ...fieldLabel, textAlign: 'left' }}>지도 편차 변경</div>
+                    <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.map_deviation_change')}</div>
                     <div style={{ ...fieldValue, textAlign: 'left' }}>
                       {`변경: ${detail.map_deviation_change}${detail.map_deviation_value ? ` / 값: ${detail.map_deviation_value}` : ''}${detail.map_deviation_reason ? ` / 사유: ${detail.map_deviation_reason}` : ''}`}
                     </div>
@@ -418,7 +424,7 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
                 )}
                 {isR && detail.exception_zone_change && (
                   <div style={chipWide}>
-                    <div style={{ ...fieldLabel, textAlign: 'left' }}>예외 구역 변경</div>
+                    <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.exception_zone_change')}</div>
                     <div style={{ ...fieldValue, textAlign: 'left' }}>
                       {`변경: ${detail.exception_zone_change}${detail.exception_zone_value ? ` / 값: ${detail.exception_zone_value}` : ''}`}
                     </div>
@@ -432,18 +438,18 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
               <div style={rowStyle}>
                 <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
-                    <div style={fieldLabel}>X표시 변경 여부</div>
+                    <div style={fieldLabel}>{t('request.x_mark_change')}</div>
                     <div style={fieldValue}>{detail.x_mark_change}</div>
                   </div>
                   {xMarkIsDelete && (
                     <div style={{ flex: 1 }}>
-                      <div style={{ ...fieldLabel, color: '#dc3545' }}>삭제 안내</div>
-                      <div style={{ ...fieldValue, color: '#dc3545' }}>특정 제품 삭제 필요</div>
+                      <div style={{ ...fieldLabel, color: '#dc3545' }}>{t('approval.x_mark_delete_notice')}</div>
+                      <div style={{ ...fieldValue, color: '#dc3545' }}>{t('approval.x_mark_delete_desc')}</div>
                     </div>
                   )}
                   {xMarkHasDetail && detail.x_mark_image_copy && (
                     <div style={{ flex: 1 }}>
-                      <div style={fieldLabel}>이미지 복사 위치</div>
+                      <div style={fieldLabel}>{t('request.x_mark_image_copy')}</div>
                       <div style={fieldValue}>{detail.x_mark_image_copy}</div>
                     </div>
                   )}
@@ -456,12 +462,12 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
               <div style={rowStyle}>
                 <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
-                    <div style={fieldLabel}>Only C가문 제품</div>
+                    <div style={fieldLabel}>{t('request.only_c_family')}</div>
                     <div style={fieldValue}>{detail.only_c_family}</div>
                   </div>
                   {isCFamily && buildCFamilyInfo() && (
                     <div style={{ flex: 1 }}>
-                      <div style={fieldLabel}>C가문 세부 정보</div>
+                      <div style={fieldLabel}>{t('approval.c_family_detail')}</div>
                       <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildCFamilyInfo()}</div>
                     </div>
                   )}
@@ -473,7 +479,7 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
             {(isJ || isO) && detail.bone_stew_zone && (
               <div style={rowStyle}>
                 <div style={chipWide}>
-                  <div style={{ ...fieldLabel, textAlign: 'left' }}>뼈찜 조합 영역</div>
+                  <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.bone_stew_zone')}</div>
                   <div style={{ ...fieldValue, textAlign: 'left' }}>
                     {`영역: ${detail.bone_stew_zone}${detail.bone_stew_location ? ` / 위치: ${detail.bone_stew_location}` : ''}${detail.bone_stew_product ? ` / 제품: ${detail.bone_stew_product}` : ''}${detail.bone_stew_cooking ? ` / 조리법: ${detail.bone_stew_cooking}` : ''}`}
                   </div>
@@ -484,12 +490,12 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
             {/* 행 6: 분리 진행 여부, T가문 적용, 주력 제품 변경, 20주년 제품 */}
             {isR && (detail.separation_progress || detail.t_family_apply || detail.main_product_change || detail.anniversary_20) && (
               <div style={rowStyle}>
-                <Chip label="분리 진행 여부" value={detail.separation_progress} />
-                <Chip label="T가문 적용" value={detail.t_family_apply} />
-                <Chip label="주력 제품 변경" value={detail.main_product_change} />
-                <Chip label="20주년 제품" value={detail.anniversary_20} />
+                <Chip label={t('request.separation_progress')} value={detail.separation_progress} />
+                <Chip label={t('request.t_family_apply')} value={detail.t_family_apply} />
+                <Chip label={t('request.main_product_change')} value={detail.main_product_change} />
+                <Chip label={t('request.anniversary_20')} value={detail.anniversary_20} />
                 {isAnniversary && detail.anniversary_20_option && (
-                  <Chip label="20주년 옵션" value={detail.anniversary_20_option} />
+                  <Chip label={t('request.anniversary_20_option')} value={detail.anniversary_20_option} />
                 )}
               </div>
             )}
@@ -497,14 +503,14 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
             {/* 행 7: 특이사항·변경 요청 목적 */}
             {((isO && !isR && !isJ) || role === 'MASTER' || isPL) && detail.change_purpose_note && (
               <div style={rowStyle}>
-                <Chip label="특이사항·변경 요청 목적" value={detail.change_purpose_note} style={chipFull} />
+                <Chip label={t('request.change_purpose_note')} value={detail.change_purpose_note} style={chipFull} />
               </div>
             )}
 
             {/* 설탕 추가 (E/MASTER 전용) */}
             {((isE && !isR && !isJ && !isO) || role === 'MASTER') && detail.sugar_add && (
               <div style={rowStyle}>
-                <Chip label="설탕 추가 진행 여부" value={detail.sugar_add} />
+                <Chip label={t('request.sugar_add')} value={detail.sugar_add} />
               </div>
             )}
           </div>
@@ -512,7 +518,7 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
           {/* 흐름도 */}
           {showFlowChart && (detail.flow_chart?.length ?? 0) > 0 && (
             <div style={cardStyle}>
-              <div style={sectionTitle}>흐름도</div>
+              <div style={sectionTitle}>{t('request.flow_chart')}</div>
               <FlowChartTable rows={detail.flow_chart ?? []} />
             </div>
           )}
@@ -523,10 +529,10 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
 
   if (showJayer) {
     pages.push({
-      label: 'J-ayer 정보',
+      label: t('request.section_jayer'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>J-ayer 정보</div>
+          <div style={sectionTitle}>{t('request.section_jayer')}</div>
           <JayerTable rows={jayer} />
         </div>
       ),
@@ -534,10 +540,10 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
   }
   if (showOayer) {
     pages.push({
-      label: 'O-ayer 정보',
+      label: t('request.section_oayer'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>O-ayer 정보</div>
+          <div style={sectionTitle}>{t('request.section_oayer')}</div>
           <OayerTable rows={oayer} />
         </div>
       ),
@@ -545,10 +551,10 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
   }
   if (showBoneStew) {
     pages.push({
-      label: '뼈찜 정보',
+      label: t('request.section_bone_stew'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>뼈찜 정보</div>
+          <div style={sectionTitle}>{t('request.section_bone_stew')}</div>
           <BoneStewTable rows={boneStew} />
         </div>
       ),
@@ -676,16 +682,16 @@ export default function ApprovalPage(): React.ReactElement {
     try {
       if (pendingAction.type === 'agree') {
         await documentsAPI.approveStep(selected.id, pendingAction.agent, commentInput || undefined);
-        addToast(`AGENT ${pendingAction.agent} 합의 처리되었습니다.`, 'success');
+        addToast(t('approval.agree_success', { agent: pendingAction.agent }), 'success');
         setModalOpen(false);
         fetchDocs();
       } else {
         await documentsAPI.rejectStep(selected.id, pendingAction.agent, commentInput || undefined);
-        addToast('반려 처리되었습니다.', 'error');
+        addToast(t('approval.reject_success'), 'error');
         await refreshAndSelect(selected.id);
       }
     } catch {
-      addToast('처리 중 오류가 발생했습니다.', 'error');
+      addToast(t('common.process_error'), 'error');
     } finally {
       setProcessing(false);
       setPendingAction(null);
@@ -701,7 +707,7 @@ export default function ApprovalPage(): React.ReactElement {
       setModalOpen(false);
       fetchDocs();
     } catch {
-      addToast('처리 중 오류가 발생했습니다.', 'error');
+      addToast(t('common.process_error'), 'error');
     } finally {
       setProcessing(false);
     }
@@ -787,7 +793,7 @@ export default function ApprovalPage(): React.ReactElement {
                   </td>
                   <td><StatusBadge status={doc.status} /></td>
                   <td style={{ fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 500 }}>
-                    {getCurrentStage(doc)}
+                    {getCurrentStage(doc, t)}
                   </td>
                   <td>{formatDate(doc.submitted_at)}</td>
                   <td>{formatDate(doc.deadline)}</td>
@@ -817,7 +823,7 @@ export default function ApprovalPage(): React.ReactElement {
         <Modal
           isOpen={commentModalOpen}
           onClose={() => { setCommentModalOpen(false); setPendingAction(null); }}
-          title={pendingAction.type === 'agree' ? `AGENT ${pendingAction.agent} 합의` : `AGENT ${pendingAction.agent} 반려`}
+          title={pendingAction.type === 'agree' ? t('approval.modal_agree_title', { agent: pendingAction.agent }) : t('approval.modal_reject_title', { agent: pendingAction.agent })}
           size="md"
           footer={
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -826,24 +832,24 @@ export default function ApprovalPage(): React.ReactElement {
                 onClick={handleConfirmAction}
                 disabled={processing}
               >
-                확인
+                {t('common.confirm')}
               </button>
               <button className="btn btn-secondary" onClick={() => { setCommentModalOpen(false); setPendingAction(null); }}>
-                취소
+                {t('common.cancel')}
               </button>
             </div>
           }
         >
           <div>
             <p style={{ marginBottom: 8, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-              {pendingAction.type === 'agree' ? '합의 이유 (선택)' : '반려 이유 (선택)'}
+              {pendingAction.type === 'agree' ? t('approval.comment_agree_label') : t('approval.comment_reject_label')}
             </p>
             <textarea
               className="form-control"
               rows={4}
               value={commentInput}
               onChange={(e) => setCommentInput(e.target.value)}
-              placeholder={pendingAction.type === 'agree' ? '합의 이유를 입력하세요...' : '반려 이유를 입력하세요...'}
+              placeholder={pendingAction.type === 'agree' ? t('approval.comment_agree_placeholder') : t('approval.comment_reject_placeholder')}
               style={{ width: '100%', resize: 'vertical' }}
             />
           </div>
@@ -881,14 +887,14 @@ export default function ApprovalPage(): React.ReactElement {
                     disabled={processing}
                     onClick={() => triggerAgree(pendingStep.agent)}
                   >
-                    합의
+                    {t('approval.agree')}
                   </button>
                   <button
                     className="btn btn-danger"
                     disabled={processing}
                     onClick={() => triggerReject(pendingStep.agent)}
                   >
-                    반려
+                    {t('approval.reject')}
                   </button>
                 </>
               )}
@@ -903,7 +909,7 @@ export default function ApprovalPage(): React.ReactElement {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* 현재 역할 표시 */}
             <div style={{ background: 'var(--accent-light)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 600 }}>
-              현재 역할: {ROLE_LABEL[currentUser.role]} ({currentUser.name})
+              {t('approval.current_role')} {ROLE_LABEL[currentUser.role]} ({currentUser.name})
             </div>
 
             {/* 상태 + 합의/반려 이유 */}
@@ -923,7 +929,7 @@ export default function ApprovalPage(): React.ReactElement {
                         padding: '4px 10px',
                       }}
                     >
-                      <span style={{ fontWeight: 700 }}>AGENT {s.agent} ({s.action === 'approved' ? '합의' : '반려'})</span>: {s.comment}
+                      <span style={{ fontWeight: 700 }}>AGENT {s.agent} ({s.action === 'approved' ? t('approval.agree') : t('approval.reject')})</span>: {s.comment}
                     </div>
                   ))}
                 </div>
