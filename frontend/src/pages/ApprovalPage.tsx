@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useTranslation, TFunction } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { documentsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
@@ -12,7 +12,7 @@ import { RequestDocument, AgentType, ApprovalStepFrontend, UserRole, DetailFormS
 
 const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
 
-const getCurrentStage = (doc: RequestDocument, t: (key: string) => string): string => {
+const getCurrentStage = (doc: RequestDocument, t: TFunction): string => {
   const steps = doc.approval_steps ?? [];
   const pending = steps.filter((s) => s.action === 'pending');
   if (pending.length === 0 && doc.status === 'approved') return t('common.status_approved');
