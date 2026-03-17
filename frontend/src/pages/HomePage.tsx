@@ -15,9 +15,10 @@ export default function HomePage(): React.ReactElement {
   const [recent, setRecent] = useState<RequestDocument[]>([]);
 
   useEffect(() => {
-    documentsAPI.list({ page_size: '5' }).then((r) => {
+    documentsAPI.list({}).then((r) => {
       const data = r.data;
-      setRecent(Array.isArray(data) ? data : (data as any).results ?? []);
+      const all: RequestDocument[] = Array.isArray(data) ? data : (data as any).results ?? [];
+      setRecent(all.filter((d) => d.status !== 'approved').slice(0, 5));
     }).catch(() => {});
   }, []);
 
@@ -59,7 +60,7 @@ export default function HomePage(): React.ReactElement {
               }}
             >
               <h2 className="section-title">{t('home.recent_title')}</h2>
-              <Link to="/history" className="btn btn-secondary btn-sm">
+              <Link to="/approval" className="btn btn-secondary btn-sm">
                 {t('home.view_all')} →
               </Link>
             </div>
