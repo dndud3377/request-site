@@ -1501,17 +1501,20 @@ select.form-control option {
 
 .approval-flow {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 0;
   padding: 8px 0;
+  overflow-x: auto;
 }
 
 .approval-connector {
-  width: 2px;
-  height: 20px;
+  width: 20px;
+  height: 2px;
   background: var(--border);
-  margin-left: 28px;
+  margin: 0;
+  flex-shrink: 0;
 }
 
 .approval-node {
@@ -1592,8 +1595,7 @@ select.form-control option {
 
 .approval-parallel {
   display: flex;
-  flex-direction: row;
-  gap: 12px;
-  align-items: flex-start;
-  margin-left: 0;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
 }
