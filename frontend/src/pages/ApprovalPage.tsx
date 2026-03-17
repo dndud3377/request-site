@@ -419,7 +419,7 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
                   <div style={chipWide}>
                     <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.map_deviation_change')}</div>
                     <div style={{ ...fieldValue, textAlign: 'left' }}>
-                      {`변경: ${detail.map_deviation_change}${detail.map_deviation_value ? ` / 값: ${detail.map_deviation_value}` : ''}${detail.map_deviation_reason ? ` / 사유: ${detail.map_deviation_reason}` : ''}`}
+                      {`변경: ${detail.map_deviation_change}${detail.map_deviation_value_x ? ` / X: ${detail.map_deviation_value_x}` : ''}${detail.map_deviation_value_y ? ` / Y: ${detail.map_deviation_value_y}` : ''}${detail.map_deviation_reason ? ` / 사유: ${detail.map_deviation_reason}` : ''}`}
                     </div>
                   </div>
                 )}
@@ -482,7 +482,14 @@ function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProp
                 <div style={chipWide}>
                   <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.bone_stew_zone')}</div>
                   <div style={{ ...fieldValue, textAlign: 'left' }}>
-                    {`영역: ${detail.bone_stew_zone}${detail.bone_stew_location ? ` / 위치: ${detail.bone_stew_location}` : ''}${detail.bone_stew_product ? ` / 제품: ${detail.bone_stew_product}` : ''}${detail.bone_stew_cooking ? ` / 조리법: ${detail.bone_stew_cooking}` : ''}`}
+                    {`영역: ${detail.bone_stew_zone}`}
+                    {Array.isArray(detail.bone_stew_entries) && detail.bone_stew_entries.length > 0 && (
+                      <span>
+                        {detail.bone_stew_entries.map((e: { location: string; product: string; cooking: string }, i: number) =>
+                          ` / [${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.cooking || '-'}`
+                        ).join('')}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

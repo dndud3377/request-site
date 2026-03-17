@@ -154,15 +154,14 @@ const INITIAL_DETAIL: DetailFormState = {
   flow_chart: [makeRow()],
   cooking_method: '',
   map_deviation_change: '변경 없음',
-  map_deviation_value: '',
+  map_deviation_value_x: '',
+  map_deviation_value_y: '',
   map_deviation_reason: '',
   exception_zone_change: '변경 없음',
   exception_zone_value: '',
   separation_progress: '아니오',
   bone_stew_zone: '없음',
-  bone_stew_location: '',
-  bone_stew_product: '',
-  bone_stew_cooking: '',
+  bone_stew_entries: [{ location: '', product: '', cooking: '' }],
   only_c_family: 'No',
   c_family_north_line: '',
   c_family_north_combination: '',
@@ -360,6 +359,28 @@ export default function RequestPage(): React.ReactElement {
 
   const handleOayerDeleteRow = (id: string) => {
     setOayerRows((rows) => (rows.length <= 1 ? rows : rows.filter((r) => r.id !== id)));
+  };
+
+  // ===== BoneStew Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
+  const handleBoneStewEntryChange = (idx: number, field: 'location' | 'product' | 'cooking', value: string) => {
+    setDetail((prev) => ({
+      ...prev,
+      bone_stew_entries: prev.bone_stew_entries.map((e, i) => (i === idx ? { ...e, [field]: value } : e)),
+    }));
+  };
+
+  const handleBoneStewEntryAdd = () => {
+    setDetail((prev) => ({
+      ...prev,
+      bone_stew_entries: [...prev.bone_stew_entries, { location: '', product: '', cooking: '' }],
+    }));
+  };
+
+  const handleBoneStewEntryDelete = (idx: number) => {
+    setDetail((prev) => {
+      if (prev.bone_stew_entries.length <= 1) return prev;
+      return { ...prev, bone_stew_entries: prev.bone_stew_entries.filter((_, i) => i !== idx) };
+    });
   };
 
   // ===== BoneStew Handlers =====
@@ -648,7 +669,7 @@ export default function RequestPage(): React.ReactElement {
           />
         </div>
 
-        {/* 5-6. 지도 편차 / 예외 구역 */}
+        {/* 5. 지도 편차 */}
         <div className="full-width flex-row">
           <div className="form-group" style={{ flex: 25 }}>
             <label className="form-label">{t('request.map_deviation_change')}</label>
@@ -658,13 +679,21 @@ export default function RequestPage(): React.ReactElement {
             </select>
           </div>
           <div className="form-group" style={{ flex: 10, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_deviation_value')}</label>
-            <input className="form-control" name="map_deviation_value" value={detail.map_deviation_value} onChange={handleDetailChange} />
+            <label className="form-label">{t('request.map_deviation_value_x')}</label>
+            <input className="form-control" name="map_deviation_value_x" value={detail.map_deviation_value_x} onChange={handleDetailChange} />
+          </div>
+          <div className="form-group" style={{ flex: 10, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
+            <label className="form-label">{t('request.map_deviation_value_y')}</label>
+            <input className="form-control" name="map_deviation_value_y" value={detail.map_deviation_value_y} onChange={handleDetailChange} />
           </div>
           <div className="form-group" style={{ flex: 30, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_deviation_reason')}</label>
             <input className="form-control" name="map_deviation_reason" value={detail.map_deviation_reason} onChange={handleDetailChange} />
           </div>
+        </div>
+
+        {/* 6. 예외 구역 */}
+        <div className="full-width flex-row">
           <div className="form-group" style={{ flex: 25 }}>
             <label className="form-label">{t('request.exception_zone_change')}</label>
             <select className="form-control" name="exception_zone_change" value={detail.exception_zone_change} onChange={handleDetailChange}>
@@ -679,8 +708,8 @@ export default function RequestPage(): React.ReactElement {
         </div>
 
         {/* 8. 뼈찜 조합 영역 */}
-        <div className="full-width flex-row">
-          <div className="form-group flex-col">
+        <div className="full-width flex-row" style={{ alignItems: 'flex-start' }}>
+          <div className="form-group" style={{ flex: '0 0 auto', minWidth: '120px' }}>
             <label className="form-label">{t('request.bone_stew_zone')}</label>
             <select className="form-control" name="bone_stew_zone" value={detail.bone_stew_zone} onChange={handleDetailChange}>
               <option value="없음">{t('request.bone_stew_zone_none')}</option>
@@ -688,35 +717,60 @@ export default function RequestPage(): React.ReactElement {
             </select>
           </div>
           {hasBoneStew && (
-            <>
-              <FormSelect
-                label={t('request.bone_stew_location')}
-                name="bone_stew_location"
-                value={detail.bone_stew_location}
-                options={OPTION_BONE_STEW_LOCATION}
-                onChange={handleDetailChange}
-                placeholder={t('request.select_placeholder')}
-                className="flex-col"
-              />
-              <FormSelect
-                label={t('request.bone_stew_product')}
-                name="bone_stew_product"
-                value={detail.bone_stew_product}
-                options={OPTION_BONE_STEW_PRODUCT}
-                onChange={handleDetailChange}
-                placeholder={t('request.select_placeholder')}
-                className="flex-col"
-              />
-              <FormSelect
-                label={t('request.bone_stew_cooking')}
-                name="bone_stew_cooking"
-                value={detail.bone_stew_cooking}
-                options={OPTION_BONE_STEW_COOKING}
-                onChange={handleDetailChange}
-                placeholder={t('request.select_placeholder')}
-                className="flex-col"
-              />
-            </>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {detail.bone_stew_entries.map((entry, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                  <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                    <label className="form-label">{t('request.bone_stew_location')}</label>
+                    <select
+                      className="form-control"
+                      value={entry.location}
+                      onChange={(e) => handleBoneStewEntryChange(idx, 'location', e.target.value)}
+                    >
+                      <option value="">{t('request.select_placeholder')}</option>
+                      {OPTION_BONE_STEW_LOCATION.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                    <label className="form-label">{t('request.bone_stew_product')}</label>
+                    <select
+                      className="form-control"
+                      value={entry.product}
+                      onChange={(e) => handleBoneStewEntryChange(idx, 'product', e.target.value)}
+                    >
+                      <option value="">{t('request.select_placeholder')}</option>
+                      {OPTION_BONE_STEW_PRODUCT.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                    <label className="form-label">{t('request.bone_stew_cooking')}</label>
+                    <select
+                      className="form-control"
+                      value={entry.cooking}
+                      onChange={(e) => handleBoneStewEntryChange(idx, 'cooking', e.target.value)}
+                    >
+                      <option value="">{t('request.select_placeholder')}</option>
+                      {OPTION_BONE_STEW_COOKING.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  {detail.bone_stew_entries.length > 1 && (
+                    <button
+                      type="button"
+                      className="btn btn-danger"
+                      style={{ padding: '6px 10px', marginBottom: '2px' }}
+                      onClick={() => handleBoneStewEntryDelete(idx)}
+                    >
+                      {t('request.bone_stew_delete')}
+                    </button>
+                  )}
+                </div>
+              ))}
+              <div>
+                <button type="button" className="btn btn-secondary" onClick={handleBoneStewEntryAdd}>
+                  + {t('request.bone_stew_add')}
+                </button>
+              </div>
+            </div>
           )}
         </div>
 

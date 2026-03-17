@@ -181,7 +181,8 @@ export interface DetailFormState {
 
   // 지도 편차
   map_deviation_change: string;
-  map_deviation_value: string;
+  map_deviation_value_x: string;
+  map_deviation_value_y: string;
   map_deviation_reason: string;
 
   // 예외 구역
@@ -193,9 +194,7 @@ export interface DetailFormState {
 
   // 뼈찜
   bone_stew_zone: string;
-  bone_stew_location: string;
-  bone_stew_product: string;
-  bone_stew_cooking: string;
+  bone_stew_entries: Array<{ location: string; product: string; cooking: string }>;
 
   // C가문
   only_c_family: string;
