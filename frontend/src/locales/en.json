@@ -123,8 +123,8 @@
     "col_type": "Type",
     "col_requester": "Requester",
     "col_status": "Status",
-    "col_created": "Created",
-    "col_submitted": "Submitted"
+    "col_submitted": "Submitted",
+    "col_approved": "Approval Date"
   },
   "voc": {
     "title": "VOC",

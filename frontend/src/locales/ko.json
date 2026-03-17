@@ -164,8 +164,8 @@
     "col_type": "유형",
     "col_requester": "의뢰자",
     "col_status": "상태",
-    "col_created": "작성일",
-    "col_submitted": "상신일"
+    "col_submitted": "상신일",
+    "col_approved": "결재 완료일"
   },
   "voc": {
     "title": "VOC",
