@@ -4,8 +4,7 @@
     "request": "의뢰서 작성",
     "approval": "결재 현황",
     "history": "이력 조회",
-    "voc": "VOC",
-    "rfg": "RFG"
+    "voc": "VOC"
   },
   "home": {
     "hero_title": "제품 소개 지도",
@@ -189,9 +188,6 @@
     "submit": "등록하기",
     "no_data": "등록된 VOC가 없습니다.",
     "submit_success": "VOC가 등록되었습니다."
-  },
-  "rfg": {
-    "title": "RFG"
   },
   "common": {
     "loading": "로딩 중...",

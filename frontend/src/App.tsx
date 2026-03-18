@@ -10,7 +10,6 @@ import RequestPage from './pages/RequestPage';
 import ApprovalPage from './pages/ApprovalPage';
 import HistoryPage from './pages/HistoryPage';
 import VOCPage from './pages/VOCPage';
-import RFGPage from './pages/RFGPage';
 
 function Footer(): React.ReactElement {
   return (
@@ -36,7 +35,6 @@ export default function App(): React.ReactElement {
               <Route path="/approval" element={<ApprovalPage />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/voc" element={<VOCPage />} />
-              <Route path="/rfg" element={<RFGPage />} />
             </Routes>
           </main>
           <Footer />

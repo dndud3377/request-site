@@ -23,7 +23,6 @@ export type Status =
   | 'revision_required';
 
 export type VocStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
-export type RfgStatus = 'open' | 'in_progress' | 'resolved';
 
 export type Priority = 'low' | 'medium' | 'high' | 'urgent';
 export type ProductType = 'new' | 'update' | 'add_feature' | 'change';
@@ -94,19 +93,6 @@ export interface VOC {
 }
 
 export type CreateVocInput = Omit<VOC, 'id' | 'response' | 'status' | 'created_at' | 'responded_at'>;
-
-export interface RFG {
-  id: number;
-  title: string;
-  requester_name: string;
-  requester_email: string;
-  product_name: string;
-  description: string;
-  status: RfgStatus;
-  created_at: string;
-}
-
-export type CreateRfgInput = Omit<RFG, 'id' | 'status' | 'created_at'>;
 
 export interface Stats {
   total: number;
