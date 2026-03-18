@@ -5,6 +5,7 @@ import { documentsAPI } from '../api/client';
 import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
 import FormSelect from '../components/FormSelect';
+import AutocompleteInput from '../components/AutocompleteInput';
 import { useAuth } from '../contexts/AuthContext';
 import {
   CreateDocumentInput,
@@ -38,8 +39,9 @@ interface CFamilyRowProps {
   region: CRegion;
   detail: DetailFormState;
   onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+  onSetValue: (name: string, value: string) => void;
 }
-const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange }) => {
+const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSetValue }) => {
   const { t } = useTranslation();
   const showSelects = region !== 'middle' || detail.c_family_middle_use === '사용';
   return (
@@ -69,23 +71,19 @@ const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange }) => 
             placeholder={t('request.select_placeholder')}
             className="flex-col"
           />
-          <FormSelect
+          <AutocompleteInput
             label={t('request.c_family_combination')}
-            name={`c_family_${region}_combination`}
             value={detail[`c_family_${region}_combination` as keyof DetailFormState] as string}
             options={OPTION_COMBINATION}
-            onChange={onChange}
-            placeholder={t('request.select_placeholder')}
-            className="flex-col"
+            onChange={(v) => onSetValue(`c_family_${region}_combination`, v)}
+            style={{ flex: 1 }}
           />
-          <FormSelect
+          <AutocompleteInput
             label={t('request.c_family_product')}
-            name={`c_family_${region}_product`}
             value={detail[`c_family_${region}_product` as keyof DetailFormState] as string}
             options={OPTION_PRODUCT}
-            onChange={onChange}
-            placeholder={t('request.select_placeholder')}
-            className="flex-col"
+            onChange={(v) => onSetValue(`c_family_${region}_product`, v)}
+            style={{ flex: 1 }}
           />
         </>
       )}
@@ -298,6 +296,11 @@ export default function RequestPage(): React.ReactElement {
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
+    setDetail((prev) => ({ ...prev, [name]: value }));
+    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
+  };
+
+  const handleDetailSet = (name: string, value: string) => {
     setDetail((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
   };
@@ -545,14 +548,12 @@ export default function RequestPage(): React.ReactElement {
                   placeholder={t('request.select_placeholder')}
                   className="flex-col"
                 />
-                <FormSelect
+                <AutocompleteInput
                   label={t('request.source_product_name')}
-                  name="source_product_name"
                   value={detail.source_product_name}
                   options={OPTION_SOURCE_PRODUCT}
-                  onChange={handleDetailChange}
-                  placeholder={t('request.select_placeholder')}
-                  className="flex-col"
+                  onChange={(v) => handleDetailSet('source_product_name', v)}
+                  style={{ flex: 1 }}
                 />
               </div>
 
@@ -638,27 +639,23 @@ export default function RequestPage(): React.ReactElement {
             error={errors.line}
             className="flex-col"
           />
-          <FormSelect
+          <AutocompleteInput
             label={t('request.combination_method')}
-            name="combination_method"
             value={detail.combination_method}
             options={OPTION_COMBINATION}
-            onChange={handleDetailChange}
-            placeholder={t('request.select_placeholder')}
+            onChange={(v) => handleDetailSet('combination_method', v)}
             required
             error={errors.combination_method}
-            className="flex-col"
+            style={{ flex: 1 }}
           />
-          <FormSelect
+          <AutocompleteInput
             label={t('request.product_name_select')}
-            name="product_name_select"
             value={detail.product_name_select}
             options={OPTION_PRODUCT}
-            onChange={handleDetailChange}
-            placeholder={t('request.select_placeholder')}
+            onChange={(v) => handleDetailSet('product_name_select', v)}
             required
             error={errors.product_name_select}
-            className="flex-col"
+            style={{ flex: 1 }}
           />
           <FormSelect
             label={t('request.cooking_method')}
@@ -733,17 +730,13 @@ export default function RequestPage(): React.ReactElement {
                       {OPTION_BONE_STEW_LOCATION.map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
                   </div>
-                  <div className="form-group flex-col" style={{ marginBottom: 0 }}>
-                    <label className="form-label">{t('request.bone_stew_product')}</label>
-                    <select
-                      className="form-control"
-                      value={entry.product}
-                      onChange={(e) => handleBoneStewEntryChange(idx, 'product', e.target.value)}
-                    >
-                      <option value="">{t('request.select_placeholder')}</option>
-                      {OPTION_BONE_STEW_PRODUCT.map((o) => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                  </div>
+                  <AutocompleteInput
+                    label={t('request.bone_stew_product')}
+                    value={entry.product}
+                    options={OPTION_BONE_STEW_PRODUCT}
+                    onChange={(v) => handleBoneStewEntryChange(idx, 'product', v)}
+                    style={{ flex: 1 }}
+                  />
                   <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                     <label className="form-label">{t('request.bone_stew_cooking')}</label>
                     <select
@@ -787,9 +780,9 @@ export default function RequestPage(): React.ReactElement {
           </div>
           {isCFamily && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <CFamilyRow region="north"  detail={detail} onChange={handleDetailChange} />
-              <CFamilyRow region="middle" detail={detail} onChange={handleDetailChange} />
-              <CFamilyRow region="south"  detail={detail} onChange={handleDetailChange} />
+              <CFamilyRow region="north"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} />
+              <CFamilyRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} />
+              <CFamilyRow region="south"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} />
             </div>
           )}
         </div>
@@ -943,10 +936,11 @@ export default function RequestPage(): React.ReactElement {
                   </select>
                 </td>
                 <td>
-                  <select value={row.product_name} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)}>
-                    <option value=""></option>
-                    {OPTION_JAYER_PRODUCT.map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
+                  <AutocompleteInput
+                    value={row.product_name}
+                    options={OPTION_JAYER_PRODUCT}
+                    onChange={(v) => handleJayerChange(row.id, 'product_name', v)}
+                  />
                 </td>
                 <td><input value={row.step} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} /></td>
                 <td><input value={row.item_id} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} /></td>
@@ -1019,10 +1013,11 @@ export default function RequestPage(): React.ReactElement {
                   </select>
                 </td>
                 <td>
-                  <select value={row.product_name} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)}>
-                    <option value=""></option>
-                    {OPTION_OAYER_PRODUCT.map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
+                  <AutocompleteInput
+                    value={row.product_name}
+                    options={OPTION_OAYER_PRODUCT}
+                    onChange={(v) => handleOayerChange(row.id, 'product_name', v)}
+                  />
                 </td>
                 <td><input value={row.step} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} /></td>
                 <td><input value={row.tt} onChange={(e) => handleOayerChange(row.id, 'tt', e.target.value)} /></td>
