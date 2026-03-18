@@ -5,7 +5,10 @@ import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import ApprovalFlow from '../components/ApprovalFlow';
 import PagedDetailView from '../components/PagedDetailView';
+import { MOCK_USERS } from '../contexts/AuthContext';
 import { RequestDocument } from '../types';
+
+const MASTER_USER = MOCK_USERS.find((u) => u.role === 'MASTER')!;
 
 const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
 
@@ -149,8 +152,9 @@ export default function HistoryPage(): React.ReactElement {
               doc={selected}
               onAgree={() => {}}
               onReject={() => {}}
+              onAssign={() => {}}
               processing={false}
-              userRole="MASTER"
+              currentUser={MASTER_USER}
             />
           </div>
 
