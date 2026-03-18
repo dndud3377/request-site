@@ -152,7 +152,7 @@ export default function HistoryPage(): React.ReactElement {
               doc={selected}
               onAgree={() => {}}
               onReject={() => {}}
-              onAssign={() => {}}
+              onAssign={(_a, _id, _name) => {}}
               processing={false}
               currentUser={MASTER_USER}
             />

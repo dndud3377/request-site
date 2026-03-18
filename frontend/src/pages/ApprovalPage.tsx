@@ -6,7 +6,7 @@ import { documentsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
-import { useAuth, ROLE_LABEL } from '../contexts/AuthContext';
+import { useAuth, ROLE_LABEL, MOCK_USERS } from '../contexts/AuthContext';
 import { canUserAgree, canUserAssign, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import PagedDetailView from '../components/PagedDetailView';
 import { RequestDocument, AgentType } from '../types';
@@ -52,6 +52,10 @@ export default function ApprovalPage(): React.ReactElement {
   const [pendingAction, setPendingAction] = useState<{ type: 'agree' | 'reject'; agent: AgentType } | null>(null);
   const [commentInput, setCommentInput] = useState('');
 
+  // 지정하기 UI (모달 footer)
+  const [assigningOpen, setAssigningOpen] = useState(false);
+  const [assigningUserId, setAssigningUserId] = useState('');
+
   const fetchDocs = useCallback(() => {
     setLoading(true);
     const params: Record<string, string> = {};
@@ -82,6 +86,8 @@ export default function ApprovalPage(): React.ReactElement {
   const openDetail = (doc: RequestDocument) => {
     setSelected(doc);
     setPageIdx(0);
+    setAssigningOpen(false);
+    setAssigningUserId('');
     setModalOpen(true);
   };
 
@@ -131,11 +137,11 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
-  const handleAssign = async (agent: AgentType) => {
+  const handleAssign = async (agent: AgentType, userId: number, userName: string) => {
     if (!selected) return;
     setProcessing(true);
     try {
-      await documentsAPI.assignStep(selected.id, agent, currentUser.id, currentUser.name);
+      await documentsAPI.assignStep(selected.id, agent, userId, userName);
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');
@@ -316,8 +322,11 @@ export default function ApprovalPage(): React.ReactElement {
           ) ?? [];
           const assignableStep = pendingSteps.find((s) => canUserAssign(currentUser, s));
           const actableStep = pendingSteps.find((s) => canUserAgree(currentUser, s));
+          const teamMembers = assignableStep
+            ? MOCK_USERS.filter((u) => ROLE_TO_AGENT[u.role] === assignableStep.agent)
+            : [];
           return (
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
               {selected && (isPL || isMaster) && selected.status === 'rejected' && (
                 <button className="btn btn-primary" onClick={() => handleEditResubmit(selected)}>
                   {t('approval.edit_resubmit')}
@@ -328,14 +337,48 @@ export default function ApprovalPage(): React.ReactElement {
                   {t('approval.withdraw')}
                 </button>
               )}
-              {assignableStep && (
+              {assignableStep && !assigningOpen && (
                 <button
                   className="btn btn-secondary"
                   disabled={processing}
-                  onClick={() => handleAssign(assignableStep.agent)}
+                  onClick={() => { setAssigningOpen(true); setAssigningUserId(''); }}
                 >
-                  담당하기
+                  지정하기
                 </button>
+              )}
+              {assignableStep && assigningOpen && (
+                <>
+                  <select
+                    value={assigningUserId}
+                    onChange={(e) => setAssigningUserId(e.target.value)}
+                    style={{ fontSize: '0.85rem', padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)' }}
+                  >
+                    <option value="">담당자 선택</option>
+                    {teamMembers.map((u) => (
+                      <option key={u.id} value={String(u.id)}>{u.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={!assigningUserId || processing}
+                    onClick={() => {
+                      const user = teamMembers.find((u) => u.id === Number(assigningUserId));
+                      if (user) {
+                        handleAssign(assignableStep.agent, user.id, user.name);
+                        setAssigningOpen(false);
+                        setAssigningUserId('');
+                      }
+                    }}
+                  >
+                    확인
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => { setAssigningOpen(false); setAssigningUserId(''); }}
+                  >
+                    취소
+                  </button>
+                </>
               )}
               {actableStep && (
                 <>
