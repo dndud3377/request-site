@@ -7,7 +7,7 @@ import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth, ROLE_LABEL } from '../contexts/AuthContext';
-import ApprovalFlow, { canUserAgree } from '../components/ApprovalFlow';
+import ApprovalFlow, { canUserAgree, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import PagedDetailView from '../components/PagedDetailView';
 import { RequestDocument, AgentType, ApprovalStepFrontend, UserRole } from '../types';
 

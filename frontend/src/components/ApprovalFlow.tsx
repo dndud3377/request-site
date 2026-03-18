@@ -4,7 +4,7 @@ import { RequestDocument, AgentType, ApprovalStepFrontend, UserRole } from '../t
 
 const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
 
-const ROLE_TO_AGENT: Partial<Record<UserRole, AgentType>> = {
+export const ROLE_TO_AGENT: Partial<Record<UserRole, AgentType>> = {
   TE_R: 'R',
   TE_J: 'J',
   TE_O: 'O',

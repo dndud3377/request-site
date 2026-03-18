@@ -26,6 +26,8 @@
     "save_draft": "임시저장",
     "submit": "상신하기",
     "submit_confirm": "의뢰서를 상신하시겠습니까? 상신 후에는 수정이 불가합니다.",
+    "submit_note_label": "특이사항",
+    "submit_note_placeholder": "상신 전 전달할 특이사항이 있으면 입력하세요. (선택)",
     "submit_success": "의뢰서가 성공적으로 상신되었습니다!",
     "submit_email_sent": "담당자에게 이메일이 발송되었습니다.",
     "save_success": "임시저장되었습니다.",
