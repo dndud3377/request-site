@@ -1,12 +1,10 @@
 import {
   RequestDocument,
   VOC,
-  RFG,
   Stats,
   CreateDocumentInput,
   UpdateDocumentInput,
   CreateVocInput,
-  CreateRfgInput,
   AgentType,
   ApprovalStepFrontend,
 } from '../types';
@@ -269,47 +267,12 @@ const SAMPLE_VOCS: VOC[] = [
   },
 ];
 
-const SAMPLE_RFGS: RFG[] = [
-  {
-    id: 1,
-    title: '스마트 온도조절기 V2 설치 가이드 요청',
-    requester_name: '김민준',
-    requester_email: 'minjun.kim@company.com',
-    product_name: '스마트 온도조절기 V2',
-    description: '신규 출시된 스마트 온도조절기 V2의 설치 가이드 제작을 요청합니다. 기존 배선과의 호환성 및 Wi-Fi 설정 과정을 포함해 주세요.',
-    status: 'in_progress',
-    created_at: dateStr(5),
-  },
-  {
-    id: 2,
-    title: '공기청정기 Pro 사용자 매뉴얼 한/영 번역 요청',
-    requester_name: '이서연',
-    requester_email: 'seoyeon.lee@company.com',
-    product_name: '공기청정기 Pro',
-    description: '공기청정기 Pro 한국어 사용자 매뉴얼의 영문 번역 가이드 제작을 요청합니다.',
-    status: 'open',
-    created_at: dateStr(2),
-  },
-  {
-    id: 3,
-    title: '로봇청소기 R3 멀티맵 설정 가이드 요청',
-    requester_name: '박지훈',
-    requester_email: 'jihoon.park@company.com',
-    product_name: '로봇청소기 R3',
-    description: '다층 구조 주택에서 R3의 멀티맵 기능을 설정하는 방법에 대한 가이드를 요청합니다.',
-    status: 'resolved',
-    created_at: dateStr(15),
-  },
-];
-
 // ===== In-memory Stores =====
 
 let documents: RequestDocument[] = [...SAMPLE_DOCUMENTS];
 let vocs: VOC[] = [...SAMPLE_VOCS];
-let rfgs: RFG[] = [...SAMPLE_RFGS];
 let nextDocId = 100;
 let nextVocId = 100;
-let nextRfgId = 100;
 let nextStepId = 200;
 
 // ===== Mock Documents API =====
@@ -563,36 +526,6 @@ const mockGetVoc = async (id: number) => {
   return { data: voc };
 };
 
-// ===== Mock RFG API =====
-
-const mockListRfgs = async (params?: Record<string, string>) => {
-  await delay();
-  let result = [...rfgs];
-  if (params?.status) {
-    result = result.filter((r) => r.status === params.status);
-  }
-  return { data: { results: result, count: result.length } };
-};
-
-const mockCreateRfg = async (data: CreateRfgInput) => {
-  await delay();
-  const newRfg: RFG = {
-    ...data,
-    id: nextRfgId++,
-    status: 'open',
-    created_at: now(),
-  };
-  rfgs = [newRfg, ...rfgs];
-  return { data: newRfg };
-};
-
-const mockGetRfg = async (id: number) => {
-  await delay();
-  const rfg = rfgs.find((r) => r.id === id);
-  if (!rfg) throw new Error(`RFG ${id} not found`);
-  return { data: rfg };
-};
-
 // ===== Exports =====
 
 export const mockDocumentsAPI = {
@@ -614,10 +547,4 @@ export const mockVocAPI = {
   list: mockListVocs,
   create: mockCreateVoc,
   get: mockGetVoc,
-};
-
-export const mockRfgAPI = {
-  list: mockListRfgs,
-  create: mockCreateRfg,
-  get: mockGetRfg,
 };

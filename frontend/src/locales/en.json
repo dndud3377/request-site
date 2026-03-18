@@ -4,8 +4,7 @@
     "request": "New Request",
     "approval": "Approval Status",
     "history": "History",
-    "voc": "VOC",
-    "rfg": "RFG"
+    "voc": "VOC"
   },
   "home": {
     "hero_title": "Product Introduction Map",
@@ -148,9 +147,6 @@
     "submit": "Submit",
     "no_data": "No VOC submitted yet.",
     "submit_success": "VOC has been submitted."
-  },
-  "rfg": {
-    "title": "RFG"
   },
   "common": {
     "loading": "Loading...",
