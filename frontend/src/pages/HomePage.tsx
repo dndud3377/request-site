@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { documentsAPI } from '../api/client';
-import StatusBadge, { PriorityBadge } from '../components/StatusBadge';
+import StatusBadge from '../components/StatusBadge';
 import { RequestDocument } from '../types';
 
 const formatDate = (dateStr: string | null): string => {
@@ -72,7 +72,6 @@ export default function HomePage(): React.ReactElement {
                     <th>{t('approval.col_product')}</th>
                     <th>{t('approval.col_requester')}</th>
                     <th>{t('approval.col_status')}</th>
-                    <th>{t('approval.col_priority')}</th>
                     <th>{t('approval.col_submitted')}</th>
                   </tr>
                 </thead>
@@ -86,9 +85,6 @@ export default function HomePage(): React.ReactElement {
                       <td>{doc.requester_name}</td>
                       <td>
                         <StatusBadge status={doc.status} />
-                      </td>
-                      <td>
-                        <PriorityBadge priority={doc.priority} />
                       </td>
                       <td>{formatDate(doc.submitted_at)}</td>
                     </tr>
