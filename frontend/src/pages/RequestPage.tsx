@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { documentsAPI } from '../api/client';
 import { useToast } from '../components/Toast';
-import { ConfirmModal } from '../components/Modal';
+import Modal from '../components/Modal';
 import FormSelect from '../components/FormSelect';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -265,6 +265,7 @@ export default function RequestPage(): React.ReactElement {
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [submitNote, setSubmitNote] = useState('');
   const [savedId, setSavedId] = useState<number | null>(editDocId);
 
   // 편집 모드: 기존 문서 데이터 로드
@@ -410,7 +411,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // ===== API =====
-  const buildEnrichedForm = (): CreateDocumentInput => {
+  const buildEnrichedForm = (note?: string): CreateDocumentInput => {
     const title = `${detail.line}(${detail.request_purpose})_${detail.combination_method}_${detail.product_name_select}_${detail.cooking_method}_요청서`;
     return {
       ...form,
@@ -419,6 +420,7 @@ export default function RequestPage(): React.ReactElement {
       requester_name: currentUser.name,
       requester_email: currentUser.email,
       requester_department: currentUser.department,
+      reference_materials: note ?? '',
       additional_notes: JSON.stringify({ detail, jayerRows, oayerRows, boneStewRows }),
     };
   };
@@ -466,7 +468,7 @@ export default function RequestPage(): React.ReactElement {
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      const enriched = buildEnrichedForm();
+      const enriched = buildEnrichedForm(submitNote);
       let docId = savedId;
       if (!docId) {
         const res = await documentsAPI.create(enriched);
@@ -1146,14 +1148,33 @@ export default function RequestPage(): React.ReactElement {
         </div>
       </div>
 
-      <ConfirmModal
+      <Modal
         isOpen={confirmOpen}
         onClose={() => setConfirmOpen(false)}
-        onConfirm={handleSubmit}
         title={t('request.submit')}
-        message={t('request.submit_confirm')}
-        confirmLabel={t('request.submit')}
-      />
+        size="md"
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setConfirmOpen(false)}>
+              {t('common.cancel')}
+            </button>
+            <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
+              📤 {submitting ? t('common.loading') : t('request.submit')}
+            </button>
+          </>
+        }
+      >
+        <div className="form-group">
+          <label className="form-label">{t('request.submit_note_label')}</label>
+          <textarea
+            className="form-control"
+            rows={5}
+            placeholder={t('request.submit_note_placeholder')}
+            value={submitNote}
+            onChange={(e) => setSubmitNote(e.target.value)}
+          />
+        </div>
+      </Modal>
     </div>
   );
 }

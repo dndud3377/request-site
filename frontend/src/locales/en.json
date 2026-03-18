@@ -26,6 +26,8 @@
     "save_draft": "Save Draft",
     "submit": "Submit",
     "submit_confirm": "Are you sure you want to submit this request? It cannot be edited after submission.",
+    "submit_note_label": "Special Notes",
+    "submit_note_placeholder": "Enter any special notes to include with your submission. (Optional)",
     "submit_success": "Your request has been successfully submitted!",
     "submit_email_sent": "An email notification has been sent to the reviewer.",
     "save_success": "Saved as draft.",
