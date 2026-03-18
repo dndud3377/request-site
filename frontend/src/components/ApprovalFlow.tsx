@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { RequestDocument, AgentType, ApprovalStepFrontend, UserRole } from '../types';
+import { RequestDocument, AgentType, ApprovalStepFrontend, UserRole, MockUser } from '../types';
 
 const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
 
@@ -11,21 +11,28 @@ export const ROLE_TO_AGENT: Partial<Record<UserRole, AgentType>> = {
   TE_E: 'E',
 };
 
-export const canUserAgree = (role: UserRole, step: ApprovalStepFrontend): boolean => {
-  if (role === 'MASTER') return true;
-  const agent = ROLE_TO_AGENT[role];
-  return !!agent && step.agent === agent && step.action === 'pending';
+// 담당자 지정 가능 여부: 같은 팀, pending, 아직 담당자 없음
+export const canUserAssign = (user: MockUser, step: ApprovalStepFrontend): boolean => {
+  const agent = ROLE_TO_AGENT[user.role];
+  return !!agent && step.agent === agent && step.action === 'pending' && !step.assignee_id;
+};
+
+// 합의/반려 가능 여부: MASTER이거나, 담당자로 지정된 본인
+export const canUserAgree = (user: MockUser, step: ApprovalStepFrontend): boolean => {
+  if (user.role === 'MASTER') return true;
+  return step.action === 'pending' && step.assignee_id === user.id;
 };
 
 interface ApprovalFlowProps {
   doc: RequestDocument;
   onAgree: (agent: AgentType) => void;
   onReject: (agent: AgentType) => void;
+  onAssign: (agent: AgentType) => void;
   processing: boolean;
-  userRole: UserRole;
+  currentUser: MockUser;
 }
 
-export default function ApprovalFlow({ doc, onAgree, onReject, processing, userRole }: ApprovalFlowProps): React.ReactElement {
+export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, processing, currentUser }: ApprovalFlowProps): React.ReactElement {
   const { t } = useTranslation();
   const steps = doc.approval_steps ?? [];
 
@@ -52,7 +59,10 @@ export default function ApprovalFlow({ doc, onAgree, onReject, processing, userR
         </div>
       );
     }
-    const canAct = canUserAgree(userRole, step);
+
+    const canAssign = canUserAssign(currentUser, step);
+    const canAct = canUserAgree(currentUser, step);
+
     return (
       <div className={`approval-node ${step.action === 'approved' ? 'approval-node-done' : step.action === 'rejected' ? 'approval-node-rejected' : ''}`}>
         <span className="step-agent-label">{label}</span>
@@ -65,6 +75,25 @@ export default function ApprovalFlow({ doc, onAgree, onReject, processing, userR
             "{step.comment}"
           </span>
         )}
+        {/* 담당자 표시 */}
+        {step.action === 'pending' && (
+          <span style={{ fontSize: '0.72rem', color: step.assignee_name ? 'var(--text-secondary)' : 'var(--text-muted)', marginTop: 2, display: 'block' }}>
+            {step.assignee_name ? `담당자: ${step.assignee_name}` : '담당자: 미지정'}
+          </span>
+        )}
+        {/* 담당하기 버튼 (미지정 상태, 같은 팀) */}
+        {step.action === 'pending' && canAssign && (
+          <div style={{ marginTop: 6 }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={processing}
+              onClick={() => onAssign(step.agent)}
+            >
+              담당하기
+            </button>
+          </div>
+        )}
+        {/* 합의/반려 버튼 (담당자 본인) */}
         {step.action === 'pending' && canAct && (
           <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
             <button

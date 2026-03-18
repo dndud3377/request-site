@@ -444,6 +444,24 @@ const mockApproveStep = async (docId: number, agent: AgentType, comment?: string
   return { data: { message: '처리되었습니다.', status: newStatus } };
 };
 
+// agent 단계 담당자 지정
+const mockAssignStep = async (docId: number, agent: AgentType, assigneeId: number, assigneeName: string) => {
+  await delay(200);
+  const doc = documents.find((d) => d.id === docId);
+  if (!doc) throw new Error(`Document ${docId} not found`);
+
+  const steps = [...(doc.approval_steps ?? [])];
+  const stepIdx = steps.findIndex((s) => s.agent === agent && s.action === 'pending');
+  if (stepIdx !== -1) {
+    steps[stepIdx] = { ...steps[stepIdx], assignee_id: assigneeId, assignee_name: assigneeName };
+  }
+
+  documents = documents.map((d) =>
+    d.id === docId ? { ...d, approval_steps: steps, updated_at: now() } : d
+  );
+  return { data: { message: '담당자가 지정되었습니다.' } };
+};
+
 // agent 단계 반려: 해당 step을 rejected로 표시, 문서 status → rejected
 const mockRejectStep = async (docId: number, agent: AgentType, comment?: string) => {
   await delay();
@@ -540,6 +558,7 @@ export const mockDocumentsAPI = {
   rejectStep: mockRejectStep,
   stats: mockDocumentStats,
   approveStep: mockApproveStep,
+  assignStep: mockAssignStep,
 };
 
 export const mockVocAPI = {

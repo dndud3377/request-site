@@ -7,9 +7,9 @@ import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth, ROLE_LABEL } from '../contexts/AuthContext';
-import ApprovalFlow, { canUserAgree, ROLE_TO_AGENT } from '../components/ApprovalFlow';
+import { canUserAgree, canUserAssign, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import PagedDetailView from '../components/PagedDetailView';
-import { RequestDocument, AgentType, ApprovalStepFrontend, UserRole } from '../types';
+import { RequestDocument, AgentType } from '../types';
 
 // ===== Utils =====
 
@@ -128,6 +128,19 @@ export default function ApprovalPage(): React.ReactElement {
     } finally {
       setProcessing(false);
       setPendingAction(null);
+    }
+  };
+
+  const handleAssign = async (agent: AgentType) => {
+    if (!selected) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.assignStep(selected.id, agent, currentUser.id, currentUser.name);
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -298,10 +311,11 @@ export default function ApprovalPage(): React.ReactElement {
         size="lg"
         footer={(() => {
           const userAgent = ROLE_TO_AGENT[currentUser.role];
-          const pendingStep = selected?.approval_steps?.find((s) =>
+          const pendingSteps = selected?.approval_steps?.filter((s) =>
             s.action === 'pending' && (isMaster ? true : s.agent === userAgent)
-          );
-          const canAct = !!pendingStep && selected?.status === 'under_review';
+          ) ?? [];
+          const assignableStep = pendingSteps.find((s) => canUserAssign(currentUser, s));
+          const actableStep = pendingSteps.find((s) => canUserAgree(currentUser, s));
           return (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               {selected && (isPL || isMaster) && selected.status === 'rejected' && (
@@ -314,19 +328,28 @@ export default function ApprovalPage(): React.ReactElement {
                   {t('approval.withdraw')}
                 </button>
               )}
-              {canAct && pendingStep && (
+              {assignableStep && (
+                <button
+                  className="btn btn-secondary"
+                  disabled={processing}
+                  onClick={() => handleAssign(assignableStep.agent)}
+                >
+                  담당하기
+                </button>
+              )}
+              {actableStep && (
                 <>
                   <button
                     className="btn btn-primary"
                     disabled={processing}
-                    onClick={() => triggerAgree(pendingStep.agent)}
+                    onClick={() => triggerAgree(actableStep.agent)}
                   >
                     {t('approval.agree')}
                   </button>
                   <button
                     className="btn btn-danger"
                     disabled={processing}
-                    onClick={() => triggerReject(pendingStep.agent)}
+                    onClick={() => triggerReject(actableStep.agent)}
                   >
                     {t('approval.reject')}
                   </button>

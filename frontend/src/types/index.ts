@@ -39,6 +39,8 @@ export interface ApprovalStepFrontend {
   acted_at: string | null;
   comment?: string;
   is_parallel?: boolean;  // J, O 병렬 표시용
+  assignee_id?: number;   // 담당자 user ID
+  assignee_name?: string; // 담당자 이름
 }
 
 // ===== Domain Models =====
