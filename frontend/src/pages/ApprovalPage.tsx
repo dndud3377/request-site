@@ -258,6 +258,7 @@ export default function ApprovalPage(): React.ReactElement {
           onClose={() => { setCommentModalOpen(false); setPendingAction(null); }}
           title={pendingAction.type === 'agree' ? t('approval.modal_agree_title', { agent: pendingAction.agent }) : t('approval.modal_reject_title', { agent: pendingAction.agent })}
           size="md"
+          topLevel
           footer={
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button

@@ -378,6 +378,15 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
               <FlowChartTable rows={detail.flow_chart ?? []} />
             </div>
           )}
+
+          {doc.reference_materials && (
+            <div style={cardStyle}>
+              <div style={sectionTitle}>특이사항</div>
+              <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-primary)', fontSize: '0.9rem', lineHeight: 1.6 }}>
+                {doc.reference_materials}
+              </div>
+            </div>
+          )}
         </div>
       ),
     },

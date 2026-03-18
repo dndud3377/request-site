@@ -359,24 +359,23 @@ const mockSubmitDocument = async (id: number) => {
   };
 };
 
-// 반려 후 재상신: 반려한 agent의 step만 reset, 나머지 approved는 유지
+// 반려 후 재상신: 전체 초기화, AGENT R부터 재시작
 const mockResubmitDocument = async (id: number) => {
   await delay(500);
   const doc = documents.find((d) => d.id === id);
   if (!doc) throw new Error(`Document ${id} not found`);
   if (doc.status !== 'rejected') throw new Error('반려된 의뢰서만 재상신할 수 있습니다.');
 
-  const steps = [...(doc.approval_steps ?? [])];
-  // 반려된 step 찾기
-  const rejectedIdx = steps.findIndex((s) => s.action === 'rejected');
-  if (rejectedIdx !== -1) {
-    // 반려된 step만 pending으로 리셋
-    steps[rejectedIdx] = { ...steps[rejectedIdx], action: 'pending', acted_at: null };
-  }
+  const initialStep: ApprovalStepFrontend = {
+    id: nextStepId++,
+    agent: 'R',
+    action: 'pending',
+    acted_at: null,
+  };
 
   documents = documents.map((d) =>
     d.id === id
-      ? { ...d, status: 'under_review' as const, updated_at: now(), approval_steps: steps }
+      ? { ...d, status: 'under_review' as const, updated_at: now(), approval_steps: [initialStep] }
       : d
   );
   const updated = documents.find((d) => d.id === id)!;

@@ -8,6 +8,7 @@ interface ModalProps {
   children: ReactNode;
   footer?: ReactNode;
   size?: 'md' | 'lg';
+  topLevel?: boolean;
 }
 
 interface ConfirmModalProps {
@@ -27,11 +28,12 @@ export default function Modal({
   children,
   footer,
   size = 'md',
+  topLevel = false,
 }: ModalProps): React.ReactElement | null {
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" style={topLevel ? { zIndex: 3000 } : undefined} onClick={onClose}>
       <div className={`modal${size === 'lg' ? ' modal-lg' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{title}</h3>
