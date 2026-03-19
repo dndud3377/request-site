@@ -223,7 +223,6 @@ export default function ApprovalPage(): React.ReactElement {
                 <th>{t('approval.col_status')}</th>
                 <th>{t('approval.col_current_stage')}</th>
                 <th>{t('approval.col_submitted')}</th>
-                <th>{t('approval.col_deadline')}</th>
                 <th></th>
               </tr>
             </thead>
@@ -248,7 +247,6 @@ export default function ApprovalPage(): React.ReactElement {
                     {getCurrentStage(doc, t)}
                   </td>
                   <td>{formatDate(doc.submitted_at)}</td>
-                  <td>{formatDate(doc.deadline)}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {(isPL || isMaster) && doc.status === 'rejected' && (

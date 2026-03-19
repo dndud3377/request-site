@@ -24,9 +24,6 @@ export type Status =
 
 export type VocStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 
-export type Priority = 'low' | 'medium' | 'high' | 'urgent';
-export type ProductType = 'new' | 'update' | 'add_feature' | 'change';
-export type MapType = 'intro' | 'feature' | 'comparison' | 'roadmap';
 export type VocCategory = 'inquiry' | 'complaint' | 'suggestion' | 'praise';
 
 export type AgentType = 'R' | 'J' | 'O' | 'E';
@@ -51,21 +48,8 @@ export interface RequestDocument {
   requester_name: string;
   requester_email: string;
   requester_department: string;
-  requester_position: string;
   product_name: string;
-  product_name_en: string;
-  product_type: ProductType;
-  product_version: string;
-  product_description: string;
-  product_description_en: string;
-  map_type: MapType;
-  target_audience: string;
-  key_features: string;
-  key_features_en: string;
-  changes_from_previous: string;
   reference_materials: string;
-  deadline: string;
-  priority: Priority;
   additional_notes: string;
   status: Status;
   created_at: string;

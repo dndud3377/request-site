@@ -87,11 +87,7 @@
     "yes": "Yes",
     "no_change": "No Change",
     "has_change": "Has Change",
-    "select_placeholder": "Select...",
-    "product_type_new": "New Product",
-    "product_type_update": "Product Update",
-    "product_type_add_feature": "Feature Addition",
-    "product_type_change": "Product Change"
+    "select_placeholder": "Select..."
   },
   "approval": {
     "title": "Approval Status",
@@ -107,9 +103,7 @@
     "col_product": "Product",
     "col_requester": "Requester",
     "col_status": "Status",
-    "col_priority": "Priority",
     "col_submitted": "Submitted",
-    "col_deadline": "Deadline",
     "view_detail": "View"
   },
   "history": {
@@ -170,9 +164,6 @@
     "status_approved": "Approved",
     "status_rejected": "Rejected",
     "status_revision_required": "Revision Required",
-    "priority_low": "Low",
-    "priority_medium": "Medium",
-    "priority_high": "High",
-    "priority_urgent": "Urgent"
+    "no_data": "No data available."
   }
 }
