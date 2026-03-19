@@ -2,8 +2,6 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RequestDocument, UserRole, DetailFormState, FlowChartRow, JayerRow, OayerRow, BoneStewTableRow } from '../types';
 
-const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
-
 // ===== Table Components =====
 
 function FlowChartTable({ rows }: { rows: FlowChartRow[] }) {
@@ -211,30 +209,11 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
       <div style={rowStyle}>
         <Chip label={t('approval.label_requester')} value={doc.requester_name} />
         <Chip label={t('approval.label_department')} value={doc.requester_department} />
-        <Chip label={t('approval.label_position')} value={doc.requester_position} />
         <Chip label={t('approval.label_email')} value={doc.requester_email} style={chipWide} />
       </div>
       <div style={rowStyle}>
         <Chip label={t('approval.label_product_name')} value={doc.product_name} />
-        <Chip label={t('approval.label_product_type')} value={doc.product_type} />
-        <Chip label={t('approval.label_version')} value={doc.product_version} />
-        <Chip label={t('approval.label_deadline')} value={formatDate(doc.deadline)} />
       </div>
-      {doc.product_description && (
-        <div style={rowStyle}>
-          <Chip label={t('approval.label_product_desc')} value={doc.product_description} style={chipFull} />
-        </div>
-      )}
-      {doc.key_features && (
-        <div style={rowStyle}>
-          <Chip label={t('approval.label_key_features')} value={doc.key_features} style={chipFull} />
-        </div>
-      )}
-      {doc.changes_from_previous && (
-        <div style={rowStyle}>
-          <Chip label={t('approval.label_changes')} value={doc.changes_from_previous} style={chipFull} />
-        </div>
-      )}
     </div>
   ) : null;
 

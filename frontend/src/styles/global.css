@@ -608,10 +608,6 @@ select.form-control option {
 .badge-resolved { background: var(--success-light); color: var(--success); }
 .badge-closed { background: rgba(107, 138, 176, 0.2); color: var(--text-muted); }
 
-.priority-low { color: var(--success); }
-.priority-medium { color: var(--info); }
-.priority-high { color: var(--warning); }
-.priority-urgent { color: var(--danger); }
 
 /* ===== Search & Filter ===== */
 .toolbar {
