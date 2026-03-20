@@ -1,16 +1,24 @@
 from django.contrib import admin
-from .models import RequestDocument, ApprovalStep, VOC, RFG
+from .models import UserProfile, RequestDocument, ApprovalStep, VOC
 
 
 class ApprovalStepInline(admin.TabularInline):
     model = ApprovalStep
     extra = 0
+    fields = ['agent', 'action', 'is_parallel', 'assignee_name', 'comment', 'acted_at']
+    readonly_fields = ['acted_at']
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ['display_name', 'role', 'department', 'user']
+    list_filter = ['role']
 
 
 @admin.register(RequestDocument)
 class RequestDocumentAdmin(admin.ModelAdmin):
-    list_display = ['title', 'requester_name', 'product_name', 'product_type', 'status', 'priority', 'created_at']
-    list_filter = ['status', 'product_type', 'map_type', 'priority']
+    list_display = ['title', 'requester_name', 'product_name', 'status', 'created_at']
+    list_filter = ['status']
     search_fields = ['title', 'product_name', 'requester_name']
     inlines = [ApprovalStepInline]
     readonly_fields = ['created_at', 'updated_at', 'submitted_at']
@@ -18,8 +26,8 @@ class RequestDocumentAdmin(admin.ModelAdmin):
 
 @admin.register(ApprovalStep)
 class ApprovalStepAdmin(admin.ModelAdmin):
-    list_display = ['document', 'step_order', 'approver_name', 'action', 'acted_at']
-    list_filter = ['action']
+    list_display = ['document', 'agent', 'action', 'is_parallel', 'assignee_name', 'acted_at']
+    list_filter = ['agent', 'action']
 
 
 @admin.register(VOC)
@@ -27,10 +35,3 @@ class VOCAdmin(admin.ModelAdmin):
     list_display = ['title', 'category', 'submitter_name', 'status', 'created_at']
     list_filter = ['category', 'status']
     search_fields = ['title', 'submitter_name']
-
-
-@admin.register(RFG)
-class RFGAdmin(admin.ModelAdmin):
-    list_display = ['title', 'requester_name', 'product_name', 'status', 'created_at']
-    list_filter = ['status']
-    search_fields = ['title', 'requester_name', 'product_name']
