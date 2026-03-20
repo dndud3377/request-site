@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { MockUser, UserRole } from '../types';
 import { authAPI, setToken, clearToken } from '../api/client';
 
@@ -47,6 +47,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const found = savedId ? MOCK_USERS.find((u) => u.id === Number(savedId)) : null;
     return found ?? MOCK_USERS[0];
   });
+
+  useEffect(() => {
+    authAPI.login(currentUser.username, currentUser.password)
+      .then((res) => setToken(res.access))
+      .catch(() => clearToken());
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const switchUser = async (userId: number) => {
     const user = MOCK_USERS.find((u) => u.id === userId);

@@ -104,7 +104,9 @@
     "col_requester": "Requester",
     "col_status": "Status",
     "col_submitted": "Submitted",
-    "view_detail": "View"
+    "col_current_stage": "Current Stage",
+    "view_detail": "View",
+    "current_role": "Current Role:"
   },
   "history": {
     "title": "History",
