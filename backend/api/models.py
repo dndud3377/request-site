@@ -1,35 +1,42 @@
+import json
 from django.db import models
 from django.contrib.auth.models import User
 
 
+class UserProfile(models.Model):
+    """사용자 역할 프로필"""
+
+    ROLE_CHOICES = [
+        ('PL', '제품 담당자'),
+        ('TE_R', 'AGENT R팀'),
+        ('TE_J', 'AGENT J팀'),
+        ('TE_O', 'AGENT O팀'),
+        ('TE_E', 'AGENT E팀'),
+        ('MASTER', '관리자'),
+    ]
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES)
+    department = models.CharField(max_length=100, blank=True)
+    display_name = models.CharField(max_length=100, blank=True)
+
+    def __str__(self):
+        return f"{self.display_name} ({self.role})"
+
+
 class RequestDocument(models.Model):
-    """제품 소개 지도 의뢰서 모델"""
+    """의뢰서 모델 - 프론트엔드 RequestDocument 타입과 1:1 매핑"""
 
     STATUS_CHOICES = [
-        ('draft', 'Draft / 임시저장'),
-        ('submitted', 'Submitted / 상신됨'),
-        ('under_review', 'Under Review / 검토중'),
-        ('approved', 'Approved / 승인됨'),
-        ('rejected', 'Rejected / 반려됨'),
-        ('revision_required', 'Revision Required / 수정요청'),
+        ('draft', '임시저장'),
+        ('submitted', '상신됨'),
+        ('under_review', '검토중'),
+        ('approved', '승인됨'),
+        ('rejected', '반려됨'),
+        ('revision_required', '수정요청'),
     ]
 
-    PRODUCT_TYPE_CHOICES = [
-        ('new', 'New Product / 신제품'),
-        ('update', 'Product Update / 제품 업데이트'),
-        ('add_feature', 'Feature Addition / 기능 추가'),
-        ('change', 'Product Change / 제품 변경'),
-    ]
-
-    MAP_TYPE_CHOICES = [
-        ('intro', 'Introduction Map / 소개 지도'),
-        ('feature', 'Feature Map / 기능 지도'),
-        ('comparison', 'Comparison Map / 비교 지도'),
-        ('roadmap', 'Product Roadmap / 제품 로드맵'),
-    ]
-
-    # 기본 정보
-    title = models.CharField(max_length=200, verbose_name='의뢰서 제목')
+    title = models.CharField(max_length=300, verbose_name='의뢰서 제목')
     requester = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='requests', verbose_name='의뢰자'
@@ -37,42 +44,14 @@ class RequestDocument(models.Model):
     requester_name = models.CharField(max_length=100, verbose_name='의뢰자 이름')
     requester_email = models.EmailField(verbose_name='의뢰자 이메일')
     requester_department = models.CharField(max_length=100, verbose_name='부서')
-    requester_position = models.CharField(max_length=100, blank=True, verbose_name='직책')
-
-    # 제품 정보
     product_name = models.CharField(max_length=200, verbose_name='제품명')
-    product_name_en = models.CharField(max_length=200, blank=True, verbose_name='제품명 (영문)')
-    product_type = models.CharField(
-        max_length=20, choices=PRODUCT_TYPE_CHOICES, verbose_name='제품 유형'
-    )
-    product_version = models.CharField(max_length=50, blank=True, verbose_name='버전')
-    product_description = models.TextField(verbose_name='제품 설명')
-    product_description_en = models.TextField(blank=True, verbose_name='제품 설명 (영문)')
-
-    # 의뢰 상세
-    map_type = models.CharField(
-        max_length=20, choices=MAP_TYPE_CHOICES, verbose_name='지도 유형'
-    )
-    target_audience = models.TextField(verbose_name='대상 고객')
-    key_features = models.TextField(verbose_name='주요 기능/특징')
-    key_features_en = models.TextField(blank=True, verbose_name='주요 기능/특징 (영문)')
-    changes_from_previous = models.TextField(blank=True, verbose_name='이전 버전 대비 변경사항')
     reference_materials = models.TextField(blank=True, verbose_name='참고 자료')
-    deadline = models.DateField(null=True, blank=True, verbose_name='요청 완료일')
-    priority = models.CharField(
-        max_length=10,
-        choices=[('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('urgent', 'Urgent')],
-        default='medium',
-        verbose_name='우선순위'
-    )
-    additional_notes = models.TextField(blank=True, verbose_name='추가 요청사항')
+    # 상세 폼 데이터를 JSON 문자열로 저장 (detail.sugar_add 등 포함)
+    additional_notes = models.TextField(blank=True, verbose_name='추가 정보(JSON)')
 
-    # 상태
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default='draft', verbose_name='상태'
     )
-
-    # 타임스탬프
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일')
     submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='상신일')
@@ -83,57 +62,78 @@ class RequestDocument(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"[{self.get_status_display()}] {self.title} - {self.requester_name}"
+        return f"[{self.status}] {self.title}"
+
+    def get_detail(self):
+        """additional_notes JSON 파싱"""
+        try:
+            return json.loads(self.additional_notes or '{}')
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+    def is_sugar_add(self):
+        """설탕 추가 여부 확인 (E단계 생성 조건)"""
+        detail = self.get_detail()
+        return detail.get('detail', {}).get('sugar_add') == '예'
 
 
 class ApprovalStep(models.Model):
-    """결재 단계 모델"""
+    """결재 단계 - 프론트엔드 ApprovalStepFrontend 타입과 1:1 매핑"""
+
+    AGENT_CHOICES = [
+        ('R', 'AGENT R'),
+        ('J', 'AGENT J'),
+        ('O', 'AGENT O'),
+        ('E', 'AGENT E'),
+    ]
 
     ACTION_CHOICES = [
-        ('pending', 'Pending / 대기'),
-        ('approved', 'Approved / 승인'),
-        ('rejected', 'Rejected / 반려'),
-        ('revision', 'Revision Requested / 수정요청'),
+        ('pending', '대기'),
+        ('approved', '합의'),
+        ('rejected', '반려'),
     ]
 
     document = models.ForeignKey(
         RequestDocument, on_delete=models.CASCADE,
         related_name='approval_steps', verbose_name='의뢰서'
     )
-    step_order = models.PositiveIntegerField(verbose_name='결재 순서')
-    approver_name = models.CharField(max_length=100, verbose_name='결재자 이름')
-    approver_email = models.EmailField(verbose_name='결재자 이메일')
-    approver_position = models.CharField(max_length=100, verbose_name='결재자 직책')
+    agent = models.CharField(max_length=2, choices=AGENT_CHOICES, verbose_name='담당 에이전트')
     action = models.CharField(
-        max_length=20, choices=ACTION_CHOICES, default='pending', verbose_name='결재 결과'
+        max_length=10, choices=ACTION_CHOICES, default='pending', verbose_name='결재 결과'
     )
+    acted_at = models.DateTimeField(null=True, blank=True, verbose_name='처리일시')
     comment = models.TextField(blank=True, verbose_name='의견')
-    acted_at = models.DateTimeField(null=True, blank=True, verbose_name='결재일시')
+    is_parallel = models.BooleanField(default=False, verbose_name='병렬 처리 여부')
+    assignee = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='assigned_steps', verbose_name='담당자'
+    )
+    assignee_name = models.CharField(max_length=100, blank=True, verbose_name='담당자 이름')
 
     class Meta:
         verbose_name = '결재 단계'
         verbose_name_plural = '결재 단계 목록'
-        ordering = ['step_order']
+        ordering = ['id']
 
     def __str__(self):
-        return f"{self.document.title} - Step {self.step_order}: {self.approver_name}"
+        return f"{self.document.title} - AGENT {self.agent}: {self.action}"
 
 
 class VOC(models.Model):
     """VOC (Voice of Customer) 모델"""
 
     CATEGORY_CHOICES = [
-        ('inquiry', 'Inquiry / 문의'),
-        ('complaint', 'Complaint / 불만'),
-        ('suggestion', 'Suggestion / 제안'),
-        ('praise', 'Praise / 칭찬'),
+        ('inquiry', '문의'),
+        ('complaint', '불만'),
+        ('suggestion', '제안'),
+        ('praise', '칭찬'),
     ]
 
     STATUS_CHOICES = [
-        ('open', 'Open / 접수'),
-        ('in_progress', 'In Progress / 처리중'),
-        ('resolved', 'Resolved / 해결됨'),
-        ('closed', 'Closed / 종료'),
+        ('open', '접수'),
+        ('in_progress', '처리중'),
+        ('resolved', '해결됨'),
+        ('closed', '종료'),
     ]
 
     title = models.CharField(max_length=200, verbose_name='제목')
@@ -154,32 +154,4 @@ class VOC(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"[{self.get_status_display()}] {self.title}"
-
-
-class RFG(models.Model):
-    """RFG (Request For Guide) 모델"""
-
-    STATUS_CHOICES = [
-        ('open', 'Open / 접수'),
-        ('in_progress', 'In Progress / 처리중'),
-        ('resolved', 'Resolved / 완료'),
-    ]
-
-    title = models.CharField(max_length=200, verbose_name='요청 제목')
-    requester_name = models.CharField(max_length=100, verbose_name='요청자')
-    requester_email = models.EmailField(verbose_name='이메일')
-    product_name = models.CharField(max_length=200, verbose_name='제품명')
-    description = models.TextField(verbose_name='요청 내용')
-    status = models.CharField(
-        max_length=20, choices=STATUS_CHOICES, default='open', verbose_name='상태'
-    )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name='접수일')
-
-    class Meta:
-        verbose_name = 'RFG'
-        verbose_name_plural = 'RFG 목록'
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return f"[{self.get_status_display()}] {self.title}"
+        return f"[{self.status}] {self.title}"
