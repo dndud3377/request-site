@@ -2,17 +2,18 @@ version: '3.9'
 
 services:
   db:
-    image: postgres:15-alpine
+    image: mysql:8.0
     container_name: request_db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-requestdb}
-      POSTGRES_USER: ${POSTGRES_USER:-requestuser}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-requestpass}
+      MYSQL_DATABASE: ${MYSQL_DB:-requestdb}
+      MYSQL_USER: ${MYSQL_USER:-requestuser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-requestpass}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-requestuser} -d ${POSTGRES_DB:-requestdb}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER:-requestuser}", "-p${MYSQL_PASSWORD:-requestpass}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -27,7 +28,7 @@ services:
       - .env
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
-      - POSTGRES_HOST=db
+      - MYSQL_HOST=db
     volumes:
       - media_data:/app/media
       - static_data:/app/staticfiles
@@ -66,7 +67,7 @@ services:
       - frontend
 
 volumes:
-  postgres_data:
+  mysql_data:
     driver: local
   media_data:
     driver: local
