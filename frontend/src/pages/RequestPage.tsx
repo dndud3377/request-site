@@ -18,7 +18,7 @@ import {
 
 // ===== Option Constants =====
 const OPTION_REQUEST_PURPOSE = ['신규', '복사', '변경'] as const;
-const OPTION_LINE = ['A라인', 'B라인', 'C라인'] as const;
+const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
 const OPTION_COMBINATION = ['조합법A', '조합법B', '조합법C'] as const;
 const OPTION_PRODUCT = ['제품A', '제품B', '제품C'] as const;
 const OPTION_COOKING = ['조리법1', '조리법2', '조리법3'] as const;
