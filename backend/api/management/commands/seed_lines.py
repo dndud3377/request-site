@@ -9,9 +9,11 @@ from django.core.management.base import BaseCommand
 from api.models import Line
 
 LINES = [
-    {'name': 'A라인', 'order': 1},
-    {'name': 'B라인', 'order': 2},
-    {'name': 'C라인', 'order': 3},
+    {'name': '라인1', 'order': 1},
+    {'name': '라인2', 'order': 2},
+    {'name': '라인3', 'order': 3},
+    {'name': '라인4', 'order': 4},
+    {'name': '라인5', 'order': 5},
 ]
 
 
