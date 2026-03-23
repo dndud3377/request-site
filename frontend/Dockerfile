@@ -8,7 +8,8 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-FROM nginx:alpine
+ARG NGINX_IMAGE=nginx:alpine
+FROM ${NGINX_IMAGE}
 COPY --from=build /app/build /usr/share/nginx/html
 COPY nginx-frontend.conf /etc/nginx/conf.d/default.conf
 
