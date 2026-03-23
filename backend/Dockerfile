@@ -1,4 +1,5 @@
-FROM python:3.11-slim
+ARG PYTHON_IMAGE=
+FROM ${PYTHON_IMAGE}
 
 WORKDIR /app
 
