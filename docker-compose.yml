@@ -2,14 +2,14 @@ version: '3.9'
 
 services:
   db:
-    image: mysql:8.0
-    container_name: request_db
+    image: ${CONTAINER_IMAGE}
+    container_name: ${CONTAINER_DB}
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: ${MYSQL_DB:-requestdb}
-      MYSQL_USER: ${MYSQL_USER:-requestuser}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-requestpass}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DB}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -22,6 +22,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE}
     container_name: request_backend
     restart: unless-stopped
     env_file:
