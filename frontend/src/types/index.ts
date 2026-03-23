@@ -12,6 +12,14 @@ export interface MockUser {
   email: string;
 }
 
+// ===== Master Data =====
+
+export interface Line {
+  id: number;
+  name: string;
+  order: number;
+}
+
 // ===== Domain Enums / Literal Types =====
 
 export type Status =

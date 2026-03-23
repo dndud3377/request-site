@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import UserProfile, RequestDocument, ApprovalStep, VOC
+from .models import UserProfile, RequestDocument, ApprovalStep, VOC, Line
 
 
 class ApprovalStepInline(admin.TabularInline):
@@ -35,3 +35,10 @@ class VOCAdmin(admin.ModelAdmin):
     list_display = ['title', 'category', 'submitter_name', 'status', 'created_at']
     list_filter = ['category', 'status']
     search_fields = ['title', 'submitter_name']
+
+
+@admin.register(Line)
+class LineAdmin(admin.ModelAdmin):
+    list_display = ['name', 'order', 'is_active']
+    list_editable = ['order', 'is_active']
+    ordering = ['order', 'name']

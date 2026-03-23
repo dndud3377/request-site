@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { documentsAPI } from '../api/client';
+import { documentsAPI, linesAPI } from '../api/client';
 import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
 import FormSelect from '../components/FormSelect';
@@ -40,8 +40,9 @@ interface CFamilyRowProps {
   detail: DetailFormState;
   onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
   onSetValue: (name: string, value: string) => void;
+  lineOptions: string[];
 }
-const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSetValue }) => {
+const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSetValue, lineOptions }) => {
   const { t } = useTranslation();
   const showSelects = region !== 'middle' || detail.c_family_middle_use === '사용';
   return (
@@ -66,7 +67,7 @@ const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSet
             label={t('request.c_family_line')}
             name={`c_family_${region}_line`}
             value={detail[`c_family_${region}_line` as keyof DetailFormState] as string}
-            options={OPTION_LINE}
+            options={lineOptions}
             onChange={onChange}
             placeholder={t('request.select_placeholder')}
             className="flex-col"
@@ -239,6 +240,14 @@ export default function RequestPage(): React.ReactElement {
   // 반려 후 재상신 모드: location.state.editDocId 가 있을 때
   const editDocId: number | null = (location.state as any)?.editDocId ?? null;
   const isEditMode = !!editDocId;
+
+  const [lineOptions, setLineOptions] = useState<string[]>(OPTION_LINE as unknown as string[]);
+
+  useEffect(() => {
+    linesAPI.list()
+      .then((lines) => { if (lines.length > 0) setLineOptions(lines.map((l) => l.name)); })
+      .catch(() => { /* 폴백 유지 */ });
+  }, []);
 
   const [step, setStep] = useState(1);
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
@@ -619,7 +628,7 @@ export default function RequestPage(): React.ReactElement {
             label={t('request.line')}
             name="line"
             value={detail.line}
-            options={OPTION_LINE}
+            options={lineOptions}
             onChange={handleDetailChange}
             placeholder={t('request.select_placeholder')}
             required
@@ -767,9 +776,9 @@ export default function RequestPage(): React.ReactElement {
           </div>
           {isCFamily && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <CFamilyRow region="north"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} />
-              <CFamilyRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} />
-              <CFamilyRow region="south"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} />
+              <CFamilyRow region="north"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} />
+              <CFamilyRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} />
+              <CFamilyRow region="south"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} />
             </div>
           )}
         </div>
