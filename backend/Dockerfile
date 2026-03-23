@@ -1,6 +1,8 @@
-ARG PYTHON_IMAGE=
+ARG PYTHON_IMAGE=python:3.11.0-slim
 FROM ${PYTHON_IMAGE}
 
+# 사내 debian repository 사용을 위해 sources.list 복사
+COPY ./sources.list /etc/apt/sources.list
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
