@@ -5,10 +5,10 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
 
-from .models import RequestDocument, ApprovalStep, VOC
+from .models import RequestDocument, ApprovalStep, VOC, Line
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer,
-    VOCSerializer,
+    VOCSerializer, LineSerializer,
 )
 
 
@@ -209,3 +209,11 @@ class VOCViewSet(viewsets.ModelViewSet):
     filterset_fields = ['category', 'status']
     search_fields = ['title', 'submitter_name', 'content']
     ordering = ['-created_at']
+
+
+class LineViewSet(viewsets.ReadOnlyModelViewSet):
+    """라인 마스터 데이터 (읽기 전용)"""
+    queryset = Line.objects.filter(is_active=True)
+    serializer_class = LineSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None

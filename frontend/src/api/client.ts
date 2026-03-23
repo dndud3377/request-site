@@ -2,6 +2,7 @@ import {
   RequestDocument,
   VOC,
   Stats,
+  Line,
   CreateDocumentInput,
   UpdateDocumentInput,
   CreateVocInput,
@@ -202,4 +203,10 @@ export const vocAPI = {
   list: listVocs,
   create: createVoc,
   get: getVoc,
+};
+
+// ===== 라인 API =====
+
+export const linesAPI = {
+  list: (): Promise<Line[]> => get<Line[]>('/lines/'),
 };

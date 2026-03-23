@@ -119,6 +119,21 @@ class ApprovalStep(models.Model):
         return f"{self.document.title} - AGENT {self.agent}: {self.action}"
 
 
+class Line(models.Model):
+    """라인 마스터 데이터"""
+    name = models.CharField(max_length=50, unique=True, verbose_name='라인 이름')
+    order = models.PositiveSmallIntegerField(default=0, verbose_name='정렬 순서')
+    is_active = models.BooleanField(default=True, verbose_name='활성 여부')
+
+    class Meta:
+        verbose_name = '라인'
+        verbose_name_plural = '라인 목록'
+        ordering = ['order', 'name']
+
+    def __str__(self):
+        return self.name
+
+
 class VOC(models.Model):
     """VOC (Voice of Customer) 모델"""
 
