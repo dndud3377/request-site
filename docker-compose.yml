@@ -23,7 +23,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       args:
-        PYTHON_IMAGE: ${PYTHON_IMAGE}
+        IMAGE_PATH: ${IMAGE_PATH}
+        PIP_INDEX_URL: ${PIP_INDEX_URL}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST}
     container_name: request_backend
     restart: unless-stopped
     env_file:
@@ -48,6 +50,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        IMAGE_PATH: ${IMAGE_PATH}
     container_name: request_frontend
     restart: unless-stopped
     depends_on:
