@@ -1,12 +1,9 @@
 from django.utils import timezone
-from django.http import JsonResponse
-from django.views.decorators.http import require_GET
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db import connection
 
 from .models import RequestDocument, ApprovalStep, VOC, Line
 from .serializers import (
@@ -220,76 +217,3 @@ class LineViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = LineSerializer
     permission_classes = [AllowAny]
     pagination_class = None
-
-
-@require_GET
-def form_options_view(request):
-    """
-    조합법 / 제품이름 / 조리법 옵션을 동적으로 반환합니다.
-
-    Query parameters:
-      - line        : 선택된 라인 이름 (필수)
-      - combination : 선택된 조합법 (제품이름 옵션 조회 시 필요)
-      - product     : 선택된 제품이름 (조리법 옵션 조회 시 필요)
-
-    응답:
-      { "options": ["값1", "값2", ...] }
-    """
-    line = request.GET.get('line', '').strip()
-    combination = request.GET.get('combination', '').strip()
-    product = request.GET.get('product', '').strip()
-
-    if not line:
-        return JsonResponse({'options': []})
-
-    # ------------------------------------------------------------------
-    # DB에서 원시 데이터 조회
-    # ------------------------------------------------------------------
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT * FROM A.라인")
-        columns = [col[0] for col in cursor.description]
-        rows = cursor.fetchall()
-
-    # ------------------------------------------------------------------
-    # TODO: 아래 주석 영역에 DataFrame 가공 코드를 삽입하세요.
-    #
-    #   import pandas as pd
-    #   df = pd.DataFrame(rows, columns=columns)
-    #
-    #   <여기에 사용자 정의 가공 코드 삽입>
-    #
-    # 가공 후 df 에는 반드시 다음 컬럼이 포함되어야 합니다:
-    #   - 라인 필터용 컬럼 (예: df['라인컬럼명'])
-    #   - A 컬럼 (조합법)
-    #   - B 컬럼 (제품이름)
-    #   - C 컬럼 (조리법)
-    # ------------------------------------------------------------------
-    import pandas as pd
-    df = pd.DataFrame(rows, columns=columns)
-    # <사용자 가공 코드를 여기에 삽입>
-
-    # ------------------------------------------------------------------
-    # TODO: 라인 필터링 코드를 삽입하세요.
-    #
-    #   df = df[df['라인컬럼명'] == line]
-    #
-    # 위 줄에서 '라인컬럼명'을 실제 라인 컬럼 이름으로 교체하세요.
-    # ------------------------------------------------------------------
-
-    # 단계별 옵션 반환
-    try:
-        if product and combination:
-            # 조리법 옵션: A == combination AND B == product 인 C 컬럼 고유값
-            filtered = df[(df['A'] == combination) & (df['B'] == product)]
-            options = filtered['C'].dropna().unique().tolist()
-        elif combination:
-            # 제품이름 옵션: A == combination 인 B 컬럼 고유값
-            filtered = df[df['A'] == combination]
-            options = filtered['B'].dropna().unique().tolist()
-        else:
-            # 조합법 옵션: A 컬럼 고유값
-            options = df['A'].dropna().unique().tolist()
-    except KeyError:
-        options = []
-
-    return JsonResponse({'options': options})
