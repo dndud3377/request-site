@@ -210,3 +210,19 @@ export const vocAPI = {
 export const linesAPI = {
   list: (): Promise<Line[]> => get<Line[]>('/lines/'),
 };
+
+// ===== 폼 옵션 API =====
+
+const getOptions = (url: string): Promise<string[]> =>
+  get<{ options: string[] }>(url).then((r) => r.options);
+
+export const formOptionsAPI = {
+  getCombinations: (line: string): Promise<string[]> =>
+    getOptions(`/form-options/combinations/?line=${encodeURIComponent(line)}`),
+
+  getProducts: (line: string, combination: string): Promise<string[]> =>
+    getOptions(`/form-options/products/?line=${encodeURIComponent(line)}&combination=${encodeURIComponent(combination)}`),
+
+  getCooking: (line: string, product: string): Promise<string[]> =>
+    getOptions(`/form-options/cooking/?line=${encodeURIComponent(line)}&product=${encodeURIComponent(product)}`),
+};

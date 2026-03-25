@@ -134,6 +134,44 @@ class Line(models.Model):
         return self.name
 
 
+class CombinationProduct(models.Model):
+    """외부 DB에서 1시간마다 동기화되는 조합법-제품이름 캐시"""
+    line = models.CharField(max_length=50, verbose_name='라인')
+    combination = models.CharField(max_length=200, verbose_name='조합법')
+    product_name = models.CharField(max_length=200, verbose_name='제품이름')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        verbose_name = '조합법-제품이름 캐시'
+        verbose_name_plural = '조합법-제품이름 캐시 목록'
+        indexes = [
+            models.Index(fields=['line']),
+            models.Index(fields=['line', 'combination']),
+        ]
+
+    def __str__(self):
+        return f"{self.line} / {self.combination} / {self.product_name}"
+
+
+class ProductCooking(models.Model):
+    """외부 DB에서 1시간마다 동기화되는 제품이름-조리법 캐시"""
+    line = models.CharField(max_length=50, verbose_name='라인')
+    product_name = models.CharField(max_length=200, verbose_name='제품이름')
+    cooking_method = models.CharField(max_length=200, verbose_name='조리법')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        verbose_name = '제품이름-조리법 캐시'
+        verbose_name_plural = '제품이름-조리법 캐시 목록'
+        indexes = [
+            models.Index(fields=['line']),
+            models.Index(fields=['line', 'product_name']),
+        ]
+
+    def __str__(self):
+        return f"{self.line} / {self.product_name} / {self.cooking_method}"
+
+
 class VOC(models.Model):
     """VOC (Voice of Customer) 모델"""
 

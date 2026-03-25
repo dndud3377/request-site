@@ -5,7 +5,10 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
 
-from .models import RequestDocument, ApprovalStep, VOC, Line
+from django.http import JsonResponse
+from django.views.decorators.http import require_GET
+
+from .models import RequestDocument, ApprovalStep, VOC, Line, CombinationProduct, ProductCooking
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer,
     VOCSerializer, LineSerializer,
@@ -217,3 +220,53 @@ class LineViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = LineSerializer
     permission_classes = [AllowAny]
     pagination_class = None
+
+
+@require_GET
+def form_options_combinations(request):
+    """라인 → 조합법 목록"""
+    line = request.GET.get('line', '')
+    if not line:
+        return JsonResponse({'options': []})
+    options = list(
+        CombinationProduct.objects
+        .filter(line=line)
+        .values_list('combination', flat=True)
+        .distinct()
+        .order_by('combination')
+    )
+    return JsonResponse({'options': options})
+
+
+@require_GET
+def form_options_products(request):
+    """라인 + 조합법 → 제품이름 목록"""
+    line = request.GET.get('line', '')
+    combination = request.GET.get('combination', '')
+    if not line or not combination:
+        return JsonResponse({'options': []})
+    options = list(
+        CombinationProduct.objects
+        .filter(line=line, combination=combination)
+        .values_list('product_name', flat=True)
+        .distinct()
+        .order_by('product_name')
+    )
+    return JsonResponse({'options': options})
+
+
+@require_GET
+def form_options_cooking(request):
+    """라인 + 제품이름 → 조리법 목록"""
+    line = request.GET.get('line', '')
+    product = request.GET.get('product', '')
+    if not line or not product:
+        return JsonResponse({'options': []})
+    options = list(
+        ProductCooking.objects
+        .filter(line=line, product_name=product)
+        .values_list('cooking_method', flat=True)
+        .distinct()
+        .order_by('cooking_method')
+    )
+    return JsonResponse({'options': options})

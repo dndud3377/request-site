@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { documentsAPI, linesAPI } from '../api/client';
+import { documentsAPI, linesAPI, formOptionsAPI } from '../api/client';
 import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
 import FormSelect from '../components/FormSelect';
@@ -19,9 +19,6 @@ import {
 // ===== Option Constants =====
 const OPTION_REQUEST_PURPOSE = ['신규', '복사', '변경'] as const;
 const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
-const OPTION_COMBINATION = ['조합법A', '조합법B', '조합법C'] as const;
-const OPTION_PRODUCT = ['제품A', '제품B', '제품C'] as const;
-const OPTION_COOKING = ['조리법1', '조리법2', '조리법3'] as const;
 const OPTION_OTHER_PURPOSE = ['목적A', '목적B', '목적C'] as const;
 const OPTION_SOURCE_LOCATION = ['위치A', '위치B', '위치C'] as const;
 const OPTION_SOURCE_PRODUCT = ['원본제품A', '원본제품B', '원본제품C'] as const;
@@ -242,12 +239,45 @@ export default function RequestPage(): React.ReactElement {
   const isEditMode = !!editDocId;
 
   const [lineOptions, setLineOptions] = useState<string[]>(OPTION_LINE as unknown as string[]);
+  const [combinationOptions, setCombinationOptions] = useState<string[]>([]);
+  const [productOptions, setProductOptions] = useState<string[]>([]);
+  const [cookingOptions, setCookingOptions] = useState<string[]>([]);
 
   useEffect(() => {
     linesAPI.list()
       .then((lines) => { if (lines.length > 0) setLineOptions(lines.map((l) => l.name)); })
       .catch(() => { /* 폴백 유지 */ });
   }, []);
+
+  // 라인 변경 → 조합법 fetch + 하위 초기화
+  useEffect(() => {
+    if (!detail.line) { setCombinationOptions([]); setProductOptions([]); setCookingOptions([]); return; }
+    formOptionsAPI.getCombinations(detail.line)
+      .then(setCombinationOptions)
+      .catch(() => setCombinationOptions([]));
+    setProductOptions([]);
+    setCookingOptions([]);
+    setDetail((prev) => ({ ...prev, combination_method: '', product_name_select: '', cooking_method: '' }));
+  }, [detail.line]);
+
+  // 조합법 변경 → 제품이름 fetch + 하위 초기화
+  useEffect(() => {
+    if (!detail.line || !detail.combination_method) { setProductOptions([]); setCookingOptions([]); return; }
+    formOptionsAPI.getProducts(detail.line, detail.combination_method)
+      .then(setProductOptions)
+      .catch(() => setProductOptions([]));
+    setCookingOptions([]);
+    setDetail((prev) => ({ ...prev, product_name_select: '', cooking_method: '' }));
+  }, [detail.combination_method]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 제품이름 변경 → 조리법 fetch
+  useEffect(() => {
+    if (!detail.line || !detail.product_name_select) { setCookingOptions([]); return; }
+    formOptionsAPI.getCooking(detail.line, detail.product_name_select)
+      .then(setCookingOptions)
+      .catch(() => setCookingOptions([]));
+    setDetail((prev) => ({ ...prev, cooking_method: '' }));
+  }, [detail.product_name_select]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [step, setStep] = useState(1);
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
@@ -638,7 +668,7 @@ export default function RequestPage(): React.ReactElement {
           <AutocompleteInput
             label={t('request.combination_method')}
             value={detail.combination_method}
-            options={OPTION_COMBINATION}
+            options={combinationOptions}
             onChange={(v) => handleDetailSet('combination_method', v)}
             required
             error={errors.combination_method}
@@ -647,7 +677,7 @@ export default function RequestPage(): React.ReactElement {
           <AutocompleteInput
             label={t('request.product_name_select')}
             value={detail.product_name_select}
-            options={OPTION_PRODUCT}
+            options={productOptions}
             onChange={(v) => handleDetailSet('product_name_select', v)}
             required
             error={errors.product_name_select}
@@ -657,7 +687,7 @@ export default function RequestPage(): React.ReactElement {
             label={t('request.cooking_method')}
             name="cooking_method"
             value={detail.cooking_method}
-            options={OPTION_COOKING}
+            options={cookingOptions}
             onChange={handleDetailChange}
             placeholder={t('request.select_placeholder')}
             className="flex-col"

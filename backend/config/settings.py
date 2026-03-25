@@ -23,7 +23,8 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'django_filters',
-    'api',
+    'django_apscheduler',
+    'api.apps.ApiConfig',
 ]
 
 MIDDLEWARE = [
@@ -123,6 +124,12 @@ EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@requestsite.com')
+
+# External DB (form options sync)
+EXTERNAL_DB_HOST = os.environ.get('EXTERNAL_DB_HOST', '')
+EXTERNAL_DB_PORT = os.environ.get('EXTERNAL_DB_PORT', '3306')
+EXTERNAL_DB_USER = os.environ.get('EXTERNAL_DB_USER', '')
+EXTERNAL_DB_PASSWORD = os.environ.get('EXTERNAL_DB_PASSWORD', '')
 
 # Approval email recipients
 APPROVAL_EMAIL_LIST = os.environ.get('APPROVAL_EMAIL_LIST', '').split(',')
