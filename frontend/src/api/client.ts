@@ -210,3 +210,25 @@ export const vocAPI = {
 export const linesAPI = {
   list: (): Promise<Line[]> => get<Line[]>('/lines/'),
 };
+
+// ===== 폼 옵션 API (조합법 / 제품이름 / 조리법) =====
+
+const getFormOptions = async (params: Record<string, string>): Promise<string[]> => {
+  const qs = '?' + new URLSearchParams(params).toString();
+  const data = await get<{ options: string[] }>(`/form-options/${qs}`);
+  return data.options ?? [];
+};
+
+export const formOptionsAPI = {
+  /** 라인 선택 후 조합법 목록 조회 */
+  getCombinations: (line: string) =>
+    getFormOptions({ line }),
+
+  /** 조합법 선택 후 제품이름 목록 조회 */
+  getProducts: (line: string, combination: string) =>
+    getFormOptions({ line, combination }),
+
+  /** 제품이름 선택 후 조리법 목록 조회 */
+  getCookingMethods: (line: string, combination: string, product: string) =>
+    getFormOptions({ line, combination, product }),
+};

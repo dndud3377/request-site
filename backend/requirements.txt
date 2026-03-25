@@ -7,3 +7,4 @@ python-dotenv==1.0.1
 mysqlclient==2.2.4
 django-filter==24.2
 gunicorn==22.0.0
+pandas==2.2.2

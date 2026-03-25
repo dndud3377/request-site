@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import RequestDocumentViewSet, VOCViewSet, LineViewSet
+from .views import RequestDocumentViewSet, VOCViewSet, LineViewSet, form_options_view
 from .auth_views import login_view, me_view
 
 router = DefaultRouter()
@@ -12,4 +12,5 @@ urlpatterns = [
     path('', include(router.urls)),
     path('auth/login/', login_view),
     path('auth/me/', me_view),
+    path('form-options/', form_options_view),
 ]
