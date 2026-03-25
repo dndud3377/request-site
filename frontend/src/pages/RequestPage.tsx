@@ -249,6 +249,19 @@ export default function RequestPage(): React.ReactElement {
   const [middleProductOptions, setMiddleProductOptions] = useState<string[]>([]);
   const [southProductOptions, setSouthProductOptions] = useState<string[]>([]);
 
+  const [step, setStep] = useState(1);
+  const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
+  const [detail, setDetail] = useState<DetailFormState>(INITIAL_DETAIL);
+  const [jayerRows, setJayerRows] = useState<JayerRow[]>([makeJayerRow()]);
+  const [oayerRows, setOayerRows] = useState<OayerRow[]>([makeOayerRow()]);
+  const [boneStewRows, setBoneStewRows] = useState<BoneStewTableRow[]>([makeBoneStewRow()]);
+  const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
+  const [saving, setSaving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [submitNote, setSubmitNote] = useState('');
+  const [savedId, setSavedId] = useState<number | null>(editDocId);
+
   useEffect(() => {
     linesAPI.list()
       .then((lines) => { if (lines.length > 0) setLineOptions(lines.map((l) => l.name)); })
@@ -269,7 +282,7 @@ export default function RequestPage(): React.ReactElement {
     setCookingOptions([]);
     setNorthProductOptions([]); setMiddleProductOptions([]); setSouthProductOptions([]);
     setDetail((prev) => ({ ...prev, combination_method: '', product_name_select: '', cooking_method: '' }));
-  }, [detail.line]);
+  }, [detail.line]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
   useEffect(() => {
@@ -289,19 +302,6 @@ export default function RequestPage(): React.ReactElement {
       .catch(() => setCookingOptions([]));
     setDetail((prev) => ({ ...prev, cooking_method: '' }));
   }, [detail.product_name_select]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const [step, setStep] = useState(1);
-  const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
-  const [detail, setDetail] = useState<DetailFormState>(INITIAL_DETAIL);
-  const [jayerRows, setJayerRows] = useState<JayerRow[]>([makeJayerRow()]);
-  const [oayerRows, setOayerRows] = useState<OayerRow[]>([makeOayerRow()]);
-  const [boneStewRows, setBoneStewRows] = useState<BoneStewTableRow[]>([makeBoneStewRow()]);
-  const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
-  const [saving, setSaving] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [submitNote, setSubmitNote] = useState('');
-  const [savedId, setSavedId] = useState<number | null>(editDocId);
 
   // 편집 모드: 기존 문서 데이터 로드
   useEffect(() => {
