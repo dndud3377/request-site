@@ -38,8 +38,11 @@ interface CFamilyRowProps {
   onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
   onSetValue: (name: string, value: string) => void;
   lineOptions: string[];
+  combinationOptions: string[];
+  productOptions: string[];
+  onCombinationChange: (region: CRegion, value: string) => void;
 }
-const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSetValue, lineOptions }) => {
+const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSetValue, lineOptions, combinationOptions, productOptions, onCombinationChange }) => {
   const { t } = useTranslation();
   const showSelects = region !== 'middle' || detail.c_family_middle_use === '사용';
   return (
@@ -72,14 +75,14 @@ const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSet
           <AutocompleteInput
             label={t('request.c_family_combination')}
             value={detail[`c_family_${region}_combination` as keyof DetailFormState] as string}
-            options={OPTION_COMBINATION}
-            onChange={(v) => onSetValue(`c_family_${region}_combination`, v)}
+            options={combinationOptions}
+            onChange={(v) => { onSetValue(`c_family_${region}_combination`, v); onCombinationChange(region, v); }}
             style={{ flex: 1 }}
           />
           <AutocompleteInput
             label={t('request.c_family_product')}
             value={detail[`c_family_${region}_product` as keyof DetailFormState] as string}
-            options={OPTION_PRODUCT}
+            options={productOptions}
             onChange={(v) => onSetValue(`c_family_${region}_product`, v)}
             style={{ flex: 1 }}
           />
@@ -242,6 +245,9 @@ export default function RequestPage(): React.ReactElement {
   const [combinationOptions, setCombinationOptions] = useState<string[]>([]);
   const [productOptions, setProductOptions] = useState<string[]>([]);
   const [cookingOptions, setCookingOptions] = useState<string[]>([]);
+  const [northProductOptions, setNorthProductOptions] = useState<string[]>([]);
+  const [middleProductOptions, setMiddleProductOptions] = useState<string[]>([]);
+  const [southProductOptions, setSouthProductOptions] = useState<string[]>([]);
 
   useEffect(() => {
     linesAPI.list()
@@ -249,14 +255,19 @@ export default function RequestPage(): React.ReactElement {
       .catch(() => { /* 폴백 유지 */ });
   }, []);
 
-  // 라인 변경 → 조합법 fetch + 하위 초기화
+  // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
   useEffect(() => {
-    if (!detail.line) { setCombinationOptions([]); setProductOptions([]); setCookingOptions([]); return; }
+    if (!detail.line) {
+      setCombinationOptions([]); setProductOptions([]); setCookingOptions([]);
+      setNorthProductOptions([]); setMiddleProductOptions([]); setSouthProductOptions([]);
+      return;
+    }
     formOptionsAPI.getCombinations(detail.line)
       .then(setCombinationOptions)
       .catch(() => setCombinationOptions([]));
     setProductOptions([]);
     setCookingOptions([]);
+    setNorthProductOptions([]); setMiddleProductOptions([]); setSouthProductOptions([]);
     setDetail((prev) => ({ ...prev, combination_method: '', product_name_select: '', cooking_method: '' }));
   }, [detail.line]);
 
@@ -329,6 +340,28 @@ export default function RequestPage(): React.ReactElement {
   const handleDetailSet = (name: string, value: string) => {
     setDetail((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
+  };
+
+  // C가문 리전별 조합법 변경 → 해당 리전 제품이름 fetch
+  const handleCFamilyCombinationChange = (region: CRegion, value: string) => {
+    if (!detail.line || !value) {
+      if (region === 'north') setNorthProductOptions([]);
+      else if (region === 'middle') setMiddleProductOptions([]);
+      else setSouthProductOptions([]);
+      return;
+    }
+    formOptionsAPI.getProducts(detail.line, value)
+      .then((opts) => {
+        if (region === 'north') setNorthProductOptions(opts);
+        else if (region === 'middle') setMiddleProductOptions(opts);
+        else setSouthProductOptions(opts);
+      })
+      .catch(() => {
+        if (region === 'north') setNorthProductOptions([]);
+        else if (region === 'middle') setMiddleProductOptions([]);
+        else setSouthProductOptions([]);
+      });
+    setDetail((prev) => ({ ...prev, [`c_family_${region}_product`]: '' }));
   };
 
   const handleRadioChange = (name: keyof DetailFormState, value: string) => {
@@ -806,9 +839,9 @@ export default function RequestPage(): React.ReactElement {
           </div>
           {isCFamily && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <CFamilyRow region="north"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} />
-              <CFamilyRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} />
-              <CFamilyRow region="south"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} />
+              <CFamilyRow region="north"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={northProductOptions}  onCombinationChange={handleCFamilyCombinationChange} />
+              <CFamilyRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={middleProductOptions} onCombinationChange={handleCFamilyCombinationChange} />
+              <CFamilyRow region="south"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={southProductOptions}  onCombinationChange={handleCFamilyCombinationChange} />
             </div>
           )}
         </div>
