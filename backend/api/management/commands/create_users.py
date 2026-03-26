@@ -37,12 +37,7 @@ class Command(BaseCommand):
         updated = 0
 
         for u in USERS:
-            try:
-                user = User.objects.get(username=u['username'])
-                is_new = False
-            except User.DoesNotExist:
-                user = User(pk=u['id'], username=u['username'])
-                is_new = True
+            user, is_new = User.objects.get_or_create(username=u['username'])
             user.email = u['email']
             user.set_password(PASSWORD)
             user.save()

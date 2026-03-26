@@ -1,5 +1,7 @@
 ARG IMAGE_PATH
 FROM ${IMAGE_PATH}python:3.11.0-slim
+# 사내 debian repository 사용을 위해 sources.list 복사
+COPY ./sources.list /etc/apt/sources.list
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -10,14 +12,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 ARG PIP_INDEX_URL
 ARG PIP_TRUSTED_HOST
+# ENV로 컨테이너 실행 시점에 사용할 환경변수 설정
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
 ENV PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
 COPY requirements.txt .
-RUN if [ -n "$PIP_INDEX_URL" ]; then \
-        pip install --no-cache-dir --index-url ${PIP_INDEX_URL} --trusted-host ${PIP_TRUSTED_HOST} -r requirements.txt; \
-    else \
-        pip install --no-cache-dir -r requirements.txt; \
-    fi
+RUN pip install --no-cache-dir --index-url ${PIP_INDEX_URL} --trusted-host ${PIP_TRUSTED_HOST} -r requirements.txt
 COPY . .
 RUN mkdir -p /app/staticfiles /app/media
 EXPOSE 8000
