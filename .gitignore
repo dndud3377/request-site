@@ -33,6 +33,7 @@ frontend/build/
 .env.development.local
 .env.test.local
 .env.production.local
+.env.dev
 
 # IDEs
 .idea/
@@ -43,3 +44,15 @@ frontend/build/
 
 # Docker
 *.override.yml
+
+# Nginx
+*nginx.conf
+
+# frontend
+*nginx-frontend.conf
+
+# Proxy configurations (REQUIRED)
+pip.conf
+sources.list
+.npmrc
+nginx.conf
