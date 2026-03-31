@@ -12,8 +12,6 @@ class ApiConfig(AppConfig):
         if os.environ.get('SKIP_SCHEDULER'):
             return
         if os.environ.get('RUN_MAIN') != 'true':
-            # Django dev server는 두 번 ready()를 호출하므로 RUN_MAIN 체크
-            # gunicorn 환경에서는 RUN_MAIN이 없으므로 무조건 실행
             # Django dev server 는 두 번 ready() 를 호출하므로 RUN_MAIN 체크
             # gunicorn 환경에서는 RUN_MAIN 이 없으므로 무조건 실행
             from . import scheduler
