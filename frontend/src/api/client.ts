@@ -101,3 +101,88 @@ const listDocuments = async (params?: Record<string, string>) => {
   }
   return { data };
 };
+
+const getDocument = async (id: number) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.get(id);
+  const data = await get<RequestDocument>(`/documents/${id}/`);
+  return { data };
+};
+
+const createDocument = async (input: CreateDocumentInput) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.create(input);
+  const data = await post<RequestDocument>('/documents/', input);
+  return { data };
+};
+
+const updateDocument = async (id: number, input: UpdateDocumentInput) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.update(id, input);
+  const data = await patch<RequestDocument>(`/documents/${id}/`, input);
+  return { data };
+};
+
+const submitDocument = async (id: number) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.submit(id);
+  const data = await post<{ message: string; email_sent: boolean; document: RequestDocument }>(
+    `/documents/${id}/submit/`
+  );
+  return { data };
+};
+
+const resubmitDocument = async (id: number) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.resubmit(id);
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${id}/resubmit/`
+  );
+  return { data };
+};
+
+const withdrawDocument = async (id: number) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.withdraw(id);
+  const data = await post<{ message: string }>(`/documents/${id}/withdraw/`);
+  return { data };
+};
+
+const deleteDocument = async (id: number) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.delete(id);
+  const data = await post<{ message: string }>(`/documents/${id}/delete/`);
+  return { data };
+};
+
+const approveStep = async (docId: number, agent: AgentType, comment?: string) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.approveStep(docId, agent, comment);
+  const data = await post<{ message: string; status: string }>(
+    `/documents/${docId}/approve-step/`,
+    { agent, comment: comment ?? '' }
+  );
+  return { data };
+};
+
+const rejectStep = async (docId: number, agent: AgentType, comment?: string) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.rejectStep(docId, agent, comment);
+  const data = await post<{ message: string; status: string }>(
+    `/documents/${docId}/reject-step/`,
+    { agent, comment: comment ?? '' }
+  );
+  return { data };
+};
+
+const assignStep = async (
+  docId: number,
+  agent: AgentType,
+  assigneeId: number,
+  assigneeName: string
+) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.assignStep(docId, agent, assigneeId, assigneeName);
+  const data = await post<{ message: string }>(`/documents/${docId}/assign-step/`, {
+    agent,
+    assignee_id: assigneeId,
+    assignee_name: assigneeName,
+  });
+  return { data };
+};
+
+const documentStats = async () => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.stats();
+  const data = await get<Stats>('/documents/stats/');
+  return { data };
+};
