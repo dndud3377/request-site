@@ -6,9 +6,9 @@ import { documentsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
-import { useAuth, ROLE_LABEL, MOCK_USERS } from '../contexts/AuthContext';
-import { canUserAgree, canUserAssign, ROLE_TO_AGENT } from '../components/ApprovalFlow';
+import { useAuth, MOCK_USERS } from '../contexts/AuthContext';
 import PagedDetailView from '../components/PagedDetailView';
+import { canUserAgree, canUserAssign, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType } from '../types';
 
 // ===== Utils =====
@@ -83,8 +83,13 @@ export default function ApprovalPage(): React.ReactElement {
     { key: 'rejected', label: t('approval.filter_rejected') },
   ];
 
-  const openDetail = (doc: RequestDocument) => {
-    setSelected(doc);
+  const openDetail = async (doc: RequestDocument) => {
+    try {
+      const detailResult = await documentsAPI.get(doc.id);
+      setSelected(detailResult.data);
+    } catch {
+      setSelected(doc);
+    }
     setPageIdx(0);
     setAssigningOpen(false);
     setAssigningUserId('');
@@ -150,18 +155,46 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
-  const handleWithdraw = async (doc: RequestDocument) => {
-    if (!window.confirm(t('approval.withdraw_confirm'))) return;
+  // 철회 모달 상태
+  const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
+  const [withdrawDoc, setWithdrawDoc] = useState<RequestDocument | null>(null);
+
+  const handleWithdrawClick = (doc: RequestDocument) => {
+    setWithdrawDoc(doc);
+    setWithdrawModalOpen(true);
+  };
+
+  const handleWithdrawToDraft = async () => {
+    if (!withdrawDoc) return;
     setProcessing(true);
     try {
-      await documentsAPI.withdraw(doc.id);
+      await documentsAPI.withdraw(withdrawDoc.id);
       addToast(t('approval.withdraw_success'), 'success');
+      setWithdrawModalOpen(false);
       setModalOpen(false);
       fetchDocs();
     } catch {
       addToast(t('common.process_error'), 'error');
     } finally {
       setProcessing(false);
+      setWithdrawDoc(null);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!withdrawDoc) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.delete(withdrawDoc.id);
+      addToast('의뢰서가 삭제되었습니다.', 'success');
+      setWithdrawModalOpen(false);
+      setModalOpen(false);
+      fetchDocs();
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+      setWithdrawDoc(null);
     }
   };
 
@@ -249,13 +282,13 @@ export default function ApprovalPage(): React.ReactElement {
                   <td>{formatDate(doc.submitted_at)}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {(isPL || isMaster) && doc.status === 'rejected' && (
+                      {(isPL || isMaster) && (doc.status === 'rejected' || doc.status === 'draft') && (
                         <button className="btn btn-primary btn-sm" onClick={() => handleEditResubmit(doc)}>
                           {t('approval.edit_resubmit')}
                         </button>
                       )}
-                      {(isPL || isMaster) && (doc.status === 'under_review' || doc.status === 'rejected') && (
-                        <button className="btn btn-secondary btn-sm" onClick={() => handleWithdraw(doc)} disabled={processing}>
+                      {(isPL || isMaster) && (doc.status === 'under_review' || doc.status === 'rejected' || doc.status === 'draft') && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => handleWithdrawClick(doc)} disabled={processing}>
                           {t('approval.withdraw')}
                         </button>
                       )}
@@ -307,6 +340,60 @@ export default function ApprovalPage(): React.ReactElement {
         </Modal>
       )}
 
+      {/* 철회/삭제 선택 모달 */}
+      {withdrawModalOpen && (
+        <Modal
+          isOpen={withdrawModalOpen}
+          onClose={() => { setWithdrawModalOpen(false); setWithdrawDoc(null); }}
+          title="철회 방식 선택"
+          size="md"
+          topLevel
+          footer={
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={handleWithdrawToDraft}
+                disabled={processing}
+              >
+                임시저장
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={handleDelete}
+                disabled={processing}
+              >
+                삭제
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => { setWithdrawModalOpen(false); setWithdrawDoc(null); }}
+                disabled={processing}
+              >
+                취소
+              </button>
+            </div>
+          }
+        >
+          <div>
+            <p style={{ fontSize: '0.95rem', color: 'var(--text-secondary)', marginBottom: 8 }}>
+              의뢰서를 철회하는 방식을 선택해주세요.
+            </p>
+            <div style={{ background: 'var(--bg-secondary)', padding: '12px', borderRadius: 'var(--radius-sm)', marginTop: 12 }}>
+              <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 8 }}>📝 임시저장</p>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+                의뢰서가 임시저장 상태로 돌아갑니다. 이후 수정하여 재상신할 수 있습니다.
+              </p>
+            </div>
+            <div style={{ background: '#fff0f0', padding: '12px', borderRadius: 'var(--radius-sm)', marginTop: 8 }}>
+              <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#dc3545', marginBottom: 8 }}>🗑️ 삭제</p>
+              <p style={{ fontSize: '0.8rem', color: '#dc3545', margin: 0 }}>
+                의뢰서가 완전히 삭제됩니다. 복구할 수 없습니다.
+              </p>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {/* 상세 모달 */}
       <Modal
         isOpen={modalOpen}
@@ -325,13 +412,13 @@ export default function ApprovalPage(): React.ReactElement {
             : [];
           return (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
-              {selected && (isPL || isMaster) && selected.status === 'rejected' && (
+              {selected && (isPL || isMaster) && (selected.status === 'rejected' || selected.status === 'draft') && (
                 <button className="btn btn-primary" onClick={() => handleEditResubmit(selected)}>
                   {t('approval.edit_resubmit')}
                 </button>
               )}
-              {selected && (isPL || isMaster) && (selected.status === 'under_review' || selected.status === 'rejected') && (
-                <button className="btn btn-secondary" onClick={() => handleWithdraw(selected)} disabled={processing}>
+              {selected && (isPL || isMaster) && (selected.status === 'under_review' || selected.status === 'rejected' || selected.status === 'draft') && (
+                <button className="btn btn-secondary" onClick={() => handleWithdrawClick(selected)} disabled={processing}>
                   {t('approval.withdraw')}
                 </button>
               )}
@@ -405,11 +492,6 @@ export default function ApprovalPage(): React.ReactElement {
       >
         {selected && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* 현재 역할 표시 */}
-            <div style={{ background: 'var(--accent-light)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 600 }}>
-              {t('approval.current_role')} {ROLE_LABEL[currentUser.role]} ({currentUser.name})
-            </div>
-
             {/* 상태 + 합의/반려 이유 */}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
               <StatusBadge status={selected.status} />

@@ -1,9 +1,13 @@
 from django.utils import timezone
+from django.http import JsonResponse
+from django.views.decorators.http import require_GET
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
+from django.db import connection
+
 
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
@@ -175,6 +179,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='assign-step')
     def assign_step(self, request, pk=None):
         """에이전트 단계 담당자 지정"""
+        from django.contrib.auth.models import User
+
         document = self.get_object()
         agent = request.data.get('agent')
         assignee_id = request.data.get('assignee_id')
@@ -187,7 +193,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '해당 단계를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if assignee_id:
-            step.assignee_id = assignee_id
+            try:
+                assignee_user = User.objects.get(id=assignee_id)
+                step.assignee = assignee_user
+            except User.DoesNotExist:
+                return Response({'error': '사용자를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
         step.assignee_name = assignee_name
         step.save()
 
@@ -202,71 +213,3 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             by_status[key] = RequestDocument.objects.filter(status=key).count()
 
         return Response({'total': total, 'by_status': by_status})
-
-
-class VOCViewSet(viewsets.ModelViewSet):
-    queryset = VOC.objects.all()
-    serializer_class = VOCSerializer
-    permission_classes = [AllowAny]
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['category', 'status']
-    search_fields = ['title', 'submitter_name', 'content']
-    ordering = ['-created_at']
-
-
-class LineViewSet(viewsets.ReadOnlyModelViewSet):
-    """라인 마스터 데이터 (읽기 전용)"""
-    queryset = Line.objects.filter(is_active=True)
-    serializer_class = LineSerializer
-    permission_classes = [AllowAny]
-    pagination_class = None
-
-
-@require_GET
-def form_options_combinations(request):
-    """라인 → 조합법 목록"""
-    line = request.GET.get('line', '')
-    if not line:
-        return JsonResponse({'options': []})
-    options = list(
-        CombinationProduct.objects
-        .filter(line=line)
-        .values_list('combination', flat=True)
-        .distinct()
-        .order_by('combination')
-    )
-    return JsonResponse({'options': options})
-
-
-@require_GET
-def form_options_products(request):
-    """라인 + 조합법 → 제품이름 목록"""
-    line = request.GET.get('line', '')
-    combination = request.GET.get('combination', '')
-    if not line or not combination:
-        return JsonResponse({'options': []})
-    options = list(
-        CombinationProduct.objects
-        .filter(line=line, combination=combination)
-        .values_list('product_name', flat=True)
-        .distinct()
-        .order_by('product_name')
-    )
-    return JsonResponse({'options': options})
-
-
-@require_GET
-def form_options_cooking(request):
-    """라인 + 제품이름 → 조리법 목록"""
-    line = request.GET.get('line', '')
-    product = request.GET.get('product', '')
-    if not line or not product:
-        return JsonResponse({'options': []})
-    options = list(
-        ProductCooking.objects
-        .filter(line=line, product_name=product)
-        .values_list('cooking_method', flat=True)
-        .distinct()
-        .order_by('cooking_method')
-    )
-    return JsonResponse({'options': options})
