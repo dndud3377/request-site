@@ -242,3 +242,42 @@ docker compose exec backend python manage.py sync_form_options_manual
 | `MASTER` | 전체 열람 및 관리 |
 
 결재 흐름: `PL 제출 → TE_R → TE_J + TE_O (병렬) → TE_E → 승인`
+
+---
+
+## 백엔드 연동 현황 (VITE_USE_MOCK=false 전환 관련)
+
+> main 브랜치에는 없지만 실제 운영 브랜치에 구현된 코드의 현황을 기록한다.
+> Claude가 main 브랜치만 분석하면 "미구현"으로 오탐할 수 있으므로 이 문서를 참고할 것.
+
+### #1 — urls.py import 대상 구현 여부
+
+`backend/api/urls.py`에서 import 하는 모든 뷰/함수는 **구현되어 있음**.
+
+**`backend/api/views.py`:**
+
+| import 대상 | 상태 |
+|---|---|
+| `VOCViewSet` | ✅ 구현됨 |
+| `LineViewSet` | ✅ 구현됨 |
+| `form_options_combinations` | ✅ 구현됨 |
+| `form_options_products` | ✅ 구현됨 |
+| `form_options_cooking` | ✅ 구현됨 |
+| `form_options_step_info` | ✅ 구현됨 |
+
+**`backend/api/models.py`:**
+
+| 모델 | 상태 |
+|---|---|
+| `VOC` | ✅ 구현됨 |
+| `Line` | ✅ 구현됨 |
+| `CombinationProduct` | ✅ 구현됨 |
+| `ProductCooking` | ✅ 구현됨 |
+| `StepInfo` | ✅ 구현됨 |
+
+**`backend/api/serializers.py`:**
+
+| 시리얼라이저 | 상태 |
+|---|---|
+| `VOCSerializer` | ✅ 구현됨 |
+| `LineSerializer` | ✅ 구현됨 |
