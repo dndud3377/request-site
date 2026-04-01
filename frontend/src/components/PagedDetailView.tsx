@@ -211,6 +211,8 @@ type Page = { label: string; content: React.ReactNode };
       label: t('request.section_detail'),
       content: (
         <div>
+          {PLBasicSection}
+
           <div style={cardStyle}>
             <div style={sectionTitle}>{t('approval.section_basic')}</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
