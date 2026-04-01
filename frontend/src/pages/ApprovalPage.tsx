@@ -83,8 +83,13 @@ export default function ApprovalPage(): React.ReactElement {
     { key: 'rejected', label: t('approval.filter_rejected') },
   ];
 
-  const openDetail = (doc: RequestDocument) => {
-    setSelected(doc);
+  const openDetail = async (doc: RequestDocument) => {
+    try {
+      const detailResult = await documentsAPI.get(doc.id);
+      setSelected(detailResult.data);
+    } catch {
+      setSelected(doc);
+    }
     setPageIdx(0);
     setAssigningOpen(false);
     setAssigningUserId('');
