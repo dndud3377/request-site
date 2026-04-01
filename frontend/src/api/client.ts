@@ -186,3 +186,79 @@ const documentStats = async () => {
   const data = await get<Stats>('/documents/stats/');
   return { data };
 };
+
+export const documentsAPI = {
+  list: listDocuments,
+  get: getDocument,
+  create: createDocument,
+  update: updateDocument,
+  submit: submitDocument,
+  resubmit: resubmitDocument,
+  withdraw: withdrawDocument,
+  delete: deleteDocument,
+  approveStep,
+  rejectStep,
+  assignStep,
+  stats: documentStats,
+};
+
+// ===== VOC API =====
+
+const listVocs = async (params?: Record<string, string>) => {
+  if (useMockAPI && mockVocAPI) return mockVocAPI.list(params);
+  const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+  const data = await get<{ results: VOC[]; count: number } | VOC[]>(`/voc/${qs}`);
+  if (Array.isArray(data)) {
+    return { data: { results: data, count: data.length } };
+  }
+  return { data };
+};
+
+const createVoc = async (input: CreateVocInput) => {
+  if (useMockAPI && mockVocAPI) return mockVocAPI.create(input);
+  const data = await post<VOC>('/voc/', input);
+  return { data };
+};
+
+const getVoc = async (id: number) => {
+  if (useMockAPI && mockVocAPI) return mockVocAPI.get(id);
+  const data = await get<VOC>(`/voc/${id}/`);
+  return { data };
+};
+
+export const vocAPI = {
+  list: listVocs,
+  create: createVoc,
+  get: getVoc,
+};
+
+// ===== 라인 API =====
+
+export const linesAPI = {
+  list: (): Promise<Line[]> => get<Line[]>('/lines/'),
+};
+
+// ===== 폼 옵션 API =====
+
+const getOptions = (url: string): Promise<string[]> =>
+  get<{ options: string[] }>(url).then((r) => r.options);
+
+export const formOptionsAPI = {
+  getCombinations: (line: string): Promise<string[]> =>
+    getOptions(`/form-options/combinations/?line=${encodeURIComponent(line)}`),
+
+  getProducts: (line: string, combination?: string): Promise<string[]> => {
+    const params = new URLSearchParams({ line });
+    if (combination) {
+      params.append('combination', combination);
+    }
+    return getOptions(`/form-options/products/?${params.toString()}`);
+  },
+
+  getCooking: (line: string, product: string): Promise<string[]> =>
+    getOptions(`/form-options/cooking/?line=${encodeURIComponent(line)}&product=${encodeURIComponent(product)}`),
+
+  getStepInfo: (line: string, process: string): Promise<StepInfo[]> =>
+    get<{ options: StepInfo[] }>(`/form-options/step-info/?line=${encodeURIComponent(line)}&process=${encodeURIComponent(process)}`)
+      .then((r) => r.options || []),
+};
