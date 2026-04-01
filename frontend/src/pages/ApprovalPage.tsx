@@ -155,18 +155,46 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
-  const handleWithdraw = async (doc: RequestDocument) => {
-    if (!window.confirm(t('approval.withdraw_confirm'))) return;
+  // 철회 모달 상태
+  const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
+  const [withdrawDoc, setWithdrawDoc] = useState<RequestDocument | null>(null);
+
+  const handleWithdrawClick = (doc: RequestDocument) => {
+    setWithdrawDoc(doc);
+    setWithdrawModalOpen(true);
+  };
+
+  const handleWithdrawToDraft = async () => {
+    if (!withdrawDoc) return;
     setProcessing(true);
     try {
-      await documentsAPI.withdraw(doc.id);
+      await documentsAPI.withdraw(withdrawDoc.id);
       addToast(t('approval.withdraw_success'), 'success');
+      setWithdrawModalOpen(false);
       setModalOpen(false);
       fetchDocs();
     } catch {
       addToast(t('common.process_error'), 'error');
     } finally {
       setProcessing(false);
+      setWithdrawDoc(null);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!withdrawDoc) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.delete(withdrawDoc.id);
+      addToast('의뢰서가 삭제되었습니다.', 'success');
+      setWithdrawModalOpen(false);
+      setModalOpen(false);
+      fetchDocs();
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+      setWithdrawDoc(null);
     }
   };
 
