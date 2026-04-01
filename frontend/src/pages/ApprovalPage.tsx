@@ -282,13 +282,13 @@ export default function ApprovalPage(): React.ReactElement {
                   <td>{formatDate(doc.submitted_at)}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {(isPL || isMaster) && doc.status === 'rejected' && (
+                      {(isPL || isMaster) && (doc.status === 'rejected' || doc.status === 'draft') && (
                         <button className="btn btn-primary btn-sm" onClick={() => handleEditResubmit(doc)}>
                           {t('approval.edit_resubmit')}
                         </button>
                       )}
-                      {(isPL || isMaster) && (doc.status === 'under_review' || doc.status === 'rejected') && (
-                        <button className="btn btn-secondary btn-sm" onClick={() => handleWithdraw(doc)} disabled={processing}>
+                      {(isPL || isMaster) && (doc.status === 'under_review' || doc.status === 'rejected' || doc.status === 'draft') && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => handleWithdrawClick(doc)} disabled={processing}>
                           {t('approval.withdraw')}
                         </button>
                       )}
