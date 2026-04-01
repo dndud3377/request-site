@@ -203,28 +203,14 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   const xMarkIsDelete = xMarkChange === '삭제';
   const isAnniversary = detail.anniversary_20 === 'Yes';
 
-  const PLBasicSection = isPL ? (
-    <div style={cardStyle}>
-      <div style={sectionTitle}>{t('approval.section_request_info')}</div>
-      <div style={rowStyle}>
-        <Chip label={t('approval.label_requester')} value={doc.requester_name} />
-        <Chip label={t('approval.label_department')} value={doc.requester_department} />
-        <Chip label={t('approval.label_email')} value={doc.requester_email} style={chipWide} />
-      </div>
-      <div style={rowStyle}>
-        <Chip label={t('approval.label_product_name')} value={doc.product_name} />
-      </div>
-    </div>
-  ) : null;
+  const PLBasicSection = null;
 
-  type Page = { label: string; content: React.ReactNode };
+type Page = { label: string; content: React.ReactNode };
   const pages: Page[] = [
     {
       label: t('request.section_detail'),
       content: (
         <div>
-          {PLBasicSection}
-
           <div style={cardStyle}>
             <div style={sectionTitle}>{t('approval.section_basic')}</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
