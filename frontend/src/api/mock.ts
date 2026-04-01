@@ -454,6 +454,7 @@ export const mockDocumentsAPI = {
   submit: mockSubmitDocument,
   resubmit: mockResubmitDocument,
   withdraw: mockWithdrawDocument,
+  delete: mockDeleteDocument,
   rejectStep: mockRejectStep,
   stats: mockDocumentStats,
   approveStep: mockApproveStep,
