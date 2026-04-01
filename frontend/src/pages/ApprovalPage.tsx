@@ -6,9 +6,9 @@ import { documentsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
-import { useAuth, ROLE_LABEL, MOCK_USERS } from '../contexts/AuthContext';
-import { canUserAgree, canUserAssign, ROLE_TO_AGENT } from '../components/ApprovalFlow';
+import { useAuth, MOCK_USERS } from '../contexts/AuthContext';
 import PagedDetailView from '../components/PagedDetailView';
+import { canUserAgree, canUserAssign, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType } from '../types';
 
 // ===== Utils =====
