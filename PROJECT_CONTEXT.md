@@ -281,3 +281,10 @@ docker compose exec backend python manage.py sync_form_options_manual
 |---|---|
 | `VOCSerializer` | ✅ 구현됨 |
 | `LineSerializer` | ✅ 구현됨 |
+
+### #4 — AuthContext 인증 방식 (미결정)
+
+현재: 앱 시작 시 `MOCK_USERS[0]` 자격증명으로 자동 로그인 시도.
+→ 실제 백엔드에 해당 유저가 없으면 이후 모든 API 인증 실패.
+
+**상태: later** — 로그인 페이지 도입 vs 유저 스위처 유지 방향 미결정. 추후 재논의.
