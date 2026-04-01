@@ -412,13 +412,13 @@ export default function ApprovalPage(): React.ReactElement {
             : [];
           return (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
-              {selected && (isPL || isMaster) && selected.status === 'rejected' && (
+              {selected && (isPL || isMaster) && (selected.status === 'rejected' || selected.status === 'draft') && (
                 <button className="btn btn-primary" onClick={() => handleEditResubmit(selected)}>
                   {t('approval.edit_resubmit')}
                 </button>
               )}
-              {selected && (isPL || isMaster) && (selected.status === 'under_review' || selected.status === 'rejected') && (
-                <button className="btn btn-secondary" onClick={() => handleWithdraw(selected)} disabled={processing}>
+              {selected && (isPL || isMaster) && (selected.status === 'under_review' || selected.status === 'rejected' || selected.status === 'draft') && (
+                <button className="btn btn-secondary" onClick={() => handleWithdrawClick(selected)} disabled={processing}>
                   {t('approval.withdraw')}
                 </button>
               )}
@@ -492,11 +492,6 @@ export default function ApprovalPage(): React.ReactElement {
       >
         {selected && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* 현재 역할 표시 */}
-            <div style={{ background: 'var(--accent-light)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 600 }}>
-              {t('approval.current_role')} {ROLE_LABEL[currentUser.role]} ({currentUser.name})
-            </div>
-
             {/* 상태 + 합의/반려 이유 */}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
               <StatusBadge status={selected.status} />
