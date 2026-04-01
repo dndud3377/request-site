@@ -107,6 +107,47 @@ Docker Compose 서비스: `db`, `backend`, `frontend`, `nginx`
 
 ---
 
+## `backend/api/scheduler.py`
+
+```python
+# 역할: Big Data 를 사용하여 폼 옵션 데이터 (조합법 - 제품 이름, 제품 이름 - 조리법) 를 주기적으로 동기화하는 스케줄러
+
+# 라인 2 제외 (테이블 없음)
+LINES = ['라인 1', '라인 3', '라인 4', '라인 5']
+LINE_SUFFIX_MAP = {
+    '라인 1': '라인1',
+    '라인 3': '라인3',
+    '라인 4': '라인4',
+    '라인 5': '라인5',
+}
+
+# 동기화 데이터
+# 1. 조합법-제품 이름: {suffix}_map → api_combinationproduct
+# 2. 제품 이름-조리법: {suffix}_map → api_productcooking
+
+# 필요 이유: bigdata 데이터베이스의 최신 조합법/제품이름/조리법 정보를 Django 애플리케이션의 폼 옵션으로 제공하기 위해 주기적 또는 수동으로 동기화 필요
+
+# 실행 방식:
+#   - APScheduler 를 사용한 백그라운드 스케줄러
+#   - 1 시간 주기 (IntervalTrigger(hours=1)) 로 자동 실행
+#   - 스케줄러 시작 시 즉시 1 회 실행
+#   - start() 함수 호출로 스케줄러 등록 및 시작
+
+# 환경 변수 요구사항:
+#   ID: bigdata 계정 ID
+#   PASSWORD: 비밀번호 (JSON pack 또는 문자열)
+#   MYSQL_USER, MYSQL_PASSWORD, MYSQL_HOST, MYSQL_PORT, MYSQL_DB: Django DB 연결 정보
+
+# 주요 함수:
+#   - bd_login(): bigdata 로그인
+#   - login_with_retry(): 여러 비밀번호로 재시도 로그인
+#   - get_data_from_bd(): bigdata 를 사용하여 데이터 조회 (DataFrame 반환)
+#   - sync_form_options(): 실제 동기화 수행 (각 라인별 데이터 삭제 후 추가)
+#   - start(): 스케줄러 등록 및 시작
+```
+
+---
+
 ## `backend/api/management/commands/sync_form_options_manual.py`
 
 **역할**: bigdata를 사용하여 폼 옵션 데이터(조합법-제품 이름, 제품 이름-조리법)를 수동으로 동기화하는 Django 관리 명령어

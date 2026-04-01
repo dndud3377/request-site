@@ -208,3 +208,24 @@ class VOC(models.Model):
 
     def __str__(self):
         return f"[{self.status}] {self.title}"
+
+
+class StepInfo(models.Model):
+    """big data에서 실시간 조회되는 STEP 정보 (J-ayer 정보 채움용)"""
+    line = models.CharField(max_length=50, verbose_name='라인')
+    cooking_method = models.CharField(max_length=200, verbose_name='조리법')
+    cooking_methodid = models.CharField(max_length=200, verbose_name='조리법 ID')
+    step = models.CharField(max_length=200, verbose_name='단계')
+    combination = models.CharField(max_length=200, verbose_name='조합법')
+    recipeid = models.CharField(max_length=200, verbose_name='레시피')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='조회 시각')
+
+    class Meta:
+        verbose_name = '단계 정보'
+        verbose_name_plural = '단계 정보 목록'
+        indexes = [
+            models.Index(fields=['line', 'process']),
+        ]
+
+    def __str__(self):
+        return f"{self.line} / {self.process} / {self.processid} / {self.stepseq}"
