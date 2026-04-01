@@ -7,7 +7,14 @@ import {
   UpdateDocumentInput,
   CreateVocInput,
   AgentType,
+  StepInfo,
 } from '../types';
+import { mockDocumentsAPI, mockVocAPI } from './mock';
+
+// ===== Mock API 여부 확인 =====
+// Vite 환경 변수: VITE_USE_MOCK=true 설정 시 Mock API 사용
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
+const useMockAPI = USE_MOCK;
 
 // ===== JWT 토큰 관리 =====
 
@@ -84,11 +91,11 @@ export const authAPI = {
 // ===== 의뢰서 API =====
 
 const listDocuments = async (params?: Record<string, string>) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.list(params);
   const qs = params ? '?' + new URLSearchParams(params).toString() : '';
   const data = await get<{ results: RequestDocument[]; count: number } | RequestDocument[]>(
     `/documents/${qs}`
   );
-  // DRF pagination or plain array
   if (Array.isArray(data)) {
     return { data: { results: data, count: data.length } };
   }
@@ -96,21 +103,25 @@ const listDocuments = async (params?: Record<string, string>) => {
 };
 
 const getDocument = async (id: number) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.get(id);
   const data = await get<RequestDocument>(`/documents/${id}/`);
   return { data };
 };
 
 const createDocument = async (input: CreateDocumentInput) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.create(input);
   const data = await post<RequestDocument>('/documents/', input);
   return { data };
 };
 
 const updateDocument = async (id: number, input: UpdateDocumentInput) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.update(id, input);
   const data = await patch<RequestDocument>(`/documents/${id}/`, input);
   return { data };
 };
 
 const submitDocument = async (id: number) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.submit(id);
   const data = await post<{ message: string; email_sent: boolean; document: RequestDocument }>(
     `/documents/${id}/submit/`
   );
@@ -118,6 +129,7 @@ const submitDocument = async (id: number) => {
 };
 
 const resubmitDocument = async (id: number) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.resubmit(id);
   const data = await post<{ message: string; document: RequestDocument }>(
     `/documents/${id}/resubmit/`
   );
@@ -125,11 +137,19 @@ const resubmitDocument = async (id: number) => {
 };
 
 const withdrawDocument = async (id: number) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.withdraw(id);
   const data = await post<{ message: string }>(`/documents/${id}/withdraw/`);
   return { data };
 };
 
+const deleteDocument = async (id: number) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.delete(id);
+  const data = await post<{ message: string }>(`/documents/${id}/delete/`);
+  return { data };
+};
+
 const approveStep = async (docId: number, agent: AgentType, comment?: string) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.approveStep(docId, agent, comment);
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/approve-step/`,
     { agent, comment: comment ?? '' }
@@ -138,6 +158,7 @@ const approveStep = async (docId: number, agent: AgentType, comment?: string) =>
 };
 
 const rejectStep = async (docId: number, agent: AgentType, comment?: string) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.rejectStep(docId, agent, comment);
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/reject-step/`,
     { agent, comment: comment ?? '' }
@@ -151,6 +172,7 @@ const assignStep = async (
   assigneeId: number,
   assigneeName: string
 ) => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.assignStep(docId, agent, assigneeId, assigneeName);
   const data = await post<{ message: string }>(`/documents/${docId}/assign-step/`, {
     agent,
     assignee_id: assigneeId,
@@ -160,6 +182,7 @@ const assignStep = async (
 };
 
 const documentStats = async () => {
+  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.stats();
   const data = await get<Stats>('/documents/stats/');
   return { data };
 };
@@ -172,6 +195,7 @@ export const documentsAPI = {
   submit: submitDocument,
   resubmit: resubmitDocument,
   withdraw: withdrawDocument,
+  delete: deleteDocument,
   approveStep,
   rejectStep,
   assignStep,
@@ -181,6 +205,7 @@ export const documentsAPI = {
 // ===== VOC API =====
 
 const listVocs = async (params?: Record<string, string>) => {
+  if (useMockAPI && mockVocAPI) return mockVocAPI.list(params);
   const qs = params ? '?' + new URLSearchParams(params).toString() : '';
   const data = await get<{ results: VOC[]; count: number } | VOC[]>(`/voc/${qs}`);
   if (Array.isArray(data)) {
@@ -190,11 +215,13 @@ const listVocs = async (params?: Record<string, string>) => {
 };
 
 const createVoc = async (input: CreateVocInput) => {
+  if (useMockAPI && mockVocAPI) return mockVocAPI.create(input);
   const data = await post<VOC>('/voc/', input);
   return { data };
 };
 
 const getVoc = async (id: number) => {
+  if (useMockAPI && mockVocAPI) return mockVocAPI.get(id);
   const data = await get<VOC>(`/voc/${id}/`);
   return { data };
 };
@@ -220,9 +247,18 @@ export const formOptionsAPI = {
   getCombinations: (line: string): Promise<string[]> =>
     getOptions(`/form-options/combinations/?line=${encodeURIComponent(line)}`),
 
-  getProducts: (line: string, combination: string): Promise<string[]> =>
-    getOptions(`/form-options/products/?line=${encodeURIComponent(line)}&combination=${encodeURIComponent(combination)}`),
+  getProducts: (line: string, combination?: string): Promise<string[]> => {
+    const params = new URLSearchParams({ line });
+    if (combination) {
+      params.append('combination', combination);
+    }
+    return getOptions(`/form-options/products/?${params.toString()}`);
+  },
 
   getCooking: (line: string, product: string): Promise<string[]> =>
     getOptions(`/form-options/cooking/?line=${encodeURIComponent(line)}&product=${encodeURIComponent(product)}`),
+
+  getStepInfo: (line: string, process: string): Promise<StepInfo[]> =>
+    get<{ options: StepInfo[] }>(`/form-options/step-info/?line=${encodeURIComponent(line)}&process=${encodeURIComponent(process)}`)
+      .then((r) => r.options || []),
 };

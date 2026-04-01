@@ -303,6 +303,15 @@ const mockWithdrawDocument = async (id: number) => {
   return { data: { message: '철회되었습니다.' } };
 };
 
+// 삭제: 문서 완전 삭제
+const mockDeleteDocument = async (id: number) => {
+  await delay(300);
+  const docIndex = documents.findIndex((d) => d.id === id);
+  if (docIndex === -1) throw new Error(`Document ${id} not found`);
+  documents.splice(docIndex, 1);
+  return { data: { message: '삭제되었습니다.' } };
+};
+
 const mockApproveStep = async (docId: number, agent: AgentType, comment?: string) => {
   await delay();
   const doc = documents.find((d) => d.id === docId);
@@ -445,6 +454,7 @@ export const mockDocumentsAPI = {
   submit: mockSubmitDocument,
   resubmit: mockResubmitDocument,
   withdraw: mockWithdrawDocument,
+  delete: mockDeleteDocument,
   rejectStep: mockRejectStep,
   stats: mockDocumentStats,
   approveStep: mockApproveStep,
