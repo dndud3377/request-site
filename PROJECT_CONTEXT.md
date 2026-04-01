@@ -107,6 +107,40 @@ Docker Compose 서비스: `db`, `backend`, `frontend`, `nginx`
 
 ---
 
+## `backend/api/management/commands/sync_form_options_manual.py`
+
+**역할**: bigdata를 사용하여 폼 옵션 데이터(조합법-제품 이름, 제품 이름-조리법)를 수동으로 동기화하는 Django 관리 명령어
+
+**형식**:
+```python
+# 라인 2 제외 (테이블 없음)
+LINES = ['라인 1', '라인 3', '라인 4', '라인 5']
+LINE_SUFFIX_MAP = {
+    '라인 1': '라인1',
+    '라인 3': '라인3',
+    '라인 4': '라인4',
+    '라인 5': '라인5',
+}
+
+# 동기화 데이터
+# 1. 조합법-제품 이름: {suffix}_map → api_combinationproduct
+# 2. 제품 이름-조리법: {suffix}_map → api_productcooking
+```
+
+**필요 이유**: bigdata 데이터베이스의 최신 조합법/제품이름/조리법 정보를 Django 애플리케이션의 폼 옵션으로 제공하기 위해 주기적 또는 수동으로 동기화 필요
+
+**실행 방법**:
+```bash
+docker compose exec backend python manage.py sync_form_options_manual
+```
+
+**환경 변수 요구사항**:
+- `ID`: bigdata 계정 ID
+- `PASSWORD`: 비밀번호
+- `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_DB`: Django DB 연결 정보
+
+---
+
 ## 환경변수 요약 (`.env.example` 기준)
 
 | 변수 | 설명 |
