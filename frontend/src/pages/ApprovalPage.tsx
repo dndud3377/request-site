@@ -340,6 +340,60 @@ export default function ApprovalPage(): React.ReactElement {
         </Modal>
       )}
 
+      {/* 철회/삭제 선택 모달 */}
+      {withdrawModalOpen && (
+        <Modal
+          isOpen={withdrawModalOpen}
+          onClose={() => { setWithdrawModalOpen(false); setWithdrawDoc(null); }}
+          title="철회 방식 선택"
+          size="md"
+          topLevel
+          footer={
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={handleWithdrawToDraft}
+                disabled={processing}
+              >
+                임시저장
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={handleDelete}
+                disabled={processing}
+              >
+                삭제
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => { setWithdrawModalOpen(false); setWithdrawDoc(null); }}
+                disabled={processing}
+              >
+                취소
+              </button>
+            </div>
+          }
+        >
+          <div>
+            <p style={{ fontSize: '0.95rem', color: 'var(--text-secondary)', marginBottom: 8 }}>
+              의뢰서를 철회하는 방식을 선택해주세요.
+            </p>
+            <div style={{ background: 'var(--bg-secondary)', padding: '12px', borderRadius: 'var(--radius-sm)', marginTop: 12 }}>
+              <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 8 }}>📝 임시저장</p>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+                의뢰서가 임시저장 상태로 돌아갑니다. 이후 수정하여 재상신할 수 있습니다.
+              </p>
+            </div>
+            <div style={{ background: '#fff0f0', padding: '12px', borderRadius: 'var(--radius-sm)', marginTop: 8 }}>
+              <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#dc3545', marginBottom: 8 }}>🗑️ 삭제</p>
+              <p style={{ fontSize: '0.8rem', color: '#dc3545', margin: 0 }}>
+                의뢰서가 완전히 삭제됩니다. 복구할 수 없습니다.
+              </p>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {/* 상세 모달 */}
       <Modal
         isOpen={modalOpen}
