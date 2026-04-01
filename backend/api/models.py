@@ -211,7 +211,7 @@ class VOC(models.Model):
 
 
 class StepInfo(models.Model):
-    """BDQ 에서 실시간 조회되는 STEP 정보 (J-ayer 정보 채움용)"""
+    """big data에서 실시간 조회되는 STEP 정보 (J-ayer 정보 채움용)"""
     line = models.CharField(max_length=50, verbose_name='라인')
     cooking_method = models.CharField(max_length=200, verbose_name='조리법')
     cooking_methodid = models.CharField(max_length=200, verbose_name='조리법 ID')
