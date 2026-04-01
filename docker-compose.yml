@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   db:
     image: ${CONTAINER_IMAGE}
@@ -13,7 +11,7 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER:-requestuser}", "-p${MYSQL_PASSWORD:-requestpass}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,13 +24,34 @@ services:
         IMAGE_PATH: ${IMAGE_PATH}
         PIP_INDEX_URL: ${PIP_INDEX_URL}
         PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST}
+        BIGDATA_INDEX_URL: ${BIGDATA_INDEX_URL}
+        BIGDATA_TRUSTED_HOST: ${BIGDATA_TRUSTED_HOST}
+        ODBC_DRIVER_URL: ${ODBC_DRIVER_URL}
+        ODBC_DRIVER_FILENAME: ${ODBC_DRIVER_FILENAME}
     container_name: request_backend
     restart: unless-stopped
+    ports:
+      - "8000:8000"
     env_file:
       - .env
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
       - MYSQL_HOST=db
+      - SKIP_SCHEDULER=true
+      # ODBC 설정
+      - ODBC_HOST=${ODBC_HOST}
+      - ODBC_PORT=${ODBC_PORT}
+      - ODBC_DATABASE=${ODBC_DATABASE}
+      - ODBC_AUTH_MECH=${ODBC_AUTH_MECH}
+      - ODBC_USE_SASL=${ODBC_USE_SASL}
+      - ODBC_UID=${ODBC_UID}
+      - ODBC_PWD=${ODBC_PWD}
+      - ODBC_KRB_FQDN=${ODBC_KRB_FQDN}
+      - ODBC_KRB_REALM=${ODBC_KRB_REALM}
+      - ODBC_KRB_SERVICE_NAME=${ODBC_KRB_SERVICE_NAME}
+      - ODBC_SSL=${ODBC_SSL}
+      - ODBC_TSASL_BUFFER_SIZE=${ODBC_TSASL_BUFFER_SIZE}
+      - ODBC_ROWS_PER_BLOCK=${ODBC_ROWS_PER_BLOCK}
     volumes:
       - media_data:/app/media
       - static_data:/app/staticfiles
@@ -52,6 +71,8 @@ services:
       dockerfile: Dockerfile
       args:
         IMAGE_PATH: ${IMAGE_PATH}
+        NPM_REGISTRY_URL: ${NPM_REGISTRY_URL}
+        VITE_USE_MOCK: ${VITE_USE_MOCK:-true}
     container_name: request_frontend
     restart: unless-stopped
     depends_on:
@@ -61,11 +82,12 @@ services:
     build:
       context: ./nginx
       dockerfile: Dockerfile
+      args:
+        IMAGE_PATH: ${IMAGE_PATH}
     container_name: request_nginx
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "10010:80"
     volumes:
       - static_data:/var/www/static
       - media_data:/var/www/media
