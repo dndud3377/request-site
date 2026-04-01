@@ -76,3 +76,140 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             'message': '재상신되었습니다.',
             'document': RequestDocumentSerializer(document).data,
         })
+
+    @action(detail=True, methods=['post'])
+    def withdraw(self, request, pk=None):
+        """철회: under_review/rejected → draft, 단계 초기화"""
+        document = self.get_object()
+        if document.status not in ('under_review', 'rejected', 'submitted'):
+            return Response(
+                {'error': '철회할 수 없는 상태입니다.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        document.status = 'draft'
+        document.submitted_at = None
+        document.save()
+
+        ApprovalStep.objects.filter(document=document).delete()
+
+        return Response({'message': '철회되었습니다.'})
+
+    @action(detail=True, methods=['post'], url_path='approve-step')
+    def approve_step(self, request, pk=None):
+        """에이전트 단계 합의 (mock.ts mockApproveStep 로직과 동일)"""
+        document = self.get_object()
+        agent = request.data.get('agent')
+        comment = request.data.get('comment', '')
+
+        if agent not in ('R', 'J', 'O', 'E'):
+            return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        step = ApprovalStep.objects.filter(
+            document=document, agent=agent, action='pending'
+        ).first()
+        if not step:
+            return Response({'error': f'AGENT {agent}의 대기 중인 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        step.action = 'approved'
+        step.acted_at = timezone.now()
+        step.comment = comment
+        step.save()
+
+        new_status = document.status
+
+        if agent == 'R':
+            # R 합의 → J, O 병렬 단계 생성
+            ApprovalStep.objects.create(document=document, agent='J', action='pending', is_parallel=True)
+            ApprovalStep.objects.create(document=document, agent='O', action='pending', is_parallel=True)
+            new_status = 'under_review'
+
+        elif agent in ('J', 'O'):
+            # J/O 모두 합의 시 다음 단계 결정
+            j_step = ApprovalStep.objects.filter(document=document, agent='J').order_by('-id').first()
+            o_step = ApprovalStep.objects.filter(document=document, agent='O').order_by('-id').first()
+            both_approved = (
+                j_step and j_step.action == 'approved' and
+                o_step and o_step.action == 'approved'
+            )
+            if both_approved:
+                if document.is_sugar_add():
+                    ApprovalStep.objects.create(document=document, agent='E', action='pending')
+                    new_status = 'under_review'
+                else:
+                    new_status = 'approved'
+
+        elif agent == 'E':
+            new_status = 'approved'
+
+        document.status = new_status
+        document.save()
+
+        return Response({
+            'message': '처리되었습니다.',
+            'status': new_status,
+        })
+
+    @action(detail=True, methods=['post'], url_path='reject-step')
+    def reject_step(self, request, pk=None):
+        """에이전트 단계 반려"""
+        document = self.get_object()
+        agent = request.data.get('agent')
+        comment = request.data.get('comment', '')
+
+        if agent not in ('R', 'J', 'O', 'E'):
+            return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        step = ApprovalStep.objects.filter(
+            document=document, agent=agent, action='pending'
+        ).first()
+        if not step:
+            return Response({'error': f'AGENT {agent}의 대기 중인 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        step.action = 'rejected'
+        step.acted_at = timezone.now()
+        step.comment = comment
+        step.save()
+
+        document.status = 'rejected'
+        document.save()
+
+        return Response({'message': '반려되었습니다.', 'status': 'rejected'})
+
+    @action(detail=True, methods=['post'], url_path='assign-step')
+    def assign_step(self, request, pk=None):
+        """에이전트 단계 담당자 지정"""
+        from django.contrib.auth.models import User
+
+        document = self.get_object()
+        agent = request.data.get('agent')
+        assignee_id = request.data.get('assignee_id')
+        assignee_name = request.data.get('assignee_name', '')
+
+        step = ApprovalStep.objects.filter(
+            document=document, agent=agent, action='pending'
+        ).first()
+        if not step:
+            return Response({'error': '해당 단계를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if assignee_id:
+            try:
+                assignee_user = User.objects.get(id=assignee_id)
+                step.assignee = assignee_user
+            except User.DoesNotExist:
+                return Response({'error': '사용자를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        step.assignee_name = assignee_name
+        step.save()
+
+        return Response({'message': '담당자가 지정되었습니다.'})
+
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        """상태별 통계"""
+        total = RequestDocument.objects.count()
+        by_status = {}
+        for key, _ in RequestDocument.STATUS_CHOICES:
+            by_status[key] = RequestDocument.objects.filter(status=key).count()
+
+        return Response({'total': total, 'by_status': by_status})
