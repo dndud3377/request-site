@@ -95,6 +95,19 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         return Response({'message': '철회되었습니다.'})
 
+    @action(detail=True, methods=['post'], url_path='delete')
+    def delete(self, request, pk=None):
+        """의뢰서 삭제 (draft 상태만 가능)"""
+        document = self.get_object()
+        if document.status != 'draft':
+            return Response(
+                {'error': '임시저장 상태의 의뢰서만 삭제할 수 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        document.delete()
+        return Response({'message': '삭제되었습니다.'})
+
     @action(detail=True, methods=['post'], url_path='approve-step')
     def approve_step(self, request, pk=None):
         """에이전트 단계 합의 (mock.ts mockApproveStep 로직과 동일)"""

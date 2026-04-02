@@ -602,7 +602,6 @@ select.form-control option {
 .badge-under_review { background: var(--warning-light); color: var(--warning); }
 .badge-approved { background: var(--success-light); color: var(--success); }
 .badge-rejected { background: var(--danger-light); color: var(--danger); }
-.badge-revision_required { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
 .badge-open { background: var(--info-light); color: var(--info); }
 .badge-in_progress { background: var(--warning-light); color: var(--warning); }
 .badge-resolved { background: var(--success-light); color: var(--success); }

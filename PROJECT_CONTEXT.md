@@ -107,81 +107,6 @@ Docker Compose 서비스: `db`, `backend`, `frontend`, `nginx`
 
 ---
 
-## `backend/api/scheduler.py`
-
-```python
-# 역할: Big Data 를 사용하여 폼 옵션 데이터 (조합법 - 제품 이름, 제품 이름 - 조리법) 를 주기적으로 동기화하는 스케줄러
-
-# 라인 2 제외 (테이블 없음)
-LINES = ['라인 1', '라인 3', '라인 4', '라인 5']
-LINE_SUFFIX_MAP = {
-    '라인 1': '라인1',
-    '라인 3': '라인3',
-    '라인 4': '라인4',
-    '라인 5': '라인5',
-}
-
-# 동기화 데이터
-# 1. 조합법-제품 이름: {suffix}_map → api_combinationproduct
-# 2. 제품 이름-조리법: {suffix}_map → api_productcooking
-
-# 필요 이유: bigdata 데이터베이스의 최신 조합법/제품이름/조리법 정보를 Django 애플리케이션의 폼 옵션으로 제공하기 위해 주기적 또는 수동으로 동기화 필요
-
-# 실행 방식:
-#   - APScheduler 를 사용한 백그라운드 스케줄러
-#   - 1 시간 주기 (IntervalTrigger(hours=1)) 로 자동 실행
-#   - 스케줄러 시작 시 즉시 1 회 실행
-#   - start() 함수 호출로 스케줄러 등록 및 시작
-
-# 환경 변수 요구사항:
-#   ID: bigdata 계정 ID
-#   PASSWORD: 비밀번호 (JSON pack 또는 문자열)
-#   MYSQL_USER, MYSQL_PASSWORD, MYSQL_HOST, MYSQL_PORT, MYSQL_DB: Django DB 연결 정보
-
-# 주요 함수:
-#   - bd_login(): bigdata 로그인
-#   - login_with_retry(): 여러 비밀번호로 재시도 로그인
-#   - get_data_from_bd(): bigdata 를 사용하여 데이터 조회 (DataFrame 반환)
-#   - sync_form_options(): 실제 동기화 수행 (각 라인별 데이터 삭제 후 추가)
-#   - start(): 스케줄러 등록 및 시작
-```
-
----
-
-## `backend/api/management/commands/sync_form_options_manual.py`
-
-**역할**: bigdata를 사용하여 폼 옵션 데이터(조합법-제품 이름, 제품 이름-조리법)를 수동으로 동기화하는 Django 관리 명령어
-
-**형식**:
-```python
-# 라인 2 제외 (테이블 없음)
-LINES = ['라인 1', '라인 3', '라인 4', '라인 5']
-LINE_SUFFIX_MAP = {
-    '라인 1': '라인1',
-    '라인 3': '라인3',
-    '라인 4': '라인4',
-    '라인 5': '라인5',
-}
-
-# 동기화 데이터
-# 1. 조합법-제품 이름: {suffix}_map → api_combinationproduct
-# 2. 제품 이름-조리법: {suffix}_map → api_productcooking
-```
-
-**필요 이유**: bigdata 데이터베이스의 최신 조합법/제품이름/조리법 정보를 Django 애플리케이션의 폼 옵션으로 제공하기 위해 주기적 또는 수동으로 동기화 필요
-
-**실행 방법**:
-```bash
-docker compose exec backend python manage.py sync_form_options_manual
-```
-
-**환경 변수 요구사항**:
-- `ID`: bigdata 계정 ID
-- `PASSWORD`: 비밀번호
-- `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_DB`: Django DB 연결 정보
-
----
-
 ## 환경변수 요약 (`.env.example` 기준)
 
 | 변수 | 설명 |
@@ -242,3 +167,99 @@ docker compose exec backend python manage.py sync_form_options_manual
 | `MASTER` | 전체 열람 및 관리 |
 
 결재 흐름: `PL 제출 → TE_R → TE_J + TE_O (병렬) → TE_E → 승인`
+
+---
+
+## 백엔드 연동 현황 (VITE_USE_MOCK=false 전환 관련)
+
+> main 브랜치에는 없지만 실제 운영 브랜치에 구현된 코드의 현황을 기록한다.
+> Claude가 main 브랜치만 분석하면 "미구현"으로 오탐할 수 있으므로 이 문서를 참고할 것.
+
+### #1 — urls.py import 대상 구현 여부
+
+`backend/api/urls.py`에서 import 하는 모든 뷰/함수는 **구현되어 있음**.
+
+**`backend/api/views.py`:**
+
+| import 대상 | 상태 |
+|---|---|
+| `VOCViewSet` | ✅ 구현됨 |
+| `LineViewSet` | ✅ 구현됨 |
+| `form_options_combinations` | ✅ 구현됨 |
+| `form_options_products` | ✅ 구현됨 |
+| `form_options_cooking` | ✅ 구현됨 |
+| `form_options_step_info` | ✅ 구현됨 |
+
+**`backend/api/models.py`:**
+
+| 모델 | 상태 |
+|---|---|
+| `VOC` | ✅ 구현됨 |
+| `Line` | ✅ 구현됨 |
+| `CombinationProduct` | ✅ 구현됨 |
+| `ProductCooking` | ✅ 구현됨 |
+| `StepInfo` | ✅ 구현됨 |
+
+**`backend/api/serializers.py`:**
+
+| 시리얼라이저 | 상태 |
+|---|---|
+| `VOCSerializer` | ✅ 구현됨 |
+| `LineSerializer` | ✅ 구현됨 |
+
+### #4 — AuthContext 인증 방식 (미결정)
+
+현재: 앱 시작 시 `MOCK_USERS[0]` 자격증명으로 자동 로그인 시도.
+→ 실제 백엔드에 해당 유저가 없으면 이후 모든 API 인증 실패.
+
+**상태: later** — 로그인 페이지 도입 vs 유저 스위처 유지 방향 미결정. 추후 재논의.
+
+### #5 — 외부 DB 동기화 (scheduler.py / sync_form_options_manual.py)
+
+**상태: ✅ 구현됨** (비공개 브랜치)
+
+- **`backend/api/scheduler.py`**: Big Data를 사용하여 폼 옵션 데이터를 1시간 주기로 자동 동기화
+  - 동기화 대상: `CombinationProduct` (조합법-제품), `ProductCooking` (제품-조리법)
+  - 라인 2 제외: `LINES = ['라인 1', '라인 3', '라인 4', '라인 5']`
+  - APScheduler `IntervalTrigger(hours=1)` + 시작 시 즉시 1회 실행
+  - 주요 함수: `bd_login()`, `login_with_retry()`, `get_data_from_bd()`, `sync_form_options()`, `start()`
+  - 환경변수: `ID`, `PASSWORD` (Big Data 계정), `MYSQL_*` (Django DB)
+
+- **`backend/api/management/commands/sync_form_options_manual.py`**: 수동 동기화 커맨드
+  ```bash
+  docker compose exec backend python manage.py sync_form_options_manual
+  ```
+
+### #6 — JWT 토큰 만료 처리 없음
+
+**상태: later** — 테스트 서버 운영 중에는 실질적 문제 없음. #4(인증 방식) 결정 후 함께 처리.
+
+**문제 내용:**
+- 백엔드(SimpleJWT)는 `{ access, refresh }` 두 토큰을 발급하지만, 프론트엔드는 **access token만 저장**하고 refresh token은 버림 (`AuthContext.tsx`)
+- `client.ts`에서 401 응답을 특별히 처리하지 않고 단순 `throw` → 각 페이지에서 toast 에러만 표시됨
+- 자동 갱신 인터셉터 없음
+
+**지금 문제가 안 되는 이유:**
+- 현재 앱은 페이지 로드 시 / 유저 스위칭 시마다 재로그인하여 새 토큰을 받음
+- 테스트 서버 사용자는 세션 중 토큰이 만료될 만큼 장시간 머물지 않음
+
+**해결 시점:** 프로덕션 전환 전 (또는 테스트 중 401 에러가 자주 발생할 경우)
+
+**임시 우회:** `backend/config/settings.py`의 `SIMPLE_JWT.ACCESS_TOKEN_LIFETIME`을 1~7일로 늘리는 것만으로 충분 (코드 변경 없음)
+
+**정식 해결 (나중에):**
+1. 백엔드 `urls.py`에 `/auth/refresh/` 엔드포인트 추가
+2. `client.ts`에서 401 감지 시 refresh token으로 재발급 후 원래 요청 재시도
+3. refresh 실패 시 로그인 페이지로 리다이렉트
+
+### #7 — DRF 권한 AllowAny (의도적 임시 설정)
+
+**상태: later** — 테스트 서버 운영 중 누구나 접근 가능해야 하므로 의도적으로 설정. 프로덕션 전환 전 복구 필요.
+
+**현재 상태:**
+- `backend/api/views.py`: `VOCViewSet`, `LineViewSet` 등 뷰에 `permission_classes = [AllowAny]` 직접 지정
+- `backend/config/settings.py`의 `DEFAULT_PERMISSION_CLASSES`는 `IsAuthenticatedOrReadOnly`로 유지 중
+
+**프로덕션 전환 시:**
+- 각 뷰의 `permission_classes = [AllowAny]` 제거 → `settings.py` 기본값(`IsAuthenticatedOrReadOnly`) 적용
+- 또는 역할별 세밀한 권한 제어가 필요하면 커스텀 Permission 클래스 작성

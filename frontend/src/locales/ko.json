@@ -197,7 +197,6 @@
     "status_under_review": "검토중",
     "status_approved": "결재완료",
     "status_rejected": "반려됨",
-    "status_revision_required": "수정요청",
     "no_data": "데이터 없음",
     "process_error": "처리 중 오류가 발생했습니다."
   }

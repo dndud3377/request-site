@@ -165,7 +165,6 @@
     "status_under_review": "Under Review",
     "status_approved": "Approved",
     "status_rejected": "Rejected",
-    "status_revision_required": "Revision Required",
     "no_data": "No data available."
   }
 }

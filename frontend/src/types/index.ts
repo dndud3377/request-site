@@ -27,8 +27,7 @@ export type Status =
   | 'submitted'
   | 'under_review'
   | 'approved'
-  | 'rejected'
-  | 'revision_required';
+  | 'rejected';
 
 export type VocStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 
@@ -212,4 +211,13 @@ export interface ApiResponse<T> {
 
 export interface ApiListResponse<T> {
   data: { results: T[]; count: number } | T[];
+}
+
+// ===== big data Step Info =====
+
+export interface StepInfo {
+  cooking_methodid: string;
+  step: string;
+  combination: string;
+  recipeid: string;
 }
