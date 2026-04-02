@@ -72,7 +72,7 @@ services:
       args:
         IMAGE_PATH: ${IMAGE_PATH}
         NPM_REGISTRY_URL: ${NPM_REGISTRY_URL}
-        VITE_USE_MOCK: ${VITE_USE_MOCK:-true}
+        VITE_USE_MOCK: ${VITE_USE_MOCK:-false}
     container_name: request_frontend
     restart: unless-stopped
     depends_on:
