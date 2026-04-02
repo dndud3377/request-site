@@ -229,3 +229,25 @@ Docker Compose 서비스: `db`, `backend`, `frontend`, `nginx`
   ```bash
   docker compose exec backend python manage.py sync_form_options_manual
   ```
+
+### #6 — JWT 토큰 만료 처리 없음
+
+**상태: later** — 테스트 서버 운영 중에는 실질적 문제 없음. #4(인증 방식) 결정 후 함께 처리.
+
+**문제 내용:**
+- 백엔드(SimpleJWT)는 `{ access, refresh }` 두 토큰을 발급하지만, 프론트엔드는 **access token만 저장**하고 refresh token은 버림 (`AuthContext.tsx`)
+- `client.ts`에서 401 응답을 특별히 처리하지 않고 단순 `throw` → 각 페이지에서 toast 에러만 표시됨
+- 자동 갱신 인터셉터 없음
+
+**지금 문제가 안 되는 이유:**
+- 현재 앱은 페이지 로드 시 / 유저 스위칭 시마다 재로그인하여 새 토큰을 받음
+- 테스트 서버 사용자는 세션 중 토큰이 만료될 만큼 장시간 머물지 않음
+
+**해결 시점:** 프로덕션 전환 전 (또는 테스트 중 401 에러가 자주 발생할 경우)
+
+**임시 우회:** `backend/config/settings.py`의 `SIMPLE_JWT.ACCESS_TOKEN_LIFETIME`을 1~7일로 늘리는 것만으로 충분 (코드 변경 없음)
+
+**정식 해결 (나중에):**
+1. 백엔드 `urls.py`에 `/auth/refresh/` 엔드포인트 추가
+2. `client.ts`에서 401 감지 시 refresh token으로 재발급 후 원래 요청 재시도
+3. refresh 실패 시 로그인 페이지로 리다이렉트
