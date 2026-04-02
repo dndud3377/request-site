@@ -226,3 +226,59 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             by_status[key] = RequestDocument.objects.filter(status=key).count()
 
         return Response({'total': total, 'by_status': by_status})
+
+
+class VOCViewSet(viewsets.ModelViewSet):
+    queryset = VOC.objects.all()
+    serializer_class = VOCSerializer
+    permission_classes = [AllowAny]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ['category', 'status']
+    search_fields = ['title', 'submitter_name', 'content']
+    ordering = ['-created_at']
+
+
+class LineViewSet(viewsets.ReadOnlyModelViewSet):
+    """라인 마스터 데이터 (읽기 전용)"""
+    queryset = Line.objects.filter(is_active=True)
+    serializer_class = LineSerializer
+    permission_classes = [AllowAny]
+    pagination_class = None
+
+
+# @require_GET
+# def form_options_combinations(request):
+#     """라인 → 조합법 목록"""
+#     # 파라미터: line (GET)
+#     # 로직: CombinationProduct 모델에서 line 필터링 후 combination 목록 반환
+#     # 반환값: JsonResponse({'options': ['조합법1', '조합법2', ...]})
+
+
+# @require_GET
+# def form_options_products(request):
+#     """라인 + 조합법 → 제품이름 목록 (combination 은 선택 사항)"""
+#     # 파라미터: line (GET), combination (GET, 선택)
+#     # 로직: CombinationProduct 모델에서 line 필터링, combination 있으면 추가 필터링 후 product_name 목록 반환
+#     # 반환값: JsonResponse({'options': ['제품1', '제품2', ...]})
+
+
+# @require_GET
+# def form_options_cooking(request):
+#     """라인 + 제품이름 → 조리법 목록"""
+#     # 파라미터: line (GET), product (GET)
+#     # 로직: ProductCooking 모델에서 line, product_name 필터링 후 cooking_method 목록 반환
+#     # 반환값: JsonResponse({'options': ['조리법1', '조리법2', ...]})
+
+
+# [EXTERNAL] bigdata 서비스 참조 - scheduler.py 함수 사용
+# @require_GET
+# def form_options_step_info(request):
+#     """big data 실시간 조회"""
+#     # 파라미터: line (GET), process (GET)
+#     # 로직:
+#     #   1. big data로그인
+#     #   2. big data 자격증명 가져오기
+#     #   3. 라인별 테이블 매핑
+#     #   4. big data 쿼리 실행
+#     #   5. DataFrame을 dict 리스트로 변환
+#     # 반환값: JsonResponse({'options': [{'processid': '...', 'step': '...', 'descript': '...', 'recipeid': '...'}, ...]})
