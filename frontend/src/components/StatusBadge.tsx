@@ -11,7 +11,6 @@ const STATUS_I18N_KEY: Record<string, string> = {
   under_review: 'common.status_under_review',
   approved: 'common.status_approved',
   rejected: 'common.status_rejected',
-  revision_required: 'common.status_revision_required',
   open: 'voc.status_open',
   in_progress: 'voc.status_in_progress',
   resolved: 'voc.status_resolved',

@@ -27,8 +27,7 @@ export type Status =
   | 'submitted'
   | 'under_review'
   | 'approved'
-  | 'rejected'
-  | 'revision_required';
+  | 'rejected';
 
 export type VocStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 

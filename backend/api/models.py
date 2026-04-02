@@ -33,7 +33,6 @@ class RequestDocument(models.Model):
         ('under_review', '검토중'),
         ('approved', '승인됨'),
         ('rejected', '반려됨'),
-        ('revision_required', '수정요청'),
     ]
 
     title = models.CharField(max_length=300, verbose_name='의뢰서 제목')
