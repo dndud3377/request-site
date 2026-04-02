@@ -251,3 +251,15 @@ Docker Compose 서비스: `db`, `backend`, `frontend`, `nginx`
 1. 백엔드 `urls.py`에 `/auth/refresh/` 엔드포인트 추가
 2. `client.ts`에서 401 감지 시 refresh token으로 재발급 후 원래 요청 재시도
 3. refresh 실패 시 로그인 페이지로 리다이렉트
+
+### #7 — DRF 권한 AllowAny (의도적 임시 설정)
+
+**상태: later** — 테스트 서버 운영 중 누구나 접근 가능해야 하므로 의도적으로 설정. 프로덕션 전환 전 복구 필요.
+
+**현재 상태:**
+- `backend/api/views.py`: `VOCViewSet`, `LineViewSet` 등 뷰에 `permission_classes = [AllowAny]` 직접 지정
+- `backend/config/settings.py`의 `DEFAULT_PERMISSION_CLASSES`는 `IsAuthenticatedOrReadOnly`로 유지 중
+
+**프로덕션 전환 시:**
+- 각 뷰의 `permission_classes = [AllowAny]` 제거 → `settings.py` 기본값(`IsAuthenticatedOrReadOnly`) 적용
+- 또는 역할별 세밀한 권한 제어가 필요하면 커스텀 Permission 클래스 작성
