@@ -30,9 +30,9 @@ const OPTION_BB_PROCESS_ID = ['뼈찜조리법1', '뼈찜조리법2'] as const;
 const OPTION_JAYER_PRODUCT = ['제품A', '제품B', '제품C'] as const;
 const OPTION_OAYER_PRODUCT = ['제품A', '제품B', '제품C'] as const;
 
-// ===== CFamilyRow — 북쪽/중간/남쪽 공통 행 =====
+// ===== ProdcRow — 북쪽/중간/남쪽 공통 행 =====
 type CRegion = 'north' | 'middle' | 'south';
-interface CFamilyRowProps {
+interface ProdcRowProps {
   region: CRegion;
   detail: DetailFormState;
   onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
@@ -43,9 +43,9 @@ interface CFamilyRowProps {
   onCombinationChange: (region: CRegion, value: string) => void;
 }
 const REGION_LABEL_KEY = { north: 'prodc_top', middle: 'prodc_middle', south: 'prodc_bottom' } as const;
-const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSetValue, lineOptions, combinationOptions, productOptions, onCombinationChange }) => {
+const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValue, lineOptions, combinationOptions, productOptions, onCombinationChange }) => {
   const { t } = useTranslation();
-  const showSelects = region !== 'middle' || detail.c_family_middle_use === '사용';
+  const showSelects = region !== 'middle' || detail.prodc_middle_use === '사용';
   return (
     <div className="flex-row">
       <span style={{ width: '40px', paddingTop: '32px', fontWeight: 600 }}>
@@ -54,8 +54,8 @@ const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSet
       {region === 'middle' && (
         <FormSelect
           label={t('request.prodc_use')}
-          name="c_family_middle_use"
-          value={detail.c_family_middle_use}
+          name="prodc_middle_use"
+          value={detail.prodc_middle_use}
           options={['사용', '미사용']}
           onChange={onChange}
           placeholder={t('request.select_placeholder')}
@@ -66,8 +66,8 @@ const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSet
         <>
           <FormSelect
             label={t('request.prodc_line')}
-            name={`c_family_${region}_line`}
-            value={detail[`c_family_${region}_line` as keyof DetailFormState] as string}
+            name={`prodc_${region}_line`}
+            value={detail[`prodc_${region}_line` as keyof DetailFormState] as string}
             options={lineOptions}
             onChange={onChange}
             placeholder={t('request.select_placeholder')}
@@ -75,16 +75,16 @@ const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSet
           />
           <AutocompleteInput
             label={t('request.prodc_process_selection')}
-            value={detail[`c_family_${region}_combination` as keyof DetailFormState] as string}
+            value={detail[`prodc_${region}_combination` as keyof DetailFormState] as string}
             options={combinationOptions}
-            onChange={(v) => { onSetValue(`c_family_${region}_combination`, v); onCombinationChange(region, v); }}
+            onChange={(v) => { onSetValue(`prodc_${region}_combination`, v); onCombinationChange(region, v); }}
             style={{ flex: 1 }}
           />
           <AutocompleteInput
             label={t('request.prodc_partid')}
-            value={detail[`c_family_${region}_product` as keyof DetailFormState] as string}
+            value={detail[`prodc_${region}_product` as keyof DetailFormState] as string}
             options={productOptions}
-            onChange={(v) => onSetValue(`c_family_${region}_product`, v)}
+            onChange={(v) => onSetValue(`prodc_${region}_product`, v)}
             style={{ flex: 1 }}
           />
         </>
@@ -135,9 +135,9 @@ const makeBbRow = (): BbTableRow => ({
   ss: '',
   sd: '',
   bb_process_id: '',
-  bone_name: '',
-  bone_step: '',
-  bone_ss: '',
+  bb_name: '',
+  bb_step: '',
+  bb_ss: '',
   remark: '',
 });
 
@@ -162,19 +162,19 @@ const INITIAL_DETAIL: DetailFormState = {
   separation_progress: '아니오',
   bb_zone: '없음',
   bb_entries: [{ location: '', product: '', process_id: '' }],
-  only_c_family: 'No',
-  c_family_north_line: '',
-  c_family_north_combination: '',
-  c_family_north_product: '',
-  c_family_middle_use: '',
-  c_family_middle_line: '',
-  c_family_middle_combination: '',
-  c_family_middle_product: '',
-  c_family_south_line: '',
-  c_family_south_combination: '',
-  c_family_south_product: '',
-  x_mark_change: '없음',
-  x_mark_image_copy: '',
+  only_prodc: 'No',
+  prodc_north_line: '',
+  prodc_north_combination: '',
+  prodc_north_product: '',
+  prodc_middle_use: '',
+  prodc_middle_line: '',
+  prodc_middle_combination: '',
+  prodc_middle_product: '',
+  prodc_south_line: '',
+  prodc_south_combination: '',
+  prodc_south_product: '',
+  mshot_change: '없음',
+  mshot_image_copy: '',
   anniversary_20: 'No',
   anniversary_20_option: '',
   t_family_apply: '미적용',
@@ -324,9 +324,9 @@ export default function RequestPage(): React.ReactElement {
   const hasMapDeviation = detail.map_deviation_change === '변경 있음';
   const hasExceptionZone = detail.exception_zone_change === '변경 있음';
   const hasBb = detail.bb_zone === '존재';
-  const isCFamily = detail.only_c_family === 'Yes';
-  const xMarkDeleteMode = detail.x_mark_change === '삭제';
-  const xMarkEditAddMode = detail.x_mark_change === '추가' || detail.x_mark_change === '수정';
+  const isProdc = detail.only_prodc === 'Yes';
+  const mshotDeleteMode = detail.mshot_change === '삭제';
+  const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
   const isAnniversary = detail.anniversary_20 === 'Yes';
 
   // ===== Step 1 Handlers =====
@@ -344,7 +344,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // C가문 리전별 조합법 변경 → 해당 리전 제품이름 fetch
-  const handleCFamilyCombinationChange = (region: CRegion, value: string) => {
+  const handleProdcCombinationChange = (region: CRegion, value: string) => {
     if (!detail.line || !value) {
       if (region === 'north') setNorthProductOptions([]);
       else if (region === 'middle') setMiddleProductOptions([]);
@@ -362,7 +362,7 @@ export default function RequestPage(): React.ReactElement {
         else if (region === 'middle') setMiddleProductOptions([]);
         else setSouthProductOptions([]);
       });
-    setDetail((prev) => ({ ...prev, [`c_family_${region}_product`]: '' }));
+    setDetail((prev) => ({ ...prev, [`prodc_${region}_product`]: '' }));
   };
 
   const handleRadioChange = (name: keyof DetailFormState, value: string) => {
@@ -833,16 +833,16 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px' }}>
             <label className="form-label">{t('request.prodc_status')}</label>
-            <select className="form-control" name="only_c_family" value={detail.only_c_family} onChange={handleDetailChange}>
+            <select className="form-control" name="only_prodc" value={detail.only_prodc} onChange={handleDetailChange}>
               <option value="No">No</option>
               <option value="Yes">Yes</option>
             </select>
           </div>
-          {isCFamily && (
+          {isProdc && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <CFamilyRow region="north"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={northProductOptions}  onCombinationChange={handleCFamilyCombinationChange} />
-              <CFamilyRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={middleProductOptions} onCombinationChange={handleCFamilyCombinationChange} />
-              <CFamilyRow region="south"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={southProductOptions}  onCombinationChange={handleCFamilyCombinationChange} />
+              <ProdcRow region="north"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={northProductOptions}  onCombinationChange={handleProdcCombinationChange} />
+              <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={middleProductOptions} onCombinationChange={handleProdcCombinationChange} />
+              <ProdcRow region="south"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={southProductOptions}  onCombinationChange={handleProdcCombinationChange} />
             </div>
           )}
         </div>
@@ -850,22 +850,22 @@ export default function RequestPage(): React.ReactElement {
         {/* 10. X표시 변경 여부 */}
         <div className="form-group full-width">
           <label className="form-label">{t('request.mshot_change_status')}</label>
-          <select className="form-control" name="x_mark_change" value={detail.x_mark_change} onChange={handleDetailChange}>
+          <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={handleDetailChange}>
             <option value="없음">{t('request.mshot_none')}</option>
             <option value="추가">{t('request.mshot_add')}</option>
             <option value="수정">{t('request.mshot_edit')}</option>
             <option value="삭제">{t('request.mshot_delete')}</option>
           </select>
-          {xMarkDeleteMode && (
+          {mshotDeleteMode && (
             <p style={{ color: 'red', fontWeight: 600, margin: '8px 0 0 0' }}>특정 제품 삭제 필요</p>
           )}
-          {xMarkEditAddMode && (
+          {mshotEditAddMode && (
             <div className="form-group" style={{ width: '50%', marginTop: '8px' }}>
               <label className="form-label">{t('request.mshot_change_image_attach_area')}</label>
               <textarea
                 className="form-control"
-                name="x_mark_image_copy"
-                value={detail.x_mark_image_copy}
+                name="mshot_image_copy"
+                value={detail.mshot_image_copy}
                 onChange={handleDetailChange}
                 style={{ aspectRatio: '1 / 1', resize: 'none' }}
               />
@@ -1127,9 +1127,9 @@ export default function RequestPage(): React.ReactElement {
                   <td><input value={row.ss} onChange={(e) => handleBbChange(row.id, 'ss', e.target.value)} disabled={isDisabled} /></td>
                   <td><input value={row.sd} onChange={(e) => handleBbChange(row.id, 'sd', e.target.value)} disabled={isDisabled} /></td>
                   <td><input value={row.bb_process_id} onChange={(e) => handleBbChange(row.id, 'bb_process_id', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bone_name} onChange={(e) => handleBbChange(row.id, 'bone_name', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bone_step} onChange={(e) => handleBbChange(row.id, 'bone_step', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bone_ss} onChange={(e) => handleBbChange(row.id, 'bone_ss', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.bb_name} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.bb_step} onChange={(e) => handleBbChange(row.id, 'bb_step', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.bb_ss} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} disabled={isDisabled} /></td>
                   <td><input value={row.remark} onChange={(e) => handleBbChange(row.id, 'remark', e.target.value)} disabled={isDisabled} /></td>
                   <td style={{ textAlign: 'center' }}>
                     <button

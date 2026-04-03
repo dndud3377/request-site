@@ -62,7 +62,7 @@ function BbTable({ rows }: { rows: BbTableRow[] }) {
         <thead><tr><th>{t('request.process_id')}</th><th>SS</th><th>SD</th><th>{t('request.bb_ref_process_id')}</th><th>뼈찜 이름</th><th>뼈찜 STEP</th><th>뼈찜 SS</th><th>비고</th></tr></thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id}><td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td>{r.bone_name}</td><td>{r.bone_step}</td><td>{r.bone_ss}</td><td>{r.remark}</td></tr>
+            <tr key={r.id}><td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td>{r.bb_name}</td><td>{r.bb_step}</td><td>{r.bb_ss}</td><td>{r.remark}</td></tr>
           ))}
         </tbody>
       </table>
@@ -178,29 +178,29 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
     { label: t('request.process_id'), value: detail.process_id || '-' },
   ];
 
-  const buildCFamilyInfo = (): string => {
+  const buildProdcInfo = (): string => {
     const lines: string[] = [];
-    if (detail.c_family_north_line || detail.c_family_north_combination || detail.c_family_north_product) {
-      lines.push(`[북] ${detail.c_family_north_line || '-'} / ${detail.c_family_north_combination || '-'} / ${detail.c_family_north_product || '-'}`);
+    if (detail.prodc_north_line || detail.prodc_north_combination || detail.prodc_north_product) {
+      lines.push(`[북] ${detail.prodc_north_line || '-'} / ${detail.prodc_north_combination || '-'} / ${detail.prodc_north_product || '-'}`);
     }
-    const middleUse = detail.c_family_middle_use;
+    const middleUse = detail.prodc_middle_use;
     if (middleUse) {
       if (middleUse === '미사용') {
         lines.push('[중간] 미사용');
       } else {
-        lines.push(`[중간] ${detail.c_family_middle_line || '-'} / ${detail.c_family_middle_combination || '-'} / ${detail.c_family_middle_product || '-'}`);
+        lines.push(`[중간] ${detail.prodc_middle_line || '-'} / ${detail.prodc_middle_combination || '-'} / ${detail.prodc_middle_product || '-'}`);
       }
     }
-    if (detail.c_family_south_line || detail.c_family_south_combination || detail.c_family_south_product) {
-      lines.push(`[남] ${detail.c_family_south_line || '-'} / ${detail.c_family_south_combination || '-'} / ${detail.c_family_south_product || '-'}`);
+    if (detail.prodc_south_line || detail.prodc_south_combination || detail.prodc_south_product) {
+      lines.push(`[남] ${detail.prodc_south_line || '-'} / ${detail.prodc_south_combination || '-'} / ${detail.prodc_south_product || '-'}`);
     }
     return lines.join('\n');
   };
 
-  const isCFamily = detail.only_c_family === 'Yes';
-  const xMarkChange = detail.x_mark_change || '없음';
-  const xMarkHasDetail = xMarkChange === '추가' || xMarkChange === '수정';
-  const xMarkIsDelete = xMarkChange === '삭제';
+  const isProdc = detail.only_prodc === 'Yes';
+  const mshotChange = detail.mshot_change || '없음';
+  const mshotHasDetail = mshotChange === '추가' || mshotChange === '수정';
+  const mshotIsDelete = mshotChange === '삭제';
   const isAnniversary = detail.anniversary_20 === 'Yes';
 
   const PLBasicSection = null;
@@ -256,40 +256,40 @@ type Page = { label: string; content: React.ReactNode };
               </div>
             )}
 
-            {isR && detail.x_mark_change && (
+            {isR && detail.mshot_change && (
               <div style={rowStyle}>
                 <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
                     <div style={fieldLabel}>{t('request.mshot_change_status')}</div>
-                    <div style={fieldValue}>{detail.x_mark_change}</div>
+                    <div style={fieldValue}>{detail.mshot_change}</div>
                   </div>
-                  {xMarkIsDelete && (
+                  {mshotIsDelete && (
                     <div style={{ flex: 1 }}>
-                      <div style={{ ...fieldLabel, color: '#dc3545' }}>{t('approval.x_mark_delete_notice')}</div>
-                      <div style={{ ...fieldValue, color: '#dc3545' }}>{t('approval.x_mark_delete_desc')}</div>
+                      <div style={{ ...fieldLabel, color: '#dc3545' }}>{t('approval.mshot_delete_notice')}</div>
+                      <div style={{ ...fieldValue, color: '#dc3545' }}>{t('approval.mshot_delete_desc')}</div>
                     </div>
                   )}
-                  {xMarkHasDetail && detail.x_mark_image_copy && (
+                  {mshotHasDetail && detail.mshot_image_copy && (
                     <div style={{ flex: 1 }}>
                       <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')}</div>
-                      <div style={fieldValue}>{detail.x_mark_image_copy}</div>
+                      <div style={fieldValue}>{detail.mshot_image_copy}</div>
                     </div>
                   )}
                 </div>
               </div>
             )}
 
-            {isR && detail.only_c_family && (
+            {isR && detail.only_prodc && (
               <div style={rowStyle}>
                 <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
                     <div style={fieldLabel}>{t('request.prodc_status')}</div>
-                    <div style={fieldValue}>{detail.only_c_family}</div>
+                    <div style={fieldValue}>{detail.only_prodc}</div>
                   </div>
-                  {isCFamily && buildCFamilyInfo() && (
+                  {isProdc && buildProdcInfo() && (
                     <div style={{ flex: 1 }}>
-                      <div style={fieldLabel}>{t('approval.c_family_detail')}</div>
-                      <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildCFamilyInfo()}</div>
+                      <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
+                      <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildProdcInfo()}</div>
                     </div>
                   )}
                 </div>

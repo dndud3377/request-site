@@ -135,9 +135,9 @@ export interface BbTableRow {
   ss: string;
   sd: string;
   bb_process_id: string;
-  bone_name: string;
-  bone_step: string;
-  bone_ss: string;
+  bb_name: string;
+  bb_step: string;
+  bb_ss: string;
   remark: string;
 }
 
@@ -176,21 +176,21 @@ export interface DetailFormState {
   bb_entries: Array<{ location: string; product: string; process_id: string }>;
 
   // C가문
-  only_c_family: string;
-  c_family_north_line: string;
-  c_family_north_combination: string;
-  c_family_north_product: string;
-  c_family_middle_use: string;
-  c_family_middle_line: string;
-  c_family_middle_combination: string;
-  c_family_middle_product: string;
-  c_family_south_line: string;
-  c_family_south_combination: string;
-  c_family_south_product: string;
+  only_prodc: string;
+  prodc_north_line: string;
+  prodc_north_combination: string;
+  prodc_north_product: string;
+  prodc_middle_use: string;
+  prodc_middle_line: string;
+  prodc_middle_combination: string;
+  prodc_middle_product: string;
+  prodc_south_line: string;
+  prodc_south_combination: string;
+  prodc_south_product: string;
 
   // X표시
-  x_mark_change: string;
-  x_mark_image_copy: string;
+  mshot_change: string;
+  mshot_image_copy: string;
 
   // 20주년
   anniversary_20: string;
