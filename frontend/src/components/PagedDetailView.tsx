@@ -9,7 +9,7 @@ function FlowChartTable({ rows }: { rows: FlowChartRow[] }) {
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <table className="table" style={{ fontSize: '0.8rem', marginBottom: 8 }}>
-      <thead><tr><th>{t('request.flow_location')}</th><th>{t('request.flow_product_name')}</th><th>Step</th></tr></thead>
+      <thead><tr><th>{t('request.flow_line')}</th><th>{t('request.flow_partid')}</th><th>Step</th></tr></thead>
       <tbody>
         {rows.map((r) => (
           <tr key={r.id}><td>{r.location}</td><td>{r.product_name}</td><td>{r.step}</td></tr>
@@ -25,7 +25,7 @@ function JayerTable({ rows }: { rows: JayerRow[] }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>{t('request.cooking_method')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>ID</th><th>REV 여부</th><th>그림판 version</th></tr></thead>
+        <thead><tr><th>{t('request.method')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>ID</th><th>REV 여부</th><th>그림판 version</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}><td>{r.cooking_method}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td><td>{r.rev}</td><td>{r.drawing_version}</td></tr>
@@ -42,7 +42,7 @@ function OayerTable({ rows }: { rows: OayerRow[] }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>{t('request.cooking_method')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>TT</th></tr></thead>
+        <thead><tr><th>{t('request.method')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>TT</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id}><td>{r.cooking_method}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td></tr>
@@ -173,9 +173,9 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   const basicRow = [
     { label: t('request.request_purpose'), value: purposeValue },
     { label: t('request.line'), value: detail.line || '-' },
-    { label: t('request.combination_method'), value: detail.combination_method || '-' },
-    { label: t('request.product_name_select'), value: detail.product_name_select || '-' },
-    { label: t('request.cooking_method'), value: detail.cooking_method || '-' },
+    { label: t('request.process_selection'), value: detail.combination_method || '-' },
+    { label: t('request.partid_selection'), value: detail.product_name_select || '-' },
+    { label: t('request.method'), value: detail.cooking_method || '-' },
   ];
 
   const buildCFamilyInfo = (): string => {
@@ -230,8 +230,8 @@ type Page = { label: string; content: React.ReactNode };
 
             {(isR || isJ) && (detail.source_location || detail.source_product_name) && (
               <div style={rowStyle}>
-                <Chip label={t('request.source_location')} value={detail.source_location} />
-                <Chip label={t('request.source_product_name')} value={detail.source_product_name} />
+                <Chip label={t('request.source_line')} value={detail.source_location} />
+                <Chip label={t('request.source_partid_selection')} value={detail.source_product_name} />
               </div>
             )}
 
@@ -239,7 +239,7 @@ type Page = { label: string; content: React.ReactNode };
               <div style={rowStyle}>
                 {(isR || isO) && detail.map_deviation_change && (
                   <div style={chipWide}>
-                    <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.map_deviation_change')}</div>
+                    <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.map')}</div>
                     <div style={{ ...fieldValue, textAlign: 'left' }}>
                       {`변경: ${detail.map_deviation_change}${detail.map_deviation_value_x ? ` / X: ${detail.map_deviation_value_x}` : ''}${detail.map_deviation_value_y ? ` / Y: ${detail.map_deviation_value_y}` : ''}${detail.map_deviation_reason ? ` / 사유: ${detail.map_deviation_reason}` : ''}`}
                     </div>
@@ -247,7 +247,7 @@ type Page = { label: string; content: React.ReactNode };
                 )}
                 {isR && detail.exception_zone_change && (
                   <div style={chipWide}>
-                    <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.exception_zone_change')}</div>
+                    <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.ea_change')}</div>
                     <div style={{ ...fieldValue, textAlign: 'left' }}>
                       {`변경: ${detail.exception_zone_change}${detail.exception_zone_value ? ` / 값: ${detail.exception_zone_value}` : ''}`}
                     </div>
@@ -260,7 +260,7 @@ type Page = { label: string; content: React.ReactNode };
               <div style={rowStyle}>
                 <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
-                    <div style={fieldLabel}>{t('request.x_mark_change')}</div>
+                    <div style={fieldLabel}>{t('request.mshot_change_status')}</div>
                     <div style={fieldValue}>{detail.x_mark_change}</div>
                   </div>
                   {xMarkIsDelete && (
@@ -271,7 +271,7 @@ type Page = { label: string; content: React.ReactNode };
                   )}
                   {xMarkHasDetail && detail.x_mark_image_copy && (
                     <div style={{ flex: 1 }}>
-                      <div style={fieldLabel}>{t('request.x_mark_image_copy')}</div>
+                      <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')}</div>
                       <div style={fieldValue}>{detail.x_mark_image_copy}</div>
                     </div>
                   )}
@@ -283,7 +283,7 @@ type Page = { label: string; content: React.ReactNode };
               <div style={rowStyle}>
                 <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
-                    <div style={fieldLabel}>{t('request.only_c_family')}</div>
+                    <div style={fieldLabel}>{t('request.prodc_status')}</div>
                     <div style={fieldValue}>{detail.only_c_family}</div>
                   </div>
                   {isCFamily && buildCFamilyInfo() && (
@@ -299,7 +299,7 @@ type Page = { label: string; content: React.ReactNode };
             {(isJ || isO) && detail.bone_stew_zone && (
               <div style={rowStyle}>
                 <div style={chipWide}>
-                  <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.bone_stew_zone')}</div>
+                  <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.bb_status')}</div>
                   <div style={{ ...fieldValue, textAlign: 'left' }}>
                     {`영역: ${detail.bone_stew_zone}`}
                     {Array.isArray(detail.bone_stew_entries) && detail.bone_stew_entries.length > 0 && (
@@ -316,12 +316,12 @@ type Page = { label: string; content: React.ReactNode };
 
             {isR && (detail.separation_progress || detail.t_family_apply || detail.main_product_change || detail.anniversary_20) && (
               <div style={rowStyle}>
-                <Chip label={t('request.separation_progress')} value={detail.separation_progress} />
-                <Chip label={t('request.t_family_apply')} value={detail.t_family_apply} />
-                <Chip label={t('request.main_product_change')} value={detail.main_product_change} />
-                <Chip label={t('request.anniversary_20')} value={detail.anniversary_20} />
+                <Chip label={t('request.split_progress_status')} value={detail.separation_progress} />
+                <Chip label={t('request.tmap_application_status')} value={detail.t_family_apply} />
+                <Chip label={t('request.hplhc_status')} value={detail.main_product_change} />
+                <Chip label={t('request.ip_application_status')} value={detail.anniversary_20} />
                 {isAnniversary && detail.anniversary_20_option && (
-                  <Chip label={t('request.anniversary_20_option')} value={detail.anniversary_20_option} />
+                  <Chip label={t('request.ip_option_selection')} value={detail.anniversary_20_option} />
                 )}
               </div>
             )}
@@ -334,7 +334,7 @@ type Page = { label: string; content: React.ReactNode };
 
             {((isE && !isR && !isJ && !isO) || role === 'MASTER') && detail.sugar_add && (
               <div style={rowStyle}>
-                <Chip label={t('request.sugar_add')} value={detail.sugar_add} />
+                <Chip label={t('request.e_lps')} value={detail.sugar_add} />
               </div>
             )}
           </div>
@@ -361,10 +361,10 @@ type Page = { label: string; content: React.ReactNode };
 
   if (showJayer) {
     pages.push({
-      label: t('request.section_jayer'),
+      label: t('request.job_li'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>{t('request.section_jayer')}</div>
+          <div style={sectionTitle}>{t('request.job_li')}</div>
           <JayerTable rows={jayer} />
         </div>
       ),
@@ -372,10 +372,10 @@ type Page = { label: string; content: React.ReactNode };
   }
   if (showOayer) {
     pages.push({
-      label: t('request.section_oayer'),
+      label: t('request.ovl_li'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>{t('request.section_oayer')}</div>
+          <div style={sectionTitle}>{t('request.ovl_li')}</div>
           <OayerTable rows={oayer} />
         </div>
       ),
@@ -383,10 +383,10 @@ type Page = { label: string; content: React.ReactNode };
   }
   if (showBoneStew) {
     pages.push({
-      label: t('request.section_bone_stew'),
+      label: t('request.bb_li'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>{t('request.section_bone_stew')}</div>
+          <div style={sectionTitle}>{t('request.bb_li')}</div>
           <BoneStewTable rows={boneStew} />
         </div>
       ),
