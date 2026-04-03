@@ -12,7 +12,7 @@ from django.db import connection
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
-from .models import RequestDocument, ApprovalStep, VOC, Line, CombinationProduct, ProductCooking
+from .models import RequestDocument, ApprovalStep, VOC, Line, ProcessProduct, ProductProcessId
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer,
     VOCSerializer, LineSerializer,
@@ -247,18 +247,18 @@ class LineViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 # @require_GET
-# def form_options_combinations(request):
+# def form_options_processes(request):
 #     """라인 → 조합법 목록"""
 #     # 파라미터: line (GET)
-#     # 로직: CombinationProduct 모델에서 line 필터링 후 combination 목록 반환
+#     # 로직: ProcessProduct 모델에서 line 필터링 후 process 목록 반환
 #     # 반환값: JsonResponse({'options': ['조합법1', '조합법2', ...]})
 
 
 # @require_GET
 # def form_options_products(request):
-#     """라인 + 조합법 → 제품이름 목록 (combination 은 선택 사항)"""
-#     # 파라미터: line (GET), combination (GET, 선택)
-#     # 로직: CombinationProduct 모델에서 line 필터링, combination 있으면 추가 필터링 후 product_name 목록 반환
+#     """라인 + 조합법 → 제품이름 목록 (process 는 선택 사항)"""
+#     # 파라미터: line (GET), process (GET, 선택)
+#     # 로직: ProcessProduct 모델에서 line 필터링, process 있으면 추가 필터링 후 product_name 목록 반환
 #     # 반환값: JsonResponse({'options': ['제품1', '제품2', ...]})
 
 
@@ -266,7 +266,7 @@ class LineViewSet(viewsets.ReadOnlyModelViewSet):
 # def form_options_process_id(request):
 #     """라인 + 제품이름 → 조리법 목록"""
 #     # 파라미터: line (GET), product (GET)
-#     # 로직: ProductCooking 모델에서 line, product_name 필터링 후 process_id 목록 반환
+#     # 로직: ProductProcessId 모델에서 line, product_name 필터링 후 process_id 목록 반환
 #     # 반환값: JsonResponse({'options': ['조리법1', '조리법2', ...]})
 
 

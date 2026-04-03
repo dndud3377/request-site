@@ -180,19 +180,19 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
 
   const buildProdcInfo = (): string => {
     const lines: string[] = [];
-    if (detail.prodc_north_line || detail.prodc_north_combination || detail.prodc_north_product) {
-      lines.push(`[북] ${detail.prodc_north_line || '-'} / ${detail.prodc_north_combination || '-'} / ${detail.prodc_north_product || '-'}`);
+    if (detail.prodc_top_line || detail.prodc_top_process || detail.prodc_top_product) {
+      lines.push(`[북] ${detail.prodc_top_line || '-'} / ${detail.prodc_top_process || '-'} / ${detail.prodc_top_product || '-'}`);
     }
     const middleUse = detail.prodc_middle_use;
     if (middleUse) {
       if (middleUse === '미사용') {
         lines.push('[중간] 미사용');
       } else {
-        lines.push(`[중간] ${detail.prodc_middle_line || '-'} / ${detail.prodc_middle_combination || '-'} / ${detail.prodc_middle_product || '-'}`);
+        lines.push(`[중간] ${detail.prodc_middle_line || '-'} / ${detail.prodc_middle_process || '-'} / ${detail.prodc_middle_product || '-'}`);
       }
     }
-    if (detail.prodc_south_line || detail.prodc_south_combination || detail.prodc_south_product) {
-      lines.push(`[남] ${detail.prodc_south_line || '-'} / ${detail.prodc_south_combination || '-'} / ${detail.prodc_south_product || '-'}`);
+    if (detail.prodc_bottom_line || detail.prodc_bottom_process || detail.prodc_bottom_product) {
+      lines.push(`[남] ${detail.prodc_bottom_line || '-'} / ${detail.prodc_bottom_process || '-'} / ${detail.prodc_bottom_product || '-'}`);
     }
     return lines.join('\n');
   };

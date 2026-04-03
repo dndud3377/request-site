@@ -31,19 +31,19 @@ const OPTION_JAYER_PRODUCT = ['제품A', '제품B', '제품C'] as const;
 const OPTION_OAYER_PRODUCT = ['제품A', '제품B', '제품C'] as const;
 
 // ===== ProdcRow — 북쪽/중간/남쪽 공통 행 =====
-type CRegion = 'north' | 'middle' | 'south';
+type CRegion = 'top' | 'middle' | 'bottom';
 interface ProdcRowProps {
   region: CRegion;
   detail: DetailFormState;
   onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
   onSetValue: (name: string, value: string) => void;
   lineOptions: string[];
-  combinationOptions: string[];
+  processOptions: string[];
   productOptions: string[];
-  onCombinationChange: (region: CRegion, value: string) => void;
+  onProcessChange: (region: CRegion, value: string) => void;
 }
-const REGION_LABEL_KEY = { north: 'prodc_top', middle: 'prodc_middle', south: 'prodc_bottom' } as const;
-const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValue, lineOptions, combinationOptions, productOptions, onCombinationChange }) => {
+const REGION_LABEL_KEY = { top: 'prodc_top', middle: 'prodc_middle', bottom: 'prodc_bottom' } as const;
+const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValue, lineOptions, processOptions, productOptions, onProcessChange }) => {
   const { t } = useTranslation();
   const showSelects = region !== 'middle' || detail.prodc_middle_use === '사용';
   return (
@@ -75,9 +75,9 @@ const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValu
           />
           <AutocompleteInput
             label={t('request.prodc_process_selection')}
-            value={detail[`prodc_${region}_combination` as keyof DetailFormState] as string}
-            options={combinationOptions}
-            onChange={(v) => { onSetValue(`prodc_${region}_combination`, v); onCombinationChange(region, v); }}
+            value={detail[`prodc_${region}_process` as keyof DetailFormState] as string}
+            options={processOptions}
+            onChange={(v) => { onSetValue(`prodc_${region}_process`, v); onProcessChange(region, v); }}
             style={{ flex: 1 }}
           />
           <AutocompleteInput
@@ -163,16 +163,16 @@ const INITIAL_DETAIL: DetailFormState = {
   bb_zone: '없음',
   bb_entries: [{ location: '', product: '', process_id: '' }],
   only_prodc: 'No',
-  prodc_north_line: '',
-  prodc_north_combination: '',
-  prodc_north_product: '',
+  prodc_top_line: '',
+  prodc_top_process: '',
+  prodc_top_product: '',
   prodc_middle_use: '',
   prodc_middle_line: '',
-  prodc_middle_combination: '',
+  prodc_middle_process: '',
   prodc_middle_product: '',
-  prodc_south_line: '',
-  prodc_south_combination: '',
-  prodc_south_product: '',
+  prodc_bottom_line: '',
+  prodc_bottom_process: '',
+  prodc_bottom_product: '',
   mshot_change: '없음',
   mshot_image_copy: '',
   ip_status: 'No',
@@ -243,12 +243,12 @@ export default function RequestPage(): React.ReactElement {
   const isEditMode = !!editDocId;
 
   const [lineOptions, setLineOptions] = useState<string[]>(OPTION_LINE as unknown as string[]);
-  const [combinationOptions, setCombinationOptions] = useState<string[]>([]);
+  const [processOptions, setProcessOptions] = useState<string[]>([]);
   const [productOptions, setProductOptions] = useState<string[]>([]);
   const [processIdOptions, setProcessIdOptions] = useState<string[]>([]);
-  const [northProductOptions, setNorthProductOptions] = useState<string[]>([]);
+  const [topProductOptions, setTopProductOptions] = useState<string[]>([]);
   const [middleProductOptions, setMiddleProductOptions] = useState<string[]>([]);
-  const [southProductOptions, setSouthProductOptions] = useState<string[]>([]);
+  const [bottomProductOptions, setBottomProductOptions] = useState<string[]>([]);
 
   const [step, setStep] = useState(1);
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
@@ -272,16 +272,16 @@ export default function RequestPage(): React.ReactElement {
   // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
   useEffect(() => {
     if (!detail.line) {
-      setCombinationOptions([]); setProductOptions([]); setProcessIdOptions([]);
-      setNorthProductOptions([]); setMiddleProductOptions([]); setSouthProductOptions([]);
+      setProcessOptions([]); setProductOptions([]); setProcessIdOptions([]);
+      setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
       return;
     }
-    formOptionsAPI.getCombinations(detail.line)
-      .then(setCombinationOptions)
-      .catch(() => setCombinationOptions([]));
+    formOptionsAPI.getProcesses(detail.line)
+      .then(setProcessOptions)
+      .catch(() => setProcessOptions([]));
     setProductOptions([]);
     setProcessIdOptions([]);
-    setNorthProductOptions([]); setMiddleProductOptions([]); setSouthProductOptions([]);
+    setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
     setDetail((prev) => ({ ...prev, process_selection: '', partid_selection: '', process_id: '' }));
   }, [detail.line]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -344,23 +344,23 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // C가문 리전별 조합법 변경 → 해당 리전 제품이름 fetch
-  const handleProdcCombinationChange = (region: CRegion, value: string) => {
+  const handleProdcProcessChange = (region: CRegion, value: string) => {
     if (!detail.line || !value) {
-      if (region === 'north') setNorthProductOptions([]);
+      if (region === 'top') setTopProductOptions([]);
       else if (region === 'middle') setMiddleProductOptions([]);
-      else setSouthProductOptions([]);
+      else setBottomProductOptions([]);
       return;
     }
     formOptionsAPI.getProducts(detail.line, value)
       .then((opts) => {
-        if (region === 'north') setNorthProductOptions(opts);
+        if (region === 'top') setTopProductOptions(opts);
         else if (region === 'middle') setMiddleProductOptions(opts);
-        else setSouthProductOptions(opts);
+        else setBottomProductOptions(opts);
       })
       .catch(() => {
-        if (region === 'north') setNorthProductOptions([]);
+        if (region === 'top') setTopProductOptions([]);
         else if (region === 'middle') setMiddleProductOptions([]);
-        else setSouthProductOptions([]);
+        else setBottomProductOptions([]);
       });
     setDetail((prev) => ({ ...prev, [`prodc_${region}_product`]: '' }));
   };
@@ -702,7 +702,7 @@ export default function RequestPage(): React.ReactElement {
           <AutocompleteInput
             label={t('request.process_selection')}
             value={detail.process_selection}
-            options={combinationOptions}
+            options={processOptions}
             onChange={(v) => handleDetailSet('process_selection', v)}
             required
             error={errors.process_selection}
@@ -840,9 +840,9 @@ export default function RequestPage(): React.ReactElement {
           </div>
           {isProdc && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <ProdcRow region="north"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={northProductOptions}  onCombinationChange={handleProdcCombinationChange} />
-              <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={middleProductOptions} onCombinationChange={handleProdcCombinationChange} />
-              <ProdcRow region="south"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={southProductOptions}  onCombinationChange={handleProdcCombinationChange} />
+              <ProdcRow region="top"    detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={topProductOptions}    onProcessChange={handleProdcProcessChange} />
+              <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={middleProductOptions}  onProcessChange={handleProdcProcessChange} />
+              <ProdcRow region="bottom" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={bottomProductOptions}  onProcessChange={handleProdcProcessChange} />
             </div>
           )}
         </div>
