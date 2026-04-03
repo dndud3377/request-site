@@ -173,8 +173,8 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   const basicRow = [
     { label: t('request.request_purpose'), value: purposeValue },
     { label: t('request.line'), value: detail.line || '-' },
-    { label: t('request.process_selection'), value: detail.combination_method || '-' },
-    { label: t('request.partid_selection'), value: detail.product_name_select || '-' },
+    { label: t('request.process_selection'), value: detail.process_selection || '-' },
+    { label: t('request.partid_selection'), value: detail.partid_selection || '-' },
     { label: t('request.process_id'), value: detail.process_id || '-' },
   ];
 
@@ -201,7 +201,7 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   const mshotChange = detail.mshot_change || '없음';
   const mshotHasDetail = mshotChange === '추가' || mshotChange === '수정';
   const mshotIsDelete = mshotChange === '삭제';
-  const isAnniversary = detail.anniversary_20 === 'Yes';
+  const isAnniversary = detail.ip_status === 'Yes';
 
   const PLBasicSection = null;
 
@@ -228,28 +228,28 @@ type Page = { label: string; content: React.ReactNode };
           <div style={cardStyle}>
             <div style={sectionTitle}>{t('approval.section_detail')}</div>
 
-            {(isR || isJ) && (detail.source_location || detail.source_product_name) && (
+            {(isR || isJ) && (detail.source_line || detail.source_partid) && (
               <div style={rowStyle}>
-                <Chip label={t('request.source_line')} value={detail.source_location} />
-                <Chip label={t('request.source_partid_selection')} value={detail.source_product_name} />
+                <Chip label={t('request.source_line')} value={detail.source_line} />
+                <Chip label={t('request.source_partid_selection')} value={detail.source_partid} />
               </div>
             )}
 
-            {(isR || isO || isJ) && (detail.map_deviation_change || detail.exception_zone_change) && (
+            {(isR || isO || isJ) && (detail.map_change || detail.ea_change) && (
               <div style={rowStyle}>
-                {(isR || isO) && detail.map_deviation_change && (
+                {(isR || isO) && detail.map_change && (
                   <div style={chipWide}>
                     <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.map')}</div>
                     <div style={{ ...fieldValue, textAlign: 'left' }}>
-                      {`변경: ${detail.map_deviation_change}${detail.map_deviation_value_x ? ` / X: ${detail.map_deviation_value_x}` : ''}${detail.map_deviation_value_y ? ` / Y: ${detail.map_deviation_value_y}` : ''}${detail.map_deviation_reason ? ` / 사유: ${detail.map_deviation_reason}` : ''}`}
+                      {`변경: ${detail.map_change}${detail.map_value_x ? ` / X: ${detail.map_value_x}` : ''}${detail.map_value_y ? ` / Y: ${detail.map_value_y}` : ''}${detail.map_reason ? ` / 사유: ${detail.map_reason}` : ''}`}
                     </div>
                   </div>
                 )}
-                {isR && detail.exception_zone_change && (
+                {isR && detail.ea_change && (
                   <div style={chipWide}>
                     <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.ea_change')}</div>
                     <div style={{ ...fieldValue, textAlign: 'left' }}>
-                      {`변경: ${detail.exception_zone_change}${detail.exception_zone_value ? ` / 값: ${detail.exception_zone_value}` : ''}`}
+                      {`변경: ${detail.ea_change}${detail.ea_value ? ` / 값: ${detail.ea_value}` : ''}`}
                     </div>
                   </div>
                 )}
@@ -314,14 +314,14 @@ type Page = { label: string; content: React.ReactNode };
               </div>
             )}
 
-            {isR && (detail.separation_progress || detail.t_family_apply || detail.main_product_change || detail.anniversary_20) && (
+            {isR && (detail.split_progress || detail.tmap_apply || detail.hplhc_change || detail.ip_status) && (
               <div style={rowStyle}>
-                <Chip label={t('request.split_progress_status')} value={detail.separation_progress} />
-                <Chip label={t('request.tmap_application_status')} value={detail.t_family_apply} />
-                <Chip label={t('request.hplhc_status')} value={detail.main_product_change} />
-                <Chip label={t('request.ip_application_status')} value={detail.anniversary_20} />
-                {isAnniversary && detail.anniversary_20_option && (
-                  <Chip label={t('request.ip_option_selection')} value={detail.anniversary_20_option} />
+                <Chip label={t('request.split_progress_status')} value={detail.split_progress} />
+                <Chip label={t('request.tmap_application_status')} value={detail.tmap_apply} />
+                <Chip label={t('request.hplhc_status')} value={detail.hplhc_change} />
+                <Chip label={t('request.ip_application_status')} value={detail.ip_status} />
+                {isAnniversary && detail.ip_option && (
+                  <Chip label={t('request.ip_option_selection')} value={detail.ip_option} />
                 )}
               </div>
             )}
@@ -332,9 +332,9 @@ type Page = { label: string; content: React.ReactNode };
               </div>
             )}
 
-            {((isE && !isR && !isJ && !isO) || role === 'MASTER') && detail.sugar_add && (
+            {((isE && !isR && !isJ && !isO) || role === 'MASTER') && detail.e_lps && (
               <div style={rowStyle}>
-                <Chip label={t('request.e_lps')} value={detail.sugar_add} />
+                <Chip label={t('request.e_lps')} value={detail.e_lps} />
               </div>
             )}
           </div>

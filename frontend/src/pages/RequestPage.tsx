@@ -145,21 +145,21 @@ const makeBbRow = (): BbTableRow => ({
 const INITIAL_DETAIL: DetailFormState = {
   request_purpose: '',
   line: '',
-  combination_method: '',
-  product_name_select: '',
+  process_selection: '',
+  partid_selection: '',
   other_purpose: '',
-  source_location: '',
-  source_product_name: '',
+  source_line: '',
+  source_partid: '',
   change_purpose_note: '',
   flow_chart: [makeRow()],
   process_id: '',
-  map_deviation_change: '변경 없음',
-  map_deviation_value_x: '',
-  map_deviation_value_y: '',
-  map_deviation_reason: '',
-  exception_zone_change: '변경 없음',
-  exception_zone_value: '',
-  separation_progress: '아니오',
+  map_change: '변경 없음',
+  map_value_x: '',
+  map_value_y: '',
+  map_reason: '',
+  ea_change: '변경 없음',
+  ea_value: '',
+  split_progress: '아니오',
   bb_zone: '없음',
   bb_entries: [{ location: '', product: '', process_id: '' }],
   only_prodc: 'No',
@@ -175,11 +175,11 @@ const INITIAL_DETAIL: DetailFormState = {
   prodc_south_product: '',
   mshot_change: '없음',
   mshot_image_copy: '',
-  anniversary_20: 'No',
-  anniversary_20_option: '',
-  t_family_apply: '미적용',
-  main_product_change: '변경 없음',
-  sugar_add: '아니오',
+  ip_status: 'No',
+  ip_option: '',
+  tmap_apply: '미적용',
+  hplhc_change: '변경 없음',
+  e_lps: '아니오',
 };
 
 const INITIAL_FORM: CreateDocumentInput = {
@@ -195,8 +195,8 @@ const INITIAL_FORM: CreateDocumentInput = {
 const DETAIL_REQUIRED: (keyof DetailFormState)[] = [
   'request_purpose',
   'line',
-  'combination_method',
-  'product_name_select',
+  'process_selection',
+  'partid_selection',
 ];
 
 // ===== Wizard Step Indicator =====
@@ -282,27 +282,27 @@ export default function RequestPage(): React.ReactElement {
     setProductOptions([]);
     setProcessIdOptions([]);
     setNorthProductOptions([]); setMiddleProductOptions([]); setSouthProductOptions([]);
-    setDetail((prev) => ({ ...prev, combination_method: '', product_name_select: '', process_id: '' }));
+    setDetail((prev) => ({ ...prev, process_selection: '', partid_selection: '', process_id: '' }));
   }, [detail.line]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
   useEffect(() => {
-    if (!detail.line || !detail.combination_method) { setProductOptions([]); setProcessIdOptions([]); return; }
-    formOptionsAPI.getProducts(detail.line, detail.combination_method)
+    if (!detail.line || !detail.process_selection) { setProductOptions([]); setProcessIdOptions([]); return; }
+    formOptionsAPI.getProducts(detail.line, detail.process_selection)
       .then(setProductOptions)
       .catch(() => setProductOptions([]));
     setProcessIdOptions([]);
-    setDetail((prev) => ({ ...prev, product_name_select: '', process_id: '' }));
-  }, [detail.combination_method]); // eslint-disable-line react-hooks/exhaustive-deps
+    setDetail((prev) => ({ ...prev, partid_selection: '', process_id: '' }));
+  }, [detail.process_selection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 제품이름 변경 → 조리법 fetch
   useEffect(() => {
-    if (!detail.line || !detail.product_name_select) { setProcessIdOptions([]); return; }
-    formOptionsAPI.getProcessId(detail.line, detail.product_name_select)
+    if (!detail.line || !detail.partid_selection) { setProcessIdOptions([]); return; }
+    formOptionsAPI.getProcessId(detail.line, detail.partid_selection)
       .then(setProcessIdOptions)
       .catch(() => setProcessIdOptions([]));
     setDetail((prev) => ({ ...prev, process_id: '' }));
-  }, [detail.product_name_select]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail.partid_selection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 편집 모드: 기존 문서 데이터 로드
   useEffect(() => {
@@ -321,13 +321,13 @@ export default function RequestPage(): React.ReactElement {
 
   // Derived booleans for Step 1 conditional rendering
   const isCopy = detail.request_purpose === '복사';
-  const hasMapDeviation = detail.map_deviation_change === '변경 있음';
-  const hasExceptionZone = detail.exception_zone_change === '변경 있음';
+  const hasMapDeviation = detail.map_change === '변경 있음';
+  const hasExceptionZone = detail.ea_change === '변경 있음';
   const hasBb = detail.bb_zone === '존재';
   const isProdc = detail.only_prodc === 'Yes';
   const mshotDeleteMode = detail.mshot_change === '삭제';
   const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
-  const isAnniversary = detail.anniversary_20 === 'Yes';
+  const isAnniversary = detail.ip_status === 'Yes';
 
   // ===== Step 1 Handlers =====
   const handleDetailChange = (
@@ -475,11 +475,11 @@ export default function RequestPage(): React.ReactElement {
 
   // ===== API =====
   const buildEnrichedForm = (note?: string): CreateDocumentInput => {
-    const title = `${detail.line}(${detail.request_purpose})_${detail.combination_method}_${detail.product_name_select}_${detail.process_id}_요청서`;
+    const title = `${detail.line}(${detail.request_purpose})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서`;
     return {
       ...form,
       title,
-      product_name: detail.product_name_select,
+      product_name: detail.partid_selection,
       requester_name: currentUser.name,
       requester_email: currentUser.email,
       requester_department: currentUser.department,
@@ -601,8 +601,8 @@ export default function RequestPage(): React.ReactElement {
                 />
                 <FormSelect
                   label={t('request.source_line')}
-                  name="source_location"
-                  value={detail.source_location}
+                  name="source_line"
+                  value={detail.source_line}
                   options={OPTION_SOURCE_LOCATION}
                   onChange={handleDetailChange}
                   placeholder={t('request.select_placeholder')}
@@ -610,9 +610,9 @@ export default function RequestPage(): React.ReactElement {
                 />
                 <AutocompleteInput
                   label={t('request.source_partid_selection')}
-                  value={detail.source_product_name}
+                  value={detail.source_partid}
                   options={OPTION_SOURCE_PRODUCT}
-                  onChange={(v) => handleDetailSet('source_product_name', v)}
+                  onChange={(v) => handleDetailSet('source_partid', v)}
                   style={{ flex: 1 }}
                 />
               </div>
@@ -701,20 +701,20 @@ export default function RequestPage(): React.ReactElement {
           />
           <AutocompleteInput
             label={t('request.process_selection')}
-            value={detail.combination_method}
+            value={detail.process_selection}
             options={combinationOptions}
-            onChange={(v) => handleDetailSet('combination_method', v)}
+            onChange={(v) => handleDetailSet('process_selection', v)}
             required
-            error={errors.combination_method}
+            error={errors.process_selection}
             style={{ flex: 1 }}
           />
           <AutocompleteInput
             label={t('request.partid_selection')}
-            value={detail.product_name_select}
+            value={detail.partid_selection}
             options={productOptions}
-            onChange={(v) => handleDetailSet('product_name_select', v)}
+            onChange={(v) => handleDetailSet('partid_selection', v)}
             required
-            error={errors.product_name_select}
+            error={errors.partid_selection}
             style={{ flex: 1 }}
           />
           <FormSelect
@@ -732,22 +732,22 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width flex-row">
           <div className="form-group" style={{ flex: 25 }}>
             <label className="form-label">{t('request.map')}</label>
-            <select className="form-control" name="map_deviation_change" value={detail.map_deviation_change} onChange={handleDetailChange}>
+            <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange}>
               <option value="변경 없음">{t('request.map_no_change')}</option>
               <option value="변경 있음">{t('request.map_has_change')}</option>
             </select>
           </div>
           <div className="form-group" style={{ flex: 10, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_value_x')}</label>
-            <input className="form-control" name="map_deviation_value_x" value={detail.map_deviation_value_x} onChange={handleDetailChange} />
+            <input className="form-control" name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} />
           </div>
           <div className="form-group" style={{ flex: 10, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_value_y')}</label>
-            <input className="form-control" name="map_deviation_value_y" value={detail.map_deviation_value_y} onChange={handleDetailChange} />
+            <input className="form-control" name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} />
           </div>
           <div className="form-group" style={{ flex: 30, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_reason')}</label>
-            <input className="form-control" name="map_deviation_reason" value={detail.map_deviation_reason} onChange={handleDetailChange} />
+            <input className="form-control" name="map_reason" value={detail.map_reason} onChange={handleDetailChange} />
           </div>
         </div>
 
@@ -755,14 +755,14 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width flex-row">
           <div className="form-group" style={{ flex: 25 }}>
             <label className="form-label">{t('request.ea_change')}</label>
-            <select className="form-control" name="exception_zone_change" value={detail.exception_zone_change} onChange={handleDetailChange}>
+            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange}>
               <option value="변경 없음">{t('request.no_change')}</option>
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
           </div>
           <div className="form-group" style={{ flex: 10, visibility: hasExceptionZone ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.ea_value')}</label>
-            <input className="form-control" name="exception_zone_value" value={detail.exception_zone_value} onChange={handleDetailChange} />
+            <input className="form-control" name="ea_value" value={detail.ea_value} onChange={handleDetailChange} />
           </div>
         </div>
 
@@ -877,7 +877,7 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width flex-row">
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px' }}>
             <label className="form-label">{t('request.ip_application_status')}</label>
-            <select className="form-control" name="anniversary_20" value={detail.anniversary_20} onChange={handleDetailChange}>
+            <select className="form-control" name="ip_status" value={detail.ip_status} onChange={handleDetailChange}>
               <option value="No">No</option>
               <option value="Yes">Yes</option>
             </select>
@@ -890,10 +890,10 @@ export default function RequestPage(): React.ReactElement {
                   <label key={opt} className="radio-item">
                     <input
                       type="radio"
-                      name="anniversary_20_option"
+                      name="ip_option"
                       value={opt}
-                      checked={detail.anniversary_20_option === opt}
-                      onChange={() => handleRadioChange('anniversary_20_option', opt)}
+                      checked={detail.ip_option === opt}
+                      onChange={() => handleRadioChange('ip_option', opt)}
                     />
                     {opt}
                   </label>
@@ -903,7 +903,7 @@ export default function RequestPage(): React.ReactElement {
           )}
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px', marginLeft: '32px' }}>
             <label className="form-label">{t('request.split_progress_status')}</label>
-            <select className="form-control" name="separation_progress" value={detail.separation_progress} onChange={handleDetailChange}>
+            <select className="form-control" name="split_progress" value={detail.split_progress} onChange={handleDetailChange}>
               <option value="아니오">{t('request.no')}</option>
               <option value="예">{t('request.yes')}</option>
             </select>
@@ -914,21 +914,21 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width flex-row">
           <div className="form-group flex-col">
             <label className="form-label">{t('request.tmap_application_status')}</label>
-            <select className="form-control" name="t_family_apply" value={detail.t_family_apply} onChange={handleDetailChange}>
+            <select className="form-control" name="tmap_apply" value={detail.tmap_apply} onChange={handleDetailChange}>
               <option value="미적용">{t('request.tmap_not_applied')}</option>
               <option value="적용">{t('request.tmap_applied')}</option>
             </select>
           </div>
           <div className="form-group flex-col">
             <label className="form-label">{t('request.hplhc_status')}</label>
-            <select className="form-control" name="main_product_change" value={detail.main_product_change} onChange={handleDetailChange}>
+            <select className="form-control" name="hplhc_change" value={detail.hplhc_change} onChange={handleDetailChange}>
               <option value="변경 없음">{t('request.no_change')}</option>
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
           </div>
           <div className="form-group flex-col">
             <label className="form-label">{t('request.e_lps')}</label>
-            <select className="form-control" name="sugar_add" value={detail.sugar_add} onChange={handleDetailChange}>
+            <select className="form-control" name="e_lps" value={detail.e_lps} onChange={handleDetailChange}>
               <option value="아니오">{t('request.no')}</option>
               <option value="예">{t('request.yes')}</option>
             </select>

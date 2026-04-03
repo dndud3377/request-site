@@ -51,7 +51,7 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, process
   let sugarAdd = false;
   try {
     const parsed = JSON.parse(doc.additional_notes ?? '{}');
-    sugarAdd = parsed?.detail?.sugar_add === '예';
+    sugarAdd = parsed?.detail?.e_lps === '예';
   } catch { sugarAdd = false; }
 
   const renderStepBadge = (step: ApprovalStepFrontend | undefined, label: string) => {

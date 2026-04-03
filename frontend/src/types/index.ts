@@ -145,13 +145,13 @@ export interface DetailFormState {
   // 항상 표시
   request_purpose: string;
   line: string;
-  combination_method: string;
-  product_name_select: string;
+  process_selection: string;
+  partid_selection: string;
 
   // 복사 선택 시
   other_purpose: string;
-  source_location: string;
-  source_product_name: string;
+  source_line: string;
+  source_partid: string;
   change_purpose_note: string;
   flow_chart: FlowChartRow[];
 
@@ -159,17 +159,17 @@ export interface DetailFormState {
   process_id: string;
 
   // 지도 편차
-  map_deviation_change: string;
-  map_deviation_value_x: string;
-  map_deviation_value_y: string;
-  map_deviation_reason: string;
+  map_change: string;
+  map_value_x: string;
+  map_value_y: string;
+  map_reason: string;
 
   // 예외 구역
-  exception_zone_change: string;
-  exception_zone_value: string;
+  ea_change: string;
+  ea_value: string;
 
   // 분리
-  separation_progress: string;
+  split_progress: string;
 
   // 뼈찜
   bb_zone: string;
@@ -193,13 +193,13 @@ export interface DetailFormState {
   mshot_image_copy: string;
 
   // 20주년
-  anniversary_20: string;
-  anniversary_20_option: string;
+  ip_status: string;
+  ip_option: string;
 
   // T가문 / 주력 / 설탕
-  t_family_apply: string;
-  main_product_change: string;
-  sugar_add: string;
+  tmap_apply: string;
+  hplhc_change: string;
+  e_lps: string;
 }
 
 // ===== API Response Wrappers =====
