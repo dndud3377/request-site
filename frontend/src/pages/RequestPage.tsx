@@ -815,14 +815,14 @@ export default function RequestPage(): React.ReactElement {
                       style={{ padding: '6px 10px', marginBottom: '2px' }}
                       onClick={() => handleBoneStewEntryDelete(idx)}
                     >
-                      {t('request.bone_stew_delete')}
+                      {t('request.bb_delete')}
                     </button>
                   )}
                 </div>
               ))}
               <div>
                 <button type="button" className="btn btn-secondary" onClick={handleBoneStewEntryAdd}>
-                  + {t('request.bone_stew_add')}
+                  + {t('request.bb_add')}
                 </button>
               </div>
             </div>
