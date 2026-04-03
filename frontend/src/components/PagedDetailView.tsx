@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { RequestDocument, UserRole, DetailFormState, FlowChartRow, JayerRow, OayerRow, BoneStewTableRow } from '../types';
+import { RequestDocument, UserRole, DetailFormState, FlowChartRow, JayerRow, OayerRow, BbTableRow } from '../types';
 
 // ===== Table Components =====
 
@@ -25,10 +25,10 @@ function JayerTable({ rows }: { rows: JayerRow[] }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>{t('request.method')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>ID</th><th>REV 여부</th><th>그림판 version</th></tr></thead>
+        <thead><tr><th>{t('request.process_id')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>ID</th><th>REV 여부</th><th>그림판 version</th></tr></thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id}><td>{r.cooking_method}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td><td>{r.rev}</td><td>{r.drawing_version}</td></tr>
+            <tr key={r.id}><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td><td>{r.rev}</td><td>{r.drawing_version}</td></tr>
           ))}
         </tbody>
       </table>
@@ -42,10 +42,10 @@ function OayerTable({ rows }: { rows: OayerRow[] }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>{t('request.method')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>TT</th></tr></thead>
+        <thead><tr><th>{t('request.process_id')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>TT</th></tr></thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id}><td>{r.cooking_method}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td></tr>
+            <tr key={r.id}><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td></tr>
           ))}
         </tbody>
       </table>
@@ -53,16 +53,16 @@ function OayerTable({ rows }: { rows: OayerRow[] }) {
   );
 }
 
-function BoneStewTable({ rows }: { rows: BoneStewTableRow[] }) {
+function BbTable({ rows }: { rows: BbTableRow[] }) {
   const { t } = useTranslation();
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>조리법</th><th>SS</th><th>SD</th><th>뼈찜 조리법</th><th>뼈찜 이름</th><th>뼈찜 STEP</th><th>뼈찜 SS</th><th>비고</th></tr></thead>
+        <thead><tr><th>{t('request.process_id')}</th><th>SS</th><th>SD</th><th>{t('request.bb_ref_process_id')}</th><th>뼈찜 이름</th><th>뼈찜 STEP</th><th>뼈찜 SS</th><th>비고</th></tr></thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id}><td>{r.cooking_method}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bone_cooking}</td><td>{r.bone_name}</td><td>{r.bone_step}</td><td>{r.bone_ss}</td><td>{r.remark}</td></tr>
+            <tr key={r.id}><td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td>{r.bone_name}</td><td>{r.bone_step}</td><td>{r.bone_ss}</td><td>{r.remark}</td></tr>
           ))}
         </tbody>
       </table>
@@ -84,14 +84,14 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   let detail: Partial<DetailFormState> = {};
   let jayer: JayerRow[] = [];
   let oayer: OayerRow[] = [];
-  let boneStew: BoneStewTableRow[] = [];
+  let bb: BbTableRow[] = [];
 
   try {
     const parsed = JSON.parse(doc.additional_notes ?? '{}');
     detail = parsed?.detail ?? {};
     jayer = parsed?.jayerRows ?? [];
     oayer = parsed?.oayerRows ?? [];
-    boneStew = parsed?.boneStewRows ?? [];
+    bb = parsed?.bbRows ?? [];
   } catch { /* noop */ }
 
   const isPL = role === 'PL';
@@ -102,7 +102,7 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
 
   const showJayer = isR || isJ || isO;
   const showOayer = isO;
-  const showBoneStew = isJ || isO;
+  const showBb = isJ || isO;
   const showFlowChart = isJ || isO;
 
   const cardStyle: React.CSSProperties = {
@@ -175,7 +175,7 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
     { label: t('request.line'), value: detail.line || '-' },
     { label: t('request.process_selection'), value: detail.combination_method || '-' },
     { label: t('request.partid_selection'), value: detail.product_name_select || '-' },
-    { label: t('request.method'), value: detail.cooking_method || '-' },
+    { label: t('request.process_id'), value: detail.process_id || '-' },
   ];
 
   const buildCFamilyInfo = (): string => {
@@ -296,16 +296,16 @@ type Page = { label: string; content: React.ReactNode };
               </div>
             )}
 
-            {(isJ || isO) && detail.bone_stew_zone && (
+            {(isJ || isO) && detail.bb_zone && (
               <div style={rowStyle}>
                 <div style={chipWide}>
                   <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.bb_status')}</div>
                   <div style={{ ...fieldValue, textAlign: 'left' }}>
-                    {`영역: ${detail.bone_stew_zone}`}
-                    {Array.isArray(detail.bone_stew_entries) && detail.bone_stew_entries.length > 0 && (
+                    {`영역: ${detail.bb_zone}`}
+                    {Array.isArray(detail.bb_entries) && detail.bb_entries.length > 0 && (
                       <span>
-                        {detail.bone_stew_entries.map((e: { location: string; product: string; cooking: string }, i: number) =>
-                          ` / [${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.cooking || '-'}`
+                        {detail.bb_entries.map((e: { location: string; product: string; process_id: string }, i: number) =>
+                          ` / [${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.process_id || '-'}`
                         ).join('')}
                       </span>
                     )}
@@ -381,13 +381,13 @@ type Page = { label: string; content: React.ReactNode };
       ),
     });
   }
-  if (showBoneStew) {
+  if (showBb) {
     pages.push({
       label: t('request.bb_li'),
       content: (
         <div style={cardStyle}>
           <div style={sectionTitle}>{t('request.bb_li')}</div>
-          <BoneStewTable rows={boneStew} />
+          <BbTable rows={bb} />
         </div>
       ),
     });

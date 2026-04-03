@@ -13,7 +13,7 @@ import {
   FlowChartRow,
   JayerRow,
   OayerRow,
-  BoneStewTableRow,
+  BbTableRow,
 } from '../types';
 
 // ===== Option Constants =====
@@ -24,7 +24,7 @@ const OPTION_SOURCE_LOCATION = ['위치A', '위치B', '위치C'] as const;
 const OPTION_SOURCE_PRODUCT = ['원본제품A', '원본제품B', '원본제품C'] as const;
 const OPTION_BONE_STEW_LOCATION = ['위치1', '위치2', '위치3'] as const;
 const OPTION_BONE_STEW_PRODUCT = ['뼈찜제품A', '뼈찜제품B'] as const;
-const OPTION_BONE_STEW_COOKING = ['뼈찜조리법1', '뼈찜조리법2'] as const;
+const OPTION_BB_PROCESS_ID = ['뼈찜조리법1', '뼈찜조리법2'] as const;
 
 // Step 2, 3 전용 제품 이름 옵션 (별도 관리 — 필요에 따라 변경)
 const OPTION_JAYER_PRODUCT = ['제품A', '제품B', '제품C'] as const;
@@ -103,7 +103,7 @@ const makeRow = (): FlowChartRow => ({
 
 const makeJayerRow = (): JayerRow => ({
   id: String(Date.now() + Math.random()),
-  cooking_method: '',
+  process_id: '',
   sp: '',
   sd: '',
   pp: '',
@@ -118,7 +118,7 @@ const makeJayerRow = (): JayerRow => ({
 
 const makeOayerRow = (): OayerRow => ({
   id: String(Date.now() + Math.random()),
-  cooking_method: '',
+  process_id: '',
   sp: '',
   sd: '',
   pp: '',
@@ -129,12 +129,12 @@ const makeOayerRow = (): OayerRow => ({
   tt: '',
 });
 
-const makeBoneStewRow = (): BoneStewTableRow => ({
+const makeBbRow = (): BbTableRow => ({
   id: String(Date.now() + Math.random()),
-  cooking_method: '',
+  process_id: '',
   ss: '',
   sd: '',
-  bone_cooking: '',
+  bb_process_id: '',
   bone_name: '',
   bone_step: '',
   bone_ss: '',
@@ -152,7 +152,7 @@ const INITIAL_DETAIL: DetailFormState = {
   source_product_name: '',
   change_purpose_note: '',
   flow_chart: [makeRow()],
-  cooking_method: '',
+  process_id: '',
   map_deviation_change: '변경 없음',
   map_deviation_value_x: '',
   map_deviation_value_y: '',
@@ -160,8 +160,8 @@ const INITIAL_DETAIL: DetailFormState = {
   exception_zone_change: '변경 없음',
   exception_zone_value: '',
   separation_progress: '아니오',
-  bone_stew_zone: '없음',
-  bone_stew_entries: [{ location: '', product: '', cooking: '' }],
+  bb_zone: '없음',
+  bb_entries: [{ location: '', product: '', process_id: '' }],
   only_c_family: 'No',
   c_family_north_line: '',
   c_family_north_combination: '',
@@ -245,7 +245,7 @@ export default function RequestPage(): React.ReactElement {
   const [lineOptions, setLineOptions] = useState<string[]>(OPTION_LINE as unknown as string[]);
   const [combinationOptions, setCombinationOptions] = useState<string[]>([]);
   const [productOptions, setProductOptions] = useState<string[]>([]);
-  const [cookingOptions, setCookingOptions] = useState<string[]>([]);
+  const [processIdOptions, setProcessIdOptions] = useState<string[]>([]);
   const [northProductOptions, setNorthProductOptions] = useState<string[]>([]);
   const [middleProductOptions, setMiddleProductOptions] = useState<string[]>([]);
   const [southProductOptions, setSouthProductOptions] = useState<string[]>([]);
@@ -255,7 +255,7 @@ export default function RequestPage(): React.ReactElement {
   const [detail, setDetail] = useState<DetailFormState>(INITIAL_DETAIL);
   const [jayerRows, setJayerRows] = useState<JayerRow[]>([makeJayerRow()]);
   const [oayerRows, setOayerRows] = useState<OayerRow[]>([makeOayerRow()]);
-  const [boneStewRows, setBoneStewRows] = useState<BoneStewTableRow[]>([makeBoneStewRow()]);
+  const [bbRows, setBbRows] = useState<BbTableRow[]>([makeBbRow()]);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -272,7 +272,7 @@ export default function RequestPage(): React.ReactElement {
   // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
   useEffect(() => {
     if (!detail.line) {
-      setCombinationOptions([]); setProductOptions([]); setCookingOptions([]);
+      setCombinationOptions([]); setProductOptions([]); setProcessIdOptions([]);
       setNorthProductOptions([]); setMiddleProductOptions([]); setSouthProductOptions([]);
       return;
     }
@@ -280,28 +280,28 @@ export default function RequestPage(): React.ReactElement {
       .then(setCombinationOptions)
       .catch(() => setCombinationOptions([]));
     setProductOptions([]);
-    setCookingOptions([]);
+    setProcessIdOptions([]);
     setNorthProductOptions([]); setMiddleProductOptions([]); setSouthProductOptions([]);
-    setDetail((prev) => ({ ...prev, combination_method: '', product_name_select: '', cooking_method: '' }));
+    setDetail((prev) => ({ ...prev, combination_method: '', product_name_select: '', process_id: '' }));
   }, [detail.line]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
   useEffect(() => {
-    if (!detail.line || !detail.combination_method) { setProductOptions([]); setCookingOptions([]); return; }
+    if (!detail.line || !detail.combination_method) { setProductOptions([]); setProcessIdOptions([]); return; }
     formOptionsAPI.getProducts(detail.line, detail.combination_method)
       .then(setProductOptions)
       .catch(() => setProductOptions([]));
-    setCookingOptions([]);
-    setDetail((prev) => ({ ...prev, product_name_select: '', cooking_method: '' }));
+    setProcessIdOptions([]);
+    setDetail((prev) => ({ ...prev, product_name_select: '', process_id: '' }));
   }, [detail.combination_method]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 제품이름 변경 → 조리법 fetch
   useEffect(() => {
-    if (!detail.line || !detail.product_name_select) { setCookingOptions([]); return; }
-    formOptionsAPI.getCooking(detail.line, detail.product_name_select)
-      .then(setCookingOptions)
-      .catch(() => setCookingOptions([]));
-    setDetail((prev) => ({ ...prev, cooking_method: '' }));
+    if (!detail.line || !detail.product_name_select) { setProcessIdOptions([]); return; }
+    formOptionsAPI.getProcessId(detail.line, detail.product_name_select)
+      .then(setProcessIdOptions)
+      .catch(() => setProcessIdOptions([]));
+    setDetail((prev) => ({ ...prev, process_id: '' }));
   }, [detail.product_name_select]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 편집 모드: 기존 문서 데이터 로드
@@ -314,7 +314,7 @@ export default function RequestPage(): React.ReactElement {
         if (parsed.detail) setDetail(parsed.detail);
         if (parsed.jayerRows) setJayerRows(parsed.jayerRows);
         if (parsed.oayerRows) setOayerRows(parsed.oayerRows);
-        if (parsed.boneStewRows) setBoneStewRows(parsed.boneStewRows);
+        if (parsed.bbRows) setBbRows(parsed.bbRows);
       } catch { /* noop */ }
     }).catch(() => {});
   }, [editDocId]);
@@ -323,7 +323,7 @@ export default function RequestPage(): React.ReactElement {
   const isCopy = detail.request_purpose === '복사';
   const hasMapDeviation = detail.map_deviation_change === '변경 있음';
   const hasExceptionZone = detail.exception_zone_change === '변경 있음';
-  const hasBoneStew = detail.bone_stew_zone === '존재';
+  const hasBb = detail.bb_zone === '존재';
   const isCFamily = detail.only_c_family === 'Yes';
   const xMarkDeleteMode = detail.x_mark_change === '삭제';
   const xMarkEditAddMode = detail.x_mark_change === '추가' || detail.x_mark_change === '수정';
@@ -425,41 +425,41 @@ export default function RequestPage(): React.ReactElement {
     setOayerRows((rows) => (rows.length <= 1 ? rows : rows.filter((r) => r.id !== id)));
   };
 
-  // ===== BoneStew Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
-  const handleBoneStewEntryChange = (idx: number, field: 'location' | 'product' | 'cooking', value: string) => {
+  // ===== Bb Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
+  const handleBbEntryChange = (idx: number, field: 'location' | 'product' | 'process_id', value: string) => {
     setDetail((prev) => ({
       ...prev,
-      bone_stew_entries: prev.bone_stew_entries.map((e, i) => (i === idx ? { ...e, [field]: value } : e)),
+      bb_entries: prev.bb_entries.map((e, i) => (i === idx ? { ...e, [field]: value } : e)),
     }));
   };
 
-  const handleBoneStewEntryAdd = () => {
+  const handleBbEntryAdd = () => {
     setDetail((prev) => ({
       ...prev,
-      bone_stew_entries: [...prev.bone_stew_entries, { location: '', product: '', cooking: '' }],
+      bb_entries: [...prev.bb_entries, { location: '', product: '', process_id: '' }],
     }));
   };
 
-  const handleBoneStewEntryDelete = (idx: number) => {
+  const handleBbEntryDelete = (idx: number) => {
     setDetail((prev) => {
-      if (prev.bone_stew_entries.length <= 1) return prev;
-      return { ...prev, bone_stew_entries: prev.bone_stew_entries.filter((_, i) => i !== idx) };
+      if (prev.bb_entries.length <= 1) return prev;
+      return { ...prev, bb_entries: prev.bb_entries.filter((_, i) => i !== idx) };
     });
   };
 
-  // ===== BoneStew Handlers =====
-  const handleBoneStewChange = (
+  // ===== Bb Handlers =====
+  const handleBbChange = (
     id: string,
-    field: keyof Omit<BoneStewTableRow, 'id'>,
+    field: keyof Omit<BbTableRow, 'id'>,
     value: string
   ) => {
-    setBoneStewRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+    setBbRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
   };
 
-  const handleBoneStewAddRow = () => setBoneStewRows((rows) => [...rows, makeBoneStewRow()]);
+  const handleBbAddRow = () => setBbRows((rows) => [...rows, makeBbRow()]);
 
-  const handleBoneStewDeleteRow = (id: string) => {
-    setBoneStewRows((rows) => (rows.length <= 1 ? rows : rows.filter((r) => r.id !== id)));
+  const handleBbDeleteRow = (id: string) => {
+    setBbRows((rows) => (rows.length <= 1 ? rows : rows.filter((r) => r.id !== id)));
   };
 
   // ===== Validation =====
@@ -475,7 +475,7 @@ export default function RequestPage(): React.ReactElement {
 
   // ===== API =====
   const buildEnrichedForm = (note?: string): CreateDocumentInput => {
-    const title = `${detail.line}(${detail.request_purpose})_${detail.combination_method}_${detail.product_name_select}_${detail.cooking_method}_요청서`;
+    const title = `${detail.line}(${detail.request_purpose})_${detail.combination_method}_${detail.product_name_select}_${detail.process_id}_요청서`;
     return {
       ...form,
       title,
@@ -484,7 +484,7 @@ export default function RequestPage(): React.ReactElement {
       requester_email: currentUser.email,
       requester_department: currentUser.department,
       reference_materials: note ?? '',
-      additional_notes: JSON.stringify({ detail, jayerRows, oayerRows, boneStewRows }),
+      additional_notes: JSON.stringify({ detail, jayerRows, oayerRows, bbRows }),
     };
   };
 
@@ -718,10 +718,10 @@ export default function RequestPage(): React.ReactElement {
             style={{ flex: 1 }}
           />
           <FormSelect
-            label={t('request.method')}
-            name="cooking_method"
-            value={detail.cooking_method}
-            options={cookingOptions}
+            label={t('request.process_id')}
+            name="process_id"
+            value={detail.process_id}
+            options={processIdOptions}
             onChange={handleDetailChange}
             placeholder={t('request.select_placeholder')}
             className="flex-col"
@@ -770,21 +770,21 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width flex-row" style={{ alignItems: 'flex-start' }}>
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '120px' }}>
             <label className="form-label">{t('request.bb_status')}</label>
-            <select className="form-control" name="bone_stew_zone" value={detail.bone_stew_zone} onChange={handleDetailChange}>
+            <select className="form-control" name="bb_zone" value={detail.bb_zone} onChange={handleDetailChange}>
               <option value="없음">{t('request.bb_omit')}</option>
               <option value="존재">{t('request.bb_input')}</option>
             </select>
           </div>
-          {hasBoneStew && (
+          {hasBb && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {detail.bone_stew_entries.map((entry, idx) => (
+              {detail.bb_entries.map((entry, idx) => (
                 <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
                   <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                     <label className="form-label">{t('request.bb_ref_line')}</label>
                     <select
                       className="form-control"
                       value={entry.location}
-                      onChange={(e) => handleBoneStewEntryChange(idx, 'location', e.target.value)}
+                      onChange={(e) => handleBbEntryChange(idx, 'location', e.target.value)}
                     >
                       <option value="">{t('request.select_placeholder')}</option>
                       {OPTION_BONE_STEW_LOCATION.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -794,26 +794,26 @@ export default function RequestPage(): React.ReactElement {
                     label={t('request.bb_ref_part_id')}
                     value={entry.product}
                     options={OPTION_BONE_STEW_PRODUCT}
-                    onChange={(v) => handleBoneStewEntryChange(idx, 'product', v)}
+                    onChange={(v) => handleBbEntryChange(idx, 'product', v)}
                     style={{ flex: 1 }}
                   />
                   <div className="form-group flex-col" style={{ marginBottom: 0 }}>
-                    <label className="form-label">{t('request.bb_ref_method')}</label>
+                    <label className="form-label">{t('request.bb_ref_process_id')}</label>
                     <select
                       className="form-control"
-                      value={entry.cooking}
-                      onChange={(e) => handleBoneStewEntryChange(idx, 'cooking', e.target.value)}
+                      value={entry.process_id}
+                      onChange={(e) => handleBbEntryChange(idx, 'process_id', e.target.value)}
                     >
                       <option value="">{t('request.select_placeholder')}</option>
-                      {OPTION_BONE_STEW_COOKING.map((o) => <option key={o} value={o}>{o}</option>)}
+                      {OPTION_BB_PROCESS_ID.map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
                   </div>
-                  {detail.bone_stew_entries.length > 1 && (
+                  {detail.bb_entries.length > 1 && (
                     <button
                       type="button"
                       className="btn btn-danger"
                       style={{ padding: '6px 10px', marginBottom: '2px' }}
-                      onClick={() => handleBoneStewEntryDelete(idx)}
+                      onClick={() => handleBbEntryDelete(idx)}
                     >
                       {t('request.bb_delete')}
                     </button>
@@ -821,7 +821,7 @@ export default function RequestPage(): React.ReactElement {
                 </div>
               ))}
               <div>
-                <button type="button" className="btn btn-secondary" onClick={handleBoneStewEntryAdd}>
+                <button type="button" className="btn btn-secondary" onClick={handleBbEntryAdd}>
                   + {t('request.bb_add')}
                 </button>
               </div>
@@ -977,7 +977,7 @@ export default function RequestPage(): React.ReactElement {
           <tbody>
             {jayerRows.map((row) => (
               <tr key={row.id}>
-                <td><input value={row.cooking_method} onChange={(e) => handleJayerChange(row.id, 'cooking_method', e.target.value)} /></td>
+                <td><input value={row.process_id} onChange={(e) => handleJayerChange(row.id, 'process_id', e.target.value)} /></td>
                 <td><input value={row.sp} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} /></td>
                 <td><input value={row.sd} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} /></td>
                 <td><input value={row.pp} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} /></td>
@@ -1054,7 +1054,7 @@ export default function RequestPage(): React.ReactElement {
           <tbody>
             {oayerRows.map((row) => (
               <tr key={row.id}>
-                <td><input value={row.cooking_method} onChange={(e) => handleOayerChange(row.id, 'cooking_method', e.target.value)} /></td>
+                <td><input value={row.process_id} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} /></td>
                 <td><input value={row.sp} onChange={(e) => handleOayerChange(row.id, 'sp', e.target.value)} /></td>
                 <td><input value={row.sd} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} /></td>
                 <td><input value={row.pp} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} /></td>
@@ -1094,7 +1094,7 @@ export default function RequestPage(): React.ReactElement {
   );
 
   const renderStep4 = () => {
-    const isDisabled = detail.bone_stew_zone === '없음';
+    const isDisabled = detail.bb_zone === '없음';
     return (
       <div className="form-section">
         <div className="form-section-title">🦴 {t('request.bb_li')}</div>
@@ -1120,23 +1120,23 @@ export default function RequestPage(): React.ReactElement {
               </tr>
             </thead>
             <tbody>
-              {boneStewRows.map((row, idx) => (
+              {bbRows.map((row, idx) => (
                 <tr key={row.id}>
                   <td className="wizard-table-no">{idx + 1}</td>
-                  <td><input value={row.cooking_method} onChange={(e) => handleBoneStewChange(row.id, 'cooking_method', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.ss} onChange={(e) => handleBoneStewChange(row.id, 'ss', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.sd} onChange={(e) => handleBoneStewChange(row.id, 'sd', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bone_cooking} onChange={(e) => handleBoneStewChange(row.id, 'bone_cooking', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bone_name} onChange={(e) => handleBoneStewChange(row.id, 'bone_name', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bone_step} onChange={(e) => handleBoneStewChange(row.id, 'bone_step', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bone_ss} onChange={(e) => handleBoneStewChange(row.id, 'bone_ss', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.remark} onChange={(e) => handleBoneStewChange(row.id, 'remark', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.process_id} onChange={(e) => handleBbChange(row.id, 'process_id', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.ss} onChange={(e) => handleBbChange(row.id, 'ss', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.sd} onChange={(e) => handleBbChange(row.id, 'sd', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.bb_process_id} onChange={(e) => handleBbChange(row.id, 'bb_process_id', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.bone_name} onChange={(e) => handleBbChange(row.id, 'bone_name', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.bone_step} onChange={(e) => handleBbChange(row.id, 'bone_step', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.bone_ss} onChange={(e) => handleBbChange(row.id, 'bone_ss', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.remark} onChange={(e) => handleBbChange(row.id, 'remark', e.target.value)} disabled={isDisabled} /></td>
                   <td style={{ textAlign: 'center' }}>
                     <button
                       type="button"
                       className="flow-delete-btn"
-                      onClick={() => handleBoneStewDeleteRow(row.id)}
-                      disabled={isDisabled || boneStewRows.length <= 1}
+                      onClick={() => handleBbDeleteRow(row.id)}
+                      disabled={isDisabled || bbRows.length <= 1}
                     >
                       ✕
                     </button>
@@ -1149,7 +1149,7 @@ export default function RequestPage(): React.ReactElement {
         <button
           type="button"
           className="flow-table-add-btn"
-          onClick={handleBoneStewAddRow}
+          onClick={handleBbAddRow}
           disabled={isDisabled}
         >
           + 행 추가

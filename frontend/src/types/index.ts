@@ -103,7 +103,7 @@ export interface FlowChartRow {
 
 export interface JayerRow {
   id: string;
-  cooking_method: string;
+  process_id: string;
   sp: string;
   sd: string;
   pp: string;
@@ -118,7 +118,7 @@ export interface JayerRow {
 
 export interface OayerRow {
   id: string;
-  cooking_method: string;
+  process_id: string;
   sp: string;
   sd: string;
   pp: string;
@@ -129,12 +129,12 @@ export interface OayerRow {
   tt: string;
 }
 
-export interface BoneStewTableRow {
+export interface BbTableRow {
   id: string;
-  cooking_method: string;
+  process_id: string;
   ss: string;
   sd: string;
-  bone_cooking: string;
+  bb_process_id: string;
   bone_name: string;
   bone_step: string;
   bone_ss: string;
@@ -156,7 +156,7 @@ export interface DetailFormState {
   flow_chart: FlowChartRow[];
 
   // 제품 이름 선택 시
-  cooking_method: string;
+  process_id: string;
 
   // 지도 편차
   map_deviation_change: string;
@@ -172,8 +172,8 @@ export interface DetailFormState {
   separation_progress: string;
 
   // 뼈찜
-  bone_stew_zone: string;
-  bone_stew_entries: Array<{ location: string; product: string; cooking: string }>;
+  bb_zone: string;
+  bb_entries: Array<{ location: string; product: string; process_id: string }>;
 
   // C가문
   only_c_family: string;
@@ -216,7 +216,7 @@ export interface ApiListResponse<T> {
 // ===== big data Step Info =====
 
 export interface StepInfo {
-  cooking_methodid: string;
+  processid: string;
   step: string;
   combination: string;
   recipeid: string;
