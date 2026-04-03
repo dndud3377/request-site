@@ -133,10 +133,10 @@ class Line(models.Model):
         return self.name
 
 
-class CombinationProduct(models.Model):
+class ProcessProduct(models.Model):
     """외부 DB에서 1시간마다 동기화되는 조합법-제품이름 캐시"""
     line = models.CharField(max_length=50, verbose_name='라인')
-    combination = models.CharField(max_length=200, verbose_name='조합법')
+    process = models.CharField(max_length=200, verbose_name='조합법')
     product_name = models.CharField(max_length=200, verbose_name='제품이름')
     last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
 
@@ -145,14 +145,14 @@ class CombinationProduct(models.Model):
         verbose_name_plural = '조합법-제품이름 캐시 목록'
         indexes = [
             models.Index(fields=['line']),
-            models.Index(fields=['line', 'combination']),
+            models.Index(fields=['line', 'process']),
         ]
 
     def __str__(self):
-        return f"{self.line} / {self.combination} / {self.product_name}"
+        return f"{self.line} / {self.process} / {self.product_name}"
 
 
-class ProductCooking(models.Model):
+class ProductProcessId(models.Model):
     """외부 DB에서 1시간마다 동기화되는 제품이름-조리법 캐시"""
     line = models.CharField(max_length=50, verbose_name='라인')
     product_name = models.CharField(max_length=200, verbose_name='제품이름')
@@ -215,7 +215,7 @@ class StepInfo(models.Model):
     process_id = models.CharField(max_length=200, verbose_name='조리법')
     processid = models.CharField(max_length=200, verbose_name='조리법 ID')
     step = models.CharField(max_length=200, verbose_name='단계')
-    combination = models.CharField(max_length=200, verbose_name='조합법')
+    process = models.CharField(max_length=200, verbose_name='조합법')
     recipeid = models.CharField(max_length=200, verbose_name='레시피')
     last_synced = models.DateTimeField(auto_now=True, verbose_name='조회 시각')
 

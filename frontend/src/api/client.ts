@@ -244,13 +244,13 @@ const getOptions = (url: string): Promise<string[]> =>
   get<{ options: string[] }>(url).then((r) => r.options);
 
 export const formOptionsAPI = {
-  getCombinations: (line: string): Promise<string[]> =>
-    getOptions(`/form-options/combinations/?line=${encodeURIComponent(line)}`),
+  getProcesses: (line: string): Promise<string[]> =>
+    getOptions(`/form-options/processes/?line=${encodeURIComponent(line)}`),
 
-  getProducts: (line: string, combination?: string): Promise<string[]> => {
+  getProducts: (line: string, process?: string): Promise<string[]> => {
     const params = new URLSearchParams({ line });
-    if (combination) {
-      params.append('combination', combination);
+    if (process) {
+      params.append('process', process);
     }
     return getOptions(`/form-options/products/?${params.toString()}`);
   },

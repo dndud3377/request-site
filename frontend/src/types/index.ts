@@ -177,16 +177,16 @@ export interface DetailFormState {
 
   // C가문
   only_prodc: string;
-  prodc_north_line: string;
-  prodc_north_combination: string;
-  prodc_north_product: string;
+  prodc_top_line: string;
+  prodc_top_process: string;
+  prodc_top_product: string;
   prodc_middle_use: string;
   prodc_middle_line: string;
-  prodc_middle_combination: string;
+  prodc_middle_process: string;
   prodc_middle_product: string;
-  prodc_south_line: string;
-  prodc_south_combination: string;
-  prodc_south_product: string;
+  prodc_bottom_line: string;
+  prodc_bottom_process: string;
+  prodc_bottom_product: string;
 
   // X표시
   mshot_change: string;
@@ -218,6 +218,6 @@ export interface ApiListResponse<T> {
 export interface StepInfo {
   processid: string;
   step: string;
-  combination: string;
+  process: string;
   recipeid: string;
 }
