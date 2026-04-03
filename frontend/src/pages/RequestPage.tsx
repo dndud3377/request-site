@@ -42,17 +42,18 @@ interface CFamilyRowProps {
   productOptions: string[];
   onCombinationChange: (region: CRegion, value: string) => void;
 }
+const REGION_LABEL_KEY = { north: 'prodc_top', middle: 'prodc_middle', south: 'prodc_bottom' } as const;
 const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSetValue, lineOptions, combinationOptions, productOptions, onCombinationChange }) => {
   const { t } = useTranslation();
   const showSelects = region !== 'middle' || detail.c_family_middle_use === '사용';
   return (
     <div className="flex-row">
       <span style={{ width: '40px', paddingTop: '32px', fontWeight: 600 }}>
-        {t(`request.c_family_${region}`)}
+        {t(`request.${REGION_LABEL_KEY[region]}`)}
       </span>
       {region === 'middle' && (
         <FormSelect
-          label={t('request.c_family_middle_use')}
+          label={t('request.prodc_use')}
           name="c_family_middle_use"
           value={detail.c_family_middle_use}
           options={['사용', '미사용']}
@@ -64,7 +65,7 @@ const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSet
       {showSelects && (
         <>
           <FormSelect
-            label={t('request.c_family_line')}
+            label={t('request.prodc_line')}
             name={`c_family_${region}_line`}
             value={detail[`c_family_${region}_line` as keyof DetailFormState] as string}
             options={lineOptions}
@@ -73,14 +74,14 @@ const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSet
             className="flex-col"
           />
           <AutocompleteInput
-            label={t('request.c_family_combination')}
+            label={t('request.prodc_process_selection')}
             value={detail[`c_family_${region}_combination` as keyof DetailFormState] as string}
             options={combinationOptions}
             onChange={(v) => { onSetValue(`c_family_${region}_combination`, v); onCombinationChange(region, v); }}
             style={{ flex: 1 }}
           />
           <AutocompleteInput
-            label={t('request.c_family_product')}
+            label={t('request.prodc_partid')}
             value={detail[`c_family_${region}_product` as keyof DetailFormState] as string}
             options={productOptions}
             onChange={(v) => onSetValue(`c_family_${region}_product`, v)}
@@ -548,7 +549,7 @@ export default function RequestPage(): React.ReactElement {
         const submitRes = await documentsAPI.submit(docId!);
         addToast(t('request.submit_success'), 'success');
         if (submitRes.data.email_sent) {
-          setTimeout(() => addToast(t('request.submit_email_sent'), 'info'), 800);
+          setTimeout(() => addToast(t('request.messenger_sent_to_manager'), 'info'), 800);
         }
       }
       setTimeout(() => navigate('/approval'), 1500);
@@ -599,7 +600,7 @@ export default function RequestPage(): React.ReactElement {
                   className="flex-col"
                 />
                 <FormSelect
-                  label={t('request.source_location')}
+                  label={t('request.source_line')}
                   name="source_location"
                   value={detail.source_location}
                   options={OPTION_SOURCE_LOCATION}
@@ -608,7 +609,7 @@ export default function RequestPage(): React.ReactElement {
                   className="flex-col"
                 />
                 <AutocompleteInput
-                  label={t('request.source_product_name')}
+                  label={t('request.source_partid_selection')}
                   value={detail.source_product_name}
                   options={OPTION_SOURCE_PRODUCT}
                   onChange={(v) => handleDetailSet('source_product_name', v)}
@@ -621,9 +622,9 @@ export default function RequestPage(): React.ReactElement {
                 <label className="form-label">{t('request.flow_chart')}</label>
                 <div className="flow-table flow-table-wrapper">
                   <div className="flow-table-header flow-table-row">
-                    <div className="flow-table-cell header-cell">{t('request.flow_location')}</div>
-                    <div className="flow-table-cell header-cell">{t('request.flow_product_name')}</div>
-                    <div className="flow-table-cell header-cell">{t('request.flow_step')}</div>
+                    <div className="flow-table-cell header-cell">{t('request.flow_line')}</div>
+                    <div className="flow-table-cell header-cell">{t('request.flow_partid')}</div>
+                    <div className="flow-table-cell header-cell">{t('request.flow_progress_layer')}</div>
                     <div className="flow-table-cell header-cell"></div>
                   </div>
                   {detail.flow_chart.map((row) => (
@@ -699,7 +700,7 @@ export default function RequestPage(): React.ReactElement {
             className="flex-col"
           />
           <AutocompleteInput
-            label={t('request.combination_method')}
+            label={t('request.process_selection')}
             value={detail.combination_method}
             options={combinationOptions}
             onChange={(v) => handleDetailSet('combination_method', v)}
@@ -708,7 +709,7 @@ export default function RequestPage(): React.ReactElement {
             style={{ flex: 1 }}
           />
           <AutocompleteInput
-            label={t('request.product_name_select')}
+            label={t('request.partid_selection')}
             value={detail.product_name_select}
             options={productOptions}
             onChange={(v) => handleDetailSet('product_name_select', v)}
@@ -717,7 +718,7 @@ export default function RequestPage(): React.ReactElement {
             style={{ flex: 1 }}
           />
           <FormSelect
-            label={t('request.cooking_method')}
+            label={t('request.method')}
             name="cooking_method"
             value={detail.cooking_method}
             options={cookingOptions}
@@ -730,22 +731,22 @@ export default function RequestPage(): React.ReactElement {
         {/* 5. 지도 편차 */}
         <div className="full-width flex-row">
           <div className="form-group" style={{ flex: 25 }}>
-            <label className="form-label">{t('request.map_deviation_change')}</label>
+            <label className="form-label">{t('request.map')}</label>
             <select className="form-control" name="map_deviation_change" value={detail.map_deviation_change} onChange={handleDetailChange}>
-              <option value="변경 없음">{t('request.map_deviation_no_change')}</option>
-              <option value="변경 있음">{t('request.map_deviation_has_change')}</option>
+              <option value="변경 없음">{t('request.map_no_change')}</option>
+              <option value="변경 있음">{t('request.map_has_change')}</option>
             </select>
           </div>
           <div className="form-group" style={{ flex: 10, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_deviation_value_x')}</label>
+            <label className="form-label">{t('request.map_value_x')}</label>
             <input className="form-control" name="map_deviation_value_x" value={detail.map_deviation_value_x} onChange={handleDetailChange} />
           </div>
           <div className="form-group" style={{ flex: 10, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_deviation_value_y')}</label>
+            <label className="form-label">{t('request.map_value_y')}</label>
             <input className="form-control" name="map_deviation_value_y" value={detail.map_deviation_value_y} onChange={handleDetailChange} />
           </div>
           <div className="form-group" style={{ flex: 30, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_deviation_reason')}</label>
+            <label className="form-label">{t('request.map_reason')}</label>
             <input className="form-control" name="map_deviation_reason" value={detail.map_deviation_reason} onChange={handleDetailChange} />
           </div>
         </div>
@@ -753,14 +754,14 @@ export default function RequestPage(): React.ReactElement {
         {/* 6. 예외 구역 */}
         <div className="full-width flex-row">
           <div className="form-group" style={{ flex: 25 }}>
-            <label className="form-label">{t('request.exception_zone_change')}</label>
+            <label className="form-label">{t('request.ea_change')}</label>
             <select className="form-control" name="exception_zone_change" value={detail.exception_zone_change} onChange={handleDetailChange}>
               <option value="변경 없음">{t('request.no_change')}</option>
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
           </div>
           <div className="form-group" style={{ flex: 10, visibility: hasExceptionZone ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.exception_zone_value')}</label>
+            <label className="form-label">{t('request.ea_value')}</label>
             <input className="form-control" name="exception_zone_value" value={detail.exception_zone_value} onChange={handleDetailChange} />
           </div>
         </div>
@@ -768,10 +769,10 @@ export default function RequestPage(): React.ReactElement {
         {/* 8. 뼈찜 조합 영역 */}
         <div className="full-width flex-row" style={{ alignItems: 'flex-start' }}>
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '120px' }}>
-            <label className="form-label">{t('request.bone_stew_zone')}</label>
+            <label className="form-label">{t('request.bb_status')}</label>
             <select className="form-control" name="bone_stew_zone" value={detail.bone_stew_zone} onChange={handleDetailChange}>
-              <option value="없음">{t('request.bone_stew_zone_none')}</option>
-              <option value="존재">{t('request.bone_stew_zone_exists')}</option>
+              <option value="없음">{t('request.bb_omit')}</option>
+              <option value="존재">{t('request.bb_input')}</option>
             </select>
           </div>
           {hasBoneStew && (
@@ -779,7 +780,7 @@ export default function RequestPage(): React.ReactElement {
               {detail.bone_stew_entries.map((entry, idx) => (
                 <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
                   <div className="form-group flex-col" style={{ marginBottom: 0 }}>
-                    <label className="form-label">{t('request.bone_stew_location')}</label>
+                    <label className="form-label">{t('request.bb_ref_line')}</label>
                     <select
                       className="form-control"
                       value={entry.location}
@@ -790,14 +791,14 @@ export default function RequestPage(): React.ReactElement {
                     </select>
                   </div>
                   <AutocompleteInput
-                    label={t('request.bone_stew_product')}
+                    label={t('request.bb_ref_part_id')}
                     value={entry.product}
                     options={OPTION_BONE_STEW_PRODUCT}
                     onChange={(v) => handleBoneStewEntryChange(idx, 'product', v)}
                     style={{ flex: 1 }}
                   />
                   <div className="form-group flex-col" style={{ marginBottom: 0 }}>
-                    <label className="form-label">{t('request.bone_stew_cooking')}</label>
+                    <label className="form-label">{t('request.bb_ref_method')}</label>
                     <select
                       className="form-control"
                       value={entry.cooking}
@@ -814,14 +815,14 @@ export default function RequestPage(): React.ReactElement {
                       style={{ padding: '6px 10px', marginBottom: '2px' }}
                       onClick={() => handleBoneStewEntryDelete(idx)}
                     >
-                      {t('request.bone_stew_delete')}
+                      {t('request.bb_delete')}
                     </button>
                   )}
                 </div>
               ))}
               <div>
                 <button type="button" className="btn btn-secondary" onClick={handleBoneStewEntryAdd}>
-                  + {t('request.bone_stew_add')}
+                  + {t('request.bb_add')}
                 </button>
               </div>
             </div>
@@ -831,7 +832,7 @@ export default function RequestPage(): React.ReactElement {
         {/* 9. Only C가문 제품 */}
         <div className="full-width" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px' }}>
-            <label className="form-label">{t('request.only_c_family')}</label>
+            <label className="form-label">{t('request.prodc_status')}</label>
             <select className="form-control" name="only_c_family" value={detail.only_c_family} onChange={handleDetailChange}>
               <option value="No">No</option>
               <option value="Yes">Yes</option>
@@ -848,19 +849,19 @@ export default function RequestPage(): React.ReactElement {
 
         {/* 10. X표시 변경 여부 */}
         <div className="form-group full-width">
-          <label className="form-label">{t('request.x_mark_change')}</label>
+          <label className="form-label">{t('request.mshot_change_status')}</label>
           <select className="form-control" name="x_mark_change" value={detail.x_mark_change} onChange={handleDetailChange}>
-            <option value="없음">{t('request.x_mark_none')}</option>
-            <option value="추가">{t('request.x_mark_add')}</option>
-            <option value="수정">{t('request.x_mark_edit')}</option>
-            <option value="삭제">{t('request.x_mark_delete')}</option>
+            <option value="없음">{t('request.mshot_none')}</option>
+            <option value="추가">{t('request.mshot_add')}</option>
+            <option value="수정">{t('request.mshot_edit')}</option>
+            <option value="삭제">{t('request.mshot_delete')}</option>
           </select>
           {xMarkDeleteMode && (
             <p style={{ color: 'red', fontWeight: 600, margin: '8px 0 0 0' }}>특정 제품 삭제 필요</p>
           )}
           {xMarkEditAddMode && (
             <div className="form-group" style={{ width: '50%', marginTop: '8px' }}>
-              <label className="form-label">{t('request.x_mark_image_copy')}</label>
+              <label className="form-label">{t('request.mshot_change_image_attach_area')}</label>
               <textarea
                 className="form-control"
                 name="x_mark_image_copy"
@@ -875,7 +876,7 @@ export default function RequestPage(): React.ReactElement {
         {/* 11. 20주년 제품 + 분리 진행 여부 */}
         <div className="full-width flex-row">
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px' }}>
-            <label className="form-label">{t('request.anniversary_20')}</label>
+            <label className="form-label">{t('request.ip_application_status')}</label>
             <select className="form-control" name="anniversary_20" value={detail.anniversary_20} onChange={handleDetailChange}>
               <option value="No">No</option>
               <option value="Yes">Yes</option>
@@ -883,7 +884,7 @@ export default function RequestPage(): React.ReactElement {
           </div>
           {isAnniversary && (
             <div className="form-group" style={{ flex: '0 0 auto' }}>
-              <label className="form-label">{t('request.anniversary_20_option')}</label>
+              <label className="form-label">{t('request.ip_option_selection')}</label>
               <div className="radio-group">
                 {(['옵션A', '옵션B', '옵션C'] as const).map((opt) => (
                   <label key={opt} className="radio-item">
@@ -901,7 +902,7 @@ export default function RequestPage(): React.ReactElement {
             </div>
           )}
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px', marginLeft: '32px' }}>
-            <label className="form-label">{t('request.separation_progress')}</label>
+            <label className="form-label">{t('request.split_progress_status')}</label>
             <select className="form-control" name="separation_progress" value={detail.separation_progress} onChange={handleDetailChange}>
               <option value="아니오">{t('request.no')}</option>
               <option value="예">{t('request.yes')}</option>
@@ -912,21 +913,21 @@ export default function RequestPage(): React.ReactElement {
         {/* 12-14. T가문 적용 / 주력 제품 변경 / 설탕 추가 */}
         <div className="full-width flex-row">
           <div className="form-group flex-col">
-            <label className="form-label">{t('request.t_family_apply')}</label>
+            <label className="form-label">{t('request.tmap_application_status')}</label>
             <select className="form-control" name="t_family_apply" value={detail.t_family_apply} onChange={handleDetailChange}>
-              <option value="미적용">{t('request.t_family_not_applied')}</option>
-              <option value="적용">{t('request.t_family_applied')}</option>
+              <option value="미적용">{t('request.tmap_not_applied')}</option>
+              <option value="적용">{t('request.tmap_applied')}</option>
             </select>
           </div>
           <div className="form-group flex-col">
-            <label className="form-label">{t('request.main_product_change')}</label>
+            <label className="form-label">{t('request.hplhc_status')}</label>
             <select className="form-control" name="main_product_change" value={detail.main_product_change} onChange={handleDetailChange}>
               <option value="변경 없음">{t('request.no_change')}</option>
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
           </div>
           <div className="form-group flex-col">
-            <label className="form-label">{t('request.sugar_add')}</label>
+            <label className="form-label">{t('request.e_lps')}</label>
             <select className="form-control" name="sugar_add" value={detail.sugar_add} onChange={handleDetailChange}>
               <option value="아니오">{t('request.no')}</option>
               <option value="예">{t('request.yes')}</option>
@@ -940,7 +941,7 @@ export default function RequestPage(): React.ReactElement {
 
   const renderStep2 = () => (
     <div className="form-section">
-      <div className="form-section-title">🔷 {t('request.section_jayer')}</div>
+      <div className="form-section-title">🔷 {t('request.job_li')}</div>
       <div className="wizard-table-wrapper">
         <table className="wizard-table">
           <thead>
@@ -1019,7 +1020,7 @@ export default function RequestPage(): React.ReactElement {
 
   const renderStep3 = () => (
     <div className="form-section">
-      <div className="form-section-title">🔶 {t('request.section_oayer')}</div>
+      <div className="form-section-title">🔶 {t('request.ovl_li')}</div>
       <div className="wizard-table-wrapper">
         <table className="wizard-table">
           <thead>
@@ -1096,7 +1097,7 @@ export default function RequestPage(): React.ReactElement {
     const isDisabled = detail.bone_stew_zone === '없음';
     return (
       <div className="form-section">
-        <div className="form-section-title">🦴 {t('request.section_bone_stew')}</div>
+        <div className="form-section-title">🦴 {t('request.bb_li')}</div>
         {isDisabled && (
           <div className="wizard-disabled-notice">
             Step 1에서 '뼈찜 조합 영역'을 <strong>존재</strong>로 설정해야 입력할 수 있습니다.
@@ -1169,9 +1170,9 @@ export default function RequestPage(): React.ReactElement {
         currentStep={step}
         steps={[
           t('request.section_detail'),
-          t('request.section_jayer'),
-          t('request.section_oayer'),
-          t('request.section_bone_stew'),
+          t('request.job_li'),
+          t('request.ovl_li'),
+          t('request.bb_li'),
         ]}
       />
 
