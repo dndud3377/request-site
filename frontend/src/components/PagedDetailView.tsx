@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { RequestDocument, UserRole, DetailFormState, FlowChartRow, JayerRow, OayerRow, BoneStewTableRow } from '../types';
+import { RequestDocument, UserRole, DetailFormState, FlowChartRow, JayerRow, OayerRow, BbTableRow } from '../types';
 
 // ===== Table Components =====
 
@@ -25,10 +25,10 @@ function JayerTable({ rows }: { rows: JayerRow[] }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>{t('request.method')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>ID</th><th>REV 여부</th><th>그림판 version</th></tr></thead>
+        <thead><tr><th>{t('request.process_id')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>ID</th><th>REV 여부</th><th>그림판 version</th></tr></thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id}><td>{r.cooking_method}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td><td>{r.rev}</td><td>{r.drawing_version}</td></tr>
+            <tr key={r.id}><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td><td>{r.rev}</td><td>{r.drawing_version}</td></tr>
           ))}
         </tbody>
       </table>
@@ -42,10 +42,10 @@ function OayerTable({ rows }: { rows: OayerRow[] }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>{t('request.method')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>TT</th></tr></thead>
+        <thead><tr><th>{t('request.process_id')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>TT</th></tr></thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id}><td>{r.cooking_method}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td></tr>
+            <tr key={r.id}><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td></tr>
           ))}
         </tbody>
       </table>
@@ -53,16 +53,16 @@ function OayerTable({ rows }: { rows: OayerRow[] }) {
   );
 }
 
-function BoneStewTable({ rows }: { rows: BoneStewTableRow[] }) {
+function BbTable({ rows }: { rows: BbTableRow[] }) {
   const { t } = useTranslation();
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>조리법</th><th>SS</th><th>SD</th><th>뼈찜 조리법</th><th>뼈찜 이름</th><th>뼈찜 STEP</th><th>뼈찜 SS</th><th>비고</th></tr></thead>
+        <thead><tr><th>{t('request.process_id')}</th><th>SS</th><th>SD</th><th>{t('request.bb_ref_process_id')}</th><th>뼈찜 이름</th><th>뼈찜 STEP</th><th>뼈찜 SS</th><th>비고</th></tr></thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id}><td>{r.cooking_method}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bone_cooking}</td><td>{r.bone_name}</td><td>{r.bone_step}</td><td>{r.bone_ss}</td><td>{r.remark}</td></tr>
+            <tr key={r.id}><td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td>{r.bb_name}</td><td>{r.bb_step}</td><td>{r.bb_ss}</td><td>{r.remark}</td></tr>
           ))}
         </tbody>
       </table>
@@ -84,14 +84,14 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   let detail: Partial<DetailFormState> = {};
   let jayer: JayerRow[] = [];
   let oayer: OayerRow[] = [];
-  let boneStew: BoneStewTableRow[] = [];
+  let bb: BbTableRow[] = [];
 
   try {
     const parsed = JSON.parse(doc.additional_notes ?? '{}');
     detail = parsed?.detail ?? {};
     jayer = parsed?.jayerRows ?? [];
     oayer = parsed?.oayerRows ?? [];
-    boneStew = parsed?.boneStewRows ?? [];
+    bb = parsed?.bbRows ?? [];
   } catch { /* noop */ }
 
   const isPL = role === 'PL';
@@ -102,7 +102,7 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
 
   const showJayer = isR || isJ || isO;
   const showOayer = isO;
-  const showBoneStew = isJ || isO;
+  const showBb = isJ || isO;
   const showFlowChart = isJ || isO;
 
   const cardStyle: React.CSSProperties = {
@@ -173,35 +173,35 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   const basicRow = [
     { label: t('request.request_purpose'), value: purposeValue },
     { label: t('request.line'), value: detail.line || '-' },
-    { label: t('request.process_selection'), value: detail.combination_method || '-' },
-    { label: t('request.partid_selection'), value: detail.product_name_select || '-' },
-    { label: t('request.method'), value: detail.cooking_method || '-' },
+    { label: t('request.process_selection'), value: detail.process_selection || '-' },
+    { label: t('request.partid_selection'), value: detail.partid_selection || '-' },
+    { label: t('request.process_id'), value: detail.process_id || '-' },
   ];
 
-  const buildCFamilyInfo = (): string => {
+  const buildProdcInfo = (): string => {
     const lines: string[] = [];
-    if (detail.c_family_north_line || detail.c_family_north_combination || detail.c_family_north_product) {
-      lines.push(`[북] ${detail.c_family_north_line || '-'} / ${detail.c_family_north_combination || '-'} / ${detail.c_family_north_product || '-'}`);
+    if (detail.prodc_north_line || detail.prodc_north_combination || detail.prodc_north_product) {
+      lines.push(`[북] ${detail.prodc_north_line || '-'} / ${detail.prodc_north_combination || '-'} / ${detail.prodc_north_product || '-'}`);
     }
-    const middleUse = detail.c_family_middle_use;
+    const middleUse = detail.prodc_middle_use;
     if (middleUse) {
       if (middleUse === '미사용') {
         lines.push('[중간] 미사용');
       } else {
-        lines.push(`[중간] ${detail.c_family_middle_line || '-'} / ${detail.c_family_middle_combination || '-'} / ${detail.c_family_middle_product || '-'}`);
+        lines.push(`[중간] ${detail.prodc_middle_line || '-'} / ${detail.prodc_middle_combination || '-'} / ${detail.prodc_middle_product || '-'}`);
       }
     }
-    if (detail.c_family_south_line || detail.c_family_south_combination || detail.c_family_south_product) {
-      lines.push(`[남] ${detail.c_family_south_line || '-'} / ${detail.c_family_south_combination || '-'} / ${detail.c_family_south_product || '-'}`);
+    if (detail.prodc_south_line || detail.prodc_south_combination || detail.prodc_south_product) {
+      lines.push(`[남] ${detail.prodc_south_line || '-'} / ${detail.prodc_south_combination || '-'} / ${detail.prodc_south_product || '-'}`);
     }
     return lines.join('\n');
   };
 
-  const isCFamily = detail.only_c_family === 'Yes';
-  const xMarkChange = detail.x_mark_change || '없음';
-  const xMarkHasDetail = xMarkChange === '추가' || xMarkChange === '수정';
-  const xMarkIsDelete = xMarkChange === '삭제';
-  const isAnniversary = detail.anniversary_20 === 'Yes';
+  const isProdc = detail.only_prodc === 'Yes';
+  const mshotChange = detail.mshot_change || '없음';
+  const mshotHasDetail = mshotChange === '추가' || mshotChange === '수정';
+  const mshotIsDelete = mshotChange === '삭제';
+  const isIp = detail.ip_status === 'Yes';
 
   const PLBasicSection = null;
 
@@ -228,84 +228,84 @@ type Page = { label: string; content: React.ReactNode };
           <div style={cardStyle}>
             <div style={sectionTitle}>{t('approval.section_detail')}</div>
 
-            {(isR || isJ) && (detail.source_location || detail.source_product_name) && (
+            {(isR || isJ) && (detail.source_line || detail.source_partid) && (
               <div style={rowStyle}>
-                <Chip label={t('request.source_line')} value={detail.source_location} />
-                <Chip label={t('request.source_partid_selection')} value={detail.source_product_name} />
+                <Chip label={t('request.source_line')} value={detail.source_line} />
+                <Chip label={t('request.source_partid_selection')} value={detail.source_partid} />
               </div>
             )}
 
-            {(isR || isO || isJ) && (detail.map_deviation_change || detail.exception_zone_change) && (
+            {(isR || isO || isJ) && (detail.map_change || detail.ea_change) && (
               <div style={rowStyle}>
-                {(isR || isO) && detail.map_deviation_change && (
+                {(isR || isO) && detail.map_change && (
                   <div style={chipWide}>
                     <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.map')}</div>
                     <div style={{ ...fieldValue, textAlign: 'left' }}>
-                      {`변경: ${detail.map_deviation_change}${detail.map_deviation_value_x ? ` / X: ${detail.map_deviation_value_x}` : ''}${detail.map_deviation_value_y ? ` / Y: ${detail.map_deviation_value_y}` : ''}${detail.map_deviation_reason ? ` / 사유: ${detail.map_deviation_reason}` : ''}`}
+                      {`변경: ${detail.map_change}${detail.map_value_x ? ` / X: ${detail.map_value_x}` : ''}${detail.map_value_y ? ` / Y: ${detail.map_value_y}` : ''}${detail.map_reason ? ` / 사유: ${detail.map_reason}` : ''}`}
                     </div>
                   </div>
                 )}
-                {isR && detail.exception_zone_change && (
+                {isR && detail.ea_change && (
                   <div style={chipWide}>
                     <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.ea_change')}</div>
                     <div style={{ ...fieldValue, textAlign: 'left' }}>
-                      {`변경: ${detail.exception_zone_change}${detail.exception_zone_value ? ` / 값: ${detail.exception_zone_value}` : ''}`}
+                      {`변경: ${detail.ea_change}${detail.ea_value ? ` / 값: ${detail.ea_value}` : ''}`}
                     </div>
                   </div>
                 )}
               </div>
             )}
 
-            {isR && detail.x_mark_change && (
+            {isR && detail.mshot_change && (
               <div style={rowStyle}>
                 <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
                     <div style={fieldLabel}>{t('request.mshot_change_status')}</div>
-                    <div style={fieldValue}>{detail.x_mark_change}</div>
+                    <div style={fieldValue}>{detail.mshot_change}</div>
                   </div>
-                  {xMarkIsDelete && (
+                  {mshotIsDelete && (
                     <div style={{ flex: 1 }}>
-                      <div style={{ ...fieldLabel, color: '#dc3545' }}>{t('approval.x_mark_delete_notice')}</div>
-                      <div style={{ ...fieldValue, color: '#dc3545' }}>{t('approval.x_mark_delete_desc')}</div>
+                      <div style={{ ...fieldLabel, color: '#dc3545' }}>{t('approval.mshot_delete_notice')}</div>
+                      <div style={{ ...fieldValue, color: '#dc3545' }}>{t('approval.mshot_delete_desc')}</div>
                     </div>
                   )}
-                  {xMarkHasDetail && detail.x_mark_image_copy && (
+                  {mshotHasDetail && detail.mshot_image_copy && (
                     <div style={{ flex: 1 }}>
                       <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')}</div>
-                      <div style={fieldValue}>{detail.x_mark_image_copy}</div>
+                      <div style={fieldValue}>{detail.mshot_image_copy}</div>
                     </div>
                   )}
                 </div>
               </div>
             )}
 
-            {isR && detail.only_c_family && (
+            {isR && detail.only_prodc && (
               <div style={rowStyle}>
                 <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
                     <div style={fieldLabel}>{t('request.prodc_status')}</div>
-                    <div style={fieldValue}>{detail.only_c_family}</div>
+                    <div style={fieldValue}>{detail.only_prodc}</div>
                   </div>
-                  {isCFamily && buildCFamilyInfo() && (
+                  {isProdc && buildProdcInfo() && (
                     <div style={{ flex: 1 }}>
-                      <div style={fieldLabel}>{t('approval.c_family_detail')}</div>
-                      <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildCFamilyInfo()}</div>
+                      <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
+                      <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildProdcInfo()}</div>
                     </div>
                   )}
                 </div>
               </div>
             )}
 
-            {(isJ || isO) && detail.bone_stew_zone && (
+            {(isJ || isO) && detail.bb_zone && (
               <div style={rowStyle}>
                 <div style={chipWide}>
                   <div style={{ ...fieldLabel, textAlign: 'left' }}>{t('request.bb_status')}</div>
                   <div style={{ ...fieldValue, textAlign: 'left' }}>
-                    {`영역: ${detail.bone_stew_zone}`}
-                    {Array.isArray(detail.bone_stew_entries) && detail.bone_stew_entries.length > 0 && (
+                    {`영역: ${detail.bb_zone}`}
+                    {Array.isArray(detail.bb_entries) && detail.bb_entries.length > 0 && (
                       <span>
-                        {detail.bone_stew_entries.map((e: { location: string; product: string; cooking: string }, i: number) =>
-                          ` / [${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.cooking || '-'}`
+                        {detail.bb_entries.map((e: { location: string; product: string; process_id: string }, i: number) =>
+                          ` / [${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.process_id || '-'}`
                         ).join('')}
                       </span>
                     )}
@@ -314,14 +314,14 @@ type Page = { label: string; content: React.ReactNode };
               </div>
             )}
 
-            {isR && (detail.separation_progress || detail.t_family_apply || detail.main_product_change || detail.anniversary_20) && (
+            {isR && (detail.split_progress || detail.tmap_apply || detail.hplhc_change || detail.ip_status) && (
               <div style={rowStyle}>
-                <Chip label={t('request.split_progress_status')} value={detail.separation_progress} />
-                <Chip label={t('request.tmap_application_status')} value={detail.t_family_apply} />
-                <Chip label={t('request.hplhc_status')} value={detail.main_product_change} />
-                <Chip label={t('request.ip_application_status')} value={detail.anniversary_20} />
-                {isAnniversary && detail.anniversary_20_option && (
-                  <Chip label={t('request.ip_option_selection')} value={detail.anniversary_20_option} />
+                <Chip label={t('request.split_progress_status')} value={detail.split_progress} />
+                <Chip label={t('request.tmap_application_status')} value={detail.tmap_apply} />
+                <Chip label={t('request.hplhc_status')} value={detail.hplhc_change} />
+                <Chip label={t('request.ip_application_status')} value={detail.ip_status} />
+                {isIp && detail.ip_option && (
+                  <Chip label={t('request.ip_option_selection')} value={detail.ip_option} />
                 )}
               </div>
             )}
@@ -332,9 +332,9 @@ type Page = { label: string; content: React.ReactNode };
               </div>
             )}
 
-            {((isE && !isR && !isJ && !isO) || role === 'MASTER') && detail.sugar_add && (
+            {((isE && !isR && !isJ && !isO) || role === 'MASTER') && detail.e_lps && (
               <div style={rowStyle}>
-                <Chip label={t('request.e_lps')} value={detail.sugar_add} />
+                <Chip label={t('request.e_lps')} value={detail.e_lps} />
               </div>
             )}
           </div>
@@ -381,13 +381,13 @@ type Page = { label: string; content: React.ReactNode };
       ),
     });
   }
-  if (showBoneStew) {
+  if (showBb) {
     pages.push({
       label: t('request.bb_li'),
       content: (
         <div style={cardStyle}>
           <div style={sectionTitle}>{t('request.bb_li')}</div>
-          <BoneStewTable rows={boneStew} />
+          <BbTable rows={bb} />
         </div>
       ),
     });

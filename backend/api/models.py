@@ -45,7 +45,7 @@ class RequestDocument(models.Model):
     requester_department = models.CharField(max_length=100, verbose_name='부서')
     product_name = models.CharField(max_length=200, verbose_name='제품명')
     reference_materials = models.TextField(blank=True, verbose_name='참고 자료')
-    # 상세 폼 데이터를 JSON 문자열로 저장 (detail.sugar_add 등 포함)
+    # 상세 폼 데이터를 JSON 문자열로 저장 (detail.e_lps 등 포함)
     additional_notes = models.TextField(blank=True, verbose_name='추가 정보(JSON)')
 
     status = models.CharField(
@@ -70,10 +70,10 @@ class RequestDocument(models.Model):
         except (json.JSONDecodeError, TypeError):
             return {}
 
-    def is_sugar_add(self):
+    def is_e_lps(self):
         """설탕 추가 여부 확인 (E단계 생성 조건)"""
         detail = self.get_detail()
-        return detail.get('detail', {}).get('sugar_add') == '예'
+        return detail.get('detail', {}).get('e_lps') == '예'
 
 
 class ApprovalStep(models.Model):
@@ -156,7 +156,7 @@ class ProductCooking(models.Model):
     """외부 DB에서 1시간마다 동기화되는 제품이름-조리법 캐시"""
     line = models.CharField(max_length=50, verbose_name='라인')
     product_name = models.CharField(max_length=200, verbose_name='제품이름')
-    cooking_method = models.CharField(max_length=200, verbose_name='조리법')
+    process_id = models.CharField(max_length=200, verbose_name='조리법')
     last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
 
     class Meta:
@@ -168,7 +168,7 @@ class ProductCooking(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.line} / {self.product_name} / {self.cooking_method}"
+        return f"{self.line} / {self.product_name} / {self.process_id}"
 
 
 class VOC(models.Model):
@@ -212,8 +212,8 @@ class VOC(models.Model):
 class StepInfo(models.Model):
     """big data에서 실시간 조회되는 STEP 정보 (J-ayer 정보 채움용)"""
     line = models.CharField(max_length=50, verbose_name='라인')
-    cooking_method = models.CharField(max_length=200, verbose_name='조리법')
-    cooking_methodid = models.CharField(max_length=200, verbose_name='조리법 ID')
+    process_id = models.CharField(max_length=200, verbose_name='조리법')
+    processid = models.CharField(max_length=200, verbose_name='조리법 ID')
     step = models.CharField(max_length=200, verbose_name='단계')
     combination = models.CharField(max_length=200, verbose_name='조합법')
     recipeid = models.CharField(max_length=200, verbose_name='레시피')
@@ -223,8 +223,8 @@ class StepInfo(models.Model):
         verbose_name = '단계 정보'
         verbose_name_plural = '단계 정보 목록'
         indexes = [
-            models.Index(fields=['line', 'cooking_method']),
+            models.Index(fields=['line', 'process_id'], name='api_stepinf_line_process_idx'),
         ]
 
     def __str__(self):
-        return f"{self.line} / {self.cooking_method} / {self.cooking_methodid} / {self.step}"
+        return f"{self.line} / {self.process_id} / {self.processid} / {self.step}"

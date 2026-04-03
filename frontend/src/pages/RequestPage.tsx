@@ -13,26 +13,26 @@ import {
   FlowChartRow,
   JayerRow,
   OayerRow,
-  BoneStewTableRow,
+  BbTableRow,
 } from '../types';
 
 // ===== Option Constants =====
 const OPTION_REQUEST_PURPOSE = ['신규', '복사', '변경'] as const;
 const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
 const OPTION_OTHER_PURPOSE = ['목적A', '목적B', '목적C'] as const;
-const OPTION_SOURCE_LOCATION = ['위치A', '위치B', '위치C'] as const;
-const OPTION_SOURCE_PRODUCT = ['원본제품A', '원본제품B', '원본제품C'] as const;
-const OPTION_BONE_STEW_LOCATION = ['위치1', '위치2', '위치3'] as const;
-const OPTION_BONE_STEW_PRODUCT = ['뼈찜제품A', '뼈찜제품B'] as const;
-const OPTION_BONE_STEW_COOKING = ['뼈찜조리법1', '뼈찜조리법2'] as const;
+const OPTION_SOURCE_LINE = ['위치A', '위치B', '위치C'] as const;
+const OPTION_SOURCE_PARTID = ['원본제품A', '원본제품B', '원본제품C'] as const;
+const OPTION_BB_LOCATION = ['위치1', '위치2', '위치3'] as const;
+const OPTION_BB_PRODUCT = ['뼈찜제품A', '뼈찜제품B'] as const;
+const OPTION_BB_PROCESS_ID = ['뼈찜조리법1', '뼈찜조리법2'] as const;
 
 // Step 2, 3 전용 제품 이름 옵션 (별도 관리 — 필요에 따라 변경)
 const OPTION_JAYER_PRODUCT = ['제품A', '제품B', '제품C'] as const;
 const OPTION_OAYER_PRODUCT = ['제품A', '제품B', '제품C'] as const;
 
-// ===== CFamilyRow — 북쪽/중간/남쪽 공통 행 =====
+// ===== ProdcRow — 북쪽/중간/남쪽 공통 행 =====
 type CRegion = 'north' | 'middle' | 'south';
-interface CFamilyRowProps {
+interface ProdcRowProps {
   region: CRegion;
   detail: DetailFormState;
   onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
@@ -43,9 +43,9 @@ interface CFamilyRowProps {
   onCombinationChange: (region: CRegion, value: string) => void;
 }
 const REGION_LABEL_KEY = { north: 'prodc_top', middle: 'prodc_middle', south: 'prodc_bottom' } as const;
-const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSetValue, lineOptions, combinationOptions, productOptions, onCombinationChange }) => {
+const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValue, lineOptions, combinationOptions, productOptions, onCombinationChange }) => {
   const { t } = useTranslation();
-  const showSelects = region !== 'middle' || detail.c_family_middle_use === '사용';
+  const showSelects = region !== 'middle' || detail.prodc_middle_use === '사용';
   return (
     <div className="flex-row">
       <span style={{ width: '40px', paddingTop: '32px', fontWeight: 600 }}>
@@ -54,8 +54,8 @@ const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSet
       {region === 'middle' && (
         <FormSelect
           label={t('request.prodc_use')}
-          name="c_family_middle_use"
-          value={detail.c_family_middle_use}
+          name="prodc_middle_use"
+          value={detail.prodc_middle_use}
           options={['사용', '미사용']}
           onChange={onChange}
           placeholder={t('request.select_placeholder')}
@@ -66,8 +66,8 @@ const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSet
         <>
           <FormSelect
             label={t('request.prodc_line')}
-            name={`c_family_${region}_line`}
-            value={detail[`c_family_${region}_line` as keyof DetailFormState] as string}
+            name={`prodc_${region}_line`}
+            value={detail[`prodc_${region}_line` as keyof DetailFormState] as string}
             options={lineOptions}
             onChange={onChange}
             placeholder={t('request.select_placeholder')}
@@ -75,16 +75,16 @@ const CFamilyRow: React.FC<CFamilyRowProps> = ({ region, detail, onChange, onSet
           />
           <AutocompleteInput
             label={t('request.prodc_process_selection')}
-            value={detail[`c_family_${region}_combination` as keyof DetailFormState] as string}
+            value={detail[`prodc_${region}_combination` as keyof DetailFormState] as string}
             options={combinationOptions}
-            onChange={(v) => { onSetValue(`c_family_${region}_combination`, v); onCombinationChange(region, v); }}
+            onChange={(v) => { onSetValue(`prodc_${region}_combination`, v); onCombinationChange(region, v); }}
             style={{ flex: 1 }}
           />
           <AutocompleteInput
             label={t('request.prodc_partid')}
-            value={detail[`c_family_${region}_product` as keyof DetailFormState] as string}
+            value={detail[`prodc_${region}_product` as keyof DetailFormState] as string}
             options={productOptions}
-            onChange={(v) => onSetValue(`c_family_${region}_product`, v)}
+            onChange={(v) => onSetValue(`prodc_${region}_product`, v)}
             style={{ flex: 1 }}
           />
         </>
@@ -103,7 +103,7 @@ const makeRow = (): FlowChartRow => ({
 
 const makeJayerRow = (): JayerRow => ({
   id: String(Date.now() + Math.random()),
-  cooking_method: '',
+  process_id: '',
   sp: '',
   sd: '',
   pp: '',
@@ -118,7 +118,7 @@ const makeJayerRow = (): JayerRow => ({
 
 const makeOayerRow = (): OayerRow => ({
   id: String(Date.now() + Math.random()),
-  cooking_method: '',
+  process_id: '',
   sp: '',
   sd: '',
   pp: '',
@@ -129,15 +129,15 @@ const makeOayerRow = (): OayerRow => ({
   tt: '',
 });
 
-const makeBoneStewRow = (): BoneStewTableRow => ({
+const makeBbRow = (): BbTableRow => ({
   id: String(Date.now() + Math.random()),
-  cooking_method: '',
+  process_id: '',
   ss: '',
   sd: '',
-  bone_cooking: '',
-  bone_name: '',
-  bone_step: '',
-  bone_ss: '',
+  bb_process_id: '',
+  bb_name: '',
+  bb_step: '',
+  bb_ss: '',
   remark: '',
 });
 
@@ -145,41 +145,41 @@ const makeBoneStewRow = (): BoneStewTableRow => ({
 const INITIAL_DETAIL: DetailFormState = {
   request_purpose: '',
   line: '',
-  combination_method: '',
-  product_name_select: '',
+  process_selection: '',
+  partid_selection: '',
   other_purpose: '',
-  source_location: '',
-  source_product_name: '',
+  source_line: '',
+  source_partid: '',
   change_purpose_note: '',
   flow_chart: [makeRow()],
-  cooking_method: '',
-  map_deviation_change: '변경 없음',
-  map_deviation_value_x: '',
-  map_deviation_value_y: '',
-  map_deviation_reason: '',
-  exception_zone_change: '변경 없음',
-  exception_zone_value: '',
-  separation_progress: '아니오',
-  bone_stew_zone: '없음',
-  bone_stew_entries: [{ location: '', product: '', cooking: '' }],
-  only_c_family: 'No',
-  c_family_north_line: '',
-  c_family_north_combination: '',
-  c_family_north_product: '',
-  c_family_middle_use: '',
-  c_family_middle_line: '',
-  c_family_middle_combination: '',
-  c_family_middle_product: '',
-  c_family_south_line: '',
-  c_family_south_combination: '',
-  c_family_south_product: '',
-  x_mark_change: '없음',
-  x_mark_image_copy: '',
-  anniversary_20: 'No',
-  anniversary_20_option: '',
-  t_family_apply: '미적용',
-  main_product_change: '변경 없음',
-  sugar_add: '아니오',
+  process_id: '',
+  map_change: '변경 없음',
+  map_value_x: '',
+  map_value_y: '',
+  map_reason: '',
+  ea_change: '변경 없음',
+  ea_value: '',
+  split_progress: '아니오',
+  bb_zone: '없음',
+  bb_entries: [{ location: '', product: '', process_id: '' }],
+  only_prodc: 'No',
+  prodc_north_line: '',
+  prodc_north_combination: '',
+  prodc_north_product: '',
+  prodc_middle_use: '',
+  prodc_middle_line: '',
+  prodc_middle_combination: '',
+  prodc_middle_product: '',
+  prodc_south_line: '',
+  prodc_south_combination: '',
+  prodc_south_product: '',
+  mshot_change: '없음',
+  mshot_image_copy: '',
+  ip_status: 'No',
+  ip_option: '',
+  tmap_apply: '미적용',
+  hplhc_change: '변경 없음',
+  e_lps: '아니오',
 };
 
 const INITIAL_FORM: CreateDocumentInput = {
@@ -195,8 +195,8 @@ const INITIAL_FORM: CreateDocumentInput = {
 const DETAIL_REQUIRED: (keyof DetailFormState)[] = [
   'request_purpose',
   'line',
-  'combination_method',
-  'product_name_select',
+  'process_selection',
+  'partid_selection',
 ];
 
 // ===== Wizard Step Indicator =====
@@ -245,7 +245,7 @@ export default function RequestPage(): React.ReactElement {
   const [lineOptions, setLineOptions] = useState<string[]>(OPTION_LINE as unknown as string[]);
   const [combinationOptions, setCombinationOptions] = useState<string[]>([]);
   const [productOptions, setProductOptions] = useState<string[]>([]);
-  const [cookingOptions, setCookingOptions] = useState<string[]>([]);
+  const [processIdOptions, setProcessIdOptions] = useState<string[]>([]);
   const [northProductOptions, setNorthProductOptions] = useState<string[]>([]);
   const [middleProductOptions, setMiddleProductOptions] = useState<string[]>([]);
   const [southProductOptions, setSouthProductOptions] = useState<string[]>([]);
@@ -255,7 +255,7 @@ export default function RequestPage(): React.ReactElement {
   const [detail, setDetail] = useState<DetailFormState>(INITIAL_DETAIL);
   const [jayerRows, setJayerRows] = useState<JayerRow[]>([makeJayerRow()]);
   const [oayerRows, setOayerRows] = useState<OayerRow[]>([makeOayerRow()]);
-  const [boneStewRows, setBoneStewRows] = useState<BoneStewTableRow[]>([makeBoneStewRow()]);
+  const [bbRows, setBbRows] = useState<BbTableRow[]>([makeBbRow()]);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -272,7 +272,7 @@ export default function RequestPage(): React.ReactElement {
   // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
   useEffect(() => {
     if (!detail.line) {
-      setCombinationOptions([]); setProductOptions([]); setCookingOptions([]);
+      setCombinationOptions([]); setProductOptions([]); setProcessIdOptions([]);
       setNorthProductOptions([]); setMiddleProductOptions([]); setSouthProductOptions([]);
       return;
     }
@@ -280,29 +280,29 @@ export default function RequestPage(): React.ReactElement {
       .then(setCombinationOptions)
       .catch(() => setCombinationOptions([]));
     setProductOptions([]);
-    setCookingOptions([]);
+    setProcessIdOptions([]);
     setNorthProductOptions([]); setMiddleProductOptions([]); setSouthProductOptions([]);
-    setDetail((prev) => ({ ...prev, combination_method: '', product_name_select: '', cooking_method: '' }));
+    setDetail((prev) => ({ ...prev, process_selection: '', partid_selection: '', process_id: '' }));
   }, [detail.line]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
   useEffect(() => {
-    if (!detail.line || !detail.combination_method) { setProductOptions([]); setCookingOptions([]); return; }
-    formOptionsAPI.getProducts(detail.line, detail.combination_method)
+    if (!detail.line || !detail.process_selection) { setProductOptions([]); setProcessIdOptions([]); return; }
+    formOptionsAPI.getProducts(detail.line, detail.process_selection)
       .then(setProductOptions)
       .catch(() => setProductOptions([]));
-    setCookingOptions([]);
-    setDetail((prev) => ({ ...prev, product_name_select: '', cooking_method: '' }));
-  }, [detail.combination_method]); // eslint-disable-line react-hooks/exhaustive-deps
+    setProcessIdOptions([]);
+    setDetail((prev) => ({ ...prev, partid_selection: '', process_id: '' }));
+  }, [detail.process_selection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 제품이름 변경 → 조리법 fetch
   useEffect(() => {
-    if (!detail.line || !detail.product_name_select) { setCookingOptions([]); return; }
-    formOptionsAPI.getCooking(detail.line, detail.product_name_select)
-      .then(setCookingOptions)
-      .catch(() => setCookingOptions([]));
-    setDetail((prev) => ({ ...prev, cooking_method: '' }));
-  }, [detail.product_name_select]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!detail.line || !detail.partid_selection) { setProcessIdOptions([]); return; }
+    formOptionsAPI.getProcessId(detail.line, detail.partid_selection)
+      .then(setProcessIdOptions)
+      .catch(() => setProcessIdOptions([]));
+    setDetail((prev) => ({ ...prev, process_id: '' }));
+  }, [detail.partid_selection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 편집 모드: 기존 문서 데이터 로드
   useEffect(() => {
@@ -314,20 +314,20 @@ export default function RequestPage(): React.ReactElement {
         if (parsed.detail) setDetail(parsed.detail);
         if (parsed.jayerRows) setJayerRows(parsed.jayerRows);
         if (parsed.oayerRows) setOayerRows(parsed.oayerRows);
-        if (parsed.boneStewRows) setBoneStewRows(parsed.boneStewRows);
+        if (parsed.bbRows) setBbRows(parsed.bbRows);
       } catch { /* noop */ }
     }).catch(() => {});
   }, [editDocId]);
 
   // Derived booleans for Step 1 conditional rendering
   const isCopy = detail.request_purpose === '복사';
-  const hasMapDeviation = detail.map_deviation_change === '변경 있음';
-  const hasExceptionZone = detail.exception_zone_change === '변경 있음';
-  const hasBoneStew = detail.bone_stew_zone === '존재';
-  const isCFamily = detail.only_c_family === 'Yes';
-  const xMarkDeleteMode = detail.x_mark_change === '삭제';
-  const xMarkEditAddMode = detail.x_mark_change === '추가' || detail.x_mark_change === '수정';
-  const isAnniversary = detail.anniversary_20 === 'Yes';
+  const hasMapChange = detail.map_change === '변경 있음';
+  const hasEaChange = detail.ea_change === '변경 있음';
+  const hasBb = detail.bb_zone === '존재';
+  const isProdc = detail.only_prodc === 'Yes';
+  const mshotDeleteMode = detail.mshot_change === '삭제';
+  const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
+  const isIp = detail.ip_status === 'Yes';
 
   // ===== Step 1 Handlers =====
   const handleDetailChange = (
@@ -344,7 +344,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // C가문 리전별 조합법 변경 → 해당 리전 제품이름 fetch
-  const handleCFamilyCombinationChange = (region: CRegion, value: string) => {
+  const handleProdcCombinationChange = (region: CRegion, value: string) => {
     if (!detail.line || !value) {
       if (region === 'north') setNorthProductOptions([]);
       else if (region === 'middle') setMiddleProductOptions([]);
@@ -362,7 +362,7 @@ export default function RequestPage(): React.ReactElement {
         else if (region === 'middle') setMiddleProductOptions([]);
         else setSouthProductOptions([]);
       });
-    setDetail((prev) => ({ ...prev, [`c_family_${region}_product`]: '' }));
+    setDetail((prev) => ({ ...prev, [`prodc_${region}_product`]: '' }));
   };
 
   const handleRadioChange = (name: keyof DetailFormState, value: string) => {
@@ -425,41 +425,41 @@ export default function RequestPage(): React.ReactElement {
     setOayerRows((rows) => (rows.length <= 1 ? rows : rows.filter((r) => r.id !== id)));
   };
 
-  // ===== BoneStew Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
-  const handleBoneStewEntryChange = (idx: number, field: 'location' | 'product' | 'cooking', value: string) => {
+  // ===== Bb Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
+  const handleBbEntryChange = (idx: number, field: 'location' | 'product' | 'process_id', value: string) => {
     setDetail((prev) => ({
       ...prev,
-      bone_stew_entries: prev.bone_stew_entries.map((e, i) => (i === idx ? { ...e, [field]: value } : e)),
+      bb_entries: prev.bb_entries.map((e, i) => (i === idx ? { ...e, [field]: value } : e)),
     }));
   };
 
-  const handleBoneStewEntryAdd = () => {
+  const handleBbEntryAdd = () => {
     setDetail((prev) => ({
       ...prev,
-      bone_stew_entries: [...prev.bone_stew_entries, { location: '', product: '', cooking: '' }],
+      bb_entries: [...prev.bb_entries, { location: '', product: '', process_id: '' }],
     }));
   };
 
-  const handleBoneStewEntryDelete = (idx: number) => {
+  const handleBbEntryDelete = (idx: number) => {
     setDetail((prev) => {
-      if (prev.bone_stew_entries.length <= 1) return prev;
-      return { ...prev, bone_stew_entries: prev.bone_stew_entries.filter((_, i) => i !== idx) };
+      if (prev.bb_entries.length <= 1) return prev;
+      return { ...prev, bb_entries: prev.bb_entries.filter((_, i) => i !== idx) };
     });
   };
 
-  // ===== BoneStew Handlers =====
-  const handleBoneStewChange = (
+  // ===== Bb Handlers =====
+  const handleBbChange = (
     id: string,
-    field: keyof Omit<BoneStewTableRow, 'id'>,
+    field: keyof Omit<BbTableRow, 'id'>,
     value: string
   ) => {
-    setBoneStewRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+    setBbRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
   };
 
-  const handleBoneStewAddRow = () => setBoneStewRows((rows) => [...rows, makeBoneStewRow()]);
+  const handleBbAddRow = () => setBbRows((rows) => [...rows, makeBbRow()]);
 
-  const handleBoneStewDeleteRow = (id: string) => {
-    setBoneStewRows((rows) => (rows.length <= 1 ? rows : rows.filter((r) => r.id !== id)));
+  const handleBbDeleteRow = (id: string) => {
+    setBbRows((rows) => (rows.length <= 1 ? rows : rows.filter((r) => r.id !== id)));
   };
 
   // ===== Validation =====
@@ -475,16 +475,16 @@ export default function RequestPage(): React.ReactElement {
 
   // ===== API =====
   const buildEnrichedForm = (note?: string): CreateDocumentInput => {
-    const title = `${detail.line}(${detail.request_purpose})_${detail.combination_method}_${detail.product_name_select}_${detail.cooking_method}_요청서`;
+    const title = `${detail.line}(${detail.request_purpose})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서`;
     return {
       ...form,
       title,
-      product_name: detail.product_name_select,
+      product_name: detail.partid_selection,
       requester_name: currentUser.name,
       requester_email: currentUser.email,
       requester_department: currentUser.department,
       reference_materials: note ?? '',
-      additional_notes: JSON.stringify({ detail, jayerRows, oayerRows, boneStewRows }),
+      additional_notes: JSON.stringify({ detail, jayerRows, oayerRows, bbRows }),
     };
   };
 
@@ -601,18 +601,18 @@ export default function RequestPage(): React.ReactElement {
                 />
                 <FormSelect
                   label={t('request.source_line')}
-                  name="source_location"
-                  value={detail.source_location}
-                  options={OPTION_SOURCE_LOCATION}
+                  name="source_line"
+                  value={detail.source_line}
+                  options={OPTION_SOURCE_LINE}
                   onChange={handleDetailChange}
                   placeholder={t('request.select_placeholder')}
                   className="flex-col"
                 />
                 <AutocompleteInput
                   label={t('request.source_partid_selection')}
-                  value={detail.source_product_name}
-                  options={OPTION_SOURCE_PRODUCT}
-                  onChange={(v) => handleDetailSet('source_product_name', v)}
+                  value={detail.source_partid}
+                  options={OPTION_SOURCE_PARTID}
+                  onChange={(v) => handleDetailSet('source_partid', v)}
                   style={{ flex: 1 }}
                 />
               </div>
@@ -701,27 +701,27 @@ export default function RequestPage(): React.ReactElement {
           />
           <AutocompleteInput
             label={t('request.process_selection')}
-            value={detail.combination_method}
+            value={detail.process_selection}
             options={combinationOptions}
-            onChange={(v) => handleDetailSet('combination_method', v)}
+            onChange={(v) => handleDetailSet('process_selection', v)}
             required
-            error={errors.combination_method}
+            error={errors.process_selection}
             style={{ flex: 1 }}
           />
           <AutocompleteInput
             label={t('request.partid_selection')}
-            value={detail.product_name_select}
+            value={detail.partid_selection}
             options={productOptions}
-            onChange={(v) => handleDetailSet('product_name_select', v)}
+            onChange={(v) => handleDetailSet('partid_selection', v)}
             required
-            error={errors.product_name_select}
+            error={errors.partid_selection}
             style={{ flex: 1 }}
           />
           <FormSelect
-            label={t('request.method')}
-            name="cooking_method"
-            value={detail.cooking_method}
-            options={cookingOptions}
+            label={t('request.process_id')}
+            name="process_id"
+            value={detail.process_id}
+            options={processIdOptions}
             onChange={handleDetailChange}
             placeholder={t('request.select_placeholder')}
             className="flex-col"
@@ -732,22 +732,22 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width flex-row">
           <div className="form-group" style={{ flex: 25 }}>
             <label className="form-label">{t('request.map')}</label>
-            <select className="form-control" name="map_deviation_change" value={detail.map_deviation_change} onChange={handleDetailChange}>
+            <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange}>
               <option value="변경 없음">{t('request.map_no_change')}</option>
               <option value="변경 있음">{t('request.map_has_change')}</option>
             </select>
           </div>
-          <div className="form-group" style={{ flex: 10, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
+          <div className="form-group" style={{ flex: 10, visibility: hasMapChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_value_x')}</label>
-            <input className="form-control" name="map_deviation_value_x" value={detail.map_deviation_value_x} onChange={handleDetailChange} />
+            <input className="form-control" name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} />
           </div>
-          <div className="form-group" style={{ flex: 10, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
+          <div className="form-group" style={{ flex: 10, visibility: hasMapChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_value_y')}</label>
-            <input className="form-control" name="map_deviation_value_y" value={detail.map_deviation_value_y} onChange={handleDetailChange} />
+            <input className="form-control" name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} />
           </div>
-          <div className="form-group" style={{ flex: 30, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
+          <div className="form-group" style={{ flex: 30, visibility: hasMapChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_reason')}</label>
-            <input className="form-control" name="map_deviation_reason" value={detail.map_deviation_reason} onChange={handleDetailChange} />
+            <input className="form-control" name="map_reason" value={detail.map_reason} onChange={handleDetailChange} />
           </div>
         </div>
 
@@ -755,14 +755,14 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width flex-row">
           <div className="form-group" style={{ flex: 25 }}>
             <label className="form-label">{t('request.ea_change')}</label>
-            <select className="form-control" name="exception_zone_change" value={detail.exception_zone_change} onChange={handleDetailChange}>
+            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange}>
               <option value="변경 없음">{t('request.no_change')}</option>
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
           </div>
-          <div className="form-group" style={{ flex: 10, visibility: hasExceptionZone ? 'visible' : 'hidden' }}>
+          <div className="form-group" style={{ flex: 10, visibility: hasEaChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.ea_value')}</label>
-            <input className="form-control" name="exception_zone_value" value={detail.exception_zone_value} onChange={handleDetailChange} />
+            <input className="form-control" name="ea_value" value={detail.ea_value} onChange={handleDetailChange} />
           </div>
         </div>
 
@@ -770,50 +770,50 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width flex-row" style={{ alignItems: 'flex-start' }}>
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '120px' }}>
             <label className="form-label">{t('request.bb_status')}</label>
-            <select className="form-control" name="bone_stew_zone" value={detail.bone_stew_zone} onChange={handleDetailChange}>
+            <select className="form-control" name="bb_zone" value={detail.bb_zone} onChange={handleDetailChange}>
               <option value="없음">{t('request.bb_omit')}</option>
               <option value="존재">{t('request.bb_input')}</option>
             </select>
           </div>
-          {hasBoneStew && (
+          {hasBb && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {detail.bone_stew_entries.map((entry, idx) => (
+              {detail.bb_entries.map((entry, idx) => (
                 <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
                   <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                     <label className="form-label">{t('request.bb_ref_line')}</label>
                     <select
                       className="form-control"
                       value={entry.location}
-                      onChange={(e) => handleBoneStewEntryChange(idx, 'location', e.target.value)}
+                      onChange={(e) => handleBbEntryChange(idx, 'location', e.target.value)}
                     >
                       <option value="">{t('request.select_placeholder')}</option>
-                      {OPTION_BONE_STEW_LOCATION.map((o) => <option key={o} value={o}>{o}</option>)}
+                      {OPTION_BB_LOCATION.map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
                   </div>
                   <AutocompleteInput
                     label={t('request.bb_ref_part_id')}
                     value={entry.product}
-                    options={OPTION_BONE_STEW_PRODUCT}
-                    onChange={(v) => handleBoneStewEntryChange(idx, 'product', v)}
+                    options={OPTION_BB_PRODUCT}
+                    onChange={(v) => handleBbEntryChange(idx, 'product', v)}
                     style={{ flex: 1 }}
                   />
                   <div className="form-group flex-col" style={{ marginBottom: 0 }}>
-                    <label className="form-label">{t('request.bb_ref_method')}</label>
+                    <label className="form-label">{t('request.bb_ref_process_id')}</label>
                     <select
                       className="form-control"
-                      value={entry.cooking}
-                      onChange={(e) => handleBoneStewEntryChange(idx, 'cooking', e.target.value)}
+                      value={entry.process_id}
+                      onChange={(e) => handleBbEntryChange(idx, 'process_id', e.target.value)}
                     >
                       <option value="">{t('request.select_placeholder')}</option>
-                      {OPTION_BONE_STEW_COOKING.map((o) => <option key={o} value={o}>{o}</option>)}
+                      {OPTION_BB_PROCESS_ID.map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
                   </div>
-                  {detail.bone_stew_entries.length > 1 && (
+                  {detail.bb_entries.length > 1 && (
                     <button
                       type="button"
                       className="btn btn-danger"
                       style={{ padding: '6px 10px', marginBottom: '2px' }}
-                      onClick={() => handleBoneStewEntryDelete(idx)}
+                      onClick={() => handleBbEntryDelete(idx)}
                     >
                       {t('request.bb_delete')}
                     </button>
@@ -821,7 +821,7 @@ export default function RequestPage(): React.ReactElement {
                 </div>
               ))}
               <div>
-                <button type="button" className="btn btn-secondary" onClick={handleBoneStewEntryAdd}>
+                <button type="button" className="btn btn-secondary" onClick={handleBbEntryAdd}>
                   + {t('request.bb_add')}
                 </button>
               </div>
@@ -833,16 +833,16 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px' }}>
             <label className="form-label">{t('request.prodc_status')}</label>
-            <select className="form-control" name="only_c_family" value={detail.only_c_family} onChange={handleDetailChange}>
+            <select className="form-control" name="only_prodc" value={detail.only_prodc} onChange={handleDetailChange}>
               <option value="No">No</option>
               <option value="Yes">Yes</option>
             </select>
           </div>
-          {isCFamily && (
+          {isProdc && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <CFamilyRow region="north"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={northProductOptions}  onCombinationChange={handleCFamilyCombinationChange} />
-              <CFamilyRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={middleProductOptions} onCombinationChange={handleCFamilyCombinationChange} />
-              <CFamilyRow region="south"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={southProductOptions}  onCombinationChange={handleCFamilyCombinationChange} />
+              <ProdcRow region="north"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={northProductOptions}  onCombinationChange={handleProdcCombinationChange} />
+              <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={middleProductOptions} onCombinationChange={handleProdcCombinationChange} />
+              <ProdcRow region="south"  detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} combinationOptions={combinationOptions} productOptions={southProductOptions}  onCombinationChange={handleProdcCombinationChange} />
             </div>
           )}
         </div>
@@ -850,22 +850,22 @@ export default function RequestPage(): React.ReactElement {
         {/* 10. X표시 변경 여부 */}
         <div className="form-group full-width">
           <label className="form-label">{t('request.mshot_change_status')}</label>
-          <select className="form-control" name="x_mark_change" value={detail.x_mark_change} onChange={handleDetailChange}>
+          <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={handleDetailChange}>
             <option value="없음">{t('request.mshot_none')}</option>
             <option value="추가">{t('request.mshot_add')}</option>
             <option value="수정">{t('request.mshot_edit')}</option>
             <option value="삭제">{t('request.mshot_delete')}</option>
           </select>
-          {xMarkDeleteMode && (
+          {mshotDeleteMode && (
             <p style={{ color: 'red', fontWeight: 600, margin: '8px 0 0 0' }}>특정 제품 삭제 필요</p>
           )}
-          {xMarkEditAddMode && (
+          {mshotEditAddMode && (
             <div className="form-group" style={{ width: '50%', marginTop: '8px' }}>
               <label className="form-label">{t('request.mshot_change_image_attach_area')}</label>
               <textarea
                 className="form-control"
-                name="x_mark_image_copy"
-                value={detail.x_mark_image_copy}
+                name="mshot_image_copy"
+                value={detail.mshot_image_copy}
                 onChange={handleDetailChange}
                 style={{ aspectRatio: '1 / 1', resize: 'none' }}
               />
@@ -877,12 +877,12 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width flex-row">
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px' }}>
             <label className="form-label">{t('request.ip_application_status')}</label>
-            <select className="form-control" name="anniversary_20" value={detail.anniversary_20} onChange={handleDetailChange}>
+            <select className="form-control" name="ip_status" value={detail.ip_status} onChange={handleDetailChange}>
               <option value="No">No</option>
               <option value="Yes">Yes</option>
             </select>
           </div>
-          {isAnniversary && (
+          {isIp && (
             <div className="form-group" style={{ flex: '0 0 auto' }}>
               <label className="form-label">{t('request.ip_option_selection')}</label>
               <div className="radio-group">
@@ -890,10 +890,10 @@ export default function RequestPage(): React.ReactElement {
                   <label key={opt} className="radio-item">
                     <input
                       type="radio"
-                      name="anniversary_20_option"
+                      name="ip_option"
                       value={opt}
-                      checked={detail.anniversary_20_option === opt}
-                      onChange={() => handleRadioChange('anniversary_20_option', opt)}
+                      checked={detail.ip_option === opt}
+                      onChange={() => handleRadioChange('ip_option', opt)}
                     />
                     {opt}
                   </label>
@@ -903,7 +903,7 @@ export default function RequestPage(): React.ReactElement {
           )}
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px', marginLeft: '32px' }}>
             <label className="form-label">{t('request.split_progress_status')}</label>
-            <select className="form-control" name="separation_progress" value={detail.separation_progress} onChange={handleDetailChange}>
+            <select className="form-control" name="split_progress" value={detail.split_progress} onChange={handleDetailChange}>
               <option value="아니오">{t('request.no')}</option>
               <option value="예">{t('request.yes')}</option>
             </select>
@@ -914,21 +914,21 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width flex-row">
           <div className="form-group flex-col">
             <label className="form-label">{t('request.tmap_application_status')}</label>
-            <select className="form-control" name="t_family_apply" value={detail.t_family_apply} onChange={handleDetailChange}>
+            <select className="form-control" name="tmap_apply" value={detail.tmap_apply} onChange={handleDetailChange}>
               <option value="미적용">{t('request.tmap_not_applied')}</option>
               <option value="적용">{t('request.tmap_applied')}</option>
             </select>
           </div>
           <div className="form-group flex-col">
             <label className="form-label">{t('request.hplhc_status')}</label>
-            <select className="form-control" name="main_product_change" value={detail.main_product_change} onChange={handleDetailChange}>
+            <select className="form-control" name="hplhc_change" value={detail.hplhc_change} onChange={handleDetailChange}>
               <option value="변경 없음">{t('request.no_change')}</option>
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
           </div>
           <div className="form-group flex-col">
             <label className="form-label">{t('request.e_lps')}</label>
-            <select className="form-control" name="sugar_add" value={detail.sugar_add} onChange={handleDetailChange}>
+            <select className="form-control" name="e_lps" value={detail.e_lps} onChange={handleDetailChange}>
               <option value="아니오">{t('request.no')}</option>
               <option value="예">{t('request.yes')}</option>
             </select>
@@ -977,7 +977,7 @@ export default function RequestPage(): React.ReactElement {
           <tbody>
             {jayerRows.map((row) => (
               <tr key={row.id}>
-                <td><input value={row.cooking_method} onChange={(e) => handleJayerChange(row.id, 'cooking_method', e.target.value)} /></td>
+                <td><input value={row.process_id} onChange={(e) => handleJayerChange(row.id, 'process_id', e.target.value)} /></td>
                 <td><input value={row.sp} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} /></td>
                 <td><input value={row.sd} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} /></td>
                 <td><input value={row.pp} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} /></td>
@@ -1054,7 +1054,7 @@ export default function RequestPage(): React.ReactElement {
           <tbody>
             {oayerRows.map((row) => (
               <tr key={row.id}>
-                <td><input value={row.cooking_method} onChange={(e) => handleOayerChange(row.id, 'cooking_method', e.target.value)} /></td>
+                <td><input value={row.process_id} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} /></td>
                 <td><input value={row.sp} onChange={(e) => handleOayerChange(row.id, 'sp', e.target.value)} /></td>
                 <td><input value={row.sd} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} /></td>
                 <td><input value={row.pp} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} /></td>
@@ -1094,7 +1094,7 @@ export default function RequestPage(): React.ReactElement {
   );
 
   const renderStep4 = () => {
-    const isDisabled = detail.bone_stew_zone === '없음';
+    const isDisabled = detail.bb_zone === '없음';
     return (
       <div className="form-section">
         <div className="form-section-title">🦴 {t('request.bb_li')}</div>
@@ -1120,23 +1120,23 @@ export default function RequestPage(): React.ReactElement {
               </tr>
             </thead>
             <tbody>
-              {boneStewRows.map((row, idx) => (
+              {bbRows.map((row, idx) => (
                 <tr key={row.id}>
                   <td className="wizard-table-no">{idx + 1}</td>
-                  <td><input value={row.cooking_method} onChange={(e) => handleBoneStewChange(row.id, 'cooking_method', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.ss} onChange={(e) => handleBoneStewChange(row.id, 'ss', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.sd} onChange={(e) => handleBoneStewChange(row.id, 'sd', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bone_cooking} onChange={(e) => handleBoneStewChange(row.id, 'bone_cooking', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bone_name} onChange={(e) => handleBoneStewChange(row.id, 'bone_name', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bone_step} onChange={(e) => handleBoneStewChange(row.id, 'bone_step', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bone_ss} onChange={(e) => handleBoneStewChange(row.id, 'bone_ss', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.remark} onChange={(e) => handleBoneStewChange(row.id, 'remark', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.process_id} onChange={(e) => handleBbChange(row.id, 'process_id', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.ss} onChange={(e) => handleBbChange(row.id, 'ss', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.sd} onChange={(e) => handleBbChange(row.id, 'sd', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.bb_process_id} onChange={(e) => handleBbChange(row.id, 'bb_process_id', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.bb_name} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.bb_step} onChange={(e) => handleBbChange(row.id, 'bb_step', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.bb_ss} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} disabled={isDisabled} /></td>
+                  <td><input value={row.remark} onChange={(e) => handleBbChange(row.id, 'remark', e.target.value)} disabled={isDisabled} /></td>
                   <td style={{ textAlign: 'center' }}>
                     <button
                       type="button"
                       className="flow-delete-btn"
-                      onClick={() => handleBoneStewDeleteRow(row.id)}
-                      disabled={isDisabled || boneStewRows.length <= 1}
+                      onClick={() => handleBbDeleteRow(row.id)}
+                      disabled={isDisabled || bbRows.length <= 1}
                     >
                       ✕
                     </button>
@@ -1149,7 +1149,7 @@ export default function RequestPage(): React.ReactElement {
         <button
           type="button"
           className="flow-table-add-btn"
-          onClick={handleBoneStewAddRow}
+          onClick={handleBbAddRow}
           disabled={isDisabled}
         >
           + 행 추가

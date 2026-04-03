@@ -103,7 +103,7 @@ export interface FlowChartRow {
 
 export interface JayerRow {
   id: string;
-  cooking_method: string;
+  process_id: string;
   sp: string;
   sd: string;
   pp: string;
@@ -118,7 +118,7 @@ export interface JayerRow {
 
 export interface OayerRow {
   id: string;
-  cooking_method: string;
+  process_id: string;
   sp: string;
   sd: string;
   pp: string;
@@ -129,15 +129,15 @@ export interface OayerRow {
   tt: string;
 }
 
-export interface BoneStewTableRow {
+export interface BbTableRow {
   id: string;
-  cooking_method: string;
+  process_id: string;
   ss: string;
   sd: string;
-  bone_cooking: string;
-  bone_name: string;
-  bone_step: string;
-  bone_ss: string;
+  bb_process_id: string;
+  bb_name: string;
+  bb_step: string;
+  bb_ss: string;
   remark: string;
 }
 
@@ -145,61 +145,61 @@ export interface DetailFormState {
   // 항상 표시
   request_purpose: string;
   line: string;
-  combination_method: string;
-  product_name_select: string;
+  process_selection: string;
+  partid_selection: string;
 
   // 복사 선택 시
   other_purpose: string;
-  source_location: string;
-  source_product_name: string;
+  source_line: string;
+  source_partid: string;
   change_purpose_note: string;
   flow_chart: FlowChartRow[];
 
   // 제품 이름 선택 시
-  cooking_method: string;
+  process_id: string;
 
   // 지도 편차
-  map_deviation_change: string;
-  map_deviation_value_x: string;
-  map_deviation_value_y: string;
-  map_deviation_reason: string;
+  map_change: string;
+  map_value_x: string;
+  map_value_y: string;
+  map_reason: string;
 
   // 예외 구역
-  exception_zone_change: string;
-  exception_zone_value: string;
+  ea_change: string;
+  ea_value: string;
 
   // 분리
-  separation_progress: string;
+  split_progress: string;
 
   // 뼈찜
-  bone_stew_zone: string;
-  bone_stew_entries: Array<{ location: string; product: string; cooking: string }>;
+  bb_zone: string;
+  bb_entries: Array<{ location: string; product: string; process_id: string }>;
 
   // C가문
-  only_c_family: string;
-  c_family_north_line: string;
-  c_family_north_combination: string;
-  c_family_north_product: string;
-  c_family_middle_use: string;
-  c_family_middle_line: string;
-  c_family_middle_combination: string;
-  c_family_middle_product: string;
-  c_family_south_line: string;
-  c_family_south_combination: string;
-  c_family_south_product: string;
+  only_prodc: string;
+  prodc_north_line: string;
+  prodc_north_combination: string;
+  prodc_north_product: string;
+  prodc_middle_use: string;
+  prodc_middle_line: string;
+  prodc_middle_combination: string;
+  prodc_middle_product: string;
+  prodc_south_line: string;
+  prodc_south_combination: string;
+  prodc_south_product: string;
 
   // X표시
-  x_mark_change: string;
-  x_mark_image_copy: string;
+  mshot_change: string;
+  mshot_image_copy: string;
 
   // 20주년
-  anniversary_20: string;
-  anniversary_20_option: string;
+  ip_status: string;
+  ip_option: string;
 
   // T가문 / 주력 / 설탕
-  t_family_apply: string;
-  main_product_change: string;
-  sugar_add: string;
+  tmap_apply: string;
+  hplhc_change: string;
+  e_lps: string;
 }
 
 // ===== API Response Wrappers =====
@@ -216,7 +216,7 @@ export interface ApiListResponse<T> {
 // ===== big data Step Info =====
 
 export interface StepInfo {
-  cooking_methodid: string;
+  processid: string;
   step: string;
   combination: string;
   recipeid: string;

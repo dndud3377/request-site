@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     RequestDocumentViewSet, VOCViewSet, LineViewSet,
-    form_options_combinations, form_options_products, form_options_cooking,
+    form_options_combinations, form_options_products, form_options_process_id,
 )
 from .auth_views import login_view, me_view
 
@@ -17,5 +17,5 @@ urlpatterns = [
     path('auth/me/', me_view),
     path('form-options/combinations/', form_options_combinations),
     path('form-options/products/', form_options_products),
-    path('form-options/cooking/', form_options_cooking),
+    path('form-options/process-id/', form_options_process_id),
 ]

@@ -255,8 +255,8 @@ export const formOptionsAPI = {
     return getOptions(`/form-options/products/?${params.toString()}`);
   },
 
-  getCooking: (line: string, product: string): Promise<string[]> =>
-    getOptions(`/form-options/cooking/?line=${encodeURIComponent(line)}&product=${encodeURIComponent(product)}`),
+  getProcessId: (line: string, product: string): Promise<string[]> =>
+    getOptions(`/form-options/process-id/?line=${encodeURIComponent(line)}&product=${encodeURIComponent(product)}`),
 
   getStepInfo: (line: string, process: string): Promise<StepInfo[]> =>
     get<{ options: StepInfo[] }>(`/form-options/step-info/?line=${encodeURIComponent(line)}&process=${encodeURIComponent(process)}`)

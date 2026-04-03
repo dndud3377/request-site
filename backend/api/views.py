@@ -146,7 +146,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 o_step and o_step.action == 'approved'
             )
             if both_approved:
-                if document.is_sugar_add():
+                if document.is_e_lps():
                     ApprovalStep.objects.create(document=document, agent='E', action='pending')
                     new_status = 'under_review'
                 else:
@@ -263,10 +263,10 @@ class LineViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 # @require_GET
-# def form_options_cooking(request):
+# def form_options_process_id(request):
 #     """라인 + 제품이름 → 조리법 목록"""
 #     # 파라미터: line (GET), product (GET)
-#     # 로직: ProductCooking 모델에서 line, product_name 필터링 후 cooking_method 목록 반환
+#     # 로직: ProductCooking 모델에서 line, product_name 필터링 후 process_id 목록 반환
 #     # 반환값: JsonResponse({'options': ['조리법1', '조리법2', ...]})
 
 
