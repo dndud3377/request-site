@@ -45,7 +45,7 @@ class RequestDocument(models.Model):
     requester_department = models.CharField(max_length=100, verbose_name='부서')
     product_name = models.CharField(max_length=200, verbose_name='제품명')
     reference_materials = models.TextField(blank=True, verbose_name='참고 자료')
-    # 상세 폼 데이터를 JSON 문자열로 저장 (detail.sugar_add 등 포함)
+    # 상세 폼 데이터를 JSON 문자열로 저장 (detail.e_lps 등 포함)
     additional_notes = models.TextField(blank=True, verbose_name='추가 정보(JSON)')
 
     status = models.CharField(
@@ -70,10 +70,10 @@ class RequestDocument(models.Model):
         except (json.JSONDecodeError, TypeError):
             return {}
 
-    def is_sugar_add(self):
+    def is_e_lps(self):
         """설탕 추가 여부 확인 (E단계 생성 조건)"""
         detail = self.get_detail()
-        return detail.get('detail', {}).get('sugar_add') == '예'
+        return detail.get('detail', {}).get('e_lps') == '예'
 
 
 class ApprovalStep(models.Model):

@@ -146,7 +146,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 o_step and o_step.action == 'approved'
             )
             if both_approved:
-                if document.is_sugar_add():
+                if document.is_e_lps():
                     ApprovalStep.objects.create(document=document, agent='E', action='pending')
                     new_status = 'under_review'
                 else:

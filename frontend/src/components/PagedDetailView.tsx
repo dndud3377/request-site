@@ -201,7 +201,7 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   const mshotChange = detail.mshot_change || '없음';
   const mshotHasDetail = mshotChange === '추가' || mshotChange === '수정';
   const mshotIsDelete = mshotChange === '삭제';
-  const isAnniversary = detail.ip_status === 'Yes';
+  const isIp = detail.ip_status === 'Yes';
 
   const PLBasicSection = null;
 
@@ -320,7 +320,7 @@ type Page = { label: string; content: React.ReactNode };
                 <Chip label={t('request.tmap_application_status')} value={detail.tmap_apply} />
                 <Chip label={t('request.hplhc_status')} value={detail.hplhc_change} />
                 <Chip label={t('request.ip_application_status')} value={detail.ip_status} />
-                {isAnniversary && detail.ip_option && (
+                {isIp && detail.ip_option && (
                   <Chip label={t('request.ip_option_selection')} value={detail.ip_option} />
                 )}
               </div>

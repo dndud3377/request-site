@@ -20,10 +20,10 @@ import {
 const OPTION_REQUEST_PURPOSE = ['신규', '복사', '변경'] as const;
 const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
 const OPTION_OTHER_PURPOSE = ['목적A', '목적B', '목적C'] as const;
-const OPTION_SOURCE_LOCATION = ['위치A', '위치B', '위치C'] as const;
-const OPTION_SOURCE_PRODUCT = ['원본제품A', '원본제품B', '원본제품C'] as const;
-const OPTION_BONE_STEW_LOCATION = ['위치1', '위치2', '위치3'] as const;
-const OPTION_BONE_STEW_PRODUCT = ['뼈찜제품A', '뼈찜제품B'] as const;
+const OPTION_SOURCE_LINE = ['위치A', '위치B', '위치C'] as const;
+const OPTION_SOURCE_PARTID = ['원본제품A', '원본제품B', '원본제품C'] as const;
+const OPTION_BB_LOCATION = ['위치1', '위치2', '위치3'] as const;
+const OPTION_BB_PRODUCT = ['뼈찜제품A', '뼈찜제품B'] as const;
 const OPTION_BB_PROCESS_ID = ['뼈찜조리법1', '뼈찜조리법2'] as const;
 
 // Step 2, 3 전용 제품 이름 옵션 (별도 관리 — 필요에 따라 변경)
@@ -321,13 +321,13 @@ export default function RequestPage(): React.ReactElement {
 
   // Derived booleans for Step 1 conditional rendering
   const isCopy = detail.request_purpose === '복사';
-  const hasMapDeviation = detail.map_change === '변경 있음';
-  const hasExceptionZone = detail.ea_change === '변경 있음';
+  const hasMapChange = detail.map_change === '변경 있음';
+  const hasEaChange = detail.ea_change === '변경 있음';
   const hasBb = detail.bb_zone === '존재';
   const isProdc = detail.only_prodc === 'Yes';
   const mshotDeleteMode = detail.mshot_change === '삭제';
   const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
-  const isAnniversary = detail.ip_status === 'Yes';
+  const isIp = detail.ip_status === 'Yes';
 
   // ===== Step 1 Handlers =====
   const handleDetailChange = (
@@ -603,7 +603,7 @@ export default function RequestPage(): React.ReactElement {
                   label={t('request.source_line')}
                   name="source_line"
                   value={detail.source_line}
-                  options={OPTION_SOURCE_LOCATION}
+                  options={OPTION_SOURCE_LINE}
                   onChange={handleDetailChange}
                   placeholder={t('request.select_placeholder')}
                   className="flex-col"
@@ -611,7 +611,7 @@ export default function RequestPage(): React.ReactElement {
                 <AutocompleteInput
                   label={t('request.source_partid_selection')}
                   value={detail.source_partid}
-                  options={OPTION_SOURCE_PRODUCT}
+                  options={OPTION_SOURCE_PARTID}
                   onChange={(v) => handleDetailSet('source_partid', v)}
                   style={{ flex: 1 }}
                 />
@@ -737,15 +737,15 @@ export default function RequestPage(): React.ReactElement {
               <option value="변경 있음">{t('request.map_has_change')}</option>
             </select>
           </div>
-          <div className="form-group" style={{ flex: 10, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
+          <div className="form-group" style={{ flex: 10, visibility: hasMapChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_value_x')}</label>
             <input className="form-control" name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} />
           </div>
-          <div className="form-group" style={{ flex: 10, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
+          <div className="form-group" style={{ flex: 10, visibility: hasMapChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_value_y')}</label>
             <input className="form-control" name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} />
           </div>
-          <div className="form-group" style={{ flex: 30, visibility: hasMapDeviation ? 'visible' : 'hidden' }}>
+          <div className="form-group" style={{ flex: 30, visibility: hasMapChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_reason')}</label>
             <input className="form-control" name="map_reason" value={detail.map_reason} onChange={handleDetailChange} />
           </div>
@@ -760,7 +760,7 @@ export default function RequestPage(): React.ReactElement {
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
           </div>
-          <div className="form-group" style={{ flex: 10, visibility: hasExceptionZone ? 'visible' : 'hidden' }}>
+          <div className="form-group" style={{ flex: 10, visibility: hasEaChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.ea_value')}</label>
             <input className="form-control" name="ea_value" value={detail.ea_value} onChange={handleDetailChange} />
           </div>
@@ -787,13 +787,13 @@ export default function RequestPage(): React.ReactElement {
                       onChange={(e) => handleBbEntryChange(idx, 'location', e.target.value)}
                     >
                       <option value="">{t('request.select_placeholder')}</option>
-                      {OPTION_BONE_STEW_LOCATION.map((o) => <option key={o} value={o}>{o}</option>)}
+                      {OPTION_BB_LOCATION.map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
                   </div>
                   <AutocompleteInput
                     label={t('request.bb_ref_part_id')}
                     value={entry.product}
-                    options={OPTION_BONE_STEW_PRODUCT}
+                    options={OPTION_BB_PRODUCT}
                     onChange={(v) => handleBbEntryChange(idx, 'product', v)}
                     style={{ flex: 1 }}
                   />
@@ -882,7 +882,7 @@ export default function RequestPage(): React.ReactElement {
               <option value="Yes">Yes</option>
             </select>
           </div>
-          {isAnniversary && (
+          {isIp && (
             <div className="form-group" style={{ flex: '0 0 auto' }}>
               <label className="form-label">{t('request.ip_option_selection')}</label>
               <div className="radio-group">
