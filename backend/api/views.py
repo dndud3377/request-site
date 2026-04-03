@@ -276,9 +276,14 @@ class LineViewSet(viewsets.ReadOnlyModelViewSet):
 #     """big data 실시간 조회"""
 #     # 파라미터: line (GET), process (GET)
 #     # 로직:
-#     #   1. big data로그인
+#     #   1. big data 로그인
 #     #   2. big data 자격증명 가져오기
 #     #   3. 라인별 테이블 매핑
-#     #   4. big data 쿼리 실행
-#     #   5. DataFrame을 dict 리스트로 변환
-#     # 반환값: JsonResponse({'options': [{'processid': '...', 'step': '...', 'descript': '...', 'recipeid': '...'}, ...]})
+#     #   4. big data 쿼리 실행 (process 파라미터로 cooking_method 필터링)
+#     #   5. DataFrame을 dict 리스트로 변환 (필드명 매핑 적용)
+#     #      BigData 원본 → 응답 필드명 변환:
+#     #        processid  → cooking_methodid
+#     #        descript   → combination
+#     #        step       → step        (동일)
+#     #        recipeid   → recipeid    (동일)
+#     # 반환값: JsonResponse({'options': [{'cooking_methodid': '...', 'step': '...', 'combination': '...', 'recipeid': '...'}, ...]})
