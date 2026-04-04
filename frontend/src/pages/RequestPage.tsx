@@ -249,7 +249,9 @@ export default function RequestPage(): React.ReactElement {
   const [topProductOptions, setTopProductOptions] = useState<string[]>([]);
   const [middleProductOptions, setMiddleProductOptions] = useState<string[]>([]);
   const [bottomProductOptions, setBottomProductOptions] = useState<string[]>([]);
-
+  const [sourceProductOptions, setSourceProductOptions] = useState<string[]>([]);
+  const [BbProductOptions, setBbProductOptions] = useState<Record<number, string[]>>({});
+  const [BbProductidOptions, setBbProductidOptions] = useState<Record<number, string[]>>({});
   const [step, setStep] = useState(1);
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
   const [detail, setDetail] = useState<DetailFormState>(INITIAL_DETAIL);
@@ -303,6 +305,53 @@ export default function RequestPage(): React.ReactElement {
       .catch(() => setProcessIdOptions([]));
     setDetail((prev) => ({ ...prev, process_id: '' }));
   }, [detail.partid_selection]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!detail.line || !detail.process_id) return;
+    fetchStepInfoAndPopulateJayer(detail.line, detail.process_id);
+  }, [detail.process_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const isCopy = detail.request_purpose === '복사';
+    if (!isCopy || !detail.source_line) { setSourceProductOptions([]); return; }
+    const lineName = detail.source_line.replace(' 라인', '');
+    formOptionsAPI.getProducts(lineName)
+      .then(setSourceProductOptions)
+      .catch(() => setSourceProductOptions([]));
+    setDetail((prev) => ({ ...prev, source_partid: '' }));
+  }, [detail.request_purpose, detail.source_line]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const hasBb = detail.bb_zone === '존재';
+    if (!hasBb) return;
+    detail.bb_entries.forEach((entry, idx) => {
+      if (!entry.location) {
+        setBbProductOptions((prev) => ({ ...prev, [idx]: [] }));
+        setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
+        return;
+      }
+      const lineName = entry.location.replace(' 라인', '');
+      formOptionsAPI.getProducts(lineName)
+        .then((opts) => setBbProductOptions((prev) => ({ ...prev, [idx]: opts })))
+        .catch(() => setBbProductOptions((prev) => ({ ...prev, [idx]: [] })));
+      setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
+    });
+  }, [detail.bb_zone, detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const hasBb = detail.bb_zone === '존재';
+    if (!hasBb) return;
+    detail.bb_entries.forEach((entry, idx) => {
+      if (!entry.location || !entry.product) {
+        setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
+        return;
+      }
+      const lineName = entry.location.replace(' 라인', '');
+      formOptionsAPI.getProcessId(lineName, entry.product)
+        .then((opts) => setBbProductidOptions((prev) => ({ ...prev, [idx]: opts })))
+        .catch(() => setBbProductidOptions((prev) => ({ ...prev, [idx]: [] })));
+    });
+  }, [detail.bb_zone, detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 편집 모드: 기존 문서 데이터 로드
   useEffect(() => {
@@ -388,6 +437,28 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // ===== Jayer Handlers =====
+  // ===== Jayer 자동 채움 함수 (bigdata STEP 정보 조회) =====
+  const fetchStepInfoAndPopulateJayer = async (line: string, process: string) => {
+    try {
+      const stepData = await formOptionsAPI.getStepInfo(line, process);
+      if (stepData && stepData.length > 0) {
+        // Jayer 행을 bigdata 데이터로 자동 채움 (항상 덮어쓰기)
+        const newJayerRows: JayerRow[] = stepData.map((item) => ({
+          ...makeJayerRow(),
+          process_id: item.processid,
+          sp: item.stepseq,
+          sd: item.descript,
+          pp: item.recipeid,
+        }));
+        setJayerRows(newJayerRows);
+        addToast(`Jayer 정보 ${stepData.length}건 자동 채움`, 'info');
+      }
+    } catch (e) {
+      console.error('STEP 정보 조회 실패:', e);
+      addToast('Jayer layer 정보 조회 실패', 'error');
+    }
+  };
+
   const handleJayerChange = (id: string, field: keyof Omit<JayerRow, 'id'>, value: string) => {
     setJayerRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
   };
