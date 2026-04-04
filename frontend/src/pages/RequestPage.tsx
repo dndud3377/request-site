@@ -249,7 +249,9 @@ export default function RequestPage(): React.ReactElement {
   const [topProductOptions, setTopProductOptions] = useState<string[]>([]);
   const [middleProductOptions, setMiddleProductOptions] = useState<string[]>([]);
   const [bottomProductOptions, setBottomProductOptions] = useState<string[]>([]);
-
+  const [sourceProductOptions, setSourceProductOptions] = useState<string[]>([]);
+  const [BbProductOptions, setBbProductOptions] = useState<Record<number, string[]>>({});
+  const [BbProductidOptions, setBbProductidOptions] = useState<Record<number, string[]>>({});
   const [step, setStep] = useState(1);
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
   const [detail, setDetail] = useState<DetailFormState>(INITIAL_DETAIL);
