@@ -437,6 +437,28 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // ===== Jayer Handlers =====
+  // ===== Jayer 자동 채움 함수 (bigdata STEP 정보 조회) =====
+  const fetchStepInfoAndPopulateJayer = async (line: string, process: string) => {
+    try {
+      const stepData = await formOptionsAPI.getStepInfo(line, process);
+      if (stepData && stepData.length > 0) {
+        // Jayer 행을 bigdata 데이터로 자동 채움 (항상 덮어쓰기)
+        const newJayerRows: JayerRow[] = stepData.map((item) => ({
+          ...makeJayerRow(),
+          process_id: item.processid,
+          sp: item.stepseq,
+          sd: item.descript,
+          pp: item.recipeid,
+        }));
+        setJayerRows(newJayerRows);
+        addToast(`Jayer 정보 ${stepData.length}건 자동 채움`, 'info');
+      }
+    } catch (e) {
+      console.error('STEP 정보 조회 실패:', e);
+      addToast('Jayer layer 정보 조회 실패', 'error');
+    }
+  };
+
   const handleJayerChange = (id: string, field: keyof Omit<JayerRow, 'id'>, value: string) => {
     setJayerRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
   };
