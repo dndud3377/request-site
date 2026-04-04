@@ -306,6 +306,53 @@ export default function RequestPage(): React.ReactElement {
     setDetail((prev) => ({ ...prev, process_id: '' }));
   }, [detail.partid_selection]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!detail.line || !detail.process_id) return;
+    fetchStepInfoAndPopulateJayer(detail.line, detail.process_id);
+  }, [detail.process_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const isCopy = detail.request_purpose === '복사';
+    if (!isCopy || !detail.source_line) { setSourceProductOptions([]); return; }
+    const lineName = detail.source_line.replace(' 라인', '');
+    formOptionsAPI.getProducts(lineName)
+      .then(setSourceProductOptions)
+      .catch(() => setSourceProductOptions([]));
+    setDetail((prev) => ({ ...prev, source_partid: '' }));
+  }, [detail.request_purpose, detail.source_line]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const hasBb = detail.bb_zone === '존재';
+    if (!hasBb) return;
+    detail.bb_entries.forEach((entry, idx) => {
+      if (!entry.location) {
+        setBbProductOptions((prev) => ({ ...prev, [idx]: [] }));
+        setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
+        return;
+      }
+      const lineName = entry.location.replace(' 라인', '');
+      formOptionsAPI.getProducts(lineName)
+        .then((opts) => setBbProductOptions((prev) => ({ ...prev, [idx]: opts })))
+        .catch(() => setBbProductOptions((prev) => ({ ...prev, [idx]: [] })));
+      setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
+    });
+  }, [detail.bb_zone, detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const hasBb = detail.bb_zone === '존재';
+    if (!hasBb) return;
+    detail.bb_entries.forEach((entry, idx) => {
+      if (!entry.location || !entry.product) {
+        setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
+        return;
+      }
+      const lineName = entry.location.replace(' 라인', '');
+      formOptionsAPI.getProcessId(lineName, entry.product)
+        .then((opts) => setBbProductidOptions((prev) => ({ ...prev, [idx]: opts })))
+        .catch(() => setBbProductidOptions((prev) => ({ ...prev, [idx]: [] })));
+    });
+  }, [detail.bb_zone, detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // 편집 모드: 기존 문서 데이터 로드
   useEffect(() => {
     if (!editDocId) return;
