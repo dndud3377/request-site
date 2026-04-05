@@ -160,7 +160,7 @@ const INITIAL_DETAIL: DetailFormState = {
   ea_change: '변경 없음',
   ea_value: '',
   split_progress: '아니오',
-  bb_zone: '없음',
+  bb_zone: '존재',
   bb_entries: [{ location: '', product: '', process_id: '' }],
   only_prodc: 'No',
   prodc_top_line: '',
@@ -197,6 +197,7 @@ const DETAIL_REQUIRED: (keyof DetailFormState)[] = [
   'line',
   'process_selection',
   'partid_selection',
+  'process_id',
 ];
 
 // ===== Wizard Step Indicator =====
@@ -322,8 +323,6 @@ export default function RequestPage(): React.ReactElement {
   }, [detail.request_purpose, detail.source_line]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const hasBb = detail.bb_zone === '존재';
-    if (!hasBb) return;
     detail.bb_entries.forEach((entry, idx) => {
       if (!entry.location) {
         setBbProductOptions((prev) => ({ ...prev, [idx]: [] }));
@@ -336,11 +335,9 @@ export default function RequestPage(): React.ReactElement {
         .catch(() => setBbProductOptions((prev) => ({ ...prev, [idx]: [] })));
       setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
     });
-  }, [detail.bb_zone, detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const hasBb = detail.bb_zone === '존재';
-    if (!hasBb) return;
     detail.bb_entries.forEach((entry, idx) => {
       if (!entry.location || !entry.product) {
         setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
@@ -351,7 +348,7 @@ export default function RequestPage(): React.ReactElement {
         .then((opts) => setBbProductidOptions((prev) => ({ ...prev, [idx]: opts })))
         .catch(() => setBbProductidOptions((prev) => ({ ...prev, [idx]: [] })));
     });
-  }, [detail.bb_zone, detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 편집 모드: 기존 문서 데이터 로드
   useEffect(() => {
@@ -372,8 +369,7 @@ export default function RequestPage(): React.ReactElement {
   const isCopy = detail.request_purpose === '복사';
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === '변경 있음';
-  const hasBb = detail.bb_zone === '존재';
-  const isProdc = detail.only_prodc === 'Yes';
+const isProdc = detail.only_prodc === 'Yes';
   const mshotDeleteMode = detail.mshot_change === '삭제';
   const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
   const isIp = detail.ip_status === 'Yes';
@@ -540,6 +536,17 @@ export default function RequestPage(): React.ReactElement {
       const val = detail[field] as string;
       if (!val?.trim()) newErrors[field] = t('request.required');
     });
+    if (detail.map_change === '변경 있음') {
+      if (!detail.map_value_x?.trim()) newErrors['map_value_x'] = t('request.required');
+      if (!detail.map_value_y?.trim()) newErrors['map_value_y'] = t('request.required');
+      if (!detail.map_reason?.trim())  newErrors['map_reason']  = t('request.required');
+    }
+    const filledBb = detail.bb_entries.filter(
+      (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
+    );
+    if (filledBb.length === 0) {
+      newErrors['bb_entries'] = t('request.required');
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -795,6 +802,8 @@ export default function RequestPage(): React.ReactElement {
             options={processIdOptions}
             onChange={handleDetailChange}
             placeholder={t('request.select_placeholder')}
+            required
+            error={errors.process_id}
             className="flex-col"
           />
         </div>
@@ -809,16 +818,19 @@ export default function RequestPage(): React.ReactElement {
             </select>
           </div>
           <div className="form-group" style={{ flex: 10, visibility: hasMapChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_value_x')}</label>
-            <input className="form-control" name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} />
+            <label className="form-label">{t('request.map_value_x')} <span className="required">*</span></label>
+            <input className={`form-control${errors.map_value_x ? ' error' : ''}`} name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} />
+            {errors.map_value_x && <span className="form-error">{errors.map_value_x}</span>}
           </div>
           <div className="form-group" style={{ flex: 10, visibility: hasMapChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_value_y')}</label>
-            <input className="form-control" name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} />
+            <label className="form-label">{t('request.map_value_y')} <span className="required">*</span></label>
+            <input className={`form-control${errors.map_value_y ? ' error' : ''}`} name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} />
+            {errors.map_value_y && <span className="form-error">{errors.map_value_y}</span>}
           </div>
           <div className="form-group" style={{ flex: 30, visibility: hasMapChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_reason')}</label>
-            <input className="form-control" name="map_reason" value={detail.map_reason} onChange={handleDetailChange} />
+            <label className="form-label">{t('request.map_reason')} <span className="required">*</span></label>
+            <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} />
+            {errors.map_reason && <span className="form-error">{errors.map_reason}</span>}
           </div>
         </div>
 
@@ -838,66 +850,61 @@ export default function RequestPage(): React.ReactElement {
         </div>
 
         {/* 8. 뼈찜 조합 영역 */}
-        <div className="full-width flex-row" style={{ alignItems: 'flex-start' }}>
-          <div className="form-group" style={{ flex: '0 0 auto', minWidth: '120px' }}>
-            <label className="form-label">{t('request.bb_status')}</label>
-            <select className="form-control" name="bb_zone" value={detail.bb_zone} onChange={handleDetailChange}>
-              <option value="없음">{t('request.bb_omit')}</option>
-              <option value="존재">{t('request.bb_input')}</option>
-            </select>
-          </div>
-          {hasBb && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {detail.bb_entries.map((entry, idx) => (
-                <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-                  <div className="form-group flex-col" style={{ marginBottom: 0 }}>
-                    <label className="form-label">{t('request.bb_ref_line')}</label>
-                    <select
-                      className="form-control"
-                      value={entry.location}
-                      onChange={(e) => handleBbEntryChange(idx, 'location', e.target.value)}
-                    >
-                      <option value="">{t('request.select_placeholder')}</option>
-                      {OPTION_BB_LOCATION.map((o) => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                  </div>
-                  <AutocompleteInput
-                    label={t('request.bb_ref_part_id')}
-                    value={entry.product}
-                    options={OPTION_BB_PRODUCT}
-                    onChange={(v) => handleBbEntryChange(idx, 'product', v)}
-                    style={{ flex: 1 }}
-                  />
-                  <div className="form-group flex-col" style={{ marginBottom: 0 }}>
-                    <label className="form-label">{t('request.bb_ref_process_id')}</label>
-                    <select
-                      className="form-control"
-                      value={entry.process_id}
-                      onChange={(e) => handleBbEntryChange(idx, 'process_id', e.target.value)}
-                    >
-                      <option value="">{t('request.select_placeholder')}</option>
-                      {OPTION_BB_PROCESS_ID.map((o) => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                  </div>
-                  {detail.bb_entries.length > 1 && (
-                    <button
-                      type="button"
-                      className="btn btn-danger"
-                      style={{ padding: '6px 10px', marginBottom: '2px' }}
-                      onClick={() => handleBbEntryDelete(idx)}
-                    >
-                      {t('request.bb_delete')}
-                    </button>
-                  )}
+        <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <label className="form-label">
+            {t('request.bb_status')} <span className="required">*</span>
+          </label>
+          {errors.bb_entries && <span className="form-error">{errors.bb_entries}</span>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {detail.bb_entries.map((entry, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                  <label className="form-label">{t('request.bb_ref_line')}</label>
+                  <select
+                    className="form-control"
+                    value={entry.location}
+                    onChange={(e) => handleBbEntryChange(idx, 'location', e.target.value)}
+                  >
+                    <option value="">{t('request.select_placeholder')}</option>
+                    {OPTION_BB_LOCATION.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
                 </div>
-              ))}
-              <div>
-                <button type="button" className="btn btn-secondary" onClick={handleBbEntryAdd}>
-                  + {t('request.bb_add')}
-                </button>
+                <AutocompleteInput
+                  label={t('request.bb_ref_part_id')}
+                  value={entry.product}
+                  options={OPTION_BB_PRODUCT}
+                  onChange={(v) => handleBbEntryChange(idx, 'product', v)}
+                  style={{ flex: 1 }}
+                />
+                <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                  <label className="form-label">{t('request.bb_ref_process_id')}</label>
+                  <select
+                    className="form-control"
+                    value={entry.process_id}
+                    onChange={(e) => handleBbEntryChange(idx, 'process_id', e.target.value)}
+                  >
+                    <option value="">{t('request.select_placeholder')}</option>
+                    {OPTION_BB_PROCESS_ID.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                {detail.bb_entries.length > 1 && (
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    style={{ padding: '6px 10px', marginBottom: '2px' }}
+                    onClick={() => handleBbEntryDelete(idx)}
+                  >
+                    {t('request.bb_delete')}
+                  </button>
+                )}
               </div>
+            ))}
+            <div>
+              <button type="button" className="btn btn-secondary" onClick={handleBbEntryAdd}>
+                + {t('request.bb_add')}
+              </button>
             </div>
-          )}
+          </div>
         </div>
 
         {/* 9. Only C가문 제품 */}
@@ -1164,70 +1171,57 @@ export default function RequestPage(): React.ReactElement {
     </div>
   );
 
-  const renderStep4 = () => {
-    const isDisabled = detail.bb_zone === '없음';
-    return (
-      <div className="form-section">
-        <div className="form-section-title">🦴 {t('request.bb_li')}</div>
-        {isDisabled && (
-          <div className="wizard-disabled-notice">
-            Step 1에서 '뼈찜 조합 영역'을 <strong>존재</strong>로 설정해야 입력할 수 있습니다.
-          </div>
-        )}
-        <div className={`wizard-table-wrapper${isDisabled ? ' wizard-table-disabled' : ''}`}>
-          <table className="wizard-table">
-            <thead>
-              <tr>
-                <th style={{ minWidth: 40 }}>No</th>
-                <th style={{ minWidth: 90 }}>조리법</th>
-                <th style={{ minWidth: 60 }}>SS</th>
-                <th style={{ minWidth: 60 }}>SD</th>
-                <th style={{ minWidth: 90 }}>뼈찜 조리법</th>
-                <th style={{ minWidth: 90 }}>뼈찜 이름</th>
-                <th style={{ minWidth: 80 }}>뼈찜 STEP</th>
-                <th style={{ minWidth: 70 }}>뼈찜 SS</th>
-                <th style={{ minWidth: 90 }}>비고</th>
-                <th style={{ width: 40 }}></th>
+  const renderStep4 = () => (
+    <div className="form-section">
+      <div className="form-section-title">🦴 {t('request.bb_li')}</div>
+      <div className="wizard-table-wrapper">
+        <table className="wizard-table">
+          <thead>
+            <tr>
+              <th style={{ minWidth: 40 }}>No</th>
+              <th style={{ minWidth: 90 }}>조리법</th>
+              <th style={{ minWidth: 60 }}>SS</th>
+              <th style={{ minWidth: 60 }}>SD</th>
+              <th style={{ minWidth: 90 }}>뼈찜 조리법</th>
+              <th style={{ minWidth: 90 }}>뼈찜 이름</th>
+              <th style={{ minWidth: 80 }}>뼈찜 STEP</th>
+              <th style={{ minWidth: 70 }}>뼈찜 SS</th>
+              <th style={{ minWidth: 90 }}>비고</th>
+              <th style={{ width: 40 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {bbRows.map((row, idx) => (
+              <tr key={row.id}>
+                <td className="wizard-table-no">{idx + 1}</td>
+                <td><input value={row.process_id} onChange={(e) => handleBbChange(row.id, 'process_id', e.target.value)} /></td>
+                <td><input value={row.ss} onChange={(e) => handleBbChange(row.id, 'ss', e.target.value)} /></td>
+                <td><input value={row.sd} onChange={(e) => handleBbChange(row.id, 'sd', e.target.value)} /></td>
+                <td><input value={row.bb_process_id} onChange={(e) => handleBbChange(row.id, 'bb_process_id', e.target.value)} /></td>
+                <td><input value={row.bb_name} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} /></td>
+                <td><input value={row.bb_step} onChange={(e) => handleBbChange(row.id, 'bb_step', e.target.value)} /></td>
+                <td><input value={row.bb_ss} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} /></td>
+                <td><input value={row.remark} onChange={(e) => handleBbChange(row.id, 'remark', e.target.value)} /></td>
+                <td style={{ textAlign: 'center' }}>
+                  <button
+                    type="button"
+                    className="flow-delete-btn"
+                    onClick={() => handleBbDeleteRow(row.id)}
+                    disabled={bbRows.length <= 1}
+                  >
+                    ✕
+                  </button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {bbRows.map((row, idx) => (
-                <tr key={row.id}>
-                  <td className="wizard-table-no">{idx + 1}</td>
-                  <td><input value={row.process_id} onChange={(e) => handleBbChange(row.id, 'process_id', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.ss} onChange={(e) => handleBbChange(row.id, 'ss', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.sd} onChange={(e) => handleBbChange(row.id, 'sd', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bb_process_id} onChange={(e) => handleBbChange(row.id, 'bb_process_id', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bb_name} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bb_step} onChange={(e) => handleBbChange(row.id, 'bb_step', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.bb_ss} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} disabled={isDisabled} /></td>
-                  <td><input value={row.remark} onChange={(e) => handleBbChange(row.id, 'remark', e.target.value)} disabled={isDisabled} /></td>
-                  <td style={{ textAlign: 'center' }}>
-                    <button
-                      type="button"
-                      className="flow-delete-btn"
-                      onClick={() => handleBbDeleteRow(row.id)}
-                      disabled={isDisabled || bbRows.length <= 1}
-                    >
-                      ✕
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <button
-          type="button"
-          className="flow-table-add-btn"
-          onClick={handleBbAddRow}
-          disabled={isDisabled}
-        >
-          + 행 추가
-        </button>
+            ))}
+          </tbody>
+        </table>
       </div>
-    );
-  };
+      <button type="button" className="flow-table-add-btn" onClick={handleBbAddRow}>
+        + 행 추가
+      </button>
+    </div>
+  );
 
   // ===== Main Render =====
   return (
