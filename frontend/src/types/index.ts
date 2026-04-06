@@ -202,6 +202,16 @@ export interface DetailFormState {
   e_lps: string;
 }
 
+// ===== Change History =====
+
+export interface HistorySnapshot {
+  timestamp: string;   // ISO 8601, 재상신 직전 시각
+  detail: DetailFormState;
+  jayerRows: JayerRow[];
+  oayerRows: OayerRow[];
+  bbRows: BbTableRow[];
+}
+
 // ===== API Response Wrappers =====
 // Pages consume responses as r.data or r.data.results
 
