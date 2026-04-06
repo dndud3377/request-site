@@ -273,6 +273,7 @@ export default function RequestPage(): React.ReactElement {
     bbRows: BbTableRow[];
     history: HistorySnapshot[];
   } | null>(null);
+  const isLoadingEditRef = useRef(false);
 
   useEffect(() => {
     linesAPI.list()
@@ -290,33 +291,46 @@ export default function RequestPage(): React.ReactElement {
     formOptionsAPI.getProcesses(detail.line)
       .then(setProcessOptions)
       .catch(() => setProcessOptions([]));
-    setProductOptions([]);
-    setProcessIdOptions([]);
-    setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
-    setDetail((prev) => ({ ...prev, process_selection: '', partid_selection: '', process_id: '' }));
+    if (!isLoadingEditRef.current) {
+      setProductOptions([]);
+      setProcessIdOptions([]);
+      setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
+      setDetail((prev) => ({ ...prev, process_selection: '', partid_selection: '', process_id: '' }));
+    }
   }, [detail.line]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
   useEffect(() => {
-    if (!detail.line || !detail.process_selection) { setProductOptions([]); setProcessIdOptions([]); return; }
+    if (!detail.line || !detail.process_selection) {
+      if (!isLoadingEditRef.current) { setProductOptions([]); setProcessIdOptions([]); }
+      return;
+    }
     formOptionsAPI.getProducts(detail.line, detail.process_selection)
       .then(setProductOptions)
       .catch(() => setProductOptions([]));
-    setProcessIdOptions([]);
-    setDetail((prev) => ({ ...prev, partid_selection: '', process_id: '' }));
+    if (!isLoadingEditRef.current) {
+      setProcessIdOptions([]);
+      setDetail((prev) => ({ ...prev, partid_selection: '', process_id: '' }));
+    }
   }, [detail.process_selection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 제품이름 변경 → 조리법 fetch
   useEffect(() => {
-    if (!detail.line || !detail.partid_selection) { setProcessIdOptions([]); return; }
+    if (!detail.line || !detail.partid_selection) {
+      if (!isLoadingEditRef.current) { setProcessIdOptions([]); }
+      return;
+    }
     formOptionsAPI.getProcessId(detail.line, detail.partid_selection)
       .then(setProcessIdOptions)
       .catch(() => setProcessIdOptions([]));
-    setDetail((prev) => ({ ...prev, process_id: '' }));
+    if (!isLoadingEditRef.current) {
+      setDetail((prev) => ({ ...prev, process_id: '' }));
+    }
   }, [detail.partid_selection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!detail.line || !detail.process_id) return;
+    if (isLoadingEditRef.current) return; // 편집 모드 로드 중엔 jayerRows 덮어쓰기 방지
     fetchStepInfoAndPopulateJayer(detail.line, detail.process_id);
   }, [detail.process_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -327,7 +341,9 @@ export default function RequestPage(): React.ReactElement {
     formOptionsAPI.getProducts(lineName)
       .then(setSourceProductOptions)
       .catch(() => setSourceProductOptions([]));
-    setDetail((prev) => ({ ...prev, source_partid: '' }));
+    if (!isLoadingEditRef.current) {
+      setDetail((prev) => ({ ...prev, source_partid: '' }));
+    }
   }, [detail.request_purpose, detail.source_line]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -361,6 +377,7 @@ export default function RequestPage(): React.ReactElement {
   // 편집 모드: 기존 문서 데이터 로드
   useEffect(() => {
     if (!editDocId) return;
+    isLoadingEditRef.current = true;
     documentsAPI.get(editDocId).then((res) => {
       const doc = res.data;
       try {
@@ -377,7 +394,7 @@ export default function RequestPage(): React.ReactElement {
         if (parsed.oayerRows) setOayerRows(parsed.oayerRows);
         if (parsed.bbRows) setBbRows(parsed.bbRows);
       } catch { /* noop */ }
-    }).catch(() => {});
+    }).catch(() => { isLoadingEditRef.current = false; });
   }, [editDocId]);
 
   // Derived booleans for Step 1 conditional rendering
@@ -393,12 +410,14 @@ const isProdc = detail.only_prodc === 'Yes';
   const handleDetailChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
+    isLoadingEditRef.current = false; // 사용자 상호작용 시 로드 가드 해제
     const { name, value } = e.target;
     setDetail((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
   };
 
   const handleDetailSet = (name: string, value: string) => {
+    isLoadingEditRef.current = false; // 사용자 상호작용 시 로드 가드 해제
     setDetail((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
   };
