@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { documentsAPI, linesAPI, formOptionsAPI } from '../api/client';
@@ -14,6 +14,7 @@ import {
   JayerRow,
   OayerRow,
   BbTableRow,
+  HistorySnapshot,
 } from '../types';
 
 // ===== Option Constants =====
@@ -265,6 +266,13 @@ export default function RequestPage(): React.ReactElement {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitNote, setSubmitNote] = useState('');
   const [savedId, setSavedId] = useState<number | null>(editDocId);
+  const prevParsedRef = useRef<{
+    detail: DetailFormState;
+    jayerRows: JayerRow[];
+    oayerRows: OayerRow[];
+    bbRows: BbTableRow[];
+    history: HistorySnapshot[];
+  } | null>(null);
 
   useEffect(() => {
     linesAPI.list()
@@ -357,6 +365,13 @@ export default function RequestPage(): React.ReactElement {
       const doc = res.data;
       try {
         const parsed = JSON.parse(doc.additional_notes ?? '{}');
+        prevParsedRef.current = {
+          detail: parsed.detail ?? {},
+          jayerRows: parsed.jayerRows ?? [],
+          oayerRows: parsed.oayerRows ?? [],
+          bbRows: parsed.bbRows ?? [],
+          history: parsed.history ?? [],
+        };
         if (parsed.detail) setDetail(parsed.detail);
         if (parsed.jayerRows) setJayerRows(parsed.jayerRows);
         if (parsed.oayerRows) setOayerRows(parsed.oayerRows);
@@ -554,6 +569,23 @@ const isProdc = detail.only_prodc === 'Yes';
   // ===== API =====
   const buildEnrichedForm = (note?: string): CreateDocumentInput => {
     const title = `${detail.line}(${detail.request_purpose})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서`;
+
+    // 재상신 모드일 때 이전 스냅샷을 history에 누적
+    let history: HistorySnapshot[] = [];
+    if (isEditMode && prevParsedRef.current) {
+      const prev = prevParsedRef.current;
+      history = [
+        ...prev.history,
+        {
+          timestamp: new Date().toISOString(),
+          detail: prev.detail as DetailFormState,
+          jayerRows: prev.jayerRows,
+          oayerRows: prev.oayerRows,
+          bbRows: prev.bbRows,
+        },
+      ];
+    }
+
     return {
       ...form,
       title,
@@ -562,7 +594,7 @@ const isProdc = detail.only_prodc === 'Yes';
       requester_email: currentUser.email,
       requester_department: currentUser.department,
       reference_materials: note ?? '',
-      additional_notes: JSON.stringify({ detail, jayerRows, oayerRows, bbRows }),
+      additional_notes: JSON.stringify({ detail, jayerRows, oayerRows, bbRows, history }),
     };
   };
 
