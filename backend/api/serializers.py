@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import RequestDocument, ApprovalStep, VOC, Line
+from .models import RequestDocument, ApprovalStep, VOC, Line, AdminNotice
 
 
 class ApprovalStepSerializer(serializers.ModelSerializer):
@@ -46,3 +46,11 @@ class LineSerializer(serializers.ModelSerializer):
     class Meta:
         model = Line
         fields = ['id', 'name', 'order']
+
+
+class AdminNoticeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AdminNotice
+        fields = ['id', 'template', 'date', 'title', 'content', 'items',
+                  'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']

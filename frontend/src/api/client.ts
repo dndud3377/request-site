@@ -8,8 +8,11 @@ import {
   CreateVocInput,
   AgentType,
   StepInfo,
+  AdminNotice,
+  CreateNoticeInput,
+  UpdateNoticeInput,
 } from '../types';
-import { mockDocumentsAPI, mockVocAPI } from './mock';
+import { mockDocumentsAPI, mockVocAPI, mockNoticesAPI } from './mock';
 
 // ===== Mock API 여부 확인 =====
 // Vite 환경 변수: VITE_USE_MOCK=true 설정 시 Mock API 사용
@@ -236,6 +239,53 @@ export const vocAPI = {
 
 export const linesAPI = {
   list: (): Promise<Line[]> => get<Line[]>('/lines/'),
+};
+
+// ===== 공지사항 API =====
+
+const listNotices = async () => {
+  if (useMockAPI) return mockNoticesAPI.list();
+  const data = await get<AdminNotice[]>('/notices/');
+  return { data: Array.isArray(data) ? data : [] };
+};
+
+const latestNotice = async () => {
+  if (useMockAPI) return mockNoticesAPI.latest();
+  const data = await get<AdminNotice | null>('/notices/latest/');
+  return { data };
+};
+
+const getNotice = async (id: number) => {
+  if (useMockAPI) return mockNoticesAPI.get(id);
+  const data = await get<AdminNotice>(`/notices/${id}/`);
+  return { data };
+};
+
+const createNotice = async (input: CreateNoticeInput) => {
+  if (useMockAPI) return mockNoticesAPI.create(input);
+  const data = await post<AdminNotice>('/notices/', input);
+  return { data };
+};
+
+const updateNotice = async (id: number, input: UpdateNoticeInput) => {
+  if (useMockAPI) return mockNoticesAPI.update(id, input);
+  const data = await patch<AdminNotice>(`/notices/${id}/`, input);
+  return { data };
+};
+
+const deleteNotice = async (id: number) => {
+  if (useMockAPI) return mockNoticesAPI.delete(id);
+  await request(`/notices/${id}/`, { method: 'DELETE' });
+  return { data: null };
+};
+
+export const noticesAPI = {
+  list: listNotices,
+  latest: latestNotice,
+  get: getNotice,
+  create: createNotice,
+  update: updateNotice,
+  delete: deleteNotice,
 };
 
 // ===== 폼 옵션 API =====

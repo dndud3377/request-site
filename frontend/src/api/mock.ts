@@ -7,6 +7,9 @@ import {
   CreateVocInput,
   AgentType,
   ApprovalStepFrontend,
+  AdminNotice,
+  CreateNoticeInput,
+  UpdateNoticeInput,
 } from '../types';
 
 // MOCK_USERS는 AuthContext에서 관리 (여기서는 import 불필요)
@@ -444,7 +447,87 @@ const mockGetVoc = async (id: number) => {
   return { data: voc };
 };
 
+// ===== Sample Notices =====
+
+const SAMPLE_NOTICES: AdminNotice[] = [
+  {
+    id: 1,
+    template: 'release_note',
+    date: '2026-04-07',
+    title: 'v2.0 업데이트',
+    content: '',
+    items: [
+      { category: 'new', content: '관리자 공지사항 기능 추가' },
+      { category: 'updated', content: '결재 현황 UI 개선' },
+      { category: 'bugfix', content: '합의 처리 후 모달 닫힘 오류 수정' },
+    ],
+    created_at: '2026-04-07T09:00:00',
+    updated_at: '2026-04-07T09:00:00',
+  },
+];
+
+// ===== In-memory Notice Store =====
+
+let notices: AdminNotice[] = [...SAMPLE_NOTICES];
+let nextNoticeId = 2;
+
+// ===== Mock Notices API =====
+
+const mockListNotices = async () => {
+  await delay();
+  return { data: [...notices] };
+};
+
+const mockLatestNotice = async () => {
+  await delay(200);
+  return { data: notices[0] ?? null };
+};
+
+const mockGetNotice = async (id: number) => {
+  await delay();
+  const notice = notices.find((n) => n.id === id);
+  if (!notice) throw new Error(`Notice ${id} not found`);
+  return { data: notice };
+};
+
+const mockCreateNotice = async (data: CreateNoticeInput) => {
+  await delay();
+  const newNotice: AdminNotice = {
+    ...data,
+    id: nextNoticeId++,
+    created_at: now(),
+    updated_at: now(),
+  };
+  notices = [newNotice, ...notices];
+  return { data: newNotice };
+};
+
+const mockUpdateNotice = async (id: number, data: UpdateNoticeInput) => {
+  await delay();
+  notices = notices.map((n) =>
+    n.id === id ? { ...n, ...data, updated_at: now() } : n
+  );
+  const updated = notices.find((n) => n.id === id);
+  if (!updated) throw new Error(`Notice ${id} not found`);
+  return { data: updated };
+};
+
+const mockDeleteNotice = async (id: number) => {
+  await delay();
+  notices = notices.filter((n) => n.id !== id);
+  return { data: null };
+};
+
 // ===== Exports =====
+
+export const mockNoticesAPI = {
+  list: mockListNotices,
+  latest: mockLatestNotice,
+  get: mockGetNotice,
+  create: mockCreateNotice,
+  update: mockUpdateNotice,
+  delete: mockDeleteNotice,
+};
 
 export const mockDocumentsAPI = {
   list: mockListDocuments,

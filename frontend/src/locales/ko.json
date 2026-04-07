@@ -199,5 +199,25 @@
     "status_rejected": "반려됨",
     "no_data": "데이터 없음",
     "process_error": "처리 중 오류가 발생했습니다."
+  },
+  "notice": {
+    "label_notice": "공지",
+    "label_release": "릴리즈 노트",
+    "write": "공지 작성",
+    "edit": "공지 편집",
+    "template": "템플릿",
+    "template_notice": "Notice",
+    "template_release": "Release Note",
+    "date": "날짜",
+    "title": "제목",
+    "content": "내용",
+    "category_new": "New",
+    "category_updated": "Updated",
+    "category_bugfix": "Bugfix",
+    "add_item": "+ 항목 추가",
+    "save": "저장",
+    "cancel": "취소",
+    "close": "닫기",
+    "no_notice": "등록된 공지사항이 없습니다"
   }
 }

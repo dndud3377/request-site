@@ -223,6 +223,30 @@ export interface ApiListResponse<T> {
   data: { results: T[]; count: number } | T[];
 }
 
+// ===== Admin Notice =====
+
+export type NoticeTemplate = 'notice' | 'release_note';
+export type ReleaseCategory = 'new' | 'updated' | 'bugfix';
+
+export interface ReleaseItem {
+  category: ReleaseCategory;
+  content: string;
+}
+
+export interface AdminNotice {
+  id: number;
+  template: NoticeTemplate;
+  date: string;          // 'YYYY-MM-DD'
+  title: string;
+  content: string;       // Notice 타입 전용
+  items: ReleaseItem[];  // Release Note 타입 전용
+  created_at: string;
+  updated_at: string;
+}
+
+export type CreateNoticeInput = Omit<AdminNotice, 'id' | 'created_at' | 'updated_at'>;
+export type UpdateNoticeInput = Partial<CreateNoticeInput>;
+
 // ===== big data Step Info =====
 
 export interface StepInfo {
