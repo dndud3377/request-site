@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import UserProfile, RequestDocument, ApprovalStep, VOC, Line
+from .models import UserProfile, RequestDocument, ApprovalStep, VOC, Line, AdminNotice
 
 
 class ApprovalStepInline(admin.TabularInline):
@@ -42,3 +42,10 @@ class LineAdmin(admin.ModelAdmin):
     list_display = ['name', 'order', 'is_active']
     list_editable = ['order', 'is_active']
     ordering = ['order', 'name']
+
+
+@admin.register(AdminNotice)
+class AdminNoticeAdmin(admin.ModelAdmin):
+    list_display = ['title', 'template', 'date', 'created_at']
+    list_filter = ['template', 'date']
+    ordering = ['-date', '-created_at']

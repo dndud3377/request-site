@@ -1601,3 +1601,134 @@ select.form-control option {
   gap: 8px;
   align-items: stretch;
 }
+
+/* ===== Admin Notice Banner ===== */
+
+.notice-banner {
+  background: linear-gradient(135deg, var(--blue-50), var(--bg-secondary));
+  border-bottom: 2px solid var(--accent);
+  padding: 12px 0;
+}
+
+.notice-banner .container {
+  /* inherits container styles */
+}
+
+.notice-banner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.notice-banner-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+.notice-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notice-close-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 4px;
+  transition: color 0.15s;
+}
+
+.notice-close-btn:hover {
+  color: var(--text-primary);
+}
+
+.notice-banner-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.notice-banner-content {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.notice-release-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.notice-release-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+
+.notice-release-new {
+  background: rgba(5, 150, 105, 0.08);
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.notice-release-updated {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.notice-release-bugfix {
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* ===== Navbar Notice Bell ===== */
+
+.notice-bell-btn {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+}
+
+.notice-bell-btn:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.notice-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  background: var(--danger);
+  border-radius: 50%;
+  border: 1.5px solid white;
+}
+

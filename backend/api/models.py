@@ -209,6 +209,32 @@ class VOC(models.Model):
         return f"[{self.status}] {self.title}"
 
 
+class AdminNotice(models.Model):
+    """관리팀 공지사항"""
+
+    TEMPLATE_CHOICES = [
+        ('notice', 'Notice'),
+        ('release_note', 'Release Note'),
+    ]
+
+    template = models.CharField(max_length=20, choices=TEMPLATE_CHOICES, verbose_name='템플릿')
+    date = models.DateField(verbose_name='날짜')
+    title = models.CharField(max_length=200, verbose_name='제목')
+    content = models.TextField(blank=True, verbose_name='내용')  # Notice 타입 전용
+    items = models.JSONField(default=list, verbose_name='항목')   # Release Note 전용
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='작성일')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일')
+
+    class Meta:
+        verbose_name = '공지사항'
+        verbose_name_plural = '공지사항 목록'
+        ordering = ['-date', '-created_at']
+
+    def __str__(self):
+        return f"[{self.template}] {self.title} ({self.date})"
+
+
 class StepInfo(models.Model):
     """big data에서 실시간 조회되는 STEP 정보 (J-ayer 정보 채움용)"""
     line = models.CharField(max_length=50, verbose_name='라인')

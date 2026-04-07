@@ -4,7 +4,7 @@ from django.views.decorators.http import require_GET
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import connection
 
@@ -12,11 +12,24 @@ from django.db import connection
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
-from .models import RequestDocument, ApprovalStep, VOC, Line, ProcessProduct, ProductProcessId
+from .models import RequestDocument, ApprovalStep, VOC, Line, ProcessProduct, ProductProcessId, AdminNotice
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer,
-    VOCSerializer, LineSerializer,
+    VOCSerializer, LineSerializer, AdminNoticeSerializer,
 )
+
+
+class IsMasterOrReadOnly(BasePermission):
+    """읽기는 모두 허용, 쓰기는 MASTER 역할만 허용"""
+
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return True
+        return (
+            request.user.is_authenticated and
+            hasattr(request.user, 'profile') and
+            request.user.profile.role == 'MASTER'
+        )
 
 
 class RequestDocumentViewSet(viewsets.ModelViewSet):
@@ -244,6 +257,23 @@ class LineViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = LineSerializer
     permission_classes = [AllowAny]
     pagination_class = None
+
+
+class AdminNoticeViewSet(viewsets.ModelViewSet):
+    """공지사항 (읽기: 모두, 쓰기: MASTER 전용)"""
+    queryset = AdminNotice.objects.all()
+    serializer_class = AdminNoticeSerializer
+    permission_classes = [IsMasterOrReadOnly]
+    pagination_class = None
+    filter_backends = []
+
+    @action(detail=False, methods=['get'])
+    def latest(self, request):
+        """최신 공지 1개 반환"""
+        notice = AdminNotice.objects.first()
+        if not notice:
+            return Response(None)
+        return Response(AdminNoticeSerializer(notice).data)
 
 
 # @require_GET

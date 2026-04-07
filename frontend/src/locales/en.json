@@ -166,5 +166,25 @@
     "status_approved": "Approved",
     "status_rejected": "Rejected",
     "no_data": "No data available."
+  },
+  "notice": {
+    "label_notice": "Notice",
+    "label_release": "Release Note",
+    "write": "Write Notice",
+    "edit": "Edit Notice",
+    "template": "Template",
+    "template_notice": "Notice",
+    "template_release": "Release Note",
+    "date": "Date",
+    "title": "Title",
+    "content": "Content",
+    "category_new": "New",
+    "category_updated": "Updated",
+    "category_bugfix": "Bugfix",
+    "add_item": "+ Add Item",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "no_notice": "No notices registered"
   }
 }
