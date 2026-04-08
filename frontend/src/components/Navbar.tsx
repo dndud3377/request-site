@@ -96,18 +96,6 @@ export default function Navbar(): React.ReactElement {
         </div>
 
         <div className="navbar-actions">
-          {/* 공지사항 확성기 아이콘 */}
-          <button
-            className="notice-bell-btn"
-            onClick={handleShowNotice}
-            title="공지사항 보기"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 11l19-9-9 19-2-8-8-2z"/>
-            </svg>
-            {hasUnread && <span className="notice-badge" />}
-          </button>
-
           {/* 사용자 선택 드롭다운 */}
           <div className="role-selector" ref={dropdownRef}>
             <button
@@ -150,6 +138,20 @@ export default function Navbar(): React.ReactElement {
               EN
             </button>
           </div>
+
+          {/* 공지사항 확성기 아이콘 */}
+          <button
+            className="notice-bell-btn"
+            onClick={handleShowNotice}
+            title="공지사항 보기"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9v6h4l5 5V4L7 9H3z"/>
+              <path d="M16 9a5 5 0 0 1 0 6"/>
+              <path d="M19.07 5.93a10 10 0 0 1 0 12.14"/>
+            </svg>
+            {hasUnread && <span className="notice-badge" />}
+          </button>
         </div>
       </div>
     </nav>
