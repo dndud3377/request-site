@@ -74,14 +74,6 @@ export default function Navbar(): React.ReactElement {
     }
   };
 
-  const handleWriteNotice = () => {
-    if (location.pathname !== '/') {
-      navigate('/');
-      setTimeout(() => window.dispatchEvent(new CustomEvent('open-write-notice')), 100);
-    } else {
-      window.dispatchEvent(new CustomEvent('open-write-notice'));
-    }
-  };
 
   return (
     <nav className="navbar">
@@ -93,9 +85,9 @@ export default function Navbar(): React.ReactElement {
           title="공지사항 보기"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 9v6h4l5 5V4L7 9H3z"/>
-            <path d="M16 9a5 5 0 0 1 0 6"/>
-            <path d="M19.07 5.93a10 10 0 0 1 0 12.14"/>
+            <path d="M4 9H2a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h2"/>
+            <path d="M4 9l14-6v18L4 15"/>
+            <path d="M7 15v4"/>
           </svg>
           {hasUnread && <span className="notice-badge" />}
         </button>
@@ -161,16 +153,6 @@ export default function Navbar(): React.ReactElement {
             </button>
           </div>
 
-          {/* 공지 작성 버튼 — MASTER 전용, KO/EN 옆 */}
-          {currentUser.role === 'MASTER' && (
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={handleWriteNotice}
-              title="공지 작성"
-            >
-              {t('notice.write')}
-            </button>
-          )}
         </div>
       </div>
     </nav>

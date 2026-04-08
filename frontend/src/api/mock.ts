@@ -451,6 +451,16 @@ const mockGetVoc = async (id: number) => {
 
 const SAMPLE_NOTICES: AdminNotice[] = [
   {
+    id: 2,
+    template: 'notice',
+    date: '2026-04-08',
+    title: '의뢰서 작성 방법 안내',
+    content: '의뢰서를 작성하려면 상단 메뉴에서 "의뢰서 작성"을 클릭하세요.\n\n작성 완료 후 "상신" 버튼을 눌러 결재를 요청할 수 있습니다.\n결재 현황은 "결재 현황" 메뉴에서 확인할 수 있습니다.',
+    items: [],
+    created_at: '2026-04-08T09:00:00',
+    updated_at: '2026-04-08T09:00:00',
+  },
+  {
     id: 1,
     template: 'release_note',
     date: '2026-04-07',
@@ -469,7 +479,7 @@ const SAMPLE_NOTICES: AdminNotice[] = [
 // ===== In-memory Notice Store =====
 
 let notices: AdminNotice[] = [...SAMPLE_NOTICES];
-let nextNoticeId = 2;
+let nextNoticeId = 3;
 
 // ===== Mock Notices API =====
 
