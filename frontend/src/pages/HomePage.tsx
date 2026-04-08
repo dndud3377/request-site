@@ -276,6 +276,13 @@ export default function HomePage(): React.ReactElement {
     return () => window.removeEventListener('show-notice', handler);
   }, []);
 
+  // Navbar 공지 작성 버튼 이벤트 수신
+  useEffect(() => {
+    const handler = () => { setEditMode(false); setShowModal(true); };
+    window.addEventListener('open-write-notice', handler);
+    return () => window.removeEventListener('open-write-notice', handler);
+  }, []);
+
   // 최근 의뢰 로드
   useEffect(() => {
     documentsAPI.list({}).then((r) => {
@@ -333,17 +340,6 @@ export default function HomePage(): React.ReactElement {
           onEdit={openEditModal}
           isMaster={isMaster}
         />
-      )}
-
-      {/* MASTER: 공지 작성 버튼 (배너가 닫혀있을 때) */}
-      {isMaster && !showBanner && (
-        <div style={{ background: 'var(--bg-secondary)', padding: '8px 0' }}>
-          <div className="container" style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="btn btn-secondary btn-sm" onClick={openWriteModal}>
-              📣 {t('notice.write')}
-            </button>
-          </div>
-        </div>
       )}
 
       {/* 공지 편집/작성 모달 */}

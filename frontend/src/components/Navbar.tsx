@@ -68,16 +68,38 @@ export default function Navbar(): React.ReactElement {
     setHasUnread(false);
     if (location.pathname !== '/') {
       navigate('/');
-      // 페이지 이동 후 이벤트 발행 (약간 지연)
       setTimeout(() => window.dispatchEvent(new CustomEvent('show-notice')), 100);
     } else {
       window.dispatchEvent(new CustomEvent('show-notice'));
     }
   };
 
+  const handleWriteNotice = () => {
+    if (location.pathname !== '/') {
+      navigate('/');
+      setTimeout(() => window.dispatchEvent(new CustomEvent('open-write-notice')), 100);
+    } else {
+      window.dispatchEvent(new CustomEvent('open-write-notice'));
+    }
+  };
+
   return (
     <nav className="navbar">
       <div className="navbar-inner">
+        {/* 확성기 아이콘 — 로고 왼쪽 */}
+        <button
+          className="notice-bell-btn"
+          onClick={handleShowNotice}
+          title="공지사항 보기"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 9v6h4l5 5V4L7 9H3z"/>
+            <path d="M16 9a5 5 0 0 1 0 6"/>
+            <path d="M19.07 5.93a10 10 0 0 1 0 12.14"/>
+          </svg>
+          {hasUnread && <span className="notice-badge" />}
+        </button>
+
         <Link to="/" className="navbar-logo">
           <div className="navbar-logo-icon">🗺️</div>
           <span>ProductMap</span>
@@ -139,19 +161,16 @@ export default function Navbar(): React.ReactElement {
             </button>
           </div>
 
-          {/* 공지사항 확성기 아이콘 */}
-          <button
-            className="notice-bell-btn"
-            onClick={handleShowNotice}
-            title="공지사항 보기"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 9v6h4l5 5V4L7 9H3z"/>
-              <path d="M16 9a5 5 0 0 1 0 6"/>
-              <path d="M19.07 5.93a10 10 0 0 1 0 12.14"/>
-            </svg>
-            {hasUnread && <span className="notice-badge" />}
-          </button>
+          {/* 공지 작성 버튼 — MASTER 전용, KO/EN 옆 */}
+          {currentUser.role === 'MASTER' && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleWriteNotice}
+              title="공지 작성"
+            >
+              {t('notice.write')}
+            </button>
+          )}
         </div>
       </div>
     </nav>
