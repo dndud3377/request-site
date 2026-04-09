@@ -1605,21 +1605,21 @@ select.form-control option {
 /* ===== Notice Manager Modal ===== */
 
 .notice-modal-lg {
-  max-width: 1067px;
+  max-width: 1400px;
   width: 100%;
 }
 
 .notice-modal-body {
   display: flex;
-  min-height: 587px;
-  max-height: 747px;
+  min-height: 720px;
+  max-height: 85vh;
   padding: 0;
   overflow: hidden;
 }
 
 /* 왼쪽 패널 — 탭 + 목록 */
 .notice-left-panel {
-  width: 320px;
+  width: 380px;
   flex-shrink: 0;
   border-right: 1px solid var(--border);
   display: flex;
@@ -1695,7 +1695,7 @@ select.form-control option {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 260px;
+  max-width: 320px;
 }
 
 .notice-list-type {

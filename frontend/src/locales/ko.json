@@ -201,8 +201,8 @@
     "process_error": "처리 중 오류가 발생했습니다."
   },
   "notice": {
-    "label_notice": "공지",
-    "label_release": "버전 히스토리",
+    "label_notice": "Notice",
+    "label_release": "Version History",
     "write": "공지 작성",
     "edit": "공지 편집",
     "template": "템플릿",

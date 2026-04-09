@@ -256,7 +256,6 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                         if (catItems.length === 0) return null;
                         return catItems.map((item, idx) => (
                           <div key={`${cat}-${idx}`} className={`notice-release-row notice-release-${cat}`}>
-                            <span className="notice-release-icon">{CATEGORY_ICON[cat]}</span>
                             <span className="notice-release-cat">{t(`notice.category_${cat}`)}</span>
                             <span className="notice-release-text">{item.content}</span>
                           </div>
