@@ -188,7 +188,7 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                   className={`notice-tab ${tab === tabKey ? 'active' : ''}`}
                   onClick={() => setTab(tabKey)}
                 >
-                  {tabKey === 'all' ? '전체' : tabKey === 'release_note' ? 'RN' : '공지'}
+                  {tabKey === 'all' ? '전체' : tabKey === 'release_note' ? t('notice.label_release') : t('notice.label_notice')}
                 </button>
               ))}
             </div>
@@ -256,7 +256,6 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                         if (catItems.length === 0) return null;
                         return catItems.map((item, idx) => (
                           <div key={`${cat}-${idx}`} className={`notice-release-row notice-release-${cat}`}>
-                            <span className="notice-release-icon">{CATEGORY_ICON[cat]}</span>
                             <span className="notice-release-cat">{t(`notice.category_${cat}`)}</span>
                             <span className="notice-release-text">{item.content}</span>
                           </div>
@@ -353,14 +352,14 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                       {(
                         [
-                          { cat: 'new', icon: '🆕', label: t('notice.category_new'), items: newItems, setter: setNewItems },
-                          { cat: 'updated', icon: '✏️', label: t('notice.category_updated'), items: updatedItems, setter: setUpdatedItems },
-                          { cat: 'bugfix', icon: '🐛', label: t('notice.category_bugfix'), items: bugfixItems, setter: setBugfixItems },
+                          { cat: 'new', label: t('notice.category_new'), items: newItems, setter: setNewItems },
+                          { cat: 'updated', label: t('notice.category_updated'), items: updatedItems, setter: setUpdatedItems },
+                          { cat: 'bugfix', label: t('notice.category_bugfix'), items: bugfixItems, setter: setBugfixItems },
                         ] as const
-                      ).map(({ cat, icon, label, items, setter }) => (
+                      ).map(({ cat, label, items, setter }) => (
                         <div key={cat} className={`notice-form-section notice-form-section-${cat}`}>
                           <div className={`notice-form-section-header ${cat}`}>
-                            <span>{icon} {label}</span>
+                            <span>{label}</span>
                           </div>
                           <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                             {items.map((val, idx) => (
