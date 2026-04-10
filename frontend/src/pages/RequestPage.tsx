@@ -1071,36 +1071,37 @@ const isProdc = detail.only_prodc === 'Yes';
   const renderStep2 = () => (
     <div className="form-section">
       <div className="form-section-title">🔷 {t('request.job_li')}</div>
+      {/* 일괄 설정 툴바 */}
+      <div className="wizard-table-toolbar">
+        <div className="wizard-table-toolbar-group">
+          <span className="wizard-table-toolbar-label">ST:</span>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'O')}>모두 O</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'X')}>모두 X</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('st')}>초기화</button>
+        </div>
+        <div className="wizard-table-toolbar-group">
+          <span className="wizard-table-toolbar-label">신규/복사:</span>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '신규')}>모두 신규</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '복사')}>모두 복사</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('new_or_copy')}>초기화</button>
+        </div>
+      </div>
       <div className="wizard-table-wrapper">
         <table className="wizard-table">
           <thead>
             <tr>
-              <th style={{ minWidth: 90 }}>조리법</th>
-              <th style={{ minWidth: 60 }}>SP</th>
-              <th style={{ minWidth: 60 }}>SD</th>
-              <th style={{ minWidth: 60 }}>PP</th>
-              <th style={{ minWidth: 90 }}>
-                ST
-                <div className="th-header-btns">
-                  <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'O')}>모두O</button>
-                  <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'X')}>모두X</button>
-                  <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('st')}>초기화</button>
-                </div>
-              </th>
-              <th style={{ minWidth: 110 }}>
-                신규/복사
-                <div className="th-header-btns">
-                  <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '신규')}>모두 신규</button>
-                  <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '복사')}>모두 복사</button>
-                  <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('new_or_copy')}>초기화</button>
-                </div>
-              </th>
-              <th style={{ minWidth: 110 }}>제품 이름</th>
-              <th style={{ minWidth: 70 }}>STEP</th>
-              <th style={{ minWidth: 70 }}>ID</th>
-              <th style={{ minWidth: 80 }}>REV 여부</th>
-              <th style={{ minWidth: 110 }}>그림판 version</th>
-              <th style={{ width: 40 }}></th>
+              <th>조리법</th>
+              <th>SP</th>
+              <th>SD</th>
+              <th>PP</th>
+              <th>ST</th>
+              <th>신규/복사</th>
+              <th>제품 이름</th>
+              <th>STEP</th>
+              <th>ID</th>
+              <th>REV</th>
+              <th>그림판 Version</th>
+              <th style={{ width: 32 }}></th>
             </tr>
           </thead>
           <tbody>
