@@ -1387,14 +1387,14 @@ select.form-control option {
 
 .wizard-table th {
   background: var(--bg-secondary);
-  padding: 8px 10px;
+  padding: 6px 6px;
   text-align: center;
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 700;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border);
   border-right: 1px solid var(--border-light);
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .wizard-table th:last-child {
@@ -1425,10 +1425,10 @@ select.form-control option {
   width: 100%;
   border: none;
   background: transparent;
-  font-size: 0.88rem;
+  font-size: 0.75rem;
   color: var(--text-primary);
   outline: none;
-  padding: 6px 8px;
+  padding: 3px 5px;
   font-family: inherit;
 }
 
@@ -1479,6 +1479,40 @@ select.form-control option {
 .th-header-btn:hover {
   background: var(--accent);
   color: white;
+}
+
+/* Toolbar above wizard table (action buttons moved out of <th>) */
+.wizard-table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  font-size: 0.72rem;
+}
+
+.wizard-table-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wizard-table-toolbar-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  white-space: nowrap;
+  margin-right: 2px;
+}
+
+/* When toolbar is present, remove top border-radius from wrapper */
+.wizard-table-toolbar + .wizard-table-wrapper {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 /* Wizard disabled notice */
