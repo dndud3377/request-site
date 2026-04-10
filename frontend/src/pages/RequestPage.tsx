@@ -1072,13 +1072,13 @@ const isProdc = detail.only_prodc === 'Yes';
       {/* 일괄 설정 툴바 */}
       <div className="wizard-table-toolbar">
         <div className="wizard-table-toolbar-group">
-          <span className="wizard-table-toolbar-label">ST:</span>
+          <span className="wizard-table-toolbar-label">{t('request.col_st')}:</span>
           <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'O')}>모두 O</button>
           <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'X')}>모두 X</button>
           <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('st')}>초기화</button>
         </div>
         <div className="wizard-table-toolbar-group">
-          <span className="wizard-table-toolbar-label">신규/복사:</span>
+          <span className="wizard-table-toolbar-label">{t('request.col_new_or_copy')}:</span>
           <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '신규')}>모두 신규</button>
           <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '복사')}>모두 복사</button>
           <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('new_or_copy')}>초기화</button>
@@ -1088,17 +1088,17 @@ const isProdc = detail.only_prodc === 'Yes';
         <table className="wizard-table">
           <thead>
             <tr>
-              <th style={{ minWidth: 58 }}>조리법</th>
-              <th style={{ minWidth: 78 }}>SP</th>
-              <th style={{ minWidth: 160 }}>SD</th>
-              <th style={{ minWidth: 95 }}>PP</th>
-              <th style={{ minWidth: 42 }}>ST</th>
-              <th style={{ minWidth: 52 }}>신규/복사</th>
-              <th style={{ minWidth: 75 }}>제품 이름</th>
-              <th style={{ minWidth: 48 }}>STEP</th>
-              <th style={{ minWidth: 90 }}>ID</th>
-              <th style={{ minWidth: 42 }}>REV</th>
-              <th style={{ minWidth: 200 }}>그림판 Version</th>
+              <th style={{ minWidth: 58 }}>{t('request.process_id')}</th>
+              <th style={{ minWidth: 78 }}>{t('request.col_sp')}</th>
+              <th style={{ minWidth: 160 }}>{t('request.col_sd')}</th>
+              <th style={{ minWidth: 95 }}>{t('request.col_pp')}</th>
+              <th style={{ minWidth: 42 }}>{t('request.col_st')}</th>
+              <th style={{ minWidth: 52 }}>{t('request.col_new_or_copy')}</th>
+              <th style={{ minWidth: 75 }}>{t('request.col_product_name')}</th>
+              <th style={{ minWidth: 48 }}>{t('request.col_step')}</th>
+              <th style={{ minWidth: 90 }}>{t('request.col_item_id')}</th>
+              <th style={{ minWidth: 42 }}>{t('request.col_rev')}</th>
+              <th style={{ minWidth: 200 }}>{t('request.col_drawing_version')}</th>
               <th style={{ width: 32 }}></th>
             </tr>
           </thead>

@@ -32,7 +32,7 @@ function JayerTable({ rows, changedRowIds = new Set<string>() }: { rows: JayerRo
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>{t('request.process_id')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>ID</th><th>REV 여부</th><th>그림판 version</th></tr></thead>
+        <thead><tr><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th><th>{t('request.col_rev')}</th><th>{t('request.col_drawing_version')}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} style={changedRowIds.has(r.id) ? changedRowStyle : undefined}><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td><td>{r.rev}</td><td>{r.drawing_version}</td></tr>
@@ -49,7 +49,7 @@ function OayerTable({ rows, changedRowIds = new Set<string>() }: { rows: OayerRo
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
-        <thead><tr><th>{t('request.process_id')}</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/복사</th><th>제품 이름</th><th>STEP</th><th>TT</th></tr></thead>
+        <thead><tr><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_tt')}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} style={changedRowIds.has(r.id) ? changedRowStyle : undefined}><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td></tr>
