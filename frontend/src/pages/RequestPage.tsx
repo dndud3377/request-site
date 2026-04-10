@@ -27,9 +27,7 @@ const OPTION_BB_LOCATION = ['위치1', '위치2', '위치3'] as const;
 const OPTION_BB_PRODUCT = ['뼈찜제품A', '뼈찜제품B'] as const;
 const OPTION_BB_PROCESS_ID = ['뼈찜조리법1', '뼈찜조리법2'] as const;
 
-// Step 2, 3 전용 제품 이름 옵션 (별도 관리 — 필요에 따라 변경)
-const OPTION_JAYER_PRODUCT = ['제품A', '제품B', '제품C'] as const;
-const OPTION_OAYER_PRODUCT = ['제품A', '제품B', '제품C'] as const;
+
 
 // ===== ProdcRow — 북쪽/중간/남쪽 공통 행 =====
 type CRegion = 'top' | 'middle' | 'bottom';
@@ -1074,13 +1072,13 @@ const isProdc = detail.only_prodc === 'Yes';
       {/* 일괄 설정 툴바 */}
       <div className="wizard-table-toolbar">
         <div className="wizard-table-toolbar-group">
-          <span className="wizard-table-toolbar-label">ST:</span>
+          <span className="wizard-table-toolbar-label">{t('request.col_st')}:</span>
           <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'O')}>모두 O</button>
           <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'X')}>모두 X</button>
           <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('st')}>초기화</button>
         </div>
         <div className="wizard-table-toolbar-group">
-          <span className="wizard-table-toolbar-label">신규/복사:</span>
+          <span className="wizard-table-toolbar-label">{t('request.col_new_or_copy')}:</span>
           <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '신규')}>모두 신규</button>
           <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '복사')}>모두 복사</button>
           <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('new_or_copy')}>초기화</button>
@@ -1090,17 +1088,17 @@ const isProdc = detail.only_prodc === 'Yes';
         <table className="wizard-table">
           <thead>
             <tr>
-              <th style={{ minWidth: 58 }}>조리법</th>
-              <th style={{ minWidth: 78 }}>SP</th>
-              <th style={{ minWidth: 160 }}>SD</th>
-              <th style={{ minWidth: 95 }}>PP</th>
-              <th style={{ minWidth: 42 }}>ST</th>
-              <th style={{ minWidth: 52 }}>신규/복사</th>
-              <th style={{ minWidth: 75 }}>제품 이름</th>
-              <th style={{ minWidth: 48 }}>STEP</th>
-              <th style={{ minWidth: 90 }}>ID</th>
-              <th style={{ minWidth: 42 }}>REV</th>
-              <th style={{ minWidth: 200 }}>그림판 Version</th>
+              <th style={{ minWidth: 58 }}>{t('request.process_id')}</th>
+              <th style={{ minWidth: 78 }}>{t('request.col_sp')}</th>
+              <th style={{ minWidth: 160 }}>{t('request.col_sd')}</th>
+              <th style={{ minWidth: 95 }}>{t('request.col_pp')}</th>
+              <th style={{ minWidth: 42 }}>{t('request.col_st')}</th>
+              <th style={{ minWidth: 52 }}>{t('request.col_new_or_copy')}</th>
+              <th style={{ minWidth: 75 }}>{t('request.col_product_name')}</th>
+              <th style={{ minWidth: 48 }}>{t('request.col_step')}</th>
+              <th style={{ minWidth: 90 }}>{t('request.col_item_id')}</th>
+              <th style={{ minWidth: 42 }}>{t('request.col_rev')}</th>
+              <th style={{ minWidth: 200 }}>{t('request.col_drawing_version')}</th>
               <th style={{ width: 32 }}></th>
             </tr>
           </thead>
@@ -1125,13 +1123,7 @@ const isProdc = detail.only_prodc === 'Yes';
                     <option value="복사">복사</option>
                   </select>
                 </td>
-                <td>
-                  <AutocompleteInput
-                    value={row.product_name}
-                    options={OPTION_JAYER_PRODUCT}
-                    onChange={(v) => handleJayerChange(row.id, 'product_name', v)}
-                  />
-                </td>
+                <td><input value={row.product_name} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} /></td>
                 <td><input value={row.step} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} /></td>
                 <td><input value={row.item_id} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} /></td>
                 <td><input value={row.rev} onChange={(e) => handleJayerChange(row.id, 'rev', e.target.value)} /></td>
@@ -1203,11 +1195,7 @@ const isProdc = detail.only_prodc === 'Yes';
                   </select>
                 </td>
                 <td>
-                  <AutocompleteInput
-                    value={row.product_name}
-                    options={OPTION_OAYER_PRODUCT}
-                    onChange={(v) => handleOayerChange(row.id, 'product_name', v)}
-                  />
+                  <input value={row.product_name} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} />
                 </td>
                 <td><input value={row.step} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} /></td>
                 <td><input value={row.tt} onChange={(e) => handleOayerChange(row.id, 'tt', e.target.value)} /></td>
