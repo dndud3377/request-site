@@ -1090,17 +1090,17 @@ const isProdc = detail.only_prodc === 'Yes';
         <table className="wizard-table">
           <thead>
             <tr>
-              <th>조리법</th>
-              <th>SP</th>
-              <th>SD</th>
-              <th>PP</th>
-              <th>ST</th>
-              <th>신규/복사</th>
-              <th>제품 이름</th>
-              <th>STEP</th>
-              <th>ID</th>
-              <th>REV</th>
-              <th>그림판 Version</th>
+              <th style={{ minWidth: 58 }}>조리법</th>
+              <th style={{ minWidth: 78 }}>SP</th>
+              <th style={{ minWidth: 160 }}>SD</th>
+              <th style={{ minWidth: 95 }}>PP</th>
+              <th style={{ minWidth: 42 }}>ST</th>
+              <th style={{ minWidth: 52 }}>신규/복사</th>
+              <th style={{ minWidth: 75 }}>제품 이름</th>
+              <th style={{ minWidth: 48 }}>STEP</th>
+              <th style={{ minWidth: 90 }}>ID</th>
+              <th style={{ minWidth: 42 }}>REV</th>
+              <th style={{ minWidth: 200 }}>그림판 Version</th>
               <th style={{ width: 32 }}></th>
             </tr>
           </thead>
