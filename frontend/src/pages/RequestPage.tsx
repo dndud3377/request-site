@@ -27,9 +27,7 @@ const OPTION_BB_LOCATION = ['위치1', '위치2', '위치3'] as const;
 const OPTION_BB_PRODUCT = ['뼈찜제품A', '뼈찜제품B'] as const;
 const OPTION_BB_PROCESS_ID = ['뼈찜조리법1', '뼈찜조리법2'] as const;
 
-// Step 2, 3 전용 제품 이름 옵션 (별도 관리 — 필요에 따라 변경)
-const OPTION_JAYER_PRODUCT = ['제품A', '제품B', '제품C'] as const;
-const OPTION_OAYER_PRODUCT = ['제품A', '제품B', '제품C'] as const;
+
 
 // ===== ProdcRow — 북쪽/중간/남쪽 공통 행 =====
 type CRegion = 'top' | 'middle' | 'bottom';
@@ -1125,13 +1123,7 @@ const isProdc = detail.only_prodc === 'Yes';
                     <option value="복사">복사</option>
                   </select>
                 </td>
-                <td>
-                  <AutocompleteInput
-                    value={row.product_name}
-                    options={OPTION_JAYER_PRODUCT}
-                    onChange={(v) => handleJayerChange(row.id, 'product_name', v)}
-                  />
-                </td>
+                <td><input value={row.product_name} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} /></td>
                 <td><input value={row.step} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} /></td>
                 <td><input value={row.item_id} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} /></td>
                 <td><input value={row.rev} onChange={(e) => handleJayerChange(row.id, 'rev', e.target.value)} /></td>
@@ -1203,11 +1195,7 @@ const isProdc = detail.only_prodc === 'Yes';
                   </select>
                 </td>
                 <td>
-                  <AutocompleteInput
-                    value={row.product_name}
-                    options={OPTION_OAYER_PRODUCT}
-                    onChange={(v) => handleOayerChange(row.id, 'product_name', v)}
-                  />
+                  <input value={row.product_name} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} />
                 </td>
                 <td><input value={row.step} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} /></td>
                 <td><input value={row.tt} onChange={(e) => handleOayerChange(row.id, 'tt', e.target.value)} /></td>
