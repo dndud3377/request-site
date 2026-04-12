@@ -229,10 +229,24 @@ const getVoc = async (id: number) => {
   return { data };
 };
 
+const updateVocStatus = async (id: number, status: VOC['status']) => {
+  if (useMockAPI && mockVocAPI) return mockVocAPI.updateStatus(id, status);
+  const data = await patch<VOC>(`/voc/${id}/`, { status });
+  return { data };
+};
+
+const updateVocResponse = async (id: number, response: string) => {
+  if (useMockAPI && mockVocAPI) return mockVocAPI.updateResponse(id, response);
+  const data = await patch<VOC>(`/voc/${id}/`, { response });
+  return { data };
+};
+
 export const vocAPI = {
   list: listVocs,
   create: createVoc,
   get: getVoc,
+  updateStatus: updateVocStatus,
+  updateResponse: updateVocResponse,
 };
 
 // ===== 라인 API =====

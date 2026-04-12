@@ -142,37 +142,40 @@ const SAMPLE_DOCUMENTS: RequestDocument[] = [
 const SAMPLE_VOCS: VOC[] = [
   {
     id: 1,
-    title: '스마트 온도조절기 앱 연동 오류 문의',
-    category: 'inquiry',
+    title: '스마트 온도조절기 앱 연동 오류',
+    category: 'error_report',
     submitter_name: '홍길동',
     submitter_email: 'gildong@test.com',
-    content: '스마트 온도조절기 V2를 구매했는데 앱과 연동이 안 됩니다. 블루투스 연결은 되는데 Wi-Fi 등록에서 계속 실패합니다.',
+    submitter_user_id: 1,
+    content: '스마트 온도조절기 V2를 사용 중인데 앱과 연동이 안 됩니다. 블루투스 연결은 되는데 Wi-Fi 등록에서 계속 실패합니다.',
     response: '',
-    status: 'in_progress',
+    status: 'checking',
     created_at: dateStr(3),
     responded_at: null,
   },
   {
     id: 2,
-    title: '공기청정기 필터 교체 주기가 너무 짧습니다',
-    category: 'complaint',
-    submitter_name: '이영희',
-    submitter_email: 'younghee@test.com',
-    content: '공기청정기 Pro를 구매한 지 2개월이 됐는데 벌써 필터 교체 알람이 뜹니다. 필터 교체 주기 개선을 요청합니다.',
-    response: '고객님의 소중한 의견 감사합니다. 필터 교체 주기 조정 관련 개발팀에 전달하겠습니다.',
-    status: 'resolved',
+    title: '공기청정기 필터 교체 주기 개선 요청',
+    category: 'feature_request',
+    submitter_name: '이서연',
+    submitter_email: 'seoyeon.lee@company.com',
+    submitter_user_id: 2,
+    content: '공기청정기 Pro를 구매한 지 2개월이 됐는데 벌써 필터 교체 알람이 뜹니다. 필터 교체 주기 조정 기능 개선을 요청합니다.',
+    response: '소중한 의견 감사합니다. 필터 교체 주기 조정 관련 개발팀에 전달하겠습니다.',
+    status: 'completed',
     created_at: dateStr(10),
     responded_at: dateStr(7),
   },
   {
     id: 3,
-    title: '로봇청소기에 물걸레 강도 조절 기능 추가 제안',
-    category: 'suggestion',
-    submitter_name: '박철수',
-    submitter_email: 'chulsoo@test.com',
+    title: '로봇청소기 물걸레 강도 조절 기능 추가',
+    category: 'feature_request',
+    submitter_name: '박지훈',
+    submitter_email: 'jihoon.park@company.com',
+    submitter_user_id: 3,
     content: '로봇청소기 R3를 잘 사용하고 있습니다. 물걸레 세척 시 물 분사량을 사용자가 조절할 수 있는 기능이 있으면 좋겠습니다.',
     response: '',
-    status: 'open',
+    status: 'checking',
     created_at: dateStr(1),
     responded_at: null,
   },
@@ -432,7 +435,7 @@ const mockCreateVoc = async (data: CreateVocInput) => {
     ...data,
     id: nextVocId++,
     response: '',
-    status: 'open',
+    status: 'checking',
     created_at: now(),
     responded_at: null,
   };
@@ -445,6 +448,22 @@ const mockGetVoc = async (id: number) => {
   const voc = vocs.find((v) => v.id === id);
   if (!voc) throw new Error(`VOC ${id} not found`);
   return { data: voc };
+};
+
+const mockUpdateVocStatus = async (id: number, status: VOC['status']) => {
+  await delay();
+  const idx = vocs.findIndex((v) => v.id === id);
+  if (idx === -1) throw new Error(`VOC ${id} not found`);
+  vocs[idx] = { ...vocs[idx], status };
+  return { data: vocs[idx] };
+};
+
+const mockUpdateVocResponse = async (id: number, response: string) => {
+  await delay();
+  const idx = vocs.findIndex((v) => v.id === id);
+  if (idx === -1) throw new Error(`VOC ${id} not found`);
+  vocs[idx] = { ...vocs[idx], response, responded_at: now() };
+  return { data: vocs[idx] };
 };
 
 // ===== Sample Notices =====
@@ -558,4 +577,6 @@ export const mockVocAPI = {
   list: mockListVocs,
   create: mockCreateVoc,
   get: mockGetVoc,
+  updateStatus: mockUpdateVocStatus,
+  updateResponse: mockUpdateVocResponse,
 };
