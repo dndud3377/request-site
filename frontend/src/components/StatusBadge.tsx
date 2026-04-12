@@ -11,10 +11,8 @@ const STATUS_I18N_KEY: Record<string, string> = {
   under_review: 'common.status_under_review',
   approved: 'common.status_approved',
   rejected: 'common.status_rejected',
-  open: 'voc.status_open',
-  in_progress: 'voc.status_in_progress',
-  resolved: 'voc.status_resolved',
-  closed: 'voc.status_closed',
+  checking: 'voc.status_checking',
+  completed: 'voc.status_completed',
 };
 
 export default function StatusBadge({ status }: StatusBadgeProps): React.ReactElement {

@@ -29,9 +29,9 @@ export type Status =
   | 'approved'
   | 'rejected';
 
-export type VocStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+export type VocStatus = 'checking' | 'completed' | 'rejected';
 
-export type VocCategory = 'inquiry' | 'complaint' | 'suggestion' | 'praise';
+export type VocCategory = 'inquiry' | 'error_report' | 'feature_request' | 'task_request';
 
 export type AgentType = 'R' | 'J' | 'O' | 'E';
 export type StepAction = 'pending' | 'approved' | 'rejected';
@@ -78,6 +78,7 @@ export interface VOC {
   category: VocCategory;
   submitter_name: string;
   submitter_email: string;
+  submitter_user_id?: number;
   content: string;
   response: string;
   status: VocStatus;
