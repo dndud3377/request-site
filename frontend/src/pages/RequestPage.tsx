@@ -15,6 +15,7 @@ import {
   OayerRow,
   BbTableRow,
   HistorySnapshot,
+  ExternalBbDataItem,
 } from '../types';
 
 // ===== Option Constants =====
@@ -258,6 +259,10 @@ export default function RequestPage(): React.ReactElement {
   const [jayerRows, setJayerRows] = useState<JayerRow[]>([makeJayerRow()]);
   const [oayerRows, setOayerRows] = useState<OayerRow[]>([makeOayerRow()]);
   const [bbRows, setBbRows] = useState<BbTableRow[]>([makeBbRow()]);
+  const [bbExternalData, setBbExternalData] = useState<ExternalBbDataItem[][]>([]);
+  const [bbExternalLoading, setBbExternalLoading] = useState(false);
+  const [activeBbTab, setActiveBbTab] = useState(0);
+  const [selectedJayerRowId, setSelectedJayerRowId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -370,6 +375,19 @@ export default function RequestPage(): React.ReactElement {
         .then((opts) => setBbProductidOptions((prev) => ({ ...prev, [idx]: opts })))
         .catch(() => setBbProductidOptions((prev) => ({ ...prev, [idx]: [] })));
     });
+  }, [detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // bb_entries 변경 시 외부 데이터 로드
+  useEffect(() => {
+    if (detail.bb_entries.length === 0) return;
+    setBbExternalLoading(true);
+    Promise.all(detail.bb_entries.map((entry) => formOptionsAPI.getBbExternalData(entry)))
+      .then((results) => {
+        setBbExternalData(results);
+        setActiveBbTab(0);
+      })
+      .catch(() => setBbExternalData([]))
+      .finally(() => setBbExternalLoading(false));
   }, [detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 편집 모드: 기존 문서 데이터 로드
@@ -559,6 +577,24 @@ const isProdc = detail.only_prodc === 'Yes';
 
   const handleBbDeleteRow = (id: string) => {
     setBbRows((rows) => (rows.length <= 1 ? rows : rows.filter((r) => r.id !== id)));
+  };
+
+  const handleBbAddFromExternal = (externalRow: ExternalBbDataItem) => {
+    const jayerRef = jayerRows.find((r) => r.id === selectedJayerRowId) ?? jayerRows[0];
+    const newRow = makeBbRow();
+    if (jayerRef) {
+      newRow.process_id = jayerRef.process_id;
+      newRow.ss = jayerRef.sp;
+      newRow.sd = jayerRef.sd;
+    }
+    newRow.bb_process_id = externalRow.bb_process_id;
+    newRow.bb_name = externalRow.bb_name;
+    newRow.bb_step = externalRow.bb_step;
+    newRow.bb_ss = externalRow.bb_ss;
+    setBbRows((rows) => {
+      const hasEmpty = rows.some((r) => !r.process_id && !r.bb_process_id);
+      return hasEmpty ? rows.filter((r) => r.process_id || r.bb_process_id).concat(newRow) : [...rows, newRow];
+    });
   };
 
   // ===== Validation =====
@@ -1211,57 +1247,164 @@ const isProdc = detail.only_prodc === 'Yes';
     </div>
   );
 
-  const renderStep4 = () => (
-    <div className="form-section">
-      <div className="form-section-title">🦴 {t('request.bb_li')}</div>
-      <div className="wizard-table-wrapper">
-        <table className="wizard-table">
-          <thead>
-            <tr>
-              <th style={{ minWidth: 40 }}>No</th>
-              <th style={{ minWidth: 90 }}>조리법</th>
-              <th style={{ minWidth: 60 }}>SS</th>
-              <th style={{ minWidth: 60 }}>SD</th>
-              <th style={{ minWidth: 90 }}>뼈찜 조리법</th>
-              <th style={{ minWidth: 90 }}>뼈찜 이름</th>
-              <th style={{ minWidth: 80 }}>뼈찜 STEP</th>
-              <th style={{ minWidth: 70 }}>뼈찜 SS</th>
-              <th style={{ minWidth: 90 }}>비고</th>
-              <th style={{ width: 40 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {bbRows.map((row, idx) => (
-              <tr key={row.id}>
-                <td className="wizard-table-no">{idx + 1}</td>
-                <td><input value={row.process_id} onChange={(e) => handleBbChange(row.id, 'process_id', e.target.value)} /></td>
-                <td><input value={row.ss} onChange={(e) => handleBbChange(row.id, 'ss', e.target.value)} /></td>
-                <td><input value={row.sd} onChange={(e) => handleBbChange(row.id, 'sd', e.target.value)} /></td>
-                <td><input value={row.bb_process_id} onChange={(e) => handleBbChange(row.id, 'bb_process_id', e.target.value)} /></td>
-                <td><input value={row.bb_name} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} /></td>
-                <td><input value={row.bb_step} onChange={(e) => handleBbChange(row.id, 'bb_step', e.target.value)} /></td>
-                <td><input value={row.bb_ss} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} /></td>
-                <td><input value={row.remark} onChange={(e) => handleBbChange(row.id, 'remark', e.target.value)} /></td>
-                <td style={{ textAlign: 'center' }}>
-                  <button
-                    type="button"
-                    className="flow-delete-btn"
-                    onClick={() => handleBbDeleteRow(row.id)}
-                    disabled={bbRows.length <= 1}
-                  >
-                    ✕
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+  const renderStep4 = () => {
+    const currentTabData = bbExternalData[activeBbTab] ?? [];
+    const currentEntry = detail.bb_entries[activeBbTab];
+
+    return (
+      <div className="form-section">
+        <div className="form-section-title">🦴 {t('request.bb_li')}</div>
+
+        {/* 분할 패널 */}
+        <div className="bb-split-panel">
+          {/* 왼쪽: J-ayer 참조 테이블 */}
+          <div className="bb-split-panel-left">
+            <div className="bb-split-panel-title">
+              J-ayer 참조 — 클릭하여 선택
+            </div>
+            <div className="bb-split-panel-scroll">
+              {jayerRows.length === 0 || (jayerRows.length === 1 && !jayerRows[0].process_id) ? (
+                <div className="bb-split-hint">J-ayer 정보가 없습니다.</div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>조리법</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>SP</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>SD</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jayerRows.map((row) => (
+                      <tr
+                        key={row.id}
+                        className={selectedJayerRowId === row.id ? 'bb-jayer-selected' : ''}
+                        onClick={() => setSelectedJayerRowId(row.id)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.process_id || '—'}</td>
+                        <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.sp || '—'}</td>
+                        <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.sd || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
+          {/* 오른쪽: bb_entries 탭별 외부 데이터 */}
+          <div className="bb-split-panel-right">
+            <div className="bb-split-panel-title">
+              외부 데이터 — 클릭하면 BB 행 자동 추가
+            </div>
+            <div className="bb-tab-bar">
+              {detail.bb_entries.map((entry, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  className={`bb-tab${activeBbTab === idx ? ' bb-tab-active' : ''}`}
+                  onClick={() => setActiveBbTab(idx)}
+                >
+                  {entry.product || entry.location || `항목 ${idx + 1}`}
+                </button>
+              ))}
+            </div>
+            <div className="bb-split-panel-scroll">
+              {bbExternalLoading ? (
+                <div className="bb-split-loading">데이터 로드 중...</div>
+              ) : currentTabData.length === 0 ? (
+                <div className="bb-split-hint">
+                  {currentEntry?.process_id
+                    ? '해당 조리법에 대한 외부 데이터가 없습니다.'
+                    : 'Step 1에서 뼈찜 조합 조리법을 먼저 선택하세요.'}
+                </div>
+              ) : (
+                <table className="bb-external-table">
+                  <thead>
+                    <tr>
+                      <th>뼈찜 조리법</th>
+                      <th>뼈찜 이름</th>
+                      <th>STEP</th>
+                      <th>뼈찜 SS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentTabData.map((item) => (
+                      <tr
+                        key={item.id}
+                        className="bb-external-row"
+                        onClick={() => handleBbAddFromExternal(item)}
+                        title="클릭하면 BB 테이블에 행이 추가됩니다"
+                      >
+                        <td>{item.bb_process_id}</td>
+                        <td>{item.bb_name}</td>
+                        <td>{item.bb_step}</td>
+                        <td>{item.bb_ss}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* 선택된 BB 테이블 rows */}
+        <div className="bb-selected-section">
+          <div className="form-section-title" style={{ fontSize: 14, marginBottom: 8 }}>
+            선택된 뼈찜 정보
+          </div>
+          <div className="wizard-table-wrapper">
+            <table className="wizard-table">
+              <thead>
+                <tr>
+                  <th style={{ minWidth: 40 }}>No</th>
+                  <th style={{ minWidth: 90 }}>조리법</th>
+                  <th style={{ minWidth: 60 }}>SS</th>
+                  <th style={{ minWidth: 60 }}>SD</th>
+                  <th style={{ minWidth: 90 }}>뼈찜 조리법</th>
+                  <th style={{ minWidth: 90 }}>뼈찜 이름</th>
+                  <th style={{ minWidth: 80 }}>뼈찜 STEP</th>
+                  <th style={{ minWidth: 70 }}>뼈찜 SS</th>
+                  <th style={{ minWidth: 90 }}>비고</th>
+                  <th style={{ width: 40 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {bbRows.map((row, idx) => (
+                  <tr key={row.id}>
+                    <td className="wizard-table-no">{idx + 1}</td>
+                    <td><input value={row.process_id} onChange={(e) => handleBbChange(row.id, 'process_id', e.target.value)} /></td>
+                    <td><input value={row.ss} onChange={(e) => handleBbChange(row.id, 'ss', e.target.value)} /></td>
+                    <td><input value={row.sd} onChange={(e) => handleBbChange(row.id, 'sd', e.target.value)} /></td>
+                    <td><input value={row.bb_process_id} onChange={(e) => handleBbChange(row.id, 'bb_process_id', e.target.value)} /></td>
+                    <td><input value={row.bb_name} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} /></td>
+                    <td><input value={row.bb_step} onChange={(e) => handleBbChange(row.id, 'bb_step', e.target.value)} /></td>
+                    <td><input value={row.bb_ss} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} /></td>
+                    <td><input value={row.remark} onChange={(e) => handleBbChange(row.id, 'remark', e.target.value)} /></td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        className="flow-delete-btn"
+                        onClick={() => handleBbDeleteRow(row.id)}
+                        disabled={bbRows.length <= 1}
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button type="button" className="flow-table-add-btn" onClick={handleBbAddRow}>
+            + 행 추가
+          </button>
+        </div>
       </div>
-      <button type="button" className="flow-table-add-btn" onClick={handleBbAddRow}>
-        + 행 추가
-      </button>
-    </div>
-  );
+    );
+  };
 
   // ===== Main Render =====
   return (

@@ -10,6 +10,7 @@ import {
   AdminNotice,
   CreateNoticeInput,
   UpdateNoticeInput,
+  ExternalBbDataItem,
 } from '../types';
 
 // MOCK_USERS는 AuthContext에서 관리 (여기서는 import 불필요)
@@ -579,4 +580,36 @@ export const mockVocAPI = {
   get: mockGetVoc,
   updateStatus: mockUpdateVocStatus,
   updateResponse: mockUpdateVocResponse,
+};
+
+// ===== 뼈찜 외부 데이터 소스 (Mock) =====
+
+const BB_EXTERNAL_DEFAULT: ExternalBbDataItem[] = [
+  { id: 'ext-001', bb_process_id: 'BB-P001', bb_name: '기본뼈찜A', bb_step: '1', bb_ss: 'SS01' },
+  { id: 'ext-002', bb_process_id: 'BB-P002', bb_name: '기본뼈찜B', bb_step: '2', bb_ss: 'SS02' },
+  { id: 'ext-003', bb_process_id: 'BB-P003', bb_name: '기본뼈찜C', bb_step: '3', bb_ss: 'SS03' },
+  { id: 'ext-004', bb_process_id: 'BB-P004', bb_name: '기본뼈찜D', bb_step: '4', bb_ss: 'SS04' },
+];
+
+const BB_EXTERNAL_DATA: Record<string, ExternalBbDataItem[]> = {
+  '뼈찜조리법1': [
+    { id: 'ext-101', bb_process_id: 'BB-P101', bb_name: '뼈찜조리법1-A형', bb_step: '1', bb_ss: 'SS11' },
+    { id: 'ext-102', bb_process_id: 'BB-P102', bb_name: '뼈찜조리법1-B형', bb_step: '2', bb_ss: 'SS12' },
+    { id: 'ext-103', bb_process_id: 'BB-P103', bb_name: '뼈찜조리법1-C형', bb_step: '3', bb_ss: 'SS13' },
+    { id: 'ext-104', bb_process_id: 'BB-P104', bb_name: '뼈찜조리법1-D형', bb_step: '4', bb_ss: 'SS14' },
+    { id: 'ext-105', bb_process_id: 'BB-P105', bb_name: '뼈찜조리법1-E형', bb_step: '5', bb_ss: 'SS15' },
+  ],
+  '뼈찜조리법2': [
+    { id: 'ext-201', bb_process_id: 'BB-P201', bb_name: '뼈찜조리법2-A형', bb_step: '1', bb_ss: 'SS21' },
+    { id: 'ext-202', bb_process_id: 'BB-P202', bb_name: '뼈찜조리법2-B형', bb_step: '2', bb_ss: 'SS22' },
+    { id: 'ext-203', bb_process_id: 'BB-P203', bb_name: '뼈찜조리법2-C형', bb_step: '3', bb_ss: 'SS23' },
+    { id: 'ext-204', bb_process_id: 'BB-P204', bb_name: '뼈찜조리법2-D형', bb_step: '4', bb_ss: 'SS24' },
+  ],
+};
+
+export const mockGetBbExternalData = async (
+  entry: { location: string; product: string; process_id: string }
+): Promise<ExternalBbDataItem[]> => {
+  await delay(200);
+  return BB_EXTERNAL_DATA[entry.process_id] ?? BB_EXTERNAL_DEFAULT;
 };
