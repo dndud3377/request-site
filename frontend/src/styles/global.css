@@ -1890,3 +1890,204 @@ select.form-control option {
   border: 1.5px solid white;
 }
 
+/* ===== 뼈찜 분할 패널 (Split Panel) ===== */
+
+.bb-split-panel {
+  display: flex;
+  gap: 16px;
+  min-height: 320px;
+  margin-bottom: 16px;
+}
+
+.bb-split-panel-left,
+.bb-split-panel-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-card);
+}
+
+.bb-split-panel-title {
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.bb-split-panel-scroll {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.bb-split-panel-left table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.bb-split-panel-left thead th {
+  background: var(--bg-primary);
+  padding: 6px 8px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.bb-split-panel-left tbody tr {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.bb-split-panel-left tbody tr:hover {
+  background: var(--bg-card-hover);
+}
+
+.bb-split-panel-left tbody tr.bb-jayer-selected {
+  background: var(--accent-light);
+  outline: 1px solid var(--accent);
+}
+
+.bb-split-panel-left tbody td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-primary);
+}
+
+.bb-tab-bar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  background: var(--bg-primary);
+}
+
+.bb-tab {
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  transition: var(--transition);
+}
+
+.bb-tab:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.bb-tab.bb-tab-active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.bb-external-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.bb-external-table thead th {
+  background: var(--bg-primary);
+  padding: 6px 8px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.bb-external-row {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.bb-external-row:hover {
+  background: var(--accent-light);
+}
+
+.bb-external-row td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-primary);
+}
+
+.bb-split-hint {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.bb-split-loading {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.bb-selected-section {
+  margin-top: 0;
+}
+
+.bb-selected-section .form-section-title {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+/* 스테이징 배지 */
+.bb-staged-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--accent-light);
+  color: var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 외부 데이터 선택됨 표시 */
+.bb-external-staged {
+  background: var(--accent-light) !important;
+  outline: 1px solid var(--accent);
+}
+
+/* 적용 버튼 행 */
+.bb-apply-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+}
+
+.bb-apply-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  flex: 1;
+}
+
