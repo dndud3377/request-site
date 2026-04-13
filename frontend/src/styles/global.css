@@ -2055,3 +2055,39 @@ select.form-control option {
   margin-bottom: 8px;
 }
 
+/* 스테이징 배지 */
+.bb-staged-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--accent-light);
+  color: var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 외부 데이터 선택됨 표시 */
+.bb-external-staged {
+  background: var(--accent-light) !important;
+  outline: 1px solid var(--accent);
+}
+
+/* 적용 버튼 행 */
+.bb-apply-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+}
+
+.bb-apply-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  flex: 1;
+}
+

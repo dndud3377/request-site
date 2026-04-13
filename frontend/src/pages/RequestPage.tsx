@@ -263,6 +263,7 @@ export default function RequestPage(): React.ReactElement {
   const [bbExternalLoading, setBbExternalLoading] = useState(false);
   const [activeBbTab, setActiveBbTab] = useState(0);
   const [selectedJayerRowId, setSelectedJayerRowId] = useState<string | null>(null);
+  const [stagedMappings, setStagedMappings] = useState<Record<string, ExternalBbDataItem>>({});
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -579,22 +580,41 @@ const isProdc = detail.only_prodc === 'Yes';
     setBbRows((rows) => (rows.length <= 1 ? rows : rows.filter((r) => r.id !== id)));
   };
 
-  const handleBbAddFromExternal = (externalRow: ExternalBbDataItem) => {
-    const jayerRef = jayerRows.find((r) => r.id === selectedJayerRowId) ?? jayerRows[0];
-    const newRow = makeBbRow();
-    if (jayerRef) {
-      newRow.process_id = jayerRef.process_id;
-      newRow.ss = jayerRef.sp;
-      newRow.sd = jayerRef.sd;
-    }
-    newRow.bb_process_id = externalRow.bb_process_id;
-    newRow.bb_name = externalRow.bb_name;
-    newRow.bb_step = externalRow.bb_step;
-    newRow.bb_ss = externalRow.bb_ss;
-    setBbRows((rows) => {
-      const hasEmpty = rows.some((r) => !r.process_id && !r.bb_process_id);
-      return hasEmpty ? rows.filter((r) => r.process_id || r.bb_process_id).concat(newRow) : [...rows, newRow];
+  // 오른쪽 외부 데이터 클릭 → 선택된 J-ayer 행에 스테이징 (즉시 적용 X)
+  const handleStageMapping = (externalRow: ExternalBbDataItem) => {
+    if (!selectedJayerRowId) return;
+    setStagedMappings((prev) => ({ ...prev, [selectedJayerRowId]: externalRow }));
+  };
+
+  // 스테이징 취소
+  const handleClearStaging = (jayerRowId: string) => {
+    setStagedMappings((prev) => {
+      const next = { ...prev };
+      delete next[jayerRowId];
+      return next;
     });
+  };
+
+  // "적용" 버튼 → 스테이징된 모든 매핑을 BB 테이블에 한 번에 반영
+  const handleApplyMappings = () => {
+    const mappedRows: BbTableRow[] = jayerRows
+      .filter((jr) => stagedMappings[jr.id])
+      .map((jr) => {
+        const ext = stagedMappings[jr.id];
+        const newRow = makeBbRow();
+        newRow.process_id = jr.process_id;
+        newRow.ss = jr.sp;
+        newRow.sd = jr.sd;
+        newRow.bb_process_id = ext.bb_process_id;
+        newRow.bb_name = ext.bb_name;
+        newRow.bb_step = ext.bb_step;
+        newRow.bb_ss = ext.bb_ss;
+        return newRow;
+      });
+    if (mappedRows.length === 0) return;
+    setBbRows(mappedRows);
+    setStagedMappings({});
+    setSelectedJayerRowId(null);
   };
 
   // ===== Validation =====
@@ -1250,6 +1270,7 @@ const isProdc = detail.only_prodc === 'Yes';
   const renderStep4 = () => {
     const currentTabData = bbExternalData[activeBbTab] ?? [];
     const currentEntry = detail.bb_entries[activeBbTab];
+    const stagedCount = Object.keys(stagedMappings).length;
 
     return (
       <div className="form-section">
@@ -1257,36 +1278,58 @@ const isProdc = detail.only_prodc === 'Yes';
 
         {/* 분할 패널 */}
         <div className="bb-split-panel">
-          {/* 왼쪽: J-ayer 참조 테이블 */}
+          {/* 왼쪽: J-ayer 행 목록 + 매핑 미리보기 */}
           <div className="bb-split-panel-left">
             <div className="bb-split-panel-title">
-              J-ayer 참조 — 클릭하여 선택
+              ① J-ayer 행 선택 — 클릭하여 선택 후 오른쪽에서 데이터 지정
             </div>
             <div className="bb-split-panel-scroll">
               {jayerRows.length === 0 || (jayerRows.length === 1 && !jayerRows[0].process_id) ? (
-                <div className="bb-split-hint">J-ayer 정보가 없습니다.</div>
+                <div className="bb-split-hint">J-ayer 정보가 없습니다. Step 2를 먼저 입력하세요.</div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr>
                       <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>조리법</th>
                       <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>SP</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>SD</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>매핑된 뼈찜 데이터</th>
+                      <th style={{ padding: '6px 8px', background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, width: 28 }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {jayerRows.map((row) => (
-                      <tr
-                        key={row.id}
-                        className={selectedJayerRowId === row.id ? 'bb-jayer-selected' : ''}
-                        onClick={() => setSelectedJayerRowId(row.id)}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.process_id || '—'}</td>
-                        <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.sp || '—'}</td>
-                        <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.sd || '—'}</td>
-                      </tr>
-                    ))}
+                    {jayerRows.map((row) => {
+                      const staged = stagedMappings[row.id];
+                      const isSelected = selectedJayerRowId === row.id;
+                      return (
+                        <tr
+                          key={row.id}
+                          className={isSelected ? 'bb-jayer-selected' : ''}
+                          onClick={() => setSelectedJayerRowId(row.id)}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.process_id || '—'}</td>
+                          <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.sp || '—'}</td>
+                          <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>
+                            {staged ? (
+                              <span className="bb-staged-badge">{staged.bb_name} ({staged.bb_step})</span>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>미지정</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '4px 6px', borderBottom: '1px solid var(--border-light)', textAlign: 'center' }}>
+                            {staged && (
+                              <button
+                                type="button"
+                                className="flow-delete-btn"
+                                style={{ width: 20, height: 20, fontSize: 11 }}
+                                onClick={(e) => { e.stopPropagation(); handleClearStaging(row.id); }}
+                                title="매핑 취소"
+                              >✕</button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -1296,7 +1339,7 @@ const isProdc = detail.only_prodc === 'Yes';
           {/* 오른쪽: bb_entries 탭별 외부 데이터 */}
           <div className="bb-split-panel-right">
             <div className="bb-split-panel-title">
-              외부 데이터 — 클릭하면 BB 행 자동 추가
+              ② 외부 데이터 선택 — 선택된 J-ayer 행에 지정됨
             </div>
             <div className="bb-tab-bar">
               {detail.bb_entries.map((entry, idx) => (
@@ -1311,7 +1354,9 @@ const isProdc = detail.only_prodc === 'Yes';
               ))}
             </div>
             <div className="bb-split-panel-scroll">
-              {bbExternalLoading ? (
+              {!selectedJayerRowId ? (
+                <div className="bb-split-hint">← 먼저 왼쪽에서 J-ayer 행을 선택하세요.</div>
+              ) : bbExternalLoading ? (
                 <div className="bb-split-loading">데이터 로드 중...</div>
               ) : currentTabData.length === 0 ? (
                 <div className="bb-split-hint">
@@ -1330,19 +1375,24 @@ const isProdc = detail.only_prodc === 'Yes';
                     </tr>
                   </thead>
                   <tbody>
-                    {currentTabData.map((item) => (
-                      <tr
-                        key={item.id}
-                        className="bb-external-row"
-                        onClick={() => handleBbAddFromExternal(item)}
-                        title="클릭하면 BB 테이블에 행이 추가됩니다"
-                      >
-                        <td>{item.bb_process_id}</td>
-                        <td>{item.bb_name}</td>
-                        <td>{item.bb_step}</td>
-                        <td>{item.bb_ss}</td>
-                      </tr>
-                    ))}
+                    {currentTabData.map((item) => {
+                      const isStaged = selectedJayerRowId
+                        ? stagedMappings[selectedJayerRowId]?.id === item.id
+                        : false;
+                      return (
+                        <tr
+                          key={item.id}
+                          className={`bb-external-row${isStaged ? ' bb-external-staged' : ''}`}
+                          onClick={() => handleStageMapping(item)}
+                          title="클릭하면 선택된 J-ayer 행에 지정됩니다"
+                        >
+                          <td>{item.bb_process_id}</td>
+                          <td>{item.bb_name}</td>
+                          <td>{item.bb_step}</td>
+                          <td>{item.bb_ss}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -1350,10 +1400,27 @@ const isProdc = detail.only_prodc === 'Yes';
           </div>
         </div>
 
-        {/* 선택된 BB 테이블 rows */}
+        {/* 적용 버튼 */}
+        <div className="bb-apply-row">
+          <span className="bb-apply-hint">
+            {stagedCount > 0
+              ? `${stagedCount}개 행이 매핑됨 — 적용 버튼을 눌러 뼈찜 정보에 반영하세요.`
+              : 'J-ayer 행을 선택하고 외부 데이터를 지정한 뒤 적용하세요.'}
+          </span>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleApplyMappings}
+            disabled={stagedCount === 0}
+          >
+            ✔ 적용 ({stagedCount}건)
+          </button>
+        </div>
+
+        {/* 뼈찜 정보 테이블 (적용 후 채워짐) */}
         <div className="bb-selected-section">
           <div className="form-section-title" style={{ fontSize: 14, marginBottom: 8 }}>
-            선택된 뼈찜 정보
+            뼈찜 정보 (적용 결과)
           </div>
           <div className="wizard-table-wrapper">
             <table className="wizard-table">
@@ -1389,9 +1456,7 @@ const isProdc = detail.only_prodc === 'Yes';
                         className="flow-delete-btn"
                         onClick={() => handleBbDeleteRow(row.id)}
                         disabled={bbRows.length <= 1}
-                      >
-                        ✕
-                      </button>
+                      >✕</button>
                     </td>
                   </tr>
                 ))}
