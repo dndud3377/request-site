@@ -72,6 +72,18 @@ export type CreateDocumentInput = Omit<
 
 export type UpdateDocumentInput = Partial<CreateDocumentInput>;
 
+export type VocPage = 'request' | 'approval' | 'history';
+
+export interface VocComment {
+  id: number;
+  author_name: string;
+  author_role: UserRole;
+  is_submitter: boolean;
+  content: string;
+  is_reject_reason: boolean;
+  created_at: string;
+}
+
 export interface VOC {
   id: number;
   title: string;
@@ -80,13 +92,18 @@ export interface VOC {
   submitter_email: string;
   submitter_user_id?: number;
   content: string;
-  response: string;
+  page?: VocPage;
+  comments: VocComment[];
   status: VocStatus;
   created_at: string;
-  responded_at: string | null;
 }
 
-export type CreateVocInput = Omit<VOC, 'id' | 'response' | 'status' | 'created_at' | 'responded_at'>;
+export type CreateVocInput = Omit<VOC, 'id' | 'comments' | 'status' | 'created_at'>;
+
+export type AddVocCommentInput = {
+  content: string;
+  is_reject_reason?: boolean;
+};
 
 export interface Stats {
   total: number;

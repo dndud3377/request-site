@@ -1,6 +1,7 @@
 import {
   RequestDocument,
   VOC,
+  VocComment,
   Stats,
   Line,
   CreateDocumentInput,
@@ -236,9 +237,12 @@ const updateVocStatus = async (id: number, status: VOC['status']) => {
   return { data };
 };
 
-const updateVocResponse = async (id: number, response: string) => {
-  if (useMockAPI && mockVocAPI) return mockVocAPI.updateResponse(id, response);
-  const data = await patch<VOC>(`/voc/${id}/`, { response });
+const addVocComment = async (
+  id: number,
+  comment: Omit<VocComment, 'id' | 'created_at'>
+) => {
+  if (useMockAPI && mockVocAPI) return mockVocAPI.addComment(id, comment);
+  const data = await post<VOC>(`/voc/${id}/comments/`, comment);
   return { data };
 };
 
@@ -247,7 +251,7 @@ export const vocAPI = {
   create: createVoc,
   get: getVoc,
   updateStatus: updateVocStatus,
-  updateResponse: updateVocResponse,
+  addComment: addVocComment,
 };
 
 // ===== 라인 API =====
