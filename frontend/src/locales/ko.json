@@ -4,7 +4,8 @@
     "request": "의뢰서 작성",
     "approval": "결재 현황",
     "history": "이력 조회",
-    "voc": "VOC"
+    "voc": "VOC",
+    "guide": "가이드"
   },
   "home": {
     "hero_title": "제품 소개 지도",
@@ -224,6 +225,37 @@
     "status_rejected": "반려됨",
     "no_data": "데이터 없음",
     "process_error": "처리 중 오류가 발생했습니다."
+  },
+  "guide": {
+    "title": "가이드",
+    "subtitle": "업무 가이드 및 노하우를 공유합니다",
+    "write": "가이드 작성",
+    "edit": "수정",
+    "delete": "삭제",
+    "search_placeholder": "제목 검색...",
+    "no_guides": "등록된 가이드가 없습니다.",
+    "section_all": "전체",
+    "section_general": "일반",
+    "section_line_combination": "라인/조합법",
+    "section_jayer": "J-ayer",
+    "section_oayer": "O-ayer",
+    "section_bone": "뼈찜",
+    "section_map": "지도편차",
+    "section_cfamily": "C가문",
+    "section_xmark": "X표시",
+    "section_separation": "분리/T가문",
+    "form_title": "제목",
+    "form_section": "섹션",
+    "form_content": "내용",
+    "confirm_delete": "이 가이드를 삭제하시겠습니까?",
+    "create_success": "가이드가 등록되었습니다.",
+    "update_success": "가이드가 수정되었습니다.",
+    "delete_success": "가이드가 삭제되었습니다.",
+    "author": "작성자",
+    "created_at": "작성일",
+    "updated_at": "수정일",
+    "modal_write_title": "가이드 작성",
+    "modal_edit_title": "가이드 수정"
   },
   "notice": {
     "label_notice": "Notice",

@@ -12,6 +12,8 @@ import {
   AdminNotice,
   CreateNoticeInput,
   UpdateNoticeInput,
+  Guide,
+  CreateGuideInput,
 } from '../types';
 import { mockDocumentsAPI, mockVocAPI, mockNoticesAPI } from './mock';
 
@@ -304,6 +306,45 @@ export const noticesAPI = {
   create: createNotice,
   update: updateNotice,
   delete: deleteNotice,
+};
+
+// ===== 가이드 API =====
+
+const listGuides = async (params?: { section?: string; search?: string }) => {
+  const qs = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : '';
+  const data = await get<{ results: Guide[]; count: number } | Guide[]>(`/guides/${qs}`);
+  if (Array.isArray(data)) {
+    return { data: { results: data, count: data.length } };
+  }
+  return { data };
+};
+
+const getGuide = async (id: number) => {
+  const data = await get<Guide>(`/guides/${id}/`);
+  return { data };
+};
+
+const createGuide = async (input: CreateGuideInput) => {
+  const data = await post<Guide>('/guides/', input);
+  return { data };
+};
+
+const updateGuide = async (id: number, input: Partial<CreateGuideInput>) => {
+  const data = await patch<Guide>(`/guides/${id}/`, input);
+  return { data };
+};
+
+const deleteGuide = async (id: number) => {
+  await request(`/guides/${id}/`, { method: 'DELETE' });
+  return { data: null };
+};
+
+export const guidesAPI = {
+  list: listGuides,
+  get: getGuide,
+  create: createGuide,
+  update: updateGuide,
+  delete: deleteGuide,
 };
 
 // ===== 폼 옵션 API =====

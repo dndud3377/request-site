@@ -273,3 +273,33 @@ export interface StepInfo {
   process: string;
   recipeid: string;
 }
+
+// ===== Guide =====
+
+export type GuideSection =
+  | 'general'
+  | 'line_combination'
+  | 'jayer'
+  | 'oayer'
+  | 'bone'
+  | 'map'
+  | 'cfamily'
+  | 'xmark'
+  | 'separation';
+
+export interface Guide {
+  id: number;
+  title: string;
+  section: GuideSection;
+  content: string;
+  author_name: string;
+  author_role: UserRole;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateGuideInput {
+  title: string;
+  section: GuideSection;
+  content: string;
+}

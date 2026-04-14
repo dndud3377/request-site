@@ -4,7 +4,8 @@
     "request": "New Request",
     "approval": "Approval Status",
     "history": "History",
-    "voc": "VOC"
+    "voc": "VOC",
+    "guide": "Guide"
   },
   "home": {
     "hero_title": "Product Introduction Map",
@@ -191,6 +192,37 @@
     "status_approved": "Approved",
     "status_rejected": "Rejected",
     "no_data": "No data available."
+  },
+  "guide": {
+    "title": "Guide",
+    "subtitle": "Share work guides and know-how",
+    "write": "Write Guide",
+    "edit": "Edit",
+    "delete": "Delete",
+    "search_placeholder": "Search by title...",
+    "no_guides": "No guides registered.",
+    "section_all": "All",
+    "section_general": "General",
+    "section_line_combination": "Line / Combination",
+    "section_jayer": "J-ayer",
+    "section_oayer": "O-ayer",
+    "section_bone": "Bone Stew",
+    "section_map": "Map Deviation",
+    "section_cfamily": "C-Family",
+    "section_xmark": "X Mark",
+    "section_separation": "Separation / T-Family",
+    "form_title": "Title",
+    "form_section": "Section",
+    "form_content": "Content",
+    "confirm_delete": "Delete this guide?",
+    "create_success": "Guide has been created.",
+    "update_success": "Guide has been updated.",
+    "delete_success": "Guide has been deleted.",
+    "author": "Author",
+    "created_at": "Created",
+    "updated_at": "Updated",
+    "modal_write_title": "Write Guide",
+    "modal_edit_title": "Edit Guide"
   },
   "notice": {
     "label_notice": "Notice",
