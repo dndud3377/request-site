@@ -1,6 +1,7 @@
 import {
   RequestDocument,
   VOC,
+  VocComment,
   Stats,
   CreateDocumentInput,
   UpdateDocumentInput,
@@ -142,42 +143,71 @@ const SAMPLE_DOCUMENTS: RequestDocument[] = [
 const SAMPLE_VOCS: VOC[] = [
   {
     id: 1,
-    title: '스마트 온도조절기 앱 연동 오류',
+    title: '결재 현황 페이지 오류 접수',
     category: 'error_report',
-    submitter_name: '홍길동',
-    submitter_email: 'gildong@test.com',
+    submitter_name: '김의뢰',
+    submitter_email: 'pl.user@company.com',
     submitter_user_id: 1,
-    content: '스마트 온도조절기 V2를 사용 중인데 앱과 연동이 안 됩니다. 블루투스 연결은 되는데 Wi-Fi 등록에서 계속 실패합니다.',
-    response: '',
+    page: 'approval',
+    content: '결재 현황에서 합의 버튼을 눌러도 상태가 바뀌지 않는 경우가 있습니다. 재현 빈도: 2~3회 중 1회',
+    comments: [
+      {
+        id: 1001,
+        author_name: '관리자',
+        author_role: 'MASTER',
+        is_submitter: false,
+        content: '접수 확인했습니다. 재현 환경(브라우저, OS) 알려주시면 빠르게 확인하겠습니다.',
+        is_reject_reason: false,
+        created_at: dateStr(2),
+      },
+      {
+        id: 1002,
+        author_name: '김의뢰',
+        author_role: 'PL',
+        is_submitter: true,
+        content: 'Chrome 120, Windows 11 환경입니다. 재현 영상도 첨부 가능합니다.',
+        is_reject_reason: false,
+        created_at: dateStr(1),
+      },
+    ],
     status: 'checking',
     created_at: dateStr(3),
-    responded_at: null,
   },
   {
     id: 2,
-    title: '공기청정기 필터 교체 주기 개선 요청',
+    title: '이력 조회 검색 기능 개선 요청',
     category: 'feature_request',
-    submitter_name: '이서연',
-    submitter_email: 'seoyeon.lee@company.com',
+    submitter_name: '이검토',
+    submitter_email: 'agent.r1@company.com',
     submitter_user_id: 2,
-    content: '공기청정기 Pro를 구매한 지 2개월이 됐는데 벌써 필터 교체 알람이 뜹니다. 필터 교체 주기 조정 기능 개선을 요청합니다.',
-    response: '소중한 의견 감사합니다. 필터 교체 주기 조정 관련 개발팀에 전달하겠습니다.',
+    page: 'history',
+    content: '이력 조회에서 날짜 범위 필터를 추가해주시면 업무에 큰 도움이 될 것 같습니다.',
+    comments: [
+      {
+        id: 1003,
+        author_name: '관리자',
+        author_role: 'MASTER',
+        is_submitter: false,
+        content: '좋은 의견 감사합니다. 날짜 필터는 다음 스프린트에 반영 예정입니다.',
+        is_reject_reason: false,
+        created_at: dateStr(5),
+      },
+    ],
     status: 'completed',
     created_at: dateStr(10),
-    responded_at: dateStr(7),
   },
   {
     id: 3,
-    title: '로봇청소기 물걸레 강도 조절 기능 추가',
-    category: 'feature_request',
-    submitter_name: '박지훈',
-    submitter_email: 'jihoon.park@company.com',
-    submitter_user_id: 3,
-    content: '로봇청소기 R3를 잘 사용하고 있습니다. 물걸레 세척 시 물 분사량을 사용자가 조절할 수 있는 기능이 있으면 좋겠습니다.',
-    response: '',
+    title: '의뢰서 작성 문의',
+    category: 'inquiry',
+    submitter_name: '김의뢰',
+    submitter_email: 'pl.user@company.com',
+    submitter_user_id: 1,
+    page: 'request',
+    content: '의뢰서 작성 시 조합법 선택 항목이 너무 많아 찾기 어렵습니다. 검색 기능이 있나요?',
+    comments: [],
     status: 'checking',
     created_at: dateStr(1),
-    responded_at: null,
   },
 ];
 
@@ -429,15 +459,16 @@ const mockListVocs = async (params?: Record<string, string>) => {
   return { data: { results: result, count: result.length } };
 };
 
+let nextCommentId = 2000;
+
 const mockCreateVoc = async (data: CreateVocInput) => {
   await delay();
   const newVoc: VOC = {
     ...data,
     id: nextVocId++,
-    response: '',
+    comments: [],
     status: 'checking',
     created_at: now(),
-    responded_at: null,
   };
   vocs = [newVoc, ...vocs];
   return { data: newVoc };
@@ -458,11 +489,19 @@ const mockUpdateVocStatus = async (id: number, status: VOC['status']) => {
   return { data: vocs[idx] };
 };
 
-const mockUpdateVocResponse = async (id: number, response: string) => {
+const mockAddVocComment = async (
+  id: number,
+  comment: Omit<VocComment, 'id' | 'created_at'>
+) => {
   await delay();
   const idx = vocs.findIndex((v) => v.id === id);
   if (idx === -1) throw new Error(`VOC ${id} not found`);
-  vocs[idx] = { ...vocs[idx], response, responded_at: now() };
+  const newComment: VocComment = {
+    ...comment,
+    id: nextCommentId++,
+    created_at: now(),
+  };
+  vocs[idx] = { ...vocs[idx], comments: [...vocs[idx].comments, newComment] };
   return { data: vocs[idx] };
 };
 
@@ -578,5 +617,5 @@ export const mockVocAPI = {
   create: mockCreateVoc,
   get: mockGetVoc,
   updateStatus: mockUpdateVocStatus,
-  updateResponse: mockUpdateVocResponse,
+  addComment: mockAddVocComment,
 };
