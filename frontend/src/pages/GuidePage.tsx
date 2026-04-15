@@ -150,7 +150,7 @@ export default function GuidePage(): React.ReactElement {
     t(`guide.section_${s}` as Parameters<typeof t>[0]);
 
   return (
-    <div className="page">
+    <div className="container page">
       {/* Header */}
       <div className="page-header">
         <div>
