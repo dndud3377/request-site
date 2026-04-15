@@ -9,13 +9,14 @@ import {
   CreateVocInput,
   AgentType,
   StepInfo,
+  ExternalBbDataItem,
   AdminNotice,
   CreateNoticeInput,
   UpdateNoticeInput,
   Guide,
   CreateGuideInput,
 } from '../types';
-import { mockDocumentsAPI, mockVocAPI, mockNoticesAPI } from './mock';
+import { mockDocumentsAPI, mockVocAPI, mockNoticesAPI, mockGetBbExternalData } from './mock';
 
 // ===== Mock API 여부 확인 =====
 // Vite 환경 변수: VITE_USE_MOCK=true 설정 시 Mock API 사용
@@ -370,4 +371,11 @@ export const formOptionsAPI = {
   getStepInfo: (line: string, process: string): Promise<StepInfo[]> =>
     get<{ options: StepInfo[] }>(`/form-options/step-info/?line=${encodeURIComponent(line)}&process=${encodeURIComponent(process)}`)
       .then((r) => r.options || []),
+
+  getBbExternalData: (entry: { location: string; product: string; process_id: string }): Promise<ExternalBbDataItem[]> => {
+    if (useMockAPI) return mockGetBbExternalData(entry);
+    return get<{ options: ExternalBbDataItem[] }>(
+      `/form-options/bb-external/?location=${encodeURIComponent(entry.location)}&product=${encodeURIComponent(entry.product)}&process_id=${encodeURIComponent(entry.process_id)}`
+    ).then((r) => r.options || []);
+  },
 };

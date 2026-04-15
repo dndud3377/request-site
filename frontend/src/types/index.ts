@@ -274,6 +274,16 @@ export interface StepInfo {
   recipeid: string;
 }
 
+// ===== 뼈찜 외부 데이터 소스 =====
+
+export interface ExternalBbDataItem {
+  id: string;
+  bb_process_id: string;
+  bb_name: string;
+  bb_step: string;
+  bb_ss: string;
+}
+
 // ===== Guide =====
 
 export type GuideSection =
