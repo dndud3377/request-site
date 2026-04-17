@@ -264,6 +264,13 @@ export default function RequestPage(): React.ReactElement {
   const [activeBbTab, setActiveBbTab] = useState(0);
   const [selectedJayerRowId, setSelectedJayerRowId] = useState<string | null>(null);
   const [stagedMappings, setStagedMappings] = useState<Record<string, ExternalBbDataItem>>({});
+  const [jayerChecked, setJayerChecked] = useState<Set<string>>(new Set());
+  const [oayerChecked, setOayerChecked] = useState<Set<string>>(new Set());
+  const [bbChecked, setBbChecked] = useState<Set<string>>(new Set());
+  const [jayerDeleted, setJayerDeleted] = useState<JayerRow[]>([]);
+  const [oayerDeleted, setOayerDeleted] = useState<OayerRow[]>([]);
+  const [bbDeleted, setBbDeleted] = useState<BbTableRow[]>([]);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -518,10 +525,46 @@ const isProdc = detail.only_prodc === 'Yes';
     setJayerRows((rows) => rows.map((r) => ({ ...r, [field]: '' })));
   };
 
-  const handleJayerAddRow = () => setJayerRows((rows) => [...rows, makeJayerRow()]);
+  const handleJayerAddRow = () => {
+    setJayerRows((rows) => [...rows, makeJayerRow()]);
+    setJayerDeleted([]);
+  };
 
-  const handleJayerDeleteRow = (id: string) => {
-    setJayerRows((rows) => (rows.length <= 1 ? rows : rows.filter((r) => r.id !== id)));
+  const handleJayerBulkDelete = () => {
+    const toDelete = jayerRows.filter((r) => jayerChecked.has(r.id));
+    setJayerDeleted(toDelete);
+    setJayerRows((rows) => {
+      const remaining = rows.filter((r) => !jayerChecked.has(r.id));
+      return remaining.length === 0 ? [makeJayerRow()] : remaining;
+    });
+    setSelectedJayerRowId((prev) => (prev && jayerChecked.has(prev) ? null : prev));
+    setStagedMappings((prev) => {
+      const next = { ...prev };
+      jayerChecked.forEach((id) => delete next[id]);
+      return next;
+    });
+    setJayerChecked(new Set());
+  };
+
+  const handleJayerRestore = () => {
+    setJayerRows((rows) => [...rows, ...jayerDeleted]);
+    setJayerDeleted([]);
+  };
+
+  const handleJayerCheckToggle = (id: string) => {
+    setJayerChecked((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const handleJayerCheckAll = () => {
+    if (jayerChecked.size === jayerRows.length) {
+      setJayerChecked(new Set());
+    } else {
+      setJayerChecked(new Set(jayerRows.map((r) => r.id)));
+    }
   };
 
   // ===== Oayer Handlers =====
@@ -537,10 +580,40 @@ const isProdc = detail.only_prodc === 'Yes';
     setOayerRows((rows) => rows.map((r) => ({ ...r, [field]: '' })));
   };
 
-  const handleOayerAddRow = () => setOayerRows((rows) => [...rows, makeOayerRow()]);
+  const handleOayerAddRow = () => {
+    setOayerRows((rows) => [...rows, makeOayerRow()]);
+    setOayerDeleted([]);
+  };
 
-  const handleOayerDeleteRow = (id: string) => {
-    setOayerRows((rows) => (rows.length <= 1 ? rows : rows.filter((r) => r.id !== id)));
+  const handleOayerBulkDelete = () => {
+    const toDelete = oayerRows.filter((r) => oayerChecked.has(r.id));
+    setOayerDeleted(toDelete);
+    setOayerRows((rows) => {
+      const remaining = rows.filter((r) => !oayerChecked.has(r.id));
+      return remaining.length === 0 ? [makeOayerRow()] : remaining;
+    });
+    setOayerChecked(new Set());
+  };
+
+  const handleOayerRestore = () => {
+    setOayerRows((rows) => [...rows, ...oayerDeleted]);
+    setOayerDeleted([]);
+  };
+
+  const handleOayerCheckToggle = (id: string) => {
+    setOayerChecked((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const handleOayerCheckAll = () => {
+    if (oayerChecked.size === oayerRows.length) {
+      setOayerChecked(new Set());
+    } else {
+      setOayerChecked(new Set(oayerRows.map((r) => r.id)));
+    }
   };
 
   // ===== Bb Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
@@ -574,10 +647,40 @@ const isProdc = detail.only_prodc === 'Yes';
     setBbRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
   };
 
-  const handleBbAddRow = () => setBbRows((rows) => [...rows, makeBbRow()]);
+  const handleBbAddRow = () => {
+    setBbRows((rows) => [...rows, makeBbRow()]);
+    setBbDeleted([]);
+  };
 
-  const handleBbDeleteRow = (id: string) => {
-    setBbRows((rows) => (rows.length <= 1 ? rows : rows.filter((r) => r.id !== id)));
+  const handleBbBulkDelete = () => {
+    const toDelete = bbRows.filter((r) => bbChecked.has(r.id));
+    setBbDeleted(toDelete);
+    setBbRows((rows) => {
+      const remaining = rows.filter((r) => !bbChecked.has(r.id));
+      return remaining.length === 0 ? [makeBbRow()] : remaining;
+    });
+    setBbChecked(new Set());
+  };
+
+  const handleBbRestore = () => {
+    setBbRows((rows) => [...rows, ...bbDeleted]);
+    setBbDeleted([]);
+  };
+
+  const handleBbCheckToggle = (id: string) => {
+    setBbChecked((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const handleBbCheckAll = () => {
+    if (bbChecked.size === bbRows.length) {
+      setBbChecked(new Set());
+    } else {
+      setBbChecked(new Set(bbRows.map((r) => r.id)));
+    }
   };
 
   // 오른쪽 외부 데이터 클릭 → 선택된 J-ayer 행에 스테이징 (즉시 적용 X)
@@ -1144,6 +1247,14 @@ const isProdc = detail.only_prodc === 'Yes';
         <table className="wizard-table">
           <thead>
             <tr>
+              <th style={{ width: 32, textAlign: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={jayerRows.length > 0 && jayerChecked.size === jayerRows.length}
+                  ref={(el) => { if (el) el.indeterminate = jayerChecked.size > 0 && jayerChecked.size < jayerRows.length; }}
+                  onChange={handleJayerCheckAll}
+                />
+              </th>
               <th style={{ minWidth: 58 }}>{t('request.process_id')}</th>
               <th style={{ minWidth: 78 }}>{t('request.col_sp')}</th>
               <th style={{ minWidth: 160 }}>{t('request.col_sd')}</th>
@@ -1155,12 +1266,14 @@ const isProdc = detail.only_prodc === 'Yes';
               <th style={{ minWidth: 90 }}>{t('request.col_item_id')}</th>
               <th style={{ minWidth: 42 }}>{t('request.col_rev')}</th>
               <th style={{ minWidth: 200 }}>{t('request.col_drawing_version')}</th>
-              <th style={{ width: 32 }}></th>
             </tr>
           </thead>
           <tbody>
             {jayerRows.map((row) => (
-              <tr key={row.id}>
+              <tr key={row.id} className={jayerChecked.has(row.id) ? 'row-checked' : ''}>
+                <td style={{ textAlign: 'center' }}>
+                  <input type="checkbox" checked={jayerChecked.has(row.id)} onChange={() => handleJayerCheckToggle(row.id)} />
+                </td>
                 <td><input value={row.process_id} onChange={(e) => handleJayerChange(row.id, 'process_id', e.target.value)} /></td>
                 <td><input value={row.sp} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} /></td>
                 <td><input value={row.sd} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} /></td>
@@ -1184,15 +1297,26 @@ const isProdc = detail.only_prodc === 'Yes';
                 <td><input value={row.item_id} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} /></td>
                 <td><input value={row.rev} onChange={(e) => handleJayerChange(row.id, 'rev', e.target.value)} /></td>
                 <td><input value={row.drawing_version} onChange={(e) => handleJayerChange(row.id, 'drawing_version', e.target.value)} /></td>
-                <td style={{ textAlign: 'center' }}>
-                  <button type="button" className="flow-delete-btn" onClick={() => handleJayerDeleteRow(row.id)} disabled={jayerRows.length <= 1}>✕</button>
-                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <button type="button" className="flow-table-add-btn" onClick={handleJayerAddRow}>+ 행 추가</button>
+      <div className="bulk-action-row">
+        <button type="button" className="flow-table-add-btn" onClick={handleJayerAddRow}>+ 행 추가</button>
+        {jayerChecked.size > 0 && (
+          <button
+            type="button"
+            className="btn btn-danger btn-sm"
+            onClick={() => setDeleteConfirm({ message: `${jayerChecked.size}개 항목을 삭제하시겠습니까?`, onConfirm: handleJayerBulkDelete })}
+          >선택 삭제 ({jayerChecked.size})</button>
+        )}
+        {jayerDeleted.length > 0 && (
+          <button type="button" className="btn btn-secondary btn-sm" onClick={handleJayerRestore}>
+            복원 ({jayerDeleted.length}개)
+          </button>
+        )}
+      </div>
     </div>
   );
 
@@ -1203,6 +1327,14 @@ const isProdc = detail.only_prodc === 'Yes';
         <table className="wizard-table">
           <thead>
             <tr>
+              <th style={{ width: 32, textAlign: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={oayerRows.length > 0 && oayerChecked.size === oayerRows.length}
+                  ref={(el) => { if (el) el.indeterminate = oayerChecked.size > 0 && oayerChecked.size < oayerRows.length; }}
+                  onChange={handleOayerCheckAll}
+                />
+              </th>
               <th style={{ minWidth: 90 }}>조리법</th>
               <th style={{ minWidth: 60 }}>SP</th>
               <th style={{ minWidth: 60 }}>SD</th>
@@ -1226,12 +1358,14 @@ const isProdc = detail.only_prodc === 'Yes';
               <th style={{ minWidth: 110 }}>제품 이름</th>
               <th style={{ minWidth: 70 }}>STEP</th>
               <th style={{ minWidth: 70 }}>TT</th>
-              <th style={{ width: 40 }}></th>
             </tr>
           </thead>
           <tbody>
             {oayerRows.map((row) => (
-              <tr key={row.id}>
+              <tr key={row.id} className={oayerChecked.has(row.id) ? 'row-checked' : ''}>
+                <td style={{ textAlign: 'center' }}>
+                  <input type="checkbox" checked={oayerChecked.has(row.id)} onChange={() => handleOayerCheckToggle(row.id)} />
+                </td>
                 <td><input value={row.process_id} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} /></td>
                 <td><input value={row.sp} onChange={(e) => handleOayerChange(row.id, 'sp', e.target.value)} /></td>
                 <td><input value={row.sd} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} /></td>
@@ -1255,15 +1389,26 @@ const isProdc = detail.only_prodc === 'Yes';
                 </td>
                 <td><input value={row.step} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} /></td>
                 <td><input value={row.tt} onChange={(e) => handleOayerChange(row.id, 'tt', e.target.value)} /></td>
-                <td style={{ textAlign: 'center' }}>
-                  <button type="button" className="flow-delete-btn" onClick={() => handleOayerDeleteRow(row.id)} disabled={oayerRows.length <= 1}>✕</button>
-                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <button type="button" className="flow-table-add-btn" onClick={handleOayerAddRow}>+ 행 추가</button>
+      <div className="bulk-action-row">
+        <button type="button" className="flow-table-add-btn" onClick={handleOayerAddRow}>+ 행 추가</button>
+        {oayerChecked.size > 0 && (
+          <button
+            type="button"
+            className="btn btn-danger btn-sm"
+            onClick={() => setDeleteConfirm({ message: `${oayerChecked.size}개 항목을 삭제하시겠습니까?`, onConfirm: handleOayerBulkDelete })}
+          >선택 삭제 ({oayerChecked.size})</button>
+        )}
+        {oayerDeleted.length > 0 && (
+          <button type="button" className="btn btn-secondary btn-sm" onClick={handleOayerRestore}>
+            복원 ({oayerDeleted.length}개)
+          </button>
+        )}
+      </div>
     </div>
   );
 
@@ -1426,6 +1571,14 @@ const isProdc = detail.only_prodc === 'Yes';
             <table className="wizard-table">
               <thead>
                 <tr>
+                  <th style={{ width: 32, textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={bbRows.length > 0 && bbChecked.size === bbRows.length}
+                      ref={(el) => { if (el) el.indeterminate = bbChecked.size > 0 && bbChecked.size < bbRows.length; }}
+                      onChange={handleBbCheckAll}
+                    />
+                  </th>
                   <th style={{ minWidth: 40 }}>No</th>
                   <th style={{ minWidth: 90 }}>조리법</th>
                   <th style={{ minWidth: 60 }}>SS</th>
@@ -1435,12 +1588,14 @@ const isProdc = detail.only_prodc === 'Yes';
                   <th style={{ minWidth: 80 }}>뼈찜 STEP</th>
                   <th style={{ minWidth: 70 }}>뼈찜 SS</th>
                   <th style={{ minWidth: 90 }}>비고</th>
-                  <th style={{ width: 40 }}></th>
                 </tr>
               </thead>
               <tbody>
                 {bbRows.map((row, idx) => (
-                  <tr key={row.id}>
+                  <tr key={row.id} className={bbChecked.has(row.id) ? 'row-checked' : ''}>
+                    <td style={{ textAlign: 'center' }}>
+                      <input type="checkbox" checked={bbChecked.has(row.id)} onChange={() => handleBbCheckToggle(row.id)} />
+                    </td>
                     <td className="wizard-table-no">{idx + 1}</td>
                     <td><input value={row.process_id} onChange={(e) => handleBbChange(row.id, 'process_id', e.target.value)} /></td>
                     <td><input value={row.ss} onChange={(e) => handleBbChange(row.id, 'ss', e.target.value)} /></td>
@@ -1450,22 +1605,26 @@ const isProdc = detail.only_prodc === 'Yes';
                     <td><input value={row.bb_step} onChange={(e) => handleBbChange(row.id, 'bb_step', e.target.value)} /></td>
                     <td><input value={row.bb_ss} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} /></td>
                     <td><input value={row.remark} onChange={(e) => handleBbChange(row.id, 'remark', e.target.value)} /></td>
-                    <td style={{ textAlign: 'center' }}>
-                      <button
-                        type="button"
-                        className="flow-delete-btn"
-                        onClick={() => handleBbDeleteRow(row.id)}
-                        disabled={bbRows.length <= 1}
-                      >✕</button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <button type="button" className="flow-table-add-btn" onClick={handleBbAddRow}>
-            + 행 추가
-          </button>
+          <div className="bulk-action-row">
+            <button type="button" className="flow-table-add-btn" onClick={handleBbAddRow}>+ 행 추가</button>
+            {bbChecked.size > 0 && (
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={() => setDeleteConfirm({ message: `${bbChecked.size}개 항목을 삭제하시겠습니까?`, onConfirm: handleBbBulkDelete })}
+              >선택 삭제 ({bbChecked.size})</button>
+            )}
+            {bbDeleted.length > 0 && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={handleBbRestore}>
+                복원 ({bbDeleted.length}개)
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -1515,6 +1674,21 @@ const isProdc = detail.only_prodc === 'Yes';
           )}
         </div>
       </div>
+
+      {deleteConfirm && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+          <div className="modal-content delete-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <p className="delete-confirm-message">{deleteConfirm.message}</p>
+            <div className="delete-confirm-actions">
+              <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>취소</button>
+              <button
+                className="btn btn-danger"
+                onClick={() => { deleteConfirm.onConfirm(); setDeleteConfirm(null); }}
+              >삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Modal
         isOpen={confirmOpen}

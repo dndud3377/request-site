@@ -1322,6 +1322,46 @@ select.form-control option {
   border-radius: 4px;
 }
 
+.bulk-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.bulk-action-row .flow-table-add-btn {
+  margin-top: 0;
+  flex: 1;
+}
+
+.btn-sm {
+  font-size: 0.82rem;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
+.row-checked td {
+  background: var(--accent-light) !important;
+}
+
+.delete-confirm-modal {
+  max-width: 360px;
+  padding: 24px;
+  text-align: center;
+}
+
+.delete-confirm-message {
+  font-size: 1rem;
+  margin-bottom: 20px;
+  color: var(--text-primary);
+}
+
+.delete-confirm-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
 .flow-table-add-btn {
   margin-top: 8px;
   background: none;
