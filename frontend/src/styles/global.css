@@ -1346,8 +1346,13 @@ select.form-control option {
 
 .delete-confirm-modal {
   max-width: 360px;
+  width: 100%;
   padding: 24px;
   text-align: center;
+  background: var(--bg-modal);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
 }
 
 .delete-confirm-message {
