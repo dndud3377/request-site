@@ -121,6 +121,8 @@ export interface FlowChartRow {
 
 export interface JayerRow {
   id: string;
+  sortOrder: number;
+  disabled: boolean;
   process_id: string;
   sp: string;
   sd: string;
@@ -136,6 +138,8 @@ export interface JayerRow {
 
 export interface OayerRow {
   id: string;
+  sortOrder: number;
+  disabled: boolean;
   process_id: string;
   sp: string;
   sd: string;
@@ -149,6 +153,8 @@ export interface OayerRow {
 
 export interface BbTableRow {
   id: string;
+  sortOrder: number;
+  disabled: boolean;
   process_id: string;
   ss: string;
   sd: string;

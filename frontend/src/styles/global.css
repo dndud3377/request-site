@@ -1344,22 +1344,22 @@ select.form-control option {
   background: var(--accent-light) !important;
 }
 
-.delete-confirm-modal {
-  max-width: 360px;
-  padding: 24px;
-  text-align: center;
+.row-disabled td {
+  opacity: 0.45;
+  background: var(--bg-secondary) !important;
+  color: var(--text-muted);
 }
 
-.delete-confirm-message {
-  font-size: 1rem;
-  margin-bottom: 20px;
-  color: var(--text-primary);
+.row-disabled input,
+.row-disabled select {
+  cursor: not-allowed;
+  background: transparent;
 }
 
-.delete-confirm-actions {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
+.row-divider td {
+  padding: 0 !important;
+  height: 2px;
+  background: var(--border);
 }
 
 .flow-table-add-btn {

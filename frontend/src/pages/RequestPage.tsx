@@ -103,6 +103,8 @@ const makeRow = (): FlowChartRow => ({
 
 const makeJayerRow = (): JayerRow => ({
   id: String(Date.now() + Math.random()),
+  sortOrder: Date.now(),
+  disabled: false,
   process_id: '',
   sp: '',
   sd: '',
@@ -118,6 +120,8 @@ const makeJayerRow = (): JayerRow => ({
 
 const makeOayerRow = (): OayerRow => ({
   id: String(Date.now() + Math.random()),
+  sortOrder: Date.now(),
+  disabled: false,
   process_id: '',
   sp: '',
   sd: '',
@@ -131,6 +135,8 @@ const makeOayerRow = (): OayerRow => ({
 
 const makeBbRow = (): BbTableRow => ({
   id: String(Date.now() + Math.random()),
+  sortOrder: Date.now(),
+  disabled: false,
   process_id: '',
   ss: '',
   sd: '',
@@ -267,10 +273,6 @@ export default function RequestPage(): React.ReactElement {
   const [jayerChecked, setJayerChecked] = useState<Set<string>>(new Set());
   const [oayerChecked, setOayerChecked] = useState<Set<string>>(new Set());
   const [bbChecked, setBbChecked] = useState<Set<string>>(new Set());
-  const [jayerDeleted, setJayerDeleted] = useState<JayerRow[]>([]);
-  const [oayerDeleted, setOayerDeleted] = useState<OayerRow[]>([]);
-  const [bbDeleted, setBbDeleted] = useState<BbTableRow[]>([]);
-  const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -527,16 +529,12 @@ const isProdc = detail.only_prodc === 'Yes';
 
   const handleJayerAddRow = () => {
     setJayerRows((rows) => [...rows, makeJayerRow()]);
-    setJayerDeleted([]);
   };
 
-  const handleJayerBulkDelete = () => {
-    const toDelete = jayerRows.filter((r) => jayerChecked.has(r.id));
-    setJayerDeleted(toDelete);
-    setJayerRows((rows) => {
-      const remaining = rows.filter((r) => !jayerChecked.has(r.id));
-      return remaining.length === 0 ? [makeJayerRow()] : remaining;
-    });
+  const handleJayerBulkDisable = () => {
+    setJayerRows((rows) =>
+      rows.map((r) => (jayerChecked.has(r.id) && !r.disabled ? { ...r, disabled: true } : r))
+    );
     setSelectedJayerRowId((prev) => (prev && jayerChecked.has(prev) ? null : prev));
     setStagedMappings((prev) => {
       const next = { ...prev };
@@ -546,9 +544,11 @@ const isProdc = detail.only_prodc === 'Yes';
     setJayerChecked(new Set());
   };
 
-  const handleJayerRestore = () => {
-    setJayerRows((rows) => [...rows, ...jayerDeleted]);
-    setJayerDeleted([]);
+  const handleJayerBulkRestore = () => {
+    setJayerRows((rows) =>
+      rows.map((r) => (jayerChecked.has(r.id) && r.disabled ? { ...r, disabled: false } : r))
+    );
+    setJayerChecked(new Set());
   };
 
   const handleJayerCheckToggle = (id: string) => {
@@ -560,10 +560,12 @@ const isProdc = detail.only_prodc === 'Yes';
   };
 
   const handleJayerCheckAll = () => {
-    if (jayerChecked.size === jayerRows.length) {
+    const activeIds = jayerRows.filter((r) => !r.disabled).map((r) => r.id);
+    const allActiveChecked = activeIds.every((id) => jayerChecked.has(id));
+    if (allActiveChecked) {
       setJayerChecked(new Set());
     } else {
-      setJayerChecked(new Set(jayerRows.map((r) => r.id)));
+      setJayerChecked(new Set(activeIds));
     }
   };
 
@@ -582,22 +584,20 @@ const isProdc = detail.only_prodc === 'Yes';
 
   const handleOayerAddRow = () => {
     setOayerRows((rows) => [...rows, makeOayerRow()]);
-    setOayerDeleted([]);
   };
 
-  const handleOayerBulkDelete = () => {
-    const toDelete = oayerRows.filter((r) => oayerChecked.has(r.id));
-    setOayerDeleted(toDelete);
-    setOayerRows((rows) => {
-      const remaining = rows.filter((r) => !oayerChecked.has(r.id));
-      return remaining.length === 0 ? [makeOayerRow()] : remaining;
-    });
+  const handleOayerBulkDisable = () => {
+    setOayerRows((rows) =>
+      rows.map((r) => (oayerChecked.has(r.id) && !r.disabled ? { ...r, disabled: true } : r))
+    );
     setOayerChecked(new Set());
   };
 
-  const handleOayerRestore = () => {
-    setOayerRows((rows) => [...rows, ...oayerDeleted]);
-    setOayerDeleted([]);
+  const handleOayerBulkRestore = () => {
+    setOayerRows((rows) =>
+      rows.map((r) => (oayerChecked.has(r.id) && r.disabled ? { ...r, disabled: false } : r))
+    );
+    setOayerChecked(new Set());
   };
 
   const handleOayerCheckToggle = (id: string) => {
@@ -609,10 +609,12 @@ const isProdc = detail.only_prodc === 'Yes';
   };
 
   const handleOayerCheckAll = () => {
-    if (oayerChecked.size === oayerRows.length) {
+    const activeIds = oayerRows.filter((r) => !r.disabled).map((r) => r.id);
+    const allActiveChecked = activeIds.every((id) => oayerChecked.has(id));
+    if (allActiveChecked) {
       setOayerChecked(new Set());
     } else {
-      setOayerChecked(new Set(oayerRows.map((r) => r.id)));
+      setOayerChecked(new Set(activeIds));
     }
   };
 
@@ -649,22 +651,20 @@ const isProdc = detail.only_prodc === 'Yes';
 
   const handleBbAddRow = () => {
     setBbRows((rows) => [...rows, makeBbRow()]);
-    setBbDeleted([]);
   };
 
-  const handleBbBulkDelete = () => {
-    const toDelete = bbRows.filter((r) => bbChecked.has(r.id));
-    setBbDeleted(toDelete);
-    setBbRows((rows) => {
-      const remaining = rows.filter((r) => !bbChecked.has(r.id));
-      return remaining.length === 0 ? [makeBbRow()] : remaining;
-    });
+  const handleBbBulkDisable = () => {
+    setBbRows((rows) =>
+      rows.map((r) => (bbChecked.has(r.id) && !r.disabled ? { ...r, disabled: true } : r))
+    );
     setBbChecked(new Set());
   };
 
-  const handleBbRestore = () => {
-    setBbRows((rows) => [...rows, ...bbDeleted]);
-    setBbDeleted([]);
+  const handleBbBulkRestore = () => {
+    setBbRows((rows) =>
+      rows.map((r) => (bbChecked.has(r.id) && r.disabled ? { ...r, disabled: false } : r))
+    );
+    setBbChecked(new Set());
   };
 
   const handleBbCheckToggle = (id: string) => {
@@ -676,10 +676,12 @@ const isProdc = detail.only_prodc === 'Yes';
   };
 
   const handleBbCheckAll = () => {
-    if (bbChecked.size === bbRows.length) {
+    const activeIds = bbRows.filter((r) => !r.disabled).map((r) => r.id);
+    const allActiveChecked = activeIds.every((id) => bbChecked.has(id));
+    if (allActiveChecked) {
       setBbChecked(new Set());
     } else {
-      setBbChecked(new Set(bbRows.map((r) => r.id)));
+      setBbChecked(new Set(activeIds));
     }
   };
 
@@ -770,7 +772,13 @@ const isProdc = detail.only_prodc === 'Yes';
       requester_email: currentUser.email,
       requester_department: currentUser.department,
       reference_materials: note ?? '',
-      additional_notes: JSON.stringify({ detail, jayerRows, oayerRows, bbRows, history }),
+      additional_notes: JSON.stringify({
+        detail,
+        jayerRows: jayerRows.filter(r => !r.disabled),
+        oayerRows: oayerRows.filter(r => !r.disabled),
+        bbRows: bbRows.filter(r => !r.disabled),
+        history,
+      }),
     };
   };
 
@@ -1250,8 +1258,8 @@ const isProdc = detail.only_prodc === 'Yes';
               <th style={{ width: 32, textAlign: 'center' }}>
                 <input
                   type="checkbox"
-                  checked={jayerRows.length > 0 && jayerChecked.size === jayerRows.length}
-                  ref={(el) => { if (el) el.indeterminate = jayerChecked.size > 0 && jayerChecked.size < jayerRows.length; }}
+                  checked={jayerRows.filter(r => !r.disabled).length > 0 && jayerRows.filter(r => !r.disabled).every(r => jayerChecked.has(r.id))}
+                  ref={(el) => { if (el) { const active = jayerRows.filter(r => !r.disabled); el.indeterminate = active.some(r => jayerChecked.has(r.id)) && !active.every(r => jayerChecked.has(r.id)); } }}
                   onChange={handleJayerCheckAll}
                 />
               </th>
@@ -1269,51 +1277,60 @@ const isProdc = detail.only_prodc === 'Yes';
             </tr>
           </thead>
           <tbody>
-            {jayerRows.map((row) => (
-              <tr key={row.id} className={jayerChecked.has(row.id) ? 'row-checked' : ''}>
-                <td style={{ textAlign: 'center' }}>
-                  <input type="checkbox" checked={jayerChecked.has(row.id)} onChange={() => handleJayerCheckToggle(row.id)} />
-                </td>
-                <td><input value={row.process_id} onChange={(e) => handleJayerChange(row.id, 'process_id', e.target.value)} /></td>
-                <td><input value={row.sp} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} /></td>
-                <td><input value={row.sd} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} /></td>
-                <td><input value={row.pp} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} /></td>
-                <td>
-                  <select value={row.st} onChange={(e) => handleJayerChange(row.id, 'st', e.target.value)}>
-                    <option value=""></option>
-                    <option value="O">O</option>
-                    <option value="X">X</option>
-                  </select>
-                </td>
-                <td>
-                  <select value={row.new_or_copy} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)}>
-                    <option value=""></option>
-                    <option value="신규">신규</option>
-                    <option value="복사">복사</option>
-                  </select>
-                </td>
-                <td><input value={row.product_name} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} /></td>
-                <td><input value={row.step} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} /></td>
-                <td><input value={row.item_id} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} /></td>
-                <td><input value={row.rev} onChange={(e) => handleJayerChange(row.id, 'rev', e.target.value)} /></td>
-                <td><input value={row.drawing_version} onChange={(e) => handleJayerChange(row.id, 'drawing_version', e.target.value)} /></td>
-              </tr>
-            ))}
+            {[
+              ...jayerRows.filter(r => !r.disabled).sort((a, b) => a.sortOrder - b.sortOrder),
+              ...jayerRows.filter(r => r.disabled).sort((a, b) => a.sortOrder - b.sortOrder),
+            ].map((row, idx, arr) => {
+              const isFirstDisabled = row.disabled && (idx === 0 || !arr[idx - 1].disabled);
+              return (
+                <>
+                  {isFirstDisabled && (
+                    <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={12} /></tr>
+                  )}
+                  <tr key={row.id} className={[row.disabled ? 'row-disabled' : '', jayerChecked.has(row.id) ? 'row-checked' : ''].filter(Boolean).join(' ')}>
+                    <td style={{ textAlign: 'center' }}>
+                      <input type="checkbox" checked={jayerChecked.has(row.id)} onChange={() => handleJayerCheckToggle(row.id)} />
+                    </td>
+                    <td><input value={row.process_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'process_id', e.target.value)} /></td>
+                    <td><input value={row.sp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} /></td>
+                    <td><input value={row.sd} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} /></td>
+                    <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} /></td>
+                    <td>
+                      <select value={row.st} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'st', e.target.value)}>
+                        <option value=""></option>
+                        <option value="O">O</option>
+                        <option value="X">X</option>
+                      </select>
+                    </td>
+                    <td>
+                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)}>
+                        <option value=""></option>
+                        <option value="신규">신규</option>
+                        <option value="복사">복사</option>
+                      </select>
+                    </td>
+                    <td><input value={row.product_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} /></td>
+                    <td><input value={row.step} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} /></td>
+                    <td><input value={row.item_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} /></td>
+                    <td><input value={row.rev} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'rev', e.target.value)} /></td>
+                    <td><input value={row.drawing_version} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'drawing_version', e.target.value)} /></td>
+                  </tr>
+                </>
+              );
+            })}
           </tbody>
         </table>
       </div>
       <div className="bulk-action-row">
         <button type="button" className="flow-table-add-btn" onClick={handleJayerAddRow}>+ 행 추가</button>
-        {jayerChecked.size > 0 && (
-          <button
-            type="button"
-            className="btn btn-danger btn-sm"
-            onClick={() => setDeleteConfirm({ message: `${jayerChecked.size}개 항목을 삭제하시겠습니까?`, onConfirm: handleJayerBulkDelete })}
-          >선택 삭제 ({jayerChecked.size})</button>
+        {jayerRows.filter(r => !r.disabled && jayerChecked.has(r.id)).length > 0 && (
+          <button type="button" className="btn btn-danger btn-sm" onClick={handleJayerBulkDisable}>
+            선택 비활성화 ({jayerRows.filter(r => !r.disabled && jayerChecked.has(r.id)).length})
+          </button>
         )}
-        {jayerDeleted.length > 0 && (
-          <button type="button" className="btn btn-secondary btn-sm" onClick={handleJayerRestore}>
-            복원 ({jayerDeleted.length}개)
+        {jayerRows.filter(r => r.disabled && jayerChecked.has(r.id)).length > 0 && (
+          <button type="button" className="btn btn-secondary btn-sm" onClick={handleJayerBulkRestore}>
+            복원 ({jayerRows.filter(r => r.disabled && jayerChecked.has(r.id)).length})
           </button>
         )}
       </div>
@@ -1330,8 +1347,8 @@ const isProdc = detail.only_prodc === 'Yes';
               <th style={{ width: 32, textAlign: 'center' }}>
                 <input
                   type="checkbox"
-                  checked={oayerRows.length > 0 && oayerChecked.size === oayerRows.length}
-                  ref={(el) => { if (el) el.indeterminate = oayerChecked.size > 0 && oayerChecked.size < oayerRows.length; }}
+                  checked={oayerRows.filter(r => !r.disabled).length > 0 && oayerRows.filter(r => !r.disabled).every(r => oayerChecked.has(r.id))}
+                  ref={(el) => { if (el) { const active = oayerRows.filter(r => !r.disabled); el.indeterminate = active.some(r => oayerChecked.has(r.id)) && !active.every(r => oayerChecked.has(r.id)); } }}
                   onChange={handleOayerCheckAll}
                 />
               </th>
@@ -1361,51 +1378,58 @@ const isProdc = detail.only_prodc === 'Yes';
             </tr>
           </thead>
           <tbody>
-            {oayerRows.map((row) => (
-              <tr key={row.id} className={oayerChecked.has(row.id) ? 'row-checked' : ''}>
-                <td style={{ textAlign: 'center' }}>
-                  <input type="checkbox" checked={oayerChecked.has(row.id)} onChange={() => handleOayerCheckToggle(row.id)} />
-                </td>
-                <td><input value={row.process_id} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} /></td>
-                <td><input value={row.sp} onChange={(e) => handleOayerChange(row.id, 'sp', e.target.value)} /></td>
-                <td><input value={row.sd} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} /></td>
-                <td><input value={row.pp} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} /></td>
-                <td>
-                  <select value={row.st} onChange={(e) => handleOayerChange(row.id, 'st', e.target.value)}>
-                    <option value=""></option>
-                    <option value="O">O</option>
-                    <option value="X">X</option>
-                  </select>
-                </td>
-                <td>
-                  <select value={row.new_or_copy} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)}>
-                    <option value=""></option>
-                    <option value="신규">신규</option>
-                    <option value="복사">복사</option>
-                  </select>
-                </td>
-                <td>
-                  <input value={row.product_name} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} />
-                </td>
-                <td><input value={row.step} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} /></td>
-                <td><input value={row.tt} onChange={(e) => handleOayerChange(row.id, 'tt', e.target.value)} /></td>
-              </tr>
-            ))}
+            {[
+              ...oayerRows.filter(r => !r.disabled).sort((a, b) => a.sortOrder - b.sortOrder),
+              ...oayerRows.filter(r => r.disabled).sort((a, b) => a.sortOrder - b.sortOrder),
+            ].map((row, idx, arr) => {
+              const isFirstDisabled = row.disabled && (idx === 0 || !arr[idx - 1].disabled);
+              return (
+                <>
+                  {isFirstDisabled && (
+                    <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={10} /></tr>
+                  )}
+                  <tr key={row.id} className={[row.disabled ? 'row-disabled' : '', oayerChecked.has(row.id) ? 'row-checked' : ''].filter(Boolean).join(' ')}>
+                    <td style={{ textAlign: 'center' }}>
+                      <input type="checkbox" checked={oayerChecked.has(row.id)} onChange={() => handleOayerCheckToggle(row.id)} />
+                    </td>
+                    <td><input value={row.process_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} /></td>
+                    <td><input value={row.sp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'sp', e.target.value)} /></td>
+                    <td><input value={row.sd} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} /></td>
+                    <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} /></td>
+                    <td>
+                      <select value={row.st} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'st', e.target.value)}>
+                        <option value=""></option>
+                        <option value="O">O</option>
+                        <option value="X">X</option>
+                      </select>
+                    </td>
+                    <td>
+                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)}>
+                        <option value=""></option>
+                        <option value="신규">신규</option>
+                        <option value="복사">복사</option>
+                      </select>
+                    </td>
+                    <td><input value={row.product_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} /></td>
+                    <td><input value={row.step} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} /></td>
+                    <td><input value={row.tt} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'tt', e.target.value)} /></td>
+                  </tr>
+                </>
+              );
+            })}
           </tbody>
         </table>
       </div>
       <div className="bulk-action-row">
         <button type="button" className="flow-table-add-btn" onClick={handleOayerAddRow}>+ 행 추가</button>
-        {oayerChecked.size > 0 && (
-          <button
-            type="button"
-            className="btn btn-danger btn-sm"
-            onClick={() => setDeleteConfirm({ message: `${oayerChecked.size}개 항목을 삭제하시겠습니까?`, onConfirm: handleOayerBulkDelete })}
-          >선택 삭제 ({oayerChecked.size})</button>
+        {oayerRows.filter(r => !r.disabled && oayerChecked.has(r.id)).length > 0 && (
+          <button type="button" className="btn btn-danger btn-sm" onClick={handleOayerBulkDisable}>
+            선택 비활성화 ({oayerRows.filter(r => !r.disabled && oayerChecked.has(r.id)).length})
+          </button>
         )}
-        {oayerDeleted.length > 0 && (
-          <button type="button" className="btn btn-secondary btn-sm" onClick={handleOayerRestore}>
-            복원 ({oayerDeleted.length}개)
+        {oayerRows.filter(r => r.disabled && oayerChecked.has(r.id)).length > 0 && (
+          <button type="button" className="btn btn-secondary btn-sm" onClick={handleOayerBulkRestore}>
+            복원 ({oayerRows.filter(r => r.disabled && oayerChecked.has(r.id)).length})
           </button>
         )}
       </div>
@@ -1429,7 +1453,7 @@ const isProdc = detail.only_prodc === 'Yes';
               ① J-ayer 행 선택 — 클릭하여 선택 후 오른쪽에서 데이터 지정
             </div>
             <div className="bb-split-panel-scroll">
-              {jayerRows.length === 0 || (jayerRows.length === 1 && !jayerRows[0].process_id) ? (
+              {jayerRows.filter(r => !r.disabled).length === 0 ? (
                 <div className="bb-split-hint">J-ayer 정보가 없습니다. Step 2를 먼저 입력하세요.</div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -1442,7 +1466,7 @@ const isProdc = detail.only_prodc === 'Yes';
                     </tr>
                   </thead>
                   <tbody>
-                    {jayerRows.map((row) => {
+                    {jayerRows.filter(r => !r.disabled).sort((a, b) => a.sortOrder - b.sortOrder).map((row) => {
                       const staged = stagedMappings[row.id];
                       const isSelected = selectedJayerRowId === row.id;
                       return (
@@ -1574,8 +1598,8 @@ const isProdc = detail.only_prodc === 'Yes';
                   <th style={{ width: 32, textAlign: 'center' }}>
                     <input
                       type="checkbox"
-                      checked={bbRows.length > 0 && bbChecked.size === bbRows.length}
-                      ref={(el) => { if (el) el.indeterminate = bbChecked.size > 0 && bbChecked.size < bbRows.length; }}
+                      checked={bbRows.filter(r => !r.disabled).length > 0 && bbRows.filter(r => !r.disabled).every(r => bbChecked.has(r.id))}
+                      ref={(el) => { if (el) { const active = bbRows.filter(r => !r.disabled); el.indeterminate = active.some(r => bbChecked.has(r.id)) && !active.every(r => bbChecked.has(r.id)); } }}
                       onChange={handleBbCheckAll}
                     />
                   </th>
@@ -1591,37 +1615,47 @@ const isProdc = detail.only_prodc === 'Yes';
                 </tr>
               </thead>
               <tbody>
-                {bbRows.map((row, idx) => (
-                  <tr key={row.id} className={bbChecked.has(row.id) ? 'row-checked' : ''}>
-                    <td style={{ textAlign: 'center' }}>
-                      <input type="checkbox" checked={bbChecked.has(row.id)} onChange={() => handleBbCheckToggle(row.id)} />
-                    </td>
-                    <td className="wizard-table-no">{idx + 1}</td>
-                    <td><input value={row.process_id} onChange={(e) => handleBbChange(row.id, 'process_id', e.target.value)} /></td>
-                    <td><input value={row.ss} onChange={(e) => handleBbChange(row.id, 'ss', e.target.value)} /></td>
-                    <td><input value={row.sd} onChange={(e) => handleBbChange(row.id, 'sd', e.target.value)} /></td>
-                    <td><input value={row.bb_process_id} onChange={(e) => handleBbChange(row.id, 'bb_process_id', e.target.value)} /></td>
-                    <td><input value={row.bb_name} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} /></td>
-                    <td><input value={row.bb_step} onChange={(e) => handleBbChange(row.id, 'bb_step', e.target.value)} /></td>
-                    <td><input value={row.bb_ss} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} /></td>
-                    <td><input value={row.remark} onChange={(e) => handleBbChange(row.id, 'remark', e.target.value)} /></td>
-                  </tr>
-                ))}
+                {[
+                  ...bbRows.filter(r => !r.disabled).sort((a, b) => a.sortOrder - b.sortOrder),
+                  ...bbRows.filter(r => r.disabled).sort((a, b) => a.sortOrder - b.sortOrder),
+                ].map((row, idx, arr) => {
+                  const activeIdx = arr.filter(r => !r.disabled).indexOf(row);
+                  const isFirstDisabled = row.disabled && (idx === 0 || !arr[idx - 1].disabled);
+                  return (
+                    <>
+                      {isFirstDisabled && (
+                        <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={10} /></tr>
+                      )}
+                      <tr key={row.id} className={[row.disabled ? 'row-disabled' : '', bbChecked.has(row.id) ? 'row-checked' : ''].filter(Boolean).join(' ')}>
+                        <td style={{ textAlign: 'center' }}>
+                          <input type="checkbox" checked={bbChecked.has(row.id)} onChange={() => handleBbCheckToggle(row.id)} />
+                        </td>
+                        <td className="wizard-table-no">{row.disabled ? '—' : activeIdx + 1}</td>
+                        <td><input value={row.process_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleBbChange(row.id, 'process_id', e.target.value)} /></td>
+                        <td><input value={row.ss} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleBbChange(row.id, 'ss', e.target.value)} /></td>
+                        <td><input value={row.sd} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleBbChange(row.id, 'sd', e.target.value)} /></td>
+                        <td><input value={row.bb_process_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleBbChange(row.id, 'bb_process_id', e.target.value)} /></td>
+                        <td><input value={row.bb_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} /></td>
+                        <td><input value={row.bb_step} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleBbChange(row.id, 'bb_step', e.target.value)} /></td>
+                        <td><input value={row.bb_ss} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} /></td>
+                        <td><input value={row.remark} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleBbChange(row.id, 'remark', e.target.value)} /></td>
+                      </tr>
+                    </>
+                  );
+                })}
               </tbody>
             </table>
           </div>
           <div className="bulk-action-row">
             <button type="button" className="flow-table-add-btn" onClick={handleBbAddRow}>+ 행 추가</button>
-            {bbChecked.size > 0 && (
-              <button
-                type="button"
-                className="btn btn-danger btn-sm"
-                onClick={() => setDeleteConfirm({ message: `${bbChecked.size}개 항목을 삭제하시겠습니까?`, onConfirm: handleBbBulkDelete })}
-              >선택 삭제 ({bbChecked.size})</button>
+            {bbRows.filter(r => !r.disabled && bbChecked.has(r.id)).length > 0 && (
+              <button type="button" className="btn btn-danger btn-sm" onClick={handleBbBulkDisable}>
+                선택 비활성화 ({bbRows.filter(r => !r.disabled && bbChecked.has(r.id)).length})
+              </button>
             )}
-            {bbDeleted.length > 0 && (
-              <button type="button" className="btn btn-secondary btn-sm" onClick={handleBbRestore}>
-                복원 ({bbDeleted.length}개)
+            {bbRows.filter(r => r.disabled && bbChecked.has(r.id)).length > 0 && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={handleBbBulkRestore}>
+                복원 ({bbRows.filter(r => r.disabled && bbChecked.has(r.id)).length})
               </button>
             )}
           </div>
@@ -1674,21 +1708,6 @@ const isProdc = detail.only_prodc === 'Yes';
           )}
         </div>
       </div>
-
-      {deleteConfirm && (
-        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
-          <div className="modal-content delete-confirm-modal" onClick={(e) => e.stopPropagation()}>
-            <p className="delete-confirm-message">{deleteConfirm.message}</p>
-            <div className="delete-confirm-actions">
-              <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>취소</button>
-              <button
-                className="btn btn-danger"
-                onClick={() => { deleteConfirm.onConfirm(); setDeleteConfirm(null); }}
-              >삭제</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <Modal
         isOpen={confirmOpen}
