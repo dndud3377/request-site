@@ -4,7 +4,8 @@
     "request": "New Request",
     "approval": "Approval Status",
     "history": "History",
-    "voc": "VOC"
+    "voc": "VOC",
+    "permissions": "Permissions"
   },
   "home": {
     "hero_title": "Product Introduction Map",
@@ -169,6 +170,24 @@
     "comment_success": "Reply submitted.",
     "status_update_success": "Status updated."
   },
+  "permission": {
+    "title": "Permission Management",
+    "subtitle": "Add or remove users by role.",
+    "users_label": "Users",
+    "no_users": "No users registered.",
+    "add_user": "Add User",
+    "add_success": "User added successfully.",
+    "add_error": "Failed to add user.",
+    "delete": "Delete",
+    "delete_confirm": "Delete user {{name}}?",
+    "delete_yes": "Delete",
+    "delete_success": "User deleted successfully.",
+    "delete_error": "Failed to delete user.",
+    "field_loginid": "Login ID",
+    "field_name": "Name",
+    "field_department": "Department",
+    "field_role": "Role"
+  },
   "common": {
     "loading": "Loading...",
     "error": "An error occurred.",
@@ -190,7 +209,8 @@
     "status_under_review": "Under Review",
     "status_approved": "Approved",
     "status_rejected": "Rejected",
-    "no_data": "No data available."
+    "no_data": "No data available.",
+    "saving": "Saving..."
   },
   "notice": {
     "label_notice": "Notice",

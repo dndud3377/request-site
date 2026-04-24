@@ -4,7 +4,8 @@
     "request": "의뢰서 작성",
     "approval": "결재 현황",
     "history": "이력 조회",
-    "voc": "VOC"
+    "voc": "VOC",
+    "permissions": "권한 관리"
   },
   "home": {
     "hero_title": "제품 소개 지도",
@@ -201,6 +202,24 @@
     "comment_success": "답글이 등록되었습니다.",
     "status_update_success": "상태가 변경되었습니다."
   },
+  "permission": {
+    "title": "권한 관리",
+    "subtitle": "역할별 사용자를 추가하거나 삭제합니다.",
+    "users_label": "사용자 목록",
+    "no_users": "등록된 사용자가 없습니다.",
+    "add_user": "사용자 추가",
+    "add_success": "사용자가 추가되었습니다.",
+    "add_error": "사용자 추가에 실패했습니다.",
+    "delete": "삭제",
+    "delete_confirm": "{{name}} 사용자를 삭제하시겠습니까?",
+    "delete_yes": "삭제",
+    "delete_success": "사용자가 삭제되었습니다.",
+    "delete_error": "사용자 삭제에 실패했습니다.",
+    "field_loginid": "로그인 ID",
+    "field_name": "이름",
+    "field_department": "부서",
+    "field_role": "역할"
+  },
   "common": {
     "loading": "로딩 중...",
     "error": "오류가 발생했습니다.",
@@ -223,7 +242,8 @@
     "status_approved": "결재완료",
     "status_rejected": "반려됨",
     "no_data": "데이터 없음",
-    "process_error": "처리 중 오류가 발생했습니다."
+    "process_error": "처리 중 오류가 발생했습니다.",
+    "saving": "저장 중..."
   },
   "notice": {
     "label_notice": "Notice",

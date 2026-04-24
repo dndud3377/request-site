@@ -13,6 +13,8 @@ import {
   AdminNotice,
   CreateNoticeInput,
   UpdateNoticeInput,
+  UserWithRole,
+  CreateUserInput,
 } from '../types';
 import { mockDocumentsAPI, mockVocAPI, mockNoticesAPI, mockGetBbExternalData } from './mock';
 
@@ -305,6 +307,29 @@ export const noticesAPI = {
   create: createNotice,
   update: updateNotice,
   delete: deleteNotice,
+};
+
+// ===== 사용자 관리 API =====
+
+const listUsers = async (): Promise<{ data: UserWithRole[] }> => {
+  const data = await get<{ results: UserWithRole[]; count: number } | UserWithRole[]>('/users/');
+  if (Array.isArray(data)) return { data };
+  return { data: (data as { results: UserWithRole[] }).results };
+};
+
+const createUser = async (input: CreateUserInput): Promise<{ data: UserWithRole }> => {
+  const data = await post<UserWithRole>('/users/', input);
+  return { data };
+};
+
+const deleteUser = async (id: number): Promise<void> => {
+  await request(`/users/${id}/`, { method: 'DELETE' });
+};
+
+export const usersAPI = {
+  list: listUsers,
+  create: createUser,
+  remove: deleteUser,
 };
 
 // ===== 폼 옵션 API =====

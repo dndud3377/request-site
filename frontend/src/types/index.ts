@@ -271,6 +271,24 @@ export interface AdminNotice {
 export type CreateNoticeInput = Omit<AdminNotice, 'id' | 'created_at' | 'updated_at'>;
 export type UpdateNoticeInput = Partial<CreateNoticeInput>;
 
+// ===== User Management =====
+
+export interface UserWithRole {
+  id: number;
+  loginid: string;
+  name: string;
+  department: string;
+  role: UserRole;
+  email?: string;
+}
+
+export interface CreateUserInput {
+  loginid: string;
+  name: string;
+  department: string;
+  role: UserRole;
+}
+
 // ===== big data Step Info =====
 
 export interface StepInfo {
