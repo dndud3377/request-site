@@ -17,6 +17,7 @@ const NAV_LINKS: NavLink[] = [
   { to: '/approval', key: 'nav.approval' },
   { to: '/history', key: 'nav.history' },
   { to: '/voc', key: 'nav.voc' },
+  { to: '/permissions', key: 'nav.permissions' },
 ];
 
 export default function Navbar(): React.ReactElement {
