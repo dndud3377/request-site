@@ -24,7 +24,7 @@ export default function Navbar(): React.ReactElement {
   const { t, i18n } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
-  const { currentUser, switchUser } = useAuth();
+  const { currentUser, switchUser, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [hasUnread, setHasUnread] = useState(false);
@@ -137,6 +137,16 @@ export default function Navbar(): React.ReactElement {
               </div>
             )}
           </div>
+
+          {/* 로그아웃 */}
+          <button
+            className="btn btn-secondary"
+            style={{ padding: '5px 12px', fontSize: 13 }}
+            onClick={logout}
+            title={t('login.logout')}
+          >
+            {t('login.logout')}
+          </button>
 
           {/* 언어 전환 */}
           <div className="lang-toggle">
