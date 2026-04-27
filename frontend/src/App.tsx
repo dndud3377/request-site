@@ -2,9 +2,10 @@ import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import './i18n';
 import './styles/global.css';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Navbar from './components/Navbar';
 import { ToastProvider } from './components/Toast';
+import LogoutPage from './pages/LogoutPage';
 import HomePage from './pages/HomePage';
 import RequestPage from './pages/RequestPage';
 import ApprovalPage from './pages/ApprovalPage';
@@ -22,26 +23,38 @@ function Footer(): React.ReactElement {
   );
 }
 
+function AppContent(): React.ReactElement {
+  const { isLoggedIn } = useAuth();
+
+  if (!isLoggedIn) {
+    return <LogoutPage />;
+  }
+
+  return (
+    <div className="app-wrapper">
+      <Navbar />
+      <main className="main-content">
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/request" element={<RequestPage />} />
+          <Route path="/approval" element={<ApprovalPage />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/voc" element={<VOCPage />} />
+          <Route path="/permissions" element={<PermissionPage />} />
+        </Routes>
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
 export default function App(): React.ReactElement {
   return (
     <BrowserRouter>
       <AuthProvider>
-      <ToastProvider>
-        <div className="app-wrapper">
-          <Navbar />
-          <main className="main-content">
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/request" element={<RequestPage />} />
-              <Route path="/approval" element={<ApprovalPage />} />
-              <Route path="/history" element={<HistoryPage />} />
-              <Route path="/voc" element={<VOCPage />} />
-              <Route path="/permissions" element={<PermissionPage />} />
-            </Routes>
-          </main>
-          <Footer />
-        </div>
-      </ToastProvider>
+        <ToastProvider>
+          <AppContent />
+        </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   );

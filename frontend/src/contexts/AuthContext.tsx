@@ -34,12 +34,16 @@ export const ROLE_LABEL: Record<UserRole, string> = {
 
 interface AuthContextValue {
   currentUser: MockUser;
+  isLoggedIn: boolean;
+  login: () => Promise<void>;
+  logout: () => void;
   switchUser: (userId: number) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const STORAGE_KEY = 'approval_system_user_id';
+const LOGGED_IN_KEY = 'approval_system_logged_in';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<MockUser>(() => {
@@ -48,32 +52,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return found ?? MOCK_USERS[0];
   });
 
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(
+    () => localStorage.getItem(LOGGED_IN_KEY) === 'true'
+  );
+
+  // 로그인 상태가 복원될 때 JWT 토큰도 복원
   useEffect(() => {
+    if (!isLoggedIn) return;
     authAPI.login(currentUser.username, currentUser.password)
       .then((res) => setToken(res.access))
       .catch(() => clearToken());
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const login = async () => {
+    try {
+      const res = await authAPI.login(currentUser.username, currentUser.password);
+      setToken(res.access);
+    } catch {
+      clearToken();
+    }
+    setIsLoggedIn(true);
+    localStorage.setItem(LOGGED_IN_KEY, 'true');
+  };
+
+  const logout = () => {
+    clearToken();
+    setIsLoggedIn(false);
+    localStorage.removeItem(LOGGED_IN_KEY);
+  };
+
   const switchUser = async (userId: number) => {
     const user = MOCK_USERS.find((u) => u.id === userId);
     if (!user) return;
 
-    // UI 즉시 전환
     setCurrentUser(user);
     localStorage.setItem(STORAGE_KEY, String(userId));
 
-    // 백엔드 JWT 토큰 갱신 (백그라운드)
     try {
       const res = await authAPI.login(user.username, user.password);
       setToken(res.access);
     } catch {
-      // 백엔드 미연결 상태에서도 UI 전환은 이미 완료됨
       clearToken();
     }
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, switchUser }}>
+    <AuthContext.Provider value={{ currentUser, isLoggedIn, login, logout, switchUser }}>
       {children}
     </AuthContext.Provider>
   );

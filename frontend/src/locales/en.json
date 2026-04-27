@@ -170,6 +170,14 @@
     "comment_success": "Reply submitted.",
     "status_update_success": "Status updated."
   },
+  "login": {
+    "title": "Product Introduction Map\nRequest System",
+    "subtitle": "Sign in with your company account to continue.",
+    "btn": "Sign in with Company Account",
+    "logging_in": "Signing in...",
+    "hint": "Authentication is handled via corporate OpenID.",
+    "logout": "Log out"
+  },
   "permission": {
     "title": "Permission Management",
     "subtitle": "Add or remove users by role.",

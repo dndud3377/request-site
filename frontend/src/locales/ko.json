@@ -202,6 +202,14 @@
     "comment_success": "답글이 등록되었습니다.",
     "status_update_success": "상태가 변경되었습니다."
   },
+  "login": {
+    "title": "제품 소개 지도\n의뢰 시스템",
+    "subtitle": "사내 계정으로 로그인하여 서비스를 이용하세요.",
+    "btn": "사내 계정으로 로그인",
+    "logging_in": "로그인 중...",
+    "hint": "사내 OpenID 계정을 통해 인증합니다.",
+    "logout": "로그아웃"
+  },
   "permission": {
     "title": "권한 관리",
     "subtitle": "역할별 사용자를 추가하거나 삭제합니다.",
