@@ -5,7 +5,7 @@ import './styles/global.css';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Navbar from './components/Navbar';
 import { ToastProvider } from './components/Toast';
-import LoginPage from './pages/LoginPage';
+import LogoutPage from './pages/LogoutPage';
 import HomePage from './pages/HomePage';
 import RequestPage from './pages/RequestPage';
 import ApprovalPage from './pages/ApprovalPage';
@@ -27,7 +27,7 @@ function AppContent(): React.ReactElement {
   const { isLoggedIn } = useAuth();
 
   if (!isLoggedIn) {
-    return <LoginPage />;
+    return <LogoutPage />;
   }
 
   return (

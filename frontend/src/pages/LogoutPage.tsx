@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 
-export default function LoginPage(): React.ReactElement {
+export default function LogoutPage(): React.ReactElement {
   const { t, i18n } = useTranslation();
   const { login } = useAuth();
   const [loading, setLoading] = useState(false);
