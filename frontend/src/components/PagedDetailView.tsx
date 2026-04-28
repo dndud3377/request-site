@@ -31,7 +31,7 @@ function JayerTable({ rows, changedRowIds = new Set<string>() }: { rows: JayerRo
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
+      <table className="table" style={{ fontSize: '0.68rem', marginBottom: 8 }}>
         <thead><tr><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th><th>{t('request.col_rev')}</th><th>{t('request.col_drawing_version')}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
@@ -48,7 +48,7 @@ function OayerTable({ rows, changedRowIds = new Set<string>() }: { rows: OayerRo
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
+      <table className="table" style={{ fontSize: '0.68rem', marginBottom: 8 }}>
         <thead><tr><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_tt')}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
@@ -65,7 +65,7 @@ function BbTable({ rows, changedRowIds = new Set<string>() }: { rows: BbTableRow
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
+      <table className="table" style={{ fontSize: '0.68rem', marginBottom: 8 }}>
         <thead><tr><th>{t('request.process_id')}</th><th>SS</th><th>SD</th><th>{t('request.bb_ref_process_id')}</th><th>뼈찜 이름</th><th>뼈찜 STEP</th><th>뼈찜 SS</th><th>비고</th></tr></thead>
         <tbody>
           {rows.map((r) => (
@@ -109,6 +109,7 @@ export interface PagedDetailViewProps {
 
 export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProps): React.ReactElement {
   const { t } = useTranslation();
+  const [expandedTable, setExpandedTable] = useState<'jayer' | 'oayer' | 'bb' | null>(null);
   let detail: Partial<DetailFormState> = {};
   let jayer: JayerRow[] = [];
   let oayer: OayerRow[] = [];
@@ -484,12 +485,21 @@ type Page = { label: string; content: React.ReactNode };
     },
   ];
 
+  const expandBtnStyle: React.CSSProperties = {
+    background: 'none', border: '1px solid var(--border)', borderRadius: 4,
+    padding: '2px 8px', fontSize: '0.75rem', color: 'var(--accent)',
+    cursor: 'pointer', fontWeight: 600, lineHeight: 1.4,
+  };
+
   if (showJayer) {
     pages.push({
       label: t('request.job_li'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>{t('request.job_li')}</div>
+          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{t('request.job_li')}</span>
+            <button style={expandBtnStyle} onClick={() => setExpandedTable('jayer')}>⛶ 전체화면</button>
+          </div>
           <JayerTable rows={jayer} changedRowIds={changedJayerIds} />
         </div>
       ),
@@ -500,7 +510,10 @@ type Page = { label: string; content: React.ReactNode };
       label: t('request.ovl_li'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>{t('request.ovl_li')}</div>
+          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{t('request.ovl_li')}</span>
+            <button style={expandBtnStyle} onClick={() => setExpandedTable('oayer')}>⛶ 전체화면</button>
+          </div>
           <OayerTable rows={oayer} changedRowIds={changedOayerIds} />
         </div>
       ),
@@ -511,7 +524,10 @@ type Page = { label: string; content: React.ReactNode };
       label: t('request.bb_li'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>{t('request.bb_li')}</div>
+          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{t('request.bb_li')}</span>
+            <button style={expandBtnStyle} onClick={() => setExpandedTable('bb')}>⛶ 전체화면</button>
+          </div>
           <BbTable rows={bb} changedRowIds={changedBbIds} />
         </div>
       ),
@@ -533,8 +549,35 @@ type Page = { label: string; content: React.ReactNode };
     transition: 'opacity 0.15s',
   });
 
+  const expandedLabel =
+    expandedTable === 'jayer' ? t('request.job_li') :
+    expandedTable === 'oayer' ? t('request.ovl_li') :
+    expandedTable === 'bb'    ? t('request.bb_li') : '';
+
   return (
     <div>
+      {expandedTable && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 5000,
+          background: 'var(--bg-card)', overflow: 'auto', padding: '24px 28px',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              {expandedLabel}
+            </span>
+            <button
+              onClick={() => setExpandedTable(null)}
+              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 14px', fontSize: '0.9rem', cursor: 'pointer', fontWeight: 600 }}
+            >
+              ✕ 닫기
+            </button>
+          </div>
+          {expandedTable === 'jayer' && <JayerTable rows={jayer} changedRowIds={changedJayerIds} />}
+          {expandedTable === 'oayer' && <OayerTable rows={oayer} changedRowIds={changedOayerIds} />}
+          {expandedTable === 'bb'    && <BbTable rows={bb} changedRowIds={changedBbIds} />}
+        </div>
+      )}
+
       {pages.length > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-lg)', padding: '10px 16px' }}>
           <button style={navBtnStyle(safeIdx === 0)} disabled={safeIdx === 0} onClick={() => setPageIdx(safeIdx - 1)}>◀</button>
