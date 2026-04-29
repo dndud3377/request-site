@@ -26,11 +26,6 @@ const OPTION_REQUEST_PURPOSE = ['신규', '복사', '변경'] as const;
 const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
 const OPTION_OTHER_PURPOSE = ['목적A', '목적B', '목적C'] as const;
 const OPTION_SOURCE_LINE = ['위치A', '위치B', '위치C'] as const;
-const OPTION_SOURCE_PARTID = ['원본제품A', '원본제품B', '원본제품C'] as const;
-const OPTION_BB_LOCATION = ['위치1', '위치2', '위치3'] as const;
-const OPTION_BB_PRODUCT = ['뼈찜제품A', '뼈찜제품B'] as const;
-const OPTION_BB_PROCESS_ID = ['뼈찜조리법1', '뼈찜조리법2'] as const;
-
 
 
 // ===== ProdcRow — 북쪽/중간/남쪽 공통 행 =====
@@ -259,24 +254,31 @@ export default function RequestPage(): React.ReactElement {
   const [topProductOptions, setTopProductOptions] = useState<string[]>([]);
   const [middleProductOptions, setMiddleProductOptions] = useState<string[]>([]);
   const [bottomProductOptions, setBottomProductOptions] = useState<string[]>([]);
-  const [sourceProductOptions, setSourceProductOptions] = useState<string[]>([]);
+
   const [BbProductOptions, setBbProductOptions] = useState<Record<number, string[]>>({});
   const [BbProductidOptions, setBbProductidOptions] = useState<Record<number, string[]>>({});
+
+  const [FlowProductOptions, setFlowProductOptions] = useState<Record<number, string[]>>({});
+
   const [step, setStep] = useState(1);
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
   const [detail, setDetail] = useState<DetailFormState>(INITIAL_DETAIL);
   const [jayerRows, setJayerRows] = useState<JayerRow[]>([makeJayerRow()]);
   const [oayerRows, setOayerRows] = useState<OayerRow[]>([makeOayerRow()]);
-  const [bbRows, setBbRows] = useState<BbTableRow[]>([makeBbRow()]);
-  const [bbExternalData, setBbExternalData] = useState<ExternalBbDataItem[][]>([]);
+  const [bbRows, setBbRows] = useState<BbTableRow[]>([]);
+  const [bbExternalData, setBbExternalData] = useState<PhotoStepOption[][]>([]);
   const [bbExternalLoading, setBbExternalLoading] = useState(false);
   const [activeBbTab, setActiveBbTab] = useState(0);
   const [selectedJayerRowId, setSelectedJayerRowId] = useState<string | null>(null);
   const [stagedMappings, setStagedMappings] = useState<Record<string, ExternalBbDataItem>>({});
+  const [mappedJayerRowIds, setMappedJayerRowIds] = useState<Set<string>>(new Set());
+  const [bbAutoFillRanges, setBbAutoFillRanges] = useState<BbAutoFillRange[]>([]);
+  const [showAutoFillPanel, setShowAutoFillPanel] = useState(false);
+  const [isBbSorted, setIsBbSorted] = useState(false);  // STEPSEQ 정렬 상태
+  const [bbSearchQueries, setBbSearchQueries] = useState<string[]>([]);  // 탭별 검색어
   const [jayerChecked, setJayerChecked] = useState<Set<string>>(new Set());
   const [oayerChecked, setOayerChecked] = useState<Set<string>>(new Set());
   const [bbChecked, setBbChecked] = useState<Set<string>>(new Set());
-  const [bbDeleted, setBbDeleted] = useState<BbTableRow[]>([]);
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
