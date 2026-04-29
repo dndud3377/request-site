@@ -385,6 +385,27 @@ export default function RequestPage(): React.ReactElement {
     }
   }, [detail.line]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!detail.source_line || approvedDocs.length === 0) {
+      setSourcePartIdOptions([]);
+      return;
+    }
+
+    const filteredDocs = approvedDocs.filter(doc => {
+      try {
+        const parsed = JSON.parse(doc.additional_notes ?? '{}');
+        const docLine = parsed.detail?.line;
+        return docLine === detail.source_line;
+      } catch {
+        return false;
+      }
+    });
+
+    const partIds = Array.from(new Set(filteredDocs.map((doc: RequestDocument) => doc.product_name)));
+    setSourcePartIdOptions(partIds);
+    setDetail((prev) => ({ ...prev, source_partid: '' }));
+  }, [detail.source_line, approvedDocs]);
+
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
   useEffect(() => {
     if (!detail.line || !detail.process_selection) {
@@ -420,17 +441,6 @@ export default function RequestPage(): React.ReactElement {
     fetchStepInfoAndPopulateJayer(detail.line, detail.process_id);
   }, [detail.process_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    const isCopy = detail.request_purpose === '복사';
-    if (!isCopy || !detail.source_line) { setSourceProductOptions([]); return; }
-    const lineName = detail.source_line.replace(' 라인', '');
-    formOptionsAPI.getProducts(lineName)
-      .then(setSourceProductOptions)
-      .catch(() => setSourceProductOptions([]));
-    if (!isLoadingEditRef.current) {
-      setDetail((prev) => ({ ...prev, source_partid: '' }));
-    }
-  }, [detail.request_purpose, detail.source_line]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     detail.bb_entries.forEach((entry, idx) => {
