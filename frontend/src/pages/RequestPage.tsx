@@ -607,6 +607,52 @@ const isProdc = detail.only_prodc === 'Yes';
   };
 
   // C가문 리전별 조합법 변경 → 해당 리전 제품이름 fetch
+  // 차용 시 원본 PART ID 의 데이터 불러오기
+  const loadSourceDocumentData = (partId: string) => {
+    const sourceDoc = approvedDocs
+      .filter(doc => doc.product_name === partId)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+    if (!sourceDoc) {
+      addToast('원본 문서를 찾을 수 없습니다.', 'error');
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(sourceDoc.additional_notes ?? '{}');
+      const sourceDetail = parsed.detail ?? {};
+
+      const fieldsToCopy: Partial<DetailFormState> = {};
+
+      if (sourceDetail.map_change) fieldsToCopy.map_change = sourceDetail.map_change;
+      if (sourceDetail.map_value_x) fieldsToCopy.map_value_x = sourceDetail.map_value_x;
+      if (sourceDetail.map_value_y) fieldsToCopy.map_value_y = sourceDetail.map_value_y;
+      if (sourceDetail.map_reason) fieldsToCopy.map_reason = sourceDetail.map_reason;
+
+      if (sourceDetail.ea_change) fieldsToCopy.ea_change = sourceDetail.ea_change;
+      if (sourceDetail.ea_value) fieldsToCopy.ea_value = sourceDetail.ea_value;
+
+      if (sourceDetail.mshot_change) fieldsToCopy.mshot_change = sourceDetail.mshot_change;
+      if (sourceDetail.mshot_image_copy) fieldsToCopy.mshot_image_copy = sourceDetail.mshot_image_copy;
+
+      if (sourceDetail.ip_status) fieldsToCopy.ip_status = sourceDetail.ip_status;
+      if (sourceDetail.ip_option) fieldsToCopy.ip_option = sourceDetail.ip_option;
+
+      if (sourceDetail.split_progress) fieldsToCopy.split_progress = sourceDetail.split_progress;
+
+      if (sourceDetail.tmap_apply) fieldsToCopy.tmap_apply = sourceDetail.tmap_apply;
+
+      if (sourceDetail.hplhc_change) fieldsToCopy.hplhc_change = sourceDetail.hplhc_change;
+
+      setDetail(prev => ({ ...prev, ...fieldsToCopy }));
+
+      addToast('원본 제품의 데이터가 적용되었습니다.', 'info');
+    } catch (err) {
+      console.error('원본 데이터 로드 실패:', err);
+      addToast('원본 데이터를 불러오는데 실패했습니다.', 'error');
+    }
+  };
+
   const handleProdcProcessChange = (region: CRegion, value: string) => {
     if (!detail.line || !value) {
       if (region === 'top') setTopProductOptions([]);
