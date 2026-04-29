@@ -2232,60 +2232,66 @@ const isProdc = detail.only_prodc === 'Yes';
                 </button>
               ))}
             </div>
-            <input
-              type="text"
-              className="form-control"
-              placeholder="공법 / 이름 / STEP 검색..."
-              value={currentSearchQuery}
-              onChange={(e) => setBbSearchQueries((prev) => {
-                const next = [...prev];
-                next[activeBbTab] = e.target.value;
-                return next;
-              })}
-              style={{ margin: '8px 8px 0 8px', width: 'calc(100% - 16px)', fontSize: 13 }}
-            />
             <div className="bb-split-panel-scroll">
-              {!selectedJayerRowId ? (
-                <div className="bb-split-hint">← 먼저 왼쪽에서 J-ayer 행을 선택하세요.</div>
-              ) : bbExternalLoading ? (
+              {bbExternalLoading ? (
                 <div className="bb-split-loading">데이터 로드 중...</div>
-              ) : filteredTabData.length === 0 ? (
+              ) : currentTabData.length === 0 ? (
                 <div className="bb-split-hint">
                   {currentEntry?.process_id
-                    ? '해당 조리법에 대한 외부 데이터가 없습니다.'
+                    ? '해당 bb 에 대한 데이터가 없습니다.'
                     : 'Step 1에서 뼈찜 조합 조리법을 먼저 선택하세요.'}
                 </div>
               ) : (
-                <table className="bb-external-table">
-                  <thead>
-                    <tr>
-                      <th>뼈찜 조리법</th>
-                      <th>뼈찜 이름</th>
-                      <th>STEP</th>
-                      <th>뼈찜 SS</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTabData.map((item) => {
-                      const isStaged = selectedJayerRowId
-                        ? stagedMappings[selectedJayerRowId]?.id === item.id
-                        : false;
-                      return (
-                        <tr
-                          key={item.id}
-                          className={`bb-external-row${isStaged ? ' bb-external-staged' : ''}`}
-                          onClick={() => handleStageMapping(item)}
-                          title="클릭하면 선택된 J-ayer 행에 지정됩니다"
-                        >
-                          <td>{item.bb_process_id}</td>
-                          <td>{item.bb_name}</td>
-                          <td>{item.bb_step}</td>
-                          <td>{item.bb_ss}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <>
+                  <input
+                    type="text"
+                    placeholder="검색어 입력"
+                    value={bbSearchQueries[activeBbTab] || ''}
+                    onChange={(e) => {
+                      const newQueries = [...bbSearchQueries];
+                      newQueries[activeBbTab] = e.target.value;
+                      setBbSearchQueries(newQueries);
+                    }}
+                    style={{ marginBottom: 8, padding: '6px 10px', width: '100%', boxSizing: 'border-box' }}
+                  />
+                  {currentSearchQuery && (
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+                      검색 결과: {filteredTabData.length}건
+                    </div>
+                  )}
+                  <table className="bb-external-table">
+                    <thead>
+                      <tr>
+                        <th>Ref.공법</th>
+                        <th>Ref.PART ID</th>
+                        <th>Ref.SEQ</th>
+                        <th>설명</th>
+                        <th>Layer</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredTabData.map((item) => {
+                        const isStaged = selectedJayerRowId
+                          ? stagedMappings[selectedJayerRowId]?.id === item.id
+                          : false;
+                        return (
+                          <tr
+                            key={item.id}
+                            className={`bb-external-row${isStaged ? ' bb-external-staged' : ''}`}
+                            onClick={() => handleStageMapping(item)}
+                            title="클릭하면 선택된 원본 layer 에 지정됩니다"
+                          >
+                            <td>{item.bb_process_id}</td>
+                            <td>{item.bb_name}</td>
+                            <td>{item.bb_ss}</td>
+                            <td>{item.bb_step}</td>
+                            <td>{item.layerid || '—'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </>
               )}
             </div>
           </div>
@@ -2295,8 +2301,8 @@ const isProdc = detail.only_prodc === 'Yes';
         <div className="bb-apply-row">
           <span className="bb-apply-hint">
             {stagedCount > 0
-              ? `${stagedCount}개 행이 매핑됨 — 적용 버튼을 눌러 뼈찜 정보에 반영하세요.`
-              : 'J-ayer 행을 선택하고 외부 데이터를 지정한 뒤 적용하세요.'}
+              ? `${stagedCount}개 행이 매핑됨 — 적용 버튼을 눌러 bb 정보에 반영하세요.`
+              : '왼쪽에서 원본 layer 를 선택하고 오른쪽에서 bb 데이터를 클릭하여 매핑하세요.'}
           </span>
           <button
             type="button"
