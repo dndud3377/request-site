@@ -1909,7 +1909,7 @@ const isProdc = detail.only_prodc === 'Yes';
               return (
                 <>
                   {isFirstDisabled && (
-                    <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={11} /></tr>
+                    <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={10} /></tr>
                   )}
                   <tr key={row.id} className={[row.disabled ? 'row-disabled' : '', oayerChecked.has(row.id) ? 'row-checked' : ''].filter(Boolean).join(' ')}>
                     <td style={{ textAlign: 'center' }}>
@@ -1937,7 +1937,7 @@ const isProdc = detail.only_prodc === 'Yes';
                       </select>
                     </td>
                     <td><input value={row.product_name} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} /></td>
-                    <td><input value={row.step} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} /></td>
+                    <td><input value={row.step} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} /></td>
                     <td><input value={row.tt} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'tt', e.target.value)} /></td>
                   </tr>
                 </>
@@ -1963,13 +1963,149 @@ const isProdc = detail.only_prodc === 'Yes';
   );
 
   const renderStep4 = () => {
-    const currentTabData = bbExternalData[activeBbTab] ?? [];
+    const currentTabPhotoSteps = bbExternalData[activeBbTab] ?? [];
     const currentEntry = detail.bb_entries[activeBbTab];
+    const currentTabData: ExternalBbDataItem[] = currentTabPhotoSteps.map((step, idx) => ({
+      id: `photo-${activeBbTab}-${idx}`,
+      bb_process_id: step.processid,
+      bb_name: currentEntry?.product || '',
+      bb_step: step.descript,
+      bb_ss: step.stepseq,
+      layerid: step.layerid,
+    }));
+
+    const currentSearchQuery = bbSearchQueries[activeBbTab] || '';
+    const filteredTabData = currentSearchQuery
+      ? currentTabData.filter(item =>
+          item.bb_process_id.toLowerCase().includes(currentSearchQuery.toLowerCase()) ||
+          item.bb_name.toLowerCase().includes(currentSearchQuery.toLowerCase()) ||
+          item.bb_ss.toLowerCase().includes(currentSearchQuery.toLowerCase()) ||
+          item.bb_step.toLowerCase().includes(currentSearchQuery.toLowerCase()) ||
+          (item.layerid || '').toLowerCase().includes(currentSearchQuery.toLowerCase())
+        )
+      : currentTabData;
     const stagedCount = Object.keys(stagedMappings).length;
 
     return (
       <div className="form-section">
-        <div className="form-section-title">🦴 {t('request.bb_li')}</div>
+        <div className="form-section-title"><span style={{ color: '#4CAF50' }}>🔷</span> {t('request.bb_li')}</div>
+
+        {/* 자동 채움 버튼 */}
+        <div style={{ marginBottom: 12 }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleOpenAutoFillPanel}
+            disabled={bbExternalData.length === 0 || bbExternalData.every(tab => tab.length === 0)}
+          >
+            📋 Backbone 자동 채움
+          </button>
+          {bbExternalData.length > 0 && (
+            <span style={{ marginLeft: 12, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              {bbExternalData.reduce((sum, tab) => sum + tab.length, 0)}행 조회됨
+            </span>
+          )}
+        </div>
+
+        {/* 자동 채움 패널 */}
+        {showAutoFillPanel && (
+          <div style={{
+            marginBottom: 16,
+            padding: 16,
+            background: 'var(--bg-secondary)',
+            borderRadius: 8,
+            border: '1px solid var(--border)'
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
+              🔷 Layer 범위 설정
+            </div>
+            {bbAutoFillRanges.map((range, idx) => (
+              <div
+                key={range.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginBottom: 8,
+                  flexWrap: 'wrap'
+                }}
+              >
+                <span style={{ fontSize: 13, minWidth: 50 }}>범위 {idx + 1}:</span>
+                <select
+                  value={range.layerFrom}
+                  onChange={(e) => handleRangeChange(range.id, 'layerFrom', e.target.value)}
+                  style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
+                >
+                  <option value="">시작 Layer</option>
+                  {[...new Set(jayerRows.map(r => r.layerid).filter(Boolean))]
+                    .sort((a, b) => parseFloat(a) - parseFloat(b))
+                    .map(layerid => (
+                      <option key={layerid} value={layerid}>{layerid}</option>
+                    ))}
+                </select>
+                <span>~</span>
+                <select
+                  value={range.layerTo}
+                  onChange={(e) => handleRangeChange(range.id, 'layerTo', e.target.value)}
+                  style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
+                >
+                  <option value="">종료 Layer</option>
+                  {[...new Set(jayerRows.map(r => r.layerid).filter(Boolean))]
+                    .sort((a, b) => parseFloat(a) - parseFloat(b))
+                    .map(layerid => (
+                      <option key={layerid} value={layerid}>{layerid}</option>
+                    ))}
+                </select>
+                <select
+                  value={range.productId}
+                  onChange={(e) => handleRangeChange(range.id, 'productId', e.target.value)}
+                  style={{ padding: '4px 8px', fontSize: 13, minWidth: 120 }}
+                >
+                  {detail.bb_entries.map((entry, entryIdx) => (
+                    <option key={entryIdx} value={entry.product}>
+                      {entry.product || entry.location || `항목 ${entryIdx + 1}`}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="flow-delete-btn"
+                  onClick={() => handleRemoveRange(range.id)}
+                  style={{ width: 24, height: 24, padding: 0 }}
+                >✕</button>
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleAddRange}
+                style={{ fontSize: 13, padding: '6px 12px' }}
+              >
+                + 범위 추가
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleApplyAutoFill}
+                style={{ fontSize: 13, padding: '6px 12px' }}
+              >
+                ✔ 적용
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowAutoFillPanel(false);
+                  setBbAutoFillRanges([]);
+                }}
+                style={{ fontSize: 13, padding: '6px 12px' }}
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 분할 패널 */}
         <div className="bb-split-panel">
@@ -2053,7 +2189,7 @@ const isProdc = detail.only_prodc === 'Yes';
                 <div className="bb-split-hint">← 먼저 왼쪽에서 J-ayer 행을 선택하세요.</div>
               ) : bbExternalLoading ? (
                 <div className="bb-split-loading">데이터 로드 중...</div>
-              ) : currentTabData.length === 0 ? (
+              ) : filteredTabData.length === 0 ? (
                 <div className="bb-split-hint">
                   {currentEntry?.process_id
                     ? '해당 조리법에 대한 외부 데이터가 없습니다.'
@@ -2070,7 +2206,7 @@ const isProdc = detail.only_prodc === 'Yes';
                     </tr>
                   </thead>
                   <tbody>
-                    {currentTabData.map((item) => {
+                    {filteredTabData.map((item) => {
                       const isStaged = selectedJayerRowId
                         ? stagedMappings[selectedJayerRowId]?.id === item.id
                         : false;
@@ -2168,11 +2304,6 @@ const isProdc = detail.only_prodc === 'Yes';
                 className="btn btn-danger btn-sm"
                 onClick={() => setDeleteConfirm({ message: `${bbChecked.size}개 항목을 삭제하시겠습니까?`, onConfirm: handleBbBulkDelete })}
               >선택 삭제 ({bbChecked.size})</button>
-            )}
-            {bbDeleted.length > 0 && (
-              <button type="button" className="btn btn-secondary btn-sm" onClick={handleBbRestore}>
-                복원 ({bbDeleted.length}개)
-              </button>
             )}
           </div>
         </div>
