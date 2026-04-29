@@ -953,26 +953,167 @@ const isProdc = detail.only_prodc === 'Yes';
     });
   };
 
-  // "적용" 버튼 → 스테이징된 모든 매핑을 BB 테이블에 한 번에 반영
   const handleApplyMappings = () => {
     const mappedRows: BbTableRow[] = jayerRows
       .filter((jr) => stagedMappings[jr.id])
       .map((jr) => {
         const ext = stagedMappings[jr.id];
         const newRow = makeBbRow();
+        newRow.sourceJayerRowId = jr.id;
         newRow.process_id = jr.process_id;
         newRow.ss = jr.sp;
         newRow.sd = jr.sd;
         newRow.bb_process_id = ext.bb_process_id;
         newRow.bb_name = ext.bb_name;
-        newRow.bb_step = ext.bb_step;
+        newRow.bb_step = '';
         newRow.bb_ss = ext.bb_ss;
         return newRow;
       });
     if (mappedRows.length === 0) return;
-    setBbRows(mappedRows);
+
+    setBbRows((prev) => [...prev, ...mappedRows]);
+    setMappedJayerRowIds((prev) => {
+      const next = new Set(prev);
+      mappedRows.forEach((row) => {
+        if (row.sourceJayerRowId) next.add(row.sourceJayerRowId);
+      });
+      return next;
+    });
     setStagedMappings({});
     setSelectedJayerRowId(null);
+  };
+
+  const handleOpenAutoFillPanel = () => {
+    const layerIds = [...new Set(jayerRows.map(r => r.layerid).filter(Boolean))]
+      .sort((a, b) => parseFloat(a) - parseFloat(b));
+
+    const productIds = detail.bb_entries.map(e => e.product).filter(Boolean);
+
+    if (layerIds.length > 0 && productIds.length > 0) {
+      setBbAutoFillRanges([{
+        id: String(Date.now()),
+        layerFrom: layerIds[0],
+        layerTo: layerIds[layerIds.length - 1],
+        productId: productIds[0],
+      }]);
+    } else {
+      setBbAutoFillRanges([]);
+    }
+    setShowAutoFillPanel(true);
+  };
+
+  const handleAddRange = () => {
+    const productIds = detail.bb_entries.map(e => e.product).filter(Boolean);
+    setBbAutoFillRanges(prev => [
+      ...prev,
+      {
+        id: String(Date.now()),
+        layerFrom: '',
+        layerTo: '',
+        productId: productIds[0] || '',
+      },
+    ]);
+  };
+
+  const handleRemoveRange = (id: string) => {
+    setBbAutoFillRanges(prev => prev.filter(r => r.id !== id));
+  };
+
+  const handleRangeChange = (id: string, field: keyof BbAutoFillRange, value: string) => {
+    setBbAutoFillRanges(prev => prev.map(r =>
+      r.id === id ? { ...r, [field]: value } : r
+    ));
+  };
+
+  const handleApplyAutoFill = () => {
+    const hasExistingData = bbRows.some(
+      (row) => row.bb_process_id || row.bb_ss || row.bb_name
+    );
+
+    if (hasExistingData) {
+      const confirmed = window.confirm('기존 입력된 Backbone 데이터가 있습니다. 덮어쓰시겠습니까?');
+      if (!confirmed) return;
+    }
+
+    const newBbRows: BbTableRow[] = [];
+
+    bbAutoFillRanges.forEach(range => {
+      if (!range.layerFrom || !range.layerTo || !range.productId) return;
+
+      const from = parseFloat(range.layerFrom);
+      const to = parseFloat(range.layerTo);
+
+      if (isNaN(from) || isNaN(to)) return;
+
+      const jayerRowsInRange = jayerRows.filter(row => {
+        const layer = parseFloat(row.layerid);
+        return !isNaN(layer) && layer >= from && layer <= to;
+      });
+
+      const entryIdx = detail.bb_entries.findIndex(
+        e => e.product === range.productId
+      );
+
+      if (entryIdx === -1) return;
+
+      const photoSteps = bbExternalData[entryIdx] ?? [];
+
+      jayerRowsInRange.forEach(jayerRow => {
+        const matchedStep = photoSteps.find(
+          step => step.layerid === jayerRow.layerid
+        );
+
+        if (!matchedStep) return;
+
+        newBbRows.push({
+          id: String(Date.now() + Math.random()),
+          sourceJayerRowId: jayerRow.id,
+          sortOrder: jayerRow.sortOrder,
+          disabled: jayerRow.disabled,
+          process_id: jayerRow.process_id,
+          ss: jayerRow.sp,
+          sd: jayerRow.sd,
+          bb_process_id: matchedStep.processid,
+          bb_name: range.productId,
+          bb_step: matchedStep.layerid,
+          bb_ss: matchedStep.stepseq,
+          remark: '',
+        });
+      });
+    });
+
+    if (newBbRows.length === 0) {
+      addToast('매칭된 Backbone 데이터가 없습니다.', 'error');
+      return;
+    }
+
+    setBbRows(newBbRows);
+    const mappedIds = newBbRows.map(r => r.sourceJayerRowId).filter(Boolean) as string[];
+    setMappedJayerRowIds(new Set(mappedIds));
+    setShowAutoFillPanel(false);
+    setBbAutoFillRanges([]);
+    setIsBbSorted(false);
+    addToast(`Backbone 데이터가 ${newBbRows.length}행 자동 채워졌습니다.`, 'success');
+  };
+
+  const handleResetBbRows = () => {
+    const confirmed = window.confirm('모든 Backbone 데이터를 지우시겠습니까?');
+    if (!confirmed) return;
+
+    setBbRows([]);
+    setMappedJayerRowIds(new Set());
+    setIsBbSorted(false);
+    addToast('Backbone 데이터가 초기화되었습니다.', 'info');
+  };
+
+  const handleSortBbRows = () => {
+    setBbRows(prev => {
+      const sorted = [...prev].sort((a, b) =>
+        a.ss.localeCompare(b.ss, undefined, { numeric: true })
+      );
+      setIsBbSorted(true);
+      return sorted;
+    });
   };
 
   // ===== Validation =====
