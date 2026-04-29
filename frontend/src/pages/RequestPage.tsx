@@ -2382,8 +2382,8 @@ const isProdc = detail.only_prodc === 'Yes';
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
-                onClick={() => setDeleteConfirm({ message: `${bbChecked.size}개 항목을 삭제하시겠습니까?`, onConfirm: handleBbBulkDelete })}
-              >선택 삭제 ({bbChecked.size})</button>
+                onClick={() => setDeleteConfirm({ message: `${bbChecked.size}개 항목을 원복하시겠습니까?`, onConfirm: handleBbBulkDelete })}
+              >선택 원복 ({bbChecked.size})</button>
             )}
           </div>
         </div>
