@@ -1175,12 +1175,12 @@ const isProdc = detail.only_prodc === 'Yes';
   };
 
   // ===== API =====
-  const buildEnrichedForm = (note?: string): CreateDocumentInput => {
+  const buildEnrichedForm = (note?: string, shouldAddHistory = false): CreateDocumentInput => {
     const title = `${detail.line}(${detail.request_purpose})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서`;
 
-    // 재상신 모드일 때 이전 스냅샷을 history에 누적
+    // 반려된 문서 재상신 시 이전 스냅샷을 history 에 누적
     let history: HistorySnapshot[] = [];
-    if (isEditMode && prevParsedRef.current) {
+    if (shouldAddHistory && prevParsedRef.current) {
       const prev = prevParsedRef.current;
       history = [
         ...prev.history,
