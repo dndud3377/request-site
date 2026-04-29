@@ -2575,9 +2575,9 @@ const isProdc = detail.only_prodc === 'Yes';
               )}
             </div>
           </div>
-          {/* 조리법 */}
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#f57c00' }}>🟠 조리법</div>
+          {/* PP */}
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#f57c00' }}>🟠 PPID</div>
             <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
               <input
                 type="text"
@@ -2812,9 +2812,9 @@ const isProdc = detail.only_prodc === 'Yes';
               )}
             </div>
           </div>
-          {/* 조리법 */}
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#f57c00' }}>🟠 조리법</div>
+          {/* PP */}
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#f57c00' }}>🟠 PPID</div>
             <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
               <input
                 type="text"
