@@ -345,6 +345,28 @@ export default function RequestPage(): React.ReactElement {
     }
   }, []);
 
+  useEffect(() => {
+    if (detail.request_purpose === '신규') {
+      setJayerRows((rows) =>
+        rows.map((r) => ({
+          ...r,
+          product_name: '',
+          layerid: '',
+          item_id: '',
+          rev: '',
+          drawing_version: '',
+        }))
+      );
+      setOayerRows((rows) =>
+        rows.map((r) => ({
+          ...r,
+          product_name: '',
+          step: '',
+        }))
+      );
+    }
+  }, [detail.request_purpose]);
+
   // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
   useEffect(() => {
     if (!detail.line) {
