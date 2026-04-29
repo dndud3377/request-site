@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { usersAPI } from '../api/client';
 import { useToast } from '../components/Toast';
-import { UserRole, UserWithRole, CreateUserInput } from '../types';
+import Modal from '../components/Modal';
+import { UserRole, UserWithRole, UserForAssignment } from '../types';
 
-const ALL_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_J', 'TE_O', 'TE_E', 'MASTER'];
+const ALL_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
 
 const ROLE_LABEL: Record<UserRole, string> = {
   PL: 'PL',
@@ -14,123 +15,10 @@ const ROLE_LABEL: Record<UserRole, string> = {
   TE_O: 'TE_O',
   TE_E: 'TE_E',
   MASTER: 'MASTER',
+  NONE: '권한 없음',
 };
 
-// ===== Add User Modal =====
 
-interface AddUserModalProps {
-  targetRole: UserRole;
-  currentRole: UserRole;
-  onClose: () => void;
-  onAdded: (user: UserWithRole) => void;
-}
-
-function AddUserModal({ targetRole, currentRole, onClose, onAdded }: AddUserModalProps): React.ReactElement {
-  const { t } = useTranslation();
-  const addToast = useToast();
-  const [form, setForm] = useState<CreateUserInput>({
-    loginid: '',
-    name: '',
-    department: '',
-    role: targetRole,
-  });
-  const [submitting, setSubmitting] = useState(false);
-
-  const canChooseRole = currentRole === 'MASTER';
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.loginid.trim() || !form.name.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await usersAPI.create(form);
-      onAdded(res.data);
-      addToast(t('permission.add_success'), 'success');
-      onClose();
-    } catch (err: unknown) {
-      addToast(err instanceof Error ? err.message : t('permission.add_error'), 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="modal-content"
-        style={{ maxWidth: 440 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="modal-header">
-          <h2 className="modal-title">{t('permission.add_user')}</h2>
-          <button className="modal-close" onClick={onClose}>✕</button>
-        </div>
-        <form onSubmit={handleSubmit} style={{ padding: '0 24px 24px' }}>
-          <div className="form-group" style={{ marginBottom: 16 }}>
-            <label className="form-label">{t('permission.field_loginid')} *</label>
-            <input
-              className="form-input"
-              type="text"
-              value={form.loginid}
-              onChange={(e) => setForm((f) => ({ ...f, loginid: e.target.value }))}
-              placeholder="예: hong.gildong"
-              required
-            />
-          </div>
-          <div className="form-group" style={{ marginBottom: 16 }}>
-            <label className="form-label">{t('permission.field_name')} *</label>
-            <input
-              className="form-input"
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="예: 홍길동"
-              required
-            />
-          </div>
-          <div className="form-group" style={{ marginBottom: 16 }}>
-            <label className="form-label">{t('permission.field_department')}</label>
-            <input
-              className="form-input"
-              type="text"
-              value={form.department}
-              onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))}
-              placeholder="예: AGENT R팀"
-            />
-          </div>
-          {canChooseRole && (
-            <div className="form-group" style={{ marginBottom: 16 }}>
-              <label className="form-label">{t('permission.field_role')}</label>
-              <select
-                className="form-select"
-                value={form.role}
-                onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as UserRole }))}
-              >
-                {ALL_ROLES.map((r) => (
-                  <option key={r} value={r}>{ROLE_LABEL[r]}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          {!canChooseRole && (
-            <div className="form-group" style={{ marginBottom: 16 }}>
-              <label className="form-label">{t('permission.field_role')}</label>
-              <input className="form-input" type="text" value={ROLE_LABEL[form.role]} readOnly />
-            </div>
-          )}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 24 }}>
-            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting}>
-              {t('common.cancel')}
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={submitting}>
-              {submitting ? t('common.saving') : t('permission.add_user')}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
 
 // ===== Delete Confirm Row =====
 
@@ -204,8 +92,6 @@ function UserTable({
       <thead>
         <tr style={{ borderBottom: '2px solid var(--color-border, #e2e8f0)' }}>
           <th style={thStyle}>{t('permission.field_loginid')}</th>
-          <th style={thStyle}>{t('permission.field_name')}</th>
-          <th style={thStyle}>{t('permission.field_department')}</th>
           {canModify && <th style={{ ...thStyle, width: 120 }}></th>}
         </tr>
       </thead>
@@ -213,8 +99,6 @@ function UserTable({
         {users.map((user) => (
           <tr key={user.id} style={{ borderBottom: '1px solid var(--color-border, #e2e8f0)' }}>
             <td style={tdStyle}>{user.loginid}</td>
-            <td style={tdStyle}>{user.name}</td>
-            <td style={tdStyle}>{user.department || '-'}</td>
             {canModify && (
               <td style={{ ...tdStyle, textAlign: 'right' }}>
                 {confirmingId === user.id ? (
@@ -266,9 +150,12 @@ export default function PermissionPage(): React.ReactElement {
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<UserRole>(() =>
-    currentUser.role === 'MASTER' ? 'PL' : currentUser.role
+    currentUser.role === 'MASTER' ? 'PL' : (currentUser.role || 'NONE')
   );
-  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [usersForAssignment, setUsersForAssignment] = useState<UserForAssignment[]>([]);
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState<{ userId: string; role: UserRole }>({ userId: '', role: 'NONE' });
+  const [submitting, setSubmitting] = useState(false);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -283,11 +170,47 @@ export default function PermissionPage(): React.ReactElement {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  const fetchUsersForAssignment = useCallback(() => {
+    usersAPI
+      .forAssignment()
+      .then((r) => setUsersForAssignment(r.data))
+      .catch(() => setUsersForAssignment([]));
+  }, []);
+
+  useEffect(() => { 
+    fetchUsers();
+    fetchUsersForAssignment();
+  }, [fetchUsers, fetchUsersForAssignment]);
 
   const usersForTab = users.filter((u) => u.role === activeTab);
 
   const canModifyTab = isMaster || currentUser.role === activeTab;
+
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.userId) {
+      addToast(t('permission.select_user_error'), 'error');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await usersAPI.assignRole(Number(form.userId), form.role);
+      fetchUsers();
+      fetchUsersForAssignment();
+      addToast(t('permission.add_success'), 'success');
+      setForm({ userId: '', role: activeTab });
+      setFormOpen(false);
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : t('permission.add_error'), 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleAdded = (user: UserWithRole) => {
     setUsers((prev) => [...prev, user]);
@@ -379,7 +302,10 @@ export default function PermissionPage(): React.ReactElement {
             <button
               className="btn btn-primary"
               style={{ padding: '6px 16px', fontSize: 13 }}
-              onClick={() => setAddModalOpen(true)}
+              onClick={() => {
+                setForm({ userId: '', role: activeTab });
+                setFormOpen(true);
+              }}
             >
               + {t('permission.add_user')}
             </button>
@@ -403,14 +329,61 @@ export default function PermissionPage(): React.ReactElement {
         )}
       </div>
 
-      {addModalOpen && (
-        <AddUserModal
-          targetRole={activeTab}
-          currentRole={currentUser.role}
-          onClose={() => setAddModalOpen(false)}
-          onAdded={handleAdded}
-        />
-      )}
+      {/* Add User Modal */}
+      <Modal
+        isOpen={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={t('permission.add_user')}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setFormOpen(false)} disabled={submitting}>
+              {t('common.cancel')}
+            </button>
+            <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
+              {submitting ? t('common.loading') : t('permission.add_user')}
+            </button>
+          </>
+        }
+      >
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="form-group">
+            <label className="form-label">{t('permission.select_user')} <span className="required">*</span></label>
+            <select
+              className="form-control"
+              name="userId"
+              value={form.userId}
+              onChange={handleFormChange}
+              required
+            >
+              <option value="">-- {t('permission.select_user_placeholder')} --</option>
+              {usersForAssignment.map(user => (
+                <option key={user.id} value={user.id}>
+                  {user.display_name} ({user.username}, {user.department || '부서없음'})
+                </option>
+              ))}
+            </select>
+            {usersForAssignment.length === 0 && (
+              <p style={{ fontSize: 13, color: '#718096', marginTop: 8 }}>
+                {t('permission.no_users_for_assignment')}
+              </p>
+            )}
+          </div>
+          <div className="form-group">
+            <label className="form-label">{t('permission.field_role')} <span className="required">*</span></label>
+            <select
+              className="form-control"
+              name="role"
+              value={form.role}
+              onChange={handleFormChange}
+              required
+            >
+              {ALL_ROLES.filter(r => r !== 'NONE').map((r) => (
+                <option key={r} value={r}>{ROLE_LABEL[r]}</option>
+              ))}
+            </select>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
