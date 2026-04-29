@@ -13,7 +13,7 @@ function FlowChartTable({ rows }: { rows: FlowChartRow[] }) {
       <thead><tr><th>{t('request.flow_line')}</th><th>{t('request.flow_partid')}</th><th>Step</th></tr></thead>
       <tbody>
         {rows.map((r) => (
-          <tr key={r.id}><td>{r.location}</td><td>{r.product_name}</td><td>{r.step}</td></tr>
+          <tr key={r.id}><td>{r.location}</td><td>{r.product}</td><td>{r.step}</td></tr>
         ))}
       </tbody>
     </table>
@@ -31,11 +31,11 @@ function JayerTable({ rows, changedRowIds = new Set<string>() }: { rows: JayerRo
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table className="table" style={{ fontSize: '0.68rem', marginBottom: 8 }}>
-        <thead><tr><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th><th>{t('request.col_rev')}</th><th>{t('request.col_drawing_version')}</th></tr></thead>
+      <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
+        <thead><tr><th>Update 날짜</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th><th>{t('request.col_rev')}</th><th>{t('request.col_drawing_version')}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id} style={changedRowIds.has(r.id) ? changedRowStyle : undefined}><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td><td>{r.rev}</td><td>{r.drawing_version}</td></tr>
+            <tr key={r.id} style={changedRowIds.has(r.id) ? changedRowStyle : undefined}><td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td><td>{r.rev}</td><td>{r.drawing_version}</td></tr>
           ))}
         </tbody>
       </table>
@@ -48,11 +48,11 @@ function OayerTable({ rows, changedRowIds = new Set<string>() }: { rows: OayerRo
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table className="table" style={{ fontSize: '0.68rem', marginBottom: 8 }}>
-        <thead><tr><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_tt')}</th></tr></thead>
+      <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
+        <thead><tr><th>Update 날짜</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_tt')}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id} style={changedRowIds.has(r.id) ? changedRowStyle : undefined}><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td></tr>
+            <tr key={r.id} style={changedRowIds.has(r.id) ? changedRowStyle : undefined}><td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td></tr>
           ))}
         </tbody>
       </table>
@@ -65,8 +65,8 @@ function BbTable({ rows, changedRowIds = new Set<string>() }: { rows: BbTableRow
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table className="table" style={{ fontSize: '0.68rem', marginBottom: 8 }}>
-        <thead><tr><th>{t('request.process_id')}</th><th>SS</th><th>SD</th><th>{t('request.bb_ref_process_id')}</th><th>뼈찜 이름</th><th>뼈찜 STEP</th><th>뼈찜 SS</th><th>비고</th></tr></thead>
+      <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
+        <thead><tr><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.bb_ref_process_id')}</th><th>{t('request.col_bb_layer')}</th><th>{t('request.col_remark')}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} style={changedRowIds.has(r.id) ? changedRowStyle : undefined}><td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td>{r.bb_name}</td><td>{r.bb_step}</td><td>{r.bb_ss}</td><td>{r.remark}</td></tr>
@@ -109,7 +109,6 @@ export interface PagedDetailViewProps {
 
 export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProps): React.ReactElement {
   const { t } = useTranslation();
-  const [expandedTable, setExpandedTable] = useState<'jayer' | 'oayer' | 'bb' | null>(null);
   let detail: Partial<DetailFormState> = {};
   let jayer: JayerRow[] = [];
   let oayer: OayerRow[] = [];
@@ -135,7 +134,6 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   const isR = role === 'TE_R' || role === 'MASTER' || isPL;
   const isJ = role === 'TE_J' || role === 'MASTER' || isPL;
   const isO = role === 'TE_O' || role === 'MASTER' || isPL;
-  const isE = role === 'TE_E' || role === 'MASTER' || isPL;
 
   const showJayer = isR || isJ || isO;
   const showOayer = isO;
@@ -309,18 +307,18 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   const buildProdcInfo = (): string => {
     const lines: string[] = [];
     if (detail.prodc_top_line || detail.prodc_top_process || detail.prodc_top_product) {
-      lines.push(`[북] ${detail.prodc_top_line || '-'} / ${detail.prodc_top_process || '-'} / ${detail.prodc_top_product || '-'}`);
+      lines.push(`[상판] ${detail.prodc_top_line || '-'} / ${detail.prodc_top_process || '-'} / ${detail.prodc_top_product || '-'}`);
     }
     const middleUse = detail.prodc_middle_use;
     if (middleUse) {
       if (middleUse === '미사용') {
-        lines.push('[중간] 미사용');
+        lines.push('[중판] 미사용');
       } else {
-        lines.push(`[중간] ${detail.prodc_middle_line || '-'} / ${detail.prodc_middle_process || '-'} / ${detail.prodc_middle_product || '-'}`);
+        lines.push(`[중판] ${detail.prodc_middle_line || '-'} / ${detail.prodc_middle_process || '-'} / ${detail.prodc_middle_product || '-'}`);
       }
     }
     if (detail.prodc_bottom_line || detail.prodc_bottom_process || detail.prodc_bottom_product) {
-      lines.push(`[남] ${detail.prodc_bottom_line || '-'} / ${detail.prodc_bottom_process || '-'} / ${detail.prodc_bottom_product || '-'}`);
+      lines.push(`[하판] ${detail.prodc_bottom_line || '-'} / ${detail.prodc_bottom_process || '-'} / ${detail.prodc_bottom_product || '-'}`);
     }
     return lines.join('\n');
   };
@@ -397,7 +395,17 @@ type Page = { label: string; content: React.ReactNode };
                     {mshotHasDetail && detail.mshot_image_copy && (
                       <div style={{ flex: 1 }}>
                         <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')}</div>
-                        <div style={fieldValue}>{detail.mshot_image_copy}</div>
+                        <img
+                          src={`/media/${detail.mshot_image_copy}`}
+                          alt="attached"
+                          style={{
+                            maxWidth: '300px',
+                            maxHeight: '200px',
+                            borderRadius: '4px',
+                            border: '1px solid #ddd',
+                            marginTop: '8px'
+                          }}
+                        />
                       </div>
                     )}
                   </div>
@@ -426,12 +434,11 @@ type Page = { label: string; content: React.ReactNode };
             })()}
 
             {(isJ || isO) && detail.bb_zone && (() => {
-              const bbValue = [
-                `영역: ${detail.bb_zone}`,
-                ...(Array.isArray(detail.bb_entries) ? detail.bb_entries.map((e: { location: string; product: string; process_id: string }, i: number) =>
-                  `[${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.process_id || '-'}`
-                ) : []),
-              ].join(' / ');
+              const bbValue = Array.isArray(detail.bb_entries) && detail.bb_entries.length > 0
+                ? detail.bb_entries.map((e: { location: string; product: string; process_id: string }, i: number) =>
+                    `[${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.process_id || '-'}`
+                  ).join(' / ')
+                : '-';
               const bbChanged = changedFields.has('bb_zone') || changedFields.has('bb_entries');
               return (
                 <div style={rowStyle}>
@@ -458,11 +465,7 @@ type Page = { label: string; content: React.ReactNode };
               </div>
             )}
 
-            {((isE && !isR && !isJ && !isO) || role === 'MASTER') && detail.e_lps && (
-              <div style={rowStyle}>
-                <Chip label={t('request.e_lps')} value={detail.e_lps} changed={changedFields.has('e_lps')} fieldKey="e_lps" />
-              </div>
-            )}
+
           </div>
 
           {showFlowChart && (detail.flow_chart?.length ?? 0) > 0 && (
@@ -485,21 +488,12 @@ type Page = { label: string; content: React.ReactNode };
     },
   ];
 
-  const expandBtnStyle: React.CSSProperties = {
-    background: 'none', border: '1px solid var(--border)', borderRadius: 4,
-    padding: '2px 8px', fontSize: '0.75rem', color: 'var(--accent)',
-    cursor: 'pointer', fontWeight: 600, lineHeight: 1.4,
-  };
-
   if (showJayer) {
     pages.push({
       label: t('request.job_li'),
       content: (
         <div style={cardStyle}>
-          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>{t('request.job_li')}</span>
-            <button style={expandBtnStyle} onClick={() => setExpandedTable('jayer')}>⛶ 전체화면</button>
-          </div>
+          <div style={sectionTitle}>{t('request.job_li')}</div>
           <JayerTable rows={jayer} changedRowIds={changedJayerIds} />
         </div>
       ),
@@ -510,10 +504,7 @@ type Page = { label: string; content: React.ReactNode };
       label: t('request.ovl_li'),
       content: (
         <div style={cardStyle}>
-          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>{t('request.ovl_li')}</span>
-            <button style={expandBtnStyle} onClick={() => setExpandedTable('oayer')}>⛶ 전체화면</button>
-          </div>
+          <div style={sectionTitle}>{t('request.ovl_li')}</div>
           <OayerTable rows={oayer} changedRowIds={changedOayerIds} />
         </div>
       ),
@@ -524,10 +515,7 @@ type Page = { label: string; content: React.ReactNode };
       label: t('request.bb_li'),
       content: (
         <div style={cardStyle}>
-          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>{t('request.bb_li')}</span>
-            <button style={expandBtnStyle} onClick={() => setExpandedTable('bb')}>⛶ 전체화면</button>
-          </div>
+          <div style={sectionTitle}>{t('request.bb_li')}</div>
           <BbTable rows={bb} changedRowIds={changedBbIds} />
         </div>
       ),
@@ -549,35 +537,8 @@ type Page = { label: string; content: React.ReactNode };
     transition: 'opacity 0.15s',
   });
 
-  const expandedLabel =
-    expandedTable === 'jayer' ? t('request.job_li') :
-    expandedTable === 'oayer' ? t('request.ovl_li') :
-    expandedTable === 'bb'    ? t('request.bb_li') : '';
-
   return (
     <div>
-      {expandedTable && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 5000,
-          background: 'var(--bg-card)', overflow: 'auto', padding: '24px 28px',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-            <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              {expandedLabel}
-            </span>
-            <button
-              onClick={() => setExpandedTable(null)}
-              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 14px', fontSize: '0.9rem', cursor: 'pointer', fontWeight: 600 }}
-            >
-              ✕ 닫기
-            </button>
-          </div>
-          {expandedTable === 'jayer' && <JayerTable rows={jayer} changedRowIds={changedJayerIds} />}
-          {expandedTable === 'oayer' && <OayerTable rows={oayer} changedRowIds={changedOayerIds} />}
-          {expandedTable === 'bb'    && <BbTable rows={bb} changedRowIds={changedBbIds} />}
-        </div>
-      )}
-
       {pages.length > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-lg)', padding: '10px 16px' }}>
           <button style={navBtnStyle(safeIdx === 0)} disabled={safeIdx === 0} onClick={() => setPageIdx(safeIdx - 1)}>◀</button>
