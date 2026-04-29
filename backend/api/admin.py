@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import UserProfile, RequestDocument, ApprovalStep, VOC, Line, AdminNotice
+from .models import RequestDocument, ApprovalStep, VOC, Line, AdminNotice
 
 
 class ApprovalStepInline(admin.TabularInline):
@@ -9,10 +9,12 @@ class ApprovalStepInline(admin.TabularInline):
     readonly_fields = ['acted_at']
 
 
-@admin.register(UserProfile)
-class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ['display_name', 'role', 'department', 'user']
-    list_filter = ['role']
+# User Admin 은 마이그레이션 실행 후 설정 (필드가 아직 없음)
+# from django.contrib.auth import admin as auth_admin
+# from django.contrib.auth import get_user_model
+# User = get_user_model()
+# if hasattr(auth_admin.UserAdmin, 'list_display'):
+#     auth_admin.UserAdmin.list_display = list(auth_admin.UserAdmin.list_display) + ['display_name', 'role', 'department']
 
 
 @admin.register(RequestDocument)
