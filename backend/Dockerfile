@@ -19,7 +19,7 @@ ENV PYTHONUNBUFFERED=1 \
     ODBCSYSINI=/usr/local/odbc \
     CLOUDERAIMPALAINI=/etc/cloudera.impalaodbc.ini
 
-# mysqlclient C 확장 빌드 + cron 데몬 + wget (ODBC 설치용) + envsubst (템플릿 치환용)
+# mysqlclient C 확장 빌드 + cron 데몬 + wget (ODBC 설치용) + envsubst (템플릿 치환용) + curl (헬스체크용)
 RUN apt-get update && apt-get install -y \
     gcc \
     pkg-config \
@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y \
     unixodbc \
     cron \
     wget \
+    curl \
     libodbc1 \
     odbcinst \
     gettext \
@@ -53,6 +54,8 @@ ARG PIP_INDEX_URL
 ARG PIP_TRUSTED_HOST
 ARG BIGDATA_INDEX_URL
 ARG BIGDATA_TRUSTED_HOST
+ARG GUNICORN_PORT=8000
+ARG GUNICORN_WORKERS=3
 # ENV 로 컨테이너 실행 시점에 사용할 환경변수 설정
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
 ENV PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
@@ -60,10 +63,12 @@ ENV BIGDATA_INDEX_URL=${BIGDATA_INDEX_URL}
 ENV BIGDATA_TRUSTED_HOST=${BIGDATA_TRUSTED_HOST}
 ENV ODBC_DRIVER_URL=${ODBC_DRIVER_URL}
 ENV ODBC_DRIVER_FILENAME=${ODBC_DRIVER_FILENAME}
-COPY requirements.txt .
+ENV GUNICORN_PORT=${GUNICORN_PORT}
+ENV GUNICORN_WORKERS=${GUNICORN_WORKERS}
+COPY requirements.txt .    
 RUN pip install --no-cache-dir --index-url ${PIP_INDEX_URL} --trusted-host ${PIP_TRUSTED_HOST} -r requirements.txt
 
 COPY . .
 RUN mkdir -p /app/staticfiles /app/media
 EXPOSE 8000
-CMD ["sh", "-c", "python manage.py migrate --noinput && SKIP_SCHEDULER=true gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && SKIP_SCHEDULER=true gunicorn config.wsgi:application --bind 0.0.0.0:${GUNICORN_PORT} --workers ${GUNICORN_WORKERS}"]
