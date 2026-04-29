@@ -235,6 +235,52 @@ const WizardIndicator: React.FC<WizardIndicatorProps> = ({ currentStep, steps })
   </div>
 );
 
+// ===== FilterWordEditor =====
+interface FilterWordEditorProps {
+  label: string;
+  words: string[];
+  onChange: (words: string[]) => void;
+}
+const FilterWordEditor: React.FC<FilterWordEditorProps> = ({ label, words, onChange }) => {
+  const [input, setInput] = React.useState('');
+  const add = () => {
+    const trimmed = input.trim();
+    if (trimmed && !words.includes(trimmed)) {
+      onChange([...words, trimmed]);
+    }
+    setInput('');
+  };
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>{label}</div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+        <input
+          className="form-control"
+          style={{ flex: 1, fontSize: 13 }}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder="키워드 입력 후 Enter 또는 추가"
+        />
+        <button type="button" className="btn btn-secondary btn-sm" onClick={add}>추가</button>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {words.length === 0 && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>필터 없음</span>}
+        {words.map((w, i) => (
+          <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 8px', fontSize: 12 }}>
+            {w}
+            <button
+              type="button"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: 'var(--text-muted)', fontSize: 14 }}
+              onClick={() => onChange(words.filter((_, idx) => idx !== i))}
+            >×</button>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // ===== Main Component =====
 export default function RequestPage(): React.ReactElement {
   const { t } = useTranslation();
@@ -1770,10 +1816,6 @@ const isProdc = detail.only_prodc === 'Yes';
               <th style={{ width: 'auto' }}>{t('request.col_item_id')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_rev')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_drawing_version')}</th>
-              <th style={{ minWidth: 48 }}>{t('request.col_step')}</th>
-              <th style={{ minWidth: 90 }}>{t('request.col_item_id')}</th>
-              <th style={{ minWidth: 42 }}>{t('request.col_rev')}</th>
-              <th style={{ minWidth: 200 }}>{t('request.col_drawing_version')}</th>
             </tr>
           </thead>
           <tbody>
@@ -2109,58 +2151,64 @@ const isProdc = detail.only_prodc === 'Yes';
 
         {/* 분할 패널 */}
         <div className="bb-split-panel">
-          {/* 왼쪽: J-ayer 행 목록 + 매핑 미리보기 */}
+          {/* 왼쪽: 원본 행 목록 + 매핑 미리보기 */}
           <div className="bb-split-panel-left">
             <div className="bb-split-panel-title">
-              ① J-ayer 행 선택 — 클릭하여 선택 후 오른쪽에서 데이터 지정
+              ① 원본 데이터 목록 — 행을 클릭하면 오른쪽에서 bb 데이터 매핑 가능
             </div>
             <div className="bb-split-panel-scroll">
               {jayerRows.filter(r => !r.disabled).length === 0 ? (
-                <div className="bb-split-hint">J-ayer 정보가 없습니다. Step 2를 먼저 입력하세요.</div>
+                <div className="bb-split-hint">원본 layer 정보가 없습니다. Step 2를 먼저 입력하세요.</div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>조리법</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>SP</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>매핑된 뼈찜 데이터</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>공법</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>STEPSEQ</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>STEP 설명</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>Layer</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>Backbone Data</th>
                       <th style={{ padding: '6px 8px', background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, width: 28 }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {jayerRows.filter(r => !r.disabled).sort((a, b) => a.sortOrder - b.sortOrder).map((row) => {
-                      const staged = stagedMappings[row.id];
-                      const isSelected = selectedJayerRowId === row.id;
-                      return (
-                        <tr
-                          key={row.id}
-                          className={isSelected ? 'bb-jayer-selected' : ''}
-                          onClick={() => setSelectedJayerRowId(row.id)}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.process_id || '—'}</td>
-                          <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.sp || '—'}</td>
-                          <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>
-                            {staged ? (
-                              <span className="bb-staged-badge">{staged.bb_name} ({staged.bb_step})</span>
-                            ) : (
-                              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>미지정</span>
-                            )}
-                          </td>
-                          <td style={{ padding: '4px 6px', borderBottom: '1px solid var(--border-light)', textAlign: 'center' }}>
-                            {staged && (
-                              <button
-                                type="button"
-                                className="flow-delete-btn"
-                                style={{ width: 20, height: 20, fontSize: 11 }}
-                                onClick={(e) => { e.stopPropagation(); handleClearStaging(row.id); }}
-                                title="매핑 취소"
-                              >✕</button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {jayerRows
+                      .filter((row) => !mappedJayerRowIds.has(row.id))
+                      .filter(r => !r.disabled).sort((a, b) => a.sortOrder - b.sortOrder).map((row) => {
+                        const staged = stagedMappings[row.id];
+                        const isSelected = selectedJayerRowId === row.id;
+                        return (
+                          <tr
+                            key={row.id}
+                            className={isSelected ? 'bb-jayer-selected' : ''}
+                            onClick={() => setSelectedJayerRowId(row.id)}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.process_id || '—'}</td>
+                            <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.sp || '—'}</td>
+                            <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.sd || '—'}</td>
+                            <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.layerid || '—'}</td>
+                            <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>
+                              {staged ? (
+                                <span className="bb-staged-badge">{staged.bb_process_id} / {staged.bb_step}</span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>미선택</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '4px 6px', borderBottom: '1px solid var(--border-light)', textAlign: 'center' }}>
+                              {staged && (
+                                <button
+                                  type="button"
+                                  className="flow-delete-btn"
+                                  style={{ width: 20, height: 20, fontSize: 11 }}
+                                  onClick={(e) => { e.stopPropagation(); handleClearStaging(row.id); }}
+                                  title="매핑 취소"
+                                >✕</button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               )}
@@ -2184,6 +2232,18 @@ const isProdc = detail.only_prodc === 'Yes';
                 </button>
               ))}
             </div>
+            <input
+              type="text"
+              className="form-control"
+              placeholder="공법 / 이름 / STEP 검색..."
+              value={currentSearchQuery}
+              onChange={(e) => setBbSearchQueries((prev) => {
+                const next = [...prev];
+                next[activeBbTab] = e.target.value;
+                return next;
+              })}
+              style={{ margin: '8px 8px 0 8px', width: 'calc(100% - 16px)', fontSize: 13 }}
+            />
             <div className="bb-split-panel-scroll">
               {!selectedJayerRowId ? (
                 <div className="bb-split-hint">← 먼저 왼쪽에서 J-ayer 행을 선택하세요.</div>
@@ -2298,6 +2358,22 @@ const isProdc = detail.only_prodc === 'Yes';
           </div>
           <div className="bulk-action-row">
             <button type="button" className="flow-table-add-btn" onClick={handleBbAddRow}>+ 행 추가</button>
+            <button
+              type="button"
+              className={`btn btn-secondary btn-sm${isBbSorted ? ' btn-sorted' : ''}`}
+              onClick={handleSortBbRows}
+              disabled={bbRows.length === 0 || isBbSorted}
+            >
+              {isBbSorted ? '✓ SS 정렬됨' : '↕ SS 정렬'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={handleResetBbRows}
+              disabled={bbRows.length === 0}
+            >
+              🗑 초기화
+            </button>
             {bbChecked.size > 0 && (
               <button
                 type="button"
@@ -2370,6 +2446,82 @@ const isProdc = detail.only_prodc === 'Yes';
           </div>
         </div>
       )}
+
+      {/* J-ayer 비활성화 필터 모달 */}
+      <Modal
+        isOpen={jayerFilterModalOpen}
+        onClose={() => {
+          localStorage.setItem('jayerFilterWords', JSON.stringify(jayerFilterWords));
+          setJayerFilterModalOpen(false);
+        }}
+        title="J-ayer 비활성화 필터 설정"
+        size="md"
+        footer={
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              localStorage.setItem('jayerFilterWords', JSON.stringify(jayerFilterWords));
+              setJayerFilterModalOpen(false);
+            }}
+          >
+            저장 후 닫기
+          </button>
+        }
+      >
+        <FilterWordEditor
+          label="STEPSEQ (SP) 필터"
+          words={jayerFilterWords.sp}
+          onChange={(words) => setJayerFilterWords((prev) => ({ ...prev, sp: words }))}
+        />
+        <FilterWordEditor
+          label="STEP 설명 (SD) 필터"
+          words={jayerFilterWords.sd}
+          onChange={(words) => setJayerFilterWords((prev) => ({ ...prev, sd: words }))}
+        />
+        <FilterWordEditor
+          label="조리법 (PP) 필터"
+          words={jayerFilterWords.pp}
+          onChange={(words) => setJayerFilterWords((prev) => ({ ...prev, pp: words }))}
+        />
+      </Modal>
+
+      {/* O-ayer 비활성화 필터 모달 */}
+      <Modal
+        isOpen={oayerFilterModalOpen}
+        onClose={() => {
+          localStorage.setItem('oayerFilterWords', JSON.stringify(oayerFilterWords));
+          setOayerFilterModalOpen(false);
+        }}
+        title="O-ayer 비활성화 필터 설정"
+        size="md"
+        footer={
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              localStorage.setItem('oayerFilterWords', JSON.stringify(oayerFilterWords));
+              setOayerFilterModalOpen(false);
+            }}
+          >
+            저장 후 닫기
+          </button>
+        }
+      >
+        <FilterWordEditor
+          label="STEPSEQ (SP) 필터"
+          words={oayerFilterWords.sp}
+          onChange={(words) => setOayerFilterWords((prev) => ({ ...prev, sp: words }))}
+        />
+        <FilterWordEditor
+          label="STEP 설명 (SD) 필터"
+          words={oayerFilterWords.sd}
+          onChange={(words) => setOayerFilterWords((prev) => ({ ...prev, sd: words }))}
+        />
+        <FilterWordEditor
+          label="조리법 (PP) 필터"
+          words={oayerFilterWords.pp}
+          onChange={(words) => setOayerFilterWords((prev) => ({ ...prev, pp: words }))}
+        />
+      </Modal>
 
       <Modal
         isOpen={confirmOpen}
