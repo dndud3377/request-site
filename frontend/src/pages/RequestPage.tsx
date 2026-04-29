@@ -1605,13 +1605,45 @@ const isProdc = detail.only_prodc === 'Yes';
           {mshotEditAddMode && (
             <div className="form-group" style={{ width: '50%', marginTop: '8px' }}>
               <label className="form-label">{t('request.mshot_change_image_attach_area')}</label>
-              <textarea
-                className="form-control"
-                name="mshot_image_copy"
-                value={detail.mshot_image_copy}
-                onChange={handleDetailChange}
-                style={{ aspectRatio: '1 / 1', resize: 'none' }}
-              />
+              <div
+                className="image-upload-area"
+                style={{
+                  border: '2px dashed #ccc',
+                  borderRadius: '8px',
+                  padding: '20px',
+                  textAlign: 'center',
+                  minHeight: '100px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#f9f9f9'
+                }}
+                onPaste={handleImagePaste}
+              >
+                {detail.mshot_image_copy ? (
+                  <div style={{ width: '100%' }}>
+                    <img
+                      src={`/media/${detail.mshot_image_copy}`}
+                      alt="attached"
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '300px',
+                        borderRadius: '4px',
+                        border: '1px solid #ddd'
+                      }}
+                    />
+                    <p style={{ margin: '8px 0 0 0', color: '#666', fontSize: '13px' }}>
+                      이미지가 첨부되었습니다. Ctrl+V 로 다시 붙여넣으면 변경됩니다.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ fontSize: '36px', marginBottom: '8px' }}>📋</div>
+                    <p style={{ margin: '0', color: '#666' }}>Ctrl+V 로 이미지를 붙여넣으세요</p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -1669,13 +1701,6 @@ const isProdc = detail.only_prodc === 'Yes';
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
           </div>
-          <div className="form-group flex-col">
-            <label className="form-label">{t('request.e_lps')}</label>
-            <select className="form-control" name="e_lps" value={detail.e_lps} onChange={handleDetailChange}>
-              <option value="아니오">{t('request.no')}</option>
-              <option value="예">{t('request.yes')}</option>
-            </select>
-          </div>
         </div>
 
       </div>
@@ -1689,19 +1714,39 @@ const isProdc = detail.only_prodc === 'Yes';
       <div className="wizard-table-toolbar">
         <div className="wizard-table-toolbar-group">
           <span className="wizard-table-toolbar-label">{t('request.col_st')}:</span>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'O')}>모두 O</button>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'X')}>모두 X</button>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('st')}>초기화</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'O')}>{t('request.btn_all_o')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'X')}>{t('request.btn_all_x')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('st')}>{t('request.btn_reset')}</button>
         </div>
         <div className="wizard-table-toolbar-group">
           <span className="wizard-table-toolbar-label">{t('request.col_new_or_copy')}:</span>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '신규')}>모두 신규</button>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '복사')}>모두 복사</button>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('new_or_copy')}>초기화</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '신규')}>{t('request.btn_all_new')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '차용')}>{t('request.btn_all_copy')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('new_or_copy')}>{t('request.btn_reset')}</button>
+        </div>
+        <div className="wizard-table-toolbar-group" style={{ marginLeft: 'auto' }}>
+          <button type="button" className="th-header-btn" onClick={() => setJayerFilterModalOpen(true)}>비활성화 필터</button>
         </div>
       </div>
       <div className="wizard-table-wrapper">
         <table className="wizard-table">
+          <colgroup>
+            <col />
+            <col />
+            <col />
+            <col />
+            <col className="sd-column" />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col style={{ width: '32px' }} />
+          </colgroup>
           <thead>
             <tr>
               <th style={{ width: 32, textAlign: 'center' }}>
@@ -1712,13 +1757,19 @@ const isProdc = detail.only_prodc === 'Yes';
                   onChange={handleJayerCheckAll}
                 />
               </th>
-              <th style={{ minWidth: 58 }}>{t('request.process_id')}</th>
-              <th style={{ minWidth: 78 }}>{t('request.col_sp')}</th>
-              <th style={{ minWidth: 160 }}>{t('request.col_sd')}</th>
-              <th style={{ minWidth: 95 }}>{t('request.col_pp')}</th>
-              <th style={{ minWidth: 42 }}>{t('request.col_st')}</th>
-              <th style={{ minWidth: 52 }}>{t('request.col_new_or_copy')}</th>
-              <th style={{ minWidth: 75 }}>{t('request.col_product_name')}</th>
+              <th style={{ width: 'auto' }}>Update 날짜</th>
+              <th style={{ width: 'auto' }}>{t('request.process_id')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_sp')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_sd')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_layer')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_pp')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_st')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_new_or_copy')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_product_name')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_step')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_item_id')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_rev')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_drawing_version')}</th>
               <th style={{ minWidth: 48 }}>{t('request.col_step')}</th>
               <th style={{ minWidth: 90 }}>{t('request.col_item_id')}</th>
               <th style={{ minWidth: 42 }}>{t('request.col_rev')}</th>
