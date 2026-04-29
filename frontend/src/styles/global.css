@@ -2040,13 +2040,134 @@ select.form-control option {
   border-radius: 50%;
   border: 1.5px solid white;
 }
+/* ===== Guide Page ===== */
+
+.guide-layout {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+/* Sidebar */
+.guide-sidebar {
+  width: 190px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 80px;
+  padding: 10px 6px !important;
+}
+
+.guide-sidebar-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  transition: background 0.15s, color 0.15s;
+  line-height: 1.4;
+}
+
+.guide-sidebar-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.guide-sidebar-btn.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Main */
+.guide-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+/* Card */
+.guide-card {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.guide-card:hover {
+  border-color: var(--accent-light);
+  box-shadow: var(--shadow-md);
+}
+
+.guide-card-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.guide-card-preview {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  flex: 1;
+}
+
+.guide-card-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* Section badge */
+.guide-section-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Detail modal content */
+.guide-content-body {
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.75;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
 
 /* ===== 뼈찜 분할 패널 (Split Panel) ===== */
 
 .bb-split-panel {
   display: flex;
   gap: 16px;
-  min-height: 320px;
+  min-height: 400px;  /* 10행 + 검색창 + 여유 공간 */
   margin-bottom: 16px;
 }
 
@@ -2074,6 +2195,7 @@ select.form-control option {
 .bb-split-panel-scroll {
   overflow-y: auto;
   flex: 1;
+  max-height: 350px;  /* 약 10행 표시 */
 }
 
 .bb-split-panel-left table {
