@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { documentsAPI, linesAPI, formOptionsAPI } from '../api/client';
+import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI } from '../api/client';
 import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
 import FormSelect from '../components/FormSelect';
@@ -15,7 +15,10 @@ import {
   OayerRow,
   BbTableRow,
   HistorySnapshot,
+  RequestDocument,
   ExternalBbDataItem,
+  PhotoStepOption,
+  BbAutoFillRange,
 } from '../types';
 
 // ===== Option Constants =====
@@ -23,11 +26,6 @@ const OPTION_REQUEST_PURPOSE = ['신규', '복사', '변경'] as const;
 const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
 const OPTION_OTHER_PURPOSE = ['목적A', '목적B', '목적C'] as const;
 const OPTION_SOURCE_LINE = ['위치A', '위치B', '위치C'] as const;
-const OPTION_SOURCE_PARTID = ['원본제품A', '원본제품B', '원본제품C'] as const;
-const OPTION_BB_LOCATION = ['위치1', '위치2', '위치3'] as const;
-const OPTION_BB_PRODUCT = ['뼈찜제품A', '뼈찜제품B'] as const;
-const OPTION_BB_PROCESS_ID = ['뼈찜조리법1', '뼈찜조리법2'] as const;
-
 
 
 // ===== ProdcRow — 북쪽/중간/남쪽 공통 행 =====
@@ -256,24 +254,31 @@ export default function RequestPage(): React.ReactElement {
   const [topProductOptions, setTopProductOptions] = useState<string[]>([]);
   const [middleProductOptions, setMiddleProductOptions] = useState<string[]>([]);
   const [bottomProductOptions, setBottomProductOptions] = useState<string[]>([]);
-  const [sourceProductOptions, setSourceProductOptions] = useState<string[]>([]);
+
   const [BbProductOptions, setBbProductOptions] = useState<Record<number, string[]>>({});
   const [BbProductidOptions, setBbProductidOptions] = useState<Record<number, string[]>>({});
+
+  const [FlowProductOptions, setFlowProductOptions] = useState<Record<number, string[]>>({});
+
   const [step, setStep] = useState(1);
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
   const [detail, setDetail] = useState<DetailFormState>(INITIAL_DETAIL);
   const [jayerRows, setJayerRows] = useState<JayerRow[]>([makeJayerRow()]);
   const [oayerRows, setOayerRows] = useState<OayerRow[]>([makeOayerRow()]);
-  const [bbRows, setBbRows] = useState<BbTableRow[]>([makeBbRow()]);
-  const [bbExternalData, setBbExternalData] = useState<ExternalBbDataItem[][]>([]);
+  const [bbRows, setBbRows] = useState<BbTableRow[]>([]);
+  const [bbExternalData, setBbExternalData] = useState<PhotoStepOption[][]>([]);
   const [bbExternalLoading, setBbExternalLoading] = useState(false);
   const [activeBbTab, setActiveBbTab] = useState(0);
   const [selectedJayerRowId, setSelectedJayerRowId] = useState<string | null>(null);
   const [stagedMappings, setStagedMappings] = useState<Record<string, ExternalBbDataItem>>({});
+  const [mappedJayerRowIds, setMappedJayerRowIds] = useState<Set<string>>(new Set());
+  const [bbAutoFillRanges, setBbAutoFillRanges] = useState<BbAutoFillRange[]>([]);
+  const [showAutoFillPanel, setShowAutoFillPanel] = useState(false);
+  const [isBbSorted, setIsBbSorted] = useState(false);  // STEPSEQ 정렬 상태
+  const [bbSearchQueries, setBbSearchQueries] = useState<string[]>([]);  // 탭별 검색어
   const [jayerChecked, setJayerChecked] = useState<Set<string>>(new Set());
   const [oayerChecked, setOayerChecked] = useState<Set<string>>(new Set());
   const [bbChecked, setBbChecked] = useState<Set<string>>(new Set());
-  const [bbDeleted, setBbDeleted] = useState<BbTableRow[]>([]);
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
@@ -290,11 +295,77 @@ export default function RequestPage(): React.ReactElement {
   } | null>(null);
   const isLoadingEditRef = useRef(false);
 
+  const [approvedDocs, setApprovedDocs] = useState<RequestDocument[]>([]);
+  const [sourcePartIdOptions, setSourcePartIdOptions] = useState<string[]>([]);
+
+  const [jayerFilterWords, setJayerFilterWords] = useState<{ sp: string[]; sd: string[]; pp: string[] }>({ sp: [], sd: [], pp: [] });
+  const [oayerFilterWords, setOayerFilterWords] = useState<{ sp: string[]; sd: string[]; pp: string[] }>({ sp: [], sd: [], pp: [] });
+  const [jayerFilterModalOpen, setJayerFilterModalOpen] = useState(false);
+  const [oayerFilterModalOpen, setOayerFilterModalOpen] = useState(false);
+
   useEffect(() => {
     linesAPI.list()
       .then((lines) => { if (lines.length > 0) setLineOptions(lines.map((l) => l.name)); })
       .catch(() => { /* 폴백 유지 */ });
+
+    // 승인된 문서 목록 로드
+    documentsAPI.getApproved()
+      .then((r) => {
+        setApprovedDocs(r.data);
+        // PART ID 목록 추출 (중복 제거)
+        const partIds = Array.from(new Set(r.data.map((doc: RequestDocument) => doc.product_name)));
+        setSourcePartIdOptions(partIds);
+      })
+      .catch(console.error);
+
+    // localStorage에서 비활성화 필터 단어 로드
+    const savedJayerFilter = localStorage.getItem('jayerFilterWords');
+    if (savedJayerFilter) {
+      try {
+        const parsed = JSON.parse(savedJayerFilter);
+        const converted = {
+          sp: Array.isArray(parsed.sp) ? parsed.sp : parsed.sp ? [parsed.sp] : [],
+          sd: Array.isArray(parsed.sd) ? parsed.sd : parsed.sd ? [parsed.sd] : [],
+          pp: Array.isArray(parsed.pp) ? parsed.pp : parsed.pp ? [parsed.pp] : [],
+        };
+        setJayerFilterWords(converted);
+      } catch (e) { /* 파싱 실패 시 기본값 유지 */ }
+    }
+    const savedOayerFilter = localStorage.getItem('oayerFilterWords');
+    if (savedOayerFilter) {
+      try {
+        const parsed = JSON.parse(savedOayerFilter);
+        const converted = {
+          sp: Array.isArray(parsed.sp) ? parsed.sp : parsed.sp ? [parsed.sp] : [],
+          sd: Array.isArray(parsed.sd) ? parsed.sd : parsed.sd ? [parsed.sd] : [],
+          pp: Array.isArray(parsed.pp) ? parsed.pp : parsed.pp ? [parsed.pp] : [],
+        };
+        setOayerFilterWords(converted);
+      } catch (e) { /* 파싱 실패 시 기본값 유지 */ }
+    }
   }, []);
+
+  useEffect(() => {
+    if (detail.request_purpose === '신규') {
+      setJayerRows((rows) =>
+        rows.map((r) => ({
+          ...r,
+          product_name: '',
+          layerid: '',
+          item_id: '',
+          rev: '',
+          drawing_version: '',
+        }))
+      );
+      setOayerRows((rows) =>
+        rows.map((r) => ({
+          ...r,
+          product_name: '',
+          step: '',
+        }))
+      );
+    }
+  }, [detail.request_purpose]);
 
   // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
   useEffect(() => {
@@ -313,6 +384,27 @@ export default function RequestPage(): React.ReactElement {
       setDetail((prev) => ({ ...prev, process_selection: '', partid_selection: '', process_id: '' }));
     }
   }, [detail.line]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!detail.source_line || approvedDocs.length === 0) {
+      setSourcePartIdOptions([]);
+      return;
+    }
+
+    const filteredDocs = approvedDocs.filter(doc => {
+      try {
+        const parsed = JSON.parse(doc.additional_notes ?? '{}');
+        const docLine = parsed.detail?.line;
+        return docLine === detail.source_line;
+      } catch {
+        return false;
+      }
+    });
+
+    const partIds = Array.from(new Set(filteredDocs.map((doc: RequestDocument) => doc.product_name)));
+    setSourcePartIdOptions(partIds);
+    setDetail((prev) => ({ ...prev, source_partid: '' }));
+  }, [detail.source_line, approvedDocs]);
 
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
   useEffect(() => {
@@ -345,21 +437,41 @@ export default function RequestPage(): React.ReactElement {
 
   useEffect(() => {
     if (!detail.line || !detail.process_id) return;
-    if (isLoadingEditRef.current) return; // 편집 모드 로드 중엔 jayerRows 덮어쓰기 방지
-    fetchStepInfoAndPopulateJayer(detail.line, detail.process_id);
+    if (isLoadingEditRef.current) return; // 편집 모드 로드 중엔 jayerRows/oayerRows 덮어쓰기 방지
+    fetchJobFileLayerAndPopulateJayer(detail.line, detail.process_id);
+    fetchOvlLayerAndPopulateOayer(detail.line, detail.process_id);
   }, [detail.process_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    const isCopy = detail.request_purpose === '복사';
-    if (!isCopy || !detail.source_line) { setSourceProductOptions([]); return; }
-    const lineName = detail.source_line.replace(' 라인', '');
-    formOptionsAPI.getProducts(lineName)
-      .then(setSourceProductOptions)
-      .catch(() => setSourceProductOptions([]));
-    if (!isLoadingEditRef.current) {
-      setDetail((prev) => ({ ...prev, source_partid: '' }));
+    const jayerMaxLength = Math.max(
+      'STEP 설명'.length,
+      ...jayerRows.map(r => r.sd?.length || 0)
+    );
+
+    const oayerMaxLength = Math.max(
+      'STEP 설명'.length,
+      ...oayerRows.map(r => r.sd?.length || 0)
+    );
+
+    const calculateWidth = (charLength: number) =>
+      Math.min(Math.max(charLength * 10, 80), 200);
+
+    const jayerTable = document.querySelector('.wizard-table-wrapper:nth-of-type(2) .wizard-table');
+    if (jayerTable) {
+      const sdCol = jayerTable.querySelector('.col-sd-column');
+      if (sdCol) {
+        sdCol.setAttribute('width', `${calculateWidth(jayerMaxLength)}px`);
+      }
     }
-  }, [detail.request_purpose, detail.source_line]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const oayerTable = document.querySelector('.wizard-table-wrapper:nth-of-type(3) .wizard-table');
+    if (oayerTable) {
+      const sdCol = oayerTable.querySelector('.col-sd-column');
+      if (sdCol) {
+        sdCol.setAttribute('width', `${calculateWidth(oayerMaxLength)}px`);
+      }
+    }
+  }, [jayerRows, oayerRows]);
 
   useEffect(() => {
     detail.bb_entries.forEach((entry, idx) => {
@@ -368,13 +480,24 @@ export default function RequestPage(): React.ReactElement {
         setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
         return;
       }
-      const lineName = entry.location.replace(' 라인', '');
-      formOptionsAPI.getProducts(lineName)
+      formOptionsAPI.getProducts(entry.location)
         .then((opts) => setBbProductOptions((prev) => ({ ...prev, [idx]: opts })))
         .catch(() => setBbProductOptions((prev) => ({ ...prev, [idx]: [] })));
       setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
     });
-  }, [detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail.bb_entries.map(e => e.location).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    detail.flow_chart.forEach((entry, idx) => {
+      if (!entry.location) {
+        setFlowProductOptions((prev) => ({ ...prev, [idx]: [] }));
+        return;
+      }
+      formOptionsAPI.getProducts(entry.location)
+        .then((opts) => setFlowProductOptions((prev) => ({ ...prev, [idx]: opts })))
+        .catch(() => setFlowProductOptions((prev) => ({ ...prev, [idx]: [] })));
+    });
+  }, [detail.flow_chart.map(e => e.location).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     detail.bb_entries.forEach((entry, idx) => {
@@ -382,12 +505,11 @@ export default function RequestPage(): React.ReactElement {
         setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
         return;
       }
-      const lineName = entry.location.replace(' 라인', '');
-      formOptionsAPI.getProcessId(lineName, entry.product)
+      formOptionsAPI.getProcessId(entry.location, entry.product)
         .then((opts) => setBbProductidOptions((prev) => ({ ...prev, [idx]: opts })))
         .catch(() => setBbProductidOptions((prev) => ({ ...prev, [idx]: [] })));
     });
-  }, [detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail.bb_entries.map(e => e.product).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // bb_entries 변경 시 외부 데이터 로드
   useEffect(() => {
@@ -420,13 +542,19 @@ export default function RequestPage(): React.ReactElement {
         if (parsed.detail) setDetail(parsed.detail);
         if (parsed.jayerRows) setJayerRows(parsed.jayerRows);
         if (parsed.oayerRows) setOayerRows(parsed.oayerRows);
-        if (parsed.bbRows) setBbRows(parsed.bbRows);
+        if (parsed.bbRows) {
+          setBbRows(parsed.bbRows);
+          const existingJayerIds = parsed.bbRows
+            .map((row: BbTableRow) => row.sourceJayerRowId)
+            .filter(Boolean);
+          setMappedJayerRowIds(new Set(existingJayerIds));
+        }
       } catch { /* noop */ }
     }).catch(() => { isLoadingEditRef.current = false; });
   }, [editDocId]);
 
   // Derived booleans for Step 1 conditional rendering
-  const isCopy = detail.request_purpose === '복사';
+  const isCopy = detail.request_purpose === '차용';
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === '변경 있음';
 const isProdc = detail.only_prodc === 'Yes';
@@ -444,6 +572,34 @@ const isProdc = detail.only_prodc === 'Yes';
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
   };
 
+  // 이미지 붙여넣기 핸들러 - 백엔드로 업로드
+  const handleImagePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf('image') !== -1) {
+        const file = item.getAsFile();
+        if (file) {
+          try {
+            const result = await uploadImageAPI.upload(file);
+            setDetail((prev) => ({
+              ...prev,
+              mshot_image_copy: result.path
+            }));
+            addToast(`이미지 업로드 완료: ${file.name}`, 'info');
+          } catch (err) {
+            console.error('이미지 업로드 실패:', err);
+            addToast('이미지 업로드 실패', 'error');
+          }
+          e.preventDefault();
+          break;
+        }
+      }
+    }
+  };
+
   const handleDetailSet = (name: string, value: string) => {
     isLoadingEditRef.current = false; // 사용자 상호작용 시 로드 가드 해제
     setDetail((prev) => ({ ...prev, [name]: value }));
@@ -451,6 +607,52 @@ const isProdc = detail.only_prodc === 'Yes';
   };
 
   // C가문 리전별 조합법 변경 → 해당 리전 제품이름 fetch
+  // 차용 시 원본 PART ID 의 데이터 불러오기
+  const loadSourceDocumentData = (partId: string) => {
+    const sourceDoc = approvedDocs
+      .filter(doc => doc.product_name === partId)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+    if (!sourceDoc) {
+      addToast('원본 문서를 찾을 수 없습니다.', 'error');
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(sourceDoc.additional_notes ?? '{}');
+      const sourceDetail = parsed.detail ?? {};
+
+      const fieldsToCopy: Partial<DetailFormState> = {};
+
+      if (sourceDetail.map_change) fieldsToCopy.map_change = sourceDetail.map_change;
+      if (sourceDetail.map_value_x) fieldsToCopy.map_value_x = sourceDetail.map_value_x;
+      if (sourceDetail.map_value_y) fieldsToCopy.map_value_y = sourceDetail.map_value_y;
+      if (sourceDetail.map_reason) fieldsToCopy.map_reason = sourceDetail.map_reason;
+
+      if (sourceDetail.ea_change) fieldsToCopy.ea_change = sourceDetail.ea_change;
+      if (sourceDetail.ea_value) fieldsToCopy.ea_value = sourceDetail.ea_value;
+
+      if (sourceDetail.mshot_change) fieldsToCopy.mshot_change = sourceDetail.mshot_change;
+      if (sourceDetail.mshot_image_copy) fieldsToCopy.mshot_image_copy = sourceDetail.mshot_image_copy;
+
+      if (sourceDetail.ip_status) fieldsToCopy.ip_status = sourceDetail.ip_status;
+      if (sourceDetail.ip_option) fieldsToCopy.ip_option = sourceDetail.ip_option;
+
+      if (sourceDetail.split_progress) fieldsToCopy.split_progress = sourceDetail.split_progress;
+
+      if (sourceDetail.tmap_apply) fieldsToCopy.tmap_apply = sourceDetail.tmap_apply;
+
+      if (sourceDetail.hplhc_change) fieldsToCopy.hplhc_change = sourceDetail.hplhc_change;
+
+      setDetail(prev => ({ ...prev, ...fieldsToCopy }));
+
+      addToast('원본 제품의 데이터가 적용되었습니다.', 'info');
+    } catch (err) {
+      console.error('원본 데이터 로드 실패:', err);
+      addToast('원본 데이터를 불러오는데 실패했습니다.', 'error');
+    }
+  };
+
   const handleProdcProcessChange = (region: CRegion, value: string) => {
     if (!detail.line || !value) {
       if (region === 'top') setTopProductOptions([]);
@@ -487,6 +689,15 @@ const isProdc = detail.only_prodc === 'Yes';
     setDetail((prev) => ({ ...prev, flow_chart: [...prev.flow_chart, makeRow()] }));
   };
 
+  // ===== Date Format Helper =====
+  const formatUpdatedDate = (updated: string): string => {
+    if (!updated || updated.length < 12) return updated;
+    const yyyyMMdd = updated.slice(0, 8);
+    const hh = updated.slice(8, 10);
+    const mm = updated.slice(10, 12);
+    return `${yyyyMMdd} ${hh}:${mm}`;
+  };
+
   const handleFlowDeleteRow = (id: string) => {
     setDetail((prev) => {
       if (prev.flow_chart.length <= 1) return prev;
@@ -494,26 +705,64 @@ const isProdc = detail.only_prodc === 'Yes';
     });
   };
 
-  // ===== Jayer Handlers =====
-  // ===== Jayer 자동 채움 함수 (bigdata STEP 정보 조회) =====
-  const fetchStepInfoAndPopulateJayer = async (line: string, process: string) => {
+  // ===== Jayer & Oayer Handlers =====
+  // ===== 비활성화 필터 확인 함수 (키워드 배열 지원) =====
+  const shouldDisableRow = (filterWords: { sp: string[]; sd: string[]; pp: string[] }, row: { sp: string; sd: string; pp: string }): boolean => {
+    const { sp, sd, pp } = filterWords;
+    if (sp.some(keyword => keyword && row.sp.toLowerCase().includes(keyword.toLowerCase()))) return true;
+    if (sd.some(keyword => keyword && row.sd.toLowerCase().includes(keyword.toLowerCase()))) return true;
+    if (pp.some(keyword => keyword && row.pp.toLowerCase().includes(keyword.toLowerCase()))) return true;
+    return false;
+  };
+
+  const fetchJobFileLayerAndPopulateJayer = async (line: string, process: string) => {
     try {
-      const stepData = await formOptionsAPI.getStepInfo(line, process);
-      if (stepData && stepData.length > 0) {
-        // Jayer 행을 bigdata 데이터로 자동 채움 (항상 덮어쓰기)
-        const newJayerRows: JayerRow[] = stepData.map((item) => ({
-          ...makeJayerRow(),
-          process_id: item.processid,
-          sp: item.stepseq,
-          sd: item.descript,
-          pp: item.recipeid,
-        }));
+      const jobFileData = await formOptionsAPI.getJobFileLayer(line, process);
+
+      if (jobFileData && jobFileData.length > 0) {
+        const newJayerRows: JayerRow[] = jobFileData.map((item) => {
+          const row = {
+            ...makeJayerRow(),
+            updated: item.updated ? formatUpdatedDate(item.updated) : '',
+            process_id: item.processid,
+            sp: item.stepseq,
+            sd: item.descript,
+            pp: item.recipeid,
+            layerid: item.layerid || '',
+          };
+          return { ...row, disabled: shouldDisableRow(jayerFilterWords, row) };
+        });
         setJayerRows(newJayerRows);
-        addToast(`Jayer 정보 ${stepData.length}건 자동 채움`, 'info');
+        addToast(t('request.toast_job_auto_fill', { count: jobFileData.length }), 'info');
       }
     } catch (e) {
-      console.error('STEP 정보 조회 실패:', e);
-      addToast('Jayer layer 정보 조회 실패', 'error');
+      console.error('JOB FILE layer 정보 조회 실패:', e);
+      addToast(t('request.toast_job_auto_fill_error'), 'error');
+    }
+  };
+
+  const fetchOvlLayerAndPopulateOayer = async (line: string, process: string) => {
+    try {
+      const ovlData = await formOptionsAPI.getOvlLayer(line, process);
+
+      if (ovlData && ovlData.length > 0) {
+        const newOayerRows: OayerRow[] = ovlData.map((item) => {
+          const row = {
+            ...makeOayerRow(),
+            updated: item.updated ? formatUpdatedDate(item.updated) : '',
+            process_id: item.processid,
+            sp: item.stepseq,
+            sd: item.descript,
+            pp: item.recipeid,
+          };
+          return { ...row, disabled: shouldDisableRow(oayerFilterWords, row) };
+        });
+        setOayerRows(newOayerRows);
+        addToast(t('request.toast_ovl_auto_fill', { count: ovlData.length }), 'info');
+      }
+    } catch (e) {
+      console.error('OVL layer 정보 조회 실패:', e);
+      addToast(t('request.toast_ovl_auto_fill_error'), 'error');
     }
   };
 
@@ -653,22 +902,24 @@ const isProdc = detail.only_prodc === 'Yes';
 
   const handleBbAddRow = () => {
     setBbRows((rows) => [...rows, makeBbRow()]);
-    setBbDeleted([]);
   };
 
   const handleBbBulkDelete = () => {
-    const toDelete = bbRows.filter((r) => bbChecked.has(r.id));
-    setBbDeleted(toDelete);
-    setBbRows((rows) => {
-      const remaining = rows.filter((r) => !bbChecked.has(r.id));
-      return remaining.length === 0 ? [makeBbRow()] : remaining;
-    });
-    setBbChecked(new Set());
-  };
+    const rowsToRestore = bbRows.filter((r) =>
+      bbChecked.has(r.id) && r.sourceJayerRowId
+    );
 
-  const handleBbRestore = () => {
-    setBbRows((rows) => [...rows, ...bbDeleted]);
-    setBbDeleted([]);
+    setBbRows((rows) => rows.filter((r) => !bbChecked.has(r.id)));
+
+    setMappedJayerRowIds((prev) => {
+      const next = new Set(prev);
+      rowsToRestore.forEach((row) => {
+        if (row.sourceJayerRowId) next.delete(row.sourceJayerRowId);
+      });
+      return next;
+    });
+
+    setBbChecked(new Set());
   };
 
   const handleBbCheckToggle = (id: string) => {
@@ -702,57 +953,234 @@ const isProdc = detail.only_prodc === 'Yes';
     });
   };
 
-  // "적용" 버튼 → 스테이징된 모든 매핑을 BB 테이블에 한 번에 반영
   const handleApplyMappings = () => {
     const mappedRows: BbTableRow[] = jayerRows
       .filter((jr) => stagedMappings[jr.id])
       .map((jr) => {
         const ext = stagedMappings[jr.id];
         const newRow = makeBbRow();
+        newRow.sourceJayerRowId = jr.id;
         newRow.process_id = jr.process_id;
         newRow.ss = jr.sp;
         newRow.sd = jr.sd;
         newRow.bb_process_id = ext.bb_process_id;
         newRow.bb_name = ext.bb_name;
-        newRow.bb_step = ext.bb_step;
+        newRow.bb_step = '';
         newRow.bb_ss = ext.bb_ss;
         return newRow;
       });
     if (mappedRows.length === 0) return;
-    setBbRows(mappedRows);
+
+    setBbRows((prev) => [...prev, ...mappedRows]);
+    setMappedJayerRowIds((prev) => {
+      const next = new Set(prev);
+      mappedRows.forEach((row) => {
+        if (row.sourceJayerRowId) next.add(row.sourceJayerRowId);
+      });
+      return next;
+    });
     setStagedMappings({});
     setSelectedJayerRowId(null);
   };
 
-  // ===== Validation =====
-  const validate = (): boolean => {
-    const newErrors: Partial<Record<string, string>> = {};
-    DETAIL_REQUIRED.forEach((field) => {
-      const val = detail[field] as string;
-      if (!val?.trim()) newErrors[field] = t('request.required');
-    });
-    if (detail.map_change === '변경 있음') {
-      if (!detail.map_value_x?.trim()) newErrors['map_value_x'] = t('request.required');
-      if (!detail.map_value_y?.trim()) newErrors['map_value_y'] = t('request.required');
-      if (!detail.map_reason?.trim())  newErrors['map_reason']  = t('request.required');
+  const handleOpenAutoFillPanel = () => {
+    const layerIds = [...new Set(jayerRows.map(r => r.layerid).filter(Boolean))]
+      .sort((a, b) => parseFloat(a) - parseFloat(b));
+
+    const productIds = detail.bb_entries.map(e => e.product).filter(Boolean);
+
+    if (layerIds.length > 0 && productIds.length > 0) {
+      setBbAutoFillRanges([{
+        id: String(Date.now()),
+        layerFrom: layerIds[0],
+        layerTo: layerIds[layerIds.length - 1],
+        productId: productIds[0],
+      }]);
+    } else {
+      setBbAutoFillRanges([]);
     }
-    const filledBb = detail.bb_entries.filter(
-      (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
+    setShowAutoFillPanel(true);
+  };
+
+  const handleAddRange = () => {
+    const productIds = detail.bb_entries.map(e => e.product).filter(Boolean);
+    setBbAutoFillRanges(prev => [
+      ...prev,
+      {
+        id: String(Date.now()),
+        layerFrom: '',
+        layerTo: '',
+        productId: productIds[0] || '',
+      },
+    ]);
+  };
+
+  const handleRemoveRange = (id: string) => {
+    setBbAutoFillRanges(prev => prev.filter(r => r.id !== id));
+  };
+
+  const handleRangeChange = (id: string, field: keyof BbAutoFillRange, value: string) => {
+    setBbAutoFillRanges(prev => prev.map(r =>
+      r.id === id ? { ...r, [field]: value } : r
+    ));
+  };
+
+  const handleApplyAutoFill = () => {
+    const hasExistingData = bbRows.some(
+      (row) => row.bb_process_id || row.bb_ss || row.bb_name
     );
-    if (filledBb.length === 0) {
-      newErrors['bb_entries'] = t('request.required');
+
+    if (hasExistingData) {
+      const confirmed = window.confirm('기존 입력된 Backbone 데이터가 있습니다. 덮어쓰시겠습니까?');
+      if (!confirmed) return;
     }
+
+    const newBbRows: BbTableRow[] = [];
+
+    bbAutoFillRanges.forEach(range => {
+      if (!range.layerFrom || !range.layerTo || !range.productId) return;
+
+      const from = parseFloat(range.layerFrom);
+      const to = parseFloat(range.layerTo);
+
+      if (isNaN(from) || isNaN(to)) return;
+
+      const jayerRowsInRange = jayerRows.filter(row => {
+        const layer = parseFloat(row.layerid);
+        return !isNaN(layer) && layer >= from && layer <= to;
+      });
+
+      const entryIdx = detail.bb_entries.findIndex(
+        e => e.product === range.productId
+      );
+
+      if (entryIdx === -1) return;
+
+      const photoSteps = bbExternalData[entryIdx] ?? [];
+
+      jayerRowsInRange.forEach(jayerRow => {
+        const matchedStep = photoSteps.find(
+          step => step.layerid === jayerRow.layerid
+        );
+
+        if (!matchedStep) return;
+
+        newBbRows.push({
+          id: String(Date.now() + Math.random()),
+          sourceJayerRowId: jayerRow.id,
+          sortOrder: jayerRow.sortOrder,
+          disabled: jayerRow.disabled,
+          process_id: jayerRow.process_id,
+          ss: jayerRow.sp,
+          sd: jayerRow.sd,
+          bb_process_id: matchedStep.processid,
+          bb_name: range.productId,
+          bb_step: matchedStep.layerid,
+          bb_ss: matchedStep.stepseq,
+          remark: '',
+        });
+      });
+    });
+
+    if (newBbRows.length === 0) {
+      addToast('매칭된 Backbone 데이터가 없습니다.', 'error');
+      return;
+    }
+
+    setBbRows(newBbRows);
+    const mappedIds = newBbRows.map(r => r.sourceJayerRowId).filter(Boolean) as string[];
+    setMappedJayerRowIds(new Set(mappedIds));
+    setShowAutoFillPanel(false);
+    setBbAutoFillRanges([]);
+    setIsBbSorted(false);
+    addToast(`Backbone 데이터가 ${newBbRows.length}행 자동 채워졌습니다.`, 'success');
+  };
+
+  const handleResetBbRows = () => {
+    const confirmed = window.confirm('모든 Backbone 데이터를 지우시겠습니까?');
+    if (!confirmed) return;
+
+    setBbRows([]);
+    setMappedJayerRowIds(new Set());
+    setIsBbSorted(false);
+    addToast('Backbone 데이터가 초기화되었습니다.', 'info');
+  };
+
+  const handleSortBbRows = () => {
+    setBbRows(prev => {
+      const sorted = [...prev].sort((a, b) =>
+        a.ss.localeCompare(b.ss, undefined, { numeric: true })
+      );
+      setIsBbSorted(true);
+      return sorted;
+    });
+  };
+
+  // ===== Validation =====
+  const validate = (currentStep: number): { valid: boolean; errors: string[] } => {
+    const newErrors: Partial<Record<string, string>> = {};
+    const errorMessages: string[] = [];
+
+    if (currentStep === 1) {
+      DETAIL_REQUIRED.forEach((field) => {
+        const val = detail[field] as string;
+        if (!val?.trim()) {
+          newErrors[field] = t('request.required');
+          errorMessages.push(`${field}: 필수 입력 항목입니다.`);
+        }
+      });
+      if (detail.map_change === '변경 있음') {
+        if (!detail.map_value_x?.trim()) {
+          newErrors['map_value_x'] = t('request.required');
+          errorMessages.push('MAP 변경 X: 필수 입력 항목입니다.');
+        }
+        if (!detail.map_value_y?.trim()) {
+          newErrors['map_value_y'] = t('request.required');
+          errorMessages.push('MAP 변경 Y: 필수 입력 항목입니다.');
+        }
+        if (!detail.map_reason?.trim()) {
+          newErrors['map_reason'] = t('request.required');
+          errorMessages.push('MAP 변경 사유: 필수 입력 항목입니다.');
+        }
+      }
+      const filledBb = detail.bb_entries.filter(
+        (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
+      );
+      if (filledBb.length === 0) {
+        newErrors['bb_entries'] = t('request.required');
+        errorMessages.push('Backbone 조합 영역: 최소 1개 이상 입력해야 합니다.');
+      }
+    }
+
+    if (currentStep === 2) {
+      // TODO: J-ayer 행 검증 로직 추가
+    }
+
+    if (currentStep === 3) {
+      // TODO: O-ayer 행 검증 로직 추가
+    }
+
+    if (currentStep === 4) {
+      const unmappedJayerRows = jayerRows.filter(
+        (row) => row.process_id && !mappedJayerRowIds.has(row.id)
+      );
+      if (unmappedJayerRows.length > 0) {
+        newErrors['jayer_mapping'] = '모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.';
+        errorMessages.push('모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.');
+      }
+    }
+
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return { valid: Object.keys(newErrors).length === 0, errors: errorMessages };
   };
 
   // ===== API =====
-  const buildEnrichedForm = (note?: string): CreateDocumentInput => {
+  const buildEnrichedForm = (note?: string, shouldAddHistory = false): CreateDocumentInput => {
     const title = `${detail.line}(${detail.request_purpose})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서`;
 
-    // 재상신 모드일 때 이전 스냅샷을 history에 누적
+    // 반려된 문서 재상신 시 이전 스냅샷을 history 에 누적
     let history: HistorySnapshot[] = [];
-    if (isEditMode && prevParsedRef.current) {
+    if (shouldAddHistory && prevParsedRef.current) {
       const prev = prevParsedRef.current;
       history = [
         ...prev.history,
@@ -803,9 +1231,13 @@ const isProdc = detail.only_prodc === 'Yes';
   };
 
   const handleNextStep = () => {
-    if (step === 1 && !validate()) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
+    if (step === 1) {
+      const result = validate(step);
+      if (!result.valid) {
+        result.errors.forEach(msg => addToast(msg, 'error'));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
     }
     setStep((s) => s + 1);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -817,7 +1249,9 @@ const isProdc = detail.only_prodc === 'Yes';
   };
 
   const handleSubmitClick = () => {
-    if (!validate()) {
+    const result = validate(4);
+    if (!result.valid) {
+      result.errors.forEach(msg => addToast(msg, 'error'));
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -827,8 +1261,9 @@ const isProdc = detail.only_prodc === 'Yes';
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      const enriched = buildEnrichedForm(submitNote);
       let docId = savedId;
+
+      const enriched = buildEnrichedForm(submitNote, false);
       if (!docId) {
         const res = await documentsAPI.create(enriched);
         docId = res.data.id;
@@ -837,9 +1272,13 @@ const isProdc = detail.only_prodc === 'Yes';
         await documentsAPI.update(docId, enriched);
       }
 
-      if (isEditMode && docId) {
-        // 반려 후 재상신: resubmit 호출
-        await documentsAPI.resubmit(docId);
+      const doc = await documentsAPI.get(docId!);
+      const isRejected = doc.data.status === 'rejected';
+
+      if (isRejected) {
+        const enrichedWithHistory = buildEnrichedForm(submitNote, true);
+        await documentsAPI.update(docId!, enrichedWithHistory);
+        await documentsAPI.resubmit(docId!);
         addToast('재상신되었습니다.', 'success');
       } else {
         const submitRes = await documentsAPI.submit(docId!);
@@ -849,8 +1288,9 @@ const isProdc = detail.only_prodc === 'Yes';
         }
       }
       setTimeout(() => navigate('/approval'), 1500);
-    } catch {
-      addToast(t('common.error'), 'error');
+    } catch (err) {
+      console.error('상신 오류:', err);
+      addToast(`오류 발생: ${err instanceof Error ? err.message : '알 수 없는 오류'}`, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -881,7 +1321,7 @@ const isProdc = detail.only_prodc === 'Yes';
           {errors.request_purpose && <span className="form-error">{errors.request_purpose}</span>}
         </div>
 
-        {/* 복사 선택 시 sub-fields */}
+        {/* 차용 선택 시 sub-fields */}
         {isCopy && (
           <div className="form-group full-width">
             <div className="conditional-group">
@@ -899,7 +1339,7 @@ const isProdc = detail.only_prodc === 'Yes';
                   label={t('request.source_line')}
                   name="source_line"
                   value={detail.source_line}
-                  options={OPTION_SOURCE_LINE}
+                  options={lineOptions}
                   onChange={handleDetailChange}
                   placeholder={t('request.select_placeholder')}
                   className="flex-col"
@@ -907,8 +1347,13 @@ const isProdc = detail.only_prodc === 'Yes';
                 <AutocompleteInput
                   label={t('request.source_partid_selection')}
                   value={detail.source_partid}
-                  options={OPTION_SOURCE_PARTID}
-                  onChange={(v) => handleDetailSet('source_partid', v)}
+                  options={sourcePartIdOptions}
+                  onChange={(v) => {
+                    handleDetailSet('source_partid', v);
+                    if (v) {
+                      loadSourceDocumentData(v);
+                    }
+                  }}
                   style={{ flex: 1 }}
                 />
               </div>
@@ -916,56 +1361,55 @@ const isProdc = detail.only_prodc === 'Yes';
               {/* 흐름도 */}
               <div className="form-group">
                 <label className="form-label">{t('request.flow_chart')}</label>
-                <div className="flow-table flow-table-wrapper">
-                  <div className="flow-table-header flow-table-row">
-                    <div className="flow-table-cell header-cell">{t('request.flow_line')}</div>
-                    <div className="flow-table-cell header-cell">{t('request.flow_partid')}</div>
-                    <div className="flow-table-cell header-cell">{t('request.flow_progress_layer')}</div>
-                    <div className="flow-table-cell header-cell"></div>
-                  </div>
-                  {detail.flow_chart.map((row) => (
-                    <div key={row.id} className="flow-table-row">
-                      <div className="flow-table-cell">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {detail.flow_chart.map((row, idx) => (
+                    <div key={row.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                      <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                        <label className="form-label">{t('request.flow_line')}</label>
                         <select
+                          className="form-control"
                           value={row.location}
                           onChange={(e) => handleFlowChange(row.id, 'location', e.target.value)}
                         >
-                          <option value="">위치 선택</option>
-                          <option value="위치A">위치A</option>
-                          <option value="위치B">위치B</option>
-                          <option value="위치C">위치C</option>
+                          <option value="">{t('request.select_placeholder')}</option>
+                          {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                         </select>
                       </div>
-                      <div className="flow-table-cell">
-                        <input
+                      <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                        <label className="form-label">{t('request.flow_partid')}</label>
+                        <AutocompleteInput
                           value={row.product_name}
-                          onChange={(e) => handleFlowChange(row.id, 'product_name', e.target.value)}
-                          placeholder="제품 이름"
+                          onChange={(v) => handleFlowChange(row.id, 'product_name', v)}
+                          options={FlowProductOptions[idx] || []}
+                          placeholder={t('request.select_placeholder')}
+                          style={{ width: '100%' }}
                         />
                       </div>
-                      <div className="flow-table-cell">
+                      <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                        <label className="form-label">{t('request.flow_progress_layer')}</label>
                         <input
+                          className="form-control"
                           value={row.step}
                           onChange={(e) => handleFlowChange(row.id, 'step', e.target.value)}
-                          placeholder="Step"
+                          placeholder="ex) 1.0 ~ 15.0"
                         />
                       </div>
-                      <div className="flow-table-cell">
+                      {detail.flow_chart.length > 1 && (
                         <button
                           type="button"
-                          className="flow-delete-btn"
+                          className="btn btn-danger"
+                          style={{ padding: '6px 10px', marginBottom: '2px' }}
                           onClick={() => handleFlowDeleteRow(row.id)}
-                          disabled={detail.flow_chart.length <= 1}
                         >
-                          ✕
+                          {t('request.bb_delete')}
                         </button>
-                      </div>
+                      )}
                     </div>
                   ))}
+                  <button type="button" className="btn btn-secondary" onClick={handleFlowAddRow}>
+                    + {t('request.flow_add_row')}
+                  </button>
                 </div>
-                <button type="button" className="flow-table-add-btn" onClick={handleFlowAddRow}>
-                  {t('request.flow_add_row')}
-                </button>
               </div>
 
               <div className="form-group">
@@ -1084,16 +1528,19 @@ const isProdc = detail.only_prodc === 'Yes';
                     onChange={(e) => handleBbEntryChange(idx, 'location', e.target.value)}
                   >
                     <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_BB_LOCATION.map((o) => <option key={o} value={o}>{o}</option>)}
+                    {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
-                <AutocompleteInput
-                  label={t('request.bb_ref_part_id')}
-                  value={entry.product}
-                  options={OPTION_BB_PRODUCT}
-                  onChange={(v) => handleBbEntryChange(idx, 'product', v)}
-                  style={{ flex: 1 }}
-                />
+                <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                  <label className="form-label">{t('request.bb_ref_part_id')}</label>
+                  <AutocompleteInput
+                    value={entry.product}
+                    onChange={(v) => handleBbEntryChange(idx, 'product', v)}
+                    options={BbProductOptions[idx] || []}
+                    placeholder={t('request.select_placeholder')}
+                    style={{ width: '100%' }}
+                  />
+                </div>
                 <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                   <label className="form-label">{t('request.bb_ref_process_id')}</label>
                   <select
@@ -1102,7 +1549,7 @@ const isProdc = detail.only_prodc === 'Yes';
                     onChange={(e) => handleBbEntryChange(idx, 'process_id', e.target.value)}
                   >
                     <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_BB_PROCESS_ID.map((o) => <option key={o} value={o}>{o}</option>)}
+                    {(BbProductidOptions[idx] || []).map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
                 {detail.bb_entries.length > 1 && (
@@ -1158,13 +1605,45 @@ const isProdc = detail.only_prodc === 'Yes';
           {mshotEditAddMode && (
             <div className="form-group" style={{ width: '50%', marginTop: '8px' }}>
               <label className="form-label">{t('request.mshot_change_image_attach_area')}</label>
-              <textarea
-                className="form-control"
-                name="mshot_image_copy"
-                value={detail.mshot_image_copy}
-                onChange={handleDetailChange}
-                style={{ aspectRatio: '1 / 1', resize: 'none' }}
-              />
+              <div
+                className="image-upload-area"
+                style={{
+                  border: '2px dashed #ccc',
+                  borderRadius: '8px',
+                  padding: '20px',
+                  textAlign: 'center',
+                  minHeight: '100px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#f9f9f9'
+                }}
+                onPaste={handleImagePaste}
+              >
+                {detail.mshot_image_copy ? (
+                  <div style={{ width: '100%' }}>
+                    <img
+                      src={`/media/${detail.mshot_image_copy}`}
+                      alt="attached"
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '300px',
+                        borderRadius: '4px',
+                        border: '1px solid #ddd'
+                      }}
+                    />
+                    <p style={{ margin: '8px 0 0 0', color: '#666', fontSize: '13px' }}>
+                      이미지가 첨부되었습니다. Ctrl+V 로 다시 붙여넣으면 변경됩니다.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ fontSize: '36px', marginBottom: '8px' }}>📋</div>
+                    <p style={{ margin: '0', color: '#666' }}>Ctrl+V 로 이미지를 붙여넣으세요</p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -1222,13 +1701,6 @@ const isProdc = detail.only_prodc === 'Yes';
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
           </div>
-          <div className="form-group flex-col">
-            <label className="form-label">{t('request.e_lps')}</label>
-            <select className="form-control" name="e_lps" value={detail.e_lps} onChange={handleDetailChange}>
-              <option value="아니오">{t('request.no')}</option>
-              <option value="예">{t('request.yes')}</option>
-            </select>
-          </div>
         </div>
 
       </div>
@@ -1242,19 +1714,39 @@ const isProdc = detail.only_prodc === 'Yes';
       <div className="wizard-table-toolbar">
         <div className="wizard-table-toolbar-group">
           <span className="wizard-table-toolbar-label">{t('request.col_st')}:</span>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'O')}>모두 O</button>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'X')}>모두 X</button>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('st')}>초기화</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'O')}>{t('request.btn_all_o')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'X')}>{t('request.btn_all_x')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('st')}>{t('request.btn_reset')}</button>
         </div>
         <div className="wizard-table-toolbar-group">
           <span className="wizard-table-toolbar-label">{t('request.col_new_or_copy')}:</span>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '신규')}>모두 신규</button>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '복사')}>모두 복사</button>
-          <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('new_or_copy')}>초기화</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '신규')}>{t('request.btn_all_new')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('new_or_copy', '차용')}>{t('request.btn_all_copy')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('new_or_copy')}>{t('request.btn_reset')}</button>
+        </div>
+        <div className="wizard-table-toolbar-group" style={{ marginLeft: 'auto' }}>
+          <button type="button" className="th-header-btn" onClick={() => setJayerFilterModalOpen(true)}>비활성화 필터</button>
         </div>
       </div>
       <div className="wizard-table-wrapper">
         <table className="wizard-table">
+          <colgroup>
+            <col />
+            <col />
+            <col />
+            <col />
+            <col className="sd-column" />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col style={{ width: '32px' }} />
+          </colgroup>
           <thead>
             <tr>
               <th style={{ width: 32, textAlign: 'center' }}>
@@ -1265,17 +1757,19 @@ const isProdc = detail.only_prodc === 'Yes';
                   onChange={handleJayerCheckAll}
                 />
               </th>
-              <th style={{ minWidth: 58 }}>{t('request.process_id')}</th>
-              <th style={{ minWidth: 78 }}>{t('request.col_sp')}</th>
-              <th style={{ minWidth: 160 }}>{t('request.col_sd')}</th>
-              <th style={{ minWidth: 95 }}>{t('request.col_pp')}</th>
-              <th style={{ minWidth: 42 }}>{t('request.col_st')}</th>
-              <th style={{ minWidth: 52 }}>{t('request.col_new_or_copy')}</th>
-              <th style={{ minWidth: 75 }}>{t('request.col_product_name')}</th>
-              <th style={{ minWidth: 48 }}>{t('request.col_step')}</th>
-              <th style={{ minWidth: 90 }}>{t('request.col_item_id')}</th>
-              <th style={{ minWidth: 42 }}>{t('request.col_rev')}</th>
-              <th style={{ minWidth: 200 }}>{t('request.col_drawing_version')}</th>
+              <th style={{ width: 'auto' }}>Update 날짜</th>
+              <th style={{ width: 'auto' }}>{t('request.process_id')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_sp')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_sd')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_layer')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_pp')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_st')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_new_or_copy')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_product_name')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_step')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_item_id')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_rev')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_drawing_version')}</th>
             </tr>
           </thead>
           <tbody>
@@ -1287,20 +1781,24 @@ const isProdc = detail.only_prodc === 'Yes';
               return (
                 <>
                   {isFirstDisabled && (
-                    <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={12} /></tr>
+                    <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={15} /></tr>
                   )}
-                  <tr key={row.id} className={[row.disabled ? 'row-disabled' : '', jayerChecked.has(row.id) ? 'row-checked' : ''].filter(Boolean).join(' ')}>
+                  <tr key={row.id} className={[row.disabled ? 'row-disabled' : '', jayerChecked.has(row.id) ? 'row-checked' : '', mappedJayerRowIds.has(row.id) ? 'row-mapped' : ''].filter(Boolean).join(' ')}>
                     <td style={{ textAlign: 'center' }}>
                       <input type="checkbox" checked={jayerChecked.has(row.id)} onChange={() => handleJayerCheckToggle(row.id)} />
                     </td>
+                    <td><input value={row.updated ?? ''} readOnly style={{ background: '#f5f5f5', color: '#666' }} /></td>
                     <td><input value={row.process_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'process_id', e.target.value)} /></td>
                     <td><input value={row.sp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} /></td>
                     <td><input value={row.sd} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} /></td>
-                    <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} /></td>
+                    <td><input value={row.layerid ?? ''} disabled={detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} /></td>
+                    <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
                     <td>
                       <select value={row.st} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'st', e.target.value)}>
                         <option value=""></option>
                         <option value="O">O</option>
+                        <option value="O (D)">O (D)</option>
+                        <option value="O (혼용)">O (혼용)</option>
                         <option value="X">X</option>
                       </select>
                     </td>
@@ -1308,14 +1806,14 @@ const isProdc = detail.only_prodc === 'Yes';
                       <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)}>
                         <option value=""></option>
                         <option value="신규">신규</option>
-                        <option value="복사">복사</option>
+                        <option value="차용">차용</option>
                       </select>
                     </td>
-                    <td><input value={row.product_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} /></td>
+                    <td><input value={row.product_name} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} /></td>
                     <td><input value={row.step} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} /></td>
-                    <td><input value={row.item_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} /></td>
-                    <td><input value={row.rev} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'rev', e.target.value)} /></td>
-                    <td><input value={row.drawing_version} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'drawing_version', e.target.value)} /></td>
+                    <td><input value={row.item_id} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} /></td>
+                    <td><input value={row.rev} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'rev', e.target.value)} /></td>
+                    <td><input value={row.drawing_version} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'drawing_version', e.target.value)} /></td>
                   </tr>
                 </>
               );
@@ -1342,8 +1840,40 @@ const isProdc = detail.only_prodc === 'Yes';
   const renderStep3 = () => (
     <div className="form-section">
       <div className="form-section-title">🔶 {t('request.ovl_li')}</div>
+      {/* 일괄 설정 툴바 */}
+      <div className="wizard-table-toolbar">
+        <div className="wizard-table-toolbar-group">
+          <span className="wizard-table-toolbar-label">{t('request.col_st')}:</span>
+          <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('st', 'O')}>{t('request.btn_all_o')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('st', 'X')}>{t('request.btn_all_x')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleOayerResetField('st')}>{t('request.btn_reset')}</button>
+        </div>
+        <div className="wizard-table-toolbar-group">
+          <span className="wizard-table-toolbar-label">{t('request.col_new_or_copy')}:</span>
+          <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('new_or_copy', '신규')}>{t('request.btn_all_new')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('new_or_copy', '차용')}>{t('request.btn_all_copy')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleOayerResetField('new_or_copy')}>{t('request.btn_reset')}</button>
+        </div>
+        <div className="wizard-table-toolbar-group" style={{ marginLeft: 'auto' }}>
+          <button type="button" className="th-header-btn" onClick={() => setOayerFilterModalOpen(true)}>비활성화 필터</button>
+        </div>
+      </div>
       <div className="wizard-table-wrapper">
         <table className="wizard-table">
+          <colgroup>
+            <col />
+            <col />
+            <col />
+            <col />
+            <col className="sd-column" />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col style={{ width: '40px' }} />
+          </colgroup>
           <thead>
             <tr>
               <th style={{ width: 32, textAlign: 'center' }}>
@@ -1354,29 +1884,16 @@ const isProdc = detail.only_prodc === 'Yes';
                   onChange={handleOayerCheckAll}
                 />
               </th>
-              <th style={{ minWidth: 90 }}>조리법</th>
-              <th style={{ minWidth: 60 }}>SP</th>
-              <th style={{ minWidth: 60 }}>SD</th>
-              <th style={{ minWidth: 60 }}>PP</th>
-              <th style={{ minWidth: 90 }}>
-                ST
-                <div className="th-header-btns">
-                  <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('st', 'O')}>모두O</button>
-                  <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('st', 'X')}>모두X</button>
-                  <button type="button" className="th-header-btn" onClick={() => handleOayerResetField('st')}>초기화</button>
-                </div>
-              </th>
-              <th style={{ minWidth: 110 }}>
-                신규/복사
-                <div className="th-header-btns">
-                  <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('new_or_copy', '신규')}>모두 신규</button>
-                  <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('new_or_copy', '복사')}>모두 복사</button>
-                  <button type="button" className="th-header-btn" onClick={() => handleOayerResetField('new_or_copy')}>초기화</button>
-                </div>
-              </th>
-              <th style={{ minWidth: 110 }}>제품 이름</th>
-              <th style={{ minWidth: 70 }}>STEP</th>
-              <th style={{ minWidth: 70 }}>TT</th>
+              <th style={{ width: 'auto' }}>Update 날짜</th>
+              <th style={{ width: 'auto' }}>{t('request.process_id')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_sp')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_sd')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_pp')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_st')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_new_or_copy')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_product_name')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_step')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_tt')}</th>
             </tr>
           </thead>
           <tbody>
@@ -1394,14 +1911,17 @@ const isProdc = detail.only_prodc === 'Yes';
                     <td style={{ textAlign: 'center' }}>
                       <input type="checkbox" checked={oayerChecked.has(row.id)} onChange={() => handleOayerCheckToggle(row.id)} />
                     </td>
+                    <td><input value={row.updated ?? ''} readOnly style={{ background: '#f5f5f5', color: '#666' }} /></td>
                     <td><input value={row.process_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} /></td>
                     <td><input value={row.sp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'sp', e.target.value)} /></td>
                     <td><input value={row.sd} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} /></td>
-                    <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} /></td>
+                    <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
                     <td>
                       <select value={row.st} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'st', e.target.value)}>
                         <option value=""></option>
                         <option value="O">O</option>
+                        <option value="O (D)">O (D)</option>
+                        <option value="O (혼용)">O (혼용)</option>
                         <option value="X">X</option>
                       </select>
                     </td>
@@ -1409,11 +1929,11 @@ const isProdc = detail.only_prodc === 'Yes';
                       <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)}>
                         <option value=""></option>
                         <option value="신규">신규</option>
-                        <option value="복사">복사</option>
+                        <option value="차용">차용</option>
                       </select>
                     </td>
-                    <td><input value={row.product_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} /></td>
-                    <td><input value={row.step} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} /></td>
+                    <td><input value={row.product_name} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} /></td>
+                    <td><input value={row.step} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} /></td>
                     <td><input value={row.tt} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'tt', e.target.value)} /></td>
                   </tr>
                 </>
@@ -1439,68 +1959,210 @@ const isProdc = detail.only_prodc === 'Yes';
   );
 
   const renderStep4 = () => {
-    const currentTabData = bbExternalData[activeBbTab] ?? [];
+    const currentTabPhotoSteps = bbExternalData[activeBbTab] ?? [];
     const currentEntry = detail.bb_entries[activeBbTab];
+    const currentTabData: ExternalBbDataItem[] = currentTabPhotoSteps.map((step, idx) => ({
+      id: `photo-${activeBbTab}-${idx}`,
+      bb_process_id: step.processid,
+      bb_name: currentEntry?.product || '',
+      bb_step: step.descript,
+      bb_ss: step.stepseq,
+      layerid: step.layerid,
+    }));
+
+    const currentSearchQuery = bbSearchQueries[activeBbTab] || '';
+    const filteredTabData = currentSearchQuery
+      ? currentTabData.filter(item =>
+          item.bb_process_id.toLowerCase().includes(currentSearchQuery.toLowerCase()) ||
+          item.bb_name.toLowerCase().includes(currentSearchQuery.toLowerCase()) ||
+          item.bb_ss.toLowerCase().includes(currentSearchQuery.toLowerCase()) ||
+          item.bb_step.toLowerCase().includes(currentSearchQuery.toLowerCase()) ||
+          (item.layerid || '').toLowerCase().includes(currentSearchQuery.toLowerCase())
+        )
+      : currentTabData;
     const stagedCount = Object.keys(stagedMappings).length;
 
     return (
       <div className="form-section">
-        <div className="form-section-title">🦴 {t('request.bb_li')}</div>
+        <div className="form-section-title"><span style={{ color: '#4CAF50' }}>🔷</span> {t('request.bb_li')}</div>
+
+        {/* 자동 채움 버튼 */}
+        <div style={{ marginBottom: 12 }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleOpenAutoFillPanel}
+            disabled={bbExternalData.length === 0 || bbExternalData.every(tab => tab.length === 0)}
+          >
+            📋 Backbone 자동 채움
+          </button>
+          {bbExternalData.length > 0 && (
+            <span style={{ marginLeft: 12, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              {bbExternalData.reduce((sum, tab) => sum + tab.length, 0)}행 조회됨
+            </span>
+          )}
+        </div>
+
+        {/* 자동 채움 패널 */}
+        {showAutoFillPanel && (
+          <div style={{
+            marginBottom: 16,
+            padding: 16,
+            background: 'var(--bg-secondary)',
+            borderRadius: 8,
+            border: '1px solid var(--border)'
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
+              🔷 Layer 범위 설정
+            </div>
+            {bbAutoFillRanges.map((range, idx) => (
+              <div
+                key={range.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginBottom: 8,
+                  flexWrap: 'wrap'
+                }}
+              >
+                <span style={{ fontSize: 13, minWidth: 50 }}>범위 {idx + 1}:</span>
+                <select
+                  value={range.layerFrom}
+                  onChange={(e) => handleRangeChange(range.id, 'layerFrom', e.target.value)}
+                  style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
+                >
+                  <option value="">시작 Layer</option>
+                  {[...new Set(jayerRows.map(r => r.layerid).filter(Boolean))]
+                    .sort((a, b) => parseFloat(a) - parseFloat(b))
+                    .map(layerid => (
+                      <option key={layerid} value={layerid}>{layerid}</option>
+                    ))}
+                </select>
+                <span>~</span>
+                <select
+                  value={range.layerTo}
+                  onChange={(e) => handleRangeChange(range.id, 'layerTo', e.target.value)}
+                  style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
+                >
+                  <option value="">종료 Layer</option>
+                  {[...new Set(jayerRows.map(r => r.layerid).filter(Boolean))]
+                    .sort((a, b) => parseFloat(a) - parseFloat(b))
+                    .map(layerid => (
+                      <option key={layerid} value={layerid}>{layerid}</option>
+                    ))}
+                </select>
+                <select
+                  value={range.productId}
+                  onChange={(e) => handleRangeChange(range.id, 'productId', e.target.value)}
+                  style={{ padding: '4px 8px', fontSize: 13, minWidth: 120 }}
+                >
+                  {detail.bb_entries.map((entry, entryIdx) => (
+                    <option key={entryIdx} value={entry.product}>
+                      {entry.product || entry.location || `항목 ${entryIdx + 1}`}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="flow-delete-btn"
+                  onClick={() => handleRemoveRange(range.id)}
+                  style={{ width: 24, height: 24, padding: 0 }}
+                >✕</button>
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleAddRange}
+                style={{ fontSize: 13, padding: '6px 12px' }}
+              >
+                + 범위 추가
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleApplyAutoFill}
+                style={{ fontSize: 13, padding: '6px 12px' }}
+              >
+                ✔ 적용
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowAutoFillPanel(false);
+                  setBbAutoFillRanges([]);
+                }}
+                style={{ fontSize: 13, padding: '6px 12px' }}
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* 분할 패널 */}
         <div className="bb-split-panel">
-          {/* 왼쪽: J-ayer 행 목록 + 매핑 미리보기 */}
+          {/* 왼쪽: 원본 행 목록 + 매핑 미리보기 */}
           <div className="bb-split-panel-left">
             <div className="bb-split-panel-title">
-              ① J-ayer 행 선택 — 클릭하여 선택 후 오른쪽에서 데이터 지정
+              ① 원본 데이터 목록 — 행을 클릭하면 오른쪽에서 bb 데이터 매핑 가능
             </div>
             <div className="bb-split-panel-scroll">
               {jayerRows.filter(r => !r.disabled).length === 0 ? (
-                <div className="bb-split-hint">J-ayer 정보가 없습니다. Step 2를 먼저 입력하세요.</div>
+                <div className="bb-split-hint">원본 layer 정보가 없습니다. Step 2를 먼저 입력하세요.</div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>조리법</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>SP</th>
-                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>매핑된 뼈찜 데이터</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>공법</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>STEPSEQ</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>STEP 설명</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>Layer</th>
+                      <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>Backbone Data</th>
                       <th style={{ padding: '6px 8px', background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, width: 28 }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {jayerRows.filter(r => !r.disabled).sort((a, b) => a.sortOrder - b.sortOrder).map((row) => {
-                      const staged = stagedMappings[row.id];
-                      const isSelected = selectedJayerRowId === row.id;
-                      return (
-                        <tr
-                          key={row.id}
-                          className={isSelected ? 'bb-jayer-selected' : ''}
-                          onClick={() => setSelectedJayerRowId(row.id)}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.process_id || '—'}</td>
-                          <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.sp || '—'}</td>
-                          <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>
-                            {staged ? (
-                              <span className="bb-staged-badge">{staged.bb_name} ({staged.bb_step})</span>
-                            ) : (
-                              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>미지정</span>
-                            )}
-                          </td>
-                          <td style={{ padding: '4px 6px', borderBottom: '1px solid var(--border-light)', textAlign: 'center' }}>
-                            {staged && (
-                              <button
-                                type="button"
-                                className="flow-delete-btn"
-                                style={{ width: 20, height: 20, fontSize: 11 }}
-                                onClick={(e) => { e.stopPropagation(); handleClearStaging(row.id); }}
-                                title="매핑 취소"
-                              >✕</button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {jayerRows
+                      .filter((row) => !mappedJayerRowIds.has(row.id))
+                      .filter(r => !r.disabled).sort((a, b) => a.sortOrder - b.sortOrder).map((row) => {
+                        const staged = stagedMappings[row.id];
+                        const isSelected = selectedJayerRowId === row.id;
+                        return (
+                          <tr
+                            key={row.id}
+                            className={isSelected ? 'bb-jayer-selected' : ''}
+                            onClick={() => setSelectedJayerRowId(row.id)}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.process_id || '—'}</td>
+                            <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.sp || '—'}</td>
+                            <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.sd || '—'}</td>
+                            <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>{row.layerid || '—'}</td>
+                            <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border-light)' }}>
+                              {staged ? (
+                                <span className="bb-staged-badge">{staged.bb_process_id} / {staged.bb_step}</span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>미선택</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '4px 6px', borderBottom: '1px solid var(--border-light)', textAlign: 'center' }}>
+                              {staged && (
+                                <button
+                                  type="button"
+                                  className="flow-delete-btn"
+                                  style={{ width: 20, height: 20, fontSize: 11 }}
+                                  onClick={(e) => { e.stopPropagation(); handleClearStaging(row.id); }}
+                                  title="매핑 취소"
+                                >✕</button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               )}
@@ -1525,47 +2187,65 @@ const isProdc = detail.only_prodc === 'Yes';
               ))}
             </div>
             <div className="bb-split-panel-scroll">
-              {!selectedJayerRowId ? (
-                <div className="bb-split-hint">← 먼저 왼쪽에서 J-ayer 행을 선택하세요.</div>
-              ) : bbExternalLoading ? (
+              {bbExternalLoading ? (
                 <div className="bb-split-loading">데이터 로드 중...</div>
               ) : currentTabData.length === 0 ? (
                 <div className="bb-split-hint">
                   {currentEntry?.process_id
-                    ? '해당 조리법에 대한 외부 데이터가 없습니다.'
+                    ? '해당 bb 에 대한 데이터가 없습니다.'
                     : 'Step 1에서 뼈찜 조합 조리법을 먼저 선택하세요.'}
                 </div>
               ) : (
-                <table className="bb-external-table">
-                  <thead>
-                    <tr>
-                      <th>뼈찜 조리법</th>
-                      <th>뼈찜 이름</th>
-                      <th>STEP</th>
-                      <th>뼈찜 SS</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {currentTabData.map((item) => {
-                      const isStaged = selectedJayerRowId
-                        ? stagedMappings[selectedJayerRowId]?.id === item.id
-                        : false;
-                      return (
-                        <tr
-                          key={item.id}
-                          className={`bb-external-row${isStaged ? ' bb-external-staged' : ''}`}
-                          onClick={() => handleStageMapping(item)}
-                          title="클릭하면 선택된 J-ayer 행에 지정됩니다"
-                        >
-                          <td>{item.bb_process_id}</td>
-                          <td>{item.bb_name}</td>
-                          <td>{item.bb_step}</td>
-                          <td>{item.bb_ss}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <>
+                  <input
+                    type="text"
+                    placeholder="검색어 입력"
+                    value={bbSearchQueries[activeBbTab] || ''}
+                    onChange={(e) => {
+                      const newQueries = [...bbSearchQueries];
+                      newQueries[activeBbTab] = e.target.value;
+                      setBbSearchQueries(newQueries);
+                    }}
+                    style={{ marginBottom: 8, padding: '6px 10px', width: '100%', boxSizing: 'border-box' }}
+                  />
+                  {currentSearchQuery && (
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+                      검색 결과: {filteredTabData.length}건
+                    </div>
+                  )}
+                  <table className="bb-external-table">
+                    <thead>
+                      <tr>
+                        <th>Ref.공법</th>
+                        <th>Ref.PART ID</th>
+                        <th>Ref.SEQ</th>
+                        <th>설명</th>
+                        <th>Layer</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredTabData.map((item) => {
+                        const isStaged = selectedJayerRowId
+                          ? stagedMappings[selectedJayerRowId]?.id === item.id
+                          : false;
+                        return (
+                          <tr
+                            key={item.id}
+                            className={`bb-external-row${isStaged ? ' bb-external-staged' : ''}`}
+                            onClick={() => handleStageMapping(item)}
+                            title="클릭하면 선택된 원본 layer 에 지정됩니다"
+                          >
+                            <td>{item.bb_process_id}</td>
+                            <td>{item.bb_name}</td>
+                            <td>{item.bb_ss}</td>
+                            <td>{item.bb_step}</td>
+                            <td>{item.layerid || '—'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </>
               )}
             </div>
           </div>
@@ -1575,8 +2255,8 @@ const isProdc = detail.only_prodc === 'Yes';
         <div className="bb-apply-row">
           <span className="bb-apply-hint">
             {stagedCount > 0
-              ? `${stagedCount}개 행이 매핑됨 — 적용 버튼을 눌러 뼈찜 정보에 반영하세요.`
-              : 'J-ayer 행을 선택하고 외부 데이터를 지정한 뒤 적용하세요.'}
+              ? `${stagedCount}개 행이 매핑됨 — 적용 버튼을 눌러 bb 정보에 반영하세요.`
+              : '왼쪽에서 원본 layer 를 선택하고 오른쪽에서 bb 데이터를 클릭하여 매핑하세요.'}
           </span>
           <button
             type="button"
@@ -1588,10 +2268,18 @@ const isProdc = detail.only_prodc === 'Yes';
           </button>
         </div>
 
-        {/* 뼈찜 정보 테이블 (적용 후 채워짐) */}
+        {/* bb 정보 테이블 (적용 후 채워짐) */}
         <div className="bb-selected-section">
-          <div className="form-section-title" style={{ fontSize: 14, marginBottom: 8 }}>
-            뼈찜 정보 (적용 결과)
+          <div className="form-section-title" style={{ fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#4CAF50' }}>
+            <span>bb 정보 (적용 결과)</span>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleResetBbRows}
+              style={{ fontSize: 13, padding: '6px 12px' }}
+            >
+              🗑️ 초기화
+            </button>
           </div>
           <div className="wizard-table-wrapper">
             <table className="wizard-table">
@@ -1605,15 +2293,21 @@ const isProdc = detail.only_prodc === 'Yes';
                       onChange={handleBbCheckAll}
                     />
                   </th>
-                  <th style={{ minWidth: 40 }}>No</th>
-                  <th style={{ minWidth: 90 }}>조리법</th>
-                  <th style={{ minWidth: 60 }}>SS</th>
-                  <th style={{ minWidth: 60 }}>SD</th>
-                  <th style={{ minWidth: 90 }}>뼈찜 조리법</th>
-                  <th style={{ minWidth: 90 }}>뼈찜 이름</th>
-                  <th style={{ minWidth: 80 }}>뼈찜 STEP</th>
-                  <th style={{ minWidth: 70 }}>뼈찜 SS</th>
-                  <th style={{ minWidth: 90 }}>비고</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_no')}</th>
+                  <th style={{ width: 'auto' }}>{t('request.process_id')}</th>
+                  <th
+                    style={{ width: 'auto', cursor: 'pointer', userSelect: 'none' }}
+                    onClick={handleSortBbRows}
+                    title="클릭하여 SEQ 기준 오름차순 정렬"
+                  >
+                    {t('request.col_sp')} 🔼
+                  </th>
+                  <th style={{ width: 'auto' }}>{t('request.col_sd')}</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_bb_process_id')}</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_bb_partid')}</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_bb_layer')}</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_bb_stepseq')}</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_remark')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1642,13 +2336,8 @@ const isProdc = detail.only_prodc === 'Yes';
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
-                onClick={() => setDeleteConfirm({ message: `${bbChecked.size}개 항목을 삭제하시겠습니까?`, onConfirm: handleBbBulkDelete })}
-              >선택 삭제 ({bbChecked.size})</button>
-            )}
-            {bbDeleted.length > 0 && (
-              <button type="button" className="btn btn-secondary btn-sm" onClick={handleBbRestore}>
-                복원 ({bbDeleted.length}개)
-              </button>
+                onClick={() => setDeleteConfirm({ message: `${bbChecked.size}개 항목을 원복하시겠습니까?`, onConfirm: handleBbBulkDelete })}
+              >선택 원복 ({bbChecked.size})</button>
             )}
           </div>
         </div>
@@ -1715,6 +2404,480 @@ const isProdc = detail.only_prodc === 'Yes';
           </div>
         </div>
       )}
+
+      {/* J-ayer 비활성화 필터 모달 */}
+      <Modal
+        isOpen={jayerFilterModalOpen}
+        onClose={() => setJayerFilterModalOpen(false)}
+        title="J-ayer 비활성화 필터"
+        size="lg"
+        style={{ width: 'fit-content', maxWidth: '90%' }}
+        footer={
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setJayerFilterWords({ sp: [], sd: [], pp: [] });
+                localStorage.removeItem('jayerFilterWords');
+                addToast('모든 필터가 초기화되었습니다.', 'info');
+              }}
+            >
+              전체 초기화
+            </button>
+            <button className="btn btn-secondary" onClick={() => setJayerFilterModalOpen(false)}>
+              취소
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                localStorage.setItem('jayerFilterWords', JSON.stringify(jayerFilterWords));
+                setJayerRows((rows) =>
+                  rows.map((r) => ({
+                    ...r,
+                    disabled: r.disabled || shouldDisableRow(jayerFilterWords, r),
+                  }))
+                );
+                setJayerFilterModalOpen(false);
+                addToast('비활성화 필터가 저장되었습니다.', 'success');
+              }}
+            >
+              저장
+            </button>
+          </>
+        }
+      >
+        <div style={{ fontSize: '13px' }}>
+          {/* STEPSEQ */}
+          <div style={{ marginBottom: '10px' }}>
+            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#1976d2' }}>🔵 STEPSEQ</div>
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="키워드 입력"
+                style={{ fontSize: '13px', padding: '6px 10px', width: '700px', flexShrink: 0 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const value = e.currentTarget.value.trim();
+                    if (value) {
+                      if (jayerFilterWords.sp.includes(value)) {
+                        addToast('중복된 키워드입니다.', 'info');
+                      } else {
+                        setJayerFilterWords((prev) => ({ ...prev, sp: [...prev.sp, value] }));
+                        e.currentTarget.value = '';
+                      }
+                    }
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
+                onClick={(e) => {
+                  const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
+                  const value = input.value.trim();
+                  if (value) {
+                    if (jayerFilterWords.sp.includes(value)) {
+                      addToast('중복된 키워드입니다.', 'info');
+                    } else {
+                      setJayerFilterWords((prev) => ({ ...prev, sp: [...prev.sp, value] }));
+                      input.value = '';
+                    }
+                  }
+                }}
+              >
+                + 추가
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
+              {jayerFilterWords.sp.length > 0 ? (
+                jayerFilterWords.sp.map((keyword, idx) => (
+                  <span
+                    key={idx}
+                    style={{ display: 'inline-flex', alignItems: 'center', background: '#e3f2fd', padding: '2px 6px', borderRadius: '3px', fontSize: '13px' }}
+                  >
+                    {keyword}
+                    <button
+                      type="button"
+                      style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }}
+                      onClick={() => setJayerFilterWords((prev) => ({ ...prev, sp: prev.sp.filter((_, i) => i !== idx) }))}
+                    >✕</button>
+                  </span>
+                ))
+              ) : (
+                <span style={{ color: '#999', fontSize: '13px' }}>키워드를 입력해주세요</span>
+              )}
+            </div>
+          </div>
+          {/* STEP 설명 */}
+          <div style={{ marginBottom: '10px' }}>
+            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#388e3c' }}>🟢 STEP 설명</div>
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="키워드 입력"
+                style={{ fontSize: '13px', padding: '6px 10px', width: '700px', flexShrink: 0 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const value = e.currentTarget.value.trim();
+                    if (value) {
+                      if (jayerFilterWords.sd.includes(value)) {
+                        addToast('중복된 키워드입니다.', 'info');
+                      } else {
+                        setJayerFilterWords((prev) => ({ ...prev, sd: [...prev.sd, value] }));
+                        e.currentTarget.value = '';
+                      }
+                    }
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
+                onClick={(e) => {
+                  const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
+                  const value = input.value.trim();
+                  if (value) {
+                    if (jayerFilterWords.sd.includes(value)) {
+                      addToast('중복된 키워드입니다.', 'info');
+                    } else {
+                      setJayerFilterWords((prev) => ({ ...prev, sd: [...prev.sd, value] }));
+                      input.value = '';
+                    }
+                  }
+                }}
+              >
+                + 추가
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
+              {jayerFilterWords.sd.length > 0 ? (
+                jayerFilterWords.sd.map((keyword, idx) => (
+                  <span
+                    key={idx}
+                    style={{ display: 'inline-flex', alignItems: 'center', background: '#e8f5e9', padding: '2px 6px', borderRadius: '3px', fontSize: '13px' }}
+                  >
+                    {keyword}
+                    <button
+                      type="button"
+                      style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }}
+                      onClick={() => setJayerFilterWords((prev) => ({ ...prev, sd: prev.sd.filter((_, i) => i !== idx) }))}
+                    >✕</button>
+                  </span>
+                ))
+              ) : (
+                <span style={{ color: '#999', fontSize: '13px' }}>키워드를 입력해주세요</span>
+              )}
+            </div>
+          </div>
+          {/* PP */}
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#f57c00' }}>🟠 PPID</div>
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="키워드 입력"
+                style={{ fontSize: '13px', padding: '6px 10px', width: '700px', flexShrink: 0 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const value = e.currentTarget.value.trim();
+                    if (value) {
+                      if (jayerFilterWords.pp.includes(value)) {
+                        addToast('중복된 키워드입니다.', 'info');
+                      } else {
+                        setJayerFilterWords((prev) => ({ ...prev, pp: [...prev.pp, value] }));
+                        e.currentTarget.value = '';
+                      }
+                    }
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
+                onClick={(e) => {
+                  const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
+                  const value = input.value.trim();
+                  if (value) {
+                    if (jayerFilterWords.pp.includes(value)) {
+                      addToast('중복된 키워드입니다.', 'info');
+                    } else {
+                      setJayerFilterWords((prev) => ({ ...prev, pp: [...prev.pp, value] }));
+                      input.value = '';
+                    }
+                  }
+                }}
+              >
+                + 추가
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
+              {jayerFilterWords.pp.length > 0 ? (
+                jayerFilterWords.pp.map((keyword, idx) => (
+                  <span
+                    key={idx}
+                    style={{ display: 'inline-flex', alignItems: 'center', background: '#fff3e0', padding: '2px 6px', borderRadius: '3px', fontSize: '13px' }}
+                  >
+                    {keyword}
+                    <button
+                      type="button"
+                      style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }}
+                      onClick={() => setJayerFilterWords((prev) => ({ ...prev, pp: prev.pp.filter((_, i) => i !== idx) }))}
+                    >✕</button>
+                  </span>
+                ))
+              ) : (
+                <span style={{ color: '#999', fontSize: '13px' }}>키워드를 입력해주세요</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* OVL layer 비활성화 필터 모달 */}
+      <Modal
+        isOpen={oayerFilterModalOpen}
+        onClose={() => setOayerFilterModalOpen(false)}
+        title="OVL layer 비활성화 필터"
+        size="lg"
+        style={{ width: 'fit-content', maxWidth: '90%' }}
+        footer={
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setOayerFilterWords({ sp: [], sd: [], pp: [] });
+                localStorage.removeItem('oayerFilterWords');
+                addToast('모든 필터가 초기화되었습니다.', 'info');
+              }}
+            >
+              전체 초기화
+            </button>
+            <button className="btn btn-secondary" onClick={() => setOayerFilterModalOpen(false)}>
+              취소
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                localStorage.setItem('oayerFilterWords', JSON.stringify(oayerFilterWords));
+                setOayerRows((rows) =>
+                  rows.map((r) => ({
+                    ...r,
+                    disabled: r.disabled || shouldDisableRow(oayerFilterWords, r),
+                  }))
+                );
+                setOayerFilterModalOpen(false);
+                addToast('비활성화 필터가 저장되었습니다.', 'success');
+              }}
+            >
+              저장
+            </button>
+          </>
+        }
+      >
+        <div style={{ fontSize: '13px' }}>
+          {/* STEPSEQ */}
+          <div style={{ marginBottom: '10px' }}>
+            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#1976d2' }}>🔵 STEPSEQ</div>
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="키워드 입력"
+                style={{ fontSize: '13px', padding: '6px 10px', width: '700px', flexShrink: 0 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const value = e.currentTarget.value.trim();
+                    if (value) {
+                      if (oayerFilterWords.sp.includes(value)) {
+                        addToast('중복된 키워드입니다.', 'info');
+                      } else {
+                        setOayerFilterWords((prev) => ({ ...prev, sp: [...prev.sp, value] }));
+                        e.currentTarget.value = '';
+                      }
+                    }
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
+                onClick={(e) => {
+                  const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
+                  const value = input.value.trim();
+                  if (value) {
+                    if (oayerFilterWords.sp.includes(value)) {
+                      addToast('중복된 키워드입니다.', 'info');
+                    } else {
+                      setOayerFilterWords((prev) => ({ ...prev, sp: [...prev.sp, value] }));
+                      input.value = '';
+                    }
+                  }
+                }}
+              >
+                + 추가
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
+              {oayerFilterWords.sp.length > 0 ? (
+                oayerFilterWords.sp.map((keyword, idx) => (
+                  <span
+                    key={idx}
+                    style={{ display: 'inline-flex', alignItems: 'center', background: '#e3f2fd', padding: '2px 6px', borderRadius: '3px', fontSize: '13px' }}
+                  >
+                    {keyword}
+                    <button
+                      type="button"
+                      style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }}
+                      onClick={() => setOayerFilterWords((prev) => ({ ...prev, sp: prev.sp.filter((_, i) => i !== idx) }))}
+                    >✕</button>
+                  </span>
+                ))
+              ) : (
+                <span style={{ color: '#999', fontSize: '13px' }}>키워드를 입력해주세요</span>
+              )}
+            </div>
+          </div>
+          {/* STEP 설명 */}
+          <div style={{ marginBottom: '10px' }}>
+            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#388e3c' }}>🟢 STEP 설명</div>
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="키워드 입력"
+                style={{ fontSize: '13px', padding: '6px 10px', width: '700px', flexShrink: 0 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const value = e.currentTarget.value.trim();
+                    if (value) {
+                      if (oayerFilterWords.sd.includes(value)) {
+                        addToast('중복된 키워드입니다.', 'info');
+                      } else {
+                        setOayerFilterWords((prev) => ({ ...prev, sd: [...prev.sd, value] }));
+                        e.currentTarget.value = '';
+                      }
+                    }
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
+                onClick={(e) => {
+                  const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
+                  const value = input.value.trim();
+                  if (value) {
+                    if (oayerFilterWords.sd.includes(value)) {
+                      addToast('중복된 키워드입니다.', 'info');
+                    } else {
+                      setOayerFilterWords((prev) => ({ ...prev, sd: [...prev.sd, value] }));
+                      input.value = '';
+                    }
+                  }
+                }}
+              >
+                + 추가
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
+              {oayerFilterWords.sd.length > 0 ? (
+                oayerFilterWords.sd.map((keyword, idx) => (
+                  <span
+                    key={idx}
+                    style={{ display: 'inline-flex', alignItems: 'center', background: '#e8f5e9', padding: '2px 6px', borderRadius: '3px', fontSize: '13px' }}
+                  >
+                    {keyword}
+                    <button
+                      type="button"
+                      style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }}
+                      onClick={() => setOayerFilterWords((prev) => ({ ...prev, sd: prev.sd.filter((_, i) => i !== idx) }))}
+                    >✕</button>
+                  </span>
+                ))
+              ) : (
+                <span style={{ color: '#999', fontSize: '13px' }}>키워드를 입력해주세요</span>
+              )}
+            </div>
+          </div>
+          {/* PP */}
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#f57c00' }}>🟠 PPID</div>
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="키워드 입력"
+                style={{ fontSize: '13px', padding: '6px 10px', width: '700px', flexShrink: 0 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const value = e.currentTarget.value.trim();
+                    if (value) {
+                      if (oayerFilterWords.pp.includes(value)) {
+                        addToast('중복된 키워드입니다.', 'info');
+                      } else {
+                        setOayerFilterWords((prev) => ({ ...prev, pp: [...prev.pp, value] }));
+                        e.currentTarget.value = '';
+                      }
+                    }
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
+                onClick={(e) => {
+                  const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
+                  const value = input.value.trim();
+                  if (value) {
+                    if (oayerFilterWords.pp.includes(value)) {
+                      addToast('중복된 키워드입니다.', 'info');
+                    } else {
+                      setOayerFilterWords((prev) => ({ ...prev, pp: [...prev.pp, value] }));
+                      input.value = '';
+                    }
+                  }
+                }}
+              >
+                + 추가
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
+              {oayerFilterWords.pp.length > 0 ? (
+                oayerFilterWords.pp.map((keyword, idx) => (
+                  <span
+                    key={idx}
+                    style={{ display: 'inline-flex', alignItems: 'center', background: '#fff3e0', padding: '2px 6px', borderRadius: '3px', fontSize: '13px' }}
+                  >
+                    {keyword}
+                    <button
+                      type="button"
+                      style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }}
+                      onClick={() => setOayerFilterWords((prev) => ({ ...prev, pp: prev.pp.filter((_, i) => i !== idx) }))}
+                    >✕</button>
+                  </span>
+                ))
+              ) : (
+                <span style={{ color: '#999', fontSize: '13px' }}>키워드를 입력해주세요</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={confirmOpen}
