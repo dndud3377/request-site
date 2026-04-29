@@ -70,7 +70,7 @@ export default function LogoutPage(): React.ReactElement {
       </div>
 
       <p style={styles.footer}>
-        © 2024 Product Introduction Map Request System
+        © 2026 Product Introduction Map Request System
       </p>
     </div>
   );
