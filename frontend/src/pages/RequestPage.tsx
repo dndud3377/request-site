@@ -1117,25 +1117,61 @@ const isProdc = detail.only_prodc === 'Yes';
   };
 
   // ===== Validation =====
-  const validate = (): boolean => {
+  const validate = (currentStep: number): { valid: boolean; errors: string[] } => {
     const newErrors: Partial<Record<string, string>> = {};
-    DETAIL_REQUIRED.forEach((field) => {
-      const val = detail[field] as string;
-      if (!val?.trim()) newErrors[field] = t('request.required');
-    });
-    if (detail.map_change === '변경 있음') {
-      if (!detail.map_value_x?.trim()) newErrors['map_value_x'] = t('request.required');
-      if (!detail.map_value_y?.trim()) newErrors['map_value_y'] = t('request.required');
-      if (!detail.map_reason?.trim())  newErrors['map_reason']  = t('request.required');
+    const errorMessages: string[] = [];
+
+    if (currentStep === 1) {
+      DETAIL_REQUIRED.forEach((field) => {
+        const val = detail[field] as string;
+        if (!val?.trim()) {
+          newErrors[field] = t('request.required');
+          errorMessages.push(`${field}: 필수 입력 항목입니다.`);
+        }
+      });
+      if (detail.map_change === '변경 있음') {
+        if (!detail.map_value_x?.trim()) {
+          newErrors['map_value_x'] = t('request.required');
+          errorMessages.push('MAP 변경 X: 필수 입력 항목입니다.');
+        }
+        if (!detail.map_value_y?.trim()) {
+          newErrors['map_value_y'] = t('request.required');
+          errorMessages.push('MAP 변경 Y: 필수 입력 항목입니다.');
+        }
+        if (!detail.map_reason?.trim()) {
+          newErrors['map_reason'] = t('request.required');
+          errorMessages.push('MAP 변경 사유: 필수 입력 항목입니다.');
+        }
+      }
+      const filledBb = detail.bb_entries.filter(
+        (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
+      );
+      if (filledBb.length === 0) {
+        newErrors['bb_entries'] = t('request.required');
+        errorMessages.push('Backbone 조합 영역: 최소 1개 이상 입력해야 합니다.');
+      }
     }
-    const filledBb = detail.bb_entries.filter(
-      (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
-    );
-    if (filledBb.length === 0) {
-      newErrors['bb_entries'] = t('request.required');
+
+    if (currentStep === 2) {
+      // TODO: J-ayer 행 검증 로직 추가
     }
+
+    if (currentStep === 3) {
+      // TODO: O-ayer 행 검증 로직 추가
+    }
+
+    if (currentStep === 4) {
+      const unmappedJayerRows = jayerRows.filter(
+        (row) => row.process_id && !mappedJayerRowIds.has(row.id)
+      );
+      if (unmappedJayerRows.length > 0) {
+        newErrors['jayer_mapping'] = '모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.';
+        errorMessages.push('모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.');
+      }
+    }
+
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return { valid: Object.keys(newErrors).length === 0, errors: errorMessages };
   };
 
   // ===== API =====
