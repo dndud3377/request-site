@@ -1231,9 +1231,13 @@ const isProdc = detail.only_prodc === 'Yes';
   };
 
   const handleNextStep = () => {
-    if (step === 1 && !validate()) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
+    if (step === 1) {
+      const result = validate(step);
+      if (!result.valid) {
+        result.errors.forEach(msg => addToast(msg, 'error'));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
     }
     setStep((s) => s + 1);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1245,7 +1249,9 @@ const isProdc = detail.only_prodc === 'Yes';
   };
 
   const handleSubmitClick = () => {
-    if (!validate()) {
+    const result = validate(4);
+    if (!result.valid) {
+      result.errors.forEach(msg => addToast(msg, 'error'));
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
@@ -1255,8 +1261,9 @@ const isProdc = detail.only_prodc === 'Yes';
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      const enriched = buildEnrichedForm(submitNote);
       let docId = savedId;
+
+      const enriched = buildEnrichedForm(submitNote, false);
       if (!docId) {
         const res = await documentsAPI.create(enriched);
         docId = res.data.id;
@@ -1265,9 +1272,13 @@ const isProdc = detail.only_prodc === 'Yes';
         await documentsAPI.update(docId, enriched);
       }
 
-      if (isEditMode && docId) {
-        // 반려 후 재상신: resubmit 호출
-        await documentsAPI.resubmit(docId);
+      const doc = await documentsAPI.get(docId!);
+      const isRejected = doc.data.status === 'rejected';
+
+      if (isRejected) {
+        const enrichedWithHistory = buildEnrichedForm(submitNote, true);
+        await documentsAPI.update(docId!, enrichedWithHistory);
+        await documentsAPI.resubmit(docId!);
         addToast('재상신되었습니다.', 'success');
       } else {
         const submitRes = await documentsAPI.submit(docId!);
@@ -1277,8 +1288,9 @@ const isProdc = detail.only_prodc === 'Yes';
         }
       }
       setTimeout(() => navigate('/approval'), 1500);
-    } catch {
-      addToast(t('common.error'), 'error');
+    } catch (err) {
+      console.error('상신 오류:', err);
+      addToast(`오류 발생: ${err instanceof Error ? err.message : '알 수 없는 오류'}`, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -1309,7 +1321,7 @@ const isProdc = detail.only_prodc === 'Yes';
           {errors.request_purpose && <span className="form-error">{errors.request_purpose}</span>}
         </div>
 
-        {/* 복사 선택 시 sub-fields */}
+        {/* 차용 선택 시 sub-fields */}
         {isCopy && (
           <div className="form-group full-width">
             <div className="conditional-group">
@@ -1327,7 +1339,7 @@ const isProdc = detail.only_prodc === 'Yes';
                   label={t('request.source_line')}
                   name="source_line"
                   value={detail.source_line}
-                  options={OPTION_SOURCE_LINE}
+                  options={lineOptions}
                   onChange={handleDetailChange}
                   placeholder={t('request.select_placeholder')}
                   className="flex-col"
@@ -1335,8 +1347,13 @@ const isProdc = detail.only_prodc === 'Yes';
                 <AutocompleteInput
                   label={t('request.source_partid_selection')}
                   value={detail.source_partid}
-                  options={OPTION_SOURCE_PARTID}
-                  onChange={(v) => handleDetailSet('source_partid', v)}
+                  options={sourcePartIdOptions}
+                  onChange={(v) => {
+                    handleDetailSet('source_partid', v);
+                    if (v) {
+                      loadSourceDocumentData(v);
+                    }
+                  }}
                   style={{ flex: 1 }}
                 />
               </div>
@@ -1344,56 +1361,55 @@ const isProdc = detail.only_prodc === 'Yes';
               {/* 흐름도 */}
               <div className="form-group">
                 <label className="form-label">{t('request.flow_chart')}</label>
-                <div className="flow-table flow-table-wrapper">
-                  <div className="flow-table-header flow-table-row">
-                    <div className="flow-table-cell header-cell">{t('request.flow_line')}</div>
-                    <div className="flow-table-cell header-cell">{t('request.flow_partid')}</div>
-                    <div className="flow-table-cell header-cell">{t('request.flow_progress_layer')}</div>
-                    <div className="flow-table-cell header-cell"></div>
-                  </div>
-                  {detail.flow_chart.map((row) => (
-                    <div key={row.id} className="flow-table-row">
-                      <div className="flow-table-cell">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {detail.flow_chart.map((row, idx) => (
+                    <div key={row.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                      <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                        <label className="form-label">{t('request.flow_line')}</label>
                         <select
+                          className="form-control"
                           value={row.location}
                           onChange={(e) => handleFlowChange(row.id, 'location', e.target.value)}
                         >
-                          <option value="">위치 선택</option>
-                          <option value="위치A">위치A</option>
-                          <option value="위치B">위치B</option>
-                          <option value="위치C">위치C</option>
+                          <option value="">{t('request.select_placeholder')}</option>
+                          {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                         </select>
                       </div>
-                      <div className="flow-table-cell">
-                        <input
+                      <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                        <label className="form-label">{t('request.flow_partid')}</label>
+                        <AutocompleteInput
                           value={row.product_name}
-                          onChange={(e) => handleFlowChange(row.id, 'product_name', e.target.value)}
-                          placeholder="제품 이름"
+                          onChange={(v) => handleFlowChange(row.id, 'product_name', v)}
+                          options={FlowProductOptions[idx] || []}
+                          placeholder={t('request.select_placeholder')}
+                          style={{ width: '100%' }}
                         />
                       </div>
-                      <div className="flow-table-cell">
+                      <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                        <label className="form-label">{t('request.flow_progress_layer')}</label>
                         <input
+                          className="form-control"
                           value={row.step}
                           onChange={(e) => handleFlowChange(row.id, 'step', e.target.value)}
-                          placeholder="Step"
+                          placeholder="ex) 1.0 ~ 15.0"
                         />
                       </div>
-                      <div className="flow-table-cell">
+                      {detail.flow_chart.length > 1 && (
                         <button
                           type="button"
-                          className="flow-delete-btn"
+                          className="btn btn-danger"
+                          style={{ padding: '6px 10px', marginBottom: '2px' }}
                           onClick={() => handleFlowDeleteRow(row.id)}
-                          disabled={detail.flow_chart.length <= 1}
                         >
-                          ✕
+                          {t('request.bb_delete')}
                         </button>
-                      </div>
+                      )}
                     </div>
                   ))}
+                  <button type="button" className="btn btn-secondary" onClick={handleFlowAddRow}>
+                    + {t('request.flow_add_row')}
+                  </button>
                 </div>
-                <button type="button" className="flow-table-add-btn" onClick={handleFlowAddRow}>
-                  {t('request.flow_add_row')}
-                </button>
               </div>
 
               <div className="form-group">
@@ -1512,16 +1528,19 @@ const isProdc = detail.only_prodc === 'Yes';
                     onChange={(e) => handleBbEntryChange(idx, 'location', e.target.value)}
                   >
                     <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_BB_LOCATION.map((o) => <option key={o} value={o}>{o}</option>)}
+                    {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
-                <AutocompleteInput
-                  label={t('request.bb_ref_part_id')}
-                  value={entry.product}
-                  options={OPTION_BB_PRODUCT}
-                  onChange={(v) => handleBbEntryChange(idx, 'product', v)}
-                  style={{ flex: 1 }}
-                />
+                <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                  <label className="form-label">{t('request.bb_ref_part_id')}</label>
+                  <AutocompleteInput
+                    value={entry.product}
+                    onChange={(v) => handleBbEntryChange(idx, 'product', v)}
+                    options={BbProductOptions[idx] || []}
+                    placeholder={t('request.select_placeholder')}
+                    style={{ width: '100%' }}
+                  />
+                </div>
                 <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                   <label className="form-label">{t('request.bb_ref_process_id')}</label>
                   <select
@@ -1530,7 +1549,7 @@ const isProdc = detail.only_prodc === 'Yes';
                     onChange={(e) => handleBbEntryChange(idx, 'process_id', e.target.value)}
                   >
                     <option value="">{t('request.select_placeholder')}</option>
-                    {OPTION_BB_PROCESS_ID.map((o) => <option key={o} value={o}>{o}</option>)}
+                    {(BbProductidOptions[idx] || []).map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
                 {detail.bb_entries.length > 1 && (
