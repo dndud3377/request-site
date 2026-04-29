@@ -2642,11 +2642,11 @@ const isProdc = detail.only_prodc === 'Yes';
         </div>
       </Modal>
 
-      {/* O-ayer 비활성화 필터 모달 */}
+      {/* OVL layer 비활성화 필터 모달 */}
       <Modal
         isOpen={oayerFilterModalOpen}
         onClose={() => setOayerFilterModalOpen(false)}
-        title="O-ayer 비활성화 필터"
+        title="OVL layer 비활성화 필터"
         size="lg"
         style={{ width: 'fit-content', maxWidth: '90%' }}
         footer={
