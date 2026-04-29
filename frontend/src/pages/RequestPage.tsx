@@ -1785,20 +1785,24 @@ const isProdc = detail.only_prodc === 'Yes';
               return (
                 <>
                   {isFirstDisabled && (
-                    <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={12} /></tr>
+                    <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={15} /></tr>
                   )}
-                  <tr key={row.id} className={[row.disabled ? 'row-disabled' : '', jayerChecked.has(row.id) ? 'row-checked' : ''].filter(Boolean).join(' ')}>
+                  <tr key={row.id} className={[row.disabled ? 'row-disabled' : '', jayerChecked.has(row.id) ? 'row-checked' : '', mappedJayerRowIds.has(row.id) ? 'row-mapped' : ''].filter(Boolean).join(' ')}>
                     <td style={{ textAlign: 'center' }}>
                       <input type="checkbox" checked={jayerChecked.has(row.id)} onChange={() => handleJayerCheckToggle(row.id)} />
                     </td>
+                    <td><input value={row.updated ?? ''} readOnly style={{ background: '#f5f5f5', color: '#666' }} /></td>
                     <td><input value={row.process_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'process_id', e.target.value)} /></td>
                     <td><input value={row.sp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} /></td>
                     <td><input value={row.sd} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} /></td>
-                    <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} /></td>
+                    <td><input value={row.layerid ?? ''} disabled={detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} /></td>
+                    <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
                     <td>
                       <select value={row.st} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'st', e.target.value)}>
                         <option value=""></option>
                         <option value="O">O</option>
+                        <option value="O (D)">O (D)</option>
+                        <option value="O (혼용)">O (혼용)</option>
                         <option value="X">X</option>
                       </select>
                     </td>
@@ -1806,14 +1810,14 @@ const isProdc = detail.only_prodc === 'Yes';
                       <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)}>
                         <option value=""></option>
                         <option value="신규">신규</option>
-                        <option value="복사">복사</option>
+                        <option value="차용">차용</option>
                       </select>
                     </td>
-                    <td><input value={row.product_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} /></td>
+                    <td><input value={row.product_name} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} /></td>
                     <td><input value={row.step} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} /></td>
-                    <td><input value={row.item_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} /></td>
-                    <td><input value={row.rev} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'rev', e.target.value)} /></td>
-                    <td><input value={row.drawing_version} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'drawing_version', e.target.value)} /></td>
+                    <td><input value={row.item_id} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} /></td>
+                    <td><input value={row.rev} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'rev', e.target.value)} /></td>
+                    <td><input value={row.drawing_version} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'drawing_version', e.target.value)} /></td>
                   </tr>
                 </>
               );
@@ -1840,8 +1844,40 @@ const isProdc = detail.only_prodc === 'Yes';
   const renderStep3 = () => (
     <div className="form-section">
       <div className="form-section-title">🔶 {t('request.ovl_li')}</div>
+      {/* 일괄 설정 툴바 */}
+      <div className="wizard-table-toolbar">
+        <div className="wizard-table-toolbar-group">
+          <span className="wizard-table-toolbar-label">{t('request.col_st')}:</span>
+          <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('st', 'O')}>{t('request.btn_all_o')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('st', 'X')}>{t('request.btn_all_x')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleOayerResetField('st')}>{t('request.btn_reset')}</button>
+        </div>
+        <div className="wizard-table-toolbar-group">
+          <span className="wizard-table-toolbar-label">{t('request.col_new_or_copy')}:</span>
+          <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('new_or_copy', '신규')}>{t('request.btn_all_new')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('new_or_copy', '차용')}>{t('request.btn_all_copy')}</button>
+          <button type="button" className="th-header-btn" onClick={() => handleOayerResetField('new_or_copy')}>{t('request.btn_reset')}</button>
+        </div>
+        <div className="wizard-table-toolbar-group" style={{ marginLeft: 'auto' }}>
+          <button type="button" className="th-header-btn" onClick={() => setOayerFilterModalOpen(true)}>비활성화 필터</button>
+        </div>
+      </div>
       <div className="wizard-table-wrapper">
         <table className="wizard-table">
+          <colgroup>
+            <col />
+            <col />
+            <col />
+            <col />
+            <col className="sd-column" />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col />
+            <col style={{ width: '40px' }} />
+          </colgroup>
           <thead>
             <tr>
               <th style={{ width: 32, textAlign: 'center' }}>
@@ -1852,29 +1888,16 @@ const isProdc = detail.only_prodc === 'Yes';
                   onChange={handleOayerCheckAll}
                 />
               </th>
-              <th style={{ minWidth: 90 }}>조리법</th>
-              <th style={{ minWidth: 60 }}>SP</th>
-              <th style={{ minWidth: 60 }}>SD</th>
-              <th style={{ minWidth: 60 }}>PP</th>
-              <th style={{ minWidth: 90 }}>
-                ST
-                <div className="th-header-btns">
-                  <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('st', 'O')}>모두O</button>
-                  <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('st', 'X')}>모두X</button>
-                  <button type="button" className="th-header-btn" onClick={() => handleOayerResetField('st')}>초기화</button>
-                </div>
-              </th>
-              <th style={{ minWidth: 110 }}>
-                신규/복사
-                <div className="th-header-btns">
-                  <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('new_or_copy', '신규')}>모두 신규</button>
-                  <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('new_or_copy', '복사')}>모두 복사</button>
-                  <button type="button" className="th-header-btn" onClick={() => handleOayerResetField('new_or_copy')}>초기화</button>
-                </div>
-              </th>
-              <th style={{ minWidth: 110 }}>제품 이름</th>
-              <th style={{ minWidth: 70 }}>STEP</th>
-              <th style={{ minWidth: 70 }}>TT</th>
+              <th style={{ width: 'auto' }}>Update 날짜</th>
+              <th style={{ width: 'auto' }}>{t('request.process_id')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_sp')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_sd')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_pp')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_st')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_new_or_copy')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_product_name')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_step')}</th>
+              <th style={{ width: 'auto' }}>{t('request.col_tt')}</th>
             </tr>
           </thead>
           <tbody>
@@ -1886,20 +1909,23 @@ const isProdc = detail.only_prodc === 'Yes';
               return (
                 <>
                   {isFirstDisabled && (
-                    <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={10} /></tr>
+                    <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={11} /></tr>
                   )}
                   <tr key={row.id} className={[row.disabled ? 'row-disabled' : '', oayerChecked.has(row.id) ? 'row-checked' : ''].filter(Boolean).join(' ')}>
                     <td style={{ textAlign: 'center' }}>
                       <input type="checkbox" checked={oayerChecked.has(row.id)} onChange={() => handleOayerCheckToggle(row.id)} />
                     </td>
+                    <td><input value={row.updated ?? ''} readOnly style={{ background: '#f5f5f5', color: '#666' }} /></td>
                     <td><input value={row.process_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} /></td>
                     <td><input value={row.sp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'sp', e.target.value)} /></td>
                     <td><input value={row.sd} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} /></td>
-                    <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} /></td>
+                    <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
                     <td>
                       <select value={row.st} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'st', e.target.value)}>
                         <option value=""></option>
                         <option value="O">O</option>
+                        <option value="O (D)">O (D)</option>
+                        <option value="O (혼용)">O (혼용)</option>
                         <option value="X">X</option>
                       </select>
                     </td>
@@ -1907,10 +1933,10 @@ const isProdc = detail.only_prodc === 'Yes';
                       <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)}>
                         <option value=""></option>
                         <option value="신규">신규</option>
-                        <option value="복사">복사</option>
+                        <option value="차용">차용</option>
                       </select>
                     </td>
-                    <td><input value={row.product_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} /></td>
+                    <td><input value={row.product_name} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} /></td>
                     <td><input value={row.step} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} /></td>
                     <td><input value={row.tt} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'tt', e.target.value)} /></td>
                   </tr>
