@@ -480,13 +480,24 @@ export default function RequestPage(): React.ReactElement {
         setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
         return;
       }
-      const lineName = entry.location.replace(' 라인', '');
-      formOptionsAPI.getProducts(lineName)
+      formOptionsAPI.getProducts(entry.location)
         .then((opts) => setBbProductOptions((prev) => ({ ...prev, [idx]: opts })))
         .catch(() => setBbProductOptions((prev) => ({ ...prev, [idx]: [] })));
       setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
     });
-  }, [detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail.bb_entries.map(e => e.location).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    detail.flow_chart.forEach((entry, idx) => {
+      if (!entry.location) {
+        setFlowProductOptions((prev) => ({ ...prev, [idx]: [] }));
+        return;
+      }
+      formOptionsAPI.getProducts(entry.location)
+        .then((opts) => setFlowProductOptions((prev) => ({ ...prev, [idx]: opts })))
+        .catch(() => setFlowProductOptions((prev) => ({ ...prev, [idx]: [] })));
+    });
+  }, [detail.flow_chart.map(e => e.location).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     detail.bb_entries.forEach((entry, idx) => {
@@ -494,12 +505,11 @@ export default function RequestPage(): React.ReactElement {
         setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
         return;
       }
-      const lineName = entry.location.replace(' 라인', '');
-      formOptionsAPI.getProcessId(lineName, entry.product)
+      formOptionsAPI.getProcessId(entry.location, entry.product)
         .then((opts) => setBbProductidOptions((prev) => ({ ...prev, [idx]: opts })))
         .catch(() => setBbProductidOptions((prev) => ({ ...prev, [idx]: [] })));
     });
-  }, [detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail.bb_entries.map(e => e.product).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // bb_entries 변경 시 외부 데이터 로드
   useEffect(() => {
