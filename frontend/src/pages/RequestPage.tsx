@@ -542,13 +542,19 @@ export default function RequestPage(): React.ReactElement {
         if (parsed.detail) setDetail(parsed.detail);
         if (parsed.jayerRows) setJayerRows(parsed.jayerRows);
         if (parsed.oayerRows) setOayerRows(parsed.oayerRows);
-        if (parsed.bbRows) setBbRows(parsed.bbRows);
+        if (parsed.bbRows) {
+          setBbRows(parsed.bbRows);
+          const existingJayerIds = parsed.bbRows
+            .map((row: BbTableRow) => row.sourceJayerRowId)
+            .filter(Boolean);
+          setMappedJayerRowIds(new Set(existingJayerIds));
+        }
       } catch { /* noop */ }
     }).catch(() => { isLoadingEditRef.current = false; });
   }, [editDocId]);
 
   // Derived booleans for Step 1 conditional rendering
-  const isCopy = detail.request_purpose === '복사';
+  const isCopy = detail.request_purpose === '차용';
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === '변경 있음';
 const isProdc = detail.only_prodc === 'Yes';
@@ -564,6 +570,34 @@ const isProdc = detail.only_prodc === 'Yes';
     const { name, value } = e.target;
     setDetail((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
+  };
+
+  // 이미지 붙여넣기 핸들러 - 백엔드로 업로드
+  const handleImagePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf('image') !== -1) {
+        const file = item.getAsFile();
+        if (file) {
+          try {
+            const result = await uploadImageAPI.upload(file);
+            setDetail((prev) => ({
+              ...prev,
+              mshot_image_copy: result.path
+            }));
+            addToast(`이미지 업로드 완료: ${file.name}`, 'info');
+          } catch (err) {
+            console.error('이미지 업로드 실패:', err);
+            addToast('이미지 업로드 실패', 'error');
+          }
+          e.preventDefault();
+          break;
+        }
+      }
+    }
   };
 
   const handleDetailSet = (name: string, value: string) => {
