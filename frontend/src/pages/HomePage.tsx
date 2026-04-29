@@ -339,7 +339,7 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                       <label className="form-label">{t('notice.content')}</label>
                       <textarea
                         className="form-control"
-                        rows={5}
+                        rows={13}
                         value={formContent}
                         onChange={(e) => setFormContent(e.target.value)}
                         placeholder={t('notice.content')}
@@ -499,7 +499,7 @@ export default function HomePage(): React.ReactElement {
         <div className="hero-grid" />
         <div className="container">
           <div className="hero-content">
-            <div className="hero-badge">🗺️ Product Introduction Map System</div>
+            <div className="hero-badge">Product Introduction Map System</div>
             <h1>
               <span className="highlight">{t('home.hero_title')}</span>
             </h1>
