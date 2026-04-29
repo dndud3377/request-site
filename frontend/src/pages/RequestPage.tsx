@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { documentsAPI, linesAPI, formOptionsAPI } from '../api/client';
+import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI } from '../api/client';
 import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
 import FormSelect from '../components/FormSelect';
@@ -15,7 +15,10 @@ import {
   OayerRow,
   BbTableRow,
   HistorySnapshot,
+  RequestDocument,
   ExternalBbDataItem,
+  PhotoStepOption,
+  BbAutoFillRange,
 } from '../types';
 
 // ===== Option Constants =====
