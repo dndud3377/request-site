@@ -295,10 +295,54 @@ export default function RequestPage(): React.ReactElement {
   } | null>(null);
   const isLoadingEditRef = useRef(false);
 
+  const [approvedDocs, setApprovedDocs] = useState<RequestDocument[]>([]);
+  const [sourcePartIdOptions, setSourcePartIdOptions] = useState<string[]>([]);
+
+  const [jayerFilterWords, setJayerFilterWords] = useState<{ sp: string[]; sd: string[]; pp: string[] }>({ sp: [], sd: [], pp: [] });
+  const [oayerFilterWords, setOayerFilterWords] = useState<{ sp: string[]; sd: string[]; pp: string[] }>({ sp: [], sd: [], pp: [] });
+  const [jayerFilterModalOpen, setJayerFilterModalOpen] = useState(false);
+  const [oayerFilterModalOpen, setOayerFilterModalOpen] = useState(false);
+
   useEffect(() => {
     linesAPI.list()
       .then((lines) => { if (lines.length > 0) setLineOptions(lines.map((l) => l.name)); })
       .catch(() => { /* 폴백 유지 */ });
+
+    // 승인된 문서 목록 로드
+    documentsAPI.getApproved()
+      .then((r) => {
+        setApprovedDocs(r.data);
+        // PART ID 목록 추출 (중복 제거)
+        const partIds = Array.from(new Set(r.data.map((doc: RequestDocument) => doc.product_name)));
+        setSourcePartIdOptions(partIds);
+      })
+      .catch(console.error);
+
+    // localStorage에서 비활성화 필터 단어 로드
+    const savedJayerFilter = localStorage.getItem('jayerFilterWords');
+    if (savedJayerFilter) {
+      try {
+        const parsed = JSON.parse(savedJayerFilter);
+        const converted = {
+          sp: Array.isArray(parsed.sp) ? parsed.sp : parsed.sp ? [parsed.sp] : [],
+          sd: Array.isArray(parsed.sd) ? parsed.sd : parsed.sd ? [parsed.sd] : [],
+          pp: Array.isArray(parsed.pp) ? parsed.pp : parsed.pp ? [parsed.pp] : [],
+        };
+        setJayerFilterWords(converted);
+      } catch (e) { /* 파싱 실패 시 기본값 유지 */ }
+    }
+    const savedOayerFilter = localStorage.getItem('oayerFilterWords');
+    if (savedOayerFilter) {
+      try {
+        const parsed = JSON.parse(savedOayerFilter);
+        const converted = {
+          sp: Array.isArray(parsed.sp) ? parsed.sp : parsed.sp ? [parsed.sp] : [],
+          sd: Array.isArray(parsed.sd) ? parsed.sd : parsed.sd ? [parsed.sd] : [],
+          pp: Array.isArray(parsed.pp) ? parsed.pp : parsed.pp ? [parsed.pp] : [],
+        };
+        setOayerFilterWords(converted);
+      } catch (e) { /* 파싱 실패 시 기본값 유지 */ }
+    }
   }, []);
 
   // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
