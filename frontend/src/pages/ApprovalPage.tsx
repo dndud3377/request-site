@@ -9,18 +9,38 @@ import { useToast } from '../components/Toast';
 import { useAuth, MOCK_USERS } from '../contexts/AuthContext';
 import PagedDetailView from '../components/PagedDetailView';
 import { canUserAgree, canUserAssign, ROLE_TO_AGENT } from '../components/ApprovalFlow';
-import { RequestDocument, AgentType } from '../types';
+import { RequestDocument, AgentType, UserRole } from '../types';
 
 // ===== Utils =====
 
 const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
+
+const formatExpectedCompletionDate = (submittedAt: string | null): string => {
+  if (!submittedAt) return '-';
+  const submittedDate = new Date(submittedAt);
+  const expectedDate = new Date(submittedDate);
+  expectedDate.setDate(expectedDate.getDate() + 7);  // 7 일 추가
+  return expectedDate.toLocaleDateString('ko-KR');
+};
 
 const getCurrentStage = (doc: RequestDocument, t: TFunction): string => {
   const steps = doc.approval_steps ?? [];
   const pending = steps.filter((s) => s.action === 'pending');
   if (pending.length === 0 && doc.status === 'approved') return t('common.status_approved');
   if (pending.length === 0) return '-';
-  return pending.map((s) => `AGENT ${s.agent}`).join(' / ');
+  
+  // agent 코드를 라벨로 변환
+  const agentToLabel: Record<string, string> = {
+    'R': t('approval.agent_R'),
+    'J': t('approval.agent_J'),
+    'O': t('approval.agent_O'),
+    'E': t('approval.agent_E'),
+  };
+  
+  return pending.map((s) => {
+    const label = agentToLabel[s.agent] || s.agent;
+    return s.assignee_name ? `${label} (${s.assignee_name})` : label;
+  }).join(' / ');
 };
 
 // ===== (ApprovalFlow, PagedDetailView are imported from components/) =====
@@ -256,6 +276,7 @@ export default function ApprovalPage(): React.ReactElement {
                 <th>{t('approval.col_status')}</th>
                 <th>{t('approval.col_current_stage')}</th>
                 <th>{t('approval.col_submitted')}</th>
+                <th>{t('approval.col_expected_completion')}</th>
                 <th></th>
               </tr>
             </thead>
@@ -280,6 +301,7 @@ export default function ApprovalPage(): React.ReactElement {
                     {getCurrentStage(doc, t)}
                   </td>
                   <td>{formatDate(doc.submitted_at)}</td>
+                  <td>{formatExpectedCompletionDate(doc.submitted_at)}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {(isPL || isMaster) && (doc.status === 'rejected' || doc.status === 'draft') && (
@@ -401,14 +423,17 @@ export default function ApprovalPage(): React.ReactElement {
         title={selected?.title ?? ''}
         size="lg"
         footer={(() => {
-          const userAgent = ROLE_TO_AGENT[currentUser.role];
+          const userAgent = currentUser.role ? ROLE_TO_AGENT[currentUser.role] : undefined;
           const pendingSteps = selected?.approval_steps?.filter((s) =>
             s.action === 'pending' && (isMaster ? true : s.agent === userAgent)
           ) ?? [];
           const assignableStep = pendingSteps.find((s) => canUserAssign(currentUser, s));
           const actableStep = pendingSteps.find((s) => canUserAgree(currentUser, s));
           const teamMembers = assignableStep
-            ? MOCK_USERS.filter((u) => ROLE_TO_AGENT[u.role] === assignableStep.agent)
+            ? MOCK_USERS.filter((u): boolean => {
+                if (!u.role) return false;
+                return ROLE_TO_AGENT[u.role] === assignableStep.agent;
+              })
             : [];
           return (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -519,7 +544,7 @@ export default function ApprovalPage(): React.ReactElement {
             {/* 페이지 네비게이션 + 의뢰 상세 */}
             <PagedDetailView
               doc={selected}
-              role={currentUser.role}
+              role={currentUser.role as UserRole}
               pageIdx={pageIdx}
               setPageIdx={setPageIdx}
             />
