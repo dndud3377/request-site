@@ -1,6 +1,7 @@
+// ⚠️ MASKING 처리된 파일. 이 파일에 포함된 비즈니스 용어는 {{ko.json}} 키로 마스킹되어 있습니다. 원래 용어를 확인하려면 다음 파일을 참조하세요: frontend/src/locales/ko.json
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RequestDocument, AgentType, ApprovalStepFrontend, UserRole, MockUser } from '../types';
+import { RequestDocument, AgentType, ApprovalStepFrontend, UserRole, MockUser, UserRoleWithNull } from '../types';
 import { MOCK_USERS } from '../contexts/AuthContext';
 
 const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
@@ -13,13 +14,16 @@ export const ROLE_TO_AGENT: Partial<Record<UserRole, AgentType>> = {
 };
 
 // 담당자 지정 가능 여부: 같은 팀, pending, 아직 담당자 없음
-export const canUserAssign = (user: MockUser, step: ApprovalStepFrontend): boolean => {
+// password 필드가 optional이도록 수정
+export const canUserAssign = (user: { role: UserRoleWithNull } | MockUser, step: ApprovalStepFrontend): boolean => {
+  if (!user.role) return false;
   const agent = ROLE_TO_AGENT[user.role];
   return !!agent && step.agent === agent && step.action === 'pending' && !step.assignee_id;
 };
 
 // 합의/반려 가능 여부: MASTER이거나, 담당자로 지정된 본인
-export const canUserAgree = (user: MockUser, step: ApprovalStepFrontend): boolean => {
+// password 필드가 optional이도록 수정
+export const canUserAgree = (user: { role: UserRoleWithNull; id: number } | MockUser, step: ApprovalStepFrontend): boolean => {
   if (user.role === 'MASTER') return true;
   return step.action === 'pending' && step.assignee_id === user.id;
 };
@@ -48,11 +52,15 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, process
   const oStep = getStep('O');
   const eStep = getStep('E');
 
-  let sugarAdd = false;
+  let hasPlel = false;
   try {
     const parsed = JSON.parse(doc.additional_notes ?? '{}');
-    sugarAdd = parsed?.detail?.e_lps === '예';
-  } catch { sugarAdd = false; }
+    const jayerRows = parsed?.jayerRows ?? [];
+    // PP 에 PLEL 포함 여부 검사 (대소문자 구분 없음)
+    hasPlel = jayerRows.some((row: any) => 
+      row.pp?.toLowerCase().includes('plel')
+    );
+  } catch { hasPlel = false; }
 
   const renderStepBadge = (step: ApprovalStepFrontend | undefined, label: string) => {
     if (!step) {
@@ -68,31 +76,26 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, process
     const canAct = canUserAgree(currentUser, step);
     const isAssigning = assigningAgent === step.agent;
 
-    // 이 agent 팀에 속한 팀원 목록
-    const teamMembers = MOCK_USERS.filter((u) => ROLE_TO_AGENT[u.role] === step.agent);
+    // 이 agent 팀에 속한 팀원 목록 (role이 null이 아닌 경우만)
+    const teamMembers = MOCK_USERS.filter((u): boolean => {
+      if (!u.role) return false;
+      const agent = ROLE_TO_AGENT[u.role as UserRole];
+      return agent === step.agent;
+    });
+
+    // 담당자가 지정된 경우 라벨에 담당자 이름 포함 (예: {{approval.agent_R}} (오우영))
+    const displayLabel = step.assignee_name ? `${label} (${step.assignee_name})` : label;
 
     return (
       <div className={`approval-node ${step.action === 'approved' ? 'approval-node-done' : step.action === 'rejected' ? 'approval-node-rejected' : ''}`}>
-        <span className="step-agent-label">{label}</span>
+        <span className="step-agent-label">{displayLabel}</span>
         <span className={`step-badge step-badge-${step.action}`}>
           {step.action === 'approved' ? t('approval.step_approved') : step.action === 'rejected' ? t('approval.step_rejected') : t('approval.step_pending')}
         </span>
         {step.acted_at && <span className="step-acted-at">{formatDate(step.acted_at)}</span>}
-        {/* 합의/반려 완료 시 담당자 이름 표시 */}
-        {(step.action === 'approved' || step.action === 'rejected') && step.assignee_name && (
-          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block', marginTop: 2 }}>
-            담당: {step.assignee_name}
-          </span>
-        )}
         {step.comment && (
           <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: 2, display: 'block', maxWidth: 120, wordBreak: 'break-all' }}>
             "{step.comment}"
-          </span>
-        )}
-        {/* 담당자 표시 (pending) */}
-        {step.action === 'pending' && (
-          <span style={{ fontSize: '0.72rem', color: step.assignee_name ? 'var(--text-secondary)' : 'var(--text-muted)', marginTop: 2, display: 'block' }}>
-            {step.assignee_name ? `담당자: ${step.assignee_name}` : '담당자: 미지정'}
           </span>
         )}
         {/* 지정하기 버튼 (미지정 상태, 같은 팀) */}
@@ -173,16 +176,16 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, process
         {doc.submitted_at && <span className="step-acted-at">{formatDate(doc.submitted_at)}</span>}
       </div>
       <div className="approval-connector" />
-      {renderStepBadge(rStep, 'AGENT R')}
+      {renderStepBadge(rStep, t('approval.agent_R'))}
       <div className="approval-connector" />
       <div className="approval-parallel">
-        {renderStepBadge(jStep, 'AGENT J')}
-        {renderStepBadge(oStep, 'AGENT O')}
+        {renderStepBadge(jStep, t('approval.agent_J'))}
+        {renderStepBadge(oStep, t('approval.agent_O'))}
       </div>
       <div className="approval-connector" />
-      {(sugarAdd || eStep) && (
+      {(hasPlel || eStep) && (
         <>
-          {renderStepBadge(eStep, 'AGENT E')}
+          {renderStepBadge(eStep, t('approval.agent_E'))}
           <div className="approval-connector" />
         </>
       )}
