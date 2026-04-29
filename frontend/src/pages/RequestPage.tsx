@@ -2314,10 +2314,18 @@ const isProdc = detail.only_prodc === 'Yes';
           </button>
         </div>
 
-        {/* 뼈찜 정보 테이블 (적용 후 채워짐) */}
+        {/* bb 정보 테이블 (적용 후 채워짐) */}
         <div className="bb-selected-section">
-          <div className="form-section-title" style={{ fontSize: 14, marginBottom: 8 }}>
-            뼈찜 정보 (적용 결과)
+          <div className="form-section-title" style={{ fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#4CAF50' }}>
+            <span>bb 정보 (적용 결과)</span>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleResetBbRows}
+              style={{ fontSize: 13, padding: '6px 12px' }}
+            >
+              🗑️ 초기화
+            </button>
           </div>
           <div className="wizard-table-wrapper">
             <table className="wizard-table">
@@ -2331,15 +2339,21 @@ const isProdc = detail.only_prodc === 'Yes';
                       onChange={handleBbCheckAll}
                     />
                   </th>
-                  <th style={{ minWidth: 40 }}>No</th>
-                  <th style={{ minWidth: 90 }}>조리법</th>
-                  <th style={{ minWidth: 60 }}>SS</th>
-                  <th style={{ minWidth: 60 }}>SD</th>
-                  <th style={{ minWidth: 90 }}>뼈찜 조리법</th>
-                  <th style={{ minWidth: 90 }}>뼈찜 이름</th>
-                  <th style={{ minWidth: 80 }}>뼈찜 STEP</th>
-                  <th style={{ minWidth: 70 }}>뼈찜 SS</th>
-                  <th style={{ minWidth: 90 }}>비고</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_no')}</th>
+                  <th style={{ width: 'auto' }}>{t('request.process_id')}</th>
+                  <th
+                    style={{ width: 'auto', cursor: 'pointer', userSelect: 'none' }}
+                    onClick={handleSortBbRows}
+                    title="클릭하여 SEQ 기준 오름차순 정렬"
+                  >
+                    {t('request.col_sp')} 🔼
+                  </th>
+                  <th style={{ width: 'auto' }}>{t('request.col_sd')}</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_bb_process_id')}</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_bb_partid')}</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_bb_layer')}</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_bb_stepseq')}</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_remark')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -2364,22 +2378,6 @@ const isProdc = detail.only_prodc === 'Yes';
           </div>
           <div className="bulk-action-row">
             <button type="button" className="flow-table-add-btn" onClick={handleBbAddRow}>+ 행 추가</button>
-            <button
-              type="button"
-              className={`btn btn-secondary btn-sm${isBbSorted ? ' btn-sorted' : ''}`}
-              onClick={handleSortBbRows}
-              disabled={bbRows.length === 0 || isBbSorted}
-            >
-              {isBbSorted ? '✓ SS 정렬됨' : '↕ SS 정렬'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={handleResetBbRows}
-              disabled={bbRows.length === 0}
-            >
-              🗑 초기화
-            </button>
             {bbChecked.size > 0 && (
               <button
                 type="button"
