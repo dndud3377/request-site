@@ -689,6 +689,15 @@ const isProdc = detail.only_prodc === 'Yes';
     setDetail((prev) => ({ ...prev, flow_chart: [...prev.flow_chart, makeRow()] }));
   };
 
+  // ===== Date Format Helper =====
+  const formatUpdatedDate = (updated: string): string => {
+    if (!updated || updated.length < 12) return updated;
+    const yyyyMMdd = updated.slice(0, 8);
+    const hh = updated.slice(8, 10);
+    const mm = updated.slice(10, 12);
+    return `${yyyyMMdd} ${hh}:${mm}`;
+  };
+
   const handleFlowDeleteRow = (id: string) => {
     setDetail((prev) => {
       if (prev.flow_chart.length <= 1) return prev;
@@ -696,26 +705,64 @@ const isProdc = detail.only_prodc === 'Yes';
     });
   };
 
-  // ===== Jayer Handlers =====
-  // ===== Jayer 자동 채움 함수 (bigdata STEP 정보 조회) =====
-  const fetchStepInfoAndPopulateJayer = async (line: string, process: string) => {
+  // ===== Jayer & Oayer Handlers =====
+  // ===== 비활성화 필터 확인 함수 (키워드 배열 지원) =====
+  const shouldDisableRow = (filterWords: { sp: string[]; sd: string[]; pp: string[] }, row: { sp: string; sd: string; pp: string }): boolean => {
+    const { sp, sd, pp } = filterWords;
+    if (sp.some(keyword => keyword && row.sp.toLowerCase().includes(keyword.toLowerCase()))) return true;
+    if (sd.some(keyword => keyword && row.sd.toLowerCase().includes(keyword.toLowerCase()))) return true;
+    if (pp.some(keyword => keyword && row.pp.toLowerCase().includes(keyword.toLowerCase()))) return true;
+    return false;
+  };
+
+  const fetchJobFileLayerAndPopulateJayer = async (line: string, process: string) => {
     try {
-      const stepData = await formOptionsAPI.getStepInfo(line, process);
-      if (stepData && stepData.length > 0) {
-        // Jayer 행을 bigdata 데이터로 자동 채움 (항상 덮어쓰기)
-        const newJayerRows: JayerRow[] = stepData.map((item) => ({
-          ...makeJayerRow(),
-          process_id: item.processid,
-          sp: item.stepseq,
-          sd: item.descript,
-          pp: item.recipeid,
-        }));
+      const jobFileData = await formOptionsAPI.getJobFileLayer(line, process);
+
+      if (jobFileData && jobFileData.length > 0) {
+        const newJayerRows: JayerRow[] = jobFileData.map((item) => {
+          const row = {
+            ...makeJayerRow(),
+            updated: item.updated ? formatUpdatedDate(item.updated) : '',
+            process_id: item.processid,
+            sp: item.stepseq,
+            sd: item.descript,
+            pp: item.recipeid,
+            layerid: item.layerid || '',
+          };
+          return { ...row, disabled: shouldDisableRow(jayerFilterWords, row) };
+        });
         setJayerRows(newJayerRows);
-        addToast(`Jayer 정보 ${stepData.length}건 자동 채움`, 'info');
+        addToast(t('request.toast_job_auto_fill', { count: jobFileData.length }), 'info');
       }
     } catch (e) {
-      console.error('STEP 정보 조회 실패:', e);
-      addToast('Jayer layer 정보 조회 실패', 'error');
+      console.error('JOB FILE layer 정보 조회 실패:', e);
+      addToast(t('request.toast_job_auto_fill_error'), 'error');
+    }
+  };
+
+  const fetchOvlLayerAndPopulateOayer = async (line: string, process: string) => {
+    try {
+      const ovlData = await formOptionsAPI.getOvlLayer(line, process);
+
+      if (ovlData && ovlData.length > 0) {
+        const newOayerRows: OayerRow[] = ovlData.map((item) => {
+          const row = {
+            ...makeOayerRow(),
+            updated: item.updated ? formatUpdatedDate(item.updated) : '',
+            process_id: item.processid,
+            sp: item.stepseq,
+            sd: item.descript,
+            pp: item.recipeid,
+          };
+          return { ...row, disabled: shouldDisableRow(oayerFilterWords, row) };
+        });
+        setOayerRows(newOayerRows);
+        addToast(t('request.toast_ovl_auto_fill', { count: ovlData.length }), 'info');
+      }
+    } catch (e) {
+      console.error('OVL layer 정보 조회 실패:', e);
+      addToast(t('request.toast_ovl_auto_fill_error'), 'error');
     }
   };
 
