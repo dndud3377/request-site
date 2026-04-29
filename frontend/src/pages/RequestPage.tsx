@@ -902,22 +902,24 @@ const isProdc = detail.only_prodc === 'Yes';
 
   const handleBbAddRow = () => {
     setBbRows((rows) => [...rows, makeBbRow()]);
-    setBbDeleted([]);
   };
 
   const handleBbBulkDelete = () => {
-    const toDelete = bbRows.filter((r) => bbChecked.has(r.id));
-    setBbDeleted(toDelete);
-    setBbRows((rows) => {
-      const remaining = rows.filter((r) => !bbChecked.has(r.id));
-      return remaining.length === 0 ? [makeBbRow()] : remaining;
-    });
-    setBbChecked(new Set());
-  };
+    const rowsToRestore = bbRows.filter((r) =>
+      bbChecked.has(r.id) && r.sourceJayerRowId
+    );
 
-  const handleBbRestore = () => {
-    setBbRows((rows) => [...rows, ...bbDeleted]);
-    setBbDeleted([]);
+    setBbRows((rows) => rows.filter((r) => !bbChecked.has(r.id)));
+
+    setMappedJayerRowIds((prev) => {
+      const next = new Set(prev);
+      rowsToRestore.forEach((row) => {
+        if (row.sourceJayerRowId) next.delete(row.sourceJayerRowId);
+      });
+      return next;
+    });
+
+    setBbChecked(new Set());
   };
 
   const handleBbCheckToggle = (id: string) => {
