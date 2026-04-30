@@ -187,15 +187,16 @@ SESSION_COOKIE_HTTPONLY = True
 CSRF_USE_SESSIONS = True
 
 # ============================================
-# HTTPS 보안 설정
+# HTTPS 보안 설정 (운영 전용 - DEBUG=False일 때만 활성화)
 # ============================================
-SECURE_SSL_REDIRECT = True  # HTTP → HTTPS 자동 리다이렉트
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # Nginx 프록시 헤더 신뢰
-SESSION_COOKIE_SECURE = True  # 쿠키 HTTPS에서만 전송
-CSRF_COOKIE_SECURE = True  # CSRF 토큰도 HTTPS에서만
-SECURE_HSTS_SECONDS = 31536000  # 1년
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True  # HTTP → HTTPS 자동 리다이렉트
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # Nginx 프록시 헤더 신뢰
+    SESSION_COOKIE_SECURE = True  # 쿠키 HTTPS에서만 전송
+    CSRF_COOKIE_SECURE = True  # CSRF 토큰도 HTTPS에서만
+    SECURE_HSTS_SECONDS = 31536000  # 1년
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
 
 # ============================================
 # 로깅 설정

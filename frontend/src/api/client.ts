@@ -122,7 +122,8 @@ export const authAPI = {
     post<{ success?: boolean; redirect_url?: string; user?: unknown }>('/auth/oidc/callback/', data),
   oidcLogout: () =>
     post<{ message: string; logout_url: string }>('/auth/oidc/logout/'),
-  // mockLogin 제거됨 (개발용에서는 localStorage 기반 Mock 데이터 사용)
+  devLogin: (username: string) =>
+    post<{ access: string; refresh: string; user: unknown }>('/auth/dev-login/', { username }),
 };
 
 // ===== 의뢰서 API =====

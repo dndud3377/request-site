@@ -2507,3 +2507,117 @@ select.form-control option {
   border-color: var(--accent);
 }
 
+/* ===== DEV 모드 유저 전환 드롭다운 ===== */
+.dev-user-switcher {
+  position: relative;
+  margin-right: 12px;
+}
+
+.dev-user-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: #fef3c7;
+  border: 1.5px solid #f59e0b;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  color: #92400e;
+  transition: background 0.15s;
+}
+
+.dev-user-btn:hover {
+  background: #fde68a;
+}
+
+.dev-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: #f59e0b;
+  color: white;
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+
+.dev-user-name {
+  font-weight: 600;
+}
+
+.dev-user-role {
+  color: #b45309;
+  font-size: 12px;
+}
+
+.dev-user-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 200px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.dev-role-group {
+  padding: 4px 0;
+}
+
+.dev-role-group + .dev-role-group {
+  border-top: 1px solid var(--border-light);
+}
+
+.dev-role-label {
+  padding: 4px 12px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.dev-user-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.dev-user-item:hover {
+  background: var(--bg-secondary);
+}
+
+.dev-user-item.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.dev-user-dept {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.dev-current-badge {
+  font-size: 10px;
+  background: var(--accent);
+  color: white;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+

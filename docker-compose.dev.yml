@@ -1,1 +1,75 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        IMAGE_PATH: ${IMAGE_PATH}
+        PIP_INDEX_URL: ${PIP_INDEX_URL}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST}
+        BIGDATA_INDEX_URL: ${BIGDATA_INDEX_URL}
+        BIGDATA_TRUSTED_HOST: ${BIGDATA_TRUSTED_HOST}
+        ODBC_DRIVER_URL: ${ODBC_DRIVER_URL}
+        ODBC_DRIVER_FILENAME: ${ODBC_DRIVER_FILENAME}
+    container_name: request_backend_dev
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    env_file:
+      - .env.dev
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - MYSQL_HOST=${MYSQL_HOST}
+      - MYSQL_DB=${DEV_MYSQL_DB:-requestdb_dev}
+      - AUTH_MODE=dev
+      - DEBUG=True
+      - SKIP_SCHEDULER=true
+      - ODBC_HOST=${ODBC_HOST}
+      - ODBC_PORT=${ODBC_PORT}
+      - ODBC_DATABASE=${ODBC_DATABASE}
+      - ODBC_AUTH_MECH=${ODBC_AUTH_MECH}
+      - ODBC_USE_SASL=${ODBC_USE_SASL}
+      - ODBC_UID=${ODBC_UID}
+      - ODBC_PWD=${ODBC_PWD}
+      - ODBC_KRB_FQDN=${ODBC_KRB_FQDN}
+      - ODBC_KRB_REALM=${ODBC_KRB_REALM}
+      - ODBC_KRB_SERVICE_NAME=${ODBC_KRB_SERVICE_NAME}
+      - ODBC_SSL=${ODBC_SSL}
+      - ODBC_TSASL_BUFFER_SIZE=${ODBC_TSASL_BUFFER_SIZE}
+      - ODBC_ROWS_PER_BLOCK=${ODBC_ROWS_PER_BLOCK}
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py create_users &&
+             python manage.py runserver 0.0.0.0:8000"
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        IMAGE_PATH: ${IMAGE_PATH}
+        NPM_REGISTRY_URL: ${NPM_REGISTRY_URL}
+        REACT_APP_USE_MOCK: "false"
+        REACT_APP_AUTH_MODE: "dev"
+    container_name: request_frontend_dev
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+      args:
+        IMAGE_PATH: ${IMAGE_PATH}
+    container_name: request_nginx_dev
+    restart: unless-stopped
+    ports:
+      - "10011:80"
+    volumes:
+      - ./nginx/nginx.dev.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - backend
+      - frontend
