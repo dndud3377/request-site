@@ -35,7 +35,7 @@ services:
     env_file:
       - .env
     environment:
-      - DJANGO_SETTINGS_MODULE=config.settings
+      - DJANGO_SETTINGS_MODULE=config.settings.production
       - MYSQL_HOST=db
       - SKIP_SCHEDULER=true
       # ODBC 설정
