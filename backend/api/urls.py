@@ -7,7 +7,8 @@ from .views import (
     form_options_process, form_options_products, form_options_process_id,
     form_options_job_file_layer, form_options_ovl_layer, form_options_bb_external,
 )
-from .auth_views import login_view, me_view, refresh_token_view, oidc_login_init, oidc_callback, oidc_logout, dev_login_view
+from .auth_views import login_view, me_view, refresh_token_view, oidc_login_init, oidc_callback, oidc_logout
+from .auth_views_dev import dev_login_view
 
 router = DefaultRouter()
 router.register(r'documents', RequestDocumentViewSet, basename='document')

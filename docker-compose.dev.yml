@@ -1,4 +1,28 @@
 services:
+  db-sync:
+    image: ${CONTAINER_IMAGE}
+    env_file:
+      - .env.dev
+    environment:
+      - SKIP_DB_SYNC=${SKIP_DB_SYNC:-false}
+    command: >
+      sh -c "
+        if [ \"$$SKIP_DB_SYNC\" = 'true' ]; then
+          echo '[DB Sync] Skipped';
+          exit 0;
+        fi;
+        echo '[DB Sync] Creating dev DB if not exists...';
+        mysql -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD
+          -e 'CREATE DATABASE IF NOT EXISTS \`'$$DEV_MYSQL_DB'\`
+              CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;';
+        echo '[DB Sync] Copying prod → dev...';
+        mysqldump -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD
+          --single-transaction --skip-lock-tables $$MYSQL_DB |
+          mysql -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD $$DEV_MYSQL_DB;
+        echo '[DB Sync] Done.';
+      "
+    restart: "no"
+
   backend:
     build:
       context: ./backend
@@ -18,7 +42,7 @@ services:
     env_file:
       - .env.dev
     environment:
-      - DJANGO_SETTINGS_MODULE=config.settings
+      - DJANGO_SETTINGS_MODULE=config.settings.development
       - MYSQL_HOST=${MYSQL_HOST}
       - MYSQL_DB=${DEV_MYSQL_DB:-requestdb_dev}
       - AUTH_MODE=dev
@@ -39,6 +63,9 @@ services:
       - ODBC_ROWS_PER_BLOCK=${ODBC_ROWS_PER_BLOCK}
     volumes:
       - ./backend:/app
+    depends_on:
+      db-sync:
+        condition: service_completed_successfully
     command: >
       sh -c "python manage.py migrate --noinput &&
              python manage.py create_users &&

@@ -1,14 +1,16 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# settings/base.py 기준: config/settings/base.py → parent×3 = backend/
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-production')
 
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
@@ -27,9 +29,6 @@ INSTALLED_APPS = [
     'mozilla_django_oidc',
     'api.apps.ApiConfig',
 ]
-
-# 커스텀 User 모델 사용 (暂时不使用，恢复默认)
-# AUTH_USER_MODEL = 'api.User'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -100,8 +99,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'api.authentication.CookieJWTAuthentication',  # Cookie 기반 JWT 인증 (우선)
-        'rest_framework_simplejwt.authentication.JWTAuthentication',  # 기존 JWT (하위 호환)
+        'api.authentication.CookieJWTAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticatedOrReadOnly',
@@ -122,7 +121,6 @@ CORS_ALLOWED_ORIGINS = os.environ.get(
 
 CORS_ALLOW_CREDENTIALS = True
 
-# Email settings
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
@@ -131,17 +129,12 @@ EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@project.com')
 
-# External DB (form options sync)
 EXTERNAL_DB_HOST = os.environ.get('EXTERNAL_DB_HOST', '')
 EXTERNAL_DB_PORT = os.environ.get('EXTERNAL_DB_PORT', '3306')
 EXTERNAL_DB_USER = os.environ.get('EXTERNAL_DB_USER', '')
 EXTERNAL_DB_PASSWORD = os.environ.get('EXTERNAL_DB_PASSWORD', '')
 
-# Approval email recipients
 APPROVAL_EMAIL_LIST = os.environ.get('APPROVAL_EMAIL_LIST', '').split(',')
-
-# JWT settings (SSO 전환 시 제거 예정)
-from datetime import timedelta
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=12),
@@ -165,42 +158,23 @@ OIDC_OP_LOGOUT_ENDPOINT = os.environ.get('OIDC_OP_LOGOUT_ENDPOINT', '')
 OIDC_RP_SIGN_ALGORITHM = os.environ.get('OIDC_RP_SIGN_ALGORITHM', 'RS256')
 OIDC_CALLBACK_BASE_URL = os.environ.get('OIDC_CALLBACK_BASE_URL', 'http://localhost:8000')
 
-# ADFS 인증서 경로 (ID 토큰 서명 검증용)
 OIDC_CERT_FILE_PATH = os.environ.get('OIDC_CERT_FILE_PATH', str(BASE_DIR / 'api' / 'certs'))
 OIDC_CERT_FILE_NAME = os.environ.get('OIDC_CERT_FILE_NAME', 'company-dev.net.cer')
 
 # ============================================
-# 서비스용 JWT 설정 (ADFS id_token 기반 별도 토큰 생성)
+# 서비스용 JWT 설정
 # ============================================
 SERVICE_JWT_SECRET_KEY = os.environ.get('SERVICE_JWT_SECRET_KEY', '')
 SERVICE_JWT_ALGORITHM = os.environ.get('SERVICE_JWT_ALGORITHM', 'HS256')
-SERVICE_JWT_ACCESS_TOKEN_LIFETIME = timedelta(hours=1)  # 1 시간 (토큰 만료 시 자동 갱신 안 함, 로그아웃)
+SERVICE_JWT_ACCESS_TOKEN_LIFETIME = timedelta(hours=1)
 SERVICE_JWT_REFRESH_TOKEN_LIFETIME = timedelta(days=7)
 
-# ============================================
-# Auth Mode 설정 (개발용: mock, 운영용: sso)
-# ============================================
-AUTH_MODE = os.environ.get('AUTH_MODE', 'sso')  # 기본값: sso (운영용)
+# Auth Mode (dev: 개발용 드롭다운, sso: 운영용 OIDC)
+AUTH_MODE = os.environ.get('AUTH_MODE', 'sso')
 
-# Cookie 설정
 SESSION_COOKIE_HTTPONLY = True
 CSRF_USE_SESSIONS = True
 
-# ============================================
-# HTTPS 보안 설정 (운영 전용 - DEBUG=False일 때만 활성화)
-# ============================================
-if not DEBUG:
-    SECURE_SSL_REDIRECT = True  # HTTP → HTTPS 자동 리다이렉트
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # Nginx 프록시 헤더 신뢰
-    SESSION_COOKIE_SECURE = True  # 쿠키 HTTPS에서만 전송
-    CSRF_COOKIE_SECURE = True  # CSRF 토큰도 HTTPS에서만
-    SECURE_HSTS_SECONDS = 31536000  # 1년
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-
-# ============================================
-# 로깅 설정
-# ============================================
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
