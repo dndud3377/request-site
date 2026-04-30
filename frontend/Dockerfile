@@ -9,8 +9,10 @@ COPY package.json package-lock.json .
 RUN npm ci
 
 COPY . .
-ARG VITE_USE_MOCK
-RUN echo "VITE_USE_MOCK=${VITE_USE_MOCK}" > .env
+ARG REACT_APP_USE_MOCK
+ARG REACT_APP_AUTH_MODE
+RUN echo "REACT_APP_USE_MOCK=${REACT_APP_USE_MOCK}" > .env \
+ && echo "REACT_APP_AUTH_MODE=${REACT_APP_AUTH_MODE}" >> .env
 RUN npm run build
 
 ARG IMAGE_PATH

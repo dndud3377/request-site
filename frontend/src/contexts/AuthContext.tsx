@@ -2,7 +2,9 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { MockUser, UserRole } from '../types';
 import { authAPI, setToken, clearToken } from '../api/client';
 
-// ===== Mock Users (프론트엔드 역할 목록 - 실제 로그인 시에도 이 목록에서 정보 참조) =====
+const IS_DEV_MODE = process.env.REACT_APP_AUTH_MODE === 'dev';
+
+// ===== Mock Users (역할 테스트용 유저 목록) =====
 
 export const MOCK_USERS: MockUser[] = [
   { id: 1,  username: 'pl_user',  password: 'pass1234', name: '김의뢰', role: 'PL',     department: '마케팅팀',  email: 'pl.user@company.com' },
@@ -37,7 +39,7 @@ interface AuthContextValue {
   isLoggedIn: boolean;
   login: () => Promise<void>;
   logout: () => void;
-  switchUser: (userId: number) => Promise<void>;
+  switchUser: (username: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -53,21 +55,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(
-    () => localStorage.getItem(LOGGED_IN_KEY) === 'true'
+    () => IS_DEV_MODE ? true : localStorage.getItem(LOGGED_IN_KEY) === 'true'
   );
 
-  // 로그인 상태가 복원될 때 JWT 토큰도 복원
   useEffect(() => {
-    if (!isLoggedIn) return;
-    authAPI.login(currentUser.username, currentUser.password)
-      .then((res) => setToken(res.access))
-      .catch(() => clearToken());
+    if (IS_DEV_MODE) {
+      // dev 모드: 저장된 유저 또는 첫 번째 유저로 자동 로그인
+      authAPI.devLogin(currentUser.username)
+        .then((res: any) => setToken(res.access))
+        .catch(() => clearToken());
+    } else {
+      // 운영 모드: 저장된 로그인 상태 복원
+      if (!isLoggedIn) return;
+      authAPI.login(currentUser.username, currentUser.password)
+        .then((res) => setToken(res.access))
+        .catch(() => clearToken());
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const login = async () => {
     try {
-      const res = await authAPI.login(currentUser.username, currentUser.password);
-      setToken(res.access);
+      if (IS_DEV_MODE) {
+        const res: any = await authAPI.devLogin(currentUser.username);
+        setToken(res.access);
+      } else {
+        const res = await authAPI.login(currentUser.username, currentUser.password);
+        setToken(res.access);
+      }
     } catch {
       clearToken();
     }
@@ -81,16 +95,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(LOGGED_IN_KEY);
   };
 
-  const switchUser = async (userId: number) => {
-    const user = MOCK_USERS.find((u) => u.id === userId);
+  const switchUser = async (username: string) => {
+    const user = MOCK_USERS.find((u) => u.username === username);
     if (!user) return;
 
     setCurrentUser(user);
-    localStorage.setItem(STORAGE_KEY, String(userId));
+    localStorage.setItem(STORAGE_KEY, String(user.id));
 
     try {
-      const res = await authAPI.login(user.username, user.password);
-      setToken(res.access);
+      if (IS_DEV_MODE) {
+        const res: any = await authAPI.devLogin(username);
+        setToken(res.access);
+      } else {
+        const res = await authAPI.login(user.username, user.password);
+        setToken(res.access);
+      }
     } catch {
       clearToken();
     }

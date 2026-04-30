@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useAuth, ROLE_LABEL, MOCK_USERS, MockUser } from '../contexts/AuthContext';
+import { useAuth, ROLE_LABEL, MOCK_USERS } from '../contexts/AuthContext';
 import { noticesAPI, authAPI } from '../api/client';
-import UserSwitchModal from './UserSwitchModal';
+
+const IS_DEV_MODE = process.env.REACT_APP_AUTH_MODE === 'dev';
 
 const LAST_SEEN_NOTICE_KEY = 'last_seen_notice_id';
 
@@ -33,18 +34,19 @@ const NAV_LINKS: NavLink[] = [
   { to: '/permissions', key: 'nav.permissions' },
 ];
 
+// dev 모드 유저 드롭다운에서 역할 표시 순서
+const ROLE_ORDER = ['PL', 'TE_R', 'TE_J', 'TE_O', 'TE_E', 'MASTER'] as const;
+
 export default function Navbar(): React.ReactElement {
   const { t, i18n } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser, switchUser } = useAuth();
   const [hasUnread, setHasUnread] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [userSwitchModalOpen, setUserSwitchModalOpen] = useState(false);
+  const [devUserDropdownOpen, setDevUserDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // 포트 번호로 개발용 확인 (localhost:10011)
-  const isDevMode = window.location.port === '10011';
+  const devDropdownRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = async () => {
     setDropdownOpen(false);
@@ -56,19 +58,14 @@ export default function Navbar(): React.ReactElement {
     window.location.href = '/?logged_out=true';
   };
 
-  // 사용자 전환 핸들러 (개발용 - AuthContext 의 switchUser 사용)
-  const { switchUser } = useAuth();
-  const handleSwitchUser = (user: MockUser) => {
-    if (switchUser) {
-      switchUser(user);
-    }
-  };
-
   // 드롭다운 외부 클릭 시 닫기
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setDropdownOpen(false);
+      }
+      if (devDropdownRef.current && !devDropdownRef.current.contains(event.target as Node)) {
+        setDevUserDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -135,10 +132,8 @@ export default function Navbar(): React.ReactElement {
 
         <div className="navbar-links">
           {NAV_LINKS.map(({ to, key }) => {
-            // 역할별 접근 권한 확인
             const allowedPaths = ROLE_PERMISSIONS[currentUser.role || 'NONE'] || ['/'];
             if (!allowedPaths.includes(to)) return null;
-            
             return (
               <Link
                 key={to}
@@ -152,10 +147,58 @@ export default function Navbar(): React.ReactElement {
         </div>
 
         <div className="navbar-actions">
+          {/* DEV 모드: 유저 전환 드롭다운 */}
+          {IS_DEV_MODE && (
+            <div className="dev-user-switcher" ref={devDropdownRef}>
+              <button
+                className="dev-user-btn"
+                onClick={() => setDevUserDropdownOpen(!devUserDropdownOpen)}
+                title="테스트 유저 전환"
+              >
+                <span className="dev-badge">DEV</span>
+                <span className="dev-user-name">{currentUser.name}</span>
+                <span className="dev-user-role">({ROLE_LABEL[currentUser.role] || currentUser.role})</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginLeft: 4 }}>
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
+              </button>
+
+              {devUserDropdownOpen && (
+                <div className="dev-user-dropdown">
+                  {ROLE_ORDER.map((role) => {
+                    const usersInRole = MOCK_USERS.filter((u) => u.role === role);
+                    if (usersInRole.length === 0) return null;
+                    return (
+                      <div key={role} className="dev-role-group">
+                        <div className="dev-role-label">{ROLE_LABEL[role]}</div>
+                        {usersInRole.map((u) => (
+                          <button
+                            key={u.username}
+                            className={`dev-user-item ${currentUser.username === u.username ? 'active' : ''}`}
+                            onClick={() => {
+                              switchUser(u.username);
+                              setDevUserDropdownOpen(false);
+                            }}
+                          >
+                            {u.name}
+                            <span className="dev-user-dept">{u.department}</span>
+                            {currentUser.username === u.username && (
+                              <span className="dev-current-badge">현재</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 사용자 정보 + 설정 아이콘 + 드롭다운 */}
           <div className="user-info-wrapper" ref={dropdownRef}>
-            <div 
-              className="user-info" 
+            <div
+              className="user-info"
               onClick={() => setDropdownOpen(!dropdownOpen)}
               style={{ cursor: 'pointer' }}
             >
@@ -163,13 +206,13 @@ export default function Navbar(): React.ReactElement {
               <span className="user-department">{cleanDepartment}</span>
               <span className="user-role">{roleLabel}</span>
               {/* 설정 아이콘 */}
-              <svg 
-                className="settings-icon" 
-                width="16" 
-                height="16" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
+              <svg
+                className="settings-icon"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
                 strokeWidth="2"
                 style={{ marginLeft: 8 }}
               >
@@ -178,7 +221,7 @@ export default function Navbar(): React.ReactElement {
               </svg>
             </div>
 
-            {/* 드롭다운 메뉴 */}
+            {/* 설정 드롭다운 */}
             {dropdownOpen && (
               <div className="user-dropdown">
                 <div className="dropdown-item user-info-item">
@@ -193,19 +236,6 @@ export default function Navbar(): React.ReactElement {
                   <span className="dropdown-label">{t('profile.department') || '부서'}</span>
                   <span className="dropdown-value">{currentUser.department || '-'}</span>
                 </div>
-                {isDevMode && (
-                  <>
-                    <div className="dropdown-divider" />
-                    <div className="dropdown-item">
-                      <button 
-                        className="dropdown-btn"
-                        onClick={() => { setUserSwitchModalOpen(true); setDropdownOpen(false); }}
-                      >
-                        🔄 사용자 전환
-                      </button>
-                    </div>
-                  </>
-                )}
                 <div className="dropdown-divider" />
                 <div className="dropdown-item lang-item">
                   <button
@@ -222,7 +252,7 @@ export default function Navbar(): React.ReactElement {
                   </button>
                 </div>
                 <div className="dropdown-item">
-                  <button 
+                  <button
                     className="dropdown-btn logout-btn"
                     onClick={handleLogout}
                   >
@@ -234,16 +264,6 @@ export default function Navbar(): React.ReactElement {
           </div>
         </div>
       </div>
-
-      {/* 개발용 사용자 전환 모달 */}
-      {isDevMode && (
-        <UserSwitchModal
-          isOpen={userSwitchModalOpen}
-          onClose={() => setUserSwitchModalOpen(false)}
-          onSelectUser={handleSwitchUser}
-          currentUser={currentUser as MockUser}
-        />
-      )}
     </nav>
   );
 }
