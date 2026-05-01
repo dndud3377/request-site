@@ -38,6 +38,7 @@ function AppContent(): React.ReactElement {
   const location = useLocation();
 
   if (location.pathname === '/oidc-callback') return <OIDCCallbackPage />;
+  if (location.pathname === '/logout') return <LoginPage />;
   if (isLoading) return <LoadingSpinner />;
   if (!isLoggedIn) return <LoginPage />;
 
