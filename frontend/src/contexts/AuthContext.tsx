@@ -30,6 +30,7 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   TE_O:   'AGENT O팀',
   TE_E:   'AGENT E팀',
   MASTER: '관리자',
+  NONE:   '미지정',
 };
 
 // ===== Context =====
@@ -105,7 +106,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isLoggedIn) return;
 
-    const handleTimeout = () => {
+    const handleTimeout = async () => {
+      try { await authAPI.oidcLogout(); } catch {}
       clearToken();
       setIsLoggedIn(false);
       setCurrentUser(EMPTY_USER);
@@ -117,12 +119,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       inactivityTimerRef.current = setTimeout(handleTimeout, INACTIVITY_MS);
     };
 
-    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'] as const;
-    events.forEach(e => window.addEventListener(e, resetTimer, { passive: true }));
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'] as const;
+    events.forEach(e => document.addEventListener(e, resetTimer, { passive: true }));
     resetTimer();
 
     return () => {
-      events.forEach(e => window.removeEventListener(e, resetTimer));
+      events.forEach(e => document.removeEventListener(e, resetTimer));
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
     };
   }, [isLoggedIn]);
