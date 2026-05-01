@@ -1,6 +1,6 @@
 // ===== Auth / Role Types =====
 
-export type UserRole = 'PL' | 'TE_R' | 'TE_J' | 'TE_O' | 'TE_E' | 'MASTER';
+export type UserRole = 'PL' | 'TE_R' | 'TE_J' | 'TE_O' | 'TE_E' | 'MASTER' | 'NONE';
 
 export interface UserInfo {
   id: number;
