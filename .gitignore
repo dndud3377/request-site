@@ -48,6 +48,11 @@ frontend/build/
 # Nginx
 *nginx.conf
 
+# SSL 인증서 (절대 커밋 금지)
+nginx/certs/*.crt
+nginx/certs/*.key
+nginx/certs/*.pem
+
 # frontend
 *nginx-frontend.conf
 

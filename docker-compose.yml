@@ -87,8 +87,9 @@ services:
     container_name: request_nginx
     restart: unless-stopped
     ports:
-      - "10010:80"
+      - "10010:443"
     volumes:
+      - ./nginx/certs:/etc/nginx/certs:ro
       - static_data:/var/www/static
       - media_data:/var/www/media
     depends_on:
