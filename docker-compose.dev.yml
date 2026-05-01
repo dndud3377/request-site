@@ -78,7 +78,6 @@ services:
       args:
         IMAGE_PATH: ${IMAGE_PATH}
         NPM_REGISTRY_URL: ${NPM_REGISTRY_URL}
-        REACT_APP_USE_MOCK: "false"
         REACT_APP_AUTH_MODE: "dev"
     container_name: request_frontend_dev
     restart: unless-stopped
