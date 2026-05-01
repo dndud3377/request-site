@@ -208,7 +208,14 @@
     "btn": "사내 계정으로 로그인",
     "logging_in": "로그인 중...",
     "hint": "사내 OpenID 계정을 통해 인증합니다.",
-    "logout": "로그아웃"
+    "logout": "로그아웃",
+    "or": "또는",
+    "username_placeholder": "아이디",
+    "password_placeholder": "비밀번호",
+    "pw_btn": "로그인",
+    "error_sso": "SSO 로그인에 실패했습니다.",
+    "error_pw": "로그인에 실패했습니다. 아이디와 비밀번호를 확인해주세요.",
+    "inactive_logout": "장시간 비활동으로 자동 로그아웃되었습니다."
   },
   "permission": {
     "title": "권한 관리",

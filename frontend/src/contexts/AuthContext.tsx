@@ -1,10 +1,10 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { MockUser, UserRole } from '../types';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { MockUser, UserInfo, UserRole } from '../types';
 import { authAPI, setToken, clearToken } from '../api/client';
 
 const IS_DEV_MODE = process.env.REACT_APP_AUTH_MODE === 'dev';
 
-// ===== Mock Users (역할 테스트용 유저 목록) =====
+// ===== Mock Users (dev 유저 전환용) =====
 
 export const MOCK_USERS: MockUser[] = [
   { id: 1,  username: 'pl_user',  password: 'pass1234', name: '김의뢰', role: 'PL',     department: '마케팅팀',  email: 'pl.user@company.com' },
@@ -35,9 +35,11 @@ export const ROLE_LABEL: Record<UserRole, string> = {
 // ===== Context =====
 
 interface AuthContextValue {
-  currentUser: MockUser;
+  currentUser: UserInfo;
   isLoggedIn: boolean;
-  login: () => Promise<void>;
+  isLoading: boolean;
+  loginSSO: () => Promise<void>;
+  loginWithPassword: (username: string, password: string) => Promise<void>;
   logout: () => void;
   switchUser: (username: string) => Promise<void>;
 }
@@ -45,78 +47,122 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const STORAGE_KEY = 'approval_system_user_id';
-const LOGGED_IN_KEY = 'approval_system_logged_in';
+const INACTIVITY_MS = 60 * 60 * 1000;
+
+const EMPTY_USER: UserInfo = { id: 0, username: '', name: '', role: 'PL', department: '', email: '' };
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<MockUser>(() => {
-    const savedId = localStorage.getItem(STORAGE_KEY);
-    const found = savedId ? MOCK_USERS.find((u) => u.id === Number(savedId)) : null;
-    return found ?? MOCK_USERS[0];
-  });
+  const [currentUser, setCurrentUser] = useState<UserInfo>(EMPTY_USER);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoading, setIsLoading] = useState(!IS_DEV_MODE);
+  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(
-    () => IS_DEV_MODE ? true : localStorage.getItem(LOGGED_IN_KEY) === 'true'
-  );
-
+  // ===== 초기화: 세션 복원 (운영) / dev 자동 로그인 =====
   useEffect(() => {
     if (IS_DEV_MODE) {
-      // dev 모드: 저장된 유저 또는 첫 번째 유저로 자동 로그인
-      authAPI.devLogin(currentUser.username)
+      const savedId = localStorage.getItem(STORAGE_KEY);
+      const found = savedId ? MOCK_USERS.find(u => u.id === Number(savedId)) : null;
+      const devUser = found ?? MOCK_USERS[0];
+      setCurrentUser(devUser as unknown as UserInfo);
+      authAPI.devLogin(devUser.username)
         .then((res: any) => setToken(res.access))
         .catch(() => clearToken());
-    } else {
-      // 운영 모드: 저장된 로그인 상태 복원
-      if (!isLoggedIn) return;
-      authAPI.login(currentUser.username, currentUser.password)
-        .then((res) => setToken(res.access))
-        .catch(() => clearToken());
+      setIsLoggedIn(true);
+      return;
     }
+
+    // 운영 모드: /api/auth/me/ 최대 5회 재시도
+    const MAX_RETRIES = 5;
+    let cancelled = false;
+
+    (async () => {
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        if (cancelled) return;
+        try {
+          const res = await authAPI.me();
+          if (cancelled) return;
+          setCurrentUser(res.user);
+          setIsLoggedIn(true);
+          setIsLoading(false);
+          return;
+        } catch (e) {
+          // HTTP errors (401, 403, 5xx) → no retry, network errors → retry with backoff
+          if (e instanceof Error && e.message.startsWith('HTTP ')) break;
+          if (attempt < MAX_RETRIES - 1) {
+            await sleep((attempt + 1) * 1000);
+          }
+        }
+      }
+      if (!cancelled) setIsLoading(false);
+    })();
+
+    return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const login = async () => {
-    try {
-      if (IS_DEV_MODE) {
-        const res: any = await authAPI.devLogin(currentUser.username);
-        setToken(res.access);
-      } else {
-        const res = await authAPI.login(currentUser.username, currentUser.password);
-        setToken(res.access);
-      }
-    } catch {
+  // ===== 1시간 비활동 자동 로그아웃 =====
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const handleTimeout = () => {
       clearToken();
-    }
+      setIsLoggedIn(false);
+      setCurrentUser(EMPTY_USER);
+      window.location.href = '/?reason=inactive';
+    };
+
+    const resetTimer = () => {
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = setTimeout(handleTimeout, INACTIVITY_MS);
+    };
+
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'] as const;
+    events.forEach(e => window.addEventListener(e, resetTimer, { passive: true }));
+    resetTimer();
+
+    return () => {
+      events.forEach(e => window.removeEventListener(e, resetTimer));
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+    };
+  }, [isLoggedIn]);
+
+  const loginSSO = async () => {
+    const res = await authAPI.oidcLogin();
+    if (res.nonce_jwt) localStorage.setItem('oidc_state_jwt', res.nonce_jwt);
+    window.location.href = res.redirect_url;
+  };
+
+  const loginWithPassword = async (username: string, password: string) => {
+    const res = await authAPI.login(username, password);
+    setToken(res.access);
+    const meRes = await authAPI.me();
+    setCurrentUser(meRes.user);
     setIsLoggedIn(true);
-    localStorage.setItem(LOGGED_IN_KEY, 'true');
   };
 
   const logout = () => {
     clearToken();
     setIsLoggedIn(false);
-    localStorage.removeItem(LOGGED_IN_KEY);
+    setCurrentUser(EMPTY_USER);
   };
 
   const switchUser = async (username: string) => {
-    const user = MOCK_USERS.find((u) => u.username === username);
+    if (!IS_DEV_MODE) return;
+    const user = MOCK_USERS.find(u => u.username === username);
     if (!user) return;
-
-    setCurrentUser(user);
+    setCurrentUser(user as unknown as UserInfo);
     localStorage.setItem(STORAGE_KEY, String(user.id));
-
     try {
-      if (IS_DEV_MODE) {
-        const res: any = await authAPI.devLogin(username);
-        setToken(res.access);
-      } else {
-        const res = await authAPI.login(user.username, user.password);
-        setToken(res.access);
-      }
+      const res: any = await authAPI.devLogin(username);
+      setToken(res.access);
     } catch {
       clearToken();
     }
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, isLoggedIn, login, logout, switchUser }}>
+    <AuthContext.Provider value={{ currentUser, isLoggedIn, isLoading, loginSSO, loginWithPassword, logout, switchUser }}>
       {children}
     </AuthContext.Provider>
   );

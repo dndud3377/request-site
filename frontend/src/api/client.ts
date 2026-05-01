@@ -20,39 +20,20 @@ import {
   UserWithRole,
   CreateUserInput,
 } from '../types';
-import { mockDocumentsAPI, mockNoticesAPI, mockGetBbExternalData } from './mock';
-
-// ===== Mock API 여부 확인 =====
-// CRA 환경 변수: REACT_APP_USE_MOCK=true 설정 시 Mock API 사용
-const USE_MOCK = process.env.REACT_APP_USE_MOCK === 'true';
-const useMockAPI = USE_MOCK;
 
 // ===== JWT 토큰 관리 =====
-// 참고: HttpOnly Cookie에 토큰이 저장되므로 JavaScript로 직접 읽을 수 없습니다.
-// 대신 Cookie 존재 여부만 확인하고, API 호출 시 credentials: 'include'로 자동 전송됩니다.
 
 const TOKEN_KEY = 'access_token';
 
-/**
- * 토큰이 존재하는지 확인합니다.
- * HttpOnly Cookie이므로 실제 토큰 값은 읽을 수 없고, 존재 여부만 확인합니다.
- * API 호출 시 credentials: 'include'로 Cookie가 자동 전송됩니다.
- */
 export function getToken(): string | null {
-  // HttpOnly Cookie는 JavaScript로 읽을 수 없으므로
-  // localStorage에 토큰이 있으면 반환 (하위 호환성), 없으면 null 반환
-  // 실제 인증은 Cookie를 통해 이루어집니다.
   return localStorage.getItem(TOKEN_KEY);
 }
 
 export function setToken(token: string): void {
-  // 하위 호환성을 위해 localStorage에도 저장 (선택적)
-  // 실제 인증은 HttpOnly Cookie를 통해 이루어집니다.
   localStorage.setItem(TOKEN_KEY, token);
 }
 
 export function clearToken(): void {
-  // localStorage에서 제거 (Cookie 삭제는 서버에서 처리)
   localStorage.removeItem(TOKEN_KEY);
 }
 
@@ -64,17 +45,15 @@ async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  // HttpOnly Cookie에 저장된 JWT가 자동으로 전송됩니다.
-  // Authorization 헤더는 더 이상 필요하지 않습니다.
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
 
-  const res = await fetch(`${BASE_URL}${path}`, { 
-    ...options, 
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...options,
     headers,
-    credentials: 'include',  // 쿠키(세션, JWT) 자동 전송 - 중요!
+    credentials: 'include',
   });
 
   if (!res.ok) {
@@ -88,7 +67,6 @@ async function request<T>(
     throw new Error(errMsg);
   }
 
-  // 204 No Content 처리
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
@@ -112,10 +90,8 @@ export const authAPI = {
     post<{ access: string; refresh: string; user: unknown }>('/auth/login/', { username, password }),
   me: () =>
     get<{ user: UserInfo }>('/auth/me/'),
-  // 토큰 갱신 (슬라이딩 윈도우)
   refresh: () =>
     post<{ success: boolean; user: UserInfo }>('/auth/refresh/'),
-  // OIDC SSO 로그인 (form_post 모드)
   oidcLogin: () =>
     get<{ redirect_url: string; nonce_jwt?: string }>('/auth/oidc/login/'),
   oidcCallback: (data: { id_token: string; state?: string; nonce_jwt?: string }) =>
@@ -129,7 +105,6 @@ export const authAPI = {
 // ===== 의뢰서 API =====
 
 const listDocuments = async (params?: Record<string, string>) => {
-  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.list(params);
   const qs = params ? '?' + new URLSearchParams(params).toString() : '';
   const data = await get<{ results: RequestDocument[]; count: number } | RequestDocument[]>(
     `/documents/${qs}`
@@ -141,25 +116,21 @@ const listDocuments = async (params?: Record<string, string>) => {
 };
 
 const getDocument = async (id: number) => {
-  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.get(id);
   const data = await get<RequestDocument>(`/documents/${id}/`);
   return { data };
 };
 
 const createDocument = async (input: CreateDocumentInput) => {
-  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.create(input);
   const data = await post<RequestDocument>('/documents/', input);
   return { data };
 };
 
 const updateDocument = async (id: number, input: UpdateDocumentInput) => {
-  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.update(id, input);
   const data = await patch<RequestDocument>(`/documents/${id}/`, input);
   return { data };
 };
 
 const submitDocument = async (id: number) => {
-  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.submit(id);
   const data = await post<{ message: string; email_sent: boolean; document: RequestDocument }>(
     `/documents/${id}/submit/`
   );
@@ -167,7 +138,6 @@ const submitDocument = async (id: number) => {
 };
 
 const resubmitDocument = async (id: number) => {
-  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.resubmit(id);
   const data = await post<{ message: string; document: RequestDocument }>(
     `/documents/${id}/resubmit/`
   );
@@ -175,19 +145,16 @@ const resubmitDocument = async (id: number) => {
 };
 
 const withdrawDocument = async (id: number) => {
-  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.withdraw(id);
   const data = await post<{ message: string }>(`/documents/${id}/withdraw/`);
   return { data };
 };
 
 const deleteDocument = async (id: number) => {
-  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.delete(id);
   const data = await post<{ message: string }>(`/documents/${id}/delete/`);
   return { data };
 };
 
 const approveStep = async (docId: number, agent: AgentType, comment?: string) => {
-  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.approveStep(docId, agent, comment);
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/approve-step/`,
     { agent, comment: comment ?? '' }
@@ -196,7 +163,6 @@ const approveStep = async (docId: number, agent: AgentType, comment?: string) =>
 };
 
 const rejectStep = async (docId: number, agent: AgentType, comment?: string) => {
-  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.rejectStep(docId, agent, comment);
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/reject-step/`,
     { agent, comment: comment ?? '' }
@@ -210,7 +176,6 @@ const assignStep = async (
   assigneeId: number,
   assigneeName: string
 ) => {
-  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.assignStep(docId, agent, assigneeId, assigneeName);
   const data = await post<{ message: string }>(`/documents/${docId}/assign-step/`, {
     agent,
     assignee_id: assigneeId,
@@ -220,22 +185,11 @@ const assignStep = async (
 };
 
 const documentStats = async () => {
-  if (useMockAPI && mockDocumentsAPI) return mockDocumentsAPI.stats();
   const data = await get<Stats>('/documents/stats/');
   return { data };
 };
 
-// 승인된 문서 목록 조회 (이력조회용)
 const getApprovedDocuments = async (product_name?: string): Promise<{ data: RequestDocument[] }> => {
-  if (useMockAPI && mockDocumentsAPI) {
-    const all = await mockDocumentsAPI.list({ status: 'approved' });
-    const data = all.data;
-    let results: RequestDocument[] = Array.isArray(data) ? data : (data as any).results ?? [];
-    if (product_name) {
-      results = results.filter((d: RequestDocument) => d.product_name === product_name);
-    }
-    return { data: results };
-  }
   const params: Record<string, string> = { status: 'approved' };
   if (product_name) params.product_name = product_name;
   const qs = '?' + new URLSearchParams(params).toString();
@@ -319,37 +273,31 @@ export const linesAPI = {
 // ===== 공지사항 API =====
 
 const listNotices = async () => {
-  if (useMockAPI) return mockNoticesAPI.list();
   const data = await get<AdminNotice[]>('/notices/');
   return { data };
 };
 
 const latestNotice = async () => {
-  if (useMockAPI) return mockNoticesAPI.latest();
   const data = await get<AdminNotice | null>('/notices/latest/');
   return { data: data ?? null };
 };
 
 const getNotice = async (id: number) => {
-  if (useMockAPI) return mockNoticesAPI.get(id);
   const data = await get<AdminNotice>(`/notices/${id}/`);
   return { data };
 };
 
 const createNotice = async (input: CreateNoticeInput) => {
-  if (useMockAPI) return mockNoticesAPI.create(input);
   const data = await post<AdminNotice>('/notices/', input);
   return { data: data ?? null };
 };
 
 const updateNotice = async (id: number, input: UpdateNoticeInput) => {
-  if (useMockAPI) return mockNoticesAPI.update(id, input);
   const data = await patch<AdminNotice>(`/notices/${id}/`, input);
   return { data: data ?? null };
 };
 
 const deleteNotice = async (id: number) => {
-  if (useMockAPI) return mockNoticesAPI.delete(id);
   await request(`/notices/${id}/`, { method: 'DELETE' });
   return { data: undefined };
 };
@@ -419,13 +367,11 @@ const deleteUser = async (id: number): Promise<void> => {
   await request(`/users/${id}/`, { method: 'DELETE' });
 };
 
-// 권한 부여 대상 사용자 목록 조회 (role='NONE')
 const getUsersForAssignment = async (): Promise<{ data: UserForAssignment[] }> => {
   const data = await get<UserForAssignment[]>('/users/for-assignment/');
   return { data: Array.isArray(data) ? data : [] };
 };
 
-// 사용자에게 역할 부여
 const assignRole = async (userId: number, role: UserRole): Promise<{ data: UserWithRole }> => {
   const data = await post<UserWithRole>(`/users/${userId}/assign-role/`, { role });
   return { data };
@@ -462,7 +408,6 @@ export const formOptionsAPI = {
   getProcessId: (line: string, product: string): Promise<string[]> =>
     getOptions(`/form-options/process-id/?line=${encodeURIComponent(line)}&product=${encodeURIComponent(product)}`),
 
-  // JOB FILE layer (PMAINF) 와 OVL layer (POVLAY) 를 별도로 조회
   getJobFileLayer: (line: string, process: string): Promise<StepInfo[]> =>
     getStepOptions(`/form-options/job-file-layer/?line=${encodeURIComponent(line)}&process=${encodeURIComponent(process)}`),
 
@@ -501,7 +446,7 @@ export const uploadImageAPI = {
         method: 'POST',
         headers,
         body: formData,
-        credentials: 'include',  // 쿠키 전송
+        credentials: 'include',
       })
         .then(async (res) => {
           if (!res.ok) {

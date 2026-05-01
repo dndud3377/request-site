@@ -2,6 +2,15 @@
 
 export type UserRole = 'PL' | 'TE_R' | 'TE_J' | 'TE_O' | 'TE_E' | 'MASTER';
 
+export interface UserInfo {
+  id: number;
+  username: string;
+  name: string;
+  role: UserRole;
+  department: string;
+  email: string;
+}
+
 export interface MockUser {
   id: number;
   username: string;
