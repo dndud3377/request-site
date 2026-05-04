@@ -56,8 +56,8 @@ class CookieJWTAuthentication(BaseAuthentication):
                 raise AuthenticationFailed('Invalid token payload')
             
             try:
-                user = User.objects.get(username=username)
-                logger.info(f"[Auth] User found: {user.username}, id: {user.id}")
+                user = User.objects.get(loginid=username)
+                logger.info(f"[Auth] User found: {user.loginid}, id: {user.id}")
             except User.DoesNotExist:
                 logger.error(f"[Auth] User not found: {username}")
                 # 사용자가 없으면 Cookie를 삭제하고 None 반환 (SSO 로그인 시도)

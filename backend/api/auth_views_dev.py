@@ -32,12 +32,12 @@ def dev_login_view(request):
         return Response({'error': 'username을 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        user = User.objects.get(username=username)
+        user = User.objects.get(loginid=username)
     except User.DoesNotExist:
         return Response({'error': f'사용자를 찾을 수 없습니다: {username}'}, status=status.HTTP_404_NOT_FOUND)
 
     refresh = RefreshToken.for_user(user)
-    logger.info(f"[DEV] Dev login: {username} ({getattr(user, 'role', 'NONE')})")
+    logger.info(f"[DEV] Dev login: {username} ({user.role})")
     return Response({
         'access': str(refresh.access_token),
         'refresh': str(refresh),
