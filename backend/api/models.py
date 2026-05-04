@@ -8,6 +8,45 @@
 import json
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
+
+
+class UserProfileManager(BaseUserManager):
+    def create_user(self, loginid, password=None, **extra_fields):
+        if not loginid:
+            raise ValueError('loginid는 필수입니다.')
+        user = self.model(loginid=loginid, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, loginid, password=None, **extra_fields):
+        return self.create_user(loginid, password, **extra_fields)
+
+
+class UserProfile(AbstractBaseUser):
+    ROLE_CHOICES = [
+        ('NONE', 'NONE'), ('PL', 'PL'), ('TE_R', 'TE_R'),
+        ('TE_J', 'TE_J'), ('TE_O', 'TE_O'), ('TE_E', 'TE_E'), ('MASTER', 'MASTER'),
+    ]
+    loginid  = models.CharField(max_length=150, unique=True, verbose_name='로그인 ID')
+    mail     = models.EmailField(blank=True, default='', verbose_name='이메일')
+    username = models.CharField(max_length=150, blank=True, default='', verbose_name='표시 이름')
+    deptname = models.CharField(max_length=200, blank=True, default='', verbose_name='부서명')
+    role     = models.CharField(max_length=10, choices=ROLE_CHOICES, default='NONE', verbose_name='역할')
+    # password, last_login → AbstractBaseUser 자동 포함
+
+    USERNAME_FIELD = 'loginid'
+    REQUIRED_FIELDS = []
+    objects = UserProfileManager()
+
+    class Meta:
+        verbose_name = '사용자'
+        verbose_name_plural = '사용자 목록'
+
+    def __str__(self):
+        return f"{self.loginid} ({self.username})"
+
 
 User = get_user_model()
 

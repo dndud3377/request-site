@@ -13,7 +13,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import connection
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
+User = get_user_model()
 from .models import (
     RequestDocument, ApprovalStep, VOC, Line, ProcessProduct, ProductProcessId, AdminNotice,
     StepLine1, StepLine3, StepLine4, StepLine5, VocHistory,
@@ -35,8 +36,7 @@ class IsMasterOrReadOnly(BasePermission):
             return True
         return (
             request.user.is_authenticated and
-            hasattr(request.user, 'profile') and
-            request.user.profile.role == 'MASTER'
+            request.user.role == 'MASTER'
         )
 
 
@@ -647,67 +647,46 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [AllowAny]  # 테스트 서버용
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['username', 'display_name', 'department']
-    ordering_fields = ['id', 'username']
+    search_fields = ['loginid', 'username', 'deptname']
+    ordering_fields = ['id', 'loginid']
     ordering = ['id']
-    
+
     def get_serializer_class(self):
         return UserSerializer
-    
+
     def get_queryset(self):
-        # role 필터링 지원 (Django ORM 이 role 필드를 인식하지 못하므로 raw SQL 사용)
         role = self.request.query_params.get('role')
         if role:
-            from django.db import connection
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    'SELECT id FROM a_user WHERE role = %s',
-                    [role]
-                )
-                user_ids = [row[0] for row in cursor.fetchall()]
-            return User.objects.filter(id__in=user_ids)
+            return User.objects.filter(role=role)
         return User.objects.all()
-    
+
     @action(detail=False, methods=['get'], url_path='for-assignment')
     def for_assignment(self, request):
         """권한 부여 대상 사용자 목록 (role='NONE' 인 사용자)"""
-        # Django ORM 이 role 필드를 인식하지 못하므로 raw SQL 사용
-        from django.db import connection
-        with connection.cursor() as cursor:
-            cursor.execute(
-                'SELECT id, username, display_name, department, email FROM a_user WHERE role = %s ORDER BY username',
-                ['NONE']
-            )
-            rows = cursor.fetchall()
-            data = [{
-                'id': row[0],
-                'username': row[1],
-                'display_name': row[2] or '',
-                'department': row[3] or '',
-                'email': row[4] or '',
-            } for row in rows]
+        users = User.objects.filter(role='NONE').order_by('loginid')
+        data = [{
+            'id': u.id,
+            'username': u.loginid,
+            'display_name': u.username,
+            'department': u.deptname,
+            'email': u.mail,
+        } for u in users]
         return Response(data)
-    
+
     @action(detail=True, methods=['post'], url_path='assign-role')
     def assign_role(self, request, pk=None):
         """사용자에게 역할 부여"""
         user = self.get_object()
         role = request.data.get('role')
-        
+
         if role not in ['PL', 'TE_R', 'TE_J', 'TE_O', 'TE_E', 'MASTER']:
             return Response({'error': '유효하지 않은 역할입니다.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Django ORM 이 role 필드를 인식하지 못하므로 raw SQL 사용
-        from django.db import connection
-        with connection.cursor() as cursor:
-            cursor.execute(
-                'UPDATE a_user SET role = %s WHERE id = %s',
-                [role, user.id]
-            )
-        
+
+        User.objects.filter(pk=user.pk).update(role=role)
+
         return Response({
             'id': user.id,
-            'username': user.username,
+            'username': user.loginid,
             'role': role,
         })
     

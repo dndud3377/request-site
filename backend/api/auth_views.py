@@ -25,18 +25,13 @@ logger = logging.getLogger(__name__)
 
 def user_to_dict(user):
     """User 객체를 프론트엔드 사용자 정보로 변환"""
-    # role, department, display_name 을 auth_user 에서 직접 가져옴
-    role = getattr(user, 'role', 'NONE') or 'NONE'
-    name = getattr(user, 'display_name', '') or user.username
-    department = getattr(user, 'department', '') or ''
-    
     return {
         'id': user.id,
-        'username': user.username,
-        'name': name,
-        'role': role,
-        'department': department,
-        'email': user.email,
+        'username': user.loginid,
+        'name': user.username or user.loginid,
+        'role': user.role or 'NONE',
+        'department': user.deptname,
+        'email': user.mail,
     }
 
 
@@ -55,25 +50,19 @@ def create_or_update_user_from_oidc(claims):
         logger.error("[OIDC] No login_id found in claims")
         return None
     
-    # 사용자 생성 또는 업데이트
-    # login_id를 username으로 사용 (Django 필수 필드)
     user, created = User.objects.get_or_create(
-        username=login_id,
+        loginid=login_id,
         defaults={
-            'email': email or '',
-            'is_staff': False,
-            'is_active': True,
+            'mail': email or '',
+            'role': 'NONE',
         }
     )
-    
+
     if not created:
-        # 기존 사용자 정보 업데이트
-        user.email = email or user.email
-    
-    # auth_user 에 직접 역할 정보 저장 (기본 role: NONE)
-    user.role = 'NONE'  # SSO 로그인 시 기본 권한 없음
-    user.department = dept_name or ''
-    user.display_name = user_name or ''
+        user.mail = email or user.mail
+
+    user.deptname = dept_name or ''
+    user.username = user_name or ''
     user.save()
     
     logger.info(f"[OIDC] User {'created' if created else 'updated'}: {login_id}")
@@ -120,7 +109,7 @@ def login_view(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    user = authenticate(request, username=username, password=password)
+    user = authenticate(request, loginid=username, password=password)
     if not user:
         return Response(
             {'error': '아이디 또는 비밀번호가 올바르지 않습니다.'},
@@ -189,7 +178,7 @@ def refresh_token_view(request):
         username = payload.get('username')
         
         try:
-            user = User.objects.get(username=username)
+            user = User.objects.get(loginid=username)
         except User.DoesNotExist:
             return Response(
                 {'error': '사용자를 찾을 수 없습니다.'},
@@ -446,6 +435,7 @@ def oidc_callback(request):
         )
     
     # Django 세션 로그인
+    user.backend = 'django.contrib.auth.backends.ModelBackend'
     login(request, user)
     
     # ============================================
@@ -505,7 +495,7 @@ def oidc_callback(request):
     }
     service_refresh_token = jwt.encode(refresh_payload, service_jwt_secret, algorithm=service_jwt_algorithm)
     
-    logger.info(f"[OIDC] Login success: {user.username}, service token created")
+    logger.info(f"[OIDC] Login success: {user.loginid}, service token created")
     
     # ============================================
     # HttpOnly Cookie에 토큰 저장
