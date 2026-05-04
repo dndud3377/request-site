@@ -6,10 +6,11 @@
 - frontend/src/locales/ko.json
 """
 
-import django.contrib.auth.models
+import django.contrib.auth.base_user
 import django.db.models.deletion
 from django.conf import settings
 from django.db import migrations, models
+import api.models
 
 
 class Migration(migrations.Migration):
@@ -36,7 +37,7 @@ class Migration(migrations.Migration):
                 'verbose_name_plural': '사용자 목록',
             },
             managers=[
-                ('objects', django.contrib.auth.models.UserManager()),
+                ('objects', api.models.UserProfileManager()),
             ],
         ),
         migrations.CreateModel(
