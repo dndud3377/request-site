@@ -1,4 +1,4 @@
-from django.contrib.auth import authenticate, login, logout, get_user_model
+from django.contrib.auth import login, logout, get_user_model
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
@@ -7,7 +7,6 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework_simplejwt.tokens import RefreshToken
 from datetime import datetime, timedelta
 import logging
 import os
@@ -91,37 +90,6 @@ def get_adfs_public_key():
     except Exception as e:
         logger.error(f"[OIDC] Failed to load certificate: {e}")
         return None
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def login_view(request):
-    """
-    POST /api/auth/login/
-    { username, password } → { access, refresh, user }
-    """
-    username = request.data.get('username', '').strip()
-    password = request.data.get('password', '').strip()
-
-    if not username or not password:
-        return Response(
-            {'error': '아이디와 비밀번호를 입력해주세요.'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    user = authenticate(request, loginid=username, password=password)
-    if not user:
-        return Response(
-            {'error': '아이디 또는 비밀번호가 올바르지 않습니다.'},
-            status=status.HTTP_401_UNAUTHORIZED
-        )
-
-    refresh = RefreshToken.for_user(user)
-    return Response({
-        'access': str(refresh.access_token),
-        'refresh': str(refresh),
-        'user': user_to_dict(user),
-    })
 
 
 @api_view(['GET'])

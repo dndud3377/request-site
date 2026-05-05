@@ -4,12 +4,9 @@ import { useAuth } from '../contexts/AuthContext';
 
 export default function LoginPage(): React.ReactElement {
   const { t, i18n } = useTranslation();
-  const { loginSSO, loginWithPassword } = useAuth();
+  const { loginSSO } = useAuth();
 
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [ssoLoading, setSsoLoading] = useState(false);
-  const [pwLoading, setPwLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const isInactive = new URLSearchParams(window.location.search).get('reason') === 'inactive';
@@ -22,19 +19,6 @@ export default function LoginPage(): React.ReactElement {
     } catch (e) {
       setError(e instanceof Error ? e.message : t('login.error_sso'));
       setSsoLoading(false);
-    }
-  };
-
-  const handlePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!username.trim() || !password) return;
-    setPwLoading(true);
-    setError(null);
-    try {
-      await loginWithPassword(username.trim(), password);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t('login.error_pw'));
-      setPwLoading(false);
     }
   };
 
@@ -85,7 +69,7 @@ export default function LoginPage(): React.ReactElement {
         <button
           style={{ ...styles.ssoBtn, ...(ssoLoading ? styles.btnDisabled : {}) }}
           onClick={handleSSO}
-          disabled={ssoLoading || pwLoading}
+          disabled={ssoLoading}
         >
           {ssoLoading ? (
             <span style={styles.btnInner}>
@@ -99,49 +83,6 @@ export default function LoginPage(): React.ReactElement {
             </span>
           )}
         </button>
-
-        {/* 구분선 */}
-        <div style={styles.divider}>
-          <span style={styles.dividerLine} />
-          <span style={styles.dividerText}>{t('login.or')}</span>
-          <span style={styles.dividerLine} />
-        </div>
-
-        {/* ID/PW 폼 */}
-        <form onSubmit={handlePassword} style={styles.form}>
-          <input
-            style={styles.input}
-            type="text"
-            placeholder={t('login.username_placeholder')}
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            autoComplete="username"
-            disabled={ssoLoading || pwLoading}
-          />
-          <input
-            style={styles.input}
-            type="password"
-            placeholder={t('login.password_placeholder')}
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            autoComplete="current-password"
-            disabled={ssoLoading || pwLoading}
-          />
-          <button
-            type="submit"
-            style={{ ...styles.pwBtn, ...((pwLoading || !username.trim() || !password) ? styles.btnDisabled : {}) }}
-            disabled={pwLoading || ssoLoading || !username.trim() || !password}
-          >
-            {pwLoading ? (
-              <span style={styles.btnInner}>
-                <span style={{ ...styles.spinner, borderTopColor: 'var(--accent)' }} />
-                {t('login.logging_in')}
-              </span>
-            ) : (
-              t('login.pw_btn')
-            )}
-          </button>
-        </form>
 
         <p style={styles.hint}>{t('login.hint')}</p>
       </div>
@@ -284,55 +225,6 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'var(--transition)',
     boxShadow: '0 2px 8px var(--accent-glow)',
     marginBottom: 0,
-  },
-  divider: {
-    width: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    margin: '20px 0',
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    background: 'var(--border)',
-    display: 'block',
-  },
-  dividerText: {
-    fontSize: 12,
-    color: 'var(--text-disabled)',
-    whiteSpace: 'nowrap',
-  },
-  form: {
-    width: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 10,
-  },
-  input: {
-    width: '100%',
-    padding: '12px 14px',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 14,
-    color: 'var(--text-primary)',
-    background: 'var(--bg-primary)',
-    outline: 'none',
-    boxSizing: 'border-box',
-    transition: 'var(--transition)',
-  },
-  pwBtn: {
-    width: '100%',
-    padding: '12px 24px',
-    background: 'transparent',
-    color: 'var(--accent)',
-    border: '1.5px solid var(--accent)',
-    borderRadius: 'var(--radius-md)',
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'var(--transition)',
-    marginTop: 4,
   },
   btnDisabled: {
     opacity: 0.6,
