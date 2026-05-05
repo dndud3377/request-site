@@ -14,7 +14,6 @@ export interface UserInfo {
 export interface MockUser {
   id: number;
   username: string;
-  password: string;
   name: string;
   role: UserRole;
   department: string;

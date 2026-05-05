@@ -7,7 +7,7 @@ from .views import (
     form_options_process, form_options_products, form_options_process_id,
     form_options_job_file_layer, form_options_ovl_layer, form_options_bb_external,
 )
-from .auth_views import login_view, me_view, refresh_token_view, oidc_login_init, oidc_callback, oidc_logout
+from .auth_views import me_view, refresh_token_view, oidc_login_init, oidc_callback, oidc_logout
 from .auth_views_dev import dev_login_view
 
 router = DefaultRouter()
@@ -22,7 +22,6 @@ urlpatterns = [
     path('', include(router.urls)),
     path('health/', health_check),
     path('upload-image/', upload_image),
-    path('auth/login/', login_view),
     path('auth/dev-login/', dev_login_view),
     path('auth/me/', me_view),
     path('auth/refresh/', refresh_token_view),

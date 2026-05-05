@@ -7,20 +7,20 @@ const IS_DEV_MODE = process.env.REACT_APP_AUTH_MODE === 'dev';
 // ===== Mock Users (dev 유저 전환용) =====
 
 export const MOCK_USERS: MockUser[] = [
-  { id: 1,  username: 'pl_user',  password: 'pass1234', name: '김의뢰', role: 'PL',     department: '마케팅팀',  email: 'pl.user@company.com' },
-  { id: 2,  username: 'agent_r1', password: 'pass1234', name: '이검토', role: 'TE_R',   department: 'AGENT R팀', email: 'agent.r1@company.com' },
-  { id: 7,  username: 'agent_r2', password: 'pass1234', name: '김R',   role: 'TE_R',   department: 'AGENT R팀', email: 'agent.r2@company.com' },
-  { id: 8,  username: 'agent_r3', password: 'pass1234', name: '박R',   role: 'TE_R',   department: 'AGENT R팀', email: 'agent.r3@company.com' },
-  { id: 3,  username: 'agent_j1', password: 'pass1234', name: '박제이', role: 'TE_J',   department: 'AGENT J팀', email: 'agent.j1@company.com' },
-  { id: 9,  username: 'agent_j2', password: 'pass1234', name: '김J',   role: 'TE_J',   department: 'AGENT J팀', email: 'agent.j2@company.com' },
-  { id: 10, username: 'agent_j3', password: 'pass1234', name: '이J',   role: 'TE_J',   department: 'AGENT J팀', email: 'agent.j3@company.com' },
-  { id: 4,  username: 'agent_o1', password: 'pass1234', name: '최오이', role: 'TE_O',   department: 'AGENT O팀', email: 'agent.o1@company.com' },
-  { id: 11, username: 'agent_o2', password: 'pass1234', name: '김O',   role: 'TE_O',   department: 'AGENT O팀', email: 'agent.o2@company.com' },
-  { id: 12, username: 'agent_o3', password: 'pass1234', name: '이O',   role: 'TE_O',   department: 'AGENT O팀', email: 'agent.o3@company.com' },
-  { id: 5,  username: 'agent_e1', password: 'pass1234', name: '정이이', role: 'TE_E',   department: 'AGENT E팀', email: 'agent.e1@company.com' },
-  { id: 13, username: 'agent_e2', password: 'pass1234', name: '김E',   role: 'TE_E',   department: 'AGENT E팀', email: 'agent.e2@company.com' },
-  { id: 14, username: 'agent_e3', password: 'pass1234', name: '이E',   role: 'TE_E',   department: 'AGENT E팀', email: 'agent.e3@company.com' },
-  { id: 6,  username: 'master',   password: 'pass1234', name: '관리자', role: 'MASTER', department: '관리팀',    email: 'master@company.com' },
+  { id: 1,  username: 'pl_user',  name: '김의뢰', role: 'PL',     department: '마케팅팀',  email: 'pl.user@company.com' },
+  { id: 2,  username: 'agent_r1', name: '이검토', role: 'TE_R',   department: 'AGENT R팀', email: 'agent.r1@company.com' },
+  { id: 7,  username: 'agent_r2', name: '김R',   role: 'TE_R',   department: 'AGENT R팀', email: 'agent.r2@company.com' },
+  { id: 8,  username: 'agent_r3', name: '박R',   role: 'TE_R',   department: 'AGENT R팀', email: 'agent.r3@company.com' },
+  { id: 3,  username: 'agent_j1', name: '박제이', role: 'TE_J',   department: 'AGENT J팀', email: 'agent.j1@company.com' },
+  { id: 9,  username: 'agent_j2', name: '김J',   role: 'TE_J',   department: 'AGENT J팀', email: 'agent.j2@company.com' },
+  { id: 10, username: 'agent_j3', name: '이J',   role: 'TE_J',   department: 'AGENT J팀', email: 'agent.j3@company.com' },
+  { id: 4,  username: 'agent_o1', name: '최오이', role: 'TE_O',   department: 'AGENT O팀', email: 'agent.o1@company.com' },
+  { id: 11, username: 'agent_o2', name: '김O',   role: 'TE_O',   department: 'AGENT O팀', email: 'agent.o2@company.com' },
+  { id: 12, username: 'agent_o3', name: '이O',   role: 'TE_O',   department: 'AGENT O팀', email: 'agent.o3@company.com' },
+  { id: 5,  username: 'agent_e1', name: '정이이', role: 'TE_E',   department: 'AGENT E팀', email: 'agent.e1@company.com' },
+  { id: 13, username: 'agent_e2', name: '김E',   role: 'TE_E',   department: 'AGENT E팀', email: 'agent.e2@company.com' },
+  { id: 14, username: 'agent_e3', name: '이E',   role: 'TE_E',   department: 'AGENT E팀', email: 'agent.e3@company.com' },
+  { id: 6,  username: 'master',   name: '관리자', role: 'MASTER', department: '관리팀',    email: 'master@company.com' },
 ];
 
 export const ROLE_LABEL: Record<UserRole, string> = {
@@ -40,7 +40,6 @@ interface AuthContextValue {
   isLoggedIn: boolean;
   isLoading: boolean;
   loginSSO: () => Promise<void>;
-  loginWithPassword: (username: string, password: string) => Promise<void>;
   logout: () => void;
   switchUser: (username: string) => Promise<void>;
 }
@@ -135,14 +134,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.href = res.redirect_url;
   };
 
-  const loginWithPassword = async (username: string, password: string) => {
-    const res = await authAPI.login(username, password);
-    setToken(res.access);
-    const meRes = await authAPI.me();
-    setCurrentUser(meRes.user);
-    setIsLoggedIn(true);
-  };
-
   const logout = () => {
     clearToken();
     setIsLoggedIn(false);
@@ -164,7 +155,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, isLoggedIn, isLoading, loginSSO, loginWithPassword, logout, switchUser }}>
+    <AuthContext.Provider value={{ currentUser, isLoggedIn, isLoading, loginSSO, logout, switchUser }}>
       {children}
     </AuthContext.Provider>
   );

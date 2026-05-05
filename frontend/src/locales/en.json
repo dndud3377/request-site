@@ -177,12 +177,7 @@
     "logging_in": "Signing in...",
     "hint": "Authentication is handled via corporate OpenID.",
     "logout": "Log out",
-    "or": "or",
-    "username_placeholder": "Username",
-    "password_placeholder": "Password",
-    "pw_btn": "Sign in",
     "error_sso": "SSO login failed.",
-    "error_pw": "Login failed. Please check your credentials.",
     "inactive_logout": "You have been logged out due to inactivity."
   },
   "permission": {

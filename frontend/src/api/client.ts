@@ -86,8 +86,6 @@ function patch<T>(path: string, data?: unknown) {
 // ===== 인증 API =====
 
 export const authAPI = {
-  login: (username: string, password: string) =>
-    post<{ access: string; refresh: string; user: unknown }>('/auth/login/', { username, password }),
   me: () =>
     get<{ user: UserInfo }>('/auth/me/'),
   refresh: () =>
