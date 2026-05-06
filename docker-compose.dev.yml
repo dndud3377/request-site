@@ -3,11 +3,8 @@ services:
     image: ${CONTAINER_IMAGE}
     container_name: request_db_dev
     restart: unless-stopped
-    environment:
-      MYSQL_DATABASE: ${MYSQL_DB}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    env_file:
+      - .env.dev
     volumes:
       - mysql_dev_data:/var/lib/mysql
     healthcheck:
