@@ -17,6 +17,9 @@ services:
     image: ${CONTAINER_IMAGE}
     env_file:
       - .env.dev
+    networks:
+      - default
+      - request_default
     depends_on:
       db:
         condition: service_healthy
@@ -31,6 +34,7 @@ services:
           exit 0;
         fi;
         echo '[DB Sync] Copying prod → dev...';
+        set -o pipefail;
         mysqldump -h $$PROD_MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD
           --single-transaction --skip-lock-tables $$PROD_MYSQL_DB |
           mysql -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD $$MYSQL_DB;
@@ -104,3 +108,8 @@ services:
 
 volumes:
   mysql_dev_data:
+
+networks:
+  default: {}
+  request_default:
+    external: true
