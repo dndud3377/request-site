@@ -195,6 +195,7 @@
     "delete_error": "Failed to delete user.",
     "field_loginid": "Login ID",
     "field_name": "Name",
+    "field_email": "Email",
     "field_department": "Department",
     "field_role": "Role",
     "select_user": "Search Users",

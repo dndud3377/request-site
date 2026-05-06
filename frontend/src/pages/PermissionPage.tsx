@@ -92,6 +92,9 @@ function UserTable({
       <thead>
         <tr style={{ borderBottom: '2px solid var(--color-border, #e2e8f0)' }}>
           <th style={thStyle}>{t('permission.field_loginid')}</th>
+          <th style={thStyle}>{t('permission.field_name')}</th>
+          <th style={thStyle}>{t('permission.field_email')}</th>
+          <th style={thStyle}>{t('permission.field_department')}</th>
           {canModify && <th style={{ ...thStyle, width: 120 }}></th>}
         </tr>
       </thead>
@@ -99,6 +102,9 @@ function UserTable({
         {users.map((user) => (
           <tr key={user.id} style={{ borderBottom: '1px solid var(--color-border, #e2e8f0)' }}>
             <td style={tdStyle}>{user.loginid}</td>
+            <td style={tdStyle}>{user.name || '-'}</td>
+            <td style={tdStyle}>{user.mail || '-'}</td>
+            <td style={tdStyle}>{user.deptname || '-'}</td>
             {canModify && (
               <td style={{ ...tdStyle, textAlign: 'right' }}>
                 {confirmingId === user.id ? (
