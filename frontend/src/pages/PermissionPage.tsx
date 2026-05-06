@@ -20,62 +20,20 @@ const ROLE_LABEL: Record<UserRole, string> = {
 
 
 
-// ===== Delete Confirm Row =====
-
-interface DeleteConfirmProps {
-  user: UserWithRole;
-  onCancel: () => void;
-  onConfirm: () => void;
-  loading: boolean;
-}
-
-function DeleteConfirm({ user, onCancel, onConfirm, loading }: DeleteConfirmProps): React.ReactElement {
-  const { t } = useTranslation();
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
-      <span style={{ fontSize: 13, color: 'var(--color-danger, #e53e3e)' }}>
-        {t('permission.delete_confirm', { name: user.name })}
-      </span>
-      <button
-        className="btn btn-danger"
-        style={{ padding: '2px 10px', fontSize: 12 }}
-        onClick={onConfirm}
-        disabled={loading}
-      >
-        {loading ? '...' : t('permission.delete_yes')}
-      </button>
-      <button
-        className="btn btn-secondary"
-        style={{ padding: '2px 10px', fontSize: 12 }}
-        onClick={onCancel}
-        disabled={loading}
-      >
-        {t('common.cancel')}
-      </button>
-    </span>
-  );
-}
-
 // ===== User Table =====
 
 interface UserTableProps {
   users: UserWithRole[];
   canModify: boolean;
-  onDelete: (user: UserWithRole) => void;
+  onRequestDelete: (user: UserWithRole) => void;
   deletingId: number | null;
-  confirmingId: number | null;
-  onConfirmDelete: (user: UserWithRole) => void;
-  onCancelDelete: () => void;
 }
 
 function UserTable({
   users,
   canModify,
-  onDelete,
+  onRequestDelete,
   deletingId,
-  confirmingId,
-  onConfirmDelete,
-  onCancelDelete,
 }: UserTableProps): React.ReactElement {
   const { t } = useTranslation();
 
@@ -95,7 +53,7 @@ function UserTable({
           <th style={thStyle}>{t('permission.field_name')}</th>
           <th style={thStyle}>{t('permission.field_email')}</th>
           <th style={thStyle}>{t('permission.field_department')}</th>
-          {canModify && <th style={{ ...thStyle, width: 120 }}></th>}
+          {canModify && <th style={{ ...thStyle, width: 80 }}></th>}
         </tr>
       </thead>
       <tbody>
@@ -107,23 +65,14 @@ function UserTable({
             <td style={tdStyle}>{user.deptname || '-'}</td>
             {canModify && (
               <td style={{ ...tdStyle, textAlign: 'right' }}>
-                {confirmingId === user.id ? (
-                  <DeleteConfirm
-                    user={user}
-                    onCancel={onCancelDelete}
-                    onConfirm={() => onDelete(user)}
-                    loading={deletingId === user.id}
-                  />
-                ) : (
-                  <button
-                    className="btn btn-danger"
-                    style={{ padding: '3px 12px', fontSize: 12 }}
-                    onClick={() => onConfirmDelete(user)}
-                    disabled={deletingId === user.id}
-                  >
-                    {t('permission.delete')}
-                  </button>
-                )}
+                <button
+                  className="btn btn-danger"
+                  style={{ padding: '3px 12px', fontSize: 12 }}
+                  onClick={() => onRequestDelete(user)}
+                  disabled={deletingId === user.id}
+                >
+                  {deletingId === user.id ? '...' : t('permission.delete')}
+                </button>
               </td>
             )}
           </tr>
@@ -165,7 +114,7 @@ export default function PermissionPage(): React.ReactElement {
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [confirmingId, setConfirmingId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<UserWithRole | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const isMaster = currentUser.role === 'MASTER';
@@ -262,20 +211,13 @@ export default function PermissionPage(): React.ReactElement {
     }
   };
 
-  const handleConfirmDelete = (user: UserWithRole) => {
-    setConfirmingId(user.id);
-  };
-
-  const handleCancelDelete = () => {
-    setConfirmingId(null);
-  };
-
-  const handleDelete = async (user: UserWithRole) => {
-    setDeletingId(user.id);
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeletingId(deleteTarget.id);
     try {
-      await usersAPI.remove(user.id);
-      setUsers((prev) => prev.filter((u) => u.id !== user.id));
-      setConfirmingId(null);
+      await usersAPI.remove(deleteTarget.id);
+      setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id));
+      setDeleteTarget(null);
       addToast(t('permission.delete_success'), 'success');
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : t('permission.delete_error'), 'error');
@@ -367,20 +309,46 @@ export default function PermissionPage(): React.ReactElement {
           <UserTable
             users={usersForTab}
             canModify={canModifyTab}
-            onDelete={handleDelete}
+            onRequestDelete={setDeleteTarget}
             deletingId={deletingId}
-            confirmingId={confirmingId}
-            onConfirmDelete={handleConfirmDelete}
-            onCancelDelete={handleCancelDelete}
           />
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        title={t('permission.delete_modal_title')}
+        footer={
+          <>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deletingId !== null}
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              className="btn btn-danger"
+              onClick={handleDelete}
+              disabled={deletingId !== null}
+            >
+              {deletingId !== null ? '...' : t('permission.delete_yes')}
+            </button>
+          </>
+        }
+      >
+        <p style={{ margin: 0, fontSize: 14 }}>
+          {t('permission.delete_modal_body')}
+        </p>
+      </Modal>
 
       {/* Add User Modal */}
       <Modal
         isOpen={formOpen}
         onClose={() => setFormOpen(false)}
-        title={t('permission.add_user')}
+        title={`${t('permission.add_user')} — ${ROLE_LABEL[activeTab]}`}
         size="lg"
         footer={
           <>
@@ -497,12 +465,6 @@ export default function PermissionPage(): React.ReactElement {
             )}
           </div>
 
-          <div className="form-group">
-            <label className="form-label">{t('permission.field_role')}</label>
-            <p style={{ fontSize: 14, color: '#4a5568', padding: '8px 0', margin: 0 }}>
-              {ROLE_LABEL[activeTab]}
-            </p>
-          </div>
         </form>
       </Modal>
     </div>
