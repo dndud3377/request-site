@@ -92,15 +92,17 @@ const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValu
 };
 
 // ===== Row Factories =====
+const genId = () => `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
 const makeRow = (): FlowChartRow => ({
-  id: String(Date.now() + Math.random()),
+  id: genId(),
   location: '',
   product_name: '',
   step: '',
 });
 
 const makeJayerRow = (): JayerRow => ({
-  id: String(Date.now() + Math.random()),
+  id: genId(),
   sortOrder: Date.now(),
   disabled: false,
   process_id: '',
@@ -117,7 +119,7 @@ const makeJayerRow = (): JayerRow => ({
 });
 
 const makeOayerRow = (): OayerRow => ({
-  id: String(Date.now() + Math.random()),
+  id: genId(),
   sortOrder: Date.now(),
   disabled: false,
   process_id: '',
@@ -132,7 +134,7 @@ const makeOayerRow = (): OayerRow => ({
 });
 
 const makeBbRow = (): BbTableRow => ({
-  id: String(Date.now() + Math.random()),
+  id: genId(),
   sortOrder: Date.now(),
   disabled: false,
   process_id: '',
@@ -1066,7 +1068,7 @@ const isProdc = detail.only_prodc === 'Yes';
         if (!matchedStep) return;
 
         newBbRows.push({
-          id: String(Date.now() + Math.random()),
+          id: genId(),
           sourceJayerRowId: jayerRow.id,
           sortOrder: jayerRow.sortOrder,
           disabled: jayerRow.disabled,
