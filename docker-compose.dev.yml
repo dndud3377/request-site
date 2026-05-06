@@ -21,7 +21,7 @@ services:
       db:
         condition: service_healthy
     command: >
-      sh -c "
+      bash -c "
         echo '[DB Sync] Creating dev DB if not exists...';
         mysql -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD
           -e 'CREATE DATABASE IF NOT EXISTS \`'$$MYSQL_DB'\`
