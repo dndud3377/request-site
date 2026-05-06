@@ -1,26 +1,29 @@
 // ===== Auth / Role Types =====
 
+// 역할 타입 (null 제외 - 기본)
 export type UserRole = 'PL' | 'TE_R' | 'TE_J' | 'TE_O' | 'TE_E' | 'MASTER' | 'NONE';
 
-export interface UserInfo {
-  id: number;
-  username: string;
-  name: string;
-  role: UserRole;
-  department: string;
-  email: string;
-}
+// null 을 포함한 역할 타입
+export type UserRoleWithNull = UserRole | null | 'NONE';
 
 export interface MockUser {
   id: number;
   username: string;
   name: string;
-  role: UserRole;
+  role: UserRoleWithNull;
   department: string;
   email: string;
 }
 
-// ===== Master Data =====
+export interface UserInfo {
+  id: number;
+  username: string;
+  name: string;
+  role: UserRoleWithNull;
+  department: string;
+  email: string;
+}
+
 
 export interface Line {
   id: number;
@@ -28,7 +31,6 @@ export interface Line {
   order: number;
 }
 
-// ===== Domain Enums / Literal Types =====
 
 export type Status =
   | 'draft'
@@ -43,6 +45,14 @@ export type VocCategory = 'inquiry' | 'error_report' | 'feature_request' | 'task
 
 export type AgentType = 'R' | 'J' | 'O' | 'E';
 export type StepAction = 'pending' | 'approved' | 'rejected';
+
+// 역할 → 담당자 매핑 (null 제외)
+export const ROLE_TO_AGENT: Partial<Record<UserRole, AgentType>> = {
+  TE_R: 'R',
+  TE_J: 'J',
+  TE_O: 'O',
+  TE_E: 'E',
+};
 
 export interface ApprovalStepFrontend {
   id: number;
@@ -123,18 +133,20 @@ export interface Stats {
 export interface FlowChartRow {
   id: string;
   location: string;
-  product_name: string;
+  product: string;
   step: string;
 }
 
 export interface JayerRow {
   id: string;
+  updated: string;      // 'YYYYMMDD HH:MM' 형식
   sortOrder: number;
   disabled: boolean;
   process_id: string;
   sp: string;
   sd: string;
   pp: string;
+  layerid: string;      // Layer 컬럼
   st: string;           // 'O' | 'X' | ''
   new_or_copy: string;  // '신규' | '복사' | ''
   product_name: string;
@@ -146,6 +158,7 @@ export interface JayerRow {
 
 export interface OayerRow {
   id: string;
+  updated: string;      // 'YYYYMMDD HH:MM' 형식
   sortOrder: number;
   disabled: boolean;
   process_id: string;
@@ -161,6 +174,7 @@ export interface OayerRow {
 
 export interface BbTableRow {
   id: string;
+  sourceJayerRowId?: string;  // 어떤 J-ayer 행에서 왔는지 추적
   sortOrder: number;
   disabled: boolean;
   process_id: string;
@@ -190,24 +204,22 @@ export interface DetailFormState {
   // 제품 이름 선택 시
   process_id: string;
 
-  // 지도 편차
   map_change: string;
   map_value_x: string;
   map_value_y: string;
   map_reason: string;
 
-  // 예외 구역
+  // Exclusive Area
   ea_change: string;
   ea_value: string;
 
-  // 분리
+  // split
   split_progress: string;
 
-  // 뼈찜
+  // Backbone
   bb_zone: string;
   bb_entries: Array<{ location: string; product: string; process_id: string }>;
 
-  // C가문
   only_prodc: string;
   prodc_top_line: string;
   prodc_top_process: string;
@@ -220,18 +232,14 @@ export interface DetailFormState {
   prodc_bottom_process: string;
   prodc_bottom_product: string;
 
-  // X표시
   mshot_change: string;
-  mshot_image_copy: string;
+  mshot_image_copy: string;  // 붙여넣기 시 파일명만 저장
 
-  // 20주년
   ip_status: string;
   ip_option: string;
 
-  // T가문 / 주력 / 설탕
   tmap_apply: string;
   hplhc_change: string;
-  e_lps: string;
 }
 
 // ===== Change History =====
@@ -290,10 +298,21 @@ export interface UserWithRole {
   mail: string;
 }
 
+export interface UserForAssignment {
+  id: number;
+  username: string;
+  display_name: string;
+  department: string;
+  email: string;
+}
+
 export interface CreateUserInput {
   loginid: string;
-  name: string;
-  department: string;
+  role: UserRole;
+}
+
+export interface AssignRoleInput {
+  userId: number;
   role: UserRole;
 }
 
@@ -305,16 +324,47 @@ export interface UserForAssignment {
   email: string;         // DB mail
 }
 
-// ===== big data Step Info =====
 
 export interface StepInfo {
-  processid: string;
-  step: string;
+  line: string;
   process: string;
+  processid: string;
+  stepseq: string;
+  descript: string;
   recipeid: string;
+  layerid: string;  
+  updated: string;  // 'YYYYMMDDHHMMSS' 형식
 }
 
-// ===== 뼈찜 외부 데이터 소스 =====
+// ===== Guide =====
+
+export type GuideSection =
+  | 'general'
+  | 'line_combination'
+  | 'jayer'
+  | 'oayer'
+  | 'bone'
+  | 'map'
+  | 'cfamily'
+  | 'xmark'
+  | 'separation';
+
+export interface Guide {
+  id: number;
+  title: string;
+  section: GuideSection;
+  content: string;
+  author_name: string;
+  author_role: UserRole;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateGuideInput {
+  title: string;
+  section: GuideSection;
+  content: string;
+}
 
 export interface ExternalBbDataItem {
   id: string;
@@ -322,4 +372,21 @@ export interface ExternalBbDataItem {
   bb_name: string;
   bb_step: string;
   bb_ss: string;
+  layerid?: string;  
+}
+
+
+export interface PhotoStepOption {
+  processid: string;
+  stepseq: string;
+  descript: string;
+  layerid: string;  
+}
+
+
+export interface BbAutoFillRange {
+  id: string;
+  layerFrom: string;      // 시작 Layer
+  layerTo: string;        // 종료 Layer
+  productId: string;      // 선택된 PART ID
 }
