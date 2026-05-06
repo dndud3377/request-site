@@ -242,7 +242,8 @@
     "role_TE_O": "TE_O",
     "role_TE_E": "TE_E",
     "role_MASTER": "MASTER",
-    "role_NONE": "권한 없음"
+    "role_NONE": "권한 없음",
+    "search_placeholder": "이름, 로그인ID, 이메일, 부서 검색..."
   },
   "common": {
     "loading": "로딩 중...",
