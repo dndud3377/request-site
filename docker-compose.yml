@@ -39,7 +39,7 @@ services:
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.production
       - MYSQL_HOST=db
-      - SKIP_SCHEDULER=true
+      - SKIP_SCHEDULER=false
       # ODBC 설정
       - ODBC_HOST=${ODBC_HOST}
       - ODBC_PORT=${ODBC_PORT}
