@@ -17,9 +17,8 @@ services:
     image: ${CONTAINER_IMAGE}
     env_file:
       - .env.dev
-    networks:
-      - default
-      - request_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -111,5 +110,3 @@ volumes:
 
 networks:
   default: {}
-  request_default:
-    external: true
