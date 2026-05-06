@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { vocAPI } from '../api/client';
+import { vocAPI, uploadImageAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
@@ -35,6 +35,7 @@ export default function VOCPage(): React.ReactElement {
   const { currentUser } = useAuth();
   const isMaster = currentUser.role === 'MASTER';
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const contentEditableRef = useRef<HTMLDivElement>(null);
 
   // ── list state ──
   const [vocs, setVocs]           = useState<VOC[]>([]);
@@ -87,15 +88,42 @@ export default function VOCPage(): React.ReactElement {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleContentPaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) return;
+        try {
+          const result = await uploadImageAPI.upload(file);
+          const img = `<img src="${result.url}" style="max-width:100%;border-radius:4px;margin:4px 0;" />`;
+          document.execCommand('insertHTML', false, img);
+        } catch {
+          addToast('이미지 업로드에 실패했습니다.', 'error');
+        }
+        return;
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const contentHtml = contentEditableRef.current?.innerHTML ?? '';
+    const contentText = contentEditableRef.current?.textContent?.trim() ?? '';
+    if (!contentText) {
+      addToast(t('voc.content') + ' 을(를) 입력해주세요.', 'error');
+      return;
+    }
     setSubmitting(true);
     try {
       const input: CreateVocInput = {
         title: form.title,
         category: form.category,
         page: form.page,
-        content: form.content,
+        content: contentHtml,
         submitter_name: currentUser.name,
         submitter_email: currentUser.email,
         submitter_user_id: currentUser.id,
@@ -103,6 +131,7 @@ export default function VOCPage(): React.ReactElement {
       await vocAPI.create(input);
       addToast(t('voc.submit_success'), 'success');
       setForm({ title: '', category: 'inquiry', page: 'request', content: '' });
+      if (contentEditableRef.current) contentEditableRef.current.innerHTML = '';
       setFormOpen(false);
       fetchVocs();
     } catch {
@@ -322,7 +351,32 @@ export default function VOCPage(): React.ReactElement {
           </div>
           <div className="form-group">
             <label className="form-label">{t('voc.content')} <span className="required">*</span></label>
-            <textarea className="form-control" name="content" value={form.content} onChange={handleFormChange} rows={6} required />
+            <style>{`
+              .voc-content-editor:empty::before {
+                content: attr(data-placeholder);
+                color: var(--text-muted, #a0aec0);
+                pointer-events: none;
+              }
+            `}</style>
+            <div
+              ref={contentEditableRef}
+              contentEditable
+              onPaste={handleContentPaste}
+              className="voc-content-editor"
+              data-placeholder={t('voc.content')}
+              style={{
+                minHeight: 140,
+                border: '1px solid var(--border-color, #e2e8f0)',
+                borderRadius: 6,
+                padding: '8px 12px',
+                fontSize: '0.95rem',
+                lineHeight: 1.7,
+                outline: 'none',
+                background: 'var(--bg-primary, #fff)',
+                overflowY: 'auto',
+                cursor: 'text',
+              }}
+            />
           </div>
         </form>
       </Modal>
@@ -378,17 +432,17 @@ export default function VOCPage(): React.ReactElement {
             {/* 원본 내용 */}
             <div className="form-group">
               <label className="form-label">{t('voc.content')}</label>
-              <div style={{
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 8,
-                padding: '14px 16px',
-                whiteSpace: 'pre-wrap',
-                fontSize: '0.95rem',
-                lineHeight: 1.7,
-              }}>
-                {selected.content}
-              </div>
+              <div
+                style={{
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 8,
+                  padding: '14px 16px',
+                  fontSize: '0.95rem',
+                  lineHeight: 1.7,
+                }}
+                dangerouslySetInnerHTML={{ __html: selected.content }}
+              />
             </div>
 
             {/* 반려 사유 입력 (인라인) */}
