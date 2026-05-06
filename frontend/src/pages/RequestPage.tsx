@@ -122,6 +122,7 @@ const makeJayerRow = (): JayerRow => ({
 
 const makeOayerRow = (): OayerRow => ({
   id: genId(),
+  updated: '',
   sortOrder: Date.now(),
   disabled: false,
   process_id: '',
