@@ -196,7 +196,12 @@
     "field_loginid": "Login ID",
     "field_name": "Name",
     "field_department": "Department",
-    "field_role": "Role"
+    "field_role": "Role",
+    "select_user": "Search Users",
+    "select_user_placeholder": "Search by name, login ID, email, or department...",
+    "select_user_error": "Please select at least one user.",
+    "no_users_for_assignment": "No users available to assign.",
+    "add_partial_success": "{{succeeded}} user(s) added, {{failed}} failed."
   },
   "common": {
     "loading": "Loading...",
