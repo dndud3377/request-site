@@ -1,24 +1,42 @@
 services:
+  db:
+    image: ${CONTAINER_IMAGE}
+    container_name: request_db_dev
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DB}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql_dev_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u $$MYSQL_USER -p$$MYSQL_PASSWORD || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   db-sync:
     image: ${CONTAINER_IMAGE}
     env_file:
       - .env.dev
-    networks:
-      - request_default
+    depends_on:
+      db:
+        condition: service_healthy
     command: >
       sh -c "
         echo '[DB Sync] Creating dev DB if not exists...';
         mysql -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD
-          -e 'CREATE DATABASE IF NOT EXISTS \`'$$DEV_MYSQL_DB'\`
+          -e 'CREATE DATABASE IF NOT EXISTS \`'$$MYSQL_DB'\`
               CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;';
         if [ \"$$SKIP_DB_SYNC\" = 'true' ]; then
           echo '[DB Sync] Data sync skipped (SKIP_DB_SYNC=true)';
           exit 0;
         fi;
         echo '[DB Sync] Copying prod → dev...';
-        mysqldump -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD
+        mysqldump -h $$PROD_MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD
           --single-transaction --skip-lock-tables $$PROD_MYSQL_DB |
-          mysql -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD $$DEV_MYSQL_DB;
+          mysql -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD $$MYSQL_DB;
         echo '[DB Sync] Done.';
       "
     restart: "no"
@@ -48,9 +66,6 @@ services:
       - SKIP_SCHEDULER=true
     volumes:
       - ./backend:/app
-    networks:
-      - default
-      - request_default
     depends_on:
       db-sync:
         condition: service_completed_successfully
@@ -90,7 +105,5 @@ services:
       - backend
       - frontend
 
-networks:
-  default: {}
-  request_default:
-    external: true
+volumes:
+  mysql_dev_data:
