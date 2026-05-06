@@ -103,12 +103,14 @@ const makeRow = (): FlowChartRow => ({
 
 const makeJayerRow = (): JayerRow => ({
   id: genId(),
+  updated: '',
   sortOrder: Date.now(),
   disabled: false,
   process_id: '',
   sp: '',
   sd: '',
   pp: '',
+  layerid: '',
   st: '',
   new_or_copy: '',
   product_name: '',
@@ -120,6 +122,7 @@ const makeJayerRow = (): JayerRow => ({
 
 const makeOayerRow = (): OayerRow => ({
   id: genId(),
+  updated: '',
   sortOrder: Date.now(),
   disabled: false,
   process_id: '',
