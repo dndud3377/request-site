@@ -3,6 +3,8 @@ services:
     image: ${CONTAINER_IMAGE}
     env_file:
       - .env.dev
+    networks:
+      - request_default
     command: >
       sh -c "
         echo '[DB Sync] Creating dev DB if not exists...';
@@ -46,6 +48,9 @@ services:
       - SKIP_SCHEDULER=true
     volumes:
       - ./backend:/app
+    networks:
+      - default
+      - request_default
     depends_on:
       db-sync:
         condition: service_completed_successfully
@@ -84,3 +89,8 @@ services:
     depends_on:
       - backend
       - frontend
+
+networks:
+  default: {}
+  request_default:
+    external: true
