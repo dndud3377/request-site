@@ -31,7 +31,7 @@ services:
           exit 0;
         fi;
         echo '[DB Sync] Copying prod → dev...';
-        set -o pipefail;
+        set -eo pipefail;
         mysqldump -h $$PROD_MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD
           --single-transaction --skip-lock-tables $$PROD_MYSQL_DB |
           mysql -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD $$MYSQL_DB;
