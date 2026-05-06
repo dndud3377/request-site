@@ -228,7 +228,12 @@
     "field_loginid": "로그인 ID",
     "field_name": "이름",
     "field_department": "부서",
-    "field_role": "역할"
+    "field_role": "역할",
+    "select_user": "사용자 검색",
+    "select_user_placeholder": "이름, 로그인ID, 이메일, 부서 검색...",
+    "select_user_error": "사용자를 1명 이상 선택해주세요.",
+    "no_users_for_assignment": "추가 가능한 사용자가 없습니다.",
+    "add_partial_success": "{{succeeded}}명 추가 성공, {{failed}}명 실패."
   },
   "common": {
     "loading": "로딩 중...",

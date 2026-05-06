@@ -297,6 +297,14 @@ export interface CreateUserInput {
   role: UserRole;
 }
 
+export interface UserForAssignment {
+  id: number;
+  username: string;      // DB loginid
+  display_name: string;  // DB username (표시 이름)
+  department: string;    // DB deptname
+  email: string;         // DB mail
+}
+
 // ===== big data Step Info =====
 
 export interface StepInfo {

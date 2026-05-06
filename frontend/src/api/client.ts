@@ -19,6 +19,7 @@ import {
   UserInfo,
   UserWithRole,
   CreateUserInput,
+  UserForAssignment,
 } from '../types';
 
 // ===== JWT 토큰 관리 =====

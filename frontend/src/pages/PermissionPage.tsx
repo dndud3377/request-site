@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { usersAPI } from '../api/client';
@@ -154,12 +154,25 @@ export default function PermissionPage(): React.ReactElement {
   );
   const [usersForAssignment, setUsersForAssignment] = useState<UserForAssignment[]>([]);
   const [formOpen, setFormOpen] = useState(false);
-  const [form, setForm] = useState<{ userId: string; role: UserRole }>({ userId: '', role: 'NONE' });
+  const [selectedUsers, setSelectedUsers] = useState<UserForAssignment[]>([]);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const isMaster = currentUser.role === 'MASTER';
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setSearchDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const fetchUsers = useCallback(() => {
     setLoading(true);
@@ -186,35 +199,61 @@ export default function PermissionPage(): React.ReactElement {
 
   const canModifyTab = isMaster || currentUser.role === activeTab;
 
-  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
+  const filteredUsers = usersForAssignment.filter((u) => {
+    if (selectedUsers.some((s) => s.id === u.id)) return false;
+    if (!userSearchQuery.trim()) return false;
+    const q = userSearchQuery.toLowerCase();
+    return (
+      u.display_name.toLowerCase().includes(q) ||
+      u.username.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      (u.department && u.department.toLowerCase().includes(q))
+    );
+  });
+
+  const handleSelectUser = (user: UserForAssignment) => {
+    if (selectedUsers.some((s) => s.id === user.id)) return;
+    setSelectedUsers((prev) => [...prev, user]);
+    setUserSearchQuery('');
+    setSearchDropdownOpen(false);
+  };
+
+  const handleRemoveUser = (userId: number) => {
+    setSelectedUsers((prev) => prev.filter((u) => u.id !== userId));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.userId) {
+    if (selectedUsers.length === 0) {
       addToast(t('permission.select_user_error'), 'error');
       return;
     }
     setSubmitting(true);
     try {
-      await usersAPI.assignRole(Number(form.userId), form.role);
-      fetchUsers();
-      fetchUsersForAssignment();
-      addToast(t('permission.add_success'), 'success');
-      setForm({ userId: '', role: activeTab });
-      setFormOpen(false);
-    } catch (err: unknown) {
-      addToast(err instanceof Error ? err.message : t('permission.add_error'), 'error');
+      const results = await Promise.allSettled(
+        selectedUsers.map((user) => usersAPI.assignRole(user.id, activeTab))
+      );
+      const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+      const failed = results.filter((r) => r.status === 'rejected').length;
+
+      if (succeeded > 0) {
+        fetchUsers();
+        fetchUsersForAssignment();
+      }
+
+      if (failed === 0) {
+        addToast(t('permission.add_success'), 'success');
+        setFormOpen(false);
+      } else if (succeeded > 0) {
+        const failedUsers = selectedUsers.filter((_, i) => results[i].status === 'rejected');
+        setSelectedUsers(failedUsers);
+        addToast(t('permission.add_partial_success', { succeeded, failed }), 'error');
+      } else {
+        addToast(t('permission.add_error'), 'error');
+      }
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const handleAdded = (user: UserWithRole) => {
-    setUsers((prev) => [...prev, user]);
-    setActiveTab(user.role);
   };
 
   const handleConfirmDelete = (user: UserWithRole) => {
@@ -303,7 +342,9 @@ export default function PermissionPage(): React.ReactElement {
               className="btn btn-primary"
               style={{ padding: '6px 16px', fontSize: 13 }}
               onClick={() => {
-                setForm({ userId: '', role: activeTab });
+                setSelectedUsers([]);
+                setUserSearchQuery('');
+                setSearchDropdownOpen(false);
                 setFormOpen(true);
               }}
             >
@@ -334,6 +375,7 @@ export default function PermissionPage(): React.ReactElement {
         isOpen={formOpen}
         onClose={() => setFormOpen(false)}
         title={t('permission.add_user')}
+        size="lg"
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setFormOpen(false)} disabled={submitting}>
@@ -348,39 +390,112 @@ export default function PermissionPage(): React.ReactElement {
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="form-group">
             <label className="form-label">{t('permission.select_user')} <span className="required">*</span></label>
-            <select
-              className="form-control"
-              name="userId"
-              value={form.userId}
-              onChange={handleFormChange}
-              required
-            >
-              <option value="">-- {t('permission.select_user_placeholder')} --</option>
-              {usersForAssignment.map(user => (
-                <option key={user.id} value={user.id}>
-                  {user.display_name} ({user.username}, {user.department || '부서없음'})
-                </option>
-              ))}
-            </select>
+
+            {/* 선택된 사용자 태그 목록 */}
+            {selectedUsers.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                {selectedUsers.map((user) => (
+                  <span
+                    key={user.id}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      background: '#e3f2fd',
+                      padding: '3px 8px',
+                      borderRadius: 3,
+                      fontSize: 13,
+                    }}
+                  >
+                    <strong>{user.display_name}</strong>
+                    <span style={{ color: '#718096', marginLeft: 4, fontSize: 12 }}>
+                      {user.username} · {user.department || '부서없음'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveUser(user.id)}
+                      style={{
+                        marginLeft: 6,
+                        border: 'none',
+                        background: 'none',
+                        cursor: 'pointer',
+                        color: '#666',
+                        padding: 0,
+                        fontSize: 12,
+                        lineHeight: 1,
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* 검색 입력 + 드롭다운 */}
+            <div ref={searchContainerRef} style={{ position: 'relative' }}>
+              <input
+                type="text"
+                className="form-control"
+                value={userSearchQuery}
+                placeholder={t('permission.select_user_placeholder')}
+                autoComplete="off"
+                onChange={(e) => {
+                  setUserSearchQuery(e.target.value);
+                  setSearchDropdownOpen(true);
+                }}
+                onFocus={() => {
+                  if (userSearchQuery) setSearchDropdownOpen(true);
+                }}
+              />
+              {searchDropdownOpen && filteredUsers.length > 0 && (
+                <ul
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    zIndex: 9999,
+                    background: 'var(--bg-modal, #fff)',
+                    border: '1px solid var(--color-border, #e2e8f0)',
+                    borderRadius: 4,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+                    margin: 0,
+                    padding: 0,
+                    listStyle: 'none',
+                    maxHeight: 220,
+                    overflowY: 'auto',
+                  }}
+                >
+                  {filteredUsers.map((user) => (
+                    <li
+                      key={user.id}
+                      onMouseDown={(e) => { e.preventDefault(); handleSelectUser(user); }}
+                      style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.9rem' }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLLIElement).style.background = 'var(--bg-secondary, #f7fafc)'; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLLIElement).style.background = 'transparent'; }}
+                    >
+                      <span style={{ fontWeight: 600 }}>{user.display_name}</span>
+                      <span style={{ color: '#718096', marginLeft: 8, fontSize: 12 }}>
+                        {user.username} · {user.email} · {user.department || '부서없음'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
             {usersForAssignment.length === 0 && (
               <p style={{ fontSize: 13, color: '#718096', marginTop: 8 }}>
                 {t('permission.no_users_for_assignment')}
               </p>
             )}
           </div>
+
           <div className="form-group">
-            <label className="form-label">{t('permission.field_role')} <span className="required">*</span></label>
-            <select
-              className="form-control"
-              name="role"
-              value={form.role}
-              onChange={handleFormChange}
-              required
-            >
-              {ALL_ROLES.filter(r => r !== 'NONE').map((r) => (
-                <option key={r} value={r}>{ROLE_LABEL[r]}</option>
-              ))}
-            </select>
+            <label className="form-label">{t('permission.field_role')}</label>
+            <p style={{ fontSize: 14, color: '#4a5568', padding: '8px 0', margin: 0 }}>
+              {ROLE_LABEL[activeTab]}
+            </p>
           </div>
         </form>
       </Modal>
