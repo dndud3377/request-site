@@ -17,7 +17,7 @@ services:
               CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;';
         echo '[DB Sync] Copying prod → dev...';
         mysqldump -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD
-          --single-transaction --skip-lock-tables $$MYSQL_DB |
+          --single-transaction --skip-lock-tables $$PROD_MYSQL_DB |
           mysql -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD $$DEV_MYSQL_DB;
         echo '[DB Sync] Done.';
       "
@@ -43,32 +43,19 @@ services:
       - .env.dev
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.development
-      - MYSQL_HOST=${MYSQL_HOST}
-      - MYSQL_DB=${DEV_MYSQL_DB:-requestdb_dev}
       - AUTH_MODE=dev
       - DEBUG=True
       - SKIP_SCHEDULER=true
-      - ODBC_HOST=${ODBC_HOST}
-      - ODBC_PORT=${ODBC_PORT}
-      - ODBC_DATABASE=${ODBC_DATABASE}
-      - ODBC_AUTH_MECH=${ODBC_AUTH_MECH}
-      - ODBC_USE_SASL=${ODBC_USE_SASL}
-      - ODBC_UID=${ODBC_UID}
-      - ODBC_PWD=${ODBC_PWD}
-      - ODBC_KRB_FQDN=${ODBC_KRB_FQDN}
-      - ODBC_KRB_REALM=${ODBC_KRB_REALM}
-      - ODBC_KRB_SERVICE_NAME=${ODBC_KRB_SERVICE_NAME}
-      - ODBC_SSL=${ODBC_SSL}
-      - ODBC_TSASL_BUFFER_SIZE=${ODBC_TSASL_BUFFER_SIZE}
-      - ODBC_ROWS_PER_BLOCK=${ODBC_ROWS_PER_BLOCK}
     volumes:
       - ./backend:/app
     depends_on:
       db-sync:
         condition: service_completed_successfully
     command: >
-      sh -c "python manage.py migrate --noinput &&
+      sh -c "python manage.py wait_for_db &&
+             python manage.py migrate --noinput &&
              python manage.py create_users &&
+             python manage.py seed_lines &&
              python manage.py runserver 0.0.0.0:8000"
 
   frontend:
