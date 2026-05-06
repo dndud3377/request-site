@@ -8,15 +8,6 @@ import { UserRole, UserWithRole, UserForAssignment } from '../types';
 
 const ALL_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
 
-const ROLE_LABEL: Record<UserRole, string> = {
-  PL: 'PL',
-  TE_R: 'TE_R',
-  TE_J: 'TE_J',
-  TE_O: 'TE_O',
-  TE_E: 'TE_E',
-  MASTER: 'MASTER',
-  NONE: '권한 없음',
-};
 
 
 
@@ -255,7 +246,7 @@ export default function PermissionPage(): React.ReactElement {
               marginBottom: -2,
             }}
           >
-            {ROLE_LABEL[role]}
+            {t(`permission.role_${role}`)}
             <span
               style={{
                 marginLeft: 6,
@@ -283,7 +274,7 @@ export default function PermissionPage(): React.ReactElement {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h2 style={{ fontSize: 16, fontWeight: 600 }}>
-            {ROLE_LABEL[activeTab]} {t('permission.users_label')}
+            {t(`permission.role_${activeTab}`)} {t('permission.users_label')}
           </h2>
           {canModifyTab && (
             <button
@@ -348,7 +339,7 @@ export default function PermissionPage(): React.ReactElement {
       <Modal
         isOpen={formOpen}
         onClose={() => setFormOpen(false)}
-        title={`${t('permission.add_user')} — ${ROLE_LABEL[activeTab]}`}
+        title={`${t('permission.add_user')} — ${t(`permission.role_${activeTab}`)}`}
         size="lg"
         footer={
           <>
