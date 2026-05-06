@@ -285,9 +285,9 @@ export interface UserWithRole {
   id: number;
   loginid: string;
   name: string;
-  department: string;
+  deptname: string;
   role: UserRole;
-  email?: string;
+  mail: string;
 }
 
 export interface CreateUserInput {
