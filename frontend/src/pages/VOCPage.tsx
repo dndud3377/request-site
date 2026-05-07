@@ -482,51 +482,58 @@ export default function VOCPage(): React.ReactElement {
               </div>
             )}
 
-            {/* 대화 (채팅형) */}
+            {/* 댓글 */}
             <div className="form-group">
               <label className="form-label">{t('voc.discussion')}</label>
-              <div className="voc-chat" style={{ minHeight: 80 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {(selected.comments ?? []).length === 0 ? (
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{t('voc.no_comments')}</p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>{t('voc.no_comments')}</p>
                 ) : (
-                  (selected.comments ?? []).map((c) => {
-                    const isAdmin = !c.is_submitter;
-                    return (
-                      <div
-                        key={c.id}
-                        className={`voc-chat-bubble ${isAdmin ? 'admin' : 'mine'} ${c.is_reject_reason ? 'reject' : ''}`}
-                      >
-                        <span className="bubble-meta">
-                          {c.author_name} · {formatTime(c.created_at)}
+                  (selected.comments ?? []).map((c) => (
+                    <div
+                      key={c.id}
+                      style={{
+                        border: `1px solid ${c.is_reject_reason ? 'var(--danger, #e53e3e)' : 'var(--border-color, #e2e8f0)'}`,
+                        borderRadius: 6,
+                        padding: '10px 14px',
+                        background: c.is_reject_reason ? 'var(--danger-light, #fff5f5)' : 'var(--bg-secondary, #f7fafc)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {c.author_name}
+                          <span style={{ fontWeight: 400, marginLeft: 6 }}>{c.author_role}</span>
                           {c.is_reject_reason && (
-                            <span style={{ color: 'var(--danger)', marginLeft: 6 }}>[반려 사유]</span>
+                            <span style={{ color: 'var(--danger, #e53e3e)', marginLeft: 8 }}>[반려 사유]</span>
                           )}
                         </span>
-                        <div className="bubble-text">{c.content}</div>
+                        <span>{formatTime(c.created_at)}</span>
                       </div>
-                    );
-                  })
+                      <div style={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{c.content}</div>
+                    </div>
+                  ))
                 )}
-                <div ref={chatBottomRef} />
               </div>
 
               {/* 댓글 입력 (완료/반려 상태면 숨김) */}
               {selected.status === 'checking' && (
-                <div className="voc-chat-input">
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                   <textarea
                     className="form-control"
                     value={commentText}
+                    rows={3}
                     onChange={(e) => setComment(e.target.value)}
                     placeholder={t('voc.comment_placeholder' as any)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSendComment();
                     }}
+                    style={{ resize: 'vertical' }}
                   />
                   <button
                     className="btn btn-primary"
                     onClick={handleSendComment}
                     disabled={sendingComment || !commentText.trim()}
-                    style={{ whiteSpace: 'nowrap' }}
+                    style={{ whiteSpace: 'nowrap', alignSelf: 'flex-end' }}
                   >
                     {t('voc.send_comment')}
                   </button>
