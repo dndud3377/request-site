@@ -137,10 +137,45 @@ export default function PermissionPage(): React.ReactElement {
       .catch(() => setUsersForAssignment([]));
   }, []);
 
-  useEffect(() => { 
+  useEffect(() => {
     fetchUsers();
     fetchUsersForAssignment();
   }, [fetchUsers, fetchUsersForAssignment]);
+
+  useEffect(() => {
+    const es = new EventSource('/api/users/events/');
+
+    es.addEventListener('user_added', (e: MessageEvent) => {
+      const user = JSON.parse(e.data) as UserWithRole;
+      setUsers(prev => prev.some(u => u.id === user.id) ? prev : [...prev, user]);
+      if (user.role === 'NONE') {
+        setUsersForAssignment(prev => {
+          if (prev.some(u => u.id === user.id)) return prev;
+          return [...prev, {
+            id: user.id,
+            username: user.loginid,
+            display_name: user.name,
+            department: user.deptname,
+            email: user.mail,
+          }];
+        });
+      }
+    });
+
+    es.addEventListener('user_updated', (e: MessageEvent) => {
+      const updated = JSON.parse(e.data) as UserWithRole;
+      setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
+      setUsersForAssignment(prev => prev.filter(u => u.id !== updated.id));
+    });
+
+    es.addEventListener('user_deleted', (e: MessageEvent) => {
+      const { id } = JSON.parse(e.data) as { id: number };
+      setUsers(prev => prev.filter(u => u.id !== id));
+      setUsersForAssignment(prev => prev.filter(u => u.id !== id));
+    });
+
+    return () => es.close();
+  }, []);
 
   const usersForTab = users.filter((u) => {
     if (u.role !== activeTab) return false;

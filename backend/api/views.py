@@ -1,9 +1,11 @@
 # ⚠️ MASKING 처리된 파일. 이 파일에 포함된 비즈니스 용어는 {{ko.json}} 키로 마스킹되어 있습니다. 원래 용어를 확인하려면 다음 파일을 참조하세요: frontend/src/locales/ko.json
 
 from django.utils import timezone
-from django.http import JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.csrf import csrf_exempt
+import queue as _queue_module
+from .sse import broadcaster
 from django.db import connections
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
@@ -690,6 +692,16 @@ class UserViewSet(viewsets.ModelViewSet):
             return Response({'error': '유효하지 않은 역할입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         User.objects.filter(pk=user.pk).update(role=role)
+        user.refresh_from_db()
+
+        broadcaster.broadcast('user_updated', {
+            'id': user.id,
+            'loginid': user.loginid,
+            'name': user.username or '',
+            'deptname': user.deptname or '',
+            'role': role,
+            'mail': user.mail or '',
+        })
 
         return Response({
             'id': user.id,
@@ -717,11 +729,34 @@ class UserViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         try:
             user = self.get_object()
-            # User 삭제 (연결된 데이터는 CASCADE 로 자동 삭제)
+            user_id = user.id
             user.delete()
+            broadcaster.broadcast('user_deleted', {'id': user_id})
             return Response(status=status.HTTP_204_NO_CONTENT)
         except Exception as e:
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+
+@csrf_exempt
+def user_events(request):
+    """SSE endpoint: 사용자 권한 변경 실시간 스트림"""
+    def event_stream():
+        q = broadcaster.subscribe()
+        try:
+            yield ": connected\n\n"
+            while True:
+                try:
+                    msg = q.get(timeout=30)
+                    yield msg
+                except _queue_module.Empty:
+                    yield ": keepalive\n\n"
+        finally:
+            broadcaster.unsubscribe(q)
+
+    response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'
+    return response
