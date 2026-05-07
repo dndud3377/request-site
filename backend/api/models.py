@@ -241,6 +241,25 @@ class VOC(models.Model):
         return f"[{self.status}] {self.title}"
 
 
+class VocComment(models.Model):
+    """VOC 댓글"""
+    voc = models.ForeignKey(VOC, on_delete=models.CASCADE, related_name='comments', verbose_name='VOC')
+    author_name = models.CharField(max_length=100, verbose_name='작성자')
+    author_role = models.CharField(max_length=20, verbose_name='역할')
+    is_submitter = models.BooleanField(default=False, verbose_name='제출자 여부')
+    content = models.TextField(verbose_name='내용')
+    is_reject_reason = models.BooleanField(default=False, verbose_name='반려 사유 여부')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='작성일시')
+
+    class Meta:
+        verbose_name = 'VOC 댓글'
+        verbose_name_plural = 'VOC 댓글 목록'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"[{self.voc_id}] {self.author_name}: {self.content[:30]}"
+
+
 class AdminNotice(models.Model):
     """관리팀 공지사항"""
 
