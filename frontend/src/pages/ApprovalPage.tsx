@@ -179,11 +179,11 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
-  const handleAssign = async (agent: AgentType, userId: number, userName: string) => {
+  const handleAssign = async (agent: AgentType, loginid: string, userName: string) => {
     if (!selected) return;
     setProcessing(true);
     try {
-      await documentsAPI.assignStep(selected.id, agent, userId, userName);
+      await documentsAPI.assignStep(selected.id, agent, loginid, userName);
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');
@@ -486,7 +486,7 @@ export default function ApprovalPage(): React.ReactElement {
                       : <>
                           <option value="">담당자 선택</option>
                           {teamMembers.map((u) => (
-                            <option key={u.id} value={String(u.id)}>{u.name}</option>
+                            <option key={u.loginid} value={u.loginid}>{u.name}</option>
                           ))}
                         </>
                     }
@@ -495,9 +495,9 @@ export default function ApprovalPage(): React.ReactElement {
                     className="btn btn-primary btn-sm"
                     disabled={!assigningUserId || processing || loadingMembers}
                     onClick={() => {
-                      const user = teamMembers.find((u) => u.id === Number(assigningUserId));
+                      const user = teamMembers.find((u) => u.loginid === assigningUserId);
                       if (user) {
-                        handleAssign(assignableStep.agent, user.id, user.name);
+                        handleAssign(assignableStep.agent, user.loginid, user.name);
                         setAssigningOpen(false);
                         setAssigningUserId('');
                       }

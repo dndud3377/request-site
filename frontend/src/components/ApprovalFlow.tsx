@@ -17,21 +17,21 @@ export const ROLE_TO_AGENT: Partial<Record<UserRole, AgentType>> = {
 export const canUserAssign = (user: { role: UserRoleWithNull } | MockUser, step: ApprovalStepFrontend): boolean => {
   if (!user.role) return false;
   const agent = ROLE_TO_AGENT[user.role];
-  return !!agent && step.agent === agent && step.action === 'pending' && !step.assignee_id;
+  return !!agent && step.agent === agent && step.action === 'pending' && !step.assignee_loginid;
 };
 
 // 합의/반려 가능 여부: MASTER이거나, 담당자로 지정된 본인
 // password 필드가 optional이도록 수정
-export const canUserAgree = (user: { role: UserRoleWithNull; id: number } | MockUser, step: ApprovalStepFrontend): boolean => {
+export const canUserAgree = (user: { role: UserRoleWithNull; username: string } | MockUser, step: ApprovalStepFrontend): boolean => {
   if (user.role === 'MASTER') return true;
-  return step.action === 'pending' && step.assignee_id === user.id;
+  return step.action === 'pending' && step.assignee_loginid === user.username;
 };
 
 interface ApprovalFlowProps {
   doc: RequestDocument;
   onAgree: (agent: AgentType) => void;
   onReject: (agent: AgentType) => void;
-  onAssign: (agent: AgentType, userId: number, userName: string) => void;
+  onAssign: (agent: AgentType, loginid: string, userName: string) => void;
   onLoadTeamMembers: (agent: AgentType) => Promise<UserWithRole[]>;
   processing: boolean;
   currentUser: MockUser;
@@ -125,7 +125,7 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, onLoadT
                 : <>
                     <option value="">선택하세요</option>
                     {teamMembers.map((u) => (
-                      <option key={u.id} value={String(u.id)}>{u.name}</option>
+                      <option key={u.loginid} value={u.loginid}>{u.name}</option>
                     ))}
                   </>
               }
@@ -134,9 +134,9 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, onLoadT
               className="btn btn-primary btn-sm"
               disabled={!assigningUserId || processing}
               onClick={() => {
-                const user = teamMembers.find((u: UserWithRole) => u.id === Number(assigningUserId));
+                const user = teamMembers.find((u: UserWithRole) => u.loginid === assigningUserId);
                 if (user) {
-                  onAssign(step.agent, user.id, user.name);
+                  onAssign(step.agent, user.loginid, user.name);
                   setAssigningAgent(null);
                   setAssigningUserId('');
                 }

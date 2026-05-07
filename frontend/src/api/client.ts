@@ -172,12 +172,12 @@ const rejectStep = async (docId: number, agent: AgentType, comment?: string) => 
 const assignStep = async (
   docId: number,
   agent: AgentType,
-  assigneeId: number,
+  assigneeLoginid: string,
   assigneeName: string
 ) => {
   const data = await post<{ message: string }>(`/documents/${docId}/assign-step/`, {
     agent,
-    assignee_id: assigneeId,
+    assignee_loginid: assigneeLoginid,
     assignee_name: assigneeName,
   });
   return { data };

@@ -263,11 +263,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='assign-step')
     def assign_step(self, request, pk=None):
         """에이전트 단계 담당자 지정"""
-        from django.contrib.auth.models import User
-        
         document = self.get_object()
         agent = request.data.get('agent')
-        assignee_id = request.data.get('assignee_id')
+        assignee_loginid = request.data.get('assignee_loginid')
         assignee_name = request.data.get('assignee_name', '')
 
         step = ApprovalStep.objects.filter(
@@ -276,9 +274,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not step:
             return Response({'error': '해당 단계를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if assignee_id:
+        if assignee_loginid:
             try:
-                assignee_user = User.objects.get(id=assignee_id)
+                assignee_user = User.objects.get(loginid=assignee_loginid)
                 step.assignee = assignee_user
             except User.DoesNotExist:
                 return Response({'error': '사용자를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
