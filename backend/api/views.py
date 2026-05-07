@@ -16,12 +16,12 @@ from django.db import connection
 from django.contrib.auth import get_user_model
 User = get_user_model()
 from .models import (
-    RequestDocument, ApprovalStep, VOC, Line, ProcessProduct, ProductProcessId, AdminNotice,
+    RequestDocument, ApprovalStep, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
     StepLine1, StepLine3, StepLine4, StepLine5, VocHistory,
 )
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer,
-    VOCSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
+    VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
     UserSerializer,
 )
 import uuid
@@ -307,6 +307,15 @@ class VOCViewSet(viewsets.ModelViewSet):
     filterset_fields = ['category', 'status', 'submitter_user_id']
     search_fields = ['title', 'submitter_name', 'content']
     ordering = ['-created_at']
+
+    @action(detail=True, methods=['post'])
+    def comment(self, request, pk=None):
+        voc = self.get_object()
+        data = {**request.data, 'voc': voc.id}
+        serializer = VocCommentSerializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(VOCSerializer(voc).data)
 
 
 class LineViewSet(viewsets.ReadOnlyModelViewSet):

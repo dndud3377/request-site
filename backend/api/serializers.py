@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import RequestDocument, ApprovalStep, VOC, Line, AdminNotice, VocHistory
+from .models import RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory
 
 User = get_user_model()
 
@@ -72,7 +72,16 @@ class RequestDocumentListSerializer(serializers.ModelSerializer):
         ]
 
 
+class VocCommentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VocComment
+        fields = ['id', 'voc', 'author_name', 'author_role', 'is_submitter', 'content', 'is_reject_reason', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+
 class VOCSerializer(serializers.ModelSerializer):
+    comments = VocCommentSerializer(many=True, read_only=True)
+
     class Meta:
         model = VOC
         fields = '__all__'
