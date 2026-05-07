@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     RequestDocumentViewSet, VOCViewSet, LineViewSet, AdminNoticeViewSet, VocHistoryViewSet,
     UserViewSet,
-    health_check, upload_image,
+    health_check, upload_image, user_events,
     form_options_process, form_options_products, form_options_process_id,
     form_options_job_file_layer, form_options_ovl_layer, form_options_bb_external,
 )
@@ -19,6 +19,7 @@ router.register(r'notices', AdminNoticeViewSet, basename='notice')
 router.register(r'users', UserViewSet, basename='user')
 
 urlpatterns = [
+    path('users/events/', user_events, name='user-events'),
     path('', include(router.urls)),
     path('health/', health_check),
     path('upload-image/', upload_image),

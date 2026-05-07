@@ -21,6 +21,8 @@ User = get_user_model()
 
 logger = logging.getLogger(__name__)
 
+from .sse import broadcaster as _user_broadcaster
+
 
 def user_to_dict(user):
     """User 객체를 프론트엔드 사용자 정보로 변환"""
@@ -65,6 +67,17 @@ def create_or_update_user_from_oidc(claims):
     user.save()
     
     logger.info(f"[OIDC] User {'created' if created else 'updated'}: {login_id}")
+
+    if created:
+        _user_broadcaster.broadcast('user_added', {
+            'id': user.id,
+            'loginid': user.loginid,
+            'name': user.username or '',
+            'deptname': user.deptname or '',
+            'role': 'NONE',
+            'mail': user.mail or '',
+        })
+
     return user
 
 
