@@ -304,7 +304,7 @@ class VOCViewSet(viewsets.ModelViewSet):
     serializer_class = VOCSerializer
     permission_classes = [AllowAny]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['category', 'status']
+    filterset_fields = ['category', 'status', 'submitter_user_id']
     search_fields = ['title', 'submitter_name', 'content']
     ordering = ['-created_at']
 
