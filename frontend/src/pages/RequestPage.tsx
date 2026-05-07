@@ -307,6 +307,8 @@ export default function RequestPage(): React.ReactElement {
   const [oayerFilterWords, setOayerFilterWords] = useState<{ sp: string[]; sd: string[]; pp: string[] }>({ sp: [], sd: [], pp: [] });
   const [jayerFilterModalOpen, setJayerFilterModalOpen] = useState(false);
   const [oayerFilterModalOpen, setOayerFilterModalOpen] = useState(false);
+  const [jayerSortBySp, setJayerSortBySp] = useState(false);
+  const [oayerSortBySp, setOayerSortBySp] = useState(false);
 
   useEffect(() => {
     linesAPI.list()
@@ -1730,6 +1732,14 @@ const isProdc = detail.only_prodc === 'Yes';
           <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('new_or_copy')}>{t('request.btn_reset')}</button>
         </div>
         <div className="wizard-table-toolbar-group" style={{ marginLeft: 'auto' }}>
+          <button
+            type="button"
+            className="th-header-btn"
+            onClick={() => setJayerSortBySp(v => !v)}
+            style={jayerSortBySp ? { background: 'var(--accent)', color: 'white' } : undefined}
+          >
+            정렬{jayerSortBySp ? ' ▲' : ''}
+          </button>
           <button type="button" className="th-header-btn" onClick={() => setJayerFilterModalOpen(true)}>비활성화 필터</button>
         </div>
       </div>
@@ -1779,8 +1789,8 @@ const isProdc = detail.only_prodc === 'Yes';
           </thead>
           <tbody>
             {[
-              ...jayerRows.filter(r => !r.disabled).sort((a, b) => a.sortOrder - b.sortOrder),
-              ...jayerRows.filter(r => r.disabled).sort((a, b) => a.sortOrder - b.sortOrder),
+              ...jayerRows.filter(r => !r.disabled).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+              ...jayerRows.filter(r => r.disabled).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
             ].map((row, idx, arr) => {
               const isFirstDisabled = row.disabled && (idx === 0 || !arr[idx - 1].disabled);
               return (
@@ -1860,6 +1870,14 @@ const isProdc = detail.only_prodc === 'Yes';
           <button type="button" className="th-header-btn" onClick={() => handleOayerResetField('new_or_copy')}>{t('request.btn_reset')}</button>
         </div>
         <div className="wizard-table-toolbar-group" style={{ marginLeft: 'auto' }}>
+          <button
+            type="button"
+            className="th-header-btn"
+            onClick={() => setOayerSortBySp(v => !v)}
+            style={oayerSortBySp ? { background: 'var(--accent)', color: 'white' } : undefined}
+          >
+            정렬{oayerSortBySp ? ' ▲' : ''}
+          </button>
           <button type="button" className="th-header-btn" onClick={() => setOayerFilterModalOpen(true)}>비활성화 필터</button>
         </div>
       </div>
@@ -1903,8 +1921,8 @@ const isProdc = detail.only_prodc === 'Yes';
           </thead>
           <tbody>
             {[
-              ...oayerRows.filter(r => !r.disabled).sort((a, b) => a.sortOrder - b.sortOrder),
-              ...oayerRows.filter(r => r.disabled).sort((a, b) => a.sortOrder - b.sortOrder),
+              ...oayerRows.filter(r => !r.disabled).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+              ...oayerRows.filter(r => r.disabled).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
             ].map((row, idx, arr) => {
               const isFirstDisabled = row.disabled && (idx === 0 || !arr[idx - 1].disabled);
               return (
