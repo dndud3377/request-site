@@ -8,15 +8,6 @@ import { UserRole, UserWithRole, UserForAssignment } from '../types';
 
 const ALL_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
 
-const ROLE_LABEL: Record<UserRole, string> = {
-  PL: 'PL',
-  TE_R: 'TE_R',
-  TE_J: 'TE_J',
-  TE_O: 'TE_O',
-  TE_E: 'TE_E',
-  MASTER: 'MASTER',
-  NONE: '권한 없음',
-};
 
 
 
@@ -116,6 +107,7 @@ export default function PermissionPage(): React.ReactElement {
   const [submitting, setSubmitting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<UserWithRole | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [tabSearchQuery, setTabSearchQuery] = useState('');
 
   const isMaster = currentUser.role === 'MASTER';
 
@@ -150,7 +142,17 @@ export default function PermissionPage(): React.ReactElement {
     fetchUsersForAssignment();
   }, [fetchUsers, fetchUsersForAssignment]);
 
-  const usersForTab = users.filter((u) => u.role === activeTab);
+  const usersForTab = users.filter((u) => {
+    if (u.role !== activeTab) return false;
+    if (!tabSearchQuery.trim()) return true;
+    const q = tabSearchQuery.toLowerCase();
+    return (
+      (u.loginid && u.loginid.toLowerCase().includes(q)) ||
+      (u.name && u.name.toLowerCase().includes(q)) ||
+      (u.mail && u.mail.toLowerCase().includes(q)) ||
+      (u.deptname && u.deptname.toLowerCase().includes(q))
+    );
+  });
 
   const canModifyTab = isMaster || currentUser.role === activeTab;
 
@@ -242,7 +244,7 @@ export default function PermissionPage(): React.ReactElement {
         {ALL_ROLES.map((role) => (
           <button
             key={role}
-            onClick={() => setActiveTab(role)}
+            onClick={() => { setActiveTab(role); setTabSearchQuery(''); }}
             style={{
               padding: '8px 18px',
               fontSize: 14,
@@ -255,7 +257,7 @@ export default function PermissionPage(): React.ReactElement {
               marginBottom: -2,
             }}
           >
-            {ROLE_LABEL[role]}
+            {t(`permission.role_${role}`)}
             <span
               style={{
                 marginLeft: 6,
@@ -281,9 +283,9 @@ export default function PermissionPage(): React.ReactElement {
           padding: '16px 20px',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h2 style={{ fontSize: 16, fontWeight: 600 }}>
-            {ROLE_LABEL[activeTab]} {t('permission.users_label')}
+            {t(`permission.role_${activeTab}`)} {t('permission.users_label')}
           </h2>
           {canModifyTab && (
             <button
@@ -299,6 +301,17 @@ export default function PermissionPage(): React.ReactElement {
               + {t('permission.add_user')}
             </button>
           )}
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <input
+            type="text"
+            className="form-control"
+            value={tabSearchQuery}
+            onChange={(e) => setTabSearchQuery(e.target.value)}
+            placeholder={t('permission.search_placeholder')}
+            style={{ maxWidth: 320, fontSize: 13 }}
+          />
         </div>
 
         {loading ? (
@@ -348,7 +361,7 @@ export default function PermissionPage(): React.ReactElement {
       <Modal
         isOpen={formOpen}
         onClose={() => setFormOpen(false)}
-        title={`${t('permission.add_user')} — ${ROLE_LABEL[activeTab]}`}
+        title={`${t('permission.add_user')} — ${t(`permission.role_${activeTab}`)}`}
         size="lg"
         footer={
           <>
