@@ -363,6 +363,7 @@ export default function PermissionPage(): React.ReactElement {
         onClose={() => setFormOpen(false)}
         title={`${t('permission.add_user')} — ${t(`permission.role_${activeTab}`)}`}
         size="lg"
+        style={{ minHeight: 480 }}
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setFormOpen(false)} disabled={submitting}>
@@ -374,49 +375,9 @@ export default function PermissionPage(): React.ReactElement {
           </>
         }
       >
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 240 }}>
           <div className="form-group">
             <label className="form-label">{t('permission.select_user')} <span className="required">*</span></label>
-
-            {/* 선택된 사용자 태그 목록 */}
-            {selectedUsers.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                {selectedUsers.map((user) => (
-                  <span
-                    key={user.id}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      background: '#e3f2fd',
-                      padding: '3px 8px',
-                      borderRadius: 3,
-                      fontSize: 13,
-                    }}
-                  >
-                    <strong>{user.display_name}</strong>
-                    <span style={{ color: '#718096', marginLeft: 4, fontSize: 12 }}>
-                      {user.username} · {user.department || '부서없음'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveUser(user.id)}
-                      style={{
-                        marginLeft: 6,
-                        border: 'none',
-                        background: 'none',
-                        cursor: 'pointer',
-                        color: '#666',
-                        padding: 0,
-                        fontSize: 12,
-                        lineHeight: 1,
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
 
             {/* 검색 입력 + 드롭다운 */}
             <div ref={searchContainerRef} style={{ position: 'relative' }}>
@@ -475,6 +436,46 @@ export default function PermissionPage(): React.ReactElement {
               <p style={{ fontSize: 13, color: '#718096', marginTop: 8 }}>
                 {t('permission.no_users_for_assignment')}
               </p>
+            )}
+
+            {/* 선택된 사용자 태그 목록 */}
+            {selectedUsers.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                {selectedUsers.map((user) => (
+                  <span
+                    key={user.id}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      background: '#e3f2fd',
+                      padding: '3px 8px',
+                      borderRadius: 3,
+                      fontSize: 13,
+                    }}
+                  >
+                    <strong>{user.display_name}</strong>
+                    <span style={{ color: '#718096', marginLeft: 4, fontSize: 12 }}>
+                      {user.username} · {user.department || '부서없음'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveUser(user.id)}
+                      style={{
+                        marginLeft: 6,
+                        border: 'none',
+                        background: 'none',
+                        cursor: 'pointer',
+                        color: '#666',
+                        padding: 0,
+                        fontSize: 12,
+                        lineHeight: 1,
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
             )}
           </div>
 
