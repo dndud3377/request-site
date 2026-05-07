@@ -351,8 +351,9 @@ export const guidesAPI = {
 
 // ===== 사용자 관리 API =====
 
-const listUsers = async (): Promise<{ data: UserWithRole[] }> => {
-  const data = await get<{ results: UserWithRole[]; count: number } | UserWithRole[]>('/users/');
+const listUsers = async (role?: string): Promise<{ data: UserWithRole[] }> => {
+  const path = role ? `/users/?role=${role}` : '/users/';
+  const data = await get<{ results: UserWithRole[]; count: number } | UserWithRole[]>(path);
   if (Array.isArray(data)) return { data };
   return { data: (data as { results: UserWithRole[] }).results };
 };

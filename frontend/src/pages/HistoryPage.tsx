@@ -153,6 +153,7 @@ export default function HistoryPage(): React.ReactElement {
               onAgree={() => {}}
               onReject={() => {}}
               onAssign={(_a, _id, _name) => {}}
+              onLoadTeamMembers={() => Promise.resolve([])}
               processing={false}
               currentUser={MASTER_USER}
             />

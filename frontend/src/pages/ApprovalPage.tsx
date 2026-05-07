@@ -2,14 +2,21 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useNavigate } from 'react-router-dom';
-import { documentsAPI } from '../api/client';
+import { documentsAPI, usersAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
-import { useAuth, MOCK_USERS } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView from '../components/PagedDetailView';
 import { canUserAgree, canUserAssign, ROLE_TO_AGENT } from '../components/ApprovalFlow';
-import { RequestDocument, AgentType, UserRole } from '../types';
+import { RequestDocument, AgentType, UserRole, UserWithRole } from '../types';
+
+const AGENT_TO_ROLE: Record<string, string> = {
+  R: 'TE_R',
+  J: 'TE_J',
+  O: 'TE_O',
+  E: 'TE_E',
+};
 
 // ===== Utils =====
 
@@ -75,6 +82,15 @@ export default function ApprovalPage(): React.ReactElement {
   // 지정하기 UI (모달 footer)
   const [assigningOpen, setAssigningOpen] = useState(false);
   const [assigningUserId, setAssigningUserId] = useState('');
+  const [teamMembers, setTeamMembers] = useState<UserWithRole[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+
+  const handleLoadTeamMembers = async (agent: AgentType): Promise<UserWithRole[]> => {
+    const role = AGENT_TO_ROLE[agent];
+    if (!role) return [];
+    const res = await usersAPI.list(role);
+    return res.data;
+  };
 
   const fetchDocs = useCallback(() => {
     setLoading(true);
@@ -113,6 +129,7 @@ export default function ApprovalPage(): React.ReactElement {
     setPageIdx(0);
     setAssigningOpen(false);
     setAssigningUserId('');
+    setTeamMembers([]);
     setModalOpen(true);
   };
 
@@ -429,12 +446,6 @@ export default function ApprovalPage(): React.ReactElement {
           ) ?? [];
           const assignableStep = pendingSteps.find((s) => canUserAssign(currentUser, s));
           const actableStep = pendingSteps.find((s) => canUserAgree(currentUser, s));
-          const teamMembers = assignableStep
-            ? MOCK_USERS.filter((u): boolean => {
-                if (!u.role) return false;
-                return ROLE_TO_AGENT[u.role] === assignableStep.agent;
-              })
-            : [];
           return (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
               {selected && (isPL || isMaster) && (selected.status === 'rejected' || selected.status === 'draft') && (
@@ -451,7 +462,14 @@ export default function ApprovalPage(): React.ReactElement {
                 <button
                   className="btn btn-secondary"
                   disabled={processing}
-                  onClick={() => { setAssigningOpen(true); setAssigningUserId(''); }}
+                  onClick={async () => {
+                    setAssigningOpen(true);
+                    setAssigningUserId('');
+                    setLoadingMembers(true);
+                    const members = await handleLoadTeamMembers(assignableStep.agent);
+                    setTeamMembers(members);
+                    setLoadingMembers(false);
+                  }}
                 >
                   지정하기
                 </button>
@@ -463,14 +481,19 @@ export default function ApprovalPage(): React.ReactElement {
                     onChange={(e) => setAssigningUserId(e.target.value)}
                     style={{ fontSize: '0.85rem', padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)' }}
                   >
-                    <option value="">담당자 선택</option>
-                    {teamMembers.map((u) => (
-                      <option key={u.id} value={String(u.id)}>{u.name}</option>
-                    ))}
+                    {loadingMembers
+                      ? <option>로딩 중...</option>
+                      : <>
+                          <option value="">담당자 선택</option>
+                          {teamMembers.map((u) => (
+                            <option key={u.id} value={String(u.id)}>{u.name}</option>
+                          ))}
+                        </>
+                    }
                   </select>
                   <button
                     className="btn btn-primary btn-sm"
-                    disabled={!assigningUserId || processing}
+                    disabled={!assigningUserId || processing || loadingMembers}
                     onClick={() => {
                       const user = teamMembers.find((u) => u.id === Number(assigningUserId));
                       if (user) {

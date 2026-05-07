@@ -1,8 +1,7 @@
 // ⚠️ MASKING 처리된 파일. 이 파일에 포함된 비즈니스 용어는 {{ko.json}} 키로 마스킹되어 있습니다. 원래 용어를 확인하려면 다음 파일을 참조하세요: frontend/src/locales/ko.json
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RequestDocument, AgentType, ApprovalStepFrontend, UserRole, MockUser, UserRoleWithNull } from '../types';
-import { MOCK_USERS } from '../contexts/AuthContext';
+import { RequestDocument, AgentType, ApprovalStepFrontend, UserRole, UserWithRole, MockUser, UserRoleWithNull } from '../types';
 
 const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
 
@@ -33,16 +32,19 @@ interface ApprovalFlowProps {
   onAgree: (agent: AgentType) => void;
   onReject: (agent: AgentType) => void;
   onAssign: (agent: AgentType, userId: number, userName: string) => void;
+  onLoadTeamMembers: (agent: AgentType) => Promise<UserWithRole[]>;
   processing: boolean;
   currentUser: MockUser;
 }
 
-export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, processing, currentUser }: ApprovalFlowProps): React.ReactElement {
+export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, onLoadTeamMembers, processing, currentUser }: ApprovalFlowProps): React.ReactElement {
   const { t } = useTranslation();
   const steps = doc.approval_steps ?? [];
 
   const [assigningAgent, setAssigningAgent] = useState<AgentType | null>(null);
   const [assigningUserId, setAssigningUserId] = useState<string>('');
+  const [teamMembers, setTeamMembers] = useState<UserWithRole[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
 
   const getStep = (agent: AgentType): ApprovalStepFrontend | undefined =>
     steps.find((s) => s.agent === agent);
@@ -76,13 +78,6 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, process
     const canAct = canUserAgree(currentUser, step);
     const isAssigning = assigningAgent === step.agent;
 
-    // 이 agent 팀에 속한 팀원 목록 (role이 null이 아닌 경우만)
-    const teamMembers = MOCK_USERS.filter((u): boolean => {
-      if (!u.role) return false;
-      const agent = ROLE_TO_AGENT[u.role as UserRole];
-      return agent === step.agent;
-    });
-
     // 담당자가 지정된 경우 라벨에 담당자 이름 포함 (예: {{approval.agent_R}} (오우영))
     const displayLabel = step.assignee_name ? `${label} (${step.assignee_name})` : label;
 
@@ -104,7 +99,14 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, process
             <button
               className="btn btn-secondary btn-sm"
               disabled={processing}
-              onClick={() => { setAssigningAgent(step.agent); setAssigningUserId(''); }}
+              onClick={() => {
+                setAssigningAgent(step.agent);
+                setAssigningUserId('');
+                setLoadingMembers(true);
+                onLoadTeamMembers(step.agent)
+                  .then(setTeamMembers)
+                  .finally(() => setLoadingMembers(false));
+              }}
             >
               지정하기
             </button>
@@ -118,16 +120,21 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, process
               onChange={(e) => setAssigningUserId(e.target.value)}
               style={{ fontSize: '0.8rem', padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)' }}
             >
-              <option value="">선택하세요</option>
-              {teamMembers.map((u) => (
-                <option key={u.id} value={String(u.id)}>{u.name}</option>
-              ))}
+              {loadingMembers
+                ? <option>로딩 중...</option>
+                : <>
+                    <option value="">선택하세요</option>
+                    {teamMembers.map((u) => (
+                      <option key={u.id} value={String(u.id)}>{u.name}</option>
+                    ))}
+                  </>
+              }
             </select>
             <button
               className="btn btn-primary btn-sm"
               disabled={!assigningUserId || processing}
               onClick={() => {
-                const user = teamMembers.find((u) => u.id === Number(assigningUserId));
+                const user = teamMembers.find((u: UserWithRole) => u.id === Number(assigningUserId));
                 if (user) {
                   onAssign(step.agent, user.id, user.name);
                   setAssigningAgent(null);
