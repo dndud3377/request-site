@@ -590,6 +590,16 @@ select.form-control option {
   color: var(--text-primary);
 }
 
+.table.table-compact th {
+  padding: 5px 8px;
+  font-size: 0.65rem;
+}
+
+.table.table-compact td {
+  padding: 5px 8px;
+  font-size: 0.7rem;
+}
+
 /* ===== Status Badge ===== */
 .badge {
   display: inline-flex;

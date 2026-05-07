@@ -22,7 +22,7 @@ import {
 } from '../types';
 
 // ===== Option Constants =====
-const OPTION_REQUEST_PURPOSE = ['신규', '복사', '변경'] as const;
+const OPTION_REQUEST_PURPOSE = ['신규', '차용', '변경'] as const;
 const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
 const OPTION_OTHER_PURPOSE = ['목적A', '목적B', '목적C'] as const;
 const OPTION_SOURCE_LINE = ['위치A', '위치B', '위치C'] as const;
@@ -309,6 +309,7 @@ export default function RequestPage(): React.ReactElement {
   const [oayerFilterModalOpen, setOayerFilterModalOpen] = useState(false);
   const [jayerSortBySp, setJayerSortBySp] = useState(false);
   const [oayerSortBySp, setOayerSortBySp] = useState(false);
+  const [copiedFields, setCopiedFields] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     linesAPI.list()
@@ -353,6 +354,7 @@ export default function RequestPage(): React.ReactElement {
   }, []);
 
   useEffect(() => {
+    setCopiedFields(new Set());
     if (detail.request_purpose === '신규') {
       setJayerRows((rows) =>
         rows.map((r) => ({
@@ -411,6 +413,7 @@ export default function RequestPage(): React.ReactElement {
     const partIds = Array.from(new Set(filteredDocs.map((doc: RequestDocument) => doc.product_name)));
     setSourcePartIdOptions(partIds);
     setDetail((prev) => ({ ...prev, source_partid: '' }));
+    setCopiedFields(new Set());
   }, [detail.source_line, approvedDocs]);
 
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
@@ -652,6 +655,7 @@ const isProdc = detail.only_prodc === 'Yes';
       if (sourceDetail.hplhc_change) fieldsToCopy.hplhc_change = sourceDetail.hplhc_change;
 
       setDetail(prev => ({ ...prev, ...fieldsToCopy }));
+      setCopiedFields(new Set(Object.keys(fieldsToCopy)));
 
       addToast('원본 제품의 데이터가 적용되었습니다.', 'info');
     } catch (err) {
@@ -1359,6 +1363,8 @@ const isProdc = detail.only_prodc === 'Yes';
                     handleDetailSet('source_partid', v);
                     if (v) {
                       loadSourceDocumentData(v);
+                    } else {
+                      setCopiedFields(new Set());
                     }
                   }}
                   style={{ flex: 1 }}
@@ -1481,24 +1487,24 @@ const isProdc = detail.only_prodc === 'Yes';
         <div className="full-width flex-row">
           <div className="form-group" style={{ flex: 25 }}>
             <label className="form-label">{t('request.map')}</label>
-            <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange}>
+            <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange} disabled={copiedFields.has('map_change')}>
               <option value="변경 없음">{t('request.map_no_change')}</option>
               <option value="변경 있음">{t('request.map_has_change')}</option>
             </select>
           </div>
           <div className="form-group" style={{ flex: 10, visibility: hasMapChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_value_x')} <span className="required">*</span></label>
-            <input className={`form-control${errors.map_value_x ? ' error' : ''}`} name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} />
+            <input className={`form-control${errors.map_value_x ? ' error' : ''}`} name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} disabled={copiedFields.has('map_value_x')} />
             {errors.map_value_x && <span className="form-error">{errors.map_value_x}</span>}
           </div>
           <div className="form-group" style={{ flex: 10, visibility: hasMapChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_value_y')} <span className="required">*</span></label>
-            <input className={`form-control${errors.map_value_y ? ' error' : ''}`} name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} />
+            <input className={`form-control${errors.map_value_y ? ' error' : ''}`} name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} disabled={copiedFields.has('map_value_y')} />
             {errors.map_value_y && <span className="form-error">{errors.map_value_y}</span>}
           </div>
           <div className="form-group" style={{ flex: 30, visibility: hasMapChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_reason')} <span className="required">*</span></label>
-            <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} />
+            <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} disabled={copiedFields.has('map_reason')} />
             {errors.map_reason && <span className="form-error">{errors.map_reason}</span>}
           </div>
         </div>
@@ -1507,14 +1513,14 @@ const isProdc = detail.only_prodc === 'Yes';
         <div className="full-width flex-row">
           <div className="form-group" style={{ flex: 25 }}>
             <label className="form-label">{t('request.ea_change')}</label>
-            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange}>
+            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange} disabled={copiedFields.has('ea_change')}>
               <option value="변경 없음">{t('request.no_change')}</option>
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
           </div>
           <div className="form-group" style={{ flex: 10, visibility: hasEaChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.ea_value')}</label>
-            <input className="form-control" name="ea_value" value={detail.ea_value} onChange={handleDetailChange} />
+            <input className="form-control" name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={copiedFields.has('ea_value')} />
           </div>
         </div>
 
@@ -1600,7 +1606,7 @@ const isProdc = detail.only_prodc === 'Yes';
         {/* 10. X표시 변경 여부 */}
         <div className="form-group full-width">
           <label className="form-label">{t('request.mshot_change_status')}</label>
-          <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={handleDetailChange}>
+          <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={handleDetailChange} disabled={copiedFields.has('mshot_change')}>
             <option value="없음">{t('request.mshot_none')}</option>
             <option value="추가">{t('request.mshot_add')}</option>
             <option value="수정">{t('request.mshot_edit')}</option>
@@ -1626,7 +1632,7 @@ const isProdc = detail.only_prodc === 'Yes';
                   justifyContent: 'center',
                   backgroundColor: '#f9f9f9'
                 }}
-                onPaste={handleImagePaste}
+                onPaste={copiedFields.has('mshot_image_copy') ? undefined : handleImagePaste}
               >
                 {detail.mshot_image_copy ? (
                   <div style={{ width: '100%' }}>
@@ -1659,7 +1665,7 @@ const isProdc = detail.only_prodc === 'Yes';
         <div className="full-width flex-row">
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px' }}>
             <label className="form-label">{t('request.ip_application_status')}</label>
-            <select className="form-control" name="ip_status" value={detail.ip_status} onChange={handleDetailChange}>
+            <select className="form-control" name="ip_status" value={detail.ip_status} onChange={handleDetailChange} disabled={copiedFields.has('ip_status')}>
               <option value="No">No</option>
               <option value="Yes">Yes</option>
             </select>
@@ -1676,6 +1682,7 @@ const isProdc = detail.only_prodc === 'Yes';
                       value={opt}
                       checked={detail.ip_option === opt}
                       onChange={() => handleRadioChange('ip_option', opt)}
+                      disabled={copiedFields.has('ip_option')}
                     />
                     {opt}
                   </label>
@@ -1685,7 +1692,7 @@ const isProdc = detail.only_prodc === 'Yes';
           )}
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px', marginLeft: '32px' }}>
             <label className="form-label">{t('request.split_progress_status')}</label>
-            <select className="form-control" name="split_progress" value={detail.split_progress} onChange={handleDetailChange}>
+            <select className="form-control" name="split_progress" value={detail.split_progress} onChange={handleDetailChange} disabled={copiedFields.has('split_progress')}>
               <option value="아니오">{t('request.no')}</option>
               <option value="예">{t('request.yes')}</option>
             </select>
@@ -1696,14 +1703,14 @@ const isProdc = detail.only_prodc === 'Yes';
         <div className="full-width flex-row">
           <div className="form-group flex-col">
             <label className="form-label">{t('request.tmap_application_status')}</label>
-            <select className="form-control" name="tmap_apply" value={detail.tmap_apply} onChange={handleDetailChange}>
+            <select className="form-control" name="tmap_apply" value={detail.tmap_apply} onChange={handleDetailChange} disabled={copiedFields.has('tmap_apply')}>
               <option value="미적용">{t('request.tmap_not_applied')}</option>
               <option value="적용">{t('request.tmap_applied')}</option>
             </select>
           </div>
           <div className="form-group flex-col">
             <label className="form-label">{t('request.hplhc_status')}</label>
-            <select className="form-control" name="hplhc_change" value={detail.hplhc_change} onChange={handleDetailChange}>
+            <select className="form-control" name="hplhc_change" value={detail.hplhc_change} onChange={handleDetailChange} disabled={copiedFields.has('hplhc_change')}>
               <option value="변경 없음">{t('request.no_change')}</option>
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>

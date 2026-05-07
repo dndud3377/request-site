@@ -31,7 +31,7 @@ function JayerTable({ rows, changedRowIds = new Set<string>() }: { rows: JayerRo
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
+      <table className="table table-compact" style={{ marginBottom: 8 }}>
         <thead><tr><th>Update 날짜</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th><th>{t('request.col_rev')}</th><th>{t('request.col_drawing_version')}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
@@ -48,7 +48,7 @@ function OayerTable({ rows, changedRowIds = new Set<string>() }: { rows: OayerRo
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
+      <table className="table table-compact" style={{ marginBottom: 8 }}>
         <thead><tr><th>Update 날짜</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_tt')}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
@@ -65,7 +65,7 @@ function BbTable({ rows, changedRowIds = new Set<string>() }: { rows: BbTableRow
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table className="table" style={{ fontSize: '0.78rem', marginBottom: 8 }}>
+      <table className="table table-compact" style={{ marginBottom: 8 }}>
         <thead><tr><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.bb_ref_process_id')}</th><th>{t('request.col_bb_layer')}</th><th>{t('request.col_remark')}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
