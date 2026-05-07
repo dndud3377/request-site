@@ -222,6 +222,8 @@ class VOC(models.Model):
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, verbose_name='유형')
     submitter_name = models.CharField(max_length=100, verbose_name='제출자')
     submitter_email = models.EmailField(verbose_name='이메일')
+    submitter_user_id = models.IntegerField(null=True, blank=True, verbose_name='제출자 ID')
+    page = models.CharField(max_length=20, blank=True, default='', verbose_name='관련 페이지')
     content = models.TextField(verbose_name='내용')
     response = models.TextField(blank=True, verbose_name='답변')
     status = models.CharField(

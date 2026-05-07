@@ -21,6 +21,7 @@ const PAGES: PageOption[] = [
   { value: 'request',  labelKey: 'voc.page_request' },
   { value: 'approval', labelKey: 'voc.page_approval' },
   { value: 'history',  labelKey: 'voc.page_history' },
+  { value: 'other',    labelKey: 'voc.page_other' },
 ];
 
 const VOC_STATUSES: VocStatus[] = ['checking', 'completed', 'rejected'];
@@ -365,7 +366,7 @@ export default function VOCPage(): React.ReactElement {
               className="voc-content-editor"
               data-placeholder={t('voc.content')}
               style={{
-                minHeight: 140,
+                minHeight: 280,
                 border: '1px solid var(--border-color, #e2e8f0)',
                 borderRadius: 6,
                 padding: '8px 12px',
@@ -485,10 +486,10 @@ export default function VOCPage(): React.ReactElement {
             <div className="form-group">
               <label className="form-label">{t('voc.discussion')}</label>
               <div className="voc-chat" style={{ minHeight: 80 }}>
-                {selected.comments.length === 0 ? (
+                {(selected.comments ?? []).length === 0 ? (
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{t('voc.no_comments')}</p>
                 ) : (
-                  selected.comments.map((c) => {
+                  (selected.comments ?? []).map((c) => {
                     const isAdmin = !c.is_submitter;
                     return (
                       <div
