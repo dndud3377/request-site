@@ -90,7 +90,7 @@ export type CreateDocumentInput = Omit<
 
 export type UpdateDocumentInput = Partial<CreateDocumentInput>;
 
-export type VocPage = 'request' | 'approval' | 'history';
+export type VocPage = 'request' | 'approval' | 'history' | 'other';
 
 export interface VocComment {
   id: number;
