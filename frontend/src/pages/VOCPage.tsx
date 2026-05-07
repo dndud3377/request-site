@@ -45,7 +45,7 @@ export default function VOCPage(): React.ReactElement {
 
   // ── register form ──
   const [formOpen, setFormOpen]   = useState(false);
-  const [form, setForm]           = useState({ title: '', category: 'inquiry' as VocCategory, page: 'request' as VocPage, content: '' });
+  const [form, setForm]           = useState({ title: '', category: 'inquiry' as VocCategory, page: 'request' as VocPage});
   const [submitting, setSubmitting] = useState(false);
 
   // ── detail modal ──
@@ -130,7 +130,7 @@ export default function VOCPage(): React.ReactElement {
       };
       await vocAPI.create(input);
       addToast(t('voc.submit_success'), 'success');
-      setForm({ title: '', category: 'inquiry', page: 'request', content: '' });
+      setForm({ title: '', category: 'inquiry', page: 'request'});
       if (contentEditableRef.current) contentEditableRef.current.innerHTML = '';
       setFormOpen(false);
       fetchVocs();
