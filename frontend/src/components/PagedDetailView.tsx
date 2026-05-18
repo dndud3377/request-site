@@ -66,7 +66,7 @@ function BbTable({ rows, changedRowIds = new Set<string>() }: { rows: BbTableRow
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table table-compact" style={{ marginBottom: 8 }}>
-        <thead><tr><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.bb_ref_process_id')}</th><th>{t('request.col_bb_layer')}</th><th>{t('request.col_remark')}</th></tr></thead>
+        <thead><tr><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_bb_process_id')}</th><th>{t('request.col_bb_partid')}</th><th>{t('request.col_bb_layer')}</th><th>{t('request.col_bb_stepseq')}</th><th>{t('request.col_remark')}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} style={changedRowIds.has(r.id) ? changedRowStyle : undefined}><td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td>{r.bb_name}</td><td>{r.bb_step}</td><td>{r.bb_ss}</td><td>{r.remark}</td></tr>
@@ -566,25 +566,25 @@ type Page = { label: string; content: React.ReactNode };
 
   const getStepDisplay = (agent: string, round: number): StepDisplayInfo => {
     if (agent === 'E' && !hasPlel) {
-      return { status: 'na', label: '해당없음' };
+      return { status: 'na', label: t('approval.step_na') };
     }
     const s = getStep(agent, round);
-    if (!s) return { status: 'waiting', label: '대기중' };
+    if (!s) return { status: 'waiting', label: t('approval.step_pending') };
     if (s.action === 'approved') return {
-      status: 'approved', label: '합의',
+      status: 'approved', label: t('approval.agree'),
       assignee: s.assignee_name || undefined,
       date: formatDateTime(s.acted_at),
       comment: s.comment || undefined,
     };
     if (s.action === 'rejected') return {
-      status: 'rejected', label: '반려',
+      status: 'rejected', label: t('approval.reject'),
       assignee: s.assignee_name || undefined,
       date: formatDateTime(s.acted_at),
       comment: s.comment || undefined,
     };
     // pending
-    if (!s.assignee_name) return { status: 'unassigned', label: '미지정' };
-    return { status: 'reviewing', label: '검토중', assignee: s.assignee_name };
+    if (!s.assignee_name) return { status: 'unassigned', label: t('approval.step_unassigned') };
+    return { status: 'reviewing', label: t('common.status_under_review'), assignee: s.assignee_name };
   };
 
   const statusBadgeStyle = (status: StepDisplayInfo['status']): React.CSSProperties => {
@@ -625,21 +625,21 @@ type Page = { label: string; content: React.ReactNode };
   });
 
   const AGENTS: Array<{ key: string; label: string }> = [
-    { key: 'R', label: 'R팀' },
-    { key: 'J', label: 'J팀' },
-    { key: 'O', label: 'O팀' },
-    { key: 'E', label: 'E팀' },
+    { key: 'R', label: t('approval.agent_R') },
+    { key: 'J', label: t('approval.agent_J') },
+    { key: 'O', label: t('approval.agent_O') },
+    { key: 'E', label: t('approval.agent_E') },
   ];
 
   pages.push({
-    label: '결재 현황',
+    label: t('approval.title'),
     content: (
       <div style={cardStyle}>
-        <div style={sectionTitle}>결재 현황</div>
+        <div style={sectionTitle}>{t('approval.title')}</div>
 
         {/* 상신자 행 */}
         <div style={teamRowStyle}>
-          <div style={teamLabelStyle}>상신자</div>
+          <div style={teamLabelStyle}>{t('approval.label_requester')}</div>
           <div style={historyListStyle}>
             {rounds.map((r) => {
               const isCurrent = r === maxRound;
@@ -664,7 +664,7 @@ type Page = { label: string; content: React.ReactNode };
             <div style={historyListStyle}>
               {key === 'E' && !hasPlel ? (
                 <div style={historyItemStyle(false)}>
-                  <span style={{ ...statusBadgeStyle('na') }}>해당없음</span>
+                  <span style={{ ...statusBadgeStyle('na') }}>{t('approval.step_na')}</span>
                 </div>
               ) : (
                 rounds.map((r) => {
@@ -695,16 +695,16 @@ type Page = { label: string; content: React.ReactNode };
 
         {/* 완료 행 */}
         <div style={{ ...teamRowStyle, borderBottom: 'none' }}>
-          <div style={teamLabelStyle}>완료</div>
+          <div style={teamLabelStyle}>{t('approval.step_done')}</div>
           <div style={historyListStyle}>
             <div style={historyItemStyle(true)}>
               {doc.status === 'approved' ? (
                 <>
-                  <span style={statusBadgeStyle('approved')}>완료</span>
+                  <span style={statusBadgeStyle('approved')}>{t('approval.step_done')}</span>
                   <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{formatDateTime(getApprovedAt())}</span>
                 </>
               ) : doc.status === 'under_review' ? (
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>진행중</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{t('common.status_under_review')}</span>
               ) : null}
             </div>
           </div>

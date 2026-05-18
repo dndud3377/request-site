@@ -32,18 +32,19 @@ const formatExpectedCompletionDate = (submittedAt: string | null): string => {
 
 const getCurrentStage = (doc: RequestDocument, t: TFunction): string => {
   const steps = doc.approval_steps ?? [];
-  const pending = steps.filter((s) => s.action === 'pending');
+  const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
+  const currentSteps = steps.filter((s) => (s.round ?? 1) === maxRound);
+  const pending = currentSteps.filter((s) => s.action === 'pending');
   if (pending.length === 0 && doc.status === 'approved') return t('common.status_approved');
   if (pending.length === 0) return '-';
-  
-  // agent 코드를 라벨로 변환
+
   const agentToLabel: Record<string, string> = {
     'R': t('approval.agent_R'),
     'J': t('approval.agent_J'),
     'O': t('approval.agent_O'),
     'E': t('approval.agent_E'),
   };
-  
+
   return pending.map((s) => {
     const label = agentToLabel[s.agent] || s.agent;
     return s.assignee_name ? `${label} (${s.assignee_name})` : label;
@@ -242,9 +243,6 @@ export default function ApprovalPage(): React.ReactElement {
 
   const isPL = currentUser.role === 'PL';
   const isMaster = currentUser.role === 'MASTER';
-
-  // 모달 내 comment 목록 (합의/반려된 step의 코멘트)
-  const stepComments = selected?.approval_steps?.filter((s) => s.comment && s.action !== 'pending') ?? [];
 
   return (
     <div className="container page">
@@ -540,29 +538,7 @@ export default function ApprovalPage(): React.ReactElement {
       >
         {selected && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* 상태 + 합의/반려 이유 */}
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-              <StatusBadge status={selected.status} />
-              {stepComments.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {stepComments.map((s) => (
-                    <div
-                      key={s.id}
-                      style={{
-                        fontSize: '0.8rem',
-                        color: s.action === 'rejected' ? '#dc3545' : 'var(--text-secondary)',
-                        background: s.action === 'rejected' ? '#fff0f0' : 'var(--bg-secondary)',
-                        border: `1px solid ${s.action === 'rejected' ? '#f5c6cb' : 'var(--border)'}`,
-                        borderRadius: 'var(--radius-sm)',
-                        padding: '4px 10px',
-                      }}
-                    >
-                      <span style={{ fontWeight: 700 }}>AGENT {s.agent} ({s.action === 'approved' ? t('approval.agree') : t('approval.reject')})</span>: {s.comment}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <StatusBadge status={selected.status} />
 
             {/* 페이지 네비게이션 + 의뢰 상세 */}
             <PagedDetailView

@@ -40,6 +40,8 @@ interface ApprovalFlowProps {
 export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, onLoadTeamMembers, processing, currentUser }: ApprovalFlowProps): React.ReactElement {
   const { t } = useTranslation();
   const steps = doc.approval_steps ?? [];
+  const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
+  const currentSteps = steps.filter((s) => (s.round ?? 1) === maxRound);
 
   const [assigningAgent, setAssigningAgent] = useState<AgentType | null>(null);
   const [assigningUserId, setAssigningUserId] = useState<string>('');
@@ -47,7 +49,7 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, onLoadT
   const [loadingMembers, setLoadingMembers] = useState(false);
 
   const getStep = (agent: AgentType): ApprovalStepFrontend | undefined =>
-    steps.find((s) => s.agent === agent);
+    currentSteps.find((s) => s.agent === agent);
 
   const rStep = getStep('R');
   const jStep = getStep('J');
