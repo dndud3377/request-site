@@ -139,11 +139,13 @@ class ApprovalStep(models.Model):
         related_name='assigned_steps', verbose_name='담당자'
     )
     assignee_name = models.CharField(max_length=100, blank=True, verbose_name='담당자 이름')
+    round = models.PositiveSmallIntegerField(default=1, verbose_name='상신 회차')
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True, verbose_name='생성일시')
 
     class Meta:
         verbose_name = '결재 단계'
         verbose_name_plural = '결재 단계 목록'
-        ordering = ['id']
+        ordering = ['round', 'id']
 
     def __str__(self):
         return f"{self.document.title} - AGENT {self.agent}: {self.action}"

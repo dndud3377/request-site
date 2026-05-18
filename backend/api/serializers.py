@@ -42,7 +42,7 @@ class ApprovalStepSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ApprovalStep
-        fields = ['id', 'agent', 'action', 'acted_at', 'comment', 'is_parallel', 'assignee_loginid', 'assignee_name']
+        fields = ['id', 'agent', 'action', 'acted_at', 'comment', 'is_parallel', 'assignee_loginid', 'assignee_name', 'round', 'created_at']
 
     def get_assignee_loginid(self, obj):
         return obj.assignee.loginid if obj.assignee else None

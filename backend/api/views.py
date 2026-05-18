@@ -99,7 +99,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document.save()
 
         ApprovalStep.objects.filter(document=document).delete()
-        ApprovalStep.objects.create(document=document, agent='R', action='pending')
+        ApprovalStep.objects.create(document=document, agent='R', action='pending', round=1)
 
         return Response({
             'message': '의뢰서가 성공적으로 상신되었습니다.',
@@ -148,8 +148,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document.status = 'under_review'
         document.save()
 
-        ApprovalStep.objects.filter(document=document).delete()
-        ApprovalStep.objects.create(document=document, agent='R', action='pending')
+        from django.db.models import Max
+        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 0
+        ApprovalStep.objects.create(document=document, agent='R', action='pending', round=max_round + 1)
 
         return Response({
             'message': '재상신되었습니다.',
@@ -203,24 +204,25 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         step.save()
 
         new_status = document.status
+        current_round = step.round
 
         if agent == 'R':
             # R 합의 → J, O 병렬 단계 생성
-            ApprovalStep.objects.create(document=document, agent='J', action='pending', is_parallel=True)
-            ApprovalStep.objects.create(document=document, agent='O', action='pending', is_parallel=True)
+            ApprovalStep.objects.create(document=document, agent='J', action='pending', is_parallel=True, round=current_round)
+            ApprovalStep.objects.create(document=document, agent='O', action='pending', is_parallel=True, round=current_round)
             new_status = 'under_review'
 
         elif agent in ('J', 'O'):
             # J/O 모두 합의 시 다음 단계 결정
-            j_step = ApprovalStep.objects.filter(document=document, agent='J').order_by('-id').first()
-            o_step = ApprovalStep.objects.filter(document=document, agent='O').order_by('-id').first()
+            j_step = ApprovalStep.objects.filter(document=document, agent='J', round=current_round).order_by('-id').first()
+            o_step = ApprovalStep.objects.filter(document=document, agent='O', round=current_round).order_by('-id').first()
             both_approved = (
                 j_step and j_step.action == 'approved' and
                 o_step and o_step.action == 'approved'
             )
             if both_approved:
                 if document.has_ppid_plel():
-                    ApprovalStep.objects.create(document=document, agent='E', action='pending')
+                    ApprovalStep.objects.create(document=document, agent='E', action='pending', round=current_round)
                     new_status = 'under_review'
                 else:
                     new_status = 'approved'
