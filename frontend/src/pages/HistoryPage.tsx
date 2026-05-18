@@ -3,12 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { documentsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
-import ApprovalFlow from '../components/ApprovalFlow';
 import PagedDetailView from '../components/PagedDetailView';
-import { MOCK_USERS } from '../contexts/AuthContext';
 import { RequestDocument } from '../types';
-
-const MASTER_USER = MOCK_USERS.find((u) => u.role === 'MASTER')!;
 
 const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
 
@@ -139,27 +135,6 @@ export default function HistoryPage(): React.ReactElement {
             </button>
           }
         >
-          {/* 결재 경로 */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{
-              fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent)',
-              textTransform: 'uppercase', letterSpacing: '0.05em',
-              marginBottom: 10,
-            }}>
-              {t('approval.section_approval_flow')}
-            </div>
-            <ApprovalFlow
-              doc={selected}
-              onAgree={() => {}}
-              onReject={() => {}}
-              onAssign={(_a, _id, _name) => {}}
-              onLoadTeamMembers={() => Promise.resolve([])}
-              processing={false}
-              currentUser={MASTER_USER}
-            />
-          </div>
-
-          {/* 상세 정보 */}
           <PagedDetailView
             doc={selected}
             role="MASTER"
