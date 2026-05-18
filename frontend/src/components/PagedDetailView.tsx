@@ -522,6 +522,197 @@ type Page = { label: string; content: React.ReactNode };
     });
   }
 
+  // ===== 결재 현황 페이지 =====
+  const allSteps = doc.approval_steps ?? [];
+  const maxRound = allSteps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
+  const rounds = Array.from({ length: maxRound }, (_, i) => i + 1);
+
+  const getStep = (agent: string, round: number) =>
+    allSteps.find((s) => s.agent === agent && (s.round ?? 1) === round);
+
+  const hasPlel = (() => {
+    try {
+      const parsed = JSON.parse(doc.additional_notes ?? '{}');
+      return (parsed?.jayerRows ?? []).some((r: any) => r.pp?.toLowerCase().includes('plel'));
+    } catch { return false; }
+  })();
+
+  // 각 회차 상신 날짜: round=1은 doc.submitted_at, 이후 회차는 해당 R 단계의 created_at
+  const getRoundSubmittedAt = (round: number): string | null => {
+    if (round === 1) return doc.submitted_at ?? null;
+    const rStep = allSteps.find((s) => s.agent === 'R' && (s.round ?? 1) === round);
+    return rStep?.created_at ?? null;
+  };
+
+  // 완료 날짜: 승인된 마지막 단계의 acted_at
+  const getApprovedAt = (): string | null => {
+    const approved = allSteps.filter((s) => s.action === 'approved' && s.acted_at);
+    if (!approved.length) return null;
+    return approved.reduce((a, b) =>
+      new Date(a.acted_at!) > new Date(b.acted_at!) ? a : b
+    ).acted_at;
+  };
+
+  const formatDateTime = (d: string | null | undefined): string =>
+    d ? new Date(d).toLocaleDateString('ko-KR') : '-';
+
+  type StepDisplayInfo = {
+    status: 'approved' | 'rejected' | 'reviewing' | 'unassigned' | 'waiting' | 'na';
+    label: string;
+    assignee?: string;
+    date?: string;
+    comment?: string;
+  };
+
+  const getStepDisplay = (agent: string, round: number): StepDisplayInfo => {
+    if (agent === 'E' && !hasPlel) {
+      return { status: 'na', label: '해당없음' };
+    }
+    const s = getStep(agent, round);
+    if (!s) return { status: 'waiting', label: '대기중' };
+    if (s.action === 'approved') return {
+      status: 'approved', label: '합의',
+      assignee: s.assignee_name || undefined,
+      date: formatDateTime(s.acted_at),
+      comment: s.comment || undefined,
+    };
+    if (s.action === 'rejected') return {
+      status: 'rejected', label: '반려',
+      assignee: s.assignee_name || undefined,
+      date: formatDateTime(s.acted_at),
+      comment: s.comment || undefined,
+    };
+    // pending
+    if (!s.assignee_name) return { status: 'unassigned', label: '미지정' };
+    return { status: 'reviewing', label: '검토중', assignee: s.assignee_name };
+  };
+
+  const statusBadgeStyle = (status: StepDisplayInfo['status']): React.CSSProperties => {
+    const base: React.CSSProperties = {
+      display: 'inline-block', padding: '2px 8px', borderRadius: 10,
+      fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap',
+    };
+    const colors: Record<StepDisplayInfo['status'], React.CSSProperties> = {
+      approved:   { background: '#d4edda', color: '#155724' },
+      rejected:   { background: '#f8d7da', color: '#721c24' },
+      reviewing:  { background: '#cce5ff', color: '#004085' },
+      unassigned: { background: '#e2e3e5', color: '#383d41' },
+      waiting:    { background: '#f0f0f0', color: '#adb5bd' },
+      na:         { background: '#f0f0f0', color: '#adb5bd' },
+    };
+    return { ...base, ...colors[status] };
+  };
+
+  const teamRowStyle: React.CSSProperties = {
+    display: 'flex', alignItems: 'flex-start', gap: 12,
+    padding: '8px 0', borderBottom: '1px solid var(--border)',
+  };
+
+  const teamLabelStyle: React.CSSProperties = {
+    minWidth: 64, fontWeight: 700, fontSize: '0.82rem',
+    color: 'var(--text-primary)', paddingTop: 2,
+  };
+
+  const historyListStyle: React.CSSProperties = {
+    display: 'flex', flexDirection: 'column', gap: 4, flex: 1,
+  };
+
+  const historyItemStyle = (isCurrent: boolean): React.CSSProperties => ({
+    display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6,
+    padding: '4px 8px', borderRadius: 6,
+    background: isCurrent ? 'rgba(37,99,235,0.05)' : 'transparent',
+    fontSize: '0.82rem',
+  });
+
+  const AGENTS: Array<{ key: string; label: string }> = [
+    { key: 'R', label: 'R팀' },
+    { key: 'J', label: 'J팀' },
+    { key: 'O', label: 'O팀' },
+    { key: 'E', label: 'E팀' },
+  ];
+
+  pages.push({
+    label: '결재 현황',
+    content: (
+      <div style={cardStyle}>
+        <div style={sectionTitle}>결재 현황</div>
+
+        {/* 상신자 행 */}
+        <div style={teamRowStyle}>
+          <div style={teamLabelStyle}>상신자</div>
+          <div style={historyListStyle}>
+            {rounds.map((r) => {
+              const isCurrent = r === maxRound;
+              const date = getRoundSubmittedAt(r);
+              return (
+                <div key={r} style={historyItemStyle(isCurrent)}>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', minWidth: 40 }}>{r}회차</span>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{doc.requester_name}</span>
+                  {date && date !== '-' && (
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{date}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 팀별 행 */}
+        {AGENTS.map(({ key, label }) => (
+          <div key={key} style={teamRowStyle}>
+            <div style={teamLabelStyle}>{label}</div>
+            <div style={historyListStyle}>
+              {key === 'E' && !hasPlel ? (
+                <div style={historyItemStyle(false)}>
+                  <span style={{ ...statusBadgeStyle('na') }}>해당없음</span>
+                </div>
+              ) : (
+                rounds.map((r) => {
+                  const isCurrent = r === maxRound;
+                  const info = getStepDisplay(key, r);
+                  return (
+                    <div key={r} style={historyItemStyle(isCurrent)}>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', minWidth: 40 }}>{r}회차</span>
+                      <span style={statusBadgeStyle(info.status)}>{info.label}</span>
+                      {info.assignee && (
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{info.assignee}</span>
+                      )}
+                      {info.date && (
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{info.date}</span>
+                      )}
+                      {info.comment && (
+                        <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.78rem' }}>
+                          "{info.comment}"
+                        </span>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        ))}
+
+        {/* 완료 행 */}
+        <div style={{ ...teamRowStyle, borderBottom: 'none' }}>
+          <div style={teamLabelStyle}>완료</div>
+          <div style={historyListStyle}>
+            <div style={historyItemStyle(true)}>
+              {doc.status === 'approved' ? (
+                <>
+                  <span style={statusBadgeStyle('approved')}>완료</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{formatDateTime(getApprovedAt())}</span>
+                </>
+              ) : doc.status === 'under_review' ? (
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>진행중</span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    ),
+  });
+
   const safeIdx = Math.min(pageIdx, pages.length - 1);
   const currentPage = pages[safeIdx];
 
