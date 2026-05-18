@@ -118,7 +118,9 @@
     "col_submitted": "Submitted",
     "col_current_stage": "Current Stage",
     "view_detail": "View",
-    "current_role": "Current Role:"
+    "current_role": "Current Role:",
+    "step_unassigned": "Unassigned",
+    "step_na": "N/A"
   },
   "history": {
     "title": "History",
