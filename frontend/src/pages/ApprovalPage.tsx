@@ -32,18 +32,19 @@ const formatExpectedCompletionDate = (submittedAt: string | null): string => {
 
 const getCurrentStage = (doc: RequestDocument, t: TFunction): string => {
   const steps = doc.approval_steps ?? [];
-  const pending = steps.filter((s) => s.action === 'pending');
+  const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
+  const currentSteps = steps.filter((s) => (s.round ?? 1) === maxRound);
+  const pending = currentSteps.filter((s) => s.action === 'pending');
   if (pending.length === 0 && doc.status === 'approved') return t('common.status_approved');
   if (pending.length === 0) return '-';
-  
-  // agent 코드를 라벨로 변환
+
   const agentToLabel: Record<string, string> = {
     'R': t('approval.agent_R'),
     'J': t('approval.agent_J'),
     'O': t('approval.agent_O'),
     'E': t('approval.agent_E'),
   };
-  
+
   return pending.map((s) => {
     const label = agentToLabel[s.agent] || s.agent;
     return s.assignee_name ? `${label} (${s.assignee_name})` : label;
