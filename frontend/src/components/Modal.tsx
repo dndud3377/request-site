@@ -51,10 +51,9 @@ export default function Modal({
             <button
               className="modal-close"
               onClick={() => setIsFullscreen((v) => !v)}
-              title={isFullscreen ? '창 크기 복원' : '전체화면'}
-              style={{ fontSize: '1rem' }}
+              style={{ fontSize: '0.75rem' }}
             >
-              {isFullscreen ? '⊠' : '⛶'}
+              {isFullscreen ? '⊠ 창 복원' : '⛶ 전체화면'}
             </button>
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
