@@ -1,4 +1,4 @@
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface ModalProps {
@@ -32,14 +32,32 @@ export default function Modal({
   topLevel = false,
   style,
 }: ModalProps): React.ReactElement | null {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   if (!isOpen) return null;
+
+  const modalClass = [
+    'modal',
+    size === 'lg' ? 'modal-lg' : '',
+    isFullscreen ? 'modal-fullscreen' : '',
+  ].filter(Boolean).join(' ');
 
   return (
     <div className="modal-overlay" style={topLevel ? { zIndex: 3000 } : undefined}>
-      <div className={`modal${size === 'lg' ? ' modal-lg' : ''}`} style={style}>
+      <div className={modalClass} style={isFullscreen ? undefined : style}>
         <div className="modal-header">
           <h3>{title}</h3>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button
+              className="modal-close"
+              onClick={() => setIsFullscreen((v) => !v)}
+              title={isFullscreen ? '창 크기 복원' : '전체화면'}
+              style={{ fontSize: '1rem' }}
+            >
+              {isFullscreen ? '⊠' : '⛶'}
+            </button>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}
