@@ -188,7 +188,6 @@ const INITIAL_DETAIL: DetailFormState = {
   ip_option: '',
   tmap_apply: '미적용',
   hplhc_change: '변경 없음',
-  e_lps: '아니오',
 };
 
 const INITIAL_FORM: CreateDocumentInput = {
@@ -2154,7 +2153,7 @@ const isProdc = detail.only_prodc === 'Yes';
             </div>
             <div className="bb-split-panel-scroll">
               {jayerRows.filter(r => !r.disabled).length === 0 ? (
-                <div className="bb-split-hint">원본 layer 정보가 없습니다. Step 2를 먼저 입력하세요.</div>
+                <div className="bb-split-hint">원본 layer 정보가 없습니다. Step 3를 먼저 입력하세요.</div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
