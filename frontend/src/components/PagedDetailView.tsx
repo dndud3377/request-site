@@ -66,7 +66,7 @@ function BbTable({ rows, changedRowIds = new Set<string>() }: { rows: BbTableRow
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table table-compact" style={{ marginBottom: 8 }}>
-        <thead><tr><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.bb_ref_process_id')}</th><th>{t('request.col_bb_layer')}</th><th>{t('request.col_remark')}</th></tr></thead>
+        <thead><tr><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_bb_process_id')}</th><th>{t('request.col_bb_partid')}</th><th>{t('request.col_bb_layer')}</th><th>{t('request.col_bb_stepseq')}</th><th>{t('request.col_remark')}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} style={changedRowIds.has(r.id) ? changedRowStyle : undefined}><td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td>{r.bb_name}</td><td>{r.bb_step}</td><td>{r.bb_ss}</td><td>{r.remark}</td></tr>
