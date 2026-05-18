@@ -556,6 +556,16 @@ type Page = { label: string; content: React.ReactNode };
   const formatDateTime = (d: string | null | undefined): string =>
     d ? new Date(d).toLocaleDateString('ko-KR') : '-';
 
+  const formatDateTimeShort = (d: string | null | undefined): string => {
+    if (!d) return '-';
+    const dt = new Date(d);
+    const date = dt.toLocaleDateString('ko-KR');
+    const hh = String(dt.getHours()).padStart(2, '0');
+    const mm = String(dt.getMinutes()).padStart(2, '0');
+    const ss = String(dt.getSeconds()).padStart(2, '0');
+    return `${date} ${hh}:${mm}:${ss}`;
+  };
+
   type StepDisplayInfo = {
     status: 'approved' | 'rejected' | 'reviewing' | 'unassigned' | 'waiting' | 'na';
     label: string;
@@ -643,7 +653,7 @@ type Page = { label: string; content: React.ReactNode };
           <div style={historyListStyle}>
             {rounds.map((r) => {
               const isCurrent = r === maxRound;
-              const date = getRoundSubmittedAt(r);
+              const date = formatDateTimeShort(getRoundSubmittedAt(r));
               return (
                 <div key={r} style={historyItemStyle(isCurrent)}>
                   <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', minWidth: 40 }}>{r}회차</span>

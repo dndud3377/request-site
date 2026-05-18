@@ -192,8 +192,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if agent not in ('R', 'J', 'O', 'E'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        from django.db.models import Max
+        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+
         step = ApprovalStep.objects.filter(
-            document=document, agent=agent, action='pending'
+            document=document, agent=agent, action='pending', round=max_round
         ).first()
         if not step:
             return Response({'error': f'AGENT {agent}의 대기 중인 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -248,8 +251,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if agent not in ('R', 'J', 'O', 'E'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        from django.db.models import Max
+        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+
         step = ApprovalStep.objects.filter(
-            document=document, agent=agent, action='pending'
+            document=document, agent=agent, action='pending', round=max_round
         ).first()
         if not step:
             return Response({'error': f'AGENT {agent}의 대기 중인 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -272,8 +278,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         assignee_loginid = request.data.get('assignee_loginid')
         assignee_name = request.data.get('assignee_name', '')
 
+        from django.db.models import Max
+        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+
         step = ApprovalStep.objects.filter(
-            document=document, agent=agent, action='pending'
+            document=document, agent=agent, action='pending', round=max_round
         ).first()
         if not step:
             return Response({'error': '해당 단계를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
