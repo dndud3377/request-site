@@ -733,6 +733,26 @@ select.form-control option {
   max-width: 1120px;
 }
 
+.modal-fullscreen {
+  max-width: none !important;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 0 !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-fullscreen .modal-body {
+  max-height: none;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.modal-overlay:has(.modal-fullscreen) {
+  padding: 0;
+  align-items: stretch;
+}
+
 .modal-header {
   padding: 24px 28px 0;
   display: flex;
