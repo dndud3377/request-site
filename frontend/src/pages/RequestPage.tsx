@@ -188,7 +188,6 @@ const INITIAL_DETAIL: DetailFormState = {
   ip_option: '',
   tmap_apply: '미적용',
   hplhc_change: '변경 없음',
-  e_lps: '아니오',
 };
 
 const INITIAL_FORM: CreateDocumentInput = {
@@ -1140,6 +1139,16 @@ const isProdc = detail.only_prodc === 'Yes';
           errorMessages.push(`${field}: 필수 입력 항목입니다.`);
         }
       });
+      const filledBb = detail.bb_entries.filter(
+        (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
+      );
+      if (filledBb.length === 0) {
+        newErrors['bb_entries'] = t('request.required');
+        errorMessages.push('Backbone 조합 영역: 최소 1개 이상 입력해야 합니다.');
+      }
+    }
+
+    if (currentStep === 2) {
       if (detail.map_change === '변경 있음') {
         if (!detail.map_value_x?.trim()) {
           newErrors['map_value_x'] = t('request.required');
@@ -1154,24 +1163,17 @@ const isProdc = detail.only_prodc === 'Yes';
           errorMessages.push('MAP 변경 사유: 필수 입력 항목입니다.');
         }
       }
-      const filledBb = detail.bb_entries.filter(
-        (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
-      );
-      if (filledBb.length === 0) {
-        newErrors['bb_entries'] = t('request.required');
-        errorMessages.push('Backbone 조합 영역: 최소 1개 이상 입력해야 합니다.');
-      }
-    }
-
-    if (currentStep === 2) {
-      // TODO: J-ayer 행 검증 로직 추가
     }
 
     if (currentStep === 3) {
-      // TODO: O-ayer 행 검증 로직 추가
+      // TODO: J-ayer 행 검증 로직 추가
     }
 
     if (currentStep === 4) {
+      // TODO: O-ayer 행 검증 로직 추가
+    }
+
+    if (currentStep === 5) {
       const unmappedJayerRows = jayerRows.filter(
         (row) => row.process_id && !mappedJayerRowIds.has(row.id)
       );
@@ -1242,7 +1244,7 @@ const isProdc = detail.only_prodc === 'Yes';
   };
 
   const handleNextStep = () => {
-    if (step === 1) {
+    if (step === 1 || step === 2) {
       const result = validate(step);
       if (!result.valid) {
         result.errors.forEach(msg => addToast(msg, 'error'));
@@ -1260,7 +1262,7 @@ const isProdc = detail.only_prodc === 'Yes';
   };
 
   const handleSubmitClick = () => {
-    const result = validate(4);
+    const result = validate(5);
     if (!result.valid) {
       result.errors.forEach(msg => addToast(msg, 'error'));
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1483,47 +1485,6 @@ const isProdc = detail.only_prodc === 'Yes';
           />
         </div>
 
-        {/* 5. 지도 편차 */}
-        <div className="full-width flex-row">
-          <div className="form-group" style={{ flex: 25 }}>
-            <label className="form-label">{t('request.map')}</label>
-            <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange} disabled={copiedFields.has('map_change')}>
-              <option value="변경 없음">{t('request.map_no_change')}</option>
-              <option value="변경 있음">{t('request.map_has_change')}</option>
-            </select>
-          </div>
-          <div className="form-group" style={{ flex: 10, visibility: hasMapChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_value_x')} <span className="required">*</span></label>
-            <input className={`form-control${errors.map_value_x ? ' error' : ''}`} name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} disabled={copiedFields.has('map_value_x')} />
-            {errors.map_value_x && <span className="form-error">{errors.map_value_x}</span>}
-          </div>
-          <div className="form-group" style={{ flex: 10, visibility: hasMapChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_value_y')} <span className="required">*</span></label>
-            <input className={`form-control${errors.map_value_y ? ' error' : ''}`} name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} disabled={copiedFields.has('map_value_y')} />
-            {errors.map_value_y && <span className="form-error">{errors.map_value_y}</span>}
-          </div>
-          <div className="form-group" style={{ flex: 30, visibility: hasMapChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_reason')} <span className="required">*</span></label>
-            <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} disabled={copiedFields.has('map_reason')} />
-            {errors.map_reason && <span className="form-error">{errors.map_reason}</span>}
-          </div>
-        </div>
-
-        {/* 6. 예외 구역 */}
-        <div className="full-width flex-row">
-          <div className="form-group" style={{ flex: 25 }}>
-            <label className="form-label">{t('request.ea_change')}</label>
-            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange} disabled={copiedFields.has('ea_change')}>
-              <option value="변경 없음">{t('request.no_change')}</option>
-              <option value="변경 있음">{t('request.has_change')}</option>
-            </select>
-          </div>
-          <div className="form-group" style={{ flex: 10, visibility: hasEaChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.ea_value')}</label>
-            <input className="form-control" name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={copiedFields.has('ea_value')} />
-          </div>
-        </div>
-
         {/* 8. 뼈찜 조합 영역 */}
         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <label className="form-label">
@@ -1585,7 +1546,57 @@ const isProdc = detail.only_prodc === 'Yes';
           </div>
         </div>
 
-        {/* 9. Only C가문 제품 */}
+      </div>
+    </div>
+  );
+
+  const renderStepMap = () => (
+    <div className="form-section">
+      <div className="form-section-title">🗺️ {t('request.section_map')}</div>
+      <div className="form-grid">
+
+        {/* 지도 편차 */}
+        <div className="full-width flex-row">
+          <div className="form-group" style={{ flex: 25 }}>
+            <label className="form-label">{t('request.map')}</label>
+            <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange} disabled={copiedFields.has('map_change')}>
+              <option value="변경 없음">{t('request.map_no_change')}</option>
+              <option value="변경 있음">{t('request.map_has_change')}</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ flex: 10, visibility: hasMapChange ? 'visible' : 'hidden' }}>
+            <label className="form-label">{t('request.map_value_x')} <span className="required">*</span></label>
+            <input className={`form-control${errors.map_value_x ? ' error' : ''}`} name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} disabled={copiedFields.has('map_value_x')} />
+            {errors.map_value_x && <span className="form-error">{errors.map_value_x}</span>}
+          </div>
+          <div className="form-group" style={{ flex: 10, visibility: hasMapChange ? 'visible' : 'hidden' }}>
+            <label className="form-label">{t('request.map_value_y')} <span className="required">*</span></label>
+            <input className={`form-control${errors.map_value_y ? ' error' : ''}`} name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} disabled={copiedFields.has('map_value_y')} />
+            {errors.map_value_y && <span className="form-error">{errors.map_value_y}</span>}
+          </div>
+          <div className="form-group" style={{ flex: 30, visibility: hasMapChange ? 'visible' : 'hidden' }}>
+            <label className="form-label">{t('request.map_reason')} <span className="required">*</span></label>
+            <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} disabled={copiedFields.has('map_reason')} />
+            {errors.map_reason && <span className="form-error">{errors.map_reason}</span>}
+          </div>
+        </div>
+
+        {/* 예외 구역 */}
+        <div className="full-width flex-row">
+          <div className="form-group" style={{ flex: 25 }}>
+            <label className="form-label">{t('request.ea_change')}</label>
+            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange} disabled={copiedFields.has('ea_change')}>
+              <option value="변경 없음">{t('request.no_change')}</option>
+              <option value="변경 있음">{t('request.has_change')}</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ flex: 10, visibility: hasEaChange ? 'visible' : 'hidden' }}>
+            <label className="form-label">{t('request.ea_value')}</label>
+            <input className="form-control" name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={copiedFields.has('ea_value')} />
+          </div>
+        </div>
+
+        {/* Only C가문 제품 */}
         <div className="full-width" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px' }}>
             <label className="form-label">{t('request.prodc_status')}</label>
@@ -1603,7 +1614,7 @@ const isProdc = detail.only_prodc === 'Yes';
           )}
         </div>
 
-        {/* 10. X표시 변경 여부 */}
+        {/* X표시 변경 여부 */}
         <div className="form-group full-width">
           <label className="form-label">{t('request.mshot_change_status')}</label>
           <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={handleDetailChange} disabled={copiedFields.has('mshot_change')}>
@@ -1661,7 +1672,7 @@ const isProdc = detail.only_prodc === 'Yes';
           )}
         </div>
 
-        {/* 11. 20주년 제품 + 분리 진행 여부 */}
+        {/* 20주년 제품 + 분리 진행 여부 */}
         <div className="full-width flex-row">
           <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px' }}>
             <label className="form-label">{t('request.ip_application_status')}</label>
@@ -1699,7 +1710,7 @@ const isProdc = detail.only_prodc === 'Yes';
           </div>
         </div>
 
-        {/* 12-14. T가문 적용 / 주력 제품 변경 / 설탕 추가 */}
+        {/* T가문 적용 / 주력 제품 변경 */}
         <div className="full-width flex-row">
           <div className="form-group flex-col">
             <label className="form-label">{t('request.tmap_application_status')}</label>
@@ -2142,7 +2153,7 @@ const isProdc = detail.only_prodc === 'Yes';
             </div>
             <div className="bb-split-panel-scroll">
               {jayerRows.filter(r => !r.disabled).length === 0 ? (
-                <div className="bb-split-hint">원본 layer 정보가 없습니다. Step 2를 먼저 입력하세요.</div>
+                <div className="bb-split-hint">원본 layer 정보가 없습니다. Step 3를 먼저 입력하세요.</div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
@@ -2387,6 +2398,7 @@ const isProdc = detail.only_prodc === 'Yes';
         currentStep={step}
         steps={[
           t('request.section_detail'),
+          t('request.section_map'),
           t('request.job_li'),
           t('request.ovl_li'),
           t('request.bb_li'),
@@ -2394,9 +2406,10 @@ const isProdc = detail.only_prodc === 'Yes';
       />
 
       {step === 1 && renderStep1()}
-      {step === 2 && renderStep2()}
-      {step === 3 && renderStep3()}
-      {step === 4 && renderStep4()}
+      {step === 2 && renderStepMap()}
+      {step === 3 && renderStep2()}
+      {step === 4 && renderStep3()}
+      {step === 5 && renderStep4()}
 
       <div className="form-actions" style={step > 1 ? { justifyContent: 'space-between' } : {}}>
         {step > 1 && (
@@ -2408,7 +2421,7 @@ const isProdc = detail.only_prodc === 'Yes';
           <button className="btn btn-secondary" onClick={handleSaveDraft} disabled={saving}>
             💾 {saving ? t('common.loading') : t('request.save_draft')}
           </button>
-          {step < 4 ? (
+          {step < 5 ? (
             <button className="btn btn-primary" onClick={handleNextStep}>
               다음 →
             </button>

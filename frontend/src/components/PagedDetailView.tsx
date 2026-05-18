@@ -358,81 +358,6 @@ type Page = { label: string; content: React.ReactNode };
               </div>
             )}
 
-            {(isR || isO || isJ) && (detail.map_change || detail.ea_change) && (
-              <div style={rowStyle}>
-                {(isR || isO) && detail.map_change && (() => {
-                  const mapValue = `변경: ${detail.map_change}${detail.map_value_x ? ` / X: ${detail.map_value_x}` : ''}${detail.map_value_y ? ` / Y: ${detail.map_value_y}` : ''}${detail.map_reason ? ` / 사유: ${detail.map_reason}` : ''}`;
-                  const mapChanged = changedFields.has('map_change') || changedFields.has('map_value_x') || changedFields.has('map_value_y') || changedFields.has('map_reason');
-                  return (
-                    <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change" />
-                  );
-                })()}
-                {isR && detail.ea_change && (() => {
-                  const eaValue = `변경: ${detail.ea_change}${detail.ea_value ? ` / 값: ${detail.ea_value}` : ''}`;
-                  const eaChanged = changedFields.has('ea_change') || changedFields.has('ea_value');
-                  return (
-                    <Chip label={t('request.ea_change')} value={eaValue} style={chipWide} changed={eaChanged} fieldKey="ea_change" />
-                  );
-                })()}
-              </div>
-            )}
-
-            {isR && detail.mshot_change && (() => {
-              const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy');
-              return (
-                <div style={rowStyle}>
-                  <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(mshotChanged ? { border: '2px solid #dc3545' } : {}) }}>
-                    <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
-                      <div style={fieldLabel}>{t('request.mshot_change_status')}</div>
-                      <div style={fieldValue}>{detail.mshot_change}</div>
-                    </div>
-                    {mshotIsDelete && (
-                      <div style={{ flex: 1 }}>
-                        <div style={{ ...fieldLabel, color: '#dc3545' }}>{t('approval.mshot_delete_notice')}</div>
-                        <div style={{ ...fieldValue, color: '#dc3545' }}>{t('approval.mshot_delete_desc')}</div>
-                      </div>
-                    )}
-                    {mshotHasDetail && detail.mshot_image_copy && (
-                      <div style={{ flex: 1 }}>
-                        <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')}</div>
-                        <img
-                          src={`/media/${detail.mshot_image_copy}`}
-                          alt="attached"
-                          style={{
-                            maxWidth: '300px',
-                            maxHeight: '200px',
-                            borderRadius: '4px',
-                            border: '1px solid #ddd',
-                            marginTop: '8px'
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {isR && detail.only_prodc && (() => {
-              const prodcChanged = ['only_prodc','prodc_top_line','prodc_top_process','prodc_top_product','prodc_middle_use','prodc_middle_line','prodc_middle_process','prodc_middle_product','prodc_bottom_line','prodc_bottom_process','prodc_bottom_product'].some((k) => changedFields.has(k));
-              return (
-                <div style={rowStyle}>
-                  <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(prodcChanged ? { border: '2px solid #dc3545' } : {}) }}>
-                    <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
-                      <div style={fieldLabel}>{t('request.prodc_status')}</div>
-                      <div style={fieldValue}>{detail.only_prodc}</div>
-                    </div>
-                    {isProdc && buildProdcInfo() && (
-                      <div style={{ flex: 1 }}>
-                        <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
-                        <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildProdcInfo()}</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
             {(isJ || isO) && detail.bb_zone && (() => {
               const bbValue = Array.isArray(detail.bb_entries) && detail.bb_entries.length > 0
                 ? detail.bb_entries.map((e: { location: string; product: string; process_id: string }, i: number) =>
@@ -446,18 +371,6 @@ type Page = { label: string; content: React.ReactNode };
                 </div>
               );
             })()}
-
-            {isR && (detail.split_progress || detail.tmap_apply || detail.hplhc_change || detail.ip_status) && (
-              <div style={rowStyle}>
-                <Chip label={t('request.split_progress_status')} value={detail.split_progress} changed={changedFields.has('split_progress')} fieldKey="split_progress" />
-                <Chip label={t('request.tmap_application_status')} value={detail.tmap_apply} changed={changedFields.has('tmap_apply')} fieldKey="tmap_apply" />
-                <Chip label={t('request.hplhc_status')} value={detail.hplhc_change} changed={changedFields.has('hplhc_change')} fieldKey="hplhc_change" />
-                <Chip label={t('request.ip_application_status')} value={detail.ip_status} changed={changedFields.has('ip_status')} fieldKey="ip_status" />
-                {isIp && detail.ip_option && (
-                  <Chip label={t('request.ip_option_selection')} value={detail.ip_option} changed={changedFields.has('ip_option')} fieldKey="ip_option" />
-                )}
-              </div>
-            )}
 
             {((isO && !isR && !isJ) || role === 'MASTER' || isPL) && detail.change_purpose_note && (
               <div style={rowStyle}>
@@ -487,6 +400,105 @@ type Page = { label: string; content: React.ReactNode };
       ),
     },
   ];
+
+  const showMap = isR || isJ || isO;
+  if (showMap) {
+    pages.push({
+      label: t('request.section_map'),
+      content: (
+        <div style={cardStyle}>
+          <div style={sectionTitle}>🗺️ {t('request.section_map')}</div>
+
+          {(isR || isO || isJ) && (detail.map_change || detail.ea_change) && (
+            <div style={rowStyle}>
+              {(isR || isO) && detail.map_change && (() => {
+                const mapValue = `변경: ${detail.map_change}${detail.map_value_x ? ` / X: ${detail.map_value_x}` : ''}${detail.map_value_y ? ` / Y: ${detail.map_value_y}` : ''}${detail.map_reason ? ` / 사유: ${detail.map_reason}` : ''}`;
+                const mapChanged = changedFields.has('map_change') || changedFields.has('map_value_x') || changedFields.has('map_value_y') || changedFields.has('map_reason');
+                return (
+                  <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change" />
+                );
+              })()}
+              {isR && detail.ea_change && (() => {
+                const eaValue = `변경: ${detail.ea_change}${detail.ea_value ? ` / 값: ${detail.ea_value}` : ''}`;
+                const eaChanged = changedFields.has('ea_change') || changedFields.has('ea_value');
+                return (
+                  <Chip label={t('request.ea_change')} value={eaValue} style={chipWide} changed={eaChanged} fieldKey="ea_change" />
+                );
+              })()}
+            </div>
+          )}
+
+          {isR && detail.mshot_change && (() => {
+            const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy');
+            return (
+              <div style={rowStyle}>
+                <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(mshotChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                  <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
+                    <div style={fieldLabel}>{t('request.mshot_change_status')}</div>
+                    <div style={fieldValue}>{detail.mshot_change}</div>
+                  </div>
+                  {mshotIsDelete && (
+                    <div style={{ flex: 1 }}>
+                      <div style={{ ...fieldLabel, color: '#dc3545' }}>{t('approval.mshot_delete_notice')}</div>
+                      <div style={{ ...fieldValue, color: '#dc3545' }}>{t('approval.mshot_delete_desc')}</div>
+                    </div>
+                  )}
+                  {mshotHasDetail && detail.mshot_image_copy && (
+                    <div style={{ flex: 1 }}>
+                      <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')}</div>
+                      <img
+                        src={`/media/${detail.mshot_image_copy}`}
+                        alt="attached"
+                        style={{
+                          maxWidth: '300px',
+                          maxHeight: '200px',
+                          borderRadius: '4px',
+                          border: '1px solid #ddd',
+                          marginTop: '8px'
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {isR && detail.only_prodc && (() => {
+            const prodcChanged = ['only_prodc','prodc_top_line','prodc_top_process','prodc_top_product','prodc_middle_use','prodc_middle_line','prodc_middle_process','prodc_middle_product','prodc_bottom_line','prodc_bottom_process','prodc_bottom_product'].some((k) => changedFields.has(k));
+            return (
+              <div style={rowStyle}>
+                <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(prodcChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                  <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
+                    <div style={fieldLabel}>{t('request.prodc_status')}</div>
+                    <div style={fieldValue}>{detail.only_prodc}</div>
+                  </div>
+                  {isProdc && buildProdcInfo() && (
+                    <div style={{ flex: 1 }}>
+                      <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
+                      <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildProdcInfo()}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {isR && (detail.split_progress || detail.tmap_apply || detail.hplhc_change || detail.ip_status) && (
+            <div style={rowStyle}>
+              <Chip label={t('request.split_progress_status')} value={detail.split_progress} changed={changedFields.has('split_progress')} fieldKey="split_progress" />
+              <Chip label={t('request.tmap_application_status')} value={detail.tmap_apply} changed={changedFields.has('tmap_apply')} fieldKey="tmap_apply" />
+              <Chip label={t('request.hplhc_status')} value={detail.hplhc_change} changed={changedFields.has('hplhc_change')} fieldKey="hplhc_change" />
+              <Chip label={t('request.ip_application_status')} value={detail.ip_status} changed={changedFields.has('ip_status')} fieldKey="ip_status" />
+              {isIp && detail.ip_option && (
+                <Chip label={t('request.ip_option_selection')} value={detail.ip_option} changed={changedFields.has('ip_option')} fieldKey="ip_option" />
+              )}
+            </div>
+          )}
+        </div>
+      ),
+    });
+  }
 
   if (showJayer) {
     pages.push({
