@@ -1649,6 +1649,7 @@ export default function RequestPage(): React.ReactElement {
             <label className="form-label">{t('request.ea_value')}</label>
             <input className="form-control" name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={copiedFields.has('ea_value')} />
           </div>
+          <div style={{ flex: 4 }} />
         </div>
 
         {/* Only C가문 제품 */}
