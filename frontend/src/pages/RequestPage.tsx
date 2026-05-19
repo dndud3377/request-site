@@ -684,6 +684,14 @@ export default function RequestPage(): React.ReactElement {
 
   const handleProdcRegionSelect = (region: CRegion) => {
     const next = prodcCopyRegion === region ? null : region;
+
+    if (prodcCopyRegion && prodcCopyRegion !== region) {
+      handleDetailSet(`prodc_${prodcCopyRegion}_line`, '');
+      handleDetailSet(`prodc_${prodcCopyRegion}_process`, '');
+      handleDetailSet(`prodc_${prodcCopyRegion}_product`, '');
+      handleProdcProcessChange(prodcCopyRegion, '');
+    }
+
     setProdcCopyRegion(next);
     if (next) {
       handleDetailSet(`prodc_${next}_line`, detail.line);
