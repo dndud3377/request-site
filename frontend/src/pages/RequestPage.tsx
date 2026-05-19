@@ -1259,14 +1259,33 @@ const isProdc = detail.only_prodc === 'Yes';
   };
 
   const handleReset = () => {
-    setDetail(INITIAL_DETAIL);
-    setJayerRows([makeJayerRow()]);
-    setOayerRows([makeOayerRow()]);
-    setBbRows([]);
+    setDetail(prev => ({
+      ...prev,
+      map_change: INITIAL_DETAIL.map_change,
+      map_value_x: INITIAL_DETAIL.map_value_x,
+      map_value_y: INITIAL_DETAIL.map_value_y,
+      map_reason: INITIAL_DETAIL.map_reason,
+      ea_change: INITIAL_DETAIL.ea_change,
+      ea_value: INITIAL_DETAIL.ea_value,
+      only_prodc: INITIAL_DETAIL.only_prodc,
+      prodc_top_line: INITIAL_DETAIL.prodc_top_line,
+      prodc_top_process: INITIAL_DETAIL.prodc_top_process,
+      prodc_top_product: INITIAL_DETAIL.prodc_top_product,
+      prodc_middle_use: INITIAL_DETAIL.prodc_middle_use,
+      prodc_middle_line: INITIAL_DETAIL.prodc_middle_line,
+      prodc_middle_process: INITIAL_DETAIL.prodc_middle_process,
+      prodc_middle_product: INITIAL_DETAIL.prodc_middle_product,
+      prodc_bottom_line: INITIAL_DETAIL.prodc_bottom_line,
+      prodc_bottom_process: INITIAL_DETAIL.prodc_bottom_process,
+      prodc_bottom_product: INITIAL_DETAIL.prodc_bottom_product,
+      mshot_change: INITIAL_DETAIL.mshot_change,
+      mshot_image_copy: INITIAL_DETAIL.mshot_image_copy,
+      backside_status: INITIAL_DETAIL.backside_status,
+      split_progress: INITIAL_DETAIL.split_progress,
+      tmap_apply: INITIAL_DETAIL.tmap_apply,
+      hplhc_change: INITIAL_DETAIL.hplhc_change,
+    }));
     setErrors({});
-    setCopiedFields(new Set());
-    setStep(1);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSubmitClick = () => {
@@ -2423,9 +2442,11 @@ const isProdc = detail.only_prodc === 'Yes';
           <button className="btn btn-secondary" onClick={handleSaveDraft} disabled={saving}>
             💾 {saving ? t('common.loading') : t('request.save_draft')}
           </button>
-          <button className="btn btn-secondary" onClick={handleReset}>
-            🔄 {t('common.reset')}
-          </button>
+          {step === 2 && (
+            <button className="btn btn-secondary" onClick={handleReset}>
+              🔄 {t('common.reset')}
+            </button>
+          )}
           {step < 5 ? (
             <button className="btn btn-primary" onClick={handleNextStep}>
               다음 →
