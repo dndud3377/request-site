@@ -1616,7 +1616,7 @@ select.form-control option {
 }
 
 .wizard-table col.sd-column {
-  width: 150px;
+  width: 250px;
 }
 
 .wizard-table td input:focus,
