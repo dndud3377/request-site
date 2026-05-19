@@ -308,6 +308,7 @@ export default function RequestPage(): React.ReactElement {
   const [jayerSortBySp, setJayerSortBySp] = useState(false);
   const [oayerSortBySp, setOayerSortBySp] = useState(false);
   const [copiedFields, setCopiedFields] = useState<Set<string>>(new Set());
+  const [prodcCopyRegion, setProdcCopyRegion] = useState<CRegion | null>(null);
 
   useEffect(() => {
     linesAPI.list()
@@ -565,7 +566,7 @@ export default function RequestPage(): React.ReactElement {
   const isCopy = detail.request_purpose === '차용';
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === '변경 있음';
-const isProdc = detail.only_prodc === 'Yes';
+  const isProdc = detail.only_prodc === 'Yes';
   const mshotDeleteMode = detail.mshot_change === '삭제';
   const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
 
@@ -679,6 +680,17 @@ const isProdc = detail.only_prodc === 'Yes';
         else setBottomProductOptions([]);
       });
     setDetail((prev) => ({ ...prev, [`prodc_${region}_product`]: '' }));
+  };
+
+  const handleProdcRegionSelect = (region: CRegion) => {
+    const next = prodcCopyRegion === region ? null : region;
+    setProdcCopyRegion(next);
+    if (next) {
+      handleDetailSet(`prodc_${next}_line`, detail.line);
+      handleDetailSet(`prodc_${next}_process`, detail.process_selection);
+      handleProdcProcessChange(next, detail.process_selection);
+      handleDetailSet(`prodc_${next}_product`, detail.partid_selection);
+    }
   };
 
   const handleRadioChange = (name: keyof DetailFormState, value: string) => {
@@ -1286,6 +1298,7 @@ const isProdc = detail.only_prodc === 'Yes';
       hplhc_change: INITIAL_DETAIL.hplhc_change,
     }));
     setErrors({});
+    setProdcCopyRegion(null);
   };
 
   const handleSubmitClick = () => {
@@ -1641,6 +1654,20 @@ const isProdc = detail.only_prodc === 'Yes';
           </div>
           {isProdc && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <span className="form-label" style={{ marginBottom: 0 }}>{t('request.prodc_apply_region')}</span>
+                {(['top', 'middle', 'bottom'] as CRegion[]).map((region) => (
+                  <label key={region} className="radio-item" style={{ cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="prodc_copy_region"
+                      checked={prodcCopyRegion === region}
+                      onChange={() => handleProdcRegionSelect(region)}
+                    />
+                    {t(`request.prodc_${region}`)}
+                  </label>
+                ))}
+              </div>
               <ProdcRow region="top"    detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={topProductOptions}    onProcessChange={handleProdcProcessChange} />
               <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={middleProductOptions}  onProcessChange={handleProdcProcessChange} />
               <ProdcRow region="bottom" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={bottomProductOptions}  onProcessChange={handleProdcProcessChange} />
