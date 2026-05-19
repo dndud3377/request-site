@@ -154,8 +154,6 @@ export interface JayerRow {
   product_name: string;
   step: string;
   item_id: string;
-  rev: string;
-  drawing_version: string;
 }
 
 export interface OayerRow {

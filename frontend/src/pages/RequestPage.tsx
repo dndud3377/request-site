@@ -128,8 +128,6 @@ const makeJayerRow = (): JayerRow => ({
   product_name: '',
   step: '',
   item_id: '',
-  rev: '',
-  drawing_version: '',
 });
 
 const makeOayerRow = (): OayerRow => ({
@@ -373,8 +371,6 @@ export default function RequestPage(): React.ReactElement {
           product_name: '',
           layerid: '',
           item_id: '',
-          rev: '',
-          drawing_version: '',
         }))
       );
       setOayerRows((rows) =>
@@ -1887,8 +1883,6 @@ export default function RequestPage(): React.ReactElement {
             <col />
             <col />
             <col />
-            <col />
-            <col />
             <col style={{ width: '32px' }} />
           </colgroup>
           <thead>
@@ -1912,8 +1906,6 @@ export default function RequestPage(): React.ReactElement {
               <th style={{ width: 'auto' }}>{t('request.col_product_name')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_step')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_item_id')}</th>
-              <th style={{ width: 'auto' }}>{t('request.col_rev')}</th>
-              <th style={{ width: 'auto' }}>{t('request.col_drawing_version')}</th>
             </tr>
           </thead>
           <tbody>
@@ -1925,7 +1917,7 @@ export default function RequestPage(): React.ReactElement {
               return (
                 <>
                   {isFirstDisabled && (
-                    <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={15} /></tr>
+                    <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={13} /></tr>
                   )}
                   <tr key={row.id} className={[row.disabled ? 'row-disabled' : '', jayerChecked.has(row.id) ? 'row-checked' : '', mappedJayerRowIds.has(row.id) ? 'row-mapped' : ''].filter(Boolean).join(' ')}>
                     <td style={{ textAlign: 'center' }}>
@@ -1956,8 +1948,6 @@ export default function RequestPage(): React.ReactElement {
                     <td><input value={row.product_name} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} /></td>
                     <td><input value={row.step} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} /></td>
                     <td><input value={row.item_id} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} /></td>
-                    <td><input value={row.rev} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'rev', e.target.value)} /></td>
-                    <td><input value={row.drawing_version} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'drawing_version', e.target.value)} /></td>
                   </tr>
                 </>
               );

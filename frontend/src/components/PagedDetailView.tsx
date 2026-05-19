@@ -32,10 +32,10 @@ function JayerTable({ rows, changedRowIds = new Set<string>() }: { rows: JayerRo
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="table table-compact" style={{ marginBottom: 8 }}>
-        <thead><tr><th>Update 날짜</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th><th>{t('request.col_rev')}</th><th>{t('request.col_drawing_version')}</th></tr></thead>
+        <thead><tr><th>Update 날짜</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th></tr></thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id} style={changedRowIds.has(r.id) ? changedRowStyle : undefined}><td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td><td>{r.rev}</td><td>{r.drawing_version}</td></tr>
+            <tr key={r.id} style={changedRowIds.has(r.id) ? changedRowStyle : undefined}><td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td></tr>
           ))}
         </tbody>
       </table>

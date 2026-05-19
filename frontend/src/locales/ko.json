@@ -55,8 +55,6 @@
     "col_product_name": "제품 이름",
     "col_step": "STEP",
     "col_item_id": "ID",
-    "col_rev": "REV",
-    "col_drawing_version": "그림판 Version",
     "col_tt": "TT",
     "map_option_title": "Map Option 선택",
     "map": "지도 편차 변경",

@@ -55,8 +55,6 @@
     "col_product_name": "Product Name",
     "col_step": "STEP",
     "col_item_id": "ID",
-    "col_rev": "REV",
-    "col_drawing_version": "Drawing Version",
     "col_tt": "TT",
     "map_option_title": "Map Option Selection",
     "map": "Map Deviation Change",
