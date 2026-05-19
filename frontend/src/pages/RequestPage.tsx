@@ -39,13 +39,14 @@ interface ProdcRowProps {
   processOptions: string[];
   productOptions: string[];
   onProcessChange: (region: CRegion, value: string) => void;
+  errors?: Partial<Record<string, string>>;
 }
 const REGION_LABEL_KEY = { top: 'prodc_top', middle: 'prodc_middle', bottom: 'prodc_bottom' } as const;
-const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValue, lineOptions, processOptions, productOptions, onProcessChange }) => {
+const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValue, lineOptions, processOptions, productOptions, onProcessChange, errors = {} }) => {
   const { t } = useTranslation();
   const showSelects = region !== 'middle' || detail.prodc_middle_use === '사용';
   return (
-    <div className="flex-row">
+    <div className="flex-row" style={{ alignItems: 'flex-start' }}>
       <span style={{ width: '40px', paddingTop: '32px', fontWeight: 600 }}>
         {t(`request.${REGION_LABEL_KEY[region]}`)}
       </span>
@@ -62,29 +63,40 @@ const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValu
       )}
       {showSelects && (
         <>
-          <FormSelect
-            label={t('request.prodc_line')}
-            name={`prodc_${region}_line`}
-            value={detail[`prodc_${region}_line` as keyof DetailFormState] as string}
-            options={lineOptions}
-            onChange={onChange}
-            placeholder={t('request.select_placeholder')}
-            className="flex-col"
-          />
-          <AutocompleteInput
-            label={t('request.prodc_process_selection')}
-            value={detail[`prodc_${region}_process` as keyof DetailFormState] as string}
-            options={processOptions}
-            onChange={(v) => { onSetValue(`prodc_${region}_process`, v); onProcessChange(region, v); }}
-            style={{ flex: 1 }}
-          />
-          <AutocompleteInput
-            label={t('request.prodc_partid')}
-            value={detail[`prodc_${region}_product` as keyof DetailFormState] as string}
-            options={productOptions}
-            onChange={(v) => onSetValue(`prodc_${region}_product`, v)}
-            style={{ flex: 1 }}
-          />
+          <div className="flex-col" style={{ flex: 1 }}>
+            <label className="form-label">
+              {t('request.prodc_line')}
+              {region !== 'middle' && <span className="required"> *</span>}
+            </label>
+            <select
+              className={`form-control${errors[`prodc_${region}_line`] ? ' error' : ''}`}
+              name={`prodc_${region}_line`}
+              value={detail[`prodc_${region}_line` as keyof DetailFormState] as string}
+              onChange={onChange}
+            >
+              <option value="">{t('request.select_placeholder')}</option>
+              {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+            {errors[`prodc_${region}_line`] && <span className="form-error">{errors[`prodc_${region}_line`]}</span>}
+          </div>
+          <div className="flex-col" style={{ flex: 1 }}>
+            <AutocompleteInput
+              label={`${t('request.prodc_process_selection')}${region !== 'middle' ? ' *' : ''}`}
+              value={detail[`prodc_${region}_process` as keyof DetailFormState] as string}
+              options={processOptions}
+              onChange={(v) => { onSetValue(`prodc_${region}_process`, v); onProcessChange(region, v); }}
+              error={errors[`prodc_${region}_process`]}
+            />
+          </div>
+          <div className="flex-col" style={{ flex: 1 }}>
+            <AutocompleteInput
+              label={`${t('request.prodc_partid')}${region !== 'middle' ? ' *' : ''}`}
+              value={detail[`prodc_${region}_product` as keyof DetailFormState] as string}
+              options={productOptions}
+              onChange={(v) => onSetValue(`prodc_${region}_product`, v)}
+              error={errors[`prodc_${region}_product`]}
+            />
+          </div>
         </>
       )}
     </div>
@@ -1180,6 +1192,34 @@ export default function RequestPage(): React.ReactElement {
           errorMessages.push('MAP 변경 사유: 필수 입력 항목입니다.');
         }
       }
+      if (detail.ea_change === '변경 있음') {
+        if (!detail.ea_value?.trim()) {
+          newErrors['ea_value'] = t('request.required');
+          errorMessages.push('예외 구역 값: 필수 입력 항목입니다.');
+        }
+      }
+      if (detail.only_prodc === 'Yes') {
+        (['top', 'bottom'] as const).forEach((region) => {
+          if (!detail[`prodc_${region}_line` as keyof DetailFormState]?.toString().trim()) {
+            newErrors[`prodc_${region}_line`] = t('request.required');
+            errorMessages.push(`C가문 ${region === 'top' ? '북쪽' : '남쪽'} 위치: 필수 입력 항목입니다.`);
+          }
+          if (!detail[`prodc_${region}_process` as keyof DetailFormState]?.toString().trim()) {
+            newErrors[`prodc_${region}_process`] = t('request.required');
+            errorMessages.push(`C가문 ${region === 'top' ? '북쪽' : '남쪽'} 조합법: 필수 입력 항목입니다.`);
+          }
+          if (!detail[`prodc_${region}_product` as keyof DetailFormState]?.toString().trim()) {
+            newErrors[`prodc_${region}_product`] = t('request.required');
+            errorMessages.push(`C가문 ${region === 'top' ? '북쪽' : '남쪽'} 제품: 필수 입력 항목입니다.`);
+          }
+        });
+      }
+      if (detail.mshot_change === '추가' || detail.mshot_change === '수정') {
+        if (!detail.mshot_image_copy) {
+          newErrors['mshot_image_copy'] = t('request.required');
+          errorMessages.push('X표시 이미지: 필수 입력 항목입니다.');
+        }
+      }
     }
 
     if (currentStep === 3) {
@@ -1646,8 +1686,9 @@ export default function RequestPage(): React.ReactElement {
             </select>
           </div>
           <div className="form-group" style={{ flex: 1, visibility: hasEaChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.ea_value')}</label>
-            <input className="form-control" name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={copiedFields.has('ea_value')} />
+            <label className="form-label">{t('request.ea_value')} <span className="required">*</span></label>
+            <input className={`form-control${errors.ea_value ? ' error' : ''}`} name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={copiedFields.has('ea_value')} />
+            {errors.ea_value && <span className="form-error">{errors.ea_value}</span>}
           </div>
           <div style={{ flex: 4 }} />
         </div>
@@ -1677,9 +1718,9 @@ export default function RequestPage(): React.ReactElement {
                   </label>
                 ))}
               </div>
-              <ProdcRow region="top"    detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={topProductOptions}    onProcessChange={handleProdcProcessChange} />
-              <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={middleProductOptions}  onProcessChange={handleProdcProcessChange} />
-              <ProdcRow region="bottom" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={bottomProductOptions}  onProcessChange={handleProdcProcessChange} />
+              <ProdcRow region="top"    detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={topProductOptions}    onProcessChange={handleProdcProcessChange} errors={errors} />
+              <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={middleProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} />
+              <ProdcRow region="bottom" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={bottomProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} />
             </div>
           )}
         </div>
@@ -1700,11 +1741,11 @@ export default function RequestPage(): React.ReactElement {
           )}
           {mshotEditAddMode && (
             <div className="form-group" style={{ width: '50%', marginTop: '8px' }}>
-              <label className="form-label">{t('request.mshot_change_image_attach_area')}</label>
+              <label className="form-label">{t('request.mshot_change_image_attach_area')} <span className="required">*</span></label>
               <div
                 className="image-upload-area"
                 style={{
-                  border: '2px dashed #ccc',
+                  border: `2px dashed ${errors.mshot_image_copy ? '#dc3545' : '#ccc'}`,
                   borderRadius: '8px',
                   padding: '20px',
                   textAlign: 'center',
@@ -1713,7 +1754,7 @@ export default function RequestPage(): React.ReactElement {
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  backgroundColor: '#f9f9f9'
+                  backgroundColor: errors.mshot_image_copy ? '#fff5f5' : '#f9f9f9'
                 }}
                 onPaste={copiedFields.has('mshot_image_copy') ? undefined : handleImagePaste}
               >
@@ -1740,6 +1781,7 @@ export default function RequestPage(): React.ReactElement {
                   </div>
                 )}
               </div>
+              {errors.mshot_image_copy && <span className="form-error">{errors.mshot_image_copy}</span>}
             </div>
           )}
         </div>
