@@ -484,34 +484,71 @@ type Page = { label: string; content: React.ReactNode };
           })()}
 
           {isR && (() => {
-            const mapOptions = [
-              { label: t('request.backside_adjust'),         fieldKey: 'backside_status', activeValue: 'Yes',       value: detail.backside_status },
-              { label: t('request.split_progress_status'),   fieldKey: 'split_progress',  activeValue: '예',         value: detail.split_progress },
-              { label: t('request.tmap_application_status'), fieldKey: 'tmap_apply',      activeValue: '적용',       value: detail.tmap_apply },
-              { label: t('request.hplhc_status'),            fieldKey: 'hplhc_change',    activeValue: '변경 있음',  value: detail.hplhc_change },
+            const mapOptionDefs = [
+              { label: t('request.backside_adjust'),         fieldKey: 'backside_status', activeValue: 'Yes'      },
+              { label: t('request.split_progress_status'),   fieldKey: 'split_progress',  activeValue: '예'       },
+              { label: t('request.tmap_application_status'), fieldKey: 'tmap_apply',      activeValue: '적용'     },
+              { label: t('request.hplhc_status'),            fieldKey: 'hplhc_change',    activeValue: '변경 있음'},
             ];
-            const activeOptions = mapOptions.filter(o => o.value === o.activeValue);
+            const activeOptions = mapOptionDefs.filter(o => (detail as any)[o.fieldKey] === o.activeValue);
+            const prevActiveOptions = mapOptionDefs.filter(o => (prevSnap?.detail as any)?.[o.fieldKey] === o.activeValue);
+            const mapOptionChanged = mapOptionDefs.some(o => changedFields.has(o.fieldKey));
+
+            const [mapHistOpen, setMapHistOpen] = useState(false);
+
+            const tagStyle = (active: boolean): React.CSSProperties => ({
+              padding: '4px 14px',
+              borderRadius: 6,
+              background: active ? 'var(--accent)' : 'var(--bg-secondary)',
+              color: active ? 'white' : 'var(--text-muted)',
+              fontSize: '0.85rem',
+              fontWeight: 500,
+            });
+
             return (
-              <div>
+              <div style={{ position: 'relative', ...(mapOptionChanged ? { border: '2px solid #dc3545', borderRadius: 6, padding: '10px 12px' } : {}) }}>
+                {mapOptionChanged && (
+                  <button
+                    onClick={() => setMapHistOpen(true)}
+                    style={{
+                      position: 'absolute', top: 6, right: 8,
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0,
+                    }}
+                  >
+                    이력 확인
+                  </button>
+                )}
                 <div style={{ ...fieldLabel, marginBottom: 6 }}>{t('request.map_option_title')}</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {activeOptions.map(o => (
-                    <div
-                      key={o.fieldKey}
-                      style={{
-                        padding: '4px 14px',
-                        borderRadius: 6,
-                        background: 'var(--accent)',
-                        color: 'white',
-                        fontSize: '0.85rem',
-                        fontWeight: 500,
-                        border: changedFields.has(o.fieldKey) ? '2px solid #dc3545' : 'none',
-                      }}
-                    >
-                      {o.label}
-                    </div>
+                    <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>
                   ))}
                 </div>
+                {mapHistOpen && prevSnap && (
+                  <Modal isOpen onClose={() => setMapHistOpen(false)} title={`${t('request.map_option_title')} 변경 이력`}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>이전 (재상신 전)</div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {prevActiveOptions.length > 0
+                            ? prevActiveOptions.map(o => <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>)
+                            : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
+                          }
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>현재 (최신)</div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {activeOptions.length > 0
+                            ? activeOptions.map(o => <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>)
+                            : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
+                          }
+                        </div>
+                      </div>
+                    </div>
+                  </Modal>
+                )}
               </div>
             );
           })()}
