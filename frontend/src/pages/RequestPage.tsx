@@ -184,7 +184,7 @@ const INITIAL_DETAIL: DetailFormState = {
   prodc_bottom_product: '',
   mshot_change: '없음',
   mshot_image_copy: '',
-  ip_status: 'No',
+  backside_status: 'No',
   tmap_apply: '미적용',
   hplhc_change: '변경 없음',
 };
@@ -642,7 +642,7 @@ const isProdc = detail.only_prodc === 'Yes';
       if (sourceDetail.mshot_change) fieldsToCopy.mshot_change = sourceDetail.mshot_change;
       if (sourceDetail.mshot_image_copy) fieldsToCopy.mshot_image_copy = sourceDetail.mshot_image_copy;
 
-      if (sourceDetail.ip_status) fieldsToCopy.ip_status = sourceDetail.ip_status;
+      if (sourceDetail.backside_status) fieldsToCopy.backside_status = sourceDetail.backside_status;
 
       if (sourceDetail.split_progress) fieldsToCopy.split_progress = sourceDetail.split_progress;
 
@@ -1677,7 +1677,7 @@ const isProdc = detail.only_prodc === 'Yes';
         <div className="full-width flex-row">
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
             <label className="form-label">{t('request.backside_status')}</label>
-            <select className="form-control" name="ip_status" value={detail.ip_status} onChange={handleDetailChange} disabled={copiedFields.has('ip_status')}>
+            <select className="form-control" name="backside_status" value={detail.backside_status} onChange={handleDetailChange} disabled={copiedFields.has('backside_status')}>
               <option value="No">No</option>
               <option value="Yes">Yes</option>
             </select>

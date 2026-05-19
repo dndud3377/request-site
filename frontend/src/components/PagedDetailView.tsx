@@ -483,12 +483,12 @@ type Page = { label: string; content: React.ReactNode };
             );
           })()}
 
-          {isR && (detail.split_progress || detail.tmap_apply || detail.hplhc_change || detail.ip_status) && (
+          {isR && (detail.split_progress || detail.tmap_apply || detail.hplhc_change || detail.backside_status) && (
             <div style={rowStyle}>
               <Chip label={t('request.split_progress_status')} value={detail.split_progress} changed={changedFields.has('split_progress')} fieldKey="split_progress" />
               <Chip label={t('request.tmap_application_status')} value={detail.tmap_apply} changed={changedFields.has('tmap_apply')} fieldKey="tmap_apply" />
               <Chip label={t('request.hplhc_status')} value={detail.hplhc_change} changed={changedFields.has('hplhc_change')} fieldKey="hplhc_change" />
-              <Chip label={t('request.backside_status')} value={detail.ip_status} changed={changedFields.has('ip_status')} fieldKey="ip_status" />
+              <Chip label={t('request.backside_status')} value={detail.backside_status} changed={changedFields.has('backside_status')} fieldKey="backside_status" />
             </div>
           )}
         </div>
