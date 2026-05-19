@@ -459,36 +459,6 @@ export default function RequestPage(): React.ReactElement {
     fetchOvlLayerAndPopulateOayer(detail.line, detail.process_id);
   }, [detail.process_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    const jayerMaxLength = Math.max(
-      'STEP 설명'.length,
-      ...jayerRows.map(r => r.sd?.length || 0)
-    );
-
-    const oayerMaxLength = Math.max(
-      'STEP 설명'.length,
-      ...oayerRows.map(r => r.sd?.length || 0)
-    );
-
-    const calculateWidth = (charLength: number) =>
-      Math.min(Math.max(charLength * 10, 80), 200);
-
-    const jayerTable = document.querySelector('.wizard-table-wrapper:nth-of-type(2) .wizard-table');
-    if (jayerTable) {
-      const sdCol = jayerTable.querySelector('.col-sd-column');
-      if (sdCol) {
-        sdCol.setAttribute('width', `${calculateWidth(jayerMaxLength)}px`);
-      }
-    }
-
-    const oayerTable = document.querySelector('.wizard-table-wrapper:nth-of-type(3) .wizard-table');
-    if (oayerTable) {
-      const sdCol = oayerTable.querySelector('.col-sd-column');
-      if (sdCol) {
-        sdCol.setAttribute('width', `${calculateWidth(oayerMaxLength)}px`);
-      }
-    }
-  }, [jayerRows, oayerRows]);
 
   useEffect(() => {
     detail.bb_entries.forEach((entry, idx) => {

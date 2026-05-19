@@ -1594,6 +1594,7 @@ select.form-control option {
   padding: 3px 5px;
   font-family: inherit;
   white-space: nowrap;
+  field-sizing: content;
 }
 
 /* STEP 설명 컬럼 (4 번째 컬럼) - 줄바꿈 허용 */
@@ -1604,11 +1605,18 @@ select.form-control option {
   line-height: 1.3;
 }
 
-/* STEP 설명 colgroup 컬럼 - 초기 너비 설정 */
+/* SD 컬럼 (5번째) - 고정 폭 + 줄바꿈 */
+.wizard-table td:nth-child(5) input {
+  field-sizing: fixed;
+  width: 100%;
+  white-space: normal;
+  word-break: break-all;
+  overflow-wrap: break-word;
+  line-height: 1.4;
+}
+
 .wizard-table col.sd-column {
-  width: 150px;  /* 초기값 (JavaScript 에서 동적 조정) */
-  min-width: 80px;
-  max-width: 200px;
+  width: 150px;
 }
 
 .wizard-table td input:focus,
