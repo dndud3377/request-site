@@ -185,7 +185,6 @@ const INITIAL_DETAIL: DetailFormState = {
   mshot_change: '없음',
   mshot_image_copy: '',
   ip_status: 'No',
-  ip_option: '',
   tmap_apply: '미적용',
   hplhc_change: '변경 없음',
 };
@@ -569,7 +568,6 @@ export default function RequestPage(): React.ReactElement {
 const isProdc = detail.only_prodc === 'Yes';
   const mshotDeleteMode = detail.mshot_change === '삭제';
   const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
-  const isIp = detail.ip_status === 'Yes';
 
   // ===== Step 1 Handlers =====
   const handleDetailChange = (
@@ -645,7 +643,6 @@ const isProdc = detail.only_prodc === 'Yes';
       if (sourceDetail.mshot_image_copy) fieldsToCopy.mshot_image_copy = sourceDetail.mshot_image_copy;
 
       if (sourceDetail.ip_status) fieldsToCopy.ip_status = sourceDetail.ip_status;
-      if (sourceDetail.ip_option) fieldsToCopy.ip_option = sourceDetail.ip_option;
 
       if (sourceDetail.split_progress) fieldsToCopy.split_progress = sourceDetail.split_progress;
 
@@ -1685,26 +1682,6 @@ const isProdc = detail.only_prodc === 'Yes';
               <option value="Yes">Yes</option>
             </select>
           </div>
-          {isIp && (
-            <div className="form-group" style={{ flex: '0 0 auto' }}>
-              <label className="form-label">{t('request.ip_option_selection')}</label>
-              <div className="radio-group">
-                {(['옵션A', '옵션B', '옵션C'] as const).map((opt) => (
-                  <label key={opt} className="radio-item">
-                    <input
-                      type="radio"
-                      name="ip_option"
-                      value={opt}
-                      checked={detail.ip_option === opt}
-                      onChange={() => handleRadioChange('ip_option', opt)}
-                      disabled={copiedFields.has('ip_option')}
-                    />
-                    {opt}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
             <label className="form-label">{t('request.split_progress_status')}</label>
             <select className="form-control" name="split_progress" value={detail.split_progress} onChange={handleDetailChange} disabled={copiedFields.has('split_progress')}>

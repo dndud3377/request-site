@@ -238,7 +238,6 @@ export interface DetailFormState {
   mshot_image_copy: string;  // 붙여넣기 시 파일명만 저장
 
   ip_status: string;
-  ip_option: string;
 
   tmap_apply: string;
   hplhc_change: string;
