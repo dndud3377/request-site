@@ -1651,12 +1651,12 @@ export default function RequestPage(): React.ReactElement {
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
           </div>
-          <div className="form-group" style={{ flex: 1, visibility: hasEaChange ? 'visible' : 'hidden' }}>
+          <div className="form-group" style={{ flex: 1.5, visibility: hasEaChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.ea_value')} <span className="required">*</span></label>
             <input className={`form-control${errors.ea_value ? ' error' : ''}`} name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={copiedFields.has('ea_value')} />
             {errors.ea_value && <span className="form-error">{errors.ea_value}</span>}
           </div>
-          <div style={{ flex: 4 }} />
+          <div style={{ flex: 3.5 }} />
         </div>
 
         {/* Only C가문 제품 */}
