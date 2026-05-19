@@ -483,14 +483,38 @@ type Page = { label: string; content: React.ReactNode };
             );
           })()}
 
-          {isR && (detail.split_progress || detail.tmap_apply || detail.hplhc_change || detail.backside_status) && (
-            <div style={rowStyle}>
-              <Chip label={t('request.split_progress_status')} value={detail.split_progress} changed={changedFields.has('split_progress')} fieldKey="split_progress" />
-              <Chip label={t('request.tmap_application_status')} value={detail.tmap_apply} changed={changedFields.has('tmap_apply')} fieldKey="tmap_apply" />
-              <Chip label={t('request.hplhc_status')} value={detail.hplhc_change} changed={changedFields.has('hplhc_change')} fieldKey="hplhc_change" />
-              <Chip label={t('request.backside_adjust')} value={detail.backside_status} changed={changedFields.has('backside_status')} fieldKey="backside_status" />
-            </div>
-          )}
+          {isR && (() => {
+            const mapOptions = [
+              { label: t('request.backside_adjust'),         fieldKey: 'backside_status', activeValue: 'Yes',       value: detail.backside_status },
+              { label: t('request.split_progress_status'),   fieldKey: 'split_progress',  activeValue: '예',         value: detail.split_progress },
+              { label: t('request.tmap_application_status'), fieldKey: 'tmap_apply',      activeValue: '적용',       value: detail.tmap_apply },
+              { label: t('request.hplhc_status'),            fieldKey: 'hplhc_change',    activeValue: '변경 있음',  value: detail.hplhc_change },
+            ];
+            const activeOptions = mapOptions.filter(o => o.value === o.activeValue);
+            return (
+              <div>
+                <div style={{ ...fieldLabel, marginBottom: 6 }}>{t('request.map_option_title')}</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {activeOptions.map(o => (
+                    <div
+                      key={o.fieldKey}
+                      style={{
+                        padding: '4px 14px',
+                        borderRadius: 6,
+                        background: 'var(--accent)',
+                        color: 'white',
+                        fontSize: '0.85rem',
+                        fontWeight: 500,
+                        border: changedFields.has(o.fieldKey) ? '2px solid #dc3545' : 'none',
+                      }}
+                    >
+                      {o.label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       ),
     });
