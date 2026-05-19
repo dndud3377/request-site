@@ -1853,7 +1853,6 @@ export default function RequestPage(): React.ReactElement {
             <col />
             <col />
             <col />
-            <col style={{ width: '32px' }} />
           </colgroup>
           <thead>
             <tr>
@@ -1984,7 +1983,6 @@ export default function RequestPage(): React.ReactElement {
             <col />
             <col />
             <col />
-            <col style={{ width: '40px' }} />
           </colgroup>
           <thead>
             <tr>
