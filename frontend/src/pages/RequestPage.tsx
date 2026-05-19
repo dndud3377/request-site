@@ -184,8 +184,7 @@ const INITIAL_DETAIL: DetailFormState = {
   prodc_bottom_product: '',
   mshot_change: '없음',
   mshot_image_copy: '',
-  ip_status: 'No',
-  ip_option: '',
+  backside_status: 'No',
   tmap_apply: '미적용',
   hplhc_change: '변경 없음',
 };
@@ -569,7 +568,6 @@ export default function RequestPage(): React.ReactElement {
 const isProdc = detail.only_prodc === 'Yes';
   const mshotDeleteMode = detail.mshot_change === '삭제';
   const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
-  const isIp = detail.ip_status === 'Yes';
 
   // ===== Step 1 Handlers =====
   const handleDetailChange = (
@@ -644,8 +642,7 @@ const isProdc = detail.only_prodc === 'Yes';
       if (sourceDetail.mshot_change) fieldsToCopy.mshot_change = sourceDetail.mshot_change;
       if (sourceDetail.mshot_image_copy) fieldsToCopy.mshot_image_copy = sourceDetail.mshot_image_copy;
 
-      if (sourceDetail.ip_status) fieldsToCopy.ip_status = sourceDetail.ip_status;
-      if (sourceDetail.ip_option) fieldsToCopy.ip_option = sourceDetail.ip_option;
+      if (sourceDetail.backside_status) fieldsToCopy.backside_status = sourceDetail.backside_status;
 
       if (sourceDetail.split_progress) fieldsToCopy.split_progress = sourceDetail.split_progress;
 
@@ -1550,6 +1547,8 @@ const isProdc = detail.only_prodc === 'Yes';
     </div>
   );
 
+  const SELECT_W = '220px';
+
   const renderStepMap = () => (
     <div className="form-section">
       <div className="form-section-title">🗺️ {t('request.section_map')}</div>
@@ -1557,24 +1556,24 @@ const isProdc = detail.only_prodc === 'Yes';
 
         {/* 지도 편차 */}
         <div className="full-width flex-row">
-          <div className="form-group" style={{ flex: 25 }}>
+          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
             <label className="form-label">{t('request.map')}</label>
             <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange} disabled={copiedFields.has('map_change')}>
               <option value="변경 없음">{t('request.map_no_change')}</option>
               <option value="변경 있음">{t('request.map_has_change')}</option>
             </select>
           </div>
-          <div className="form-group" style={{ flex: 10, visibility: hasMapChange ? 'visible' : 'hidden' }}>
+          <div className="form-group" style={{ flex: 1, visibility: hasMapChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_value_x')} <span className="required">*</span></label>
             <input className={`form-control${errors.map_value_x ? ' error' : ''}`} name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} disabled={copiedFields.has('map_value_x')} />
             {errors.map_value_x && <span className="form-error">{errors.map_value_x}</span>}
           </div>
-          <div className="form-group" style={{ flex: 10, visibility: hasMapChange ? 'visible' : 'hidden' }}>
+          <div className="form-group" style={{ flex: 1, visibility: hasMapChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_value_y')} <span className="required">*</span></label>
             <input className={`form-control${errors.map_value_y ? ' error' : ''}`} name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} disabled={copiedFields.has('map_value_y')} />
             {errors.map_value_y && <span className="form-error">{errors.map_value_y}</span>}
           </div>
-          <div className="form-group" style={{ flex: 30, visibility: hasMapChange ? 'visible' : 'hidden' }}>
+          <div className="form-group" style={{ flex: 3, visibility: hasMapChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.map_reason')} <span className="required">*</span></label>
             <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} disabled={copiedFields.has('map_reason')} />
             {errors.map_reason && <span className="form-error">{errors.map_reason}</span>}
@@ -1583,22 +1582,22 @@ const isProdc = detail.only_prodc === 'Yes';
 
         {/* 예외 구역 */}
         <div className="full-width flex-row">
-          <div className="form-group" style={{ flex: 25 }}>
+          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
             <label className="form-label">{t('request.ea_change')}</label>
             <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange} disabled={copiedFields.has('ea_change')}>
               <option value="변경 없음">{t('request.no_change')}</option>
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
           </div>
-          <div className="form-group" style={{ flex: 10, visibility: hasEaChange ? 'visible' : 'hidden' }}>
+          <div className="form-group" style={{ flex: 1, visibility: hasEaChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.ea_value')}</label>
             <input className="form-control" name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={copiedFields.has('ea_value')} />
           </div>
         </div>
 
         {/* Only C가문 제품 */}
-        <div className="full-width" style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
-          <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px' }}>
+        <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
             <label className="form-label">{t('request.prodc_status')}</label>
             <select className="form-control" name="only_prodc" value={detail.only_prodc} onChange={handleDetailChange}>
               <option value="No">No</option>
@@ -1606,7 +1605,7 @@ const isProdc = detail.only_prodc === 'Yes';
             </select>
           </div>
           {isProdc && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <ProdcRow region="top"    detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={topProductOptions}    onProcessChange={handleProdcProcessChange} />
               <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={middleProductOptions}  onProcessChange={handleProdcProcessChange} />
               <ProdcRow region="bottom" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={bottomProductOptions}  onProcessChange={handleProdcProcessChange} />
@@ -1617,12 +1616,14 @@ const isProdc = detail.only_prodc === 'Yes';
         {/* X표시 변경 여부 */}
         <div className="form-group full-width">
           <label className="form-label">{t('request.mshot_change_status')}</label>
-          <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={handleDetailChange} disabled={copiedFields.has('mshot_change')}>
-            <option value="없음">{t('request.mshot_none')}</option>
-            <option value="추가">{t('request.mshot_add')}</option>
-            <option value="수정">{t('request.mshot_edit')}</option>
-            <option value="삭제">{t('request.mshot_delete')}</option>
-          </select>
+          <div style={{ width: SELECT_W }}>
+            <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={handleDetailChange} disabled={copiedFields.has('mshot_change')}>
+              <option value="없음">{t('request.mshot_none')}</option>
+              <option value="추가">{t('request.mshot_add')}</option>
+              <option value="수정">{t('request.mshot_edit')}</option>
+              <option value="삭제">{t('request.mshot_delete')}</option>
+            </select>
+          </div>
           {mshotDeleteMode && (
             <p style={{ color: 'red', fontWeight: 600, margin: '8px 0 0 0' }}>특정 제품 삭제 필요</p>
           )}
@@ -1674,34 +1675,15 @@ const isProdc = detail.only_prodc === 'Yes';
 
         {/* 20주년 제품 + 분리 진행 여부 */}
         <div className="full-width flex-row">
-          <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px' }}>
-            <label className="form-label">{t('request.ip_application_status')}</label>
-            <select className="form-control" name="ip_status" value={detail.ip_status} onChange={handleDetailChange} disabled={copiedFields.has('ip_status')}>
+          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+            <label className="form-label">{t('request.backside_adjust')}</label>
+            <select className="form-control" name="backside_status" value={detail.backside_status} onChange={handleDetailChange} disabled={copiedFields.has('backside_status')}>
               <option value="No">No</option>
-              <option value="Yes">Yes</option>
+              <option value="PHOTO MAP">PHOTO MAP</option>
+              <option value="EDS + PHOTO MAP">EDS + PHOTO MAP</option>
             </select>
           </div>
-          {isIp && (
-            <div className="form-group" style={{ flex: '0 0 auto' }}>
-              <label className="form-label">{t('request.ip_option_selection')}</label>
-              <div className="radio-group">
-                {(['옵션A', '옵션B', '옵션C'] as const).map((opt) => (
-                  <label key={opt} className="radio-item">
-                    <input
-                      type="radio"
-                      name="ip_option"
-                      value={opt}
-                      checked={detail.ip_option === opt}
-                      onChange={() => handleRadioChange('ip_option', opt)}
-                      disabled={copiedFields.has('ip_option')}
-                    />
-                    {opt}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="form-group" style={{ flex: '0 0 auto', minWidth: '160px', marginLeft: '32px' }}>
+          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
             <label className="form-label">{t('request.split_progress_status')}</label>
             <select className="form-control" name="split_progress" value={detail.split_progress} onChange={handleDetailChange} disabled={copiedFields.has('split_progress')}>
               <option value="아니오">{t('request.no')}</option>
@@ -1712,14 +1694,14 @@ const isProdc = detail.only_prodc === 'Yes';
 
         {/* T가문 적용 / 주력 제품 변경 */}
         <div className="full-width flex-row">
-          <div className="form-group flex-col">
+          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
             <label className="form-label">{t('request.tmap_application_status')}</label>
             <select className="form-control" name="tmap_apply" value={detail.tmap_apply} onChange={handleDetailChange} disabled={copiedFields.has('tmap_apply')}>
               <option value="미적용">{t('request.tmap_not_applied')}</option>
               <option value="적용">{t('request.tmap_applied')}</option>
             </select>
           </div>
-          <div className="form-group flex-col">
+          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
             <label className="form-label">{t('request.hplhc_status')}</label>
             <select className="form-control" name="hplhc_change" value={detail.hplhc_change} onChange={handleDetailChange} disabled={copiedFields.has('hplhc_change')}>
               <option value="변경 없음">{t('request.no_change')}</option>
