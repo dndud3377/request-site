@@ -329,6 +329,7 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   const mshotIsDelete = mshotChange === '삭제';
 
   const PLBasicSection = null;
+  const [mapHistOpen, setMapHistOpen] = useState(false);
 
 type Page = { label: string; content: React.ReactNode };
   const pages: Page[] = [
@@ -493,8 +494,6 @@ type Page = { label: string; content: React.ReactNode };
             const activeOptions = mapOptionDefs.filter(o => (detail as any)[o.fieldKey] === o.activeValue);
             const prevActiveOptions = mapOptionDefs.filter(o => (prevSnap?.detail as any)?.[o.fieldKey] === o.activeValue);
             const mapOptionChanged = mapOptionDefs.some(o => changedFields.has(o.fieldKey));
-
-            const [mapHistOpen, setMapHistOpen] = useState(false);
 
             const tagStyle = (active: boolean): React.CSSProperties => ({
               padding: '4px 14px',
