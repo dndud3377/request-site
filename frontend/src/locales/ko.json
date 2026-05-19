@@ -58,6 +58,7 @@
     "col_rev": "REV",
     "col_drawing_version": "그림판 Version",
     "col_tt": "TT",
+    "map_option_title": "Map Option 선택",
     "map": "지도 편차 변경",
     "map_no_change": "변경 없음",
     "map_has_change": "변경 있음",

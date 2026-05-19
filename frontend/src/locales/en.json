@@ -58,6 +58,7 @@
     "col_rev": "REV",
     "col_drawing_version": "Drawing Version",
     "col_tt": "TT",
+    "map_option_title": "Map Option Selection",
     "map": "Map Deviation Change",
     "map_no_change": "No Change",
     "map_has_change": "Has Change",

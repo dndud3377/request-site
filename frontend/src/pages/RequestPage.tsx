@@ -1743,51 +1743,58 @@ export default function RequestPage(): React.ReactElement {
           )}
         </div>
 
-        {/* Backside 적용 여부 */}
-        <div className="full-width">
-          <div className="form-group" style={{ width: SELECT_W }}>
-            <label className="form-label">{t('request.backside_adjust')}</label>
-            <select className="form-control" name="backside_status" value={detail.backside_status} onChange={handleDetailChange} disabled={copiedFields.has('backside_status')}>
-              <option value="No">No</option>
-              <option value="PHOTO MAP">PHOTO MAP</option>
-              <option value="EDS">EDS</option>
-              <option value="EDS + PHOTO MAP">EDS + PHOTO MAP</option>
-            </select>
-          </div>
-        </div>
-
-        {/* 분리 진행 여부 */}
-        <div className="full-width">
-          <div className="form-group" style={{ width: SELECT_W }}>
-            <label className="form-label">{t('request.split_progress_status')}</label>
-            <select className="form-control" name="split_progress" value={detail.split_progress} onChange={handleDetailChange} disabled={copiedFields.has('split_progress')}>
-              <option value="아니오">{t('request.no')}</option>
-              <option value="예">{t('request.yes')}</option>
-            </select>
-          </div>
-        </div>
-
-        {/* T가문 적용 */}
-        <div className="full-width">
-          <div className="form-group" style={{ width: SELECT_W }}>
-            <label className="form-label">{t('request.tmap_application_status')}</label>
-            <select className="form-control" name="tmap_apply" value={detail.tmap_apply} onChange={handleDetailChange} disabled={copiedFields.has('tmap_apply')}>
-              <option value="미적용">{t('request.tmap_not_applied')}</option>
-              <option value="적용">{t('request.tmap_applied')}</option>
-            </select>
-          </div>
-        </div>
-
-        {/* 주력 제품 변경 */}
-        <div className="full-width">
-          <div className="form-group" style={{ width: SELECT_W }}>
-            <label className="form-label">{t('request.hplhc_status')}</label>
-            <select className="form-control" name="hplhc_change" value={detail.hplhc_change} onChange={handleDetailChange} disabled={copiedFields.has('hplhc_change')}>
-              <option value="변경 없음">{t('request.no_change')}</option>
-              <option value="변경 있음">{t('request.has_change')}</option>
-            </select>
-          </div>
-        </div>
+        {/* Map Option 선택 표 */}
+        {(() => {
+          const mapOptions = [
+            { label: t('request.backside_adjust'),          name: 'backside_status' as keyof DetailFormState, yes: 'Yes',      no: 'No'       },
+            { label: t('request.split_progress_status'),    name: 'split_progress'  as keyof DetailFormState, yes: '예',       no: '아니오'   },
+            { label: t('request.tmap_application_status'),  name: 'tmap_apply'      as keyof DetailFormState, yes: '적용',     no: '미적용'   },
+            { label: t('request.hplhc_status'),             name: 'hplhc_change'    as keyof DetailFormState, yes: '변경 있음', no: '변경 없음' },
+          ];
+          return (
+            <div className="full-width">
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                {t('request.map_option_title')}
+              </div>
+              <table style={{ borderCollapse: 'collapse', width: '100%', maxWidth: '480px', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                    <th style={{ border: '1px solid var(--border)', padding: '8px 16px', textAlign: 'left', fontWeight: 600 }}>OPTION</th>
+                    <th style={{ border: '1px solid var(--border)', padding: '8px 24px', textAlign: 'center', fontWeight: 600 }}>YES</th>
+                    <th style={{ border: '1px solid var(--border)', padding: '8px 24px', textAlign: 'center', fontWeight: 600 }}>NO</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mapOptions.map((opt) => (
+                    <tr key={opt.name as string}>
+                      <td style={{ border: '1px solid var(--border)', padding: '8px 16px' }}>{opt.label}</td>
+                      <td style={{ border: '1px solid var(--border)', padding: '8px 24px', textAlign: 'center' }}>
+                        <input
+                          type="radio"
+                          name={opt.name as string}
+                          value={opt.yes}
+                          checked={detail[opt.name] === opt.yes}
+                          onChange={handleDetailChange}
+                          disabled={copiedFields.has(opt.name as string)}
+                        />
+                      </td>
+                      <td style={{ border: '1px solid var(--border)', padding: '8px 24px', textAlign: 'center' }}>
+                        <input
+                          type="radio"
+                          name={opt.name as string}
+                          value={opt.no}
+                          checked={detail[opt.name] === opt.no}
+                          onChange={handleDetailChange}
+                          disabled={copiedFields.has(opt.name as string)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
 
       </div>
     </div>
