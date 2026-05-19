@@ -308,6 +308,7 @@ export default function RequestPage(): React.ReactElement {
   const [jayerSortBySp, setJayerSortBySp] = useState(false);
   const [oayerSortBySp, setOayerSortBySp] = useState(false);
   const [copiedFields, setCopiedFields] = useState<Set<string>>(new Set());
+  const [prodcCopyRegion, setProdcCopyRegion] = useState<CRegion | null>(null);
 
   useEffect(() => {
     linesAPI.list()
@@ -565,7 +566,7 @@ export default function RequestPage(): React.ReactElement {
   const isCopy = detail.request_purpose === '차용';
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === '변경 있음';
-const isProdc = detail.only_prodc === 'Yes';
+  const isProdc = detail.only_prodc === 'Yes';
   const mshotDeleteMode = detail.mshot_change === '삭제';
   const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
 
@@ -679,6 +680,17 @@ const isProdc = detail.only_prodc === 'Yes';
         else setBottomProductOptions([]);
       });
     setDetail((prev) => ({ ...prev, [`prodc_${region}_product`]: '' }));
+  };
+
+  const handleProdcRegionSelect = (region: CRegion) => {
+    const next = prodcCopyRegion === region ? null : region;
+    setProdcCopyRegion(next);
+    if (next) {
+      handleDetailSet(`prodc_${next}_line`, detail.line);
+      handleDetailSet(`prodc_${next}_process`, detail.process_selection);
+      handleProdcProcessChange(next, detail.process_selection);
+      handleDetailSet(`prodc_${next}_product`, detail.partid_selection);
+    }
   };
 
   const handleRadioChange = (name: keyof DetailFormState, value: string) => {
@@ -1258,6 +1270,37 @@ const isProdc = detail.only_prodc === 'Yes';
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleReset = () => {
+    setDetail(prev => ({
+      ...prev,
+      map_change: INITIAL_DETAIL.map_change,
+      map_value_x: INITIAL_DETAIL.map_value_x,
+      map_value_y: INITIAL_DETAIL.map_value_y,
+      map_reason: INITIAL_DETAIL.map_reason,
+      ea_change: INITIAL_DETAIL.ea_change,
+      ea_value: INITIAL_DETAIL.ea_value,
+      only_prodc: INITIAL_DETAIL.only_prodc,
+      prodc_top_line: INITIAL_DETAIL.prodc_top_line,
+      prodc_top_process: INITIAL_DETAIL.prodc_top_process,
+      prodc_top_product: INITIAL_DETAIL.prodc_top_product,
+      prodc_middle_use: INITIAL_DETAIL.prodc_middle_use,
+      prodc_middle_line: INITIAL_DETAIL.prodc_middle_line,
+      prodc_middle_process: INITIAL_DETAIL.prodc_middle_process,
+      prodc_middle_product: INITIAL_DETAIL.prodc_middle_product,
+      prodc_bottom_line: INITIAL_DETAIL.prodc_bottom_line,
+      prodc_bottom_process: INITIAL_DETAIL.prodc_bottom_process,
+      prodc_bottom_product: INITIAL_DETAIL.prodc_bottom_product,
+      mshot_change: INITIAL_DETAIL.mshot_change,
+      mshot_image_copy: INITIAL_DETAIL.mshot_image_copy,
+      backside_status: INITIAL_DETAIL.backside_status,
+      split_progress: INITIAL_DETAIL.split_progress,
+      tmap_apply: INITIAL_DETAIL.tmap_apply,
+      hplhc_change: INITIAL_DETAIL.hplhc_change,
+    }));
+    setErrors({});
+    setProdcCopyRegion(null);
+  };
+
   const handleSubmitClick = () => {
     const result = validate(5);
     if (!result.valid) {
@@ -1547,11 +1590,16 @@ const isProdc = detail.only_prodc === 'Yes';
     </div>
   );
 
-  const SELECT_W = '220px';
+  const SELECT_W = '300px';
 
   const renderStepMap = () => (
     <div className="form-section">
-      <div className="form-section-title">🗺️ {t('request.section_map')}</div>
+      <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>🗺️ {t('request.section_map')}</span>
+        <button className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '4px 10px' }} onClick={handleReset}>
+          🔄 {t('common.reset')}
+        </button>
+      </div>
       <div className="form-grid">
 
         {/* 지도 편차 */}
@@ -1606,6 +1654,20 @@ const isProdc = detail.only_prodc === 'Yes';
           </div>
           {isProdc && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <span className="form-label" style={{ marginBottom: 0 }}>{t('request.prodc_apply_region')}</span>
+                {(['top', 'middle', 'bottom'] as CRegion[]).map((region) => (
+                  <label key={region} className="radio-item" style={{ cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="prodc_copy_region"
+                      checked={prodcCopyRegion === region}
+                      onChange={() => handleProdcRegionSelect(region)}
+                    />
+                    {t(`request.prodc_${region}`)}
+                  </label>
+                ))}
+              </div>
               <ProdcRow region="top"    detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={topProductOptions}    onProcessChange={handleProdcProcessChange} />
               <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={middleProductOptions}  onProcessChange={handleProdcProcessChange} />
               <ProdcRow region="bottom" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={bottomProductOptions}  onProcessChange={handleProdcProcessChange} />
@@ -1673,17 +1735,22 @@ const isProdc = detail.only_prodc === 'Yes';
           )}
         </div>
 
-        {/* 20주년 제품 + 분리 진행 여부 */}
-        <div className="full-width flex-row">
-          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+        {/* Backside 적용 여부 */}
+        <div className="full-width">
+          <div className="form-group" style={{ width: SELECT_W }}>
             <label className="form-label">{t('request.backside_adjust')}</label>
             <select className="form-control" name="backside_status" value={detail.backside_status} onChange={handleDetailChange} disabled={copiedFields.has('backside_status')}>
               <option value="No">No</option>
               <option value="PHOTO MAP">PHOTO MAP</option>
+              <option value="EDS">EDS</option>
               <option value="EDS + PHOTO MAP">EDS + PHOTO MAP</option>
             </select>
           </div>
-          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+        </div>
+
+        {/* 분리 진행 여부 */}
+        <div className="full-width">
+          <div className="form-group" style={{ width: SELECT_W }}>
             <label className="form-label">{t('request.split_progress_status')}</label>
             <select className="form-control" name="split_progress" value={detail.split_progress} onChange={handleDetailChange} disabled={copiedFields.has('split_progress')}>
               <option value="아니오">{t('request.no')}</option>
@@ -1692,16 +1759,20 @@ const isProdc = detail.only_prodc === 'Yes';
           </div>
         </div>
 
-        {/* T가문 적용 / 주력 제품 변경 */}
-        <div className="full-width flex-row">
-          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+        {/* T가문 적용 */}
+        <div className="full-width">
+          <div className="form-group" style={{ width: SELECT_W }}>
             <label className="form-label">{t('request.tmap_application_status')}</label>
             <select className="form-control" name="tmap_apply" value={detail.tmap_apply} onChange={handleDetailChange} disabled={copiedFields.has('tmap_apply')}>
               <option value="미적용">{t('request.tmap_not_applied')}</option>
               <option value="적용">{t('request.tmap_applied')}</option>
             </select>
           </div>
-          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+        </div>
+
+        {/* 주력 제품 변경 */}
+        <div className="full-width">
+          <div className="form-group" style={{ width: SELECT_W }}>
             <label className="form-label">{t('request.hplhc_status')}</label>
             <select className="form-control" name="hplhc_change" value={detail.hplhc_change} onChange={handleDetailChange} disabled={copiedFields.has('hplhc_change')}>
               <option value="변경 없음">{t('request.no_change')}</option>

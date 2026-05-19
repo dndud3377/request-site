@@ -76,6 +76,7 @@
     "bb_add": "Add",
     "bb_delete": "Delete",
     "prodc_status": "Only C-Family Product",
+    "prodc_apply_region": "Product Region",
     "prodc_top": "North",
     "prodc_middle": "Middle",
     "prodc_bottom": "South",
