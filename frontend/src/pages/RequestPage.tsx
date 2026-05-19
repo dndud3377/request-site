@@ -1679,7 +1679,8 @@ const isProdc = detail.only_prodc === 'Yes';
             <label className="form-label">{t('request.backside_adjust')}</label>
             <select className="form-control" name="backside_status" value={detail.backside_status} onChange={handleDetailChange} disabled={copiedFields.has('backside_status')}>
               <option value="No">No</option>
-              <option value="Yes">Yes</option>
+              <option value="PHOTO MAP">PHOTO MAP</option>
+              <option value="EDS + PHOTO MAP">EDS + PHOTO MAP</option>
             </select>
           </div>
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
