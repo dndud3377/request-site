@@ -1581,7 +1581,12 @@ const isProdc = detail.only_prodc === 'Yes';
 
   const renderStepMap = () => (
     <div className="form-section">
-      <div className="form-section-title">🗺️ {t('request.section_map')}</div>
+      <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>🗺️ {t('request.section_map')}</span>
+        <button className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '4px 10px' }} onClick={handleReset}>
+          🔄 {t('common.reset')}
+        </button>
+      </div>
       <div className="form-grid">
 
         {/* 지도 편차 */}
@@ -2442,11 +2447,6 @@ const isProdc = detail.only_prodc === 'Yes';
           <button className="btn btn-secondary" onClick={handleSaveDraft} disabled={saving}>
             💾 {saving ? t('common.loading') : t('request.save_draft')}
           </button>
-          {step === 2 && (
-            <button className="btn btn-secondary" onClick={handleReset}>
-              🔄 {t('common.reset')}
-            </button>
-          )}
           {step < 5 ? (
             <button className="btn btn-primary" onClick={handleNextStep}>
               다음 →
