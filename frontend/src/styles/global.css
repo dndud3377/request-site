@@ -1641,6 +1641,37 @@ select.form-control option {
   min-width: 40px;
 }
 
+/* Map Option 토글 버튼 */
+.map-option-btn {
+  padding: 6px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.map-option-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.map-option-btn.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.map-option-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Header action buttons inside <th> */
 .th-header-btns {
   display: flex;
