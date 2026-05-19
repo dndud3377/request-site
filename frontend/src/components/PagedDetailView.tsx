@@ -488,7 +488,7 @@ type Page = { label: string; content: React.ReactNode };
               <Chip label={t('request.split_progress_status')} value={detail.split_progress} changed={changedFields.has('split_progress')} fieldKey="split_progress" />
               <Chip label={t('request.tmap_application_status')} value={detail.tmap_apply} changed={changedFields.has('tmap_apply')} fieldKey="tmap_apply" />
               <Chip label={t('request.hplhc_status')} value={detail.hplhc_change} changed={changedFields.has('hplhc_change')} fieldKey="hplhc_change" />
-              <Chip label={t('request.backside_status')} value={detail.backside_status} changed={changedFields.has('backside_status')} fieldKey="backside_status" />
+              <Chip label={t('request.backside_adjust')} value={detail.backside_status} changed={changedFields.has('backside_status')} fieldKey="backside_status" />
             </div>
           )}
         </div>

@@ -89,7 +89,7 @@
     "mshot_edit": "수정",
     "mshot_delete": "삭제",
     "mshot_change_image_attach_area": "이미지 복사 영역",
-    "backside_status": "Backside 적용 여부",
+    "backside_adjust": "Backside 적용 여부",
     "tmap_application_status": "T가문 적용",
     "tmap_not_applied": "미적용",
     "tmap_applied": "적용",

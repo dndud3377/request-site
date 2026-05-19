@@ -1676,7 +1676,7 @@ const isProdc = detail.only_prodc === 'Yes';
         {/* 20주년 제품 + 분리 진행 여부 */}
         <div className="full-width flex-row">
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
-            <label className="form-label">{t('request.backside_status')}</label>
+            <label className="form-label">{t('request.backside_adjust')}</label>
             <select className="form-control" name="backside_status" value={detail.backside_status} onChange={handleDetailChange} disabled={copiedFields.has('backside_status')}>
               <option value="No">No</option>
               <option value="Yes">Yes</option>
