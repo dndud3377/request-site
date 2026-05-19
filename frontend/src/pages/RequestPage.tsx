@@ -1651,12 +1651,12 @@ export default function RequestPage(): React.ReactElement {
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
           </div>
-          <div className="form-group" style={{ flex: 1, visibility: hasEaChange ? 'visible' : 'hidden' }}>
+          <div className="form-group" style={{ flex: 1.5, visibility: hasEaChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.ea_value')} <span className="required">*</span></label>
             <input className={`form-control${errors.ea_value ? ' error' : ''}`} name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={copiedFields.has('ea_value')} />
             {errors.ea_value && <span className="form-error">{errors.ea_value}</span>}
           </div>
-          <div style={{ flex: 4 }} />
+          <div style={{ flex: 3.5 }} />
         </div>
 
         {/* Only C가문 제품 */}
@@ -1752,55 +1752,36 @@ export default function RequestPage(): React.ReactElement {
           )}
         </div>
 
-        {/* Map Option 선택 표 */}
+        {/* Map Option 선택 토글 버튼 */}
         {(() => {
           const mapOptions = [
-            { label: t('request.backside_adjust'),          name: 'backside_status' as keyof DetailFormState, yes: 'Yes',      no: 'No'       },
-            { label: t('request.split_progress_status'),    name: 'split_progress'  as keyof DetailFormState, yes: '예',       no: '아니오'   },
-            { label: t('request.tmap_application_status'),  name: 'tmap_apply'      as keyof DetailFormState, yes: '적용',     no: '미적용'   },
-            { label: t('request.hplhc_status'),             name: 'hplhc_change'    as keyof DetailFormState, yes: '변경 있음', no: '변경 없음' },
+            { label: t('request.backside_adjust'),         name: 'backside_status' as keyof DetailFormState, activeValue: 'Yes',       defaultValue: 'No'        },
+            { label: t('request.split_progress_status'),   name: 'split_progress'  as keyof DetailFormState, activeValue: '예',         defaultValue: '아니오'    },
+            { label: t('request.tmap_application_status'), name: 'tmap_apply'      as keyof DetailFormState, activeValue: '적용',       defaultValue: '미적용'    },
+            { label: t('request.hplhc_status'),            name: 'hplhc_change'    as keyof DetailFormState, activeValue: '변경 있음',  defaultValue: '변경 없음' },
           ];
           return (
             <div className="full-width">
               <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
                 {t('request.map_option_title')}
               </div>
-              <table style={{ borderCollapse: 'collapse', width: '100%', maxWidth: '480px', fontSize: '0.9rem' }}>
-                <thead>
-                  <tr style={{ backgroundColor: 'var(--bg-secondary)' }}>
-                    <th style={{ border: '1px solid var(--border)', padding: '8px 16px', textAlign: 'left', fontWeight: 600 }}>OPTION</th>
-                    <th style={{ border: '1px solid var(--border)', padding: '8px 24px', textAlign: 'center', fontWeight: 600 }}>YES</th>
-                    <th style={{ border: '1px solid var(--border)', padding: '8px 24px', textAlign: 'center', fontWeight: 600 }}>NO</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {mapOptions.map((opt) => (
-                    <tr key={opt.name as string}>
-                      <td style={{ border: '1px solid var(--border)', padding: '8px 16px' }}>{opt.label}</td>
-                      <td style={{ border: '1px solid var(--border)', padding: '8px 24px', textAlign: 'center' }}>
-                        <input
-                          type="radio"
-                          name={opt.name as string}
-                          value={opt.yes}
-                          checked={detail[opt.name] === opt.yes}
-                          onChange={handleDetailChange}
-                          disabled={copiedFields.has(opt.name as string)}
-                        />
-                      </td>
-                      <td style={{ border: '1px solid var(--border)', padding: '8px 24px', textAlign: 'center' }}>
-                        <input
-                          type="radio"
-                          name={opt.name as string}
-                          value={opt.no}
-                          checked={detail[opt.name] === opt.no}
-                          onChange={handleDetailChange}
-                          disabled={copiedFields.has(opt.name as string)}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {mapOptions.map((opt) => {
+                  const isActive = detail[opt.name] === opt.activeValue;
+                  const isDisabled = copiedFields.has(opt.name as string);
+                  return (
+                    <button
+                      key={opt.name as string}
+                      type="button"
+                      className={`map-option-btn${isActive ? ' active' : ''}`}
+                      disabled={isDisabled}
+                      onClick={() => handleDetailSet(opt.name as string, isActive ? opt.defaultValue : opt.activeValue)}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           );
         })()}
@@ -1853,7 +1834,6 @@ export default function RequestPage(): React.ReactElement {
             <col />
             <col />
             <col />
-            <col style={{ width: '32px' }} />
           </colgroup>
           <thead>
             <tr>
@@ -1984,7 +1964,6 @@ export default function RequestPage(): React.ReactElement {
             <col />
             <col />
             <col />
-            <col style={{ width: '40px' }} />
           </colgroup>
           <thead>
             <tr>
