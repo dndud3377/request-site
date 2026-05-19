@@ -1258,6 +1258,17 @@ const isProdc = detail.only_prodc === 'Yes';
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleReset = () => {
+    setDetail(INITIAL_DETAIL);
+    setJayerRows([makeJayerRow()]);
+    setOayerRows([makeOayerRow()]);
+    setBbRows([]);
+    setErrors({});
+    setCopiedFields(new Set());
+    setStep(1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleSubmitClick = () => {
     const result = validate(5);
     if (!result.valid) {
@@ -1673,17 +1684,22 @@ const isProdc = detail.only_prodc === 'Yes';
           )}
         </div>
 
-        {/* 20주년 제품 + 분리 진행 여부 */}
-        <div className="full-width flex-row">
-          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+        {/* Backside 적용 여부 */}
+        <div className="full-width">
+          <div className="form-group" style={{ width: SELECT_W }}>
             <label className="form-label">{t('request.backside_adjust')}</label>
             <select className="form-control" name="backside_status" value={detail.backside_status} onChange={handleDetailChange} disabled={copiedFields.has('backside_status')}>
               <option value="No">No</option>
               <option value="PHOTO MAP">PHOTO MAP</option>
+              <option value="EDS">EDS</option>
               <option value="EDS + PHOTO MAP">EDS + PHOTO MAP</option>
             </select>
           </div>
-          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+        </div>
+
+        {/* 분리 진행 여부 */}
+        <div className="full-width">
+          <div className="form-group" style={{ width: SELECT_W }}>
             <label className="form-label">{t('request.split_progress_status')}</label>
             <select className="form-control" name="split_progress" value={detail.split_progress} onChange={handleDetailChange} disabled={copiedFields.has('split_progress')}>
               <option value="아니오">{t('request.no')}</option>
@@ -1692,16 +1708,20 @@ const isProdc = detail.only_prodc === 'Yes';
           </div>
         </div>
 
-        {/* T가문 적용 / 주력 제품 변경 */}
-        <div className="full-width flex-row">
-          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+        {/* T가문 적용 */}
+        <div className="full-width">
+          <div className="form-group" style={{ width: SELECT_W }}>
             <label className="form-label">{t('request.tmap_application_status')}</label>
             <select className="form-control" name="tmap_apply" value={detail.tmap_apply} onChange={handleDetailChange} disabled={copiedFields.has('tmap_apply')}>
               <option value="미적용">{t('request.tmap_not_applied')}</option>
               <option value="적용">{t('request.tmap_applied')}</option>
             </select>
           </div>
-          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+        </div>
+
+        {/* 주력 제품 변경 */}
+        <div className="full-width">
+          <div className="form-group" style={{ width: SELECT_W }}>
             <label className="form-label">{t('request.hplhc_status')}</label>
             <select className="form-control" name="hplhc_change" value={detail.hplhc_change} onChange={handleDetailChange} disabled={copiedFields.has('hplhc_change')}>
               <option value="변경 없음">{t('request.no_change')}</option>
@@ -2402,6 +2422,9 @@ const isProdc = detail.only_prodc === 'Yes';
         <div style={{ display: 'flex', gap: '12px' }}>
           <button className="btn btn-secondary" onClick={handleSaveDraft} disabled={saving}>
             💾 {saving ? t('common.loading') : t('request.save_draft')}
+          </button>
+          <button className="btn btn-secondary" onClick={handleReset}>
+            🔄 {t('common.reset')}
           </button>
           {step < 5 ? (
             <button className="btn btn-primary" onClick={handleNextStep}>
