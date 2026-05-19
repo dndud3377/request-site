@@ -1577,7 +1577,7 @@ const isProdc = detail.only_prodc === 'Yes';
     </div>
   );
 
-  const SELECT_W = '220px';
+  const SELECT_W = '300px';
 
   const renderStepMap = () => (
     <div className="form-section">
