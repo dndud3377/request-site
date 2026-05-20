@@ -204,6 +204,7 @@ export interface DetailFormState {
   // 제품 이름 선택 시
   process_id: string;
 
+  map_type: string;
   map_change: string;
   map_value_x: string;
   map_value_y: string;

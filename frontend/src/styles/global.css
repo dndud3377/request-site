@@ -1672,6 +1672,37 @@ select.form-control option {
   cursor: not-allowed;
 }
 
+/* MAP 유형 선택 토글 버튼 (테두리·글자색만 변경) */
+.map-type-btn {
+  padding: 6px 18px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.map-type-btn:hover {
+  border-color: var(--accent-glow);
+  color: var(--accent);
+}
+
+.map-type-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-card);
+}
+
+.map-type-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Header action buttons inside <th> */
 .th-header-btns {
   display: flex;
