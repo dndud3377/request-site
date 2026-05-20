@@ -1736,6 +1736,7 @@ export default function RequestPage(): React.ReactElement {
                       checked={prodcCopyRegion === region}
                       onChange={() => handleProdcRegionSelect(region)}
                     />
+                    <span className="radio-custom" />
                     {t(`request.prodc_${region}`)}
                   </label>
                 ))}

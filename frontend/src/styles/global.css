@@ -1272,10 +1272,41 @@ select.form-control option {
 }
 
 .radio-item input[type="radio"] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
-  cursor: pointer;
+  display: none;
+}
+
+.radio-custom {
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-card);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.radio-custom::after {
+  content: '';
+  display: block;
+  width: 5px;
+  height: 9px;
+  border-right: 2px solid var(--border);
+  border-bottom: 2px solid var(--border);
+  transform: rotate(45deg) translate(-1px, -1px);
+  opacity: 0.5;
+}
+
+.radio-item input[type="radio"]:checked + .radio-custom {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.radio-item input[type="radio"]:checked + .radio-custom::after {
+  border-color: white;
+  opacity: 1;
 }
 
 /* ===== Flow Chart Table ===== */
