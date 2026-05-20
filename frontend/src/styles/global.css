@@ -1272,10 +1272,41 @@ select.form-control option {
 }
 
 .radio-item input[type="radio"] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
-  cursor: pointer;
+  display: none;
+}
+
+.radio-custom {
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-card);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.radio-custom::after {
+  content: '';
+  display: block;
+  width: 5px;
+  height: 9px;
+  border-right: 2px solid var(--border);
+  border-bottom: 2px solid var(--border);
+  transform: rotate(45deg) translate(-1px, -1px);
+  opacity: 0.5;
+}
+
+.radio-item input[type="radio"]:checked + .radio-custom {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.radio-item input[type="radio"]:checked + .radio-custom::after {
+  border-color: white;
+  opacity: 1;
 }
 
 /* ===== Flow Chart Table ===== */
@@ -1668,6 +1699,37 @@ select.form-control option {
 }
 
 .map-option-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* MAP 유형 선택 토글 버튼 (테두리·글자색만 변경) */
+.map-type-btn {
+  padding: 6px 18px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.map-type-btn:hover {
+  border-color: var(--accent-glow);
+  color: var(--accent);
+}
+
+.map-type-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-card);
+}
+
+.map-type-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
