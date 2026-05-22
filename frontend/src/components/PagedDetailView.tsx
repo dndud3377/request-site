@@ -478,21 +478,59 @@ type Page = { label: string; content: React.ReactNode };
 
           {isR && detail.only_prodc && (() => {
             const prodcChanged = ['only_prodc','prodc_top_line','prodc_top_process','prodc_top_product','prodc_middle_use','prodc_middle_line','prodc_middle_process','prodc_middle_product','prodc_bottom_line','prodc_bottom_process','prodc_bottom_product'].some((k) => changedFields.has(k));
+            const revChanged = changedFields.has('rev_yn') || changedFields.has('rev_entries');
+            const revYn = (detail as any).rev_yn as string | undefined;
+            const revEntries = (detail as any).rev_entries as Array<{ layers: string[]; gds: string }> | undefined;
             return (
-              <div style={rowStyle}>
-                <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(prodcChanged ? { border: '2px solid #dc3545' } : {}) }}>
-                  <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
-                    <div style={fieldLabel}>{t('request.prodc_status')}</div>
-                    <div style={fieldValue}>{detail.only_prodc}</div>
-                  </div>
-                  {isProdc && buildProdcInfo() && (
-                    <div style={{ flex: 1 }}>
-                      <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
-                      <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildProdcInfo()}</div>
+              <>
+                <div style={rowStyle}>
+                  <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(prodcChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                    <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
+                      <div style={fieldLabel}>{t('request.prodc_status')}</div>
+                      <div style={fieldValue}>{detail.only_prodc}</div>
                     </div>
-                  )}
+                    {isProdc && buildProdcInfo() && (
+                      <div style={{ flex: 1 }}>
+                        <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
+                        <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildProdcInfo()}</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+                {isProdc && revYn && (
+                  <div style={rowStyle}>
+                    <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(revChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                        <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
+                          <div style={fieldLabel}>REV 여부</div>
+                          <div style={fieldValue}>{revYn}</div>
+                        </div>
+                        {revYn === 'YES' && Array.isArray(revEntries) && revEntries.length > 0 && (
+                          <div style={{ flex: 1 }}>
+                            <div style={fieldLabel}>Layer / GDS version</div>
+                            <table style={{ borderCollapse: 'collapse', marginTop: 4, fontSize: '12px' }}>
+                              <thead>
+                                <tr>
+                                  <th style={{ border: '1px solid #ddd', padding: '3px 8px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>Layer</th>
+                                  <th style={{ border: '1px solid #ddd', padding: '3px 8px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>GDS version</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {revEntries.map((entry, idx) => (
+                                  <tr key={idx}>
+                                    <td style={{ border: '1px solid #ddd', padding: '3px 8px', whiteSpace: 'nowrap' }}>{entry.layers?.join(', ')}</td>
+                                    <td style={{ border: '1px solid #ddd', padding: '3px 8px', whiteSpace: 'nowrap' }}>{entry.gds}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             );
           })()}
 
