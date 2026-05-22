@@ -240,6 +240,9 @@ export interface DetailFormState {
 
   tmap_apply: string;
   hplhc_change: string;
+
+  rev_yn: string;
+  rev_entries: Array<{ layer: string; gds: string }>;
 }
 
 // ===== Change History =====
