@@ -198,6 +198,8 @@ const INITIAL_DETAIL: DetailFormState = {
   backside_status: 'No',
   tmap_apply: '미적용',
   hplhc_change: '변경 없음',
+  rev_yn: '',
+  rev_entries: [],
 };
 
 const INITIAL_FORM: CreateDocumentInput = {
@@ -320,6 +322,8 @@ export default function RequestPage(): React.ReactElement {
   const [oayerSortBySp, setOayerSortBySp] = useState(false);
   const [copiedFields, setCopiedFields] = useState<Set<string>>(new Set());
   const [prodcCopyRegion, setProdcCopyRegion] = useState<CRegion | null>(null);
+  const [revLayerSelected, setRevLayerSelected] = useState<string>('');
+  const [revGds, setRevGds] = useState<string>('');
 
   useEffect(() => {
     linesAPI.list()
@@ -550,6 +554,10 @@ export default function RequestPage(): React.ReactElement {
   const isProdc = detail.only_prodc === 'Yes';
   const mshotDeleteMode = detail.mshot_change === '삭제';
   const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
+  const usedRevLayers = new Set((detail.rev_entries ?? []).map((e) => e.layer));
+  const availableRevLayers = Array.from(
+    new Set(jayerRows.filter((r) => !r.disabled && r.layerid).map((r) => r.layerid))
+  ).filter((l) => !usedRevLayers.has(l));
 
   // ===== Step 1 Handlers =====
   const handleDetailChange = (
@@ -1332,10 +1340,14 @@ export default function RequestPage(): React.ReactElement {
       split_progress: INITIAL_DETAIL.split_progress,
       tmap_apply: INITIAL_DETAIL.tmap_apply,
       hplhc_change: INITIAL_DETAIL.hplhc_change,
+      rev_yn: INITIAL_DETAIL.rev_yn,
+      rev_entries: INITIAL_DETAIL.rev_entries,
     }));
     setErrors({});
     setCopiedFields(new Set());
     setProdcCopyRegion(null);
+    setRevLayerSelected('');
+    setRevGds('');
   };
 
   const handleSubmitClick = () => {
@@ -1719,7 +1731,20 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
             <label className="form-label">{t('request.prodc_status')}</label>
-            <select className="form-control" name="only_prodc" value={detail.only_prodc} onChange={handleDetailChange} disabled={isMapRegistered}>
+            <select
+              className="form-control"
+              name="only_prodc"
+              value={detail.only_prodc}
+              onChange={(e) => {
+                handleDetailChange(e);
+                if (e.target.value === 'No') {
+                  setDetail((prev) => ({ ...prev, rev_yn: '', rev_entries: [] }));
+                  setRevLayerSelected('');
+                  setRevGds('');
+                }
+              }}
+              disabled={isMapRegistered}
+            >
               <option value="No">No</option>
               <option value="Yes">Yes</option>
             </select>
@@ -1744,6 +1769,135 @@ export default function RequestPage(): React.ReactElement {
               <ProdcRow region="top"    detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={topProductOptions}    onProcessChange={handleProdcProcessChange} errors={errors} />
               <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={middleProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} />
               <ProdcRow region="bottom" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={bottomProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} />
+
+              {/* REV 여부 */}
+              <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '14px', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <label className="form-label" style={{ marginBottom: 0 }}>REV 여부</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {(['YES', 'NO'] as const).map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      className={`map-type-btn${detail.rev_yn === val ? ' active' : ''}`}
+                      onClick={() => {
+                        if (val === 'NO') {
+                          setDetail((prev) => ({ ...prev, rev_yn: val, rev_entries: [] }));
+                          setRevLayerSelected('');
+                          setRevGds('');
+                        } else {
+                          setDetail((prev) => ({ ...prev, rev_yn: val }));
+                        }
+                      }}
+                      disabled={isMapRegistered}
+                    >
+                      {val}
+                    </button>
+                  ))}
+                </div>
+
+                {detail.rev_yn === 'YES' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {/* 입력 행: Layer 버튼 + GDS version + 추가 버튼 */}
+                    <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <label className="form-label" style={{ marginBottom: 0 }}>Layer</label>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxWidth: '480px' }}>
+                          {availableRevLayers.length > 0 ? availableRevLayers.map((layer) => (
+                            <button
+                              key={layer}
+                              type="button"
+                              onClick={() => setRevLayerSelected((prev) => prev === layer ? '' : layer)}
+                              style={{
+                                padding: '5px 13px',
+                                borderRadius: '4px',
+                                border: `1.5px solid ${revLayerSelected === layer ? 'var(--accent, #1976D2)' : '#ccc'}`,
+                                backgroundColor: revLayerSelected === layer ? 'var(--accent, #1976D2)' : '#fff',
+                                color: revLayerSelected === layer ? '#fff' : '#333',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: revLayerSelected === layer ? 600 : 400,
+                                transition: 'all 0.15s',
+                              }}
+                            >
+                              {layer}
+                            </button>
+                          )) : (
+                            <span style={{ fontSize: '13px', color: '#999' }}>
+                              {(detail.rev_entries ?? []).length > 0
+                                ? '모든 Layer가 추가되었습니다.'
+                                : 'J-ayer 정보에 Layer 데이터가 없습니다.'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <label className="form-label" style={{ marginBottom: 0 }}>GDS version</label>
+                        <input
+                          className="form-control"
+                          style={{ width: '180px' }}
+                          value={revGds}
+                          onChange={(e) => setRevGds(e.target.value)}
+                          placeholder="GDS version 입력"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        style={{ whiteSpace: 'nowrap' }}
+                        disabled={!revLayerSelected || !revGds.trim()}
+                        onClick={() => {
+                          if (!revLayerSelected || !revGds.trim()) return;
+                          setDetail((prev) => ({
+                            ...prev,
+                            rev_entries: [...(prev.rev_entries ?? []), { layer: revLayerSelected, gds: revGds.trim() }],
+                          }));
+                          setRevLayerSelected('');
+                          setRevGds('');
+                        }}
+                      >
+                        + 추가
+                      </button>
+                    </div>
+
+                    {/* 추가된 항목 목록 */}
+                    {(detail.rev_entries ?? []).length > 0 && (
+                      <table className="wizard-table" style={{ width: 'auto', marginTop: '4px' }}>
+                        <thead>
+                          <tr>
+                            <th>Layer</th>
+                            <th>GDS version</th>
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(detail.rev_entries ?? []).map((entry, idx) => (
+                            <tr key={idx}>
+                              <td style={{ padding: '6px 12px' }}>{entry.layer}</td>
+                              <td style={{ padding: '6px 12px' }}>{entry.gds}</td>
+                              <td style={{ padding: '6px 8px' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-danger btn-sm"
+                                  onClick={() =>
+                                    setDetail((prev) => ({
+                                      ...prev,
+                                      rev_entries: (prev.rev_entries ?? []).filter((_, i) => i !== idx),
+                                    }))
+                                  }
+                                >
+                                  삭제
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
