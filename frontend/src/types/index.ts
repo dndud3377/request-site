@@ -242,7 +242,7 @@ export interface DetailFormState {
   hplhc_change: string;
 
   rev_yn: string;
-  rev_entries: Array<{ layer: string; gds: string }>;
+  rev_entries: Array<{ layers: string[]; gds: string }>;
 }
 
 // ===== Change History =====

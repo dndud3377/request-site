@@ -322,7 +322,7 @@ export default function RequestPage(): React.ReactElement {
   const [oayerSortBySp, setOayerSortBySp] = useState(false);
   const [copiedFields, setCopiedFields] = useState<Set<string>>(new Set());
   const [prodcCopyRegion, setProdcCopyRegion] = useState<CRegion | null>(null);
-  const [revLayerSelected, setRevLayerSelected] = useState<string>('');
+  const [revLayersSelected, setRevLayersSelected] = useState<string[]>([]);
   const [revGds, setRevGds] = useState<string>('');
 
   useEffect(() => {
@@ -554,7 +554,7 @@ export default function RequestPage(): React.ReactElement {
   const isProdc = detail.only_prodc === 'Yes';
   const mshotDeleteMode = detail.mshot_change === '삭제';
   const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
-  const usedRevLayers = new Set((detail.rev_entries ?? []).map((e) => e.layer));
+  const usedRevLayers = new Set((detail.rev_entries ?? []).flatMap((e) => e.layers));
   const availableRevLayers = Array.from(
     new Set(jayerRows.filter((r) => !r.disabled && r.layerid).map((r) => r.layerid))
   ).filter((l) => !usedRevLayers.has(l));
@@ -1346,7 +1346,7 @@ export default function RequestPage(): React.ReactElement {
     setErrors({});
     setCopiedFields(new Set());
     setProdcCopyRegion(null);
-    setRevLayerSelected('');
+    setRevLayersSelected([]);
     setRevGds('');
   };
 
@@ -1739,7 +1739,7 @@ export default function RequestPage(): React.ReactElement {
                 handleDetailChange(e);
                 if (e.target.value === 'No') {
                   setDetail((prev) => ({ ...prev, rev_yn: '', rev_entries: [] }));
-                  setRevLayerSelected('');
+                  setRevLayersSelected([]);
                   setRevGds('');
                 }
               }}
@@ -1782,7 +1782,7 @@ export default function RequestPage(): React.ReactElement {
                       onClick={() => {
                         if (val === 'NO') {
                           setDetail((prev) => ({ ...prev, rev_yn: val, rev_entries: [] }));
-                          setRevLayerSelected('');
+                          setRevLayersSelected([]);
                           setRevGds('');
                         } else {
                           setDetail((prev) => ({ ...prev, rev_yn: val }));
@@ -1802,26 +1802,33 @@ export default function RequestPage(): React.ReactElement {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         <label className="form-label" style={{ marginBottom: 0 }}>Layer</label>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxWidth: '480px' }}>
-                          {availableRevLayers.length > 0 ? availableRevLayers.map((layer) => (
-                            <button
-                              key={layer}
-                              type="button"
-                              onClick={() => setRevLayerSelected((prev) => prev === layer ? '' : layer)}
-                              style={{
-                                padding: '5px 13px',
-                                borderRadius: '4px',
-                                border: `1.5px solid ${revLayerSelected === layer ? 'var(--accent, #1976D2)' : '#ccc'}`,
-                                backgroundColor: revLayerSelected === layer ? 'var(--accent, #1976D2)' : '#fff',
-                                color: revLayerSelected === layer ? '#fff' : '#333',
-                                cursor: 'pointer',
-                                fontSize: '13px',
-                                fontWeight: revLayerSelected === layer ? 600 : 400,
-                                transition: 'all 0.15s',
-                              }}
-                            >
-                              {layer}
-                            </button>
-                          )) : (
+                          {availableRevLayers.length > 0 ? availableRevLayers.map((layer) => {
+                            const isSelected = revLayersSelected.includes(layer);
+                            return (
+                              <button
+                                key={layer}
+                                type="button"
+                                onClick={() =>
+                                  setRevLayersSelected((prev) =>
+                                    isSelected ? prev.filter((l) => l !== layer) : [...prev, layer]
+                                  )
+                                }
+                                style={{
+                                  padding: '5px 13px',
+                                  borderRadius: '4px',
+                                  border: `1.5px solid ${isSelected ? 'var(--accent, #1976D2)' : '#ccc'}`,
+                                  backgroundColor: isSelected ? 'var(--accent, #1976D2)' : '#fff',
+                                  color: isSelected ? '#fff' : '#333',
+                                  cursor: 'pointer',
+                                  fontSize: '13px',
+                                  fontWeight: isSelected ? 600 : 400,
+                                  transition: 'all 0.15s',
+                                }}
+                              >
+                                {layer}
+                              </button>
+                            );
+                          }) : (
                             <span style={{ fontSize: '13px', color: '#999' }}>
                               {(detail.rev_entries ?? []).length > 0
                                 ? '모든 Layer가 추가되었습니다.'
@@ -1835,7 +1842,7 @@ export default function RequestPage(): React.ReactElement {
                         <label className="form-label" style={{ marginBottom: 0 }}>GDS version</label>
                         <input
                           className="form-control"
-                          style={{ width: '180px' }}
+                          style={{ width: '360px' }}
                           value={revGds}
                           onChange={(e) => setRevGds(e.target.value)}
                           placeholder="GDS version 입력"
@@ -1846,14 +1853,14 @@ export default function RequestPage(): React.ReactElement {
                         type="button"
                         className="btn btn-primary"
                         style={{ whiteSpace: 'nowrap' }}
-                        disabled={!revLayerSelected || !revGds.trim()}
+                        disabled={revLayersSelected.length === 0 || !revGds.trim()}
                         onClick={() => {
-                          if (!revLayerSelected || !revGds.trim()) return;
+                          if (revLayersSelected.length === 0 || !revGds.trim()) return;
                           setDetail((prev) => ({
                             ...prev,
-                            rev_entries: [...(prev.rev_entries ?? []), { layer: revLayerSelected, gds: revGds.trim() }],
+                            rev_entries: [...(prev.rev_entries ?? []), { layers: revLayersSelected, gds: revGds.trim() }],
                           }));
-                          setRevLayerSelected('');
+                          setRevLayersSelected([]);
                           setRevGds('');
                         }}
                       >
@@ -1863,23 +1870,24 @@ export default function RequestPage(): React.ReactElement {
 
                     {/* 추가된 항목 목록 */}
                     {(detail.rev_entries ?? []).length > 0 && (
-                      <table className="wizard-table" style={{ width: 'auto', marginTop: '4px' }}>
+                      <table style={{ borderCollapse: 'collapse', width: 'fit-content', marginTop: '4px', fontSize: '12px' }}>
                         <thead>
                           <tr>
-                            <th>Layer</th>
-                            <th>GDS version</th>
-                            <th></th>
+                            <th style={{ border: '1px solid #ddd', padding: '4px 10px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>Layer</th>
+                            <th style={{ border: '1px solid #ddd', padding: '4px 10px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>GDS version</th>
+                            <th style={{ border: '1px solid #ddd', padding: '4px 6px', background: '#f5f5f5' }}></th>
                           </tr>
                         </thead>
                         <tbody>
                           {(detail.rev_entries ?? []).map((entry, idx) => (
                             <tr key={idx}>
-                              <td style={{ padding: '6px 12px' }}>{entry.layer}</td>
-                              <td style={{ padding: '6px 12px' }}>{entry.gds}</td>
-                              <td style={{ padding: '6px 8px' }}>
+                              <td style={{ border: '1px solid #ddd', padding: '4px 10px', whiteSpace: 'nowrap' }}>{entry.layers.join(', ')}</td>
+                              <td style={{ border: '1px solid #ddd', padding: '4px 10px', whiteSpace: 'nowrap' }}>{entry.gds}</td>
+                              <td style={{ border: '1px solid #ddd', padding: '4px 6px', textAlign: 'center' }}>
                                 <button
                                   type="button"
                                   className="btn btn-danger btn-sm"
+                                  style={{ fontSize: '11px', padding: '2px 7px' }}
                                   onClick={() =>
                                     setDetail((prev) => ({
                                       ...prev,
