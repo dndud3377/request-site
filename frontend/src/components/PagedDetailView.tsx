@@ -611,7 +611,10 @@ type Page = { label: string; content: React.ReactNode };
       label: t('request.job_li'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>{t('request.job_li')}</div>
+          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{t('request.job_li')}</span>
+            <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {jayer.length}건</span>
+          </div>
           <JayerTable rows={jayer} changedRowIds={changedJayerIds} />
         </div>
       ),
@@ -622,7 +625,10 @@ type Page = { label: string; content: React.ReactNode };
       label: t('request.ovl_li'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>{t('request.ovl_li')}</div>
+          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{t('request.ovl_li')}</span>
+            <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {oayer.length}건</span>
+          </div>
           <OayerTable rows={oayer} changedRowIds={changedOayerIds} />
         </div>
       ),
