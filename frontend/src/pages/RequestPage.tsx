@@ -2011,7 +2011,12 @@ export default function RequestPage(): React.ReactElement {
 
   const renderStep2 = () => (
     <div className="form-section">
-      <div className="form-section-title">🔷 {t('request.job_li')}</div>
+      <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>🔷 {t('request.job_li')}</span>
+        <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)' }}>
+          활성 {jayerRows.filter(r => !r.disabled).length} / 전체 {jayerRows.length}
+        </span>
+      </div>
       {/* 일괄 설정 툴바 */}
       <div className="wizard-table-toolbar">
         <div className="wizard-table-toolbar-group">
@@ -2142,7 +2147,12 @@ export default function RequestPage(): React.ReactElement {
 
   const renderStep3 = () => (
     <div className="form-section">
-      <div className="form-section-title">🔶 {t('request.ovl_li')}</div>
+      <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>🔶 {t('request.ovl_li')}</span>
+        <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)' }}>
+          활성 {oayerRows.filter(r => !r.disabled).length} / 전체 {oayerRows.length}
+        </span>
+      </div>
       {/* 일괄 설정 툴바 */}
       <div className="wizard-table-toolbar">
         <div className="wizard-table-toolbar-group">

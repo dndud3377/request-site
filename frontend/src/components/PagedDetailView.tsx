@@ -26,54 +26,250 @@ const changedRowStyle: React.CSSProperties = {
   background: 'rgba(220,53,69,0.04)',
 };
 
-function JayerTable({ rows, changedRowIds = new Set<string>() }: { rows: JayerRow[]; changedRowIds?: Set<string> }) {
-  const { t } = useTranslation();
-  if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
+const histBtnStyle: React.CSSProperties = {
+  fontSize: '0.68rem', padding: '2px 7px', borderRadius: 4,
+  background: 'none', border: '1px solid #dc3545',
+  color: '#dc3545', cursor: 'pointer', fontWeight: 700,
+  whiteSpace: 'nowrap',
+};
+
+// ===== Row Diff Modal =====
+
+interface DiffField { key: string; label: string; }
+
+function RowDiffModal({
+  title, fields, curRow, prevRow, onClose,
+}: {
+  title: string;
+  fields: DiffField[];
+  curRow: Record<string, any>;
+  prevRow: Record<string, any>;
+  onClose: () => void;
+}) {
+  const thS: React.CSSProperties = {
+    textAlign: 'left', padding: '5px 10px', fontSize: '0.78rem',
+    fontWeight: 700, color: 'var(--text-muted)',
+    borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)',
+  };
+  const tdS: React.CSSProperties = { padding: '5px 10px', fontSize: '0.82rem', verticalAlign: 'top' };
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table className="table table-compact" style={{ marginBottom: 8 }}>
-        <thead><tr><th>Update 날짜</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th></tr></thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} style={changedRowIds.has(r.id) ? changedRowStyle : undefined}><td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td></tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Modal isOpen onClose={onClose} title={title}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', minWidth: 420 }}>
+          <thead>
+            <tr>
+              <th style={thS}>항목</th>
+              <th style={{ ...thS, color: '#dc3545' }}>변경 전</th>
+              <th style={{ ...thS, color: '#155724' }}>변경 후</th>
+            </tr>
+          </thead>
+          <tbody>
+            {fields.map(({ key, label }) => {
+              const before = String(prevRow[key] ?? '');
+              const after  = String(curRow[key]  ?? '');
+              const isChanged = before !== after;
+              return (
+                <tr key={key} style={{ background: isChanged ? 'rgba(220,53,69,0.05)' : undefined }}>
+                  <td style={{ ...tdS, fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{label}</td>
+                  <td style={{ ...tdS, color: isChanged ? '#dc3545' : 'var(--text-primary)' }}>{before || '-'}</td>
+                  <td style={{ ...tdS, color: isChanged ? '#155724' : 'var(--text-primary)', fontWeight: isChanged ? 700 : 400 }}>{after || '-'}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Modal>
   );
 }
 
-function OayerTable({ rows, changedRowIds = new Set<string>() }: { rows: OayerRow[]; changedRowIds?: Set<string> }) {
+// ===== Table Components =====
+
+function JayerTable({
+  rows,
+  changedRowIds = new Set<string>(),
+  prevRowMap,
+}: {
+  rows: JayerRow[];
+  changedRowIds?: Set<string>;
+  prevRowMap?: Map<string, JayerRow>;
+}) {
   const { t } = useTranslation();
+  const [diffId, setDiffId] = useState<string | null>(null);
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
+  const diffCur = diffId ? rows.find((r) => r.id === diffId) : null;
+  const diffPrev = diffId ? prevRowMap?.get(diffId) : null;
+  const fields: DiffField[] = [
+    { key: 'updated',      label: 'Update 날짜' },
+    { key: 'process_id',   label: t('request.process_id') },
+    { key: 'sp',           label: t('request.col_sp') },
+    { key: 'sd',           label: t('request.col_sd') },
+    { key: 'pp',           label: t('request.col_pp') },
+    { key: 'layerid',      label: 'Layer' },
+    { key: 'st',           label: t('request.col_st') },
+    { key: 'new_or_copy',  label: t('request.col_new_or_copy') },
+    { key: 'product_name', label: t('request.col_product_name') },
+    { key: 'step',         label: t('request.col_step') },
+    { key: 'item_id',      label: t('request.col_item_id') },
+  ];
+  const hasPrev = (prevRowMap?.size ?? 0) > 0;
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table className="table table-compact" style={{ marginBottom: 8 }}>
-        <thead><tr><th>Update 날짜</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_tt')}</th></tr></thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} style={changedRowIds.has(r.id) ? changedRowStyle : undefined}><td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td></tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      {diffCur && diffPrev && (
+        <RowDiffModal title="J-ayer 행 변경 이력" fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
+      )}
+      <div style={{ overflowX: 'auto' }}>
+        <table className="table table-compact" style={{ marginBottom: 8 }}>
+          <thead>
+            <tr>
+              {hasPrev && <th style={{ width: 64 }}></th>}
+              <th>Update 날짜</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const isChanged = changedRowIds.has(r.id);
+              return (
+                <tr key={r.id} style={isChanged ? changedRowStyle : undefined}>
+                  {hasPrev && (
+                    <td style={{ textAlign: 'center' }}>
+                      {isChanged && prevRowMap?.has(r.id) && (
+                        <button style={histBtnStyle} onClick={() => setDiffId(r.id)}>이력 확인</button>
+                      )}
+                    </td>
+                  )}
+                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
-function BbTable({ rows, changedRowIds = new Set<string>() }: { rows: BbTableRow[]; changedRowIds?: Set<string> }) {
+function OayerTable({
+  rows,
+  changedRowIds = new Set<string>(),
+  prevRowMap,
+}: {
+  rows: OayerRow[];
+  changedRowIds?: Set<string>;
+  prevRowMap?: Map<string, OayerRow>;
+}) {
   const { t } = useTranslation();
+  const [diffId, setDiffId] = useState<string | null>(null);
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
+  const diffCur = diffId ? rows.find((r) => r.id === diffId) : null;
+  const diffPrev = diffId ? prevRowMap?.get(diffId) : null;
+  const fields: DiffField[] = [
+    { key: 'updated',      label: 'Update 날짜' },
+    { key: 'process_id',   label: t('request.process_id') },
+    { key: 'sp',           label: t('request.col_sp') },
+    { key: 'sd',           label: t('request.col_sd') },
+    { key: 'pp',           label: t('request.col_pp') },
+    { key: 'st',           label: t('request.col_st') },
+    { key: 'new_or_copy',  label: t('request.col_new_or_copy') },
+    { key: 'product_name', label: t('request.col_product_name') },
+    { key: 'step',         label: t('request.col_step') },
+    { key: 'tt',           label: t('request.col_tt') },
+  ];
+  const hasPrev = (prevRowMap?.size ?? 0) > 0;
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table className="table table-compact" style={{ marginBottom: 8 }}>
-        <thead><tr><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_bb_process_id')}</th><th>{t('request.col_bb_partid')}</th><th>{t('request.col_bb_layer')}</th><th>{t('request.col_bb_stepseq')}</th><th>{t('request.col_remark')}</th></tr></thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} style={changedRowIds.has(r.id) ? changedRowStyle : undefined}><td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td>{r.bb_name}</td><td>{r.bb_step}</td><td>{r.bb_ss}</td><td>{r.remark}</td></tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      {diffCur && diffPrev && (
+        <RowDiffModal title="O-ayer 행 변경 이력" fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
+      )}
+      <div style={{ overflowX: 'auto' }}>
+        <table className="table table-compact" style={{ marginBottom: 8 }}>
+          <thead>
+            <tr>
+              {hasPrev && <th style={{ width: 64 }}></th>}
+              <th>Update 날짜</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_tt')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const isChanged = changedRowIds.has(r.id);
+              return (
+                <tr key={r.id} style={isChanged ? changedRowStyle : undefined}>
+                  {hasPrev && (
+                    <td style={{ textAlign: 'center' }}>
+                      {isChanged && prevRowMap?.has(r.id) && (
+                        <button style={histBtnStyle} onClick={() => setDiffId(r.id)}>이력 확인</button>
+                      )}
+                    </td>
+                  )}
+                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function BbTable({
+  rows,
+  changedRowIds = new Set<string>(),
+  prevRowMap,
+}: {
+  rows: BbTableRow[];
+  changedRowIds?: Set<string>;
+  prevRowMap?: Map<string, BbTableRow>;
+}) {
+  const { t } = useTranslation();
+  const [diffId, setDiffId] = useState<string | null>(null);
+  if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
+  const diffCur = diffId ? rows.find((r) => r.id === diffId) : null;
+  const diffPrev = diffId ? prevRowMap?.get(diffId) : null;
+  const fields: DiffField[] = [
+    { key: 'process_id',    label: t('request.process_id') },
+    { key: 'ss',            label: t('request.col_sp') },
+    { key: 'sd',            label: t('request.col_sd') },
+    { key: 'bb_process_id', label: t('request.col_bb_process_id') },
+    { key: 'bb_name',       label: t('request.col_bb_partid') },
+    { key: 'bb_step',       label: t('request.col_bb_layer') },
+    { key: 'bb_ss',         label: t('request.col_bb_stepseq') },
+    { key: 'remark',        label: t('request.col_remark') },
+  ];
+  const hasPrev = (prevRowMap?.size ?? 0) > 0;
+  return (
+    <>
+      {diffCur && diffPrev && (
+        <RowDiffModal title="뼈찜 행 변경 이력" fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
+      )}
+      <div style={{ overflowX: 'auto' }}>
+        <table className="table table-compact" style={{ marginBottom: 8 }}>
+          <thead>
+            <tr>
+              {hasPrev && <th style={{ width: 64 }}></th>}
+              <th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_bb_process_id')}</th><th>{t('request.col_bb_partid')}</th><th>{t('request.col_bb_layer')}</th><th>{t('request.col_bb_stepseq')}</th><th>{t('request.col_remark')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const isChanged = changedRowIds.has(r.id);
+              return (
+                <tr key={r.id} style={isChanged ? changedRowStyle : undefined}>
+                  {hasPrev && (
+                    <td style={{ textAlign: 'center' }}>
+                      {isChanged && prevRowMap?.has(r.id) && (
+                        <button style={histBtnStyle} onClick={() => setDiffId(r.id)}>이력 확인</button>
+                      )}
+                    </td>
+                  )}
+                  <td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td>{r.bb_name}</td><td>{r.bb_step}</td><td>{r.bb_ss}</td><td>{r.remark}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -88,14 +284,53 @@ function computeDetailDiff(cur: any, prev: any): Set<string> {
   return changed;
 }
 
-function computeTableDiff(cur: Array<{ id: string }>, prev: Array<{ id: string }>): Set<string> {
-  const changed = new Set<string>();
-  const prevMap = new Map((prev ?? []).map((r) => [r.id, r]));
-  for (const row of cur ?? []) {
-    const p = prevMap.get(row.id);
-    if (!p || JSON.stringify(row) !== JSON.stringify(p)) changed.add(row.id);
+// Excludes unstable/non-semantic fields from comparison
+function rowContentSig(row: any): string {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { sortOrder, disabled, id, sourceJayerRowId, ...rest } = row;
+  const sorted = Object.fromEntries(Object.keys(rest).sort().map((k) => [k, rest[k]]));
+  return JSON.stringify(sorted);
+}
+
+function computeTableDiff<T extends { id: string }>(
+  cur: T[],
+  prev: T[]
+): { changedIds: Set<string>; prevRowMap: Map<string, T> } {
+  const changedIds = new Set<string>();
+  const prevRowMap = new Map<string, T>();
+
+  if (!prev || prev.length === 0) {
+    return { changedIds, prevRowMap };
   }
-  return changed;
+
+  const prevById = new Map(prev.map((r) => [r.id, r]));
+  const anyIdMatch = (cur ?? []).some((r) => prevById.has(r.id));
+
+  if (!anyIdMatch) {
+    // Positional fallback: rows were regenerated with new IDs
+    for (let i = 0; i < (cur ?? []).length; i++) {
+      const row = cur[i];
+      const p = prev[i];
+      if (!p) {
+        changedIds.add(row.id);
+      } else {
+        prevRowMap.set(row.id, p);
+        if (rowContentSig(row) !== rowContentSig(p)) changedIds.add(row.id);
+      }
+    }
+  } else {
+    for (const row of cur ?? []) {
+      const p = prevById.get(row.id);
+      if (!p) {
+        changedIds.add(row.id);
+      } else {
+        prevRowMap.set(row.id, p);
+        if (rowContentSig(row) !== rowContentSig(p)) changedIds.add(row.id);
+      }
+    }
+  }
+
+  return { changedIds, prevRowMap };
 }
 
 // ===== PagedDetailView =====
@@ -125,10 +360,16 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   } catch { /* noop */ }
 
   const prevSnap = history.length > 0 ? history[history.length - 1] : null;
-  const changedFields   = prevSnap ? computeDetailDiff(detail, prevSnap.detail) : new Set<string>();
-  const changedJayerIds = prevSnap ? computeTableDiff(jayer, prevSnap.jayerRows ?? []) : new Set<string>();
-  const changedOayerIds = prevSnap ? computeTableDiff(oayer, prevSnap.oayerRows ?? []) : new Set<string>();
-  const changedBbIds    = prevSnap ? computeTableDiff(bb,    prevSnap.bbRows ?? [])    : new Set<string>();
+  const changedFields = prevSnap ? computeDetailDiff(detail, prevSnap.detail) : new Set<string>();
+  const { changedIds: changedJayerIds, prevRowMap: prevJayerMap } = prevSnap
+    ? computeTableDiff(jayer, prevSnap.jayerRows ?? [])
+    : { changedIds: new Set<string>(), prevRowMap: new Map<string, JayerRow>() };
+  const { changedIds: changedOayerIds, prevRowMap: prevOayerMap } = prevSnap
+    ? computeTableDiff(oayer, prevSnap.oayerRows ?? [])
+    : { changedIds: new Set<string>(), prevRowMap: new Map<string, OayerRow>() };
+  const { changedIds: changedBbIds, prevRowMap: prevBbMap } = prevSnap
+    ? computeTableDiff(bb, prevSnap.bbRows ?? [])
+    : { changedIds: new Set<string>(), prevRowMap: new Map<string, BbTableRow>() };
 
   const isPL = role === 'PL';
   const isR = role === 'TE_R' || role === 'MASTER' || isPL;
@@ -478,21 +719,59 @@ type Page = { label: string; content: React.ReactNode };
 
           {isR && detail.only_prodc && (() => {
             const prodcChanged = ['only_prodc','prodc_top_line','prodc_top_process','prodc_top_product','prodc_middle_use','prodc_middle_line','prodc_middle_process','prodc_middle_product','prodc_bottom_line','prodc_bottom_process','prodc_bottom_product'].some((k) => changedFields.has(k));
+            const revChanged = changedFields.has('rev_yn') || changedFields.has('rev_entries');
+            const revYn = (detail as any).rev_yn as string | undefined;
+            const revEntries = (detail as any).rev_entries as Array<{ layers: string[]; gds: string }> | undefined;
             return (
-              <div style={rowStyle}>
-                <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(prodcChanged ? { border: '2px solid #dc3545' } : {}) }}>
-                  <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
-                    <div style={fieldLabel}>{t('request.prodc_status')}</div>
-                    <div style={fieldValue}>{detail.only_prodc}</div>
-                  </div>
-                  {isProdc && buildProdcInfo() && (
-                    <div style={{ flex: 1 }}>
-                      <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
-                      <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildProdcInfo()}</div>
+              <>
+                <div style={rowStyle}>
+                  <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(prodcChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                    <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
+                      <div style={fieldLabel}>{t('request.prodc_status')}</div>
+                      <div style={fieldValue}>{detail.only_prodc}</div>
                     </div>
-                  )}
+                    {isProdc && buildProdcInfo() && (
+                      <div style={{ flex: 1 }}>
+                        <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
+                        <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildProdcInfo()}</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+                {isProdc && revYn && (
+                  <div style={rowStyle}>
+                    <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(revChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                        <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
+                          <div style={fieldLabel}>REV 여부</div>
+                          <div style={fieldValue}>{revYn}</div>
+                        </div>
+                        {revYn === 'YES' && Array.isArray(revEntries) && revEntries.length > 0 && (
+                          <div style={{ flex: 1 }}>
+                            <div style={fieldLabel}>Layer / GDS version</div>
+                            <table style={{ borderCollapse: 'collapse', marginTop: 4, fontSize: '12px' }}>
+                              <thead>
+                                <tr>
+                                  <th style={{ border: '1px solid #ddd', padding: '3px 8px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>Layer</th>
+                                  <th style={{ border: '1px solid #ddd', padding: '3px 8px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>GDS version</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {revEntries.map((entry, idx) => (
+                                  <tr key={idx}>
+                                    <td style={{ border: '1px solid #ddd', padding: '3px 8px', whiteSpace: 'nowrap' }}>{entry.layers?.join(', ')}</td>
+                                    <td style={{ border: '1px solid #ddd', padding: '3px 8px', whiteSpace: 'nowrap' }}>{entry.gds}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             );
           })()}
 
@@ -573,8 +852,11 @@ type Page = { label: string; content: React.ReactNode };
       label: t('request.job_li'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>{t('request.job_li')}</div>
-          <JayerTable rows={jayer} changedRowIds={changedJayerIds} />
+          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{t('request.job_li')}</span>
+            <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {jayer.length}건</span>
+          </div>
+          <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} />
         </div>
       ),
     });
@@ -584,8 +866,11 @@ type Page = { label: string; content: React.ReactNode };
       label: t('request.ovl_li'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>{t('request.ovl_li')}</div>
-          <OayerTable rows={oayer} changedRowIds={changedOayerIds} />
+          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{t('request.ovl_li')}</span>
+            <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {oayer.length}건</span>
+          </div>
+          <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} />
         </div>
       ),
     });
@@ -596,7 +881,7 @@ type Page = { label: string; content: React.ReactNode };
       content: (
         <div style={cardStyle}>
           <div style={sectionTitle}>{t('request.bb_li')}</div>
-          <BbTable rows={bb} changedRowIds={changedBbIds} />
+          <BbTable rows={bb} changedRowIds={changedBbIds} prevRowMap={prevBbMap} />
         </div>
       ),
     });
