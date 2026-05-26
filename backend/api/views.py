@@ -648,10 +648,43 @@ def form_options_bb_external(request):
         
         logger.info(f"[BB_EXTERNAL] {len(options)}건 조회 성공: {line}, {process_id}")
         return JsonResponse({'options': options})
-        
+
     except Exception as e:
         logger.error(f"[BB_EXTERNAL] 조회 실패: {e}")
         return JsonResponse({'options': [], 'error': str(e)})
+
+
+@require_GET
+def form_options_layer_ids(request):
+    """line + process → unique sorted layerid list (eqptype='PMAINF')"""
+    line = request.GET.get('line', '')
+    process = request.GET.get('process', '')
+
+    if not line or not process:
+        return JsonResponse({'options': []})
+
+    model_map = {
+        'line1': StepLine1,
+        'line3': StepLine3,
+        'line4': StepLine4,
+        'line5': StepLine5,
+    }
+
+    model = model_map.get(line)
+    if not model:
+        return JsonResponse({'options': []})
+
+    try:
+        layerids = (
+            model.objects.filter(eqptype='PMAINF', processid=process)
+            .exclude(layerid='').exclude(layerid=None)
+            .values_list('layerid', flat=True)
+            .distinct()
+            .order_by('layerid')
+        )
+        return JsonResponse({'options': list(layerids)})
+    except Exception as e:
+        return JsonResponse({'options': []})
 
 
 class UserViewSet(viewsets.ModelViewSet):

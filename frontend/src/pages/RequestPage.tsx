@@ -110,7 +110,9 @@ const makeRow = (): FlowChartRow => ({
   id: genId(),
   location: '',
   product_name: '',
-  step: '',
+  process_id: '',
+  step_from: '',
+  step_to: '',
 });
 
 const makeJayerRow = (): JayerRow => ({
@@ -277,6 +279,8 @@ export default function RequestPage(): React.ReactElement {
   const [BbProductidOptions, setBbProductidOptions] = useState<Record<number, string[]>>({});
 
   const [FlowProductOptions, setFlowProductOptions] = useState<Record<number, string[]>>({});
+  const [FlowProcessIdOptions, setFlowProcessIdOptions] = useState<Record<number, string[]>>({});
+  const [FlowLayerIdOptions, setFlowLayerIdOptions] = useState<Record<number, string[]>>({});
 
   const [step, setStep] = useState(1);
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
@@ -492,6 +496,30 @@ export default function RequestPage(): React.ReactElement {
         .catch(() => setFlowProductOptions((prev) => ({ ...prev, [idx]: [] })));
     });
   }, [detail.flow_chart.map(e => e.location).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    detail.flow_chart.forEach((entry, idx) => {
+      if (!entry.location || !entry.product_name) {
+        setFlowProcessIdOptions((prev) => ({ ...prev, [idx]: [] }));
+        return;
+      }
+      formOptionsAPI.getProcessId(entry.location, entry.product_name)
+        .then((opts) => setFlowProcessIdOptions((prev) => ({ ...prev, [idx]: opts })))
+        .catch(() => setFlowProcessIdOptions((prev) => ({ ...prev, [idx]: [] })));
+    });
+  }, [detail.flow_chart.map(e => `${e.location}|${e.product_name}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    detail.flow_chart.forEach((entry, idx) => {
+      if (!entry.location || !entry.process_id) {
+        setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: [] }));
+        return;
+      }
+      formOptionsAPI.getLayerIds(entry.location, entry.process_id)
+        .then((opts) => setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: opts })))
+        .catch(() => setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: [] })));
+    });
+  }, [detail.flow_chart.map(e => `${e.location}|${e.process_id}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     detail.bb_entries.forEach((entry, idx) => {
@@ -1469,7 +1497,7 @@ export default function RequestPage(): React.ReactElement {
                 <label className="form-label">{t('request.flow_chart')}</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {detail.flow_chart.map((row, idx) => (
-                    <div key={row.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                    <div key={row.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                       <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                         <label className="form-label">{t('request.flow_line')}</label>
                         <select
@@ -1492,13 +1520,39 @@ export default function RequestPage(): React.ReactElement {
                         />
                       </div>
                       <div className="form-group flex-col" style={{ marginBottom: 0 }}>
-                        <label className="form-label">{t('request.flow_progress_layer')}</label>
-                        <input
+                        <label className="form-label">{t('request.flow_process_id')}</label>
+                        <select
                           className="form-control"
-                          value={row.step}
-                          onChange={(e) => handleFlowChange(row.id, 'step', e.target.value)}
-                          placeholder="ex) 1.0 ~ 15.0"
-                        />
+                          value={row.process_id}
+                          onChange={(e) => handleFlowChange(row.id, 'process_id', e.target.value)}
+                        >
+                          <option value="">{t('request.select_placeholder')}</option>
+                          {(FlowProcessIdOptions[idx] || []).map((o) => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                        <label className="form-label">{t('request.flow_progress_layer')}</label>
+                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                          <select
+                            className="form-control"
+                            value={row.step_from}
+                            onChange={(e) => handleFlowChange(row.id, 'step_from', e.target.value)}
+                            style={{ minWidth: '80px' }}
+                          >
+                            <option value="">{t('request.select_placeholder')}</option>
+                            {(FlowLayerIdOptions[idx] || []).map((o) => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                          <span style={{ whiteSpace: 'nowrap' }}>~</span>
+                          <select
+                            className="form-control"
+                            value={row.step_to}
+                            onChange={(e) => handleFlowChange(row.id, 'step_to', e.target.value)}
+                            style={{ minWidth: '80px' }}
+                          >
+                            <option value="">{t('request.select_placeholder')}</option>
+                            {(FlowLayerIdOptions[idx] || []).map((o) => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                        </div>
                       </div>
                       {detail.flow_chart.length > 1 && (
                         <button

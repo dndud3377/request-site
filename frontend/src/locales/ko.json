@@ -46,6 +46,7 @@
     "flow_chart": "흐름도",
     "flow_line": "위치",
     "flow_partid": "제품 이름",
+    "flow_process_id": "조리법",
     "flow_progress_layer": "Step",
     "flow_add_row": "+ 행 추가",
     "process_id": "조리법",

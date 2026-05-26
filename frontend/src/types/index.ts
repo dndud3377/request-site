@@ -135,8 +135,10 @@ export interface Stats {
 export interface FlowChartRow {
   id: string;
   location: string;
-  product: string;
-  step: string;
+  product_name: string;
+  process_id: string;
+  step_from: string;
+  step_to: string;
 }
 
 export interface JayerRow {

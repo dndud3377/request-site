@@ -46,6 +46,7 @@
     "flow_chart": "Flow Chart",
     "flow_line": "Location",
     "flow_partid": "Product Name",
+    "flow_process_id": "Cooking Method",
     "flow_progress_layer": "Step",
     "flow_add_row": "+ Add Row",
     "process_id": "Cooking Method",
