@@ -1323,7 +1323,7 @@ export default function RequestPage(): React.ReactElement {
         return;
       }
     }
-    if (step === 1 && !detail.customer_name.trim() && !detail.customer_requirement.trim()) {
+    if (step === 1 && !detail.customer_requirement.trim()) {
       const confirmed = window.confirm('Special Care (Shot map포함)요청건은 반드시 작성 필요한데 넘어가시겠습니까?');
       if (!confirmed) return;
     }
