@@ -414,6 +414,9 @@ export const formOptionsAPI = {
   getOvlLayer: (line: string, process: string): Promise<StepInfo[]> =>
     getStepOptions(`/form-options/ovl-layer/?line=${encodeURIComponent(line)}&process=${encodeURIComponent(process)}`),
 
+  getLayerIds: (line: string, process: string): Promise<string[]> =>
+    getOptions(`/form-options/layer-ids/?line=${encodeURIComponent(line)}&process=${encodeURIComponent(process)}`),
+
   getBbExternalData: (entry: { location: string; product: string; process_id: string }): Promise<StepOption[]> => {
     return get<{ options: StepOption[] }>(
       `/form-options/bb-external/?location=${encodeURIComponent(entry.location)}&product=${encodeURIComponent(entry.product)}&process_id=${encodeURIComponent(entry.process_id)}`

@@ -6,6 +6,7 @@ from .views import (
     health_check, upload_image, user_events,
     form_options_process, form_options_products, form_options_process_id,
     form_options_job_file_layer, form_options_ovl_layer, form_options_bb_external,
+    form_options_layer_ids,
 )
 from .auth_views import me_view, refresh_token_view, oidc_login_init, oidc_callback, oidc_logout
 from .auth_views_dev import dev_login_view
@@ -36,4 +37,5 @@ urlpatterns = [
     path('form-options/job-file-layer/', form_options_job_file_layer),
     path('form-options/ovl-layer/', form_options_ovl_layer),
     path('form-options/bb-external/', form_options_bb_external),
+    path('form-options/layer-ids/', form_options_layer_ids),
 ]

@@ -901,6 +901,12 @@ select.form-control option {
   color: var(--info);
 }
 
+.toast-warning {
+  background: rgba(217, 119, 6, 0.1);
+  border: 1px solid #d97706;
+  color: #d97706;
+}
+
 @keyframes slideIn {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }

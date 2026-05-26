@@ -10,10 +10,15 @@ function FlowChartTable({ rows }: { rows: FlowChartRow[] }) {
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
     <table className="table" style={{ fontSize: '0.8rem', marginBottom: 8 }}>
-      <thead><tr><th>{t('request.flow_line')}</th><th>{t('request.flow_partid')}</th><th>Step</th></tr></thead>
+      <thead><tr><th>{t('request.flow_line')}</th><th>{t('request.flow_partid')}</th><th>{t('request.flow_process_id')}</th><th>Step</th></tr></thead>
       <tbody>
         {rows.map((r) => (
-          <tr key={r.id}><td>{r.location}</td><td>{r.product}</td><td>{r.step}</td></tr>
+          <tr key={r.id}>
+            <td>{r.location}</td>
+            <td>{r.product_name}</td>
+            <td>{r.process_id}</td>
+            <td>{r.step_from && r.step_to ? `${r.step_from} ~ ${r.step_to}` : (r.step_from || r.step_to || '')}</td>
+          </tr>
         ))}
       </tbody>
     </table>
