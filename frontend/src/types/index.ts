@@ -193,6 +193,8 @@ export interface DetailFormState {
   line: string;
   process_selection: string;
   partid_selection: string;
+  customer_name: string;
+  customer_requirement: string;
 
   // 복사 선택 시
   other_purpose: string;

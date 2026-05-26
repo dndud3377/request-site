@@ -34,6 +34,8 @@
     "save_success": "Saved as draft.",
     "required": "This field is required.",
     "request_purpose": "Request Purpose",
+    "customer_name": "Customer / Vendor",
+    "customer_requirement": "Requirements",
     "line": "Line",
     "process_selection": "Combination Method",
     "partid_selection": "Product Name",

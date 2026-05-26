@@ -166,6 +166,8 @@ const INITIAL_DETAIL: DetailFormState = {
   line: '',
   process_selection: '',
   partid_selection: '',
+  customer_name: '',
+  customer_requirement: '',
   other_purpose: '',
   source_line: '',
   source_partid: '',
@@ -1321,6 +1323,10 @@ export default function RequestPage(): React.ReactElement {
         return;
       }
     }
+    if (step === 1 && !detail.customer_name.trim() && !detail.customer_requirement.trim()) {
+      const confirmed = window.confirm('Special Care (Shot map포함)요청건은 반드시 작성 필요한데 넘어가시겠습니까?');
+      if (!confirmed) return;
+    }
     setStep((s) => s + 1);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -1568,6 +1574,28 @@ export default function RequestPage(): React.ReactElement {
             error={errors.process_id}
             className="flex-col"
           />
+        </div>
+
+        {/* 고객 및 업체 */}
+        <div className="full-width flex-row">
+          <div className="form-group flex-col" style={{ flex: 1 }}>
+            <label className="form-label">{t('request.customer_name')}</label>
+            <input
+              className="form-control"
+              name="customer_name"
+              value={detail.customer_name}
+              onChange={handleDetailChange}
+            />
+          </div>
+          <div className="form-group flex-col" style={{ flex: 2 }}>
+            <label className="form-label">{t('request.customer_requirement')}</label>
+            <input
+              className="form-control"
+              name="customer_requirement"
+              value={detail.customer_requirement}
+              onChange={handleDetailChange}
+            />
+          </div>
         </div>
 
         {/* 8. 뼈찜 조합 영역 */}

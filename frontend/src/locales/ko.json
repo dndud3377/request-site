@@ -34,6 +34,8 @@
     "save_success": "임시저장되었습니다.",
     "required": "필수 입력 항목입니다.",
     "request_purpose": "요청 목적",
+    "customer_name": "고객/업체명",
+    "customer_requirement": "요구 사항",
     "line": "라인",
     "process_selection": "조합법",
     "partid_selection": "제품 이름",
