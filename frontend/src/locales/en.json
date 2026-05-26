@@ -103,7 +103,11 @@
     "yes": "Yes",
     "no_change": "No Change",
     "has_change": "Has Change",
-    "select_placeholder": "Select..."
+    "select_placeholder": "Select...",
+    "toast_job_auto_fill": "J-ayer auto-filled with {{count}} rows.",
+    "toast_job_auto_fill_error": "Failed to load J-ayer information.",
+    "toast_ovl_auto_fill": "O-ayer auto-filled with {{count}} rows.",
+    "toast_ovl_auto_fill_error": "Failed to load O-ayer information."
   },
   "approval": {
     "title": "Approval Status",
