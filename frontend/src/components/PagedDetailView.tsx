@@ -381,7 +381,7 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   const isJ = role === 'TE_J' || role === 'MASTER' || isPL;
   const isO = role === 'TE_O' || role === 'MASTER' || isPL;
 
-  const showJayer = isR || isJ || isO;
+  const showJayer = isJ || isO;
   const showOayer = isO;
   const showBb = isJ || isO;
   const showFlowChart = isJ || isO;
@@ -657,7 +657,7 @@ type Page = { label: string; content: React.ReactNode };
     },
   ];
 
-  const showMap = isR || isJ || isO;
+  const showMap = isR || isO;
   if (showMap) {
     pages.push({
       label: t('request.section_map'),
@@ -1106,27 +1106,34 @@ type Page = { label: string; content: React.ReactNode };
   const safeIdx = Math.min(pageIdx, pages.length - 1);
   const currentPage = pages[safeIdx];
 
-  const navBtnStyle = (disabled: boolean): React.CSSProperties => ({
-    background: disabled ? 'var(--bg-secondary)' : 'var(--accent)',
-    border: 'none',
-    borderRadius: 'var(--radius-sm)',
-    padding: '6px 16px',
-    cursor: disabled ? 'default' : 'pointer',
-    color: disabled ? 'var(--text-muted)' : '#fff',
-    fontSize: '1rem',
-    fontWeight: 600,
-    transition: 'opacity 0.15s',
-  });
-
   return (
     <div>
       {pages.length > 1 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-lg)', padding: '10px 16px' }}>
-          <button style={navBtnStyle(safeIdx === 0)} disabled={safeIdx === 0} onClick={() => setPageIdx(safeIdx - 1)}>◀</button>
-          <span style={{ flex: 1, textAlign: 'center', fontWeight: 700, color: 'var(--accent)', fontSize: '1rem' }}>
-            {currentPage.label} ({safeIdx + 1} / {pages.length})
-          </span>
-          <button style={navBtnStyle(safeIdx === pages.length - 1)} disabled={safeIdx === pages.length - 1} onClick={() => setPageIdx(safeIdx + 1)}>▶</button>
+        <div style={{ display: 'flex', borderBottom: '2px solid var(--border)', marginBottom: 20, gap: 0 }}>
+          {pages.map((page, idx) => {
+            const isActive = idx === safeIdx;
+            return (
+              <button
+                key={idx}
+                onClick={() => setPageIdx(idx)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                  marginBottom: -2,
+                  padding: '8px 16px',
+                  cursor: 'pointer',
+                  fontWeight: isActive ? 700 : 400,
+                  color: isActive ? 'var(--accent)' : 'var(--text-muted)',
+                  fontSize: '0.9rem',
+                  whiteSpace: 'nowrap',
+                  transition: 'color 0.15s',
+                }}
+              >
+                {page.label}
+              </button>
+            );
+          })}
         </div>
       )}
       {currentPage.content}
