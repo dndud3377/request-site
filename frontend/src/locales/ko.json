@@ -108,7 +108,10 @@
     "toast_job_no_data": "J-ayer STEP 정보가 없습니다.",
     "toast_ovl_auto_fill": "O-ayer {{count}}행이 자동으로 채워졌습니다.",
     "toast_ovl_auto_fill_error": "O-ayer 정보를 불러오는데 실패했습니다.",
-    "toast_ovl_no_data": "O-ayer STEP 정보가 없습니다."
+    "toast_ovl_no_data": "O-ayer STEP 정보가 없습니다.",
+    "toast_bb_auto_fill": "BB 데이터 {{count}}행이 조회되었습니다.",
+    "toast_bb_no_data": "BB STEP 정보가 없습니다.",
+    "toast_bb_error": "BB 정보를 불러오는데 실패했습니다."
   },
   "approval": {
     "title": "결재 현황",

@@ -905,6 +905,21 @@ export default function RequestPage(): React.ReactElement {
       ...prev,
       bb_entries: prev.bb_entries.map((e, i) => (i === idx ? { ...e, [field]: value } : e)),
     }));
+
+    if (field === 'process_id' && value) {
+      const updatedEntry = { ...detail.bb_entries[idx], process_id: value };
+      formOptionsAPI.getBbExternalData(updatedEntry)
+        .then((result) => {
+          if (result.length > 0) {
+            addToast(t('request.toast_bb_auto_fill', { count: result.length }), 'info');
+          } else {
+            addToast(t('request.toast_bb_no_data'), 'warning');
+          }
+        })
+        .catch(() => {
+          addToast(t('request.toast_bb_error'), 'error');
+        });
+    }
   };
 
   const handleBbEntryAdd = () => {

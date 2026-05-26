@@ -109,7 +109,10 @@
     "toast_job_no_data": "No J-ayer STEP information found.",
     "toast_ovl_auto_fill": "O-ayer auto-filled with {{count}} rows.",
     "toast_ovl_auto_fill_error": "Failed to load O-ayer information.",
-    "toast_ovl_no_data": "No O-ayer STEP information found."
+    "toast_ovl_no_data": "No O-ayer STEP information found.",
+    "toast_bb_auto_fill": "BB data loaded with {{count}} rows.",
+    "toast_bb_no_data": "No BB STEP information found.",
+    "toast_bb_error": "Failed to load BB information."
   },
   "approval": {
     "title": "Approval Status",
