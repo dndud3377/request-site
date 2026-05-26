@@ -592,6 +592,16 @@ type Page = { label: string; content: React.ReactNode };
                 <Chip key={item.label} label={item.label} value={item.value} changed={item.changed} fieldKey={item.fieldKey} />
               ))}
             </div>
+            {(detail.customer_name || detail.customer_requirement) && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                {detail.customer_name && (
+                  <Chip label={t('request.customer_name')} value={detail.customer_name} changed={changedFields.has('customer_name')} fieldKey="customer_name" />
+                )}
+                {detail.customer_requirement && (
+                  <Chip label={t('request.customer_requirement')} value={detail.customer_requirement} style={chipWide} changed={changedFields.has('customer_requirement')} fieldKey="customer_requirement" />
+                )}
+              </div>
+            )}
           </div>
 
           <div style={cardStyle}>
