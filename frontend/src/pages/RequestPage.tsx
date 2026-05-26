@@ -760,6 +760,8 @@ export default function RequestPage(): React.ReactElement {
         });
         setJayerRows(newJayerRows);
         addToast(t('request.toast_job_auto_fill', { count: jobFileData.length }), 'info');
+      } else {
+        addToast(t('request.toast_job_no_data'), 'warning');
       }
     } catch (e) {
       console.error('JOB FILE layer 정보 조회 실패:', e);
@@ -785,6 +787,8 @@ export default function RequestPage(): React.ReactElement {
         });
         setOayerRows(newOayerRows);
         addToast(t('request.toast_ovl_auto_fill', { count: ovlData.length }), 'info');
+      } else {
+        addToast(t('request.toast_ovl_no_data'), 'warning');
       }
     } catch (e) {
       console.error('OVL layer 정보 조회 실패:', e);

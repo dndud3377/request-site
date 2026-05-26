@@ -106,8 +106,10 @@
     "select_placeholder": "Select...",
     "toast_job_auto_fill": "J-ayer auto-filled with {{count}} rows.",
     "toast_job_auto_fill_error": "Failed to load J-ayer information.",
+    "toast_job_no_data": "No J-ayer STEP information found.",
     "toast_ovl_auto_fill": "O-ayer auto-filled with {{count}} rows.",
-    "toast_ovl_auto_fill_error": "Failed to load O-ayer information."
+    "toast_ovl_auto_fill_error": "Failed to load O-ayer information.",
+    "toast_ovl_no_data": "No O-ayer STEP information found."
   },
   "approval": {
     "title": "Approval Status",

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 
-type ToastType = 'success' | 'error' | 'info';
+type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 interface Toast {
   id: number;
@@ -20,6 +20,7 @@ const ICONS: Record<ToastType, string> = {
   success: '✅',
   error: '❌',
   info: 'ℹ️',
+  warning: '⚠️',
 };
 
 export function ToastProvider({ children }: ToastProviderProps): React.ReactElement {
