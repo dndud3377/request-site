@@ -516,7 +516,10 @@ export default function RequestPage(): React.ReactElement {
         return;
       }
       formOptionsAPI.getLayerIds(entry.location, entry.process_id)
-        .then((opts) => setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: opts })))
+        .then((opts) => {
+          const sorted = [...opts].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+          setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: sorted }));
+        })
         .catch(() => setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: [] })));
     });
   }, [detail.flow_chart.map(e => `${e.location}|${e.process_id}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
