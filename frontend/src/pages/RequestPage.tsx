@@ -24,7 +24,7 @@ import {
 // ===== Option Constants =====
 const OPTION_REQUEST_PURPOSE = ['신규', '차용', '변경'] as const;
 const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
-const OPTION_OTHER_PURPOSE = ['목적A', '목적B', '목적C'] as const;
+const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay, ADI CD 추가/삭제/변경'] as const;
 const OPTION_SOURCE_LINE = ['위치A', '위치B', '위치C'] as const;
 
 
