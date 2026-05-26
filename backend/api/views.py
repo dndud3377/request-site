@@ -19,7 +19,7 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
-    StepLine1, StepLine3, StepLine4, StepLine5, VocHistory,
+    PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory,
 )
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer,
@@ -442,12 +442,12 @@ def form_options_job_file_layer(request):
     
     # {{request.line}} 별 모델 매핑
     model_map = {
-        'line1': StepLine1,
-        'line3': StepLine3,
-        'line4': StepLine4,
-        'line5': StepLine5,
+        'line1': PhotoStepS1,
+        'line3': PhotoStepS3,
+        'line4': PhotoStepS4,
+        'line5': PhotoStepS5,
     }
-    
+
     model = model_map.get(line)
     if not model:
         logger.warning(f"[JOB_FILE_LAYER] 알 수 없는 {{request.line}}: {line}")
@@ -496,10 +496,10 @@ def form_options_ovl_layer(request):
     
     # {{request.line}} 별 모델 매핑
     model_map = {
-        'line1': StepLine1,
-        'line3': StepLine3,
-        'line4': StepLine4,
-        'line5': StepLine5,
+        'line1': PhotoStepS1,
+        'line3': PhotoStepS3,
+        'line4': PhotoStepS4,
+        'line5': PhotoStepS5,
     }
     
     model = model_map.get(line)
@@ -618,10 +618,10 @@ def form_options_bb_external(request):
     
     # {{request.line}} 별 모델 매핑
     model_map = {
-        'line1': StepLine1,
-        'line3': StepLine3,
-        'line4': StepLine4,
-        'line5': StepLine5,
+        'line1': PhotoStepS1,
+        'line3': PhotoStepS3,
+        'line4': PhotoStepS4,
+        'line5': PhotoStepS5,
     }
     
     model = model_map.get(line)
@@ -664,10 +664,10 @@ def form_options_layer_ids(request):
         return JsonResponse({'options': []})
 
     model_map = {
-        'line1': StepLine1,
-        'line3': StepLine3,
-        'line4': StepLine4,
-        'line5': StepLine5,
+        'line1': PhotoStepS1,
+        'line3': PhotoStepS3,
+        'line4': PhotoStepS4,
+        'line5': PhotoStepS5,
     }
 
     model = model_map.get(line)
