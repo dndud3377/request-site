@@ -568,8 +568,8 @@ export default function RequestPage(): React.ReactElement {
 
   // Derived booleans for Step 1 conditional rendering
   const isCopy = detail.request_purpose === '차용';
-  const isMapCopy = detail.map_type === '차용';
-  const isMapRegistered = detail.map_type === '기등록';
+  const isMapCopy = detail.map_type === 'CLONE';
+  const isMapRegistered = detail.map_type === 'EXISTING';
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === '변경 있음';
   const isProdc = detail.only_prodc === 'Yes';
@@ -1279,7 +1279,7 @@ export default function RequestPage(): React.ReactElement {
 
   // ===== API =====
   const buildEnrichedForm = (note?: string, shouldAddHistory = false): CreateDocumentInput => {
-    const title = `${detail.line}(${detail.request_purpose})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서`;
+    const title = `${detail.line}(${detail.request_purpose})_MAP(${detail.map_type})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서`;
 
     // 반려된 문서 재상신 시 이전 스냅샷을 history 에 누적
     let history: HistorySnapshot[] = [];
@@ -1726,8 +1726,8 @@ export default function RequestPage(): React.ReactElement {
             {t('request.map_type')} <span className="required">*</span>
           </label>
           <div style={{ display: 'flex', gap: '8px', marginTop: 4 }}>
-            {(['신규', '차용', '기등록'] as const).map((val) => {
-              const labelKey = val === '신규' ? 'map_type_new' : val === '차용' ? 'map_type_borrow' : 'map_type_registered';
+            {(['NEW', 'CLONE', 'EXISTING'] as const).map((val) => {
+              const labelKey = val === 'NEW' ? 'map_type_new' : val === 'CLONE' ? 'map_type_borrow' : 'map_type_registered';
               return (
                 <button
                   key={val}

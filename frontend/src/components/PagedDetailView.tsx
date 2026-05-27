@@ -722,10 +722,10 @@ type Page = { label: string; content: React.ReactNode };
           {detail.map_type && (
             <div style={rowStyle}>
               <Chip label={t('request.map_type')} value={detail.map_type} changed={changedFields.has('map_type')} fieldKey="map_type" />
-              {detail.map_type === '차용' && detail.source_line && (
+              {detail.map_type === 'CLONE' && detail.source_line && (
                 <Chip label={t('request.source_line')} value={detail.source_line} changed={changedFields.has('source_line')} fieldKey="source_line" />
               )}
-              {detail.map_type === '차용' && detail.source_partid && (
+              {detail.map_type === 'CLONE' && detail.source_partid && (
                 <Chip label={t('request.source_partid_selection')} value={detail.source_partid} changed={changedFields.has('source_partid')} fieldKey="source_partid" />
               )}
             </div>
