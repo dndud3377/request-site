@@ -3,6 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { RequestDocument, UserRole, DetailFormState, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot } from '../types';
 import Modal from './Modal';
 
+const ST_CELL_COLOR: Record<string, string> = {
+  'O (D)':   '#D4F5E2',
+  'O (혼용)': '#FFE0EC',
+  'X':        '#f3f4f6',
+};
+
 // ===== Table Components =====
 
 function FlowChartTable({ rows }: { rows: FlowChartRow[] }) {
@@ -143,7 +149,7 @@ function JayerTable({
                       )}
                     </td>
                   )}
-                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td>
+                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td style={{ backgroundColor: ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td>
                 </tr>
               );
             })}
@@ -206,7 +212,7 @@ function OayerTable({
                       )}
                     </td>
                   )}
-                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td>{r.st}</td><td>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td>
+                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td style={{ backgroundColor: ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td>
                 </tr>
               );
             })}
