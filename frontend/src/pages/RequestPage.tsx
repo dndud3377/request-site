@@ -1138,7 +1138,7 @@ export default function RequestPage(): React.ReactElement {
 
       const jayerRowsInRange = jayerRows.filter(row => {
         const layer = parseFloat(row.layerid);
-        return !isNaN(layer) && layer >= from && layer <= to;
+        return !row.disabled && !isNaN(layer) && layer >= from && layer <= to;
       });
 
       const entryIdx = detail.bb_entries.findIndex(
