@@ -22,7 +22,7 @@ import {
 } from '../types';
 
 // ===== Option Constants =====
-const OPTION_REQUEST_PURPOSE = ['신규', '차용', '변경'] as const;
+const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'MAP 변경'] as const;
 const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
 const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay, ADI CD 추가/삭제/변경'] as const;
 const OPTION_SOURCE_LINE = ['위치A', '위치B', '위치C'] as const;
@@ -622,6 +622,30 @@ export default function RequestPage(): React.ReactElement {
     isLoadingEditRef.current = false; // 사용자 상호작용 시 로드 가드 해제
     setDetail((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
+  };
+
+  const handleRequestPurposeSelect = (val: string) => {
+    const isSwitchingFromCopy = detail.request_purpose === '차용' && val !== '차용';
+    if (isSwitchingFromCopy) {
+      const hasSubFieldData =
+        detail.other_purpose.trim() !== '' ||
+        detail.change_purpose_note.trim() !== '' ||
+        detail.flow_chart.some((r) => r.location || r.product_name || r.process_id || r.step_from || r.step_to);
+      if (hasSubFieldData) {
+        const confirmed = window.confirm('차용에 적으신 내용이 초기화 됩니다. 변경하시겠습니까?');
+        if (!confirmed) return;
+      }
+      setDetail((prev) => ({
+        ...prev,
+        request_purpose: val,
+        other_purpose: '',
+        change_purpose_note: '',
+        flow_chart: [makeRow()],
+      }));
+      if (errors.request_purpose) setErrors((prev) => ({ ...prev, request_purpose: '' }));
+      return;
+    }
+    handleDetailSet('request_purpose', val);
   };
 
   const handleMapTypeSelect = (val: string) => {
@@ -1455,17 +1479,18 @@ export default function RequestPage(): React.ReactElement {
           <label className="form-label">
             {t('request.request_purpose')} <span className="required">*</span>
           </label>
-          <select
-            className={`form-control ${errors.request_purpose ? 'error' : ''}`}
-            name="request_purpose"
-            value={detail.request_purpose}
-            onChange={handleDetailChange}
-          >
-            <option value="">{t('request.select_placeholder')}</option>
-            {OPTION_REQUEST_PURPOSE.map((v) => (
-              <option key={v} value={v}>{v}</option>
+          <div style={{ display: 'flex', gap: '8px', marginTop: 4 }}>
+            {OPTION_REQUEST_PURPOSE.map((val) => (
+              <button
+                key={val}
+                type="button"
+                className={`map-type-btn${detail.request_purpose === val ? ' active' : ''}`}
+                onClick={() => handleRequestPurposeSelect(val)}
+              >
+                {val}
+              </button>
             ))}
-          </select>
+          </div>
           {errors.request_purpose && <span className="form-error">{errors.request_purpose}</span>}
         </div>
 
@@ -1473,16 +1498,20 @@ export default function RequestPage(): React.ReactElement {
         {isCopy && (
           <div className="form-group full-width">
             <div className="conditional-group">
-              <div className="flex-row">
-                <FormSelect
-                  label={t('request.other_purpose')}
-                  name="other_purpose"
-                  value={detail.other_purpose}
-                  options={OPTION_OTHER_PURPOSE}
-                  onChange={handleDetailChange}
-                  placeholder={t('request.select_placeholder')}
-                  className="flex-col"
-                />
+              <div className="flex-col">
+                <label className="form-label">{t('request.other_purpose')}</label>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: 4 }}>
+                  {OPTION_OTHER_PURPOSE.map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      className={`map-type-btn${detail.other_purpose === val ? ' active' : ''}`}
+                      onClick={() => handleDetailSet('other_purpose', detail.other_purpose === val ? '' : val)}
+                    >
+                      {val}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* 흐름도 */}
