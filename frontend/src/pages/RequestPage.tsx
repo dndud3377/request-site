@@ -1279,7 +1279,9 @@ export default function RequestPage(): React.ReactElement {
 
   // ===== API =====
   const buildEnrichedForm = (note?: string, shouldAddHistory = false): CreateDocumentInput => {
-    const title = `${detail.line}(${detail.request_purpose})_MAP(${detail.map_type})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서`;
+    const now = new Date();
+    const dateStr = `${String(now.getFullYear()).slice(2)}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+    const title = `${detail.line}(${detail.request_purpose})_MAP(${detail.map_type})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서_${dateStr}`;
 
     // 반려된 문서 재상신 시 이전 스냅샷을 history 에 누적
     let history: HistorySnapshot[] = [];
