@@ -1046,7 +1046,7 @@ export default function RequestPage(): React.ReactElement {
 
   const handleApplyMappings = () => {
     const mappedRows: BbTableRow[] = jayerRows
-      .filter((jr) => stagedMappings[jr.id])
+      .filter((jr) => !jr.disabled && stagedMappings[jr.id])
       .map((jr) => {
         const ext = stagedMappings[jr.id];
         const newRow = makeBbRow();
@@ -1075,7 +1075,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleOpenAutoFillPanel = () => {
-    const layerIds = [...new Set(jayerRows.map(r => r.layerid).filter(Boolean))]
+    const layerIds = [...new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean))]
       .sort((a, b) => parseFloat(a) - parseFloat(b));
 
     const productIds = detail.bb_entries.map(e => e.product).filter(Boolean);
@@ -1290,7 +1290,7 @@ export default function RequestPage(): React.ReactElement {
 
     if (currentStep === 5) {
       const unmappedJayerRows = jayerRows.filter(
-        (row) => row.process_id && !mappedJayerRowIds.has(row.id)
+        (row) => !row.disabled && row.process_id && !mappedJayerRowIds.has(row.id)
       );
       if (unmappedJayerRows.length > 0) {
         newErrors['jayer_mapping'] = '모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.';
@@ -2481,7 +2481,7 @@ export default function RequestPage(): React.ReactElement {
                   style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
                 >
                   <option value="">시작 Layer</option>
-                  {[...new Set(jayerRows.map(r => r.layerid).filter(Boolean))]
+                  {[...new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean))]
                     .sort((a, b) => parseFloat(a) - parseFloat(b))
                     .map(layerid => (
                       <option key={layerid} value={layerid}>{layerid}</option>
@@ -2494,7 +2494,7 @@ export default function RequestPage(): React.ReactElement {
                   style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
                 >
                   <option value="">종료 Layer</option>
-                  {[...new Set(jayerRows.map(r => r.layerid).filter(Boolean))]
+                  {[...new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean))]
                     .sort((a, b) => parseFloat(a) - parseFloat(b))
                     .map(layerid => (
                       <option key={layerid} value={layerid}>{layerid}</option>
