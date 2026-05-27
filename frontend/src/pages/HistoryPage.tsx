@@ -2,8 +2,9 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { documentsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
-import Modal from '../components/Modal';
+import Modal, { ConfirmModal } from '../components/Modal';
 import PagedDetailView from '../components/PagedDetailView';
+import { useAuth } from '../contexts/AuthContext';
 import { RequestDocument } from '../types';
 
 const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
@@ -19,12 +20,15 @@ const getApprovalCompletedDate = (doc: RequestDocument): string => {
 
 export default function HistoryPage(): React.ReactElement {
   const { t } = useTranslation();
+  const { currentUser } = useAuth();
+  const isMaster = currentUser.role === 'MASTER';
   const [docs, setDocs] = useState<RequestDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<RequestDocument | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pageIdx, setPageIdx] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<RequestDocument | null>(null);
 
   const fetchDocs = useCallback(() => {
     setLoading(true);
@@ -48,6 +52,16 @@ export default function HistoryPage(): React.ReactElement {
     setSelected(doc);
     setPageIdx(0);
     setModalOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await documentsAPI.delete(deleteTarget.id);
+      fetchDocs();
+    } catch {
+      // noop
+    }
   };
 
   return (
@@ -89,12 +103,13 @@ export default function HistoryPage(): React.ReactElement {
                 <th>{t('history.col_status')}</th>
                 <th>{t('history.col_submitted')}</th>
                 <th>{t('history.col_approved')}</th>
+                {isMaster && <th></th>}
               </tr>
             </thead>
             <tbody>
-              {docs.map((doc) => (
+              {docs.map((doc, index) => (
                 <tr key={doc.id}>
-                  <td style={{ color: 'var(--text-muted)' }}>#{doc.id}</td>
+                  <td style={{ color: 'var(--text-muted)' }}>{index + 1}</td>
                   <td>
                     <span
                       style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'pointer' }}
@@ -115,6 +130,16 @@ export default function HistoryPage(): React.ReactElement {
                   </td>
                   <td>{formatDate(doc.submitted_at)}</td>
                   <td>{getApprovalCompletedDate(doc)}</td>
+                  {isMaster && (
+                    <td>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={() => setDeleteTarget(doc)}
+                      >
+                        삭제
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -143,6 +168,16 @@ export default function HistoryPage(): React.ReactElement {
           />
         </Modal>
       )}
+
+      <ConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        title="문서 삭제"
+        message={`"${deleteTarget?.title}" 문서를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`}
+        confirmLabel="삭제"
+        danger
+      />
     </div>
   );
 }

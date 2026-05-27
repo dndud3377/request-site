@@ -150,7 +150,7 @@ function JayerTable({
                       )}
                     </td>
                   )}
-                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td style={{ backgroundColor: ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td>
+                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td style={{ backgroundColor: r.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }}>{r.pp}</td><td style={{ backgroundColor: ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td>
                 </tr>
               );
             })}
@@ -213,7 +213,7 @@ function OayerTable({
                       )}
                     </td>
                   )}
-                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td style={{ backgroundColor: ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td>
+                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td style={{ backgroundColor: r.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }}>{r.pp}</td><td style={{ backgroundColor: ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td>
                 </tr>
               );
             })}
@@ -722,10 +722,10 @@ type Page = { label: string; content: React.ReactNode };
           {detail.map_type && (
             <div style={rowStyle}>
               <Chip label={t('request.map_type')} value={detail.map_type} changed={changedFields.has('map_type')} fieldKey="map_type" />
-              {detail.map_type === '차용' && detail.source_line && (
+              {detail.map_type === 'CLONE' && detail.source_line && (
                 <Chip label={t('request.source_line')} value={detail.source_line} changed={changedFields.has('source_line')} fieldKey="source_line" />
               )}
-              {detail.map_type === '차용' && detail.source_partid && (
+              {detail.map_type === 'CLONE' && detail.source_partid && (
                 <Chip label={t('request.source_partid_selection')} value={detail.source_partid} changed={changedFields.has('source_partid')} fieldKey="source_partid" />
               )}
             </div>
@@ -925,7 +925,7 @@ type Page = { label: string; content: React.ReactNode };
             <span>{t('request.job_li')}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {jayer.length}건</span>
-              <button onClick={exportJayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📥 JOB</button>
+              <button onClick={exportJayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
             </div>
           </div>
           <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} />
@@ -942,7 +942,7 @@ type Page = { label: string; content: React.ReactNode };
             <span>{t('request.ovl_li')}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {oayer.length}건</span>
-              <button onClick={exportOayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📥 OVL</button>
+              <button onClick={exportOayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
             </div>
           </div>
           <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} />
