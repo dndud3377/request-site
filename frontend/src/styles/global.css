@@ -2338,6 +2338,7 @@ select.form-control option {
 .bb-split-panel-scroll {
   overflow-y: auto;
   flex: 1;
+  max-height: 350px;
 }
 
 .bb-split-panel-left table {

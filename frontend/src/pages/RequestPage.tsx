@@ -305,6 +305,8 @@ export default function RequestPage(): React.ReactElement {
   const [bbSearchQueries, setBbSearchQueries] = useState<string[]>([]);  // 탭별 검색어
   const [jayerChecked, setJayerChecked] = useState<Set<string>>(new Set());
   const [oayerChecked, setOayerChecked] = useState<Set<string>>(new Set());
+  const jayerDragInfo = useRef<{ startId: string; mode: 'check' | 'uncheck' } | null>(null);
+  const oayerDragInfo = useRef<{ startId: string; mode: 'check' | 'uncheck' } | null>(null);
   const [bbChecked, setBbChecked] = useState<Set<string>>(new Set());
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
@@ -536,6 +538,15 @@ export default function RequestPage(): React.ReactElement {
       .catch(() => setBbExternalData([]))
       .finally(() => setBbExternalLoading(false));
   }, [detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const handleDragEnd = () => {
+      jayerDragInfo.current = null;
+      oayerDragInfo.current = null;
+    };
+    document.addEventListener('mouseup', handleDragEnd);
+    return () => document.removeEventListener('mouseup', handleDragEnd);
+  }, []);
 
   // 편집 모드: 기존 문서 데이터 로드
   useEffect(() => {
@@ -886,6 +897,31 @@ export default function RequestPage(): React.ReactElement {
     });
   };
 
+  const handleJayerDragStart = (id: string) => {
+    const mode = jayerChecked.has(id) ? 'uncheck' : 'check';
+    jayerDragInfo.current = { startId: id, mode };
+    setJayerChecked((prev) => {
+      const next = new Set(prev);
+      mode === 'check' ? next.add(id) : next.delete(id);
+      return next;
+    });
+  };
+
+  const handleJayerDragEnter = (id: string, renderedIds: string[]) => {
+    if (!jayerDragInfo.current) return;
+    const { startId, mode } = jayerDragInfo.current;
+    const startIdx = renderedIds.indexOf(startId);
+    const endIdx = renderedIds.indexOf(id);
+    if (startIdx === -1 || endIdx === -1) return;
+    const [from, to] = startIdx <= endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
+    const rangeIds = new Set(renderedIds.slice(from, to + 1));
+    setJayerChecked((prev) => {
+      const next = new Set(prev);
+      rangeIds.forEach((rid) => (mode === 'check' ? next.add(rid) : next.delete(rid)));
+      return next;
+    });
+  };
+
   const handleJayerCheckAll = () => {
     const activeIds = jayerRows.filter((r) => !r.disabled).map((r) => r.id);
     const allActiveChecked = activeIds.every((id) => jayerChecked.has(id));
@@ -931,6 +967,31 @@ export default function RequestPage(): React.ReactElement {
     setOayerChecked((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const handleOayerDragStart = (id: string) => {
+    const mode = oayerChecked.has(id) ? 'uncheck' : 'check';
+    oayerDragInfo.current = { startId: id, mode };
+    setOayerChecked((prev) => {
+      const next = new Set(prev);
+      mode === 'check' ? next.add(id) : next.delete(id);
+      return next;
+    });
+  };
+
+  const handleOayerDragEnter = (id: string, renderedIds: string[]) => {
+    if (!oayerDragInfo.current) return;
+    const { startId, mode } = oayerDragInfo.current;
+    const startIdx = renderedIds.indexOf(startId);
+    const endIdx = renderedIds.indexOf(id);
+    if (startIdx === -1 || endIdx === -1) return;
+    const [from, to] = startIdx <= endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
+    const rangeIds = new Set(renderedIds.slice(from, to + 1));
+    setOayerChecked((prev) => {
+      const next = new Set(prev);
+      rangeIds.forEach((rid) => (mode === 'check' ? next.add(rid) : next.delete(rid)));
       return next;
     });
   };
@@ -2168,7 +2229,7 @@ export default function RequestPage(): React.ReactElement {
         </div>
       </div>
       <div className="wizard-table-wrapper">
-        <table className="wizard-table">
+        <table className="wizard-table" style={{ userSelect: jayerDragInfo.current ? 'none' : undefined }}>
           <colgroup>
             <col />
             <col />
@@ -2207,18 +2268,25 @@ export default function RequestPage(): React.ReactElement {
             </tr>
           </thead>
           <tbody>
-            {[
-              ...jayerRows.filter(r => !r.disabled).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-              ...jayerRows.filter(r => r.disabled).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-            ].map((row, idx, arr) => {
-              const isFirstDisabled = row.disabled && (idx === 0 || !arr[idx - 1].disabled);
+            {(() => {
+              const renderedJayerRows = [
+                ...jayerRows.filter(r => !r.disabled).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+                ...jayerRows.filter(r => r.disabled).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+              ];
+              const renderedJayerIds = renderedJayerRows.map(r => r.id);
+              return renderedJayerRows.map((row, idx) => {
+              const isFirstDisabled = row.disabled && (idx === 0 || !renderedJayerRows[idx - 1].disabled);
               return (
                 <>
                   {isFirstDisabled && (
                     <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={13} /></tr>
                   )}
-                  <tr key={row.id} className={[row.disabled ? 'row-disabled' : '', jayerChecked.has(row.id) ? 'row-checked' : '', mappedJayerRowIds.has(row.id) ? 'row-mapped' : ''].filter(Boolean).join(' ')}>
-                    <td style={{ textAlign: 'center' }}>
+                  <tr
+                    key={row.id}
+                    className={[row.disabled ? 'row-disabled' : '', jayerChecked.has(row.id) ? 'row-checked' : '', mappedJayerRowIds.has(row.id) ? 'row-mapped' : ''].filter(Boolean).join(' ')}
+                    onMouseEnter={() => handleJayerDragEnter(row.id, renderedJayerIds)}
+                  >
+                    <td style={{ textAlign: 'center' }} onMouseDown={() => handleJayerDragStart(row.id)}>
                       <input type="checkbox" checked={jayerChecked.has(row.id)} onChange={() => handleJayerCheckToggle(row.id)} />
                     </td>
                     <td><input value={row.updated ?? ''} readOnly style={{ background: '#f5f5f5', color: '#666' }} /></td>
@@ -2251,7 +2319,8 @@ export default function RequestPage(): React.ReactElement {
                   </tr>
                 </>
               );
-            })}
+              });
+            })()}
           </tbody>
         </table>
       </div>
@@ -2306,7 +2375,7 @@ export default function RequestPage(): React.ReactElement {
         </div>
       </div>
       <div className="wizard-table-wrapper">
-        <table className="wizard-table">
+        <table className="wizard-table" style={{ userSelect: oayerDragInfo.current ? 'none' : undefined }}>
           <colgroup>
             <col />
             <col />
@@ -2343,18 +2412,25 @@ export default function RequestPage(): React.ReactElement {
             </tr>
           </thead>
           <tbody>
-            {[
-              ...oayerRows.filter(r => !r.disabled).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-              ...oayerRows.filter(r => r.disabled).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-            ].map((row, idx, arr) => {
-              const isFirstDisabled = row.disabled && (idx === 0 || !arr[idx - 1].disabled);
+            {(() => {
+              const renderedOayerRows = [
+                ...oayerRows.filter(r => !r.disabled).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+                ...oayerRows.filter(r => r.disabled).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+              ];
+              const renderedOayerIds = renderedOayerRows.map(r => r.id);
+              return renderedOayerRows.map((row, idx) => {
+              const isFirstDisabled = row.disabled && (idx === 0 || !renderedOayerRows[idx - 1].disabled);
               return (
                 <>
                   {isFirstDisabled && (
                     <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={10} /></tr>
                   )}
-                  <tr key={row.id} className={[row.disabled ? 'row-disabled' : '', oayerChecked.has(row.id) ? 'row-checked' : ''].filter(Boolean).join(' ')}>
-                    <td style={{ textAlign: 'center' }}>
+                  <tr
+                    key={row.id}
+                    className={[row.disabled ? 'row-disabled' : '', oayerChecked.has(row.id) ? 'row-checked' : ''].filter(Boolean).join(' ')}
+                    onMouseEnter={() => handleOayerDragEnter(row.id, renderedOayerIds)}
+                  >
+                    <td style={{ textAlign: 'center' }} onMouseDown={() => handleOayerDragStart(row.id)}>
                       <input type="checkbox" checked={oayerChecked.has(row.id)} onChange={() => handleOayerCheckToggle(row.id)} />
                     </td>
                     <td><input value={row.updated ?? ''} readOnly style={{ background: '#f5f5f5', color: '#666' }} /></td>
@@ -2386,7 +2462,8 @@ export default function RequestPage(): React.ReactElement {
                   </tr>
                 </>
               );
-            })}
+              });
+            })()}
           </tbody>
         </table>
       </div>
@@ -3334,6 +3411,7 @@ export default function RequestPage(): React.ReactElement {
         onClose={() => setConfirmOpen(false)}
         title={t('request.submit')}
         size="md"
+        style={{ maxWidth: '520px' }}
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setConfirmOpen(false)}>
