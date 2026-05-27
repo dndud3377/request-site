@@ -567,7 +567,7 @@ export default function RequestPage(): React.ReactElement {
   }, [editDocId]);
 
   // Derived booleans for Step 1 conditional rendering
-  const isCopy = detail.request_purpose === '차용';
+  const isCopy = detail.request_purpose === '차용' || detail.request_purpose === '신규+차용';
   const isMapCopy = detail.map_type === 'CLONE';
   const isMapRegistered = detail.map_type === 'EXISTING';
   const hasMapChange = detail.map_change === '변경 있음';
@@ -625,7 +625,8 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleRequestPurposeSelect = (val: string) => {
-    const isSwitchingFromCopy = detail.request_purpose === '차용' && val !== '차용';
+    const COPY_PURPOSES = ['차용', '신규+차용'];
+    const isSwitchingFromCopy = COPY_PURPOSES.includes(detail.request_purpose) && !COPY_PURPOSES.includes(val);
     if (isSwitchingFromCopy) {
       const hasSubFieldData =
         detail.other_purpose.trim() !== '' ||
