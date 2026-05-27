@@ -567,7 +567,7 @@ export default function RequestPage(): React.ReactElement {
   }, [editDocId]);
 
   // Derived booleans for Step 1 conditional rendering
-  const isCopy = detail.request_purpose === '차용';
+  const isCopy = detail.request_purpose === '차용' || detail.request_purpose === '신규+차용';
   const isMapCopy = detail.map_type === 'CLONE';
   const isMapRegistered = detail.map_type === 'EXISTING';
   const hasMapChange = detail.map_change === '변경 있음';
@@ -625,7 +625,8 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleRequestPurposeSelect = (val: string) => {
-    const isSwitchingFromCopy = detail.request_purpose === '차용' && val !== '차용';
+    const COPY_PURPOSES = ['차용', '신규+차용'];
+    const isSwitchingFromCopy = COPY_PURPOSES.includes(detail.request_purpose) && !COPY_PURPOSES.includes(val);
     if (isSwitchingFromCopy) {
       const hasSubFieldData =
         detail.other_purpose.trim() !== '' ||
@@ -1045,7 +1046,7 @@ export default function RequestPage(): React.ReactElement {
 
   const handleApplyMappings = () => {
     const mappedRows: BbTableRow[] = jayerRows
-      .filter((jr) => stagedMappings[jr.id])
+      .filter((jr) => !jr.disabled && stagedMappings[jr.id])
       .map((jr) => {
         const ext = stagedMappings[jr.id];
         const newRow = makeBbRow();
@@ -1074,7 +1075,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleOpenAutoFillPanel = () => {
-    const layerIds = [...new Set(jayerRows.map(r => r.layerid).filter(Boolean))]
+    const layerIds = [...new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean))]
       .sort((a, b) => parseFloat(a) - parseFloat(b));
 
     const productIds = detail.bb_entries.map(e => e.product).filter(Boolean);
@@ -1137,7 +1138,7 @@ export default function RequestPage(): React.ReactElement {
 
       const jayerRowsInRange = jayerRows.filter(row => {
         const layer = parseFloat(row.layerid);
-        return !isNaN(layer) && layer >= from && layer <= to;
+        return !row.disabled && !isNaN(layer) && layer >= from && layer <= to;
       });
 
       const entryIdx = detail.bb_entries.findIndex(
@@ -1289,7 +1290,7 @@ export default function RequestPage(): React.ReactElement {
 
     if (currentStep === 5) {
       const unmappedJayerRows = jayerRows.filter(
-        (row) => row.process_id && !mappedJayerRowIds.has(row.id)
+        (row) => !row.disabled && row.process_id && !mappedJayerRowIds.has(row.id)
       );
       if (unmappedJayerRows.length > 0) {
         newErrors['jayer_mapping'] = '모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.';
@@ -2236,10 +2237,12 @@ export default function RequestPage(): React.ReactElement {
                       </select>
                     </td>
                     <td>
-                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#eff6ff' : undefined }}>
+                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : row.new_or_copy === '기등록' ? '#e5e7eb' : undefined }}>
                         <option value=""></option>
                         <option value="신규">신규</option>
                         <option value="차용">차용</option>
+                        <option value="기등록">기등록</option>
+                        <option value="layer삭제">layer삭제</option>
                       </select>
                     </td>
                     <td><input value={row.product_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} /></td>
@@ -2369,10 +2372,12 @@ export default function RequestPage(): React.ReactElement {
                       </select>
                     </td>
                     <td>
-                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#eff6ff' : undefined }}>
+                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : row.new_or_copy === '기등록' ? '#e5e7eb' : undefined }}>
                         <option value=""></option>
                         <option value="신규">신규</option>
                         <option value="차용">차용</option>
+                        <option value="기등록">기등록</option>
+                        <option value="layer삭제">layer삭제</option>
                       </select>
                     </td>
                     <td><input value={row.product_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} /></td>
@@ -2439,9 +2444,9 @@ export default function RequestPage(): React.ReactElement {
           >
             📋 Backbone 자동 채움
           </button>
-          {bbExternalData.length > 0 && (
+          {jayerRows.filter(r => !r.disabled).length > 0 && (
             <span style={{ marginLeft: 12, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              {bbExternalData.reduce((sum, tab) => sum + tab.length, 0)}행 조회됨
+              {jayerRows.filter(r => !r.disabled && !mappedJayerRowIds.has(r.id)).length}행 조회됨
             </span>
           )}
         </div>
@@ -2476,7 +2481,7 @@ export default function RequestPage(): React.ReactElement {
                   style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
                 >
                   <option value="">시작 Layer</option>
-                  {[...new Set(jayerRows.map(r => r.layerid).filter(Boolean))]
+                  {[...new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean))]
                     .sort((a, b) => parseFloat(a) - parseFloat(b))
                     .map(layerid => (
                       <option key={layerid} value={layerid}>{layerid}</option>
@@ -2489,7 +2494,7 @@ export default function RequestPage(): React.ReactElement {
                   style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
                 >
                   <option value="">종료 Layer</option>
-                  {[...new Set(jayerRows.map(r => r.layerid).filter(Boolean))]
+                  {[...new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean))]
                     .sort((a, b) => parseFloat(a) - parseFloat(b))
                     .map(layerid => (
                       <option key={layerid} value={layerid}>{layerid}</option>
