@@ -107,9 +107,9 @@ export default function HistoryPage(): React.ReactElement {
               </tr>
             </thead>
             <tbody>
-              {docs.map((doc) => (
+              {docs.map((doc, index) => (
                 <tr key={doc.id}>
-                  <td style={{ color: 'var(--text-muted)' }}>#{doc.id}</td>
+                  <td style={{ color: 'var(--text-muted)' }}>{index + 1}</td>
                   <td>
                     <span
                       style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'pointer' }}
