@@ -1605,37 +1605,32 @@ export default function RequestPage(): React.ReactElement {
                       </div>
                       <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                         <label className="form-label">{t('request.flow_process_id')}</label>
-                        <select
-                          className="form-control"
+                        <AutocompleteInput
                           value={row.process_id}
-                          onChange={(e) => handleFlowChange(row.id, 'process_id', e.target.value)}
-                        >
-                          <option value="">{t('request.select_placeholder')}</option>
-                          {(FlowProcessIdOptions[idx] || []).map((o) => <option key={o} value={o}>{o}</option>)}
-                        </select>
+                          onChange={(v) => handleFlowChange(row.id, 'process_id', v)}
+                          options={FlowProcessIdOptions[idx] || []}
+                          placeholder={t('request.select_placeholder')}
+                          style={{ width: '100%' }}
+                        />
                       </div>
                       <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                         <label className="form-label">{t('request.flow_progress_layer')}</label>
                         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                          <select
-                            className="form-control"
+                          <AutocompleteInput
                             value={row.step_from}
-                            onChange={(e) => handleFlowChange(row.id, 'step_from', e.target.value)}
+                            onChange={(v) => handleFlowChange(row.id, 'step_from', v)}
+                            options={FlowLayerIdOptions[idx] || []}
+                            placeholder={t('request.select_placeholder')}
                             style={{ minWidth: '80px' }}
-                          >
-                            <option value="">{t('request.select_placeholder')}</option>
-                            {(FlowLayerIdOptions[idx] || []).map((o) => <option key={o} value={o}>{o}</option>)}
-                          </select>
+                          />
                           <span style={{ whiteSpace: 'nowrap' }}>~</span>
-                          <select
-                            className="form-control"
+                          <AutocompleteInput
                             value={row.step_to}
-                            onChange={(e) => handleFlowChange(row.id, 'step_to', e.target.value)}
+                            onChange={(v) => handleFlowChange(row.id, 'step_to', v)}
+                            options={FlowLayerIdOptions[idx] || []}
+                            placeholder={t('request.select_placeholder')}
                             style={{ minWidth: '80px' }}
-                          >
-                            <option value="">{t('request.select_placeholder')}</option>
-                            {(FlowLayerIdOptions[idx] || []).map((o) => <option key={o} value={o}>{o}</option>)}
-                          </select>
+                          />
                         </div>
                       </div>
                       {detail.flow_chart.length > 1 && (
@@ -1701,16 +1696,15 @@ export default function RequestPage(): React.ReactElement {
             error={errors.partid_selection}
             style={{ flex: 1 }}
           />
-          <FormSelect
+          <AutocompleteInput
             label={t('request.process_id')}
-            name="process_id"
             value={detail.process_id}
             options={processIdOptions}
-            onChange={handleDetailChange}
+            onChange={(v) => handleDetailSet('process_id', v)}
             placeholder={t('request.select_placeholder')}
             required
             error={errors.process_id}
-            className="flex-col"
+            style={{ flex: 1 }}
           />
         </div>
 
@@ -1768,14 +1762,13 @@ export default function RequestPage(): React.ReactElement {
                 </div>
                 <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                   <label className="form-label">{t('request.bb_ref_process_id')}</label>
-                  <select
-                    className="form-control"
+                  <AutocompleteInput
                     value={entry.process_id}
-                    onChange={(e) => handleBbEntryChange(idx, 'process_id', e.target.value)}
-                  >
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {(BbProductidOptions[idx] || []).map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
+                    onChange={(v) => handleBbEntryChange(idx, 'process_id', v)}
+                    options={BbProductidOptions[idx] || []}
+                    placeholder={t('request.select_placeholder')}
+                    style={{ width: '100%' }}
+                  />
                 </div>
                 {detail.bb_entries.length > 1 && (
                   <button
