@@ -3334,6 +3334,7 @@ export default function RequestPage(): React.ReactElement {
         onClose={() => setConfirmOpen(false)}
         title={t('request.submit')}
         size="md"
+        style={{ maxWidth: '520px' }}
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setConfirmOpen(false)}>
