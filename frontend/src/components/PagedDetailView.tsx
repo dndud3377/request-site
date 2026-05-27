@@ -150,7 +150,7 @@ function JayerTable({
                       )}
                     </td>
                   )}
-                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td style={{ backgroundColor: ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td>
+                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td style={{ backgroundColor: r.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }}>{r.pp}</td><td style={{ backgroundColor: ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td>
                 </tr>
               );
             })}
@@ -213,7 +213,7 @@ function OayerTable({
                       )}
                     </td>
                   )}
-                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td>{r.pp}</td><td style={{ backgroundColor: ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td>
+                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td style={{ backgroundColor: r.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }}>{r.pp}</td><td style={{ backgroundColor: ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td>
                 </tr>
               );
             })}
