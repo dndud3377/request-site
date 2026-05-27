@@ -2237,10 +2237,12 @@ export default function RequestPage(): React.ReactElement {
                       </select>
                     </td>
                     <td>
-                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#eff6ff' : undefined }}>
+                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : row.new_or_copy === '기등록' ? '#e5e7eb' : undefined }}>
                         <option value=""></option>
                         <option value="신규">신규</option>
                         <option value="차용">차용</option>
+                        <option value="기등록">기등록</option>
+                        <option value="layer삭제">layer삭제</option>
                       </select>
                     </td>
                     <td><input value={row.product_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} /></td>
@@ -2370,10 +2372,12 @@ export default function RequestPage(): React.ReactElement {
                       </select>
                     </td>
                     <td>
-                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#eff6ff' : undefined }}>
+                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : row.new_or_copy === '기등록' ? '#e5e7eb' : undefined }}>
                         <option value=""></option>
                         <option value="신규">신규</option>
                         <option value="차용">차용</option>
+                        <option value="기등록">기등록</option>
+                        <option value="layer삭제">layer삭제</option>
                       </select>
                     </td>
                     <td><input value={row.product_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} /></td>
