@@ -384,7 +384,6 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
       [t('request.process_id')]:    r.process_id,
       [t('request.col_sp')]:        r.sp,
       [t('request.col_sd')]:        r.sd,
-      [t('request.col_layer')]:     r.layerid ?? '',
       [t('request.col_pp')]:        r.pp,
       [t('request.col_st')]:        r.st,
       [t('request.col_new_or_copy')]: r.new_or_copy,
