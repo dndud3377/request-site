@@ -375,23 +375,6 @@ export default function RequestPage(): React.ReactElement {
 
   useEffect(() => {
     setCopiedFields(new Set());
-    if (detail.request_purpose === '신규') {
-      setJayerRows((rows) =>
-        rows.map((r) => ({
-          ...r,
-          product_name: '',
-          layerid: '',
-          item_id: '',
-        }))
-      );
-      setOayerRows((rows) =>
-        rows.map((r) => ({
-          ...r,
-          product_name: '',
-          step: '',
-        }))
-      );
-    }
   }, [detail.request_purpose]);
 
   // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
@@ -2205,7 +2188,7 @@ export default function RequestPage(): React.ReactElement {
                     <td><input value={row.process_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'process_id', e.target.value)} /></td>
                     <td><input value={row.sp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} /></td>
                     <td><input value={row.sd} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} /></td>
-                    <td><input value={row.layerid ?? ''} disabled={detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} /></td>
+                    <td><input value={row.layerid ?? ''} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} /></td>
                     <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
                     <td>
                       <select value={row.st} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'st', e.target.value)}>
@@ -2223,9 +2206,9 @@ export default function RequestPage(): React.ReactElement {
                         <option value="차용">차용</option>
                       </select>
                     </td>
-                    <td><input value={row.product_name} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} /></td>
+                    <td><input value={row.product_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} /></td>
                     <td><input value={row.step} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} /></td>
-                    <td><input value={row.item_id} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} /></td>
+                    <td><input value={row.item_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} /></td>
                   </tr>
                 </>
               );
@@ -2356,8 +2339,8 @@ export default function RequestPage(): React.ReactElement {
                         <option value="차용">차용</option>
                       </select>
                     </td>
-                    <td><input value={row.product_name} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} /></td>
-                    <td><input value={row.step} readOnly={row.disabled || detail.request_purpose === '신규'} disabled={row.disabled || detail.request_purpose === '신규'} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} /></td>
+                    <td><input value={row.product_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} /></td>
+                    <td><input value={row.step} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} /></td>
                     <td><input value={row.tt} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'tt', e.target.value)} /></td>
                   </tr>
                 </>
