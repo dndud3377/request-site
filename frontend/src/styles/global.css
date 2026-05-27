@@ -733,6 +733,11 @@ select.form-control option {
   max-width: 1120px;
 }
 
+.modal-lg .modal-body {
+  height: 75vh;
+  max-height: none;
+}
+
 .modal-fullscreen {
   max-width: none !important;
   width: 100% !important;
