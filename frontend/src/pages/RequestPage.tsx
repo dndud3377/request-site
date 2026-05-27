@@ -2444,9 +2444,9 @@ export default function RequestPage(): React.ReactElement {
           >
             📋 Backbone 자동 채움
           </button>
-          {bbExternalData.length > 0 && (
+          {jayerRows.filter(r => !r.disabled).length > 0 && (
             <span style={{ marginLeft: 12, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              {bbExternalData.reduce((sum, tab) => sum + tab.length, 0)}행 조회됨
+              {jayerRows.filter(r => !r.disabled && !mappedJayerRowIds.has(r.id)).length}행 조회됨
             </span>
           )}
         </div>
