@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import * as XLSX from 'xlsx';
 import { RequestDocument, UserRole, DetailFormState, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot } from '../types';
 import Modal from './Modal';
 
@@ -369,6 +370,53 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
     bb = parsed?.bbRows ?? [];
     history = parsed?.history ?? [];
   } catch { /* noop */ }
+
+  const getNowString = () => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  };
+
+  const exportJayer = () => {
+    const activeRows = jayer.filter(r => !r.disabled);
+    const data = activeRows.map(r => ({
+      'Update 날짜':           r.updated ?? '',
+      [t('request.process_id')]:    r.process_id,
+      [t('request.col_sp')]:        r.sp,
+      [t('request.col_sd')]:        r.sd,
+      [t('request.col_layer')]:     r.layerid ?? '',
+      [t('request.col_pp')]:        r.pp,
+      [t('request.col_st')]:        r.st,
+      [t('request.col_new_or_copy')]: r.new_or_copy,
+      [t('request.col_product_name')]: r.product_name,
+      [t('request.col_step')]:      r.step,
+      [t('request.col_item_id')]:   r.item_id,
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'JOB');
+    XLSX.writeFile(wb, `${doc.title}_JOB_${getNowString()}.xlsx`);
+  };
+
+  const exportOayer = () => {
+    const activeRows = oayer.filter(r => !r.disabled);
+    const data = activeRows.map(r => ({
+      'Update 날짜':           r.updated ?? '',
+      [t('request.process_id')]:    r.process_id,
+      [t('request.col_sp')]:        r.sp,
+      [t('request.col_sd')]:        r.sd,
+      [t('request.col_pp')]:        r.pp,
+      [t('request.col_st')]:        r.st,
+      [t('request.col_new_or_copy')]: r.new_or_copy,
+      [t('request.col_product_name')]: r.product_name,
+      [t('request.col_step')]:      r.step,
+      [t('request.col_tt')]:        r.tt,
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'OVL');
+    XLSX.writeFile(wb, `${doc.title}_OVL_${getNowString()}.xlsx`);
+  };
 
   const prevSnap = history.length > 0 ? history[history.length - 1] : null;
   const changedFields = prevSnap ? computeDetailDiff(detail, prevSnap.detail) : new Set<string>();
@@ -875,7 +923,10 @@ type Page = { label: string; content: React.ReactNode };
         <div style={cardStyle}>
           <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>{t('request.job_li')}</span>
-            <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {jayer.length}건</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {jayer.length}건</span>
+              <button onClick={exportJayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📥 JOB</button>
+            </div>
           </div>
           <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} />
         </div>
@@ -889,7 +940,10 @@ type Page = { label: string; content: React.ReactNode };
         <div style={cardStyle}>
           <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>{t('request.ovl_li')}</span>
-            <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {oayer.length}건</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {oayer.length}건</span>
+              <button onClick={exportOayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📥 OVL</button>
+            </div>
           </div>
           <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} />
         </div>
