@@ -27,6 +27,11 @@ const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as c
 const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay, ADI CD 추가/삭제/변경'] as const;
 const OPTION_SOURCE_LINE = ['위치A', '위치B', '위치C'] as const;
 
+const ST_CELL_COLOR: Record<string, string> = {
+  'O (D)':   '#D4F5E2',
+  'O (혼용)': '#FFE0EC',
+  'X':        '#f3f4f6',
+};
 
 // ===== ProdcRow — 북쪽/중간/남쪽 공통 행 =====
 type CRegion = 'top' | 'middle' | 'bottom';
@@ -2191,7 +2196,7 @@ export default function RequestPage(): React.ReactElement {
                     <td><input value={row.layerid ?? ''} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} /></td>
                     <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
                     <td>
-                      <select value={row.st} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'st', e.target.value)}>
+                      <select value={row.st} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'st', e.target.value)} style={{ backgroundColor: ST_CELL_COLOR[row.st] }}>
                         <option value=""></option>
                         <option value="O">O</option>
                         <option value="O (D)">O (D)</option>
@@ -2200,7 +2205,7 @@ export default function RequestPage(): React.ReactElement {
                       </select>
                     </td>
                     <td>
-                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)}>
+                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#eff6ff' : undefined }}>
                         <option value=""></option>
                         <option value="신규">신규</option>
                         <option value="차용">차용</option>
@@ -2324,7 +2329,7 @@ export default function RequestPage(): React.ReactElement {
                     <td><input value={row.sd} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} /></td>
                     <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
                     <td>
-                      <select value={row.st} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'st', e.target.value)}>
+                      <select value={row.st} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'st', e.target.value)} style={{ backgroundColor: ST_CELL_COLOR[row.st] }}>
                         <option value=""></option>
                         <option value="O">O</option>
                         <option value="O (D)">O (D)</option>
@@ -2333,7 +2338,7 @@ export default function RequestPage(): React.ReactElement {
                       </select>
                     </td>
                     <td>
-                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)}>
+                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#eff6ff' : undefined }}>
                         <option value=""></option>
                         <option value="신규">신규</option>
                         <option value="차용">차용</option>
