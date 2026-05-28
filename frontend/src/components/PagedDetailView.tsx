@@ -150,7 +150,7 @@ function JayerTable({
                       )}
                     </td>
                   )}
-                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td style={{ backgroundColor: r.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }}>{r.pp}</td><td style={{ backgroundColor: ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.item_id}</td>
+                  {(() => { const reg = r.new_or_copy === '기등록'; const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: reg ? rb : r.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.item_id}</td></>); })()}
                 </tr>
               );
             })}
@@ -213,7 +213,7 @@ function OayerTable({
                       )}
                     </td>
                   )}
-                  <td>{r.updated || '-'}</td><td>{r.process_id}</td><td>{r.sp}</td><td>{r.sd}</td><td style={{ backgroundColor: r.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }}>{r.pp}</td><td style={{ backgroundColor: ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td>{r.product_name}</td><td>{r.step}</td><td>{r.tt}</td>
+                  {(() => { const reg = r.new_or_copy === '기등록'; const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: reg ? rb : r.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.tt}</td></>); })()}
                 </tr>
               );
             })}

@@ -159,15 +159,19 @@
     "mshot_delete_notice": "삭제 안내",
     "mshot_delete_desc": "특정 제품 삭제 필요",
     "prodc_detail": "C가문 세부 정보",
-    "agree_success": "AGENT {{agent}} 합의 처리되었습니다.",
+    "agree_success": "{{agent}} 합의 처리되었습니다.",
     "reject_success": "반려 처리되었습니다.",
-    "modal_agree_title": "AGENT {{agent}} 합의",
-    "modal_reject_title": "AGENT {{agent}} 반려",
+    "modal_agree_title": "{{agent}} 합의",
+    "modal_reject_title": "{{agent}} 반려",
     "comment_agree_label": "합의 이유 (선택)",
     "comment_reject_label": "반려 이유 (선택)",
     "comment_agree_placeholder": "합의 이유를 입력하세요...",
     "comment_reject_placeholder": "반려 이유를 입력하세요...",
-    "current_role": "현재 역할:"
+    "current_role": "현재 역할:",
+    "agent_R": "RFG",
+    "agent_J": "JOB",
+    "agent_O": "OVL",
+    "agent_E": "EUV"
   },
   "history": {
     "title": "이력 조회",
