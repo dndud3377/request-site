@@ -1691,6 +1691,15 @@ export default function RequestPage(): React.ReactElement {
           />
         </div>
 
+        {/* 안내 문구 */}
+        {!canSelectPurpose && (
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+            라인, 조합법, 제품 이름, 조리법을 모두 선택하면 나머지 항목을 입력할 수 있습니다.
+          </span>
+        )}
+
+        {canSelectPurpose && (<>
+
         {/* 2. 요청 목적 */}
         <div className="form-group full-width">
           <label className="form-label">
@@ -1703,18 +1712,11 @@ export default function RequestPage(): React.ReactElement {
                 type="button"
                 className={`map-type-btn${detail.request_purpose === val ? ' active' : ''}`}
                 onClick={() => handleRequestPurposeSelect(val)}
-                disabled={!canSelectPurpose}
-                style={!canSelectPurpose ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
               >
                 {val}
               </button>
             ))}
           </div>
-          {!canSelectPurpose && (
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: 4 }}>
-              라인, 조합법, 제품 이름, 조리법을 모두 선택하면 요청 목적을 선택할 수 있습니다.
-            </span>
-          )}
           {errors.request_purpose && <span className="form-error">{errors.request_purpose}</span>}
         </div>
 
@@ -1936,6 +1938,8 @@ export default function RequestPage(): React.ReactElement {
             />
           </div>
         </div>
+
+        </>)}
 
       </div>
     </div>
