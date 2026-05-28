@@ -164,7 +164,7 @@ export default function ApprovalPage(): React.ReactElement {
     try {
       if (pendingAction.type === 'agree') {
         await documentsAPI.approveStep(selected.id, pendingAction.agent, commentInput || undefined);
-        addToast(t('approval.agree_success', { agent: pendingAction.agent }), 'success');
+        addToast(t('approval.agree_success', { agent: t(`approval.agent_${pendingAction.agent}` as any) }), 'success');
         setModalOpen(false);
         fetchDocs();
       } else {
@@ -343,7 +343,7 @@ export default function ApprovalPage(): React.ReactElement {
         <Modal
           isOpen={commentModalOpen}
           onClose={() => { setCommentModalOpen(false); setPendingAction(null); }}
-          title={pendingAction.type === 'agree' ? t('approval.modal_agree_title', { agent: pendingAction.agent }) : t('approval.modal_reject_title', { agent: pendingAction.agent })}
+          title={pendingAction.type === 'agree' ? t('approval.modal_agree_title', { agent: t(`approval.agent_${pendingAction.agent}` as any) }) : t('approval.modal_reject_title', { agent: t(`approval.agent_${pendingAction.agent}` as any) })}
           size="md"
           topLevel
           footer={

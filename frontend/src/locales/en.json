@@ -136,7 +136,19 @@
     "view_detail": "View",
     "current_role": "Current Role:",
     "step_unassigned": "Unassigned",
-    "step_na": "N/A"
+    "step_na": "N/A",
+    "agree_success": "{{agent}} agreed.",
+    "reject_success": "Rejected.",
+    "modal_agree_title": "{{agent}} Agree",
+    "modal_reject_title": "{{agent}} Reject",
+    "comment_agree_label": "Reason (optional)",
+    "comment_reject_label": "Reason (optional)",
+    "comment_agree_placeholder": "Enter reason for agreement...",
+    "comment_reject_placeholder": "Enter reason for rejection...",
+    "agent_R": "RFG",
+    "agent_J": "JOB",
+    "agent_O": "OVL",
+    "agent_E": "EUV"
   },
   "history": {
     "title": "History",
