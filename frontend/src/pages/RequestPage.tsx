@@ -877,11 +877,11 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleJayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
-    setJayerRows((rows) => rows.map((r) => ({ ...r, [field]: value })));
+    setJayerRows((rows) => rows.map((r) => r.new_or_copy === '기등록' ? r : { ...r, [field]: value }));
   };
 
   const handleJayerResetField = (field: 'st' | 'new_or_copy') => {
-    setJayerRows((rows) => rows.map((r) => ({ ...r, [field]: '' })));
+    setJayerRows((rows) => rows.map((r) => r.new_or_copy === '기등록' ? r : { ...r, [field]: '' }));
   };
 
   const handleJayerAddRow = () => {
@@ -957,11 +957,11 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleOayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
-    setOayerRows((rows) => rows.map((r) => ({ ...r, [field]: value })));
+    setOayerRows((rows) => rows.map((r) => r.new_or_copy === '기등록' ? r : { ...r, [field]: value }));
   };
 
   const handleOayerResetField = (field: 'st' | 'new_or_copy') => {
-    setOayerRows((rows) => rows.map((r) => ({ ...r, [field]: '' })));
+    setOayerRows((rows) => rows.map((r) => r.new_or_copy === '기등록' ? r : { ...r, [field]: '' }));
   };
 
   const handleOayerAddRow = () => {
@@ -2421,6 +2421,8 @@ export default function RequestPage(): React.ReactElement {
               const renderedJayerIds = renderedJayerRows.map(r => r.id);
               return renderedJayerRows.map((row, idx) => {
               const isFirstDisabled = row.disabled && (idx === 0 || !renderedJayerRows[idx - 1].disabled);
+              const isRegistered = row.new_or_copy === '기등록';
+              const regBg = '#e5e7eb';
               return (
                 <>
                   {isFirstDisabled && (
@@ -2434,14 +2436,14 @@ export default function RequestPage(): React.ReactElement {
                     <td style={{ textAlign: 'center' }} onMouseDown={() => handleJayerDragStart(row.id)}>
                       <input type="checkbox" checked={jayerChecked.has(row.id)} onChange={() => handleJayerCheckToggle(row.id)} />
                     </td>
-                    <td><input value={row.updated ?? ''} readOnly style={{ background: '#f5f5f5', color: '#666' }} /></td>
-                    <td><input value={row.process_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'process_id', e.target.value)} /></td>
-                    <td><input value={row.sp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} /></td>
-                    <td><input value={row.sd} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} /></td>
-                    <td><input value={row.layerid ?? ''} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} /></td>
-                    <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
-                    <td>
-                      <select value={row.st} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'st', e.target.value)} style={{ backgroundColor: ST_CELL_COLOR[row.st] }}>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.updated ?? ''} readOnly style={{ background: isRegistered ? regBg : '#f5f5f5', color: '#666' }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.process_id} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'process_id', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.sp} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.sd} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.layerid ?? ''} readOnly={isRegistered} disabled={isRegistered} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.pp} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}>
+                      <select value={row.st} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'st', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : ST_CELL_COLOR[row.st] }}>
                         <option value=""></option>
                         <option value="O">O</option>
                         <option value="O (D)">O (D)</option>
@@ -2449,8 +2451,8 @@ export default function RequestPage(): React.ReactElement {
                         <option value="X">X</option>
                       </select>
                     </td>
-                    <td>
-                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : row.new_or_copy === '기등록' ? '#e5e7eb' : undefined }}>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}>
+                      <select value={row.new_or_copy} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined }}>
                         <option value=""></option>
                         <option value="신규">신규</option>
                         <option value="차용">차용</option>
@@ -2458,9 +2460,9 @@ export default function RequestPage(): React.ReactElement {
                         <option value="layer삭제">layer삭제</option>
                       </select>
                     </td>
-                    <td><input value={row.product_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} /></td>
-                    <td><input value={row.step} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} /></td>
-                    <td><input value={row.item_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.step} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.item_id} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                   </tr>
                 </>
               );
@@ -2565,6 +2567,8 @@ export default function RequestPage(): React.ReactElement {
               const renderedOayerIds = renderedOayerRows.map(r => r.id);
               return renderedOayerRows.map((row, idx) => {
               const isFirstDisabled = row.disabled && (idx === 0 || !renderedOayerRows[idx - 1].disabled);
+              const isRegistered = row.new_or_copy === '기등록';
+              const regBg = '#e5e7eb';
               return (
                 <>
                   {isFirstDisabled && (
@@ -2578,13 +2582,13 @@ export default function RequestPage(): React.ReactElement {
                     <td style={{ textAlign: 'center' }} onMouseDown={() => handleOayerDragStart(row.id)}>
                       <input type="checkbox" checked={oayerChecked.has(row.id)} onChange={() => handleOayerCheckToggle(row.id)} />
                     </td>
-                    <td><input value={row.updated ?? ''} readOnly style={{ background: '#f5f5f5', color: '#666' }} /></td>
-                    <td><input value={row.process_id} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} /></td>
-                    <td><input value={row.sp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'sp', e.target.value)} /></td>
-                    <td><input value={row.sd} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} /></td>
-                    <td><input value={row.pp} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
-                    <td>
-                      <select value={row.st} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'st', e.target.value)} style={{ backgroundColor: ST_CELL_COLOR[row.st] }}>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.updated ?? ''} readOnly style={{ background: isRegistered ? regBg : '#f5f5f5', color: '#666' }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.process_id} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.sp} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'sp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.sd} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.pp} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}>
+                      <select value={row.st} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'st', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : ST_CELL_COLOR[row.st] }}>
                         <option value=""></option>
                         <option value="O">O</option>
                         <option value="O (D)">O (D)</option>
@@ -2592,8 +2596,8 @@ export default function RequestPage(): React.ReactElement {
                         <option value="X">X</option>
                       </select>
                     </td>
-                    <td>
-                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : row.new_or_copy === '기등록' ? '#e5e7eb' : undefined }}>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}>
+                      <select value={row.new_or_copy} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined }}>
                         <option value=""></option>
                         <option value="신규">신규</option>
                         <option value="차용">차용</option>
@@ -2601,9 +2605,9 @@ export default function RequestPage(): React.ReactElement {
                         <option value="layer삭제">layer삭제</option>
                       </select>
                     </td>
-                    <td><input value={row.product_name} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} /></td>
-                    <td><input value={row.step} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} /></td>
-                    <td><input value={row.tt} readOnly={row.disabled} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'tt', e.target.value)} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.step} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.tt} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'tt', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                   </tr>
                 </>
               );
