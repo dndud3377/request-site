@@ -1531,12 +1531,62 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // ===== Step Render Functions =====
-  const renderStep1 = () => (
+  const renderStep1 = () => {
+    const canSelectPurpose =
+      detail.line !== '' &&
+      detail.process_selection !== '' &&
+      detail.partid_selection !== '' &&
+      detail.process_id !== '';
+
+    return (
     <div className="form-section">
       <div className="form-section-title">📋 {t('request.section_detail')}</div>
       <div className="form-grid">
 
-        {/* 1. 요청 목적 */}
+        {/* 1. 라인 / 조합법 / 제품 이름 / 조리법 */}
+        <div className="full-width flex-row">
+          <FormSelect
+            label={t('request.line')}
+            name="line"
+            value={detail.line}
+            options={lineOptions}
+            onChange={handleDetailChange}
+            placeholder={t('request.select_placeholder')}
+            required
+            error={errors.line}
+            className="flex-col"
+          />
+          <AutocompleteInput
+            label={t('request.process_selection')}
+            value={detail.process_selection}
+            options={processOptions}
+            onChange={(v) => handleDetailSet('process_selection', v)}
+            required
+            error={errors.process_selection}
+            style={{ flex: 1 }}
+          />
+          <AutocompleteInput
+            label={t('request.partid_selection')}
+            value={detail.partid_selection}
+            options={productOptions}
+            onChange={(v) => handleDetailSet('partid_selection', v)}
+            required
+            error={errors.partid_selection}
+            style={{ flex: 1 }}
+          />
+          <AutocompleteInput
+            label={t('request.process_id')}
+            value={detail.process_id}
+            options={processIdOptions}
+            onChange={(v) => handleDetailSet('process_id', v)}
+            placeholder={t('request.select_placeholder')}
+            required
+            error={errors.process_id}
+            style={{ flex: 1 }}
+          />
+        </div>
+
+        {/* 2. 요청 목적 */}
         <div className="form-group full-width">
           <label className="form-label">
             {t('request.request_purpose')} <span className="required">*</span>
@@ -1548,11 +1598,18 @@ export default function RequestPage(): React.ReactElement {
                 type="button"
                 className={`map-type-btn${detail.request_purpose === val ? ' active' : ''}`}
                 onClick={() => handleRequestPurposeSelect(val)}
+                disabled={!canSelectPurpose}
+                style={!canSelectPurpose ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
               >
                 {val}
               </button>
             ))}
           </div>
+          {!canSelectPurpose && (
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: 4 }}>
+              라인, 조합법, 제품 이름, 조리법을 모두 선택하면 요청 목적을 선택할 수 있습니다.
+            </span>
+          )}
           {errors.request_purpose && <span className="form-error">{errors.request_purpose}</span>}
         </div>
 
@@ -1665,72 +1722,7 @@ export default function RequestPage(): React.ReactElement {
           </div>
         )}
 
-        {/* 2-4. 라인 / 조합법 / 제품 이름 / 조리법 */}
-        <div className="full-width flex-row">
-          <FormSelect
-            label={t('request.line')}
-            name="line"
-            value={detail.line}
-            options={lineOptions}
-            onChange={handleDetailChange}
-            placeholder={t('request.select_placeholder')}
-            required
-            error={errors.line}
-            className="flex-col"
-          />
-          <AutocompleteInput
-            label={t('request.process_selection')}
-            value={detail.process_selection}
-            options={processOptions}
-            onChange={(v) => handleDetailSet('process_selection', v)}
-            required
-            error={errors.process_selection}
-            style={{ flex: 1 }}
-          />
-          <AutocompleteInput
-            label={t('request.partid_selection')}
-            value={detail.partid_selection}
-            options={productOptions}
-            onChange={(v) => handleDetailSet('partid_selection', v)}
-            required
-            error={errors.partid_selection}
-            style={{ flex: 1 }}
-          />
-          <AutocompleteInput
-            label={t('request.process_id')}
-            value={detail.process_id}
-            options={processIdOptions}
-            onChange={(v) => handleDetailSet('process_id', v)}
-            placeholder={t('request.select_placeholder')}
-            required
-            error={errors.process_id}
-            style={{ flex: 1 }}
-          />
-        </div>
-
-        {/* 고객 및 업체 */}
-        <div className="full-width flex-row">
-          <div className="form-group flex-col" style={{ flex: 1 }}>
-            <label className="form-label">{t('request.customer_name')}</label>
-            <input
-              className="form-control"
-              name="customer_name"
-              value={detail.customer_name}
-              onChange={handleDetailChange}
-            />
-          </div>
-          <div className="form-group flex-col" style={{ flex: 2 }}>
-            <label className="form-label">{t('request.customer_requirement')}</label>
-            <input
-              className="form-control"
-              name="customer_requirement"
-              value={detail.customer_requirement}
-              onChange={handleDetailChange}
-            />
-          </div>
-        </div>
-
-        {/* 8. 뼈찜 조합 영역 */}
+        {/* 3. 뼈찜 조합 영역 */}
         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <label className="form-label">
             {t('request.bb_status')} <span className="required">*</span>
@@ -1790,9 +1782,32 @@ export default function RequestPage(): React.ReactElement {
           </div>
         </div>
 
+        {/* 4. 고객/업체명 / 요구 사항 */}
+        <div className="full-width flex-row">
+          <div className="form-group flex-col" style={{ flex: 1 }}>
+            <label className="form-label">{t('request.customer_name')}</label>
+            <input
+              className="form-control"
+              name="customer_name"
+              value={detail.customer_name}
+              onChange={handleDetailChange}
+            />
+          </div>
+          <div className="form-group flex-col" style={{ flex: 2 }}>
+            <label className="form-label">{t('request.customer_requirement')}</label>
+            <input
+              className="form-control"
+              name="customer_requirement"
+              value={detail.customer_requirement}
+              onChange={handleDetailChange}
+            />
+          </div>
+        </div>
+
       </div>
     </div>
-  );
+    );
+  };
 
   const SELECT_W = '300px';
 
