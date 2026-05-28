@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 interface AutocompleteInputProps {
   value: string;
   onChange: (value: string) => void;
+  onSelect?: (value: string) => void;
   options: readonly string[];
   placeholder?: string;
   label?: string;
@@ -14,6 +15,7 @@ interface AutocompleteInputProps {
 export default function AutocompleteInput({
   value,
   onChange,
+  onSelect,
   options,
   placeholder,
   label,
@@ -79,6 +81,7 @@ export default function AutocompleteInput({
               onMouseDown={(e) => {
                 e.preventDefault();
                 onChange(opt);
+                onSelect?.(opt);
                 setOpen(false);
               }}
               style={{

@@ -308,6 +308,12 @@ export default function RequestPage(): React.ReactElement {
   const jayerDragInfo = useRef<{ startId: string; mode: 'check' | 'uncheck' } | null>(null);
   const oayerDragInfo = useRef<{ startId: string; mode: 'check' | 'uncheck' } | null>(null);
   const [bbChecked, setBbChecked] = useState<Set<string>>(new Set());
+  const [refDocId, setRefDocId] = useState<number | null>(null);
+  const [refDocLabel, setRefDocLabel] = useState<string>('');
+  const [refJayerRows, setRefJayerRows] = useState<JayerRow[]>([]);
+  const [refOayerRows, setRefOayerRows] = useState<OayerRow[]>([]);
+  const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
+  const [mergeStats, setMergeStats] = useState<{ matched: number; unmatchedRef: number } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
@@ -456,9 +462,22 @@ export default function RequestPage(): React.ReactElement {
   useEffect(() => {
     if (!detail.line || !detail.process_id) return;
     if (isLoadingEditRef.current) return; // 편집 모드 로드 중엔 jayerRows/oayerRows 덮어쓰기 방지
+    setRefDocId(null);
+    setRefDocLabel('');
+    setRefJayerRows([]);
+    setRefOayerRows([]);
     fetchJobFileLayerAndPopulateJayer(detail.line, detail.process_id);
     fetchOvlLayerAndPopulateOayer(detail.line, detail.process_id);
   }, [detail.process_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (detail.other_purpose !== 'Layer 추가/삭제') {
+      setRefDocId(null);
+      setRefDocLabel('');
+      setRefJayerRows([]);
+      setRefOayerRows([]);
+    }
+  }, [detail.other_purpose]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   useEffect(() => {
@@ -1004,6 +1023,91 @@ export default function RequestPage(): React.ReactElement {
     } else {
       setOayerChecked(new Set(activeIds));
     }
+  };
+
+  // ===== Layer 추가/삭제 Handlers =====
+  const handleRefDocSelect = async (label: string) => {
+    const doc = approvedDocs.find((d) => d.title === label);
+    if (!doc) {
+      setRefDocId(null);
+      setRefJayerRows([]);
+      setRefOayerRows([]);
+      return;
+    }
+    setRefDocId(doc.id);
+    try {
+      const res = await documentsAPI.get(doc.id);
+      const parsed = JSON.parse(res.data.additional_notes ?? '{}');
+      setRefJayerRows(parsed.jayerRows ?? []);
+      setRefOayerRows(parsed.oayerRows ?? []);
+    } catch {
+      setRefJayerRows([]);
+      setRefOayerRows([]);
+      addToast('요청서 데이터 로드 실패', 'error');
+    }
+  };
+
+  const handleMergeClick = () => {
+    const makeKey = (r: { process_id: string; sp: string; sd: string; pp: string }) =>
+      `${r.process_id}||${r.sp}||${r.sd}||${r.pp}`;
+
+    const activeJayerKeys = new Set(jayerRows.filter((r) => !r.disabled).map(makeKey));
+    const activeRefJayerKeys = new Set(refJayerRows.filter((r) => !r.disabled).map(makeKey));
+    const jayerMatched = [...activeJayerKeys].filter((k) => activeRefJayerKeys.has(k)).length;
+    const jayerUnmatchedRef = [...activeRefJayerKeys].filter((k) => !activeJayerKeys.has(k)).length;
+
+    const activeOayerKeys = new Set(oayerRows.filter((r) => !r.disabled).map(makeKey));
+    const activeRefOayerKeys = new Set(refOayerRows.filter((r) => !r.disabled).map(makeKey));
+    const oayerMatched = [...activeOayerKeys].filter((k) => activeRefOayerKeys.has(k)).length;
+    const oayerUnmatchedRef = [...activeRefOayerKeys].filter((k) => !activeOayerKeys.has(k)).length;
+
+    setMergeStats({
+      matched: jayerMatched + oayerMatched,
+      unmatchedRef: jayerUnmatchedRef + oayerUnmatchedRef,
+    });
+    setMergeConfirmOpen(true);
+  };
+
+  const handleMergeConfirm = () => {
+    const makeKey = (r: { process_id: string; sp: string; sd: string; pp: string }) =>
+      `${r.process_id}||${r.sp}||${r.sd}||${r.pp}`;
+
+    const refJayerKeyMap = new Map<string, JayerRow>();
+    refJayerRows.filter((r) => !r.disabled).forEach((r) => refJayerKeyMap.set(makeKey(r), r));
+    const activeJayerKeys = new Set(jayerRows.filter((r) => !r.disabled).map(makeKey));
+
+    const mergedJayer: JayerRow[] = jayerRows.map((r) => {
+      if (!r.disabled && refJayerKeyMap.has(makeKey(r))) {
+        return { ...r, st: 'X', new_or_copy: '기등록' };
+      }
+      return r;
+    });
+    refJayerRows.filter((r) => !r.disabled).forEach((r) => {
+      if (!activeJayerKeys.has(makeKey(r))) {
+        mergedJayer.push({ ...r, id: genId(), sortOrder: Date.now() });
+      }
+    });
+    setJayerRows(mergedJayer);
+
+    const refOayerKeyMap = new Map<string, OayerRow>();
+    refOayerRows.filter((r) => !r.disabled).forEach((r) => refOayerKeyMap.set(makeKey(r), r));
+    const activeOayerKeys = new Set(oayerRows.filter((r) => !r.disabled).map(makeKey));
+
+    const mergedOayer: OayerRow[] = oayerRows.map((r) => {
+      if (!r.disabled && refOayerKeyMap.has(makeKey(r))) {
+        return { ...r, st: 'X', new_or_copy: '기등록' };
+      }
+      return r;
+    });
+    refOayerRows.filter((r) => !r.disabled).forEach((r) => {
+      if (!activeOayerKeys.has(makeKey(r))) {
+        mergedOayer.push({ ...r, id: genId(), sortOrder: Date.now() });
+      }
+    });
+    setOayerRows(mergedOayer);
+
+    setMergeConfirmOpen(false);
+    addToast(`매칭 ${mergeStats!.matched}건 적용, 미매칭 ${mergeStats!.unmatchedRef}건 추가 완료`, 'success');
   };
 
   // ===== Bb Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
@@ -1632,6 +1736,34 @@ export default function RequestPage(): React.ReactElement {
                   ))}
                 </div>
               </div>
+
+              {/* Layer 추가/삭제: 참조 요청서 선택 */}
+              {detail.other_purpose === 'Layer 추가/삭제' && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                  <div style={{ flex: 1 }}>
+                    <AutocompleteInput
+                      label="참조 요청서"
+                      value={refDocLabel}
+                      options={approvedDocs.map((d) => d.title)}
+                      onChange={(v) => {
+                        setRefDocLabel(v);
+                        if (refDocId !== null) setRefDocId(null);
+                      }}
+                      onSelect={handleRefDocSelect}
+                      placeholder="이력에서 요청서를 선택하세요"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={refDocId === null}
+                    style={refDocId === null ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                    onClick={handleMergeClick}
+                  >
+                    Merge
+                  </button>
+                </div>
+              )}
 
               {/* 흐름도 */}
               <div className="form-group">
@@ -3412,6 +3544,28 @@ export default function RequestPage(): React.ReactElement {
             </div>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={mergeConfirmOpen}
+        onClose={() => setMergeConfirmOpen(false)}
+        title="Merge 확인"
+        size="md"
+        style={{ maxWidth: '420px' }}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setMergeConfirmOpen(false)}>
+              {t('common.cancel')}
+            </button>
+            <button className="btn btn-primary" onClick={handleMergeConfirm}>
+              {t('common.confirm')}
+            </button>
+          </>
+        }
+      >
+        <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+          매칭 {mergeStats?.matched ?? 0}건, 미매칭 {mergeStats?.unmatchedRef ?? 0}건 추가 예정입니다. 진행하시겠습니까?
+        </p>
       </Modal>
 
       <Modal
