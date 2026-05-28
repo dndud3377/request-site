@@ -59,6 +59,13 @@
     "col_step": "STEP",
     "col_item_id": "ID",
     "col_tt": "TT",
+    "col_layer": "Layer",
+    "col_no": "No.",
+    "col_bb_process_id": "BB Process",
+    "col_bb_partid": "BB Product",
+    "col_bb_layer": "BB Step",
+    "col_bb_stepseq": "SS",
+    "col_remark": "Remark",
     "map_option_title": "Map Option Selection",
     "map_type": "Request Type",
     "map_type_new": "NEW",
@@ -119,7 +126,12 @@
     "toast_ovl_no_data": "No O-ayer STEP information found.",
     "toast_bb_auto_fill": "BB data loaded with {{count}} rows.",
     "toast_bb_no_data": "No BB STEP information found.",
-    "toast_bb_error": "Failed to load BB information."
+    "toast_bb_error": "Failed to load BB information.",
+    "btn_all_o": "All O",
+    "btn_all_x": "All X",
+    "btn_all_new": "All New",
+    "btn_all_copy": "All Copy",
+    "btn_reset": "Reset"
   },
   "approval": {
     "title": "Approval Status",
@@ -283,5 +295,26 @@
     "cancel": "Cancel",
     "close": "Close",
     "no_notice": "No notices registered"
+  },
+  "guide": {
+    "title": "Guide",
+    "subtitle": "Work guides and references",
+    "write": "Write Guide",
+    "edit": "Edit",
+    "delete": "Delete",
+    "search_placeholder": "Search by title or content",
+    "no_guides": "No guides registered.",
+    "author": "Author",
+    "created_at": "Created",
+    "updated_at": "Updated",
+    "form_title": "Title",
+    "form_section": "Section",
+    "form_content": "Content",
+    "create_success": "Guide created.",
+    "update_success": "Guide updated.",
+    "delete_success": "Guide deleted.",
+    "confirm_delete": "Delete this guide?",
+    "modal_write_title": "Write Guide",
+    "modal_edit_title": "Edit Guide"
   }
 }

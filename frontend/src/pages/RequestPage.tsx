@@ -1026,13 +1026,13 @@ export default function RequestPage(): React.ReactElement {
 
     const activeJayerKeys = new Set(jayerRows.filter((r) => !r.disabled).map(makeKey));
     const activeRefJayerKeys = new Set(refJayerRows.filter((r) => !r.disabled).map(makeKey));
-    const jayerMatched = [...activeJayerKeys].filter((k) => activeRefJayerKeys.has(k)).length;
-    const jayerUnmatchedRef = [...activeRefJayerKeys].filter((k) => !activeJayerKeys.has(k)).length;
+    const jayerMatched = Array.from(activeJayerKeys).filter((k) => activeRefJayerKeys.has(k)).length;
+    const jayerUnmatchedRef = Array.from(activeRefJayerKeys).filter((k) => !activeJayerKeys.has(k)).length;
 
     const activeOayerKeys = new Set(oayerRows.filter((r) => !r.disabled).map(makeKey));
     const activeRefOayerKeys = new Set(refOayerRows.filter((r) => !r.disabled).map(makeKey));
-    const oayerMatched = [...activeOayerKeys].filter((k) => activeRefOayerKeys.has(k)).length;
-    const oayerUnmatchedRef = [...activeRefOayerKeys].filter((k) => !activeOayerKeys.has(k)).length;
+    const oayerMatched = Array.from(activeOayerKeys).filter((k) => activeRefOayerKeys.has(k)).length;
+    const oayerUnmatchedRef = Array.from(activeRefOayerKeys).filter((k) => !activeOayerKeys.has(k)).length;
 
     setMergeStats({ jayerMatched, jayerUnmatchedRef, oayerMatched, oayerUnmatchedRef });
     setMergeConfirmOpen(true);
@@ -1210,7 +1210,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleOpenAutoFillPanel = () => {
-    const layerIds = [...new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean))]
+    const layerIds = Array.from(new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean)))
       .sort((a, b) => parseFloat(a) - parseFloat(b));
 
     const productIds = detail.bb_entries.map(e => e.product).filter(Boolean);
@@ -2697,7 +2697,7 @@ export default function RequestPage(): React.ReactElement {
                   style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
                 >
                   <option value="">시작 Layer</option>
-                  {[...new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean))]
+                  {Array.from(new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean)))
                     .sort((a, b) => parseFloat(a) - parseFloat(b))
                     .map(layerid => (
                       <option key={layerid} value={layerid}>{layerid}</option>
@@ -2710,7 +2710,7 @@ export default function RequestPage(): React.ReactElement {
                   style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
                 >
                   <option value="">종료 Layer</option>
-                  {[...new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean))]
+                  {Array.from(new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean)))
                     .sort((a, b) => parseFloat(a) - parseFloat(b))
                     .map(layerid => (
                       <option key={layerid} value={layerid}>{layerid}</option>
