@@ -1107,7 +1107,7 @@ export default function RequestPage(): React.ReactElement {
     setOayerRows(mergedOayer);
 
     setMergeConfirmOpen(false);
-    addToast(`매칭 ${mergeStats!.matched}건 적용, 미매칭 ${mergeStats!.unmatchedRef}건 추가 완료`, 'success');
+    addToast(`기등록 ${mergeStats!.matched}건 적용, 미매칭 ${mergeStats!.unmatchedRef}건 추가 완료`, 'success');
   };
 
   // ===== Bb Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
@@ -3573,7 +3573,7 @@ export default function RequestPage(): React.ReactElement {
         }
       >
         <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-          매칭 {mergeStats?.matched ?? 0}건, 미매칭 {mergeStats?.unmatchedRef ?? 0}건 추가 예정입니다. 진행하시겠습니까?
+          기등록 {mergeStats?.matched ?? 0}건, 미매칭 {mergeStats?.unmatchedRef ?? 0}건 추가 예정입니다. 진행하시겠습니까?
         </p>
       </Modal>
 
