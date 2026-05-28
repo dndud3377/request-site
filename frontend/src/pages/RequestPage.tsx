@@ -1500,8 +1500,8 @@ export default function RequestPage(): React.ReactElement {
       reference_materials: note ?? '',
       additional_notes: JSON.stringify({
         detail,
-        jayerRows: jayerRows.filter(r => !r.disabled),
-        oayerRows: oayerRows.filter(r => !r.disabled),
+        jayerRows: jayerRows.filter(r => !r.disabled).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        oayerRows: oayerRows.filter(r => !r.disabled).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
         bbRows,
         history,
       }),
