@@ -2312,6 +2312,7 @@ select.form-control option {
   gap: 16px;
   min-height: 400px;  /* 10행 + 검색창 + 여유 공간 */
   margin-bottom: 16px;
+  align-items: flex-start;
 }
 
 .bb-split-panel-left,
