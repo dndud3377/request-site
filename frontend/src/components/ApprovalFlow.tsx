@@ -80,7 +80,7 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, onLoadT
     const canAct = canUserAgree(currentUser, step);
     const isAssigning = assigningAgent === step.agent;
 
-    const displayLabel = label;
+    const displayLabel = step.assignee_name ? `${label} (${step.assignee_name})` : label;
 
     return (
       <div className={`approval-node ${step.action === 'approved' ? 'approval-node-done' : step.action === 'rejected' ? 'approval-node-rejected' : ''}`}>
