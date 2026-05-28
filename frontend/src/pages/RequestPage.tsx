@@ -308,6 +308,12 @@ export default function RequestPage(): React.ReactElement {
   const jayerDragInfo = useRef<{ startId: string; mode: 'check' | 'uncheck' } | null>(null);
   const oayerDragInfo = useRef<{ startId: string; mode: 'check' | 'uncheck' } | null>(null);
   const [bbChecked, setBbChecked] = useState<Set<string>>(new Set());
+  const [refDocId, setRefDocId] = useState<number | null>(null);
+  const [refDocLabel, setRefDocLabel] = useState<string>('');
+  const [refJayerRows, setRefJayerRows] = useState<JayerRow[]>([]);
+  const [refOayerRows, setRefOayerRows] = useState<OayerRow[]>([]);
+  const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
+  const [mergeStats, setMergeStats] = useState<{ matched: number; unmatchedRef: number } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
@@ -456,9 +462,22 @@ export default function RequestPage(): React.ReactElement {
   useEffect(() => {
     if (!detail.line || !detail.process_id) return;
     if (isLoadingEditRef.current) return; // 편집 모드 로드 중엔 jayerRows/oayerRows 덮어쓰기 방지
+    setRefDocId(null);
+    setRefDocLabel('');
+    setRefJayerRows([]);
+    setRefOayerRows([]);
     fetchJobFileLayerAndPopulateJayer(detail.line, detail.process_id);
     fetchOvlLayerAndPopulateOayer(detail.line, detail.process_id);
   }, [detail.process_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (detail.other_purpose !== 'Layer 추가/삭제') {
+      setRefDocId(null);
+      setRefDocLabel('');
+      setRefJayerRows([]);
+      setRefOayerRows([]);
+    }
+  }, [detail.other_purpose]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   useEffect(() => {
@@ -1006,6 +1025,91 @@ export default function RequestPage(): React.ReactElement {
     }
   };
 
+  // ===== Layer 추가/삭제 Handlers =====
+  const handleRefDocSelect = async (label: string) => {
+    const doc = approvedDocs.find((d) => d.title === label);
+    if (!doc) {
+      setRefDocId(null);
+      setRefJayerRows([]);
+      setRefOayerRows([]);
+      return;
+    }
+    setRefDocId(doc.id);
+    try {
+      const res = await documentsAPI.get(doc.id);
+      const parsed = JSON.parse(res.data.additional_notes ?? '{}');
+      setRefJayerRows(parsed.jayerRows ?? []);
+      setRefOayerRows(parsed.oayerRows ?? []);
+    } catch {
+      setRefJayerRows([]);
+      setRefOayerRows([]);
+      addToast('요청서 데이터 로드 실패', 'error');
+    }
+  };
+
+  const handleMergeClick = () => {
+    const makeKey = (r: { process_id: string; sp: string; sd: string; pp: string }) =>
+      `${r.process_id}||${r.sp}||${r.sd}||${r.pp}`;
+
+    const activeJayerKeys = new Set(jayerRows.filter((r) => !r.disabled).map(makeKey));
+    const activeRefJayerKeys = new Set(refJayerRows.filter((r) => !r.disabled).map(makeKey));
+    const jayerMatched = [...activeJayerKeys].filter((k) => activeRefJayerKeys.has(k)).length;
+    const jayerUnmatchedRef = [...activeRefJayerKeys].filter((k) => !activeJayerKeys.has(k)).length;
+
+    const activeOayerKeys = new Set(oayerRows.filter((r) => !r.disabled).map(makeKey));
+    const activeRefOayerKeys = new Set(refOayerRows.filter((r) => !r.disabled).map(makeKey));
+    const oayerMatched = [...activeOayerKeys].filter((k) => activeRefOayerKeys.has(k)).length;
+    const oayerUnmatchedRef = [...activeRefOayerKeys].filter((k) => !activeOayerKeys.has(k)).length;
+
+    setMergeStats({
+      matched: jayerMatched + oayerMatched,
+      unmatchedRef: jayerUnmatchedRef + oayerUnmatchedRef,
+    });
+    setMergeConfirmOpen(true);
+  };
+
+  const handleMergeConfirm = () => {
+    const makeKey = (r: { process_id: string; sp: string; sd: string; pp: string }) =>
+      `${r.process_id}||${r.sp}||${r.sd}||${r.pp}`;
+
+    const refJayerKeyMap = new Map<string, JayerRow>();
+    refJayerRows.filter((r) => !r.disabled).forEach((r) => refJayerKeyMap.set(makeKey(r), r));
+    const activeJayerKeys = new Set(jayerRows.filter((r) => !r.disabled).map(makeKey));
+
+    const mergedJayer: JayerRow[] = jayerRows.map((r) => {
+      if (!r.disabled && refJayerKeyMap.has(makeKey(r))) {
+        return { ...r, st: 'X', new_or_copy: '기등록' };
+      }
+      return r;
+    });
+    refJayerRows.filter((r) => !r.disabled).forEach((r) => {
+      if (!activeJayerKeys.has(makeKey(r))) {
+        mergedJayer.push({ ...r, id: genId(), sortOrder: Date.now() });
+      }
+    });
+    setJayerRows(mergedJayer);
+
+    const refOayerKeyMap = new Map<string, OayerRow>();
+    refOayerRows.filter((r) => !r.disabled).forEach((r) => refOayerKeyMap.set(makeKey(r), r));
+    const activeOayerKeys = new Set(oayerRows.filter((r) => !r.disabled).map(makeKey));
+
+    const mergedOayer: OayerRow[] = oayerRows.map((r) => {
+      if (!r.disabled && refOayerKeyMap.has(makeKey(r))) {
+        return { ...r, st: 'X', new_or_copy: '기등록' };
+      }
+      return r;
+    });
+    refOayerRows.filter((r) => !r.disabled).forEach((r) => {
+      if (!activeOayerKeys.has(makeKey(r))) {
+        mergedOayer.push({ ...r, id: genId(), sortOrder: Date.now() });
+      }
+    });
+    setOayerRows(mergedOayer);
+
+    setMergeConfirmOpen(false);
+    addToast(`매칭 ${mergeStats!.matched}건 적용, 미매칭 ${mergeStats!.unmatchedRef}건 추가 완료`, 'success');
+  };
+
   // ===== Bb Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
   const handleBbEntryChange = (idx: number, field: 'location' | 'product' | 'process_id', value: string) => {
     setDetail((prev) => ({
@@ -1367,7 +1471,8 @@ export default function RequestPage(): React.ReactElement {
   const buildEnrichedForm = (note?: string, shouldAddHistory = false): CreateDocumentInput => {
     const now = new Date();
     const dateStr = `${String(now.getFullYear()).slice(2)}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
-    const title = `${detail.line}(${detail.request_purpose})_MAP(${detail.map_type})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서_${dateStr}`;
+    const purposePart = detail.other_purpose ? `${detail.request_purpose}-${detail.other_purpose}` : detail.request_purpose;
+    const title = `${detail.line}(${purposePart})_MAP(${detail.map_type})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서_${dateStr}`;
 
     // 반려된 문서 재상신 시 이전 스냅샷을 history 에 누적
     let history: HistorySnapshot[] = [];
@@ -1531,12 +1636,62 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // ===== Step Render Functions =====
-  const renderStep1 = () => (
+  const renderStep1 = () => {
+    const canSelectPurpose =
+      detail.line !== '' &&
+      detail.process_selection !== '' &&
+      detail.partid_selection !== '' &&
+      detail.process_id !== '';
+
+    return (
     <div className="form-section">
       <div className="form-section-title">📋 {t('request.section_detail')}</div>
       <div className="form-grid">
 
-        {/* 1. 요청 목적 */}
+        {/* 1. 라인 / 조합법 / 제품 이름 / 조리법 */}
+        <div className="full-width flex-row">
+          <FormSelect
+            label={t('request.line')}
+            name="line"
+            value={detail.line}
+            options={lineOptions}
+            onChange={handleDetailChange}
+            placeholder={t('request.select_placeholder')}
+            required
+            error={errors.line}
+            className="flex-col"
+          />
+          <AutocompleteInput
+            label={t('request.process_selection')}
+            value={detail.process_selection}
+            options={processOptions}
+            onChange={(v) => handleDetailSet('process_selection', v)}
+            required
+            error={errors.process_selection}
+            style={{ flex: 1 }}
+          />
+          <AutocompleteInput
+            label={t('request.partid_selection')}
+            value={detail.partid_selection}
+            options={productOptions}
+            onChange={(v) => handleDetailSet('partid_selection', v)}
+            required
+            error={errors.partid_selection}
+            style={{ flex: 1 }}
+          />
+          <AutocompleteInput
+            label={t('request.process_id')}
+            value={detail.process_id}
+            options={processIdOptions}
+            onChange={(v) => handleDetailSet('process_id', v)}
+            placeholder={t('request.select_placeholder')}
+            required
+            error={errors.process_id}
+            style={{ flex: 1 }}
+          />
+        </div>
+
+        {/* 2. 요청 목적 */}
         <div className="form-group full-width">
           <label className="form-label">
             {t('request.request_purpose')} <span className="required">*</span>
@@ -1548,11 +1703,18 @@ export default function RequestPage(): React.ReactElement {
                 type="button"
                 className={`map-type-btn${detail.request_purpose === val ? ' active' : ''}`}
                 onClick={() => handleRequestPurposeSelect(val)}
+                disabled={!canSelectPurpose}
+                style={!canSelectPurpose ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
               >
                 {val}
               </button>
             ))}
           </div>
+          {!canSelectPurpose && (
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: 4 }}>
+              라인, 조합법, 제품 이름, 조리법을 모두 선택하면 요청 목적을 선택할 수 있습니다.
+            </span>
+          )}
           {errors.request_purpose && <span className="form-error">{errors.request_purpose}</span>}
         </div>
 
@@ -1575,6 +1737,34 @@ export default function RequestPage(): React.ReactElement {
                   ))}
                 </div>
               </div>
+
+              {/* Layer 추가/삭제: 참조 요청서 선택 */}
+              {detail.other_purpose === 'Layer 추가/삭제' && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                  <div style={{ flex: 1 }}>
+                    <AutocompleteInput
+                      label="참조 요청서"
+                      value={refDocLabel}
+                      options={approvedDocs.map((d) => d.title)}
+                      onChange={(v) => {
+                        setRefDocLabel(v);
+                        if (refDocId !== null) setRefDocId(null);
+                      }}
+                      onSelect={handleRefDocSelect}
+                      placeholder="이력에서 요청서를 선택하세요"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={refDocId === null}
+                    style={refDocId === null ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                    onClick={handleMergeClick}
+                  >
+                    Merge
+                  </button>
+                </div>
+              )}
 
               {/* 흐름도 */}
               <div className="form-group">
@@ -1605,37 +1795,32 @@ export default function RequestPage(): React.ReactElement {
                       </div>
                       <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                         <label className="form-label">{t('request.flow_process_id')}</label>
-                        <select
-                          className="form-control"
+                        <AutocompleteInput
                           value={row.process_id}
-                          onChange={(e) => handleFlowChange(row.id, 'process_id', e.target.value)}
-                        >
-                          <option value="">{t('request.select_placeholder')}</option>
-                          {(FlowProcessIdOptions[idx] || []).map((o) => <option key={o} value={o}>{o}</option>)}
-                        </select>
+                          onChange={(v) => handleFlowChange(row.id, 'process_id', v)}
+                          options={FlowProcessIdOptions[idx] || []}
+                          placeholder={t('request.select_placeholder')}
+                          style={{ width: '100%' }}
+                        />
                       </div>
                       <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                         <label className="form-label">{t('request.flow_progress_layer')}</label>
                         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                          <select
-                            className="form-control"
+                          <AutocompleteInput
                             value={row.step_from}
-                            onChange={(e) => handleFlowChange(row.id, 'step_from', e.target.value)}
+                            onChange={(v) => handleFlowChange(row.id, 'step_from', v)}
+                            options={FlowLayerIdOptions[idx] || []}
+                            placeholder={t('request.select_placeholder')}
                             style={{ minWidth: '80px' }}
-                          >
-                            <option value="">{t('request.select_placeholder')}</option>
-                            {(FlowLayerIdOptions[idx] || []).map((o) => <option key={o} value={o}>{o}</option>)}
-                          </select>
+                          />
                           <span style={{ whiteSpace: 'nowrap' }}>~</span>
-                          <select
-                            className="form-control"
+                          <AutocompleteInput
                             value={row.step_to}
-                            onChange={(e) => handleFlowChange(row.id, 'step_to', e.target.value)}
+                            onChange={(v) => handleFlowChange(row.id, 'step_to', v)}
+                            options={FlowLayerIdOptions[idx] || []}
+                            placeholder={t('request.select_placeholder')}
                             style={{ minWidth: '80px' }}
-                          >
-                            <option value="">{t('request.select_placeholder')}</option>
-                            {(FlowLayerIdOptions[idx] || []).map((o) => <option key={o} value={o}>{o}</option>)}
-                          </select>
+                          />
                         </div>
                       </div>
                       {detail.flow_chart.length > 1 && (
@@ -1670,73 +1855,7 @@ export default function RequestPage(): React.ReactElement {
           </div>
         )}
 
-        {/* 2-4. 라인 / 조합법 / 제품 이름 / 조리법 */}
-        <div className="full-width flex-row">
-          <FormSelect
-            label={t('request.line')}
-            name="line"
-            value={detail.line}
-            options={lineOptions}
-            onChange={handleDetailChange}
-            placeholder={t('request.select_placeholder')}
-            required
-            error={errors.line}
-            className="flex-col"
-          />
-          <AutocompleteInput
-            label={t('request.process_selection')}
-            value={detail.process_selection}
-            options={processOptions}
-            onChange={(v) => handleDetailSet('process_selection', v)}
-            required
-            error={errors.process_selection}
-            style={{ flex: 1 }}
-          />
-          <AutocompleteInput
-            label={t('request.partid_selection')}
-            value={detail.partid_selection}
-            options={productOptions}
-            onChange={(v) => handleDetailSet('partid_selection', v)}
-            required
-            error={errors.partid_selection}
-            style={{ flex: 1 }}
-          />
-          <FormSelect
-            label={t('request.process_id')}
-            name="process_id"
-            value={detail.process_id}
-            options={processIdOptions}
-            onChange={handleDetailChange}
-            placeholder={t('request.select_placeholder')}
-            required
-            error={errors.process_id}
-            className="flex-col"
-          />
-        </div>
-
-        {/* 고객 및 업체 */}
-        <div className="full-width flex-row">
-          <div className="form-group flex-col" style={{ flex: 1 }}>
-            <label className="form-label">{t('request.customer_name')}</label>
-            <input
-              className="form-control"
-              name="customer_name"
-              value={detail.customer_name}
-              onChange={handleDetailChange}
-            />
-          </div>
-          <div className="form-group flex-col" style={{ flex: 2 }}>
-            <label className="form-label">{t('request.customer_requirement')}</label>
-            <input
-              className="form-control"
-              name="customer_requirement"
-              value={detail.customer_requirement}
-              onChange={handleDetailChange}
-            />
-          </div>
-        </div>
-
-        {/* 8. 뼈찜 조합 영역 */}
+        {/* 3. 뼈찜 조합 영역 */}
         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <label className="form-label">
             {t('request.bb_status')} <span className="required">*</span>
@@ -1768,14 +1887,13 @@ export default function RequestPage(): React.ReactElement {
                 </div>
                 <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                   <label className="form-label">{t('request.bb_ref_process_id')}</label>
-                  <select
-                    className="form-control"
+                  <AutocompleteInput
                     value={entry.process_id}
-                    onChange={(e) => handleBbEntryChange(idx, 'process_id', e.target.value)}
-                  >
-                    <option value="">{t('request.select_placeholder')}</option>
-                    {(BbProductidOptions[idx] || []).map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
+                    onChange={(v) => handleBbEntryChange(idx, 'process_id', v)}
+                    options={BbProductidOptions[idx] || []}
+                    placeholder={t('request.select_placeholder')}
+                    style={{ width: '100%' }}
+                  />
                 </div>
                 {detail.bb_entries.length > 1 && (
                   <button
@@ -1797,9 +1915,32 @@ export default function RequestPage(): React.ReactElement {
           </div>
         </div>
 
+        {/* 4. 고객/업체명 / 요구 사항 */}
+        <div className="full-width flex-row">
+          <div className="form-group flex-col" style={{ flex: 1 }}>
+            <label className="form-label">{t('request.customer_name')}</label>
+            <input
+              className="form-control"
+              name="customer_name"
+              value={detail.customer_name}
+              onChange={handleDetailChange}
+            />
+          </div>
+          <div className="form-group flex-col" style={{ flex: 2 }}>
+            <label className="form-label">{t('request.customer_requirement')}</label>
+            <input
+              className="form-control"
+              name="customer_requirement"
+              value={detail.customer_requirement}
+              onChange={handleDetailChange}
+            />
+          </div>
+        </div>
+
       </div>
     </div>
-  );
+    );
+  };
 
   const SELECT_W = '300px';
 
@@ -3404,6 +3545,28 @@ export default function RequestPage(): React.ReactElement {
             </div>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={mergeConfirmOpen}
+        onClose={() => setMergeConfirmOpen(false)}
+        title="Merge 확인"
+        size="md"
+        style={{ maxWidth: '420px' }}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setMergeConfirmOpen(false)}>
+              {t('common.cancel')}
+            </button>
+            <button className="btn btn-primary" onClick={handleMergeConfirm}>
+              {t('common.confirm')}
+            </button>
+          </>
+        }
+      >
+        <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+          매칭 {mergeStats?.matched ?? 0}건, 미매칭 {mergeStats?.unmatchedRef ?? 0}건 추가 예정입니다. 진행하시겠습니까?
+        </p>
       </Modal>
 
       <Modal
