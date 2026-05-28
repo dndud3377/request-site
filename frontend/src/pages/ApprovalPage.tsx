@@ -47,7 +47,7 @@ const getCurrentStage = (doc: RequestDocument, t: TFunction): string => {
 
   return pending.map((s) => {
     const label = agentToLabel[s.agent] || s.agent;
-    return s.assignee_name ? `${label} (${s.assignee_name})` : label;
+    return label;
   }).join(' / ');
 };
 

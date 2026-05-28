@@ -1014,7 +1014,6 @@ type Page = { label: string; content: React.ReactNode };
   type StepDisplayInfo = {
     status: 'approved' | 'rejected' | 'reviewing' | 'unassigned' | 'waiting' | 'na';
     label: string;
-    assignee?: string;
     date?: string;
     comment?: string;
   };
@@ -1027,19 +1026,17 @@ type Page = { label: string; content: React.ReactNode };
     if (!s) return { status: 'waiting', label: t('approval.step_pending') };
     if (s.action === 'approved') return {
       status: 'approved', label: t('approval.agree'),
-      assignee: s.assignee_name || undefined,
       date: formatDateTime(s.acted_at),
       comment: s.comment || undefined,
     };
     if (s.action === 'rejected') return {
       status: 'rejected', label: t('approval.reject'),
-      assignee: s.assignee_name || undefined,
       date: formatDateTime(s.acted_at),
       comment: s.comment || undefined,
     };
     // pending
     if (!s.assignee_name) return { status: 'unassigned', label: t('approval.step_unassigned') };
-    return { status: 'reviewing', label: t('common.status_under_review'), assignee: s.assignee_name };
+    return { status: 'reviewing', label: t('common.status_under_review') };
   };
 
   const statusBadgeStyle = (status: StepDisplayInfo['status']): React.CSSProperties => {
@@ -1129,9 +1126,6 @@ type Page = { label: string; content: React.ReactNode };
                     <div key={r} style={historyItemStyle(isCurrent)}>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', minWidth: 40 }}>{r}회차</span>
                       <span style={statusBadgeStyle(info.status)}>{info.label}</span>
-                      {info.assignee && (
-                        <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{info.assignee}</span>
-                      )}
                       {info.date && (
                         <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{info.date}</span>
                       )}
