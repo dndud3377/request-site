@@ -313,7 +313,7 @@ export default function RequestPage(): React.ReactElement {
   const [refJayerRows, setRefJayerRows] = useState<JayerRow[]>([]);
   const [refOayerRows, setRefOayerRows] = useState<OayerRow[]>([]);
   const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
-  const [mergeStats, setMergeStats] = useState<{ matched: number; unmatchedRef: number } | null>(null);
+  const [mergeStats, setMergeStats] = useState<{ jayerMatched: number; jayerUnmatchedRef: number; oayerMatched: number; oayerUnmatchedRef: number } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
@@ -1033,10 +1033,7 @@ export default function RequestPage(): React.ReactElement {
     const oayerMatched = [...activeOayerKeys].filter((k) => activeRefOayerKeys.has(k)).length;
     const oayerUnmatchedRef = [...activeRefOayerKeys].filter((k) => !activeOayerKeys.has(k)).length;
 
-    setMergeStats({
-      matched: jayerMatched + oayerMatched,
-      unmatchedRef: jayerUnmatchedRef + oayerUnmatchedRef,
-    });
+    setMergeStats({ jayerMatched, jayerUnmatchedRef, oayerMatched, oayerUnmatchedRef });
     setMergeConfirmOpen(true);
   };
 
@@ -1079,7 +1076,7 @@ export default function RequestPage(): React.ReactElement {
     setOayerRows(mergedOayer);
 
     setMergeConfirmOpen(false);
-    addToast(`기등록 ${mergeStats!.matched}건 적용, 미매칭 ${mergeStats!.unmatchedRef}건 추가 완료`, 'success');
+    addToast(`J-ayer 기등록 ${mergeStats!.jayerMatched}건 / O-ayer 기등록 ${mergeStats!.oayerMatched}건, 미매칭 ${mergeStats!.jayerUnmatchedRef + mergeStats!.oayerUnmatchedRef}건 추가 완료`, 'success');
   };
 
   // ===== Bb Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
@@ -3552,9 +3549,17 @@ export default function RequestPage(): React.ReactElement {
           </>
         }
       >
-        <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-          기등록 {mergeStats?.matched ?? 0}건, 미매칭 {mergeStats?.unmatchedRef ?? 0}건 추가 예정입니다. 진행하시겠습니까?
-        </p>
+        <div style={{ color: 'var(--text-secondary)', lineHeight: 2 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', marginBottom: '4px' }}>
+            <span>J-ayer</span>
+            <span>기등록 <b>{mergeStats?.jayerMatched ?? 0}</b>건 / 미매칭 <b>{mergeStats?.jayerUnmatchedRef ?? 0}</b>건 추가 예정</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', marginBottom: '12px' }}>
+            <span>O-ayer</span>
+            <span>기등록 <b>{mergeStats?.oayerMatched ?? 0}</b>건 / 미매칭 <b>{mergeStats?.oayerUnmatchedRef ?? 0}</b>건 추가 예정</span>
+          </div>
+          <p style={{ margin: 0 }}>진행하시겠습니까?</p>
+        </div>
       </Modal>
 
       <Modal
