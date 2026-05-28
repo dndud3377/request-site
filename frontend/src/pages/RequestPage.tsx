@@ -188,7 +188,6 @@ const INITIAL_DETAIL: DetailFormState = {
   map_reason: '',
   ea_change: '변경 없음',
   ea_value: '',
-  split_progress: '아니오',
   bb_zone: '존재',
   bb_entries: [{ location: '', product: '', process_id: '' }],
   only_prodc: 'No',
@@ -204,9 +203,16 @@ const INITIAL_DETAIL: DetailFormState = {
   prodc_bottom_product: '',
   mshot_change: '없음',
   mshot_image_copy: '',
-  backside_status: 'No',
-  tmap_apply: '미적용',
-  hplhc_change: '변경 없음',
+  photo_backside: '미적용',
+  eds_backside: '미적용',
+  inter: '미적용',
+  tsv: '미적용',
+  rf: '미적용',
+  fullchip: '미적용',
+  split: '미적용',
+  st: '미적용',
+  ecc: '미적용',
+  labelsideshot: '미적용',
   rev_yn: '',
   rev_entries: [],
 };
@@ -690,13 +696,8 @@ export default function RequestPage(): React.ReactElement {
       if (sourceDetail.mshot_change) fieldsToCopy.mshot_change = sourceDetail.mshot_change;
       if (sourceDetail.mshot_image_copy) fieldsToCopy.mshot_image_copy = sourceDetail.mshot_image_copy;
 
-      if (sourceDetail.backside_status) fieldsToCopy.backside_status = sourceDetail.backside_status;
-
-      if (sourceDetail.split_progress) fieldsToCopy.split_progress = sourceDetail.split_progress;
-
-      if (sourceDetail.tmap_apply) fieldsToCopy.tmap_apply = sourceDetail.tmap_apply;
-
-      if (sourceDetail.hplhc_change) fieldsToCopy.hplhc_change = sourceDetail.hplhc_change;
+      const mapOptFields = ['photo_backside','eds_backside','inter','tsv','rf','fullchip','split','st','ecc','labelsideshot'] as const;
+      mapOptFields.forEach((f) => { if (sourceDetail[f]) (fieldsToCopy as any)[f] = sourceDetail[f]; });
 
       setDetail(prev => ({ ...prev, ...fieldsToCopy }));
       setCopiedFields(new Set(Object.keys(fieldsToCopy)));
@@ -1542,10 +1543,16 @@ export default function RequestPage(): React.ReactElement {
       prodc_bottom_product: INITIAL_DETAIL.prodc_bottom_product,
       mshot_change: INITIAL_DETAIL.mshot_change,
       mshot_image_copy: INITIAL_DETAIL.mshot_image_copy,
-      backside_status: INITIAL_DETAIL.backside_status,
-      split_progress: INITIAL_DETAIL.split_progress,
-      tmap_apply: INITIAL_DETAIL.tmap_apply,
-      hplhc_change: INITIAL_DETAIL.hplhc_change,
+      photo_backside: INITIAL_DETAIL.photo_backside,
+      eds_backside: INITIAL_DETAIL.eds_backside,
+      inter: INITIAL_DETAIL.inter,
+      tsv: INITIAL_DETAIL.tsv,
+      rf: INITIAL_DETAIL.rf,
+      fullchip: INITIAL_DETAIL.fullchip,
+      split: INITIAL_DETAIL.split,
+      st: INITIAL_DETAIL.st,
+      ecc: INITIAL_DETAIL.ecc,
+      labelsideshot: INITIAL_DETAIL.labelsideshot,
       rev_yn: INITIAL_DETAIL.rev_yn,
       rev_entries: INITIAL_DETAIL.rev_entries,
     }));
@@ -2281,10 +2288,16 @@ export default function RequestPage(): React.ReactElement {
         {/* Map Option 선택 토글 버튼 */}
         {(() => {
           const mapOptions = [
-            { label: t('request.backside_adjust'),         name: 'backside_status' as keyof DetailFormState, activeValue: 'Yes',       defaultValue: 'No'        },
-            { label: t('request.split_progress_status'),   name: 'split_progress'  as keyof DetailFormState, activeValue: '예',         defaultValue: '아니오'    },
-            { label: t('request.tmap_application_status'), name: 'tmap_apply'      as keyof DetailFormState, activeValue: '적용',       defaultValue: '미적용'    },
-            { label: t('request.hplhc_status'),            name: 'hplhc_change'    as keyof DetailFormState, activeValue: '변경 있음',  defaultValue: '변경 없음' },
+            { label: t('request.map_opt_photo_backside'), name: 'photo_backside' as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_eds_backside'),   name: 'eds_backside'   as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_inter'),          name: 'inter'          as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_tsv'),            name: 'tsv'            as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_rf'),             name: 'rf'             as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_fullchip'),       name: 'fullchip'       as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_split'),          name: 'split'          as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_st'),             name: 'st'             as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_ecc'),            name: 'ecc'            as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_labelsideshot'),  name: 'labelsideshot'  as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
           ];
           return (
             <div className="full-width">
