@@ -10,7 +10,7 @@ import {
   AgentType,
   StepInfo,
   ExternalBbDataItem,
-  PhotoStepOption,
+  StepOption,
   AdminNotice,
   CreateNoticeInput,
   UpdateNoticeInput,
@@ -18,7 +18,6 @@ import {
   CreateGuideInput,
   UserInfo,
   UserWithRole,
-  UserRole,
   CreateUserInput,
   UserForAssignment,
 } from '../types';
@@ -418,8 +417,8 @@ export const formOptionsAPI = {
   getLayerIds: (line: string, process: string): Promise<string[]> =>
     getOptions(`/form-options/layer-ids/?line=${encodeURIComponent(line)}&process=${encodeURIComponent(process)}`),
 
-  getBbExternalData: (entry: { location: string; product: string; process_id: string }): Promise<PhotoStepOption[]> => {
-    return get<{ options: PhotoStepOption[] }>(
+  getBbExternalData: (entry: { location: string; product: string; process_id: string }): Promise<StepOption[]> => {
+    return get<{ options: StepOption[] }>(
       `/form-options/bb-external/?location=${encodeURIComponent(entry.location)}&product=${encodeURIComponent(entry.product)}&process_id=${encodeURIComponent(entry.process_id)}`
     ).then((r) => r.options || []);
   },

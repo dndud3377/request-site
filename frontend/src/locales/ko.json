@@ -59,13 +59,6 @@
     "col_step": "STEP",
     "col_item_id": "ID",
     "col_tt": "TT",
-    "col_layer": "Layer",
-    "col_no": "No.",
-    "col_bb_process_id": "뼈찜 조리법",
-    "col_bb_partid": "뼈찜 제품 이름",
-    "col_bb_layer": "뼈찜 Step",
-    "col_bb_stepseq": "SS",
-    "col_remark": "비고",
     "map_option_title": "Map Option 선택",
     "map_type": "MAP 목적",
     "map_type_new": "NEW",
@@ -125,12 +118,7 @@
     "toast_ovl_no_data": "O-ayer STEP 정보가 없습니다.",
     "toast_bb_auto_fill": "BB 데이터 {{count}}행이 조회되었습니다.",
     "toast_bb_no_data": "BB STEP 정보가 없습니다.",
-    "toast_bb_error": "BB 정보를 불러오는데 실패했습니다.",
-    "btn_all_o": "전체 O",
-    "btn_all_x": "전체 X",
-    "btn_all_new": "전체 신규",
-    "btn_all_copy": "전체 복사",
-    "btn_reset": "초기화"
+    "toast_bb_error": "BB 정보를 불러오는데 실패했습니다."
   },
   "approval": {
     "title": "결재 현황",
@@ -328,26 +316,5 @@
     "cancel": "취소",
     "close": "닫기",
     "no_notice": "등록된 공지사항이 없습니다"
-  },
-  "guide": {
-    "title": "가이드",
-    "subtitle": "작업 가이드 및 참고 자료",
-    "write": "가이드 작성",
-    "edit": "수정",
-    "delete": "삭제",
-    "search_placeholder": "제목 또는 내용 검색",
-    "no_guides": "등록된 가이드가 없습니다.",
-    "author": "작성자",
-    "created_at": "작성일",
-    "updated_at": "수정일",
-    "form_title": "제목",
-    "form_section": "섹션",
-    "form_content": "내용",
-    "create_success": "가이드가 등록되었습니다.",
-    "update_success": "가이드가 수정되었습니다.",
-    "delete_success": "가이드가 삭제되었습니다.",
-    "confirm_delete": "이 가이드를 삭제하시겠습니까?",
-    "modal_write_title": "가이드 작성",
-    "modal_edit_title": "가이드 수정"
   }
 }
