@@ -1039,7 +1039,7 @@ type Page = { label: string; content: React.ReactNode };
     };
     // pending
     if (!s.assignee_name) return { status: 'unassigned', label: t('approval.step_unassigned') };
-    return { status: 'reviewing', label: t('common.status_under_review'), assignee: s.assignee_name };
+    return { status: 'reviewing', label: t('common.status_under_review') };
   };
 
   const statusBadgeStyle = (status: StepDisplayInfo['status']): React.CSSProperties => {
