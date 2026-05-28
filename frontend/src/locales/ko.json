@@ -134,6 +134,7 @@
     "col_requester": "의뢰자",
     "col_status": "상태",
     "col_submitted": "상신일",
+    "col_expected_completion": "완료 예상일",
     "col_current_stage": "현재 단계",
     "view_detail": "상세보기",
     "agree": "합의",
