@@ -194,14 +194,9 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, onLoadT
       <div className="approval-parallel">
         {renderStepBadge(jStep, t('approval.agent_J'))}
         {renderStepBadge(oStep, t('approval.agent_O'))}
+        {(hasPlel || eStep) && renderStepBadge(eStep, t('approval.agent_E'))}
       </div>
       <div className="approval-connector" />
-      {(hasPlel || eStep) && (
-        <>
-          {renderStepBadge(eStep, t('approval.agent_E'))}
-          <div className="approval-connector" />
-        </>
-      )}
       <div className={`approval-node ${doc.status === 'approved' ? 'approval-node-done' : 'approval-node-inactive'}`}>
         <span className="step-agent-label">{t('common.status_approved')}</span>
         {doc.status === 'approved' && <span className="step-badge step-badge-approved">{t('approval.step_done')}</span>}

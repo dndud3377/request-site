@@ -216,28 +216,26 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             new_status = 'under_review'
 
         elif agent == 'P':
-            # P 합의 → J, O 병렬 단계 생성
+            # P 합의 → J, O, [E if PLEL] 병렬 단계 생성
             ApprovalStep.objects.create(document=document, agent='J', action='pending', is_parallel=True, round=current_round)
             ApprovalStep.objects.create(document=document, agent='O', action='pending', is_parallel=True, round=current_round)
+            if document.has_ppid_plel():
+                ApprovalStep.objects.create(document=document, agent='E', action='pending', is_parallel=True, round=current_round)
             new_status = 'under_review'
 
-        elif agent in ('J', 'O'):
-            # J/O 모두 합의 시 다음 단계 결정
+        elif agent in ('J', 'O', 'E'):
+            # J/O/[E] 모두 합의 시 최종 승인
             j_step = ApprovalStep.objects.filter(document=document, agent='J', round=current_round).order_by('-id').first()
             o_step = ApprovalStep.objects.filter(document=document, agent='O', round=current_round).order_by('-id').first()
-            both_approved = (
-                j_step and j_step.action == 'approved' and
-                o_step and o_step.action == 'approved'
-            )
-            if both_approved:
-                if document.has_ppid_plel():
-                    ApprovalStep.objects.create(document=document, agent='E', action='pending', round=current_round)
-                    new_status = 'under_review'
-                else:
-                    new_status = 'approved'
-
-        elif agent == 'E':
-            new_status = 'approved'
+            e_step = ApprovalStep.objects.filter(document=document, agent='E', round=current_round).order_by('-id').first()
+            j_approved = j_step and j_step.action == 'approved'
+            o_approved = o_step and o_step.action == 'approved'
+            if e_step:
+                all_approved = j_approved and o_approved and e_step.action == 'approved'
+            else:
+                all_approved = j_approved and o_approved
+            if all_approved:
+                new_status = 'approved'
 
         document.status = new_status
         document.save()
