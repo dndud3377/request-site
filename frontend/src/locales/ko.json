@@ -300,7 +300,15 @@
     "status_rejected": "반려됨",
     "no_data": "데이터 없음",
     "process_error": "처리 중 오류가 발생했습니다.",
-    "saving": "저장 중..."
+    "saving": "저장 중...",
+    "role_label_PL": "제품 담당자",
+    "role_label_TE_R": "AGENT R팀",
+    "role_label_TE_P": "AGENT P팀",
+    "role_label_TE_J": "AGENT J팀",
+    "role_label_TE_O": "AGENT O팀",
+    "role_label_TE_E": "AGENT E팀",
+    "role_label_MASTER": "관리자",
+    "role_label_NONE": "미지정"
   },
   "notice": {
     "label_notice": "Notice",

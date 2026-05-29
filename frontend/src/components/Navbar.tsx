@@ -102,11 +102,11 @@ export default function Navbar(): React.ReactElement {
     }
   };
 
-  // 역할 표시 레이블 가져오기
-  const roleLabel = currentUser.role ? ROLE_LABEL[currentUser.role] : ROLE_LABEL['null'];
+  const roleLabel = currentUser.role ? t(ROLE_LABEL[currentUser.role] as any) : t('common.role_label_NONE');
 
-  // 부서명에서 괄호와 그 내용 제거 (예: "FP 팀 (소속)" → "FP 팀")
-  const cleanDepartment = currentUser.department ? currentUser.department.replace(/\(.*?\)/g, '').trim() : '';
+  // 부서명: dev 모드에서는 i18n 키로 저장되므로 번역, 운영에서는 괄호 제거
+  const rawDept = currentUser.department ?? '';
+  const cleanDepartment = IS_DEV_MODE ? t(rawDept as any) : rawDept.replace(/\(.*?\)/g, '').trim();
 
   return (
     <nav className="navbar">
@@ -157,7 +157,7 @@ export default function Navbar(): React.ReactElement {
               >
                 <span className="dev-badge">DEV</span>
                 <span className="dev-user-name">{currentUser.name}</span>
-                <span className="dev-user-role">({ROLE_LABEL[currentUser.role] || currentUser.role})</span>
+                <span className="dev-user-role">({t(ROLE_LABEL[currentUser.role] as any) || currentUser.role})</span>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginLeft: 4 }}>
                   <polyline points="6 9 12 15 18 9"/>
                 </svg>
@@ -170,7 +170,7 @@ export default function Navbar(): React.ReactElement {
                     if (usersInRole.length === 0) return null;
                     return (
                       <div key={role} className="dev-role-group">
-                        <div className="dev-role-label">{ROLE_LABEL[role]}</div>
+                        <div className="dev-role-label">{t(ROLE_LABEL[role] as any)}</div>
                         {usersInRole.map((u) => (
                           <button
                             key={u.username}
@@ -181,7 +181,7 @@ export default function Navbar(): React.ReactElement {
                             }}
                           >
                             {u.name}
-                            <span className="dev-user-dept">{u.department}</span>
+                            <span className="dev-user-dept">{t(u.department as any)}</span>
                             {currentUser.username === u.username && (
                               <span className="dev-current-badge">현재</span>
                             )}

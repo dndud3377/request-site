@@ -266,7 +266,15 @@
     "status_approved": "Approved",
     "status_rejected": "Rejected",
     "no_data": "No data available.",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "role_label_PL": "Product Manager",
+    "role_label_TE_R": "AGENT R Team",
+    "role_label_TE_P": "AGENT P Team",
+    "role_label_TE_J": "AGENT J Team",
+    "role_label_TE_O": "AGENT O Team",
+    "role_label_TE_E": "AGENT E Team",
+    "role_label_MASTER": "Administrator",
+    "role_label_NONE": "Unassigned"
   },
   "notice": {
     "label_notice": "Notice",
