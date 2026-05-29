@@ -78,7 +78,7 @@ export default function UserSwitchModal({
               }}
               onClick={() => setSelectedRole(role)}
             >
-              {ROLE_LABEL[role]}
+              {t(ROLE_LABEL[role] as any)}
             </button>
           ))}
         </div>
@@ -86,7 +86,7 @@ export default function UserSwitchModal({
         {/* 사용자 목록 */}
         <div style={styles.userList}>
           <div style={styles.userListHeader}>
-            {ROLE_LABEL[selectedRole]} 역할 사용자
+            {t(ROLE_LABEL[selectedRole] as any)} 역할 사용자
           </div>
           <div style={styles.userGrid}>
             {filteredUsers.map((user) => {

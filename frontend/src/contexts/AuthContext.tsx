@@ -4,38 +4,40 @@ import { authAPI, setToken, clearToken } from '../api/client';
 
 const IS_DEV_MODE = process.env.REACT_APP_AUTH_MODE === 'dev';
 
+// ===== Role label i18n keys =====
+
+export const ROLE_LABEL: Record<UserRole, string> = {
+  PL:     'common.role_label_PL',
+  TE_R:   'common.role_label_TE_R',
+  TE_P:   'common.role_label_TE_P',
+  TE_J:   'common.role_label_TE_J',
+  TE_O:   'common.role_label_TE_O',
+  TE_E:   'common.role_label_TE_E',
+  MASTER: 'common.role_label_MASTER',
+  NONE:   'common.role_label_NONE',
+};
+
 // ===== Mock Users (dev 유저 전환용) =====
 
 export const MOCK_USERS: MockUser[] = [
-  { id: 1,  username: 'pl_user',  name: '김의뢰', role: 'PL',     department: '마케팅팀',  email: 'pl.user@company.com' },
-  { id: 2,  username: 'agent_r1', name: '이검토', role: 'TE_R',   department: 'AGENT R팀', email: 'agent.r1@company.com' },
-  { id: 7,  username: 'agent_r2', name: '김R',   role: 'TE_R',   department: 'AGENT R팀', email: 'agent.r2@company.com' },
-  { id: 8,  username: 'agent_r3', name: '박R',   role: 'TE_R',   department: 'AGENT R팀', email: 'agent.r3@company.com' },
-  { id: 15, username: 'agent_p1', name: '원이',  role: 'TE_P',   department: 'AGENT P팀', email: 'agent.p1@company.com' },
-  { id: 16, username: 'agent_p2', name: '미나미', role: 'TE_P',   department: 'AGENT P팀', email: 'agent.p2@company.com' },
-  { id: 17, username: 'agent_p3', name: '제나',  role: 'TE_P',   department: 'AGENT P팀', email: 'agent.p3@company.com' },
-  { id: 3,  username: 'agent_j1', name: '박제이', role: 'TE_J',   department: 'AGENT J팀', email: 'agent.j1@company.com' },
-  { id: 9,  username: 'agent_j2', name: '김J',   role: 'TE_J',   department: 'AGENT J팀', email: 'agent.j2@company.com' },
-  { id: 10, username: 'agent_j3', name: '이J',   role: 'TE_J',   department: 'AGENT J팀', email: 'agent.j3@company.com' },
-  { id: 4,  username: 'agent_o1', name: '최오이', role: 'TE_O',   department: 'AGENT O팀', email: 'agent.o1@company.com' },
-  { id: 11, username: 'agent_o2', name: '김O',   role: 'TE_O',   department: 'AGENT O팀', email: 'agent.o2@company.com' },
-  { id: 12, username: 'agent_o3', name: '이O',   role: 'TE_O',   department: 'AGENT O팀', email: 'agent.o3@company.com' },
-  { id: 5,  username: 'agent_e1', name: '정이이', role: 'TE_E',   department: 'AGENT E팀', email: 'agent.e1@company.com' },
-  { id: 13, username: 'agent_e2', name: '김E',   role: 'TE_E',   department: 'AGENT E팀', email: 'agent.e2@company.com' },
-  { id: 14, username: 'agent_e3', name: '이E',   role: 'TE_E',   department: 'AGENT E팀', email: 'agent.e3@company.com' },
-  { id: 6,  username: 'master',   name: '관리자', role: 'MASTER', department: '관리팀',    email: 'master@company.com' },
+  { id: 1,  username: 'pl_user',  name: '김의뢰', role: 'PL',     department: '마케팅팀',             email: 'pl.user@company.com' },
+  { id: 2,  username: 'agent_r1', name: '이검토', role: 'TE_R',   department: ROLE_LABEL['TE_R'],     email: 'agent.r1@company.com' },
+  { id: 7,  username: 'agent_r2', name: '김R',   role: 'TE_R',   department: ROLE_LABEL['TE_R'],     email: 'agent.r2@company.com' },
+  { id: 8,  username: 'agent_r3', name: '박R',   role: 'TE_R',   department: ROLE_LABEL['TE_R'],     email: 'agent.r3@company.com' },
+  { id: 15, username: 'agent_p1', name: '원이',  role: 'TE_P',   department: ROLE_LABEL['TE_P'],     email: 'agent.p1@company.com' },
+  { id: 16, username: 'agent_p2', name: '미나미', role: 'TE_P',   department: ROLE_LABEL['TE_P'],     email: 'agent.p2@company.com' },
+  { id: 17, username: 'agent_p3', name: '제나',  role: 'TE_P',   department: ROLE_LABEL['TE_P'],     email: 'agent.p3@company.com' },
+  { id: 3,  username: 'agent_j1', name: '박제이', role: 'TE_J',   department: ROLE_LABEL['TE_J'],     email: 'agent.j1@company.com' },
+  { id: 9,  username: 'agent_j2', name: '김J',   role: 'TE_J',   department: ROLE_LABEL['TE_J'],     email: 'agent.j2@company.com' },
+  { id: 10, username: 'agent_j3', name: '이J',   role: 'TE_J',   department: ROLE_LABEL['TE_J'],     email: 'agent.j3@company.com' },
+  { id: 4,  username: 'agent_o1', name: '최오이', role: 'TE_O',   department: ROLE_LABEL['TE_O'],     email: 'agent.o1@company.com' },
+  { id: 11, username: 'agent_o2', name: '김O',   role: 'TE_O',   department: ROLE_LABEL['TE_O'],     email: 'agent.o2@company.com' },
+  { id: 12, username: 'agent_o3', name: '이O',   role: 'TE_O',   department: ROLE_LABEL['TE_O'],     email: 'agent.o3@company.com' },
+  { id: 5,  username: 'agent_e1', name: '정이이', role: 'TE_E',   department: ROLE_LABEL['TE_E'],     email: 'agent.e1@company.com' },
+  { id: 13, username: 'agent_e2', name: '김E',   role: 'TE_E',   department: ROLE_LABEL['TE_E'],     email: 'agent.e2@company.com' },
+  { id: 14, username: 'agent_e3', name: '이E',   role: 'TE_E',   department: ROLE_LABEL['TE_E'],     email: 'agent.e3@company.com' },
+  { id: 6,  username: 'master',   name: '관리자', role: 'MASTER', department: '관리팀',               email: 'master@company.com' },
 ];
-
-export const ROLE_LABEL: Record<UserRole, string> = {
-  PL:     '제품 담당자',
-  TE_R:   'AGENT R팀',
-  TE_P:   'AGENT P팀',
-  TE_J:   'AGENT J팀',
-  TE_O:   'AGENT O팀',
-  TE_E:   'AGENT E팀',
-  MASTER: '관리자',
-  NONE:   '미지정',
-};
 
 // ===== Context =====
 
