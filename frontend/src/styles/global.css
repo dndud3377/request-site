@@ -1257,8 +1257,6 @@ select.form-control option {
 
 /* ===== Conditional Group (indented sub-fields) ===== */
 .conditional-group {
-  border-left: 3px solid var(--accent-light);
-  padding-left: 20px;
   margin-top: 8px;
   display: flex;
   flex-direction: column;
