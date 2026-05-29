@@ -18,6 +18,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   NONE: ['/', '/approval', '/history', '/voc', '/guide'],
   PL: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
   TE_R: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
+  TE_P: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
   TE_J: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
   TE_O: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
   TE_E: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
