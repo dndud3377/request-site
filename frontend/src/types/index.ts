@@ -218,9 +218,6 @@ export interface DetailFormState {
   ea_change: string;
   ea_value: string;
 
-  // split
-  split_progress: string;
-
   // Backbone
   bb_zone: string;
   bb_entries: Array<{ location: string; product: string; process_id: string }>;
@@ -240,10 +237,16 @@ export interface DetailFormState {
   mshot_change: string;
   mshot_image_copy: string;  // 붙여넣기 시 파일명만 저장
 
-  backside_status: string;
-
-  tmap_apply: string;
-  hplhc_change: string;
+  photo_backside: string;
+  eds_backside: string;
+  inter: string;
+  tsv: string;
+  rf: string;
+  fullchip: string;
+  split: string;
+  st: string;
+  ecc: string;
+  labelsideshot: string;
 
   rev_yn: string;
   rev_entries: Array<{ layers: string[]; gds: string }>;

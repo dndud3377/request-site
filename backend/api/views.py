@@ -28,6 +28,7 @@ from .serializers import (
 )
 import uuid
 import logging
+import re
 
 
 class IsMasterOrReadOnly(BasePermission):
@@ -298,6 +299,33 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         step.save()
 
         return Response({'message': '담당자가 지정되었습니다.'})
+
+    def _unique_title(self, base_title, exclude_id=None):
+        """중복 제목 처리: 같은 제목이 있으면 _2, _3, ... suffix 를 붙여 반환"""
+        qs = RequestDocument.objects.all()
+        if exclude_id is not None:
+            qs = qs.exclude(id=exclude_id)
+
+        if not qs.filter(title=base_title).exists():
+            return base_title
+
+        pattern = re.compile(r'^' + re.escape(base_title) + r'_(\d+)$')
+        existing_numbers = []
+        for title in qs.filter(title__startswith=base_title + '_').values_list('title', flat=True):
+            m = pattern.match(title)
+            if m:
+                existing_numbers.append(int(m.group(1)))
+
+        next_num = max(existing_numbers) + 1 if existing_numbers else 2
+        return f"{base_title}_{next_num}"
+
+    def perform_create(self, serializer):
+        base_title = serializer.validated_data.get('title', '')
+        serializer.save(title=self._unique_title(base_title))
+
+    def perform_update(self, serializer):
+        base_title = serializer.validated_data.get('title', serializer.instance.title)
+        serializer.save(title=self._unique_title(base_title, exclude_id=serializer.instance.id))
 
     @action(detail=False, methods=['get'])
     def stats(self, request):

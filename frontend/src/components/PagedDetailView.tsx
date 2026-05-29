@@ -845,10 +845,16 @@ type Page = { label: string; content: React.ReactNode };
 
           {isR && (() => {
             const mapOptionDefs = [
-              { label: t('request.backside_adjust'),         fieldKey: 'backside_status', activeValue: 'Yes'      },
-              { label: t('request.split_progress_status'),   fieldKey: 'split_progress',  activeValue: '예'       },
-              { label: t('request.tmap_application_status'), fieldKey: 'tmap_apply',      activeValue: '적용'     },
-              { label: t('request.hplhc_status'),            fieldKey: 'hplhc_change',    activeValue: '변경 있음'},
+              { label: t('request.map_opt_photo_backside'), fieldKey: 'photo_backside', activeValue: '적용' },
+              { label: t('request.map_opt_eds_backside'),   fieldKey: 'eds_backside',   activeValue: '적용' },
+              { label: t('request.map_opt_inter'),          fieldKey: 'inter',          activeValue: '적용' },
+              { label: t('request.map_opt_tsv'),            fieldKey: 'tsv',            activeValue: '적용' },
+              { label: t('request.map_opt_rf'),             fieldKey: 'rf',             activeValue: '적용' },
+              { label: t('request.map_opt_fullchip'),       fieldKey: 'fullchip',       activeValue: '적용' },
+              { label: t('request.map_opt_split'),          fieldKey: 'split',          activeValue: '적용' },
+              { label: t('request.map_opt_st'),             fieldKey: 'st',             activeValue: '적용' },
+              { label: t('request.map_opt_ecc'),            fieldKey: 'ecc',            activeValue: '적용' },
+              { label: t('request.map_opt_labelsideshot'),  fieldKey: 'labelsideshot',  activeValue: '적용' },
             ];
             const activeOptions = mapOptionDefs.filter(o => (detail as any)[o.fieldKey] === o.activeValue);
             const prevActiveOptions = mapOptionDefs.filter(o => (prevSnap?.detail as any)?.[o.fieldKey] === o.activeValue);
@@ -1033,7 +1039,7 @@ type Page = { label: string; content: React.ReactNode };
     };
     // pending
     if (!s.assignee_name) return { status: 'unassigned', label: t('approval.step_unassigned') };
-    return { status: 'reviewing', label: t('common.status_under_review'), assignee: s.assignee_name };
+    return { status: 'reviewing', label: t('common.status_under_review') };
   };
 
   const statusBadgeStyle = (status: StepDisplayInfo['status']): React.CSSProperties => {

@@ -10,6 +10,7 @@ interface AutocompleteInputProps {
   required?: boolean;
   error?: string;
   style?: React.CSSProperties;
+  disabled?: boolean;
 }
 
 export default function AutocompleteInput({
@@ -22,6 +23,7 @@ export default function AutocompleteInput({
   required,
   error,
   style,
+  disabled,
 }: AutocompleteInputProps): React.ReactElement {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -53,9 +55,11 @@ export default function AutocompleteInput({
         className={`form-control${error ? ' error' : ''}`}
         value={value}
         placeholder={placeholder ?? '입력 또는 선택'}
-        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
+        onChange={(e) => { if (!disabled) { onChange(e.target.value); setOpen(true); } }}
+        onFocus={() => { if (!disabled) setOpen(true); }}
         autoComplete="off"
+        disabled={disabled}
+        style={disabled ? { backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed', opacity: 0.6 } : undefined}
       />
       {error && <span className="form-error">{error}</span>}
       {open && filtered.length > 0 && (

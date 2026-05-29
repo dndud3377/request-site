@@ -80,8 +80,8 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, onLoadT
     const canAct = canUserAgree(currentUser, step);
     const isAssigning = assigningAgent === step.agent;
 
-    // 담당자가 지정된 경우 라벨에 담당자 이름 포함 (예: {{approval.agent_R}} (오우영))
-    const displayLabel = step.assignee_name ? `${label} (${step.assignee_name})` : label;
+    const isActed = step.action === 'approved' || step.action === 'rejected';
+    const displayLabel = (isActed && step.assignee_name) ? `${label} (${step.assignee_name})` : label;
 
     return (
       <div className={`approval-node ${step.action === 'approved' ? 'approval-node-done' : step.action === 'rejected' ? 'approval-node-rejected' : ''}`}>

@@ -188,7 +188,6 @@ const INITIAL_DETAIL: DetailFormState = {
   map_reason: '',
   ea_change: '변경 없음',
   ea_value: '',
-  split_progress: '아니오',
   bb_zone: '존재',
   bb_entries: [{ location: '', product: '', process_id: '' }],
   only_prodc: 'No',
@@ -204,9 +203,16 @@ const INITIAL_DETAIL: DetailFormState = {
   prodc_bottom_product: '',
   mshot_change: '없음',
   mshot_image_copy: '',
-  backside_status: 'No',
-  tmap_apply: '미적용',
-  hplhc_change: '변경 없음',
+  photo_backside: '미적용',
+  eds_backside: '미적용',
+  inter: '미적용',
+  tsv: '미적용',
+  rf: '미적용',
+  fullchip: '미적용',
+  split: '미적용',
+  st: '미적용',
+  ecc: '미적용',
+  labelsideshot: '미적용',
   rev_yn: '',
   rev_entries: [],
 };
@@ -313,7 +319,7 @@ export default function RequestPage(): React.ReactElement {
   const [refJayerRows, setRefJayerRows] = useState<JayerRow[]>([]);
   const [refOayerRows, setRefOayerRows] = useState<OayerRow[]>([]);
   const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
-  const [mergeStats, setMergeStats] = useState<{ matched: number; unmatchedRef: number } | null>(null);
+  const [mergeStats, setMergeStats] = useState<{ jayerMatched: number; jayerUnmatchedRef: number; oayerMatched: number; oayerUnmatchedRef: number } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
@@ -597,8 +603,6 @@ export default function RequestPage(): React.ReactElement {
   }, [editDocId]);
 
   // Derived booleans for Step 1 conditional rendering
-  const isCopy = detail.request_purpose === '차용' || detail.request_purpose === '신규+차용';
-  const isMapCopy = detail.map_type === 'CLONE';
   const isMapRegistered = detail.map_type === 'EXISTING';
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === '변경 있음';
@@ -655,37 +659,11 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleRequestPurposeSelect = (val: string) => {
-    const COPY_PURPOSES = ['차용', '신규+차용'];
-    const isSwitchingFromCopy = COPY_PURPOSES.includes(detail.request_purpose) && !COPY_PURPOSES.includes(val);
-    if (isSwitchingFromCopy) {
-      const hasSubFieldData =
-        detail.other_purpose.trim() !== '' ||
-        detail.change_purpose_note.trim() !== '' ||
-        detail.flow_chart.some((r) => r.location || r.product_name || r.process_id || r.step_from || r.step_to);
-      if (hasSubFieldData) {
-        const confirmed = window.confirm('차용에 적으신 내용이 초기화 됩니다. 변경하시겠습니까?');
-        if (!confirmed) return;
-      }
-      setDetail((prev) => ({
-        ...prev,
-        request_purpose: val,
-        other_purpose: '',
-        change_purpose_note: '',
-        flow_chart: [makeRow()],
-      }));
-      if (errors.request_purpose) setErrors((prev) => ({ ...prev, request_purpose: '' }));
-      return;
-    }
     handleDetailSet('request_purpose', val);
   };
 
   const handleMapTypeSelect = (val: string) => {
-    if (val !== '차용') {
-      setDetail((prev) => ({ ...prev, map_type: val, source_line: '', source_partid: '' }));
-      setCopiedFields(new Set());
-    } else {
-      setDetail((prev) => ({ ...prev, map_type: val }));
-    }
+    setDetail((prev) => ({ ...prev, map_type: val }));
     if (errors['map_type']) setErrors((prev) => ({ ...prev, map_type: '' }));
   };
 
@@ -718,13 +696,8 @@ export default function RequestPage(): React.ReactElement {
       if (sourceDetail.mshot_change) fieldsToCopy.mshot_change = sourceDetail.mshot_change;
       if (sourceDetail.mshot_image_copy) fieldsToCopy.mshot_image_copy = sourceDetail.mshot_image_copy;
 
-      if (sourceDetail.backside_status) fieldsToCopy.backside_status = sourceDetail.backside_status;
-
-      if (sourceDetail.split_progress) fieldsToCopy.split_progress = sourceDetail.split_progress;
-
-      if (sourceDetail.tmap_apply) fieldsToCopy.tmap_apply = sourceDetail.tmap_apply;
-
-      if (sourceDetail.hplhc_change) fieldsToCopy.hplhc_change = sourceDetail.hplhc_change;
+      const mapOptFields = ['photo_backside','eds_backside','inter','tsv','rf','fullchip','split','st','ecc','labelsideshot'] as const;
+      mapOptFields.forEach((f) => { if (sourceDetail[f]) (fieldsToCopy as any)[f] = sourceDetail[f]; });
 
       setDetail(prev => ({ ...prev, ...fieldsToCopy }));
       setCopiedFields(new Set(Object.keys(fieldsToCopy)));
@@ -1061,10 +1034,7 @@ export default function RequestPage(): React.ReactElement {
     const oayerMatched = [...activeOayerKeys].filter((k) => activeRefOayerKeys.has(k)).length;
     const oayerUnmatchedRef = [...activeRefOayerKeys].filter((k) => !activeOayerKeys.has(k)).length;
 
-    setMergeStats({
-      matched: jayerMatched + oayerMatched,
-      unmatchedRef: jayerUnmatchedRef + oayerUnmatchedRef,
-    });
+    setMergeStats({ jayerMatched, jayerUnmatchedRef, oayerMatched, oayerUnmatchedRef });
     setMergeConfirmOpen(true);
   };
 
@@ -1107,7 +1077,7 @@ export default function RequestPage(): React.ReactElement {
     setOayerRows(mergedOayer);
 
     setMergeConfirmOpen(false);
-    addToast(`기등록 ${mergeStats!.matched}건 적용, 미매칭 ${mergeStats!.unmatchedRef}건 추가 완료`, 'success');
+    addToast(`J-ayer 기등록 ${mergeStats!.jayerMatched}건 / O-ayer 기등록 ${mergeStats!.oayerMatched}건, 미매칭 ${mergeStats!.jayerUnmatchedRef + mergeStats!.oayerUnmatchedRef}건 추가 완료`, 'success');
   };
 
   // ===== Bb Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
@@ -1573,10 +1543,16 @@ export default function RequestPage(): React.ReactElement {
       prodc_bottom_product: INITIAL_DETAIL.prodc_bottom_product,
       mshot_change: INITIAL_DETAIL.mshot_change,
       mshot_image_copy: INITIAL_DETAIL.mshot_image_copy,
-      backside_status: INITIAL_DETAIL.backside_status,
-      split_progress: INITIAL_DETAIL.split_progress,
-      tmap_apply: INITIAL_DETAIL.tmap_apply,
-      hplhc_change: INITIAL_DETAIL.hplhc_change,
+      photo_backside: INITIAL_DETAIL.photo_backside,
+      eds_backside: INITIAL_DETAIL.eds_backside,
+      inter: INITIAL_DETAIL.inter,
+      tsv: INITIAL_DETAIL.tsv,
+      rf: INITIAL_DETAIL.rf,
+      fullchip: INITIAL_DETAIL.fullchip,
+      split: INITIAL_DETAIL.split,
+      st: INITIAL_DETAIL.st,
+      ecc: INITIAL_DETAIL.ecc,
+      labelsideshot: INITIAL_DETAIL.labelsideshot,
       rev_yn: INITIAL_DETAIL.rev_yn,
       rev_entries: INITIAL_DETAIL.rev_entries,
     }));
@@ -1698,8 +1674,6 @@ export default function RequestPage(): React.ReactElement {
           </span>
         )}
 
-        {canSelectPurpose && (<>
-
         {/* 2. 요청 목적 */}
         <div className="form-group full-width">
           <label className="form-label">
@@ -1711,7 +1685,8 @@ export default function RequestPage(): React.ReactElement {
                 key={val}
                 type="button"
                 className={`map-type-btn${detail.request_purpose === val ? ' active' : ''}`}
-                onClick={() => handleRequestPurposeSelect(val)}
+                onClick={() => { if (canSelectPurpose) handleRequestPurposeSelect(val); }}
+                disabled={!canSelectPurpose}
               >
                 {val}
               </button>
@@ -1720,142 +1695,149 @@ export default function RequestPage(): React.ReactElement {
           {errors.request_purpose && <span className="form-error">{errors.request_purpose}</span>}
         </div>
 
-        {/* 차용 선택 시 sub-fields */}
-        {isCopy && (
-          <div className="form-group full-width">
-            <div className="conditional-group">
-              <div className="flex-col">
-                <label className="form-label">{t('request.other_purpose')}</label>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: 4 }}>
-                  {OPTION_OTHER_PURPOSE.map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className={`map-type-btn${detail.other_purpose === val ? ' active' : ''}`}
-                      onClick={() => handleDetailSet('other_purpose', detail.other_purpose === val ? '' : val)}
-                    >
-                      {val}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Layer 추가/삭제: 참조 요청서 선택 */}
-              {detail.other_purpose === 'Layer 추가/삭제' && (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-                  <div style={{ flex: 1 }}>
-                    <AutocompleteInput
-                      label="참조 요청서"
-                      value={refDocLabel}
-                      options={approvedDocs.map((d) => d.title)}
-                      onChange={(v) => {
-                        setRefDocLabel(v);
-                        if (refDocId !== null) setRefDocId(null);
-                      }}
-                      onSelect={handleRefDocSelect}
-                      placeholder="이력에서 요청서를 선택하세요"
-                    />
-                  </div>
+        {/* 기타 목적 / 흐름도 / 특이사항 */}
+        <div className="form-group full-width">
+          <div className="conditional-group">
+            <div className="flex-col">
+              <label className="form-label">{t('request.other_purpose')}</label>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: 4 }}>
+                {OPTION_OTHER_PURPOSE.map((val) => (
                   <button
+                    key={val}
                     type="button"
-                    className="btn btn-primary"
-                    disabled={refDocId === null}
-                    style={refDocId === null ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                    onClick={handleMergeClick}
+                    className={`map-type-btn${detail.other_purpose === val ? ' active' : ''}`}
+                    onClick={() => { if (canSelectPurpose) handleDetailSet('other_purpose', detail.other_purpose === val ? '' : val); }}
+                    disabled={!canSelectPurpose}
                   >
-                    Merge
+                    {val}
                   </button>
-                </div>
-              )}
-
-              {/* 흐름도 */}
-              <div className="form-group">
-                <label className="form-label">{t('request.flow_chart')}</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {detail.flow_chart.map((row, idx) => (
-                    <div key={row.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                      <div className="form-group flex-col" style={{ marginBottom: 0 }}>
-                        <label className="form-label">{t('request.flow_line')}</label>
-                        <select
-                          className="form-control"
-                          value={row.location}
-                          onChange={(e) => handleFlowChange(row.id, 'location', e.target.value)}
-                        >
-                          <option value="">{t('request.select_placeholder')}</option>
-                          {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                        </select>
-                      </div>
-                      <div className="form-group flex-col" style={{ marginBottom: 0 }}>
-                        <label className="form-label">{t('request.flow_partid')}</label>
-                        <AutocompleteInput
-                          value={row.product_name}
-                          onChange={(v) => handleFlowChange(row.id, 'product_name', v)}
-                          options={FlowProductOptions[idx] || []}
-                          placeholder={t('request.select_placeholder')}
-                          style={{ width: '100%' }}
-                        />
-                      </div>
-                      <div className="form-group flex-col" style={{ marginBottom: 0 }}>
-                        <label className="form-label">{t('request.flow_process_id')}</label>
-                        <AutocompleteInput
-                          value={row.process_id}
-                          onChange={(v) => handleFlowChange(row.id, 'process_id', v)}
-                          options={FlowProcessIdOptions[idx] || []}
-                          placeholder={t('request.select_placeholder')}
-                          style={{ width: '100%' }}
-                        />
-                      </div>
-                      <div className="form-group flex-col" style={{ marginBottom: 0 }}>
-                        <label className="form-label">{t('request.flow_progress_layer')}</label>
-                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                          <AutocompleteInput
-                            value={row.step_from}
-                            onChange={(v) => handleFlowChange(row.id, 'step_from', v)}
-                            options={FlowLayerIdOptions[idx] || []}
-                            placeholder={t('request.select_placeholder')}
-                            style={{ minWidth: '80px' }}
-                          />
-                          <span style={{ whiteSpace: 'nowrap' }}>~</span>
-                          <AutocompleteInput
-                            value={row.step_to}
-                            onChange={(v) => handleFlowChange(row.id, 'step_to', v)}
-                            options={FlowLayerIdOptions[idx] || []}
-                            placeholder={t('request.select_placeholder')}
-                            style={{ minWidth: '80px' }}
-                          />
-                        </div>
-                      </div>
-                      {detail.flow_chart.length > 1 && (
-                        <button
-                          type="button"
-                          className="btn btn-danger"
-                          style={{ padding: '6px 10px', marginBottom: '2px' }}
-                          onClick={() => handleFlowDeleteRow(row.id)}
-                        >
-                          {t('request.bb_delete')}
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  <button type="button" className="btn btn-secondary" onClick={handleFlowAddRow}>
-                    + {t('request.flow_add_row')}
-                  </button>
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">{t('request.change_purpose_note')}</label>
-                <textarea
-                  className="form-control"
-                  name="change_purpose_note"
-                  value={detail.change_purpose_note}
-                  onChange={handleDetailChange}
-                  rows={3}
-                />
+                ))}
               </div>
             </div>
+
+            {/* Layer 추가/삭제: 참조 요청서 선택 */}
+            {detail.other_purpose === 'Layer 추가/삭제' && (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                <div style={{ flex: 1 }}>
+                  <AutocompleteInput
+                    label="참조 요청서"
+                    value={refDocLabel}
+                    options={approvedDocs.map((d) => d.title)}
+                    onChange={(v) => {
+                      setRefDocLabel(v);
+                      if (refDocId !== null) setRefDocId(null);
+                    }}
+                    onSelect={handleRefDocSelect}
+                    placeholder="이력에서 요청서를 선택하세요"
+                    disabled={!canSelectPurpose}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={!canSelectPurpose || refDocId === null}
+                  style={!canSelectPurpose || refDocId === null ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                  onClick={handleMergeClick}
+                >
+                  Merge
+                </button>
+              </div>
+            )}
+
+            {/* 흐름도 */}
+            <div className="form-group">
+              <label className="form-label">{t('request.flow_chart')}</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {detail.flow_chart.map((row, idx) => (
+                  <div key={row.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                      <label className="form-label">{t('request.flow_line')}</label>
+                      <select
+                        className="form-control"
+                        value={row.location}
+                        onChange={(e) => handleFlowChange(row.id, 'location', e.target.value)}
+                        disabled={!canSelectPurpose}
+                      >
+                        <option value="">{t('request.select_placeholder')}</option>
+                        {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                      <label className="form-label">{t('request.flow_partid')}</label>
+                      <AutocompleteInput
+                        value={row.product_name}
+                        onChange={(v) => handleFlowChange(row.id, 'product_name', v)}
+                        options={FlowProductOptions[idx] || []}
+                        placeholder={t('request.select_placeholder')}
+                        style={{ width: '100%' }}
+                        disabled={!canSelectPurpose}
+                      />
+                    </div>
+                    <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                      <label className="form-label">{t('request.flow_process_id')}</label>
+                      <AutocompleteInput
+                        value={row.process_id}
+                        onChange={(v) => handleFlowChange(row.id, 'process_id', v)}
+                        options={FlowProcessIdOptions[idx] || []}
+                        placeholder={t('request.select_placeholder')}
+                        style={{ width: '100%' }}
+                        disabled={!canSelectPurpose}
+                      />
+                    </div>
+                    <div className="form-group flex-col" style={{ marginBottom: 0 }}>
+                      <label className="form-label">{t('request.flow_progress_layer')}</label>
+                      <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                        <AutocompleteInput
+                          value={row.step_from}
+                          onChange={(v) => handleFlowChange(row.id, 'step_from', v)}
+                          options={FlowLayerIdOptions[idx] || []}
+                          placeholder={t('request.select_placeholder')}
+                          style={{ minWidth: '80px' }}
+                          disabled={!canSelectPurpose}
+                        />
+                        <span style={{ whiteSpace: 'nowrap' }}>~</span>
+                        <AutocompleteInput
+                          value={row.step_to}
+                          onChange={(v) => handleFlowChange(row.id, 'step_to', v)}
+                          options={FlowLayerIdOptions[idx] || []}
+                          placeholder={t('request.select_placeholder')}
+                          style={{ minWidth: '80px' }}
+                          disabled={!canSelectPurpose}
+                        />
+                      </div>
+                    </div>
+                    {detail.flow_chart.length > 1 && (
+                      <button
+                        type="button"
+                        className="btn btn-danger"
+                        style={{ padding: '6px 10px', marginBottom: '2px' }}
+                        onClick={() => handleFlowDeleteRow(row.id)}
+                        disabled={!canSelectPurpose}
+                      >
+                        {t('request.bb_delete')}
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button type="button" className="btn btn-secondary" onClick={handleFlowAddRow} disabled={!canSelectPurpose}>
+                  + {t('request.flow_add_row')}
+                </button>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">{t('request.change_purpose_note')}</label>
+              <textarea
+                className="form-control"
+                name="change_purpose_note"
+                value={detail.change_purpose_note}
+                onChange={handleDetailChange}
+                rows={3}
+                disabled={!canSelectPurpose}
+              />
+            </div>
           </div>
-        )}
+        </div>
 
         {/* 3. 뼈찜 조합 영역 */}
         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1872,6 +1854,7 @@ export default function RequestPage(): React.ReactElement {
                     className="form-control"
                     value={entry.location}
                     onChange={(e) => handleBbEntryChange(idx, 'location', e.target.value)}
+                    disabled={!canSelectPurpose}
                   >
                     <option value="">{t('request.select_placeholder')}</option>
                     {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -1885,6 +1868,7 @@ export default function RequestPage(): React.ReactElement {
                     options={BbProductOptions[idx] || []}
                     placeholder={t('request.select_placeholder')}
                     style={{ width: '100%' }}
+                    disabled={!canSelectPurpose}
                   />
                 </div>
                 <div className="form-group flex-col" style={{ marginBottom: 0 }}>
@@ -1895,6 +1879,7 @@ export default function RequestPage(): React.ReactElement {
                     options={BbProductidOptions[idx] || []}
                     placeholder={t('request.select_placeholder')}
                     style={{ width: '100%' }}
+                    disabled={!canSelectPurpose}
                   />
                 </div>
                 {detail.bb_entries.length > 1 && (
@@ -1903,6 +1888,7 @@ export default function RequestPage(): React.ReactElement {
                     className="btn btn-danger"
                     style={{ padding: '6px 10px', marginBottom: '2px' }}
                     onClick={() => handleBbEntryDelete(idx)}
+                    disabled={!canSelectPurpose}
                   >
                     {t('request.bb_delete')}
                   </button>
@@ -1910,7 +1896,7 @@ export default function RequestPage(): React.ReactElement {
               </div>
             ))}
             <div>
-              <button type="button" className="btn btn-secondary" onClick={handleBbEntryAdd}>
+              <button type="button" className="btn btn-secondary" onClick={handleBbEntryAdd} disabled={!canSelectPurpose}>
                 + {t('request.bb_add')}
               </button>
             </div>
@@ -1926,6 +1912,7 @@ export default function RequestPage(): React.ReactElement {
               name="customer_name"
               value={detail.customer_name}
               onChange={handleDetailChange}
+              disabled={!canSelectPurpose}
             />
           </div>
           <div className="form-group flex-col" style={{ flex: 2 }}>
@@ -1935,11 +1922,10 @@ export default function RequestPage(): React.ReactElement {
               name="customer_requirement"
               value={detail.customer_requirement}
               onChange={handleDetailChange}
+              disabled={!canSelectPurpose}
             />
           </div>
         </div>
-
-        </>)}
 
       </div>
     </div>
@@ -1981,38 +1967,36 @@ export default function RequestPage(): React.ReactElement {
           {errors.map_type && <span className="form-error">{errors.map_type}</span>}
         </div>
 
-        {/* 차용 시 원본 위치/Part ID */}
-        {isMapCopy && (
-          <div className="full-width">
-            <div className="conditional-group">
-              <div className="flex-row">
-                <FormSelect
-                  label={t('request.source_line')}
-                  name="source_line"
-                  value={detail.source_line}
-                  options={lineOptions}
-                  onChange={handleDetailChange}
-                  placeholder={t('request.select_placeholder')}
-                  className="flex-col"
-                />
-                <AutocompleteInput
-                  label={t('request.source_partid_selection')}
-                  value={detail.source_partid}
-                  options={sourcePartIdOptions}
-                  onChange={(v) => {
-                    handleDetailSet('source_partid', v);
-                    if (v) {
-                      loadSourceDocumentData(v);
-                    } else {
-                      setCopiedFields(new Set());
-                    }
-                  }}
-                  style={{ flex: 1 }}
-                />
-              </div>
+        {/* 원본 위치/Part ID */}
+        <div className="full-width">
+          <div className="conditional-group">
+            <div className="flex-row">
+              <FormSelect
+                label={t('request.source_line')}
+                name="source_line"
+                value={detail.source_line}
+                options={lineOptions}
+                onChange={handleDetailChange}
+                placeholder={t('request.select_placeholder')}
+                className="flex-col"
+              />
+              <AutocompleteInput
+                label={t('request.source_partid_selection')}
+                value={detail.source_partid}
+                options={sourcePartIdOptions}
+                onChange={(v) => {
+                  handleDetailSet('source_partid', v);
+                  if (v) {
+                    loadSourceDocumentData(v);
+                  } else {
+                    setCopiedFields(new Set());
+                  }
+                }}
+                style={{ flex: 1 }}
+              />
             </div>
           </div>
-        )}
+        </div>
 
         {/* 지도 편차 */}
         <div className="full-width flex-row">
@@ -2304,10 +2288,16 @@ export default function RequestPage(): React.ReactElement {
         {/* Map Option 선택 토글 버튼 */}
         {(() => {
           const mapOptions = [
-            { label: t('request.backside_adjust'),         name: 'backside_status' as keyof DetailFormState, activeValue: 'Yes',       defaultValue: 'No'        },
-            { label: t('request.split_progress_status'),   name: 'split_progress'  as keyof DetailFormState, activeValue: '예',         defaultValue: '아니오'    },
-            { label: t('request.tmap_application_status'), name: 'tmap_apply'      as keyof DetailFormState, activeValue: '적용',       defaultValue: '미적용'    },
-            { label: t('request.hplhc_status'),            name: 'hplhc_change'    as keyof DetailFormState, activeValue: '변경 있음',  defaultValue: '변경 없음' },
+            { label: t('request.map_opt_photo_backside'), name: 'photo_backside' as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_eds_backside'),   name: 'eds_backside'   as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_inter'),          name: 'inter'          as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_tsv'),            name: 'tsv'            as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_rf'),             name: 'rf'             as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_fullchip'),       name: 'fullchip'       as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_split'),          name: 'split'          as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_st'),             name: 'st'             as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_ecc'),            name: 'ecc'            as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_labelsideshot'),  name: 'labelsideshot'  as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
           ];
           return (
             <div className="full-width">
@@ -3572,9 +3562,17 @@ export default function RequestPage(): React.ReactElement {
           </>
         }
       >
-        <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-          기등록 {mergeStats?.matched ?? 0}건, 미매칭 {mergeStats?.unmatchedRef ?? 0}건 추가 예정입니다. 진행하시겠습니까?
-        </p>
+        <div style={{ color: 'var(--text-secondary)', lineHeight: 2 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', marginBottom: '4px' }}>
+            <span>J-ayer</span>
+            <span>기등록 <b>{mergeStats?.jayerMatched ?? 0}</b>건 / 미매칭 <b>{mergeStats?.jayerUnmatchedRef ?? 0}</b>건 추가 예정</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', marginBottom: '12px' }}>
+            <span>O-ayer</span>
+            <span>기등록 <b>{mergeStats?.oayerMatched ?? 0}</b>건 / 미매칭 <b>{mergeStats?.oayerUnmatchedRef ?? 0}</b>건 추가 예정</span>
+          </div>
+          <p style={{ margin: 0 }}>진행하시겠습니까?</p>
+        </div>
       </Modal>
 
       <Modal
