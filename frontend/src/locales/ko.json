@@ -136,6 +136,8 @@
     "col_submitted": "상신일",
     "col_expected_completion": "완료 예상일",
     "col_current_stage": "현재 단계",
+    "col_current_stage_completion": "현재 단계 완료일",
+    "col_final_completion": "최종 완료 예상일",
     "view_detail": "상세보기",
     "agree": "합의",
     "reject": "반려",

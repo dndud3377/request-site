@@ -138,6 +138,8 @@
     "col_submitted": "Submitted",
     "col_expected_completion": "Expected Completion",
     "col_current_stage": "Current Stage",
+    "col_current_stage_completion": "Stage Due Date",
+    "col_final_completion": "Final Expected Completion",
     "view_detail": "View",
     "current_role": "Current Role:",
     "step_unassigned": "Unassigned",
