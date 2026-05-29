@@ -190,7 +190,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         agent = request.data.get('agent')
         comment = request.data.get('comment', '')
 
-        if agent not in ('R', 'J', 'O', 'E'):
+        if agent not in ('R', 'P', 'J', 'O', 'E'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         from django.db.models import Max
@@ -211,7 +211,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         current_round = step.round
 
         if agent == 'R':
-            # R 합의 → J, O 병렬 단계 생성
+            # R 합의 → P 단계 생성
+            ApprovalStep.objects.create(document=document, agent='P', action='pending', round=current_round)
+            new_status = 'under_review'
+
+        elif agent == 'P':
+            # P 합의 → J, O 병렬 단계 생성
             ApprovalStep.objects.create(document=document, agent='J', action='pending', is_parallel=True, round=current_round)
             ApprovalStep.objects.create(document=document, agent='O', action='pending', is_parallel=True, round=current_round)
             new_status = 'under_review'
@@ -249,7 +254,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         agent = request.data.get('agent')
         comment = request.data.get('comment', '')
 
-        if agent not in ('R', 'J', 'O', 'E'):
+        if agent not in ('R', 'P', 'J', 'O', 'E'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         from django.db.models import Max
@@ -760,7 +765,7 @@ class UserViewSet(viewsets.ModelViewSet):
         user = self.get_object()
         role = request.data.get('role')
 
-        if role not in ['PL', 'TE_R', 'TE_J', 'TE_O', 'TE_E', 'MASTER']:
+        if role not in ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER']:
             return Response({'error': '유효하지 않은 역할입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         User.objects.filter(pk=user.pk).update(role=role)

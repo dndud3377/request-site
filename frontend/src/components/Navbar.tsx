@@ -35,7 +35,7 @@ const NAV_LINKS: NavLink[] = [
 ];
 
 // dev 모드 유저 드롭다운에서 역할 표시 순서
-const ROLE_ORDER = ['PL', 'TE_R', 'TE_J', 'TE_O', 'TE_E', 'MASTER'] as const;
+const ROLE_ORDER = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER'] as const;
 
 export default function Navbar(): React.ReactElement {
   const { t, i18n } = useTranslation();

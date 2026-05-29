@@ -430,14 +430,15 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
     : { changedIds: new Set<string>(), prevRowMap: new Map<string, BbTableRow>() };
 
   const isPL = role === 'PL';
+  const isP = role === 'TE_P' || role === 'MASTER' || isPL;
   const isR = role === 'TE_R' || role === 'MASTER' || isPL;
   const isJ = role === 'TE_J' || role === 'MASTER' || isPL;
   const isO = role === 'TE_O' || role === 'MASTER' || isPL;
 
-  const showJayer = isJ || isO;
-  const showOayer = isO;
-  const showBb = isJ || isO;
-  const showFlowChart = isJ || isO;
+  const showJayer = isJ || isO || isP;
+  const showOayer = isO || isP;
+  const showBb = isJ || isO || isP;
+  const showFlowChart = isJ || isO || isP;
 
   const cardStyle: React.CSSProperties = {
     background: 'var(--bg-card)',
@@ -660,14 +661,14 @@ type Page = { label: string; content: React.ReactNode };
           <div style={cardStyle}>
             <div style={sectionTitle}>{t('approval.section_detail')}</div>
 
-            {(isR || isJ) && (detail.source_line || detail.source_partid) && (
+            {(isR || isJ || isP) && (detail.source_line || detail.source_partid) && (
               <div style={rowStyle}>
                 <Chip label={t('request.source_line')} value={detail.source_line} changed={changedFields.has('source_line')} fieldKey="source_line" />
                 <Chip label={t('request.source_partid_selection')} value={detail.source_partid} changed={changedFields.has('source_partid')} fieldKey="source_partid" />
               </div>
             )}
 
-            {(isJ || isO) && detail.bb_zone && (() => {
+            {(isJ || isO || isP) && detail.bb_zone && (() => {
               const bbValue = Array.isArray(detail.bb_entries) && detail.bb_entries.length > 0
                 ? detail.bb_entries.map((e: { location: string; product: string; process_id: string }, i: number) =>
                     `[${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.process_id || '-'}`
@@ -681,7 +682,7 @@ type Page = { label: string; content: React.ReactNode };
               );
             })()}
 
-            {((isO && !isR && !isJ) || role === 'MASTER' || isPL) && detail.change_purpose_note && (
+            {((isO && !isR && !isJ) || role === 'MASTER' || isPL || isP) && detail.change_purpose_note && (
               <div style={rowStyle}>
                 <Chip label={t('request.change_purpose_note')} value={detail.change_purpose_note} style={chipFull} changed={changedFields.has('change_purpose_note')} fieldKey="change_purpose_note" />
               </div>
@@ -710,7 +711,7 @@ type Page = { label: string; content: React.ReactNode };
     },
   ];
 
-  const showMap = isR || isO;
+  const showMap = isR || isO || isP;
   if (showMap) {
     pages.push({
       label: t('request.section_map'),
@@ -730,16 +731,16 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {(isR || isO || isJ) && (detail.map_change || detail.ea_change) && (
+          {(isR || isO || isJ || isP) && (detail.map_change || detail.ea_change) && (
             <div style={rowStyle}>
-              {(isR || isO) && detail.map_change && (() => {
+              {(isR || isO || isP) && detail.map_change && (() => {
                 const mapValue = `변경: ${detail.map_change}${detail.map_value_x ? ` / X: ${detail.map_value_x}` : ''}${detail.map_value_y ? ` / Y: ${detail.map_value_y}` : ''}${detail.map_reason ? ` / 사유: ${detail.map_reason}` : ''}`;
                 const mapChanged = changedFields.has('map_change') || changedFields.has('map_value_x') || changedFields.has('map_value_y') || changedFields.has('map_reason');
                 return (
                   <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change" />
                 );
               })()}
-              {isR && detail.ea_change && (() => {
+              {(isR || isP) && detail.ea_change && (() => {
                 const eaValue = `변경: ${detail.ea_change}${detail.ea_value ? ` / 값: ${detail.ea_value}` : ''}`;
                 const eaChanged = changedFields.has('ea_change') || changedFields.has('ea_value');
                 return (
@@ -749,7 +750,7 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {isR && detail.mshot_change && (() => {
+          {(isR || isP) && detail.mshot_change && (() => {
             const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy');
             return (
               <div style={rowStyle}>
@@ -785,7 +786,7 @@ type Page = { label: string; content: React.ReactNode };
             );
           })()}
 
-          {isR && detail.only_prodc && (() => {
+          {(isR || isP) && detail.only_prodc && (() => {
             const prodcChanged = ['only_prodc','prodc_top_line','prodc_top_process','prodc_top_product','prodc_middle_use','prodc_middle_line','prodc_middle_process','prodc_middle_product','prodc_bottom_line','prodc_bottom_process','prodc_bottom_product'].some((k) => changedFields.has(k));
             const revChanged = changedFields.has('rev_yn') || changedFields.has('rev_entries');
             const revYn = (detail as any).rev_yn as string | undefined;
@@ -843,7 +844,7 @@ type Page = { label: string; content: React.ReactNode };
             );
           })()}
 
-          {isR && (() => {
+          {(isR || isP) && (() => {
             const mapOptionDefs = [
               { label: t('request.map_opt_photo_backside'), fieldKey: 'photo_backside', activeValue: '적용' },
               { label: t('request.map_opt_eds_backside'),   fieldKey: 'eds_backside',   activeValue: '적용' },
@@ -1081,6 +1082,7 @@ type Page = { label: string; content: React.ReactNode };
 
   const AGENTS: Array<{ key: string; label: string }> = [
     { key: 'R', label: t('approval.agent_R') },
+    { key: 'P', label: t('approval.agent_P') },
     { key: 'J', label: t('approval.agent_J') },
     { key: 'O', label: t('approval.agent_O') },
     { key: 'E', label: t('approval.agent_E') },

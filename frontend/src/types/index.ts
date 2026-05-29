@@ -1,7 +1,7 @@
 // ===== Auth / Role Types =====
 
 // 역할 타입 (null 제외 - 기본)
-export type UserRole = 'PL' | 'TE_R' | 'TE_J' | 'TE_O' | 'TE_E' | 'MASTER' | 'NONE';
+export type UserRole = 'PL' | 'TE_R' | 'TE_P' | 'TE_J' | 'TE_O' | 'TE_E' | 'MASTER' | 'NONE';
 
 // null 을 포함한 역할 타입
 export type UserRoleWithNull = UserRole | null | 'NONE';
@@ -43,12 +43,13 @@ export type VocStatus = 'checking' | 'completed' | 'rejected';
 
 export type VocCategory = 'inquiry' | 'error_report' | 'feature_request' | 'task_request';
 
-export type AgentType = 'R' | 'J' | 'O' | 'E';
+export type AgentType = 'R' | 'P' | 'J' | 'O' | 'E';
 export type StepAction = 'pending' | 'approved' | 'rejected';
 
 // 역할 → 담당자 매핑 (null 제외)
 export const ROLE_TO_AGENT: Partial<Record<UserRole, AgentType>> = {
   TE_R: 'R',
+  TE_P: 'P',
   TE_J: 'J',
   TE_O: 'O',
   TE_E: 'E',

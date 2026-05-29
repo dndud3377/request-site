@@ -176,6 +176,7 @@
     "comment_reject_placeholder": "반려 이유를 입력하세요...",
     "current_role": "현재 역할:",
     "agent_R": "RFG",
+    "agent_P": "PHPSI",
     "agent_J": "JOB",
     "agent_O": "OVL",
     "agent_E": "EUV"
@@ -267,6 +268,7 @@
     "add_partial_success": "{{succeeded}}명 추가 성공, {{failed}}명 실패.",
     "role_PL": "PL",
     "role_TE_R": "TE_R",
+    "role_TE_P": "TE_P",
     "role_TE_J": "TE_J",
     "role_TE_O": "TE_O",
     "role_TE_E": "TE_E",

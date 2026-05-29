@@ -11,6 +11,9 @@ export const MOCK_USERS: MockUser[] = [
   { id: 2,  username: 'agent_r1', name: '이검토', role: 'TE_R',   department: 'AGENT R팀', email: 'agent.r1@company.com' },
   { id: 7,  username: 'agent_r2', name: '김R',   role: 'TE_R',   department: 'AGENT R팀', email: 'agent.r2@company.com' },
   { id: 8,  username: 'agent_r3', name: '박R',   role: 'TE_R',   department: 'AGENT R팀', email: 'agent.r3@company.com' },
+  { id: 15, username: 'agent_p1', name: '원이',  role: 'TE_P',   department: 'AGENT P팀', email: 'agent.p1@company.com' },
+  { id: 16, username: 'agent_p2', name: '미나미', role: 'TE_P',   department: 'AGENT P팀', email: 'agent.p2@company.com' },
+  { id: 17, username: 'agent_p3', name: '제나',  role: 'TE_P',   department: 'AGENT P팀', email: 'agent.p3@company.com' },
   { id: 3,  username: 'agent_j1', name: '박제이', role: 'TE_J',   department: 'AGENT J팀', email: 'agent.j1@company.com' },
   { id: 9,  username: 'agent_j2', name: '김J',   role: 'TE_J',   department: 'AGENT J팀', email: 'agent.j2@company.com' },
   { id: 10, username: 'agent_j3', name: '이J',   role: 'TE_J',   department: 'AGENT J팀', email: 'agent.j3@company.com' },
@@ -26,6 +29,7 @@ export const MOCK_USERS: MockUser[] = [
 export const ROLE_LABEL: Record<UserRole, string> = {
   PL:     '제품 담당자',
   TE_R:   'AGENT R팀',
+  TE_P:   'AGENT P팀',
   TE_J:   'AGENT J팀',
   TE_O:   'AGENT O팀',
   TE_E:   'AGENT E팀',

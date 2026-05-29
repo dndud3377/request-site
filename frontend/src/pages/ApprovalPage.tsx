@@ -13,6 +13,7 @@ import { RequestDocument, AgentType, UserRole, UserWithRole } from '../types';
 
 const AGENT_TO_ROLE: Record<string, string> = {
   R: 'TE_R',
+  P: 'TE_P',
   J: 'TE_J',
   O: 'TE_O',
   E: 'TE_E',
@@ -55,6 +56,7 @@ const hasEUVStep = (doc: RequestDocument): boolean => {
 const getStageDuration = (agent: AgentType): number => {
   switch (agent) {
     case 'R': return 1;
+    case 'P': return 3;
     case 'J':
     case 'O': return 4;
     case 'E': return 3;
@@ -145,6 +147,7 @@ const getCurrentStage = (doc: RequestDocument, t: TFunction): string => {
 
   const agentToLabel: Record<string, string> = {
     'R': t('approval.agent_R'),
+    'P': t('approval.agent_P'),
     'J': t('approval.agent_J'),
     'O': t('approval.agent_O'),
     'E': t('approval.agent_E'),
