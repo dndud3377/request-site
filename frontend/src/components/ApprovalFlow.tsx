@@ -7,6 +7,7 @@ const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateSt
 
 export const ROLE_TO_AGENT: Partial<Record<UserRole, AgentType>> = {
   TE_R: 'R',
+  TE_P: 'P',
   TE_J: 'J',
   TE_O: 'O',
   TE_E: 'E',
@@ -52,6 +53,7 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, onLoadT
     currentSteps.find((s) => s.agent === agent);
 
   const rStep = getStep('R');
+  const pStep = getStep('P');
   const jStep = getStep('J');
   const oStep = getStep('O');
   const eStep = getStep('E');
@@ -187,17 +189,14 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, onLoadT
       <div className="approval-connector" />
       {renderStepBadge(rStep, t('approval.agent_R'))}
       <div className="approval-connector" />
+      {renderStepBadge(pStep, t('approval.agent_P'))}
+      <div className="approval-connector" />
       <div className="approval-parallel">
         {renderStepBadge(jStep, t('approval.agent_J'))}
         {renderStepBadge(oStep, t('approval.agent_O'))}
+        {(hasPlel || eStep) && renderStepBadge(eStep, t('approval.agent_E'))}
       </div>
       <div className="approval-connector" />
-      {(hasPlel || eStep) && (
-        <>
-          {renderStepBadge(eStep, t('approval.agent_E'))}
-          <div className="approval-connector" />
-        </>
-      )}
       <div className={`approval-node ${doc.status === 'approved' ? 'approval-node-done' : 'approval-node-inactive'}`}>
         <span className="step-agent-label">{t('common.status_approved')}</span>
         {doc.status === 'approved' && <span className="step-badge step-badge-approved">{t('approval.step_done')}</span>}

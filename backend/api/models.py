@@ -26,7 +26,7 @@ class UserProfileManager(BaseUserManager):
 
 class UserProfile(AbstractBaseUser):
     ROLE_CHOICES = [
-        ('NONE', 'NONE'), ('PL', 'PL'), ('TE_R', 'TE_R'),
+        ('NONE', 'NONE'), ('PL', 'PL'), ('TE_R', 'TE_R'), ('TE_P', 'TE_P'),
         ('TE_J', 'TE_J'), ('TE_O', 'TE_O'), ('TE_E', 'TE_E'), ('MASTER', 'MASTER'),
     ]
     loginid  = models.CharField(max_length=150, unique=True, verbose_name='로그인 ID')
@@ -112,6 +112,7 @@ class ApprovalStep(models.Model):
 
     AGENT_CHOICES = [
         ('R', '{{agent_R}}'),
+        ('P', '{{agent_P}}'),
         ('J', '{{agent_J}}'),
         ('O', '{{agent_O}}'),
         ('E', '{{agent_E}}'),

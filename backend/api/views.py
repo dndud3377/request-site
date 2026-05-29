@@ -190,7 +190,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         agent = request.data.get('agent')
         comment = request.data.get('comment', '')
 
-        if agent not in ('R', 'J', 'O', 'E'):
+        if agent not in ('R', 'P', 'J', 'O', 'E'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         from django.db.models import Max
@@ -211,28 +211,31 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         current_round = step.round
 
         if agent == 'R':
-            # R 합의 → J, O 병렬 단계 생성
-            ApprovalStep.objects.create(document=document, agent='J', action='pending', is_parallel=True, round=current_round)
-            ApprovalStep.objects.create(document=document, agent='O', action='pending', is_parallel=True, round=current_round)
+            # R 합의 → P 단계 생성
+            ApprovalStep.objects.create(document=document, agent='P', action='pending', round=current_round)
             new_status = 'under_review'
 
-        elif agent in ('J', 'O'):
-            # J/O 모두 합의 시 다음 단계 결정
+        elif agent == 'P':
+            # P 합의 → J, O, [E if PLEL] 병렬 단계 생성
+            ApprovalStep.objects.create(document=document, agent='J', action='pending', is_parallel=True, round=current_round)
+            ApprovalStep.objects.create(document=document, agent='O', action='pending', is_parallel=True, round=current_round)
+            if document.has_ppid_plel():
+                ApprovalStep.objects.create(document=document, agent='E', action='pending', is_parallel=True, round=current_round)
+            new_status = 'under_review'
+
+        elif agent in ('J', 'O', 'E'):
+            # J/O/[E] 모두 합의 시 최종 승인
             j_step = ApprovalStep.objects.filter(document=document, agent='J', round=current_round).order_by('-id').first()
             o_step = ApprovalStep.objects.filter(document=document, agent='O', round=current_round).order_by('-id').first()
-            both_approved = (
-                j_step and j_step.action == 'approved' and
-                o_step and o_step.action == 'approved'
-            )
-            if both_approved:
-                if document.has_ppid_plel():
-                    ApprovalStep.objects.create(document=document, agent='E', action='pending', round=current_round)
-                    new_status = 'under_review'
-                else:
-                    new_status = 'approved'
-
-        elif agent == 'E':
-            new_status = 'approved'
+            e_step = ApprovalStep.objects.filter(document=document, agent='E', round=current_round).order_by('-id').first()
+            j_approved = j_step and j_step.action == 'approved'
+            o_approved = o_step and o_step.action == 'approved'
+            if e_step:
+                all_approved = j_approved and o_approved and e_step.action == 'approved'
+            else:
+                all_approved = j_approved and o_approved
+            if all_approved:
+                new_status = 'approved'
 
         document.status = new_status
         document.save()
@@ -249,7 +252,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         agent = request.data.get('agent')
         comment = request.data.get('comment', '')
 
-        if agent not in ('R', 'J', 'O', 'E'):
+        if agent not in ('R', 'P', 'J', 'O', 'E'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         from django.db.models import Max
@@ -760,7 +763,7 @@ class UserViewSet(viewsets.ModelViewSet):
         user = self.get_object()
         role = request.data.get('role')
 
-        if role not in ['PL', 'TE_R', 'TE_J', 'TE_O', 'TE_E', 'MASTER']:
+        if role not in ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER']:
             return Response({'error': '유효하지 않은 역할입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         User.objects.filter(pk=user.pk).update(role=role)

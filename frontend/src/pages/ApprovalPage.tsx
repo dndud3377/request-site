@@ -13,6 +13,7 @@ import { RequestDocument, AgentType, UserRole, UserWithRole } from '../types';
 
 const AGENT_TO_ROLE: Record<string, string> = {
   R: 'TE_R',
+  P: 'TE_P',
   J: 'TE_J',
   O: 'TE_O',
   E: 'TE_E',
@@ -55,84 +56,70 @@ const hasEUVStep = (doc: RequestDocument): boolean => {
 const getStageDuration = (agent: AgentType): number => {
   switch (agent) {
     case 'R': return 1;
+    case 'P': return 3;
     case 'J':
-    case 'O': return 4;
+    case 'O': return 3;
     case 'E': return 3;
     default: return 0;
   }
 };
 
-// 현재 단계 완료일 계산
-const formatCurrentStageCompletionDate = (doc: RequestDocument): string => {
-  if (!doc.submitted_at) return '-';
-  
+// RFG 합의 다음날 (시작일)
+const getStartDate = (doc: RequestDocument): Date | null => {
   const steps = doc.approval_steps ?? [];
-  const completedSteps = steps.filter((s) => s.action !== 'pending');
-  const pendingSteps = steps.filter((s) => s.action === 'pending');
-  
-  if (pendingSteps.length === 0) return '-';
-  
-  const currentAgent = pendingSteps[0].agent;
-  
-  // 기준 시간: 상신일 + 완료된 단계들의 실제 소요시간
-  const baseDate = new Date(doc.submitted_at);
-  let elapsedDays = 0;
-  
-  // 완료된 단계들의 실제 소요시간 계산
-  completedSteps.forEach((step) => {
-    if (step.acted_at && doc.submitted_at) {
-      const stepDuration = Math.ceil(
-        (new Date(step.acted_at).getTime() - new Date(doc.submitted_at).getTime()) / (1000 * 60 * 60 * 24)
-      );
-      elapsedDays = Math.max(elapsedDays, stepDuration);
-    }
-  });
-  
-  // 현재 단계의 예상 완료일
-  const expectedDate = new Date(baseDate);
-  expectedDate.setDate(expectedDate.getDate() + elapsedDays + getStageDuration(currentAgent));
-  
-  return expectedDate.toLocaleDateString('ko-KR');
+  const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
+  const rStep = steps.find(s => s.agent === 'R' && (s.round ?? 1) === maxRound && s.action === 'approved');
+  if (!rStep?.acted_at) return null;
+  const d = new Date(rStep.acted_at);
+  d.setDate(d.getDate() + 1);
+  return d;
 };
 
-// 최종 완료 예상일 계산 (EUV 조건 반영)
-const formatFinalCompletionDate = (doc: RequestDocument): string => {
-  if (!doc.submitted_at) return '-';
-  
+const getFlowGroups = (hasEUV: boolean): AgentType[][] => [
+  ['P'],
+  hasEUV ? ['J', 'O', 'E'] : ['J', 'O'],
+];
+
+const getTotalDays = (hasEUV: boolean): number =>
+  getFlowGroups(hasEUV).reduce((sum, group) =>
+    sum + Math.max(...group.map(a => getStageDuration(a))), 0);
+
+const formatStartDate = (doc: RequestDocument): string => {
+  const d = getStartDate(doc);
+  return d ? d.toLocaleDateString('ko-KR') : '-';
+};
+
+// 현재 단계 완료일: max(completed acted_at in current round) + current stage max duration
+const formatCurrentStageCompletionDate = (doc: RequestDocument): string => {
   const steps = doc.approval_steps ?? [];
-  const completedSteps = steps.filter((s) => s.action !== 'pending');
-  const pendingSteps = steps.filter((s) => s.action === 'pending');
-  
-  const baseDate = new Date(doc.submitted_at);
-  
-  // 완료된 단계들의 실제 소요시간 계산 (병렬은 긴 쪽)
-  let actualDays = 0;
-  const completedAgents = new Set<AgentType>();
-  
-  completedSteps.forEach((step) => {
-    if (step.acted_at && doc.submitted_at) {
-      const stepDuration = Math.ceil(
-        (new Date(step.acted_at).getTime() - new Date(doc.submitted_at).getTime()) / (1000 * 60 * 60 * 24)
-      );
-      actualDays = Math.max(actualDays, stepDuration);
-      completedAgents.add(step.agent);
-    }
-  });
-  
-  // 남은 단계들의 고정 소요시간 계산
-  let remainingDays = 0;
-  pendingSteps.forEach((step) => {
-    // 이미 완료된 에이전트는 제외 (병렬 중복 방지)
-    if (!completedAgents.has(step.agent)) {
-      remainingDays += getStageDuration(step.agent);
-    }
-  });
-  
-  // 최종 예상일 = 상신일 + 실제경과일 + 남은단계고정합
-  const finalDate = new Date(baseDate);
-  finalDate.setDate(finalDate.getDate() + actualDays + remainingDays);
-  
-  return finalDate.toLocaleDateString('ko-KR');
+  const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
+  const currentRoundSteps = steps.filter(s => (s.round ?? 1) === maxRound);
+  const pending = currentRoundSteps.filter(s => s.action === 'pending');
+  const completed = currentRoundSteps.filter(s => s.action !== 'pending' && s.acted_at);
+
+  if (pending.length === 0) return '-';
+
+  const latestRef = completed.reduce<string | null>((max, s) =>
+    !max || new Date(s.acted_at!) > new Date(max) ? s.acted_at! : max, null);
+
+  if (!latestRef) return '-';
+
+  const currentMaxDuration = Math.max(...pending.map(s => getStageDuration(s.agent)));
+  const d = new Date(latestRef);
+  d.setDate(d.getDate() + currentMaxDuration);
+  return d.toLocaleDateString('ko-KR');
+};
+
+// 최종 완료 예상일: R.acted_at + getTotalDays (P + max(J/O/[E]))
+const formatFinalCompletionDate = (doc: RequestDocument): string => {
+  const steps = doc.approval_steps ?? [];
+  const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
+  const rStep = steps.find(s => s.agent === 'R' && (s.round ?? 1) === maxRound && s.action === 'approved');
+  if (!rStep?.acted_at) return '-';
+  const euv = hasEUVStep(doc);
+  const d = new Date(rStep.acted_at);
+  d.setDate(d.getDate() + getTotalDays(euv));
+  return d.toLocaleDateString('ko-KR');
 };
 
 const getCurrentStage = (doc: RequestDocument, t: TFunction): string => {
@@ -145,6 +132,7 @@ const getCurrentStage = (doc: RequestDocument, t: TFunction): string => {
 
   const agentToLabel: Record<string, string> = {
     'R': t('approval.agent_R'),
+    'P': t('approval.agent_P'),
     'J': t('approval.agent_J'),
     'O': t('approval.agent_O'),
     'E': t('approval.agent_E'),
@@ -395,7 +383,7 @@ export default function ApprovalPage(): React.ReactElement {
                 <th>{t('approval.col_requester')}</th>
                 <th>{t('approval.col_status')}</th>
                 <th>{t('approval.col_current_stage')}</th>
-                <th>{t('approval.col_submitted')}</th>
+                <th>{t('approval.col_start_date')}</th>
                 <th>{t('approval.col_current_stage_completion')}</th>
                 <th>{t('approval.col_final_completion')}</th>
                 <th></th>
@@ -421,7 +409,7 @@ export default function ApprovalPage(): React.ReactElement {
                   <td style={{ fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 500 }}>
                     {getCurrentStage(doc, t)}
                   </td>
-                  <td>{formatDate(doc.submitted_at)}</td>
+                  <td>{formatStartDate(doc)}</td>
                   <td>{formatCurrentStageCompletionDate(doc)}</td>
                   <td>{formatFinalCompletionDate(doc)}</td>
                   <td>
