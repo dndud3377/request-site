@@ -18,6 +18,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   NONE: ['/', '/approval', '/history', '/voc', '/guide'],
   PL: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
   TE_R: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
+  TE_P: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
   TE_J: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
   TE_O: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
   TE_E: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
@@ -157,7 +158,7 @@ export default function Navbar(): React.ReactElement {
               >
                 <span className="dev-badge">DEV</span>
                 <span className="dev-user-name">{currentUser.name}</span>
-                <span className="dev-user-role">({t(ROLE_LABEL[currentUser.role] as any) || currentUser.role})</span>
+                <span className="dev-user-role">({roleLabel})</span>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginLeft: 4 }}>
                   <polyline points="6 9 12 15 18 9"/>
                 </svg>
