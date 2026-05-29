@@ -9,7 +9,6 @@
     "@types/node": "^20.11.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
-    "ajv": "^8.20.0",
     "i18next": "^23.10.0",
     "i18next-browser-languagedetector": "^7.2.1",
     "react": "^18.2.0",
