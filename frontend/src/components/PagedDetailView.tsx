@@ -128,7 +128,7 @@ function JayerTable({
   return (
     <>
       {diffCur && diffPrev && (
-        <RowDiffModal title="J-ayer 행 변경 이력" fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
+        <RowDiffModal title={t('request.jayer_row_history')} fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
       )}
       <div style={{ overflowX: 'auto' }}>
         <table className="table table-compact" style={{ marginBottom: 8 }}>
@@ -191,7 +191,7 @@ function OayerTable({
   return (
     <>
       {diffCur && diffPrev && (
-        <RowDiffModal title="O-ayer 행 변경 이력" fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
+        <RowDiffModal title={t('request.oayer_row_history')} fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
       )}
       <div style={{ overflowX: 'auto' }}>
         <table className="table table-compact" style={{ marginBottom: 8 }}>

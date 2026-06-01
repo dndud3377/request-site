@@ -1120,7 +1120,7 @@ export default function RequestPage(): React.ReactElement {
     setOayerRows(mergedOayer);
 
     setMergeConfirmOpen(false);
-    addToast(`J-ayer 기등록 ${mergeStats!.jayerMatched}건 / O-ayer 기등록 ${mergeStats!.oayerMatched}건, 미매칭 ${mergeStats!.jayerUnmatchedRef + mergeStats!.oayerUnmatchedRef}건 추가 완료`, 'success');
+    addToast(t('request.toast_merge_complete', { jayerMatched: mergeStats!.jayerMatched, oayerMatched: mergeStats!.oayerMatched, unmatched: mergeStats!.jayerUnmatchedRef + mergeStats!.oayerUnmatchedRef }), 'success');
   };
 
   // ===== Bb Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
@@ -2191,7 +2191,7 @@ export default function RequestPage(): React.ReactElement {
                             <span style={{ fontSize: '13px', color: '#999' }}>
                               {(detail.rev_entries ?? []).length > 0
                                 ? '모든 Layer가 추가되었습니다.'
-                                : 'J-ayer 정보에 Layer 데이터가 없습니다.'}
+                                : t('request.jayer_no_layer_data')}
                             </span>
                           )}
                         </div>
@@ -2913,7 +2913,7 @@ export default function RequestPage(): React.ReactElement {
           {/* 오른쪽: bb_entries 탭별 외부 데이터 */}
           <div className="bb-split-panel-right">
             <div className="bb-split-panel-title">
-              ② 외부 데이터 선택 — 선택된 J-ayer 행에 지정됨
+              {t('request.ext_data_assign_to_jayer')}
             </div>
             <div className="bb-tab-bar">
               {detail.bb_entries.map((entry, idx) => (
@@ -3152,7 +3152,7 @@ export default function RequestPage(): React.ReactElement {
       <Modal
         isOpen={jayerFilterModalOpen}
         onClose={() => { setJayerFilterModalOpen(false); setJayerNewFilter({ label: '', words: emptyDraftWords() }); }}
-        title="J-ayer 필터 관리"
+        title={t('request.jayer_filter_manage')}
         size="lg"
         style={{ width: '560px', maxWidth: '95%' }}
         footer={
@@ -3275,7 +3275,7 @@ export default function RequestPage(): React.ReactElement {
       <Modal
         isOpen={oayerFilterModalOpen}
         onClose={() => { setOayerFilterModalOpen(false); setOayerNewFilter({ label: '', words: emptyDraftWords() }); }}
-        title="O-ayer 필터 관리"
+        title={t('request.oayer_filter_manage')}
         size="lg"
         style={{ width: '560px', maxWidth: '95%' }}
         footer={
@@ -3413,11 +3413,11 @@ export default function RequestPage(): React.ReactElement {
       >
         <div style={{ color: 'var(--text-secondary)', lineHeight: 2 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', marginBottom: '4px' }}>
-            <span>J-ayer</span>
+            <span>{t('request.jayer')}</span>
             <span>기등록 <b>{mergeStats?.jayerMatched ?? 0}</b>건 / 미매칭 <b>{mergeStats?.jayerUnmatchedRef ?? 0}</b>건 추가 예정</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', marginBottom: '12px' }}>
-            <span>O-ayer</span>
+            <span>{t('request.oayer')}</span>
             <span>기등록 <b>{mergeStats?.oayerMatched ?? 0}</b>건 / 미매칭 <b>{mergeStats?.oayerUnmatchedRef ?? 0}</b>건 추가 예정</span>
           </div>
           <p style={{ margin: 0 }}>진행하시겠습니까?</p>
