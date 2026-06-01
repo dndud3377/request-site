@@ -7,7 +7,7 @@ interface ModalProps {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
-  size?: 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg';
   topLevel?: boolean;
   style?: React.CSSProperties;
 }
@@ -38,7 +38,7 @@ export default function Modal({
 
   const modalClass = [
     'modal',
-    size === 'lg' ? 'modal-lg' : '',
+    size === 'lg' ? 'modal-lg' : size === 'sm' ? 'modal-sm' : '',
     isFullscreen ? 'modal-fullscreen' : '',
   ].filter(Boolean).join(' ');
 
