@@ -19,7 +19,7 @@
 
 | # | 섹션 | 버그 체크 | 발견된 버그 수 |
 |---|------|-----------|---------------|
-| 1 | 데이터 모델 (Models) | ⬜ 미완료 | - |
+| 1 | 데이터 모델 (Models) | ✅ 완료 | 1건 수정 (Bug1: ApprovalStep.action default 오류) |
 | 2 | 인증 시스템 (Authentication) | ⬜ 미완료 | - |
 | 3 | 의뢰서 API (RequestDocumentViewSet) | ⬜ 미완료 | - |
 | 4 | VOC API (VOCViewSet) | ⬜ 미완료 | - |
@@ -48,8 +48,10 @@
 
 ## 1. 데이터 모델 (Models)
 
-> **버그 체크:** ⬜ 미완료
+> **버그 체크:** ✅ 완료
 > **파일:** `backend/api/models.py`
+>
+> **결과:** Bug 1건 수정 (`ApprovalStep.action default='checking'` → `'pending'`), Issue 1건 보류 (`created_at null=True` — 마이그레이션 영향 검토 필요)
 
 ### 1.1 UserProfile
 
