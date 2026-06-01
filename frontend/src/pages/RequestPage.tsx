@@ -362,6 +362,7 @@ export default function RequestPage(): React.ReactElement {
   const [oayerInfoTab, setOayerInfoTab] = useState<'table' | 'info'>('table');
   const [tbvtlvSdsSelected, setTbvtlvSdsSelected] = useState<string[]>([]);
   const [tbvtlvNote, setTbvtlvNote] = useState<string>('');
+  const [tbvtlvWarnModal, setTbvtlvWarnModal] = useState(false);
 
   useEffect(() => {
     linesAPI.list()
@@ -1553,7 +1554,7 @@ export default function RequestPage(): React.ReactElement {
     }
   };
 
-  const handleNextStep = () => {
+  const handleNextStep = (skipTbvtlvWarn = false) => {
     if (step === 1 || step === 2 || step === 4) {
       const result = validate(step);
       if (!result.valid) {
@@ -1565,6 +1566,19 @@ export default function RequestPage(): React.ReactElement {
     if (step === 1 && !detail.customer_requirement.trim()) {
       const confirmed = window.confirm('Special Care (Shot map포함)요청건은 반드시 작성 필요한데 넘어가시겠습니까?');
       if (!confirmed) return;
+    }
+    if (step === 4 && !skipTbvtlvWarn) {
+      const hasTbvtlvActive = oayerRows.some(
+        r => !r.disabled && (r.sd.toUpperCase().includes('TBV') || r.sd.toUpperCase().includes('TLV'))
+      );
+      if (hasTbvtlvActive) {
+        const thicknessEmpty = !detail.tbvtlv_thickness.trim();
+        const entriesEmpty = (detail.tbvtlv_entries ?? []).length === 0;
+        if (thicknessEmpty || entriesEmpty) {
+          setTbvtlvWarnModal(true);
+          return;
+        }
+      }
     }
     setStep((s) => s + 1);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3643,6 +3657,28 @@ export default function RequestPage(): React.ReactElement {
           </div>
           <p style={{ margin: 0 }}>진행하시겠습니까?</p>
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={tbvtlvWarnModal}
+        onClose={() => setTbvtlvWarnModal(false)}
+        title={t('request.tbvtlv_warn_title')}
+        size="sm"
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setTbvtlvWarnModal(false)}>
+              {t('common.cancel')}
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => { setTbvtlvWarnModal(false); handleNextStep(true); }}
+            >
+              {t('request.tbvtlv_warn_proceed')}
+            </button>
+          </>
+        }
+      >
+        <p style={{ margin: 0, fontSize: 14 }}>{t('request.tbvtlv_warn_body')}</p>
       </Modal>
 
       <Modal
