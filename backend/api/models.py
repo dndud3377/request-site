@@ -386,6 +386,21 @@ class PhotoStepS5(models.Model):
 
 
 
+class ProductBarcode(models.Model):
+    """외부 DB 에서 1시간마다 동기화되는 바코드-품목 캐시"""
+    n7mto_date = models.CharField(max_length=200, verbose_name='MTO Date')
+    n7c_layer_num = models.CharField(max_length=200, verbose_name='Layer Num')
+    n7prod_code = models.CharField(max_length=200, verbose_name='Product Code')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        verbose_name = '바코드-품목 캐시'
+        verbose_name_plural = '바코드-품목 캐시 목록'
+
+    def __str__(self):
+        return f"{self.n7prod_code} / {self.n7mto_date} / {self.n7c_layer_num}"
+
+
 class VocHistory(models.Model):
     """VOC 처리 이력 - 프론트엔드 VocHistory 타입과 1:1 매핑"""
 

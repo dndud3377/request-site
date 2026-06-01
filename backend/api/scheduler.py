@@ -148,6 +148,27 @@ def sync_form_options():
             except Exception as e:
                 logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e))
 
+        try:
+            query_pb = """
+                SELECT DISTINCT n7mto_date, n7c_layer_num, n7prod_code
+                FROM A.B
+            """
+            df_pb = get_data_from_dcq(query_pb, dcq_id)
+
+            if df_pb is None or len(df_pb) == 0:
+                logger.warning(_("[scheduler] 바코드-품목 데이터가 없습니다"))
+            else:
+                df_pb['last_synced'] = pd.Timestamp.now()
+                df_pb = df_pb[['n7mto_date', 'n7c_layer_num', 'n7prod_code', 'last_synced']]
+
+                with engine.begin() as db_conn:
+                    db_conn.execute(text("DELETE FROM api_productbarcode"))
+                    df_pb.to_sql('api_productbarcode', db_conn, if_exists='append', index=False)
+
+                logger.info(_("[scheduler] 바코드-품목 {count}건 동기화 완료").format(count=len(df_pb)))
+        except Exception as e:
+            logger.error(_("[scheduler] 바코드-품목 동기화 실패: {e}").format(e=e))
+
     finally:
         if engine:
             engine.dispose()
