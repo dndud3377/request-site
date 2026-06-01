@@ -2808,11 +2808,12 @@ export default function RequestPage(): React.ReactElement {
                     />
                   </div>
 
-                  {/* SD 선택 (단일 선택) + 비고 + 추가 — 한 줄 */}
-                  <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {/* SD 선택 (좌) + 비고·추가 (우) — 좌우 반반 */}
+                  <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
+                    {/* 왼쪽: SD 선택 */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_sd_select')}</label>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxWidth: 320 }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                         {availableTbvtlvSds.length > 0 ? availableTbvtlvSds.map(sd => {
                           const isSelected = tbvtlvSdsSelected[0] === sd;
                           return (
@@ -2841,36 +2842,36 @@ export default function RequestPage(): React.ReactElement {
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {/* 오른쪽: 비고 + 추가 버튼 */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_note')}</label>
-                      <textarea
-                        className="form-control"
-                        style={{ width: 220, minHeight: 120, resize: 'vertical' }}
-                        rows={5}
-                        value={tbvtlvNote}
-                        onChange={e => setTbvtlvNote(e.target.value)}
-                        placeholder="비고 입력"
-                      />
-                    </div>
-
-                    <div style={{ paddingTop: 24 }}>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        style={{ whiteSpace: 'nowrap' }}
-                        disabled={tbvtlvSdsSelected.length === 0}
-                        onClick={() => {
-                          if (tbvtlvSdsSelected.length === 0) return;
-                          setDetail(prev => ({
-                            ...prev,
-                            tbvtlv_entries: [...(prev.tbvtlv_entries ?? []), { sds: tbvtlvSdsSelected, note: tbvtlvNote }],
-                          }));
-                          setTbvtlvSdsSelected([]);
-                          setTbvtlvNote('');
-                        }}
-                      >
-                        + {t('request.tbvtlv_add')}
-                      </button>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                        <textarea
+                          className="form-control"
+                          style={{ flex: 1, minHeight: 120, resize: 'vertical' }}
+                          rows={5}
+                          value={tbvtlvNote}
+                          onChange={e => setTbvtlvNote(e.target.value)}
+                          placeholder="비고 입력"
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          style={{ whiteSpace: 'nowrap', marginTop: 2 }}
+                          disabled={tbvtlvSdsSelected.length === 0}
+                          onClick={() => {
+                            if (tbvtlvSdsSelected.length === 0) return;
+                            setDetail(prev => ({
+                              ...prev,
+                              tbvtlv_entries: [...(prev.tbvtlv_entries ?? []), { sds: tbvtlvSdsSelected, note: tbvtlvNote }],
+                            }));
+                            setTbvtlvSdsSelected([]);
+                            setTbvtlvNote('');
+                          }}
+                        >
+                          + {t('request.tbvtlv_add')}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
