@@ -178,6 +178,13 @@ npm test
 
 프론트엔드에서 사용자에게 보이는 **모든 텍스트(라벨, 버튼, 메시지, 제목 등)는 코드에 직접 하드코딩하지 않는다.**
 
+### 사용 라이브러리
+
+- `i18next` 23.10.0
+- `react-i18next` 14.1.0
+- `i18next-browser-languagedetector` 7.2.1 — localStorage → navigator 순서로 언어 자동 감지
+- 설정 파일: `frontend/src/i18n.ts`
+
 ### 절차
 
 1. `ko.json` / `en.json`에 용어를 **먼저 추가**한다.
@@ -188,44 +195,56 @@ npm test
 
 ```
 frontend/src/locales/
-├── ko.json   # 한국어
+├── ko.json   # 한국어 (기본 fallback)
 └── en.json   # 영어
 ```
+
+### 현재 키 구조 (최상위 네임스페이스)
+
+| 키 | 설명 |
+|----|------|
+| `nav.*` | 네비게이션 메뉴 |
+| `home.*` | 홈 페이지 |
+| `request.*` | 의뢰서 작성 페이지 |
+| `approval.*` | 결재 현황 페이지 |
+| `history.*` | 이력 조회 페이지 |
+| `voc.*` | VOC 페이지 |
+| `permission.*` | 권한 관리 페이지 |
+| `guide.*` | 가이드 페이지 |
+| `login.*` | 로그인 페이지 |
+| `error.*` | 에러 메시지 |
+| `message.*` | 공통 알림 메시지 |
 
 ### 작성 예시
 
 ```json
 // ko.json
 {
-  "auth": {
-    "login": "로그인",
-    "logout": "로그아웃",
-    "signup": "회원가입",
-    "email_placeholder": "이메일을 입력하세요",
-    "password_placeholder": "비밀번호를 입력하세요"
+  "nav": {
+    "home": "홈",
+    "request": "의뢰서 작성",
+    "approval": "결재 현황"
   },
-  "common": {
-    "save": "저장",
-    "cancel": "취소",
-    "confirm": "확인",
-    "error_required": "필수 입력 항목입니다"
+  "request": {
+    "title": "의뢰서 작성",
+    "save_draft": "임시저장",
+    "submit": "상신하기",
+    "required": "필수 입력 항목입니다."
   }
 }
 
 // en.json
 {
-  "auth": {
-    "login": "Login",
-    "logout": "Logout",
-    "signup": "Sign Up",
-    "email_placeholder": "Enter your email",
-    "password_placeholder": "Enter your password"
+  "nav": {
+    "home": "Home",
+    "request": "New Request",
+    "approval": "Approval Status"
   },
-  "common": {
-    "save": "Save",
-    "cancel": "Cancel",
-    "confirm": "Confirm",
-    "error_required": "This field is required"
+  "request": {
+    "title": "New Request",
+    "save_draft": "Save Draft",
+    "submit": "Submit",
+    "required": "This field is required."
   }
 }
 ```
@@ -234,11 +253,11 @@ frontend/src/locales/
 
 ```tsx
 // ❌ 하드코딩 — 금지
-<button>로그인</button>
+<button>임시저장</button>
 
 // ✅ i18n 키 참조 — 올바른 방식
 const { t } = useTranslation();
-<button>{t('auth.login')}</button>
+<button>{t('request.save_draft')}</button>
 ```
 
 ### 체크리스트 (텍스트 추가 시)
@@ -255,40 +274,100 @@ const { t } = useTranslation();
 
 ## 🛠️ 기술 스택 참고사항
 
-| 영역 | 기술 |
-|------|------|
-| Frontend | React (TypeScript 권장) |
-| Backend | Django + Django REST Framework |
-| 언어 | Python (backend), JavaScript/TypeScript (frontend) |
-| API 방식 | REST API (JSON) |
+| 영역 | 기술 | 버전 / 비고 |
+|------|------|------------|
+| Frontend | React + TypeScript | 18.2.0 / 4.9.5 (strict mode, **TypeScript 필수**) |
+| Backend | Django + Django REST Framework | 4.2.13 / 3.15.1 |
+| 언어 | Python (backend), TypeScript (frontend) | |
+| Database | MySQL | 8.0 |
+| 인증 | JWT + OIDC SSO | djangorestframework-simplejwt 5.3.1, mozilla-django-oidc |
+| i18n | react-i18next / i18next | 14.1.0 / 23.10.0 (한국어 기본, 영어 지원) |
+| 라우팅 | React Router | 6.22.3 |
+| API 방식 | REST API (JSON) + SSE | SSE는 실시간 알림(`/api/users/events/`)에 사용 |
+| 인프라 | Docker + Nginx | 운영: HTTPS 10010 포트, 개발: HTTP 10011 포트 |
+| 백그라운드 작업 | APScheduler | django-apscheduler 0.6.2 |
+| 데이터 처리 | pandas, SQLAlchemy | Cloudera Impala ODBC 연동 (form options) |
 
 ### 공통 컨벤션
 - Python: **PEP8** 준수, 함수·클래스에 docstring 작성
-- React: 컴포넌트는 **함수형** 사용, props에 타입 명시
+- React: 컴포넌트는 **함수형** 사용, props에 타입 명시 (TypeScript strict mode)
 - API 응답: 항상 `{ data, message, status }` 형태 통일 권장
 - 환경변수: `.env` 파일 사용, 코드에 하드코딩 금지
+- 설정 파일: `backend/config/settings/` 하위에 `base.py`, `development.py`, `production.py` 분리
 
 ---
 
-## 📁 프로젝트 구조 (기본 예시)
+## 📁 프로젝트 구조
 
 ```
-project-root/
-├── backend/              # Django 프로젝트
+request-site/
+├── backend/                        # Django 프로젝트
 │   ├── manage.py
-│   ├── config/           # settings, urls, wsgi
-│   └── apps/             # Django 앱들
-├── frontend/             # React 프로젝트
+│   ├── requirements.txt
+│   ├── config/                     # 프로젝트 설정
+│   │   ├── settings/
+│   │   │   ├── base.py             # 공통 설정
+│   │   │   ├── development.py      # 개발 환경
+│   │   │   └── production.py       # 운영 환경
+│   │   ├── urls.py
+│   │   └── wsgi.py
+│   └── api/                        # 단일 Django 앱
+│       ├── models.py               # DB 모델 (RequestDocument, VOC, User 등)
+│       ├── views.py                # DRF ViewSets
+│       ├── serializers.py
+│       ├── urls.py
+│       ├── auth_views.py           # OIDC 인증 처리
+│       ├── auth_views_dev.py       # 개발용 로그인 (유저 전환)
+│       ├── authentication.py       # 커스텀 JWT 인증
+│       ├── scheduler.py            # APScheduler 백그라운드 작업
+│       ├── utils.py
+│       └── migrations/
+├── frontend/                       # React 프로젝트
 │   ├── public/
+│   ├── package.json
+│   ├── tsconfig.json
 │   └── src/
-│       ├── components/
-│       ├── pages/
-│       ├── api/          # API 호출 함수 모음
-│       └── locales/      # 다국어 파일
-│           ├── ko.json
-│           └── en.json
-├── .env
-└── CLAUDE.md             # ← 이 파일
+│       ├── App.tsx                 # 라우터 & 레이아웃
+│       ├── index.tsx
+│       ├── i18n.ts                 # i18next 설정 (언어 감지: localStorage → navigator)
+│       ├── api/
+│       │   └── client.ts           # API 호출 함수 모음
+│       ├── components/             # 공통 컴포넌트
+│       │   ├── Navbar.tsx
+│       │   ├── Modal.tsx
+│       │   ├── Toast.tsx
+│       │   └── ...
+│       ├── contexts/
+│       │   └── AuthContext.tsx     # 인증 상태 관리
+│       ├── pages/                  # 페이지 컴포넌트
+│       │   ├── HomePage.tsx
+│       │   ├── RequestPage.tsx
+│       │   ├── ApprovalPage.tsx
+│       │   ├── HistoryPage.tsx
+│       │   ├── VOCPage.tsx
+│       │   ├── PermissionPage.tsx
+│       │   ├── GuidePage.tsx
+│       │   ├── LoginPage.tsx
+│       │   └── OIDCCallbackPage.tsx
+│       ├── locales/                # 다국어 파일
+│       │   ├── ko.json             # 한국어 (기본 fallback)
+│       │   └── en.json             # 영어
+│       ├── styles/
+│       │   └── global.css
+│       └── types/
+│           ├── index.ts            # 공통 타입 정의
+│           └── i18n.d.ts           # i18next 타입 확장
+├── nginx/                          # Nginx 설정
+│   ├── nginx.conf                  # 운영 (HTTPS, 10010 포트)
+│   └── nginx.dev.conf              # 개발 (HTTP, 10011 포트)
+├── mysql/                          # MySQL 설정
+│   ├── my.cnf
+│   └── my.dev.cnf
+├── docker-compose.yml              # 운영 컨테이너 구성
+├── docker-compose.dev.yml          # 개발 컨테이너 구성
+├── .env.example                    # 운영 환경변수 템플릿
+├── .env.dev.example                # 개발 환경변수 템플릿
+└── CLAUDE.md                       # ← 이 파일
 ```
 
 ---
