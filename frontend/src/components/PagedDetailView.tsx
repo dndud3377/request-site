@@ -434,11 +434,12 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   const isR = role === 'TE_R' || role === 'MASTER' || isPL;
   const isJ = role === 'TE_J' || role === 'MASTER' || isPL;
   const isO = role === 'TE_O' || role === 'MASTER' || isPL;
+  const isE = role === 'TE_E';
 
-  const showJayer = isJ || isO || isP;
+  const showJayer = isJ || isE || isO || isP;
   const showOayer = isO || isP;
-  const showBb = isJ || isO || isP;
-  const showFlowChart = isJ || isO || isP;
+  const showBb = isJ || isE || isO || isP;
+  const showFlowChart = isJ || isE || isO || isP;
 
   const cardStyle: React.CSSProperties = {
     background: 'var(--bg-card)',
@@ -661,14 +662,14 @@ type Page = { label: string; content: React.ReactNode };
           <div style={cardStyle}>
             <div style={sectionTitle}>{t('approval.section_detail')}</div>
 
-            {(isR || isJ || isP) && (detail.source_line || detail.source_partid) && (
+            {(isR || isJ || isE || isP) && (detail.source_line || detail.source_partid) && (
               <div style={rowStyle}>
                 <Chip label={t('request.source_line')} value={detail.source_line} changed={changedFields.has('source_line')} fieldKey="source_line" />
                 <Chip label={t('request.source_partid_selection')} value={detail.source_partid} changed={changedFields.has('source_partid')} fieldKey="source_partid" />
               </div>
             )}
 
-            {(isJ || isO || isP) && detail.bb_zone && (() => {
+            {(isJ || isE || isO || isP) && detail.bb_zone && (() => {
               const bbValue = Array.isArray(detail.bb_entries) && detail.bb_entries.length > 0
                 ? detail.bb_entries.map((e: { location: string; product: string; process_id: string }, i: number) =>
                     `[${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.process_id || '-'}`
@@ -740,7 +741,7 @@ type Page = { label: string; content: React.ReactNode };
                   <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change" />
                 );
               })()}
-              {(isR || isP) && detail.ea_change && (() => {
+              {(isR || isO || isP) && detail.ea_change && (() => {
                 const eaValue = `변경: ${detail.ea_change}${detail.ea_value ? ` / 값: ${detail.ea_value}` : ''}`;
                 const eaChanged = changedFields.has('ea_change') || changedFields.has('ea_value');
                 return (
@@ -750,7 +751,7 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {(isR || isP) && detail.mshot_change && (() => {
+          {(isR || isO || isP) && detail.mshot_change && (() => {
             const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy');
             return (
               <div style={rowStyle}>
@@ -786,7 +787,7 @@ type Page = { label: string; content: React.ReactNode };
             );
           })()}
 
-          {(isR || isP) && detail.only_prodc && (() => {
+          {(isR || isO || isP) && detail.only_prodc && (() => {
             const prodcChanged = ['only_prodc','prodc_top_line','prodc_top_process','prodc_top_product','prodc_middle_use','prodc_middle_line','prodc_middle_process','prodc_middle_product','prodc_bottom_line','prodc_bottom_process','prodc_bottom_product'].some((k) => changedFields.has(k));
             const revChanged = changedFields.has('rev_yn') || changedFields.has('rev_entries');
             const revYn = (detail as any).rev_yn as string | undefined;
@@ -844,7 +845,7 @@ type Page = { label: string; content: React.ReactNode };
             );
           })()}
 
-          {(isR || isP) && (() => {
+          {(isR || isO || isP) && (() => {
             const mapOptionDefs = [
               { label: t('request.map_opt_photo_backside'), fieldKey: 'photo_backside', activeValue: '적용' },
               { label: t('request.map_opt_eds_backside'),   fieldKey: 'eds_backside',   activeValue: '적용' },
