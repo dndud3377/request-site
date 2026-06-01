@@ -1468,6 +1468,13 @@ export default function RequestPage(): React.ReactElement {
     }
 
     if (currentStep === 4) {
+      if (!detail.partial_shot?.trim()) {
+        newErrors['partial_shot'] = t('request.required');
+        errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
+      }
+    }
+
+    if (currentStep === 4) {
       // TODO: O-ayer 행 검증 로직 추가
     }
 
@@ -1547,7 +1554,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleNextStep = () => {
-    if (step === 1 || step === 2) {
+    if (step === 1 || step === 2 || step === 4) {
       const result = validate(step);
       if (!result.valid) {
         result.errors.forEach(msg => addToast(msg, 'error'));
@@ -2749,20 +2756,28 @@ export default function RequestPage(): React.ReactElement {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
 
             {/* Partial Shot 계측 필요 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <label className="form-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>{t('request.partial_shot')}</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {(['O', 'X'] as const).map(val => (
-                  <button
-                    key={val}
-                    type="button"
-                    className={`map-type-btn${detail.partial_shot === val ? ' active' : ''}`}
-                    onClick={() => setDetail(prev => ({ ...prev, partial_shot: prev.partial_shot === val ? '' : val }))}
-                  >
-                    {val}
-                  </button>
-                ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <label className="form-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>
+                  {t('request.partial_shot')} <span className="required">*</span>
+                </label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {(['O', 'X'] as const).map(val => (
+                    <button
+                      key={val}
+                      type="button"
+                      className={`map-type-btn${detail.partial_shot === val ? ' active' : ''}`}
+                      onClick={() => {
+                        setDetail(prev => ({ ...prev, partial_shot: prev.partial_shot === val ? '' : val }));
+                        if (errors['partial_shot']) setErrors(prev => ({ ...prev, partial_shot: '' }));
+                      }}
+                    >
+                      {val}
+                    </button>
+                  ))}
+                </div>
               </div>
+              {errors['partial_shot'] && <span className="form-error">{errors['partial_shot']}</span>}
             </div>
 
             {/* TBV/TLV */}
@@ -2793,71 +2808,70 @@ export default function RequestPage(): React.ReactElement {
                     />
                   </div>
 
-                  {/* SD 선택 (단일 선택) */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_sd_select')}</label>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxWidth: 520 }}>
-                      {availableTbvtlvSds.length > 0 ? availableTbvtlvSds.map(sd => {
-                        const isSelected = tbvtlvSdsSelected[0] === sd;
-                        return (
-                          <button
-                            key={sd}
-                            type="button"
-                            onClick={() =>
-                              setTbvtlvSdsSelected(isSelected ? [] : [sd])
-                            }
-                            style={{
-                              padding: '5px 13px',
-                              borderRadius: '4px',
-                              border: `1.5px solid ${isSelected ? 'var(--accent, #1976D2)' : '#ccc'}`,
-                              backgroundColor: isSelected ? 'var(--accent, #1976D2)' : '#fff',
-                              color: isSelected ? '#fff' : '#333',
-                              cursor: 'pointer',
-                              fontSize: '13px',
-                              fontWeight: isSelected ? 600 : 400,
-                              transition: 'all 0.15s',
-                            }}
-                          >
-                            {sd}
-                          </button>
-                        );
-                      }) : (
-                        <span style={{ fontSize: 13, color: '#999' }}>모든 SD가 추가되었습니다.</span>
-                      )}
+                  {/* SD 선택 (단일 선택) + 비고 + 추가 — 한 줄 */}
+                  <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_sd_select')}</label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxWidth: 320 }}>
+                        {availableTbvtlvSds.length > 0 ? availableTbvtlvSds.map(sd => {
+                          const isSelected = tbvtlvSdsSelected[0] === sd;
+                          return (
+                            <button
+                              key={sd}
+                              type="button"
+                              onClick={() => setTbvtlvSdsSelected(isSelected ? [] : [sd])}
+                              style={{
+                                padding: '5px 13px',
+                                borderRadius: '4px',
+                                border: `1.5px solid ${isSelected ? 'var(--accent, #1976D2)' : '#ccc'}`,
+                                backgroundColor: isSelected ? 'var(--accent, #1976D2)' : '#fff',
+                                color: isSelected ? '#fff' : '#333',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: isSelected ? 600 : 400,
+                                transition: 'all 0.15s',
+                              }}
+                            >
+                              {sd}
+                            </button>
+                          );
+                        }) : (
+                          <span style={{ fontSize: 13, color: '#999' }}>모든 SD가 추가되었습니다.</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  {/* 비고 (textarea) + 추가 버튼 */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_note')}</label>
-                    <textarea
-                      className="form-control"
-                      style={{ width: '100%', maxWidth: 600, minHeight: 120, resize: 'vertical' }}
-                      rows={5}
-                      value={tbvtlvNote}
-                      onChange={e => setTbvtlvNote(e.target.value)}
-                      placeholder="비고 입력"
-                    />
-                  </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_note')}</label>
+                      <textarea
+                        className="form-control"
+                        style={{ width: 220, minHeight: 120, resize: 'vertical' }}
+                        rows={5}
+                        value={tbvtlvNote}
+                        onChange={e => setTbvtlvNote(e.target.value)}
+                        placeholder="비고 입력"
+                      />
+                    </div>
 
-                  <div>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      style={{ whiteSpace: 'nowrap' }}
-                      disabled={tbvtlvSdsSelected.length === 0}
-                      onClick={() => {
-                        if (tbvtlvSdsSelected.length === 0) return;
-                        setDetail(prev => ({
-                          ...prev,
-                          tbvtlv_entries: [...(prev.tbvtlv_entries ?? []), { sds: tbvtlvSdsSelected, note: tbvtlvNote.trim() }],
-                        }));
-                        setTbvtlvSdsSelected([]);
-                        setTbvtlvNote('');
-                      }}
-                    >
-                      + {t('request.tbvtlv_add')}
-                    </button>
+                    <div style={{ paddingTop: 24 }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        style={{ whiteSpace: 'nowrap' }}
+                        disabled={tbvtlvSdsSelected.length === 0}
+                        onClick={() => {
+                          if (tbvtlvSdsSelected.length === 0) return;
+                          setDetail(prev => ({
+                            ...prev,
+                            tbvtlv_entries: [...(prev.tbvtlv_entries ?? []), { sds: tbvtlvSdsSelected, note: tbvtlvNote }],
+                          }));
+                          setTbvtlvSdsSelected([]);
+                          setTbvtlvNote('');
+                        }}
+                      >
+                        + {t('request.tbvtlv_add')}
+                      </button>
+                    </div>
                   </div>
 
                   {/* 추가된 항목 테이블 */}
@@ -2874,7 +2888,7 @@ export default function RequestPage(): React.ReactElement {
                         {(detail.tbvtlv_entries ?? []).map((entry, idx) => (
                           <tr key={idx}>
                             <td style={{ border: '1px solid #ddd', padding: '4px 10px', whiteSpace: 'nowrap' }}>{entry.sds.join(', ')}</td>
-                            <td style={{ border: '1px solid #ddd', padding: '4px 10px' }}>{entry.note}</td>
+                            <td style={{ border: '1px solid #ddd', padding: '4px 10px', whiteSpace: 'pre-wrap' }}>{entry.note}</td>
                             <td style={{ border: '1px solid #ddd', padding: '4px 6px', textAlign: 'center' }}>
                               <button
                                 type="button"
