@@ -119,7 +119,16 @@
     "toast_ovl_no_data": "No O-ayer STEP information found.",
     "toast_bb_auto_fill": "BB data loaded with {{count}} rows.",
     "toast_bb_no_data": "No BB STEP information found.",
-    "toast_bb_error": "Failed to load BB information."
+    "toast_bb_error": "Failed to load BB information.",
+    "jayer": "J-ayer",
+    "oayer": "O-ayer",
+    "jayer_row_history": "J-ayer Row Change History",
+    "oayer_row_history": "O-ayer Row Change History",
+    "toast_merge_complete": "J-ayer {{jayerMatched}} pre-registered / O-ayer {{oayerMatched}} pre-registered, {{unmatched}} unmatched added",
+    "jayer_no_layer_data": "No Layer data found in J-ayer information.",
+    "ext_data_assign_to_jayer": "② Select external data — assigned to the selected J-ayer row",
+    "jayer_filter_manage": "J-ayer Filter Management",
+    "oayer_filter_manage": "O-ayer Filter Management"
   },
   "approval": {
     "title": "Approval Status",
