@@ -122,7 +122,7 @@
 
 ```
 📝 파일 수정 보고 형식
-수정 파일: backend/apps/user/models.py
+수정 파일: backend/api/models.py
 수정 이유: User 모델에 phone_number 필드 추가
 영향 범위: serializers.py, admin.py, migration 파일 신규 생성 필요
 진행할까요?
@@ -210,10 +210,9 @@ frontend/src/locales/
 | `history.*` | 이력 조회 페이지 |
 | `voc.*` | VOC 페이지 |
 | `permission.*` | 권한 관리 페이지 |
-| `guide.*` | 가이드 페이지 |
 | `login.*` | 로그인 페이지 |
-| `error.*` | 에러 메시지 |
-| `message.*` | 공통 알림 메시지 |
+| `common.*` | 공통 UI 텍스트 (버튼, 상태 등) |
+| `notice.*` | 공지사항 관련 텍스트 |
 
 ### 작성 예시
 
@@ -320,7 +319,9 @@ request-site/
 │       ├── auth_views_dev.py       # 개발용 로그인 (유저 전환)
 │       ├── authentication.py       # 커스텀 JWT 인증
 │       ├── scheduler.py            # APScheduler 백그라운드 작업
+│       ├── sse.py                  # Server-Sent Events 처리
 │       ├── utils.py
+│       ├── management/             # Django 커스텀 management commands
 │       └── migrations/
 ├── frontend/                       # React 프로젝트
 │   ├── public/
