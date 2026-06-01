@@ -127,7 +127,17 @@
     "jayer_no_layer_data": "No Layer data found in J-ayer information.",
     "ext_data_assign_to_jayer": "② Select external data — assigned to the selected J-ayer row",
     "jayer_filter_manage": "J-ayer Filter Management",
-    "oayer_filter_manage": "O-ayer Filter Management"
+    "oayer_filter_manage": "O-ayer Filter Management",
+    "ovl_tab_table": "OVL Layer List",
+    "ovl_tab_info": "OVL Info",
+    "partial_shot": "Partial Shot Measurement Required",
+    "tbvtlv": "TBV/TLV",
+    "tbvtlv_thickness": "Thickness",
+    "tbvtlv_no_data": "No TBV/TLV items found in OVL Layer list.",
+    "tbvtlv_sd_select": "Select SD",
+    "tbvtlv_note": "Note",
+    "tbvtlv_add": "Add",
+    "tbvtlv_entries_label": "Added Items"
   },
   "approval": {
     "title": "Approval Status",

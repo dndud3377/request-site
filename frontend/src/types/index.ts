@@ -258,6 +258,11 @@ export interface DetailFormState {
 
   rev_yn: string;
   rev_entries: Array<{ layers: string[]; gds: string }>;
+
+  // O-ayer 정보 탭
+  partial_shot: string;
+  tbvtlv_thickness: string;
+  tbvtlv_entries: Array<{ sds: string[]; note: string }>;
 }
 
 // ===== Change History =====
