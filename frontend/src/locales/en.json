@@ -137,7 +137,10 @@
     "tbvtlv_sd_select": "Select SD",
     "tbvtlv_note": "Note",
     "tbvtlv_add": "Add",
-    "tbvtlv_entries_label": "Added Items"
+    "tbvtlv_entries_label": "Added Items",
+    "tbvtlv_warn_title": "Input Check",
+    "tbvtlv_warn_body": "Thickness / Note fields are not filled in. Are you sure you want to proceed without entering them?",
+    "tbvtlv_warn_proceed": "Proceed"
   },
   "approval": {
     "title": "Approval Status",

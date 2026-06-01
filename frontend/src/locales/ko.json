@@ -136,7 +136,10 @@
     "tbvtlv_sd_select": "SD 선택",
     "tbvtlv_note": "비고",
     "tbvtlv_add": "추가",
-    "tbvtlv_entries_label": "추가된 항목"
+    "tbvtlv_entries_label": "추가된 항목",
+    "tbvtlv_warn_title": "입력 확인",
+    "tbvtlv_warn_body": "두께 / 비고 항목을 입력하지 않았습니다. 입력하지 않고 넘어가도 괜찮으시겠습니까?",
+    "tbvtlv_warn_proceed": "계속 진행"
   },
   "approval": {
     "title": "결재 현황",
