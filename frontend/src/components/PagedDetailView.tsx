@@ -941,18 +941,104 @@ type Page = { label: string; content: React.ReactNode };
   if (showOayer) {
     pages.push({
       label: t('request.ovl_li'),
-      content: (
-        <div style={cardStyle}>
-          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>{t('request.ovl_li')}</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {oayer.length}건</span>
-              <button onClick={exportOayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
+      content: (() => {
+        const OayerTabs = () => {
+          const [activeTab, setActiveTab] = React.useState<'table' | 'info'>('table');
+          const tbvtlvEntries = detail.tbvtlv_entries ?? [];
+          const infoHasData = detail.partial_shot !== '' || tbvtlvEntries.length > 0 || (detail.tbvtlv_thickness ?? '') !== '';
+          return (
+            <div style={cardStyle}>
+              <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>{t('request.ovl_li')}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {oayer.length}건</span>
+                  <button onClick={exportOayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
+                </div>
+              </div>
+              {/* 탭 버튼 */}
+              <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderBottom: '2px solid var(--border)' }}>
+                {([
+                  { key: 'table', label: t('request.ovl_tab_table') },
+                  { key: 'info',  label: t('request.ovl_tab_info') },
+                ] as const).map(tab => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTab(tab.key)}
+                    style={{
+                      padding: '7px 18px',
+                      fontSize: '0.85rem',
+                      fontWeight: activeTab === tab.key ? 700 : 400,
+                      color: activeTab === tab.key ? 'var(--accent)' : 'var(--text-secondary)',
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: activeTab === tab.key ? '2px solid var(--accent)' : '2px solid transparent',
+                      marginBottom: -2,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                    }}
+                  >
+                    {tab.label}
+                    {tab.key === 'info' && infoHasData && (
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#4CAF50', display: 'inline-block' }} />
+                    )}
+                  </button>
+                ))}
+              </div>
+              {activeTab === 'table' && (
+                <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} />
+              )}
+              {activeTab === 'info' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20, fontSize: 13 }}>
+                  {/* Partial Shot */}
+                  <div>
+                    <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('request.partial_shot')}</div>
+                    <div>
+                      {detail.partial_shot
+                        ? <span style={{ padding: '4px 14px', borderRadius: 4, background: 'var(--accent)', color: '#fff', fontWeight: 700 }}>{detail.partial_shot}</span>
+                        : <span style={{ color: 'var(--text-muted)' }}>—</span>
+                      }
+                    </div>
+                  </div>
+                  {/* TBV/TLV */}
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 8 }}>{t('request.tbvtlv')}</div>
+                    {(detail.tbvtlv_thickness ?? '') !== '' && (
+                      <div style={{ marginBottom: 10 }}>
+                        <span style={{ color: 'var(--text-muted)', marginRight: 8 }}>{t('request.tbvtlv_thickness')}:</span>
+                        <span style={{ fontWeight: 600 }}>{detail.tbvtlv_thickness}</span>
+                      </div>
+                    )}
+                    {tbvtlvEntries.length > 0 ? (
+                      <table style={{ borderCollapse: 'collapse', width: 'fit-content', fontSize: 12 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ border: '1px solid #ddd', padding: '4px 10px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>{t('request.tbvtlv_sd_select')}</th>
+                            <th style={{ border: '1px solid #ddd', padding: '4px 10px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>{t('request.tbvtlv_note')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tbvtlvEntries.map((entry, idx) => (
+                            <tr key={idx}>
+                              <td style={{ border: '1px solid #ddd', padding: '4px 10px', whiteSpace: 'nowrap' }}>{entry.sds.join(', ')}</td>
+                              <td style={{ border: '1px solid #ddd', padding: '4px 10px' }}>{entry.note || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)' }}>—</span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-          <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} />
-        </div>
-      ),
+          );
+        };
+        return <OayerTabs />;
+      })(),
     });
   }
   if (showBb) {
