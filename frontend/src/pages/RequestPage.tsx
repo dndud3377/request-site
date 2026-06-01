@@ -2782,7 +2782,7 @@ export default function RequestPage(): React.ReactElement {
 
             {/* TBV/TLV */}
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 20 }}>
-              <label className="form-label" style={{ marginBottom: 6 }}>
+              <label className="form-label" style={{ marginBottom: 20 }}>
                 {t('request.tbvtlv')}
                 {!hasTbvtlv && (
                   <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 400, color: 'var(--text-muted)' }}>
