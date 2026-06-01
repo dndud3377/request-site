@@ -2749,9 +2749,9 @@ export default function RequestPage(): React.ReactElement {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
 
             {/* Partial Shot 계측 필요 */}
-            <div>
-              <label className="form-label">{t('request.partial_shot')}</label>
-              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <label className="form-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>{t('request.partial_shot')}</label>
+              <div style={{ display: 'flex', gap: 8 }}>
                 {(['O', 'X'] as const).map(val => (
                   <button
                     key={val}
@@ -2781,9 +2781,9 @@ export default function RequestPage(): React.ReactElement {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-                  {/* 두께 입력 */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_thickness')}</label>
+                  {/* 두께 입력 — 한 줄 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <label className="form-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>{t('request.tbvtlv_thickness')}</label>
                     <input
                       className="form-control"
                       style={{ width: 260 }}
@@ -2793,54 +2793,54 @@ export default function RequestPage(): React.ReactElement {
                     />
                   </div>
 
-                  {/* SD 선택 + 비고 + 추가 */}
-                  <div style={{ display: 'flex', gap: 20, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_sd_select')}</label>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxWidth: 520 }}>
-                        {availableTbvtlvSds.length > 0 ? availableTbvtlvSds.map(sd => {
-                          const isSelected = tbvtlvSdsSelected.includes(sd);
-                          return (
-                            <button
-                              key={sd}
-                              type="button"
-                              onClick={() =>
-                                setTbvtlvSdsSelected(prev =>
-                                  isSelected ? prev.filter(s => s !== sd) : [...prev, sd]
-                                )
-                              }
-                              style={{
-                                padding: '5px 13px',
-                                borderRadius: '4px',
-                                border: `1.5px solid ${isSelected ? 'var(--accent, #1976D2)' : '#ccc'}`,
-                                backgroundColor: isSelected ? 'var(--accent, #1976D2)' : '#fff',
-                                color: isSelected ? '#fff' : '#333',
-                                cursor: 'pointer',
-                                fontSize: '13px',
-                                fontWeight: isSelected ? 600 : 400,
-                                transition: 'all 0.15s',
-                              }}
-                            >
-                              {sd}
-                            </button>
-                          );
-                        }) : (
-                          <span style={{ fontSize: 13, color: '#999' }}>모든 SD가 추가되었습니다.</span>
-                        )}
-                      </div>
+                  {/* SD 선택 (단일 선택) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_sd_select')}</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxWidth: 520 }}>
+                      {availableTbvtlvSds.length > 0 ? availableTbvtlvSds.map(sd => {
+                        const isSelected = tbvtlvSdsSelected[0] === sd;
+                        return (
+                          <button
+                            key={sd}
+                            type="button"
+                            onClick={() =>
+                              setTbvtlvSdsSelected(isSelected ? [] : [sd])
+                            }
+                            style={{
+                              padding: '5px 13px',
+                              borderRadius: '4px',
+                              border: `1.5px solid ${isSelected ? 'var(--accent, #1976D2)' : '#ccc'}`,
+                              backgroundColor: isSelected ? 'var(--accent, #1976D2)' : '#fff',
+                              color: isSelected ? '#fff' : '#333',
+                              cursor: 'pointer',
+                              fontSize: '13px',
+                              fontWeight: isSelected ? 600 : 400,
+                              transition: 'all 0.15s',
+                            }}
+                          >
+                            {sd}
+                          </button>
+                        );
+                      }) : (
+                        <span style={{ fontSize: 13, color: '#999' }}>모든 SD가 추가되었습니다.</span>
+                      )}
                     </div>
+                  </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_note')}</label>
-                      <input
-                        className="form-control"
-                        style={{ width: 320 }}
-                        value={tbvtlvNote}
-                        onChange={e => setTbvtlvNote(e.target.value)}
-                        placeholder="비고 입력"
-                      />
-                    </div>
+                  {/* 비고 (textarea) + 추가 버튼 */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_note')}</label>
+                    <textarea
+                      className="form-control"
+                      style={{ width: '100%', maxWidth: 600, minHeight: 120, resize: 'vertical' }}
+                      rows={5}
+                      value={tbvtlvNote}
+                      onChange={e => setTbvtlvNote(e.target.value)}
+                      placeholder="비고 입력"
+                    />
+                  </div>
 
+                  <div>
                     <button
                       type="button"
                       className="btn btn-primary"
