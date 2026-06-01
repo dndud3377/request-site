@@ -6,7 +6,7 @@ import { useToast } from '../components/Toast';
 import Modal from '../components/Modal';
 import { UserRole, UserWithRole, UserForAssignment } from '../types';
 
-const ALL_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
+const ALL_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
 
 
 
