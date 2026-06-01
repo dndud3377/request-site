@@ -63,7 +63,7 @@
   - frontend/src/components/Example.tsx
   - ...
 
-예상 소요 시간: [짧음 / 보통 / 김]
+예상 소요 시간: [짧음 / 보통 / 길음]
 
 진행할까요? (수정 사항이 있으면 말씀해 주세요)
 ```
@@ -80,7 +80,7 @@
 🧪 검증 방법
 
 1. [명령어 또는 동작 — 예: `python manage.py test api.tests.UserTest`]
-2. [브라우저에서 확인할 경로 — 예: http://localhost:3000/users]
+2. [브라우저에서 확인할 경로 — 예: http://localhost:10011]
 3. [확인해야 할 응답값 또는 UI 상태]
 ```
 
@@ -136,11 +136,11 @@
 - 구현이 끝나면 아래 명령어를 **반드시 실행하고 결과를 보고**한다.
 
 ```bash
-# Backend
-python manage.py test
+# Backend (backend/ 디렉토리에서 실행)
+cd backend && python manage.py test
 
-# Frontend
-npm test
+# Frontend (frontend/ 디렉토리에서 실행)
+cd frontend && npm test
 ```
 
 - 테스트 실패 시 코드 수정 후 **재실행 결과까지 확인**한다.
@@ -301,6 +301,7 @@ const { t } = useTranslation();
 ```
 request-site/
 ├── backend/                        # Django 프로젝트
+│   ├── Dockerfile
 │   ├── manage.py
 │   ├── requirements.txt
 │   ├── config/                     # 프로젝트 설정
@@ -308,6 +309,7 @@ request-site/
 │   │   │   ├── base.py             # 공통 설정
 │   │   │   ├── development.py      # 개발 환경
 │   │   │   └── production.py       # 운영 환경
+│   │   ├── odbc/                   # Cloudera Impala ODBC 설정
 │   │   ├── urls.py
 │   │   └── wsgi.py
 │   └── api/                        # 단일 Django 앱
@@ -322,8 +324,14 @@ request-site/
 │       ├── sse.py                  # Server-Sent Events 처리
 │       ├── utils.py
 │       ├── management/             # Django 커스텀 management commands
+│       │   └── commands/
+│       │       ├── create_users.py
+│       │       ├── seed_lines.py
+│       │       └── wait_for_db.py
 │       └── migrations/
 ├── frontend/                       # React 프로젝트
+│   ├── Dockerfile
+│   ├── nginx-frontend.conf
 │   ├── public/
 │   ├── package.json
 │   ├── tsconfig.json
@@ -334,10 +342,14 @@ request-site/
 │       ├── api/
 │       │   └── client.ts           # API 호출 함수 모음
 │       ├── components/             # 공통 컴포넌트
-│       │   ├── Navbar.tsx
+│       │   ├── ApprovalFlow.tsx
+│       │   ├── AutocompleteInput.tsx
+│       │   ├── FormSelect.tsx
 │       │   ├── Modal.tsx
-│       │   ├── Toast.tsx
-│       │   └── ...
+│       │   ├── Navbar.tsx
+│       │   ├── PagedDetailView.tsx
+│       │   ├── StatusBadge.tsx
+│       │   └── Toast.tsx
 │       ├── contexts/
 │       │   └── AuthContext.tsx     # 인증 상태 관리
 │       ├── pages/                  # 페이지 컴포넌트
@@ -359,6 +371,7 @@ request-site/
 │           ├── index.ts            # 공통 타입 정의
 │           └── i18n.d.ts           # i18next 타입 확장
 ├── nginx/                          # Nginx 설정
+│   ├── Dockerfile
 │   ├── nginx.conf                  # 운영 (HTTPS, 10010 포트)
 │   └── nginx.dev.conf              # 개발 (HTTP, 10011 포트)
 ├── mysql/                          # MySQL 설정
