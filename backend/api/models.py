@@ -130,7 +130,7 @@ class ApprovalStep(models.Model):
     )
     agent = models.CharField(max_length=2, choices=AGENT_CHOICES, verbose_name='담당 에이전트')
     action = models.CharField(
-        max_length=10, choices=ACTION_CHOICES, default='checking', verbose_name='결재 결과'
+        max_length=10, choices=ACTION_CHOICES, default='pending', verbose_name='결재 결과'
     )
     acted_at = models.DateTimeField(null=True, blank=True, verbose_name='처리일시')
     comment = models.TextField(blank=True, verbose_name='의견')

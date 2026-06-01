@@ -1,5 +1,11 @@
 # 시스템 전체 구조 문서 & 버그 체크 현황
 
+> **⚠️ 필수 준수 사항**
+> 이 문서를 바탕으로 작업할 때 **CLAUDE.md의 모든 규칙을 반드시 지킨다.**
+> - 작업 전 CLAUDE.md를 다시 읽는다.
+> - 계획을 먼저 제시하고 사용자의 승인을 받은 후 코드를 작성한다.
+> - 승인 없이 코드를 한 줄도 작성하지 않는다.
+
 > **사용 방법**
 > - `⬜ 미완료` : 아직 버그 체크를 하지 않은 섹션
 > - `🔍 진행 중` : 현재 버그 체크 중인 섹션
@@ -13,7 +19,7 @@
 
 | # | 섹션 | 버그 체크 | 발견된 버그 수 |
 |---|------|-----------|---------------|
-| 1 | 데이터 모델 (Models) | ⬜ 미완료 | - |
+| 1 | 데이터 모델 (Models) | ✅ 완료 | 1건 수정 (Bug1: ApprovalStep.action default 오류) |
 | 2 | 인증 시스템 (Authentication) | ⬜ 미완료 | - |
 | 3 | 의뢰서 API (RequestDocumentViewSet) | ⬜ 미완료 | - |
 | 4 | VOC API (VOCViewSet) | ⬜ 미완료 | - |
@@ -42,8 +48,10 @@
 
 ## 1. 데이터 모델 (Models)
 
-> **버그 체크:** ⬜ 미완료
+> **버그 체크:** ✅ 완료
 > **파일:** `backend/api/models.py`
+>
+> **결과:** Bug 1건 수정 (`ApprovalStep.action default='checking'` → `'pending'`), Issue 1건 보류 (`created_at null=True` — 마이그레이션 영향 검토 필요)
 
 ### 1.1 UserProfile
 
