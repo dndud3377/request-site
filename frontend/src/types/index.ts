@@ -180,7 +180,6 @@ export interface OayerRow {
   new_or_copy: string;
   product_name: string;
   step: string;
-  tt: string;
 }
 
 export interface BbTableRow {

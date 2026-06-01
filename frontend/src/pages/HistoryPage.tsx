@@ -22,6 +22,7 @@ export default function HistoryPage(): React.ReactElement {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
   const isMaster = currentUser.role === 'MASTER';
+  const isNone = currentUser.role === 'NONE';
   const [docs, setDocs] = useState<RequestDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -111,12 +112,16 @@ export default function HistoryPage(): React.ReactElement {
                 <tr key={doc.id}>
                   <td style={{ color: 'var(--text-muted)' }}>{index + 1}</td>
                   <td>
-                    <span
-                      style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'pointer' }}
-                      onClick={() => openDetail(doc)}
-                    >
-                      {doc.title}
-                    </span>
+                    {isNone ? (
+                      <span style={{ fontWeight: 600 }}>{doc.title}</span>
+                    ) : (
+                      <span
+                        style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'pointer' }}
+                        onClick={() => openDetail(doc)}
+                      >
+                        {doc.title}
+                      </span>
+                    )}
                   </td>
                   <td>{doc.product_name}</td>
                   <td>

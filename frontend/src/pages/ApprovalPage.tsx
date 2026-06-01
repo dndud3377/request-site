@@ -336,6 +336,7 @@ export default function ApprovalPage(): React.ReactElement {
 
   const isPL = currentUser.role === 'PL';
   const isMaster = currentUser.role === 'MASTER';
+  const isNone = currentUser.role === 'NONE';
 
   return (
     <div className="container page">
@@ -393,12 +394,16 @@ export default function ApprovalPage(): React.ReactElement {
               {docs.map((doc) => (
                 <tr key={doc.id}>
                   <td>
-                    <button
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 600, fontSize: '0.9rem', textAlign: 'left', padding: 0 }}
-                      onClick={() => openDetail(doc)}
-                    >
-                      {doc.title}
-                    </button>
+                    {isNone ? (
+                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{doc.title}</span>
+                    ) : (
+                      <button
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 600, fontSize: '0.9rem', textAlign: 'left', padding: 0 }}
+                        onClick={() => openDetail(doc)}
+                      >
+                        {doc.title}
+                      </button>
+                    )}
                   </td>
                   <td>{doc.product_name}</td>
                   <td>

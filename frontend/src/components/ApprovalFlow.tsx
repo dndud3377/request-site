@@ -21,11 +21,14 @@ export const canUserAssign = (user: { role: UserRoleWithNull } | MockUser, step:
   return !!agent && step.agent === agent && step.action === 'pending' && !step.assignee_loginid;
 };
 
-// 합의/반려 가능 여부: MASTER이거나, 담당자로 지정된 본인
+// 합의/반려 가능 여부: MASTER이거나, TE_O/TE_E는 자기 단계 pending이면 누구나, 나머지는 담당자로 지정된 본인
 // password 필드가 optional이도록 수정
 export const canUserAgree = (user: { role: UserRoleWithNull; username: string } | MockUser, step: ApprovalStepFrontend): boolean => {
   if (user.role === 'MASTER') return true;
-  return step.action === 'pending' && step.assignee_loginid === user.username;
+  if (step.action !== 'pending') return false;
+  const agent = user.role ? ROLE_TO_AGENT[user.role] : undefined;
+  if ((user.role === 'TE_O' || user.role === 'TE_E') && agent && step.agent === agent) return true;
+  return step.assignee_loginid === user.username;
 };
 
 interface ApprovalFlowProps {

@@ -153,7 +153,6 @@ const makeOayerRow = (): OayerRow => ({
   new_or_copy: '',
   product_name: '',
   step: '',
-  tt: '',
 });
 
 const makeBbRow = (): BbTableRow => ({
@@ -2620,7 +2619,6 @@ export default function RequestPage(): React.ReactElement {
               <th style={{ width: 'auto' }}>{t('request.col_new_or_copy')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_product_name')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_step')}</th>
-              <th style={{ width: 'auto' }}>{t('request.col_tt')}</th>
             </tr>
           </thead>
           <tbody>
@@ -2672,7 +2670,6 @@ export default function RequestPage(): React.ReactElement {
                     </td>
                     <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                     <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.step} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.tt} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'tt', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                   </tr>
                 </>
               );

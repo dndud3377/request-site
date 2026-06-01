@@ -185,7 +185,6 @@ function OayerTable({
     { key: 'new_or_copy',  label: t('request.col_new_or_copy') },
     { key: 'product_name', label: t('request.col_product_name') },
     { key: 'step',         label: t('request.col_step') },
-    { key: 'tt',           label: t('request.col_tt') },
   ];
   const hasPrev = (prevRowMap?.size ?? 0) > 0;
   return (
@@ -198,7 +197,7 @@ function OayerTable({
           <thead>
             <tr>
               {hasPrev && <th style={{ width: 64 }}></th>}
-              <th>Update 날짜</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_tt')}</th>
+              <th>Update 날짜</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th>
             </tr>
           </thead>
           <tbody>
@@ -213,7 +212,7 @@ function OayerTable({
                       )}
                     </td>
                   )}
-                  {(() => { const reg = r.new_or_copy === '기등록'; const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: reg ? rb : r.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.tt}</td></>); })()}
+                  {(() => { const reg = r.new_or_copy === '기등록'; const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: reg ? rb : r.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td></>); })()}
                 </tr>
               );
             })}
@@ -409,7 +408,6 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
       [t('request.col_new_or_copy')]: r.new_or_copy,
       [t('request.col_product_name')]: r.product_name,
       [t('request.col_step')]:      r.step,
-      [t('request.col_tt')]:        r.tt,
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -434,11 +432,12 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   const isR = role === 'TE_R' || role === 'MASTER' || isPL;
   const isJ = role === 'TE_J' || role === 'MASTER' || isPL;
   const isO = role === 'TE_O' || role === 'MASTER' || isPL;
+  const isE = role === 'TE_E';
 
-  const showJayer = isJ || isO || isP;
+  const showJayer = isJ || isE || isO || isP;
   const showOayer = isO || isP;
-  const showBb = isJ || isO || isP;
-  const showFlowChart = isJ || isO || isP;
+  const showBb = isJ || isE || isO || isP;
+  const showFlowChart = isJ || isE || isO || isP;
 
   const cardStyle: React.CSSProperties = {
     background: 'var(--bg-card)',
@@ -661,14 +660,14 @@ type Page = { label: string; content: React.ReactNode };
           <div style={cardStyle}>
             <div style={sectionTitle}>{t('approval.section_detail')}</div>
 
-            {(isR || isJ || isP) && (detail.source_line || detail.source_partid) && (
+            {(isR || isJ || isE || isP) && (detail.source_line || detail.source_partid) && (
               <div style={rowStyle}>
                 <Chip label={t('request.source_line')} value={detail.source_line} changed={changedFields.has('source_line')} fieldKey="source_line" />
                 <Chip label={t('request.source_partid_selection')} value={detail.source_partid} changed={changedFields.has('source_partid')} fieldKey="source_partid" />
               </div>
             )}
 
-            {(isJ || isO || isP) && detail.bb_zone && (() => {
+            {(isJ || isE || isO || isP) && detail.bb_zone && (() => {
               const bbValue = Array.isArray(detail.bb_entries) && detail.bb_entries.length > 0
                 ? detail.bb_entries.map((e: { location: string; product: string; process_id: string }, i: number) =>
                     `[${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.process_id || '-'}`
@@ -740,7 +739,7 @@ type Page = { label: string; content: React.ReactNode };
                   <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change" />
                 );
               })()}
-              {(isR || isP) && detail.ea_change && (() => {
+              {(isR || isO || isP) && detail.ea_change && (() => {
                 const eaValue = `변경: ${detail.ea_change}${detail.ea_value ? ` / 값: ${detail.ea_value}` : ''}`;
                 const eaChanged = changedFields.has('ea_change') || changedFields.has('ea_value');
                 return (
@@ -750,7 +749,7 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {(isR || isP) && detail.mshot_change && (() => {
+          {(isR || isO || isP) && detail.mshot_change && (() => {
             const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy');
             return (
               <div style={rowStyle}>
@@ -786,7 +785,7 @@ type Page = { label: string; content: React.ReactNode };
             );
           })()}
 
-          {(isR || isP) && detail.only_prodc && (() => {
+          {(isR || isO || isP) && detail.only_prodc && (() => {
             const prodcChanged = ['only_prodc','prodc_top_line','prodc_top_process','prodc_top_product','prodc_middle_use','prodc_middle_line','prodc_middle_process','prodc_middle_product','prodc_bottom_line','prodc_bottom_process','prodc_bottom_product'].some((k) => changedFields.has(k));
             const revChanged = changedFields.has('rev_yn') || changedFields.has('rev_entries');
             const revYn = (detail as any).rev_yn as string | undefined;
@@ -844,7 +843,7 @@ type Page = { label: string; content: React.ReactNode };
             );
           })()}
 
-          {(isR || isP) && (() => {
+          {(isR || isO || isP) && (() => {
             const mapOptionDefs = [
               { label: t('request.map_opt_photo_backside'), fieldKey: 'photo_backside', activeValue: '적용' },
               { label: t('request.map_opt_eds_backside'),   fieldKey: 'eds_backside',   activeValue: '적용' },
