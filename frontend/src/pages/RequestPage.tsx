@@ -3357,7 +3357,7 @@ export default function RequestPage(): React.ReactElement {
             💾 {saving ? t('common.loading') : t('request.save_draft')}
           </button>
           {step < 5 ? (
-            <button className="btn btn-primary" onClick={handleNextStep}>
+            <button className="btn btn-primary" onClick={() => handleNextStep()}>
               다음 →
             </button>
           ) : (
