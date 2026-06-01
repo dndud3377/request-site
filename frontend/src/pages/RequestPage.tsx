@@ -19,6 +19,7 @@ import {
   ExternalBbDataItem,
   PhotoStepOption,
   BbAutoFillRange,
+  FilterSet,
 } from '../types';
 
 // ===== Option Constants =====
@@ -125,6 +126,7 @@ const makeJayerRow = (): JayerRow => ({
   updated: '',
   sortOrder: Date.now(),
   disabled: false,
+  manuallyDisabled: false,
   process_id: '',
   sp: '',
   sd: '',
@@ -142,6 +144,7 @@ const makeOayerRow = (): OayerRow => ({
   updated: '',
   sortOrder: Date.now(),
   disabled: false,
+  manuallyDisabled: false,
   process_id: '',
   sp: '',
   sd: '',
@@ -339,10 +342,13 @@ export default function RequestPage(): React.ReactElement {
   const [approvedDocs, setApprovedDocs] = useState<RequestDocument[]>([]);
   const [sourcePartIdOptions, setSourcePartIdOptions] = useState<string[]>([]);
 
-  const [jayerFilterWords, setJayerFilterWords] = useState<{ sp: string[]; sd: string[]; pp: string[] }>({ sp: [], sd: [], pp: [] });
-  const [oayerFilterWords, setOayerFilterWords] = useState<{ sp: string[]; sd: string[]; pp: string[] }>({ sp: [], sd: [], pp: [] });
+  const [jayerFilterSets, setJayerFilterSets] = useState<FilterSet[]>([]);
+  const [oayerFilterSets, setOayerFilterSets] = useState<FilterSet[]>([]);
   const [jayerFilterModalOpen, setJayerFilterModalOpen] = useState(false);
   const [oayerFilterModalOpen, setOayerFilterModalOpen] = useState(false);
+  const emptyDraftWords = () => ({ sp: [] as string[], sd: [] as string[], pp: [] as string[] });
+  const [jayerNewFilter, setJayerNewFilter] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
+  const [oayerNewFilter, setOayerNewFilter] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
   const [jayerSortBySp, setJayerSortBySp] = useState(false);
   const [oayerSortBySp, setOayerSortBySp] = useState(false);
   const [copiedFields, setCopiedFields] = useState<Set<string>>(new Set());
@@ -365,30 +371,36 @@ export default function RequestPage(): React.ReactElement {
       })
       .catch(console.error);
 
-    // localStorage에서 비활성화 필터 단어 로드
-    const savedJayerFilter = localStorage.getItem('jayerFilterWords');
-    if (savedJayerFilter) {
-      try {
-        const parsed = JSON.parse(savedJayerFilter);
-        const converted = {
-          sp: Array.isArray(parsed.sp) ? parsed.sp : parsed.sp ? [parsed.sp] : [],
-          sd: Array.isArray(parsed.sd) ? parsed.sd : parsed.sd ? [parsed.sd] : [],
-          pp: Array.isArray(parsed.pp) ? parsed.pp : parsed.pp ? [parsed.pp] : [],
-        };
-        setJayerFilterWords(converted);
-      } catch (e) { /* 파싱 실패 시 기본값 유지 */ }
+    // localStorage에서 비활성화 FilterSet 로드 (구버전 jayerFilterWords 마이그레이션 포함)
+    const savedJayerSets = localStorage.getItem('jayerFilterSets');
+    if (savedJayerSets) {
+      try { setJayerFilterSets(JSON.parse(savedJayerSets)); } catch { /* 파싱 실패 시 기본값 유지 */ }
+    } else {
+      const oldJayer = localStorage.getItem('jayerFilterWords');
+      if (oldJayer) {
+        try {
+          const w = JSON.parse(oldJayer);
+          const migrated: FilterSet[] = [{ id: String(Date.now()), label: '기존 필터', words: { sp: Array.isArray(w.sp) ? w.sp : [], sd: Array.isArray(w.sd) ? w.sd : [], pp: Array.isArray(w.pp) ? w.pp : [] } }];
+          setJayerFilterSets(migrated);
+          localStorage.setItem('jayerFilterSets', JSON.stringify(migrated));
+          localStorage.removeItem('jayerFilterWords');
+        } catch { /* noop */ }
+      }
     }
-    const savedOayerFilter = localStorage.getItem('oayerFilterWords');
-    if (savedOayerFilter) {
-      try {
-        const parsed = JSON.parse(savedOayerFilter);
-        const converted = {
-          sp: Array.isArray(parsed.sp) ? parsed.sp : parsed.sp ? [parsed.sp] : [],
-          sd: Array.isArray(parsed.sd) ? parsed.sd : parsed.sd ? [parsed.sd] : [],
-          pp: Array.isArray(parsed.pp) ? parsed.pp : parsed.pp ? [parsed.pp] : [],
-        };
-        setOayerFilterWords(converted);
-      } catch (e) { /* 파싱 실패 시 기본값 유지 */ }
+    const savedOayerSets = localStorage.getItem('oayerFilterSets');
+    if (savedOayerSets) {
+      try { setOayerFilterSets(JSON.parse(savedOayerSets)); } catch { /* 파싱 실패 시 기본값 유지 */ }
+    } else {
+      const oldOayer = localStorage.getItem('oayerFilterWords');
+      if (oldOayer) {
+        try {
+          const w = JSON.parse(oldOayer);
+          const migrated: FilterSet[] = [{ id: String(Date.now() + 1), label: '기존 필터', words: { sp: Array.isArray(w.sp) ? w.sp : [], sd: Array.isArray(w.sd) ? w.sd : [], pp: Array.isArray(w.pp) ? w.pp : [] } }];
+          setOayerFilterSets(migrated);
+          localStorage.setItem('oayerFilterSets', JSON.stringify(migrated));
+          localStorage.removeItem('oayerFilterWords');
+        } catch { /* noop */ }
+      }
     }
   }, []);
 
@@ -589,8 +601,20 @@ export default function RequestPage(): React.ReactElement {
           history: parsed.history ?? [],
         };
         if (parsed.detail) setDetail(parsed.detail);
-        if (parsed.jayerRows) setJayerRows(parsed.jayerRows);
-        if (parsed.oayerRows) setOayerRows(parsed.oayerRows);
+        if (parsed.jayerRows) {
+          const fSets: FilterSet[] = (() => { try { return JSON.parse(localStorage.getItem('jayerFilterSets') ?? '[]'); } catch { return []; } })();
+          setJayerRows(parsed.jayerRows.map((r: JayerRow) => {
+            const md = r.manuallyDisabled ?? r.disabled;
+            return { ...r, manuallyDisabled: md, disabled: md || fSets.some(fs => shouldDisableRow(fs.words, r)) };
+          }));
+        }
+        if (parsed.oayerRows) {
+          const fSets: FilterSet[] = (() => { try { return JSON.parse(localStorage.getItem('oayerFilterSets') ?? '[]'); } catch { return []; } })();
+          setOayerRows(parsed.oayerRows.map((r: OayerRow) => {
+            const md = r.manuallyDisabled ?? r.disabled;
+            return { ...r, manuallyDisabled: md, disabled: md || fSets.some(fs => shouldDisableRow(fs.words, r)) };
+          }));
+        }
         if (parsed.bbRows) {
           setBbRows(parsed.bbRows);
           const existingJayerIds = parsed.bbRows
@@ -790,6 +814,9 @@ export default function RequestPage(): React.ReactElement {
     return false;
   };
 
+  const calcDisabled = (row: { manuallyDisabled: boolean; sp: string; sd: string; pp: string }, filterSets: FilterSet[]): boolean =>
+    row.manuallyDisabled || filterSets.some(fs => shouldDisableRow(fs.words, row));
+
   const fetchJobFileLayerAndPopulateJayer = async (line: string, process: string) => {
     try {
       const jobFileData = await formOptionsAPI.getJobFileLayer(line, process);
@@ -805,7 +832,7 @@ export default function RequestPage(): React.ReactElement {
             pp: item.recipeid,
             layerid: item.layerid || '',
           };
-          return { ...row, disabled: shouldDisableRow(jayerFilterWords, row) };
+          return { ...row, manuallyDisabled: false, disabled: calcDisabled(row, jayerFilterSets) };
         });
         setJayerRows(newJayerRows);
         addToast(t('request.toast_job_auto_fill', { count: jobFileData.length }), 'info');
@@ -832,7 +859,7 @@ export default function RequestPage(): React.ReactElement {
             sd: item.descript,
             pp: item.recipeid,
           };
-          return { ...row, disabled: shouldDisableRow(oayerFilterWords, row) };
+          return { ...row, manuallyDisabled: false, disabled: calcDisabled(row, oayerFilterSets) };
         });
         setOayerRows(newOayerRows);
         addToast(t('request.toast_ovl_auto_fill', { count: ovlData.length }), 'info');
@@ -863,7 +890,7 @@ export default function RequestPage(): React.ReactElement {
 
   const handleJayerBulkDisable = () => {
     setJayerRows((rows) =>
-      rows.map((r) => (jayerChecked.has(r.id) && !r.disabled ? { ...r, disabled: true } : r))
+      rows.map((r) => (jayerChecked.has(r.id) && !r.disabled ? { ...r, manuallyDisabled: true, disabled: true } : r))
     );
     setSelectedJayerRowId((prev) => (prev && jayerChecked.has(prev) ? null : prev));
     setStagedMappings((prev) => {
@@ -876,7 +903,10 @@ export default function RequestPage(): React.ReactElement {
 
   const handleJayerBulkRestore = () => {
     setJayerRows((rows) =>
-      rows.map((r) => (jayerChecked.has(r.id) && r.disabled ? { ...r, disabled: false } : r))
+      rows.map((r) => jayerChecked.has(r.id) && r.disabled
+        ? { ...r, manuallyDisabled: false, disabled: calcDisabled({ ...r, manuallyDisabled: false }, jayerFilterSets) }
+        : r
+      )
     );
     setJayerChecked(new Set());
   };
@@ -943,14 +973,17 @@ export default function RequestPage(): React.ReactElement {
 
   const handleOayerBulkDisable = () => {
     setOayerRows((rows) =>
-      rows.map((r) => (oayerChecked.has(r.id) && !r.disabled ? { ...r, disabled: true } : r))
+      rows.map((r) => (oayerChecked.has(r.id) && !r.disabled ? { ...r, manuallyDisabled: true, disabled: true } : r))
     );
     setOayerChecked(new Set());
   };
 
   const handleOayerBulkRestore = () => {
     setOayerRows((rows) =>
-      rows.map((r) => (oayerChecked.has(r.id) && r.disabled ? { ...r, disabled: false } : r))
+      rows.map((r) => oayerChecked.has(r.id) && r.disabled
+        ? { ...r, manuallyDisabled: false, disabled: calcDisabled({ ...r, manuallyDisabled: false }, oayerFilterSets) }
+        : r
+      )
     );
     setOayerChecked(new Set());
   };
@@ -3083,227 +3116,201 @@ export default function RequestPage(): React.ReactElement {
             <button
               className="btn btn-secondary"
               onClick={() => {
-                setJayerFilterWords({ sp: [], sd: [], pp: [] });
-                localStorage.removeItem('jayerFilterWords');
+                const updated: FilterSet[] = [];
+                setJayerFilterSets(updated);
+                localStorage.removeItem('jayerFilterSets');
+                setJayerRows(rows => rows.map(r => ({ ...r, disabled: r.manuallyDisabled })));
                 addToast('모든 필터가 초기화되었습니다.', 'info');
               }}
             >
               전체 초기화
             </button>
             <button className="btn btn-secondary" onClick={() => setJayerFilterModalOpen(false)}>
-              취소
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                localStorage.setItem('jayerFilterWords', JSON.stringify(jayerFilterWords));
-                setJayerRows((rows) =>
-                  rows.map((r) => ({
-                    ...r,
-                    disabled: r.disabled || shouldDisableRow(jayerFilterWords, r),
-                  }))
-                );
-                setJayerFilterModalOpen(false);
-                addToast('비활성화 필터가 저장되었습니다.', 'success');
-              }}
-            >
-              저장
+              닫기
             </button>
           </>
         }
       >
-        <div style={{ fontSize: '13px' }}>
-          {/* STEPSEQ */}
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#1976d2' }}>🔵 STEPSEQ</div>
-            <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="키워드 입력"
-                style={{ fontSize: '13px', padding: '6px 10px', width: '700px', flexShrink: 0 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const value = e.currentTarget.value.trim();
-                    if (value) {
-                      if (jayerFilterWords.sp.includes(value)) {
-                        addToast('중복된 키워드입니다.', 'info');
-                      } else {
-                        setJayerFilterWords((prev) => ({ ...prev, sp: [...prev.sp, value] }));
-                        e.currentTarget.value = '';
-                      }
-                    }
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
-                onClick={(e) => {
-                  const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
-                  const value = input.value.trim();
-                  if (value) {
-                    if (jayerFilterWords.sp.includes(value)) {
-                      addToast('중복된 키워드입니다.', 'info');
-                    } else {
-                      setJayerFilterWords((prev) => ({ ...prev, sp: [...prev.sp, value] }));
-                      input.value = '';
-                    }
-                  }
-                }}
-              >
-                + 추가
-              </button>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
-              {jayerFilterWords.sp.length > 0 ? (
-                jayerFilterWords.sp.map((keyword, idx) => (
-                  <span
-                    key={idx}
-                    style={{ display: 'inline-flex', alignItems: 'center', background: '#e3f2fd', padding: '2px 6px', borderRadius: '3px', fontSize: '13px' }}
-                  >
-                    {keyword}
+        <div style={{ fontSize: '13px', minWidth: '600px' }}>
+          {/* 활성 FilterSet 목록 */}
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontWeight: 600, marginBottom: '8px' }}>활성 필터 목록</div>
+            {jayerFilterSets.length === 0 ? (
+              <div style={{ color: '#999', fontSize: '13px', padding: '8px 0' }}>적용된 필터가 없습니다.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {jayerFilterSets.map(fs => (
+                  <div key={fs.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', background: '#f5f5f5', padding: '8px 10px', borderRadius: '6px' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, marginBottom: '4px' }}>{fs.label || '(이름 없음)'}</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {fs.words.sp.map((k, i) => <span key={i} style={{ background: '#e3f2fd', padding: '1px 6px', borderRadius: '3px' }}>STEPSEQ: {k}</span>)}
+                        {fs.words.sd.map((k, i) => <span key={i} style={{ background: '#e8f5e9', padding: '1px 6px', borderRadius: '3px' }}>STEP설명: {k}</span>)}
+                        {fs.words.pp.map((k, i) => <span key={i} style={{ background: '#fff3e0', padding: '1px 6px', borderRadius: '3px' }}>PPID: {k}</span>)}
+                      </div>
+                    </div>
                     <button
                       type="button"
-                      style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }}
-                      onClick={() => setJayerFilterWords((prev) => ({ ...prev, sp: prev.sp.filter((_, i) => i !== idx) }))}
-                    >✕</button>
-                  </span>
-                ))
-              ) : (
-                <span style={{ color: '#999', fontSize: '13px' }}>키워드를 입력해주세요</span>
-              )}
-            </div>
+                      className="btn btn-danger btn-sm"
+                      onClick={() => {
+                        const updated = jayerFilterSets.filter(f => f.id !== fs.id);
+                        setJayerFilterSets(updated);
+                        localStorage.setItem('jayerFilterSets', JSON.stringify(updated));
+                        setJayerRows(rows => rows.map(r => ({ ...r, disabled: calcDisabled(r, updated) })));
+                        addToast(`필터 "${fs.label}"이 삭제되었습니다.`, 'info');
+                      }}
+                    >삭제</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          {/* STEP 설명 */}
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#388e3c' }}>🟢 STEP 설명</div>
-            <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="키워드 입력"
-                style={{ fontSize: '13px', padding: '6px 10px', width: '700px', flexShrink: 0 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const value = e.currentTarget.value.trim();
-                    if (value) {
-                      if (jayerFilterWords.sd.includes(value)) {
-                        addToast('중복된 키워드입니다.', 'info');
-                      } else {
-                        setJayerFilterWords((prev) => ({ ...prev, sd: [...prev.sd, value] }));
-                        e.currentTarget.value = '';
-                      }
-                    }
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
-                onClick={(e) => {
-                  const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
-                  const value = input.value.trim();
-                  if (value) {
-                    if (jayerFilterWords.sd.includes(value)) {
-                      addToast('중복된 키워드입니다.', 'info');
-                    } else {
-                      setJayerFilterWords((prev) => ({ ...prev, sd: [...prev.sd, value] }));
-                      input.value = '';
-                    }
-                  }
-                }}
-              >
-                + 추가
-              </button>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
-              {jayerFilterWords.sd.length > 0 ? (
-                jayerFilterWords.sd.map((keyword, idx) => (
-                  <span
-                    key={idx}
-                    style={{ display: 'inline-flex', alignItems: 'center', background: '#e8f5e9', padding: '2px 6px', borderRadius: '3px', fontSize: '13px' }}
-                  >
-                    {keyword}
-                    <button
-                      type="button"
-                      style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }}
-                      onClick={() => setJayerFilterWords((prev) => ({ ...prev, sd: prev.sd.filter((_, i) => i !== idx) }))}
-                    >✕</button>
-                  </span>
-                ))
-              ) : (
-                <span style={{ color: '#999', fontSize: '13px' }}>키워드를 입력해주세요</span>
-              )}
-            </div>
-          </div>
-          {/* PP */}
+
+          <hr style={{ margin: '12px 0' }} />
+
+          {/* 새 필터 추가 */}
           <div>
-            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#f57c00' }}>🟠 PPID</div>
-            <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+            <div style={{ fontWeight: 600, marginBottom: '8px' }}>새 필터 추가</div>
+            <div style={{ marginBottom: '8px' }}>
               <input
                 type="text"
                 className="form-control"
-                placeholder="키워드 입력"
-                style={{ fontSize: '13px', padding: '6px 10px', width: '700px', flexShrink: 0 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const value = e.currentTarget.value.trim();
-                    if (value) {
-                      if (jayerFilterWords.pp.includes(value)) {
-                        addToast('중복된 키워드입니다.', 'info');
-                      } else {
-                        setJayerFilterWords((prev) => ({ ...prev, pp: [...prev.pp, value] }));
+                placeholder="필터 이름 (예: PLEL 제외)"
+                style={{ fontSize: '13px', padding: '6px 10px' }}
+                value={jayerNewFilter.label}
+                onChange={(e) => setJayerNewFilter(prev => ({ ...prev, label: e.target.value }))}
+              />
+            </div>
+            {/* STEPSEQ */}
+            <div style={{ marginBottom: '8px' }}>
+              <div style={{ fontWeight: 500, marginBottom: '4px', color: '#1976d2' }}>🔵 STEPSEQ</div>
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="키워드 입력 후 Enter 또는 + 추가"
+                  style={{ fontSize: '13px', padding: '6px 10px' }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const value = e.currentTarget.value.trim();
+                      if (value && !jayerNewFilter.words.sp.includes(value)) {
+                        setJayerNewFilter(prev => ({ ...prev, words: { ...prev.words, sp: [...prev.words.sp, value] } }));
                         e.currentTarget.value = '';
                       }
                     }
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
-                onClick={(e) => {
-                  const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
-                  const value = input.value.trim();
-                  if (value) {
-                    if (jayerFilterWords.pp.includes(value)) {
-                      addToast('중복된 키워드입니다.', 'info');
-                    } else {
-                      setJayerFilterWords((prev) => ({ ...prev, pp: [...prev.pp, value] }));
+                  }}
+                />
+                <button type="button" className="btn btn-secondary" style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
+                  onClick={(e) => {
+                    const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
+                    const value = input.value.trim();
+                    if (value && !jayerNewFilter.words.sp.includes(value)) {
+                      setJayerNewFilter(prev => ({ ...prev, words: { ...prev.words, sp: [...prev.words.sp, value] } }));
                       input.value = '';
                     }
-                  }
-                }}
-              >
-                + 추가
-              </button>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
-              {jayerFilterWords.pp.length > 0 ? (
-                jayerFilterWords.pp.map((keyword, idx) => (
-                  <span
-                    key={idx}
-                    style={{ display: 'inline-flex', alignItems: 'center', background: '#fff3e0', padding: '2px 6px', borderRadius: '3px', fontSize: '13px' }}
-                  >
-                    {keyword}
-                    <button
-                      type="button"
-                      style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }}
-                      onClick={() => setJayerFilterWords((prev) => ({ ...prev, pp: prev.pp.filter((_, i) => i !== idx) }))}
-                    >✕</button>
+                  }}>+ 추가</button>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
+                {jayerNewFilter.words.sp.map((k, i) => (
+                  <span key={i} style={{ display: 'inline-flex', alignItems: 'center', background: '#e3f2fd', padding: '2px 6px', borderRadius: '3px' }}>
+                    {k}<button type="button" style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }} onClick={() => setJayerNewFilter(prev => ({ ...prev, words: { ...prev.words, sp: prev.words.sp.filter((_, j) => j !== i) } }))}>✕</button>
                   </span>
-                ))
-              ) : (
-                <span style={{ color: '#999', fontSize: '13px' }}>키워드를 입력해주세요</span>
-              )}
+                ))}
+              </div>
             </div>
+            {/* STEP 설명 */}
+            <div style={{ marginBottom: '8px' }}>
+              <div style={{ fontWeight: 500, marginBottom: '4px', color: '#388e3c' }}>🟢 STEP 설명</div>
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="키워드 입력 후 Enter 또는 + 추가"
+                  style={{ fontSize: '13px', padding: '6px 10px' }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const value = e.currentTarget.value.trim();
+                      if (value && !jayerNewFilter.words.sd.includes(value)) {
+                        setJayerNewFilter(prev => ({ ...prev, words: { ...prev.words, sd: [...prev.words.sd, value] } }));
+                        e.currentTarget.value = '';
+                      }
+                    }
+                  }}
+                />
+                <button type="button" className="btn btn-secondary" style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
+                  onClick={(e) => {
+                    const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
+                    const value = input.value.trim();
+                    if (value && !jayerNewFilter.words.sd.includes(value)) {
+                      setJayerNewFilter(prev => ({ ...prev, words: { ...prev.words, sd: [...prev.words.sd, value] } }));
+                      input.value = '';
+                    }
+                  }}>+ 추가</button>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
+                {jayerNewFilter.words.sd.map((k, i) => (
+                  <span key={i} style={{ display: 'inline-flex', alignItems: 'center', background: '#e8f5e9', padding: '2px 6px', borderRadius: '3px' }}>
+                    {k}<button type="button" style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }} onClick={() => setJayerNewFilter(prev => ({ ...prev, words: { ...prev.words, sd: prev.words.sd.filter((_, j) => j !== i) } }))}>✕</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+            {/* PPID */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{ fontWeight: 500, marginBottom: '4px', color: '#f57c00' }}>🟠 PPID</div>
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="키워드 입력 후 Enter 또는 + 추가"
+                  style={{ fontSize: '13px', padding: '6px 10px' }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const value = e.currentTarget.value.trim();
+                      if (value && !jayerNewFilter.words.pp.includes(value)) {
+                        setJayerNewFilter(prev => ({ ...prev, words: { ...prev.words, pp: [...prev.words.pp, value] } }));
+                        e.currentTarget.value = '';
+                      }
+                    }
+                  }}
+                />
+                <button type="button" className="btn btn-secondary" style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
+                  onClick={(e) => {
+                    const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
+                    const value = input.value.trim();
+                    if (value && !jayerNewFilter.words.pp.includes(value)) {
+                      setJayerNewFilter(prev => ({ ...prev, words: { ...prev.words, pp: [...prev.words.pp, value] } }));
+                      input.value = '';
+                    }
+                  }}>+ 추가</button>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
+                {jayerNewFilter.words.pp.map((k, i) => (
+                  <span key={i} style={{ display: 'inline-flex', alignItems: 'center', background: '#fff3e0', padding: '2px 6px', borderRadius: '3px' }}>
+                    {k}<button type="button" style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }} onClick={() => setJayerNewFilter(prev => ({ ...prev, words: { ...prev.words, pp: prev.words.pp.filter((_, j) => j !== i) } }))}>✕</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={jayerNewFilter.words.sp.length === 0 && jayerNewFilter.words.sd.length === 0 && jayerNewFilter.words.pp.length === 0}
+              onClick={() => {
+                const newSet: FilterSet = { id: String(Date.now()), label: jayerNewFilter.label || '필터', words: jayerNewFilter.words };
+                const updated = [...jayerFilterSets, newSet];
+                setJayerFilterSets(updated);
+                localStorage.setItem('jayerFilterSets', JSON.stringify(updated));
+                setJayerRows(rows => rows.map(r => ({ ...r, disabled: r.disabled || shouldDisableRow(newSet.words, r) })));
+                setJayerNewFilter({ label: '', words: emptyDraftWords() });
+                addToast(`필터 "${newSet.label}"이 추가되었습니다.`, 'success');
+              }}
+            >
+              필터 추가 및 적용
+            </button>
           </div>
         </div>
       </Modal>
@@ -3320,227 +3327,125 @@ export default function RequestPage(): React.ReactElement {
             <button
               className="btn btn-secondary"
               onClick={() => {
-                setOayerFilterWords({ sp: [], sd: [], pp: [] });
-                localStorage.removeItem('oayerFilterWords');
+                setOayerFilterSets([]);
+                localStorage.removeItem('oayerFilterSets');
+                setOayerRows(rows => rows.map(r => ({ ...r, disabled: r.manuallyDisabled })));
                 addToast('모든 필터가 초기화되었습니다.', 'info');
               }}
             >
               전체 초기화
             </button>
             <button className="btn btn-secondary" onClick={() => setOayerFilterModalOpen(false)}>
-              취소
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                localStorage.setItem('oayerFilterWords', JSON.stringify(oayerFilterWords));
-                setOayerRows((rows) =>
-                  rows.map((r) => ({
-                    ...r,
-                    disabled: r.disabled || shouldDisableRow(oayerFilterWords, r),
-                  }))
-                );
-                setOayerFilterModalOpen(false);
-                addToast('비활성화 필터가 저장되었습니다.', 'success');
-              }}
-            >
-              저장
+              닫기
             </button>
           </>
         }
       >
-        <div style={{ fontSize: '13px' }}>
-          {/* STEPSEQ */}
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#1976d2' }}>🔵 STEPSEQ</div>
-            <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="키워드 입력"
-                style={{ fontSize: '13px', padding: '6px 10px', width: '700px', flexShrink: 0 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const value = e.currentTarget.value.trim();
-                    if (value) {
-                      if (oayerFilterWords.sp.includes(value)) {
-                        addToast('중복된 키워드입니다.', 'info');
-                      } else {
-                        setOayerFilterWords((prev) => ({ ...prev, sp: [...prev.sp, value] }));
-                        e.currentTarget.value = '';
-                      }
-                    }
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
-                onClick={(e) => {
-                  const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
-                  const value = input.value.trim();
-                  if (value) {
-                    if (oayerFilterWords.sp.includes(value)) {
-                      addToast('중복된 키워드입니다.', 'info');
-                    } else {
-                      setOayerFilterWords((prev) => ({ ...prev, sp: [...prev.sp, value] }));
-                      input.value = '';
-                    }
-                  }
-                }}
-              >
-                + 추가
-              </button>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
-              {oayerFilterWords.sp.length > 0 ? (
-                oayerFilterWords.sp.map((keyword, idx) => (
-                  <span
-                    key={idx}
-                    style={{ display: 'inline-flex', alignItems: 'center', background: '#e3f2fd', padding: '2px 6px', borderRadius: '3px', fontSize: '13px' }}
-                  >
-                    {keyword}
+        <div style={{ fontSize: '13px', minWidth: '600px' }}>
+          {/* 활성 FilterSet 목록 */}
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ fontWeight: 600, marginBottom: '8px' }}>활성 필터 목록</div>
+            {oayerFilterSets.length === 0 ? (
+              <div style={{ color: '#999', fontSize: '13px', padding: '8px 0' }}>적용된 필터가 없습니다.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {oayerFilterSets.map(fs => (
+                  <div key={fs.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', background: '#f5f5f5', padding: '8px 10px', borderRadius: '6px' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, marginBottom: '4px' }}>{fs.label || '(이름 없음)'}</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {fs.words.sp.map((k, i) => <span key={i} style={{ background: '#e3f2fd', padding: '1px 6px', borderRadius: '3px' }}>STEPSEQ: {k}</span>)}
+                        {fs.words.sd.map((k, i) => <span key={i} style={{ background: '#e8f5e9', padding: '1px 6px', borderRadius: '3px' }}>STEP설명: {k}</span>)}
+                        {fs.words.pp.map((k, i) => <span key={i} style={{ background: '#fff3e0', padding: '1px 6px', borderRadius: '3px' }}>PPID: {k}</span>)}
+                      </div>
+                    </div>
                     <button
                       type="button"
-                      style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }}
-                      onClick={() => setOayerFilterWords((prev) => ({ ...prev, sp: prev.sp.filter((_, i) => i !== idx) }))}
-                    >✕</button>
-                  </span>
-                ))
-              ) : (
-                <span style={{ color: '#999', fontSize: '13px' }}>키워드를 입력해주세요</span>
-              )}
-            </div>
+                      className="btn btn-danger btn-sm"
+                      onClick={() => {
+                        const updated = oayerFilterSets.filter(f => f.id !== fs.id);
+                        setOayerFilterSets(updated);
+                        localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
+                        setOayerRows(rows => rows.map(r => ({ ...r, disabled: calcDisabled(r, updated) })));
+                        addToast(`필터 "${fs.label}"이 삭제되었습니다.`, 'info');
+                      }}
+                    >삭제</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          {/* STEP 설명 */}
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#388e3c' }}>🟢 STEP 설명</div>
-            <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="키워드 입력"
-                style={{ fontSize: '13px', padding: '6px 10px', width: '700px', flexShrink: 0 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const value = e.currentTarget.value.trim();
-                    if (value) {
-                      if (oayerFilterWords.sd.includes(value)) {
-                        addToast('중복된 키워드입니다.', 'info');
-                      } else {
-                        setOayerFilterWords((prev) => ({ ...prev, sd: [...prev.sd, value] }));
-                        e.currentTarget.value = '';
-                      }
-                    }
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
-                onClick={(e) => {
-                  const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
-                  const value = input.value.trim();
-                  if (value) {
-                    if (oayerFilterWords.sd.includes(value)) {
-                      addToast('중복된 키워드입니다.', 'info');
-                    } else {
-                      setOayerFilterWords((prev) => ({ ...prev, sd: [...prev.sd, value] }));
-                      input.value = '';
-                    }
-                  }
-                }}
-              >
-                + 추가
-              </button>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
-              {oayerFilterWords.sd.length > 0 ? (
-                oayerFilterWords.sd.map((keyword, idx) => (
-                  <span
-                    key={idx}
-                    style={{ display: 'inline-flex', alignItems: 'center', background: '#e8f5e9', padding: '2px 6px', borderRadius: '3px', fontSize: '13px' }}
-                  >
-                    {keyword}
-                    <button
-                      type="button"
-                      style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }}
-                      onClick={() => setOayerFilterWords((prev) => ({ ...prev, sd: prev.sd.filter((_, i) => i !== idx) }))}
-                    >✕</button>
-                  </span>
-                ))
-              ) : (
-                <span style={{ color: '#999', fontSize: '13px' }}>키워드를 입력해주세요</span>
-              )}
-            </div>
-          </div>
-          {/* PP */}
+
+          <hr style={{ margin: '12px 0' }} />
+
+          {/* 새 필터 추가 */}
           <div>
-            <div style={{ fontWeight: 600, marginBottom: '4px', color: '#f57c00' }}>🟠 PPID</div>
-            <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+            <div style={{ fontWeight: 600, marginBottom: '8px' }}>새 필터 추가</div>
+            <div style={{ marginBottom: '8px' }}>
               <input
                 type="text"
                 className="form-control"
-                placeholder="키워드 입력"
-                style={{ fontSize: '13px', padding: '6px 10px', width: '700px', flexShrink: 0 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const value = e.currentTarget.value.trim();
-                    if (value) {
-                      if (oayerFilterWords.pp.includes(value)) {
-                        addToast('중복된 키워드입니다.', 'info');
-                      } else {
-                        setOayerFilterWords((prev) => ({ ...prev, pp: [...prev.pp, value] }));
-                        e.currentTarget.value = '';
-                      }
-                    }
-                  }
-                }}
+                placeholder="필터 이름 (예: oxide 제외)"
+                style={{ fontSize: '13px', padding: '6px 10px' }}
+                value={oayerNewFilter.label}
+                onChange={(e) => setOayerNewFilter(prev => ({ ...prev, label: e.target.value }))}
               />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
-                onClick={(e) => {
-                  const input = (e.target as HTMLElement).previousSibling as HTMLInputElement;
-                  const value = input.value.trim();
-                  if (value) {
-                    if (oayerFilterWords.pp.includes(value)) {
-                      addToast('중복된 키워드입니다.', 'info');
-                    } else {
-                      setOayerFilterWords((prev) => ({ ...prev, pp: [...prev.pp, value] }));
-                      input.value = '';
-                    }
-                  }
-                }}
-              >
-                + 추가
-              </button>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
-              {oayerFilterWords.pp.length > 0 ? (
-                oayerFilterWords.pp.map((keyword, idx) => (
-                  <span
-                    key={idx}
-                    style={{ display: 'inline-flex', alignItems: 'center', background: '#fff3e0', padding: '2px 6px', borderRadius: '3px', fontSize: '13px' }}
-                  >
-                    {keyword}
-                    <button
-                      type="button"
-                      style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }}
-                      onClick={() => setOayerFilterWords((prev) => ({ ...prev, pp: prev.pp.filter((_, i) => i !== idx) }))}
-                    >✕</button>
-                  </span>
-                ))
-              ) : (
-                <span style={{ color: '#999', fontSize: '13px' }}>키워드를 입력해주세요</span>
-              )}
+            {/* STEPSEQ */}
+            <div style={{ marginBottom: '8px' }}>
+              <div style={{ fontWeight: 500, marginBottom: '4px', color: '#1976d2' }}>🔵 STEPSEQ</div>
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+                <input type="text" className="form-control" placeholder="키워드 입력 후 Enter 또는 + 추가" style={{ fontSize: '13px', padding: '6px 10px' }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = e.currentTarget.value.trim(); if (v && !oayerNewFilter.words.sp.includes(v)) { setOayerNewFilter(prev => ({ ...prev, words: { ...prev.words, sp: [...prev.words.sp, v] } })); e.currentTarget.value = ''; } } }} />
+                <button type="button" className="btn btn-secondary" style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
+                  onClick={(e) => { const input = (e.target as HTMLElement).previousSibling as HTMLInputElement; const v = input.value.trim(); if (v && !oayerNewFilter.words.sp.includes(v)) { setOayerNewFilter(prev => ({ ...prev, words: { ...prev.words, sp: [...prev.words.sp, v] } })); input.value = ''; } }}>+ 추가</button>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
+                {oayerNewFilter.words.sp.map((k, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', background: '#e3f2fd', padding: '2px 6px', borderRadius: '3px' }}>{k}<button type="button" style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }} onClick={() => setOayerNewFilter(prev => ({ ...prev, words: { ...prev.words, sp: prev.words.sp.filter((_, j) => j !== i) } }))}>✕</button></span>)}
+              </div>
             </div>
+            {/* STEP 설명 */}
+            <div style={{ marginBottom: '8px' }}>
+              <div style={{ fontWeight: 500, marginBottom: '4px', color: '#388e3c' }}>🟢 STEP 설명</div>
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+                <input type="text" className="form-control" placeholder="키워드 입력 후 Enter 또는 + 추가" style={{ fontSize: '13px', padding: '6px 10px' }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = e.currentTarget.value.trim(); if (v && !oayerNewFilter.words.sd.includes(v)) { setOayerNewFilter(prev => ({ ...prev, words: { ...prev.words, sd: [...prev.words.sd, v] } })); e.currentTarget.value = ''; } } }} />
+                <button type="button" className="btn btn-secondary" style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
+                  onClick={(e) => { const input = (e.target as HTMLElement).previousSibling as HTMLInputElement; const v = input.value.trim(); if (v && !oayerNewFilter.words.sd.includes(v)) { setOayerNewFilter(prev => ({ ...prev, words: { ...prev.words, sd: [...prev.words.sd, v] } })); input.value = ''; } }}>+ 추가</button>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
+                {oayerNewFilter.words.sd.map((k, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', background: '#e8f5e9', padding: '2px 6px', borderRadius: '3px' }}>{k}<button type="button" style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }} onClick={() => setOayerNewFilter(prev => ({ ...prev, words: { ...prev.words, sd: prev.words.sd.filter((_, j) => j !== i) } }))}>✕</button></span>)}
+              </div>
+            </div>
+            {/* PPID */}
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{ fontWeight: 500, marginBottom: '4px', color: '#f57c00' }}>🟠 PPID</div>
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+                <input type="text" className="form-control" placeholder="키워드 입력 후 Enter 또는 + 추가" style={{ fontSize: '13px', padding: '6px 10px' }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = e.currentTarget.value.trim(); if (v && !oayerNewFilter.words.pp.includes(v)) { setOayerNewFilter(prev => ({ ...prev, words: { ...prev.words, pp: [...prev.words.pp, v] } })); e.currentTarget.value = ''; } } }} />
+                <button type="button" className="btn btn-secondary" style={{ fontSize: '13px', padding: '6px 10px', whiteSpace: 'nowrap' }}
+                  onClick={(e) => { const input = (e.target as HTMLElement).previousSibling as HTMLInputElement; const v = input.value.trim(); if (v && !oayerNewFilter.words.pp.includes(v)) { setOayerNewFilter(prev => ({ ...prev, words: { ...prev.words, pp: [...prev.words.pp, v] } })); input.value = ''; } }}>+ 추가</button>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px', minHeight: '20px' }}>
+                {oayerNewFilter.words.pp.map((k, i) => <span key={i} style={{ display: 'inline-flex', alignItems: 'center', background: '#fff3e0', padding: '2px 6px', borderRadius: '3px' }}>{k}<button type="button" style={{ marginLeft: '4px', border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: '0', fontSize: '12px' }} onClick={() => setOayerNewFilter(prev => ({ ...prev, words: { ...prev.words, pp: prev.words.pp.filter((_, j) => j !== i) } }))}>✕</button></span>)}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={oayerNewFilter.words.sp.length === 0 && oayerNewFilter.words.sd.length === 0 && oayerNewFilter.words.pp.length === 0}
+              onClick={() => {
+                const newSet: FilterSet = { id: String(Date.now()), label: oayerNewFilter.label || '필터', words: oayerNewFilter.words };
+                const updated = [...oayerFilterSets, newSet];
+                setOayerFilterSets(updated);
+                localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
+                setOayerRows(rows => rows.map(r => ({ ...r, disabled: r.disabled || shouldDisableRow(newSet.words, r) })));
+                setOayerNewFilter({ label: '', words: emptyDraftWords() });
+                addToast(`필터 "${newSet.label}"이 추가되었습니다.`, 'success');
+              }}
+            >
+              필터 추가 및 적용
+            </button>
           </div>
         </div>
       </Modal>
