@@ -142,11 +142,18 @@ export interface FlowChartRow {
   step_to: string;
 }
 
+export interface FilterSet {
+  id: string;
+  label: string;
+  words: { sp: string[]; sd: string[]; pp: string[] };
+}
+
 export interface JayerRow {
   id: string;
   updated: string;      // 'YYYYMMDD HH:MM' 형식
   sortOrder: number;
   disabled: boolean;
+  manuallyDisabled: boolean;
   process_id: string;
   sp: string;
   sd: string;
@@ -164,6 +171,7 @@ export interface OayerRow {
   updated: string;      // 'YYYYMMDD HH:MM' 형식
   sortOrder: number;
   disabled: boolean;
+  manuallyDisabled: boolean;
   process_id: string;
   sp: string;
   sd: string;
