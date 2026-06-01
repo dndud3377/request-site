@@ -1481,7 +1481,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // ===== API =====
-  const buildEnrichedForm = (note?: string, shouldAddHistory = false): CreateDocumentInput => {
+  const buildEnrichedForm = (note?: string, shouldAddHistory = false, isDraft = false): CreateDocumentInput => {
     const now = new Date();
     const dateStr = `${String(now.getFullYear()).slice(2)}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
     const purposePart = detail.other_purpose ? `${detail.request_purpose}-${detail.other_purpose}` : detail.request_purpose;
@@ -1513,8 +1513,8 @@ export default function RequestPage(): React.ReactElement {
       reference_materials: note ?? '',
       additional_notes: JSON.stringify({
         detail,
-        jayerRows: jayerRows.filter(r => !r.disabled).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-        oayerRows: oayerRows.filter(r => !r.disabled).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        jayerRows: (isDraft ? jayerRows : jayerRows.filter(r => !r.disabled)).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        oayerRows: (isDraft ? oayerRows : oayerRows.filter(r => !r.disabled)).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
         bbRows,
         history,
         jayerActiveFilterIds: [...jayerActiveFilterIds],
@@ -1526,7 +1526,7 @@ export default function RequestPage(): React.ReactElement {
   const handleSaveDraft = async () => {
     setSaving(true);
     try {
-      const enriched = buildEnrichedForm();
+      const enriched = buildEnrichedForm(undefined, false, true);
       if (savedId) {
         await documentsAPI.update(savedId, enriched);
       } else {
@@ -2411,8 +2411,7 @@ export default function RequestPage(): React.ReactElement {
               type="button"
               className="th-header-btn"
               onClick={() => {
-                const next = new Set(jayerActiveFilterIds);
-                next.has(fs.id) ? next.delete(fs.id) : next.add(fs.id);
+                const next = jayerActiveFilterIds.has(fs.id) ? new Set<string>() : new Set([fs.id]);
                 setJayerActiveFilterIds(next);
                 setJayerRows(rows => rows.map(r => ({ ...r, disabled: calcDisabled(r, jayerFilterSets, next) })));
               }}
@@ -2575,8 +2574,7 @@ export default function RequestPage(): React.ReactElement {
               type="button"
               className="th-header-btn"
               onClick={() => {
-                const next = new Set(oayerActiveFilterIds);
-                next.has(fs.id) ? next.delete(fs.id) : next.add(fs.id);
+                const next = oayerActiveFilterIds.has(fs.id) ? new Set<string>() : new Set([fs.id]);
                 setOayerActiveFilterIds(next);
                 setOayerRows(rows => rows.map(r => ({ ...r, disabled: calcDisabled(r, oayerFilterSets, next) })));
               }}
