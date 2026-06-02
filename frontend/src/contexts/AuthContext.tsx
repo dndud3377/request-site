@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { MockUser, UserInfo, UserRole } from '../types';
 import { authAPI, setToken, clearToken } from '../api/client';
 
@@ -53,7 +53,6 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const STORAGE_KEY = 'approval_system_user_id';
-const INACTIVITY_MS = 60 * 60 * 1000;
 
 const EMPTY_USER: UserInfo = { id: 0, username: '', name: '', role: 'PL', department: '', email: '' };
 
@@ -63,7 +62,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<UserInfo>(EMPTY_USER);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(!IS_DEV_MODE);
-  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ===== 초기화: 세션 복원 (운영) / dev 자동 로그인 =====
   useEffect(() => {
@@ -106,33 +104,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ===== 1시간 비활동 자동 로그아웃 =====
-  useEffect(() => {
-    if (!isLoggedIn) return;
-
-    const handleTimeout = async () => {
-      try { await authAPI.oidcLogout(); } catch {}
-      clearToken();
-      setIsLoggedIn(false);
-      setCurrentUser(EMPTY_USER);
-      window.location.href = '/?reason=inactive';
-    };
-
-    const resetTimer = () => {
-      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-      inactivityTimerRef.current = setTimeout(handleTimeout, INACTIVITY_MS);
-    };
-
-    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'] as const;
-    events.forEach(e => document.addEventListener(e, resetTimer, { passive: true }));
-    resetTimer();
-
-    return () => {
-      events.forEach(e => document.removeEventListener(e, resetTimer));
-      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-    };
-  }, [isLoggedIn]);
 
   const loginSSO = async () => {
     const res = await authAPI.oidcLogin();
