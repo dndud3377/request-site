@@ -152,6 +152,8 @@ def sync_form_options():
             query_pb = """
                 SELECT DISTINCT n7mto_date, n7cancel_date, n7c_layer_num, n7prod_code, n7barcode
                 FROM A.B
+                WHERE n7barcode IS NOT NULL AND n7barcode != ''
+                  AND n7c_layer_num IS NOT NULL AND n7c_layer_num != ''
             """
             df_pb = get_data_from_dcq(query_pb, dcq_id)
 
