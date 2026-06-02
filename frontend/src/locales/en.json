@@ -32,6 +32,7 @@
     "submit_success": "Your request has been successfully submitted!",
     "messenger_sent_to_manager": "An email notification has been sent to the reviewer.",
     "save_success": "Saved as draft.",
+    "auto_save_success": "Auto-saved as draft after 20 minutes of inactivity.",
     "required": "This field is required.",
     "request_purpose": "Request Purpose",
     "customer_name": "Customer / Vendor",

@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI } from '../api/client';
 import { useToast } from '../components/Toast';
+import { useIdleAutoSave } from '../hooks/useIdleAutoSave';
 import Modal from '../components/Modal';
 import FormSelect from '../components/FormSelect';
 import AutocompleteInput from '../components/AutocompleteInput';
@@ -1567,6 +1568,23 @@ export default function RequestPage(): React.ReactElement {
       setSaving(false);
     }
   };
+
+  const handleIdleAutoSave = async () => {
+    try {
+      const enriched = buildEnrichedForm(undefined, false, true);
+      if (savedId) {
+        await documentsAPI.update(savedId, enriched);
+      } else {
+        const res = await documentsAPI.create(enriched);
+        setSavedId(res.data.id);
+      }
+      addToast(t('request.auto_save_success'), 'info');
+    } catch {
+      // 자동저장 실패는 조용히 무시
+    }
+  };
+
+  useIdleAutoSave(handleIdleAutoSave, 20 * 60 * 1000);
 
   const handleNextStep = (skipTbvtlvWarn = false) => {
     if (step === 1 || step === 2 || step === 4) {
