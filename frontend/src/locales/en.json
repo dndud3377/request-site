@@ -237,8 +237,7 @@
     "logging_in": "Signing in...",
     "hint": "Authentication is handled via corporate OpenID.",
     "logout": "Log out",
-    "error_sso": "SSO login failed.",
-    "inactive_logout": "You have been logged out due to inactivity."
+    "error_sso": "SSO login failed."
   },
   "permission": {
     "title": "Permission Management",

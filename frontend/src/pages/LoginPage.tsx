@@ -9,8 +9,6 @@ export default function LoginPage(): React.ReactElement {
   const [ssoLoading, setSsoLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isInactive = new URLSearchParams(window.location.search).get('reason') === 'inactive';
-
   const handleSSO = async () => {
     setSsoLoading(true);
     setError(null);
@@ -54,13 +52,6 @@ export default function LoginPage(): React.ReactElement {
           ))}
         </h1>
         <p style={styles.subtitle}>{t('login.subtitle')}</p>
-
-        {/* 비활동 로그아웃 안내 */}
-        {isInactive && (
-          <div style={styles.inactiveNotice}>
-            {t('login.inactive_logout')}
-          </div>
-        )}
 
         {/* 에러 메시지 */}
         {error && <div style={styles.errorMsg}>{error}</div>}
@@ -189,17 +180,6 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 1.6,
-  },
-  inactiveNotice: {
-    width: '100%',
-    background: 'rgba(var(--accent-rgb, 99, 102, 241), 0.08)',
-    border: '1px solid var(--accent)',
-    borderRadius: 'var(--radius-md)',
-    padding: '10px 14px',
-    fontSize: 13,
-    color: 'var(--accent)',
-    textAlign: 'center',
-    marginBottom: 16,
   },
   errorMsg: {
     width: '100%',

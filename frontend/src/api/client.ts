@@ -41,6 +41,28 @@ export function clearToken(): void {
 // ===== HTTP 기본 클라이언트 =====
 
 const BASE_URL = '/api';
+const IS_DEV_MODE = process.env.REACT_APP_AUTH_MODE === 'dev';
+
+// 중복 리다이렉트 방지 플래그
+let isRedirectingToSSO = false;
+
+// SSO 모드에서 401 발생 시 ADFS로 자동 리다이렉트
+async function redirectToSSO(): Promise<void> {
+  if (isRedirectingToSSO) return;
+  isRedirectingToSSO = true;
+  try {
+    const res = await fetch(`${BASE_URL}/auth/oidc/login/`, { credentials: 'include' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.nonce_jwt) localStorage.setItem('oidc_state_jwt', data.nonce_jwt);
+      window.location.href = data.redirect_url;
+    } else {
+      isRedirectingToSSO = false;
+    }
+  } catch {
+    isRedirectingToSSO = false;
+  }
+}
 
 async function request<T>(
   path: string,
@@ -58,6 +80,18 @@ async function request<T>(
   });
 
   if (!res.ok) {
+    // SSO 모드에서 401 발생 시 자동 ADFS 리다이렉트
+    // /auth/oidc/ 경로는 제외 (콜백 루프 방지), /auth/dev-login/ 제외 (dev 전용)
+    if (
+      res.status === 401 &&
+      !IS_DEV_MODE &&
+      !path.startsWith('/auth/oidc/') &&
+      !path.startsWith('/auth/dev-login/')
+    ) {
+      redirectToSSO();
+      return new Promise<T>(() => {}); // 리다이렉트 완료까지 resolve 안 함
+    }
+
     let errMsg = `HTTP ${res.status}`;
     try {
       const body = await res.json();
