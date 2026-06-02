@@ -388,9 +388,11 @@ class PhotoStepS5(models.Model):
 
 class ProductBarcode(models.Model):
     """외부 DB 에서 1시간마다 동기화되는 바코드-품목 캐시"""
-    n7mto_date = models.CharField(max_length=200, verbose_name='MTO Date')
+    n7mto_date = models.CharField(max_length=200, null=True, blank=True, verbose_name='MTO Date')
+    n7cancel_date = models.CharField(max_length=200, null=True, blank=True, verbose_name='Cancel Date')
     n7c_layer_num = models.CharField(max_length=200, verbose_name='Layer Num')
     n7prod_code = models.CharField(max_length=200, verbose_name='Product Code')
+    n7barcode = models.CharField(max_length=200, verbose_name='Barcode')
     last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
 
     class Meta:
