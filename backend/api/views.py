@@ -17,9 +17,10 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db import connection
 from django.contrib.auth import get_user_model
 User = get_user_model()
+from django.db.models import Q
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
-    PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory,
+    PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode,
 )
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer,
@@ -714,6 +715,34 @@ def form_options_layer_ids(request):
             .order_by('layerid')
         )
         return JsonResponse({'options': list(layerids)})
+    except Exception as e:
+        return JsonResponse({'options': []})
+
+
+@require_GET
+def form_options_barcode(request):
+    """product_name → 유효한 바코드 옵션 목록 반환 (n7cancel_date, n7cancel_ok 없는 행만)"""
+    product_name = request.GET.get('product_name', '')
+    if not product_name:
+        return JsonResponse({'options': []})
+
+    try:
+        qs = ProductBarcode.objects.filter(
+            n7prod_code=product_name,
+        ).filter(
+            Q(n7cancel_date__isnull=True) | Q(n7cancel_date='')
+        ).filter(
+            Q(n7cancel_ok__isnull=True) | Q(n7cancel_ok='')
+        )
+
+        options = [
+            {
+                'label': f"{row.n7barcode} [{row.n7mto_date}]" if row.n7mto_date else row.n7barcode,
+                'n7c_layer_num': row.n7c_layer_num,
+            }
+            for row in qs
+        ]
+        return JsonResponse({'options': options})
     except Exception as e:
         return JsonResponse({'options': []})
 

@@ -302,6 +302,7 @@ export default function RequestPage(): React.ReactElement {
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
   const [detail, setDetail] = useState<DetailFormState>(INITIAL_DETAIL);
   const [jayerRows, setJayerRows] = useState<JayerRow[]>([makeJayerRow()]);
+  const [jayerBarcodeCache, setJayerBarcodeCache] = useState<Record<string, { label: string; n7c_layer_num: string }[]>>({});
   const [oayerRows, setOayerRows] = useState<OayerRow[]>([makeOayerRow()]);
   const [bbRows, setBbRows] = useState<BbTableRow[]>([]);
   const [bbExternalData, setBbExternalData] = useState<PhotoStepOption[][]>([]);
@@ -888,7 +889,20 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleJayerChange = (id: string, field: keyof Omit<JayerRow, 'id'>, value: string) => {
-    setJayerRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+    setJayerRows((rows) => rows.map((r) => {
+      if (r.id !== id) return r;
+      if (field === 'product_name') return { ...r, product_name: value, item_id: '' };
+      return { ...r, [field]: value };
+    }));
+    if (field === 'product_name') {
+      if (value) {
+        formOptionsAPI.getBarcodeOptions(value).then((options) => {
+          setJayerBarcodeCache((prev) => ({ ...prev, [id]: options }));
+        });
+      } else {
+        setJayerBarcodeCache((prev) => ({ ...prev, [id]: [] }));
+      }
+    }
   };
 
   const handleJayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
@@ -2527,7 +2541,17 @@ export default function RequestPage(): React.ReactElement {
                     </td>
                     <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                     <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.step} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.item_id} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'item_id', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td style={{ backgroundColor: isRegistered ? regBg : undefined, minWidth: 160 }}>
+                      <AutocompleteInput
+                        value={row.item_id}
+                        onChange={(v) => handleJayerChange(row.id, 'item_id', v)}
+                        options={(jayerBarcodeCache[row.id] ?? [])
+                          .filter((o) => !row.step || o.n7c_layer_num.includes(row.step))
+                          .map((o) => o.label)}
+                        disabled={row.disabled || isRegistered}
+                        style={{ backgroundColor: isRegistered ? regBg : undefined }}
+                      />
+                    </td>
                   </tr>
                 </>
               );

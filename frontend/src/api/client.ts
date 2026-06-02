@@ -417,6 +417,11 @@ export const formOptionsAPI = {
   getLayerIds: (line: string, process: string): Promise<string[]> =>
     getOptions(`/form-options/layer-ids/?line=${encodeURIComponent(line)}&process=${encodeURIComponent(process)}`),
 
+  getBarcodeOptions: (product_name: string): Promise<{ label: string; n7c_layer_num: string }[]> =>
+    get<{ options: { label: string; n7c_layer_num: string }[] }>(
+      `/form-options/barcode/?product_name=${encodeURIComponent(product_name)}`
+    ).then((r) => r.options || []),
+
   getBbExternalData: (entry: { location: string; product: string; process_id: string }): Promise<StepOption[]> => {
     return get<{ options: StepOption[] }>(
       `/form-options/bb-external/?location=${encodeURIComponent(entry.location)}&product=${encodeURIComponent(entry.product)}&process_id=${encodeURIComponent(entry.process_id)}`
