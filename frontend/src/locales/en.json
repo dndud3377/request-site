@@ -141,7 +141,12 @@
     "tbvtlv_entries_label": "Added Items",
     "tbvtlv_warn_title": "Input Check",
     "tbvtlv_warn_body": "Thickness / Note fields are not filled in. Are you sure you want to proceed without entering them?",
-    "tbvtlv_warn_proceed": "Proceed"
+    "tbvtlv_warn_proceed": "Proceed",
+    "bb_overwrite_confirm": "Existing Backbone data found. Do you want to overwrite it?",
+    "bb_reset_confirm": "Are you sure you want to clear all Backbone data?",
+    "special_care_confirm": "Special Care (including Shot map) requests must be filled in. Do you want to proceed anyway?",
+    "filter_delete_confirm": "Are you sure you want to delete the \"{{label}}\" filter?",
+    "filter_all_delete_confirm": "Are you sure you want to delete all saved filters?"
   },
   "approval": {
     "title": "Approval Status",
@@ -295,7 +300,8 @@
     "role_label_TE_O": "AGENT O Team",
     "role_label_TE_E": "AGENT E Team",
     "role_label_MASTER": "Administrator",
-    "role_label_NONE": "Unassigned"
+    "role_label_NONE": "Unassigned",
+    "restore": "Restore"
   },
   "notice": {
     "label_notice": "Notice",
@@ -315,6 +321,8 @@
     "save": "Save",
     "cancel": "Cancel",
     "close": "Close",
-    "no_notice": "No notices registered"
+    "no_notice": "No notices registered",
+    "delete_title": "Delete Notice",
+    "delete_confirm": "Are you sure you want to delete \"{{title}}\"?"
   }
 }

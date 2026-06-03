@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI } from '../api/client';
 import { useToast } from '../components/Toast';
 import { useIdleAutoSave } from '../hooks/useIdleAutoSave';
-import Modal from '../components/Modal';
+import Modal, { ConfirmModal } from '../components/Modal';
 import FormSelect from '../components/FormSelect';
 import AutocompleteInput from '../components/AutocompleteInput';
 import { useAuth } from '../contexts/AuthContext';
@@ -365,6 +365,15 @@ export default function RequestPage(): React.ReactElement {
   const [tbvtlvSdsSelected, setTbvtlvSdsSelected] = useState<string[]>([]);
   const [tbvtlvNote, setTbvtlvNote] = useState<string>('');
   const [tbvtlvWarnModal, setTbvtlvWarnModal] = useState(false);
+  const [bbOverwriteConfirm, setBbOverwriteConfirm] = useState(false);
+  const [bbResetConfirm, setBbResetConfirm] = useState(false);
+  const [specialCareConfirm, setSpecialCareConfirm] = useState(false);
+  const [filterDeleteConfirm, setFilterDeleteConfirm] = useState<{
+    type: 'jayer' | 'oayer';
+    filterId: string;
+    label: string;
+  } | null>(null);
+  const [filterAllDeleteConfirm, setFilterAllDeleteConfirm] = useState<'jayer' | 'oayer' | null>(null);
 
   useEffect(() => {
     linesAPI.list()
@@ -1315,16 +1324,7 @@ export default function RequestPage(): React.ReactElement {
     ));
   };
 
-  const handleApplyAutoFill = () => {
-    const hasExistingData = bbRows.some(
-      (row) => row.bb_process_id || row.bb_ss || row.bb_name
-    );
-
-    if (hasExistingData) {
-      const confirmed = window.confirm('기존 입력된 Backbone 데이터가 있습니다. 덮어쓰시겠습니까?');
-      if (!confirmed) return;
-    }
-
+  const proceedApplyAutoFill = () => {
     const newBbRows: BbTableRow[] = [];
 
     bbAutoFillRanges.forEach(range => {
@@ -1386,14 +1386,65 @@ export default function RequestPage(): React.ReactElement {
     addToast(`Backbone 데이터가 ${newBbRows.length}행 자동 채워졌습니다.`, 'success');
   };
 
-  const handleResetBbRows = () => {
-    const confirmed = window.confirm('모든 Backbone 데이터를 지우시겠습니까?');
-    if (!confirmed) return;
+  const handleApplyAutoFill = () => {
+    const hasExistingData = bbRows.some(
+      (row) => row.bb_process_id || row.bb_ss || row.bb_name
+    );
+    if (hasExistingData) {
+      setBbOverwriteConfirm(true);
+      return;
+    }
+    proceedApplyAutoFill();
+  };
 
+  const handleResetBbRows = () => {
+    setBbResetConfirm(true);
+  };
+
+  const proceedResetBbRows = () => {
     setBbRows([]);
     setMappedJayerRowIds(new Set());
     setIsBbSorted(false);
     addToast('Backbone 데이터가 초기화되었습니다.', 'info');
+  };
+
+  const handleFilterDeleteConfirm = () => {
+    if (!filterDeleteConfirm) return;
+    const { type, filterId, label } = filterDeleteConfirm;
+    if (type === 'jayer') {
+      const updated = jayerFilterSets.filter(f => f.id !== filterId);
+      const nextActive = new Set(jayerActiveFilterIds);
+      nextActive.delete(filterId);
+      setJayerFilterSets(updated);
+      setJayerActiveFilterIds(nextActive);
+      localStorage.setItem('jayerFilterSets', JSON.stringify(updated));
+      setJayerRows(rows => rows.map(r => ({ ...r, disabled: calcDisabled(r, updated, nextActive) })));
+    } else {
+      const updated = oayerFilterSets.filter(f => f.id !== filterId);
+      const nextActive = new Set(oayerActiveFilterIds);
+      nextActive.delete(filterId);
+      setOayerFilterSets(updated);
+      setOayerActiveFilterIds(nextActive);
+      localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
+      setOayerRows(rows => rows.map(r => ({ ...r, disabled: calcDisabled(r, updated, nextActive) })));
+    }
+    addToast(`필터 "${label}"이 삭제되었습니다.`, 'info');
+  };
+
+  const handleFilterAllDeleteConfirm = () => {
+    if (!filterAllDeleteConfirm) return;
+    if (filterAllDeleteConfirm === 'jayer') {
+      setJayerFilterSets([]);
+      setJayerActiveFilterIds(new Set());
+      localStorage.removeItem('jayerFilterSets');
+      setJayerRows(rows => rows.map(r => ({ ...r, disabled: r.manuallyDisabled })));
+    } else {
+      setOayerFilterSets([]);
+      setOayerActiveFilterIds(new Set());
+      localStorage.removeItem('oayerFilterSets');
+      setOayerRows(rows => rows.map(r => ({ ...r, disabled: r.manuallyDisabled })));
+    }
+    addToast('모든 필터가 삭제되었습니다.', 'info');
   };
 
   const handleSortBbRows = () => {
@@ -1587,7 +1638,7 @@ export default function RequestPage(): React.ReactElement {
 
   useIdleAutoSave(handleIdleAutoSave, 20 * 60 * 1000);
 
-  const handleNextStep = (skipTbvtlvWarn = false) => {
+  const handleNextStep = (skipTbvtlvWarn = false, skipSpecialCare = false) => {
     if (step === 1 || step === 2 || step === 4) {
       const result = validate(step);
       if (!result.valid) {
@@ -1596,9 +1647,9 @@ export default function RequestPage(): React.ReactElement {
         return;
       }
     }
-    if (step === 1 && !detail.customer_requirement.trim()) {
-      const confirmed = window.confirm('Special Care (Shot map포함)요청건은 반드시 작성 필요한데 넘어가시겠습니까?');
-      if (!confirmed) return;
+    if (step === 1 && !detail.customer_requirement.trim() && !skipSpecialCare) {
+      setSpecialCareConfirm(true);
+      return;
     }
     if (step === 4 && !skipTbvtlvWarn) {
       const hasTbvtlvActive = oayerRows.some(
@@ -3411,20 +3462,15 @@ export default function RequestPage(): React.ReactElement {
         </div>
       </div>
 
-      {deleteConfirm && (
-        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
-          <div className="delete-confirm-modal" onClick={(e) => e.stopPropagation()}>
-            <p className="delete-confirm-message">{deleteConfirm.message}</p>
-            <div className="delete-confirm-actions">
-              <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>취소</button>
-              <button
-                className="btn btn-danger"
-                onClick={() => { deleteConfirm.onConfirm(); setDeleteConfirm(null); }}
-              >삭제</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmModal
+        isOpen={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        onConfirm={() => deleteConfirm?.onConfirm()}
+        title={t('common.confirm')}
+        message={deleteConfirm?.message ?? ''}
+        confirmLabel={t('common.restore')}
+        danger
+      />
 
       {/* J-ayer 필터 관리 모달 */}
       <Modal
@@ -3438,13 +3484,7 @@ export default function RequestPage(): React.ReactElement {
             <button
               className="btn btn-secondary"
               style={{ fontSize: '12px' }}
-              onClick={() => {
-                setJayerFilterSets([]);
-                setJayerActiveFilterIds(new Set());
-                localStorage.removeItem('jayerFilterSets');
-                setJayerRows(rows => rows.map(r => ({ ...r, disabled: r.manuallyDisabled })));
-                addToast('모든 필터가 삭제되었습니다.', 'info');
-              }}
+              onClick={() => setFilterAllDeleteConfirm('jayer')}
             >
               전체 삭제
             </button>
@@ -3516,14 +3556,7 @@ export default function RequestPage(): React.ReactElement {
                             </div>
                           </div>
                           <button type="button" className="btn btn-danger btn-sm"
-                            onClick={() => {
-                              const updated = jayerFilterSets.filter(f=>f.id!==fs.id);
-                              const nextActive = new Set(jayerActiveFilterIds); nextActive.delete(fs.id);
-                              setJayerFilterSets(updated); setJayerActiveFilterIds(nextActive);
-                              localStorage.setItem('jayerFilterSets', JSON.stringify(updated));
-                              setJayerRows(rows=>rows.map(r=>({...r, disabled:calcDisabled(r,updated,nextActive)})));
-                              addToast(`필터 "${fs.label}"이 삭제되었습니다.`, 'info');
-                            }}>삭제</button>
+                            onClick={() => setFilterDeleteConfirm({ type: 'jayer', filterId: fs.id, label: fs.label })}>삭제</button>
                         </div>
                       ))}
                     </div>
@@ -3561,13 +3594,7 @@ export default function RequestPage(): React.ReactElement {
             <button
               className="btn btn-secondary"
               style={{ fontSize: '12px' }}
-              onClick={() => {
-                setOayerFilterSets([]);
-                setOayerActiveFilterIds(new Set());
-                localStorage.removeItem('oayerFilterSets');
-                setOayerRows(rows => rows.map(r => ({ ...r, disabled: r.manuallyDisabled })));
-                addToast('모든 필터가 삭제되었습니다.', 'info');
-              }}
+              onClick={() => setFilterAllDeleteConfirm('oayer')}
             >
               전체 삭제
             </button>
@@ -3639,14 +3666,7 @@ export default function RequestPage(): React.ReactElement {
                             </div>
                           </div>
                           <button type="button" className="btn btn-danger btn-sm"
-                            onClick={() => {
-                              const updated = oayerFilterSets.filter(f=>f.id!==fs.id);
-                              const nextActive = new Set(oayerActiveFilterIds); nextActive.delete(fs.id);
-                              setOayerFilterSets(updated); setOayerActiveFilterIds(nextActive);
-                              localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
-                              setOayerRows(rows=>rows.map(r=>({...r, disabled:calcDisabled(r,updated,nextActive)})));
-                              addToast(`필터 "${fs.label}"이 삭제되었습니다.`, 'info');
-                            }}>삭제</button>
+                            onClick={() => setFilterDeleteConfirm({ type: 'oayer', filterId: fs.id, label: fs.label })}>삭제</button>
                         </div>
                       ))}
                     </div>
@@ -3702,27 +3722,14 @@ export default function RequestPage(): React.ReactElement {
         </div>
       </Modal>
 
-      <Modal
+      <ConfirmModal
         isOpen={tbvtlvWarnModal}
         onClose={() => setTbvtlvWarnModal(false)}
+        onConfirm={() => handleNextStep(true)}
         title={t('request.tbvtlv_warn_title')}
-        size="sm"
-        footer={
-          <>
-            <button className="btn btn-secondary" onClick={() => setTbvtlvWarnModal(false)}>
-              {t('common.cancel')}
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={() => { setTbvtlvWarnModal(false); handleNextStep(true); }}
-            >
-              {t('request.tbvtlv_warn_proceed')}
-            </button>
-          </>
-        }
-      >
-        <p style={{ margin: 0, fontSize: 14 }}>{t('request.tbvtlv_warn_body')}</p>
-      </Modal>
+        message={t('request.tbvtlv_warn_body')}
+        confirmLabel={t('request.tbvtlv_warn_proceed')}
+      />
 
       <Modal
         isOpen={confirmOpen}
@@ -3752,6 +3759,54 @@ export default function RequestPage(): React.ReactElement {
           />
         </div>
       </Modal>
+
+      <ConfirmModal
+        isOpen={bbOverwriteConfirm}
+        onClose={() => setBbOverwriteConfirm(false)}
+        onConfirm={proceedApplyAutoFill}
+        title={t('common.confirm')}
+        message={t('request.bb_overwrite_confirm')}
+      />
+
+      <ConfirmModal
+        isOpen={bbResetConfirm}
+        onClose={() => setBbResetConfirm(false)}
+        onConfirm={proceedResetBbRows}
+        title={t('common.confirm')}
+        message={t('request.bb_reset_confirm')}
+        danger
+      />
+
+      <ConfirmModal
+        isOpen={specialCareConfirm}
+        onClose={() => setSpecialCareConfirm(false)}
+        onConfirm={() => handleNextStep(false, true)}
+        title={t('request.tbvtlv_warn_title')}
+        message={t('request.special_care_confirm')}
+        confirmLabel={t('request.tbvtlv_warn_proceed')}
+      />
+
+      <ConfirmModal
+        isOpen={!!filterDeleteConfirm}
+        onClose={() => setFilterDeleteConfirm(null)}
+        onConfirm={handleFilterDeleteConfirm}
+        title={t('common.confirm')}
+        message={t('request.filter_delete_confirm', { label: filterDeleteConfirm?.label ?? '' })}
+        confirmLabel={t('common.delete')}
+        danger
+        topLevel
+      />
+
+      <ConfirmModal
+        isOpen={!!filterAllDeleteConfirm}
+        onClose={() => setFilterAllDeleteConfirm(null)}
+        onConfirm={handleFilterAllDeleteConfirm}
+        title={t('common.confirm')}
+        message={t('request.filter_all_delete_confirm')}
+        confirmLabel={t('common.delete')}
+        danger
+        topLevel
+      />
     </div>
   );
 }

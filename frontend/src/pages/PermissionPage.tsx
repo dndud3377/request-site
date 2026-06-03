@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { usersAPI } from '../api/client';
 import { useToast } from '../components/Toast';
-import Modal from '../components/Modal';
+import Modal, { ConfirmModal } from '../components/Modal';
 import { UserRole, UserWithRole, UserForAssignment } from '../types';
 
 const ALL_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
@@ -364,33 +364,16 @@ export default function PermissionPage(): React.ReactElement {
       </div>
 
       {/* Delete Confirmation Modal */}
-      <Modal
+      <ConfirmModal
         isOpen={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
         title={t('permission.delete_modal_title')}
-        footer={
-          <>
-            <button
-              className="btn btn-secondary"
-              onClick={() => setDeleteTarget(null)}
-              disabled={deletingId !== null}
-            >
-              {t('common.cancel')}
-            </button>
-            <button
-              className="btn btn-danger"
-              onClick={handleDelete}
-              disabled={deletingId !== null}
-            >
-              {deletingId !== null ? '...' : t('permission.delete_yes')}
-            </button>
-          </>
-        }
-      >
-        <p style={{ margin: 0, fontSize: 14 }}>
-          {t('permission.delete_modal_body')}
-        </p>
-      </Modal>
+        message={t('permission.delete_modal_body')}
+        confirmLabel={t('permission.delete_yes')}
+        danger
+        loading={deletingId !== null}
+      />
 
       {/* Add User Modal */}
       <Modal
