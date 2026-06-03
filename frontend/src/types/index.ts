@@ -80,6 +80,7 @@ export interface RequestDocument {
   reference_materials: string;
   additional_notes: string;
   status: Status;
+  production_date: string | null;
   created_at: string;
   updated_at: string;
   submitted_at: string | null;
