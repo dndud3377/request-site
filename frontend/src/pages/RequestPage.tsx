@@ -357,6 +357,7 @@ export default function RequestPage(): React.ReactElement {
   const [oayerNewFilter, setOayerNewFilter] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
   const [jayerSortBySp, setJayerSortBySp] = useState(false);
   const [oayerSortBySp, setOayerSortBySp] = useState(false);
+  const [productionDate, setProductionDate] = useState<string>('');
   const [copiedFields, setCopiedFields] = useState<Set<string>>(new Set());
   const [prodcCopyRegion, setProdcCopyRegion] = useState<CRegion | null>(null);
   const [revLayersSelected, setRevLayersSelected] = useState<string[]>([]);
@@ -619,6 +620,7 @@ export default function RequestPage(): React.ReactElement {
           bbRows: parsed.bbRows ?? [],
           history: parsed.history ?? [],
         };
+        if (doc.production_date) setProductionDate(doc.production_date);
         if (parsed.detail) setDetail(parsed.detail);
         if (parsed.jayerRows) {
           const fSets: FilterSet[] = (() => { try { return JSON.parse(localStorage.getItem('jayerFilterSets') ?? '[]'); } catch { return []; } })();
@@ -1589,6 +1591,7 @@ export default function RequestPage(): React.ReactElement {
       requester_name: currentUser.name,
       requester_email: currentUser.email,
       requester_department: currentUser.department,
+      production_date: productionDate || null,
       reference_materials: note ?? '',
       additional_notes: JSON.stringify({
         detail,
@@ -2083,6 +2086,19 @@ export default function RequestPage(): React.ReactElement {
               disabled={!canSelectPurpose}
             />
           </div>
+        </div>
+
+        {/* 5. 실제 생산 진행 날짜 */}
+        <div className="form-group full-width">
+          <label className="form-label">{t('request.production_date')}</label>
+          <input
+            type="date"
+            className="form-control"
+            value={productionDate}
+            onChange={(e) => setProductionDate(e.target.value)}
+            disabled={!canSelectPurpose}
+            style={{ maxWidth: '200px' }}
+          />
         </div>
 
       </div>

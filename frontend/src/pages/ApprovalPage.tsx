@@ -384,9 +384,9 @@ export default function ApprovalPage(): React.ReactElement {
                 <th>{t('approval.col_requester')}</th>
                 <th>{t('approval.col_status')}</th>
                 <th>{t('approval.col_current_stage')}</th>
-                <th>{t('approval.col_start_date')}</th>
                 <th>{t('approval.col_current_stage_completion')}</th>
                 <th>{t('approval.col_final_completion')}</th>
+                <th>{t('approval.col_production_date')}</th>
                 <th></th>
               </tr>
             </thead>
@@ -414,9 +414,9 @@ export default function ApprovalPage(): React.ReactElement {
                   <td style={{ fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 500 }}>
                     {getCurrentStage(doc, t)}
                   </td>
-                  <td>{formatStartDate(doc)}</td>
                   <td>{formatCurrentStageCompletionDate(doc)}</td>
                   <td>{formatFinalCompletionDate(doc)}</td>
+                  <td>{doc.production_date ? formatDate(doc.production_date) : '-'}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {(isPL || isMaster) && (doc.status === 'rejected' || doc.status === 'draft') && (

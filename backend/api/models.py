@@ -78,6 +78,7 @@ class RequestDocument(models.Model):
     status = models.CharField(
         max_length=20, choices=STATUS_CHOICES, default='draft', verbose_name='상태'
     )
+    production_date = models.DateField(null=True, blank=True, verbose_name='실제 생산 진행 날짜')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일')
     submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='상신일')

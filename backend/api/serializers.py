@@ -56,7 +56,7 @@ class RequestDocumentSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'requester_name', 'requester_email', 'requester_department',
             'product_name', 'reference_materials', 'additional_notes',
-            'status', 'created_at', 'updated_at', 'submitted_at', 'approval_steps',
+            'status', 'production_date', 'created_at', 'updated_at', 'submitted_at', 'approval_steps',
         ]
         read_only_fields = ['status', 'created_at', 'updated_at', 'submitted_at']
 
@@ -68,7 +68,7 @@ class RequestDocumentListSerializer(serializers.ModelSerializer):
         model = RequestDocument
         fields = [
             'id', 'title', 'requester_name', 'requester_department',
-            'product_name', 'status', 'created_at', 'submitted_at', 'additional_notes', 'approval_steps',
+            'product_name', 'status', 'production_date', 'created_at', 'submitted_at', 'additional_notes', 'approval_steps',
         ]
 
 
