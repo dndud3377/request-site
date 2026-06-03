@@ -13,10 +13,11 @@ export const ROLE_TO_AGENT: Partial<Record<UserRole, AgentType>> = {
   TE_E: 'E',
 };
 
-// 담당자 지정 가능 여부: 같은 팀, pending, 아직 담당자 없음
+// 담당자 지정 가능 여부: 같은 팀, pending, 아직 담당자 없음 (TE_O/TE_E는 지정 불필요)
 // password 필드가 optional이도록 수정
 export const canUserAssign = (user: { role: UserRoleWithNull } | MockUser, step: ApprovalStepFrontend): boolean => {
   if (!user.role) return false;
+  if (user.role === 'TE_O' || user.role === 'TE_E') return false;
   const agent = ROLE_TO_AGENT[user.role];
   return !!agent && step.agent === agent && step.action === 'pending' && !step.assignee_loginid;
 };
