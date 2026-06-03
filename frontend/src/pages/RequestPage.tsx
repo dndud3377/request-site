@@ -1570,6 +1570,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleIdleAutoSave = async () => {
+    if (!detail.line || !detail.partid_selection || !detail.process_selection || !detail.process_id) return;
     try {
       const enriched = buildEnrichedForm(undefined, false, true);
       if (savedId) {
