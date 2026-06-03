@@ -428,6 +428,7 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
         message={t('notice.delete_confirm', { title: deleteNoticeTarget?.title ?? '' })}
         confirmLabel={t('common.delete')}
         danger
+        topLevel
       />
     </div>
   );
