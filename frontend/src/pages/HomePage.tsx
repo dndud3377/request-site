@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { documentsAPI, noticesAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
+import { ConfirmModal } from '../components/Modal';
 import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseItem } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -34,6 +35,7 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
   // 왼쪽 패널 상태
   const [tab, setTab] = useState<'all' | 'release_note' | 'notice'>('all');
   const [selected, setSelected] = useState<AdminNotice | null>(null);
+  const [deleteNoticeTarget, setDeleteNoticeTarget] = useState<AdminNotice | null>(null);
 
   // 오른쪽 패널 상태
   const [rightPanel, setRightPanel] = useState<'detail' | 'form'>('detail');
@@ -97,15 +99,17 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
     setRightPanel('form');
   };
 
-  const handleDelete = async (notice: AdminNotice) => {
-    if (!window.confirm(`"${notice.title}" 공지를 삭제하시겠습니까?`)) return;
+  const handleDelete = async () => {
+    if (!deleteNoticeTarget) return;
     try {
-      await noticesAPI.delete(notice.id);
+      await noticesAPI.delete(deleteNoticeTarget.id);
       onRefresh();
       setSelected(null);
       setRightPanel('detail');
     } catch (err) {
       console.error('Failed to delete notice:', err);
+    } finally {
+      setDeleteNoticeTarget(null);
     }
   };
 
@@ -269,7 +273,7 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                   <div className="notice-right-footer">
                     <button
                       className="btn btn-danger btn-sm"
-                      onClick={() => handleDelete(selected)}
+                      onClick={() => setDeleteNoticeTarget(selected)}
                     >
                       {t('common.delete')}
                     </button>
@@ -416,6 +420,15 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
           </div>
         </div>
       </div>
+      <ConfirmModal
+        isOpen={!!deleteNoticeTarget}
+        onClose={() => setDeleteNoticeTarget(null)}
+        onConfirm={handleDelete}
+        title={t('notice.delete_title')}
+        message={t('notice.delete_confirm', { title: deleteNoticeTarget?.title ?? '' })}
+        confirmLabel={t('common.delete')}
+        danger
+      />
     </div>
   );
 }

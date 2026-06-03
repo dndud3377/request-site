@@ -140,7 +140,12 @@
     "tbvtlv_entries_label": "추가된 항목",
     "tbvtlv_warn_title": "입력 확인",
     "tbvtlv_warn_body": "두께 / 비고 항목을 입력하지 않았습니다. 입력하지 않고 넘어가도 괜찮으시겠습니까?",
-    "tbvtlv_warn_proceed": "계속 진행"
+    "tbvtlv_warn_proceed": "계속 진행",
+    "bb_overwrite_confirm": "기존 입력된 Backbone 데이터가 있습니다. 덮어쓰시겠습니까?",
+    "bb_reset_confirm": "모든 Backbone 데이터를 지우시겠습니까?",
+    "special_care_confirm": "Special Care (Shot map포함) 요청건은 반드시 작성 필요한데 넘어가시겠습니까?",
+    "filter_delete_confirm": "\"{{label}}\" 필터를 삭제하시겠습니까?",
+    "filter_all_delete_confirm": "저장된 모든 필터를 삭제하시겠습니까?"
   },
   "approval": {
     "title": "결재 현황",
@@ -329,7 +334,8 @@
     "role_label_TE_O": "AGENT O팀",
     "role_label_TE_E": "AGENT E팀",
     "role_label_MASTER": "관리자",
-    "role_label_NONE": "미지정"
+    "role_label_NONE": "미지정",
+    "restore": "원복"
   },
   "notice": {
     "label_notice": "Notice",
@@ -349,6 +355,8 @@
     "save": "저장",
     "cancel": "취소",
     "close": "닫기",
-    "no_notice": "등록된 공지사항이 없습니다"
+    "no_notice": "등록된 공지사항이 없습니다",
+    "delete_title": "공지 삭제",
+    "delete_confirm": "\"{{title}}\" 공지를 삭제하시겠습니까?"
   }
 }

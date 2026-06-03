@@ -10,6 +10,7 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg';
   topLevel?: boolean;
   style?: React.CSSProperties;
+  hideFullscreen?: boolean;
 }
 
 interface ConfirmModalProps {
@@ -20,6 +21,8 @@ interface ConfirmModalProps {
   message: string;
   confirmLabel?: string;
   danger?: boolean;
+  loading?: boolean;
+  topLevel?: boolean;
 }
 
 export default function Modal({
@@ -31,6 +34,7 @@ export default function Modal({
   size = 'md',
   topLevel = false,
   style,
+  hideFullscreen = false,
 }: ModalProps): React.ReactElement | null {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -48,13 +52,15 @@ export default function Modal({
         <div className="modal-header">
           <h3>{title}</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <button
-              className="modal-close"
-              onClick={() => setIsFullscreen((v) => !v)}
-              style={{ fontSize: '0.75rem' }}
-            >
-              {isFullscreen ? '⊠ 창 복원' : '⛶ 전체화면'}
-            </button>
+            {!hideFullscreen && (
+              <button
+                className="modal-close"
+                onClick={() => setIsFullscreen((v) => !v)}
+                style={{ fontSize: '0.75rem' }}
+              >
+                {isFullscreen ? '⊠ 창 복원' : '⛶ 전체화면'}
+              </button>
+            )}
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
         </div>
@@ -73,6 +79,8 @@ export function ConfirmModal({
   message,
   confirmLabel,
   danger = false,
+  loading = false,
+  topLevel = false,
 }: ConfirmModalProps): React.ReactElement {
   const { t } = useTranslation();
 
@@ -81,16 +89,21 @@ export function ConfirmModal({
       isOpen={isOpen}
       onClose={onClose}
       title={title}
+      size="sm"
+      hideFullscreen
+      topLevel={topLevel}
+      style={{ maxWidth: '420px' }}
       footer={
         <>
-          <button className="btn btn-secondary" onClick={onClose}>
+          <button className="btn btn-secondary" onClick={onClose} disabled={loading}>
             {t('common.cancel')}
           </button>
           <button
             className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`}
             onClick={() => { onConfirm(); onClose(); }}
+            disabled={loading}
           >
-            {confirmLabel || t('common.confirm')}
+            {loading ? t('common.loading') : (confirmLabel || t('common.confirm'))}
           </button>
         </>
       }
