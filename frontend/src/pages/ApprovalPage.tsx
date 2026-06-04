@@ -198,10 +198,35 @@ export default function ApprovalPage(): React.ReactElement {
     return res.data;
   };
 
+  const applyClientFilter = useCallback((all: RequestDocument[]): RequestDocument[] => {
+    if (filter === 'my') {
+      const role = currentUser.role;
+      if (role === 'MASTER') return all;
+      if (role === 'PL') {
+        return all.filter((d) => d.requester_name === currentUser.name);
+      }
+      if (role === 'NONE' || !role) return [];
+      // TE_* 역할: 내 loginid(username)가 assignee_loginid인 pending 단계가 있는 문서
+      return all.filter((d) =>
+        (d.approval_steps ?? []).some(
+          (s) => s.action === 'pending' && s.assignee_loginid === currentUser.username
+        )
+      );
+    }
+    if (filter.startsWith('agent_')) {
+      const agent = filter.replace('agent_', '') as AgentType;
+      return all.filter((d) =>
+        (d.approval_steps ?? []).some((s) => s.agent === agent && s.action === 'pending')
+      );
+    }
+    return all;
+  }, [filter, currentUser]);
+
   const fetchDocs = useCallback(() => {
     setLoading(true);
     const params: Record<string, string> = {};
-    if (filter) params.status = filter;
+    // 백엔드 status 필터: draft, rejected만 서버에서 처리
+    if (filter === 'draft' || filter === 'rejected') params.status = filter;
     if (search) params.search = search;
     documentsAPI
       .list(params)
@@ -210,18 +235,25 @@ export default function ApprovalPage(): React.ReactElement {
         let all: RequestDocument[] = Array.isArray(data) ? data : (data as any).results ?? [];
         // 결재 현황: approved 제외
         all = all.filter((d) => d.status !== 'approved');
+        // 클라이언트 필터 (my, agent_*)
+        all = applyClientFilter(all);
         setDocs(all);
       })
       .catch(() => setDocs([]))
       .finally(() => setLoading(false));
-  }, [filter, search]);
+  }, [filter, search, applyClientFilter]);
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
 
   const filterTabs: FilterTab[] = [
     { key: '', label: t('approval.filter_all') },
+    { key: 'my', label: t('approval.filter_my') },
+    { key: 'agent_R', label: t('approval.filter_agent_R') },
+    { key: 'agent_P', label: t('approval.filter_agent_P') },
+    { key: 'agent_J', label: t('approval.filter_agent_J') },
+    { key: 'agent_O', label: t('approval.filter_agent_O') },
+    { key: 'agent_E', label: t('approval.filter_agent_E') },
     { key: 'draft', label: t('approval.filter_draft') },
-    { key: 'under_review', label: t('approval.filter_under_review') },
     { key: 'rejected', label: t('approval.filter_rejected') },
   ];
 
