@@ -93,7 +93,13 @@ export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, onLoadT
       <div className={`approval-node ${step.action === 'approved' ? 'approval-node-done' : step.action === 'rejected' ? 'approval-node-rejected' : ''}`}>
         <span className="step-agent-label">{displayLabel}</span>
         <span className={`step-badge step-badge-${step.action}`}>
-          {step.action === 'approved' ? t('approval.step_approved') : step.action === 'rejected' ? t('approval.step_rejected') : t('approval.step_pending')}
+          {step.action === 'approved'
+            ? t('approval.step_approved')
+            : step.action === 'rejected'
+            ? t('approval.step_rejected')
+            : (step.agent !== 'O' && step.agent !== 'E' && !step.assignee_loginid)
+            ? t('approval.step_unassigned')
+            : t('approval.step_pending')}
         </span>
         {step.acted_at && <span className="step-acted-at">{formatDate(step.acted_at)}</span>}
         {step.comment && (

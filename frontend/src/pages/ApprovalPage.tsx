@@ -122,6 +122,18 @@ const formatFinalCompletionDate = (doc: RequestDocument): string => {
   return d.toLocaleDateString('ko-KR');
 };
 
+// TE_O/TE_E는 담당자 지정 불필요 — 나머지 단계에서 담당자 미지정 시 'unassigned' 반환
+const getDisplayStatus = (doc: RequestDocument): string => {
+  if (doc.status !== 'under_review') return doc.status;
+  const steps = doc.approval_steps ?? [];
+  const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
+  const pending = steps.filter((s) => (s.round ?? 1) === maxRound && s.action === 'pending');
+  const needsAssignment = pending.some(
+    (s) => s.agent !== 'O' && s.agent !== 'E' && !s.assignee_loginid
+  );
+  return needsAssignment ? 'unassigned' : 'under_review';
+};
+
 const getCurrentStage = (doc: RequestDocument, t: TFunction): string => {
   const steps = doc.approval_steps ?? [];
   const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
@@ -382,8 +394,8 @@ export default function ApprovalPage(): React.ReactElement {
                 <th>{t('approval.col_title')}</th>
                 <th>{t('approval.col_product')}</th>
                 <th>{t('approval.col_requester')}</th>
-                <th>{t('approval.col_status')}</th>
                 <th>{t('approval.col_current_stage')}</th>
+                <th>{t('approval.col_status')}</th>
                 <th>{t('approval.col_current_stage_completion')}</th>
                 <th>{t('approval.col_final_completion')}</th>
                 <th>{t('approval.col_production_date')}</th>
@@ -410,10 +422,10 @@ export default function ApprovalPage(): React.ReactElement {
                     <div>{doc.requester_name}</div>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{doc.requester_department}</div>
                   </td>
-                  <td><StatusBadge status={doc.status} /></td>
                   <td style={{ fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 500 }}>
                     {getCurrentStage(doc, t)}
                   </td>
+                  <td><StatusBadge status={getDisplayStatus(doc)} /></td>
                   <td>{formatCurrentStageCompletionDate(doc)}</td>
                   <td>{formatFinalCompletionDate(doc)}</td>
                   <td>{doc.production_date ? formatDate(doc.production_date) : '-'}</td>

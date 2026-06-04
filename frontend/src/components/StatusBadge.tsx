@@ -9,6 +9,7 @@ const STATUS_I18N_KEY: Record<string, string> = {
   draft: 'common.status_draft',
   submitted: 'common.status_submitted',
   under_review: 'common.status_under_review',
+  unassigned: 'approval.step_unassigned',
   approved: 'common.status_approved',
   rejected: 'common.status_rejected',
   checking: 'voc.status_checking',

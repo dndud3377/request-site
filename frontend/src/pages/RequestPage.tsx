@@ -229,6 +229,7 @@ const INITIAL_FORM: CreateDocumentInput = {
   requester_email: '',
   requester_department: '',
   product_name: '',
+  production_date: null,
   reference_materials: '',
   additional_notes: '',
 };
