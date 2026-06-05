@@ -566,7 +566,7 @@ select.form-control option {
   background: var(--bg-secondary);
   padding: 12px 16px;
   text-align: left;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -576,7 +576,7 @@ select.form-control option {
 
 .table td {
   padding: 14px 16px;
-  font-size: 0.875rem;
+  font-size: 0.78rem;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border);
 }

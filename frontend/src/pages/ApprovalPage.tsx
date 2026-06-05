@@ -91,7 +91,33 @@ interface DocTableRow {
   stageText: string;
   dueDate: string | null;
   isDone: boolean;
+  pathStatus: string; // 경로별 상태 (StatusBadge에 전달)
 }
+
+// 경로별 상태 계산: pending의 assignee 여부에 따라 unassigned / under_review / approved
+const resolvePathStatus = (
+  pendingStep: { agent: string; assignee_loginid?: string } | undefined,
+  isDone: boolean,
+  docStatus: string,
+): string => {
+  if (docStatus === 'rejected') return 'rejected';
+  if (isDone) return 'approved';
+  if (!pendingStep) return 'approved';
+  // O/E는 담당자 지정 없이도 진행 가능
+  if (pendingStep.agent === 'O' || pendingStep.agent === 'E') return 'under_review';
+  return pendingStep.assignee_loginid ? 'under_review' : 'unassigned';
+};
+
+const buildStageText = (
+  step: { agent: string; assignee_name?: string } | undefined,
+  isDone: boolean,
+  t: TFunction,
+): string => {
+  if (isDone) return t('common.status_approved');
+  if (!step) return t('common.status_approved');
+  const label = t(`approval.agent_${step.agent}` as any);
+  return step.assignee_name ? `${label}(${step.assignee_name})` : label;
+};
 
 const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
   const maxRound = getCurrentRound(doc);
@@ -102,10 +128,29 @@ const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
   if (!inParallel) {
     const pending = currentSteps.filter(s => s.action === 'pending');
     if (pending.length === 0) {
-      return [{ pathKey: 'single', stageText: doc.status === 'approved' ? t('common.status_approved') : '-', dueDate: null, isDone: true }];
+      return [{
+        pathKey: 'single',
+        stageText: doc.status === 'approved' ? t('common.status_approved') : '-',
+        dueDate: null,
+        isDone: true,
+        pathStatus: doc.status,
+      }];
     }
-    const stageText = pending.map(s => t(`approval.agent_${s.agent}` as any)).join(' / ');
-    return [{ pathKey: 'single', stageText, dueDate: pending[0]?.due_date ?? null, isDone: false }];
+    // R 단계 pending: assignee 여부로 상태 결정
+    const rPending = pending.find(s => s.agent === 'R');
+    const pathStatus = rPending
+      ? (rPending.assignee_loginid ? 'under_review' : 'unassigned')
+      : 'under_review';
+    const stageText = pending
+      .map(s => buildStageText(s, false, t))
+      .join(' / ');
+    return [{
+      pathKey: 'single',
+      stageText,
+      dueDate: pending[0]?.due_date ?? null,
+      isDone: false,
+      pathStatus,
+    }];
   }
 
   // 병렬 단계
@@ -123,15 +168,17 @@ const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
   return [
     {
       pathKey: 'path1',
-      stageText: path1Pending ? t(`approval.agent_${path1Pending.agent}` as any) : t('common.status_approved'),
+      stageText: buildStageText(path1Pending, path1Done, t),
       dueDate: path1Pending?.due_date ?? null,
       isDone: path1Done,
+      pathStatus: resolvePathStatus(path1Pending, path1Done, doc.status),
     },
     {
       pathKey: 'path2',
-      stageText: path2Pending ? t(`approval.agent_${path2Pending.agent}` as any) : t('common.status_approved'),
+      stageText: buildStageText(path2Pending, path2Done, t),
       dueDate: path2Pending?.due_date ?? null,
       isDone: path2Done,
+      pathStatus: resolvePathStatus(path2Pending, path2Done, doc.status),
     },
   ];
 };
@@ -444,21 +491,21 @@ export default function ApprovalPage(): React.ReactElement {
                       {idx === 0 && (
                         <td rowSpan={rows.length}>
                           <div>{doc.requester_name}</div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{doc.requester_department}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{doc.requester_department}</div>
                         </td>
                       )}
-                      <td style={{ fontSize: '0.8rem', fontWeight: 500 }}>
+                      <td style={{ fontWeight: 500 }}>
                         {isParallel && (
                           <span className={`path-label-chip ${row.pathKey === 'path1' ? 'path1' : 'path2'}`} style={{ marginRight: 6 }}>
                             {row.pathKey === 'path1' ? t('approval.path_label_phpsi_job') : t('approval.path_label_ovl_euv')}
                           </span>
                         )}
-                        <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--accent)' }}>{row.stageText}</span>
+                        <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{row.stageText}</span>
                       </td>
                       <td>
                         <span className={dd.cls}>{dd.text}</span>
                       </td>
-                      {idx === 0 && <td rowSpan={rows.length}><StatusBadge status={getDisplayStatus(doc)} /></td>}
+                      <td><StatusBadge status={row.pathStatus} /></td>
                       {idx === 0 && <td rowSpan={rows.length}>{getFinalCompletionDate(doc)}</td>}
                       {idx === 0 && <td rowSpan={rows.length}>{doc.production_date ? formatDate(doc.production_date) : '-'}</td>}
                       {idx === 0 && (
