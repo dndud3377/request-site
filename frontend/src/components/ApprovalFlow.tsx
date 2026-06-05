@@ -1,11 +1,7 @@
 // ⚠️ MASKING 처리된 파일. 이 파일에 포함된 비즈니스 용어는 {{ko.json}} 키로 마스킹되어 있습니다. 원래 용어를 확인하려면 다음 파일을 참조하세요: frontend/src/locales/ko.json
-import React, { useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { RequestDocument, AgentType, ApprovalStepFrontend, UserRole, UserWithRole, MockUser, UserRoleWithNull } from '../types';
+import { ApprovalStepFrontend, UserRole, MockUser, UserRoleWithNull } from '../types';
 
-const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
-
-export const ROLE_TO_AGENT: Partial<Record<UserRole, AgentType>> = {
+export const ROLE_TO_AGENT: Partial<Record<UserRole, string>> = {
   TE_R: 'R',
   TE_P: 'P',
   TE_J: 'J',
@@ -14,7 +10,6 @@ export const ROLE_TO_AGENT: Partial<Record<UserRole, AgentType>> = {
 };
 
 // 담당자 지정 가능 여부: 같은 팀, pending, 아직 담당자 없음 (TE_O/TE_E는 지정 불필요)
-// password 필드가 optional이도록 수정
 export const canUserAssign = (user: { role: UserRoleWithNull } | MockUser, step: ApprovalStepFrontend): boolean => {
   if (!user.role) return false;
   if (user.role === 'TE_O' || user.role === 'TE_E') return false;
@@ -23,7 +18,6 @@ export const canUserAssign = (user: { role: UserRoleWithNull } | MockUser, step:
 };
 
 // 합의/반려 가능 여부: MASTER이거나, TE_O/TE_E는 자기 단계 pending이면 누구나, 나머지는 담당자로 지정된 본인
-// password 필드가 optional이도록 수정
 export const canUserAgree = (user: { role: UserRoleWithNull; username: string } | MockUser, step: ApprovalStepFrontend): boolean => {
   if (user.role === 'MASTER') return true;
   if (step.action !== 'pending') return false;
@@ -31,186 +25,3 @@ export const canUserAgree = (user: { role: UserRoleWithNull; username: string } 
   if ((user.role === 'TE_O' || user.role === 'TE_E') && agent && step.agent === agent) return true;
   return step.assignee_loginid === user.username;
 };
-
-interface ApprovalFlowProps {
-  doc: RequestDocument;
-  onAgree: (agent: AgentType) => void;
-  onReject: (agent: AgentType) => void;
-  onAssign: (agent: AgentType, loginid: string, userName: string) => void;
-  onLoadTeamMembers: (agent: AgentType) => Promise<UserWithRole[]>;
-  processing: boolean;
-  currentUser: MockUser;
-}
-
-export default function ApprovalFlow({ doc, onAgree, onReject, onAssign, onLoadTeamMembers, processing, currentUser }: ApprovalFlowProps): React.ReactElement {
-  const { t } = useTranslation();
-  const steps = doc.approval_steps ?? [];
-  const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
-  const currentSteps = steps.filter((s) => (s.round ?? 1) === maxRound);
-
-  const [assigningAgent, setAssigningAgent] = useState<AgentType | null>(null);
-  const [assigningUserId, setAssigningUserId] = useState<string>('');
-  const [teamMembers, setTeamMembers] = useState<UserWithRole[]>([]);
-  const [loadingMembers, setLoadingMembers] = useState(false);
-
-  const getStep = (agent: AgentType): ApprovalStepFrontend | undefined =>
-    currentSteps.find((s) => s.agent === agent);
-
-  const rStep = getStep('R');
-  const pStep = getStep('P');
-  const jStep = getStep('J');
-  const oStep = getStep('O');
-  const eStep = getStep('E');
-
-  let hasPlel = false;
-  try {
-    const parsed = JSON.parse(doc.additional_notes ?? '{}');
-    const jayerRows = parsed?.jayerRows ?? [];
-    // PP 에 PLEL 포함 여부 검사 (대소문자 구분 없음)
-    hasPlel = jayerRows.some((row: any) => 
-      row.pp?.toLowerCase().includes('plel')
-    );
-  } catch { hasPlel = false; }
-
-  const renderStepBadge = (step: ApprovalStepFrontend | undefined, label: string) => {
-    if (!step) {
-      return (
-        <div className="approval-node approval-node-inactive">
-          <span className="step-agent-label">{label}</span>
-          <span className="step-badge step-badge-future">{t('approval.step_future')}</span>
-        </div>
-      );
-    }
-
-    const canAssign = canUserAssign(currentUser, step);
-    const canAct = canUserAgree(currentUser, step);
-    const isAssigning = assigningAgent === step.agent;
-
-    const isActed = step.action === 'approved' || step.action === 'rejected';
-    const displayLabel = (isActed && step.assignee_name) ? `${label} (${step.assignee_name})` : label;
-
-    return (
-      <div className={`approval-node ${step.action === 'approved' ? 'approval-node-done' : step.action === 'rejected' ? 'approval-node-rejected' : ''}`}>
-        <span className="step-agent-label">{displayLabel}</span>
-        <span className={`step-badge step-badge-${step.action}`}>
-          {step.action === 'approved'
-            ? t('approval.step_approved')
-            : step.action === 'rejected'
-            ? t('approval.step_rejected')
-            : (step.agent !== 'O' && step.agent !== 'E' && !step.assignee_loginid)
-            ? t('approval.step_unassigned')
-            : t('approval.step_pending')}
-        </span>
-        {step.acted_at && <span className="step-acted-at">{formatDate(step.acted_at)}</span>}
-        {step.comment && (
-          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: 2, display: 'block', maxWidth: 120, wordBreak: 'break-all' }}>
-            "{step.comment}"
-          </span>
-        )}
-        {/* 지정하기 버튼 (미지정 상태, 같은 팀) */}
-        {step.action === 'pending' && canAssign && !isAssigning && (
-          <div style={{ marginTop: 6 }}>
-            <button
-              className="btn btn-secondary btn-sm"
-              disabled={processing}
-              onClick={() => {
-                setAssigningAgent(step.agent);
-                setAssigningUserId('');
-                setLoadingMembers(true);
-                onLoadTeamMembers(step.agent)
-                  .then(setTeamMembers)
-                  .finally(() => setLoadingMembers(false));
-              }}
-            >
-              지정하기
-            </button>
-          </div>
-        )}
-        {/* 팀원 선택 드롭다운 */}
-        {step.action === 'pending' && isAssigning && (
-          <div style={{ display: 'flex', gap: 4, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            <select
-              value={assigningUserId}
-              onChange={(e) => setAssigningUserId(e.target.value)}
-              style={{ fontSize: '0.8rem', padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border)' }}
-            >
-              {loadingMembers
-                ? <option>로딩 중...</option>
-                : <>
-                    <option value="">선택하세요</option>
-                    {teamMembers.map((u) => (
-                      <option key={u.loginid} value={u.loginid}>{u.name}</option>
-                    ))}
-                  </>
-              }
-            </select>
-            <button
-              className="btn btn-primary btn-sm"
-              disabled={!assigningUserId || processing}
-              onClick={() => {
-                const user = teamMembers.find((u: UserWithRole) => u.loginid === assigningUserId);
-                if (user) {
-                  onAssign(step.agent, user.loginid, user.name);
-                  setAssigningAgent(null);
-                  setAssigningUserId('');
-                }
-              }}
-            >
-              확인
-            </button>
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => { setAssigningAgent(null); setAssigningUserId(''); }}
-            >
-              취소
-            </button>
-          </div>
-        )}
-        {/* 합의/반려 버튼 (담당자 본인) */}
-        {step.action === 'pending' && canAct && (
-          <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-            <button
-              className="btn btn-primary btn-sm"
-              disabled={processing}
-              onClick={() => onAgree(step.agent)}
-            >
-              {t('approval.agree')}
-            </button>
-            <button
-              className="btn btn-danger btn-sm"
-              disabled={processing}
-              onClick={() => onReject(step.agent)}
-            >
-              {t('approval.reject')}
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <div className="approval-flow">
-      <div className="approval-node approval-node-start">
-        <span className="step-agent-label">{t('common.status_submitted')}</span>
-        <span className="step-badge step-badge-approved">✓</span>
-        {doc.submitted_at && <span className="step-acted-at">{formatDate(doc.submitted_at)}</span>}
-      </div>
-      <div className="approval-connector" />
-      {renderStepBadge(rStep, t('approval.agent_R'))}
-      <div className="approval-connector" />
-      {renderStepBadge(pStep, t('approval.agent_P'))}
-      <div className="approval-connector" />
-      <div className="approval-parallel">
-        {renderStepBadge(jStep, t('approval.agent_J'))}
-        {renderStepBadge(oStep, t('approval.agent_O'))}
-        {(hasPlel || eStep) && renderStepBadge(eStep, t('approval.agent_E'))}
-      </div>
-      <div className="approval-connector" />
-      <div className={`approval-node ${doc.status === 'approved' ? 'approval-node-done' : 'approval-node-inactive'}`}>
-        <span className="step-agent-label">{t('common.status_approved')}</span>
-        {doc.status === 'approved' && <span className="step-badge step-badge-approved">{t('approval.step_done')}</span>}
-      </div>
-    </div>
-  );
-}

@@ -1821,6 +1821,73 @@ select.form-control option {
   margin-bottom: 12px;
 }
 
+/* ===== Row Split (병렬 결재 테이블) ===== */
+
+/* 병렬 구간 - 첫 번째 행: 상단 border만, 하단 border 없음 */
+.doc-row-first td {
+  border-bottom: none !important;
+}
+
+/* 병렬 구간 - 두 번째 행: 상단 border 없음, 배경 살짝 어둡게 */
+.doc-row-second td {
+  border-top: none !important;
+  background: var(--bg-card-hover) !important;
+}
+
+/* hover 시 둘 다 동일하게 */
+.doc-row-first:hover td,
+.doc-row-second:hover td {
+  background: var(--bg-secondary) !important;
+  color: var(--text-primary);
+}
+
+/* 경로 레이블 칩 */
+.path-label-chip {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.path-label-chip.path1 {
+  background: var(--accent-light);
+  color: var(--accent);
+  border: 1px solid rgba(37, 99, 235, 0.3);
+}
+
+.path-label-chip.path2 {
+  background: rgba(5, 150, 105, 0.1);
+  color: var(--success);
+  border: 1px solid rgba(5, 150, 105, 0.3);
+}
+
+/* due_date 기한 초과 */
+.due-date-overdue {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* due_date 오늘 마감 */
+.due-date-today {
+  color: var(--warning);
+  font-weight: 700;
+}
+
+/* due_date 완료된 경로 */
+.due-date-done {
+  color: var(--text-disabled);
+  text-decoration: line-through;
+}
+
+/* due_date 미확정 */
+.due-date-undecided {
+  color: var(--text-disabled);
+  font-style: italic;
+}
+
 /* ===== Approval Flow ===== */
 
 .approval-flow {
