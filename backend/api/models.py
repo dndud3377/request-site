@@ -305,6 +305,32 @@ class AdminNotice(models.Model):
     def __str__(self):
         return f"[{self.template}] {self.title} ({self.date})"
 
+class Guide(models.Model):
+    """의뢰서 작성 가이드"""
+
+    GUIDE_TYPE_CHOICES = [
+        ('feature', '기능 가이드'),
+        ('info', '정보 가이드'),
+    ]
+
+    guide_type = models.CharField(max_length=10, choices=GUIDE_TYPE_CHOICES, default='info', verbose_name='가이드 유형')
+    feature_key = models.CharField(max_length=100, null=True, blank=True, unique=True, verbose_name='기능 키')
+    title = models.CharField(max_length=200, verbose_name='제목')
+    content = models.TextField(verbose_name='내용 (HTML)')
+    author_name = models.CharField(max_length=100, verbose_name='작성자 이름')
+    author_role = models.CharField(max_length=20, verbose_name='작성자 역할')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='작성일')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일')
+
+    class Meta:
+        verbose_name = '가이드'
+        verbose_name_plural = '가이드 목록'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"[{self.guide_type}] {self.title}"
+
+
 class PhotoStepS1(models.Model):
     """line1 라인 {{request.col_step}} 정보 (스케줄러 동기화)"""
     processid = models.CharField(max_length=200, verbose_name='{{request.process_id}} ID')

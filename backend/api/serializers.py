@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory
+from .models import RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide
 
 User = get_user_model()
 
@@ -111,3 +111,10 @@ class VocHistorySerializer(serializers.ModelSerializer):
 
     def get_assignee_id(self, obj):
         return obj.assignee_id
+
+
+class GuideSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Guide
+        fields = ['id', 'guide_type', 'feature_key', 'title', 'content', 'author_name', 'author_role', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
