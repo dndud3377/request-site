@@ -179,6 +179,54 @@ def sync_form_options():
             engine.dispose()
 
 
+def sync_holidays():
+    """
+    DCQ 에서 대한민국 공휴일 데이터를 가져와 api_holiday 테이블에 저장
+    """
+    engine = None
+    try:
+        engine = get_django_engine()
+    except Exception as e:
+        logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e))
+        return
+
+    if not dcq_login_with_retry():
+        logger.error(_("[scheduler] DCQ 로그인 실패로 인해 공휴일 동기화를 중단합니다"))
+        return
+
+    dcq_id, _ = get_dcq_credentials()
+    if not dcq_id:
+        logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
+        return
+
+    try:
+        query = """
+            SELECT DISTINCT date_name, isholiday, act_date
+            FROM A.B
+        """
+        df = get_data_from_dcq(query, dcq_id)
+
+        if df is None or len(df) == 0:
+            logger.warning(_("[scheduler] 공휴일 데이터가 없습니다"))
+            return
+
+        df = df[df['isholiday'] == 'Y'].copy()
+        df['act_date'] = pd.to_datetime(df['act_date']).dt.date
+
+        with engine.begin() as db_conn:
+            db_conn.execute(text("DELETE FROM api_holiday"))
+            df[['date_name', 'isholiday', 'act_date']].to_sql(
+                'api_holiday', db_conn, if_exists='append', index=False
+            )
+
+        logger.info(_("[scheduler] 공휴일 {count}건 동기화 완료").format(count=len(df)))
+    except Exception as e:
+        logger.error(_("[scheduler] 공휴일 동기화 실패: {e}").format(e=e))
+    finally:
+        if engine:
+            engine.dispose()
+
+
 def start():
     from apscheduler.schedulers.background import BackgroundScheduler
     from apscheduler.triggers.interval import IntervalTrigger
@@ -198,9 +246,19 @@ def start():
             replace_existing=True,
         )
 
+        from apscheduler.triggers.cron import CronTrigger
+        scheduler.add_job(
+            sync_holidays,
+            trigger=CronTrigger(hour=2, minute=0),
+            id='sync_holidays',
+            name='공휴일 동기화',
+            replace_existing=True,
+        )
+
         scheduler.start()
-        logger.info(_("[scheduler] APScheduler 시작 - 1 시간 주기 DCQ 동기화 등록"))
+        logger.info(_("[scheduler] APScheduler 시작 - 1 시간 주기 DCQ 동기화 / 매일 02:00 공휴일 동기화 등록"))
 
         threading.Thread(target=sync_form_options, daemon=True).start()
+        threading.Thread(target=sync_holidays, daemon=True).start()
     except ProgrammingError as e:
         logger.warning(_("[scheduler] 테이블이 아직 생성되지 않았습니다. 마이그레이션 후 재시작됩니다: {e}").format(e=e))
