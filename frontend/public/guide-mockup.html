@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>가이드 시스템 UI 목업</title>
+  <title>가이드 시스템 UI 목업 v2</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #1a1a2e; }
@@ -11,7 +11,7 @@
     /* ── 탭 전환 ── */
     .tab-bar {
       display: flex; background: #1a1a2e; padding: 12px 24px; gap: 8px;
-      position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+      position: sticky; top: 0; z-index: 50; box-shadow: 0 2px 8px rgba(0,0,0,.3);
     }
     .tab-btn {
       padding: 8px 20px; border-radius: 8px; border: none; cursor: pointer;
@@ -20,15 +20,13 @@
     }
     .tab-btn.active { background: #4f8ef7; color: #fff; }
 
-    .screen { display: none; padding: 24px; max-width: 1200px; margin: 0 auto; }
+    /* ── 레이아웃: 패널 열리면 콘텐츠 우측 여백 ── */
+    .screen { display: none; padding: 24px; max-width: 1200px; margin: 0 auto; transition: padding-right .35s cubic-bezier(.4,0,.2,1); }
     .screen.active { display: block; }
+    body.panel-open .screen.active { padding-right: 500px; }
 
     /* ── 공통 카드 ── */
-    .card {
-      background: #fff; border-radius: 12px; padding: 24px;
-      box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 20px;
-    }
-    .card-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; color: #1a1a2e; }
+    .card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 20px; }
     label { display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }
     select, input[type=text], textarea {
       width: 100%; padding: 10px 14px; border: 1.5px solid #dde1ea; border-radius: 8px;
@@ -36,7 +34,7 @@
       transition: border-color .2s, box-shadow .2s; outline: none; margin-bottom: 16px;
     }
     select:focus, input:focus, textarea:focus { border-color: #4f8ef7; box-shadow: 0 0 0 3px rgba(79,142,247,.15); }
-    textarea { min-height: 120px; resize: vertical; }
+    textarea { min-height: 100px; resize: vertical; }
 
     /* ── 버튼 ── */
     .btn { padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; font-weight: 600; transition: all .15s; }
@@ -44,152 +42,155 @@
     .btn-primary:hover { background: #3a7ae0; transform: translateY(-1px); }
     .btn-secondary { background: #f0f2f5; color: #555; }
     .btn-secondary:hover { background: #e4e8f0; }
+    .btn-ghost { background: transparent; color: #4f8ef7; border: 1.5px solid #4f8ef7; }
+    .btn-ghost:hover { background: #eff6ff; }
     .btn-danger { background: #ff4d4f; color: #fff; }
+    .btn-danger:hover { background: #e03e40; }
     .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+    /* ─ ? 버튼 ─ */
     .btn-guide-q {
-      width: 22px; height: 22px; border-radius: 50%; background: #4f8ef7; color: #fff;
-      border: none; cursor: pointer; font-size: 12px; font-weight: 700;
+      width: 20px; height: 20px; border-radius: 50%; background: #4f8ef7; color: #fff;
+      border: none; cursor: pointer; font-size: 11px; font-weight: 800;
       display: inline-flex; align-items: center; justify-content: center;
-      margin-left: 8px; transition: all .2s; vertical-align: middle;
+      margin-left: 7px; transition: all .2s; vertical-align: middle; flex-shrink: 0;
     }
-    .btn-guide-q:hover { background: #3a7ae0; transform: scale(1.15); box-shadow: 0 2px 8px rgba(79,142,247,.4); }
+    .btn-guide-q:hover { background: #3a7ae0; transform: scale(1.2); box-shadow: 0 2px 8px rgba(79,142,247,.45); }
+
+    /* ─ 종합 가이드 버튼 ─ */
     .btn-step-guide {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 5px 13px; border-radius: 20px; font-size: 12px; font-weight: 600;
       background: linear-gradient(135deg, #667eea, #764ba2); color: #fff;
-      border: none; cursor: pointer; transition: all .2s; margin-left: 12px;
+      border: none; cursor: pointer; transition: all .2s; margin-left: 12px; flex-shrink: 0;
     }
     .btn-step-guide:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102,126,234,.4); }
 
     /* ── 목적 선택 카드 ── */
     .type-selector { display: flex; gap: 12px; margin-bottom: 20px; }
     .type-card {
-      flex: 1; padding: 20px; border: 2px solid #dde1ea; border-radius: 12px;
+      flex: 1; padding: 18px; border: 2px solid #dde1ea; border-radius: 12px;
       cursor: pointer; transition: all .2s; text-align: center; background: #fafbff;
     }
     .type-card:hover { border-color: #4f8ef7; background: #f0f6ff; }
     .type-card.selected { border-color: #4f8ef7; background: #eff6ff; box-shadow: 0 0 0 3px rgba(79,142,247,.15); }
-    .type-card .icon { font-size: 32px; margin-bottom: 8px; }
-    .type-card .name { font-size: 16px; font-weight: 700; color: #1a1a2e; }
-    .type-card .desc { font-size: 12px; color: #888; margin-top: 4px; }
-
-    /* ── Step / Feature 선택 ── */
-    .row { display: flex; gap: 16px; }
-    .row > * { flex: 1; }
-    .step-badge {
-      display: inline-block; padding: 2px 10px; border-radius: 12px;
-      font-size: 11px; font-weight: 700; background: #e8f0fe; color: #4f8ef7; margin-right: 6px;
-    }
+    .type-card .icon { font-size: 28px; margin-bottom: 6px; }
+    .type-card .name { font-size: 15px; font-weight: 700; color: #1a1a2e; }
+    .type-card .desc { font-size: 11px; color: #888; margin-top: 3px; line-height: 1.5; }
 
     /* ── 리치 에디터 목업 ── */
-    .editor-wrap { border: 1.5px solid #dde1ea; border-radius: 10px; overflow: hidden; margin-bottom: 16px; }
+    .editor-wrap { border: 1.5px solid #dde1ea; border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
     .editor-toolbar {
-      display: flex; gap: 4px; padding: 8px 12px; background: #f7f9fc; border-bottom: 1px solid #e8ecf2;
-      flex-wrap: wrap;
+      display: flex; gap: 3px; padding: 7px 10px; background: #f7f9fc; border-bottom: 1px solid #e8ecf2;
+      flex-wrap: wrap; align-items: center;
     }
     .toolbar-btn {
-      padding: 5px 9px; border: 1px solid #dde1ea; border-radius: 6px; background: #fff;
-      font-size: 12px; cursor: pointer; transition: all .15s; font-weight: 600;
+      padding: 4px 8px; border: 1px solid #dde1ea; border-radius: 5px; background: #fff;
+      font-size: 12px; cursor: pointer; transition: all .15s; font-weight: 600; white-space: nowrap;
     }
     .toolbar-btn:hover { background: #e8f0fe; border-color: #4f8ef7; color: #4f8ef7; }
-    .toolbar-sep { width: 1px; background: #dde1ea; margin: 0 4px; align-self: stretch; }
+    .toolbar-sep { width: 1px; background: #dde1ea; margin: 0 3px; align-self: stretch; min-height: 20px; }
     .editor-body {
-      min-height: 180px; padding: 14px; font-size: 14px; line-height: 1.7;
-      background: #fafbff; color: #555; cursor: text;
+      min-height: 160px; padding: 12px 14px; font-size: 14px; line-height: 1.7;
+      background: #fafbff; color: #1a1a2e; outline: none;
     }
-    .editor-body.editing { color: #1a1a2e; }
 
     /* ── GuidePage 카드 목록 ── */
-    .guide-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+    .guide-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
     .guide-card {
-      background: #fff; border-radius: 12px; padding: 18px; border: 1.5px solid #eef0f5;
-      transition: all .2s; cursor: pointer;
+      background: #fff; border-radius: 12px; padding: 16px; border: 1.5px solid #eef0f5;
+      transition: all .2s; cursor: pointer; position: relative;
     }
     .guide-card:hover { border-color: #4f8ef7; box-shadow: 0 4px 16px rgba(79,142,247,.12); transform: translateY(-2px); }
-    .guide-card .badge {
-      display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 11px; font-weight: 700;
-      margin-bottom: 8px;
+    .guide-card .card-edit-btn {
+      position: absolute; top: 10px; right: 10px;
+      padding: 3px 8px; font-size: 11px; font-weight: 600; border-radius: 6px;
+      background: #f0f2f5; color: #888; border: none; cursor: pointer;
+      opacity: 0; transition: opacity .2s;
     }
+    .guide-card:hover .card-edit-btn { opacity: 1; }
+    .guide-card .card-edit-btn:hover { background: #eff6ff; color: #4f8ef7; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 11px; font-weight: 700; margin-bottom: 8px; }
     .badge-feature { background: #eff6ff; color: #3b82f6; }
     .badge-info { background: #f0fdf4; color: #16a34a; }
-    .guide-card .g-title { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
-    .guide-card .g-preview { font-size: 13px; color: #888; line-height: 1.5; }
-    .guide-card .g-meta { font-size: 11px; color: #aaa; margin-top: 10px; }
+    .g-title { font-size: 14px; font-weight: 700; margin-bottom: 5px; }
+    .g-preview { font-size: 12px; color: #888; line-height: 1.5; }
+    .g-meta { font-size: 11px; color: #aaa; margin-top: 8px; }
 
     /* ── RequestPage 목업 ── */
     .step-header {
       display: flex; align-items: center; background: linear-gradient(135deg, #1a1a2e, #2d2d5e);
-      color: #fff; padding: 16px 24px; border-radius: 12px; margin-bottom: 20px;
+      color: #fff; padding: 14px 22px; border-radius: 12px; margin-bottom: 16px;
     }
     .step-number {
-      width: 36px; height: 36px; border-radius: 50%; background: #4f8ef7;
+      width: 34px; height: 34px; border-radius: 50%; background: #4f8ef7;
       display: flex; align-items: center; justify-content: center;
-      font-size: 16px; font-weight: 800; margin-right: 12px; flex-shrink: 0;
+      font-size: 15px; font-weight: 800; margin-right: 11px; flex-shrink: 0;
     }
-    .step-title { font-size: 18px; font-weight: 700; flex: 1; }
+    .step-title { font-size: 17px; font-weight: 700; flex: 1; }
     .form-section {
-      background: #fff; border-radius: 12px; padding: 20px 24px;
-      margin-bottom: 16px; border: 1.5px solid #eef0f5;
+      background: #fff; border-radius: 12px; padding: 18px 22px;
+      margin-bottom: 14px; border: 1.5px solid #eef0f5;
     }
     .section-header {
-      display: flex; align-items: center; margin-bottom: 14px;
-      font-size: 15px; font-weight: 700; color: #1a1a2e;
+      display: flex; align-items: center; margin-bottom: 13px;
+      font-size: 14px; font-weight: 700; color: #1a1a2e;
     }
-    .section-header .guide-indicator {
-      margin-left: 8px; font-size: 11px; font-weight: 600; color: #4f8ef7;
-      background: #eff6ff; padding: 2px 8px; border-radius: 10px;
-    }
-    .form-row { display: flex; gap: 14px; margin-bottom: 14px; }
+    .form-row { display: flex; gap: 12px; margin-bottom: 12px; }
     .form-row > * { flex: 1; }
-    .form-field label { font-size: 12px; font-weight: 600; color: #888; margin-bottom: 4px; display: flex; align-items: center; }
-    .form-field .mock-input {
-      height: 38px; background: #f7f9fc; border: 1.5px solid #e8ecf2;
-      border-radius: 8px; padding: 0 12px; display: flex; align-items: center;
-      font-size: 13px; color: #bbb;
+    .form-field label { font-size: 12px; font-weight: 600; color: #888; margin-bottom: 3px; display: flex; align-items: center; }
+    .mock-input {
+      height: 36px; background: #f7f9fc; border: 1.5px solid #e8ecf2;
+      border-radius: 8px; padding: 0 11px; display: flex; align-items: center;
+      font-size: 13px; color: #bbb; cursor: text; transition: border-color .2s;
     }
-    .form-field .mock-input.filled { color: #1a1a2e; background: #fafbff; }
+    .mock-input:focus-within, .mock-input:hover { border-color: #4f8ef7; }
+    .mock-input.filled { color: #1a1a2e; background: #fafbff; }
 
-    /* ── 슬라이드 패널 ── */
-    .overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,.4);
-      opacity: 0; pointer-events: none; transition: opacity .3s; z-index: 200;
-    }
-    .overlay.open { opacity: 1; pointer-events: all; }
+    /* ── 슬라이드 패널 (오버레이 없음 — 폼 조작 가능) ── */
     .slide-panel {
-      position: fixed; top: 0; right: 0; bottom: 0; width: 480px;
-      background: #fff; box-shadow: -8px 0 32px rgba(0,0,0,.15);
+      position: fixed; top: 56px; right: 0; bottom: 0; width: 480px;
+      background: #fff; box-shadow: -6px 0 24px rgba(0,0,0,.12);
       transform: translateX(100%); transition: transform .35s cubic-bezier(.4,0,.2,1);
-      z-index: 201; display: flex; flex-direction: column; overflow: hidden;
+      z-index: 40; display: flex; flex-direction: column; overflow: hidden;
+      border-left: 1.5px solid #e8ecf2;
     }
     .slide-panel.open { transform: translateX(0); }
     .panel-header {
-      padding: 20px 24px; background: linear-gradient(135deg, #1a1a2e, #2d2d5e);
-      color: #fff; display: flex; align-items: center; gap: 12px;
+      padding: 16px 20px; background: linear-gradient(135deg, #1a1a2e, #2d2d5e);
+      color: #fff; display: flex; align-items: center; gap: 10px; flex-shrink: 0;
     }
-    .panel-header h3 { flex: 1; font-size: 16px; font-weight: 700; }
+    .panel-header h3 { flex: 1; font-size: 15px; font-weight: 700; }
     .panel-close {
-      width: 32px; height: 32px; border-radius: 8px; background: rgba(255,255,255,.15);
-      border: none; color: #fff; cursor: pointer; font-size: 18px;
+      width: 30px; height: 30px; border-radius: 8px; background: rgba(255,255,255,.15);
+      border: none; color: #fff; cursor: pointer; font-size: 16px;
       display: flex; align-items: center; justify-content: center; transition: background .2s;
     }
-    .panel-close:hover { background: rgba(255,255,255,.25); }
-    .panel-body { flex: 1; overflow-y: auto; padding: 20px 24px; }
-    .guide-item { margin-bottom: 16px; border: 1.5px solid #eef0f5; border-radius: 10px; overflow: hidden; }
+    .panel-close:hover { background: rgba(255,255,255,.28); }
+    .panel-subheader {
+      padding: 10px 20px; background: #f7f9fc; border-bottom: 1px solid #e8ecf2;
+      font-size: 12px; color: #888; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+    }
+    .panel-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+    .guide-item { margin-bottom: 12px; border: 1.5px solid #eef0f5; border-radius: 10px; overflow: hidden; }
     .guide-item-header {
-      padding: 14px 16px; background: #f7f9fc; cursor: pointer;
+      padding: 12px 14px; background: #f7f9fc; cursor: pointer;
       display: flex; align-items: center; justify-content: space-between;
-      font-size: 14px; font-weight: 700; color: #1a1a2e; transition: background .2s;
+      font-size: 13px; font-weight: 700; color: #1a1a2e; transition: background .2s;
+      user-select: none;
     }
     .guide-item-header:hover { background: #eff6ff; }
-    .guide-item-body { padding: 14px 16px; font-size: 14px; line-height: 1.8; color: #444; display: none; }
+    .guide-item-body { padding: 12px 14px; font-size: 13px; line-height: 1.8; color: #444; display: none; border-top: 1px solid #eef0f5; }
     .guide-item-body.open { display: block; }
-    .guide-item-body img { max-width: 100%; border-radius: 8px; margin: 8px 0; }
-    .chevron { transition: transform .2s; }
+    .guide-item-body img { max-width: 100%; border-radius: 8px; margin: 6px 0; }
+    .chevron { transition: transform .2s; font-size: 11px; color: #aaa; }
     .chevron.open { transform: rotate(180deg); }
-    .empty-guide {
-      text-align: center; padding: 48px 24px; color: #aaa;
+    .empty-guide { text-align: center; padding: 40px 20px; color: #bbb; }
+    .empty-guide .empty-icon { font-size: 42px; margin-bottom: 10px; }
+    .panel-hint {
+      padding: 10px 20px; background: #fffbeb; border-top: 1px solid #fde68a;
+      font-size: 11px; color: #92400e; display: flex; align-items: center; gap: 6px; flex-shrink: 0;
     }
-    .empty-guide .empty-icon { font-size: 48px; margin-bottom: 12px; }
 
     /* ── 모달 ── */
     .modal-backdrop {
@@ -198,33 +199,70 @@
     }
     .modal-backdrop.open { display: flex; }
     .modal {
-      background: #fff; border-radius: 16px; padding: 28px; width: 640px; max-width: 95vw;
+      background: #fff; border-radius: 16px; padding: 26px; width: 660px; max-width: 95vw;
       max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.25);
-      animation: modalIn .25s ease;
+      animation: modalIn .22s ease;
     }
     @keyframes modalIn { from { opacity:0; transform: scale(.95) translateY(10px); } to { opacity:1; transform: scale(1); } }
-    .modal-title { font-size: 20px; font-weight: 800; margin-bottom: 24px; color: #1a1a2e; }
-    .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+    .modal-title { font-size: 18px; font-weight: 800; margin-bottom: 20px; color: #1a1a2e; display: flex; align-items: center; gap: 8px; }
+    .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; padding-top: 16px; border-top: 1px solid #f0f2f5; }
 
-    /* ── 숨김/표시 ── */
+    /* ── 정보 가이드 상세 모달 ── */
+    .info-detail-content {
+      background: #f7f9fc; border-radius: 10px; padding: 16px; min-height: 120px;
+      font-size: 14px; line-height: 1.8; color: #333;
+    }
+    .info-detail-meta { font-size: 12px; color: #aaa; margin-top: 14px; display: flex; gap: 16px; }
+
+    /* ── row 유틸 ── */
+    .row { display: flex; gap: 14px; }
+    .row > * { flex: 1; }
+
+    /* ── 숨김/표시/애니메이션 ── */
     .hidden { display: none !important; }
-    .fade-in { animation: fadeIn .3s ease; }
-    @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+    .fade-in { animation: fadeIn .25s ease; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
 
     /* ── 노트 ── */
     .note-box {
       background: #fffbeb; border: 1.5px solid #fcd34d; border-radius: 8px;
-      padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #92400e;
+      padding: 11px 15px; margin-bottom: 18px; font-size: 13px; color: #92400e;
     }
+
+    /* ── toast ── */
+    #toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: #1a1a2e; color: #fff; padding: 11px 22px; border-radius: 10px;
+      font-size: 13px; font-weight: 600; opacity: 0; transition: all .3s;
+      z-index: 500; pointer-events: none;
+    }
+
+    /* ── 이모티콘 팝업 ── */
+    #emoji-popup {
+      background: #fff; border: 1.5px solid #dde1ea; border-radius: 12px;
+      padding: 10px; display: flex; flex-wrap: wrap; gap: 5px;
+      margin-bottom: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
+    }
+    #emoji-popup span { font-size: 20px; cursor: pointer; padding: 2px; border-radius: 4px; transition: background .15s; }
+    #emoji-popup span:hover { background: #f0f2f5; }
+
+    /* ── 사이드바 아이템 ── */
+    .sidebar-item {
+      padding: 8px 12px; border-radius: 8px; cursor: pointer;
+      font-size: 13px; font-weight: 600; color: #555; margin-bottom: 3px;
+      transition: all .15s;
+    }
+    .sidebar-item:hover { background: #f0f6ff; color: #4f8ef7; }
+    .sidebar-item.active { background: #eff6ff; color: #4f8ef7; }
   </style>
 </head>
 <body>
 
 <!-- 탭 전환 바 -->
 <div class="tab-bar">
-  <span style="color:#fff;font-weight:800;font-size:16px;margin-right:12px;">🗂 UI 목업</span>
-  <button class="tab-btn active" onclick="switchTab('guide-page')">📖 가이드 작성 페이지</button>
-  <button class="tab-btn" onclick="switchTab('request-page')">📝 의뢰서 작성 페이지</button>
+  <span style="color:#fff;font-weight:800;font-size:15px;margin-right:10px;">🗂 UI 목업 v2</span>
+  <button class="tab-btn active" onclick="switchTab('guide-page', this)">📖 가이드 작성 페이지</button>
+  <button class="tab-btn" onclick="switchTab('request-page', this)">📝 의뢰서 작성 페이지</button>
 </div>
 
 <!-- =====================================================================
@@ -232,57 +270,91 @@
      ===================================================================== -->
 <div id="guide-page" class="screen active">
   <div class="note-box">
-    💡 <strong>시나리오:</strong> 관리자가 가이드를 작성합니다. "가이드 작성" 버튼을 클릭해 보세요.
+    💡 <strong>시나리오:</strong> "가이드 작성" 버튼으로 새 가이드를 작성하거나, 카드를 클릭해 내용 확인·수정을 해보세요.
   </div>
 
   <!-- 헤더 -->
-  <div class="card" style="display:flex;align-items:center;justify-content:space-between;">
+  <div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:18px 22px;">
     <div>
-      <div style="font-size:22px;font-weight:800;">📚 가이드 관리</div>
-      <div style="color:#888;font-size:13px;margin-top:4px;">의뢰서 작성 가이드를 관리합니다</div>
+      <div style="font-size:20px;font-weight:800;">📚 가이드 관리</div>
+      <div style="color:#888;font-size:13px;margin-top:3px;">의뢰서 작성 가이드를 등록·관리합니다</div>
     </div>
-    <button class="btn btn-primary" onclick="openWriteModal()">+ 가이드 작성</button>
+    <button class="btn btn-primary" onclick="openWriteModal(null)">+ 가이드 작성</button>
   </div>
 
   <!-- 필터 + 목록 -->
-  <div style="display:flex;gap:20px;">
+  <div style="display:flex;gap:18px;">
     <!-- 사이드바 -->
-    <div style="width:200px;flex-shrink:0;">
-      <div class="card" style="padding:16px;">
-        <div style="font-size:13px;font-weight:700;color:#888;margin-bottom:12px;">CATEGORY</div>
-        <div class="sidebar-item active" onclick="filterGuides('all',this)" style="padding:8px 12px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;background:#eff6ff;color:#4f8ef7;margin-bottom:4px;">전체</div>
-        <div class="sidebar-item" onclick="filterGuides('feature',this)" style="padding:8px 12px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;color:#555;margin-bottom:4px;">⚙️ 기능 가이드</div>
-        <div class="sidebar-item" onclick="filterGuides('info',this)" style="padding:8px 12px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;color:#555;margin-bottom:4px;">📌 정보 가이드</div>
+    <div style="width:180px;flex-shrink:0;">
+      <div class="card" style="padding:14px;">
+        <div style="font-size:11px;font-weight:700;color:#aaa;margin-bottom:10px;letter-spacing:.5px;">CATEGORY</div>
+        <div class="sidebar-item active" onclick="filterGuides('all',this)">전체</div>
+        <div class="sidebar-item" onclick="filterGuides('feature',this)">⚙️ 기능 가이드</div>
+        <div class="sidebar-item" onclick="filterGuides('info',this)">📌 정보 가이드</div>
       </div>
     </div>
 
     <!-- 카드 그리드 -->
     <div style="flex:1;">
       <div class="guide-grid" id="guide-list">
-        <div class="guide-card" data-type="feature">
+
+        <!-- 기능 가이드 카드 예시 -->
+        <div class="guide-card" data-type="feature" data-key="step1_line_process"
+             data-step="1" data-feature="라인/공정/조리법 선택"
+             data-content="<p>💡 <strong>선택 순서: 라인 → 공정 → Part ID → Process ID</strong></p><p>라인을 먼저 선택해야 공정 드롭다운이 활성화됩니다.</p><p>⚠️ 라인 변경 시 이하 선택 값이 초기화됩니다.</p>"
+             onclick="handleCardClick(this)">
+          <button class="card-edit-btn" onclick="event.stopPropagation();openWriteModal(this.parentElement)">✏️ 수정</button>
           <span class="badge badge-feature">⚙️ 기능 · Step 1</span>
-          <div class="g-title">라인/공정/조리법 선택 방법</div>
-          <div class="g-preview">라인은 생산 라인을 의미하며, 드롭다운에서 선택 후 공정을 연속으로 선택합니다...</div>
+          <div class="g-title">라인/공정/조리법 선택 가이드</div>
+          <div class="g-preview">라인 선택 후 공정 드롭다운이 활성화되며, Part ID → Process ID 순서로 선택합니다...</div>
           <div class="g-meta">홍길동 · 2025-06-05</div>
         </div>
-        <div class="guide-card" data-type="feature">
+
+        <div class="guide-card" data-type="feature" data-key="step2_cfamily"
+             data-step="2" data-feature="Only C가문 설정"
+             data-content="<p>📌 C가문(C-family) 제품에만 해당하는 옵션입니다.</p><p>North / Middle / South 영역별로 적용할 제품을 선택합니다.<br>💡 해당 없는 영역은 비워두면 됩니다.</p>"
+             onclick="handleCardClick(this)">
+          <button class="card-edit-btn" onclick="event.stopPropagation();openWriteModal(this.parentElement)">✏️ 수정</button>
           <span class="badge badge-feature">⚙️ 기능 · Step 2</span>
           <div class="g-title">Only C가문 설정 가이드</div>
-          <div class="g-preview">C가문 제품만 해당하는 옵션입니다. North/Middle/South 영역별 제품을 선택합니다...</div>
+          <div class="g-preview">C가문 제품만 해당하는 옵션. North/Middle/South 영역별 제품을 선택합니다...</div>
           <div class="g-meta">이순신 · 2025-06-04</div>
         </div>
-        <div class="guide-card" data-type="info">
+
+        <div class="guide-card" data-type="feature" data-key="step3_jayer_filter"
+             data-step="3" data-feature="필터 관리"
+             data-content="<p>🔍 <strong>필터 관리</strong>는 SP/SD/PP 키워드 기반으로 특정 Row를 자동 비활성화합니다.</p><p>👉 필터 추가 → 키워드 입력 → 활성화 버튼으로 적용</p><p>⚠️ 저장된 필터는 localStorage에 유지됩니다.</p>"
+             onclick="handleCardClick(this)">
+          <button class="card-edit-btn" onclick="event.stopPropagation();openWriteModal(this.parentElement)">✏️ 수정</button>
+          <span class="badge badge-feature">⚙️ 기능 · Step 3</span>
+          <div class="g-title">J-ayer 필터 관리 사용법</div>
+          <div class="g-preview">SP/SD/PP 키워드를 기반으로 특정 Row를 자동으로 비활성화하는 기능입니다...</div>
+          <div class="g-meta">홍길동 · 2025-06-03</div>
+        </div>
+
+        <!-- 정보 가이드 카드 예시 -->
+        <div class="guide-card" data-type="info"
+             data-title="의뢰서 승인 프로세스 안내"
+             data-content="<p>📋 <strong>의뢰서 결재 프로세스</strong></p><p>① 의뢰서 작성 및 제출</p><p>② 1차 팀장 검토 및 승인</p><p>③ 2차 부서장 최종 결재</p><p>④ 승인 완료 → 담당자에게 이메일 알림 발송</p><p><br>⏱ 평균 소요 시간: 영업일 기준 2~3일</p><p>⚠️ 반려 시 사유가 명시되며, 의뢰서 수정 후 재제출이 가능합니다.</p>"
+             onclick="handleCardClick(this)">
+          <button class="card-edit-btn" onclick="event.stopPropagation();openWriteModal(this.parentElement)">✏️ 수정</button>
           <span class="badge badge-info">📌 정보</span>
           <div class="g-title">의뢰서 승인 프로세스 안내</div>
           <div class="g-preview">의뢰서 제출 후 1차 팀장, 2차 부서장 순서로 결재가 진행됩니다...</div>
           <div class="g-meta">관리자 · 2025-06-03</div>
         </div>
-        <div class="guide-card" data-type="feature">
-          <span class="badge badge-feature">⚙️ 기능 · Step 3</span>
-          <div class="g-title">J-ayer 필터 관리 사용법</div>
-          <div class="g-preview">SP/SD/PP 키워드를 기반으로 특정 Row를 자동으로 비활성화하는 기능입니다...</div>
-          <div class="g-meta">홍길동 · 2025-06-02</div>
+
+        <div class="guide-card" data-type="info"
+             data-title="MAP 용어 정의 모음"
+             data-content="<p>📖 <strong>MAP 관련 주요 용어</strong></p><p>✅ <strong>NEW</strong>: 완전 신규 MAP을 생성하는 경우</p><p>✅ <strong>CLONE</strong>: 기존 MAP을 복사하여 수정하는 경우</p><p>✅ <strong>EXISTING</strong>: 기존 MAP을 그대로 재사용하는 경우</p><p>✅ <strong>REV</strong>: MAP의 개정(Revision) 버전</p><p>✅ <strong>X mark</strong>: 웨이퍼 상의 불량 위치 표시</p><p>✅ <strong>C가문</strong>: C-family 공정 그룹 (North/Middle/South 영역 구분)</p>"
+             onclick="handleCardClick(this)">
+          <button class="card-edit-btn" onclick="event.stopPropagation();openWriteModal(this.parentElement)">✏️ 수정</button>
+          <span class="badge badge-info">📌 정보</span>
+          <div class="g-title">MAP 용어 정의 모음</div>
+          <div class="g-preview">NEW, CLONE, EXISTING, REV, X mark 등 MAP 관련 주요 용어를 정리합니다...</div>
+          <div class="g-meta">관리자 · 2025-06-01</div>
         </div>
+
       </div>
     </div>
   </div>
@@ -293,7 +365,7 @@
      ===================================================================== -->
 <div id="request-page" class="screen">
   <div class="note-box">
-    💡 <strong>시나리오:</strong> 의뢰서 작성 중 파란 <strong>?</strong> 버튼을 클릭하거나 <strong>📖 종합 가이드</strong> 버튼을 눌러보세요.
+    💡 <strong>시나리오:</strong> 파란 <strong>?</strong> 버튼 클릭 → 우측 슬라이드 패널 오픈. <strong>패널이 열린 상태에서도 폼을 수정할 수 있습니다.</strong>
   </div>
 
   <!-- Step 1 헤더 -->
@@ -305,12 +377,11 @@
     </button>
   </div>
 
-  <!-- 라인/공정 선택 섹션 -->
+  <!-- 라인/공정 섹션 -->
   <div class="form-section">
     <div class="section-header">
       라인 / 공정 / 조리법 선택
       <button class="btn-guide-q" title="가이드 보기" onclick="openSlidePanel('step1_line_process','라인/공정/조리법 선택')">?</button>
-      <span class="guide-indicator">가이드 1건</span>
     </div>
     <div class="form-row">
       <div class="form-field">
@@ -322,39 +393,49 @@
         <div class="mock-input filled">Logic / 28nm</div>
       </div>
       <div class="form-field">
-        <label>Part ID (제품명) <span style="color:#ff4d4f">*</span></label>
+        <label>Part ID <span style="color:#ff4d4f">*</span></label>
         <div class="mock-input">선택하세요</div>
       </div>
-    </div>
-    <div class="form-row">
       <div class="form-field">
-        <label>Process ID (조리법) <span style="color:#ff4d4f">*</span></label>
-        <div class="mock-input">자동 완성...</div>
+        <label>Process ID <span style="color:#ff4d4f">*</span></label>
+        <div class="mock-input">자동완성...</div>
       </div>
-      <div class="form-field"></div>
-      <div class="form-field"></div>
     </div>
   </div>
 
-  <!-- 의뢰 목적 섹션 — 가이드 없음 (? 버튼 미표시) -->
+  <!-- 의뢰 목적 섹션 — ? 버튼 없음 (가이드 미등록) -->
   <div class="form-section">
-    <div class="section-header">
-      의뢰 목적
-      <!-- 가이드 없어서 ? 버튼 없음 -->
-    </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px;font-weight:500;">
+    <div class="section-header">의뢰 목적</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:0;">
         <input type="radio" name="purpose" checked> 신규
       </label>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px;font-weight:500;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:0;">
         <input type="radio" name="purpose"> 차용
       </label>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px;font-weight:500;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:0;">
         <input type="radio" name="purpose"> 신규+차용
       </label>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px;font-weight:500;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:0;">
         <input type="radio" name="purpose"> MAP 변경
       </label>
+    </div>
+    <div style="margin-top:10px;">
+      <div style="font-size:12px;font-weight:700;color:#888;margin-bottom:8px;">기타 목적</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12px;font-weight:500;margin-bottom:0;">
+          <input type="checkbox"> Layer 추가/삭제
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12px;font-weight:500;margin-bottom:0;">
+          <input type="checkbox"> STEPSEQ 변경
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12px;font-weight:500;margin-bottom:0;">
+          <input type="checkbox"> 공법 추가/변경
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12px;font-weight:500;margin-bottom:0;">
+          <input type="checkbox"> Overlay/ADI CD 변경
+        </label>
+      </div>
     </div>
   </div>
 
@@ -363,14 +444,13 @@
     <div class="section-header">
       BB 조합 구역 (Backbone)
       <button class="btn-guide-q" title="가이드 보기" onclick="openSlidePanel('step1_bb_entry','BB 조합 구역 입력')">?</button>
-      <span class="guide-indicator">가이드 2건</span>
     </div>
-    <div style="background:#f7f9fc;border-radius:8px;padding:14px;font-size:13px;color:#888;border:1.5px dashed #dde1ea;">
-      + BB 조합 구역 추가 버튼 클릭...
+    <div style="background:#f7f9fc;border-radius:8px;padding:12px;font-size:13px;color:#bbb;border:1.5px dashed #dde1ea;text-align:center;">
+      + BB 조합 구역 행 추가
     </div>
   </div>
 
-  <div style="height:20px;"></div>
+  <div style="height:18px;"></div>
 
   <!-- Step 2 헤더 -->
   <div class="step-header">
@@ -386,27 +466,54 @@
     <div class="section-header">
       MAP 유형 설정
       <button class="btn-guide-q" title="가이드 보기" onclick="openSlidePanel('step2_map_type','MAP 유형 설정')">?</button>
-      <span class="guide-indicator">가이드 1건</span>
     </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px;font-weight:500;">
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:0;">
         <input type="radio" name="map" checked> NEW
       </label>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px;font-weight:500;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:0;">
         <input type="radio" name="map"> CLONE
       </label>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px;font-weight:500;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:0;">
         <input type="radio" name="map"> EXISTING
       </label>
     </div>
   </div>
 
-  <!-- Only C가문 섹션 -->
+  <!-- 원본 위치/제품 섹션 (CLONE 시 표시) -->
+  <div class="form-section">
+    <div class="section-header">
+      원본 위치 / 원본 제품
+      <!-- 가이드 미등록 예시 — ? 버튼 없음 -->
+    </div>
+    <div class="form-row">
+      <div class="form-field">
+        <label>원본 위치 (Source Location)</label>
+        <div class="mock-input">선택하세요</div>
+      </div>
+      <div class="form-field">
+        <label>원본 제품 (Source Part ID)</label>
+        <div class="mock-input">선택하세요</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 예외 구역 변경 -->
+  <div class="form-section">
+    <div class="section-header">
+      예외 구역 변경
+      <!-- 가이드 미등록 예시 — ? 버튼 없음 -->
+    </div>
+    <div style="background:#f7f9fc;border-radius:8px;padding:12px;font-size:13px;color:#bbb;border:1.5px dashed #dde1ea;text-align:center;">
+      + 예외 구역 행 추가
+    </div>
+  </div>
+
+  <!-- Only C가문 설정 -->
   <div class="form-section">
     <div class="section-header">
       Only C가문 설정
       <button class="btn-guide-q" title="가이드 보기" onclick="openSlidePanel('step2_cfamily','Only C가문 설정')">?</button>
-      <span class="guide-indicator">가이드 1건</span>
     </div>
     <div class="form-row">
       <div class="form-field">
@@ -423,35 +530,60 @@
       </div>
     </div>
   </div>
+
+  <div style="height:18px;"></div>
+
+  <!-- Step 4 헤더 (예시) -->
+  <div class="step-header">
+    <div class="step-number">4</div>
+    <div class="step-title">O-ayer 정보</div>
+    <button class="btn-step-guide" onclick="openSlidePanel('step4','Step 4 종합 가이드')">
+      📖 종합 가이드
+    </button>
+  </div>
+
+  <!-- Partial Shot 섹션 -->
+  <div class="form-section">
+    <div class="section-header">
+      Partial Shot 측정 여부
+      <!-- 가이드 미등록 예시 — ? 버튼 없음 -->
+    </div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:0;">
+        <input type="radio" name="partial" checked> O (측정)
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:0;">
+        <input type="radio" name="partial"> X (미측정)
+      </label>
+    </div>
+  </div>
 </div>
 
 <!-- =====================================================================
-     모달: 가이드 작성
+     모달: 가이드 작성 / 수정
      ===================================================================== -->
-<div class="modal-backdrop" id="write-modal">
-  <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-title">✍️ 가이드 작성</div>
+<div class="modal-backdrop" id="write-modal" onclick="if(event.target===this)closeWriteModal()">
+  <div class="modal">
+    <div class="modal-title" id="write-modal-title">✍️ 가이드 작성</div>
 
-    <!-- STEP A: 목적 선택 -->
+    <!-- 목적 선택 -->
     <div id="modal-step-purpose">
-      <div style="margin-bottom:16px;font-size:14px;color:#555;">
-        어떤 종류의 가이드를 작성하시겠습니까?
-      </div>
+      <div style="margin-bottom:14px;font-size:13px;color:#666;">어떤 종류의 가이드를 작성하시겠습니까?</div>
       <div class="type-selector">
         <div class="type-card" id="type-feature" onclick="selectType('feature')">
           <div class="icon">⚙️</div>
           <div class="name">기능 가이드</div>
-          <div class="desc">의뢰서의 특정 기능에 연결<br>해당 기능 옆 ? 버튼으로 표시</div>
+          <div class="desc">의뢰서 특정 기능에 연결<br>? 버튼으로 표시됨</div>
         </div>
         <div class="type-card" id="type-info" onclick="selectType('info')">
           <div class="icon">📌</div>
           <div class="name">정보 가이드</div>
-          <div class="desc">독립적인 정보성 문서<br>가이드 목록에서 열람</div>
+          <div class="desc">독립 정보성 문서<br>가이드 목록에서 열람</div>
         </div>
       </div>
     </div>
 
-    <!-- STEP B-1: 기능 선택 (기능 선택 시) -->
+    <!-- 기능 선택 (기능 타입) -->
     <div id="modal-step-feature" class="hidden fade-in">
       <div class="row">
         <div>
@@ -467,68 +599,54 @@
         </div>
         <div>
           <label>기능 선택 <span style="color:#ff4d4f">*</span></label>
-          <select id="feature-select">
+          <select id="feature-select" onchange="checkEditorContent()">
             <option value="">-- Step을 먼저 선택하세요 --</option>
           </select>
         </div>
       </div>
     </div>
 
-    <!-- STEP B-2: 제목 (정보 선택 시) -->
+    <!-- 제목 (정보 타입) -->
     <div id="modal-step-title" class="hidden fade-in">
       <label>제목 <span style="color:#ff4d4f">*</span></label>
-      <input type="text" placeholder="가이드 제목을 입력하세요">
+      <input type="text" id="info-title-input" placeholder="가이드 제목을 입력하세요" oninput="checkEditorContent()">
     </div>
 
-    <!-- STEP C: 에디터 (공통, 목적 선택 후 표시) -->
+    <!-- 에디터 (공통) -->
     <div id="modal-step-editor" class="hidden fade-in">
       <label>내용 <span style="color:#ff4d4f">*</span></label>
       <div class="editor-wrap">
-        <!-- 툴바 -->
         <div class="editor-toolbar">
-          <button class="toolbar-btn" title="Bold"><b>B</b></button>
-          <button class="toolbar-btn" title="Italic"><i>I</i></button>
-          <button class="toolbar-btn" title="Underline"><u>U</u></button>
+          <button class="toolbar-btn"><b>B</b></button>
+          <button class="toolbar-btn"><i>I</i></button>
+          <button class="toolbar-btn"><u>U</u></button>
           <div class="toolbar-sep"></div>
           <button class="toolbar-btn">H1</button>
           <button class="toolbar-btn">H2</button>
           <button class="toolbar-btn">H3</button>
           <div class="toolbar-sep"></div>
-          <button class="toolbar-btn" title="정렬: 왼쪽">≡</button>
-          <button class="toolbar-btn" title="정렬: 가운데">≡</button>
+          <button class="toolbar-btn">≡ 좌</button>
+          <button class="toolbar-btn">≡ 중</button>
           <div class="toolbar-sep"></div>
-          <button class="toolbar-btn" title="불릿 목록">• 목록</button>
-          <button class="toolbar-btn" title="번호 목록">1. 목록</button>
+          <button class="toolbar-btn">• 목록</button>
+          <button class="toolbar-btn">1. 목록</button>
           <div class="toolbar-sep"></div>
-          <button class="toolbar-btn" title="이모티콘 삽입" onclick="insertEmoji()">😊 이모티콘</button>
-          <button class="toolbar-btn" title="이미지 업로드">🖼 이미지</button>
+          <button class="toolbar-btn" onclick="toggleEmojiPopup()">😊 이모티콘</button>
+          <button class="toolbar-btn">🖼 이미지</button>
         </div>
-        <!-- 에디터 바디 -->
-        <div class="editor-body editing" contenteditable="true" id="editor-body"
-          style="outline:none;"
-          onInput="checkEditorContent()">
-        </div>
+        <div class="editor-body" contenteditable="true" id="editor-body"
+             oninput="checkEditorContent()"></div>
       </div>
-      <div style="font-size:12px;color:#aaa;">📎 이미지를 에디터에 직접 붙여넣기(Ctrl+V)할 수 있습니다.</div>
-    </div>
-
-    <!-- 이모티콘 팝업 -->
-    <div id="emoji-popup" class="hidden" style="
-      background:#fff;border:1.5px solid #dde1ea;border-radius:12px;
-      padding:12px;display:flex;flex-wrap:wrap;gap:6px;margin-top:-10px;margin-bottom:12px;
-      box-shadow:0 4px 16px rgba(0,0,0,.12);">
-      <span style="font-size:22px;cursor:pointer;" onclick="pickEmoji('✅')">✅</span>
-      <span style="font-size:22px;cursor:pointer;" onclick="pickEmoji('⚠️')">⚠️</span>
-      <span style="font-size:22px;cursor:pointer;" onclick="pickEmoji('📌')">📌</span>
-      <span style="font-size:22px;cursor:pointer;" onclick="pickEmoji('💡')">💡</span>
-      <span style="font-size:22px;cursor:pointer;" onclick="pickEmoji('🔍')">🔍</span>
-      <span style="font-size:22px;cursor:pointer;" onclick="pickEmoji('📝')">📝</span>
-      <span style="font-size:22px;cursor:pointer;" onclick="pickEmoji('🚨')">🚨</span>
-      <span style="font-size:22px;cursor:pointer;" onclick="pickEmoji('✨')">✨</span>
-      <span style="font-size:22px;cursor:pointer;" onclick="pickEmoji('👉')">👉</span>
-      <span style="font-size:22px;cursor:pointer;" onclick="pickEmoji('❌')">❌</span>
-      <span style="font-size:22px;cursor:pointer;" onclick="pickEmoji('🎯')">🎯</span>
-      <span style="font-size:22px;cursor:pointer;" onclick="pickEmoji('📊')">📊</span>
+      <div id="emoji-popup" class="hidden">
+        <span onclick="pickEmoji('✅')">✅</span><span onclick="pickEmoji('⚠️')">⚠️</span>
+        <span onclick="pickEmoji('📌')">📌</span><span onclick="pickEmoji('💡')">💡</span>
+        <span onclick="pickEmoji('🔍')">🔍</span><span onclick="pickEmoji('📝')">📝</span>
+        <span onclick="pickEmoji('🚨')">🚨</span><span onclick="pickEmoji('✨')">✨</span>
+        <span onclick="pickEmoji('👉')">👉</span><span onclick="pickEmoji('❌')">❌</span>
+        <span onclick="pickEmoji('🎯')">🎯</span><span onclick="pickEmoji('📊')">📊</span>
+        <span onclick="pickEmoji('🔧')">🔧</span><span onclick="pickEmoji('📋')">📋</span>
+      </div>
+      <div style="font-size:11px;color:#aaa;margin-top:-6px;">📎 이미지를 에디터에 직접 Ctrl+V로 붙여넣기할 수 있습니다.</div>
     </div>
 
     <div class="modal-footer">
@@ -539,50 +657,95 @@
 </div>
 
 <!-- =====================================================================
-     슬라이드 패널
+     모달: 정보 가이드 상세 보기
      ===================================================================== -->
-<div class="overlay" id="overlay" onclick="closeSlidePanel()"></div>
+<div class="modal-backdrop" id="info-detail-modal" onclick="if(event.target===this)closeInfoModal()">
+  <div class="modal" style="width:600px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div class="modal-title" id="info-detail-title" style="margin-bottom:0;">📌 정보 가이드</div>
+      <button class="btn btn-ghost btn-sm" onclick="editFromDetail()">✏️ 수정</button>
+    </div>
+    <div class="info-detail-content" id="info-detail-content"></div>
+    <div class="info-detail-meta" id="info-detail-meta"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeInfoModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- =====================================================================
+     슬라이드 패널 (오버레이 없음 — 폼 조작 가능)
+     ===================================================================== -->
 <div class="slide-panel" id="slide-panel">
   <div class="panel-header">
-    <div style="font-size:20px;">📖</div>
+    <div style="font-size:18px;">📖</div>
     <h3 id="panel-title">가이드</h3>
     <button class="panel-close" onclick="closeSlidePanel()">✕</button>
   </div>
+  <div class="panel-subheader">
+    <span>가이드 내용을 확인하면서 폼을 작성할 수 있습니다</span>
+  </div>
   <div class="panel-body" id="panel-body"></div>
+  <div class="panel-hint">💡 패널 외부 폼 영역을 클릭하면 바로 입력 가능합니다</div>
 </div>
 
-<!-- 가이드 저장 성공 toast -->
-<div id="toast" style="
-  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
-  background:#1a1a2e;color:#fff;padding:12px 24px;border-radius:10px;font-size:14px;
-  font-weight:600;opacity:0;transition:all .3s;z-index:500;pointer-events:none;">
-  ✅ 가이드가 저장되었습니다
-</div>
+<!-- toast -->
+<div id="toast">✅ 가이드가 저장되었습니다</div>
 
 <script>
 // ── 탭 전환 ──
-function switchTab(id) {
+function switchTab(id, btn) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(id).classList.add('active');
-  event.target.classList.add('active');
+  btn.classList.add('active');
+  // 패널 닫기
+  closeSlidePanel();
 }
 
 // ── 카드 필터 ──
 function filterGuides(type, el) {
-  document.querySelectorAll('.sidebar-item').forEach(s => {
-    s.style.background=''; s.style.color='#555';
-  });
-  el.style.background='#eff6ff'; el.style.color='#4f8ef7';
+  document.querySelectorAll('.sidebar-item').forEach(s => s.classList.remove('active'));
+  el.classList.add('active');
   document.querySelectorAll('.guide-card').forEach(c => {
     c.style.display = (type==='all' || c.dataset.type===type) ? '' : 'none';
   });
 }
 
-// ── 가이드 작성 모달 ──
+// ── 카드 클릭: 기능=슬라이드패널(수정모드 없음), 정보=상세모달 ──
+let currentDetailCard = null;
+function handleCardClick(card) {
+  if (card.dataset.type === 'feature') {
+    // 기능 가이드는 슬라이드 패널로 바로 열기 (GuidePage에서는 수정 버튼 별도)
+    openSlidePanelWithData(card.dataset.key, card.querySelector('.g-title').textContent, card.dataset.content);
+  } else {
+    // 정보 가이드는 상세 모달
+    currentDetailCard = card;
+    document.getElementById('info-detail-title').textContent = '📌 ' + card.dataset.title;
+    document.getElementById('info-detail-content').innerHTML = card.dataset.content;
+    document.getElementById('info-detail-meta').innerHTML = `<span>작성자: ${card.querySelector('.g-meta').textContent}</span>`;
+    document.getElementById('info-detail-modal').classList.add('open');
+  }
+}
+
+function closeInfoModal() {
+  document.getElementById('info-detail-modal').classList.remove('open');
+}
+
+function editFromDetail() {
+  closeInfoModal();
+  if (currentDetailCard) openWriteModal(currentDetailCard);
+}
+
+// ── 가이드 작성/수정 모달 ──
 let selectedType = null;
-function openWriteModal() {
+let editingCard = null;
+
+function openWriteModal(card) {
+  editingCard = card;
   selectedType = null;
+
+  // 초기화
   document.getElementById('type-feature').classList.remove('selected');
   document.getElementById('type-info').classList.remove('selected');
   document.getElementById('modal-step-feature').classList.add('hidden');
@@ -591,14 +754,40 @@ function openWriteModal() {
   document.getElementById('emoji-popup').classList.add('hidden');
   document.getElementById('save-btn').disabled = true;
   document.getElementById('editor-body').innerHTML = '';
+  document.getElementById('info-title-input').value = '';
   document.getElementById('step-select').value = '';
   document.getElementById('feature-select').innerHTML = '<option value="">-- Step을 먼저 선택하세요 --</option>';
+
+  if (card) {
+    // 수정 모드: 기존 데이터 채우기
+    document.getElementById('write-modal-title').textContent = '✏️ 가이드 수정';
+    const type = card.dataset.type;
+    selectType(type);
+
+    if (type === 'feature') {
+      // Step, Feature 선택 복원
+      const stepNum = card.dataset.step;
+      if (stepNum) {
+        document.getElementById('step-select').value = stepNum;
+        updateFeatureOptions();
+        document.getElementById('feature-select').value = card.dataset.key || '';
+      }
+    } else {
+      document.getElementById('info-title-input').value = card.dataset.title || '';
+    }
+    document.getElementById('editor-body').innerHTML = card.dataset.content || '';
+  } else {
+    document.getElementById('write-modal-title').textContent = '✍️ 가이드 작성';
+  }
+
+  checkEditorContent();
   document.getElementById('write-modal').classList.add('open');
 }
-function closeWriteModal() { document.getElementById('write-modal').classList.remove('open'); }
-document.getElementById('write-modal').addEventListener('click', function(e) {
-  if (e.target === this) closeWriteModal();
-});
+
+function closeWriteModal() {
+  document.getElementById('write-modal').classList.remove('open');
+  editingCard = null;
+}
 
 function selectType(type) {
   selectedType = type;
@@ -610,12 +799,41 @@ function selectType(type) {
   checkEditorContent();
 }
 
+// ── 기능 목록 (수정된 버전) ──
 const FEATURES = {
-  1: [['step1_line_process','라인/공정/조리법 선택'],['step1_request_purpose','의뢰 목적'],['step1_flow_chart','Flow Chart'],['step1_bb_entry','BB 조합 구역 입력'],['step1_customer_vendor','고객사/협력사']],
-  2: [['step2_map_type','MAP 유형 설정'],['step2_map_deviation','MAP 편차 변경'],['step2_cfamily','Only C가문 설정'],['step2_rev','REV 관리'],['step2_xmark','X mark 변경'],['step2_map_options','MAP 옵션']],
-  3: [['step3_jayer_table','J-ayer 테이블'],['step3_jayer_filter','필터 관리'],['step3_jayer_toolbar','일괄 작업 툴바']],
-  4: [['step4_oayer_table','O-ayer 테이블'],['step4_oayer_info','OVL Info 탭'],['step4_tbvtlv','TBV/TLV 설정']],
-  5: [['step5_bb_autofill','BB 자동 채우기'],['step5_bb_mapping','BB 매핑'],['step5_bb_table','BB 적용 테이블']]
+  1: [
+    ['step1_line_process',   '라인/공정/조리법 선택'],
+    ['step1_request_purpose','의뢰 목적'],
+    ['step1_other_purpose',  '기타 목적'],
+    ['step1_flow_chart',     'Flow Chart'],
+    ['step1_bb_entry',       'BB 조합 구역 입력'],
+    ['step1_customer_vendor','고객사/협력사'],
+  ],
+  2: [
+    ['step2_map_type',        'MAP 유형 설정'],
+    ['step2_source_location', '원본 위치/원본 제품'],
+    ['step2_map_deviation',   'MAP 편차 변경'],
+    ['step2_exception_zone',  '예외 구역 변경'],
+    ['step2_cfamily',         'Only C가문 설정'],
+    ['step2_rev',             'REV 관리'],
+    ['step2_xmark',           'X mark 변경'],
+    ['step2_map_options',     'MAP 옵션'],
+  ],
+  3: [
+    ['step3_jayer_table', 'J-ayer 테이블'],
+    ['step3_jayer_filter','필터 관리'],
+  ],
+  4: [
+    ['step4_oayer_table',  'O-ayer 테이블'],
+    ['step4_oayer_info',   'OVL Info 탭'],
+    ['step4_partial_shot', 'Partial Shot'],
+    ['step4_tbvtlv',       'TBV/TLV 설정'],
+  ],
+  5: [
+    ['step5_bb_autofill','BB 자동 채우기'],
+    ['step5_bb_mapping', 'BB 매핑'],
+    ['step5_bb_table',   'BB 적용 테이블'],
+  ],
 };
 
 function updateFeatureOptions() {
@@ -628,12 +846,17 @@ function updateFeatureOptions() {
 }
 
 function checkEditorContent() {
-  const hasContent = document.getElementById('editor-body').innerText.trim().length > 0;
-  const validType = selectedType === 'info' || (selectedType === 'feature' && document.getElementById('step-select').value);
-  document.getElementById('save-btn').disabled = !(hasContent && validType && selectedType);
+  const hasContent = (document.getElementById('editor-body').innerText || '').trim().length > 0;
+  let validMeta = false;
+  if (selectedType === 'feature') {
+    validMeta = !!document.getElementById('step-select').value;
+  } else if (selectedType === 'info') {
+    validMeta = (document.getElementById('info-title-input').value || '').trim().length > 0;
+  }
+  document.getElementById('save-btn').disabled = !(hasContent && validMeta && selectedType);
 }
 
-function insertEmoji() {
+function toggleEmojiPopup() {
   document.getElementById('emoji-popup').classList.toggle('hidden');
 }
 function pickEmoji(emoji) {
@@ -644,99 +867,164 @@ function pickEmoji(emoji) {
 }
 
 function saveGuide() {
-  closeWriteModal();
-  // 새 카드 목록에 추가 (목업 데모)
-  const featureVal = document.getElementById('feature-select');
-  const featureLabel = featureVal.options[featureVal.selectedIndex]?.text || '새 기능';
+  const featureSel = document.getElementById('feature-select');
+  const featureLabel = featureSel.options[featureSel.selectedIndex]?.text || '';
   const stepVal = document.getElementById('step-select').value;
-  const content = document.getElementById('editor-body').innerText.trim();
-  const list = document.getElementById('guide-list');
-  const card = document.createElement('div');
-  card.className = 'guide-card fade-in';
-  card.dataset.type = selectedType;
-  card.innerHTML = selectedType === 'feature'
-    ? `<span class="badge badge-feature">⚙️ 기능 · Step ${stepVal}</span><div class="g-title">${featureLabel} 가이드</div><div class="g-preview">${content.substring(0,60)}...</div><div class="g-meta">나 · 방금 전</div>`
-    : `<span class="badge badge-info">📌 정보</span><div class="g-title">새 정보 가이드</div><div class="g-preview">${content.substring(0,60)}...</div><div class="g-meta">나 · 방금 전</div>`;
-  list.prepend(card);
-  showToast();
+  const content = document.getElementById('editor-body').innerHTML;
+  const titleVal = document.getElementById('info-title-input').value.trim();
+
+  if (editingCard) {
+    // 수정: 카드 데이터 업데이트
+    editingCard.dataset.content = content;
+    if (selectedType === 'feature') {
+      editingCard.dataset.step = stepVal;
+      editingCard.dataset.key = featureSel.value;
+      editingCard.querySelector('.badge').textContent = `⚙️ 기능 · Step ${stepVal}`;
+      editingCard.querySelector('.g-title').textContent = featureLabel + ' 가이드';
+      editingCard.querySelector('.g-preview').textContent = document.getElementById('editor-body').innerText.substring(0,60) + '...';
+    } else {
+      editingCard.dataset.title = titleVal;
+      editingCard.querySelector('.g-title').textContent = titleVal;
+      editingCard.querySelector('.g-preview').textContent = document.getElementById('editor-body').innerText.substring(0,60) + '...';
+    }
+  } else {
+    // 신규 카드 생성
+    const list = document.getElementById('guide-list');
+    const card = document.createElement('div');
+    card.className = 'guide-card fade-in';
+    card.dataset.type = selectedType;
+    card.onclick = function() { handleCardClick(this); };
+
+    if (selectedType === 'feature') {
+      card.dataset.key = featureSel.value;
+      card.dataset.step = stepVal;
+      card.dataset.feature = featureLabel;
+      card.dataset.content = content;
+      card.innerHTML = `
+        <button class="card-edit-btn" onclick="event.stopPropagation();openWriteModal(this.parentElement)">✏️ 수정</button>
+        <span class="badge badge-feature">⚙️ 기능 · Step ${stepVal}</span>
+        <div class="g-title">${featureLabel} 가이드</div>
+        <div class="g-preview">${document.getElementById('editor-body').innerText.substring(0,60)}...</div>
+        <div class="g-meta">나 · 방금 전</div>`;
+    } else {
+      card.dataset.title = titleVal;
+      card.dataset.content = content;
+      card.innerHTML = `
+        <button class="card-edit-btn" onclick="event.stopPropagation();openWriteModal(this.parentElement)">✏️ 수정</button>
+        <span class="badge badge-info">📌 정보</span>
+        <div class="g-title">${titleVal}</div>
+        <div class="g-preview">${document.getElementById('editor-body').innerText.substring(0,60)}...</div>
+        <div class="g-meta">나 · 방금 전</div>`;
+    }
+    list.prepend(card);
+  }
+
+  closeWriteModal();
+  showToast(editingCard ? '✅ 가이드가 수정되었습니다' : '✅ 가이드가 저장되었습니다');
 }
 
-function showToast() {
+function showToast(msg) {
   const t = document.getElementById('toast');
+  t.textContent = msg || '✅ 저장되었습니다';
   t.style.opacity = '1'; t.style.transform = 'translateX(-50%) translateY(0)';
   setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(-50%) translateY(20px)'; }, 2500);
 }
 
-// ── 슬라이드 패널 ──
+// ── 슬라이드 패널 (오버레이 없음) ──
 const PANEL_DATA = {
   'step1_line_process': {
     title: '라인/공정/조리법 선택',
-    guides: [{ title: '선택 순서 안내', content: '<p>💡 <strong>선택 순서: 라인 → 공정 → Part ID → Process ID</strong></p><p>라인을 먼저 선택해야 공정 드롭다운이 활성화됩니다.</p><p>⚠️ 라인 변경 시 이하 선택 값이 초기화됩니다.</p>' }]
+    content: '<p>💡 <strong>선택 순서: 라인 → 공정 → Part ID → Process ID</strong></p><p>라인을 먼저 선택해야 공정 드롭다운이 활성화됩니다.</p><p>⚠️ 라인 변경 시 이하 선택 값이 초기화됩니다.</p>'
   },
   'step1_bb_entry': {
     title: 'BB 조합 구역 입력',
-    guides: [
-      { title: 'BB 구역이란?', content: '<p>📌 Backbone(BB) 조합 구역은 생산 공정의 뼈대 데이터를 입력하는 영역입니다.</p>' },
-      { title: '입력 방법', content: '<p>👉 Location → Part ID → Process ID 순서로 입력합니다.<br>최소 1개 이상 입력해야 제출이 가능합니다.</p><p>✅ 자동완성 기능을 활용하세요!</p>' }
-    ]
+    content: '<p>📌 Backbone(BB) 조합 구역은 생산 공정의 뼈대 데이터를 입력하는 영역입니다.</p><p>👉 Location → Part ID → Process ID 순서로 입력합니다.<br>최소 1개 이상 입력해야 제출이 가능합니다.</p><p>✅ 자동완성 기능을 활용하세요!</p>'
   },
   'step2_map_type': {
     title: 'MAP 유형 설정',
-    guides: [{ title: 'NEW / CLONE / EXISTING 차이', content: '<p>🎯 <strong>NEW</strong>: 신규 MAP 생성<br><strong>CLONE</strong>: 기존 MAP 복사 후 수정<br><strong>EXISTING</strong>: 기존 MAP 그대로 사용</p><p>⚠️ CLONE 선택 시 Source 위치와 제품을 추가로 선택해야 합니다.</p>' }]
+    content: '<p>🎯 <strong>NEW</strong>: 신규 MAP 생성<br><strong>CLONE</strong>: 기존 MAP 복사 후 수정<br><strong>EXISTING</strong>: 기존 MAP 그대로 사용</p><p>⚠️ CLONE 선택 시 원본 위치와 제품을 추가로 선택해야 합니다.</p>'
   },
   'step2_cfamily': {
     title: 'Only C가문 설정',
-    guides: [{ title: 'C가문 설정 가이드', content: '<p>📌 C가문(C-family) 제품에만 해당하는 옵션입니다.</p><p>North / Middle / South 영역별로 적용할 제품을 선택합니다.<br>💡 해당 없는 영역은 비워두면 됩니다.</p>' }]
+    content: '<p>📌 C가문(C-family) 제품에만 해당하는 옵션입니다.</p><p>North / Middle / South 영역별로 적용할 제품을 선택합니다.<br>💡 해당 없는 영역은 비워두면 됩니다.</p>'
   },
   'step1': {
     title: 'Step 1 종합 가이드',
-    guides: [
-      { title: '① 라인/공정/조리법 선택', content: '<p>💡 선택 순서: 라인 → 공정 → Part ID → Process ID</p><p>라인 변경 시 이하 항목이 초기화됩니다.</p>' },
-      { title: '② 의뢰 목적', content: '<p>📌 신규 제품은 "신규", 기존 MAP을 가져오는 경우 "차용"을 선택합니다.</p>' },
-      { title: '③ BB 조합 구역', content: '<p>👉 최소 1개 이상의 BB 구역을 입력해야 Step 1을 완료할 수 있습니다.</p>' }
+    items: [
+      { title: '① 라인/공정/조리법 선택', content: '<p>💡 선택 순서: 라인 → 공정 → Part ID → Process ID<br>라인 변경 시 이하 항목이 초기화됩니다.</p>' },
+      { title: '② 의뢰 목적 / 기타 목적', content: '<p>📌 신규 제품은 "신규", 기존 MAP 차용은 "차용"을 선택합니다.<br>Layer 추가 등은 기타 목적에서 체크합니다.</p>' },
+      { title: '③ BB 조합 구역', content: '<p>👉 최소 1개 이상의 BB 구역을 입력해야 다음 단계로 진행할 수 있습니다.</p>' },
     ]
   },
   'step2': {
     title: 'Step 2 종합 가이드',
-    guides: [
-      { title: '① MAP 유형', content: '<p>🎯 NEW: 신규 생성, CLONE: 복사, EXISTING: 기존 그대로</p>' },
-      { title: '② Only C가문 설정', content: '<p>📌 C가문 제품에만 해당. 영역별 제품 선택.</p>' },
-      { title: '③ X mark 변경', content: '<p>⚠️ X mark 추가/수정/삭제 시 이미지 첨부가 필수입니다.</p>' }
+    items: [
+      { title: '① MAP 유형', content: '<p>🎯 NEW: 신규 생성 / CLONE: 원본 복사 / EXISTING: 기존 그대로</p>' },
+      { title: '② 원본 위치/제품', content: '<p>📌 CLONE 선택 시 Source Location과 Source Part ID를 반드시 선택해야 합니다.</p>' },
+      { title: '③ 예외 구역 변경', content: '<p>⚠️ 예외 구역이 있는 경우에만 입력합니다.</p>' },
+      { title: '④ Only C가문 설정', content: '<p>📌 C가문 제품에만 해당. 영역별 제품 선택.</p>' },
+      { title: '⑤ X mark 변경', content: '<p>⚠️ X mark 추가/수정/삭제 시 이미지 첨부가 필수입니다.</p>' },
     ]
-  }
+  },
+  'step4': {
+    title: 'Step 4 종합 가이드',
+    items: [
+      { title: '① O-ayer 테이블', content: '<p>📋 J-ayer와 동일한 구조로 OVL Layer를 관리합니다.</p>' },
+      { title: '② Partial Shot', content: '<p>📌 Partial Shot 측정 여부를 O(측정)/X(미측정)으로 선택합니다.</p>' },
+      { title: '③ TBV/TLV 설정', content: '<p>💡 TBV/TLV 두께값과 SD를 입력합니다.</p>' },
+    ]
+  },
 };
 
 function openSlidePanel(key, title) {
-  const data = PANEL_DATA[key] || { title, guides: [] };
-  document.getElementById('panel-title').textContent = data.title || title;
+  openSlidePanelWithData(key, title, null);
+}
+
+function openSlidePanelWithData(key, title, directContent) {
+  const data = PANEL_DATA[key];
+  const panelTitle = data ? data.title : title;
+  document.getElementById('panel-title').textContent = panelTitle;
+
   const body = document.getElementById('panel-body');
-  if (!data.guides || data.guides.length === 0) {
-    body.innerHTML = '<div class="empty-guide"><div class="empty-icon">📭</div><div>등록된 가이드가 없습니다</div></div>';
-  } else {
-    body.innerHTML = data.guides.map((g, i) => `
+
+  // directContent: 카드에서 직접 열 때
+  if (directContent !== null && directContent !== undefined) {
+    body.innerHTML = `<div style="font-size:13px;line-height:1.8;color:#333;">${directContent}</div>`;
+    document.getElementById('slide-panel').classList.add('open');
+    document.body.classList.add('panel-open');
+    return;
+  }
+
+  if (!data) {
+    body.innerHTML = '<div class="empty-guide"><div class="empty-icon">📭</div><div style="font-size:13px;">등록된 가이드가 없습니다</div></div>';
+  } else if (data.content) {
+    // 단일 콘텐츠
+    body.innerHTML = `<div style="font-size:13px;line-height:1.8;color:#333;">${data.content}</div>`;
+  } else if (data.items) {
+    // 아코디언 (종합 가이드)
+    body.innerHTML = data.items.map((g, i) => `
       <div class="guide-item">
         <div class="guide-item-header" onclick="toggleGuideItem(${i})">
           <span>${g.title}</span>
-          <span class="chevron" id="chev-${i}">▼</span>
+          <span class="chevron ${i===0?'open':''}" id="chev-${i}">▼</span>
         </div>
-        <div class="guide-item-body ${i===0?'open':''}" id="body-${i}">${g.content}</div>
+        <div class="guide-item-body ${i===0?'open':''}" id="gbody-${i}">${g.content}</div>
       </div>
     `).join('');
   }
-  document.getElementById('overlay').classList.add('open');
+
   document.getElementById('slide-panel').classList.add('open');
+  document.body.classList.add('panel-open');
 }
 
 function closeSlidePanel() {
-  document.getElementById('overlay').classList.remove('open');
   document.getElementById('slide-panel').classList.remove('open');
+  document.body.classList.remove('panel-open');
 }
 
 function toggleGuideItem(i) {
-  const body = document.getElementById(`body-${i}`);
-  const chev = document.getElementById(`chev-${i}`);
-  body.classList.toggle('open');
-  chev.classList.toggle('open');
+  document.getElementById(`gbody-${i}`).classList.toggle('open');
+  document.getElementById(`chev-${i}`).classList.toggle('open');
 }
 </script>
 </body>
