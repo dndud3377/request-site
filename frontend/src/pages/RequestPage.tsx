@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI } from '../api/client';
+import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI } from '../api/client';
 import { useToast } from '../components/Toast';
 import { useIdleAutoSave } from '../hooks/useIdleAutoSave';
 import Modal, { ConfirmModal } from '../components/Modal';
@@ -21,7 +21,9 @@ import {
   PhotoStepOption,
   BbAutoFillRange,
   FilterSet,
+  GuideFeatureKey,
 } from '../types';
+import GuideSlidePanel from '../components/GuideSlidePanel';
 
 // ===== Option Constants =====
 const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'MAP 변경'] as const;
@@ -376,6 +378,10 @@ export default function RequestPage(): React.ReactElement {
     label: string;
   } | null>(null);
   const [filterAllDeleteConfirm, setFilterAllDeleteConfirm] = useState<'jayer' | 'oayer' | null>(null);
+  const [featureGuideKeys, setFeatureGuideKeys] = useState<Set<string>>(new Set());
+  const [slidePanel, setSlidePanel] = useState<{ open: boolean; featureKey: GuideFeatureKey; title: string }>({
+    open: false, featureKey: 'step1_line_process', title: ''
+  });
 
   useEffect(() => {
     linesAPI.list()
@@ -423,6 +429,15 @@ export default function RequestPage(): React.ReactElement {
         } catch { /* noop */ }
       }
     }
+
+    // 기능 가이드 키 목록 로드
+    guidesAPI.list({ guide_type: 'feature' })
+      .then((r) => {
+        const data = r.data;
+        const items = Array.isArray(data) ? data : (data as { results: { feature_key: string }[] }).results ?? [];
+        setFeatureGuideKeys(new Set(items.map((g: { feature_key: string | null }) => g.feature_key).filter(Boolean) as string[]));
+      })
+      .catch(() => { /* 가이드 없어도 무관 */ });
   }, []);
 
   useEffect(() => {
@@ -1773,6 +1788,38 @@ export default function RequestPage(): React.ReactElement {
     }
   };
 
+  // ===== Guide helpers =====
+  const toggleSlidePanel = (featureKey: GuideFeatureKey, title: string) => {
+    setSlidePanel((prev) =>
+      prev.open && prev.featureKey === featureKey
+        ? { ...prev, open: false }
+        : { open: true, featureKey, title }
+    );
+  };
+
+  const GuideBadge = ({ fk, tk }: { fk: GuideFeatureKey; tk: string }) =>
+    featureGuideKeys.has(fk) ? (
+      <button
+        type="button"
+        onClick={(e) => { e.preventDefault(); toggleSlidePanel(fk, tk); }}
+        style={{
+          fontSize: 10,
+          padding: '2px 7px',
+          border: '1px solid #4f8ef7',
+          borderRadius: 10,
+          background: slidePanel.open && slidePanel.featureKey === fk ? '#eff6ff' : 'transparent',
+          color: '#4f8ef7',
+          cursor: 'pointer',
+          marginLeft: 6,
+          verticalAlign: 'middle',
+          fontWeight: 600,
+          lineHeight: 1.4,
+        }}
+      >
+        {t('guide.guide_btn')}
+      </button>
+    ) : null;
+
   // ===== Step Render Functions =====
   const renderStep1 = () => {
     const canSelectPurpose =
@@ -1787,6 +1834,10 @@ export default function RequestPage(): React.ReactElement {
       <div className="form-grid">
 
         {/* 1. 라인 / 조합법 / 제품 이름 / 조리법 */}
+        <div className="full-width" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('request.line')} / {t('request.process_selection')}</span>
+          <GuideBadge fk="step1_line_process" tk={t('guide.feat.step1_line_process' as never)} />
+        </div>
         <div className="full-width flex-row">
           <FormSelect
             label={t('request.line')}
@@ -1840,6 +1891,7 @@ export default function RequestPage(): React.ReactElement {
         <div className="form-group full-width">
           <label className="form-label">
             {t('request.request_purpose')} <span className="required">*</span>
+            <GuideBadge fk="step1_request_purpose" tk={t('guide.feat.step1_request_purpose' as never)} />
           </label>
           <div style={{ display: 'flex', gap: '8px', marginTop: 4 }}>
             {OPTION_REQUEST_PURPOSE.map((val) => (
@@ -1861,7 +1913,7 @@ export default function RequestPage(): React.ReactElement {
         <div className="form-group full-width">
           <div className="conditional-group">
             <div className="flex-col">
-              <label className="form-label">{t('request.other_purpose')}</label>
+              <label className="form-label">{t('request.other_purpose')}<GuideBadge fk="step1_other_purpose" tk={t('guide.feat.step1_other_purpose' as never)} /></label>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: 4 }}>
                 {OPTION_OTHER_PURPOSE.map((val) => (
                   <button
@@ -1908,7 +1960,7 @@ export default function RequestPage(): React.ReactElement {
 
             {/* 흐름도 */}
             <div className="form-group">
-              <label className="form-label">{t('request.flow_chart')}</label>
+              <label className="form-label">{t('request.flow_chart')}<GuideBadge fk="step1_flow_chart" tk={t('guide.feat.step1_flow_chart' as never)} /></label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {detail.flow_chart.map((row, idx) => (
                   <div key={row.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -2005,6 +2057,7 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <label className="form-label">
             {t('request.bb_status')} <span className="required">*</span>
+            <GuideBadge fk="step1_bb_entry" tk={t('guide.feat.step1_bb_entry' as never)} />
           </label>
           {errors.bb_entries && <span className="form-error">{errors.bb_entries}</span>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -2068,7 +2121,7 @@ export default function RequestPage(): React.ReactElement {
         {/* 4. 고객/업체명 / 요구 사항 */}
         <div className="full-width flex-row">
           <div className="form-group flex-col" style={{ flex: 1 }}>
-            <label className="form-label">{t('request.customer_name')}</label>
+            <label className="form-label">{t('request.customer_name')}<GuideBadge fk="step1_customer_vendor" tk={t('guide.feat.step1_customer_vendor' as never)} /></label>
             <input
               className="form-control"
               name="customer_name"
@@ -2123,6 +2176,7 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width">
           <label className="form-label">
             {t('request.map_type')} <span className="required">*</span>
+            <GuideBadge fk="step2_map_type" tk={t('guide.feat.step2_map_type' as never)} />
           </label>
           <div style={{ display: 'flex', gap: '8px', marginTop: 4 }}>
             {(['NEW', 'CLONE', 'EXISTING'] as const).map((val) => {
@@ -2143,6 +2197,10 @@ export default function RequestPage(): React.ReactElement {
         </div>
 
         {/* 원본 위치/Part ID */}
+        <div className="full-width" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('request.source_line')}</span>
+          <GuideBadge fk="step2_source_location" tk={t('guide.feat.step2_source_location' as never)} />
+        </div>
         <div className="full-width">
           <div className="conditional-group">
             <div className="flex-row">
@@ -2176,7 +2234,7 @@ export default function RequestPage(): React.ReactElement {
         {/* 지도 편차 */}
         <div className="full-width flex-row">
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
-            <label className="form-label">{t('request.map')}</label>
+            <label className="form-label">{t('request.map')}<GuideBadge fk="step2_map_deviation" tk={t('guide.feat.step2_map_deviation' as never)} /></label>
             <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange} disabled={copiedFields.has('map_change') || isMapRegistered}>
               <option value="변경 없음">{t('request.map_no_change')}</option>
               <option value="변경 있음">{t('request.map_has_change')}</option>
@@ -2202,7 +2260,7 @@ export default function RequestPage(): React.ReactElement {
         {/* 예외 구역 */}
         <div className="full-width flex-row">
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
-            <label className="form-label">{t('request.ea_change')}</label>
+            <label className="form-label">{t('request.ea_change')}<GuideBadge fk="step2_exception_zone" tk={t('guide.feat.step2_exception_zone' as never)} /></label>
             <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange} disabled={copiedFields.has('ea_change') || isMapRegistered}>
               <option value="변경 없음">{t('request.no_change')}</option>
               <option value="변경 있음">{t('request.has_change')}</option>
@@ -2219,7 +2277,7 @@ export default function RequestPage(): React.ReactElement {
         {/* Only C가문 제품 */}
         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
-            <label className="form-label">{t('request.prodc_status')}</label>
+            <label className="form-label">{t('request.prodc_status')}<GuideBadge fk="step2_cfamily" tk={t('guide.feat.step2_cfamily' as never)} /></label>
             <select
               className="form-control"
               name="only_prodc"
@@ -2261,7 +2319,7 @@ export default function RequestPage(): React.ReactElement {
 
               {/* REV 여부 */}
               <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '14px', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <label className="form-label" style={{ marginBottom: 0 }}>REV 여부</label>
+                <label className="form-label" style={{ marginBottom: 0 }}>REV 여부<GuideBadge fk="step2_rev" tk={t('guide.feat.step2_rev' as never)} /></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {(['YES', 'NO'] as const).map((val) => (
                     <button
@@ -2401,7 +2459,7 @@ export default function RequestPage(): React.ReactElement {
 
         {/* X표시 변경 여부 */}
         <div className="form-group full-width">
-          <label className="form-label">{t('request.mshot_change_status')}</label>
+          <label className="form-label">{t('request.mshot_change_status')}<GuideBadge fk="step2_xmark" tk={t('guide.feat.step2_xmark' as never)} /></label>
           <div style={{ width: SELECT_W }}>
             <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={handleDetailChange} disabled={copiedFields.has('mshot_change') || isMapRegistered}>
               <option value="없음">{t('request.mshot_none')}</option>
@@ -2476,8 +2534,9 @@ export default function RequestPage(): React.ReactElement {
           ];
           return (
             <div className="full-width">
-              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: 4 }}>
                 {t('request.map_option_title')}
+                <GuideBadge fk="step2_map_options" tk={t('guide.feat.step2_map_options' as never)} />
               </div>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 {mapOptions.map((opt) => {
@@ -2507,7 +2566,10 @@ export default function RequestPage(): React.ReactElement {
   const renderStep2 = () => (
     <div className="form-section">
       <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span>🔷 {t('request.job_li')}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          🔷 {t('request.job_li')}
+          <GuideBadge fk="step3_jayer_table" tk={t('guide.feat.step3_jayer_table' as never)} />
+        </span>
         <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)' }}>
           활성 {jayerRows.filter(r => !r.disabled).length} / 전체 {jayerRows.length}
         </span>
@@ -2551,6 +2613,7 @@ export default function RequestPage(): React.ReactElement {
             </button>
           ))}
           <button type="button" className="th-header-btn" onClick={() => setJayerFilterModalOpen(true)}>+ 필터</button>
+          <GuideBadge fk="step3_jayer_filter" tk={t('guide.feat.step3_jayer_filter' as never)} />
         </div>
       </div>
       <div className="wizard-table-wrapper">
@@ -2693,7 +2756,10 @@ export default function RequestPage(): React.ReactElement {
     return (
       <div className="form-section">
         <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>🔶 {t('request.ovl_li')}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            🔶 {t('request.ovl_li')}
+            <GuideBadge fk="step4_oayer_table" tk={t('guide.feat.step4_oayer_table' as never)} />
+          </span>
           <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)' }}>
             활성 {oayerRows.filter(r => !r.disabled).length} / 전체 {oayerRows.length}
           </span>
@@ -2879,12 +2945,17 @@ export default function RequestPage(): React.ReactElement {
         {/* 탭 2: OVL 정보 */}
         {oayerInfoTab === 'info' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: -12 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('request.ovl_tab_info')}</span>
+              <GuideBadge fk="step4_oayer_info" tk={t('guide.feat.step4_oayer_info' as never)} />
+            </div>
 
             {/* Partial Shot 계측 필요 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                 <label className="form-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>
                   {t('request.partial_shot')} <span className="required">*</span>
+                  <GuideBadge fk="step4_partial_shot" tk={t('guide.feat.step4_partial_shot' as never)} />
                 </label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {(['O', 'X'] as const).map(val => (
@@ -2909,6 +2980,7 @@ export default function RequestPage(): React.ReactElement {
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 20 }}>
               <label className="form-label" style={{ marginBottom: 20 }}>
                 {t('request.tbvtlv')}
+                <GuideBadge fk="step4_tbvtlv" tk={t('guide.feat.step4_tbvtlv' as never)} />
                 {!hasTbvtlv && (
                   <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 400, color: 'var(--text-muted)' }}>
                     ({t('request.tbvtlv_no_data')})
@@ -3074,7 +3146,7 @@ export default function RequestPage(): React.ReactElement {
         <div className="form-section-title"><span style={{ color: '#4CAF50' }}>🔷</span> {t('request.bb_li')}</div>
 
         {/* 자동 채움 버튼 */}
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
             type="button"
             className="btn btn-primary"
@@ -3084,10 +3156,11 @@ export default function RequestPage(): React.ReactElement {
             📋 Backbone 자동 채움
           </button>
           {jayerRows.filter(r => !r.disabled).length > 0 && (
-            <span style={{ marginLeft: 12, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
               {jayerRows.filter(r => !r.disabled && !mappedJayerRowIds.has(r.id)).length}행 조회됨
             </span>
           )}
+          <GuideBadge fk="step5_bb_autofill" tk={t('guide.feat.step5_bb_autofill' as never)} />
         </div>
 
         {/* 자동 채움 패널 */}
@@ -3191,6 +3264,10 @@ export default function RequestPage(): React.ReactElement {
         )}
 
         {/* 분할 패널 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('guide.feat.step5_bb_mapping' as never)}</span>
+          <GuideBadge fk="step5_bb_mapping" tk={t('guide.feat.step5_bb_mapping' as never)} />
+        </div>
         <div className="bb-split-panel">
           {/* 왼쪽: 원본 행 목록 + 매핑 미리보기 */}
           <div className="bb-split-panel-left">
@@ -3358,7 +3435,10 @@ export default function RequestPage(): React.ReactElement {
         {/* bb 정보 테이블 (적용 후 채워짐) */}
         <div className="bb-selected-section">
           <div className="form-section-title" style={{ fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#4CAF50' }}>
-            <span>bb 정보 (적용 결과)</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              bb 정보 (적용 결과)
+              <GuideBadge fk="step5_bb_table" tk={t('guide.feat.step5_bb_table' as never)} />
+            </span>
             <button
               type="button"
               className="btn btn-secondary"
@@ -3823,6 +3903,13 @@ export default function RequestPage(): React.ReactElement {
         confirmLabel={t('common.delete')}
         danger
         topLevel
+      />
+
+      <GuideSlidePanel
+        featureKey={slidePanel.featureKey}
+        featureTitle={slidePanel.title}
+        isOpen={slidePanel.open}
+        onClose={() => setSlidePanel((prev) => ({ ...prev, open: false }))}
       />
     </div>
   );
