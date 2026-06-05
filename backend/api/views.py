@@ -212,20 +212,41 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         current_round = step.round
 
         if agent == 'R':
-            # R 합의 → P 단계 생성
-            ApprovalStep.objects.create(document=document, agent='P', action='pending', round=current_round)
+            # R 합의 → P(due: R포함 4영업일), O(due: R포함 6영업일), [E if PLEL] 동시 생성
+            from .utils import calculate_business_due_date
+            import datetime
+            r_date = step.acted_at.date() if step.acted_at else datetime.date.today()
+            p_due = calculate_business_due_date(r_date, 4)
+            o_due = calculate_business_due_date(r_date, 6)
+            ApprovalStep.objects.create(
+                document=document, agent='P', action='pending',
+                round=current_round, due_date=p_due,
+            )
+            ApprovalStep.objects.create(
+                document=document, agent='O', action='pending',
+                is_parallel=True, round=current_round, due_date=o_due,
+            )
+            if document.has_ppid_plel():
+                ApprovalStep.objects.create(
+                    document=document, agent='E', action='pending',
+                    is_parallel=True, round=current_round, due_date=o_due,
+                )
             new_status = 'under_review'
 
         elif agent == 'P':
-            # P 합의 → J, O, [E if PLEL] 병렬 단계 생성
-            ApprovalStep.objects.create(document=document, agent='J', action='pending', is_parallel=True, round=current_round)
-            ApprovalStep.objects.create(document=document, agent='O', action='pending', is_parallel=True, round=current_round)
-            if document.has_ppid_plel():
-                ApprovalStep.objects.create(document=document, agent='E', action='pending', is_parallel=True, round=current_round)
+            # P 합의 → J(due: P포함 4영업일) 생성
+            from .utils import calculate_business_due_date
+            import datetime
+            p_date = step.acted_at.date() if step.acted_at else datetime.date.today()
+            j_due = calculate_business_due_date(p_date, 4)
+            ApprovalStep.objects.create(
+                document=document, agent='J', action='pending',
+                round=current_round, due_date=j_due,
+            )
             new_status = 'under_review'
 
         elif agent in ('J', 'O', 'E'):
-            # J/O/[E] 모두 합의 시 최종 승인
+            # J + O + [E] 모두 합의 시 최종 승인
             j_step = ApprovalStep.objects.filter(document=document, agent='J', round=current_round).order_by('-id').first()
             o_step = ApprovalStep.objects.filter(document=document, agent='O', round=current_round).order_by('-id').first()
             e_step = ApprovalStep.objects.filter(document=document, agent='E', round=current_round).order_by('-id').first()

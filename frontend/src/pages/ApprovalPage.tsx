@@ -23,105 +23,6 @@ const AGENT_TO_ROLE: Record<string, string> = {
 
 const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
 
-// EUV 단계 포함 여부 확인
-const hasEUVStep = (doc: RequestDocument): boolean => {
-  // 1. 이미 EUV 단계가 존재하는지 확인
-  const steps = doc.approval_steps ?? [];
-  const eStep = steps.find((s) => s.agent === 'E');
-  if (eStep) return true;
-  
-  // 2. J/O 모두 합의되었는데 EUV 가 없으면 PLEL 없음
-  const jStep = steps.find((s) => s.agent === 'J');
-  const oStep = steps.find((s) => s.agent === 'O');
-  const jApproved = jStep?.action === 'approved';
-  const oApproved = oStep?.action === 'approved';
-  
-  if (jApproved && oApproved && !eStep) {
-    return false;
-  }
-  
-  // 3. 아직 진행 중이면 additional_notes 에서 PLEL 확인
-  try {
-    const parsed = JSON.parse(doc.additional_notes ?? '{}');
-    const jayerRows = parsed?.jayerRows ?? [];
-    return jayerRows.some((row: any) => 
-      row.pp?.toLowerCase().includes('plel')
-    );
-  } catch {
-    return false;
-  }
-};
-
-// 단계별 소요 일수
-const getStageDuration = (agent: AgentType): number => {
-  switch (agent) {
-    case 'R': return 1;
-    case 'P': return 3;
-    case 'J':
-    case 'O': return 3;
-    case 'E': return 3;
-    default: return 0;
-  }
-};
-
-// RFG 합의 다음날 (시작일)
-const getStartDate = (doc: RequestDocument): Date | null => {
-  const steps = doc.approval_steps ?? [];
-  const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
-  const rStep = steps.find(s => s.agent === 'R' && (s.round ?? 1) === maxRound && s.action === 'approved');
-  if (!rStep?.acted_at) return null;
-  const d = new Date(rStep.acted_at);
-  d.setDate(d.getDate() + 1);
-  return d;
-};
-
-const getFlowGroups = (hasEUV: boolean): AgentType[][] => [
-  ['P'],
-  hasEUV ? ['J', 'O', 'E'] : ['J', 'O'],
-];
-
-const getTotalDays = (hasEUV: boolean): number =>
-  getFlowGroups(hasEUV).reduce((sum, group) =>
-    sum + Math.max(...group.map(a => getStageDuration(a))), 0);
-
-const formatStartDate = (doc: RequestDocument): string => {
-  const d = getStartDate(doc);
-  return d ? d.toLocaleDateString('ko-KR') : '-';
-};
-
-// 현재 단계 완료일: max(completed acted_at in current round) + current stage max duration
-const formatCurrentStageCompletionDate = (doc: RequestDocument): string => {
-  const steps = doc.approval_steps ?? [];
-  const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
-  const currentRoundSteps = steps.filter(s => (s.round ?? 1) === maxRound);
-  const pending = currentRoundSteps.filter(s => s.action === 'pending');
-  const completed = currentRoundSteps.filter(s => s.action !== 'pending' && s.acted_at);
-
-  if (pending.length === 0) return '-';
-
-  const latestRef = completed.reduce<string | null>((max, s) =>
-    !max || new Date(s.acted_at!) > new Date(max) ? s.acted_at! : max, null);
-
-  if (!latestRef) return '-';
-
-  const currentMaxDuration = Math.max(...pending.map(s => getStageDuration(s.agent)));
-  const d = new Date(latestRef);
-  d.setDate(d.getDate() + currentMaxDuration);
-  return d.toLocaleDateString('ko-KR');
-};
-
-// 최종 완료 예상일: R.acted_at + getTotalDays (P + max(J/O/[E]))
-const formatFinalCompletionDate = (doc: RequestDocument): string => {
-  const steps = doc.approval_steps ?? [];
-  const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
-  const rStep = steps.find(s => s.agent === 'R' && (s.round ?? 1) === maxRound && s.action === 'approved');
-  if (!rStep?.acted_at) return '-';
-  const euv = hasEUVStep(doc);
-  const d = new Date(rStep.acted_at);
-  d.setDate(d.getDate() + getTotalDays(euv));
-  return d.toLocaleDateString('ko-KR');
-};
-
 // TE_O/TE_E는 담당자 지정 불필요 — 나머지 단계에서 담당자 미지정 시 'unassigned' 반환
 const getDisplayStatus = (doc: RequestDocument): string => {
   if (doc.status !== 'under_review') return doc.status;
@@ -134,26 +35,105 @@ const getDisplayStatus = (doc: RequestDocument): string => {
   return needsAssignment ? 'unassigned' : 'under_review';
 };
 
-const getCurrentStage = (doc: RequestDocument, t: TFunction): string => {
-  const steps = doc.approval_steps ?? [];
-  const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
-  const currentSteps = steps.filter((s) => (s.round ?? 1) === maxRound);
-  const pending = currentSteps.filter((s) => s.action === 'pending');
-  if (pending.length === 0 && doc.status === 'approved') return t('common.status_approved');
-  if (pending.length === 0) return '-';
+const getCurrentRound = (doc: RequestDocument): number =>
+  (doc.approval_steps ?? []).reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
 
-  const agentToLabel: Record<string, string> = {
-    'R': t('approval.agent_R'),
-    'P': t('approval.agent_P'),
-    'J': t('approval.agent_J'),
-    'O': t('approval.agent_O'),
-    'E': t('approval.agent_E'),
-  };
+// due_date 텍스트 + CSS 클래스 반환
+const getDueDateDisplay = (
+  dueDate: string | null | undefined,
+  isDone: boolean,
+  undecidedLabel: string,
+): { text: string; cls: string } => {
+  if (isDone) return { text: dueDate ? formatDate(dueDate) : '-', cls: 'due-date-done' };
+  if (!dueDate) return { text: undecidedLabel, cls: 'due-date-undecided' };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate); due.setHours(0, 0, 0, 0);
+  if (due < today) return { text: formatDate(dueDate), cls: 'due-date-overdue' };
+  if (due.getTime() === today.getTime()) return { text: formatDate(dueDate), cls: 'due-date-today' };
+  return { text: formatDate(dueDate), cls: '' };
+};
 
-  return pending.map((s) => {
-    const label = agentToLabel[s.agent] || s.agent;
-    return label;
-  }).join(' / ');
+// 최종 완료 예상일: max(path1_end, path2_end)
+// path1: J.due if exists, else P.due + 4 cal days (estimate before J is created)
+// path2: max(O.due, E.due)
+const getFinalCompletionDate = (doc: RequestDocument): string => {
+  const maxRound = getCurrentRound(doc);
+  const currentSteps = (doc.approval_steps ?? []).filter(s => (s.round ?? 1) === maxRound);
+  const rStep = currentSteps.find(s => s.agent === 'R');
+  if (!rStep || rStep.action !== 'approved') return '-';
+
+  const pStep = currentSteps.find(s => s.agent === 'P');
+  const jStep = currentSteps.find(s => s.agent === 'J');
+  const oStep = currentSteps.find(s => s.agent === 'O');
+  const eStep = currentSteps.find(s => s.agent === 'E');
+
+  // path2: max(O.due, E.due)
+  const path2Dates = [oStep?.due_date, eStep?.due_date].filter(Boolean) as string[];
+  const path2End = path2Dates.length > 0 ? path2Dates.reduce((a, b) => (a > b ? a : b)) : null;
+
+  // path1: J.due or estimated (P.due + 4 calendar days)
+  let path1End: string | null = null;
+  if (jStep?.due_date) {
+    path1End = jStep.due_date;
+  } else if (pStep?.due_date) {
+    const d = new Date(pStep.due_date);
+    d.setDate(d.getDate() + 4);
+    path1End = d.toISOString().slice(0, 10);
+  }
+
+  const candidates = [path1End, path2End].filter(Boolean) as string[];
+  if (candidates.length === 0) return '-';
+  return formatDate(candidates.reduce((a, b) => (a > b ? a : b)));
+};
+
+interface DocTableRow {
+  pathKey: 'single' | 'path1' | 'path2';
+  stageText: string;
+  dueDate: string | null;
+  isDone: boolean;
+}
+
+const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
+  const maxRound = getCurrentRound(doc);
+  const currentSteps = (doc.approval_steps ?? []).filter(s => (s.round ?? 1) === maxRound);
+  const rStep = currentSteps.find(s => s.agent === 'R');
+  const inParallel = rStep?.action === 'approved';
+
+  if (!inParallel) {
+    const pending = currentSteps.filter(s => s.action === 'pending');
+    if (pending.length === 0) {
+      return [{ pathKey: 'single', stageText: doc.status === 'approved' ? t('common.status_approved') : '-', dueDate: null, isDone: true }];
+    }
+    const stageText = pending.map(s => t(`approval.agent_${s.agent}` as any)).join(' / ');
+    return [{ pathKey: 'single', stageText, dueDate: pending[0]?.due_date ?? null, isDone: false }];
+  }
+
+  // 병렬 단계
+  const pStep = currentSteps.find(s => s.agent === 'P');
+  const jStep = currentSteps.find(s => s.agent === 'J');
+  const oStep = currentSteps.find(s => s.agent === 'O');
+  const eStep = currentSteps.find(s => s.agent === 'E');
+
+  const path1Pending = [pStep, jStep].find(s => s?.action === 'pending');
+  const path1Done = !path1Pending;
+
+  const path2Pending = [oStep, eStep].find(s => s?.action === 'pending');
+  const path2Done = !path2Pending;
+
+  return [
+    {
+      pathKey: 'path1',
+      stageText: path1Pending ? t(`approval.agent_${path1Pending.agent}` as any) : t('common.status_approved'),
+      dueDate: path1Pending?.due_date ?? null,
+      isDone: path1Done,
+    },
+    {
+      pathKey: 'path2',
+      stageText: path2Pending ? t(`approval.agent_${path2Pending.agent}` as any) : t('common.status_approved'),
+      dueDate: path2Pending?.due_date ?? null,
+      isDone: path2Done,
+    },
+  ];
 };
 
 // ===== (ApprovalFlow, PagedDetailView are imported from components/) =====
@@ -427,56 +407,80 @@ export default function ApprovalPage(): React.ReactElement {
                 <th>{t('approval.col_product')}</th>
                 <th>{t('approval.col_requester')}</th>
                 <th>{t('approval.col_current_stage')}</th>
-                <th>{t('approval.col_status')}</th>
                 <th>{t('approval.col_current_stage_completion')}</th>
+                <th>{t('approval.col_status')}</th>
                 <th>{t('approval.col_final_completion')}</th>
                 <th>{t('approval.col_production_date')}</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {docs.map((doc) => (
-                <tr key={doc.id}>
-                  <td>
-                    {isNone ? (
-                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{doc.title}</span>
-                    ) : (
-                      <button
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 600, fontSize: '0.9rem', textAlign: 'left', padding: 0 }}
-                        onClick={() => openDetail(doc)}
-                      >
-                        {doc.title}
-                      </button>
-                    )}
-                  </td>
-                  <td>{doc.product_name}</td>
-                  <td>
-                    <div>{doc.requester_name}</div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{doc.requester_department}</div>
-                  </td>
-                  <td style={{ fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 500 }}>
-                    {getCurrentStage(doc, t)}
-                  </td>
-                  <td><StatusBadge status={getDisplayStatus(doc)} /></td>
-                  <td>{formatCurrentStageCompletionDate(doc)}</td>
-                  <td>{formatFinalCompletionDate(doc)}</td>
-                  <td>{doc.production_date ? formatDate(doc.production_date) : '-'}</td>
-                  <td>
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {(isPL || isMaster) && (doc.status === 'rejected' || doc.status === 'draft') && (
-                        <button className="btn btn-primary btn-sm" onClick={() => handleEditResubmit(doc)}>
-                          {t('approval.edit_resubmit')}
-                        </button>
+              {docs.flatMap((doc) => {
+                const rows = getDocTableRows(doc, t);
+                const isParallel = rows.length === 2;
+                const undecided = t('approval.due_date_undecided');
+                return rows.map((row, idx) => {
+                  const dd = getDueDateDisplay(row.dueDate, row.isDone, undecided);
+                  return (
+                    <tr
+                      key={`${doc.id}-${idx}`}
+                      className={isParallel ? (idx === 0 ? 'doc-row-first' : 'doc-row-second') : ''}
+                    >
+                      {idx === 0 && (
+                        <td rowSpan={rows.length}>
+                          {isNone ? (
+                            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{doc.title}</span>
+                          ) : (
+                            <button
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 600, fontSize: '0.9rem', textAlign: 'left', padding: 0 }}
+                              onClick={() => openDetail(doc)}
+                            >
+                              {doc.title}
+                            </button>
+                          )}
+                        </td>
                       )}
-                      {(isPL || isMaster) && (doc.status === 'under_review' || doc.status === 'rejected' || doc.status === 'draft') && (
-                        <button className="btn btn-secondary btn-sm" onClick={() => handleWithdrawClick(doc)} disabled={processing}>
-                          {t('approval.withdraw')}
-                        </button>
+                      {idx === 0 && <td rowSpan={rows.length}>{doc.product_name}</td>}
+                      {idx === 0 && (
+                        <td rowSpan={rows.length}>
+                          <div>{doc.requester_name}</div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{doc.requester_department}</div>
+                        </td>
                       )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                      <td style={{ fontSize: '0.8rem', fontWeight: 500 }}>
+                        {isParallel && (
+                          <span className={`path-label-chip ${row.pathKey === 'path1' ? 'path1' : 'path2'}`} style={{ marginRight: 6 }}>
+                            {row.pathKey === 'path1' ? t('approval.path_label_phpsi_job') : t('approval.path_label_ovl_euv')}
+                          </span>
+                        )}
+                        <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--accent)' }}>{row.stageText}</span>
+                      </td>
+                      <td>
+                        <span className={dd.cls}>{dd.text}</span>
+                      </td>
+                      {idx === 0 && <td rowSpan={rows.length}><StatusBadge status={getDisplayStatus(doc)} /></td>}
+                      {idx === 0 && <td rowSpan={rows.length}>{getFinalCompletionDate(doc)}</td>}
+                      {idx === 0 && <td rowSpan={rows.length}>{doc.production_date ? formatDate(doc.production_date) : '-'}</td>}
+                      {idx === 0 && (
+                        <td rowSpan={rows.length}>
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            {(isPL || isMaster) && (doc.status === 'rejected' || doc.status === 'draft') && (
+                              <button className="btn btn-primary btn-sm" onClick={() => handleEditResubmit(doc)}>
+                                {t('approval.edit_resubmit')}
+                              </button>
+                            )}
+                            {(isPL || isMaster) && (doc.status === 'under_review' || doc.status === 'rejected' || doc.status === 'draft') && (
+                              <button className="btn btn-secondary btn-sm" onClick={() => handleWithdrawClick(doc)} disabled={processing}>
+                                {t('approval.withdraw')}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                });
+              })}
             </tbody>
           </table>
         </div>

@@ -66,6 +66,7 @@ export interface ApprovalStepFrontend {
   assignee_name?: string;    // 담당자 이름
   round: number;             // 상신 회차
   created_at?: string | null; // 단계 생성일시 (R 단계의 경우 해당 회차 상신 시각)
+  due_date?: string | null;   // 완료 기한 (YYYY-MM-DD)
 }
 
 // ===== Domain Models =====

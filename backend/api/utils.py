@@ -144,3 +144,38 @@ def get_line_suffix(line):
         '라인 5': 'line5',
     }
     return korean_map.get(line)
+
+
+def calculate_business_due_date(start_date, n_days):
+    """
+    start_date(포함) 기준으로 n_days 영업일째 날짜를 반환한다.
+    주말(토/일) 및 api_holiday 테이블의 isholiday='Y' 날짜를 제외한다.
+
+    Args:
+        start_date: datetime.date — 시작일 (당일 포함 카운트)
+        n_days: int — 영업일 수 (1이면 start_date 당일)
+
+    Returns:
+        datetime.date
+    """
+    import datetime
+    from .models import Holiday
+
+    # 향후 충분한 범위의 공휴일 집합을 한 번에 조회
+    lookahead = start_date + datetime.timedelta(days=n_days * 3 + 30)
+    holiday_set = set(
+        Holiday.objects.filter(
+            act_date__gte=start_date,
+            act_date__lte=lookahead,
+            isholiday='Y',
+        ).values_list('act_date', flat=True)
+    )
+
+    count = 0
+    current = start_date
+    while True:
+        if current.weekday() < 5 and current not in holiday_set:
+            count += 1
+            if count == n_days:
+                return current
+        current += datetime.timedelta(days=1)

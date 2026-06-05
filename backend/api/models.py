@@ -108,6 +108,21 @@ class RequestDocument(models.Model):
         return False
 
 
+class Holiday(models.Model):
+    """대한민국 공휴일 캐시 (스케줄러 동기화)"""
+    date_name = models.CharField(max_length=100, verbose_name='공휴일명')
+    isholiday = models.CharField(max_length=1, verbose_name='공휴일 여부')
+    act_date = models.DateField(unique=True, verbose_name='날짜')
+
+    class Meta:
+        verbose_name = '공휴일'
+        verbose_name_plural = '공휴일 목록'
+        indexes = [models.Index(fields=['act_date'], name='api_holiday_act_date_idx')]
+
+    def __str__(self):
+        return f"{self.act_date} ({self.date_name})"
+
+
 class ApprovalStep(models.Model):
     """결재 단계 - 프론트엔드 ApprovalStepFrontend 타입과 1:1 매핑"""
 
@@ -143,6 +158,7 @@ class ApprovalStep(models.Model):
     assignee_name = models.CharField(max_length=100, blank=True, verbose_name='담당자 이름')
     round = models.PositiveSmallIntegerField(default=1, verbose_name='상신 회차')
     created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True, verbose_name='생성일시')
+    due_date = models.DateField(null=True, blank=True, verbose_name='완료 기한')
 
     class Meta:
         verbose_name = '결재 단계'

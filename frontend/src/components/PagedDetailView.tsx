@@ -1103,6 +1103,7 @@ type Page = { label: string; content: React.ReactNode };
     assignee?: string;
     date?: string;
     comment?: string;
+    dueDate?: string;
   };
 
   const getStepDisplay = (agent: string, round: number): StepDisplayInfo => {
@@ -1111,6 +1112,7 @@ type Page = { label: string; content: React.ReactNode };
     }
     const s = getStep(agent, round);
     if (!s) return { status: 'waiting', label: t('approval.step_pending') };
+    const dueDate = s.due_date ? s.due_date.slice(5).replace('-', '/') : undefined; // MM/DD
     if (s.action === 'approved') return {
       status: 'approved', label: t('approval.agree'),
       assignee: s.assignee_name || undefined,
@@ -1124,8 +1126,8 @@ type Page = { label: string; content: React.ReactNode };
       comment: s.comment || undefined,
     };
     // pending
-    if (!s.assignee_name) return { status: 'unassigned', label: t('approval.step_unassigned') };
-    return { status: 'reviewing', label: t('common.status_under_review') };
+    if (!s.assignee_name) return { status: 'unassigned', label: t('approval.step_unassigned'), dueDate };
+    return { status: 'reviewing', label: t('common.status_under_review'), dueDate };
   };
 
   const statusBadgeStyle = (status: StepDisplayInfo['status']): React.CSSProperties => {
@@ -1221,6 +1223,11 @@ type Page = { label: string; content: React.ReactNode };
                       )}
                       {info.date && (
                         <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{info.date}</span>
+                      )}
+                      {info.dueDate && (
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                          {t('approval.col_due_date')}: {info.dueDate}
+                        </span>
                       )}
                       {info.comment && (
                         <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.78rem' }}>
