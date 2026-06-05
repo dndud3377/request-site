@@ -346,8 +346,11 @@ export const noticesAPI = {
 
 // ===== 가이드 API =====
 
-const listGuides = async (params?: { section?: string; search?: string }) => {
-  const qs = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : '';
+const listGuides = async (params?: { guide_type?: string; feature_key?: string; search?: string }) => {
+  const filtered = params
+    ? Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== ''))
+    : {};
+  const qs = Object.keys(filtered).length > 0 ? '?' + new URLSearchParams(filtered as Record<string, string>).toString() : '';
   const data = await get<{ results: Guide[]; count: number } | Guide[]>(`/guides/${qs}`);
   if (Array.isArray(data)) {
     return { data: { results: data, count: data.length } };

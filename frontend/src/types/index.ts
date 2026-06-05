@@ -363,21 +363,24 @@ export interface StepInfo {
 
 // ===== Guide =====
 
-export type GuideSection =
-  | 'general'
-  | 'line_combination'
-  | 'jayer'
-  | 'oayer'
-  | 'bone'
-  | 'map'
-  | 'cfamily'
-  | 'xmark'
-  | 'separation';
+export type GuideType = 'feature' | 'info';
+
+// 기능 가이드의 feature_key 목록 (Step별 고정)
+export type GuideFeatureKey =
+  | 'step1_line_process' | 'step1_request_purpose' | 'step1_other_purpose'
+  | 'step1_flow_chart' | 'step1_bb_entry' | 'step1_customer_vendor'
+  | 'step2_map_type' | 'step2_source_location' | 'step2_map_deviation'
+  | 'step2_exception_zone' | 'step2_cfamily' | 'step2_rev'
+  | 'step2_xmark' | 'step2_map_options'
+  | 'step3_jayer_table' | 'step3_jayer_filter'
+  | 'step4_oayer_table' | 'step4_oayer_info' | 'step4_partial_shot' | 'step4_tbvtlv'
+  | 'step5_bb_autofill' | 'step5_bb_mapping' | 'step5_bb_table';
 
 export interface Guide {
   id: number;
+  guide_type: GuideType;
+  feature_key: GuideFeatureKey | null;
   title: string;
-  section: GuideSection;
   content: string;
   author_name: string;
   author_role: UserRole;
@@ -386,10 +389,48 @@ export interface Guide {
 }
 
 export interface CreateGuideInput {
+  guide_type: GuideType;
+  feature_key?: GuideFeatureKey | null;
   title: string;
-  section: GuideSection;
   content: string;
 }
+
+// Step별 기능 목록 상수
+export const GUIDE_STEP_FEATURES: Record<number, { key: GuideFeatureKey; labelKey: string }[]> = {
+  1: [
+    { key: 'step1_line_process',    labelKey: 'guide.feat.step1_line_process' },
+    { key: 'step1_request_purpose', labelKey: 'guide.feat.step1_request_purpose' },
+    { key: 'step1_other_purpose',   labelKey: 'guide.feat.step1_other_purpose' },
+    { key: 'step1_flow_chart',      labelKey: 'guide.feat.step1_flow_chart' },
+    { key: 'step1_bb_entry',        labelKey: 'guide.feat.step1_bb_entry' },
+    { key: 'step1_customer_vendor', labelKey: 'guide.feat.step1_customer_vendor' },
+  ],
+  2: [
+    { key: 'step2_map_type',        labelKey: 'guide.feat.step2_map_type' },
+    { key: 'step2_source_location', labelKey: 'guide.feat.step2_source_location' },
+    { key: 'step2_map_deviation',   labelKey: 'guide.feat.step2_map_deviation' },
+    { key: 'step2_exception_zone',  labelKey: 'guide.feat.step2_exception_zone' },
+    { key: 'step2_cfamily',         labelKey: 'guide.feat.step2_cfamily' },
+    { key: 'step2_rev',             labelKey: 'guide.feat.step2_rev' },
+    { key: 'step2_xmark',           labelKey: 'guide.feat.step2_xmark' },
+    { key: 'step2_map_options',     labelKey: 'guide.feat.step2_map_options' },
+  ],
+  3: [
+    { key: 'step3_jayer_table',  labelKey: 'guide.feat.step3_jayer_table' },
+    { key: 'step3_jayer_filter', labelKey: 'guide.feat.step3_jayer_filter' },
+  ],
+  4: [
+    { key: 'step4_oayer_table',   labelKey: 'guide.feat.step4_oayer_table' },
+    { key: 'step4_oayer_info',    labelKey: 'guide.feat.step4_oayer_info' },
+    { key: 'step4_partial_shot',  labelKey: 'guide.feat.step4_partial_shot' },
+    { key: 'step4_tbvtlv',        labelKey: 'guide.feat.step4_tbvtlv' },
+  ],
+  5: [
+    { key: 'step5_bb_autofill', labelKey: 'guide.feat.step5_bb_autofill' },
+    { key: 'step5_bb_mapping',  labelKey: 'guide.feat.step5_bb_mapping' },
+    { key: 'step5_bb_table',    labelKey: 'guide.feat.step5_bb_table' },
+  ],
+};
 
 export interface ExternalBbDataItem {
   id: string;

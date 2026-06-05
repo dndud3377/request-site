@@ -20,12 +20,12 @@ User = get_user_model()
 from django.db.models import Q
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
-    PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode,
+    PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide,
 )
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer,
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
-    UserSerializer,
+    UserSerializer, GuideSerializer,
 )
 import uuid
 import logging
@@ -887,3 +887,36 @@ def user_events(request):
     response['Cache-Control'] = 'no-cache'
     response['X-Accel-Buffering'] = 'no'
     return response
+
+
+class IsMasterOrReadOnly(BasePermission):
+    """MASTER 역할만 쓰기 허용, 나머지는 읽기 전용."""
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return request.user and request.user.is_authenticated
+        return request.user and request.user.is_authenticated and getattr(request.user, 'role', '') == 'MASTER'
+
+
+class GuideViewSet(viewsets.ModelViewSet):
+    """의뢰서 작성 가이드 CRUD"""
+    serializer_class = GuideSerializer
+    permission_classes = [IsMasterOrReadOnly]
+
+    def get_queryset(self):
+        qs = Guide.objects.all()
+        guide_type = self.request.query_params.get('guide_type')
+        feature_key = self.request.query_params.get('feature_key')
+        if guide_type:
+            qs = qs.filter(guide_type=guide_type)
+        if feature_key:
+            qs = qs.filter(feature_key=feature_key)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(
+            author_name=self.request.user.username or self.request.user.loginid,
+            author_role=self.request.user.role,
+        )
+
+    def perform_update(self, serializer):
+        serializer.save()

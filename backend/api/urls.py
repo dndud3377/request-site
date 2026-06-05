@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     RequestDocumentViewSet, VOCViewSet, LineViewSet, AdminNoticeViewSet, VocHistoryViewSet,
-    UserViewSet,
+    UserViewSet, GuideViewSet,
     health_check, upload_image, user_events,
     form_options_process, form_options_products, form_options_process_id,
     form_options_job_file_layer, form_options_ovl_layer, form_options_bb_external,
@@ -18,6 +18,7 @@ router.register(r'voc-histories', VocHistoryViewSet, basename='voc-history')
 router.register(r'lines', LineViewSet, basename='line')
 router.register(r'notices', AdminNoticeViewSet, basename='notice')
 router.register(r'users', UserViewSet, basename='user')
+router.register(r'guides', GuideViewSet, basename='guide')
 
 urlpatterns = [
     path('users/events/', user_events, name='user-events'),

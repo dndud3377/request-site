@@ -3,26 +3,38 @@ import { useTranslation } from 'react-i18next';
 import { guidesAPI } from '../api/client';
 import { useToast } from '../components/Toast';
 import Modal, { ConfirmModal } from '../components/Modal';
-import { Guide, GuideSection, CreateGuideInput } from '../types';
+import RichTextEditor from '../components/RichTextEditor';
+import {
+  Guide,
+  GuideType,
+  GuideFeatureKey,
+  CreateGuideInput,
+  GUIDE_STEP_FEATURES,
+} from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
-// ===== Constants =====
-
-type SectionFilter = GuideSection | 'all';
-
-interface SectionOption {
-  value: SectionFilter;
-  labelKey: string;
-}
-
-const SECTIONS: SectionOption[] = [
-  { value: 'all',            labelKey: 'guide.section_all' },
-];
-
-const SECTION_KEYS = SECTIONS.filter((s) => s.value !== 'all').map((s) => s.value as GuideSection);
+// ===== Helpers =====
 
 const formatDate = (d: string) =>
   new Date(d).toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' });
+
+type FilterTab = 'all' | 'feature' | 'info';
+
+interface FormState {
+  guide_type: GuideType;
+  selectedStep: number | null;
+  feature_key: GuideFeatureKey | null;
+  title: string;
+  content: string;
+}
+
+const EMPTY_FORM: FormState = {
+  guide_type: 'feature',
+  selectedStep: null,
+  feature_key: null,
+  title: '',
+  content: '',
+};
 
 // ===== Page =====
 
@@ -32,23 +44,23 @@ export default function GuidePage(): React.ReactElement {
   const { currentUser } = useAuth();
 
   // ── list state ──
-  const [guides, setGuides]       = useState<Guide[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [section, setSection]     = useState<SectionFilter>('all');
-  const [searchQuery, setSearch]  = useState('');
+  const [guides, setGuides]     = useState<Guide[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [filterTab, setFilter]  = useState<FilterTab>('all');
+  const [searchQuery, setSearch] = useState('');
 
-  // ── detail modal ──
-  const [selected, setSelected]   = useState<Guide | null>(null);
+  // ── detail modal (info guides only) ──
+  const [selected, setSelected] = useState<Guide | null>(null);
 
   // ── write / edit modal ──
-  const [formOpen, setFormOpen]   = useState(false);
-  const [editTarget, setEditTarget] = useState<Guide | null>(null);
-  const [form, setForm]           = useState<CreateGuideInput>({ title: '', section: 'general', content: '' });
-  const [submitting, setSubmitting] = useState(false);
+  const [formOpen, setFormOpen]       = useState(false);
+  const [editTarget, setEditTarget]   = useState<Guide | null>(null);
+  const [form, setForm]               = useState<FormState>(EMPTY_FORM);
+  const [submitting, setSubmitting]   = useState(false);
 
   // ── delete confirm ──
   const [deleteTarget, setDeleteTarget] = useState<Guide | null>(null);
-  const [deleting, setDeleting]   = useState(false);
+  const [deleting, setDeleting]         = useState(false);
 
   // ─────────────── helpers ───────────────
 
@@ -60,13 +72,18 @@ export default function GuidePage(): React.ReactElement {
     [currentUser]
   );
 
+  const featureLabel = useCallback(
+    (key: GuideFeatureKey): string => t(`guide.feat.${key}` as never),
+    [t]
+  );
+
   // ─────────────── data ───────────────
 
   const fetchGuides = useCallback(() => {
     setLoading(true);
-    const params: { section?: string; search?: string } = {};
-    if (section !== 'all') params.section = section;
-    if (searchQuery)       params.search  = searchQuery;
+    const params: { guide_type?: string; search?: string } = {};
+    if (filterTab !== 'all') params.guide_type = filterTab;
+    if (searchQuery)         params.search = searchQuery;
 
     guidesAPI
       .list(params)
@@ -76,7 +93,7 @@ export default function GuidePage(): React.ReactElement {
       })
       .catch(() => setGuides([]))
       .finally(() => setLoading(false));
-  }, [section, searchQuery]);
+  }, [filterTab, searchQuery]);
 
   useEffect(() => { fetchGuides(); }, [fetchGuides]);
 
@@ -84,30 +101,68 @@ export default function GuidePage(): React.ReactElement {
 
   const openWrite = () => {
     setEditTarget(null);
-    setForm({ title: '', section: 'general', content: '' });
+    setForm(EMPTY_FORM);
     setFormOpen(true);
   };
 
   const openEdit = (guide: Guide) => {
     setEditTarget(guide);
-    setForm({ title: guide.title, section: guide.section, content: guide.content });
+    // reconstruct form state from existing guide
+    let selectedStep: number | null = null;
+    if (guide.guide_type === 'feature' && guide.feature_key) {
+      for (const [step, features] of Object.entries(GUIDE_STEP_FEATURES)) {
+        if (features.some((f) => f.key === guide.feature_key)) {
+          selectedStep = Number(step);
+          break;
+        }
+      }
+    }
+    setForm({
+      guide_type: guide.guide_type,
+      selectedStep,
+      feature_key: guide.feature_key,
+      title: guide.title,
+      content: guide.content,
+    });
     setSelected(null);
     setFormOpen(true);
   };
 
   const handleSubmit = async () => {
-    if (!form.title.trim() || !form.content.trim()) {
+    // validation
+    if (form.guide_type === 'feature') {
+      if (!form.feature_key) {
+        addToast(t('guide.select_feature'), 'error');
+        return;
+      }
+    } else {
+      if (!form.title.trim()) {
+        addToast(t('common.error'), 'error');
+        return;
+      }
+    }
+    if (!form.content.trim() || form.content === '<p></p>') {
       addToast(t('common.error'), 'error');
       return;
     }
+
+    const payload: CreateGuideInput = {
+      guide_type: form.guide_type,
+      feature_key: form.guide_type === 'feature' ? form.feature_key : null,
+      title: form.guide_type === 'feature' && form.feature_key
+        ? featureLabel(form.feature_key)
+        : form.title,
+      content: form.content,
+    };
+
     setSubmitting(true);
     try {
       if (editTarget) {
-        const r = await guidesAPI.update(editTarget.id, form);
+        const r = await guidesAPI.update(editTarget.id, payload);
         setGuides((prev) => prev.map((g) => (g.id === editTarget.id ? r.data : g)));
         addToast(t('guide.update_success'), 'success');
       } else {
-        const r = await guidesAPI.create(form);
+        const r = await guidesAPI.create(payload);
         setGuides((prev) => [r.data, ...prev]);
         addToast(t('guide.create_success'), 'success');
       }
@@ -135,10 +190,11 @@ export default function GuidePage(): React.ReactElement {
     }
   };
 
-  // ─────────────── render ───────────────
+  // ─────────────── derived ───────────────
 
-  const sectionLabel = (s: GuideSection): string =>
-    t(`guide.section_${s}` as any);
+  const stepFeatures = form.selectedStep ? GUIDE_STEP_FEATURES[form.selectedStep] ?? [] : [];
+
+  // ─────────────── render ───────────────
 
   return (
     <div className="container page">
@@ -166,13 +222,13 @@ export default function GuidePage(): React.ReactElement {
       <div className="guide-layout">
         {/* Sidebar */}
         <aside className="guide-sidebar card" style={{ padding: '12px 8px' }}>
-          {SECTIONS.map((opt) => (
+          {(['all', 'feature', 'info'] as FilterTab[]).map((tab) => (
             <button
-              key={opt.value}
-              className={`guide-sidebar-btn${section === opt.value ? ' active' : ''}`}
-              onClick={() => setSection(opt.value)}
+              key={tab}
+              className={`guide-sidebar-btn${filterTab === tab ? ' active' : ''}`}
+              onClick={() => setFilter(tab)}
             >
-              {t(opt.labelKey as any)}
+              {t(`guide.section_${tab}` as never)}
             </button>
           ))}
         </aside>
@@ -189,11 +245,28 @@ export default function GuidePage(): React.ReactElement {
                 <div
                   key={guide.id}
                   className="card guide-card"
-                  onClick={() => setSelected(guide)}
+                  onClick={() => {
+                    if (guide.guide_type === 'info') setSelected(guide);
+                    else openEdit(guide);
+                  }}
+                  style={{ cursor: 'pointer' }}
                 >
-                  <span className="guide-section-badge">{sectionLabel(guide.section)}</span>
+                  <span
+                    className="guide-section-badge"
+                    style={{
+                      background: guide.guide_type === 'feature' ? '#eff6ff' : '#f0fdf4',
+                      color: guide.guide_type === 'feature' ? '#3b82f6' : '#16a34a',
+                    }}
+                  >
+                    {t(guide.guide_type === 'feature' ? 'guide.type_feature' : 'guide.type_info')}
+                  </span>
                   <div className="guide-card-title">{guide.title}</div>
-                  <div className="guide-card-preview">{guide.content}</div>
+                  <div
+                    className="guide-card-preview"
+                    dangerouslySetInnerHTML={{
+                      __html: guide.content.replace(/<[^>]+>/g, ' ').slice(0, 80),
+                    }}
+                  />
                   <div className="guide-card-meta">
                     <span>{guide.author_name}</span>
                     <span>·</span>
@@ -206,7 +279,7 @@ export default function GuidePage(): React.ReactElement {
         </main>
       </div>
 
-      {/* Detail Modal */}
+      {/* Info Guide Detail Modal */}
       <Modal
         isOpen={!!selected}
         onClose={() => setSelected(null)}
@@ -231,7 +304,6 @@ export default function GuidePage(): React.ReactElement {
         {selected && (
           <div>
             <div style={{ marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span className="guide-section-badge">{sectionLabel(selected.section)}</span>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 {t('guide.author')}: {selected.author_name}
               </span>
@@ -244,7 +316,11 @@ export default function GuidePage(): React.ReactElement {
                 </span>
               )}
             </div>
-            <pre className="guide-content-body">{selected.content}</pre>
+            <div
+              className="guide-content-render"
+              style={{ fontSize: 14, lineHeight: 1.85, color: '#333' }}
+              dangerouslySetInnerHTML={{ __html: selected.content }}
+            />
           </div>
         )}
       </Modal>
@@ -253,49 +329,137 @@ export default function GuidePage(): React.ReactElement {
       <Modal
         isOpen={formOpen}
         onClose={() => setFormOpen(false)}
-        title={t(editTarget ? 'guide.modal_edit_title' : 'guide.modal_write_title')}
+        title={t(editTarget ? 'guide.edit_title' : 'guide.write_title')}
+        size="lg"
         footer={
           <>
+            {editTarget && canEdit(editTarget) && (
+              <button
+                className="btn btn-danger"
+                style={{ marginRight: 'auto' }}
+                onClick={() => { setDeleteTarget(editTarget); setFormOpen(false); }}
+                disabled={submitting}
+              >
+                {t('guide.delete')}
+              </button>
+            )}
             <button className="btn btn-secondary" onClick={() => setFormOpen(false)} disabled={submitting}>
-              {t('common.cancel')}
+              {t('guide.cancel')}
             </button>
             <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
-              {submitting ? t('common.loading') : t('common.save')}
+              {submitting ? t('common.loading') : t('guide.save')}
             </button>
           </>
         }
       >
-        <div className="form-group" style={{ marginBottom: 16 }}>
-          <label className="form-label">{t('guide.form_title')}</label>
-          <input
-            className="form-control"
-            type="text"
-            value={form.title}
-            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            placeholder={t('guide.form_title')}
-          />
-        </div>
-        <div className="form-group" style={{ marginBottom: 16 }}>
-          <label className="form-label">{t('guide.form_section')}</label>
-          <select
-            className="form-control"
-            value={form.section}
-            onChange={(e) => setForm((f) => ({ ...f, section: e.target.value as GuideSection }))}
-          >
-            {SECTION_KEYS.map((s) => (
-              <option key={s} value={s}>{sectionLabel(s)}</option>
-            ))}
-          </select>
-        </div>
+        {/* Guide type selection (only when creating) */}
+        {!editTarget && (
+          <div className="form-group" style={{ marginBottom: 20 }}>
+            <label className="form-label">{t('guide.type_label')}</label>
+            <div style={{ display: 'flex', gap: 12 }}>
+              {(['feature', 'info'] as GuideType[]).map((type) => (
+                <div
+                  key={type}
+                  onClick={() => setForm((f) => ({
+                    ...f,
+                    guide_type: type,
+                    selectedStep: null,
+                    feature_key: null,
+                    title: '',
+                  }))}
+                  style={{
+                    flex: 1,
+                    padding: '14px 16px',
+                    border: `2px solid ${form.guide_type === type ? '#4f8ef7' : '#dde1ea'}`,
+                    borderRadius: 10,
+                    cursor: 'pointer',
+                    background: form.guide_type === type ? '#eff6ff' : '#fafbff',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: 14, color: form.guide_type === type ? '#3b82f6' : '#333', marginBottom: 4 }}>
+                    {type === 'feature' ? '⚙️' : '📋'} {t(`guide.type_${type}` as never)}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#888' }}>
+                    {t(`guide.type_${type}_desc` as never)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Feature type: step + feature selector */}
+        {form.guide_type === 'feature' && (
+          <>
+            <div className="form-group" style={{ marginBottom: 16 }}>
+              <label className="form-label">{t('guide.select_step')}</label>
+              <select
+                className="form-control"
+                value={form.selectedStep ?? ''}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    selectedStep: e.target.value ? Number(e.target.value) : null,
+                    feature_key: null,
+                  }))
+                }
+                disabled={!!editTarget}
+              >
+                <option value="">{t('guide.select_step_placeholder')}</option>
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <option key={s} value={s}>Step {s}</option>
+                ))}
+              </select>
+            </div>
+
+            {form.selectedStep && (
+              <div className="form-group" style={{ marginBottom: 16 }}>
+                <label className="form-label">{t('guide.select_feature')}</label>
+                <select
+                  className="form-control"
+                  value={form.feature_key ?? ''}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      feature_key: (e.target.value as GuideFeatureKey) || null,
+                    }))
+                  }
+                  disabled={!!editTarget}
+                >
+                  <option value="">{t('guide.select_feature_placeholder')}</option>
+                  {stepFeatures.map((feat) => (
+                    <option key={feat.key} value={feat.key}>
+                      {t(feat.labelKey as never)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Info type: title input */}
+        {form.guide_type === 'info' && (
+          <div className="form-group" style={{ marginBottom: 16 }}>
+            <label className="form-label">{t('guide.info_title_label')}</label>
+            <input
+              className="form-control"
+              type="text"
+              value={form.title}
+              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              placeholder={t('guide.info_title_placeholder')}
+            />
+          </div>
+        )}
+
+        {/* Content editor */}
         <div className="form-group">
-          <label className="form-label">{t('guide.form_content')}</label>
-          <textarea
-            className="form-control"
-            rows={12}
+          <label className="form-label">{t('guide.content_label')}</label>
+          <RichTextEditor
             value={form.content}
-            onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-            placeholder={t('guide.form_content')}
-            style={{ resize: 'vertical', fontFamily: 'inherit' }}
+            onChange={(html) => setForm((f) => ({ ...f, content: html }))}
+            placeholder={t('guide.editor_placeholder')}
           />
         </div>
       </Modal>
