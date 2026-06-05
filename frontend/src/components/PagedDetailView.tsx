@@ -1136,12 +1136,12 @@ type Page = { label: string; content: React.ReactNode };
       fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap',
     };
     const colors: Record<StepDisplayInfo['status'], React.CSSProperties> = {
-      approved:   { background: '#d4edda', color: '#155724' },
-      rejected:   { background: '#f8d7da', color: '#721c24' },
-      reviewing:  { background: '#cce5ff', color: '#004085' },
-      unassigned: { background: '#e2e3e5', color: '#383d41' },
-      waiting:    { background: '#f0f0f0', color: '#adb5bd' },
-      na:         { background: '#f0f0f0', color: '#adb5bd' },
+      approved:   { background: 'rgba(5,150,105,0.1)',   color: '#059669' },
+      rejected:   { background: 'rgba(220,38,38,0.1)',   color: '#dc2626' },
+      reviewing:  { background: 'rgba(217,119,6,0.1)',   color: '#d97706' },
+      unassigned: { background: 'rgba(107,138,176,0.15)', color: '#6b8ab0' },
+      waiting:    { background: 'rgba(107,138,176,0.1)', color: '#adb5bd' },
+      na:         { background: 'rgba(107,138,176,0.1)', color: '#adb5bd' },
     };
     return { ...base, ...colors[status] };
   };
