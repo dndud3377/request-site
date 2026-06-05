@@ -207,7 +207,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         step.acted_at = timezone.now()
         step.comment = comment
         if not step.assignee_name:
-            step.assignee_name = request.user.username
+            step.assignee_name = request.data.get('approver_name', '')
         step.save()
 
         new_status = document.status

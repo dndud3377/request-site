@@ -325,7 +325,7 @@ export default function ApprovalPage(): React.ReactElement {
     setProcessing(true);
     try {
       if (pendingAction.type === 'agree') {
-        await documentsAPI.approveStep(selected.id, pendingAction.agent, commentInput || undefined);
+        await documentsAPI.approveStep(selected.id, pendingAction.agent, commentInput || undefined, currentUser.name);
         addToast(t('approval.agree_success', { agent: t(`approval.agent_${pendingAction.agent}` as any) }), 'success');
         setModalOpen(false);
         fetchDocs();

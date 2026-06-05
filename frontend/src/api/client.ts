@@ -187,10 +187,10 @@ const deleteDocument = async (id: number) => {
   return { data };
 };
 
-const approveStep = async (docId: number, agent: AgentType, comment?: string) => {
+const approveStep = async (docId: number, agent: AgentType, comment?: string, approverName?: string) => {
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/approve-step/`,
-    { agent, comment: comment ?? '' }
+    { agent, comment: comment ?? '', approver_name: approverName ?? '' }
   );
   return { data };
 };
