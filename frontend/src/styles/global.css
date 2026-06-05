@@ -1823,15 +1823,19 @@ select.form-control option {
 
 /* ===== Row Split (병렬 결재 테이블) ===== */
 
-/* 병렬 구간 - 두 번째 행: 상단 border 없음 (내부 구분선 제거) */
+/* 병렬 구간 - 첫 번째 행: 하단 border 없음 (내부 구분선 제거) */
+.doc-row-first td {
+  border-bottom: none !important;
+}
+
+/* 병렬 구간 - 두 번째 행: 상단 border 없음 (이중 제거) */
 .doc-row-second td {
   border-top: none !important;
 }
 
-/* hover 시 둘 다 카드 배경으로 (강조 없음) */
-.doc-row-first:hover td,
-.doc-row-second:hover td {
-  background: var(--bg-card) !important;
+/* hover 그룹 강조 — JS에서 hoveredDocId 일치 시 두 행 모두 클래스 부여 */
+.doc-row-group-hovered td {
+  background: var(--bg-secondary) !important;
   color: var(--text-primary);
 }
 

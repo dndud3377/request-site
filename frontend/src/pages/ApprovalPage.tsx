@@ -204,6 +204,7 @@ export default function ApprovalPage(): React.ReactElement {
   const [modalOpen, setModalOpen] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [pageIdx, setPageIdx] = useState(0);
+  const [hoveredDocId, setHoveredDocId] = useState<number | null>(null);
 
   // 합의/반려 comment 모달
   const [commentModalOpen, setCommentModalOpen] = useState(false);
@@ -465,10 +466,16 @@ export default function ApprovalPage(): React.ReactElement {
                 const undecided = t('approval.due_date_undecided');
                 return rows.map((row, idx) => {
                   const dd = getDueDateDisplay(row.dueDate, row.isDone, undecided);
+                  const rowClasses = [
+                    isParallel ? (idx === 0 ? 'doc-row-first' : 'doc-row-second') : '',
+                    hoveredDocId === doc.id ? 'doc-row-group-hovered' : '',
+                  ].filter(Boolean).join(' ');
                   return (
                     <tr
                       key={`${doc.id}-${idx}`}
-                      className={isParallel ? (idx === 0 ? 'doc-row-first' : 'doc-row-second') : ''}
+                      className={rowClasses}
+                      onMouseEnter={() => setHoveredDocId(doc.id)}
+                      onMouseLeave={() => setHoveredDocId(null)}
                     >
                       {idx === 0 && (
                         <td rowSpan={rows.length}>
