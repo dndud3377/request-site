@@ -103,8 +103,6 @@ const resolvePathStatus = (
   if (docStatus === 'rejected') return 'rejected';
   if (isDone) return 'approved';
   if (!pendingStep) return 'approved';
-  // O/E는 담당자 지정 없이도 진행 가능
-  if (pendingStep.agent === 'O' || pendingStep.agent === 'E') return 'under_review';
   return pendingStep.assignee_loginid ? 'under_review' : 'unassigned';
 };
 
@@ -455,7 +453,6 @@ export default function ApprovalPage(): React.ReactElement {
                 <th>{t('approval.col_requester')}</th>
                 <th>{t('approval.col_current_stage')}</th>
                 <th>{t('approval.col_current_stage_completion')}</th>
-                <th>{t('approval.col_status')}</th>
                 <th>{t('approval.col_final_completion')}</th>
                 <th>{t('approval.col_production_date')}</th>
                 <th></th>
@@ -495,17 +492,14 @@ export default function ApprovalPage(): React.ReactElement {
                         </td>
                       )}
                       <td style={{ fontWeight: 500 }}>
-                        {isParallel && (
-                          <span className={`path-label-chip ${row.pathKey === 'path1' ? 'path1' : 'path2'}`} style={{ marginRight: 6 }}>
-                            {row.pathKey === 'path1' ? t('approval.path_label_phpsi_job') : t('approval.path_label_ovl_euv')}
-                          </span>
-                        )}
-                        <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{row.stageText}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <StatusBadge status={row.pathStatus} />
+                          <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{row.stageText}</span>
+                        </div>
                       </td>
                       <td>
                         <span className={dd.cls}>{dd.text}</span>
                       </td>
-                      <td><StatusBadge status={row.pathStatus} /></td>
                       {idx === 0 && <td rowSpan={rows.length}>{getFinalCompletionDate(doc)}</td>}
                       {idx === 0 && <td rowSpan={rows.length}>{doc.production_date ? formatDate(doc.production_date) : '-'}</td>}
                       {idx === 0 && (

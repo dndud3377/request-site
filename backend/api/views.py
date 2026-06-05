@@ -206,6 +206,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         step.action = 'approved'
         step.acted_at = timezone.now()
         step.comment = comment
+        if not step.assignee_name:
+            step.assignee_name = request.user.username  # 담당자 미지정 시 합의자 이름 기록
         step.save()
 
         new_status = document.status
