@@ -1828,10 +1828,9 @@ select.form-control option {
   border-bottom: none !important;
 }
 
-/* 병렬 구간 - 두 번째 행: 상단 border 없음, 배경 살짝 어둡게 */
+/* 병렬 구간 - 두 번째 행: 상단 border 없음 */
 .doc-row-second td {
   border-top: none !important;
-  background: var(--bg-card-hover) !important;
 }
 
 /* hover 시 둘 다 동일하게 */
