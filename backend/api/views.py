@@ -900,7 +900,7 @@ class IsMasterOrReadOnly(BasePermission):
 class GuideViewSet(viewsets.ModelViewSet):
     """의뢰서 작성 가이드 CRUD"""
     serializer_class = GuideSerializer
-    permission_classes = [IsMasterOrReadOnly]
+    permission_classes = [AllowAny]
 
     def get_queryset(self):
         qs = Guide.objects.all()
