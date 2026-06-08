@@ -1031,7 +1031,7 @@ class UserGroupViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='remove-member')
     def remove_member(self, request, pk=None):
-        """멤버 제거 — creator는 제거 불가"""
+        """멤버 제거 — 본인 탈퇴 및 타 멤버 내보내기 모두 허용"""
         group = self.get_object()
         user_id = request.data.get('user_id')
         if not user_id:
@@ -1044,9 +1044,6 @@ class UserGroupViewSet(viewsets.ModelViewSet):
 
         if not group.members.filter(pk=target.pk).exists():
             return Response({'error': '그룹 멤버가 아닙니다.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if target.pk == group.creator.pk:
-            return Response({'error': '그룹 생성자는 제거할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         group.members.remove(target)
         return Response(UserGroupSerializer(group, context={'request': request}).data)

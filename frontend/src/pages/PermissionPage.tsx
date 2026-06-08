@@ -9,6 +9,20 @@ import { UserRole, UserWithRole, UserForAssignment, UserGroup, UserGroupMember, 
 const ALL_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
 
 
+// ===== Shared styles =====
+
+const thStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '10px 12px',
+  fontWeight: 600,
+  fontSize: 13,
+  color: '#4a5568',
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: '10px 12px',
+  fontSize: 14,
+};
 
 
 // ===== User Table =====
@@ -73,451 +87,570 @@ function UserTable({
   );
 }
 
-const thStyle: React.CSSProperties = {
-  textAlign: 'left',
-  padding: '10px 12px',
-  fontWeight: 600,
-  fontSize: 13,
-  color: '#4a5568',
-};
 
-const tdStyle: React.CSSProperties = {
-  padding: '10px 12px',
-  fontSize: 14,
-};
+// ===== AddGroupMemberModal =====
 
-// ===== My Group Section =====
-
-interface MyGroupSectionProps {
-  currentLoginid: string;
-  currentRole: UserRole | null;
+interface AddGroupMemberModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  group: UserGroup;
+  onMemberAdded: (updated: UserGroup) => void;
 }
 
-function MyGroupSection({ currentLoginid, currentRole }: MyGroupSectionProps): React.ReactElement {
+function AddGroupMemberModal({ isOpen, onClose, group, onMemberAdded }: AddGroupMemberModalProps): React.ReactElement {
   const { t } = useTranslation();
   const addToast = useToast();
 
-  const [groups, setGroups] = useState<UserGroup[]>([]);
-  const [loadingGroups, setLoadingGroups] = useState(true);
+  const [candidates, setCandidates] = useState<AvailableGroupMember[]>([]);
+  const [selected, setSelected] = useState<AvailableGroupMember[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
 
-  // create form
-  const [newGroupName, setNewGroupName] = useState('');
-  const [creating, setCreating] = useState(false);
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelected([]);
+    setSearchQuery('');
+    userGroupsAPI.availableMembers(group.id)
+      .then(setCandidates)
+      .catch(() => setCandidates([]));
+  }, [isOpen, group.id]);
 
-  // per-group state
-  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<number>>(new Set());
-  const [availableMembers, setAvailableMembers] = useState<Record<number, AvailableGroupMember[]>>({});
-  const [memberSearchQuery, setMemberSearchQuery] = useState<Record<number, string>>({});
-  const [memberDropdownOpen, setMemberDropdownOpen] = useState<Record<number, boolean>>({});
-  const memberSearchRefs = useRef<Record<number, HTMLDivElement | null>>({});
-
-  // modals
-  const [deleteTarget, setDeleteTarget] = useState<UserGroup | null>(null);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [removeMemberTarget, setRemoveMemberTarget] = useState<{ group: UserGroup; member: UserGroupMember } | null>(null);
-  const [removingMember, setRemovingMember] = useState(false);
-  const [renameTarget, setRenameTarget] = useState<UserGroup | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-  const [renaming, setRenaming] = useState(false);
-
-  const fetchGroups = useCallback(() => {
-    setLoadingGroups(true);
-    userGroupsAPI.list()
-      .then(setGroups)
-      .catch(() => setGroups([]))
-      .finally(() => setLoadingGroups(false));
-  }, []);
-
-  useEffect(() => { fetchGroups(); }, [fetchGroups]);
-
-  // close member dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      setMemberDropdownOpen(prev => {
-        const updated = { ...prev };
-        Object.keys(memberSearchRefs.current).forEach(key => {
-          const id = Number(key);
-          const ref = memberSearchRefs.current[id];
-          if (ref && !ref.contains(e.target as Node)) {
-            updated[id] = false;
-          }
-        });
-        return updated;
-      });
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const toggleExpand = (groupId: number) => {
-    const isExpanding = !expandedGroupIds.has(groupId);
-    setExpandedGroupIds(prev => {
-      const next = new Set(prev);
-      if (isExpanding) next.add(groupId); else next.delete(groupId);
-      return next;
-    });
-    if (isExpanding) {
-      userGroupsAPI.availableMembers(groupId)
-        .then(data => setAvailableMembers(am => ({ ...am, [groupId]: data })))
-        .catch(() => setAvailableMembers(am => ({ ...am, [groupId]: [] })));
+  const filtered = candidates.filter(u =>
+    !selected.some(s => s.id === u.id) && (
+      searchQuery.trim() === '' ? false : (
+        u.loginid.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        u.mail.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (u.deptname && u.deptname.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
+    )
+  );
+
+  const handleSelect = (u: AvailableGroupMember) => {
+    setSelected(prev => [...prev, u]);
+    setSearchQuery('');
+    setDropdownOpen(false);
+  };
+
+  const handleSubmit = async () => {
+    if (selected.length === 0) return;
+    setSubmitting(true);
+    try {
+      let lastUpdated: UserGroup = group;
+      const results = await Promise.allSettled(
+        selected.map(m => userGroupsAPI.addMember(group.id, m.id))
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled') lastUpdated = r.value;
+      }
+      const succeeded = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      if (succeeded > 0) {
+        onMemberAdded(lastUpdated);
+        if (failed === 0) {
+          addToast(t('group.add_member_success'), 'success');
+        } else {
+          addToast(t('group.add_member_error'), 'error');
+        }
+        onClose();
+      } else {
+        addToast(t('group.add_member_error'), 'error');
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const refreshAvailableMembers = useCallback((groupId: number) => {
-    userGroupsAPI.availableMembers(groupId)
-      .then(data => setAvailableMembers(am => ({ ...am, [groupId]: data })))
-      .catch(() => {});
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`${t('group.add_member_modal_title')} — ${group.name}`}
+      size="md"
+      style={{ minHeight: 360 }}
+      footer={
+        <>
+          <button className="btn btn-secondary" onClick={onClose} disabled={submitting}>
+            {t('common.cancel')}
+          </button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting || selected.length === 0}>
+            {submitting ? t('common.loading') : t('group.add_member')}
+          </button>
+        </>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 200 }}>
+        <div ref={searchRef} style={{ position: 'relative' }}>
+          <input
+            type="text"
+            className="form-control"
+            value={searchQuery}
+            onChange={e => { setSearchQuery(e.target.value); setDropdownOpen(true); }}
+            onFocus={() => setDropdownOpen(true)}
+            placeholder={t('group.add_member_placeholder')}
+            style={{ fontSize: 13 }}
+          />
+          {dropdownOpen && searchQuery.trim() && (
+            <ul style={{
+              position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999,
+              background: 'var(--bg-modal, #fff)',
+              border: '1px solid var(--color-border, #e2e8f0)',
+              borderRadius: 4, boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+              margin: 0, padding: 0, listStyle: 'none',
+              maxHeight: 200, overflowY: 'auto',
+            }}>
+              {filtered.length === 0 ? (
+                <li style={{ padding: '10px 12px', color: '#999', fontSize: 13 }}>
+                  {t('group.no_available_members')}
+                </li>
+              ) : filtered.map(u => (
+                <li
+                  key={u.id}
+                  onMouseDown={e => { e.preventDefault(); handleSelect(u); }}
+                  style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13 }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLLIElement).style.background = 'var(--bg-secondary, #f7fafc)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLLIElement).style.background = 'transparent'; }}
+                >
+                  <strong>{u.loginid}</strong>
+                  <span style={{ color: '#718096', marginLeft: 8, fontSize: 12 }}>
+                    {u.name} · {u.deptname || '부서없음'} · {u.mail}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {selected.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {selected.map(u => (
+              <span
+                key={u.id}
+                style={{
+                  display: 'inline-flex', alignItems: 'center',
+                  background: '#e3f2fd', padding: '3px 8px',
+                  borderRadius: 3, fontSize: 13,
+                }}
+              >
+                <strong>{u.loginid}</strong>
+                <span style={{ color: '#718096', marginLeft: 4, fontSize: 12 }}>
+                  {u.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelected(prev => prev.filter(s => s.id !== u.id))}
+                  style={{ marginLeft: 6, border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: 0, fontSize: 12, lineHeight: 1 }}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+
+// ===== CreateGroupModal =====
+
+interface CreateGroupModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  currentRole: UserRole;
+  currentLoginid: string;
+  onCreated: (group: UserGroup) => void;
+}
+
+function CreateGroupModal({ isOpen, onClose, currentRole, currentLoginid, onCreated }: CreateGroupModalProps): React.ReactElement {
+  const { t } = useTranslation();
+  const addToast = useToast();
+
+  const [groupName, setGroupName] = useState('');
+  const [candidates, setCandidates] = useState<AvailableGroupMember[]>([]);
+  const [selected, setSelected] = useState<AvailableGroupMember[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [nameError, setNameError] = useState('');
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setGroupName('');
+    setSelected([]);
+    setSearchQuery('');
+    setNameError('');
+    // Load same-role users (excluding self)
+    usersAPI.list(currentRole)
+      .then(res => {
+        const data = res.data as UserWithRole[];
+        setCandidates(
+          data
+            .filter(u => u.loginid !== currentLoginid)
+            .map(u => ({ id: u.id, loginid: u.loginid, name: u.name, mail: u.mail, deptname: u.deptname }))
+        );
+      })
+      .catch(() => setCandidates([]));
+  }, [isOpen, currentRole, currentLoginid]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const handleCreateGroup = async (e: React.FormEvent) => {
+  const filtered = candidates.filter(u =>
+    !selected.some(s => s.id === u.id) && (
+      searchQuery.trim() === '' ? false : (
+        u.loginid.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        u.mail.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (u.deptname && u.deptname.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
+    )
+  );
+
+  const handleSelect = (u: AvailableGroupMember) => {
+    setSelected(prev => [...prev, u]);
+    setSearchQuery('');
+    setDropdownOpen(false);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const name = newGroupName.trim();
-    if (!name) { addToast(t('group.name_required_error'), 'error'); return; }
-    setCreating(true);
+    const name = groupName.trim();
+    if (!name) { setNameError(t('group.name_required_error')); return; }
+    setNameError('');
+    setSubmitting(true);
     try {
       const group = await userGroupsAPI.create(name);
-      setGroups(prev => [group, ...prev]);
-      setNewGroupName('');
+      if (selected.length > 0) {
+        await Promise.allSettled(selected.map(m => userGroupsAPI.addMember(group.id, m.id)));
+      }
+      const finalGroup = await userGroupsAPI.get(group.id);
+      onCreated(finalGroup);
       addToast(t('group.create_success'), 'success');
+      onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t('group.create_error');
-      addToast(msg, 'error');
+      setNameError(msg);
     } finally {
-      setCreating(false);
+      setSubmitting(false);
     }
   };
 
-  const handleDeleteGroup = async () => {
-    if (!deleteTarget) return;
-    setDeletingId(deleteTarget.id);
-    try {
-      await userGroupsAPI.delete(deleteTarget.id);
-      setGroups(prev => prev.filter(g => g.id !== deleteTarget.id));
-      setDeleteTarget(null);
-      addToast(t('group.delete_success'), 'success');
-    } catch {
-      addToast(t('group.delete_error'), 'error');
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  const handleAddMember = async (groupId: number, userId: number) => {
-    try {
-      const updated = await userGroupsAPI.addMember(groupId, userId);
-      setGroups(prev => prev.map(g => g.id === groupId ? updated : g));
-      setMemberSearchQuery(q => ({ ...q, [groupId]: '' }));
-      setMemberDropdownOpen(d => ({ ...d, [groupId]: false }));
-      refreshAvailableMembers(groupId);
-      addToast(t('group.add_member_success'), 'success');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : t('group.add_member_error');
-      addToast(msg, 'error');
-    }
-  };
-
-  const handleRemoveMember = async () => {
-    if (!removeMemberTarget) return;
-    setRemovingMember(true);
-    const { group, member } = removeMemberTarget;
-    try {
-      const updated = await userGroupsAPI.removeMember(group.id, member.id);
-      // if current user removed themselves, remove group from list
-      if (member.loginid === currentLoginid) {
-        setGroups(prev => prev.filter(g => g.id !== group.id));
-      } else {
-        setGroups(prev => prev.map(g => g.id === group.id ? updated : g));
-        refreshAvailableMembers(group.id);
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={t('group.create_modal_title')}
+      size="md"
+      style={{ minHeight: 400 }}
+      footer={
+        <>
+          <button className="btn btn-secondary" onClick={onClose} disabled={submitting}>
+            {t('common.cancel')}
+          </button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
+            {submitting ? t('common.loading') : t('group.create')}
+          </button>
+        </>
       }
-      setRemoveMemberTarget(null);
-      addToast(t('group.remove_member_success'), 'success');
-    } catch {
-      addToast(t('group.remove_member_error'), 'error');
-    } finally {
-      setRemovingMember(false);
-    }
-  };
+    >
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 200 }}>
+        <div className="form-group">
+          <label className="form-label">{t('group.create_placeholder')} <span className="required">*</span></label>
+          <input
+            type="text"
+            className="form-control"
+            value={groupName}
+            onChange={e => { setGroupName(e.target.value); setNameError(''); }}
+            placeholder={t('group.create_placeholder')}
+            autoFocus
+            style={{ fontSize: 14 }}
+          />
+          {nameError && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{nameError}</p>}
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">{t('group.add_member')}</label>
+          <div ref={searchRef} style={{ position: 'relative' }}>
+            <input
+              type="text"
+              className="form-control"
+              value={searchQuery}
+              onChange={e => { setSearchQuery(e.target.value); setDropdownOpen(true); }}
+              onFocus={() => setDropdownOpen(true)}
+              placeholder={t('group.add_member_placeholder')}
+              style={{ fontSize: 13 }}
+            />
+            {dropdownOpen && searchQuery.trim() && (
+              <ul style={{
+                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999,
+                background: 'var(--bg-modal, #fff)',
+                border: '1px solid var(--color-border, #e2e8f0)',
+                borderRadius: 4, boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+                margin: 0, padding: 0, listStyle: 'none',
+                maxHeight: 200, overflowY: 'auto',
+              }}>
+                {filtered.length === 0 ? (
+                  <li style={{ padding: '10px 12px', color: '#999', fontSize: 13 }}>
+                    {t('group.no_available_members')}
+                  </li>
+                ) : filtered.map(u => (
+                  <li
+                    key={u.id}
+                    onMouseDown={e => { e.preventDefault(); handleSelect(u); }}
+                    style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13 }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLLIElement).style.background = 'var(--bg-secondary, #f7fafc)'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLLIElement).style.background = 'transparent'; }}
+                  >
+                    <strong>{u.loginid}</strong>
+                    <span style={{ color: '#718096', marginLeft: 8, fontSize: 12 }}>
+                      {u.name} · {u.deptname || '부서없음'} · {u.mail}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          {selected.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {selected.map(u => (
+                <span
+                  key={u.id}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center',
+                    background: '#e3f2fd', padding: '3px 8px',
+                    borderRadius: 3, fontSize: 13,
+                  }}
+                >
+                  <strong>{u.loginid}</strong>
+                  <span style={{ color: '#718096', marginLeft: 4, fontSize: 12 }}>
+                    {u.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelected(prev => prev.filter(s => s.id !== u.id))}
+                    style={{ marginLeft: 6, border: 'none', background: 'none', cursor: 'pointer', color: '#666', padding: 0, fontSize: 12, lineHeight: 1 }}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+
+// ===== GroupTabContent =====
+
+interface GroupTabContentProps {
+  group: UserGroup;
+  currentLoginid: string;
+  onGroupUpdated: (updated: UserGroup) => void;
+  onGroupDeleted: (id: number) => void;
+}
+
+function GroupTabContent({ group, currentLoginid, onGroupUpdated, onGroupDeleted }: GroupTabContentProps): React.ReactElement {
+  const { t } = useTranslation();
+  const addToast = useToast();
+
+  const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState('');
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<UserGroupMember | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   const handleRename = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!renameTarget) return;
     const name = renameValue.trim();
-    if (!name) { addToast(t('group.name_required_error'), 'error'); return; }
+    if (!name) { setRenameError(t('group.name_required_error')); return; }
+    setRenameError('');
     setRenaming(true);
     try {
-      const updated = await userGroupsAPI.rename(renameTarget.id, name);
-      setGroups(prev => prev.map(g => g.id === renameTarget.id ? updated : g));
-      setRenameTarget(null);
+      const updated = await userGroupsAPI.rename(group.id, name);
+      onGroupUpdated(updated);
+      setRenameOpen(false);
       addToast(t('group.rename_success'), 'success');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t('group.rename_error');
-      addToast(msg, 'error');
+      setRenameError(msg);
     } finally {
       setRenaming(false);
     }
   };
 
-  const getFilteredAvailable = (groupId: number): AvailableGroupMember[] => {
-    const all = availableMembers[groupId] || [];
-    const q = (memberSearchQuery[groupId] || '').toLowerCase().trim();
-    if (!q) return [];
-    return all.filter(u =>
-      u.loginid.toLowerCase().includes(q) ||
-      u.name.toLowerCase().includes(q) ||
-      u.mail.toLowerCase().includes(q) ||
-      (u.deptname && u.deptname.toLowerCase().includes(q))
-    );
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await userGroupsAPI.delete(group.id);
+      onGroupDeleted(group.id);
+      addToast(t('group.delete_success'), 'success');
+    } catch {
+      addToast(t('group.delete_error'), 'error');
+    } finally {
+      setDeleting(false);
+    }
   };
 
-  const isRemoveConfirmSelf = removeMemberTarget?.member.loginid === currentLoginid;
+  const handleRemoveMember = async () => {
+    if (!removeTarget) return;
+    setRemoving(true);
+    try {
+      const updated = await userGroupsAPI.removeMember(group.id, removeTarget.id);
+      if (removeTarget.loginid === currentLoginid) {
+        onGroupDeleted(group.id);
+      } else {
+        onGroupUpdated(updated);
+      }
+      setRemoveTarget(null);
+      addToast(t('group.remove_member_success'), 'success');
+    } catch {
+      addToast(t('group.remove_member_error'), 'error');
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  const isSelfRemove = removeTarget?.loginid === currentLoginid;
 
   return (
-    <div style={{ marginTop: 32 }}>
-      {/* Section header */}
-      <div style={{ marginBottom: 16 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>{t('group.section_title')}</h2>
-        <p style={{ color: '#718096', fontSize: 14 }}>{t('group.section_subtitle')}</p>
+    <div
+      style={{
+        background: '#fff',
+        border: '1px solid var(--color-border, #e2e8f0)',
+        borderRadius: 8,
+        padding: '16px 20px',
+      }}
+    >
+      {/* Header row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>{group.name}</h2>
+          <span style={{ color: '#718096', fontSize: 13 }}>
+            {t('group.member_count', { count: group.members.length })}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            className="btn btn-secondary"
+            style={{ padding: '5px 14px', fontSize: 13 }}
+            onClick={() => { setRenameValue(group.name); setRenameError(''); setRenameOpen(true); }}
+          >
+            {t('group.rename')}
+          </button>
+          <button
+            className="btn btn-danger"
+            style={{ padding: '5px 14px', fontSize: 13 }}
+            onClick={() => setDeleteConfirmOpen(true)}
+          >
+            {t('group.delete')}
+          </button>
+          <button
+            className="btn btn-primary"
+            style={{ padding: '5px 14px', fontSize: 13 }}
+            onClick={() => setAddMemberOpen(true)}
+          >
+            + {t('group.add_member')}
+          </button>
+        </div>
       </div>
 
-      {/* Create group form */}
-      {currentRole && currentRole !== 'NONE' && (
-        <form
-          onSubmit={handleCreateGroup}
-          style={{ display: 'flex', gap: 8, marginBottom: 20, maxWidth: 400 }}
-        >
-          <input
-            type="text"
-            className="form-control"
-            value={newGroupName}
-            onChange={e => setNewGroupName(e.target.value)}
-            placeholder={t('group.create_placeholder')}
-            style={{ fontSize: 14 }}
-          />
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={creating}
-            style={{ whiteSpace: 'nowrap', padding: '6px 16px', fontSize: 13 }}
-          >
-            {creating ? t('common.loading') : `+ ${t('group.create')}`}
-          </button>
-        </form>
-      )}
-
-      {/* Group list */}
-      {loadingGroups ? (
-        <div style={{ color: '#999', fontSize: 14 }}>{t('common.loading')}</div>
-      ) : groups.length === 0 ? (
-        <div style={{ color: '#999', fontSize: 14, padding: '24px 0' }}>{t('group.no_groups')}</div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {groups.map(group => {
-            const isExpanded = expandedGroupIds.has(group.id);
-            const isCreator = group.creator_loginid === currentLoginid;
-            const filtered = getFilteredAvailable(group.id);
-            const mq = memberSearchQuery[group.id] || '';
-            const dropOpen = memberDropdownOpen[group.id] || false;
-
+      {/* Member table */}
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '2px solid var(--color-border, #e2e8f0)' }}>
+            <th style={{ ...thStyle, width: 160 }}>{t('permission.field_loginid')}</th>
+            <th style={thStyle}>{t('permission.field_name')}</th>
+            <th style={thStyle}>{t('permission.field_department')}</th>
+            <th style={{ ...thStyle, width: 100 }}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {group.members.map(member => {
+            const isSelf = member.loginid === currentLoginid;
+            const isCreator = member.loginid === group.creator_loginid;
             return (
-              <div
-                key={group.id}
-                style={{
-                  background: '#fff',
-                  border: '1px solid var(--color-border, #e2e8f0)',
-                  borderRadius: 8,
-                  overflow: 'hidden',
-                }}
-              >
-                {/* Card header */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '12px 16px',
-                    cursor: 'pointer',
-                    background: isExpanded ? 'var(--bg-secondary, #f7fafc)' : '#fff',
-                    borderBottom: isExpanded ? '1px solid var(--color-border, #e2e8f0)' : 'none',
-                  }}
-                  onClick={() => toggleExpand(group.id)}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontWeight: 600, fontSize: 15 }}>{group.name}</span>
-                    {isCreator && (
-                      <span style={{
-                        background: '#ebf8ff', color: '#2b6cb0',
-                        fontSize: 11, padding: '1px 7px', borderRadius: 10, fontWeight: 600,
-                      }}>
-                        {t('group.creator_badge')}
-                      </span>
-                    )}
-                    <span style={{ color: '#718096', fontSize: 13 }}>
-                      {t('group.member_count', { count: group.members.length })}
+              <tr key={member.id} style={{ borderBottom: '1px solid var(--color-border, #e2e8f0)' }}>
+                <td style={tdStyle}>
+                  <strong>{member.loginid}</strong>
+                  {isSelf && (
+                    <span style={{
+                      marginLeft: 6, background: '#f0fff4', color: '#276749',
+                      fontSize: 11, padding: '1px 6px', borderRadius: 10,
+                    }}>
+                      {t('group.you_badge')}
                     </span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
-                    <button
-                      className="btn btn-secondary"
-                      style={{ padding: '3px 10px', fontSize: 12 }}
-                      onClick={() => { setRenameTarget(group); setRenameValue(group.name); }}
-                    >
-                      {t('group.rename')}
-                    </button>
-                    <button
-                      className="btn btn-danger"
-                      style={{ padding: '3px 10px', fontSize: 12 }}
-                      onClick={() => setDeleteTarget(group)}
-                    >
-                      {t('group.delete')}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Expanded body */}
-                {isExpanded && (
-                  <div style={{ padding: '12px 16px' }}>
-                    {/* Member list */}
-                    <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 12 }}>
-                      <thead>
-                        <tr style={{ borderBottom: '2px solid var(--color-border, #e2e8f0)' }}>
-                          <th style={{ ...thStyle, width: 140 }}>로그인 ID</th>
-                          <th style={thStyle}>이름</th>
-                          <th style={thStyle}>부서</th>
-                          <th style={{ ...thStyle, width: 80 }}></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {group.members.map(member => {
-                          const isSelf = member.loginid === currentLoginid;
-                          const isGroupCreator = member.loginid === group.creator_loginid;
-                          return (
-                            <tr key={member.id} style={{ borderBottom: '1px solid var(--color-border, #e2e8f0)' }}>
-                              <td style={tdStyle}>
-                                <strong>{member.loginid}</strong>
-                                {isSelf && (
-                                  <span style={{
-                                    marginLeft: 6, background: '#f0fff4', color: '#276749',
-                                    fontSize: 11, padding: '1px 6px', borderRadius: 10,
-                                  }}>
-                                    {t('group.you_badge')}
-                                  </span>
-                                )}
-                                {isGroupCreator && !isSelf && (
-                                  <span style={{
-                                    marginLeft: 6, background: '#ebf8ff', color: '#2b6cb0',
-                                    fontSize: 11, padding: '1px 6px', borderRadius: 10,
-                                  }}>
-                                    {t('group.creator_badge')}
-                                  </span>
-                                )}
-                              </td>
-                              <td style={{ ...tdStyle, color: '#4a5568' }}>{member.name || '-'}</td>
-                              <td style={{ ...tdStyle, color: '#718096', fontSize: 13 }}>{member.deptname || '-'}</td>
-                              <td style={{ ...tdStyle, textAlign: 'right' }}>
-                                {!isGroupCreator && (
-                                  <button
-                                    className="btn btn-danger"
-                                    style={{ padding: '2px 10px', fontSize: 12 }}
-                                    onClick={() => setRemoveMemberTarget({ group, member })}
-                                  >
-                                    {isSelf ? t('group.leave_group') : t('group.remove_member')}
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-
-                    {/* Add member search */}
-                    <div
-                      ref={el => { memberSearchRefs.current[group.id] = el; }}
-                      style={{ position: 'relative', maxWidth: 360 }}
-                    >
-                      <input
-                        type="text"
-                        className="form-control"
-                        value={mq}
-                        onChange={e => {
-                          setMemberSearchQuery(q => ({ ...q, [group.id]: e.target.value }));
-                          setMemberDropdownOpen(d => ({ ...d, [group.id]: true }));
-                        }}
-                        onFocus={() => setMemberDropdownOpen(d => ({ ...d, [group.id]: true }))}
-                        placeholder={t('group.add_member_placeholder')}
-                        style={{ fontSize: 13 }}
-                      />
-                      {dropOpen && mq && (
-                        <ul style={{
-                          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999,
-                          background: 'var(--bg-modal, #fff)',
-                          border: '1px solid var(--color-border, #e2e8f0)',
-                          borderRadius: 4, boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-                          margin: 0, padding: 0, listStyle: 'none',
-                          maxHeight: 200, overflowY: 'auto',
-                        }}>
-                          {filtered.length === 0 ? (
-                            <li style={{ padding: '10px 12px', color: '#999', fontSize: 13 }}>
-                              {t('group.no_available_members')}
-                            </li>
-                          ) : filtered.map(u => (
-                            <li
-                              key={u.id}
-                              onMouseDown={e => { e.preventDefault(); handleAddMember(group.id, u.id); }}
-                              style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13 }}
-                              onMouseEnter={e => { (e.currentTarget as HTMLLIElement).style.background = 'var(--bg-secondary, #f7fafc)'; }}
-                              onMouseLeave={e => { (e.currentTarget as HTMLLIElement).style.background = 'transparent'; }}
-                            >
-                              <strong>{u.loginid}</strong>
-                              <span style={{ color: '#718096', marginLeft: 8, fontSize: 12 }}>
-                                {u.name} · {u.deptname || '부서없음'} · {u.mail}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                  {isCreator && !isSelf && (
+                    <span style={{
+                      marginLeft: 6, background: '#ebf8ff', color: '#2b6cb0',
+                      fontSize: 11, padding: '1px 6px', borderRadius: 10,
+                    }}>
+                      {t('group.creator_badge')}
+                    </span>
+                  )}
+                  {isCreator && isSelf && (
+                    <span style={{
+                      marginLeft: 6, background: '#ebf8ff', color: '#2b6cb0',
+                      fontSize: 11, padding: '1px 6px', borderRadius: 10,
+                    }}>
+                      {t('group.creator_badge')}
+                    </span>
+                  )}
+                </td>
+                <td style={{ ...tdStyle, color: '#4a5568' }}>{member.name || '-'}</td>
+                <td style={{ ...tdStyle, color: '#718096', fontSize: 13 }}>{member.deptname || '-'}</td>
+                <td style={{ ...tdStyle, textAlign: 'right' }}>
+                  <button
+                    className="btn btn-danger"
+                    style={{ padding: '2px 10px', fontSize: 12 }}
+                    onClick={() => setRemoveTarget(member)}
+                  >
+                    {isSelf ? t('group.leave_group') : t('group.remove_member')}
+                  </button>
+                </td>
+              </tr>
             );
           })}
-        </div>
-      )}
-
-      {/* Delete group confirm */}
-      <ConfirmModal
-        isOpen={deleteTarget !== null}
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDeleteGroup}
-        title={t('group.delete_confirm_title')}
-        message={deleteTarget ? t('group.delete_confirm_body', { name: deleteTarget.name }) : ''}
-        confirmLabel={t('group.delete')}
-        danger
-        loading={deletingId !== null}
-      />
-
-      {/* Remove member confirm */}
-      <ConfirmModal
-        isOpen={removeMemberTarget !== null}
-        onClose={() => setRemoveMemberTarget(null)}
-        onConfirm={handleRemoveMember}
-        title={isRemoveConfirmSelf ? t('group.leave_confirm_title') : t('group.remove_member_confirm_title')}
-        message={isRemoveConfirmSelf ? t('group.leave_confirm_body') : t('group.remove_member_confirm_body')}
-        confirmLabel={isRemoveConfirmSelf ? t('group.leave_group') : t('group.remove_member')}
-        danger
-        loading={removingMember}
-      />
+        </tbody>
+      </table>
 
       {/* Rename modal */}
       <Modal
-        isOpen={renameTarget !== null}
-        onClose={() => setRenameTarget(null)}
+        isOpen={renameOpen}
+        onClose={() => setRenameOpen(false)}
         title={t('group.rename')}
         size="sm"
         footer={
           <>
-            <button className="btn btn-secondary" onClick={() => setRenameTarget(null)} disabled={renaming}>
+            <button className="btn btn-secondary" onClick={() => setRenameOpen(false)} disabled={renaming}>
               {t('common.cancel')}
             </button>
             <button className="btn btn-primary" onClick={handleRename} disabled={renaming}>
@@ -531,16 +664,50 @@ function MyGroupSection({ currentLoginid, currentRole }: MyGroupSectionProps): R
             type="text"
             className="form-control"
             value={renameValue}
-            onChange={e => setRenameValue(e.target.value)}
+            onChange={e => { setRenameValue(e.target.value); setRenameError(''); }}
             placeholder={t('group.rename_placeholder')}
             autoFocus
             style={{ fontSize: 14 }}
           />
+          {renameError && <p style={{ color: '#e53e3e', fontSize: 12, marginTop: 4 }}>{renameError}</p>}
         </form>
       </Modal>
+
+      {/* Delete group confirm */}
+      <ConfirmModal
+        isOpen={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        onConfirm={handleDelete}
+        title={t('group.delete_confirm_title')}
+        message={t('group.delete_confirm_body', { name: group.name })}
+        confirmLabel={t('group.delete')}
+        danger
+        loading={deleting}
+      />
+
+      {/* Remove / Leave member confirm */}
+      <ConfirmModal
+        isOpen={removeTarget !== null}
+        onClose={() => setRemoveTarget(null)}
+        onConfirm={handleRemoveMember}
+        title={isSelfRemove ? t('group.leave_confirm_title') : t('group.remove_member_confirm_title')}
+        message={isSelfRemove ? t('group.leave_confirm_body') : t('group.remove_member_confirm_body')}
+        confirmLabel={isSelfRemove ? t('group.leave_group') : t('group.remove_member')}
+        danger
+        loading={removing}
+      />
+
+      {/* Add member modal */}
+      <AddGroupMemberModal
+        isOpen={addMemberOpen}
+        onClose={() => setAddMemberOpen(false)}
+        group={group}
+        onMemberAdded={updated => { onGroupUpdated(updated); setAddMemberOpen(false); }}
+      />
     </div>
   );
 }
+
 
 // ===== Main Page =====
 
@@ -564,6 +731,11 @@ export default function PermissionPage(): React.ReactElement {
   const [deleteTarget, setDeleteTarget] = useState<UserWithRole | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [tabSearchQuery, setTabSearchQuery] = useState('');
+
+  // Group state
+  const [groups, setGroups] = useState<UserGroup[]>([]);
+  const [activeGroupId, setActiveGroupId] = useState<number | null>(null);
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
 
   const isMaster = currentUser.role === 'MASTER';
 
@@ -593,10 +765,17 @@ export default function PermissionPage(): React.ReactElement {
       .catch(() => setUsersForAssignment([]));
   }, []);
 
+  const fetchGroups = useCallback(() => {
+    userGroupsAPI.list()
+      .then(setGroups)
+      .catch(() => setGroups([]));
+  }, []);
+
   useEffect(() => {
     fetchUsers();
     fetchUsersForAssignment();
-  }, [fetchUsers, fetchUsersForAssignment]);
+    fetchGroups();
+  }, [fetchUsers, fetchUsersForAssignment, fetchGroups]);
 
   useEffect(() => {
     const es = new EventSource('/api/users/events/');
@@ -646,6 +825,11 @@ export default function PermissionPage(): React.ReactElement {
   });
 
   const canModifyTab = isMaster || currentUser.role === activeTab;
+  const canCreateGroup =
+    activeGroupId === null &&
+    currentUser.role === activeTab &&
+    currentUser.role !== 'NONE' &&
+    currentUser.role !== 'MASTER';
 
   const filteredUsers = usersForAssignment.filter((u) => {
     if (selectedUsers.some((s) => s.id === u.id)) return false;
@@ -719,6 +903,22 @@ export default function PermissionPage(): React.ReactElement {
     }
   };
 
+  const activeGroup = groups.find(g => g.id === activeGroupId) ?? null;
+
+  const tabButtonStyle = (isActive: boolean): React.CSSProperties => ({
+    padding: '8px 18px',
+    fontSize: 14,
+    fontWeight: isActive ? 700 : 400,
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    borderBottom: isActive ? '2px solid var(--color-primary, #3182ce)' : '2px solid transparent',
+    color: isActive ? 'var(--color-primary, #3182ce)' : '#4a5568',
+    marginBottom: -2,
+    whiteSpace: 'nowrap' as const,
+    flexShrink: 0,
+  });
+
   return (
     <div className="container" style={{ padding: '32px 24px' }}>
       <div style={{ marginBottom: 24 }}>
@@ -730,30 +930,29 @@ export default function PermissionPage(): React.ReactElement {
         </p>
       </div>
 
-      {/* Role Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '2px solid var(--color-border, #e2e8f0)', paddingBottom: 0 }}>
+      {/* Tab bar — role tabs + group tabs, horizontally scrollable */}
+      <div style={{
+        display: 'flex',
+        gap: 4,
+        flexWrap: 'nowrap',
+        overflowX: 'auto',
+        scrollbarWidth: 'none',
+        borderBottom: '2px solid var(--color-border, #e2e8f0)',
+        paddingBottom: 0,
+        marginBottom: 20,
+      }}>
         {ALL_ROLES.map((role) => (
           <button
             key={role}
-            onClick={() => { setActiveTab(role); setTabSearchQuery(''); }}
-            style={{
-              padding: '8px 18px',
-              fontSize: 14,
-              fontWeight: activeTab === role ? 700 : 400,
-              border: 'none',
-              background: 'transparent',
-              cursor: 'pointer',
-              borderBottom: activeTab === role ? '2px solid var(--color-primary, #3182ce)' : '2px solid transparent',
-              color: activeTab === role ? 'var(--color-primary, #3182ce)' : '#4a5568',
-              marginBottom: -2,
-            }}
+            onClick={() => { setActiveTab(role); setActiveGroupId(null); setTabSearchQuery(''); }}
+            style={tabButtonStyle(activeGroupId === null && activeTab === role)}
           >
             {t(`permission.role_${role}`)}
             <span
               style={{
                 marginLeft: 6,
-                background: activeTab === role ? 'var(--color-primary, #3182ce)' : '#e2e8f0',
-                color: activeTab === role ? '#fff' : '#4a5568',
+                background: (activeGroupId === null && activeTab === role) ? 'var(--color-primary, #3182ce)' : '#e2e8f0',
+                color: (activeGroupId === null && activeTab === role) ? '#fff' : '#4a5568',
                 borderRadius: 10,
                 padding: '1px 7px',
                 fontSize: 11,
@@ -763,67 +962,106 @@ export default function PermissionPage(): React.ReactElement {
             </span>
           </button>
         ))}
-      </div>
 
-      {/* Tab Content */}
-      <div
-        style={{
-          background: '#fff',
-          border: '1px solid var(--color-border, #e2e8f0)',
-          borderRadius: 8,
-          padding: '16px 20px',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600 }}>
-            {t(`permission.role_${activeTab}`)} {t('permission.users_label')}
-          </h2>
-          {canModifyTab && (
-            <button
-              className="btn btn-primary"
-              style={{ padding: '6px 16px', fontSize: 13 }}
-              onClick={() => {
-                setSelectedUsers([]);
-                setUserSearchQuery('');
-                setSearchDropdownOpen(false);
-                setFormOpen(true);
+        {groups.map(group => (
+          <button
+            key={`group_${group.id}`}
+            onClick={() => { setActiveGroupId(group.id); setTabSearchQuery(''); }}
+            style={tabButtonStyle(activeGroupId === group.id)}
+          >
+            {group.name}
+            <span
+              style={{
+                marginLeft: 6,
+                background: activeGroupId === group.id ? 'var(--color-primary, #3182ce)' : '#e2e8f0',
+                color: activeGroupId === group.id ? '#fff' : '#4a5568',
+                borderRadius: 10,
+                padding: '1px 7px',
+                fontSize: 11,
               }}
             >
-              + {t('permission.add_user')}
-            </button>
-          )}
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          <input
-            type="text"
-            className="form-control"
-            value={tabSearchQuery}
-            onChange={(e) => setTabSearchQuery(e.target.value)}
-            placeholder={t('permission.search_placeholder')}
-            style={{ maxWidth: 320, fontSize: 13 }}
-          />
-        </div>
-
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: '#999' }}>
-            {t('common.loading')}
-          </div>
-        ) : (
-          <UserTable
-            users={usersForTab}
-            canModify={canModifyTab}
-            onRequestDelete={setDeleteTarget}
-            deletingId={deletingId}
-          />
-        )}
+              {group.members.length}
+            </span>
+          </button>
+        ))}
       </div>
 
-      {/* My Group Section */}
-      <MyGroupSection
-        currentLoginid={currentUser.username}
-        currentRole={currentUser.role}
-      />
+      {/* Tab content */}
+      {activeGroupId !== null && activeGroup !== null ? (
+        <GroupTabContent
+          group={activeGroup}
+          currentLoginid={currentUser.username}
+          onGroupUpdated={updated => setGroups(prev => prev.map(g => g.id === updated.id ? updated : g))}
+          onGroupDeleted={id => {
+            setGroups(prev => prev.filter(g => g.id !== id));
+            setActiveGroupId(null);
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            background: '#fff',
+            border: '1px solid var(--color-border, #e2e8f0)',
+            borderRadius: 8,
+            padding: '16px 20px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600 }}>
+              {t(`permission.role_${activeTab}`)} {t('permission.users_label')}
+            </h2>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {canModifyTab && (
+                <button
+                  className="btn btn-primary"
+                  style={{ padding: '6px 16px', fontSize: 13 }}
+                  onClick={() => {
+                    setSelectedUsers([]);
+                    setUserSearchQuery('');
+                    setSearchDropdownOpen(false);
+                    setFormOpen(true);
+                  }}
+                >
+                  + {t('permission.add_user')}
+                </button>
+              )}
+              {canCreateGroup && (
+                <button
+                  className="btn btn-secondary"
+                  style={{ padding: '6px 16px', fontSize: 13 }}
+                  onClick={() => setCreateGroupOpen(true)}
+                >
+                  + {t('group.create')}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <input
+              type="text"
+              className="form-control"
+              value={tabSearchQuery}
+              onChange={(e) => setTabSearchQuery(e.target.value)}
+              placeholder={t('permission.search_placeholder')}
+              style={{ maxWidth: 320, fontSize: 13 }}
+            />
+          </div>
+
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: '#999' }}>
+              {t('common.loading')}
+            </div>
+          ) : (
+            <UserTable
+              users={usersForTab}
+              canModify={canModifyTab}
+              onRequestDelete={setDeleteTarget}
+              deletingId={deletingId}
+            />
+          )}
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       <ConfirmModal
@@ -859,7 +1097,6 @@ export default function PermissionPage(): React.ReactElement {
           <div className="form-group">
             <label className="form-label">{t('permission.select_user')} <span className="required">*</span></label>
 
-            {/* 검색 입력 + 드롭다운 */}
             <div ref={searchContainerRef} style={{ position: 'relative' }}>
               <input
                 type="text"
@@ -918,7 +1155,6 @@ export default function PermissionPage(): React.ReactElement {
               </p>
             )}
 
-            {/* 선택된 사용자 태그 목록 */}
             {selectedUsers.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                 {selectedUsers.map((user) => (
@@ -958,9 +1194,20 @@ export default function PermissionPage(): React.ReactElement {
               </div>
             )}
           </div>
-
         </form>
       </Modal>
+
+      {/* Create Group Modal */}
+      <CreateGroupModal
+        isOpen={createGroupOpen}
+        onClose={() => setCreateGroupOpen(false)}
+        currentRole={activeTab}
+        currentLoginid={currentUser.username}
+        onCreated={group => {
+          setGroups(prev => [...prev, group]);
+          setActiveGroupId(group.id);
+        }}
+      />
     </div>
   );
 }

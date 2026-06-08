@@ -476,6 +476,8 @@
     "creator_badge": "생성자",
     "you_badge": "나",
     "name_required_error": "그룹 이름을 입력해주세요.",
-    "no_role_error": "역할이 없는 사용자는 그룹을 만들 수 없습니다."
+    "no_role_error": "역할이 없는 사용자는 그룹을 만들 수 없습니다.",
+    "add_member_modal_title": "멤버 추가",
+    "create_modal_title": "그룹 만들기"
   }
 }
