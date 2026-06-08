@@ -15,7 +15,7 @@ interface NavLink {
 
 // 역할별 접근 가능한 페이지
 const ROLE_PERMISSIONS: Record<string, string[]> = {
-  NONE: ['/', '/approval', '/history', '/voc', '/guide'],
+  NONE: ['/'],
   PL: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
   TE_R: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
   TE_P: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
