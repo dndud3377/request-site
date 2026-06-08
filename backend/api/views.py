@@ -949,19 +949,24 @@ class UserGroupViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_queryset(self):
+        if not self.request.user.is_authenticated:
+            return UserGroup.objects.none()
         return UserGroup.objects.filter(
             members=self.request.user
         ).select_related('creator').prefetch_related('members')
 
     def get_object(self):
         from django.shortcuts import get_object_or_404
+        if not self.request.user.is_authenticated:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
         return get_object_or_404(
             UserGroup.objects.filter(members=self.request.user),
             pk=self.kwargs['pk']
         )
 
     def create(self, request, *args, **kwargs):
-        if request.user.role == 'NONE':
+        if not request.user.is_authenticated or request.user.role == 'NONE':
             return Response(
                 {'error': '역할이 없는 사용자는 그룹을 만들 수 없습니다.'},
                 status=status.HTTP_403_FORBIDDEN

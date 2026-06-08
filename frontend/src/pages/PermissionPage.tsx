@@ -586,8 +586,9 @@ function GroupTabContent({ group, currentLoginid, onGroupUpdated, onGroupDeleted
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '2px solid var(--color-border, #e2e8f0)' }}>
-            <th style={{ ...thStyle, width: 160 }}>{t('permission.field_loginid')}</th>
+            <th style={thStyle}>{t('permission.field_loginid')}</th>
             <th style={thStyle}>{t('permission.field_name')}</th>
+            <th style={thStyle}>{t('permission.field_email')}</th>
             <th style={thStyle}>{t('permission.field_department')}</th>
             <th style={{ ...thStyle, width: 100 }}></th>
           </tr>
@@ -595,38 +596,12 @@ function GroupTabContent({ group, currentLoginid, onGroupUpdated, onGroupDeleted
         <tbody>
           {group.members.map(member => {
             const isSelf = member.loginid === currentLoginid;
-            const isCreator = member.loginid === group.creator_loginid;
             return (
               <tr key={member.id} style={{ borderBottom: '1px solid var(--color-border, #e2e8f0)' }}>
-                <td style={tdStyle}>
-                  <strong>{member.loginid}</strong>
-                  {isSelf && (
-                    <span style={{
-                      marginLeft: 6, background: '#f0fff4', color: '#276749',
-                      fontSize: 11, padding: '1px 6px', borderRadius: 10,
-                    }}>
-                      {t('group.you_badge')}
-                    </span>
-                  )}
-                  {isCreator && !isSelf && (
-                    <span style={{
-                      marginLeft: 6, background: '#ebf8ff', color: '#2b6cb0',
-                      fontSize: 11, padding: '1px 6px', borderRadius: 10,
-                    }}>
-                      {t('group.creator_badge')}
-                    </span>
-                  )}
-                  {isCreator && isSelf && (
-                    <span style={{
-                      marginLeft: 6, background: '#ebf8ff', color: '#2b6cb0',
-                      fontSize: 11, padding: '1px 6px', borderRadius: 10,
-                    }}>
-                      {t('group.creator_badge')}
-                    </span>
-                  )}
-                </td>
-                <td style={{ ...tdStyle, color: '#4a5568' }}>{member.name || '-'}</td>
-                <td style={{ ...tdStyle, color: '#718096', fontSize: 13 }}>{member.deptname || '-'}</td>
+                <td style={tdStyle}><strong>{member.loginid}</strong></td>
+                <td style={tdStyle}>{member.name || '-'}</td>
+                <td style={tdStyle}>{member.mail || '-'}</td>
+                <td style={tdStyle}>{member.deptname || '-'}</td>
                 <td style={{ ...tdStyle, textAlign: 'right' }}>
                   <button
                     className="btn btn-danger"
@@ -713,7 +688,7 @@ function GroupTabContent({ group, currentLoginid, onGroupUpdated, onGroupDeleted
 
 export default function PermissionPage(): React.ReactElement {
   const { t } = useTranslation();
-  const { currentUser } = useAuth();
+  const { currentUser, isLoading: authLoading } = useAuth();
   const addToast = useToast();
 
   const [users, setUsers] = useState<UserWithRole[]>([]);
@@ -774,8 +749,12 @@ export default function PermissionPage(): React.ReactElement {
   useEffect(() => {
     fetchUsers();
     fetchUsersForAssignment();
+  }, [fetchUsers, fetchUsersForAssignment]);
+
+  useEffect(() => {
+    if (authLoading) return;
     fetchGroups();
-  }, [fetchUsers, fetchUsersForAssignment, fetchGroups]);
+  }, [fetchGroups, authLoading]);
 
   useEffect(() => {
     const es = new EventSource('/api/users/events/');
