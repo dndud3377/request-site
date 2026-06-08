@@ -136,7 +136,7 @@ def refresh_token_view(request):
     
     service_jwt_secret = getattr(settings, 'SERVICE_JWT_SECRET_KEY', '')
     service_jwt_algorithm = getattr(settings, 'SERVICE_JWT_ALGORITHM', 'HS256')
-    access_token_lifetime = getattr(settings, 'SERVICE_JWT_ACCESS_TOKEN_LIFETIME', timedelta(hours=1))
+    access_token_lifetime = getattr(settings, 'SERVICE_JWT_ACCESS_TOKEN_LIFETIME', timedelta(hours=12))
     
     try:
         # refresh_token 검증
