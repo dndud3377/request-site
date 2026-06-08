@@ -247,10 +247,7 @@ export default function GuidePage(): React.ReactElement {
                 <div
                   key={guide.id}
                   className="card guide-card"
-                  onClick={() => {
-                    if (guide.guide_type === 'info') setSelected(guide);
-                    else openEdit(guide);
-                  }}
+                  onClick={() => setSelected(guide)}
                   style={{ cursor: 'pointer' }}
                 >
                   <span

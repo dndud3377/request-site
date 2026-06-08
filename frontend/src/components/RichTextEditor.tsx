@@ -18,6 +18,93 @@ interface Props {
 
 const EMOJI_LIST = ['✅','⚠️','📌','💡','🔍','📝','🚨','✨','👉','❌','🎯','📊','🔧','📋','👆','🔺','📎','💬'];
 
+// ===== 엑셀 색상 팔레트 =====
+
+const EXCEL_THEME_BASES = [
+  '#FFFFFF', '#000000', '#EEECE1', '#1F497D',
+  '#4F81BD', '#C0504D', '#9BBB59', '#8064A2',
+  '#4BACC6', '#F79646',
+];
+
+const EXCEL_STANDARD_COLORS = [
+  '#C00000', '#FF0000', '#FFC000', '#FFFF00',
+  '#92D050', '#00B050', '#00B0F0', '#0070C0',
+  '#002060', '#7030A0',
+];
+
+const TINTS = [0, 0.8, 0.6, 0.4, -0.25, -0.5];
+
+function applyTint(hex: string, tint: number): string {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const r = (num >> 16) & 0xFF;
+  const g = (num >> 8) & 0xFF;
+  const b = num & 0xFF;
+  const calc = (c: number) =>
+    Math.max(0, Math.min(255, tint >= 0
+      ? Math.round(c + (255 - c) * tint)
+      : Math.round(c * (1 + tint))));
+  return '#' + [calc(r), calc(g), calc(b)].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+// THEME_COLORS[row][col] — 6행 × 10열
+const THEME_COLORS: string[][] = TINTS.map(t => EXCEL_THEME_BASES.map(c => applyTint(c, t)));
+
+interface ColorPaletteProps {
+  showNone?: boolean;
+  onSelect: (color: string | null) => void;
+}
+
+const ColorPalette: React.FC<ColorPaletteProps> = ({ showNone, onSelect }) => (
+  <div
+    style={{
+      position: 'absolute',
+      top: '110%',
+      left: 0,
+      zIndex: 9999,
+      background: '#fff',
+      border: '1px solid #dde1ea',
+      borderRadius: 6,
+      padding: '8px 10px',
+      boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+      userSelect: 'none',
+      minWidth: 192,
+    }}
+  >
+    {showNone && (
+      <button
+        type="button"
+        onMouseDown={(e) => { e.preventDefault(); onSelect(null); }}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#555', border: 'none', background: 'none', cursor: 'pointer', marginBottom: 6, padding: '2px 0' }}
+      >
+        <div style={{ width: 14, height: 14, border: '1px solid #ccc', background: 'repeating-linear-gradient(45deg,#fff,#fff 2px,#f88 2px,#f88 4px)', borderRadius: 2 }} />
+        색 없음
+      </button>
+    )}
+    <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>테마 색상</div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 16px)', gap: 2, marginBottom: 8 }}>
+      {THEME_COLORS.flat().map((color, i) => (
+        <div
+          key={i}
+          title={color}
+          onMouseDown={(e) => { e.preventDefault(); onSelect(color); }}
+          style={{ width: 16, height: 16, background: color, border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', borderRadius: 1 }}
+        />
+      ))}
+    </div>
+    <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>표준 색상</div>
+    <div style={{ display: 'flex', gap: 2 }}>
+      {EXCEL_STANDARD_COLORS.map(color => (
+        <div
+          key={color}
+          title={color}
+          onMouseDown={(e) => { e.preventDefault(); onSelect(color); }}
+          style={{ width: 16, height: 16, background: color, border: '1px solid rgba(0,0,0,0.15)', cursor: 'pointer', borderRadius: 1 }}
+        />
+      ))}
+    </div>
+  </div>
+);
+
 const FONT_FAMILIES = [
   { label: '기본', value: '' },
   { label: '맑은 고딕', value: '맑은 고딕, Malgun Gothic, sans-serif' },
@@ -93,8 +180,21 @@ const Sep = () => (
 const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, placeholder }) => {
   const { t } = useTranslation();
   const [showEmoji, setShowEmoji] = React.useState(false);
-  const textColorRef = useRef<HTMLInputElement>(null);
-  const bgColorRef = useRef<HTMLInputElement>(null);
+  const [activeColorPicker, setActiveColorPicker] = React.useState<'text' | 'bg' | null>(null);
+  const textColorBtnRef = useRef<HTMLDivElement>(null);
+  const bgColorBtnRef = useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!activeColorPicker) return;
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!textColorBtnRef.current?.contains(t) && !bgColorBtnRef.current?.contains(t)) {
+        setActiveColorPicker(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [activeColorPicker]);
 
   const editor = useEditor({
     extensions: [
@@ -257,16 +357,16 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
             <Sep />
 
             {/* 글꼴 색 */}
-            <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+            <div ref={textColorBtnRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
               <button
                 type="button"
                 title="글꼴 색"
-                onMouseDown={(e) => { e.preventDefault(); textColorRef.current?.click(); }}
+                onMouseDown={(e) => { e.preventDefault(); setActiveColorPicker(v => v === 'text' ? null : 'text'); }}
                 style={{
                   padding: '3px 7px 2px',
-                  border: '1px solid #dde1ea',
+                  border: `1px solid ${activeColorPicker === 'text' ? '#4f8ef7' : '#dde1ea'}`,
                   borderRadius: 5,
-                  background: '#fff',
+                  background: activeColorPicker === 'text' ? '#eff6ff' : '#fff',
                   cursor: 'pointer',
                   fontSize: 13,
                   fontWeight: 700,
@@ -280,28 +380,28 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
                 <span style={{ color: currentTextColor }}>A</span>
                 <span style={{ display: 'block', width: 14, height: 3, background: currentTextColor, borderRadius: 1 }} />
               </button>
-              <input
-                ref={textColorRef}
-                type="color"
-                value={currentTextColor}
-                style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
-                onChange={(e) => {
-                  (editor.chain().focus() as any).setColor(e.target.value).run();
-                }}
-              />
+              {activeColorPicker === 'text' && (
+                <ColorPalette
+                  onSelect={(color) => {
+                    if (color) (editor.chain().focus() as any).setColor(color).run();
+                    else (editor.chain().focus() as any).unsetColor().run();
+                    setActiveColorPicker(null);
+                  }}
+                />
+              )}
             </div>
 
             {/* 바탕색 */}
-            <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+            <div ref={bgColorBtnRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
               <button
                 type="button"
                 title="바탕색"
-                onMouseDown={(e) => { e.preventDefault(); bgColorRef.current?.click(); }}
+                onMouseDown={(e) => { e.preventDefault(); setActiveColorPicker(v => v === 'bg' ? null : 'bg'); }}
                 style={{
                   padding: '3px 7px 2px',
-                  border: '1px solid #dde1ea',
+                  border: `1px solid ${activeColorPicker === 'bg' ? '#4f8ef7' : '#dde1ea'}`,
                   borderRadius: 5,
-                  background: '#fff',
+                  background: activeColorPicker === 'bg' ? '#eff6ff' : '#fff',
                   cursor: 'pointer',
                   fontSize: 12,
                   fontWeight: 700,
@@ -315,15 +415,16 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
                 <span style={{ background: currentBgColor, padding: '0 2px', borderRadius: 2, color: '#333', fontSize: 11 }}>AB</span>
                 <span style={{ display: 'block', width: 14, height: 3, background: currentBgColor, borderRadius: 1 }} />
               </button>
-              <input
-                ref={bgColorRef}
-                type="color"
-                value={currentBgColor}
-                style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
-                onChange={(e) => {
-                  (editor.chain().focus() as any).setBackgroundColor(e.target.value).run();
-                }}
-              />
+              {activeColorPicker === 'bg' && (
+                <ColorPalette
+                  showNone
+                  onSelect={(color) => {
+                    if (color) (editor.chain().focus() as any).setBackgroundColor(color).run();
+                    else (editor.chain().focus() as any).unsetBackgroundColor().run();
+                    setActiveColorPicker(null);
+                  }}
+                />
+              )}
             </div>
 
             {/* 색상 초기화 */}
@@ -331,6 +432,7 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
               title="색상 초기화"
               onClick={() => {
                 (editor.chain().focus() as any).unsetColor().unsetBackgroundColor().run();
+                setActiveColorPicker(null);
               }}
             >
               <span style={{ fontSize: 11 }}>색 초기화</span>
