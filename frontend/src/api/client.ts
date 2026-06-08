@@ -20,6 +20,9 @@ import {
   UserWithRole,
   CreateUserInput,
   UserForAssignment,
+  UserGroup,
+  AvailableGroupMember,
+  UserRole,
 } from '../types';
 
 // ===== JWT 토큰 관리 =====
@@ -425,6 +428,53 @@ export const usersAPI = {
   remove: deleteUser,
   forAssignment: getUsersForAssignment,
   assignRole: assignRole,
+};
+
+// ===== 나만의 그룹 API =====
+
+const listUserGroups = async (): Promise<UserGroup[]> => {
+  const data = await get<UserGroup[]>('/user-groups/');
+  return Array.isArray(data) ? data : [];
+};
+
+const getUserGroup = async (id: number): Promise<UserGroup> => {
+  return get<UserGroup>(`/user-groups/${id}/`);
+};
+
+const createUserGroup = async (name: string): Promise<UserGroup> => {
+  return post<UserGroup>('/user-groups/', { name });
+};
+
+const renameUserGroup = async (id: number, name: string): Promise<UserGroup> => {
+  return patch<UserGroup>(`/user-groups/${id}/`, { name });
+};
+
+const deleteUserGroup = async (id: number): Promise<void> => {
+  await request(`/user-groups/${id}/`, { method: 'DELETE' });
+};
+
+const getAvailableGroupMembers = async (groupId: number): Promise<AvailableGroupMember[]> => {
+  const data = await get<AvailableGroupMember[]>(`/user-groups/${groupId}/available-members/`);
+  return Array.isArray(data) ? data : [];
+};
+
+const addGroupMember = async (groupId: number, userId: number): Promise<UserGroup> => {
+  return post<UserGroup>(`/user-groups/${groupId}/add-member/`, { user_id: userId });
+};
+
+const removeGroupMember = async (groupId: number, userId: number): Promise<UserGroup> => {
+  return post<UserGroup>(`/user-groups/${groupId}/remove-member/`, { user_id: userId });
+};
+
+export const userGroupsAPI = {
+  list: listUserGroups,
+  get: getUserGroup,
+  create: createUserGroup,
+  rename: renameUserGroup,
+  delete: deleteUserGroup,
+  availableMembers: getAvailableGroupMembers,
+  addMember: addGroupMember,
+  removeMember: removeGroupMember,
 };
 
 // ===== 폼 옵션 API =====
