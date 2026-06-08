@@ -13,6 +13,7 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS
+from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import connection
 from django.contrib.auth import get_user_model
@@ -32,21 +33,38 @@ import logging
 import re
 
 
+def _is_dev() -> bool:
+    return getattr(settings, 'AUTH_MODE', 'sso') == 'dev'
+
+
 class IsMasterOrReadOnly(BasePermission):
-    """읽기는 모두 허용, 쓰기는 MASTER 역할만 허용"""
+    """읽기: 운영=인증 필요, 개발=허용 / 쓰기: MASTER만"""
 
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
-            return True
-        return (
-            request.user.is_authenticated and
-            request.user.role == 'MASTER'
-        )
+            return _is_dev() or bool(request.user and request.user.is_authenticated)
+        return bool(request.user and request.user.is_authenticated and request.user.role == 'MASTER')
+
+
+class IsAuthenticatedInProd(BasePermission):
+    """운영=인증 필요, 개발=허용"""
+
+    def has_permission(self, request, view):
+        return _is_dev() or bool(request.user and request.user.is_authenticated)
+
+
+class IsAuthenticatedOrMasterDelete(BasePermission):
+    """읽기·쓰기: 운영=인증 필요, 개발=허용 / 삭제: MASTER만 (개발·운영 동일)"""
+
+    def has_permission(self, request, view):
+        if request.method == 'DELETE':
+            return bool(request.user and request.user.is_authenticated and request.user.role == 'MASTER')
+        return _is_dev() or bool(request.user and request.user.is_authenticated)
 
 
 class RequestDocumentViewSet(viewsets.ModelViewSet):
     queryset = RequestDocument.objects.all()
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticatedInProd]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'product_name']
     search_fields = ['title', 'product_name', 'requester_name', 'requester_department']
@@ -179,8 +197,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='delete')
     def delete(self, request, pk=None):
-        """의뢰서 삭제 (모든 상태 가능)"""
+        """의뢰서 삭제 — approved 상태는 MASTER만, 나머지는 PL/MASTER"""
         document = self.get_object()
+        user_role = getattr(request.user, 'role', '')
+        if document.status == 'approved' and user_role != 'MASTER':
+            return Response({'error': '결재 완료된 문서는 MASTER만 삭제할 수 있습니다.'}, status=status.HTTP_403_FORBIDDEN)
         document.delete()
         return Response({'message': '삭제되었습니다.'})
 
@@ -368,7 +389,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 class VOCViewSet(viewsets.ModelViewSet):
     queryset = VOC.objects.all()
     serializer_class = VOCSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticatedInProd]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['category', 'status', 'submitter_user_id']
     search_fields = ['title', 'submitter_name', 'content']
@@ -388,7 +409,7 @@ class LineViewSet(viewsets.ReadOnlyModelViewSet):
     """{{request.line}} 마스터 데이터 (읽기 전용)"""
     queryset = Line.objects.filter(is_active=True)
     serializer_class = LineSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticatedInProd]
     pagination_class = None
 
 
@@ -640,7 +661,7 @@ class VocHistoryViewSet(viewsets.ModelViewSet):
     """VOC 처리 이력"""
     queryset = VocHistory.objects.all()
     serializer_class = VocHistorySerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticatedInProd]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['voc', 'action']
     ordering = ['-acted_at']
@@ -781,7 +802,7 @@ class UserViewSet(viewsets.ModelViewSet):
     """
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [AllowAny]  # 테스트 서버용
+    permission_classes = [IsMasterOrReadOnly]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['loginid', 'username', 'deptname']
     ordering_fields = ['id', 'loginid']
@@ -889,18 +910,10 @@ def user_events(request):
     return response
 
 
-class IsMasterOrReadOnly(BasePermission):
-    """MASTER 역할만 쓰기 허용, 나머지는 읽기 전용."""
-    def has_permission(self, request, view):
-        if request.method in SAFE_METHODS:
-            return request.user and request.user.is_authenticated
-        return request.user and request.user.is_authenticated and getattr(request.user, 'role', '') == 'MASTER'
-
-
 class GuideViewSet(viewsets.ModelViewSet):
     """의뢰서 작성 가이드 CRUD"""
     serializer_class = GuideSerializer
-    permission_classes = [IsMasterOrReadOnly]
+    permission_classes = [IsAuthenticatedOrMasterDelete]
 
     def get_queryset(self):
         qs = Guide.objects.all()
