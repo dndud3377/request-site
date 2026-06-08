@@ -441,6 +441,8 @@
     "creator_badge": "Creator",
     "you_badge": "Me",
     "name_required_error": "Please enter a group name.",
-    "no_role_error": "Users without a role cannot create groups."
+    "no_role_error": "Users without a role cannot create groups.",
+    "add_member_modal_title": "Add Members",
+    "create_modal_title": "Create Group"
   }
 }
