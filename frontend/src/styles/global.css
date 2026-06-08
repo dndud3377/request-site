@@ -2835,3 +2835,37 @@ select.form-control option {
   border-radius: 3px;
 }
 
+/* ===== TipTap RichTextEditor ===== */
+.ProseMirror {
+  outline: none;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: #aaa;
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+.guide-content-render img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.guide-content-render p {
+  margin: 0.4em 0;
+}
+
+.guide-content-render h1,
+.guide-content-render h2,
+.guide-content-render h3 {
+  margin: 0.8em 0 0.4em;
+}
+
+.guide-content-render ul,
+.guide-content-render ol {
+  padding-left: 1.4em;
+  margin: 0.4em 0;
+}
+
