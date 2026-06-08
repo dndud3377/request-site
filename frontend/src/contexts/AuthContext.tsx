@@ -61,7 +61,7 @@ const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, m
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<UserInfo>(EMPTY_USER);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isLoading, setIsLoading] = useState(!IS_DEV_MODE);
+  const [isLoading, setIsLoading] = useState(true);
 
   // ===== 초기화: 세션 복원 (운영) / dev 자동 로그인 =====
   useEffect(() => {
@@ -71,9 +71,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const devUser = found ?? MOCK_USERS[0];
       setCurrentUser(devUser as unknown as UserInfo);
       authAPI.devLogin(devUser.username)
-        .then((res: any) => setToken(res.access))
-        .catch(() => clearToken());
-      setIsLoggedIn(true);
+        .then((res: any) => {
+          setToken(res.access);
+          setIsLoggedIn(true);
+          setIsLoading(false);
+        })
+        .catch(() => {
+          clearToken();
+          setIsLoggedIn(true);
+          setIsLoading(false);
+        });
       return;
     }
 
@@ -121,6 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!IS_DEV_MODE) return;
     const user = MOCK_USERS.find(u => u.username === username);
     if (!user) return;
+    setIsLoading(true);
     setCurrentUser(user as unknown as UserInfo);
     localStorage.setItem(STORAGE_KEY, String(user.id));
     try {
@@ -128,6 +136,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(res.access);
     } catch {
       clearToken();
+    } finally {
+      setIsLoading(false);
     }
   };
 
