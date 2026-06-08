@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide
+from .models import RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup
 
 User = get_user_model()
 
@@ -118,3 +118,35 @@ class GuideSerializer(serializers.ModelSerializer):
         model = Guide
         fields = ['id', 'guide_type', 'feature_key', 'title', 'content', 'author_name', 'author_role', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at', 'author_name', 'author_role']
+
+
+class UserGroupMemberSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source='username', read_only=True)
+
+    class Meta:
+        model = User
+        fields = ['id', 'loginid', 'name', 'mail', 'deptname', 'role']
+        read_only_fields = ['id', 'loginid', 'name', 'mail', 'deptname', 'role']
+
+
+class UserGroupSerializer(serializers.ModelSerializer):
+    creator_loginid = serializers.CharField(source='creator.loginid', read_only=True)
+    members         = UserGroupMemberSerializer(many=True, read_only=True)
+
+    class Meta:
+        model  = UserGroup
+        fields = ['id', 'name', 'creator_loginid', 'members', 'created_at']
+        read_only_fields = ['id', 'creator_loginid', 'members', 'created_at']
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('그룹 이름을 입력해주세요.')
+        request = self.context.get('request')
+        if request:
+            qs = UserGroup.objects.filter(creator=request.user, name=value)
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError('같은 이름의 그룹이 이미 존재합니다.')
+        return value

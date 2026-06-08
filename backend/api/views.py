@@ -21,12 +21,12 @@ User = get_user_model()
 from django.db.models import Q
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
-    PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide,
+    PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
 )
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer,
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
-    UserSerializer, GuideSerializer,
+    UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer,
 )
 import uuid
 import logging
@@ -934,3 +934,119 @@ class GuideViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save()
+
+
+class UserGroupViewSet(viewsets.ModelViewSet):
+    """
+    나만의 그룹 ViewSet
+    - 현재 사용자가 멤버인 그룹만 조회 가능
+    - 그룹 생성 시 creator가 자동으로 members에 추가됨
+    - 멤버 추가/제거는 creator와 동일 role인 사용자만 허용
+    - 모든 멤버가 그룹 관리 가능 (이름 변경, 멤버 추가/제거, 삭제)
+    """
+    serializer_class = UserGroupSerializer
+    permission_classes = [IsAuthenticatedInProd]
+    pagination_class = None
+
+    def get_queryset(self):
+        return UserGroup.objects.filter(
+            members=self.request.user
+        ).select_related('creator').prefetch_related('members')
+
+    def get_object(self):
+        from django.shortcuts import get_object_or_404
+        return get_object_or_404(
+            UserGroup.objects.filter(members=self.request.user),
+            pk=self.kwargs['pk']
+        )
+
+    def create(self, request, *args, **kwargs):
+        if request.user.role == 'NONE':
+            return Response(
+                {'error': '역할이 없는 사용자는 그룹을 만들 수 없습니다.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        serializer = self.get_serializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        group = serializer.save(creator=request.user)
+        group.members.add(request.user)
+        return Response(UserGroupSerializer(group, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        kwargs['partial'] = True
+        return super().update(request, *args, **kwargs)
+
+    def perform_update(self, serializer):
+        serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        group = self.get_object()
+        group.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['get'], url_path='available-members')
+    def available_members(self, request, pk=None):
+        """creator와 동일 role이고 아직 멤버가 아닌 사용자 목록"""
+        group = self.get_object()
+        creator_role = group.creator.role
+        current_member_ids = group.members.values_list('id', flat=True)
+        candidates = User.objects.filter(role=creator_role).exclude(
+            id__in=current_member_ids
+        ).order_by('username', 'loginid')
+        data = [
+            {
+                'id': u.id,
+                'loginid': u.loginid,
+                'name': u.username,
+                'mail': u.mail,
+                'deptname': u.deptname,
+            }
+            for u in candidates
+        ]
+        return Response(data)
+
+    @action(detail=True, methods=['post'], url_path='add-member')
+    def add_member(self, request, pk=None):
+        """멤버 추가 — creator와 동일 role만 허용"""
+        group = self.get_object()
+        user_id = request.data.get('user_id')
+        if not user_id:
+            return Response({'error': 'user_id는 필수입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            target = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({'error': '사용자를 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if target.role != group.creator.role:
+            return Response(
+                {'error': f'역할({group.creator.role})이 동일한 사용자만 추가할 수 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if group.members.filter(pk=target.pk).exists():
+            return Response({'error': '이미 그룹 멤버입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        group.members.add(target)
+        return Response(UserGroupSerializer(group, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'], url_path='remove-member')
+    def remove_member(self, request, pk=None):
+        """멤버 제거 — creator는 제거 불가"""
+        group = self.get_object()
+        user_id = request.data.get('user_id')
+        if not user_id:
+            return Response({'error': 'user_id는 필수입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            target = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return Response({'error': '사용자를 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not group.members.filter(pk=target.pk).exists():
+            return Response({'error': '그룹 멤버가 아닙니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if target.pk == group.creator.pk:
+            return Response({'error': '그룹 생성자는 제거할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        group.members.remove(target)
+        return Response(UserGroupSerializer(group, context={'request': request}).data)

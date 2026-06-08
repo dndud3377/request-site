@@ -447,6 +447,29 @@ class ProductBarcode(models.Model):
         return f"{self.n7prod_code} / {self.n7mto_date} / {self.n7c_layer_num}"
 
 
+class UserGroup(models.Model):
+    """나만의 그룹 — 알림 발송 대상 그룹 (멤버만 조회·관리 가능)"""
+    name       = models.CharField(max_length=100, verbose_name='그룹 이름')
+    creator    = models.ForeignKey(
+        'UserProfile', on_delete=models.CASCADE,
+        related_name='created_groups', verbose_name='생성자'
+    )
+    members    = models.ManyToManyField(
+        'UserProfile', related_name='member_groups',
+        blank=True, verbose_name='그룹 멤버'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일')
+
+    class Meta:
+        unique_together = ('creator', 'name')
+        verbose_name = '나만의 그룹'
+        verbose_name_plural = '나만의 그룹 목록'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"[{self.creator.loginid}] {self.name}"
+
+
 class VocHistory(models.Model):
     """VOC 처리 이력 - 프론트엔드 VocHistory 타입과 1:1 매핑"""
 

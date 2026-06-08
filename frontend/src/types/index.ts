@@ -341,6 +341,33 @@ export interface AssignRoleInput {
   role: UserRole;
 }
 
+// ===== User Groups =====
+
+export interface UserGroupMember {
+  id: number;
+  loginid: string;
+  name: string;
+  mail: string;
+  deptname: string;
+  role: UserRole;
+}
+
+export interface UserGroup {
+  id: number;
+  name: string;
+  creator_loginid: string;
+  members: UserGroupMember[];
+  created_at: string;
+}
+
+export interface AvailableGroupMember {
+  id: number;
+  loginid: string;
+  name: string;
+  mail: string;
+  deptname: string;
+}
+
 export interface UserForAssignment {
   id: number;
   username: string;      // DB loginid
