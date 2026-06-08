@@ -913,10 +913,14 @@ class GuideViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(
-            author_name=self.request.user.username or self.request.user.loginid,
-            author_role=self.request.user.role,
-        )
+        user = self.request.user
+        if user and user.is_authenticated:
+            author_name = getattr(user, 'loginid', None) or getattr(user, 'username', '') or ''
+            author_role = getattr(user, 'role', '')
+        else:
+            author_name = ''
+            author_role = ''
+        serializer.save(author_name=author_name, author_role=author_role)
 
     def perform_update(self, serializer):
         serializer.save()
