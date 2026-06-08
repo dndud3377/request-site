@@ -360,6 +360,7 @@
     "edit": "Edit",
     "delete": "Delete",
     "confirm_delete": "Are you sure you want to delete this guide?",
+    "feature_already_exists": "A guide for this feature already exists.",
     "create_success": "Guide saved successfully.",
     "update_success": "Guide updated successfully.",
     "delete_success": "Guide deleted successfully.",
