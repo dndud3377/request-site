@@ -53,10 +53,11 @@ export default function GuidePage(): React.ReactElement {
   const [selected, setSelected] = useState<Guide | null>(null);
 
   // ── write / edit modal ──
-  const [formOpen, setFormOpen]       = useState(false);
-  const [editTarget, setEditTarget]   = useState<Guide | null>(null);
-  const [form, setForm]               = useState<FormState>(EMPTY_FORM);
-  const [submitting, setSubmitting]   = useState(false);
+  const [formOpen, setFormOpen]           = useState(false);
+  const [editTarget, setEditTarget]       = useState<Guide | null>(null);
+  const [form, setForm]                   = useState<FormState>(EMPTY_FORM);
+  const [submitting, setSubmitting]       = useState(false);
+  const [allFeatureGuides, setAllFeatureGuides] = useState<Guide[]>([]);
 
   // ── delete confirm ──
   const [deleteTarget, setDeleteTarget] = useState<Guide | null>(null);
@@ -64,13 +65,7 @@ export default function GuidePage(): React.ReactElement {
 
   // ─────────────── helpers ───────────────
 
-  const canEdit = useCallback(
-    (guide: Guide) =>
-      currentUser.role === 'MASTER' ||
-      currentUser.role === guide.author_role ||
-      currentUser.name === guide.author_name,
-    [currentUser]
-  );
+  const canDelete = currentUser.role === 'MASTER';
 
   const featureLabel = useCallback(
     (key: GuideFeatureKey): string => t(`guide.feat.${key}` as never),
@@ -102,6 +97,13 @@ export default function GuidePage(): React.ReactElement {
   const openWrite = () => {
     setEditTarget(null);
     setForm(EMPTY_FORM);
+    guidesAPI
+      .list({ guide_type: 'feature' })
+      .then((r) => {
+        const data = r.data;
+        setAllFeatureGuides(Array.isArray(data) ? data : (data as { results: Guide[] }).results ?? []);
+      })
+      .catch(() => setAllFeatureGuides([]));
     setFormOpen(true);
   };
 
@@ -286,17 +288,19 @@ export default function GuidePage(): React.ReactElement {
         title={selected?.title ?? ''}
         size="lg"
         footer={
-          selected && canEdit(selected) ? (
+          selected ? (
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-secondary" onClick={() => openEdit(selected)}>
                 {t('guide.edit')}
               </button>
-              <button
-                className="btn btn-danger"
-                onClick={() => { setDeleteTarget(selected); setSelected(null); }}
-              >
-                {t('guide.delete')}
-              </button>
+              {canDelete && (
+                <button
+                  className="btn btn-danger"
+                  onClick={() => { setDeleteTarget(selected); setSelected(null); }}
+                >
+                  {t('guide.delete')}
+                </button>
+              )}
             </div>
           ) : undefined
         }
@@ -333,7 +337,7 @@ export default function GuidePage(): React.ReactElement {
         size="lg"
         footer={
           <>
-            {editTarget && canEdit(editTarget) && (
+            {editTarget && canDelete && (
               <button
                 className="btn btn-danger"
                 style={{ marginRight: 'auto' }}
@@ -419,12 +423,14 @@ export default function GuidePage(): React.ReactElement {
                 <select
                   className="form-control"
                   value={form.feature_key ?? ''}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      feature_key: (e.target.value as GuideFeatureKey) || null,
-                    }))
-                  }
+                  onChange={(e) => {
+                    const key = (e.target.value as GuideFeatureKey) || null;
+                    if (key && allFeatureGuides.some((g) => g.feature_key === key)) {
+                      addToast(t('guide.feature_already_exists'), 'error');
+                      return;
+                    }
+                    setForm((f) => ({ ...f, feature_key: key }));
+                  }}
                   disabled={!!editTarget}
                 >
                   <option value="">{t('guide.select_feature_placeholder')}</option>

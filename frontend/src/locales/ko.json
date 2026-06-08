@@ -395,6 +395,7 @@
     "edit": "수정",
     "delete": "삭제",
     "confirm_delete": "이 가이드를 삭제하시겠습니까?",
+    "feature_already_exists": "이미 작성된 가이드가 존재합니다.",
     "create_success": "가이드가 저장되었습니다.",
     "update_success": "가이드가 수정되었습니다.",
     "delete_success": "가이드가 삭제되었습니다.",
