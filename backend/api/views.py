@@ -803,6 +803,7 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [IsMasterOrReadOnly]
+    pagination_class = None
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['loginid', 'username', 'deptname']
     ordering_fields = ['id', 'loginid']

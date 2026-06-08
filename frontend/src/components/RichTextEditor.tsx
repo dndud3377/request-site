@@ -272,7 +272,7 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
   const currentFontSize = (editor.getAttributes('textStyle').fontSize as string | undefined)?.replace('px', '') || '';
 
   return (
-    <div style={{ border: '1.5px solid #dde1ea', borderRadius: 10, overflow: 'hidden' }}>
+    <div style={{ border: '1.5px solid #dde1ea', borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {!readOnly && (
         <>
           {/* 툴바 1행: 서식 */}
@@ -470,11 +470,11 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
       )}
 
       {/* 에디터 본문 */}
-      <div onPaste={handlePaste}>
+      <div onPaste={handlePaste} style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
         <EditorContent
           editor={editor}
           style={{
-            minHeight: 160,
+            minHeight: 120,
             padding: '12px 14px',
             fontSize: 14,
             lineHeight: 1.7,
