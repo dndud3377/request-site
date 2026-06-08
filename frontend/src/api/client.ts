@@ -73,6 +73,11 @@ async function request<T>(
     ...(options.headers as Record<string, string>),
   };
 
+  if (IS_DEV_MODE) {
+    const token = getToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers,
