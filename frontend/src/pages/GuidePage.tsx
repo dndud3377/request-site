@@ -353,117 +353,119 @@ export default function GuidePage(): React.ReactElement {
           </>
         }
       >
-        {/* Guide type selection (only when creating) */}
-        {!editTarget && (
-          <div className="form-group" style={{ marginBottom: 20 }}>
-            <label className="form-label">{t('guide.type_label')}</label>
-            <div style={{ display: 'flex', gap: 12 }}>
-              {(['feature', 'info'] as GuideType[]).map((type) => (
-                <div
-                  key={type}
-                  onClick={() => setForm((f) => ({
-                    ...f,
-                    guide_type: type,
-                    selectedStep: null,
-                    feature_key: null,
-                    title: '',
-                  }))}
-                  style={{
-                    flex: 1,
-                    padding: '14px 16px',
-                    border: `2px solid ${form.guide_type === type ? '#4f8ef7' : '#dde1ea'}`,
-                    borderRadius: 10,
-                    cursor: 'pointer',
-                    background: form.guide_type === type ? '#eff6ff' : '#fafbff',
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  <div style={{ fontWeight: 700, fontSize: 14, color: form.guide_type === type ? '#3b82f6' : '#333', marginBottom: 4 }}>
-                    {type === 'feature' ? '⚙️' : '📋'} {t(`guide.type_${type}` as never)}
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+          {/* Guide type selection (only when creating) */}
+          {!editTarget && (
+            <div className="form-group" style={{ marginBottom: 20 }}>
+              <label className="form-label">{t('guide.type_label')}</label>
+              <div style={{ display: 'flex', gap: 12 }}>
+                {(['feature', 'info'] as GuideType[]).map((type) => (
+                  <div
+                    key={type}
+                    onClick={() => setForm((f) => ({
+                      ...f,
+                      guide_type: type,
+                      selectedStep: null,
+                      feature_key: null,
+                      title: '',
+                    }))}
+                    style={{
+                      flex: 1,
+                      padding: '14px 16px',
+                      border: `2px solid ${form.guide_type === type ? '#4f8ef7' : '#dde1ea'}`,
+                      borderRadius: 10,
+                      cursor: 'pointer',
+                      background: form.guide_type === type ? '#eff6ff' : '#fafbff',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, fontSize: 14, color: form.guide_type === type ? '#3b82f6' : '#333', marginBottom: 4 }}>
+                      {type === 'feature' ? '⚙️' : '📋'} {t(`guide.type_${type}` as never)}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#888' }}>
+                      {t(`guide.type_${type}_desc` as never)}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12, color: '#888' }}>
-                    {t(`guide.type_${type}_desc` as never)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Feature type: step + feature selector */}
-        {form.guide_type === 'feature' && (
-          <>
-            <div className="form-group" style={{ marginBottom: 16 }}>
-              <label className="form-label">{t('guide.select_step')}</label>
-              <select
-                className="form-control"
-                value={form.selectedStep ?? ''}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    selectedStep: e.target.value ? Number(e.target.value) : null,
-                    feature_key: null,
-                  }))
-                }
-                disabled={!!editTarget}
-              >
-                <option value="">{t('guide.select_step_placeholder')}</option>
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <option key={s} value={s}>Step {s}</option>
                 ))}
-              </select>
+              </div>
             </div>
+          )}
 
-            {form.selectedStep && (
+          {/* Feature type: step + feature selector */}
+          {form.guide_type === 'feature' && (
+            <>
               <div className="form-group" style={{ marginBottom: 16 }}>
-                <label className="form-label">{t('guide.select_feature')}</label>
+                <label className="form-label">{t('guide.select_step')}</label>
                 <select
                   className="form-control"
-                  value={form.feature_key ?? ''}
-                  onChange={(e) => {
-                    const key = (e.target.value as GuideFeatureKey) || null;
-                    if (key && allFeatureGuides.some((g) => g.feature_key === key)) {
-                      addToast(t('guide.feature_already_exists'), 'error');
-                      return;
-                    }
-                    setForm((f) => ({ ...f, feature_key: key }));
-                  }}
+                  value={form.selectedStep ?? ''}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      selectedStep: e.target.value ? Number(e.target.value) : null,
+                      feature_key: null,
+                    }))
+                  }
                   disabled={!!editTarget}
                 >
-                  <option value="">{t('guide.select_feature_placeholder')}</option>
-                  {stepFeatures.map((feat) => (
-                    <option key={feat.key} value={feat.key}>
-                      {t(feat.labelKey as never)}
-                    </option>
+                  <option value="">{t('guide.select_step_placeholder')}</option>
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <option key={s} value={s}>Step {s}</option>
                   ))}
                 </select>
               </div>
-            )}
-          </>
-        )}
 
-        {/* Info type: title input */}
-        {form.guide_type === 'info' && (
-          <div className="form-group" style={{ marginBottom: 16 }}>
-            <label className="form-label">{t('guide.info_title_label')}</label>
-            <input
-              className="form-control"
-              type="text"
-              value={form.title}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-              placeholder={t('guide.info_title_placeholder')}
+              {form.selectedStep && (
+                <div className="form-group" style={{ marginBottom: 16 }}>
+                  <label className="form-label">{t('guide.select_feature')}</label>
+                  <select
+                    className="form-control"
+                    value={form.feature_key ?? ''}
+                    onChange={(e) => {
+                      const key = (e.target.value as GuideFeatureKey) || null;
+                      if (key && allFeatureGuides.some((g) => g.feature_key === key)) {
+                        addToast(t('guide.feature_already_exists'), 'error');
+                        return;
+                      }
+                      setForm((f) => ({ ...f, feature_key: key }));
+                    }}
+                    disabled={!!editTarget}
+                  >
+                    <option value="">{t('guide.select_feature_placeholder')}</option>
+                    {stepFeatures.map((feat) => (
+                      <option key={feat.key} value={feat.key}>
+                        {t(feat.labelKey as never)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Info type: title input */}
+          {form.guide_type === 'info' && (
+            <div className="form-group" style={{ marginBottom: 16 }}>
+              <label className="form-label">{t('guide.info_title_label')}</label>
+              <input
+                className="form-control"
+                type="text"
+                value={form.title}
+                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                placeholder={t('guide.info_title_placeholder')}
+              />
+            </div>
+          )}
+
+          {/* Content editor */}
+          <div className="form-group" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <label className="form-label">{t('guide.content_label')}</label>
+            <RichTextEditor
+              value={form.content}
+              onChange={(html) => setForm((f) => ({ ...f, content: html }))}
+              placeholder={t('guide.editor_placeholder')}
             />
           </div>
-        )}
-
-        {/* Content editor */}
-        <div className="form-group">
-          <label className="form-label">{t('guide.content_label')}</label>
-          <RichTextEditor
-            value={form.content}
-            onChange={(html) => setForm((f) => ({ ...f, content: html }))}
-            placeholder={t('guide.editor_placeholder')}
-          />
         </div>
       </Modal>
 
