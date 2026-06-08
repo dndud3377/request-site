@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './i18n';
 import './styles/global.css';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -33,6 +33,12 @@ function LoadingSpinner(): React.ReactElement {
   );
 }
 
+function ProtectedRoute({ children }: { children: React.ReactElement }): React.ReactElement {
+  const { currentUser } = useAuth();
+  if (currentUser.role === 'NONE') return <Navigate to="/" replace />;
+  return children;
+}
+
 function AppContent(): React.ReactElement {
   const { isLoggedIn, isLoading } = useAuth();
   const location = useLocation();
@@ -48,12 +54,12 @@ function AppContent(): React.ReactElement {
       <main className="main-content">
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/request" element={<RequestPage />} />
-          <Route path="/approval" element={<ApprovalPage />} />
-          <Route path="/history" element={<HistoryPage />} />
-          <Route path="/voc" element={<VOCPage />} />
-          <Route path="/permissions" element={<PermissionPage />} />
-          <Route path="/guide" element={<GuidePage />} />
+          <Route path="/request"     element={<ProtectedRoute><RequestPage /></ProtectedRoute>} />
+          <Route path="/approval"    element={<ProtectedRoute><ApprovalPage /></ProtectedRoute>} />
+          <Route path="/history"     element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
+          <Route path="/voc"         element={<ProtectedRoute><VOCPage /></ProtectedRoute>} />
+          <Route path="/permissions" element={<ProtectedRoute><PermissionPage /></ProtectedRoute>} />
+          <Route path="/guide"       element={<ProtectedRoute><GuidePage /></ProtectedRoute>} />
         </Routes>
       </main>
       <Footer />
