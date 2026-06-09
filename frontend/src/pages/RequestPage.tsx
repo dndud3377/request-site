@@ -191,6 +191,12 @@ const INITIAL_DETAIL: DetailFormState = {
   map_value_x: '',
   map_value_y: '',
   map_reason: '',
+  map_change_top: '변경 있음',
+  map_value_x_top: '',
+  map_value_y_top: '',
+  map_change_bottom: '변경 있음',
+  map_value_x_bottom: '',
+  map_value_y_bottom: '',
   ea_change: '변경 없음',
   ea_value: '',
   bb_zone: '존재',
@@ -382,6 +388,7 @@ export default function RequestPage(): React.ReactElement {
   const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
   const [mergeStats, setMergeStats] = useState<{ jayerMatched: number; jayerUnmatchedRef: number; oayerMatched: number; oayerUnmatchedRef: number } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [mapTypeChangeConfirm, setMapTypeChangeConfirm] = useState<{ targetType: string } | null>(null);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -719,7 +726,7 @@ export default function RequestPage(): React.ReactElement {
   }, [editDocId]);
 
   // Derived booleans for Step 1 conditional rendering
-  const isMapRegistered = detail.map_type === 'EXISTING';
+  const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === '변경 있음';
   const isProdc = detail.only_prodc === 'Yes';
@@ -779,8 +786,22 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleMapTypeSelect = (val: string) => {
+    if (val === detail.map_type) return;
+    if (val === 'CLONE' || val === 'EXISTING') {
+      setMapTypeChangeConfirm({ targetType: val });
+      return;
+    }
     setDetail((prev) => ({ ...prev, map_type: val }));
     if (errors['map_type']) setErrors((prev) => ({ ...prev, map_type: '' }));
+  };
+
+  const handleMapTypeChangeConfirm = () => {
+    if (!mapTypeChangeConfirm) return;
+    const newType = mapTypeChangeConfirm.targetType;
+    setDetail({ ...INITIAL_DETAIL, map_type: newType });
+    setCopiedFields(new Set());
+    setErrors({});
+    setMapTypeChangeConfirm(null);
   };
 
   // C가문 리전별 조합법 변경 → 해당 리전 제품이름 fetch
@@ -1554,7 +1575,47 @@ export default function RequestPage(): React.ReactElement {
         errorMessages.push('MAP 요청 목적: 필수 입력 항목입니다.');
       }
       if (!isMapRegistered) {
-      if (detail.map_change === '변경 있음') {
+      if (detail.only_prodc === 'Yes') {
+        // C가문 Yes: top/bottom X/Y 필수 + 부호·동일값 검증
+        if (!detail.map_value_x_top?.trim()) {
+          newErrors['map_value_x_top'] = t('request.required');
+          errorMessages.push('MAP 변경 X (북쪽): 필수 입력 항목입니다.');
+        }
+        if (!detail.map_value_y_top?.trim()) {
+          newErrors['map_value_y_top'] = t('request.required');
+          errorMessages.push('MAP 변경 Y (북쪽): 필수 입력 항목입니다.');
+        }
+        if (!detail.map_value_x_bottom?.trim()) {
+          newErrors['map_value_x_bottom'] = t('request.required');
+          errorMessages.push('MAP 변경 X (남쪽): 필수 입력 항목입니다.');
+        }
+        if (!detail.map_value_y_bottom?.trim()) {
+          newErrors['map_value_y_bottom'] = t('request.required');
+          errorMessages.push('MAP 변경 Y (남쪽): 필수 입력 항목입니다.');
+        }
+        if (!detail.map_reason?.trim()) {
+          newErrors['map_reason'] = t('request.required');
+          errorMessages.push('MAP 변경 사유: 필수 입력 항목입니다.');
+        }
+        // X값 부호 반대 + 절대값 동일 검증
+        if (detail.map_value_x_top?.trim() && detail.map_value_x_bottom?.trim()) {
+          const xTop = parseFloat(detail.map_value_x_top);
+          const xBot = parseFloat(detail.map_value_x_bottom);
+          if (!isNaN(xTop) && !isNaN(xBot)) {
+            if (Math.abs(xTop) !== Math.abs(xBot) || Math.sign(xTop) === Math.sign(xBot)) {
+              newErrors['map_value_x_bottom'] = t('request.map_x_sign_error');
+              errorMessages.push(t('request.map_x_sign_error'));
+            }
+          }
+        }
+        // Y값 동일 검증
+        if (detail.map_value_y_top?.trim() && detail.map_value_y_bottom?.trim()) {
+          if (detail.map_value_y_top.trim() !== detail.map_value_y_bottom.trim()) {
+            newErrors['map_value_y_bottom'] = t('request.map_y_equal_error');
+            errorMessages.push(t('request.map_y_equal_error'));
+          }
+        }
+      } else if (detail.map_change === '변경 있음') {
         if (!detail.map_value_x?.trim()) {
           newErrors['map_value_x'] = t('request.required');
           errorMessages.push('MAP 변경 X: 필수 입력 항목입니다.');
@@ -1764,6 +1825,12 @@ export default function RequestPage(): React.ReactElement {
       map_value_x: INITIAL_DETAIL.map_value_x,
       map_value_y: INITIAL_DETAIL.map_value_y,
       map_reason: INITIAL_DETAIL.map_reason,
+      map_change_top: INITIAL_DETAIL.map_change_top,
+      map_value_x_top: INITIAL_DETAIL.map_value_x_top,
+      map_value_y_top: INITIAL_DETAIL.map_value_y_top,
+      map_change_bottom: INITIAL_DETAIL.map_change_bottom,
+      map_value_x_bottom: INITIAL_DETAIL.map_value_x_bottom,
+      map_value_y_bottom: INITIAL_DETAIL.map_value_y_bottom,
       ea_change: INITIAL_DETAIL.ea_change,
       ea_value: INITIAL_DETAIL.ea_value,
       only_prodc: INITIAL_DETAIL.only_prodc,
@@ -2297,49 +2364,6 @@ export default function RequestPage(): React.ReactElement {
           </div>
         </div>
 
-        {/* 지도 편차 */}
-        <div className="full-width flex-row">
-          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
-            <label className="form-label">{t('request.map')}<GuideBadge fk="step2_map_deviation" tk={t('guide.feat.step2_map_deviation' as never)} /></label>
-            <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange} disabled={copiedFields.has('map_change') || isMapRegistered}>
-              <option value="변경 없음">{t('request.map_no_change')}</option>
-              <option value="변경 있음">{t('request.map_has_change')}</option>
-            </select>
-          </div>
-          <div className="form-group" style={{ flex: 1, visibility: hasMapChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_value_x')} <span className="required">*</span></label>
-            <input className={`form-control${errors.map_value_x ? ' error' : ''}`} name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} disabled={copiedFields.has('map_value_x') || isMapRegistered} />
-            {errors.map_value_x && <span className="form-error">{errors.map_value_x}</span>}
-          </div>
-          <div className="form-group" style={{ flex: 1, visibility: hasMapChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_value_y')} <span className="required">*</span></label>
-            <input className={`form-control${errors.map_value_y ? ' error' : ''}`} name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} disabled={copiedFields.has('map_value_y') || isMapRegistered} />
-            {errors.map_value_y && <span className="form-error">{errors.map_value_y}</span>}
-          </div>
-          <div className="form-group" style={{ flex: 3, visibility: hasMapChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_reason')} <span className="required">*</span></label>
-            <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} disabled={copiedFields.has('map_reason') || isMapRegistered} />
-            {errors.map_reason && <span className="form-error">{errors.map_reason}</span>}
-          </div>
-        </div>
-
-        {/* 예외 구역 */}
-        <div className="full-width flex-row">
-          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
-            <label className="form-label">{t('request.ea_change')}<GuideBadge fk="step2_exception_zone" tk={t('guide.feat.step2_exception_zone' as never)} /></label>
-            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange} disabled={copiedFields.has('ea_change') || isMapRegistered}>
-              <option value="변경 없음">{t('request.no_change')}</option>
-              <option value="변경 있음">{t('request.has_change')}</option>
-            </select>
-          </div>
-          <div className="form-group" style={{ flex: 1.5, visibility: hasEaChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.ea_value')} <span className="required">*</span></label>
-            <input className={`form-control${errors.ea_value ? ' error' : ''}`} name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={copiedFields.has('ea_value') || isMapRegistered} />
-            {errors.ea_value && <span className="form-error">{errors.ea_value}</span>}
-          </div>
-          <div style={{ flex: 3.5 }} />
-        </div>
-
         {/* Only C가문 제품 */}
         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
@@ -2521,6 +2545,92 @@ export default function RequestPage(): React.ReactElement {
               </div>
             </div>
           )}
+        </div>
+
+        {/* 지도 편차 */}
+        {isProdc ? (
+          <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <label className="form-label">{t('request.map')}<GuideBadge fk="step2_map_deviation" tk={t('guide.feat.step2_map_deviation' as never)} /></label>
+            {(['top', 'bottom'] as const).map((region) => (
+              <div key={region} className="flex-row" style={{ alignItems: 'flex-start', gap: '12px' }}>
+                <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+                  <label className="form-label" style={{ marginBottom: 4 }}>{t(`request.prodc_${region}`)}</label>
+                  <select className="form-control" disabled value="변경 있음">
+                    <option value="변경 있음">{t('request.map_has_change')}</option>
+                  </select>
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('request.map_value_x')} <span className="required">*</span></label>
+                  <input
+                    className={`form-control${errors[`map_value_x_${region}`] ? ' error' : ''}`}
+                    name={`map_value_x_${region}`}
+                    value={detail[`map_value_x_${region}` as keyof DetailFormState] as string}
+                    onChange={handleDetailChange}
+                    disabled={isMapRegistered}
+                  />
+                  {errors[`map_value_x_${region}`] && <span className="form-error">{errors[`map_value_x_${region}`]}</span>}
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('request.map_value_y')} <span className="required">*</span></label>
+                  <input
+                    className={`form-control${errors[`map_value_y_${region}`] ? ' error' : ''}`}
+                    name={`map_value_y_${region}`}
+                    value={detail[`map_value_y_${region}` as keyof DetailFormState] as string}
+                    onChange={handleDetailChange}
+                    disabled={isMapRegistered}
+                  />
+                  {errors[`map_value_y_${region}`] && <span className="form-error">{errors[`map_value_y_${region}`]}</span>}
+                </div>
+              </div>
+            ))}
+            <div className="form-group" style={{ flex: 3 }}>
+              <label className="form-label">{t('request.map_reason')} <span className="required">*</span></label>
+              <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} disabled={isMapRegistered} />
+              {errors.map_reason && <span className="form-error">{errors.map_reason}</span>}
+            </div>
+          </div>
+        ) : (
+          <div className="full-width flex-row">
+            <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+              <label className="form-label">{t('request.map')}<GuideBadge fk="step2_map_deviation" tk={t('guide.feat.step2_map_deviation' as never)} /></label>
+              <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange} disabled={copiedFields.has('map_change') || isMapRegistered}>
+                <option value="변경 없음">{t('request.map_no_change')}</option>
+                <option value="변경 있음">{t('request.map_has_change')}</option>
+              </select>
+            </div>
+            <div className="form-group" style={{ flex: 1, visibility: hasMapChange ? 'visible' : 'hidden' }}>
+              <label className="form-label">{t('request.map_value_x')} <span className="required">*</span></label>
+              <input className={`form-control${errors.map_value_x ? ' error' : ''}`} name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} disabled={copiedFields.has('map_value_x') || isMapRegistered} />
+              {errors.map_value_x && <span className="form-error">{errors.map_value_x}</span>}
+            </div>
+            <div className="form-group" style={{ flex: 1, visibility: hasMapChange ? 'visible' : 'hidden' }}>
+              <label className="form-label">{t('request.map_value_y')} <span className="required">*</span></label>
+              <input className={`form-control${errors.map_value_y ? ' error' : ''}`} name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} disabled={copiedFields.has('map_value_y') || isMapRegistered} />
+              {errors.map_value_y && <span className="form-error">{errors.map_value_y}</span>}
+            </div>
+            <div className="form-group" style={{ flex: 3, visibility: hasMapChange ? 'visible' : 'hidden' }}>
+              <label className="form-label">{t('request.map_reason')} <span className="required">*</span></label>
+              <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} disabled={copiedFields.has('map_reason') || isMapRegistered} />
+              {errors.map_reason && <span className="form-error">{errors.map_reason}</span>}
+            </div>
+          </div>
+        )}
+
+        {/* 예외 구역 */}
+        <div className="full-width flex-row">
+          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+            <label className="form-label">{t('request.ea_change')}<GuideBadge fk="step2_exception_zone" tk={t('guide.feat.step2_exception_zone' as never)} /></label>
+            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange} disabled={copiedFields.has('ea_change') || isMapRegistered}>
+              <option value="변경 없음">{t('request.no_change')}</option>
+              <option value="변경 있음">{t('request.has_change')}</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ flex: 1.5, visibility: hasEaChange ? 'visible' : 'hidden' }}>
+            <label className="form-label">{t('request.ea_value')} <span className="required">*</span></label>
+            <input className={`form-control${errors.ea_value ? ' error' : ''}`} name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={copiedFields.has('ea_value') || isMapRegistered} />
+            {errors.ea_value && <span className="form-error">{errors.ea_value}</span>}
+          </div>
+          <div style={{ flex: 3.5 }} />
         </div>
 
         {/* X표시 변경 여부 */}
@@ -3908,6 +4018,15 @@ export default function RequestPage(): React.ReactElement {
           />
         </div>
       </Modal>
+
+      <ConfirmModal
+        isOpen={!!mapTypeChangeConfirm}
+        onClose={() => setMapTypeChangeConfirm(null)}
+        onConfirm={handleMapTypeChangeConfirm}
+        title={t('request.map_type_change_confirm_title')}
+        message={t('request.map_type_change_confirm_msg')}
+        danger
+      />
 
       <ConfirmModal
         isOpen={bbOverwriteConfirm}
