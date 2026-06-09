@@ -208,6 +208,8 @@ const INITIAL_DETAIL: DetailFormState = {
   prodc_bottom_product: '',
   mshot_change: '없음',
   mshot_image_copy: '',
+  mshot_image_copy_top: '',
+  mshot_image_copy_bottom: '',
   photo_backside: '미적용',
   eds_backside: '미적용',
   inter: '미적용',
@@ -243,6 +245,55 @@ const DETAIL_REQUIRED: (keyof DetailFormState)[] = [
   'partid_selection',
   'process_id',
 ];
+
+// ===== Mshot Image Upload =====
+interface MshotImageUploadProps {
+  fieldName: 'mshot_image_copy' | 'mshot_image_copy_top' | 'mshot_image_copy_bottom';
+  value: string;
+  error?: string;
+  disabled: boolean;
+  onPaste: (e: React.ClipboardEvent<HTMLDivElement>, fieldName: 'mshot_image_copy' | 'mshot_image_copy_top' | 'mshot_image_copy_bottom') => void;
+}
+
+const MshotImageUpload: React.FC<MshotImageUploadProps> = ({ fieldName, value, error, disabled, onPaste }) => (
+  <div>
+    <div
+      className="image-upload-area"
+      style={{
+        border: `2px dashed ${error ? '#dc3545' : '#ccc'}`,
+        borderRadius: '8px',
+        padding: '20px',
+        textAlign: 'center',
+        minHeight: '100px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: error ? '#fff5f5' : '#f9f9f9',
+      }}
+      onPaste={disabled ? undefined : (e) => onPaste(e, fieldName)}
+    >
+      {value ? (
+        <div style={{ width: '100%' }}>
+          <img
+            src={`/media/${value}`}
+            alt="attached"
+            style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '4px', border: '1px solid #ddd' }}
+          />
+          <p style={{ margin: '8px 0 0 0', color: '#666', fontSize: '13px' }}>
+            이미지가 첨부되었습니다. Ctrl+V 로 다시 붙여넣으면 변경됩니다.
+          </p>
+        </div>
+      ) : (
+        <div>
+          <div style={{ fontSize: '36px', marginBottom: '8px' }}>📋</div>
+          <p style={{ margin: '0', color: '#666' }}>Ctrl+V 로 이미지를 붙여넣으세요</p>
+        </div>
+      )}
+    </div>
+    {error && <span className="form-error">{error}</span>}
+  </div>
+);
 
 // ===== Wizard Step Indicator =====
 interface WizardIndicatorProps {
@@ -690,7 +741,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // 이미지 붙여넣기 핸들러 - 백엔드로 업로드
-  const handleImagePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
+  const handleImagePaste = async (e: React.ClipboardEvent<HTMLDivElement>, fieldName: 'mshot_image_copy' | 'mshot_image_copy_top' | 'mshot_image_copy_bottom') => {
     const items = e.clipboardData?.items;
     if (!items) return;
 
@@ -703,7 +754,7 @@ export default function RequestPage(): React.ReactElement {
             const result = await uploadImageAPI.upload(file);
             setDetail((prev) => ({
               ...prev,
-              mshot_image_copy: result.path
+              [fieldName]: result.path
             }));
             addToast(`이미지 업로드 완료: ${file.name}`, 'info');
           } catch (err) {
@@ -1540,9 +1591,20 @@ export default function RequestPage(): React.ReactElement {
         });
       }
       if (detail.mshot_change === '추가' || detail.mshot_change === '수정') {
-        if (!detail.mshot_image_copy) {
-          newErrors['mshot_image_copy'] = t('request.required');
-          errorMessages.push('X표시 이미지: 필수 입력 항목입니다.');
+        if (detail.only_prodc === 'Yes') {
+          if (!detail.mshot_image_copy_top) {
+            newErrors['mshot_image_copy_top'] = t('request.required');
+            errorMessages.push('X표시 이미지 (북쪽): 필수 입력 항목입니다.');
+          }
+          if (!detail.mshot_image_copy_bottom) {
+            newErrors['mshot_image_copy_bottom'] = t('request.required');
+            errorMessages.push('X표시 이미지 (남쪽): 필수 입력 항목입니다.');
+          }
+        } else {
+          if (!detail.mshot_image_copy) {
+            newErrors['mshot_image_copy'] = t('request.required');
+            errorMessages.push('X표시 이미지: 필수 입력 항목입니다.');
+          }
         }
       }
       } // end !isMapRegistered
@@ -1717,6 +1779,8 @@ export default function RequestPage(): React.ReactElement {
       prodc_bottom_product: INITIAL_DETAIL.prodc_bottom_product,
       mshot_change: INITIAL_DETAIL.mshot_change,
       mshot_image_copy: INITIAL_DETAIL.mshot_image_copy,
+      mshot_image_copy_top: INITIAL_DETAIL.mshot_image_copy_top,
+      mshot_image_copy_bottom: INITIAL_DETAIL.mshot_image_copy_bottom,
       photo_backside: INITIAL_DETAIL.photo_backside,
       eds_backside: INITIAL_DETAIL.eds_backside,
       inter: INITIAL_DETAIL.inter,
@@ -2473,49 +2537,43 @@ export default function RequestPage(): React.ReactElement {
           {mshotDeleteMode && (
             <p style={{ color: 'red', fontWeight: 600, margin: '8px 0 0 0' }}>특정 제품 삭제 필요</p>
           )}
-          {mshotEditAddMode && (
+          {mshotEditAddMode && !isProdc && (
             <div className="form-group" style={{ width: '50%', marginTop: '8px' }}>
               <label className="form-label">{t('request.mshot_change_image_attach_area')} <span className="required">*</span></label>
-              <div
-                className="image-upload-area"
-                style={{
-                  border: `2px dashed ${errors.mshot_image_copy ? '#dc3545' : '#ccc'}`,
-                  borderRadius: '8px',
-                  padding: '20px',
-                  textAlign: 'center',
-                  minHeight: '100px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: errors.mshot_image_copy ? '#fff5f5' : '#f9f9f9'
-                }}
-                onPaste={copiedFields.has('mshot_image_copy') || isMapRegistered ? undefined : handleImagePaste}
-              >
-                {detail.mshot_image_copy ? (
-                  <div style={{ width: '100%' }}>
-                    <img
-                      src={`/media/${detail.mshot_image_copy}`}
-                      alt="attached"
-                      style={{
-                        maxWidth: '100%',
-                        maxHeight: '300px',
-                        borderRadius: '4px',
-                        border: '1px solid #ddd'
-                      }}
-                    />
-                    <p style={{ margin: '8px 0 0 0', color: '#666', fontSize: '13px' }}>
-                      이미지가 첨부되었습니다. Ctrl+V 로 다시 붙여넣으면 변경됩니다.
-                    </p>
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ fontSize: '36px', marginBottom: '8px' }}>📋</div>
-                    <p style={{ margin: '0', color: '#666' }}>Ctrl+V 로 이미지를 붙여넣으세요</p>
-                  </div>
-                )}
+              <MshotImageUpload
+                fieldName="mshot_image_copy"
+                value={detail.mshot_image_copy}
+                error={errors.mshot_image_copy}
+                disabled={copiedFields.has('mshot_image_copy') || isMapRegistered}
+                onPaste={handleImagePaste}
+              />
+            </div>
+          )}
+          {mshotEditAddMode && isProdc && (
+            <div className="form-group" style={{ marginTop: '8px' }}>
+              <label className="form-label">{t('request.mshot_change_image_attach_area')}</label>
+              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: '280px' }}>
+                  <div className="form-label" style={{ marginBottom: '6px' }}>{t('request.prodc_top')} <span className="required">*</span></div>
+                  <MshotImageUpload
+                    fieldName="mshot_image_copy_top"
+                    value={detail.mshot_image_copy_top}
+                    error={errors.mshot_image_copy_top}
+                    disabled={isMapRegistered}
+                    onPaste={handleImagePaste}
+                  />
+                </div>
+                <div style={{ flex: 1, minWidth: '280px' }}>
+                  <div className="form-label" style={{ marginBottom: '6px' }}>{t('request.prodc_bottom')} <span className="required">*</span></div>
+                  <MshotImageUpload
+                    fieldName="mshot_image_copy_bottom"
+                    value={detail.mshot_image_copy_bottom}
+                    error={errors.mshot_image_copy_bottom}
+                    disabled={isMapRegistered}
+                    onPaste={handleImagePaste}
+                  />
+                </div>
               </div>
-              {errors.mshot_image_copy && <span className="form-error">{errors.mshot_image_copy}</span>}
             </div>
           )}
         </div>
@@ -2540,7 +2598,7 @@ export default function RequestPage(): React.ReactElement {
                 {t('request.map_option_title')}
                 <GuideBadge fk="step2_map_options" tk={t('guide.feat.step2_map_options' as never)} />
               </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, max-content)', gap: '8px' }}>
                 {mapOptions.map((opt) => {
                   const isActive = detail[opt.name] === opt.activeValue;
                   const isDisabled = copiedFields.has(opt.name as string) || isMapRegistered;
