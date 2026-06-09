@@ -370,6 +370,12 @@
     "delete_title": "공지 삭제",
     "delete_confirm": "\"{{title}}\" 공지를 삭제하시겠습니까?"
   },
+  "session": {
+    "warning_title": "세션 만료 안내",
+    "warning_body": "장시간 활동이 없어 곧 자동 로그아웃됩니다.\n세션을 연장하시겠습니까?",
+    "extend": "세션 연장",
+    "logout": "로그아웃"
+  },
   "guide": {
     "title": "가이드 관리",
     "subtitle": "의뢰서 작성 가이드를 등록·관리합니다",

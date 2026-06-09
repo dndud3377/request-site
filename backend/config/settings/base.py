@@ -168,7 +168,7 @@ OIDC_CERT_FILE_NAME = os.environ.get('OIDC_CERT_FILE_NAME', 'company-dev.net.cer
 # ============================================
 SERVICE_JWT_SECRET_KEY = os.environ.get('SERVICE_JWT_SECRET_KEY', '')
 SERVICE_JWT_ALGORITHM = os.environ.get('SERVICE_JWT_ALGORITHM', 'HS256')
-SERVICE_JWT_ACCESS_TOKEN_LIFETIME = timedelta(hours=1)
+SERVICE_JWT_ACCESS_TOKEN_LIFETIME = timedelta(hours=12)
 SERVICE_JWT_REFRESH_TOKEN_LIFETIME = timedelta(days=7)
 
 # Auth Mode (dev: 개발용 드롭다운, sso: 운영용 OIDC)
