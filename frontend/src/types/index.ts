@@ -245,7 +245,9 @@ export interface DetailFormState {
   prodc_bottom_product: string;
 
   mshot_change: string;
-  mshot_image_copy: string;  // 붙여넣기 시 파일명만 저장
+  mshot_image_copy: string;       // C가문 No일 때 단일 이미지
+  mshot_image_copy_top: string;   // C가문 Yes일 때 북쪽 이미지
+  mshot_image_copy_bottom: string; // C가문 Yes일 때 남쪽 이미지
 
   photo_backside: string;
   eds_backside: string;
