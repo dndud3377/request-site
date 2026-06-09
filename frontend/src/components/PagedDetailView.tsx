@@ -750,7 +750,8 @@ type Page = { label: string; content: React.ReactNode };
           )}
 
           {(isR || isO || isP) && detail.mshot_change && (() => {
-            const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy');
+            const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy') || changedFields.has('mshot_image_copy_top') || changedFields.has('mshot_image_copy_bottom');
+            const imgStyle: React.CSSProperties = { maxWidth: '300px', maxHeight: '200px', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px' };
             return (
               <div style={rowStyle}>
                 <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(mshotChanged ? { border: '2px solid #dc3545' } : {}) }}>
@@ -764,20 +765,26 @@ type Page = { label: string; content: React.ReactNode };
                       <div style={{ ...fieldValue, color: '#dc3545' }}>{t('approval.mshot_delete_desc')}</div>
                     </div>
                   )}
-                  {mshotHasDetail && detail.mshot_image_copy && (
+                  {mshotHasDetail && !isProdc && detail.mshot_image_copy && (
                     <div style={{ flex: 1 }}>
                       <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')}</div>
-                      <img
-                        src={`/media/${detail.mshot_image_copy}`}
-                        alt="attached"
-                        style={{
-                          maxWidth: '300px',
-                          maxHeight: '200px',
-                          borderRadius: '4px',
-                          border: '1px solid #ddd',
-                          marginTop: '8px'
-                        }}
-                      />
+                      <img src={`/media/${detail.mshot_image_copy}`} alt="attached" style={imgStyle} />
+                    </div>
+                  )}
+                  {mshotHasDetail && isProdc && (detail.mshot_image_copy_top || detail.mshot_image_copy_bottom) && (
+                    <div style={{ flex: 1, display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                      {detail.mshot_image_copy_top && (
+                        <div>
+                          <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')} — {t('request.prodc_top')}</div>
+                          <img src={`/media/${detail.mshot_image_copy_top}`} alt="top" style={imgStyle} />
+                        </div>
+                      )}
+                      {detail.mshot_image_copy_bottom && (
+                        <div>
+                          <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')} — {t('request.prodc_bottom')}</div>
+                          <img src={`/media/${detail.mshot_image_copy_bottom}`} alt="bottom" style={imgStyle} />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
