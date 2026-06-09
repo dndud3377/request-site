@@ -2197,22 +2197,24 @@ export default function RequestPage(): React.ReactElement {
         </div>
 
         {/* 원본 위치/Part ID */}
-        <div className="full-width" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('request.source_line')}</span>
-          <GuideBadge fk="step2_source_location" tk={t('guide.feat.step2_source_location' as never)} />
-        </div>
         <div className="full-width">
           <div className="conditional-group">
             <div className="flex-row">
-              <FormSelect
-                label={t('request.source_line')}
-                name="source_line"
-                value={detail.source_line}
-                options={lineOptions}
-                onChange={handleDetailChange}
-                placeholder={t('request.select_placeholder')}
-                className="flex-col"
-              />
+              <div className="form-group flex-col">
+                <label className="form-label">
+                  {t('request.source_line')}
+                  <GuideBadge fk="step2_source_location" tk={t('guide.feat.step2_source_location' as never)} />
+                </label>
+                <select
+                  className="form-control"
+                  name="source_line"
+                  value={detail.source_line}
+                  onChange={handleDetailChange}
+                >
+                  <option value="">{t('request.select_placeholder')}</option>
+                  {lineOptions.map((v) => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
               <AutocompleteInput
                 label={t('request.source_partid_selection')}
                 value={detail.source_partid}
@@ -2945,11 +2947,6 @@ export default function RequestPage(): React.ReactElement {
         {/* 탭 2: OVL 정보 */}
         {oayerInfoTab === 'info' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: -12 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('request.ovl_tab_info')}</span>
-              <GuideBadge fk="step4_oayer_info" tk={t('guide.feat.step4_oayer_info' as never)} />
-            </div>
-
             {/* Partial Shot 계측 필요 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -3264,10 +3261,6 @@ export default function RequestPage(): React.ReactElement {
         )}
 
         {/* 분할 패널 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('guide.feat.step5_bb_mapping' as never)}</span>
-          <GuideBadge fk="step5_bb_mapping" tk={t('guide.feat.step5_bb_mapping' as never)} />
-        </div>
         <div className="bb-split-panel">
           {/* 왼쪽: 원본 행 목록 + 매핑 미리보기 */}
           <div className="bb-split-panel-left">
@@ -3422,6 +3415,7 @@ export default function RequestPage(): React.ReactElement {
               ? `${stagedCount}개 행이 매핑됨 — 적용 버튼을 눌러 bb 정보에 반영하세요.`
               : '왼쪽에서 원본 layer 를 선택하고 오른쪽에서 bb 데이터를 클릭하여 매핑하세요.'}
           </span>
+          <GuideBadge fk="step5_bb_mapping" tk={t('guide.feat.step5_bb_mapping' as never)} />
           <button
             type="button"
             className="btn btn-primary"

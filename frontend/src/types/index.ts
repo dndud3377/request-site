@@ -400,7 +400,7 @@ export type GuideFeatureKey =
   | 'step2_exception_zone' | 'step2_cfamily' | 'step2_rev'
   | 'step2_xmark' | 'step2_map_options'
   | 'step3_jayer_table' | 'step3_jayer_filter'
-  | 'step4_oayer_table' | 'step4_oayer_info' | 'step4_partial_shot' | 'step4_tbvtlv'
+  | 'step4_oayer_table' | 'step4_partial_shot' | 'step4_tbvtlv'
   | 'step5_bb_autofill' | 'step5_bb_mapping' | 'step5_bb_table';
 
 export interface Guide {
@@ -448,7 +448,6 @@ export const GUIDE_STEP_FEATURES: Record<number, { key: GuideFeatureKey; labelKe
   ],
   4: [
     { key: 'step4_oayer_table',   labelKey: 'guide.feat.step4_oayer_table' },
-    { key: 'step4_oayer_info',    labelKey: 'guide.feat.step4_oayer_info' },
     { key: 'step4_partial_shot',  labelKey: 'guide.feat.step4_partial_shot' },
     { key: 'step4_tbvtlv',        labelKey: 'guide.feat.step4_tbvtlv' },
   ],
