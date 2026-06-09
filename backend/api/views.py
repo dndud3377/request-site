@@ -22,7 +22,9 @@ from django.db.models import Q
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
+    MapName,
 )
+from .utils import LINE_TO_LINEID_MAP
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer,
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
@@ -789,6 +791,23 @@ def form_options_barcode(request):
         return JsonResponse({'options': options})
     except Exception as e:
         return JsonResponse({'options': []})
+
+
+@require_GET
+def form_options_mapname(request):
+    """원본 위치(라인명) → partid 목록 반환"""
+    line = request.GET.get('line', '')
+    lineid = LINE_TO_LINEID_MAP.get(line)
+    if not lineid:
+        return JsonResponse({'options': []})
+
+    options = list(
+        MapName.objects.filter(lineid=lineid)
+        .values_list('partid', flat=True)
+        .distinct()
+        .order_by('partid')
+    )
+    return JsonResponse({'options': options})
 
 
 class UserViewSet(viewsets.ModelViewSet):

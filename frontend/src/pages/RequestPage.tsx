@@ -404,6 +404,7 @@ export default function RequestPage(): React.ReactElement {
   const isLoadingEditRef = useRef(false);
 
   const [approvedDocs, setApprovedDocs] = useState<RequestDocument[]>([]);
+  const [sourcePartIdOptions, setSourcePartIdOptions] = useState<string[]>([]);
 
   const [jayerFilterSets, setJayerFilterSets] = useState<FilterSet[]>([]);
   const [oayerFilterSets, setOayerFilterSets] = useState<FilterSet[]>([]);
@@ -509,6 +510,18 @@ export default function RequestPage(): React.ReactElement {
       setDetail((prev) => ({ ...prev, process_selection: '', partid_selection: '', process_id: '' }));
     }
   }, [detail.line]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 원본 위치 변경 → 원본 제품 목록 fetch
+  useEffect(() => {
+    setDetail((prev) => ({ ...prev, source_partid: '' }));
+    if (!detail.source_line) {
+      setSourcePartIdOptions([]);
+      return;
+    }
+    formOptionsAPI.getMapNames(detail.source_line)
+      .then(setSourcePartIdOptions)
+      .catch(() => setSourcePartIdOptions([]));
+  }, [detail.source_line]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
   useEffect(() => {
@@ -2274,7 +2287,7 @@ export default function RequestPage(): React.ReactElement {
               <AutocompleteInput
                 label={t('request.source_partid_selection')}
                 value={detail.source_partid}
-                options={[]}
+                options={sourcePartIdOptions}
                 onChange={(v) => handleDetailSet('source_partid', v)}
                 style={{ flex: 1 }}
               />
