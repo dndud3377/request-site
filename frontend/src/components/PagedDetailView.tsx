@@ -730,14 +730,23 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {(isR || isO || isJ || isP) && (detail.map_change || detail.ea_change) && (
+          {(isR || isO || isJ || isP) && (detail.map_change || (detail as any).map_change_top || detail.ea_change) && (
             <div style={rowStyle}>
-              {(isR || isO || isP) && detail.map_change && (() => {
-                const mapValue = `변경: ${detail.map_change}${detail.map_value_x ? ` / X: ${detail.map_value_x}` : ''}${detail.map_value_y ? ` / Y: ${detail.map_value_y}` : ''}${detail.map_reason ? ` / 사유: ${detail.map_reason}` : ''}`;
-                const mapChanged = changedFields.has('map_change') || changedFields.has('map_value_x') || changedFields.has('map_value_y') || changedFields.has('map_reason');
-                return (
-                  <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change" />
-                );
+              {(isR || isO || isP) && (() => {
+                if (isProdc && ((detail as any).map_value_x_top || (detail as any).map_value_x_bottom)) {
+                  const topVal = `X: ${(detail as any).map_value_x_top || '-'} / Y: ${(detail as any).map_value_y_top || '-'}`;
+                  const botVal = `X: ${(detail as any).map_value_x_bottom || '-'} / Y: ${(detail as any).map_value_y_bottom || '-'}`;
+                  const reasonPart = detail.map_reason ? ` / 사유: ${detail.map_reason}` : '';
+                  const mapValue = `[${t('request.prodc_top')}] ${topVal} / [${t('request.prodc_bottom')}] ${botVal}${reasonPart}`;
+                  const mapChanged = ['map_value_x_top','map_value_y_top','map_value_x_bottom','map_value_y_bottom','map_reason'].some(k => changedFields.has(k));
+                  return <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change_top" />;
+                }
+                if (!isProdc && detail.map_change) {
+                  const mapValue = `변경: ${detail.map_change}${detail.map_value_x ? ` / X: ${detail.map_value_x}` : ''}${detail.map_value_y ? ` / Y: ${detail.map_value_y}` : ''}${detail.map_reason ? ` / 사유: ${detail.map_reason}` : ''}`;
+                  const mapChanged = changedFields.has('map_change') || changedFields.has('map_value_x') || changedFields.has('map_value_y') || changedFields.has('map_reason');
+                  return <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change" />;
+                }
+                return null;
               })()}
               {(isR || isO || isP) && detail.ea_change && (() => {
                 const eaValue = `변경: ${detail.ea_change}${detail.ea_value ? ` / 값: ${detail.ea_value}` : ''}`;
