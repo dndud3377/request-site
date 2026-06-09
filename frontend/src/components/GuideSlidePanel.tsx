@@ -50,7 +50,7 @@ const GuideSlidePanel: React.FC<Props> = ({ featureKey, featureTitle, isOpen, on
           transition={{ type: 'tween', duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
           style={{
             position: 'fixed',
-            top: 0,
+            top: 64,
             right: 0,
             bottom: 0,
             width: 480,
@@ -81,17 +81,19 @@ const GuideSlidePanel: React.FC<Props> = ({ featureKey, featureTitle, isOpen, on
             <button
               onClick={onClose}
               style={{
-                width: 30,
-                height: 30,
+                width: 32,
+                height: 32,
                 borderRadius: 8,
-                background: 'rgba(255,255,255,0.15)',
-                border: 'none',
+                background: 'rgba(255,255,255,0.25)',
+                border: '1.5px solid rgba(255,255,255,0.6)',
                 color: '#fff',
                 cursor: 'pointer',
                 fontSize: 16,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                fontWeight: 700,
+                flexShrink: 0,
               }}
               aria-label={t('common.close')}
             >
