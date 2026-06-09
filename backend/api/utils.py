@@ -24,6 +24,15 @@ LINE_SUFFIX_MAP = {
     'LINE5': 'line5',
 }
 
+# 라인명 → 외부 DB lineid 매핑 (api_mapname 동기화용)
+LINE_TO_LINEID_MAP = {
+    '라인1': 'aaaaa',
+    '라인2': 'bbbbb',
+    '라인3': 'ccccc',
+    '라인4': 'ddddd',
+    '라인5': 'eeeee',
+}
+
 
 def cq_login(dcq_id, dcq_password):
     """

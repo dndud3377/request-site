@@ -21,6 +21,7 @@ from .utils import (
     get_django_engine,
     get_data_from_dcq,
     LINE_SUFFIX_MAP,
+    LINE_TO_LINEID_MAP,
 )
 
 logger = logging.getLogger(__name__)
@@ -173,6 +174,31 @@ def sync_form_options():
                 logger.info(_("[scheduler] 바코드-품목 {count}건 동기화 완료").format(count=len(df_pb)))
         except Exception as e:
             logger.error(_("[scheduler] 바코드-품목 동기화 실패: {e}").format(e=e))
+
+        try:
+            lineid_list = list(LINE_TO_LINEID_MAP.values())
+            placeholders = ' OR '.join([f"lineid = '{lid}'" for lid in lineid_list])
+            query_mn = f"""
+                SELECT DISTINCT lineid, partid
+                FROM X.Y
+                WHERE ({placeholders})
+                  AND partid IS NOT NULL AND partid != ''
+            """
+            df_mn = get_data_from_dcq(query_mn, dcq_id)
+
+            if df_mn is None or len(df_mn) == 0:
+                logger.warning(_("[scheduler] MAP 이름 데이터가 없습니다"))
+            else:
+                df_mn['last_synced'] = pd.Timestamp.now()
+                df_mn = df_mn[['lineid', 'partid', 'last_synced']]
+
+                with engine.begin() as db_conn:
+                    db_conn.execute(text("DELETE FROM api_mapname"))
+                    df_mn.to_sql('api_mapname', db_conn, if_exists='append', index=False)
+
+                logger.info(_("[scheduler] MAP 이름 {count}건 동기화 완료").format(count=len(df_mn)))
+        except Exception as e:
+            logger.error(_("[scheduler] MAP 이름 동기화 실패: {e}").format(e=e))
 
     finally:
         if engine:

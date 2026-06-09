@@ -509,6 +509,9 @@ export const formOptionsAPI = {
   getLayerIds: (line: string, process: string): Promise<string[]> =>
     getOptions(`/form-options/layer-ids/?line=${encodeURIComponent(line)}&process=${encodeURIComponent(process)}`),
 
+  getMapNames: (line: string): Promise<string[]> =>
+    getOptions(`/form-options/map-names/?line=${encodeURIComponent(line)}`),
+
   getBarcodeOptions: (product_name: string): Promise<{ label: string; n7c_layer_num: string }[]> =>
     get<{ options: { label: string; n7c_layer_num: string }[] }>(
       `/form-options/barcode/?product_name=${encodeURIComponent(product_name)}`
