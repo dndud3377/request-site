@@ -1,6 +1,10 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useCallback, useEffect, useState } from 'react';
 import { MockUser, UserInfo, UserRole } from '../types';
 import { authAPI, setToken, clearToken } from '../api/client';
+import { useIdleTimer } from '../hooks/useIdleTimer';
+
+const SESSION_TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12시간
+const WARN_BEFORE_MS = 10 * 60 * 1000;           // 만료 10분 전
 
 const IS_DEV_MODE = process.env.REACT_APP_AUTH_MODE === 'dev';
 
@@ -45,8 +49,11 @@ interface AuthContextValue {
   currentUser: UserInfo;
   isLoggedIn: boolean;
   isLoading: boolean;
+  showWarning: boolean;
   loginSSO: () => Promise<void>;
   logout: () => void;
+  extendSession: () => Promise<void>;
+  autoLogout: () => Promise<void>;
   switchUser: (username: string) => Promise<void>;
 }
 
@@ -62,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<UserInfo>(EMPTY_USER);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [showWarning, setShowWarning] = useState(false);
 
   // ===== 초기화: 세션 복원 (운영) / dev 자동 로그인 =====
   useEffect(() => {
@@ -112,6 +120,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ===== 세션 자동 로그아웃 (운영 모드 전용) =====
+
+  const autoLogout = useCallback(async () => {
+    setShowWarning(false);
+    if (!IS_DEV_MODE) {
+      try { await authAPI.oidcLogout(); } catch {}
+    }
+    clearToken();
+    setIsLoggedIn(false);
+    setCurrentUser(EMPTY_USER);
+  }, []);
+
+  const handleShowWarning = useCallback(() => {
+    setShowWarning(true);
+  }, []);
+
+  const { reset: resetIdleTimer } = useIdleTimer(
+    autoLogout,
+    SESSION_TIMEOUT_MS,
+    {
+      onWarn: handleShowWarning,
+      warnBeforeMs: WARN_BEFORE_MS,
+      enabled: !IS_DEV_MODE && isLoggedIn,
+    },
+  );
+
+  const extendSession = useCallback(async () => {
+    setShowWarning(false);
+    resetIdleTimer();
+    try { await authAPI.refresh(); } catch {}
+  }, [resetIdleTimer]);
+
+  // ===== SSO / 일반 로그인 =====
+
   const loginSSO = async () => {
     const res = await authAPI.oidcLogin();
     if (res.nonce_jwt) localStorage.setItem('oidc_state_jwt', res.nonce_jwt);
@@ -142,7 +184,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, isLoggedIn, isLoading, loginSSO, logout, switchUser }}>
+    <AuthContext.Provider value={{ currentUser, isLoggedIn, isLoading, showWarning, loginSSO, logout, extendSession, autoLogout, switchUser }}>
       {children}
     </AuthContext.Provider>
   );

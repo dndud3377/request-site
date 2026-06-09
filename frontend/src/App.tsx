@@ -4,6 +4,7 @@ import './i18n';
 import './styles/global.css';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Navbar from './components/Navbar';
+import SessionWarningModal from './components/SessionWarningModal';
 import { ToastProvider } from './components/Toast';
 import LoginPage from './pages/LoginPage';
 import OIDCCallbackPage from './pages/OIDCCallbackPage';
@@ -39,8 +40,10 @@ function ProtectedRoute({ children }: { children: React.ReactElement }): React.R
   return children;
 }
 
+const WARN_BEFORE_MS = 10 * 60 * 1000;
+
 function AppContent(): React.ReactElement {
-  const { isLoggedIn, isLoading } = useAuth();
+  const { isLoggedIn, isLoading, showWarning, extendSession, autoLogout } = useAuth();
   const location = useLocation();
 
   if (location.pathname === '/oidc-callback') return <OIDCCallbackPage />;
@@ -50,6 +53,12 @@ function AppContent(): React.ReactElement {
 
   return (
     <div className="app-wrapper">
+      <SessionWarningModal
+        visible={showWarning}
+        remainingMs={WARN_BEFORE_MS}
+        onExtend={extendSession}
+        onLogout={autoLogout}
+      />
       <Navbar />
       <main className="main-content">
         <Routes>

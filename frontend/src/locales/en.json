@@ -335,6 +335,12 @@
     "delete_title": "Delete Notice",
     "delete_confirm": "Are you sure you want to delete \"{{title}}\"?"
   },
+  "session": {
+    "warning_title": "Session Expiring Soon",
+    "warning_body": "You have been inactive for a while.\nWould you like to extend your session?",
+    "extend": "Extend Session",
+    "logout": "Log Out"
+  },
   "guide": {
     "title": "Guide Management",
     "subtitle": "Manage guides for request form",

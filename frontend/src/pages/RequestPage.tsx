@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI } from '../api/client';
 import { useToast } from '../components/Toast';
-import { useIdleAutoSave } from '../hooks/useIdleAutoSave';
+import { useIdleTimer } from '../hooks/useIdleTimer';
 import Modal, { ConfirmModal } from '../components/Modal';
 import FormSelect from '../components/FormSelect';
 import AutocompleteInput from '../components/AutocompleteInput';
@@ -1655,7 +1655,7 @@ export default function RequestPage(): React.ReactElement {
     }
   };
 
-  useIdleAutoSave(handleIdleAutoSave, 20 * 60 * 1000);
+  useIdleTimer(handleIdleAutoSave, 20 * 60 * 1000);
 
   const handleNextStep = (skipTbvtlvWarn = false, skipSpecialCare = false) => {
     if (step === 1 || step === 2 || step === 4) {
