@@ -730,14 +730,23 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {(isR || isO || isJ || isP) && (detail.map_change || detail.ea_change) && (
+          {(isR || isO || isJ || isP) && (detail.map_change || (detail as any).map_change_top || detail.ea_change) && (
             <div style={rowStyle}>
-              {(isR || isO || isP) && detail.map_change && (() => {
-                const mapValue = `변경: ${detail.map_change}${detail.map_value_x ? ` / X: ${detail.map_value_x}` : ''}${detail.map_value_y ? ` / Y: ${detail.map_value_y}` : ''}${detail.map_reason ? ` / 사유: ${detail.map_reason}` : ''}`;
-                const mapChanged = changedFields.has('map_change') || changedFields.has('map_value_x') || changedFields.has('map_value_y') || changedFields.has('map_reason');
-                return (
-                  <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change" />
-                );
+              {(isR || isO || isP) && (() => {
+                if (isProdc && ((detail as any).map_value_x_top || (detail as any).map_value_x_bottom)) {
+                  const topVal = `X: ${(detail as any).map_value_x_top || '-'} / Y: ${(detail as any).map_value_y_top || '-'}`;
+                  const botVal = `X: ${(detail as any).map_value_x_bottom || '-'} / Y: ${(detail as any).map_value_y_bottom || '-'}`;
+                  const reasonPart = detail.map_reason ? ` / 사유: ${detail.map_reason}` : '';
+                  const mapValue = `[${t('request.prodc_top')}] ${topVal} / [${t('request.prodc_bottom')}] ${botVal}${reasonPart}`;
+                  const mapChanged = ['map_value_x_top','map_value_y_top','map_value_x_bottom','map_value_y_bottom','map_reason'].some(k => changedFields.has(k));
+                  return <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change_top" />;
+                }
+                if (!isProdc && detail.map_change) {
+                  const mapValue = `변경: ${detail.map_change}${detail.map_value_x ? ` / X: ${detail.map_value_x}` : ''}${detail.map_value_y ? ` / Y: ${detail.map_value_y}` : ''}${detail.map_reason ? ` / 사유: ${detail.map_reason}` : ''}`;
+                  const mapChanged = changedFields.has('map_change') || changedFields.has('map_value_x') || changedFields.has('map_value_y') || changedFields.has('map_reason');
+                  return <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change" />;
+                }
+                return null;
               })()}
               {(isR || isO || isP) && detail.ea_change && (() => {
                 const eaValue = `변경: ${detail.ea_change}${detail.ea_value ? ` / 값: ${detail.ea_value}` : ''}`;
@@ -750,7 +759,8 @@ type Page = { label: string; content: React.ReactNode };
           )}
 
           {(isR || isO || isP) && detail.mshot_change && (() => {
-            const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy');
+            const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy') || changedFields.has('mshot_image_copy_top') || changedFields.has('mshot_image_copy_bottom');
+            const imgStyle: React.CSSProperties = { maxWidth: '300px', maxHeight: '200px', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px' };
             return (
               <div style={rowStyle}>
                 <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(mshotChanged ? { border: '2px solid #dc3545' } : {}) }}>
@@ -764,20 +774,26 @@ type Page = { label: string; content: React.ReactNode };
                       <div style={{ ...fieldValue, color: '#dc3545' }}>{t('approval.mshot_delete_desc')}</div>
                     </div>
                   )}
-                  {mshotHasDetail && detail.mshot_image_copy && (
+                  {mshotHasDetail && !isProdc && detail.mshot_image_copy && (
                     <div style={{ flex: 1 }}>
                       <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')}</div>
-                      <img
-                        src={`/media/${detail.mshot_image_copy}`}
-                        alt="attached"
-                        style={{
-                          maxWidth: '300px',
-                          maxHeight: '200px',
-                          borderRadius: '4px',
-                          border: '1px solid #ddd',
-                          marginTop: '8px'
-                        }}
-                      />
+                      <img src={`/media/${detail.mshot_image_copy}`} alt="attached" style={imgStyle} />
+                    </div>
+                  )}
+                  {mshotHasDetail && isProdc && (detail.mshot_image_copy_top || detail.mshot_image_copy_bottom) && (
+                    <div style={{ flex: 1, display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                      {detail.mshot_image_copy_top && (
+                        <div>
+                          <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')} — {t('request.prodc_top')}</div>
+                          <img src={`/media/${detail.mshot_image_copy_top}`} alt="top" style={imgStyle} />
+                        </div>
+                      )}
+                      {detail.mshot_image_copy_bottom && (
+                        <div>
+                          <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')} — {t('request.prodc_bottom')}</div>
+                          <img src={`/media/${detail.mshot_image_copy_bottom}`} alt="bottom" style={imgStyle} />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

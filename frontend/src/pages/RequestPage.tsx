@@ -191,6 +191,12 @@ const INITIAL_DETAIL: DetailFormState = {
   map_value_x: '',
   map_value_y: '',
   map_reason: '',
+  map_change_top: '변경 있음',
+  map_value_x_top: '',
+  map_value_y_top: '',
+  map_change_bottom: '변경 있음',
+  map_value_x_bottom: '',
+  map_value_y_bottom: '',
   ea_change: '변경 없음',
   ea_value: '',
   bb_zone: '존재',
@@ -208,6 +214,8 @@ const INITIAL_DETAIL: DetailFormState = {
   prodc_bottom_product: '',
   mshot_change: '없음',
   mshot_image_copy: '',
+  mshot_image_copy_top: '',
+  mshot_image_copy_bottom: '',
   photo_backside: '미적용',
   eds_backside: '미적용',
   inter: '미적용',
@@ -243,6 +251,55 @@ const DETAIL_REQUIRED: (keyof DetailFormState)[] = [
   'partid_selection',
   'process_id',
 ];
+
+// ===== Mshot Image Upload =====
+interface MshotImageUploadProps {
+  fieldName: 'mshot_image_copy' | 'mshot_image_copy_top' | 'mshot_image_copy_bottom';
+  value: string;
+  error?: string;
+  disabled: boolean;
+  onPaste: (e: React.ClipboardEvent<HTMLDivElement>, fieldName: 'mshot_image_copy' | 'mshot_image_copy_top' | 'mshot_image_copy_bottom') => void;
+}
+
+const MshotImageUpload: React.FC<MshotImageUploadProps> = ({ fieldName, value, error, disabled, onPaste }) => (
+  <div>
+    <div
+      className="image-upload-area"
+      style={{
+        border: `2px dashed ${error ? '#dc3545' : '#ccc'}`,
+        borderRadius: '8px',
+        padding: '20px',
+        textAlign: 'center',
+        minHeight: '100px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: error ? '#fff5f5' : '#f9f9f9',
+      }}
+      onPaste={disabled ? undefined : (e) => onPaste(e, fieldName)}
+    >
+      {value ? (
+        <div style={{ width: '100%' }}>
+          <img
+            src={`/media/${value}`}
+            alt="attached"
+            style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '4px', border: '1px solid #ddd' }}
+          />
+          <p style={{ margin: '8px 0 0 0', color: '#666', fontSize: '13px' }}>
+            이미지가 첨부되었습니다. Ctrl+V 로 다시 붙여넣으면 변경됩니다.
+          </p>
+        </div>
+      ) : (
+        <div>
+          <div style={{ fontSize: '36px', marginBottom: '8px' }}>📋</div>
+          <p style={{ margin: '0', color: '#666' }}>Ctrl+V 로 이미지를 붙여넣으세요</p>
+        </div>
+      )}
+    </div>
+    {error && <span className="form-error">{error}</span>}
+  </div>
+);
 
 // ===== Wizard Step Indicator =====
 interface WizardIndicatorProps {
@@ -331,6 +388,7 @@ export default function RequestPage(): React.ReactElement {
   const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
   const [mergeStats, setMergeStats] = useState<{ jayerMatched: number; jayerUnmatchedRef: number; oayerMatched: number; oayerUnmatchedRef: number } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [mapTypeChangeConfirm, setMapTypeChangeConfirm] = useState<{ targetType: string } | null>(null);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -668,7 +726,7 @@ export default function RequestPage(): React.ReactElement {
   }, [editDocId]);
 
   // Derived booleans for Step 1 conditional rendering
-  const isMapRegistered = detail.map_type === 'EXISTING';
+  const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === '변경 있음';
   const isProdc = detail.only_prodc === 'Yes';
@@ -690,7 +748,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // 이미지 붙여넣기 핸들러 - 백엔드로 업로드
-  const handleImagePaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
+  const handleImagePaste = async (e: React.ClipboardEvent<HTMLDivElement>, fieldName: 'mshot_image_copy' | 'mshot_image_copy_top' | 'mshot_image_copy_bottom') => {
     const items = e.clipboardData?.items;
     if (!items) return;
 
@@ -703,7 +761,7 @@ export default function RequestPage(): React.ReactElement {
             const result = await uploadImageAPI.upload(file);
             setDetail((prev) => ({
               ...prev,
-              mshot_image_copy: result.path
+              [fieldName]: result.path
             }));
             addToast(`이미지 업로드 완료: ${file.name}`, 'info');
           } catch (err) {
@@ -728,8 +786,22 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleMapTypeSelect = (val: string) => {
+    if (val === detail.map_type) return;
+    if (val === 'CLONE' || val === 'EXISTING') {
+      setMapTypeChangeConfirm({ targetType: val });
+      return;
+    }
     setDetail((prev) => ({ ...prev, map_type: val }));
     if (errors['map_type']) setErrors((prev) => ({ ...prev, map_type: '' }));
+  };
+
+  const handleMapTypeChangeConfirm = () => {
+    if (!mapTypeChangeConfirm) return;
+    const newType = mapTypeChangeConfirm.targetType;
+    setDetail({ ...INITIAL_DETAIL, map_type: newType });
+    setCopiedFields(new Set());
+    setErrors({});
+    setMapTypeChangeConfirm(null);
   };
 
   // C가문 리전별 조합법 변경 → 해당 리전 제품이름 fetch
@@ -1503,7 +1575,47 @@ export default function RequestPage(): React.ReactElement {
         errorMessages.push('MAP 요청 목적: 필수 입력 항목입니다.');
       }
       if (!isMapRegistered) {
-      if (detail.map_change === '변경 있음') {
+      if (detail.only_prodc === 'Yes') {
+        // C가문 Yes: top/bottom X/Y 필수 + 부호·동일값 검증
+        if (!detail.map_value_x_top?.trim()) {
+          newErrors['map_value_x_top'] = t('request.required');
+          errorMessages.push('MAP 변경 X (북쪽): 필수 입력 항목입니다.');
+        }
+        if (!detail.map_value_y_top?.trim()) {
+          newErrors['map_value_y_top'] = t('request.required');
+          errorMessages.push('MAP 변경 Y (북쪽): 필수 입력 항목입니다.');
+        }
+        if (!detail.map_value_x_bottom?.trim()) {
+          newErrors['map_value_x_bottom'] = t('request.required');
+          errorMessages.push('MAP 변경 X (남쪽): 필수 입력 항목입니다.');
+        }
+        if (!detail.map_value_y_bottom?.trim()) {
+          newErrors['map_value_y_bottom'] = t('request.required');
+          errorMessages.push('MAP 변경 Y (남쪽): 필수 입력 항목입니다.');
+        }
+        if (!detail.map_reason?.trim()) {
+          newErrors['map_reason'] = t('request.required');
+          errorMessages.push('MAP 변경 사유: 필수 입력 항목입니다.');
+        }
+        // X값 부호 반대 + 절대값 동일 검증
+        if (detail.map_value_x_top?.trim() && detail.map_value_x_bottom?.trim()) {
+          const xTop = parseFloat(detail.map_value_x_top);
+          const xBot = parseFloat(detail.map_value_x_bottom);
+          if (!isNaN(xTop) && !isNaN(xBot)) {
+            if (Math.abs(xTop) !== Math.abs(xBot) || Math.sign(xTop) === Math.sign(xBot)) {
+              newErrors['map_value_x_bottom'] = t('request.map_x_sign_error');
+              errorMessages.push(t('request.map_x_sign_error'));
+            }
+          }
+        }
+        // Y값 동일 검증
+        if (detail.map_value_y_top?.trim() && detail.map_value_y_bottom?.trim()) {
+          if (detail.map_value_y_top.trim() !== detail.map_value_y_bottom.trim()) {
+            newErrors['map_value_y_bottom'] = t('request.map_y_equal_error');
+            errorMessages.push(t('request.map_y_equal_error'));
+          }
+        }
+      } else if (detail.map_change === '변경 있음') {
         if (!detail.map_value_x?.trim()) {
           newErrors['map_value_x'] = t('request.required');
           errorMessages.push('MAP 변경 X: 필수 입력 항목입니다.');
@@ -1540,9 +1652,20 @@ export default function RequestPage(): React.ReactElement {
         });
       }
       if (detail.mshot_change === '추가' || detail.mshot_change === '수정') {
-        if (!detail.mshot_image_copy) {
-          newErrors['mshot_image_copy'] = t('request.required');
-          errorMessages.push('X표시 이미지: 필수 입력 항목입니다.');
+        if (detail.only_prodc === 'Yes') {
+          if (!detail.mshot_image_copy_top) {
+            newErrors['mshot_image_copy_top'] = t('request.required');
+            errorMessages.push('X표시 이미지 (북쪽): 필수 입력 항목입니다.');
+          }
+          if (!detail.mshot_image_copy_bottom) {
+            newErrors['mshot_image_copy_bottom'] = t('request.required');
+            errorMessages.push('X표시 이미지 (남쪽): 필수 입력 항목입니다.');
+          }
+        } else {
+          if (!detail.mshot_image_copy) {
+            newErrors['mshot_image_copy'] = t('request.required');
+            errorMessages.push('X표시 이미지: 필수 입력 항목입니다.');
+          }
         }
       }
       } // end !isMapRegistered
@@ -1702,6 +1825,12 @@ export default function RequestPage(): React.ReactElement {
       map_value_x: INITIAL_DETAIL.map_value_x,
       map_value_y: INITIAL_DETAIL.map_value_y,
       map_reason: INITIAL_DETAIL.map_reason,
+      map_change_top: INITIAL_DETAIL.map_change_top,
+      map_value_x_top: INITIAL_DETAIL.map_value_x_top,
+      map_value_y_top: INITIAL_DETAIL.map_value_y_top,
+      map_change_bottom: INITIAL_DETAIL.map_change_bottom,
+      map_value_x_bottom: INITIAL_DETAIL.map_value_x_bottom,
+      map_value_y_bottom: INITIAL_DETAIL.map_value_y_bottom,
       ea_change: INITIAL_DETAIL.ea_change,
       ea_value: INITIAL_DETAIL.ea_value,
       only_prodc: INITIAL_DETAIL.only_prodc,
@@ -1717,6 +1846,8 @@ export default function RequestPage(): React.ReactElement {
       prodc_bottom_product: INITIAL_DETAIL.prodc_bottom_product,
       mshot_change: INITIAL_DETAIL.mshot_change,
       mshot_image_copy: INITIAL_DETAIL.mshot_image_copy,
+      mshot_image_copy_top: INITIAL_DETAIL.mshot_image_copy_top,
+      mshot_image_copy_bottom: INITIAL_DETAIL.mshot_image_copy_bottom,
       photo_backside: INITIAL_DETAIL.photo_backside,
       eds_backside: INITIAL_DETAIL.eds_backside,
       inter: INITIAL_DETAIL.inter,
@@ -2233,49 +2364,6 @@ export default function RequestPage(): React.ReactElement {
           </div>
         </div>
 
-        {/* 지도 편차 */}
-        <div className="full-width flex-row">
-          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
-            <label className="form-label">{t('request.map')}<GuideBadge fk="step2_map_deviation" tk={t('guide.feat.step2_map_deviation' as never)} /></label>
-            <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange} disabled={copiedFields.has('map_change') || isMapRegistered}>
-              <option value="변경 없음">{t('request.map_no_change')}</option>
-              <option value="변경 있음">{t('request.map_has_change')}</option>
-            </select>
-          </div>
-          <div className="form-group" style={{ flex: 1, visibility: hasMapChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_value_x')} <span className="required">*</span></label>
-            <input className={`form-control${errors.map_value_x ? ' error' : ''}`} name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} disabled={copiedFields.has('map_value_x') || isMapRegistered} />
-            {errors.map_value_x && <span className="form-error">{errors.map_value_x}</span>}
-          </div>
-          <div className="form-group" style={{ flex: 1, visibility: hasMapChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_value_y')} <span className="required">*</span></label>
-            <input className={`form-control${errors.map_value_y ? ' error' : ''}`} name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} disabled={copiedFields.has('map_value_y') || isMapRegistered} />
-            {errors.map_value_y && <span className="form-error">{errors.map_value_y}</span>}
-          </div>
-          <div className="form-group" style={{ flex: 3, visibility: hasMapChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.map_reason')} <span className="required">*</span></label>
-            <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} disabled={copiedFields.has('map_reason') || isMapRegistered} />
-            {errors.map_reason && <span className="form-error">{errors.map_reason}</span>}
-          </div>
-        </div>
-
-        {/* 예외 구역 */}
-        <div className="full-width flex-row">
-          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
-            <label className="form-label">{t('request.ea_change')}<GuideBadge fk="step2_exception_zone" tk={t('guide.feat.step2_exception_zone' as never)} /></label>
-            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange} disabled={copiedFields.has('ea_change') || isMapRegistered}>
-              <option value="변경 없음">{t('request.no_change')}</option>
-              <option value="변경 있음">{t('request.has_change')}</option>
-            </select>
-          </div>
-          <div className="form-group" style={{ flex: 1.5, visibility: hasEaChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.ea_value')} <span className="required">*</span></label>
-            <input className={`form-control${errors.ea_value ? ' error' : ''}`} name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={copiedFields.has('ea_value') || isMapRegistered} />
-            {errors.ea_value && <span className="form-error">{errors.ea_value}</span>}
-          </div>
-          <div style={{ flex: 3.5 }} />
-        </div>
-
         {/* Only C가문 제품 */}
         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
@@ -2459,6 +2547,92 @@ export default function RequestPage(): React.ReactElement {
           )}
         </div>
 
+        {/* 지도 편차 */}
+        {isProdc ? (
+          <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <label className="form-label">{t('request.map')}<GuideBadge fk="step2_map_deviation" tk={t('guide.feat.step2_map_deviation' as never)} /></label>
+            {(['top', 'bottom'] as const).map((region) => (
+              <div key={region} className="flex-row" style={{ alignItems: 'flex-start', gap: '12px' }}>
+                <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+                  <label className="form-label" style={{ marginBottom: 4 }}>{t(`request.prodc_${region}`)}</label>
+                  <select className="form-control" disabled value="변경 있음">
+                    <option value="변경 있음">{t('request.map_has_change')}</option>
+                  </select>
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('request.map_value_x')} <span className="required">*</span></label>
+                  <input
+                    className={`form-control${errors[`map_value_x_${region}`] ? ' error' : ''}`}
+                    name={`map_value_x_${region}`}
+                    value={detail[`map_value_x_${region}` as keyof DetailFormState] as string}
+                    onChange={handleDetailChange}
+                    disabled={isMapRegistered}
+                  />
+                  {errors[`map_value_x_${region}`] && <span className="form-error">{errors[`map_value_x_${region}`]}</span>}
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('request.map_value_y')} <span className="required">*</span></label>
+                  <input
+                    className={`form-control${errors[`map_value_y_${region}`] ? ' error' : ''}`}
+                    name={`map_value_y_${region}`}
+                    value={detail[`map_value_y_${region}` as keyof DetailFormState] as string}
+                    onChange={handleDetailChange}
+                    disabled={isMapRegistered}
+                  />
+                  {errors[`map_value_y_${region}`] && <span className="form-error">{errors[`map_value_y_${region}`]}</span>}
+                </div>
+              </div>
+            ))}
+            <div className="form-group" style={{ flex: 3 }}>
+              <label className="form-label">{t('request.map_reason')} <span className="required">*</span></label>
+              <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} disabled={isMapRegistered} />
+              {errors.map_reason && <span className="form-error">{errors.map_reason}</span>}
+            </div>
+          </div>
+        ) : (
+          <div className="full-width flex-row">
+            <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+              <label className="form-label">{t('request.map')}<GuideBadge fk="step2_map_deviation" tk={t('guide.feat.step2_map_deviation' as never)} /></label>
+              <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange} disabled={copiedFields.has('map_change') || isMapRegistered}>
+                <option value="변경 없음">{t('request.map_no_change')}</option>
+                <option value="변경 있음">{t('request.map_has_change')}</option>
+              </select>
+            </div>
+            <div className="form-group" style={{ flex: 1, visibility: hasMapChange ? 'visible' : 'hidden' }}>
+              <label className="form-label">{t('request.map_value_x')} <span className="required">*</span></label>
+              <input className={`form-control${errors.map_value_x ? ' error' : ''}`} name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} disabled={copiedFields.has('map_value_x') || isMapRegistered} />
+              {errors.map_value_x && <span className="form-error">{errors.map_value_x}</span>}
+            </div>
+            <div className="form-group" style={{ flex: 1, visibility: hasMapChange ? 'visible' : 'hidden' }}>
+              <label className="form-label">{t('request.map_value_y')} <span className="required">*</span></label>
+              <input className={`form-control${errors.map_value_y ? ' error' : ''}`} name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} disabled={copiedFields.has('map_value_y') || isMapRegistered} />
+              {errors.map_value_y && <span className="form-error">{errors.map_value_y}</span>}
+            </div>
+            <div className="form-group" style={{ flex: 3, visibility: hasMapChange ? 'visible' : 'hidden' }}>
+              <label className="form-label">{t('request.map_reason')} <span className="required">*</span></label>
+              <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} disabled={copiedFields.has('map_reason') || isMapRegistered} />
+              {errors.map_reason && <span className="form-error">{errors.map_reason}</span>}
+            </div>
+          </div>
+        )}
+
+        {/* 예외 구역 */}
+        <div className="full-width flex-row">
+          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+            <label className="form-label">{t('request.ea_change')}<GuideBadge fk="step2_exception_zone" tk={t('guide.feat.step2_exception_zone' as never)} /></label>
+            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange} disabled={copiedFields.has('ea_change') || isMapRegistered}>
+              <option value="변경 없음">{t('request.no_change')}</option>
+              <option value="변경 있음">{t('request.has_change')}</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ flex: 1.5, visibility: hasEaChange ? 'visible' : 'hidden' }}>
+            <label className="form-label">{t('request.ea_value')} <span className="required">*</span></label>
+            <input className={`form-control${errors.ea_value ? ' error' : ''}`} name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={copiedFields.has('ea_value') || isMapRegistered} />
+            {errors.ea_value && <span className="form-error">{errors.ea_value}</span>}
+          </div>
+          <div style={{ flex: 3.5 }} />
+        </div>
+
         {/* X표시 변경 여부 */}
         <div className="form-group full-width">
           <label className="form-label">{t('request.mshot_change_status')}<GuideBadge fk="step2_xmark" tk={t('guide.feat.step2_xmark' as never)} /></label>
@@ -2473,49 +2647,43 @@ export default function RequestPage(): React.ReactElement {
           {mshotDeleteMode && (
             <p style={{ color: 'red', fontWeight: 600, margin: '8px 0 0 0' }}>특정 제품 삭제 필요</p>
           )}
-          {mshotEditAddMode && (
+          {mshotEditAddMode && !isProdc && (
             <div className="form-group" style={{ width: '50%', marginTop: '8px' }}>
               <label className="form-label">{t('request.mshot_change_image_attach_area')} <span className="required">*</span></label>
-              <div
-                className="image-upload-area"
-                style={{
-                  border: `2px dashed ${errors.mshot_image_copy ? '#dc3545' : '#ccc'}`,
-                  borderRadius: '8px',
-                  padding: '20px',
-                  textAlign: 'center',
-                  minHeight: '100px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: errors.mshot_image_copy ? '#fff5f5' : '#f9f9f9'
-                }}
-                onPaste={copiedFields.has('mshot_image_copy') || isMapRegistered ? undefined : handleImagePaste}
-              >
-                {detail.mshot_image_copy ? (
-                  <div style={{ width: '100%' }}>
-                    <img
-                      src={`/media/${detail.mshot_image_copy}`}
-                      alt="attached"
-                      style={{
-                        maxWidth: '100%',
-                        maxHeight: '300px',
-                        borderRadius: '4px',
-                        border: '1px solid #ddd'
-                      }}
-                    />
-                    <p style={{ margin: '8px 0 0 0', color: '#666', fontSize: '13px' }}>
-                      이미지가 첨부되었습니다. Ctrl+V 로 다시 붙여넣으면 변경됩니다.
-                    </p>
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ fontSize: '36px', marginBottom: '8px' }}>📋</div>
-                    <p style={{ margin: '0', color: '#666' }}>Ctrl+V 로 이미지를 붙여넣으세요</p>
-                  </div>
-                )}
+              <MshotImageUpload
+                fieldName="mshot_image_copy"
+                value={detail.mshot_image_copy}
+                error={errors.mshot_image_copy}
+                disabled={copiedFields.has('mshot_image_copy') || isMapRegistered}
+                onPaste={handleImagePaste}
+              />
+            </div>
+          )}
+          {mshotEditAddMode && isProdc && (
+            <div className="form-group" style={{ marginTop: '8px' }}>
+              <label className="form-label">{t('request.mshot_change_image_attach_area')}</label>
+              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: '280px' }}>
+                  <div className="form-label" style={{ marginBottom: '6px' }}>{t('request.prodc_top')} <span className="required">*</span></div>
+                  <MshotImageUpload
+                    fieldName="mshot_image_copy_top"
+                    value={detail.mshot_image_copy_top}
+                    error={errors.mshot_image_copy_top}
+                    disabled={isMapRegistered}
+                    onPaste={handleImagePaste}
+                  />
+                </div>
+                <div style={{ flex: 1, minWidth: '280px' }}>
+                  <div className="form-label" style={{ marginBottom: '6px' }}>{t('request.prodc_bottom')} <span className="required">*</span></div>
+                  <MshotImageUpload
+                    fieldName="mshot_image_copy_bottom"
+                    value={detail.mshot_image_copy_bottom}
+                    error={errors.mshot_image_copy_bottom}
+                    disabled={isMapRegistered}
+                    onPaste={handleImagePaste}
+                  />
+                </div>
               </div>
-              {errors.mshot_image_copy && <span className="form-error">{errors.mshot_image_copy}</span>}
             </div>
           )}
         </div>
@@ -2540,7 +2708,7 @@ export default function RequestPage(): React.ReactElement {
                 {t('request.map_option_title')}
                 <GuideBadge fk="step2_map_options" tk={t('guide.feat.step2_map_options' as never)} />
               </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, max-content)', gap: '8px' }}>
                 {mapOptions.map((opt) => {
                   const isActive = detail[opt.name] === opt.activeValue;
                   const isDisabled = copiedFields.has(opt.name as string) || isMapRegistered;
@@ -3850,6 +4018,15 @@ export default function RequestPage(): React.ReactElement {
           />
         </div>
       </Modal>
+
+      <ConfirmModal
+        isOpen={!!mapTypeChangeConfirm}
+        onClose={() => setMapTypeChangeConfirm(null)}
+        onConfirm={handleMapTypeChangeConfirm}
+        title={t('request.map_type_change_confirm_title')}
+        message={t('request.map_type_change_confirm_msg')}
+        danger
+      />
 
       <ConfirmModal
         isOpen={bbOverwriteConfirm}
