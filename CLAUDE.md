@@ -115,7 +115,7 @@ React + Django 기반 웹 애플리케이션. 아래 규칙을 **반드시** 모
 
 - 라이브러리: `i18next` 23.10.0 / `react-i18next` 14.1.0
 - 위치: `frontend/src/locales/ko.json` (기본) / `en.json`
-- 키 구조: `nav.*` / `home.*` / `request.*` / `approval.*` / `history.*` / `voc.*` / `permission.*` / `login.*` / `common.*` / `notice.*`
+- 키 구조: `nav.*` / `home.*` / `request.*` / `approval.*` / `history.*` / `voc.*` / `permission.*` / `login.*` / `common.*` / `notice.*` / `session.*` / `guide.*` / `group.*`
 
 절차 (반드시 순서 준수):
 1. `ko.json` / `en.json`에 키를 **반드시 동시에** 추가한다. (하나만 추가 절대 금지)
