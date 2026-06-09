@@ -29,7 +29,6 @@ import GuideSlidePanel from '../components/GuideSlidePanel';
 const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'MAP 변경'] as const;
 const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
 const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay, ADI CD 추가/삭제/변경'] as const;
-const OPTION_SOURCE_LINE = ['위치A', '위치B', '위치C'] as const;
 
 const ST_CELL_COLOR: Record<string, string> = {
   'O (D)':   '#D4F5E2',
@@ -405,7 +404,6 @@ export default function RequestPage(): React.ReactElement {
   const isLoadingEditRef = useRef(false);
 
   const [approvedDocs, setApprovedDocs] = useState<RequestDocument[]>([]);
-  const [sourcePartIdOptions, setSourcePartIdOptions] = useState<string[]>([]);
 
   const [jayerFilterSets, setJayerFilterSets] = useState<FilterSet[]>([]);
   const [oayerFilterSets, setOayerFilterSets] = useState<FilterSet[]>([]);
@@ -419,7 +417,6 @@ export default function RequestPage(): React.ReactElement {
   const [jayerSortBySp, setJayerSortBySp] = useState(false);
   const [oayerSortBySp, setOayerSortBySp] = useState(false);
   const [productionDate, setProductionDate] = useState<string>('');
-  const [copiedFields, setCopiedFields] = useState<Set<string>>(new Set());
   const [prodcCopyRegion, setProdcCopyRegion] = useState<CRegion | null>(null);
   const [revLayersSelected, setRevLayersSelected] = useState<string[]>([]);
   const [revGds, setRevGds] = useState<string>('');
@@ -450,9 +447,6 @@ export default function RequestPage(): React.ReactElement {
     documentsAPI.getApproved()
       .then((r) => {
         setApprovedDocs(r.data);
-        // PART ID 목록 추출 (중복 제거)
-        const partIds = Array.from(new Set(r.data.map((doc: RequestDocument) => doc.product_name)));
-        setSourcePartIdOptions(partIds);
       })
       .catch(console.error);
 
@@ -498,10 +492,6 @@ export default function RequestPage(): React.ReactElement {
       .catch(() => { /* 가이드 없어도 무관 */ });
   }, []);
 
-  useEffect(() => {
-    setCopiedFields(new Set());
-  }, [detail.request_purpose]);
-
   // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
   useEffect(() => {
     if (!detail.line) {
@@ -519,28 +509,6 @@ export default function RequestPage(): React.ReactElement {
       setDetail((prev) => ({ ...prev, process_selection: '', partid_selection: '', process_id: '' }));
     }
   }, [detail.line]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!detail.source_line || approvedDocs.length === 0) {
-      setSourcePartIdOptions([]);
-      return;
-    }
-
-    const filteredDocs = approvedDocs.filter(doc => {
-      try {
-        const parsed = JSON.parse(doc.additional_notes ?? '{}');
-        const docLine = parsed.detail?.line;
-        return docLine === detail.source_line;
-      } catch {
-        return false;
-      }
-    });
-
-    const partIds = Array.from(new Set(filteredDocs.map((doc: RequestDocument) => doc.product_name)));
-    setSourcePartIdOptions(partIds);
-    setDetail((prev) => ({ ...prev, source_partid: '' }));
-    setCopiedFields(new Set());
-  }, [detail.source_line, approvedDocs]);
 
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
   useEffect(() => {
@@ -799,53 +767,11 @@ export default function RequestPage(): React.ReactElement {
     if (!mapTypeChangeConfirm) return;
     const newType = mapTypeChangeConfirm.targetType;
     setDetail({ ...INITIAL_DETAIL, map_type: newType });
-    setCopiedFields(new Set());
     setErrors({});
     setMapTypeChangeConfirm(null);
   };
 
   // C가문 리전별 조합법 변경 → 해당 리전 제품이름 fetch
-  // 차용 시 원본 PART ID 의 데이터 불러오기
-  const loadSourceDocumentData = (partId: string) => {
-    const sourceDoc = approvedDocs
-      .filter(doc => doc.product_name === partId)
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-
-    if (!sourceDoc) {
-      addToast('원본 문서를 찾을 수 없습니다.', 'error');
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(sourceDoc.additional_notes ?? '{}');
-      const sourceDetail = parsed.detail ?? {};
-
-      const fieldsToCopy: Partial<DetailFormState> = {};
-
-      if (sourceDetail.map_change) fieldsToCopy.map_change = sourceDetail.map_change;
-      if (sourceDetail.map_value_x) fieldsToCopy.map_value_x = sourceDetail.map_value_x;
-      if (sourceDetail.map_value_y) fieldsToCopy.map_value_y = sourceDetail.map_value_y;
-      if (sourceDetail.map_reason) fieldsToCopy.map_reason = sourceDetail.map_reason;
-
-      if (sourceDetail.ea_change) fieldsToCopy.ea_change = sourceDetail.ea_change;
-      if (sourceDetail.ea_value) fieldsToCopy.ea_value = sourceDetail.ea_value;
-
-      if (sourceDetail.mshot_change) fieldsToCopy.mshot_change = sourceDetail.mshot_change;
-      if (sourceDetail.mshot_image_copy) fieldsToCopy.mshot_image_copy = sourceDetail.mshot_image_copy;
-
-      const mapOptFields = ['photo_backside','eds_backside','inter','tsv','rf','fullchip','split','st','ecc','labelsideshot'] as const;
-      mapOptFields.forEach((f) => { if (sourceDetail[f]) (fieldsToCopy as any)[f] = sourceDetail[f]; });
-
-      setDetail(prev => ({ ...prev, ...fieldsToCopy }));
-      setCopiedFields(new Set(Object.keys(fieldsToCopy)));
-
-      addToast('원본 제품의 데이터가 적용되었습니다.', 'info');
-    } catch (err) {
-      console.error('원본 데이터 로드 실패:', err);
-      addToast('원본 데이터를 불러오는데 실패했습니다.', 'error');
-    }
-  };
-
   const handleProdcProcessChange = (region: CRegion, value: string) => {
     if (!detail.line || !value) {
       if (region === 'top') setTopProductOptions([]);
@@ -1865,7 +1791,6 @@ export default function RequestPage(): React.ReactElement {
       tbvtlv_entries: INITIAL_DETAIL.tbvtlv_entries,
     }));
     setErrors({});
-    setCopiedFields(new Set());
     setProdcCopyRegion(null);
     setRevLayersSelected([]);
     setRevGds('');
@@ -2349,15 +2274,8 @@ export default function RequestPage(): React.ReactElement {
               <AutocompleteInput
                 label={t('request.source_partid_selection')}
                 value={detail.source_partid}
-                options={sourcePartIdOptions}
-                onChange={(v) => {
-                  handleDetailSet('source_partid', v);
-                  if (v) {
-                    loadSourceDocumentData(v);
-                  } else {
-                    setCopiedFields(new Set());
-                  }
-                }}
+                options={[]}
+                onChange={(v) => handleDetailSet('source_partid', v)}
                 style={{ flex: 1 }}
               />
             </div>
@@ -2593,24 +2511,24 @@ export default function RequestPage(): React.ReactElement {
           <div className="full-width flex-row">
             <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
               <label className="form-label">{t('request.map')}<GuideBadge fk="step2_map_deviation" tk={t('guide.feat.step2_map_deviation' as never)} /></label>
-              <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange} disabled={copiedFields.has('map_change') || isMapRegistered}>
+              <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange} disabled={isMapRegistered}>
                 <option value="변경 없음">{t('request.map_no_change')}</option>
                 <option value="변경 있음">{t('request.map_has_change')}</option>
               </select>
             </div>
             <div className="form-group" style={{ flex: 1, visibility: hasMapChange ? 'visible' : 'hidden' }}>
               <label className="form-label">{t('request.map_value_x')} <span className="required">*</span></label>
-              <input className={`form-control${errors.map_value_x ? ' error' : ''}`} name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} disabled={copiedFields.has('map_value_x') || isMapRegistered} />
+              <input className={`form-control${errors.map_value_x ? ' error' : ''}`} name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} disabled={isMapRegistered} />
               {errors.map_value_x && <span className="form-error">{errors.map_value_x}</span>}
             </div>
             <div className="form-group" style={{ flex: 1, visibility: hasMapChange ? 'visible' : 'hidden' }}>
               <label className="form-label">{t('request.map_value_y')} <span className="required">*</span></label>
-              <input className={`form-control${errors.map_value_y ? ' error' : ''}`} name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} disabled={copiedFields.has('map_value_y') || isMapRegistered} />
+              <input className={`form-control${errors.map_value_y ? ' error' : ''}`} name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} disabled={isMapRegistered} />
               {errors.map_value_y && <span className="form-error">{errors.map_value_y}</span>}
             </div>
             <div className="form-group" style={{ flex: 3, visibility: hasMapChange ? 'visible' : 'hidden' }}>
               <label className="form-label">{t('request.map_reason')} <span className="required">*</span></label>
-              <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} disabled={copiedFields.has('map_reason') || isMapRegistered} />
+              <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} disabled={isMapRegistered} />
               {errors.map_reason && <span className="form-error">{errors.map_reason}</span>}
             </div>
           </div>
@@ -2620,14 +2538,14 @@ export default function RequestPage(): React.ReactElement {
         <div className="full-width flex-row">
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
             <label className="form-label">{t('request.ea_change')}<GuideBadge fk="step2_exception_zone" tk={t('guide.feat.step2_exception_zone' as never)} /></label>
-            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange} disabled={copiedFields.has('ea_change') || isMapRegistered}>
+            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange} disabled={isMapRegistered}>
               <option value="변경 없음">{t('request.no_change')}</option>
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
           </div>
           <div className="form-group" style={{ flex: 1.5, visibility: hasEaChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.ea_value')} <span className="required">*</span></label>
-            <input className={`form-control${errors.ea_value ? ' error' : ''}`} name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={copiedFields.has('ea_value') || isMapRegistered} />
+            <input className={`form-control${errors.ea_value ? ' error' : ''}`} name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={isMapRegistered} />
             {errors.ea_value && <span className="form-error">{errors.ea_value}</span>}
           </div>
           <div style={{ flex: 3.5 }} />
@@ -2637,7 +2555,7 @@ export default function RequestPage(): React.ReactElement {
         <div className="form-group full-width">
           <label className="form-label">{t('request.mshot_change_status')}<GuideBadge fk="step2_xmark" tk={t('guide.feat.step2_xmark' as never)} /></label>
           <div style={{ width: SELECT_W }}>
-            <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={handleDetailChange} disabled={copiedFields.has('mshot_change') || isMapRegistered}>
+            <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={handleDetailChange} disabled={isMapRegistered}>
               <option value="없음">{t('request.mshot_none')}</option>
               <option value="추가">{t('request.mshot_add')}</option>
               <option value="수정">{t('request.mshot_edit')}</option>
@@ -2654,7 +2572,7 @@ export default function RequestPage(): React.ReactElement {
                 fieldName="mshot_image_copy"
                 value={detail.mshot_image_copy}
                 error={errors.mshot_image_copy}
-                disabled={copiedFields.has('mshot_image_copy') || isMapRegistered}
+                disabled={isMapRegistered}
                 onPaste={handleImagePaste}
               />
             </div>
@@ -2711,7 +2629,7 @@ export default function RequestPage(): React.ReactElement {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, max-content)', gap: '8px' }}>
                 {mapOptions.map((opt) => {
                   const isActive = detail[opt.name] === opt.activeValue;
-                  const isDisabled = copiedFields.has(opt.name as string) || isMapRegistered;
+                  const isDisabled = isMapRegistered;
                   return (
                     <button
                       key={opt.name as string}
