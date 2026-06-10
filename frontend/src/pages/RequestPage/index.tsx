@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI } from '../api/client';
-import { useToast } from '../components/Toast';
-import { useIdleTimer } from '../hooks/useIdleTimer';
-import Modal, { ConfirmModal } from '../components/Modal';
-import FormSelect from '../components/FormSelect';
-import AutocompleteInput from '../components/AutocompleteInput';
-import { useAuth } from '../contexts/AuthContext';
+import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI } from '../../api/client';
+import { useToast } from '../../components/Toast';
+import { useIdleTimer } from '../../hooks/useIdleTimer';
+import Modal, { ConfirmModal } from '../../components/Modal';
+import FormSelect from '../../components/FormSelect';
+import AutocompleteInput from '../../components/AutocompleteInput';
+import { useAuth } from '../../contexts/AuthContext';
 import {
   CreateDocumentInput,
   DetailFormState,
@@ -22,8 +22,8 @@ import {
   BbAutoFillRange,
   FilterSet,
   GuideFeatureKey,
-} from '../types';
-import GuideSlidePanel from '../components/GuideSlidePanel';
+} from '../../types';
+import GuideSlidePanel from '../../components/GuideSlidePanel';
 
 // ===== Option Constants =====
 const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'MAP 변경'] as const;
