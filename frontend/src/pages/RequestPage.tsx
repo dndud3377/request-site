@@ -425,7 +425,14 @@ export default function RequestPage(): React.ReactElement {
   const [tbvtlvSdsSelected, setTbvtlvSdsSelected] = useState<string[]>([]);
   const [tbvtlvNote, setTbvtlvNote] = useState<string>('');
   const [tbvtlvWarnModal, setTbvtlvWarnModal] = useState(false);
-  const [bbOverwriteConfirm, setBbOverwriteConfirm] = useState(false);
+  const [bbConflictState, setBbConflictState] = useState<{
+    duplicateLayerIds: string[];
+    rowsToAdd: BbTableRow[];
+    rowsToReplace: BbTableRow[];
+    existingRowIdsToRemove: string[];
+  } | null>(null);
+  const [bbPartialAddConfirm, setBbPartialAddConfirm] = useState(false);
+  const bbPartialAddRowsRef = useRef<BbTableRow[]>([]);
   const [bbResetConfirm, setBbResetConfirm] = useState(false);
   const [specialCareConfirm, setSpecialCareConfirm] = useState(false);
   const [filterDeleteConfirm, setFilterDeleteConfirm] = useState<{
@@ -1353,15 +1360,12 @@ export default function RequestPage(): React.ReactElement {
     ));
   };
 
-  const proceedApplyAutoFill = () => {
+  const buildAutoFillRows = (): BbTableRow[] => {
     const newBbRows: BbTableRow[] = [];
-
     bbAutoFillRanges.forEach(range => {
       if (!range.layerFrom || !range.layerTo || !range.productId) return;
-
       const from = parseFloat(range.layerFrom);
       const to = parseFloat(range.layerTo);
-
       if (isNaN(from) || isNaN(to)) return;
 
       const jayerRowsInRange = jayerRows.filter(row => {
@@ -1369,21 +1373,13 @@ export default function RequestPage(): React.ReactElement {
         return !row.disabled && !isNaN(layer) && layer >= from && layer <= to;
       });
 
-      const entryIdx = detail.bb_entries.findIndex(
-        e => e.product === range.productId
-      );
-
+      const entryIdx = detail.bb_entries.findIndex(e => e.product === range.productId);
       if (entryIdx === -1) return;
 
       const photoSteps = bbExternalData[entryIdx] ?? [];
-
       jayerRowsInRange.forEach(jayerRow => {
-        const matchedStep = photoSteps.find(
-          step => step.layerid === jayerRow.layerid
-        );
-
+        const matchedStep = photoSteps.find(step => step.layerid === jayerRow.layerid);
         if (!matchedStep) return;
-
         newBbRows.push({
           id: genId(),
           sourceJayerRowId: jayerRow.id,
@@ -1400,30 +1396,66 @@ export default function RequestPage(): React.ReactElement {
         });
       });
     });
+    return newBbRows;
+  };
 
-    if (newBbRows.length === 0) {
+  const applyBbRowChanges = (
+    rowsToReplace: BbTableRow[],
+    existingRowIdsToRemove: string[],
+    rowsToAdd: BbTableRow[]
+  ) => {
+    const removeSet = new Set(existingRowIdsToRemove);
+    setBbRows(prev => {
+      const removedSourceIds = prev
+        .filter(r => removeSet.has(r.id) && r.sourceJayerRowId)
+        .map(r => r.sourceJayerRowId as string);
+
+      setMappedJayerRowIds(prevMapped => {
+        const next = new Set(prevMapped);
+        removedSourceIds.forEach(id => next.delete(id));
+        [...rowsToReplace, ...rowsToAdd].forEach(r => {
+          if (r.sourceJayerRowId) next.add(r.sourceJayerRowId);
+        });
+        return next;
+      });
+
+      return [
+        ...prev.filter(r => !removeSet.has(r.id)),
+        ...rowsToReplace,
+        ...rowsToAdd,
+      ];
+    });
+    setShowAutoFillPanel(false);
+    setBbAutoFillRanges([]);
+    setIsBbSorted(false);
+    const total = rowsToReplace.length + rowsToAdd.length;
+    addToast(`Backbone 데이터가 ${total}행 자동 채워졌습니다.`, 'success');
+  };
+
+  const handleApplyAutoFill = () => {
+    const allNewRows = buildAutoFillRows();
+    if (allNewRows.length === 0) {
       addToast('매칭된 Backbone 데이터가 없습니다.', 'error');
       return;
     }
 
-    setBbRows(newBbRows);
-    const mappedIds = newBbRows.map(r => r.sourceJayerRowId).filter(Boolean) as string[];
-    setMappedJayerRowIds(new Set(mappedIds));
-    setShowAutoFillPanel(false);
-    setBbAutoFillRanges([]);
-    setIsBbSorted(false);
-    addToast(`Backbone 데이터가 ${newBbRows.length}행 자동 채워졌습니다.`, 'success');
-  };
+    const newLayerIds = new Set(allNewRows.map(r => r.bb_step).filter(Boolean));
+    const conflictingExisting = bbRows.filter(r => r.bb_step && newLayerIds.has(r.bb_step));
 
-  const handleApplyAutoFill = () => {
-    const hasExistingData = bbRows.some(
-      (row) => row.bb_process_id || row.bb_ss || row.bb_name
-    );
-    if (hasExistingData) {
-      setBbOverwriteConfirm(true);
+    if (conflictingExisting.length === 0) {
+      applyBbRowChanges([], [], allNewRows);
       return;
     }
-    proceedApplyAutoFill();
+
+    const duplicateLayerIds = [...new Set(conflictingExisting.map(r => r.bb_step))].sort(
+      (a, b) => parseFloat(a) - parseFloat(b)
+    );
+    const conflictLayerSet = new Set(duplicateLayerIds);
+    const rowsToReplace = allNewRows.filter(r => conflictLayerSet.has(r.bb_step));
+    const rowsToAdd = allNewRows.filter(r => !conflictLayerSet.has(r.bb_step));
+    const existingRowIdsToRemove = conflictingExisting.map(r => r.id);
+
+    setBbConflictState({ duplicateLayerIds, rowsToAdd, rowsToReplace, existingRowIdsToRemove });
   };
 
   const handleResetBbRows = () => {
@@ -3960,11 +3992,44 @@ export default function RequestPage(): React.ReactElement {
       />
 
       <ConfirmModal
-        isOpen={bbOverwriteConfirm}
-        onClose={() => setBbOverwriteConfirm(false)}
-        onConfirm={proceedApplyAutoFill}
+        isOpen={!!bbConflictState}
+        onClose={() => {
+          const rowsToAdd = bbConflictState?.rowsToAdd ?? [];
+          setBbConflictState(null);
+          if (rowsToAdd.length > 0) {
+            bbPartialAddRowsRef.current = rowsToAdd;
+            setBbPartialAddConfirm(true);
+          }
+        }}
+        onConfirm={() => {
+          if (!bbConflictState) return;
+          const { rowsToReplace, existingRowIdsToRemove, rowsToAdd } = bbConflictState;
+          setBbConflictState(null);
+          applyBbRowChanges(rowsToReplace, existingRowIdsToRemove, rowsToAdd);
+        }}
         title={t('common.confirm')}
-        message={t('request.bb_overwrite_confirm')}
+        message={t('request.bb_overwrite_confirm_with_layers', {
+          layers: bbConflictState?.duplicateLayerIds.join(', ') ?? '',
+        })}
+        danger
+      />
+
+      <ConfirmModal
+        isOpen={bbPartialAddConfirm}
+        onClose={() => {
+          bbPartialAddRowsRef.current = [];
+          setBbPartialAddConfirm(false);
+        }}
+        onConfirm={() => {
+          const rowsToAdd = bbPartialAddRowsRef.current;
+          bbPartialAddRowsRef.current = [];
+          setBbPartialAddConfirm(false);
+          applyBbRowChanges([], [], rowsToAdd);
+        }}
+        title={t('common.confirm')}
+        message={t('request.bb_partial_add_confirm', {
+          count: bbPartialAddRowsRef.current.length,
+        })}
       />
 
       <ConfirmModal
