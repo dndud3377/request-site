@@ -5,8 +5,6 @@ import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI } fro
 import { useToast } from '../../components/Toast';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
 import Modal, { ConfirmModal } from '../../components/Modal';
-import FormSelect from '../../components/FormSelect';
-import AutocompleteInput from '../../components/AutocompleteInput';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   CreateDocumentInput,
@@ -25,10 +23,7 @@ import {
 } from '../../types';
 import GuideSlidePanel from '../../components/GuideSlidePanel';
 import {
-  OPTION_REQUEST_PURPOSE,
   OPTION_LINE,
-  OPTION_OTHER_PURPOSE,
-  ST_CELL_COLOR,
   CRegion,
   genId,
   makeRow,
@@ -39,8 +34,6 @@ import {
   INITIAL_FORM,
   DETAIL_REQUIRED,
 } from './constants';
-import ProdcRow from './components/ProdcRow';
-import MshotImageUpload from './components/MshotImageUpload';
 import WizardIndicator from './components/WizardIndicator';
 import Step1 from './components/Step1';
 import StepMap from './components/StepMap';
