@@ -14,12 +14,14 @@
 
 ```
 pages/RequestPage/
-├── index.tsx                       # 메인 컴포넌트 (현재 ~2,242줄) — 상태·핸들러·조립
+├── index.tsx                       # 메인 컴포넌트 (현재 ~2,028줄) — 상태·핸들러·effect·조립
 ├── constants.ts                    # 상수·팩토리·초기 상태 (외부 state 비의존)
+├── helpers.ts                      # 순수 헬퍼 (formatUpdatedDate/shouldDisableRow/calcDisabled/emptyDraftWords)
 └── components/
     ├── ProdcRow.tsx                # PRODC 북/중/남 공통 행 (REGION_LABEL_KEY 동봉)
     ├── MshotImageUpload.tsx        # M-shot 이미지 붙여넣기 영역 (자기완결)
     ├── WizardIndicator.tsx         # 상단 단계 인디케이터 (자기완결)
+    ├── FilterManageModal.tsx       # J/O 필터 관리 모달 (공유 — jayer↔oayer props 매개변수화)
     ├── Step1.tsx                   # step 1 — 기본정보(라인/목적/흐름도/뼈찜entry/고객/생산일)
     ├── StepMap.tsx                 # step 2 — MAP(타입/원본/PRODC/REV/지도편차/예외/M-shot/맵옵션)
     ├── Step2.tsx                   # step 3 — J-layer 표
@@ -83,35 +85,37 @@ pages/RequestPage/
 
 ---
 
-## 3. 향후 리팩토링 계획 (남은 작업: 커스텀 훅 추출)
+## 3. 리팩토링 진행 현황 & 향후 방향
 
-독립 단위 분리(1차) + 5개 Step 컴포넌트 분리(2차)가 완료되어 index.tsx 는 4,083 → 2,242줄로 줄었다. 더 줄이려면 **state에 강하게 결합된 핸들러**를 커스텀 훅으로 빼야 한다. 위험도가 가장 높으므로 아래 원칙을 따른다.
+| 단계 | 내용 | 상태 | index.tsx |
+|------|------|------|-----------|
+| 1차 | 독립 단위 분리(상수·팩토리·ProdcRow/Mshot/Wizard) | ✅ | 4,083 → 3,795 |
+| 2차 | 5개 Step 컴포넌트 분리(renderStepN → StepN) | ✅ | 3,795 → 2,242 |
+| 3차 | 순수 헬퍼(helpers.ts) + 공유 필터 모달(FilterManageModal) 분리 | ✅ | 2,242 → 2,028 |
 
-### 3.1 커스텀 훅으로 핸들러 추출 (도메인별) — 미완료
-핸들러가 이미 `handleJayer*` / `handleOayer*` / `handleBb*` 접두사로 도메인 분리되어 있어 훅으로 떼어내기 좋다.
+### 3.1 커스텀 훅으로 핸들러 추출 — ⛔ 검증 결과 비권장
 
-```
-pages/RequestPage/hooks/
-├── useJayer.ts     # jayerRows·jayerChecked·필터 state + handleJayer* 일괄
-├── useOayer.ts     # useJayer와 대칭 (공통화 여지 검토)
-├── useBbTable.ts   # bbRows·외부데이터·자동채움 + handleBb* / handleApply* / handleStage
-└── useFlowChart.ts # flow_chart 행 핸들러
-```
+원래 계획했던 `useJayer`/`useOayer`/`useBbTable` 분리를 **코드로 검증한 결과, 도메인이 분리 불가능**하여 진행하지 않기로 결정했다(2026-06). 근거:
 
-- 훅은 `{ state, setState, handlers }` 를 반환하여 index.tsx에서 구조분해로 사용.
-- **주의**: Step 컴포넌트 분리(props 주입)와 달리, 훅 추출은 **state 소유권을 index.tsx → 훅으로 이동**시키므로 `tsc` 가 못 잡는 런타임 버그(stale closure, 렌더 타이밍) 위험이 있다. 여러 핸들러가 `detail`, `errors`, `setDetail`, 옵션 캐시 등 **컴포넌트 전역 state를 교차 참조**하므로, 훅 시그니처에 의존 state/setter를 명시적으로 주입(파라미터)해야 한다.
-- J-layer / O-layer 는 거의 대칭이므로 `useLayerTable(kind: 'jayer' | 'oayer')` 형태의 단일 제네릭 훅으로 통합하는 것도 검토(단, 미묘한 차이가 있으니 diff 먼저 확인).
+- **Jayer ↔ Bb 교차 쓰기**: `handleJayerBulkDisable` 이 `setSelectedJayerRowId`·`setStagedMappings`(Bb 매핑 state)를 변경.
+- **Bb ↔ Jayer 교차 읽기/쓰기**: `handleApplyMappings`·`buildAutoFillRows` 가 `jayerRows`·`detail.bb_entries`·`bbExternalData` 를 읽고 `setMappedJayerRowIds`(jayer 결합)를 씀.
+- **16개 effect 의 연쇄 동기화**: 대부분 `detail.*` 에 키를 두고 옵션 캐시 + `setDetail` 연쇄 초기화 + jayer/oayer 행 채우기를 교차 수행. 전부 `eslint-disable react-hooks/exhaustive-deps` 로 **의존성 배열을 의도적으로 부분 지정**, 공유 `isLoadingEditRef` 가드 ref 사용.
 
-### 3.2 진행 원칙 (필수)
-- 한 번에 한 도메인씩, **파일별 개별 커밋** (CLAUDE.md 규칙 E).
-- 각 단계마다 검증: `npx tsc --noEmit` 의 전체 error 개수가 **베이스라인과 동일**한지 확인(현재 베이스라인 = 47개, 모두 기존 i18n strict 키 타이핑 / es5 target의 `Set` 순회 관련 pre-existing). 신규 `TS2304/2305/2307/2552`(미정의·import) 발생 시 즉시 수정.
+→ 훅으로 옮기면 (1) 주입 의존성이 도메인당 15~30개로 폭증해 복잡도가 오히려 증가하고, (2) **state 소유권 이동이 클로저 캡처·effect 실행 타이밍을 바꿔 `tsc` 가 못 잡는 런타임 버그**(stale closure / effect 순서)를 유발할 수 있다. "기존 기능 무손상 최우선" 원칙과 충돌하므로 **현 상태(2,028줄)를 합리적 종료점으로 인정**한다.
+
+> 굳이 추가로 줄여야 한다면: 남은 confirm/merge/submit 모달(8~28줄, 이미 공용 `ConfirmModal`/`Modal` 기반)을 컴포넌트화할 수 있으나 props 주입 오버헤드 대비 이득이 적다. 훅 추출이 정말 필요해지면 **도메인이 아니라 응집된 한 덩어리**(예: 옵션-fetch effect 묶음)부터, 광범위한 수동 회귀 테스트를 동반해 시도할 것.
+
+### 3.2 분리 작업 진행 원칙 (필수 — 후속 작업 시에도 동일)
+- 한 번에 한 단위씩, **파일별 개별 커밋** (CLAUDE.md 규칙 E).
+- **state 소유권은 index.tsx 에 유지**, JSX·순수 함수만 이동(props 주입). 이것이 `tsc` 로 완전 검증 가능한 안전 패턴.
+- 각 단계마다 검증: `npx tsc --noEmit` 의 전체 error 개수가 **베이스라인(47개)과 동일**한지 확인. 47개는 모두 기존 i18n strict 키 타이핑 / es5 target `Set` 순회 관련 pre-existing(파일만 이동, 총수 불변 = 신규 0 증명). 신규 `TS2304/2305/2307/2552/6133`(미정의·import·미사용) 발생 시 즉시 수정.
 - 동작 동일성이 핵심. 로직/문구 변경 금지(요청 시에만).
 
 ---
 
 ## 4. 알려진 pre-existing 이슈 (이번 리팩토링 무관)
 - `tsc --noEmit` 기준 전체 47개 error 존재 — i18n `t()` 의 strict 키 타입 + `Set` 순회(es5 target). CRA(Babel) 빌드는 통과하므로 런타임 영향 없음.
-- 하드코딩 한글 문자열 다수 잔존 (예: `MshotImageUpload` 의 "Ctrl+V 로 이미지를 붙여넣으세요", `Step2~Step4`/`StepMap` 의 "활성/전체", "STEP 정렬", "+ 행 추가", "선택 비활성화", "범위 추가", "특정 제품 삭제 필요" 등). CLAUDE.md 규칙 G(i18n) 위반이나, 분리 시 동작 보존 위해 원문 그대로 이동. 추후 `request.*` 키로 일괄 이관 필요.
+- 하드코딩 한글 문자열 다수 잔존 (예: `MshotImageUpload` 의 "Ctrl+V 로 이미지를 붙여넣으세요", `Step2~Step4`/`StepMap` 의 "활성/전체", "STEP 정렬", "+ 행 추가", "선택 비활성화", "범위 추가", "특정 제품 삭제 필요", `FilterManageModal` 의 "저장된 필터/새 필터 만들기/전체 삭제/닫기/키워드 입력 후 Enter" 등). CLAUDE.md 규칙 G(i18n) 위반이나, 분리 시 동작 보존 위해 원문 그대로 이동. 추후 `request.*` 키로 일괄 이관 필요.
 
 ---
 
