@@ -332,14 +332,6 @@ export interface UserWithRole {
   mail: string;
 }
 
-export interface UserForAssignment {
-  id: number;
-  username: string;
-  display_name: string;
-  department: string;
-  email: string;
-}
-
 export interface CreateUserInput {
   loginid: string;
   role: UserRole;
@@ -379,10 +371,11 @@ export interface AvailableGroupMember {
 
 export interface UserForAssignment {
   id: number;
-  username: string;      // DB loginid
-  display_name: string;  // DB username (표시 이름)
-  department: string;    // DB deptname
-  email: string;         // DB mail
+  username: string;       // DB loginid
+  display_name: string;   // DB username (표시 이름)
+  department: string;     // DB deptname
+  email: string;          // DB mail
+  current_role?: UserRole; // MASTER 조회 시에만 포함
 }
 
 

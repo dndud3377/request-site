@@ -412,8 +412,9 @@ const deleteUser = async (id: number): Promise<void> => {
   await request(`/users/${id}/`, { method: 'DELETE' });
 };
 
-const getUsersForAssignment = async (): Promise<{ data: UserForAssignment[] }> => {
-  const data = await get<UserForAssignment[]>('/users/for-assignment/');
+const getUsersForAssignment = async (role?: string): Promise<{ data: UserForAssignment[] }> => {
+  const path = role ? `/users/for-assignment/?role=${encodeURIComponent(role)}` : '/users/for-assignment/';
+  const data = await get<UserForAssignment[]>(path);
   return { data: Array.isArray(data) ? data : [] };
 };
 

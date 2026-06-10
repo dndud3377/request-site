@@ -317,7 +317,10 @@
     "role_TE_E": "TE_E",
     "role_MASTER": "MASTER",
     "role_NONE": "권한 없음",
-    "search_placeholder": "이름, 로그인ID, 이메일, 부서 검색..."
+    "search_placeholder": "이름, 로그인ID, 이메일, 부서 검색...",
+    "no_department": "부서없음",
+    "role_change_success": "역할이 변경되었습니다.",
+    "role_change_error": "역할 변경에 실패했습니다."
   },
   "common": {
     "loading": "로딩 중...",
