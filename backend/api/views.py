@@ -830,7 +830,8 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == 'assign_role':
-            return [IsAuthenticatedInProd()]
+            from rest_framework.permissions import IsAuthenticated
+            return [IsAuthenticated()]
         return super().get_permissions()
 
     def get_serializer_class(self):
