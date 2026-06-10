@@ -816,8 +816,8 @@ class UserViewSet(viewsets.ModelViewSet):
     - list: 모든 사용자 목록 조회
     - create: login_id 로 사용자 생성 및 권한 부여
     - destroy: 사용자 삭제
-    - for-assignment: 권한 부여 대상 사용자 목록 (role='NONE')
-    - assign-role: 사용자에게 역할 부여
+    - for-assignment: 권한 부여 대상 사용자 목록
+    - assign-role: 사용자에게 역할 부여 (MASTER: 모든 역할 변경 / 일반: NONE→자신의 역할만)
     """
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -827,6 +827,11 @@ class UserViewSet(viewsets.ModelViewSet):
     search_fields = ['loginid', 'username', 'deptname']
     ordering_fields = ['id', 'loginid']
     ordering = ['id']
+
+    def get_permissions(self):
+        if self.action == 'assign_role':
+            return [IsAuthenticatedInProd()]
+        return super().get_permissions()
 
     def get_serializer_class(self):
         return UserSerializer
@@ -839,25 +844,54 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='for-assignment')
     def for_assignment(self, request):
-        """권한 부여 대상 사용자 목록 (role='NONE' 인 사용자)"""
-        users = User.objects.filter(role='NONE').order_by('loginid')
+        """권한 부여 대상 사용자 목록
+        - MASTER + role 파라미터: 해당 역할 제외한 전체 사용자
+        - 그 외: NONE 사용자만
+        """
+        is_master = request.user.is_authenticated and request.user.role == 'MASTER'
+        target_role = request.query_params.get('role')
+
+        if is_master and target_role:
+            users = User.objects.exclude(role=target_role).order_by('loginid')
+        else:
+            users = User.objects.filter(role='NONE').order_by('loginid')
+
         data = [{
             'id': u.id,
             'username': u.loginid,
             'display_name': u.username,
             'department': u.deptname,
             'email': u.mail,
+            'current_role': u.role,
         } for u in users]
         return Response(data)
 
     @action(detail=True, methods=['post'], url_path='assign-role')
     def assign_role(self, request, pk=None):
-        """사용자에게 역할 부여"""
+        """사용자에게 역할 부여
+        - MASTER: NONE 포함 모든 역할 변경 가능
+        - 일반 사용자(PL/TE_*): 대상이 NONE이고 자신의 역할로만 부여 가능
+        - NONE 사용자: 403
+        """
         user = self.get_object()
         role = request.data.get('role')
 
-        if role not in ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER']:
+        is_master = request.user.is_authenticated and request.user.role == 'MASTER'
+        requester_role = getattr(request.user, 'role', None) if request.user.is_authenticated else None
+
+        all_valid_roles = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE']
+        assignable_roles = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E']
+
+        if role not in all_valid_roles:
             return Response({'error': '유효하지 않은 역할입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not is_master:
+            if requester_role not in assignable_roles:
+                return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+            if user.role != 'NONE':
+                return Response({'error': '권한 없는 사용자에게만 역할을 부여할 수 있습니다.'}, status=status.HTTP_403_FORBIDDEN)
+            if role != requester_role:
+                return Response({'error': '자신의 역할로만 부여할 수 있습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         User.objects.filter(pk=user.pk).update(role=role)
         user.refresh_from_db()
@@ -873,8 +907,11 @@ class UserViewSet(viewsets.ModelViewSet):
 
         return Response({
             'id': user.id,
-            'username': user.loginid,
+            'loginid': user.loginid,
+            'name': user.username or '',
+            'deptname': user.deptname or '',
             'role': role,
+            'mail': user.mail or '',
         })
     
     def create(self, request, *args, **kwargs):

@@ -316,7 +316,10 @@
     "role_TE_E": "TE_E",
     "role_MASTER": "MASTER",
     "role_NONE": "No Permission",
-    "search_placeholder": "Search by name, login ID, email, or department..."
+    "search_placeholder": "Search by name, login ID, email, or department...",
+    "no_department": "No Department",
+    "role_change_success": "Role changed successfully.",
+    "role_change_error": "Failed to change role."
   },
   "common": {
     "loading": "Loading...",

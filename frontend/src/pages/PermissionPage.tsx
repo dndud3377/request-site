@@ -27,18 +27,26 @@ const tdStyle: React.CSSProperties = {
 
 // ===== User Table =====
 
+const ASSIGNABLE_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
+
 interface UserTableProps {
   users: UserWithRole[];
   canModify: boolean;
+  isMaster: boolean;
   onRequestDelete: (user: UserWithRole) => void;
+  onRoleChange: (user: UserWithRole, newRole: UserRole) => void;
   deletingId: number | null;
+  changingRoleId: number | null;
 }
 
 function UserTable({
   users,
   canModify,
+  isMaster,
   onRequestDelete,
+  onRoleChange,
   deletingId,
+  changingRoleId,
 }: UserTableProps): React.ReactElement {
   const { t } = useTranslation();
 
@@ -50,6 +58,8 @@ function UserTable({
     );
   }
 
+  const showActionCol = isMaster || canModify;
+
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead>
@@ -58,7 +68,7 @@ function UserTable({
           <th style={thStyle}>{t('permission.field_name')}</th>
           <th style={thStyle}>{t('permission.field_email')}</th>
           <th style={thStyle}>{t('permission.field_department')}</th>
-          {canModify && <th style={{ ...thStyle, width: 80 }}></th>}
+          {showActionCol && <th style={{ ...thStyle, width: isMaster ? 200 : 80 }}></th>}
         </tr>
       </thead>
       <tbody>
@@ -68,16 +78,41 @@ function UserTable({
             <td style={tdStyle}>{user.name || '-'}</td>
             <td style={tdStyle}>{user.mail || '-'}</td>
             <td style={tdStyle}>{user.deptname || '-'}</td>
-            {canModify && (
+            {showActionCol && (
               <td style={{ ...tdStyle, textAlign: 'right' }}>
-                <button
-                  className="btn btn-danger"
-                  style={{ padding: '3px 12px', fontSize: 12 }}
-                  onClick={() => onRequestDelete(user)}
-                  disabled={deletingId === user.id}
-                >
-                  {deletingId === user.id ? '...' : t('permission.delete')}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+                  {isMaster && (
+                    <select
+                      value={user.role}
+                      onChange={(e) => onRoleChange(user, e.target.value as UserRole)}
+                      disabled={changingRoleId === user.id}
+                      style={{
+                        fontSize: 12,
+                        padding: '3px 6px',
+                        borderRadius: 4,
+                        border: '1px solid #cbd5e0',
+                        background: 'var(--bg-modal, #fff)',
+                        cursor: changingRoleId === user.id ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {ASSIGNABLE_ROLES.map((r) => (
+                        <option key={r} value={r}>
+                          {t(`permission.role_${r}`)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {(isMaster || canModify) && (
+                    <button
+                      className="btn btn-danger"
+                      style={{ padding: '3px 12px', fontSize: 12 }}
+                      onClick={() => onRequestDelete(user)}
+                      disabled={deletingId === user.id}
+                    >
+                      {deletingId === user.id ? '...' : t('permission.delete')}
+                    </button>
+                  )}
+                </div>
               </td>
             )}
           </tr>
@@ -127,16 +162,17 @@ function AddGroupMemberModal({ isOpen, onClose, group, onMemberAdded }: AddGroup
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const filtered = candidates.filter(u =>
-    !selected.some(s => s.id === u.id) && (
-      searchQuery.trim() === '' ? false : (
-        u.loginid.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.mail.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (u.deptname && u.deptname.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
-    )
-  );
+  const filtered = candidates.filter(u => {
+    if (selected.some(s => s.id === u.id)) return false;
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      u.loginid.toLowerCase().includes(q) ||
+      u.name.toLowerCase().includes(q) ||
+      u.mail.toLowerCase().includes(q) ||
+      (u.deptname && u.deptname.toLowerCase().includes(q))
+    );
+  });
 
   const handleSelect = (u: AvailableGroupMember) => {
     setSelected(prev => [...prev, u]);
@@ -202,7 +238,7 @@ function AddGroupMemberModal({ isOpen, onClose, group, onMemberAdded }: AddGroup
             placeholder={t('group.add_member_placeholder')}
             style={{ fontSize: 13 }}
           />
-          {dropdownOpen && searchQuery.trim() && (
+          {dropdownOpen && (
             <ul style={{
               position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999,
               background: 'var(--bg-modal, #fff)',
@@ -225,7 +261,7 @@ function AddGroupMemberModal({ isOpen, onClose, group, onMemberAdded }: AddGroup
                 >
                   <strong>{u.loginid}</strong>
                   <span style={{ color: '#718096', marginLeft: 8, fontSize: 12 }}>
-                    {u.name} · {u.deptname || '부서없음'} · {u.mail}
+                    {u.name} · {u.deptname || t('permission.no_department')} · {u.mail}
                   </span>
                 </li>
               ))}
@@ -316,16 +352,17 @@ function CreateGroupModal({ isOpen, onClose, currentRole, currentLoginid, onCrea
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const filtered = candidates.filter(u =>
-    !selected.some(s => s.id === u.id) && (
-      searchQuery.trim() === '' ? false : (
-        u.loginid.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.mail.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (u.deptname && u.deptname.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
-    )
-  );
+  const filtered = candidates.filter(u => {
+    if (selected.some(s => s.id === u.id)) return false;
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      u.loginid.toLowerCase().includes(q) ||
+      u.name.toLowerCase().includes(q) ||
+      u.mail.toLowerCase().includes(q) ||
+      (u.deptname && u.deptname.toLowerCase().includes(q))
+    );
+  });
 
   const handleSelect = (u: AvailableGroupMember) => {
     setSelected(prev => [...prev, u]);
@@ -401,7 +438,7 @@ function CreateGroupModal({ isOpen, onClose, currentRole, currentLoginid, onCrea
               placeholder={t('group.add_member_placeholder')}
               style={{ fontSize: 13 }}
             />
-            {dropdownOpen && searchQuery.trim() && (
+            {dropdownOpen && (
               <ul style={{
                 position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999,
                 background: 'var(--bg-modal, #fff)',
@@ -424,7 +461,7 @@ function CreateGroupModal({ isOpen, onClose, currentRole, currentLoginid, onCrea
                   >
                     <strong>{u.loginid}</strong>
                     <span style={{ color: '#718096', marginLeft: 8, fontSize: 12 }}>
-                      {u.name} · {u.deptname || '부서없음'} · {u.mail}
+                      {u.name} · {u.deptname || t('permission.no_department')} · {u.mail}
                     </span>
                   </li>
                 ))}
@@ -705,6 +742,7 @@ export default function PermissionPage(): React.ReactElement {
   const [submitting, setSubmitting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<UserWithRole | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [changingRoleId, setChangingRoleId] = useState<number | null>(null);
   const [tabSearchQuery, setTabSearchQuery] = useState('');
 
   // Group state
@@ -733,9 +771,9 @@ export default function PermissionPage(): React.ReactElement {
       .finally(() => setLoading(false));
   }, []);
 
-  const fetchUsersForAssignment = useCallback(() => {
+  const fetchUsersForAssignment = useCallback((role?: string) => {
     usersAPI
-      .forAssignment()
+      .forAssignment(role)
       .then((r) => setUsersForAssignment(r.data))
       .catch(() => setUsersForAssignment([]));
   }, []);
@@ -748,8 +786,8 @@ export default function PermissionPage(): React.ReactElement {
 
   useEffect(() => {
     fetchUsers();
-    fetchUsersForAssignment();
-  }, [fetchUsers, fetchUsersForAssignment]);
+    fetchUsersForAssignment(isMaster ? activeTab : undefined);
+  }, [fetchUsers, fetchUsersForAssignment, isMaster, activeTab]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -803,7 +841,7 @@ export default function PermissionPage(): React.ReactElement {
     );
   });
 
-  const canModifyTab = isMaster || currentUser.role === activeTab;
+  const canModifyTab = activeTab !== 'NONE' && (isMaster || currentUser.role === activeTab);
   const canCreateGroup =
     activeGroupId === null &&
     currentUser.role === activeTab &&
@@ -812,7 +850,7 @@ export default function PermissionPage(): React.ReactElement {
 
   const filteredUsers = usersForAssignment.filter((u) => {
     if (selectedUsers.some((s) => s.id === u.id)) return false;
-    if (!userSearchQuery.trim()) return false;
+    if (!userSearchQuery.trim()) return true;
     const q = userSearchQuery.toLowerCase();
     return (
       u.display_name.toLowerCase().includes(q) ||
@@ -849,7 +887,7 @@ export default function PermissionPage(): React.ReactElement {
 
       if (succeeded > 0) {
         fetchUsers();
-        fetchUsersForAssignment();
+        fetchUsersForAssignment(isMaster ? activeTab : undefined);
       }
 
       if (failed === 0) {
@@ -864,6 +902,19 @@ export default function PermissionPage(): React.ReactElement {
       }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleRoleChange = async (user: UserWithRole, newRole: UserRole) => {
+    if (newRole === user.role) return;
+    setChangingRoleId(user.id);
+    try {
+      await usersAPI.assignRole(user.id, newRole);
+      addToast(t('permission.role_change_success'), 'success');
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : t('permission.role_change_error'), 'error');
+    } finally {
+      setChangingRoleId(null);
     }
   };
 
@@ -1035,8 +1086,11 @@ export default function PermissionPage(): React.ReactElement {
             <UserTable
               users={usersForTab}
               canModify={canModifyTab}
+              isMaster={isMaster}
               onRequestDelete={setDeleteTarget}
+              onRoleChange={handleRoleChange}
               deletingId={deletingId}
+              changingRoleId={changingRoleId}
             />
           )}
         </div>
@@ -1059,8 +1113,8 @@ export default function PermissionPage(): React.ReactElement {
         isOpen={formOpen}
         onClose={() => setFormOpen(false)}
         title={`${t('permission.add_user')} — ${t(`permission.role_${activeTab}`)}`}
-        size="lg"
-        style={{ minHeight: 480 }}
+        size="md"
+        style={{ minHeight: 240 }}
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setFormOpen(false)} disabled={submitting}>
@@ -1072,7 +1126,7 @@ export default function PermissionPage(): React.ReactElement {
           </>
         }
       >
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 240 }}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 120 }}>
           <div className="form-group">
             <label className="form-label">{t('permission.select_user')} <span className="required">*</span></label>
 
@@ -1091,7 +1145,7 @@ export default function PermissionPage(): React.ReactElement {
                   if (userSearchQuery) setSearchDropdownOpen(true);
                 }}
               />
-              {searchDropdownOpen && filteredUsers.length > 0 && (
+              {searchDropdownOpen && (
                 <ul
                   style={{
                     position: 'absolute',
@@ -1110,7 +1164,11 @@ export default function PermissionPage(): React.ReactElement {
                     overflowY: 'auto',
                   }}
                 >
-                  {filteredUsers.map((user) => (
+                  {filteredUsers.length === 0 ? (
+                    <li style={{ padding: '10px 12px', color: '#999', fontSize: 13 }}>
+                      {t('permission.no_users_for_assignment')}
+                    </li>
+                  ) : filteredUsers.map((user) => (
                     <li
                       key={user.id}
                       onMouseDown={(e) => { e.preventDefault(); handleSelectUser(user); }}
@@ -1120,7 +1178,12 @@ export default function PermissionPage(): React.ReactElement {
                     >
                       <span style={{ fontWeight: 600 }}>{user.display_name}</span>
                       <span style={{ color: '#718096', marginLeft: 8, fontSize: 12 }}>
-                        {user.username} · {user.email} · {user.department || '부서없음'}
+                        {user.username} · {user.email} · {user.department || t('permission.no_department')}
+                        {user.current_role && (
+                          <span style={{ marginLeft: 6, color: '#3182ce', fontWeight: 500 }}>
+                            ({t(`permission.role_${user.current_role}`)})
+                          </span>
+                        )}
                       </span>
                     </li>
                   ))}
@@ -1150,7 +1213,7 @@ export default function PermissionPage(): React.ReactElement {
                   >
                     <strong>{user.display_name}</strong>
                     <span style={{ color: '#718096', marginLeft: 4, fontSize: 12 }}>
-                      {user.username} · {user.department || '부서없음'}
+                      {user.username} · {user.department || t('permission.no_department')}
                     </span>
                     <button
                       type="button"
