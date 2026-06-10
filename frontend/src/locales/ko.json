@@ -148,6 +148,8 @@
     "tbvtlv_warn_body": "두께 / 비고 항목을 입력하지 않았습니다. 입력하지 않고 넘어가도 괜찮으시겠습니까?",
     "tbvtlv_warn_proceed": "계속 진행",
     "bb_overwrite_confirm": "기존 입력된 Backbone 데이터가 있습니다. 덮어쓰시겠습니까?",
+    "bb_overwrite_confirm_with_layers": "다음 Layer가 이미 입력되어 있습니다: {{layers}}\n덮어쓰시겠습니까?",
+    "bb_partial_add_confirm": "중복되지 않은 {{count}}개 행을 추가하시겠습니까?",
     "bb_reset_confirm": "모든 Backbone 데이터를 지우시겠습니까?",
     "special_care_confirm": "Special Care (Shot map포함) 요청건은 반드시 작성 필요한데 넘어가시겠습니까?",
     "filter_delete_confirm": "\"{{label}}\" 필터를 삭제하시겠습니까?",
