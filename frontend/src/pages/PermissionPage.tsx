@@ -1141,9 +1141,7 @@ export default function PermissionPage(): React.ReactElement {
                   setUserSearchQuery(e.target.value);
                   setSearchDropdownOpen(true);
                 }}
-                onFocus={() => {
-                  if (userSearchQuery) setSearchDropdownOpen(true);
-                }}
+                onFocus={() => setSearchDropdownOpen(true)}
               />
               {searchDropdownOpen && (
                 <ul
