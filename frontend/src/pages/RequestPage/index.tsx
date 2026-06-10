@@ -34,6 +34,7 @@ import {
   INITIAL_FORM,
   DETAIL_REQUIRED,
 } from './constants';
+import { formatUpdatedDate, calcDisabled, emptyDraftWords } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import Step1 from './components/Step1';
 import StepMap from './components/StepMap';
@@ -122,7 +123,6 @@ export default function RequestPage(): React.ReactElement {
   const [oayerActiveFilterIds, setOayerActiveFilterIds] = useState<Set<string>>(new Set());
   const [jayerFilterModalOpen, setJayerFilterModalOpen] = useState(false);
   const [oayerFilterModalOpen, setOayerFilterModalOpen] = useState(false);
-  const emptyDraftWords = () => ({ sp: [] as string[], sd: [] as string[], pp: [] as string[] });
   const [jayerNewFilter, setJayerNewFilter] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
   const [oayerNewFilter, setOayerNewFilter] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
   const [jayerSortBySp, setJayerSortBySp] = useState(false);
@@ -558,14 +558,6 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // ===== Date Format Helper =====
-  const formatUpdatedDate = (updated: string): string => {
-    if (!updated || updated.length < 12) return updated;
-    const yyyyMMdd = updated.slice(0, 8);
-    const hh = updated.slice(8, 10);
-    const mm = updated.slice(10, 12);
-    return `${yyyyMMdd} ${hh}:${mm}`;
-  };
-
   const handleFlowDeleteRow = (id: string) => {
     setDetail((prev) => {
       if (prev.flow_chart.length <= 1) return prev;
@@ -574,21 +566,6 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // ===== Jayer & Oayer Handlers =====
-  // ===== 비활성화 필터 확인 함수 (키워드 배열 지원) =====
-  const shouldDisableRow = (filterWords: { sp: string[]; sd: string[]; pp: string[] }, row: { sp: string; sd: string; pp: string }): boolean => {
-    const { sp, sd, pp } = filterWords;
-    if (sp.some(keyword => keyword && row.sp.toLowerCase().includes(keyword.toLowerCase()))) return true;
-    if (sd.some(keyword => keyword && row.sd.toLowerCase().includes(keyword.toLowerCase()))) return true;
-    if (pp.some(keyword => keyword && row.pp.toLowerCase().includes(keyword.toLowerCase()))) return true;
-    return false;
-  };
-
-  const calcDisabled = (
-    row: { manuallyDisabled: boolean; sp: string; sd: string; pp: string },
-    filterSets: FilterSet[],
-    activeIds: Set<string>
-  ): boolean =>
-    row.manuallyDisabled || filterSets.some(fs => activeIds.has(fs.id) && shouldDisableRow(fs.words, row));
 
   const fetchJobFileLayerAndPopulateJayer = async (line: string, process: string) => {
     try {
