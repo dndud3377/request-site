@@ -741,9 +741,6 @@ select.form-control option {
 .modal-lg .modal-body {
   height: 75vh;
   max-height: none;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
 }
 
 .modal-fullscreen {
