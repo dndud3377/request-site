@@ -160,8 +160,22 @@ const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
   const path1Pending = [pStep, jStep].find(s => s?.action === 'pending');
   const path1Done = !path1Pending;
 
-  const path2Pending = [oStep, eStep].find(s => s?.action === 'pending');
-  const path2Done = !path2Pending;
+  const path2PendingSteps = ([oStep, eStep] as (typeof oStep)[]).filter(
+    (s): s is NonNullable<typeof oStep> => !!s && s.action === 'pending'
+  );
+  const path2Done = path2PendingSteps.length === 0;
+  const path2StageText = path2Done
+    ? t('common.status_approved')
+    : path2PendingSteps
+        .map(s => {
+          const label = t(`approval.agent_${s.agent}` as any);
+          return s.assignee_name ? `${label}(${s.assignee_name})` : label;
+        })
+        .join(' / ');
+  const path2DueDate = path2PendingSteps.reduce<string | null>((max, s) => {
+    if (!s.due_date) return max;
+    return !max || s.due_date > max ? s.due_date : max;
+  }, null);
 
   return [
     {
@@ -173,10 +187,10 @@ const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
     },
     {
       pathKey: 'path2',
-      stageText: buildStageText(path2Pending, path2Done, t),
-      dueDate: path2Pending?.due_date ?? null,
+      stageText: path2StageText,
+      dueDate: path2DueDate,
       isDone: path2Done,
-      pathStatus: resolvePathStatus(path2Pending, path2Done, doc.status),
+      pathStatus: resolvePathStatus(path2PendingSteps[0], path2Done, doc.status),
     },
   ];
 };
