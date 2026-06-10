@@ -10,19 +10,34 @@
 
 ## 1. 파일 구조 (2026-06 리팩토링 후)
 
-기존 단일 파일 `pages/RequestPage.tsx`(4,083줄)를 폴더로 전환하고, **동작에 영향이 없는 독립 단위**를 분리했다. 이동/분리만 수행했으며 로직 변경은 없다.
+기존 단일 파일 `pages/RequestPage.tsx`(4,083줄)를 폴더로 전환하고, **동작에 영향이 없도록** 독립 단위 → 5개 Step 컴포넌트 순으로 분리했다. **모든 분리는 로직 복사 + props 주입만** 수행했으며 동작/문구 변경은 없다(검증: `tsc` 에러 총수 47개 불변).
 
 ```
 pages/RequestPage/
-├── index.tsx                       # 메인 컴포넌트 (현재 ~3,795줄) — 상태/핸들러/JSX
+├── index.tsx                       # 메인 컴포넌트 (현재 ~2,242줄) — 상태·핸들러·조립
 ├── constants.ts                    # 상수·팩토리·초기 상태 (외부 state 비의존)
 └── components/
     ├── ProdcRow.tsx                # PRODC 북/중/남 공통 행 (REGION_LABEL_KEY 동봉)
     ├── MshotImageUpload.tsx        # M-shot 이미지 붙여넣기 영역 (자기완결)
-    └── WizardIndicator.tsx         # 상단 단계 인디케이터 (자기완결)
+    ├── WizardIndicator.tsx         # 상단 단계 인디케이터 (자기완결)
+    ├── Step1.tsx                   # step 1 — 기본정보(라인/목적/흐름도/뼈찜entry/고객/생산일)
+    ├── StepMap.tsx                 # step 2 — MAP(타입/원본/PRODC/REV/지도편차/예외/M-shot/맵옵션)
+    ├── Step2.tsx                   # step 3 — J-layer 표
+    ├── Step3.tsx                   # step 4 — O-layer 표 + TBV/TLV·partial_shot 정보 탭
+    └── Step4.tsx                   # step 5 — Backbone(bb) 자동채움·매핑·결과 표
 ```
 
+> ⚠️ **Step 파일명 ↔ step 번호 매핑 주의** (기존 `renderStepN` 명명을 그대로 보존):
+> `step 1 → Step1` / `step 2 → StepMap` / `step 3 → Step2` / `step 4 → Step3` / `step 5 → Step4`.
+
 > 폴더 진입점은 `index.tsx` 이므로 `import RequestPage from './pages/RequestPage'` 경로는 변경 없이 그대로 유효하다. (App.tsx 수정 불필요)
+
+### Step 컴포넌트 분리 패턴 (중요 — 후속 작업 시 동일하게)
+- state·setter·핸들러·파생값·내부 컴포넌트(`GuideBadge`)는 **모두 props 로 주입**. state 소유권은 index.tsx 에 그대로 둔다(클로저 동작 보존).
+- `GuideBadge` 는 index.tsx 에 남아 있고 `React.FC<{ fk; tk }>` 타입의 prop 으로 각 Step 에 전달 → 배지 호출부(`<GuideBadge fk tk/>`)·클로저(`toggleSlidePanel`/`slidePanel`) 변경 0.
+- `t`(useTranslation), `ST_CELL_COLOR`, `AutocompleteInput`, `FormSelect`, `ProdcRow`, `MshotImageUpload` 등 **import 가능한 것은 Step 파일에서 직접 import**.
+- 파생 불리언(`isProdc`/`isMapRegistered`/`hasMapChange`/`hasEaChange`/`mshotDeleteMode`/`mshotEditAddMode`/`availableRevLayers`)은 동일값 보장을 위해 **props 로 전달**(Step 내부 재계산 금지).
+- 검증: 매 분리 후 `tsc` 전체 error 가 47개로 유지되는지 확인. 신규 `TS2304/2305/2307/2552/6133` 발생 시 즉시 수정.
 
 ### `constants.ts` export 목록
 - 옵션: `OPTION_REQUEST_PURPOSE`, `OPTION_LINE`, `OPTION_OTHER_PURPOSE`, `ST_CELL_COLOR`
@@ -55,26 +70,24 @@ pages/RequestPage/
 | `handleMap*` / `handleMerge*` / `handleFilter*` / `handleProdc*` / `handleDetail*` / `handleApply*` | 각 2 | |
 | 기타 (`handleSubmit`, `handleSave`, `handleReset`, `handleStage`, `handleSort`, `handleRange`, `handleRadio`, `handleImage`, `handleRef`, `handleNext`/`handlePrev` 등) | 1~2 | |
 
-### 2.3 렌더 함수 (JSX 섹션 — 거대 블록)
-메인 `return` 은 `step` 값에 따라 아래 렌더 함수를 호출한다.
+### 2.3 렌더 함수 → Step 컴포넌트 (✅ 분리 완료)
+메인 `return` 은 `step` 값에 따라 §1의 Step 컴포넌트를 렌더한다. 기존 `renderStepN()` 인라인 렌더 함수는 모두 제거되고 `components/StepN.tsx` 로 분리됨.
 
-| 함수 | 역할 | 대략 위치 |
-|------|------|-----------|
-| `renderStep1()` | 기본정보 + 목적/라인/제품 + Flow/Bb entry | ~1637~ |
-| `renderStepMap()` | MAP 변경 단계 | ~1978~ |
-| `renderStep2()` | (현 step 2) | ~2411~ |
-| `renderStep3()` | J-layer / O-layer 표 | ~2588~ |
-| `renderStep4()` | 뼈찜(Bb) 표 + 자동채움 | ~2960~ |
-
-> 위 라인 번호는 변동되므로 참고용. 실제 위치는 `grep -n "renderStep" index.tsx` 로 확인할 것.
+| step | 컴포넌트 | 역할 |
+|------|----------|------|
+| 1 | `Step1` | 기본정보 + 목적/라인/제품 + Flow/Bb entry |
+| 2 | `StepMap` | MAP 변경 단계 |
+| 3 | `Step2` | J-layer 표 |
+| 4 | `Step3` | O-layer 표 + TBV/TLV·partial_shot 정보 탭 |
+| 5 | `Step4` | 뼈찜(Bb) 표 + 자동채움·매핑 |
 
 ---
 
-## 3. 향후 리팩토링 계획 (핸들러·JSX 일괄 분리)
+## 3. 향후 리팩토링 계획 (남은 작업: 커스텀 훅 추출)
 
-이번에 끝낸 1차(독립 단위 분리) 이후, index.tsx를 더 줄이려면 **state에 강하게 결합된 부분**을 다뤄야 한다. 위험도가 높으므로 아래 순서/원칙을 따른다.
+독립 단위 분리(1차) + 5개 Step 컴포넌트 분리(2차)가 완료되어 index.tsx 는 4,083 → 2,242줄로 줄었다. 더 줄이려면 **state에 강하게 결합된 핸들러**를 커스텀 훅으로 빼야 한다. 위험도가 가장 높으므로 아래 원칙을 따른다.
 
-### 3.1 커스텀 훅으로 핸들러 추출 (도메인별)
+### 3.1 커스텀 훅으로 핸들러 추출 (도메인별) — 미완료
 핸들러가 이미 `handleJayer*` / `handleOayer*` / `handleBb*` 접두사로 도메인 분리되어 있어 훅으로 떼어내기 좋다.
 
 ```
@@ -86,22 +99,10 @@ pages/RequestPage/hooks/
 ```
 
 - 훅은 `{ state, setState, handlers }` 를 반환하여 index.tsx에서 구조분해로 사용.
-- **주의**: 여러 핸들러가 `detail`, `errors`, `setDetail`, 옵션 캐시 등 **컴포넌트 전역 state를 교차 참조**한다. 훅 시그니처에 의존 state/setter를 명시적으로 주입(파라미터)해야 클로저 누수가 없다.
+- **주의**: Step 컴포넌트 분리(props 주입)와 달리, 훅 추출은 **state 소유권을 index.tsx → 훅으로 이동**시키므로 `tsc` 가 못 잡는 런타임 버그(stale closure, 렌더 타이밍) 위험이 있다. 여러 핸들러가 `detail`, `errors`, `setDetail`, 옵션 캐시 등 **컴포넌트 전역 state를 교차 참조**하므로, 훅 시그니처에 의존 state/setter를 명시적으로 주입(파라미터)해야 한다.
 - J-layer / O-layer 는 거의 대칭이므로 `useLayerTable(kind: 'jayer' | 'oayer')` 형태의 단일 제네릭 훅으로 통합하는 것도 검토(단, 미묘한 차이가 있으니 diff 먼저 확인).
 
-### 3.2 렌더 함수 → 하위 컴포넌트 추출
-`renderStepN()` 들을 `components/StepN.tsx` 로 분리. 각 Step은 다수의 props(상태+핸들러)를 받게 되므로, 3.1의 훅 추출을 **먼저** 끝낸 뒤 진행하면 props 묶음이 단순해진다.
-
-```
-pages/RequestPage/components/
-├── Step1Basic.tsx
-├── StepMap.tsx
-├── Step2*.tsx
-├── Step3Layers.tsx   # J/O-layer 표 (LayerTable 하위 컴포넌트로 또 분리 가능)
-└── Step4Bb.tsx
-```
-
-### 3.3 진행 원칙 (필수)
+### 3.2 진행 원칙 (필수)
 - 한 번에 한 도메인씩, **파일별 개별 커밋** (CLAUDE.md 규칙 E).
 - 각 단계마다 검증: `npx tsc --noEmit` 의 전체 error 개수가 **베이스라인과 동일**한지 확인(현재 베이스라인 = 47개, 모두 기존 i18n strict 키 타이핑 / es5 target의 `Set` 순회 관련 pre-existing). 신규 `TS2304/2305/2307/2552`(미정의·import) 발생 시 즉시 수정.
 - 동작 동일성이 핵심. 로직/문구 변경 금지(요청 시에만).
@@ -110,7 +111,7 @@ pages/RequestPage/components/
 
 ## 4. 알려진 pre-existing 이슈 (이번 리팩토링 무관)
 - `tsc --noEmit` 기준 전체 47개 error 존재 — i18n `t()` 의 strict 키 타입 + `Set` 순회(es5 target). CRA(Babel) 빌드는 통과하므로 런타임 영향 없음.
-- 하드코딩 한글 문자열 일부 잔존 (예: `MshotImageUpload` 의 "Ctrl+V 로 이미지를 붙여넣으세요", `renderStep4`의 안내 문구). CLAUDE.md 규칙 G(i18n) 위반이나, 이번 분리 범위 밖이라 원문 보존. 추후 `request.*` 키로 이관 필요.
+- 하드코딩 한글 문자열 다수 잔존 (예: `MshotImageUpload` 의 "Ctrl+V 로 이미지를 붙여넣으세요", `Step2~Step4`/`StepMap` 의 "활성/전체", "STEP 정렬", "+ 행 추가", "선택 비활성화", "범위 추가", "특정 제품 삭제 필요" 등). CLAUDE.md 규칙 G(i18n) 위반이나, 분리 시 동작 보존 위해 원문 그대로 이동. 추후 `request.*` 키로 일괄 이관 필요.
 
 ---
 
