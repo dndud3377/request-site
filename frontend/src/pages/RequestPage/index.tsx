@@ -109,6 +109,8 @@ export default function RequestPage(): React.ReactElement {
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // 임시저장/자동저장/상신이 동시에 create()를 호출해 의뢰서가 중복 생성되는 race 방지 가드
+  const isPersistingRef = useRef(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitNote, setSubmitNote] = useState('');
   const [savedId, setSavedId] = useState<number | null>(editDocId ?? peerReviewDocId);
@@ -1421,6 +1423,8 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleSaveDraft = async () => {
+    if (isPersistingRef.current) return;
+    isPersistingRef.current = true;
     setSaving(true);
     try {
       const enriched = buildEnrichedForm(undefined, false, true);
@@ -1435,11 +1439,15 @@ export default function RequestPage(): React.ReactElement {
       addToast(t('common.error'), 'error');
     } finally {
       setSaving(false);
+      isPersistingRef.current = false;
     }
   };
 
   const handleIdleAutoSave = async () => {
     if (!detail.line || !detail.partid_selection || !detail.process_selection || !detail.process_id) return;
+    // 수동 저장/상신이 진행 중이면 중복 create 방지를 위해 자동저장을 건너뛴다
+    if (isPersistingRef.current) return;
+    isPersistingRef.current = true;
     try {
       const enriched = buildEnrichedForm(undefined, false, true);
       if (savedId) {
@@ -1451,6 +1459,8 @@ export default function RequestPage(): React.ReactElement {
       addToast(t('request.auto_save_success'), 'info');
     } catch {
       // 자동저장 실패는 조용히 무시
+    } finally {
+      isPersistingRef.current = false;
     }
   };
 
@@ -1575,6 +1585,8 @@ export default function RequestPage(): React.ReactElement {
       setDesigneeError(t('request.designee_required'));
       return;
     }
+    if (isPersistingRef.current) return;
+    isPersistingRef.current = true;
     setSubmitting(true);
     try {
       let docId = savedId;
@@ -1616,6 +1628,7 @@ export default function RequestPage(): React.ReactElement {
       addToast(`오류 발생: ${err instanceof Error ? err.message : '알 수 없는 오류'}`, 'error');
     } finally {
       setSubmitting(false);
+      isPersistingRef.current = false;
     }
   };
 
