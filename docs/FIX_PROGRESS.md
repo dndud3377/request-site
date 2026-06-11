@@ -38,7 +38,7 @@
 |------|------|------|
 | 항목 1 | 상신 실패 방지 (race + 트랜잭션) | ✅ 완료 (코드/푸시), ⏳ docker 검증 대기 |
 | 항목 2 | step 검증 dead code 정리 (빈 TODO 블록 제거) | ✅ 완료 |
-| 항목 3 | 결재/이력 조회 error 상태 처리 (규칙 J) | ⬜ 대기 (다음) |
+| 항목 3 | 결재/이력 조회 error 상태 처리 (규칙 J) | ✅ 완료 |
 | (후보) | J/O/E 동시 합의 lost-update 방지 (`select_for_update`) | ⬜ 미정 |
 | (후보) | `additional_notes` JSON 손상 방어 / silent 유실 방지 | ⬜ 미정 |
 | (마무리) | `docs/APPROVAL.md` 신규 작성, 관련 docs 최신화 | ⬜ 대기 |
@@ -117,6 +117,31 @@
 
 ### 검증
 - `cd frontend && npx tsc --noEmit` → 신규 에러 0 (tsconfig deprecation 2건만 잔존, 기존 이슈).
+
+---
+
+## 2-3. [항목 3] 결재/이력 조회 error 상태 처리 — 완료 내역
+
+### 문제
+- `ApprovalPage.tsx`/`HistoryPage.tsx`가 목록 조회 실패를 `.catch(()=>setDocs([]))`로
+  빈 배열 처리 → 네트워크/401/500 등 실패가 "데이터 없음(empty)"과 구분 안 됨(규칙 J 위반).
+
+### 무엇을 고쳤나
+- **커밋 ① i18n** (`locales/ko.json`+`en.json`): `common.load_error` 추가
+  ("목록을 불러오지 못했습니다." / "Failed to load the list."). 재시도 라벨은 기존 `common.retry` 재사용.
+- **커밋 ② `ApprovalPage.tsx`**: `error` state 추가, `fetchDocs` 시작 시 `setError(false)`·catch에서
+  `setError(true)`. 렌더를 `loading→error→empty→table`로 확장, error 시 메시지+재시도 버튼.
+- **커밋 ③ `HistoryPage.tsx`**: 동일 패턴 적용.
+
+### 동작 변화
+- error=false(정상/빈 값) 경로는 **동작 100% 동일**. 실패 시에만 ⚠️ + 재시도 버튼 노출.
+- 재조회마다 `setError(false)`로 초기화되어 에러 플래그가 박히지 않음.
+
+### 검증
+- `npx tsc --noEmit` → 신규 에러 0. ko/en `load_error` 동기화 확인.
+
+### 범위 밖(후속 후보)
+- `HistoryPage.handleDelete`의 silent catch(삭제 mutation, toast 인프라 부재) — 별도 항목.
 
 ---
 
