@@ -37,8 +37,8 @@
 | 항목 | 내용 | 상태 |
 |------|------|------|
 | 항목 1 | 상신 실패 방지 (race + 트랜잭션) | ✅ 완료 (코드/푸시), ⏳ docker 검증 대기 |
-| 항목 2 | step 검증 정합성 (렌더 step↔validate 불일치, J-layer 미검증, 중복 블록) | ⬜ 계획 단계 |
-| 항목 3 | 결재/이력 조회 error 상태 처리 (규칙 J) | ⬜ 대기 |
+| 항목 2 | step 검증 dead code 정리 (빈 TODO 블록 제거) | ✅ 완료 |
+| 항목 3 | 결재/이력 조회 error 상태 처리 (규칙 J) | ⬜ 대기 (다음) |
 | (후보) | J/O/E 동시 합의 lost-update 방지 (`select_for_update`) | ⬜ 미정 |
 | (후보) | `additional_notes` JSON 손상 방어 / silent 유실 방지 | ⬜ 미정 |
 | (마무리) | `docs/APPROVAL.md` 신규 작성, 관련 docs 최신화 | ⬜ 대기 |
@@ -91,6 +91,32 @@
   1. 신규 작성 → 임시저장 → 상신: 정상 1건, 결재현황 노출.
   2. 반려된 문서 → 재상신: round+1 PL 단계 생성, 상태 under_review.
   3. (가능하면) 상신 직후 결재현황/이력에 즉시 반영 확인.
+
+---
+
+## 2-2. [항목 2] step 검증 dead code 정리 — 완료 내역
+
+### 정정 사항
+- 앞서 보고한 "렌더 step ↔ validate 인덱스 불일치"는 **오류였음**. `validate(currentStep)`은
+  파일명(Step2/Step3)이 아니라 `step` **상태값**으로 분기하고 렌더도 같은 상태로 컴포넌트를
+  고르므로 내용이 정확히 대응한다(1=기본정보, 2=MAP, 3=J-layer, 4=O-layer+partial, 5=Bb).
+- `WizardIndicator`는 클릭 점프가 없는 순수 표시용 → 이동은 next/prev 순차. step 5 도달 =
+  step 1·2·4 검증 통과를 의미. 따라서 위저드는 정상 작동하며 추가 재검증 불필요.
+
+### 결정 사항
+- J-layer(step3)·O-layer(step4 행) 행 단위 필수값 검증: **추가 안 함**(행은 선택사항이 의도).
+  상신 시 step 5의 "활성+process_id J-layer 행 Bb 매핑 필수"로 간접 검증.
+- 상신 직전 전체 단계 재검증: **추가 안 함**(순차 이동으로 이미 보장).
+
+### 무엇을 고쳤나
+**커밋 — `frontend/src/pages/RequestPage/index.tsx`** (`validate` 함수)
+- 빈 `if (currentStep === 3) { /* TODO */ }` 제거.
+- 중복된 빈 `if (currentStep === 4) { /* TODO */ }` 제거(진짜 partial_shot 검증 블록은 유지).
+- 의도를 설명하는 주석 2줄 추가(향후 TODO 재삽입 방지).
+- 동작 변화 0 (빈 블록은 런타임 무동작이었음).
+
+### 검증
+- `cd frontend && npx tsc --noEmit` → 신규 에러 0 (tsconfig deprecation 2건만 잔존, 기존 이슈).
 
 ---
 
