@@ -10,7 +10,7 @@ import {
   AgentType,
   StepInfo,
   ExternalBbDataItem,
-  StepOption,
+  PhotoStepOption,
   AdminNotice,
   CreateNoticeInput,
   UpdateNoticeInput,
@@ -561,8 +561,8 @@ export const formOptionsAPI = {
       `/form-options/barcode/?product_name=${encodeURIComponent(product_name)}`
     ).then((r) => r.options || []),
 
-  getBbExternalData: (entry: { location: string; product: string; process_id: string }): Promise<StepOption[]> => {
-    return get<{ options: StepOption[] }>(
+  getBbExternalData: (entry: { location: string; product: string; process_id: string }): Promise<PhotoStepOption[]> => {
+    return get<{ options: PhotoStepOption[] }>(
       `/form-options/bb-external/?location=${encodeURIComponent(entry.location)}&product=${encodeURIComponent(entry.product)}&process_id=${encodeURIComponent(entry.process_id)}`
     ).then((r) => r.options || []);
   },
