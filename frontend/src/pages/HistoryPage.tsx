@@ -25,6 +25,7 @@ export default function HistoryPage(): React.ReactElement {
   const isNone = currentUser.role === 'NONE';
   const [docs, setDocs] = useState<RequestDocument[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<RequestDocument | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -33,6 +34,7 @@ export default function HistoryPage(): React.ReactElement {
 
   const fetchDocs = useCallback(() => {
     setLoading(true);
+    setError(false);
     const params: Record<string, string> = { status: 'approved' };
     if (search) params.search = search;
     documentsAPI
@@ -41,7 +43,7 @@ export default function HistoryPage(): React.ReactElement {
         const data = r.data;
         setDocs(Array.isArray(data) ? data : (data as any).results ?? []);
       })
-      .catch(() => setDocs([]))
+      .catch(() => { setError(true); setDocs([]); })
       .finally(() => setLoading(false));
   }, [search]);
 
@@ -86,6 +88,12 @@ export default function HistoryPage(): React.ReactElement {
       {loading ? (
         <div className="empty-state">
           <p>{t('common.loading')}</p>
+        </div>
+      ) : error ? (
+        <div className="empty-state">
+          <div className="empty-state-icon">⚠️</div>
+          <p>{t('common.load_error')}</p>
+          <button className="btn" onClick={fetchDocs}>{t('common.retry')}</button>
         </div>
       ) : docs.length === 0 ? (
         <div className="empty-state">
