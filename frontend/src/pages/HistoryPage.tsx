@@ -4,6 +4,7 @@ import { documentsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal, { ConfirmModal } from '../components/Modal';
 import PagedDetailView from '../components/PagedDetailView';
+import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { RequestDocument } from '../types';
 
@@ -20,6 +21,7 @@ const getApprovalCompletedDate = (doc: RequestDocument): string => {
 
 export default function HistoryPage(): React.ReactElement {
   const { t } = useTranslation();
+  const addToast = useToast();
   const { currentUser } = useAuth();
   const isMaster = currentUser.role === 'MASTER';
   const isNone = currentUser.role === 'NONE';
@@ -61,9 +63,12 @@ export default function HistoryPage(): React.ReactElement {
     if (!deleteTarget) return;
     try {
       await documentsAPI.delete(deleteTarget.id);
+      addToast(t('history.delete_success'), 'success');
       fetchDocs();
     } catch {
-      // noop
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
