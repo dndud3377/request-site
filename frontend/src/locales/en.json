@@ -359,6 +359,7 @@
     "status_rejected": "Rejected",
     "no_data": "No data available.",
     "process_error": "An error occurred while processing.",
+    "load_error": "Failed to load the list.",
     "saving": "Saving...",
     "role_label_PL": "Product Manager",
     "role_label_TE_R": "AGENT R Team",

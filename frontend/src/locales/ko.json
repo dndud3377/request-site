@@ -360,6 +360,7 @@
     "status_rejected": "반려됨",
     "no_data": "데이터 없음",
     "process_error": "처리 중 오류가 발생했습니다.",
+    "load_error": "목록을 불러오지 못했습니다.",
     "saving": "저장 중...",
     "role_label_PL": "제품 담당자",
     "role_label_TE_R": "AGENT R팀",
