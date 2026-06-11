@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS
 from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db import connection
+from django.db import connection, transaction
 from django.contrib.auth import get_user_model
 User = get_user_model()
 from django.db.models import Q
@@ -123,18 +123,19 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
-        document.status = 'under_review'
-        document.submitted_at = document.submitted_at or timezone.now()
-        document.designated_pl = designated_pl_user
-        document.designated_pl_name = designated_pl_user.username or designated_pl_loginid
-        document.save()
+        with transaction.atomic():
+            document.status = 'under_review'
+            document.submitted_at = document.submitted_at or timezone.now()
+            document.designated_pl = designated_pl_user
+            document.designated_pl_name = designated_pl_user.username or designated_pl_loginid
+            document.save()
 
-        ApprovalStep.objects.filter(document=document).delete()
-        ApprovalStep.objects.create(
-            document=document, agent='PL', action='pending', round=1,
-            assignee=designated_pl_user,
-            assignee_name=document.designated_pl_name,
-        )
+            ApprovalStep.objects.filter(document=document).delete()
+            ApprovalStep.objects.create(
+                document=document, agent='PL', action='pending', round=1,
+                assignee=designated_pl_user,
+                assignee_name=document.designated_pl_name,
+            )
 
         return Response({
             'message': '의뢰서가 성공적으로 상신되었습니다.',
@@ -168,18 +169,19 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
-        document.status = 'under_review'
-        document.designated_pl = designated_pl_user
-        document.designated_pl_name = designated_pl_user.username or designated_pl_loginid
-        document.save()
-
         from django.db.models import Max
-        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 0
-        ApprovalStep.objects.create(
-            document=document, agent='PL', action='pending', round=max_round + 1,
-            assignee=designated_pl_user,
-            assignee_name=document.designated_pl_name,
-        )
+        with transaction.atomic():
+            document.status = 'under_review'
+            document.designated_pl = designated_pl_user
+            document.designated_pl_name = designated_pl_user.username or designated_pl_loginid
+            document.save()
+
+            max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 0
+            ApprovalStep.objects.create(
+                document=document, agent='PL', action='pending', round=max_round + 1,
+                assignee=designated_pl_user,
+                assignee_name=document.designated_pl_name,
+            )
 
         return Response({
             'message': '재상신되었습니다.',
@@ -196,11 +198,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        document.status = 'draft'
-        document.submitted_at = None
-        document.save()
+        with transaction.atomic():
+            document.status = 'draft'
+            document.submitted_at = None
+            document.save()
 
-        ApprovalStep.objects.filter(document=document).delete()
+            ApprovalStep.objects.filter(document=document).delete()
 
         return Response({'message': '철회되었습니다.'})
 
@@ -215,6 +218,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return Response({'message': '삭제되었습니다.'})
 
     @action(detail=True, methods=['post'], url_path='approve-step')
+    @transaction.atomic
     def approve_step(self, request, pk=None):
         """에이전트 단계 합의 (mock.ts mockApproveStep 로직과 동일)"""
         document = self.get_object()
@@ -318,13 +322,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not step:
             return Response({'error': f'AGENT {agent}의 대기 중인 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        step.action = 'rejected'
-        step.acted_at = timezone.now()
-        step.comment = comment
-        step.save()
+        with transaction.atomic():
+            step.action = 'rejected'
+            step.acted_at = timezone.now()
+            step.comment = comment
+            step.save()
 
-        document.status = 'rejected'
-        document.save()
+            document.status = 'rejected'
+            document.save()
 
         return Response({'message': '반려되었습니다.', 'status': 'rejected'})
 
@@ -380,16 +385,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         comment = request.data.get('comment', '')
-        step.action = 'approved'
-        step.acted_at = timezone.now()
-        step.comment = comment
-        step.save()
+        with transaction.atomic():
+            step.action = 'approved'
+            step.acted_at = timezone.now()
+            step.comment = comment
+            step.save()
 
-        ApprovalStep.objects.create(
-            document=document, agent='R', action='pending', round=step.round,
-        )
-        document.status = 'under_review'
-        document.save()
+            ApprovalStep.objects.create(
+                document=document, agent='R', action='pending', round=step.round,
+            )
+            document.status = 'under_review'
+            document.save()
 
         return Response({'message': '합의되었습니다. R 단계로 진행합니다.', 'status': 'under_review'})
 
@@ -408,13 +414,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         comment = request.data.get('comment', '')
-        step.action = 'rejected'
-        step.acted_at = timezone.now()
-        step.comment = comment
-        step.save()
+        with transaction.atomic():
+            step.action = 'rejected'
+            step.acted_at = timezone.now()
+            step.comment = comment
+            step.save()
 
-        document.status = 'rejected'
-        document.save()
+            document.status = 'rejected'
+            document.save()
 
         return Response({'message': '반려되었습니다.', 'status': 'rejected'})
 
@@ -433,16 +440,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         comment = request.data.get('comment', '')
-        step.action = 'approved'
-        step.acted_at = timezone.now()
-        step.comment = f'[수정 후 상신] {comment}'.strip()
-        step.save()
+        with transaction.atomic():
+            step.action = 'approved'
+            step.acted_at = timezone.now()
+            step.comment = f'[수정 후 상신] {comment}'.strip()
+            step.save()
 
-        ApprovalStep.objects.create(
-            document=document, agent='R', action='pending', round=step.round,
-        )
-        document.status = 'under_review'
-        document.save()
+            ApprovalStep.objects.create(
+                document=document, agent='R', action='pending', round=step.round,
+            )
+            document.status = 'under_review'
+            document.save()
 
         return Response({'message': '수정 후 상신되었습니다. R 단계로 진행합니다.', 'status': 'under_review'})
 
