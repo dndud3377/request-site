@@ -249,7 +249,8 @@
     "col_requester": "의뢰자",
     "col_status": "상태",
     "col_submitted": "상신일",
-    "col_approved": "결재 완료일"
+    "col_approved": "결재 완료일",
+    "delete_success": "문서가 삭제되었습니다."
   },
   "voc": {
     "title": "VOC",
@@ -360,6 +361,7 @@
     "status_rejected": "반려됨",
     "no_data": "데이터 없음",
     "process_error": "처리 중 오류가 발생했습니다.",
+    "load_error": "목록을 불러오지 못했습니다.",
     "saving": "저장 중...",
     "role_label_PL": "제품 담당자",
     "role_label_TE_R": "AGENT R팀",

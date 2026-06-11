@@ -15,10 +15,10 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS
 from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db import connection
+from django.db import connection, transaction
 from django.contrib.auth import get_user_model
 User = get_user_model()
-from django.db.models import Q
+from django.db.models import Q, Max
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
@@ -78,6 +78,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return RequestDocumentListSerializer
         return RequestDocumentSerializer
 
+    def _max_round(self, document, default=1):
+        """문서의 현재 최대 결재 회차를 반환한다. 단계가 없으면 default."""
+        return ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or default
+
     def _validate_bb_mapping(self, document):
         """J-ayer 행 bb 매핑 검증. 문제 있으면 error 문자열 반환, 없으면 None."""
         import json
@@ -123,18 +127,19 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
-        document.status = 'under_review'
-        document.submitted_at = document.submitted_at or timezone.now()
-        document.designated_pl = designated_pl_user
-        document.designated_pl_name = designated_pl_user.username or designated_pl_loginid
-        document.save()
+        with transaction.atomic():
+            document.status = 'under_review'
+            document.submitted_at = document.submitted_at or timezone.now()
+            document.designated_pl = designated_pl_user
+            document.designated_pl_name = designated_pl_user.username or designated_pl_loginid
+            document.save()
 
-        ApprovalStep.objects.filter(document=document).delete()
-        ApprovalStep.objects.create(
-            document=document, agent='PL', action='pending', round=1,
-            assignee=designated_pl_user,
-            assignee_name=document.designated_pl_name,
-        )
+            ApprovalStep.objects.filter(document=document).delete()
+            ApprovalStep.objects.create(
+                document=document, agent='PL', action='pending', round=1,
+                assignee=designated_pl_user,
+                assignee_name=document.designated_pl_name,
+            )
 
         return Response({
             'message': '의뢰서가 성공적으로 상신되었습니다.',
@@ -168,18 +173,18 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
-        document.status = 'under_review'
-        document.designated_pl = designated_pl_user
-        document.designated_pl_name = designated_pl_user.username or designated_pl_loginid
-        document.save()
+        with transaction.atomic():
+            document.status = 'under_review'
+            document.designated_pl = designated_pl_user
+            document.designated_pl_name = designated_pl_user.username or designated_pl_loginid
+            document.save()
 
-        from django.db.models import Max
-        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 0
-        ApprovalStep.objects.create(
-            document=document, agent='PL', action='pending', round=max_round + 1,
-            assignee=designated_pl_user,
-            assignee_name=document.designated_pl_name,
-        )
+            max_round = self._max_round(document, default=0)
+            ApprovalStep.objects.create(
+                document=document, agent='PL', action='pending', round=max_round + 1,
+                assignee=designated_pl_user,
+                assignee_name=document.designated_pl_name,
+            )
 
         return Response({
             'message': '재상신되었습니다.',
@@ -196,11 +201,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        document.status = 'draft'
-        document.submitted_at = None
-        document.save()
+        with transaction.atomic():
+            document.status = 'draft'
+            document.submitted_at = None
+            document.save()
 
-        ApprovalStep.objects.filter(document=document).delete()
+            ApprovalStep.objects.filter(document=document).delete()
 
         return Response({'message': '철회되었습니다.'})
 
@@ -215,6 +221,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return Response({'message': '삭제되었습니다.'})
 
     @action(detail=True, methods=['post'], url_path='approve-step')
+    @transaction.atomic
     def approve_step(self, request, pk=None):
         """에이전트 단계 합의 (mock.ts mockApproveStep 로직과 동일)"""
         document = self.get_object()
@@ -224,10 +231,15 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if agent not in ('R', 'P', 'J', 'O', 'E'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        from django.db.models import Max
-        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+        # 동시 합의 lost-update 방지: 문서 행을 잠가 같은 문서의 상태전이를 직렬화한다.
+        # (J/O/E 병렬 단계를 두 결재자가 거의 동시에 마지막으로 합의할 때, 둘 다 '미완료'로
+        #  읽어 approved 전이가 누락되던 문제를 막는다.)
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
 
-        step = ApprovalStep.objects.filter(
+        max_round = self._max_round(document)
+
+        # 잠근 뒤 최신 커밋본을 읽기 위해 locking read 사용
+        step = ApprovalStep.objects.select_for_update().filter(
             document=document, agent=agent, action='pending', round=max_round
         ).first()
         if not step:
@@ -279,9 +291,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         elif agent in ('J', 'O', 'E'):
             # J + O + [E] 모두 합의 시 최종 승인
-            j_step = ApprovalStep.objects.filter(document=document, agent='J', round=current_round).order_by('-id').first()
-            o_step = ApprovalStep.objects.filter(document=document, agent='O', round=current_round).order_by('-id').first()
-            e_step = ApprovalStep.objects.filter(document=document, agent='E', round=current_round).order_by('-id').first()
+            j_step = ApprovalStep.objects.select_for_update().filter(document=document, agent='J', round=current_round).order_by('-id').first()
+            o_step = ApprovalStep.objects.select_for_update().filter(document=document, agent='O', round=current_round).order_by('-id').first()
+            e_step = ApprovalStep.objects.select_for_update().filter(document=document, agent='E', round=current_round).order_by('-id').first()
             j_approved = j_step and j_step.action == 'approved'
             o_approved = o_step and o_step.action == 'approved'
             if e_step:
@@ -300,6 +312,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=True, methods=['post'], url_path='reject-step')
+    @transaction.atomic
     def reject_step(self, request, pk=None):
         """에이전트 단계 반려"""
         document = self.get_object()
@@ -309,10 +322,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if agent not in ('R', 'P', 'J', 'O', 'E'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        from django.db.models import Max
-        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+        # 문서 행을 잠가 합의(approve_step)와 반려가 동시에 같은 문서를 전이시키는 경쟁을 직렬화한다.
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
 
-        step = ApprovalStep.objects.filter(
+        max_round = self._max_round(document)
+
+        step = ApprovalStep.objects.select_for_update().filter(
             document=document, agent=agent, action='pending', round=max_round
         ).first()
         if not step:
@@ -336,8 +351,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         assignee_loginid = request.data.get('assignee_loginid')
         assignee_name = request.data.get('assignee_name', '')
 
-        from django.db.models import Max
-        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+        max_round = self._max_round(document)
 
         step = ApprovalStep.objects.filter(
             document=document, agent=agent, action='pending', round=max_round
@@ -359,8 +373,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     def _get_pending_pl_step(self, document):
         """현재 회차의 pending PL 단계 반환. 없으면 None."""
-        from django.db.models import Max
-        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+        max_round = self._max_round(document)
         return ApprovalStep.objects.filter(
             document=document, agent='PL', action='pending', round=max_round
         ).first()
@@ -380,16 +393,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         comment = request.data.get('comment', '')
-        step.action = 'approved'
-        step.acted_at = timezone.now()
-        step.comment = comment
-        step.save()
+        with transaction.atomic():
+            step.action = 'approved'
+            step.acted_at = timezone.now()
+            step.comment = comment
+            step.save()
 
-        ApprovalStep.objects.create(
-            document=document, agent='R', action='pending', round=step.round,
-        )
-        document.status = 'under_review'
-        document.save()
+            ApprovalStep.objects.create(
+                document=document, agent='R', action='pending', round=step.round,
+            )
+            document.status = 'under_review'
+            document.save()
 
         return Response({'message': '합의되었습니다. R 단계로 진행합니다.', 'status': 'under_review'})
 
@@ -408,13 +422,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         comment = request.data.get('comment', '')
-        step.action = 'rejected'
-        step.acted_at = timezone.now()
-        step.comment = comment
-        step.save()
+        with transaction.atomic():
+            step.action = 'rejected'
+            step.acted_at = timezone.now()
+            step.comment = comment
+            step.save()
 
-        document.status = 'rejected'
-        document.save()
+            document.status = 'rejected'
+            document.save()
 
         return Response({'message': '반려되었습니다.', 'status': 'rejected'})
 
@@ -433,16 +448,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         comment = request.data.get('comment', '')
-        step.action = 'approved'
-        step.acted_at = timezone.now()
-        step.comment = f'[수정 후 상신] {comment}'.strip()
-        step.save()
+        with transaction.atomic():
+            step.action = 'approved'
+            step.acted_at = timezone.now()
+            step.comment = f'[수정 후 상신] {comment}'.strip()
+            step.save()
 
-        ApprovalStep.objects.create(
-            document=document, agent='R', action='pending', round=step.round,
-        )
-        document.status = 'under_review'
-        document.save()
+            ApprovalStep.objects.create(
+                document=document, agent='R', action='pending', round=step.round,
+            )
+            document.status = 'under_review'
+            document.save()
 
         return Response({'message': '수정 후 상신되었습니다. R 단계로 진행합니다.', 'status': 'under_review'})
 
@@ -580,18 +596,10 @@ def health_check(request):
 @require_GET
 def form_options_process(request):
     """{{request.line}} → {{request.process_selection}} 목록"""
-    import logging
-    logger = logging.getLogger(__name__)
     from .models import ProcessProduct as CP
     line = request.GET.get('line', '')
-    logger.warning(f"[DEBUG] line parameter: {repr(line)}")
     if not line:
-        logger.warning("[DEBUG] line is empty, returning empty options")
         return JsonResponse({'options': []})
-    # Debug: 총 레코드 수 확인
-    total = CP.objects.count()
-    line_count = CP.objects.filter(line=line).count()
-    logger.warning(f"[DEBUG] total records: {total}, line '{line}' count: {line_count}")
     options = list(
         CP.objects
         .filter(line=line)
@@ -599,7 +607,6 @@ def form_options_process(request):
         .distinct()
         .order_by('process')
     )
-    logger.warning(f"[DEBUG] options count: {len(options)}")
     return JsonResponse({'options': options})
 
 

@@ -4,10 +4,10 @@ import { documentsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal, { ConfirmModal } from '../components/Modal';
 import PagedDetailView from '../components/PagedDetailView';
+import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { RequestDocument } from '../types';
-
-const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
+import { formatDate } from '../utils/date';
 
 const getApprovalCompletedDate = (doc: RequestDocument): string => {
   const approved = (doc.approval_steps ?? []).filter((s) => s.action === 'approved' && s.acted_at);
@@ -20,11 +20,13 @@ const getApprovalCompletedDate = (doc: RequestDocument): string => {
 
 export default function HistoryPage(): React.ReactElement {
   const { t } = useTranslation();
+  const addToast = useToast();
   const { currentUser } = useAuth();
   const isMaster = currentUser.role === 'MASTER';
   const isNone = currentUser.role === 'NONE';
   const [docs, setDocs] = useState<RequestDocument[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<RequestDocument | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -33,6 +35,7 @@ export default function HistoryPage(): React.ReactElement {
 
   const fetchDocs = useCallback(() => {
     setLoading(true);
+    setError(false);
     const params: Record<string, string> = { status: 'approved' };
     if (search) params.search = search;
     documentsAPI
@@ -41,7 +44,7 @@ export default function HistoryPage(): React.ReactElement {
         const data = r.data;
         setDocs(Array.isArray(data) ? data : (data as any).results ?? []);
       })
-      .catch(() => setDocs([]))
+      .catch(() => { setError(true); setDocs([]); })
       .finally(() => setLoading(false));
   }, [search]);
 
@@ -59,9 +62,12 @@ export default function HistoryPage(): React.ReactElement {
     if (!deleteTarget) return;
     try {
       await documentsAPI.delete(deleteTarget.id);
+      addToast(t('history.delete_success'), 'success');
       fetchDocs();
     } catch {
-      // noop
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
@@ -86,6 +92,12 @@ export default function HistoryPage(): React.ReactElement {
       {loading ? (
         <div className="empty-state">
           <p>{t('common.loading')}</p>
+        </div>
+      ) : error ? (
+        <div className="empty-state">
+          <div className="empty-state-icon">⚠️</div>
+          <p>{t('common.load_error')}</p>
+          <button className="btn" onClick={fetchDocs}>{t('common.retry')}</button>
         </div>
       ) : docs.length === 0 ? (
         <div className="empty-state">

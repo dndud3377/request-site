@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI } from '../../api/client';
 import { useToast } from '../../components/Toast';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
+import { useCellSelection } from '../../hooks/useCellSelection';
 import Modal, { ConfirmModal } from '../../components/Modal';
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -35,6 +36,8 @@ import {
   INITIAL_DETAIL,
   INITIAL_FORM,
   DETAIL_REQUIRED,
+  JAYER_EDITABLE_COLS,
+  OAYER_EDITABLE_COLS,
 } from './constants';
 import { formatUpdatedDate, calcDisabled, emptyDraftWords } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
@@ -91,7 +94,6 @@ export default function RequestPage(): React.ReactElement {
   const [mappedJayerRowIds, setMappedJayerRowIds] = useState<Set<string>>(new Set());
   const [bbAutoFillRanges, setBbAutoFillRanges] = useState<BbAutoFillRange[]>([]);
   const [showAutoFillPanel, setShowAutoFillPanel] = useState(false);
-  const [isBbSorted, setIsBbSorted] = useState(false);  // STEPSEQ 정렬 상태
   const [bbSearchQueries, setBbSearchQueries] = useState<string[]>([]);  // 탭별 검색어
   const [jayerChecked, setJayerChecked] = useState<Set<string>>(new Set());
   const [oayerChecked, setOayerChecked] = useState<Set<string>>(new Set());
@@ -109,6 +111,8 @@ export default function RequestPage(): React.ReactElement {
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // 임시저장/자동저장/상신이 동시에 create()를 호출해 의뢰서가 중복 생성되는 race 방지 가드
+  const isPersistingRef = useRef(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitNote, setSubmitNote] = useState('');
   const [savedId, setSavedId] = useState<number | null>(editDocId ?? peerReviewDocId);
@@ -392,6 +396,10 @@ export default function RequestPage(): React.ReactElement {
     document.addEventListener('mouseup', handleDragEnd);
     return () => document.removeEventListener('mouseup', handleDragEnd);
   }, []);
+
+  // 엑셀식 셀 선택 + 붙여넣기 (J/O 표 공용 훅)
+  const jayerCellSel = useCellSelection<JayerRow>(setJayerRows, JAYER_EDITABLE_COLS);
+  const oayerCellSel = useCellSelection<OayerRow>(setOayerRows, OAYER_EDITABLE_COLS);
 
   // 편집 모드 (반려 재상신 or 지정 PL 수정 후 상신): 기존 문서 데이터 로드
   useEffect(() => {
@@ -701,13 +709,11 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleJayerDragStart = (id: string) => {
+    // 드래그 선택 모드만 설정한다. 시작 행 토글은 단일 클릭 시 체크박스 onChange가,
+    // 드래그 시 handleJayerDragEnter(시작 행 포함 범위)가 처리한다.
+    // (여기서 토글하면 onChange와 이중 토글되어 단일 클릭이 먹지 않는 버그가 생긴다.)
     const mode = jayerChecked.has(id) ? 'uncheck' : 'check';
     jayerDragInfo.current = { startId: id, mode };
-    setJayerChecked((prev) => {
-      const next = new Set(prev);
-      mode === 'check' ? next.add(id) : next.delete(id);
-      return next;
-    });
   };
 
   const handleJayerDragEnter = (id: string, renderedIds: string[]) => {
@@ -778,13 +784,9 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleOayerDragStart = (id: string) => {
+    // 드래그 선택 모드만 설정한다(시작 행 토글은 onChange/handleOayerDragEnter가 처리).
     const mode = oayerChecked.has(id) ? 'uncheck' : 'check';
     oayerDragInfo.current = { startId: id, mode };
-    setOayerChecked((prev) => {
-      const next = new Set(prev);
-      mode === 'check' ? next.add(id) : next.delete(id);
-      return next;
-    });
   };
 
   const handleOayerDragEnter = (id: string, renderedIds: string[]) => {
@@ -1132,7 +1134,6 @@ export default function RequestPage(): React.ReactElement {
     });
     setShowAutoFillPanel(false);
     setBbAutoFillRanges([]);
-    setIsBbSorted(false);
     const total = rowsToReplace.length + rowsToAdd.length;
     addToast(`Backbone 데이터가 ${total}행 자동 채워졌습니다.`, 'success');
   };
@@ -1170,7 +1171,6 @@ export default function RequestPage(): React.ReactElement {
   const proceedResetBbRows = () => {
     setBbRows([]);
     setMappedJayerRowIds(new Set());
-    setIsBbSorted(false);
     addToast('Backbone 데이터가 초기화되었습니다.', 'info');
   };
 
@@ -1218,7 +1218,6 @@ export default function RequestPage(): React.ReactElement {
       const sorted = [...prev].sort((a, b) =>
         a.ss.localeCompare(b.ss, undefined, { numeric: true })
       );
-      setIsBbSorted(true);
       return sorted;
     });
   };
@@ -1347,19 +1346,14 @@ export default function RequestPage(): React.ReactElement {
       } // end !isMapRegistered
     }
 
-    if (currentStep === 3) {
-      // TODO: J-ayer 행 검증 로직 추가
-    }
+    // step 3(J-layer)·step 4 O-layer 행은 의도적으로 행 단위 필수값 검증을 두지 않는다(행은 선택사항).
+    // 상신 시 step 5의 "활성 + process_id 있는 J-layer 행은 Bb 매핑 필수" 규칙으로 간접 검증된다.
 
     if (currentStep === 4) {
       if (!detail.partial_shot?.trim()) {
         newErrors['partial_shot'] = t('request.required');
         errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
       }
-    }
-
-    if (currentStep === 4) {
-      // TODO: O-ayer 행 검증 로직 추가
     }
 
     if (currentStep === 5) {
@@ -1421,6 +1415,8 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleSaveDraft = async () => {
+    if (isPersistingRef.current) return;
+    isPersistingRef.current = true;
     setSaving(true);
     try {
       const enriched = buildEnrichedForm(undefined, false, true);
@@ -1435,11 +1431,15 @@ export default function RequestPage(): React.ReactElement {
       addToast(t('common.error'), 'error');
     } finally {
       setSaving(false);
+      isPersistingRef.current = false;
     }
   };
 
   const handleIdleAutoSave = async () => {
     if (!detail.line || !detail.partid_selection || !detail.process_selection || !detail.process_id) return;
+    // 수동 저장/상신이 진행 중이면 중복 create 방지를 위해 자동저장을 건너뛴다
+    if (isPersistingRef.current) return;
+    isPersistingRef.current = true;
     try {
       const enriched = buildEnrichedForm(undefined, false, true);
       if (savedId) {
@@ -1451,6 +1451,8 @@ export default function RequestPage(): React.ReactElement {
       addToast(t('request.auto_save_success'), 'info');
     } catch {
       // 자동저장 실패는 조용히 무시
+    } finally {
+      isPersistingRef.current = false;
     }
   };
 
@@ -1575,6 +1577,8 @@ export default function RequestPage(): React.ReactElement {
       setDesigneeError(t('request.designee_required'));
       return;
     }
+    if (isPersistingRef.current) return;
+    isPersistingRef.current = true;
     setSubmitting(true);
     try {
       let docId = savedId;
@@ -1616,6 +1620,7 @@ export default function RequestPage(): React.ReactElement {
       addToast(`오류 발생: ${err instanceof Error ? err.message : '알 수 없는 오류'}`, 'error');
     } finally {
       setSubmitting(false);
+      isPersistingRef.current = false;
     }
   };
 
@@ -1767,6 +1772,7 @@ export default function RequestPage(): React.ReactElement {
           handleJayerAddRow={handleJayerAddRow}
           handleJayerBulkDisable={handleJayerBulkDisable}
           handleJayerBulkRestore={handleJayerBulkRestore}
+          cellSel={jayerCellSel}
           GuideBadge={GuideBadge}
         />
       )}
@@ -1803,6 +1809,7 @@ export default function RequestPage(): React.ReactElement {
           handleOayerAddRow={handleOayerAddRow}
           handleOayerBulkDisable={handleOayerBulkDisable}
           handleOayerBulkRestore={handleOayerBulkRestore}
+          cellSel={oayerCellSel}
           GuideBadge={GuideBadge}
         />
       )}
