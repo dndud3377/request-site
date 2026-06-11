@@ -12,11 +12,7 @@ export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'MAP
 export const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
 export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay, ADI CD 추가/삭제/변경'] as const;
 
-export const ST_CELL_COLOR: Record<string, string> = {
-  'O (D)':   '#D4F5E2',
-  'O (혼용)': '#FFE0EC',
-  'X':        '#f3f4f6',
-};
+export { ST_CELL_COLOR } from '../../utils/stCellColor';
 
 // ===== Shared Types =====
 export type CRegion = 'top' | 'middle' | 'bottom';

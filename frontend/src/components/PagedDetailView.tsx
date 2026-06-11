@@ -3,12 +3,7 @@ import { useTranslation } from 'react-i18next';
 import * as XLSX from 'xlsx';
 import { RequestDocument, UserRole, DetailFormState, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot } from '../types';
 import Modal from './Modal';
-
-const ST_CELL_COLOR: Record<string, string> = {
-  'O (D)':   '#D4F5E2',
-  'O (혼용)': '#FFE0EC',
-  'X':        '#f3f4f6',
-};
+import { ST_CELL_COLOR } from '../utils/stCellColor';
 
 // ===== Table Components =====
 
