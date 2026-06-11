@@ -91,7 +91,6 @@ export default function RequestPage(): React.ReactElement {
   const [mappedJayerRowIds, setMappedJayerRowIds] = useState<Set<string>>(new Set());
   const [bbAutoFillRanges, setBbAutoFillRanges] = useState<BbAutoFillRange[]>([]);
   const [showAutoFillPanel, setShowAutoFillPanel] = useState(false);
-  const [isBbSorted, setIsBbSorted] = useState(false);  // STEPSEQ 정렬 상태
   const [bbSearchQueries, setBbSearchQueries] = useState<string[]>([]);  // 탭별 검색어
   const [jayerChecked, setJayerChecked] = useState<Set<string>>(new Set());
   const [oayerChecked, setOayerChecked] = useState<Set<string>>(new Set());
@@ -1128,7 +1127,6 @@ export default function RequestPage(): React.ReactElement {
     });
     setShowAutoFillPanel(false);
     setBbAutoFillRanges([]);
-    setIsBbSorted(false);
     const total = rowsToReplace.length + rowsToAdd.length;
     addToast(`Backbone 데이터가 ${total}행 자동 채워졌습니다.`, 'success');
   };
@@ -1166,7 +1164,6 @@ export default function RequestPage(): React.ReactElement {
   const proceedResetBbRows = () => {
     setBbRows([]);
     setMappedJayerRowIds(new Set());
-    setIsBbSorted(false);
     addToast('Backbone 데이터가 초기화되었습니다.', 'info');
   };
 
@@ -1214,7 +1211,6 @@ export default function RequestPage(): React.ReactElement {
       const sorted = [...prev].sort((a, b) =>
         a.ss.localeCompare(b.ss, undefined, { numeric: true })
       );
-      setIsBbSorted(true);
       return sorted;
     });
   };
