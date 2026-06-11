@@ -54,7 +54,7 @@ export default function Navbar(): React.ReactElement {
     try {
       await authAPI.oidcLogout();
     } catch (e) {
-      console.log('[Navbar] Logout API failed');
+      // 로그아웃 API 실패는 무시하고 강제 리다이렉트
     }
     window.location.href = '/?logged_out=true';
   };
