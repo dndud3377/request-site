@@ -171,16 +171,50 @@ const updateDocument = async (id: number, input: UpdateDocumentInput) => {
   return { data };
 };
 
-const submitDocument = async (id: number) => {
+const submitDocument = async (id: number, designatedPlLoginid: string) => {
   const data = await post<{ message: string; email_sent: boolean; document: RequestDocument }>(
-    `/documents/${id}/submit/`
+    `/documents/${id}/submit/`,
+    { designated_pl_loginid: designatedPlLoginid }
   );
   return { data };
 };
 
-const resubmitDocument = async (id: number) => {
+const resubmitDocument = async (id: number, designatedPlLoginid: string) => {
   const data = await post<{ message: string; document: RequestDocument }>(
-    `/documents/${id}/resubmit/`
+    `/documents/${id}/resubmit/`,
+    { designated_pl_loginid: designatedPlLoginid }
+  );
+  return { data };
+};
+
+const peerApprove = async (docId: number, comment?: string) => {
+  const data = await post<{ message: string; status: string }>(
+    `/documents/${docId}/peer-approve/`,
+    { comment: comment ?? '' }
+  );
+  return { data };
+};
+
+const peerReject = async (docId: number, comment?: string) => {
+  const data = await post<{ message: string; status: string }>(
+    `/documents/${docId}/peer-reject/`,
+    { comment: comment ?? '' }
+  );
+  return { data };
+};
+
+const peerSubmit = async (docId: number, comment?: string) => {
+  const data = await post<{ message: string; status: string }>(
+    `/documents/${docId}/peer-submit/`,
+    { comment: comment ?? '' }
+  );
+  return { data };
+};
+
+const changeDesignee = async (docId: number, designatedPlLoginid: string) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${docId}/change-designee/`,
+    { designated_pl_loginid: designatedPlLoginid }
   );
   return { data };
 };
@@ -250,6 +284,10 @@ export const documentsAPI = {
   approveStep,
   rejectStep,
   assignStep,
+  peerApprove,
+  peerReject,
+  peerSubmit,
+  changeDesignee,
   stats: documentStats,
   getApproved: getApprovedDocuments,
 };
