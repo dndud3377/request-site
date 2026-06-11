@@ -228,10 +228,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if agent not in ('R', 'P', 'J', 'O', 'E'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # 동시 합의 lost-update 방지: 문서 행을 잠가 같은 문서의 상태전이를 직렬화한다.
+        # (J/O/E 병렬 단계를 두 결재자가 거의 동시에 마지막으로 합의할 때, 둘 다 '미완료'로
+        #  읽어 approved 전이가 누락되던 문제를 막는다.)
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
         from django.db.models import Max
         max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
 
-        step = ApprovalStep.objects.filter(
+        # 잠근 뒤 최신 커밋본을 읽기 위해 locking read 사용
+        step = ApprovalStep.objects.select_for_update().filter(
             document=document, agent=agent, action='pending', round=max_round
         ).first()
         if not step:
@@ -283,9 +289,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         elif agent in ('J', 'O', 'E'):
             # J + O + [E] 모두 합의 시 최종 승인
-            j_step = ApprovalStep.objects.filter(document=document, agent='J', round=current_round).order_by('-id').first()
-            o_step = ApprovalStep.objects.filter(document=document, agent='O', round=current_round).order_by('-id').first()
-            e_step = ApprovalStep.objects.filter(document=document, agent='E', round=current_round).order_by('-id').first()
+            j_step = ApprovalStep.objects.select_for_update().filter(document=document, agent='J', round=current_round).order_by('-id').first()
+            o_step = ApprovalStep.objects.select_for_update().filter(document=document, agent='O', round=current_round).order_by('-id').first()
+            e_step = ApprovalStep.objects.select_for_update().filter(document=document, agent='E', round=current_round).order_by('-id').first()
             j_approved = j_step and j_step.action == 'approved'
             o_approved = o_step and o_step.action == 'approved'
             if e_step:
@@ -304,6 +310,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=True, methods=['post'], url_path='reject-step')
+    @transaction.atomic
     def reject_step(self, request, pk=None):
         """에이전트 단계 반려"""
         document = self.get_object()
@@ -313,23 +320,25 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if agent not in ('R', 'P', 'J', 'O', 'E'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # 문서 행을 잠가 합의(approve_step)와 반려가 동시에 같은 문서를 전이시키는 경쟁을 직렬화한다.
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
         from django.db.models import Max
         max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
 
-        step = ApprovalStep.objects.filter(
+        step = ApprovalStep.objects.select_for_update().filter(
             document=document, agent=agent, action='pending', round=max_round
         ).first()
         if not step:
             return Response({'error': f'AGENT {agent}의 대기 중인 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        with transaction.atomic():
-            step.action = 'rejected'
-            step.acted_at = timezone.now()
-            step.comment = comment
-            step.save()
+        step.action = 'rejected'
+        step.acted_at = timezone.now()
+        step.comment = comment
+        step.save()
 
-            document.status = 'rejected'
-            document.save()
+        document.status = 'rejected'
+        document.save()
 
         return Response({'message': '반려되었습니다.', 'status': 'rejected'})
 
