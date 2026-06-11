@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI } from '../../api/client';
@@ -118,6 +119,8 @@ export default function RequestPage(): React.ReactElement {
   const [designeeSearchQuery, setDesigneeSearchQuery] = useState('');
   const [plUserOptions, setPlUserOptions] = useState<UserWithRole[]>([]);
   const [designeeError, setDesigneeError] = useState('');
+  const designeeInputRef = useRef<HTMLInputElement>(null);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const prevParsedRef = useRef<{
     detail: DetailFormState;
     jayerRows: JayerRow[];
@@ -1993,14 +1996,22 @@ export default function RequestPage(): React.ReactElement {
               <>
                 <div style={{ position: 'relative' }}>
                   <input
+                    ref={designeeInputRef}
                     className="form-control"
                     placeholder={t('request.designee_placeholder')}
                     value={designeeSearchQuery}
-                    onChange={(e) => { setDesigneeSearchQuery(e.target.value); setDesigneeError(''); }}
+                    onChange={(e) => {
+                      setDesigneeSearchQuery(e.target.value);
+                      setDesigneeError('');
+                      if (designeeInputRef.current) {
+                        const r = designeeInputRef.current.getBoundingClientRect();
+                        setDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                      }
+                    }}
                     autoComplete="off"
                   />
-                  {designeeSearchQuery && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', zIndex: 10, maxHeight: 180, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
+                  {designeeSearchQuery && dropdownRect && createPortal(
+                    <div style={{ position: 'fixed', top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', zIndex: 9999, maxHeight: 180, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
                       {plUserOptions
                         .filter(u =>
                           u.name.toLowerCase().includes(designeeSearchQuery.toLowerCase()) ||
@@ -2016,6 +2027,7 @@ export default function RequestPage(): React.ReactElement {
                               setDesigneeLoginid(u.loginid);
                               setDesigneeName(`${u.name} (${u.deptname})`);
                               setDesigneeSearchQuery('');
+                              setDropdownRect(null);
                               setDesigneeError('');
                             }}
                           >
@@ -2029,7 +2041,8 @@ export default function RequestPage(): React.ReactElement {
                       ).length === 0 && (
                         <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>검색 결과 없음</div>
                       )}
-                    </div>
+                    </div>,
+                    document.body
                   )}
                 </div>
                 {designeeError && (
