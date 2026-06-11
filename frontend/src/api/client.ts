@@ -296,6 +296,10 @@ const addVocComment = async (id: number, comment: {
   return { data };
 };
 
+const deleteVoc = async (id: number) => {
+  await request(`/voc/${id}/`, { method: 'DELETE' });
+};
+
 export const vocAPI = {
   list: listVocs,
   create: createVoc,
@@ -303,6 +307,7 @@ export const vocAPI = {
   updateStatus: updateVocStatus,
   updateResponse: updateVocResponse,
   addComment: addVocComment,
+  delete: deleteVoc,
 };
 
 // ===== 라인 API =====
