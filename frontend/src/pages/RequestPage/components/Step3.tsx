@@ -180,12 +180,14 @@ const Step3: React.FC<Step3Props> = ({
           <div className="wizard-table-wrapper">
             <table className="wizard-table" style={{ userSelect: oayerDragInfo.current ? 'none' : undefined }}>
               <colgroup>
+                <col style={{ width: 44 }} />
                 <col /><col /><col /><col />
                 <col className="sd-column" />
                 <col /><col /><col /><col /><col /><col />
               </colgroup>
               <thead>
                 <tr>
+                  <th style={{ width: 44, textAlign: 'center' }}>No</th>
                   <th style={{ width: 32, textAlign: 'center' }}>
                     <input
                       type="checkbox"
@@ -219,13 +221,14 @@ const Step3: React.FC<Step3Props> = ({
                     return (
                       <>
                         {isFirstDisabled && (
-                          <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={10} /></tr>
+                          <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={11} /></tr>
                         )}
                         <tr
                           key={row.id}
                           className={[row.disabled ? 'row-disabled' : '', oayerChecked.has(row.id) ? 'row-checked' : ''].filter(Boolean).join(' ')}
                           onMouseEnter={() => handleOayerDragEnter(row.id, renderedOayerIds)}
                         >
+                          <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{idx + 1}</td>
                           <td style={{ textAlign: 'center' }} onMouseDown={() => handleOayerDragStart(row.id)}>
                             <input type="checkbox" checked={oayerChecked.has(row.id)} onChange={() => handleOayerCheckToggle(row.id)} />
                           </td>
@@ -243,8 +246,8 @@ const Step3: React.FC<Step3Props> = ({
                               <option value="X">X</option>
                             </select>
                           </td>
-                          <td style={{ backgroundColor: isRegistered ? regBg : undefined }}>
-                            <select value={row.new_or_copy} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined }}>
+                          <td>
+                            <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined }}>
                               <option value=""></option>
                               <option value="신규">신규</option>
                               <option value="차용">차용</option>
