@@ -159,8 +159,8 @@
 | 5(3) | 체크박스 단일클릭 이중토글 버그 — dragStart 시작행 토글 제거 | ✅ 완료(index.tsx) |
 | 3 | dead code 제거 — isBbSorted, console.log 3곳, 백엔드 [DEBUG] | ✅ 완료 |
 | 2 | 안전한 통일 — formatDate(util), ST_CELL_COLOR(util), 백엔드 _max_round | ✅ 완료 |
-| 4 | 내용작성 UI 통일(VOC/공지/release_note → RichTextEditor) | ⬜ 계획 단계 |
-| 5(2) | 엑셀식 복사-붙여넣기 | ⬜ 마지막 별도 진행 |
+| 4 | 내용작성 UI 통일 → RichTextEditor (VOC 본문, 공지 notice 본문) | ✅ 완료 (release_note는 구조 유지로 제외) |
+| 5(2) | 엑셀식 복사-붙여넣기 | ⬜ 마지막 별도 진행 (다음) |
 
 ### 항목 1·7 검증 결론
 - 이미지: base64 아님, 서버 경로(`mshot_images/uuid`)만 저장 → `/media/` prefix로 표시. **온전히 전달.**
