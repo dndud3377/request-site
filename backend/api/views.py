@@ -597,18 +597,10 @@ def health_check(request):
 @require_GET
 def form_options_process(request):
     """{{request.line}} → {{request.process_selection}} 목록"""
-    import logging
-    logger = logging.getLogger(__name__)
     from .models import ProcessProduct as CP
     line = request.GET.get('line', '')
-    logger.warning(f"[DEBUG] line parameter: {repr(line)}")
     if not line:
-        logger.warning("[DEBUG] line is empty, returning empty options")
         return JsonResponse({'options': []})
-    # Debug: 총 레코드 수 확인
-    total = CP.objects.count()
-    line_count = CP.objects.filter(line=line).count()
-    logger.warning(f"[DEBUG] total records: {total}, line '{line}' count: {line_count}")
     options = list(
         CP.objects
         .filter(line=line)
@@ -616,7 +608,6 @@ def form_options_process(request):
         .distinct()
         .order_by('process')
     )
-    logger.warning(f"[DEBUG] options count: {len(options)}")
     return JsonResponse({'options': options})
 
 
