@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI } from '../../api/client';
 import { useToast } from '../../components/Toast';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
+import { useCellSelection } from '../../hooks/useCellSelection';
 import Modal, { ConfirmModal } from '../../components/Modal';
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -35,6 +36,8 @@ import {
   INITIAL_DETAIL,
   INITIAL_FORM,
   DETAIL_REQUIRED,
+  JAYER_EDITABLE_COLS,
+  OAYER_EDITABLE_COLS,
 } from './constants';
 import { formatUpdatedDate, calcDisabled, emptyDraftWords } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
@@ -393,6 +396,10 @@ export default function RequestPage(): React.ReactElement {
     document.addEventListener('mouseup', handleDragEnd);
     return () => document.removeEventListener('mouseup', handleDragEnd);
   }, []);
+
+  // 엑셀식 셀 선택 + 붙여넣기 (J/O 표 공용 훅)
+  const jayerCellSel = useCellSelection<JayerRow>(setJayerRows, JAYER_EDITABLE_COLS);
+  const oayerCellSel = useCellSelection<OayerRow>(setOayerRows, OAYER_EDITABLE_COLS);
 
   // 편집 모드 (반려 재상신 or 지정 PL 수정 후 상신): 기존 문서 데이터 로드
   useEffect(() => {
@@ -1765,6 +1772,7 @@ export default function RequestPage(): React.ReactElement {
           handleJayerAddRow={handleJayerAddRow}
           handleJayerBulkDisable={handleJayerBulkDisable}
           handleJayerBulkRestore={handleJayerBulkRestore}
+          cellSel={jayerCellSel}
           GuideBadge={GuideBadge}
         />
       )}
@@ -1801,6 +1809,7 @@ export default function RequestPage(): React.ReactElement {
           handleOayerAddRow={handleOayerAddRow}
           handleOayerBulkDisable={handleOayerBulkDisable}
           handleOayerBulkRestore={handleOayerBulkRestore}
+          cellSel={oayerCellSel}
           GuideBadge={GuideBadge}
         />
       )}

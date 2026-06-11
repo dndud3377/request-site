@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { OayerRow, FilterSet, DetailFormState, GuideFeatureKey } from '../../../types';
 import { ST_CELL_COLOR } from '../constants';
+import { CellSelectionApi } from '../../../hooks/useCellSelection';
 
 interface Step3Props {
   oayerRows: OayerRow[];
@@ -39,6 +40,7 @@ interface Step3Props {
   handleOayerAddRow: () => void;
   handleOayerBulkDisable: () => void;
   handleOayerBulkRestore: () => void;
+  cellSel: CellSelectionApi;
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
 }
 
@@ -74,9 +76,15 @@ const Step3: React.FC<Step3Props> = ({
   handleOayerAddRow,
   handleOayerBulkDisable,
   handleOayerBulkRestore,
+  cellSel,
   GuideBadge,
 }) => {
   const { t } = useTranslation();
+  const renderedOayerRows = [
+    ...oayerRows.filter(r => !r.disabled).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+    ...oayerRows.filter(r => r.disabled).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+  ];
+  const renderedOayerIds = renderedOayerRows.map(r => r.id);
   const tbvtlvSdOptions = Array.from(
     new Set(
       oayerRows
@@ -178,7 +186,7 @@ const Step3: React.FC<Step3Props> = ({
             </div>
           </div>
           <div className="wizard-table-wrapper">
-            <table className="wizard-table" style={{ userSelect: oayerDragInfo.current ? 'none' : undefined }}>
+            <table className="wizard-table" style={{ userSelect: oayerDragInfo.current ? 'none' : undefined }} onPaste={(e) => cellSel.onCellPaste(e, renderedOayerIds)}>
               <colgroup>
                 <col style={{ width: 44 }} />
                 <col /><col /><col /><col />
@@ -208,60 +216,61 @@ const Step3: React.FC<Step3Props> = ({
                 </tr>
               </thead>
               <tbody>
-                {(() => {
-                  const renderedOayerRows = [
-                    ...oayerRows.filter(r => !r.disabled).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-                    ...oayerRows.filter(r => r.disabled).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-                  ];
-                  const renderedOayerIds = renderedOayerRows.map(r => r.id);
-                  return renderedOayerRows.map((row, idx) => {
-                    const isFirstDisabled = row.disabled && (idx === 0 || !renderedOayerRows[idx - 1].disabled);
-                    const isRegistered = row.new_or_copy === '기등록';
-                    const regBg = '#e5e7eb';
-                    return (
-                      <>
-                        {isFirstDisabled && (
-                          <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={11} /></tr>
-                        )}
-                        <tr
-                          key={row.id}
-                          className={[row.disabled ? 'row-disabled' : '', oayerChecked.has(row.id) ? 'row-checked' : ''].filter(Boolean).join(' ')}
-                          onMouseEnter={() => handleOayerDragEnter(row.id, renderedOayerIds)}
-                        >
-                          <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{idx + 1}</td>
-                          <td style={{ textAlign: 'center' }} onMouseDown={() => handleOayerDragStart(row.id)}>
-                            <input type="checkbox" checked={oayerChecked.has(row.id)} onChange={() => handleOayerCheckToggle(row.id)} />
-                          </td>
-                          <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.updated ?? ''} readOnly style={{ background: isRegistered ? regBg : '#f5f5f5', color: '#666' }} /></td>
-                          <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.process_id} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                          <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.sp} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'sp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                          <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.sd} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                          <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.pp} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
-                          <td style={{ backgroundColor: isRegistered ? regBg : undefined }}>
-                            <select value={row.st} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'st', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : ST_CELL_COLOR[row.st] }}>
-                              <option value=""></option>
-                              <option value="O">O</option>
-                              <option value="O (D)">O (D)</option>
-                              <option value="O (혼용)">O (혼용)</option>
-                              <option value="X">X</option>
-                            </select>
-                          </td>
-                          <td>
-                            <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined }}>
-                              <option value=""></option>
-                              <option value="신규">신규</option>
-                              <option value="차용">차용</option>
-                              <option value="기등록">기등록</option>
-                              <option value="layer삭제">layer삭제</option>
-                            </select>
-                          </td>
-                          <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                          <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.step} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                        </tr>
-                      </>
-                    );
+                {renderedOayerRows.map((row, idx) => {
+                  const isFirstDisabled = row.disabled && (idx === 0 || !renderedOayerRows[idx - 1].disabled);
+                  const isRegistered = row.new_or_copy === '기등록';
+                  const regBg = '#e5e7eb';
+                  const cellProps = (col: string, bg?: string, extra?: React.CSSProperties) => ({
+                    onMouseDown: (e: React.MouseEvent) => cellSel.onCellMouseDown(row.id, col, e),
+                    onMouseEnter: () => cellSel.onCellMouseEnter(row.id, col, renderedOayerIds),
+                    style: {
+                      backgroundColor: bg,
+                      ...extra,
+                      ...(cellSel.isCellSelected(row.id, col) ? { outline: '2px solid #2563eb', outlineOffset: '-2px' } : {}),
+                    } as React.CSSProperties,
                   });
-                })()}
+                  return (
+                    <React.Fragment key={row.id}>
+                      {isFirstDisabled && (
+                        <tr className="row-divider"><td colSpan={11} /></tr>
+                      )}
+                      <tr
+                        className={[row.disabled ? 'row-disabled' : '', oayerChecked.has(row.id) ? 'row-checked' : ''].filter(Boolean).join(' ')}
+                        onMouseEnter={() => handleOayerDragEnter(row.id, renderedOayerIds)}
+                      >
+                        <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{idx + 1}</td>
+                        <td style={{ textAlign: 'center' }} onMouseDown={() => handleOayerDragStart(row.id)}>
+                          <input type="checkbox" checked={oayerChecked.has(row.id)} onChange={() => handleOayerCheckToggle(row.id)} />
+                        </td>
+                        <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.updated ?? ''} readOnly style={{ background: isRegistered ? regBg : '#f5f5f5', color: '#666' }} /></td>
+                        <td {...cellProps('process_id', isRegistered ? regBg : undefined)}><input value={row.process_id} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                        <td {...cellProps('sp', isRegistered ? regBg : undefined)}><input value={row.sp} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'sp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                        <td {...cellProps('sd', isRegistered ? regBg : undefined)}><input value={row.sd} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                        <td {...cellProps('pp', isRegistered ? regBg : undefined)}><input value={row.pp} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
+                        <td {...cellProps('st', isRegistered ? regBg : undefined)}>
+                          <select value={row.st} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'st', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : ST_CELL_COLOR[row.st] }}>
+                            <option value=""></option>
+                            <option value="O">O</option>
+                            <option value="O (D)">O (D)</option>
+                            <option value="O (혼용)">O (혼용)</option>
+                            <option value="X">X</option>
+                          </select>
+                        </td>
+                        <td {...cellProps('new_or_copy')}>
+                          <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleOayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined }}>
+                            <option value=""></option>
+                            <option value="신규">신규</option>
+                            <option value="차용">차용</option>
+                            <option value="기등록">기등록</option>
+                            <option value="layer삭제">layer삭제</option>
+                          </select>
+                        </td>
+                        <td {...cellProps('product_name', isRegistered ? regBg : undefined)}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                        <td {...cellProps('step', isRegistered ? regBg : undefined)}><input value={row.step} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                      </tr>
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { JayerRow, FilterSet, GuideFeatureKey } from '../../../types';
 import { ST_CELL_COLOR } from '../constants';
+import { CellSelectionApi } from '../../../hooks/useCellSelection';
 
 interface Step2Props {
   jayerRows: JayerRow[];
@@ -32,6 +33,7 @@ interface Step2Props {
   handleJayerAddRow: () => void;
   handleJayerBulkDisable: () => void;
   handleJayerBulkRestore: () => void;
+  cellSel: CellSelectionApi;
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
 }
 
@@ -59,9 +61,15 @@ const Step2: React.FC<Step2Props> = ({
   handleJayerAddRow,
   handleJayerBulkDisable,
   handleJayerBulkRestore,
+  cellSel,
   GuideBadge,
 }) => {
   const { t } = useTranslation();
+  const renderedJayerRows = [
+    ...jayerRows.filter(r => !r.disabled).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+    ...jayerRows.filter(r => r.disabled).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+  ];
+  const renderedJayerIds = renderedJayerRows.map(r => r.id);
   return (
     <div className="form-section">
       <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -116,7 +124,7 @@ const Step2: React.FC<Step2Props> = ({
         </div>
       </div>
       <div className="wizard-table-wrapper">
-        <table className="wizard-table" style={{ userSelect: jayerDragInfo.current ? 'none' : undefined }}>
+        <table className="wizard-table" style={{ userSelect: jayerDragInfo.current ? 'none' : undefined }} onPaste={(e) => cellSel.onCellPaste(e, renderedJayerIds)}>
           <colgroup>
             <col style={{ width: 44 }} />
             <col />
@@ -157,23 +165,26 @@ const Step2: React.FC<Step2Props> = ({
             </tr>
           </thead>
           <tbody>
-            {(() => {
-              const renderedJayerRows = [
-                ...jayerRows.filter(r => !r.disabled).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-                ...jayerRows.filter(r => r.disabled).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-              ];
-              const renderedJayerIds = renderedJayerRows.map(r => r.id);
-              return renderedJayerRows.map((row, idx) => {
+            {renderedJayerRows.map((row, idx) => {
               const isFirstDisabled = row.disabled && (idx === 0 || !renderedJayerRows[idx - 1].disabled);
               const isRegistered = row.new_or_copy === '기등록';
               const regBg = '#e5e7eb';
+              // 편집 셀 공통 props: 셀 선택(드래그/Ctrl) + 선택 하이라이트
+              const cellProps = (col: string, bg?: string, extra?: React.CSSProperties) => ({
+                onMouseDown: (e: React.MouseEvent) => cellSel.onCellMouseDown(row.id, col, e),
+                onMouseEnter: () => cellSel.onCellMouseEnter(row.id, col, renderedJayerIds),
+                style: {
+                  backgroundColor: bg,
+                  ...extra,
+                  ...(cellSel.isCellSelected(row.id, col) ? { outline: '2px solid #2563eb', outlineOffset: '-2px' } : {}),
+                } as React.CSSProperties,
+              });
               return (
-                <>
+                <React.Fragment key={row.id}>
                   {isFirstDisabled && (
-                    <tr key={`divider-${row.id}`} className="row-divider"><td colSpan={13} /></tr>
+                    <tr className="row-divider"><td colSpan={13} /></tr>
                   )}
                   <tr
-                    key={row.id}
                     className={[row.disabled ? 'row-disabled' : '', jayerChecked.has(row.id) ? 'row-checked' : '', mappedJayerRowIds.has(row.id) ? 'row-mapped' : ''].filter(Boolean).join(' ')}
                     onMouseEnter={() => handleJayerDragEnter(row.id, renderedJayerIds)}
                   >
@@ -182,12 +193,12 @@ const Step2: React.FC<Step2Props> = ({
                       <input type="checkbox" checked={jayerChecked.has(row.id)} onChange={() => handleJayerCheckToggle(row.id)} />
                     </td>
                     <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.updated ?? ''} readOnly style={{ background: isRegistered ? regBg : '#f5f5f5', color: '#666' }} /></td>
-                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.process_id} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'process_id', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.sp} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.sd} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.layerid ?? ''} readOnly={isRegistered} disabled={isRegistered} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.pp} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
-                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}>
+                    <td {...cellProps('process_id', isRegistered ? regBg : undefined)}><input value={row.process_id} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'process_id', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td {...cellProps('sp', isRegistered ? regBg : undefined)}><input value={row.sp} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td {...cellProps('sd', isRegistered ? regBg : undefined)}><input value={row.sd} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td {...cellProps('layerid', isRegistered ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={isRegistered} disabled={isRegistered} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td {...cellProps('pp', isRegistered ? regBg : undefined)}><input value={row.pp} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
+                    <td {...cellProps('st', isRegistered ? regBg : undefined)}>
                       <select value={row.st} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'st', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : ST_CELL_COLOR[row.st] }}>
                         <option value=""></option>
                         <option value="O">O</option>
@@ -196,7 +207,7 @@ const Step2: React.FC<Step2Props> = ({
                         <option value="X">X</option>
                       </select>
                     </td>
-                    <td>
+                    <td {...cellProps('new_or_copy')}>
                       <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined }}>
                         <option value=""></option>
                         <option value="신규">신규</option>
@@ -205,9 +216,9 @@ const Step2: React.FC<Step2Props> = ({
                         <option value="layer삭제">layer삭제</option>
                       </select>
                     </td>
-                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.step} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                    <td style={{ backgroundColor: isRegistered ? regBg : undefined, minWidth: 160 }}>
+                    <td {...cellProps('product_name', isRegistered ? regBg : undefined)}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td {...cellProps('step', isRegistered ? regBg : undefined)}><input value={row.step} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td {...cellProps('item_id', isRegistered ? regBg : undefined, { minWidth: 160 })}>
                       <AutocompleteInput
                         value={row.item_id}
                         onChange={(v) => handleJayerChange(row.id, 'item_id', v)}
@@ -219,10 +230,9 @@ const Step2: React.FC<Step2Props> = ({
                       />
                     </td>
                   </tr>
-                </>
+                </React.Fragment>
               );
-              });
-            })()}
+            })}
           </tbody>
         </table>
       </div>
