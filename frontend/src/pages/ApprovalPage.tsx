@@ -10,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView from '../components/PagedDetailView';
 import { canUserAgree, canUserAssign, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole } from '../types';
+import { formatDate } from '../utils/date';
 
 const AGENT_TO_ROLE: Record<string, string> = {
   R: 'TE_R',
@@ -20,8 +21,6 @@ const AGENT_TO_ROLE: Record<string, string> = {
 };
 
 // ===== Utils =====
-
-const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
 
 // TE_O/TE_E는 담당자 지정 불필요 — 나머지 단계에서 담당자 미지정 시 'unassigned' 반환
 const getDisplayStatus = (doc: RequestDocument): string => {

@@ -7,8 +7,7 @@ import PagedDetailView from '../components/PagedDetailView';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { RequestDocument } from '../types';
-
-const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
+import { formatDate } from '../utils/date';
 
 const getApprovalCompletedDate = (doc: RequestDocument): string => {
   const approved = (doc.approval_steps ?? []).filter((s) => s.action === 'approved' && s.acted_at);
