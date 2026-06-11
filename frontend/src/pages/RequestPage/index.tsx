@@ -703,13 +703,11 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleJayerDragStart = (id: string) => {
+    // 드래그 선택 모드만 설정한다. 시작 행 토글은 단일 클릭 시 체크박스 onChange가,
+    // 드래그 시 handleJayerDragEnter(시작 행 포함 범위)가 처리한다.
+    // (여기서 토글하면 onChange와 이중 토글되어 단일 클릭이 먹지 않는 버그가 생긴다.)
     const mode = jayerChecked.has(id) ? 'uncheck' : 'check';
     jayerDragInfo.current = { startId: id, mode };
-    setJayerChecked((prev) => {
-      const next = new Set(prev);
-      mode === 'check' ? next.add(id) : next.delete(id);
-      return next;
-    });
   };
 
   const handleJayerDragEnter = (id: string, renderedIds: string[]) => {
@@ -780,13 +778,9 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleOayerDragStart = (id: string) => {
+    // 드래그 선택 모드만 설정한다(시작 행 토글은 onChange/handleOayerDragEnter가 처리).
     const mode = oayerChecked.has(id) ? 'uncheck' : 'check';
     oayerDragInfo.current = { startId: id, mode };
-    setOayerChecked((prev) => {
-      const next = new Set(prev);
-      mode === 'check' ? next.add(id) : next.delete(id);
-      return next;
-    });
   };
 
   const handleOayerDragEnter = (id: string, renderedIds: string[]) => {
