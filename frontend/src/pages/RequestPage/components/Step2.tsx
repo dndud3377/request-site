@@ -118,6 +118,7 @@ const Step2: React.FC<Step2Props> = ({
       <div className="wizard-table-wrapper">
         <table className="wizard-table" style={{ userSelect: jayerDragInfo.current ? 'none' : undefined }}>
           <colgroup>
+            <col style={{ width: 44 }} />
             <col />
             <col />
             <col />
@@ -133,6 +134,7 @@ const Step2: React.FC<Step2Props> = ({
           </colgroup>
           <thead>
             <tr>
+              <th style={{ width: 44, textAlign: 'center' }}>No</th>
               <th style={{ width: 32, textAlign: 'center' }}>
                 <input
                   type="checkbox"
@@ -175,6 +177,7 @@ const Step2: React.FC<Step2Props> = ({
                     className={[row.disabled ? 'row-disabled' : '', jayerChecked.has(row.id) ? 'row-checked' : '', mappedJayerRowIds.has(row.id) ? 'row-mapped' : ''].filter(Boolean).join(' ')}
                     onMouseEnter={() => handleJayerDragEnter(row.id, renderedJayerIds)}
                   >
+                    <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{idx + 1}</td>
                     <td style={{ textAlign: 'center' }} onMouseDown={() => handleJayerDragStart(row.id)}>
                       <input type="checkbox" checked={jayerChecked.has(row.id)} onChange={() => handleJayerCheckToggle(row.id)} />
                     </td>
@@ -193,8 +196,8 @@ const Step2: React.FC<Step2Props> = ({
                         <option value="X">X</option>
                       </select>
                     </td>
-                    <td style={{ backgroundColor: isRegistered ? regBg : undefined }}>
-                      <select value={row.new_or_copy} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined }}>
+                    <td>
+                      <select value={row.new_or_copy} disabled={row.disabled} onChange={(e) => handleJayerChange(row.id, 'new_or_copy', e.target.value)} style={{ backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined }}>
                         <option value=""></option>
                         <option value="신규">신규</option>
                         <option value="차용">차용</option>
