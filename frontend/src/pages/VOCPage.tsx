@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { vocAPI, uploadImageAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import { useToast } from '../components/Toast';
-import Modal from '../components/Modal';
+import Modal, { ConfirmModal } from '../components/Modal';
 import { VOC, VocCategory, VocStatus, VocPage, CreateVocInput } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -58,6 +58,10 @@ export default function VOCPage(): React.ReactElement {
   const [rejectOpen, setRejectOpen]   = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [rejecting, setRejecting]     = useState(false);
+
+  // ── delete flow ──
+  const [deleteTarget, setDeleteTarget] = useState<VOC | null>(null);
+  const [deleting, setDeleting]         = useState(false);
 
   // ─────────────── data ───────────────
   const fetchVocs = useCallback(() => {
@@ -175,6 +179,22 @@ export default function VOCPage(): React.ReactElement {
       addToast(t('voc.status_update_success'), 'success');
     } catch {
       addToast(t('common.error'), 'error');
+    }
+  };
+
+  // ─────────────── delete (master) ───────────────
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await vocAPI.delete(deleteTarget.id);
+      setVocs((prev) => prev.filter((v) => v.id !== deleteTarget.id));
+      addToast(t('voc.delete_success'), 'success');
+    } catch {
+      addToast(t('common.error'), 'error');
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
     }
   };
 
@@ -390,11 +410,20 @@ export default function VOCPage(): React.ReactElement {
           title={selected.title}
           footer={
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', width: '100%' }}>
+              {/* 삭제 버튼 (MASTER 전용) */}
+              {isMaster && (
+                <button
+                  className="btn btn-danger"
+                  style={{ marginRight: 'auto' }}
+                  onClick={() => { setDeleteTarget(selected); setSelected(null); setRejectOpen(false); setRejectReason(''); }}
+                >
+                  {t('voc.delete_btn')}
+                </button>
+              )}
               {/* 반려 버튼 (MASTER, 확인중 상태에서만) */}
               {isMaster && selected.status === 'checking' && (
                 <button
                   className="btn btn-danger"
-                  style={{ marginRight: 'auto' }}
                   onClick={() => setRejectOpen(true)}
                 >
                   {t('voc.reject_btn')}
@@ -544,6 +573,16 @@ export default function VOCPage(): React.ReactElement {
           </div>
         </Modal>
       )}
+      {/* ── 삭제 확인 모달 (상세 모달 밖에 배치) ── */}
+      <ConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDelete}
+        title={t('voc.delete_confirm_title')}
+        message={t('voc.delete_confirm_body')}
+        confirmLabel={deleting ? t('common.loading') : t('voc.delete_btn')}
+        danger
+      />
     </div>
   );
 }

@@ -284,7 +284,11 @@
     "no_data": "No VOC submitted yet.",
     "submit_success": "VOC has been submitted.",
     "comment_success": "Reply submitted.",
-    "status_update_success": "Status updated."
+    "status_update_success": "Status updated.",
+    "delete_btn": "Delete VOC",
+    "delete_confirm_title": "Delete VOC",
+    "delete_confirm_body": "Are you sure you want to delete this VOC? All comments and history will be permanently deleted.",
+    "delete_success": "VOC deleted successfully."
   },
   "login": {
     "title": "Product Introduction Map\nRequest System",

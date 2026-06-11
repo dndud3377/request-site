@@ -526,7 +526,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 class VOCViewSet(viewsets.ModelViewSet):
     queryset = VOC.objects.all()
     serializer_class = VOCSerializer
-    permission_classes = [IsAuthenticatedInProd]
+    permission_classes = [IsAuthenticatedOrMasterDelete]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['category', 'status', 'submitter_user_id']
     search_fields = ['title', 'submitter_name', 'content']

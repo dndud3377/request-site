@@ -285,7 +285,11 @@
     "no_data": "등록된 VOC가 없습니다.",
     "submit_success": "VOC가 등록되었습니다.",
     "comment_success": "답글이 등록되었습니다.",
-    "status_update_success": "상태가 변경되었습니다."
+    "status_update_success": "상태가 변경되었습니다.",
+    "delete_btn": "VOC 삭제",
+    "delete_confirm_title": "VOC 삭제",
+    "delete_confirm_body": "이 VOC를 삭제하시겠습니까? 댓글과 이력이 모두 삭제되며 되돌릴 수 없습니다.",
+    "delete_success": "VOC가 삭제되었습니다."
   },
   "login": {
     "title": "제품 소개 지도\n의뢰 시스템",
