@@ -39,9 +39,10 @@
 | 항목 1 | 상신 실패 방지 (race + 트랜잭션) | ✅ 완료 (코드/푸시), ⏳ docker 검증 대기 |
 | 항목 2 | step 검증 dead code 정리 (빈 TODO 블록 제거) | ✅ 완료 |
 | 항목 3 | 결재/이력 조회 error 상태 처리 (규칙 J) | ✅ 완료 |
-| (후보) | J/O/E 동시 합의 lost-update 방지 (`select_for_update`) | ⬜ 미정 |
-| (후보) | `additional_notes` JSON 손상 방어 / silent 유실 방지 | ⬜ 미정 |
-| (마무리) | `docs/APPROVAL.md` 신규 작성, 관련 docs 최신화 | ⬜ 대기 |
+| 후보1 | J/O/E 동시 합의 lost-update 방지 (`select_for_update`) | ✅ 완료 |
+| 후보3 | `HistoryPage.handleDelete` 삭제 실패 토스트 표시 | ✅ 완료 |
+| 후보2 | `additional_notes` JSON 손상 방어 / silent 유실 방지 | ⬜ 설명만 (미수정) |
+| 문서 | `docs/APPROVAL.md` 신규 작성 (결재 기능 상세) | ✅ 완료 |
 
 ---
 
