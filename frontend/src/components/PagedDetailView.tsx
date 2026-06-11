@@ -1184,6 +1184,7 @@ type Page = { label: string; content: React.ReactNode };
   });
 
   const AGENTS: Array<{ key: string; label: string }> = [
+    { key: 'PL', label: t('approval.agent_PL' as any) },
     { key: 'R', label: t('approval.agent_R') },
     { key: 'P', label: t('approval.agent_P') },
     { key: 'J', label: t('approval.agent_J') },
