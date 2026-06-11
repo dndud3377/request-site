@@ -43,7 +43,7 @@ export type VocStatus = 'checking' | 'completed' | 'rejected';
 
 export type VocCategory = 'inquiry' | 'error_report' | 'feature_request' | 'task_request';
 
-export type AgentType = 'R' | 'P' | 'J' | 'O' | 'E';
+export type AgentType = 'PL' | 'R' | 'P' | 'J' | 'O' | 'E';
 export type StepAction = 'pending' | 'approved' | 'rejected';
 
 // 역할 → 담당자 매핑 (null 제외)
@@ -85,6 +85,8 @@ export interface RequestDocument {
   created_at: string;
   updated_at: string;
   submitted_at: string | null;
+  designated_pl_loginid?: string | null;
+  designated_pl_name?: string;
   approval_steps?: ApprovalStepFrontend[];
 }
 

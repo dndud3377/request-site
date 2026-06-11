@@ -120,6 +120,21 @@ const buildStageText = (
 const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
   const maxRound = getCurrentRound(doc);
   const currentSteps = (doc.approval_steps ?? []).filter(s => (s.round ?? 1) === maxRound);
+
+  // PL 검토 단계 pending: 기한 없음, R 단계 미생성 상태
+  const plStep = currentSteps.find(s => s.agent === 'PL');
+  if (plStep?.action === 'pending') {
+    const label = t('approval.agent_PL' as any);
+    const stageText = plStep.assignee_name ? `${label}(${plStep.assignee_name})` : label;
+    return [{
+      pathKey: 'single',
+      stageText,
+      dueDate: null,
+      isDone: false,
+      pathStatus: 'under_review',
+    }];
+  }
+
   const rStep = currentSteps.find(s => s.agent === 'R');
   const inParallel = rStep?.action === 'approved';
 
@@ -211,6 +226,7 @@ export default function ApprovalPage(): React.ReactElement {
   const { currentUser } = useAuth();
 
   const [docs, setDocs] = useState<RequestDocument[]>([]);
+  const [allDocs, setAllDocs] = useState<RequestDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [search, setSearch] = useState('');
@@ -221,7 +237,7 @@ export default function ApprovalPage(): React.ReactElement {
 
   // 합의/반려 comment 모달
   const [commentModalOpen, setCommentModalOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<{ type: 'agree' | 'reject'; agent: AgentType } | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ type: 'agree' | 'reject'; agent: AgentType; isPeer?: boolean } | null>(null);
   const [commentInput, setCommentInput] = useState('');
 
   // 지정하기 UI (모달 footer)
@@ -229,6 +245,10 @@ export default function ApprovalPage(): React.ReactElement {
   const [assigningUserId, setAssigningUserId] = useState('');
   const [teamMembers, setTeamMembers] = useState<UserWithRole[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
+
+  // 지정자 변경 UI (모달 footer)
+  const [changingDesigneeOpen, setChangingDesigneeOpen] = useState(false);
+  const [changingDesigneeUserId, setChangingDesigneeUserId] = useState('');
 
   const handleLoadTeamMembers = async (agent: AgentType): Promise<UserWithRole[]> => {
     const role = AGENT_TO_ROLE[agent];
@@ -238,11 +258,18 @@ export default function ApprovalPage(): React.ReactElement {
   };
 
   const applyClientFilter = useCallback((all: RequestDocument[]): RequestDocument[] => {
+    if (filter === 'draft') return all.filter(d => d.status === 'draft');
+    if (filter === 'rejected') return all.filter(d => d.status === 'rejected');
     if (filter === 'my') {
       const role = currentUser.role;
       if (role === 'MASTER') return all;
       if (role === 'PL') {
-        return all.filter((d) => d.requester_name === currentUser.name);
+        return all.filter((d) =>
+          d.requester_name === currentUser.name ||
+          (d.approval_steps ?? []).some(
+            (s) => s.agent === 'PL' && s.action === 'pending' && s.assignee_loginid === currentUser.username
+          )
+        );
       }
       if (role === 'NONE' || !role) return [];
       // TE_* 역할: 내 loginid(username)가 assignee_loginid인 pending 단계가 있는 문서
@@ -261,11 +288,30 @@ export default function ApprovalPage(): React.ReactElement {
     return all;
   }, [filter, currentUser]);
 
+  const getTabCount = useCallback((key: string, base: RequestDocument[]): number => {
+    if (key === '') return base.length;
+    if (key === 'draft') return base.filter(d => d.status === 'draft').length;
+    if (key === 'rejected') return base.filter(d => d.status === 'rejected').length;
+    if (key === 'my') {
+      const role = currentUser.role;
+      if (role === 'MASTER') return base.length;
+      if (role === 'PL') return base.filter(d =>
+        d.requester_name === currentUser.name ||
+        (d.approval_steps ?? []).some(s => s.agent === 'PL' && s.action === 'pending' && s.assignee_loginid === currentUser.username)
+      ).length;
+      if (role === 'NONE' || !role) return 0;
+      return base.filter(d => (d.approval_steps ?? []).some(s => s.action === 'pending' && s.assignee_loginid === currentUser.username)).length;
+    }
+    if (key.startsWith('agent_')) {
+      const agent = key.replace('agent_', '') as AgentType;
+      return base.filter(d => (d.approval_steps ?? []).some(s => s.agent === agent && s.action === 'pending')).length;
+    }
+    return 0;
+  }, [currentUser]);
+
   const fetchDocs = useCallback(() => {
     setLoading(true);
     const params: Record<string, string> = {};
-    // 백엔드 status 필터: draft, rejected만 서버에서 처리
-    if (filter === 'draft' || filter === 'rejected') params.status = filter;
     if (search) params.search = search;
     documentsAPI
       .list(params)
@@ -274,27 +320,30 @@ export default function ApprovalPage(): React.ReactElement {
         let all: RequestDocument[] = Array.isArray(data) ? data : (data as any).results ?? [];
         // 결재 현황: approved 제외
         all = all.filter((d) => d.status !== 'approved');
-        // 클라이언트 필터 (my, agent_*)
-        all = applyClientFilter(all);
-        setDocs(all);
+        setAllDocs(all);
+        setDocs(applyClientFilter(all));
       })
-      .catch(() => setDocs([]))
+      .catch(() => { setAllDocs([]); setDocs([]); })
       .finally(() => setLoading(false));
   }, [filter, search, applyClientFilter]);
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
 
-  const filterTabs: FilterTab[] = [
-    { key: '', label: t('approval.filter_all') },
-    { key: 'my', label: t('approval.filter_my') },
-    { key: 'agent_R', label: t('approval.filter_agent_R') },
-    { key: 'agent_P', label: t('approval.filter_agent_P') },
-    { key: 'agent_J', label: t('approval.filter_agent_J') },
-    { key: 'agent_O', label: t('approval.filter_agent_O') },
-    { key: 'agent_E', label: t('approval.filter_agent_E') },
-    { key: 'draft', label: t('approval.filter_draft') },
-    { key: 'rejected', label: t('approval.filter_rejected') },
+  const tabBaseLabels: { key: string; baseLabel: string }[] = [
+    { key: '', baseLabel: t('approval.filter_all') },
+    { key: 'my', baseLabel: t('approval.filter_my') },
+    { key: 'agent_R', baseLabel: t('approval.filter_agent_R') },
+    { key: 'agent_P', baseLabel: t('approval.filter_agent_P') },
+    { key: 'agent_J', baseLabel: t('approval.filter_agent_J') },
+    { key: 'agent_O', baseLabel: t('approval.filter_agent_O') },
+    { key: 'agent_E', baseLabel: t('approval.filter_agent_E') },
+    { key: 'draft', baseLabel: t('approval.filter_draft') },
+    { key: 'rejected', baseLabel: t('approval.filter_rejected') },
   ];
+  const filterTabs: FilterTab[] = tabBaseLabels.map(({ key, baseLabel }) => {
+    const count = getTabCount(key, allDocs);
+    return { key, label: count > 0 ? `${baseLabel}(${count})` : baseLabel };
+  });
 
   const openDetail = async (doc: RequestDocument) => {
     try {
@@ -307,6 +356,8 @@ export default function ApprovalPage(): React.ReactElement {
     setAssigningOpen(false);
     setAssigningUserId('');
     setTeamMembers([]);
+    setChangingDesigneeOpen(false);
+    setChangingDesigneeUserId('');
     setModalOpen(true);
   };
 
@@ -315,20 +366,21 @@ export default function ApprovalPage(): React.ReactElement {
     const listData = listResult.data;
     let newDocs: RequestDocument[] = Array.isArray(listData) ? listData : (listData as any).results ?? [];
     newDocs = newDocs.filter((d) => d.status !== 'approved');
-    setDocs(newDocs);
-    const refreshed = newDocs.find((d) => d.id === docId);
-    if (refreshed) setSelected(refreshed);
+    setAllDocs(newDocs);
+    setDocs(applyClientFilter(newDocs));
+    const freshDoc = await documentsAPI.get(docId).then(r => r.data).catch(() => newDocs.find(d => d.id === docId));
+    if (freshDoc) setSelected(freshDoc);
   };
 
   // 합의/반려 버튼 클릭 → comment 모달 열기
-  const triggerAgree = (agent: AgentType) => {
-    setPendingAction({ type: 'agree', agent });
+  const triggerAgree = (agent: AgentType, isPeer = false) => {
+    setPendingAction({ type: 'agree', agent, isPeer });
     setCommentInput('');
     setCommentModalOpen(true);
   };
 
-  const triggerReject = (agent: AgentType) => {
-    setPendingAction({ type: 'reject', agent });
+  const triggerReject = (agent: AgentType, isPeer = false) => {
+    setPendingAction({ type: 'reject', agent, isPeer });
     setCommentInput('');
     setCommentModalOpen(true);
   };
@@ -338,7 +390,18 @@ export default function ApprovalPage(): React.ReactElement {
     setCommentModalOpen(false);
     setProcessing(true);
     try {
-      if (pendingAction.type === 'agree') {
+      if (pendingAction.isPeer) {
+        if (pendingAction.type === 'agree') {
+          await documentsAPI.peerApprove(selected.id, commentInput || undefined);
+          addToast(t('approval.agree_success', { agent: t('approval.agent_PL' as any) }), 'success');
+          setModalOpen(false);
+          fetchDocs();
+        } else {
+          await documentsAPI.peerReject(selected.id, commentInput || undefined);
+          addToast(t('approval.reject_success'), 'error');
+          await refreshAndSelect(selected.id);
+        }
+      } else if (pendingAction.type === 'agree') {
         await documentsAPI.approveStep(selected.id, pendingAction.agent, commentInput || undefined, currentUser.name);
         addToast(t('approval.agree_success', { agent: t(`approval.agent_${pendingAction.agent}` as any) }), 'success');
         setModalOpen(false);
@@ -353,6 +416,28 @@ export default function ApprovalPage(): React.ReactElement {
     } finally {
       setProcessing(false);
       setPendingAction(null);
+    }
+  };
+
+  const handlePeerSubmitNav = (doc: RequestDocument) => {
+    setModalOpen(false);
+    navigate('/request', { state: { peerReviewDocId: doc.id } });
+  };
+
+  const handleChangeDesignee = async () => {
+    if (!selected || !changingDesigneeUserId) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.changeDesignee(selected.id, changingDesigneeUserId);
+      setChangingDesigneeOpen(false);
+      setChangingDesigneeUserId('');
+      setTeamMembers([]);
+      addToast('지정자가 변경되었습니다.', 'success');
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -642,11 +727,21 @@ export default function ApprovalPage(): React.ReactElement {
         size="lg"
         footer={(() => {
           const userAgent = currentUser.role ? ROLE_TO_AGENT[currentUser.role] : undefined;
-          const pendingSteps = selected?.approval_steps?.filter((s) =>
-            s.action === 'pending' && (isMaster ? true : s.agent === userAgent)
-          ) ?? [];
+          const pendingSteps = selected?.approval_steps?.filter((s) => {
+            if (s.action !== 'pending') return false;
+            if (isMaster) return true;
+            if (isPL && s.agent === 'PL') return true;
+            return s.agent === userAgent;
+          }) ?? [];
           const assignableStep = pendingSteps.find((s) => canUserAssign(currentUser, s));
           const actableStep = pendingSteps.find((s) => canUserAgree(currentUser, s));
+          const isPLStep = actableStep?.agent === 'PL';
+
+          // 지정자 변경 가능 여부: 원 PL 또는 MASTER, under_review, PL 단계 pending
+          const hasPendingPLStep = (selected?.approval_steps ?? []).some(s => s.agent === 'PL' && s.action === 'pending');
+          const isOriginalPL = isPL && selected?.requester_name === currentUser.name;
+          const canChangeDesignee = (isOriginalPL || isMaster) && selected?.status === 'under_review' && hasPendingPLStep;
+
           return (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
               {selected && (isPL || isMaster) && (selected.status === 'rejected' || selected.status === 'draft') && (
@@ -659,7 +754,57 @@ export default function ApprovalPage(): React.ReactElement {
                   {t('approval.withdraw')}
                 </button>
               )}
-              {assignableStep && !assigningOpen && (
+              {/* 지정자 변경 */}
+              {canChangeDesignee && !changingDesigneeOpen && !assigningOpen && (
+                <button
+                  className="btn btn-secondary"
+                  disabled={processing}
+                  onClick={async () => {
+                    setChangingDesigneeOpen(true);
+                    setChangingDesigneeUserId('');
+                    setLoadingMembers(true);
+                    const members = await usersAPI.list('PL');
+                    setTeamMembers(members.data.filter(u => u.loginid !== currentUser.username));
+                    setLoadingMembers(false);
+                  }}
+                >
+                  {t('approval.change_designee')}
+                </button>
+              )}
+              {canChangeDesignee && changingDesigneeOpen && (
+                <>
+                  <select
+                    value={changingDesigneeUserId}
+                    onChange={(e) => setChangingDesigneeUserId(e.target.value)}
+                    style={{ fontSize: '0.85rem', padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)' }}
+                  >
+                    {loadingMembers
+                      ? <option>로딩 중...</option>
+                      : <>
+                          <option value="">담당자 선택</option>
+                          {teamMembers.map((u) => (
+                            <option key={u.loginid} value={u.loginid}>{u.name}</option>
+                          ))}
+                        </>
+                    }
+                  </select>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={!changingDesigneeUserId || processing || loadingMembers}
+                    onClick={handleChangeDesignee}
+                  >
+                    변경
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => { setChangingDesigneeOpen(false); setChangingDesigneeUserId(''); setTeamMembers([]); }}
+                  >
+                    취소
+                  </button>
+                </>
+              )}
+              {/* 일반 담당자 지정 (R/P/J 단계) */}
+              {assignableStep && !assigningOpen && !changingDesigneeOpen && (
                 <button
                   className="btn btn-secondary"
                   disabled={processing}
@@ -714,7 +859,22 @@ export default function ApprovalPage(): React.ReactElement {
                   </button>
                 </>
               )}
-              {actableStep && (
+              {/* PL 검토 단계 액션 */}
+              {actableStep && isPLStep && selected && (
+                <>
+                  <button className="btn btn-primary" disabled={processing} onClick={() => triggerAgree(actableStep.agent, true)}>
+                    {t('approval.agree')}
+                  </button>
+                  <button className="btn btn-danger" disabled={processing} onClick={() => triggerReject(actableStep.agent, true)}>
+                    {t('approval.reject')}
+                  </button>
+                  <button className="btn btn-secondary" disabled={processing} onClick={() => handlePeerSubmitNav(selected)}>
+                    {t('approval.peer_submit')}
+                  </button>
+                </>
+              )}
+              {/* 일반 단계 액션 */}
+              {actableStep && !isPLStep && (
                 <>
                   <button
                     className="btn btn-primary"
