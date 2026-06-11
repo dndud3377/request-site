@@ -266,9 +266,7 @@ export default function ApprovalPage(): React.ReactElement {
       if (role === 'PL') {
         return all.filter((d) =>
           d.requester_name === currentUser.name ||
-          (d.approval_steps ?? []).some(
-            (s) => s.agent === 'PL' && s.action === 'pending' && s.assignee_loginid === currentUser.username
-          )
+          d.designated_pl_loginid === currentUser.username
         );
       }
       if (role === 'NONE' || !role) return [];
@@ -297,7 +295,7 @@ export default function ApprovalPage(): React.ReactElement {
       if (role === 'MASTER') return base.length;
       if (role === 'PL') return base.filter(d =>
         d.requester_name === currentUser.name ||
-        (d.approval_steps ?? []).some(s => s.agent === 'PL' && s.action === 'pending' && s.assignee_loginid === currentUser.username)
+        d.designated_pl_loginid === currentUser.username
       ).length;
       if (role === 'NONE' || !role) return 0;
       return base.filter(d => (d.approval_steps ?? []).some(s => s.action === 'pending' && s.assignee_loginid === currentUser.username)).length;
