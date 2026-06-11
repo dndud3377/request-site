@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI } from '../../api/client';
+import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI } from '../../api/client';
 import { useToast } from '../../components/Toast';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
 import Modal, { ConfirmModal } from '../../components/Modal';
@@ -20,6 +21,7 @@ import {
   BbAutoFillRange,
   FilterSet,
   GuideFeatureKey,
+  UserWithRole,
 } from '../../types';
 import GuideSlidePanel from '../../components/GuideSlidePanel';
 import {
@@ -54,6 +56,10 @@ export default function RequestPage(): React.ReactElement {
   // 반려 후 재상신 모드: location.state.editDocId 가 있을 때
   const editDocId: number | null = (location.state as any)?.editDocId ?? null;
   const isEditMode = !!editDocId;
+
+  // 지정 PL 수정 후 상신 모드
+  const peerReviewDocId: number | null = (location.state as any)?.peerReviewDocId ?? null;
+  const isPeerReviewMode = !!peerReviewDocId;
 
   const [lineOptions, setLineOptions] = useState<string[]>(OPTION_LINE as unknown as string[]);
   const [processOptions, setProcessOptions] = useState<string[]>([]);
@@ -105,7 +111,16 @@ export default function RequestPage(): React.ReactElement {
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitNote, setSubmitNote] = useState('');
-  const [savedId, setSavedId] = useState<number | null>(editDocId);
+  const [savedId, setSavedId] = useState<number | null>(editDocId ?? peerReviewDocId);
+
+  // 동료 PL 지정 (상신 모달)
+  const [designeeLoginid, setDesigneeLoginid] = useState('');
+  const [designeeName, setDesigneeName] = useState('');
+  const [designeeSearchQuery, setDesigneeSearchQuery] = useState('');
+  const [plUserOptions, setPlUserOptions] = useState<UserWithRole[]>([]);
+  const [designeeError, setDesigneeError] = useState('');
+  const designeeInputRef = useRef<HTMLInputElement>(null);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const prevParsedRef = useRef<{
     detail: DetailFormState;
     jayerRows: JayerRow[];
@@ -378,11 +393,12 @@ export default function RequestPage(): React.ReactElement {
     return () => document.removeEventListener('mouseup', handleDragEnd);
   }, []);
 
-  // 편집 모드: 기존 문서 데이터 로드
+  // 편집 모드 (반려 재상신 or 지정 PL 수정 후 상신): 기존 문서 데이터 로드
   useEffect(() => {
-    if (!editDocId) return;
+    const targetDocId = editDocId ?? peerReviewDocId;
+    if (!targetDocId) return;
     isLoadingEditRef.current = true;
-    documentsAPI.get(editDocId).then((res) => {
+    documentsAPI.get(targetDocId).then((res) => {
       const doc = res.data;
       try {
         const parsed = JSON.parse(doc.additional_notes ?? '{}');
@@ -422,7 +438,8 @@ export default function RequestPage(): React.ReactElement {
         }
       } catch { /* noop */ }
     }).catch(() => { isLoadingEditRef.current = false; });
-  }, [editDocId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editDocId, peerReviewDocId]);
 
   // Derived booleans for Step 1 conditional rendering
   const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
@@ -1529,17 +1546,35 @@ export default function RequestPage(): React.ReactElement {
     setRevGds('');
   };
 
-  const handleSubmitClick = () => {
+  const handleSubmitClick = async () => {
     const result = validate(5);
     if (!result.valid) {
       result.errors.forEach(msg => addToast(msg, 'error'));
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+    // peer review 모드가 아닐 때만 PL 목록 로드
+    if (!isPeerReviewMode && plUserOptions.length === 0) {
+      try {
+        const res = await usersAPI.list('PL');
+        setPlUserOptions(res.data.filter(u => u.loginid !== currentUser.username));
+      } catch {
+        setPlUserOptions([]);
+      }
+    }
+    setDesigneeLoginid('');
+    setDesigneeName('');
+    setDesigneeSearchQuery('');
+    setDesigneeError('');
     setConfirmOpen(true);
   };
 
   const handleSubmit = async () => {
+    // peer review 모드 외 일반 상신: 지정자 필수
+    if (!isPeerReviewMode && !designeeLoginid) {
+      setDesigneeError(t('request.designee_required'));
+      return;
+    }
     setSubmitting(true);
     try {
       let docId = savedId;
@@ -1553,24 +1588,31 @@ export default function RequestPage(): React.ReactElement {
         await documentsAPI.update(docId, enriched);
       }
 
-      const doc = await documentsAPI.get(docId!);
-      const isRejected = doc.data.status === 'rejected';
-
-      if (isRejected) {
+      if (isPeerReviewMode) {
+        // 지정 PL 수정 후 상신
         const enrichedWithHistory = buildEnrichedForm(submitNote, true);
         await documentsAPI.update(docId!, enrichedWithHistory);
-        await documentsAPI.resubmit(docId!);
-        addToast('재상신되었습니다.', 'success');
+        await documentsAPI.peerSubmit(docId!, submitNote || undefined);
+        addToast('수정 후 상신되었습니다.', 'success');
       } else {
-        const submitRes = await documentsAPI.submit(docId!);
-        addToast(t('request.submit_success'), 'success');
-        if (submitRes.data.email_sent) {
-          setTimeout(() => addToast(t('request.messenger_sent_to_manager'), 'info'), 800);
+        const doc = await documentsAPI.get(docId!);
+        const isRejected = doc.data.status === 'rejected';
+
+        if (isRejected) {
+          const enrichedWithHistory = buildEnrichedForm(submitNote, true);
+          await documentsAPI.update(docId!, enrichedWithHistory);
+          await documentsAPI.resubmit(docId!, designeeLoginid);
+          addToast('재상신되었습니다.', 'success');
+        } else {
+          const submitRes = await documentsAPI.submit(docId!, designeeLoginid);
+          addToast(t('request.submit_success'), 'success');
+          if (submitRes.data.email_sent) {
+            setTimeout(() => addToast(t('request.messenger_sent_to_manager'), 'info'), 800);
+          }
         }
       }
       setTimeout(() => navigate('/approval'), 1500);
     } catch (err) {
-      console.error('상신 오류:', err);
       addToast(`오류 발생: ${err instanceof Error ? err.message : '알 수 없는 오류'}`, 'error');
     } finally {
       setSubmitting(false);
@@ -1613,9 +1655,14 @@ export default function RequestPage(): React.ReactElement {
   return (
     <div className="container page">
       <div className="page-header">
-        <h1>{isEditMode ? '의뢰서 수정·재상신' : t('request.title')}</h1>
-        <p>{isEditMode ? '내용을 수정한 후 재상신하면 반려 단계부터 다시 검토됩니다.' : t('request.subtitle')}</p>
+        <h1>{isPeerReviewMode ? '의뢰서 수정·재상신' : isEditMode ? '의뢰서 수정·재상신' : t('request.title')}</h1>
+        <p>{isPeerReviewMode || isEditMode ? '내용을 수정한 후 재상신하면 반려 단계부터 다시 검토됩니다.' : t('request.subtitle')}</p>
       </div>
+      {isPeerReviewMode && (
+        <div style={{ background: 'var(--warning-light)', border: '1px solid var(--warning)', borderRadius: 'var(--radius-sm)', padding: '10px 16px', marginBottom: 16, color: 'var(--warning)', fontSize: '0.9rem', fontWeight: 500 }}>
+          🟡 {t('request.peer_review_banner')}
+        </div>
+      )}
 
       <WizardIndicator
         currentStep={step}
@@ -1901,7 +1948,7 @@ export default function RequestPage(): React.ReactElement {
       <Modal
         isOpen={confirmOpen}
         onClose={() => setConfirmOpen(false)}
-        title={t('request.submit')}
+        title={isPeerReviewMode ? t('approval.peer_submit') : t('request.submit')}
         size="md"
         style={{ maxWidth: '520px' }}
         footer={
@@ -1909,8 +1956,12 @@ export default function RequestPage(): React.ReactElement {
             <button className="btn btn-secondary" onClick={() => setConfirmOpen(false)}>
               {t('common.cancel')}
             </button>
-            <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
-              📤 {submitting ? t('common.loading') : t('request.submit')}
+            <button
+              className="btn btn-primary"
+              onClick={handleSubmit}
+              disabled={submitting || (!isPeerReviewMode && !designeeLoginid)}
+            >
+              📤 {submitting ? t('common.loading') : (isPeerReviewMode ? t('approval.peer_submit') : t('request.submit'))}
             </button>
           </>
         }
@@ -1919,12 +1970,88 @@ export default function RequestPage(): React.ReactElement {
           <label className="form-label">{t('request.submit_note_label')}</label>
           <textarea
             className="form-control"
-            rows={5}
+            rows={3}
             placeholder={t('request.submit_note_placeholder')}
             value={submitNote}
             onChange={(e) => setSubmitNote(e.target.value)}
           />
         </div>
+        {!isPeerReviewMode && (
+          <div className="form-group" style={{ marginTop: 12 }}>
+            <label className="form-label">
+              {t('request.designee_label')} <span style={{ color: 'var(--danger)' }}>*</span>
+            </label>
+            {designeeLoginid ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-secondary)', padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                <span style={{ flex: 1, fontSize: '0.875rem' }}>✓ {designeeName}</span>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                  onClick={() => { setDesigneeLoginid(''); setDesigneeName(''); setDesigneeSearchQuery(''); }}
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    ref={designeeInputRef}
+                    className="form-control"
+                    placeholder={t('request.designee_placeholder')}
+                    value={designeeSearchQuery}
+                    onChange={(e) => {
+                      setDesigneeSearchQuery(e.target.value);
+                      setDesigneeError('');
+                      if (designeeInputRef.current) {
+                        const r = designeeInputRef.current.getBoundingClientRect();
+                        setDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                      }
+                    }}
+                    autoComplete="off"
+                  />
+                  {designeeSearchQuery && dropdownRect && createPortal(
+                    <div style={{ position: 'fixed', top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', zIndex: 9999, maxHeight: 180, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
+                      {plUserOptions
+                        .filter(u =>
+                          u.name.toLowerCase().includes(designeeSearchQuery.toLowerCase()) ||
+                          u.loginid.toLowerCase().includes(designeeSearchQuery.toLowerCase())
+                        )
+                        .map(u => (
+                          <div
+                            key={u.loginid}
+                            style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.875rem' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                            onMouseLeave={e => (e.currentTarget.style.background = '')}
+                            onClick={() => {
+                              setDesigneeLoginid(u.loginid);
+                              setDesigneeName(`${u.name} (${u.deptname})`);
+                              setDesigneeSearchQuery('');
+                              setDropdownRect(null);
+                              setDesigneeError('');
+                            }}
+                          >
+                            <span style={{ fontWeight: 600 }}>{u.name}</span>
+                            <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: '0.8rem' }}>{u.deptname}</span>
+                          </div>
+                        ))}
+                      {plUserOptions.filter(u =>
+                        u.name.toLowerCase().includes(designeeSearchQuery.toLowerCase()) ||
+                        u.loginid.toLowerCase().includes(designeeSearchQuery.toLowerCase())
+                      ).length === 0 && (
+                        <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>검색 결과 없음</div>
+                      )}
+                    </div>,
+                    document.body
+                  )}
+                </div>
+                {designeeError && (
+                  <p style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: 4 }}>{designeeError}</p>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </Modal>
 
       <ConfirmModal

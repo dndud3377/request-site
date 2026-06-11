@@ -78,9 +78,28 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return RequestDocumentListSerializer
         return RequestDocumentSerializer
 
+    def _validate_bb_mapping(self, document):
+        """J-ayer 행 bb 매핑 검증. 문제 있으면 error 문자열 반환, 없으면 None."""
+        import json
+        try:
+            detail = json.loads(document.additional_notes or '{}')
+            jayer_rows = detail.get('jayerRows', [])
+            bb_rows = detail.get('bbRows', [])
+            mapped_jayer_ids = {
+                bb.get('sourceJayerRowId')
+                for bb in bb_rows
+                if bb.get('sourceJayerRowId')
+            }
+            unmapped = [r for r in jayer_rows if r.get('process_id') and r.get('id') not in mapped_jayer_ids]
+            if unmapped:
+                return '모든 원본 데이터에 bb 을 매핑해야 상신할 수 있습니다.'
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return None
+
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
-        """상신: draft → under_review, {{approval.agent_R}} 단계 생성"""
+        """상신: draft → under_review, PL 검토 단계 생성 (지정 PL 필수)"""
         document = self.get_object()
         if document.status != 'draft':
             return Response(
@@ -88,40 +107,34 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # 원본 데이터 목록 매핑 검증: 모든 J-ayer 행에 bb 이 매핑되어야 함
-        import json
+        designated_pl_loginid = request.data.get('designated_pl_loginid', '').strip()
+        if not designated_pl_loginid:
+            return Response({'error': '동료 PL을 지정해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            detail = json.loads(document.additional_notes or '{}')
-            jayer_rows = detail.get('jayerRows', [])
-            bb_rows = detail.get('bbRows', [])
+            designated_pl_user = User.objects.get(loginid=designated_pl_loginid, role='PL')
+        except User.DoesNotExist:
+            return Response({'error': '유효하지 않은 PL 사용자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 매핑된 J-ayer 행 ID 집합
-            mapped_jayer_ids = set()
-            for bb_row in bb_rows:
-                source_id = bb_row.get('sourceJayerRowId')
-                if source_id:
-                    mapped_jayer_ids.add(source_id)
+        if designated_pl_user == request.user:
+            return Response({'error': '본인을 지정할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # process_id가 있는 J-ayer 행 중 매핑되지 않은 행 확인
-            unmapped_rows = [
-                row for row in jayer_rows
-                if row.get('process_id') and row.get('id') not in mapped_jayer_ids
-            ]
-
-            if unmapped_rows:
-                return Response(
-                    {'error': '모든 원본 데이터에 bb 을 매핑해야 상신할 수 있습니다.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        except (json.JSONDecodeError, TypeError):
-            pass  # JSON 파싱 실패 시 검증 스킵
+        err = self._validate_bb_mapping(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         document.status = 'under_review'
         document.submitted_at = document.submitted_at or timezone.now()
+        document.designated_pl = designated_pl_user
+        document.designated_pl_name = designated_pl_user.username or designated_pl_loginid
         document.save()
 
         ApprovalStep.objects.filter(document=document).delete()
-        ApprovalStep.objects.create(document=document, agent='R', action='pending', round=1)
+        ApprovalStep.objects.create(
+            document=document, agent='PL', action='pending', round=1,
+            assignee=designated_pl_user,
+            assignee_name=document.designated_pl_name,
+        )
 
         return Response({
             'message': '의뢰서가 성공적으로 상신되었습니다.',
@@ -131,7 +144,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def resubmit(self, request, pk=None):
-        """재상신: rejected → under_review, 단계 초기화 후 {{approval.agent_R}}부터"""
+        """재상신: rejected → under_review, PL 검토 단계 생성 (지정 PL 필수)"""
         document = self.get_object()
         if document.status != 'rejected':
             return Response(
@@ -139,40 +152,34 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # 원본 데이터 목록 매핑 검증: 모든 J-ayer 행에 bb 이 매핑되어야 함
-        import json
+        designated_pl_loginid = request.data.get('designated_pl_loginid', '').strip()
+        if not designated_pl_loginid:
+            return Response({'error': '동료 PL을 지정해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            detail = json.loads(document.additional_notes or '{}')
-            jayer_rows = detail.get('jayerRows', [])
-            bb_rows = detail.get('bbRows', [])
+            designated_pl_user = User.objects.get(loginid=designated_pl_loginid, role='PL')
+        except User.DoesNotExist:
+            return Response({'error': '유효하지 않은 PL 사용자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 매핑된 J-ayer 행 ID 집합
-            mapped_jayer_ids = set()
-            for bb_row in bb_rows:
-                source_id = bb_row.get('sourceJayerRowId')
-                if source_id:
-                    mapped_jayer_ids.add(source_id)
+        if designated_pl_user == request.user:
+            return Response({'error': '본인을 지정할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # process_id가 있는 J-ayer 행 중 매핑되지 않은 행 확인
-            unmapped_rows = [
-                row for row in jayer_rows
-                if row.get('process_id') and row.get('id') not in mapped_jayer_ids
-            ]
-
-            if unmapped_rows:
-                return Response(
-                    {'error': '모든 원본 데이터에 bb 을 매핑해야 상신할 수 있습니다.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        except (json.JSONDecodeError, TypeError):
-            pass  # JSON 파싱 실패 시 검증 스킵
+        err = self._validate_bb_mapping(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         document.status = 'under_review'
+        document.designated_pl = designated_pl_user
+        document.designated_pl_name = designated_pl_user.username or designated_pl_loginid
         document.save()
 
         from django.db.models import Max
         max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 0
-        ApprovalStep.objects.create(document=document, agent='R', action='pending', round=max_round + 1)
+        ApprovalStep.objects.create(
+            document=document, agent='PL', action='pending', round=max_round + 1,
+            assignee=designated_pl_user,
+            assignee_name=document.designated_pl_name,
+        )
 
         return Response({
             'message': '재상신되었습니다.',
@@ -350,6 +357,134 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         return Response({'message': '담당자가 지정되었습니다.'})
 
+    def _get_pending_pl_step(self, document):
+        """현재 회차의 pending PL 단계 반환. 없으면 None."""
+        from django.db.models import Max
+        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+        return ApprovalStep.objects.filter(
+            document=document, agent='PL', action='pending', round=max_round
+        ).first()
+
+    @action(detail=True, methods=['post'], url_path='peer-approve')
+    def peer_approve(self, request, pk=None):
+        """지정 PL 합의: PL 단계 approved → R 단계 생성"""
+        document = self.get_object()
+        user_role = getattr(request.user, 'role', '')
+
+        step = self._get_pending_pl_step(document)
+        if not step:
+            return Response({'error': '대기 중인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        caller_loginid = getattr(request.user, 'loginid', '')
+        if user_role != 'MASTER' and (not step.assignee or step.assignee.loginid != caller_loginid):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        comment = request.data.get('comment', '')
+        step.action = 'approved'
+        step.acted_at = timezone.now()
+        step.comment = comment
+        step.save()
+
+        ApprovalStep.objects.create(
+            document=document, agent='R', action='pending', round=step.round,
+        )
+        document.status = 'under_review'
+        document.save()
+
+        return Response({'message': '합의되었습니다. R 단계로 진행합니다.', 'status': 'under_review'})
+
+    @action(detail=True, methods=['post'], url_path='peer-reject')
+    def peer_reject(self, request, pk=None):
+        """지정 PL 반려: PL 단계 rejected → 원 PL에게 반환"""
+        document = self.get_object()
+        user_role = getattr(request.user, 'role', '')
+
+        step = self._get_pending_pl_step(document)
+        if not step:
+            return Response({'error': '대기 중인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        caller_loginid = getattr(request.user, 'loginid', '')
+        if user_role != 'MASTER' and (not step.assignee or step.assignee.loginid != caller_loginid):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        comment = request.data.get('comment', '')
+        step.action = 'rejected'
+        step.acted_at = timezone.now()
+        step.comment = comment
+        step.save()
+
+        document.status = 'rejected'
+        document.save()
+
+        return Response({'message': '반려되었습니다.', 'status': 'rejected'})
+
+    @action(detail=True, methods=['post'], url_path='peer-submit')
+    def peer_submit(self, request, pk=None):
+        """지정 PL 수정 후 상신: 문서 내용은 이미 update됨, PL 단계 approved → R 단계 생성"""
+        document = self.get_object()
+        user_role = getattr(request.user, 'role', '')
+
+        step = self._get_pending_pl_step(document)
+        if not step:
+            return Response({'error': '대기 중인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        caller_loginid = getattr(request.user, 'loginid', '')
+        if user_role != 'MASTER' and (not step.assignee or step.assignee.loginid != caller_loginid):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        comment = request.data.get('comment', '')
+        step.action = 'approved'
+        step.acted_at = timezone.now()
+        step.comment = f'[수정 후 상신] {comment}'.strip()
+        step.save()
+
+        ApprovalStep.objects.create(
+            document=document, agent='R', action='pending', round=step.round,
+        )
+        document.status = 'under_review'
+        document.save()
+
+        return Response({'message': '수정 후 상신되었습니다. R 단계로 진행합니다.', 'status': 'under_review'})
+
+    @action(detail=True, methods=['post'], url_path='change-designee')
+    def change_designee(self, request, pk=None):
+        """지정자 변경: PL 단계 pending 동안 원 PL 또는 MASTER가 변경 가능"""
+        document = self.get_object()
+        user_role = getattr(request.user, 'role', '')
+        caller_loginid = getattr(request.user, 'loginid', '')
+
+        is_requester = (
+            document.requester and document.requester.loginid == caller_loginid
+        )
+        if user_role != 'MASTER' and not is_requester:
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        step = self._get_pending_pl_step(document)
+        if not step:
+            return Response({'error': '변경 가능한 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        new_loginid = request.data.get('designated_pl_loginid', '').strip()
+        if not new_loginid:
+            return Response({'error': '새 지정 PL의 loginid를 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            new_pl_user = User.objects.get(loginid=new_loginid, role='PL')
+        except User.DoesNotExist:
+            return Response({'error': '유효하지 않은 PL 사용자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if new_pl_user.loginid == caller_loginid:
+            return Response({'error': '본인을 지정할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        step.assignee = new_pl_user
+        step.assignee_name = new_pl_user.username or new_loginid
+        step.save()
+
+        document.designated_pl = new_pl_user
+        document.designated_pl_name = step.assignee_name
+        document.save()
+
+        return Response({'message': '지정자가 변경되었습니다.', 'document': RequestDocumentSerializer(document).data})
+
     def _unique_title(self, base_title, exclude_id=None):
         """중복 제목 처리: 같은 제목이 있으면 _2, _3, ... suffix 를 붙여 반환"""
         qs = RequestDocument.objects.all()
@@ -391,7 +526,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 class VOCViewSet(viewsets.ModelViewSet):
     queryset = VOC.objects.all()
     serializer_class = VOCSerializer
-    permission_classes = [IsAuthenticatedInProd]
+    permission_classes = [IsAuthenticatedOrMasterDelete]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['category', 'status', 'submitter_user_id']
     search_fields = ['title', 'submitter_name', 'content']

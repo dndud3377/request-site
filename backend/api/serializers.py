@@ -50,26 +50,37 @@ class ApprovalStepSerializer(serializers.ModelSerializer):
 
 class RequestDocumentSerializer(serializers.ModelSerializer):
     approval_steps = ApprovalStepSerializer(many=True, read_only=True)
+    designated_pl_loginid = serializers.SerializerMethodField()
 
     class Meta:
         model = RequestDocument
         fields = [
             'id', 'title', 'requester_name', 'requester_email', 'requester_department',
             'product_name', 'reference_materials', 'additional_notes',
-            'status', 'production_date', 'created_at', 'updated_at', 'submitted_at', 'approval_steps',
+            'status', 'production_date', 'created_at', 'updated_at', 'submitted_at',
+            'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
         ]
-        read_only_fields = ['status', 'created_at', 'updated_at', 'submitted_at']
+        read_only_fields = ['status', 'created_at', 'updated_at', 'submitted_at',
+                            'designated_pl_loginid', 'designated_pl_name']
+
+    def get_designated_pl_loginid(self, obj):
+        return obj.designated_pl.loginid if obj.designated_pl else None
 
 
 class RequestDocumentListSerializer(serializers.ModelSerializer):
     approval_steps = ApprovalStepSerializer(many=True, read_only=True)
+    designated_pl_loginid = serializers.SerializerMethodField()
 
     class Meta:
         model = RequestDocument
         fields = [
             'id', 'title', 'requester_name', 'requester_department',
-            'product_name', 'status', 'production_date', 'created_at', 'submitted_at', 'additional_notes', 'approval_steps',
+            'product_name', 'status', 'production_date', 'created_at', 'submitted_at',
+            'additional_notes', 'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
         ]
+
+    def get_designated_pl_loginid(self, obj):
+        return obj.designated_pl.loginid if obj.designated_pl else None
 
 
 class VocCommentSerializer(serializers.ModelSerializer):
