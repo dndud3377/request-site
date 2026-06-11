@@ -1349,19 +1349,14 @@ export default function RequestPage(): React.ReactElement {
       } // end !isMapRegistered
     }
 
-    if (currentStep === 3) {
-      // TODO: J-ayer 행 검증 로직 추가
-    }
+    // step 3(J-layer)·step 4 O-layer 행은 의도적으로 행 단위 필수값 검증을 두지 않는다(행은 선택사항).
+    // 상신 시 step 5의 "활성 + process_id 있는 J-layer 행은 Bb 매핑 필수" 규칙으로 간접 검증된다.
 
     if (currentStep === 4) {
       if (!detail.partial_shot?.trim()) {
         newErrors['partial_shot'] = t('request.required');
         errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
       }
-    }
-
-    if (currentStep === 4) {
-      // TODO: O-ayer 행 검증 로직 추가
     }
 
     if (currentStep === 5) {
