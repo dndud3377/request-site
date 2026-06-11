@@ -79,6 +79,11 @@ class RequestDocument(models.Model):
         max_length=20, choices=STATUS_CHOICES, default='draft', verbose_name='상태'
     )
     production_date = models.DateField(null=True, blank=True, verbose_name='실제 생산 진행 날짜')
+    designated_pl = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='designated_reviews', verbose_name='지정 PL'
+    )
+    designated_pl_name = models.CharField(max_length=100, blank=True, verbose_name='지정 PL 이름')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일')
     submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='상신일')
@@ -127,6 +132,7 @@ class ApprovalStep(models.Model):
     """결재 단계 - 프론트엔드 ApprovalStepFrontend 타입과 1:1 매핑"""
 
     AGENT_CHOICES = [
+        ('PL', '검토'),
         ('R', '{{agent_R}}'),
         ('P', '{{agent_P}}'),
         ('J', '{{agent_J}}'),
