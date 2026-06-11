@@ -18,7 +18,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db import connection, transaction
 from django.contrib.auth import get_user_model
 User = get_user_model()
-from django.db.models import Q
+from django.db.models import Q, Max
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
@@ -77,6 +77,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             return RequestDocumentListSerializer
         return RequestDocumentSerializer
+
+    def _max_round(self, document, default=1):
+        """문서의 현재 최대 결재 회차를 반환한다. 단계가 없으면 default."""
+        return ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or default
 
     def _validate_bb_mapping(self, document):
         """J-ayer 행 bb 매핑 검증. 문제 있으면 error 문자열 반환, 없으면 None."""
@@ -169,14 +173,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
-        from django.db.models import Max
         with transaction.atomic():
             document.status = 'under_review'
             document.designated_pl = designated_pl_user
             document.designated_pl_name = designated_pl_user.username or designated_pl_loginid
             document.save()
 
-            max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 0
+            max_round = self._max_round(document, default=0)
             ApprovalStep.objects.create(
                 document=document, agent='PL', action='pending', round=max_round + 1,
                 assignee=designated_pl_user,
@@ -233,8 +236,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         #  읽어 approved 전이가 누락되던 문제를 막는다.)
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
 
-        from django.db.models import Max
-        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+        max_round = self._max_round(document)
 
         # 잠근 뒤 최신 커밋본을 읽기 위해 locking read 사용
         step = ApprovalStep.objects.select_for_update().filter(
@@ -323,8 +325,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 문서 행을 잠가 합의(approve_step)와 반려가 동시에 같은 문서를 전이시키는 경쟁을 직렬화한다.
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
 
-        from django.db.models import Max
-        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+        max_round = self._max_round(document)
 
         step = ApprovalStep.objects.select_for_update().filter(
             document=document, agent=agent, action='pending', round=max_round
@@ -350,8 +351,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         assignee_loginid = request.data.get('assignee_loginid')
         assignee_name = request.data.get('assignee_name', '')
 
-        from django.db.models import Max
-        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+        max_round = self._max_round(document)
 
         step = ApprovalStep.objects.filter(
             document=document, agent=agent, action='pending', round=max_round
@@ -373,8 +373,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     def _get_pending_pl_step(self, document):
         """현재 회차의 pending PL 단계 반환. 없으면 None."""
-        from django.db.models import Max
-        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+        max_round = self._max_round(document)
         return ApprovalStep.objects.filter(
             document=document, agent='PL', action='pending', round=max_round
         ).first()
