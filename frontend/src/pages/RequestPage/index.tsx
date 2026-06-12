@@ -546,7 +546,56 @@ export default function RequestPage(): React.ReactElement {
   const handleMapTypeChangeConfirm = () => {
     if (!mapTypeChangeConfirm) return;
     const newType = mapTypeChangeConfirm.targetType;
-    setDetail({ ...INITIAL_DETAIL, map_type: newType });
+    // StepMap(원본·C가문·지도편차·예외구역·X표시·Map Option·REV) 필드만 초기화한다.
+    // Step1/3/4/5 데이터(라인·뼈찜·partial_shot·tbvtlv 등)는 보존한다.
+    setDetail((prev) => ({
+      ...prev,
+      map_type: newType,
+      source_line: INITIAL_DETAIL.source_line,
+      source_partid: INITIAL_DETAIL.source_partid,
+      map_change: INITIAL_DETAIL.map_change,
+      map_value_x: INITIAL_DETAIL.map_value_x,
+      map_value_y: INITIAL_DETAIL.map_value_y,
+      map_reason: INITIAL_DETAIL.map_reason,
+      map_change_top: INITIAL_DETAIL.map_change_top,
+      map_value_x_top: INITIAL_DETAIL.map_value_x_top,
+      map_value_y_top: INITIAL_DETAIL.map_value_y_top,
+      map_change_bottom: INITIAL_DETAIL.map_change_bottom,
+      map_value_x_bottom: INITIAL_DETAIL.map_value_x_bottom,
+      map_value_y_bottom: INITIAL_DETAIL.map_value_y_bottom,
+      ea_change: INITIAL_DETAIL.ea_change,
+      ea_value: INITIAL_DETAIL.ea_value,
+      only_prodc: INITIAL_DETAIL.only_prodc,
+      prodc_top_line: INITIAL_DETAIL.prodc_top_line,
+      prodc_top_process: INITIAL_DETAIL.prodc_top_process,
+      prodc_top_product: INITIAL_DETAIL.prodc_top_product,
+      prodc_middle_use: INITIAL_DETAIL.prodc_middle_use,
+      prodc_middle_line: INITIAL_DETAIL.prodc_middle_line,
+      prodc_middle_process: INITIAL_DETAIL.prodc_middle_process,
+      prodc_middle_product: INITIAL_DETAIL.prodc_middle_product,
+      prodc_bottom_line: INITIAL_DETAIL.prodc_bottom_line,
+      prodc_bottom_process: INITIAL_DETAIL.prodc_bottom_process,
+      prodc_bottom_product: INITIAL_DETAIL.prodc_bottom_product,
+      mshot_change: INITIAL_DETAIL.mshot_change,
+      mshot_image_copy: INITIAL_DETAIL.mshot_image_copy,
+      mshot_image_copy_top: INITIAL_DETAIL.mshot_image_copy_top,
+      mshot_image_copy_bottom: INITIAL_DETAIL.mshot_image_copy_bottom,
+      photo_backside: INITIAL_DETAIL.photo_backside,
+      eds_backside: INITIAL_DETAIL.eds_backside,
+      inter: INITIAL_DETAIL.inter,
+      tsv: INITIAL_DETAIL.tsv,
+      rf: INITIAL_DETAIL.rf,
+      fullchip: INITIAL_DETAIL.fullchip,
+      split: INITIAL_DETAIL.split,
+      st: INITIAL_DETAIL.st,
+      ecc: INITIAL_DETAIL.ecc,
+      labelsideshot: INITIAL_DETAIL.labelsideshot,
+      rev_yn: INITIAL_DETAIL.rev_yn,
+      rev_entries: INITIAL_DETAIL.rev_entries,
+    }));
+    setProdcCopyRegion(null);
+    setRevLayersSelected([]);
+    setRevGds('');
     setErrors({});
     setMapTypeChangeConfirm(null);
   };
