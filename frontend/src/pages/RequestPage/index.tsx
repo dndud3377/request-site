@@ -6,6 +6,7 @@ import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, user
 import { useToast } from '../../components/Toast';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
 import { useCellSelection } from '../../hooks/useCellSelection';
+import { numberBoundaryMatch } from '../../utils/specMatch';
 import Modal, { ConfirmModal } from '../../components/Modal';
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -48,6 +49,18 @@ import Step2 from './components/Step2';
 import Step3 from './components/Step3';
 import Step4 from './components/Step4';
 
+// step 값으로 바코드 후보를 좁혀 item_id 자동값을 결정한다.
+// 정확히 1개 매칭이면 그 label, 그 외(0개·2개+)면 '' (드롭다운에서 선택).
+const autoMatchItemId = (
+  row: { step: string },
+  candidates: { label: string; spec: string }[],
+): string => {
+  const step = row.step?.trim();
+  if (!step) return '';
+  const matched = candidates.filter((c) => numberBoundaryMatch(c.spec, step));
+  return matched.length === 1 ? matched[0].label : '';
+};
+
 // ===== Main Component =====
 export default function RequestPage(): React.ReactElement {
   const { t } = useTranslation();
@@ -83,7 +96,7 @@ export default function RequestPage(): React.ReactElement {
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
   const [detail, setDetail] = useState<DetailFormState>(INITIAL_DETAIL);
   const [jayerRows, setJayerRows] = useState<JayerRow[]>([makeJayerRow()]);
-  const [jayerBarcodeCache, setJayerBarcodeCache] = useState<Record<string, { label: string; n7c_layer_num: string }[]>>({});
+  const [jayerBarcodeCache, setJayerBarcodeCache] = useState<Record<string, { label: string; spec: string }[]>>({});
   const [oayerRows, setOayerRows] = useState<OayerRow[]>([makeOayerRow()]);
   const [bbRows, setBbRows] = useState<BbTableRow[]>([]);
   const [bbExternalData, setBbExternalData] = useState<PhotoStepOption[][]>([]);
@@ -397,10 +410,6 @@ export default function RequestPage(): React.ReactElement {
     document.addEventListener('mouseup', handleDragEnd);
     return () => document.removeEventListener('mouseup', handleDragEnd);
   }, []);
-
-  // 엑셀식 셀 선택 + 붙여넣기 (J/O 표 공용 훅)
-  const jayerCellSel = useCellSelection<JayerRow>(setJayerRows, JAYER_EDITABLE_COLS);
-  const oayerCellSel = useCellSelection<OayerRow>(setOayerRows, OAYER_EDITABLE_COLS);
 
   // 편집 모드 (반려 재상신 or 지정 PL 수정 후 상신): 기존 문서 데이터 로드
   useEffect(() => {
@@ -732,18 +741,68 @@ export default function RequestPage(): React.ReactElement {
         if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
         return next;
       }
+      if (field === 'step') {
+        // step 변경 시 캐시된 후보로 item_id 자동매칭 재실행
+        const candidates = jayerBarcodeCache[id] ?? [];
+        return { ...r, step: value, item_id: autoMatchItemId({ ...r, step: value }, candidates) };
+      }
       return { ...r, [field]: value };
     }));
     if (field === 'product_name') {
       if (value) {
         formOptionsAPI.getBarcodeOptions(value).then((options) => {
           setJayerBarcodeCache((prev) => ({ ...prev, [id]: options }));
+          // 후보 도착 후 현재 step 기준으로 item_id 자동매칭(1개면 자동, 그 외 빈값)
+          setJayerRows((rows) => rows.map((r) => (r.id === id ? { ...r, item_id: autoMatchItemId(r, options) } : r)));
         });
       } else {
         setJayerBarcodeCache((prev) => ({ ...prev, [id]: [] }));
       }
     }
   };
+
+  // 붙여넣기 후 J-layer 자동채움/바코드 조회 연동
+  const handleJayerAfterPaste = (changes: { rowId: string; values: Record<string, string> }[]) => {
+    changes.forEach(({ rowId, values }) => {
+      if ('product_name' in values) {
+        const pn = values.product_name;
+        if (pn) {
+          formOptionsAPI.getBarcodeOptions(pn).then((options) => {
+            setJayerBarcodeCache((prev) => ({ ...prev, [rowId]: options }));
+            setJayerRows((rows) => rows.map((r) => {
+              if (r.id !== rowId) return r;
+              let step = r.step;
+              if (!step?.trim() && r.layerid?.trim()) step = r.layerid;
+              return { ...r, step, item_id: autoMatchItemId({ ...r, step }, options) };
+            }));
+          });
+        } else {
+          setJayerBarcodeCache((prev) => ({ ...prev, [rowId]: [] }));
+          setJayerRows((rows) => rows.map((r) => (r.id === rowId ? { ...r, item_id: '' } : r)));
+        }
+      } else if ('step' in values) {
+        const candidates = jayerBarcodeCache[rowId] ?? [];
+        setJayerRows((rows) => rows.map((r) => (r.id === rowId ? { ...r, item_id: autoMatchItemId(r, candidates) } : r)));
+      }
+    });
+  };
+
+  // 붙여넣기 후 O-layer 자동채움(바코드 없음 — step=layer 자동만)
+  const handleOayerAfterPaste = (changes: { rowId: string; values: Record<string, string> }[]) => {
+    changes.forEach(({ rowId, values }) => {
+      if ('product_name' in values && values.product_name) {
+        setOayerRows((rows) => rows.map((r) => {
+          if (r.id !== rowId) return r;
+          if (!r.step?.trim() && r.layerid?.trim()) return { ...r, step: r.layerid };
+          return r;
+        }));
+      }
+    });
+  };
+
+  // 엑셀식 셀 선택 + 붙여넣기 (J/O 표 공용 훅). 붙여넣기 후 자동채움/바코드 조회 연동.
+  const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, handleJayerAfterPaste);
+  const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, handleOayerAfterPaste);
 
   const handleJayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
     setJayerRows((rows) => rows.map((r) => r.new_or_copy === '기등록' ? r : { ...r, [field]: value }));

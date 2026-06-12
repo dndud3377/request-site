@@ -4,6 +4,7 @@ import AutocompleteInput from '../../../components/AutocompleteInput';
 import { JayerRow, FilterSet, GuideFeatureKey } from '../../../types';
 import { ST_CELL_COLOR } from '../constants';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
+import { numberBoundaryMatch } from '../../../utils/specMatch';
 
 interface Step2Props {
   jayerRows: JayerRow[];
@@ -17,7 +18,7 @@ interface Step2Props {
   jayerDragInfo: React.MutableRefObject<{ startId: string; mode: 'check' | 'uncheck' } | null>;
   jayerChecked: Set<string>;
   mappedJayerRowIds: Set<string>;
-  jayerBarcodeCache: Record<string, { label: string; n7c_layer_num: string }[]>;
+  jayerBarcodeCache: Record<string, { label: string; spec: string }[]>;
   calcDisabled: (
     row: { manuallyDisabled: boolean; sp: string; sd: string; pp: string },
     filterSets: FilterSet[],
@@ -223,7 +224,7 @@ const Step2: React.FC<Step2Props> = ({
                         value={row.item_id}
                         onChange={(v) => handleJayerChange(row.id, 'item_id', v)}
                         options={(jayerBarcodeCache[row.id] ?? [])
-                          .filter((o) => !row.step || o.n7c_layer_num.includes(row.step))
+                          .filter((o) => !row.step || numberBoundaryMatch(o.spec, row.step))
                           .map((o) => o.label)}
                         disabled={row.disabled || isRegistered}
                         style={{ backgroundColor: isRegistered ? regBg : undefined }}
