@@ -185,13 +185,13 @@ const Step3: React.FC<Step3Props> = ({
               <button type="button" className="th-header-btn" onClick={() => setOayerFilterModalOpen(true)}>+ 필터</button>
             </div>
           </div>
-          <div className="wizard-table-wrapper">
+          <div className="wizard-table-wrapper" ref={cellSel.containerRef}>
             <table className="wizard-table" style={{ userSelect: oayerDragInfo.current ? 'none' : undefined }} onPaste={(e) => cellSel.onCellPaste(e, renderedOayerIds)}>
               <colgroup>
                 <col style={{ width: 44 }} />
                 <col /><col /><col /><col />
                 <col className="sd-column" />
-                <col /><col /><col /><col /><col /><col />
+                <col /><col /><col /><col /><col /><col /><col />
               </colgroup>
               <thead>
                 <tr>
@@ -208,6 +208,7 @@ const Step3: React.FC<Step3Props> = ({
                   <th style={{ width: 'auto' }}>{t('request.process_id')}</th>
                   <th style={{ width: 'auto' }}>{t('request.col_sp')}</th>
                   <th style={{ width: 'auto' }}>{t('request.col_sd')}</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_layer')}</th>
                   <th style={{ width: 'auto' }}>{t('request.col_pp')}</th>
                   <th style={{ width: 'auto' }}>{t('request.col_st')}</th>
                   <th style={{ width: 'auto' }}>{t('request.col_new_or_copy')}</th>
@@ -226,13 +227,13 @@ const Step3: React.FC<Step3Props> = ({
                     style: {
                       backgroundColor: bg,
                       ...extra,
-                      ...(cellSel.isCellSelected(row.id, col) ? { outline: '2px solid #2563eb', outlineOffset: '-2px' } : {}),
+                      ...(cellSel.isCellSelected(row.id, col) ? { boxShadow: 'inset 0 0 0 9999px rgba(37, 99, 235, 0.12)' } : {}),
                     } as React.CSSProperties,
                   });
                   return (
                     <React.Fragment key={row.id}>
                       {isFirstDisabled && (
-                        <tr className="row-divider"><td colSpan={11} /></tr>
+                        <tr className="row-divider"><td colSpan={12} /></tr>
                       )}
                       <tr
                         className={[row.disabled ? 'row-disabled' : '', oayerChecked.has(row.id) ? 'row-checked' : ''].filter(Boolean).join(' ')}
@@ -246,6 +247,7 @@ const Step3: React.FC<Step3Props> = ({
                         <td {...cellProps('process_id', isRegistered ? regBg : undefined)}><input value={row.process_id} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                         <td {...cellProps('sp', isRegistered ? regBg : undefined)}><input value={row.sp} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'sp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                         <td {...cellProps('sd', isRegistered ? regBg : undefined)}><input value={row.sd} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                        <td {...cellProps('layerid', isRegistered ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={isRegistered} disabled={isRegistered} onChange={(e) => handleOayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                         <td {...cellProps('pp', isRegistered ? regBg : undefined)}><input value={row.pp} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
                         <td {...cellProps('st', isRegistered ? regBg : undefined)}>
                           <select value={row.st} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'st', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : ST_CELL_COLOR[row.st] }}>
