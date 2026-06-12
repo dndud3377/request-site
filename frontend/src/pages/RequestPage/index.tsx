@@ -590,6 +590,7 @@ export default function RequestPage(): React.ReactElement {
       st: INITIAL_DETAIL.st,
       ecc: INITIAL_DETAIL.ecc,
       labelsideshot: INITIAL_DETAIL.labelsideshot,
+      hpkglabelheight: INITIAL_DETAIL.hpkglabelheight,
       rev_yn: INITIAL_DETAIL.rev_yn,
       rev_entries: INITIAL_DETAIL.rev_entries,
     }));
@@ -1627,6 +1628,7 @@ export default function RequestPage(): React.ReactElement {
       st: INITIAL_DETAIL.st,
       ecc: INITIAL_DETAIL.ecc,
       labelsideshot: INITIAL_DETAIL.labelsideshot,
+      hpkglabelheight: INITIAL_DETAIL.hpkglabelheight,
       rev_yn: INITIAL_DETAIL.rev_yn,
       rev_entries: INITIAL_DETAIL.rev_entries,
       partial_shot: INITIAL_DETAIL.partial_shot,
