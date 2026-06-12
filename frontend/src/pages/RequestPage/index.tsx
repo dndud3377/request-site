@@ -108,6 +108,7 @@ export default function RequestPage(): React.ReactElement {
   const [mergeStats, setMergeStats] = useState<{ jayerMatched: number; jayerUnmatchedRef: number; oayerMatched: number; oayerUnmatchedRef: number } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [mapTypeChangeConfirm, setMapTypeChangeConfirm] = useState<{ targetType: string } | null>(null);
+  const [onlyMapConfirm, setOnlyMapConfirm] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -451,6 +452,7 @@ export default function RequestPage(): React.ReactElement {
 
   // Derived booleans for Step 1 conditional rendering
   const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
+  const isOnlyMap = detail.request_purpose === 'Only MAP';
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === '변경 있음';
   const isProdc = detail.only_prodc === 'Yes';
@@ -506,7 +508,29 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleRequestPurposeSelect = (val: string) => {
+    if (val === 'Only MAP' && detail.request_purpose !== 'Only MAP') {
+      setOnlyMapConfirm(true);
+      return;
+    }
     handleDetailSet('request_purpose', val);
+  };
+
+  // Only MAP 확인 → 라인/조합법/제품/조리법/고객/요구사항/생산일을 제외한 Step1 항목 초기화
+  const handleOnlyMapConfirm = () => {
+    setDetail((prev) => ({
+      ...prev,
+      request_purpose: 'Only MAP',
+      other_purpose: INITIAL_DETAIL.other_purpose,
+      flow_chart: [makeRow()],
+      change_purpose_note: INITIAL_DETAIL.change_purpose_note,
+      bb_entries: INITIAL_DETAIL.bb_entries.map((e) => ({ ...e })),
+    }));
+    setRefDocId(null);
+    setRefDocLabel('');
+    setRefJayerRows([]);
+    setRefOayerRows([]);
+    setErrors((prev) => ({ ...prev, request_purpose: '', bb_entries: '' }));
+    setOnlyMapConfirm(false);
   };
 
   const handleMapTypeSelect = (val: string) => {
@@ -1250,12 +1274,15 @@ export default function RequestPage(): React.ReactElement {
           errorMessages.push(`${field}: 필수 입력 항목입니다.`);
         }
       });
-      const filledBb = detail.bb_entries.filter(
-        (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
-      );
-      if (filledBb.length === 0) {
-        newErrors['bb_entries'] = t('request.required');
-        errorMessages.push('Backbone 조합 영역: 최소 1개 이상 입력해야 합니다.');
+      // Only MAP 모드에서는 Backbone 조합 영역 필수 검증을 우회한다.
+      if (!isOnlyMap) {
+        const filledBb = detail.bb_entries.filter(
+          (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
+        );
+        if (filledBb.length === 0) {
+          newErrors['bb_entries'] = t('request.required');
+          errorMessages.push('Backbone 조합 영역: 최소 1개 이상 입력해야 합니다.');
+        }
       }
     }
 
@@ -1699,6 +1726,7 @@ export default function RequestPage(): React.ReactElement {
         <Step1
           detail={detail}
           errors={errors}
+          isOnlyMap={isOnlyMap}
           lineOptions={lineOptions}
           processOptions={processOptions}
           productOptions={productOptions}
@@ -2082,6 +2110,15 @@ export default function RequestPage(): React.ReactElement {
         onConfirm={handleMapTypeChangeConfirm}
         title={t('request.map_type_change_confirm_title')}
         message={t('request.map_type_change_confirm_msg')}
+        danger
+      />
+
+      <ConfirmModal
+        isOpen={onlyMapConfirm}
+        onClose={() => setOnlyMapConfirm(false)}
+        onConfirm={handleOnlyMapConfirm}
+        title={t('request.only_map_confirm_title')}
+        message={t('request.only_map_confirm_msg')}
         danger
       />
 
