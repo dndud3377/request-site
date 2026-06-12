@@ -397,6 +397,35 @@ class VOCViewSet(viewsets.ModelViewSet):
     search_fields = ['title', 'submitter_name', 'content']
     ordering = ['-created_at']
 
+    @action(detail=True, methods=['patch'], url_path='update-status')
+    def update_status(self, request, pk=None):
+        """VOC 상태 변경 — completed: 작성자 본인만, rejected: MASTER만"""
+        voc = self.get_object()
+        new_status = request.data.get('status')
+        user_role = getattr(request.user, 'role', '')
+
+        if new_status == 'completed':
+            if voc.submitter_user_id != request.user.id:
+                return Response(
+                    {'error': '작성자 본인만 완료 처리할 수 있습니다.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        elif new_status == 'rejected':
+            if user_role != 'MASTER':
+                return Response(
+                    {'error': 'MASTER만 반려 처리할 수 있습니다.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        else:
+            return Response(
+                {'error': '유효하지 않은 상태입니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        voc.status = new_status
+        voc.save()
+        return Response(VOCSerializer(voc).data)
+
     @action(detail=True, methods=['post'])
     def comment(self, request, pk=None):
         voc = self.get_object()
