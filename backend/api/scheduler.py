@@ -155,6 +155,7 @@ def sync_form_options():
                 FROM A.B
                 WHERE n7barcode IS NOT NULL AND n7barcode != ''
                   AND n7c_layer_num IS NOT NULL AND n7c_layer_num != ''
+                  AND n7material_spec IS NOT NULL AND n7material_spec != ''
             """
             df_pb = get_data_from_dcq(query_pb, dcq_id)
 
@@ -163,7 +164,7 @@ def sync_form_options():
             else:
                 df_pb['last_synced'] = pd.Timestamp.now()
                 # 값이 없을 수 있는 컬럼은 None으로 통일
-                for col in ['n7mto_date', 'n7cancel_date', 'n7cancel_ok', 'n7material_spec']:
+                for col in ['n7mto_date', 'n7cancel_date', 'n7cancel_ok']:
                     df_pb[col] = df_pb[col].where(df_pb[col].notna() & (df_pb[col] != ''), other=None)
                 df_pb = df_pb[['n7mto_date', 'n7cancel_date', 'n7cancel_ok', 'n7c_layer_num', 'n7prod_code', 'n7barcode', 'n7material_spec', 'last_synced']]
 
