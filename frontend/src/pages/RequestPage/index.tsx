@@ -634,6 +634,7 @@ export default function RequestPage(): React.ReactElement {
             sp: item.stepseq,
             sd: item.descript,
             pp: item.recipeid,
+            layerid: item.layerid || '',
           };
           return { ...row, manuallyDisabled: false, disabled: calcDisabled(row, oayerFilterSets, oayerActiveFilterIds) };
         });
@@ -651,7 +652,12 @@ export default function RequestPage(): React.ReactElement {
   const handleJayerChange = (id: string, field: keyof Omit<JayerRow, 'id'>, value: string) => {
     setJayerRows((rows) => rows.map((r) => {
       if (r.id !== id) return r;
-      if (field === 'product_name') return { ...r, product_name: value, item_id: '' };
+      if (field === 'product_name') {
+        const next = { ...r, product_name: value, item_id: '' };
+        // product_name을 채우면 step이 비어있을 때 layer 값으로 자동 채움(layer 없으면 무동작)
+        if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
+        return next;
+      }
       return { ...r, [field]: value };
     }));
     if (field === 'product_name') {
@@ -743,7 +749,16 @@ export default function RequestPage(): React.ReactElement {
 
   // ===== Oayer Handlers =====
   const handleOayerChange = (id: string, field: keyof Omit<OayerRow, 'id'>, value: string) => {
-    setOayerRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+    setOayerRows((rows) => rows.map((r) => {
+      if (r.id !== id) return r;
+      if (field === 'product_name') {
+        const next = { ...r, product_name: value };
+        // product_name을 채우면 step이 비어있을 때 layer 값으로 자동 채움(layer 없으면 무동작)
+        if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
+        return next;
+      }
+      return { ...r, [field]: value };
+    }));
   };
 
   const handleOayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
