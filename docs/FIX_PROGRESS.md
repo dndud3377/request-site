@@ -170,6 +170,25 @@
 
 ---
 
+## 2-5. 3차 요청(J/O 표 추가 개선 6건) 진행 내역
+
+인터뷰로 구체화 후 진행. 결정: 항목4 자동채움 값은 st가 아니라 **layer**, 빈 칸일 때만;
+항목5는 Step3에 **col_layer** 추가(st는 이미 존재); 항목4는 **Step2·Step3 모두** 적용.
+
+| # | 내용 | 상태 |
+|---|------|------|
+| 1 | 셀 선택 표시 → 연한 파란 배경(반투명 inset, 엑셀식) | ✅ 완료(Step2/Step3) |
+| 2 | 표 밖 클릭 시 선택 해제 (containerRef + document mousedown) | ✅ 완료(useCellSelection) |
+| 3 | Delete 키로 선택 셀 값 비우기(포커스 표 안일 때, 잠긴 셀 제외) | ✅ 완료(useCellSelection) |
+| 4 | product_name 채우면 step=layer 자동(빈 칸만, layer 없으면 무동작) — **J/O 모두** | ✅ 완료(index.tsx) |
+| 5 | Step3에 col_layer 열 추가(sd↔pp), 타입/팩토리/표시/붙여넣기 대상 | ✅ 완료(types/constants/Step3/PagedDetailView) |
+| 6 | Step3 layer 자동채움(OVL 데이터 layerid 매핑, 백엔드 무변경) | ✅ 완료(index.tsx) |
+
+검증: `tsc --noEmit` 신규 에러 0. (이 환경은 react-scripts test 러너가 typescript 모듈
+해석 실패로 실행 불가 — 테스트 파일 없음, 타입 검증으로 대체)
+
+---
+
 ## 3. 다음 작업 예정 (순서)
 
 1. **[항목 2] step 검증 정합성** — 다음 계획 제시 예정.
