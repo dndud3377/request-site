@@ -22,11 +22,6 @@ export default function OIDCCallbackPage(): React.ReactElement {
 
     // nonce_jwt 가져오기 (localStorage에서)
     const nonceJwt = localStorage.getItem(OIDC_STATE_JWT_KEY) || undefined;
-    if (nonceJwt) {
-      console.log('[OIDCCallback] nonce_jwt 가져옴:', nonceJwt.substring(0, 50) + '...');
-    } else {
-      console.log('[OIDCCallback] nonce_jwt 없음');
-    }
 
     if (!token) {
       setError('ID 토큰을 받지 못했습니다. 로그인 페이지로 이동합니다.');

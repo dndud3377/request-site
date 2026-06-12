@@ -10,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView from '../components/PagedDetailView';
 import { canUserAgree, canUserAssign, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole } from '../types';
+import { formatDate } from '../utils/date';
 
 const AGENT_TO_ROLE: Record<string, string> = {
   R: 'TE_R',
@@ -20,8 +21,6 @@ const AGENT_TO_ROLE: Record<string, string> = {
 };
 
 // ===== Utils =====
-
-const formatDate = (d: string | null): string => (d ? new Date(d).toLocaleDateString('ko-KR') : '-');
 
 // TE_O/TE_E는 담당자 지정 불필요 — 나머지 단계에서 담당자 미지정 시 'unassigned' 반환
 const getDisplayStatus = (doc: RequestDocument): string => {
@@ -228,6 +227,7 @@ export default function ApprovalPage(): React.ReactElement {
   const [docs, setDocs] = useState<RequestDocument[]>([]);
   const [allDocs, setAllDocs] = useState<RequestDocument[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [filter, setFilter] = useState('');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<RequestDocument | null>(null);
@@ -309,6 +309,7 @@ export default function ApprovalPage(): React.ReactElement {
 
   const fetchDocs = useCallback(() => {
     setLoading(true);
+    setError(false);
     const params: Record<string, string> = {};
     if (search) params.search = search;
     documentsAPI
@@ -321,7 +322,7 @@ export default function ApprovalPage(): React.ReactElement {
         setAllDocs(all);
         setDocs(applyClientFilter(all));
       })
-      .catch(() => { setAllDocs([]); setDocs([]); })
+      .catch(() => { setError(true); setAllDocs([]); setDocs([]); })
       .finally(() => setLoading(false));
   }, [filter, search, applyClientFilter]);
 
@@ -535,6 +536,12 @@ export default function ApprovalPage(): React.ReactElement {
 
       {loading ? (
         <div className="empty-state"><p>{t('common.loading')}</p></div>
+      ) : error ? (
+        <div className="empty-state">
+          <div className="empty-state-icon">⚠️</div>
+          <p>{t('common.load_error')}</p>
+          <button className="btn" onClick={fetchDocs}>{t('common.retry')}</button>
+        </div>
       ) : docs.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">📋</div>

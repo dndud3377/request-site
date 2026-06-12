@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { vocAPI, uploadImageAPI } from '../api/client';
+import { vocAPI } from '../api/client';
+import RichTextEditor from '../components/RichTextEditor';
 import StatusBadge from '../components/StatusBadge';
 import { useToast } from '../components/Toast';
 import Modal, { ConfirmModal } from '../components/Modal';
@@ -36,7 +37,6 @@ export default function VOCPage(): React.ReactElement {
   const { currentUser } = useAuth();
   const isMaster = currentUser.role === 'MASTER';
   const chatBottomRef = useRef<HTMLDivElement>(null);
-  const contentEditableRef = useRef<HTMLDivElement>(null);
 
   // ── list state ──
   const [vocs, setVocs]           = useState<VOC[]>([]);
@@ -46,7 +46,7 @@ export default function VOCPage(): React.ReactElement {
 
   // ── register form ──
   const [formOpen, setFormOpen]   = useState(false);
-  const [form, setForm]           = useState({ title: '', category: 'inquiry' as VocCategory, page: 'request' as VocPage});
+  const [form, setForm]           = useState({ title: '', category: 'inquiry' as VocCategory, page: 'request' as VocPage, content: '' });
   const [submitting, setSubmitting] = useState(false);
 
   // ── detail modal ──
@@ -93,31 +93,10 @@ export default function VOCPage(): React.ReactElement {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleContentPaste = async (e: React.ClipboardEvent<HTMLDivElement>) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.type.startsWith('image/')) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        if (!file) return;
-        try {
-          const result = await uploadImageAPI.upload(file);
-          const img = `<img src="${result.url}" style="max-width:100%;border-radius:4px;margin:4px 0;" />`;
-          document.execCommand('insertHTML', false, img);
-        } catch {
-          addToast('이미지 업로드에 실패했습니다.', 'error');
-        }
-        return;
-      }
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const contentHtml = contentEditableRef.current?.innerHTML ?? '';
-    const contentText = contentEditableRef.current?.textContent?.trim() ?? '';
+    const contentHtml = form.content;
+    const contentText = form.content.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim();
     if (!contentText) {
       addToast(t('voc.content') + ' 을(를) 입력해주세요.', 'error');
       return;
@@ -135,8 +114,7 @@ export default function VOCPage(): React.ReactElement {
       };
       await vocAPI.create(input);
       addToast(t('voc.submit_success'), 'success');
-      setForm({ title: '', category: 'inquiry', page: 'request'});
-      if (contentEditableRef.current) contentEditableRef.current.innerHTML = '';
+      setForm({ title: '', category: 'inquiry', page: 'request', content: '' });
       setFormOpen(false);
       fetchVocs();
     } catch {
@@ -372,31 +350,10 @@ export default function VOCPage(): React.ReactElement {
           </div>
           <div className="form-group">
             <label className="form-label">{t('voc.content')} <span className="required">*</span></label>
-            <style>{`
-              .voc-content-editor:empty::before {
-                content: attr(data-placeholder);
-                color: var(--text-muted, #a0aec0);
-                pointer-events: none;
-              }
-            `}</style>
-            <div
-              ref={contentEditableRef}
-              contentEditable
-              onPaste={handleContentPaste}
-              className="voc-content-editor"
-              data-placeholder={t('voc.content')}
-              style={{
-                minHeight: 280,
-                border: '1px solid var(--border-color, #e2e8f0)',
-                borderRadius: 6,
-                padding: '8px 12px',
-                fontSize: '0.95rem',
-                lineHeight: 1.7,
-                outline: 'none',
-                background: 'var(--bg-primary, #fff)',
-                overflowY: 'auto',
-                cursor: 'text',
-              }}
+            <RichTextEditor
+              value={form.content}
+              onChange={(html) => setForm((f) => ({ ...f, content: html }))}
+              placeholder={t('voc.content')}
             />
           </div>
         </form>

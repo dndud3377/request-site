@@ -249,7 +249,8 @@
     "col_requester": "Requester",
     "col_status": "Status",
     "col_submitted": "Submitted",
-    "col_approved": "Approval Date"
+    "col_approved": "Approval Date",
+    "delete_success": "The document has been deleted."
   },
   "voc": {
     "title": "VOC",
@@ -359,6 +360,7 @@
     "status_rejected": "Rejected",
     "no_data": "No data available.",
     "process_error": "An error occurred while processing.",
+    "load_error": "Failed to load the list.",
     "saving": "Saving...",
     "role_label_PL": "Product Manager",
     "role_label_TE_R": "AGENT R Team",

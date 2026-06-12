@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { documentsAPI, noticesAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import { ConfirmModal } from '../components/Modal';
+import RichTextEditor from '../components/RichTextEditor';
 import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseItem } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -250,7 +251,11 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                   <div className="notice-detail-title">{selected.title}</div>
 
                   {selected.template === 'notice' && selected.content && (
-                    <div className="notice-detail-content">{selected.content}</div>
+                    <div
+                      className="notice-detail-content"
+                      style={{ whiteSpace: 'pre-wrap' }}
+                      dangerouslySetInnerHTML={{ __html: selected.content }}
+                    />
                   )}
 
                   {selected.template === 'release_note' && (
@@ -341,11 +346,9 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                   {formTemplate === 'notice' && (
                     <div className="form-group">
                       <label className="form-label">{t('notice.content')}</label>
-                      <textarea
-                        className="form-control"
-                        rows={13}
+                      <RichTextEditor
                         value={formContent}
-                        onChange={(e) => setFormContent(e.target.value)}
+                        onChange={(html) => setFormContent(html)}
                         placeholder={t('notice.content')}
                       />
                     </div>
