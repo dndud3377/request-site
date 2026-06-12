@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import RequestDocument, ApprovalStep, VOC, Line, AdminNotice
+from .models import RequestDocument, ApprovalStep, VOC, Line, AdminNotice, MailNotification
 
 
 class ApprovalStepInline(admin.TabularInline):
@@ -51,3 +51,11 @@ class AdminNoticeAdmin(admin.ModelAdmin):
     list_display = ['title', 'template', 'date', 'created_at']
     list_filter = ['template', 'date']
     ordering = ['-date', '-created_at']
+
+
+@admin.register(MailNotification)
+class MailNotificationAdmin(admin.ModelAdmin):
+    list_display = ['event_type', 'subject', 'status', 'attempts', 'created_at', 'sent_at']
+    list_filter = ['status', 'event_type']
+    search_fields = ['subject', 'recipients']
+    readonly_fields = ['created_at', 'sent_at']

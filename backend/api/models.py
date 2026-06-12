@@ -494,6 +494,58 @@ class UserGroup(models.Model):
         return f"[{self.creator.loginid}] {self.name}"
 
 
+class MailNotification(models.Model):
+    """결재 알림 메일 발송 큐 (영속 outbox)
+
+    각 결재 전이 시점에 행을 적재(enqueue)하고, APScheduler 잡
+    `process_mail_queue` 가 주기적으로 DXHUB 메일 API 로 발송한다.
+    발송 실패 시 `attempts` 를 누적하며 `max_attempts` 회까지 재시도한다.
+    DB 에 영속되므로 서버 재시작에도 재시도 상태가 보존된다.
+    """
+
+    EVENT_CHOICES = [
+        ('stage_arrival', '단계 도착'),
+        ('rejected', '반려'),
+        ('approved', '승인 완료'),
+    ]
+
+    STATUS_CHOICES = [
+        ('pending', '대기'),
+        ('sent', '발송 완료'),
+        ('failed', '발송 실패'),
+    ]
+
+    document = models.ForeignKey(
+        RequestDocument, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='mail_notifications', verbose_name='의뢰서'
+    )
+    event_type = models.CharField(
+        max_length=20, choices=EVENT_CHOICES, verbose_name='이벤트 유형'
+    )
+    recipients = models.JSONField(default=list, verbose_name='수신자 이메일 목록')
+    subject = models.CharField(max_length=500, verbose_name='제목')
+    contents = models.TextField(verbose_name='본문(HTML)')
+    status = models.CharField(
+        max_length=10, choices=STATUS_CHOICES, default='pending', verbose_name='상태'
+    )
+    attempts = models.PositiveSmallIntegerField(default=0, verbose_name='시도 횟수')
+    max_attempts = models.PositiveSmallIntegerField(default=5, verbose_name='최대 시도 횟수')
+    last_error = models.TextField(blank=True, verbose_name='마지막 에러')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='적재일시')
+    sent_at = models.DateTimeField(null=True, blank=True, verbose_name='발송일시')
+
+    class Meta:
+        verbose_name = '결재 알림 메일'
+        verbose_name_plural = '결재 알림 메일 목록'
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['status'], name='api_mailnoti_status_idx'),
+        ]
+
+    def __str__(self):
+        return f"[{self.status}] {self.event_type} → {self.recipients}"
+
+
 class VocHistory(models.Model):
     """VOC 처리 이력 - 프론트엔드 VocHistory 타입과 1:1 매핑"""
 

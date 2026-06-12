@@ -138,6 +138,14 @@ EXTERNAL_DB_PASSWORD = os.environ.get('EXTERNAL_DB_PASSWORD', '')
 
 APPROVAL_EMAIL_LIST = os.environ.get('APPROVAL_EMAIL_LIST', '').split(',')
 
+# DXHUB 메일 API (결재 알림 발송)
+DXHUB_MAIL_URL = os.environ.get('DXHUB_MAIL_URL', '')
+DXHUB_API_KEY = os.environ.get('DXHUB_API_KEY', '')
+# 메일 본문에 포함할 웹 서비스 주소 (개발 http://localhost:10011 / 운영 https://...:10010)
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:10011')
+# 설정 시 모든 결재 알림 메일을 이 주소로 강제 발송 (개발/검증용). 비우면 실제 수신자에게 발송.
+MAIL_REDIRECT_TO = os.environ.get('MAIL_REDIRECT_TO', '')
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=12),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),

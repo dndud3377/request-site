@@ -25,6 +25,7 @@ from .models import (
     MapName,
 )
 from .utils import LINE_TO_LINEID_MAP
+from . import mailer
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer,
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
@@ -135,11 +136,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             document.save()
 
             ApprovalStep.objects.filter(document=document).delete()
-            ApprovalStep.objects.create(
+            pl_step = ApprovalStep.objects.create(
                 document=document, agent='PL', action='pending', round=1,
                 assignee=designated_pl_user,
                 assignee_name=document.designated_pl_name,
             )
+            mailer.enqueue_stage_arrival(document, 'PL', pl_step)
 
         return Response({
             'message': '의뢰서가 성공적으로 상신되었습니다.',
@@ -180,11 +182,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             document.save()
 
             max_round = self._max_round(document, default=0)
-            ApprovalStep.objects.create(
+            pl_step = ApprovalStep.objects.create(
                 document=document, agent='PL', action='pending', round=max_round + 1,
                 assignee=designated_pl_user,
                 assignee_name=document.designated_pl_name,
             )
+            mailer.enqueue_stage_arrival(document, 'PL', pl_step)
 
         return Response({
             'message': '재상신되었습니다.',
@@ -262,19 +265,22 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             r_date = step.acted_at.date() if step.acted_at else datetime.date.today()
             p_due = calculate_business_due_date(r_date, 4)
             o_due = calculate_business_due_date(r_date, 6)
-            ApprovalStep.objects.create(
+            p_step = ApprovalStep.objects.create(
                 document=document, agent='P', action='pending',
                 round=current_round, due_date=p_due,
             )
-            ApprovalStep.objects.create(
+            o_step = ApprovalStep.objects.create(
                 document=document, agent='O', action='pending',
                 is_parallel=True, round=current_round, due_date=o_due,
             )
+            mailer.enqueue_stage_arrival(document, 'P', p_step)
+            mailer.enqueue_stage_arrival(document, 'O', o_step)
             if document.has_ppid_plel():
-                ApprovalStep.objects.create(
+                e_step = ApprovalStep.objects.create(
                     document=document, agent='E', action='pending',
                     is_parallel=True, round=current_round, due_date=o_due,
                 )
+                mailer.enqueue_stage_arrival(document, 'E', e_step)
             new_status = 'under_review'
 
         elif agent == 'P':
@@ -283,10 +289,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             import datetime
             p_date = step.acted_at.date() if step.acted_at else datetime.date.today()
             j_due = calculate_business_due_date(p_date, 4)
-            ApprovalStep.objects.create(
+            j_step = ApprovalStep.objects.create(
                 document=document, agent='J', action='pending',
                 round=current_round, due_date=j_due,
             )
+            mailer.enqueue_stage_arrival(document, 'J', j_step)
             new_status = 'under_review'
 
         elif agent in ('J', 'O', 'E'):
@@ -305,6 +312,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         document.status = new_status
         document.save()
+
+        if new_status == 'approved':
+            mailer.enqueue_approved(document)
 
         return Response({
             'message': '처리되었습니다.',
@@ -340,6 +350,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         document.status = 'rejected'
         document.save()
+
+        mailer.enqueue_rejected(document)
 
         return Response({'message': '반려되었습니다.', 'status': 'rejected'})
 
@@ -399,11 +411,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             step.comment = comment
             step.save()
 
-            ApprovalStep.objects.create(
+            r_step = ApprovalStep.objects.create(
                 document=document, agent='R', action='pending', round=step.round,
             )
             document.status = 'under_review'
             document.save()
+            mailer.enqueue_stage_arrival(document, 'R', r_step)
 
         return Response({'message': '합의되었습니다. R 단계로 진행합니다.', 'status': 'under_review'})
 
@@ -430,6 +443,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
             document.status = 'rejected'
             document.save()
+            mailer.enqueue_rejected(document)
 
         return Response({'message': '반려되었습니다.', 'status': 'rejected'})
 
@@ -454,11 +468,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             step.comment = f'[수정 후 상신] {comment}'.strip()
             step.save()
 
-            ApprovalStep.objects.create(
+            r_step = ApprovalStep.objects.create(
                 document=document, agent='R', action='pending', round=step.round,
             )
             document.status = 'under_review'
             document.save()
+            mailer.enqueue_stage_arrival(document, 'R', r_step)
 
         return Response({'message': '수정 후 상신되었습니다. R 단계로 진행합니다.', 'status': 'under_review'})
 
