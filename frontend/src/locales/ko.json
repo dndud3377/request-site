@@ -165,6 +165,7 @@
   },
   "approval": {
     "title": "결재 현황",
+    "tab_route": "결재 경로",
     "subtitle": "의뢰서 결재 진행 현황을 확인합니다",
     "filter_all": "전체",
     "filter_my": "MY",

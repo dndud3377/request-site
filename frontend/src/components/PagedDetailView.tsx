@@ -1190,10 +1190,10 @@ type Page = { label: string; content: React.ReactNode };
   ];
 
   pages.push({
-    label: t('approval.title'),
+    label: t('approval.tab_route'),
     content: (
       <div style={cardStyle}>
-        <div style={sectionTitle}>{t('approval.title')}</div>
+        <div style={sectionTitle}>{t('approval.tab_route')}</div>
 
         {/* 상신자 행 */}
         <div style={teamRowStyle}>
