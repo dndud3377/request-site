@@ -136,6 +136,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   st: '미적용',
   ecc: '미적용',
   labelsideshot: '미적용',
+  hpkglabelheight: '미적용',
   rev_yn: '',
   rev_entries: [],
   partial_shot: '',
