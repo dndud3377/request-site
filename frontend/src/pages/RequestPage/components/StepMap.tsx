@@ -475,6 +475,7 @@ const StepMap: React.FC<StepMapProps> = ({
             { label: t('request.map_opt_st'),             name: 'st'             as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
             { label: t('request.map_opt_ecc'),            name: 'ecc'            as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
             { label: t('request.map_opt_labelsideshot'),  name: 'labelsideshot'  as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_hpkglabelheight'), name: 'hpkglabelheight' as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
           ];
           return (
             <div className="full-width">
