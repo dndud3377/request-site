@@ -460,6 +460,7 @@ class ProductBarcode(models.Model):
     n7c_layer_num = models.CharField(max_length=200, verbose_name='Layer Num')
     n7prod_code = models.CharField(max_length=200, verbose_name='Product Code')
     n7barcode = models.CharField(max_length=200, verbose_name='Barcode')
+    n7material_spec = models.CharField(max_length=500, null=True, blank=True, verbose_name='Material Spec')
     last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
 
     class Meta:
