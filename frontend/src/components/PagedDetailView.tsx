@@ -867,6 +867,7 @@ type Page = { label: string; content: React.ReactNode };
               { label: t('request.map_opt_st'),             fieldKey: 'st',             activeValue: '적용' },
               { label: t('request.map_opt_ecc'),            fieldKey: 'ecc',            activeValue: '적용' },
               { label: t('request.map_opt_labelsideshot'),  fieldKey: 'labelsideshot',  activeValue: '적용' },
+              { label: t('request.map_opt_hpkglabelheight'), fieldKey: 'hpkglabelheight', activeValue: '적용' },
             ];
             const activeOptions = mapOptionDefs.filter(o => (detail as any)[o.fieldKey] === o.activeValue);
             const prevActiveOptions = mapOptionDefs.filter(o => (prevSnap?.detail as any)?.[o.fieldKey] === o.activeValue);
