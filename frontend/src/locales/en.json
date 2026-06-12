@@ -72,6 +72,8 @@
     "map_type_registered": "EXISTING",
     "map_type_change_confirm_title": "Change Request Type",
     "map_type_change_confirm_msg": "Changing the request type will reset all entered values. Do you want to continue?",
+    "only_map_confirm_title": "Switch to Only MAP",
+    "only_map_confirm_msg": "Selecting Only MAP will reset and disable Other Purpose, Flow Chart, Notes, Backbone, and Reference Request. Do you want to continue?",
     "map_x_sign_error": "North/South X values must have the same absolute value with opposite signs.",
     "map_y_equal_error": "North/South Y values must be identical.",
     "map": "Map Deviation Change",
