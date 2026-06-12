@@ -117,6 +117,7 @@
     "map_opt_st": "8",
     "map_opt_ecc": "9",
     "map_opt_labelsideshot": "10",
+    "map_opt_hpkglabelheight": "11",
     "e_lps": "Sugar Addition",
     "no": "No",
     "yes": "Yes",
