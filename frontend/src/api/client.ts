@@ -314,7 +314,7 @@ const getVoc = async (id: number) => {
 };
 
 const updateVocStatus = async (id: number, status: VOC['status']) => {
-  const data = await patch<VOC>(`/voc/${id}/`, { status });
+  const data = await patch<VOC>(`/voc/${id}/update-status/`, { status });
   return { data };
 };
 
