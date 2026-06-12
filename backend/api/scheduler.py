@@ -282,6 +282,16 @@ def start():
             replace_existing=True,
         )
 
+        from .mailer import process_mail_queue
+        scheduler.add_job(
+            process_mail_queue,
+            trigger=IntervalTrigger(minutes=1),
+            id='process_mail_queue',
+            name='결재 알림 메일 큐 발송',
+            replace_existing=True,
+            max_instances=1,
+        )
+
         scheduler.start()
         logger.info(_("[scheduler] APScheduler 시작 - 1 시간 주기 DCQ 동기화 / 매일 02:00 공휴일 동기화 등록"))
 
