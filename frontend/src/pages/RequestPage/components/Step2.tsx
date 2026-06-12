@@ -123,7 +123,7 @@ const Step2: React.FC<Step2Props> = ({
           <GuideBadge fk="step3_jayer_filter" tk={t('guide.feat.step3_jayer_filter' as never)} />
         </div>
       </div>
-      <div className="wizard-table-wrapper">
+      <div className="wizard-table-wrapper" ref={cellSel.containerRef}>
         <table className="wizard-table" style={{ userSelect: jayerDragInfo.current ? 'none' : undefined }} onPaste={(e) => cellSel.onCellPaste(e, renderedJayerIds)}>
           <colgroup>
             <col style={{ width: 44 }} />
@@ -176,7 +176,7 @@ const Step2: React.FC<Step2Props> = ({
                 style: {
                   backgroundColor: bg,
                   ...extra,
-                  ...(cellSel.isCellSelected(row.id, col) ? { outline: '2px solid #2563eb', outlineOffset: '-2px' } : {}),
+                  ...(cellSel.isCellSelected(row.id, col) ? { boxShadow: 'inset 0 0 0 9999px rgba(37, 99, 235, 0.12)' } : {}),
                 } as React.CSSProperties,
               });
               return (
