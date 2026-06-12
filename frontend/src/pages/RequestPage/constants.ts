@@ -8,7 +8,7 @@ import {
 } from '../../types';
 
 // ===== Option Constants =====
-export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'MAP 변경'] as const;
+export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'Only MAP'] as const;
 export const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
 export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay, ADI CD 추가/삭제/변경'] as const;
 
@@ -136,6 +136,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   st: '미적용',
   ecc: '미적용',
   labelsideshot: '미적용',
+  hpkglabelheight: '미적용',
   rev_yn: '',
   rev_entries: [],
   partial_shot: '',

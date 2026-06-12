@@ -8,6 +8,7 @@ import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE } from '../constants';
 interface Step1Props {
   detail: DetailFormState;
   errors: Partial<Record<string, string>>;
+  isOnlyMap: boolean;
   lineOptions: string[];
   processOptions: string[];
   productOptions: string[];
@@ -41,6 +42,7 @@ interface Step1Props {
 const Step1: React.FC<Step1Props> = ({
   detail,
   errors,
+  isOnlyMap,
   lineOptions,
   processOptions,
   productOptions,
@@ -76,6 +78,8 @@ const Step1: React.FC<Step1Props> = ({
     detail.process_selection !== '' &&
     detail.partid_selection !== '' &&
     detail.process_id !== '';
+  // Only MAP 모드: 기타목적·흐름도·특이사항·Backbone·참조요청서는 초기화 후 작성 불가
+  const disableOptional = !canSelectPurpose || isOnlyMap;
 
   return (
     <div className="form-section">
@@ -169,8 +173,8 @@ const Step1: React.FC<Step1Props> = ({
                     key={val}
                     type="button"
                     className={`map-type-btn${detail.other_purpose === val ? ' active' : ''}`}
-                    onClick={() => { if (canSelectPurpose) handleDetailSet('other_purpose', detail.other_purpose === val ? '' : val); }}
-                    disabled={!canSelectPurpose}
+                    onClick={() => { if (!disableOptional) handleDetailSet('other_purpose', detail.other_purpose === val ? '' : val); }}
+                    disabled={disableOptional}
                   >
                     {val}
                   </button>
@@ -192,14 +196,14 @@ const Step1: React.FC<Step1Props> = ({
                     }}
                     onSelect={handleRefDocSelect}
                     placeholder="이력에서 요청서를 선택하세요"
-                    disabled={!canSelectPurpose}
+                    disabled={disableOptional}
                   />
                 </div>
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={!canSelectPurpose || refDocId === null}
-                  style={!canSelectPurpose || refDocId === null ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                  disabled={disableOptional || refDocId === null}
+                  style={disableOptional || refDocId === null ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
                   onClick={handleMergeClick}
                 >
                   Merge
@@ -219,7 +223,7 @@ const Step1: React.FC<Step1Props> = ({
                         className="form-control"
                         value={row.location}
                         onChange={(e) => handleFlowChange(row.id, 'location', e.target.value)}
-                        disabled={!canSelectPurpose}
+                        disabled={disableOptional}
                       >
                         <option value="">{t('request.select_placeholder')}</option>
                         {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -233,7 +237,7 @@ const Step1: React.FC<Step1Props> = ({
                         options={FlowProductOptions[idx] || []}
                         placeholder={t('request.select_placeholder')}
                         style={{ width: '100%' }}
-                        disabled={!canSelectPurpose}
+                        disabled={disableOptional}
                       />
                     </div>
                     <div className="form-group flex-col" style={{ marginBottom: 0 }}>
@@ -244,7 +248,7 @@ const Step1: React.FC<Step1Props> = ({
                         options={FlowProcessIdOptions[idx] || []}
                         placeholder={t('request.select_placeholder')}
                         style={{ width: '100%' }}
-                        disabled={!canSelectPurpose}
+                        disabled={disableOptional}
                       />
                     </div>
                     <div className="form-group flex-col" style={{ marginBottom: 0 }}>
@@ -256,7 +260,7 @@ const Step1: React.FC<Step1Props> = ({
                           options={FlowLayerIdOptions[idx] || []}
                           placeholder={t('request.select_placeholder')}
                           style={{ minWidth: '80px' }}
-                          disabled={!canSelectPurpose}
+                          disabled={disableOptional}
                         />
                         <span style={{ whiteSpace: 'nowrap' }}>~</span>
                         <AutocompleteInput
@@ -265,7 +269,7 @@ const Step1: React.FC<Step1Props> = ({
                           options={FlowLayerIdOptions[idx] || []}
                           placeholder={t('request.select_placeholder')}
                           style={{ minWidth: '80px' }}
-                          disabled={!canSelectPurpose}
+                          disabled={disableOptional}
                         />
                       </div>
                     </div>
@@ -275,14 +279,14 @@ const Step1: React.FC<Step1Props> = ({
                         className="btn btn-danger"
                         style={{ padding: '6px 10px', marginBottom: '2px' }}
                         onClick={() => handleFlowDeleteRow(row.id)}
-                        disabled={!canSelectPurpose}
+                        disabled={disableOptional}
                       >
                         {t('request.bb_delete')}
                       </button>
                     )}
                   </div>
                 ))}
-                <button type="button" className="btn btn-secondary" onClick={handleFlowAddRow} disabled={!canSelectPurpose}>
+                <button type="button" className="btn btn-secondary" onClick={handleFlowAddRow} disabled={disableOptional}>
                   + {t('request.flow_add_row')}
                 </button>
               </div>
@@ -296,7 +300,7 @@ const Step1: React.FC<Step1Props> = ({
                 value={detail.change_purpose_note}
                 onChange={handleDetailChange}
                 rows={3}
-                disabled={!canSelectPurpose}
+                disabled={disableOptional}
               />
             </div>
           </div>
@@ -318,7 +322,7 @@ const Step1: React.FC<Step1Props> = ({
                     className="form-control"
                     value={entry.location}
                     onChange={(e) => handleBbEntryChange(idx, 'location', e.target.value)}
-                    disabled={!canSelectPurpose}
+                    disabled={disableOptional}
                   >
                     <option value="">{t('request.select_placeholder')}</option>
                     {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -332,7 +336,7 @@ const Step1: React.FC<Step1Props> = ({
                     options={BbProductOptions[idx] || []}
                     placeholder={t('request.select_placeholder')}
                     style={{ width: '100%' }}
-                    disabled={!canSelectPurpose}
+                    disabled={disableOptional}
                   />
                 </div>
                 <div className="form-group flex-col" style={{ marginBottom: 0 }}>
@@ -343,7 +347,7 @@ const Step1: React.FC<Step1Props> = ({
                     options={BbProductidOptions[idx] || []}
                     placeholder={t('request.select_placeholder')}
                     style={{ width: '100%' }}
-                    disabled={!canSelectPurpose}
+                    disabled={disableOptional}
                   />
                 </div>
                 {detail.bb_entries.length > 1 && (
@@ -352,7 +356,7 @@ const Step1: React.FC<Step1Props> = ({
                     className="btn btn-danger"
                     style={{ padding: '6px 10px', marginBottom: '2px' }}
                     onClick={() => handleBbEntryDelete(idx)}
-                    disabled={!canSelectPurpose}
+                    disabled={disableOptional}
                   >
                     {t('request.bb_delete')}
                   </button>
@@ -360,7 +364,7 @@ const Step1: React.FC<Step1Props> = ({
               </div>
             ))}
             <div>
-              <button type="button" className="btn btn-secondary" onClick={handleBbEntryAdd} disabled={!canSelectPurpose}>
+              <button type="button" className="btn btn-secondary" onClick={handleBbEntryAdd} disabled={disableOptional}>
                 + {t('request.bb_add')}
               </button>
             </div>

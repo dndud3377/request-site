@@ -106,35 +106,37 @@ const StepMap: React.FC<StepMapProps> = ({
           {errors.map_type && <span className="form-error">{errors.map_type}</span>}
         </div>
 
-        {/* 원본 위치/Part ID */}
-        <div className="full-width">
-          <div className="conditional-group">
-            <div className="flex-row">
-              <div className="form-group flex-col">
-                <label className="form-label">
-                  {t('request.source_line')}
-                  <GuideBadge fk="step2_source_location" tk={t('guide.feat.step2_source_location' as never)} />
-                </label>
-                <select
-                  className="form-control"
-                  name="source_line"
-                  value={detail.source_line}
-                  onChange={handleDetailChange}
-                >
-                  <option value="">{t('request.select_placeholder')}</option>
-                  {lineOptions.map((v) => <option key={v} value={v}>{v}</option>)}
-                </select>
+        {/* 원본 위치/Part ID (CLONE 전용) */}
+        {detail.map_type === 'CLONE' && (
+          <div className="full-width">
+            <div className="conditional-group">
+              <div className="flex-row">
+                <div className="form-group flex-col">
+                  <label className="form-label">
+                    {t('request.source_line')}
+                    <GuideBadge fk="step2_source_location" tk={t('guide.feat.step2_source_location' as never)} />
+                  </label>
+                  <select
+                    className="form-control"
+                    name="source_line"
+                    value={detail.source_line}
+                    onChange={handleDetailChange}
+                  >
+                    <option value="">{t('request.select_placeholder')}</option>
+                    {lineOptions.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
+                <AutocompleteInput
+                  label={t('request.source_partid_selection')}
+                  value={detail.source_partid}
+                  options={sourcePartIdOptions}
+                  onChange={(v) => handleDetailSet('source_partid', v)}
+                  style={{ flex: 1 }}
+                />
               </div>
-              <AutocompleteInput
-                label={t('request.source_partid_selection')}
-                value={detail.source_partid}
-                options={sourcePartIdOptions}
-                onChange={(v) => handleDetailSet('source_partid', v)}
-                style={{ flex: 1 }}
-              />
             </div>
           </div>
-        </div>
+        )}
 
         {/* Only C가문 제품 */}
         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -473,6 +475,7 @@ const StepMap: React.FC<StepMapProps> = ({
             { label: t('request.map_opt_st'),             name: 'st'             as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
             { label: t('request.map_opt_ecc'),            name: 'ecc'            as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
             { label: t('request.map_opt_labelsideshot'),  name: 'labelsideshot'  as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
+            { label: t('request.map_opt_hpkglabelheight'), name: 'hpkglabelheight' as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
           ];
           return (
             <div className="full-width">

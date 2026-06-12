@@ -269,6 +269,7 @@ export interface DetailFormState {
   st: string;
   ecc: string;
   labelsideshot: string;
+  hpkglabelheight: string;
 
   rev_yn: string;
   rev_entries: Array<{ layers: string[]; gds: string }>;
