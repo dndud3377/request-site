@@ -177,6 +177,23 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 
 ---
 
+## 4.1 결재 알림 메일 (DXHUB) — 2026-06 추가
+
+각 전이 시점에 해당 단계 권한자/작성자/그룹멤버에게 알림 메일을 보낸다.
+적재(enqueue)는 결재 트랜잭션 안에서 수행되고, 실제 발송은 백그라운드 큐
+(`MailNotification` + APScheduler `process_mail_queue`, 재시도 5회)에서 분리 처리된다.
+
+| 전이(액션) | 메일 이벤트 | 수신자 |
+|-----------|-----------|--------|
+| `submit`/`resubmit` | stage_arrival(PL) | 지정 PL 1명 |
+| `peer_approve`/`peer_submit` | stage_arrival(R) | TE_R 미지정 시 고정 주소 |
+| `approve_step`(R) | stage_arrival(P·O[·E]) | P 고정 주소 / O·E 팀 전원 |
+| `approve_step`(P) | stage_arrival(J) | TE_J 미지정 시 고정 주소 |
+| `approve_step`(J·O·E 전부 합의) | approved | 작성자가 속한 모든 그룹 멤버 전원 |
+| `reject_step`/`peer_reject` | rejected | 요청서 작성자 1명 |
+
+> 상세 규칙·환경변수·검증 방법은 `docs/MAIL.md` 참조.
+
 ## 5. 안정성 / 동시성 (2026-06 현황)
 
 - ✅ 상태전이 액션(submit/resubmit/withdraw/approve_step/reject_step/peer_*)은
