@@ -165,6 +165,7 @@
   },
   "approval": {
     "title": "Approval Status",
+    "tab_route": "Approval Route",
     "subtitle": "Check the approval progress of submitted requests",
     "filter_all": "All",
     "filter_my": "MY",
