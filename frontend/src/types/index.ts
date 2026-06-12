@@ -180,6 +180,7 @@ export interface OayerRow {
   sp: string;
   sd: string;
   pp: string;
+  layerid: string;      // Layer 컬럼 (Step2와 동일)
   st: string;
   new_or_copy: string;
   product_name: string;
