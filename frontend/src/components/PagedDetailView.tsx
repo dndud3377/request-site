@@ -656,12 +656,7 @@ type Page = { label: string; content: React.ReactNode };
           <div style={cardStyle}>
             <div style={sectionTitle}>{t('approval.section_detail')}</div>
 
-            {(isR || isJ || isE || isP) && (detail.source_line || detail.source_partid) && (
-              <div style={rowStyle}>
-                <Chip label={t('request.source_line')} value={detail.source_line} changed={changedFields.has('source_line')} fieldKey="source_line" />
-                <Chip label={t('request.source_partid_selection')} value={detail.source_partid} changed={changedFields.has('source_partid')} fieldKey="source_partid" />
-              </div>
-            )}
+            {/* 원본 라인/Part ID는 MAP 정보 섹션(CLONE)에서만 표시한다. */}
 
             {(isJ || isE || isO || isP) && detail.bb_zone && (() => {
               const bbValue = Array.isArray(detail.bb_entries) && detail.bb_entries.length > 0
