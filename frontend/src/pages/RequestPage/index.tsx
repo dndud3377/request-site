@@ -2078,6 +2078,12 @@ export default function RequestPage(): React.ReactElement {
         setNewFilter={setJayerNewFilter}
         onAllDelete={() => setFilterAllDeleteConfirm('jayer')}
         onRequestDelete={(fs) => setFilterDeleteConfirm({ type: 'jayer', filterId: fs.id, label: fs.label })}
+        onEdit={(filterId, label, words) => {
+          const updated = jayerFilterSets.map(f => f.id === filterId ? { ...f, label, words } : f);
+          setJayerFilterSets(updated);
+          localStorage.setItem('jayerFilterSets', JSON.stringify(updated));
+          setJayerRows(rows => rows.map(r => ({ ...r, disabled: calcDisabled(r, updated, jayerActiveFilterIds) })));
+        }}
       />
 
       {/* O-ayer 필터 관리 모달 */}
@@ -2092,6 +2098,12 @@ export default function RequestPage(): React.ReactElement {
         setNewFilter={setOayerNewFilter}
         onAllDelete={() => setFilterAllDeleteConfirm('oayer')}
         onRequestDelete={(fs) => setFilterDeleteConfirm({ type: 'oayer', filterId: fs.id, label: fs.label })}
+        onEdit={(filterId, label, words) => {
+          const updated = oayerFilterSets.map(f => f.id === filterId ? { ...f, label, words } : f);
+          setOayerFilterSets(updated);
+          localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
+          setOayerRows(rows => rows.map(r => ({ ...r, disabled: calcDisabled(r, updated, oayerActiveFilterIds) })));
+        }}
       />
 
       <Modal
