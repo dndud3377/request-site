@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Modal from '../../../components/Modal';
 import { useToast } from '../../../components/Toast';
 import { FilterSet } from '../../../types';
@@ -17,6 +17,7 @@ interface FilterManageModalProps {
   setNewFilter: React.Dispatch<React.SetStateAction<FilterDraft>>;
   onAllDelete: () => void;
   onRequestDelete: (fs: FilterSet) => void;
+  onEdit: (filterId: string, label: string, words: FilterDraft['words']) => void;
 }
 
 const FilterManageModal: React.FC<FilterManageModalProps> = ({
@@ -30,8 +31,30 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
   setNewFilter,
   onAllDelete,
   onRequestDelete,
+  onEdit,
 }) => {
   const addToast = useToast();
+  // 수정 중인 필터 id (null이면 새 필터 만들기 모드)
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  // 모달이 닫히면 수정 모드 해제
+  useEffect(() => {
+    if (!isOpen) setEditingId(null);
+  }, [isOpen]);
+
+  const startEdit = (fs: FilterSet) => {
+    setEditingId(fs.id);
+    setNewFilter({
+      label: fs.label,
+      words: { sp: [...fs.words.sp], sd: [...fs.words.sd], pp: [...fs.words.pp] },
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setNewFilter({ label: '', words: emptyDraftWords() });
+  };
+
   return (
     <Modal
       isOpen={isOpen}
@@ -49,19 +72,32 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
             전체 삭제
           </button>
           <div style={{ display: 'flex', gap: 8 }}>
+            {editingId && (
+              <button type="button" className="btn btn-secondary" onClick={cancelEdit}>
+                수정 취소
+              </button>
+            )}
             <button
               type="button"
               className="btn btn-primary"
               disabled={newFilter.words.sp.length === 0 && newFilter.words.sd.length === 0 && newFilter.words.pp.length === 0}
               onClick={() => {
-                const newSet: FilterSet = { id: String(Date.now()), label: newFilter.label || '필터', words: newFilter.words };
+                const label = newFilter.label || '필터';
+                if (editingId) {
+                  onEdit(editingId, label, newFilter.words);
+                  setNewFilter({ label: '', words: emptyDraftWords() });
+                  setEditingId(null);
+                  addToast(`필터 "${label}"이 수정되었습니다.`, 'success');
+                  return;
+                }
+                const newSet: FilterSet = { id: String(Date.now()), label, words: newFilter.words };
                 const updated = [...filterSets, newSet];
                 setFilterSets(updated);
                 localStorage.setItem(storageKey, JSON.stringify(updated));
                 setNewFilter({ label: '', words: emptyDraftWords() });
                 addToast(`필터 "${newSet.label}"이 추가되었습니다.`, 'success');
               }}
-            >+ 추가</button>
+            >{editingId ? '수정 적용' : '+ 추가'}</button>
             <button className="btn btn-secondary" onClick={onClose}>
               닫기
             </button>
@@ -115,6 +151,8 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
                             {fs.words.pp.map((k,i)=><span key={i} style={{ background:'#fff3e0', padding:'1px 7px', borderRadius:10, fontSize:11 }}>🟠 {k}</span>)}
                           </div>
                         </div>
+                        <button type="button" className="btn btn-secondary btn-sm"
+                          onClick={() => startEdit(fs)}>수정</button>
                         <button type="button" className="btn btn-danger btn-sm"
                           onClick={() => onRequestDelete(fs)}>삭제</button>
                       </div>
@@ -126,7 +164,7 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
             <hr style={{ margin: '14px 0', borderColor: 'var(--border)' }} />
 
             {/* 새 필터 만들기 */}
-            <div style={{ fontWeight: 600, fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>새 필터 만들기</div>
+            <div style={{ fontWeight: 600, fontSize: 12, color: editingId ? 'var(--accent)' : '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>{editingId ? '필터 수정' : '새 필터 만들기'}</div>
             <input
               type="text"
               placeholder="필터 이름을 입력하세요..."
