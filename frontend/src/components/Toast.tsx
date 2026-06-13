@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, ReactNode } from 'react';
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -25,9 +25,10 @@ const ICONS: Record<ToastType, string> = {
 
 export function ToastProvider({ children }: ToastProviderProps): React.ReactElement {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastIdRef = useRef(0);
 
   const addToast = useCallback<AddToast>((message, type = 'info') => {
-    const id = Date.now();
+    const id = (toastIdRef.current += 1);
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
