@@ -221,4 +221,11 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 
 ---
 
+## 7. 상세 보기(PagedDetailView) 변경 이력
+
+- **(2026-06-13) 원본 라인/Part ID는 MAP 정보 섹션에만 표시**: 기존에는 `source_line`/`source_partid`가 '상세 정보' 섹션(`section_detail`)과 'MAP 정보' 섹션(`section_map`, `map_type === 'CLONE'`) 두 곳에 중복 노출됐다. '상세 정보' 쪽 블록을 제거하여 **MAP 정보 섹션(CLONE)에서만** 보이도록 한다. MAP 섹션 노출 조건은 `showMap = isR || isO || isP`이므로 순수 TE_J/TE_E 역할에는 원본 정보가 표시되지 않는다(MAP 정보 성격상 의도된 동작).
+- 각 step에서 작성한 내용은 상세 보기에서 별도 페이지/섹션으로 분리 렌더된다: J-layer→`job_li`, O-layer→`ovl_li`(table/info 탭, info 탭에 `partial_shot`·TBV·TLV), Backbone→`bb`, MAP 변경 내용→`section_map`.
+
+---
+
 *결재 로직/화면이 바뀌면 이 문서를 반드시 함께 갱신한다.*
