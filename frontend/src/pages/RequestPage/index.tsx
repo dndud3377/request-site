@@ -517,15 +517,22 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleRequestPurposeSelect = (val: string) => {
-    if (val === 'Only MAP' && detail.request_purpose !== 'Only MAP') {
+    if (val === detail.request_purpose) return;
+    // 이미 선택된 목적이 있을 때 Only MAP으로 바꾸면 초기화 모달을 띄운다.
+    if (val === 'Only MAP' && detail.request_purpose) {
       setOnlyMapConfirm(true);
+      return;
+    }
+    // 첫 선택이 Only MAP이면 초기화할 것이 없으므로 모달 없이 바로 적용.
+    if (val === 'Only MAP') {
+      applyOnlyMap();
       return;
     }
     handleDetailSet('request_purpose', val);
   };
 
-  // Only MAP 확인 → 라인/조합법/제품/조리법/고객/요구사항/생산일을 제외한 Step1 항목 초기화
-  const handleOnlyMapConfirm = () => {
+  // Only MAP 적용 → 라인/조합법/제품/조리법/고객/요구사항/생산일을 제외한 Step1 항목 초기화
+  const applyOnlyMap = () => {
     setDetail((prev) => ({
       ...prev,
       request_purpose: 'Only MAP',
@@ -539,12 +546,17 @@ export default function RequestPage(): React.ReactElement {
     setRefJayerRows([]);
     setRefOayerRows([]);
     setErrors((prev) => ({ ...prev, request_purpose: '', bb_entries: '' }));
+  };
+
+  const handleOnlyMapConfirm = () => {
+    applyOnlyMap();
     setOnlyMapConfirm(false);
   };
 
   const handleMapTypeSelect = (val: string) => {
     if (val === detail.map_type) return;
-    if (val === 'CLONE' || val === 'EXISTING') {
+    // 이미 선택된 map_type이 있을 때만 초기화 모달을 띄운다. 첫 선택이면 초기화할 것이 없으므로 바로 적용.
+    if ((val === 'CLONE' || val === 'EXISTING') && detail.map_type) {
       setMapTypeChangeConfirm({ targetType: val });
       return;
     }
