@@ -425,6 +425,8 @@
     "content_label": "내용",
     "editor_placeholder": "가이드 내용을 작성하세요...",
     "paste_image_hint": "이미지를 에디터에 직접 Ctrl+V로 붙여넣기할 수 있습니다.",
+    "video_too_large": "동영상 크기는 50MB를 초과할 수 없습니다.",
+    "video_upload_failed": "동영상 업로드에 실패했습니다.",
     "save": "저장",
     "cancel": "취소",
     "edit": "수정",
