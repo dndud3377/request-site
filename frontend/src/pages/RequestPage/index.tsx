@@ -1637,12 +1637,32 @@ export default function RequestPage(): React.ReactElement {
 
   useIdleTimer(handleIdleAutoSave, 20 * 60 * 1000);
 
+  // 검증 실패 시 첫 번째 오류 필드로 스크롤·강조한다.
+  // O-layer(step 4)의 partial_shot 오류는 'info' 탭에 있으므로 먼저 탭을 전환한다.
+  const scrollToFirstError = () => {
+    if (step === 4) setOayerInfoTab('info');
+    // 탭 전환·에러 span 렌더가 끝난 뒤 DOM을 조회하도록 지연한다.
+    setTimeout(() => {
+      const errorEl = document.querySelector('.form-error');
+      if (!errorEl) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      const container = (errorEl.closest('.form-group') ?? errorEl.parentElement ?? errorEl) as HTMLElement;
+      container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      container.classList.add('field-error-flash');
+      setTimeout(() => container.classList.remove('field-error-flash'), 1600);
+      const focusable = container.querySelector('input, select, textarea, button') as HTMLElement | null;
+      focusable?.focus({ preventScroll: true });
+    }, 60);
+  };
+
   const handleNextStep = (skipTbvtlvWarn = false, skipSpecialCare = false) => {
     if (step === 1 || step === 2 || step === 4) {
       const result = validate(step);
       if (!result.valid) {
         result.errors.forEach(msg => addToast(msg, 'error'));
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        scrollToFirstError();
         return;
       }
     }
@@ -1732,7 +1752,7 @@ export default function RequestPage(): React.ReactElement {
     const result = validate(5);
     if (!result.valid) {
       result.errors.forEach(msg => addToast(msg, 'error'));
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollToFirstError();
       return;
     }
     // peer review 모드가 아닐 때만 PL 목록 로드
