@@ -2020,6 +2020,7 @@ export default function RequestPage(): React.ReactElement {
           activeBbTab={activeBbTab}
           setActiveBbTab={setActiveBbTab}
           detail={detail}
+          errors={errors}
           bbSearchQueries={bbSearchQueries}
           setBbSearchQueries={setBbSearchQueries}
           stagedMappings={stagedMappings}
