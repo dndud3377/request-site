@@ -540,11 +540,26 @@ export default function RequestPage(): React.ReactElement {
       flow_chart: [makeRow()],
       change_purpose_note: INITIAL_DETAIL.change_purpose_note,
       bb_entries: INITIAL_DETAIL.bb_entries.map((e) => ({ ...e })),
+      // Only MAP은 StepMap 정보까지만 필요 → O-layer 정보 탭(partial_shot/TBV·TLV) 초기화
+      partial_shot: INITIAL_DETAIL.partial_shot,
+      tbvtlv_thickness: INITIAL_DETAIL.tbvtlv_thickness,
+      tbvtlv_entries: [],
     }));
     setRefDocId(null);
     setRefDocLabel('');
     setRefJayerRows([]);
     setRefOayerRows([]);
+    // Only MAP은 StepMap 정보까지만 필요 → J-layer/O-layer/Backbone 표 데이터 비우기
+    setJayerRows([makeJayerRow()]);
+    setOayerRows([makeOayerRow()]);
+    setBbRows([]);
+    setBbExternalData([]);
+    setMappedJayerRowIds(new Set());
+    setStagedMappings({});
+    setSelectedJayerRowId(null);
+    setJayerChecked(new Set());
+    setOayerChecked(new Set());
+    setBbChecked(new Set());
     setErrors((prev) => ({ ...prev, request_purpose: '', bb_entries: '' }));
   };
 
