@@ -88,6 +88,10 @@ export interface RequestDocument {
   designated_pl_loginid?: string | null;
   designated_pl_name?: string;
   approval_steps?: ApprovalStepFrontend[];
+  // 서버가 요청자 기준으로 계산해 내려주는 권한 플래그 (읽기 전용)
+  requester_loginid?: string | null;
+  can_edit?: boolean;
+  can_withdraw?: boolean;
 }
 
 export type CreateDocumentInput = Omit<
