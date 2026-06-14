@@ -1835,28 +1835,20 @@ export default function RequestPage(): React.ReactElement {
     );
   };
 
-  const GuideBadge = ({ fk, tk }: { fk: GuideFeatureKey; tk: string }) =>
-    featureGuideKeys.has(fk) ? (
+  const GuideBadge = ({ fk, tk }: { fk: GuideFeatureKey; tk: string }) => {
+    if (!featureGuideKeys.has(fk)) return null;
+    const isVideo = GUIDE_DEMO_KEYS.includes(fk);
+    const active = slidePanel.open && slidePanel.featureKey === fk;
+    return (
       <button
         type="button"
         onClick={(e) => { e.preventDefault(); toggleSlidePanel(fk, tk); }}
-        style={{
-          fontSize: 10,
-          padding: '2px 7px',
-          border: '1px solid #4f8ef7',
-          borderRadius: 10,
-          background: slidePanel.open && slidePanel.featureKey === fk ? '#eff6ff' : 'transparent',
-          color: '#4f8ef7',
-          cursor: 'pointer',
-          marginLeft: 6,
-          verticalAlign: 'middle',
-          fontWeight: 600,
-          lineHeight: 1.4,
-        }}
+        className={`${isVideo ? 'guide-video-badge' : 'guide-badge'}${active ? ' active' : ''}`}
       >
-        {t('guide.guide_btn')}
+        {t(isVideo ? 'guide.video_btn' : 'guide.guide_btn')}
       </button>
-    ) : null;
+    );
+  };
 
   // ===== Main Render =====
   return (
