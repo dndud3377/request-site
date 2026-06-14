@@ -609,12 +609,12 @@ export default function ApprovalPage(): React.ReactElement {
                       {idx === 0 && (
                         <td rowSpan={rows.length}>
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                            {(isPL || isMaster) && (doc.status === 'rejected' || doc.status === 'draft') && (
+                            {doc.can_edit && (doc.status === 'rejected' || doc.status === 'draft') && (
                               <button className="btn btn-primary btn-sm" onClick={() => handleEditResubmit(doc)}>
                                 {t('approval.edit_resubmit')}
                               </button>
                             )}
-                            {(isPL || isMaster) && (doc.status === 'under_review' || doc.status === 'rejected' || doc.status === 'draft') && (
+                            {doc.can_withdraw && (doc.status === 'under_review' || doc.status === 'rejected' || doc.status === 'draft') && (
                               <button className="btn btn-secondary btn-sm" onClick={() => handleWithdrawClick(doc)} disabled={processing}>
                                 {t('approval.withdraw')}
                               </button>
@@ -749,12 +749,12 @@ export default function ApprovalPage(): React.ReactElement {
 
           return (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
-              {selected && (isPL || isMaster) && (selected.status === 'rejected' || selected.status === 'draft') && (
+              {selected && selected.can_edit && (selected.status === 'rejected' || selected.status === 'draft') && (
                 <button className="btn btn-primary" onClick={() => handleEditResubmit(selected)}>
                   {t('approval.edit_resubmit')}
                 </button>
               )}
-              {selected && (isPL || isMaster) && (selected.status === 'under_review' || selected.status === 'rejected' || selected.status === 'draft') && (
+              {selected && selected.can_withdraw && (selected.status === 'under_review' || selected.status === 'rejected' || selected.status === 'draft') && (
                 <button className="btn btn-secondary" onClick={() => handleWithdrawClick(selected)} disabled={processing}>
                   {t('approval.withdraw')}
                 </button>
