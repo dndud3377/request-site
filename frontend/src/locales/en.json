@@ -479,12 +479,45 @@
       "replay": "▶ Replay",
       "playing": "Playing…",
       "done_loop": "Done — replaying shortly",
+      "common": {
+        "add": "Add",
+        "add_row": "Add Row",
+        "add_filter": "Filter",
+        "disable": "Disable Selected",
+        "restore": "Restore",
+        "save": "Save",
+        "cancel": "Cancel"
+      },
       "step1_line_process": {
         "lead": "This is the first required item when creating a request. Select the 4 fields below in order to enable the remaining items.",
         "downstream_title": "Request Purpose · Flow Chart · BB Combination …",
         "locked": "🔒 Locked",
         "unlocked": "✓ Ready to input",
         "callout": "⚠️ Note · The process/part/recipe lists are pulled from an external query DB and refreshed once every hour. If a newly registered item is missing, try again shortly."
+      },
+      "step3_jayer_table": {
+        "lead": "The core table for J-ayer data. It supports paste, barcode auto-fill, and row disable/restore.",
+        "phase_paste": "① Select a cell and paste Excel data with Ctrl+V",
+        "phase_barcode": "② Entering Product/STEP auto-matches the ID (barcode)",
+        "phase_disable": "③ Check rows, then disable the selection",
+        "phase_restore": "④ Restore to revert to the original state",
+        "match_tag": "1 match",
+        "callout": "⚠️ Note · Barcode candidates are pulled from an external query DB and refreshed once every hour. When exactly one STEP matches, the ID is auto-filled; with 2+ matches, pick it from the dropdown. Disabled rows are excluded from the request."
+      },
+      "step3_jayer_filter": {
+        "lead": "Create and apply filters that disable matching rows at once. Define conditions with SP/SD/PP keywords.",
+        "phase_open": "① Open the filter modal with the + Filter button",
+        "phase_fill": "② Enter a filter name, then add SP/SD/PP keywords",
+        "phase_save": "③ Saving creates a filter button in the toolbar",
+        "phase_apply": "④ Click the filter button → matching rows are disabled",
+        "phase_toggle": "⑤ Click again to clear the disabling",
+        "modal_title": "Filter Management",
+        "name_label": "Filter name",
+        "name_ph": "Enter a filter name",
+        "kw_suffix": "keyword",
+        "kw_ph": "Enter keyword",
+        "sample_name": "Exclude PLEL",
+        "callout": "💡 Filters rows whose SP/SD/PP column contains the keyword. You can add multiple keywords, and saved filters can be deleted in the modal."
       }
     }
   },
