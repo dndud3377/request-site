@@ -47,7 +47,7 @@ export const FakeCursor: React.FC<FakeCursorProps> = ({ controls, clicking }) =>
   </motion.div>
 );
 
-const CURSOR_MOVE = { duration: 0.55, ease: [0.5, 0.05, 0.2, 1] as const };
+const CURSOR_MOVE = { duration: 0.72, ease: [0.5, 0.05, 0.2, 1] as const };
 
 /** 데모 타임라인 시퀀스에 전달되는 제어 API */
 export interface TimelineApi {
