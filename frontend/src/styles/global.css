@@ -2881,3 +2881,204 @@ select.form-control option {
   margin: 0.4em 0;
 }
 
+/* ===== 가이드 애니메이션 데모 (guideDemos) ===== */
+.guide-demo-lead {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #475067;
+  margin-bottom: 14px;
+}
+
+.guide-demo-stage {
+  position: relative;
+  background: #f9fafc;
+  border: 1px solid #e8ecf2;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.guide-demo-field { margin-bottom: 12px; position: relative; }
+.guide-demo-field:last-of-type { margin-bottom: 0; }
+
+.guide-demo-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #5b647a;
+  margin-bottom: 5px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.guide-demo-field-label .step-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #d6dbe6;
+  color: #fff;
+  font-size: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  transition: background 0.3s;
+}
+.guide-demo-field.active .step-dot { background: #4f8ef7; }
+.guide-demo-field.done .step-dot { background: #22c55e; }
+
+.guide-demo-control {
+  height: 38px;
+  border: 1.5px solid #dde1ea;
+  border-radius: 9px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 12.5px;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.guide-demo-field.active .guide-demo-control {
+  border-color: #4f8ef7;
+  box-shadow: 0 0 0 3px rgba(79, 142, 247, 0.16);
+}
+.guide-demo-val { color: #aab1c2; }
+.guide-demo-val.filled { color: #1f2738; font-weight: 600; }
+.guide-demo-caret { margin-left: auto; color: #b9c0cf; font-size: 10px; }
+.guide-demo-cursorbar {
+  width: 1.5px;
+  height: 16px;
+  background: #4f8ef7;
+  margin-left: 1px;
+  animation: guideDemoBlink 1s steps(1) infinite;
+}
+@keyframes guideDemoBlink { 50% { opacity: 0; } }
+
+.guide-demo-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1.5px solid #e2e6ef;
+  border-radius: 9px;
+  box-shadow: 0 10px 26px rgba(25, 30, 60, 0.16);
+  padding: 4px;
+  z-index: 20;
+  transform-origin: top center;
+}
+.guide-demo-opt {
+  padding: 8px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  color: #3a4254;
+  transition: background 0.15s, color 0.15s;
+}
+.guide-demo-opt.hi {
+  background: #eff6ff;
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.guide-demo-downstream {
+  margin-top: 14px;
+  border-top: 1px dashed #d8dee9;
+  padding-top: 12px;
+  position: relative;
+  opacity: 0.45;
+  filter: grayscale(0.7);
+  transition: opacity 0.5s ease, filter 0.5s ease;
+}
+.guide-demo-downstream.unlocked { opacity: 1; filter: none; }
+.guide-demo-downstream-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #5b647a;
+  margin-bottom: 8px;
+}
+.guide-demo-pill-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.guide-demo-pill {
+  font-size: 11px;
+  padding: 6px 11px;
+  border: 1.5px solid #dde1ea;
+  border-radius: 16px;
+  color: #8a93a6;
+  background: #fff;
+}
+.guide-demo-downstream.unlocked .guide-demo-pill {
+  border-color: #c7d6f5;
+  color: #4f6694;
+}
+.guide-demo-lock-badge {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 12px;
+  background: #eef1f6;
+  color: #9aa3b5;
+  transition: background 0.4s, color 0.4s, transform 0.4s;
+}
+.guide-demo-downstream.unlocked .guide-demo-lock-badge {
+  background: #dcfce7;
+  color: #15803d;
+  transform: scale(1.05);
+}
+
+.guide-demo-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  z-index: 50;
+  pointer-events: none;
+}
+.guide-demo-cursor svg {
+  display: block;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+  transition: transform 0.12s;
+}
+.guide-demo-cursor svg.clicking { transform: scale(0.82); }
+
+.guide-demo-ripple {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid #4f8ef7;
+  pointer-events: none;
+  z-index: 49;
+}
+
+.guide-demo-callout {
+  margin-top: 14px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 9px;
+  padding: 9px 12px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #92400e;
+}
+
+.guide-demo-controls {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.guide-demo-replay {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1.5px solid #4f8ef7;
+  background: #fff;
+  color: #4f8ef7;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.guide-demo-replay:hover { background: #eff6ff; }
+.guide-demo-status { font-size: 11px; color: #9aa3b5; }
+

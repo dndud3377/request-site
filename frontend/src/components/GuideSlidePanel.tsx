@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { guidesAPI } from '../api/client';
 import { Guide, GuideFeatureKey } from '../types';
+import { GUIDE_DEMOS } from './guideDemos';
 
 interface Props {
   featureKey: GuideFeatureKey;
@@ -16,9 +17,10 @@ const GuideSlidePanel: React.FC<Props> = ({ featureKey, featureTitle, isOpen, on
   const [guide, setGuide] = useState<Guide | null>(null);
   const [loading, setLoading] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const DemoComponent = GUIDE_DEMOS[featureKey];
 
   useEffect(() => {
-    if (!isOpen || !featureKey) return;
+    if (!isOpen || !featureKey || GUIDE_DEMOS[featureKey]) return;
     setLoading(true);
     guidesAPI
       .list({ feature_key: featureKey })
@@ -117,7 +119,9 @@ const GuideSlidePanel: React.FC<Props> = ({ featureKey, featureTitle, isOpen, on
 
           {/* 바디 */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
-            {loading ? (
+            {DemoComponent ? (
+              <DemoComponent />
+            ) : loading ? (
               <div style={{ textAlign: 'center', padding: '40px 0', color: '#aaa', fontSize: 13 }}>
                 {t('common.loading')}
               </div>
