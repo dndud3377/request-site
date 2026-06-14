@@ -26,6 +26,7 @@ import {
   UserWithRole,
 } from '../../types';
 import GuideSlidePanel from '../../components/GuideSlidePanel';
+import { GUIDE_DEMO_KEYS } from '../../components/guideDemos';
 import {
   OPTION_LINE,
   CRegion,
@@ -239,9 +240,10 @@ export default function RequestPage(): React.ReactElement {
       .then((r) => {
         const data = r.data;
         const items = Array.isArray(data) ? data : (data as { results: { feature_key: string }[] }).results ?? [];
-        setFeatureGuideKeys(new Set(items.map((g: { feature_key: string | null }) => g.feature_key).filter(Boolean) as string[]));
+        const dbKeys = items.map((g: { feature_key: string | null }) => g.feature_key).filter(Boolean) as string[];
+        setFeatureGuideKeys(new Set([...dbKeys, ...GUIDE_DEMO_KEYS]));
       })
-      .catch(() => { /* 가이드 없어도 무관 */ });
+      .catch(() => { setFeatureGuideKeys(new Set(GUIDE_DEMO_KEYS)); });
   }, []);
 
   // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
