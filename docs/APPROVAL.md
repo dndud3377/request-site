@@ -99,11 +99,15 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 ### Case J — 철회 (`withdraw`, `views.py:189`)
 - 조건: status가 under_review/rejected/submitted.
 - 동작: `status → draft`, `submitted_at=None`, **현재 문서의 모든 step 삭제**.
-- ⚠️ 백엔드 호출자 권한 검사 없음(프론트에서 PL/MASTER로만 버튼 노출).
+- ✅ 권한: MASTER / 의뢰자 PL 본인 / 지정 PL 본인 / **의뢰자가 멤버인 '나만의 그룹'의 멤버**
+  만 가능(`_can_withdraw`, 2026-06 추가). 그 외 호출은 403. 그룹 판정은
+  `requester.member_groups` 기준(approved 메일 수신자 규칙과 동일).
 
 ### Case K — 담당자 지정 (`assign_step`, `views.py:331` 부근)
 - 동작: 현재 회차의 해당 agent pending step에 assignee 지정.
-- ⚠️ 백엔드 호출자 권한 검사 없음.
+- ✅ 권한: 프론트 `canUserAssign`과 동일(`_can_assign_step`, 2026-06 추가) —
+  MASTER / 같은 팀(역할↔agent 일치) + 미지정일 때만. PL·O·E 단계는 지정 불가.
+  또한 `agent`는 `R·P·J·O·E`만 허용(`agent='PL'`로 지정 PL을 덮어쓰는 우회 차단).
 
 ### Case L — 지정 PL 변경 (`change_designee`)
 - 권한: **의뢰자 본인 또는 MASTER만**. 현재 회차 PL step의 assignee 교체.
@@ -207,10 +211,12 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 
 검증·확인 대상(현재 구현이 의도와 맞는지 사용자 확인 필요):
 
-1. **일반 단계(R·P·J·O·E) 합의/반려에 백엔드 권한 검사 없음**
-   — `approve_step`/`reject_step`/`assign_step`/`withdraw`는 `request.user`의 role/loginid를
-   확인하지 않는다. 프론트 `canUserAgree`는 UI 가드일 뿐이라, API 직접 호출 시 권한 우회 가능.
-   (PL 단계 `peer_*`와 `change_designee`에는 검사가 있음.)
+1. ✅ **(2026-06 해결) 일반 단계(R·P·J·O·E) 합의/반려 + 담당자지정 + 철회 백엔드 인가 추가**
+   — `approve_step`/`reject_step`(`_can_act_on_step`), `assign_step`(`_can_assign_step`),
+   `withdraw`(`_can_withdraw`)에 서버측 인가를 추가해 API 직접 호출 우회를 차단했다.
+   규칙은 프론트 `canUserAgree`/`canUserAssign`과 1:1 일치(철회는 Case J 규칙).
+   프론트 철회 버튼은 그룹 멤버 여부를 알 수 없어 현행 `(isPL||isMaster)` 노출 유지 +
+   백엔드 권위 검사(권한 없으면 403 토스트).
 2. **TE_O/TE_E는 담당자 지정 없이 같은 팀 누구나 합의 가능** — 누가 처리할지 비결정적(먼저 누른 사람).
 3. **`_validate_bb_mapping`이 JSON 파싱 실패 시 통과 처리** — 손상된 데이터가 검증을 우회.
 4. **`additional_notes`가 JSONField가 아닌 TextField** — 깨진 JSON 저장 시 `get_detail()`이
