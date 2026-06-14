@@ -11,13 +11,17 @@
 
 ---
 
-## 1. 아키텍처 (영속 큐 + 재시도)
+## 1. 아키텍처 (하이브리드: 즉시 발송 + 영속 큐 재시도)
 
 ```
 결재 전이(상신/합의/반려/완료)
    └─ enqueue_*()  → MailNotification(status='pending') INSERT  (결재 트랜잭션 안)
-                                  │
-APScheduler 1분 주기 ─ process_mail_queue() ─ DXHUB API 발송
+                   └─ transaction.on_commit 등록
+커밋 성공 ─ 데몬 스레드 _send_now_async() ─ 즉시 1회 발송  ← 거의 실시간
+   성공 → status='sent'
+   실패 → pending 유지
+                                  │ (즉시 발송 실패분 / 누락분)
+APScheduler 1분 주기 ─ process_mail_queue() ─ DXHUB API 발송  ← 안전망
    성공 → status='sent'
    실패 → attempts += 1, 재시도 (max_attempts=5 도달 시 status='failed')
 ```
@@ -25,10 +29,14 @@ APScheduler 1분 주기 ─ process_mail_queue() ─ DXHUB API 발송
 - **적재(enqueue)는 기존 결재 트랜잭션 안에서 INSERT 만 수행**한다. 외부 HTTP 가
   없으므로 문서 행 락(`select_for_update`)을 오래 점유하지 않고, 결재가 롤백되면
   메일 적재도 함께 롤백되어 일관성이 보장된다.
-- **발송은 백그라운드**에서 분리 수행한다. DB 에 영속되므로 서버 재시작에도
-  재시도 상태가 보존된다(가장 견고). 외부 API 장애가 결재 흐름에 영향을 주지 않는다.
-- 동시 발송 방지: `process_mail_queue` 는 `max_instances=1`, 각 행은
-  `select_for_update(skip_locked=True)` 로 점유 후 처리한다.
+- **즉시 발송**: 커밋 직후 `transaction.on_commit` → 데몬 스레드에서 1회 발송한다.
+  평상시 거의 실시간으로 나가며, 데몬 스레드라 외부 지연이 결재 응답을 막지 않는다.
+  on_commit 콜백은 예외를 전파하지 않아(`_send_now_async`) 결재 응답을 깨지 않는다.
+- **재시도 안전망**: 즉시 발송이 실패하면 행은 `pending` 으로 남고, `process_mail_queue`
+  잡(1분 주기)이 `max_attempts`(5) 회까지 재시도한다. DB 영속이라 서버 재시작에도
+  재시도 상태가 보존된다. 외부 API 장애가 결재 흐름에 영향을 주지 않는다.
+- **중복 발송 방지**: 즉시 스레드와 큐 잡이 겹쳐도 각 행은 `select_for_update(skip_locked=True)`
+  + `status='pending'` 필터로 한쪽만 처리한다. `process_mail_queue` 는 `max_instances=1`.
 
 ---
 
@@ -80,11 +88,12 @@ verify=False, timeout=10
 
 ## 5. 개발 환경 검증
 
-dev 는 `SKIP_SCHEDULER=true` 로 **무거운 DCQ 동기화는 끄지만**, 외부 DB 가 필요 없는
-**메일 큐 발송 잡은 자동 실행**된다(`apps.py` → `scheduler.start_mail_only`, 1분 주기).
-즉 dev 에서도 결재를 진행하면 1분 내에 자동으로 메일이 나간다.
+dev 에서도 결재를 진행하면 **커밋 직후 즉시 발송**(하이브리드)되므로 거의 실시간으로
+메일이 나간다(on_commit 은 스케줄러와 무관하게 동작). 추가로 `SKIP_SCHEDULER=true`
+환경에서도 외부 DB 가 필요 없는 **메일 큐 발송 잡(재시도 안전망)은 자동 실행**된다
+(`apps.py` → `scheduler.start_mail_only`, 1분 주기).
 
-즉시 발송을 확인하고 싶거나 수동으로 큐를 비우려면:
+즉시 발송 실패분을 바로 재시도하거나 수동으로 큐를 비우려면:
 
 ```bash
 docker exec -it <backend_container> python manage.py process_mail_queue
