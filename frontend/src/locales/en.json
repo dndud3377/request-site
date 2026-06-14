@@ -474,6 +474,18 @@
       "step5_bb_autofill": "BB Auto-fill",
       "step5_bb_mapping": "BB Mapping",
       "step5_bb_table": "BB Applied Table"
+    },
+    "demo": {
+      "replay": "▶ Replay",
+      "playing": "Playing…",
+      "done_loop": "Done — replaying shortly",
+      "step1_line_process": {
+        "lead": "This is the first required item when creating a request. Select the 4 fields below in order to enable the remaining items.",
+        "downstream_title": "Request Purpose · Flow Chart · BB Combination …",
+        "locked": "🔒 Locked",
+        "unlocked": "✓ Ready to input",
+        "callout": "⚠️ Note · The process/part/recipe lists are pulled from an external query DB and refreshed once every hour. If a newly registered item is missing, try again shortly."
+      }
     }
   },
   "group": {
