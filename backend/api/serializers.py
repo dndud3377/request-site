@@ -1,8 +1,41 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup
+from . import doc_permissions
 
 User = get_user_model()
+
+
+class DocPermFieldsMixin:
+    """RequestDocument 직렬화에 현재 요청자 기준 권한 플래그를 추가한다.
+    프론트가 수정/철회 버튼을 정확히(그룹 멤버 포함) 노출하기 위해 사용한다."""
+    can_edit = serializers.SerializerMethodField()
+    can_withdraw = serializers.SerializerMethodField()
+    requester_loginid = serializers.SerializerMethodField()
+
+    def _perm_user(self):
+        request = self.context.get('request')
+        return getattr(request, 'user', None) if request else None
+
+    def _co_member_ids(self):
+        # 목록 직렬화 시 호출자 그룹 동료를 1회만 계산해 문서별 쿼리를 피한다.
+        cached = getattr(self, '_cached_co_ids', None)
+        if cached is None:
+            user = self._perm_user()
+            cached = doc_permissions.co_member_ids_for(user) if user else set()
+            self._cached_co_ids = cached
+        return cached
+
+    def get_requester_loginid(self, obj):
+        return obj.requester.loginid if obj.requester_id else None
+
+    def get_can_edit(self, obj):
+        user = self._perm_user()
+        return bool(user and doc_permissions.can_edit(user, obj, self._co_member_ids()))
+
+    def get_can_withdraw(self, obj):
+        user = self._perm_user()
+        return bool(user and doc_permissions.can_withdraw(user, obj, self._co_member_ids()))
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -48,7 +81,7 @@ class ApprovalStepSerializer(serializers.ModelSerializer):
         return obj.assignee.loginid if obj.assignee else None
 
 
-class RequestDocumentSerializer(serializers.ModelSerializer):
+class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer):
     approval_steps = ApprovalStepSerializer(many=True, read_only=True)
     designated_pl_loginid = serializers.SerializerMethodField()
 
@@ -59,6 +92,7 @@ class RequestDocumentSerializer(serializers.ModelSerializer):
             'product_name', 'reference_materials', 'additional_notes',
             'status', 'production_date', 'created_at', 'updated_at', 'submitted_at',
             'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
+            'requester_loginid', 'can_edit', 'can_withdraw',
         ]
         read_only_fields = ['status', 'created_at', 'updated_at', 'submitted_at',
                             'designated_pl_loginid', 'designated_pl_name']
@@ -67,7 +101,7 @@ class RequestDocumentSerializer(serializers.ModelSerializer):
         return obj.designated_pl.loginid if obj.designated_pl else None
 
 
-class RequestDocumentListSerializer(serializers.ModelSerializer):
+class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSerializer):
     approval_steps = ApprovalStepSerializer(many=True, read_only=True)
     designated_pl_loginid = serializers.SerializerMethodField()
 
@@ -77,6 +111,7 @@ class RequestDocumentListSerializer(serializers.ModelSerializer):
             'id', 'title', 'requester_name', 'requester_department',
             'product_name', 'status', 'production_date', 'created_at', 'submitted_at',
             'additional_notes', 'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
+            'requester_loginid', 'can_edit', 'can_withdraw',
         ]
 
     def get_designated_pl_loginid(self, obj):
