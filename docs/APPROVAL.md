@@ -215,8 +215,18 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
    — `approve_step`/`reject_step`(`_can_act_on_step`), `assign_step`(`_can_assign_step`),
    `withdraw`(`_can_withdraw`)에 서버측 인가를 추가해 API 직접 호출 우회를 차단했다.
    규칙은 프론트 `canUserAgree`/`canUserAssign`과 1:1 일치(철회는 Case J 규칙).
-   프론트 철회 버튼은 그룹 멤버 여부를 알 수 없어 현행 `(isPL||isMaster)` 노출 유지 +
-   백엔드 권위 검사(권한 없으면 403 토스트).
+
+   ✅ **(2026-06 추가) 문서 수정(`update`/PATCH) 인가 + `requester` FK 설정** (`doc_permissions.can_edit`)
+   — 그동안 `PATCH /documents/{id}/` 가 로그인만 하면 누구나 어떤 상태의 문서든 덮어쓸 수 있었다.
+   상태별 인가를 추가: draft=작성자 / rejected=철회범위(의뢰자·지정PL·의뢰자 그룹멤버) /
+   under_review=PL 검토 pending 시 지정 PL / approved=MASTER. 실패 시 403.
+   또한 `perform_create` 에서 `requester=request.user` 를 설정한다 — 그 전엔 `requester` FK 가
+   항상 null 이라 철회·`change_designee`·승인 알림 메일의 "의뢰자/그룹" 판정이 동작하지 않았다.
+   (레거시 null 문서는 의뢰자 이메일로 보조 판별.)
+
+   ✅ **(2026-06) 프론트 수정/철회 버튼**: 시리얼라이저가 요청자 기준 `can_edit`/`can_withdraw`
+   플래그를 내려주고, `ApprovalPage` 가 그 플래그로 버튼을 노출한다(그룹 멤버 포함 정확 노출,
+   권한 없는 사용자 헛클릭 403 제거).
 2. **TE_O/TE_E는 담당자 지정 없이 같은 팀 누구나 합의 가능** — 누가 처리할지 비결정적(먼저 누른 사람).
 3. **`_validate_bb_mapping`이 JSON 파싱 실패 시 통과 처리** — 손상된 데이터가 검증을 우회.
 4. **`additional_notes`가 JSONField가 아닌 TextField** — 깨진 JSON 저장 시 `get_detail()`이
