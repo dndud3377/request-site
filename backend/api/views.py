@@ -312,29 +312,34 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         current_round = step.round
 
         if agent == 'R':
-            # R 합의 → P(due: R포함 4영업일), O(due: R포함 6영업일), [E if PLEL] 동시 생성
-            from .utils import calculate_business_due_date
-            import datetime
-            r_date = step.acted_at.date() if step.acted_at else datetime.date.today()
-            p_due = calculate_business_due_date(r_date, 4)
-            o_due = calculate_business_due_date(r_date, 6)
-            p_step = ApprovalStep.objects.create(
-                document=document, agent='P', action='pending',
-                round=current_round, due_date=p_due,
-            )
-            o_step = ApprovalStep.objects.create(
-                document=document, agent='O', action='pending',
-                is_parallel=True, round=current_round, due_date=o_due,
-            )
-            mailer.enqueue_stage_arrival(document, 'P', p_step)
-            mailer.enqueue_stage_arrival(document, 'O', o_step)
-            if document.has_ppid_plel():
-                e_step = ApprovalStep.objects.create(
-                    document=document, agent='E', action='pending',
+            if document.is_only_map():
+                # Only MAP 의뢰서는 R 단계까지만 진행 → R 합의가 곧 최종 승인
+                # (P/O/E 단계를 생성하지 않는다)
+                new_status = 'approved'
+            else:
+                # R 합의 → P(due: R포함 4영업일), O(due: R포함 6영업일), [E if PLEL] 동시 생성
+                from .utils import calculate_business_due_date
+                import datetime
+                r_date = step.acted_at.date() if step.acted_at else datetime.date.today()
+                p_due = calculate_business_due_date(r_date, 4)
+                o_due = calculate_business_due_date(r_date, 6)
+                p_step = ApprovalStep.objects.create(
+                    document=document, agent='P', action='pending',
+                    round=current_round, due_date=p_due,
+                )
+                o_step = ApprovalStep.objects.create(
+                    document=document, agent='O', action='pending',
                     is_parallel=True, round=current_round, due_date=o_due,
                 )
-                mailer.enqueue_stage_arrival(document, 'E', e_step)
-            new_status = 'under_review'
+                mailer.enqueue_stage_arrival(document, 'P', p_step)
+                mailer.enqueue_stage_arrival(document, 'O', o_step)
+                if document.has_ppid_plel():
+                    e_step = ApprovalStep.objects.create(
+                        document=document, agent='E', action='pending',
+                        is_parallel=True, round=current_round, due_date=o_due,
+                    )
+                    mailer.enqueue_stage_arrival(document, 'E', e_step)
+                new_status = 'under_review'
 
         elif agent == 'P':
             # P 합의 → J(due: P포함 4영업일) 생성
