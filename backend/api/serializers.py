@@ -6,7 +6,7 @@ from . import doc_permissions
 User = get_user_model()
 
 
-class DocPermFieldsMixin:
+class DocPermFieldsMixin(serializers.Serializer):
     """RequestDocument 직렬화에 현재 요청자 기준 권한 플래그를 추가한다.
     프론트가 수정/철회 버튼을 정확히(그룹 멤버 포함) 노출하기 위해 사용한다."""
     can_edit = serializers.SerializerMethodField()
