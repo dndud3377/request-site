@@ -25,9 +25,9 @@ const FIELDS: Record<FieldKey, FieldSpec> = {
   recipe: { typed: 'PROC_',   value: 'PROC_X1',   options: ['PROC_X1', 'PROC_X2'],      labelKey: 'request.process_id' },
 };
 
-const CURSOR_MOVE = { duration: 0.55, ease: [0.5, 0.05, 0.2, 1] as const };
-const LOOP_DELAY_MS = 4000;
-const TYPE_SPEED_MS = 85;
+const CURSOR_MOVE = { duration: 0.72, ease: [0.5, 0.05, 0.2, 1] as const };
+const LOOP_DELAY_MS = 4500;
+const TYPE_SPEED_MS = 105;
 
 const Step1LineProcessDemo: React.FC = () => {
   const { t } = useTranslation();
