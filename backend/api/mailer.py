@@ -20,12 +20,13 @@
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
 """
 import logging
+import threading
 
 import requests
 from urllib3.exceptions import InsecureRequestWarning
 
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
 from .models import MailNotification, UserProfile
@@ -197,13 +198,18 @@ def _enqueue(document, event_type, recipients, agent=None):
         )
         return None
     subject, contents = _build_message(event_type, document, agent)
-    return MailNotification.objects.create(
+    noti = MailNotification.objects.create(
         document=document,
         event_type=event_type,
         recipients=recipients,
         subject=subject,
         contents=contents,
     )
+    # 하이브리드: 커밋 직후 즉시 1회 발송 시도(거의 실시간). 실패하면 pending 으로
+    # 남아 큐 잡(1분 주기)이 최대 max_attempts 회까지 재시도한다.
+    noti_id = noti.id
+    transaction.on_commit(lambda: _send_now_async(noti_id))
+    return noti
 
 
 def enqueue_stage_arrival(document, agent, step=None):
@@ -295,3 +301,26 @@ def process_mail_queue():
             _process_one(noti_id)
         except Exception as e:  # noqa: BLE001 — 한 건 실패가 전체 처리를 막지 않도록
             logger.error("[mailer] 큐 처리 중 예외 (id=%s): %s", noti_id, e)
+
+
+def _run_immediate(noti_id):
+    """별도 스레드에서 단일 알림을 즉시 발송 처리하고 DB 커넥션을 정리한다."""
+    try:
+        _process_one(noti_id)
+    except Exception as e:  # noqa: BLE001 — 즉시 발송 실패는 큐 잡이 재시도한다
+        logger.error("[mailer] 즉시 발송 처리 실패 (id=%s): %s", noti_id, e)
+    finally:
+        # 스레드 전용 DB 커넥션 누수 방지
+        connection.close()
+
+
+def _send_now_async(noti_id):
+    """커밋 직후 호출되어 즉시 1회 발송을 데몬 스레드에 위임한다.
+
+    on_commit 콜백에서 실행되므로 **절대 예외를 전파하지 않는다**
+    (이미 커밋된 결재 응답을 깨뜨리지 않기 위함).
+    """
+    try:
+        threading.Thread(target=_run_immediate, args=(noti_id,), daemon=True).start()
+    except Exception as e:  # noqa: BLE001 — 스레드 생성 실패해도 큐 잡이 재시도한다
+        logger.error("[mailer] 즉시 발송 스레드 생성 실패 (id=%s): %s", noti_id, e)

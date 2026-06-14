@@ -155,3 +155,28 @@ class MailQueueProcessTest(TestCase):
         mailer.process_mail_queue()
         mailer.process_mail_queue()
         self.assertEqual(mock_send.call_count, 1)
+
+
+class HybridImmediateSendTest(TestCase):
+    """하이브리드: 적재 후 커밋 직후 즉시 발송이 예약되는지 검증."""
+
+    def setUp(self):
+        self.requester = UserProfile.objects.create(
+            loginid='req', mail='req@company.com', role='NONE'
+        )
+        self.doc = _make_document(self.requester)
+
+    @patch('api.mailer._send_now_async')
+    def test_enqueue_schedules_immediate_send_on_commit(self, mock_async):
+        with self.captureOnCommitCallbacks(execute=True):
+            step = ApprovalStep.objects.create(document=self.doc, agent='R')
+            noti = mailer.enqueue_stage_arrival(self.doc, 'R', step)
+        mock_async.assert_called_once_with(noti.id)
+
+    @patch('api.mailer._send_now_async')
+    def test_no_immediate_send_when_no_recipient(self, mock_async):
+        self.doc.requester_email = ''
+        self.doc.save()
+        with self.captureOnCommitCallbacks(execute=True):
+            mailer.enqueue_rejected(self.doc)
+        mock_async.assert_not_called()
