@@ -1086,16 +1086,16 @@ def form_options_barcode(request):
             Q(n7cancel_date__isnull=True) | Q(n7cancel_date='')
         ).filter(
             Q(n7cancel_ok__isnull=True) | Q(n7cancel_ok='')
+        ).exclude(
+            Q(n7mto_date__isnull=True) | Q(n7mto_date='')
         )
 
         options = []
         for row in qs:
-            ms = row.n7material_spec or ''
-            # n7material_spec("문자-문자")에서 '-' 뒤 문자만 사용
-            spec = ms.split('-', 1)[1] if '-' in ms else ms
-            date = row.n7mto_date or ''
+            spec = row.n7c_layer_num.split('_')[0]
+            date = row.n7mto_date
             options.append({
-                'label': f"{row.n7barcode} [{date}] [{spec}]",
+                'label': f"{row.n7barcode} [{date}]",
                 'spec': spec,
             })
         return JsonResponse({'options': options})
