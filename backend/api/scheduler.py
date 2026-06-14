@@ -299,3 +299,30 @@ def start():
         threading.Thread(target=sync_holidays, daemon=True).start()
     except ProgrammingError as e:
         logger.warning(_("[scheduler] 테이블이 아직 생성되지 않았습니다. 마이그레이션 후 재시작됩니다: {e}").format(e=e))
+
+
+def start_mail_only():
+    """무거운 DCQ 동기화를 건너뛰는 환경(SKIP_SCHEDULER=true, 예: 개발)에서도
+    외부 DB 가 필요 없는 결재 알림 메일 큐 발송 잡만 단독으로 실행한다."""
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from apscheduler.triggers.interval import IntervalTrigger
+    from django_apscheduler.jobstores import DjangoJobStore
+    from django.db.utils import ProgrammingError
+
+    scheduler = BackgroundScheduler(timezone='Asia/Seoul')
+    scheduler.add_jobstore(DjangoJobStore(), 'default')
+
+    try:
+        from .mailer import process_mail_queue
+        scheduler.add_job(
+            process_mail_queue,
+            trigger=IntervalTrigger(minutes=1),
+            id='process_mail_queue',
+            name='결재 알림 메일 큐 발송',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.start()
+        logger.info(_("[scheduler] 메일 전용 스케줄러 시작 - 1 분 주기 결재 알림 발송"))
+    except ProgrammingError as e:
+        logger.warning(_("[scheduler] 테이블이 아직 생성되지 않았습니다. 마이그레이션 후 재시작됩니다: {e}").format(e=e))
