@@ -10,6 +10,7 @@ interface AutocompleteInputProps {
   required?: boolean;
   error?: string;
   style?: React.CSSProperties;
+  inputStyle?: React.CSSProperties;
   disabled?: boolean;
 }
 
@@ -23,6 +24,7 @@ export default function AutocompleteInput({
   required,
   error,
   style,
+  inputStyle,
   disabled,
 }: AutocompleteInputProps): React.ReactElement {
   const [open, setOpen] = useState(false);
@@ -59,7 +61,7 @@ export default function AutocompleteInput({
         onFocus={() => { if (!disabled) setOpen(true); }}
         autoComplete="off"
         disabled={disabled}
-        style={disabled ? { backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed', opacity: 0.6 } : undefined}
+        style={disabled ? { backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed', opacity: 0.6 } : inputStyle}
       />
       {error && <span className="form-error">{error}</span>}
       {open && filtered.length > 0 && (
