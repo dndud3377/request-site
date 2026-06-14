@@ -843,6 +843,52 @@ def upload_image(request):
         return JsonResponse({'error': f'업로드 실패: {str(e)}'}, status=500)
 
 
+# 동영상 업로드 최대 크기 (50MB)
+MAX_VIDEO_UPLOAD_SIZE = 50 * 1024 * 1024
+
+
+@csrf_exempt
+@require_POST
+def upload_video(request):
+    """동영상 파일 업로드 API - 가이드 동영상용"""
+    logger = logging.getLogger(__name__)
+
+    if 'video' not in request.FILES:
+        return JsonResponse({'error': '동영상 파일이 없습니다'}, status=400)
+
+    video = request.FILES['video']
+
+    # 동영상 파일 검증
+    if not video.content_type.startswith('video/'):
+        return JsonResponse({'error': '동영상 파일만 업로드할 수 있습니다'}, status=400)
+
+    # 파일 크기 제한 (50MB)
+    if video.size > MAX_VIDEO_UPLOAD_SIZE:
+        return JsonResponse({'error': '동영상 크기는 50MB 를 초과할 수 없습니다'}, status=400)
+
+    # 파일명 생성 (UUID 사용)
+    ext = video.name.split('.')[-1] if '.' in video.name else 'mp4'
+    filename = f"guide_{uuid.uuid4().hex}.{ext}"
+    path = f"guide_videos/{filename}"
+
+    try:
+        # 파일 저장
+        saved_path = default_storage.save(path, ContentFile(video.read()))
+        file_url = default_storage.url(saved_path)
+
+        logger.info(f"[UPLOAD_VIDEO] 동영상 업로드 성공: {saved_path}")
+
+        return JsonResponse({
+            'path': saved_path,
+            'url': file_url,
+            'original_name': video.name,
+            'size': video.size
+        })
+    except Exception as e:
+        logger.error(f"[UPLOAD_VIDEO] 동영상 업로드 실패: {e}")
+        return JsonResponse({'error': f'업로드 실패: {str(e)}'}, status=500)
+
+
 
 
 class VocHistoryViewSet(viewsets.ModelViewSet):

@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     RequestDocumentViewSet, VOCViewSet, LineViewSet, AdminNoticeViewSet, VocHistoryViewSet,
     UserViewSet, GuideViewSet, UserGroupViewSet,
-    health_check, upload_image, user_events,
+    health_check, upload_image, upload_video, user_events,
     form_options_process, form_options_products, form_options_process_id,
     form_options_job_file_layer, form_options_ovl_layer, form_options_bb_external,
     form_options_layer_ids, form_options_barcode, form_options_mapname,
@@ -26,6 +26,7 @@ urlpatterns = [
     path('', include(router.urls)),
     path('health/', health_check),
     path('upload-image/', upload_image),
+    path('upload-video/', upload_video),
     path('auth/dev-login/', dev_login_view),
     path('auth/me/', me_view),
     path('auth/refresh/', refresh_token_view),

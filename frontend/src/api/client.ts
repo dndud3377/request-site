@@ -613,3 +613,49 @@ export const uploadImageAPI = {
     });
   },
 };
+
+// ===== 동영상 업로드 API =====
+
+export interface UploadVideoResult {
+  path: string;
+  url: string;
+  original_name: string;
+  size: number;
+}
+
+export const uploadVideoAPI = {
+  upload: (file: File): Promise<UploadVideoResult> => {
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    return new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append('video', file);
+
+      fetch(`${BASE_URL}/upload-video/`, {
+        method: 'POST',
+        headers,
+        body: formData,
+        credentials: 'include',
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            let errMsg = `HTTP ${res.status}`;
+            try {
+              const body = await res.json();
+              errMsg = body.error || JSON.stringify(body);
+            } catch {
+              //
+            }
+            throw new Error(errMsg);
+          }
+          return res.json();
+        })
+        .then((data: UploadVideoResult) => resolve(data))
+        .catch((err) => reject(err));
+    });
+  },
+};

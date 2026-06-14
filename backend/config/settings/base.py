@@ -95,6 +95,9 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# 업로드 용량 제한 (가이드 동영상 50MB 허용, 폼 데이터 여유분 포함)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 55 * 1024 * 1024  # 55MB
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'api.UserProfile'

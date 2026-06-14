@@ -1,13 +1,40 @@
 import React, { useCallback, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import { Node as TiptapNode, mergeAttributes } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import { TextStyle, Color, FontSize, BackgroundColor, FontFamily } from '@tiptap/extension-text-style';
 import TextAlign from '@tiptap/extension-text-align';
 import Underline from '@tiptap/extension-underline';
 import Placeholder from '@tiptap/extension-placeholder';
-import { uploadImageAPI } from '../api/client';
+import { uploadImageAPI, uploadVideoAPI } from '../api/client';
 import { useTranslation } from 'react-i18next';
+
+// 동영상 업로드 최대 크기 (50MB)
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
+
+// 가이드 동영상용 커스텀 노드 — <video controls> 로 렌더링
+const Video = TiptapNode.create({
+  name: 'video',
+  group: 'block',
+  atom: true,
+  draggable: true,
+  addAttributes() {
+    return { src: { default: null } };
+  },
+  parseHTML() {
+    return [{ tag: 'video' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return [
+      'video',
+      mergeAttributes(HTMLAttributes, {
+        controls: 'controls',
+        style: 'max-width:100%;border-radius:8px;',
+      }),
+    ];
+  },
+});
 
 interface Props {
   value: string;
@@ -200,6 +227,7 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
     extensions: [
       StarterKit,
       Image.configure({ inline: false, allowBase64: false }),
+      Video,
       TextStyle,
       Color,
       FontSize,
@@ -264,6 +292,29 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
     input.click();
   }, [editor]);
 
+  const handleVideoUpload = useCallback(async () => {
+    if (!editor) return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'video/*';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      if (file.size > MAX_VIDEO_SIZE) {
+        window.alert(t('guide.video_too_large'));
+        return;
+      }
+      try {
+        const res = await uploadVideoAPI.upload(file);
+        const url = res.url;
+        if (url) editor.chain().focus().insertContent({ type: 'video', attrs: { src: url } }).run();
+      } catch {
+        window.alert(t('guide.video_upload_failed'));
+      }
+    };
+    input.click();
+  }, [editor, t]);
+
   if (!editor) return null;
 
   const currentTextColor = editor.getAttributes('textStyle').color || '#000000';
@@ -303,6 +354,7 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
             <Sep />
             <ToolbarBtn onClick={() => setShowEmoji((v) => !v)} title="이모티콘">😊 이모티콘</ToolbarBtn>
             <ToolbarBtn onClick={handleImageUpload} title="이미지 업로드">🖼 이미지</ToolbarBtn>
+            <ToolbarBtn onClick={handleVideoUpload} title="동영상 업로드">🎬 동영상</ToolbarBtn>
           </div>
 
           {/* 툴바 2행: 글꼴 / 크기 / 색상 */}

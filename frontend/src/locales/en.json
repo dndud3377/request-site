@@ -424,6 +424,8 @@
     "content_label": "Content",
     "editor_placeholder": "Write guide content...",
     "paste_image_hint": "You can paste images directly into the editor with Ctrl+V.",
+    "video_too_large": "Video size cannot exceed 50MB.",
+    "video_upload_failed": "Failed to upload the video.",
     "save": "Save",
     "cancel": "Cancel",
     "edit": "Edit",
