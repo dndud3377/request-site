@@ -540,6 +540,23 @@ select.form-control option {
   color: var(--danger);
 }
 
+/* 검증 실패 시 해당 필드로 스크롤한 뒤 잠깐 강조 */
+.field-error-flash {
+  animation: field-error-flash 1.5s ease-out;
+  border-radius: 6px;
+}
+
+@keyframes field-error-flash {
+  0%, 40% {
+    box-shadow: 0 0 0 3px var(--danger);
+    background-color: rgba(220, 53, 69, 0.08);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background-color: transparent;
+  }
+}
+
 .form-actions {
   display: flex;
   gap: 12px;

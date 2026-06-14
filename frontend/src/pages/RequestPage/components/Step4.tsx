@@ -15,6 +15,7 @@ interface Step4Props {
   activeBbTab: number;
   setActiveBbTab: React.Dispatch<React.SetStateAction<number>>;
   detail: DetailFormState;
+  errors: Partial<Record<string, string>>;
   bbSearchQueries: string[];
   setBbSearchQueries: React.Dispatch<React.SetStateAction<string[]>>;
   stagedMappings: Record<string, ExternalBbDataItem>;
@@ -53,6 +54,7 @@ const Step4: React.FC<Step4Props> = ({
   activeBbTab,
   setActiveBbTab,
   detail,
+  errors,
   bbSearchQueries,
   setBbSearchQueries,
   stagedMappings,
@@ -112,6 +114,12 @@ const Step4: React.FC<Step4Props> = ({
   return (
     <div className="form-section">
       <div className="form-section-title"><span style={{ color: '#4CAF50' }}>🔷</span> {t('request.bb_li')}</div>
+
+      {errors.jayer_mapping && (
+        <div className="form-group" style={{ marginBottom: 12 }}>
+          <span className="form-error">{errors.jayer_mapping}</span>
+        </div>
+      )}
 
       {/* 자동 채움 버튼 */}
       <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>

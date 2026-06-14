@@ -517,15 +517,22 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleRequestPurposeSelect = (val: string) => {
-    if (val === 'Only MAP' && detail.request_purpose !== 'Only MAP') {
+    if (val === detail.request_purpose) return;
+    // 이미 선택된 목적이 있을 때 Only MAP으로 바꾸면 초기화 모달을 띄운다.
+    if (val === 'Only MAP' && detail.request_purpose) {
       setOnlyMapConfirm(true);
+      return;
+    }
+    // 첫 선택이 Only MAP이면 초기화할 것이 없으므로 모달 없이 바로 적용.
+    if (val === 'Only MAP') {
+      applyOnlyMap();
       return;
     }
     handleDetailSet('request_purpose', val);
   };
 
-  // Only MAP 확인 → 라인/조합법/제품/조리법/고객/요구사항/생산일을 제외한 Step1 항목 초기화
-  const handleOnlyMapConfirm = () => {
+  // Only MAP 적용 → 라인/조합법/제품/조리법/고객/요구사항/생산일을 제외한 Step1 항목 초기화
+  const applyOnlyMap = () => {
     setDetail((prev) => ({
       ...prev,
       request_purpose: 'Only MAP',
@@ -533,18 +540,38 @@ export default function RequestPage(): React.ReactElement {
       flow_chart: [makeRow()],
       change_purpose_note: INITIAL_DETAIL.change_purpose_note,
       bb_entries: INITIAL_DETAIL.bb_entries.map((e) => ({ ...e })),
+      // Only MAP은 StepMap 정보까지만 필요 → O-layer 정보 탭(partial_shot/TBV·TLV) 초기화
+      partial_shot: INITIAL_DETAIL.partial_shot,
+      tbvtlv_thickness: INITIAL_DETAIL.tbvtlv_thickness,
+      tbvtlv_entries: [],
     }));
     setRefDocId(null);
     setRefDocLabel('');
     setRefJayerRows([]);
     setRefOayerRows([]);
+    // Only MAP은 StepMap 정보까지만 필요 → J-layer/O-layer/Backbone 표 데이터 비우기
+    setJayerRows([makeJayerRow()]);
+    setOayerRows([makeOayerRow()]);
+    setBbRows([]);
+    setBbExternalData([]);
+    setMappedJayerRowIds(new Set());
+    setStagedMappings({});
+    setSelectedJayerRowId(null);
+    setJayerChecked(new Set());
+    setOayerChecked(new Set());
+    setBbChecked(new Set());
     setErrors((prev) => ({ ...prev, request_purpose: '', bb_entries: '' }));
+  };
+
+  const handleOnlyMapConfirm = () => {
+    applyOnlyMap();
     setOnlyMapConfirm(false);
   };
 
   const handleMapTypeSelect = (val: string) => {
     if (val === detail.map_type) return;
-    if (val === 'CLONE' || val === 'EXISTING') {
+    // 이미 선택된 map_type이 있을 때만 초기화 모달을 띄운다. 첫 선택이면 초기화할 것이 없으므로 바로 적용.
+    if ((val === 'CLONE' || val === 'EXISTING') && detail.map_type) {
       setMapTypeChangeConfirm({ targetType: val });
       return;
     }
@@ -1155,7 +1182,8 @@ export default function RequestPage(): React.ReactElement {
         newRow.sd = jr.sd;
         newRow.bb_process_id = ext.bb_process_id;
         newRow.bb_name = ext.bb_name;
-        newRow.bb_step = '';
+        // 자동 채움(buildAutoFillRows)과 동일하게 layer 컬럼을 외부 데이터의 layerid로 채운다.
+        newRow.bb_step = ext.layerid ?? '';
         newRow.bb_ss = ext.bb_ss;
         return newRow;
       });
@@ -1609,12 +1637,32 @@ export default function RequestPage(): React.ReactElement {
 
   useIdleTimer(handleIdleAutoSave, 20 * 60 * 1000);
 
+  // 검증 실패 시 첫 번째 오류 필드로 스크롤·강조한다.
+  // O-layer(step 4)의 partial_shot 오류는 'info' 탭에 있으므로 먼저 탭을 전환한다.
+  const scrollToFirstError = () => {
+    if (step === 4) setOayerInfoTab('info');
+    // 탭 전환·에러 span 렌더가 끝난 뒤 DOM을 조회하도록 지연한다.
+    setTimeout(() => {
+      const errorEl = document.querySelector('.form-error');
+      if (!errorEl) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      const container = (errorEl.closest('.form-group') ?? errorEl.parentElement ?? errorEl) as HTMLElement;
+      container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      container.classList.add('field-error-flash');
+      setTimeout(() => container.classList.remove('field-error-flash'), 1600);
+      const focusable = container.querySelector('input, select, textarea, button') as HTMLElement | null;
+      focusable?.focus({ preventScroll: true });
+    }, 60);
+  };
+
   const handleNextStep = (skipTbvtlvWarn = false, skipSpecialCare = false) => {
     if (step === 1 || step === 2 || step === 4) {
       const result = validate(step);
       if (!result.valid) {
         result.errors.forEach(msg => addToast(msg, 'error'));
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        scrollToFirstError();
         return;
       }
     }
@@ -1704,7 +1752,7 @@ export default function RequestPage(): React.ReactElement {
     const result = validate(5);
     if (!result.valid) {
       result.errors.forEach(msg => addToast(msg, 'error'));
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollToFirstError();
       return;
     }
     // peer review 모드가 아닐 때만 PL 목록 로드
@@ -1972,6 +2020,7 @@ export default function RequestPage(): React.ReactElement {
           activeBbTab={activeBbTab}
           setActiveBbTab={setActiveBbTab}
           detail={detail}
+          errors={errors}
           bbSearchQueries={bbSearchQueries}
           setBbSearchQueries={setBbSearchQueries}
           stagedMappings={stagedMappings}
@@ -2050,6 +2099,12 @@ export default function RequestPage(): React.ReactElement {
         setNewFilter={setJayerNewFilter}
         onAllDelete={() => setFilterAllDeleteConfirm('jayer')}
         onRequestDelete={(fs) => setFilterDeleteConfirm({ type: 'jayer', filterId: fs.id, label: fs.label })}
+        onEdit={(filterId, label, words) => {
+          const updated = jayerFilterSets.map(f => f.id === filterId ? { ...f, label, words } : f);
+          setJayerFilterSets(updated);
+          localStorage.setItem('jayerFilterSets', JSON.stringify(updated));
+          setJayerRows(rows => rows.map(r => ({ ...r, disabled: calcDisabled(r, updated, jayerActiveFilterIds) })));
+        }}
       />
 
       {/* O-ayer 필터 관리 모달 */}
@@ -2064,6 +2119,12 @@ export default function RequestPage(): React.ReactElement {
         setNewFilter={setOayerNewFilter}
         onAllDelete={() => setFilterAllDeleteConfirm('oayer')}
         onRequestDelete={(fs) => setFilterDeleteConfirm({ type: 'oayer', filterId: fs.id, label: fs.label })}
+        onEdit={(filterId, label, words) => {
+          const updated = oayerFilterSets.map(f => f.id === filterId ? { ...f, label, words } : f);
+          setOayerFilterSets(updated);
+          localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
+          setOayerRows(rows => rows.map(r => ({ ...r, disabled: calcDisabled(r, updated, oayerActiveFilterIds) })));
+        }}
       />
 
       <Modal
