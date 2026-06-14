@@ -209,6 +209,8 @@ const Step2: React.FC<Step2Props> = ({
                         options={ST_OPTIONS}
                         disabled={row.disabled || isRegistered}
                         inputStyle={{ backgroundColor: isRegistered ? regBg : ST_CELL_COLOR[row.st] }}
+                        dropdownFontSize="0.7rem"
+                        dropdownDirection="up"
                       />
                     </td>
                     <td {...cellProps('new_or_copy')}>
@@ -218,6 +220,8 @@ const Step2: React.FC<Step2Props> = ({
                         options={NEW_OR_COPY_OPTIONS}
                         disabled={row.disabled}
                         inputStyle={{ backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined }}
+                        dropdownFontSize="0.7rem"
+                        dropdownDirection="up"
                       />
                     </td>
                     <td {...cellProps('product_name', isRegistered ? regBg : undefined)}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>

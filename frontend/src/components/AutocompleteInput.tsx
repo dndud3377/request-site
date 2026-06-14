@@ -12,6 +12,8 @@ interface AutocompleteInputProps {
   style?: React.CSSProperties;
   inputStyle?: React.CSSProperties;
   disabled?: boolean;
+  dropdownFontSize?: string;
+  dropdownDirection?: 'up' | 'down';
 }
 
 export default function AutocompleteInput({
@@ -26,6 +28,8 @@ export default function AutocompleteInput({
   style,
   inputStyle,
   disabled,
+  dropdownFontSize = '0.9rem',
+  dropdownDirection = 'down',
 }: AutocompleteInputProps): React.ReactElement {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -67,7 +71,7 @@ export default function AutocompleteInput({
       {open && filtered.length > 0 && (
         <ul style={{
           position: 'absolute',
-          top: '100%',
+          ...(dropdownDirection === 'up' ? { bottom: '100%' } : { top: '100%' }),
           left: 0,
           right: 0,
           zIndex: 9999,
@@ -93,7 +97,7 @@ export default function AutocompleteInput({
               style={{
                 padding: '8px 12px',
                 cursor: 'pointer',
-                fontSize: '0.9rem',
+                fontSize: dropdownFontSize,
                 color: opt === value ? 'var(--accent)' : 'var(--text-primary)',
                 fontWeight: opt === value ? 700 : 400,
                 background: 'transparent',
