@@ -3496,3 +3496,112 @@ select.form-control option {
   line-height: 1;
 }
 
+/* --- BB 자동 채우기 데모 --- */
+.guide-demo-select {
+  height: 30px;
+  min-width: 78px;
+  border: 1.5px solid #dde1ea;
+  border-radius: 7px;
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 11px;
+  gap: 4px;
+}
+.guide-demo-select .val { color: #1f2738; font-weight: 600; }
+.guide-demo-select .ph { color: #aab1c2; }
+.guide-demo-select .caret { margin-left: auto; color: #b9c0cf; font-size: 9px; }
+.guide-demo-range-panel {
+  margin-top: 12px;
+  background: #f7f9fc;
+  border: 1px solid #e2e6ef;
+  border-radius: 9px;
+  padding: 12px;
+  overflow: hidden;
+}
+.guide-demo-range-panel .title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2b3242;
+  margin-bottom: 10px;
+}
+.guide-demo-range-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.guide-demo-range-row .rlabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: #5b647a;
+  min-width: 44px;
+}
+.guide-demo-range-row .tilde { color: #8a93a6; }
+.guide-demo-range-actions { display: flex; gap: 8px; margin-top: 10px; }
+.guide-demo-bb-badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #e0ebff;
+  border-radius: 8px;
+  padding: 2px 8px;
+}
+.guide-demo-bb-badge.sm { font-size: 9.5px; padding: 1px 6px; }
+
+/* --- BB 매핑 데모 --- */
+.guide-demo-bbsplit { display: flex; gap: 8px; }
+.guide-demo-bbpanel {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #e2e6ef;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #fff;
+}
+.guide-demo-bbpanel .bbpanel-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #475067;
+  background: #f3f6fb;
+  padding: 7px 9px;
+  border-bottom: 1px solid #e8ecf2;
+}
+.guide-demo-bb-search {
+  font-size: 10px;
+  color: #98a1b3;
+  padding: 5px 9px;
+  border-bottom: 1px solid #eef1f6;
+}
+.guide-demo-table.sm { border: none; border-radius: 0; font-size: 10.5px; }
+.guide-demo-table.sm th { padding: 5px 7px; }
+.guide-demo-table.sm td { padding: 5px 7px; height: 26px; }
+.guide-demo-table.sm tr.bb-selected td { background: #eff6ff; box-shadow: inset 2px 0 0 #4f8ef7; }
+.guide-demo-table.sm tr.bb-used td { color: #b6bdcb; background: #f7f8fb; }
+.guide-demo-table td .muted { color: #b6bdcb; font-size: 10px; }
+.guide-demo-bb-apply {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.guide-demo-bb-apply .hint { flex: 1; font-size: 10.5px; color: #6b7689; min-width: 140px; }
+.guide-demo-bb-applied {
+  margin-top: 12px;
+  border: 1px solid #bbf7d0;
+  border-radius: 9px;
+  overflow: hidden;
+}
+.guide-demo-bb-applied .title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #15803d;
+  background: #f0fdf4;
+  padding: 6px 9px;
+  border-bottom: 1px solid #dcfce7;
+}
+
