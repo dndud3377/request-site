@@ -68,6 +68,7 @@ class IsAuthenticatedOrMasterDelete(BasePermission):
 class RequestDocumentViewSet(viewsets.ModelViewSet):
     queryset = RequestDocument.objects.all()
     permission_classes = [IsAuthenticatedInProd]
+    pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'product_name']
     search_fields = ['title', 'product_name', 'requester_name', 'requester_department']
@@ -638,6 +639,7 @@ class VOCViewSet(viewsets.ModelViewSet):
     queryset = VOC.objects.all()
     serializer_class = VOCSerializer
     permission_classes = [IsAuthenticatedOrMasterDelete]
+    pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ['category', 'status', 'submitter_user_id']
     search_fields = ['title', 'submitter_name', 'content']
@@ -976,6 +978,7 @@ class VocHistoryViewSet(viewsets.ModelViewSet):
     queryset = VocHistory.objects.all()
     serializer_class = VocHistorySerializer
     permission_classes = [IsAuthenticatedInProd]
+    pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['voc', 'action']
     ordering = ['-acted_at']
@@ -1287,6 +1290,7 @@ class GuideViewSet(viewsets.ModelViewSet):
     """의뢰서 작성 가이드 CRUD"""
     serializer_class = GuideSerializer
     permission_classes = [IsAuthenticatedOrMasterDelete]
+    pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
 
     def get_queryset(self):
         qs = Guide.objects.all()
