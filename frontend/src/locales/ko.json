@@ -530,6 +530,20 @@
         "delete_all": "전체 삭제",
         "sample_name": "PLEL 제외",
         "callout": "💡 SP(STEPSEQ)/SD(STEP 설명)/PP(PPID) 컬럼 값에 키워드가 포함된 행을 필터링합니다. 키워드는 여러 개 추가할 수 있고, 저장된 필터는 [수정]·[삭제]로 관리합니다."
+      },
+      "step4_oayer_table": {
+        "lead": "O-ayer는 두 개의 탭(OVL Layer 목록 · OVL 정보)을 모두 작성해야 합니다. 목록 탭은 J-ayer 테이블과 동일하고, 정보 탭에는 Partial Shot과 TBV/TLV 설정이 있습니다.",
+        "phase_table": "① OVL Layer 목록 탭 — J-ayer 테이블과 동일하게 작성",
+        "phase_switch": "② OVL 정보 탭으로 전환 (두 탭 모두 작성)",
+        "phase_partial": "③ Partial Shot 필수 선택 (O / X)",
+        "phase_tbvtlv_cond": "④ TBV/TLV는 SD에 TBV·TLV 포함 행이 있을 때만 표시됨",
+        "phase_tbvtlv_fill": "⑤ 두께 · SD 선택 · 비고 입력 후 추가",
+        "phase_tbvtlv_delete": "⑥ 추가된 항목 삭제",
+        "table_note": "J-ayer 테이블과 동일 (복사·붙여넣기 · 바코드 · 비활성화/복원 지원)",
+        "tbvtlv_cond": "SD에 TBV/TLV 포함 행이 있을 때 표시",
+        "thickness_ph": "두께 값 입력",
+        "note_ph": "비고 입력",
+        "callout": "💡 두 탭을 모두 작성해야 합니다. Partial Shot은 필수 선택이며, TBV/TLV 설정은 O-ayer SD에 TBV·TLV가 포함된 행이 있을 때만 OVL 정보 탭에 나타납니다."
       }
     }
   },
