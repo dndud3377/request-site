@@ -583,6 +583,32 @@
         "staged_hint": "{{count}}개 행이 매핑됨 — 적용 버튼을 누르세요.",
         "applied_title": "적용 결과",
         "callout": "⚠️ 오른쪽 BB 데이터 목록은 외부 쿼리 DB에서 가져오며 1시간에 1번씩 갱신됩니다. 매핑된 행은 왼쪽 목록에서 사라지고 적용 결과에 추가되며, 매핑을 취소하려면 행의 X 버튼을 누릅니다."
+      },
+      "step2_map_type": {
+        "lead": "MAP 유형(NEW·CLONE·EXISTING)을 선택하고, 예외 구역 변경·X mark 변경·MAP 옵션 등 세부 항목을 입력합니다. 유형을 바꾸면 입력값이 초기화됩니다.",
+        "phase_new": "① NEW 선택 — 각 기능을 직접 입력",
+        "phase_ea": "② 예외 구역 변경 → 변경 있음 + 값(mm) 입력",
+        "phase_xmark": "③ X mark 변경 → 추가 시 이미지 영역에 Ctrl+V 붙여넣기",
+        "phase_options": "④ MAP 옵션 버튼으로 적용/미적용 토글(다중 선택)",
+        "phase_clone": "⑤ CLONE 으로 변경 → 입력값 초기화 + 원본 위치·제품 선택",
+        "phase_existing": "⑥ EXISTING → 기존 MAP을 그대로 사용(대부분 입력 비활성, 확인만)",
+        "source_label": "원본 위치 / 원본 제품 (CLONE 전용)",
+        "existing_note": "이미 존재하는 MAP을 그대로 사용합니다. 세부 입력은 비활성화되며 선택만 하면 됩니다.",
+        "callout": "💡 NEW는 새로 입력, CLONE은 원본 제품을 복사(원본 위치·제품 선택), EXISTING은 기존 MAP을 그대로 사용합니다. 유형 변경 시 입력값이 초기화되므로 주의하세요."
+      },
+      "step2_cfamily": {
+        "lead": "Only C가문 = Yes일 때의 입력 흐름입니다. 제품 해당 위치와 북/중/남 영역, MAP 편차, X mark, REV 관리까지 C가문 전용 항목이 활성화됩니다.",
+        "phase_cfamily": "① Only C가문 = Yes 선택 → 전용 항목 활성화",
+        "phase_region": "② 제품 해당 위치 + 북/중/남 영역(위치·조합법·제품) 입력",
+        "phase_deviation": "③ MAP 편차 — Yes면 ‘변경 있음’ 자동, 북/남 X는 부호 반대",
+        "phase_xmark": "④ X mark — C가문은 북/남 이미지를 각각 붙여넣기",
+        "phase_rev": "⑤ REV 관리 — Layer별 GDS 버전 추가",
+        "dev_fixed": "변경 있음 자동 고정",
+        "dev_rule": "검증: |X| 동일 · 부호 반대 / Y 동일",
+        "rev_label": "REV 여부",
+        "rev_hint": "Layer 버튼 = 활성 J-ayer 행의 Layer ID",
+        "gds_ph": "GDS version 입력",
+        "callout": "💡 Only C가문 = Yes를 선택하면 북/중/남 영역(북·남 필수, 중간 선택), MAP 편차(북/남 부호 반대), 북/남 X mark 이미지, REV 관리가 활성화됩니다. REV의 Layer 버튼은 활성 J-ayer 행의 Layer ID로 표시되며, GDS version을 입력해 추가합니다."
       }
     }
   },
