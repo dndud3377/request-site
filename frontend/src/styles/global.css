@@ -3384,3 +3384,115 @@ select.form-control option {
   min-height: 0;
 }
 
+/* --- O-ayer 데모 (탭 / Partial Shot / TBV-TLV) --- */
+.guide-demo-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1.5px solid #e2e6ef;
+  margin-bottom: 14px;
+}
+.guide-demo-tab {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  color: #98a1b3;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1.5px;
+  cursor: default;
+}
+.guide-demo-tab.on {
+  color: #2563eb;
+  border-bottom-color: #4f8ef7;
+}
+.guide-demo-mini-note {
+  font-size: 11px;
+  color: #6b7689;
+  background: #f3f6fb;
+  border-radius: 7px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+}
+
+.guide-demo-info { display: flex; flex-direction: column; gap: 18px; }
+.guide-demo-formgroup { display: flex; flex-direction: column; gap: 8px; }
+.guide-demo-formgroup.tbvtlv {
+  border-top: 1px solid #e8ecf2;
+  padding-top: 14px;
+}
+.guide-demo-formlabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: #3a4254;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.guide-demo-formlabel .req { color: #ef4444; }
+.guide-demo-cond-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: #6d28d9;
+  background: #ede9fe;
+  border-radius: 10px;
+  padding: 2px 8px;
+}
+.guide-demo-choices { display: flex; gap: 8px; }
+.guide-demo-choice {
+  width: 40px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1.5px solid #dde1ea;
+  background: #fff;
+  color: #475067;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: default;
+  transition: all 0.15s;
+}
+.guide-demo-choice.on {
+  background: #4f8ef7;
+  border-color: #4f8ef7;
+  color: #fff;
+}
+.guide-demo-tbv-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.guide-demo-tbv-row .lbl {
+  font-size: 11px;
+  font-weight: 700;
+  color: #5b647a;
+  min-width: 52px;
+}
+.guide-demo-tbv-row .guide-demo-kwbox { flex: 1; min-width: 110px; }
+.guide-demo-sdbtns { display: flex; gap: 6px; flex-wrap: wrap; }
+.guide-demo-sdbtn {
+  font-size: 11.5px;
+  padding: 5px 12px;
+  border-radius: 5px;
+  border: 1.5px solid #ccc;
+  background: #fff;
+  color: #333;
+  cursor: default;
+  transition: all 0.15s;
+}
+.guide-demo-sdbtn.on {
+  border-color: #4f8ef7;
+  background: #4f8ef7;
+  color: #fff;
+  font-weight: 600;
+}
+.guide-demo-table.entries { margin-top: 6px; }
+.guide-demo-iconbtn {
+  border: none;
+  background: none;
+  cursor: default;
+  font-size: 13px;
+  line-height: 1;
+}
+
