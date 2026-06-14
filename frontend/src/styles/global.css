@@ -3605,3 +3605,75 @@ select.form-control option {
   border-bottom: 1px solid #dcfce7;
 }
 
+/* --- Step2 MAP 데모 --- */
+.guide-demo-choice.wide,
+.guide-demo-choice.auto {
+  width: auto;
+  min-width: 0;
+  padding: 0 14px;
+  height: 32px;
+}
+.guide-demo-choice.auto.sm { height: 26px; padding: 0 10px; font-size: 11px; }
+.guide-demo-formlabel.highlight { color: #2563eb; }
+.guide-demo-featurewrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: opacity 0.4s, filter 0.4s;
+}
+.guide-demo-featurewrap.disabled {
+  opacity: 0.4;
+  filter: grayscale(0.6);
+  pointer-events: none;
+}
+.guide-demo-imgarea {
+  margin-top: 8px;
+  border: 1.5px dashed #c7d6f5;
+  border-radius: 8px;
+  background: #f7f9fc;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #8a93a6;
+  position: relative;
+}
+.guide-demo-imgarea.sm { min-height: 42px; flex: 1; flex-direction: column; gap: 2px; }
+.guide-demo-imgarea .cap { font-size: 9.5px; font-weight: 700; color: #5b647a; }
+.guide-demo-imgarea .pasted { font-size: 18px; }
+.guide-demo-imgrow { display: flex; gap: 8px; margin-top: 8px; }
+.guide-demo-existing-note {
+  margin-top: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #15803d;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 8px 11px;
+}
+.guide-demo-cregion {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.guide-demo-cregion .rlabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: #5b647a;
+  min-width: 40px;
+}
+.guide-demo-select.sm { height: 26px; min-width: 72px; font-size: 10.5px; }
+.guide-demo-rule {
+  font-size: 10px;
+  font-weight: 600;
+  color: #b45309;
+  background: #fef3c7;
+  border-radius: 8px;
+  padding: 2px 8px;
+}
+
