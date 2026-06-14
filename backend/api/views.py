@@ -26,6 +26,7 @@ from .models import (
 )
 from .utils import LINE_TO_LINEID_MAP
 from . import mailer
+from . import doc_permissions
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer,
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
@@ -66,7 +67,7 @@ class IsAuthenticatedOrMasterDelete(BasePermission):
 
 
 class RequestDocumentViewSet(viewsets.ModelViewSet):
-    queryset = RequestDocument.objects.all()
+    queryset = RequestDocument.objects.select_related('requester', 'designated_pl').all()
     permission_classes = [IsAuthenticatedInProd]
     pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -119,30 +120,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             and not step.assignee_id
         )
 
+    # 의뢰자/철회/수정 권한은 serializers 와 공유하기 위해 doc_permissions 모듈에 둔다.
     def _can_withdraw(self, user, document):
-        """철회 인가.
+        return doc_permissions.can_withdraw(user, document)
 
-        MASTER / 의뢰자 PL 본인 / 지정 PL 본인 /
-        의뢰자가 멤버인 '나만의 그룹'의 멤버 인 경우 허용.
-        (그룹 판정은 mailer.enqueue_approved 와 동일하게 requester.member_groups 기준)
-        """
-        role = getattr(user, 'role', '')
-        if role == 'MASTER':
-            return True
-        caller_loginid = getattr(user, 'loginid', '')
-        if not caller_loginid:
-            return False
-        requester = document.requester
-        if requester and requester.loginid == caller_loginid:
-            return True
-        if document.designated_pl and document.designated_pl.loginid == caller_loginid:
-            return True
-        if requester and User.objects.filter(
-            loginid=caller_loginid,
-            member_groups__in=requester.member_groups.all(),
-        ).exists():
-            return True
-        return False
+    def _can_edit(self, user, document):
+        return doc_permissions.can_edit(user, document)
 
     def _max_round(self, document, default=1):
         """문서의 현재 최대 결재 회차를 반환한다. 단계가 없으면 default."""
@@ -618,7 +601,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         base_title = serializer.validated_data.get('title', '')
-        serializer.save(title=self._unique_title(base_title))
+        user = self.request.user
+        requester = user if getattr(user, 'is_authenticated', False) else None
+        serializer.save(title=self._unique_title(base_title), requester=requester)
+
+    def update(self, request, *args, **kwargs):
+        """수정(PUT/PATCH) 인가: 상태별 권한이 없으면 403."""
+        document = self.get_object()
+        if not self._can_edit(request.user, document):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
 
     def perform_update(self, serializer):
         base_title = serializer.validated_data.get('title', serializer.instance.title)
