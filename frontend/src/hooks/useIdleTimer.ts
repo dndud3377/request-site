@@ -12,6 +12,8 @@ interface IdleTimerOptions {
   onWarn?: () => void;
   warnBeforeMs?: number;
   enabled?: boolean;
+  // 사용자 활동(타이머 reset)이 감지될 때 호출. 경고 모달 닫기 등에 사용.
+  onActivity?: () => void;
 }
 
 /**
@@ -25,17 +27,21 @@ export function useIdleTimer(
   idleMs: number,
   options: IdleTimerOptions = {},
 ): { reset: () => void } {
-  const { onWarn, warnBeforeMs = 0, enabled = true } = options;
+  const { onWarn, warnBeforeMs = 0, enabled = true, onActivity } = options;
 
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onIdleRef = useRef(onIdle);
   const onWarnRef = useRef(onWarn);
+  const onActivityRef = useRef(onActivity);
 
   useEffect(() => { onIdleRef.current = onIdle; }, [onIdle]);
   useEffect(() => { onWarnRef.current = onWarn; }, [onWarn]);
+  useEffect(() => { onActivityRef.current = onActivity; }, [onActivity]);
 
   const reset = useCallback(() => {
+    onActivityRef.current?.();
+
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     if (warnTimerRef.current) clearTimeout(warnTimerRef.current);
 
