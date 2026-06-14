@@ -80,7 +80,11 @@ verify=False, timeout=10
 
 ## 5. 개발 환경 검증
 
-dev 는 `SKIP_SCHEDULER=true` 라 APScheduler 가 뜨지 않는다. 큐를 수동으로 비워 검증한다.
+dev 는 `SKIP_SCHEDULER=true` 로 **무거운 DCQ 동기화는 끄지만**, 외부 DB 가 필요 없는
+**메일 큐 발송 잡은 자동 실행**된다(`apps.py` → `scheduler.start_mail_only`, 1분 주기).
+즉 dev 에서도 결재를 진행하면 1분 내에 자동으로 메일이 나간다.
+
+즉시 발송을 확인하고 싶거나 수동으로 큐를 비우려면:
 
 ```bash
 docker exec -it <backend_container> python manage.py process_mail_queue
@@ -88,6 +92,9 @@ docker exec -it <backend_container> python manage.py process_mail_queue
 
 - `MAIL_REDIRECT_TO=wooyoung7.oh@company.com` 설정 시 모든 메일이 해당 주소로 발송된다.
 - 적재/발송 상태는 Django Admin 의 **결재 알림 메일** 목록에서 확인할 수 있다.
+
+> 스케줄러 동작 정리: SKIP_SCHEDULER=true → DCQ 동기화 OFF / 메일 발송 ON.
+> SKIP_SCHEDULER 미설정(운영) → 둘 다 ON.
 
 ---
 
