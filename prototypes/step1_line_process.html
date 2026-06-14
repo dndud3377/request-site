@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>가이드 데모 · Step1 라인/공정/조리법 선택</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+                 "Malgun Gothic", sans-serif;
+    background: #eef1f6;
+    color: #2b2f38;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 28px 12px 60px;
+  }
+
+  /* ===== 슬라이드 패널 모사 ===== */
+  .panel {
+    width: 460px;
+    background: #fff;
+    border: 1.5px solid #e8ecf2;
+    border-radius: 14px;
+    box-shadow: 0 14px 40px rgba(20, 25, 60, 0.14);
+    overflow: hidden;
+  }
+  .panel-header {
+    padding: 15px 18px;
+    background: linear-gradient(135deg, #1a1a2e, #2d2d5e);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .panel-header .ico { font-size: 18px; }
+  .panel-header h3 { font-size: 14.5px; font-weight: 700; flex: 1; }
+  .panel-hint {
+    padding: 8px 18px;
+    background: #f7f9fc;
+    border-bottom: 1px solid #e8ecf2;
+    font-size: 11.5px;
+    color: #8a93a6;
+  }
+
+  .panel-body { padding: 16px 18px 20px; }
+
+  .lead {
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: #475067;
+    margin-bottom: 14px;
+  }
+  .lead b { color: #2563eb; }
+
+  /* ===== 데모 무대 ===== */
+  .stage {
+    position: relative;
+    background: #f9fafc;
+    border: 1px solid #e8ecf2;
+    border-radius: 12px;
+    padding: 16px 16px 18px;
+    overflow: visible;
+  }
+
+  .field { margin-bottom: 12px; position: relative; }
+  .field:last-child { margin-bottom: 0; }
+  .field-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #5b647a;
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .field-label .step-dot {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #d6dbe6;
+    color: #fff;
+    font-size: 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    transition: background .3s;
+  }
+  .field.done .field-label .step-dot { background: #22c55e; }
+  .field.active .field-label .step-dot { background: #4f8ef7; }
+
+  .control {
+    height: 38px;
+    border: 1.5px solid #dde1ea;
+    border-radius: 9px;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 12.5px;
+    color: #aab1c2;
+    position: relative;
+    transition: border-color .25s, box-shadow .25s, background .25s;
+  }
+  .control .caret { margin-left: auto; color: #b9c0cf; font-size: 10px; }
+  .control .typed { color: #1f2738; font-weight: 600; }
+  .control .cursor-bar {
+    width: 1.5px; height: 16px; background: #4f8ef7;
+    margin-left: 1px; opacity: 0;
+  }
+  .field.active .control {
+    border-color: #4f8ef7;
+    box-shadow: 0 0 0 3px rgba(79,142,247,0.16);
+  }
+  .field.active .control .cursor-bar { opacity: 1; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .field.filled .control { color: #1f2738; }
+  .field.filled .control .val { color: #1f2738; font-weight: 600; }
+
+  /* 옵션/제안 드롭다운 */
+  .options {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0; right: 0;
+    background: #fff;
+    border: 1.5px solid #e2e6ef;
+    border-radius: 9px;
+    box-shadow: 0 10px 26px rgba(25,30,60,0.16);
+    padding: 4px;
+    z-index: 20;
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+    transform-origin: top center;
+    pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .options.show { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+  .opt {
+    padding: 8px 10px;
+    font-size: 12px;
+    border-radius: 6px;
+    color: #3a4254;
+    transition: background .15s, color .15s;
+  }
+  .opt.hi { background: #eff6ff; color: #2563eb; font-weight: 700; }
+
+  /* 하위 영역 (의뢰 목적 / Flow Chart) */
+  .downstream {
+    margin-top: 14px;
+    border-top: 1px dashed #d8dee9;
+    padding-top: 12px;
+    opacity: .45;
+    filter: grayscale(0.7);
+    transition: opacity .5s ease, filter .5s ease;
+    position: relative;
+  }
+  .downstream.unlocked { opacity: 1; filter: none; }
+  .downstream-title {
+    font-size: 11px; font-weight: 700; color: #5b647a;
+    margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+  }
+  .pill-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pill {
+    font-size: 11px; padding: 6px 11px;
+    border: 1.5px solid #dde1ea; border-radius: 16px;
+    color: #8a93a6; background: #fff;
+  }
+  .downstream.unlocked .pill { border-color: #c7d6f5; color: #4f6694; }
+  .lock-badge {
+    position: absolute; top: 8px; right: 0;
+    font-size: 10px; font-weight: 700;
+    padding: 3px 9px; border-radius: 12px;
+    background: #eef1f6; color: #9aa3b5;
+    transition: all .4s;
+  }
+  .downstream.unlocked .lock-badge {
+    background: #dcfce7; color: #15803d;
+    transform: scale(1.05);
+  }
+
+  /* 가짜 커서 */
+  .cursor {
+    position: absolute;
+    width: 22px; height: 22px;
+    left: 0; top: 0;
+    z-index: 50;
+    pointer-events: none;
+    transition: transform .55s cubic-bezier(.5,.05,.2,1);
+    will-change: transform;
+  }
+  .cursor svg { display: block; filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
+  .cursor.click svg { transform: scale(0.82); }
+  .ripple {
+    position: absolute; border-radius: 50%;
+    border: 2px solid #4f8ef7;
+    width: 8px; height: 8px;
+    pointer-events: none; z-index: 49;
+    opacity: 0;
+  }
+  .ripple.go { animation: ripple .45s ease-out; }
+  @keyframes ripple {
+    0% { opacity: .7; transform: translate(-50%,-50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%,-50%) scale(6); }
+  }
+
+  /* 주의 콜아웃 */
+  .callout {
+    margin-top: 14px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 9px;
+    padding: 9px 12px;
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: #92400e;
+  }
+
+  .controls { margin-top: 14px; display: flex; align-items: center; gap: 10px; }
+  .replay-btn {
+    font-size: 12px; font-weight: 700;
+    padding: 8px 14px; border-radius: 9px;
+    border: 1.5px solid #4f8ef7; background: #fff; color: #4f8ef7;
+    cursor: pointer; transition: background .15s;
+  }
+  .replay-btn:hover { background: #eff6ff; }
+  .status { font-size: 11px; color: #9aa3b5; }
+</style>
+</head>
+<body>
+  <div class="panel">
+    <div class="panel-header">
+      <span class="ico">📖</span>
+      <h3>라인/공정/조리법 선택</h3>
+    </div>
+    <div class="panel-hint">의뢰서 작성 화면에서 이렇게 동작합니다.</div>
+
+    <div class="panel-body">
+      <p class="lead">
+        의뢰서 작성의 <b>첫 번째 필수 항목</b>입니다. 아래 4개 필드를
+        순서대로 선택하면 이후 항목들이 활성화됩니다.
+      </p>
+
+      <div class="stage" id="stage">
+        <!-- 라인 -->
+        <div class="field" id="f-line">
+          <div class="field-label"><span class="step-dot">1</span> 라인 (Line)</div>
+          <div class="control" id="c-line">
+            <span class="val" id="v-line">선택하세요</span>
+            <span class="caret">▾</span>
+          </div>
+          <div class="options" id="o-line">
+            <div class="opt" data-v="L1">L1</div>
+            <div class="opt" data-v="L2">L2</div>
+            <div class="opt" data-v="L3">L3</div>
+          </div>
+        </div>
+
+        <!-- 조합법 -->
+        <div class="field" id="f-proc">
+          <div class="field-label"><span class="step-dot">2</span> 조합법 (Process)</div>
+          <div class="control" id="c-proc">
+            <span class="val" id="v-proc">선택하세요</span>
+            <span class="cursor-bar"></span>
+          </div>
+          <div class="options" id="o-proc">
+            <div class="opt" data-v="RECIPE_A1">RECIPE_A1</div>
+            <div class="opt" data-v="RECIPE_A2">RECIPE_A2</div>
+          </div>
+        </div>
+
+        <!-- 제품 이름 -->
+        <div class="field" id="f-part">
+          <div class="field-label"><span class="step-dot">3</span> 제품 이름 (Part ID)</div>
+          <div class="control" id="c-part">
+            <span class="val" id="v-part">선택하세요</span>
+            <span class="cursor-bar"></span>
+          </div>
+          <div class="options" id="o-part">
+            <div class="opt" data-v="PART_1234">PART_1234</div>
+            <div class="opt" data-v="PART_1290">PART_1290</div>
+          </div>
+        </div>
+
+        <!-- 조리법 -->
+        <div class="field" id="f-recipe">
+          <div class="field-label"><span class="step-dot">4</span> 조리법 (Process ID)</div>
+          <div class="control" id="c-recipe">
+            <span class="val" id="v-recipe">선택하세요</span>
+            <span class="cursor-bar"></span>
+          </div>
+          <div class="options" id="o-recipe">
+            <div class="opt" data-v="PROC_X1">PROC_X1</div>
+            <div class="opt" data-v="PROC_X2">PROC_X2</div>
+          </div>
+        </div>
+
+        <!-- 하위 영역 -->
+        <div class="downstream" id="downstream">
+          <span class="lock-badge" id="lockBadge">🔒 비활성</span>
+          <div class="downstream-title">의뢰 목적 · Flow Chart · BB 조합 …</div>
+          <div class="pill-row">
+            <span class="pill">신규</span>
+            <span class="pill">차용</span>
+            <span class="pill">Flow Chart</span>
+            <span class="pill">BB 조합 구역</span>
+          </div>
+        </div>
+
+        <!-- 커서 -->
+        <div class="cursor" id="cursor">
+          <svg width="22" height="22" viewBox="0 0 22 22">
+            <path d="M2 2 L2 17 L6.2 13 L9 19 L11.4 18 L8.6 12 L14 12 Z"
+                  fill="#fff" stroke="#1a1a2e" stroke-width="1.3" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="ripple" id="ripple"></div>
+      </div>
+
+      <div class="callout">
+        ⚠️ <b>주의</b> · 조합법·제품명·조리법 목록은 외부 쿼리 DB에서 가져오며
+        <b>1시간에 1번씩 갱신</b>됩니다. 방금 등록한 항목이 안 보이면 잠시 후 다시 시도하세요.
+      </div>
+
+      <div class="controls">
+        <button class="replay-btn" id="replay">▶ 다시 보기</button>
+        <span class="status" id="status">재생 중…</span>
+      </div>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const stage = $('stage');
+const cursor = $('cursor');
+const ripple = $('ripple');
+const status = $('status');
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+function centerOf(el) {
+  const s = stage.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  return { x: r.left - s.left + r.width / 2, y: r.top - s.top + r.height / 2 };
+}
+
+async function moveTo(el, opts = {}) {
+  const { x, y } = centerOf(el);
+  const ox = opts.dx || 0, oy = opts.dy || 0;
+  cursor.style.transform = `translate(${x - 6 + ox}px, ${y - 4 + oy}px)`;
+  await sleep(580);
+}
+
+async function clickAt(el) {
+  const { x, y } = centerOf(el);
+  cursor.classList.add('click');
+  ripple.style.left = x + 'px';
+  ripple.style.top = y + 'px';
+  ripple.classList.remove('go'); void ripple.offsetWidth; ripple.classList.add('go');
+  await sleep(150);
+  cursor.classList.remove('click');
+  await sleep(120);
+}
+
+async function typeInto(valEl, text, fieldEl) {
+  fieldEl.classList.add('active');
+  valEl.classList.remove('val');
+  valEl.innerHTML = '<span class="typed"></span>';
+  const typed = valEl.querySelector('.typed');
+  for (let i = 0; i < text.length; i++) {
+    typed.textContent += text[i];
+    await sleep(85);
+  }
+  await sleep(150);
+}
+
+function reset() {
+  ['f-line','f-proc','f-part','f-recipe'].forEach(id => {
+    $(id).classList.remove('active','done','filled');
+  });
+  $('v-line').textContent = '선택하세요';   $('v-line').className = 'val';
+  $('v-proc').textContent = '선택하세요';   $('v-proc').className = 'val';
+  $('v-part').textContent = '선택하세요';   $('v-part').className = 'val';
+  $('v-recipe').textContent = '선택하세요'; $('v-recipe').className = 'val';
+  ['o-line','o-proc','o-part','o-recipe'].forEach(id => $(id).classList.remove('show'));
+  $('downstream').classList.remove('unlocked');
+  $('lockBadge').textContent = '🔒 비활성';
+  cursor.style.transform = 'translate(-30px, -30px)';
+}
+
+function setFilled(fieldId, valId, value) {
+  const f = $(fieldId);
+  f.classList.remove('active');
+  f.classList.add('filled','done');
+  const v = $(valId);
+  v.className = 'val';
+  v.textContent = value;
+}
+
+async function highlightAndPick(optsId, value) {
+  const opts = $(optsId);
+  opts.classList.add('show');
+  await sleep(300);
+  const target = [...opts.children].find(o => o.dataset.v === value);
+  // move cursor onto option
+  await moveTo(target);
+  target.classList.add('hi');
+  await sleep(280);
+  await clickAt(target);
+  opts.classList.remove('show');
+  target.classList.remove('hi');
+  await sleep(120);
+}
+
+let running = false;
+async function play() {
+  if (running) return;
+  running = true;
+  status.textContent = '재생 중…';
+  reset();
+  await sleep(500);
+
+  // 1. 라인 (드롭다운 선택)
+  await moveTo($('c-line'));
+  await clickAt($('c-line'));
+  $('f-line').classList.add('active');
+  await highlightAndPick('o-line', 'L1');
+  setFilled('f-line','v-line','L1');
+  await sleep(250);
+
+  // 2. 조합법 (자동완성 타이핑)
+  await moveTo($('c-proc'));
+  await clickAt($('c-proc'));
+  await typeInto($('v-proc'), 'RECIPE_', $('f-proc'));
+  await highlightAndPick('o-proc', 'RECIPE_A1');
+  setFilled('f-proc','v-proc','RECIPE_A1');
+  await sleep(200);
+
+  // 3. 제품 이름
+  await moveTo($('c-part'));
+  await clickAt($('c-part'));
+  await typeInto($('v-part'), 'PART_', $('f-part'));
+  await highlightAndPick('o-part', 'PART_1234');
+  setFilled('f-part','v-part','PART_1234');
+  await sleep(200);
+
+  // 4. 조리법
+  await moveTo($('c-recipe'));
+  await clickAt($('c-recipe'));
+  await typeInto($('v-recipe'), 'PROC_', $('f-recipe'));
+  await highlightAndPick('o-recipe', 'PROC_X1');
+  setFilled('f-recipe','v-recipe','PROC_X1');
+  await sleep(350);
+
+  // 5. 하위 영역 활성화
+  await moveTo($('downstream'), { dy: -6 });
+  $('downstream').classList.add('unlocked');
+  $('lockBadge').textContent = '✓ 입력 가능';
+  await sleep(900);
+
+  status.textContent = '완료 — 5초 후 다시 재생';
+  running = false;
+  loopTimer = setTimeout(play, 5000);
+}
+
+let loopTimer = null;
+$('replay').addEventListener('click', () => {
+  clearTimeout(loopTimer);
+  if (!running) play();
+});
+
+window.addEventListener('load', () => setTimeout(play, 400));
+</script>
+</body>
+</html>
