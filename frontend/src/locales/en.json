@@ -529,6 +529,20 @@
         "delete_all": "Delete All",
         "sample_name": "Exclude PLEL",
         "callout": "💡 Filters rows whose SP(STEPSEQ)/SD(STEP Desc)/PP(PPID) column contains the keyword. You can add multiple keywords; manage saved filters with [Edit]·[Delete]."
+      },
+      "step4_oayer_table": {
+        "lead": "O-ayer requires filling both tabs (OVL Layer List · OVL Info). The list tab works like the J-ayer table, and the info tab holds Partial Shot and TBV/TLV settings.",
+        "phase_table": "① OVL Layer List tab — same as the J-ayer table",
+        "phase_switch": "② Switch to the OVL Info tab (fill both tabs)",
+        "phase_partial": "③ Partial Shot required selection (O / X)",
+        "phase_tbvtlv_cond": "④ TBV/TLV shows only when a row's SD contains TBV/TLV",
+        "phase_tbvtlv_fill": "⑤ Enter thickness · select SD · note, then add",
+        "phase_tbvtlv_delete": "⑥ Delete the added entry",
+        "table_note": "Same as the J-ayer table (copy/paste · barcode · disable/restore)",
+        "tbvtlv_cond": "Shown when a row's SD contains TBV/TLV",
+        "thickness_ph": "Enter thickness",
+        "note_ph": "Enter note",
+        "callout": "💡 Both tabs must be filled. Partial Shot is required, and the TBV/TLV setting appears in the OVL Info tab only when an O-ayer row's SD contains TBV/TLV."
       }
     }
   },
