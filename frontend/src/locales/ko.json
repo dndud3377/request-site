@@ -475,6 +475,18 @@
       "step5_bb_autofill": "BB 자동 채우기",
       "step5_bb_mapping": "BB 매핑",
       "step5_bb_table": "BB 적용 테이블"
+    },
+    "demo": {
+      "replay": "▶ 다시 보기",
+      "playing": "재생 중…",
+      "done_loop": "완료 — 잠시 후 다시 재생됩니다",
+      "step1_line_process": {
+        "lead": "의뢰서 작성의 첫 번째 필수 항목입니다. 아래 4개 필드를 순서대로 선택하면 이후 항목들이 활성화됩니다.",
+        "downstream_title": "의뢰 목적 · Flow Chart · BB 조합 …",
+        "locked": "🔒 비활성",
+        "unlocked": "✓ 입력 가능",
+        "callout": "⚠️ 주의 · 조합법·제품명·조리법 목록은 외부 쿼리 DB에서 가져오며 1시간에 1번씩 갱신됩니다. 방금 등록한 항목이 안 보이면 잠시 후 다시 시도하세요."
+      }
     }
   },
   "group": {
