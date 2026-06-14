@@ -61,7 +61,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 const STORAGE_KEY = 'approval_system_user_id';
 
-const EMPTY_USER: UserInfo = { id: 0, username: '', name: '', role: 'PL', department: '', email: '' };
+const EMPTY_USER: UserInfo = { id: 0, username: '', name: '', role: 'NONE', department: '', email: '' };
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
@@ -136,6 +136,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setShowWarning(true);
   }, []);
 
+  // 사용자 활동 감지 시 경고 모달을 닫는다(활동 = 세션 연장이므로 모달이 남아 화면을
+  // 막은 채 00:00까지 멈추는 문제 방지). 이미 닫혀 있으면 리렌더는 생략된다.
+  const handleActivity = useCallback(() => {
+    setShowWarning(false);
+  }, []);
+
   const { reset: resetIdleTimer } = useIdleTimer(
     autoLogout,
     SESSION_TIMEOUT_MS,
@@ -143,6 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       onWarn: handleShowWarning,
       warnBeforeMs: WARN_BEFORE_MS,
       enabled: !IS_DEV_MODE && isLoggedIn,
+      onActivity: handleActivity,
     },
   );
 
