@@ -62,6 +62,9 @@ class RequestDocument(models.Model):
         ('rejected', '반려됨'),
     ]
 
+    # 요청 목적 'Only MAP' 값 (결재 경로를 R 단계까지만 진행)
+    ONLY_MAP_PURPOSE = 'Only MAP'
+
     title = models.CharField(max_length=300, verbose_name='의뢰서 제목')
     requester = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
@@ -102,6 +105,15 @@ class RequestDocument(models.Model):
             return json.loads(self.additional_notes or '{}')
         except (json.JSONDecodeError, TypeError):
             return {}
+
+    def is_only_map(self):
+        """요청 목적이 'Only MAP' 인지 여부.
+
+        Only MAP 의뢰서는 결재 경로를 R 단계까지만 진행하고, R 합의 시 바로 승인된다.
+        request_purpose 는 additional_notes JSON 의 `detail` 하위에 저장된다.
+        """
+        inner_detail = self.get_detail().get('detail', {})
+        return inner_detail.get('request_purpose') == self.ONLY_MAP_PURPOSE
 
     def has_ppid_plel(self):
         detail = self.get_detail()

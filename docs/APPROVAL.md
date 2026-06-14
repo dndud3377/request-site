@@ -55,9 +55,16 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
                      └─(반려)─▶ rejected ──(재상신, round+1)──▶ PL 검토 …
 
 어느 단계든 반려 → rejected
+
+[Only MAP 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ R ─(합의)─▶ approved   (P/O/E 단계 없음)
 ```
 
 핵심: **PL → R → (P → J) ∥ (O [+E])**. R 합의 후 두 경로(path1=P→J, path2=O[+E])가 **병렬** 진행되고, J·O·(E) 가 **모두** 합의돼야 문서가 `approved`가 된다.
+
+> **예외 — 요청 목적 'Only MAP'**: `RequestDocument.is_only_map()`이 참이면 결재 경로를
+> **R 단계까지만** 진행한다. R 합의 시 P/O/E 단계를 생성하지 않고 곧바로 `approved`가 된다.
+> 판정값 `request_purpose`는 `additional_notes` JSON의 `detail` 하위에 저장된다
+> (상수 `RequestDocument.ONLY_MAP_PURPOSE = 'Only MAP'`).
 
 ### Case A — 상신 (`submit`, `views.py:100`)
 - 조건: `status == 'draft'`, **지정 PL 필수**(role='PL'인 사용자, **본인 지정 불가**), `_validate_bb_mapping` 통과.
@@ -80,6 +87,8 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 - 동작: R `approved` → **P(due: R당일 포함 4영업일), O(due: 6영업일, 병렬)** 동시 생성.
   추가로 `has_ppid_plel()`이 참이면 **E**(due: 6영업일, 병렬)도 생성.
 - `has_ppid_plel()`(`models.py:106`): J-layer 행 중 `pp` 값에 `plel`(대소문자 무관) 포함이 하나라도 있으면 E 단계 생성.
+- **Only MAP 예외**: `document.is_only_map()`이 참이면 P/O/E를 **생성하지 않고** `status → approved`로
+  바로 전이한다(R 합의 = 최종 승인). 승인 메일(`enqueue_approved`)이 발송된다.
 
 ### Case F — P 합의 (`approve_step` agent='P', `views.py:272`)
 - 동작: P `approved` → **J(due: P당일 포함 4영업일)** 생성. (path1은 P→J 순차)
