@@ -486,7 +486,8 @@
         "disable": "Disable Selected",
         "restore": "Restore",
         "save": "Save",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "col_layer": "Layer"
       },
       "step1_line_process": {
         "lead": "This is the first required item when creating a request. Select the 4 fields below in order to enable the remaining items.",
@@ -543,6 +544,44 @@
         "thickness_ph": "Enter thickness",
         "note_ph": "Enter note",
         "callout": "💡 Both tabs must be filled. Partial Shot is required, and the TBV/TLV setting appears in the OVL Info tab only when an O-ayer row's SD contains TBV/TLV."
+      },
+      "step5_bb_autofill": {
+        "lead": "Auto-fills BB data into J-ayer rows by Layer range. You can define multiple ranges at once.",
+        "phase_open": "① 📋 Backbone Auto-fill → open the Layer range panel",
+        "phase_range1": "② Range 1 — select start/end Layer and Product ID",
+        "phase_add": "③ Add another range with + Add Range",
+        "phase_range2": "④ Range 2 — select start/end Layer and Product ID",
+        "phase_apply": "⑤ ✔ Apply → BB data auto-fills the rows in range",
+        "autofill_btn": "Backbone Auto-fill",
+        "range_title": "Layer Range Setup",
+        "range": "Range",
+        "from_ph": "Start Layer",
+        "to_ph": "End Layer",
+        "prod_ph": "Product ID",
+        "add_range": "Add Range",
+        "apply": "Apply",
+        "col_bb": "Backbone Data",
+        "callout": "⚠️ BB data is pulled from an external query DB and refreshed once every hour. Use + Add Range to add as many ranges as needed; on apply, the J-ayer rows in each range are filled automatically."
+      },
+      "step5_bb_mapping": {
+        "lead": "Map BB data to each J-ayer row directly. Pick a source row on the left, then click a BB data row on the right to link them.",
+        "phase_select": "① Select a source row to map on the left",
+        "phase_map": "② Click a BB data row on the right → map",
+        "phase_repeat": "③ Keep selecting more pairs",
+        "phase_apply": "④ ✔ Apply → mapped rows move to the applied result",
+        "left_title": "Source Data List",
+        "right_title": "BB Data List",
+        "search_ph": "Search",
+        "col_method": "Method",
+        "col_bb": "Backbone Data",
+        "ref_method": "Ref.Method",
+        "ref_desc": "Desc",
+        "unmapped": "Unmapped",
+        "apply_btn": "Apply",
+        "apply_hint": "Select a source row on the left and click BB data on the right to map.",
+        "staged_hint": "{{count}} rows mapped — press Apply.",
+        "applied_title": "Applied Result",
+        "callout": "⚠️ The BB data list on the right is pulled from an external query DB and refreshed once every hour. Mapped rows disappear from the left list and are added to the result; press the X button on a row to undo a mapping."
       }
     }
   },
