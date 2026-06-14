@@ -79,6 +79,70 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return RequestDocumentListSerializer
         return RequestDocumentSerializer
 
+    # ===== 결재 액션 서버측 인가 (프론트 ApprovalFlow 와 동일 규칙) =====
+    # 프론트의 canUserAgree / canUserAssign 은 UI 가드일 뿐이라 API 직접 호출 시
+    # 우회되던 문제(APPROVAL.md §6-1)를 막기 위해 서버에서도 동일 규칙을 강제한다.
+
+    # 역할 → 담당 agent 매핑 (프론트 ROLE_TO_AGENT 와 동일)
+    _ROLE_TO_AGENT = {'TE_R': 'R', 'TE_P': 'P', 'TE_J': 'J', 'TE_O': 'O', 'TE_E': 'E'}
+
+    def _can_act_on_step(self, user, step):
+        """합의/반려 인가 (canUserAgree 동일).
+
+        - MASTER: 항상 허용
+        - TE_O/TE_E: 자기 agent(O/E) 단계면 담당자 지정 없이 허용
+        - 그 외(R/P/J): 해당 step 의 assignee 본인만
+        """
+        role = getattr(user, 'role', '')
+        if role == 'MASTER':
+            return True
+        if role in ('TE_O', 'TE_E') and step.agent == self._ROLE_TO_AGENT[role]:
+            return True
+        caller_loginid = getattr(user, 'loginid', '')
+        return bool(caller_loginid and step.assignee and step.assignee.loginid == caller_loginid)
+
+    def _can_assign_step(self, user, step):
+        """담당자 지정 인가 (canUserAssign 동일 + MASTER 허용).
+
+        - MASTER: 항상 허용
+        - PL 단계 / TE_O / TE_E: 지정 개념 없음 → 불가
+        - 그 외: 같은 팀(역할↔agent 일치) + 아직 미지정일 때만
+        """
+        role = getattr(user, 'role', '')
+        if role == 'MASTER':
+            return True
+        if step.agent == 'PL' or role in ('TE_O', 'TE_E'):
+            return False
+        return (
+            self._ROLE_TO_AGENT.get(role) == step.agent
+            and not step.assignee_id
+        )
+
+    def _can_withdraw(self, user, document):
+        """철회 인가.
+
+        MASTER / 의뢰자 PL 본인 / 지정 PL 본인 /
+        의뢰자가 멤버인 '나만의 그룹'의 멤버 인 경우 허용.
+        (그룹 판정은 mailer.enqueue_approved 와 동일하게 requester.member_groups 기준)
+        """
+        role = getattr(user, 'role', '')
+        if role == 'MASTER':
+            return True
+        caller_loginid = getattr(user, 'loginid', '')
+        if not caller_loginid:
+            return False
+        requester = document.requester
+        if requester and requester.loginid == caller_loginid:
+            return True
+        if document.designated_pl and document.designated_pl.loginid == caller_loginid:
+            return True
+        if requester and User.objects.filter(
+            loginid=caller_loginid,
+            member_groups__in=requester.member_groups.all(),
+        ).exists():
+            return True
+        return False
+
     def _max_round(self, document, default=1):
         """문서의 현재 최대 결재 회차를 반환한다. 단계가 없으면 default."""
         return ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or default
@@ -198,6 +262,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def withdraw(self, request, pk=None):
         """철회: under_review/rejected → draft, 단계 초기화"""
         document = self.get_object()
+        if not self._can_withdraw(request.user, document):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
         if document.status not in ('under_review', 'rejected', 'submitted'):
             return Response(
                 {'error': '철회할 수 없는 상태입니다.'},
@@ -247,6 +313,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         ).first()
         if not step:
             return Response({'error': f'AGENT {agent}의 대기 중인 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not self._can_act_on_step(request.user, step):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         step.action = 'approved'
         step.acted_at = timezone.now()
@@ -343,6 +412,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not step:
             return Response({'error': f'AGENT {agent}의 대기 중인 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        if not self._can_act_on_step(request.user, step):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
         step.action = 'rejected'
         step.acted_at = timezone.now()
         step.comment = comment
@@ -363,6 +435,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         assignee_loginid = request.data.get('assignee_loginid')
         assignee_name = request.data.get('assignee_name', '')
 
+        # agent 화이트리스트: 'PL' 등으로 지정 PL 단계를 덮어써 change_designee 권한검증을
+        # 우회하는 것을 차단한다(PL 지정 변경은 change_designee 전용).
+        if agent not in ('R', 'P', 'J', 'O', 'E'):
+            return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
         max_round = self._max_round(document)
 
         step = ApprovalStep.objects.filter(
@@ -370,6 +447,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         ).first()
         if not step:
             return Response({'error': '해당 단계를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not self._can_assign_step(request.user, step):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         if assignee_loginid:
             try:
