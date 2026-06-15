@@ -5,25 +5,25 @@ import { DemoControls, useDemoTimeline } from './parts';
 
 interface DemoRow {
   no: number;
-  proc: string;
   sd: string;
-  name: string;
-  /** 단일 매칭 바코드 (null 이면 후보 2개라 드롭다운 선택 필요) */
-  barcode: string | null;
-  /** 후보가 여럿일 때의 옵션 목록 */
+  layer: string;
+  /** STEP 은 Layer 에 맞춰 자동으로 채워진다 */
+  step: string;
+  /** 단일 매칭 바코드 (null 이면 후보 2개라 드롭다운 선택) */
+  id: string | null;
   options: string[] | null;
 }
 
+const SRC_NAME = 'PART_1234';
+
 const ROWS: DemoRow[] = [
-  { no: 1, proc: 'PH', sd: 'ABLD', name: 'PART_A', barcode: 'BC-A30', options: null },
-  { no: 2, proc: 'PH', sd: 'PLEL', name: 'PART_B', barcode: 'BC-B30', options: null },
-  { no: 3, proc: 'ET', sd: 'CTAA', name: 'PART_C', barcode: 'BC-C30', options: null },
-  { no: 4, proc: 'ET', sd: 'CTAA', name: 'PART_D', barcode: null, options: ['BC-D30', 'BC-D31'] },
+  { no: 1, sd: 'ABLD', layer: 'M1', step: '10', id: 'BC-A10', options: null },
+  { no: 2, sd: 'CTAA', layer: 'M2', step: '20', id: 'BC-B20', options: null },
+  { no: 3, sd: 'CTAA', layer: 'V1', step: '30', id: 'BC-C30', options: null },
+  { no: 4, sd: 'PLEL', layer: 'V2', step: '40', id: null, options: ['BC-D40', 'BC-D41'] },
 ];
 
-const SRC_STEP = '30';
-
-type Phase = 'copy' | 'paste' | 'barcode' | 'dropdown' | 'disable' | 'restore';
+type Phase = 'copy' | 'paste' | 'step' | 'barcode' | 'dropdown' | 'disable' | 'restore';
 
 const fillVariants = {
   initial: { opacity: 0, y: -4 },
@@ -34,19 +34,20 @@ const Step3JayerTableDemo: React.FC = () => {
   const { t } = useTranslation();
 
   const [phase, setPhase] = useState<Phase>('copy');
-  const [steps, setSteps] = useState<Record<number, string>>({ 1: SRC_STEP });
+  const [names, setNames] = useState<Record<number, string>>({ 1: SRC_NAME });
   const [copyMark, setCopyMark] = useState(false);
   const [copyChip, setCopyChip] = useState(false);
-  const [selStep, setSelStep] = useState<Set<number>>(new Set());
+  const [selName, setSelName] = useState<Set<number>>(new Set());
   const [pasteChip, setPasteChip] = useState(false);
-  const [idVals, setIdVals] = useState<Record<number, string>>({});
+  const [steps, setSteps] = useState<Record<number, string>>({});
+  const [ids, setIds] = useState<Record<number, string>>({});
   const [candTag, setCandTag] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropHi, setDropHi] = useState<string | null>(null);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [disabled, setDisabled] = useState<Set<number>>(new Set());
 
-  const stepCellRefs = useRef<(HTMLTableCellElement | null)[]>([]);
+  const nameCellRefs = useRef<(HTMLTableCellElement | null)[]>([]);
   const idCellRefs = useRef<(HTMLTableCellElement | null)[]>([]);
   const checkRefs = useRef<(HTMLInputElement | null)[]>([]);
   const dropOptRef = useRef<HTMLDivElement>(null);
@@ -55,7 +56,6 @@ const Step3JayerTableDemo: React.FC = () => {
 
   const candOptions = ROWS[3].options ?? [];
   const pickedBarcode = candOptions[0];
-
   const activeChecked = Array.from(checked).filter((n) => !disabled.has(n));
   const disabledChecked = Array.from(checked).filter((n) => disabled.has(n));
 
@@ -63,12 +63,13 @@ const Step3JayerTableDemo: React.FC = () => {
     async ({ moveTo, click, sleep, cancelled }) => {
       // reset
       setPhase('copy');
-      setSteps({ 1: SRC_STEP });
+      setNames({ 1: SRC_NAME });
       setCopyMark(false);
       setCopyChip(false);
-      setSelStep(new Set());
+      setSelName(new Set());
       setPasteChip(false);
-      setIdVals({});
+      setSteps({});
+      setIds({});
       setCandTag(false);
       setDropdownOpen(false);
       setDropHi(null);
@@ -76,9 +77,9 @@ const Step3JayerTableDemo: React.FC = () => {
       setDisabled(new Set());
       await sleep(550);
 
-      // ① 셀 복사
-      await moveTo(stepCellRefs.current[0]);
-      await click(stepCellRefs.current[0]);
+      // ① 제품명 셀 복사
+      await moveTo(nameCellRefs.current[0]);
+      await click(nameCellRefs.current[0]);
       if (cancelled()) return;
       setCopyMark(true);
       setCopyChip(true);
@@ -87,61 +88,71 @@ const Step3JayerTableDemo: React.FC = () => {
       await sleep(250);
 
       // ② 드래그 선택 후 붙여넣기
-      await moveTo(stepCellRefs.current[1]);
-      setSelStep(new Set([2]));
-      await sleep(360);
-      await moveTo(stepCellRefs.current[2]);
-      setSelStep(new Set([2, 3]));
-      await sleep(360);
-      await moveTo(stepCellRefs.current[3]);
-      setSelStep(new Set([2, 3, 4]));
-      await sleep(460);
+      await moveTo(nameCellRefs.current[1]);
+      setSelName(new Set([2]));
+      await sleep(340);
+      await moveTo(nameCellRefs.current[2]);
+      setSelName(new Set([2, 3]));
+      await sleep(340);
+      await moveTo(nameCellRefs.current[3]);
+      setSelName(new Set([2, 3, 4]));
+      await sleep(440);
       if (cancelled()) return;
       setPhase('paste');
       setPasteChip(true);
       await sleep(750);
       for (const r of [2, 3, 4]) {
         if (cancelled()) return;
-        setSteps((prev) => ({ ...prev, [r]: SRC_STEP }));
-        await sleep(230);
+        setNames((prev) => ({ ...prev, [r]: SRC_NAME }));
+        await sleep(220);
       }
       setPasteChip(false);
       setCopyMark(false);
-      setSelStep(new Set());
+      setSelName(new Set());
       await sleep(550);
 
-      // ③ 바코드 자동 매칭
+      // ③ STEP 이 Layer 에 맞춰 자동 채움
+      setPhase('step');
+      await sleep(250);
+      for (const row of ROWS) {
+        if (cancelled()) return;
+        setSteps((prev) => ({ ...prev, [row.no]: row.step }));
+        await sleep(240);
+      }
+      await sleep(450);
+
+      // ④ ID(바코드) 자동 매칭
       setPhase('barcode');
       await moveTo(idCellRefs.current[0]);
       if (cancelled()) return;
       for (const r of [1, 2, 3]) {
         if (cancelled()) return;
-        const bc = ROWS[r - 1].barcode;
-        if (bc) setIdVals((prev) => ({ ...prev, [r]: bc }));
-        await sleep(300);
+        const bc = ROWS[r - 1].id;
+        if (bc) setIds((prev) => ({ ...prev, [r]: bc }));
+        await sleep(280);
       }
       setCandTag(true);
-      await sleep(800);
+      await sleep(700);
 
-      // ④ 후보 2개 → 드롭다운 선택
+      // ⑤ 후보 2개 → 드롭다운에서 항목 확인 후 선택
       setPhase('dropdown');
       await moveTo(idCellRefs.current[3]);
       await click(idCellRefs.current[3]);
       if (cancelled()) return;
       setDropdownOpen(true);
-      await sleep(550);
+      await sleep(850);
       await moveTo(dropOptRef.current);
       setDropHi(pickedBarcode);
       await sleep(500);
       await click(dropOptRef.current);
       if (cancelled()) return;
-      setIdVals((prev) => ({ ...prev, 4: pickedBarcode }));
+      setIds((prev) => ({ ...prev, 4: pickedBarcode }));
       setDropdownOpen(false);
       setDropHi(null);
       setCandTag(false);
       await sleep(650);
 
-      // ⑤ 체크 후 선택 비활성화
+      // ⑥ 체크 후 선택 비활성화
       setPhase('disable');
       await sleep(250);
       await moveTo(checkRefs.current[2]);
@@ -156,11 +167,10 @@ const Step3JayerTableDemo: React.FC = () => {
       await moveTo(disableBtnRef.current);
       await click(disableBtnRef.current);
       setDisabled(new Set([3, 4]));
-      await sleep(850);
+      await sleep(800);
 
-      // ⑥ 복원
+      // ⑦ 복원
       setPhase('restore');
-      await sleep(250);
       await moveTo(restoreBtnRef.current);
       await click(restoreBtnRef.current);
       setDisabled(new Set());
@@ -184,8 +194,8 @@ const Step3JayerTableDemo: React.FC = () => {
             <thead>
               <tr>
                 <th className="cb" />
-                <th>{t('request.process_id')}</th>
                 <th>{t('request.col_sd')}</th>
+                <th>{t('guide.demo.common.col_layer')}</th>
                 <th>{t('request.col_product_name')}</th>
                 <th>{t('request.col_step')}</th>
                 <th>{t('request.col_item_id')}</th>
@@ -195,11 +205,12 @@ const Step3JayerTableDemo: React.FC = () => {
               {ROWS.map((row, idx) => {
                 const isDisabled = disabled.has(row.no);
                 const isChecked = checked.has(row.no);
+                const nameVal = names[row.no];
                 const stepVal = steps[row.no];
-                const idVal = idVals[row.no];
+                const idVal = ids[row.no];
                 const isLastRow = idx === ROWS.length - 1;
-                const stepCls = [
-                  selStep.has(row.no) ? 'cell-selected' : '',
+                const nameCls = [
+                  selName.has(row.no) ? 'cell-selected' : '',
                   copyMark && idx === 0 ? 'cell-copy' : '',
                 ]
                   .filter(Boolean)
@@ -216,20 +227,24 @@ const Step3JayerTableDemo: React.FC = () => {
                         type="checkbox"
                         readOnly
                         checked={isChecked}
-                        ref={(el) => {
-                          checkRefs.current[idx] = el;
-                        }}
+                        ref={(el) => { checkRefs.current[idx] = el; }}
                       />
                     </td>
-                    <td>{row.proc}</td>
                     <td>{row.sd}</td>
-                    <td>{row.name}</td>
+                    <td>{row.layer}</td>
                     <td
-                      className={stepCls}
-                      ref={(el) => {
-                        stepCellRefs.current[idx] = el;
-                      }}
+                      className={nameCls}
+                      ref={(el) => { nameCellRefs.current[idx] = el; }}
                     >
+                      {nameVal ? (
+                        <motion.span variants={fillVariants} initial="initial" animate="shown">
+                          {nameVal}
+                        </motion.span>
+                      ) : (
+                        <span className="ph" />
+                      )}
+                    </td>
+                    <td>
                       {stepVal ? (
                         <motion.span variants={fillVariants} initial="initial" animate="shown">
                           {stepVal}
@@ -238,12 +253,7 @@ const Step3JayerTableDemo: React.FC = () => {
                         <span className="ph" />
                       )}
                     </td>
-                    <td
-                      className="id-cell"
-                      ref={(el) => {
-                        idCellRefs.current[idx] = el;
-                      }}
-                    >
+                    <td className="id-cell" ref={(el) => { idCellRefs.current[idx] = el; }}>
                       {idVal ? (
                         <motion.span variants={fillVariants} initial="initial" animate="shown">
                           {idVal}
@@ -292,22 +302,12 @@ const Step3JayerTableDemo: React.FC = () => {
 
           <AnimatePresence>
             {copyChip && (
-              <motion.div
-                className="guide-demo-chip"
-                initial={{ opacity: 0, y: 6, scale: 0.9 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-              >
+              <motion.div className="guide-demo-chip" initial={{ opacity: 0, y: 6, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}>
                 📋 Ctrl + C
               </motion.div>
             )}
             {pasteChip && (
-              <motion.div
-                className="guide-demo-chip"
-                initial={{ opacity: 0, y: 6, scale: 0.9 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-              >
+              <motion.div className="guide-demo-chip" initial={{ opacity: 0, y: 6, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}>
                 📋 Ctrl + V
               </motion.div>
             )}
