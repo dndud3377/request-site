@@ -1842,7 +1842,7 @@ export default function RequestPage(): React.ReactElement {
     return (
       <button
         type="button"
-        onClick={(e) => { e.preventDefault(); toggleSlidePanel(fk, tk); }}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleSlidePanel(fk, tk); }}
         className={`${isVideo ? 'guide-video-badge' : 'guide-badge'}${active ? ' active' : ''}`}
       >
         {t(isVideo ? 'guide.video_btn' : 'guide.guide_btn')}
