@@ -475,7 +475,8 @@
       "step4_tbvtlv": "TBV/TLV 설정",
       "step5_bb_autofill": "BB 자동 채우기",
       "step5_bb_mapping": "BB 매핑",
-      "step5_bb_table": "BB 적용 테이블"
+      "step5_bb_table": "BB 적용 테이블",
+      "permission_user_group": "사용자 추가 & 그룹 만들기"
     },
     "demo": {
       "replay": "▶ 다시 보기",
@@ -606,8 +607,8 @@
       "step2_cfamily": {
         "lead": "Only C가문 = Yes일 때의 입력 흐름입니다. 제품 해당 위치와 북/중/남 영역, MAP 편차, X mark, REV 관리까지 C가문 전용 항목이 활성화됩니다.",
         "phase_cfamily": "① Only C가문 = Yes 선택 → 전용 항목 활성화",
-        "phase_region": "② 제품 해당 위치 + 북/중/남 영역(위치·조합법·제품) 입력",
-        "phase_deviation": "③ MAP 편차 — Yes면 ‘변경 있음’ 자동, 북/남 X는 부호 반대",
+        "phase_region": "② 제품 해당 위치 선택 → 그 영역에 현재 제품이 자동 채워짐 (남쪽은 직접 입력)",
+        "phase_deviation": "③ MAP 편차 — Yes면 ‘변경 있음’ 자동, 북/남 X·Y 입력(X 부호 반대·Y 동일)",
         "phase_xmark": "④ X mark — C가문은 북/남 이미지를 각각 붙여넣기",
         "phase_rev": "⑤ REV 관리 — Layer별 GDS 버전 추가",
         "dev_fixed": "변경 있음 자동 고정",
@@ -616,8 +617,24 @@
         "rev_hint": "Layer 버튼 = 활성 J-ayer 행의 Layer ID",
         "gds_ph": "GDS version 입력",
         "callout": "💡 Only C가문 = Yes를 선택하면 북/중/남 영역(북·남 필수, 중간 선택), MAP 편차(북/남 부호 반대), 북/남 X mark 이미지, REV 관리가 활성화됩니다. REV의 Layer 버튼은 활성 J-ayer 행의 Layer ID로 표시되며, GDS version을 입력해 추가합니다."
+      },
+      "permission_user_group": {
+        "lead": "권한 관리 페이지에서 역할에 사용자를 추가하고, 사용자 그룹을 만드는 흐름입니다.",
+        "phase_open_user": "① + 사용자 추가 → 사용자 추가 모달 열기",
+        "phase_search_user": "② 검색 후 추가할 사용자 선택",
+        "phase_add_user": "③ 추가 → 현재 역할 목록에 반영",
+        "phase_open_group": "④ + 그룹 만들기 → 그룹 생성 모달 열기",
+        "phase_fill_group": "⑤ 그룹 이름 입력 + 멤버 추가",
+        "phase_create_group": "⑥ 만들기 → 그룹 생성",
+        "add_user_title": "사용자 추가",
+        "user_list_title": "현재 역할 사용자",
+        "group_title": "나만의 그룹",
+        "no_users": "추가된 사용자가 없습니다.",
+        "no_groups": "생성된 그룹이 없습니다.",
+        "callout": "💡 사용자 추가는 현재 선택된 역할 탭에 사용자를 배정합니다. 그룹 만들기는 같은 역할의 사용자들을 묶어 한 번에 관리할 수 있게 해줍니다."
       }
-    }
+    },
+    "permission_step": "권한관리"
   },
   "group": {
     "section_title": "나만의 그룹",
