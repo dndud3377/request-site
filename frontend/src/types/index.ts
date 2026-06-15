@@ -411,7 +411,8 @@ export type GuideFeatureKey =
   | 'step2_xmark' | 'step2_map_options'
   | 'step3_jayer_table' | 'step3_jayer_filter'
   | 'step4_oayer_table' | 'step4_partial_shot' | 'step4_tbvtlv'
-  | 'step5_bb_autofill' | 'step5_bb_mapping' | 'step5_bb_table';
+  | 'step5_bb_autofill' | 'step5_bb_mapping' | 'step5_bb_table'
+  | 'permission_user_group';
 
 export interface Guide {
   id: number;
@@ -465,6 +466,10 @@ export const GUIDE_STEP_FEATURES: Record<number, { key: GuideFeatureKey; labelKe
     { key: 'step5_bb_autofill', labelKey: 'guide.feat.step5_bb_autofill' },
     { key: 'step5_bb_mapping',  labelKey: 'guide.feat.step5_bb_mapping' },
     { key: 'step5_bb_table',    labelKey: 'guide.feat.step5_bb_table' },
+  ],
+  // 권한 관리 (의뢰서 Step 이 아닌 별도 페이지)
+  6: [
+    { key: 'permission_user_group', labelKey: 'guide.feat.permission_user_group' },
   ],
 };
 

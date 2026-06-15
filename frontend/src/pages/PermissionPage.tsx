@@ -4,7 +4,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { usersAPI, userGroupsAPI } from '../api/client';
 import { useToast } from '../components/Toast';
 import Modal, { ConfirmModal } from '../components/Modal';
-import { UserRole, UserWithRole, UserForAssignment, UserGroup, UserGroupMember, AvailableGroupMember } from '../types';
+import { UserRole, UserWithRole, UserForAssignment, UserGroup, UserGroupMember, AvailableGroupMember, GuideFeatureKey } from '../types';
+import GuideSlidePanel from '../components/GuideSlidePanel';
+import { GUIDE_DEMO_KEYS } from '../components/guideDemos';
+
+const PERMISSION_GUIDE_KEY: GuideFeatureKey = 'permission_user_group';
 
 const ALL_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
 
@@ -742,6 +746,7 @@ export default function PermissionPage(): React.ReactElement {
   const [submitting, setSubmitting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<UserWithRole | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [guidePanelOpen, setGuidePanelOpen] = useState(false);
   const [changingRoleId, setChangingRoleId] = useState<number | null>(null);
   const [tabSearchQuery, setTabSearchQuery] = useState('');
 
@@ -1040,7 +1045,20 @@ export default function PermissionPage(): React.ReactElement {
             <h2 style={{ fontSize: 16, fontWeight: 600 }}>
               {t(`permission.role_${activeTab}`)} {t('permission.users_label')}
             </h2>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {GUIDE_DEMO_KEYS.includes(PERMISSION_GUIDE_KEY) && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => { e.stopPropagation(); setGuidePanelOpen((v) => !v); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setGuidePanelOpen((v) => !v); }
+                  }}
+                  className={`guide-video-badge${guidePanelOpen ? ' active' : ''}`}
+                >
+                  {t('guide.video_btn')}
+                </span>
+              )}
               {canModifyTab && (
                 <button
                   className="btn btn-primary"
@@ -1066,6 +1084,13 @@ export default function PermissionPage(): React.ReactElement {
               )}
             </div>
           </div>
+
+          <GuideSlidePanel
+            featureKey={PERMISSION_GUIDE_KEY}
+            featureTitle={t('guide.feat.permission_user_group')}
+            isOpen={guidePanelOpen}
+            onClose={() => setGuidePanelOpen(false)}
+          />
 
           <div style={{ marginBottom: 12 }}>
             <input

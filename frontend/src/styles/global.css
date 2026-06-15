@@ -3554,6 +3554,26 @@ select.form-control option {
   border: 1px solid #e2e6ef;
 }
 .guide-demo-table td.muted { color: #b6bdcb; }
+
+/* --- 권한 관리 데모 (사용자 목록) --- */
+.guide-demo-userlist {
+  border: 1px solid #e2e6ef;
+  border-radius: 8px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+.guide-demo-userrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: #2b3242;
+  border-bottom: 1px solid #eef1f6;
+  transition: background 0.15s;
+}
+.guide-demo-userrow:last-child { border-bottom: none; }
+.guide-demo-userrow.on { background: #eff6ff; color: #2563eb; font-weight: 600; }
 .guide-demo-bb-badge {
   display: inline-block;
   font-size: 10.5px;

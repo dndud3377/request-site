@@ -474,7 +474,8 @@
       "step4_tbvtlv": "TBV/TLV Setting",
       "step5_bb_autofill": "BB Auto-fill",
       "step5_bb_mapping": "BB Mapping",
-      "step5_bb_table": "BB Applied Table"
+      "step5_bb_table": "BB Applied Table",
+      "permission_user_group": "Add User & Create Group"
     },
     "demo": {
       "replay": "▶ Replay",
@@ -605,8 +606,8 @@
       "step2_cfamily": {
         "lead": "The input flow when Only C-family = Yes. Product region, North/Middle/South areas, MAP deviation, X mark, and REV management are enabled.",
         "phase_cfamily": "① Select Only C-family = Yes → enable dedicated items",
-        "phase_region": "② Product region + North/Middle/South areas (location·method·product)",
-        "phase_deviation": "③ MAP deviation — fixed to ‘Has Change’; North/South X have opposite signs",
+        "phase_region": "② Select the product region → that area auto-fills with the current product (enter South manually)",
+        "phase_deviation": "③ MAP deviation — fixed to ‘Has Change’; enter North/South X·Y (X opposite signs, Y equal)",
         "phase_xmark": "④ X mark — C-family pastes North/South images separately",
         "phase_rev": "⑤ REV management — add GDS version per Layer",
         "dev_fixed": "Fixed to Has Change",
@@ -615,8 +616,24 @@
         "rev_hint": "Layer buttons = Layer IDs of active J-ayer rows",
         "gds_ph": "Enter GDS version",
         "callout": "💡 Selecting Only C-family = Yes enables North/Middle/South areas (North·South required, Middle optional), MAP deviation (opposite N/S signs), North/South X mark images, and REV management. REV Layer buttons come from active J-ayer Layer IDs; enter a GDS version to add."
+      },
+      "permission_user_group": {
+        "lead": "On the Permissions page, this is the flow for adding users to a role and creating user groups.",
+        "phase_open_user": "① + Add User → open the add-user modal",
+        "phase_search_user": "② Search and select users to add",
+        "phase_add_user": "③ Add → applied to the current role list",
+        "phase_open_group": "④ + Create Group → open the create-group modal",
+        "phase_fill_group": "⑤ Enter a group name + add members",
+        "phase_create_group": "⑥ Create → the group is created",
+        "add_user_title": "Add User",
+        "user_list_title": "Users in current role",
+        "group_title": "My Groups",
+        "no_users": "No users added yet.",
+        "no_groups": "No groups created yet.",
+        "callout": "💡 Add User assigns users to the currently selected role tab. Create Group bundles users of the same role so they can be managed together."
       }
-    }
+    },
+    "permission_step": "Permissions"
   },
   "group": {
     "section_title": "My Groups",

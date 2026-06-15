@@ -24,7 +24,9 @@ const Step2CfamilyDemo: React.FC = () => {
   const [bottom, setBottom] = useState<RegionRow>({ line: '', proc: '', prod: '' });
   const [middle, setMiddle] = useState<'' | 'use' | 'unuse'>('');
   const [devTopX, setDevTopX] = useState('');
+  const [devTopY, setDevTopY] = useState('');
   const [devBotX, setDevBotX] = useState('');
+  const [devBotY, setDevBotY] = useState('');
   const [xmarkAdd, setXmarkAdd] = useState(false);
   const [topImg, setTopImg] = useState(false);
   const [botImg, setBotImg] = useState(false);
@@ -63,7 +65,9 @@ const Step2CfamilyDemo: React.FC = () => {
       setBottom({ line: '', proc: '', prod: '' });
       setMiddle('');
       setDevTopX('');
+      setDevTopY('');
       setDevBotX('');
+      setDevBotY('');
       setXmarkAdd(false);
       setTopImg(false);
       setBotImg(false);
@@ -79,27 +83,37 @@ const Step2CfamilyDemo: React.FC = () => {
       setCfamily('Yes');
       await sleep(750);
 
-      // ② 제품 해당 위치 + 북/중/남 영역
+      // ② 제품 해당 위치 선택 → 해당 영역에 현재 제품 자동 채움 + 남쪽 수동 입력
       setPhase('region');
-      if (!(await pick('region_top', () => setApplyRegion('top')))) return;
-      if (!(await pick('top_line', () => setTop((p) => ({ ...p, line: 'L1' }))))) return;
-      if (!(await pick('top_proc', () => setTop((p) => ({ ...p, proc: 'REC_A' }))))) return;
-      if (!(await pick('top_prod', () => setTop((p) => ({ ...p, prod: 'PART_T' }))))) return;
+      await moveTo(refs.current.region_top);
+      await click(refs.current.region_top);
+      setApplyRegion('top');
+      setTop({ line: 'L1', proc: 'REC_A', prod: 'PART_X' });
+      await sleep(850);
+      if (cancelled()) return;
       if (!(await pick('middle_unuse', () => setMiddle('unuse')))) return;
       if (!(await pick('bottom_line', () => setBottom((p) => ({ ...p, line: 'L1' }))))) return;
       if (!(await pick('bottom_proc', () => setBottom((p) => ({ ...p, proc: 'REC_B' }))))) return;
       if (!(await pick('bottom_prod', () => setBottom((p) => ({ ...p, prod: 'PART_B' }))))) return;
       await sleep(500);
 
-      // ③ MAP 편차 (변경 있음 자동 고정, 북/남 X 부호 반대)
+      // ③ MAP 편차 (변경 있음 자동 고정, 북/남 X·Y 입력)
       setPhase('deviation');
       await moveTo(refs.current.dev_topX);
       await click(refs.current.dev_topX);
       if (!(await typeText(setDevTopX, '0.5'))) return;
-      await sleep(250);
+      await sleep(200);
+      await moveTo(refs.current.dev_topY);
+      await click(refs.current.dev_topY);
+      if (!(await typeText(setDevTopY, '0.2'))) return;
+      await sleep(200);
       await moveTo(refs.current.dev_botX);
       await click(refs.current.dev_botX);
       if (!(await typeText(setDevBotX, '-0.5'))) return;
+      await sleep(200);
+      await moveTo(refs.current.dev_botY);
+      await click(refs.current.dev_botY);
+      if (!(await typeText(setDevBotY, '0.2'))) return;
       await sleep(700);
 
       // ④ X mark (C가문: 북/남 이미지 각각)
@@ -217,14 +231,20 @@ const Step2CfamilyDemo: React.FC = () => {
                 <div className="guide-demo-select sm" ref={setRef('dev_topX')}>
                   {devTopX ? <span className="val">{devTopX}</span> : <span className="ph">{t('request.map_value_x')}</span>}
                 </div>
+                <div className="guide-demo-select sm" ref={setRef('dev_topY')}>
+                  {devTopY ? <span className="val">{devTopY}</span> : <span className="ph">{t('request.map_value_y')}</span>}
+                </div>
               </div>
               <div className="guide-demo-cregion">
                 <span className="rlabel">{t('request.prodc_bottom')}</span>
                 <div className="guide-demo-select sm" ref={setRef('dev_botX')}>
                   {devBotX ? <span className="val">{devBotX}</span> : <span className="ph">{t('request.map_value_x')}</span>}
                 </div>
-                <span className="guide-demo-rule">{t('guide.demo.step2_cfamily.dev_rule')}</span>
+                <div className="guide-demo-select sm" ref={setRef('dev_botY')}>
+                  {devBotY ? <span className="val">{devBotY}</span> : <span className="ph">{t('request.map_value_y')}</span>}
+                </div>
               </div>
+              <span className="guide-demo-rule">{t('guide.demo.step2_cfamily.dev_rule')}</span>
             </div>
 
             {/* X mark (북/남 이미지) */}
