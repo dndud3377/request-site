@@ -8,32 +8,37 @@ interface Range {
   to: string;
   prod: string;
 }
-
-interface TRow {
-  proc: string;
+interface ResultRow {
   layer: string;
+  sd: string;
+  bbproc: string;
+  bbpart: string;
 }
 
-const ROWS: TRow[] = [
-  { proc: 'PH', layer: 'L10' },
-  { proc: 'PH', layer: 'L20' },
-  { proc: 'ET', layer: 'L30' },
-  { proc: 'ET', layer: 'L40' },
-];
-
-/** 범위별 (시작/종료 Layer, 제품 ID)와 해당 범위가 채우는 행 layer 목록 */
-const PLAN = [
-  { from: 'L10', to: 'L20', prod: 'BB_A', layers: ['L10', 'L20'] },
-  { from: 'L30', to: 'L40', prod: 'BB_B', layers: ['L30', 'L40'] },
+/** 각 범위(시작/종료 Layer, 제품 ID)와 적용 시 채워지는 bb 결과 행 */
+const PLAN: { from: string; to: string; prod: string; rows: ResultRow[] }[] = [
+  {
+    from: 'L10',
+    to: 'L20',
+    prod: 'BB_A',
+    rows: [
+      { layer: 'L10', sd: 'ABLD', bbproc: 'PH', bbpart: 'REF_A' },
+      { layer: 'L20', sd: 'CTAA', bbproc: 'PH', bbpart: 'REF_A' },
+    ],
+  },
+  {
+    from: 'L30',
+    to: 'L40',
+    prod: 'BB_B',
+    rows: [
+      { layer: 'L30', sd: 'PLEL', bbproc: 'ET', bbpart: 'REF_B' },
+      { layer: 'L40', sd: 'CTAA', bbproc: 'ET', bbpart: 'REF_B' },
+    ],
+  },
 ];
 
 type Phase = 'open' | 'range1' | 'add' | 'range2' | 'apply';
 type Field = 'from' | 'to' | 'prod';
-
-const fillVariants = {
-  initial: { opacity: 0, y: -4 },
-  shown: { opacity: 1, y: 0 },
-};
 
 const Step5BbAutofillDemo: React.FC = () => {
   const { t } = useTranslation();
@@ -41,7 +46,7 @@ const Step5BbAutofillDemo: React.FC = () => {
   const [phase, setPhase] = useState<Phase>('open');
   const [panelOpen, setPanelOpen] = useState(false);
   const [ranges, setRanges] = useState<Range[]>([]);
-  const [filled, setFilled] = useState<Record<string, string>>({});
+  const [resultRows, setResultRows] = useState<ResultRow[]>([]);
 
   const autofillBtnRef = useRef<HTMLButtonElement>(null);
   const addRangeBtnRef = useRef<HTMLButtonElement>(null);
@@ -55,23 +60,20 @@ const Step5BbAutofillDemo: React.FC = () => {
 
   const { stageRef, cursorLayer, done, replay } = useDemoTimeline(
     async ({ moveTo, click, sleep, cancelled }) => {
-      const fillRange = async (
-        idx: number,
-        refs: { from: HTMLDivElement | null; to: HTMLDivElement | null; prod: HTMLDivElement | null }
-      ): Promise<boolean> => {
+      const fillRange = async (idx: number): Promise<boolean> => {
         const plan = PLAN[idx];
-        await moveTo(refs.from);
-        await click(refs.from);
+        await moveTo(fromRefs.current[idx]);
+        await click(fromRefs.current[idx]);
         setField(idx, 'from', plan.from);
         await sleep(320);
         if (cancelled()) return false;
-        await moveTo(refs.to);
-        await click(refs.to);
+        await moveTo(toRefs.current[idx]);
+        await click(toRefs.current[idx]);
         setField(idx, 'to', plan.to);
         await sleep(320);
         if (cancelled()) return false;
-        await moveTo(refs.prod);
-        await click(refs.prod);
+        await moveTo(prodRefs.current[idx]);
+        await click(prodRefs.current[idx]);
         setField(idx, 'prod', plan.prod);
         await sleep(380);
         return !cancelled();
@@ -81,7 +83,7 @@ const Step5BbAutofillDemo: React.FC = () => {
       setPhase('open');
       setPanelOpen(false);
       setRanges([]);
-      setFilled({});
+      setResultRows([]);
       await sleep(550);
 
       // ① 자동 채움 버튼 → 패널 열기
@@ -93,14 +95,7 @@ const Step5BbAutofillDemo: React.FC = () => {
 
       // ② 범위 1 설정
       setPhase('range1');
-      if (
-        !(await fillRange(0, {
-          from: fromRefs.current[0],
-          to: toRefs.current[0],
-          prod: prodRefs.current[0],
-        }))
-      )
-        return;
+      if (!(await fillRange(0))) return;
       await sleep(300);
 
       // ③ + 범위 추가
@@ -112,26 +107,19 @@ const Step5BbAutofillDemo: React.FC = () => {
 
       // 범위 2 설정
       setPhase('range2');
-      if (
-        !(await fillRange(1, {
-          from: fromRefs.current[1],
-          to: toRefs.current[1],
-          prod: prodRefs.current[1],
-        }))
-      )
-        return;
+      if (!(await fillRange(1))) return;
       await sleep(350);
 
-      // ④ 적용 → 범위 내 행 자동 채움
+      // ④ 적용 → bb 정보(적용 결과)에 채워짐
       setPhase('apply');
       await moveTo(applyBtnRef.current);
       await click(applyBtnRef.current);
       setPanelOpen(false);
-      await sleep(400);
+      await sleep(450);
       for (const plan of PLAN) {
-        for (const layer of plan.layers) {
+        for (const row of plan.rows) {
           if (cancelled()) return;
-          setFilled((prev) => ({ ...prev, [layer]: `${plan.prod} / ${layer.slice(1)}0` }));
+          setResultRows((prev) => [...prev, row]);
           await sleep(240);
         }
       }
@@ -147,17 +135,8 @@ const Step5BbAutofillDemo: React.FC = () => {
   ) => {
     const val = ranges[idx]?.[field];
     return (
-      <div
-        className="guide-demo-select"
-        ref={(el) => {
-          refArr.current[idx] = el;
-        }}
-      >
-        {val ? (
-          <span className="val">{val}</span>
-        ) : (
-          <span className="ph">{t(placeholderKey as never)}</span>
-        )}
+      <div className="guide-demo-select" ref={(el) => { refArr.current[idx] = el; }}>
+        {val ? <span className="val">{val}</span> : <span className="ph">{t(placeholderKey as never)}</span>}
         <span className="caret">▾</span>
       </div>
     );
@@ -194,6 +173,7 @@ const Step5BbAutofillDemo: React.FC = () => {
                   <span className="tilde">~</span>
                   {selectBox(idx, 'to', 'guide.demo.step5_bb_autofill.to_ph', toRefs)}
                   {selectBox(idx, 'prod', 'guide.demo.step5_bb_autofill.prod_ph', prodRefs)}
+                  <span className="guide-demo-range-x">✕</span>
                 </div>
               ))}
               <div className="guide-demo-range-actions">
@@ -203,42 +183,39 @@ const Step5BbAutofillDemo: React.FC = () => {
                 <button type="button" className="guide-demo-btn primary sm" ref={applyBtnRef}>
                   ✔ {t('guide.demo.step5_bb_autofill.apply')}
                 </button>
+                <span className="guide-demo-btn ghost sm">{t('guide.demo.step5_bb_autofill.cancel')}</span>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* 대상 J-ayer 테이블 */}
-        <div className="guide-demo-tablewrap" style={{ marginTop: 12 }}>
-          <table className="guide-demo-table">
+        {/* bb 정보 (적용 결과) */}
+        <div className="guide-demo-bb-applied" style={{ marginTop: 12 }}>
+          <div className="title">{t('guide.demo.step5_bb_autofill.result_title')}</div>
+          <table className="guide-demo-table sm">
             <thead>
               <tr>
-                <th>{t('request.process_id')}</th>
                 <th>{t('guide.demo.common.col_layer')}</th>
-                <th>{t('guide.demo.step5_bb_autofill.col_bb')}</th>
+                <th>{t('request.col_sd')}</th>
+                <th>{t('guide.demo.step5_bb_autofill.col_bbproc')}</th>
+                <th>{t('guide.demo.step5_bb_autofill.col_bbpart')}</th>
               </tr>
             </thead>
             <tbody>
-              {ROWS.map((row) => (
-                <tr key={row.layer}>
-                  <td>{row.proc}</td>
-                  <td>{row.layer}</td>
-                  <td>
-                    {filled[row.layer] ? (
-                      <motion.span
-                        className="guide-demo-bb-badge"
-                        variants={fillVariants}
-                        initial="initial"
-                        animate="shown"
-                      >
-                        {filled[row.layer]}
-                      </motion.span>
-                    ) : (
-                      <span className="ph" />
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {resultRows.length === 0 ? (
+                <tr><td colSpan={4} className="muted" style={{ textAlign: 'center' }}>—</td></tr>
+              ) : (
+                <AnimatePresence>
+                  {resultRows.map((r) => (
+                    <motion.tr key={r.layer} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}>
+                      <td>{r.layer}</td>
+                      <td>{r.sd}</td>
+                      <td><span className="guide-demo-bb-badge sm">{r.bbproc}</span></td>
+                      <td>{r.bbpart}</td>
+                    </motion.tr>
+                  ))}
+                </AnimatePresence>
+              )}
             </tbody>
           </table>
         </div>

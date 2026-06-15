@@ -1838,36 +1838,28 @@ export default function RequestPage(): React.ReactElement {
   // 가이드 배지는 <label> 안에 위치하는 경우가 많다. <button> 으로 두면 label 의
   // "연결된 컨트롤"이 되어 label(행) 아무 곳이나 클릭해도 가이드가 열린다.
   // labelable 이 아닌 <span role="button"> 으로 렌더해 배지를 직접 클릭할 때만 열리게 한다.
-  const GuideBadge = ({ fk, tk }: { fk: GuideFeatureKey; tk: string }) =>
-    featureGuideKeys.has(fk) ? (
+  // 빌트인 데모가 있는 기능은 '영상 가이드' 배지로 구분한다.
+  const GuideBadge = ({ fk, tk }: { fk: GuideFeatureKey; tk: string }) => {
+    if (!featureGuideKeys.has(fk)) return null;
+    const isVideo = GUIDE_DEMO_KEYS.includes(fk);
+    const active = slidePanel.open && slidePanel.featureKey === fk;
+    const open = (e: React.SyntheticEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleSlidePanel(fk, tk);
+    };
+    return (
       <span
         role="button"
         tabIndex={0}
-        onClick={(e) => { e.stopPropagation(); toggleSlidePanel(fk, tk); }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            toggleSlidePanel(fk, tk);
-          }
-        }}
-        style={{
-          display: 'inline-block',
-          fontSize: 10,
-          padding: '2px 7px',
-          border: '1px solid #4f8ef7',
-          borderRadius: 10,
-          background: slidePanel.open && slidePanel.featureKey === fk ? '#eff6ff' : 'transparent',
-          color: '#4f8ef7',
-          cursor: 'pointer',
-          marginLeft: 6,
-          verticalAlign: 'middle',
-          fontWeight: 600,
-          lineHeight: 1.4,
-        }}
+        onClick={open}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') open(e); }}
+        className={`${isVideo ? 'guide-video-badge' : 'guide-badge'}${active ? ' active' : ''}`}
       >
-        {t('guide.guide_btn')}
+        {t(isVideo ? 'guide.video_btn' : 'guide.guide_btn')}
       </span>
-    ) : null;
+    );
+  };
 
   // ===== Main Render =====
   return (

@@ -3541,6 +3541,19 @@ select.form-control option {
 }
 .guide-demo-range-row .tilde { color: #8a93a6; }
 .guide-demo-range-actions { display: flex; gap: 8px; margin-top: 10px; }
+.guide-demo-range-x {
+  margin-left: 2px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 10px;
+  color: #aab1c2;
+  border: 1px solid #e2e6ef;
+}
+.guide-demo-table td.muted { color: #b6bdcb; }
 .guide-demo-bb-badge {
   display: inline-block;
   font-size: 10.5px;
@@ -3675,5 +3688,55 @@ select.form-control option {
   background: #fef3c7;
   border-radius: 8px;
   padding: 2px 8px;
+}
+
+/* --- 가이드 배지 (일반 / 영상) · <span role="button"> 로 렌더 --- */
+.guide-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 7px;
+  border: 1px solid #4f8ef7;
+  border-radius: 10px;
+  background: transparent;
+  color: #4f8ef7;
+  cursor: pointer;
+  margin-left: 6px;
+  vertical-align: middle;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.guide-badge.active { background: #eff6ff; }
+
+.guide-video-badge {
+  display: inline-block;
+  position: relative;
+  font-size: 10px;
+  padding: 2px 9px 2px 19px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #7c3aed, #db2777);
+  color: #fff;
+  cursor: pointer;
+  margin-left: 6px;
+  vertical-align: middle;
+  font-weight: 700;
+  line-height: 1.4;
+  animation: guideVideoPulse 1.8s ease-in-out infinite;
+}
+.guide-video-badge::before {
+  content: '▶';
+  position: absolute;
+  left: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 8px;
+}
+.guide-video-badge.active {
+  filter: brightness(1.1);
+  box-shadow: 0 0 0 3px rgba(219, 39, 119, 0.25);
+}
+@keyframes guideVideoPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.45); }
+  50% { box-shadow: 0 0 7px 2px rgba(219, 39, 119, 0.5); }
 }
 

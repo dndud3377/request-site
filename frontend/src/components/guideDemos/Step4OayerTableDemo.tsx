@@ -8,17 +8,19 @@ type Phase = 'table' | 'switch' | 'partial' | 'tbvtlv_cond' | 'tbvtlv_fill' | 't
 
 interface TRow {
   no: number;
-  proc: string;
   sd: string;
+  layer: string;
+  step: string;
 }
 
+const SRC_NAME = 'PART_1234';
+
 const ROWS: TRow[] = [
-  { no: 1, proc: 'PH', sd: 'TBV_01' },
-  { no: 2, proc: 'ET', sd: 'TLV_02' },
-  { no: 3, proc: 'ET', sd: 'CTAA' },
+  { no: 1, sd: 'TBV_01', layer: 'M1', step: '10' },
+  { no: 2, sd: 'TLV_02', layer: 'M2', step: '20' },
+  { no: 3, sd: 'CTAA', layer: 'V1', step: '30' },
 ];
 
-const SRC_STEP = '30';
 const SD_OPTIONS = ['TBV_01', 'TLV_02'];
 const PICK_SD = 'TBV_01';
 const THICKNESS = '5.0';
@@ -39,8 +41,11 @@ const Step4OayerTableDemo: React.FC = () => {
 
   const [phase, setPhase] = useState<Phase>('table');
   const [tab, setTab] = useState<Tab>('table');
+  const [names, setNames] = useState<Record<number, string>>({ 1: SRC_NAME });
   const [steps, setSteps] = useState<Record<number, string>>({});
-  const [selStep, setSelStep] = useState<Set<number>>(new Set());
+  const [selName, setSelName] = useState<Set<number>>(new Set());
+  const [copyMark, setCopyMark] = useState(false);
+  const [copyChip, setCopyChip] = useState(false);
   const [pasteChip, setPasteChip] = useState(false);
   const [partialShot, setPartialShot] = useState<'O' | 'X' | null>(null);
   const [thickness, setThickness] = useState('');
@@ -48,7 +53,7 @@ const Step4OayerTableDemo: React.FC = () => {
   const [note, setNote] = useState('');
   const [entries, setEntries] = useState<Entry[]>([]);
 
-  const stepCellRefs = useRef<(HTMLTableCellElement | null)[]>([]);
+  const nameCellRefs = useRef<(HTMLTableCellElement | null)[]>([]);
   const infoTabRef = useRef<HTMLButtonElement>(null);
   const partialORef = useRef<HTMLButtonElement>(null);
   const thicknessRef = useRef<HTMLDivElement>(null);
@@ -75,8 +80,11 @@ const Step4OayerTableDemo: React.FC = () => {
       // reset
       setPhase('table');
       setTab('table');
+      setNames({ 1: SRC_NAME });
       setSteps({});
-      setSelStep(new Set());
+      setSelName(new Set());
+      setCopyMark(false);
+      setCopyChip(false);
       setPasteChip(false);
       setPartialShot(null);
       setThickness('');
@@ -85,26 +93,37 @@ const Step4OayerTableDemo: React.FC = () => {
       setEntries([]);
       await sleep(550);
 
-      // ① OVL Layer 목록 탭 — J-ayer와 동일하게 가볍게 (드래그 붙여넣기 1회)
-      await moveTo(stepCellRefs.current[0]);
-      setSelStep(new Set([1]));
+      // ① OVL Layer 목록 탭 — 제품명 복사 → 드래그 붙여넣기 → STEP 자동 채움
+      await moveTo(nameCellRefs.current[0]);
+      await click(nameCellRefs.current[0]);
+      setCopyMark(true);
+      setCopyChip(true);
+      await sleep(850);
+      setCopyChip(false);
+      await sleep(200);
+      await moveTo(nameCellRefs.current[1]);
+      setSelName(new Set([2]));
       await sleep(320);
-      await moveTo(stepCellRefs.current[1]);
-      setSelStep(new Set([1, 2]));
-      await sleep(320);
-      await moveTo(stepCellRefs.current[2]);
-      setSelStep(new Set([1, 2, 3]));
+      await moveTo(nameCellRefs.current[2]);
+      setSelName(new Set([2, 3]));
       await sleep(420);
       if (cancelled()) return;
       setPasteChip(true);
       await sleep(650);
-      for (const r of [1, 2, 3]) {
+      for (const r of [2, 3]) {
         if (cancelled()) return;
-        setSteps((prev) => ({ ...prev, [r]: SRC_STEP }));
+        setNames((prev) => ({ ...prev, [r]: SRC_NAME }));
         await sleep(220);
       }
       setPasteChip(false);
-      setSelStep(new Set());
+      setCopyMark(false);
+      setSelName(new Set());
+      await sleep(400);
+      for (const row of ROWS) {
+        if (cancelled()) return;
+        setSteps((prev) => ({ ...prev, [row.no]: row.step }));
+        await sleep(230);
+      }
       await sleep(700);
 
       // ② OVL 정보 탭으로 전환
@@ -189,8 +208,9 @@ const Step4OayerTableDemo: React.FC = () => {
               <thead>
                 <tr>
                   <th className="cb" />
-                  <th>{t('request.process_id')}</th>
                   <th>{t('request.col_sd')}</th>
+                  <th>{t('guide.demo.common.col_layer')}</th>
+                  <th>{t('request.col_product_name')}</th>
                   <th>{t('request.col_step')}</th>
                 </tr>
               </thead>
@@ -200,14 +220,26 @@ const Step4OayerTableDemo: React.FC = () => {
                     <td className="cb">
                       <input type="checkbox" readOnly />
                     </td>
-                    <td>{row.proc}</td>
                     <td>{row.sd}</td>
+                    <td>{row.layer}</td>
                     <td
-                      className={selStep.has(row.no) ? 'cell-selected' : ''}
+                      className={[
+                        selName.has(row.no) ? 'cell-selected' : '',
+                        copyMark && idx === 0 ? 'cell-copy' : '',
+                      ].filter(Boolean).join(' ')}
                       ref={(el) => {
-                        stepCellRefs.current[idx] = el;
+                        nameCellRefs.current[idx] = el;
                       }}
                     >
+                      {names[row.no] ? (
+                        <motion.span variants={fillVariants} initial="initial" animate="shown">
+                          {names[row.no]}
+                        </motion.span>
+                      ) : (
+                        <span className="ph" />
+                      )}
+                    </td>
+                    <td>
                       {steps[row.no] ? (
                         <motion.span variants={fillVariants} initial="initial" animate="shown">
                           {steps[row.no]}
@@ -221,6 +253,16 @@ const Step4OayerTableDemo: React.FC = () => {
               </tbody>
             </table>
             <AnimatePresence>
+              {copyChip && (
+                <motion.div
+                  className="guide-demo-chip"
+                  initial={{ opacity: 0, y: 6, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                >
+                  📋 Ctrl + C
+                </motion.div>
+              )}
               {pasteChip && (
                 <motion.div
                   className="guide-demo-chip"

@@ -446,6 +446,7 @@
     "panel_form_hint": "Click outside the panel to interact with the form",
     "no_content": "No guide registered",
     "guide_btn": "Guide",
+    "video_btn": "Video Guide",
     "step1_title": "Step 1 · Request Details",
     "step2_title": "Step 2 · MAP Info",
     "step3_title": "Step 3 · J-ayer Info",
@@ -497,15 +498,16 @@
         "callout": "⚠️ Note · The process/part/recipe lists are pulled from an external query DB and refreshed once every hour. If a newly registered item is missing, try again shortly."
       },
       "step3_jayer_table": {
-        "lead": "The core table for J-ayer data. It supports cell copy & drag-paste, STEP-based barcode (ID) auto-matching, and row disable/restore.",
-        "phase_copy": "① Copy a single STEP cell (Ctrl+C)",
-        "phase_paste": "② Drag-select multiple cells and paste with Ctrl+V",
-        "phase_barcode": "③ The ID (barcode) auto-matches based on STEP",
-        "phase_dropdown": "④ With 2 candidates, pick one from the dropdown",
-        "phase_disable": "⑤ Check rows, then disable the selection",
-        "phase_restore": "⑥ Restore to revert to the original state",
+        "lead": "The core J-ayer table. Copy a product name and drag-paste it, and STEP auto-fills by Layer while the ID (barcode) auto-matches. Row disable/restore is also supported.",
+        "phase_copy": "① Copy a single product-name cell (Ctrl+C)",
+        "phase_paste": "② Drag-select multiple cells and paste the product name (Ctrl+V)",
+        "phase_barcode": "④ The ID (barcode) auto-matches",
+        "phase_dropdown": "⑤ With 2 candidates, check the dropdown and pick one",
+        "phase_disable": "⑥ Check rows, then disable the selection",
+        "phase_restore": "⑦ Restore to revert to the original state",
         "cand_tag": "2 candidates",
-        "callout": "⚠️ Note · Barcode candidates are pulled from an external query DB and refreshed once every hour. When exactly one STEP matches, the ID is auto-filled; with 2+ matches, pick it from the dropdown. Disabled rows are excluded from the request."
+        "callout": "⚠️ Note · STEP/barcode candidates come from an external query DB refreshed hourly. A single barcode match auto-fills; with 2+ matches, pick from the dropdown. Disabled rows are excluded from the request.",
+        "phase_step": "③ STEP auto-fills based on each row’s Layer"
       },
       "step3_jayer_filter": {
         "lead": "The J-ayer table has a 'Filter' feature that disables matching rows at once. Build conditions with SP/SD/PP keywords, apply them, and edit or delete saved filters.",
@@ -533,13 +535,13 @@
       },
       "step4_oayer_table": {
         "lead": "O-ayer requires filling both tabs (OVL Layer List · OVL Info). The list tab works like the J-ayer table, and the info tab holds Partial Shot and TBV/TLV settings.",
-        "phase_table": "① OVL Layer List tab — same as the J-ayer table",
+        "phase_table": "① OVL Layer List tab — copy/paste product name → STEP auto-fills",
         "phase_switch": "② Switch to the OVL Info tab (fill both tabs)",
         "phase_partial": "③ Partial Shot required selection (O / X)",
         "phase_tbvtlv_cond": "④ TBV/TLV shows only when a row's SD contains TBV/TLV",
         "phase_tbvtlv_fill": "⑤ Enter thickness · select SD · note, then add",
         "phase_tbvtlv_delete": "⑥ Delete the added entry",
-        "table_note": "Same as the J-ayer table (copy/paste · barcode · disable/restore)",
+        "table_note": "Same as the J-ayer table (paste product name → STEP auto · barcode · disable/restore)",
         "tbvtlv_cond": "Shown when a row's SD contains TBV/TLV",
         "thickness_ph": "Enter thickness",
         "note_ph": "Enter note",
@@ -561,7 +563,11 @@
         "add_range": "Add Range",
         "apply": "Apply",
         "col_bb": "Backbone Data",
-        "callout": "⚠️ BB data is pulled from an external query DB and refreshed once every hour. Use + Add Range to add as many ranges as needed; on apply, the J-ayer rows in each range are filled automatically."
+        "callout": "⚠️ BB data is pulled from an external query DB and refreshed once every hour. Use + Add Range to add as many ranges as needed; on apply, the J-ayer rows in each range are filled automatically.",
+        "cancel": "Cancel",
+        "result_title": "bb info (applied result)",
+        "col_bbproc": "BB Method",
+        "col_bbpart": "BB Product"
       },
       "step5_bb_mapping": {
         "lead": "Map BB data to each J-ayer row directly. Pick a source row on the left, then click a BB data row on the right to link them.",
@@ -587,13 +593,14 @@
         "lead": "Select the MAP type (NEW·CLONE·EXISTING) and fill in details like Exception Zone, X mark, and MAP Options. Changing the type resets entered values.",
         "phase_new": "① Select NEW — enter each item directly",
         "phase_ea": "② Exception Zone → Has Change + value (mm)",
-        "phase_xmark": "③ X mark → on Add, paste an image (Ctrl+V) into the area",
-        "phase_options": "④ Toggle apply/none with MAP Option buttons (multi-select)",
-        "phase_clone": "⑤ Switch to CLONE → values reset + pick Source Location·Product",
-        "phase_existing": "⑥ EXISTING → reuse an existing MAP (most inputs disabled, just confirm)",
+        "phase_xmark": "④ X mark → on Add, paste an image (Ctrl+V) into the area",
+        "phase_options": "⑤ Toggle apply/none with MAP Option buttons (multi-select)",
+        "phase_clone": "⑥ Switch to CLONE → values reset + pick Source Location·Product",
+        "phase_existing": "⑦ EXISTING → reuse an existing MAP (most inputs disabled, just confirm)",
         "source_label": "Source Location / Source Product (CLONE only)",
         "existing_note": "Reuses an existing MAP as-is. Detailed inputs are disabled — just select.",
-        "callout": "💡 NEW enters from scratch, CLONE copies a source product (pick Source Location·Product), EXISTING reuses an existing MAP. Changing the type resets entered values."
+        "callout": "💡 NEW enters from scratch, CLONE copies a source product (pick Source Location·Product), EXISTING reuses an existing MAP. Changing the type resets entered values.",
+        "phase_deviation": "③ MAP Deviation → Has Change + enter X·Y values"
       },
       "step2_cfamily": {
         "lead": "The input flow when Only C-family = Yes. Product region, North/Middle/South areas, MAP deviation, X mark, and REV management are enabled.",
