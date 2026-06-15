@@ -8,6 +8,7 @@ import Step5BbAutofillDemo from './Step5BbAutofillDemo';
 import Step5BbMappingDemo from './Step5BbMappingDemo';
 import Step2MapTypeDemo from './Step2MapTypeDemo';
 import Step2CfamilyDemo from './Step2CfamilyDemo';
+import PermissionUserGroupDemo from './PermissionUserGroupDemo';
 
 /** feature_key → 빌트인 애니메이션 데모 컴포넌트 매핑 */
 export const GUIDE_DEMOS: Partial<Record<GuideFeatureKey, React.FC>> = {
@@ -19,6 +20,7 @@ export const GUIDE_DEMOS: Partial<Record<GuideFeatureKey, React.FC>> = {
   step4_oayer_table: Step4OayerTableDemo,
   step5_bb_autofill: Step5BbAutofillDemo,
   step5_bb_mapping: Step5BbMappingDemo,
+  permission_user_group: PermissionUserGroupDemo,
 };
 
 /** 빌트인 데모가 존재하는 feature_key 목록 (가이드 배지 노출용) */
