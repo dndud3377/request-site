@@ -1,20 +1,33 @@
 import React, { useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
+import { UserRole } from '../../types';
 import { DemoControls, useDemoTimeline } from './parts';
 
 type Phase =
   | 'open_user'
   | 'search_user'
+  | 'select_user'
   | 'add_user'
   | 'open_group'
   | 'fill_group'
   | 'create_group';
 
-const USERS = ['김철수', '이영희', '박민수'];
-const ADD_USERS = ['김철수', '이영희'];
+interface Candidate {
+  name: string;
+  role: UserRole;
+}
+
+const ROLE_TABS: UserRole[] = ['PL', 'TE_R', 'TE_P', 'MASTER'];
+const ACTIVE_ROLE: UserRole = 'PL';
+
+const USERS: Candidate[] = [
+  { name: '김철수', role: 'NONE' },
+  { name: '이영희', role: 'TE_R' },
+  { name: '박민수', role: 'NONE' },
+];
 const GROUP_NAME = '개발팀';
-const GROUP_MEMBER = '박민수';
+const MEMBERS = ['정수진', '한지민'];
 
 const PermissionUserGroupDemo: React.FC = () => {
   const { t } = useTranslation();
@@ -23,16 +36,18 @@ const PermissionUserGroupDemo: React.FC = () => {
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [userSearch, setUserSearch] = useState('');
   const [resultsShown, setResultsShown] = useState(false);
-  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+  const [userSelected, setUserSelected] = useState<string[]>([]);
   const [addedUsers, setAddedUsers] = useState<string[]>([]);
   const [groupModalOpen, setGroupModalOpen] = useState(false);
   const [groupName, setGroupName] = useState('');
   const [memberSearch, setMemberSearch] = useState('');
-  const [groupMembers, setGroupMembers] = useState<string[]>([]);
+  const [memberSelected, setMemberSelected] = useState<string[]>([]);
   const [createdGroups, setCreatedGroups] = useState<string[]>([]);
 
   const refs = useRef<Record<string, HTMLElement | null>>({});
   const setRef = (key: string) => (el: HTMLElement | null) => { refs.current[key] = el; };
+
+  const roleLabel = (r: UserRole) => t(`permission.role_${r}` as never);
 
   const { stageRef, cursorLayer, done, replay } = useDemoTimeline(
     async ({ moveTo, click, sleep, cancelled }) => {
@@ -40,9 +55,16 @@ const PermissionUserGroupDemo: React.FC = () => {
         for (let i = 0; i < text.length; i += 1) {
           if (cancelled()) return false;
           setter(text.slice(0, i + 1));
-          await sleep(90);
+          await sleep(85);
         }
         return true;
+      };
+      const pickUser = async (name: string): Promise<boolean> => {
+        await moveTo(refs.current[`u_${name}`]);
+        await click(refs.current[`u_${name}`]);
+        setUserSelected((prev) => [...prev, name]);
+        await sleep(320);
+        return !cancelled();
       };
 
       // reset
@@ -50,56 +72,56 @@ const PermissionUserGroupDemo: React.FC = () => {
       setUserModalOpen(false);
       setUserSearch('');
       setResultsShown(false);
-      setSelectedUsers(new Set());
+      setUserSelected([]);
       setAddedUsers([]);
       setGroupModalOpen(false);
       setGroupName('');
       setMemberSearch('');
-      setGroupMembers([]);
+      setMemberSelected([]);
       setCreatedGroups([]);
       await sleep(550);
 
-      // ① + 사용자 추가 → 모달 열기
+      // ① + 사용자 추가 → 모달(제목에 역할)
       await moveTo(refs.current.addUserBtn);
       await click(refs.current.addUserBtn);
       setUserModalOpen(true);
       await sleep(650);
 
-      // ② 검색 → 사용자 선택
+      // ② 검색 → 후보(현재 역할 표시)
       setPhase('search_user');
       await moveTo(refs.current.userSearch);
       await click(refs.current.userSearch);
       if (!(await typeInto(setUserSearch, '사용자'))) return;
       setResultsShown(true);
       await sleep(450);
-      for (const u of ADD_USERS) {
-        if (cancelled()) return;
-        await moveTo(refs.current[`u_${u}`]);
-        await click(refs.current[`u_${u}`]);
-        setSelectedUsers((prev) => new Set(prev).add(u));
-        await sleep(300);
-      }
+
+      // ③ 여러 명 선택 + ✕ 제거 후 재선택
+      setPhase('select_user');
+      if (!(await pickUser('김철수'))) return;
+      if (!(await pickUser('이영희'))) return;
+      await moveTo(refs.current['ux_이영희']);
+      await click(refs.current['ux_이영희']);
+      setUserSelected((prev) => prev.filter((n) => n !== '이영희'));
+      await sleep(350);
+      if (!(await pickUser('박민수'))) return;
       await sleep(300);
 
-      // ③ 추가 → 역할 목록에 반영
+      // ④ 추가 → 현재 역할 목록 반영
       setPhase('add_user');
       await moveTo(refs.current.addUserConfirm);
       await click(refs.current.addUserConfirm);
-      setAddedUsers([...ADD_USERS]);
+      setAddedUsers(['김철수', '박민수']);
       setUserModalOpen(false);
-      setUserSearch('');
-      setResultsShown(false);
-      setSelectedUsers(new Set());
-      await sleep(800);
+      await sleep(850);
 
-      // ④ + 그룹 만들기 → 모달 열기
+      // ⑤ + 그룹 만들기
       setPhase('open_group');
       await moveTo(refs.current.createGroupBtn);
       await click(refs.current.createGroupBtn);
       setGroupModalOpen(true);
       await sleep(650);
 
-      // ⑤ 그룹명 + 멤버 입력
+      // ⑥ 그룹명 + 멤버 다중 선택(칩/✕)
       setPhase('fill_group');
       await moveTo(refs.current.groupName);
       await click(refs.current.groupName);
@@ -107,15 +129,21 @@ const PermissionUserGroupDemo: React.FC = () => {
       await sleep(250);
       await moveTo(refs.current.memberSearch);
       await click(refs.current.memberSearch);
-      if (!(await typeInto(setMemberSearch, GROUP_MEMBER))) return;
-      await sleep(300);
-      await moveTo(refs.current.memberResult);
-      await click(refs.current.memberResult);
-      setGroupMembers([GROUP_MEMBER]);
-      setMemberSearch('');
-      await sleep(450);
+      if (!(await typeInto(setMemberSearch, '멤버'))) return;
+      await sleep(350);
+      for (const m of MEMBERS) {
+        if (cancelled()) return;
+        await moveTo(refs.current[`m_${m}`]);
+        await click(refs.current[`m_${m}`]);
+        setMemberSelected((prev) => [...prev, m]);
+        await sleep(300);
+      }
+      await moveTo(refs.current['mx_한지민']);
+      await click(refs.current['mx_한지민']);
+      setMemberSelected((prev) => prev.filter((n) => n !== '한지민'));
+      await sleep(400);
 
-      // ⑥ 만들기 → 그룹 생성
+      // ⑦ 만들기 → 그룹 생성
       setPhase('create_group');
       await moveTo(refs.current.createGroupConfirm);
       await click(refs.current.createGroupConfirm);
@@ -127,17 +155,33 @@ const PermissionUserGroupDemo: React.FC = () => {
 
   const pk = (k: string) => `guide.demo.permission_user_group.${k}` as never;
 
+  const chip = (name: string, refKey: string) => (
+    <span key={name} className="guide-demo-kwchip">
+      {name}
+      <span ref={setRef(refKey)} className="chip-x">✕</span>
+    </span>
+  );
+
   return (
     <div>
       <p className="guide-demo-lead">{t('guide.demo.permission_user_group.lead')}</p>
 
-      <div className="guide-demo-stage" ref={stageRef} style={{ minHeight: 440 }}>
+      <div className="guide-demo-stage" ref={stageRef} style={{ minHeight: 460 }}>
         <div className="guide-demo-phase">
           <span className="guide-demo-phase-dot" />
           {t(pk(`phase_${phase}`))}
         </div>
 
-        {/* 미니 툴바 */}
+        {/* 역할 탭 */}
+        <div className="guide-demo-tabs">
+          {ROLE_TABS.map((r) => (
+            <button key={r} type="button" className={`guide-demo-tab${r === ACTIVE_ROLE ? ' on' : ''}`}>
+              {roleLabel(r)}
+            </button>
+          ))}
+        </div>
+
+        {/* 툴바 */}
         <div className="guide-demo-toolbar" style={{ justifyContent: 'flex-end' }}>
           <button type="button" className="guide-demo-btn primary sm" ref={setRef('addUserBtn') as React.Ref<HTMLButtonElement>}>
             + {t('permission.add_user')}
@@ -147,8 +191,8 @@ const PermissionUserGroupDemo: React.FC = () => {
           </button>
         </div>
 
-        {/* 사용자 목록 */}
-        <div className="guide-demo-section-label">{t(pk('user_list_title'))}</div>
+        {/* 사용자 목록 (현재 역할) */}
+        <div className="guide-demo-section-label">{roleLabel(ACTIVE_ROLE)} · {t(pk('user_list_title'))}</div>
         <table className="guide-demo-table sm">
           <tbody>
             {addedUsers.length === 0 ? (
@@ -186,28 +230,32 @@ const PermissionUserGroupDemo: React.FC = () => {
           {userModalOpen && (
             <motion.div className="guide-demo-modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <motion.div className="guide-demo-modal" initial={{ opacity: 0, y: 12, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: 0.96 }}>
-                <div className="guide-demo-modal-title">{t(pk('add_user_title'))}</div>
+                <div className="guide-demo-modal-title">{t('permission.add_user')} — {roleLabel(ACTIVE_ROLE)}</div>
                 <div className="guide-demo-kwbox single" ref={setRef('userSearch')}>
-                  {userSearch ? <span className="val">{userSearch}</span> : <span className="ph">{t('group.add_member_placeholder')}</span>}
+                  {userSearch ? <span className="val">{userSearch}</span> : <span className="ph">{t('permission.select_user_placeholder')}</span>}
                 </div>
                 <AnimatePresence>
                   {resultsShown && (
                     <motion.div className="guide-demo-userlist" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-                      {USERS.map((u) => (
-                        <div
-                          key={u}
-                          ref={setRef(`u_${u}`)}
-                          className={`guide-demo-userrow${selectedUsers.has(u) ? ' on' : ''}`}
-                        >
-                          <input type="checkbox" readOnly checked={selectedUsers.has(u)} /> {u}
+                      {USERS.filter((u) => !userSelected.includes(u.name)).map((u) => (
+                        <div key={u.name} ref={setRef(`u_${u.name}`)} className="guide-demo-userrow">
+                          👤 {u.name} <span className="role">({roleLabel(u.role)})</span>
                         </div>
                       ))}
                     </motion.div>
                   )}
                 </AnimatePresence>
+                {userSelected.length > 0 && (
+                  <div className="guide-demo-kwchips" style={{ marginTop: 8 }}>
+                    <AnimatePresence>
+                      {userSelected.map((n) => chip(n, `ux_${n}`))}
+                    </AnimatePresence>
+                  </div>
+                )}
                 <div className="guide-demo-modal-footer">
+                  <span className="guide-demo-btn ghost sm">{t('common.cancel')}</span>
                   <button type="button" className="guide-demo-btn primary sm" ref={setRef('addUserConfirm') as React.Ref<HTMLButtonElement>}>
-                    {t('permission.add_user')} ({selectedUsers.size})
+                    {t('permission.add_user')} ({userSelected.length})
                   </button>
                 </div>
               </motion.div>
@@ -223,36 +271,37 @@ const PermissionUserGroupDemo: React.FC = () => {
                 <div className="guide-demo-modal-title">{t('group.create_modal_title')}</div>
 
                 <div className="guide-demo-modal-field">
-                  <span className="lbl">{t('group.create_placeholder')}</span>
-                  <div className="guide-demo-kwbox single" ref={setRef('groupName')}>
+                  <span className="lbl">{t('group.create_placeholder')} <span style={{ color: '#ef4444' }}>*</span></span>
+                  <div className="guide-demo-kwbox single name" ref={setRef('groupName')}>
                     {groupName ? <span className="val">{groupName}</span> : <span className="ph">{t('group.create_placeholder')}</span>}
                   </div>
                 </div>
 
                 <div className="guide-demo-modal-field">
-                  <span className="lbl">{t('group.add_member')}</span>
+                  <span className="lbl">{t('group.add_member')} <span className="guide-demo-cond-badge">{t(pk('same_role_note'))}</span></span>
                   <div className="guide-demo-kwbox single" ref={setRef('memberSearch')}>
                     {memberSearch ? <span className="val">{memberSearch}</span> : <span className="ph">{t('group.add_member_placeholder')}</span>}
                   </div>
                   <AnimatePresence>
                     {memberSearch && (
                       <motion.div className="guide-demo-userlist" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                        <div className="guide-demo-userrow" ref={setRef('memberResult')}>👤 {GROUP_MEMBER}</div>
+                        {MEMBERS.filter((m) => !memberSelected.includes(m)).map((m) => (
+                          <div key={m} ref={setRef(`m_${m}`)} className="guide-demo-userrow">👤 {m}</div>
+                        ))}
                       </motion.div>
                     )}
                   </AnimatePresence>
-                  <div className="guide-demo-kwchips">
-                    <AnimatePresence>
-                      {groupMembers.map((m) => (
-                        <motion.span key={m} className="guide-demo-kwchip" initial={{ opacity: 0, scale: 0.7 }} animate={{ opacity: 1, scale: 1 }}>
-                          {m} ✕
-                        </motion.span>
-                      ))}
-                    </AnimatePresence>
-                  </div>
+                  {memberSelected.length > 0 && (
+                    <div className="guide-demo-kwchips">
+                      <AnimatePresence>
+                        {memberSelected.map((m) => chip(m, `mx_${m}`))}
+                      </AnimatePresence>
+                    </div>
+                  )}
                 </div>
 
                 <div className="guide-demo-modal-footer">
+                  <span className="guide-demo-btn ghost sm">{t('common.cancel')}</span>
                   <button type="button" className="guide-demo-btn primary sm" ref={setRef('createGroupConfirm') as React.Ref<HTMLButtonElement>}>
                     {t('group.create')}
                   </button>
