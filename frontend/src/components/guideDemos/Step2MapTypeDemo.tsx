@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { DemoControls, useDemoTimeline } from './parts';
 
 type MapType = 'NEW' | 'CLONE' | 'EXISTING';
-type Phase = 'new' | 'ea' | 'xmark' | 'options' | 'clone' | 'existing';
+type Phase = 'new' | 'ea' | 'deviation' | 'xmark' | 'options' | 'clone' | 'existing';
 
 const OPTION_KEYS = [
   'map_opt_photo_backside',
@@ -23,6 +23,9 @@ const Step2MapTypeDemo: React.FC = () => {
   const [mapType, setMapType] = useState<MapType | null>(null);
   const [eaChange, setEaChange] = useState<'' | 'no' | 'yes'>('');
   const [eaValue, setEaValue] = useState('');
+  const [devChange, setDevChange] = useState<'' | 'no' | 'yes'>('');
+  const [devX, setDevX] = useState('');
+  const [devY, setDevY] = useState('');
   const [xmark, setXmark] = useState<'' | 'none' | 'add' | 'edit' | 'delete'>('');
   const [xmarkPasted, setXmarkPasted] = useState(false);
   const [pasteChip, setPasteChip] = useState(false);
@@ -33,6 +36,9 @@ const Step2MapTypeDemo: React.FC = () => {
   const typeRefs = useRef<Record<MapType, HTMLButtonElement | null>>({ NEW: null, CLONE: null, EXISTING: null });
   const eaYesRef = useRef<HTMLButtonElement>(null);
   const eaValueRef = useRef<HTMLDivElement>(null);
+  const devYesRef = useRef<HTMLButtonElement>(null);
+  const devXRef = useRef<HTMLDivElement>(null);
+  const devYRef = useRef<HTMLDivElement>(null);
   const xmarkAddRef = useRef<HTMLButtonElement>(null);
   const xmarkImgRef = useRef<HTMLDivElement>(null);
   const optRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -57,6 +63,9 @@ const Step2MapTypeDemo: React.FC = () => {
       setMapType(null);
       setEaChange('');
       setEaValue('');
+      setDevChange('');
+      setDevX('');
+      setDevY('');
       setXmark('');
       setXmarkPasted(false);
       setPasteChip(false);
@@ -82,7 +91,22 @@ const Step2MapTypeDemo: React.FC = () => {
       if (!(await typeText(setEaValue, '5.0'))) return;
       await sleep(500);
 
-      // ③ X mark 변경 → 추가 + 이미지 붙여넣기
+      // ③ MAP 편차 변경 → 변경 있음 + X/Y 값 입력
+      setPhase('deviation');
+      await moveTo(devYesRef.current);
+      await click(devYesRef.current);
+      setDevChange('yes');
+      await sleep(400);
+      await moveTo(devXRef.current);
+      await click(devXRef.current);
+      if (!(await typeText(setDevX, '0.5'))) return;
+      await sleep(250);
+      await moveTo(devYRef.current);
+      await click(devYRef.current);
+      if (!(await typeText(setDevY, '-0.3'))) return;
+      await sleep(500);
+
+      // ④ X mark 변경 → 추가 + 이미지 붙여넣기
       setPhase('xmark');
       await moveTo(xmarkAddRef.current);
       await click(xmarkAddRef.current);
@@ -114,6 +138,9 @@ const Step2MapTypeDemo: React.FC = () => {
       setMapType('CLONE');
       setEaChange('');
       setEaValue('');
+      setDevChange('');
+      setDevX('');
+      setDevY('');
       setXmark('');
       setXmarkPasted(false);
       setOptions(new Set());
@@ -205,6 +232,25 @@ const Step2MapTypeDemo: React.FC = () => {
                 <div className="guide-demo-select" ref={eaValueRef} style={{ minWidth: 110 }}>
                   {eaValue ? <span className="val">{eaValue}</span> : <span className="ph">{t('request.ea_value')}</span>}
                 </div>
+              )}
+            </div>
+          </div>
+
+          {/* MAP 편차 변경 */}
+          <div className="guide-demo-formgroup">
+            <div className="guide-demo-formlabel">{t('request.map')}</div>
+            <div className="guide-demo-choices">
+              <span className={`guide-demo-choice auto${devChange === 'no' ? ' on' : ''}`}>{t('request.map_no_change')}</span>
+              <button type="button" ref={devYesRef} className={`guide-demo-choice auto${devChange === 'yes' ? ' on' : ''}`}>{t('request.map_has_change')}</button>
+              {devChange === 'yes' && (
+                <>
+                  <div className="guide-demo-select" ref={devXRef} style={{ minWidth: 84 }}>
+                    {devX ? <span className="val">{devX}</span> : <span className="ph">{t('request.map_value_x')}</span>}
+                  </div>
+                  <div className="guide-demo-select" ref={devYRef} style={{ minWidth: 84 }}>
+                    {devY ? <span className="val">{devY}</span> : <span className="ph">{t('request.map_value_y')}</span>}
+                  </div>
+                </>
               )}
             </div>
           </div>
