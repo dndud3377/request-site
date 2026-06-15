@@ -1839,14 +1839,22 @@ export default function RequestPage(): React.ReactElement {
     if (!featureGuideKeys.has(fk)) return null;
     const isVideo = GUIDE_DEMO_KEYS.includes(fk);
     const active = slidePanel.open && slidePanel.featureKey === fk;
+    const open = (e: React.SyntheticEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleSlidePanel(fk, tk);
+    };
+    // labelable 이 아닌 <span role="button"> 으로 렌더해 배지를 직접 클릭할 때만 열리게 한다.
     return (
-      <button
-        type="button"
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleSlidePanel(fk, tk); }}
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={open}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') open(e); }}
         className={`${isVideo ? 'guide-video-badge' : 'guide-badge'}${active ? ' active' : ''}`}
       >
         {t(isVideo ? 'guide.video_btn' : 'guide.guide_btn')}
-      </button>
+      </span>
     );
   };
 

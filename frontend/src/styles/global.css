@@ -3690,8 +3690,9 @@ select.form-control option {
   padding: 2px 8px;
 }
 
-/* --- 가이드 배지 (일반 / 영상) --- */
+/* --- 가이드 배지 (일반 / 영상) · <span role="button"> 로 렌더 --- */
 .guide-badge {
+  display: inline-block;
   font-size: 10px;
   padding: 2px 7px;
   border: 1px solid #4f8ef7;
@@ -3707,6 +3708,7 @@ select.form-control option {
 .guide-badge.active { background: #eff6ff; }
 
 .guide-video-badge {
+  display: inline-block;
   position: relative;
   font-size: 10px;
   padding: 2px 9px 2px 19px;
