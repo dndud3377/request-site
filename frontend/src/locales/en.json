@@ -619,18 +619,20 @@
       },
       "permission_user_group": {
         "lead": "On the Permissions page, this is the flow for adding users to a role and creating user groups.",
-        "phase_open_user": "① + Add User → open the add-user modal",
-        "phase_search_user": "② Search and select users to add",
-        "phase_add_user": "③ Add → applied to the current role list",
-        "phase_open_group": "④ + Create Group → open the create-group modal",
-        "phase_fill_group": "⑤ Enter a group name + add members",
-        "phase_create_group": "⑥ Create → the group is created",
+        "phase_open_user": "① + Add User → open modal (title shows current role)",
+        "phase_search_user": "② Search → each candidate shows its current role",
+        "phase_add_user": "④ Add → assign all to the current role list",
+        "phase_open_group": "⑤ + Create Group → open modal",
+        "phase_fill_group": "⑥ Group name (required) + multi-select members (chips/✕)",
+        "phase_create_group": "⑦ Create → the group is created",
         "add_user_title": "Add User",
         "user_list_title": "Users in current role",
         "group_title": "My Groups",
         "no_users": "No users added yet.",
         "no_groups": "No groups created yet.",
-        "callout": "💡 Add User assigns users to the currently selected role tab. Create Group bundles users of the same role so they can be managed together."
+        "callout": "💡 Add User assigns users to the currently selected role tab. Create Group bundles users of the same role so they can be managed together.",
+        "phase_select_user": "③ Select multiple (chips) · removable with ✕",
+        "same_role_note": "Same role only"
       }
     },
     "permission_step": "Permissions"
