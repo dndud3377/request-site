@@ -409,8 +409,8 @@ export default function GuidePage(): React.ReactElement {
                   disabled={!!editTarget}
                 >
                   <option value="">{t('guide.select_step_placeholder')}</option>
-                  {[1, 2, 3, 4, 5].map((s) => (
-                    <option key={s} value={s}>Step {s}</option>
+                  {Object.keys(GUIDE_STEP_FEATURES).map(Number).map((s) => (
+                    <option key={s} value={s}>{s <= 5 ? `Step ${s}` : t('guide.permission_step')}</option>
                   ))}
                 </select>
               </div>
