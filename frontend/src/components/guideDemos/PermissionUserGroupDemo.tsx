@@ -275,6 +275,7 @@ const PermissionUserGroupDemo: React.FC = () => {
                   <div className="guide-demo-kwbox single name" ref={setRef('groupName')}>
                     {groupName ? <span className="val">{groupName}</span> : <span className="ph">{t('group.create_placeholder')}</span>}
                   </div>
+                  <div className="guide-demo-mail-hint">{t(pk('mail_hint'))}</div>
                 </div>
 
                 <div className="guide-demo-modal-field">

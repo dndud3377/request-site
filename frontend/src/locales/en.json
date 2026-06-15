@@ -632,7 +632,8 @@
         "no_groups": "No groups created yet.",
         "callout": "💡 Add User assigns users to the currently selected role tab. Create Group bundles users of the same role so they can be managed together.",
         "phase_select_user": "③ Select multiple (chips) · removable with ✕",
-        "same_role_note": "Same role only"
+        "same_role_note": "Same role only",
+        "mail_hint": "💡 Notification emails are delivered only to this group’s members."
       }
     },
     "permission_step": "Permissions"
