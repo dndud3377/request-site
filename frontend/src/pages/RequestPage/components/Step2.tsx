@@ -235,6 +235,8 @@ const Step2: React.FC<Step2Props> = ({
                           .map((o) => o.label)}
                         disabled={row.disabled || isRegistered}
                         style={{ backgroundColor: isRegistered ? regBg : undefined }}
+                        dropdownDirection="up"
+                        dropdownFontSize="0.7rem"
                       />
                     </td>
                   </tr>
