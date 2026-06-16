@@ -762,6 +762,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleJayerChange = (id: string, field: keyof Omit<JayerRow, 'id'>, value: string) => {
+    const changedRow = jayerRows.find(r => r.id === id);
     setJayerRows((rows) => rows.map((r) => {
       if (r.id !== id) return r;
       if (field === 'product_name') {
@@ -777,6 +778,15 @@ export default function RequestPage(): React.ReactElement {
       }
       return { ...r, [field]: value };
     }));
+    // J→O 동기화: layerid가 같은 O-layer 행에 st/new_or_copy 반영 (기등록 행 보호)
+    if ((field === 'st' || field === 'new_or_copy') && changedRow?.layerid?.trim()) {
+      const layerid = changedRow.layerid.trim();
+      setOayerRows(rows => rows.map(r => {
+        if (r.layerid?.trim() !== layerid) return r;
+        if (r.new_or_copy === '기등록') return r;
+        return { ...r, [field]: value };
+      }));
+    }
     if (field === 'product_name') {
       if (value) {
         formOptionsAPI.getBarcodeOptions(value).then((options) => {
@@ -835,10 +845,24 @@ export default function RequestPage(): React.ReactElement {
 
   const handleJayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
     setJayerRows((rows) => rows.map((r) => r.new_or_copy === '기등록' ? r : { ...r, [field]: value }));
+    // J→O 동기화: 변경된 J-layer 행의 layerid 집합 기준으로 O-layer 반영
+    const layerids = new Set(jayerRows.filter(r => r.new_or_copy !== '기등록' && r.layerid?.trim()).map(r => r.layerid.trim()));
+    setOayerRows(rows => rows.map(r => {
+      if (!r.layerid?.trim() || !layerids.has(r.layerid.trim())) return r;
+      if (r.new_or_copy === '기등록') return r;
+      return { ...r, [field]: value };
+    }));
   };
 
   const handleJayerResetField = (field: 'st' | 'new_or_copy') => {
     setJayerRows((rows) => rows.map((r) => r.new_or_copy === '기등록' ? r : { ...r, [field]: '' }));
+    // J→O 동기화: 변경된 J-layer 행의 layerid 집합 기준으로 O-layer 반영
+    const layerids = new Set(jayerRows.filter(r => r.new_or_copy !== '기등록' && r.layerid?.trim()).map(r => r.layerid.trim()));
+    setOayerRows(rows => rows.map(r => {
+      if (!r.layerid?.trim() || !layerids.has(r.layerid.trim())) return r;
+      if (r.new_or_copy === '기등록') return r;
+      return { ...r, [field]: '' };
+    }));
   };
 
   const handleJayerAddRow = () => {
@@ -911,6 +935,7 @@ export default function RequestPage(): React.ReactElement {
 
   // ===== Oayer Handlers =====
   const handleOayerChange = (id: string, field: keyof Omit<OayerRow, 'id'>, value: string) => {
+    const changedRow = oayerRows.find(r => r.id === id);
     setOayerRows((rows) => rows.map((r) => {
       if (r.id !== id) return r;
       if (field === 'product_name') {
@@ -921,14 +946,37 @@ export default function RequestPage(): React.ReactElement {
       }
       return { ...r, [field]: value };
     }));
+    // O→J 동기화: layerid가 같은 J-layer 행에 st/new_or_copy 반영 (기등록 행 보호)
+    if ((field === 'st' || field === 'new_or_copy') && changedRow?.layerid?.trim()) {
+      const layerid = changedRow.layerid.trim();
+      setJayerRows(rows => rows.map(r => {
+        if (r.layerid?.trim() !== layerid) return r;
+        if (r.new_or_copy === '기등록') return r;
+        return { ...r, [field]: value };
+      }));
+    }
   };
 
   const handleOayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
     setOayerRows((rows) => rows.map((r) => r.new_or_copy === '기등록' ? r : { ...r, [field]: value }));
+    // O→J 동기화: 변경된 O-layer 행의 layerid 집합 기준으로 J-layer 반영
+    const layerids = new Set(oayerRows.filter(r => r.new_or_copy !== '기등록' && r.layerid?.trim()).map(r => r.layerid.trim()));
+    setJayerRows(rows => rows.map(r => {
+      if (!r.layerid?.trim() || !layerids.has(r.layerid.trim())) return r;
+      if (r.new_or_copy === '기등록') return r;
+      return { ...r, [field]: value };
+    }));
   };
 
   const handleOayerResetField = (field: 'st' | 'new_or_copy') => {
     setOayerRows((rows) => rows.map((r) => r.new_or_copy === '기등록' ? r : { ...r, [field]: '' }));
+    // O→J 동기화: 변경된 O-layer 행의 layerid 집합 기준으로 J-layer 반영
+    const layerids = new Set(oayerRows.filter(r => r.new_or_copy !== '기등록' && r.layerid?.trim()).map(r => r.layerid.trim()));
+    setJayerRows(rows => rows.map(r => {
+      if (!r.layerid?.trim() || !layerids.has(r.layerid.trim())) return r;
+      if (r.new_or_copy === '기등록') return r;
+      return { ...r, [field]: '' };
+    }));
   };
 
   const handleOayerAddRow = () => {
@@ -1530,7 +1578,7 @@ export default function RequestPage(): React.ReactElement {
     // step 3(J-layer)·step 4 O-layer 행은 의도적으로 행 단위 필수값 검증을 두지 않는다(행은 선택사항).
     // 상신 시 step 5의 "활성 + process_id 있는 J-layer 행은 Bb 매핑 필수" 규칙으로 간접 검증된다.
 
-    if (currentStep === 4) {
+    if (currentStep === 4 && !isOnlyMap) {
       if (!detail.partial_shot?.trim()) {
         newErrors['partial_shot'] = t('request.required');
         errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
