@@ -622,18 +622,18 @@
         "phase_open_user": "① + Add User → open modal (title shows current role)",
         "phase_search_user": "② Search → each candidate shows its current role",
         "phase_add_user": "④ Add → assign all to the current role list",
-        "phase_open_group": "⑤ + Create Group → open modal",
-        "phase_fill_group": "⑥ Group name (required) + multi-select members (chips/✕)",
-        "phase_create_group": "⑦ Create → the group is created",
+        "phase_open_group": "⑥ + Create Group → open modal",
+        "phase_fill_group": "⑦ Group name (required) + multi-select members (chips/✕)",
+        "phase_create_group": "⑧ Create → a group tab is added to the tab bar",
         "add_user_title": "Add User",
         "user_list_title": "Users in current role",
-        "group_title": "My Groups",
         "no_users": "No users added yet.",
-        "no_groups": "No groups created yet.",
         "callout": "💡 Add User assigns users to the currently selected role tab. Create Group bundles users of the same role so they can be managed together.",
         "phase_select_user": "③ Select multiple (chips) · removable with ✕",
         "same_role_note": "Same role only",
-        "mail_hint": "💡 Notification emails are delivered only to this group’s members."
+        "phase_group_intro": "⑤ About Create Group (emails go only to members)",
+        "group_intro_title": "What is a group?",
+        "group_intro_desc": "Bundle users of the same role for unified management. Once created, it is added as a group tab above, and notification emails are sent only to group members."
       }
     },
     "permission_step": "Permissions"

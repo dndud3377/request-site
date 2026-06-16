@@ -623,18 +623,18 @@
         "phase_open_user": "① + 사용자 추가 → 모달 열기 (제목에 현재 역할 표시)",
         "phase_search_user": "② 검색 → 후보 목록에 각 사용자의 현재 역할 표시",
         "phase_add_user": "④ 추가 → 현재 역할 목록에 일괄 배정",
-        "phase_open_group": "⑤ + 그룹 만들기 → 모달 열기",
-        "phase_fill_group": "⑥ 그룹명(필수) + 멤버 다중 선택(칩/✕)",
-        "phase_create_group": "⑦ 만들기 → 그룹 생성",
+        "phase_open_group": "⑥ + 그룹 만들기 → 모달 열기",
+        "phase_fill_group": "⑦ 그룹명(필수) + 멤버 다중 선택(칩/✕)",
+        "phase_create_group": "⑧ 만들기 → 탭바에 그룹 탭 생성",
         "add_user_title": "사용자 추가",
         "user_list_title": "현재 역할 사용자",
-        "group_title": "나만의 그룹",
         "no_users": "추가된 사용자가 없습니다.",
-        "no_groups": "생성된 그룹이 없습니다.",
         "callout": "💡 사용자 추가는 현재 선택된 역할 탭에 사용자를 배정합니다. 그룹 만들기는 같은 역할의 사용자들을 묶어 한 번에 관리할 수 있게 해줍니다.",
         "phase_select_user": "③ 여러 명 선택(칩) · ✕로 제거 가능",
         "same_role_note": "같은 역할만",
-        "mail_hint": "💡 이 그룹의 멤버에게만 알림 메일이 전달됩니다."
+        "phase_group_intro": "⑤ 그룹 만들기 기능 설명 (메일은 그룹 멤버에게만)",
+        "group_intro_title": "그룹이란?",
+        "group_intro_desc": "같은 역할의 사용자를 하나로 묶어 관리합니다. 만들면 위 탭바에 그룹 탭으로 추가되고, 알림 메일은 그룹 멤버에게만 발송됩니다."
       }
     },
     "permission_step": "권한관리"
