@@ -411,6 +411,23 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
     XLSX.writeFile(wb, `${doc.title}_OVL_${getNowString()}.xlsx`);
   };
 
+  const exportBb = () => {
+    const data = bb.map(r => ({
+      [t('request.process_id')]:       r.process_id,
+      [t('request.col_sp')]:           r.ss,
+      [t('request.col_sd')]:           r.sd,
+      [t('request.col_bb_process_id')]: r.bb_process_id,
+      [t('request.col_bb_partid')]:    r.bb_name,
+      [t('request.col_bb_layer')]:     r.bb_step,
+      [t('request.col_bb_stepseq')]:   r.bb_ss,
+      [t('request.col_remark')]:       r.remark,
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'BB');
+    XLSX.writeFile(wb, `${doc.title}_BB_${getNowString()}.xlsx`);
+  };
+
   const prevSnap = history.length > 0 ? history[history.length - 1] : null;
   const changedFields = prevSnap ? computeDetailDiff(detail, prevSnap.detail) : new Set<string>();
   const { changedIds: changedJayerIds, prevRowMap: prevJayerMap } = prevSnap
@@ -662,7 +679,7 @@ type Page = { label: string; content: React.ReactNode };
               const bbValue = Array.isArray(detail.bb_entries) && detail.bb_entries.length > 0
                 ? detail.bb_entries.map((e: { location: string; product: string; process_id: string }, i: number) =>
                     `[${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.process_id || '-'}`
-                  ).join(' / ')
+                  ).join('\n')
                 : '-';
               const bbChanged = changedFields.has('bb_zone') || changedFields.has('bb_entries');
               return (
@@ -728,7 +745,7 @@ type Page = { label: string; content: React.ReactNode };
                   const topVal = `X: ${(detail as any).map_value_x_top || '-'} / Y: ${(detail as any).map_value_y_top || '-'}`;
                   const botVal = `X: ${(detail as any).map_value_x_bottom || '-'} / Y: ${(detail as any).map_value_y_bottom || '-'}`;
                   const reasonPart = detail.map_reason ? ` / 사유: ${detail.map_reason}` : '';
-                  const mapValue = `[${t('request.prodc_top')}] ${topVal} / [${t('request.prodc_bottom')}] ${botVal}${reasonPart}`;
+                  const mapValue = `[${t('request.prodc_top')}] ${topVal}\n[${t('request.prodc_bottom')}] ${botVal}${reasonPart}`;
                   const mapChanged = ['map_value_x_top','map_value_y_top','map_value_x_bottom','map_value_y_bottom','map_reason'].some(k => changedFields.has(k));
                   return <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change_top" />;
                 }
@@ -1054,7 +1071,13 @@ type Page = { label: string; content: React.ReactNode };
       label: t('request.bb_li'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>{t('request.bb_li')}</div>
+          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{t('request.bb_li')}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {bb.length}건</span>
+              <button onClick={exportBb} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
+            </div>
+          </div>
           <BbTable rows={bb} changedRowIds={changedBbIds} prevRowMap={prevBbMap} />
         </div>
       ),
@@ -1239,7 +1262,7 @@ type Page = { label: string; content: React.ReactNode };
                         </span>
                       )}
                       {info.comment && (
-                        <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.78rem' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.78rem', whiteSpace: 'pre-wrap' }}>
                           "{info.comment}"
                         </span>
                       )}
