@@ -1091,16 +1091,15 @@ def form_options_barcode(request):
             Q(n7cancel_date__isnull=True) | Q(n7cancel_date='')
         ).filter(
             Q(n7cancel_ok__isnull=True) | Q(n7cancel_ok='')
-        ).exclude(
-            Q(n7mto_date__isnull=True) | Q(n7mto_date='')
         )
 
         options = []
         for row in qs:
             spec = row.n7c_layer_num.split('_')[0]
             date = row.n7mto_date
+            label = f"{row.n7barcode} [{date}]" if date else row.n7barcode
             options.append({
-                'label': f"{row.n7barcode} [{date}]",
+                'label': label,
                 'spec': spec,
             })
         return JsonResponse({'options': options})
