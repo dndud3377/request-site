@@ -1530,7 +1530,7 @@ export default function RequestPage(): React.ReactElement {
     // step 3(J-layer)·step 4 O-layer 행은 의도적으로 행 단위 필수값 검증을 두지 않는다(행은 선택사항).
     // 상신 시 step 5의 "활성 + process_id 있는 J-layer 행은 Bb 매핑 필수" 규칙으로 간접 검증된다.
 
-    if (currentStep === 4) {
+    if (currentStep === 4 && !isOnlyMap) {
       if (!detail.partial_shot?.trim()) {
         newErrors['partial_shot'] = t('request.required');
         errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
