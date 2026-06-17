@@ -249,6 +249,9 @@ export default function ApprovalPage(): React.ReactElement {
   // 지정자 변경 UI (모달 footer)
   const [changingDesigneeOpen, setChangingDesigneeOpen] = useState(false);
   const [changingDesigneeUserId, setChangingDesigneeUserId] = useState('');
+  const [changingDesigneeQuery, setChangingDesigneeQuery] = useState('');
+  const [changingDesigneeDropdownOpen, setChangingDesigneeDropdownOpen] = useState(false);
+  const changingDesigneeRef = React.useRef<HTMLDivElement>(null);
 
   const handleLoadTeamMembers = async (agent: AgentType): Promise<UserWithRole[]> => {
     const role = AGENT_TO_ROLE[agent];
@@ -327,6 +330,16 @@ export default function ApprovalPage(): React.ReactElement {
   }, [filter, search, applyClientFilter]);
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (changingDesigneeRef.current && !changingDesigneeRef.current.contains(e.target as Node)) {
+        setChangingDesigneeDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const tabBaseLabels: { key: string; baseLabel: string }[] = [
     { key: '', baseLabel: t('approval.filter_all') },
@@ -430,6 +443,8 @@ export default function ApprovalPage(): React.ReactElement {
       await documentsAPI.changeDesignee(selected.id, changingDesigneeUserId);
       setChangingDesigneeOpen(false);
       setChangingDesigneeUserId('');
+      setChangingDesigneeQuery('');
+      setChangingDesigneeDropdownOpen(false);
       setTeamMembers([]);
       addToast('지정자가 변경되었습니다.', 'success');
       await refreshAndSelect(selected.id);
@@ -778,21 +793,76 @@ export default function ApprovalPage(): React.ReactElement {
               )}
               {canChangeDesignee && changingDesigneeOpen && (
                 <>
-                  <select
-                    value={changingDesigneeUserId}
-                    onChange={(e) => setChangingDesigneeUserId(e.target.value)}
-                    style={{ fontSize: '0.85rem', padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)' }}
-                  >
-                    {loadingMembers
-                      ? <option>로딩 중...</option>
-                      : <>
-                          <option value="">담당자 선택</option>
-                          {teamMembers.map((u) => (
-                            <option key={u.loginid} value={u.loginid}>{u.name}</option>
-                          ))}
-                        </>
-                    }
-                  </select>
+                  <div ref={changingDesigneeRef} style={{ position: 'relative' }}>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={changingDesigneeQuery}
+                      placeholder={loadingMembers ? '로딩 중...' : '이름·ID·이메일·부서 검색'}
+                      disabled={loadingMembers}
+                      autoComplete="off"
+                      style={{ fontSize: '0.85rem', padding: '4px 8px', width: 220 }}
+                      onChange={(e) => {
+                        setChangingDesigneeQuery(e.target.value);
+                        setChangingDesigneeUserId('');
+                        setChangingDesigneeDropdownOpen(true);
+                      }}
+                      onFocus={() => setChangingDesigneeDropdownOpen(true)}
+                    />
+                    {changingDesigneeDropdownOpen && !loadingMembers && (
+                      <ul style={{
+                        position: 'absolute', bottom: '100%', left: 0, right: 0,
+                        background: 'var(--bg-modal)', border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)',
+                        margin: 0, padding: 0, listStyle: 'none',
+                        maxHeight: 220, overflowY: 'auto', zIndex: 9999,
+                      }}>
+                        {teamMembers.filter((u) => {
+                          const q = changingDesigneeQuery.toLowerCase();
+                          if (!q) return true;
+                          return (
+                            u.name.toLowerCase().includes(q) ||
+                            u.loginid.toLowerCase().includes(q) ||
+                            (u.mail ?? '').toLowerCase().includes(q) ||
+                            (u.deptname ?? '').toLowerCase().includes(q)
+                          );
+                        }).length === 0 ? (
+                          <li style={{ padding: '8px 12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                            검색 결과 없음
+                          </li>
+                        ) : (
+                          teamMembers.filter((u) => {
+                            const q = changingDesigneeQuery.toLowerCase();
+                            if (!q) return true;
+                            return (
+                              u.name.toLowerCase().includes(q) ||
+                              u.loginid.toLowerCase().includes(q) ||
+                              (u.mail ?? '').toLowerCase().includes(q) ||
+                              (u.deptname ?? '').toLowerCase().includes(q)
+                            );
+                          }).map((u) => (
+                            <li
+                              key={u.loginid}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setChangingDesigneeQuery(u.name);
+                                setChangingDesigneeUserId(u.loginid);
+                                setChangingDesigneeDropdownOpen(false);
+                              }}
+                              style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
+                              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-secondary)'; }}
+                              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                            >
+                              <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{u.name}</span>
+                              <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>
+                                {u.loginid}{u.mail ? ` · ${u.mail}` : ''}{u.deptname ? ` · ${u.deptname}` : ''}
+                              </span>
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                    )}
+                  </div>
                   <button
                     className="btn btn-primary btn-sm"
                     disabled={!changingDesigneeUserId || processing || loadingMembers}
@@ -802,7 +872,13 @@ export default function ApprovalPage(): React.ReactElement {
                   </button>
                   <button
                     className="btn btn-secondary btn-sm"
-                    onClick={() => { setChangingDesigneeOpen(false); setChangingDesigneeUserId(''); setTeamMembers([]); }}
+                    onClick={() => {
+                      setChangingDesigneeOpen(false);
+                      setChangingDesigneeUserId('');
+                      setChangingDesigneeQuery('');
+                      setChangingDesigneeDropdownOpen(false);
+                      setTeamMembers([]);
+                    }}
                   >
                     취소
                   </button>
