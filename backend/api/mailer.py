@@ -14,8 +14,7 @@
 -----------
 - PL 검토: 지정 PL 1명
 - R/J: 담당자(assignee)가 지정돼 있으면 그 1명, 미지정이면 단계별 고정 주소
-- P: 담당자 지정 시 그 1명, 미지정 시 요청서 라인별 고정 주소
-     (라인 미매칭/미지정이면 등록된 모든 라인 수신자에게 발송)
+- P: 담당자 지정 시 그 1명, 미지정 시 TE_P 권한 보유 전원
 - O/E: 해당 역할(TE_O/TE_E) 팀 전원
 - 반려: 요청서 작성자 1명
 - 승인 완료: 작성자가 속한 모든 그룹의 멤버 전원(중복 제거)
@@ -114,28 +113,27 @@ def _split_emails(value):
     return [addr.strip() for addr in str(value).split(',') if addr.strip()]
 
 
-def _p_line_fallback_recipients(document):
-    """P 단계 담당자 미지정 시 라인별 고정 수신자 목록을 반환한다.
-
-    - 요청서 라인이 P_LINE_FALLBACK 키에 있으면 → 해당 라인 수신자만
-    - 라인이 키에 없거나 라인 정보가 비어 있으면 → 등록된 모든 라인 수신자
-    설정 위치/형식은 settings 의 P_LINE_FALLBACK(.env) 주석 참고.
-    """
-    line_map = getattr(settings, 'P_LINE_FALLBACK', {}) or {}
-    if not line_map:
-        return []
-
-    line = (document.get_detail().get('detail', {}) or {}).get('line', '')
-    line = (line or '').strip()
-
-    if line and line in line_map:
-        return _split_emails(line_map[line])
-
-    # 라인 미매칭/미지정 → 등록된 모든 라인 수신자(중복은 _apply_redirect 에서 제거)
-    recipients = []
-    for value in line_map.values():
-        recipients.extend(_split_emails(value))
-    return recipients
+# ---------------------------------------------------------------------------
+# [추후 사용 예정] P 단계 담당자 미지정 시 라인별 고정 수신자
+# ---------------------------------------------------------------------------
+# 라인마다 다른 고정 주소로 발송이 필요해지면 아래 함수를 활성화하고
+# resolve_stage_recipients 의 P 분기에서 _team_emails('P') 대신 호출한다.
+# 설정은 .env 의 P_LINE_FALLBACK (settings/base.py 주석 참고).
+#
+# def _p_line_fallback_recipients(document):
+#     line_map = getattr(settings, 'P_LINE_FALLBACK', {}) or {}
+#     if not line_map:
+#         return []
+#     line = (document.get_detail().get('detail', {}) or {}).get('line', '')
+#     line = (line or '').strip()
+#     if line and line in line_map:
+#         return _split_emails(line_map[line])
+#     # 라인 미매칭/미지정 → 등록된 모든 라인 수신자
+#     recipients = []
+#     for value in line_map.values():
+#         recipients.extend(_split_emails(value))
+#     return recipients
+# ---------------------------------------------------------------------------
 
 
 def resolve_stage_recipients(document, agent, step=None):
@@ -151,11 +149,12 @@ def resolve_stage_recipients(document, agent, step=None):
         elif document.designated_pl and document.designated_pl.mail:
             recipients = [document.designated_pl.mail]
     elif agent == 'P':
-        # P: 담당자 지정 시 그 1명, 미지정 시 라인별 고정 수신자
+        # P: 담당자 지정 시 그 1명, 미지정 시 TE_P 권한 보유 전원
+        # (라인별 고정 수신자로 전환하려면 위의 주석 처리된 _p_line_fallback_recipients 활용)
         if step is not None and step.assignee and step.assignee.mail:
             recipients = [step.assignee.mail]
         else:
-            recipients = _p_line_fallback_recipients(document)
+            recipients = _team_emails('P')
     else:
         # R/J: 담당자 지정 시 그 1명, 미지정 시 고정 주소
         if step is not None and step.assignee and step.assignee.mail:
