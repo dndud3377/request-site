@@ -450,6 +450,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         step.assignee_name = assignee_name
         step.save()
 
+        mailer.enqueue_stage_arrival(document, agent, step)
+
         return Response({'message': '담당자가 지정되었습니다.'})
 
     def _get_pending_pl_step(self, document):

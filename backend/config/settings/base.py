@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import timedelta
 from pathlib import Path
@@ -148,6 +149,31 @@ DXHUB_API_KEY = os.environ.get('DXHUB_API_KEY', '')
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:10011')
 # 설정 시 모든 결재 알림 메일을 이 주소로 강제 발송 (개발/검증용). 비우면 실제 수신자에게 발송.
 MAIL_REDIRECT_TO = os.environ.get('MAIL_REDIRECT_TO', '')
+
+# ---------------------------------------------------------------------------
+# P 단계 라인별 고정 수신자 (담당자 미지정 시 사용)
+# ---------------------------------------------------------------------------
+# P 단계에 담당자가 아직 지정되지 않았을 때, 요청서의 "라인" 값에 따라
+# 서로 다른 고정 주소로 메일을 보내기 위한 설정이다.
+#
+# [수신자 변경 방법]
+#   .env 파일의 P_LINE_FALLBACK 값을 JSON 문자열로 수정하면 된다 (재배포 불필요).
+#   - 키(key)   : 요청서의 라인 이름 (요청서 제목/상세의 라인 값과 정확히 일치해야 함, 예: "S1")
+#   - 값(value) : 수신 이메일. 한 라인에 여러 명이면 콤마(,)로 구분한다.
+#
+# [예시]  (라인당 1명 또는 여러 명 혼용 가능)
+#   P_LINE_FALLBACK={"S1":"s1user@company.com","S2":"s2user@company.com","S3":"s3user@company.com","S4":"s4user@company.com","S5":"s5a@company.com,s5b@company.com"}
+#
+# [동작 규칙]
+#   - 요청서 라인이 키에 있으면 → 해당 라인 수신자에게만 발송
+#   - 요청서 라인이 키에 없거나 라인 정보가 비어 있으면 → 등록된 모든 라인 수신자에게 발송
+#   - JSON 파싱 실패 시 → 빈 설정({})으로 처리(수신자 없음)
+try:
+    P_LINE_FALLBACK = json.loads(os.environ.get('P_LINE_FALLBACK', '') or '{}')
+    if not isinstance(P_LINE_FALLBACK, dict):
+        P_LINE_FALLBACK = {}
+except (json.JSONDecodeError, TypeError):
+    P_LINE_FALLBACK = {}
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=12),
