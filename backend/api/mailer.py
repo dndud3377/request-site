@@ -13,7 +13,9 @@
 수신자 규칙
 -----------
 - PL 검토: 지정 PL 1명
-- R/P/J: 담당자(assignee)가 지정돼 있으면 그 1명, 미지정이면 단계별 고정 주소
+- R/J: 담당자(assignee)가 지정돼 있으면 그 1명, 미지정이면 단계별 고정 주소
+- P: 담당자 지정 시 그 1명, 미지정 시 요청서 라인별 고정 주소
+     (라인 미매칭/미지정이면 등록된 모든 라인 수신자에게 발송)
 - O/E: 해당 역할(TE_O/TE_E) 팀 전원
 - 반려: 요청서 작성자 1명
 - 승인 완료: 작성자가 속한 모든 그룹의 멤버 전원(중복 제거)
@@ -50,9 +52,14 @@ AGENT_ROLE_MAP = {
 }
 
 # 담당자 미지정 시 단계별 고정 수신 주소 (담당 팀 1명 대표 주소)
+#
+# [수신자 변경 방법]
+#   아래 딕셔너리의 이메일 문자열을 직접 수정한다(수정 후 백엔드 재시작 필요).
+#   R/J 단계만 여기서 관리한다.
+#   P 단계는 "라인별"로 주소가 달라지므로 여기 두지 않고,
+#   settings 의 P_LINE_FALLBACK(.env 환경변수)에서 관리한다.
 UNASSIGNED_FALLBACK = {
     'R': 'user_R@company.com',
-    'P': 'user_P@company.com',
     'J': 'user_J@company.com',
 }
 
@@ -100,6 +107,37 @@ def _team_emails(agent):
     )
 
 
+def _split_emails(value):
+    """콤마로 구분된 이메일 문자열을 리스트로 분할한다(공백/빈값 제거)."""
+    if not value:
+        return []
+    return [addr.strip() for addr in str(value).split(',') if addr.strip()]
+
+
+def _p_line_fallback_recipients(document):
+    """P 단계 담당자 미지정 시 라인별 고정 수신자 목록을 반환한다.
+
+    - 요청서 라인이 P_LINE_FALLBACK 키에 있으면 → 해당 라인 수신자만
+    - 라인이 키에 없거나 라인 정보가 비어 있으면 → 등록된 모든 라인 수신자
+    설정 위치/형식은 settings 의 P_LINE_FALLBACK(.env) 주석 참고.
+    """
+    line_map = getattr(settings, 'P_LINE_FALLBACK', {}) or {}
+    if not line_map:
+        return []
+
+    line = (document.get_detail().get('detail', {}) or {}).get('line', '')
+    line = (line or '').strip()
+
+    if line and line in line_map:
+        return _split_emails(line_map[line])
+
+    # 라인 미매칭/미지정 → 등록된 모든 라인 수신자(중복은 _apply_redirect 에서 제거)
+    recipients = []
+    for value in line_map.values():
+        recipients.extend(_split_emails(value))
+    return recipients
+
+
 def resolve_stage_recipients(document, agent, step=None):
     """단계 도착 시 수신자 이메일 목록을 반환한다."""
     if agent in TEAM_BROADCAST_AGENTS:
@@ -112,8 +150,14 @@ def resolve_stage_recipients(document, agent, step=None):
             recipients = [step.assignee.mail]
         elif document.designated_pl and document.designated_pl.mail:
             recipients = [document.designated_pl.mail]
+    elif agent == 'P':
+        # P: 담당자 지정 시 그 1명, 미지정 시 라인별 고정 수신자
+        if step is not None and step.assignee and step.assignee.mail:
+            recipients = [step.assignee.mail]
+        else:
+            recipients = _p_line_fallback_recipients(document)
     else:
-        # R/P/J: 담당자 지정 시 그 1명, 미지정 시 고정 주소
+        # R/J: 담당자 지정 시 그 1명, 미지정 시 고정 주소
         if step is not None and step.assignee and step.assignee.mail:
             recipients = [step.assignee.mail]
         else:
