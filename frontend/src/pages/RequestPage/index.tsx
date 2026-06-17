@@ -136,7 +136,9 @@ export default function RequestPage(): React.ReactElement {
   const [designeeLoginid, setDesigneeLoginid] = useState('');
   const [designeeName, setDesigneeName] = useState('');
   const [designeeSearchQuery, setDesigneeSearchQuery] = useState('');
+  const [designeeDropdownOpen, setDesigneeDropdownOpen] = useState(false);
   const [plUserOptions, setPlUserOptions] = useState<UserWithRole[]>([]);
+  const designeeContainerRef = useRef<HTMLDivElement>(null);
   const [designeeError, setDesigneeError] = useState('');
   const designeeInputRef = useRef<HTMLInputElement>(null);
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -460,6 +462,18 @@ export default function RequestPage(): React.ReactElement {
     }).catch(() => { isLoadingEditRef.current = false; });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editDocId, peerReviewDocId]);
+
+  // 동료 PL 지정 드롭다운 외부 클릭 감지
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (designeeContainerRef.current && !designeeContainerRef.current.contains(e.target as Node)) {
+        setDesigneeDropdownOpen(false);
+        setDropdownRect(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // Derived booleans for Step 1 conditional rendering
   const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
@@ -2275,14 +2289,14 @@ export default function RequestPage(): React.ReactElement {
                 <button
                   className="btn btn-secondary btn-sm"
                   style={{ padding: '2px 8px', fontSize: '0.75rem' }}
-                  onClick={() => { setDesigneeLoginid(''); setDesigneeName(''); setDesigneeSearchQuery(''); }}
+                  onClick={() => { setDesigneeLoginid(''); setDesigneeName(''); setDesigneeSearchQuery(''); setDesigneeDropdownOpen(false); setDropdownRect(null); }}
                 >
                   ✕
                 </button>
               </div>
             ) : (
               <>
-                <div style={{ position: 'relative' }}>
+                <div ref={designeeContainerRef} style={{ position: 'relative' }}>
                   <input
                     ref={designeeInputRef}
                     className="form-control"
@@ -2291,6 +2305,14 @@ export default function RequestPage(): React.ReactElement {
                     onChange={(e) => {
                       setDesigneeSearchQuery(e.target.value);
                       setDesigneeError('');
+                      setDesigneeDropdownOpen(true);
+                      if (designeeInputRef.current) {
+                        const r = designeeInputRef.current.getBoundingClientRect();
+                        setDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                      }
+                    }}
+                    onFocus={() => {
+                      setDesigneeDropdownOpen(true);
                       if (designeeInputRef.current) {
                         const r = designeeInputRef.current.getBoundingClientRect();
                         setDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
@@ -2298,37 +2320,43 @@ export default function RequestPage(): React.ReactElement {
                     }}
                     autoComplete="off"
                   />
-                  {designeeSearchQuery && dropdownRect && createPortal(
-                    <div style={{ position: 'fixed', top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', zIndex: 9999, maxHeight: 180, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
-                      {plUserOptions
-                        .filter(u =>
-                          u.name.toLowerCase().includes(designeeSearchQuery.toLowerCase()) ||
-                          u.loginid.toLowerCase().includes(designeeSearchQuery.toLowerCase())
-                        )
-                        .map(u => (
+                  {designeeDropdownOpen && dropdownRect && createPortal(
+                    <div style={{ position: 'fixed', top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', zIndex: 9999, maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
+                      {(() => {
+                        const q = designeeSearchQuery.toLowerCase();
+                        const filtered = plUserOptions.filter(u =>
+                          !q ||
+                          u.name.toLowerCase().includes(q) ||
+                          u.loginid.toLowerCase().includes(q) ||
+                          (u.mail ?? '').toLowerCase().includes(q) ||
+                          (u.deptname ?? '').toLowerCase().includes(q)
+                        );
+                        if (filtered.length === 0) {
+                          return <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>검색 결과 없음</div>;
+                        }
+                        return filtered.map(u => (
                           <div
                             key={u.loginid}
-                            style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.875rem' }}
+                            style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.875rem', borderBottom: '1px solid var(--border)' }}
                             onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
                             onMouseLeave={e => (e.currentTarget.style.background = '')}
-                            onClick={() => {
+                            onMouseDown={(e) => {
+                              e.preventDefault();
                               setDesigneeLoginid(u.loginid);
                               setDesigneeName(`${u.name} (${u.deptname})`);
                               setDesigneeSearchQuery('');
+                              setDesigneeDropdownOpen(false);
                               setDropdownRect(null);
                               setDesigneeError('');
                             }}
                           >
                             <span style={{ fontWeight: 600 }}>{u.name}</span>
-                            <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: '0.8rem' }}>{u.deptname}</span>
+                            <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>
+                              {u.loginid}{u.mail ? ` · ${u.mail}` : ''}{u.deptname ? ` · ${u.deptname}` : ''}
+                            </span>
                           </div>
-                        ))}
-                      {plUserOptions.filter(u =>
-                        u.name.toLowerCase().includes(designeeSearchQuery.toLowerCase()) ||
-                        u.loginid.toLowerCase().includes(designeeSearchQuery.toLowerCase())
-                      ).length === 0 && (
-                        <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>검색 결과 없음</div>
-                      )}
+                        ));
+                      })()}
                     </div>,
                     document.body
                   )}
