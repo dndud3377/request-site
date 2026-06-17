@@ -1097,7 +1097,11 @@ def form_options_barcode(request):
         for row in qs:
             spec = row.n7c_layer_num.split('_')[0]
             date = row.n7mto_date
-            label = f"{row.n7barcode} [{date}]" if date else row.n7barcode
+            letters = ''.join(c for c in spec if c.isalpha())
+            if letters:
+                label = f"{row.n7barcode}_{letters} [{date}]" if date else f"{row.n7barcode}_{letters}"
+            else:
+                label = f"{row.n7barcode} [{date}]" if date else row.n7barcode
             options.append({
                 'label': label,
                 'spec': spec,

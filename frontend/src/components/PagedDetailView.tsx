@@ -1099,6 +1099,13 @@ type Page = { label: string; content: React.ReactNode };
     } catch { return false; }
   })();
 
+  const isOnlyMap = (() => {
+    try {
+      const parsed = JSON.parse(doc.additional_notes ?? '{}');
+      return parsed?.detail?.request_purpose === 'Only MAP';
+    } catch { return false; }
+  })();
+
   // 각 회차 상신 날짜: round=1은 doc.submitted_at, 이후 회차는 해당 R 단계의 created_at
   const getRoundSubmittedAt = (round: number): string | null => {
     if (round === 1) return doc.submitted_at ?? null;
@@ -1139,6 +1146,9 @@ type Page = { label: string; content: React.ReactNode };
 
   const getStepDisplay = (agent: string, round: number): StepDisplayInfo => {
     if (agent === 'E' && !hasPlel) {
+      return { status: 'na', label: t('approval.step_na') };
+    }
+    if (isOnlyMap && ['P', 'J', 'O', 'E'].includes(agent)) {
       return { status: 'na', label: t('approval.step_na') };
     }
     const s = getStep(agent, round);
@@ -1238,7 +1248,7 @@ type Page = { label: string; content: React.ReactNode };
           <div key={key} style={teamRowStyle}>
             <div style={teamLabelStyle}>{label}</div>
             <div style={historyListStyle}>
-              {key === 'E' && !hasPlel ? (
+              {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) ? (
                 <div style={historyItemStyle(false)}>
                   <span style={{ ...statusBadgeStyle('na') }}>{t('approval.step_na')}</span>
                 </div>

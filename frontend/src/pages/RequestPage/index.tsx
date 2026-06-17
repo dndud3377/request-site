@@ -764,19 +764,26 @@ export default function RequestPage(): React.ReactElement {
   const handleJayerChange = (id: string, field: keyof Omit<JayerRow, 'id'>, value: string) => {
     const changedRow = jayerRows.find(r => r.id === id);
     setJayerRows((rows) => rows.map((r) => {
-      if (r.id !== id) return r;
-      if (field === 'product_name') {
-        const next = { ...r, product_name: value, item_id: '' };
-        // product_name을 채우면 step이 비어있을 때 layer 값으로 자동 채움(layer 없으면 무동작)
-        if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
-        return next;
+      if (r.id === id) {
+        if (field === 'product_name') {
+          const next = { ...r, product_name: value, item_id: '' };
+          // product_name을 채우면 step이 비어있을 때 layer 값으로 자동 채움(layer 없으면 무동작)
+          if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
+          return next;
+        }
+        if (field === 'step') {
+          // step 변경 시 캐시된 후보로 item_id 자동매칭 재실행
+          const candidates = jayerBarcodeCache[id] ?? [];
+          return { ...r, step: value, item_id: autoMatchItemId({ ...r, step: value }, candidates) };
+        }
+        return { ...r, [field]: value };
       }
-      if (field === 'step') {
-        // step 변경 시 캐시된 후보로 item_id 자동매칭 재실행
-        const candidates = jayerBarcodeCache[id] ?? [];
-        return { ...r, step: value, item_id: autoMatchItemId({ ...r, step: value }, candidates) };
+      // J→J 동기화: layerid가 같은 다른 J-layer 행에 st/new_or_copy 반영 (기등록 행 보호)
+      if ((field === 'st' || field === 'new_or_copy') && changedRow?.layerid?.trim() && r.layerid?.trim() === changedRow.layerid.trim()) {
+        if (r.new_or_copy === '기등록') return r;
+        return { ...r, [field]: value };
       }
-      return { ...r, [field]: value };
+      return r;
     }));
     // J→O 동기화: layerid가 같은 O-layer 행에 st/new_or_copy 반영 (기등록 행 보호)
     if ((field === 'st' || field === 'new_or_copy') && changedRow?.layerid?.trim()) {
@@ -937,14 +944,21 @@ export default function RequestPage(): React.ReactElement {
   const handleOayerChange = (id: string, field: keyof Omit<OayerRow, 'id'>, value: string) => {
     const changedRow = oayerRows.find(r => r.id === id);
     setOayerRows((rows) => rows.map((r) => {
-      if (r.id !== id) return r;
-      if (field === 'product_name') {
-        const next = { ...r, product_name: value };
-        // product_name을 채우면 step이 비어있을 때 layer 값으로 자동 채움(layer 없으면 무동작)
-        if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
-        return next;
+      if (r.id === id) {
+        if (field === 'product_name') {
+          const next = { ...r, product_name: value };
+          // product_name을 채우면 step이 비어있을 때 layer 값으로 자동 채움(layer 없으면 무동작)
+          if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
+          return next;
+        }
+        return { ...r, [field]: value };
       }
-      return { ...r, [field]: value };
+      // O→O 동기화: layerid가 같은 다른 O-layer 행에 st/new_or_copy 반영 (기등록 행 보호)
+      if ((field === 'st' || field === 'new_or_copy') && changedRow?.layerid?.trim() && r.layerid?.trim() === changedRow.layerid.trim()) {
+        if (r.new_or_copy === '기등록') return r;
+        return { ...r, [field]: value };
+      }
+      return r;
     }));
     // O→J 동기화: layerid가 같은 J-layer 행에 st/new_or_copy 반영 (기등록 행 보호)
     if ((field === 'st' || field === 'new_or_copy') && changedRow?.layerid?.trim()) {
