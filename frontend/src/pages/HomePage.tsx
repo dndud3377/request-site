@@ -5,6 +5,7 @@ import { documentsAPI, noticesAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import { ConfirmModal } from '../components/Modal';
 import RichTextEditor from '../components/RichTextEditor';
+import GuideTourModal from '../components/GuideTourModal';
 import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseItem } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -447,6 +448,7 @@ export default function HomePage(): React.ReactElement {
   const [recent, setRecent] = useState<RequestDocument[]>([]);
   const [allNotices, setAllNotices] = useState<AdminNotice[]>([]);
   const [showNoticeModal, setShowNoticeModal] = useState(false);
+  const [showTour, setShowTour] = useState(false);
 
   const loadNotices = useCallback(async () => {
     try {
@@ -501,6 +503,9 @@ export default function HomePage(): React.ReactElement {
 
   return (
     <div>
+      {/* 전체 가이드 모달 */}
+      <GuideTourModal isOpen={showTour} onClose={() => setShowTour(false)} />
+
       {/* 공지 모달 */}
       {showNoticeModal && (
         <NoticeManagerModal
@@ -529,6 +534,13 @@ export default function HomePage(): React.ReactElement {
               <Link to="/approval" className="btn btn-secondary btn-lg">
                 📋 {t('home.view_status')}
               </Link>
+              <button
+                type="button"
+                className="btn btn-secondary btn-lg"
+                onClick={() => setShowTour(true)}
+              >
+                🧭 {t('guide.tour.button')}
+              </button>
             </div>
           </div>
         </div>
