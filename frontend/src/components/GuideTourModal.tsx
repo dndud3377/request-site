@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import GuideTourStepPreview, { TourHighlight } from './GuideTourStepPreview';
+import GuideTourStepPreview, { TourPhase } from './GuideTourStepPreview';
 
 /** "전체 가이드" 한 단계의 메타데이터 */
 export interface GuideTourStep {
@@ -9,14 +9,14 @@ export interface GuideTourStep {
   description: string;
   /** iframe으로 그대로 보여줄 실제 라우트 */
   path: string;
-  /** 페이지 위에 강조할 요소들 */
-  highlights: TourHighlight[];
+  /** 페이지 위에서 순차로 강조할 phase들 */
+  phases: TourPhase[];
 }
 
 /**
  * 전체 가이드 단계 메타데이터 반환.
- * 현재는 뼈대 단계로 "요청서 작성"(/request) 1개만 구현되어 있으며,
- * 나머지 단계(결재/이력/VOC/권한)는 path/highlights를 추가하여 순차 확장한다.
+ * 현재는 "요청서 작성"(/request) 1개만 구현되어 있으며, 그 안에서 위저드 5단계를
+ * 순차 진행하며 핵심 기능을 설명한다. 나머지 단계(결재/이력/VOC/권한)는 추후 확장.
  */
 export function useGuideTourSteps(): GuideTourStep[] {
   const { t } = useTranslation();
@@ -29,10 +29,16 @@ export function useGuideTourSteps(): GuideTourStep[] {
         title: t('guide.tour.steps.request.title'),
         description: t('guide.tour.steps.request.description'),
         path: '/request',
-        highlights: [
-          { selector: '.page-header', captionKey: 'guide.tour.steps.request.highlights.header' },
-          { selector: '.wizard-indicator', captionKey: 'guide.tour.steps.request.highlights.wizard' },
-          { selector: '.form-actions', captionKey: 'guide.tour.steps.request.highlights.actions' },
+        phases: [
+          { wizardStep: 1, selector: '.wizard-indicator', captionKey: 'guide.tour.steps.request.flow.wizard' },
+          { wizardStep: 1, selector: '[data-tour="detail-fields"]', captionKey: 'guide.tour.steps.request.flow.detail' },
+          { wizardStep: 1, selector: '.required', captionKey: 'guide.tour.steps.request.flow.required' },
+          { wizardStep: 2, selector: '.guide-badge', captionKey: 'guide.tour.steps.request.flow.map' },
+          { wizardStep: 3, selector: '.wizard-table', captionKey: 'guide.tour.steps.request.flow.jayer_auto' },
+          { wizardStep: 3, selector: '.th-header-btn', captionKey: 'guide.tour.steps.request.flow.jayer_filter' },
+          { wizardStep: 4, selector: '[data-tour="oayer-tabs"]', captionKey: 'guide.tour.steps.request.flow.oayer' },
+          { wizardStep: 5, selector: '[data-tour="bb-autofill"]', captionKey: 'guide.tour.steps.request.flow.bb_autofill' },
+          { wizardStep: 5, selector: '.bb-split-panel', captionKey: 'guide.tour.steps.request.flow.bb_mapping' },
         ],
       },
     ],
@@ -135,7 +141,7 @@ const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
           <GuideTourStepPreview
             key={step.key}
             path={step.path}
-            highlights={step.highlights}
+            phases={step.phases}
             active
             paused={paused}
           />
