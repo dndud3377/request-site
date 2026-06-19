@@ -44,6 +44,10 @@ import {
   makeTourJayerRows,
   makeTourOayerRows,
   makeTourBbRows,
+  makeTourBbExternalData,
+  TOUR_JAYER_PRODUCT,
+  TOUR_JAYER_STEPS,
+  TOUR_JAYER_ITEMS,
 } from './constants';
 import { formatUpdatedDate, calcDisabled, emptyDraftWords } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
@@ -473,18 +477,93 @@ export default function RequestPage(): React.ReactElement {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editDocId, peerReviewDocId]);
 
-  // 전체 가이드 투어: 부모(GuideTourStepPreview)가 보낸 위저드 단계 이동 메시지 수신
+  // 전체 가이드 투어: 부모(GuideTourStepPreview)가 보낸 명령 수신 — 실제 상태/핸들러로 시연
   useEffect(() => {
     if (!isTourMode) return;
+    let activeTok: { cancelled: boolean } | null = null;
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+    const setJayerCell = (idx: number, field: keyof JayerRow, val: string) =>
+      setJayerRows((rows) => rows.map((r, i) => (i === idx ? { ...r, [field]: val } : r)));
+
+    // J-ayer: 1행 입력 → 복사 → 드래그 붙여넣기 → product_name→step→barcode 자동 채움 시연
+    const runJayerDemo = async (tok: { cancelled: boolean }) => {
+      setJayerRows(makeTourJayerRows());
+      await sleep(700); if (tok.cancelled) return;
+      setJayerCell(0, 'product_name', TOUR_JAYER_PRODUCT); await sleep(650); if (tok.cancelled) return;
+      setJayerCell(0, 'step', TOUR_JAYER_STEPS[0]); await sleep(650); if (tok.cancelled) return;
+      setJayerCell(0, 'item_id', TOUR_JAYER_ITEMS[0]); await sleep(850); if (tok.cancelled) return;
+      // 복사 → 아래로 드래그 붙여넣기 (product_name 채움)
+      for (let i = 1; i < 5; i += 1) {
+        setJayerCell(i, 'product_name', TOUR_JAYER_PRODUCT);
+        await sleep(280); if (tok.cancelled) return;
+      }
+      await sleep(450); if (tok.cancelled) return;
+      // step → barcode(item_id) 자동 채움
+      for (let i = 1; i < 5; i += 1) {
+        setJayerCell(i, 'step', TOUR_JAYER_STEPS[i]);
+        setJayerCell(i, 'item_id', TOUR_JAYER_ITEMS[i]);
+        await sleep(320); if (tok.cancelled) return;
+      }
+    };
+
+    // BB: 자동채움 패널 열기 → 적용(샘플 채움) → 매핑 패널
+    const runBbDemo = async (tok: { cancelled: boolean }) => {
+      setBbExternalData(makeTourBbExternalData() as PhotoStepOption[][]);
+      setBbRows([]);
+      setShowAutoFillPanel(false);
+      await sleep(600); if (tok.cancelled) return;
+      setShowAutoFillPanel(true);
+      await sleep(1600); if (tok.cancelled) return;
+      setShowAutoFillPanel(false);
+      setBbRows(makeTourBbRows());
+      await sleep(700);
+    };
+
+    const openSubmitDemo = () => {
+      setSubmitNote(t('guide.tour.steps.request.flow.submit_note_sample'));
+      setDesigneeLoginid('tour-reviewer');
+      setDesigneeName(t('guide.tour.steps.request.flow.submit_designee_sample'));
+      setConfirmOpen(true);
+    };
+
     const onMsg = (e: MessageEvent) => {
       if (e.origin !== window.location.origin) return;
-      const data = e.data;
-      if (data && data.type === 'guide-tour-step' && typeof data.step === 'number') {
-        setStep(Math.min(5, Math.max(1, data.step)));
+      const d = e.data;
+      if (!d || d.type !== 'guide-tour-cmd') return;
+      if (activeTok) activeTok.cancelled = true;
+      const tok = { cancelled: false };
+      activeTok = tok;
+
+      switch (d.cmd) {
+        case 'step':
+          setConfirmOpen(false);
+          setShowAutoFillPanel(false);
+          if (typeof d.step === 'number') setStep(Math.min(5, Math.max(1, d.step)));
+          break;
+        case 'jayer-demo':
+          runJayerDemo(tok);
+          break;
+        case 'bb-demo':
+          runBbDemo(tok);
+          break;
+        case 'open-submit':
+          openSubmitDemo();
+          break;
+        case 'submitted':
+          setConfirmOpen(false);
+          addToast(t('guide.tour.steps.request.flow.submitted_toast'), 'success');
+          break;
+        default:
+          break;
       }
     };
     window.addEventListener('message', onMsg);
-    return () => window.removeEventListener('message', onMsg);
+    return () => {
+      window.removeEventListener('message', onMsg);
+      if (activeTok) activeTok.cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTourMode]);
 
   // 동료 PL 지정 드롭다운 외부 클릭 감지
@@ -2292,7 +2371,7 @@ export default function RequestPage(): React.ReactElement {
           </>
         }
       >
-        <div className="form-group">
+        <div className="form-group" data-tour="submit-note">
           <label className="form-label">{t('request.submit_note_label')}</label>
           <textarea
             className="form-control"
@@ -2303,7 +2382,7 @@ export default function RequestPage(): React.ReactElement {
           />
         </div>
         {!isPeerReviewMode && (
-          <div className="form-group" style={{ marginTop: 12 }}>
+          <div className="form-group" data-tour="submit-designee" style={{ marginTop: 12 }}>
             <label className="form-label">
               {t('request.designee_label')} <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
