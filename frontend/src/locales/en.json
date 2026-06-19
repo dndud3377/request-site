@@ -405,6 +405,32 @@
     "logout": "Log Out"
   },
   "guide": {
+    "tour": {
+      "button": "Full Guide",
+      "heading": "Service Walkthrough",
+      "next": "Next",
+      "prev": "Previous",
+      "skip": "Skip",
+      "start": "Get Started",
+      "pause": "Pause",
+      "resume": "Play",
+      "progress": "{{current}}/{{total}}",
+      "steps": {
+        "request": {
+          "title": "Create a Request",
+          "description": "Select a type, enter a title and details, then submit to file your request.",
+          "demo": {
+            "type_label": "Type",
+            "type_value": "New Product",
+            "title_label": "Title",
+            "title_value": "Request to introduce a new line",
+            "content_label": "Details",
+            "content_value": "Requesting a product introduction map for the new product on line L1.",
+            "toast": "✓ Submitted"
+          }
+        }
+      }
+    },
     "title": "Guide Management",
     "subtitle": "Manage guides for request form",
     "write": "+ Write Guide",
