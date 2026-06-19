@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import GuideTourStepPreview, { TourHighlight } from './GuideTourStepPreview';
 
@@ -20,19 +20,24 @@ export interface GuideTourStep {
  */
 export function useGuideTourSteps(): GuideTourStep[] {
   const { t } = useTranslation();
-  return [
-    {
-      key: 'request',
-      title: t('guide.tour.steps.request.title'),
-      description: t('guide.tour.steps.request.description'),
-      path: '/request',
-      highlights: [
-        { selector: '.page-header', captionKey: 'guide.tour.steps.request.highlights.header' },
-        { selector: '.wizard-indicator', captionKey: 'guide.tour.steps.request.highlights.wizard' },
-        { selector: '.form-actions', captionKey: 'guide.tour.steps.request.highlights.actions' },
-      ],
-    },
-  ];
+  // 모달 리렌더(예: 일시정지 토글)마다 배열 식별자가 바뀌면 미리보기 오버레이 루프가
+  // 재시작되므로, 언어(t)가 바뀔 때만 새로 생성되도록 메모이즈한다.
+  return useMemo(
+    () => [
+      {
+        key: 'request' as const,
+        title: t('guide.tour.steps.request.title'),
+        description: t('guide.tour.steps.request.description'),
+        path: '/request',
+        highlights: [
+          { selector: '.page-header', captionKey: 'guide.tour.steps.request.highlights.header' },
+          { selector: '.wizard-indicator', captionKey: 'guide.tour.steps.request.highlights.wizard' },
+          { selector: '.form-actions', captionKey: 'guide.tour.steps.request.highlights.actions' },
+        ],
+      },
+    ],
+    [t]
+  );
 }
 
 interface Props {
