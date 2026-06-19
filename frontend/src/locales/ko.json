@@ -406,6 +406,32 @@
     "logout": "로그아웃"
   },
   "guide": {
+    "tour": {
+      "button": "전체 가이드",
+      "heading": "서비스 둘러보기",
+      "next": "다음",
+      "prev": "이전",
+      "skip": "건너뛰기",
+      "start": "시작하기",
+      "pause": "일시정지",
+      "resume": "재생",
+      "progress": "{{current}}/{{total}}",
+      "steps": {
+        "request": {
+          "title": "요청서 작성",
+          "description": "유형을 선택하고 제목과 내용을 입력한 뒤 상신하면 의뢰가 접수됩니다.",
+          "demo": {
+            "type_label": "유형",
+            "type_value": "신규 제품",
+            "title_label": "제목",
+            "title_value": "신규 라인 도입 의뢰",
+            "content_label": "내용",
+            "content_value": "L1 라인 신규 제품 소개 지도 제작을 요청합니다.",
+            "toast": "✓ 제출 완료"
+          }
+        }
+      }
+    },
     "title": "가이드 관리",
     "subtitle": "의뢰서 작성 가이드를 등록·관리합니다",
     "write": "+ 가이드 작성",
