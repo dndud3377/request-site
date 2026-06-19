@@ -419,10 +419,16 @@
         "request": {
           "title": "Create a Request",
           "description": "Select a type, enter a title and details, then submit to file your request.",
-          "highlights": {
-            "header": "This is where you write a product introduction map request.",
-            "wizard": "The request is completed through a 5-step wizard.",
-            "actions": "Save a draft, or submit on the final step."
+          "flow": {
+            "wizard": "A request is completed through a 5-step wizard, in order.",
+            "detail": "Once you fill in line, recipe, product and process, the disabled sections below become editable.",
+            "required": "Fields marked with a red * are required — fill them in before moving on.",
+            "map": "On the MAP step, press the guide (?) button for anything you're unsure about.",
+            "jayer_auto": "J-ayer is auto-filled from your request details, and you can edit it with cell drag and copy/paste.",
+            "jayer_filter": "Use the filter to pick and disable only the rows you want.",
+            "oayer": "O-ayer has two tabs — be sure to fill in both.",
+            "bb_autofill": "On the BB step, 'Auto Fill' populates Backbone data in one click.",
+            "bb_mapping": "You can also map BB data directly by clicking a source row."
           }
         }
       }
