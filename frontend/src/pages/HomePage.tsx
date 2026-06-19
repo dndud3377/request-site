@@ -539,7 +539,7 @@ export default function HomePage(): React.ReactElement {
                 className="btn btn-secondary btn-lg"
                 onClick={() => setShowTour(true)}
               >
-                🧭 {t('guide.tour.button')}
+                ❓ {t('guide.tour.button')}
               </button>
             </div>
           </div>
