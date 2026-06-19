@@ -1,27 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import GuideTourStepPreview, { TourPhase } from './GuideTourStepPreview';
+import GuideTourStepPreview, { TourPhase, DEFAULT_HOLD_MS } from './GuideTourStepPreview';
 
 /** "전체 가이드" 한 단계의 메타데이터 */
 export interface GuideTourStep {
   key: 'request' | 'approval' | 'history' | 'voc' | 'permission';
   title: string;
   description: string;
-  /** iframe으로 그대로 보여줄 실제 라우트 */
   path: string;
-  /** 페이지 위에서 순차로 강조할 phase들 */
   phases: TourPhase[];
 }
 
+const RK = 'guide.tour.steps.request.flow';
+
 /**
- * 전체 가이드 단계 메타데이터 반환.
- * 현재는 "요청서 작성"(/request) 1개만 구현되어 있으며, 그 안에서 위저드 5단계를
- * 순차 진행하며 핵심 기능을 설명한다. 나머지 단계(결재/이력/VOC/권한)는 추후 확장.
+ * 전체 가이드 단계 메타데이터. 현재 "요청서 작성"(/request) 1개 — 위저드 5단계를
+ * 순차 진행하며 핵심 기능을 실제 동작으로 시연한다.
  */
 export function useGuideTourSteps(): GuideTourStep[] {
   const { t } = useTranslation();
-  // 모달 리렌더(예: 일시정지 토글)마다 배열 식별자가 바뀌면 미리보기 오버레이 루프가
-  // 재시작되므로, 언어(t)가 바뀔 때만 새로 생성되도록 메모이즈한다.
   return useMemo(
     () => [
       {
@@ -30,15 +27,18 @@ export function useGuideTourSteps(): GuideTourStep[] {
         description: t('guide.tour.steps.request.description'),
         path: '/request',
         phases: [
-          { wizardStep: 1, selector: '.wizard-indicator', captionKey: 'guide.tour.steps.request.flow.wizard' },
-          { wizardStep: 1, selector: '[data-tour="detail-fields"]', captionKey: 'guide.tour.steps.request.flow.detail' },
-          { wizardStep: 1, selector: '.required', captionKey: 'guide.tour.steps.request.flow.required' },
-          { wizardStep: 2, selector: '.guide-badge', captionKey: 'guide.tour.steps.request.flow.map' },
-          { wizardStep: 3, selector: '.wizard-table', captionKey: 'guide.tour.steps.request.flow.jayer_auto' },
-          { wizardStep: 3, selector: '.th-header-btn', captionKey: 'guide.tour.steps.request.flow.jayer_filter' },
-          { wizardStep: 4, selector: '[data-tour="oayer-tabs"]', captionKey: 'guide.tour.steps.request.flow.oayer' },
-          { wizardStep: 5, selector: '[data-tour="bb-autofill"]', captionKey: 'guide.tour.steps.request.flow.bb_autofill' },
-          { wizardStep: 5, selector: '.bb-split-panel', captionKey: 'guide.tour.steps.request.flow.bb_mapping' },
+          { wizardStep: 1, selector: '.wizard-indicator', captionKey: `${RK}.wizard`, hold: 3000 },
+          { wizardStep: 1, selector: '[data-tour="line-fields"]', captionKey: `${RK}.detail`, hold: 3500 },
+          { wizardStep: 1, selector: '.required', captionKey: `${RK}.required`, hold: 3000 },
+          { wizardStep: 2, selector: '.guide-badge', captionKey: `${RK}.map`, hold: 3000 },
+          { wizardStep: 3, cmd: 'jayer-demo', selector: '.wizard-table', captionKey: `${RK}.jayer_auto`, hold: 6500 },
+          { wizardStep: 3, selector: '[data-tour="jayer-filter"]', captionKey: `${RK}.jayer_filter`, hold: 3000 },
+          { wizardStep: 4, selector: '[data-tour="oayer-tabs"]', captionKey: `${RK}.oayer`, hold: 3000 },
+          { wizardStep: 5, cmd: 'bb-demo', selector: '[data-tour="bb-autofill"]', captionKey: `${RK}.bb_autofill`, hold: 4500 },
+          { wizardStep: 5, selector: '.bb-split-panel', captionKey: `${RK}.bb_mapping`, hold: 3500 },
+          { wizardStep: 5, cmd: 'open-submit', selector: '[data-tour="submit-note"]', captionKey: `${RK}.submit_note`, hold: 3500 },
+          { wizardStep: 5, selector: '[data-tour="submit-designee"]', captionKey: `${RK}.submit_designee`, hold: 3500 },
+          { wizardStep: 5, cmd: 'submitted', captionKey: `${RK}.submitted`, hold: 3200 },
         ],
       },
     ],
@@ -54,73 +54,85 @@ interface Props {
 const FOCUSABLE =
   'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
+const fmt = (ms: number): string => {
+  const total = Math.round(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
+
 const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const { t } = useTranslation();
   const steps = useGuideTourSteps();
   const modalRef = useRef<HTMLDivElement>(null);
 
-  const [current, setCurrent] = useState(0);
+  const [current, setCurrent] = useState(0);          // step index
   const [paused, setPaused] = useState(false);
+  const [phaseIdx, setPhaseIdx] = useState(0);        // 현재 phase index
+  const [phaseElapsed, setPhaseElapsed] = useState(0);
+  const [seekSig, setSeekSig] = useState<{ index: number; nonce: number }>({ index: 0, nonce: 0 });
 
-  // 열릴 때마다 첫 단계 / 재생 상태로 초기화
+  const step = steps[current];
+  const durations = useMemo(() => step.phases.map((p) => p.hold ?? DEFAULT_HOLD_MS), [step]);
+  const totalMs = useMemo(() => durations.reduce((a, b) => a + b, 0), [durations]);
+  const baseMs = durations.slice(0, phaseIdx).reduce((a, b) => a + b, 0);
+  const elapsedMs = baseMs + Math.min(phaseElapsed, durations[phaseIdx] ?? 0);
+
   useEffect(() => {
     if (isOpen) {
       setCurrent(0);
       setPaused(false);
+      setPhaseIdx(0);
+      setPhaseElapsed(0);
+      setSeekSig({ index: 0, nonce: 0 });
     }
   }, [isOpen]);
+
+  // 현재 phase 내 경과 시간 틱 (일시정지 시 정지)
+  useEffect(() => { setPhaseElapsed(0); }, [phaseIdx]);
+  useEffect(() => {
+    if (paused) return;
+    const id = setInterval(() => setPhaseElapsed((e) => e + 100), 100);
+    return () => clearInterval(id);
+  }, [paused, phaseIdx]);
+
+  const handlePhaseChange = useCallback((i: number) => setPhaseIdx(i), []);
+  const seekTo = useCallback((i: number) => {
+    setSeekSig((s) => ({ index: i, nonce: s.nonce + 1 }));
+    setPhaseIdx(i);
+    setPhaseElapsed(0);
+  }, []);
 
   const isFirst = current === 0;
   const isLast = current === steps.length - 1;
 
-  const goPrev = useCallback(() => {
-    setPaused(false);
-    setCurrent((c) => Math.max(0, c - 1));
-  }, []);
-
+  const goPrev = useCallback(() => { setPaused(false); setCurrent((c) => Math.max(0, c - 1)); }, []);
   const goNext = useCallback(() => {
-    if (isLast) {
-      onClose();
-      return;
-    }
+    if (isLast) { onClose(); return; }
     setPaused(false);
     setCurrent((c) => Math.min(steps.length - 1, c + 1));
   }, [isLast, onClose, steps.length]);
 
-  // Esc 닫기 + Tab 포커스 트랩
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-        return;
-      }
+      if (e.key === 'Escape') { onClose(); return; }
       if (e.key === 'Tab' && modalRef.current) {
         const nodes = modalRef.current.querySelectorAll<HTMLElement>(FOCUSABLE);
         if (nodes.length === 0) return;
         const first = nodes[0];
         const last = nodes[nodes.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [isOpen, onClose]);
 
-  // 열릴 때 모달로 포커스 이동
-  useEffect(() => {
-    if (isOpen) modalRef.current?.focus();
-  }, [isOpen]);
+  useEffect(() => { if (isOpen) modalRef.current?.focus(); }, [isOpen]);
 
   if (!isOpen) return null;
-
-  const step = steps[current];
 
   return (
     <div className="guide-tour-overlay" onClick={onClose} role="presentation">
@@ -134,7 +146,7 @@ const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="guide-tour-progress">
-          {t('guide.tour.progress', { current: current + 1, total: steps.length })}
+          {t('guide.tour.progress', { current: current + 1, total: steps.length })} · {step.title}
         </div>
 
         <div className="guide-tour-preview">
@@ -144,24 +156,39 @@ const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
             phases={step.phases}
             active
             paused={paused}
+            onPhaseChange={handlePhaseChange}
+            seek={seekSig}
           />
         </div>
 
-        <h3 className="guide-tour-title">{step.title}</h3>
-        <p className="guide-tour-desc">{step.description}</p>
-
-        <div className="guide-tour-dots">
-          {steps.map((s, i) => (
-            <span key={s.key} className={`guide-tour-dot${i === current ? ' active' : ''}`} />
-          ))}
+        {/* 동영상형 챕터 타임라인 */}
+        <div className="guide-tour-timeline">
+          <span className="guide-tour-time">{fmt(elapsedMs)}</span>
+          <div className="guide-tour-track">
+            {step.phases.map((p, i) => {
+              const fill = i < phaseIdx ? 1 : i > phaseIdx ? 0 : Math.min(phaseElapsed / (durations[i] || 1), 1);
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  className={`guide-tour-chapter${i === phaseIdx ? ' active' : ''}`}
+                  style={{ flexGrow: durations[i] }}
+                  onClick={() => seekTo(i)}
+                  title={t(p.captionKey as never)}
+                  aria-label={t(p.captionKey as never)}
+                >
+                  <span className="guide-tour-chapter-fill" style={{ width: `${fill * 100}%` }} />
+                </button>
+              );
+            })}
+          </div>
+          <span className="guide-tour-time">{fmt(totalMs)}</span>
         </div>
 
+        <p className="guide-tour-desc">{step.description}</p>
+
         <div className="guide-tour-footer">
-          <button
-            type="button"
-            className="btn btn-secondary guide-tour-pause"
-            onClick={() => setPaused((p) => !p)}
-          >
+          <button type="button" className="btn btn-secondary guide-tour-pause" onClick={() => setPaused((p) => !p)}>
             {paused ? t('guide.tour.resume') : t('guide.tour.pause')}
           </button>
 
