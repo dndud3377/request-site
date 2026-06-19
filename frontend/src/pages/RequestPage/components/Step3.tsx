@@ -114,7 +114,7 @@ const Step3: React.FC<Step3Props> = ({
       </div>
 
       {/* 탭 버튼 */}
-      <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '2px solid var(--border)' }}>
+      <div data-tour="oayer-tabs" style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '2px solid var(--border)' }}>
         {([
           { key: 'table', label: t('request.ovl_tab_table') },
           { key: 'info',  label: t('request.ovl_tab_info') },
