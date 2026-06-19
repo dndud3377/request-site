@@ -420,14 +420,10 @@
         "request": {
           "title": "요청서 작성",
           "description": "유형을 선택하고 제목과 내용을 입력한 뒤 상신하면 의뢰가 접수됩니다.",
-          "demo": {
-            "type_label": "유형",
-            "type_value": "신규 제품",
-            "title_label": "제목",
-            "title_value": "신규 라인 도입 의뢰",
-            "content_label": "내용",
-            "content_value": "L1 라인 신규 제품 소개 지도 제작을 요청합니다.",
-            "toast": "✓ 제출 완료"
+          "highlights": {
+            "header": "여기서 제품 소개 지도 제작 의뢰서를 작성합니다.",
+            "wizard": "의뢰는 5단계 위저드로 순서대로 진행됩니다.",
+            "actions": "임시저장하거나 마지막 단계에서 상신할 수 있습니다."
           }
         }
       }
