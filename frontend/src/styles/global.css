@@ -3954,3 +3954,54 @@ select.form-control option {
 }
 .guide-tour-skip:hover { color: #5b647a; }
 
+/* 중앙 캡션 (강조 대상이 없는 phase) */
+.guide-tour-caption.center {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 70%;
+  text-align: center;
+  font-size: 14px;
+}
+
+/* 동영상형 챕터 타임라인 */
+.guide-tour-timeline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 10px;
+}
+.guide-tour-time {
+  font-size: 11px;
+  font-weight: 700;
+  color: #9aa3b5;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.guide-tour-track {
+  flex: 1;
+  display: flex;
+  gap: 3px;
+  height: 8px;
+}
+.guide-tour-chapter {
+  position: relative;
+  height: 100%;
+  border: none;
+  padding: 0;
+  background: #e3e7ef;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.guide-tour-chapter:hover { transform: scaleY(1.4); }
+.guide-tour-chapter.active { box-shadow: 0 0 0 2px rgba(79, 142, 247, 0.4); }
+.guide-tour-chapter-fill {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  background: #4f8ef7;
+  border-radius: 4px;
+}
+
