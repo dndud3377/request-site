@@ -162,3 +162,33 @@ export const DETAIL_REQUIRED: (keyof DetailFormState)[] = [
   'partid_selection',
   'process_id',
 ];
+
+// ===== 전체 가이드(투어) 샘플 시드 =====
+// /request?embed=tour 진입 시, 위저드 각 단계를 "값이 채워진" 상태로 보여주기 위한 샘플 데이터.
+export const makeTourDetail = (): DetailFormState => ({
+  ...INITIAL_DETAIL,
+  request_purpose: '신규',
+  line: '라인1',
+  process_selection: 'RECIPE_A',
+  partid_selection: 'PART_1000',
+  process_id: 'PROC_X1',
+  customer_name: '샘플 고객사',
+  customer_requirement: '신규 라인 제품 소개 지도 제작 요청',
+  map_type: 'NEW',
+});
+
+export const makeTourJayerRows = (): JayerRow[] => [
+  { ...makeJayerRow(), process_id: 'PROC_X1', sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01', st: 'ST1', new_or_copy: '신규', product_name: '샘플제품A', step: '10', item_id: 'ITEM_1' },
+  { ...makeJayerRow(), process_id: 'PROC_X1', sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'ST1', new_or_copy: '신규', product_name: '샘플제품A', step: '20', item_id: 'ITEM_2' },
+  { ...makeJayerRow(), process_id: 'PROC_X2', sp: 'SP03', sd: 'SD03', pp: 'PP03', layerid: 'L03', st: 'ST2', new_or_copy: '차용', product_name: '샘플제품B', step: '30', item_id: 'ITEM_3' },
+];
+
+export const makeTourOayerRows = (): OayerRow[] => [
+  { ...makeOayerRow(), process_id: 'PROC_X1', sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01', st: 'ST1', new_or_copy: '신규', product_name: '샘플제품A', step: '10' },
+  { ...makeOayerRow(), process_id: 'PROC_X1', sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'ST1', new_or_copy: '신규', product_name: '샘플제품A', step: '20' },
+];
+
+export const makeTourBbRows = (): BbTableRow[] => [
+  { ...makeBbRow(), process_id: 'PROC_X1', ss: 'SS01', sd: 'SD01', bb_process_id: 'BB_X1', bb_name: 'BB샘플A', bb_step: '10', bb_ss: 'BSS01', remark: '' },
+  { ...makeBbRow(), process_id: 'PROC_X2', ss: 'SS02', sd: 'SD02', bb_process_id: 'BB_X2', bb_name: 'BB샘플B', bb_step: '20', bb_ss: 'BSS02', remark: '' },
+];
