@@ -51,6 +51,24 @@ function AppContent(): React.ReactElement {
   if (isLoading) return <LoadingSpinner />;
   if (!isLoggedIn) return <LoginPage />;
 
+  const routes = (
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/request"     element={<ProtectedRoute><RequestPage /></ProtectedRoute>} />
+      <Route path="/approval"    element={<ProtectedRoute><ApprovalPage /></ProtectedRoute>} />
+      <Route path="/history"     element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
+      <Route path="/voc"         element={<ProtectedRoute><VOCPage /></ProtectedRoute>} />
+      <Route path="/permissions" element={<ProtectedRoute><PermissionPage /></ProtectedRoute>} />
+      <Route path="/guide"       element={<ProtectedRoute><GuidePage /></ProtectedRoute>} />
+    </Routes>
+  );
+
+  // 전체 가이드 임베드 모드: 네비/푸터/세션 모달 없이 페이지 본문만 렌더 (iframe 미리보기용)
+  const isTourEmbed = new URLSearchParams(location.search).get('embed') === 'tour';
+  if (isTourEmbed) {
+    return <div className="app-tour-embed">{routes}</div>;
+  }
+
   return (
     <div className="app-wrapper">
       <SessionWarningModal
@@ -61,15 +79,7 @@ function AppContent(): React.ReactElement {
       />
       <Navbar />
       <main className="main-content">
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/request"     element={<ProtectedRoute><RequestPage /></ProtectedRoute>} />
-          <Route path="/approval"    element={<ProtectedRoute><ApprovalPage /></ProtectedRoute>} />
-          <Route path="/history"     element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
-          <Route path="/voc"         element={<ProtectedRoute><VOCPage /></ProtectedRoute>} />
-          <Route path="/permissions" element={<ProtectedRoute><PermissionPage /></ProtectedRoute>} />
-          <Route path="/guide"       element={<ProtectedRoute><GuidePage /></ProtectedRoute>} />
-        </Routes>
+        {routes}
       </main>
       <Footer />
     </div>
