@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>애니메이션 데모 가이드 모달</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --border: #e3e5e9;
+    --text: #1b1f27;
+    --text-mute: #6b7280;
+    --accent: #3454d1;
+    --accent-soft: #eef1fc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Pretendard', sans-serif;
+    background: #d8dae0;
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px;
+  }
+  #app-root {
+    background: var(--bg);
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+    height: 660px;
+    width: 100%;
+    max-width: 1080px;
+    display: flex;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+  }
+  .sidebar { width: 180px; background: #181c2a; color: #c7cbe0; flex-shrink: 0; display: flex; flex-direction: column; padding: 18px 0; }
+  .sidebar-title { padding: 0 18px 18px 18px; font-weight: 700; color: #fff; font-size: 15px; }
+  .nav-item { display: flex; align-items: center; gap: 8px; padding: 9px 18px; font-size: 13px; cursor: pointer; color: #9ba0bd; }
+  .nav-item.active { background: #262b3f; color: #fff; }
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .topbar { height: 54px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; flex-shrink: 0; }
+  .topbar-label { font-size: 14px; color: var(--text-mute); }
+  #guide-btn { display: flex; align-items: center; gap: 6px; background: var(--accent-soft); color: var(--accent); border: 1px solid #d6ddf8; border-radius: 8px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  #guide-btn:hover { background: #e2e7fb; }
+  .content { flex: 1; padding: 24px; overflow: auto; }
+  .greeting { font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .subgreeting { font-size: 13px; color: var(--text-mute); margin-bottom: 20px; }
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .stat-label { font-size: 12px; color: var(--text-mute); margin-bottom: 6px; }
+  .stat-value { font-size: 20px; font-weight: 700; }
+  .table-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .table-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+  .table-row { display:flex; align-items:center; justify-content:space-between; padding:9px 10px; border-radius:7px; background:#fafbfc; margin-bottom:8px; }
+  .row-title { font-size: 13px; color: var(--text); }
+  .row-status { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 6px; }
+
+  #overlay {
+    position: absolute; inset: 0;
+    background: rgba(15,17,26,0.5);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.25s ease;
+    z-index: 5;
+  }
+  #overlay.show { opacity: 1; pointer-events: auto; }
+  #modal {
+    width: 600px;
+    background: var(--surface);
+    border-radius: 16px;
+    box-shadow: 0 20px 48px rgba(0,0,0,0.3);
+    padding: 22px 26px 20px 26px;
+    transform: scale(0.96);
+    transition: transform 0.25s ease;
+  }
+  #overlay.show #modal { transform: scale(1); }
+  .modal-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .modal-step-label { font-size: 12px; font-weight: 700; color: var(--accent); display:flex; align-items:center; gap:6px; }
+  .rec-dot { width: 7px; height: 7px; border-radius: 50%; background: #e23d3d; animation: rec-blink 1.2s ease-in-out infinite; }
+  @keyframes rec-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+  #modal-close { background: none; border: none; font-size: 17px; color: var(--text-mute); cursor: pointer; padding: 2px; }
+
+  .preview-frame {
+    height: 240px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    overflow: hidden;
+    position: relative;
+  }
+  .pf-topbar { height: 26px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 10px; gap: 6px; }
+  .pf-dot { width: 6px; height: 6px; border-radius: 50%; background: #e3e5e9; }
+  .pf-title { font-size: 10px; color: var(--text-mute); margin-left: 4px; font-weight: 600; }
+  .pf-body { position: absolute; top: 26px; left: 0; right: 0; bottom: 0; padding: 12px; }
+
+  .modal-text { margin-top: 16px; }
+  .modal-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  .modal-desc { font-size: 13px; line-height: 1.6; color: var(--text-mute); }
+
+  .modal-dots { display: flex; gap: 5px; justify-content: center; margin: 16px 0; }
+  .m-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border); transition: background 0.2s, width 0.2s; }
+  .m-dot.on { background: var(--accent); width: 18px; border-radius: 3px; }
+
+  .modal-footer { display: flex; align-items: center; justify-content: space-between; }
+  .footer-left { display: flex; align-items: center; gap: 10px; }
+  .m-skip { font-size: 12px; color: var(--text-mute); cursor: pointer; background: none; border: none; padding: 0; }
+  .m-checkbox-row { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-mute); }
+  .footer-right { display: flex; gap: 8px; }
+  .m-btn { font-size: 12.5px; font-weight: 600; padding: 8px 16px; border-radius: 7px; cursor: pointer; border: 1px solid var(--border); background: #fff; color: var(--text); }
+  .m-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .m-btn:disabled { opacity: 0.4; cursor: default; }
+
+  /* shared demo elements */
+  .mp-row { display:flex; align-items:center; justify-content:space-between; padding:6px 8px; border-radius:6px; background:#fff; border:1px solid var(--border); margin-bottom:6px; font-size:10px; transition: opacity 0.25s, border-color 0.25s; }
+  .mp-row.dim { opacity: 0.22; }
+  .mp-row.match { border-color: var(--accent); }
+  .mp-badge { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 5px; transition: background 0.25s, color 0.25s; }
+  .mp-btn-mini { font-size: 9px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border: 1px solid #d6ddf8; border-radius: 5px; padding: 4px 9px; display:inline-block; transition: transform 0.18s, background 0.18s; }
+  .mp-btn-mini.pulse { transform: scale(0.92); background: #d8e0fb; }
+  .mp-stepper { display:flex; align-items:center; gap:6px; margin-bottom: 12px; }
+  .mp-step-circle { width:18px; height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; color:#fff; background:#c7cbe0; transition: background 0.3s; }
+  .mp-step-line { flex:1; height:2px; background: var(--border); transition: background 0.3s; }
+
+  .rf-field-label { font-size: 9px; color: var(--text-mute); margin-top: 8px; margin-bottom: 3px; }
+  .rf-select, .rf-input { height: 20px; border: 1px solid var(--border); border-radius: 5px; background:#fff; font-size: 10px; padding: 0 6px; display:flex; align-items:center; color: var(--text); }
+  .rf-textarea { min-height: 36px; border: 1px solid var(--border); border-radius: 5px; background:#fff; font-size: 10px; padding: 4px 6px; color: var(--text); }
+  .typing::after { content: '|'; animation: blink 0.9s steps(1) infinite; color: var(--accent); margin-left:1px; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .rf-submit-row { display:flex; justify-content:flex-end; margin-top:10px; }
+  .rf-toast {
+    position:absolute; bottom:10px; right:10px; background:#1e9e6b; color:#fff;
+    font-size:10px; font-weight:700; padding:6px 10px; border-radius:6px;
+    opacity:0; transform:translateY(6px); transition: opacity 0.25s, transform 0.25s;
+  }
+  .rf-toast.show { opacity:1; transform:translateY(0); }
+  .hist-search { height:20px; width:110px; border:1px solid var(--border); border-radius:5px; background:#fff; font-size:10px; padding:0 6px; display:flex; align-items:center; margin-bottom:10px; }
+
+  .caption { text-align: center; color: #6b7280; font-size: 13px; margin-top: 14px; }
+</style>
+</head>
+<body>
+
+<div id="app-root">
+  <div class="sidebar">
+    <div class="sidebar-title">request-site</div>
+    <div>
+      <div class="nav-item active"><span>🏠</span><span>대시보드</span></div>
+      <div class="nav-item"><span>📝</span><span>요청관리</span></div>
+      <div class="nav-item"><span>✅</span><span>결재진행</span></div>
+      <div class="nav-item"><span>🗂️</span><span>이력조회</span></div>
+      <div class="nav-item"><span>💬</span><span>VOC</span></div>
+      <div class="nav-item"><span>🔑</span><span>권한관리</span></div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-label">대시보드</div>
+      <button id="guide-btn"><span>📘</span> 전체 가이드</button>
+    </div>
+    <div class="content">
+      <div class="greeting">안녕하세요, 오우영님</div>
+      <div class="subgreeting">오늘 처리할 요청 3건이 있습니다.</div>
+      <div class="stats-row" id="stats-row"></div>
+      <div class="table-card">
+        <div class="table-title">최근 요청</div>
+        <div id="table-rows"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="overlay">
+    <div id="modal">
+      <div class="modal-top">
+        <div class="modal-step-label"><span class="rec-dot"></span><span id="modal-step-label"></span></div>
+        <button id="modal-close">✕</button>
+      </div>
+
+      <div class="preview-frame" id="preview-frame"></div>
+
+      <div class="modal-text">
+        <div class="modal-title" id="modal-title"></div>
+        <div class="modal-desc" id="modal-desc"></div>
+      </div>
+
+      <div class="modal-dots" id="modal-dots"></div>
+
+      <div class="modal-footer">
+        <div class="footer-left">
+          <button class="m-skip" id="m-skip">건너뛰기</button>
+          <div class="m-checkbox-row">
+            <input type="checkbox" id="m-noshow" style="margin:0;">
+            <label for="m-noshow">다시 보지 않기</label>
+          </div>
+        </div>
+        <div class="footer-right">
+          <button class="m-btn" id="m-prev">이전</button>
+          <button class="m-btn primary" id="m-next">다음</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="caption">각 단계마다 해당 페이지의 핵심 동작이 짧은 루프 영상처럼 자동 재생됩니다</div>
+
+<script>
+// ---------- background dashboard (decorative) ----------
+const stats = [
+  {label:'대기중', value:'12', color:'#3454d1'},
+  {label:'승인완료', value:'48', color:'#1e9e6b'},
+  {label:'반려', value:'3', color:'#d1394a'},
+  {label:'전체', value:'63', color:'#6b7280'},
+];
+document.getElementById('stats-row').innerHTML = stats.map(s =>
+  `<div class="stat-card"><div class="stat-label">${s.label}</div><div class="stat-value" style="color:${s.color};">${s.value}</div></div>`
+).join('');
+const rows = [
+  {title:'2026년 6월 데이터 추출 요청', status:'대기중', color:'#3454d1', bg:'#eef1fc'},
+  {title:'고객 분석 리포트 승인 요청', status:'승인완료', color:'#1e9e6b', bg:'#e9f7f0'},
+  {title:'권한 변경 요청 (영업1팀)', status:'반려', color:'#d1394a', bg:'#fbeaec'},
+];
+document.getElementById('table-rows').innerHTML = rows.map(r =>
+  `<div class="table-row"><span class="row-title">${r.title}</span><span class="row-status" style="color:${r.color}; background:${r.bg};">${r.status}</span></div>`
+).join('');
+
+// ---------- timer helper with cancellation ----------
+function sleep(ms, token) {
+  return new Promise(resolve => {
+    const id = setTimeout(resolve, ms);
+    (token.timers ||= []).push(id);
+  });
+}
+async function typeInto(el, text, token, speed) {
+  el.classList.add('typing');
+  el.textContent = '';
+  for (const ch of text) {
+    if (token.cancelled) return;
+    el.textContent += ch;
+    await sleep(speed, token);
+    if (token.cancelled) return;
+  }
+}
+
+// ---------- step 1: 요청서 작성 ----------
+function buildRequestForm() {
+  return `
+    <div class="pf-topbar"><div class="pf-dot"></div><div class="pf-dot"></div><div class="pf-title">요청관리 &gt; 신규 등록</div></div>
+    <div class="pf-body">
+      <div class="rf-field-label">요청 유형</div>
+      <div class="rf-select" id="rf-type">선택하세요</div>
+      <div class="rf-field-label">제목</div>
+      <div class="rf-input" id="rf-title"></div>
+      <div class="rf-field-label">상세내용</div>
+      <div class="rf-textarea" id="rf-content"></div>
+      <div class="rf-submit-row"><div class="mp-btn-mini" id="rf-submit">제출</div></div>
+      <div class="rf-toast" id="rf-toast">✅ 제출 완료</div>
+    </div>`;
+}
+async function playRequestForm(token) {
+  const type = document.getElementById('rf-type');
+  const title = document.getElementById('rf-title');
+  const content = document.getElementById('rf-content');
+  const submit = document.getElementById('rf-submit');
+  const toast = document.getElementById('rf-toast');
+  while (!token.cancelled) {
+    type.textContent = '선택하세요'; type.style.color = 'var(--text-mute)';
+    title.classList.remove('typing'); title.textContent = '';
+    content.classList.remove('typing'); content.textContent = '';
+    submit.classList.remove('pulse'); toast.classList.remove('show');
+    await sleep(500, token); if (token.cancelled) return;
+
+    type.textContent = '데이터 추출 요청'; type.style.color = 'var(--accent)';
+    await sleep(450, token); if (token.cancelled) return;
+
+    await typeInto(title, '2026년 6월 매출 데이터 요청', token, 35);
+    title.classList.remove('typing');
+    if (token.cancelled) return;
+    await sleep(250, token); if (token.cancelled) return;
+
+    await typeInto(content, '마케팅팀 요청으로 6월 매출 데이터 추출이 필요합니다.', token, 22);
+    content.classList.remove('typing');
+    if (token.cancelled) return;
+    await sleep(400, token); if (token.cancelled) return;
+
+    submit.classList.add('pulse');
+    await sleep(250, token); if (token.cancelled) return;
+    submit.classList.remove('pulse');
+    toast.classList.add('show');
+    await sleep(1100, token); if (token.cancelled) return;
+    toast.classList.remove('show');
+    await sleep(700, token); if (token.cancelled) return;
+  }
+}
+
+// ---------- step 2: 결재 진행 ----------
+function buildApproval() {
+  return `
+    <div class="pf-topbar"><div class="pf-dot"></div><div class="pf-dot"></div><div class="pf-title">결재진행</div></div>
+    <div class="pf-body">
+      <div class="mp-stepper">
+        <div class="mp-step-circle" id="ap-c1">1</div><div class="mp-step-line" id="ap-l1"></div>
+        <div class="mp-step-circle" id="ap-c2">2</div><div class="mp-step-line" id="ap-l2"></div>
+        <div class="mp-step-circle" id="ap-c3">3</div>
+      </div>
+      <div class="mp-row"><span>2026년 6월 매출 데이터 요청</span><span class="mp-badge" id="ap-badge">대기중</span></div>
+      <div class="rf-submit-row"><div class="mp-btn-mini" id="ap-approve">승인</div></div>
+    </div>`;
+}
+async function playApproval(token) {
+  const c1 = document.getElementById('ap-c1'), c2 = document.getElementById('ap-c2'), c3 = document.getElementById('ap-c3');
+  const l1 = document.getElementById('ap-l1'), l2 = document.getElementById('ap-l2');
+  const badge = document.getElementById('ap-badge');
+  const approve = document.getElementById('ap-approve');
+  function setBadge(text, color, bg) { badge.textContent = text; badge.style.color = color; badge.style.background = bg; }
+  while (!token.cancelled) {
+    c1.style.background = '#3454d1'; c2.style.background = '#c7cbe0'; c3.style.background = '#c7cbe0';
+    l1.style.background = '#e3e5e9'; l2.style.background = '#e3e5e9';
+    setBadge('대기중', '#3454d1', '#eef1fc');
+    await sleep(600, token); if (token.cancelled) return;
+
+    l1.style.background = '#3454d1'; c2.style.background = '#3454d1';
+    setBadge('검토중', '#3454d1', '#eef1fc');
+    await sleep(700, token); if (token.cancelled) return;
+
+    approve.classList.add('pulse');
+    await sleep(220, token); if (token.cancelled) return;
+    approve.classList.remove('pulse');
+    l2.style.background = '#1e9e6b'; c3.style.background = '#1e9e6b';
+    setBadge('승인완료', '#1e9e6b', '#e9f7f0');
+    await sleep(1100, token); if (token.cancelled) return;
+    await sleep(500, token); if (token.cancelled) return;
+  }
+}
+
+// ---------- step 3: 이력 조회 ----------
+function buildHistory() {
+  return `
+    <div class="pf-topbar"><div class="pf-dot"></div><div class="pf-dot"></div><div class="pf-title">이력조회</div></div>
+    <div class="pf-body">
+      <div class="hist-search" id="hist-search"></div>
+      <div class="mp-row" id="hr1"><span>5월 정산 데이터 추출</span><span class="mp-badge" style="color:#6b7280; background:#eef0f2;">완료</span></div>
+      <div class="mp-row" id="hr2"><span>영업1팀 권한 변경</span><span class="mp-badge" style="color:#6b7280; background:#eef0f2;">완료</span></div>
+      <div class="mp-row" id="hr3"><span>4월 리포트 추출</span><span class="mp-badge" style="color:#6b7280; background:#eef0f2;">완료</span></div>
+    </div>`;
+}
+async function playHistory(token) {
+  const search = document.getElementById('hist-search');
+  const hr1 = document.getElementById('hr1'), hr2 = document.getElementById('hr2'), hr3 = document.getElementById('hr3');
+  while (!token.cancelled) {
+    [hr1, hr2, hr3].forEach(r => { r.classList.remove('dim', 'match'); });
+    await sleep(500, token); if (token.cancelled) return;
+
+    await typeInto(search, '추출', token, 110);
+    search.classList.remove('typing');
+    if (token.cancelled) return;
+    await sleep(300, token); if (token.cancelled) return;
+
+    hr2.classList.add('dim');
+    hr1.classList.add('match'); hr3.classList.add('match');
+    await sleep(1300, token); if (token.cancelled) return;
+    await sleep(500, token); if (token.cancelled) return;
+  }
+}
+
+// ---------- step 4: VOC ----------
+function buildVoc() {
+  return `
+    <div class="pf-topbar"><div class="pf-dot"></div><div class="pf-dot"></div><div class="pf-title">VOC</div></div>
+    <div class="pf-body">
+      <div class="rf-field-label">의견 작성</div>
+      <div class="rf-textarea" id="voc-text"></div>
+      <div class="rf-submit-row"><div class="mp-btn-mini" id="voc-submit">등록</div></div>
+      <div class="rf-toast" id="voc-toast">✅ 등록 완료</div>
+      <div class="mp-row" id="voc-row" style="margin-top:10px; opacity:0;"><span>결재 속도가 느려요</span><span class="mp-badge" id="voc-badge" style="color:#d97706; background:#fef3e2;">답변대기</span></div>
+    </div>`;
+}
+async function playVoc(token) {
+  const text = document.getElementById('voc-text');
+  const submit = document.getElementById('voc-submit');
+  const toast = document.getElementById('voc-toast');
+  const row = document.getElementById('voc-row');
+  const badge = document.getElementById('voc-badge');
+  while (!token.cancelled) {
+    text.classList.remove('typing'); text.textContent = '';
+    toast.classList.remove('show'); row.style.opacity = '0';
+    badge.textContent = '답변대기'; badge.style.color = '#d97706'; badge.style.background = '#fef3e2';
+    await sleep(500, token); if (token.cancelled) return;
+
+    await typeInto(text, '결재 속도가 느려요', token, 38);
+    text.classList.remove('typing');
+    if (token.cancelled) return;
+    await sleep(300, token); if (token.cancelled) return;
+
+    submit.classList.add('pulse');
+    await sleep(220, token); if (token.cancelled) return;
+    submit.classList.remove('pulse');
+    toast.classList.add('show');
+    row.style.opacity = '1';
+    await sleep(900, token); if (token.cancelled) return;
+    toast.classList.remove('show');
+    await sleep(500, token); if (token.cancelled) return;
+
+    badge.textContent = '답변완료'; badge.style.color = '#1e9e6b'; badge.style.background = '#e9f7f0';
+    await sleep(1100, token); if (token.cancelled) return;
+    await sleep(500, token); if (token.cancelled) return;
+  }
+}
+
+// ---------- step 5: 권한관리 ----------
+function buildPermission() {
+  return `
+    <div class="pf-topbar"><div class="pf-dot"></div><div class="pf-dot"></div><div class="pf-title">권한관리</div></div>
+    <div class="pf-body">
+      <div class="mp-row"><span>오우영 · 개발팀</span><span class="mp-badge" id="perm-badge" style="color:#6b7280; background:#eef0f2;">일반사용자</span></div>
+      <div class="rf-submit-row"><div class="mp-btn-mini" id="perm-edit">권한 변경</div></div>
+    </div>`;
+}
+async function playPermission(token) {
+  const badge = document.getElementById('perm-badge');
+  const btn = document.getElementById('perm-edit');
+  while (!token.cancelled) {
+    badge.textContent = '일반사용자'; badge.style.color = '#6b7280'; badge.style.background = '#eef0f2';
+    await sleep(700, token); if (token.cancelled) return;
+
+    btn.classList.add('pulse');
+    await sleep(220, token); if (token.cancelled) return;
+    btn.classList.remove('pulse');
+    badge.textContent = '관리자'; badge.style.color = '#3454d1'; badge.style.background = '#eef1fc';
+    await sleep(1300, token); if (token.cancelled) return;
+    await sleep(600, token); if (token.cancelled) return;
+  }
+}
+
+// ---------- step registry ----------
+const steps = [
+  { title: '요청서 작성', desc: '필요한 데이터를 요청서로 작성해 제출합니다. 유형 선택부터 상세 내용까지 한 화면에서 끝나요.', build: buildRequestForm, play: playRequestForm },
+  { title: '결재 진행', desc: '제출된 요청서가 결재선을 따라 승인됩니다. 일반 요청은 1단계, 고위험 요청은 병렬 2단계로 진행돼요.', build: buildApproval, play: playApproval },
+  { title: '이력 조회', desc: '완료된 요청서를 검색하고 결재 이력을 한눈에 확인할 수 있습니다.', build: buildHistory, play: playHistory },
+  { title: 'VOC', desc: '처리 과정에서 의견이나 불편사항을 남기면 담당자가 확인 후 답변을 드립니다.', build: buildVoc, play: playVoc },
+  { title: '권한관리', desc: '사용자별 결재·조회 권한을 관리자가 설정합니다.', build: buildPermission, play: playPermission },
+];
+
+const overlay = document.getElementById('overlay');
+const previewFrame = document.getElementById('preview-frame');
+const modalTitle = document.getElementById('modal-title');
+const modalDesc = document.getElementById('modal-desc');
+const modalStepLabel = document.getElementById('modal-step-label');
+const modalDots = document.getElementById('modal-dots');
+const mPrev = document.getElementById('m-prev');
+const mNext = document.getElementById('m-next');
+const mSkip = document.getElementById('m-skip');
+const modalClose = document.getElementById('modal-close');
+
+modalDots.innerHTML = steps.map(() => `<div class="m-dot"></div>`).join('');
+
+let current = 0;
+let activeToken = null;
+
+function stopCurrent() {
+  if (activeToken) {
+    activeToken.cancelled = true;
+    (activeToken.timers || []).forEach(clearTimeout);
+  }
+}
+
+function render(i) {
+  stopCurrent();
+  previewFrame.innerHTML = steps[i].build();
+  modalStepLabel.textContent = `${i + 1} / ${steps.length} · 자동 재생 중`;
+  modalTitle.textContent = steps[i].title;
+  modalDesc.textContent = steps[i].desc;
+  Array.from(modalDots.children).forEach((d, idx) => d.classList.toggle('on', idx === i));
+  mPrev.disabled = (i === 0);
+  mNext.textContent = (i === steps.length - 1) ? '시작하기' : '다음';
+
+  activeToken = { cancelled: false, timers: [] };
+  steps[i].play(activeToken);
+}
+
+function openModal() { current = 0; render(current); overlay.classList.add('show'); }
+function closeModal() { stopCurrent(); overlay.classList.remove('show'); }
+
+document.getElementById('guide-btn').addEventListener('click', openModal);
+modalClose.addEventListener('click', closeModal);
+mSkip.addEventListener('click', closeModal);
+mPrev.addEventListener('click', () => { if (current > 0) { current--; render(current); } });
+mNext.addEventListener('click', () => {
+  if (current === steps.length - 1) { closeModal(); return; }
+  current++; render(current);
+});
+</script>
+</body>
+</html>
