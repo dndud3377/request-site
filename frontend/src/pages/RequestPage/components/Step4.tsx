@@ -126,6 +126,7 @@ const Step4: React.FC<Step4Props> = ({
         <button
           type="button"
           className="btn btn-primary"
+          data-tour="bb-autofill"
           onClick={handleOpenAutoFillPanel}
           disabled={bbExternalData.length === 0 || bbExternalData.every(tab => tab.length === 0)}
         >

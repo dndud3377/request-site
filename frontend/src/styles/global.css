@@ -3878,9 +3878,9 @@ select.form-control option {
   padding: 20px;
 }
 .guide-tour-modal {
-  width: 600px;
-  max-width: 100%;
-  max-height: 90vh;
+  width: 1200px;
+  max-width: 95vw;
+  max-height: 92vh;
   overflow-y: auto;
   background: #fff;
   border-radius: 16px;

@@ -40,6 +40,10 @@ import {
   DETAIL_REQUIRED,
   JAYER_EDITABLE_COLS,
   OAYER_EDITABLE_COLS,
+  makeTourDetail,
+  makeTourJayerRows,
+  makeTourOayerRows,
+  makeTourBbRows,
 } from './constants';
 import { formatUpdatedDate, calcDisabled, emptyDraftWords } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
@@ -78,6 +82,11 @@ export default function RequestPage(): React.ReactElement {
   const peerReviewDocId: number | null = (location.state as any)?.peerReviewDocId ?? null;
   const isPeerReviewMode = !!peerReviewDocId;
 
+  // 전체 가이드 투어 모드: /request?embed=tour (&step=N) — 샘플 값이 채워진 읽기 전용 미리보기
+  const tourParams = new URLSearchParams(location.search);
+  const isTourMode = tourParams.get('embed') === 'tour';
+  const initialTourStep = Math.min(5, Math.max(1, parseInt(tourParams.get('step') || '1', 10) || 1));
+
   const [lineOptions, setLineOptions] = useState<string[]>(OPTION_LINE as unknown as string[]);
   const [processOptions, setProcessOptions] = useState<string[]>([]);
   const [productOptions, setProductOptions] = useState<string[]>([]);
@@ -93,13 +102,13 @@ export default function RequestPage(): React.ReactElement {
   const [FlowProcessIdOptions, setFlowProcessIdOptions] = useState<Record<number, string[]>>({});
   const [FlowLayerIdOptions, setFlowLayerIdOptions] = useState<Record<number, string[]>>({});
 
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(isTourMode ? initialTourStep : 1);
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
-  const [detail, setDetail] = useState<DetailFormState>(INITIAL_DETAIL);
-  const [jayerRows, setJayerRows] = useState<JayerRow[]>([makeJayerRow()]);
+  const [detail, setDetail] = useState<DetailFormState>(isTourMode ? makeTourDetail() : INITIAL_DETAIL);
+  const [jayerRows, setJayerRows] = useState<JayerRow[]>(isTourMode ? makeTourJayerRows() : [makeJayerRow()]);
   const [jayerBarcodeCache, setJayerBarcodeCache] = useState<Record<string, { label: string; spec: string }[]>>({});
-  const [oayerRows, setOayerRows] = useState<OayerRow[]>([makeOayerRow()]);
-  const [bbRows, setBbRows] = useState<BbTableRow[]>([]);
+  const [oayerRows, setOayerRows] = useState<OayerRow[]>(isTourMode ? makeTourOayerRows() : [makeOayerRow()]);
+  const [bbRows, setBbRows] = useState<BbTableRow[]>(isTourMode ? makeTourBbRows() : []);
   const [bbExternalData, setBbExternalData] = useState<PhotoStepOption[][]>([]);
   const [bbExternalLoading, setBbExternalLoading] = useState(false);
   const [activeBbTab, setActiveBbTab] = useState(0);
@@ -149,7 +158,8 @@ export default function RequestPage(): React.ReactElement {
     bbRows: BbTableRow[];
     history: HistorySnapshot[];
   } | null>(null);
-  const isLoadingEditRef = useRef(false);
+  // 투어 모드에선 시드한 값이 라인/조합법 변경 reset 효과로 지워지지 않도록 로드 가드를 켠 채 시작
+  const isLoadingEditRef = useRef(isTourMode);
 
   const [approvedDocs, setApprovedDocs] = useState<RequestDocument[]>([]);
   const [sourcePartIdOptions, setSourcePartIdOptions] = useState<string[]>([]);
@@ -462,6 +472,20 @@ export default function RequestPage(): React.ReactElement {
     }).catch(() => { isLoadingEditRef.current = false; });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editDocId, peerReviewDocId]);
+
+  // 전체 가이드 투어: 부모(GuideTourStepPreview)가 보낸 위저드 단계 이동 메시지 수신
+  useEffect(() => {
+    if (!isTourMode) return;
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      const data = e.data;
+      if (data && data.type === 'guide-tour-step' && typeof data.step === 'number') {
+        setStep(Math.min(5, Math.max(1, data.step)));
+      }
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [isTourMode]);
 
   // 동료 PL 지정 드롭다운 외부 클릭 감지
   useEffect(() => {
