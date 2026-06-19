@@ -1,19 +1,22 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import TourRequestFormDemo from './guideDemos/TourRequestFormDemo';
+import GuideTourStepPreview, { TourHighlight } from './GuideTourStepPreview';
 
 /** "전체 가이드" 한 단계의 메타데이터 */
 export interface GuideTourStep {
   key: 'request' | 'approval' | 'history' | 'voc' | 'permission';
   title: string;
   description: string;
-  DemoComponent: React.ComponentType<{ active: boolean; paused: boolean }>;
+  /** iframe으로 그대로 보여줄 실제 라우트 */
+  path: string;
+  /** 페이지 위에 강조할 요소들 */
+  highlights: TourHighlight[];
 }
 
 /**
  * 전체 가이드 단계 메타데이터 반환.
- * 현재는 뼈대 단계로 "요청서 작성" 1개만 구현되어 있으며,
- * 나머지 단계(결재/이력/VOC/권한)는 데모 컴포넌트 완성 시 순차 추가한다.
+ * 현재는 뼈대 단계로 "요청서 작성"(/request) 1개만 구현되어 있으며,
+ * 나머지 단계(결재/이력/VOC/권한)는 path/highlights를 추가하여 순차 확장한다.
  */
 export function useGuideTourSteps(): GuideTourStep[] {
   const { t } = useTranslation();
@@ -22,7 +25,12 @@ export function useGuideTourSteps(): GuideTourStep[] {
       key: 'request',
       title: t('guide.tour.steps.request.title'),
       description: t('guide.tour.steps.request.description'),
-      DemoComponent: TourRequestFormDemo,
+      path: '/request',
+      highlights: [
+        { selector: '.page-header', captionKey: 'guide.tour.steps.request.highlights.header' },
+        { selector: '.wizard-indicator', captionKey: 'guide.tour.steps.request.highlights.wizard' },
+        { selector: '.form-actions', captionKey: 'guide.tour.steps.request.highlights.actions' },
+      ],
     },
   ];
 }
@@ -102,14 +110,9 @@ const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const step = steps[current];
-  const Demo = step.DemoComponent;
 
   return (
-    <div
-      className="guide-tour-overlay"
-      onClick={onClose}
-      role="presentation"
-    >
+    <div className="guide-tour-overlay" onClick={onClose} role="presentation">
       <div
         className="guide-tour-modal"
         role="dialog"
@@ -124,7 +127,13 @@ const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
         </div>
 
         <div className="guide-tour-preview">
-          <Demo active paused={paused} />
+          <GuideTourStepPreview
+            key={step.key}
+            path={step.path}
+            highlights={step.highlights}
+            active
+            paused={paused}
+          />
         </div>
 
         <h3 className="guide-tour-title">{step.title}</h3>
@@ -132,10 +141,7 @@ const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
         <div className="guide-tour-dots">
           {steps.map((s, i) => (
-            <span
-              key={s.key}
-              className={`guide-tour-dot${i === current ? ' active' : ''}`}
-            />
+            <span key={s.key} className={`guide-tour-dot${i === current ? ' active' : ''}`} />
           ))}
         </div>
 
@@ -149,26 +155,13 @@ const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
           </button>
 
           <div className="guide-tour-nav">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={goPrev}
-              disabled={isFirst}
-            >
+            <button type="button" className="btn btn-secondary" onClick={goPrev} disabled={isFirst}>
               {t('guide.tour.prev')}
             </button>
-            <button
-              type="button"
-              className="guide-tour-skip"
-              onClick={onClose}
-            >
+            <button type="button" className="guide-tour-skip" onClick={onClose}>
               {t('guide.tour.skip')}
             </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={goNext}
-            >
+            <button type="button" className="btn btn-primary" onClick={goNext}>
               {isLast ? t('guide.tour.start') : t('guide.tour.next')}
             </button>
           </div>
