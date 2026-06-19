@@ -84,7 +84,7 @@ const Step1: React.FC<Step1Props> = ({
   return (
     <div className="form-section">
       <div className="form-section-title">📋 {t('request.section_detail')}</div>
-      <div className="form-grid">
+      <div className="form-grid" data-tour="detail-fields">
 
         {/* 1. 라인 / 조합법 / 제품 이름 / 조리법 */}
         <div className="full-width" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
