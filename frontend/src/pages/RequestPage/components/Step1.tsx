@@ -91,7 +91,7 @@ const Step1: React.FC<Step1Props> = ({
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('request.line')} / {t('request.process_selection')}</span>
           <GuideBadge fk="step1_line_process" tk={t('guide.feat.step1_line_process' as never)} />
         </div>
-        <div className="full-width flex-row">
+        <div className="full-width flex-row" data-tour="line-fields">
           <FormSelect
             label={t('request.line')}
             name="line"
