@@ -428,7 +428,13 @@
             "jayer_filter": "Use the filter to pick and disable only the rows you want.",
             "oayer": "O-ayer has two tabs — be sure to fill in both.",
             "bb_autofill": "On the BB step, 'Auto Fill' populates Backbone data in one click.",
-            "bb_mapping": "You can also map BB data directly by clicking a source row."
+            "bb_mapping": "You can also map BB data directly by clicking a source row.",
+            "submit_note": "When submitting, add notes to pass along to the reviewer.",
+            "submit_designee": "You must assign a reviewer (PL) before submitting.",
+            "submitted": "On submit, a 'Request submitted' notification appears and approval begins.",
+            "submit_note_sample": "Requesting review for the new line introduction.",
+            "submit_designee_sample": "Gildong Hong (Reviewer PL)",
+            "submitted_toast": "Your request has been submitted."
           }
         }
       }

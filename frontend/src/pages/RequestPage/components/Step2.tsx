@@ -123,7 +123,7 @@ const Step2: React.FC<Step2Props> = ({
               {fs.label}
             </button>
           ))}
-          <button type="button" className="th-header-btn" onClick={() => setJayerFilterModalOpen(true)}>+ 필터</button>
+          <button type="button" className="th-header-btn" data-tour="jayer-filter" onClick={() => setJayerFilterModalOpen(true)}>+ 필터</button>
           <GuideBadge fk="step3_jayer_filter" tk={t('guide.feat.step3_jayer_filter' as never)} />
         </div>
       </div>

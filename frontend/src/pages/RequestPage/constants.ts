@@ -178,9 +178,7 @@ export const makeTourDetail = (): DetailFormState => ({
 });
 
 export const makeTourJayerRows = (): JayerRow[] => [
-  { ...makeJayerRow(), process_id: 'PROC_X1', sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01', st: 'ST1', new_or_copy: '신규', product_name: '샘플제품A', step: '10', item_id: 'ITEM_1' },
-  { ...makeJayerRow(), process_id: 'PROC_X1', sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'ST1', new_or_copy: '신규', product_name: '샘플제품A', step: '20', item_id: 'ITEM_2' },
-  { ...makeJayerRow(), process_id: 'PROC_X2', sp: 'SP03', sd: 'SD03', pp: 'PP03', layerid: 'L03', st: 'ST2', new_or_copy: '차용', product_name: '샘플제품B', step: '30', item_id: 'ITEM_3' },
+  makeJayerRow(), makeJayerRow(), makeJayerRow(), makeJayerRow(), makeJayerRow(),
 ];
 
 export const makeTourOayerRows = (): OayerRow[] => [
@@ -192,3 +190,16 @@ export const makeTourBbRows = (): BbTableRow[] => [
   { ...makeBbRow(), process_id: 'PROC_X1', ss: 'SS01', sd: 'SD01', bb_process_id: 'BB_X1', bb_name: 'BB샘플A', bb_step: '10', bb_ss: 'BSS01', remark: '' },
   { ...makeBbRow(), process_id: 'PROC_X2', ss: 'SS02', sd: 'SD02', bb_process_id: 'BB_X2', bb_name: 'BB샘플B', bb_step: '20', bb_ss: 'BSS02', remark: '' },
 ];
+
+// BB 자동채움 버튼을 활성화하기 위한 외부 데이터 샘플 (PhotoStepOption[][])
+export const makeTourBbExternalData = () => [
+  [
+    { processid: 'BB_X1', stepseq: '10', descript: 'BB샘플A', layerid: 'L01' },
+    { processid: 'BB_X2', stepseq: '20', descript: 'BB샘플B', layerid: 'L02' },
+  ],
+];
+
+// J-ayer 데모에서 채워 넣을 샘플 값
+export const TOUR_JAYER_PRODUCT = '샘플제품A';
+export const TOUR_JAYER_STEPS = ['10', '20', '30', '40', '50'];
+export const TOUR_JAYER_ITEMS = ['ITEM_1', 'ITEM_2', 'ITEM_3', 'ITEM_4', 'ITEM_5'];
