@@ -420,6 +420,7 @@
           "title": "Create a Request",
           "description": "Select a type, enter a title and details, then submit to file your request.",
           "flow": {
+            "step_intro": "Next: the {{step}} step.",
             "wizard": "A request is completed through a 5-step wizard, in order.",
             "detail": "Once you fill in line, recipe, product and process, the disabled sections below become editable.",
             "required": "Fields marked with a red * are required — fill them in before moving on.",

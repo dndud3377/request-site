@@ -19,31 +19,43 @@ const RK = 'guide.tour.steps.request.flow';
  */
 export function useGuideTourSteps(): GuideTourStep[] {
   const { t } = useTranslation();
-  return useMemo(
-    () => [
+  return useMemo(() => {
+    const cap = (k: string) => t(`${RK}.${k}` as never) as string;
+    const intro = (nameKey: string) =>
+      t(`${RK}.step_intro` as never, { step: t(nameKey as never) }) as string;
+    return [
       {
         key: 'request' as const,
         title: t('guide.tour.steps.request.title'),
         description: t('guide.tour.steps.request.description'),
         path: '/request',
         phases: [
-          { wizardStep: 1, selector: '.wizard-indicator', captionKey: `${RK}.wizard`, hold: 3000 },
-          { wizardStep: 1, selector: '[data-tour="line-fields"]', captionKey: `${RK}.detail`, hold: 3500 },
-          { wizardStep: 1, selector: '.required', captionKey: `${RK}.required`, hold: 3000 },
-          { wizardStep: 2, selector: '.guide-badge', captionKey: `${RK}.map`, hold: 3000 },
-          { wizardStep: 3, cmd: 'jayer-demo', selector: '.wizard-table', captionKey: `${RK}.jayer_auto`, hold: 6500 },
-          { wizardStep: 3, selector: '[data-tour="jayer-filter"]', captionKey: `${RK}.jayer_filter`, hold: 3000 },
-          { wizardStep: 4, selector: '[data-tour="oayer-tabs"]', captionKey: `${RK}.oayer`, hold: 3000 },
-          { wizardStep: 5, cmd: 'bb-demo', selector: '[data-tour="bb-autofill"]', captionKey: `${RK}.bb_autofill`, hold: 4500 },
-          { wizardStep: 5, selector: '.bb-split-panel', captionKey: `${RK}.bb_mapping`, hold: 3500 },
-          { wizardStep: 5, cmd: 'open-submit', selector: '[data-tour="submit-note"]', captionKey: `${RK}.submit_note`, hold: 3500 },
-          { wizardStep: 5, selector: '[data-tour="submit-designee"]', captionKey: `${RK}.submit_designee`, hold: 3500 },
-          { wizardStep: 5, cmd: 'submitted', captionKey: `${RK}.submitted`, hold: 3200 },
+          // Step 1 — 의뢰 상세
+          { wizardStep: 1, caption: intro('request.section_detail'), hold: 2300 },
+          { wizardStep: 1, selector: '.wizard-indicator', caption: cap('wizard'), hold: 3000 },
+          { wizardStep: 1, selector: '[data-tour="line-fields"]', caption: cap('detail'), hold: 3500 },
+          { wizardStep: 1, selector: '.required', caption: cap('required'), hold: 3000 },
+          // Step 2 — MAP 정보
+          { wizardStep: 2, caption: intro('request.section_map'), hold: 2300 },
+          { wizardStep: 2, selector: '.guide-badge', caption: cap('map'), hold: 3000 },
+          // Step 3 — J-ayer
+          { wizardStep: 3, caption: intro('request.job_li'), hold: 2300 },
+          { wizardStep: 3, cmd: 'jayer-demo', overlayDemo: 'jayer', caption: cap('jayer_auto'), hold: 9000 },
+          { wizardStep: 3, selector: '[data-tour="jayer-filter"]', caption: cap('jayer_filter'), hold: 3000 },
+          // Step 4 — O-ayer
+          { wizardStep: 4, caption: intro('request.ovl_li'), hold: 2300 },
+          { wizardStep: 4, selector: '[data-tour="oayer-tabs"]', caption: cap('oayer'), hold: 3000 },
+          // Step 5 — 뼈찜(BB)
+          { wizardStep: 5, caption: intro('request.bb_li'), hold: 2300 },
+          { wizardStep: 5, cmd: 'bb-demo', selector: '[data-tour="bb-autofill"]', caption: cap('bb_autofill'), hold: 4500 },
+          { wizardStep: 5, selector: '.bb-split-panel', caption: cap('bb_mapping'), hold: 3500 },
+          { wizardStep: 5, cmd: 'open-submit', selector: '[data-tour="submit-note"]', caption: cap('submit_note'), hold: 3500 },
+          { wizardStep: 5, selector: '[data-tour="submit-designee"]', caption: cap('submit_designee'), hold: 3500 },
+          { wizardStep: 5, cmd: 'submitted', caption: cap('submitted'), hold: 3200 },
         ],
       },
-    ],
-    [t]
-  );
+    ];
+  }, [t]);
 }
 
 interface Props {
@@ -174,8 +186,8 @@ const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
                   className={`guide-tour-chapter${i === phaseIdx ? ' active' : ''}`}
                   style={{ flexGrow: durations[i] }}
                   onClick={() => seekTo(i)}
-                  title={t(p.captionKey as never)}
-                  aria-label={t(p.captionKey as never)}
+                  title={p.caption}
+                  aria-label={p.caption}
                 >
                   <span className="guide-tour-chapter-fill" style={{ width: `${fill * 100}%` }} />
                 </button>
