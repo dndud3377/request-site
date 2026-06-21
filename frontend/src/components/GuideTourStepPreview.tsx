@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import Step3JayerTableDemo from './guideDemos/Step3JayerTableDemo';
 
 /** 한 phase = 위저드 단계 이동(선택) + 명령(선택) + 요소 강조 + 캡션 */
 export interface TourPhase {
@@ -7,18 +7,17 @@ export interface TourPhase {
   wizardStep?: number;
   /** iframe(투어 모드)로 보낼 명령 (jayer-demo / bb-demo / open-submit / submitted) */
   cmd?: string;
-  /** 강조할 요소 선택자 (없으면 캡션만 중앙 표시) */
+  /** 강조할 요소 선택자 (없으면 캡션만 표시) */
   selector?: string;
-  /** 설명 캡션 i18n 키 */
-  captionKey: string;
+  /** 미리보기 위에 띄울 빌트인 데모 (예: 'jayer') */
+  overlayDemo?: 'jayer';
+  /** 설명 캡션 (이미 번역된 문자열) */
+  caption: string;
   /** 이 phase 표시 시간(ms) */
   hold?: number;
 }
 
-interface SeekSignal {
-  index: number;
-  nonce: number;
-}
+interface SeekSignal { index: number; nonce: number; }
 
 interface Props {
   path: string;
@@ -37,13 +36,11 @@ const STEP_SWITCH_MS = 800;
 const CMD_LEAD_MS = 900;
 const LOOP_DELAY_MS = 1200;
 const EL_WAIT_MS = 2600;
-/** 미리보기 최대 높이 (컨트롤 버튼까지 한 화면에 보이도록 뷰포트의 일부만 사용) */
 const MAX_PREVIEW_VH = 0.52;
 
 interface Rect { top: number; left: number; width: number; height: number; }
 
 const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, onPhaseChange, seek }) => {
-  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -51,6 +48,8 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
   const [loaded, setLoaded] = useState(false);
   const [rect, setRect] = useState<Rect | null>(null);
   const [caption, setCaption] = useState('');
+  const [overlayDemo, setOverlayDemo] = useState<'jayer' | null>(null);
+  const [fadeKey, setFadeKey] = useState(0);
 
   const pausedRef = useRef(paused);
   useEffect(() => { pausedRef.current = paused; }, [paused]);
@@ -58,16 +57,12 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
   const onPhaseChangeRef = useRef(onPhaseChange);
   useEffect(() => { onPhaseChangeRef.current = onPhaseChange; }, [onPhaseChange]);
 
-  // 부모가 seek 요청 시 다음 루프 반복에서 해당 phase로 점프
   const seekRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (seek) seekRef.current = seek.index;
-  }, [seek?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (seek) seekRef.current = seek.index; }, [seek?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const initialStep = phases.find((p) => p.wizardStep)?.wizardStep ?? 1;
   const src = `${path}?embed=tour&step=${initialStep}`;
 
-  // 너비 + 높이 제한을 모두 만족하는 축소 비율
   useEffect(() => {
     const update = () => {
       const w = containerRef.current?.parentElement?.clientWidth ?? VIEWPORT_W * 0.5;
@@ -95,7 +90,6 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
         elapsed += tick;
       }
     };
-
     const getDoc = (): Document | null => {
       try { return iframeRef.current?.contentDocument ?? null; } catch { return null; }
     };
@@ -111,10 +105,7 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
       return getDoc()?.querySelector<HTMLElement>(selector) ?? null;
     };
     const sendCmd = (payload: Record<string, unknown>) => {
-      iframeRef.current?.contentWindow?.postMessage(
-        { type: 'guide-tour-cmd', ...payload },
-        window.location.origin
-      );
+      iframeRef.current?.contentWindow?.postMessage({ type: 'guide-tour-cmd', ...payload }, window.location.origin);
     };
 
     const run = async (): Promise<void> => {
@@ -126,7 +117,11 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
         if (seekRef.current != null) { i = seekRef.current; seekRef.current = null; }
         const phase = phases[i];
         onPhaseChangeRef.current?.(i);
+        // 전환: 이전 강조/캡션/오버레이를 모두 비우고 밝기 페이드 트리거 (#1 #2)
         setRect(null);
+        setCaption('');
+        setOverlayDemo(null);
+        setFadeKey((k) => k + 1);
 
         const ws = phase.wizardStep ?? currentStep;
         if (ws !== currentStep) {
@@ -136,14 +131,12 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
           if (cancelled) return;
           if (seekRef.current != null) continue;
         }
-
         if (phase.cmd) {
           sendCmd({ cmd: phase.cmd });
           await wait(CMD_LEAD_MS);
           if (cancelled) return;
           if (seekRef.current != null) continue;
         }
-
         if (phase.selector) {
           const el = await waitForEl(phase.selector);
           if (cancelled) return;
@@ -155,13 +148,10 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
             if (seekRef.current != null) continue;
             const r = el.getBoundingClientRect();
             setRect({ top: r.top * scale, left: r.left * scale, width: r.width * scale, height: r.height * scale });
-          } else {
-            setRect(null);
           }
-        } else {
-          setRect(null);
         }
-        setCaption(t(phase.captionKey as never));
+        setOverlayDemo(phase.overlayDemo ?? null);
+        setCaption(phase.caption);
 
         await wait(phase.hold ?? DEFAULT_HOLD_MS);
         if (cancelled) return;
@@ -174,18 +164,15 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
 
     run();
     return () => { cancelled = true; };
-  }, [active, loaded, scale, phases, t, initialStep]);
+  }, [active, loaded, scale, phases, initialStep]);
 
   const cursor = rect ? { x: rect.left + rect.width * 0.5, y: rect.top + rect.height * 0.5 } : null;
   const frameW = VIEWPORT_W * scale;
   const frameH = VIEWPORT_H * scale;
+  const captionPos = rect ? 'anchored' : overlayDemo ? 'bottom' : 'center';
 
   return (
-    <div
-      className="guide-tour-preview-frame"
-      ref={containerRef}
-      style={{ width: frameW, height: frameH, margin: '0 auto' }}
-    >
+    <div className="guide-tour-preview-frame" ref={containerRef} style={{ width: frameW, height: frameH, margin: '0 auto' }}>
       <iframe
         ref={iframeRef}
         className="guide-tour-iframe"
@@ -195,14 +182,11 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
         onLoad={() => setLoaded(true)}
       />
 
-      {rect && (
-        <div
-          className="guide-tour-spotlight"
-          style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }}
-        />
+      {rect && !overlayDemo && (
+        <div className="guide-tour-spotlight" style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }} />
       )}
 
-      {cursor && (
+      {cursor && !overlayDemo && (
         <div className="guide-tour-cursor" style={{ transform: `translate(${cursor.x}px, ${cursor.y}px)` }}>
           <svg width="22" height="22" viewBox="0 0 22 22">
             <path d="M2 2 L2 17 L6.2 13 L9 19 L11.4 18 L8.6 12 L14 12 Z" fill="#fff" stroke="#1a1a2e" strokeWidth="1.3" strokeLinejoin="round" />
@@ -210,10 +194,18 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
         </div>
       )}
 
+      {overlayDemo === 'jayer' && (
+        <div className="guide-tour-demo-overlay">
+          <div className="guide-tour-demo-card">
+            <Step3JayerTableDemo />
+          </div>
+        </div>
+      )}
+
       {caption && (
         <div
-          className={`guide-tour-caption${rect ? '' : ' center'}`}
-          style={rect ? {
+          className={`guide-tour-caption ${captionPos}`}
+          style={captionPos === 'anchored' && rect ? {
             top: Math.min(rect.top + rect.height + 8, frameH - 56),
             left: Math.max(8, Math.min(rect.left, frameW - 320)),
           } : undefined}
@@ -221,6 +213,9 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
           {caption}
         </div>
       )}
+
+      {/* PPT 슬라이드쇼식 밝기 전환 (#2) */}
+      <div className="guide-tour-fade" key={fadeKey} />
 
       {!loaded && <div className="guide-tour-preview-loading" />}
     </div>
