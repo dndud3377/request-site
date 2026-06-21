@@ -3954,16 +3954,6 @@ select.form-control option {
 }
 .guide-tour-skip:hover { color: #5b647a; }
 
-/* 중앙 캡션 (강조 대상이 없는 phase) */
-.guide-tour-caption.center {
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  max-width: 70%;
-  text-align: center;
-  font-size: 14px;
-}
-
 /* 동영상형 챕터 타임라인 */
 .guide-tour-timeline {
   display: flex;
@@ -4003,5 +3993,62 @@ select.form-control option {
   width: 0;
   background: #4f8ef7;
   border-radius: 4px;
+}
+
+/* 캡션 위치 변형 */
+.guide-tour-caption { z-index: 9; }
+.guide-tour-caption.center {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 72%;
+  text-align: center;
+  font-size: 14px;
+}
+.guide-tour-caption.bottom {
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 82%;
+  text-align: center;
+  font-size: 13px;
+}
+
+/* PPT 슬라이드쇼식 밝기 전환 */
+.guide-tour-fade {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 12;
+  animation: guideTourFlash 0.5s ease;
+}
+@keyframes guideTourFlash {
+  0% { opacity: 0; }
+  28% { opacity: 0.4; }
+  100% { opacity: 0; }
+}
+
+/* J-ayer 빌트인 데모 오버레이 */
+.guide-tour-demo-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  background: rgba(244, 246, 250, 0.97);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.guide-tour-demo-card {
+  width: min(560px, 92%);
+  max-height: 94%;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #e8ecf2;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(15, 17, 26, 0.18);
+  padding: 16px 18px;
 }
 
