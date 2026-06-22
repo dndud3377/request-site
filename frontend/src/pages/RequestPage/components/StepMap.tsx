@@ -83,7 +83,7 @@ const StepMap: React.FC<StepMapProps> = ({
       <div className="form-grid">
 
         {/* 요청 목적 (신규/차용/기등록) */}
-        <div className="full-width">
+        <div className="full-width" data-tour="map-purpose">
           <label className="form-label">
             {t('request.map_type')} <span className="required">*</span>
             <GuideBadge fk="step2_map_type" tk={t('guide.feat.step2_map_type' as never)} />
@@ -139,7 +139,7 @@ const StepMap: React.FC<StepMapProps> = ({
         )}
 
         {/* Only C가문 제품 */}
-        <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div className="full-width" data-tour="map-cfamily" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
             <label className="form-label">{t('request.prodc_status')}<GuideBadge fk="step2_cfamily" tk={t('guide.feat.step2_cfamily' as never)} /></label>
             <select
@@ -364,7 +364,7 @@ const StepMap: React.FC<StepMapProps> = ({
             </div>
           </div>
         ) : (
-          <div className="full-width flex-row">
+          <div className="full-width flex-row" data-tour="map-deviation">
             <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
               <label className="form-label">{t('request.map')}<GuideBadge fk="step2_map_deviation" tk={t('guide.feat.step2_map_deviation' as never)} /></label>
               <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange} disabled={isMapRegistered}>
@@ -391,7 +391,7 @@ const StepMap: React.FC<StepMapProps> = ({
         )}
 
         {/* 예외 구역 */}
-        <div className="full-width flex-row">
+        <div className="full-width flex-row" data-tour="map-exception">
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
             <label className="form-label">{t('request.ea_change')}<GuideBadge fk="step2_exception_zone" tk={t('guide.feat.step2_exception_zone' as never)} /></label>
             <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange} disabled={isMapRegistered}>
@@ -408,7 +408,7 @@ const StepMap: React.FC<StepMapProps> = ({
         </div>
 
         {/* X표시 변경 여부 */}
-        <div className="form-group full-width">
+        <div className="form-group full-width" data-tour="map-xmark">
           <label className="form-label">{t('request.mshot_change_status')}<GuideBadge fk="step2_xmark" tk={t('guide.feat.step2_xmark' as never)} /></label>
           <div style={{ width: SELECT_W }}>
             <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={handleDetailChange} disabled={isMapRegistered}>
