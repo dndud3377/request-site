@@ -14,9 +14,9 @@ import { RequestDocument, AgentType, UserRole, UserWithRole } from '../types';
 import { formatDate } from '../utils/date';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC } from './approvalTourSeed';
 
-// 전체 가이드 상세 모달에서 J/O/BB export 페이지로 이동하기 위한 페이지 인덱스
+// 전체 가이드 상세 모달에서 특정 페이지로 이동하기 위한 페이지 인덱스
 // (MASTER 역할 기준 페이지 순서: 0 상세 · 1 MAP · 2 JOB · 3 OVL · 4 BB · 5 결재 경로)
-const TOUR_PAGE_IDX: Record<string, number> = { jayer: 2, oayer: 3, bb: 4 };
+const TOUR_PAGE_IDX: Record<string, number> = { jayer: 2, route: 5 };
 
 const AGENT_TO_ROLE: Record<string, string> = {
   R: 'TE_R',
@@ -233,6 +233,9 @@ export default function ApprovalPage(): React.ReactElement {
 
   // 전체 가이드 투어 모드: /approval?embed=tour — 샘플 데이터로 결재 현황을 시연한다.
   const isTourMode = new URLSearchParams(location.search).get('embed') === 'tour';
+  // 투어에서 제목을 '실제로 클릭'하는 모습을 보여주기 위한 가짜 커서
+  const [tourCursor, setTourCursor] = useState<{ x: number; y: number } | null>(null);
+  const [tourClicking, setTourClicking] = useState(false);
 
   const [docs, setDocs] = useState<RequestDocument[]>([]);
   const [allDocs, setAllDocs] = useState<RequestDocument[]>([]);
@@ -357,17 +360,59 @@ export default function ApprovalPage(): React.ReactElement {
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
 
-  // 전체 가이드(투어) 명령 수신: MY 필터 클릭 → 상세 열기 → J/O/BB export 페이지 이동
+  // 전체 가이드(투어) 명령 수신: MY 필터 → 제목 클릭(커서)으로 상세 열기 → J-ayer export → 결재 경로 탭
   useEffect(() => {
     if (!isTourMode) return;
+    let activeTok: { cancelled: boolean } | null = null;
+    let paused = false;
+    const rawSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    // 일시정지를 반영하는 sleep — paused 동안 멈췄다가 재생 시 이어서 진행한다.
+    const sleep = async (ms: number) => {
+      let elapsed = 0;
+      while (elapsed < ms) {
+        if (paused) { await rawSleep(60); continue; }
+        await rawSleep(60);
+        elapsed += 60;
+      }
+    };
+
+    // 커서를 의뢰 제목으로 이동(스크롤로 보이게) → 눌러서 상세 모달을 연다.
+    const runOpenDetail = async (tok: { cancelled: boolean }) => {
+      setTourCursor(null);
+      setTourClicking(false);
+      await sleep(400); if (tok.cancelled) return;
+      const el = document.querySelector('[data-tour="approval-doc-title"]') as HTMLElement | null;
+      if (el) { el.scrollIntoView({ block: 'center', inline: 'nearest' }); await sleep(320); if (tok.cancelled) return; }
+      const r = el?.getBoundingClientRect();
+      if (r) setTourCursor({ x: r.left + r.width * 0.5, y: r.top + r.height * 0.5 });
+      await sleep(650); if (tok.cancelled) return;
+      setTourClicking(true);
+      el?.classList.add('tour-pressed');
+      await sleep(300); if (tok.cancelled) return;
+      setTourClicking(false);
+      el?.classList.remove('tour-pressed');
+      setSelected(TOUR_APPROVAL_DETAIL_DOC);
+      setPageIdx(0);
+      setModalOpen(true);
+      await sleep(300);
+      setTourCursor(null);
+    };
+
     const onMsg = (e: MessageEvent) => {
       if (e.origin !== window.location.origin) return;
       const d = e.data;
       if (!d || d.type !== 'guide-tour-cmd') return;
+      if (d.cmd === 'pause') { paused = true; return; }
+      if (d.cmd === 'resume') { paused = false; return; }
+      if (activeTok) activeTok.cancelled = true;
+      const tok = { cancelled: false };
+      activeTok = tok;
       switch (d.cmd) {
         case 'tour-reset':
           setModalOpen(false);
           setFilter('');
+          setTourCursor(null);
+          setTourClicking(false);
           break;
         case 'my-filter':
           setFilter('my');
@@ -376,21 +421,23 @@ export default function ApprovalPage(): React.ReactElement {
           setFilter('');
           break;
         case 'open-detail':
-          setSelected(TOUR_APPROVAL_DETAIL_DOC);
-          setPageIdx(0);
-          setModalOpen(true);
+          runOpenDetail(tok);
           break;
         case 'page-jayer':
-        case 'page-oayer':
-        case 'page-bb':
-          setPageIdx(TOUR_PAGE_IDX[d.cmd.replace('page-', '')] ?? 0);
+          setPageIdx(TOUR_PAGE_IDX.jayer);
+          break;
+        case 'page-route':
+          setPageIdx(TOUR_PAGE_IDX.route);
           break;
         default:
           break;
       }
     };
     window.addEventListener('message', onMsg);
-    return () => window.removeEventListener('message', onMsg);
+    return () => {
+      window.removeEventListener('message', onMsg);
+      if (activeTok) activeTok.cancelled = true;
+    };
   }, [isTourMode]);
 
   useEffect(() => {
@@ -661,9 +708,15 @@ export default function ApprovalPage(): React.ReactElement {
                       {idx === 0 && (
                         <td rowSpan={rows.length}>
                           {isNone ? (
-                            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{doc.title}</span>
+                            <span
+                              data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-doc-title' : undefined}
+                              style={{ fontWeight: 600, fontSize: '0.9rem' }}
+                            >
+                              {doc.title}
+                            </span>
                           ) : (
                             <button
+                              data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-doc-title' : undefined}
                               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 600, fontSize: '0.9rem', textAlign: 'left', padding: 0 }}
                               onClick={() => openDetail(doc)}
                             >
@@ -1063,6 +1116,16 @@ export default function ApprovalPage(): React.ReactElement {
           </div>
         )}
       </Modal>
+
+      {/* 전체 가이드 데모: 제목을 실제로 클릭하는 모습을 보여주는 가짜 커서 */}
+      {isTourMode && tourCursor && (
+        <div className={`tour-jcursor${tourClicking ? ' clicking' : ''}`} style={{ transform: `translate(${tourCursor.x}px, ${tourCursor.y}px)` }}>
+          {tourClicking && <span className="tour-jcursor-ripple" />}
+          <svg width="22" height="22" viewBox="0 0 22 22">
+            <path d="M2 2 L2 17 L6.2 13 L9 19 L11.4 18 L8.6 12 L14 12 Z" fill="#fff" stroke="#1a1a2e" strokeWidth="1.3" strokeLinejoin="round" />
+          </svg>
+        </div>
+      )}
     </div>
   );
 }
