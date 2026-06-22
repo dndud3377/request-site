@@ -121,9 +121,7 @@ export default function RequestPage(): React.ReactElement {
   const tourRef = useRef<{
     jayerRows: JayerRow[];
     bbExternalData: PhotoStepOption[][];
-    bbAutoFillRanges: BbAutoFillRange[];
     handleOpenAutoFillPanel: () => void;
-    handleRangeChange: (id: string, field: keyof BbAutoFillRange, value: string) => void;
     handleApplyAutoFill: () => void;
     handleStageMapping: (item: ExternalBbDataItem) => void;
     handleApplyMappings: () => void;
@@ -423,6 +421,7 @@ export default function RequestPage(): React.ReactElement {
 
   // bb_entries 변경 시 외부 데이터 로드
   useEffect(() => {
+    if (isTourMode) return; // 투어 모드는 시드(makeTourBbExternalData)를 유지 — API 빈 결과로 덮어쓰지 않음
     if (detail.bb_entries.length === 0) return;
     setBbExternalLoading(true);
     Promise.all(detail.bb_entries.map((entry) => formOptionsAPI.getBbExternalData(entry)))
@@ -567,7 +566,7 @@ export default function RequestPage(): React.ReactElement {
       setDetail((d) => ({ ...d, only_prodc: 'No', rev_yn: '', rev_entries: [] }));
     };
 
-    // BB 자동 채움: 패널 열기 → 커서로 시작/종료 Layer·제품(BB제품1) 범위 선택 → 적용(매칭 행 생성)
+    // BB 자동 채움: 패널 열기 → 적용 (실제 핸들러로 BB제품1 매칭 행 생성, 커서 연출 없음)
     const runBbAutofill = async (tok: { cancelled: boolean }) => {
       setShowAutoFillPanel(false);
       setBbRows([]);
@@ -576,27 +575,19 @@ export default function RequestPage(): React.ReactElement {
       setTourJCursor(null);
       await sleep(500); if (tok.cancelled) return;
       tourRef.current?.handleOpenAutoFillPanel();   // 범위 1개 시드(10~50, BB제품1)
-      await sleep(900); if (tok.cancelled) return;
-
-      const rangeId = tourRef.current?.bbAutoFillRanges[0]?.id;
-      // 커서로 범위를 선택하는 모습 — BB제품1은 Layer 10~30 담당
-      await moveCursor('[data-bbtour="range-from"]'); if (tok.cancelled) return;
-      await moveCursor('[data-bbtour="range-to"]'); if (tok.cancelled) return;
-      if (rangeId) tourRef.current?.handleRangeChange(rangeId, 'layerTo', '30');
-      await sleep(500); if (tok.cancelled) return;
-      await moveCursor('[data-bbtour="range-product"]'); if (tok.cancelled) return;
-      await sleep(400); if (tok.cancelled) return;
-      await moveCursor('[data-bbtour="autofill-apply"]'); if (tok.cancelled) return;
+      await sleep(1200); if (tok.cancelled) return;
       tourRef.current?.handleApplyAutoFill();        // BB제품1 3행 생성
       await sleep(700);
-      setTourJCursor(null);
     };
 
-    // BB 매핑: 커서로 원본 행(Layer 40·50) 선택 → BB제품2 탭 외부데이터 매핑 → 적용(아래에 BB제품2 행 추가)
+    // BB 매핑: 커서로 BB제품2 탭 클릭 → 원본 행(Layer 40·50) 선택 → 외부데이터 매핑 → 적용(아래에 BB제품2 행 추가)
     const runBbMapping = async (tok: { cancelled: boolean }) => {
-      setActiveBbTab(1);
       setTourJCursor(null);
-      await sleep(600); if (tok.cancelled) return;
+      await sleep(500); if (tok.cancelled) return;
+      // 외부 데이터 탭을 커서로 BB제품2로 전환하는 모습
+      await moveCursor('[data-bbtour="bbtab-1"]'); if (tok.cancelled) return;
+      setActiveBbTab(1);
+      await sleep(500); if (tok.cancelled) return;
 
       const mapOne = async (layer: string): Promise<boolean> => {
         const target = tourRef.current?.jayerRows.find((r) => !r.disabled && r.layerid === layer);
@@ -1684,9 +1675,7 @@ export default function RequestPage(): React.ReactElement {
     tourRef.current = {
       jayerRows,
       bbExternalData,
-      bbAutoFillRanges,
       handleOpenAutoFillPanel,
-      handleRangeChange,
       handleApplyAutoFill,
       handleStageMapping,
       handleApplyMappings,

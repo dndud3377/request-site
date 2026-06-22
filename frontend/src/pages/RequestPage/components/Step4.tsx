@@ -165,7 +165,6 @@ const Step4: React.FC<Step4Props> = ({
             >
               <span style={{ fontSize: 13, minWidth: 50 }}>범위 {idx + 1}:</span>
               <select
-                data-bbtour="range-from"
                 value={range.layerFrom}
                 onChange={(e) => handleRangeChange(range.id, 'layerFrom', e.target.value)}
                 style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
@@ -179,7 +178,6 @@ const Step4: React.FC<Step4Props> = ({
               </select>
               <span>~</span>
               <select
-                data-bbtour="range-to"
                 value={range.layerTo}
                 onChange={(e) => handleRangeChange(range.id, 'layerTo', e.target.value)}
                 style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
@@ -192,7 +190,6 @@ const Step4: React.FC<Step4Props> = ({
                   ))}
               </select>
               <select
-                data-bbtour="range-product"
                 value={range.productId}
                 onChange={(e) => handleRangeChange(range.id, 'productId', e.target.value)}
                 style={{ padding: '4px 8px', fontSize: 13, minWidth: 120 }}
@@ -223,7 +220,6 @@ const Step4: React.FC<Step4Props> = ({
             <button
               type="button"
               className="btn btn-primary"
-              data-bbtour="autofill-apply"
               onClick={handleApplyAutoFill}
               style={{ fontSize: 13, padding: '6px 12px' }}
             >
@@ -321,6 +317,7 @@ const Step4: React.FC<Step4Props> = ({
               <button
                 key={idx}
                 type="button"
+                data-bbtour={`bbtab-${idx}`}
                 className={`bb-tab${activeBbTab === idx ? ' bb-tab-active' : ''}`}
                 onClick={() => setActiveBbTab(idx)}
               >
