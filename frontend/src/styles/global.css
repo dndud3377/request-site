@@ -4070,6 +4070,12 @@ select.form-control option {
   0% { transform: translate(-50%, -50%) scale(0.2); opacity: 0.7; }
   100% { transform: translate(-50%, -50%) scale(2.4); opacity: 0; }
 }
+/* 투어 데모에서 버튼을 '누르는' 순간의 눌림 효과 */
+.tour-pressed {
+  transform: scale(0.94) !important;
+  filter: brightness(0.88);
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
 .tour-jchip {
   position: fixed;
   z-index: 1200;
@@ -4085,40 +4091,41 @@ select.form-control option {
   animation: guideTourReveal 0.2s ease both;
 }
 
-/* 결재 경로 다이어그램 (전체 가이드 전용) */
+/* 결재 경로 다이어그램 (전체 가이드 전용) — 미리보기를 크게 꽉 채운다 */
 .route-diagram {
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-card);
-  padding: 16px 20px;
-  margin-bottom: 20px;
+  padding: 32px 36px;
+  margin-bottom: 24px;
 }
 .route-diagram-title {
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: 1.6rem;
+  font-weight: 800;
   color: var(--accent);
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 .route-diagram-desc {
-  font-size: 0.82rem;
+  font-size: 1.05rem;
   color: var(--text-muted);
-  margin-bottom: 14px;
+  margin-bottom: 28px;
 }
 .route-diagram-flow {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  justify-content: center;
+  gap: 18px;
 }
 .route-diagram-box {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 64px;
-  padding: 8px 12px;
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-sm);
-  background: rgba(37, 99, 235, 0.06);
+  min-width: 130px;
+  padding: 20px 26px;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: rgba(37, 99, 235, 0.07);
 }
 .route-diagram-box.dim {
   border-style: dashed;
@@ -4127,7 +4134,7 @@ select.form-control option {
   opacity: 0.75;
 }
 .route-diagram-code {
-  font-size: 0.9rem;
+  font-size: 2rem;
   font-weight: 800;
   color: var(--accent);
 }
@@ -4135,41 +4142,43 @@ select.form-control option {
   color: var(--text-muted);
 }
 .route-diagram-label {
-  font-size: 0.72rem;
+  font-size: 1.05rem;
+  font-weight: 600;
   color: var(--text-secondary);
+  margin-top: 4px;
 }
 .route-diagram-arrow,
 .route-diagram-plus {
-  font-size: 1.1rem;
+  font-size: 1.9rem;
   font-weight: 700;
   color: var(--text-muted);
 }
 .route-diagram-parallel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 18px;
 }
 .route-diagram-path {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 14px;
 }
 .route-diagram-path-tag {
-  font-size: 0.7rem;
+  font-size: 0.95rem;
   font-weight: 700;
   color: var(--text-muted);
   background: var(--bg-secondary);
-  border-radius: 10px;
-  padding: 2px 8px;
-  margin-right: 2px;
+  border-radius: 12px;
+  padding: 4px 14px;
+  margin-right: 4px;
 }
 .route-diagram-notes {
-  margin: 14px 0 0;
-  padding-left: 18px;
+  margin: 28px 0 0;
+  padding-left: 22px;
 }
 .route-diagram-notes li {
-  font-size: 0.78rem;
+  font-size: 1rem;
   color: var(--text-muted);
-  line-height: 1.6;
+  line-height: 1.9;
 }
 
