@@ -117,6 +117,8 @@ export default function RequestPage(): React.ReactElement {
   // 전체 가이드 J-ayer 데모: 실제 표 위에 떠 있는 가짜 커서 + Ctrl C/V 칩
   const [tourJCursor, setTourJCursor] = useState<{ x: number; y: number } | null>(null);
   const [tourJChip, setTourJChip] = useState<{ kind: 'copy' | 'paste'; x: number; y: number } | null>(null);
+  // BB 적용 버튼을 커서로 '누르는' 순간의 클릭 애니메이션 표시 여부
+  const [tourJClicking, setTourJClicking] = useState(false);
   // 가이드 BB 데모에서 최신 핸들러/상태를 stale-closure 없이 호출하기 위한 참조
   const tourRef = useRef<{
     jayerRows: JayerRow[];
@@ -559,13 +561,6 @@ export default function RequestPage(): React.ReactElement {
       setTourJCursor(null);
     };
 
-    // MAP: C가문 여부를 Yes로 켰다가 다시 No로 되돌리는 토글 연출
-    const runMapCfamily = async (tok: { cancelled: boolean }) => {
-      setDetail((d) => ({ ...d, only_prodc: 'Yes' }));
-      await sleep(1100); if (tok.cancelled) return;
-      setDetail((d) => ({ ...d, only_prodc: 'No', rev_yn: '', rev_entries: [] }));
-    };
-
     // BB 자동 채움: 패널 열기 → 적용 (실제 핸들러로 BB제품1 매칭 행 생성, 커서 연출 없음)
     const runBbAutofill = async (tok: { cancelled: boolean }) => {
       setShowAutoFillPanel(false);
@@ -615,7 +610,11 @@ export default function RequestPage(): React.ReactElement {
       if (tok.cancelled) return;
 
       await moveCursor('[data-bbtour="map-apply"]'); if (tok.cancelled) return;
-      tourRef.current?.handleApplyMappings();        // BB제품2 2행 추가 → 결과표에 두 제품 모두 반영
+      await sleep(350); if (tok.cancelled) return;     // 적용 버튼 위에서 잠깐 멈춤
+      setTourJClicking(true);                          // 커서 눌림 애니
+      await sleep(280); if (tok.cancelled) return;
+      setTourJClicking(false);
+      tourRef.current?.handleApplyMappings();          // BB제품2 2행 추가 → 결과표에 두 제품 모두 반영
       await sleep(700);
       setTourJCursor(null);
     };
@@ -641,6 +640,7 @@ export default function RequestPage(): React.ReactElement {
           setShowAutoFillPanel(false);
           setTourJCursor(null);
           setTourJChip(null);
+          setTourJClicking(false);
           if (typeof d.step === 'number') setStep(Math.min(5, Math.max(1, d.step)));
           break;
         case 'map-reset':
@@ -658,9 +658,6 @@ export default function RequestPage(): React.ReactElement {
             ea_value: '',
             mshot_change: '없음',
           }));
-          break;
-        case 'map-cfamily':
-          runMapCfamily(tok);
           break;
         case 'map-deviation':
           setDetail((dd) => ({ ...dd, map_change: '변경 있음', map_value_x: '1.2', map_value_y: '0.8', map_reason: '신규 라인 보정' }));
@@ -2734,7 +2731,8 @@ export default function RequestPage(): React.ReactElement {
 
       {/* 전체 가이드 데모: 실제 표/패널 위에 떠 있는 가짜 커서 + 복사/붙여넣기 칩 (J-ayer step3 · BB step5) */}
       {isTourMode && (step === 3 || step === 5) && tourJCursor && (
-        <div className="tour-jcursor" style={{ transform: `translate(${tourJCursor.x}px, ${tourJCursor.y}px)` }}>
+        <div className={`tour-jcursor${tourJClicking ? ' clicking' : ''}`} style={{ transform: `translate(${tourJCursor.x}px, ${tourJCursor.y}px)` }}>
+          {tourJClicking && <span className="tour-jcursor-ripple" />}
           <svg width="22" height="22" viewBox="0 0 22 22">
             <path d="M2 2 L2 17 L6.2 13 L9 19 L11.4 18 L8.6 12 L14 12 Z" fill="#fff" stroke="#1a1a2e" strokeWidth="1.3" strokeLinejoin="round" />
           </svg>
