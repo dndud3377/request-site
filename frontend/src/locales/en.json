@@ -414,6 +414,7 @@
       "start": "Get Started",
       "pause": "Pause",
       "resume": "Play",
+      "close": "Close",
       "progress": "{{current}}/{{total}}",
       "steps": {
         "request": {
