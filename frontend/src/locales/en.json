@@ -435,7 +435,14 @@
             "submitted": "On submit, a 'Request submitted' notification appears and approval begins.",
             "submit_note_sample": "Requesting review for the new line introduction.",
             "submit_designee_sample": "Gildong Hong (Reviewer PL)",
-            "submitted_toast": "Your request has been submitted."
+            "submitted_toast": "Your request has been submitted.",
+            "map_purpose": "First choose the correct MAP purpose (new / clone / registered).",
+            "map_cfamily": "Enter values that match the product. For a C-family product switch to 'Yes' to fill the extra fields, otherwise switch back to 'No'.",
+            "map_deviation": "If the map has a deviation, switch to 'Has change' and enter the X/Y correction values and reason.",
+            "map_exception": "If there is an exception zone, switch to 'Has change' and enter the exception zone value.",
+            "map_xmark_photo": "If the X-mark changes, pick the option and paste an actual photo into the change area.",
+            "oayer_info_tbvtlv": "The 'Info' tab holds Partial Shot and TBV/TLV. TBV/TLV only appears when the O-ayer table contains TBV/TLV items.",
+            "submit_combined": "On submit you can add notes and must designate a reviewer (PL) before submitting."
           }
         }
       }
