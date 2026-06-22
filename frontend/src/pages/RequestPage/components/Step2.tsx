@@ -224,9 +224,9 @@ const Step2: React.FC<Step2Props> = ({
                         dropdownDirection="up"
                       />
                     </td>
-                    <td {...cellProps('product_name', isRegistered ? regBg : undefined)}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                    <td {...cellProps('step', isRegistered ? regBg : undefined)}><input value={row.step} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                    <td {...cellProps('item_id', isRegistered ? regBg : undefined, { minWidth: 160 })}>
+                    <td data-jtour={`product_name-${idx}`} {...cellProps('product_name', isRegistered ? regBg : undefined)}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td data-jtour={`step-${idx}`} {...cellProps('step', isRegistered ? regBg : undefined)}><input value={row.step} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
+                    <td data-jtour={`item_id-${idx}`} {...cellProps('item_id', isRegistered ? regBg : undefined, { minWidth: 160 })}>
                       <AutocompleteInput
                         value={row.item_id}
                         onChange={(v) => handleJayerChange(row.id, 'item_id', v)}
