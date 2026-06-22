@@ -113,7 +113,19 @@ export default function RequestPage(): React.ReactElement {
   const [jayerBarcodeCache, setJayerBarcodeCache] = useState<Record<string, { label: string; spec: string }[]>>({});
   const [oayerRows, setOayerRows] = useState<OayerRow[]>(isTourMode ? makeTourOayerRows() : [makeOayerRow()]);
   const [bbRows, setBbRows] = useState<BbTableRow[]>(isTourMode ? makeTourBbRows() : []);
-  const [bbExternalData, setBbExternalData] = useState<PhotoStepOption[][]>([]);
+  const [bbExternalData, setBbExternalData] = useState<PhotoStepOption[][]>(isTourMode ? (makeTourBbExternalData() as PhotoStepOption[][]) : []);
+  // 전체 가이드 J-ayer 데모: 실제 표 위에 떠 있는 가짜 커서 + Ctrl C/V 칩
+  const [tourJCursor, setTourJCursor] = useState<{ x: number; y: number } | null>(null);
+  const [tourJChip, setTourJChip] = useState<{ kind: 'copy' | 'paste'; x: number; y: number } | null>(null);
+  // 가이드 BB 데모에서 최신 핸들러/상태를 stale-closure 없이 호출하기 위한 참조
+  const tourRef = useRef<{
+    jayerRows: JayerRow[];
+    bbExternalData: PhotoStepOption[][];
+    handleOpenAutoFillPanel: () => void;
+    handleApplyAutoFill: () => void;
+    handleStageMapping: (item: ExternalBbDataItem) => void;
+    handleApplyMappings: () => void;
+  } | null>(null);
   const [bbExternalLoading, setBbExternalLoading] = useState(false);
   const [activeBbTab, setActiveBbTab] = useState(0);
   const [selectedJayerRowId, setSelectedJayerRowId] = useState<string | null>(null);
@@ -483,40 +495,109 @@ export default function RequestPage(): React.ReactElement {
     let activeTok: { cancelled: boolean } | null = null;
     const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-    const setJayerCell = (idx: number, field: keyof JayerRow, val: string) =>
-      setJayerRows((rows) => rows.map((r, i) => (i === idx ? { ...r, [field]: val } : r)));
+    const setJayerCellById = (id: string, field: keyof JayerRow, val: string) =>
+      setJayerRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: val } : r)));
 
-    // J-ayer: 1행 입력 → 복사 → 드래그 붙여넣기 → product_name→step→barcode 자동 채움 시연
-    const runJayerDemo = async (tok: { cancelled: boolean }) => {
-      setJayerRows(makeTourJayerRows());
-      await sleep(700); if (tok.cancelled) return;
-      setJayerCell(0, 'product_name', TOUR_JAYER_PRODUCT); await sleep(650); if (tok.cancelled) return;
-      setJayerCell(0, 'step', TOUR_JAYER_STEPS[0]); await sleep(650); if (tok.cancelled) return;
-      setJayerCell(0, 'item_id', TOUR_JAYER_ITEMS[0]); await sleep(850); if (tok.cancelled) return;
-      // 복사 → 아래로 드래그 붙여넣기 (product_name 채움)
-      for (let i = 1; i < 5; i += 1) {
-        setJayerCell(i, 'product_name', TOUR_JAYER_PRODUCT);
-        await sleep(280); if (tok.cancelled) return;
-      }
-      await sleep(450); if (tok.cancelled) return;
-      // step → barcode(item_id) 자동 채움
-      for (let i = 1; i < 5; i += 1) {
-        setJayerCell(i, 'step', TOUR_JAYER_STEPS[i]);
-        setJayerCell(i, 'item_id', TOUR_JAYER_ITEMS[i]);
-        await sleep(320); if (tok.cancelled) return;
-      }
+    const cellRect = (sel: string): DOMRect | null =>
+      document.querySelector(sel)?.getBoundingClientRect() ?? null;
+    const moveCursor = async (sel: string) => {
+      const r = cellRect(sel);
+      if (r) setTourJCursor({ x: r.left + r.width * 0.5, y: r.top + r.height * 0.5 });
+      await sleep(480);
+    };
+    const showChip = (sel: string, kind: 'copy' | 'paste') => {
+      const r = cellRect(sel);
+      if (r) setTourJChip({ kind, x: r.right + 8, y: r.top - 6 });
     };
 
-    // BB: 자동채움 패널 열기 → 적용(샘플 채움) → 매핑 패널
-    const runBbDemo = async (tok: { cancelled: boolean }) => {
-      setBbExternalData(makeTourBbExternalData() as PhotoStepOption[][]);
+    // J-ayer: 실제 표 위에서 커서 이동 → 1행 입력 → 복사(Ctrl+C) → 아래로 드래그 선택 →
+    // 붙여넣기(Ctrl+V) → step·item_id(바코드) 자동 채움까지 직접 연출한다.
+    const runJayerAnim = async (tok: { cancelled: boolean }) => {
+      const seed = makeTourJayerRows();
+      setJayerRows(seed);
+      setTourJChip(null);
+      jayerCellSel.clearCellSelection();
+      await sleep(650); if (tok.cancelled) return;
+
+      await moveCursor('[data-jtour="product_name-0"]'); if (tok.cancelled) return;
+      setJayerCellById(seed[0].id, 'product_name', TOUR_JAYER_PRODUCT);
+      await sleep(550); if (tok.cancelled) return;
+
+      // 복사
+      jayerCellSel.selectCells([{ rowId: seed[0].id, col: 'product_name' }]);
+      showChip('[data-jtour="product_name-0"]', 'copy');
+      await sleep(950); if (tok.cancelled) return;
+      setTourJChip(null);
+      await sleep(250); if (tok.cancelled) return;
+
+      // 아래로 드래그 선택
+      for (let i = 1; i < seed.length; i += 1) {
+        await moveCursor(`[data-jtour="product_name-${i}"]`); if (tok.cancelled) return;
+        jayerCellSel.selectCells(seed.slice(1, i + 1).map((r) => ({ rowId: r.id, col: 'product_name' })));
+        await sleep(260); if (tok.cancelled) return;
+      }
+
+      // 붙여넣기
+      showChip(`[data-jtour="product_name-${seed.length - 1}"]`, 'paste');
+      await sleep(550); if (tok.cancelled) return;
+      for (let i = 1; i < seed.length; i += 1) {
+        setJayerCellById(seed[i].id, 'product_name', TOUR_JAYER_PRODUCT);
+        await sleep(200); if (tok.cancelled) return;
+      }
+      setTourJChip(null);
+      jayerCellSel.clearCellSelection();
+      await sleep(450); if (tok.cancelled) return;
+
+      // step → item_id(바코드) 자동 채움
+      for (let i = 0; i < seed.length; i += 1) {
+        setJayerCellById(seed[i].id, 'step', TOUR_JAYER_STEPS[i]);
+        setJayerCellById(seed[i].id, 'item_id', TOUR_JAYER_ITEMS[i]);
+        await sleep(300); if (tok.cancelled) return;
+      }
+      await sleep(400);
+      setTourJCursor(null);
+    };
+
+    // MAP: C가문 여부를 Yes로 켰다가 다시 No로 되돌리는 토글 연출
+    const runMapCfamily = async (tok: { cancelled: boolean }) => {
+      setDetail((d) => ({ ...d, only_prodc: 'Yes' }));
+      await sleep(1100); if (tok.cancelled) return;
+      setDetail((d) => ({ ...d, only_prodc: 'No', rev_yn: '', rev_entries: [] }));
+    };
+
+    // BB 자동 채움: 패널 열기 → 적용 (실제 핸들러로 매칭 행 생성)
+    const runBbAutofill = async (tok: { cancelled: boolean }) => {
+      setShowAutoFillPanel(false);
       setBbRows([]);
-      setShowAutoFillPanel(false);
-      await sleep(600); if (tok.cancelled) return;
-      setShowAutoFillPanel(true);
-      await sleep(1600); if (tok.cancelled) return;
-      setShowAutoFillPanel(false);
-      setBbRows(makeTourBbRows());
+      setMappedJayerRowIds(new Set());
+      setActiveBbTab(0);
+      await sleep(500); if (tok.cancelled) return;
+      tourRef.current?.handleOpenAutoFillPanel();
+      await sleep(1500); if (tok.cancelled) return;
+      tourRef.current?.handleApplyAutoFill();
+      await sleep(700);
+    };
+
+    // BB 매핑: 미매핑 원본 행(Layer 40) 선택 → 외부데이터 항목2에서 매핑 → 적용(아래에 행 추가)
+    const runBbMapping = async (tok: { cancelled: boolean }) => {
+      const target = tourRef.current?.jayerRows.find((r) => !r.disabled && r.layerid === '40');
+      if (!target) return;
+      setActiveBbTab(1);
+      setSelectedJayerRowId(target.id);
+      await sleep(1100); if (tok.cancelled) return;
+      const ext = tourRef.current?.bbExternalData[1]?.find((s) => s.layerid === '40');
+      if (ext) {
+        tourRef.current?.handleStageMapping({
+          id: 'tour-ext-40',
+          bb_process_id: ext.processid,
+          bb_name: 'BB제품2',
+          bb_step: ext.descript,
+          bb_ss: ext.stepseq,
+          layerid: ext.layerid,
+        });
+      }
+      await sleep(1100); if (tok.cancelled) return;
+      tourRef.current?.handleApplyMappings();
       await sleep(700);
     };
 
@@ -539,13 +620,52 @@ export default function RequestPage(): React.ReactElement {
         case 'step':
           setConfirmOpen(false);
           setShowAutoFillPanel(false);
+          setTourJCursor(null);
+          setTourJChip(null);
           if (typeof d.step === 'number') setStep(Math.min(5, Math.max(1, d.step)));
           break;
-        case 'jayer-demo':
-          runJayerDemo(tok);
+        case 'map-reset':
+          setDetail((dd) => ({
+            ...dd,
+            map_type: 'NEW',
+            only_prodc: 'No',
+            rev_yn: '',
+            rev_entries: [],
+            map_change: '변경 없음',
+            map_value_x: '',
+            map_value_y: '',
+            map_reason: '',
+            ea_change: '변경 없음',
+            ea_value: '',
+            mshot_change: '없음',
+          }));
           break;
-        case 'bb-demo':
-          runBbDemo(tok);
+        case 'map-cfamily':
+          runMapCfamily(tok);
+          break;
+        case 'map-deviation':
+          setDetail((dd) => ({ ...dd, map_change: '변경 있음', map_value_x: '1.2', map_value_y: '0.8', map_reason: '신규 라인 보정' }));
+          break;
+        case 'map-exception':
+          setDetail((dd) => ({ ...dd, ea_change: '변경 있음', ea_value: '예외구역 A' }));
+          break;
+        case 'map-xmark':
+          setDetail((dd) => ({ ...dd, mshot_change: '추가' }));
+          break;
+        case 'jayer-anim':
+          runJayerAnim(tok);
+          break;
+        case 'oayer-table':
+          setOayerInfoTab('table');
+          break;
+        case 'oayer-info':
+          setOayerInfoTab('info');
+          break;
+        case 'bb-autofill':
+          runBbAutofill(tok);
+          break;
+        case 'bb-mapping':
+          runBbMapping(tok);
           break;
         case 'open-submit':
           openSubmitDemo();
@@ -1531,6 +1651,18 @@ export default function RequestPage(): React.ReactElement {
     addToast('Backbone 데이터가 초기화되었습니다.', 'info');
   };
 
+  // 가이드 BB 데모가 매 렌더의 최신 핸들러/상태를 참조하도록 갱신 (stale closure 방지)
+  if (isTourMode) {
+    tourRef.current = {
+      jayerRows,
+      bbExternalData,
+      handleOpenAutoFillPanel,
+      handleApplyAutoFill,
+      handleStageMapping,
+      handleApplyMappings,
+    };
+  }
+
   const handleFilterDeleteConfirm = () => {
     if (!filterDeleteConfirm) return;
     const { type, filterId, label } = filterDeleteConfirm;
@@ -2371,6 +2503,7 @@ export default function RequestPage(): React.ReactElement {
           </>
         }
       >
+        <div data-tour="submit-fields">
         <div className="form-group" data-tour="submit-note">
           <label className="form-label">{t('request.submit_note_label')}</label>
           <textarea
@@ -2471,6 +2604,7 @@ export default function RequestPage(): React.ReactElement {
             )}
           </div>
         )}
+        </div>
       </Modal>
 
       <ConfirmModal
@@ -2578,6 +2712,20 @@ export default function RequestPage(): React.ReactElement {
         isOpen={slidePanel.open}
         onClose={() => setSlidePanel((prev) => ({ ...prev, open: false }))}
       />
+
+      {/* 전체 가이드 J-ayer 데모: 실제 표 위에 떠 있는 가짜 커서 + 복사/붙여넣기 칩 */}
+      {isTourMode && step === 3 && tourJCursor && (
+        <div className="tour-jcursor" style={{ transform: `translate(${tourJCursor.x}px, ${tourJCursor.y}px)` }}>
+          <svg width="22" height="22" viewBox="0 0 22 22">
+            <path d="M2 2 L2 17 L6.2 13 L9 19 L11.4 18 L8.6 12 L14 12 Z" fill="#fff" stroke="#1a1a2e" strokeWidth="1.3" strokeLinejoin="round" />
+          </svg>
+        </div>
+      )}
+      {isTourMode && step === 3 && tourJChip && (
+        <div className="tour-jchip" style={{ top: tourJChip.y, left: tourJChip.x }}>
+          📋 Ctrl + {tourJChip.kind === 'copy' ? 'C' : 'V'}
+        </div>
+      )}
     </div>
   );
 }
