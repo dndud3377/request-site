@@ -3890,7 +3890,27 @@ select.form-control option {
   box-shadow: 0 24px 60px rgba(15, 17, 26, 0.35);
   padding: 22px 24px 20px;
   outline: none;
+  position: relative;
 }
+.guide-tour-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  color: #9aa3b5;
+  background: #f4f6fa;
+  border: 1px solid #e8ecf2;
+  border-radius: 8px;
+  cursor: pointer;
+  z-index: 2;
+}
+.guide-tour-close:hover { color: #5b647a; background: #e8ecf2; }
 .guide-tour-progress {
   font-size: 12px;
   font-weight: 800;
