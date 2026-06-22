@@ -1,16 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import Step3JayerTableDemo from './guideDemos/Step3JayerTableDemo';
 
 /** 한 phase = 위저드 단계 이동(선택) + 명령(선택) + 요소 강조 + 캡션 */
 export interface TourPhase {
   /** /request 위저드 단계(1~5). 지정 시 해당 단계로 전환 후 진행 */
   wizardStep?: number;
-  /** iframe(투어 모드)로 보낼 명령 (jayer-demo / bb-demo / open-submit / submitted) */
+  /** iframe(투어 모드)로 보낼 명령 (map-* / jayer-anim / oayer-* / bb-* / open-submit / submitted) */
   cmd?: string;
   /** 강조할 요소 선택자 (없으면 캡션만 표시) */
   selector?: string;
-  /** 미리보기 위에 띄울 빌트인 데모 (예: 'jayer') */
-  overlayDemo?: 'jayer';
+  /** 선택자가 없을 때 캡션을 하단에 고정한다 (J-ayer 실시간 데모처럼 표를 가리지 않도록) */
+  bottomCaption?: boolean;
   /** 설명 캡션 (이미 번역된 문자열) */
   caption: string;
   /** 이 phase 표시 시간(ms) */
@@ -48,8 +47,9 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
   const [loaded, setLoaded] = useState(false);
   const [rect, setRect] = useState<Rect | null>(null);
   const [caption, setCaption] = useState('');
-  const [overlayDemo, setOverlayDemo] = useState<'jayer' | null>(null);
-  const [fadeKey, setFadeKey] = useState(0);
+  const [bottomCaption, setBottomCaption] = useState(false);
+  // 항목이 바뀔 때마다 증가 → 강조/캡션에 부드러운 밝기 페이드인을 다시 재생시키는 키
+  const [revealKey, setRevealKey] = useState(0);
 
   const pausedRef = useRef(paused);
   useEffect(() => { pausedRef.current = paused; }, [paused]);
@@ -117,11 +117,9 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
         if (seekRef.current != null) { i = seekRef.current; seekRef.current = null; }
         const phase = phases[i];
         onPhaseChangeRef.current?.(i);
-        // 전환: 이전 강조/캡션/오버레이를 모두 비우고 밝기 페이드 트리거 (#1 #2)
+        // 전환: 이전 강조/캡션을 비운다 (다음 항목은 천천히 밝아지며 등장)
         setRect(null);
         setCaption('');
-        setOverlayDemo(null);
-        setFadeKey((k) => k + 1);
 
         const ws = phase.wizardStep ?? currentStep;
         if (ws !== currentStep) {
@@ -150,8 +148,9 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
             setRect({ top: r.top * scale, left: r.left * scale, width: r.width * scale, height: r.height * scale });
           }
         }
-        setOverlayDemo(phase.overlayDemo ?? null);
+        setBottomCaption(!!phase.bottomCaption);
         setCaption(phase.caption);
+        setRevealKey((k) => k + 1);
 
         await wait(phase.hold ?? DEFAULT_HOLD_MS);
         if (cancelled) return;
@@ -169,7 +168,7 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
   const cursor = rect ? { x: rect.left + rect.width * 0.5, y: rect.top + rect.height * 0.5 } : null;
   const frameW = VIEWPORT_W * scale;
   const frameH = VIEWPORT_H * scale;
-  const captionPos = rect ? 'anchored' : overlayDemo ? 'bottom' : 'center';
+  const captionPos = rect ? 'anchored' : bottomCaption ? 'bottom' : 'center';
 
   return (
     <div className="guide-tour-preview-frame" ref={containerRef} style={{ width: frameW, height: frameH, margin: '0 auto' }}>
@@ -182,11 +181,11 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
         onLoad={() => setLoaded(true)}
       />
 
-      {rect && !overlayDemo && (
-        <div className="guide-tour-spotlight" style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }} />
+      {rect && (
+        <div key={`sp-${revealKey}`} className="guide-tour-spotlight" style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }} />
       )}
 
-      {cursor && !overlayDemo && (
+      {cursor && (
         <div className="guide-tour-cursor" style={{ transform: `translate(${cursor.x}px, ${cursor.y}px)` }}>
           <svg width="22" height="22" viewBox="0 0 22 22">
             <path d="M2 2 L2 17 L6.2 13 L9 19 L11.4 18 L8.6 12 L14 12 Z" fill="#fff" stroke="#1a1a2e" strokeWidth="1.3" strokeLinejoin="round" />
@@ -194,16 +193,9 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
         </div>
       )}
 
-      {overlayDemo === 'jayer' && (
-        <div className="guide-tour-demo-overlay">
-          <div className="guide-tour-demo-card">
-            <Step3JayerTableDemo />
-          </div>
-        </div>
-      )}
-
       {caption && (
         <div
+          key={`cap-${revealKey}`}
           className={`guide-tour-caption ${captionPos}`}
           style={captionPos === 'anchored' && rect ? {
             top: Math.min(rect.top + rect.height + 8, frameH - 56),
@@ -213,9 +205,6 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
           {caption}
         </div>
       )}
-
-      {/* PPT 슬라이드쇼식 밝기 전환 (#2) */}
-      <div className="guide-tour-fade" key={fadeKey} />
 
       {!loaded && <div className="guide-tour-preview-loading" />}
     </div>

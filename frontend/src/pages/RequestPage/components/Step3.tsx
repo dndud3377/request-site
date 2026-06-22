@@ -330,7 +330,7 @@ const Step3: React.FC<Step3Props> = ({
           </div>
 
           {/* TBV/TLV */}
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 20 }}>
+          <div data-tour="oayer-info-tbvtlv" style={{ borderTop: '1px solid var(--border)', paddingTop: 20 }}>
             <label className="form-label" style={{ marginBottom: 20 }}>
               {t('request.tbvtlv')}
               <GuideBadge fk="step4_tbvtlv" tk={t('guide.feat.step4_tbvtlv' as never)} />

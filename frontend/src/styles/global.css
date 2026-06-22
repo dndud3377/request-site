@@ -3828,7 +3828,14 @@ select.form-control option {
   box-shadow: 0 0 0 9999px rgba(15, 17, 26, 0.42);
   z-index: 5;
   pointer-events: none;
-  transition: top 0.45s ease, left 0.45s ease, width 0.45s ease, height 0.45s ease;
+  /* 항목이 바뀔 때마다 remount 되어 천천히 밝아지며 등장 (#4) */
+  animation: guideTourReveal 0.8s ease both;
+}
+
+/* 항목 등장: 어둡고 흐릿한 상태에서 천천히 밝아진다 */
+@keyframes guideTourReveal {
+  from { opacity: 0; filter: brightness(1.6); }
+  to { opacity: 1; filter: brightness(1); }
 }
 
 /* 오버레이 가짜 커서 */
@@ -3859,11 +3866,7 @@ select.form-control option {
   border-radius: 9px;
   box-shadow: 0 8px 22px rgba(15, 17, 26, 0.35);
   pointer-events: none;
-  animation: guideTourCaptionIn 0.25s ease;
-}
-@keyframes guideTourCaptionIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  animation: guideTourReveal 0.8s ease both;
 }
 
 /* 모달 오버레이 + 중앙 카드 */
@@ -4014,41 +4017,31 @@ select.form-control option {
   font-size: 13px;
 }
 
-/* PPT 슬라이드쇼식 밝기 전환 */
-.guide-tour-fade {
-  position: absolute;
-  inset: 0;
-  background: #ffffff;
-  opacity: 0;
+/* 전체 가이드 J-ayer 실시간 데모: 실제 표 위 가짜 커서 + Ctrl C/V 칩 */
+.tour-jcursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1200;
   pointer-events: none;
-  z-index: 12;
-  animation: guideTourFlash 0.5s ease;
+  transition: transform 0.5s cubic-bezier(0.5, 0.05, 0.2, 1);
 }
-@keyframes guideTourFlash {
-  0% { opacity: 0; }
-  28% { opacity: 0.4; }
-  100% { opacity: 0; }
+.tour-jcursor svg {
+  display: block;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
 }
-
-/* J-ayer 빌트인 데모 오버레이 */
-.guide-tour-demo-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 8;
-  background: rgba(244, 246, 250, 0.97);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-}
-.guide-tour-demo-card {
-  width: min(560px, 92%);
-  max-height: 94%;
-  overflow-y: auto;
-  background: #fff;
-  border: 1px solid #e8ecf2;
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(15, 17, 26, 0.18);
-  padding: 16px 18px;
+.tour-jchip {
+  position: fixed;
+  z-index: 1200;
+  pointer-events: none;
+  background: #1f2738;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 9px;
+  border-radius: 7px;
+  box-shadow: 0 6px 16px rgba(15, 17, 26, 0.32);
+  white-space: nowrap;
+  animation: guideTourReveal 0.2s ease both;
 }
 
