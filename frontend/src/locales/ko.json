@@ -415,6 +415,7 @@
       "start": "시작하기",
       "pause": "일시정지",
       "resume": "재생",
+      "close": "닫기",
       "progress": "{{current}}/{{total}}",
       "steps": {
         "request": {

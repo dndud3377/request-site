@@ -52,8 +52,8 @@ export function useGuideTourSteps(): GuideTourStep[] {
           { wizardStep: 4, cmd: 'oayer-info', selector: '[data-tour="oayer-info-tbvtlv"]', caption: cap('oayer_info_tbvtlv'), hold: 4200 },
           // Step 5 — 뼈찜(BB)
           { wizardStep: 5, selector: '.wizard-step[data-step="5"]', caption: intro('request.bb_li'), hold: 2300 },
-          { wizardStep: 5, cmd: 'bb-autofill', selector: '[data-tour="bb-autofill"]', caption: cap('bb_autofill'), hold: 4500 },
-          { wizardStep: 5, cmd: 'bb-mapping', selector: '.bb-split-panel', caption: cap('bb_mapping'), hold: 5500 },
+          { wizardStep: 5, cmd: 'bb-autofill', selector: '[data-tour="bb-autofill"]', caption: cap('bb_autofill'), hold: 5500 },
+          { wizardStep: 5, cmd: 'bb-mapping', selector: '.bb-split-panel', caption: cap('bb_mapping'), hold: 7000 },
           { wizardStep: 5, cmd: 'open-submit', selector: '[data-tour="submit-fields"]', caption: cap('submit_combined'), hold: 4200 },
           { wizardStep: 5, cmd: 'submitted', caption: cap('submitted'), hold: 3200 },
         ],
@@ -161,6 +161,15 @@ const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
         ref={modalRef}
         onClick={(e) => e.stopPropagation()}
       >
+        <button
+          type="button"
+          className="guide-tour-close"
+          onClick={onClose}
+          aria-label={t('guide.tour.close')}
+        >
+          ✕
+        </button>
+
         <div className="guide-tour-progress">
           {t('guide.tour.progress', { current: current + 1, total: steps.length })} · {step.title}
         </div>
@@ -211,9 +220,6 @@ const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
           <div className="guide-tour-nav">
             <button type="button" className="btn btn-secondary" onClick={goPrev} disabled={isFirst}>
               {t('guide.tour.prev')}
-            </button>
-            <button type="button" className="guide-tour-skip" onClick={onClose}>
-              {t('guide.tour.skip')}
             </button>
             <button type="button" className="btn btn-primary" onClick={goNext}>
               {isLast ? t('guide.tour.start') : t('guide.tour.next')}
