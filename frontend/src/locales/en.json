@@ -450,7 +450,8 @@
             "map_exception": "If there is an exception zone, switch to 'Has change' and enter the exception zone value.",
             "map_xmark_photo": "If the X-mark changes, pick the option and paste an actual photo into the change area.",
             "oayer_info_tbvtlv": "The 'Info' tab holds Partial Shot and TBV/TLV. TBV/TLV only appears when the O-ayer table contains TBV/TLV items.",
-            "submit_combined": "On submit you can add notes and must designate a reviewer (PL) before submitting."
+            "submit_combined": "On submit you can add notes and must designate a reviewer (PL) before submitting.",
+            "bb_autofill_apply": "Click 'Apply' with the cursor to run auto-fill and generate the BB rows at once."
           }
         },
         "approval": {
@@ -460,10 +461,9 @@
             "intro": "The Approval Status page lets you track the progress of submitted requests stage by stage.",
             "route": "This is the final approval route a request goes through. After Review (PL) and RFG, Path 1 (PHPSI→JOB) and Path 2 (OVL·EUV) run in parallel.",
             "my_filter": "The 'MY' filter shows only requests you submitted or that need your approval.",
-            "open_detail": "Click a title to open the request detail and review the approval route and each team’s information.",
+            "open_detail": "Click the title with the cursor to open the request detail.",
             "export_jayer": "Use the 📊 export button on the JOB tab to download the table data as an Excel file.",
-            "export_oayer": "The OVL tab lets you export its table to Excel in the same way.",
-            "export_bb": "The BB tab also supports Excel download via the 📊 export button."
+            "route_tab": "The Approval Route tab shows each team’s (Review/RFG/PHPSI/JOB/OVL/EUV) approve/reject history with assignees and dates, by round."
           }
         }
       }

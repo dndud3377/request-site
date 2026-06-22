@@ -220,6 +220,7 @@ const Step4: React.FC<Step4Props> = ({
             <button
               type="button"
               className="btn btn-primary"
+              data-bbtour="autofill-apply"
               onClick={handleApplyAutoFill}
               style={{ fontSize: 13, padding: '6px 12px' }}
             >

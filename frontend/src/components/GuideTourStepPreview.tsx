@@ -65,6 +65,15 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
   const initialStep = phases.find((p) => p.wizardStep)?.wizardStep ?? 1;
   const src = `${path}?embed=tour&step=${initialStep}`;
 
+  // 일시정지/재생을 iframe(투어 데모)에도 전달 — iframe 내부 커서/입력 애니메이션도 멈추거나 이어지게 한다.
+  useEffect(() => {
+    if (!loaded) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: 'guide-tour-cmd', cmd: paused ? 'pause' : 'resume' },
+      window.location.origin,
+    );
+  }, [paused, loaded]);
+
   useEffect(() => {
     const update = () => {
       const w = containerRef.current?.parentElement?.clientWidth ?? VIEWPORT_W * 0.5;

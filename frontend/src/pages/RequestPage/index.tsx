@@ -496,17 +496,39 @@ export default function RequestPage(): React.ReactElement {
   useEffect(() => {
     if (!isTourMode) return;
     let activeTok: { cancelled: boolean } | null = null;
-    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    let paused = false;
+    const rawSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    // 일시정지를 반영하는 sleep — paused 동안에는 경과 시간을 세지 않아 그 자리에서 멈추고, 재생 시 이어서 진행한다.
+    const sleep = async (ms: number) => {
+      let elapsed = 0;
+      while (elapsed < ms) {
+        if (paused) { await rawSleep(60); continue; }
+        await rawSleep(60);
+        elapsed += 60;
+      }
+    };
 
     const setJayerCellById = (id: string, field: keyof JayerRow, val: string) =>
       setJayerRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: val } : r)));
 
     const cellRect = (sel: string): DOMRect | null =>
       document.querySelector(sel)?.getBoundingClientRect() ?? null;
-    const moveCursor = async (sel: string) => {
-      const r = cellRect(sel);
+    // sel 위치로 커서 이동. scroll=true면 요소를 화면 안으로 스크롤해 잘리지 않게 한다.
+    const moveCursor = async (sel: string, scroll = false) => {
+      const el = document.querySelector(sel);
+      if (el && scroll) { el.scrollIntoView({ block: 'center', inline: 'nearest' }); await sleep(320); }
+      const r = el?.getBoundingClientRect();
       if (r) setTourJCursor({ x: r.left + r.width * 0.5, y: r.top + r.height * 0.5 });
       await sleep(480);
+    };
+    // 커서가 버튼을 '누르는' 연출: 버튼 눌림 효과 + 커서 클릭 리플
+    const pressButton = async (sel: string) => {
+      const el = document.querySelector(sel);
+      setTourJClicking(true);
+      el?.classList.add('tour-pressed');
+      await sleep(300);
+      el?.classList.remove('tour-pressed');
+      setTourJClicking(false);
     };
     const showChip = (sel: string, kind: 'copy' | 'paste') => {
       const r = cellRect(sel);
@@ -561,18 +583,27 @@ export default function RequestPage(): React.ReactElement {
       setTourJCursor(null);
     };
 
-    // BB 자동 채움: 패널 열기 → 적용 (실제 핸들러로 BB제품1 매칭 행 생성, 커서 연출 없음)
-    const runBbAutofill = async (tok: { cancelled: boolean }) => {
+    // BB 자동 채움(설명): 패널 열기만 — 적용은 별도 단계에서 커서로 직접 누른다.
+    const runBbAutofillOpen = async (tok: { cancelled: boolean }) => {
       setShowAutoFillPanel(false);
       setBbRows([]);
       setMappedJayerRowIds(new Set());
       setActiveBbTab(0);
       setTourJCursor(null);
+      setTourJClicking(false);
       await sleep(500); if (tok.cancelled) return;
       tourRef.current?.handleOpenAutoFillPanel();   // 범위 1개 시드(10~50, BB제품1)
-      await sleep(1200); if (tok.cancelled) return;
+    };
+
+    // BB 자동 채움(적용): 커서를 '적용' 버튼으로 이동(스크롤로 보이게) → 눌러서 BB제품1 3행 생성
+    const runBbAutofillApply = async (tok: { cancelled: boolean }) => {
+      await sleep(400); if (tok.cancelled) return;
+      await moveCursor('[data-bbtour="autofill-apply"]', true); if (tok.cancelled) return;
+      await sleep(250); if (tok.cancelled) return;
+      await pressButton('[data-bbtour="autofill-apply"]'); if (tok.cancelled) return;
       tourRef.current?.handleApplyAutoFill();        // BB제품1 3행 생성
       await sleep(700);
+      setTourJCursor(null);
     };
 
     // BB 매핑: 커서로 BB제품2 탭 클릭 → 원본 행(Layer 40·50) 선택 → 외부데이터 매핑 → 적용(아래에 BB제품2 행 추가)
@@ -609,11 +640,9 @@ export default function RequestPage(): React.ReactElement {
       await mapOne('50');
       if (tok.cancelled) return;
 
-      await moveCursor('[data-bbtour="map-apply"]'); if (tok.cancelled) return;
-      await sleep(350); if (tok.cancelled) return;     // 적용 버튼 위에서 잠깐 멈춤
-      setTourJClicking(true);                          // 커서 눌림 애니
-      await sleep(280); if (tok.cancelled) return;
-      setTourJClicking(false);
+      await moveCursor('[data-bbtour="map-apply"]', true); if (tok.cancelled) return;
+      await sleep(250); if (tok.cancelled) return;     // 적용 버튼 위에서 잠깐 멈춤
+      await pressButton('[data-bbtour="map-apply"]'); if (tok.cancelled) return;
       tourRef.current?.handleApplyMappings();          // BB제품2 2행 추가 → 결과표에 두 제품 모두 반영
       await sleep(700);
       setTourJCursor(null);
@@ -630,6 +659,9 @@ export default function RequestPage(): React.ReactElement {
       if (e.origin !== window.location.origin) return;
       const d = e.data;
       if (!d || d.type !== 'guide-tour-cmd') return;
+      // 일시정지/재생은 진행 중인 데모를 취소하지 않고 paused 플래그만 토글한다.
+      if (d.cmd === 'pause') { paused = true; return; }
+      if (d.cmd === 'resume') { paused = false; return; }
       if (activeTok) activeTok.cancelled = true;
       const tok = { cancelled: false };
       activeTok = tok;
@@ -677,8 +709,11 @@ export default function RequestPage(): React.ReactElement {
         case 'oayer-info':
           setOayerInfoTab('info');
           break;
-        case 'bb-autofill':
-          runBbAutofill(tok);
+        case 'bb-autofill-open':
+          runBbAutofillOpen(tok);
+          break;
+        case 'bb-autofill-apply':
+          runBbAutofillApply(tok);
           break;
         case 'bb-mapping':
           runBbMapping(tok);
