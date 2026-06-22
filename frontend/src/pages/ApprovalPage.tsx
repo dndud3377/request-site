@@ -1,16 +1,22 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { documentsAPI, usersAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView from '../components/PagedDetailView';
+import ApprovalRouteDiagram from '../components/ApprovalRouteDiagram';
 import { canUserAgree, canUserAssign, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole } from '../types';
 import { formatDate } from '../utils/date';
+import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC } from './approvalTourSeed';
+
+// 전체 가이드 상세 모달에서 J/O/BB export 페이지로 이동하기 위한 페이지 인덱스
+// (MASTER 역할 기준 페이지 순서: 0 상세 · 1 MAP · 2 JOB · 3 OVL · 4 BB · 5 결재 경로)
+const TOUR_PAGE_IDX: Record<string, number> = { jayer: 2, oayer: 3, bb: 4 };
 
 const AGENT_TO_ROLE: Record<string, string> = {
   R: 'TE_R',
@@ -221,8 +227,12 @@ interface FilterTab {
 export default function ApprovalPage(): React.ReactElement {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const addToast = useToast();
   const { currentUser } = useAuth();
+
+  // 전체 가이드 투어 모드: /approval?embed=tour — 샘플 데이터로 결재 현황을 시연한다.
+  const isTourMode = new URLSearchParams(location.search).get('embed') === 'tour';
 
   const [docs, setDocs] = useState<RequestDocument[]>([]);
   const [allDocs, setAllDocs] = useState<RequestDocument[]>([]);
@@ -261,6 +271,10 @@ export default function ApprovalPage(): React.ReactElement {
   };
 
   const applyClientFilter = useCallback((all: RequestDocument[]): RequestDocument[] => {
+    if (isTourMode) {
+      if (filter === 'my') return all.filter(d => TOUR_APPROVAL_MY_IDS.has(d.id));
+      return all;
+    }
     if (filter === 'draft') return all.filter(d => d.status === 'draft');
     if (filter === 'rejected') return all.filter(d => d.status === 'rejected');
     if (filter === 'my') {
@@ -287,9 +301,14 @@ export default function ApprovalPage(): React.ReactElement {
       );
     }
     return all;
-  }, [filter, currentUser]);
+  }, [filter, currentUser, isTourMode]);
 
   const getTabCount = useCallback((key: string, base: RequestDocument[]): number => {
+    if (isTourMode) {
+      if (key === '') return base.length;
+      if (key === 'my') return base.filter(d => TOUR_APPROVAL_MY_IDS.has(d.id)).length;
+      return 0;
+    }
     if (key === '') return base.length;
     if (key === 'draft') return base.filter(d => d.status === 'draft').length;
     if (key === 'rejected') return base.filter(d => d.status === 'rejected').length;
@@ -308,9 +327,16 @@ export default function ApprovalPage(): React.ReactElement {
       return base.filter(d => (d.approval_steps ?? []).some(s => s.agent === agent && s.action === 'pending')).length;
     }
     return 0;
-  }, [currentUser]);
+  }, [currentUser, isTourMode]);
 
   const fetchDocs = useCallback(() => {
+    if (isTourMode) {
+      setAllDocs(TOUR_APPROVAL_DOCS);
+      setDocs(applyClientFilter(TOUR_APPROVAL_DOCS));
+      setError(false);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(false);
     const params: Record<string, string> = {};
@@ -330,6 +356,42 @@ export default function ApprovalPage(): React.ReactElement {
   }, [filter, search, applyClientFilter]);
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
+
+  // 전체 가이드(투어) 명령 수신: MY 필터 클릭 → 상세 열기 → J/O/BB export 페이지 이동
+  useEffect(() => {
+    if (!isTourMode) return;
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      const d = e.data;
+      if (!d || d.type !== 'guide-tour-cmd') return;
+      switch (d.cmd) {
+        case 'tour-reset':
+          setModalOpen(false);
+          setFilter('');
+          break;
+        case 'my-filter':
+          setFilter('my');
+          break;
+        case 'all-filter':
+          setFilter('');
+          break;
+        case 'open-detail':
+          setSelected(TOUR_APPROVAL_DETAIL_DOC);
+          setPageIdx(0);
+          setModalOpen(true);
+          break;
+        case 'page-jayer':
+        case 'page-oayer':
+        case 'page-bb':
+          setPageIdx(TOUR_PAGE_IDX[d.cmd.replace('page-', '')] ?? 0);
+          break;
+        default:
+          break;
+      }
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [isTourMode]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -358,11 +420,15 @@ export default function ApprovalPage(): React.ReactElement {
   });
 
   const openDetail = async (doc: RequestDocument) => {
-    try {
-      const detailResult = await documentsAPI.get(doc.id);
-      setSelected(detailResult.data);
-    } catch {
+    if (isTourMode) {
       setSelected(doc);
+    } else {
+      try {
+        const detailResult = await documentsAPI.get(doc.id);
+        setSelected(detailResult.data);
+      } catch {
+        setSelected(doc);
+      }
     }
     setPageIdx(0);
     setAssigningOpen(false);
@@ -527,6 +593,8 @@ export default function ApprovalPage(): React.ReactElement {
         <p>{t('approval.subtitle')}</p>
       </div>
 
+      {isTourMode && <ApprovalRouteDiagram />}
+
       <div className="toolbar">
         <div className="search-box">
           <span className="search-icon">🔍</span>
@@ -540,6 +608,7 @@ export default function ApprovalPage(): React.ReactElement {
           {filterTabs.map((tab) => (
             <button
               key={tab.key}
+              data-tour={tab.key === 'my' ? 'approval-my-tab' : undefined}
               className={`filter-tab ${filter === tab.key ? 'active' : ''}`}
               onClick={() => setFilter(tab.key)}
             >
@@ -987,7 +1056,7 @@ export default function ApprovalPage(): React.ReactElement {
             {/* 페이지 네비게이션 + 의뢰 상세 */}
             <PagedDetailView
               doc={selected}
-              role={currentUser.role as UserRole}
+              role={isTourMode ? 'MASTER' : (currentUser.role as UserRole)}
               pageIdx={pageIdx}
               setPageIdx={setPageIdx}
             />
