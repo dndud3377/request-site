@@ -238,7 +238,14 @@
     "agent_P": "PHPSI",
     "agent_J": "JOB",
     "agent_O": "OVL",
-    "agent_E": "EUV"
+    "agent_E": "EUV",
+    "route_diagram": {
+      "title": "Final Approval Route",
+      "desc": "The approval stages a request goes through from intake to completion.",
+      "done": "Done",
+      "note_e": "The EUV (E) stage runs only when plel (yellow cell) items are present.",
+      "note_onlymap": "'Only MAP' requests proceed only up to RFG (R); later stages are skipped."
+    }
   },
   "history": {
     "title": "History",
@@ -438,12 +445,25 @@
             "submit_designee_sample": "Gildong Hong (Reviewer PL)",
             "submitted_toast": "Your request has been submitted.",
             "map_purpose": "First choose the correct MAP purpose (new / clone / registered).",
-            "map_cfamily": "Enter values that match the product. For a C-family product switch to 'Yes' to fill the extra fields, otherwise switch back to 'No'.",
+            "map_cfamily": "Fill in each MAP field to match the product. For example, select 'Yes' for a C-family product to enter the additional fields.",
             "map_deviation": "If the map has a deviation, switch to 'Has change' and enter the X/Y correction values and reason.",
             "map_exception": "If there is an exception zone, switch to 'Has change' and enter the exception zone value.",
             "map_xmark_photo": "If the X-mark changes, pick the option and paste an actual photo into the change area.",
             "oayer_info_tbvtlv": "The 'Info' tab holds Partial Shot and TBV/TLV. TBV/TLV only appears when the O-ayer table contains TBV/TLV items.",
             "submit_combined": "On submit you can add notes and must designate a reviewer (PL) before submitting."
+          }
+        },
+        "approval": {
+          "title": "Approval Status",
+          "description": "Check the approval route and progress of submitted requests, and export tables to Excel from the detail view.",
+          "flow": {
+            "intro": "The Approval Status page lets you track the progress of submitted requests stage by stage.",
+            "route": "This is the final approval route a request goes through. After Review (PL) and RFG, Path 1 (PHPSI→JOB) and Path 2 (OVL·EUV) run in parallel.",
+            "my_filter": "The 'MY' filter shows only requests you submitted or that need your approval.",
+            "open_detail": "Click a title to open the request detail and review the approval route and each team’s information.",
+            "export_jayer": "Use the 📊 export button on the JOB tab to download the table data as an Excel file.",
+            "export_oayer": "The OVL tab lets you export its table to Excel in the same way.",
+            "export_bb": "The BB tab also supports Excel download via the 📊 export button."
           }
         }
       }

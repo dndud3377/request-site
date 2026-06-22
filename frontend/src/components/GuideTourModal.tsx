@@ -12,6 +12,7 @@ export interface GuideTourStep {
 }
 
 const RK = 'guide.tour.steps.request.flow';
+const AK = 'guide.tour.steps.approval.flow';
 
 /**
  * 전체 가이드 단계 메타데이터. 현재 "요청서 작성"(/request) 1개 — 위저드 5단계를
@@ -21,6 +22,7 @@ export function useGuideTourSteps(): GuideTourStep[] {
   const { t } = useTranslation();
   return useMemo(() => {
     const cap = (k: string) => t(`${RK}.${k}` as never) as string;
+    const acap = (k: string) => t(`${AK}.${k}` as never) as string;
     const intro = (nameKey: string) =>
       t(`${RK}.step_intro` as never, { step: t(nameKey as never) }) as string;
     return [
@@ -37,7 +39,7 @@ export function useGuideTourSteps(): GuideTourStep[] {
           // Step 2 — MAP 정보
           { wizardStep: 2, selector: '.wizard-step[data-step="2"]', caption: intro('request.section_map'), hold: 2300 },
           { wizardStep: 2, cmd: 'map-reset', selector: '[data-tour="map-purpose"]', caption: cap('map_purpose'), hold: 3200 },
-          { wizardStep: 2, cmd: 'map-cfamily', selector: '[data-tour="map-cfamily"]', caption: cap('map_cfamily'), hold: 4200 },
+          { wizardStep: 2, selector: '[data-tour="map-cfamily"]', caption: cap('map_cfamily'), hold: 4200 },
           { wizardStep: 2, cmd: 'map-deviation', selector: '[data-tour="map-deviation"]', caption: cap('map_deviation'), hold: 3500 },
           { wizardStep: 2, cmd: 'map-exception', selector: '[data-tour="map-exception"]', caption: cap('map_exception'), hold: 3200 },
           { wizardStep: 2, cmd: 'map-xmark', selector: '[data-tour="map-xmark"]', caption: cap('map_xmark_photo'), hold: 3800 },
@@ -56,6 +58,21 @@ export function useGuideTourSteps(): GuideTourStep[] {
           { wizardStep: 5, cmd: 'bb-mapping', bottomCaption: true, caption: cap('bb_mapping'), hold: 8500 },
           { wizardStep: 5, cmd: 'open-submit', selector: '[data-tour="submit-fields"]', caption: cap('submit_combined'), hold: 4200 },
           { wizardStep: 5, cmd: 'submitted', caption: cap('submitted'), hold: 3200 },
+        ],
+      },
+      {
+        key: 'approval' as const,
+        title: t('guide.tour.steps.approval.title'),
+        description: t('guide.tour.steps.approval.description'),
+        path: '/approval',
+        phases: [
+          { cmd: 'tour-reset', selector: '.filter-tabs', caption: acap('intro'), hold: 3200 },
+          { selector: '[data-tour="approval-route"]', caption: acap('route'), hold: 6500 },
+          { cmd: 'my-filter', selector: '[data-tour="approval-my-tab"]', caption: acap('my_filter'), hold: 5000 },
+          { cmd: 'open-detail', bottomCaption: true, caption: acap('open_detail'), hold: 4500 },
+          { cmd: 'page-jayer', selector: '[data-tour="export-jayer"]', caption: acap('export_jayer'), hold: 4500 },
+          { cmd: 'page-oayer', selector: '[data-tour="export-oayer"]', caption: acap('export_oayer'), hold: 4000 },
+          { cmd: 'page-bb', selector: '[data-tour="export-bb"]', caption: acap('export_bb'), hold: 4500 },
         ],
       },
     ];
