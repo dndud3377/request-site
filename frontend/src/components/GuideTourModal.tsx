@@ -52,8 +52,8 @@ export function useGuideTourSteps(): GuideTourStep[] {
           { wizardStep: 4, cmd: 'oayer-info', selector: '[data-tour="oayer-info-tbvtlv"]', caption: cap('oayer_info_tbvtlv'), hold: 4200 },
           // Step 5 — 뼈찜(BB)
           { wizardStep: 5, selector: '.wizard-step[data-step="5"]', caption: intro('request.bb_li'), hold: 2300 },
-          { wizardStep: 5, cmd: 'bb-autofill', selector: '[data-tour="bb-autofill"]', caption: cap('bb_autofill'), hold: 5500 },
-          { wizardStep: 5, cmd: 'bb-mapping', selector: '.bb-split-panel', caption: cap('bb_mapping'), hold: 7000 },
+          { wizardStep: 5, cmd: 'bb-autofill', selector: '[data-tour="bb-autofill"]', caption: cap('bb_autofill'), hold: 4000 },
+          { wizardStep: 5, cmd: 'bb-mapping', bottomCaption: true, caption: cap('bb_mapping'), hold: 8500 },
           { wizardStep: 5, cmd: 'open-submit', selector: '[data-tour="submit-fields"]', caption: cap('submit_combined'), hold: 4200 },
           { wizardStep: 5, cmd: 'submitted', caption: cap('submitted'), hold: 3200 },
         ],
