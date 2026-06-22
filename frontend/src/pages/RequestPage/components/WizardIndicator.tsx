@@ -13,7 +13,7 @@ const WizardIndicator: React.FC<WizardIndicatorProps> = ({ currentStep, steps })
       const isActive = currentStep === stepNum;
       return (
         <React.Fragment key={stepNum}>
-          <div className="wizard-step">
+          <div className="wizard-step" data-step={stepNum}>
             <div className={`wizard-step-circle${isDone ? ' done' : isActive ? ' active' : ''}`}>
               {isDone ? '✓' : stepNum}
             </div>
