@@ -165,6 +165,7 @@ const Step4: React.FC<Step4Props> = ({
             >
               <span style={{ fontSize: 13, minWidth: 50 }}>범위 {idx + 1}:</span>
               <select
+                data-bbtour="range-from"
                 value={range.layerFrom}
                 onChange={(e) => handleRangeChange(range.id, 'layerFrom', e.target.value)}
                 style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
@@ -178,6 +179,7 @@ const Step4: React.FC<Step4Props> = ({
               </select>
               <span>~</span>
               <select
+                data-bbtour="range-to"
                 value={range.layerTo}
                 onChange={(e) => handleRangeChange(range.id, 'layerTo', e.target.value)}
                 style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
@@ -190,6 +192,7 @@ const Step4: React.FC<Step4Props> = ({
                   ))}
               </select>
               <select
+                data-bbtour="range-product"
                 value={range.productId}
                 onChange={(e) => handleRangeChange(range.id, 'productId', e.target.value)}
                 style={{ padding: '4px 8px', fontSize: 13, minWidth: 120 }}
@@ -220,6 +223,7 @@ const Step4: React.FC<Step4Props> = ({
             <button
               type="button"
               className="btn btn-primary"
+              data-bbtour="autofill-apply"
               onClick={handleApplyAutoFill}
               style={{ fontSize: 13, padding: '6px 12px' }}
             >
@@ -271,6 +275,7 @@ const Step4: React.FC<Step4Props> = ({
                       return (
                         <tr
                           key={row.id}
+                          data-bbtour={`jrow-${row.layerid}`}
                           className={isSelected ? 'bb-jayer-selected' : ''}
                           onClick={() => setSelectedJayerRowId(row.id)}
                           style={{ cursor: 'pointer' }}
@@ -368,6 +373,7 @@ const Step4: React.FC<Step4Props> = ({
                       return (
                         <tr
                           key={item.id}
+                          data-bbtour={`ext-${item.layerid}`}
                           className={`bb-external-row${isStaged ? ' bb-external-staged' : ''}`}
                           onClick={() => handleStageMapping(item)}
                           title="클릭하면 선택된 원본 layer 에 지정됩니다"
@@ -399,6 +405,7 @@ const Step4: React.FC<Step4Props> = ({
         <button
           type="button"
           className="btn btn-primary"
+          data-bbtour="map-apply"
           onClick={handleApplyMappings}
           disabled={stagedCount === 0}
         >
