@@ -6,18 +6,17 @@
 - frontend/src/locales/ko.json
 """
 
-import django.contrib.auth.base_user
 import django.db.models.deletion
 from django.conf import settings
 from django.db import migrations, models
-import api.models
 
 
 class Migration(migrations.Migration):
 
     initial = True
 
-    dependencies = []
+    dependencies = [
+    ]
 
     operations = [
         migrations.CreateModel(
@@ -30,15 +29,12 @@ class Migration(migrations.Migration):
                 ('mail', models.EmailField(blank=True, default='', max_length=254, verbose_name='이메일')),
                 ('username', models.CharField(blank=True, default='', max_length=150, verbose_name='표시 이름')),
                 ('deptname', models.CharField(blank=True, default='', max_length=200, verbose_name='부서명')),
-                ('role', models.CharField(choices=[('NONE', 'NONE'), ('PL', 'PL'), ('TE_R', 'TE_R'), ('TE_J', 'TE_J'), ('TE_O', 'TE_O'), ('TE_E', 'TE_E'), ('MASTER', 'MASTER')], default='NONE', max_length=10, verbose_name='역할')),
+                ('role', models.CharField(choices=[('NONE', 'NONE'), ('PL', 'PL'), ('TE_R', 'TE_R'), ('TE_P', 'TE_P'), ('TE_J', 'TE_J'), ('TE_O', 'TE_O'), ('TE_E', 'TE_E'), ('MASTER', 'MASTER')], default='NONE', max_length=10, verbose_name='역할')),
             ],
             options={
                 'verbose_name': '사용자',
                 'verbose_name_plural': '사용자 목록',
             },
-            managers=[
-                ('objects', api.models.UserProfileManager()),
-            ],
         ),
         migrations.CreateModel(
             name='AdminNotice',
@@ -59,6 +55,25 @@ class Migration(migrations.Migration):
             },
         ),
         migrations.CreateModel(
+            name='Guide',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('guide_type', models.CharField(choices=[('feature', '기능 가이드'), ('info', '정보 가이드')], default='info', max_length=10, verbose_name='가이드 유형')),
+                ('feature_key', models.CharField(blank=True, max_length=100, null=True, unique=True, verbose_name='기능 키')),
+                ('title', models.CharField(max_length=200, verbose_name='제목')),
+                ('content', models.TextField(verbose_name='내용 (HTML)')),
+                ('author_name', models.CharField(max_length=100, verbose_name='작성자 이름')),
+                ('author_role', models.CharField(max_length=20, verbose_name='작성자 역할')),
+                ('created_at', models.DateTimeField(auto_now_add=True, verbose_name='작성일')),
+                ('updated_at', models.DateTimeField(auto_now=True, verbose_name='수정일')),
+            ],
+            options={
+                'verbose_name': '가이드',
+                'verbose_name_plural': '가이드 목록',
+                'ordering': ['-created_at'],
+            },
+        ),
+        migrations.CreateModel(
             name='Line',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
@@ -73,6 +88,24 @@ class Migration(migrations.Migration):
             },
         ),
         migrations.CreateModel(
+            name='ProductBarcode',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('n7mto_date', models.CharField(blank=True, max_length=200, null=True, verbose_name='MTO Date')),
+                ('n7cancel_date', models.CharField(blank=True, max_length=200, null=True, verbose_name='Cancel Date')),
+                ('n7cancel_ok', models.CharField(blank=True, max_length=200, null=True, verbose_name='Cancel OK')),
+                ('n7c_layer_num', models.CharField(max_length=200, verbose_name='Layer Num')),
+                ('n7prod_code', models.CharField(max_length=200, verbose_name='Product Code')),
+                ('n7barcode', models.CharField(max_length=200, verbose_name='Barcode')),
+                ('n7material_spec', models.CharField(blank=True, max_length=500, null=True, verbose_name='Material Spec')),
+                ('last_synced', models.DateTimeField(auto_now=True, verbose_name='동기화 시각')),
+            ],
+            options={
+                'verbose_name': '바코드-품목 캐시',
+                'verbose_name_plural': '바코드-품목 캐시 목록',
+            },
+        ),
+        migrations.CreateModel(
             name='VOC',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
@@ -80,6 +113,8 @@ class Migration(migrations.Migration):
                 ('category', models.CharField(choices=[('inquiry', '문의'), ('error_report', '오류 신고'), ('feature_request', '기능 제안'), ('task_request', '작업 요청')], max_length=20, verbose_name='유형')),
                 ('submitter_name', models.CharField(max_length=100, verbose_name='제출자')),
                 ('submitter_email', models.EmailField(max_length=254, verbose_name='이메일')),
+                ('submitter_user_id', models.IntegerField(blank=True, null=True, verbose_name='제출자 ID')),
+                ('page', models.CharField(blank=True, default='', max_length=20, verbose_name='관련 페이지')),
                 ('content', models.TextField(verbose_name='내용')),
                 ('response', models.TextField(blank=True, verbose_name='답변')),
                 ('status', models.CharField(choices=[('checking', '확인중'), ('completed', '완료'), ('rejected', '거부')], default='checking', max_length=20, verbose_name='상태')),
@@ -90,6 +125,34 @@ class Migration(migrations.Migration):
                 'verbose_name': 'VOC',
                 'verbose_name_plural': 'VOC 목록',
                 'ordering': ['-created_at'],
+            },
+        ),
+        migrations.CreateModel(
+            name='Holiday',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('date_name', models.CharField(max_length=100, verbose_name='공휴일명')),
+                ('isholiday', models.CharField(max_length=1, verbose_name='공휴일 여부')),
+                ('act_date', models.DateField(unique=True, verbose_name='날짜')),
+            ],
+            options={
+                'verbose_name': '공휴일',
+                'verbose_name_plural': '공휴일 목록',
+                'indexes': [models.Index(fields=['act_date'], name='api_holiday_act_date_idx')],
+            },
+        ),
+        migrations.CreateModel(
+            name='MapName',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('lineid', models.CharField(max_length=50, verbose_name='라인 ID')),
+                ('partid', models.CharField(max_length=200, verbose_name='Part ID')),
+                ('last_synced', models.DateTimeField(auto_now=True, verbose_name='동기화 시각')),
+            ],
+            options={
+                'verbose_name': 'MAP 이름 캐시',
+                'verbose_name_plural': 'MAP 이름 캐시 목록',
+                'indexes': [models.Index(fields=['lineid'], name='api_mapname_lineid_idx')],
             },
         ),
         migrations.CreateModel(
@@ -214,9 +277,12 @@ class Migration(migrations.Migration):
                 ('reference_materials', models.TextField(blank=True, verbose_name='참고 자료')),
                 ('additional_notes', models.TextField(blank=True, verbose_name='추가 정보(JSON)')),
                 ('status', models.CharField(choices=[('draft', '임시저장'), ('submitted', '상신됨'), ('under_review', '검토중'), ('approved', '승인됨'), ('rejected', '반려됨')], default='draft', max_length=20, verbose_name='상태')),
+                ('production_date', models.DateField(blank=True, null=True, verbose_name='request.production_date')),
+                ('designated_pl_name', models.CharField(blank=True, max_length=100, verbose_name='지정 PL 이름')),
                 ('created_at', models.DateTimeField(auto_now_add=True, verbose_name='생성일')),
                 ('updated_at', models.DateTimeField(auto_now=True, verbose_name='수정일')),
                 ('submitted_at', models.DateTimeField(blank=True, null=True, verbose_name='상신일')),
+                ('designated_pl', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='designated_reviews', to=settings.AUTH_USER_MODEL, verbose_name='지정 PL')),
                 ('requester', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='requests', to=settings.AUTH_USER_MODEL, verbose_name='의뢰자')),
             ],
             options={
@@ -229,19 +295,79 @@ class Migration(migrations.Migration):
             name='ApprovalStep',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('agent', models.CharField(choices=[('R', '{{agent_R}}'), ('J', '{{agent_J}}'), ('O', '{{agent_O}}'), ('E', '{{agent_E}}')], max_length=2, verbose_name='담당 에이전트')),
-                ('action', models.CharField(choices=[('pending', '대기'), ('approved', '합의'), ('rejected', '반려')], default='checking', max_length=10, verbose_name='결재 결과')),
+                ('agent', models.CharField(choices=[('PL', '검토'), ('R', '{{agent_R}}'), ('P', '{{agent_P}}'), ('J', '{{agent_J}}'), ('O', '{{agent_O}}'), ('E', '{{agent_E}}')], max_length=2, verbose_name='담당 에이전트')),
+                ('action', models.CharField(choices=[('pending', '대기'), ('approved', '합의'), ('rejected', '반려')], default='pending', max_length=10, verbose_name='결재 결과')),
                 ('acted_at', models.DateTimeField(blank=True, null=True, verbose_name='처리일시')),
                 ('comment', models.TextField(blank=True, verbose_name='의견')),
                 ('is_parallel', models.BooleanField(default=False, verbose_name='병렬 처리 여부')),
                 ('assignee_name', models.CharField(blank=True, max_length=100, verbose_name='담당자 이름')),
+                ('round', models.PositiveSmallIntegerField(default=1, verbose_name='상신 회차')),
+                ('created_at', models.DateTimeField(auto_now_add=True, null=True, verbose_name='생성일시')),
+                ('due_date', models.DateField(blank=True, null=True, verbose_name='완료 기한')),
                 ('assignee', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='assigned_steps', to=settings.AUTH_USER_MODEL, verbose_name='담당자')),
                 ('document', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='approval_steps', to='api.requestdocument', verbose_name='의뢰서')),
             ],
             options={
                 'verbose_name': '결재 단계',
                 'verbose_name_plural': '결재 단계 목록',
-                'ordering': ['id'],
+                'ordering': ['round', 'id'],
+            },
+        ),
+        migrations.CreateModel(
+            name='VocComment',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('author_name', models.CharField(max_length=100, verbose_name='작성자')),
+                ('author_role', models.CharField(max_length=20, verbose_name='역할')),
+                ('is_submitter', models.BooleanField(default=False, verbose_name='제출자 여부')),
+                ('content', models.TextField(verbose_name='내용')),
+                ('is_reject_reason', models.BooleanField(default=False, verbose_name='반려 사유 여부')),
+                ('created_at', models.DateTimeField(auto_now_add=True, verbose_name='작성일시')),
+                ('voc', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='comments', to='api.voc', verbose_name='VOC')),
+            ],
+            options={
+                'verbose_name': 'VOC 댓글',
+                'verbose_name_plural': 'VOC 댓글 목록',
+                'ordering': ['created_at'],
+            },
+        ),
+        migrations.CreateModel(
+            name='MailNotification',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('event_type', models.CharField(choices=[('stage_arrival', '단계 도착'), ('rejected', '반려'), ('approved', '승인 완료')], max_length=20, verbose_name='이벤트 유형')),
+                ('recipients', models.JSONField(default=list, verbose_name='수신자 이메일 목록')),
+                ('subject', models.CharField(max_length=500, verbose_name='제목')),
+                ('contents', models.TextField(verbose_name='본문(HTML)')),
+                ('status', models.CharField(choices=[('pending', '대기'), ('sent', '발송 완료'), ('failed', '발송 실패')], default='pending', max_length=10, verbose_name='상태')),
+                ('attempts', models.PositiveSmallIntegerField(default=0, verbose_name='시도 횟수')),
+                ('max_attempts', models.PositiveSmallIntegerField(default=5, verbose_name='최대 시도 횟수')),
+                ('last_error', models.TextField(blank=True, verbose_name='마지막 에러')),
+                ('created_at', models.DateTimeField(auto_now_add=True, verbose_name='적재일시')),
+                ('sent_at', models.DateTimeField(blank=True, null=True, verbose_name='발송일시')),
+                ('document', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='mail_notifications', to='api.requestdocument', verbose_name='의뢰서')),
+            ],
+            options={
+                'verbose_name': '결재 알림 메일',
+                'verbose_name_plural': '결재 알림 메일 목록',
+                'ordering': ['created_at'],
+                'indexes': [models.Index(fields=['status'], name='api_mailnoti_status_idx')],
+            },
+        ),
+        migrations.CreateModel(
+            name='UserGroup',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=100, verbose_name='그룹 이름')),
+                ('created_at', models.DateTimeField(auto_now_add=True, verbose_name='생성일')),
+                ('creator', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='created_groups', to=settings.AUTH_USER_MODEL, verbose_name='생성자')),
+                ('members', models.ManyToManyField(blank=True, related_name='member_groups', to=settings.AUTH_USER_MODEL, verbose_name='그룹 멤버')),
+            ],
+            options={
+                'verbose_name': '나만의 그룹',
+                'verbose_name_plural': '나만의 그룹 목록',
+                'ordering': ['-created_at'],
+                'unique_together': {('creator', 'name')},
             },
         ),
         migrations.CreateModel(
