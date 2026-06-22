@@ -36,6 +36,8 @@ const CMD_LEAD_MS = 900;
 const LOOP_DELAY_MS = 1200;
 const EL_WAIT_MS = 2600;
 const MAX_PREVIEW_VH = 0.52;
+// 스포트라이트가 강조 대상에 너무 딱 붙지 않도록 사방에 두는 여백(축소 후 화면 px)
+const SPOTLIGHT_PAD = 14;
 
 interface Rect { top: number; left: number; width: number; height: number; }
 
@@ -140,12 +142,18 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
           if (cancelled) return;
           if (seekRef.current != null) continue;
           if (el) {
-            el.scrollIntoView({ block: 'center', inline: 'center' });
+            // 세로(상/하)만 중앙 정렬 — 가로(좌/우)는 'nearest'로 두어 미리보기가 좌우로 흔들리지 않게 한다.
+            el.scrollIntoView({ block: 'center', inline: 'nearest' });
             await wait(SCROLL_SETTLE_MS);
             if (cancelled) return;
             if (seekRef.current != null) continue;
             const r = el.getBoundingClientRect();
-            setRect({ top: r.top * scale, left: r.left * scale, width: r.width * scale, height: r.height * scale });
+            setRect({
+              top: r.top * scale - SPOTLIGHT_PAD,
+              left: r.left * scale - SPOTLIGHT_PAD,
+              width: r.width * scale + SPOTLIGHT_PAD * 2,
+              height: r.height * scale + SPOTLIGHT_PAD * 2,
+            });
           }
         }
         setBottomCaption(!!phase.bottomCaption);
