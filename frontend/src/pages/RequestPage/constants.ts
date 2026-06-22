@@ -175,27 +175,54 @@ export const makeTourDetail = (): DetailFormState => ({
   customer_name: '샘플 고객사',
   customer_requirement: '신규 라인 제품 소개 지도 제작 요청',
   map_type: 'NEW',
+  // BB 자동채움/매핑 데모용 — 외부 데이터 탭 2개와 1:1로 대응한다.
+  bb_entries: [
+    { location: '', product: 'BB제품1', process_id: 'BB_R1' },
+    { location: '', product: 'BB제품2', process_id: 'BB_R2' },
+  ],
 });
 
-export const makeTourJayerRows = (): JayerRow[] => [
-  makeJayerRow(), makeJayerRow(), makeJayerRow(), makeJayerRow(), makeJayerRow(),
-];
+// J-ayer 행의 Layer 값 — BB 자동채움이 실제로 매칭되도록 외부 데이터 layerid와 맞춘다.
+export const TOUR_JAYER_LAYERS = ['10', '20', '30', '40', '50'];
+
+export const makeTourJayerRows = (): JayerRow[] =>
+  TOUR_JAYER_LAYERS.map((layer, i) => ({
+    ...makeJayerRow(),
+    sortOrder: i,
+    process_id: 'PROC_X1',
+    sp: `SP0${i + 1}`,
+    sd: `SD0${i + 1}`,
+    layerid: layer,
+    st: 'O',
+    new_or_copy: '신규',
+    product_name: '',
+    step: '',
+    item_id: '',
+  }));
 
 export const makeTourOayerRows = (): OayerRow[] => [
-  { ...makeOayerRow(), process_id: 'PROC_X1', sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01', st: 'ST1', new_or_copy: '신규', product_name: '샘플제품A', step: '10' },
-  { ...makeOayerRow(), process_id: 'PROC_X1', sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'ST1', new_or_copy: '신규', product_name: '샘플제품A', step: '20' },
+  { ...makeOayerRow(), sortOrder: 0, process_id: 'PROC_X1', sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01', st: 'ST1', new_or_copy: '신규', product_name: '샘플제품A', step: '10' },
+  { ...makeOayerRow(), sortOrder: 1, process_id: 'PROC_X1', sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'ST1', new_or_copy: '신규', product_name: '샘플제품A', step: '20' },
+  // TBV/TLV는 O-ayer에 TBV/TLV 항목이 있어야 '정보' 탭에 노출된다 — 데모용 시드 1행.
+  { ...makeOayerRow(), sortOrder: 2, process_id: 'PROC_X1', sp: 'SP03', sd: 'TBV', pp: 'PP03', layerid: 'L03', st: 'ST1', new_or_copy: '신규', product_name: '샘플제품A', step: '30' },
 ];
 
 export const makeTourBbRows = (): BbTableRow[] => [
-  { ...makeBbRow(), process_id: 'PROC_X1', ss: 'SS01', sd: 'SD01', bb_process_id: 'BB_X1', bb_name: 'BB샘플A', bb_step: '10', bb_ss: 'BSS01', remark: '' },
-  { ...makeBbRow(), process_id: 'PROC_X2', ss: 'SS02', sd: 'SD02', bb_process_id: 'BB_X2', bb_name: 'BB샘플B', bb_step: '20', bb_ss: 'BSS02', remark: '' },
+  { ...makeBbRow(), process_id: 'PROC_X1', ss: 'SP01', sd: 'SD01', bb_process_id: 'BB_R1', bb_name: 'BB제품1', bb_step: '10', bb_ss: '110', remark: '' },
+  { ...makeBbRow(), process_id: 'PROC_X1', ss: 'SP02', sd: 'SD02', bb_process_id: 'BB_R1', bb_name: 'BB제품1', bb_step: '20', bb_ss: '120', remark: '' },
 ];
 
-// BB 자동채움 버튼을 활성화하기 위한 외부 데이터 샘플 (PhotoStepOption[][])
+// BB 자동채움·매핑 데모용 외부 데이터 (PhotoStepOption[][]) — 탭은 bb_entries와 1:1 대응.
+// 탭1(BB제품1)은 Layer 10/20/30, 탭2(BB제품2)는 Layer 40/50을 담당한다.
 export const makeTourBbExternalData = () => [
   [
-    { processid: 'BB_X1', stepseq: '10', descript: 'BB샘플A', layerid: 'L01' },
-    { processid: 'BB_X2', stepseq: '20', descript: 'BB샘플B', layerid: 'L02' },
+    { processid: 'BB_R1', stepseq: '110', descript: 'BB제품1 STEP', layerid: '10' },
+    { processid: 'BB_R1', stepseq: '120', descript: 'BB제품1 STEP', layerid: '20' },
+    { processid: 'BB_R1', stepseq: '130', descript: 'BB제품1 STEP', layerid: '30' },
+  ],
+  [
+    { processid: 'BB_R2', stepseq: '240', descript: 'BB제품2 STEP', layerid: '40' },
+    { processid: 'BB_R2', stepseq: '250', descript: 'BB제품2 STEP', layerid: '50' },
   ],
 ];
 
