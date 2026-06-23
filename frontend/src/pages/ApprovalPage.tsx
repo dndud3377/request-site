@@ -255,6 +255,7 @@ export default function ApprovalPage(): React.ReactElement {
   // 지정하기 UI (모달 footer)
   const [assigningOpen, setAssigningOpen] = useState(false);
   const [assigningUserId, setAssigningUserId] = useState('');
+  const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
   const [teamMembers, setTeamMembers] = useState<UserWithRole[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
 
@@ -417,29 +418,33 @@ export default function ApprovalPage(): React.ReactElement {
       return el;
     };
 
-    // 문서 C(지정 대기) 상세를 열고 → 실제 지정 UI(select+확인)로 담당자를 배정하는 모습까지 시연한다.
+    // 문서 C(지정 대기) 상세를 열고 → 실제 지정 UI(드롭다운 버튼→항목→확인)로 담당자를 배정하는 모습까지 시연한다.
+    // 각 단계는 실제 DOM 클릭(el.click())을 호출해 운영과 동일한 onClick 동작을 그대로 탄다.
     const runOpenAssign = async (tok: { cancelled: boolean }) => {
       setTourCursor(null);
       setTourClicking(false);
       setModalOpen(false);
       setAssigningOpen(false);
       setAssigningUserId('');
+      setAssignDropdownOpen(false);
       await sleep(300); if (tok.cancelled) return;
       setSelected(TOUR_APPROVAL_ASSIGN_DOC);
       setPageIdx(0);
       setModalOpen(true);
       await sleep(700); if (tok.cancelled) return;
-      // ① '지정하기' 클릭 → 실제 select+확인/취소 노출(샘플 팀원 로드)
-      await cursorPress('[data-tour="assign-btn"]', tok); if (tok.cancelled) return;
-      setTeamMembers(TOUR_ASSIGN_MEMBERS);
-      setAssigningOpen(true);
-      setAssigningUserId('');
-      await sleep(600); if (tok.cancelled) return;
-      // ② select로 이동해 담당자(첫 번째 인원) 선택
-      await cursorPress('[data-tour="assign-select"]', tok); if (tok.cancelled) return;
-      setAssigningUserId(TOUR_ASSIGN_MEMBERS[0].loginid);
+      // ① '지정하기' 클릭 → 실제 onClick(후보 로드 + 지정 UI 노출)
+      const assignBtn = await cursorPress('[data-tour="assign-btn"]', tok); if (tok.cancelled) return;
+      assignBtn?.click();
       await sleep(700); if (tok.cancelled) return;
-      // ③ '확인' 클릭 → 실제 onClick으로 해당 단계에 담당자 배정(투어 로컬 반영)
+      // ② 드롭다운 버튼 클릭 → 후보 목록 펼침
+      const ddBtn = await cursorPress('[data-tour="assign-select"]', tok); if (tok.cancelled) return;
+      ddBtn?.click();
+      await sleep(600); if (tok.cancelled) return;
+      // ③ 후보 항목(첫 번째 인원) 클릭 → 선택
+      const opt = await cursorPress('[data-tour="assign-option"]', tok); if (tok.cancelled) return;
+      opt?.click();
+      await sleep(600); if (tok.cancelled) return;
+      // ④ '확인' 클릭 → 해당 단계에 담당자 배정(투어 로컬 반영)
       const ok = await cursorPress('[data-tour="assign-confirm"]', tok); if (tok.cancelled) return;
       ok?.click();
       await sleep(300);
@@ -1111,22 +1116,38 @@ export default function ApprovalPage(): React.ReactElement {
               )}
               {assignableStep && assigningOpen && (
                 <>
-                  <select
-                    data-tour={isTourMode ? 'assign-select' : undefined}
-                    value={assigningUserId}
-                    onChange={(e) => setAssigningUserId(e.target.value)}
-                    style={{ fontSize: '0.85rem', padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)' }}
-                  >
-                    {loadingMembers
-                      ? <option>로딩 중...</option>
-                      : <>
-                          <option value="">담당자 선택</option>
-                          {teamMembers.map((u) => (
-                            <option key={u.loginid} value={u.loginid}>{u.name}</option>
-                          ))}
-                        </>
-                    }
-                  </select>
+                  {/* 커스텀 드롭다운 — 버튼 클릭으로 후보 목록을 펼치고 항목을 선택한다 */}
+                  <div className="assign-dropdown" style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      data-tour={isTourMode ? 'assign-select' : undefined}
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setAssignDropdownOpen((o) => !o)}
+                      style={{ minWidth: 130, display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}
+                    >
+                      <span>{teamMembers.find((u) => u.loginid === assigningUserId)?.name ?? t('approval.assign_select_placeholder')}</span>
+                      <span aria-hidden="true">▾</span>
+                    </button>
+                    {assignDropdownOpen && (
+                      <ul className="assign-dropdown-list">
+                        {loadingMembers ? (
+                          <li className="assign-dropdown-empty">{t('common.loading')}</li>
+                        ) : teamMembers.length === 0 ? (
+                          <li className="assign-dropdown-empty">{t('approval.no_team_members')}</li>
+                        ) : teamMembers.map((u, i) => (
+                          <li
+                            key={u.loginid}
+                            data-tour={isTourMode && i === 0 ? 'assign-option' : undefined}
+                            className="assign-dropdown-item"
+                            onClick={() => { setAssigningUserId(u.loginid); setAssignDropdownOpen(false); }}
+                          >
+                            <strong>{u.name}</strong>
+                            <span className="assign-dropdown-dept">{u.deptname}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                   <button
                     data-tour={isTourMode ? 'assign-confirm' : undefined}
                     className="btn btn-primary btn-sm"
@@ -1137,6 +1158,7 @@ export default function ApprovalPage(): React.ReactElement {
                         handleAssign(assignableStep.agent, user.loginid, user.name);
                         setAssigningOpen(false);
                         setAssigningUserId('');
+                        setAssignDropdownOpen(false);
                       }
                     }}
                   >
@@ -1144,7 +1166,7 @@ export default function ApprovalPage(): React.ReactElement {
                   </button>
                   <button
                     className="btn btn-secondary btn-sm"
-                    onClick={() => { setAssigningOpen(false); setAssigningUserId(''); }}
+                    onClick={() => { setAssigningOpen(false); setAssigningUserId(''); setAssignDropdownOpen(false); }}
                   >
                     취소
                   </button>
