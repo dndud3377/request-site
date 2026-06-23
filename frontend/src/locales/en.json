@@ -470,6 +470,10 @@
             "revision_diff": "A request resubmitted after rejection highlights the changed fields/rows, and a 'View History' button appears on changed rows.",
             "revision_modal": "Click 'View History' to compare the before/after values side by side."
           }
+        },
+        "permission": {
+          "title": "Permissions",
+          "description": "Add users to a role tab, then group same-role users together. A group is visible only to its members, and notification mails go only to members."
         }
       }
     },
@@ -701,7 +705,7 @@
         "same_role_note": "Same role only",
         "phase_group_intro": "⑤ About Create Group (emails go only to members)",
         "group_intro_title": "What is a group?",
-        "group_intro_desc": "Bundle users of the same role for unified management. Once created, it is added as a group tab above, and notification emails are sent only to group members."
+        "group_intro_desc": "Bundle users of the same role for unified management. Once created, it is added as a group tab above; this group tab is visible only to its members, and notification emails are sent only to group members."
       }
     },
     "permission_step": "Permissions"
