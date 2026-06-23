@@ -196,7 +196,7 @@ const Step4: React.FC<Step4Props> = ({
               >
                 {detail.bb_entries.map((entry, entryIdx) => (
                   <option key={entryIdx} value={entry.product}>
-                    {entry.product || entry.location || `항목 ${entryIdx + 1}`}
+                    {`[${entry.location}] ${entry.product}`}
                   </option>
                 ))}
               </select>
@@ -322,7 +322,7 @@ const Step4: React.FC<Step4Props> = ({
                 className={`bb-tab${activeBbTab === idx ? ' bb-tab-active' : ''}`}
                 onClick={() => setActiveBbTab(idx)}
               >
-                {entry.product || entry.location || `항목 ${idx + 1}`}
+                {`[${entry.location}] ${entry.product}`}
               </button>
             ))}
           </div>
