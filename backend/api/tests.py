@@ -99,6 +99,61 @@ class RecipientResolutionTest(TestCase):
         )
 
 
+class DraftVisibilityTest(TestCase):
+    """임시저장(draft) 문서는 작성자 본인 + 그룹 공유 멤버 + MASTER 에게만 보인다."""
+
+    def setUp(self):
+        from rest_framework.test import APIRequestFactory
+        from .views import RequestDocumentViewSet
+        self._factory = APIRequestFactory()
+        self._view_cls = RequestDocumentViewSet
+
+        self.author = UserProfile.objects.create(loginid='author', mail='a@c.com', role='NONE')
+        self.member = UserProfile.objects.create(loginid='member', mail='m@c.com', role='NONE')
+        self.outsider = UserProfile.objects.create(loginid='out', mail='o@c.com', role='NONE')
+        self.master = UserProfile.objects.create(loginid='master', mail='ms@c.com', role='MASTER')
+
+        group = UserGroup.objects.create(name='team', creator=self.author)
+        group.members.add(self.author, self.member)
+
+        self.draft = RequestDocument.objects.create(
+            title='draft doc', requester=self.author, requester_name='a',
+            requester_email='a@c.com', requester_department='d', product_name='p',
+            status='draft',
+        )
+        self.submitted = RequestDocument.objects.create(
+            title='submitted doc', requester=self.author, requester_name='a',
+            requester_email='a@c.com', requester_department='d', product_name='p',
+            status='under_review',
+        )
+
+    def _visible_ids(self, user):
+        view = self._view_cls()
+        request = self._factory.get('/api/documents/')
+        request.user = user
+        view.request = request
+        view.kwargs = {}
+        view.format_kwarg = None
+        return set(view.get_queryset().values_list('id', flat=True))
+
+    def test_author_sees_own_draft(self):
+        ids = self._visible_ids(self.author)
+        self.assertIn(self.draft.id, ids)
+        self.assertIn(self.submitted.id, ids)
+
+    def test_group_member_sees_draft(self):
+        self.assertIn(self.draft.id, self._visible_ids(self.member))
+
+    def test_outsider_cannot_see_draft(self):
+        ids = self._visible_ids(self.outsider)
+        self.assertNotIn(self.draft.id, ids)
+        # 비-draft 문서는 종전대로 보인다
+        self.assertIn(self.submitted.id, ids)
+
+    def test_master_sees_all_drafts(self):
+        self.assertIn(self.draft.id, self._visible_ids(self.master))
+
+
 class EnqueueTest(TestCase):
     def setUp(self):
         self.requester = UserProfile.objects.create(

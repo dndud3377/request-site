@@ -203,6 +203,8 @@
     "withdraw_confirm": "의뢰서를 철회하시겠습니까? 임시저장 상태로 돌아갑니다.",
     "withdraw_success": "의뢰서가 철회되었습니다.",
     "assign_success": "담당자가 지정되었습니다.",
+    "assign_select_placeholder": "담당자 선택",
+    "no_team_members": "지정 가능한 담당자가 없습니다.",
     "edit_resubmit": "수정·재상신",
     "resubmit_confirm": "수정 완료 후 재상신하시겠습니까?",
     "resubmit_success": "재상신되었습니다.",
@@ -712,7 +714,13 @@
         "phase_group_intro": "⑤ 그룹 만들기 기능 설명 (메일은 그룹 멤버에게만)",
         "group_intro_title": "그룹이란?",
         "group_intro_desc": "같은 역할의 사용자를 하나로 묶어 관리합니다. 만들면 위 탭바에 그룹 탭으로 추가되며, 이 그룹 탭은 소속 멤버에게만 보이고 알림 메일도 그룹 멤버에게만 발송됩니다.",
-        "self_member": "나 (본인)"
+        "self_member": "나 (본인)",
+        "intro_title": "👥 그룹(나만의 그룹)이란?",
+        "intro_b1": "같은 역할의 사용자를 묶어 한 번에 관리합니다.",
+        "intro_b2": "그룹 탭은 소속 멤버에게만 보입니다.",
+        "intro_b3": "알림 메일은 그룹 멤버에게만 발송됩니다.",
+        "intro_b4": "작성자의 임시저장 문서는 같은 그룹 멤버에게만 공유됩니다.",
+        "intro_b5": "그룹 생성 시 생성자(본인)가 자동으로 멤버에 포함됩니다."
       }
     },
     "permission_step": "권한관리"

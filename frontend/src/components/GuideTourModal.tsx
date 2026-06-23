@@ -85,9 +85,10 @@ export function useGuideTourSteps(): GuideTourStep[] {
           { cmd: 'my-filter', selector: '[data-tour="approval-my-tab"]', caption: acap('my_filter'), hold: 5000 },
           // #4 현재 단계·지정 담당자 + 메일 발송 (목록 컬럼)
           { selector: '[data-tour="approval-stage"]', caption: acap('stage_mail'), hold: 5500 },
-          // #5 담당자 지정하기 (문서 C 상세 → 실제 select+확인으로 배정까지 시연)
-          { cmd: 'open-assign', bottomCaption: true, caption: acap('assign_btn'), hold: 9500 },
-          { bottomCaption: true, caption: acap('assign_result'), hold: 4000 },
+          // #5 담당자 지정하기 (문서 C 상세 → 실제 드롭다운+확인으로 배정까지 시연)
+          // 캡션은 상단 고정 — 하단 footer의 지정 UI(드롭다운/확인)를 가리지 않도록 한다.
+          { cmd: 'open-assign', topCaption: true, caption: acap('assign_btn'), hold: 11000 },
+          { topCaption: true, caption: acap('assign_result'), hold: 4000 },
           // 문서 A 상세 열기 → 결재 경로 / export
           { cmd: 'open-detail', bottomCaption: true, caption: acap('open_detail'), hold: 6000 },
           { cmd: 'page-route', selector: '[data-tour="approval-route-tab"]', caption: acap('route_tab'), hold: 6500 },

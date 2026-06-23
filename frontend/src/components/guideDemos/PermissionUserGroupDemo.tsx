@@ -42,6 +42,7 @@ const PermissionUserGroupDemo: React.FC<{ embedded?: boolean; paused?: boolean }
   // 그룹 생성 시 생성자(본인)가 자동으로 멤버에 포함된다 (백엔드 members.add(self) 반영)
   const selfLabel = t('guide.demo.permission_user_group.self_member' as never) as string;
 
+  const [showIntro, setShowIntro] = useState(true);
   const [phase, setPhase] = useState<Phase>('open_user');
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [userSearch, setUserSearch] = useState('');
@@ -80,6 +81,7 @@ const PermissionUserGroupDemo: React.FC<{ embedded?: boolean; paused?: boolean }
       };
 
       // reset
+      setShowIntro(true);
       setPhase('open_user');
       setUserModalOpen(false);
       setUserSearch('');
@@ -94,6 +96,12 @@ const PermissionUserGroupDemo: React.FC<{ embedded?: boolean; paused?: boolean }
       setCreatedGroup(null);
       setActiveGroup(null);
       await sleep(550);
+
+      // ⓪ 그룹 기능 인트로 — 데모 시작 전 그룹의 핵심 규칙을 먼저 설명한다.
+      await sleep(6500);
+      if (cancelled()) return;
+      setShowIntro(false);
+      await sleep(400);
 
       // ① + 사용자 추가 → 모달(제목에 역할)
       await moveTo(refs.current.addUserBtn);
@@ -199,6 +207,27 @@ const PermissionUserGroupDemo: React.FC<{ embedded?: boolean; paused?: boolean }
       {!embedded && <p className="guide-demo-lead">{t('guide.demo.permission_user_group.lead')}</p>}
 
       <div className="guide-demo-stage" ref={stageRef} style={{ minHeight: 470 }}>
+        {/* ⓪ 그룹 기능 인트로 — 데모 시작 전 핵심 규칙을 먼저 설명 */}
+        <AnimatePresence>
+          {showIntro && (
+            <motion.div
+              className="guide-demo-intro"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+            >
+              <div className="guide-demo-intro-title">{t(pk('intro_title'))}</div>
+              <ul className="guide-demo-intro-list">
+                <li>{t(pk('intro_b1'))}</li>
+                <li>{t(pk('intro_b2'))}</li>
+                <li>{t(pk('intro_b3'))}</li>
+                <li>{t(pk('intro_b4'))}</li>
+                <li>{t(pk('intro_b5'))}</li>
+              </ul>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="guide-demo-phase">
           <span className="guide-demo-phase-dot" />
           {t(pk(`phase_${phase}`))}

@@ -2896,6 +2896,36 @@ select.form-control option {
   border-radius: 12px;
   padding: 16px;
 }
+/* 권한 데모 ⓪ 그룹 기능 인트로 — 데모 무대 위를 덮는 설명 카드 */
+.guide-demo-intro {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  padding: 28px 32px;
+  background: #ffffff;
+  border-radius: 12px;
+}
+.guide-demo-intro-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: #2d3142;
+}
+.guide-demo-intro-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.guide-demo-intro-list li {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #4a5568;
+}
 
 .guide-demo-field { margin-bottom: 12px; position: relative; }
 .guide-demo-field:last-of-type { margin-bottom: 0; }
@@ -3918,6 +3948,36 @@ select.form-control option {
   letter-spacing: 0.04em;
   margin-bottom: 12px;
 }
+/* 담당자 지정 커스텀 드롭다운 (결재 상세 footer) */
+.assign-dropdown-list {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin: 0 0 4px;
+  padding: 4px;
+  list-style: none;
+  min-width: 160px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg-modal, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+  z-index: 50;
+}
+.assign-dropdown-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.assign-dropdown-item:hover { background: var(--bg-secondary, #f1f5f9); }
+.assign-dropdown-dept { color: var(--text-muted, #718096); font-size: 0.72rem; }
+.assign-dropdown-empty { padding: 8px 10px; color: var(--text-muted, #718096); font-size: 0.8rem; }
+
 /* 페이지별 탭 (모달 상단) — 아무 탭이나 눌러 해당 단계로 이동 */
 .guide-tour-tabs {
   display: flex;
@@ -4064,6 +4124,14 @@ select.form-control option {
 }
 .guide-tour-caption.bottom {
   bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 82%;
+  text-align: center;
+  font-size: 13px;
+}
+.guide-tour-caption.top {
+  top: 14px;
   left: 50%;
   transform: translateX(-50%);
   max-width: 82%;

@@ -10,6 +10,8 @@ export interface TourPhase {
   selector?: string;
   /** 선택자가 없을 때 캡션을 하단에 고정한다 (J-ayer 실시간 데모처럼 표를 가리지 않도록) */
   bottomCaption?: boolean;
+  /** 선택자가 없을 때 캡션을 상단에 고정한다 (하단 모달 footer를 가리지 않도록) */
+  topCaption?: boolean;
   /** 설명 캡션 (이미 번역된 문자열) */
   caption: string;
   /** 이 phase 표시 시간(ms) */
@@ -50,6 +52,7 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
   const [rect, setRect] = useState<Rect | null>(null);
   const [caption, setCaption] = useState('');
   const [bottomCaption, setBottomCaption] = useState(false);
+  const [topCaption, setTopCaption] = useState(false);
   // 항목이 바뀔 때마다 증가 → 강조/캡션에 부드러운 밝기 페이드인을 다시 재생시키는 키
   const [revealKey, setRevealKey] = useState(0);
 
@@ -166,6 +169,7 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
           }
         }
         setBottomCaption(!!phase.bottomCaption);
+        setTopCaption(!!phase.topCaption);
         setCaption(phase.caption);
         setRevealKey((k) => k + 1);
 
@@ -185,7 +189,7 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
   const cursor = rect ? { x: rect.left + rect.width * 0.5, y: rect.top + rect.height * 0.5 } : null;
   const frameW = VIEWPORT_W * scale;
   const frameH = VIEWPORT_H * scale;
-  const captionPos = rect ? 'anchored' : bottomCaption ? 'bottom' : 'center';
+  const captionPos = rect ? 'anchored' : topCaption ? 'top' : bottomCaption ? 'bottom' : 'center';
 
   return (
     <div className="guide-tour-preview-frame" ref={containerRef} style={{ width: frameW, height: frameH, margin: '0 auto' }}>
