@@ -1119,6 +1119,36 @@ export default function RequestPage(): React.ReactElement {
         setJayerRows((rows) => rows.map((r) => (r.id === rowId ? { ...r, item_id: autoMatchItemId(r, candidates) } : r)));
       }
     });
+    // J→J 동기화 + J→O 동기화: st / new_or_copy 붙여넣기 시 layerid 기반 연동
+    type SyncFields = Partial<Record<'st' | 'new_or_copy', string>>;
+    const layeridSyncMap = new Map<string, SyncFields>();
+    const directlyPastedIds = new Set<string>();
+    changes.forEach(({ rowId, values }) => {
+      if (!('st' in values) && !('new_or_copy' in values)) return;
+      const jRow = jayerRows.find(r => r.id === rowId);
+      if (!jRow?.layerid?.trim()) return;
+      const layerid = jRow.layerid.trim();
+      const entry = layeridSyncMap.get(layerid) ?? {};
+      if ('st' in values) entry.st = values.st;
+      if ('new_or_copy' in values) entry.new_or_copy = values.new_or_copy;
+      layeridSyncMap.set(layerid, entry);
+      directlyPastedIds.add(rowId);
+    });
+    if (layeridSyncMap.size > 0) {
+      setJayerRows(rows => rows.map(r => {
+        if (directlyPastedIds.has(r.id)) return r;
+        const layerid = r.layerid?.trim();
+        if (!layerid || !layeridSyncMap.has(layerid)) return r;
+        if (r.new_or_copy === '기등록') return r;
+        return { ...r, ...layeridSyncMap.get(layerid)! };
+      }));
+      setOayerRows(rows => rows.map(r => {
+        const layerid = r.layerid?.trim();
+        if (!layerid || !layeridSyncMap.has(layerid)) return r;
+        if (r.new_or_copy === '기등록') return r;
+        return { ...r, ...layeridSyncMap.get(layerid)! };
+      }));
+    }
   };
 
   // 붙여넣기 후 O-layer 자동채움(바코드 없음 — step=layer 자동만)
@@ -1132,6 +1162,36 @@ export default function RequestPage(): React.ReactElement {
         }));
       }
     });
+    // O→O 동기화 + O→J 동기화: st / new_or_copy 붙여넣기 시 layerid 기반 연동
+    type SyncFields = Partial<Record<'st' | 'new_or_copy', string>>;
+    const layeridSyncMap = new Map<string, SyncFields>();
+    const directlyPastedIds = new Set<string>();
+    changes.forEach(({ rowId, values }) => {
+      if (!('st' in values) && !('new_or_copy' in values)) return;
+      const oRow = oayerRows.find(r => r.id === rowId);
+      if (!oRow?.layerid?.trim()) return;
+      const layerid = oRow.layerid.trim();
+      const entry = layeridSyncMap.get(layerid) ?? {};
+      if ('st' in values) entry.st = values.st;
+      if ('new_or_copy' in values) entry.new_or_copy = values.new_or_copy;
+      layeridSyncMap.set(layerid, entry);
+      directlyPastedIds.add(rowId);
+    });
+    if (layeridSyncMap.size > 0) {
+      setOayerRows(rows => rows.map(r => {
+        if (directlyPastedIds.has(r.id)) return r;
+        const layerid = r.layerid?.trim();
+        if (!layerid || !layeridSyncMap.has(layerid)) return r;
+        if (r.new_or_copy === '기등록') return r;
+        return { ...r, ...layeridSyncMap.get(layerid)! };
+      }));
+      setJayerRows(rows => rows.map(r => {
+        const layerid = r.layerid?.trim();
+        if (!layerid || !layeridSyncMap.has(layerid)) return r;
+        if (r.new_or_copy === '기등록') return r;
+        return { ...r, ...layeridSyncMap.get(layerid)! };
+      }));
+    }
   };
 
   // 엑셀식 셀 선택 + 붙여넣기 (J/O 표 공용 훅). 붙여넣기 후 자동채움/바코드 조회 연동.
