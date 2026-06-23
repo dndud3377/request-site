@@ -2,16 +2,19 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next';
 import GuideTourStepPreview, { TourPhase, DEFAULT_HOLD_MS } from './GuideTourStepPreview';
 import PermissionUserGroupDemo from './guideDemos/PermissionUserGroupDemo';
+import ApprovalRouteDiagram from './ApprovalRouteDiagram';
 
 /** "전체 가이드" 한 단계의 메타데이터 */
 export interface GuideTourStep {
-  key: 'request' | 'approval' | 'history' | 'voc' | 'permission';
+  key: 'route' | 'request' | 'approval' | 'history' | 'voc' | 'permission';
   title: string;
   description: string;
   path: string;
   phases: TourPhase[];
-  /** iframe 미리보기 대신 직접 렌더할 데모 컴포넌트(자체 애니메이션 루프 보유) */
-  component?: React.ComponentType<{ embedded?: boolean }>;
+  /** iframe 미리보기 대신 직접 렌더할 데모 컴포넌트 */
+  component?: React.ComponentType<{ embedded?: boolean; paused?: boolean }>;
+  /** 컴포넌트형 단계가 자체 애니메이션 루프를 가져 일시정지가 의미 있는지 */
+  animated?: boolean;
 }
 
 const RK = 'guide.tour.steps.request.flow';
@@ -29,6 +32,14 @@ export function useGuideTourSteps(): GuideTourStep[] {
     const intro = (nameKey: string) =>
       t(`${RK}.step_intro` as never, { step: t(nameKey as never) }) as string;
     return [
+      {
+        key: 'route' as const,
+        title: t('guide.tour.steps.route.title'),
+        description: t('guide.tour.steps.route.description'),
+        path: '',
+        phases: [],
+        component: ApprovalRouteDiagram,
+      },
       {
         key: 'request' as const,
         title: t('guide.tour.steps.request.title'),
@@ -71,13 +82,12 @@ export function useGuideTourSteps(): GuideTourStep[] {
         path: '/approval',
         phases: [
           { cmd: 'tour-reset', selector: '.filter-tabs', caption: acap('intro'), hold: 3200 },
-          { selector: '[data-tour="approval-route"]', caption: acap('route'), hold: 6500 },
           { cmd: 'my-filter', selector: '[data-tour="approval-my-tab"]', caption: acap('my_filter'), hold: 5000 },
           // #4 현재 단계·지정 담당자 + 메일 발송 (목록 컬럼)
           { selector: '[data-tour="approval-stage"]', caption: acap('stage_mail'), hold: 5500 },
-          // #5 담당자 지정하기 (문서 C 상세 → 팀 인원 드롭다운)
-          { cmd: 'open-assign', bottomCaption: true, caption: acap('assign_btn'), hold: 5500 },
-          { selector: '[data-tour="assign-dropdown"]', caption: acap('assign_dropdown'), hold: 5000 },
+          // #5 담당자 지정하기 (문서 C 상세 → 실제 select+확인으로 배정까지 시연)
+          { cmd: 'open-assign', bottomCaption: true, caption: acap('assign_btn'), hold: 9500 },
+          { bottomCaption: true, caption: acap('assign_result'), hold: 4000 },
           // 문서 A 상세 열기 → 결재 경로 / export
           { cmd: 'open-detail', bottomCaption: true, caption: acap('open_detail'), hold: 6000 },
           { cmd: 'page-route', selector: '[data-tour="approval-route-tab"]', caption: acap('route_tab'), hold: 6500 },
@@ -94,6 +104,7 @@ export function useGuideTourSteps(): GuideTourStep[] {
         path: '',
         phases: [],
         component: PermissionUserGroupDemo,
+        animated: true,
       },
     ];
   }, [t]);
@@ -165,6 +176,14 @@ const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
     setPaused(false);
     setCurrent((c) => Math.min(steps.length - 1, c + 1));
   }, [isLast, onClose, steps.length]);
+  // 상단 탭으로 임의 단계 자유 이동
+  const goTo = useCallback((i: number) => {
+    setPaused(false);
+    setPhaseIdx(0);
+    setPhaseElapsed(0);
+    setSeekSig({ index: 0, nonce: 0 });
+    setCurrent(i);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -207,13 +226,25 @@ const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
           ✕
         </button>
 
-        <div className="guide-tour-progress">
-          {t('guide.tour.progress', { current: current + 1, total: steps.length })} · {step.title}
+        {/* 페이지별 탭 — 아무 탭이나 클릭해 해당 단계로 자유 이동 */}
+        <div className="guide-tour-tabs" role="tablist" aria-label={t('guide.tour.heading')}>
+          {steps.map((s, i) => (
+            <button
+              key={s.key}
+              type="button"
+              role="tab"
+              aria-selected={i === current}
+              className={`guide-tour-tab${i === current ? ' active' : ''}`}
+              onClick={() => goTo(i)}
+            >
+              {s.title}
+            </button>
+          ))}
         </div>
 
         <div className={`guide-tour-preview${step.component ? ' guide-tour-preview-component' : ''}`}>
           {step.component ? (
-            <step.component key={step.key} embedded />
+            <step.component key={step.key} embedded paused={paused} />
           ) : (
             <GuideTourStepPreview
               key={step.key}
@@ -256,12 +287,13 @@ const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
         <p className="guide-tour-desc">{step.description}</p>
 
         <div className="guide-tour-footer">
-          {step.component ? (
-            <span />
-          ) : (
+          {/* iframe phase 단계 + 애니메이션형 컴포넌트(권한)에서만 일시정지 노출 */}
+          {(!step.component || step.animated) ? (
             <button type="button" className="btn btn-secondary guide-tour-pause" onClick={() => setPaused((p) => !p)}>
               {paused ? t('guide.tour.resume') : t('guide.tour.pause')}
             </button>
+          ) : (
+            <span />
           )}
 
           <div className="guide-tour-nav">
