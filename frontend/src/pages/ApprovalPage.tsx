@@ -12,7 +12,7 @@ import ApprovalRouteDiagram from '../components/ApprovalRouteDiagram';
 import { canUserAgree, canUserAssign, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole } from '../types';
 import { formatDate } from '../utils/date';
-import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC } from './approvalTourSeed';
+import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS } from './approvalTourSeed';
 
 // 전체 가이드 상세 모달에서 특정 페이지로 이동하기 위한 페이지 인덱스
 // (MASTER 역할 기준 페이지 순서: 0 상세 · 1 MAP · 2 JOB · 3 OVL · 4 BB · 5 결재 경로)
@@ -380,6 +380,9 @@ export default function ApprovalPage(): React.ReactElement {
     const runOpenDetail = async (tok: { cancelled: boolean }) => {
       setTourCursor(null);
       setTourClicking(false);
+      // 이전에 열린 모달(예: 지정하기 시연)이 있으면 닫고 목록으로 돌아간다.
+      setModalOpen(false);
+      setAssigningOpen(false);
       await sleep(400); if (tok.cancelled) return;
       const el = document.querySelector('[data-tour="approval-doc-title"]') as HTMLElement | null;
       if (el) { el.scrollIntoView({ block: 'center', inline: 'nearest' }); await sleep(320); if (tok.cancelled) return; }
@@ -396,6 +399,43 @@ export default function ApprovalPage(): React.ReactElement {
       setModalOpen(true);
       await sleep(300);
       setTourCursor(null);
+    };
+
+    // 문서 C(지정 대기) 상세를 열고 → '지정하기' 버튼을 눌러 팀 인원 목록을 펼친다(실제 지정 X).
+    const runOpenAssign = async (tok: { cancelled: boolean }) => {
+      setTourCursor(null);
+      setTourClicking(false);
+      setModalOpen(false);
+      setAssigningOpen(false);
+      await sleep(300); if (tok.cancelled) return;
+      setSelected(TOUR_APPROVAL_ASSIGN_DOC);
+      setPageIdx(0);
+      setModalOpen(true);
+      await sleep(700); if (tok.cancelled) return;
+      const btn = document.querySelector('[data-tour="assign-btn"]') as HTMLElement | null;
+      if (btn) { btn.scrollIntoView({ block: 'center', inline: 'nearest' }); await sleep(320); if (tok.cancelled) return; }
+      const r = btn?.getBoundingClientRect();
+      if (r) setTourCursor({ x: r.left + r.width * 0.5, y: r.top + r.height * 0.5 });
+      await sleep(600); if (tok.cancelled) return;
+      setTourClicking(true);
+      btn?.classList.add('tour-pressed');
+      await sleep(300); if (tok.cancelled) return;
+      setTourClicking(false);
+      btn?.classList.remove('tour-pressed');
+      // 팀 인원 목록을 펼친다(샘플 인원).
+      setTeamMembers(TOUR_ASSIGN_MEMBERS);
+      setAssigningOpen(true);
+      await sleep(300);
+      setTourCursor(null);
+    };
+
+    // 상세(문서 A) J-ayer 페이지의 '이력 확인' 버튼을 실제로 눌러 변경 전/후 모달을 연다.
+    const runOpenRowDiff = async (tok: { cancelled: boolean }) => {
+      await sleep(300); if (tok.cancelled) return;
+      const btn = document.querySelector('[data-tour="jayer-hist-btn"]') as HTMLElement | null;
+      btn?.scrollIntoView({ block: 'center', inline: 'nearest' });
+      await sleep(280); if (tok.cancelled) return;
+      btn?.click();
     };
 
     const onMsg = (e: MessageEvent) => {
@@ -422,6 +462,12 @@ export default function ApprovalPage(): React.ReactElement {
           break;
         case 'open-detail':
           runOpenDetail(tok);
+          break;
+        case 'open-assign':
+          runOpenAssign(tok);
+          break;
+        case 'open-rowdiff':
+          runOpenRowDiff(tok);
           break;
         case 'page-jayer':
           setPageIdx(TOUR_PAGE_IDX.jayer);
@@ -732,7 +778,10 @@ export default function ApprovalPage(): React.ReactElement {
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{doc.requester_department}</div>
                         </td>
                       )}
-                      <td style={{ fontWeight: 500 }}>
+                      <td
+                        style={{ fontWeight: 500 }}
+                        data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id && idx === 0 ? 'approval-stage' : undefined}
+                      >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <StatusBadge status={row.pathStatus} />
                           <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{row.stageText}</span>
@@ -875,7 +924,10 @@ export default function ApprovalPage(): React.ReactElement {
             if (isPL && s.agent === 'PL') return true;
             return s.agent === userAgent;
           }) ?? [];
-          const assignableStep = pendingSteps.find((s) => canUserAssign(currentUser, s));
+          // 투어 모드에서는 '지정하기' 시연을 위해 R 단계(지정 대기)를 지정 가능 단계로 본다.
+          const assignableStep = isTourMode
+            ? selected?.approval_steps?.find((s) => s.agent === 'R' && s.action === 'pending')
+            : pendingSteps.find((s) => canUserAssign(currentUser, s));
           const actableStep = pendingSteps.find((s) => canUserAgree(currentUser, s));
           const isPLStep = actableStep?.agent === 'PL';
 
@@ -1010,6 +1062,7 @@ export default function ApprovalPage(): React.ReactElement {
               {assignableStep && !assigningOpen && !changingDesigneeOpen && (
                 <button
                   className="btn btn-secondary"
+                  data-tour={isTourMode ? 'assign-btn' : undefined}
                   disabled={processing}
                   onClick={async () => {
                     setAssigningOpen(true);
@@ -1023,7 +1076,24 @@ export default function ApprovalPage(): React.ReactElement {
                   지정하기
                 </button>
               )}
-              {assignableStep && assigningOpen && (
+              {/* 투어 모드: native select 대신 펼쳐진 팀 인원 목록을 보여준다(실제 지정 안 함). */}
+              {assignableStep && assigningOpen && isTourMode && (
+                <div
+                  data-tour="assign-dropdown"
+                  style={{ display: 'flex', flexDirection: 'column', gap: 2, border: '1px solid var(--border)', borderRadius: 6, padding: 4, background: '#fff', minWidth: 160 }}
+                >
+                  {teamMembers.map((u, i) => (
+                    <div
+                      key={u.loginid}
+                      style={{ padding: '6px 10px', fontSize: '0.85rem', borderRadius: 4, background: i === 0 ? 'var(--accent-soft, #eef2ff)' : 'transparent' }}
+                    >
+                      {u.name}
+                      <span style={{ marginLeft: 6, color: 'var(--text-muted)', fontSize: '0.72rem' }}>{u.deptname}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {assignableStep && assigningOpen && !isTourMode && (
                 <>
                   <select
                     value={assigningUserId}

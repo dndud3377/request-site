@@ -141,7 +141,7 @@ function JayerTable({
                   {hasPrev && (
                     <td style={{ textAlign: 'center' }}>
                       {isChanged && prevRowMap?.has(r.id) && (
-                        <button style={histBtnStyle} onClick={() => setDiffId(r.id)}>이력 확인</button>
+                        <button data-tour="jayer-hist-btn" style={histBtnStyle} onClick={() => setDiffId(r.id)}>이력 확인</button>
                       )}
                     </td>
                   )}

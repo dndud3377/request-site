@@ -37,7 +37,7 @@ const GROUP_NAME = '개발팀';
 const MEMBERS = ['정수진', '한지민'];
 const FINAL_MEMBERS = ['정수진'];
 
-const PermissionUserGroupDemo: React.FC = () => {
+const PermissionUserGroupDemo: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const { t } = useTranslation();
 
   const [phase, setPhase] = useState<Phase>('open_user');
@@ -191,7 +191,7 @@ const PermissionUserGroupDemo: React.FC = () => {
 
   return (
     <div>
-      <p className="guide-demo-lead">{t('guide.demo.permission_user_group.lead')}</p>
+      {!embedded && <p className="guide-demo-lead">{t('guide.demo.permission_user_group.lead')}</p>}
 
       <div className="guide-demo-stage" ref={stageRef} style={{ minHeight: 470 }}>
         <div className="guide-demo-phase">
@@ -350,9 +350,9 @@ const PermissionUserGroupDemo: React.FC = () => {
         {cursorLayer}
       </div>
 
-      <div className="guide-demo-callout">{t('guide.demo.permission_user_group.callout')}</div>
+      {!embedded && <div className="guide-demo-callout">{t('guide.demo.permission_user_group.callout')}</div>}
 
-      <DemoControls done={done} onReplay={replay} />
+      {!embedded && <DemoControls done={done} onReplay={replay} />}
     </div>
   );
 };

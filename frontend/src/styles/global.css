@@ -3926,6 +3926,12 @@ select.form-control option {
   overflow: hidden;
   margin-bottom: 16px;
 }
+/* 컴포넌트형 단계(권한 데모): 자체 애니메이션 데모를 그대로 렌더 — 흰 배경 + 여백 */
+.guide-tour-preview-component {
+  background: #fff;
+  padding: 16px 18px;
+  overflow: visible;
+}
 .guide-tour-title {
   font-size: 17px;
   font-weight: 800;
