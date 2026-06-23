@@ -88,9 +88,10 @@ const docA: RequestDocument = {
   approval_steps: [
     step(1, 'PL', 'approved', { assignee_name: '김검토', acted_at: '2026-06-17T10:00:00Z' }),
     step(2, 'R', 'approved', { assignee_name: '이RFG', acted_at: '2026-06-18T09:00:00Z' }),
+    // 경로1(PHPSI→JOB)은 순차 — P가 검토중일 때 J는 아직 생성 전(대기)이므로 J 단계는 두지 않는다.
     step(3, 'P', 'pending', { assignee_name: '박PHPSI', assignee_loginid: 'tour-p', due_date: '2026-06-24' }),
-    step(4, 'J', 'pending', { assignee_name: '정JOB', assignee_loginid: 'tour-j', due_date: '2026-06-26' }),
-    step(5, 'O', 'pending', { due_date: '2026-06-25' }),
+    // 경로2(OVL)는 병렬로 검토중 — 담당자 지정해 '검토중'으로 표시.
+    step(4, 'O', 'pending', { assignee_name: '한OVL', assignee_loginid: 'tour-o', due_date: '2026-06-25' }),
   ],
 };
 
