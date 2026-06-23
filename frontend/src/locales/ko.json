@@ -407,7 +407,9 @@
     "close": "닫기",
     "no_notice": "등록된 공지사항이 없습니다",
     "delete_title": "공지 삭제",
-    "delete_confirm": "\"{{title}}\" 공지를 삭제하시겠습니까?"
+    "delete_confirm": "\"{{title}}\" 공지를 삭제하시겠습니까?",
+    "hide_today": "오늘 하루 보지 않기",
+    "confirm": "확인"
   },
   "session": {
     "warning_title": "세션 만료 안내",
