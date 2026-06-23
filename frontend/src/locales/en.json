@@ -202,6 +202,7 @@
     "withdraw": "Withdraw",
     "withdraw_confirm": "Are you sure you want to withdraw this request? It will return to draft status.",
     "withdraw_success": "The request has been withdrawn.",
+    "assign_success": "Assignee has been designated.",
     "edit_resubmit": "Edit & Resubmit",
     "resubmit_confirm": "Are you sure you want to resubmit after editing?",
     "resubmit_success": "Resubmitted successfully.",
@@ -424,6 +425,10 @@
       "close": "Close",
       "progress": "{{current}}/{{total}}",
       "steps": {
+        "route": {
+          "title": "Approval Route",
+          "description": "The final approval route of this system. After Review (PL) and RFG, Route 1 (PHPSI→JOB) and Route 2 (OVL·EUV) proceed in parallel. (E only when plel exists; MAP-only requests stop at R.)"
+        },
         "request": {
           "title": "Create a Request",
           "description": "Select a type, enter a title and details, then submit to file your request.",
@@ -462,8 +467,8 @@
             "route": "This is the final approval route a request goes through. After Review (PL) and RFG, Path 1 (PHPSI→JOB) and Path 2 (OVL·EUV) run in parallel.",
             "my_filter": "The 'MY' filter shows only requests you submitted or that need your approval.",
             "stage_mail": "The 'Current Stage' column shows the active approval step and its assignee, and a mail is sent automatically to the relevant team/assignee.",
-            "assign_btn": "For a step with no assignee yet, use the 'Assign' button in the detail to designate the approver directly.",
-            "assign_dropdown": "Pick an approver from the list of members in the same role (team).",
+            "assign_btn": "For a step with no assignee yet, click 'Assign' in the detail, pick an approver from the same-role (team) members, and confirm.",
+            "assign_result": "On 'Confirm', the approver is assigned to that step and a mail is sent to the designated assignee.",
             "open_detail": "Click the title with the cursor to open the request detail.",
             "export_jayer": "Use the 📊 export button on the JOB tab to download the table data as an Excel file.",
             "route_tab": "The Approval Route tab shows each team’s (Review/RFG/PHPSI/JOB/OVL/EUV) approve/reject history with assignees and dates, by round.",
@@ -705,7 +710,8 @@
         "same_role_note": "Same role only",
         "phase_group_intro": "⑤ About Create Group (emails go only to members)",
         "group_intro_title": "What is a group?",
-        "group_intro_desc": "Bundle users of the same role for unified management. Once created, it is added as a group tab above; this group tab is visible only to its members, and notification emails are sent only to group members."
+        "group_intro_desc": "Bundle users of the same role for unified management. Once created, it is added as a group tab above; this group tab is visible only to its members, and notification emails are sent only to group members.",
+        "self_member": "Me (owner)"
       }
     },
     "permission_step": "Permissions"

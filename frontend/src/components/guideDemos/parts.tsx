@@ -76,7 +76,8 @@ interface DemoTimeline {
  */
 export function useDemoTimeline(
   sequence: (api: TimelineApi) => Promise<void>,
-  loopDelayMs = 4000
+  loopDelayMs = 4000,
+  paused = false
 ): DemoTimeline {
   const stageRef = useRef<HTMLDivElement>(null);
   const cursor = useAnimationControls();
@@ -86,17 +87,26 @@ export function useDemoTimeline(
   const [runId, setRunId] = useState(0);
   const seqRef = useRef(sequence);
   seqRef.current = sequence;
+  // 일시정지 상태를 ref로 추적 — 재렌더 없이 진행 중인 시퀀스가 즉시 반영
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
 
   useEffect(() => {
     let cancelled = false;
     let loopTimer: ReturnType<typeof setTimeout> | undefined;
 
+    // paused가 풀릴 때까지 대기 (취소되면 즉시 탈출)
+    const waitWhilePaused = async (): Promise<void> => {
+      while (pausedRef.current && !cancelled) await sleep(60);
+    };
     const moveTo = async (el: HTMLElement | null): Promise<void> => {
+      await waitWhilePaused();
       if (!el || !stageRef.current) return;
       const { x, y } = getCenter(stageRef.current, el);
       await cursor.start({ x: x - 6, y: y - 4, transition: CURSOR_MOVE });
     };
     const click = async (el: HTMLElement | null): Promise<void> => {
+      await waitWhilePaused();
       if (!el || !stageRef.current) return;
       const { x, y } = getCenter(stageRef.current, el);
       setRipple({ x, y, id: Date.now() });
@@ -105,7 +115,13 @@ export function useDemoTimeline(
       setClicking(false);
       await sleep(120);
     };
-    const api: TimelineApi = { moveTo, click, sleep, cancelled: () => cancelled };
+    // 일시정지 인지 sleep — 대기 전후로 paused면 멈춘다
+    const psleep = async (ms: number): Promise<void> => {
+      await waitWhilePaused();
+      await sleep(ms);
+      await waitWhilePaused();
+    };
+    const api: TimelineApi = { moveTo, click, sleep: psleep, cancelled: () => cancelled };
 
     const exec = async (): Promise<void> => {
       setDone(false);

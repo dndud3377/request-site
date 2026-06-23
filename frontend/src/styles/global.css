@@ -3918,6 +3918,34 @@ select.form-control option {
   letter-spacing: 0.04em;
   margin-bottom: 12px;
 }
+/* 페이지별 탭 (모달 상단) — 아무 탭이나 눌러 해당 단계로 이동 */
+.guide-tour-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 2px solid #e8ecf2;
+  margin-bottom: 14px;
+  padding-right: 28px; /* 닫기(✕) 버튼 영역 회피 */
+}
+.guide-tour-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7488;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.guide-tour-tab:hover { color: #2d3142; }
+.guide-tour-tab.active {
+  color: var(--color-primary, #3182ce);
+  border-bottom-color: var(--color-primary, #3182ce);
+}
 .guide-tour-preview {
   background: #f4f6fa;
   border: 1px solid #e8ecf2;

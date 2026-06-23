@@ -261,12 +261,13 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 `/approval?embed=tour` 진입 시 실데이터 API 대신 샘플 시드(`frontend/src/pages/approvalTourSeed.ts`)로 결재 현황을 시연한다(평상시 동작 무영향).
 
 - **시드**: 문서 3건 — A(R 합의 후 병렬 진행, 목록 2행 분기, **재상신 이력 1건 포함** → 상세에서 변경 필드·행 강조) / B(PL 검토 중, 단일 행) / C(R 담당자 지정 대기, 단일 행). `MY`(내 결재) 필터는 사용자 역할과 무관하게 `TOUR_APPROVAL_MY_IDS`(A·C)로 고정한다. 지정하기 시연용 샘플 팀원은 `TOUR_ASSIGN_MEMBERS`.
-- **결재 경로 다이어그램**: `frontend/src/components/ApprovalRouteDiagram.tsx` — 투어 모드에서만 페이지 상단에 **대형**으로 렌더(`data-tour="approval-route"`). 최종 경로 `PL(검토)→R(RFG)→[경로1 PHPSI→JOB]∥[경로2 OVL(+EUV)]→완료`와 조건(E는 plel 시·Only MAP은 R까지)을 안내한다. 실제 결재 페이지에는 표시하지 않는다.
-- **명령 수신**(부모 모달 → iframe `postMessage`): `tour-reset`(모달/필터/커서 초기화) · `my-filter`/`all-filter` · `open-detail`(가짜 커서로 대표 문서 A 제목 클릭→상세) · `open-assign`(문서 C 상세→'지정하기' 버튼 클릭→팀 인원 펼침 목록, 실제 지정 X) · `open-rowdiff`(문서 A J-ayer '이력 확인' 버튼 클릭→변경 전/후 모달) · `page-jayer`/`page-route`(상세 탭 이동, MASTER 역할 기준 인덱스 2/5) · `pause`/`resume`(데모 일시정지·재개).
-- **`data-tour` 앵커**(투어 전용): `approval-stage`(현재 단계 컬럼·문서 A 행) · `assign-btn`(지정하기 버튼) · `assign-dropdown`(투어 전용 팀원 펼침 목록) · `jayer-hist-btn`(이력 확인 버튼).
-- **시연 순서**: 소개 → 경로 다이어그램 → MY 필터 → 현재 단계·메일 발송 안내(목록 컬럼) → 지정하기(문서 C, 팀원 드롭다운) → 제목 클릭(커서)으로 상세(문서 A) 열기 → 결재 경로 탭(팀별·회차별 이력) → J-ayer export 안내 → 재상신 변경 행 강조 → 이력 확인 모달. export 설명은 J-ayer만 한다.
+- **결재 경로 다이어그램**: `frontend/src/components/ApprovalRouteDiagram.tsx`. **전체 가이드의 첫 단계(독립 컴포넌트)로 분리**되어, 결재현황 페이지(iframe)에는 더 이상 렌더하지 않는다. 최종 경로 `PL(검토)→R(RFG)→[경로1 PHPSI→JOB]∥[경로2 OVL(+EUV)]→완료`와 조건(E는 plel 시·Only MAP은 R까지)을 안내한다.
+- **지정하기 시연(실제 기능과 동일)**: 투어에서도 실제 `select(담당자 선택)+확인/취소` UI를 그대로 사용한다. `open-assign`이 커서로 '지정하기'→select 선택→'확인'을 누르고, '확인' onClick은 `handleAssign`을 호출한다. 투어 모드에서는 `handleAssign`/`handleLoadTeamMembers`가 API 대신 **로컬 상태로 해당 단계에 담당자를 배정**(샘플 `TOUR_ASSIGN_MEMBERS`)하고 배정 토스트(`approval.assign_success`)를 띄운다. 배정 후 `assignee_loginid`가 채워져 '지정하기' UI가 사라진다(실제 동작과 동일).
+- **명령 수신**(부모 모달 → iframe `postMessage`): `tour-reset` · `my-filter`/`all-filter` · `open-detail`(대표 문서 A 제목 클릭→상세) · `open-assign`(문서 C 상세→지정하기→select→확인까지 실제 배정) · `open-rowdiff`(문서 A J-ayer '이력 확인'→변경 전/후 모달) · `page-jayer`/`page-route`(상세 탭 이동, MASTER 기준 인덱스 2/5) · `pause`/`resume`.
+- **`data-tour` 앵커**(투어 전용): `approval-stage`(현재 단계 컬럼·문서 A 행) · `assign-btn`(지정하기 버튼) · `assign-select`(담당자 select) · `assign-confirm`(확인 버튼) · `jayer-hist-btn`(이력 확인 버튼).
+- **시연 순서**: 소개 → MY 필터 → 현재 단계·메일 발송 안내(목록 컬럼) → 지정하기(문서 C, 실제 select+확인 배정까지) → 제목 클릭(커서)으로 상세(문서 A) 열기 → 결재 경로 탭(팀별·회차별 이력) → J-ayer export 안내 → 재상신 변경 행 강조 → 이력 확인 모달. (큰 결재 경로 다이어그램은 별도 첫 단계로 분리.) export 설명은 J-ayer만 한다.
 - 상세 모달은 투어에서 `PagedDetailView`에 `role="MASTER"`를 넘겨 모든 페이지가 보이도록 한다.
-- **권한관리 단계**는 iframe이 아니라 컴포넌트형 데모(`PermissionUserGroupDemo`)로 전체 가이드에 포함된다 — 자세한 내용은 `docs/전체가이드.md`의 "권한관리 — 컴포넌트형 단계" 참고.
+- **권한관리 단계**는 iframe이 아니라 컴포넌트형 데모(`PermissionUserGroupDemo`)로 전체 가이드에 포함된다 — 자세한 내용은 `docs/전체가이드.md`의 "컴포넌트형 단계 공통 / 권한관리" 참고.
 
 ---
 

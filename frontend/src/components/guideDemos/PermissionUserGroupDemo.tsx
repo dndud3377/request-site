@@ -37,8 +37,10 @@ const GROUP_NAME = '개발팀';
 const MEMBERS = ['정수진', '한지민'];
 const FINAL_MEMBERS = ['정수진'];
 
-const PermissionUserGroupDemo: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
+const PermissionUserGroupDemo: React.FC<{ embedded?: boolean; paused?: boolean }> = ({ embedded = false, paused = false }) => {
   const { t } = useTranslation();
+  // 그룹 생성 시 생성자(본인)가 자동으로 멤버에 포함된다 (백엔드 members.add(self) 반영)
+  const selfLabel = t('guide.demo.permission_user_group.self_member' as never) as string;
 
   const [phase, setPhase] = useState<Phase>('open_user');
   const [userModalOpen, setUserModalOpen] = useState(false);
@@ -166,12 +168,15 @@ const PermissionUserGroupDemo: React.FC<{ embedded?: boolean }> = ({ embedded = 
       setPhase('create_group');
       await moveTo(refs.current.createGroupConfirm);
       await click(refs.current.createGroupConfirm);
-      setCreatedGroup({ name: GROUP_NAME, members: FINAL_MEMBERS });
+      // 생성자(본인)가 자동 포함되므로 결과 멤버 = [본인, …선택 멤버]
+      setCreatedGroup({ name: GROUP_NAME, members: [selfLabel, ...FINAL_MEMBERS] });
       setGroupModalOpen(false);
       await sleep(400);
       setActiveGroup(GROUP_NAME);
       await sleep(1000);
-    }
+    },
+    4000,
+    paused
   );
 
   const pk = (k: string) => `guide.demo.permission_user_group.${k}` as never;
@@ -184,7 +189,7 @@ const PermissionUserGroupDemo: React.FC<{ embedded?: boolean }> = ({ embedded = 
   );
 
   const roleCount = (r: UserRole): number => (r === ACTIVE_ROLE ? addedUsers.length : BASE_COUNT[r] ?? 0);
-  const listRows = activeGroup ? FINAL_MEMBERS : addedUsers;
+  const listRows = activeGroup ? (createdGroup?.members ?? []) : addedUsers;
   const listLabel = activeGroup
     ? `${activeGroup} · ${t('group.members_label')}`
     : `${roleLabel(ACTIVE_ROLE)} · ${t(pk('user_list_title'))}`;
