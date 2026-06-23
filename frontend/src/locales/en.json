@@ -203,6 +203,8 @@
     "withdraw_confirm": "Are you sure you want to withdraw this request? It will return to draft status.",
     "withdraw_success": "The request has been withdrawn.",
     "assign_success": "Assignee has been designated.",
+    "assign_select_placeholder": "Select assignee",
+    "no_team_members": "No assignable members.",
     "edit_resubmit": "Edit & Resubmit",
     "resubmit_confirm": "Are you sure you want to resubmit after editing?",
     "resubmit_success": "Resubmitted successfully.",
@@ -711,7 +713,13 @@
         "phase_group_intro": "⑤ About Create Group (emails go only to members)",
         "group_intro_title": "What is a group?",
         "group_intro_desc": "Bundle users of the same role for unified management. Once created, it is added as a group tab above; this group tab is visible only to its members, and notification emails are sent only to group members.",
-        "self_member": "Me (owner)"
+        "self_member": "Me (owner)",
+        "intro_title": "👥 What is a group (my group)?",
+        "intro_b1": "Bundle users of the same role to manage them at once.",
+        "intro_b2": "The group tab is visible only to its members.",
+        "intro_b3": "Notification emails are sent only to group members.",
+        "intro_b4": "An author's draft requests are shared only with members of the same group.",
+        "intro_b5": "On creation, the creator (you) is automatically included as a member."
       }
     },
     "permission_step": "Permissions"
