@@ -252,6 +252,7 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 - **(2026-06-13) 원본 라인/Part ID는 MAP 정보 섹션에만 표시**: 기존에는 `source_line`/`source_partid`가 '상세 정보' 섹션(`section_detail`)과 'MAP 정보' 섹션(`section_map`, `map_type === 'CLONE'`) 두 곳에 중복 노출됐다. '상세 정보' 쪽 블록을 제거하여 **MAP 정보 섹션(CLONE)에서만** 보이도록 한다. MAP 섹션 노출 조건은 `showMap = isR || isO || isP`이므로 순수 TE_J/TE_E 역할에는 원본 정보가 표시되지 않는다(MAP 정보 성격상 의도된 동작).
 - 각 step에서 작성한 내용은 상세 보기에서 별도 페이지/섹션으로 분리 렌더된다: J-layer→`job_li`, O-layer→`ovl_li`(table/info 탭, info 탭에 `partial_shot`·TBV·TLV), Backbone→`bb`, MAP 변경 내용→`section_map`.
 - **(2026-06-22)** J-ayer `📊 export` 버튼에 `data-tour="export-jayer"`, 결재 경로 탭 카드에 `data-tour="approval-route-tab"`을 부여했다(전체 가이드 투어 강조용, 실제 동작 변경 없음).
+- **(2026-06-23)** 재상신 변경 이력 강조용으로 J-ayer 변경 행의 '이력 확인' 버튼에 `data-tour="jayer-hist-btn"`을 부여했다(투어에서 변경 전/후 비교 모달 시연용, 실제 동작 변경 없음).
 
 ---
 
@@ -259,11 +260,13 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 
 `/approval?embed=tour` 진입 시 실데이터 API 대신 샘플 시드(`frontend/src/pages/approvalTourSeed.ts`)로 결재 현황을 시연한다(평상시 동작 무영향).
 
-- **시드**: 문서 3건 — A(R 합의 후 병렬 진행, 목록 2행 분기) / B(PL 검토 중, 단일 행) / C(R 담당자 지정 대기, 단일 행). `MY`(내 결재) 필터는 사용자 역할과 무관하게 `TOUR_APPROVAL_MY_IDS`(A·C)로 고정한다.
+- **시드**: 문서 3건 — A(R 합의 후 병렬 진행, 목록 2행 분기, **재상신 이력 1건 포함** → 상세에서 변경 필드·행 강조) / B(PL 검토 중, 단일 행) / C(R 담당자 지정 대기, 단일 행). `MY`(내 결재) 필터는 사용자 역할과 무관하게 `TOUR_APPROVAL_MY_IDS`(A·C)로 고정한다. 지정하기 시연용 샘플 팀원은 `TOUR_ASSIGN_MEMBERS`.
 - **결재 경로 다이어그램**: `frontend/src/components/ApprovalRouteDiagram.tsx` — 투어 모드에서만 페이지 상단에 **대형**으로 렌더(`data-tour="approval-route"`). 최종 경로 `PL(검토)→R(RFG)→[경로1 PHPSI→JOB]∥[경로2 OVL(+EUV)]→완료`와 조건(E는 plel 시·Only MAP은 R까지)을 안내한다. 실제 결재 페이지에는 표시하지 않는다.
-- **명령 수신**(부모 모달 → iframe `postMessage`): `tour-reset`(모달/필터/커서 초기화) · `my-filter`/`all-filter` · `open-detail`(가짜 커서로 대표 문서 A 제목 클릭→상세) · `page-jayer`/`page-route`(상세 탭 이동, MASTER 역할 기준 인덱스 2/5) · `pause`/`resume`(데모 일시정지·재개).
-- **시연 순서**: 소개 → 경로 다이어그램 → MY 필터 → 제목 클릭(커서)으로 상세 열기 → J-ayer export 안내 → 결재 경로 탭(팀별·회차별 이력) 안내. export 설명은 J-ayer만 한다.
+- **명령 수신**(부모 모달 → iframe `postMessage`): `tour-reset`(모달/필터/커서 초기화) · `my-filter`/`all-filter` · `open-detail`(가짜 커서로 대표 문서 A 제목 클릭→상세) · `open-assign`(문서 C 상세→'지정하기' 버튼 클릭→팀 인원 펼침 목록, 실제 지정 X) · `open-rowdiff`(문서 A J-ayer '이력 확인' 버튼 클릭→변경 전/후 모달) · `page-jayer`/`page-route`(상세 탭 이동, MASTER 역할 기준 인덱스 2/5) · `pause`/`resume`(데모 일시정지·재개).
+- **`data-tour` 앵커**(투어 전용): `approval-stage`(현재 단계 컬럼·문서 A 행) · `assign-btn`(지정하기 버튼) · `assign-dropdown`(투어 전용 팀원 펼침 목록) · `jayer-hist-btn`(이력 확인 버튼).
+- **시연 순서**: 소개 → 경로 다이어그램 → MY 필터 → 현재 단계·메일 발송 안내(목록 컬럼) → 지정하기(문서 C, 팀원 드롭다운) → 제목 클릭(커서)으로 상세(문서 A) 열기 → 결재 경로 탭(팀별·회차별 이력) → J-ayer export 안내 → 재상신 변경 행 강조 → 이력 확인 모달. export 설명은 J-ayer만 한다.
 - 상세 모달은 투어에서 `PagedDetailView`에 `role="MASTER"`를 넘겨 모든 페이지가 보이도록 한다.
+- **권한관리 단계**는 iframe이 아니라 컴포넌트형 데모(`PermissionUserGroupDemo`)로 전체 가이드에 포함된다 — 자세한 내용은 `docs/전체가이드.md`의 "권한관리 — 컴포넌트형 단계" 참고.
 
 ---
 
