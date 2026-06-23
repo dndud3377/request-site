@@ -194,6 +194,12 @@ def _approval_link():
     return f"{base}/approval"
 
 
+def _voc_link(voc_id):
+    """메일 본문에 포함할 VOC 상세 페이지 주소."""
+    base = (getattr(settings, 'FRONTEND_URL', '') or '').rstrip('/')
+    return f"{base}/voc?id={voc_id}"
+
+
 def _build_message(event_type, document, agent=None):
     """이벤트 유형별 제목/본문(HTML)을 생성한다."""
     link = _approval_link()
@@ -271,6 +277,86 @@ def enqueue_approved(document):
     """승인 완료 알림 적재."""
     recipients = resolve_approved_recipients(document)
     return _enqueue(document, 'approved', recipients)
+
+
+# --------------------------------------------------------------------------- #
+# VOC 알림
+# --------------------------------------------------------------------------- #
+def _resolve_voc_master_recipients():
+    """VOC 등록 알림 수신자: settings.VOC_MASTER_EMAIL (고정 주소)."""
+    raw = getattr(settings, 'VOC_MASTER_EMAIL', '') or ''
+    recipients = [addr.strip() for addr in raw.split(',') if addr.strip()]
+    return _apply_redirect(recipients)
+
+
+def _resolve_voc_comment_recipients(voc, commenter_email):
+    """VOC 댓글 알림 수신자: 제출자 + 기존 댓글 작성자 집합 - 본인."""
+    emails = set()
+    if voc.submitter_email:
+        emails.add(voc.submitter_email.strip())
+    for comment in voc.comments.all():
+        if comment.author_email:
+            emails.add(comment.author_email.strip())
+    emails.discard((commenter_email or '').strip())
+    return _apply_redirect(list(emails))
+
+
+def _build_voc_message(event_type, voc, commenter_name=None):
+    """VOC 이벤트 유형별 제목/본문(HTML)을 생성한다."""
+    link = _voc_link(voc.id)
+    link_html = f'<p><a href="{link}">VOC 상세에서 확인하기</a></p>'
+    base_info = (
+        f'<p>제목: {voc.title}</p>'
+        f'<p>작성자: {voc.submitter_name}</p>'
+    )
+
+    if event_type == 'voc_created':
+        subject = f'[VOC 등록] {voc.title}'
+        contents = (
+            '<p>새로운 VOC가 등록되었습니다.</p>'
+            f'{base_info}{link_html}'
+        )
+    else:
+        subject = f'[VOC 댓글] {voc.title}'
+        contents = (
+            f'<p>{commenter_name or "누군가"}님이 댓글을 남겼습니다.</p>'
+            f'{base_info}{link_html}'
+        )
+    return subject, contents
+
+
+def _enqueue_voc(voc, event_type, recipients, commenter_name=None):
+    """VOC 알림용 MailNotification 적재 (document=None)."""
+    if not recipients:
+        logger.info(
+            "[mailer] 수신자가 없어 VOC 메일 적재를 건너뜁니다 (event=%s, voc=%s)",
+            event_type, voc.pk,
+        )
+        return None
+    subject, contents = _build_voc_message(event_type, voc, commenter_name)
+    from .models import MailNotification
+    noti = MailNotification.objects.create(
+        document=None,
+        event_type=event_type,
+        recipients=recipients,
+        subject=subject,
+        contents=contents,
+    )
+    noti_id = noti.id
+    transaction.on_commit(lambda: _send_now_async(noti_id))
+    return noti
+
+
+def enqueue_voc_created(voc):
+    """VOC 신규 등록 알림 적재."""
+    recipients = _resolve_voc_master_recipients()
+    return _enqueue_voc(voc, 'voc_created', recipients)
+
+
+def enqueue_voc_comment(voc, commenter_email, commenter_name=None):
+    """VOC 댓글 등록 알림 적재."""
+    recipients = _resolve_voc_comment_recipients(voc, commenter_email)
+    return _enqueue_voc(voc, 'voc_comment', recipients, commenter_name=commenter_name)
 
 
 # --------------------------------------------------------------------------- #

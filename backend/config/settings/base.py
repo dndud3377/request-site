@@ -149,6 +149,8 @@ DXHUB_API_KEY = os.environ.get('DXHUB_API_KEY', '')
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:10011')
 # 설정 시 모든 결재 알림 메일을 이 주소로 강제 발송 (개발/검증용). 비우면 실제 수신자에게 발송.
 MAIL_REDIRECT_TO = os.environ.get('MAIL_REDIRECT_TO', '')
+# VOC 신규 등록 시 알림을 받을 고정 수신자 주소 (MASTER 담당자). 비우면 발송 안 함.
+VOC_MASTER_EMAIL = os.environ.get('VOC_MASTER_EMAIL', '')
 
 # ---------------------------------------------------------------------------
 # P 단계 라인별 고정 수신자 (담당자 미지정 시 사용)

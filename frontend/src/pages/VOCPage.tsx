@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { vocAPI } from '../api/client';
 import RichTextEditor from '../components/RichTextEditor';
 import StatusBadge from '../components/StatusBadge';
@@ -37,6 +38,7 @@ export default function VOCPage(): React.ReactElement {
   const { currentUser } = useAuth();
   const isMaster = currentUser.role === 'MASTER';
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // ── list state ──
   const [vocs, setVocs]           = useState<VOC[]>([]);
@@ -81,6 +83,19 @@ export default function VOCPage(): React.ReactElement {
   }, [filter, searchQuery, currentUser.id]);
 
   useEffect(() => { fetchVocs(); }, [fetchVocs]);
+
+  // ?id=123 query param → 해당 VOC 자동 선택
+  useEffect(() => {
+    if (loading || vocs.length === 0) return;
+    const idParam = searchParams.get('id');
+    if (!idParam) return;
+    const target = vocs.find((v) => v.id === Number(idParam));
+    if (target) {
+      setSelected(target);
+      setComment('');
+      setSearchParams({}, { replace: true });
+    }
+  }, [loading, vocs, searchParams, setSearchParams]);
 
   // scroll chat to bottom when new comment appears
   useEffect(() => {

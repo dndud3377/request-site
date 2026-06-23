@@ -644,6 +644,10 @@ class VOCViewSet(viewsets.ModelViewSet):
     search_fields = ['title', 'submitter_name', 'content']
     ordering = ['-created_at']
 
+    def perform_create(self, serializer):
+        voc = serializer.save()
+        mailer.enqueue_voc_created(voc)
+
     @action(detail=True, methods=['patch'], url_path='update-status')
     def update_status(self, request, pk=None):
         """VOC 상태 변경 — completed: 작성자 본인만, rejected: MASTER만"""
@@ -676,10 +680,13 @@ class VOCViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def comment(self, request, pk=None):
         voc = self.get_object()
+        commenter_email = getattr(request.user, 'mail', '') or ''
+        commenter_name = getattr(request.user, 'username', '') or ''
         data = {**request.data, 'voc': voc.id}
         serializer = VocCommentSerializer(data=data)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        serializer.save(author_email=commenter_email)
+        mailer.enqueue_voc_comment(voc, commenter_email, commenter_name=commenter_name)
         return Response(VOCSerializer(voc).data)
 
 
