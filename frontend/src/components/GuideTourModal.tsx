@@ -70,9 +70,18 @@ export function useGuideTourSteps(): GuideTourStep[] {
           { cmd: 'tour-reset', selector: '.filter-tabs', caption: acap('intro'), hold: 3200 },
           { selector: '[data-tour="approval-route"]', caption: acap('route'), hold: 6500 },
           { cmd: 'my-filter', selector: '[data-tour="approval-my-tab"]', caption: acap('my_filter'), hold: 5000 },
+          // #4 현재 단계·지정 담당자 + 메일 발송 (목록 컬럼)
+          { selector: '[data-tour="approval-stage"]', caption: acap('stage_mail'), hold: 5500 },
+          // #5 담당자 지정하기 (문서 C 상세 → 팀 인원 드롭다운)
+          { cmd: 'open-assign', bottomCaption: true, caption: acap('assign_btn'), hold: 5500 },
+          { selector: '[data-tour="assign-dropdown"]', caption: acap('assign_dropdown'), hold: 5000 },
+          // 문서 A 상세 열기 → 결재 경로 / export
           { cmd: 'open-detail', bottomCaption: true, caption: acap('open_detail'), hold: 6000 },
-          { cmd: 'page-jayer', selector: '[data-tour="export-jayer"]', caption: acap('export_jayer'), hold: 4500 },
           { cmd: 'page-route', selector: '[data-tour="approval-route-tab"]', caption: acap('route_tab'), hold: 6500 },
+          { cmd: 'page-jayer', selector: '[data-tour="export-jayer"]', caption: acap('export_jayer'), hold: 4500 },
+          // #6 재상신 변경 이력(diff) — 변경 행 강조 → 이력 확인 모달
+          { selector: '[data-tour="jayer-hist-btn"]', caption: acap('revision_diff'), hold: 5500 },
+          { cmd: 'open-rowdiff', bottomCaption: true, caption: acap('revision_modal'), hold: 6000 },
         ],
       },
     ];
