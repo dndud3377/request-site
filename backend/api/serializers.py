@@ -121,8 +121,8 @@ class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSeriali
 class VocCommentSerializer(serializers.ModelSerializer):
     class Meta:
         model = VocComment
-        fields = ['id', 'voc', 'author_name', 'author_role', 'is_submitter', 'content', 'is_reject_reason', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = ['id', 'voc', 'author_name', 'author_role', 'author_email', 'is_submitter', 'content', 'is_reject_reason', 'created_at']
+        read_only_fields = ['id', 'created_at', 'author_email']
 
 
 class VOCSerializer(serializers.ModelSerializer):

@@ -284,6 +284,7 @@ class VocComment(models.Model):
     voc = models.ForeignKey(VOC, on_delete=models.CASCADE, related_name='comments', verbose_name='VOC')
     author_name = models.CharField(max_length=100, verbose_name='작성자')
     author_role = models.CharField(max_length=20, verbose_name='역할')
+    author_email = models.EmailField(blank=True, default='', verbose_name='작성자 이메일')
     is_submitter = models.BooleanField(default=False, verbose_name='제출자 여부')
     content = models.TextField(verbose_name='내용')
     is_reject_reason = models.BooleanField(default=False, verbose_name='반려 사유 여부')
@@ -519,6 +520,8 @@ class MailNotification(models.Model):
         ('stage_arrival', '단계 도착'),
         ('rejected', '반려'),
         ('approved', '승인 완료'),
+        ('voc_created', 'VOC 등록'),
+        ('voc_comment', 'VOC 댓글'),
     ]
 
     STATUS_CHOICES = [
