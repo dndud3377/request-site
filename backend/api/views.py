@@ -1149,7 +1149,7 @@ class UserViewSet(viewsets.ModelViewSet):
     ordering = ['id']
 
     def get_permissions(self):
-        if self.action == 'assign_role':
+        if self.action in ('assign_role', 'destroy'):
             from rest_framework.permissions import IsAuthenticated
             return [IsAuthenticated()]
         return super().get_permissions()
@@ -1255,6 +1255,19 @@ class UserViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         try:
             user = self.get_object()
+            caller = request.user
+            caller_role = getattr(caller, 'role', '')
+            target_role = getattr(user, 'role', '')
+
+            if caller_role != 'MASTER':
+                assignable_roles = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E']
+                if caller_role not in assignable_roles:
+                    return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+                if caller.id == user.id:
+                    return Response({'error': '자기 자신은 삭제할 수 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+                if caller_role != target_role:
+                    return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
             user_id = user.id
             user.delete()
             broadcaster.broadcast('user_deleted', {'id': user_id})
