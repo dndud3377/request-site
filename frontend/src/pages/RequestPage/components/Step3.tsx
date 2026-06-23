@@ -5,7 +5,7 @@ import { OayerRow, FilterSet, DetailFormState, GuideFeatureKey } from '../../../
 import { ST_CELL_COLOR } from '../constants';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
 
-const ST_OPTIONS = ['O', 'O (D)', 'O (혼용)', 'X'];
+const ST_OPTIONS = ['O', 'O (D)', 'X'];
 const NEW_OR_COPY_OPTIONS = ['신규', '차용', '기등록', 'layer삭제'];
 
 interface Step3Props {

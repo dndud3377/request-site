@@ -38,7 +38,7 @@ interface Step2Props {
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
 }
 
-const ST_OPTIONS = ['O', 'O (D)', 'O (혼용)', 'X'];
+const ST_OPTIONS = ['O', 'O (D)', 'X'];
 const NEW_OR_COPY_OPTIONS = ['신규', '차용', '기등록', 'layer삭제'];
 
 const Step2: React.FC<Step2Props> = ({
