@@ -15,7 +15,8 @@ const Box: React.FC<{ code: string; label: string; dim?: boolean }> = ({ code, l
 
 const Arrow: React.FC = () => <span className="route-diagram-arrow" aria-hidden="true">→</span>;
 
-const ApprovalRouteDiagram: React.FC = () => {
+// embedded/paused는 컴포넌트형 투어 단계 인터페이스 호환용 — 정적 다이어그램이라 사용하지 않는다.
+const ApprovalRouteDiagram: React.FC<{ embedded?: boolean; paused?: boolean }> = () => {
   const { t } = useTranslation();
   const agent = (a: string) => t(`approval.agent_${a}` as never) as string;
 
