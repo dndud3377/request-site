@@ -76,6 +76,26 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     ordering_fields = ['created_at', 'submitted_at']
     ordering = ['-created_at']
 
+    def get_queryset(self):
+        """임시저장(draft) 문서는 작성자 본인 + 작성자와 그룹을 공유하는 멤버 + MASTER 에게만 노출.
+
+        그 외 상태(상신/반려/완료)는 종전대로 전원에게 노출한다.
+        '나만의 그룹' = 사용자가 멤버로 속한 모든 UserGroup. 같은 그룹에 속한 사용자끼리는
+        서로의 draft 를 볼 수 있다.
+        """
+        qs = super().get_queryset()
+        user = self.request.user
+        # 비인증(개발 모드 등) 또는 MASTER 는 전체 조회
+        if not getattr(user, 'is_authenticated', False) or getattr(user, 'role', None) == 'MASTER':
+            return qs
+        my_group_ids = user.member_groups.values_list('id', flat=True)
+        comember_ids = list(
+            User.objects.filter(member_groups__in=my_group_ids).values_list('id', flat=True)
+        )
+        return qs.filter(
+            ~Q(status='draft') | Q(requester=user) | Q(requester_id__in=comember_ids)
+        )
+
     def get_serializer_class(self):
         if self.action == 'list':
             return RequestDocumentListSerializer
