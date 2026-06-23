@@ -461,9 +461,14 @@
             "intro": "The Approval Status page lets you track the progress of submitted requests stage by stage.",
             "route": "This is the final approval route a request goes through. After Review (PL) and RFG, Path 1 (PHPSI→JOB) and Path 2 (OVL·EUV) run in parallel.",
             "my_filter": "The 'MY' filter shows only requests you submitted or that need your approval.",
+            "stage_mail": "The 'Current Stage' column shows the active approval step and its assignee, and a mail is sent automatically to the relevant team/assignee.",
+            "assign_btn": "For a step with no assignee yet, use the 'Assign' button in the detail to designate the approver directly.",
+            "assign_dropdown": "Pick an approver from the list of members in the same role (team).",
             "open_detail": "Click the title with the cursor to open the request detail.",
             "export_jayer": "Use the 📊 export button on the JOB tab to download the table data as an Excel file.",
-            "route_tab": "The Approval Route tab shows each team’s (Review/RFG/PHPSI/JOB/OVL/EUV) approve/reject history with assignees and dates, by round."
+            "route_tab": "The Approval Route tab shows each team’s (Review/RFG/PHPSI/JOB/OVL/EUV) approve/reject history with assignees and dates, by round.",
+            "revision_diff": "A request resubmitted after rejection highlights the changed fields/rows, and a 'View History' button appears on changed rows.",
+            "revision_modal": "Click 'View History' to compare the before/after values side by side."
           }
         }
       }
