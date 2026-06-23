@@ -8,7 +8,6 @@ import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView from '../components/PagedDetailView';
-import ApprovalRouteDiagram from '../components/ApprovalRouteDiagram';
 import { canUserAgree, canUserAssign, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole } from '../types';
 import { formatDate } from '../utils/date';
@@ -267,6 +266,8 @@ export default function ApprovalPage(): React.ReactElement {
   const changingDesigneeRef = React.useRef<HTMLDivElement>(null);
 
   const handleLoadTeamMembers = async (agent: AgentType): Promise<UserWithRole[]> => {
+    // 투어: 실제 API 대신 샘플 팀 인원을 반환(실제 지정 UI와 동일하게 select 채움)
+    if (isTourMode) return TOUR_ASSIGN_MEMBERS;
     const role = AGENT_TO_ROLE[agent];
     if (!role) return [];
     const res = await usersAPI.list(role);
@@ -401,30 +402,46 @@ export default function ApprovalPage(): React.ReactElement {
       setTourCursor(null);
     };
 
-    // 문서 C(지정 대기) 상세를 열고 → '지정하기' 버튼을 눌러 팀 인원 목록을 펼친다(실제 지정 X).
+    // 커서를 선택자 요소로 이동시키고 눌림 애니메이션을 재생하는 공용 헬퍼
+    const cursorPress = async (selector: string, tok: { cancelled: boolean }): Promise<HTMLElement | null> => {
+      const el = document.querySelector(selector) as HTMLElement | null;
+      if (el) { el.scrollIntoView({ block: 'center', inline: 'nearest' }); await sleep(320); if (tok.cancelled) return null; }
+      const r = el?.getBoundingClientRect();
+      if (r) setTourCursor({ x: r.left + r.width * 0.5, y: r.top + r.height * 0.5 });
+      await sleep(550); if (tok.cancelled) return null;
+      setTourClicking(true);
+      el?.classList.add('tour-pressed');
+      await sleep(300); if (tok.cancelled) return null;
+      setTourClicking(false);
+      el?.classList.remove('tour-pressed');
+      return el;
+    };
+
+    // 문서 C(지정 대기) 상세를 열고 → 실제 지정 UI(select+확인)로 담당자를 배정하는 모습까지 시연한다.
     const runOpenAssign = async (tok: { cancelled: boolean }) => {
       setTourCursor(null);
       setTourClicking(false);
       setModalOpen(false);
       setAssigningOpen(false);
+      setAssigningUserId('');
       await sleep(300); if (tok.cancelled) return;
       setSelected(TOUR_APPROVAL_ASSIGN_DOC);
       setPageIdx(0);
       setModalOpen(true);
       await sleep(700); if (tok.cancelled) return;
-      const btn = document.querySelector('[data-tour="assign-btn"]') as HTMLElement | null;
-      if (btn) { btn.scrollIntoView({ block: 'center', inline: 'nearest' }); await sleep(320); if (tok.cancelled) return; }
-      const r = btn?.getBoundingClientRect();
-      if (r) setTourCursor({ x: r.left + r.width * 0.5, y: r.top + r.height * 0.5 });
-      await sleep(600); if (tok.cancelled) return;
-      setTourClicking(true);
-      btn?.classList.add('tour-pressed');
-      await sleep(300); if (tok.cancelled) return;
-      setTourClicking(false);
-      btn?.classList.remove('tour-pressed');
-      // 팀 인원 목록을 펼친다(샘플 인원).
+      // ① '지정하기' 클릭 → 실제 select+확인/취소 노출(샘플 팀원 로드)
+      await cursorPress('[data-tour="assign-btn"]', tok); if (tok.cancelled) return;
       setTeamMembers(TOUR_ASSIGN_MEMBERS);
       setAssigningOpen(true);
+      setAssigningUserId('');
+      await sleep(600); if (tok.cancelled) return;
+      // ② select로 이동해 담당자(첫 번째 인원) 선택
+      await cursorPress('[data-tour="assign-select"]', tok); if (tok.cancelled) return;
+      setAssigningUserId(TOUR_ASSIGN_MEMBERS[0].loginid);
+      await sleep(700); if (tok.cancelled) return;
+      // ③ '확인' 클릭 → 실제 onClick으로 해당 단계에 담당자 배정(투어 로컬 반영)
+      const ok = await cursorPress('[data-tour="assign-confirm"]', tok); if (tok.cancelled) return;
+      ok?.click();
       await sleep(300);
       setTourCursor(null);
     };
@@ -616,6 +633,22 @@ export default function ApprovalPage(): React.ReactElement {
 
   const handleAssign = async (agent: AgentType, loginid: string, userName: string) => {
     if (!selected) return;
+    if (isTourMode) {
+      // 투어: 실제 API 대신 로컬 상태로 해당 단계에 담당자 배정 결과를 반영
+      const apply = (d: RequestDocument): RequestDocument =>
+        d.id !== selected.id ? d : {
+          ...d,
+          approval_steps: (d.approval_steps ?? []).map((s) =>
+            s.agent === agent && s.action === 'pending' && !s.assignee_loginid
+              ? { ...s, assignee_name: userName, assignee_loginid: loginid }
+              : s),
+        };
+      setAllDocs((prev) => prev.map(apply));
+      setDocs((prev) => prev.map(apply));
+      setSelected((prev) => (prev ? apply(prev) : prev));
+      addToast(t('approval.assign_success'), 'success');
+      return;
+    }
     setProcessing(true);
     try {
       await documentsAPI.assignStep(selected.id, agent, loginid, userName);
@@ -686,7 +719,6 @@ export default function ApprovalPage(): React.ReactElement {
         <p>{t('approval.subtitle')}</p>
       </div>
 
-      {isTourMode && <ApprovalRouteDiagram />}
 
       <div className="toolbar">
         <div className="search-box">
@@ -924,9 +956,10 @@ export default function ApprovalPage(): React.ReactElement {
             if (isPL && s.agent === 'PL') return true;
             return s.agent === userAgent;
           }) ?? [];
-          // 투어 모드에서는 '지정하기' 시연을 위해 R 단계(지정 대기)를 지정 가능 단계로 본다.
+          // 투어 모드에서는 '지정하기' 시연을 위해 R 단계(아직 미지정)를 지정 가능 단계로 본다.
+          // 배정 후에는 assignee_loginid가 채워져 자동으로 사라진다(실제 동작과 동일).
           const assignableStep = isTourMode
-            ? selected?.approval_steps?.find((s) => s.agent === 'R' && s.action === 'pending')
+            ? selected?.approval_steps?.find((s) => s.agent === 'R' && s.action === 'pending' && !s.assignee_loginid)
             : pendingSteps.find((s) => canUserAssign(currentUser, s));
           const actableStep = pendingSteps.find((s) => canUserAgree(currentUser, s));
           const isPLStep = actableStep?.agent === 'PL';
@@ -1076,26 +1109,10 @@ export default function ApprovalPage(): React.ReactElement {
                   지정하기
                 </button>
               )}
-              {/* 투어 모드: native select 대신 펼쳐진 팀 인원 목록을 보여준다(실제 지정 안 함). */}
-              {assignableStep && assigningOpen && isTourMode && (
-                <div
-                  data-tour="assign-dropdown"
-                  style={{ display: 'flex', flexDirection: 'column', gap: 2, border: '1px solid var(--border)', borderRadius: 6, padding: 4, background: '#fff', minWidth: 160 }}
-                >
-                  {teamMembers.map((u, i) => (
-                    <div
-                      key={u.loginid}
-                      style={{ padding: '6px 10px', fontSize: '0.85rem', borderRadius: 4, background: i === 0 ? 'var(--accent-soft, #eef2ff)' : 'transparent' }}
-                    >
-                      {u.name}
-                      <span style={{ marginLeft: 6, color: 'var(--text-muted)', fontSize: '0.72rem' }}>{u.deptname}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {assignableStep && assigningOpen && !isTourMode && (
+              {assignableStep && assigningOpen && (
                 <>
                   <select
+                    data-tour={isTourMode ? 'assign-select' : undefined}
                     value={assigningUserId}
                     onChange={(e) => setAssigningUserId(e.target.value)}
                     style={{ fontSize: '0.85rem', padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)' }}
@@ -1111,6 +1128,7 @@ export default function ApprovalPage(): React.ReactElement {
                     }
                   </select>
                   <button
+                    data-tour={isTourMode ? 'assign-confirm' : undefined}
                     className="btn btn-primary btn-sm"
                     disabled={!assigningUserId || processing || loadingMembers}
                     onClick={() => {
