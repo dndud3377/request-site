@@ -700,7 +700,7 @@ class LineViewSet(viewsets.ReadOnlyModelViewSet):
 
 class AdminNoticeViewSet(viewsets.ModelViewSet):
     """공지사항 (읽기: 모두, 쓰기: MASTER 전용)"""
-    queryset = AdminNotice.objects.all()
+    queryset = AdminNotice.objects.order_by('-date', '-created_at')
     serializer_class = AdminNoticeSerializer
     permission_classes = [IsMasterOrReadOnly]
     pagination_class = None
@@ -708,8 +708,8 @@ class AdminNoticeViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def latest(self, request):
-        """최신 공지 1개 반환"""
-        notice = AdminNotice.objects.first()
+        """가장 최근에 수정된 공지 1개 반환 (Navbar 배지 판별용)"""
+        notice = AdminNotice.objects.order_by('-updated_at').first()
         if not notice:
             return Response(None)
         return Response(AdminNoticeSerializer(notice).data)

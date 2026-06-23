@@ -8,8 +8,7 @@ import RichTextEditor from '../components/RichTextEditor';
 import GuideTourModal from '../components/GuideTourModal';
 import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseItem } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-
-const LAST_SEEN_NOTICE_KEY = 'last_seen_notice_id';
+import { shouldShowNotice, markNoticeSeen } from '../utils/noticeStorage';
 
 const formatDate = (dateStr: string | null): string => {
   if (!dateStr) return '-';
@@ -27,12 +26,14 @@ const CATEGORY_ICON: Record<ReleaseCategory, string> = {
 interface NoticeManagerModalProps {
   notices: AdminNotice[];
   isMaster: boolean;
-  onClose: () => void;
+  onClose: (hideToday: boolean) => void;
   onRefresh: () => void;
 }
 
 function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeManagerModalProps) {
   const { t } = useTranslation();
+
+  const [hideToday, setHideToday] = useState(false);
 
   // 왼쪽 패널 상태
   const [tab, setTab] = useState<'all' | 'release_note' | 'notice'>('all');
@@ -174,12 +175,12 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
   };
 
   return (
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose(false)}>
       <div className="modal notice-modal-lg">
         {/* 헤더 */}
         <div className="modal-header">
           <h3 className="modal-title">📣 공지사항</h3>
-          <button className="modal-close" onClick={onClose} title={t('notice.close')}>×</button>
+          <button className="modal-close" onClick={() => onClose(false)} title={t('notice.close')}>×</button>
         </div>
 
         {/* 2단 본문 */}
@@ -423,6 +424,21 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
             )}
           </div>
         </div>
+
+        {/* 푸터 */}
+        <div className="notice-modal-footer">
+          <label className="notice-hide-today-label">
+            <input
+              type="checkbox"
+              checked={hideToday}
+              onChange={(e) => setHideToday(e.target.checked)}
+            />
+            {t('notice.hide_today')}
+          </label>
+          <button className="btn btn-primary btn-sm" onClick={() => onClose(hideToday)}>
+            {t('notice.confirm')}
+          </button>
+        </div>
       </div>
       <ConfirmModal
         isOpen={!!deleteNoticeTarget}
@@ -461,13 +477,12 @@ export default function HomePage(): React.ReactElement {
     }
   }, []);
 
-  // 초기 로드 및 미확인 공지 자동 오픈
+  // 초기 로드 및 자동 오픈 (매 접속 시, hide_until 억제 or 내용 변경 시 오픈)
   useEffect(() => {
     loadNotices().then((list) => {
       if (list.length === 0) return;
-      const latest = list[0];
-      const lastSeen = parseInt(localStorage.getItem(LAST_SEEN_NOTICE_KEY) ?? '0', 10);
-      if (latest.id > lastSeen) {
+      const maxUpdatedAt = list.reduce((max, n) => (n.updated_at > max ? n.updated_at : max), '');
+      if (shouldShowNotice(maxUpdatedAt)) {
         setShowNoticeModal(true);
       }
     });
@@ -489,11 +504,10 @@ export default function HomePage(): React.ReactElement {
     }).catch(() => {});
   }, []);
 
-  const handleCloseModal = useCallback(() => {
-    if (allNotices.length > 0) {
-      localStorage.setItem(LAST_SEEN_NOTICE_KEY, String(allNotices[0].id));
-      window.dispatchEvent(new CustomEvent('notice-read'));
-    }
+  const handleCloseModal = useCallback((hideToday: boolean) => {
+    const maxUpdatedAt = allNotices.reduce((max, n) => (n.updated_at > max ? n.updated_at : max), '');
+    markNoticeSeen(maxUpdatedAt, hideToday);
+    window.dispatchEvent(new CustomEvent('notice-read'));
     setShowNoticeModal(false);
   }, [allNotices]);
 

@@ -3,10 +3,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth, ROLE_LABEL, MOCK_USERS } from '../contexts/AuthContext';
 import { noticesAPI, authAPI } from '../api/client';
+import { shouldShowNotice } from '../utils/noticeStorage';
 
 const IS_DEV_MODE = process.env.REACT_APP_AUTH_MODE === 'dev';
-
-const LAST_SEEN_NOTICE_KEY = 'last_seen_notice_id';
 
 interface NavLink {
   to: string;
@@ -80,12 +79,11 @@ export default function Navbar(): React.ReactElement {
   useEffect(() => {
     noticesAPI.latest().then((r) => {
       if (!r.data) return;
-      const lastSeen = parseInt(localStorage.getItem(LAST_SEEN_NOTICE_KEY) ?? '0', 10);
-      setHasUnread(r.data.id > lastSeen);
+      setHasUnread(shouldShowNotice(r.data.updated_at));
     }).catch(() => {});
   }, []);
 
-  // 공지 배너 표시 후 unread 배지 갱신
+  // 공지 모달 닫힌 후 배지 갱신
   useEffect(() => {
     const handler = () => setHasUnread(false);
     window.addEventListener('notice-read', handler);
@@ -93,7 +91,6 @@ export default function Navbar(): React.ReactElement {
   }, []);
 
   const handleShowNotice = () => {
-    localStorage.removeItem(LAST_SEEN_NOTICE_KEY);
     setHasUnread(false);
     if (location.pathname !== '/') {
       navigate('/');

@@ -2264,6 +2264,35 @@ select.form-control option {
   border-radius: 50%;
   border: 1.5px solid white;
 }
+
+/* 공지 모달 푸터 (오늘 하루 보지 않기 + 확인 버튼) */
+.notice-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.notice-hide-today-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.notice-hide-today-label input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
 /* ===== Guide Page ===== */
 
 .guide-layout {

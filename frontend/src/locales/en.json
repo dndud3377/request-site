@@ -403,7 +403,9 @@
     "close": "Close",
     "no_notice": "No notices registered",
     "delete_title": "Delete Notice",
-    "delete_confirm": "Are you sure you want to delete \"{{title}}\"?"
+    "delete_confirm": "Are you sure you want to delete \"{{title}}\"?",
+    "hide_today": "Don't show today",
+    "confirm": "Confirm"
   },
   "session": {
     "warning_title": "Session Expiring Soon",
