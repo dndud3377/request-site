@@ -245,6 +245,7 @@
     "route_diagram": {
       "title": "최종 결재 경로",
       "desc": "의뢰가 접수된 뒤 완료까지 거치는 결재 단계입니다.",
+      "product_owner": "제품담당자",
       "done": "완료",
       "note_e": "EUV(E) 단계는 plel(노란 셀) 항목이 있는 경우에만 진행됩니다.",
       "note_onlymap": "'Only MAP' 의뢰는 RFG(R)까지만 진행하고 이후 단계는 생략됩니다."

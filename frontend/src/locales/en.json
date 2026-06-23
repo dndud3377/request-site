@@ -245,6 +245,7 @@
     "route_diagram": {
       "title": "Final Approval Route",
       "desc": "The approval stages a request goes through from intake to completion.",
+      "product_owner": "Product Owner",
       "done": "Done",
       "note_e": "The EUV (E) stage runs only when plel (yellow cell) items are present.",
       "note_onlymap": "'Only MAP' requests proceed only up to RFG (R); later stages are skipped."
