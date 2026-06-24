@@ -2955,6 +2955,73 @@ select.form-control option {
   line-height: 1.5;
   color: #4a5568;
 }
+/* 인트로: 좌측 설명 + 우측 멤버/비멤버 비교 애니메이션 2단 레이아웃 */
+.guide-demo-intro-body {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.guide-demo-intro-text { flex: 1 1 300px; min-width: 260px; }
+.guide-demo-cmp {
+  flex: 0 0 auto;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.guide-demo-cmp .gdc-note {
+  font-size: 12px;
+  font-weight: 700;
+  color: #5b647a;
+  text-align: center;
+}
+.guide-demo-cmp .gdc-cols { display: flex; gap: 10px; }
+.guide-demo-cmp .gdc-col {
+  flex: 1 1 0;
+  border: 1px solid #e3e8f0;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fbfcfe;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 132px;
+}
+.guide-demo-cmp .gdc-col.member { border-color: #bfdbfe; background: #f5f9ff; }
+.guide-demo-cmp .gdc-head {
+  font-size: 12px;
+  font-weight: 800;
+  color: #2d3142;
+  padding-bottom: 5px;
+  border-bottom: 1px dashed #e3e8f0;
+}
+.guide-demo-cmp .gdc-head.ok { color: #1d4ed8; }
+.guide-demo-cmp .gdc-head.no { color: #94a3b8; }
+.guide-demo-cmp .gdc-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.guide-demo-cmp .gdc-tab {
+  font-size: 10px;
+  font-weight: 700;
+  color: #5b647a;
+  background: #eef2f8;
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+.guide-demo-cmp .gdc-tab.grp { color: #1d4ed8; background: #dbeafe; }
+.guide-demo-cmp .gdc-row { font-size: 11px; color: #3f4a5c; line-height: 1.3; }
+.guide-demo-cmp .gdc-row.muted { color: #b3bcca; }
+.guide-demo-cmp .gdc-mark.ok { color: #16a34a; font-weight: 800; }
+.guide-demo-cmp .pop { opacity: 0; animation: gdcPop 4s ease-in-out infinite; }
+.guide-demo-cmp .pop.p1 { animation-delay: 0.2s; }
+.guide-demo-cmp .pop.p2 { animation-delay: 1s; }
+.guide-demo-cmp .pop.p3 { animation-delay: 1.8s; }
+.guide-demo-cmp.paused .pop { animation-play-state: paused; }
+@keyframes gdcPop {
+  0%, 8% { opacity: 0; transform: translateY(6px); }
+  22%, 82% { opacity: 1; transform: translateY(0); }
+  96%, 100% { opacity: 0; transform: translateY(6px); }
+}
 
 .guide-demo-field { margin-bottom: 12px; position: relative; }
 .guide-demo-field:last-of-type { margin-bottom: 0; }
@@ -4173,7 +4240,7 @@ select.form-control option {
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 1200;
+  z-index: 3500;
   pointer-events: none;
   transition: transform 0.5s cubic-bezier(0.5, 0.05, 0.2, 1);
 }
@@ -4209,7 +4276,7 @@ select.form-control option {
 }
 .tour-jchip {
   position: fixed;
-  z-index: 1200;
+  z-index: 3500;
   pointer-events: none;
   background: #1f2738;
   color: #fff;
@@ -4246,14 +4313,14 @@ select.form-control option {
   align-items: center;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 18px;
+  gap: 10px;
 }
 .route-diagram-box {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 130px;
-  padding: 20px 26px;
+  min-width: 92px;
+  padding: 12px 14px;
   border: 2px solid var(--accent);
   border-radius: var(--radius-md);
   background: rgba(37, 99, 235, 0.07);
@@ -4265,7 +4332,7 @@ select.form-control option {
   opacity: 0.75;
 }
 .route-diagram-code {
-  font-size: 2rem;
+  font-size: 1.5rem;
   font-weight: 800;
   color: var(--accent);
 }
@@ -4273,35 +4340,35 @@ select.form-control option {
   color: var(--text-muted);
 }
 .route-diagram-label {
-  font-size: 1.05rem;
+  font-size: 0.92rem;
   font-weight: 600;
   color: var(--text-secondary);
   margin-top: 4px;
 }
 .route-diagram-arrow,
 .route-diagram-plus {
-  font-size: 1.9rem;
+  font-size: 1.4rem;
   font-weight: 700;
   color: var(--text-muted);
 }
 .route-diagram-parallel {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 10px;
 }
 .route-diagram-path {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
 }
 .route-diagram-path-tag {
-  font-size: 0.95rem;
+  font-size: 0.82rem;
   font-weight: 700;
   color: var(--text-muted);
   background: var(--bg-secondary);
   border-radius: 12px;
-  padding: 4px 14px;
-  margin-right: 4px;
+  padding: 3px 10px;
+  margin-right: 2px;
 }
 .route-diagram-notes {
   margin: 28px 0 0;

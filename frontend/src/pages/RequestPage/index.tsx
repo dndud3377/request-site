@@ -655,6 +655,51 @@ export default function RequestPage(): React.ReactElement {
       setConfirmOpen(true);
     };
 
+    // ── 챕터 되감기(seek) 즉시 재생용 시더 ──
+    // 커서/대기 연출 없이 각 단계의 '최종 상태'만 즉시 적용한다. 애니메이션 러너와
+    // 동일한 상태 로직을 재사용하되, 상태 반영 타이밍이 필요한 곳은 rawSleep(0)으로 양보한다.
+    const seedJayerInstant = () => {
+      const seed = makeTourJayerRows();
+      setJayerRows(
+        seed.map((r, i) => ({
+          ...r,
+          product_name: TOUR_JAYER_PRODUCT,
+          step: TOUR_JAYER_STEPS[i],
+          item_id: TOUR_JAYER_ITEMS[i],
+        })),
+      );
+    };
+    const seedBbAutofillOpenInstant = () => {
+      setShowAutoFillPanel(false);
+      setBbRows([]);
+      setMappedJayerRowIds(new Set());
+      setActiveBbTab(0);
+      tourRef.current?.handleOpenAutoFillPanel();
+    };
+    const seedBbAutofillApplyInstant = () => {
+      tourRef.current?.handleApplyAutoFill();
+    };
+    const seedBbMappingInstant = async () => {
+      setActiveBbTab(1);
+      for (const layer of ['40', '50']) {
+        const target = tourRef.current?.jayerRows.find((r) => !r.disabled && r.layerid === layer);
+        const ext = tourRef.current?.bbExternalData[1]?.find((s) => s.layerid === layer);
+        if (!target || !ext) continue;
+        setSelectedJayerRowId(target.id);
+        await rawSleep(0); // setSelectedJayerRowId 반영 후 스테이징
+        tourRef.current?.handleStageMapping({
+          id: `tour-ext-${layer}`,
+          bb_process_id: ext.processid,
+          bb_name: 'BB제품2',
+          bb_step: ext.descript,
+          bb_ss: ext.stepseq,
+          layerid: ext.layerid,
+        });
+        await rawSleep(0);
+      }
+      tourRef.current?.handleApplyMappings();
+    };
+
     const onMsg = (e: MessageEvent) => {
       if (e.origin !== window.location.origin) return;
       const d = e.data;
@@ -674,6 +719,37 @@ export default function RequestPage(): React.ReactElement {
           setTourJChip(null);
           setTourJClicking(false);
           if (typeof d.step === 'number') setStep(Math.min(5, Math.max(1, d.step)));
+          break;
+        case 'reset-all':
+          // 챕터 되감기 시 누적 상태를 초기 시드로 되돌린다(이후 0~타깃 단계를 instant로 재적용).
+          setConfirmOpen(false);
+          setShowAutoFillPanel(false);
+          setBbAutoFillRanges([]);
+          setStagedMappings({});
+          setSelectedJayerRowId(null);
+          setMappedJayerRowIds(new Set());
+          setActiveBbTab(0);
+          setOayerInfoTab('table');
+          setJayerRows(makeTourJayerRows());
+          setBbRows(makeTourBbRows());
+          setDetail((dd) => ({
+            ...dd,
+            map_type: 'NEW',
+            only_prodc: 'No',
+            rev_yn: '',
+            rev_entries: [],
+            map_change: '변경 없음',
+            map_value_x: '',
+            map_value_y: '',
+            map_reason: '',
+            ea_change: '변경 없음',
+            ea_value: '',
+            mshot_change: '없음',
+          }));
+          setTourJCursor(null);
+          setTourJChip(null);
+          setTourJClicking(false);
+          setStep(1);
           break;
         case 'map-reset':
           setDetail((dd) => ({
@@ -701,7 +777,7 @@ export default function RequestPage(): React.ReactElement {
           setDetail((dd) => ({ ...dd, mshot_change: '추가' }));
           break;
         case 'jayer-anim':
-          runJayerAnim(tok);
+          if (d.instant) seedJayerInstant(); else runJayerAnim(tok);
           break;
         case 'oayer-table':
           setOayerInfoTab('table');
@@ -710,13 +786,13 @@ export default function RequestPage(): React.ReactElement {
           setOayerInfoTab('info');
           break;
         case 'bb-autofill-open':
-          runBbAutofillOpen(tok);
+          if (d.instant) seedBbAutofillOpenInstant(); else runBbAutofillOpen(tok);
           break;
         case 'bb-autofill-apply':
-          runBbAutofillApply(tok);
+          if (d.instant) seedBbAutofillApplyInstant(); else runBbAutofillApply(tok);
           break;
         case 'bb-mapping':
-          runBbMapping(tok);
+          if (d.instant) seedBbMappingInstant(); else runBbMapping(tok);
           break;
         case 'open-submit':
           openSubmitDemo();

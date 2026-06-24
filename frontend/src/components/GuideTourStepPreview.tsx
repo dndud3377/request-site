@@ -37,6 +37,10 @@ const STEP_SWITCH_MS = 800;
 const CMD_LEAD_MS = 900;
 const LOOP_DELAY_MS = 1200;
 const EL_WAIT_MS = 2600;
+// 챕터 되감기(seek) 시 0~타깃 단계를 빠르게 재적용하는 간격
+const REPLAY_RESET_MS = 260;
+const REPLAY_STEP_MS = 140;
+const REPLAY_CMD_MS = 180;
 const MAX_PREVIEW_VH = 0.52;
 // 스포트라이트가 강조 대상에 너무 딱 붙지 않도록 사방에 두는 여백(축소 후 화면 px)
 const SPOTLIGHT_PAD = 14;
@@ -122,13 +126,47 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
       iframeRef.current?.contentWindow?.postMessage({ type: 'guide-tour-cmd', ...payload }, window.location.origin);
     };
 
+    // 요청서 단계에서만: 뒤(또는 임의)로 되감을 때 상태를 정확히 복원하기 위해
+    // 초기화 후 0~타깃 직전 단계의 명령을 instant(즉시 상태적용)로 재적용한다.
+    const isRequest = path === '/request';
+    let currentStep = initialStep;
+    const replayTo = async (target: number): Promise<boolean> => {
+      sendCmd({ cmd: 'reset-all' });
+      currentStep = initialStep;
+      await sleep(REPLAY_RESET_MS);
+      if (cancelled || seekRef.current != null) return false;
+      for (let j = 0; j < target; j += 1) {
+        if (cancelled || seekRef.current != null) return false;
+        const p = phases[j];
+        const ws = p.wizardStep ?? currentStep;
+        if (ws !== currentStep) {
+          sendCmd({ cmd: 'step', step: ws });
+          currentStep = ws;
+          await sleep(REPLAY_STEP_MS);
+          if (cancelled || seekRef.current != null) return false;
+        }
+        if (p.cmd) {
+          sendCmd({ cmd: p.cmd, instant: true });
+          await sleep(REPLAY_CMD_MS);
+        }
+      }
+      return true;
+    };
+
     const run = async (): Promise<void> => {
       let i = 0;
-      let currentStep = initialStep;
       // eslint-disable-next-line no-constant-condition
       while (true) {
         if (cancelled) return;
-        if (seekRef.current != null) { i = seekRef.current; seekRef.current = null; }
+        if (seekRef.current != null) {
+          i = seekRef.current;
+          seekRef.current = null;
+          if (isRequest && i > 0) {
+            const ok = await replayTo(i);
+            if (cancelled) return;
+            if (!ok) continue; // 재생 중 새 seek 도착 → 루프 상단에서 다시 처리
+          }
+        }
         const phase = phases[i];
         onPhaseChangeRef.current?.(i);
         // 전환: 이전 강조/캡션을 비운다 (다음 항목은 천천히 밝아지며 등장)
