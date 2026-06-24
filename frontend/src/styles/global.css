@@ -4144,7 +4144,7 @@ select.form-control option {
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 1200;
+  z-index: 3500;
   pointer-events: none;
   transition: transform 0.5s cubic-bezier(0.5, 0.05, 0.2, 1);
 }
@@ -4180,7 +4180,7 @@ select.form-control option {
 }
 .tour-jchip {
   position: fixed;
-  z-index: 1200;
+  z-index: 3500;
   pointer-events: none;
   background: #1f2738;
   color: #fff;
@@ -4217,14 +4217,14 @@ select.form-control option {
   align-items: center;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 18px;
+  gap: 10px;
 }
 .route-diagram-box {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 130px;
-  padding: 20px 26px;
+  min-width: 92px;
+  padding: 12px 14px;
   border: 2px solid var(--accent);
   border-radius: var(--radius-md);
   background: rgba(37, 99, 235, 0.07);
@@ -4236,7 +4236,7 @@ select.form-control option {
   opacity: 0.75;
 }
 .route-diagram-code {
-  font-size: 2rem;
+  font-size: 1.5rem;
   font-weight: 800;
   color: var(--accent);
 }
@@ -4244,35 +4244,35 @@ select.form-control option {
   color: var(--text-muted);
 }
 .route-diagram-label {
-  font-size: 1.05rem;
+  font-size: 0.92rem;
   font-weight: 600;
   color: var(--text-secondary);
   margin-top: 4px;
 }
 .route-diagram-arrow,
 .route-diagram-plus {
-  font-size: 1.9rem;
+  font-size: 1.4rem;
   font-weight: 700;
   color: var(--text-muted);
 }
 .route-diagram-parallel {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 10px;
 }
 .route-diagram-path {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
 }
 .route-diagram-path-tag {
-  font-size: 0.95rem;
+  font-size: 0.82rem;
   font-weight: 700;
   color: var(--text-muted);
   background: var(--bg-secondary);
   border-radius: 12px;
-  padding: 4px 14px;
-  margin-right: 4px;
+  padding: 3px 10px;
+  margin-right: 2px;
 }
 .route-diagram-notes {
   margin: 28px 0 0;
