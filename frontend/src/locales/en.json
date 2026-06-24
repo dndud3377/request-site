@@ -248,7 +248,8 @@
       "product_owner": "Product Owner",
       "done": "Done",
       "note_e": "The EUV (E) stage runs only when plel (yellow cell) items are present.",
-      "note_onlymap": "'Only MAP' requests proceed only up to RFG (R); later stages are skipped."
+      "note_onlymap": "'Only MAP' requests proceed only up to RFG (R); later stages are skipped.",
+      "note_reject": "If rejected at any stage, the whole request becomes 'Rejected' and no further stages proceed; the requester can resubmit it as a new round from the start (PL review) by designating a peer PL, or withdraw it back to a draft."
     }
   },
   "history": {
