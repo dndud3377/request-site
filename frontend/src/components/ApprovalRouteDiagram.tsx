@@ -62,6 +62,7 @@ const ApprovalRouteDiagram: React.FC<{ embedded?: boolean; paused?: boolean }> =
       <ul className="route-diagram-notes">
         <li>{t('approval.route_diagram.note_e')}</li>
         <li>{t('approval.route_diagram.note_onlymap')}</li>
+        <li>{t('approval.route_diagram.note_reject')}</li>
       </ul>
     </div>
   );
