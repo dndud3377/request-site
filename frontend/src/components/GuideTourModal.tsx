@@ -89,8 +89,9 @@ export function useGuideTourSteps(): GuideTourStep[] {
           // 캡션은 상단 고정 — 하단 footer의 지정 UI(드롭다운/확인)를 가리지 않도록 한다.
           { cmd: 'open-assign', topCaption: true, caption: acap('assign_btn'), hold: 11000 },
           { topCaption: true, caption: acap('assign_result'), hold: 4000 },
-          // 문서 A 상세 열기 → 결재 경로 / export
+          // 문서 A 상세 열기 → 상단 탭 안내 → 결재 경로 / export
           { cmd: 'open-detail', bottomCaption: true, caption: acap('open_detail'), hold: 6000 },
+          { selector: '[data-tour="detail-tabs"]', caption: acap('detail_tabs'), hold: 5000 },
           { cmd: 'page-route', selector: '[data-tour="approval-route-tab"]', caption: acap('route_tab'), hold: 6500 },
           { cmd: 'page-jayer', selector: '[data-tour="export-jayer"]', caption: acap('export_jayer'), hold: 4500 },
           // #6 재상신 변경 이력(diff) — 변경 행 강조 → 이력 확인 모달
@@ -171,20 +172,27 @@ const GuideTourModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const isFirst = current === 0;
   const isLast = current === steps.length - 1;
 
-  const goPrev = useCallback(() => { setPaused(false); setCurrent((c) => Math.max(0, c - 1)); }, []);
-  const goNext = useCallback(() => {
-    if (isLast) { onClose(); return; }
-    setPaused(false);
-    setCurrent((c) => Math.min(steps.length - 1, c + 1));
-  }, [isLast, onClose, steps.length]);
-  // 상단 탭으로 임의 단계 자유 이동
-  const goTo = useCallback((i: number) => {
+  // 단계 이동 시 항상 phase·seek 상태를 초기화해 다음 가이드가 처음 챕터부터 시작하도록 한다.
+  const resetPlayback = useCallback(() => {
     setPaused(false);
     setPhaseIdx(0);
     setPhaseElapsed(0);
     setSeekSig({ index: 0, nonce: 0 });
-    setCurrent(i);
   }, []);
+  const goPrev = useCallback(() => {
+    resetPlayback();
+    setCurrent((c) => Math.max(0, c - 1));
+  }, [resetPlayback]);
+  const goNext = useCallback(() => {
+    if (isLast) { onClose(); return; }
+    resetPlayback();
+    setCurrent((c) => Math.min(steps.length - 1, c + 1));
+  }, [isLast, onClose, steps.length, resetPlayback]);
+  // 상단 탭으로 임의 단계 자유 이동
+  const goTo = useCallback((i: number) => {
+    resetPlayback();
+    setCurrent(i);
+  }, [resetPlayback]);
 
   useEffect(() => {
     if (!isOpen) return;

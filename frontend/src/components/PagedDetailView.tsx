@@ -1310,7 +1310,7 @@ type Page = { label: string; content: React.ReactNode };
   return (
     <div>
       {pages.length > 1 && (
-        <div style={{ display: 'flex', borderBottom: '2px solid var(--border)', marginBottom: 20, gap: 0 }}>
+        <div data-tour="detail-tabs" style={{ display: 'flex', borderBottom: '2px solid var(--border)', marginBottom: 20, gap: 0 }}>
           {pages.map((page, idx) => {
             const isActive = idx === safeIdx;
             return (
