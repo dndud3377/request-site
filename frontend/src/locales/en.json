@@ -722,7 +722,15 @@
         "intro_b2": "The group tab is visible only to its members.",
         "intro_b3": "Notification emails are sent only to group members.",
         "intro_b4": "An author's draft requests are shared only with members of the same group.",
-        "intro_b5": "On creation, the creator (you) is automatically included as a member."
+        "intro_b5": "On creation, the creator (you) is automatically included as a member.",
+        "cmp_note": "Only members see the group tab, notification mail, and drafts",
+        "cmp_member": "Group member",
+        "cmp_nonmember": "Non-member",
+        "cmp_group": "Our Group",
+        "cmp_mail_yes": "Mail delivered",
+        "cmp_mail_no": "No mail",
+        "cmp_draft_yes": "Drafts shared",
+        "cmp_draft_no": "Drafts hidden"
       }
     },
     "permission_step": "Permissions"

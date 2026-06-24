@@ -216,14 +216,41 @@ const PermissionUserGroupDemo: React.FC<{ embedded?: boolean; paused?: boolean }
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
             >
-              <div className="guide-demo-intro-title">{t(pk('intro_title'))}</div>
-              <ul className="guide-demo-intro-list">
-                <li>{t(pk('intro_b1'))}</li>
-                <li>{t(pk('intro_b2'))}</li>
-                <li>{t(pk('intro_b3'))}</li>
-                <li>{t(pk('intro_b4'))}</li>
-                <li>{t(pk('intro_b5'))}</li>
-              </ul>
+              <div className="guide-demo-intro-body">
+                <div className="guide-demo-intro-text">
+                  <div className="guide-demo-intro-title">{t(pk('intro_title'))}</div>
+                  <ul className="guide-demo-intro-list">
+                    <li>{t(pk('intro_b1'))}</li>
+                    <li>{t(pk('intro_b2'))}</li>
+                    <li>{t(pk('intro_b3'))}</li>
+                    <li>{t(pk('intro_b4'))}</li>
+                    <li>{t(pk('intro_b5'))}</li>
+                  </ul>
+                </div>
+                {/* 멤버 vs 비멤버 비교 미니 애니메이션 — 멤버 쪽에만 그룹 탭·메일·임시저장이 차례로 등장 */}
+                <div className={`guide-demo-cmp${paused ? ' paused' : ''}`} aria-hidden="true">
+                  <div className="gdc-note">{t(pk('cmp_note'))}</div>
+                  <div className="gdc-cols">
+                    <div className="gdc-col member">
+                      <div className="gdc-head ok">✅ {t(pk('cmp_member'))}</div>
+                      <div className="gdc-tabs">
+                        <span className="gdc-tab">{roleLabel(ACTIVE_ROLE)}</span>
+                        <span className="gdc-tab grp pop p1">👥 {t(pk('cmp_group'))}</span>
+                      </div>
+                      <div className="gdc-row pop p2">📧 {t(pk('cmp_mail_yes'))} <span className="gdc-mark ok">✓</span></div>
+                      <div className="gdc-row pop p3">📝 {t(pk('cmp_draft_yes'))} <span className="gdc-mark ok">✓</span></div>
+                    </div>
+                    <div className="gdc-col nonmember">
+                      <div className="gdc-head no">🚫 {t(pk('cmp_nonmember'))}</div>
+                      <div className="gdc-tabs">
+                        <span className="gdc-tab">{roleLabel(ACTIVE_ROLE)}</span>
+                      </div>
+                      <div className="gdc-row muted">✕ {t(pk('cmp_mail_no'))}</div>
+                      <div className="gdc-row muted">✕ {t(pk('cmp_draft_no'))}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
