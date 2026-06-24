@@ -173,7 +173,7 @@
     "filter_agent_P": "PHPSI",
     "filter_agent_J": "JOB",
     "filter_agent_O": "OVL",
-    "filter_agent_E": "EUV",
+    "filter_agent_E": "MASK",
     "filter_draft": "임시저장",
     "filter_rejected": "반려됨",
     "peer_submit": "수정 후 상신",
@@ -238,7 +238,7 @@
     "agent_P": "PHPSI",
     "agent_J": "JOB",
     "agent_O": "OVL",
-    "agent_E": "EUV",
+    "agent_E": "MASK",
     "route_diagram": {
       "title": "최종 결재 경로",
       "desc": "의뢰가 접수된 뒤 완료까지 거치는 결재 단계입니다.",
