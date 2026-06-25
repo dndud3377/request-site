@@ -1645,6 +1645,7 @@ export default function RequestPage(): React.ReactElement {
         newRow.sd = jr.sd;
         newRow.bb_process_id = ext.bb_process_id;
         newRow.bb_name = formatBbName(ext.location ?? '', ext.bb_name);
+        newRow.entryIdx = ext.entryIdx;
         // 자동 채움(buildAutoFillRows)과 동일하게 layer 컬럼을 외부 데이터의 layerid로 채운다.
         newRow.bb_step = ext.layerid ?? '';
         newRow.bb_ss = ext.bb_ss;
@@ -1746,6 +1747,7 @@ export default function RequestPage(): React.ReactElement {
           bb_step: matchedStep.layerid,
           bb_ss: matchedStep.stepseq,
           remark: '',
+          entryIdx,
         });
       });
     });

@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import { RequestDocument, UserRole, DetailFormState, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot } from '../types';
 import Modal from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
+import { bbTabColor } from '../utils/bbTabColors';
 
 // ===== Table Components =====
 
@@ -223,11 +224,15 @@ function BbTable({
   rows,
   changedRowIds = new Set<string>(),
   prevRowMap,
+  tabCount = 0,
 }: {
   rows: BbTableRow[];
   changedRowIds?: Set<string>;
   prevRowMap?: Map<string, BbTableRow>;
+  tabCount?: number;
 }) {
+  // 탭이 2개 이상일 때만 Ref.PART ID 셀에 출처 탭 색을 적용한다.
+  const multiTab = tabCount >= 2;
   const { t } = useTranslation();
   const [diffId, setDiffId] = useState<string | null>(null);
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
@@ -269,7 +274,7 @@ function BbTable({
                       )}
                     </td>
                   )}
-                  <td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td>{r.bb_name}</td><td>{r.bb_step}</td><td>{r.bb_ss}</td><td>{r.remark}</td>
+                  <td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td style={multiTab && r.entryIdx != null ? { backgroundColor: bbTabColor(r.entryIdx) } : undefined}>{r.bb_name}</td><td>{r.bb_step}</td><td>{r.bb_ss}</td><td>{r.remark}</td>
                 </tr>
               );
             })}
@@ -1078,7 +1083,7 @@ type Page = { label: string; content: React.ReactNode };
               <button onClick={exportBb} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
             </div>
           </div>
-          <BbTable rows={bb} changedRowIds={changedBbIds} prevRowMap={prevBbMap} />
+          <BbTable rows={bb} changedRowIds={changedBbIds} prevRowMap={prevBbMap} tabCount={Array.isArray(detail?.bb_entries) ? detail.bb_entries.length : 0} />
         </div>
       ),
     });
