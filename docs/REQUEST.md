@@ -130,6 +130,10 @@ pages/RequestPage/
   - **범위 Layer 입력을 입력+선택(콤보박스)으로**: `Step4.tsx`의 시작/종료 Layer `<select>` → `AutocompleteInput`으로 교체(직접 타이핑 + 남은 layer 후보 필터). 후보(`remainingLayerOptions`)는 미매핑 행 기준. 제품 칸은 `bb_entries`와 정확히 일치해야 매칭되므로 `<select>` 유지.
   - 자동채움 결과 0건 시 안내문구를 "자동채움할 남은 원본 행이 없습니다."(info)로 정리.
 
+- **bb_name(Ref.PART ID)을 `[라인] 제품` 형식으로 + 자동채움 제품 선택을 인덱스 기반으로**: 결과표 `bb_name`이 제품명만 들어가던 것을 `[location] product` 형식(`formatBbName` 헬퍼, 라인 없으면 제품만)으로 채운다. 자동채움·수동매핑 양쪽 적용.
+  - `ExternalBbDataItem`에 `location?` 추가, `Step4.tsx` `currentTabData`에 `location` 전달 → 수동매핑(`handleApplyMappings`)이 `formatBbName(ext.location, ext.bb_name)`로 채움. (우측 외부 데이터 패널의 "Ref.PART ID" 표시·검색은 제품명만 그대로 유지)
+  - **라인만 다른 동일 제품명 구분 버그 수정**: 자동채움 범위의 제품 `<select>` value가 제품명뿐이라 라인만 다른 동일 제품을 구분하지 못하고 `findIndex(product)`로 항상 첫 항목만 잡던 문제를 인덱스 기반으로 교체. `BbAutoFillRange.productId` → `entryIdx`(항목 인덱스 문자열), `<option value={entryIdx}>`, `buildAutoFillRows`가 `detail.bb_entries[Number(entryIdx)]`를 직접 사용. 시드값(`handleOpenAutoFillPanel`/`handleAddRange`)도 인덱스로 변경. 이로써 `[LineA] BB제품1`·`[LineB] BB제품1`이 외부데이터·라벨 모두 정확히 구분된다.
+
 ### 추가 변경 이력 (2026-06-23)
 
 - **col_st 'O (혼용)' 옵션 제거**: Step3(J-layer)·Step4(O-layer)의 col_st 드롭다운에서 `'O (혼용)'` 선택지를 제거. `Step2.tsx`·`Step3.tsx`의 `ST_OPTIONS` 배열 및 `stCellColor.ts`의 색상 매핑(`'#FFE0EC'`) 삭제. 기존 DB에 저장된 `'O (혼용)'` 값은 보존되며, 상세보기에서 텍스트는 그대로 표시되나 셀 배경색은 적용되지 않는다.
