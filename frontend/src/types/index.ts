@@ -479,7 +479,8 @@ export interface ExternalBbDataItem {
   bb_name: string;
   bb_step: string;
   bb_ss: string;
-  layerid?: string;  
+  layerid?: string;
+  location?: string;  // 라인(bb_entries.location) — bb_name을 [라인] 제품 형식으로 채우기 위함
 }
 
 
@@ -495,5 +496,5 @@ export interface BbAutoFillRange {
   id: string;
   layerFrom: string;      // 시작 Layer
   layerTo: string;        // 종료 Layer
-  productId: string;      // 선택된 PART ID
+  entryIdx: string;       // 선택된 bb_entries 항목 인덱스(문자열) — 라인+제품을 유일하게 식별
 }
