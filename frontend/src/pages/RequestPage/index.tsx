@@ -58,6 +58,10 @@ import Step2 from './components/Step2';
 import Step3 from './components/Step3';
 import Step4 from './components/Step4';
 
+// bb 행의 bb_name(Ref.PART ID)을 "[라인] 제품" 형식으로 만든다(라인 없으면 제품만).
+const formatBbName = (location: string, product: string): string =>
+  location ? `[${location}] ${product}` : product;
+
 // step 값으로 바코드 후보를 좁혀 item_id 자동값을 결정한다.
 // 정확히 1개 매칭이면 그 label, 그 외(0개·2개+)면 '' (드롭다운에서 선택).
 const autoMatchItemId = (
@@ -1640,7 +1644,7 @@ export default function RequestPage(): React.ReactElement {
         newRow.ss = jr.sp;
         newRow.sd = jr.sd;
         newRow.bb_process_id = ext.bb_process_id;
-        newRow.bb_name = ext.bb_name;
+        newRow.bb_name = formatBbName(ext.location ?? '', ext.bb_name);
         // 자동 채움(buildAutoFillRows)과 동일하게 layer 컬럼을 외부 데이터의 layerid로 채운다.
         newRow.bb_step = ext.layerid ?? '';
         newRow.bb_ss = ext.bb_ss;
@@ -1665,14 +1669,15 @@ export default function RequestPage(): React.ReactElement {
     const layerIds = [...new Set(jayerRows.filter(r => !r.disabled && !mappedJayerRowIds.has(r.id)).map(r => r.layerid).filter(Boolean))]
       .sort((a, b) => parseFloat(a) - parseFloat(b));
 
-    const productIds = detail.bb_entries.map(e => e.product).filter(Boolean);
+    // 제품이 입력된 첫 bb_entries 항목을 기본 선택값(인덱스)으로 시드한다.
+    const firstProductIdx = detail.bb_entries.findIndex(e => e.product);
 
-    if (layerIds.length > 0 && productIds.length > 0) {
+    if (layerIds.length > 0 && firstProductIdx >= 0) {
       setBbAutoFillRanges([{
         id: String(Date.now()),
         layerFrom: layerIds[0],
         layerTo: layerIds[layerIds.length - 1],
-        productId: productIds[0],
+        entryIdx: String(firstProductIdx),
       }]);
     } else {
       setBbAutoFillRanges([]);
@@ -1681,14 +1686,14 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleAddRange = () => {
-    const productIds = detail.bb_entries.map(e => e.product).filter(Boolean);
+    const firstProductIdx = detail.bb_entries.findIndex(e => e.product);
     setBbAutoFillRanges(prev => [
       ...prev,
       {
         id: String(Date.now()),
         layerFrom: '',
         layerTo: '',
-        productId: productIds[0] || '',
+        entryIdx: String(firstProductIdx >= 0 ? firstProductIdx : 0),
       },
     ]);
   };
@@ -1706,7 +1711,7 @@ export default function RequestPage(): React.ReactElement {
   const buildAutoFillRows = (): BbTableRow[] => {
     const newBbRows: BbTableRow[] = [];
     bbAutoFillRanges.forEach(range => {
-      if (!range.layerFrom || !range.layerTo || !range.productId) return;
+      if (!range.layerFrom || !range.layerTo || !range.entryIdx) return;
       const from = parseFloat(range.layerFrom);
       const to = parseFloat(range.layerTo);
       if (isNaN(from) || isNaN(to)) return;
@@ -1718,8 +1723,11 @@ export default function RequestPage(): React.ReactElement {
         return !row.disabled && !mappedJayerRowIds.has(row.id) && !isNaN(layer) && layer >= from && layer <= to;
       });
 
-      const entryIdx = detail.bb_entries.findIndex(e => e.product === range.productId);
-      if (entryIdx === -1) return;
+      // 선택 항목을 인덱스로 직접 집어 라인+제품을 유일하게 식별한다.
+      // (제품명만으로 찾으면 라인만 다른 동일 제품을 구분 못 함)
+      const entryIdx = Number(range.entryIdx);
+      const entry = detail.bb_entries[entryIdx];
+      if (!entry || !entry.product) return;
 
       const photoSteps = bbExternalData[entryIdx] ?? [];
       jayerRowsInRange.forEach(jayerRow => {
@@ -1734,7 +1742,7 @@ export default function RequestPage(): React.ReactElement {
           ss: jayerRow.sp,
           sd: jayerRow.sd,
           bb_process_id: matchedStep.processid,
-          bb_name: range.productId,
+          bb_name: formatBbName(entry.location, entry.product),
           bb_step: matchedStep.layerid,
           bb_ss: matchedStep.stepseq,
           remark: '',

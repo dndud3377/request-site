@@ -98,6 +98,7 @@ const Step4: React.FC<Step4Props> = ({
     bb_step: step.descript,
     bb_ss: step.stepseq,
     layerid: step.layerid,
+    location: currentEntry?.location || '',
   }));
 
   const currentSearchQuery = bbSearchQueries[activeBbTab] || '';
@@ -190,12 +191,12 @@ const Step4: React.FC<Step4Props> = ({
                 />
               </div>
               <select
-                value={range.productId}
-                onChange={(e) => handleRangeChange(range.id, 'productId', e.target.value)}
+                value={range.entryIdx}
+                onChange={(e) => handleRangeChange(range.id, 'entryIdx', e.target.value)}
                 style={{ padding: '4px 8px', fontSize: 13, minWidth: 120 }}
               >
                 {detail.bb_entries.map((entry, entryIdx) => (
-                  <option key={entryIdx} value={entry.product}>
+                  <option key={entryIdx} value={entryIdx}>
                     {`[${entry.location}] ${entry.product}`}
                   </option>
                 ))}
