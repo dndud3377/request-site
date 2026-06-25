@@ -121,6 +121,15 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-06-25)
+
+- **Step 5(Backbone) 자동채움을 "남은 원본 행" 기준으로 통일 + 덮어쓰기 로직 제거**: 자동채움 대상·범위 UI가 일부는 전체 활성 J-layer 행, 일부는 미매핑 행 기준으로 섞여 있어, 이미 채워진 layer가 다시 채워지며 **다른 BB 제품의 행을 덮어쓰는 버그**가 있었다. 이를 다음과 같이 정리:
+  - `buildAutoFillRows`(index.tsx): 대상 행을 `!disabled && !mappedJayerRowIds.has(id)`(원본 목록에 남은 행)로 제한. 이미 매핑된 행은 후보에서 제외되어 재채움이 발생하지 않는다.
+  - `handleOpenAutoFillPanel`(index.tsx): 기본 범위 시드 layer도 미매핑 행 기준으로 산출.
+  - **덮어쓰기/충돌 처리 제거**: 자동채움이 남은 행만 다루므로 기존 bb 행과 겹칠 수 없다 → `handleApplyAutoFill`은 항상 append. 충돌 판정/상태(`bbConflictState`·`bbPartialAddConfirm`·`bbPartialAddRowsRef`)·확인 모달 2개·`applyBbRowChanges`의 replace/remove 분기를 제거(append 전용으로 단순화). 미사용 i18n 키 `bb_overwrite_confirm_with_layers`·`bb_partial_add_confirm`(ko/en) 삭제.
+  - **범위 Layer 입력을 입력+선택(콤보박스)으로**: `Step4.tsx`의 시작/종료 Layer `<select>` → `AutocompleteInput`으로 교체(직접 타이핑 + 남은 layer 후보 필터). 후보(`remainingLayerOptions`)는 미매핑 행 기준. 제품 칸은 `bb_entries`와 정확히 일치해야 매칭되므로 `<select>` 유지.
+  - 자동채움 결과 0건 시 안내문구를 "자동채움할 남은 원본 행이 없습니다."(info)로 정리.
+
 ### 추가 변경 이력 (2026-06-23)
 
 - **col_st 'O (혼용)' 옵션 제거**: Step3(J-layer)·Step4(O-layer)의 col_st 드롭다운에서 `'O (혼용)'` 선택지를 제거. `Step2.tsx`·`Step3.tsx`의 `ST_OPTIONS` 배열 및 `stCellColor.ts`의 색상 매핑(`'#FFE0EC'`) 삭제. 기존 DB에 저장된 `'O (혼용)'` 값은 보존되며, 상세보기에서 텍스트는 그대로 표시되나 셀 배경색은 적용되지 않는다.

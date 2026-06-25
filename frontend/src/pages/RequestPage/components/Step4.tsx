@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import AutocompleteInput from '../../../components/AutocompleteInput';
 import {
   PhotoStepOption,
   ExternalBbDataItem,
@@ -111,6 +112,11 @@ const Step4: React.FC<Step4Props> = ({
     : currentTabData;
   const stagedCount = Object.keys(stagedMappings).length;
 
+  // 자동채움 범위 후보 layer: 원본 목록에 남은(미매핑) 행 기준
+  const remainingLayerOptions = [...new Set(
+    jayerRows.filter(r => !r.disabled && !mappedJayerRowIds.has(r.id)).map(r => r.layerid).filter(Boolean)
+  )].sort((a, b) => parseFloat(a) - parseFloat(b));
+
   return (
     <div className="form-section">
       <div className="form-section-title"><span style={{ color: '#4CAF50' }}>🔷</span> {t('request.bb_li')}</div>
@@ -164,31 +170,25 @@ const Step4: React.FC<Step4Props> = ({
               }}
             >
               <span style={{ fontSize: 13, minWidth: 50 }}>범위 {idx + 1}:</span>
-              <select
-                value={range.layerFrom}
-                onChange={(e) => handleRangeChange(range.id, 'layerFrom', e.target.value)}
-                style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
-              >
-                <option value="">시작 Layer</option>
-                {[...new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean))]
-                  .sort((a, b) => parseFloat(a) - parseFloat(b))
-                  .map(layerid => (
-                    <option key={layerid} value={layerid}>{layerid}</option>
-                  ))}
-              </select>
+              <div style={{ minWidth: 100 }}>
+                <AutocompleteInput
+                  value={range.layerFrom}
+                  onChange={(v) => handleRangeChange(range.id, 'layerFrom', v)}
+                  options={remainingLayerOptions}
+                  placeholder="시작 Layer"
+                  dropdownFontSize="0.8rem"
+                />
+              </div>
               <span>~</span>
-              <select
-                value={range.layerTo}
-                onChange={(e) => handleRangeChange(range.id, 'layerTo', e.target.value)}
-                style={{ padding: '4px 8px', fontSize: 13, minWidth: 100 }}
-              >
-                <option value="">종료 Layer</option>
-                {[...new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean))]
-                  .sort((a, b) => parseFloat(a) - parseFloat(b))
-                  .map(layerid => (
-                    <option key={layerid} value={layerid}>{layerid}</option>
-                  ))}
-              </select>
+              <div style={{ minWidth: 100 }}>
+                <AutocompleteInput
+                  value={range.layerTo}
+                  onChange={(v) => handleRangeChange(range.id, 'layerTo', v)}
+                  options={remainingLayerOptions}
+                  placeholder="종료 Layer"
+                  dropdownFontSize="0.8rem"
+                />
+              </div>
               <select
                 value={range.productId}
                 onChange={(e) => handleRangeChange(range.id, 'productId', e.target.value)}

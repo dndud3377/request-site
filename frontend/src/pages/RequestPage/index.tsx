@@ -221,14 +221,6 @@ export default function RequestPage(): React.ReactElement {
   const [tbvtlvSdsSelected, setTbvtlvSdsSelected] = useState<string[]>([]);
   const [tbvtlvNote, setTbvtlvNote] = useState<string>('');
   const [tbvtlvWarnModal, setTbvtlvWarnModal] = useState(false);
-  const [bbConflictState, setBbConflictState] = useState<{
-    duplicateLayerIds: string[];
-    rowsToAdd: BbTableRow[];
-    rowsToReplace: BbTableRow[];
-    existingRowIdsToRemove: string[];
-  } | null>(null);
-  const [bbPartialAddConfirm, setBbPartialAddConfirm] = useState(false);
-  const bbPartialAddRowsRef = useRef<BbTableRow[]>([]);
   const [bbResetConfirm, setBbResetConfirm] = useState(false);
   const [specialCareConfirm, setSpecialCareConfirm] = useState(false);
   const [filterDeleteConfirm, setFilterDeleteConfirm] = useState<{
@@ -1669,7 +1661,8 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleOpenAutoFillPanel = () => {
-    const layerIds = [...new Set(jayerRows.filter(r => !r.disabled).map(r => r.layerid).filter(Boolean))]
+    // 원본 데이터 목록에 남은(미매핑) 행 기준으로 기본 범위를 시드한다.
+    const layerIds = [...new Set(jayerRows.filter(r => !r.disabled && !mappedJayerRowIds.has(r.id)).map(r => r.layerid).filter(Boolean))]
       .sort((a, b) => parseFloat(a) - parseFloat(b));
 
     const productIds = detail.bb_entries.map(e => e.product).filter(Boolean);
@@ -1720,7 +1713,9 @@ export default function RequestPage(): React.ReactElement {
 
       const jayerRowsInRange = jayerRows.filter(row => {
         const layer = parseFloat(row.layerid);
-        return !row.disabled && !isNaN(layer) && layer >= from && layer <= to;
+        // 원본 데이터 목록에 남은(미매핑) 행만 자동채움 대상으로 한다.
+        // 이미 채워진 행은 목록에서 빠지므로 재채움/덮어쓰기가 발생하지 않는다.
+        return !row.disabled && !mappedJayerRowIds.has(row.id) && !isNaN(layer) && layer >= from && layer <= to;
       });
 
       const entryIdx = detail.bb_entries.findIndex(e => e.product === range.productId);
@@ -1749,62 +1744,29 @@ export default function RequestPage(): React.ReactElement {
     return newBbRows;
   };
 
-  const applyBbRowChanges = (
-    rowsToReplace: BbTableRow[],
-    existingRowIdsToRemove: string[],
-    rowsToAdd: BbTableRow[]
-  ) => {
-    const removeSet = new Set(existingRowIdsToRemove);
-    setBbRows(prev => {
-      const removedSourceIds = prev
-        .filter(r => removeSet.has(r.id) && r.sourceJayerRowId)
-        .map(r => r.sourceJayerRowId as string);
-
-      setMappedJayerRowIds(prevMapped => {
-        const next = new Set(prevMapped);
-        removedSourceIds.forEach(id => next.delete(id));
-        [...rowsToReplace, ...rowsToAdd].forEach(r => {
-          if (r.sourceJayerRowId) next.add(r.sourceJayerRowId);
-        });
-        return next;
+  // 자동채움은 "원본 목록에 남은(미매핑) 행"만 대상으로 하므로 기존 bb 행과 겹칠 수 없다.
+  // 따라서 덮어쓰기/충돌 없이 항상 결과 표에 추가(append)만 한다.
+  const applyBbRowChanges = (rowsToAdd: BbTableRow[]) => {
+    setBbRows(prev => [...prev, ...rowsToAdd]);
+    setMappedJayerRowIds(prevMapped => {
+      const next = new Set(prevMapped);
+      rowsToAdd.forEach(r => {
+        if (r.sourceJayerRowId) next.add(r.sourceJayerRowId);
       });
-
-      return [
-        ...prev.filter(r => !removeSet.has(r.id)),
-        ...rowsToReplace,
-        ...rowsToAdd,
-      ];
+      return next;
     });
     setShowAutoFillPanel(false);
     setBbAutoFillRanges([]);
-    const total = rowsToReplace.length + rowsToAdd.length;
-    addToast(`Backbone 데이터가 ${total}행 자동 채워졌습니다.`, 'success');
+    addToast(`Backbone 데이터가 ${rowsToAdd.length}행 자동 채워졌습니다.`, 'success');
   };
 
   const handleApplyAutoFill = () => {
     const allNewRows = buildAutoFillRows();
     if (allNewRows.length === 0) {
-      if (!isTourMode) addToast('매칭된 Backbone 데이터가 없습니다.', 'error');
+      if (!isTourMode) addToast('자동채움할 남은 원본 행이 없습니다.', 'info');
       return;
     }
-
-    const newLayerIds = new Set(allNewRows.map(r => r.bb_step).filter(Boolean));
-    const conflictingExisting = bbRows.filter(r => r.bb_step && newLayerIds.has(r.bb_step));
-
-    if (conflictingExisting.length === 0) {
-      applyBbRowChanges([], [], allNewRows);
-      return;
-    }
-
-    const duplicateLayerIds = [...new Set(conflictingExisting.map(r => r.bb_step))].sort(
-      (a, b) => parseFloat(a) - parseFloat(b)
-    );
-    const conflictLayerSet = new Set(duplicateLayerIds);
-    const rowsToReplace = allNewRows.filter(r => conflictLayerSet.has(r.bb_step));
-    const rowsToAdd = allNewRows.filter(r => !conflictLayerSet.has(r.bb_step));
-    const existingRowIdsToRemove = conflictingExisting.map(r => r.id);
-
-    setBbConflictState({ duplicateLayerIds, rowsToAdd, rowsToReplace, existingRowIdsToRemove });
+    applyBbRowChanges(allNewRows);
   };
 
   const handleResetBbRows = () => {
@@ -2806,47 +2768,6 @@ export default function RequestPage(): React.ReactElement {
         title={t('request.only_map_confirm_title')}
         message={t('request.only_map_confirm_msg')}
         danger
-      />
-
-      <ConfirmModal
-        isOpen={!!bbConflictState}
-        onClose={() => {
-          const rowsToAdd = bbConflictState?.rowsToAdd ?? [];
-          setBbConflictState(null);
-          if (rowsToAdd.length > 0) {
-            bbPartialAddRowsRef.current = rowsToAdd;
-            setBbPartialAddConfirm(true);
-          }
-        }}
-        onConfirm={() => {
-          if (!bbConflictState) return;
-          const { rowsToReplace, existingRowIdsToRemove, rowsToAdd } = bbConflictState;
-          setBbConflictState(null);
-          applyBbRowChanges(rowsToReplace, existingRowIdsToRemove, rowsToAdd);
-        }}
-        title={t('common.confirm')}
-        message={t('request.bb_overwrite_confirm_with_layers', {
-          layers: bbConflictState?.duplicateLayerIds.join(', ') ?? '',
-        })}
-        danger
-      />
-
-      <ConfirmModal
-        isOpen={bbPartialAddConfirm}
-        onClose={() => {
-          bbPartialAddRowsRef.current = [];
-          setBbPartialAddConfirm(false);
-        }}
-        onConfirm={() => {
-          const rowsToAdd = bbPartialAddRowsRef.current;
-          bbPartialAddRowsRef.current = [];
-          setBbPartialAddConfirm(false);
-          applyBbRowChanges([], [], rowsToAdd);
-        }}
-        title={t('common.confirm')}
-        message={t('request.bb_partial_add_confirm', {
-          count: bbPartialAddRowsRef.current.length,
-        })}
       />
 
       <ConfirmModal
