@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
+import { bbTabColor } from '../../../utils/bbTabColors';
 import {
   PhotoStepOption,
   ExternalBbDataItem,
@@ -99,6 +100,7 @@ const Step4: React.FC<Step4Props> = ({
     bb_ss: step.stepseq,
     layerid: step.layerid,
     location: currentEntry?.location || '',
+    entryIdx: activeBbTab,
   }));
 
   const currentSearchQuery = bbSearchQueries[activeBbTab] || '';
@@ -112,6 +114,9 @@ const Step4: React.FC<Step4Props> = ({
       )
     : currentTabData;
   const stagedCount = Object.keys(stagedMappings).length;
+
+  // 탭이 2개 이상일 때만 탭별 색을 적용한다(1개면 구분 불필요).
+  const multiTab = detail.bb_entries.length >= 2;
 
   // 자동채움 범위 후보 layer: 원본 목록에 남은(미매핑) 행 기준
   const remainingLayerOptions = [...new Set(
@@ -315,17 +320,33 @@ const Step4: React.FC<Step4Props> = ({
             {t('request.ext_data_assign_to_jayer')}
           </div>
           <div className="bb-tab-bar">
-            {detail.bb_entries.map((entry, idx) => (
-              <button
-                key={idx}
-                type="button"
-                data-bbtour={`bbtab-${idx}`}
-                className={`bb-tab${activeBbTab === idx ? ' bb-tab-active' : ''}`}
-                onClick={() => setActiveBbTab(idx)}
-              >
-                {`[${entry.location}] ${entry.product}`}
-              </button>
-            ))}
+            {detail.bb_entries.map((entry, idx) => {
+              const isActive = activeBbTab === idx;
+              // 탭 2개 이상이면 탭 고유색을 칠하고, 활성 탭은 accent 링(테두리)+굵게+살짝 진하게로
+              // "클릭됨"을 명확히 표시한다. 1개면 기존 bb-tab-active(accent) 동작 유지.
+              const tabStyle: React.CSSProperties | undefined = multiTab
+                ? {
+                    background: bbTabColor(idx),
+                    color: 'var(--text-primary)',
+                    fontWeight: isActive ? 700 : 500,
+                    boxShadow: isActive
+                      ? 'inset 0 0 0 2px var(--accent), inset 0 0 0 100px rgba(0,0,0,0.05)'
+                      : undefined,
+                  }
+                : undefined;
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  data-bbtour={`bbtab-${idx}`}
+                  className={`bb-tab${isActive && !multiTab ? ' bb-tab-active' : ''}`}
+                  style={tabStyle}
+                  onClick={() => setActiveBbTab(idx)}
+                >
+                  {`[${entry.location}] ${entry.product}`}
+                </button>
+              );
+            })}
           </div>
           <div className="bb-split-panel-scroll">
             {bbExternalLoading ? (
@@ -468,7 +489,7 @@ const Step4: React.FC<Step4Props> = ({
                   <td><input value={row.ss} onChange={(e) => handleBbChange(row.id, 'ss', e.target.value)} /></td>
                   <td><input value={row.sd} onChange={(e) => handleBbChange(row.id, 'sd', e.target.value)} /></td>
                   <td><input value={row.bb_process_id} onChange={(e) => handleBbChange(row.id, 'bb_process_id', e.target.value)} /></td>
-                  <td><input value={row.bb_name} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} /></td>
+                  <td style={multiTab && row.entryIdx != null ? { backgroundColor: bbTabColor(row.entryIdx) } : undefined}><input value={row.bb_name} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} /></td>
                   <td><input value={row.bb_step} onChange={(e) => handleBbChange(row.id, 'bb_step', e.target.value)} /></td>
                   <td><input value={row.bb_ss} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} /></td>
                   <td><input value={row.remark} onChange={(e) => handleBbChange(row.id, 'remark', e.target.value)} /></td>
