@@ -204,6 +204,7 @@ export interface BbTableRow {
   bb_step: string;
   bb_ss: string;
   remark: string;
+  entryIdx?: number;  // 출처 탭(bb_entries) 인덱스 — 탭별 색상 적용용(상세보기/이력 재현)
 }
 
 export interface DetailFormState {
@@ -481,6 +482,7 @@ export interface ExternalBbDataItem {
   bb_ss: string;
   layerid?: string;
   location?: string;  // 라인(bb_entries.location) — bb_name을 [라인] 제품 형식으로 채우기 위함
+  entryIdx?: number;  // 출처 탭(bb_entries) 인덱스 — 탭별 색상 적용용
 }
 
 
