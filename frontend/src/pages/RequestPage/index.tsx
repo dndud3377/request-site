@@ -70,6 +70,25 @@ const autoMatchItemId = (
   return matched.length === 1 ? matched[0].label : '';
 };
 
+// 전체 가이드 되감기(seek)용 투어 상태 스냅샷 — 프리뷰가 정주행 중 챕터별로 캡처해 두었다가
+// 되감을 때 그대로 복원한다. (mappedJayerRowIds는 직렬화 위해 배열로 보관)
+export interface TourSnapshot {
+  step: number;
+  detail: DetailFormState;
+  jayerRows: JayerRow[];
+  bbRows: BbTableRow[];
+  oayerInfoTab: 'table' | 'info';
+  showAutoFillPanel: boolean;
+  bbAutoFillRanges: BbAutoFillRange[];
+  stagedMappings: Record<string, ExternalBbDataItem>;
+  mappedJayerRowIds: string[];
+  activeBbTab: number;
+  confirmOpen: boolean;
+  submitNote: string;
+  designeeLoginid: string;
+  designeeName: string;
+}
+
 // ===== Main Component =====
 export default function RequestPage(): React.ReactElement {
   const { t } = useTranslation();
@@ -128,6 +147,8 @@ export default function RequestPage(): React.ReactElement {
     handleStageMapping: (item: ExternalBbDataItem) => void;
     handleApplyMappings: () => void;
   } | null>(null);
+  // 되감기(seek) 복원용 현재 투어 상태 스냅샷 참조
+  const snapStateRef = useRef<TourSnapshot | null>(null);
   const [bbExternalLoading, setBbExternalLoading] = useState(false);
   const [activeBbTab, setActiveBbTab] = useState(0);
   const [selectedJayerRowId, setSelectedJayerRowId] = useState<string | null>(null);
@@ -655,49 +676,26 @@ export default function RequestPage(): React.ReactElement {
       setConfirmOpen(true);
     };
 
-    // ── 챕터 되감기(seek) 즉시 재생용 시더 ──
-    // 커서/대기 연출 없이 각 단계의 '최종 상태'만 즉시 적용한다. 애니메이션 러너와
-    // 동일한 상태 로직을 재사용하되, 상태 반영 타이밍이 필요한 곳은 rawSleep(0)으로 양보한다.
-    const seedJayerInstant = () => {
-      const seed = makeTourJayerRows();
-      setJayerRows(
-        seed.map((r, i) => ({
-          ...r,
-          product_name: TOUR_JAYER_PRODUCT,
-          step: TOUR_JAYER_STEPS[i],
-          item_id: TOUR_JAYER_ITEMS[i],
-        })),
-      );
-    };
-    const seedBbAutofillOpenInstant = () => {
-      setShowAutoFillPanel(false);
-      setBbRows([]);
-      setMappedJayerRowIds(new Set());
-      setActiveBbTab(0);
-      tourRef.current?.handleOpenAutoFillPanel();
-    };
-    const seedBbAutofillApplyInstant = () => {
-      tourRef.current?.handleApplyAutoFill();
-    };
-    const seedBbMappingInstant = async () => {
-      setActiveBbTab(1);
-      for (const layer of ['40', '50']) {
-        const target = tourRef.current?.jayerRows.find((r) => !r.disabled && r.layerid === layer);
-        const ext = tourRef.current?.bbExternalData[1]?.find((s) => s.layerid === layer);
-        if (!target || !ext) continue;
-        setSelectedJayerRowId(target.id);
-        await rawSleep(0); // setSelectedJayerRowId 반영 후 스테이징
-        tourRef.current?.handleStageMapping({
-          id: `tour-ext-${layer}`,
-          bb_process_id: ext.processid,
-          bb_name: 'BB제품2',
-          bb_step: ext.descript,
-          bb_ss: ext.stepseq,
-          layerid: ext.layerid,
-        });
-        await rawSleep(0);
-      }
-      tourRef.current?.handleApplyMappings();
+    // 챕터 되감기(seek) 즉시 복원: 부모(프리뷰)가 정주행 중 캡처해 둔 스냅샷을 주입한다.
+    const applySnapshot = (s: TourSnapshot) => {
+      setStep(s.step);
+      setDetail(s.detail);
+      setJayerRows(s.jayerRows);
+      setBbRows(s.bbRows);
+      setOayerInfoTab(s.oayerInfoTab);
+      setShowAutoFillPanel(s.showAutoFillPanel);
+      setBbAutoFillRanges(s.bbAutoFillRanges);
+      setStagedMappings(s.stagedMappings);
+      setMappedJayerRowIds(new Set(s.mappedJayerRowIds));
+      setActiveBbTab(s.activeBbTab);
+      setConfirmOpen(s.confirmOpen);
+      setSubmitNote(s.submitNote);
+      setDesigneeLoginid(s.designeeLoginid);
+      setDesigneeName(s.designeeName);
+      // 임시 커서/칩 오버레이는 항상 정리
+      setTourJCursor(null);
+      setTourJChip(null);
+      setTourJClicking(false);
     };
 
     const onMsg = (e: MessageEvent) => {
@@ -707,6 +705,14 @@ export default function RequestPage(): React.ReactElement {
       // 일시정지/재생은 진행 중인 데모를 취소하지 않고 paused 플래그만 토글한다.
       if (d.cmd === 'pause') { paused = true; return; }
       if (d.cmd === 'resume') { paused = false; return; }
+      // 스냅샷 요청: 현재 투어 상태를 부모(프리뷰)로 회신한다(진행 중 데모 취소 안 함).
+      if (d.cmd === 'snapshot') {
+        window.parent?.postMessage(
+          { type: 'guide-tour-state', index: d.index, state: snapStateRef.current },
+          window.location.origin,
+        );
+        return;
+      }
       if (activeTok) activeTok.cancelled = true;
       const tok = { cancelled: false };
       activeTok = tok;
@@ -720,36 +726,9 @@ export default function RequestPage(): React.ReactElement {
           setTourJClicking(false);
           if (typeof d.step === 'number') setStep(Math.min(5, Math.max(1, d.step)));
           break;
-        case 'reset-all':
-          // 챕터 되감기 시 누적 상태를 초기 시드로 되돌린다(이후 0~타깃 단계를 instant로 재적용).
-          setConfirmOpen(false);
-          setShowAutoFillPanel(false);
-          setBbAutoFillRanges([]);
-          setStagedMappings({});
-          setSelectedJayerRowId(null);
-          setMappedJayerRowIds(new Set());
-          setActiveBbTab(0);
-          setOayerInfoTab('table');
-          setJayerRows(makeTourJayerRows());
-          setBbRows(makeTourBbRows());
-          setDetail((dd) => ({
-            ...dd,
-            map_type: 'NEW',
-            only_prodc: 'No',
-            rev_yn: '',
-            rev_entries: [],
-            map_change: '변경 없음',
-            map_value_x: '',
-            map_value_y: '',
-            map_reason: '',
-            ea_change: '변경 없음',
-            ea_value: '',
-            mshot_change: '없음',
-          }));
-          setTourJCursor(null);
-          setTourJChip(null);
-          setTourJClicking(false);
-          setStep(1);
+        case 'restore':
+          // 부모가 보낸 스냅샷으로 그 챕터의 정확한 상태를 즉시 복원
+          if (d.state) applySnapshot(d.state as TourSnapshot);
           break;
         case 'map-reset':
           setDetail((dd) => ({
@@ -777,7 +756,7 @@ export default function RequestPage(): React.ReactElement {
           setDetail((dd) => ({ ...dd, mshot_change: '추가' }));
           break;
         case 'jayer-anim':
-          if (d.instant) seedJayerInstant(); else runJayerAnim(tok);
+          runJayerAnim(tok);
           break;
         case 'oayer-table':
           setOayerInfoTab('table');
@@ -786,13 +765,13 @@ export default function RequestPage(): React.ReactElement {
           setOayerInfoTab('info');
           break;
         case 'bb-autofill-open':
-          if (d.instant) seedBbAutofillOpenInstant(); else runBbAutofillOpen(tok);
+          runBbAutofillOpen(tok);
           break;
         case 'bb-autofill-apply':
-          if (d.instant) seedBbAutofillApplyInstant(); else runBbAutofillApply(tok);
+          runBbAutofillApply(tok);
           break;
         case 'bb-mapping':
-          if (d.instant) seedBbMappingInstant(); else runBbMapping(tok);
+          runBbMapping(tok);
           break;
         case 'open-submit':
           openSubmitDemo();
@@ -1787,6 +1766,23 @@ export default function RequestPage(): React.ReactElement {
       handleApplyAutoFill,
       handleStageMapping,
       handleApplyMappings,
+    };
+    // 되감기 스냅샷용 현재 상태 — 메시지 핸들러가 stale closure 없이 회신할 수 있도록 ref에 보관
+    snapStateRef.current = {
+      step,
+      detail,
+      jayerRows,
+      bbRows,
+      oayerInfoTab,
+      showAutoFillPanel,
+      bbAutoFillRanges,
+      stagedMappings,
+      mappedJayerRowIds: Array.from(mappedJayerRowIds),
+      activeBbTab,
+      confirmOpen,
+      submitNote,
+      designeeLoginid,
+      designeeName,
     };
   }
 

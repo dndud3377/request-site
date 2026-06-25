@@ -37,10 +37,9 @@ const STEP_SWITCH_MS = 800;
 const CMD_LEAD_MS = 900;
 const LOOP_DELAY_MS = 1200;
 const EL_WAIT_MS = 2600;
-// 챕터 되감기(seek) 시 0~타깃 단계를 빠르게 재적용하는 간격
-const REPLAY_RESET_MS = 260;
-const REPLAY_STEP_MS = 140;
-const REPLAY_CMD_MS = 180;
+// 챕터 되감기(seek): 복원 명령 반영 대기 / 정착된 상태 스냅샷 캡처 간격
+const RESTORE_SETTLE_MS = 160;
+const SNAP_CAPTURE_MS = 70;
 const MAX_PREVIEW_VH = 0.52;
 // 스포트라이트가 강조 대상에 너무 딱 붙지 않도록 사방에 두는 여백(축소 후 화면 px)
 const SPOTLIGHT_PAD = 14;
@@ -68,6 +67,19 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
 
   const seekRef = useRef<number | null>(null);
   useEffect(() => { if (seek) seekRef.current = seek.index; }, [seek?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 정주행 중 챕터별로 캡처해 두는 투어 상태 스냅샷(되감기 시 즉시 복원). 상태는 불투명하게 보관·전달만 한다.
+  const snapshotsRef = useRef<Map<number, unknown>>(new Map());
+  useEffect(() => {
+    const onState = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      const d = e.data;
+      if (!d || d.type !== 'guide-tour-state' || typeof d.index !== 'number') return;
+      snapshotsRef.current.set(d.index, d.state);
+    };
+    window.addEventListener('message', onState);
+    return () => window.removeEventListener('message', onState);
+  }, []);
 
   const initialStep = phases.find((p) => p.wizardStep)?.wizardStep ?? 1;
   const src = `${path}?embed=tour&step=${initialStep}`;
@@ -126,31 +138,16 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
       iframeRef.current?.contentWindow?.postMessage({ type: 'guide-tour-cmd', ...payload }, window.location.origin);
     };
 
-    // 요청서 단계에서만: 뒤(또는 임의)로 되감을 때 상태를 정확히 복원하기 위해
-    // 초기화 후 0~타깃 직전 단계의 명령을 instant(즉시 상태적용)로 재적용한다.
+    // 요청서 단계에서만 스냅샷 복원을 사용한다(다른 단계는 기존처럼 해당 phase로 직접 점프).
     const isRequest = path === '/request';
     let currentStep = initialStep;
-    const replayTo = async (target: number): Promise<boolean> => {
-      sendCmd({ cmd: 'reset-all' });
-      currentStep = initialStep;
-      await sleep(REPLAY_RESET_MS);
-      if (cancelled || seekRef.current != null) return false;
-      for (let j = 0; j < target; j += 1) {
-        if (cancelled || seekRef.current != null) return false;
-        const p = phases[j];
-        const ws = p.wizardStep ?? currentStep;
-        if (ws !== currentStep) {
-          sendCmd({ cmd: 'step', step: ws });
-          currentStep = ws;
-          await sleep(REPLAY_STEP_MS);
-          if (cancelled || seekRef.current != null) return false;
-        }
-        if (p.cmd) {
-          sendCmd({ cmd: p.cmd, instant: true });
-          await sleep(REPLAY_CMD_MS);
-        }
+    // idx까지의 누적 위저드 단계(복원 직후 currentStep 보정용)
+    const effStep = (idx: number): number => {
+      let s = initialStep;
+      for (let j = 0; j <= idx && j < phases.length; j += 1) {
+        if (phases[j].wizardStep) s = phases[j].wizardStep as number;
       }
-      return true;
+      return s;
     };
 
     const run = async (): Promise<void> => {
@@ -158,13 +155,18 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
       // eslint-disable-next-line no-constant-condition
       while (true) {
         if (cancelled) return;
+        // 되감기: 스냅샷이 있으면 그 챕터의 정착 상태를 즉시 복원하고 cmd 재생은 건너뛴다.
+        let restored = false;
         if (seekRef.current != null) {
           i = seekRef.current;
           seekRef.current = null;
-          if (isRequest && i > 0) {
-            const ok = await replayTo(i);
+          if (isRequest && snapshotsRef.current.has(i)) {
+            sendCmd({ cmd: 'restore', state: snapshotsRef.current.get(i) });
+            currentStep = effStep(i);
+            restored = true;
+            await sleep(RESTORE_SETTLE_MS);
             if (cancelled) return;
-            if (!ok) continue; // 재생 중 새 seek 도착 → 루프 상단에서 다시 처리
+            if (seekRef.current != null) continue;
           }
         }
         const phase = phases[i];
@@ -173,19 +175,21 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
         setRect(null);
         setCaption('');
 
-        const ws = phase.wizardStep ?? currentStep;
-        if (ws !== currentStep) {
-          sendCmd({ cmd: 'step', step: ws });
-          currentStep = ws;
-          await wait(STEP_SWITCH_MS);
-          if (cancelled) return;
-          if (seekRef.current != null) continue;
-        }
-        if (phase.cmd) {
-          sendCmd({ cmd: phase.cmd });
-          await wait(CMD_LEAD_MS);
-          if (cancelled) return;
-          if (seekRef.current != null) continue;
+        if (!restored) {
+          const ws = phase.wizardStep ?? currentStep;
+          if (ws !== currentStep) {
+            sendCmd({ cmd: 'step', step: ws });
+            currentStep = ws;
+            await wait(STEP_SWITCH_MS);
+            if (cancelled) return;
+            if (seekRef.current != null) continue;
+          }
+          if (phase.cmd) {
+            sendCmd({ cmd: phase.cmd });
+            await wait(CMD_LEAD_MS);
+            if (cancelled) return;
+            if (seekRef.current != null) continue;
+          }
         }
         if (phase.selector) {
           const el = await waitForEl(phase.selector);
@@ -214,6 +218,14 @@ const GuideTourStepPreview: React.FC<Props> = ({ path, phases, active, paused, o
         await wait(phase.hold ?? DEFAULT_HOLD_MS);
         if (cancelled) return;
         if (seekRef.current != null) continue;
+
+        // 정착된 이 챕터의 상태를 스냅샷으로 캡처(되감기 복원용). 다음 cmd 전에 잠깐 텀을 둔다.
+        if (isRequest) {
+          sendCmd({ cmd: 'snapshot', index: i });
+          await sleep(SNAP_CAPTURE_MS);
+          if (cancelled) return;
+          if (seekRef.current != null) continue;
+        }
 
         i += 1;
         if (i >= phases.length) { i = 0; await wait(LOOP_DELAY_MS); if (cancelled) return; }
