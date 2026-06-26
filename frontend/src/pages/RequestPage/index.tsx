@@ -40,6 +40,7 @@ import {
   DETAIL_REQUIRED,
   JAYER_EDITABLE_COLS,
   OAYER_EDITABLE_COLS,
+  LOADED_LOCK_COLS,
   makeTourDetail,
   makeTourJayerRows,
   makeTourOayerRows,
@@ -485,7 +486,10 @@ export default function RequestPage(): React.ReactElement {
           setJayerActiveFilterIds(savedActiveIds);
           setJayerRows(parsed.jayerRows.map((r: JayerRow) => {
             const md = r.manuallyDisabled ?? r.disabled;
-            return { ...r, manuallyDisabled: md, disabled: calcDisabled({ ...r, manuallyDisabled: md }, fSets, savedActiveIds) };
+            // 옛 문서(loaded 없음)는 Update 날짜로 보정: 날짜는 백엔드 자동채움에서만 채워지므로
+            // 수동 행을 잘못 잠그지 않는다.
+            const loaded = r.loaded ?? !!r.updated?.trim();
+            return { ...r, loaded, manuallyDisabled: md, disabled: calcDisabled({ ...r, manuallyDisabled: md }, fSets, savedActiveIds) };
           }));
         }
         if (parsed.oayerRows) {
@@ -494,7 +498,8 @@ export default function RequestPage(): React.ReactElement {
           setOayerActiveFilterIds(savedActiveIds);
           setOayerRows(parsed.oayerRows.map((r: OayerRow) => {
             const md = r.manuallyDisabled ?? r.disabled;
-            return { ...r, manuallyDisabled: md, disabled: calcDisabled({ ...r, manuallyDisabled: md }, fSets, savedActiveIds) };
+            const loaded = r.loaded ?? !!r.updated?.trim();
+            return { ...r, loaded, manuallyDisabled: md, disabled: calcDisabled({ ...r, manuallyDisabled: md }, fSets, savedActiveIds) };
           }));
         }
         if (parsed.bbRows) {
@@ -1059,7 +1064,7 @@ export default function RequestPage(): React.ReactElement {
             pp: item.recipeid,
             layerid: item.layerid || '',
           };
-          return { ...row, manuallyDisabled: false, disabled: calcDisabled(row, jayerFilterSets, jayerActiveFilterIds) };
+          return { ...row, loaded: true, manuallyDisabled: false, disabled: calcDisabled(row, jayerFilterSets, jayerActiveFilterIds) };
         });
         setJayerRows(newJayerRows);
         addToast(t('request.toast_job_auto_fill', { count: jobFileData.length }), 'info');
@@ -1087,7 +1092,7 @@ export default function RequestPage(): React.ReactElement {
             pp: item.recipeid,
             layerid: item.layerid || '',
           };
-          return { ...row, manuallyDisabled: false, disabled: calcDisabled(row, oayerFilterSets, oayerActiveFilterIds) };
+          return { ...row, loaded: true, manuallyDisabled: false, disabled: calcDisabled(row, oayerFilterSets, oayerActiveFilterIds) };
         });
         setOayerRows(newOayerRows);
         addToast(t('request.toast_ovl_auto_fill', { count: ovlData.length }), 'info');
@@ -1246,8 +1251,11 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // 엑셀식 셀 선택 + 붙여넣기 (J/O 표 공용 훅). 붙여넣기 후 자동채움/바코드 조회 연동.
-  const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, handleJayerAfterPaste);
-  const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, handleOayerAfterPaste);
+  // 셀 단위 잠금: 비활성/기등록 행은 전체 잠금, 불러온(loaded) 행은 LOADED_LOCK_COLS만 잠금
+  const isLayerCellLocked = (row: { disabled?: boolean; new_or_copy?: string; loaded?: boolean }, col: string): boolean =>
+    !!row.disabled || row.new_or_copy === '기등록' || (!!row.loaded && (LOADED_LOCK_COLS as readonly string[]).includes(col));
+  const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, handleJayerAfterPaste, isLayerCellLocked);
+  const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, handleOayerAfterPaste, isLayerCellLocked);
 
   const handleJayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
     setJayerRows((rows) => rows.map((r) => r.new_or_copy === '기등록' ? r : { ...r, [field]: value }));
@@ -1508,7 +1516,7 @@ export default function RequestPage(): React.ReactElement {
     });
     refJayerRows.filter((r) => !r.disabled).forEach((r) => {
       if (!activeJayerKeys.has(makeKey(r))) {
-        mergedJayer.push({ ...r, id: genId(), sortOrder: Date.now() });
+        mergedJayer.push({ ...r, id: genId(), sortOrder: Date.now(), loaded: true });
       }
     });
     setJayerRows(mergedJayer);
@@ -1525,7 +1533,7 @@ export default function RequestPage(): React.ReactElement {
     });
     refOayerRows.filter((r) => !r.disabled).forEach((r) => {
       if (!activeOayerKeys.has(makeKey(r))) {
-        mergedOayer.push({ ...r, id: genId(), sortOrder: Date.now() });
+        mergedOayer.push({ ...r, id: genId(), sortOrder: Date.now(), loaded: true });
       }
     });
     setOayerRows(mergedOayer);
