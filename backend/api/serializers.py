@@ -100,6 +100,13 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
     def get_designated_pl_loginid(self, obj):
         return obj.designated_pl.loginid if obj.designated_pl else None
 
+    def update(self, instance, validated_data):
+        # 의뢰자 표시 정보는 최초 작성자로 고정한다.
+        # 검토자(지정 PL)의 수정 후 재상신 등 업데이트 시 의뢰자가 바뀌지 않도록 차단.
+        for field in ('requester_name', 'requester_email', 'requester_department'):
+            validated_data.pop(field, None)
+        return super().update(instance, validated_data)
+
 
 class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSerializer):
     approval_steps = ApprovalStepSerializer(many=True, read_only=True)
