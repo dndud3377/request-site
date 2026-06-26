@@ -172,6 +172,7 @@ export interface JayerRow {
   product_name: string;
   step: string;
   item_id: string;
+  loaded?: boolean;     // 자동채움/병합으로 불러온 행 — 불러온 컬럼(LOADED_LOCK_COLS) 읽기전용
 }
 
 export interface OayerRow {
@@ -189,6 +190,7 @@ export interface OayerRow {
   new_or_copy: string;
   product_name: string;
   step: string;
+  loaded?: boolean;     // 자동채움/병합으로 불러온 행 — 불러온 컬럼(LOADED_LOCK_COLS) 읽기전용
 }
 
 export interface BbTableRow {
