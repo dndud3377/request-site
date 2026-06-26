@@ -202,6 +202,8 @@ export default function RequestPage(): React.ReactElement {
     bbRows: BbTableRow[];
     history: HistorySnapshot[];
   } | null>(null);
+  // 편집/지정PL 모드에서 불러온 원본 의뢰자 — 수정/재상신 시에도 최초 작성자로 고정
+  const originalRequesterRef = useRef<{ name: string; email: string; department: string } | null>(null);
   // 투어 모드에선 시드한 값이 라인/조합법 변경 reset 효과로 지워지지 않도록 로드 가드를 켠 채 시작
   const isLoadingEditRef = useRef(isTourMode);
 
@@ -354,8 +356,14 @@ export default function RequestPage(): React.ReactElement {
   }, [detail.partid_selection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (isLoadingEditRef.current) return; // 편집/투어 로드 중엔 보존(저장된 J/O/bb 유지)
+    // 조리법(process_id) 변경 → J/O 원본이 새 id로 재생성되므로 bb 매핑 상태를 초기화한다.
+    // (옛 sourceJayerRowId를 참조하는 고아 bb 행 방지)
+    setBbRows([]);
+    setMappedJayerRowIds(new Set());
+    setStagedMappings({});
+    setSelectedJayerRowId(null);
     if (!detail.line || !detail.process_id) return;
-    if (isLoadingEditRef.current) return; // 편집 모드 로드 중엔 jayerRows/oayerRows 덮어쓰기 방지
     setRefDocId(null);
     setRefDocLabel('');
     setRefJayerRows([]);
@@ -477,6 +485,12 @@ export default function RequestPage(): React.ReactElement {
           oayerRows: parsed.oayerRows ?? [],
           bbRows: parsed.bbRows ?? [],
           history: parsed.history ?? [],
+        };
+        // 원본 의뢰자 보관 — 수정/재상신 시에도 최초 작성자 유지
+        originalRequesterRef.current = {
+          name: doc.requester_name ?? '',
+          email: doc.requester_email ?? '',
+          department: doc.requester_department ?? '',
         };
         if (doc.production_date) setProductionDate(doc.production_date);
         if (parsed.detail) setDetail(parsed.detail);
@@ -1105,8 +1119,32 @@ export default function RequestPage(): React.ReactElement {
     }
   };
 
+  // 매핑된 J-layer 행이 수정/비활성화되면 매핑을 해제한다:
+  // 해당 bb 행 제거 + mappedJayerRowIds/stagedMappings/선택 정리 → 원본 데이터 목록에 다시 노출.
+  const unmapJayerRows = (ids: string[]) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    setBbRows((prev) => prev.filter((r) => !(r.sourceJayerRowId && idSet.has(r.sourceJayerRowId))));
+    setMappedJayerRowIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
+    setStagedMappings((prev) => {
+      const next = { ...prev };
+      ids.forEach((id) => delete next[id]);
+      return next;
+    });
+    setSelectedJayerRowId((prev) => (prev && idSet.has(prev) ? null : prev));
+  };
+
+  // 매핑된 행만 골라 unmap (편집/붙여넣기/Delete 공용)
+  const unmapIfMapped = (ids: string[]) => unmapJayerRows(ids.filter((id) => mappedJayerRowIds.has(id)));
+
   const handleJayerChange = (id: string, field: keyof Omit<JayerRow, 'id'>, value: string) => {
     const changedRow = jayerRows.find(r => r.id === id);
+    // 매핑된 행을 수정하면(어떤 컬럼이든) 매핑 해제 → 원본 목록 복귀
+    if (mappedJayerRowIds.has(id)) unmapJayerRows([id]);
     setJayerRows((rows) => rows.map((r) => {
       if (r.id === id) {
         if (field === 'product_name') {
@@ -1153,6 +1191,8 @@ export default function RequestPage(): React.ReactElement {
 
   // 붙여넣기 후 J-layer 자동채움/바코드 조회 연동
   const handleJayerAfterPaste = (changes: { rowId: string; values: Record<string, string> }[]) => {
+    // 매핑된 행에 붙여넣기 → 매핑 해제(원본 목록 복귀)
+    unmapIfMapped(changes.map((c) => c.rowId));
     changes.forEach(({ rowId, values }) => {
       if ('product_name' in values) {
         const pn = values.product_name;
@@ -1254,7 +1294,7 @@ export default function RequestPage(): React.ReactElement {
   // 셀 단위 잠금: 비활성/기등록 행은 전체 잠금, 불러온(loaded) 행은 LOADED_LOCK_COLS만 잠금
   const isLayerCellLocked = (row: { disabled?: boolean; new_or_copy?: string; loaded?: boolean }, col: string): boolean =>
     !!row.disabled || row.new_or_copy === '기등록' || (!!row.loaded && (LOADED_LOCK_COLS as readonly string[]).includes(col));
-  const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, handleJayerAfterPaste, isLayerCellLocked);
+  const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, handleJayerAfterPaste, isLayerCellLocked, (changes) => unmapIfMapped(changes.map((c) => c.rowId)));
   const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, handleOayerAfterPaste, isLayerCellLocked);
 
   const handleJayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
@@ -1287,12 +1327,8 @@ export default function RequestPage(): React.ReactElement {
     setJayerRows((rows) =>
       rows.map((r) => (jayerChecked.has(r.id) && !r.disabled ? { ...r, manuallyDisabled: true, disabled: true } : r))
     );
-    setSelectedJayerRowId((prev) => (prev && jayerChecked.has(prev) ? null : prev));
-    setStagedMappings((prev) => {
-      const next = { ...prev };
-      jayerChecked.forEach((id) => delete next[id]);
-      return next;
-    });
+    // 비활성화되는 행은 매핑 해제 → bb 정보에서 제거(비활성이라 원본 목록에도 안 뜸)
+    unmapJayerRows([...jayerChecked]);
     setJayerChecked(new Set());
   };
 
@@ -2048,13 +2084,18 @@ export default function RequestPage(): React.ReactElement {
       ];
     }
 
+    // 편집/지정PL 모드면 원본 의뢰자 유지, 신규 작성이면 현재 사용자
+    const requester = (isEditMode || isPeerReviewMode) && originalRequesterRef.current
+      ? originalRequesterRef.current
+      : { name: currentUser.name, email: currentUser.email, department: currentUser.department };
+
     return {
       ...form,
       title,
       product_name: detail.partid_selection,
-      requester_name: currentUser.name,
-      requester_email: currentUser.email,
-      requester_department: currentUser.department,
+      requester_name: requester.name,
+      requester_email: requester.email,
+      requester_department: requester.department,
       production_date: productionDate || null,
       reference_materials: note ?? '',
       additional_notes: JSON.stringify({
