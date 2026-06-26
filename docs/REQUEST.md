@@ -156,6 +156,8 @@ pages/RequestPage/
   - `useCellSelection`에 `onAfterClear` 콜백 추가(Delete 통지). `handleJayerBulkDisable`·`handleJayerChange`·`handleJayerAfterPaste`·Delete 전 경로 연결.
   - **라인/조합법/조리법(process_id) 변경 시**: J/O가 새 id로 재생성되므로 `bbRows`·`mappedJayerRowIds`·`stagedMappings`·`selectedJayerRowId`를 초기화(고아 bb 방지). 편집/투어 로드는 `isLoadingEditRef` 가드로 보존.
 
+- **J/O 표 셀 드래그 시 글자 텍스트 선택 방지**: 셀을 드래그 선택할 때 브라우저 기본 텍스트 선택(파란 글자 배경)이 함께 생기던 문제 수정. `useCellSelection`에 `isDragging` 상태 추가 — 드래그가 다른 셀로 확장되는 순간(`onCellMouseEnter`) 켜고 `getSelection().removeAllRanges()`로 기존 선택 제거, `mouseup`에 해제. Step2/Step3 표 `userSelect`를 `cellSel.isDragging || (행 드래그) ? 'none'`로. 단일 클릭/더블클릭 편집·input 내 텍스트 선택은 영향 없음(드래그 아닐 때만 평소대로).
+
 ### 추가 변경 이력 (2026-06-23)
 
 - **col_st 'O (혼용)' 옵션 제거**: Step3(J-layer)·Step4(O-layer)의 col_st 드롭다운에서 `'O (혼용)'` 선택지를 제거. `Step2.tsx`·`Step3.tsx`의 `ST_OPTIONS` 배열 및 `stCellColor.ts`의 색상 매핑(`'#FFE0EC'`) 삭제. 기존 DB에 저장된 `'O (혼용)'` 값은 보존되며, 상세보기에서 텍스트는 그대로 표시되나 셀 배경색은 적용되지 않는다.
