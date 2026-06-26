@@ -18,7 +18,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db import connection, transaction
 from django.contrib.auth import get_user_model
 User = get_user_model()
-from django.db.models import Q, Max
+from django.db.models import Q, Max, Min
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
@@ -1073,9 +1073,14 @@ def form_options_bb_external(request):
         return JsonResponse({'options': [], 'error': str(e)})
 
 
+def _natural_key(s: str) -> list:
+    """'{문자}{숫자}' 패턴(예: A1, B10)을 숫자 인식 오름차순으로 정렬하기 위한 키."""
+    return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', s or '')]
+
+
 @require_GET
 def form_options_layer_ids(request):
-    """line + process → unique sorted layerid list (eqptype='PMAINF')"""
+    """line + process → unique layerid list sorted by min stepseq (natural order)"""
     line = request.GET.get('line', '')
     process = request.GET.get('process', '')
 
@@ -1094,14 +1099,14 @@ def form_options_layer_ids(request):
         return JsonResponse({'options': []})
 
     try:
-        layerids = (
+        rows = (
             model.objects.filter(eqptype='PMAINF', processid=process)
             .exclude(layerid='').exclude(layerid=None)
-            .values_list('layerid', flat=True)
-            .distinct()
-            .order_by('layerid')
+            .values('layerid')
+            .annotate(min_seq=Min('stepseq'))
         )
-        return JsonResponse({'options': list(layerids)})
+        sorted_rows = sorted(rows, key=lambda r: _natural_key(r['min_seq']))
+        return JsonResponse({'options': [r['layerid'] for r in sorted_rows]})
     except Exception as e:
         return JsonResponse({'options': []})
 

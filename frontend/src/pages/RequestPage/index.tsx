@@ -420,8 +420,7 @@ export default function RequestPage(): React.ReactElement {
       }
       formOptionsAPI.getLayerIds(entry.location, entry.process_id)
         .then((opts) => {
-          const sorted = [...opts].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-          setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: sorted }));
+          setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: opts }));
         })
         .catch(() => setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: [] })));
     });
