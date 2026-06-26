@@ -146,6 +146,16 @@ pages/RequestPage/
   - `useCellSelection`을 셀 단위 잠금(`isCellLocked(row,col)`)으로 확장 — 붙여넣기/Delete/연동 콜백에서 잠긴 셀만 건너뜀(선택 하이라이트는 허용, 쓰기만 차단). 미전달 시 기존 행 단위(disabled/기등록) 동작.
   - Step2/Step3: 잠금 5개 컬럼 `readOnly`에 `|| row.loaded` 추가(배경 흰색 유지, `disabled` 미부여). Update 컬럼 배경을 회색→흰색·읽기전용. layerid `readOnly`에 `row.disabled`도 포함(기존 비활성 행 Layer 편집 가능 버그 동시 수정).
 
+- **의뢰자(requester) 최초 작성자 고정**: 검토자(지정 PL)가 "수정 후 재상신"하면 의뢰자 표시값이 검토자로 바뀌던 문제 수정.
+  - 백엔드: `RequestDocumentSerializer.update`에서 `requester_name/email/department`를 pop해 업데이트 시 변경 차단(생성은 그대로). `requester` FK는 기존에도 `perform_update`가 안 건드려 보존됨.
+  - 프론트: 편집/지정PL 로드 시 원본 requester를 `originalRequesterRef`에 보관 → `buildEnrichedForm`이 편집/지정PL 모드에선 원본 requester 사용(신규는 현재 사용자).
+
+- **J-layer 행 변경 시 Backbone 매핑 동기화**: 매핑된 J행을 **수정(어떤 컬럼이든)·붙여넣기·Delete·비활성화**하면 매핑을 해제(`unmapJayerRows`)한다.
+  - 비활성화: bb 정보에서 제거(비활성이라 원본목록에도 안 뜸), 복원 시 원본목록 복귀.
+  - 수정/붙여넣기/Delete: bb 행 제거 + **원본 데이터 목록에 재노출**(재매핑 가능). 상신 검증으로 재매핑 강제.
+  - `useCellSelection`에 `onAfterClear` 콜백 추가(Delete 통지). `handleJayerBulkDisable`·`handleJayerChange`·`handleJayerAfterPaste`·Delete 전 경로 연결.
+  - **라인/조합법/조리법(process_id) 변경 시**: J/O가 새 id로 재생성되므로 `bbRows`·`mappedJayerRowIds`·`stagedMappings`·`selectedJayerRowId`를 초기화(고아 bb 방지). 편집/투어 로드는 `isLoadingEditRef` 가드로 보존.
+
 ### 추가 변경 이력 (2026-06-23)
 
 - **col_st 'O (혼용)' 옵션 제거**: Step3(J-layer)·Step4(O-layer)의 col_st 드롭다운에서 `'O (혼용)'` 선택지를 제거. `Step2.tsx`·`Step3.tsx`의 `ST_OPTIONS` 배열 및 `stCellColor.ts`의 색상 매핑(`'#FFE0EC'`) 삭제. 기존 DB에 저장된 `'O (혼용)'` 값은 보존되며, 상세보기에서 텍스트는 그대로 표시되나 셀 배경색은 적용되지 않는다.
