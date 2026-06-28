@@ -348,6 +348,26 @@ const Step4: React.FC<Step4Props> = ({
               );
             })}
           </div>
+          {!bbExternalLoading && currentTabData.length > 0 && (
+            <div style={{ padding: '8px 0 4px', flexShrink: 0 }}>
+              <input
+                type="text"
+                placeholder="검색어 입력"
+                value={bbSearchQueries[activeBbTab] || ''}
+                onChange={(e) => {
+                  const newQueries = [...bbSearchQueries];
+                  newQueries[activeBbTab] = e.target.value;
+                  setBbSearchQueries(newQueries);
+                }}
+                style={{ padding: '6px 10px', width: '100%', boxSizing: 'border-box' }}
+              />
+              {currentSearchQuery && (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                  검색 결과: {filteredTabData.length}건
+                </div>
+              )}
+            </div>
+          )}
           <div className="bb-split-panel-scroll">
             {bbExternalLoading ? (
               <div className="bb-split-loading">데이터 로드 중...</div>
@@ -358,57 +378,39 @@ const Step4: React.FC<Step4Props> = ({
                   : 'Step 1에서 뼈찜 조합 조리법을 먼저 선택하세요.'}
               </div>
             ) : (
-              <>
-                <input
-                  type="text"
-                  placeholder="검색어 입력"
-                  value={bbSearchQueries[activeBbTab] || ''}
-                  onChange={(e) => {
-                    const newQueries = [...bbSearchQueries];
-                    newQueries[activeBbTab] = e.target.value;
-                    setBbSearchQueries(newQueries);
-                  }}
-                  style={{ marginBottom: 8, padding: '6px 10px', width: '100%', boxSizing: 'border-box' }}
-                />
-                {currentSearchQuery && (
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 4 }}>
-                    검색 결과: {filteredTabData.length}건
-                  </div>
-                )}
-                <table className="bb-external-table">
-                  <thead>
-                    <tr>
-                      <th>Ref.공법</th>
-                      <th>Ref.PART ID</th>
-                      <th>Ref.SEQ</th>
-                      <th>설명</th>
-                      <th>Layer</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTabData.map((item) => {
-                      const isStaged = selectedJayerRowId
-                        ? stagedMappings[selectedJayerRowId]?.id === item.id
-                        : false;
-                      return (
-                        <tr
-                          key={item.id}
-                          data-bbtour={`ext-${item.layerid}`}
-                          className={`bb-external-row${isStaged ? ' bb-external-staged' : ''}`}
-                          onClick={() => handleStageMapping(item)}
-                          title="클릭하면 선택된 원본 layer 에 지정됩니다"
-                        >
-                          <td>{item.bb_process_id}</td>
-                          <td>{item.bb_name}</td>
-                          <td>{item.bb_ss}</td>
-                          <td>{item.bb_step}</td>
-                          <td>{item.layerid || '—'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </>
+              <table className="bb-external-table">
+                <thead>
+                  <tr>
+                    <th>Ref.공법</th>
+                    <th>Ref.PART ID</th>
+                    <th>Ref.SEQ</th>
+                    <th>설명</th>
+                    <th>Layer</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTabData.map((item) => {
+                    const isStaged = selectedJayerRowId
+                      ? stagedMappings[selectedJayerRowId]?.id === item.id
+                      : false;
+                    return (
+                      <tr
+                        key={item.id}
+                        data-bbtour={`ext-${item.layerid}`}
+                        className={`bb-external-row${isStaged ? ' bb-external-staged' : ''}`}
+                        onClick={() => handleStageMapping(item)}
+                        title="클릭하면 선택된 원본 layer 에 지정됩니다"
+                      >
+                        <td>{item.bb_process_id}</td>
+                        <td>{item.bb_name}</td>
+                        <td>{item.bb_ss}</td>
+                        <td>{item.bb_step}</td>
+                        <td>{item.layerid || '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
         </div>
