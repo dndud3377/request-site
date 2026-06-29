@@ -36,8 +36,11 @@
 - 수정 진행 시 → 상태 `✅수정완료` + `결정/메모`에 커밋 요약.
 
 ### 0.4 정독 범위
-- ✅ 완료: `index.tsx`, `constants.ts`, `helpers.ts`, `Step1/StepMap/Step2/Step3/Step4.tsx`
-- ⏳ 후속: `ProdcRow.tsx`, `MshotImageUpload.tsx`, `FilterManageModal.tsx`, `WizardIndicator.tsx`, 공용 훅 `useCellSelection`, 공용 컴포넌트 `AutocompleteInput`/`FormSelect`, 백엔드 `documentsAPI`/serializer (필요 시 확장)
+- ✅ 완료(프론트 페이지): `index.tsx`, `constants.ts`, `helpers.ts`, `Step1/StepMap/Step2/Step3/Step4.tsx`
+- ✅ 완료(보조 컴포넌트): `ProdcRow.tsx`, `MshotImageUpload.tsx`, `FilterManageModal.tsx`, `WizardIndicator.tsx`
+- ✅ 완료(공용): 훅 `useCellSelection`, 컴포넌트 `AutocompleteInput`/`FormSelect`
+- ✅ 완료(API/백엔드): `api/client.ts`(documentsAPI/formOptionsAPI/uploadImageAPI 등), `backend/api/serializers.py`(RequestDocumentSerializer), `backend/api/views.py`(create/update/submit/resubmit/`_validate_bb_mapping`/get_queryset), `backend/api/models.py`(additional_notes/get_detail/is_only_map)
+- ⏳ 후속(필요 시): `Modal`/`Toast`/`GuideSlidePanel` 공용 UI, `useIdleTimer`, `utils/specMatch`/`bbTabColors`/`stCellColor`, 메일/스케줄러 연동
 
 ---
 
@@ -185,6 +188,38 @@
 #### [F-X.5] 단계 이동·검증·첫 오류 스크롤 — `handleNextStep/PrevStep`, `validate`, `scrollToFirstError` `index.tsx:2208-2261`. special-care/TBV 경고 모달.
 #### [F-X.6] 가이드 배지·슬라이드 패널 — `GuideBadge`/`toggleSlidePanel`/`GuideSlidePanel`.
 
+## A-7. 보조·공용·API·백엔드
+
+### 보조 컴포넌트
+#### [F-Y.1] ProdcRow (C가문 북/중/남 행) — `ProdcRow.tsx`
+- 동작: 리전별 라인(select)/조합법/제품(AutocompleteInput). 중간(middle)은 `prodc_middle_use==='사용'`일 때만 입력칸 표시, 북/남만 필수(*). 조합법 변경 시 `onProcessChange`로 제품 옵션 fetch.
+#### [F-Y.2] MshotImageUpload (X표시 이미지 붙여넣기) — `MshotImageUpload.tsx`
+- 동작: 영역에 Ctrl+V → `onPaste`→`uploadImageAPI.upload`. 값 있으면 `/media/{value}` 미리보기. `disabled` 시 붙여넣기 차단, error 시 빨강 테두리.
+#### [F-Y.3] FilterManageModal (J/O 필터 관리) — `FilterManageModal.tsx`
+- 동작: 저장된 필터 목록(수정/삭제) + 새 필터 만들기(이름 + sp/sd/pp 키워드 칩 추가·삭제) + 전체삭제. 추가는 모달이 직접 localStorage 저장, 수정/삭제/전체삭제는 부모 콜백. sp/sd/pp 모두 비면 추가 버튼 비활성.
+#### [F-Y.4] WizardIndicator (상단 단계 표시) — `WizardIndicator.tsx`
+- 동작: 완료(✓)/진행/대기 단계 시각화. 클릭 이동 없음(읽기 전용).
+
+### 공용 컴포넌트/훅
+#### [F-Z.1] AutocompleteInput — `components/AutocompleteInput.tsx`
+- 동작: 입력값 `includes` 필터 드롭다운. `onChange`(타이핑)·`onSelect`(클릭 선택). `dropdownDirection='up'`이면 `createPortal`+`position:fixed`로 overflow 클리핑 회피, scroll 시 위치 갱신. 외부 클릭 시 닫힘.
+#### [F-Z.2] FormSelect — `components/FormSelect.tsx`. 단순 라벨+select+에러, placeholder=빈값 옵션.
+#### [F-Z.3] useCellSelection — `hooks/useCellSelection.ts`
+- 동작: 드래그 사각범위/Ctrl 토글 선택, Ctrl+V 단일/매트릭스 spill 붙여넣기, Delete 비우기(표 내 포커스 시), 셀 단위 잠금(`isCellLocked`), 드래그 중 네이티브 텍스트선택 제거. 붙여넣기/Delete 후 콜백(`onAfterPaste`/`onAfterClear`).
+
+### API 클라이언트 — `api/client.ts`
+#### [F-Z.4] documentsAPI — create/update/get/submit/resubmit/peerSubmit/getApproved 등. update는 PATCH.
+#### [F-Z.5] formOptionsAPI — getProcesses/getProducts/getProcessId/getJobFileLayer/getOvlLayer/getLayerIds/getMapNames/getBarcodeOptions/getBbExternalData (모두 `{options}` 언랩).
+#### [F-Z.6] uploadImageAPI — multipart 업로드, 토큰 헤더 수동 부착.
+
+### 백엔드 — `backend/api/`
+#### [F-Z.7] RequestDocumentSerializer.update — `serializers.py:103-108`. update 시 `requester_name/email/department` pop(의뢰자 고정).
+#### [F-Z.8] perform_create/update — `views.py:705-720`. create 시 requester=현재 사용자, `_unique_title`로 제목 중복 시 `_N` 접미사. **update마다 제목 재생성**.
+#### [F-Z.9] submit/resubmit — `views.py:174-263`. draft→under_review(submit)/rejected→under_review(resubmit). 지정 PL 필수·본인 불가·role='PL' 검증, `_validate_bb_mapping` 통과 시 PL 단계 생성. `transaction.atomic`.
+#### [F-Z.10] _validate_bb_mapping — `views.py:154-171`. 서버측 매핑 검증(프론트 우회 방지).
+#### [F-Z.11] get_queryset — `views.py:79-97`. draft는 작성자+같은 그룹 멤버+MASTER만 노출.
+#### [F-Z.12] 모델 저장 구조 — `models.py`. `additional_notes`=TextField(JSON 문자열, JSONField 아님), `get_detail()`이 파싱 실패 시 `{}` 반환, `is_only_map()`.
+
 ---
 
 # PART B. 버그·오류 점검
@@ -280,6 +315,37 @@
 - 증상/의심: 탭색은 **현재 인덱스**(`idx`), 결과표색은 **저장된 entryIdx**. bb_entries 순서변경/삭제 시 둘이 어긋남(R-01과 동일 뿌리). 단독으로도 "탭색≠결과표색" 혼동.
 - 심각도: 🟡보통 · 상태: 🔍점검필요 · 결정/메모:
 
+### [R-19] 🔴 백엔드 매핑 검증이 기등록/layer삭제 행을 제외하지 않음 → 상신 실패 위험  (관련: F-5.7, F-3.10, F-Z.10)
+- 위치: `backend/api/views.py:154-171` `_validate_bb_mapping`; 프론트 `index.tsx:2101-2109` `validate(5)`
+- 증상/의심: **프론트는** 매핑 필수 대상을 `!disabled && !isNocSpecial(new_or_copy) && process_id`로 제한(기등록·layer삭제 제외). **백엔드는** `process_id가 있고 매핑 안 된 모든 행`을 unmapped로 본다(기등록·layer삭제 미제외). 따라서 `기등록`/`layer삭제` 활성 행(process_id 보유, bb 매핑 대상 아님)이 있으면 **프론트 검증은 통과하지만 백엔드 submit/resubmit이 "모든 원본 데이터에 bb을 매핑해야 상신할 수 있습니다" 에러로 차단** → 사용자가 정상 입력했는데 상신 실패.
+- 재현/근거: F-1.5 Merge로 기등록 행 생성(또는 J-layer에서 new_or_copy=기등록 수동 설정) → 다른 행 매핑 완료 후 상신 → 백엔드 400. (FIX_PROGRESS.md 목표 #6 "상신 실패 없어야 함"과 정면 충돌)
+- 심각도: 🔴치명 · 상태: 🔍점검필요 · 결정/메모: 프론트·백엔드 제외 규칙을 일치시켜야 함(백엔드에 disabled/isNocSpecial 제외 추가). ※ 저장 시 disabled 행은 제외되지만 기등록/layer삭제는 활성이라 저장됨.
+
+### [R-20] 상신 성공 토스트의 메신저 발송 안내가 항상 미발화 (dead path)  (관련: F-X.3)
+- 위치: 프론트 `index.tsx:2381-2383`(`submitRes.data.email_sent`); 백엔드 `views.py:216`(`'email_sent': False` 하드코딩)
+- 증상/의심: submit 응답의 `email_sent`가 항상 false → `request.messenger_sent_to_manager` 토스트는 실행 불가능한 죽은 경로. 실제 메일은 `mailer.enqueue_stage_arrival`로 별도 발송되므로, 안내를 주려면 응답값을 실제 발송 여부로 채우거나 안내 코드를 제거해야 함.
+- 심각도: 🟡보통 · 상태: 🔍점검필요 · 결정/메모:
+
+### [R-21] AutocompleteInput 키보드 내비게이션 없음 + up방향 첫 렌더 지연  (관련: F-Z.1, 대부분 입력)
+- 위치: `components/AutocompleteInput.tsx`
+- 증상/의심: ① 방향키/Enter로 옵션 선택 불가(마우스 전용) → 접근성·키보드 사용성 저하. ② `dropdownDirection='up'`은 `fixedPos`가 effect로 계산되기 전 1프레임 동안 드롭다운 미표시(깜빡임 가능).
+- 심각도: ⚪경미 · 상태: 🔍점검필요 · 결정/메모:
+
+### [R-22] FilterManageModal·MshotImageUpload 하드코딩 텍스트 + 필터 id 충돌 가능  (관련: F-Y.2, F-Y.3, R-06 하위)
+- 위치: `FilterManageModal.tsx`(전체 삭제/닫기/수정/삭제/"키워드 입력 후 Enter"/토스트), `MshotImageUpload.tsx`(안내문); 필터 `id: String(Date.now())` `FilterManageModal.tsx:93`
+- 증상/의심: ① i18n 미적용(규칙 G). ② 같은 ms에 필터 2개 생성 시 id 충돌(토글·삭제 오작동 가능, 희박).
+- 심각도: ⚪경미 · 상태: 🔍점검필요 · 결정/메모:
+
+### [R-23] useCellSelection — 다중 트레일링 개행 붙여넣기 시 빈 셀 덮어쓰기  (관련: F-3.5, F-Z.3)
+- 위치: `hooks/useCellSelection.ts:156`(`.replace(/\n$/, '')`)
+- 증상/의심: 트레일링 개행을 1개만 제거 → 엑셀에서 빈 줄 포함 복사 시 빈 문자열 행이 spill되어 아래 셀을 ''로 덮어쓸 수 있음.
+- 심각도: ⚪경미 · 상태: 🔍점검필요 · 결정/메모:
+
+### [R-24] update마다 제목 재생성 (자동저장 포함)  (관련: F-Z.8, F-X.2)
+- 위치: `backend/api/views.py:718-720`; 프론트 제목 생성 `index.tsx:2118-2120`(today 날짜 포함)
+- 증상/의심: 모든 update에서 `_unique_title` 재계산 → 임시저장/자동저장 시점마다 제목이 그날 날짜로 바뀜(작성 다음 날 자동저장되면 날짜 변동). 의도일 수 있으나 제목 일관성 측면 점검 필요. `exclude_id`로 자기 자신은 제외하므로 접미사 누적 폭주는 없음.
+- 심각도: ⚪경미 · 상태: 🔍점검필요 · 결정/메모:
+
 ---
 
 # PART C. 의도된 동작 / 정상 (재검토 제외)
@@ -307,3 +373,4 @@ cd frontend && CI=true npx react-scripts test --watchAll=false --passWithNoTests
 # 변경 이력
 - 2026-06-29(1차): 메인 로직 정독 후 발견 R-01~R-14 기록.
 - 2026-06-29(2차): 전 Step 컴포넌트 정독 → 기능 전수 카탈로그(PART A, F-1.1~F-X.6) 신설, 버그를 PART B로 분리·기능 연결, R-15~R-18 추가, R-14 정상 확정.
+- 2026-06-29(3차): 보조 컴포넌트(ProdcRow/Mshot/FilterManageModal/Wizard)·공용(AutocompleteInput/FormSelect/useCellSelection)·API 클라이언트·백엔드(serializer/views/models) 정독 → 기능 카탈로그 A-7(F-Y/F-Z) 추가, 버그 R-19~R-24 추가. **R-19(백엔드 매핑 검증 불일치 → 상신 실패)가 최우선 치명 항목.**
