@@ -41,6 +41,7 @@ import {
   JAYER_EDITABLE_COLS,
   OAYER_EDITABLE_COLS,
   LOADED_LOCK_COLS,
+  isNocSpecial,
   makeTourDetail,
   makeTourJayerRows,
   makeTourOayerRows,
@@ -1145,6 +1146,12 @@ export default function RequestPage(): React.ReactElement {
     const changedRow = jayerRows.find(r => r.id === id);
     // 매핑된 행을 수정하면(어떤 컬럼이든) 매핑 해제 → 원본 목록 복귀
     if (mappedJayerRowIds.has(id)) unmapJayerRows([id]);
+    // 동기화 전파 여부: 소스 행이 참여행(활성 && 기등록/layer삭제 아님)이고,
+    // 전파할 값이 특수값(기등록/layer삭제)이 아닐 때만 같은 layer의 참여행으로 전파한다.
+    const layerid = changedRow?.layerid?.trim();
+    const sourceParticipant = !!changedRow && !changedRow.disabled && !isNocSpecial(changedRow.new_or_copy);
+    const propagate = (field === 'st' || field === 'new_or_copy') && !!layerid && sourceParticipant
+      && !(field === 'new_or_copy' && isNocSpecial(value));
     setJayerRows((rows) => rows.map((r) => {
       if (r.id === id) {
         if (field === 'product_name') {
@@ -1158,21 +1165,26 @@ export default function RequestPage(): React.ReactElement {
           const candidates = jayerBarcodeCache[id] ?? [];
           return { ...r, step: value, item_id: autoMatchItemId({ ...r, step: value }, candidates) };
         }
+        if (field === 'new_or_copy') {
+          const next = { ...r, new_or_copy: value };
+          // 기등록/layer삭제 선택 시 st를 자동으로 'X'로 설정
+          if (isNocSpecial(value)) next.st = 'X';
+          return next;
+        }
         return { ...r, [field]: value };
       }
-      // J→J 동기화: layerid가 같은 다른 J-layer 행에 st/new_or_copy 반영 (기등록 행 보호)
-      if ((field === 'st' || field === 'new_or_copy') && changedRow?.layerid?.trim() && r.layerid?.trim() === changedRow.layerid.trim()) {
-        if (r.new_or_copy === '기등록') return r;
+      // J→J 동기화: 같은 layer의 "참여행"에만 반영(비활성·기등록·layer삭제 제외)
+      if (propagate && r.layerid?.trim() === layerid) {
+        if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
         return { ...r, [field]: value };
       }
       return r;
     }));
-    // J→O 동기화: layerid가 같은 O-layer 행에 st/new_or_copy 반영 (기등록 행 보호)
-    if ((field === 'st' || field === 'new_or_copy') && changedRow?.layerid?.trim()) {
-      const layerid = changedRow.layerid.trim();
+    // J→O 동기화: 같은 layer의 O-layer 참여행에만 반영
+    if (propagate) {
       setOayerRows(rows => rows.map(r => {
         if (r.layerid?.trim() !== layerid) return r;
-        if (r.new_or_copy === '기등록') return r;
+        if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
         return { ...r, [field]: value };
       }));
     }
@@ -1215,7 +1227,14 @@ export default function RequestPage(): React.ReactElement {
         setJayerRows((rows) => rows.map((r) => (r.id === rowId ? { ...r, item_id: autoMatchItemId(r, candidates) } : r)));
       }
     });
-    // J→J 동기화 + J→O 동기화: st / new_or_copy 붙여넣기 시 layerid 기반 연동
+    // 기등록/layer삭제를 붙여넣은 행은 st를 자동으로 'X'로 설정
+    const nocSpecialPastedIds = new Set(
+      changes.filter(c => 'new_or_copy' in c.values && isNocSpecial(c.values.new_or_copy)).map(c => c.rowId)
+    );
+    if (nocSpecialPastedIds.size > 0) {
+      setJayerRows(rows => rows.map(r => nocSpecialPastedIds.has(r.id) ? { ...r, st: 'X' } : r));
+    }
+    // J→J + J→O 동기화: st / new_or_copy 붙여넣기를 같은 layer의 "참여행"에만 반영
     type SyncFields = Partial<Record<'st' | 'new_or_copy', string>>;
     const layeridSyncMap = new Map<string, SyncFields>();
     const directlyPastedIds = new Set<string>();
@@ -1223,25 +1242,28 @@ export default function RequestPage(): React.ReactElement {
       if (!('st' in values) && !('new_or_copy' in values)) return;
       const jRow = jayerRows.find(r => r.id === rowId);
       if (!jRow?.layerid?.trim()) return;
+      directlyPastedIds.add(rowId);
+      // 소스가 참여행이 아니면 전파하지 않음(비활성·기등록·layer삭제)
+      if (jRow.disabled || isNocSpecial(jRow.new_or_copy)) return;
       const layerid = jRow.layerid.trim();
       const entry = layeridSyncMap.get(layerid) ?? {};
       if ('st' in values) entry.st = values.st;
-      if ('new_or_copy' in values) entry.new_or_copy = values.new_or_copy;
+      // 특수값(기등록/layer삭제)은 전파 제외
+      if ('new_or_copy' in values && !isNocSpecial(values.new_or_copy)) entry.new_or_copy = values.new_or_copy;
       layeridSyncMap.set(layerid, entry);
-      directlyPastedIds.add(rowId);
     });
     if (layeridSyncMap.size > 0) {
       setJayerRows(rows => rows.map(r => {
         if (directlyPastedIds.has(r.id)) return r;
         const layerid = r.layerid?.trim();
         if (!layerid || !layeridSyncMap.has(layerid)) return r;
-        if (r.new_or_copy === '기등록') return r;
+        if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
         return { ...r, ...layeridSyncMap.get(layerid)! };
       }));
       setOayerRows(rows => rows.map(r => {
         const layerid = r.layerid?.trim();
         if (!layerid || !layeridSyncMap.has(layerid)) return r;
-        if (r.new_or_copy === '기등록') return r;
+        if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
         return { ...r, ...layeridSyncMap.get(layerid)! };
       }));
     }
@@ -1258,7 +1280,14 @@ export default function RequestPage(): React.ReactElement {
         }));
       }
     });
-    // O→O 동기화 + O→J 동기화: st / new_or_copy 붙여넣기 시 layerid 기반 연동
+    // 기등록/layer삭제를 붙여넣은 행은 st를 자동으로 'X'로 설정
+    const nocSpecialPastedIds = new Set(
+      changes.filter(c => 'new_or_copy' in c.values && isNocSpecial(c.values.new_or_copy)).map(c => c.rowId)
+    );
+    if (nocSpecialPastedIds.size > 0) {
+      setOayerRows(rows => rows.map(r => nocSpecialPastedIds.has(r.id) ? { ...r, st: 'X' } : r));
+    }
+    // O→O + O→J 동기화: st / new_or_copy 붙여넣기를 같은 layer의 "참여행"에만 반영
     type SyncFields = Partial<Record<'st' | 'new_or_copy', string>>;
     const layeridSyncMap = new Map<string, SyncFields>();
     const directlyPastedIds = new Set<string>();
@@ -1266,25 +1295,28 @@ export default function RequestPage(): React.ReactElement {
       if (!('st' in values) && !('new_or_copy' in values)) return;
       const oRow = oayerRows.find(r => r.id === rowId);
       if (!oRow?.layerid?.trim()) return;
+      directlyPastedIds.add(rowId);
+      // 소스가 참여행이 아니면 전파하지 않음(비활성·기등록·layer삭제)
+      if (oRow.disabled || isNocSpecial(oRow.new_or_copy)) return;
       const layerid = oRow.layerid.trim();
       const entry = layeridSyncMap.get(layerid) ?? {};
       if ('st' in values) entry.st = values.st;
-      if ('new_or_copy' in values) entry.new_or_copy = values.new_or_copy;
+      // 특수값(기등록/layer삭제)은 전파 제외
+      if ('new_or_copy' in values && !isNocSpecial(values.new_or_copy)) entry.new_or_copy = values.new_or_copy;
       layeridSyncMap.set(layerid, entry);
-      directlyPastedIds.add(rowId);
     });
     if (layeridSyncMap.size > 0) {
       setOayerRows(rows => rows.map(r => {
         if (directlyPastedIds.has(r.id)) return r;
         const layerid = r.layerid?.trim();
         if (!layerid || !layeridSyncMap.has(layerid)) return r;
-        if (r.new_or_copy === '기등록') return r;
+        if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
         return { ...r, ...layeridSyncMap.get(layerid)! };
       }));
       setJayerRows(rows => rows.map(r => {
         const layerid = r.layerid?.trim();
         if (!layerid || !layeridSyncMap.has(layerid)) return r;
-        if (r.new_or_copy === '기등록') return r;
+        if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
         return { ...r, ...layeridSyncMap.get(layerid)! };
       }));
     }
@@ -1297,24 +1329,23 @@ export default function RequestPage(): React.ReactElement {
   const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, handleJayerAfterPaste, isLayerCellLocked, (changes) => unmapIfMapped(changes.map((c) => c.rowId)));
   const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, handleOayerAfterPaste, isLayerCellLocked);
 
+  // 참여행(활성 && 기등록/layer삭제 아님)에만 일괄 적용 + 같은 layer의 O 참여행 동기화
   const handleJayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
-    setJayerRows((rows) => rows.map((r) => r.new_or_copy === '기등록' ? r : { ...r, [field]: value }));
-    // J→O 동기화: 변경된 J-layer 행의 layerid 집합 기준으로 O-layer 반영
-    const layerids = new Set(jayerRows.filter(r => r.new_or_copy !== '기등록' && r.layerid?.trim()).map(r => r.layerid.trim()));
+    setJayerRows((rows) => rows.map((r) => (r.disabled || isNocSpecial(r.new_or_copy)) ? r : { ...r, [field]: value }));
+    const layerids = new Set(jayerRows.filter(r => !r.disabled && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
     setOayerRows(rows => rows.map(r => {
       if (!r.layerid?.trim() || !layerids.has(r.layerid.trim())) return r;
-      if (r.new_or_copy === '기등록') return r;
+      if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
       return { ...r, [field]: value };
     }));
   };
 
   const handleJayerResetField = (field: 'st' | 'new_or_copy') => {
-    setJayerRows((rows) => rows.map((r) => r.new_or_copy === '기등록' ? r : { ...r, [field]: '' }));
-    // J→O 동기화: 변경된 J-layer 행의 layerid 집합 기준으로 O-layer 반영
-    const layerids = new Set(jayerRows.filter(r => r.new_or_copy !== '기등록' && r.layerid?.trim()).map(r => r.layerid.trim()));
+    setJayerRows((rows) => rows.map((r) => (r.disabled || isNocSpecial(r.new_or_copy)) ? r : { ...r, [field]: '' }));
+    const layerids = new Set(jayerRows.filter(r => !r.disabled && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
     setOayerRows(rows => rows.map(r => {
       if (!r.layerid?.trim() || !layerids.has(r.layerid.trim())) return r;
-      if (r.new_or_copy === '기등록') return r;
+      if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
       return { ...r, [field]: '' };
     }));
   };
@@ -1386,6 +1417,10 @@ export default function RequestPage(): React.ReactElement {
   // ===== Oayer Handlers =====
   const handleOayerChange = (id: string, field: keyof Omit<OayerRow, 'id'>, value: string) => {
     const changedRow = oayerRows.find(r => r.id === id);
+    const layerid = changedRow?.layerid?.trim();
+    const sourceParticipant = !!changedRow && !changedRow.disabled && !isNocSpecial(changedRow.new_or_copy);
+    const propagate = (field === 'st' || field === 'new_or_copy') && !!layerid && sourceParticipant
+      && !(field === 'new_or_copy' && isNocSpecial(value));
     setOayerRows((rows) => rows.map((r) => {
       if (r.id === id) {
         if (field === 'product_name') {
@@ -1394,44 +1429,47 @@ export default function RequestPage(): React.ReactElement {
           if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
           return next;
         }
+        if (field === 'new_or_copy') {
+          const next = { ...r, new_or_copy: value };
+          // 기등록/layer삭제 선택 시 st를 자동으로 'X'로 설정
+          if (isNocSpecial(value)) next.st = 'X';
+          return next;
+        }
         return { ...r, [field]: value };
       }
-      // O→O 동기화: layerid가 같은 다른 O-layer 행에 st/new_or_copy 반영 (기등록 행 보호)
-      if ((field === 'st' || field === 'new_or_copy') && changedRow?.layerid?.trim() && r.layerid?.trim() === changedRow.layerid.trim()) {
-        if (r.new_or_copy === '기등록') return r;
+      // O→O 동기화: 같은 layer의 "참여행"에만 반영(비활성·기등록·layer삭제 제외)
+      if (propagate && r.layerid?.trim() === layerid) {
+        if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
         return { ...r, [field]: value };
       }
       return r;
     }));
-    // O→J 동기화: layerid가 같은 J-layer 행에 st/new_or_copy 반영 (기등록 행 보호)
-    if ((field === 'st' || field === 'new_or_copy') && changedRow?.layerid?.trim()) {
-      const layerid = changedRow.layerid.trim();
+    // O→J 동기화: 같은 layer의 J-layer 참여행에만 반영
+    if (propagate) {
       setJayerRows(rows => rows.map(r => {
         if (r.layerid?.trim() !== layerid) return r;
-        if (r.new_or_copy === '기등록') return r;
+        if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
         return { ...r, [field]: value };
       }));
     }
   };
 
   const handleOayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
-    setOayerRows((rows) => rows.map((r) => r.new_or_copy === '기등록' ? r : { ...r, [field]: value }));
-    // O→J 동기화: 변경된 O-layer 행의 layerid 집합 기준으로 J-layer 반영
-    const layerids = new Set(oayerRows.filter(r => r.new_or_copy !== '기등록' && r.layerid?.trim()).map(r => r.layerid.trim()));
+    setOayerRows((rows) => rows.map((r) => (r.disabled || isNocSpecial(r.new_or_copy)) ? r : { ...r, [field]: value }));
+    const layerids = new Set(oayerRows.filter(r => !r.disabled && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
     setJayerRows(rows => rows.map(r => {
       if (!r.layerid?.trim() || !layerids.has(r.layerid.trim())) return r;
-      if (r.new_or_copy === '기등록') return r;
+      if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
       return { ...r, [field]: value };
     }));
   };
 
   const handleOayerResetField = (field: 'st' | 'new_or_copy') => {
-    setOayerRows((rows) => rows.map((r) => r.new_or_copy === '기등록' ? r : { ...r, [field]: '' }));
-    // O→J 동기화: 변경된 O-layer 행의 layerid 집합 기준으로 J-layer 반영
-    const layerids = new Set(oayerRows.filter(r => r.new_or_copy !== '기등록' && r.layerid?.trim()).map(r => r.layerid.trim()));
+    setOayerRows((rows) => rows.map((r) => (r.disabled || isNocSpecial(r.new_or_copy)) ? r : { ...r, [field]: '' }));
+    const layerids = new Set(oayerRows.filter(r => !r.disabled && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
     setJayerRows(rows => rows.map(r => {
       if (!r.layerid?.trim() || !layerids.has(r.layerid.trim())) return r;
-      if (r.new_or_copy === '기등록') return r;
+      if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
       return { ...r, [field]: '' };
     }));
   };
@@ -1711,7 +1749,7 @@ export default function RequestPage(): React.ReactElement {
 
   const handleOpenAutoFillPanel = () => {
     // 원본 데이터 목록에 남은(미매핑) 행 기준으로 기본 범위를 시드한다.
-    const layerIds = [...new Set(jayerRows.filter(r => !r.disabled && !mappedJayerRowIds.has(r.id)).map(r => r.layerid).filter(Boolean))]
+    const layerIds = [...new Set(jayerRows.filter(r => !r.disabled && !isNocSpecial(r.new_or_copy) && !mappedJayerRowIds.has(r.id)).map(r => r.layerid).filter(Boolean))]
       .sort((a, b) => parseFloat(a) - parseFloat(b));
 
     // 제품이 입력된 첫 bb_entries 항목을 기본 선택값(인덱스)으로 시드한다.
@@ -1765,7 +1803,7 @@ export default function RequestPage(): React.ReactElement {
         const layer = parseFloat(row.layerid);
         // 원본 데이터 목록에 남은(미매핑) 행만 자동채움 대상으로 한다.
         // 이미 채워진 행은 목록에서 빠지므로 재채움/덮어쓰기가 발생하지 않는다.
-        return !row.disabled && !mappedJayerRowIds.has(row.id) && !isNaN(layer) && layer >= from && layer <= to;
+        return !row.disabled && !isNocSpecial(row.new_or_copy) && !mappedJayerRowIds.has(row.id) && !isNaN(layer) && layer >= from && layer <= to;
       });
 
       // 선택 항목을 인덱스로 직접 집어 라인+제품을 유일하게 식별한다.
@@ -2049,7 +2087,7 @@ export default function RequestPage(): React.ReactElement {
 
     if (currentStep === 5) {
       const unmappedJayerRows = jayerRows.filter(
-        (row) => !row.disabled && row.process_id && !mappedJayerRowIds.has(row.id)
+        (row) => !row.disabled && !isNocSpecial(row.new_or_copy) && row.process_id && !mappedJayerRowIds.has(row.id)
       );
       if (unmappedJayerRows.length > 0) {
         newErrors['jayer_mapping'] = '모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.';
