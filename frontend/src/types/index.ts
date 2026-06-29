@@ -205,6 +205,7 @@ export interface BbTableRow {
   bb_name: string;
   bb_layer: string;
   bb_ss: string;
+  bb_step: string;
   remark: string;
   entryIdx?: number;  // 출처 탭(bb_entries) 인덱스 — 탭별 색상 적용용(상세보기/이력 재현)
 }

@@ -452,7 +452,20 @@ const Step4: React.FC<Step4Props> = ({
           </button>
         </div>
         <div className="wizard-table-wrapper">
-          <table className="wizard-table">
+          <table className="wizard-table bb-info-table">
+            <colgroup>
+              <col style={{ width: 32 }} />
+              <col style={{ width: 40 }} />
+              <col />
+              <col />
+              <col className="sd-column" />
+              <col />
+              <col />
+              <col />
+              <col />
+              <col className="bb-step-column" />
+              <col />
+            </colgroup>
             <thead>
               <tr>
                 <th style={{ width: 32, textAlign: 'center' }}>
@@ -463,21 +476,22 @@ const Step4: React.FC<Step4Props> = ({
                     onChange={handleBbCheckAll}
                   />
                 </th>
-                <th style={{ width: 'auto' }}>{t('request.col_no')}</th>
-                <th style={{ width: 'auto' }}>{t('request.process_id')}</th>
+                <th>{t('request.col_no')}</th>
+                <th>{t('request.process_id')}</th>
                 <th
-                  style={{ width: 'auto', cursor: 'pointer', userSelect: 'none' }}
+                  style={{ cursor: 'pointer', userSelect: 'none' }}
                   onClick={handleSortBbRows}
                   title="클릭하여 SEQ 기준 오름차순 정렬"
                 >
                   {t('request.col_sp')} 🔼
                 </th>
-                <th style={{ width: 'auto' }}>{t('request.col_sd')}</th>
-                <th style={{ width: 'auto' }}>{t('request.col_bb_process_id')}</th>
-                <th style={{ width: 'auto' }}>{t('request.col_bb_partid')}</th>
-                <th style={{ width: 'auto' }}>{t('request.col_bb_layer')}</th>
-                <th style={{ width: 'auto' }}>{t('request.col_bb_stepseq')}</th>
-                <th style={{ width: 'auto' }}>{t('request.col_remark')}</th>
+                <th>{t('request.col_sd')}</th>
+                <th>{t('request.col_bb_process_id')}</th>
+                <th>{t('request.col_bb_partid')}</th>
+                <th>{t('request.col_bb_layer')}</th>
+                <th>{t('request.col_bb_stepseq')}</th>
+                <th>{t('request.col_bb_step')}</th>
+                <th>{t('request.col_remark')}</th>
               </tr>
             </thead>
             <tbody>
@@ -494,6 +508,7 @@ const Step4: React.FC<Step4Props> = ({
                   <td style={multiTab && row.entryIdx != null ? { backgroundColor: bbTabColor(row.entryIdx) } : undefined}><input value={row.bb_name} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} /></td>
                   <td><input value={row.bb_layer} onChange={(e) => handleBbChange(row.id, 'bb_layer', e.target.value)} /></td>
                   <td><input value={row.bb_ss} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} /></td>
+                  <td><input value={row.bb_step} onChange={(e) => handleBbChange(row.id, 'bb_step', e.target.value)} /></td>
                   <td><input value={row.remark} onChange={(e) => handleBbChange(row.id, 'remark', e.target.value)} /></td>
                 </tr>
               ))}
