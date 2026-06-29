@@ -210,6 +210,8 @@
     "withdraw_success": "The request has been withdrawn.",
     "assign_success": "Assignee has been designated.",
     "assign_select_placeholder": "Select assignee",
+    "assign_add": "Add",
+    "assign_j_hint": "You can select multiple assignees using the Add button.",
     "no_team_members": "No assignable members.",
     "edit_resubmit": "Edit & Resubmit",
     "resubmit_confirm": "Are you sure you want to resubmit after editing?",

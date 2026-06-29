@@ -312,9 +312,23 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         max_round = self._max_round(document)
 
         # 잠근 뒤 최신 커밋본을 읽기 위해 locking read 사용
-        step = ApprovalStep.objects.select_for_update().filter(
-            document=document, agent=agent, action='pending', round=max_round
-        ).first()
+        # J 다중 담당자: 호출자의 assignee 단계만 조회
+        if agent == 'J':
+            role = getattr(request.user, 'role', '')
+            caller_loginid = getattr(request.user, 'loginid', '')
+            if role == 'MASTER':
+                step = ApprovalStep.objects.select_for_update().filter(
+                    document=document, agent='J', action='pending', round=max_round
+                ).first()
+            else:
+                step = ApprovalStep.objects.select_for_update().filter(
+                    document=document, agent='J', action='pending', round=max_round,
+                    assignee__loginid=caller_loginid
+                ).first()
+        else:
+            step = ApprovalStep.objects.select_for_update().filter(
+                document=document, agent=agent, action='pending', round=max_round
+            ).first()
         if not step:
             return Response({'error': f'AGENT {agent}의 대기 중인 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -375,11 +389,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             new_status = 'under_review'
 
         elif agent in ('J', 'O', 'E'):
-            # J + O + [E] 모두 합의 시 최종 승인
-            j_step = ApprovalStep.objects.select_for_update().filter(document=document, agent='J', round=current_round).order_by('-id').first()
+            # J + O + [E] 모두 합의 시 최종 승인 (J는 다중 담당자 전원 합의 필요)
+            j_steps = list(ApprovalStep.objects.select_for_update().filter(document=document, agent='J', round=current_round))
             o_step = ApprovalStep.objects.select_for_update().filter(document=document, agent='O', round=current_round).order_by('-id').first()
             e_step = ApprovalStep.objects.select_for_update().filter(document=document, agent='E', round=current_round).order_by('-id').first()
-            j_approved = j_step and j_step.action == 'approved'
+            j_approved = len(j_steps) > 0 and all(s.action == 'approved' for s in j_steps)
             o_approved = o_step and o_step.action == 'approved'
             if e_step:
                 all_approved = j_approved and o_approved and e_step.action == 'approved'
@@ -415,9 +429,23 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         max_round = self._max_round(document)
 
-        step = ApprovalStep.objects.select_for_update().filter(
-            document=document, agent=agent, action='pending', round=max_round
-        ).first()
+        # J 다중 담당자: 호출자의 assignee 단계만 조회
+        if agent == 'J':
+            role = getattr(request.user, 'role', '')
+            caller_loginid = getattr(request.user, 'loginid', '')
+            if role == 'MASTER':
+                step = ApprovalStep.objects.select_for_update().filter(
+                    document=document, agent='J', action='pending', round=max_round
+                ).first()
+            else:
+                step = ApprovalStep.objects.select_for_update().filter(
+                    document=document, agent='J', action='pending', round=max_round,
+                    assignee__loginid=caller_loginid
+                ).first()
+        else:
+            step = ApprovalStep.objects.select_for_update().filter(
+                document=document, agent=agent, action='pending', round=max_round
+            ).first()
         if not step:
             return Response({'error': f'AGENT {agent}의 대기 중인 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -451,6 +479,54 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         max_round = self._max_round(document)
 
+        # J 다중 담당자 지정: assignees 배열로 여러 명을 한 번에 지정한다.
+        if agent == 'J' and 'assignees' in request.data:
+            assignees = request.data.get('assignees', [])
+            if not isinstance(assignees, list) or not assignees:
+                return Response({'error': '담당자 목록이 비어있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            role = getattr(request.user, 'role', '')
+            if role != 'MASTER' and role != 'TE_J':
+                return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+            existing_step = ApprovalStep.objects.filter(
+                document=document, agent='J', action='pending', round=max_round
+            ).first()
+            if not existing_step:
+                return Response({'error': '해당 단계를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            due_date = existing_step.due_date
+
+            with transaction.atomic():
+                first = True
+                for a in assignees:
+                    loginid = a.get('loginid', '')
+                    name = a.get('name', '')
+                    try:
+                        assignee_user = User.objects.get(loginid=loginid)
+                    except User.DoesNotExist:
+                        return Response(
+                            {'error': f'사용자를 찾을 수 없습니다: {loginid}'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                    if first:
+                        existing_step.assignee = assignee_user
+                        existing_step.assignee_name = name
+                        existing_step.save()
+                        mailer.enqueue_stage_arrival(document, 'J', existing_step)
+                        first = False
+                    else:
+                        new_step = ApprovalStep.objects.create(
+                            document=document, agent='J', action='pending',
+                            round=max_round, due_date=due_date,
+                            assignee=assignee_user, assignee_name=name,
+                        )
+                        mailer.enqueue_stage_arrival(document, 'J', new_step)
+
+            return Response({'message': '담당자가 지정되었습니다.'})
+
+        # 단일 담당자 지정 (기존 로직)
         step = ApprovalStep.objects.filter(
             document=document, agent=agent, action='pending', round=max_round
         ).first()

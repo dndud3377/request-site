@@ -760,6 +760,15 @@ select.form-control option {
   max-height: none;
 }
 
+.modal-xl {
+  max-width: 1400px;
+}
+
+.modal-xl .modal-body {
+  height: 75vh;
+  max-height: none;
+}
+
 .modal-fullscreen {
   max-width: none !important;
   width: 100% !important;
