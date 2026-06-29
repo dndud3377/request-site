@@ -94,7 +94,10 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 - 동작: P `approved` → **J(due: P당일 포함 4영업일)** 생성. (path1은 P→J 순차)
 
 ### Case G — J / O / E 최종 합의 (`approve_step` agent in J/O/E, `views.py:284`)
-- 동작: J·O·(E 있으면 E)가 **모두** `approved`일 때만 `status → approved`. 그 전엔 `under_review` 유지.
+- 동작: J(다중 담당자 **전원**)·O·(E 있으면 E)가 **모두** `approved`일 때만 `status → approved`. 그 전엔 `under_review` 유지.
+- ✅ **J 다중 담당자 전원 합의**: J 단계에 N명이 지정된 경우 모든 J ApprovalStep이 `approved`여야 최종 승인이 진행된다.
+  백엔드는 `all(s.action == 'approved' for s in j_steps)` 방식으로 판정한다.
+- J 합의/반려 시 **본인 담당 step만 처리**: `assignee__loginid=caller_loginid` 필터로 해당 J step을 조회한다 (MASTER는 첫 번째 pending step).
 - ✅ 동시성: 두 결재자가 거의 동시에 마지막 합의를 눌러도 문서 행 락(`select_for_update`)으로
   직렬화되어 approved 전이가 누락되지 않는다(2026-06 수정).
 
@@ -117,6 +120,10 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 - ✅ 권한: 프론트 `canUserAssign`과 동일(`_can_assign_step`, 2026-06 추가) —
   MASTER / 같은 팀(역할↔agent 일치) + 미지정일 때만. PL·O·E 단계는 지정 불가.
   또한 `agent`는 `R·P·J·O·E`만 허용(`agent='PL'`로 지정 PL을 덮어쓰는 우회 차단).
+- ✅ **J 다중 담당자 지정** (2026-06 추가): `agent='J'` + `assignees: [{loginid, name}]` 배열 전송 시
+  첫 번째 항목은 기존 unassigned pending J step에 배정, 이후 항목들은 같은 `round`·`due_date`로 새 J step 생성.
+  프론트 UI: "추가" 버튼으로 여러 명을 목록에 쌓은 뒤 "확인" 클릭 시 `assignStepMultiJ` API 호출.
+  권한: `TE_J` 또는 `MASTER`.
 
 ### Case L — 지정 PL 변경 (`change_designee`)
 - 권한: **의뢰자 본인 또는 MASTER만**. 현재 회차 PL step의 assignee 교체.
@@ -140,7 +147,8 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 - **PL 검토 pending**: "PL 검토(담당자명)" 단일 행, 기한 없음.
 - **R 미합의**: R 단계 단일 행(담당자 유무로 상태 결정).
 - **R 합의 후(병렬)**: 한 의뢰서를 **2행**으로 분리 표시 — path1(P/J), path2(O[/E]). rowSpan으로 좌측 공통열 병합.
-  - path1 단계 텍스트: 현재 pending인 P 또는 J. 둘 다 끝나면 "결재완료".
+  - path1 단계 텍스트: 현재 pending인 P 또는 J(다중이면 `담당자1 / 담당자2`로 연결). 둘 다 끝나면 "결재완료".
+  - path1 done 조건: P pending 없음 AND J pending step 0개(= 전원 합의 완료).
   - path2 단계 텍스트: pending인 O/E를 ` / `로 연결. 끝나면 "결재완료".
 
 ### 3.4 상태 배지 (`getDisplayStatus` / `resolvePathStatus`)
@@ -155,13 +163,15 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
   - ⚠️ path1 추정치는 영업일이 아닌 단순 +4 **달력일**이라 백엔드 실제 J due(영업일)와 다를 수 있음.
 
 ### 3.6 상세 모달 + 액션 (행 클릭 → 모달)
+상세 모달은 `size="xl"` (max-width 1400px)을 사용한다 (2026-06 확대).
 모달 footer는 **본인이 처리 가능한 pending step**을 찾아 버튼을 조건부 렌더한다.
 
 | 액션 | 버튼 노출 조건(프론트) | 호출 API |
 |------|----------------------|----------|
 | 합의 / 반려 (R·P·J·O·E) | `canUserAgree`가 참 | `approveStep` / `rejectStep` |
 | PL 합의 / 반려 / **수정 후 상신** | PL 검토 단계 + 본인 | `peerApprove` / `peerReject` / `/request`로 이동(peerSubmit) |
-| 담당자 지정 | `canUserAssign`가 참 | `assignStep` |
+| 담당자 지정 (R·P) | `canUserAssign`가 참 | `assignStep` |
+| 담당자 지정 (J 다중) | `canUserAssign`가 참 (J에 한해 추가/확인 UI) | `assignStepMultiJ` |
 | 지정자 변경 | PL/MASTER | `changeDesignee` |
 | 철회 | PL/MASTER | `withdraw`(임시저장으로) 또는 `delete`(삭제) 선택 |
 | 수정 후 재상신 | rejected/draft | `/request`로 이동(editDocId) |
@@ -183,7 +193,8 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 | 철회 | `withdraw/` | - |
 | 합의 | `approve-step/` | `agent`, `comment`, `approver_name` |
 | 반려 | `reject-step/` | `agent`, `comment` |
-| 담당자 지정 | `assign-step/` | `agent`, `assignee_loginid`, `assignee_name` |
+| 담당자 지정 (단일) | `assign-step/` | `agent`, `assignee_loginid`, `assignee_name` |
+| 담당자 지정 (J 다중) | `assign-step/` | `agent='J'`, `assignees: [{loginid, name}]` |
 | PL 합의/반려/수정후상신 | `peer-approve/` `peer-reject/` `peer-submit/` | `comment` |
 | 지정자 변경 | `change-designee/` | (의뢰자/MASTER) |
 | 삭제 | DELETE `documents/{id}/` | approved는 MASTER만 |

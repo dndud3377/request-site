@@ -259,6 +259,17 @@ const assignStep = async (
   return { data };
 };
 
+const assignStepMultiJ = async (
+  docId: number,
+  assignees: { loginid: string; name: string }[]
+) => {
+  const data = await post<{ message: string }>(`/documents/${docId}/assign-step/`, {
+    agent: 'J',
+    assignees,
+  });
+  return { data };
+};
+
 const documentStats = async () => {
   const data = await get<Stats>('/documents/stats/');
   return { data };
@@ -284,6 +295,7 @@ export const documentsAPI = {
   approveStep,
   rejectStep,
   assignStep,
+  assignStepMultiJ,
   peerApprove,
   peerReject,
   peerSubmit,

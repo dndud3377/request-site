@@ -210,6 +210,8 @@
     "withdraw_success": "의뢰서가 철회되었습니다.",
     "assign_success": "담당자가 지정되었습니다.",
     "assign_select_placeholder": "담당자 선택",
+    "assign_add": "추가",
+    "assign_j_hint": "추가 버튼으로 여러 명을 선택할 수 있습니다.",
     "no_team_members": "지정 가능한 담당자가 없습니다.",
     "edit_resubmit": "수정·재상신",
     "resubmit_confirm": "수정 완료 후 재상신하시겠습니까?",

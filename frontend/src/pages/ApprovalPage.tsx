@@ -172,12 +172,33 @@ const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
 
   // 병렬 단계
   const pStep = currentSteps.find(s => s.agent === 'P');
-  const jStep = currentSteps.find(s => s.agent === 'J');
+  const jSteps = currentSteps.filter(s => s.agent === 'J');
   const oStep = currentSteps.find(s => s.agent === 'O');
   const eStep = currentSteps.find(s => s.agent === 'E');
 
-  const path1Pending = [pStep, jStep].find(s => s?.action === 'pending');
-  const path1Done = !path1Pending;
+  const jPendingSteps = jSteps.filter(s => s.action === 'pending');
+  const path1PendingP = pStep?.action === 'pending' ? pStep : undefined;
+  const path1Done = !path1PendingP && jPendingSteps.length === 0;
+
+  let path1StageText: string;
+  let path1DueDate: string | null;
+  let path1PathStatus: string;
+  if (path1Done) {
+    path1StageText = t('common.status_approved');
+    path1DueDate = null;
+    path1PathStatus = doc.status === 'rejected' ? 'rejected' : 'approved';
+  } else if (path1PendingP) {
+    path1StageText = buildStageText(path1PendingP, false, t);
+    path1DueDate = path1PendingP.due_date ?? null;
+    path1PathStatus = doc.status === 'rejected' ? 'rejected' : path1PendingP.assignee_loginid ? 'under_review' : 'unassigned';
+  } else {
+    const jLabel = t(`approval.agent_J` as any);
+    const jNames = jPendingSteps.map(s => s.assignee_name).filter(Boolean);
+    path1StageText = jNames.length > 0 ? `${jLabel}(${jNames.join('/')})` : jLabel;
+    path1DueDate = jPendingSteps[0]?.due_date ?? null;
+    const jHasUnassigned = jPendingSteps.some(s => !s.assignee_loginid);
+    path1PathStatus = doc.status === 'rejected' ? 'rejected' : jHasUnassigned ? 'unassigned' : 'under_review';
+  }
 
   const path2PendingSteps = ([oStep, eStep] as (typeof oStep)[]).filter(
     (s): s is NonNullable<typeof oStep> => !!s && s.action === 'pending'
@@ -199,10 +220,10 @@ const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
   return [
     {
       pathKey: 'path1',
-      stageText: buildStageText(path1Pending, path1Done, t),
-      dueDate: path1Pending?.due_date ?? null,
+      stageText: path1StageText,
+      dueDate: path1DueDate,
       isDone: path1Done,
-      pathStatus: resolvePathStatus(path1Pending, path1Done, doc.status),
+      pathStatus: path1PathStatus,
     },
     {
       pathKey: 'path2',
@@ -258,6 +279,7 @@ export default function ApprovalPage(): React.ReactElement {
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
   const [teamMembers, setTeamMembers] = useState<UserWithRole[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
+  const [jAssignees, setJAssignees] = useState<{ loginid: string; name: string; deptname: string }[]>([]);
 
   // 지정자 변경 UI (모달 footer)
   const [changingDesigneeOpen, setChangingDesigneeOpen] = useState(false);
@@ -548,6 +570,7 @@ export default function ApprovalPage(): React.ReactElement {
     setPageIdx(0);
     setAssigningOpen(false);
     setAssigningUserId('');
+    setJAssignees([]);
     setTeamMembers([]);
     setChangingDesigneeOpen(false);
     setChangingDesigneeUserId('');
@@ -629,6 +652,20 @@ export default function ApprovalPage(): React.ReactElement {
       setTeamMembers([]);
       addToast('지정자가 변경되었습니다.', 'success');
       await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleAssignMultiJ = async (assignees: { loginid: string; name: string; deptname: string }[]) => {
+    if (!selected || assignees.length === 0) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.assignStepMultiJ(selected.id, assignees.map(a => ({ loginid: a.loginid, name: a.name })));
+      await refreshAndSelect(selected.id);
+      addToast(t('approval.assign_success'), 'success');
     } catch {
       addToast(t('common.process_error'), 'error');
     } finally {
@@ -952,7 +989,7 @@ export default function ApprovalPage(): React.ReactElement {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         title={selected?.title ?? ''}
-        size="lg"
+        size="xl"
         footer={(() => {
           const userAgent = currentUser.role ? ROLE_TO_AGENT[currentUser.role] : undefined;
           const pendingSteps = selected?.approval_steps?.filter((s) => {
@@ -1105,6 +1142,7 @@ export default function ApprovalPage(): React.ReactElement {
                   onClick={async () => {
                     setAssigningOpen(true);
                     setAssigningUserId('');
+                    setJAssignees([]);
                     setLoadingMembers(true);
                     const members = await handleLoadTeamMembers(assignableStep.agent);
                     setTeamMembers(members);
@@ -1114,9 +1152,9 @@ export default function ApprovalPage(): React.ReactElement {
                   지정하기
                 </button>
               )}
-              {assignableStep && assigningOpen && (
+              {/* 비-J 단일 담당자 지정 */}
+              {assignableStep && assigningOpen && assignableStep.agent !== 'J' && (
                 <>
-                  {/* 커스텀 드롭다운 — 버튼 클릭으로 후보 목록을 펼치고 항목을 선택한다 */}
                   <div className="assign-dropdown" style={{ position: 'relative' }}>
                     <button
                       type="button"
@@ -1125,7 +1163,14 @@ export default function ApprovalPage(): React.ReactElement {
                       onClick={() => setAssignDropdownOpen((o) => !o)}
                       style={{ minWidth: 130, display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}
                     >
-                      <span>{teamMembers.find((u) => u.loginid === assigningUserId)?.name ?? t('approval.assign_select_placeholder')}</span>
+                      {assigningUserId ? (
+                        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.3 }}>
+                          <span style={{ fontWeight: 600 }}>{teamMembers.find((u) => u.loginid === assigningUserId)?.name}</span>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{teamMembers.find((u) => u.loginid === assigningUserId)?.deptname}</span>
+                        </span>
+                      ) : (
+                        <span>{t('approval.assign_select_placeholder')}</span>
+                      )}
                       <span aria-hidden="true">▾</span>
                     </button>
                     {assignDropdownOpen && (
@@ -1162,13 +1207,118 @@ export default function ApprovalPage(): React.ReactElement {
                       }
                     }}
                   >
-                    확인
+                    {t('common.confirm')}
                   </button>
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={() => { setAssigningOpen(false); setAssigningUserId(''); setAssignDropdownOpen(false); }}
                   >
-                    취소
+                    {t('common.cancel')}
+                  </button>
+                </>
+              )}
+              {/* J 다중 담당자 지정 */}
+              {assignableStep && assigningOpen && assignableStep.agent === 'J' && (
+                <>
+                  {jAssignees.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                      {jAssignees.map((a) => (
+                        <span
+                          key={a.loginid}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                            background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+                            borderRadius: 'var(--radius-sm)', padding: '2px 6px', fontSize: '0.82rem',
+                          }}
+                        >
+                          <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                            <span style={{ fontWeight: 600 }}>{a.name}</span>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{a.deptname}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setJAssignees((prev) => prev.filter((x) => x.loginid !== a.loginid))}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 2px', fontSize: '0.85rem', lineHeight: 1 }}
+                          >×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="assign-dropdown" style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      data-tour={isTourMode ? 'assign-select' : undefined}
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setAssignDropdownOpen((o) => !o)}
+                      style={{ minWidth: 130, display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}
+                    >
+                      {assigningUserId ? (
+                        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.3 }}>
+                          <span style={{ fontWeight: 600 }}>{teamMembers.find((u) => u.loginid === assigningUserId)?.name}</span>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{teamMembers.find((u) => u.loginid === assigningUserId)?.deptname}</span>
+                        </span>
+                      ) : (
+                        <span>{t('approval.assign_select_placeholder')}</span>
+                      )}
+                      <span aria-hidden="true">▾</span>
+                    </button>
+                    {assignDropdownOpen && (
+                      <ul className="assign-dropdown-list">
+                        {loadingMembers ? (
+                          <li className="assign-dropdown-empty">{t('common.loading')}</li>
+                        ) : teamMembers.filter((u) => !jAssignees.some((a) => a.loginid === u.loginid)).length === 0 ? (
+                          <li className="assign-dropdown-empty">{t('approval.no_team_members')}</li>
+                        ) : teamMembers.filter((u) => !jAssignees.some((a) => a.loginid === u.loginid)).map((u, i) => (
+                          <li
+                            key={u.loginid}
+                            data-tour={isTourMode && i === 0 ? 'assign-option' : undefined}
+                            className="assign-dropdown-item"
+                            onClick={() => { setAssigningUserId(u.loginid); setAssignDropdownOpen(false); }}
+                          >
+                            <strong>{u.name}</strong>
+                            <span className="assign-dropdown-dept">{u.deptname}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    disabled={!assigningUserId || processing}
+                    onClick={() => {
+                      const user = teamMembers.find((u) => u.loginid === assigningUserId);
+                      if (user && !jAssignees.some((a) => a.loginid === user.loginid)) {
+                        setJAssignees((prev) => [...prev, { loginid: user.loginid, name: user.name, deptname: user.deptname ?? '' }]);
+                        setAssigningUserId('');
+                      }
+                    }}
+                  >
+                    {t('approval.assign_add')}
+                  </button>
+                  <button
+                    data-tour={isTourMode ? 'assign-confirm' : undefined}
+                    className="btn btn-primary btn-sm"
+                    disabled={jAssignees.length === 0 || processing}
+                    onClick={async () => {
+                      await handleAssignMultiJ(jAssignees);
+                      setAssigningOpen(false);
+                      setJAssignees([]);
+                      setAssigningUserId('');
+                      setAssignDropdownOpen(false);
+                    }}
+                  >
+                    {t('common.confirm')}
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setAssigningOpen(false);
+                      setJAssignees([]);
+                      setAssigningUserId('');
+                      setAssignDropdownOpen(false);
+                    }}
+                  >
+                    {t('common.cancel')}
                   </button>
                 </>
               )}
