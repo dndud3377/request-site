@@ -492,7 +492,7 @@ const Step4: React.FC<Step4Props> = ({
                   <td><input value={row.sd} onChange={(e) => handleBbChange(row.id, 'sd', e.target.value)} /></td>
                   <td><input value={row.bb_process_id} onChange={(e) => handleBbChange(row.id, 'bb_process_id', e.target.value)} /></td>
                   <td style={multiTab && row.entryIdx != null ? { backgroundColor: bbTabColor(row.entryIdx) } : undefined}><input value={row.bb_name} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} /></td>
-                  <td><input value={row.bb_step} onChange={(e) => handleBbChange(row.id, 'bb_step', e.target.value)} /></td>
+                  <td><input value={row.bb_layer} onChange={(e) => handleBbChange(row.id, 'bb_layer', e.target.value)} /></td>
                   <td><input value={row.bb_ss} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} /></td>
                   <td><input value={row.remark} onChange={(e) => handleBbChange(row.id, 'remark', e.target.value)} /></td>
                 </tr>
