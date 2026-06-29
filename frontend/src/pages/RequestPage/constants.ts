@@ -81,8 +81,9 @@ export const makeBbRow = (): BbTableRow => ({
   sd: '',
   bb_process_id: '',
   bb_name: '',
-  bb_step: '',
+  bb_layer: '',
   bb_ss: '',
+  bb_step: '',
   remark: '',
 });
 
@@ -212,8 +213,8 @@ export const makeTourOayerRows = (): OayerRow[] => [
 ];
 
 export const makeTourBbRows = (): BbTableRow[] => [
-  { ...makeBbRow(), process_id: 'PROC_X1', ss: 'SP01', sd: 'SD01', bb_process_id: 'BB_R1', bb_name: 'BB제품1', bb_step: '10', bb_ss: '110', remark: '' },
-  { ...makeBbRow(), process_id: 'PROC_X1', ss: 'SP02', sd: 'SD02', bb_process_id: 'BB_R1', bb_name: 'BB제품1', bb_step: '20', bb_ss: '120', remark: '' },
+  { ...makeBbRow(), process_id: 'PROC_X1', ss: 'SP01', sd: 'SD01', bb_process_id: 'BB_R1', bb_name: 'BB제품1', bb_layer: '10', bb_ss: '110', bb_step: 'BB제품1 STEP', remark: '' },
+  { ...makeBbRow(), process_id: 'PROC_X1', ss: 'SP02', sd: 'SD02', bb_process_id: 'BB_R1', bb_name: 'BB제품1', bb_layer: '20', bb_ss: '120', bb_step: 'BB제품1 STEP', remark: '' },
 ];
 
 // BB 자동채움·매핑 데모용 외부 데이터 (PhotoStepOption[][]) — 탭은 bb_entries와 1:1 대응.

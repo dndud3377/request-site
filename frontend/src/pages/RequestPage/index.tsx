@@ -517,7 +517,19 @@ export default function RequestPage(): React.ReactElement {
           }));
         }
         if (parsed.bbRows) {
-          setBbRows(parsed.bbRows);
+          // bb_step → bb_layer 필드명 변경 호환: 구버전 저장 문서 지원
+          // - 아주 구버전: bb_step = layerid 값 (bb_layer 없음) → bb_layer로 마이그레이션, 새 bb_step = ''
+          // - 중간 버전: bb_layer 있음, bb_step 없음 → bb_step = ''
+          // - 현재 버전: 둘 다 있음
+          type LegacyBbRow = Omit<BbTableRow, 'bb_layer' | 'bb_step'> & { bb_layer?: string; bb_step?: string };
+          setBbRows(parsed.bbRows.map((r: LegacyBbRow) => {
+            const hasBbLayer = r.bb_layer != null;
+            return {
+              ...r,
+              bb_layer: r.bb_layer ?? r.bb_step ?? '',
+              bb_step: hasBbLayer ? (r.bb_step ?? '') : '',
+            } as BbTableRow;
+          }));
           const existingJayerIds = parsed.bbRows
             .map((row: BbTableRow) => row.sourceJayerRowId)
             .filter(Boolean);
@@ -1728,8 +1740,9 @@ export default function RequestPage(): React.ReactElement {
         newRow.bb_name = formatBbName(ext.location ?? '', ext.bb_name);
         newRow.entryIdx = ext.entryIdx;
         // 자동 채움(buildAutoFillRows)과 동일하게 layer 컬럼을 외부 데이터의 layerid로 채운다.
-        newRow.bb_step = ext.layerid ?? '';
+        newRow.bb_layer = ext.layerid ?? '';
         newRow.bb_ss = ext.bb_ss;
+        newRow.bb_step = ext.bb_step;
         return newRow;
       });
     if (mappedRows.length === 0) return;
@@ -1825,8 +1838,9 @@ export default function RequestPage(): React.ReactElement {
           sd: jayerRow.sd,
           bb_process_id: matchedStep.processid,
           bb_name: formatBbName(entry.location, entry.product),
-          bb_step: matchedStep.layerid,
+          bb_layer: matchedStep.layerid,
           bb_ss: matchedStep.stepseq,
+          bb_step: matchedStep.descript,
           remark: '',
           entryIdx,
         });

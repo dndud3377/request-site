@@ -1682,6 +1682,27 @@ select.form-control option {
   width: 300px;
 }
 
+.wizard-table col.bb-step-column {
+  width: 200px;
+}
+
+/* BB 정보 테이블: bb_step 컬럼(10번째) — SD와 동일하게 고정 폭 + 줄바꿈 */
+.wizard-table.bb-info-table td:nth-child(10) input {
+  field-sizing: fixed;
+  width: 100%;
+  white-space: normal;
+  word-break: break-all;
+  overflow-wrap: break-word;
+  line-height: 1.4;
+}
+
+/* BB 정보 테이블: SP 컬럼(4번째) — 전역 nth-child(4) 줄바꿈 규칙 오버라이드 */
+.wizard-table.bb-info-table td:nth-child(4) input {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
 .wizard-table td input:focus,
 .wizard-table td select:focus {
   background: var(--accent-light);

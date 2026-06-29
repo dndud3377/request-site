@@ -244,8 +244,9 @@ function BbTable({
     { key: 'sd',            label: t('request.col_sd') },
     { key: 'bb_process_id', label: t('request.col_bb_process_id') },
     { key: 'bb_name',       label: t('request.col_bb_partid') },
-    { key: 'bb_step',       label: t('request.col_bb_layer') },
+    { key: 'bb_layer',      label: t('request.col_bb_layer') },
     { key: 'bb_ss',         label: t('request.col_bb_stepseq') },
+    { key: 'bb_step',       label: t('request.col_bb_step') },
     { key: 'remark',        label: t('request.col_remark') },
   ];
   const hasPrev = (prevRowMap?.size ?? 0) > 0;
@@ -259,7 +260,7 @@ function BbTable({
           <thead>
             <tr>
               {hasPrev && <th style={{ width: 64 }}></th>}
-              <th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_bb_process_id')}</th><th>{t('request.col_bb_partid')}</th><th>{t('request.col_bb_layer')}</th><th>{t('request.col_bb_stepseq')}</th><th>{t('request.col_remark')}</th>
+              <th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_bb_process_id')}</th><th>{t('request.col_bb_partid')}</th><th>{t('request.col_bb_layer')}</th><th>{t('request.col_bb_stepseq')}</th><th>{t('request.col_bb_step')}</th><th>{t('request.col_remark')}</th>
             </tr>
           </thead>
           <tbody>
@@ -274,7 +275,7 @@ function BbTable({
                       )}
                     </td>
                   )}
-                  <td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td style={multiTab && r.entryIdx != null ? { backgroundColor: bbTabColor(r.entryIdx) } : undefined}>{r.bb_name}</td><td>{r.bb_step}</td><td>{r.bb_ss}</td><td>{r.remark}</td>
+                  <td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td style={multiTab && r.entryIdx != null ? { backgroundColor: bbTabColor(r.entryIdx) } : undefined}>{r.bb_name}</td><td>{r.bb_layer}</td><td>{r.bb_ss}</td><td>{r.bb_step}</td><td>{r.remark}</td>
                 </tr>
               );
             })}
@@ -423,8 +424,9 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
       [t('request.col_sd')]:           r.sd,
       [t('request.col_bb_process_id')]: r.bb_process_id,
       [t('request.col_bb_partid')]:    r.bb_name,
-      [t('request.col_bb_layer')]:     r.bb_step,
+      [t('request.col_bb_layer')]:     r.bb_layer,
       [t('request.col_bb_stepseq')]:   r.bb_ss,
+      [t('request.col_bb_step')]:      r.bb_step,
       [t('request.col_remark')]:       r.remark,
     }));
     const ws = XLSX.utils.json_to_sheet(data);
