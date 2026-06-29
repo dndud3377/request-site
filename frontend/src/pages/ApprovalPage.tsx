@@ -192,7 +192,9 @@ const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
     path1DueDate = path1PendingP.due_date ?? null;
     path1PathStatus = doc.status === 'rejected' ? 'rejected' : path1PendingP.assignee_loginid ? 'under_review' : 'unassigned';
   } else {
-    path1StageText = jPendingSteps.map(s => buildStageText(s, false, t)).join(' / ');
+    const jLabel = t(`approval.agent_J` as any);
+    const jNames = jPendingSteps.map(s => s.assignee_name).filter(Boolean);
+    path1StageText = jNames.length > 0 ? `${jLabel}(${jNames.join('/')})` : jLabel;
     path1DueDate = jPendingSteps[0]?.due_date ?? null;
     const jHasUnassigned = jPendingSteps.some(s => !s.assignee_loginid);
     path1PathStatus = doc.status === 'rejected' ? 'rejected' : jHasUnassigned ? 'unassigned' : 'under_review';

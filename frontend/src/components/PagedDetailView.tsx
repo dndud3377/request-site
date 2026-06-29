@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { RequestDocument, UserRole, DetailFormState, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot } from '../types';
 import Modal from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
@@ -378,61 +378,112 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
     return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   };
 
-  const exportJayer = () => {
-    const activeRows = jayer.filter(r => !r.disabled);
-    const data = activeRows.map(r => ({
-      'Update 날짜':           r.updated ?? '',
-      [t('request.process_id')]:    r.process_id,
-      [t('request.col_sp')]:        r.sp,
-      [t('request.col_sd')]:        r.sd,
-      [t('request.col_pp')]:        r.pp,
-      [t('request.col_st')]:        r.st,
-      [t('request.col_new_or_copy')]: r.new_or_copy,
-      [t('request.col_product_name')]: r.product_name,
-      [t('request.col_step')]:      r.step,
-      [t('request.col_item_id')]:   r.item_id,
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'JOB');
-    XLSX.writeFile(wb, `${doc.title}_JOB_${getNowString()}.xlsx`);
+  const applyFill = (cell: ExcelJS.Cell, hex: string | undefined) => {
+    if (!hex) return;
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${hex.replace('#', '')}` } };
   };
 
-  const exportOayer = () => {
-    const activeRows = oayer.filter(r => !r.disabled);
-    const data = activeRows.map(r => ({
-      'Update 날짜':           r.updated ?? '',
-      [t('request.process_id')]:    r.process_id,
-      [t('request.col_sp')]:        r.sp,
-      [t('request.col_sd')]:        r.sd,
-      [t('request.col_pp')]:        r.pp,
-      [t('request.col_st')]:        r.st,
-      [t('request.col_new_or_copy')]: r.new_or_copy,
-      [t('request.col_product_name')]: r.product_name,
-      [t('request.col_step')]:      r.step,
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'OVL');
-    XLSX.writeFile(wb, `${doc.title}_OVL_${getNowString()}.xlsx`);
+  const downloadBuffer = async (wb: ExcelJS.Workbook, filename: string) => {
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
-  const exportBb = () => {
-    const data = bb.map(r => ({
-      [t('request.process_id')]:       r.process_id,
-      [t('request.col_sp')]:           r.ss,
-      [t('request.col_sd')]:           r.sd,
-      [t('request.col_bb_process_id')]: r.bb_process_id,
-      [t('request.col_bb_partid')]:    r.bb_name,
-      [t('request.col_bb_layer')]:     r.bb_layer,
-      [t('request.col_bb_stepseq')]:   r.bb_ss,
-      [t('request.col_bb_step')]:      r.bb_step,
-      [t('request.col_remark')]:       r.remark,
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'BB');
-    XLSX.writeFile(wb, `${doc.title}_BB_${getNowString()}.xlsx`);
+  const exportJayer = async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('JOB');
+    ws.columns = [
+      { header: 'Update 날짜',                       key: 'updated',       width: 16 },
+      { header: t('request.process_id'),              key: 'process_id',    width: 14 },
+      { header: t('request.col_sp'),                  key: 'sp',            width: 10 },
+      { header: t('request.col_sd'),                  key: 'sd',            width: 10 },
+      { header: t('request.col_pp'),                  key: 'pp',            width: 14 },
+      { header: t('request.col_st'),                  key: 'st',            width: 8  },
+      { header: t('request.col_new_or_copy'),         key: 'new_or_copy',   width: 10 },
+      { header: t('request.col_product_name'),        key: 'product_name',  width: 16 },
+      { header: t('request.col_step'),                key: 'step',          width: 10 },
+      { header: t('request.col_item_id'),             key: 'item_id',       width: 12 },
+    ];
+    jayer.filter(r => !r.disabled).forEach(r => {
+      const row = ws.addRow({
+        updated: r.updated ?? '', process_id: r.process_id, sp: r.sp, sd: r.sd,
+        pp: r.pp, st: r.st, new_or_copy: r.new_or_copy, product_name: r.product_name,
+        step: r.step, item_id: r.item_id,
+      });
+      const reg = r.new_or_copy === '기등록';
+      row.eachCell((cell, col) => {
+        if (reg) { applyFill(cell, '#e5e7eb'); return; }
+        if (col === 5) applyFill(cell, r.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined);
+        else if (col === 6) applyFill(cell, ST_CELL_COLOR[r.st]);
+        else if (col === 7) applyFill(cell, r.new_or_copy === '차용' ? '#eff6ff' : undefined);
+      });
+    });
+    await downloadBuffer(wb, `${doc.title}_JOB_${getNowString()}.xlsx`);
+  };
+
+  const exportOayer = async () => {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('OVL');
+    ws.columns = [
+      { header: 'Update 날짜',                       key: 'updated',       width: 16 },
+      { header: t('request.process_id'),              key: 'process_id',    width: 14 },
+      { header: t('request.col_sp'),                  key: 'sp',            width: 10 },
+      { header: t('request.col_sd'),                  key: 'sd',            width: 10 },
+      { header: t('request.col_layer'),               key: 'layerid',       width: 10 },
+      { header: t('request.col_pp'),                  key: 'pp',            width: 14 },
+      { header: t('request.col_st'),                  key: 'st',            width: 8  },
+      { header: t('request.col_new_or_copy'),         key: 'new_or_copy',   width: 10 },
+      { header: t('request.col_product_name'),        key: 'product_name',  width: 16 },
+      { header: t('request.col_step'),                key: 'step',          width: 10 },
+    ];
+    oayer.filter(r => !r.disabled).forEach(r => {
+      const row = ws.addRow({
+        updated: r.updated ?? '', process_id: r.process_id, sp: r.sp, sd: r.sd,
+        layerid: r.layerid, pp: r.pp, st: r.st, new_or_copy: r.new_or_copy,
+        product_name: r.product_name, step: r.step,
+      });
+      const reg = r.new_or_copy === '기등록';
+      row.eachCell((cell, col) => {
+        if (reg) { applyFill(cell, '#e5e7eb'); return; }
+        if (col === 6) applyFill(cell, r.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined);
+        else if (col === 7) applyFill(cell, ST_CELL_COLOR[r.st]);
+        else if (col === 8) applyFill(cell, r.new_or_copy === '차용' ? '#eff6ff' : undefined);
+      });
+    });
+    await downloadBuffer(wb, `${doc.title}_OVL_${getNowString()}.xlsx`);
+  };
+
+  const exportBb = async () => {
+    const bbTabCount = Array.isArray(detail?.bb_entries) ? (detail.bb_entries as unknown[]).length : 0;
+    const multiTab = bbTabCount >= 2;
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('BB');
+    ws.columns = [
+      { header: t('request.process_id'),              key: 'process_id',    width: 14 },
+      { header: t('request.col_sp'),                  key: 'ss',            width: 10 },
+      { header: t('request.col_sd'),                  key: 'sd',            width: 10 },
+      { header: t('request.col_bb_process_id'),       key: 'bb_process_id', width: 14 },
+      { header: t('request.col_bb_partid'),           key: 'bb_name',       width: 16 },
+      { header: t('request.col_bb_layer'),            key: 'bb_layer',      width: 10 },
+      { header: t('request.col_bb_stepseq'),          key: 'bb_ss',         width: 10 },
+      { header: t('request.col_bb_step'),             key: 'bb_step',       width: 10 },
+      { header: t('request.col_remark'),              key: 'remark',        width: 16 },
+    ];
+    bb.forEach(r => {
+      const row = ws.addRow({
+        process_id: r.process_id, ss: r.ss, sd: r.sd, bb_process_id: r.bb_process_id,
+        bb_name: r.bb_name, bb_layer: r.bb_layer, bb_ss: r.bb_ss, bb_step: r.bb_step, remark: r.remark,
+      });
+      if (multiTab && r.entryIdx != null) {
+        applyFill(row.getCell(5), bbTabColor(r.entryIdx));
+      }
+    });
+    await downloadBuffer(wb, `${doc.title}_BB_${getNowString()}.xlsx`);
   };
 
   const prevSnap = history.length > 0 ? history[history.length - 1] : null;
