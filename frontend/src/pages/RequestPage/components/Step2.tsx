@@ -128,7 +128,7 @@ const Step2: React.FC<Step2Props> = ({
         </div>
       </div>
       <div className="wizard-table-wrapper" ref={cellSel.containerRef}>
-        <table className="wizard-table" style={{ userSelect: jayerDragInfo.current ? 'none' : undefined }} onPaste={(e) => cellSel.onCellPaste(e, renderedJayerIds)}>
+        <table className="wizard-table" style={{ userSelect: cellSel.isDragging || jayerDragInfo.current ? 'none' : undefined }} onPaste={(e) => cellSel.onCellPaste(e, renderedJayerIds)}>
           <colgroup>
             <col style={{ width: 44 }} />
             <col />

@@ -190,7 +190,7 @@ const Step3: React.FC<Step3Props> = ({
             </div>
           </div>
           <div className="wizard-table-wrapper" ref={cellSel.containerRef}>
-            <table className="wizard-table" style={{ userSelect: oayerDragInfo.current ? 'none' : undefined }} onPaste={(e) => cellSel.onCellPaste(e, renderedOayerIds)}>
+            <table className="wizard-table" style={{ userSelect: cellSel.isDragging || oayerDragInfo.current ? 'none' : undefined }} onPaste={(e) => cellSel.onCellPaste(e, renderedOayerIds)}>
               <colgroup>
                 <col style={{ width: 44 }} />
                 <col /><col /><col /><col />
