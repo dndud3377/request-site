@@ -247,9 +247,11 @@
   - ※ 당초 별도 신설 검토했던 "bb_entry 수정 시 stale 매핑"은 본 항목에 흡수(별도 R 번호 미생성).
 
 ### [R-02] product_name 빠른 변경 시 바코드 자동매칭 stale-fetch 경합  (관련: F-3.9)
-- 위치: `index.tsx:1202-1213,1219-1239`
-- 증상/의심: `getBarcodeOptions` 요청 취소·순서보장 없음 → 늦게 온 이전 응답이 현재 product의 item_id를 덮어쓸 수 있음.
-- 심각도: 🟡보통 · 상태: 🔍점검필요 · 결정/메모:
+- 위치: `index.tsx:1215-1225`(handleJayerChange product_name 분기), `1236-1244`(handleJayerAfterPaste); `Step2.tsx:227`(product_name = 일반 `<input>`)
+- 증상/의심: `getBarcodeOptions` 요청에 **취소·순서보장·디바운스가 전무**. product_name이 일반 input이라 **타이핑 매 글자마다 1회씩** 호출되고, 각 응답은 도착 시 `jayerBarcodeCache[id]`와 `item_id`를 덮어쓰는데 **그 응답이 현재 product와 일치하는지 확인하지 않음** → 늦게 온 이전 글자의 응답이 현재값을 덮어써 잘못된/빈 `item_id` + 엉뚱한 바코드 후보 드롭다운이 남을 수 있음.
+- 재현/근거: "ABC" 입력 시 A·AB·ABC 3회 호출 → AB 응답이 ABC보다 늦게 도착하면 item_id가 AB 기준으로 매칭됨. 백엔드가 Impala/ODBC 연동이라 지연 편차가 커 out-of-order 가능성 실재.
+- **심각도(재측정 2026-06-30): 🟡보통 (유지, 상단)** — ▸영향: `item_id`는 상신·저장되는 데이터 필드라 조용히 잘못된 값이 들어갈 수 있음(단 자동매칭은 "후보 정확히 1개"일 때만, 사용자 수동 override 가능, 충돌/손실/상신차단 없음 → 회복 가능). ▸가능성: 매 글자마다 다발 요청 + 지연 편차로 중간 빈도, 단 out-of-order가 있어야 가시화(상시 아님). ▸종합: 손실·치명 아님 → 🟡 유지하되, item_id가 후공정에서 식별키로 쓰여 잘못된 값이 치명적이라면 🟠로 상향 가능(사용자 판단 필요). ▸부수 관찰(효율): 디바운스 부재로 product명 1건 입력에 Impala 백엔드 호출이 글자 수만큼 발생 — 정합성과 별개로 부하 이슈, 같은 수정에서 함께 처리 권장.
+- 상태: 🔍점검필요 · 결정/메모:
 
 ### [R-03] sortOrder=Date.now() 동일값 — 정렬 안정성 의존  (관련: F-1.6, F-3.x, F-5.6)
 - 위치: `constants.ts`(make*Row), 병합 push `index.tsx:1604,1621`
