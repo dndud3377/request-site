@@ -207,7 +207,8 @@ export interface BbTableRow {
   bb_ss: string;
   bb_step: string;
   remark: string;
-  entryIdx?: number;  // 출처 탭(bb_entries) 인덱스 — 탭별 색상 적용용(상세보기/이력 재현)
+  entryId?: string;   // 출처 bb_entry의 안정 id — 탭별 색상/매핑 식별(위치 비의존)
+  entryIdx?: number;  // [레거시 호환] 구버전 저장 문서의 출처 탭 인덱스 — entryId 없을 때 색상 fallback
 }
 
 export interface DetailFormState {
@@ -241,7 +242,7 @@ export interface DetailFormState {
 
   // Backbone
   bb_zone: string;
-  bb_entries: Array<{ location: string; product: string; process_id: string }>;
+  bb_entries: Array<{ id: string; location: string; product: string; process_id: string }>;
 
   only_prodc: string;
   prodc_top_line: string;
@@ -485,7 +486,7 @@ export interface ExternalBbDataItem {
   bb_ss: string;
   layerid?: string;
   location?: string;  // 라인(bb_entries.location) — bb_name을 [라인] 제품 형식으로 채우기 위함
-  entryIdx?: number;  // 출처 탭(bb_entries) 인덱스 — 탭별 색상 적용용
+  entryId?: string;   // 출처 bb_entry의 안정 id — 매핑 시 bb 행에 그대로 복사
 }
 
 
@@ -501,5 +502,5 @@ export interface BbAutoFillRange {
   id: string;
   layerFrom: string;      // 시작 Layer
   layerTo: string;        // 종료 Layer
-  entryIdx: string;       // 선택된 bb_entries 항목 인덱스(문자열) — 라인+제품을 유일하게 식별
+  entryId: string;        // 선택된 bb_entry의 안정 id — 라인+제품을 유일하게 식별
 }

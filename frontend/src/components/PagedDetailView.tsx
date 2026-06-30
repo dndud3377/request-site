@@ -225,14 +225,19 @@ function BbTable({
   changedRowIds = new Set<string>(),
   prevRowMap,
   tabCount = 0,
+  entryIds = [],
 }: {
   rows: BbTableRow[];
   changedRowIds?: Set<string>;
   prevRowMap?: Map<string, BbTableRow>;
   tabCount?: number;
+  entryIds?: string[];
 }) {
   // 탭이 2개 이상일 때만 Ref.PART ID 셀에 출처 탭 색을 적용한다.
   const multiTab = tabCount >= 2;
+  // 색 인덱스: 안정 id(entryId)의 현재 위치 우선, 레거시 행(entryId 없음)은 entryIdx로 폴백.
+  const colorIndexOf = (r: BbTableRow): number =>
+    r.entryId != null ? entryIds.indexOf(r.entryId) : (r.entryIdx ?? -1);
   const { t } = useTranslation();
   const [diffId, setDiffId] = useState<string | null>(null);
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
@@ -275,7 +280,7 @@ function BbTable({
                       )}
                     </td>
                   )}
-                  <td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td style={multiTab && r.entryIdx != null ? { backgroundColor: bbTabColor(r.entryIdx) } : undefined}>{r.bb_name}</td><td>{r.bb_layer}</td><td>{r.bb_ss}</td><td>{r.bb_step}</td><td>{r.remark}</td>
+                  <td>{r.process_id}</td><td>{r.ss}</td><td>{r.sd}</td><td>{r.bb_process_id}</td><td style={multiTab && colorIndexOf(r) >= 0 ? { backgroundColor: bbTabColor(colorIndexOf(r)) } : undefined}>{r.bb_name}</td><td>{r.bb_layer}</td><td>{r.bb_ss}</td><td>{r.bb_step}</td><td>{r.remark}</td>
                 </tr>
               );
             })}
@@ -459,8 +464,14 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   };
 
   const exportBb = async () => {
-    const bbTabCount = Array.isArray(detail?.bb_entries) ? (detail.bb_entries as unknown[]).length : 0;
+    const bbEntryIds: string[] = Array.isArray(detail?.bb_entries)
+      ? (detail.bb_entries as { id?: string }[]).map((e) => e.id ?? '')
+      : [];
+    const bbTabCount = bbEntryIds.length;
     const multiTab = bbTabCount >= 2;
+    // 색 인덱스: 안정 id(entryId) 현재 위치 우선, 레거시 행은 entryIdx 폴백.
+    const colorIndexOf = (r: BbTableRow): number =>
+      r.entryId != null ? bbEntryIds.indexOf(r.entryId) : (r.entryIdx ?? -1);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('BB');
     ws.columns = [
@@ -479,8 +490,8 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
         process_id: r.process_id, ss: r.ss, sd: r.sd, bb_process_id: r.bb_process_id,
         bb_name: r.bb_name, bb_layer: r.bb_layer, bb_ss: r.bb_ss, bb_step: r.bb_step, remark: r.remark,
       });
-      if (multiTab && r.entryIdx != null) {
-        applyFill(row.getCell(5), bbTabColor(r.entryIdx));
+      if (multiTab && colorIndexOf(r) >= 0) {
+        applyFill(row.getCell(5), bbTabColor(colorIndexOf(r)));
       }
     });
     await downloadBuffer(wb, `${doc.title}_BB_${getNowString()}.xlsx`);
@@ -1136,7 +1147,7 @@ type Page = { label: string; content: React.ReactNode };
               <button onClick={exportBb} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
             </div>
           </div>
-          <BbTable rows={bb} changedRowIds={changedBbIds} prevRowMap={prevBbMap} tabCount={Array.isArray(detail?.bb_entries) ? detail.bb_entries.length : 0} />
+          <BbTable rows={bb} changedRowIds={changedBbIds} prevRowMap={prevBbMap} tabCount={Array.isArray(detail?.bb_entries) ? detail.bb_entries.length : 0} entryIds={Array.isArray(detail?.bb_entries) ? detail.bb_entries.map((e: { id?: string }) => e.id ?? '') : []} />
         </div>
       ),
     });
