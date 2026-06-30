@@ -77,6 +77,9 @@ const autoMatchItemId = (
   return matched.length === 1 ? matched[0].label : '';
 };
 
+// product_name 타이핑 시 바코드 후보 조회를 디바운스하는 지연(ms). Impala 백엔드 중복 호출 감소.
+const BARCODE_DEBOUNCE_MS = 300;
+
 // 전체 가이드 되감기(seek)용 투어 상태 스냅샷 — 프리뷰가 정주행 중 챕터별로 캡처해 두었다가
 // 되감을 때 그대로 복원한다. (mappedJayerRowIds는 직렬화 위해 배열로 보관)
 export interface TourSnapshot {
@@ -138,6 +141,9 @@ export default function RequestPage(): React.ReactElement {
   const [detail, setDetail] = useState<DetailFormState>(isTourMode ? makeTourDetail() : INITIAL_DETAIL);
   const [jayerRows, setJayerRows] = useState<JayerRow[]>(isTourMode ? makeTourJayerRows() : [makeJayerRow()]);
   const [jayerBarcodeCache, setJayerBarcodeCache] = useState<Record<string, { label: string; spec: string }[]>>({});
+  // 바코드 후보 조회 경합/부하 방지: 행별 요청 시퀀스 토큰(최신 요청만 반영) + 타이핑 디바운스 타이머
+  const barcodeReqSeq = useRef<Record<string, number>>({});
+  const barcodeDebounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [oayerRows, setOayerRows] = useState<OayerRow[]>(isTourMode ? makeTourOayerRows() : [makeOayerRow()]);
   const [bbRows, setBbRows] = useState<BbTableRow[]>(isTourMode ? makeTourBbRows() : []);
   const [bbExternalData, setBbExternalData] = useState<PhotoStepOption[][]>(isTourMode ? (makeTourBbExternalData() as PhotoStepOption[][]) : []);
@@ -470,6 +476,12 @@ export default function RequestPage(): React.ReactElement {
     };
     document.addEventListener('mouseup', handleDragEnd);
     return () => document.removeEventListener('mouseup', handleDragEnd);
+  }, []);
+
+  // 언마운트 시 진행 중인 바코드 디바운스 타이머 정리(불필요한 setState 방지)
+  useEffect(() => {
+    const timers = barcodeDebounceTimers.current;
+    return () => { Object.values(timers).forEach((tm) => clearTimeout(tm)); };
   }, []);
 
   // 편집 모드 (반려 재상신 or 지정 PL 수정 후 상신): 기존 문서 데이터 로드
@@ -1166,6 +1178,19 @@ export default function RequestPage(): React.ReactElement {
   // 매핑된 행만 골라 unmap (편집/붙여넣기/Delete 공용)
   const unmapIfMapped = (ids: string[]) => unmapJayerRows(ids.filter((id) => mappedJayerRowIds.has(id)));
 
+  // 바코드 후보 조회 + 적용. seq 토큰으로 최신 요청만 반영하고(out-of-order 무시),
+  // 응답 시점에 행의 product_name이 그대로일 때만 item_id를 자동 채운다.
+  const runBarcodeFetch = (id: string, productName: string, seq: number) => {
+    formOptionsAPI.getBarcodeOptions(productName).then((options) => {
+      if (barcodeReqSeq.current[id] !== seq) return; // 더 최신 요청이 있으면 무시
+      setJayerBarcodeCache((prev) => ({ ...prev, [id]: options }));
+      setJayerRows((rows) => rows.map((r) =>
+        r.id === id && r.product_name === productName
+          ? { ...r, item_id: autoMatchItemId(r, options) }
+          : r));
+    });
+  };
+
   const handleJayerChange = (id: string, field: keyof Omit<JayerRow, 'id'>, value: string) => {
     const changedRow = jayerRows.find(r => r.id === id);
     // 매핑된 행을 수정하면(어떤 컬럼이든) 매핑 해제 → 원본 목록 복귀
@@ -1213,12 +1238,13 @@ export default function RequestPage(): React.ReactElement {
       }));
     }
     if (field === 'product_name') {
+      // 진행 중 요청 무효화(seq +1) + 대기 중 디바운스 타이머 취소
+      const seq = (barcodeReqSeq.current[id] ?? 0) + 1;
+      barcodeReqSeq.current[id] = seq;
+      if (barcodeDebounceTimers.current[id]) clearTimeout(barcodeDebounceTimers.current[id]);
       if (value) {
-        formOptionsAPI.getBarcodeOptions(value).then((options) => {
-          setJayerBarcodeCache((prev) => ({ ...prev, [id]: options }));
-          // 후보 도착 후 현재 step 기준으로 item_id 자동매칭(1개면 자동, 그 외 빈값)
-          setJayerRows((rows) => rows.map((r) => (r.id === id ? { ...r, item_id: autoMatchItemId(r, options) } : r)));
-        });
+        // 타이핑 부하 감소: 행별 디바운스 후 최신 product로만 조회
+        barcodeDebounceTimers.current[id] = setTimeout(() => runBarcodeFetch(id, value, seq), BARCODE_DEBOUNCE_MS);
       } else {
         setJayerBarcodeCache((prev) => ({ ...prev, [id]: [] }));
       }
@@ -1233,16 +1259,23 @@ export default function RequestPage(): React.ReactElement {
       if ('product_name' in values) {
         const pn = values.product_name;
         if (pn) {
+          // 붙여넣기는 단발 이벤트라 즉시 조회하되, seq 토큰으로 최신 요청만 반영(타이핑과 경합 방지)
+          const seq = (barcodeReqSeq.current[rowId] ?? 0) + 1;
+          barcodeReqSeq.current[rowId] = seq;
+          if (barcodeDebounceTimers.current[rowId]) clearTimeout(barcodeDebounceTimers.current[rowId]);
           formOptionsAPI.getBarcodeOptions(pn).then((options) => {
+            if (barcodeReqSeq.current[rowId] !== seq) return; // 더 최신 요청이 있으면 무시
             setJayerBarcodeCache((prev) => ({ ...prev, [rowId]: options }));
             setJayerRows((rows) => rows.map((r) => {
-              if (r.id !== rowId) return r;
+              if (r.id !== rowId || r.product_name !== pn) return r; // 현재 product 일치 시만
               let step = r.step;
               if (!step?.trim() && r.layerid?.trim()) step = r.layerid;
               return { ...r, step, item_id: autoMatchItemId({ ...r, step }, options) };
             }));
           });
         } else {
+          barcodeReqSeq.current[rowId] = (barcodeReqSeq.current[rowId] ?? 0) + 1; // 진행 중 요청 무효화
+          if (barcodeDebounceTimers.current[rowId]) clearTimeout(barcodeDebounceTimers.current[rowId]);
           setJayerBarcodeCache((prev) => ({ ...prev, [rowId]: [] }));
           setJayerRows((rows) => rows.map((r) => (r.id === rowId ? { ...r, item_id: '' } : r)));
         }
