@@ -1155,7 +1155,6 @@ export default function RequestPage(): React.ReactElement {
     setDetail((prev) => ({ ...prev, flow_chart: [...prev.flow_chart, makeRow()] }));
   };
 
-  // ===== Date Format Helper =====
   const handleFlowDeleteRow = (id: string) => {
     setDetail((prev) => {
       if (prev.flow_chart.length <= 1) return prev;
