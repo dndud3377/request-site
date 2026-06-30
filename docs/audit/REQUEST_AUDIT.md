@@ -261,19 +261,28 @@
   - 잔여(무시 가능): 조회 in-flight 중 product 셀을 Delete로 비우는 극히 좁은 창에서 캐시가 직전 후보를 잠깐 보유할 수 있으나 item_id는 product-match 가드로 안전, 다음 입력 시 갱신.
 
 ### [R-03] sortOrder=Date.now() 동일값 — 정렬 안정성 의존  (관련: F-1.6, F-3.x, F-5.6)
-- 위치: `constants.ts`(make*Row), 병합 push `index.tsx:1604,1621`
-- 증상/의심: 한 번에 생성되는 행들의 `sortOrder`가 같은 ms 값 → `a.sortOrder-b.sortOrder=0`, 삽입순서(엔진 안정정렬)에 의존. 명시적 순번 아님.
-- 심각도: ⚪경미 · 상태: 🔍점검필요 · 결정/메모:
+- 위치: `constants.ts:51,69,85`(make*Row 팩토리 `sortOrder: Date.now()`), 병합 push `index.tsx:1650,1667`. 정렬 사용처: `index.tsx:2227-2228`(저장), `Step2.tsx:73-74`·`Step3.tsx:88-89`(렌더), `buildAutoFillRows`(원본 sortOrder 상속).
+- 증상/의심: JOB FILE/OVL 자동채움처럼 `map()`으로 한 번에 만들어지는 행들은 `Date.now()`가 **모두 같은 ms 값** → `a.sortOrder-b.sortOrder=0` → 정렬이 사실상 무의미하고 **JS 안정 정렬의 삽입순서**에 의존. 즉 행 순서는 "정렬 키"가 아니라 "배열에 담긴 순서"로 유지된다.
+- **재확인(2026-06-30):** 현재는 **가시적 버그 없음**. 자동채움 행은 API 응답 순서대로 배열에 담겨 안정 정렬로 그 순서가 보존되고, 수동 `+행 추가`/병합 행은 뒤에 append되어 자연스럽게 뒤로 간다. 따라서 동작상 문제는 아니며 **잠재적 취약성**(명시적 순번 부재)에 가깝다. SP 정렬 토글은 `sp.localeCompare`라 sortOrder와 무관.
+- 위험 시나리오(이론): 같은 ms에 생성된 행들 사이에서 순서를 바꾸는 연산이 생기거나, 안정 정렬이 보장되지 않는 환경에서 순서가 흔들릴 수 있음(현 타깃 브라우저는 안정 정렬 보장).
+- 심각도: ⚪경미 · 상태: 🔍점검필요(견고화 여부는 선택)
+- 결정/메모: (수정한다면 make*Row의 sortOrder를 단조 증가 카운터/인덱스 기반으로 부여해 명시적 순번 보장. 동작 동일하나 취약성 제거.)
 
-### [R-04] bb_entries process_id 변경 시 외부데이터 이중 fetch  (관련: F-1.8)
-- 위치: `index.tsx:1637-1650` + effect `451-462`
-- 증상/의심: 토스트용 1회 + bb_entries 변경 effect 1회 = 동일 데이터 2회 조회.
-- 심각도: ⚪경미 · 상태: 🔍점검필요 · 결정/메모:
+### [R-04] bb_entries 외부데이터 조회 중복/과다 fetch  (관련: F-1.8)
+- 위치: `handleBbEntryChange`(process_id 분기, 토스트용 `getBbExternalData` 1회) + effect `index.tsx:458-470`(`[detail.bb_entries]` 의존, 전체 항목 `Promise.all(getBbExternalData)`).
+- 증상/의심(재확인 2026-06-30, R-01 수정 이후에도 유지):
+  - **이중 fetch:** process_id를 채우면 ① 핸들러가 토스트용으로 그 항목을 1회 조회 + ② effect가 bb_entries 변경을 감지해 **전체 항목을 다시 조회** → 해당 항목은 2회 조회됨.
+  - **과다 fetch(더 큼):** effect 의존이 `[detail.bb_entries]`(배열 참조)라, product/process_id가 `AutocompleteInput`(타이핑 onChange 매 글자)인 탓에 **bb_entries 한 글자 입력마다 전체 탭 외부데이터를 재조회**(Impala 호출 다발). R-02(바코드)와 같은 디바운스 부재 패턴.
+- 영향: 정합성 문제는 아니고(최종 상태는 옳음) **백엔드 부하·불필요 로딩**. 토스트가 effect 결과보다 먼저/나중에 떠 미세한 표시 어긋남 가능.
+- 심각도: ⚪경미(부하 관점) · 상태: 🔍점검필요
+- 결정/메모: (수정 방향 — ① effect 의존을 `bb_entries`의 `location|product|process_id` 조합 문자열로 좁히고 ② 조회를 디바운스, ③ 토스트용 단독 fetch 제거하고 effect 결과로 토스트를 내보내 이중 조회 제거.)
 
 ### [R-05] bb_entries 편집 시 활성 탭 항상 0으로 리셋  (관련: F-1.8, F-5.4)
-- 위치: `index.tsx:456-459` `setActiveBbTab(0)`
-- 증상/의심: Step5에서 2번 탭 보던 중 bb_entries 수정 시 탭이 0번으로 튐.
-- 심각도: ⚪경미 · 상태: 🔍점검필요 · 결정/메모:
+- 위치: `index.tsx:466` `setActiveBbTab(0)`(외부데이터 로드 effect 내부).
+- 증상/의심(재확인 2026-06-30): `[detail.bb_entries]` effect가 외부데이터를 다시 받을 때마다 `activeBbTab`을 0으로 초기화. bb_entries가 바뀌면(추가/삭제/필드 수정) 무조건 첫 탭으로 돌아감.
+- **재확인 — 사용자 영향 낮음:** bb_entries 편집은 **Step1**, 탭(activeBbTab)은 **Step5**에서 사용 → 다른 화면이라 "탭 튐"이 거의 노출 안 됨. 삭제 시 0번 리셋은 오히려 범위 안전(없는 인덱스 방지)에 기여.
+- 심각도: ⚪경미 · 상태: 🔍점검필요(🟢의도된동작 후보)
+- 결정/메모: (R-04 수정으로 effect 재실행 빈도를 줄이면 자연 완화. 별도 수정 불요로 판단되면 🟢 처리 권장.)
 
 ### [R-06] 하드코딩 한글 문자열·토스트 다수 (i18n 규칙 G 위반)  (관련: 전 기능)
 - 위치: `index.tsx`(이미지/병합/상신/필터/매핑/모달/버튼/제목 다수), `Step1~Step4/StepMap`(안내문·플레이스홀더·"활성/전체"·"+행 추가"·"선택 비활성화"·"STEP 정렬"·"범위 추가"·"특정 제품 삭제 필요"·"검색어 입력"·"데이터 로드 중..." 등)
