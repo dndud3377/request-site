@@ -144,6 +144,11 @@ export default function RequestPage(): React.ReactElement {
   // 바코드 후보 조회 경합/부하 방지: 행별 요청 시퀀스 토큰(최신 요청만 반영) + 타이핑 디바운스 타이머
   const barcodeReqSeq = useRef<Record<string, number>>({});
   const barcodeDebounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // 옵션 조회(연쇄 선택) 경합 방지: 조회 키별 요청 시퀀스 토큰(최신 요청 응답만 반영)
+  const optionReqSeq = useRef<Record<string, number>>({});
+  // 뼈찜 외부데이터: (항목,값) 조합별 결과 캐시 + 직전 조회 process_id(토스트용)
+  const bbExtCache = useRef<Record<string, PhotoStepOption[]>>({});
+  const bbExtPrevPid = useRef<Record<string, string>>({});
   const [oayerRows, setOayerRows] = useState<OayerRow[]>(isTourMode ? makeTourOayerRows() : [makeOayerRow()]);
   const [bbRows, setBbRows] = useState<BbTableRow[]>(isTourMode ? makeTourBbRows() : []);
   const [bbExternalData, setBbExternalData] = useState<PhotoStepOption[][]>(isTourMode ? (makeTourBbExternalData() as PhotoStepOption[][]) : []);
@@ -250,6 +255,19 @@ export default function RequestPage(): React.ReactElement {
     open: false, featureKey: 'step1_line_process', title: ''
   });
 
+  // 연쇄 선택 옵션 조회 공용 헬퍼.
+  // - matchedOrLoading: 값이 부모 옵션에 "정확히" 존재할 때만 조회(편집/투어 로드 중엔 우회).
+  // - fetchOptions: 키별 시퀀스 토큰으로 stale 응답을 버리고 최신 요청 결과만 반영.
+  const matchedOrLoading = (opts: string[], value: string): boolean =>
+    isLoadingEditRef.current || (!!value && opts.includes(value));
+  const fetchOptions = (key: string, fetcher: () => Promise<string[]>, apply: (opts: string[]) => void) => {
+    const seq = (optionReqSeq.current[key] ?? 0) + 1;
+    optionReqSeq.current[key] = seq;
+    fetcher()
+      .then((opts) => { if (optionReqSeq.current[key] === seq) apply(opts); })
+      .catch(() => { if (optionReqSeq.current[key] === seq) apply([]); });
+  };
+
   useEffect(() => {
     linesAPI.list()
       .then((lines) => { if (lines.length > 0) setLineOptions(lines.map((l) => l.name)); })
@@ -341,14 +359,18 @@ export default function RequestPage(): React.ReactElement {
       if (!isLoadingEditRef.current) { setProductOptions([]); setProcessIdOptions([]); }
       return;
     }
-    formOptionsAPI.getProducts(detail.line, detail.process_selection)
-      .then(setProductOptions)
-      .catch(() => setProductOptions([]));
+    // 하위 선택값은 부모 변경 시 즉시 초기화(이전 값과 부모 불일치 방지)
     if (!isLoadingEditRef.current) {
       setProcessIdOptions([]);
-      setDetail((prev) => ({ ...prev, partid_selection: '', process_id: '' }));
+      setDetail((prev) => (prev.partid_selection || prev.process_id ? { ...prev, partid_selection: '', process_id: '' } : prev));
     }
-  }, [detail.process_selection]); // eslint-disable-line react-hooks/exhaustive-deps
+    // 제품 조회는 조합법이 옵션에 정확히 존재할 때만(시퀀스 토큰으로 stale 응답 무시)
+    if (matchedOrLoading(processOptions, detail.process_selection)) {
+      fetchOptions('product', () => formOptionsAPI.getProducts(detail.line, detail.process_selection), setProductOptions);
+    } else if (!isLoadingEditRef.current) {
+      setProductOptions([]);
+    }
+  }, [detail.process_selection, processOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 제품이름 변경 → 조리법 fetch
   useEffect(() => {
@@ -356,30 +378,43 @@ export default function RequestPage(): React.ReactElement {
       if (!isLoadingEditRef.current) { setProcessIdOptions([]); }
       return;
     }
-    formOptionsAPI.getProcessId(detail.line, detail.partid_selection)
-      .then(setProcessIdOptions)
-      .catch(() => setProcessIdOptions([]));
+    // 하위(process_id) 즉시 초기화
     if (!isLoadingEditRef.current) {
-      setDetail((prev) => ({ ...prev, process_id: '' }));
+      setDetail((prev) => (prev.process_id ? { ...prev, process_id: '' } : prev));
     }
-  }, [detail.partid_selection]); // eslint-disable-line react-hooks/exhaustive-deps
+    // 조리법 조회는 제품이 옵션에 정확히 존재할 때만
+    if (matchedOrLoading(productOptions, detail.partid_selection)) {
+      fetchOptions('processId', () => formOptionsAPI.getProcessId(detail.line, detail.partid_selection), setProcessIdOptions);
+    } else if (!isLoadingEditRef.current) {
+      setProcessIdOptions([]);
+    }
+  }, [detail.partid_selection, productOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (isLoadingEditRef.current) return; // 편집/투어 로드 중엔 보존(저장된 J/O/bb 유지)
-    // 조리법(process_id) 변경 → J/O 원본이 새 id로 재생성되므로 bb 매핑 상태를 초기화한다.
-    // (옛 sourceJayerRowId를 참조하는 고아 bb 행 방지)
+    // 조리법(process_id)이 비워지면 J/O 원본이 없으므로 bb 매핑 상태를 초기화하고 종료.
+    if (!detail.line || !detail.process_id) {
+      setBbRows([]);
+      setMappedJayerRowIds(new Set());
+      setStagedMappings({});
+      setSelectedJayerRowId(null);
+      return;
+    }
+    // 유효한(옵션에 존재하는) 조리법일 때만 J/O를 새로 재생성한다.
+    // 부분 입력 중(미일치)엔 기존 J/O·매핑을 비우지 않는다(파괴적 동작 방지).
+    if (!processIdOptions.includes(detail.process_id)) return;
+    // J/O가 새 id로 재생성되므로 고아 bb 행 방지를 위해 매핑 상태 초기화
     setBbRows([]);
     setMappedJayerRowIds(new Set());
     setStagedMappings({});
     setSelectedJayerRowId(null);
-    if (!detail.line || !detail.process_id) return;
     setRefDocId(null);
     setRefDocLabel('');
     setRefJayerRows([]);
     setRefOayerRows([]);
     fetchJobFileLayerAndPopulateJayer(detail.line, detail.process_id);
     fetchOvlLayerAndPopulateOayer(detail.line, detail.process_id);
-  }, [detail.process_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail.process_id, processIdOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (detail.other_purpose !== 'Layer 추가/삭제') {
@@ -419,55 +454,90 @@ export default function RequestPage(): React.ReactElement {
 
   useEffect(() => {
     detail.flow_chart.forEach((entry, idx) => {
-      if (!entry.location || !entry.product_name) {
+      // 제품이 해당 행 옵션에 정확히 일치할 때만 조리법 조회(시퀀스 토큰으로 stale 무시)
+      if (entry.location && matchedOrLoading(FlowProductOptions[idx] ?? [], entry.product_name)) {
+        fetchOptions(
+          `flow-pid-${idx}`,
+          () => formOptionsAPI.getProcessId(entry.location, entry.product_name),
+          (opts) => setFlowProcessIdOptions((prev) => ({ ...prev, [idx]: opts })),
+        );
+      } else {
         setFlowProcessIdOptions((prev) => ({ ...prev, [idx]: [] }));
-        return;
       }
-      formOptionsAPI.getProcessId(entry.location, entry.product_name)
-        .then((opts) => setFlowProcessIdOptions((prev) => ({ ...prev, [idx]: opts })))
-        .catch(() => setFlowProcessIdOptions((prev) => ({ ...prev, [idx]: [] })));
     });
-  }, [detail.flow_chart.map(e => `${e.location}|${e.product_name}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail.flow_chart.map(e => `${e.location}|${e.product_name}`).join(','), FlowProductOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     detail.flow_chart.forEach((entry, idx) => {
-      if (!entry.location || !entry.process_id) {
+      // 조리법이 해당 행 옵션에 정확히 일치할 때만 Layer 조회
+      if (entry.location && matchedOrLoading(FlowProcessIdOptions[idx] ?? [], entry.process_id)) {
+        fetchOptions(
+          `flow-layer-${idx}`,
+          () => formOptionsAPI.getLayerIds(entry.location, entry.process_id),
+          (opts) => setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: opts })),
+        );
+      } else {
         setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: [] }));
-        return;
       }
-      formOptionsAPI.getLayerIds(entry.location, entry.process_id)
-        .then((opts) => {
-          setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: opts }));
-        })
-        .catch(() => setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: [] })));
     });
-  }, [detail.flow_chart.map(e => `${e.location}|${e.process_id}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail.flow_chart.map(e => `${e.location}|${e.process_id}`).join(','), FlowProcessIdOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     detail.bb_entries.forEach((entry) => {
-      if (!entry.location || !entry.product) {
+      // 제품이 해당 항목 옵션에 정확히 존재할 때만 조리법 조회(시퀀스 토큰으로 stale 무시)
+      if (entry.location && matchedOrLoading(BbProductOptions[entry.id] ?? [], entry.product)) {
+        fetchOptions(
+          `bb-pid-${entry.id}`,
+          () => formOptionsAPI.getProcessId(entry.location, entry.product),
+          (opts) => setBbProductidOptions((prev) => ({ ...prev, [entry.id]: opts })),
+        );
+      } else {
         setBbProductidOptions((prev) => ({ ...prev, [entry.id]: [] }));
-        return;
       }
-      formOptionsAPI.getProcessId(entry.location, entry.product)
-        .then((opts) => setBbProductidOptions((prev) => ({ ...prev, [entry.id]: opts })))
-        .catch(() => setBbProductidOptions((prev) => ({ ...prev, [entry.id]: [] })));
     });
-  }, [detail.bb_entries.map(e => e.product).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail.bb_entries.map(e => `${e.id}|${e.product}`).join(','), BbProductOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // bb_entries 변경 시 외부 데이터 로드
+  // bb_entries 외부 데이터 로드: 항목별로 제품·조리법이 옵션에 정확히 일치할 때만 조회한다.
+  // (항목,값) 조합 캐시로 변경 없는 항목 재조회를 막고, 시퀀스 토큰으로 stale 응답을 버린다.
+  // 토스트(나): 조리법이 새로 유효해진 항목에 대해서만 effect 결과 기준으로 안내(중복 fetch 없음).
   useEffect(() => {
     if (isTourMode) return; // 투어 모드는 시드(makeTourBbExternalData)를 유지 — API 빈 결과로 덮어쓰지 않음
     if (detail.bb_entries.length === 0) return;
+    const entries = detail.bb_entries;
+    const seq = (optionReqSeq.current['bb-ext'] ?? 0) + 1;
+    optionReqSeq.current['bb-ext'] = seq;
     setBbExternalLoading(true);
-    Promise.all(detail.bb_entries.map((entry) => formOptionsAPI.getBbExternalData(entry)))
+    Promise.all(entries.map((entry) => {
+      const valid = isLoadingEditRef.current || (
+        (BbProductOptions[entry.id] ?? []).includes(entry.product) &&
+        (BbProductidOptions[entry.id] ?? []).includes(entry.process_id)
+      );
+      if (!valid || !entry.process_id) return Promise.resolve([] as PhotoStepOption[]);
+      const cacheKey = `${entry.id}|${entry.location}|${entry.product}|${entry.process_id}`;
+      const cached = bbExtCache.current[cacheKey];
+      if (cached) return Promise.resolve(cached);
+      return formOptionsAPI.getBbExternalData(entry).then((res) => { bbExtCache.current[cacheKey] = res; return res; });
+    }))
       .then((results) => {
+        if (optionReqSeq.current['bb-ext'] !== seq) return; // 더 최신 요청이 있으면 무시(stale)
         setBbExternalData(results);
         setActiveBbTab(0);
+        entries.forEach((entry, i) => {
+          const validNow = !!entry.process_id && (isLoadingEditRef.current || (BbProductidOptions[entry.id] ?? []).includes(entry.process_id));
+          if (!validNow) return;
+          const changed = bbExtPrevPid.current[entry.id] !== entry.process_id;
+          bbExtPrevPid.current[entry.id] = entry.process_id;
+          if (changed && !isLoadingEditRef.current) {
+            addToast(
+              results[i].length > 0 ? t('request.toast_bb_auto_fill', { count: results[i].length }) : t('request.toast_bb_no_data'),
+              results[i].length > 0 ? 'info' : 'warning',
+            );
+          }
+        });
       })
-      .catch(() => setBbExternalData([]))
-      .finally(() => setBbExternalLoading(false));
-  }, [detail.bb_entries]); // eslint-disable-line react-hooks/exhaustive-deps
+      .catch(() => { if (optionReqSeq.current['bb-ext'] === seq) setBbExternalData([]); })
+      .finally(() => { if (optionReqSeq.current['bb-ext'] === seq) setBbExternalLoading(false); });
+  }, [detail.bb_entries.map(e => `${e.id}|${e.location}|${e.product}|${e.process_id}`).join(','), BbProductOptions, BbProductidOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handleDragEnd = () => {
@@ -1036,24 +1106,19 @@ export default function RequestPage(): React.ReactElement {
 
   // C가문 리전별 조합법 변경 → 해당 리전 제품이름 fetch
   const handleProdcProcessChange = (region: CRegion, value: string) => {
-    if (!detail.line || !value) {
-      if (region === 'top') setTopProductOptions([]);
-      else if (region === 'middle') setMiddleProductOptions([]);
-      else setBottomProductOptions([]);
-      return;
-    }
-    formOptionsAPI.getProducts(detail.line, value)
-      .then((opts) => {
-        if (region === 'top') setTopProductOptions(opts);
-        else if (region === 'middle') setMiddleProductOptions(opts);
-        else setBottomProductOptions(opts);
-      })
-      .catch(() => {
-        if (region === 'top') setTopProductOptions([]);
-        else if (region === 'middle') setMiddleProductOptions([]);
-        else setBottomProductOptions([]);
-      });
+    const apply = (opts: string[]) => {
+      if (region === 'top') setTopProductOptions(opts);
+      else if (region === 'middle') setMiddleProductOptions(opts);
+      else setBottomProductOptions(opts);
+    };
+    // 조합법 변경 시 해당 리전 제품 즉시 초기화
     setDetail((prev) => ({ ...prev, [`prodc_${region}_product`]: '' }));
+    // 제품 조회는 조합법이 옵션에 정확히 존재할 때만(시퀀스 토큰으로 stale 무시)
+    if (detail.line && matchedOrLoading(processOptions, value)) {
+      fetchOptions(`prodc-${region}`, () => formOptionsAPI.getProducts(detail.line, value), apply);
+    } else {
+      apply([]);
+    }
   };
 
   const handleProdcRegionSelect = (region: CRegion) => {
@@ -1701,21 +1766,8 @@ export default function RequestPage(): React.ReactElement {
       ...prev,
       bb_entries: prev.bb_entries.map((e, i) => (i === idx ? { ...e, [field]: value } : e)),
     }));
-
-    if (field === 'process_id' && value) {
-      const updatedEntry = { ...target, process_id: value };
-      formOptionsAPI.getBbExternalData(updatedEntry)
-        .then((result) => {
-          if (result.length > 0) {
-            addToast(t('request.toast_bb_auto_fill', { count: result.length }), 'info');
-          } else {
-            addToast(t('request.toast_bb_no_data'), 'warning');
-          }
-        })
-        .catch(() => {
-          addToast(t('request.toast_bb_error'), 'error');
-        });
-    }
+    // 외부데이터 조회/토스트는 외부데이터 effect가 "조리법이 옵션에 정확히 일치"할 때 한 번만 처리한다.
+    // (여기서 별도 조회하던 토스트 전용 fetch는 이중 조회라 제거 — R-04)
   };
 
   const handleBbEntryAdd = () => {
