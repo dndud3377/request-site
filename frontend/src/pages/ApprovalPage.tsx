@@ -1187,7 +1187,7 @@ export default function ApprovalPage(): React.ReactElement {
                             onClick={() => { setAssigningUserId(u.loginid); setAssignDropdownOpen(false); }}
                           >
                             <strong>{u.name}</strong>
-                            <span className="assign-dropdown-dept">{u.deptname}</span>
+                            <span className="assign-dropdown-dept">{u.mail}</span>
                           </li>
                         ))}
                       </ul>
@@ -1276,7 +1276,7 @@ export default function ApprovalPage(): React.ReactElement {
                             onClick={() => { setAssigningUserId(u.loginid); setAssignDropdownOpen(false); }}
                           >
                             <strong>{u.name}</strong>
-                            <span className="assign-dropdown-dept">{u.deptname}</span>
+                            <span className="assign-dropdown-dept">{u.mail}</span>
                           </li>
                         ))}
                       </ul>

@@ -4093,8 +4093,9 @@ select.form-control option {
 }
 .assign-dropdown-item {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   padding: 7px 10px;
   border-radius: 4px;
   font-size: 0.85rem;
