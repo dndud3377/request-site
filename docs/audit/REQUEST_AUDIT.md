@@ -237,7 +237,14 @@
 - 위치: `index.tsx:1660` `handleBbEntryDelete`; `Step1.tsx:317`(`key={idx}`); 인덱스 키 Record들; `buildAutoFillRows`/`handleApplyMappings`의 `entryIdx`; `Step4.tsx:509`(셀 색)
 - 증상/의심: bb_entries를 인덱스로 관리(행 key·옵션 Record·외부데이터 탭·결과표 `entryIdx`·탭색). 중간 항목 삭제 시 ① 이미 만들어진 bb 행의 `entryIdx`가 옛 인덱스로 남아 **제품·탭색이 어긋나고**, ② React key=인덱스라 입력 포커스/값이 잘못된 행에 붙을 수 있음.
 - 재현/근거: bb_entries 3개로 자동채움/매핑 후 0번 삭제 → 남은 결과행이 가리키는 제품 변경.
-- 심각도: 🟠높음 · 상태: 🔍점검필요 · 결정/메모:
+- 심각도: 🟠높음 · 상태: ✅수정완료
+- 결정/메모 (2026-06-30):
+  - **B안(안정 id) 채택** — bb_entries에 고유 `id` 부여(`makeBbEntry`), bb 행·외부데이터·자동채움 범위를 `entryIdx`(위치) → `entryId`(안정 id)로 식별. 옵션·검색어 캐시도 entry id 키로 전환해 **삭제 시 인덱스 시프트 자체를 제거**. 색상은 `entryId`의 현재 위치로 계산하고, **구버전 저장 문서는 `entryIdx` 폴백**(`PagedDetailView` 렌더+엑셀 내보내기 포함). React key=`entry.id`. 편집 로드 시 구버전 bb_entries `id` 백필 + bb 행 `entryId` 링크.
+  - **삭제 동작 (가):** 삭제한 bb_entry의 결과표 행 제거 + 그 원본 J행 매핑 해제(좌측 목록 재노출, 재매핑 가능). 다른 항목 매핑·색은 유지.
+  - **수정 동작도 R-01에 포함:** 매핑된 bb_entry를 수정(값 실제 변경 시)하면 그 항목의 결과표 행 제거 + J행 매핑 해제(새 데이터로 재매핑 유도, stale 방지). 값 동일 재선택은 무동작.
+  - 검증: `tsc --noEmit` 신규 에러 0(잔여 2건은 tsconfig deprecation 무관). 테스트 러너는 이 환경에 react-scripts/typescript 미설치로 미실행(페이지 테스트 파일 없음).
+  - 커밋: `fix(request): R-01 bb_entries를 안정 id 기반으로 전환 + 삭제/수정 시 매핑 정리`
+  - ※ 당초 별도 신설 검토했던 "bb_entry 수정 시 stale 매핑"은 본 항목에 흡수(별도 R 번호 미생성).
 
 ### [R-02] product_name 빠른 변경 시 바코드 자동매칭 stale-fetch 경합  (관련: F-3.9)
 - 위치: `index.tsx:1202-1213,1219-1239`
@@ -382,3 +389,4 @@ cd frontend && CI=true npx react-scripts test --watchAll=false --passWithNoTests
 - 2026-06-29(2차): 전 Step 컴포넌트 정독 → 기능 전수 카탈로그(PART A, F-1.1~F-X.6) 신설, 버그를 PART B로 분리·기능 연결, R-15~R-18 추가, R-14 정상 확정.
 - 2026-06-29(3차): 보조 컴포넌트(ProdcRow/Mshot/FilterManageModal/Wizard)·공용(AutocompleteInput/FormSelect/useCellSelection)·API 클라이언트·백엔드(serializer/views/models) 정독 → 기능 카탈로그 A-7(F-Y/F-Z) 추가, 버그 R-19~R-24 추가. **R-19(백엔드 매핑 검증 불일치 → 상신 실패)가 최우선 치명 항목.**
 - 2026-06-30: 수정 진행 규칙 명문화(수정 전 계획 제시 + 사용자 승인 필수). R-01 시범 수정 착수분은 승인 절차 정비를 위해 워킹 트리에서 되돌림(미커밋).
+- 2026-06-30: **R-01 ✅수정완료** — B안(안정 entryId) 전환 + 삭제/수정 시 매핑 정리(가). 6개 파일(types/constants/index/Step1/Step4/PagedDetailView) 원자적 커밋, tsc 신규 에러 0.
