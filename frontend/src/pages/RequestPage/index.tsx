@@ -32,6 +32,7 @@ import {
   CRegion,
   genId,
   makeRow,
+  makeBbEntry,
   makeJayerRow,
   makeOayerRow,
   makeBbRow,
@@ -124,8 +125,9 @@ export default function RequestPage(): React.ReactElement {
   const [middleProductOptions, setMiddleProductOptions] = useState<string[]>([]);
   const [bottomProductOptions, setBottomProductOptions] = useState<string[]>([]);
 
-  const [BbProductOptions, setBbProductOptions] = useState<Record<number, string[]>>({});
-  const [BbProductidOptions, setBbProductidOptions] = useState<Record<number, string[]>>({});
+  // bb_entries 옵션 캐시는 위치(index)가 아니라 항목 id로 키한다(삭제 시 시프트 불필요).
+  const [BbProductOptions, setBbProductOptions] = useState<Record<string, string[]>>({});
+  const [BbProductidOptions, setBbProductidOptions] = useState<Record<string, string[]>>({});
 
   const [FlowProductOptions, setFlowProductOptions] = useState<Record<number, string[]>>({});
   const [FlowProcessIdOptions, setFlowProcessIdOptions] = useState<Record<number, string[]>>({});
@@ -162,7 +164,7 @@ export default function RequestPage(): React.ReactElement {
   const [mappedJayerRowIds, setMappedJayerRowIds] = useState<Set<string>>(new Set());
   const [bbAutoFillRanges, setBbAutoFillRanges] = useState<BbAutoFillRange[]>([]);
   const [showAutoFillPanel, setShowAutoFillPanel] = useState(false);
-  const [bbSearchQueries, setBbSearchQueries] = useState<string[]>([]);  // 탭별 검색어
+  const [bbSearchQueries, setBbSearchQueries] = useState<Record<string, string>>({});  // 탭(bb_entry id)별 검색어
   const [jayerChecked, setJayerChecked] = useState<Set<string>>(new Set());
   const [oayerChecked, setOayerChecked] = useState<Set<string>>(new Set());
   const jayerDragInfo = useRef<{ startId: string; mode: 'check' | 'uncheck' } | null>(null);
@@ -384,16 +386,16 @@ export default function RequestPage(): React.ReactElement {
 
 
   useEffect(() => {
-    detail.bb_entries.forEach((entry, idx) => {
+    detail.bb_entries.forEach((entry) => {
       if (!entry.location) {
-        setBbProductOptions((prev) => ({ ...prev, [idx]: [] }));
-        setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
+        setBbProductOptions((prev) => ({ ...prev, [entry.id]: [] }));
+        setBbProductidOptions((prev) => ({ ...prev, [entry.id]: [] }));
         return;
       }
       formOptionsAPI.getProducts(entry.location)
-        .then((opts) => setBbProductOptions((prev) => ({ ...prev, [idx]: opts })))
-        .catch(() => setBbProductOptions((prev) => ({ ...prev, [idx]: [] })));
-      setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
+        .then((opts) => setBbProductOptions((prev) => ({ ...prev, [entry.id]: opts })))
+        .catch(() => setBbProductOptions((prev) => ({ ...prev, [entry.id]: [] })));
+      setBbProductidOptions((prev) => ({ ...prev, [entry.id]: [] }));
     });
   }, [detail.bb_entries.map(e => e.location).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -436,14 +438,14 @@ export default function RequestPage(): React.ReactElement {
   }, [detail.flow_chart.map(e => `${e.location}|${e.process_id}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    detail.bb_entries.forEach((entry, idx) => {
+    detail.bb_entries.forEach((entry) => {
       if (!entry.location || !entry.product) {
-        setBbProductidOptions((prev) => ({ ...prev, [idx]: [] }));
+        setBbProductidOptions((prev) => ({ ...prev, [entry.id]: [] }));
         return;
       }
       formOptionsAPI.getProcessId(entry.location, entry.product)
-        .then((opts) => setBbProductidOptions((prev) => ({ ...prev, [idx]: opts })))
-        .catch(() => setBbProductidOptions((prev) => ({ ...prev, [idx]: [] })));
+        .then((opts) => setBbProductidOptions((prev) => ({ ...prev, [entry.id]: opts })))
+        .catch(() => setBbProductidOptions((prev) => ({ ...prev, [entry.id]: [] })));
     });
   }, [detail.bb_entries.map(e => e.product).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -493,7 +495,15 @@ export default function RequestPage(): React.ReactElement {
           department: doc.requester_department ?? '',
         };
         if (doc.production_date) setProductionDate(doc.production_date);
-        if (parsed.detail) setDetail(parsed.detail);
+        // 구버전 저장 문서의 bb_entries에는 id가 없으므로 로드 시 백필(React key·매핑 식별 안정화).
+        // 백필된 항목 목록은 아래 bbRows의 레거시 entryIdx → entryId 링크에도 사용한다.
+        const loadedBbEntries: { id: string; location: string; product: string; process_id: string }[] =
+          Array.isArray(parsed.detail?.bb_entries)
+            ? parsed.detail.bb_entries.map((e: { id?: string; location: string; product: string; process_id: string }) => ({ ...e, id: e.id ?? genId() }))
+            : [];
+        if (parsed.detail) {
+          setDetail({ ...parsed.detail, bb_entries: loadedBbEntries });
+        }
         if (parsed.jayerRows) {
           const fSets: FilterSet[] = (() => { try { return JSON.parse(localStorage.getItem('jayerFilterSets') ?? '[]'); } catch { return []; } })();
           const savedActiveIds: Set<string> = new Set(Array.isArray(parsed.jayerActiveFilterIds) ? parsed.jayerActiveFilterIds : []);
@@ -524,8 +534,11 @@ export default function RequestPage(): React.ReactElement {
           type LegacyBbRow = Omit<BbTableRow, 'bb_layer' | 'bb_step'> & { bb_layer?: string; bb_step?: string };
           setBbRows(parsed.bbRows.map((r: LegacyBbRow) => {
             const hasBbLayer = r.bb_layer != null;
+            // 레거시 행(entryId 없음, entryIdx만)은 백필된 항목 id로 링크해 위치 비의존 색상/매핑을 재현한다.
+            const entryId = r.entryId ?? (r.entryIdx != null ? loadedBbEntries[r.entryIdx]?.id : undefined);
             return {
               ...r,
+              entryId,
               bb_layer: r.bb_layer ?? r.bb_step ?? '',
               bb_step: hasBbLayer ? (r.bb_step ?? '') : '',
             } as BbTableRow;
@@ -1628,14 +1641,36 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // ===== Bb Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
+  // 특정 bb_entry(id)에서 나온 결과표 행을 제거하고 그 원본 J행 매핑을 해제한다(재매핑 가능).
+  // 항목 삭제/수정 시 stale 매핑이 남지 않도록 공용으로 사용.
+  const clearMappedBbRowsForEntry = (entryId: string) => {
+    if (!bbRows.some((r) => r.entryId === entryId)) return;
+    const removedSourceJayerIds = bbRows
+      .filter((r) => r.entryId === entryId && r.sourceJayerRowId)
+      .map((r) => r.sourceJayerRowId as string);
+    setBbRows((prev) => prev.filter((r) => r.entryId !== entryId));
+    if (removedSourceJayerIds.length > 0) {
+      setMappedJayerRowIds((prev) => {
+        const next = new Set(prev);
+        removedSourceJayerIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    }
+  };
+
   const handleBbEntryChange = (idx: number, field: 'location' | 'product' | 'process_id', value: string) => {
+    const target = detail.bb_entries[idx];
+    if (!target || target[field] === value) return; // 값 변경 없음 → 무동작(매핑 보존)
+    // 매핑된 출처(bb_entry)를 수정하면 그 항목의 결과표 행을 정리하고 원본 J행 매핑을 해제한다.
+    // → 새 제품/조리법 데이터로 다시 매핑하도록 유도(stale 데이터 방지).
+    clearMappedBbRowsForEntry(target.id);
     setDetail((prev) => ({
       ...prev,
       bb_entries: prev.bb_entries.map((e, i) => (i === idx ? { ...e, [field]: value } : e)),
     }));
 
     if (field === 'process_id' && value) {
-      const updatedEntry = { ...detail.bb_entries[idx], process_id: value };
+      const updatedEntry = { ...target, process_id: value };
       formOptionsAPI.getBbExternalData(updatedEntry)
         .then((result) => {
           if (result.length > 0) {
@@ -1653,15 +1688,19 @@ export default function RequestPage(): React.ReactElement {
   const handleBbEntryAdd = () => {
     setDetail((prev) => ({
       ...prev,
-      bb_entries: [...prev.bb_entries, { location: '', product: '', process_id: '' }],
+      bb_entries: [...prev.bb_entries, makeBbEntry()],
     }));
   };
 
+  // bb_entry 삭제: 해당 항목(id)에서 나온 결과표 행 제거 + 원본 J행 매핑 해제(재노출).
+  // entryId가 안정 id이므로 인덱스 시프트가 필요 없다(옵션/검색어 캐시의 잔여 키는 안 읽혀 무해,
+  // bbExternalData·activeBbTab은 [bb_entries] effect가 재조회·탭0으로 재구성).
   const handleBbEntryDelete = (idx: number) => {
-    setDetail((prev) => {
-      if (prev.bb_entries.length <= 1) return prev;
-      return { ...prev, bb_entries: prev.bb_entries.filter((_, i) => i !== idx) };
-    });
+    if (detail.bb_entries.length <= 1) return;
+    const delId = detail.bb_entries[idx].id;
+    clearMappedBbRowsForEntry(delId);
+    setDetail((prev) => ({ ...prev, bb_entries: prev.bb_entries.filter((_, i) => i !== idx) }));
+    setBbAutoFillRanges((prev) => prev.filter((r) => r.entryId !== delId));
   };
 
   // ===== Bb Handlers =====
@@ -1738,7 +1777,7 @@ export default function RequestPage(): React.ReactElement {
         newRow.sd = jr.sd;
         newRow.bb_process_id = ext.bb_process_id;
         newRow.bb_name = formatBbName(ext.location ?? '', ext.bb_name);
-        newRow.entryIdx = ext.entryIdx;
+        newRow.entryId = ext.entryId;
         // 자동 채움(buildAutoFillRows)과 동일하게 layer 컬럼을 외부 데이터의 layerid로 채운다.
         newRow.bb_layer = ext.layerid ?? '';
         newRow.bb_ss = ext.bb_ss;
@@ -1764,15 +1803,15 @@ export default function RequestPage(): React.ReactElement {
     const layerIds = [...new Set(jayerRows.filter(r => !r.disabled && !isNocSpecial(r.new_or_copy) && !mappedJayerRowIds.has(r.id)).map(r => r.layerid).filter(Boolean))]
       .sort((a, b) => parseFloat(a) - parseFloat(b));
 
-    // 제품이 입력된 첫 bb_entries 항목을 기본 선택값(인덱스)으로 시드한다.
-    const firstProductIdx = detail.bb_entries.findIndex(e => e.product);
+    // 제품이 입력된 첫 bb_entries 항목을 기본 선택값(id)으로 시드한다.
+    const firstProductEntry = detail.bb_entries.find(e => e.product);
 
-    if (layerIds.length > 0 && firstProductIdx >= 0) {
+    if (layerIds.length > 0 && firstProductEntry) {
       setBbAutoFillRanges([{
         id: String(Date.now()),
         layerFrom: layerIds[0],
         layerTo: layerIds[layerIds.length - 1],
-        entryIdx: String(firstProductIdx),
+        entryId: firstProductEntry.id,
       }]);
     } else {
       setBbAutoFillRanges([]);
@@ -1781,14 +1820,14 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleAddRange = () => {
-    const firstProductIdx = detail.bb_entries.findIndex(e => e.product);
+    const seedEntry = detail.bb_entries.find(e => e.product) ?? detail.bb_entries[0];
     setBbAutoFillRanges(prev => [
       ...prev,
       {
         id: String(Date.now()),
         layerFrom: '',
         layerTo: '',
-        entryIdx: String(firstProductIdx >= 0 ? firstProductIdx : 0),
+        entryId: seedEntry?.id ?? '',
       },
     ]);
   };
@@ -1806,7 +1845,7 @@ export default function RequestPage(): React.ReactElement {
   const buildAutoFillRows = (): BbTableRow[] => {
     const newBbRows: BbTableRow[] = [];
     bbAutoFillRanges.forEach(range => {
-      if (!range.layerFrom || !range.layerTo || !range.entryIdx) return;
+      if (!range.layerFrom || !range.layerTo || !range.entryId) return;
       const from = parseFloat(range.layerFrom);
       const to = parseFloat(range.layerTo);
       if (isNaN(from) || isNaN(to)) return;
@@ -1818,13 +1857,14 @@ export default function RequestPage(): React.ReactElement {
         return !row.disabled && !isNocSpecial(row.new_or_copy) && !mappedJayerRowIds.has(row.id) && !isNaN(layer) && layer >= from && layer <= to;
       });
 
-      // 선택 항목을 인덱스로 직접 집어 라인+제품을 유일하게 식별한다.
+      // 선택 항목을 안정 id로 집어 라인+제품을 유일하게 식별한다.
       // (제품명만으로 찾으면 라인만 다른 동일 제품을 구분 못 함)
-      const entryIdx = Number(range.entryIdx);
-      const entry = detail.bb_entries[entryIdx];
+      const entryPos = detail.bb_entries.findIndex(e => e.id === range.entryId);
+      const entry = detail.bb_entries[entryPos];
       if (!entry || !entry.product) return;
 
-      const photoSteps = bbExternalData[entryIdx] ?? [];
+      // 외부데이터(bbExternalData)는 위치 배열이므로 현재 위치로 인덱싱한다(매번 effect가 재구성).
+      const photoSteps = bbExternalData[entryPos] ?? [];
       jayerRowsInRange.forEach(jayerRow => {
         const matchedStep = photoSteps.find(step => step.layerid === jayerRow.layerid);
         if (!matchedStep) return;
@@ -1842,7 +1882,7 @@ export default function RequestPage(): React.ReactElement {
           bb_ss: matchedStep.stepseq,
           bb_step: matchedStep.descript,
           remark: '',
-          entryIdx,
+          entryId: entry.id,
         });
       });
     });

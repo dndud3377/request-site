@@ -28,6 +28,14 @@ export type CRegion = 'top' | 'middle' | 'bottom';
 // ===== Row Factories =====
 export const genId = () => `${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
+// Backbone 조합 영역 한 항목(bb_entries). React key·매핑 출처 식별을 위해 항목마다 고유 id를 둔다.
+export const makeBbEntry = (): { id: string; location: string; product: string; process_id: string } => ({
+  id: genId(),
+  location: '',
+  product: '',
+  process_id: '',
+});
+
 export const makeRow = (): FlowChartRow => ({
   id: genId(),
   location: '',
@@ -115,7 +123,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   ea_change: '변경 없음',
   ea_value: '',
   bb_zone: '존재',
-  bb_entries: [{ location: '', product: '', process_id: '' }],
+  bb_entries: [makeBbEntry()],
   only_prodc: 'No',
   prodc_top_line: '',
   prodc_top_process: '',
@@ -182,8 +190,8 @@ export const makeTourDetail = (): DetailFormState => ({
   map_type: 'NEW',
   // BB 자동채움/매핑 데모용 — 외부 데이터 탭 2개와 1:1로 대응한다.
   bb_entries: [
-    { location: '', product: 'BB제품1', process_id: 'BB_R1' },
-    { location: '', product: 'BB제품2', process_id: 'BB_R2' },
+    { ...makeBbEntry(), product: 'BB제품1', process_id: 'BB_R1' },
+    { ...makeBbEntry(), product: 'BB제품2', process_id: 'BB_R2' },
   ],
 });
 

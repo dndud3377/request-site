@@ -16,8 +16,8 @@ interface Step1Props {
   FlowProductOptions: Record<number, string[]>;
   FlowProcessIdOptions: Record<number, string[]>;
   FlowLayerIdOptions: Record<number, string[]>;
-  BbProductOptions: Record<number, string[]>;
-  BbProductidOptions: Record<number, string[]>;
+  BbProductOptions: Record<string, string[]>;
+  BbProductidOptions: Record<string, string[]>;
   refDocLabel: string;
   setRefDocLabel: React.Dispatch<React.SetStateAction<string>>;
   refDocId: number | null;
@@ -315,7 +315,7 @@ const Step1: React.FC<Step1Props> = ({
           {errors.bb_entries && <span className="form-error">{errors.bb_entries}</span>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {detail.bb_entries.map((entry, idx) => (
-              <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+              <div key={entry.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
                 <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                   <label className="form-label">{t('request.bb_ref_line')}</label>
                   <select
@@ -333,7 +333,7 @@ const Step1: React.FC<Step1Props> = ({
                   <AutocompleteInput
                     value={entry.product}
                     onChange={(v) => handleBbEntryChange(idx, 'product', v)}
-                    options={BbProductOptions[idx] || []}
+                    options={BbProductOptions[entry.id] || []}
                     placeholder={t('request.select_placeholder')}
                     style={{ width: '100%' }}
                     disabled={disableOptional}
@@ -344,7 +344,7 @@ const Step1: React.FC<Step1Props> = ({
                   <AutocompleteInput
                     value={entry.process_id}
                     onChange={(v) => handleBbEntryChange(idx, 'process_id', v)}
-                    options={BbProductidOptions[idx] || []}
+                    options={BbProductidOptions[entry.id] || []}
                     placeholder={t('request.select_placeholder')}
                     style={{ width: '100%' }}
                     disabled={disableOptional}

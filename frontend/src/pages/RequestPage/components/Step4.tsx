@@ -19,8 +19,8 @@ interface Step4Props {
   setActiveBbTab: React.Dispatch<React.SetStateAction<number>>;
   detail: DetailFormState;
   errors: Partial<Record<string, string>>;
-  bbSearchQueries: string[];
-  setBbSearchQueries: React.Dispatch<React.SetStateAction<string[]>>;
+  bbSearchQueries: Record<string, string>;
+  setBbSearchQueries: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   stagedMappings: Record<string, ExternalBbDataItem>;
   showAutoFillPanel: boolean;
   setShowAutoFillPanel: React.Dispatch<React.SetStateAction<boolean>>;
@@ -101,10 +101,10 @@ const Step4: React.FC<Step4Props> = ({
     bb_ss: step.stepseq,
     layerid: step.layerid,
     location: currentEntry?.location || '',
-    entryIdx: activeBbTab,
+    entryId: currentEntry?.id,
   }));
 
-  const currentSearchQuery = bbSearchQueries[activeBbTab] || '';
+  const currentSearchQuery = (currentEntry ? bbSearchQueries[currentEntry.id] : '') || '';
   const filteredTabData = currentSearchQuery
     ? currentTabData.filter(item =>
         item.bb_process_id.toLowerCase().includes(currentSearchQuery.toLowerCase()) ||
@@ -118,6 +118,11 @@ const Step4: React.FC<Step4Props> = ({
 
   // 탭이 2개 이상일 때만 탭별 색을 적용한다(1개면 구분 불필요).
   const multiTab = detail.bb_entries.length >= 2;
+
+  // 결과표 행의 색 인덱스: 안정 id(entryId)의 현재 위치를 쓰되, 레거시 행은 entryIdx로 폴백.
+  const entryIds = detail.bb_entries.map(e => e.id);
+  const rowColorIndex = (row: BbTableRow): number =>
+    row.entryId != null ? entryIds.indexOf(row.entryId) : (row.entryIdx ?? -1);
 
   // 자동채움 범위 후보 layer: 원본 목록에 남은(미매핑) 행 기준
   const remainingLayerOptions = [...new Set(
@@ -197,12 +202,12 @@ const Step4: React.FC<Step4Props> = ({
                 />
               </div>
               <select
-                value={range.entryIdx}
-                onChange={(e) => handleRangeChange(range.id, 'entryIdx', e.target.value)}
+                value={range.entryId}
+                onChange={(e) => handleRangeChange(range.id, 'entryId', e.target.value)}
                 style={{ padding: '4px 8px', fontSize: 13, minWidth: 120 }}
               >
-                {detail.bb_entries.map((entry, entryIdx) => (
-                  <option key={entryIdx} value={entryIdx}>
+                {detail.bb_entries.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
                     {`[${entry.location}] ${entry.product}`}
                   </option>
                 ))}
@@ -337,7 +342,7 @@ const Step4: React.FC<Step4Props> = ({
                 : undefined;
               return (
                 <button
-                  key={idx}
+                  key={entry.id}
                   type="button"
                   data-bbtour={`bbtab-${idx}`}
                   className={`bb-tab${isActive && !multiTab ? ' bb-tab-active' : ''}`}
@@ -354,11 +359,11 @@ const Step4: React.FC<Step4Props> = ({
               <input
                 type="text"
                 placeholder="검색어 입력"
-                value={bbSearchQueries[activeBbTab] || ''}
+                value={currentSearchQuery}
                 onChange={(e) => {
-                  const newQueries = [...bbSearchQueries];
-                  newQueries[activeBbTab] = e.target.value;
-                  setBbSearchQueries(newQueries);
+                  if (!currentEntry) return;
+                  const v = e.target.value;
+                  setBbSearchQueries((prev) => ({ ...prev, [currentEntry.id]: v }));
                 }}
                 style={{ padding: '6px 10px', width: '100%', boxSizing: 'border-box' }}
               />
@@ -506,7 +511,7 @@ const Step4: React.FC<Step4Props> = ({
                   <td><input value={row.ss} onChange={(e) => handleBbChange(row.id, 'ss', e.target.value)} /></td>
                   <td><input value={row.sd} onChange={(e) => handleBbChange(row.id, 'sd', e.target.value)} /></td>
                   <td><input value={row.bb_process_id} onChange={(e) => handleBbChange(row.id, 'bb_process_id', e.target.value)} /></td>
-                  <td style={multiTab && row.entryIdx != null ? { backgroundColor: bbTabColor(row.entryIdx) } : undefined}><input value={row.bb_name} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} /></td>
+                  <td style={multiTab && rowColorIndex(row) >= 0 ? { backgroundColor: bbTabColor(rowColorIndex(row)) } : undefined}><input value={row.bb_name} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} /></td>
                   <td><input value={row.bb_layer} onChange={(e) => handleBbChange(row.id, 'bb_layer', e.target.value)} /></td>
                   <td><input value={row.bb_ss} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} /></td>
                   <td><input value={row.bb_step} onChange={(e) => handleBbChange(row.id, 'bb_step', e.target.value)} /></td>
