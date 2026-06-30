@@ -251,7 +251,14 @@
 - 증상/의심: `getBarcodeOptions` 요청에 **취소·순서보장·디바운스가 전무**. product_name이 일반 input이라 **타이핑 매 글자마다 1회씩** 호출되고, 각 응답은 도착 시 `jayerBarcodeCache[id]`와 `item_id`를 덮어쓰는데 **그 응답이 현재 product와 일치하는지 확인하지 않음** → 늦게 온 이전 글자의 응답이 현재값을 덮어써 잘못된/빈 `item_id` + 엉뚱한 바코드 후보 드롭다운이 남을 수 있음.
 - 재현/근거: "ABC" 입력 시 A·AB·ABC 3회 호출 → AB 응답이 ABC보다 늦게 도착하면 item_id가 AB 기준으로 매칭됨. 백엔드가 Impala/ODBC 연동이라 지연 편차가 커 out-of-order 가능성 실재.
 - **심각도(재측정 2026-06-30): 🟡보통 (유지, 상단)** — ▸영향: `item_id`는 상신·저장되는 데이터 필드라 조용히 잘못된 값이 들어갈 수 있음(단 자동매칭은 "후보 정확히 1개"일 때만, 사용자 수동 override 가능, 충돌/손실/상신차단 없음 → 회복 가능). ▸가능성: 매 글자마다 다발 요청 + 지연 편차로 중간 빈도, 단 out-of-order가 있어야 가시화(상시 아님). ▸종합: 손실·치명 아님 → 🟡 유지하되, item_id가 후공정에서 식별키로 쓰여 잘못된 값이 치명적이라면 🟠로 상향 가능(사용자 판단 필요). ▸부수 관찰(효율): 디바운스 부재로 product명 1건 입력에 Impala 백엔드 호출이 글자 수만큼 발생 — 정합성과 별개로 부하 이슈, 같은 수정에서 함께 처리 권장.
-- 상태: 🔍점검필요 · 결정/메모:
+- 상태: ✅수정완료
+- 결정/메모 (2026-06-30):
+  - **행별 요청 시퀀스 토큰(`barcodeReqSeq` ref) 도입** — 각 바코드 조회 직전 그 행의 seq를 +1, 응답 시 `seq` 불일치면 무시 → out-of-order 응답이 최신값을 덮어쓰지 못함. 추가로 응답 적용은 행의 `product_name`이 요청 당시 값과 같을 때만(Delete-clear 등 방어).
+  - **타이핑 디바운스 300ms**(`BARCODE_DEBOUNCE_MS`) — product_name 타이핑 경로의 조회를 디바운스해 Impala 백엔드 중복 호출 감소(부수 관찰 해소). 붙여넣기 경로는 단발이라 즉시 조회 + seq 가드만.
+  - 언마운트 시 디바운스 타이머 정리(`clearTimeout`).
+  - 검증: `tsc --noEmit` 신규 에러 0. (테스트 러너는 환경상 미실행 — R-01 메모 참조.)
+  - 커밋: `fix(request): R-02 바코드 조회 stale-fetch 경합 제거 + 타이핑 디바운스`
+  - 잔여(무시 가능): 조회 in-flight 중 product 셀을 Delete로 비우는 극히 좁은 창에서 캐시가 직전 후보를 잠깐 보유할 수 있으나 item_id는 product-match 가드로 안전, 다음 입력 시 갱신.
 
 ### [R-03] sortOrder=Date.now() 동일값 — 정렬 안정성 의존  (관련: F-1.6, F-3.x, F-5.6)
 - 위치: `constants.ts`(make*Row), 병합 push `index.tsx:1604,1621`
@@ -392,3 +399,4 @@ cd frontend && CI=true npx react-scripts test --watchAll=false --passWithNoTests
 - 2026-06-29(3차): 보조 컴포넌트(ProdcRow/Mshot/FilterManageModal/Wizard)·공용(AutocompleteInput/FormSelect/useCellSelection)·API 클라이언트·백엔드(serializer/views/models) 정독 → 기능 카탈로그 A-7(F-Y/F-Z) 추가, 버그 R-19~R-24 추가. **R-19(백엔드 매핑 검증 불일치 → 상신 실패)가 최우선 치명 항목.**
 - 2026-06-30: 수정 진행 규칙 명문화(수정 전 계획 제시 + 사용자 승인 필수). R-01 시범 수정 착수분은 승인 절차 정비를 위해 워킹 트리에서 되돌림(미커밋).
 - 2026-06-30: **R-01 ✅수정완료** — B안(안정 entryId) 전환 + 삭제/수정 시 매핑 정리(가). 6개 파일(types/constants/index/Step1/Step4/PagedDetailView) 원자적 커밋, tsc 신규 에러 0.
+- 2026-06-30: R-02 심각도 재측정(🟡보통 유지, 상단). **R-02 ✅수정완료** — 행별 시퀀스 토큰으로 stale-fetch 경합 제거 + 타이핑 300ms 디바운스. index.tsx 단일 커밋, tsc 신규 에러 0.
