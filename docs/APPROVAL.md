@@ -216,6 +216,10 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 | `approve_step`(P) | stage_arrival(J) | TE_J 미지정 시 고정 주소 |
 | `approve_step`(J·O·E 전부 합의) | approved | 작성자가 속한 모든 그룹 멤버 전원 |
 | `reject_step`/`peer_reject` | rejected | 요청서 작성자 1명 |
+| `submit`/`resubmit` | notify_submitted | **통보처 전원**(`detail.notifiers`) |
+| `approve_step`(최종 승인) | notify_approved | **통보처 전원**(`detail.notifiers`) |
+
+> **통보처(Notifier)**: 결재 권한 없이 **상신·결재완료** 시점에만 메일을 받는 인원. 최초 상신 모달에서 다중 지정하며 `detail.notifiers=[{loginid,name}]`에 저장(이메일은 발송 시점 조회). 결재 경로에는 포함되지 않고 상세 '결재 경로' 탭에 **별도 '통보처' 행**으로만 표시된다.
 
 > 상세 규칙·환경변수·검증 방법은 `docs/MAIL.md` 참조.
 
