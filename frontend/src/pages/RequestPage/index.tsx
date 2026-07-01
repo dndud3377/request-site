@@ -198,6 +198,14 @@ export default function RequestPage(): React.ReactElement {
   const [designeeError, setDesigneeError] = useState('');
   const designeeInputRef = useRef<HTMLInputElement>(null);
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  // 통보자 다중 지정 (상신 모달) — 결재 권한 없이 상신·결재완료 메일만 받는 인원
+  const [notifierUserOptions, setNotifierUserOptions] = useState<UserWithRole[]>([]);
+  const [notifierSearchQuery, setNotifierSearchQuery] = useState('');
+  const [notifierDropdownOpen, setNotifierDropdownOpen] = useState(false);
+  const [notifierDropdownRect, setNotifierDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const notifierInputRef = useRef<HTMLInputElement>(null);
+  const notifierContainerRef = useRef<HTMLDivElement>(null);
   const prevParsedRef = useRef<{
     detail: DetailFormState;
     jayerRows: JayerRow[];
@@ -502,7 +510,7 @@ export default function RequestPage(): React.ReactElement {
             ? parsed.detail.bb_entries.map((e: { id?: string; location: string; product: string; process_id: string }) => ({ ...e, id: e.id ?? genId() }))
             : [];
         if (parsed.detail) {
-          setDetail({ ...parsed.detail, bb_entries: loadedBbEntries });
+          setDetail({ ...parsed.detail, bb_entries: loadedBbEntries, notifiers: parsed.detail.notifiers ?? [] });
         }
         if (parsed.jayerRows) {
           const fSets: FilterSet[] = (() => { try { return JSON.parse(localStorage.getItem('jayerFilterSets') ?? '[]'); } catch { return []; } })();
@@ -843,6 +851,30 @@ export default function RequestPage(): React.ReactElement {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // 통보자 지정 드롭다운 외부 클릭 감지
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (notifierContainerRef.current && !notifierContainerRef.current.contains(e.target as Node)) {
+        setNotifierDropdownOpen(false);
+        setNotifierDropdownRect(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // 통보자 추가/제거 — detail.notifiers(폼 상태)에 반영되어 상신 시 함께 저장된다.
+  const addNotifier = (u: UserWithRole) => {
+    setDetail((prev) =>
+      (prev.notifiers ?? []).some((n) => n.loginid === u.loginid)
+        ? prev
+        : { ...prev, notifiers: [...(prev.notifiers ?? []), { loginid: u.loginid, name: u.name }] }
+    );
+  };
+  const removeNotifier = (loginid: string) => {
+    setDetail((prev) => ({ ...prev, notifiers: (prev.notifiers ?? []).filter((n) => n.loginid !== loginid) }));
+  };
 
   // Derived booleans for Step 1 conditional rendering
   const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
@@ -2372,10 +2404,22 @@ export default function RequestPage(): React.ReactElement {
         setPlUserOptions([]);
       }
     }
+    // 통보자 후보(전체 사용자) 로드 — 결재 권한과 무관하므로 role 필터 없음
+    if (!isPeerReviewMode && notifierUserOptions.length === 0) {
+      try {
+        const res = await usersAPI.list();
+        setNotifierUserOptions(res.data.filter(u => u.loginid !== currentUser.username));
+      } catch {
+        setNotifierUserOptions([]);
+      }
+    }
     setDesigneeLoginid('');
     setDesigneeName('');
     setDesigneeSearchQuery('');
     setDesigneeError('');
+    setNotifierSearchQuery('');
+    setNotifierDropdownOpen(false);
+    setNotifierDropdownRect(null);
     setConfirmOpen(true);
   };
 
@@ -2810,6 +2854,7 @@ export default function RequestPage(): React.ReactElement {
           />
         </div>
         {!isPeerReviewMode && (
+          <>
           <div className="form-group" data-tour="submit-designee" style={{ marginTop: 12 }}>
             <label className="form-label">
               {t('request.designee_label')} <span style={{ color: 'var(--danger)' }}>*</span>
@@ -2898,6 +2943,96 @@ export default function RequestPage(): React.ReactElement {
               </>
             )}
           </div>
+
+          {/* 통보자: 결재 권한 없이 상신·결재완료 메일만 받는 인원 (다중) */}
+          <div className="form-group" data-tour="submit-notifier" style={{ marginTop: 12 }}>
+            <label className="form-label">{t('request.notifier_label')}</label>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 6px' }}>
+              {t('request.notifier_help')}
+            </p>
+            {(detail.notifiers ?? []).length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                {(detail.notifiers ?? []).map((n) => (
+                  <span
+                    key={n.loginid}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: '0.82rem' }}
+                  >
+                    {n.name}
+                    <button
+                      type="button"
+                      onClick={() => removeNotifier(n.loginid)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 2px', fontSize: '0.85rem', lineHeight: 1 }}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div ref={notifierContainerRef} style={{ position: 'relative' }}>
+              <input
+                ref={notifierInputRef}
+                className="form-control"
+                placeholder={t('request.notifier_placeholder')}
+                value={notifierSearchQuery}
+                onChange={(e) => {
+                  setNotifierSearchQuery(e.target.value);
+                  setNotifierDropdownOpen(true);
+                  if (notifierInputRef.current) {
+                    const r = notifierInputRef.current.getBoundingClientRect();
+                    setNotifierDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                  }
+                }}
+                onFocus={() => {
+                  setNotifierDropdownOpen(true);
+                  if (notifierInputRef.current) {
+                    const r = notifierInputRef.current.getBoundingClientRect();
+                    setNotifierDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                  }
+                }}
+                autoComplete="off"
+              />
+              {notifierDropdownOpen && notifierDropdownRect && createPortal(
+                <div style={{ position: 'fixed', top: notifierDropdownRect.top, left: notifierDropdownRect.left, width: notifierDropdownRect.width, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', zIndex: 9999, maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
+                  {(() => {
+                    const q = notifierSearchQuery.toLowerCase();
+                    const chosen = detail.notifiers ?? [];
+                    const filtered = notifierUserOptions.filter(u =>
+                      !chosen.some(n => n.loginid === u.loginid) &&
+                      (!q ||
+                        u.name.toLowerCase().includes(q) ||
+                        u.loginid.toLowerCase().includes(q) ||
+                        (u.mail ?? '').toLowerCase().includes(q) ||
+                        (u.deptname ?? '').toLowerCase().includes(q))
+                    );
+                    if (filtered.length === 0) {
+                      return <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('request.search_no_result')}</div>;
+                    }
+                    return filtered.map(u => (
+                      <div
+                        key={u.loginid}
+                        style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.875rem', borderBottom: '1px solid var(--border)' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '')}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          addNotifier(u);
+                          setNotifierSearchQuery('');
+                        }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{u.name}</span>
+                        <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>
+                          {u.loginid}{u.mail ? ` · ${u.mail}` : ''}{u.deptname ? ` · ${u.deptname}` : ''}
+                        </span>
+                      </div>
+                    ));
+                  })()}
+                </div>,
+                document.body
+              )}
+            </div>
+          </div>
+          </>
         )}
         </div>
       </Modal>
