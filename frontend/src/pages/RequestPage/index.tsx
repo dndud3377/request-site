@@ -1049,11 +1049,13 @@ export default function RequestPage(): React.ReactElement {
 
   const handleMapTypeSelect = (val: string) => {
     if (val === detail.map_type) return;
-    // 이미 선택된 map_type이 있을 때만 초기화 모달을 띄운다. 첫 선택이면 초기화할 것이 없으므로 바로 적용.
-    if ((val === 'CLONE' || val === 'EXISTING') && detail.map_type) {
+    // 이미 선택된 map_type이 있으면 "어느 값으로 바꾸든" 초기화 모달을 띄운다(R-13).
+    // (기존엔 CLONE/EXISTING 전환만 초기화해 NEW로 바꿀 때 원본 등 StepMap 값이 잔존하던 버그 수정)
+    if (detail.map_type) {
       setMapTypeChangeConfirm({ targetType: val });
       return;
     }
+    // 첫 선택은 초기화할 것이 없으므로 바로 적용.
     setDetail((prev) => ({ ...prev, map_type: val }));
     if (errors['map_type']) setErrors((prev) => ({ ...prev, map_type: '' }));
   };
@@ -2112,12 +2114,13 @@ export default function RequestPage(): React.ReactElement {
       });
       // Only MAP 모드에서는 Backbone 조합 영역 필수 검증을 우회한다.
       if (!isOnlyMap) {
-        const filledBb = detail.bb_entries.filter(
+        // 추가한 항목까지 모두 완전히(위치·제품·조리법) 입력돼야 진행 가능(R-17). 불필요하면 삭제하도록 유도.
+        const allFilled = detail.bb_entries.every(
           (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
         );
-        if (filledBb.length === 0) {
+        if (!allFilled) {
           newErrors['bb_entries'] = t('request.required');
-          errorMessages.push('Backbone 조합 영역: 최소 1개 이상 입력해야 합니다.');
+          errorMessages.push('Backbone 조합 영역: 모든 항목을 입력하거나 불필요한 항목은 삭제하세요.');
         }
       }
     }
@@ -2126,6 +2129,17 @@ export default function RequestPage(): React.ReactElement {
       if (!detail.map_type?.trim()) {
         newErrors['map_type'] = t('request.required');
         errorMessages.push('MAP 요청 목적: 필수 입력 항목입니다.');
+      }
+      // CLONE(차용)은 원본 위치/Part ID가 필수(R-13). EXISTING/NEW는 해당 없음.
+      if (detail.map_type === 'CLONE') {
+        if (!detail.source_line?.trim()) {
+          newErrors['source_line'] = t('request.required');
+          errorMessages.push('원본 위치: 필수 입력 항목입니다.');
+        }
+        if (!detail.source_partid?.trim()) {
+          newErrors['source_partid'] = t('request.required');
+          errorMessages.push('원본 Part ID: 필수 입력 항목입니다.');
+        }
       }
       if (!isMapRegistered) {
       if (detail.only_prodc === 'Yes') {
