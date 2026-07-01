@@ -193,6 +193,8 @@ export default function RequestPage(): React.ReactElement {
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // 편집/지정PL 로드 실패 여부. 로드 실패 시 빈 폼으로 기존 문서를 덮어쓰는 것을 막는다(R-10).
+  const [loadError, setLoadError] = useState(false);
   // 임시저장/자동저장/상신이 동시에 create()를 호출해 의뢰서가 중복 생성되는 race 방지 가드
   const isPersistingRef = useRef(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -630,8 +632,18 @@ export default function RequestPage(): React.ReactElement {
             .filter(Boolean);
           setMappedJayerRowIds(new Set(existingJayerIds));
         }
-      } catch { /* noop */ }
-    }).catch(() => { isLoadingEditRef.current = false; });
+      } catch {
+        // 저장된 JSON 파싱 실패 → 조용히 빈 폼으로 두면 저장/상신 시 기존 문서를 덮어쓸 위험이 있으므로 차단
+        isLoadingEditRef.current = false;
+        setLoadError(true);
+        addToast(t('request.edit_load_failed'), 'error');
+      }
+    }).catch(() => {
+      // 문서 조회(네트워크) 실패 → 동일하게 덮어쓰기 방지
+      isLoadingEditRef.current = false;
+      setLoadError(true);
+      addToast(t('request.edit_load_failed'), 'error');
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editDocId, peerReviewDocId]);
 
@@ -2286,6 +2298,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleSaveDraft = async () => {
+    if (loadError) { addToast(t('request.edit_load_failed'), 'error'); return; } // 로드 실패 시 덮어쓰기 차단(R-10)
     if (isPersistingRef.current) return;
     isPersistingRef.current = true;
     setSaving(true);
@@ -2464,6 +2477,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleSubmit = async () => {
+    if (loadError) { addToast(t('request.edit_load_failed'), 'error'); return; } // 로드 실패 시 덮어쓰기 차단(R-10)
     // peer review 모드 외 일반 상신: 지정자 필수
     if (!isPeerReviewMode && !designeeLoginid) {
       setDesigneeError(t('request.designee_required'));
@@ -2475,28 +2489,30 @@ export default function RequestPage(): React.ReactElement {
     try {
       let docId = savedId;
 
-      const enriched = buildEnrichedForm(submitNote, false);
-      if (!docId) {
-        const res = await documentsAPI.create(enriched);
-        docId = res.data.id;
-        setSavedId(docId);
-      } else {
-        await documentsAPI.update(docId, enriched);
-      }
-
       if (isPeerReviewMode) {
-        // 지정 PL 수정 후 상신
-        const enrichedWithHistory = buildEnrichedForm(submitNote, true);
-        await documentsAPI.update(docId!, enrichedWithHistory);
+        // 지정 PL 수정 후 상신: history 포함본으로 1회만 저장(중복 update 제거 — R-09)
+        const enriched = buildEnrichedForm(submitNote, true);
+        if (!docId) {
+          const res = await documentsAPI.create(enriched);
+          docId = res.data.id;
+          setSavedId(docId);
+        } else {
+          await documentsAPI.update(docId, enriched);
+        }
         await documentsAPI.peerSubmit(docId!, submitNote || undefined);
         addToast('수정 후 상신되었습니다.', 'success');
       } else {
-        const doc = await documentsAPI.get(docId!);
-        const isRejected = doc.data.status === 'rejected';
-
+        // 기존 문서면 반려 여부만 조회(신규는 draft라 재상신 아님). update는 경로당 1회.
+        const isRejected = docId ? (await documentsAPI.get(docId)).data.status === 'rejected' : false;
+        const enriched = buildEnrichedForm(submitNote, isRejected); // 재상신일 때만 history 누적
+        if (!docId) {
+          const res = await documentsAPI.create(enriched);
+          docId = res.data.id;
+          setSavedId(docId);
+        } else {
+          await documentsAPI.update(docId, enriched);
+        }
         if (isRejected) {
-          const enrichedWithHistory = buildEnrichedForm(submitNote, true);
-          await documentsAPI.update(docId!, enrichedWithHistory);
           await documentsAPI.resubmit(docId!, designeeLoginid);
           addToast('재상신되었습니다.', 'success');
         } else {
@@ -2757,7 +2773,7 @@ export default function RequestPage(): React.ReactElement {
           </button>
         )}
         <div style={{ display: 'flex', gap: '12px' }}>
-          <button className="btn btn-secondary" onClick={handleSaveDraft} disabled={saving}>
+          <button className="btn btn-secondary" onClick={handleSaveDraft} disabled={saving || loadError}>
             💾 {saving ? t('common.loading') : t('request.save_draft')}
           </button>
           {step < 5 ? (
@@ -2765,7 +2781,7 @@ export default function RequestPage(): React.ReactElement {
               다음 →
             </button>
           ) : (
-            <button className="btn btn-primary" onClick={handleSubmitClick} disabled={submitting}>
+            <button className="btn btn-primary" onClick={handleSubmitClick} disabled={submitting || loadError}>
               📤 {submitting ? t('common.loading') : t('request.submit')}
             </button>
           )}
