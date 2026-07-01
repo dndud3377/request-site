@@ -125,11 +125,12 @@ const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
   const maxRound = getCurrentRound(doc);
   const currentSteps = (doc.approval_steps ?? []).filter(s => (s.round ?? 1) === maxRound);
 
-  // PL 검토 단계 pending: 기한 없음, R 단계 미생성 상태
-  const plStep = currentSteps.find(s => s.agent === 'PL');
-  if (plStep?.action === 'pending') {
+  // PL 검토 단계 pending: 기한 없음, R 단계 미생성 상태 (다중 PL은 아직 미합의자만 표시)
+  const plPending = currentSteps.filter(s => s.agent === 'PL' && s.action === 'pending');
+  if (plPending.length > 0) {
     const label = t('approval.agent_PL' as any);
-    const stageText = plStep.assignee_name ? `${label}(${plStep.assignee_name})` : label;
+    const names = plPending.map(s => s.assignee_name).filter(Boolean);
+    const stageText = names.length > 0 ? `${label}(${names.join(' / ')})` : label;
     return [{
       pathKey: 'single',
       stageText,
@@ -310,7 +311,10 @@ export default function ApprovalPage(): React.ReactElement {
       if (role === 'PL') {
         return all.filter((d) =>
           d.requester_name === currentUser.name ||
-          d.designated_pl_loginid === currentUser.username
+          d.designated_pl_loginid === currentUser.username ||
+          (d.approval_steps ?? []).some(
+            (s) => s.agent === 'PL' && s.assignee_loginid === currentUser.username
+          )
         );
       }
       if (role === 'NONE' || !role) return [];
@@ -344,7 +348,8 @@ export default function ApprovalPage(): React.ReactElement {
       if (role === 'MASTER') return base.length;
       if (role === 'PL') return base.filter(d =>
         d.requester_name === currentUser.name ||
-        d.designated_pl_loginid === currentUser.username
+        d.designated_pl_loginid === currentUser.username ||
+        (d.approval_steps ?? []).some(s => s.agent === 'PL' && s.assignee_loginid === currentUser.username)
       ).length;
       if (role === 'NONE' || !role) return 0;
       return base.filter(d => (d.approval_steps ?? []).some(s => s.action === 'pending' && s.assignee_loginid === currentUser.username)).length;
@@ -1187,7 +1192,7 @@ export default function ApprovalPage(): React.ReactElement {
                             onClick={() => { setAssigningUserId(u.loginid); setAssignDropdownOpen(false); }}
                           >
                             <strong>{u.name}</strong>
-                            <span className="assign-dropdown-dept">{u.deptname}</span>
+                            <span className="assign-dropdown-dept">{u.mail}</span>
                           </li>
                         ))}
                       </ul>
@@ -1276,7 +1281,7 @@ export default function ApprovalPage(): React.ReactElement {
                             onClick={() => { setAssigningUserId(u.loginid); setAssignDropdownOpen(false); }}
                           >
                             <strong>{u.name}</strong>
-                            <span className="assign-dropdown-dept">{u.deptname}</span>
+                            <span className="assign-dropdown-dept">{u.mail}</span>
                           </li>
                         ))}
                       </ul>

@@ -66,22 +66,23 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 > 판정값 `request_purpose`는 `additional_notes` JSON의 `detail` 하위에 저장된다
 > (상수 `RequestDocument.ONLY_MAP_PURPOSE = 'Only MAP'`).
 
-### Case A — 상신 (`submit`, `views.py:100`)
+### Case A — 상신 (`submit`)
 - 조건: `status == 'draft'`, **지정 PL 필수**(role='PL'인 사용자, **본인 지정 불가**), `_validate_bb_mapping` 통과.
-- 동작: `status → under_review`, `submitted_at` 기록, 기존 step 전체 삭제 후 `agent='PL', round=1` pending 생성.
-- ⚠️ `_validate_bb_mapping`(`views.py:81`): "활성 + `process_id` 있는 J-layer 행은 모두 Bb 매핑 필수". **단 `additional_notes` JSON 파싱 실패 시 검증을 건너뛴다(통과 처리)** — 의도 확인 필요.
+- ✅ **다중 지정 PL(2026-07)**: payload `designated_pl_loginids: [...]`(배열, 단일 `designated_pl_loginid` 도 호환). 지정 PL **전원**에 대해 `agent='PL', round=1` pending step을 각각 생성한다(`_resolve_designated_pls`로 파싱·검증). `document.designated_pl` FK 에는 **대표(첫 번째)** 만 기록(표시/하위호환용).
+- 동작: `status → under_review`, `submitted_at` 기록, 기존 step 전체 삭제 후 PL step N개 생성. 통보처(있으면) 상신 메일 발송.
+- ⚠️ `_validate_bb_mapping`: "활성 + `process_id` 있는 J-layer 행은 모두 Bb 매핑 필수". **단 `additional_notes` JSON 파싱 실패 시 검증을 건너뛴다(통과 처리)** — 의도 확인 필요.
 
-### Case B — PL 검토 합의 (`peer_approve`, `views.py:368`)
-- 권한: **MASTER 또는 해당 PL 단계의 assignee 본인만**(`views.py:379`).
-- 동작: PL step `approved` → `agent='R'` pending 생성, `status=under_review`.
+### Case B — PL 검토 합의 (`peer_approve`)
+- 권한: **MASTER 또는 해당 PL 단계의 assignee 본인만**(`_get_caller_pl_step`가 호출자 담당 pending PL step을 찾음).
+- ✅ **다중 PL 전원 합의(2026-07)**: 본인 PL step만 `approved` 처리 후, 현재 회차 **PL step 전원이 approved** 일 때만 `agent='R'` pending 생성(`_advance_after_pl`, 문서 행 `select_for_update` 락으로 R 중복/누락 방지). 아직 미합의 PL이 있으면 `under_review` 유지(R 미생성).
 
-### Case C — PL 검토 반려 (`peer_reject`, `views.py:396`)
+### Case C — PL 검토 반려 (`peer_reject`)
 - 권한: MASTER 또는 assignee 본인.
-- 동작: PL step `rejected`, `status → rejected`.
+- 동작: 본인 PL step `rejected` → `status → rejected`(**다중 PL 중 1명이라도 반려하면 즉시 반려**).
 
-### Case D — PL 수정 후 상신 (`peer_submit`, `views.py:421`)
-- 권한: MASTER 또는 assignee 본인. 문서 내용은 사전에 `/request` 화면에서 수정·update됨.
-- 동작: 합의와 동일(R 생성)하되 comment 앞에 `[수정 후 상신]` 태그.
+### Case D — PL 수정 후 상신 (`peer_submit`)
+- 권한: MASTER 또는 (현재 회차 pending PL step) assignee 본인. 문서 내용은 사전에 `/request` 화면에서 수정·update됨(`can_edit` under_review 분기가 pending PL 담당자 전원 허용).
+- 동작: 본인 PL step `approved`(comment 앞 `[수정 후 상신]` 태그) → Case B와 동일하게 **전원 합의 시에만** R 생성.
 
 ### Case E — R 합의 (`approve_step` agent='R', `views.py:250`)
 - 동작: R `approved` → **P(due: R당일 포함 4영업일), O(due: 6영업일, 병렬)** 동시 생성.
@@ -104,9 +105,10 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 ### Case H — 단계 반려 (`reject_step`, `views.py:312`)
 - 동작: 어느 단계든 해당 step `rejected`, `status → rejected`(즉시).
 
-### Case I — 재상신 (`resubmit`, `views.py:145`)
+### Case I — 재상신 (`resubmit`)
 - 조건: `status == 'rejected'`, 지정 PL 필수(본인 불가), bb 매핑 통과.
 - 동작: `status → under_review`, **max(round)+1**로 새 PL pending 생성. 이전 round step은 이력으로 보존.
+- ✅ **다중 지정 PL(2026-07)**: Case A와 동일하게 `designated_pl_loginids` 배열을 받아 새 회차에 PL step **전원**을 생성한다(전원 합의).
 
 ### Case J — 철회 (`withdraw`, `views.py:189`)
 - 조건: status가 under_review/rejected/submitted.
@@ -127,6 +129,7 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 
 ### Case L — 지정 PL 변경 (`change_designee`)
 - 권한: **의뢰자 본인 또는 MASTER만**. 현재 회차 PL step의 assignee 교체.
+- ⚠️ **다중 PL 미대응(보류)**: 현재는 `_get_pending_pl_step`(첫 pending PL step, = 대표)만 1:1 교체한다. 다중 PL 중 특정 담당자 지정 스왑은 후속 작업으로 보류(2026-07).
 
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)
 - start_date(당일 포함) 기준 n번째 영업일. 주말 + `Holiday(isholiday='Y')` 제외.
@@ -144,7 +147,7 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 - 전체 / 내 차례(my) / agent별(R·P·J·O·E) / 임시저장(draft) / 반려(rejected).
 
 ### 3.3 현재 단계 표시 (`getDocTableRows`, `:120`)
-- **PL 검토 pending**: "PL 검토(담당자명)" 단일 행, 기한 없음.
+- **PL 검토 pending**: "PL 검토(담당자명)" 단일 행, 기한 없음. **다중 PL이면 아직 미합의한 담당자명을 ` / `로 연결** 표시.
 - **R 미합의**: R 단계 단일 행(담당자 유무로 상태 결정).
 - **R 합의 후(병렬)**: 한 의뢰서를 **2행**으로 분리 표시 — path1(P/J), path2(O[/E]). rowSpan으로 좌측 공통열 병합.
   - path1 단계 텍스트: 현재 pending인 P 또는 J(다중이면 `담당자1 / 담당자2`로 연결). 둘 다 끝나면 "결재완료".
@@ -210,12 +213,16 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 
 | 전이(액션) | 메일 이벤트 | 수신자 |
 |-----------|-----------|--------|
-| `submit`/`resubmit` | stage_arrival(PL) | 지정 PL 1명 |
+| `submit`/`resubmit` | stage_arrival(PL) | 지정 PL **전원**(각 PL step별 발송) |
 | `peer_approve`/`peer_submit` | stage_arrival(R) | TE_R 미지정 시 고정 주소 |
 | `approve_step`(R) | stage_arrival(P·O[·E]) | P 고정 주소 / O·E 팀 전원 |
 | `approve_step`(P) | stage_arrival(J) | TE_J 미지정 시 고정 주소 |
 | `approve_step`(J·O·E 전부 합의) | approved | 작성자가 속한 모든 그룹 멤버 전원 |
 | `reject_step`/`peer_reject` | rejected | 요청서 작성자 1명 |
+| `submit`/`resubmit` | notify_submitted | **통보처 전원**(`detail.notifiers`) |
+| `approve_step`(최종 승인) | notify_approved | **통보처 전원**(`detail.notifiers`) |
+
+> **통보처(Notifier)**: 결재 권한 없이 **상신·결재완료** 시점에만 메일을 받는 인원. 최초 상신 모달에서 다중 지정하며 `detail.notifiers=[{loginid,name}]`에 저장(이메일은 발송 시점 조회). 결재 경로에는 포함되지 않고 상세 '결재 경로' 탭에 **별도 '통보처' 행**으로만 표시된다.
 
 > 상세 규칙·환경변수·검증 방법은 `docs/MAIL.md` 참조.
 

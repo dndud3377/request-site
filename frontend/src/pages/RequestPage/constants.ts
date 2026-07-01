@@ -155,6 +155,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   partial_shot: '',
   tbvtlv_thickness: '',
   tbvtlv_entries: [],
+  notifiers: [],
 };
 
 export const INITIAL_FORM: CreateDocumentInput = {
