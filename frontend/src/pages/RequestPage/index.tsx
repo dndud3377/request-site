@@ -132,9 +132,10 @@ export default function RequestPage(): React.ReactElement {
   const [BbProductOptions, setBbProductOptions] = useState<Record<string, string[]>>({});
   const [BbProductidOptions, setBbProductidOptions] = useState<Record<string, string[]>>({});
 
-  const [FlowProductOptions, setFlowProductOptions] = useState<Record<number, string[]>>({});
-  const [FlowProcessIdOptions, setFlowProcessIdOptions] = useState<Record<number, string[]>>({});
-  const [FlowLayerIdOptions, setFlowLayerIdOptions] = useState<Record<number, string[]>>({});
+  // flow_chart 옵션 캐시도 위치(index)가 아니라 행 id로 키한다(중간 행 삭제 시 시프트/깜빡임 방지 — R-12).
+  const [FlowProductOptions, setFlowProductOptions] = useState<Record<string, string[]>>({});
+  const [FlowProcessIdOptions, setFlowProcessIdOptions] = useState<Record<string, string[]>>({});
+  const [FlowLayerIdOptions, setFlowLayerIdOptions] = useState<Record<string, string[]>>({});
 
   const [step, setStep] = useState(isTourMode ? initialTourStep : 1);
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
@@ -443,43 +444,43 @@ export default function RequestPage(): React.ReactElement {
   }, [detail.bb_entries.map(e => e.location).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    detail.flow_chart.forEach((entry, idx) => {
+    detail.flow_chart.forEach((entry) => {
       if (!entry.location) {
-        setFlowProductOptions((prev) => ({ ...prev, [idx]: [] }));
+        setFlowProductOptions((prev) => ({ ...prev, [entry.id]: [] }));
         return;
       }
       formOptionsAPI.getProducts(entry.location)
-        .then((opts) => setFlowProductOptions((prev) => ({ ...prev, [idx]: opts })))
-        .catch(() => setFlowProductOptions((prev) => ({ ...prev, [idx]: [] })));
+        .then((opts) => setFlowProductOptions((prev) => ({ ...prev, [entry.id]: opts })))
+        .catch(() => setFlowProductOptions((prev) => ({ ...prev, [entry.id]: [] })));
     });
   }, [detail.flow_chart.map(e => e.location).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    detail.flow_chart.forEach((entry, idx) => {
+    detail.flow_chart.forEach((entry) => {
       // 제품이 해당 행 옵션에 정확히 일치할 때만 조리법 조회(시퀀스 토큰으로 stale 무시)
-      if (entry.location && matchedOrLoading(FlowProductOptions[idx] ?? [], entry.product_name)) {
+      if (entry.location && matchedOrLoading(FlowProductOptions[entry.id] ?? [], entry.product_name)) {
         fetchOptions(
-          `flow-pid-${idx}`,
+          `flow-pid-${entry.id}`,
           () => formOptionsAPI.getProcessId(entry.location, entry.product_name),
-          (opts) => setFlowProcessIdOptions((prev) => ({ ...prev, [idx]: opts })),
+          (opts) => setFlowProcessIdOptions((prev) => ({ ...prev, [entry.id]: opts })),
         );
       } else {
-        setFlowProcessIdOptions((prev) => ({ ...prev, [idx]: [] }));
+        setFlowProcessIdOptions((prev) => ({ ...prev, [entry.id]: [] }));
       }
     });
   }, [detail.flow_chart.map(e => `${e.location}|${e.product_name}`).join(','), FlowProductOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    detail.flow_chart.forEach((entry, idx) => {
+    detail.flow_chart.forEach((entry) => {
       // 조리법이 해당 행 옵션에 정확히 일치할 때만 Layer 조회
-      if (entry.location && matchedOrLoading(FlowProcessIdOptions[idx] ?? [], entry.process_id)) {
+      if (entry.location && matchedOrLoading(FlowProcessIdOptions[entry.id] ?? [], entry.process_id)) {
         fetchOptions(
-          `flow-layer-${idx}`,
+          `flow-layer-${entry.id}`,
           () => formOptionsAPI.getLayerIds(entry.location, entry.process_id),
-          (opts) => setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: opts })),
+          (opts) => setFlowLayerIdOptions((prev) => ({ ...prev, [entry.id]: opts })),
         );
       } else {
-        setFlowLayerIdOptions((prev) => ({ ...prev, [idx]: [] }));
+        setFlowLayerIdOptions((prev) => ({ ...prev, [entry.id]: [] }));
       }
     });
   }, [detail.flow_chart.map(e => `${e.location}|${e.process_id}`).join(','), FlowProcessIdOptions]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -555,6 +556,34 @@ export default function RequestPage(): React.ReactElement {
     const timers = barcodeDebounceTimers.current;
     return () => { Object.values(timers).forEach((tm) => clearTimeout(tm)); };
   }, []);
+
+  // TBV/TLV 항목은 활성 O-layer의 TBV/TLV SD에만 유효하다. 해당 SD 행이 비활성화/삭제/변경되면
+  // 그 항목을 영구 삭제하고(R-16), 선택 중이던 draft SD도 정리한다(복원해도 되돌아오지 않음 — 사용자 결정).
+  useEffect(() => {
+    const activeTbvtlvSds = new Set(
+      oayerRows
+        .filter((r) => !r.disabled && (r.sd.toUpperCase().includes('TBV') || r.sd.toUpperCase().includes('TLV')))
+        .map((r) => r.sd)
+    );
+    setDetail((prev) => {
+      const entries = prev.tbvtlv_entries ?? [];
+      if (entries.length === 0) return prev;
+      const pruned = entries
+        .map((e) => ({ ...e, sds: e.sds.filter((sd) => activeTbvtlvSds.has(sd)) }))
+        .filter((e) => e.sds.length > 0);
+      let changed = pruned.length !== entries.length;
+      if (!changed) {
+        for (let i = 0; i < entries.length; i += 1) {
+          if (entries[i].sds.length !== pruned[i].sds.length) { changed = true; break; }
+        }
+      }
+      return changed ? { ...prev, tbvtlv_entries: pruned } : prev;
+    });
+    setTbvtlvSdsSelected((prev) => {
+      const next = prev.filter((sd) => activeTbvtlvSds.has(sd));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [oayerRows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 편집 모드 (반려 재상신 or 지정 PL 수정 후 상신): 기존 문서 데이터 로드
   useEffect(() => {
