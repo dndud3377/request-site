@@ -95,8 +95,7 @@ export interface TourSnapshot {
   activeBbTab: number;
   confirmOpen: boolean;
   submitNote: string;
-  designeeLoginid: string;
-  designeeName: string;
+  designees: { loginid: string; name: string }[];
 }
 
 // ===== Main Component =====
@@ -202,9 +201,8 @@ export default function RequestPage(): React.ReactElement {
   const [submitNote, setSubmitNote] = useState('');
   const [savedId, setSavedId] = useState<number | null>(editDocId ?? peerReviewDocId);
 
-  // 동료 PL 지정 (상신 모달)
-  const [designeeLoginid, setDesigneeLoginid] = useState('');
-  const [designeeName, setDesigneeName] = useState('');
+  // 동료 PL 지정 (상신 모달) — 다중 지정(전원 합의)
+  const [designees, setDesignees] = useState<{ loginid: string; name: string }[]>([]);
   const [designeeSearchQuery, setDesigneeSearchQuery] = useState('');
   const [designeeDropdownOpen, setDesigneeDropdownOpen] = useState(false);
   const [plUserOptions, setPlUserOptions] = useState<UserWithRole[]>([]);
@@ -212,6 +210,14 @@ export default function RequestPage(): React.ReactElement {
   const [designeeError, setDesigneeError] = useState('');
   const designeeInputRef = useRef<HTMLInputElement>(null);
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  // 통보자 다중 지정 (상신 모달) — 결재 권한 없이 상신·결재완료 메일만 받는 인원
+  const [notifierUserOptions, setNotifierUserOptions] = useState<UserWithRole[]>([]);
+  const [notifierSearchQuery, setNotifierSearchQuery] = useState('');
+  const [notifierDropdownOpen, setNotifierDropdownOpen] = useState(false);
+  const [notifierDropdownRect, setNotifierDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const notifierInputRef = useRef<HTMLInputElement>(null);
+  const notifierContainerRef = useRef<HTMLDivElement>(null);
   const prevParsedRef = useRef<{
     detail: DetailFormState;
     jayerRows: JayerRow[];
@@ -615,7 +621,7 @@ export default function RequestPage(): React.ReactElement {
             ? parsed.detail.bb_entries.map((e: { id?: string; location: string; product: string; process_id: string }) => ({ ...e, id: e.id ?? genId() }))
             : [];
         if (parsed.detail) {
-          setDetail({ ...parsed.detail, bb_entries: loadedBbEntries });
+          setDetail({ ...parsed.detail, bb_entries: loadedBbEntries, notifiers: parsed.detail.notifiers ?? [] });
         }
         if (parsed.jayerRows) {
           const fSets: FilterSet[] = (() => { try { return JSON.parse(localStorage.getItem('jayerFilterSets') ?? '[]'); } catch { return []; } })();
@@ -834,8 +840,7 @@ export default function RequestPage(): React.ReactElement {
 
     const openSubmitDemo = () => {
       setSubmitNote(t('guide.tour.steps.request.flow.submit_note_sample'));
-      setDesigneeLoginid('tour-reviewer');
-      setDesigneeName(t('guide.tour.steps.request.flow.submit_designee_sample'));
+      setDesignees([{ loginid: 'tour-reviewer', name: t('guide.tour.steps.request.flow.submit_designee_sample') }]);
       setConfirmOpen(true);
     };
 
@@ -853,8 +858,7 @@ export default function RequestPage(): React.ReactElement {
       setActiveBbTab(s.activeBbTab);
       setConfirmOpen(s.confirmOpen);
       setSubmitNote(s.submitNote);
-      setDesigneeLoginid(s.designeeLoginid);
-      setDesigneeName(s.designeeName);
+      setDesignees(s.designees);
       // 임시 커서/칩 오버레이는 항상 정리
       setTourJCursor(null);
       setTourJChip(null);
@@ -966,6 +970,43 @@ export default function RequestPage(): React.ReactElement {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // 통보자 지정 드롭다운 외부 클릭 감지
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (notifierContainerRef.current && !notifierContainerRef.current.contains(e.target as Node)) {
+        setNotifierDropdownOpen(false);
+        setNotifierDropdownRect(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // 지정 PL 추가/제거 (다중, 전원 합의)
+  const addDesignee = (u: UserWithRole) => {
+    setDesignees((prev) =>
+      prev.some((d) => d.loginid === u.loginid)
+        ? prev
+        : [...prev, { loginid: u.loginid, name: `${u.name} (${u.deptname})` }]
+    );
+    setDesigneeError('');
+  };
+  const removeDesignee = (loginid: string) => {
+    setDesignees((prev) => prev.filter((d) => d.loginid !== loginid));
+  };
+
+  // 통보자 추가/제거 — detail.notifiers(폼 상태)에 반영되어 상신 시 함께 저장된다.
+  const addNotifier = (u: UserWithRole) => {
+    setDetail((prev) =>
+      (prev.notifiers ?? []).some((n) => n.loginid === u.loginid)
+        ? prev
+        : { ...prev, notifiers: [...(prev.notifiers ?? []), { loginid: u.loginid, name: u.name }] }
+    );
+  };
+  const removeNotifier = (loginid: string) => {
+    setDetail((prev) => ({ ...prev, notifiers: (prev.notifiers ?? []).filter((n) => n.loginid !== loginid) }));
+  };
 
   // Derived booleans for Step 1 conditional rendering
   const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
@@ -2075,8 +2116,7 @@ export default function RequestPage(): React.ReactElement {
       activeBbTab,
       confirmOpen,
       submitNote,
-      designeeLoginid,
-      designeeName,
+      designees,
     };
   }
 
@@ -2512,17 +2552,28 @@ export default function RequestPage(): React.ReactElement {
         setPlUserOptions([]);
       }
     }
-    setDesigneeLoginid('');
-    setDesigneeName('');
+    // 통보자 후보(전체 사용자) 로드 — 결재 권한과 무관하므로 role 필터 없음
+    if (!isPeerReviewMode && notifierUserOptions.length === 0) {
+      try {
+        const res = await usersAPI.list();
+        setNotifierUserOptions(res.data.filter(u => u.loginid !== currentUser.username));
+      } catch {
+        setNotifierUserOptions([]);
+      }
+    }
+    setDesignees([]);
     setDesigneeSearchQuery('');
     setDesigneeError('');
+    setNotifierSearchQuery('');
+    setNotifierDropdownOpen(false);
+    setNotifierDropdownRect(null);
     setConfirmOpen(true);
   };
 
   const handleSubmit = async () => {
     if (loadError) { addToast(t('request.edit_load_failed'), 'error'); return; } // 로드 실패 시 덮어쓰기 차단(R-10)
-    // peer review 모드 외 일반 상신: 지정자 필수
-    if (!isPeerReviewMode && !designeeLoginid) {
+    // peer review 모드 외 일반 상신: 지정자(1명 이상) 필수
+    if (!isPeerReviewMode && designees.length === 0) {
       setDesigneeError(t('request.designee_required'));
       return;
     }
@@ -2556,10 +2607,11 @@ export default function RequestPage(): React.ReactElement {
           await documentsAPI.update(docId, enriched);
         }
         if (isRejected) {
-          await documentsAPI.resubmit(docId!, designeeLoginid);
+          // R-09: 위에서 enriched(history 포함)로 이미 1회 update했으므로 중복 update 없이 재상신
+          await documentsAPI.resubmit(docId!, designees.map(d => d.loginid));
           addToast('재상신되었습니다.', 'success');
         } else {
-          const submitRes = await documentsAPI.submit(docId!, designeeLoginid);
+          const submitRes = await documentsAPI.submit(docId!, designees.map(d => d.loginid));
           addToast(t('request.submit_success'), 'success');
           if (submitRes.data.email_sent) {
             setTimeout(() => addToast(t('request.messenger_sent_to_manager'), 'info'), 800);
@@ -2934,7 +2986,7 @@ export default function RequestPage(): React.ReactElement {
             <button
               className="btn btn-primary"
               onClick={handleSubmit}
-              disabled={submitting || (!isPeerReviewMode && !designeeLoginid)}
+              disabled={submitting || (!isPeerReviewMode && designees.length === 0)}
             >
               📤 {submitting ? t('common.loading') : (isPeerReviewMode ? t('approval.peer_submit') : t('request.submit'))}
             </button>
@@ -2953,94 +3005,189 @@ export default function RequestPage(): React.ReactElement {
           />
         </div>
         {!isPeerReviewMode && (
+          <>
           <div className="form-group" data-tour="submit-designee" style={{ marginTop: 12 }}>
             <label className="form-label">
               {t('request.designee_label')} <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
-            {designeeLoginid ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-secondary)', padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                <span style={{ flex: 1, fontSize: '0.875rem' }}>✓ {designeeName}</span>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  style={{ padding: '2px 8px', fontSize: '0.75rem' }}
-                  onClick={() => { setDesigneeLoginid(''); setDesigneeName(''); setDesigneeSearchQuery(''); setDesigneeDropdownOpen(false); setDropdownRect(null); }}
-                >
-                  ✕
-                </button>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 6px' }}>
+              {t('request.designee_help')}
+            </p>
+            {designees.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                {designees.map((d) => (
+                  <span
+                    key={d.loginid}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: '0.82rem' }}
+                  >
+                    {d.name}
+                    <button
+                      type="button"
+                      onClick={() => removeDesignee(d.loginid)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 2px', fontSize: '0.85rem', lineHeight: 1 }}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
               </div>
-            ) : (
-              <>
-                <div ref={designeeContainerRef} style={{ position: 'relative' }}>
-                  <input
-                    ref={designeeInputRef}
-                    className="form-control"
-                    placeholder={t('request.designee_placeholder')}
-                    value={designeeSearchQuery}
-                    onChange={(e) => {
-                      setDesigneeSearchQuery(e.target.value);
-                      setDesigneeError('');
-                      setDesigneeDropdownOpen(true);
-                      if (designeeInputRef.current) {
-                        const r = designeeInputRef.current.getBoundingClientRect();
-                        setDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
-                      }
-                    }}
-                    onFocus={() => {
-                      setDesigneeDropdownOpen(true);
-                      if (designeeInputRef.current) {
-                        const r = designeeInputRef.current.getBoundingClientRect();
-                        setDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
-                      }
-                    }}
-                    autoComplete="off"
-                  />
-                  {designeeDropdownOpen && dropdownRect && createPortal(
-                    <div style={{ position: 'fixed', top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', zIndex: 9999, maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
-                      {(() => {
-                        const q = designeeSearchQuery.toLowerCase();
-                        const filtered = plUserOptions.filter(u =>
-                          !q ||
-                          u.name.toLowerCase().includes(q) ||
-                          u.loginid.toLowerCase().includes(q) ||
-                          (u.mail ?? '').toLowerCase().includes(q) ||
-                          (u.deptname ?? '').toLowerCase().includes(q)
-                        );
-                        if (filtered.length === 0) {
-                          return <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>검색 결과 없음</div>;
-                        }
-                        return filtered.map(u => (
-                          <div
-                            key={u.loginid}
-                            style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.875rem', borderBottom: '1px solid var(--border)' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
-                            onMouseLeave={e => (e.currentTarget.style.background = '')}
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              setDesigneeLoginid(u.loginid);
-                              setDesigneeName(`${u.name} (${u.deptname})`);
-                              setDesigneeSearchQuery('');
-                              setDesigneeDropdownOpen(false);
-                              setDropdownRect(null);
-                              setDesigneeError('');
-                            }}
-                          >
-                            <span style={{ fontWeight: 600 }}>{u.name}</span>
-                            <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>
-                              {u.loginid}{u.mail ? ` · ${u.mail}` : ''}{u.deptname ? ` · ${u.deptname}` : ''}
-                            </span>
-                          </div>
-                        ));
-                      })()}
-                    </div>,
-                    document.body
-                  )}
-                </div>
-                {designeeError && (
-                  <p style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: 4 }}>{designeeError}</p>
-                )}
-              </>
+            )}
+            <div ref={designeeContainerRef} style={{ position: 'relative' }}>
+              <input
+                ref={designeeInputRef}
+                className="form-control"
+                placeholder={t('request.designee_placeholder')}
+                value={designeeSearchQuery}
+                onChange={(e) => {
+                  setDesigneeSearchQuery(e.target.value);
+                  setDesigneeError('');
+                  setDesigneeDropdownOpen(true);
+                  if (designeeInputRef.current) {
+                    const r = designeeInputRef.current.getBoundingClientRect();
+                    setDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                  }
+                }}
+                onFocus={() => {
+                  setDesigneeDropdownOpen(true);
+                  if (designeeInputRef.current) {
+                    const r = designeeInputRef.current.getBoundingClientRect();
+                    setDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                  }
+                }}
+                autoComplete="off"
+              />
+              {designeeDropdownOpen && dropdownRect && createPortal(
+                <div style={{ position: 'fixed', top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', zIndex: 9999, maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
+                  {(() => {
+                    const q = designeeSearchQuery.toLowerCase();
+                    const filtered = plUserOptions.filter(u =>
+                      !designees.some(d => d.loginid === u.loginid) &&
+                      (!q ||
+                        u.name.toLowerCase().includes(q) ||
+                        u.loginid.toLowerCase().includes(q) ||
+                        (u.mail ?? '').toLowerCase().includes(q) ||
+                        (u.deptname ?? '').toLowerCase().includes(q))
+                    );
+                    if (filtered.length === 0) {
+                      return <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('request.search_no_result')}</div>;
+                    }
+                    return filtered.map(u => (
+                      <div
+                        key={u.loginid}
+                        style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.875rem', borderBottom: '1px solid var(--border)' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '')}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          addDesignee(u);
+                          setDesigneeSearchQuery('');
+                        }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{u.name}</span>
+                        <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>
+                          {u.loginid}{u.mail ? ` · ${u.mail}` : ''}{u.deptname ? ` · ${u.deptname}` : ''}
+                        </span>
+                      </div>
+                    ));
+                  })()}
+                </div>,
+                document.body
+              )}
+            </div>
+            {designeeError && (
+              <p style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: 4 }}>{designeeError}</p>
             )}
           </div>
+
+          {/* 통보자: 결재 권한 없이 상신·결재완료 메일만 받는 인원 (다중) */}
+          <div className="form-group" data-tour="submit-notifier" style={{ marginTop: 12 }}>
+            <label className="form-label">{t('request.notifier_label')}</label>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 6px' }}>
+              {t('request.notifier_help')}
+            </p>
+            {(detail.notifiers ?? []).length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                {(detail.notifiers ?? []).map((n) => (
+                  <span
+                    key={n.loginid}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: '0.82rem' }}
+                  >
+                    {n.name}
+                    <button
+                      type="button"
+                      onClick={() => removeNotifier(n.loginid)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 2px', fontSize: '0.85rem', lineHeight: 1 }}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div ref={notifierContainerRef} style={{ position: 'relative' }}>
+              <input
+                ref={notifierInputRef}
+                className="form-control"
+                placeholder={t('request.notifier_placeholder')}
+                value={notifierSearchQuery}
+                onChange={(e) => {
+                  setNotifierSearchQuery(e.target.value);
+                  setNotifierDropdownOpen(true);
+                  if (notifierInputRef.current) {
+                    const r = notifierInputRef.current.getBoundingClientRect();
+                    setNotifierDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                  }
+                }}
+                onFocus={() => {
+                  setNotifierDropdownOpen(true);
+                  if (notifierInputRef.current) {
+                    const r = notifierInputRef.current.getBoundingClientRect();
+                    setNotifierDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                  }
+                }}
+                autoComplete="off"
+              />
+              {notifierDropdownOpen && notifierDropdownRect && createPortal(
+                <div style={{ position: 'fixed', top: notifierDropdownRect.top, left: notifierDropdownRect.left, width: notifierDropdownRect.width, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', zIndex: 9999, maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
+                  {(() => {
+                    const q = notifierSearchQuery.toLowerCase();
+                    const chosen = detail.notifiers ?? [];
+                    const filtered = notifierUserOptions.filter(u =>
+                      !chosen.some(n => n.loginid === u.loginid) &&
+                      (!q ||
+                        u.name.toLowerCase().includes(q) ||
+                        u.loginid.toLowerCase().includes(q) ||
+                        (u.mail ?? '').toLowerCase().includes(q) ||
+                        (u.deptname ?? '').toLowerCase().includes(q))
+                    );
+                    if (filtered.length === 0) {
+                      return <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('request.search_no_result')}</div>;
+                    }
+                    return filtered.map(u => (
+                      <div
+                        key={u.loginid}
+                        style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.875rem', borderBottom: '1px solid var(--border)' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '')}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          addNotifier(u);
+                          setNotifierSearchQuery('');
+                        }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{u.name}</span>
+                        <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>
+                          {u.loginid}{u.mail ? ` · ${u.mail}` : ''}{u.deptname ? ` · ${u.deptname}` : ''}
+                        </span>
+                      </div>
+                    ));
+                  })()}
+                </div>,
+                document.body
+              )}
+            </div>
+          </div>
+          </>
         )}
         </div>
       </Modal>

@@ -1175,6 +1175,15 @@ type Page = { label: string; content: React.ReactNode };
     } catch { return false; }
   })();
 
+  // 통보처: 결재 경로와 별개로 표시(결재 권한 없음). detail.notifiers 에서 이름만 읽는다.
+  const notifiers: { loginid: string; name: string }[] = (() => {
+    try {
+      const parsed = JSON.parse(doc.additional_notes ?? '{}');
+      const arr = parsed?.detail?.notifiers;
+      return Array.isArray(arr) ? arr : [];
+    } catch { return []; }
+  })();
+
   // 각 회차 상신 날짜: round=1은 doc.submitted_at, 이후 회차는 해당 R 단계의 created_at
   const getRoundSubmittedAt = (round: number): string | null => {
     if (round === 1) return doc.submitted_at ?? null;
@@ -1213,15 +1222,8 @@ type Page = { label: string; content: React.ReactNode };
     dueDate?: string;
   };
 
-  const getStepDisplay = (agent: string, round: number): StepDisplayInfo => {
-    if (agent === 'E' && !hasPlel) {
-      return { status: 'na', label: t('approval.step_na') };
-    }
-    if (isOnlyMap && ['P', 'J', 'O', 'E'].includes(agent)) {
-      return { status: 'na', label: t('approval.step_na') };
-    }
-    const s = getStep(agent, round);
-    if (!s) return { status: 'waiting', label: t('approval.step_pending') };
+  // 단일 ApprovalStep → 표시 정보
+  const stepToInfo = (s: NonNullable<ReturnType<typeof getStep>>): StepDisplayInfo => {
     const dueDate = s.due_date ? s.due_date.slice(5).replace('-', '/') : undefined; // MM/DD
     if (s.action === 'approved') return {
       status: 'approved', label: t('approval.agree'),
@@ -1237,7 +1239,20 @@ type Page = { label: string; content: React.ReactNode };
     };
     // pending
     if (!s.assignee_name) return { status: 'unassigned', label: t('approval.step_unassigned'), dueDate };
-    return { status: 'reviewing', label: t('common.status_under_review'), dueDate };
+    return { status: 'reviewing', label: t('common.status_under_review'), assignee: s.assignee_name || undefined, dueDate };
+  };
+
+  // 한 단계(agent·round)의 표시 정보 목록. PL/J 등 다중 담당자는 담당자별로 여러 항목을 반환한다.
+  const getStepDisplays = (agent: string, round: number): StepDisplayInfo[] => {
+    if (agent === 'E' && !hasPlel) {
+      return [{ status: 'na', label: t('approval.step_na') }];
+    }
+    if (isOnlyMap && ['P', 'J', 'O', 'E'].includes(agent)) {
+      return [{ status: 'na', label: t('approval.step_na') }];
+    }
+    const steps = allSteps.filter((s) => s.agent === agent && (s.round ?? 1) === round);
+    if (steps.length === 0) return [{ status: 'waiting', label: t('approval.step_pending') }];
+    return steps.map(stepToInfo);
   };
 
   const statusBadgeStyle = (status: StepDisplayInfo['status']): React.CSSProperties => {
@@ -1324,27 +1339,33 @@ type Page = { label: string; content: React.ReactNode };
               ) : (
                 rounds.map((r) => {
                   const isCurrent = r === maxRound;
-                  const info = getStepDisplay(key, r);
+                  const infos = getStepDisplays(key, r);
                   return (
                     <div key={r} style={historyItemStyle(isCurrent)}>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', minWidth: 40 }}>{r}회차</span>
-                      <span style={statusBadgeStyle(info.status)}>{info.label}</span>
-                      {info.assignee && (
-                        <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{info.assignee}</span>
-                      )}
-                      {info.date && (
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{info.date}</span>
-                      )}
-                      {info.dueDate && (
-                        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                          {t('approval.col_due_date')}: {info.dueDate}
-                        </span>
-                      )}
-                      {info.comment && (
-                        <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.78rem', whiteSpace: 'pre-wrap' }}>
-                          "{info.comment}"
-                        </span>
-                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+                        {infos.map((info, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                            <span style={statusBadgeStyle(info.status)}>{info.label}</span>
+                            {info.assignee && (
+                              <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{info.assignee}</span>
+                            )}
+                            {info.date && (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{info.date}</span>
+                            )}
+                            {info.dueDate && (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                                {t('approval.col_due_date')}: {info.dueDate}
+                              </span>
+                            )}
+                            {info.comment && (
+                              <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.78rem', whiteSpace: 'pre-wrap' }}>
+                                "{info.comment}"
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   );
                 })
@@ -1369,6 +1390,20 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           </div>
         </div>
+
+        {/* 통보처: 결재 경로와 분리된 별도 행. 결재 개념 없이 이름만 나열, 없으면 숨김. */}
+        {notifiers.length > 0 && (
+          <div style={{ ...teamRowStyle, borderBottom: 'none', borderTop: '2px solid var(--border)' }}>
+            <div style={teamLabelStyle}>{t('approval.label_notifier')}</div>
+            <div style={historyListStyle}>
+              <div style={historyItemStyle(false)}>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                  {notifiers.map((n) => n.name).join(' · ')}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     ),
   });

@@ -93,10 +93,14 @@ def can_edit(user, document, co_member_ids=None):
     if st == 'rejected':
         return can_withdraw(user, document, co_member_ids)
     if st in ('under_review', 'submitted'):
-        step = pending_pl_step(document)
-        if not step:
-            return False
-        if step.assignee and step.assignee.loginid == loginid:
+        from .models import ApprovalStep
+        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+        # 다중 PL: 현재 회차의 pending PL 단계 담당자 누구나 수정(수정 후 상신) 가능
+        is_pending_pl = ApprovalStep.objects.filter(
+            document=document, agent='PL', action='pending', round=max_round,
+            assignee__loginid=loginid,
+        ).exists()
+        if is_pending_pl:
             return True
         if document.designated_pl and document.designated_pl.loginid == loginid:
             return True

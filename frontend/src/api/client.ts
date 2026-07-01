@@ -171,18 +171,18 @@ const updateDocument = async (id: number, input: UpdateDocumentInput) => {
   return { data };
 };
 
-const submitDocument = async (id: number, designatedPlLoginid: string) => {
+const submitDocument = async (id: number, designatedPlLoginids: string[]) => {
   const data = await post<{ message: string; email_sent: boolean; document: RequestDocument }>(
     `/documents/${id}/submit/`,
-    { designated_pl_loginid: designatedPlLoginid }
+    { designated_pl_loginids: designatedPlLoginids }
   );
   return { data };
 };
 
-const resubmitDocument = async (id: number, designatedPlLoginid: string) => {
+const resubmitDocument = async (id: number, designatedPlLoginids: string[]) => {
   const data = await post<{ message: string; document: RequestDocument }>(
     `/documents/${id}/resubmit/`,
-    { designated_pl_loginid: designatedPlLoginid }
+    { designated_pl_loginids: designatedPlLoginids }
   );
   return { data };
 };
