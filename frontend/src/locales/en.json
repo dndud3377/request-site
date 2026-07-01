@@ -233,6 +233,7 @@
     "step_unassigned": "Unassigned",
     "step_na": "N/A",
     "label_requester": "Requester",
+    "label_notifier": "Notify List",
     "label_department": "Department",
     "label_email": "Email",
     "label_product_name": "Product Name",

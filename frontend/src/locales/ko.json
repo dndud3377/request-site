@@ -233,6 +233,7 @@
     "step_unassigned": "미지정",
     "step_na": "해당없음",
     "label_requester": "의뢰자",
+    "label_notifier": "통보처",
     "label_department": "부서",
     "label_email": "이메일",
     "label_product_name": "제품명",
