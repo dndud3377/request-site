@@ -43,6 +43,7 @@
     "messenger_sent_to_manager": "An email notification has been sent to the reviewer.",
     "save_success": "Saved as draft.",
     "auto_save_success": "Auto-saved as draft after 20 minutes of inactivity.",
+    "edit_load_failed": "Failed to load the request. Please go back to the list and try again. (Saving and submitting are disabled to prevent overwriting.)",
     "required": "This field is required.",
     "request_purpose": "Request Purpose",
     "customer_name": "Customer / Vendor",

@@ -13,9 +13,9 @@ interface Step1Props {
   processOptions: string[];
   productOptions: string[];
   processIdOptions: string[];
-  FlowProductOptions: Record<number, string[]>;
-  FlowProcessIdOptions: Record<number, string[]>;
-  FlowLayerIdOptions: Record<number, string[]>;
+  FlowProductOptions: Record<string, string[]>;
+  FlowProcessIdOptions: Record<string, string[]>;
+  FlowLayerIdOptions: Record<string, string[]>;
   BbProductOptions: Record<string, string[]>;
   BbProductidOptions: Record<string, string[]>;
   refDocLabel: string;
@@ -215,7 +215,7 @@ const Step1: React.FC<Step1Props> = ({
             <div className="form-group">
               <label className="form-label">{t('request.flow_chart')}<GuideBadge fk="step1_flow_chart" tk={t('guide.feat.step1_flow_chart' as never)} /></label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {detail.flow_chart.map((row, idx) => (
+                {detail.flow_chart.map((row) => (
                   <div key={row.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                     <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                       <label className="form-label">{t('request.flow_line')}</label>
@@ -234,7 +234,7 @@ const Step1: React.FC<Step1Props> = ({
                       <AutocompleteInput
                         value={row.product_name}
                         onChange={(v) => handleFlowChange(row.id, 'product_name', v)}
-                        options={FlowProductOptions[idx] || []}
+                        options={FlowProductOptions[row.id] || []}
                         placeholder={t('request.select_placeholder')}
                         style={{ width: '100%' }}
                         disabled={disableOptional}
@@ -245,7 +245,7 @@ const Step1: React.FC<Step1Props> = ({
                       <AutocompleteInput
                         value={row.process_id}
                         onChange={(v) => handleFlowChange(row.id, 'process_id', v)}
-                        options={FlowProcessIdOptions[idx] || []}
+                        options={FlowProcessIdOptions[row.id] || []}
                         placeholder={t('request.select_placeholder')}
                         style={{ width: '100%' }}
                         disabled={disableOptional}
@@ -257,7 +257,7 @@ const Step1: React.FC<Step1Props> = ({
                         <AutocompleteInput
                           value={row.step_from}
                           onChange={(v) => handleFlowChange(row.id, 'step_from', v)}
-                          options={FlowLayerIdOptions[idx] || []}
+                          options={FlowLayerIdOptions[row.id] || []}
                           placeholder={t('request.select_placeholder')}
                           style={{ minWidth: '80px' }}
                           disabled={disableOptional}
@@ -266,7 +266,7 @@ const Step1: React.FC<Step1Props> = ({
                         <AutocompleteInput
                           value={row.step_to}
                           onChange={(v) => handleFlowChange(row.id, 'step_to', v)}
-                          options={FlowLayerIdOptions[idx] || []}
+                          options={FlowLayerIdOptions[row.id] || []}
                           placeholder={t('request.select_placeholder')}
                           style={{ minWidth: '80px' }}
                           disabled={disableOptional}

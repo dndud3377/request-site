@@ -117,7 +117,7 @@ const StepMap: React.FC<StepMapProps> = ({
                     <GuideBadge fk="step2_source_location" tk={t('guide.feat.step2_source_location' as never)} />
                   </label>
                   <select
-                    className="form-control"
+                    className={`form-control${errors.source_line ? ' error' : ''}`}
                     name="source_line"
                     value={detail.source_line}
                     onChange={handleDetailChange}
@@ -125,12 +125,14 @@ const StepMap: React.FC<StepMapProps> = ({
                     <option value="">{t('request.select_placeholder')}</option>
                     {lineOptions.map((v) => <option key={v} value={v}>{v}</option>)}
                   </select>
+                  {errors.source_line && <span className="form-error">{errors.source_line}</span>}
                 </div>
                 <AutocompleteInput
                   label={t('request.source_partid_selection')}
                   value={detail.source_partid}
                   options={sourcePartIdOptions}
                   onChange={(v) => handleDetailSet('source_partid', v)}
+                  error={errors.source_partid}
                   style={{ flex: 1 }}
                 />
               </div>
