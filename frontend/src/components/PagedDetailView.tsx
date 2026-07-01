@@ -1175,6 +1175,15 @@ type Page = { label: string; content: React.ReactNode };
     } catch { return false; }
   })();
 
+  // 통보처: 결재 경로와 별개로 표시(결재 권한 없음). detail.notifiers 에서 이름만 읽는다.
+  const notifiers: { loginid: string; name: string }[] = (() => {
+    try {
+      const parsed = JSON.parse(doc.additional_notes ?? '{}');
+      const arr = parsed?.detail?.notifiers;
+      return Array.isArray(arr) ? arr : [];
+    } catch { return []; }
+  })();
+
   // 각 회차 상신 날짜: round=1은 doc.submitted_at, 이후 회차는 해당 R 단계의 created_at
   const getRoundSubmittedAt = (round: number): string | null => {
     if (round === 1) return doc.submitted_at ?? null;
@@ -1369,6 +1378,20 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           </div>
         </div>
+
+        {/* 통보처: 결재 경로와 분리된 별도 행. 결재 개념 없이 이름만 나열, 없으면 숨김. */}
+        {notifiers.length > 0 && (
+          <div style={{ ...teamRowStyle, borderBottom: 'none', borderTop: '2px solid var(--border)' }}>
+            <div style={teamLabelStyle}>{t('approval.label_notifier')}</div>
+            <div style={historyListStyle}>
+              <div style={historyItemStyle(false)}>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                  {notifiers.map((n) => n.name).join(' · ')}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     ),
   });
