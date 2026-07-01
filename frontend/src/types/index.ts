@@ -287,6 +287,15 @@ export interface DetailFormState {
   partial_shot: string;
   tbvtlv_thickness: string;
   tbvtlv_entries: Array<{ sds: string[]; note: string }>;
+
+  // 통보처: 결재 권한 없이 상신·결재완료 시 메일만 받는 인원(loginid로 발송 시점에 이메일 조회)
+  notifiers: NotifierRef[];
+}
+
+// 통보자 참조: 화면 표시용 이름 + 메일 발송용 loginid
+export interface NotifierRef {
+  loginid: string;
+  name: string;
 }
 
 // ===== Change History =====
