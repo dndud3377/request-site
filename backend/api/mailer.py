@@ -185,6 +185,29 @@ def resolve_approved_recipients(document):
     return _apply_redirect(emails)
 
 
+def resolve_notifier_recipients(document):
+    """통보처 수신자: detail.notifiers 의 loginid 로 발송 시점의 최신 이메일을 조회한다.
+
+    통보자는 결재 권한이 없고, 상신·결재완료 시점에만 메일 통보를 받는다.
+    이메일 stale 방지를 위해 저장은 loginid+name 만 하고 mail 은 여기서 조회한다.
+    """
+    detail = document.get_detail().get('detail', {})
+    notifiers = detail.get('notifiers', []) if isinstance(detail, dict) else []
+    loginids = [
+        n.get('loginid') for n in notifiers
+        if isinstance(n, dict) and n.get('loginid')
+    ]
+    if not loginids:
+        return _apply_redirect([])
+    emails = list(
+        UserProfile.objects.filter(loginid__in=loginids)
+        .exclude(mail='')
+        .distinct()
+        .values_list('mail', flat=True)
+    )
+    return _apply_redirect(emails)
+
+
 # --------------------------------------------------------------------------- #
 # 메일 본문 생성
 # --------------------------------------------------------------------------- #
@@ -226,6 +249,18 @@ def _build_message(event_type, document, agent=None):
         subject = f'[승인 완료] {document.title}'
         contents = (
             '<p>의뢰서 결재가 모두 완료되었습니다.</p>'
+            f'{base_info}{link_html}'
+        )
+    elif event_type == 'notify_submitted':
+        subject = f'[상신 통보] {document.title}'
+        contents = (
+            '<p>아래 의뢰서가 상신되어 통보드립니다. (통보처 수신)</p>'
+            f'{base_info}{link_html}'
+        )
+    elif event_type == 'notify_approved':
+        subject = f'[결재 완료 통보] {document.title}'
+        contents = (
+            '<p>아래 의뢰서의 결재가 완료되어 통보드립니다. (통보처 수신)</p>'
             f'{base_info}{link_html}'
         )
     else:
@@ -277,6 +312,18 @@ def enqueue_approved(document):
     """승인 완료 알림 적재."""
     recipients = resolve_approved_recipients(document)
     return _enqueue(document, 'approved', recipients)
+
+
+def enqueue_notify_submitted(document):
+    """상신 시 통보처 알림 적재(결재 권한 없는 통보 수신자 대상)."""
+    recipients = resolve_notifier_recipients(document)
+    return _enqueue(document, 'notify_submitted', recipients)
+
+
+def enqueue_notify_approved(document):
+    """결재 완료 시 통보처 알림 적재(결재 권한 없는 통보 수신자 대상)."""
+    recipients = resolve_notifier_recipients(document)
+    return _enqueue(document, 'notify_approved', recipients)
 
 
 # --------------------------------------------------------------------------- #
