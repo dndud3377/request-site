@@ -520,6 +520,8 @@ class MailNotification(models.Model):
         ('stage_arrival', '단계 도착'),
         ('rejected', '반려'),
         ('approved', '승인 완료'),
+        ('notify_submitted', '상신 통보(통보처)'),
+        ('notify_approved', '결재 완료 통보(통보처)'),
         ('voc_created', 'VOC 등록'),
         ('voc_comment', 'VOC 댓글'),
     ]
