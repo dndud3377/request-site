@@ -310,18 +310,20 @@
 
 ### [R-09] 반려 재상신 경로에서 update 2회 호출  (관련: F-X.3)
 - 위치: `index.tsx:2352-2384`
-- 증상/의심: rejected 분기에서 history 없는 버전으로 update 후 history 버전으로 다시 update. 첫 update 불필요·중간 실패 시 history 누락 위험.
-- 심각도: 🟡보통 · 상태: 🔍점검필요 · 결정/메모:
+- 증상/의심: rejected/지정PL 분기에서 history 없는 버전으로 update 후 history 버전으로 다시 update → 같은 문서 2회 update(첫 번째 불필요).
+- 심각도: 🟡보통 · 상태: ✅수정완료
+- 결정/메모 (2026-06-30): `handleSubmit`을 경로별로 정리 — 지정PL은 history본 1회 update+peerSubmit, 신규/재상신은 (기존 문서면 상태 조회로 rejected 판별 후) `buildEnrichedForm(note, isRejected)` 1회 create/update + submit/resubmit. 최종 저장내용·history·토스트·이동 동일, **update 중복만 제거**. tsc 신규 에러 0. 커밋 `fix(request): R-09 상신 update 중복 제거 + R-10 ...`.
 
-### [R-10] additional_notes 깨진 JSON 침묵 처리  (관련: F-X.4, F-1.5)
-- 위치: `index.tsx:480-538`(편집 로드 `catch {}`), `1560-1567`(참조 로드)
-- 증상/의심: 파싱 실패 시 조용히 무시 → 편집 모드에서 데이터 미로드인데 사용자 알림 없이 빈 폼으로 보임.
-- 심각도: 🟡보통 · 상태: 🔍점검필요 · 결정/메모:
+### [R-10] 편집 로드 실패의 조용한 무시 → 덮어쓰기 위험  (관련: F-X.1, F-X.3, F-X.4)
+- 위치: `index.tsx` 편집/지정PL 로드 effect의 파싱 `catch {}` + 네트워크 `.catch`(토스트 없음); `savedId`가 기존 문서 id로 초기화 + `handleSaveDraft`에 가드 없음.
+- 증상/의심(검증됨): 로드 실패 시 빈 폼이 뜨는데 알림이 없어, 사용자가 임시저장(가드 없음)하거나 재입력 후 상신하면 **기존 문서를 빈/부분 데이터로 덮어씀**(데이터 손실). 자동저장은 필수필드 빈 값이면 skip이라 안전.
+- 심각도: 🟡→🟠(덮어쓰기 위험으로 재평가) · 상태: ✅수정완료
+- 결정/메모 (2026-06-30): "알림 + 차단" 방식 채택. 로드 실패(파싱/네트워크) 시 `loadError` 설정 + `request.edit_load_failed`(ko/en) 토스트. `handleSaveDraft`·`handleSubmit` 진입 가드 + 💾저장/📤상신 버튼 `disabled`로 **덮어쓰기 차단**(새로고침 재시도 가능). tsc 신규 에러 0.
 
 ### [R-11] 스테이징 후 J행 비활성화 시 매핑 소실  (관련: F-5.5)
-- 위치: `index.tsx:1730-1731` `!jr.disabled && stagedMappings[jr.id]`
-- 증상/의심: 스테이징만 해둔 J행이 적용 전 비활성화되면 적용 시 조용히 누락(staging 정리도 안 됨).
-- 심각도: 🟡보통 · 상태: 🔍점검필요 · 결정/메모:
+- 위치: `index.tsx` `handleApplyMappings` `!jr.disabled && stagedMappings[jr.id]`
+- 재검토(2026-06-30): `!jr.disabled` 제외는 **올바른 방어 동작**(비활성 행은 상신 대상 아니라 매핑하면 안 됨). 유일한 아쉬움은 버려진 스테이징에 대한 피드백 부재이나, 발생 순서가 좁고 동작은 안전.
+- 심각도: ⚪경미 · 상태: 🟢의도된동작(정상) — 사용자 확정 2026-06-30 (유지). 재점검 제외.
 
 ### [R-12] flow_chart 옵션 Record 인덱스 키 잔존  (관련: F-1.6)
 - 위치: `FlowProductOptions/FlowProcessIdOptions/FlowLayerIdOptions`(idx 키), `handleFlowDeleteRow`
@@ -421,3 +423,4 @@ cd frontend && CI=true npx react-scripts test --watchAll=false --passWithNoTests
 - 2026-06-30: **R-01 ✅수정완료** — B안(안정 entryId) 전환 + 삭제/수정 시 매핑 정리(가). 6개 파일(types/constants/index/Step1/Step4/PagedDetailView) 원자적 커밋, tsc 신규 에러 0.
 - 2026-06-30: R-02 심각도 재측정(🟡보통 유지, 상단). **R-02 ✅수정완료** — 행별 시퀀스 토큰으로 stale-fetch 경합 제거 + 타이핑 300ms 디바운스. index.tsx 단일 커밋, tsc 신규 에러 0.
 - 2026-06-30: R-03 ⏸️보류, **R-05 🟢의도된동작 확정**. **R-04 ✅수정완료** — 범위를 연쇄 선택 전 단계(체인/뼈찜/흐름도/PRODC)로 확장, "정확 일치 + 시퀀스 토큰"으로 전환(타이핑마다 조회·이중 조회 제거, 순서 꼬임에도 정확). index.tsx 단일 커밋, tsc 신규 에러 0.
+- 2026-06-30: R-06 ⏸️보류. **R-07 🟢정상 확정(유지)**, **R-08 ✅수정완료**(잘못된 주석 삭제). **R-09 ✅수정완료**(상신 update 중복 제거), **R-10 ✅수정완료**(로드 실패 알림+저장/상신 차단으로 덮어쓰기 방지), **R-11 🟢의도된동작 확정**.
