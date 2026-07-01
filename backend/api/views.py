@@ -210,6 +210,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 assignee_name=document.designated_pl_name,
             )
             mailer.enqueue_stage_arrival(document, 'PL', pl_step)
+            mailer.enqueue_notify_submitted(document)
 
         return Response({
             'message': '의뢰서가 성공적으로 상신되었습니다.',
@@ -256,6 +257,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 assignee_name=document.designated_pl_name,
             )
             mailer.enqueue_stage_arrival(document, 'PL', pl_step)
+            mailer.enqueue_notify_submitted(document)
 
         return Response({
             'message': '재상신되었습니다.',
@@ -407,6 +409,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         if new_status == 'approved':
             mailer.enqueue_approved(document)
+            mailer.enqueue_notify_approved(document)
 
         return Response({
             'message': '처리되었습니다.',
