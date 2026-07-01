@@ -180,17 +180,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        designated_pl_loginid = request.data.get('designated_pl_loginid', '').strip()
-        if not designated_pl_loginid:
-            return Response({'error': '동료 PL을 지정해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            designated_pl_user = User.objects.get(loginid=designated_pl_loginid, role='PL')
-        except User.DoesNotExist:
-            return Response({'error': '유효하지 않은 PL 사용자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if designated_pl_user == request.user:
-            return Response({'error': '본인을 지정할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        pl_users, err = self._resolve_designated_pls(request)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         err = self._validate_bb_mapping(document)
         if err:
@@ -199,17 +191,20 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             document.status = 'under_review'
             document.submitted_at = document.submitted_at or timezone.now()
-            document.designated_pl = designated_pl_user
-            document.designated_pl_name = designated_pl_user.username or designated_pl_loginid
+            # 대표 PL(첫 번째)만 designated_pl FK 에 기록(표시/하위호환용)
+            rep = pl_users[0]
+            document.designated_pl = rep
+            document.designated_pl_name = rep.username or rep.loginid
             document.save()
 
+            # 지정 PL 전원에 대해 pending PL 단계를 생성(전원 합의 필요)
             ApprovalStep.objects.filter(document=document).delete()
-            pl_step = ApprovalStep.objects.create(
-                document=document, agent='PL', action='pending', round=1,
-                assignee=designated_pl_user,
-                assignee_name=document.designated_pl_name,
-            )
-            mailer.enqueue_stage_arrival(document, 'PL', pl_step)
+            for u in pl_users:
+                pl_step = ApprovalStep.objects.create(
+                    document=document, agent='PL', action='pending', round=1,
+                    assignee=u, assignee_name=(u.username or u.loginid),
+                )
+                mailer.enqueue_stage_arrival(document, 'PL', pl_step)
             mailer.enqueue_notify_submitted(document)
 
         return Response({
@@ -228,17 +223,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        designated_pl_loginid = request.data.get('designated_pl_loginid', '').strip()
-        if not designated_pl_loginid:
-            return Response({'error': '동료 PL을 지정해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            designated_pl_user = User.objects.get(loginid=designated_pl_loginid, role='PL')
-        except User.DoesNotExist:
-            return Response({'error': '유효하지 않은 PL 사용자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if designated_pl_user == request.user:
-            return Response({'error': '본인을 지정할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        pl_users, err = self._resolve_designated_pls(request)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
         err = self._validate_bb_mapping(document)
         if err:
@@ -246,17 +233,19 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             document.status = 'under_review'
-            document.designated_pl = designated_pl_user
-            document.designated_pl_name = designated_pl_user.username or designated_pl_loginid
+            rep = pl_users[0]
+            document.designated_pl = rep
+            document.designated_pl_name = rep.username or rep.loginid
             document.save()
 
-            max_round = self._max_round(document, default=0)
-            pl_step = ApprovalStep.objects.create(
-                document=document, agent='PL', action='pending', round=max_round + 1,
-                assignee=designated_pl_user,
-                assignee_name=document.designated_pl_name,
-            )
-            mailer.enqueue_stage_arrival(document, 'PL', pl_step)
+            # 새 회차에 지정 PL 전원의 pending 단계를 생성(이전 회차는 이력 보존)
+            new_round = self._max_round(document, default=0) + 1
+            for u in pl_users:
+                pl_step = ApprovalStep.objects.create(
+                    document=document, agent='PL', action='pending', round=new_round,
+                    assignee=u, assignee_name=(u.username or u.loginid),
+                )
+                mailer.enqueue_stage_arrival(document, 'PL', pl_step)
             mailer.enqueue_notify_submitted(document)
 
         return Response({
@@ -554,55 +543,117 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return Response({'message': '담당자가 지정되었습니다.'})
 
     def _get_pending_pl_step(self, document):
-        """현재 회차의 pending PL 단계 반환. 없으면 None."""
+        """현재 회차의 pending PL 단계 반환(첫 번째). 없으면 None."""
         max_round = self._max_round(document)
         return ApprovalStep.objects.filter(
             document=document, agent='PL', action='pending', round=max_round
         ).first()
 
-    @action(detail=True, methods=['post'], url_path='peer-approve')
-    def peer_approve(self, request, pk=None):
-        """지정 PL 합의: PL 단계 approved → R 단계 생성"""
-        document = self.get_object()
-        user_role = getattr(request.user, 'role', '')
+    def _get_caller_pl_step(self, document, user):
+        """호출자가 처리할 현재 회차 pending PL 단계.
 
-        step = self._get_pending_pl_step(document)
-        if not step:
-            return Response({'error': '대기 중인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        다중 PL 검토를 지원한다(전원 합의). MASTER 는 첫 pending PL 단계,
+        그 외에는 본인이 담당(assignee)인 pending PL 단계를 반환한다. 없으면 None.
+        """
+        max_round = self._max_round(document)
+        qs = ApprovalStep.objects.filter(
+            document=document, agent='PL', action='pending', round=max_round
+        )
+        role = getattr(user, 'role', '')
+        if role == 'MASTER':
+            return qs.first()
+        caller_loginid = getattr(user, 'loginid', '')
+        if not caller_loginid:
+            return None
+        return qs.filter(assignee__loginid=caller_loginid).first()
 
+    def _all_pl_approved(self, document, round_no):
+        """해당 회차의 PL 단계 전원이 approved 인지(다중 PL 전원 합의 판정)."""
+        pl_steps = list(ApprovalStep.objects.filter(
+            document=document, agent='PL', round=round_no
+        ))
+        return len(pl_steps) > 0 and all(s.action == 'approved' for s in pl_steps)
+
+    def _resolve_designated_pls(self, request):
+        """요청에서 지정 PL 목록을 파싱·검증해 (User 리스트, error) 를 반환한다.
+
+        다중 지정(`designated_pl_loginids` 배열)을 우선하고, 없으면 단일
+        (`designated_pl_loginid`) 을 1개 배열로 호환 처리한다. 각 대상은
+        role='PL' 이어야 하고 본인은 지정할 수 없다. error 가 None 이 아니면 실패.
+        """
+        loginids = request.data.get('designated_pl_loginids')
+        if not isinstance(loginids, list):
+            single = str(request.data.get('designated_pl_loginid', '') or '').strip()
+            loginids = [single] if single else []
+        # 공백 제거 + 중복 제거(순서 보존)
+        cleaned = []
+        for lid in loginids:
+            lid = str(lid or '').strip()
+            if lid and lid not in cleaned:
+                cleaned.append(lid)
+        if not cleaned:
+            return None, '동료 PL을 지정해주세요.'
         caller_loginid = getattr(request.user, 'loginid', '')
-        if user_role != 'MASTER' and (not step.assignee or step.assignee.loginid != caller_loginid):
-            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        pl_users = []
+        for lid in cleaned:
+            try:
+                u = User.objects.get(loginid=lid, role='PL')
+            except User.DoesNotExist:
+                return None, f'유효하지 않은 PL 사용자입니다: {lid}'
+            if caller_loginid and lid == caller_loginid:
+                return None, '본인을 지정할 수 없습니다.'
+            pl_users.append(u)
+        return pl_users, None
 
-        comment = request.data.get('comment', '')
+    def _advance_after_pl(self, document, step, comment):
+        """PL 단계 합의 처리 공용: 본인 단계 approved 후 전원 합의 시 R 생성.
+
+        다중 PL 전원 합의를 지원한다. 문서 행 락으로 동시 합의 시 R 중복/누락을
+        방지한다. 전원 합의면 R 생성 후 True, 아직 대기자가 있으면 False 를 반환한다.
+        """
         with transaction.atomic():
+            RequestDocument.objects.select_for_update().get(pk=document.pk)
             step.action = 'approved'
             step.acted_at = timezone.now()
             step.comment = comment
             step.save()
 
-            r_step = ApprovalStep.objects.create(
-                document=document, agent='R', action='pending', round=step.round,
-            )
-            document.status = 'under_review'
-            document.save()
-            mailer.enqueue_stage_arrival(document, 'R', r_step)
+            if self._all_pl_approved(document, step.round):
+                # 전원 합의 → R 생성(중복 방지: 이미 있으면 재생성하지 않음)
+                if not ApprovalStep.objects.filter(document=document, agent='R', round=step.round).exists():
+                    r_step = ApprovalStep.objects.create(
+                        document=document, agent='R', action='pending', round=step.round,
+                    )
+                    mailer.enqueue_stage_arrival(document, 'R', r_step)
+                document.status = 'under_review'
+                document.save(update_fields=['status'])
+                return True
 
-        return Response({'message': '합의되었습니다. R 단계로 진행합니다.', 'status': 'under_review'})
+            document.status = 'under_review'
+            document.save(update_fields=['status'])
+            return False
+
+    @action(detail=True, methods=['post'], url_path='peer-approve')
+    def peer_approve(self, request, pk=None):
+        """지정 PL 합의: 본인 PL 단계 approved → 전원 합의 시 R 단계 생성(다중 PL)"""
+        document = self.get_object()
+        step = self._get_caller_pl_step(document, request.user)
+        if not step:
+            return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        comment = request.data.get('comment', '')
+        all_done = self._advance_after_pl(document, step, comment)
+        msg = ('전원 합의되어 R 단계로 진행합니다.' if all_done
+               else '합의되었습니다. 다른 지정 PL의 합의를 기다립니다.')
+        return Response({'message': msg, 'status': 'under_review'})
 
     @action(detail=True, methods=['post'], url_path='peer-reject')
     def peer_reject(self, request, pk=None):
-        """지정 PL 반려: PL 단계 rejected → 원 PL에게 반환"""
+        """지정 PL 반려: 본인 PL 단계 rejected → 문서 즉시 반려(다중 PL 중 1명이라도 반려 시)"""
         document = self.get_object()
-        user_role = getattr(request.user, 'role', '')
-
-        step = self._get_pending_pl_step(document)
+        step = self._get_caller_pl_step(document, request.user)
         if not step:
-            return Response({'error': '대기 중인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        caller_loginid = getattr(request.user, 'loginid', '')
-        if user_role != 'MASTER' and (not step.assignee or step.assignee.loginid != caller_loginid):
-            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         comment = request.data.get('comment', '')
         with transaction.atomic():
@@ -619,33 +670,18 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='peer-submit')
     def peer_submit(self, request, pk=None):
-        """지정 PL 수정 후 상신: 문서 내용은 이미 update됨, PL 단계 approved → R 단계 생성"""
+        """지정 PL 수정 후 상신: 문서는 이미 update됨. 본인 PL 단계 approved(태그) → 전원 합의 시 R 생성"""
         document = self.get_object()
-        user_role = getattr(request.user, 'role', '')
-
-        step = self._get_pending_pl_step(document)
+        step = self._get_caller_pl_step(document, request.user)
         if not step:
-            return Response({'error': '대기 중인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        caller_loginid = getattr(request.user, 'loginid', '')
-        if user_role != 'MASTER' and (not step.assignee or step.assignee.loginid != caller_loginid):
-            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         comment = request.data.get('comment', '')
-        with transaction.atomic():
-            step.action = 'approved'
-            step.acted_at = timezone.now()
-            step.comment = f'[수정 후 상신] {comment}'.strip()
-            step.save()
-
-            r_step = ApprovalStep.objects.create(
-                document=document, agent='R', action='pending', round=step.round,
-            )
-            document.status = 'under_review'
-            document.save()
-            mailer.enqueue_stage_arrival(document, 'R', r_step)
-
-        return Response({'message': '수정 후 상신되었습니다. R 단계로 진행합니다.', 'status': 'under_review'})
+        tagged = f'[수정 후 상신] {comment}'.strip()
+        all_done = self._advance_after_pl(document, step, tagged)
+        msg = ('수정 후 상신되었습니다. 전원 합의되어 R 단계로 진행합니다.' if all_done
+               else '수정 후 상신되었습니다. 다른 지정 PL의 합의를 기다립니다.')
+        return Response({'message': msg, 'status': 'under_review'})
 
     @action(detail=True, methods=['post'], url_path='change-designee')
     def change_designee(self, request, pk=None):
