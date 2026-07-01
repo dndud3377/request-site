@@ -30,6 +30,7 @@
     "submit_note_label": "Special Notes",
     "submit_note_placeholder": "Enter any special notes to include with your submission. (Optional)",
     "designee_label": "Assign Peer PL",
+    "designee_help": "If multiple are assigned, all must approve to proceed to the next step.",
     "designee_placeholder": "Search by name or ID",
     "designee_required": "Please assign a peer PL.",
     "designee_self_error": "You cannot assign yourself.",

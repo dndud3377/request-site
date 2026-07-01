@@ -30,6 +30,7 @@
     "submit_note_label": "특이사항",
     "submit_note_placeholder": "상신 전 전달할 특이사항이 있으면 입력하세요. (선택)",
     "designee_label": "동료 PL 지정",
+    "designee_help": "여러 명 지정 시 전원이 합의해야 다음 단계로 진행됩니다.",
     "designee_placeholder": "이름 또는 아이디로 검색",
     "designee_required": "동료 PL을 지정해주세요.",
     "designee_self_error": "본인을 지정할 수 없습니다.",
