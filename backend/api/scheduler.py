@@ -20,6 +20,8 @@ from .utils import (
     get_dcq_token_info,
     get_django_engine,
     get_data_from_dcq,
+    rtdb_login_with_retry,
+    get_data_from_rtdb,
     LINE_SUFFIX_MAP,
     LINE_TO_LINEID_MAP,
 )
@@ -54,22 +56,45 @@ def sync_form_options():
     else:
         logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
         return
-  
+
+    # MAIN 소스(RTDB) 토큰은 주기당 1회만 발급하여 라인 반복에서 재사용한다.
+    # 실패해도 아래 fallback(DCQ) 로 동작하므로 중단하지 않는다.
+    rtdb_token = rtdb_login_with_retry()
+    if not rtdb_token:
+        logger.warning(_("[scheduler] RTDB 로그인 실패 - {{request.process_selection}}-{{request.partid_selection}} 는 DCQ fallback 으로 진행합니다"))
+
     try:
         for line in LINES:
             try:
                 suffix = LINE_SUFFIX_MAP[line]
-                query_cp = f"""
-                    SELECT DISTINCT partnumber, descript, pkgtype_2
-                    FROM A.B_{suffix}
-                    WHERE X IS NOT NULL AND X != ''
-                """
-                df_cp = get_data_from_dcq(query_cp, dcq_id)
-                
+
+                # MAIN: RTDB(REST API) 우선 조회
+                df_cp = None
+                if rtdb_token:
+                    rtdb_payload = {
+                        "query": {
+                            "select": ["partnumber, descript, pkgtype_2"],
+                            "table_name": f"A_{suffix}.B",
+                            "filter": {"X": {"$eq": "Y"}},
+                        },
+                        "target": "realtimedb",
+                    }
+                    df_cp = get_data_from_rtdb(rtdb_payload, rtdb_token)
+
+                # FALLBACK: MAIN 이 예외(None) 또는 빈 결과면 기존 DCQ 로 조회
+                if df_cp is None or len(df_cp) == 0:
+                    logger.warning(_("[scheduler] {line} RTDB 조회 실패/빈 결과 - DCQ fallback 실행").format(line=line))
+                    query_cp = f"""
+                        SELECT DISTINCT partnumber, descript, pkgtype_2
+                        FROM A.B_{suffix}
+                        WHERE X IS NOT NULL AND X != ''
+                    """
+                    df_cp = get_data_from_dcq(query_cp, dcq_id)
+
                 if df_cp is None or len(df_cp) == 0:
                     logger.warning(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 데이터가 없습니다").format(line=line))
                     continue
-                    
+
                 df_cp = df_cp.rename(columns={'descript': 'process', 'partnumber': 'product_name'})
                 df_cp['line'] = line
                 df_cp['last_synced'] = pd.Timestamp.now()
