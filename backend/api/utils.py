@@ -6,6 +6,9 @@ import io
 import sys
 import json
 import logging
+import requests
+import pandas as pd
+import urllib3
 from sqlalchemy import create_engine
 from urllib.parse import quote_plus
 
@@ -14,6 +17,12 @@ import datacenterquery as dcq
 from datacenterquery import login, getData
 
 logger = logging.getLogger(__name__)
+
+# RTDB(REST API) 요청 타임아웃(초)
+RTDB_REQUEST_TIMEOUT = 30
+
+# verify=False 사용에 따른 InsecureRequestWarning 억제 (사내 인증서 정책)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 라인명 → DB 테이블 접미사 매핑
 LINE_SUFFIX_MAP = {
@@ -127,6 +136,103 @@ def get_data_from_dcq(query, dcq_id):
         return df
     except Exception as e:
         logger.error(f"[DCQ] 데이터 조회 실패: {e}")
+        return None
+
+
+def get_rtdb_credentials():
+    """
+    .env 파일에서 RTDB(REST API) 계정 정보 읽기
+    DCQ 와 동일하게 JSON pack 형태(비밀번호 목록)로 저장
+    """
+    rtdb_id = os.environ.get('RTDB_ID', '')
+    pwd_pack_str = os.environ.get('RTDB_PASSWORD', '')
+
+    if not rtdb_id or not pwd_pack_str:
+        logger.warning("[RTDB] 계정 정보가 .env 에 설정되지 않았습니다")
+        return None, None
+
+    try:
+        pwd_pack = json.loads(pwd_pack_str)
+        return rtdb_id, pwd_pack
+    except json.JSONDecodeError:
+        # JSON pack 이 아닌 단일 비밀번호인 경우
+        return rtdb_id, [pwd_pack_str]
+
+
+def rtdb_login_with_retry():
+    """
+    RTDB(REST API) 로그인 시도 (여러 비밀번호로 번갈아 재시도)
+    성공 시 access_token 을 반환하고, 모두 실패하면 None 을 반환한다.
+    """
+    rtdb_id, pwd_pack = get_rtdb_credentials()
+    base_url = os.environ.get('RTDB_BASE_URL', '')
+
+    if not rtdb_id or not pwd_pack or not base_url:
+        logger.error("[RTDB] 계정 정보 또는 RTDB_BASE_URL 이 설정되지 않았습니다")
+        return None
+
+    headers = {"Content-Type": "application/json"}
+    for pw in pwd_pack:
+        try:
+            payload = {"name": rtdb_id, "password": pw}
+            response = requests.post(
+                f"{base_url}/api/tokens/login",
+                data=json.dumps(payload, default=str),
+                headers=headers,
+                verify=False,
+                timeout=RTDB_REQUEST_TIMEOUT,
+            )
+            if response.status_code == 200:
+                access_token = response.json().get('access_token')
+                logger.info(f"[RTDB] 로그인 성공: {rtdb_id}")
+                return access_token
+            logger.warning(f"[RTDB] 로그인 실패 (HTTP {response.status_code})")
+        except Exception as e:
+            logger.warning(f"[RTDB] 비밀번호 시도 실패: {e}")
+
+    logger.error("[RTDB] 모든 비밀번호 시도가 실패했습니다")
+    return None
+
+
+def get_data_from_rtdb(query_payload, access_token):
+    """
+    RTDB(REST API) 의 /api/queries 엔드포인트로 데이터 조회
+    성공 시 DataFrame, 예외·에러 응답 시 None 을 반환한다.
+    """
+    base_url = os.environ.get('RTDB_BASE_URL', '')
+    if not base_url or not access_token:
+        logger.error("[RTDB] RTDB_BASE_URL 또는 access_token 이 없습니다")
+        return None
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {access_token}",
+    }
+    params = {"show_sql": True}
+    try:
+        response = requests.post(
+            f"{base_url}/api/queries",
+            headers=headers,
+            params=params,
+            data=json.dumps(query_payload, default=str),
+            verify=False,
+            timeout=RTDB_REQUEST_TIMEOUT,
+        )
+        data = response.json()
+
+        # API 에러 응답 체크
+        if 'detail' in data:
+            logger.error(f"[RTDB] API 에러: {data['detail']}")
+            return None
+
+        df = pd.DataFrame(
+            data=data.get('data'),
+            columns=data.get('schema', {}).get('columns', {}).get('names'),
+        )
+        logger.info(f"[RTDB] 데이터 조회 성공: {len(df)} 건")
+        return df
+    except Exception as e:
+        logger.error(f"[RTDB] 데이터 조회 실패: {e}")
         return None
 
 
