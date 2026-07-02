@@ -31,12 +31,14 @@ load_dotenv()
 
 LINES = ['라인 1', '라인 3', '라인 4', '라인 5']
 
-# RTDB(MAIN) 조회 파라미터 - table_name 은 모두 f"A_{suffix}.B" 를 공유한다.
+# RTDB(MAIN) 조회 파라미터 - table_name 은 소스별로 다르며 {suffix} 는 라인 접미사로 치환된다.
 RTDB_TARGET = "realtimedb"
 RTDB_PP_SELECT = ["partnumber, descript, pkgtype_2"]   # 공정-품목
 RTDB_PP_FILTER = {"X": {"$eq": "Y"}}
+RTDB_PP_TABLE = "A_{suffix}.B"
 RTDB_PC_SELECT = ["partnumber, processid"]             # 품목-공정ID
 RTDB_PC_FILTER = {"X": {"$neq": " "}}
+RTDB_PC_TABLE = "X_{suffix}.Y"
 
 
 def _write_if_changed(engine, table, line, df, key_cols, order_cols):
@@ -102,14 +104,14 @@ def sync_rtdb_options():
             logger.error(_("[scheduler] DCQ 로그인 실패 - fallback 불가"))
         return False
 
-    def fetch(rtdb_select, rtdb_filter, suffix, dcq_query):
+    def fetch(rtdb_select, rtdb_filter, rtdb_table, suffix, dcq_query):
         """MAIN(RTDB) 우선 조회 → 예외/빈 결과 시 DCQ fallback. DataFrame 또는 None 반환."""
         df = None
         if rtdb_token:
             payload = {
                 "query": {
                     "select": rtdb_select,
-                    "table_name": f"A_{suffix}.B",
+                    "table_name": rtdb_table.format(suffix=suffix),
                     "filter": rtdb_filter,
                 },
                 "target": RTDB_TARGET,
@@ -132,7 +134,7 @@ def sync_rtdb_options():
                     FROM A.B_{suffix}
                     WHERE X IS NOT NULL AND X != ''
                 """
-                df_cp = fetch(RTDB_PP_SELECT, RTDB_PP_FILTER, suffix, dcq_cp)
+                df_cp = fetch(RTDB_PP_SELECT, RTDB_PP_FILTER, RTDB_PP_TABLE, suffix, dcq_cp)
                 if df_cp is None or len(df_cp) == 0:
                     logger.warning(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 데이터가 없습니다").format(line=line))
                 else:
@@ -155,7 +157,7 @@ def sync_rtdb_options():
                     SELECT DISTINCT partnumber, processid
                     FROM A.B_{suffix}_processproduct
                 """
-                df_pc = fetch(RTDB_PC_SELECT, RTDB_PC_FILTER, suffix, dcq_pc)
+                df_pc = fetch(RTDB_PC_SELECT, RTDB_PC_FILTER, RTDB_PC_TABLE, suffix, dcq_pc)
                 if df_pc is None or len(df_pc) == 0:
                     logger.warning(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 데이터가 없습니다").format(line=line))
                 else:
