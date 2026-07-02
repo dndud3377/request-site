@@ -31,6 +31,110 @@ load_dotenv()
 
 LINES = ['라인 1', '라인 3', '라인 4', '라인 5']
 
+# RTDB(MAIN) process-product 조회 파라미터
+RTDB_PP_SELECT = ["partnumber, descript, pkgtype_2"]
+RTDB_PP_FILTER = {"X": {"$eq": "Y"}}
+RTDB_PP_TARGET = "realtimedb"
+
+
+def sync_process_product():
+    """
+    RTDB(REST API) 를 MAIN 소스로 {{request.process_selection}}-{{request.partid_selection}}
+    데이터를 10 분 주기로 동기화한다.
+    - MAIN 이 예외(None) 또는 빈 결과면 DCQ 로 fallback (DCQ 는 필요 시에만 지연 로그인)
+    - 조회 결과가 기존 테이블과 동일하면 쓰기를 건너뛴다(변경 감지)
+    """
+    engine = None
+    try:
+        engine = get_django_engine()
+    except Exception as e:
+        logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e))
+        return
+
+    # MAIN 소스(RTDB) 토큰은 주기당 1회만 발급하여 라인 반복에서 재사용한다.
+    rtdb_token = rtdb_login_with_retry()
+    if not rtdb_token:
+        logger.warning(_("[scheduler] RTDB 로그인 실패 - DCQ fallback 으로 진행합니다"))
+
+    # DCQ 는 fallback 이 실제로 필요할 때만 지연 로그인한다.
+    dcq_ready = False
+    dcq_id = None
+
+    try:
+        for line in LINES:
+            try:
+                suffix = LINE_SUFFIX_MAP[line]
+
+                # MAIN: RTDB(REST API) 우선 조회
+                df_cp = None
+                if rtdb_token:
+                    rtdb_payload = {
+                        "query": {
+                            "select": RTDB_PP_SELECT,
+                            "table_name": f"A_{suffix}.B",
+                            "filter": RTDB_PP_FILTER,
+                        },
+                        "target": RTDB_PP_TARGET,
+                    }
+                    df_cp = get_data_from_rtdb(rtdb_payload, rtdb_token)
+
+                # FALLBACK: MAIN 이 예외(None) 또는 빈 결과면 DCQ 로 조회
+                if df_cp is None or len(df_cp) == 0:
+                    logger.warning(_("[scheduler] {line} RTDB 조회 실패/빈 결과 - DCQ fallback 실행").format(line=line))
+                    if not dcq_ready:
+                        if dcq_login_with_retry():
+                            dcq_id, _pw = get_dcq_credentials()
+                            if dcq_id:
+                                get_dcq_token_info(dcq_id)
+                                dcq_ready = True
+                            else:
+                                logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
+                        else:
+                            logger.error(_("[scheduler] DCQ 로그인 실패 - fallback 불가"))
+                    if dcq_ready:
+                        query_cp = f"""
+                            SELECT DISTINCT partnumber, descript, pkgtype_2
+                            FROM A.B_{suffix}
+                            WHERE X IS NOT NULL AND X != ''
+                        """
+                        df_cp = get_data_from_dcq(query_cp, dcq_id)
+
+                if df_cp is None or len(df_cp) == 0:
+                    logger.warning(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 데이터가 없습니다").format(line=line))
+                    continue
+
+                df_cp = df_cp.rename(columns={'descript': 'process', 'partnumber': 'product_name'})
+
+                # 변경 감지: 현재 테이블의 해당 라인 데이터와 동일하면 쓰기를 건너뛴다.
+                with engine.connect() as conn:
+                    rows = conn.execute(
+                        text("SELECT process, product_name FROM api_processproduct WHERE line = :line"),
+                        {"line": line}
+                    ).fetchall()
+                old_pairs = set((r[0], r[1]) for r in rows)
+                new_pairs = set(df_cp[['process', 'product_name']].itertuples(index=False, name=None))
+                if new_pairs == old_pairs:
+                    logger.info(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 변경 없음 - skip").format(line=line))
+                    continue
+
+                df_cp['line'] = line
+                df_cp['last_synced'] = pd.Timestamp.now()
+                df_cp = df_cp[['line', 'process', 'product_name', 'last_synced']]
+
+                with engine.begin() as db_conn:
+                    db_conn.execute(
+                        text("DELETE FROM api_processproduct WHERE line = :line"),
+                        {"line": line}
+                    )
+                    df_cp.to_sql('api_processproduct', db_conn, if_exists='append', index=False)
+
+                logger.info(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} {count}건 동기화 완료").format(line=line, count=len(df_cp)))
+            except Exception as e:
+                logger.error(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 동기화 실패: {e}").format(line=line, e=e))
+    finally:
+        if engine:
+            engine.dispose()
+
 
 def sync_form_options():
     """
@@ -57,60 +161,8 @@ def sync_form_options():
         logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
         return
 
-    # MAIN 소스(RTDB) 토큰은 주기당 1회만 발급하여 라인 반복에서 재사용한다.
-    # 실패해도 아래 fallback(DCQ) 로 동작하므로 중단하지 않는다.
-    rtdb_token = rtdb_login_with_retry()
-    if not rtdb_token:
-        logger.warning(_("[scheduler] RTDB 로그인 실패 - {{request.process_selection}}-{{request.partid_selection}} 는 DCQ fallback 으로 진행합니다"))
-
     try:
         for line in LINES:
-            try:
-                suffix = LINE_SUFFIX_MAP[line]
-
-                # MAIN: RTDB(REST API) 우선 조회
-                df_cp = None
-                if rtdb_token:
-                    rtdb_payload = {
-                        "query": {
-                            "select": ["partnumber, descript, pkgtype_2"],
-                            "table_name": f"A_{suffix}.B",
-                            "filter": {"X": {"$eq": "Y"}},
-                        },
-                        "target": "realtimedb",
-                    }
-                    df_cp = get_data_from_rtdb(rtdb_payload, rtdb_token)
-
-                # FALLBACK: MAIN 이 예외(None) 또는 빈 결과면 기존 DCQ 로 조회
-                if df_cp is None or len(df_cp) == 0:
-                    logger.warning(_("[scheduler] {line} RTDB 조회 실패/빈 결과 - DCQ fallback 실행").format(line=line))
-                    query_cp = f"""
-                        SELECT DISTINCT partnumber, descript, pkgtype_2
-                        FROM A.B_{suffix}
-                        WHERE X IS NOT NULL AND X != ''
-                    """
-                    df_cp = get_data_from_dcq(query_cp, dcq_id)
-
-                if df_cp is None or len(df_cp) == 0:
-                    logger.warning(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 데이터가 없습니다").format(line=line))
-                    continue
-
-                df_cp = df_cp.rename(columns={'descript': 'process', 'partnumber': 'product_name'})
-                df_cp['line'] = line
-                df_cp['last_synced'] = pd.Timestamp.now()
-                df_cp = df_cp[['line', 'process', 'product_name', 'last_synced']]
-  
-                with engine.begin() as db_conn:
-                    db_conn.execute(
-                        text("DELETE FROM api_processproduct WHERE line = :line"),
-                        {"line": line}
-                    )
-                    df_cp.to_sql('api_processproduct', db_conn, if_exists='append', index=False)
-  
-                logger.info(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} {count}건 동기화 완료").format(line=line, count=len(df_cp)))
-            except Exception as e:
-                logger.error(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 동기화 실패: {e}").format(line=line, e=e))
-  
             try:
                 suffix = LINE_SUFFIX_MAP[line]
                 query_pc = f"""
@@ -297,6 +349,15 @@ def start():
             replace_existing=True,
         )
 
+        scheduler.add_job(
+            sync_process_product,
+            trigger=IntervalTrigger(minutes=10),
+            id='sync_process_product',
+            name='RTDB process-product 동기화',
+            replace_existing=True,
+            max_instances=1,
+        )
+
         from apscheduler.triggers.cron import CronTrigger
         scheduler.add_job(
             sync_holidays,
@@ -317,9 +378,10 @@ def start():
         )
 
         scheduler.start()
-        logger.info(_("[scheduler] APScheduler 시작 - 1 시간 주기 DCQ 동기화 / 매일 02:00 공휴일 동기화 등록"))
+        logger.info(_("[scheduler] APScheduler 시작 - 1 시간 주기 DCQ 동기화 / 10 분 주기 RTDB process-product / 매일 02:00 공휴일 동기화 등록"))
 
         threading.Thread(target=sync_form_options, daemon=True).start()
+        threading.Thread(target=sync_process_product, daemon=True).start()
         threading.Thread(target=sync_holidays, daemon=True).start()
     except ProgrammingError as e:
         logger.warning(_("[scheduler] 테이블이 아직 생성되지 않았습니다. 마이그레이션 후 재시작됩니다: {e}").format(e=e))
