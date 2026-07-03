@@ -613,6 +613,17 @@ export default function RequestPage(): React.ReactElement {
           email: doc.requester_email ?? '',
           department: doc.requester_department ?? '',
         };
+        // 검토자(지정 PL) 프리필: 이전 회차에 지정했던 PL 담당자를 상신 모달에 미리 채운다(수정 가능).
+        const plSteps = (doc.approval_steps ?? []).filter((s) => s.agent === 'PL');
+        if (plSteps.length > 0) {
+          const maxPlRound = Math.max(...plSteps.map((s) => s.round ?? 1));
+          const seen = new Set<string>();
+          const prevDesignees = plSteps
+            .filter((s) => (s.round ?? 1) === maxPlRound && s.assignee_loginid)
+            .filter((s) => !seen.has(s.assignee_loginid!) && seen.add(s.assignee_loginid!))
+            .map((s) => ({ loginid: s.assignee_loginid!, name: s.assignee_name ?? s.assignee_loginid! }));
+          if (prevDesignees.length > 0) setDesignees(prevDesignees);
+        }
         if (doc.production_date) setProductionDate(doc.production_date);
         // 구버전 저장 문서의 bb_entries에는 id가 없으므로 로드 시 백필(React key·매핑 식별 안정화).
         // 백필된 항목 목록은 아래 bbRows의 레거시 entryIdx → entryId 링크에도 사용한다.

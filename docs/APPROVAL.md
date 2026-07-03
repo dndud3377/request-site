@@ -109,6 +109,7 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 - 조건: `status == 'rejected'`, 지정 PL 필수(본인 불가), bb 매핑 통과.
 - 동작: `status → under_review`, **max(round)+1**로 새 PL pending 생성. 이전 round step은 이력으로 보존.
 - ✅ **다중 지정 PL(2026-07)**: Case A와 동일하게 `designated_pl_loginids` 배열을 받아 새 회차에 PL step **전원**을 생성한다(전원 합의).
+- ✅ **검토자 프리필(2026-07)**: 수정·재상신 화면 진입 시 이전 회차에 지정했던 PL 담당자를 상신 모달의 검토자(designees)에 **미리 채운다**(통보처처럼). `doc.approval_steps` 중 최신 회차 `agent='PL'` step의 assignee로 복원하며, **수정(추가/삭제) 가능**하다. 구현: `RequestPage` 편집 로드 `useEffect`.
 
 ### Case J — 철회 (`withdraw`, `views.py:189`)
 - 조건: status가 under_review/rejected/submitted.
@@ -222,7 +223,9 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 | `submit`/`resubmit` | notify_submitted | **통보처 전원**(`detail.notifiers`) |
 | `approve_step`(최종 승인) | notify_approved | **통보처 전원**(`detail.notifiers`) |
 
-> **통보처(Notifier)**: 결재 권한 없이 **상신·결재완료** 시점에만 메일을 받는 인원. 최초 상신 모달에서 다중 지정하며 `detail.notifiers=[{loginid,name}]`에 저장(이메일은 발송 시점 조회). 결재 경로에는 포함되지 않고 상세 '결재 경로' 탭에 **별도 '통보처' 행**으로만 표시된다.
+> **통보처(Notifier)**: 결재 권한 없이 **상신·결재완료** 시점에만 메일을 받는 인원. 최초 상신 모달에서 다중 지정하며 `detail.notifiers=[{loginid,name}]`에 저장(이메일은 발송 시점 조회). 결재 경로에는 포함되지 않으며, 상세 '결재 경로' 탭에서 **의뢰자 바로 다음**에 '통보처' 행으로 표시된다(2026-07 위치 이동). 표시 시 이름 옆에 이메일도 보이며, 통보처 이메일은 `RequestDocumentSerializer.notifier_mails`(loginid→mail)로 내려온다.
+
+> **결재 경로 이메일 표시(2026-07)**: '결재 경로' 탭의 의뢰자·결재자·통보처는 **이름 옆에 이메일**을 함께 표시한다. 의뢰자=`requester_email`, 결재자=`ApprovalStepSerializer.assignee_mail`, 통보처=`notifier_mails`. (모델 변경·마이그레이션 없음)
 
 > 상세 규칙·환경변수·검증 방법은 `docs/MAIL.md` 참조.
 

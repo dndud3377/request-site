@@ -64,6 +64,7 @@ export interface ApprovalStepFrontend {
   is_parallel?: boolean;  // J, O 병렬 표시용
   assignee_loginid?: string; // 담당자 loginid
   assignee_name?: string;    // 담당자 이름
+  assignee_mail?: string | null; // 담당자 이메일 (결재 경로 탭 표시용)
   round: number;             // 상신 회차
   created_at?: string | null; // 단계 생성일시 (R 단계의 경우 해당 회차 상신 시각)
   due_date?: string | null;   // 완료 기한 (YYYY-MM-DD)
@@ -88,6 +89,7 @@ export interface RequestDocument {
   designated_pl_loginid?: string | null;
   designated_pl_name?: string;
   approval_steps?: ApprovalStepFrontend[];
+  notifier_mails?: Record<string, string>; // 통보처 loginid → 이메일 (결재 경로 탭 표시용)
   // 서버가 요청자 기준으로 계산해 내려주는 권한 플래그 (읽기 전용)
   requester_loginid?: string | null;
   can_edit?: boolean;

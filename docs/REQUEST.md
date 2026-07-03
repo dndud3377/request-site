@@ -126,7 +126,9 @@ pages/RequestPage/
 - **상신 모달에 통보처(Notifier) 다중 지정 추가**: 지정 PL 아래에 "통보처" 필드를 추가해 **결재 권한 없이 메일 통보만 받을 인원을 여러 명** 지정할 수 있다(선택).
   - 후보는 전체 사용자(role 무관, 본인 제외). 검색→선택→칩(태그) 방식이며 `detail.notifiers = [{loginid, name}]`에 저장된다(`additional_notes` JSON, 마이그레이션 불필요).
   - 이메일 stale 방지를 위해 **이메일은 저장하지 않고** 발송 시점에 `loginid`로 조회한다.
-  - 메일: **상신·재상신 시**(`notify_submitted`), **결재 완료 시**(`notify_approved`) 통보처 전원에게 발송. 결재 경로 상세 탭에는 **별도 '통보처' 행**으로 표시(결재 경로에는 미포함). 상세는 `docs/APPROVAL.md`·`docs/MAIL.md` 참조.
+  - 메일: **상신·재상신 시**(`notify_submitted`), **결재 완료 시**(`notify_approved`) 통보처 전원에게 발송. 결재 경로 상세 탭에는 **의뢰자 다음 '통보처' 행**으로 표시(결재 경로에는 미포함, 2026-07 위치 이동·이메일 병기). 상세는 `docs/APPROVAL.md`·`docs/MAIL.md` 참조.
+
+- **수정·재상신 시 검토자(지정 PL) 프리필 (2026-07)**: 반려 후 수정·재상신 화면 진입 시, 통보처처럼 **이전에 지정했던 검토자(지정 PL)가 상신 모달에 미리 채워진다**(수정 가능). 편집 로드 `useEffect`에서 `doc.approval_steps`의 최신 회차 `agent='PL'` step assignee를 `designees`로 복원한다. 상세는 `docs/APPROVAL.md` Case I 참조.
 
 ### 추가 변경 이력 (2026-06-25)
 
