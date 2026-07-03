@@ -1218,6 +1218,7 @@ type Page = { label: string; content: React.ReactNode };
     status: 'approved' | 'rejected' | 'reviewing' | 'unassigned' | 'waiting' | 'na';
     label: string;
     assignee?: string;
+    email?: string;
     date?: string;
     comment?: string;
     dueDate?: string;
@@ -1226,21 +1227,22 @@ type Page = { label: string; content: React.ReactNode };
   // 단일 ApprovalStep → 표시 정보
   const stepToInfo = (s: NonNullable<ReturnType<typeof getStep>>): StepDisplayInfo => {
     const dueDate = s.due_date ? s.due_date.slice(5).replace('-', '/') : undefined; // MM/DD
+    const email = s.assignee_mail || undefined;
     if (s.action === 'approved') return {
       status: 'approved', label: t('approval.agree'),
-      assignee: s.assignee_name || undefined,
+      assignee: s.assignee_name || undefined, email,
       date: formatDateTime(s.acted_at),
       comment: s.comment || undefined,
     };
     if (s.action === 'rejected') return {
       status: 'rejected', label: t('approval.reject'),
-      assignee: s.assignee_name || undefined,
+      assignee: s.assignee_name || undefined, email,
       date: formatDateTime(s.acted_at),
       comment: s.comment || undefined,
     };
     // pending
     if (!s.assignee_name) return { status: 'unassigned', label: t('approval.step_unassigned'), dueDate };
-    return { status: 'reviewing', label: t('common.status_under_review'), assignee: s.assignee_name || undefined, dueDate };
+    return { status: 'reviewing', label: t('common.status_under_review'), assignee: s.assignee_name || undefined, email, dueDate };
   };
 
   // 한 단계(agent·round)의 표시 정보 목록. PL/J 등 다중 담당자는 담당자별로 여러 항목을 반환한다.
@@ -1282,6 +1284,11 @@ type Page = { label: string; content: React.ReactNode };
     color: 'var(--text-primary)', paddingTop: 2,
   };
 
+  // 이름 옆 이메일 표시 스타일 (결재 경로 탭)
+  const emailStyle: React.CSSProperties = {
+    color: 'var(--text-muted)', fontSize: '0.75rem',
+  };
+
   const historyListStyle: React.CSSProperties = {
     display: 'flex', flexDirection: 'column', gap: 4, flex: 1,
   };
@@ -1319,6 +1326,7 @@ type Page = { label: string; content: React.ReactNode };
                 <div key={r} style={historyItemStyle(isCurrent)}>
                   <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', minWidth: 40 }}>{r}회차</span>
                   <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{doc.requester_name}</span>
+                  {doc.requester_email && <span style={emailStyle}>{doc.requester_email}</span>}
                   {date && date !== '-' && (
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{date}</span>
                   )}
@@ -1327,6 +1335,27 @@ type Page = { label: string; content: React.ReactNode };
             })}
           </div>
         </div>
+
+        {/* 통보처: 의뢰자 바로 다음에 표시. 결재 개념 없이 이름·이메일만 나열, 없으면 숨김. */}
+        {notifiers.length > 0 && (
+          <div style={teamRowStyle}>
+            <div style={teamLabelStyle}>{t('approval.label_notifier')}</div>
+            <div style={historyListStyle}>
+              <div style={historyItemStyle(false)}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px' }}>
+                  {notifiers.map((n) => (
+                    <span key={n.loginid} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{n.name}</span>
+                      {doc.notifier_mails?.[n.loginid] && (
+                        <span style={emailStyle}>{doc.notifier_mails[n.loginid]}</span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 팀별 행 */}
         {AGENTS.map(({ key, label }) => (
@@ -1350,6 +1379,9 @@ type Page = { label: string; content: React.ReactNode };
                             <span style={statusBadgeStyle(info.status)}>{info.label}</span>
                             {info.assignee && (
                               <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{info.assignee}</span>
+                            )}
+                            {info.email && (
+                              <span style={emailStyle}>{info.email}</span>
                             )}
                             {info.date && (
                               <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{info.date}</span>
@@ -1392,19 +1424,6 @@ type Page = { label: string; content: React.ReactNode };
           </div>
         </div>
 
-        {/* 통보처: 결재 경로와 분리된 별도 행. 결재 개념 없이 이름만 나열, 없으면 숨김. */}
-        {notifiers.length > 0 && (
-          <div style={{ ...teamRowStyle, borderBottom: 'none', borderTop: '2px solid var(--border)' }}>
-            <div style={teamLabelStyle}>{t('approval.label_notifier')}</div>
-            <div style={historyListStyle}>
-              <div style={historyItemStyle(false)}>
-                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-                  {notifiers.map((n) => n.name).join(' · ')}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     ),
   });
