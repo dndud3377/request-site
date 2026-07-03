@@ -18,12 +18,12 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 
 `api_processproduct`(공정-품목)·`api_productprocessid`(품목-공정ID) 동기화는 두 개의 소스를
 **폴백 구조**로 사용하며, 하나의 10분 잡 `sync_rtdb_options()` 에서 **RTDB 토큰을 1회만 발급**해
-두 소스를 함께 처리한다. 두 RTDB 조회는 모두 `table_name = A_{suffix}.B` 를 공유하고 select/filter 만 다르다.
+두 소스를 함께 처리한다. 두 RTDB 조회는 **table_name·select·filter 가 각각 다르다**(`{suffix}` 는 라인 접미사로 치환).
 
-| 대상 테이블 | RTDB(MAIN) select / filter | DCQ(FALLBACK) |
-|-------------|----------------------------|---------------|
-| `api_processproduct` | `partnumber, descript, pkgtype_2` / `X $eq "Y"` | `query_cp` (`A.B_{suffix}`) |
-| `api_productprocessid` | `partnumber, processid` / `X $neq " "` | `query_pc` (`A.B_{suffix}_processproduct`) |
+| 대상 테이블 | RTDB(MAIN) table / select / filter | DCQ(FALLBACK) |
+|-------------|-----------------------------------|---------------|
+| `api_processproduct` | `A_{suffix}.B` / `partnumber, descript, pkgtype_2` / `X $eq "Y"` | `query_cp` (`A.B_{suffix}`) |
+| `api_productprocessid` | `X_{suffix}.Y` / `partnumber, processid` / `X $neq " "` | `query_pc` (`A.B_{suffix}_processproduct`) |
 
 ```
 ① MAIN     RTDB(REST API)  →  /api/queries

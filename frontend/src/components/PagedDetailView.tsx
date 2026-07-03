@@ -510,11 +510,12 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
     : { changedIds: new Set<string>(), prevRowMap: new Map<string, BbTableRow>() };
 
   const isPL = role === 'PL';
-  const isP = role === 'TE_P' || role === 'MASTER' || isPL;
-  const isR = role === 'TE_R' || role === 'MASTER' || isPL;
-  const isJ = role === 'TE_J' || role === 'MASTER' || isPL;
-  const isO = role === 'TE_O' || role === 'MASTER' || isPL;
-  const isE = role === 'TE_E';
+  // 모든 팀이 상세 보기의 전체 탭·섹션을 동일하게 볼 수 있도록 역할 게이팅을 개방한다.
+  const isP = true;
+  const isR = true;
+  const isJ = true;
+  const isO = true;
+  const isE = true;
 
   const showJayer = isJ || isE || isO || isP;
   const showOayer = isO || isP;

@@ -267,7 +267,8 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 
 ## 7. 상세 보기(PagedDetailView) 변경 이력
 
-- **(2026-06-13) 원본 라인/Part ID는 MAP 정보 섹션에만 표시**: 기존에는 `source_line`/`source_partid`가 '상세 정보' 섹션(`section_detail`)과 'MAP 정보' 섹션(`section_map`, `map_type === 'CLONE'`) 두 곳에 중복 노출됐다. '상세 정보' 쪽 블록을 제거하여 **MAP 정보 섹션(CLONE)에서만** 보이도록 한다. MAP 섹션 노출 조건은 `showMap = isR || isO || isP`이므로 순수 TE_J/TE_E 역할에는 원본 정보가 표시되지 않는다(MAP 정보 성격상 의도된 동작).
+- **(2026-07) 모든 팀 상세 탭 전체 개방**: 역할 게이팅 플래그(`isP/isR/isJ/isO/isE`)를 **모두 `true`로 고정**하여, 모든 역할(PL·TE_R·TE_P·TE_J·TE_O·TE_E·MASTER)이 상세 보기의 **6개 탭 전부**(의뢰 상세 / MAP 정보 / J-ayer / O-ayer / 뼈찜 / 결재 경로)와 탭 내부 섹션을 **동일하게** 볼 수 있다. 이로써 아래 2026-06-13 항목의 "MAP은 순수 TE_J/TE_E 미표시" 제한도 해제된다(상세 내용은 결재 권한과 무관한 표시 영역).
+- **(2026-06-13, 위 2026-07 개방으로 상위 완화됨) 원본 라인/Part ID는 MAP 정보 섹션에만 표시**: 기존에는 `source_line`/`source_partid`가 '상세 정보' 섹션(`section_detail`)과 'MAP 정보' 섹션(`section_map`, `map_type === 'CLONE'`) 두 곳에 중복 노출됐다. '상세 정보' 쪽 블록을 제거하여 **MAP 정보 섹션(CLONE)에서만** 보이도록 한다.
 - 각 step에서 작성한 내용은 상세 보기에서 별도 페이지/섹션으로 분리 렌더된다: J-layer→`job_li`, O-layer→`ovl_li`(table/info 탭, info 탭에 `partial_shot`·TBV·TLV), Backbone→`bb`, MAP 변경 내용→`section_map`.
 - **(2026-06-22)** J-ayer `📊 export` 버튼에 `data-tour="export-jayer"`, 결재 경로 탭 카드에 `data-tour="approval-route-tab"`을 부여했다(전체 가이드 투어 강조용, 실제 동작 변경 없음).
 - **(2026-06-23)** 재상신 변경 이력 강조용으로 J-ayer 변경 행의 '이력 확인' 버튼에 `data-tour="jayer-hist-btn"`을 부여했다(투어에서 변경 전/후 비교 모달 시연용, 실제 동작 변경 없음).
