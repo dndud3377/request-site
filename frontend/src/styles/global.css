@@ -129,7 +129,7 @@ img {
 }
 
 .container {
-  max-width: none;
+  max-width: 1720px;
   margin: 0 auto;
   padding: 0 24px;
 }
@@ -155,7 +155,7 @@ img {
 
 .navbar-inner {
   width: 100%;
-  max-width: none;
+  max-width: 1720px;
   margin: 0 auto;
   padding: 0 24px;
   display: flex;
