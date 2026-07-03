@@ -72,18 +72,23 @@ class UserSerializer(serializers.ModelSerializer):
 
 class ApprovalStepSerializer(serializers.ModelSerializer):
     assignee_loginid = serializers.SerializerMethodField()
+    assignee_mail = serializers.SerializerMethodField()
 
     class Meta:
         model = ApprovalStep
-        fields = ['id', 'agent', 'action', 'acted_at', 'comment', 'is_parallel', 'assignee_loginid', 'assignee_name', 'round', 'created_at', 'due_date']
+        fields = ['id', 'agent', 'action', 'acted_at', 'comment', 'is_parallel', 'assignee_loginid', 'assignee_name', 'assignee_mail', 'round', 'created_at', 'due_date']
 
     def get_assignee_loginid(self, obj):
         return obj.assignee.loginid if obj.assignee else None
+
+    def get_assignee_mail(self, obj):
+        return obj.assignee.mail if obj.assignee else None
 
 
 class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer):
     approval_steps = ApprovalStepSerializer(many=True, read_only=True)
     designated_pl_loginid = serializers.SerializerMethodField()
+    notifier_mails = serializers.SerializerMethodField()
 
     class Meta:
         model = RequestDocument
@@ -92,13 +97,27 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'product_name', 'reference_materials', 'additional_notes',
             'status', 'production_date', 'created_at', 'updated_at', 'submitted_at',
             'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
-            'requester_loginid', 'can_edit', 'can_withdraw',
+            'requester_loginid', 'can_edit', 'can_withdraw', 'notifier_mails',
         ]
         read_only_fields = ['status', 'created_at', 'updated_at', 'submitted_at',
                             'designated_pl_loginid', 'designated_pl_name']
 
     def get_designated_pl_loginid(self, obj):
         return obj.designated_pl.loginid if obj.designated_pl else None
+
+    def get_notifier_mails(self, obj):
+        """통보처(detail.notifiers) loginid → mail 매핑. 결재 경로 탭에서 이름 옆 이메일 표시용."""
+        import json
+        try:
+            data = json.loads(obj.additional_notes or '{}')
+            notifiers = (data.get('detail') or {}).get('notifiers') or []
+            loginids = [n.get('loginid') for n in notifiers if n.get('loginid')]
+            if not loginids:
+                return {}
+            users = User.objects.filter(loginid__in=loginids).values('loginid', 'mail')
+            return {u['loginid']: u['mail'] for u in users}
+        except Exception:
+            return {}
 
     def update(self, instance, validated_data):
         # 의뢰자 표시 정보는 최초 작성자로 고정한다.
