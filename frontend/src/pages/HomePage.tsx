@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { documentsAPI, noticesAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
-import { ConfirmModal } from '../components/Modal';
+import Modal, { ConfirmModal } from '../components/Modal';
 import RichTextEditor from '../components/RichTextEditor';
 import GuideTourModal from '../components/GuideTourModal';
 import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseItem } from '../types';
@@ -458,13 +458,24 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
 
 export default function HomePage(): React.ReactElement {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const isMaster = currentUser.role === 'MASTER';
+  const hasNoRole = currentUser.role === 'NONE';
 
   const [recent, setRecent] = useState<RequestDocument[]>([]);
   const [allNotices, setAllNotices] = useState<AdminNotice[]>([]);
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const [showTour, setShowTour] = useState(false);
+  const [showPermissionAlert, setShowPermissionAlert] = useState(false);
+
+  const goOrAlert = useCallback((path: string) => {
+    if (hasNoRole) {
+      setShowPermissionAlert(true);
+      return;
+    }
+    navigate(path);
+  }, [hasNoRole, navigate]);
 
   const loadNotices = useCallback(async () => {
     try {
@@ -517,6 +528,25 @@ export default function HomePage(): React.ReactElement {
 
   return (
     <div>
+      {/* 권한 없음 안내 모달 */}
+      <Modal
+        isOpen={showPermissionAlert}
+        onClose={() => setShowPermissionAlert(false)}
+        title={t('home.permission_required_title')}
+        size="sm"
+        hideFullscreen
+        style={{ maxWidth: '420px' }}
+        footer={
+          <button className="btn btn-primary" onClick={() => setShowPermissionAlert(false)}>
+            {t('common.confirm')}
+          </button>
+        }
+      >
+        <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+          {t('home.permission_required_message')}
+        </p>
+      </Modal>
+
       {/* 전체 가이드 모달 */}
       <GuideTourModal isOpen={showTour} onClose={() => setShowTour(false)} />
 
@@ -542,12 +572,20 @@ export default function HomePage(): React.ReactElement {
             <p className="hero-subtitle">{t('home.hero_subtitle')}</p>
             <p className="hero-desc">{t('home.hero_desc')}</p>
             <div className="hero-actions">
-              <Link to="/request" className="btn btn-primary btn-lg">
+              <button
+                type="button"
+                className="btn btn-primary btn-lg"
+                onClick={() => goOrAlert('/request')}
+              >
                 ✏️ {t('home.start_request')}
-              </Link>
-              <Link to="/approval" className="btn btn-secondary btn-lg">
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-lg"
+                onClick={() => goOrAlert('/approval')}
+              >
                 📋 {t('home.view_status')}
-              </Link>
+              </button>
               <button
                 type="button"
                 className="btn btn-secondary btn-lg"
@@ -573,9 +611,13 @@ export default function HomePage(): React.ReactElement {
               }}
             >
               <h2 className="section-title">{t('home.recent_title')}</h2>
-              <Link to="/approval" className="btn btn-secondary btn-sm">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => goOrAlert('/approval')}
+              >
                 {t('home.view_all')} →
-              </Link>
+              </button>
             </div>
             <div className="table-wrapper">
               <table className="table">

@@ -14,7 +14,9 @@
     "start_request": "Start a Request",
     "view_status": "View Approval Status",
     "recent_title": "Recent Requests",
-    "view_all": "View All"
+    "view_all": "View All",
+    "permission_required_title": "Notice",
+    "permission_required_message": "Please request access from a teammate in your department before using this feature."
   },
   "request": {
     "title": "New Request",
