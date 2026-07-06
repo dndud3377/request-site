@@ -14,7 +14,9 @@
     "start_request": "의뢰서 작성하기",
     "view_status": "결재 현황 보기",
     "recent_title": "최근 의뢰 현황",
-    "view_all": "전체 보기"
+    "view_all": "전체 보기",
+    "permission_required_title": "안내",
+    "permission_required_message": "같은 부서 팀원에게 권한 신청 후 사용 바랍니다."
   },
   "request": {
     "title": "의뢰서 작성",
