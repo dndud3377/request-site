@@ -1687,6 +1687,17 @@ select.form-control option {
   line-height: 1.4;
 }
 
+/* J-ayer/O-ayer: 위 nth-child(4)/(5) 줄바꿈 규칙은 Bb 테이블(bb-info-table) 컬럼 순서 기준이라
+   컬럼 순서가 다른 다른 wizard-table(Bb 제외)에는 잘못 적용된다. 기본값으로 되돌린다. */
+.wizard-table:not(.bb-info-table) td:nth-child(4) input,
+.wizard-table:not(.bb-info-table) td:nth-child(5) input {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+  field-sizing: content;
+  width: 100%;
+}
+
 .wizard-table col.sd-column {
   width: 300px;
 }
