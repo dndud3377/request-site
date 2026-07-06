@@ -589,7 +589,7 @@ export default function HomePage(): React.ReactElement {
               <button
                 type="button"
                 className="btn btn-secondary btn-lg"
-                onClick={() => setShowTour(true)}
+                onClick={() => (hasNoRole ? setShowPermissionAlert(true) : setShowTour(true))}
               >
                 ❓ {t('guide.tour.button')}
               </button>
