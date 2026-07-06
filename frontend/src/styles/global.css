@@ -1699,14 +1699,14 @@ select.form-control option {
 }
 
 .wizard-table col.sd-column {
-  width: 300px;
+  width: auto;
 }
 
 .wizard-table col.bb-step-column {
-  width: 200px;
+  width: auto;
 }
 
-/* BB 정보 테이블: bb_step 컬럼(10번째) — 줄바꿈 없이 고정 폭(200px)만 유지 */
+/* BB 정보 테이블: bb_step 컬럼(10번째) — 줄바꿈·고정 폭 모두 제거, 내용 기준 폭 */
 .wizard-table.bb-info-table td:nth-child(10) input {
   white-space: nowrap;
   word-break: normal;
@@ -1722,7 +1722,7 @@ select.form-control option {
   overflow-wrap: normal;
 }
 
-/* BB 정보 테이블: SD 컬럼(5번째) — 줄바꿈 없이 고정 폭(300px)만 유지 (J-ayer/O-ayer와 동일 처리) */
+/* BB 정보 테이블: SD 컬럼(5번째) — 줄바꿈·고정 폭 모두 제거, 내용 기준 폭 (J-ayer/O-ayer와 동일 처리) */
 .wizard-table.bb-info-table td:nth-child(5) input {
   white-space: nowrap;
   word-break: normal;
