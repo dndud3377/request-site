@@ -108,37 +108,53 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     # 역할 → 담당 agent 매핑 (프론트 ROLE_TO_AGENT 와 동일)
     _ROLE_TO_AGENT = {'TE_R': 'R', 'TE_P': 'P', 'TE_J': 'J', 'TE_O': 'O', 'TE_E': 'E'}
 
+    # 검토중(claim) 방식으로 전환된 단계 — 담당자 지정 대신 담당 역할 누구나 스스로 선점한다.
+    _CLAIM_AGENTS = ('J', 'O', 'E')
+
     def _can_act_on_step(self, user, step):
         """합의/반려 인가 (canUserAgree 동일).
 
         - MASTER: 항상 허용
-        - TE_O/TE_E: 자기 agent(O/E) 단계면 담당자 지정 없이 허용
-        - 그 외(R/P/J): 해당 step 의 assignee 본인만
+        - 그 외: 해당 step 의 assignee 본인만 (R/P 는 지정, J/O/E 는 검토중 선점으로 배정됨)
         """
         role = getattr(user, 'role', '')
         if role == 'MASTER':
-            return True
-        if role in ('TE_O', 'TE_E') and step.agent == self._ROLE_TO_AGENT[role]:
             return True
         caller_loginid = getattr(user, 'loginid', '')
         return bool(caller_loginid and step.assignee and step.assignee.loginid == caller_loginid)
 
     def _can_assign_step(self, user, step):
-        """담당자 지정 인가 (canUserAssign 동일 + MASTER 허용).
+        """담당자 지정(지정하기) 인가 (canUserAssign 동일 + MASTER 허용).
 
         - MASTER: 항상 허용
-        - PL 단계 / TE_O / TE_E: 지정 개념 없음 → 불가
-        - 그 외: 같은 팀(역할↔agent 일치) + 아직 미지정일 때만
+        - PL 단계 / J·O·E(검토중 방식): 지정하기 개념 없음 → 불가
+        - R·P: 같은 팀(역할↔agent 일치) + 아직 미지정일 때만
         """
         role = getattr(user, 'role', '')
         if role == 'MASTER':
             return True
-        if step.agent == 'PL' or role in ('TE_O', 'TE_E'):
+        if step.agent == 'PL' or step.agent in self._CLAIM_AGENTS:
             return False
         return (
             self._ROLE_TO_AGENT.get(role) == step.agent
             and not step.assignee_id
         )
+
+    def _can_claim_step(self, user, step):
+        """검토중(claim) 인가.
+
+        - MASTER: claim 불필요(바로 합의 가능)하나 편의상 허용
+        - J/O/E: 같은 팀(역할↔agent 일치) + pending + 아직 미배정일 때만
+        - 그 외 단계(PL/R/P): 검토중 방식 아님 → 불가
+        """
+        if step.agent not in self._CLAIM_AGENTS:
+            return False
+        if step.action != 'pending' or step.assignee_id:
+            return False
+        role = getattr(user, 'role', '')
+        if role == 'MASTER':
+            return True
+        return self._ROLE_TO_AGENT.get(role) == step.agent
 
     # 의뢰자/철회/수정 권한은 serializers 와 공유하기 위해 doc_permissions 모듈에 둔다.
     def _can_withdraw(self, user, document):
@@ -471,54 +487,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         max_round = self._max_round(document)
 
-        # J 다중 담당자 지정: assignees 배열로 여러 명을 한 번에 지정한다.
-        if agent == 'J' and 'assignees' in request.data:
-            assignees = request.data.get('assignees', [])
-            if not isinstance(assignees, list) or not assignees:
-                return Response({'error': '담당자 목록이 비어있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            role = getattr(request.user, 'role', '')
-            if role != 'MASTER' and role != 'TE_J':
-                return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
-
-            existing_step = ApprovalStep.objects.filter(
-                document=document, agent='J', action='pending', round=max_round
-            ).first()
-            if not existing_step:
-                return Response({'error': '해당 단계를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            due_date = existing_step.due_date
-
-            with transaction.atomic():
-                first = True
-                for a in assignees:
-                    loginid = a.get('loginid', '')
-                    name = a.get('name', '')
-                    try:
-                        assignee_user = User.objects.get(loginid=loginid)
-                    except User.DoesNotExist:
-                        return Response(
-                            {'error': f'사용자를 찾을 수 없습니다: {loginid}'},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-
-                    if first:
-                        existing_step.assignee = assignee_user
-                        existing_step.assignee_name = name
-                        existing_step.save()
-                        mailer.enqueue_stage_arrival(document, 'J', existing_step)
-                        first = False
-                    else:
-                        new_step = ApprovalStep.objects.create(
-                            document=document, agent='J', action='pending',
-                            round=max_round, due_date=due_date,
-                            assignee=assignee_user, assignee_name=name,
-                        )
-                        mailer.enqueue_stage_arrival(document, 'J', new_step)
-
-            return Response({'message': '담당자가 지정되었습니다.'})
-
-        # 단일 담당자 지정 (기존 로직)
+        # 단일 담당자 지정 (R·P 전용 — J/O/E 는 검토중(claim) 방식)
         step = ApprovalStep.objects.filter(
             document=document, agent=agent, action='pending', round=max_round
         ).first()
@@ -541,6 +510,42 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         mailer.enqueue_stage_arrival(document, agent, step)
 
         return Response({'message': '담당자가 지정되었습니다.'})
+
+    @action(detail=True, methods=['post'], url_path='claim-step')
+    @transaction.atomic
+    def claim_step(self, request, pk=None):
+        """검토중(claim) — J/O/E 단계를 담당 역할 사용자가 스스로 선점한다.
+
+        먼저 누른 1명이 해당 단계의 assignee 로 고정되며(취소·재클릭 불가),
+        이후 그 사용자만 합의/반려할 수 있다. 동시 선점 경합은 문서 행을 잠가 직렬화한다.
+        """
+        document = self.get_object()
+        agent = request.data.get('agent')
+
+        if agent not in self._CLAIM_AGENTS:
+            return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 동시 선점 경합 방지: 문서 행을 잠가 같은 단계의 중복 배정을 막는다.
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+        max_round = self._max_round(document)
+
+        step = ApprovalStep.objects.select_for_update().filter(
+            document=document, agent=agent, action='pending', round=max_round
+        ).first()
+        if not step:
+            return Response({'error': '해당 단계를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if step.assignee_id:
+            return Response({'error': '이미 다른 담당자가 검토 중입니다.'}, status=status.HTTP_409_CONFLICT)
+
+        if not self._can_claim_step(request.user, step):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        step.assignee = request.user
+        step.assignee_name = getattr(request.user, 'username', '') or getattr(request.user, 'loginid', '')
+        step.save()
+
+        return Response({'message': '검토를 시작했습니다.'})
 
     def _get_pending_pl_step(self, document):
         """현재 회차의 pending PL 단계 반환(첫 번째). 없으면 None."""
