@@ -8,7 +8,7 @@ import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView from '../components/PagedDetailView';
-import { canUserAgree, canUserAssign, ROLE_TO_AGENT } from '../components/ApprovalFlow';
+import { canUserAgree, canUserAssign, canUserClaim, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole } from '../types';
 import { formatDate } from '../utils/date';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS } from './approvalTourSeed';
@@ -193,9 +193,8 @@ const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
     path1DueDate = path1PendingP.due_date ?? null;
     path1PathStatus = doc.status === 'rejected' ? 'rejected' : path1PendingP.assignee_loginid ? 'under_review' : 'unassigned';
   } else {
-    const jLabel = t(`approval.agent_J` as any);
-    const jNames = jPendingSteps.map(s => s.assignee_name).filter(Boolean);
-    path1StageText = jNames.length > 0 ? `${jLabel}(${jNames.join('/')})` : jLabel;
+    // J 단계는 검토중(claim) 방식 — 담당자 이름은 노출하지 않는다.
+    path1StageText = t(`approval.agent_J` as any);
     path1DueDate = jPendingSteps[0]?.due_date ?? null;
     const jHasUnassigned = jPendingSteps.some(s => !s.assignee_loginid);
     path1PathStatus = doc.status === 'rejected' ? 'rejected' : jHasUnassigned ? 'unassigned' : 'under_review';
@@ -280,7 +279,6 @@ export default function ApprovalPage(): React.ReactElement {
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
   const [teamMembers, setTeamMembers] = useState<UserWithRole[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
-  const [jAssignees, setJAssignees] = useState<{ loginid: string; name: string; deptname: string }[]>([]);
 
   // 지정자 변경 UI (모달 footer)
   const [changingDesigneeOpen, setChangingDesigneeOpen] = useState(false);
@@ -575,7 +573,6 @@ export default function ApprovalPage(): React.ReactElement {
     setPageIdx(0);
     setAssigningOpen(false);
     setAssigningUserId('');
-    setJAssignees([]);
     setTeamMembers([]);
     setChangingDesigneeOpen(false);
     setChangingDesigneeUserId('');
@@ -664,13 +661,13 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
-  const handleAssignMultiJ = async (assignees: { loginid: string; name: string; deptname: string }[]) => {
-    if (!selected || assignees.length === 0) return;
+  const handleClaim = async (agent: AgentType) => {
+    if (!selected) return;
     setProcessing(true);
     try {
-      await documentsAPI.assignStepMultiJ(selected.id, assignees.map(a => ({ loginid: a.loginid, name: a.name })));
+      await documentsAPI.claimStep(selected.id, agent);
       await refreshAndSelect(selected.id);
-      addToast(t('approval.assign_success'), 'success');
+      addToast(t('approval.claim_success'), 'success');
     } catch {
       addToast(t('common.process_error'), 'error');
     } finally {
@@ -1010,6 +1007,8 @@ export default function ApprovalPage(): React.ReactElement {
             : pendingSteps.find((s) => canUserAssign(currentUser, s));
           const actableStep = pendingSteps.find((s) => canUserAgree(currentUser, s));
           const isPLStep = actableStep?.agent === 'PL';
+          // 검토중(claim) 가능 단계: J/O/E 중 담당 역할이 아직 미배정인 단계를 선점
+          const claimableStep = isTourMode ? undefined : pendingSteps.find((s) => canUserClaim(currentUser, s));
 
           // 지정자 변경 가능 여부: 원 PL 또는 MASTER, under_review, PL 단계 pending
           const hasPendingPLStep = (selected?.approval_steps ?? []).some(s => s.agent === 'PL' && s.action === 'pending');
@@ -1138,7 +1137,7 @@ export default function ApprovalPage(): React.ReactElement {
                   </button>
                 </>
               )}
-              {/* 일반 담당자 지정 (R/P/J 단계) */}
+              {/* 담당자 지정 (R·P 단계) */}
               {assignableStep && !assigningOpen && !changingDesigneeOpen && (
                 <button
                   className="btn btn-secondary"
@@ -1147,18 +1146,27 @@ export default function ApprovalPage(): React.ReactElement {
                   onClick={async () => {
                     setAssigningOpen(true);
                     setAssigningUserId('');
-                    setJAssignees([]);
                     setLoadingMembers(true);
                     const members = await handleLoadTeamMembers(assignableStep.agent);
                     setTeamMembers(members);
                     setLoadingMembers(false);
                   }}
                 >
-                  지정하기
+                  {t('approval.assign_btn')}
                 </button>
               )}
-              {/* 비-J 단일 담당자 지정 */}
-              {assignableStep && assigningOpen && assignableStep.agent !== 'J' && (
+              {/* 검토중(claim) — J/O/E 단계 선점 */}
+              {claimableStep && !assigningOpen && !changingDesigneeOpen && (
+                <button
+                  className="btn btn-secondary"
+                  disabled={processing}
+                  onClick={() => handleClaim(claimableStep.agent)}
+                >
+                  {t('approval.claim')}
+                </button>
+              )}
+              {/* 단일 담당자 지정 (R·P) */}
+              {assignableStep && assigningOpen && (
                 <>
                   <div className="assign-dropdown" style={{ position: 'relative' }}>
                     <button
@@ -1217,111 +1225,6 @@ export default function ApprovalPage(): React.ReactElement {
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={() => { setAssigningOpen(false); setAssigningUserId(''); setAssignDropdownOpen(false); }}
-                  >
-                    {t('common.cancel')}
-                  </button>
-                </>
-              )}
-              {/* J 다중 담당자 지정 */}
-              {assignableStep && assigningOpen && assignableStep.agent === 'J' && (
-                <>
-                  {jAssignees.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                      {jAssignees.map((a) => (
-                        <span
-                          key={a.loginid}
-                          style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 4,
-                            background: 'var(--bg-secondary)', border: '1px solid var(--border)',
-                            borderRadius: 'var(--radius-sm)', padding: '2px 6px', fontSize: '0.82rem',
-                          }}
-                        >
-                          <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
-                            <span style={{ fontWeight: 600 }}>{a.name}</span>
-                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{a.deptname}</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setJAssignees((prev) => prev.filter((x) => x.loginid !== a.loginid))}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 2px', fontSize: '0.85rem', lineHeight: 1 }}
-                          >×</button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="assign-dropdown" style={{ position: 'relative' }}>
-                    <button
-                      type="button"
-                      data-tour={isTourMode ? 'assign-select' : undefined}
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => setAssignDropdownOpen((o) => !o)}
-                      style={{ minWidth: 130, display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}
-                    >
-                      {assigningUserId ? (
-                        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.3 }}>
-                          <span style={{ fontWeight: 600 }}>{teamMembers.find((u) => u.loginid === assigningUserId)?.name}</span>
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{teamMembers.find((u) => u.loginid === assigningUserId)?.deptname}</span>
-                        </span>
-                      ) : (
-                        <span>{t('approval.assign_select_placeholder')}</span>
-                      )}
-                      <span aria-hidden="true">▾</span>
-                    </button>
-                    {assignDropdownOpen && (
-                      <ul className="assign-dropdown-list">
-                        {loadingMembers ? (
-                          <li className="assign-dropdown-empty">{t('common.loading')}</li>
-                        ) : teamMembers.filter((u) => !jAssignees.some((a) => a.loginid === u.loginid)).length === 0 ? (
-                          <li className="assign-dropdown-empty">{t('approval.no_team_members')}</li>
-                        ) : teamMembers.filter((u) => !jAssignees.some((a) => a.loginid === u.loginid)).map((u, i) => (
-                          <li
-                            key={u.loginid}
-                            data-tour={isTourMode && i === 0 ? 'assign-option' : undefined}
-                            className="assign-dropdown-item"
-                            onClick={() => { setAssigningUserId(u.loginid); setAssignDropdownOpen(false); }}
-                          >
-                            <strong>{u.name}</strong>
-                            <span className="assign-dropdown-dept">{u.mail}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    disabled={!assigningUserId || processing}
-                    onClick={() => {
-                      const user = teamMembers.find((u) => u.loginid === assigningUserId);
-                      if (user && !jAssignees.some((a) => a.loginid === user.loginid)) {
-                        setJAssignees((prev) => [...prev, { loginid: user.loginid, name: user.name, deptname: user.deptname ?? '' }]);
-                        setAssigningUserId('');
-                      }
-                    }}
-                  >
-                    {t('approval.assign_add')}
-                  </button>
-                  <button
-                    data-tour={isTourMode ? 'assign-confirm' : undefined}
-                    className="btn btn-primary btn-sm"
-                    disabled={jAssignees.length === 0 || processing}
-                    onClick={async () => {
-                      await handleAssignMultiJ(jAssignees);
-                      setAssigningOpen(false);
-                      setJAssignees([]);
-                      setAssigningUserId('');
-                      setAssignDropdownOpen(false);
-                    }}
-                  >
-                    {t('common.confirm')}
-                  </button>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      setAssigningOpen(false);
-                      setJAssignees([]);
-                      setAssigningUserId('');
-                      setAssignDropdownOpen(false);
-                    }}
                   >
                     {t('common.cancel')}
                   </button>
