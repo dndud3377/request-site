@@ -79,3 +79,6 @@ RTDB MAIN 소스를 사용하려면 아래 변수를 `.env` 에 추가해야 한
 
 - REST 호출은 사내 인증서 정책에 따라 `verify=False`(SSL 검증 비활성화)로 동작한다. `utils.py` 에서 `InsecureRequestWarning` 을 억제한다.
 - 요청 타임아웃은 `utils.RTDB_REQUEST_TIMEOUT`(기본 30초) 상수로 관리한다.
+- `cq_login()`(DCQ 로그인)은 전역 `sys.stdin` 을 교체하는 방식이라, 기동 시 동시에 뜨는 3개 동기화 스레드가
+  경쟁하면 stdin 이 엉켜 `>> Enter AD Password:` 프롬프트 추락·빈 로그인 실패가 발생한다. 이를 막기 위해
+  로그인 구간을 `utils._DCQ_LOGIN_LOCK`(모듈 레벨 `threading.Lock`)으로 직렬화한다.

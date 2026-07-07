@@ -6,6 +6,7 @@ import io
 import sys
 import json
 import logging
+import threading
 import requests
 import pandas as pd
 import urllib3
@@ -20,6 +21,10 @@ logger = logging.getLogger(__name__)
 
 # RTDB(REST API) 요청 타임아웃(초)
 RTDB_REQUEST_TIMEOUT = 30
+
+# DCQ 로그인 직렬화 락 - cq_login 이 전역 sys.stdin 을 교체하므로
+# 여러 스케줄러 스레드가 동시에 로그인하면 stdin 이 엉킨다. 로그인 구간을 한 번에 하나씩만 실행한다.
+_DCQ_LOGIN_LOCK = threading.Lock()
 
 # verify=False 사용에 따른 InsecureRequestWarning 억제 (사내 인증서 정책)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -49,17 +54,18 @@ def cq_login(dcq_id, dcq_password):
     sample.py 와 동일한 방식 - stdin 우회 로그인
     """
     account_info = io.StringIO(f'{dcq_id}\n{dcq_password}')
-    sys.stdin = account_info
-    try:
-        login()
-        logger.info(f"[DCQ] 로그인 성공: {dcq_id}")
-        return True
-    except Exception as e:
-        logger.error(f"[DCQ] 로그인 실패: {e}")
-        return False
-    finally:
-        account_info.close()
-        sys.stdin = sys.__stdin__
+    with _DCQ_LOGIN_LOCK:
+        sys.stdin = account_info
+        try:
+            login()
+            logger.info(f"[DCQ] 로그인 성공: {dcq_id}")
+            return True
+        except Exception as e:
+            logger.error(f"[DCQ] 로그인 실패: {e}")
+            return False
+        finally:
+            account_info.close()
+            sys.stdin = sys.__stdin__
 
 
 def get_dcq_credentials():
