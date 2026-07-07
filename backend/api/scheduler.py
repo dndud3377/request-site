@@ -39,6 +39,25 @@ RTDB_PP_TABLE = "A_{suffix}.B"
 RTDB_PC_SELECT = ["partnumber, processid"]             # 품목-공정ID
 RTDB_PC_FILTER = {"X": {"$neq": " "}}
 RTDB_PC_TABLE = "X_{suffix}.Y"
+RTDB_STEP_SELECT = ["processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid"]  # 스텝
+RTDB_STEP_FILTER = {
+    "a": {"$eq": "aaaaaa"},
+    "e": {"$neq": " "},
+    "l": {"$neq": " "},
+    "p": {"$neq": " "},
+    "r": {"$neq": " "},
+    "s": {"$neq": " "},
+}
+RTDB_STEP_TABLE = "O_{suffix}.W"
+
+# 스텝(라인별 단독 테이블) 매핑 - 라인별로 서로 다른 테이블에 저장한다.
+STEP_TABLE_MAP = {
+    '라인 1': 'api_teps1',
+    '라인 3': 'api_steps3',
+    '라인 4': 'api_steps4',
+    '라인 5': 'api_steps5',
+}
+STEP_COLUMNS = ['processid', 'stepseq', 'descript', 'recipeid', 'areaname', 'eqptype', 'updated', 'layerid']
 
 
 def _write_if_changed(engine, table, line, df, key_cols, order_cols):
@@ -173,6 +192,30 @@ def sync_rtdb_options():
                         logger.info(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} {count}건 동기화 완료").format(line=line, count=count))
             except Exception as e:
                 logger.error(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 동기화 실패: {e}").format(line=line, e=e))
+
+            # --- 스텝 (api_steps: 라인별 단독 테이블) ---
+            try:
+                dcq_ps = f"""
+                    SELECT processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid
+                    FROM A.B_{suffix}_step
+                    WHERE X = 'Y'
+                """
+                df_ps = fetch(RTDB_STEP_SELECT, RTDB_STEP_FILTER, RTDB_STEP_TABLE, suffix, dcq_ps)
+                if df_ps is None or len(df_ps) == 0:
+                    logger.warning(_("[scheduler] {line} {{request.col_step}} 데이터가 없습니다").format(line=line))
+                else:
+                    table_name = STEP_TABLE_MAP.get(line)
+                    if not table_name:
+                        logger.warning(_("[scheduler] 알 수 없는 {{request.line}}: {line}").format(line=line))
+                    else:
+                        df_ps['last_synced'] = pd.Timestamp.now()
+                        df_ps = df_ps[STEP_COLUMNS + ['last_synced']]
+                        with engine.begin() as db_conn:
+                            db_conn.execute(text(f"DELETE FROM {table_name}"))
+                            df_ps.to_sql(table_name, db_conn, if_exists='append', index=False)
+                        logger.info(_("[scheduler] {line} {{request.col_step}} {count}건 동기화 완료").format(line=line, count=len(df_ps)))
+            except Exception as e:
+                logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e))
     finally:
         if engine:
             engine.dispose()
@@ -180,8 +223,9 @@ def sync_rtdb_options():
 
 def sync_form_options():
     """
-    DCQ 를 사용하여 외부 DB 에서 {{request.col_step}}(스텝) / 바코드-품목 / MAP 이름 데이터를
-    DataFrame 으로 가져와 Django DB 에 저장한다. (공정-품목·품목-공정ID 는 sync_rtdb_options 로 분리)
+    DCQ 를 사용하여 외부 DB 에서 바코드-품목 / MAP 이름 데이터를
+    DataFrame 으로 가져와 Django DB 에 저장한다.
+    (공정-품목·품목-공정ID·스텝은 RTDB MAIN + DCQ fallback 구조로 sync_rtdb_options 로 분리)
     """
     engine = None
     
@@ -203,42 +247,6 @@ def sync_form_options():
         return
 
     try:
-        for line in LINES:
-            try:
-                suffix = LINE_SUFFIX_MAP[line]
-                query_ps = f"""
-                    SELECT processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid
-                    FROM A.B_{suffix}_step
-                    WHERE X = 'Y'
-                """
-                df_ps = get_data_from_dcq(query_ps, dcq_id)
-                
-                if df_ps is None or len(df_ps) == 0:
-                    logger.warning(_("[scheduler] {line} {{request.col_step}} 데이터가 없습니다").format(line=line))
-                    continue
-                
-                table_map = {
-                    '라인 1': 'api_teps1',
-                    '라인 3': 'api_steps3',
-                    '라인 4': 'api_steps4',
-                    '라인 5': 'api_steps5',
-                }
-                table_name = table_map.get(line)
-                if not table_name:
-                    logger.warning(_("[scheduler] 알 수 없는 {{request.line}}: {line}").format(line=line))
-                    continue
-                
-                df_ps['last_synced'] = pd.Timestamp.now()
-                df_ps = df_ps[['processid', 'stepseq', 'descript', 'recipeid', 'areaname', 'eqptype', 'updated', 'layerid', 'last_synced']]
-  
-                with engine.begin() as db_conn:
-                    db_conn.execute(text(f"DELETE FROM {table_name}"))
-                    df_ps.to_sql(table_name, db_conn, if_exists='append', index=False)
-  
-                logger.info(_("[scheduler] {line} {{request.col_step}} {count}건 동기화 완료").format(line=line, count=len(df_ps)))
-            except Exception as e:
-                logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e))
-
         try:
             query_pb = """
                 SELECT DISTINCT n7mto_date, n7cancel_date, n7cancel_ok, n7c_layer_num, n7prod_code, n7barcode, n7material_spec
