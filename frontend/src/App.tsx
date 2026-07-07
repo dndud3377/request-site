@@ -15,6 +15,7 @@ import HistoryPage from './pages/HistoryPage';
 import VOCPage from './pages/VOCPage';
 import PermissionPage from './pages/PermissionPage';
 import GuidePage from './pages/GuidePage';
+import AddressBookPage from './pages/AddressBookPage';
 
 function Footer(): React.ReactElement {
   return (
@@ -60,6 +61,7 @@ function AppContent(): React.ReactElement {
       <Route path="/voc"         element={<ProtectedRoute><VOCPage /></ProtectedRoute>} />
       <Route path="/permissions" element={<ProtectedRoute><PermissionPage /></ProtectedRoute>} />
       <Route path="/guide"       element={<ProtectedRoute><GuidePage /></ProtectedRoute>} />
+      <Route path="/address-book" element={<ProtectedRoute><AddressBookPage /></ProtectedRoute>} />
     </Routes>
   );
 

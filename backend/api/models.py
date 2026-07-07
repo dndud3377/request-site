@@ -507,6 +507,44 @@ class UserGroup(models.Model):
         return f"[{self.creator.loginid}] {self.name}"
 
 
+class AddressBook(models.Model):
+    """주소록 — 통보처로 자주 쓰는 사람 묶음을 이름 붙여 저장(본인 전용).
+
+    상신 모달에서 '통보처 불러오기'로 members 를 detail.notifiers 에 채워넣는다.
+    members 는 통보처(detail.notifiers)와 동일한 [{loginid, name}] 포맷의 JSON 문자열로
+    저장해, 발송 로직(resolve_notifier_recipients)이 그대로 재사용되도록 한다.
+    """
+    owner      = models.ForeignKey(
+        'UserProfile', on_delete=models.CASCADE,
+        related_name='address_books', verbose_name='소유자'
+    )
+    name       = models.CharField(max_length=100, verbose_name='주소록 이름')
+    members    = models.TextField(
+        default='[]', blank=True,
+        verbose_name='구성원 목록(JSON: [{loginid, name}])'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일')
+
+    class Meta:
+        unique_together = ('owner', 'name')
+        verbose_name = '주소록'
+        verbose_name_plural = '주소록 목록'
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"[{self.owner.loginid}] {self.name}"
+
+    def get_members(self):
+        """members JSON 을 파싱해 [{loginid, name}] 리스트로 반환. 손상 시 빈 리스트."""
+        import json
+        try:
+            data = json.loads(self.members or '[]')
+            return data if isinstance(data, list) else []
+        except (ValueError, TypeError):
+            return []
+
+
 class MailNotification(models.Model):
     """결재 알림 메일 발송 큐 (영속 outbox)
 

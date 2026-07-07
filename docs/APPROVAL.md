@@ -95,10 +95,12 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 - 동작: P `approved` → **J(due: P당일 포함 4영업일)** 생성. (path1은 P→J 순차)
 
 ### Case G — J / O / E 최종 합의 (`approve_step` agent in J/O/E, `views.py:284`)
-- 동작: J(다중 담당자 **전원**)·O·(E 있으면 E)가 **모두** `approved`일 때만 `status → approved`. 그 전엔 `under_review` 유지.
-- ✅ **J 다중 담당자 전원 합의**: J 단계에 N명이 지정된 경우 모든 J ApprovalStep이 `approved`여야 최종 승인이 진행된다.
-  백엔드는 `all(s.action == 'approved' for s in j_steps)` 방식으로 판정한다.
+- 동작: J·O·(E 있으면 E)가 **모두** `approved`일 때만 `status → approved`. 그 전엔 `under_review` 유지.
+- ✅ **검토중(claim) 방식(2026-07)**: J·O·E는 지정하기 없이 **담당 팀원 누구나 '검토중'을 눌러 스스로 선점**한다.
+  먼저 누른 1명이 assignee로 고정(취소·재클릭 불가)되고, **그 담당자만** 합의/반려할 수 있다(`_can_act_on_step`).
 - J 합의/반려 시 **본인 담당 step만 처리**: `assignee__loginid=caller_loginid` 필터로 해당 J step을 조회한다 (MASTER는 첫 번째 pending step).
+  최종 판정은 `all(s.action == 'approved' for s in j_steps)`로, 검토중 방식에서는 J step이 1개이므로 그 1명의 합의로 완료된다.
+  (과거 다중 배정된 J 문서는 하위호환으로 전원 합의 로직이 그대로 적용된다.)
 - ✅ 동시성: 두 결재자가 거의 동시에 마지막 합의를 눌러도 문서 행 락(`select_for_update`)으로
   직렬화되어 approved 전이가 누락되지 않는다(2026-06 수정).
 
@@ -118,13 +120,16 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
   만 가능(`_can_withdraw`, 2026-06 추가). 그 외 호출은 403. 그룹 판정은
   `requester.member_groups` 기준(approved 메일 수신자 규칙과 동일).
 
-### Case K — 담당자 지정 (`assign_step`, `views.py:331` 부근)
+### Case K — 담당자 지정 (`assign_step`, `views.py:331` 부근) — **R·P 전용**
 - 동작: 현재 회차의 해당 agent pending step에 assignee 지정.
-- ✅ 권한: 프론트 `canUserAssign`과 동일(`_can_assign_step`, 2026-06 추가) —
-  MASTER / 같은 팀(역할↔agent 일치) + 미지정일 때만. PL·O·E 단계는 지정 불가.
+- ✅ 권한: 프론트 `canUserAssign`과 동일(`_can_assign_step`) —
+  MASTER / 같은 팀(역할↔agent 일치) + 미지정일 때만. **PL·J·O·E 단계는 지정 불가**(J/O/E는 검토중 방식).
   또한 `agent`는 `R·P·J·O·E`만 허용(`agent='PL'`로 지정 PL을 덮어쓰는 우회 차단).
-- ✅ **J 다중 담당자 지정** (2026-06 추가): `agent='J'` + `assignees: [{loginid, name}]` 배열 전송 시
-  첫 번째 항목은 기존 unassigned pending J step에 배정, 이후 항목들은 같은 `round`·`due_date`로 새 J step 생성.
+
+### Case K-2 — 검토중 선점 (`claim_step`, 2026-07) — **J·O·E 전용**
+- 동작: 현재 회차의 해당 J/O/E pending step에 **요청자 본인을 assignee로 고정**(취소·재클릭 불가).
+- ✅ 권한(`_can_claim_step`): MASTER / 같은 팀(역할↔agent 일치) + pending + 미배정일 때만. `agent`는 `J·O·E`만 허용.
+- ✅ 동시성: 문서 행 락(`select_for_update`)으로 중복 선점을 막고, 이미 배정된 경우 `409`를 반환한다.
   프론트 UI: "추가" 버튼으로 여러 명을 목록에 쌓은 뒤 "확인" 클릭 시 `assignStepMultiJ` API 호출.
   권한: `TE_J` 또는 `MASTER`.
 
@@ -151,13 +156,13 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 - **PL 검토 pending**: "PL 검토(담당자명)" 단일 행, 기한 없음. **다중 PL이면 아직 미합의한 담당자명을 ` / `로 연결** 표시.
 - **R 미합의**: R 단계 단일 행(담당자 유무로 상태 결정).
 - **R 합의 후(병렬)**: 한 의뢰서를 **2행**으로 분리 표시 — path1(P/J), path2(O[/E]). rowSpan으로 좌측 공통열 병합.
-  - path1 단계 텍스트: 현재 pending인 P 또는 J(다중이면 `담당자1 / 담당자2`로 연결). 둘 다 끝나면 "결재완료".
-  - path1 done 조건: P pending 없음 AND J pending step 0개(= 전원 합의 완료).
-  - path2 단계 텍스트: pending인 O/E를 ` / `로 연결. 끝나면 "결재완료".
+  - path1 단계 텍스트: 현재 pending인 P(담당자명) 또는 **J**. **J는 검토중 방식이라 담당자 이름을 표시하지 않는다**. 둘 다 끝나면 "결재완료".
+  - path1 done 조건: P pending 없음 AND J pending step 0개(= 합의 완료).
+  - path2 단계 텍스트: pending인 O/E를 ` / `로 연결(검토중 담당자명 표시). 끝나면 "결재완료".
 
-### 3.4 상태 배지 (`getDisplayStatus` / `resolvePathStatus`)
-- pending step에 `assignee_loginid`가 없으면 **`unassigned`**, 있으면 `under_review`.
-- **O/E는 담당자 지정 개념이 없어** unassigned 판정에서 제외(항상 해당 팀이 처리).
+### 3.4 상태 배지 (`resolvePathStatus`)
+- pending step에 `assignee_loginid`가 없으면 **`unassigned`(라벨: 대기중)**, 있으면 `under_review`(검토중).
+- J·O·E도 검토중 방식으로 전환되어, 선점 전에는 **대기중**, 선점 후에는 **검토중**으로 표시된다.
 
 ### 3.5 완료 예정일
 - **현재 단계 완료예정**: 해당 pending step의 `due_date`(영업일, `getDueDateDisplay`로 지남/오늘/일반 색상).
@@ -175,7 +180,7 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 | 합의 / 반려 (R·P·J·O·E) | `canUserAgree`가 참 | `approveStep` / `rejectStep` |
 | PL 합의 / 반려 / **수정 후 상신** | PL 검토 단계 + 본인 | `peerApprove` / `peerReject` / `/request`로 이동(peerSubmit) |
 | 담당자 지정 (R·P) | `canUserAssign`가 참 | `assignStep` |
-| 담당자 지정 (J 다중) | `canUserAssign`가 참 (J에 한해 추가/확인 UI) | `assignStepMultiJ` |
+| 검토중 (J·O·E) | `canUserClaim`가 참 | `claimStep` |
 | 지정자 변경 | PL/MASTER | `changeDesignee` |
 | 철회 | PL/MASTER | `withdraw`(임시저장으로) 또는 `delete`(삭제) 선택 |
 | 수정 후 재상신 | rejected/draft | `/request`로 이동(editDocId) |
@@ -183,8 +188,9 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 처리 중 `processing`으로 버튼 비활성화(더블클릭 방지), 결과는 토스트로 안내, 실패 시 `common.process_error`.
 
 ### 3.7 결재 가능 판정 (`ApprovalFlow.tsx`)
-- `canUserAgree`: MASTER 항상 / PL은 자기 PL단계 assignee일 때 / **TE_O·TE_E는 자기 agent pending이면 무조건** / 나머지(R·P·J)는 assignee 본인.
-- `canUserAssign`: PL단계·O·E는 지정 불필요. 나머지는 같은 팀 + pending + 담당자 미지정일 때.
+- `canUserAgree`: MASTER 항상 / PL은 자기 PL단계 assignee일 때 / 나머지(R·P·J·O·E)는 assignee 본인(R·P는 지정, J·O·E는 검토중 선점으로 배정됨).
+- `canUserAssign`: **R·P 전용** — 같은 팀 + pending + 담당자 미지정일 때. PL·J·O·E는 지정 불가.
+- `canUserClaim`: **J·O·E 전용** — 같은 팀 + pending + 미배정일 때 '검토중'으로 선점 가능.
 
 ---
 
@@ -197,8 +203,8 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 | 철회 | `withdraw/` | - |
 | 합의 | `approve-step/` | `agent`, `comment`, `approver_name` |
 | 반려 | `reject-step/` | `agent`, `comment` |
-| 담당자 지정 (단일) | `assign-step/` | `agent`, `assignee_loginid`, `assignee_name` |
-| 담당자 지정 (J 다중) | `assign-step/` | `agent='J'`, `assignees: [{loginid, name}]` |
+| 담당자 지정 (R·P) | `assign-step/` | `agent`, `assignee_loginid`, `assignee_name` |
+| 검토중 선점 (J·O·E) | `claim-step/` | `agent` |
 | PL 합의/반려/수정후상신 | `peer-approve/` `peer-reject/` `peer-submit/` | `comment` |
 | 지정자 변경 | `change-designee/` | (의뢰자/MASTER) |
 | 삭제 | DELETE `documents/{id}/` | approved는 MASTER만 |
@@ -258,7 +264,7 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
    ✅ **(2026-06) 프론트 수정/철회 버튼**: 시리얼라이저가 요청자 기준 `can_edit`/`can_withdraw`
    플래그를 내려주고, `ApprovalPage` 가 그 플래그로 버튼을 노출한다(그룹 멤버 포함 정확 노출,
    권한 없는 사용자 헛클릭 403 제거).
-2. **TE_O/TE_E는 담당자 지정 없이 같은 팀 누구나 합의 가능** — 누가 처리할지 비결정적(먼저 누른 사람).
+2. ✅ **(2026-07 해결) J·O·E 검토중(claim) 방식 전환** — 지정하기 없이 담당 팀원이 '검토중'으로 선점(취소 불가) 후 그 담당자만 합의/반려. 먼저 누른 1명으로 담당이 확정된다.
 3. **`_validate_bb_mapping`이 JSON 파싱 실패 시 통과 처리** — 손상된 데이터가 검증을 우회.
 4. **`additional_notes`가 JSONField가 아닌 TextField** — 깨진 JSON 저장 시 `get_detail()`이
    조용히 `{}` 반환(silent 유실 가능).

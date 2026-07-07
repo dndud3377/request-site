@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup
+from .models import RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook
 from . import doc_permissions
 
 User = get_user_model()
@@ -222,3 +222,83 @@ class UserGroupSerializer(serializers.ModelSerializer):
             if qs.exists():
                 raise serializers.ValidationError('같은 이름의 그룹이 이미 존재합니다.')
         return value
+
+
+class AddressBookSerializer(serializers.ModelSerializer):
+    """주소록 직렬화.
+
+    - 읽기: members 를 현재 UserProfile 과 join 해 최신 name·mail·has_mail 을 함께 내려준다.
+      (실존하지 않는 loginid 는 자동 제외 → 발송 시 유령 대상 방지, has_mail=false 는 프론트 경고용.)
+    - 쓰기: members_input 으로 [{loginid, name}] 을 받아 실존 사용자만 정규화해 저장한다.
+    """
+    members       = serializers.SerializerMethodField()
+    members_input = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
+    member_count  = serializers.SerializerMethodField()
+
+    class Meta:
+        model  = AddressBook
+        fields = ['id', 'name', 'members', 'members_input', 'member_count', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def _enriched(self, obj):
+        raw = obj.get_members()
+        loginids = [m.get('loginid') for m in raw if isinstance(m, dict) and m.get('loginid')]
+        users = {u.loginid: u for u in User.objects.filter(loginid__in=loginids)}
+        result, seen = [], set()
+        for lid in loginids:
+            u = users.get(lid)
+            if not u or lid in seen:
+                continue
+            seen.add(lid)
+            result.append({
+                'loginid': u.loginid,
+                'name': u.username,
+                'mail': u.mail or '',
+                'has_mail': bool(u.mail),
+            })
+        return result
+
+    def get_members(self, obj):
+        return self._enriched(obj)
+
+    def get_member_count(self, obj):
+        return len(self._enriched(obj))
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('주소록 이름을 입력해주세요.')
+        request = self.context.get('request')
+        if request:
+            qs = AddressBook.objects.filter(owner=request.user, name=value)
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError('같은 이름의 주소록이 이미 존재합니다.')
+        return value
+
+    def _normalize_members(self, members_input):
+        """실존 사용자만 남기고 중복 제거, name 은 현재 표시이름으로 정규화."""
+        import json
+        loginids = [m.get('loginid') for m in members_input if isinstance(m, dict) and m.get('loginid')]
+        users = {u.loginid: u for u in User.objects.filter(loginid__in=loginids)}
+        norm, seen = [], set()
+        for m in members_input:
+            lid = m.get('loginid') if isinstance(m, dict) else None
+            if not lid or lid in seen or lid not in users:
+                continue
+            seen.add(lid)
+            norm.append({'loginid': lid, 'name': users[lid].username})
+        return json.dumps(norm, ensure_ascii=False)
+
+    def create(self, validated_data):
+        members_input = validated_data.pop('members_input', [])
+        validated_data['owner'] = self.context['request'].user
+        validated_data['members'] = self._normalize_members(members_input)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        members_input = validated_data.pop('members_input', None)
+        if members_input is not None:
+            instance.members = self._normalize_members(members_input)
+        return super().update(instance, validated_data)

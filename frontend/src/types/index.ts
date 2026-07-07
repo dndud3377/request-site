@@ -300,6 +300,24 @@ export interface NotifierRef {
   name: string;
 }
 
+// 주소록 구성원(조회 응답): 최신 이름·이메일 + 이메일 등록 여부(무이메일 경고용)
+export interface AddressBookMember {
+  loginid: string;
+  name: string;
+  mail: string;
+  has_mail: boolean;
+}
+
+// 주소록: 통보처로 자주 쓰는 사람 묶음(본인 전용)
+export interface AddressBook {
+  id: number;
+  name: string;
+  members: AddressBookMember[];
+  member_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // ===== Change History =====
 
 export interface HistorySnapshot {

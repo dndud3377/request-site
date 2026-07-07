@@ -15,13 +15,13 @@ interface NavLink {
 // 역할별 접근 가능한 페이지
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   NONE: ['/'],
-  PL: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
-  TE_R: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
-  TE_P: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
-  TE_J: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
-  TE_O: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
-  TE_E: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
-  MASTER: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions'],
+  PL: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions', '/address-book'],
+  TE_R: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions', '/address-book'],
+  TE_P: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions', '/address-book'],
+  TE_J: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions', '/address-book'],
+  TE_O: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions', '/address-book'],
+  TE_E: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions', '/address-book'],
+  MASTER: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions', '/address-book'],
 };
 
 const NAV_LINKS: NavLink[] = [
@@ -32,6 +32,7 @@ const NAV_LINKS: NavLink[] = [
   { to: '/voc', key: 'nav.voc' },
   { to: '/guide', key: 'nav.guide' },
   { to: '/permissions', key: 'nav.permissions' },
+  { to: '/address-book', key: 'nav.address_book' },
 ];
 
 // dev 모드 유저 드롭다운에서 역할 표시 순서
