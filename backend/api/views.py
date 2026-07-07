@@ -22,7 +22,7 @@ from django.db.models import Q, Max, Min
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
-    MapName,
+    MapName, AddressBook,
 )
 from .utils import LINE_TO_LINEID_MAP
 from . import mailer
@@ -30,7 +30,7 @@ from . import doc_permissions
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer,
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
-    UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer,
+    UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer, AddressBookSerializer,
 )
 import uuid
 import logging
@@ -1595,3 +1595,37 @@ class UserGroupViewSet(viewsets.ModelViewSet):
 
         group.members.remove(target)
         return Response(UserGroupSerializer(group, context={'request': request}).data)
+
+
+class AddressBookViewSet(viewsets.ModelViewSet):
+    """주소록 ViewSet — 통보처로 쓸 사람 묶음을 본인만 CRUD.
+
+    - 조회/수정/삭제 모두 owner=본인 스코프 (타인 주소록 접근 불가)
+    - 상신 모달의 '통보처 불러오기'가 이 목록을 읽어 통보처(detail.notifiers)에 채운다.
+    """
+    serializer_class = AddressBookSerializer
+    permission_classes = [IsAuthenticatedInProd]
+    pagination_class = None
+
+    def get_queryset(self):
+        if not self.request.user.is_authenticated:
+            return AddressBook.objects.none()
+        return AddressBook.objects.filter(owner=self.request.user)
+
+    def get_object(self):
+        from django.shortcuts import get_object_or_404
+        if not self.request.user.is_authenticated:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied()
+        return get_object_or_404(
+            AddressBook.objects.filter(owner=self.request.user),
+            pk=self.kwargs['pk']
+        )
+
+    def update(self, request, *args, **kwargs):
+        kwargs['partial'] = True
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        self.get_object().delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
