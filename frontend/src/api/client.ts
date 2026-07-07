@@ -23,6 +23,8 @@ import {
   UserGroup,
   AvailableGroupMember,
   UserRole,
+  AddressBook,
+  NotifierRef,
 } from '../types';
 
 // ===== JWT 토큰 관리 =====
@@ -527,6 +529,41 @@ export const userGroupsAPI = {
   availableMembers: getAvailableGroupMembers,
   addMember: addGroupMember,
   removeMember: removeGroupMember,
+};
+
+// ===== 주소록(통보처 프리셋) API =====
+
+const listAddressBooks = async (): Promise<AddressBook[]> => {
+  const data = await get<AddressBook[]>('/address-books/');
+  return Array.isArray(data) ? data : [];
+};
+
+const createAddressBook = async (
+  name: string,
+  members: NotifierRef[]
+): Promise<AddressBook> => {
+  return post<AddressBook>('/address-books/', { name, members_input: members });
+};
+
+const updateAddressBook = async (
+  id: number,
+  payload: { name?: string; members?: NotifierRef[] }
+): Promise<AddressBook> => {
+  const body: Record<string, unknown> = {};
+  if (payload.name !== undefined) body.name = payload.name;
+  if (payload.members !== undefined) body.members_input = payload.members;
+  return patch<AddressBook>(`/address-books/${id}/`, body);
+};
+
+const deleteAddressBook = async (id: number): Promise<void> => {
+  await request(`/address-books/${id}/`, { method: 'DELETE' });
+};
+
+export const addressBooksAPI = {
+  list: listAddressBooks,
+  create: createAddressBook,
+  update: updateAddressBook,
+  delete: deleteAddressBook,
 };
 
 // ===== 폼 옵션 API =====
