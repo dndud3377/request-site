@@ -240,7 +240,10 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
     content: value,
     editable: !readOnly,
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+      // getHTML()은 빈 문단을 <p></p>로 직렬화해 <br>이 빠지므로,
+      // 표시 시 라인박스가 생기지 않아 빈 줄이 사라진다. <br>을 채워 보정.
+      const html = editor.getHTML().replace(/<p><\/p>/g, '<p><br></p>');
+      onChange(html);
     },
   });
 
