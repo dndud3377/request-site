@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI } from '../../api/client';
+import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI, addressBooksAPI } from '../../api/client';
 import { useToast } from '../../components/Toast';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
 import { useCellSelection } from '../../hooks/useCellSelection';
@@ -24,6 +24,7 @@ import {
   FilterSet,
   GuideFeatureKey,
   UserWithRole,
+  AddressBook,
 } from '../../types';
 import GuideSlidePanel from '../../components/GuideSlidePanel';
 import { GUIDE_DEMO_KEYS } from '../../components/guideDemos';
@@ -218,6 +219,14 @@ export default function RequestPage(): React.ReactElement {
   const [notifierDropdownRect, setNotifierDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const notifierInputRef = useRef<HTMLInputElement>(null);
   const notifierContainerRef = useRef<HTMLDivElement>(null);
+
+  // 주소록(통보처 프리셋) — 상신 모달에서 통보처를 세트로 저장/불러오기
+  const [addressBooks, setAddressBooks] = useState<AddressBook[]>([]);
+  const [abLoadOpen, setAbLoadOpen] = useState(false);
+  const [abSaveOpen, setAbSaveOpen] = useState(false);
+  const [abSaveMode, setAbSaveMode] = useState<'new' | number>('new'); // 'new' 또는 덮어쓸 기존 주소록 id
+  const [abSaveNewName, setAbSaveNewName] = useState('');
+  const [abConfirm, setAbConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const prevParsedRef = useRef<{
     detail: DetailFormState;
     jayerRows: JayerRow[];
@@ -1017,6 +1026,98 @@ export default function RequestPage(): React.ReactElement {
   };
   const removeNotifier = (loginid: string) => {
     setDetail((prev) => ({ ...prev, notifiers: (prev.notifiers ?? []).filter((n) => n.loginid !== loginid) }));
+  };
+
+  // 현재 통보처 중 이메일 미등록(발송 제외) 대상 — 통보처 후보 목록(mail 포함)으로 판별
+  const noMailNotifiers = (detail.notifiers ?? []).filter((n) => {
+    const u = notifierUserOptions.find((o) => o.loginid === n.loginid);
+    return u ? !u.mail : false;
+  });
+
+  // 주소록 불러오기 — 현재 통보처를 주소록 구성원으로 '덮어쓰기'
+  const applyAddressBook = (book: AddressBook) => {
+    setDetail((prev) => ({
+      ...prev,
+      notifiers: book.members.map((m) => ({ loginid: m.loginid, name: m.name })),
+    }));
+    setAbLoadOpen(false);
+    const noMail = book.members.filter((m) => !m.has_mail).length;
+    if (noMail > 0) {
+      addToast(t('addressbook.warn_no_mail', { count: noMail }), 'warning');
+    }
+    addToast(t('addressbook.loaded', { name: book.name }), 'success');
+  };
+  const loadAddressBook = (book: AddressBook) => {
+    if ((detail.notifiers ?? []).length > 0) {
+      setAbConfirm({
+        message: t('addressbook.load_overwrite_confirm', { name: book.name, cur: (detail.notifiers ?? []).length, next: book.member_count }),
+        onConfirm: () => applyAddressBook(book),
+      });
+    } else {
+      applyAddressBook(book);
+    }
+  };
+
+  // 주소록으로 저장 — 기존 선택 시 덮어쓰기(확인), 새 이름이면 신규 생성
+  const persistAddressBook = async (mode: 'create' | 'update', idOrName: number | string) => {
+    const members = (detail.notifiers ?? []).map((n) => ({ loginid: n.loginid, name: n.name }));
+    try {
+      if (mode === 'update') {
+        await addressBooksAPI.update(idOrName as number, { members });
+      } else {
+        await addressBooksAPI.create(idOrName as string, members);
+      }
+      setAddressBooks(await addressBooksAPI.list());
+      setAbSaveOpen(false);
+      setAbSaveNewName('');
+      setAbSaveMode('new');
+      addToast(t('addressbook.saved'), 'success');
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    }
+  };
+  const saveAddressBook = () => {
+    if ((detail.notifiers ?? []).length === 0) {
+      addToast(t('addressbook.empty_save'), 'warning');
+      return;
+    }
+    if (abSaveMode !== 'new') {
+      const book = addressBooks.find((b) => b.id === abSaveMode);
+      if (!book) return;
+      setAbConfirm({
+        message: t('addressbook.save_overwrite_confirm', { name: book.name, count: (detail.notifiers ?? []).length }),
+        onConfirm: () => persistAddressBook('update', book.id),
+      });
+      return;
+    }
+    const name = abSaveNewName.trim();
+    if (!name) {
+      addToast(t('addressbook.name_required'), 'warning');
+      return;
+    }
+    const dup = addressBooks.find((b) => b.name === name);
+    if (dup) {
+      setAbConfirm({
+        message: t('addressbook.save_overwrite_confirm', { name: dup.name, count: (detail.notifiers ?? []).length }),
+        onConfirm: () => persistAddressBook('update', dup.id),
+      });
+    } else {
+      persistAddressBook('create', name);
+    }
+  };
+  const deleteAddressBookInline = (book: AddressBook) => {
+    setAbConfirm({
+      message: t('addressbook.delete_confirm', { name: book.name }),
+      onConfirm: async () => {
+        try {
+          await addressBooksAPI.delete(book.id);
+          setAddressBooks((prev) => prev.filter((b) => b.id !== book.id));
+          addToast(t('addressbook.deleted'), 'success');
+        } catch {
+          addToast(t('common.process_error'), 'error');
+        }
+      },
+    });
   };
 
   // Derived booleans for Step 1 conditional rendering
@@ -2572,12 +2673,22 @@ export default function RequestPage(): React.ReactElement {
         setNotifierUserOptions([]);
       }
     }
+    // 내 주소록 로드(통보처 불러오기/저장용)
+    if (!isPeerReviewMode) {
+      try {
+        setAddressBooks(await addressBooksAPI.list());
+      } catch {
+        setAddressBooks([]);
+      }
+    }
     setDesignees([]);
     setDesigneeSearchQuery('');
     setDesigneeError('');
     setNotifierSearchQuery('');
     setNotifierDropdownOpen(false);
     setNotifierDropdownRect(null);
+    setAbLoadOpen(false);
+    setAbSaveOpen(false);
     setConfirmOpen(true);
   };
 
@@ -2904,6 +3015,16 @@ export default function RequestPage(): React.ReactElement {
         danger
       />
 
+      {/* 주소록 저장/불러오기/삭제 확인 (상신 모달 위에 표시) */}
+      <ConfirmModal
+        isOpen={!!abConfirm}
+        onClose={() => setAbConfirm(null)}
+        onConfirm={() => abConfirm?.onConfirm()}
+        title={t('common.confirm')}
+        message={abConfirm?.message ?? ''}
+        topLevel
+      />
+
       {/* J-ayer 필터 관리 모달 */}
       <FilterManageModal
         isOpen={jayerFilterModalOpen}
@@ -3116,6 +3237,83 @@ export default function RequestPage(): React.ReactElement {
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 6px' }}>
               {t('request.notifier_help')}
             </p>
+
+            {/* 주소록 툴바: 통보처 불러오기 / 통보처로 저장 */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => { setAbLoadOpen((v) => !v); setAbSaveOpen(false); }}
+              >
+                📁 {t('addressbook.load_btn')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ marginLeft: 'auto' }}
+                onClick={() => { setAbSaveOpen((v) => !v); setAbLoadOpen(false); setAbSaveMode('new'); setAbSaveNewName(''); }}
+              >
+                💾 {t('addressbook.save_btn')}
+              </button>
+            </div>
+
+            {/* 불러오기 패널 */}
+            {abLoadOpen && (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-card)', padding: 6, marginBottom: 8 }}>
+                {addressBooks.length === 0 ? (
+                  <div style={{ padding: '8px 6px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>{t('addressbook.empty_list')}</div>
+                ) : addressBooks.map((b) => (
+                  <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px', borderRadius: 'var(--radius-sm)' }}>
+                    <button
+                      type="button"
+                      onClick={() => loadAddressBook(b)}
+                      style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-primary)', padding: 0 }}
+                    >
+                      <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{b.name}</span>
+                      <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>{t('addressbook.member_count', { count: b.member_count })}</span>
+                    </button>
+                    <button
+                      type="button"
+                      title={t('common.delete')}
+                      onClick={() => deleteAddressBookInline(b)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.9rem', padding: '2px 4px' }}
+                    >🗑</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 저장 패널: 기존 주소록 선택(덮어쓰기) 또는 새 이름(추가) */}
+            {abSaveOpen && (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-card)', padding: 10, marginBottom: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <select
+                  className="form-control"
+                  value={abSaveMode === 'new' ? 'new' : String(abSaveMode)}
+                  onChange={(e) => setAbSaveMode(e.target.value === 'new' ? 'new' : Number(e.target.value))}
+                  style={{ fontSize: '0.85rem' }}
+                >
+                  <option value="new">{t('addressbook.save_as_new')}</option>
+                  {addressBooks.map((b) => (
+                    <option key={b.id} value={b.id}>{t('addressbook.save_overwrite_option', { name: b.name })}</option>
+                  ))}
+                </select>
+                {abSaveMode === 'new' && (
+                  <input
+                    className="form-control"
+                    placeholder={t('addressbook.name_placeholder')}
+                    value={abSaveNewName}
+                    onChange={(e) => setAbSaveNewName(e.target.value)}
+                    style={{ fontSize: '0.85rem' }}
+                    autoComplete="off"
+                  />
+                )}
+                <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAbSaveOpen(false)}>{t('common.cancel')}</button>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={saveAddressBook}>{t('common.save')}</button>
+                </div>
+              </div>
+            )}
+
             {(detail.notifiers ?? []).length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
                 {(detail.notifiers ?? []).map((n) => (
@@ -3197,6 +3395,11 @@ export default function RequestPage(): React.ReactElement {
                 document.body
               )}
             </div>
+            {noMailNotifiers.length > 0 && (
+              <p style={{ fontSize: '0.78rem', color: 'var(--warning, #b26a00)', margin: '6px 0 0', lineHeight: 1.5 }}>
+                ⚠️ {t('addressbook.inline_no_mail', { count: noMailNotifiers.length, names: noMailNotifiers.map((n) => n.name).join(', ') })}
+              </p>
+            )}
           </div>
           </>
         )}
