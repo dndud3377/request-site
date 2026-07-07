@@ -6,8 +6,8 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 
 | 잡 ID | 주기 | 함수 | 설명 |
 |-------|------|------|------|
-| `sync_rtdb_options` | **10분** | `sync_rtdb_options()` | 공정-품목 / 품목-공정ID (RTDB MAIN + DCQ fallback) 동기화 |
-| `sync_form_options` | 1시간 | `sync_form_options()` | 스텝 / 바코드-품목 / MAP 이름 (DCQ) 동기화 |
+| `sync_rtdb_options` | **10분** | `sync_rtdb_options()` | 공정-품목 / 품목-공정ID / 스텝 (RTDB MAIN + DCQ fallback) 동기화 |
+| `sync_form_options` | 1시간 | `sync_form_options()` | 바코드-품목 / MAP 이름 (DCQ) 동기화 |
 | `sync_holidays` | 매일 02:00 | `sync_holidays()` | 공휴일 동기화 |
 | `process_mail_queue` | 1분 | `process_mail_queue()` | 결재 알림 메일 큐 발송 |
 
@@ -16,14 +16,16 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 
 ## 데이터 소스 구조 (MAIN / FALLBACK)
 
-`api_processproduct`(공정-품목)·`api_productprocessid`(품목-공정ID) 동기화는 두 개의 소스를
-**폴백 구조**로 사용하며, 하나의 10분 잡 `sync_rtdb_options()` 에서 **RTDB 토큰을 1회만 발급**해
-두 소스를 함께 처리한다. 두 RTDB 조회는 **table_name·select·filter 가 각각 다르다**(`{suffix}` 는 라인 접미사로 치환).
+`api_processproduct`(공정-품목)·`api_productprocessid`(품목-공정ID)·스텝(`api_teps1`/`api_steps3~5`)
+동기화는 두 개의 소스를 **폴백 구조**로 사용하며, 하나의 10분 잡 `sync_rtdb_options()` 에서
+**RTDB 토큰을 1회만 발급**해 세 소스를 함께 처리한다. 각 RTDB 조회는 **table_name·select·filter 가
+각각 다르다**(`{suffix}` 는 라인 접미사로 치환).
 
 | 대상 테이블 | RTDB(MAIN) table / select / filter | DCQ(FALLBACK) |
 |-------------|-----------------------------------|---------------|
 | `api_processproduct` | `A_{suffix}.B` / `partnumber, descript, pkgtype_2` / `X $eq "Y"` | `query_cp` (`A.B_{suffix}`) |
 | `api_productprocessid` | `X_{suffix}.Y` / `partnumber, processid` / `X $neq " "` | `query_pc` (`A.B_{suffix}_processproduct`) |
+| `api_teps1`/`api_steps3~5` (스텝) | `O_{suffix}.W` / `processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid` / `a $eq "aaaaaa", e/l/p/r/s $neq " "` | `dcq_ps` (`A.B_{suffix}_step`) |
 
 ```
 ① MAIN     RTDB(REST API)  →  /api/queries
@@ -36,9 +38,9 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 ```
 
 - MAIN 이 **예외로 실패하거나 빈 결과(0건)** 이면 FALLBACK(DCQ)을 실행한다.
-- MAIN(RTDB) 토큰은 동기화 **주기당 1회** 발급하여 두 소스·라인 반복에서 재사용한다.
-- **DCQ fallback 은 RTDB 가 실패한 경우에만 지연 로그인**하며, 그 로그인 상태는 두 소스가 공유한다(평소에는 DCQ 를 호출하지 않음).
-- 나머지 동기화(스텝, 바코드, MAP 이름, 공휴일)는 기존 DCQ 단일 소스를 그대로 사용한다.
+- MAIN(RTDB) 토큰은 동기화 **주기당 1회** 발급하여 세 소스·라인 반복에서 재사용한다.
+- **DCQ fallback 은 RTDB 가 실패한 경우에만 지연 로그인**하며, 그 로그인 상태는 세 소스가 공유한다(평소에는 DCQ 를 호출하지 않음).
+- 나머지 동기화(바코드, MAP 이름, 공휴일)는 기존 DCQ 단일 소스를 그대로 사용한다.
 
 ### 변경 감지(Change Detection) 쓰기 전략
 
@@ -52,6 +54,8 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 
 - **동일** → `DELETE + INSERT` 를 건너뛰고 로그만 남긴다(대부분의 사이클).
 - **다름** → 트랜잭션 내에서 `DELETE(line) → INSERT` 로 원자적 갱신(삭제된 행도 자동 반영).
+- **스텝(`api_teps1`/`api_steps3~5`)은 라인별 단독 테이블(공용 `line` 컬럼 없음)** 이라 `_write_if_changed`
+  대상이 아니며, 매 사이클 해당 테이블 **전체 `DELETE` → `to_sql`** 로 갱신한다.
 
 ## RTDB(REST API) 유틸 (`utils.py`)
 
