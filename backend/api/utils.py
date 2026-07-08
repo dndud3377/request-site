@@ -61,7 +61,7 @@ def cq_login(dcq_id, dcq_password):
             logger.info(f"[DCQ] 로그인 성공: {dcq_id}")
             return True
         except Exception as e:
-            logger.error(f"[DCQ] 로그인 실패: {e}")
+            logger.error(f"[DCQ] 로그인 실패: {e}", exc_info=True)
             return False
         finally:
             account_info.close()
@@ -103,7 +103,7 @@ def dcq_login_with_retry():
             if cq_login(dcq_id, pw):
                 return True
         except Exception as e:
-            logger.warning(f"[DCQ] 비밀번호 시도 실패: {e}")
+            logger.warning(f"[DCQ] 비밀번호 시도 실패: {e}", exc_info=True)
     
     logger.error("[DCQ] 모든 비밀번호 시도가 실패했습니다")
     return False
@@ -116,7 +116,7 @@ def get_dcq_token_info(dcq_id):
         logger.info(f"[DCQ] 토큰 정보: {token_info}")
         return token_info
     except Exception as e:
-        logger.error(f"[DCQ] 토큰 정보 조회 실패: {e}")
+        logger.error(f"[DCQ] 토큰 정보 조회 실패: {e}", exc_info=True)
         return None
 
 
@@ -141,7 +141,7 @@ def get_data_from_dcq(query, dcq_id):
         logger.info(f"[DCQ] 데이터 조회 성공: {len(df)} 건")
         return df
     except Exception as e:
-        logger.error(f"[DCQ] 데이터 조회 실패: {e}")
+        logger.error(f"[DCQ] 데이터 조회 실패: {e}", exc_info=True)
         return None
 
 
@@ -194,7 +194,7 @@ def rtdb_login_with_retry():
                 return access_token
             logger.warning(f"[RTDB] 로그인 실패 (HTTP {response.status_code})")
         except Exception as e:
-            logger.warning(f"[RTDB] 비밀번호 시도 실패: {e}")
+            logger.warning(f"[RTDB] 비밀번호 시도 실패: {e}", exc_info=True)
 
     logger.error("[RTDB] 모든 비밀번호 시도가 실패했습니다")
     return None
@@ -238,7 +238,7 @@ def get_data_from_rtdb(query_payload, access_token):
         logger.info(f"[RTDB] 데이터 조회 성공: {len(df)} 건")
         return df
     except Exception as e:
-        logger.error(f"[RTDB] 데이터 조회 실패: {e}")
+        logger.error(f"[RTDB] 데이터 조회 실패: {e}", exc_info=True)
         return None
 
 
