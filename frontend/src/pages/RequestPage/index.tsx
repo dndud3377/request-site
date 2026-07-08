@@ -227,6 +227,10 @@ export default function RequestPage(): React.ReactElement {
   const [abSaveMode, setAbSaveMode] = useState<'new' | number>('new'); // 'new' 또는 덮어쓸 기존 주소록 id
   const [abSaveNewName, setAbSaveNewName] = useState('');
   const [abConfirm, setAbConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  // 통보처 불러오기 — 검색 입력 + 포털 드롭다운(주소록 이름 필터)
+  const [abLoadQuery, setAbLoadQuery] = useState('');
+  const [abLoadRect, setAbLoadRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const abLoadInputRef = useRef<HTMLInputElement>(null);
   const prevParsedRef = useRef<{
     detail: DetailFormState;
     jayerRows: JayerRow[];
@@ -1105,21 +1109,6 @@ export default function RequestPage(): React.ReactElement {
       persistAddressBook('create', name);
     }
   };
-  const deleteAddressBookInline = (book: AddressBook) => {
-    setAbConfirm({
-      message: t('addressbook.delete_confirm', { name: book.name }),
-      onConfirm: async () => {
-        try {
-          await addressBooksAPI.delete(book.id);
-          setAddressBooks((prev) => prev.filter((b) => b.id !== book.id));
-          addToast(t('addressbook.deleted'), 'success');
-        } catch {
-          addToast(t('common.process_error'), 'error');
-        }
-      },
-    });
-  };
-
   // Derived booleans for Step 1 conditional rendering
   const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
   const isOnlyMap = detail.request_purpose === 'Only MAP';
@@ -3243,7 +3232,7 @@ export default function RequestPage(): React.ReactElement {
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
-                onClick={() => { setAbLoadOpen((v) => !v); setAbSaveOpen(false); }}
+                onClick={() => { setAbLoadOpen((v) => !v); setAbSaveOpen(false); setAbLoadQuery(''); setAbLoadRect(null); }}
               >
                 📁 {t('addressbook.load_btn')}
               </button>
@@ -3257,29 +3246,56 @@ export default function RequestPage(): React.ReactElement {
               </button>
             </div>
 
-            {/* 불러오기 패널 */}
+            {/* 불러오기: 검색 입력 + 포털 드롭다운(주소록 이름 필터) */}
             {abLoadOpen && (
-              <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-card)', padding: 6, marginBottom: 8 }}>
-                {addressBooks.length === 0 ? (
-                  <div style={{ padding: '8px 6px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>{t('addressbook.empty_list')}</div>
-                ) : addressBooks.map((b) => (
-                  <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px', borderRadius: 'var(--radius-sm)' }}>
-                    <button
-                      type="button"
-                      onClick={() => loadAddressBook(b)}
-                      style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-primary)', padding: 0 }}
-                    >
-                      <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{b.name}</span>
-                      <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>{t('addressbook.member_count', { count: b.member_count })}</span>
-                    </button>
-                    <button
-                      type="button"
-                      title={t('common.delete')}
-                      onClick={() => deleteAddressBookInline(b)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.9rem', padding: '2px 4px' }}
-                    >🗑</button>
-                  </div>
-                ))}
+              <div style={{ position: 'relative', marginBottom: 8 }}>
+                <input
+                  ref={abLoadInputRef}
+                  className="form-control"
+                  placeholder={t('addressbook.search_placeholder')}
+                  value={abLoadQuery}
+                  autoFocus
+                  autoComplete="off"
+                  style={{ fontSize: '0.85rem' }}
+                  onChange={(e) => {
+                    setAbLoadQuery(e.target.value);
+                    if (abLoadInputRef.current) {
+                      const r = abLoadInputRef.current.getBoundingClientRect();
+                      setAbLoadRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                    }
+                  }}
+                  onFocus={() => {
+                    if (abLoadInputRef.current) {
+                      const r = abLoadInputRef.current.getBoundingClientRect();
+                      setAbLoadRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                    }
+                  }}
+                  onBlur={() => setTimeout(() => setAbLoadRect(null), 150)}
+                />
+                {abLoadRect && createPortal(
+                  <div style={{ position: 'fixed', top: abLoadRect.top, left: abLoadRect.left, width: abLoadRect.width, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', zIndex: 9999, maxHeight: 280, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
+                    {(() => {
+                      const q = abLoadQuery.trim().toLowerCase();
+                      const filtered = addressBooks.filter((b) => !q || b.name.toLowerCase().includes(q));
+                      if (filtered.length === 0) {
+                        return <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{addressBooks.length === 0 ? t('addressbook.empty_list') : t('request.search_no_result')}</div>;
+                      }
+                      return filtered.map((b) => (
+                        <div
+                          key={b.id}
+                          style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border)' }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = '')}
+                          onMouseDown={(e) => { e.preventDefault(); loadAddressBook(b); }}
+                        >
+                          <span style={{ fontWeight: 600 }}>{b.name}</span>
+                          <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>{t('addressbook.member_count', { count: b.member_count })}</span>
+                        </div>
+                      ));
+                    })()}
+                  </div>,
+                  document.body
+                )}
               </div>
             )}
 
