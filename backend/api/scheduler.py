@@ -335,7 +335,11 @@ def sync_holidays():
             return
 
         df = df[df['isholiday'] == 'Y'].copy()
-        df['act_date'] = pd.to_datetime(df['act_date']).dt.date
+        df['act_date'] = pd.to_datetime(df['act_date'], errors='coerce').dt.date
+        # act_date 는 UNIQUE 제약이므로 같은 날짜 중복 행(예: 성탄절/기독탄신일)은 한 건만 남긴다.
+        # 변환 실패(NaT)로 생긴 결측 날짜 행도 제거한다.
+        df = df[df['act_date'].notna()]
+        df = df.drop_duplicates(subset=['act_date'], keep='first')
 
         with engine.begin() as db_conn:
             db_conn.execute(text("DELETE FROM api_holiday"))
