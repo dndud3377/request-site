@@ -144,16 +144,16 @@ export default function AddressBookPage(): React.ReactElement {
     if (!selected) return [];
     const q = memberQuery.trim().toLowerCase();
     const chosen = new Set(selected.members.map((m) => m.loginid));
+    // 구성원 후보는 제품 담당자(PL)만 노출한다.
     return users
-      .filter((u) => !chosen.has(u.loginid))
+      .filter((u) => u.role === 'PL' && !chosen.has(u.loginid))
       .filter((u) =>
         !q ||
         u.name.toLowerCase().includes(q) ||
         u.loginid.toLowerCase().includes(q) ||
         (u.mail ?? '').toLowerCase().includes(q) ||
         (u.deptname ?? '').toLowerCase().includes(q)
-      )
-      .slice(0, 8);
+      );
   }, [users, selected, memberQuery]);
 
   return (
@@ -240,7 +240,7 @@ export default function AddressBookPage(): React.ReactElement {
                     autoComplete="off"
                   />
                   {memberDropdownOpen && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 30, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', marginTop: 2, maxHeight: 240, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 30, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', marginTop: 2, maxHeight: 360, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
                       {memberMatches.length === 0 ? (
                         <div style={{ padding: '8px 12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                           {t('request.search_no_result')}
