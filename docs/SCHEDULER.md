@@ -28,7 +28,7 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 |-------|------|------|------|
 | `sync_rtdb_options` | **10분** | `sync_rtdb_options()` | 공정-품목 / 품목-공정ID / 스텝 (RTDB MAIN + DCQ fallback) 동기화 |
 | `sync_form_options` | 1시간 | `sync_form_options()` | 바코드-품목 / MAP 이름 (DCQ) 동기화 |
-| `sync_holidays` | 매일 02:00 | `sync_holidays()` | 공휴일 동기화 |
+| `sync_holidays` | 매일 02:00 | `sync_holidays()` | 공휴일 동기화 (act_date UNIQUE → 날짜 기준 중복 제거 후 저장) |
 | `process_mail_queue` | 1분 | `process_mail_queue()` | 결재 알림 메일 큐 발송 |
 
 > `scheduler` 서비스(`run_scheduler`) 기동 시 `sync_rtdb_options` / `sync_form_options` / `sync_holidays` 는 각각 스레드로 1회 즉시 실행된다.
