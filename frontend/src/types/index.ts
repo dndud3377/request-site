@@ -372,6 +372,7 @@ export interface UserWithRole {
   deptname: string;
   role: UserRole;
   mail: string;
+  role_assigned_at?: string | null;
 }
 
 export interface CreateUserInput {
