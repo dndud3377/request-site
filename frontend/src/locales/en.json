@@ -11,6 +11,7 @@
   "addressbook": {
     "load_btn": "Load notifiers",
     "save_btn": "Save as address book",
+    "search_placeholder": "Search address book name…",
     "empty_list": "No saved address books.",
     "member_count": "{{count}}",
     "save_as_new": "+ Save as new address book",
