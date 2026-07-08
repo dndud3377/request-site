@@ -12,6 +12,9 @@ const PERMISSION_GUIDE_KEY: GuideFeatureKey = 'permission_user_group';
 
 const ALL_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
 
+// 사용자 추가 시 배정 가능한 실제 역할(NONE 제외) — MASTER 역할 선택 드롭다운에 사용
+const ADD_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER'];
+
 
 // ===== Shared styles =====
 
@@ -21,6 +24,14 @@ const thStyle: React.CSSProperties = {
   fontWeight: 600,
   fontSize: 13,
   color: '#4a5568',
+};
+
+// 스크롤 컨테이너 안에서 헤더 고정용(배경 채워 아래 행이 비쳐 보이지 않게)
+const stickyThStyle: React.CSSProperties = {
+  ...thStyle,
+  position: 'sticky',
+  top: 0,
+  background: 'var(--bg-card, #fff)',
 };
 
 const tdStyle: React.CSSProperties = {
@@ -66,13 +77,13 @@ function UserTable({
 
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-      <thead>
+      <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--bg-card, #fff)' }}>
         <tr style={{ borderBottom: '2px solid var(--color-border, #e2e8f0)' }}>
-          <th style={thStyle}>{t('permission.field_loginid')}</th>
-          <th style={thStyle}>{t('permission.field_name')}</th>
-          <th style={thStyle}>{t('permission.field_email')}</th>
-          <th style={thStyle}>{t('permission.field_department')}</th>
-          {showActionCol && <th style={{ ...thStyle, width: isMaster ? 200 : 80 }}></th>}
+          <th style={stickyThStyle}>{t('permission.field_loginid')}</th>
+          <th style={stickyThStyle}>{t('permission.field_name')}</th>
+          <th style={stickyThStyle}>{t('permission.field_email')}</th>
+          <th style={stickyThStyle}>{t('permission.field_department')}</th>
+          {showActionCol && <th style={{ ...stickyThStyle, width: isMaster ? 200 : 80 }}></th>}
         </tr>
       </thead>
       <tbody>
@@ -739,6 +750,10 @@ export default function PermissionPage(): React.ReactElement {
   );
   const [usersForAssignment, setUsersForAssignment] = useState<UserForAssignment[]>([]);
   const [formOpen, setFormOpen] = useState(false);
+  // 사용자 추가 대상 역할(MASTER는 모달에서 선택, 비-MASTER는 본인 역할 고정)
+  const [formRole, setFormRole] = useState<UserRole>(() =>
+    currentUser.role === 'MASTER' ? 'PL' : ((currentUser.role as UserRole) || 'PL')
+  );
   const [selectedUsers, setSelectedUsers] = useState<UserForAssignment[]>([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
@@ -756,6 +771,18 @@ export default function PermissionPage(): React.ReactElement {
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
 
   const isMaster = currentUser.role === 'MASTER';
+  // 역할이 있는 사용자면(MASTER 포함) 사용자 추가 가능 — 비-MASTER는 본인 역할로만.
+  const canAddUser = isMaster || (currentUser.role !== 'NONE' && !!currentUser.role);
+  // 실제 배정 대상 역할: MASTER는 선택값(formRole), 비-MASTER는 본인 역할.
+  const addTargetRole: UserRole = isMaster ? formRole : (currentUser.role as UserRole);
+
+  const openAddModal = () => {
+    if (isMaster && activeTab !== 'NONE') setFormRole(activeTab);
+    setSelectedUsers([]);
+    setUserSearchQuery('');
+    setSearchDropdownOpen(false);
+    setFormOpen(true);
+  };
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -791,8 +818,12 @@ export default function PermissionPage(): React.ReactElement {
 
   useEffect(() => {
     fetchUsers();
-    fetchUsersForAssignment(isMaster ? activeTab : undefined);
-  }, [fetchUsers, fetchUsersForAssignment, isMaster, activeTab]);
+  }, [fetchUsers]);
+
+  // 추가 후보는 대상 역할 기준으로 로드(MASTER는 선택 역할, 비-MASTER는 NONE 사용자만).
+  useEffect(() => {
+    fetchUsersForAssignment(isMaster ? formRole : undefined);
+  }, [fetchUsersForAssignment, isMaster, formRole]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -834,17 +865,25 @@ export default function PermissionPage(): React.ReactElement {
     return () => es.close();
   }, []);
 
-  const usersForTab = users.filter((u) => {
-    if (u.role !== activeTab) return false;
-    if (!tabSearchQuery.trim()) return true;
-    const q = tabSearchQuery.toLowerCase();
-    return (
-      (u.loginid && u.loginid.toLowerCase().includes(q)) ||
-      (u.name && u.name.toLowerCase().includes(q)) ||
-      (u.mail && u.mail.toLowerCase().includes(q)) ||
-      (u.deptname && u.deptname.toLowerCase().includes(q))
-    );
-  });
+  const usersForTab = users
+    .filter((u) => {
+      if (u.role !== activeTab) return false;
+      if (!tabSearchQuery.trim()) return true;
+      const q = tabSearchQuery.toLowerCase();
+      return (
+        (u.loginid && u.loginid.toLowerCase().includes(q)) ||
+        (u.name && u.name.toLowerCase().includes(q)) ||
+        (u.mail && u.mail.toLowerCase().includes(q)) ||
+        (u.deptname && u.deptname.toLowerCase().includes(q))
+      );
+    })
+    // 최근 배정순(내림차순). 배정 시각 없는 사용자(과거 데이터)는 맨 아래로.
+    .sort((a, b) => {
+      const ta = a.role_assigned_at ? Date.parse(a.role_assigned_at) : -Infinity;
+      const tb = b.role_assigned_at ? Date.parse(b.role_assigned_at) : -Infinity;
+      if (tb !== ta) return tb - ta;
+      return b.id - a.id; // 동시각/무시각이면 id 큰(최근 계정) 순
+    });
 
   const canModifyTab = activeTab !== 'NONE' && (isMaster || currentUser.role === activeTab);
   const canCreateGroup =
@@ -885,19 +924,22 @@ export default function PermissionPage(): React.ReactElement {
     setSubmitting(true);
     try {
       const results = await Promise.allSettled(
-        selectedUsers.map((user) => usersAPI.assignRole(user.id, activeTab))
+        selectedUsers.map((user) => usersAPI.assignRole(user.id, addTargetRole))
       );
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;
       const failed = results.filter((r) => r.status === 'rejected').length;
 
       if (succeeded > 0) {
         fetchUsers();
-        fetchUsersForAssignment(isMaster ? activeTab : undefined);
+        fetchUsersForAssignment(isMaster ? formRole : undefined);
       }
 
       if (failed === 0) {
         addToast(t('permission.add_success'), 'success');
         setFormOpen(false);
+        // 방금 추가한 사람이 보이도록 대상 역할 탭으로 전환
+        setActiveTab(addTargetRole);
+        setActiveGroupId(null);
       } else if (succeeded > 0) {
         const failedUsers = selectedUsers.filter((_, i) => results[i].status === 'rejected');
         setSelectedUsers(failedUsers);
@@ -956,13 +998,24 @@ export default function PermissionPage(): React.ReactElement {
 
   return (
     <div className="container" style={{ padding: '32px 24px' }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4 }}>
-          {t('permission.title')}
-        </h1>
-        <p style={{ color: '#718096', fontSize: 14 }}>
-          {t('permission.subtitle')}
-        </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4 }}>
+            {t('permission.title')}
+          </h1>
+          <p style={{ color: '#718096', fontSize: 14 }}>
+            {t('permission.subtitle')}
+          </p>
+        </div>
+        {canAddUser && (
+          <button
+            className="btn btn-primary"
+            style={{ padding: '8px 18px', fontSize: 14, whiteSpace: 'nowrap', flexShrink: 0 }}
+            onClick={openAddModal}
+          >
+            + {t('permission.add_user')}
+          </button>
+        )}
       </div>
 
       {/* Tab bar — role tabs + group tabs, horizontally scrollable */}
@@ -1059,20 +1112,6 @@ export default function PermissionPage(): React.ReactElement {
                   {t('guide.video_btn')}
                 </span>
               )}
-              {canModifyTab && (
-                <button
-                  className="btn btn-primary"
-                  style={{ padding: '6px 16px', fontSize: 13 }}
-                  onClick={() => {
-                    setSelectedUsers([]);
-                    setUserSearchQuery('');
-                    setSearchDropdownOpen(false);
-                    setFormOpen(true);
-                  }}
-                >
-                  + {t('permission.add_user')}
-                </button>
-              )}
               {canCreateGroup && (
                 <button
                   className="btn btn-secondary"
@@ -1108,15 +1147,18 @@ export default function PermissionPage(): React.ReactElement {
               {t('common.loading')}
             </div>
           ) : (
-            <UserTable
-              users={usersForTab}
-              canModify={canModifyTab}
-              isMaster={isMaster}
-              onRequestDelete={setDeleteTarget}
-              onRoleChange={handleRoleChange}
-              deletingId={deletingId}
-              changingRoleId={changingRoleId}
-            />
+            /* 목록이 길면 화면의 약 2/3 높이 안에서 스크롤 */
+            <div style={{ maxHeight: '66vh', overflowY: 'auto' }}>
+              <UserTable
+                users={usersForTab}
+                canModify={canModifyTab}
+                isMaster={isMaster}
+                onRequestDelete={setDeleteTarget}
+                onRoleChange={handleRoleChange}
+                deletingId={deletingId}
+                changingRoleId={changingRoleId}
+              />
+            </div>
           )}
         </div>
       )}
@@ -1137,7 +1179,7 @@ export default function PermissionPage(): React.ReactElement {
       <Modal
         isOpen={formOpen}
         onClose={() => setFormOpen(false)}
-        title={`${t('permission.add_user')} — ${t(`permission.role_${activeTab}`)}`}
+        title={`${t('permission.add_user')} — ${t(`permission.role_${addTargetRole}`)}`}
         size="md"
         style={{ minHeight: 240 }}
         footer={
@@ -1152,6 +1194,25 @@ export default function PermissionPage(): React.ReactElement {
         }
       >
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 120 }}>
+          <div className="form-group">
+            <label className="form-label">{t('permission.add_target_role')}</label>
+            {isMaster ? (
+              <select
+                className="form-control"
+                value={formRole}
+                onChange={(e) => setFormRole(e.target.value as UserRole)}
+              >
+                {ADD_ROLES.map((r) => (
+                  <option key={r} value={r}>{t(`permission.role_${r}`)}</option>
+                ))}
+              </select>
+            ) : (
+              <p style={{ margin: 0, fontSize: 14 }}>
+                <strong>{t(`permission.role_${addTargetRole}`)}</strong>
+                <span style={{ color: '#718096', marginLeft: 8, fontSize: 13 }}>{t('permission.add_target_own')}</span>
+              </p>
+            )}
+          </div>
           <div className="form-group">
             <label className="form-label">{t('permission.select_user')} <span className="required">*</span></label>
 

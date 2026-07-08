@@ -34,6 +34,8 @@ class UserProfile(AbstractBaseUser):
     username = models.CharField(max_length=150, blank=True, default='', verbose_name='표시 이름')
     deptname = models.CharField(max_length=200, blank=True, default='', verbose_name='부서명')
     role     = models.CharField(max_length=10, choices=ROLE_CHOICES, default='NONE', verbose_name='역할')
+    # 역할이 마지막으로 배정된 시각(권한 관리에서 '최근 추가순' 정렬용). NONE→역할 배정 시 갱신.
+    role_assigned_at = models.DateTimeField(null=True, blank=True, verbose_name='역할 배정 시각')
     # password, last_login → AbstractBaseUser 자동 포함
 
     USERNAME_FIELD = 'loginid'

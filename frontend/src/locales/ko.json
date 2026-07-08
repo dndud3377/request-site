@@ -11,6 +11,7 @@
   "addressbook": {
     "load_btn": "통보처 불러오기",
     "save_btn": "통보처로 저장",
+    "search_placeholder": "주소록 이름 검색…",
     "empty_list": "저장된 주소록이 없습니다.",
     "member_count": "{{count}}명",
     "save_as_new": "+ 새 주소록으로 저장",
@@ -381,6 +382,8 @@
     "users_label": "사용자 목록",
     "no_users": "등록된 사용자가 없습니다.",
     "add_user": "사용자 추가",
+    "add_target_role": "추가할 권한",
+    "add_target_own": "(내 권한)",
     "add_success": "사용자가 추가되었습니다.",
     "add_error": "사용자 추가에 실패했습니다.",
     "delete": "삭제",

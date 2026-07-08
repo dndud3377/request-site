@@ -11,6 +11,7 @@
   "addressbook": {
     "load_btn": "Load notifiers",
     "save_btn": "Save as address book",
+    "search_placeholder": "Search address book name…",
     "empty_list": "No saved address books.",
     "member_count": "{{count}}",
     "save_as_new": "+ Save as new address book",
@@ -380,6 +381,8 @@
     "users_label": "Users",
     "no_users": "No users registered.",
     "add_user": "Add User",
+    "add_target_role": "Role to add",
+    "add_target_own": "(your role)",
     "add_success": "User added successfully.",
     "add_error": "Failed to add user.",
     "delete": "Delete",
