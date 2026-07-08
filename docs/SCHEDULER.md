@@ -1,6 +1,26 @@
 # SCHEDULER — 외부 DB 동기화 스케줄러
 
-APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `backend/api/scheduler.py`, `backend/api/utils.py`.
+APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `backend/api/scheduler.py`, `backend/api/utils.py`,
+`backend/api/management/commands/run_scheduler.py`, `backend/api/apps.py`.
+
+## 실행 구조 (단일 프로세스)
+
+스케줄러는 **전용 단일 프로세스에서만** 실행한다. gunicorn 은 다중 워커(`--workers N`)로 뜨는데,
+과거에는 `apps.py` 의 `ready()` 가 워커마다 실행되어 스케줄러가 **중복 기동**되었다. 그 결과 여러
+`BackgroundScheduler` 가 같은 `DjangoJobStore`(DB) 의 job 을 `replace_existing=True` 로 서로 탈취해
+`job ... no longer exists` 가 반복되고 메일 큐가 이중 발송될 수 있었다.
+
+이를 막기 위해:
+
+- **`apps.py` 는 스케줄러를 자동 기동하지 않는다.** (gunicorn 워커·runserver 어디서도 안 뜸)
+- 스케줄러는 관리 명령 **`python manage.py run_scheduler`** 로 띄우는 **`scheduler` 서비스(컨테이너 1개)** 에서만 실행한다.
+  - `run_scheduler` 는 `SKIP_SCHEDULER=true` 면 `start_mail_only()`(메일만), 아니면 `start()`(전체)를 호출하고 프로세스를 유지한다.
+- `docker-compose.yml`: 운영 `scheduler` 서비스(`SKIP_SCHEDULER=false`, 전체 동기화 + 메일).
+- `docker-compose.dev.yml`: 개발 `scheduler` 서비스(`SKIP_SCHEDULER=true`, 메일 큐만).
+- 마이그레이션/시드/정적파일 수집은 **웹 `backend` 서비스**가 담당하고, `scheduler` 서비스는 `wait_for_db` 후 스케줄러만 실행한다.
+
+> ⚠️ 로컬에서 compose 없이 `runserver` 만 띄우면 스케줄러/메일이 자동 실행되지 않는다.
+> 필요하면 별도 터미널에서 `python manage.py run_scheduler` 를 실행한다.
 
 ## 등록 잡
 
@@ -11,7 +31,7 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 | `sync_holidays` | 매일 02:00 | `sync_holidays()` | 공휴일 동기화 |
 | `process_mail_queue` | 1분 | `process_mail_queue()` | 결재 알림 메일 큐 발송 |
 
-> 앱 기동 시 `sync_rtdb_options` / `sync_form_options` / `sync_holidays` 는 각각 스레드로 1회 즉시 실행된다.
+> `scheduler` 서비스(`run_scheduler`) 기동 시 `sync_rtdb_options` / `sync_form_options` / `sync_holidays` 는 각각 스레드로 1회 즉시 실행된다.
 > (구 `sync_process_product` 잡은 `sync_rtdb_options` 로 통합되었으며, `start()` 에서 잔여 잡을 제거한다.)
 
 ## 데이터 소스 구조 (MAIN / FALLBACK)
