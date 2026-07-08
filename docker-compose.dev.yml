@@ -52,6 +52,7 @@ services:
         BIGDATA_TRUSTED_HOST: ${BIGDATA_TRUSTED_HOST}
         ODBC_DRIVER_URL: ${ODBC_DRIVER_URL}
         ODBC_DRIVER_FILENAME: ${ODBC_DRIVER_FILENAME}
+    image: request-site-backend-dev:latest
     container_name: request_backend_dev
     restart: unless-stopped
     ports:
@@ -74,6 +75,28 @@ services:
              python manage.py create_users &&
              python manage.py seed_lines &&
              python manage.py runserver 0.0.0.0:8000"
+
+  # dev 스케줄러 전용 단일 프로세스. dev 는 SKIP_SCHEDULER=true 이므로
+  # 무거운 DCQ/RTDB 동기화는 건너뛰고 결재 알림 메일 큐 발송만 실행한다.
+  scheduler:
+    image: request-site-backend-dev:latest
+    container_name: request_scheduler_dev
+    restart: unless-stopped
+    env_file:
+      - .env.dev
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - SKIP_SCHEDULER=true
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db-sync:
+        condition: service_completed_successfully
+      backend:
+        condition: service_started
+    command: >
+      sh -c "python manage.py wait_for_db &&
+             python manage.py run_scheduler"
 
   frontend:
     build:
