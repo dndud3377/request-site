@@ -1366,26 +1366,23 @@ class UserViewSet(viewsets.ModelViewSet):
             if role != requester_role:
                 return Response({'error': '자신의 역할로만 부여할 수 있습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
-        User.objects.filter(pk=user.pk).update(role=role)
+        # 역할 배정 시각 갱신('최근 추가순' 정렬용). NONE(역할 회수)이면 초기화한다.
+        assigned_at = timezone.now() if role != 'NONE' else None
+        User.objects.filter(pk=user.pk).update(role=role, role_assigned_at=assigned_at)
         user.refresh_from_db()
 
-        broadcaster.broadcast('user_updated', {
+        payload = {
             'id': user.id,
             'loginid': user.loginid,
             'name': user.username or '',
             'deptname': user.deptname or '',
             'role': role,
             'mail': user.mail or '',
-        })
+            'role_assigned_at': user.role_assigned_at.isoformat() if user.role_assigned_at else None,
+        }
+        broadcaster.broadcast('user_updated', payload)
 
-        return Response({
-            'id': user.id,
-            'loginid': user.loginid,
-            'name': user.username or '',
-            'deptname': user.deptname or '',
-            'role': role,
-            'mail': user.mail or '',
-        })
+        return Response(payload)
     
     def create(self, request, *args, **kwargs):
         # login_id 를 context 로 전달

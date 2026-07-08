@@ -43,7 +43,8 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'loginid', 'name', 'mail', 'role', 'deptname']
+        fields = ['id', 'loginid', 'name', 'mail', 'role', 'deptname', 'role_assigned_at']
+        read_only_fields = ['role_assigned_at']
 
     def create(self, validated_data):
         loginid = self.context.get('loginid')
