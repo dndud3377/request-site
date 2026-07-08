@@ -98,7 +98,7 @@ def sync_rtdb_options():
     try:
         engine = get_django_engine()
     except Exception as e:
-        logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e))
+        logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e), exc_info=True)
         return
 
     rtdb_token = rtdb_login_with_retry()
@@ -168,7 +168,7 @@ def sync_rtdb_options():
                     else:
                         logger.info(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} {count}건 동기화 완료").format(line=line, count=count))
             except Exception as e:
-                logger.error(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 동기화 실패: {e}").format(line=line, e=e))
+                logger.error(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
 
             # --- 품목-공정ID (api_productprocessid) ---
             try:
@@ -191,7 +191,7 @@ def sync_rtdb_options():
                     else:
                         logger.info(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} {count}건 동기화 완료").format(line=line, count=count))
             except Exception as e:
-                logger.error(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 동기화 실패: {e}").format(line=line, e=e))
+                logger.error(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
 
             # --- 스텝 (api_steps: 라인별 단독 테이블) ---
             try:
@@ -215,7 +215,7 @@ def sync_rtdb_options():
                             df_ps.to_sql(table_name, db_conn, if_exists='append', index=False)
                         logger.info(_("[scheduler] {line} {{request.col_step}} {count}건 동기화 완료").format(line=line, count=len(df_ps)))
             except Exception as e:
-                logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e))
+                logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
     finally:
         if engine:
             engine.dispose()
@@ -232,7 +232,7 @@ def sync_form_options():
     try:
         engine = get_django_engine()
     except Exception as e:
-        logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e))
+        logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e), exc_info=True)
         return
 
     if not dcq_login_with_retry():
@@ -271,7 +271,7 @@ def sync_form_options():
 
                 logger.info(_("[scheduler] 바코드-품목 {count}건 동기화 완료").format(count=len(df_pb)))
         except Exception as e:
-            logger.error(_("[scheduler] 바코드-품목 동기화 실패: {e}").format(e=e))
+            logger.error(_("[scheduler] 바코드-품목 동기화 실패: {e}").format(e=e), exc_info=True)
 
         try:
             lineid_list = list(LINE_TO_LINEID_MAP.values())
@@ -296,7 +296,7 @@ def sync_form_options():
 
                 logger.info(_("[scheduler] MAP 이름 {count}건 동기화 완료").format(count=len(df_mn)))
         except Exception as e:
-            logger.error(_("[scheduler] MAP 이름 동기화 실패: {e}").format(e=e))
+            logger.error(_("[scheduler] MAP 이름 동기화 실패: {e}").format(e=e), exc_info=True)
 
     finally:
         if engine:
@@ -311,7 +311,7 @@ def sync_holidays():
     try:
         engine = get_django_engine()
     except Exception as e:
-        logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e))
+        logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e), exc_info=True)
         return
 
     if not dcq_login_with_retry():
@@ -345,7 +345,7 @@ def sync_holidays():
 
         logger.info(_("[scheduler] 공휴일 {count}건 동기화 완료").format(count=len(df)))
     except Exception as e:
-        logger.error(_("[scheduler] 공휴일 동기화 실패: {e}").format(e=e))
+        logger.error(_("[scheduler] 공휴일 동기화 실패: {e}").format(e=e), exc_info=True)
     finally:
         if engine:
             engine.dispose()
@@ -411,7 +411,7 @@ def start():
         threading.Thread(target=sync_rtdb_options, daemon=True).start()
         threading.Thread(target=sync_holidays, daemon=True).start()
     except ProgrammingError as e:
-        logger.warning(_("[scheduler] 테이블이 아직 생성되지 않았습니다. 마이그레이션 후 재시작됩니다: {e}").format(e=e))
+        logger.warning(_("[scheduler] 테이블이 아직 생성되지 않았습니다. 마이그레이션 후 재시작됩니다: {e}").format(e=e), exc_info=True)
 
 
 def start_mail_only():
@@ -438,4 +438,4 @@ def start_mail_only():
         scheduler.start()
         logger.info(_("[scheduler] 메일 전용 스케줄러 시작 - 1 분 주기 결재 알림 발송"))
     except ProgrammingError as e:
-        logger.warning(_("[scheduler] 테이블이 아직 생성되지 않았습니다. 마이그레이션 후 재시작됩니다: {e}").format(e=e))
+        logger.warning(_("[scheduler] 테이블이 아직 생성되지 않았습니다. 마이그레이션 후 재시작됩니다: {e}").format(e=e), exc_info=True)
