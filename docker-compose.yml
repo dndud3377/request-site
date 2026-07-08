@@ -31,6 +31,7 @@ services:
         BIGDATA_TRUSTED_HOST: ${BIGDATA_TRUSTED_HOST}
         ODBC_DRIVER_URL: ${ODBC_DRIVER_URL}
         ODBC_DRIVER_FILENAME: ${ODBC_DRIVER_FILENAME}
+    image: request-site-backend:latest
     container_name: request_backend
     restart: unless-stopped
     ports:
@@ -67,6 +68,42 @@ services:
              python manage.py seed_lines &&
              python manage.py collectstatic --noinput &&
              gunicorn config.wsgi:application --bind 0.0.0.0:8000 --worker-class gthread --workers 2 --threads 10 --timeout 120"
+
+  # 스케줄러 전용 단일 프로세스. 웹(gunicorn) 워커는 스케줄러를 기동하지 않으며,
+  # APScheduler 동기화/메일 큐 잡은 이 컨테이너 하나에서만 실행된다.
+  scheduler:
+    image: request-site-backend:latest
+    container_name: request_scheduler
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.production
+      - MYSQL_HOST=db
+      - SKIP_SCHEDULER=false
+      # ODBC 설정 (DCQ/Impala 조회에 필요 - 웹과 동일)
+      - ODBC_HOST=${ODBC_HOST}
+      - ODBC_PORT=${ODBC_PORT}
+      - ODBC_DATABASE=${ODBC_DATABASE}
+      - ODBC_AUTH_MECH=${ODBC_AUTH_MECH}
+      - ODBC_USE_SASL=${ODBC_USE_SASL}
+      - ODBC_UID=${ODBC_UID}
+      - ODBC_PWD=${ODBC_PWD}
+      - ODBC_KRB_FQDN=${ODBC_KRB_FQDN}
+      - ODBC_KRB_REALM=${ODBC_KRB_REALM}
+      - ODBC_KRB_SERVICE_NAME=${ODBC_KRB_SERVICE_NAME}
+      - ODBC_SSL=${ODBC_SSL}
+      - ODBC_TSASL_BUFFER_SIZE=${ODBC_TSASL_BUFFER_SIZE}
+      - ODBC_ROWS_PER_BLOCK=${ODBC_ROWS_PER_BLOCK}
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    # 마이그레이션/시드/정적파일은 backend 가 담당한다. 여기서는 DB 대기 후 스케줄러만 실행.
+    command: >
+      sh -c "python manage.py wait_for_db &&
+             python manage.py run_scheduler"
 
   frontend:
     build:
