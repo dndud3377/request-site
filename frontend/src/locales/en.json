@@ -381,6 +381,8 @@
     "users_label": "Users",
     "no_users": "No users registered.",
     "add_user": "Add User",
+    "add_target_role": "Role to add",
+    "add_target_own": "(your role)",
     "add_success": "User added successfully.",
     "add_error": "Failed to add user.",
     "delete": "Delete",
