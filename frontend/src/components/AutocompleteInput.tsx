@@ -11,6 +11,7 @@ interface AutocompleteInputProps {
   label?: string;
   required?: boolean;
   error?: string;
+  hideErrorMessage?: boolean;
   style?: React.CSSProperties;
   inputStyle?: React.CSSProperties;
   disabled?: boolean;
@@ -28,6 +29,7 @@ export default function AutocompleteInput({
   label,
   required,
   error,
+  hideErrorMessage,
   style,
   inputStyle,
   disabled,
@@ -141,7 +143,7 @@ export default function AutocompleteInput({
         disabled={disabled}
         style={disabled ? { backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed', opacity: 0.6 } : inputStyle}
       />
-      {error && <span className="form-error">{error}</span>}
+      {error && !hideErrorMessage && <span className="form-error">{error}</span>}
       {renderDropdown()}
     </div>
   );
