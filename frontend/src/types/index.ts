@@ -223,7 +223,7 @@ export interface DetailFormState {
   customer_requirement: string;
 
   // 복사 선택 시
-  other_purpose: string;
+  other_purpose: string[];
   source_line: string;
   source_partid: string;
   change_purpose_note: string;
@@ -273,6 +273,8 @@ export interface DetailFormState {
   photo_backside: string;
   eds_backside: string;
   inter: string;
+  inter_xs: string;
+  inter_ys: string;
   tsv: string;
   rf: string;
   fullchip: string;
