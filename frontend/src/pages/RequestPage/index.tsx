@@ -1270,6 +1270,15 @@ export default function RequestPage(): React.ReactElement {
     }
   };
 
+  // 제품 이름(partid_selection): 목록에 없는 값이면 에러 표시(문구는 Step1에서 값 존재 시 숨김) + 빨간 에러 토스트
+  const handlePartidSelectionBlur = () => {
+    const value = detail.partid_selection.trim();
+    if (value && !productOptions.includes(value)) {
+      setErrors((prev) => ({ ...prev, partid_selection: t('request.partid_not_in_list') }));
+      addToast(t('request.partid_not_in_list'), 'error');
+    }
+  };
+
   const handleFlowAddRow = () => {
     setDetail((prev) => ({ ...prev, flow_chart: [...prev.flow_chart, makeRow()] }));
   };
@@ -2216,6 +2225,12 @@ export default function RequestPage(): React.ReactElement {
           errorMessages.push(`${field}: 필수 입력 항목입니다.`);
         }
       });
+      // 제품 이름(partid_selection)은 목록에 있는 값만 허용 (값은 있으나 목록 밖이면 진행 차단)
+      const partidVal = detail.partid_selection.trim();
+      if (partidVal && !productOptions.includes(partidVal)) {
+        newErrors['partid_selection'] = t('request.partid_not_in_list');
+        errorMessages.push(t('request.partid_not_in_list'));
+      }
       // Only MAP 모드에서는 Backbone 조합 영역 필수 검증을 우회한다.
       if (!isOnlyMap) {
         // 추가한 항목까지 모두 완전히(위치·제품·조리법) 입력돼야 진행 가능(R-17). 불필요하면 삭제하도록 유도.
@@ -2763,6 +2778,7 @@ export default function RequestPage(): React.ReactElement {
           setProductionDate={setProductionDate}
           handleDetailChange={handleDetailChange}
           handleDetailSet={handleDetailSet}
+          handlePartidSelectionBlur={handlePartidSelectionBlur}
           handleRequestPurposeSelect={handleRequestPurposeSelect}
           handleRefDocSelect={handleRefDocSelect}
           handleMergeClick={handleMergeClick}
