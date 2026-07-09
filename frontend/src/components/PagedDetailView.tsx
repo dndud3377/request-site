@@ -982,8 +982,8 @@ type Page = { label: string; content: React.ReactNode };
                     이력 확인
                   </button>
                 )}
-                {/* Inter 는 별도 항목 — 적용 시 Xs/Ys 세부 적용을 함께 표시 */}
-                {detail.inter === '적용' && (
+                {/* Inter 는 별도 항목 — YES 시 Xs/Ys 세부 적용을 함께 표시 */}
+                {detail.inter === 'YES' && (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
                     <div style={tagStyle(true)}>{t('request.map_opt_inter')}</div>
                     {detail.inter_xs === '적용' && <div style={tagStyle(true)}>{t('request.map_opt_inter_xs')}</div>}
