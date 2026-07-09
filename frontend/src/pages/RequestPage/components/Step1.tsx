@@ -2,7 +2,6 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
-import { useToast } from '../../../components/Toast';
 import { DetailFormState, FlowChartRow, RequestDocument, GuideFeatureKey } from '../../../types';
 import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE } from '../constants';
 
@@ -32,6 +31,7 @@ interface Step1Props {
   handleRefDocSelect: (label: string) => void;
   handleMergeClick: () => void;
   handleFlowChange: (id: string, field: keyof Omit<FlowChartRow, 'id'>, value: string) => void;
+  handleFlowStepBlur: (rowId: string, field: 'step_from' | 'step_to') => void;
   handleFlowDeleteRow: (id: string) => void;
   handleFlowAddRow: () => void;
   handleBbEntryChange: (idx: number, field: 'location' | 'product' | 'process_id', value: string) => void;
@@ -66,6 +66,7 @@ const Step1: React.FC<Step1Props> = ({
   handleRefDocSelect,
   handleMergeClick,
   handleFlowChange,
+  handleFlowStepBlur,
   handleFlowDeleteRow,
   handleFlowAddRow,
   handleBbEntryChange,
@@ -74,19 +75,6 @@ const Step1: React.FC<Step1Props> = ({
   GuideBadge,
 }) => {
   const { t } = useTranslation();
-  const addToast = useToast();
-  // blur 검증은 지연 실행되므로, 드롭다운 선택 직후의 최신 값을 ref 로 읽어 오탐을 방지한다.
-  const detailRef = React.useRef(detail);
-  detailRef.current = detail;
-  // 흐름도 Step(step_from/step_to): 목록에 없는 값이면 경고 토스트 (blur 시)
-  const validateFlowStep = (rowId: string, field: 'step_from' | 'step_to') => {
-    const cur = detailRef.current.flow_chart.find((r) => r.id === rowId);
-    const value = (cur?.[field] || '').trim();
-    const opts = FlowLayerIdOptions[rowId] || [];
-    if (value && !opts.includes(value)) {
-      addToast(t('request.flow_step_not_in_list'), 'warning');
-    }
-  };
   const canSelectPurpose =
     detail.line !== '' &&
     detail.process_selection !== '' &&
@@ -282,20 +270,22 @@ const Step1: React.FC<Step1Props> = ({
                         <AutocompleteInput
                           value={row.step_from}
                           onChange={(v) => handleFlowChange(row.id, 'step_from', v)}
-                          onBlur={() => validateFlowStep(row.id, 'step_from')}
+                          onBlur={() => handleFlowStepBlur(row.id, 'step_from')}
                           options={FlowLayerIdOptions[row.id] || []}
                           placeholder={t('request.select_placeholder')}
                           style={{ minWidth: '80px' }}
+                          error={errors[`flow_step_${row.id}_step_from`]}
                           disabled={disableOptional || (FlowLayerIdOptions[row.id] || []).length === 0}
                         />
                         <span style={{ whiteSpace: 'nowrap' }}>~</span>
                         <AutocompleteInput
                           value={row.step_to}
                           onChange={(v) => handleFlowChange(row.id, 'step_to', v)}
-                          onBlur={() => validateFlowStep(row.id, 'step_to')}
+                          onBlur={() => handleFlowStepBlur(row.id, 'step_to')}
                           options={FlowLayerIdOptions[row.id] || []}
                           placeholder={t('request.select_placeholder')}
                           style={{ minWidth: '80px' }}
+                          error={errors[`flow_step_${row.id}_step_to`]}
                           disabled={disableOptional || (FlowLayerIdOptions[row.id] || []).length === 0}
                         />
                       </div>
