@@ -1,6 +1,6 @@
 import React, { useCallback, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import { Node as TiptapNode, mergeAttributes } from '@tiptap/core';
+import { Node as TiptapNode, Extension, mergeAttributes } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import { TextStyle, Color, FontSize, BackgroundColor, FontFamily } from '@tiptap/extension-text-style';
@@ -33,6 +33,28 @@ const Video = TiptapNode.create({
         style: 'max-width:100%;border-radius:8px;',
       }),
     ];
+  },
+});
+
+// Enter 를 문단 분리 대신 한 줄 개행(<br>)으로 처리한다.
+// 단, 목록/코드블록 안에서는 기본 동작(항목 추가 등)을 유지한다.
+const EnterAsHardBreak = Extension.create({
+  name: 'enterAsHardBreak',
+  addKeyboardShortcuts() {
+    return {
+      Enter: () => {
+        const { editor } = this;
+        if (
+          editor.isActive('bulletList') ||
+          editor.isActive('orderedList') ||
+          editor.isActive('listItem') ||
+          editor.isActive('codeBlock')
+        ) {
+          return false; // 기본 Enter 동작에 위임
+        }
+        return editor.commands.setHardBreak();
+      },
+    };
   },
 });
 
@@ -226,6 +248,7 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
   const editor = useEditor({
     extensions: [
       StarterKit,
+      EnterAsHardBreak,
       Image.configure({ inline: false, allowBase64: false }),
       Video,
       TextStyle,

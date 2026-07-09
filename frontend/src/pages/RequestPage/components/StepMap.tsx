@@ -464,12 +464,50 @@ const StepMap: React.FC<StepMapProps> = ({
           )}
         </div>
 
+        {/* Inter (Map Option 위 별도 항목) — 적용 시 오른쪽에 Xs/Ys 세부 토글 노출 */}
+        <div className="full-width" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '4px' }}>
+          <button
+            type="button"
+            className={`map-option-btn${detail.inter === '적용' ? ' active' : ''}`}
+            disabled={isMapRegistered}
+            onClick={() => {
+              const next = detail.inter === '적용' ? '미적용' : '적용';
+              handleDetailSet('inter', next);
+              if (next === '미적용') {
+                handleDetailSet('inter_xs', '미적용');
+                handleDetailSet('inter_ys', '미적용');
+              }
+            }}
+          >
+            {t('request.map_opt_inter')}
+          </button>
+          {detail.inter === '적용' && (
+            <>
+              <button
+                type="button"
+                className={`map-option-btn${detail.inter_xs === '적용' ? ' active' : ''}`}
+                disabled={isMapRegistered}
+                onClick={() => handleDetailSet('inter_xs', detail.inter_xs === '적용' ? '미적용' : '적용')}
+              >
+                {t('request.map_opt_inter_xs')}
+              </button>
+              <button
+                type="button"
+                className={`map-option-btn${detail.inter_ys === '적용' ? ' active' : ''}`}
+                disabled={isMapRegistered}
+                onClick={() => handleDetailSet('inter_ys', detail.inter_ys === '적용' ? '미적용' : '적용')}
+              >
+                {t('request.map_opt_inter_ys')}
+              </button>
+            </>
+          )}
+        </div>
+
         {/* Map Option 선택 토글 버튼 */}
         {(() => {
           const mapOptions = [
             { label: t('request.map_opt_photo_backside'), name: 'photo_backside' as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
             { label: t('request.map_opt_eds_backside'),   name: 'eds_backside'   as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
-            { label: t('request.map_opt_inter'),          name: 'inter'          as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
             { label: t('request.map_opt_tsv'),            name: 'tsv'            as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
             { label: t('request.map_opt_rf'),             name: 'rf'             as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },
             { label: t('request.map_opt_fullchip'),       name: 'fullchip'       as keyof DetailFormState, activeValue: '적용', defaultValue: '미적용' },

@@ -675,8 +675,13 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
     );
   };
 
+  // other_purpose 는 배열(신규)이며, 구버전 문서는 문자열일 수 있어 양쪽 모두 처리한다.
+  const opRaw = detail.other_purpose as unknown as string[] | string | undefined;
+  const otherPurposeText = Array.isArray(opRaw)
+    ? opRaw.map((o) => `[${o}]`).join('')
+    : (opRaw || '');
   const purposeValue = detail.request_purpose
-    ? (detail.other_purpose ? `${detail.request_purpose}(${detail.other_purpose})` : detail.request_purpose)
+    ? (otherPurposeText ? `${detail.request_purpose}(${otherPurposeText})` : detail.request_purpose)
     : '-';
   const basicRow = [
     { label: t('request.request_purpose'), value: purposeValue, fieldKey: 'request_purpose', changed: changedFields.has('request_purpose') || changedFields.has('other_purpose') },
@@ -941,7 +946,6 @@ type Page = { label: string; content: React.ReactNode };
             const mapOptionDefs = [
               { label: t('request.map_opt_photo_backside'), fieldKey: 'photo_backside', activeValue: '적용' },
               { label: t('request.map_opt_eds_backside'),   fieldKey: 'eds_backside',   activeValue: '적용' },
-              { label: t('request.map_opt_inter'),          fieldKey: 'inter',          activeValue: '적용' },
               { label: t('request.map_opt_tsv'),            fieldKey: 'tsv',            activeValue: '적용' },
               { label: t('request.map_opt_rf'),             fieldKey: 'rf',             activeValue: '적용' },
               { label: t('request.map_opt_fullchip'),       fieldKey: 'fullchip',       activeValue: '적용' },
@@ -977,6 +981,14 @@ type Page = { label: string; content: React.ReactNode };
                   >
                     이력 확인
                   </button>
+                )}
+                {/* Inter 는 별도 항목 — 적용 시 Xs/Ys 세부 적용을 함께 표시 */}
+                {detail.inter === '적용' && (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={tagStyle(true)}>{t('request.map_opt_inter')}</div>
+                    {detail.inter_xs === '적용' && <div style={tagStyle(true)}>{t('request.map_opt_inter_xs')}</div>}
+                    {detail.inter_ys === '적용' && <div style={tagStyle(true)}>{t('request.map_opt_inter_ys')}</div>}
+                  </div>
                 )}
                 <div style={{ ...fieldLabel, marginBottom: 6 }}>{t('request.map_option_title')}</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
