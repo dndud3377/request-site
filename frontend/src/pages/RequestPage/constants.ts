@@ -141,7 +141,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   mshot_image_copy_bottom: '',
   photo_backside: '미적용',
   eds_backside: '미적용',
-  inter: '미적용',
+  inter: 'NO',
   inter_xs: '미적용',
   inter_ys: '미적용',
   tsv: '미적용',
