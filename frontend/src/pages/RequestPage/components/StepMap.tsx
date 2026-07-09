@@ -464,25 +464,30 @@ const StepMap: React.FC<StepMapProps> = ({
           )}
         </div>
 
-        {/* Inter (Map Option 위 별도 항목) — 적용 시 오른쪽에 Xs/Ys 세부 토글 노출 */}
-        <div className="full-width" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '4px' }}>
-          <button
-            type="button"
-            className={`map-option-btn${detail.inter === '적용' ? ' active' : ''}`}
-            disabled={isMapRegistered}
-            onClick={() => {
-              const next = detail.inter === '적용' ? '미적용' : '적용';
-              handleDetailSet('inter', next);
-              if (next === '미적용') {
-                handleDetailSet('inter_xs', '미적용');
-                handleDetailSet('inter_ys', '미적용');
-              }
-            }}
-          >
-            {t('request.map_opt_inter')}
-          </button>
-          {detail.inter === '적용' && (
-            <>
+        {/* Inter (Map Option 위 별도 항목) — prodc_status 와 동일하게 제목 + YES/NO 드롭다운.
+            YES 선택 시 오른쪽에 Xs/Ys 세부 토글 노출 */}
+        <div className="full-width flex-row" style={{ alignItems: 'center' }}>
+          <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
+            <label className="form-label">{t('request.map_opt_inter')}</label>
+            <select
+              className="form-control"
+              value={detail.inter}
+              disabled={isMapRegistered}
+              onChange={(e) => {
+                const next = e.target.value;
+                handleDetailSet('inter', next);
+                if (next === 'NO') {
+                  handleDetailSet('inter_xs', '미적용');
+                  handleDetailSet('inter_ys', '미적용');
+                }
+              }}
+            >
+              <option value="NO">NO</option>
+              <option value="YES">YES</option>
+            </select>
+          </div>
+          {detail.inter === 'YES' && (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <button
                 type="button"
                 className={`map-option-btn${detail.inter_xs === '적용' ? ' active' : ''}`}
@@ -499,7 +504,7 @@ const StepMap: React.FC<StepMapProps> = ({
               >
                 {t('request.map_opt_inter_ys')}
               </button>
-            </>
+            </div>
           )}
         </div>
 
