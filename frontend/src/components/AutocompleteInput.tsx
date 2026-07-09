@@ -5,6 +5,7 @@ interface AutocompleteInputProps {
   value: string;
   onChange: (value: string) => void;
   onSelect?: (value: string) => void;
+  onBlur?: () => void;
   options: readonly string[];
   placeholder?: string;
   label?: string;
@@ -21,6 +22,7 @@ export default function AutocompleteInput({
   value,
   onChange,
   onSelect,
+  onBlur,
   options,
   placeholder,
   label,
@@ -134,6 +136,7 @@ export default function AutocompleteInput({
         placeholder={placeholder ?? '입력 또는 선택'}
         onChange={(e) => { if (!disabled) { onChange(e.target.value); setOpen(true); } }}
         onFocus={() => { if (!disabled) setOpen(true); }}
+        onBlur={() => { if (onBlur) setTimeout(onBlur, 120); }}
         autoComplete="off"
         disabled={disabled}
         style={disabled ? { backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed', opacity: 0.6 } : inputStyle}
