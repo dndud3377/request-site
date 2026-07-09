@@ -466,7 +466,7 @@ const StepMap: React.FC<StepMapProps> = ({
 
         {/* Inter (Map Option 위 별도 항목) — prodc_status 와 동일하게 제목 + YES/NO 드롭다운.
             YES 선택 시 오른쪽에 Xs/Ys 세부 토글 노출 */}
-        <div className="full-width flex-row" style={{ alignItems: 'center' }}>
+        <div className="full-width flex-row" style={{ alignItems: 'flex-end' }}>
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
             <label className="form-label">{t('request.map_opt_inter')}</label>
             <select
@@ -487,10 +487,11 @@ const StepMap: React.FC<StepMapProps> = ({
             </select>
           </div>
           {detail.inter === 'YES' && (
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '8px' }}>
               <button
                 type="button"
                 className={`map-option-btn${detail.inter_xs === '적용' ? ' active' : ''}`}
+                style={{ padding: '10px 16px' }}
                 disabled={isMapRegistered}
                 onClick={() => handleDetailSet('inter_xs', detail.inter_xs === '적용' ? '미적용' : '적용')}
               >
@@ -499,6 +500,7 @@ const StepMap: React.FC<StepMapProps> = ({
               <button
                 type="button"
                 className={`map-option-btn${detail.inter_ys === '적용' ? ' active' : ''}`}
+                style={{ padding: '10px 16px' }}
                 disabled={isMapRegistered}
                 onClick={() => handleDetailSet('inter_ys', detail.inter_ys === '적용' ? '미적용' : '적용')}
               >

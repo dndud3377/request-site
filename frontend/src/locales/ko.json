@@ -105,6 +105,7 @@
     "flow_progress_layer": "Step",
     "flow_add_row": "+ 행 추가",
     "flow_step_not_in_list": "Step은 목록에 있는 값만 선택할 수 있습니다. 해당 항목을 수정해 주세요.",
+    "partid_not_in_list": "제품 이름은 목록에 있는 값만 선택할 수 있습니다. 해당 항목을 수정해 주세요.",
     "process_id": "조리법",
     "col_no": "No.",
     "col_sp": "SP",
