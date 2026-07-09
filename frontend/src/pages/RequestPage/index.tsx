@@ -426,7 +426,7 @@ export default function RequestPage(): React.ReactElement {
   }, [detail.process_id, processIdOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (detail.other_purpose !== 'Layer 추가/삭제') {
+    if (!detail.other_purpose.includes('Layer 추가/삭제')) {
       setRefDocId(null);
       setRefDocLabel('');
       setRefJayerRows([]);
@@ -632,7 +632,11 @@ export default function RequestPage(): React.ReactElement {
             ? parsed.detail.bb_entries.map((e: { id?: string; location: string; product: string; process_id: string }) => ({ ...e, id: e.id ?? genId() }))
             : [];
         if (parsed.detail) {
-          setDetail({ ...parsed.detail, bb_entries: loadedBbEntries, notifiers: parsed.detail.notifiers ?? [] });
+          // 구버전 문서는 other_purpose 가 문자열이므로 배열로 정규화(런타임 오류 방지)
+          const normalizedOtherPurpose = Array.isArray(parsed.detail.other_purpose)
+            ? parsed.detail.other_purpose
+            : (parsed.detail.other_purpose ? [parsed.detail.other_purpose] : []);
+          setDetail({ ...parsed.detail, other_purpose: normalizedOtherPurpose, bb_entries: loadedBbEntries, notifiers: parsed.detail.notifiers ?? [] });
         }
         if (parsed.jayerRows) {
           const fSets: FilterSet[] = (() => { try { return JSON.parse(localStorage.getItem('jayerFilterSets') ?? '[]'); } catch { return []; } })();
@@ -1070,7 +1074,7 @@ export default function RequestPage(): React.ReactElement {
     }
   };
 
-  const handleDetailSet = (name: string, value: string) => {
+  const handleDetailSet = (name: string, value: string | string[]) => {
     isLoadingEditRef.current = false; // 사용자 상호작용 시 로드 가드 해제
     setDetail((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
@@ -1181,6 +1185,8 @@ export default function RequestPage(): React.ReactElement {
       photo_backside: INITIAL_DETAIL.photo_backside,
       eds_backside: INITIAL_DETAIL.eds_backside,
       inter: INITIAL_DETAIL.inter,
+      inter_xs: INITIAL_DETAIL.inter_xs,
+      inter_ys: INITIAL_DETAIL.inter_ys,
       tsv: INITIAL_DETAIL.tsv,
       rf: INITIAL_DETAIL.rf,
       fullchip: INITIAL_DETAIL.fullchip,
@@ -2203,6 +2209,19 @@ export default function RequestPage(): React.ReactElement {
           errorMessages.push('Backbone 조합 영역: 모든 항목을 입력하거나 불필요한 항목은 삭제하세요.');
         }
       }
+      // 흐름도 Step(step_from/step_to)은 목록에 있는 값만 허용 (목록 밖 값이면 진행 차단)
+      let flowStepInvalid = false;
+      detail.flow_chart.forEach((row) => {
+        const opts = FlowLayerIdOptions[row.id] || [];
+        (['step_from', 'step_to'] as const).forEach((f) => {
+          const v = (row[f] || '').trim();
+          if (v && !opts.includes(v)) flowStepInvalid = true;
+        });
+      });
+      if (flowStepInvalid) {
+        newErrors['flow_chart'] = t('request.flow_step_not_in_list');
+        errorMessages.push(t('request.flow_step_not_in_list'));
+      }
     }
 
     if (currentStep === 2) {
@@ -2346,7 +2365,9 @@ export default function RequestPage(): React.ReactElement {
   const buildEnrichedForm = (note?: string, shouldAddHistory = false, isDraft = false): CreateDocumentInput => {
     const now = new Date();
     const dateStr = `${String(now.getFullYear()).slice(2)}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
-    const purposePart = detail.other_purpose ? `${detail.request_purpose}-${detail.other_purpose}` : detail.request_purpose;
+    const purposePart = detail.other_purpose.length
+      ? `${detail.request_purpose}-${detail.other_purpose.map((o) => `[${o}]`).join('')}`
+      : detail.request_purpose;
     const title = `${detail.line}(${purposePart})_MAP(${detail.map_type})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서_${dateStr}`;
 
     // 반려된 문서 재상신 시 이전 스냅샷을 history 에 누적
@@ -2527,6 +2548,8 @@ export default function RequestPage(): React.ReactElement {
       photo_backside: INITIAL_DETAIL.photo_backside,
       eds_backside: INITIAL_DETAIL.eds_backside,
       inter: INITIAL_DETAIL.inter,
+      inter_xs: INITIAL_DETAIL.inter_xs,
+      inter_ys: INITIAL_DETAIL.inter_ys,
       tsv: INITIAL_DETAIL.tsv,
       rf: INITIAL_DETAIL.rf,
       fullchip: INITIAL_DETAIL.fullchip,
