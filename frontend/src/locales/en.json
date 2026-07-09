@@ -65,6 +65,7 @@
     "flow_progress_layer": "Step",
     "flow_add_row": "+ Add Row",
     "flow_step_not_in_list": "Step must be selected from the list. Please correct the field.",
+    "partid_not_in_list": "Product name must be selected from the list. Please correct the field.",
     "process_id": "Cooking Method",
     "col_no": "No.",
     "col_sp": "SP",
