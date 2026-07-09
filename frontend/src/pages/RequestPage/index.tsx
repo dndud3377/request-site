@@ -1250,6 +1250,24 @@ export default function RequestPage(): React.ReactElement {
       ...prev,
       flow_chart: prev.flow_chart.map((r) => (r.id === id ? { ...r, [field]: value } : r)),
     }));
+    if (field === 'step_from' || field === 'step_to') {
+      const key = `flow_step_${id}_${field}`;
+      if (errors[key]) setErrors((prev) => ({ ...prev, [key]: '' }));
+    }
+  };
+
+  // 흐름도 Step(step_from/step_to): 목록에 없는 값이면 해당 필드를 에러로 표시 + 빨간 에러 토스트
+  const handleFlowStepBlur = (rowId: string, field: 'step_from' | 'step_to') => {
+    const row = detail.flow_chart.find((r) => r.id === rowId);
+    const value = (row?.[field] || '').trim();
+    const opts = FlowLayerIdOptions[rowId] || [];
+    const key = `flow_step_${rowId}_${field}`;
+    if (value && !opts.includes(value)) {
+      setErrors((prev) => ({ ...prev, [key]: t('request.flow_step_not_in_list') }));
+      addToast(t('request.flow_step_not_in_list'), 'error');
+    } else if (errors[key]) {
+      setErrors((prev) => ({ ...prev, [key]: '' }));
+    }
   };
 
   const handleFlowAddRow = () => {
@@ -2209,17 +2227,19 @@ export default function RequestPage(): React.ReactElement {
           errorMessages.push('Backbone 조합 영역: 모든 항목을 입력하거나 불필요한 항목은 삭제하세요.');
         }
       }
-      // 흐름도 Step(step_from/step_to)은 목록에 있는 값만 허용 (목록 밖 값이면 진행 차단)
+      // 흐름도 Step(step_from/step_to)은 목록에 있는 값만 허용 (목록 밖 값이면 해당 필드를 표시하고 진행 차단)
       let flowStepInvalid = false;
       detail.flow_chart.forEach((row) => {
         const opts = FlowLayerIdOptions[row.id] || [];
         (['step_from', 'step_to'] as const).forEach((f) => {
           const v = (row[f] || '').trim();
-          if (v && !opts.includes(v)) flowStepInvalid = true;
+          if (v && !opts.includes(v)) {
+            newErrors[`flow_step_${row.id}_${f}`] = t('request.flow_step_not_in_list');
+            flowStepInvalid = true;
+          }
         });
       });
       if (flowStepInvalid) {
-        newErrors['flow_chart'] = t('request.flow_step_not_in_list');
         errorMessages.push(t('request.flow_step_not_in_list'));
       }
     }
@@ -2747,6 +2767,7 @@ export default function RequestPage(): React.ReactElement {
           handleRefDocSelect={handleRefDocSelect}
           handleMergeClick={handleMergeClick}
           handleFlowChange={handleFlowChange}
+          handleFlowStepBlur={handleFlowStepBlur}
           handleFlowDeleteRow={handleFlowDeleteRow}
           handleFlowAddRow={handleFlowAddRow}
           handleBbEntryChange={handleBbEntryChange}
