@@ -27,6 +27,7 @@ interface Step1Props {
   setProductionDate: React.Dispatch<React.SetStateAction<string>>;
   handleDetailChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
   handleDetailSet: (name: string, value: string | string[]) => void;
+  handlePartidSelectionBlur: () => void;
   handleRequestPurposeSelect: (val: string) => void;
   handleRefDocSelect: (label: string) => void;
   handleMergeClick: () => void;
@@ -62,6 +63,7 @@ const Step1: React.FC<Step1Props> = ({
   setProductionDate,
   handleDetailChange,
   handleDetailSet,
+  handlePartidSelectionBlur,
   handleRequestPurposeSelect,
   handleRefDocSelect,
   handleMergeClick,
@@ -119,8 +121,11 @@ const Step1: React.FC<Step1Props> = ({
             value={detail.partid_selection}
             options={productOptions}
             onChange={(v) => handleDetailSet('partid_selection', v)}
+            onBlur={handlePartidSelectionBlur}
             required
             error={errors.partid_selection}
+            hideErrorMessage={!!detail.partid_selection.trim()}
+            disabled={productOptions.length === 0}
             style={{ flex: 1 }}
           />
           <AutocompleteInput
@@ -275,6 +280,7 @@ const Step1: React.FC<Step1Props> = ({
                           placeholder={t('request.select_placeholder')}
                           style={{ minWidth: '80px' }}
                           error={errors[`flow_step_${row.id}_step_from`]}
+                          hideErrorMessage
                           disabled={disableOptional || (FlowLayerIdOptions[row.id] || []).length === 0}
                         />
                         <span style={{ whiteSpace: 'nowrap' }}>~</span>
@@ -286,6 +292,7 @@ const Step1: React.FC<Step1Props> = ({
                           placeholder={t('request.select_placeholder')}
                           style={{ minWidth: '80px' }}
                           error={errors[`flow_step_${row.id}_step_to`]}
+                          hideErrorMessage
                           disabled={disableOptional || (FlowLayerIdOptions[row.id] || []).length === 0}
                         />
                       </div>
