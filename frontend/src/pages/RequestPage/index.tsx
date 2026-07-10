@@ -201,6 +201,9 @@ export default function RequestPage(): React.ReactElement {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitNote, setSubmitNote] = useState('');
   const [savedId, setSavedId] = useState<number | null>(editDocId ?? peerReviewDocId);
+  // 편집 대상 문서의 상태 — 'pause' 이면 상신 대신 '재개'(resume) 로 동작한다.
+  const [editDocStatus, setEditDocStatus] = useState<string | null>(null);
+  const isResumeMode = editDocStatus === 'pause';
 
   // 동료 PL 지정 (상신 모달) — 다중 지정(전원 합의)
   const [designees, setDesignees] = useState<{ loginid: string; name: string }[]>([]);
@@ -611,6 +614,7 @@ export default function RequestPage(): React.ReactElement {
     isLoadingEditRef.current = true;
     documentsAPI.get(targetDocId).then((res) => {
       const doc = res.data;
+      setEditDocStatus(doc.status);
       try {
         const parsed = JSON.parse(doc.additional_notes ?? '{}');
         prevParsedRef.current = {
@@ -2741,8 +2745,9 @@ export default function RequestPage(): React.ReactElement {
 
   const handleSubmit = async () => {
     if (loadError) { addToast(t('request.edit_load_failed'), 'error'); return; } // 로드 실패 시 덮어쓰기 차단(R-10)
-    // peer review 모드 외 일반 상신: 지정자(1명 이상) 필수
-    if (!isPeerReviewMode && designees.length === 0) {
+    // peer review·재개(resume) 모드 외 일반 상신: 지정자(1명 이상) 필수
+    // (재개는 멈춘 단계부터 이어지므로 지정 PL 선택이 필요 없다)
+    if (!isPeerReviewMode && !isResumeMode && designees.length === 0) {
       setDesigneeError(t('request.designee_required'));
       return;
     }
@@ -2765,8 +2770,10 @@ export default function RequestPage(): React.ReactElement {
         await documentsAPI.peerSubmit(docId!, submitNote || undefined);
         addToast('수정 후 상신되었습니다.', 'success');
       } else {
-        // 기존 문서면 반려 여부만 조회(신규는 draft라 재상신 아님). update는 경로당 1회.
-        const isRejected = docId ? (await documentsAPI.get(docId)).data.status === 'rejected' : false;
+        // 기존 문서 상태 조회(신규는 draft). update는 경로당 1회.
+        const currentStatus = docId ? (await documentsAPI.get(docId)).data.status : 'draft';
+        const isRejected = currentStatus === 'rejected';
+        const isPause = currentStatus === 'pause';
         const enriched = buildEnrichedForm(submitNote, isRejected); // 재상신일 때만 history 누적
         if (!docId) {
           const res = await documentsAPI.create(enriched);
@@ -2775,7 +2782,11 @@ export default function RequestPage(): React.ReactElement {
         } else {
           await documentsAPI.update(docId, enriched);
         }
-        if (isRejected) {
+        if (isPause) {
+          // 중단(PAUSE) 문서 재개: 멈춘 단계부터 이어진다(지정 PL 불필요).
+          await documentsAPI.resume(docId!);
+          addToast(t('request.resume_success'), 'success');
+        } else if (isRejected) {
           // R-09: 위에서 enriched(history 포함)로 이미 1회 update했으므로 중복 update 없이 재상신
           await documentsAPI.resubmit(docId!, designees.map(d => d.loginid));
           addToast('재상신되었습니다.', 'success');
@@ -3048,7 +3059,7 @@ export default function RequestPage(): React.ReactElement {
             </button>
           ) : (
             <button className="btn btn-primary" onClick={handleSubmitClick} disabled={submitting || loadError}>
-              📤 {submitting ? t('common.loading') : t('request.submit')}
+              📤 {submitting ? t('common.loading') : (isResumeMode ? t('approval.resume') : t('request.submit'))}
             </button>
           )}
         </div>
@@ -3156,7 +3167,7 @@ export default function RequestPage(): React.ReactElement {
       <Modal
         isOpen={confirmOpen}
         onClose={() => setConfirmOpen(false)}
-        title={isPeerReviewMode ? t('approval.peer_submit') : t('request.submit')}
+        title={isPeerReviewMode ? t('approval.peer_submit') : isResumeMode ? t('approval.resume') : t('request.submit')}
         size="md"
         style={{ maxWidth: '520px' }}
         footer={
@@ -3167,9 +3178,9 @@ export default function RequestPage(): React.ReactElement {
             <button
               className="btn btn-primary"
               onClick={handleSubmit}
-              disabled={submitting || (!isPeerReviewMode && designees.length === 0)}
+              disabled={submitting || (!isPeerReviewMode && !isResumeMode && designees.length === 0)}
             >
-              📤 {submitting ? t('common.loading') : (isPeerReviewMode ? t('approval.peer_submit') : t('request.submit'))}
+              📤 {submitting ? t('common.loading') : (isPeerReviewMode ? t('approval.peer_submit') : isResumeMode ? t('approval.resume') : t('request.submit'))}
             </button>
           </>
         }
@@ -3185,7 +3196,12 @@ export default function RequestPage(): React.ReactElement {
             onChange={(e) => setSubmitNote(e.target.value)}
           />
         </div>
-        {!isPeerReviewMode && (
+        {isResumeMode && (
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 12 }}>
+            {t('request.resume_hint')}
+          </p>
+        )}
+        {!isPeerReviewMode && !isResumeMode && (
           <>
           <div className="form-group" data-tour="submit-designee" style={{ marginTop: 12 }}>
             <label className="form-label">
