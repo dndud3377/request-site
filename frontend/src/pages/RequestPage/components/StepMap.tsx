@@ -39,6 +39,10 @@ interface StepMapProps {
   handleDetailSet: (name: string, value: string) => void;
   handleProdcRegionSelect: (region: CRegion) => void;
   handleProdcProcessChange: (region: CRegion, value: string) => void;
+  handleOnlyProdcChange: (value: string) => void;
+  handleMapChangeChange: (value: string) => void;
+  handleEaChangeChange: (value: string) => void;
+  handleMshotChangeChange: (value: string) => void;
   handleImagePaste: (e: React.ClipboardEvent<HTMLDivElement>, fieldName: 'mshot_image_copy' | 'mshot_image_copy_top' | 'mshot_image_copy_bottom') => void;
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
 }
@@ -74,6 +78,10 @@ const StepMap: React.FC<StepMapProps> = ({
   handleDetailSet,
   handleProdcRegionSelect,
   handleProdcProcessChange,
+  handleOnlyProdcChange,
+  handleMapChangeChange,
+  handleEaChangeChange,
+  handleMshotChangeChange,
   handleImagePaste,
   GuideBadge,
 }) => {
@@ -170,14 +178,7 @@ const StepMap: React.FC<StepMapProps> = ({
               className="form-control"
               name="only_prodc"
               value={detail.only_prodc}
-              onChange={(e) => {
-                handleDetailChange(e);
-                if (e.target.value === 'No') {
-                  setDetail((prev) => ({ ...prev, rev_yn: '', rev_entries: [] }));
-                  setRevLayersSelected([]);
-                  setRevGds('');
-                }
-              }}
+              onChange={(e) => handleOnlyProdcChange(e.target.value)}
               disabled={isMapRegistered}
             >
               <option value="No">No</option>
@@ -396,7 +397,7 @@ const StepMap: React.FC<StepMapProps> = ({
           <div className="full-width flex-row" data-tour="map-deviation">
             <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
               <label className="form-label">{t('request.map')}<GuideBadge fk="step2_map_deviation" tk={t('guide.feat.step2_map_deviation' as never)} /></label>
-              <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange} disabled={isMapRegistered}>
+              <select className="form-control" name="map_change" value={detail.map_change} onChange={(e) => handleMapChangeChange(e.target.value)} disabled={isMapRegistered}>
                 <option value="변경 없음">{t('request.map_no_change')}</option>
                 <option value="변경 있음">{t('request.map_has_change')}</option>
               </select>
@@ -423,7 +424,7 @@ const StepMap: React.FC<StepMapProps> = ({
         <div className="full-width flex-row" data-tour="map-exception">
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
             <label className="form-label">{t('request.ea_change')}<GuideBadge fk="step2_exception_zone" tk={t('guide.feat.step2_exception_zone' as never)} /></label>
-            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange} disabled={isMapRegistered}>
+            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={(e) => handleEaChangeChange(e.target.value)} disabled={isMapRegistered}>
               <option value="변경 없음">{t('request.no_change')}</option>
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
@@ -440,7 +441,7 @@ const StepMap: React.FC<StepMapProps> = ({
         <div className="form-group full-width" data-tour="map-xmark">
           <label className="form-label">{t('request.mshot_change_status')}<GuideBadge fk="step2_xmark" tk={t('guide.feat.step2_xmark' as never)} /></label>
           <div style={{ width: SELECT_W }}>
-            <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={handleDetailChange} disabled={isMapRegistered}>
+            <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={(e) => handleMshotChangeChange(e.target.value)} disabled={isMapRegistered}>
               <option value="없음">{t('request.mshot_none')}</option>
               <option value="추가">{t('request.mshot_add')}</option>
               <option value="수정">{t('request.mshot_edit')}</option>
