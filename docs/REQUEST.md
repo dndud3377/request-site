@@ -121,6 +121,13 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-07 — MAP(C가문) 입력 UX 수정)
+
+- **C가문 '적용 위치' 중앙 선택 시 자동 사용**: `handleProdcRegionSelect` 에서 중앙(middle) 라디오 선택 시 `prodc_middle_use='사용'` 으로 바꿔 행이 펼쳐지고 데이터가 채워지도록 했다(다른 위치로 전환 시 '미사용' 복원). 기존에는 중앙 선택 시 데이터는 복사되나 사용여부가 '미사용'이라 `ProdcRow` 가 셀렉트를 숨겨 보이지 않았다.
+- **C가문 리전별 드롭다운이 각 리전 라인 기준으로 동작**: 이전에는 prodc top/middle/bottom 의 조합법·제품 옵션이 Step1 메인 `detail.line` 로만 로드돼 라인이 고정된 것처럼 보였다. 리전별 조합법 옵션 상태(`top/middle/bottomProcessOptions`)와 `prodc_{region}_line` 변경 effect 를 추가하고, `handleProdcProcessChange` 가 해당 리전 라인 기준으로 제품을 조회하도록 바꿨다(`handleProdcLineChange` 로 라인 직접 변경 시 하위 초기화). `ProdcRow` 는 리전별 `processOptions` 와 `onLineChange` 를 받는다.
+- **REV Layer 드래그 다중 선택 + 표 확대**: `StepMap` 의 REV Layer 버튼을 마우스 드래그로 지나가며 일괄 선택/해제하도록 했다(첫 버튼에서 add/remove 모드 결정, 클릭 개별 토글 유지). 추가 항목 표는 인라인 12px 소형에서 앱 공용 `.table`(`.table-wrapper`) 스타일로 교체해 크기·디자인을 통일했다.
+- **MAP 변경 X/Y 정렬 + X 부호 검증 0 예외**: C가문 지도편차 행의 위치 라벨에 있던 `marginBottom:4` 인라인을 제거해 X/Y 입력이 동일선상에 정렬되도록 했다(`.form-group` gap 6px 로 통일). 검증에서 X_top/X_bottom 은 절대값이 같고 **0이 아닐 때만** 부호가 서로 반대여야 하도록 바꿔(`xTop !== 0 && Math.sign(...)===...`), 0/0 은 Y처럼 허용된다.
+
 ### 추가 변경 이력 (2026-07 — 결재 중단/재개)
 
 - **중단(PAUSE) 문서 재개**: `status == 'pause'` 문서를 `/request` 로 편집(editDocId) 시, 편집 로드에서 `editDocStatus` 를 기록하고 `isResumeMode` 로 분기한다. 상신 모달·STEP5 버튼 라벨이 '재개'(`approval.resume`)로 바뀌고, 지정 PL 선택 UI·필수 검증을 건너뛴다(재개는 멈춘 단계부터 이어지므로 지정 PL 불필요). `handleSubmit` 은 문서 상태가 pause 면 update 후 `documentsAPI.resume` 를 호출한다(상신/재상신 대신). 상세는 `docs/APPROVAL.md` Case M 참조.
