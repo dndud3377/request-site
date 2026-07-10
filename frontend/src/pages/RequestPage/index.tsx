@@ -1377,6 +1377,76 @@ export default function RequestPage(): React.ReactElement {
     }
   };
 
+  // ===== 조건부 섹션 '해제' 시 하위 값 초기화 =====
+  // 조건부 필드를 '변경 없음/미사용/없음'으로 되돌리면 숨겨진 하위 값까지 비운다.
+  // (숨김 상태로 state 에 잔존해 backend 에 잘못 저장되는 것을 막기 위함 — 감사 R-2~R-5)
+
+  // C가문(only_prodc) — No 로 전환 시 REV·상/중/하판·지도편차(prodc) 값 전체 초기화
+  const handleOnlyProdcChange = (value: string) => {
+    isLoadingEditRef.current = false;
+    if (value !== 'No') {
+      setDetail((prev) => ({ ...prev, only_prodc: value }));
+      if (errors['only_prodc']) setErrors((prev) => ({ ...prev, only_prodc: '' }));
+      return;
+    }
+    setDetail((prev) => ({
+      ...prev,
+      only_prodc: 'No',
+      rev_yn: '',
+      rev_entries: [],
+      prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
+      prodc_middle_use: '', prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
+      prodc_bottom_line: '', prodc_bottom_process: '', prodc_bottom_product: '',
+      map_change_top: INITIAL_DETAIL.map_change_top,
+      map_value_x_top: '', map_value_y_top: '',
+      map_change_bottom: INITIAL_DETAIL.map_change_bottom,
+      map_value_x_bottom: '', map_value_y_bottom: '',
+    }));
+    setProdcCopyRegion(null);
+    setRevLayersSelected([]);
+    setRevGds('');
+    setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
+    setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
+    setErrors((prev) => ({
+      ...prev,
+      only_prodc: '', prodc_top_line: '', prodc_top_process: '', prodc_bottom_line: '', prodc_bottom_process: '',
+      map_value_x_top: '', map_value_y_top: '', map_value_x_bottom: '', map_value_y_bottom: '', map_reason: '',
+    }));
+  };
+
+  // 지도 편차(map_change) — '변경 없음' 전환 시 X/Y/사유 초기화
+  const handleMapChangeChange = (value: string) => {
+    isLoadingEditRef.current = false;
+    setDetail((prev) => value === '변경 없음'
+      ? { ...prev, map_change: value, map_value_x: '', map_value_y: '', map_reason: '' }
+      : { ...prev, map_change: value });
+    if (value === '변경 없음') {
+      setErrors((prev) => ({ ...prev, map_value_x: '', map_value_y: '', map_reason: '' }));
+    }
+  };
+
+  // 예외 구역(ea_change) — '변경 없음' 전환 시 값 초기화
+  const handleEaChangeChange = (value: string) => {
+    isLoadingEditRef.current = false;
+    setDetail((prev) => value === '변경 없음'
+      ? { ...prev, ea_change: value, ea_value: '' }
+      : { ...prev, ea_change: value });
+    if (value === '변경 없음' && errors['ea_value']) setErrors((prev) => ({ ...prev, ea_value: '' }));
+  };
+
+  // X표시(mshot_change) — 추가/수정 이외(없음·삭제)로 전환 시 붙여넣은 이미지 경로 전체 초기화
+  // (여러 번 붙여넣어도 마지막 것만 저장되며, 해제 시 잔상이 남지 않도록 비운다)
+  const handleMshotChangeChange = (value: string) => {
+    isLoadingEditRef.current = false;
+    const keepImages = value === '추가' || value === '수정';
+    setDetail((prev) => keepImages
+      ? { ...prev, mshot_change: value }
+      : { ...prev, mshot_change: value, mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '' });
+    if (!keepImages) {
+      setErrors((prev) => ({ ...prev, mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '' }));
+    }
+  };
+
   const handleRadioChange = (name: keyof DetailFormState, value: string) => {
     setDetail((prev) => ({ ...prev, [name]: value }));
   };
@@ -2979,6 +3049,10 @@ export default function RequestPage(): React.ReactElement {
           handleDetailSet={handleDetailSet}
           handleProdcRegionSelect={handleProdcRegionSelect}
           handleProdcProcessChange={handleProdcProcessChange}
+          handleOnlyProdcChange={handleOnlyProdcChange}
+          handleMapChangeChange={handleMapChangeChange}
+          handleEaChangeChange={handleEaChangeChange}
+          handleMshotChangeChange={handleMshotChangeChange}
           handleImagePaste={handleImagePaste}
           GuideBadge={GuideBadge}
         />
