@@ -60,6 +60,7 @@ class RequestDocument(models.Model):
         ('draft', '임시저장'),
         ('submitted', '상신됨'),
         ('under_review', '검토중'),
+        ('pause', '중단'),
         ('approved', '승인됨'),
         ('rejected', '반려됨'),
     ]
@@ -187,6 +188,58 @@ class ApprovalStep(models.Model):
 
     def __str__(self):
         return f"{self.document.title} - AGENT {self.agent}: {self.action}"
+
+
+class PauseRequest(models.Model):
+    """결재 중단(PAUSE) 요청.
+
+    작성자가 진행 중(under_review) 결재에 대해 중단을 요청하면 생성되고,
+    요청 시점의 현재(pending) 결재 단계 팀이 '전원' 확인하면 문서 상태가 pause 로 전이된다.
+    작성자가 수정 후 재개(resume)하면 멈춘 단계부터 결재가 이어진다.
+
+    한 문서에 활성 요청(state=requested/confirmed)은 1건만 존재한다.
+    확인 현황은 target_step_ids(요청 시점 pending 단계 id) 대비 confirmed_step_ids 로 추적한다.
+    """
+
+    STATE_CHOICES = [
+        ('requested', '요청됨'),      # 확인 대기 (문서는 아직 under_review)
+        ('confirmed', '중단됨'),      # 전원 확인 → 문서 pause
+        ('cancelled', '취소됨'),      # 결재 진행/작성자 취소로 무효화
+        ('resumed', '재개됨'),        # 작성자가 재개
+    ]
+
+    document = models.ForeignKey(
+        RequestDocument, on_delete=models.CASCADE,
+        related_name='pause_requests', verbose_name='의뢰서'
+    )
+    requester = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='pause_requests', verbose_name='요청자'
+    )
+    requester_name = models.CharField(max_length=100, blank=True, verbose_name='요청자 이름')
+    reason = models.TextField(verbose_name='중단 사유')
+    round = models.PositiveSmallIntegerField(default=1, verbose_name='요청 회차')
+    state = models.CharField(
+        max_length=10, choices=STATE_CHOICES, default='requested', verbose_name='상태'
+    )
+    # 요청 시점의 현재(pending) 결재 단계 id 목록 — 이 단계 팀 전원이 확인해야 PAUSE 확정
+    target_step_ids = models.JSONField(default=list, verbose_name='대상 단계 id')
+    # '중단 확인'을 누른 단계 id 목록
+    confirmed_step_ids = models.JSONField(default=list, verbose_name='확인된 단계 id')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='요청일시')
+    confirmed_at = models.DateTimeField(null=True, blank=True, verbose_name='중단 확정일시')
+
+    class Meta:
+        verbose_name = '중단 요청'
+        verbose_name_plural = '중단 요청 목록'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.document.title} - 중단({self.state})"
+
+    def is_active(self):
+        """확인 대기 또는 중단 확정 상태(진행 중인 요청)."""
+        return self.state in ('requested', 'confirmed')
 
 
 class Line(models.Model):
