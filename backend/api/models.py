@@ -68,7 +68,7 @@ class RequestDocument(models.Model):
     # 요청 목적 'Only MAP' 값 (결재 경로를 R 단계까지만 진행)
     ONLY_MAP_PURPOSE = 'Only MAP'
 
-    title = models.CharField(max_length=300, verbose_name='의뢰서 제목')
+    title = models.CharField(max_length=600, verbose_name='의뢰서 제목')
     requester = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='requests', verbose_name='의뢰자'
