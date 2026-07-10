@@ -689,6 +689,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def resume(self, request, pk=None):
         """재개: 작성자가 중단(pause) 문서를 재개한다 → under_review.
 
@@ -697,6 +698,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         사전에 /request 화면에서 update 된다.
         """
         document = self.get_object()
+        # select_for_update 는 트랜잭션 안에서만 사용 가능하므로 메서드 전체를 atomic 으로 감싼다.
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
 
         if not doc_permissions.can_resume(request.user, document):
@@ -704,12 +706,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if document.status != 'pause':
             return Response({'error': '중단된 문서만 재개할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        with transaction.atomic():
-            document.status = 'under_review'
-            document.save()
-            PauseRequest.objects.filter(
-                document=document, state='confirmed'
-            ).update(state='resumed')
+        document.status = 'under_review'
+        document.save()
+        PauseRequest.objects.filter(
+            document=document, state='confirmed'
+        ).update(state='resumed')
 
         return Response({
             'message': '결재를 재개했습니다. 멈춘 단계부터 이어집니다.',
