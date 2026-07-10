@@ -921,7 +921,15 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return Response({'message': '지정자가 변경되었습니다.', 'document': RequestDocumentSerializer(document).data})
 
     def _unique_title(self, base_title, exclude_id=None):
-        """중복 제목 처리: 같은 제목이 있으면 _2, _3, ... suffix 를 붙여 반환"""
+        """중복 제목 처리: 같은 제목이 있으면 _2, _3, ... suffix 를 붙여 반환.
+
+        title 컬럼 max_length 를 절대 넘지 않도록 방어적으로 자른다(suffix 포함).
+        긴 라인/조합법/제품 이름으로 자동 생성 제목이 한도를 초과해 저장이 실패하던
+        문제를 막는다(감사 §4-1).
+        """
+        title_max = RequestDocument._meta.get_field('title').max_length
+        base_title = base_title[:title_max]
+
         qs = RequestDocument.objects.all()
         if exclude_id is not None:
             qs = qs.exclude(id=exclude_id)
@@ -937,7 +945,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 existing_numbers.append(int(m.group(1)))
 
         next_num = max(existing_numbers) + 1 if existing_numbers else 2
-        return f"{base_title}_{next_num}"
+        suffix = f"_{next_num}"
+        # suffix 를 붙여도 컬럼 한도를 넘지 않도록 base 를 잘라낸다
+        trimmed_base = base_title[:title_max - len(suffix)]
+        return f"{trimmed_base}{suffix}"
 
     def perform_create(self, serializer):
         base_title = serializer.validated_data.get('title', '')
