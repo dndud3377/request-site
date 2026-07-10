@@ -9,11 +9,8 @@ import GuideTourModal from '../components/GuideTourModal';
 import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseItem } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { shouldShowNotice, markNoticeSeen } from '../utils/noticeStorage';
-
-const formatDate = (dateStr: string | null): string => {
-  if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleDateString('ko-KR');
-};
+import { formatDate } from '../utils/date';
+import { getDocTableRows, getDueDateDisplay, getFinalCompletionDate } from '../utils/approvalTable';
 
 const CATEGORY_ICON: Record<ReleaseCategory, string> = {
   new: '🆕',
@@ -626,24 +623,60 @@ export default function HomePage(): React.ReactElement {
                     <th>{t('approval.col_title')}</th>
                     <th>{t('approval.col_product')}</th>
                     <th>{t('approval.col_requester')}</th>
-                    <th>{t('approval.col_status')}</th>
-                    <th>{t('approval.col_submitted')}</th>
+                    <th>{t('approval.col_current_stage')}</th>
+                    <th>{t('approval.col_current_stage_completion')}</th>
+                    <th>{t('approval.col_final_completion')}</th>
+                    <th>{t('approval.col_production_date')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {recent.map((doc) => (
-                    <tr key={doc.id}>
-                      <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-                        {doc.title}
-                      </td>
-                      <td>{doc.product_name}</td>
-                      <td>{doc.requester_name}</td>
-                      <td>
-                        <StatusBadge status={doc.status} />
-                      </td>
-                      <td>{formatDate(doc.submitted_at)}</td>
-                    </tr>
-                  ))}
+                  {recent.flatMap((doc) => {
+                    // 결재 현황(ApprovalPage)과 동일한 계산·렌더로 현재 단계를 표시한다.
+                    const rows = getDocTableRows(doc, t);
+                    const isParallel = rows.length === 2;
+                    const undecided = t('approval.due_date_undecided');
+                    return rows.map((row, idx) => {
+                      const dd = getDueDateDisplay(row.dueDate, row.isDone, undecided);
+                      return (
+                        <tr
+                          key={`${doc.id}-${idx}`}
+                          className={isParallel ? (idx === 0 ? 'doc-row-first' : 'doc-row-second') : ''}
+                        >
+                          {idx === 0 && (
+                            <td rowSpan={rows.length}>
+                              <button
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 600, fontSize: '0.9rem', textAlign: 'left', padding: 0 }}
+                                onClick={() => goOrAlert('/approval')}
+                              >
+                                {doc.title}
+                              </button>
+                            </td>
+                          )}
+                          {idx === 0 && <td rowSpan={rows.length}>{doc.product_name}</td>}
+                          {idx === 0 && (
+                            <td rowSpan={rows.length}>
+                              <div>{doc.requester_name}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{doc.requester_department}</div>
+                            </td>
+                          )}
+                          <td style={{ fontWeight: 500 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <StatusBadge status={row.pathStatus} />
+                              <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{row.stageText}</span>
+                              {idx === 0 && doc.pause_request?.state === 'requested' && (
+                                <span className="pause-req-chip">⏸ {t('approval.pause_requested_chip')}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td>
+                            <span className={dd.cls}>{dd.text}</span>
+                          </td>
+                          {idx === 0 && <td rowSpan={rows.length}>{getFinalCompletionDate(doc)}</td>}
+                          {idx === 0 && <td rowSpan={rows.length}>{doc.production_date ? formatDate(doc.production_date) : '-'}</td>}
+                        </tr>
+                      );
+                    });
+                  })}
                 </tbody>
               </table>
             </div>
