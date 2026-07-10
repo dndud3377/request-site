@@ -40,6 +40,8 @@
   --danger-light: rgba(220, 38, 38, 0.1);
   --info: #2563eb;
   --info-light: rgba(37, 99, 235, 0.1);
+  --pause: #92600a;
+  --pause-light: rgba(180, 130, 10, 0.13);
 
   --shadow-sm: 0 1px 3px rgba(37, 99, 235, 0.08);
   --shadow-md: 0 4px 12px rgba(37, 99, 235, 0.12);
@@ -634,8 +636,30 @@ select.form-control option {
 .badge-unassigned { background: rgba(107, 138, 176, 0.15); color: var(--text-muted); }
 .badge-approved { background: var(--success-light); color: var(--success); }
 .badge-rejected { background: var(--danger-light); color: var(--danger); }
+.badge-pause { background: var(--pause-light); color: var(--pause); border: 1px solid var(--pause); }
 .badge-checking { background: var(--warning-light); color: var(--warning); }
 .badge-completed { background: var(--success-light); color: var(--success); }
+
+/* 중단(PAUSE) 요청/확인 UI */
+.pause-req-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.66rem; font-weight: 700; color: var(--pause);
+  background: var(--pause-light); border: 1px dashed var(--pause);
+  border-radius: 12px; padding: 1px 7px;
+}
+.btn-pause { background: var(--pause-light); color: var(--pause); border: 1px solid var(--pause); }
+.btn-pause:hover { background: var(--pause); color: #fff; }
+.pause-banner {
+  display: flex; gap: 12px; padding: 12px 14px; border-radius: var(--radius-sm);
+  background: var(--pause-light); border: 1px solid var(--pause);
+}
+.pause-banner-title { font-weight: 800; color: var(--pause); margin: 0 0 3px; font-size: 0.9rem; }
+.pause-banner-reason { color: var(--text-primary); font-size: 0.85rem; margin: 2px 0 8px; }
+.pause-confirm-track { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.pause-cf { display: inline-flex; align-items: center; gap: 6px; font-size: 0.76rem; font-weight: 700; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-muted); }
+.pause-cf.done { background: var(--success-light); color: var(--success); border-color: var(--success); }
+.pause-cf.mine { background: var(--pause-light); color: var(--pause); border-color: var(--pause); }
+.pause-cf-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 
 
 /* ===== Search & Filter ===== */

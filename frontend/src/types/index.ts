@@ -36,6 +36,7 @@ export type Status =
   | 'draft'
   | 'submitted'
   | 'under_review'
+  | 'pause'
   | 'approved'
   | 'rejected';
 
@@ -70,6 +71,22 @@ export interface ApprovalStepFrontend {
   due_date?: string | null;   // 완료 기한 (YYYY-MM-DD)
 }
 
+// 결재 중단(PAUSE) 요청 상태
+export type PauseState = 'requested' | 'confirmed' | 'cancelled' | 'resumed';
+
+// 활성 중단 요청 정보 (서버 pause_request 필드)
+export interface PauseRequestInfo {
+  id: number;
+  state: PauseState;
+  reason: string;
+  requester_loginid?: string | null;
+  requester_name: string;
+  round: number;
+  target_step_ids: number[];   // 요청 시점의 pending 단계 id (전원 확인 대상)
+  confirmed_step_ids: number[]; // '중단 확인'된 단계 id
+  created_at: string;
+}
+
 // ===== Domain Models =====
 
 export interface RequestDocument {
@@ -94,6 +111,9 @@ export interface RequestDocument {
   requester_loginid?: string | null;
   can_edit?: boolean;
   can_withdraw?: boolean;
+  can_request_pause?: boolean; // 중단 요청 가능(작성자 본인·진행 중·기존 요청 없음)
+  can_resume?: boolean;        // 재개 가능(작성자 본인·pause 상태)
+  pause_request?: PauseRequestInfo | null; // 활성 중단 요청 (없으면 null)
 }
 
 export type CreateDocumentInput = Omit<

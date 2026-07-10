@@ -20,7 +20,7 @@
 
 | 필드 | 의미 |
 |------|------|
-| `status` | `draft`(임시저장) / `submitted`(미사용) / `under_review`(검토중) / `approved`(승인) / `rejected`(반려). 기본값 `draft` |
+| `status` | `draft`(임시저장) / `submitted`(미사용) / `under_review`(검토중) / `pause`(중단) / `approved`(승인) / `rejected`(반려). 기본값 `draft` |
 | `additional_notes` | **상세 폼 전체를 JSON 문자열로 저장**(TextField). J-layer/O-layer/Bb/detail 모두 여기에 들어감 |
 | `designated_pl` / `designated_pl_name` | 상신 시 지정한 검토 PL |
 | `submitted_at` | 최초 상신 시각 |
@@ -137,6 +137,19 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 - 권한: **의뢰자 본인 또는 MASTER만**. 현재 회차 PL step의 assignee 교체.
 - ⚠️ **다중 PL 미대응(보류)**: 현재는 `_get_pending_pl_step`(첫 pending PL step, = 대표)만 1:1 교체한다. 다중 PL 중 특정 담당자 지정 스왑은 후속 작업으로 보류(2026-07).
 
+### Case M — 결재 중단(PAUSE) 요청·확인·재개 (2026-07)
+
+진행 중(under_review) 결재를 작성자가 **중단 요청** → 현재 단계 팀이 **확인** → 문서 `pause` 전이 → 작성자가 **수정 후 재개** 하는 흐름. 모델 `PauseRequest`(`models.py`), 마이그레이션 `0006`.
+
+- **중단 요청 (`request_pause`)**: 작성자 본인(또는 MASTER) + `status == 'under_review'` + **활성 중단요청 없음**일 때. **사유(reason) 필수**. 요청 시점의 현재(pending) 결재 단계 id 를 `target_step_ids` 로 기록한다. 상태 뱃지는 **확인 완료 전까지 그대로 유지**(검토중), 목록 현재단계 칸에 '중단 요청중' 칩만 표시.
+- **중단 확인 (`confirm_pause`)**: 현재 단계 담당자(assignee) 본인, 미배정 단계면 같은 팀(역할↔agent 일치), + MASTER (`_can_confirm_pause`). 병렬(P/J ∥ O/E)이면 **target 단계 전원**이 확인해야 최종 `pause` 전이(`confirmed_step_ids` 누적, `set(target) ⊆ set(confirmed)` 시 확정). 그 전엔 under_review 유지.
+- **재개 (`resume`)**: 작성자 본인(또는 MASTER) + `status == 'pause'`. `pause → under_review` 로 되돌리고 **멈춘 시점의 pending 단계를 그대로 유지**해 그 단계부터 이어간다(회차 새로 만들지 않음, 이미 합의된 병렬 경로 유지). 문서 내용은 사전에 `/request` 편집(update)에서 저장되며, 재개 시 지정 PL 재선택 불필요(`RequestPage` 가 pause 문서 편집 시 상신 대신 `resume` 호출).
+- **요청 취소 (`cancel_pause`)**: 확인 완료 전(`requested`) 요청을 작성자/MASTER 가 철회(`cancelled`).
+- **자동 취소**: 요청중(requested) 상태에서 결재가 정상 진행(합의 `approve_step`/반려 `reject_step`)되어 단계가 넘어가면 기존 요청을 `cancelled` 처리(`_cancel_active_pause_requests`).
+- **동결**: `status == 'pause'` 동안 `approve_step`/`reject_step`/`assign_step`/`claim_step` 은 400 으로 차단. 작성자의 재개만 가능.
+- **인가/수정**: `doc_permissions.can_edit` 에 pause=작성자 본인 허용, `can_request_pause`/`can_resume` 헬퍼 추가. 시리얼라이저가 `can_request_pause`/`can_resume`/`pause_request`(state·reason·target/confirmed step ids) 를 내려줘 프론트가 버튼·배너·확인현황을 렌더한다.
+- ⚠️ 메일 알림(중단요청/확인/재개)은 이번 범위에 **미포함**.
+
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)
 - start_date(당일 포함) 기준 n번째 영업일. 주말 + `Holiday(isholiday='Y')` 제외.
 
@@ -163,6 +176,7 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 ### 3.4 상태 배지 (`resolvePathStatus`)
 - pending step에 `assignee_loginid`가 없으면 **`unassigned`(라벨: 대기중)**, 있으면 `under_review`(검토중).
 - J·O·E도 검토중 방식으로 전환되어, 선점 전에는 **대기중**, 선점 후에는 **검토중**으로 표시된다.
+- **중단(pause)**: `getDocTableRows` 가 pause 문서를 단일 행으로 렌더해 **`pause` 뱃지(라벨 'PAUSE') + 멈춘 현재 단계 텍스트**(예: `PAUSE JOB`)를 함께 표시한다. 중단 '요청중'(확정 전)에는 뱃지는 검토중 그대로 두고 현재단계 칸에 '중단 요청중' 칩만 붙인다(`.pause-req-chip`). 목록에 '중단' 필터 탭 추가.
 
 ### 3.5 완료 예정일
 - **현재 단계 완료예정**: 해당 pending step의 `due_date`(영업일, `getDueDateDisplay`로 지남/오늘/일반 색상).
@@ -184,6 +198,10 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 | 지정자 변경 | PL/MASTER | `changeDesignee` |
 | 철회 | PL/MASTER | `withdraw`(임시저장으로) 또는 `delete`(삭제) 선택 |
 | 수정 후 재상신 | rejected/draft | `/request`로 이동(editDocId) |
+| 중단 요청 | 작성자·under_review (`can_request_pause`) | 사유 입력 모달 → `requestPause` |
+| 중단 확인 | 현재 pending 단계 담당자/팀+MASTER (요청중) | `confirmPause` |
+| 중단 요청 취소 | 작성자 (요청중) | `cancelPause` |
+| 재개 | 작성자·pause (`can_resume`) | `/request`로 이동(editDocId) → `resume` |
 
 처리 중 `processing`으로 버튼 비활성화(더블클릭 방지), 결과는 토스트로 안내, 실패 시 `common.process_error`.
 
@@ -205,6 +223,10 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 | 반려 | `reject-step/` | `agent`, `comment` |
 | 담당자 지정 (R·P) | `assign-step/` | `agent`, `assignee_loginid`, `assignee_name` |
 | 검토중 선점 (J·O·E) | `claim-step/` | `agent` |
+| 중단 요청 | `request-pause/` | `reason`(필수) |
+| 중단 확인 | `confirm-pause/` | `agent` |
+| 재개 | `resume/` | - (pause → under_review) |
+| 중단 요청 취소 | `cancel-pause/` | - |
 | PL 합의/반려/수정후상신 | `peer-approve/` `peer-reject/` `peer-submit/` | `comment` |
 | 지정자 변경 | `change-designee/` | (의뢰자/MASTER) |
 | 삭제 | DELETE `documents/{id}/` | approved는 MASTER만 |

@@ -20,7 +20,7 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 from django.db.models import Q, Max, Min
 from .models import (
-    RequestDocument, ApprovalStep, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
+    RequestDocument, ApprovalStep, PauseRequest, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
     MapName, AddressBook,
 )
@@ -155,6 +155,38 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if role == 'MASTER':
             return True
         return self._ROLE_TO_AGENT.get(role) == step.agent
+
+    def _can_confirm_pause(self, user, step):
+        """중단 요청 '확인' 인가.
+
+        - MASTER: 항상 허용
+        - 담당자(assignee)가 있는 단계: 그 담당자 본인만 (PL·R·P·검토중 선점된 J/O/E)
+        - 담당자 미배정 단계: 같은 팀(역할↔agent 일치) 누구나
+        """
+        role = getattr(user, 'role', '')
+        if role == 'MASTER':
+            return True
+        caller_loginid = getattr(user, 'loginid', '')
+        if not caller_loginid:
+            return False
+        if step.assignee_id:
+            return bool(step.assignee and step.assignee.loginid == caller_loginid)
+        return self._ROLE_TO_AGENT.get(role) == step.agent
+
+    def _active_pause_request(self, document):
+        """문서의 활성(요청/확정) 중단 요청. 없으면 None."""
+        return PauseRequest.objects.filter(
+            document=document, state__in=('requested', 'confirmed')
+        ).order_by('-created_at').first()
+
+    def _cancel_active_pause_requests(self, document):
+        """진행 중(requested)인 중단 요청을 취소 처리한다.
+
+        결재가 정상 진행(합의/반려)되어 단계가 넘어가면 기존 중단 요청은 무효가 된다.
+        """
+        PauseRequest.objects.filter(
+            document=document, state='requested'
+        ).update(state='cancelled')
 
     # 의뢰자/철회/수정 권한은 serializers 와 공유하기 위해 doc_permissions 모듈에 둔다.
     def _can_withdraw(self, user, document):
@@ -316,6 +348,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         #  읽어 approved 전이가 누락되던 문제를 막는다.)
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
 
+        if document.status == 'pause':
+            return Response({'error': '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
         max_round = self._max_round(document)
 
         # 잠근 뒤 최신 커밋본을 읽기 위해 locking read 사용
@@ -348,6 +383,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not step.assignee_name:
             step.assignee_name = request.data.get('approver_name', '')
         step.save()
+
+        # 결재가 진행되어 단계가 넘어가면 진행 중이던 중단 요청은 무효 처리
+        self._cancel_active_pause_requests(document)
 
         new_status = document.status
         current_round = step.round
@@ -435,6 +473,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 문서 행을 잠가 합의(approve_step)와 반려가 동시에 같은 문서를 전이시키는 경쟁을 직렬화한다.
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
 
+        if document.status == 'pause':
+            return Response({'error': '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
         max_round = self._max_round(document)
 
         # J 다중 담당자: 호출자의 assignee 단계만 조회
@@ -465,6 +506,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         step.comment = comment
         step.save()
 
+        # 반려로 회차가 종료되면 진행 중이던 중단 요청은 무효 처리
+        self._cancel_active_pause_requests(document)
+
         document.status = 'rejected'
         document.save()
 
@@ -484,6 +528,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 우회하는 것을 차단한다(PL 지정 변경은 change_designee 전용).
         if agent not in ('R', 'P', 'J', 'O', 'E'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if document.status == 'pause':
+            return Response({'error': '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         max_round = self._max_round(document)
 
@@ -527,6 +574,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         # 동시 선점 경합 방지: 문서 행을 잠가 같은 단계의 중복 배정을 막는다.
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        if document.status == 'pause':
+            return Response({'error': '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
         max_round = self._max_round(document)
 
         step = ApprovalStep.objects.select_for_update().filter(
@@ -546,6 +597,147 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         step.save()
 
         return Response({'message': '검토를 시작했습니다.'})
+
+    @action(detail=True, methods=['post'], url_path='request-pause')
+    @transaction.atomic
+    def request_pause(self, request, pk=None):
+        """중단 요청: 작성자가 진행 중(under_review) 결재의 중단을 요청한다(사유 필수).
+
+        요청 시점의 현재(pending) 결재 단계 id 를 target 으로 기록하고, 그 단계 팀 전원이
+        '중단 확인'하면 문서가 pause 로 전이된다. 상태 뱃지는 확인 완료 전까지 그대로 유지된다.
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        reason = (request.data.get('reason') or '').strip()
+        if not reason:
+            return Response({'error': '중단 사유를 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not doc_permissions.can_request_pause(request.user, document):
+            return Response({'error': '중단 요청 권한이 없거나, 이미 진행 중인 중단 요청이 있습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        max_round = self._max_round(document)
+        pending = list(ApprovalStep.objects.filter(
+            document=document, action='pending', round=max_round
+        ))
+        if not pending:
+            return Response({'error': '진행 중인 결재 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        PauseRequest.objects.create(
+            document=document,
+            requester=request.user if getattr(request.user, 'loginid', '') else None,
+            requester_name=getattr(request.user, 'username', '') or getattr(request.user, 'loginid', ''),
+            reason=reason,
+            round=max_round,
+            target_step_ids=[s.id for s in pending],
+            confirmed_step_ids=[],
+        )
+
+        return Response({
+            'message': '중단 요청이 접수되었습니다. 현재 단계 팀의 확인을 기다립니다.',
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'], url_path='confirm-pause')
+    @transaction.atomic
+    def confirm_pause(self, request, pk=None):
+        """중단 확인: 현재 단계 담당자/팀이 중단 요청을 확인한다.
+
+        요청 시점의 pending 단계 '전원'이 확인하면 문서가 pause 로 전이된다(병렬 단계 대응).
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        pr = self._active_pause_request(document)
+        if not pr or pr.state != 'requested':
+            return Response({'error': '진행 중인 중단 요청이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        agent = request.data.get('agent')
+        max_round = self._max_round(document)
+
+        # 호출자가 확인할 수 있는, target 에 포함된 현재 회차 pending 단계를 찾는다.
+        candidates = ApprovalStep.objects.select_for_update().filter(
+            document=document, agent=agent, action='pending',
+            round=max_round, id__in=pr.target_step_ids,
+        )
+        step = next((s for s in candidates if self._can_confirm_pause(request.user, s)), None)
+        if not step:
+            return Response({'error': '확인 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        confirmed = list(pr.confirmed_step_ids or [])
+        if step.id not in confirmed:
+            confirmed.append(step.id)
+        pr.confirmed_step_ids = confirmed
+
+        # target 전원 확인 완료 시 pause 전이
+        all_confirmed = set(pr.target_step_ids or []).issubset(set(confirmed))
+        if all_confirmed:
+            pr.state = 'confirmed'
+            pr.confirmed_at = timezone.now()
+            pr.save()
+            document.status = 'pause'
+            document.save()
+            msg = '중단이 확정되었습니다.'
+        else:
+            pr.save()
+            msg = '확인했습니다. 다른 단계의 확인을 기다립니다.'
+
+        return Response({
+            'message': msg,
+            'status': document.status,
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'])
+    def resume(self, request, pk=None):
+        """재개: 작성자가 중단(pause) 문서를 재개한다 → under_review.
+
+        멈춘 시점의 pending 단계를 그대로 되살려 그 단계부터 결재가 이어진다
+        (처음 PL 검토로 돌아가거나 회차를 새로 만들지 않는다). 문서 내용 수정은
+        사전에 /request 화면에서 update 된다.
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        if not doc_permissions.can_resume(request.user, document):
+            return Response({'error': '재개 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        if document.status != 'pause':
+            return Response({'error': '중단된 문서만 재개할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            document.status = 'under_review'
+            document.save()
+            PauseRequest.objects.filter(
+                document=document, state='confirmed'
+            ).update(state='resumed')
+
+        return Response({
+            'message': '결재를 재개했습니다. 멈춘 단계부터 이어집니다.',
+            'status': 'under_review',
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'], url_path='cancel-pause')
+    @transaction.atomic
+    def cancel_pause(self, request, pk=None):
+        """중단 요청 취소: 확인 완료 전(requested) 요청을 작성자/MASTER 가 철회한다."""
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        role = getattr(request.user, 'role', '')
+        if role != 'MASTER' and not doc_permissions.is_requester(request.user, document):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        updated = PauseRequest.objects.filter(
+            document=document, state='requested'
+        ).update(state='cancelled')
+        if not updated:
+            return Response({'error': '취소할 중단 요청이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            'message': '중단 요청을 취소했습니다.',
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
 
     def _get_pending_pl_step(self, document):
         """현재 회차의 pending PL 단계 반환(첫 번째). 없으면 None."""

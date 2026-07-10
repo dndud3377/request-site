@@ -268,6 +268,38 @@ const claimStep = async (docId: number, agent: AgentType) => {
   return { data };
 };
 
+// ===== 결재 중단(PAUSE) =====
+
+const requestPause = async (docId: number, reason: string) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${docId}/request-pause/`,
+    { reason }
+  );
+  return { data };
+};
+
+const confirmPause = async (docId: number, agent: AgentType) => {
+  const data = await post<{ message: string; status: string; document: RequestDocument }>(
+    `/documents/${docId}/confirm-pause/`,
+    { agent }
+  );
+  return { data };
+};
+
+const resumeDocument = async (docId: number) => {
+  const data = await post<{ message: string; status: string; document: RequestDocument }>(
+    `/documents/${docId}/resume/`
+  );
+  return { data };
+};
+
+const cancelPause = async (docId: number) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${docId}/cancel-pause/`
+  );
+  return { data };
+};
+
 const documentStats = async () => {
   const data = await get<Stats>('/documents/stats/');
   return { data };
@@ -294,6 +326,10 @@ export const documentsAPI = {
   rejectStep,
   assignStep,
   claimStep,
+  requestPause,
+  confirmPause,
+  resume: resumeDocument,
+  cancelPause,
   peerApprove,
   peerReject,
   peerSubmit,

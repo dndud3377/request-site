@@ -11,6 +11,9 @@ class DocPermFieldsMixin(serializers.Serializer):
     프론트가 수정/철회 버튼을 정확히(그룹 멤버 포함) 노출하기 위해 사용한다."""
     can_edit = serializers.SerializerMethodField()
     can_withdraw = serializers.SerializerMethodField()
+    can_request_pause = serializers.SerializerMethodField()
+    can_resume = serializers.SerializerMethodField()
+    pause_request = serializers.SerializerMethodField()
     requester_loginid = serializers.SerializerMethodField()
 
     def _perm_user(self):
@@ -36,6 +39,37 @@ class DocPermFieldsMixin(serializers.Serializer):
     def get_can_withdraw(self, obj):
         user = self._perm_user()
         return bool(user and doc_permissions.can_withdraw(user, obj, self._co_member_ids()))
+
+    def get_can_request_pause(self, obj):
+        user = self._perm_user()
+        return bool(user and doc_permissions.can_request_pause(user, obj))
+
+    def get_can_resume(self, obj):
+        user = self._perm_user()
+        return bool(user and doc_permissions.can_resume(user, obj))
+
+    def get_pause_request(self, obj):
+        """활성(요청/확정) 중단 요청 정보. 없으면 None.
+
+        프론트가 중단 요청 배너·확인 현황·재개 버튼을 렌더하는 데 사용한다.
+        """
+        pr = next(
+            (p for p in obj.pause_requests.all() if p.state in ('requested', 'confirmed')),
+            None,
+        )
+        if not pr:
+            return None
+        return {
+            'id': pr.id,
+            'state': pr.state,
+            'reason': pr.reason,
+            'requester_loginid': pr.requester.loginid if pr.requester_id else None,
+            'requester_name': pr.requester_name,
+            'round': pr.round,
+            'target_step_ids': pr.target_step_ids or [],
+            'confirmed_step_ids': pr.confirmed_step_ids or [],
+            'created_at': pr.created_at,
+        }
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -99,6 +133,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'status', 'production_date', 'created_at', 'updated_at', 'submitted_at',
             'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw', 'notifier_mails',
+            'can_request_pause', 'can_resume', 'pause_request',
         ]
         read_only_fields = ['status', 'created_at', 'updated_at', 'submitted_at',
                             'designated_pl_loginid', 'designated_pl_name']
@@ -139,6 +174,7 @@ class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSeriali
             'product_name', 'status', 'production_date', 'created_at', 'submitted_at',
             'additional_notes', 'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw',
+            'can_request_pause', 'can_resume', 'pause_request',
         ]
 
     def get_designated_pl_loginid(self, obj):
