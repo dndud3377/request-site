@@ -10,6 +10,7 @@ const STATUS_I18N_KEY: Record<string, string> = {
   submitted: 'common.status_submitted',
   under_review: 'common.status_under_review',
   unassigned: 'approval.step_unassigned',
+  pause: 'common.status_pause',
   approved: 'common.status_approved',
   rejected: 'common.status_rejected',
   checking: 'voc.status_checking',
