@@ -10,6 +10,7 @@ interface ProdcRowProps {
   detail: DetailFormState;
   onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
   onSetValue: (name: string, value: string) => void;
+  onLineChange: (region: CRegion, value: string) => void;
   lineOptions: string[];
   processOptions: string[];
   productOptions: string[];
@@ -19,7 +20,7 @@ interface ProdcRowProps {
 
 const REGION_LABEL_KEY = { top: 'prodc_top', middle: 'prodc_middle', bottom: 'prodc_bottom' } as const;
 
-const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValue, lineOptions, processOptions, productOptions, onProcessChange, errors = {} }) => {
+const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValue, onLineChange, lineOptions, processOptions, productOptions, onProcessChange, errors = {} }) => {
   const { t } = useTranslation();
   const showSelects = region !== 'middle' || detail.prodc_middle_use === '사용';
   return (
@@ -49,7 +50,7 @@ const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValu
               className={`form-control${errors[`prodc_${region}_line`] ? ' error' : ''}`}
               name={`prodc_${region}_line`}
               value={detail[`prodc_${region}_line` as keyof DetailFormState] as string}
-              onChange={onChange}
+              onChange={(e) => onLineChange(region, e.target.value)}
             >
               <option value="">{t('request.select_placeholder')}</option>
               {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
