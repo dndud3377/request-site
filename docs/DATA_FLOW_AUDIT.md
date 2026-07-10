@@ -22,7 +22,7 @@
 | R-6 메인 라인 변경 시 prodc 잔존 | (미결정) | 보류 |
 | R-7 map_type 변경 시 Step1/뼈찜/J·O 보존 | **의도된 동작** | 유지 |
 | R-8 임시저장은 비활성 행도 저장 | **의도된 동작** | 유지 |
-| 4-1 제목 300자 초과 시 상신 실패 | **수정 필요** | 📋 계획됨(§4-1) — 승인 후 진행 |
+| 4-1 제목 300자 초과 시 상신 실패 | **수정 (A안, 600자)** | ✅ 수정됨 |
 
 **R-2~R-5 구현 요약** (`RequestPage/index.tsx` 핸들러 + `StepMap.tsx` select 연결):
 - `handleOnlyProdcChange`: C가문 `No` 전환 시 REV·prodc 상/중/하판·지도편차(top/bottom)·prodc 옵션·`prodcCopyRegion` 전부 초기화.
@@ -35,11 +35,15 @@
 
 - 문제: 자동 제목 `${line}(${purpose})_MAP(${type})_${process}_${partid}_${process_id}_요청서_YYMMDD`
   + 중복 시 `_N` suffix 가 모델 `title CharField(max_length=300)` 를 넘으면 상신/저장이 **HTTP 400** 또는 DB 오류로 실패.
-- 방안(권장 = A):
-  - **(A) 컬럼 확장 + 방어적 clamp**: `title` `max_length` 를 **500** 으로 늘리는 마이그레이션 + `_unique_title`(`views.py:923`)에서 `base_title` + suffix 가 컬럼 한도를 넘지 않도록 base 를 잘라 하드캡. → 정보 보존 + 실패 제거. **모델/마이그레이션 변경이라 사전 승인 필요**(규칙 D).
-  - (B) clamp만(현행 300 유지): 마이그레이션 없이 제목을 300자에 맞춰 자름. 단, 뒤쪽(날짜·process_id) 유실로 제목 모호.
-  - (C) 제목 포맷 단축: 구성요소 축약. UX/검색 의미 변화 큼.
-- 검증(수정 후): §2-3 SQL 의 `title_len`, 그리고 아주 긴 조합법/제품명으로 상신해 400 미발생 확인.
+- ✅ **적용된 수정 (A안, 600자)**:
+  - `models.py` `title = CharField(max_length=600)` 로 확장(기존 300).
+  - 마이그레이션 `0007_alter_requestdocument_title`.
+  - `_unique_title`(`views.py:923`)에서 `base_title` 및 `base + '_N'` suffix 가 컬럼 한도(600)를
+    **절대 넘지 않도록 방어적으로 truncate**(`title_max = RequestDocument._meta.get_field('title').max_length` 참조).
+  - 배포 시 **`python manage.py migrate` 필요.**
+- 검증(수정 후):
+  - `docker exec -it $BACKEND python manage.py migrate` → `0007` 적용.
+  - 아주 긴 조합법/제품명 조합으로 상신 → **400 없이 저장**되는지, §2-3 SQL 의 `title_len` 이 600 이하인지 확인.
 
 ---
 
