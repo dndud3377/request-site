@@ -127,6 +127,10 @@ export default function RequestPage(): React.ReactElement {
   const [topProductOptions, setTopProductOptions] = useState<string[]>([]);
   const [middleProductOptions, setMiddleProductOptions] = useState<string[]>([]);
   const [bottomProductOptions, setBottomProductOptions] = useState<string[]>([]);
+  // C가문 리전별 조합법 옵션 — 각 리전의 prodc_{region}_line 에 따라 로드된다.
+  const [topProcessOptions, setTopProcessOptions] = useState<string[]>([]);
+  const [middleProcessOptions, setMiddleProcessOptions] = useState<string[]>([]);
+  const [bottomProcessOptions, setBottomProcessOptions] = useState<string[]>([]);
 
   // bb_entries 옵션 캐시는 위치(index)가 아니라 항목 id로 키한다(삭제 시 시프트 불필요).
   const [BbProductOptions, setBbProductOptions] = useState<Record<string, string[]>>({});
@@ -365,6 +369,23 @@ export default function RequestPage(): React.ReactElement {
       setDetail((prev) => ({ ...prev, process_selection: '', partid_selection: '', process_id: '' }));
     }
   }, [detail.line]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // C가문 리전별 라인 변경 → 해당 리전 조합법 옵션 fetch (값 리셋은 하지 않음 — 복사/수동변경 핸들러가 담당)
+  useEffect(() => {
+    const line = detail.prodc_top_line as string;
+    if (!line) { setTopProcessOptions([]); return; }
+    fetchOptions('prodc-top-process', () => formOptionsAPI.getProcesses(line), setTopProcessOptions);
+  }, [detail.prodc_top_line]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const line = detail.prodc_middle_line as string;
+    if (!line) { setMiddleProcessOptions([]); return; }
+    fetchOptions('prodc-middle-process', () => formOptionsAPI.getProcesses(line), setMiddleProcessOptions);
+  }, [detail.prodc_middle_line]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const line = detail.prodc_bottom_line as string;
+    if (!line) { setBottomProcessOptions([]); return; }
+    fetchOptions('prodc-bottom-process', () => formOptionsAPI.getProcesses(line), setBottomProcessOptions);
+  }, [detail.prodc_bottom_line]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 원본 위치 변경 → 원본 제품 목록 fetch
   useEffect(() => {
@@ -1299,8 +1320,11 @@ export default function RequestPage(): React.ReactElement {
     setMapTypeChangeConfirm(null);
   };
 
-  // C가문 리전별 조합법 변경 → 해당 리전 제품이름 fetch
-  const handleProdcProcessChange = (region: CRegion, value: string) => {
+  // C가문 리전별 조합법 변경 → 해당 리전 제품이름 fetch (해당 리전 라인 기준)
+  // lineOverride: 복사(적용 위치) 경로에서 아직 state 반영 전 라인을 명시적으로 넘길 때 사용
+  const handleProdcProcessChange = (region: CRegion, value: string, lineOverride?: string) => {
+    const line = lineOverride ?? ((detail[`prodc_${region}_line` as keyof DetailFormState] as string) || '');
+    const regionProcessOpts = region === 'top' ? topProcessOptions : region === 'middle' ? middleProcessOptions : bottomProcessOptions;
     const apply = (opts: string[]) => {
       if (region === 'top') setTopProductOptions(opts);
       else if (region === 'middle') setMiddleProductOptions(opts);
@@ -1308,12 +1332,26 @@ export default function RequestPage(): React.ReactElement {
     };
     // 조합법 변경 시 해당 리전 제품 즉시 초기화
     setDetail((prev) => ({ ...prev, [`prodc_${region}_product`]: '' }));
-    // 제품 조회는 조합법이 옵션에 정확히 존재할 때만(시퀀스 토큰으로 stale 무시)
-    if (detail.line && matchedOrLoading(processOptions, value)) {
-      fetchOptions(`prodc-${region}`, () => formOptionsAPI.getProducts(detail.line, value), apply);
+    // 제품 조회는 (복사 경로거나) 조합법이 해당 리전 옵션에 존재할 때만(시퀀스 토큰으로 stale 무시)
+    const canFetch = !!lineOverride || matchedOrLoading(regionProcessOpts, value);
+    if (line && value && canFetch) {
+      fetchOptions(`prodc-${region}`, () => formOptionsAPI.getProducts(line, value), apply);
     } else {
       apply([]);
     }
+  };
+
+  // C가문 리전별 라인 직접 변경 → 라인 설정 + 하위(조합법/제품) 초기화 (조합법 옵션은 effect가 재로드)
+  const handleProdcLineChange = (region: CRegion, value: string) => {
+    setDetail((prev) => ({
+      ...prev,
+      [`prodc_${region}_line`]: value,
+      [`prodc_${region}_process`]: '',
+      [`prodc_${region}_product`]: '',
+    }));
+    if (region === 'top') setTopProductOptions([]);
+    else if (region === 'middle') setMiddleProductOptions([]);
+    else setBottomProductOptions([]);
   };
 
   const handleProdcRegionSelect = (region: CRegion) => {
@@ -1324,13 +1362,17 @@ export default function RequestPage(): React.ReactElement {
       handleDetailSet(`prodc_${prodcCopyRegion}_process`, '');
       handleDetailSet(`prodc_${prodcCopyRegion}_product`, '');
       handleProdcProcessChange(prodcCopyRegion, '');
+      // 중앙에서 다른 위치로 전환하면 중앙 사용여부를 미사용으로 되돌린다
+      if (prodcCopyRegion === 'middle') handleDetailSet('prodc_middle_use', '미사용');
     }
 
     setProdcCopyRegion(next);
     if (next) {
+      // 중앙 선택 시 사용여부를 '사용'으로 바꿔 행이 펼쳐지고 데이터가 채워지도록 한다
+      if (next === 'middle') handleDetailSet('prodc_middle_use', '사용');
       handleDetailSet(`prodc_${next}_line`, detail.line);
       handleDetailSet(`prodc_${next}_process`, detail.process_selection);
-      handleProdcProcessChange(next, detail.process_selection);
+      handleProdcProcessChange(next, detail.process_selection, detail.line);
       handleDetailSet(`prodc_${next}_product`, detail.partid_selection);
     }
   };
@@ -2397,7 +2439,9 @@ export default function RequestPage(): React.ReactElement {
           const xTop = parseFloat(detail.map_value_x_top);
           const xBot = parseFloat(detail.map_value_x_bottom);
           if (!isNaN(xTop) && !isNaN(xBot)) {
-            if (Math.abs(xTop) !== Math.abs(xBot) || Math.sign(xTop) === Math.sign(xBot)) {
+            // 절대값은 항상 동일해야 하고, 0이 아닐 때만 부호가 서로 반대여야 한다
+            // (0/0 은 부호 개념이 없으므로 Y처럼 허용).
+            if (Math.abs(xTop) !== Math.abs(xBot) || (xTop !== 0 && Math.sign(xTop) === Math.sign(xBot))) {
               newErrors['map_value_x_bottom'] = t('request.map_x_sign_error');
               errorMessages.push(t('request.map_x_sign_error'));
             }
@@ -2908,11 +2952,14 @@ export default function RequestPage(): React.ReactElement {
           detail={detail}
           errors={errors}
           lineOptions={lineOptions}
-          processOptions={processOptions}
           sourcePartIdOptions={sourcePartIdOptions}
           topProductOptions={topProductOptions}
           middleProductOptions={middleProductOptions}
           bottomProductOptions={bottomProductOptions}
+          topProcessOptions={topProcessOptions}
+          middleProcessOptions={middleProcessOptions}
+          bottomProcessOptions={bottomProcessOptions}
+          handleProdcLineChange={handleProdcLineChange}
           prodcCopyRegion={prodcCopyRegion}
           revLayersSelected={revLayersSelected}
           setRevLayersSelected={setRevLayersSelected}
