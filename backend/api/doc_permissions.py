@@ -105,4 +105,30 @@ def can_edit(user, document, co_member_ids=None):
         if document.designated_pl and document.designated_pl.loginid == loginid:
             return True
         return False
+    if st == 'pause':
+        # 중단(PAUSE) 문서는 작성자 본인만 수정 가능(수정 후 재개)
+        return is_requester(user, document)
     return False
+
+
+def can_request_pause(user, document):
+    """중단 요청 인가: 진행 중(under_review) 문서의 작성자 본인 또는 MASTER.
+
+    이미 활성(요청/확정) 중단 요청이 있으면 불가.
+    """
+    if document.status != 'under_review':
+        return False
+    if any(pr.is_active() for pr in document.pause_requests.all()):
+        return False
+    if getattr(user, 'role', '') == 'MASTER':
+        return True
+    return is_requester(user, document)
+
+
+def can_resume(user, document):
+    """재개 인가: 중단(pause) 문서의 작성자 본인 또는 MASTER."""
+    if document.status != 'pause':
+        return False
+    if getattr(user, 'role', '') == 'MASTER':
+        return True
+    return is_requester(user, document)
