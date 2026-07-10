@@ -9,7 +9,7 @@ import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView from '../components/PagedDetailView';
 import { canUserAgree, canUserAssign, canUserClaim, ROLE_TO_AGENT } from '../components/ApprovalFlow';
-import { RequestDocument, AgentType, UserRole, UserWithRole } from '../types';
+import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend } from '../types';
 import { formatDate } from '../utils/date';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS } from './approvalTourSeed';
 
@@ -110,6 +110,18 @@ const resolvePathStatus = (
   return pendingStep.assignee_loginid ? 'under_review' : 'unassigned';
 };
 
+// 중단 요청 '확인' 가능 여부(프론트 가드): MASTER / 담당자 본인 / (미배정 시) 같은 팀
+const canConfirmPauseStep = (
+  user: { role?: UserRole | string | null; username?: string },
+  step: ApprovalStepFrontend,
+): boolean => {
+  if (user.role === 'MASTER') return true;
+  const loginid = user.username;
+  if (step.assignee_loginid) return !!loginid && step.assignee_loginid === loginid;
+  const agent = user.role ? ROLE_TO_AGENT[user.role as UserRole] : undefined;
+  return agent === step.agent;
+};
+
 const buildStageText = (
   step: { agent: string; assignee_name?: string } | undefined,
   isDone: boolean,
@@ -124,6 +136,21 @@ const buildStageText = (
 const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
   const maxRound = getCurrentRound(doc);
   const currentSteps = (doc.approval_steps ?? []).filter(s => (s.round ?? 1) === maxRound);
+
+  // 중단(PAUSE): 멈춘 단계를 그대로 보여준다 (PAUSE 뱃지 + 현재 단계 텍스트).
+  if (doc.status === 'pause') {
+    const pending = currentSteps.filter(s => s.action === 'pending');
+    const stageText = pending.length > 0
+      ? pending.map(s => t(`approval.agent_${s.agent}` as any)).join(' / ')
+      : '-';
+    return [{
+      pathKey: 'single',
+      stageText,
+      dueDate: pending[0]?.due_date ?? null,
+      isDone: false,
+      pathStatus: 'pause',
+    }];
+  }
 
   // PL 검토 단계 pending: 기한 없음, R 단계 미생성 상태 (다중 PL은 아직 미합의자만 표시)
   const plPending = currentSteps.filter(s => s.agent === 'PL' && s.action === 'pending');
@@ -273,6 +300,10 @@ export default function ApprovalPage(): React.ReactElement {
   const [pendingAction, setPendingAction] = useState<{ type: 'agree' | 'reject'; agent: AgentType; isPeer?: boolean } | null>(null);
   const [commentInput, setCommentInput] = useState('');
 
+  // 중단 요청 사유 입력 모달
+  const [pauseReasonModalOpen, setPauseReasonModalOpen] = useState(false);
+  const [pauseReasonInput, setPauseReasonInput] = useState('');
+
   // 지정하기 UI (모달 footer)
   const [assigningOpen, setAssigningOpen] = useState(false);
   const [assigningUserId, setAssigningUserId] = useState('');
@@ -303,6 +334,7 @@ export default function ApprovalPage(): React.ReactElement {
     }
     if (filter === 'draft') return all.filter(d => d.status === 'draft');
     if (filter === 'rejected') return all.filter(d => d.status === 'rejected');
+    if (filter === 'pause') return all.filter(d => d.status === 'pause');
     if (filter === 'my') {
       const role = currentUser.role;
       if (role === 'MASTER') return all;
@@ -341,6 +373,7 @@ export default function ApprovalPage(): React.ReactElement {
     if (key === '') return base.length;
     if (key === 'draft') return base.filter(d => d.status === 'draft').length;
     if (key === 'rejected') return base.filter(d => d.status === 'rejected').length;
+    if (key === 'pause') return base.filter(d => d.status === 'pause').length;
     if (key === 'my') {
       const role = currentUser.role;
       if (role === 'MASTER') return base.length;
@@ -551,6 +584,7 @@ export default function ApprovalPage(): React.ReactElement {
     { key: 'agent_J', baseLabel: t('approval.filter_agent_J') },
     { key: 'agent_O', baseLabel: t('approval.filter_agent_O') },
     { key: 'agent_E', baseLabel: t('approval.filter_agent_E') },
+    { key: 'pause', baseLabel: t('approval.filter_pause') },
     { key: 'draft', baseLabel: t('approval.filter_draft') },
     { key: 'rejected', baseLabel: t('approval.filter_rejected') },
   ];
@@ -673,6 +707,66 @@ export default function ApprovalPage(): React.ReactElement {
     } finally {
       setProcessing(false);
     }
+  };
+
+  // ===== 결재 중단(PAUSE) =====
+  const handleRequestPauseClick = () => {
+    setPauseReasonInput('');
+    setPauseReasonModalOpen(true);
+  };
+
+  const submitRequestPause = async () => {
+    if (!selected || !pauseReasonInput.trim()) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.requestPause(selected.id, pauseReasonInput.trim());
+      setPauseReasonModalOpen(false);
+      addToast(t('approval.pause_requested_toast'), 'success');
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleConfirmPause = async (agent: AgentType) => {
+    if (!selected) return;
+    setProcessing(true);
+    try {
+      const r = await documentsAPI.confirmPause(selected.id, agent);
+      if (r.data.status === 'pause') {
+        addToast(t('approval.pause_confirmed_toast'), 'success');
+        setModalOpen(false);
+        fetchDocs();
+      } else {
+        addToast(t('approval.pause_confirm_progress_toast'), 'success');
+        await refreshAndSelect(selected.id);
+      }
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleCancelPause = async () => {
+    if (!selected) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.cancelPause(selected.id);
+      addToast(t('approval.pause_cancelled_toast'), 'success');
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleResumeNav = (doc: RequestDocument) => {
+    setModalOpen(false);
+    navigate('/request', { state: { editDocId: doc.id } });
   };
 
   const handleAssign = async (agent: AgentType, loginid: string, userName: string) => {
@@ -858,9 +952,12 @@ export default function ApprovalPage(): React.ReactElement {
                         style={{ fontWeight: 500 }}
                         data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id && idx === 0 ? 'approval-stage' : undefined}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <StatusBadge status={row.pathStatus} />
                           <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{row.stageText}</span>
+                          {idx === 0 && doc.pause_request?.state === 'requested' && (
+                            <span className="pause-req-chip">⏸ {t('approval.pause_requested_chip')}</span>
+                          )}
                         </div>
                       </td>
                       <td>
@@ -928,6 +1025,48 @@ export default function ApprovalPage(): React.ReactElement {
               placeholder={pendingAction.type === 'agree' ? t('approval.comment_agree_placeholder') : t('approval.comment_reject_placeholder')}
               style={{ width: '100%', resize: 'vertical' }}
             />
+          </div>
+        </Modal>
+      )}
+
+      {/* 중단 요청 사유 입력 모달 */}
+      {pauseReasonModalOpen && (
+        <Modal
+          isOpen={pauseReasonModalOpen}
+          onClose={() => setPauseReasonModalOpen(false)}
+          title={t('approval.pause_request_modal_title')}
+          size="md"
+          topLevel
+          footer={
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-pause"
+                onClick={submitRequestPause}
+                disabled={processing || !pauseReasonInput.trim()}
+              >
+                {t('approval.pause_request_submit')}
+              </button>
+              <button className="btn btn-secondary" onClick={() => setPauseReasonModalOpen(false)} disabled={processing}>
+                {t('common.cancel')}
+              </button>
+            </div>
+          }
+        >
+          <div>
+            <p style={{ marginBottom: 8, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+              {t('approval.pause_reason_label')} <span style={{ color: 'var(--danger)' }}>*</span>
+            </p>
+            <textarea
+              className="form-control"
+              rows={4}
+              value={pauseReasonInput}
+              onChange={(e) => setPauseReasonInput(e.target.value)}
+              placeholder={t('approval.pause_reason_placeholder')}
+              style={{ width: '100%', resize: 'vertical' }}
+            />
+            <p style={{ marginTop: 6, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              {t('approval.pause_reason_hint')}
+            </p>
           </div>
         </Modal>
       )}
@@ -1015,8 +1154,51 @@ export default function ApprovalPage(): React.ReactElement {
           const isOriginalPL = isPL && selected?.requester_name === currentUser.name;
           const canChangeDesignee = (isOriginalPL || isMaster) && selected?.status === 'under_review' && hasPendingPLStep;
 
+          // 중단(PAUSE) 관련 버튼 노출 계산
+          const pr = selected?.pause_request;
+          const isPauseRequester = selected
+            ? (selected.requester_loginid
+                ? selected.requester_loginid === currentUser.username
+                : selected.requester_name === currentUser.name)
+            : false;
+          // 확인 가능한 대상 단계(요청됨 상태 + target pending + 미확인 + 확인권한)
+          let pauseConfirmAgent: AgentType | undefined;
+          if (pr && pr.state === 'requested') {
+            const target = (selected?.approval_steps ?? []).find(
+              (s) => s.action === 'pending'
+                && pr.target_step_ids.includes(s.id)
+                && !pr.confirmed_step_ids.includes(s.id)
+                && canConfirmPauseStep(currentUser, s)
+            );
+            pauseConfirmAgent = target?.agent;
+          }
+
           return (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* 중단 요청 (작성자·진행 중) */}
+              {selected && selected.can_request_pause && (
+                <button className="btn btn-pause" onClick={handleRequestPauseClick} disabled={processing}>
+                  {t('approval.pause_request')}
+                </button>
+              )}
+              {/* 중단 확인 (현재 단계 담당자/팀) */}
+              {pauseConfirmAgent && (
+                <button className="btn btn-pause" onClick={() => handleConfirmPause(pauseConfirmAgent as AgentType)} disabled={processing}>
+                  {t('approval.pause_confirm')}
+                </button>
+              )}
+              {/* 중단 요청 취소 (요청됨 상태 + 작성자) */}
+              {pr && pr.state === 'requested' && isPauseRequester && (
+                <button className="btn btn-secondary" onClick={handleCancelPause} disabled={processing}>
+                  {t('approval.pause_cancel')}
+                </button>
+              )}
+              {/* 재개 (작성자·pause) */}
+              {selected && selected.can_resume && (
+                <button className="btn btn-primary" onClick={() => handleResumeNav(selected)} disabled={processing}>
+                  {t('approval.resume')}
+                </button>
+              )}
               {selected && selected.can_edit && (selected.status === 'rejected' || selected.status === 'draft') && (
                 <button className="btn btn-primary" onClick={() => handleEditResubmit(selected)}>
                   {t('approval.edit_resubmit')}
@@ -1273,6 +1455,47 @@ export default function ApprovalPage(): React.ReactElement {
         {selected && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <StatusBadge status={selected.status} />
+
+            {/* 중단 요청/확정 배너 */}
+            {selected.pause_request && (
+              <div className="pause-banner">
+                <div style={{ fontSize: '1.2rem', lineHeight: 1.2 }} aria-hidden="true">⏸</div>
+                <div style={{ flex: 1 }}>
+                  <p className="pause-banner-title">
+                    {selected.status === 'pause'
+                      ? t('approval.pause_banner_paused')
+                      : t('approval.pause_banner_requested', { name: selected.pause_request.requester_name })}
+                  </p>
+                  <p className="pause-banner-reason">“{selected.pause_request.reason}”</p>
+                  {selected.pause_request.state === 'requested' ? (
+                    <>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+                        {t('approval.pause_confirm_status')}
+                      </div>
+                      <div className="pause-confirm-track">
+                        {(selected.approval_steps ?? [])
+                          .filter((s) => selected.pause_request!.target_step_ids.includes(s.id))
+                          .map((s) => {
+                            const done = selected.pause_request!.confirmed_step_ids.includes(s.id);
+                            const mine = !done && s.action === 'pending' && canConfirmPauseStep(currentUser, s);
+                            const label = t(`approval.agent_${s.agent}` as any);
+                            return (
+                              <span key={s.id} className={`pause-cf ${done ? 'done' : mine ? 'mine' : ''}`}>
+                                <span className="pause-cf-dot" aria-hidden="true" />
+                                {label} · {done ? t('approval.pause_cf_done') : mine ? t('approval.pause_cf_mine') : t('approval.pause_cf_wait')}
+                              </span>
+                            );
+                          })}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      {t('approval.pause_resume_hint')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* 페이지 네비게이션 + 의뢰 상세 */}
             <PagedDetailView
