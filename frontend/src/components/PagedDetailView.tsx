@@ -736,7 +736,14 @@ type Page = { label: string; content: React.ReactNode };
             {(detail.customer_name || detail.customer_requirement) && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
                 {detail.customer_name && (
-                  <Chip label={t('request.customer_name')} value={detail.customer_name} changed={changedFields.has('customer_name')} fieldKey="customer_name" />
+                  <Chip
+                    label={t('request.customer_name')}
+                    value={detail.customer_name}
+                    // 요구사항이 없으면 고객/업체명을 전체 폭 + 텍스트 가운데로 표시
+                    style={detail.customer_requirement ? undefined : { ...chipFull, textAlign: 'center' }}
+                    changed={changedFields.has('customer_name')}
+                    fieldKey="customer_name"
+                  />
                 )}
                 {detail.customer_requirement && (
                   <Chip label={t('request.customer_requirement')} value={detail.customer_requirement} style={chipWide} changed={changedFields.has('customer_requirement')} fieldKey="customer_requirement" />
@@ -969,58 +976,69 @@ type Page = { label: string; content: React.ReactNode };
             });
 
             return (
-              <div style={{ position: 'relative', ...(mapOptionChanged ? { border: '2px solid #dc3545', borderRadius: 6, padding: '10px 12px' } : {}) }}>
-                {mapOptionChanged && (
-                  <button
-                    onClick={() => setMapHistOpen(true)}
-                    style={{
-                      position: 'absolute', top: 6, right: 8,
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0,
-                    }}
-                  >
-                    이력 확인
-                  </button>
-                )}
-                {/* Inter 는 별도 항목 — YES 시 Xs/Ys 세부 적용을 함께 표시 */}
-                {detail.inter === 'YES' && (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
-                    <div style={tagStyle(true)}>{t('request.map_opt_inter')}</div>
-                    {detail.inter_xs === '적용' && <div style={tagStyle(true)}>{t('request.map_opt_inter_xs')}</div>}
-                    {detail.inter_ys === '적용' && <div style={tagStyle(true)}>{t('request.map_opt_inter_ys')}</div>}
-                  </div>
-                )}
-                <div style={{ ...fieldLabel, marginBottom: 6 }}>{t('request.map_option_title')}</div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {activeOptions.map(o => (
-                    <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>
-                  ))}
-                </div>
-                {mapHistOpen && prevSnap && (
-                  <Modal isOpen onClose={() => setMapHistOpen(false)} title={`${t('request.map_option_title')} 변경 이력`}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                      <div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>이전 (재상신 전)</div>
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          {prevActiveOptions.length > 0
-                            ? prevActiveOptions.map(o => <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>)
-                            : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
-                          }
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>현재 (최신)</div>
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          {activeOptions.length > 0
-                            ? activeOptions.map(o => <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>)
-                            : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
-                          }
-                        </div>
+              <>
+                {/* Inter — 다른 항목(map/mshot)과 동일하게 별도 섹션 박스로 표시 */}
+                {detail.inter && (
+                  <div style={rowStyle}>
+                    <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
+                      <div style={fieldLabel}>{t('request.map_opt_inter')}</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 4 }}>
+                        <div style={tagStyle(detail.inter === 'YES')}>{detail.inter}</div>
+                        {detail.inter === 'YES' && detail.inter_xs === '적용' && <div style={tagStyle(true)}>{t('request.map_opt_inter_xs')}</div>}
+                        {detail.inter === 'YES' && detail.inter_ys === '적용' && <div style={tagStyle(true)}>{t('request.map_opt_inter_ys')}</div>}
                       </div>
                     </div>
-                  </Modal>
+                  </div>
                 )}
-              </div>
+                {/* Map Option — 별도 섹션 박스 */}
+                <div style={rowStyle}>
+                  <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(mapOptionChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                    {mapOptionChanged && (
+                      <button
+                        onClick={() => setMapHistOpen(true)}
+                        style={{
+                          position: 'absolute', top: 6, right: 8,
+                          background: 'none', border: 'none', cursor: 'pointer',
+                          color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0,
+                        }}
+                      >
+                        이력 확인
+                      </button>
+                    )}
+                    <div style={fieldLabel}>{t('request.map_option_title')}</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                      {activeOptions.length > 0
+                        ? activeOptions.map(o => <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>)
+                        : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
+                      }
+                    </div>
+                    {mapHistOpen && prevSnap && (
+                      <Modal isOpen onClose={() => setMapHistOpen(false)} title={`${t('request.map_option_title')} 변경 이력`}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                          <div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>이전 (재상신 전)</div>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              {prevActiveOptions.length > 0
+                                ? prevActiveOptions.map(o => <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>)
+                                : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
+                              }
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>현재 (최신)</div>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              {activeOptions.length > 0
+                                ? activeOptions.map(o => <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>)
+                                : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
+                              }
+                            </div>
+                          </div>
+                        </div>
+                      </Modal>
+                    )}
+                  </div>
+                </div>
+              </>
             );
           })()}
         </div>
