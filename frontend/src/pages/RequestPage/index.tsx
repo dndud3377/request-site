@@ -366,7 +366,22 @@ export default function RequestPage(): React.ReactElement {
       setProductOptions([]);
       setProcessIdOptions([]);
       setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
-      setDetail((prev) => ({ ...prev, process_selection: '', partid_selection: '', process_id: '' }));
+      setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
+      setProdcCopyRegion(null);
+      setRevLayersSelected([]); setRevGds('');
+      setDetail((prev) => ({
+        ...prev,
+        process_selection: '', partid_selection: '', process_id: '',
+        // 메인 라인 변경 시 C가문 리전·지도편차·REV 값도 초기화(옛 라인 기준 잔존 방지 — 감사 R-6)
+        prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
+        prodc_middle_use: '', prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
+        prodc_bottom_line: '', prodc_bottom_process: '', prodc_bottom_product: '',
+        map_change_top: INITIAL_DETAIL.map_change_top,
+        map_value_x_top: '', map_value_y_top: '',
+        map_change_bottom: INITIAL_DETAIL.map_change_bottom,
+        map_value_x_bottom: '', map_value_y_bottom: '',
+        rev_yn: '', rev_entries: [],
+      }));
     }
   }, [detail.line]); // eslint-disable-line react-hooks/exhaustive-deps
 
