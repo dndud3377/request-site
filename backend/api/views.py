@@ -706,6 +706,22 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if document.status != 'pause':
             return Response({'error': '중단된 문서만 재개할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # 멈춘 기간(중단 확정~재개)만큼 현재 pending 단계의 마감 기한을 미뤄, 중단 동안
+        # 남은 기한이 깎이지 않게 한다(감사 #1). 달력일 기준으로 밀어 남은 여유를 보존한다.
+        import datetime
+        pr = PauseRequest.objects.filter(
+            document=document, state='confirmed'
+        ).order_by('-created_at').first()
+        if pr and pr.confirmed_at:
+            paused_days = (timezone.now().date() - pr.confirmed_at.date()).days
+            if paused_days > 0:
+                max_round = self._max_round(document)
+                for step in ApprovalStep.objects.filter(
+                    document=document, action='pending', round=max_round
+                ).exclude(due_date__isnull=True):
+                    step.due_date = step.due_date + datetime.timedelta(days=paused_days)
+                    step.save(update_fields=['due_date'])
+
         document.status = 'under_review'
         document.save()
         PauseRequest.objects.filter(
