@@ -634,6 +634,7 @@ export default function HomePage(): React.ReactElement {
                     // 결재 현황(ApprovalPage)과 동일한 계산·렌더로 현재 단계를 표시한다.
                     const rows = getDocTableRows(doc, t);
                     const isParallel = rows.length === 2;
+                    const isPaused = doc.status === 'pause';
                     const undecided = t('approval.due_date_undecided');
                     return rows.map((row, idx) => {
                       const dd = getDueDateDisplay(row.dueDate, row.isDone, undecided);
@@ -669,9 +670,11 @@ export default function HomePage(): React.ReactElement {
                             </div>
                           </td>
                           <td>
-                            <span className={dd.cls}>{dd.text}</span>
+                            {isPaused
+                              ? <span style={{ color: 'var(--text-muted)' }}>{t('approval.filter_pause')}</span>
+                              : <span className={dd.cls}>{dd.text}</span>}
                           </td>
-                          {idx === 0 && <td rowSpan={rows.length}>{getFinalCompletionDate(doc)}</td>}
+                          {idx === 0 && <td rowSpan={rows.length}>{isPaused ? <span style={{ color: 'var(--text-muted)' }}>{t('approval.filter_pause')}</span> : getFinalCompletionDate(doc)}</td>}
                           {idx === 0 && <td rowSpan={rows.length}>{doc.production_date ? formatDate(doc.production_date) : '-'}</td>}
                         </tr>
                       );
