@@ -298,6 +298,9 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 
 ## 7. 상세 보기(PagedDetailView) 변경 이력
 
+- **(2026-07) Inter·Map Option 을 각각 별도 섹션 박스로**: `map_opt_inter`(YES 시 Xs/Ys 포함)와 `map_option_title`(옵션 태그) 블록을 map/mshot 등 다른 항목과 동일한 `chipBase` 박스(rowStyle) 로 감싸 **두 개의 독립 섹션**으로 표시한다. 기존에는 맨 div 로 렌더돼 다른 섹션과 디자인이 달랐다.
+- **(2026-07) 고객/업체명 단독 표시 시 전체 폭·가운데 정렬**: '요구 사항'이 비어 있으면 '고객/업체명' Chip 을 전체 폭(`chipFull`) + 텍스트 가운데 정렬로 표시한다(둘 다 있으면 기존 좌측 2열 레이아웃 유지).
+- **(2026-07) 결재 현황 테이블 계산 헬퍼 공용화**: `getDocTableRows`·`getDueDateDisplay`·`getFinalCompletionDate`·`resolvePathStatus` 등을 `frontend/src/utils/approvalTable.ts` 로 이동해 **홈 화면 '최근 의뢰 현황'과 결재 현황이 동일한 표**(현재 단계 뱃지·병렬 2행 분기 포함)를 쓰도록 했다. 홈에서 '검토중'으로 뜨고 결재 현황에서 '대기중'으로 뜨던 불일치를 해소한다. `ApprovalPage`·`HomePage` 가 이 헬퍼를 공유한다.
 - **(2026-07) 모든 팀 상세 탭 전체 개방**: 역할 게이팅 플래그(`isP/isR/isJ/isO/isE`)를 **모두 `true`로 고정**하여, 모든 역할(PL·TE_R·TE_P·TE_J·TE_O·TE_E·MASTER)이 상세 보기의 **6개 탭 전부**(의뢰 상세 / MAP 정보 / J-ayer / O-ayer / 뼈찜 / 결재 경로)와 탭 내부 섹션을 **동일하게** 볼 수 있다. 이로써 아래 2026-06-13 항목의 "MAP은 순수 TE_J/TE_E 미표시" 제한도 해제된다(상세 내용은 결재 권한과 무관한 표시 영역).
 - **(2026-06-13, 위 2026-07 개방으로 상위 완화됨) 원본 라인/Part ID는 MAP 정보 섹션에만 표시**: 기존에는 `source_line`/`source_partid`가 '상세 정보' 섹션(`section_detail`)과 'MAP 정보' 섹션(`section_map`, `map_type === 'CLONE'`) 두 곳에 중복 노출됐다. '상세 정보' 쪽 블록을 제거하여 **MAP 정보 섹션(CLONE)에서만** 보이도록 한다.
 - 각 step에서 작성한 내용은 상세 보기에서 별도 페이지/섹션으로 분리 렌더된다: J-layer→`job_li`, O-layer→`ovl_li`(table/info 탭, info 탭에 `partial_shot`·TBV·TLV), Backbone→`bb`, MAP 변경 내용→`section_map`.

@@ -12,11 +12,14 @@ interface StepMapProps {
   detail: DetailFormState;
   errors: Partial<Record<string, string>>;
   lineOptions: string[];
-  processOptions: string[];
   sourcePartIdOptions: string[];
   topProductOptions: string[];
   middleProductOptions: string[];
   bottomProductOptions: string[];
+  topProcessOptions: string[];
+  middleProcessOptions: string[];
+  bottomProcessOptions: string[];
+  handleProdcLineChange: (region: CRegion, value: string) => void;
   prodcCopyRegion: CRegion | null;
   revLayersSelected: string[];
   setRevLayersSelected: React.Dispatch<React.SetStateAction<string[]>>;
@@ -36,6 +39,10 @@ interface StepMapProps {
   handleDetailSet: (name: string, value: string) => void;
   handleProdcRegionSelect: (region: CRegion) => void;
   handleProdcProcessChange: (region: CRegion, value: string) => void;
+  handleOnlyProdcChange: (value: string) => void;
+  handleMapChangeChange: (value: string) => void;
+  handleEaChangeChange: (value: string) => void;
+  handleMshotChangeChange: (value: string) => void;
   handleImagePaste: (e: React.ClipboardEvent<HTMLDivElement>, fieldName: 'mshot_image_copy' | 'mshot_image_copy_top' | 'mshot_image_copy_bottom') => void;
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
 }
@@ -44,11 +51,14 @@ const StepMap: React.FC<StepMapProps> = ({
   detail,
   errors,
   lineOptions,
-  processOptions,
   sourcePartIdOptions,
   topProductOptions,
   middleProductOptions,
   bottomProductOptions,
+  topProcessOptions,
+  middleProcessOptions,
+  bottomProcessOptions,
+  handleProdcLineChange,
   prodcCopyRegion,
   revLayersSelected,
   setRevLayersSelected,
@@ -68,10 +78,30 @@ const StepMap: React.FC<StepMapProps> = ({
   handleDetailSet,
   handleProdcRegionSelect,
   handleProdcProcessChange,
+  handleOnlyProdcChange,
+  handleMapChangeChange,
+  handleEaChangeChange,
+  handleMshotChangeChange,
   handleImagePaste,
   GuideBadge,
 }) => {
   const { t } = useTranslation();
+
+  // REV Layer 드래그 다중 선택: 버튼 위를 눌러 드래그하면 지나가는 layer 를 일괄 선택/해제한다.
+  const revDrag = React.useRef<{ mode: 'add' | 'remove' } | null>(null);
+  const applyRevLayer = (layer: string, mode: 'add' | 'remove') => {
+    setRevLayersSelected((prev) => {
+      const has = prev.includes(layer);
+      if (mode === 'add') return has ? prev : [...prev, layer];
+      return has ? prev.filter((l) => l !== layer) : prev;
+    });
+  };
+  React.useEffect(() => {
+    const end = () => { revDrag.current = null; };
+    window.addEventListener('mouseup', end);
+    return () => window.removeEventListener('mouseup', end);
+  }, []);
+
   return (
     <div className="form-section">
       <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -148,14 +178,7 @@ const StepMap: React.FC<StepMapProps> = ({
               className="form-control"
               name="only_prodc"
               value={detail.only_prodc}
-              onChange={(e) => {
-                handleDetailChange(e);
-                if (e.target.value === 'No') {
-                  setDetail((prev) => ({ ...prev, rev_yn: '', rev_entries: [] }));
-                  setRevLayersSelected([]);
-                  setRevGds('');
-                }
-              }}
+              onChange={(e) => handleOnlyProdcChange(e.target.value)}
               disabled={isMapRegistered}
             >
               <option value="No">No</option>
@@ -179,9 +202,9 @@ const StepMap: React.FC<StepMapProps> = ({
                   </label>
                 ))}
               </div>
-              <ProdcRow region="top"    detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={topProductOptions}    onProcessChange={handleProdcProcessChange} errors={errors} />
-              <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={middleProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} />
-              <ProdcRow region="bottom" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} lineOptions={lineOptions} processOptions={processOptions} productOptions={bottomProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} />
+              <ProdcRow region="top"    detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={topProcessOptions}    productOptions={topProductOptions}    onProcessChange={handleProdcProcessChange} errors={errors} />
+              <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={middleProcessOptions} productOptions={middleProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} />
+              <ProdcRow region="bottom" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={bottomProcessOptions} productOptions={bottomProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} />
 
               {/* REV 여부 */}
               <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '14px', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -214,18 +237,22 @@ const StepMap: React.FC<StepMapProps> = ({
                     <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         <label className="form-label" style={{ marginBottom: 0 }}>Layer</label>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxWidth: '480px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxWidth: '480px', userSelect: 'none' }}>
                           {availableRevLayers.length > 0 ? availableRevLayers.map((layer) => {
                             const isSelected = revLayersSelected.includes(layer);
                             return (
                               <button
                                 key={layer}
                                 type="button"
-                                onClick={() =>
-                                  setRevLayersSelected((prev) =>
-                                    isSelected ? prev.filter((l) => l !== layer) : [...prev, layer]
-                                  )
-                                }
+                                // 드래그 다중 선택: 첫 버튼에서 add/remove 모드를 정하고 지나가는 버튼에 적용
+                                onMouseDown={() => {
+                                  const mode: 'add' | 'remove' = isSelected ? 'remove' : 'add';
+                                  revDrag.current = { mode };
+                                  applyRevLayer(layer, mode);
+                                }}
+                                onMouseEnter={() => {
+                                  if (revDrag.current) applyRevLayer(layer, revDrag.current.mode);
+                                }}
                                 style={{
                                   padding: '5px 13px',
                                   borderRadius: '4px',
@@ -283,38 +310,39 @@ const StepMap: React.FC<StepMapProps> = ({
 
                     {/* 추가된 항목 목록 */}
                     {(detail.rev_entries ?? []).length > 0 && (
-                      <table style={{ borderCollapse: 'collapse', width: 'fit-content', marginTop: '4px', fontSize: '12px' }}>
-                        <thead>
-                          <tr>
-                            <th style={{ border: '1px solid #ddd', padding: '4px 10px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>Layer</th>
-                            <th style={{ border: '1px solid #ddd', padding: '4px 10px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>GDS version</th>
-                            <th style={{ border: '1px solid #ddd', padding: '4px 6px', background: '#f5f5f5' }}></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(detail.rev_entries ?? []).map((entry, idx) => (
-                            <tr key={idx}>
-                              <td style={{ border: '1px solid #ddd', padding: '4px 10px', whiteSpace: 'nowrap' }}>{entry.layers.join(', ')}</td>
-                              <td style={{ border: '1px solid #ddd', padding: '4px 10px', whiteSpace: 'nowrap' }}>{entry.gds}</td>
-                              <td style={{ border: '1px solid #ddd', padding: '4px 6px', textAlign: 'center' }}>
-                                <button
-                                  type="button"
-                                  className="btn btn-danger btn-sm"
-                                  style={{ fontSize: '11px', padding: '2px 7px' }}
-                                  onClick={() =>
-                                    setDetail((prev) => ({
-                                      ...prev,
-                                      rev_entries: (prev.rev_entries ?? []).filter((_, i) => i !== idx),
-                                    }))
-                                  }
-                                >
-                                  삭제
-                                </button>
-                              </td>
+                      <div className="table-wrapper" style={{ maxWidth: '640px', marginTop: '4px' }}>
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th style={{ width: '55%' }}>Layer</th>
+                              <th style={{ width: '30%' }}>GDS version</th>
+                              <th style={{ width: '15%', textAlign: 'center' }}></th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {(detail.rev_entries ?? []).map((entry, idx) => (
+                              <tr key={idx}>
+                                <td>{entry.layers.join(', ')}</td>
+                                <td>{entry.gds}</td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <button
+                                    type="button"
+                                    className="btn btn-danger btn-sm"
+                                    onClick={() =>
+                                      setDetail((prev) => ({
+                                        ...prev,
+                                        rev_entries: (prev.rev_entries ?? []).filter((_, i) => i !== idx),
+                                      }))
+                                    }
+                                  >
+                                    삭제
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </div>
                 )}
@@ -330,7 +358,7 @@ const StepMap: React.FC<StepMapProps> = ({
             {(['top', 'bottom'] as const).map((region) => (
               <div key={region} className="flex-row" style={{ alignItems: 'flex-start', gap: '12px' }}>
                 <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
-                  <label className="form-label" style={{ marginBottom: 4 }}>{t(`request.prodc_${region}`)}</label>
+                  <label className="form-label">{t(`request.prodc_${region}`)}</label>
                   <select className="form-control" disabled value="변경 있음">
                     <option value="변경 있음">{t('request.map_has_change')}</option>
                   </select>
@@ -369,7 +397,7 @@ const StepMap: React.FC<StepMapProps> = ({
           <div className="full-width flex-row" data-tour="map-deviation">
             <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
               <label className="form-label">{t('request.map')}<GuideBadge fk="step2_map_deviation" tk={t('guide.feat.step2_map_deviation' as never)} /></label>
-              <select className="form-control" name="map_change" value={detail.map_change} onChange={handleDetailChange} disabled={isMapRegistered}>
+              <select className="form-control" name="map_change" value={detail.map_change} onChange={(e) => handleMapChangeChange(e.target.value)} disabled={isMapRegistered}>
                 <option value="변경 없음">{t('request.map_no_change')}</option>
                 <option value="변경 있음">{t('request.map_has_change')}</option>
               </select>
@@ -396,7 +424,7 @@ const StepMap: React.FC<StepMapProps> = ({
         <div className="full-width flex-row" data-tour="map-exception">
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
             <label className="form-label">{t('request.ea_change')}<GuideBadge fk="step2_exception_zone" tk={t('guide.feat.step2_exception_zone' as never)} /></label>
-            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={handleDetailChange} disabled={isMapRegistered}>
+            <select className="form-control" name="ea_change" value={detail.ea_change} onChange={(e) => handleEaChangeChange(e.target.value)} disabled={isMapRegistered}>
               <option value="변경 없음">{t('request.no_change')}</option>
               <option value="변경 있음">{t('request.has_change')}</option>
             </select>
@@ -413,7 +441,7 @@ const StepMap: React.FC<StepMapProps> = ({
         <div className="form-group full-width" data-tour="map-xmark">
           <label className="form-label">{t('request.mshot_change_status')}<GuideBadge fk="step2_xmark" tk={t('guide.feat.step2_xmark' as never)} /></label>
           <div style={{ width: SELECT_W }}>
-            <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={handleDetailChange} disabled={isMapRegistered}>
+            <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={(e) => handleMshotChangeChange(e.target.value)} disabled={isMapRegistered}>
               <option value="없음">{t('request.mshot_none')}</option>
               <option value="추가">{t('request.mshot_add')}</option>
               <option value="수정">{t('request.mshot_edit')}</option>
