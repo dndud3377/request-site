@@ -144,6 +144,8 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 - **중단 요청 (`request_pause`)**: 작성자 본인(또는 MASTER) + `status == 'under_review'` + **활성 중단요청 없음**일 때. **사유(reason) 필수**. 요청 시점의 현재(pending) 결재 단계 id 를 `target_step_ids` 로 기록한다. 상태 뱃지는 **확인 완료 전까지 그대로 유지**(검토중), 목록 현재단계 칸에 '중단 요청중' 칩만 표시.
 - **중단 확인 (`confirm_pause`)**: 현재 단계 담당자(assignee) 본인, 미배정 단계면 같은 팀(역할↔agent 일치), + MASTER (`_can_confirm_pause`). 병렬(P/J ∥ O/E)이면 **target 단계 전원**이 확인해야 최종 `pause` 전이(`confirmed_step_ids` 누적, `set(target) ⊆ set(confirmed)` 시 확정). 그 전엔 under_review 유지.
 - **재개 (`resume`)**: 작성자 본인(또는 MASTER) + `status == 'pause'`. `pause → under_review` 로 되돌리고 **멈춘 시점의 pending 단계를 그대로 유지**해 그 단계부터 이어간다(회차 새로 만들지 않음, 이미 합의된 병렬 경로 유지). 문서 내용은 사전에 `/request` 편집(update)에서 저장되며, 재개 시 지정 PL 재선택 불필요(`RequestPage` 가 pause 문서 편집 시 상신 대신 `resume` 호출).
+  - ✅ **마감 기한 연장(2026-07)**: 재개 시 **멈춘 기간(중단 확정 `confirmed_at` ~ 재개일, 달력일)만큼** 현재 회차 pending 단계의 `due_date` 를 뒤로 민다. 중단 동안 남은 기한이 깎이지 않는다.
+  - ✅ **목록 표시**: PAUSE 동안 결재현황/홈 목록의 '현재 단계 완료예정'·'최종 완료예정' 칸은 날짜 대신 **`중단`**(회색)으로 표시한다(기한이 지난 것처럼 빨갛게 보이지 않도록). `ApprovalPage`·`HomePage` 공통.
 - **요청 취소 (`cancel_pause`)**: 확인 완료 전(`requested`) 요청을 작성자/MASTER 가 철회(`cancelled`).
 - **자동 취소**: 요청중(requested) 상태에서 결재가 정상 진행(합의 `approve_step`/반려 `reject_step`)되어 단계가 넘어가면 기존 요청을 `cancelled` 처리(`_cancel_active_pause_requests`).
 - **동결**: `status == 'pause'` 동안 `approve_step`/`reject_step`/`assign_step`/`claim_step` 은 400 으로 차단. 작성자의 재개만 가능.
@@ -298,7 +300,9 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 
 ## 7. 상세 보기(PagedDetailView) 변경 이력
 
-- **(2026-07) Inter·Map Option 을 각각 별도 섹션 박스로**: `map_opt_inter`(YES 시 Xs/Ys 포함)와 `map_option_title`(옵션 태그) 블록을 map/mshot 등 다른 항목과 동일한 `chipBase` 박스(rowStyle) 로 감싸 **두 개의 독립 섹션**으로 표시한다. 기존에는 맨 div 로 렌더돼 다른 섹션과 디자인이 달랐다.
+- **(2026-07) INTER 표시 = 글자 코멘트**: INTER 섹션은 `inter === 'YES'` **일 때만** 노출하며, YES/NO 값 태그·버튼식 태그 없이 **글자**로 표시한다 — `INTER 적용`, Xs 적용 시 `Xs 적용`, Ys 적용 시 `Ys 적용`(` / ` 연결). Xs/Ys 는 선택 안 할 수 있으므로 적용된 것만 붙는다. (i18n: `approval.inter_applied`/`inter_xs_applied`/`inter_ys_applied`)
+- **(2026-07) REV 여부 표 = 카드형(B)**: 상세보기 REV 표를 accent 좌측 rail 카드 + **Layer pill** 형태로 교체해 눈에 띄게 했다. 하드코딩 문자열(`REV 여부`·`GDS version`·`Layer / GDS version` 등)은 `request.rev_*` i18n 키로 이관.
+- **(2026-07) Inter·Map Option 을 각각 별도 섹션 박스로**: `map_opt_inter`(YES 시 Xs/Ys 포함)와 `map_option_title`(옵션 태그) 블록을 map/mshot 등 다른 항목과 동일한 `chipBase` 박스(rowStyle) 로 감싸 **두 개의 독립 섹션**으로 표시한다. 기존에는 맨 div 로 렌더돼 다른 섹션과 디자인이 달랐다. (INTER 표기는 위 항목으로 다시 변경됨)
 - **(2026-07) 고객/업체명 단독 표시 시 전체 폭·가운데 정렬**: '요구 사항'이 비어 있으면 '고객/업체명' Chip 을 전체 폭(`chipFull`) + 텍스트 가운데 정렬로 표시한다(둘 다 있으면 기존 좌측 2열 레이아웃 유지).
 - **(2026-07) 결재 현황 테이블 계산 헬퍼 공용화**: `getDocTableRows`·`getDueDateDisplay`·`getFinalCompletionDate`·`resolvePathStatus` 등을 `frontend/src/utils/approvalTable.ts` 로 이동해 **홈 화면 '최근 의뢰 현황'과 결재 현황이 동일한 표**(현재 단계 뱃지·병렬 2행 분기 포함)를 쓰도록 했다. 홈에서 '검토중'으로 뜨고 결재 현황에서 '대기중'으로 뜨던 불일치를 해소한다. `ApprovalPage`·`HomePage` 가 이 헬퍼를 공유한다.
 - **(2026-07) 모든 팀 상세 탭 전체 개방**: 역할 게이팅 플래그(`isP/isR/isJ/isO/isE`)를 **모두 `true`로 고정**하여, 모든 역할(PL·TE_R·TE_P·TE_J·TE_O·TE_E·MASTER)이 상세 보기의 **6개 탭 전부**(의뢰 상세 / MAP 정보 / J-ayer / O-ayer / 뼈찜 / 결재 경로)와 탭 내부 섹션을 **동일하게** 볼 수 있다. 이로써 아래 2026-06-13 항목의 "MAP은 순수 TE_J/TE_E 미표시" 제한도 해제된다(상세 내용은 결재 권한과 무관한 표시 영역).

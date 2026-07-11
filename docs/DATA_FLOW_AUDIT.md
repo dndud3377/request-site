@@ -19,7 +19,7 @@
 | R-3 map_change '없음' 시 X/Y/사유 잔존 | **초기화** | ✅ 수정됨 |
 | R-4 ea_change '없음' 시 ea_value 잔존 | **초기화** | ✅ 수정됨 |
 | R-5 mshot '없음/삭제' 시 이미지 잔존 | **초기화** (+ 다중 붙여넣기는 이미 마지막 1개만 저장) | ✅ 수정됨 |
-| R-6 메인 라인 변경 시 prodc 잔존 | (미결정) | 보류 |
+| R-6 메인 라인 변경 시 prodc 잔존 | **초기화 필요** | ✅ 수정됨 |
 | R-7 map_type 변경 시 Step1/뼈찜/J·O 보존 | **의도된 동작** | 유지 |
 | R-8 임시저장은 비활성 행도 저장 | **의도된 동작** | 유지 |
 | 4-1 제목 300자 초과 시 상신 실패 | **수정 (A안, 600자)** | ✅ 수정됨 |
@@ -235,11 +235,12 @@ FROM api_requestdocument ORDER BY id DESC LIMIT 10;
 - 왜 위험: 변경 유형과 첨부가 불일치. 상세에서 이미지가 잘못 노출될 수 있음.
 - 확인: `수정` 선택 후 이미지 붙여넣기 → `없음` 전환 → 임시저장 → `detail.mshot_image_copy*` 잔존 확인.
 
-### R-6 🟡 메인 라인 변경 시 C가문 리전 값 잔존
-- 위치: 라인 변경 effect (`index.tsx:351`) — `process_selection/partid/process_id` 와 J/O/bb 는 초기화하지만
-  `prodc_*` **detail 값**은 초기화하지 않는다(리전 제품 옵션만 비움).
-- 현상: 메인 라인을 바꿔도 이전 라인 기준으로 복사됐던 상/중/하판 조합이 남을 수 있음.
-- 확인: C가문 Yes 로 상/하판 채운 뒤 STEP1 라인 변경 → 임시저장 → `detail.prodc_top_line` 이 옛 라인인지 확인.
+### R-6 ✅ 메인 라인 변경 시 C가문 리전 값 잔존 (수정됨)
+- 위치: 라인 변경 effect (`index.tsx` "라인 변경 → 조합법 fetch + 하위 초기화").
+- **적용된 수정:** 이 effect 의 `!isLoadingEditRef` 블록에 `prodc_top/middle/bottom_line/process/product`,
+  `prodc_middle_use`, 지도편차(top/bottom), `rev_yn/rev_entries` 초기화 + `setProdcCopyRegion(null)` +
+  리전 process/product 옵션 비우기를 추가했다. 이제 메인 라인을 바꾸면 옛 라인 기준 C가문/REV 값이 남지 않는다.
+- 확인: C가문 Yes 로 상/하판 채운 뒤 STEP1 라인 변경 → `detail.prodc_top_line` 등이 **비워지는지** 확인.
 
 ### R-7 🟡 (설계상 의도) map_type 변경은 Step1/3/4/5 보존
 - 위치: `handleMapTypeChangeConfirm` (`index.tsx:1263`)
