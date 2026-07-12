@@ -121,6 +121,16 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-07 — 조건부 필드 초기화 + REV i18n)
+
+- **조건부 섹션 '해제' 시 하위 값 초기화(감사 R-2~R-6)**: 숨겨진 채 state 에 남아 backend 에 잘못 저장되던 값들을 비운다. `index.tsx` 핸들러 + `StepMap` select 연결.
+  - `handleOnlyProdcChange`(C가문 No): REV·상/중/하판·지도편차(prodc)·prodc 옵션·`prodcCopyRegion` 초기화.
+  - `handleMapChangeChange`(`변경 없음`): `map_value_x/y`·`map_reason` 초기화.
+  - `handleEaChangeChange`(`변경 없음`): `ea_value` 초기화.
+  - `handleMshotChangeChange`(없음·삭제): `mshot_image_copy/top/bottom` 초기화(다중 붙여넣기는 원래 마지막 1개만 저장).
+  - **메인 라인 변경 effect(R-6)**: `prodc_*`·`prodc_middle_use`·지도편차·`rev_yn/rev_entries`·`prodcCopyRegion`·리전 옵션까지 함께 초기화.
+- **REV 하드코딩 i18n 이관**: `REV 여부`·`GDS version`·`Layer / GDS version`·`GDS version 입력`·`모든 Layer가 추가되었습니다.`·`+ 추가`·`삭제`(표) → `request.rev_*` / `common.delete` 키(ko/en 동시).
+
 ### 추가 변경 이력 (2026-07 — MAP(C가문) 입력 UX 수정)
 
 - **C가문 '적용 위치' 중앙 선택 시 자동 사용**: `handleProdcRegionSelect` 에서 중앙(middle) 라디오 선택 시 `prodc_middle_use='사용'` 으로 바꿔 행이 펼쳐지고 데이터가 채워지도록 했다(다른 위치로 전환 시 '미사용' 복원). 기존에는 중앙 선택 시 데이터는 복사되나 사용여부가 '미사용'이라 `ProdcRow` 가 셀렉트를 숨겨 보이지 않았다.

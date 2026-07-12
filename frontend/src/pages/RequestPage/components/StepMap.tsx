@@ -208,7 +208,7 @@ const StepMap: React.FC<StepMapProps> = ({
 
               {/* REV 여부 */}
               <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '14px', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <label className="form-label" style={{ marginBottom: 0 }}>REV 여부<GuideBadge fk="step2_rev" tk={t('guide.feat.step2_rev' as never)} /></label>
+                <label className="form-label" style={{ marginBottom: 0 }}>{t('request.rev_yn_label')}<GuideBadge fk="step2_rev" tk={t('guide.feat.step2_rev' as never)} /></label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   {(['YES', 'NO'] as const).map((val) => (
                     <button
@@ -271,7 +271,7 @@ const StepMap: React.FC<StepMapProps> = ({
                           }) : (
                             <span style={{ fontSize: '13px', color: '#999' }}>
                               {(detail.rev_entries ?? []).length > 0
-                                ? '모든 Layer가 추가되었습니다.'
+                                ? t('request.rev_all_added')
                                 : t('request.jayer_no_layer_data')}
                             </span>
                           )}
@@ -279,13 +279,13 @@ const StepMap: React.FC<StepMapProps> = ({
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label className="form-label" style={{ marginBottom: 0 }}>GDS version</label>
+                        <label className="form-label" style={{ marginBottom: 0 }}>{t('request.rev_gds')}</label>
                         <input
                           className="form-control"
                           style={{ width: '360px' }}
                           value={revGds}
                           onChange={(e) => setRevGds(e.target.value)}
-                          placeholder="GDS version 입력"
+                          placeholder={t('request.rev_gds_placeholder')}
                         />
                       </div>
 
@@ -304,7 +304,7 @@ const StepMap: React.FC<StepMapProps> = ({
                           setRevGds('');
                         }}
                       >
-                        + 추가
+                        {t('request.rev_add')}
                       </button>
                     </div>
 
@@ -314,8 +314,8 @@ const StepMap: React.FC<StepMapProps> = ({
                         <table className="table">
                           <thead>
                             <tr>
-                              <th style={{ width: '55%' }}>Layer</th>
-                              <th style={{ width: '30%' }}>GDS version</th>
+                              <th style={{ width: '55%' }}>{t('request.rev_layer')}</th>
+                              <th style={{ width: '30%' }}>{t('request.rev_gds')}</th>
                               <th style={{ width: '15%', textAlign: 'center' }}></th>
                             </tr>
                           </thead>
@@ -335,7 +335,7 @@ const StepMap: React.FC<StepMapProps> = ({
                                       }))
                                     }
                                   >
-                                    삭제
+                                    {t('common.delete')}
                                   </button>
                                 </td>
                               </tr>

@@ -917,28 +917,28 @@ type Page = { label: string; content: React.ReactNode };
                     <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(revChanged ? { border: '2px solid #dc3545' } : {}) }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start' }}>
                         <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
-                          <div style={fieldLabel}>REV 여부</div>
+                          <div style={fieldLabel}>{t('request.rev_yn_label')}</div>
                           <div style={fieldValue}>{revYn}</div>
                         </div>
                         {revYn === 'YES' && Array.isArray(revEntries) && revEntries.length > 0 && (
                           <div style={{ flex: 1 }}>
-                            <div style={fieldLabel}>Layer / GDS version</div>
-                            <table style={{ borderCollapse: 'collapse', marginTop: 4, fontSize: '12px' }}>
-                              <thead>
-                                <tr>
-                                  <th style={{ border: '1px solid #ddd', padding: '3px 8px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>Layer</th>
-                                  <th style={{ border: '1px solid #ddd', padding: '3px 8px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>GDS version</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {revEntries.map((entry, idx) => (
-                                  <tr key={idx}>
-                                    <td style={{ border: '1px solid #ddd', padding: '3px 8px', whiteSpace: 'nowrap' }}>{entry.layers?.join(', ')}</td>
-                                    <td style={{ border: '1px solid #ddd', padding: '3px 8px', whiteSpace: 'nowrap' }}>{entry.gds}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                            <div style={{ ...fieldLabel, marginBottom: 6 }}>{t('request.rev_layer_gds')}</div>
+                            {/* 카드형 + Layer pill (디자인 B) */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              {revEntries.map((entry, idx) => (
+                                <div key={idx} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: 'var(--bg-card)', border: '1px solid var(--border)', borderLeft: '4px solid var(--accent)', borderRadius: 8, padding: '8px 12px' }}>
+                                  <div style={{ flex: '0 0 auto', minWidth: 110 }}>
+                                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>{t('request.rev_gds')}</div>
+                                    <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--accent)' }}>{entry.gds}</div>
+                                  </div>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                    {(entry.layers ?? []).map((layer, li) => (
+                                      <span key={li} style={{ background: 'var(--accent-light)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 999, padding: '2px 10px', fontSize: '0.78rem', fontWeight: 700 }}>{layer}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -977,15 +977,17 @@ type Page = { label: string; content: React.ReactNode };
 
             return (
               <>
-                {/* Inter — 다른 항목(map/mshot)과 동일하게 별도 섹션 박스로 표시 */}
-                {detail.inter && (
+                {/* Inter — YES 일 때만, 버튼이 아닌 글자(코멘트)로 표시 (Xs/Ys 는 선택 시에만) */}
+                {detail.inter === 'YES' && (
                   <div style={rowStyle}>
                     <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
                       <div style={fieldLabel}>{t('request.map_opt_inter')}</div>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 4 }}>
-                        <div style={tagStyle(detail.inter === 'YES')}>{detail.inter}</div>
-                        {detail.inter === 'YES' && detail.inter_xs === '적용' && <div style={tagStyle(true)}>{t('request.map_opt_inter_xs')}</div>}
-                        {detail.inter === 'YES' && detail.inter_ys === '적용' && <div style={tagStyle(true)}>{t('request.map_opt_inter_ys')}</div>}
+                      <div style={fieldValue}>
+                        {[
+                          t('approval.inter_applied'),
+                          detail.inter_xs === '적용' ? t('approval.inter_xs_applied') : null,
+                          detail.inter_ys === '적용' ? t('approval.inter_ys_applied') : null,
+                        ].filter(Boolean).join(' / ')}
                       </div>
                     </div>
                   </div>
