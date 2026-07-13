@@ -1332,9 +1332,13 @@ type Page = { label: string; content: React.ReactNode };
     fontSize: '0.82rem',
   });
 
+  // 검토자(RV)는 지정됐을 때만 행으로 노출. 후결자(RA)는 R단계 다음 위치에 표시.
+  const hasReviewer = (doc.approval_steps ?? []).some((s) => s.agent === 'RV');
   const AGENTS: Array<{ key: string; label: string }> = [
     { key: 'PL', label: t('approval.agent_PL' as any) },
     { key: 'R', label: t('approval.agent_R') },
+    ...(hasReviewer ? [{ key: 'RV', label: t('approval.agent_RV' as any) }] : []),
+    { key: 'RA', label: t('approval.agent_RA' as any) },
     { key: 'P', label: t('approval.agent_P') },
     { key: 'J', label: t('approval.agent_J') },
     { key: 'O', label: t('approval.agent_O') },
