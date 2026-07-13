@@ -633,7 +633,7 @@ export default function HomePage(): React.ReactElement {
                   {recent.flatMap((doc) => {
                     // 결재 현황(ApprovalPage)과 동일한 계산·렌더로 현재 단계를 표시한다.
                     const rows = getDocTableRows(doc, t);
-                    const isParallel = rows.length === 2;
+                    const isParallel = rows.length >= 2;
                     const isPaused = doc.status === 'pause';
                     const undecided = t('approval.due_date_undecided');
                     return rows.map((row, idx) => {

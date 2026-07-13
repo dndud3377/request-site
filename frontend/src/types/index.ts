@@ -44,7 +44,7 @@ export type VocStatus = 'checking' | 'completed' | 'rejected';
 
 export type VocCategory = 'inquiry' | 'error_report' | 'feature_request' | 'task_request';
 
-export type AgentType = 'PL' | 'R' | 'P' | 'J' | 'O' | 'E';
+export type AgentType = 'PL' | 'R' | 'RV' | 'P' | 'J' | 'O' | 'E' | 'RA';
 export type StepAction = 'pending' | 'approved' | 'rejected';
 
 // 역할 → 담당자 매핑 (null 제외)
@@ -114,6 +114,7 @@ export interface RequestDocument {
   can_request_pause?: boolean; // 중단 요청 가능(작성자 본인·진행 중·기존 요청 없음)
   can_resume?: boolean;        // 재개 가능(작성자 본인·pause 상태)
   pause_request?: PauseRequestInfo | null; // 활성 중단 요청 (없으면 null)
+  post_approver_fixed_loginid?: string | null; // 고정 후결자(.env) loginid — '🔒 고정' 표시/변경 잠금용
 }
 
 export type CreateDocumentInput = Omit<
@@ -314,6 +315,9 @@ export interface DetailFormState {
 
   // 통보처: 결재 권한 없이 상신·결재완료 시 메일만 받는 인원(loginid로 발송 시점에 이메일 조회)
   notifiers: NotifierRef[];
+
+  // C가문(only_prodc=YES) 추가 후결자 — 상신 시 PL 중 지정. 고정 후결자(.env)는 별도로 항상 포함.
+  post_approvers?: NotifierRef[];
 }
 
 // 통보자 참조: 화면 표시용 이름 + 메일 발송용 loginid

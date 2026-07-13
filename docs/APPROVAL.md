@@ -152,6 +152,21 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 - **인가/수정**: `doc_permissions.can_edit` 에 pause=작성자 본인 허용, `can_request_pause`/`can_resume` 헬퍼 추가. 시리얼라이저가 `can_request_pause`/`can_resume`/`pause_request`(state·reason·target/confirmed step ids) 를 내려줘 프론트가 버튼·배너·확인현황을 렌더한다.
 - ⚠️ 메일 알림(중단요청/확인/재개)은 이번 범위에 **미포함**.
 
+### Case N — R단계 개편: 담당자 → 검토자 → 후결자(병렬) (2026-07)
+
+RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)** 로 재구성했다.
+신규 agent: `RV`(검토자), `RA`(후결자). 마이그레이션 `0008`.
+
+- **담당자(R)**: PL 전원 합의 후 생성되는 기존 R 단계(RFG 팀 1명). **지정하기**로 지정.
+- **검토자(RV)**: 지정하기에서 담당자와 **함께** 지정(선택 — '검토자 없음' 가능, RFG 팀). 지정 시 `RV` 단계 생성(`assign_step` 확장, `reviewer_loginid`). 담당자 합의 **후에만** 처리 가능(`approve_step` 순차 가드).
+- **전환(병렬)**: 담당자(검토자 있으면 검토자까지) 합의 시 `_advance_to_parallel` → **P(4영업일)·O(6영업일)·[E(plel)] + 후결자(RA, 6영업일 병렬)** 생성.
+  - **Only MAP**: P/O/E 없이 **후결자(RA)만** 생성 → 후결자 전원 합의 시 최종 승인. (후결자 미설정 시 즉시 승인)
+- **후결자(RA)**: **고정 1명**(`settings.POST_APPROVER_LOGINID`, `.env`, RFG 팀) + **C가문(only_prodc=YES) 추가 후결자**(상신 모달에서 PL 중 지정, `detail.post_approvers`). 최소 1명 필수(`_validate_post_approvers`). 고정은 PL 후보 목록에 안 뜸(TE_R 이라 자동 제외).
+- **최종 승인**: `J + O[+E] + 후결자(RA) 전원` 합의(Only MAP 은 RA 만). `approve_step` 최종 판정에 RA 포함.
+- **후결자 변경**: 작성자(또는 MASTER)가 결재 중 **C가문 추가 후결자(미합의 RA)** 를 교체(`change_post_approver`). **고정 후결자는 변경 불가**.
+- **표시**: 결재현황/홈 현재단계 — 담당자→검토자 순차, 병렬은 경로1(P/J)·경로2(O[/E])·**경로3(후결자 N/M)** 로 최대 3행. 상세 '결재 경로' 탭은 **R 다음에 검토자(지정 시)·후결자** 행을 표시.
+- ⚠️ **`.env` 설정 필요**: `POST_APPROVER_LOGINID=<RFG팀 loginid>`. `settings/base.py` 에서 읽음(규칙 D 사전 고지·동의). ⚠️ RV/RA 알림 메일은 범위 밖.
+
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)
 - start_date(당일 포함) 기준 n번째 영업일. 주말 + `Holiday(isholiday='Y')` 제외.
 

@@ -148,11 +148,13 @@ class ApprovalStep(models.Model):
 
     AGENT_CHOICES = [
         ('PL', '검토'),
-        ('R', '{{agent_R}}'),
+        ('R', '{{agent_R}}'),      # RFG 담당자
+        ('RV', '검토자'),           # RFG 검토자(담당자 다음, 선택)
         ('P', '{{agent_P}}'),
         ('J', '{{agent_J}}'),
         ('O', '{{agent_O}}'),
         ('E', '{{agent_E}}'),
+        ('RA', '후결자'),           # 후결자(R단계 이후 병렬)
     ]
 
     ACTION_CHOICES = [

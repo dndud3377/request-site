@@ -10,7 +10,7 @@ import PagedDetailView from '../components/PagedDetailView';
 import { canUserAgree, canUserAssign, canUserClaim, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend } from '../types';
 import { formatDate } from '../utils/date';
-import { getDocTableRows, getDueDateDisplay, getFinalCompletionDate } from '../utils/approvalTable';
+import { getDocTableRows, getDueDateDisplay, getFinalCompletionDate, getCurrentRound } from '../utils/approvalTable';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS } from './approvalTourSeed';
 
 // 전체 가이드 상세 모달에서 특정 페이지로 이동하기 위한 페이지 인덱스
@@ -85,6 +85,13 @@ export default function ApprovalPage(): React.ReactElement {
   // 지정하기 UI (모달 footer)
   const [assigningOpen, setAssigningOpen] = useState(false);
   const [assigningUserId, setAssigningUserId] = useState('');
+  const [assigningReviewerId, setAssigningReviewerId] = useState(''); // R단계 검토자('' = 검토자 없음)
+
+  // 후결자 변경 UI (작성자 — C가문 추가 후결자만, 고정 후결자 제외)
+  const [paChangeOpen, setPaChangeOpen] = useState(false);
+  const [paOldLoginid, setPaOldLoginid] = useState('');
+  const [paNewLoginid, setPaNewLoginid] = useState('');
+  const [paCandidates, setPaCandidates] = useState<UserWithRole[]>([]);
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
   const [teamMembers, setTeamMembers] = useState<UserWithRole[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
@@ -547,7 +554,7 @@ export default function ApprovalPage(): React.ReactElement {
     navigate('/request', { state: { editDocId: doc.id } });
   };
 
-  const handleAssign = async (agent: AgentType, loginid: string, userName: string) => {
+  const handleAssign = async (agent: AgentType, loginid: string, userName: string, reviewerLoginid?: string) => {
     if (!selected) return;
     if (isTourMode) {
       // 투어: 실제 API 대신 로컬 상태로 해당 단계에 담당자 배정 결과를 반영
@@ -567,7 +574,22 @@ export default function ApprovalPage(): React.ReactElement {
     }
     setProcessing(true);
     try {
-      await documentsAPI.assignStep(selected.id, agent, loginid, userName);
+      await documentsAPI.assignStep(selected.id, agent, loginid, userName, reviewerLoginid);
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleChangePostApprover = async () => {
+    if (!selected || !paOldLoginid || !paNewLoginid) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.changePostApprover(selected.id, paOldLoginid, paNewLoginid);
+      addToast(t('approval.change_post_approver_success'), 'success');
+      setPaChangeOpen(false); setPaOldLoginid(''); setPaNewLoginid('');
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');
@@ -690,7 +712,7 @@ export default function ApprovalPage(): React.ReactElement {
             <tbody>
               {docs.flatMap((doc) => {
                 const rows = getDocTableRows(doc, t);
-                const isParallel = rows.length === 2;
+                const isParallel = rows.length >= 2;
                 const isPaused = doc.status === 'pause';
                 const undecided = t('approval.due_date_undecided');
                 return rows.map((row, idx) => {
@@ -918,6 +940,8 @@ export default function ApprovalPage(): React.ReactElement {
             if (s.action !== 'pending') return false;
             if (isMaster) return true;
             if (isPL && s.agent === 'PL') return true;
+            // 본인이 배정된 단계(RV 검토자·RA 후결자 포함)도 노출
+            if (s.assignee_loginid && s.assignee_loginid === currentUser.username) return true;
             return s.agent === userAgent;
           }) ?? [];
           // 투어 모드에서는 '지정하기' 시연을 위해 R 단계(아직 미지정)를 지정 가능 단계로 본다.
@@ -925,7 +949,14 @@ export default function ApprovalPage(): React.ReactElement {
           const assignableStep = isTourMode
             ? selected?.approval_steps?.find((s) => s.agent === 'R' && s.action === 'pending' && !s.assignee_loginid)
             : pendingSteps.find((s) => canUserAssign(currentUser, s));
-          const actableStep = pendingSteps.find((s) => canUserAgree(currentUser, s));
+          // RV(검토자)는 담당자(R) 합의 후에만 처리 가능 → 그 전엔 actable 에서 제외
+          const rHandlerApproved = (selected?.approval_steps ?? []).some(
+            (s) => s.agent === 'R' && s.action === 'approved'
+              && (s.round ?? 1) === getCurrentRound(selected as RequestDocument)
+          );
+          const actableStep = pendingSteps.find(
+            (s) => canUserAgree(currentUser, s) && (s.agent !== 'RV' || rHandlerApproved)
+          );
           const isPLStep = actableStep?.agent === 'PL';
           // 검토중(claim) 가능 단계: J/O/E 중 담당 역할이 아직 미배정인 단계를 선점
           const claimableStep = isTourMode ? undefined : pendingSteps.find((s) => canUserClaim(currentUser, s));
@@ -954,8 +985,52 @@ export default function ApprovalPage(): React.ReactElement {
             pauseConfirmAgent = target?.agent;
           }
 
+          // 후결자 변경: 작성자 + under_review + 변경 가능한(미합의·고정 제외) RA 존재
+          const fixedPa = selected?.post_approver_fixed_loginid ?? '';
+          const changeableRa = (selected?.approval_steps ?? []).filter(
+            (s) => s.agent === 'RA' && s.action === 'pending' && !!s.assignee_loginid && s.assignee_loginid !== fixedPa
+          );
+          const canChangePa = !!selected && isPauseRequester && selected.status === 'under_review' && changeableRa.length > 0;
+
           return (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* 후결자 변경 (작성자 — C가문 추가 후결자) */}
+              {canChangePa && !paChangeOpen && (
+                <button
+                  className="btn btn-secondary"
+                  disabled={processing}
+                  onClick={async () => {
+                    setPaChangeOpen(true);
+                    setPaOldLoginid(changeableRa[0]?.assignee_loginid ?? '');
+                    setPaNewLoginid('');
+                    setLoadingMembers(true);
+                    try { const r = await usersAPI.list('PL'); setPaCandidates(r.data); } catch { setPaCandidates([]); }
+                    setLoadingMembers(false);
+                  }}
+                >
+                  {t('approval.change_post_approver')}
+                </button>
+              )}
+              {canChangePa && paChangeOpen && (
+                <>
+                  <select className="form-control" style={{ fontSize: '0.82rem', padding: '4px 8px', minWidth: 120 }}
+                    value={paOldLoginid} onChange={(e) => setPaOldLoginid(e.target.value)}>
+                    {changeableRa.map((s) => (
+                      <option key={s.id} value={s.assignee_loginid}>{s.assignee_name || s.assignee_loginid}</option>
+                    ))}
+                  </select>
+                  <span style={{ color: 'var(--text-muted)' }}>→</span>
+                  <select className="form-control" style={{ fontSize: '0.82rem', padding: '4px 8px', minWidth: 150 }}
+                    value={paNewLoginid} onChange={(e) => setPaNewLoginid(e.target.value)} disabled={loadingMembers}>
+                    <option value="">{loadingMembers ? t('common.loading') : t('approval.assign_select_placeholder')}</option>
+                    {paCandidates
+                      .filter((u) => u.loginid !== fixedPa && !(selected?.approval_steps ?? []).some((s) => s.agent === 'RA' && s.assignee_loginid === u.loginid))
+                      .map((u) => <option key={u.loginid} value={u.loginid}>{u.name} · {u.loginid}</option>)}
+                  </select>
+                  <button className="btn btn-primary btn-sm" disabled={!paNewLoginid || processing} onClick={handleChangePostApprover}>{t('common.confirm')}</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setPaChangeOpen(false); setPaOldLoginid(''); setPaNewLoginid(''); }}>{t('common.cancel')}</button>
+                </>
+              )}
               {/* 중단 요청 (작성자·진행 중) */}
               {selected && selected.can_request_pause && (
                 <button className="btn btn-pause" onClick={handleRequestPauseClick} disabled={processing}>
@@ -1169,6 +1244,23 @@ export default function ApprovalPage(): React.ReactElement {
                       </ul>
                     )}
                   </div>
+                  {/* R(RFG) 단계: 검토자 선택 (선택 — '검토자 없음' 가능, 담당자와 달라야 함) */}
+                  {assignableStep.agent === 'R' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700 }}>{t('approval.assign_reviewer_label')}</span>
+                      <select
+                        className="form-control"
+                        style={{ fontSize: '0.82rem', padding: '4px 8px', minWidth: 150 }}
+                        value={assigningReviewerId}
+                        onChange={(e) => setAssigningReviewerId(e.target.value)}
+                      >
+                        <option value="">{t('approval.assign_reviewer_none')}</option>
+                        {teamMembers.filter((u) => u.loginid !== assigningUserId).map((u) => (
+                          <option key={u.loginid} value={u.loginid}>{u.name} · {u.loginid}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <button
                     data-tour={isTourMode ? 'assign-confirm' : undefined}
                     className="btn btn-primary btn-sm"
@@ -1176,9 +1268,10 @@ export default function ApprovalPage(): React.ReactElement {
                     onClick={() => {
                       const user = teamMembers.find((u) => u.loginid === assigningUserId);
                       if (user) {
-                        handleAssign(assignableStep.agent, user.loginid, user.name);
+                        handleAssign(assignableStep.agent, user.loginid, user.name, assignableStep.agent === 'R' ? assigningReviewerId : undefined);
                         setAssigningOpen(false);
                         setAssigningUserId('');
+                        setAssigningReviewerId('');
                         setAssignDropdownOpen(false);
                       }
                     }}
@@ -1187,7 +1280,7 @@ export default function ApprovalPage(): React.ReactElement {
                   </button>
                   <button
                     className="btn btn-secondary btn-sm"
-                    onClick={() => { setAssigningOpen(false); setAssigningUserId(''); setAssignDropdownOpen(false); }}
+                    onClick={() => { setAssigningOpen(false); setAssigningUserId(''); setAssigningReviewerId(''); setAssignDropdownOpen(false); }}
                   >
                     {t('common.cancel')}
                   </button>
