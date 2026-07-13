@@ -10,7 +10,7 @@ import PagedDetailView from '../components/PagedDetailView';
 import { canUserAgree, canUserAssign, canUserClaim, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend } from '../types';
 import { formatDate } from '../utils/date';
-import { getDocTableRows, getDueDateDisplay, getFinalCompletionDate } from '../utils/approvalTable';
+import { getDocTableRows, getDueDateDisplay, getFinalCompletionDate, getCurrentRound } from '../utils/approvalTable';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS } from './approvalTourSeed';
 
 // 전체 가이드 상세 모달에서 특정 페이지로 이동하기 위한 페이지 인덱스
@@ -85,6 +85,7 @@ export default function ApprovalPage(): React.ReactElement {
   // 지정하기 UI (모달 footer)
   const [assigningOpen, setAssigningOpen] = useState(false);
   const [assigningUserId, setAssigningUserId] = useState('');
+  const [assigningReviewerId, setAssigningReviewerId] = useState(''); // R단계 검토자('' = 검토자 없음)
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
   const [teamMembers, setTeamMembers] = useState<UserWithRole[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
@@ -547,7 +548,7 @@ export default function ApprovalPage(): React.ReactElement {
     navigate('/request', { state: { editDocId: doc.id } });
   };
 
-  const handleAssign = async (agent: AgentType, loginid: string, userName: string) => {
+  const handleAssign = async (agent: AgentType, loginid: string, userName: string, reviewerLoginid?: string) => {
     if (!selected) return;
     if (isTourMode) {
       // 투어: 실제 API 대신 로컬 상태로 해당 단계에 담당자 배정 결과를 반영
@@ -567,7 +568,7 @@ export default function ApprovalPage(): React.ReactElement {
     }
     setProcessing(true);
     try {
-      await documentsAPI.assignStep(selected.id, agent, loginid, userName);
+      await documentsAPI.assignStep(selected.id, agent, loginid, userName, reviewerLoginid);
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');
@@ -690,7 +691,7 @@ export default function ApprovalPage(): React.ReactElement {
             <tbody>
               {docs.flatMap((doc) => {
                 const rows = getDocTableRows(doc, t);
-                const isParallel = rows.length === 2;
+                const isParallel = rows.length >= 2;
                 const isPaused = doc.status === 'pause';
                 const undecided = t('approval.due_date_undecided');
                 return rows.map((row, idx) => {
@@ -918,6 +919,8 @@ export default function ApprovalPage(): React.ReactElement {
             if (s.action !== 'pending') return false;
             if (isMaster) return true;
             if (isPL && s.agent === 'PL') return true;
+            // 본인이 배정된 단계(RV 검토자·RA 후결자 포함)도 노출
+            if (s.assignee_loginid && s.assignee_loginid === currentUser.username) return true;
             return s.agent === userAgent;
           }) ?? [];
           // 투어 모드에서는 '지정하기' 시연을 위해 R 단계(아직 미지정)를 지정 가능 단계로 본다.
@@ -925,7 +928,14 @@ export default function ApprovalPage(): React.ReactElement {
           const assignableStep = isTourMode
             ? selected?.approval_steps?.find((s) => s.agent === 'R' && s.action === 'pending' && !s.assignee_loginid)
             : pendingSteps.find((s) => canUserAssign(currentUser, s));
-          const actableStep = pendingSteps.find((s) => canUserAgree(currentUser, s));
+          // RV(검토자)는 담당자(R) 합의 후에만 처리 가능 → 그 전엔 actable 에서 제외
+          const rHandlerApproved = (selected?.approval_steps ?? []).some(
+            (s) => s.agent === 'R' && s.action === 'approved'
+              && (s.round ?? 1) === getCurrentRound(selected as RequestDocument)
+          );
+          const actableStep = pendingSteps.find(
+            (s) => canUserAgree(currentUser, s) && (s.agent !== 'RV' || rHandlerApproved)
+          );
           const isPLStep = actableStep?.agent === 'PL';
           // 검토중(claim) 가능 단계: J/O/E 중 담당 역할이 아직 미배정인 단계를 선점
           const claimableStep = isTourMode ? undefined : pendingSteps.find((s) => canUserClaim(currentUser, s));
@@ -1169,6 +1179,23 @@ export default function ApprovalPage(): React.ReactElement {
                       </ul>
                     )}
                   </div>
+                  {/* R(RFG) 단계: 검토자 선택 (선택 — '검토자 없음' 가능, 담당자와 달라야 함) */}
+                  {assignableStep.agent === 'R' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700 }}>{t('approval.assign_reviewer_label')}</span>
+                      <select
+                        className="form-control"
+                        style={{ fontSize: '0.82rem', padding: '4px 8px', minWidth: 150 }}
+                        value={assigningReviewerId}
+                        onChange={(e) => setAssigningReviewerId(e.target.value)}
+                      >
+                        <option value="">{t('approval.assign_reviewer_none')}</option>
+                        {teamMembers.filter((u) => u.loginid !== assigningUserId).map((u) => (
+                          <option key={u.loginid} value={u.loginid}>{u.name} · {u.loginid}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <button
                     data-tour={isTourMode ? 'assign-confirm' : undefined}
                     className="btn btn-primary btn-sm"
@@ -1176,9 +1203,10 @@ export default function ApprovalPage(): React.ReactElement {
                     onClick={() => {
                       const user = teamMembers.find((u) => u.loginid === assigningUserId);
                       if (user) {
-                        handleAssign(assignableStep.agent, user.loginid, user.name);
+                        handleAssign(assignableStep.agent, user.loginid, user.name, assignableStep.agent === 'R' ? assigningReviewerId : undefined);
                         setAssigningOpen(false);
                         setAssigningUserId('');
+                        setAssigningReviewerId('');
                         setAssignDropdownOpen(false);
                       }
                     }}
@@ -1187,7 +1215,7 @@ export default function ApprovalPage(): React.ReactElement {
                   </button>
                   <button
                     className="btn btn-secondary btn-sm"
-                    onClick={() => { setAssigningOpen(false); setAssigningUserId(''); setAssignDropdownOpen(false); }}
+                    onClick={() => { setAssigningOpen(false); setAssigningUserId(''); setAssigningReviewerId(''); setAssignDropdownOpen(false); }}
                   >
                     {t('common.cancel')}
                   </button>
