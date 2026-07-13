@@ -142,6 +142,10 @@ EXTERNAL_DB_PASSWORD = os.environ.get('EXTERNAL_DB_PASSWORD', '')
 
 APPROVAL_EMAIL_LIST = os.environ.get('APPROVAL_EMAIL_LIST', '').split(',')
 
+# 고정 후결자(RFG 팀) loginid — 모든 의뢰서에 항상 후결자로 포함된다.
+# C가문(only_prodc=YES) 문서는 이 고정 후결자에 더해 상신 시 지정한 PL(들)이 추가된다.
+POST_APPROVER_LOGINID = os.environ.get('POST_APPROVER_LOGINID', '')
+
 # DXHUB 메일 API (결재 알림 발송)
 DXHUB_MAIL_URL = os.environ.get('DXHUB_MAIL_URL', '')
 DXHUB_API_KEY = os.environ.get('DXHUB_API_KEY', '')
