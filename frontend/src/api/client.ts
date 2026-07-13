@@ -251,13 +251,24 @@ const assignStep = async (
   docId: number,
   agent: AgentType,
   assigneeLoginid: string,
-  assigneeName: string
+  assigneeName: string,
+  reviewerLoginid?: string
 ) => {
   const data = await post<{ message: string }>(`/documents/${docId}/assign-step/`, {
     agent,
     assignee_loginid: assigneeLoginid,
     assignee_name: assigneeName,
+    // R(RFG) 단계: 검토자(RV) 함께 지정 ('' 이면 검토자 없음)
+    ...(agent === 'R' ? { reviewer_loginid: reviewerLoginid ?? '' } : {}),
   });
+  return { data };
+};
+
+const changePostApprover = async (docId: number, oldLoginid: string, newLoginid: string) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${docId}/change-post-approver/`,
+    { old_loginid: oldLoginid, new_loginid: newLoginid }
+  );
   return { data };
 };
 
@@ -325,6 +336,7 @@ export const documentsAPI = {
   approveStep,
   rejectStep,
   assignStep,
+  changePostApprover,
   claimStep,
   requestPause,
   confirmPause,
