@@ -37,7 +37,9 @@ const ApprovalRouteDiagram: React.FC<{ embedded?: boolean; paused?: boolean }> =
         <Arrow />
         <Box label={agent('PL')} />
         <Arrow />
-        <Box label={agent('R')} />
+        <Box label={t('approval.stage_handler')} />
+        <Arrow />
+        <Box label={t('approval.stage_reviewer')} dim />
         <Arrow />
 
         <div className="route-diagram-parallel">
@@ -52,6 +54,10 @@ const ApprovalRouteDiagram: React.FC<{ embedded?: boolean; paused?: boolean }> =
             <Box label={agent('O')} />
             <span className="route-diagram-plus" aria-hidden="true">+</span>
             <Box label={agent('E')} dim />
+          </div>
+          <div className="route-diagram-path">
+            <span className="route-diagram-path-tag">{t('approval.stage_post')}</span>
+            <Box label={t('approval.stage_post')} />
           </div>
         </div>
 
