@@ -3,6 +3,14 @@ import type { TFunction } from 'i18next';
 import { RequestDocument } from '../types';
 import { formatDate } from './date';
 
+// R단계 하위 역할 라벨: R=담당자 / RV=검토자 / RA=후결자, 그 외는 agent_* 사용
+const stageLabel = (agent: string, t: TFunction): string => {
+  if (agent === 'R') return t('approval.stage_handler' as any);
+  if (agent === 'RV') return t('approval.stage_reviewer' as any);
+  if (agent === 'RA') return t('approval.stage_post' as any);
+  return t(`approval.agent_${agent}` as any);
+};
+
 // TE_O/TE_E는 담당자 지정 불필요 — 나머지 단계에서 담당자 미지정 시 'unassigned' 반환
 export const getDisplayStatus = (doc: RequestDocument): string => {
   if (doc.status !== 'under_review') return doc.status;
@@ -33,17 +41,19 @@ export const getDueDateDisplay = (
   return { text: formatDate(dueDate), cls: '' };
 };
 
-// 최종 완료 예상일: max(path1_end, path2_end)
+// 최종 완료 예상일: max(path1_end, path2_end, path3_end(후결자))
 export const getFinalCompletionDate = (doc: RequestDocument): string => {
   const maxRound = getCurrentRound(doc);
   const currentSteps = (doc.approval_steps ?? []).filter(s => (s.round ?? 1) === maxRound);
-  const rStep = currentSteps.find(s => s.agent === 'R');
-  if (!rStep || rStep.action !== 'approved') return '-';
+  // 병렬 단계(P/O/E/RA)가 시작돼야 최종 완료예정 산출 가능
+  const parallelPresent = currentSteps.some(s => ['P', 'O', 'E', 'RA'].includes(s.agent));
+  if (!parallelPresent) return '-';
 
   const pStep = currentSteps.find(s => s.agent === 'P');
   const jStep = currentSteps.find(s => s.agent === 'J');
   const oStep = currentSteps.find(s => s.agent === 'O');
   const eStep = currentSteps.find(s => s.agent === 'E');
+  const raSteps = currentSteps.filter(s => s.agent === 'RA');
 
   // path2: max(O.due, E.due)
   const path2Dates = [oStep?.due_date, eStep?.due_date].filter(Boolean) as string[];
@@ -59,13 +69,17 @@ export const getFinalCompletionDate = (doc: RequestDocument): string => {
     path1End = d.toISOString().slice(0, 10);
   }
 
-  const candidates = [path1End, path2End].filter(Boolean) as string[];
+  // path3: 후결자(RA) 최대 due
+  const raDates = raSteps.map(s => s.due_date).filter(Boolean) as string[];
+  const path3End = raDates.length > 0 ? raDates.reduce((a, b) => (a > b ? a : b)) : null;
+
+  const candidates = [path1End, path2End, path3End].filter(Boolean) as string[];
   if (candidates.length === 0) return '-';
   return formatDate(candidates.reduce((a, b) => (a > b ? a : b)));
 };
 
 export interface DocTableRow {
-  pathKey: 'single' | 'path1' | 'path2';
+  pathKey: 'single' | 'path1' | 'path2' | 'path3';
   stageText: string;
   dueDate: string | null;
   isDone: boolean;
@@ -91,7 +105,7 @@ const buildStageText = (
 ): string => {
   if (isDone) return t('common.status_approved');
   if (!step) return t('common.status_approved');
-  const label = t(`approval.agent_${step.agent}` as any);
+  const label = stageLabel(step.agent, t);
   return step.assignee_name ? `${label}(${step.assignee_name})` : label;
 };
 
@@ -103,7 +117,7 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
   if (doc.status === 'pause') {
     const pending = currentSteps.filter(s => s.action === 'pending');
     const stageText = pending.length > 0
-      ? pending.map(s => t(`approval.agent_${s.agent}` as any)).join(' / ')
+      ? pending.map(s => stageLabel(s.agent, t)).join(' / ')
       : '-';
     return [{
       pathKey: 'single',
@@ -129,97 +143,116 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
     }];
   }
 
-  const rStep = currentSteps.find(s => s.agent === 'R');
-  const inParallel = rStep?.action === 'approved';
+  // 병렬 단계(P/O/E/RA) 시작 여부
+  const parallelPresent = currentSteps.some(s => ['P', 'O', 'E', 'RA'].includes(s.agent));
 
-  if (!inParallel) {
-    const pending = currentSteps.filter(s => s.action === 'pending');
-    if (pending.length === 0) {
+  if (!parallelPresent) {
+    // R단계: 담당자(R) → 검토자(RV) 순차
+    const rStep = currentSteps.find(s => s.agent === 'R');
+    const rvStep = currentSteps.find(s => s.agent === 'RV');
+    if (rStep && rStep.action === 'pending') {
       return [{
         pathKey: 'single',
-        stageText: doc.status === 'approved' ? t('common.status_approved') : '-',
-        dueDate: null,
-        isDone: true,
-        pathStatus: doc.status,
+        stageText: buildStageText(rStep, false, t),
+        dueDate: rStep.due_date ?? null,
+        isDone: false,
+        pathStatus: rStep.assignee_loginid ? 'under_review' : 'unassigned',
       }];
     }
-    // R 단계 pending: assignee 여부로 상태 결정
-    const rPending = pending.find(s => s.agent === 'R');
-    const pathStatus = rPending
-      ? (rPending.assignee_loginid ? 'under_review' : 'unassigned')
-      : 'under_review';
-    const stageText = pending
-      .map(s => buildStageText(s, false, t))
-      .join(' / ');
+    if (rvStep && rvStep.action === 'pending') {
+      return [{
+        pathKey: 'single',
+        stageText: buildStageText(rvStep, false, t),
+        dueDate: rvStep.due_date ?? null,
+        isDone: false,
+        pathStatus: rvStep.assignee_loginid ? 'under_review' : 'unassigned',
+      }];
+    }
     return [{
       pathKey: 'single',
-      stageText,
-      dueDate: pending[0]?.due_date ?? null,
-      isDone: false,
-      pathStatus,
+      stageText: doc.status === 'approved' ? t('common.status_approved') : '-',
+      dueDate: null,
+      isDone: true,
+      pathStatus: doc.status,
     }];
   }
 
-  // 병렬 단계
+  // 병렬 단계: 경로1(P→J) ∥ 경로2(O[+E]) ∥ 경로3(후결자 RA). 존재하는 경로만 행으로 만든다.
+  const rows: DocTableRow[] = [];
   const pStep = currentSteps.find(s => s.agent === 'P');
   const jSteps = currentSteps.filter(s => s.agent === 'J');
   const oStep = currentSteps.find(s => s.agent === 'O');
   const eStep = currentSteps.find(s => s.agent === 'E');
+  const raSteps = currentSteps.filter(s => s.agent === 'RA');
 
-  const jPendingSteps = jSteps.filter(s => s.action === 'pending');
-  const path1PendingP = pStep?.action === 'pending' ? pStep : undefined;
-  const path1Done = !path1PendingP && jPendingSteps.length === 0;
-
-  let path1StageText: string;
-  let path1DueDate: string | null;
-  let path1PathStatus: string;
-  if (path1Done) {
-    path1StageText = t('common.status_approved');
-    path1DueDate = null;
-    path1PathStatus = doc.status === 'rejected' ? 'rejected' : 'approved';
-  } else if (path1PendingP) {
-    path1StageText = buildStageText(path1PendingP, false, t);
-    path1DueDate = path1PendingP.due_date ?? null;
-    path1PathStatus = doc.status === 'rejected' ? 'rejected' : path1PendingP.assignee_loginid ? 'under_review' : 'unassigned';
-  } else {
-    // J 단계는 검토중(claim) 방식 — 담당자 이름은 노출하지 않는다.
-    path1StageText = t(`approval.agent_J` as any);
-    path1DueDate = jPendingSteps[0]?.due_date ?? null;
-    const jHasUnassigned = jPendingSteps.some(s => !s.assignee_loginid);
-    path1PathStatus = doc.status === 'rejected' ? 'rejected' : jHasUnassigned ? 'unassigned' : 'under_review';
+  // 경로1: P/J
+  if (pStep || jSteps.length > 0) {
+    const path1PendingP = pStep?.action === 'pending' ? pStep : undefined;
+    const jPendingSteps = jSteps.filter(s => s.action === 'pending');
+    const path1Done = !path1PendingP && jPendingSteps.length === 0;
+    let stageText: string; let dueDate: string | null; let pathStatus: string;
+    if (path1Done) {
+      stageText = t('common.status_approved');
+      dueDate = null;
+      pathStatus = doc.status === 'rejected' ? 'rejected' : 'approved';
+    } else if (path1PendingP) {
+      stageText = buildStageText(path1PendingP, false, t);
+      dueDate = path1PendingP.due_date ?? null;
+      pathStatus = doc.status === 'rejected' ? 'rejected' : path1PendingP.assignee_loginid ? 'under_review' : 'unassigned';
+    } else {
+      // J는 검토중(claim) 방식 — 담당자 이름은 노출하지 않는다.
+      stageText = t('approval.agent_J' as any);
+      dueDate = jPendingSteps[0]?.due_date ?? null;
+      const jHasUnassigned = jPendingSteps.some(s => !s.assignee_loginid);
+      pathStatus = doc.status === 'rejected' ? 'rejected' : jHasUnassigned ? 'unassigned' : 'under_review';
+    }
+    rows.push({ pathKey: 'path1', stageText, dueDate, isDone: path1Done, pathStatus });
   }
 
-  const path2PendingSteps = ([oStep, eStep] as (typeof oStep)[]).filter(
-    (s): s is NonNullable<typeof oStep> => !!s && s.action === 'pending'
-  );
-  const path2Done = path2PendingSteps.length === 0;
-  const path2StageText = path2Done
-    ? t('common.status_approved')
-    : path2PendingSteps
-        .map(s => {
-          const label = t(`approval.agent_${s.agent}` as any);
-          return s.assignee_name ? `${label}(${s.assignee_name})` : label;
-        })
-        .join(' / ');
-  const path2DueDate = path2PendingSteps.reduce<string | null>((max, s) => {
-    if (!s.due_date) return max;
-    return !max || s.due_date > max ? s.due_date : max;
-  }, null);
+  // 경로2: O/E
+  if (oStep || eStep) {
+    const p2Pending = ([oStep, eStep] as (typeof oStep)[]).filter(
+      (s): s is NonNullable<typeof oStep> => !!s && s.action === 'pending'
+    );
+    const done = p2Pending.length === 0;
+    const stageText = done
+      ? t('common.status_approved')
+      : p2Pending.map(s => {
+          const l = t(`approval.agent_${s.agent}` as any);
+          return s.assignee_name ? `${l}(${s.assignee_name})` : l;
+        }).join(' / ');
+    const dueDate = p2Pending.reduce<string | null>((m, s) => {
+      if (!s.due_date) return m;
+      return !m || s.due_date > m ? s.due_date : m;
+    }, null);
+    rows.push({ pathKey: 'path2', stageText, dueDate, isDone: done, pathStatus: resolvePathStatus(p2Pending[0], done, doc.status) });
+  }
 
-  return [
-    {
-      pathKey: 'path1',
-      stageText: path1StageText,
-      dueDate: path1DueDate,
-      isDone: path1Done,
-      pathStatus: path1PathStatus,
-    },
-    {
-      pathKey: 'path2',
-      stageText: path2StageText,
-      dueDate: path2DueDate,
-      isDone: path2Done,
-      pathStatus: resolvePathStatus(path2PendingSteps[0], path2Done, doc.status),
-    },
-  ];
+  // 경로3: 후결자(RA) — N/M 합의로 진행 표시
+  if (raSteps.length > 0) {
+    const approved = raSteps.filter(s => s.action === 'approved').length;
+    const total = raSteps.length;
+    const done = approved === total;
+    const label = t('approval.stage_post' as any);
+    const stageText = done ? t('common.status_approved') : `${label} (${approved}/${total})`;
+    const dueDate = raSteps.filter(s => s.action === 'pending').reduce<string | null>((m, s) => {
+      if (!s.due_date) return m;
+      return !m || s.due_date > m ? s.due_date : m;
+    }, null);
+    rows.push({
+      pathKey: 'path3',
+      stageText,
+      dueDate,
+      isDone: done,
+      pathStatus: doc.status === 'rejected' ? 'rejected' : done ? 'approved' : 'under_review',
+    });
+  }
+
+  return rows.length > 0 ? rows : [{
+    pathKey: 'single',
+    stageText: doc.status === 'approved' ? t('common.status_approved') : '-',
+    dueDate: null,
+    isDone: true,
+    pathStatus: doc.status,
+  }];
 };
