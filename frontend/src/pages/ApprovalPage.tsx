@@ -86,6 +86,12 @@ export default function ApprovalPage(): React.ReactElement {
   const [assigningOpen, setAssigningOpen] = useState(false);
   const [assigningUserId, setAssigningUserId] = useState('');
   const [assigningReviewerId, setAssigningReviewerId] = useState(''); // R단계 검토자('' = 검토자 없음)
+
+  // 후결자 변경 UI (작성자 — C가문 추가 후결자만, 고정 후결자 제외)
+  const [paChangeOpen, setPaChangeOpen] = useState(false);
+  const [paOldLoginid, setPaOldLoginid] = useState('');
+  const [paNewLoginid, setPaNewLoginid] = useState('');
+  const [paCandidates, setPaCandidates] = useState<UserWithRole[]>([]);
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
   const [teamMembers, setTeamMembers] = useState<UserWithRole[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
@@ -577,6 +583,21 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
+  const handleChangePostApprover = async () => {
+    if (!selected || !paOldLoginid || !paNewLoginid) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.changePostApprover(selected.id, paOldLoginid, paNewLoginid);
+      addToast(t('approval.change_post_approver_success'), 'success');
+      setPaChangeOpen(false); setPaOldLoginid(''); setPaNewLoginid('');
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   // 철회 모달 상태
   const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
   const [withdrawDoc, setWithdrawDoc] = useState<RequestDocument | null>(null);
@@ -964,8 +985,52 @@ export default function ApprovalPage(): React.ReactElement {
             pauseConfirmAgent = target?.agent;
           }
 
+          // 후결자 변경: 작성자 + under_review + 변경 가능한(미합의·고정 제외) RA 존재
+          const fixedPa = selected?.post_approver_fixed_loginid ?? '';
+          const changeableRa = (selected?.approval_steps ?? []).filter(
+            (s) => s.agent === 'RA' && s.action === 'pending' && !!s.assignee_loginid && s.assignee_loginid !== fixedPa
+          );
+          const canChangePa = !!selected && isPauseRequester && selected.status === 'under_review' && changeableRa.length > 0;
+
           return (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* 후결자 변경 (작성자 — C가문 추가 후결자) */}
+              {canChangePa && !paChangeOpen && (
+                <button
+                  className="btn btn-secondary"
+                  disabled={processing}
+                  onClick={async () => {
+                    setPaChangeOpen(true);
+                    setPaOldLoginid(changeableRa[0]?.assignee_loginid ?? '');
+                    setPaNewLoginid('');
+                    setLoadingMembers(true);
+                    try { const r = await usersAPI.list('PL'); setPaCandidates(r.data); } catch { setPaCandidates([]); }
+                    setLoadingMembers(false);
+                  }}
+                >
+                  {t('approval.change_post_approver')}
+                </button>
+              )}
+              {canChangePa && paChangeOpen && (
+                <>
+                  <select className="form-control" style={{ fontSize: '0.82rem', padding: '4px 8px', minWidth: 120 }}
+                    value={paOldLoginid} onChange={(e) => setPaOldLoginid(e.target.value)}>
+                    {changeableRa.map((s) => (
+                      <option key={s.id} value={s.assignee_loginid}>{s.assignee_name || s.assignee_loginid}</option>
+                    ))}
+                  </select>
+                  <span style={{ color: 'var(--text-muted)' }}>→</span>
+                  <select className="form-control" style={{ fontSize: '0.82rem', padding: '4px 8px', minWidth: 150 }}
+                    value={paNewLoginid} onChange={(e) => setPaNewLoginid(e.target.value)} disabled={loadingMembers}>
+                    <option value="">{loadingMembers ? t('common.loading') : t('approval.assign_select_placeholder')}</option>
+                    {paCandidates
+                      .filter((u) => u.loginid !== fixedPa && !(selected?.approval_steps ?? []).some((s) => s.agent === 'RA' && s.assignee_loginid === u.loginid))
+                      .map((u) => <option key={u.loginid} value={u.loginid}>{u.name} · {u.loginid}</option>)}
+                  </select>
+                  <button className="btn btn-primary btn-sm" disabled={!paNewLoginid || processing} onClick={handleChangePostApprover}>{t('common.confirm')}</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setPaChangeOpen(false); setPaOldLoginid(''); setPaNewLoginid(''); }}>{t('common.cancel')}</button>
+                </>
+              )}
               {/* 중단 요청 (작성자·진행 중) */}
               {selected && selected.can_request_pause && (
                 <button className="btn btn-pause" onClick={handleRequestPauseClick} disabled={processing}>
