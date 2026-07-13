@@ -14,6 +14,7 @@ class DocPermFieldsMixin(serializers.Serializer):
     can_request_pause = serializers.SerializerMethodField()
     can_resume = serializers.SerializerMethodField()
     pause_request = serializers.SerializerMethodField()
+    post_approver_fixed_loginid = serializers.SerializerMethodField()
     requester_loginid = serializers.SerializerMethodField()
 
     def _perm_user(self):
@@ -47,6 +48,11 @@ class DocPermFieldsMixin(serializers.Serializer):
     def get_can_resume(self, obj):
         user = self._perm_user()
         return bool(user and doc_permissions.can_resume(user, obj))
+
+    def get_post_approver_fixed_loginid(self, obj):
+        """고정 후결자(.env) loginid — 프론트가 '🔒 고정' 표시·변경 잠금에 사용."""
+        from django.conf import settings
+        return (getattr(settings, 'POST_APPROVER_LOGINID', '') or '').strip() or None
 
     def get_pause_request(self, obj):
         """활성(요청/확정) 중단 요청 정보. 없으면 None.
@@ -133,7 +139,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'status', 'production_date', 'created_at', 'updated_at', 'submitted_at',
             'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw', 'notifier_mails',
-            'can_request_pause', 'can_resume', 'pause_request',
+            'can_request_pause', 'can_resume', 'pause_request', 'post_approver_fixed_loginid',
         ]
         read_only_fields = ['status', 'created_at', 'updated_at', 'submitted_at',
                             'designated_pl_loginid', 'designated_pl_name']
@@ -174,7 +180,7 @@ class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSeriali
             'product_name', 'status', 'production_date', 'created_at', 'submitted_at',
             'additional_notes', 'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw',
-            'can_request_pause', 'can_resume', 'pause_request',
+            'can_request_pause', 'can_resume', 'pause_request', 'post_approver_fixed_loginid',
         ]
 
     def get_designated_pl_loginid(self, obj):
