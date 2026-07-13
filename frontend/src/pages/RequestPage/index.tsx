@@ -217,6 +217,10 @@ export default function RequestPage(): React.ReactElement {
   const designeeContainerRef = useRef<HTMLDivElement>(null);
   const [designeeError, setDesigneeError] = useState('');
   const designeeInputRef = useRef<HTMLInputElement>(null);
+
+  // C가문(only_prodc=YES) 추가 후결자 — 상신 모달에서 PL 중 지정(고정 후결자 1명은 서버가 항상 포함)
+  const [postApprovers, setPostApprovers] = useState<{ loginid: string; name: string }[]>([]);
+  const [postApproverSearch, setPostApproverSearch] = useState('');
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // 통보자 다중 지정 (상신 모달) — 결재 권한 없이 상신·결재완료 메일만 받는 인원
@@ -690,6 +694,7 @@ export default function RequestPage(): React.ReactElement {
             ? parsed.detail.other_purpose
             : (parsed.detail.other_purpose ? [parsed.detail.other_purpose] : []);
           setDetail({ ...parsed.detail, other_purpose: normalizedOtherPurpose, bb_entries: loadedBbEntries, notifiers: parsed.detail.notifiers ?? [] });
+          setPostApprovers(Array.isArray(parsed.detail.post_approvers) ? parsed.detail.post_approvers : []);
         }
         if (parsed.jayerRows) {
           const fSets: FilterSet[] = (() => { try { return JSON.parse(localStorage.getItem('jayerFilterSets') ?? '[]'); } catch { return []; } })();
@@ -2659,7 +2664,8 @@ export default function RequestPage(): React.ReactElement {
       production_date: productionDate || null,
       reference_materials: note ?? '',
       additional_notes: JSON.stringify({
-        detail,
+        // C가문(only_prodc=YES) 추가 후결자를 detail 에 함께 저장(고정 후결자는 서버에서 추가)
+        detail: { ...detail, post_approvers: detail.only_prodc === 'Yes' ? postApprovers : [] },
         jayerRows: (isDraft ? jayerRows : jayerRows.filter(r => !r.disabled)).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
         oayerRows: (isDraft ? oayerRows : oayerRows.filter(r => !r.disabled)).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
         bbRows,
@@ -2878,6 +2884,11 @@ export default function RequestPage(): React.ReactElement {
     // (재개는 멈춘 단계부터 이어지므로 지정 PL 선택이 필요 없다)
     if (!isPeerReviewMode && !isResumeMode && designees.length === 0) {
       setDesigneeError(t('request.designee_required'));
+      return;
+    }
+    // C가문(only_prodc=YES): 추가 후결자 1명 이상 필수
+    if (!isPeerReviewMode && !isResumeMode && detail.only_prodc === 'Yes' && postApprovers.length === 0) {
+      addToast(t('request.post_approver_required'), 'error');
       return;
     }
     if (isPersistingRef.current) return;
@@ -3431,6 +3442,52 @@ export default function RequestPage(): React.ReactElement {
               <p style={{ color: 'var(--danger)', fontSize: '0.8rem', marginTop: 4 }}>{designeeError}</p>
             )}
           </div>
+
+          {/* 후결자: C가문(only_prodc=YES) 일 때만 — PL 중 1명 이상 지정(고정 후결자는 서버가 항상 포함) */}
+          {detail.only_prodc === 'Yes' && (
+            <div className="form-group" style={{ marginTop: 12 }}>
+              <label className="form-label">
+                {t('request.post_approver_label')} <span style={{ color: 'var(--danger)' }}>*</span>
+              </label>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 6px' }}>
+                {t('request.post_approver_help')}
+              </p>
+              {postApprovers.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                  {postApprovers.map((p) => (
+                    <span key={p.loginid} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: '0.82rem' }}>
+                      {p.name}
+                      <button type="button" onClick={() => setPostApprovers((prev) => prev.filter((x) => x.loginid !== p.loginid))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 2px', fontSize: '0.85rem', lineHeight: 1 }}>✕</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <input
+                className="form-control"
+                placeholder={t('request.post_approver_placeholder')}
+                value={postApproverSearch}
+                onChange={(e) => setPostApproverSearch(e.target.value)}
+              />
+              {postApproverSearch.trim() && (
+                <ul style={{ listStyle: 'none', margin: '4px 0 0', padding: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', maxHeight: 180, overflowY: 'auto' }}>
+                  {plUserOptions
+                    .filter((u) => !postApprovers.some((p) => p.loginid === u.loginid))
+                    .filter((u) => {
+                      const q = postApproverSearch.toLowerCase();
+                      return u.name.toLowerCase().includes(q) || u.loginid.toLowerCase().includes(q) || (u.mail ?? '').toLowerCase().includes(q);
+                    })
+                    .slice(0, 20)
+                    .map((u) => (
+                      <li key={u.loginid}
+                        onMouseDown={(e) => { e.preventDefault(); setPostApprovers((prev) => [...prev, { loginid: u.loginid, name: u.name }]); setPostApproverSearch(''); }}
+                        style={{ padding: '6px 10px', cursor: 'pointer', borderBottom: '1px solid var(--border-light)', fontSize: '0.85rem' }}>
+                        <strong>{u.name}</strong> <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{u.loginid}{u.mail ? ` · ${u.mail}` : ''}</span>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           {/* 통보자: 결재 권한 없이 상신·결재완료 메일만 받는 인원 (다중) */}
           <div className="form-group" data-tour="submit-notifier" style={{ marginTop: 12 }}>
