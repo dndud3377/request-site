@@ -3,9 +3,8 @@ import type { TFunction } from 'i18next';
 import { RequestDocument } from '../types';
 import { formatDate } from './date';
 
-// R단계 하위 역할 라벨: R=담당자 / RV=검토자 / RA=후결자, 그 외는 agent_* 사용
+// R단계 하위 역할 라벨: R=단계명(RFG) 그대로 / RV=검토자 / RA=후결자, 그 외는 agent_* 사용
 const stageLabel = (agent: string, t: TFunction): string => {
-  if (agent === 'R') return t('approval.stage_handler' as any);
   if (agent === 'RV') return t('approval.stage_reviewer' as any);
   if (agent === 'RA') return t('approval.stage_post' as any);
   return t(`approval.agent_${agent}` as any);
@@ -228,14 +227,16 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
     rows.push({ pathKey: 'path2', stageText, dueDate, isDone: done, pathStatus: resolvePathStatus(p2Pending[0], done, doc.status) });
   }
 
-  // 경로3: 후결자(RA) — N/M 합의로 진행 표시
+  // 경로3: 후결자(RA) — 미합의 후결자 이름을 표시 (다른 단계와 동일한 '라벨(이름)' 형식)
   if (raSteps.length > 0) {
-    const approved = raSteps.filter(s => s.action === 'approved').length;
-    const total = raSteps.length;
-    const done = approved === total;
+    const raPending = raSteps.filter(s => s.action === 'pending');
+    const done = raPending.length === 0;
     const label = t('approval.stage_post' as any);
-    const stageText = done ? t('common.status_approved') : `${label} (${approved}/${total})`;
-    const dueDate = raSteps.filter(s => s.action === 'pending').reduce<string | null>((m, s) => {
+    const names = raPending.map(s => s.assignee_name).filter(Boolean);
+    const stageText = done
+      ? t('common.status_approved')
+      : names.length > 0 ? `${label}(${names.join(' / ')})` : label;
+    const dueDate = raPending.reduce<string | null>((m, s) => {
       if (!s.due_date) return m;
       return !m || s.due_date > m ? s.due_date : m;
     }, null);
