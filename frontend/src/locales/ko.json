@@ -348,6 +348,7 @@
     "stage_handler": "담당자",
     "stage_reviewer": "검토자",
     "stage_post": "후결자",
+    "role_agreer": "합의자",
     "assign_handler_label": "담당자",
     "assign_reviewer_label": "검토자",
     "assign_reviewer_none": "검토자 없음",
