@@ -93,6 +93,7 @@ export default function ApprovalPage(): React.ReactElement {
   const [paNewLoginid, setPaNewLoginid] = useState('');
   const [paCandidates, setPaCandidates] = useState<UserWithRole[]>([]);
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
+  const [assignReviewerDropdownOpen, setAssignReviewerDropdownOpen] = useState(false); // R단계 검토자 드롭다운
   const [teamMembers, setTeamMembers] = useState<UserWithRole[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
 
@@ -1184,6 +1185,8 @@ export default function ApprovalPage(): React.ReactElement {
                   onClick={async () => {
                     setAssigningOpen(true);
                     setAssigningUserId('');
+                    setAssigningReviewerId('');
+                    setAssignReviewerDropdownOpen(false);
                     setLoadingMembers(true);
                     const members = await handleLoadTeamMembers(assignableStep.agent);
                     setTeamMembers(members);
@@ -1235,7 +1238,12 @@ export default function ApprovalPage(): React.ReactElement {
                             key={u.loginid}
                             data-tour={isTourMode && i === 0 ? 'assign-option' : undefined}
                             className="assign-dropdown-item"
-                            onClick={() => { setAssigningUserId(u.loginid); setAssignDropdownOpen(false); }}
+                            onClick={() => {
+                              setAssigningUserId(u.loginid);
+                              setAssignDropdownOpen(false);
+                              // 담당자 = 기존 검토자면 검토자 해제(둘은 서로 달라야 함)
+                              if (assigningReviewerId === u.loginid) setAssigningReviewerId('');
+                            }}
                           >
                             <strong>{u.name}</strong>
                             <span className="assign-dropdown-dept">{u.mail}</span>
@@ -1244,21 +1252,48 @@ export default function ApprovalPage(): React.ReactElement {
                       </ul>
                     )}
                   </div>
-                  {/* R(RFG) 단계: 검토자 선택 (선택 — '검토자 없음' 가능, 담당자와 달라야 함) */}
+                  {/* R(RFG) 단계: 검토자 선택 (담당자 지정과 동일한 드롭다운 — '검토자 없음' 가능, 담당자와 달라야 함) */}
                   {assignableStep.agent === 'R' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700 }}>{t('approval.assign_reviewer_label')}</span>
-                      <select
-                        className="form-control"
-                        style={{ fontSize: '0.82rem', padding: '4px 8px', minWidth: 150 }}
-                        value={assigningReviewerId}
-                        onChange={(e) => setAssigningReviewerId(e.target.value)}
-                      >
-                        <option value="">{t('approval.assign_reviewer_none')}</option>
-                        {teamMembers.filter((u) => u.loginid !== assigningUserId).map((u) => (
-                          <option key={u.loginid} value={u.loginid}>{u.name} · {u.loginid}</option>
-                        ))}
-                      </select>
+                      <div className="assign-dropdown" style={{ position: 'relative' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => setAssignReviewerDropdownOpen((o) => !o)}
+                          style={{ minWidth: 130, display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}
+                        >
+                          {assigningReviewerId ? (
+                            <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.3 }}>
+                              <span style={{ fontWeight: 600 }}>{teamMembers.find((u) => u.loginid === assigningReviewerId)?.name}</span>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{teamMembers.find((u) => u.loginid === assigningReviewerId)?.deptname}</span>
+                            </span>
+                          ) : (
+                            <span>{t('approval.assign_reviewer_none')}</span>
+                          )}
+                          <span aria-hidden="true">▾</span>
+                        </button>
+                        {assignReviewerDropdownOpen && (
+                          <ul className="assign-dropdown-list">
+                            <li
+                              className="assign-dropdown-item"
+                              onClick={() => { setAssigningReviewerId(''); setAssignReviewerDropdownOpen(false); }}
+                            >
+                              <strong>{t('approval.assign_reviewer_none')}</strong>
+                            </li>
+                            {teamMembers.filter((u) => u.loginid !== assigningUserId).map((u) => (
+                              <li
+                                key={u.loginid}
+                                className="assign-dropdown-item"
+                                onClick={() => { setAssigningReviewerId(u.loginid); setAssignReviewerDropdownOpen(false); }}
+                              >
+                                <strong>{u.name}</strong>
+                                <span className="assign-dropdown-dept">{u.mail}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
                     </div>
                   )}
                   <button
@@ -1273,6 +1308,7 @@ export default function ApprovalPage(): React.ReactElement {
                         setAssigningUserId('');
                         setAssigningReviewerId('');
                         setAssignDropdownOpen(false);
+                        setAssignReviewerDropdownOpen(false);
                       }
                     }}
                   >
@@ -1280,7 +1316,7 @@ export default function ApprovalPage(): React.ReactElement {
                   </button>
                   <button
                     className="btn btn-secondary btn-sm"
-                    onClick={() => { setAssigningOpen(false); setAssigningUserId(''); setAssigningReviewerId(''); setAssignDropdownOpen(false); }}
+                    onClick={() => { setAssigningOpen(false); setAssigningUserId(''); setAssigningReviewerId(''); setAssignDropdownOpen(false); setAssignReviewerDropdownOpen(false); }}
                   >
                     {t('common.cancel')}
                   </button>
