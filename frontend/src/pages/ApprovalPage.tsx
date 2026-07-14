@@ -1255,7 +1255,6 @@ export default function ApprovalPage(): React.ReactElement {
                   {/* R(RFG) 단계: 검토자 선택 (담당자 지정과 동일한 드롭다운 — '검토자 없음' 가능, 담당자와 달라야 함) */}
                   {assignableStep.agent === 'R' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700 }}>{t('approval.assign_reviewer_label')}</span>
                       <div className="assign-dropdown" style={{ position: 'relative' }}>
                         <button
                           type="button"
