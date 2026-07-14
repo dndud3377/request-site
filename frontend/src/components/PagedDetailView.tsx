@@ -1249,6 +1249,7 @@ type Page = { label: string; content: React.ReactNode };
   type StepDisplayInfo = {
     status: 'approved' | 'rejected' | 'reviewing' | 'unassigned' | 'waiting' | 'na';
     label: string;
+    roleLabel?: string; // R단계 내 역할 구분(합의자/검토자)
     assignee?: string;
     email?: string;
     date?: string;
@@ -1284,6 +1285,19 @@ type Page = { label: string; content: React.ReactNode };
     }
     if (isOnlyMap && ['P', 'J', 'O', 'E'].includes(agent)) {
       return [{ status: 'na', label: t('approval.step_na') }];
+    }
+    // R단계: 합의자(R) + 검토자(RV, 지정 시)를 한 행에 함께 표시
+    if (agent === 'R') {
+      const out: StepDisplayInfo[] = [];
+      const rSteps = allSteps.filter((s) => s.agent === 'R' && (s.round ?? 1) === round);
+      if (rSteps.length === 0) {
+        out.push({ status: 'waiting', label: t('approval.step_pending'), roleLabel: t('approval.role_agreer' as any) });
+      } else {
+        rSteps.forEach((s) => out.push({ ...stepToInfo(s), roleLabel: t('approval.role_agreer' as any) }));
+      }
+      const rvSteps = allSteps.filter((s) => s.agent === 'RV' && (s.round ?? 1) === round);
+      rvSteps.forEach((s) => out.push({ ...stepToInfo(s), roleLabel: t('approval.stage_reviewer' as any) }));
+      return out;
     }
     const steps = allSteps.filter((s) => s.agent === agent && (s.round ?? 1) === round);
     if (steps.length === 0) return [{ status: 'waiting', label: t('approval.step_pending') }];
@@ -1332,12 +1346,10 @@ type Page = { label: string; content: React.ReactNode };
     fontSize: '0.82rem',
   });
 
-  // 검토자(RV)는 지정됐을 때만 행으로 노출. 후결자(RA)는 R단계 다음 위치에 표시.
-  const hasReviewer = (doc.approval_steps ?? []).some((s) => s.agent === 'RV');
+  // 검토자(RV)는 R단계 행에 합의자와 함께 표시(getStepDisplays). 후결자(RA)는 R단계 다음 위치에 표시.
   const AGENTS: Array<{ key: string; label: string }> = [
     { key: 'PL', label: t('approval.agent_PL' as any) },
     { key: 'R', label: t('approval.agent_R') },
-    ...(hasReviewer ? [{ key: 'RV', label: t('approval.agent_RV' as any) }] : []),
     { key: 'RA', label: t('approval.agent_RA' as any) },
     { key: 'P', label: t('approval.agent_P') },
     { key: 'J', label: t('approval.agent_J') },
@@ -1412,6 +1424,9 @@ type Page = { label: string; content: React.ReactNode };
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                         {infos.map((info, i) => (
                           <div key={i} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                            {info.roleLabel && (
+                              <span style={{ minWidth: 48, fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)' }}>{info.roleLabel}</span>
+                            )}
                             <span style={statusBadgeStyle(info.status)}>{info.label}</span>
                             {info.assignee && (
                               <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{info.assignee}</span>
