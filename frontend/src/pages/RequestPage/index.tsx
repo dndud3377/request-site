@@ -221,6 +221,10 @@ export default function RequestPage(): React.ReactElement {
   // C가문(only_prodc=YES) 추가 후결자 — 상신 모달에서 PL 중 지정(고정 후결자 1명은 서버가 항상 포함)
   const [postApprovers, setPostApprovers] = useState<{ loginid: string; name: string }[]>([]);
   const [postApproverSearch, setPostApproverSearch] = useState('');
+  const [postApproverDropdownOpen, setPostApproverDropdownOpen] = useState(false);
+  const [postApproverDropdownRect, setPostApproverDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const postApproverInputRef = useRef<HTMLInputElement>(null);
+  const postApproverContainerRef = useRef<HTMLDivElement>(null);
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // 통보자 다중 지정 (상신 모달) — 결재 권한 없이 상신·결재완료 메일만 받는 인원
@@ -1050,6 +1054,18 @@ export default function RequestPage(): React.ReactElement {
       if (notifierContainerRef.current && !notifierContainerRef.current.contains(e.target as Node)) {
         setNotifierDropdownOpen(false);
         setNotifierDropdownRect(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // 후결자 지정 드롭다운 외부 클릭 감지
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (postApproverContainerRef.current && !postApproverContainerRef.current.contains(e.target as Node)) {
+        setPostApproverDropdownOpen(false);
+        setPostApproverDropdownRect(null);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -2850,10 +2866,10 @@ export default function RequestPage(): React.ReactElement {
         setPlUserOptions([]);
       }
     }
-    // 통보자 후보(전체 사용자) 로드 — 결재 권한과 무관하므로 role 필터 없음
+    // 통보자 후보(제품담당자 PL) 로드 — 검토자·후결자와 동일하게 PL 만 검색 대상
     if (!isPeerReviewMode && notifierUserOptions.length === 0) {
       try {
-        const res = await usersAPI.list();
+        const res = await usersAPI.list('PL');
         setNotifierUserOptions(res.data.filter(u => u.loginid !== currentUser.username));
       } catch {
         setNotifierUserOptions([]);
@@ -3462,30 +3478,67 @@ export default function RequestPage(): React.ReactElement {
                   ))}
                 </div>
               )}
-              <input
-                className="form-control"
-                placeholder={t('request.post_approver_placeholder')}
-                value={postApproverSearch}
-                onChange={(e) => setPostApproverSearch(e.target.value)}
-              />
-              {postApproverSearch.trim() && (
-                <ul style={{ listStyle: 'none', margin: '4px 0 0', padding: 0, border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', maxHeight: 180, overflowY: 'auto' }}>
-                  {plUserOptions
-                    .filter((u) => !postApprovers.some((p) => p.loginid === u.loginid))
-                    .filter((u) => {
+              <div ref={postApproverContainerRef} style={{ position: 'relative' }}>
+                <input
+                  ref={postApproverInputRef}
+                  className="form-control"
+                  placeholder={t('request.post_approver_placeholder')}
+                  value={postApproverSearch}
+                  onChange={(e) => {
+                    setPostApproverSearch(e.target.value);
+                    setPostApproverDropdownOpen(true);
+                    if (postApproverInputRef.current) {
+                      const r = postApproverInputRef.current.getBoundingClientRect();
+                      setPostApproverDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                    }
+                  }}
+                  onFocus={() => {
+                    setPostApproverDropdownOpen(true);
+                    if (postApproverInputRef.current) {
+                      const r = postApproverInputRef.current.getBoundingClientRect();
+                      setPostApproverDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                    }
+                  }}
+                  autoComplete="off"
+                />
+                {postApproverDropdownOpen && postApproverDropdownRect && createPortal(
+                  <div style={{ position: 'fixed', top: postApproverDropdownRect.top, left: postApproverDropdownRect.left, width: postApproverDropdownRect.width, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', zIndex: 9999, maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
+                    {(() => {
                       const q = postApproverSearch.toLowerCase();
-                      return u.name.toLowerCase().includes(q) || u.loginid.toLowerCase().includes(q) || (u.mail ?? '').toLowerCase().includes(q);
-                    })
-                    .slice(0, 20)
-                    .map((u) => (
-                      <li key={u.loginid}
-                        onMouseDown={(e) => { e.preventDefault(); setPostApprovers((prev) => [...prev, { loginid: u.loginid, name: u.name }]); setPostApproverSearch(''); }}
-                        style={{ padding: '6px 10px', cursor: 'pointer', borderBottom: '1px solid var(--border-light)', fontSize: '0.85rem' }}>
-                        <strong>{u.name}</strong> <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{u.loginid}{u.mail ? ` · ${u.mail}` : ''}</span>
-                      </li>
-                    ))}
-                </ul>
-              )}
+                      const filtered = plUserOptions.filter(u =>
+                        !postApprovers.some(p => p.loginid === u.loginid) &&
+                        (!q ||
+                          u.name.toLowerCase().includes(q) ||
+                          u.loginid.toLowerCase().includes(q) ||
+                          (u.mail ?? '').toLowerCase().includes(q) ||
+                          (u.deptname ?? '').toLowerCase().includes(q))
+                      );
+                      if (filtered.length === 0) {
+                        return <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('request.search_no_result')}</div>;
+                      }
+                      return filtered.map(u => (
+                        <div
+                          key={u.loginid}
+                          style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.875rem', borderBottom: '1px solid var(--border)' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = '')}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setPostApprovers((prev) => [...prev, { loginid: u.loginid, name: u.name }]);
+                            setPostApproverSearch('');
+                          }}
+                        >
+                          <span style={{ fontWeight: 600 }}>{u.name}</span>
+                          <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>
+                            {u.loginid}{u.mail ? ` · ${u.mail}` : ''}{u.deptname ? ` · ${u.deptname}` : ''}
+                          </span>
+                        </div>
+                      ));
+                    })()}
+                  </div>,
+                  document.body
+                )}
+              </div>
             </div>
           )}
 
