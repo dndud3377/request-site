@@ -172,6 +172,9 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 - **후결자 표시**: 경로3(RA)를 `후결자 (0/1)` 카운트 → **`후결자(미합의자 이름)`** 로 변경(다른 단계와 동일한 `라벨(이름)` 형식).
 - **검토자(RV) 지정 UI**: plain `<select>` → **담당자 지정과 동일한 커스텀 드롭다운**(`assign-dropdown`). 맨 위 '검토자 없음' 포함, 담당자로 고른 사람 제외.
 - **상신 검색 통일**: 동료 PL 지정·**후결자·통보처** 세 검색을 **PL(제품담당자)만 + 포커스/클릭 시 목록 표시**(포털 드롭다운)로 통일. 통보처 후보를 전체 사용자 → **PL만**으로 제한(`usersAPI.list('PL')`).
+- **검토자 지정 라벨 제거**: 지정하기 시 검토자 드롭다운 위 '검토자' 라벨 span 삭제(드롭다운 자체가 '검토자 없음' placeholder 로 구분).
+- **검토중(J/O/E) 팀 공동 합의**: 검토중으로 **선점(assignee 존재)** 되면 **같은 팀(역할↔agent) 누구나 합의/반려** 가능(`_can_act_on_step`/`canUserAgree`). 선점 전에는 먼저 검토중 필요. 검토중 버튼은 선점 즉시 숨김(`canUserClaim`=assignee 있으면 false). `approve_step`/`reject_step`에서 J를 assignee 필터 밖으로(회차당 단일), **RA(후결자)만** assignee 필터 유지. ⚠️ 표시되는 담당자명은 **선점자**(검토를 시작한 사람)이며, 다른 팀원이 합의해도 이름은 선점자로 남는다(감사기록은 `acted_at`/comment).
+- **결재경로 검토자 통합**: 상세 '결재 경로' 탭에서 검토자(RV) **별도 행 제거** → **R단계 행에 회차별 `합의자(R) + 검토자(RV, 지정 시)`** 함께 표시(`StepDisplayInfo.roleLabel`, i18n `approval.role_agreer`).
 
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)
 - start_date(당일 포함) 기준 n번째 영업일. 주말 + `Holiday(isholiday='Y')` 제외.

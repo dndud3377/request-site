@@ -35,11 +35,17 @@ export const canUserClaim = (user: { role: UserRoleWithNull } | MockUser, step: 
 
 // 합의/반려 가능 여부
 // - MASTER: 항상 가능
+// - J/O/E(검토중): 누군가 검토중으로 선점(assignee 존재)하면 같은 팀(역할↔agent) 누구나 합의/반려
 // - PL 역할: agent='PL' 단계에서 본인이 assignee일 때 (검토 처리)
-// - 나머지: 담당자로 지정(R·P)되거나 검토중 선점(J/O/E)한 본인
+// - 나머지(R·RV·P·RA): 담당자로 지정된 본인
 export const canUserAgree = (user: { role: UserRoleWithNull; username: string } | MockUser, step: ApprovalStepFrontend): boolean => {
   if (user.role === 'MASTER') return true;
   if (step.action !== 'pending') return false;
+  if (CLAIM_AGENTS.includes(step.agent)) {
+    // 아직 검토중 선점 전이면 불가(먼저 검토중 필요), 선점 후엔 같은 팀 누구나
+    if (!step.assignee_loginid) return false;
+    return !!user.role && ROLE_TO_AGENT[user.role] === step.agent;
+  }
   if (user.role === 'PL' && step.agent === 'PL') {
     return step.assignee_loginid === user.username;
   }

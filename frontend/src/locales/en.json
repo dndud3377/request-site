@@ -348,6 +348,7 @@
     "stage_handler": "Handler",
     "stage_reviewer": "Reviewer",
     "stage_post": "Post-approver",
+    "role_agreer": "Agreer",
     "assign_handler_label": "Handler",
     "assign_reviewer_label": "Reviewer",
     "assign_reviewer_none": "No reviewer",

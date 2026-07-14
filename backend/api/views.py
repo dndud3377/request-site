@@ -115,11 +115,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """합의/반려 인가 (canUserAgree 동일).
 
         - MASTER: 항상 허용
-        - 그 외: 해당 step 의 assignee 본인만 (R/P 는 지정, J/O/E 는 검토중 선점으로 배정됨)
+        - J/O/E(검토중): 누군가 검토중으로 선점(assignee 존재)하면 같은 팀(역할↔agent) 누구나 합의/반려
+        - 그 외(PL/R/RV/P/RA): 해당 step 의 assignee 본인만 (지정으로 배정됨)
         """
         role = getattr(user, 'role', '')
         if role == 'MASTER':
             return True
+        if step.agent in self._CLAIM_AGENTS:
+            # 아직 검토중 선점 전이면 불가(먼저 검토중 필요), 선점 후엔 같은 팀 누구나
+            if not step.assignee_id:
+                return False
+            return self._ROLE_TO_AGENT.get(role) == step.agent
         caller_loginid = getattr(user, 'loginid', '')
         return bool(caller_loginid and step.assignee and step.assignee.loginid == caller_loginid)
 
@@ -374,8 +380,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         max_round = self._max_round(document)
 
         # 잠근 뒤 최신 커밋본을 읽기 위해 locking read 사용
-        # J·RA 다중 담당자: 호출자의 assignee 단계만 조회
-        if agent in ('J', 'RA'):
+        # RA(후결자) 다중 담당자: 호출자의 assignee 단계만 조회.
+        # J/O/E(검토중)는 회차당 단일 단계이므로 assignee 필터 없이 조회 → 같은 팀 누구나 합의(인가는 _can_act_on_step).
+        if agent == 'RA':
             role = getattr(request.user, 'role', '')
             caller_loginid = getattr(request.user, 'loginid', '')
             if role == 'MASTER':
@@ -493,8 +500,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         max_round = self._max_round(document)
 
-        # J·RA 다중 담당자: 호출자의 assignee 단계만 조회
-        if agent in ('J', 'RA'):
+        # RA(후결자) 다중 담당자: 호출자의 assignee 단계만 조회.
+        # J/O/E(검토중)는 회차당 단일 단계이므로 assignee 필터 없이 조회 → 같은 팀 누구나 반려(인가는 _can_act_on_step).
+        if agent == 'RA':
             role = getattr(request.user, 'role', '')
             caller_loginid = getattr(request.user, 'loginid', '')
             if role == 'MASTER':
