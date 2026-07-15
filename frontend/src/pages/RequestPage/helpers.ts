@@ -33,3 +33,11 @@ export const calcDisabled = (
 
 /** 필터 키워드 초안 빈 값 */
 export const emptyDraftWords = () => ({ sp: [] as string[], sd: [] as string[], pp: [] as string[] });
+
+/** new_or_copy='차용' 활성 행 중 product_name·step 공란인 행 id 목록 (J/O-ayer 공용) */
+export const findNocBorrowViolations = (
+  rows: { id: string; disabled: boolean; new_or_copy: string; product_name: string; step: string }[]
+): string[] =>
+  rows
+    .filter((r) => !r.disabled && r.new_or_copy === '차용' && (!r.product_name?.trim() || !r.step?.trim()))
+    .map((r) => r.id);

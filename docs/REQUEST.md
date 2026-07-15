@@ -138,6 +138,14 @@ pages/RequestPage/
 - **REV Layer 드래그 다중 선택 + 표 확대**: `StepMap` 의 REV Layer 버튼을 마우스 드래그로 지나가며 일괄 선택/해제하도록 했다(첫 버튼에서 add/remove 모드 결정, 클릭 개별 토글 유지). 추가 항목 표는 인라인 12px 소형에서 앱 공용 `.table`(`.table-wrapper`) 스타일로 교체해 크기·디자인을 통일했다.
 - **MAP 변경 X/Y 정렬 + X 부호 검증 0 예외**: C가문 지도편차 행의 위치 라벨에 있던 `marginBottom:4` 인라인을 제거해 X/Y 입력이 동일선상에 정렬되도록 했다(`.form-group` gap 6px 로 통일). 검증에서 X_top/X_bottom 은 절대값이 같고 **0이 아닐 때만** 부호가 서로 반대여야 하도록 바꿔(`xTop !== 0 && Math.sign(...)===...`), 0/0 은 Y처럼 허용된다.
 
+### 추가 변경 이력 (2026-07 — J/O-ayer 차용 행 필수값)
+
+- **new_or_copy='차용' 행은 product_name·step 필수**: J-ayer(Step3)·O-ayer(Step4) 표는 원래 행 단위 필수값 검증을 두지 않았으나, `차용`으로 지정한 활성(`!disabled`) 행만 예외로 `product_name`·`step`을 반드시 채우도록 했다. 순수 헬퍼 `findNocBorrowViolations`(`helpers.ts`)가 위반 행 id를 반환.
+  - **검증 시점**: J-ayer는 step3→4 전환 시(`handleNextStep`), O-ayer는 step4→5 전환 시, 그리고 최종 상신(step5)에도 동일 검사를 반복(초안 복원 등으로 단계를 건너뛰는 경로 대비 안전망). 모든 모드(신규/재상신/재개)에 동일 적용.
+  - **`handleNextStep` 검증 누락 수정**: 기존엔 step 1/2/4만 `validate()`를 호출해 J-ayer(step3)는 아예 검증되지 않던 상태였다. step 3도 트리거 조건에 추가.
+  - **에러 표시**: 흐름도 `flow_step_${row.id}_${field}` 패턴과 동일하게 행별 `jayer_noc_${id}_product_name`/`_step`(O-ayer는 `oayer_noc_*`) 키로 **해당 셀에 빨간 테두리**를 표시하고, 표 상단에는 `jayer_noc_required`/`oayer_noc_required` 요약 문구(`.form-error`, count 보간)를 띄운다(BB 매핑 필수 규칙과 동일한 요약 패턴).
+  - **`scrollToFirstError` 수정**: O-ayer 표 에러(`oayer_noc_required`)가 있을 때는 Partial Shot이 있는 'info' 탭으로 강제 전환하지 않도록 조건 추가(표는 'table' 탭에 있으므로).
+
 ### 추가 변경 이력 (2026-07 — 결재 중단/재개)
 
 - **중단(PAUSE) 문서 재개**: `status == 'pause'` 문서를 `/request` 로 편집(editDocId) 시, 편집 로드에서 `editDocStatus` 를 기록하고 `isResumeMode` 로 분기한다. 상신 모달·STEP5 버튼 라벨이 '재개'(`approval.resume`)로 바뀌고, 지정 PL 선택 UI·필수 검증을 건너뛴다(재개는 멈춘 단계부터 이어지므로 지정 PL 불필요). `handleSubmit` 은 문서 상태가 pause 면 update 후 `documentsAPI.resume` 를 호출한다(상신/재상신 대신). 상세는 `docs/APPROVAL.md` Case M 참조.
