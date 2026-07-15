@@ -66,6 +66,24 @@ class IsAuthenticatedOrMasterDelete(BasePermission):
         return _is_dev() or bool(request.user and request.user.is_authenticated)
 
 
+class GuideWritePermission(BasePermission):
+    """가이드 CRUD 인가.
+
+    - 읽기(GET): IsAuthenticatedOrMasterDelete 와 동일(운영=인증 필요, 개발=허용) — 조회는 전원 제한 없음.
+    - 작성/수정(POST·PUT·PATCH): 인증 필요 + PL 역할은 불가(가이드는 PL이 참고하는 대상이지 작성 주체가 아님).
+    - 삭제(DELETE): MASTER만(기존과 동일).
+    """
+
+    def has_permission(self, request, view):
+        if request.method == 'DELETE':
+            return bool(request.user and request.user.is_authenticated and request.user.role == 'MASTER')
+        if request.method in ('POST', 'PUT', 'PATCH'):
+            return bool(
+                request.user and request.user.is_authenticated and request.user.role != 'PL'
+            )
+        return _is_dev() or bool(request.user and request.user.is_authenticated)
+
+
 class RequestDocumentViewSet(viewsets.ModelViewSet):
     queryset = RequestDocument.objects.select_related('requester', 'designated_pl').all()
     permission_classes = [IsAuthenticatedInProd]
@@ -1854,7 +1872,7 @@ def user_events(request):
 class GuideViewSet(viewsets.ModelViewSet):
     """의뢰서 작성 가이드 CRUD"""
     serializer_class = GuideSerializer
-    permission_classes = [IsAuthenticatedOrMasterDelete]
+    permission_classes = [GuideWritePermission]
     pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
 
     def get_queryset(self):
