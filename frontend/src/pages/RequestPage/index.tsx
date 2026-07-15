@@ -53,7 +53,7 @@ import {
   TOUR_JAYER_STEPS,
   TOUR_JAYER_ITEMS,
 } from './constants';
-import { formatUpdatedDate, calcDisabled, emptyDraftWords } from './helpers';
+import { formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
 import Step1 from './components/Step1';
@@ -2616,13 +2616,35 @@ export default function RequestPage(): React.ReactElement {
       } // end !isMapRegistered
     }
 
-    // step 3(J-layer)·step 4 O-layer 행은 의도적으로 행 단위 필수값 검증을 두지 않는다(행은 선택사항).
-    // 상신 시 step 5의 "활성 + process_id 있는 J-layer 행은 Bb 매핑 필수" 규칙으로 간접 검증된다.
+    // step 3(J-layer)·step 4 O-layer 행은 그 외에는 의도적으로 행 단위 필수값 검증을 두지 않는다(행은 선택사항).
+    // 예외: new_or_copy='차용' 행은 product_name·step 필수(아래). 상신 시 step 5의
+    // "활성 + process_id 있는 J-layer 행은 Bb 매핑 필수" 규칙으로도 간접 검증된다.
+
+    if (currentStep === 3) {
+      const violations = findNocBorrowViolations(jayerRows);
+      violations.forEach((id) => {
+        newErrors[`jayer_noc_${id}_product_name`] = t('request.jayer_noc_field_error' as never);
+        newErrors[`jayer_noc_${id}_step`] = t('request.jayer_noc_field_error' as never);
+      });
+      if (violations.length > 0) {
+        newErrors['jayer_noc_required'] = t('request.jayer_noc_required' as never, { count: violations.length });
+        errorMessages.push(t('request.jayer_noc_required' as never, { count: violations.length }) as string);
+      }
+    }
 
     if (currentStep === 4 && !isOnlyMap) {
       if (!detail.partial_shot?.trim()) {
         newErrors['partial_shot'] = t('request.required');
         errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
+      }
+      const oViolations = findNocBorrowViolations(oayerRows);
+      oViolations.forEach((id) => {
+        newErrors[`oayer_noc_${id}_product_name`] = t('request.oayer_noc_field_error' as never);
+        newErrors[`oayer_noc_${id}_step`] = t('request.oayer_noc_field_error' as never);
+      });
+      if (oViolations.length > 0) {
+        newErrors['oayer_noc_required'] = t('request.oayer_noc_required' as never, { count: oViolations.length });
+        errorMessages.push(t('request.oayer_noc_required' as never, { count: oViolations.length }) as string);
       }
     }
 
@@ -2633,6 +2655,25 @@ export default function RequestPage(): React.ReactElement {
       if (unmappedJayerRows.length > 0) {
         newErrors['jayer_mapping'] = '모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.';
         errorMessages.push('모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.');
+      }
+      // 초안 복원 등으로 step 3/4 검증을 건너뛰었을 경우를 대비한 최종 안전망
+      const jViolations = findNocBorrowViolations(jayerRows);
+      jViolations.forEach((id) => {
+        newErrors[`jayer_noc_${id}_product_name`] = t('request.jayer_noc_field_error' as never);
+        newErrors[`jayer_noc_${id}_step`] = t('request.jayer_noc_field_error' as never);
+      });
+      if (jViolations.length > 0) {
+        newErrors['jayer_noc_required'] = t('request.jayer_noc_required' as never, { count: jViolations.length });
+        errorMessages.push(t('request.jayer_noc_required' as never, { count: jViolations.length }) as string);
+      }
+      const oViolations = findNocBorrowViolations(oayerRows);
+      oViolations.forEach((id) => {
+        newErrors[`oayer_noc_${id}_product_name`] = t('request.oayer_noc_field_error' as never);
+        newErrors[`oayer_noc_${id}_step`] = t('request.oayer_noc_field_error' as never);
+      });
+      if (oViolations.length > 0) {
+        newErrors['oayer_noc_required'] = t('request.oayer_noc_required' as never, { count: oViolations.length });
+        errorMessages.push(t('request.oayer_noc_required' as never, { count: oViolations.length }) as string);
       }
     }
 
@@ -2740,7 +2781,14 @@ export default function RequestPage(): React.ReactElement {
   // 검증 실패 시 첫 번째 오류 필드로 스크롤·강조한다.
   // O-layer(step 4)의 partial_shot 오류는 'info' 탭에 있으므로 먼저 탭을 전환한다.
   const scrollToFirstError = () => {
-    if (step === 4) setOayerInfoTab('info');
+    // O-ayer 표(oayer_noc_*)는 'table' 탭, Partial Shot 은 'info' 탭 — 에러가 있는 탭으로만 전환한다.
+    // (validate()가 방금 setErrors 했더라도 이 시점의 `errors` state는 아직 갱신 전이라 신뢰할 수 없어,
+    //  동일한 소스 값으로 직접 재계산한다.)
+    if (step === 4) {
+      const oViolations = findNocBorrowViolations(oayerRows);
+      const partialShotMissing = !isOnlyMap && !detail.partial_shot?.trim();
+      if (partialShotMissing && oViolations.length === 0) setOayerInfoTab('info');
+    }
     // 탭 전환·에러 span 렌더가 끝난 뒤 DOM을 조회하도록 지연한다.
     setTimeout(() => {
       const errorEl = document.querySelector('.form-error');
@@ -2758,7 +2806,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleNextStep = (skipTbvtlvWarn = false, skipSpecialCare = false) => {
-    if (step === 1 || step === 2 || step === 4) {
+    if (step === 1 || step === 2 || step === 3 || step === 4) {
       const result = validate(step);
       if (!result.valid) {
         result.errors.forEach(msg => addToast(msg, 'error'));
@@ -3113,6 +3161,7 @@ export default function RequestPage(): React.ReactElement {
           jayerChecked={jayerChecked}
           mappedJayerRowIds={mappedJayerRowIds}
           jayerBarcodeCache={jayerBarcodeCache}
+          errors={errors}
           calcDisabled={calcDisabled}
           handleJayerSetAll={handleJayerSetAll}
           handleJayerResetField={handleJayerResetField}
