@@ -112,11 +112,6 @@ const Step3: React.FC<Step3Props> = ({
           활성 {oayerRows.filter(r => !r.disabled).length} / 전체 {oayerRows.length}
         </span>
       </div>
-      {errors.oayer_noc_required && (
-        <div className="form-group" style={{ marginBottom: 12 }}>
-          <span className="form-error">{errors.oayer_noc_required}</span>
-        </div>
-      )}
 
       {/* 탭 버튼 */}
       <div data-tour="oayer-tabs" style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '2px solid var(--border)' }}>
@@ -280,8 +275,8 @@ const Step3: React.FC<Step3Props> = ({
                             dropdownDirection="up"
                           />
                         </td>
-                        <td {...cellProps('product_name', isRegistered ? regBg : undefined)}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined, ...(errors[`oayer_noc_${row.id}_product_name`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
-                        <td {...cellProps('step', isRegistered ? regBg : undefined)}><input value={row.step} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined, ...(errors[`oayer_noc_${row.id}_step`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
+                        <td {...cellProps('product_name', isRegistered ? regBg : undefined)}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} className={errors[`oayer_noc_${row.id}_product_name`] ? 'field-error-target' : undefined} style={{ backgroundColor: isRegistered ? regBg : undefined, ...(errors[`oayer_noc_${row.id}_product_name`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
+                        <td {...cellProps('step', isRegistered ? regBg : undefined)}><input value={row.step} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} className={errors[`oayer_noc_${row.id}_step`] ? 'field-error-target' : undefined} style={{ backgroundColor: isRegistered ? regBg : undefined, ...(errors[`oayer_noc_${row.id}_step`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
                       </tr>
                     </React.Fragment>
                   );
