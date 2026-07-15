@@ -263,6 +263,7 @@
     "col_status": "Status",
     "col_submitted": "Submitted",
     "col_production_date": "Actual Production Date",
+    "col_production_date_sort_hint": "Click to sort (ascending → descending → default)",
     "col_start_date": "Start Date",
     "col_expected_completion": "Expected Completion",
     "col_current_stage": "Current Stage",
