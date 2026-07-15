@@ -143,8 +143,9 @@ pages/RequestPage/
 - **new_or_copy='차용' 행은 product_name·step 필수**: J-ayer(Step3)·O-ayer(Step4) 표는 원래 행 단위 필수값 검증을 두지 않았으나, `차용`으로 지정한 활성(`!disabled`) 행만 예외로 `product_name`·`step`을 반드시 채우도록 했다. 순수 헬퍼 `findNocBorrowViolations`(`helpers.ts`)가 위반 행 id를 반환.
   - **검증 시점**: J-ayer는 step3→4 전환 시(`handleNextStep`), O-ayer는 step4→5 전환 시, 그리고 최종 상신(step5)에도 동일 검사를 반복(초안 복원 등으로 단계를 건너뛰는 경로 대비 안전망). 모든 모드(신규/재상신/재개)에 동일 적용.
   - **`handleNextStep` 검증 누락 수정**: 기존엔 step 1/2/4만 `validate()`를 호출해 J-ayer(step3)는 아예 검증되지 않던 상태였다. step 3도 트리거 조건에 추가.
-  - **에러 표시**: 흐름도 `flow_step_${row.id}_${field}` 패턴과 동일하게 행별 `jayer_noc_${id}_product_name`/`_step`(O-ayer는 `oayer_noc_*`) 키로 **해당 셀에 빨간 테두리**를 표시하고, 표 상단에는 `jayer_noc_required`/`oayer_noc_required` 요약 문구(`.form-error`, count 보간)를 띄운다(BB 매핑 필수 규칙과 동일한 요약 패턴).
-  - **`scrollToFirstError` 수정**: O-ayer 표 에러(`oayer_noc_required`)가 있을 때는 Partial Shot이 있는 'info' 탭으로 강제 전환하지 않도록 조건 추가(표는 'table' 탭에 있으므로).
+  - **에러 표시**: 흐름도 `flow_step_${row.id}_${field}` 패턴과 동일하게 행별 `jayer_noc_${id}_product_name`/`_step`(O-ayer는 `oayer_noc_*`) 키로 **해당 셀에 빨간 테두리**를 표시한다. 표 상단 고정 문구는 **두지 않고**(토스트와 중복이라 제거), 안내는 토스트(`jayer_noc_required`/`oayer_noc_required`, count 보간) 하나로만 한다.
+  - **문제 셀로 자동 스크롤**: 문제 있는 `product_name`/`step` `<input>`에 스크롤 타겟 마커 클래스 `field-error-target`을 부여하고, `scrollToFirstError`가 `.form-error` 외에 이 클래스도 인식하도록 확장했다. 다른 `.form-error` 필드(예: 필수 입력 required)는 기존처럼 `field-error-flash`(노란 깜빡임)까지 재생하지만, 표 셀 타겟(`field-error-target`)은 **깜빡임 없이** `scrollIntoView`(중앙 정렬) + 포커스만 수행한다.
+  - **`scrollToFirstError` O-ayer 탭 전환 수정**: O-ayer 표 에러가 있을 때는 Partial Shot이 있는 'info' 탭으로 강제 전환하지 않도록 조건 추가(표는 'table' 탭에 있으므로). `errors` state 는 setErrors 직후 이 함수 안에서는 아직 갱신 전이라(스테일 클로저), `oayerRows`/`detail.partial_shot` 원본 값으로 직접 재계산해 판단한다.
 
 ### 추가 변경 이력 (2026-07 — 결재 중단/재개)
 
