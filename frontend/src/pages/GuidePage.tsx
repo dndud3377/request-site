@@ -66,6 +66,7 @@ export default function GuidePage(): React.ReactElement {
   // ─────────────── helpers ───────────────
 
   const canDelete = currentUser.role === 'MASTER';
+  const canWrite = currentUser.role !== 'PL'; // PL은 가이드 작성/수정 불가(조회는 제한 없음)
 
   const featureLabel = useCallback(
     (key: GuideFeatureKey): string => t(`guide.feat.${key}` as never),
@@ -215,9 +216,11 @@ export default function GuidePage(): React.ReactElement {
             placeholder={t('guide.search_placeholder')}
           />
         </div>
-        <button className="btn btn-primary" onClick={openWrite}>
-          + {t('guide.write')}
-        </button>
+        {canWrite && (
+          <button className="btn btn-primary" onClick={openWrite}>
+            + {t('guide.write')}
+          </button>
+        )}
       </div>
 
       {/* Layout: sidebar + main */}
@@ -287,9 +290,11 @@ export default function GuidePage(): React.ReactElement {
         footer={
           selected ? (
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-secondary" onClick={() => openEdit(selected)}>
-                {t('guide.edit')}
-              </button>
+              {canWrite && (
+                <button className="btn btn-secondary" onClick={() => openEdit(selected)}>
+                  {t('guide.edit')}
+                </button>
+              )}
               {canDelete && (
                 <button
                   className="btn btn-danger"
