@@ -34,6 +34,18 @@ export const calcDisabled = (
 /** 필터 키워드 초안 빈 값 */
 export const emptyDraftWords = () => ({ sp: [] as string[], sd: [] as string[], pp: [] as string[] });
 
+/** 숫자 전용 입력 필터: 부호(-, 맨 앞 1개만)·소수점(1개만) 외 문자는 제거 (MAP X/Y, 예외구역 값 등) */
+export const sanitizeSignedDecimal = (raw: string): string => {
+  let v = raw.replace(/[^0-9.\-]/g, '');
+  const neg = v.startsWith('-');
+  v = v.replace(/-/g, '');
+  const firstDot = v.indexOf('.');
+  if (firstDot !== -1) {
+    v = v.slice(0, firstDot + 1) + v.slice(firstDot + 1).replace(/\./g, '');
+  }
+  return (neg ? '-' : '') + v;
+};
+
 /** new_or_copy='차용' 활성 행 중 product_name·step 공란인 행 id 목록 (J/O-ayer 공용) */
 export const findNocBorrowViolations = (
   rows: { id: string; disabled: boolean; new_or_copy: string; product_name: string; step: string }[]
