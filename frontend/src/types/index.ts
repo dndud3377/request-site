@@ -311,7 +311,8 @@ export interface DetailFormState {
   // O-ayer 정보 탭
   partial_shot: string;
   tbvtlv_thickness: string;
-  tbvtlv_entries: Array<{ sds: string[]; note: string }>;
+  // note: 과거(문자열 자유 입력) 저장분과의 하위 호환 표시용 — 신규 작성은 noteRows(X/Y 좌표 표)만 채운다.
+  tbvtlv_entries: Array<{ sds: string[]; note?: string; noteRows?: TbvtlvNoteRow[] }>;
 
   // 통보처: 결재 권한 없이 상신·결재완료 시 메일만 받는 인원(loginid로 발송 시점에 이메일 조회)
   notifiers: NotifierRef[];
@@ -324,6 +325,14 @@ export interface DetailFormState {
 export interface NotifierRef {
   loginid: string;
   name: string;
+}
+
+// TBV/TLV 비고 — X/Y 좌표 표 1행 (사용 여부는 단순 표시용, 검증에 영향 없음)
+export interface TbvtlvNoteRow {
+  id: string;
+  x: string;
+  y: string;
+  used: 'O' | 'X';
 }
 
 // 주소록 구성원(조회 응답): 최신 이름·이메일 + 이메일 등록 여부(무이메일 경고용)
