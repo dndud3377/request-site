@@ -147,6 +147,18 @@ pages/RequestPage/
   - **문제 셀로 자동 스크롤**: 문제 있는 `product_name`/`step` `<input>`에 스크롤 타겟 마커 클래스 `field-error-target`을 부여하고, `scrollToFirstError`가 `.form-error` 외에 이 클래스도 인식하도록 확장했다. 다른 `.form-error` 필드(예: 필수 입력 required)는 기존처럼 `field-error-flash`(노란 깜빡임)까지 재생하지만, 표 셀 타겟(`field-error-target`)은 **깜빡임 없이** `scrollIntoView`(중앙 정렬) + 포커스만 수행한다.
   - **`scrollToFirstError` O-ayer 탭 전환 수정**: O-ayer 표 에러가 있을 때는 Partial Shot이 있는 'info' 탭으로 강제 전환하지 않도록 조건 추가(표는 'table' 탭에 있으므로). `errors` state 는 setErrors 직후 이 함수 안에서는 아직 갱신 전이라(스테일 클로저), `oayerRows`/`detail.partial_shot` 원본 값으로 직접 재계산해 판단한다.
 
+### 추가 변경 이력 (2026-07 — MAP/예외구역 숫자 입력 + TBV/TLV 개편)
+
+- **MAP X/Y·예외구역 값 숫자 전용 입력**: `map_value_x`/`map_value_y`(일반 + C가문 상/하판, 총 6개) · `ea_value`에 `sanitizeSignedDecimal`(`helpers.ts`, 부호 맨 앞 1개·소수점 1개만 허용) 적용. `StepMap.tsx`에서 `handleDetailChange` 대신 `handleDetailSet`으로 교체 호출, `inputMode="decimal"` 힌트 추가.
+- **상세뷰 단위 표시**: 결재현황/이력조회 공용 `PagedDetailView.tsx`에서 MAP X/Y 값 뒤에 `um`, 예외구역 값 뒤에 `mm`을 붙여 표시(C가문 상/하판 포함). 저장값 자체는 순수 숫자 문자열이고 단위는 표시 시점에만 접미.
+- **TBV/TLV 두께 버튼화**: 자유 텍스트 입력 → Partial Shot과 동일한 `map-type-btn` 2버튼 토글(`request.tbvtlv_thickness_10`="10.0um", `_15`="15.0um", ko/en 동시 등록 — 하드코딩 없음).
+- **TBV/TLV 비고 → X/Y 좌표 표**: 자유 텍스트(`note`) 입력을 No/X/Y/사용여부(O·X) 표로 전면 교체.
+  - 타입: `DetailFormState.tbvtlv_entries`를 `{sds, note?, noteRows?}[]`로 확장(`TbvtlvNoteRow` 신규, `types/index.ts`). `note`는 과거 저장분 하위 호환 전용 — 신규 작성은 `noteRows`만 채운다. 백엔드는 스키마 없는 JSON 저장이라 마이그레이션 불필요.
+  - **엑셀 붙여넣기**(`handleTbvtlvCoordPaste`, `Step3.tsx`): X 또는 Y 칸에 붙여넣으면, 탭으로 2열(X,Y)이면 두 칸에 동시에, 1열이면 붙여넣은 칸만 채운다. 줄바꿈으로 여러 행이면 기존 행 수를 넘는 만큼 자동으로 행 생성.
+  - No 컬럼은 자동 순번(입력 불가)이며 **배경색 없음**(다른 셀과 동일 톤). 사용 여부는 단순 표시용 O/X 드롭다운(검증에 영향 없음).
+  - `+ 행 추가`/행별 `삭제`로 수동 조정 가능. `+ 추가` 클릭 시 현재 SD+표 세트가 확정되어 아래 "추가된 항목"에 **가로로 나란히(줄바꿈) 읽기전용**으로 쌓이고, 입력 영역은 다음 항목을 위해 1행짜리로 초기화된다(SD 선택 스코프 — 항목마다 독립된 표).
+  - `PagedDetailView.tsx`도 동일 톤·가로 배치로 항목별 표를 렌더. `noteRows`가 없는 과거 저장분은 표 대신 기존처럼 텍스트 한 줄로 표시(데이터 손실 없음).
+
 ### 추가 변경 이력 (2026-07 — 결재 중단/재개)
 
 - **중단(PAUSE) 문서 재개**: `status == 'pause'` 문서를 `/request` 로 편집(editDocId) 시, 편집 로드에서 `editDocStatus` 를 기록하고 `isResumeMode` 로 분기한다. 상신 모달·STEP5 버튼 라벨이 '재개'(`approval.resume`)로 바뀌고, 지정 PL 선택 UI·필수 검증을 건너뛴다(재개는 멈춘 단계부터 이어지므로 지정 PL 불필요). `handleSubmit` 은 문서 상태가 pause 면 update 후 `documentsAPI.resume` 를 호출한다(상신/재상신 대신). 상세는 `docs/APPROVAL.md` Case M 참조.

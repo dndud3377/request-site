@@ -25,6 +25,7 @@ import {
   GuideFeatureKey,
   UserWithRole,
   AddressBook,
+  TbvtlvNoteRow,
 } from '../../types';
 import GuideSlidePanel from '../../components/GuideSlidePanel';
 import { GUIDE_DEMO_KEYS } from '../../components/guideDemos';
@@ -277,7 +278,7 @@ export default function RequestPage(): React.ReactElement {
   const [revGds, setRevGds] = useState<string>('');
   const [oayerInfoTab, setOayerInfoTab] = useState<'table' | 'info'>('table');
   const [tbvtlvSdsSelected, setTbvtlvSdsSelected] = useState<string[]>([]);
-  const [tbvtlvNote, setTbvtlvNote] = useState<string>('');
+  const [tbvtlvNoteRows, setTbvtlvNoteRows] = useState<TbvtlvNoteRow[]>([{ id: genId(), x: '', y: '', used: 'O' }]);
   const [tbvtlvWarnModal, setTbvtlvWarnModal] = useState(false);
   const [bbResetConfirm, setBbResetConfirm] = useState(false);
   const [specialCareConfirm, setSpecialCareConfirm] = useState(false);
@@ -3201,8 +3202,8 @@ export default function RequestPage(): React.ReactElement {
           setErrors={setErrors}
           tbvtlvSdsSelected={tbvtlvSdsSelected}
           setTbvtlvSdsSelected={setTbvtlvSdsSelected}
-          tbvtlvNote={tbvtlvNote}
-          setTbvtlvNote={setTbvtlvNote}
+          tbvtlvNoteRows={tbvtlvNoteRows}
+          setTbvtlvNoteRows={setTbvtlvNoteRows}
           calcDisabled={calcDisabled}
           handleOayerSetAll={handleOayerSetAll}
           handleOayerResetField={handleOayerResetField}

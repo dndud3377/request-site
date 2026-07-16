@@ -573,6 +573,16 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
     display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8,
   };
 
+  // TBV/TLV 좌표 표 셀 스타일 (작성 화면 Step3와 동일한 톤)
+  const tbvDetailThStyle: React.CSSProperties = {
+    background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+    padding: '6px 10px', fontSize: '0.7rem', color: 'var(--text-secondary)',
+    fontWeight: 700, textAlign: 'center',
+  };
+  const tbvDetailTdStyle: React.CSSProperties = {
+    border: '1px solid var(--border-light)', padding: '5px 8px', textAlign: 'center',
+  };
+
   // ===== FieldHistoryModal =====
   const FieldHistoryModal = ({
     label, fieldKey, currentValue, onClose,
@@ -824,22 +834,22 @@ type Page = { label: string; content: React.ReactNode };
             <div style={rowStyle}>
               {(isR || isO || isP) && (() => {
                 if (isProdc && ((detail as any).map_value_x_top || (detail as any).map_value_x_bottom)) {
-                  const topVal = `X: ${(detail as any).map_value_x_top || '-'} / Y: ${(detail as any).map_value_y_top || '-'}`;
-                  const botVal = `X: ${(detail as any).map_value_x_bottom || '-'} / Y: ${(detail as any).map_value_y_bottom || '-'}`;
+                  const topVal = `X: ${(detail as any).map_value_x_top ? `${(detail as any).map_value_x_top}um` : '-'} / Y: ${(detail as any).map_value_y_top ? `${(detail as any).map_value_y_top}um` : '-'}`;
+                  const botVal = `X: ${(detail as any).map_value_x_bottom ? `${(detail as any).map_value_x_bottom}um` : '-'} / Y: ${(detail as any).map_value_y_bottom ? `${(detail as any).map_value_y_bottom}um` : '-'}`;
                   const reasonPart = detail.map_reason ? ` / 사유: ${detail.map_reason}` : '';
                   const mapValue = `[${t('request.prodc_top')}] ${topVal}\n[${t('request.prodc_bottom')}] ${botVal}${reasonPart}`;
                   const mapChanged = ['map_value_x_top','map_value_y_top','map_value_x_bottom','map_value_y_bottom','map_reason'].some(k => changedFields.has(k));
                   return <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change_top" />;
                 }
                 if (!isProdc && detail.map_change) {
-                  const mapValue = `변경: ${detail.map_change}${detail.map_value_x ? ` / X: ${detail.map_value_x}` : ''}${detail.map_value_y ? ` / Y: ${detail.map_value_y}` : ''}${detail.map_reason ? ` / 사유: ${detail.map_reason}` : ''}`;
+                  const mapValue = `변경: ${detail.map_change}${detail.map_value_x ? ` / X: ${detail.map_value_x}um` : ''}${detail.map_value_y ? ` / Y: ${detail.map_value_y}um` : ''}${detail.map_reason ? ` / 사유: ${detail.map_reason}` : ''}`;
                   const mapChanged = changedFields.has('map_change') || changedFields.has('map_value_x') || changedFields.has('map_value_y') || changedFields.has('map_reason');
                   return <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change" />;
                 }
                 return null;
               })()}
               {(isR || isO || isP) && detail.ea_change && (() => {
-                const eaValue = `변경: ${detail.ea_change}${detail.ea_value ? ` / 값: ${detail.ea_value}` : ''}`;
+                const eaValue = `변경: ${detail.ea_change}${detail.ea_value ? ` / 값: ${detail.ea_value}mm` : ''}`;
                 const eaChanged = changedFields.has('ea_change') || changedFields.has('ea_value');
                 return (
                   <Chip label={t('request.ea_change')} value={eaValue} style={chipWide} changed={eaChanged} fieldKey="ea_change" />
@@ -1139,22 +1149,40 @@ type Page = { label: string; content: React.ReactNode };
                       </div>
                     )}
                     {tbvtlvEntries.length > 0 ? (
-                      <table style={{ borderCollapse: 'collapse', width: 'fit-content', fontSize: 12 }}>
-                        <thead>
-                          <tr>
-                            <th style={{ border: '1px solid #ddd', padding: '4px 10px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>{t('request.tbvtlv_sd_select')}</th>
-                            <th style={{ border: '1px solid #ddd', padding: '4px 10px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>{t('request.tbvtlv_note')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {tbvtlvEntries.map((entry, idx) => (
-                            <tr key={idx}>
-                              <td style={{ border: '1px solid #ddd', padding: '4px 10px', whiteSpace: 'nowrap' }}>{entry.sds.join(', ')}</td>
-                              <td style={{ border: '1px solid #ddd', padding: '4px 10px' }}>{entry.note || '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+                        {tbvtlvEntries.map((entry, idx) => (
+                          <div key={idx} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '10px 14px', width: 'fit-content' }}>
+                            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 6 }}>
+                              {t('request.tbvtlv_sd_select')}: <b style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{entry.sds.join(', ')}</b>
+                            </div>
+                            {entry.noteRows && entry.noteRows.length > 0 ? (
+                              <table style={{ borderCollapse: 'collapse', width: 'fit-content', fontSize: '0.8rem' }}>
+                                <thead>
+                                  <tr>
+                                    <th style={tbvDetailThStyle}>{t('request.tbvtlv_no')}</th>
+                                    <th style={tbvDetailThStyle}>{t('request.tbvtlv_x')}</th>
+                                    <th style={tbvDetailThStyle}>{t('request.tbvtlv_y')}</th>
+                                    <th style={tbvDetailThStyle}>{t('request.tbvtlv_used')}</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {entry.noteRows.map((row, i) => (
+                                    <tr key={row.id}>
+                                      <td style={{ ...tbvDetailTdStyle, color: 'var(--text-muted)', fontWeight: 600 }}>{i + 1}</td>
+                                      <td style={tbvDetailTdStyle}>{row.x || '—'}</td>
+                                      <td style={tbvDetailTdStyle}>{row.y || '—'}</td>
+                                      <td style={tbvDetailTdStyle}>{row.used}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : (
+                              // 과거(문자열 자유 입력) 저장분 하위 호환
+                              <span style={{ fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}>{entry.note || '—'}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     ) : (
                       <span style={{ color: 'var(--text-muted)' }}>—</span>
                     )}

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { DetailFormState, GuideFeatureKey } from '../../../types';
 import { CRegion } from '../constants';
+import { sanitizeSignedDecimal } from '../helpers';
 import ProdcRow from './ProdcRow';
 import MshotImageUpload from './MshotImageUpload';
 
@@ -369,7 +370,8 @@ const StepMap: React.FC<StepMapProps> = ({
                     className={`form-control${errors[`map_value_x_${region}`] ? ' error' : ''}`}
                     name={`map_value_x_${region}`}
                     value={detail[`map_value_x_${region}` as keyof DetailFormState] as string}
-                    onChange={handleDetailChange}
+                    onChange={(e) => handleDetailSet(`map_value_x_${region}`, sanitizeSignedDecimal(e.target.value))}
+                    inputMode="decimal"
                     disabled={isMapRegistered}
                   />
                   {errors[`map_value_x_${region}`] && <span className="form-error">{errors[`map_value_x_${region}`]}</span>}
@@ -380,7 +382,8 @@ const StepMap: React.FC<StepMapProps> = ({
                     className={`form-control${errors[`map_value_y_${region}`] ? ' error' : ''}`}
                     name={`map_value_y_${region}`}
                     value={detail[`map_value_y_${region}` as keyof DetailFormState] as string}
-                    onChange={handleDetailChange}
+                    onChange={(e) => handleDetailSet(`map_value_y_${region}`, sanitizeSignedDecimal(e.target.value))}
+                    inputMode="decimal"
                     disabled={isMapRegistered}
                   />
                   {errors[`map_value_y_${region}`] && <span className="form-error">{errors[`map_value_y_${region}`]}</span>}
@@ -404,12 +407,12 @@ const StepMap: React.FC<StepMapProps> = ({
             </div>
             <div className="form-group" style={{ flex: 1, visibility: hasMapChange ? 'visible' : 'hidden' }}>
               <label className="form-label">{t('request.map_value_x')} <span className="required">*</span></label>
-              <input className={`form-control${errors.map_value_x ? ' error' : ''}`} name="map_value_x" value={detail.map_value_x} onChange={handleDetailChange} disabled={isMapRegistered} />
+              <input className={`form-control${errors.map_value_x ? ' error' : ''}`} name="map_value_x" value={detail.map_value_x} onChange={(e) => handleDetailSet('map_value_x', sanitizeSignedDecimal(e.target.value))} inputMode="decimal" disabled={isMapRegistered} />
               {errors.map_value_x && <span className="form-error">{errors.map_value_x}</span>}
             </div>
             <div className="form-group" style={{ flex: 1, visibility: hasMapChange ? 'visible' : 'hidden' }}>
               <label className="form-label">{t('request.map_value_y')} <span className="required">*</span></label>
-              <input className={`form-control${errors.map_value_y ? ' error' : ''}`} name="map_value_y" value={detail.map_value_y} onChange={handleDetailChange} disabled={isMapRegistered} />
+              <input className={`form-control${errors.map_value_y ? ' error' : ''}`} name="map_value_y" value={detail.map_value_y} onChange={(e) => handleDetailSet('map_value_y', sanitizeSignedDecimal(e.target.value))} inputMode="decimal" disabled={isMapRegistered} />
               {errors.map_value_y && <span className="form-error">{errors.map_value_y}</span>}
             </div>
             <div className="form-group" style={{ flex: 3, visibility: hasMapChange ? 'visible' : 'hidden' }}>
@@ -431,7 +434,7 @@ const StepMap: React.FC<StepMapProps> = ({
           </div>
           <div className="form-group" style={{ flex: 1.5, visibility: hasEaChange ? 'visible' : 'hidden' }}>
             <label className="form-label">{t('request.ea_value')} <span className="required">*</span></label>
-            <input className={`form-control${errors.ea_value ? ' error' : ''}`} name="ea_value" value={detail.ea_value} onChange={handleDetailChange} disabled={isMapRegistered} />
+            <input className={`form-control${errors.ea_value ? ' error' : ''}`} name="ea_value" value={detail.ea_value} onChange={(e) => handleDetailSet('ea_value', sanitizeSignedDecimal(e.target.value))} inputMode="decimal" disabled={isMapRegistered} />
             {errors.ea_value && <span className="form-error">{errors.ea_value}</span>}
           </div>
           <div style={{ flex: 3.5 }} />

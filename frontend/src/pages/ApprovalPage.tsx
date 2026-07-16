@@ -748,8 +748,9 @@ export default function ApprovalPage(): React.ReactElement {
                   title={t('approval.col_production_date_sort_hint' as never)}
                 >
                   {t('approval.col_production_date')}
-                  {prodDateSort === 'asc' && ' ▲'}
-                  {prodDateSort === 'desc' && ' ▼'}
+                  {prodDateSort === 'asc' ? ' ▲' : prodDateSort === 'desc' ? ' ▼' : (
+                    <span style={{ color: 'var(--text-muted)' }}> ⇅</span>
+                  )}
                 </th>
                 <th></th>
               </tr>

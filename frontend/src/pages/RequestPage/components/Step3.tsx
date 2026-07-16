@@ -1,12 +1,22 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
-import { OayerRow, FilterSet, DetailFormState, GuideFeatureKey } from '../../../types';
-import { ST_CELL_COLOR } from '../constants';
+import { OayerRow, FilterSet, DetailFormState, GuideFeatureKey, TbvtlvNoteRow } from '../../../types';
+import { ST_CELL_COLOR, genId } from '../constants';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
 
 const ST_OPTIONS = ['O', 'O (D)', 'X'];
 const NEW_OR_COPY_OPTIONS = ['신규', '차용', '기등록', 'layer삭제'];
+
+// TBV/TLV 좌표 표 셀 스타일 (작성 화면·상세 화면 공용 톤)
+const tbvThHeadStyle: React.CSSProperties = {
+  background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+  padding: '6px 10px', fontSize: '0.7rem', color: 'var(--text-secondary)',
+  fontWeight: 700, textAlign: 'center',
+};
+const tbvTdStyle: React.CSSProperties = {
+  border: '1px solid var(--border-light)', padding: '5px 8px', textAlign: 'center',
+};
 
 interface Step3Props {
   oayerRows: OayerRow[];
@@ -27,8 +37,8 @@ interface Step3Props {
   setErrors: React.Dispatch<React.SetStateAction<Partial<Record<string, string>>>>;
   tbvtlvSdsSelected: string[];
   setTbvtlvSdsSelected: React.Dispatch<React.SetStateAction<string[]>>;
-  tbvtlvNote: string;
-  setTbvtlvNote: React.Dispatch<React.SetStateAction<string>>;
+  tbvtlvNoteRows: TbvtlvNoteRow[];
+  setTbvtlvNoteRows: React.Dispatch<React.SetStateAction<TbvtlvNoteRow[]>>;
   calcDisabled: (
     row: { manuallyDisabled: boolean; sp: string; sd: string; pp: string },
     filterSets: FilterSet[],
@@ -67,8 +77,8 @@ const Step3: React.FC<Step3Props> = ({
   setErrors,
   tbvtlvSdsSelected,
   setTbvtlvSdsSelected,
-  tbvtlvNote,
-  setTbvtlvNote,
+  tbvtlvNoteRows,
+  setTbvtlvNoteRows,
   calcDisabled,
   handleOayerSetAll,
   handleOayerResetField,
@@ -100,6 +110,39 @@ const Step3: React.FC<Step3Props> = ({
   const usedTbvtlvSds = new Set((detail.tbvtlv_entries ?? []).flatMap(e => e.sds));
   const availableTbvtlvSds = tbvtlvSdOptions.filter(sd => !usedTbvtlvSds.has(sd));
   const infoHasData = detail.partial_shot !== '' || (detail.tbvtlv_entries ?? []).length > 0 || detail.tbvtlv_thickness !== '';
+
+  // TBV/TLV 비고 — X/Y 좌표 표 행 핸들러
+  const handleTbvtlvRowChange = (id: string, field: 'x' | 'y' | 'used', value: string) => {
+    setTbvtlvNoteRows((rows) => rows.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+  };
+  const handleTbvtlvRowAdd = () => {
+    setTbvtlvNoteRows((rows) => [...rows, { id: genId(), x: '', y: '', used: 'O' }]);
+  };
+  const handleTbvtlvRowDelete = (id: string) => {
+    setTbvtlvNoteRows((rows) => (rows.length <= 1 ? rows : rows.filter((r) => r.id !== id)));
+  };
+  // 엑셀 붙여넣기: 2열(X,Y) 함께 붙여넣으면 두 칸 동시 채움, 1열이면 붙여넣은 칸만 채움.
+  // 기존 행 수보다 많으면 자동으로 행 생성.
+  const handleTbvtlvCoordPaste = (e: React.ClipboardEvent<HTMLInputElement>, rowIdx: number, col: 'x' | 'y') => {
+    const text = e.clipboardData.getData('text');
+    const lines = text.split(/\r?\n/).filter((l) => l.length > 0);
+    if (lines.length === 0) return;
+    e.preventDefault();
+    setTbvtlvNoteRows((prev) => {
+      const next = [...prev];
+      lines.forEach((line, i) => {
+        const cells = line.split('\t');
+        const targetIdx = rowIdx + i;
+        while (next.length <= targetIdx) next.push({ id: genId(), x: '', y: '', used: 'O' });
+        if (cells.length >= 2) {
+          next[targetIdx] = { ...next[targetIdx], x: cells[0].trim(), y: cells[1].trim() };
+        } else {
+          next[targetIdx] = { ...next[targetIdx], [col]: cells[0].trim() };
+        }
+      });
+      return next;
+    });
+  };
 
   return (
     <div className="form-section">
@@ -346,101 +389,150 @@ const Step3: React.FC<Step3Props> = ({
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-                {/* 두께 입력 — 한 줄 */}
+                {/* 두께 선택 — Partial Shot과 동일한 버튼 토글 */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                   <label className="form-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>{t('request.tbvtlv_thickness')}</label>
-                  <input
-                    className="form-control"
-                    style={{ width: 260 }}
-                    value={detail.tbvtlv_thickness}
-                    onChange={e => setDetail(prev => ({ ...prev, tbvtlv_thickness: e.target.value }))}
-                    placeholder="두께 값 입력"
-                  />
-                </div>
-
-                {/* SD 선택 (좌) + 비고·추가 (우) — 좌우 반반 */}
-                <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
-                  {/* 왼쪽: SD 선택 */}
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_sd_select')}</label>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {availableTbvtlvSds.length > 0 ? availableTbvtlvSds.map(sd => {
-                        const isSelected = tbvtlvSdsSelected[0] === sd;
-                        return (
-                          <button
-                            key={sd}
-                            type="button"
-                            onClick={() => setTbvtlvSdsSelected(isSelected ? [] : [sd])}
-                            style={{
-                              padding: '5px 13px',
-                              borderRadius: '4px',
-                              border: `1.5px solid ${isSelected ? 'var(--accent, #1976D2)' : '#ccc'}`,
-                              backgroundColor: isSelected ? 'var(--accent, #1976D2)' : '#fff',
-                              color: isSelected ? '#fff' : '#333',
-                              cursor: 'pointer',
-                              fontSize: '13px',
-                              fontWeight: isSelected ? 600 : 400,
-                              transition: 'all 0.15s',
-                            }}
-                          >
-                            {sd}
-                          </button>
-                        );
-                      }) : (
-                        <span style={{ fontSize: 13, color: '#999' }}>모든 SD가 추가되었습니다.</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 오른쪽: 비고 + 추가 버튼 */}
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_note')}</label>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                      <textarea
-                        className="form-control"
-                        style={{ flex: 1, minHeight: 120, resize: 'vertical' }}
-                        rows={5}
-                        value={tbvtlvNote}
-                        onChange={e => setTbvtlvNote(e.target.value)}
-                        placeholder="비고 입력"
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        style={{ whiteSpace: 'nowrap', marginTop: 2 }}
-                        disabled={tbvtlvSdsSelected.length === 0}
-                        onClick={() => {
-                          if (tbvtlvSdsSelected.length === 0) return;
-                          setDetail(prev => ({
-                            ...prev,
-                            tbvtlv_entries: [...(prev.tbvtlv_entries ?? []), { sds: tbvtlvSdsSelected, note: tbvtlvNote }],
-                          }));
-                          setTbvtlvSdsSelected([]);
-                          setTbvtlvNote('');
-                        }}
-                      >
-                        + {t('request.tbvtlv_add')}
-                      </button>
-                    </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {(['tbvtlv_thickness_10', 'tbvtlv_thickness_15'] as const).map((key) => {
+                      const val = t(`request.${key}` as never);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          className={`map-type-btn${detail.tbvtlv_thickness === val ? ' active' : ''}`}
+                          onClick={() => setDetail(prev => ({ ...prev, tbvtlv_thickness: prev.tbvtlv_thickness === val ? '' : val }))}
+                        >
+                          {val}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* 추가된 항목 테이블 */}
-                {(detail.tbvtlv_entries ?? []).length > 0 && (
-                  <table style={{ borderCollapse: 'collapse', width: 'fit-content', fontSize: 12, marginTop: 4 }}>
+                {/* SD 선택 */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_sd_select')}</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {availableTbvtlvSds.length > 0 ? availableTbvtlvSds.map(sd => {
+                      const isSelected = tbvtlvSdsSelected[0] === sd;
+                      return (
+                        <button
+                          key={sd}
+                          type="button"
+                          onClick={() => setTbvtlvSdsSelected(isSelected ? [] : [sd])}
+                          style={{
+                            padding: '5px 13px',
+                            borderRadius: '4px',
+                            border: `1.5px solid ${isSelected ? 'var(--accent, #1976D2)' : '#ccc'}`,
+                            backgroundColor: isSelected ? 'var(--accent, #1976D2)' : '#fff',
+                            color: isSelected ? '#fff' : '#333',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: isSelected ? 600 : 400,
+                            transition: 'all 0.15s',
+                          }}
+                        >
+                          {sd}
+                        </button>
+                      );
+                    }) : (
+                      <span style={{ fontSize: 13, color: '#999' }}>{t('request.tbvtlv_all_sd_added')}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 비고 — X/Y 좌표 표 (엑셀 붙여넣기 지원) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_note')}</label>
+                  <table style={{ borderCollapse: 'collapse', width: 'fit-content', fontSize: '0.82rem' }}>
                     <thead>
                       <tr>
-                        <th style={{ border: '1px solid #ddd', padding: '4px 10px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>{t('request.tbvtlv_sd_select')}</th>
-                        <th style={{ border: '1px solid #ddd', padding: '4px 10px', background: '#f5f5f5', whiteSpace: 'nowrap' }}>{t('request.tbvtlv_note')}</th>
-                        <th style={{ border: '1px solid #ddd', padding: '4px 6px', background: '#f5f5f5' }}></th>
+                        <th style={tbvThHeadStyle}>{t('request.tbvtlv_no')}</th>
+                        <th style={tbvThHeadStyle}>{t('request.tbvtlv_x')}</th>
+                        <th style={tbvThHeadStyle}>{t('request.tbvtlv_y')}</th>
+                        <th style={tbvThHeadStyle}>{t('request.tbvtlv_used')}</th>
+                        <th style={{ ...tbvThHeadStyle, width: 50 }} />
                       </tr>
                     </thead>
                     <tbody>
+                      {tbvtlvNoteRows.map((row, idx) => (
+                        <tr key={row.id}>
+                          <td style={{ ...tbvTdStyle, color: 'var(--text-muted)', fontWeight: 600 }}>{idx + 1}</td>
+                          <td style={tbvTdStyle}>
+                            <input
+                              value={row.x}
+                              onChange={(e) => handleTbvtlvRowChange(row.id, 'x', e.target.value)}
+                              onPaste={(e) => handleTbvtlvCoordPaste(e, idx, 'x')}
+                              style={{ width: 80, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: '0.82rem', textAlign: 'center' }}
+                            />
+                          </td>
+                          <td style={tbvTdStyle}>
+                            <input
+                              value={row.y}
+                              onChange={(e) => handleTbvtlvRowChange(row.id, 'y', e.target.value)}
+                              onPaste={(e) => handleTbvtlvCoordPaste(e, idx, 'y')}
+                              style={{ width: 80, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: '0.82rem', textAlign: 'center' }}
+                            />
+                          </td>
+                          <td style={tbvTdStyle}>
+                            <select
+                              value={row.used}
+                              onChange={(e) => handleTbvtlvRowChange(row.id, 'used', e.target.value as 'O' | 'X')}
+                              style={{ border: '1px solid var(--border)', borderRadius: 4, padding: '4px', fontSize: '0.8rem' }}
+                            >
+                              <option value="O">O</option>
+                              <option value="X">X</option>
+                            </select>
+                          </td>
+                          <td style={tbvTdStyle}>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              style={{ fontSize: 11, padding: '2px 7px' }}
+                              onClick={() => handleTbvtlvRowDelete(row.id)}
+                            >
+                              {t('common.delete')}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={handleTbvtlvRowAdd}>
+                      + {t('request.tbvtlv_row_add')}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      style={{ whiteSpace: 'nowrap' }}
+                      disabled={tbvtlvSdsSelected.length === 0}
+                      onClick={() => {
+                        if (tbvtlvSdsSelected.length === 0) return;
+                        setDetail(prev => ({
+                          ...prev,
+                          tbvtlv_entries: [...(prev.tbvtlv_entries ?? []), { sds: tbvtlvSdsSelected, noteRows: tbvtlvNoteRows }],
+                        }));
+                        setTbvtlvSdsSelected([]);
+                        setTbvtlvNoteRows([{ id: genId(), x: '', y: '', used: 'O' }]);
+                      }}
+                    >
+                      + {t('request.tbvtlv_add')}
+                    </button>
+                  </div>
+                </div>
+
+                {/* 추가된 항목 — 가로로 나란히(줄바꿈), 각 표는 내용 크기에 맞춘 읽기전용 표 */}
+                {(detail.tbvtlv_entries ?? []).length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}>{t('request.tbvtlv_entries_label')}</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
                       {(detail.tbvtlv_entries ?? []).map((entry, idx) => (
-                        <tr key={idx}>
-                          <td style={{ border: '1px solid #ddd', padding: '4px 10px', whiteSpace: 'nowrap' }}>{entry.sds.join(', ')}</td>
-                          <td style={{ border: '1px solid #ddd', padding: '4px 10px', whiteSpace: 'pre-wrap' }}>{entry.note}</td>
-                          <td style={{ border: '1px solid #ddd', padding: '4px 6px', textAlign: 'center' }}>
+                        <div key={idx} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '10px 14px', width: 'fit-content' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                              {t('request.tbvtlv_sd_select')}: <b style={{ color: 'var(--text-primary)' }}>{entry.sds.join(', ')}</b>
+                            </span>
                             <button
                               type="button"
                               className="btn btn-danger btn-sm"
@@ -454,11 +546,36 @@ const Step3: React.FC<Step3Props> = ({
                             >
                               {t('common.delete')}
                             </button>
-                          </td>
-                        </tr>
+                          </div>
+                          {entry.noteRows && entry.noteRows.length > 0 ? (
+                            <table style={{ borderCollapse: 'collapse', width: 'fit-content', fontSize: '0.8rem' }}>
+                              <thead>
+                                <tr>
+                                  <th style={tbvThHeadStyle}>{t('request.tbvtlv_no')}</th>
+                                  <th style={tbvThHeadStyle}>{t('request.tbvtlv_x')}</th>
+                                  <th style={tbvThHeadStyle}>{t('request.tbvtlv_y')}</th>
+                                  <th style={tbvThHeadStyle}>{t('request.tbvtlv_used')}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {entry.noteRows.map((row, i) => (
+                                  <tr key={row.id}>
+                                    <td style={{ ...tbvTdStyle, color: 'var(--text-muted)', fontWeight: 600 }}>{i + 1}</td>
+                                    <td style={tbvTdStyle}>{row.x || '—'}</td>
+                                    <td style={tbvTdStyle}>{row.y || '—'}</td>
+                                    <td style={tbvTdStyle}>{row.used}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            // 과거(문자열 자유 입력) 저장분 하위 호환
+                            <span style={{ fontSize: '0.82rem', whiteSpace: 'pre-wrap' }}>{entry.note || '—'}</span>
+                          )}
+                        </div>
                       ))}
-                    </tbody>
-                  </table>
+                    </div>
+                  </div>
                 )}
               </div>
             )}
