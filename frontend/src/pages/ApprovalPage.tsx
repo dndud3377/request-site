@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { documentsAPI, usersAPI } from '../api/client';
@@ -68,6 +68,9 @@ export default function ApprovalPage(): React.ReactElement {
   const [error, setError] = useState(false);
   const [filter, setFilter] = useState('');
   const [search, setSearch] = useState('');
+  // 양산일 3단 정렬(오름차순→내림차순→원래 상태). 필터 탭 전환 시 자동 해제.
+  const [prodDateSort, setProdDateSort] = useState<'asc' | 'desc' | null>(null);
+  useEffect(() => { setProdDateSort(null); }, [filter]);
   const [selected, setSelected] = useState<RequestDocument | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -378,6 +381,39 @@ export default function ApprovalPage(): React.ReactElement {
     const count = getTabCount(key, allDocs);
     return { key, label: count > 0 ? `${baseLabel}(${count})` : baseLabel };
   });
+
+  const toggleProdDateSort = () => {
+    setProdDateSort((prev) => (prev === null ? 'asc' : prev === 'asc' ? 'desc' : null));
+  };
+
+  // 목록 정렬: 양산일 정렬 켜짐 > 단계별 필터(진입 순서) > 기본(상신일 오래된 순)
+  const sortedDocs = useMemo(() => {
+    const list = [...docs];
+    if (prodDateSort) {
+      const withDate = list.filter((d) => !!d.production_date);
+      const withoutDate = list.filter((d) => !d.production_date);
+      withDate.sort((a, b) => {
+        const cmp = (a.production_date as string).localeCompare(b.production_date as string);
+        return prodDateSort === 'asc' ? cmp : -cmp;
+      });
+      return [...withDate, ...withoutDate]; // 미입력은 방향 무관 항상 맨 아래
+    }
+    if (filter.startsWith('agent_')) {
+      const agent = filter.replace('agent_', '');
+      const stepEnteredAt = (d: RequestDocument): string => {
+        const round = getCurrentRound(d);
+        const step = (d.approval_steps ?? []).find(
+          (s) => s.agent === agent && s.action === 'pending' && (s.round ?? 1) === round
+        );
+        return step?.created_at ?? '';
+      };
+      list.sort((a, b) => stepEnteredAt(a).localeCompare(stepEnteredAt(b)));
+      return list;
+    }
+    const baseDate = (d: RequestDocument): string => d.submitted_at ?? d.created_at ?? '';
+    list.sort((a, b) => baseDate(a).localeCompare(baseDate(b)));
+    return list;
+  }, [docs, prodDateSort, filter]);
 
   const openDetail = async (doc: RequestDocument) => {
     if (isTourMode) {
@@ -706,12 +742,20 @@ export default function ApprovalPage(): React.ReactElement {
                 <th>{t('approval.col_current_stage')}</th>
                 <th>{t('approval.col_current_stage_completion')}</th>
                 <th>{t('approval.col_final_completion')}</th>
-                <th>{t('approval.col_production_date')}</th>
+                <th
+                  onClick={toggleProdDateSort}
+                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                  title={t('approval.col_production_date_sort_hint' as never)}
+                >
+                  {t('approval.col_production_date')}
+                  {prodDateSort === 'asc' && ' ▲'}
+                  {prodDateSort === 'desc' && ' ▼'}
+                </th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {docs.flatMap((doc) => {
+              {sortedDocs.flatMap((doc) => {
                 const rows = getDocTableRows(doc, t);
                 const isParallel = rows.length >= 2;
                 const isPaused = doc.status === 'pause';

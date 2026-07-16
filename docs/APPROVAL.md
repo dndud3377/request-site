@@ -191,6 +191,14 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 ### 3.2 필터 탭 (`applyClientFilter`, 클라이언트 측)
 - 전체 / 내 차례(my) / agent별(R·P·J·O·E) / 임시저장(draft) / 반려(rejected).
 
+### 3.2.1 목록 정렬 (2026-07, `sortedDocs`)
+우선순위: **양산일 정렬(켜짐) > 단계별 필터(진입 순서) > 기본(상신 오래된 순)**.
+- **기본**: `submitted_at` 오름차순(오래된 상신 먼저). `submitted_at` 없는 draft는 `created_at` 대체.
+- **단계별 필터(agent_R/P/J/O/E) 활성 시**: 기본을 대체 — 현재 회차의 해당 agent `pending` `ApprovalStep.created_at` 오름차순(그 단계로 먼저 넘어온 문서가 위).
+- **양산일(`col_production_date`) 헤더 클릭 3단 토글**: 오름차순→내림차순→원래 상태. 미입력(`production_date` 없음) 행은 방향 무관 **항상 맨 아래**. 켜져 있으면 **필터 탭과 무관하게** 양산일 기준이 우선(단계별 필터의 진입 순서보다 앞섬).
+- 필터 탭(`filter`)을 바꾸면 양산일 정렬은 자동으로 원래 상태로 리셋(`useEffect([filter])`).
+- 모두 클라이언트 측 정렬(`docs` → `sortedDocs`), 백엔드/정렬 파라미터 변경 없음 — 필요한 필드(`submitted_at`/`created_at`/`production_date`/`approval_steps[].created_at`)는 이미 목록 응답에 포함.
+
 ### 3.3 현재 단계 표시 (`getDocTableRows`, `:120`)
 - **PL 검토 pending**: "PL 검토(담당자명)" 단일 행, 기한 없음. **다중 PL이면 아직 미합의한 담당자명을 ` / `로 연결** 표시.
 - **R 미합의**: R 단계 단일 행(담당자 유무로 상태 결정).

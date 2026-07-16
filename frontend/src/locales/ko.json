@@ -263,6 +263,7 @@
     "col_status": "상태",
     "col_submitted": "상신일",
     "col_production_date": "실제 생산 진행 날짜",
+    "col_production_date_sort_hint": "클릭하여 정렬(오름차순 → 내림차순 → 원래 상태)",
     "col_start_date": "시작일",
     "col_expected_completion": "완료 예상일",
     "col_current_stage": "현재 단계",

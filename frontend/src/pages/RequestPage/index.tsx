@@ -2791,15 +2791,19 @@ export default function RequestPage(): React.ReactElement {
     }
     // 탭 전환·에러 span 렌더가 끝난 뒤 DOM을 조회하도록 지연한다.
     setTimeout(() => {
-      const errorEl = document.querySelector('.form-error');
+      // J/O-ayer 차용 행 에러(.field-error-target)는 표 안의 정확한 셀로 조용히 스크롤만 한다(깜빡임 없음).
+      const errorEl = document.querySelector('.form-error, .field-error-target');
       if (!errorEl) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
+      const isTableCellTarget = errorEl.classList.contains('field-error-target');
       const container = (errorEl.closest('.form-group') ?? errorEl.parentElement ?? errorEl) as HTMLElement;
       container.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      container.classList.add('field-error-flash');
-      setTimeout(() => container.classList.remove('field-error-flash'), 1600);
+      if (!isTableCellTarget) {
+        container.classList.add('field-error-flash');
+        setTimeout(() => container.classList.remove('field-error-flash'), 1600);
+      }
       const focusable = container.querySelector('input, select, textarea, button') as HTMLElement | null;
       focusable?.focus({ preventScroll: true });
     }, 60);
