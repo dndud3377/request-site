@@ -209,6 +209,20 @@ export default function ApprovalPage(): React.ReactElement {
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
 
+  // 메일 딥링크(?id=) — 목록과 무관하게 해당 문서를 직접 조회해 상세 모달을 바로 연다.
+  useEffect(() => {
+    if (isTourMode) return;
+    const id = new URLSearchParams(location.search).get('id');
+    if (!id) return;
+    documentsAPI.get(Number(id))
+      .then((res) => {
+        setSelected(res.data);
+        setPageIdx(0);
+        setModalOpen(true);
+      })
+      .catch(() => { /* 존재하지 않거나 접근 불가한 문서 — 조용히 무시 */ });
+  }, [location.search, isTourMode]);
+
   // 전체 가이드(투어) 명령 수신: MY 필터 → 제목 클릭(커서)으로 상세 열기 → J-ayer export → 결재 경로 탭
   useEffect(() => {
     if (!isTourMode) return;

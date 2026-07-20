@@ -12,12 +12,15 @@
 
 수신자 규칙
 -----------
-- PL 검토: 지정 PL 1명
-- R/J: 담당자(assignee)가 지정돼 있으면 그 1명, 미지정이면 단계별 고정 주소
+- PL 검토: 지정 PL 각각 1명(다중 지정 시 개별 발송)
+- R: 담당자 지정 시 그 1명(제목에 "[이름님]" 표시), 미지정(도착 시점)이면 TE_R 팀 전원
+- RV(검토자): 담당자 합의로 검토자 차례가 되는 시점에 그 1명(제목에 "[이름님]" 표시)
+- RA(후결자): 병렬 진행 시작 시 각 후결자에게 개별 발송("[후결 요청]" 제목)
 - P: 담당자 지정 시 그 1명, 미지정 시 TE_P 권한 보유 전원
+- J: 담당자(claim) 지정 시 그 1명, 미지정(도착 시점)이면 고정 주소
 - O/E: 해당 역할(TE_O/TE_E) 팀 전원
-- 반려: 요청서 작성자 1명
-- 승인 완료: 작성자가 속한 모든 그룹의 멤버 전원(중복 제거)
+- 반려: 요청서 작성자 + 현재 회차에서 이미 합의했던 전원(중복 제거)
+- 승인 완료: 현재 회차 결재 경로에 참여했던 전원(중복 제거)
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
 """
 import logging
@@ -28,9 +31,10 @@ from urllib3.exceptions import InsecureRequestWarning
 
 from django.conf import settings
 from django.db import connection, transaction
+from django.db.models import Max
 from django.utils import timezone
 
-from .models import MailNotification, UserProfile
+from .models import ApprovalStep, MailNotification, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -58,21 +62,22 @@ AGENT_ROLE_MAP = {
 #   P 단계는 "라인별"로 주소가 달라지므로 여기 두지 않고,
 #   settings 의 P_LINE_FALLBACK(.env 환경변수)에서 관리한다.
 UNASSIGNED_FALLBACK = {
-    'R': 'user_R@company.com',
     'J': 'user_J@company.com',
 }
 
-# 단계 도착 시 팀 전원에게 보내는 단계 (담당자 지정 개념이 없는 병렬 단계)
+# 단계 도착 시 팀 전원에게 보내는 단계 (담당자 지정 개념이 없는 병렬 단계 + 미배정 R)
 TEAM_BROADCAST_AGENTS = ('O', 'E')
 
 # 메일 본문 표기용 단계 라벨 (마스킹된 비즈니스 용어 대신 코드 사용)
 AGENT_LABEL = {
     'PL': 'PL 검토',
     'R': 'R',
+    'RV': '검토자',
     'P': 'P',
     'J': 'J',
     'O': 'O',
     'E': 'E',
+    'RA': '후결자',
 }
 
 
@@ -155,8 +160,19 @@ def resolve_stage_recipients(document, agent, step=None):
             recipients = [step.assignee.mail]
         else:
             recipients = _team_emails('P')
+    elif agent == 'R':
+        # R: 담당자 지정 시 그 1명, 미지정(도착 시점) 시 TE_R 권한 보유 전원
+        if step is not None and step.assignee and step.assignee.mail:
+            recipients = [step.assignee.mail]
+        else:
+            recipients = _team_emails('R')
+    elif agent in ('RV', 'RA'):
+        # RV(검토자)/RA(후결자): 항상 지정된 그 1명(호출 시점에 이미 assignee 확정)
+        recipients = []
+        if step is not None and step.assignee and step.assignee.mail:
+            recipients = [step.assignee.mail]
     else:
-        # R/J: 담당자 지정 시 그 1명, 미지정 시 고정 주소
+        # J: 담당자 지정 시 그 1명, 미지정 시 고정 주소
         if step is not None and step.assignee and step.assignee.mail:
             recipients = [step.assignee.mail]
         else:
@@ -165,24 +181,41 @@ def resolve_stage_recipients(document, agent, step=None):
     return _apply_redirect(recipients)
 
 
+def _current_round(document):
+    """문서의 현재(최종) 결재 회차. 단계가 없으면 None."""
+    return ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max']
+
+
+def _current_round_step_emails(document, action=None):
+    """현재(최종) 회차의 결재 단계 중 담당자 배정된 것의 이메일(중복 제거). action 지정 시 그 결과로만 한정."""
+    max_round = _current_round(document)
+    if max_round is None:
+        return []
+    qs = ApprovalStep.objects.filter(document=document, round=max_round)
+    if action is not None:
+        qs = qs.filter(action=action)
+    return list(
+        qs.exclude(assignee__isnull=True)
+        .exclude(assignee__mail='')
+        .values_list('assignee__mail', flat=True)
+        .distinct()
+    )
+
+
 def resolve_reject_recipients(document):
-    """반려 시 수신자: 요청서 작성자 1명."""
-    recipients = [document.requester_email] if document.requester_email else []
-    return _apply_redirect(recipients)
+    """반려 시 수신자: 요청서 작성자 + 현재 회차에서 이미 합의했던 전원(중복 제거)."""
+    emails = []
+    if document.requester_email:
+        emails.append(document.requester_email)
+    for mail in _current_round_step_emails(document, action='approved'):
+        if mail not in emails:
+            emails.append(mail)
+    return _apply_redirect(emails)
 
 
 def resolve_approved_recipients(document):
-    """승인 완료 시 수신자: 작성자가 속한 모든 그룹의 멤버 전원."""
-    requester = document.requester
-    if requester is None:
-        return _apply_redirect([])
-    emails = list(
-        UserProfile.objects.filter(member_groups__in=requester.member_groups.all())
-        .exclude(mail='')
-        .distinct()
-        .values_list('mail', flat=True)
-    )
-    return _apply_redirect(emails)
+    """승인 완료 시 수신자: 현재 회차 결재 경로에 참여했던 전원(중복 제거)."""
+    return _apply_redirect(_current_round_step_emails(document))
 
 
 def resolve_notifier_recipients(document):
@@ -211,10 +244,15 @@ def resolve_notifier_recipients(document):
 # --------------------------------------------------------------------------- #
 # 메일 본문 생성
 # --------------------------------------------------------------------------- #
-def _approval_link():
-    """메일 본문에 포함할 결재 현황 페이지 주소."""
+def _detail_link(document, use_history=False):
+    """메일 본문에 포함할 의뢰 상세 딥링크.
+
+    ?id= 쿼리로 결재현황/이력조회 페이지가 해당 문서 상세 모달을 자동으로 연다.
+    완료(approved) 문서는 결재현황 목록에서 빠지므로 이력조회로 보낸다.
+    """
     base = (getattr(settings, 'FRONTEND_URL', '') or '').rstrip('/')
-    return f"{base}/approval"
+    path = 'history' if use_history else 'approval'
+    return f"{base}/{path}?id={document.id}"
 
 
 def _voc_link(voc_id):
@@ -223,18 +261,32 @@ def _voc_link(voc_id):
     return f"{base}/voc?id={voc_id}"
 
 
-def _build_message(event_type, document, agent=None):
-    """이벤트 유형별 제목/본문(HTML)을 생성한다."""
-    link = _approval_link()
-    link_html = f'<p><a href="{link}">결재 현황에서 확인하기</a></p>'
+# 완료 이후 결재현황 목록에서 빠지는 이벤트 — 이력조회로 딥링크
+_HISTORY_LINK_EVENTS = ('approved', 'notify_approved')
+
+
+def _build_message(event_type, document, agent=None, recipient_name=None):
+    """이벤트 유형별 제목/본문(HTML)을 생성한다.
+
+    recipient_name 이 주어지면(개인 지정 메일) 제목 맨 앞에 "[{이름}님] "을 붙인다.
+    """
+    use_history = event_type in _HISTORY_LINK_EVENTS
+    link = _detail_link(document, use_history)
+    link_text = '이력조회에서 확인하기' if use_history else '결재 현황에서 확인하기'
+    link_html = f'<p><a href="{link}">{link_text}</a></p>'
     base_info = (
         f'<p>의뢰서: {document.title}</p>'
         f'<p>의뢰자: {document.requester_name}</p>'
     )
+    name_prefix = f'[{recipient_name}님] ' if recipient_name else ''
 
     if event_type == 'stage_arrival':
         label = AGENT_LABEL.get(agent, agent)
-        subject = f'[결재 요청] {document.title} - {label}'
+        if agent == 'RA':
+            # 후결 요청은 접미(- 라벨) 없이 고정 문구
+            subject = f'[후결 요청] {document.title}'
+        else:
+            subject = f'{name_prefix}[결재 요청] {document.title} - {label}'
         contents = (
             f'<p>{label} 단계 결재가 도착했습니다.</p>'
             f'{base_info}{link_html}'
@@ -273,7 +325,7 @@ def _build_message(event_type, document, agent=None):
 # --------------------------------------------------------------------------- #
 # 큐 적재 (enqueue) — 결재 트랜잭션 안에서 호출
 # --------------------------------------------------------------------------- #
-def _enqueue(document, event_type, recipients, agent=None):
+def _enqueue(document, event_type, recipients, agent=None, recipient_name=None):
     """수신자가 있을 때만 MailNotification 행을 적재한다."""
     if not recipients:
         logger.info(
@@ -281,7 +333,7 @@ def _enqueue(document, event_type, recipients, agent=None):
             "(event=%s, doc=%s, agent=%s)", event_type, document.pk, agent
         )
         return None
-    subject, contents = _build_message(event_type, document, agent)
+    subject, contents = _build_message(event_type, document, agent, recipient_name)
     noti = MailNotification.objects.create(
         document=document,
         event_type=event_type,
@@ -296,10 +348,14 @@ def _enqueue(document, event_type, recipients, agent=None):
     return noti
 
 
-def enqueue_stage_arrival(document, agent, step=None):
-    """단계 도착 알림 적재."""
+def enqueue_stage_arrival(document, agent, step=None, recipient_name=None):
+    """단계 도착 알림 적재.
+
+    recipient_name: 개인 지정(담당자/검토자) 메일일 때만 넘긴다 — 제목 맨 앞에 "[이름님]" 표시용.
+    팀 전원 브로드캐스트(무배정 도착)에는 넘기지 않는다(수신자가 여럿이라 개인화 불가).
+    """
     recipients = resolve_stage_recipients(document, agent, step)
-    return _enqueue(document, 'stage_arrival', recipients, agent=agent)
+    return _enqueue(document, 'stage_arrival', recipients, agent=agent, recipient_name=recipient_name)
 
 
 def enqueue_rejected(document):

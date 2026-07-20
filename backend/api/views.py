@@ -442,11 +442,15 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         current_round = step.round
 
         if agent == 'R':
-            # 담당자 합의 → 검토자(RV)가 있으면 대기(검토자 차례), 없으면 병렬 단계로 전환
-            rv_pending = ApprovalStep.objects.filter(
+            # 담당자 합의 → 검토자(RV)가 있으면 대기(검토자 차례 — 지금 메일 발송), 없으면 병렬 단계로 전환
+            rv_step = ApprovalStep.objects.filter(
                 document=document, agent='RV', action='pending', round=current_round
-            ).exists()
-            new_status = 'under_review' if rv_pending else self._advance_to_parallel(document, step, current_round)
+            ).first()
+            if rv_step:
+                mailer.enqueue_stage_arrival(document, 'RV', rv_step, recipient_name=rv_step.assignee_name)
+                new_status = 'under_review'
+            else:
+                new_status = self._advance_to_parallel(document, step, current_round)
 
         elif agent == 'RV':
             # 검토자 합의 → 병렬 단계로 전환
@@ -602,7 +606,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         step.assignee_name = assignee_name
         step.save()
 
-        mailer.enqueue_stage_arrival(document, agent, step)
+        # R 담당자 지정 메일은 제목에 이름을 붙인다("[이름님] ..."). 그 외(P)는 기존과 동일.
+        mailer.enqueue_stage_arrival(document, agent, step, recipient_name=(step.assignee_name if agent == 'R' else None))
 
         # R(RFG 담당자) 지정 시 검토자(RV) 도 함께 지정 — '담당자 → 검토자' 순서로 진행
         if agent == 'R':
@@ -908,13 +913,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 )
                 mailer.enqueue_stage_arrival(document, 'E', e_step)
 
-        # 후결자(RA) 병렬 생성 — 고정 1명 + C가문 추가
+        # 후결자(RA) 병렬 생성 — 고정 1명 + C가문 추가. 각자에게 "[후결 요청]" 메일 발송.
         for u in post_users:
-            ApprovalStep.objects.create(
+            ra_step = ApprovalStep.objects.create(
                 document=document, agent='RA', action='pending', is_parallel=True,
                 round=round_no, due_date=ra_due,
                 assignee=u, assignee_name=(u.username or u.loginid),
             )
+            mailer.enqueue_stage_arrival(document, 'RA', ra_step)
         return 'under_review'
 
     def _resolve_designated_pls(self, request):
