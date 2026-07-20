@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'react-router-dom';
 import { documentsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal, { ConfirmModal } from '../components/Modal';
@@ -21,6 +22,7 @@ const getApprovalCompletedDate = (doc: RequestDocument): string => {
 export default function HistoryPage(): React.ReactElement {
   const { t } = useTranslation();
   const addToast = useToast();
+  const location = useLocation();
   const { currentUser } = useAuth();
   const isMaster = currentUser.role === 'MASTER';
   const isNone = currentUser.role === 'NONE';
@@ -57,6 +59,15 @@ export default function HistoryPage(): React.ReactElement {
     setPageIdx(0);
     setModalOpen(true);
   };
+
+  // 메일 딥링크(?id=) — 목록과 무관하게 해당 문서를 직접 조회해 상세 모달을 바로 연다.
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get('id');
+    if (!id) return;
+    documentsAPI.get(Number(id))
+      .then((res) => openDetail(res.data))
+      .catch(() => { /* 존재하지 않거나 접근 불가한 문서 — 조용히 무시 */ });
+  }, [location.search]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
