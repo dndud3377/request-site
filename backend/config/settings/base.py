@@ -217,6 +217,11 @@ SERVICE_JWT_REFRESH_TOKEN_LIFETIME = timedelta(days=7)
 # Auth Mode (dev: 개발용 드롭다운, sso: 운영용 OIDC)
 AUTH_MODE = os.environ.get('AUTH_MODE', 'sso')
 
+# ============================================
+# 외부 조회용 고정 API Key (읽기 전용 /api/external/ 접근)
+# ============================================
+EXTERNAL_API_KEY = os.environ.get('EXTERNAL_API_KEY', '')
+
 SESSION_COOKIE_HTTPONLY = True
 CSRF_USE_SESSIONS = True
 
