@@ -1,8 +1,10 @@
 """
 Cookie 기반 JWT 인증 클래스
 """
+import hmac
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 import jwt
@@ -77,3 +79,24 @@ class CookieJWTAuthentication(BaseAuthentication):
         except Exception as e:
             logger.error(f"[Auth] Token authentication error: {e}")
             raise AuthenticationFailed(f'인증 오류가 발생했습니다: {str(e)}')
+
+
+class ExternalApiKeyAuthentication(BaseAuthentication):
+    """외부 읽기 전용 API용 고정 키 인증.
+
+    요청 헤더 `X-API-Key` 값을 settings.EXTERNAL_API_KEY 와 상수시간 비교(hmac.compare_digest)한다.
+    로그인 계정과 무관하므로 인증 성공 시 AnonymousUser 를 반환하고, 권한 판단은
+    이 인증 성공 여부만 보는 별도 permission 클래스(views.HasExternalApiKey)에 위임한다.
+    """
+
+    def authenticate(self, request):
+        provided = request.headers.get('X-API-Key', '')
+        expected = getattr(settings, 'EXTERNAL_API_KEY', '')
+
+        if not provided:
+            return None  # 헤더 없음 → 인증 시도 안 함(permission 에서 403 처리)
+
+        if not expected or not hmac.compare_digest(provided, expected):
+            raise AuthenticationFailed('유효하지 않은 API Key입니다.')
+
+        return (AnonymousUser(), None)
