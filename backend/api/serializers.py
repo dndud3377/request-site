@@ -187,6 +187,34 @@ class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSeriali
         return obj.designated_pl.loginid if obj.designated_pl else None
 
 
+class ExternalRequestDocumentSerializer(serializers.ModelSerializer):
+    """외부 API Key 인증 전용 조회(read-only) serializer.
+
+    additional_notes(위저드 상세 JSON) 포함 전체 필드를 노출한다. 로그인 사용자
+    컨텍스트에 의존하는 권한 플래그(can_edit/can_withdraw 등, DocPermFieldsMixin)는
+    외부 요청에는 의미가 없으므로 포함하지 않는다.
+    """
+    approval_steps = ApprovalStepSerializer(many=True, read_only=True)
+    requester_loginid = serializers.SerializerMethodField()
+    designated_pl_loginid = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RequestDocument
+        fields = [
+            'id', 'title', 'requester_name', 'requester_email', 'requester_department',
+            'requester_loginid', 'product_name', 'reference_materials', 'additional_notes',
+            'status', 'production_date', 'created_at', 'updated_at', 'submitted_at',
+            'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
+        ]
+        read_only_fields = fields
+
+    def get_requester_loginid(self, obj):
+        return obj.requester.loginid if obj.requester_id else None
+
+    def get_designated_pl_loginid(self, obj):
+        return obj.designated_pl.loginid if obj.designated_pl else None
+
+
 class VocCommentSerializer(serializers.ModelSerializer):
     class Meta:
         model = VocComment
