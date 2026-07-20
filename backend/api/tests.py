@@ -40,17 +40,43 @@ class RecipientResolutionTest(TestCase):
             ['pl@company.com'],
         )
 
-    def test_rpj_unassigned_uses_fixed_fallback(self):
-        for agent, expected in [
-            ('R', 'user_R@company.com'),
-            ('P', 'user_P@company.com'),
-            ('J', 'user_J@company.com'),
-        ]:
-            step = ApprovalStep.objects.create(document=self.doc, agent=agent)
-            self.assertEqual(
-                mailer.resolve_stage_recipients(self.doc, agent, step),
-                [expected],
-            )
+    def test_j_unassigned_uses_fixed_fallback(self):
+        step = ApprovalStep.objects.create(document=self.doc, agent='J')
+        self.assertEqual(
+            mailer.resolve_stage_recipients(self.doc, 'J', step),
+            ['user_J@company.com'],
+        )
+
+    def test_r_unassigned_broadcasts_to_whole_team(self):
+        UserProfile.objects.create(loginid='r1', mail='r1@company.com', role='TE_R')
+        UserProfile.objects.create(loginid='r2', mail='r2@company.com', role='TE_R')
+        step = ApprovalStep.objects.create(document=self.doc, agent='R')
+        self.assertEqual(
+            sorted(mailer.resolve_stage_recipients(self.doc, 'R', step)),
+            ['r1@company.com', 'r2@company.com'],
+        )
+
+    def test_p_unassigned_broadcasts_to_whole_team(self):
+        UserProfile.objects.create(loginid='p1', mail='p1@company.com', role='TE_P')
+        step = ApprovalStep.objects.create(document=self.doc, agent='P')
+        self.assertEqual(
+            mailer.resolve_stage_recipients(self.doc, 'P', step),
+            ['p1@company.com'],
+        )
+
+    def test_rv_and_ra_recipient_is_assignee_only(self):
+        pl = UserProfile.objects.create(loginid='pl2', mail='pl2@company.com', role='PL')
+        step = ApprovalStep.objects.create(document=self.doc, agent='RV', assignee=pl)
+        self.assertEqual(
+            mailer.resolve_stage_recipients(self.doc, 'RV', step),
+            ['pl2@company.com'],
+        )
+        # 아직 배정 전(assignee=None)이면 수신자 없음(팀 브로드캐스트 아님)
+        unassigned_ra = ApprovalStep.objects.create(document=self.doc, agent='RA')
+        self.assertEqual(
+            mailer.resolve_stage_recipients(self.doc, 'RA', unassigned_ra),
+            [],
+        )
 
     def test_rpj_assigned_uses_assignee(self):
         te = UserProfile.objects.create(loginid='ter', mail='ter@company.com', role='TE_R')
@@ -71,22 +97,42 @@ class RecipientResolutionTest(TestCase):
             ['o1@company.com', 'o2@company.com'],
         )
 
-    def test_reject_recipient_is_requester(self):
+    def test_reject_recipient_is_requester_only_when_no_approvals_yet(self):
         self.assertEqual(
             mailer.resolve_reject_recipients(self.doc),
             ['req@company.com'],
         )
 
-    def test_approved_recipients_span_all_groups(self):
-        m1 = UserProfile.objects.create(loginid='m1', mail='m1@company.com')
-        m2 = UserProfile.objects.create(loginid='m2', mail='m2@company.com')
-        g1 = UserGroup.objects.create(name='g1', creator=self.requester)
-        g1.members.add(self.requester, m1)
-        g2 = UserGroup.objects.create(name='g2', creator=m2)
-        g2.members.add(self.requester, m2)
+    def test_reject_recipients_include_current_round_approvers(self):
+        pl = UserProfile.objects.create(loginid='pl3', mail='pl3@company.com', role='PL')
+        r = UserProfile.objects.create(loginid='r3', mail='r3@company.com', role='TE_R')
+        ApprovalStep.objects.create(
+            document=self.doc, agent='PL', round=1, action='approved', assignee=pl,
+        )
+        ApprovalStep.objects.create(
+            document=self.doc, agent='R', round=1, action='approved', assignee=r,
+        )
+        # 아직 대기 중(반려당한 단계)인 것은 포함되지 않는다
+        ApprovalStep.objects.create(document=self.doc, agent='P', round=1, action='pending')
+        self.assertEqual(
+            sorted(mailer.resolve_reject_recipients(self.doc)),
+            ['pl3@company.com', 'r3@company.com', 'req@company.com'],
+        )
+
+    def test_approved_recipients_are_current_round_participants(self):
+        # 이전 회차(반려됐던 회차) 참여자는 포함되지 않는다
+        old = UserProfile.objects.create(loginid='old1', mail='old1@company.com', role='PL')
+        ApprovalStep.objects.create(document=self.doc, agent='PL', round=1, action='rejected', assignee=old)
+
+        pl = UserProfile.objects.create(loginid='pl4', mail='pl4@company.com', role='PL')
+        r = UserProfile.objects.create(loginid='r4', mail='r4@company.com', role='TE_R')
+        j = UserProfile.objects.create(loginid='j4', mail='j4@company.com', role='TE_J')
+        ApprovalStep.objects.create(document=self.doc, agent='PL', round=2, action='approved', assignee=pl)
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=2, action='approved', assignee=r)
+        ApprovalStep.objects.create(document=self.doc, agent='J', round=2, action='approved', assignee=j)
         self.assertEqual(
             sorted(mailer.resolve_approved_recipients(self.doc)),
-            ['m1@company.com', 'm2@company.com', 'req@company.com'],
+            ['j4@company.com', 'pl4@company.com', 'r4@company.com'],
         )
 
     @override_settings(MAIL_REDIRECT_TO='dev@company.com')
@@ -162,11 +208,11 @@ class EnqueueTest(TestCase):
         self.doc = _make_document(self.requester)
 
     def test_enqueue_creates_pending_row(self):
-        step = ApprovalStep.objects.create(document=self.doc, agent='R')
-        noti = mailer.enqueue_stage_arrival(self.doc, 'R', step)
+        step = ApprovalStep.objects.create(document=self.doc, agent='J')
+        noti = mailer.enqueue_stage_arrival(self.doc, 'J', step)
         self.assertIsNotNone(noti)
         self.assertEqual(noti.status, 'pending')
-        self.assertEqual(noti.recipients, ['user_R@company.com'])
+        self.assertEqual(noti.recipients, ['user_J@company.com'])
 
     def test_enqueue_skips_when_no_recipient(self):
         self.doc.requester_email = ''
@@ -174,6 +220,50 @@ class EnqueueTest(TestCase):
         noti = mailer.enqueue_rejected(self.doc)
         self.assertIsNone(noti)
         self.assertEqual(MailNotification.objects.count(), 0)
+
+
+class MessageBuildingTest(TestCase):
+    """제목/본문 생성(_build_message) — 제목의 문서 제목·이름 접두어, 딥링크 라우팅."""
+
+    def setUp(self):
+        self.requester = UserProfile.objects.create(
+            loginid='req', mail='req@company.com', role='NONE'
+        )
+        self.doc = _make_document(self.requester)
+
+    @override_settings(FRONTEND_URL='https://example.com')
+    def test_subject_always_includes_document_title(self):
+        for event_type in ('stage_arrival', 'rejected', 'approved', 'notify_submitted', 'notify_approved'):
+            subject, _ = mailer._build_message(event_type, self.doc, agent='R')
+            self.assertIn(self.doc.title, subject)
+
+    @override_settings(FRONTEND_URL='https://example.com')
+    def test_ra_subject_uses_post_approver_prefix_without_suffix(self):
+        subject, _ = mailer._build_message('stage_arrival', self.doc, agent='RA')
+        self.assertEqual(subject, f'[후결 요청] {self.doc.title}')
+
+    @override_settings(FRONTEND_URL='https://example.com')
+    def test_personal_assignment_subject_has_name_prefix(self):
+        subject, _ = mailer._build_message('stage_arrival', self.doc, agent='R', recipient_name='홍길동')
+        self.assertTrue(subject.startswith('[홍길동님] '))
+        self.assertIn(self.doc.title, subject)
+
+    @override_settings(FRONTEND_URL='https://example.com')
+    def test_broadcast_subject_has_no_name_prefix(self):
+        subject, _ = mailer._build_message('stage_arrival', self.doc, agent='R')
+        self.assertFalse(subject.startswith('['), '팀 브로드캐스트 제목엔 이름 접두어가 없어야 한다')
+
+    @override_settings(FRONTEND_URL='https://example.com')
+    def test_in_progress_links_point_to_approval_page(self):
+        for event_type in ('stage_arrival', 'rejected', 'notify_submitted'):
+            _, contents = mailer._build_message(event_type, self.doc, agent='R')
+            self.assertIn(f'https://example.com/approval?id={self.doc.id}', contents)
+
+    @override_settings(FRONTEND_URL='https://example.com')
+    def test_completion_links_point_to_history_page(self):
+        for event_type in ('approved', 'notify_approved'):
+            _, contents = mailer._build_message(event_type, self.doc)
+            self.assertIn(f'https://example.com/history?id={self.doc.id}', contents)
 
 
 class MailQueueProcessTest(TestCase):
