@@ -27,8 +27,9 @@ from .models import (
 from .utils import LINE_TO_LINEID_MAP
 from . import mailer
 from . import doc_permissions
+from .authentication import ExternalApiKeyAuthentication
 from .serializers import (
-    RequestDocumentSerializer, RequestDocumentListSerializer,
+    RequestDocumentSerializer, RequestDocumentListSerializer, ExternalRequestDocumentSerializer,
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
     UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer, AddressBookSerializer,
 )
@@ -64,6 +65,17 @@ class IsAuthenticatedOrMasterDelete(BasePermission):
         if request.method == 'DELETE':
             return bool(request.user and request.user.is_authenticated and request.user.role == 'MASTER')
         return _is_dev() or bool(request.user and request.user.is_authenticated)
+
+
+class HasExternalApiKey(BasePermission):
+    """ExternalApiKeyAuthentication 이 X-API-Key 검증에 성공했을 때만 허용.
+
+    로그인 계정 인증이 아니므로 request.user.is_authenticated 를 보지 않고,
+    request.successful_authenticator 가 ExternalApiKeyAuthentication 인지로 판단한다.
+    """
+
+    def has_permission(self, request, view):
+        return isinstance(request.successful_authenticator, ExternalApiKeyAuthentication)
 
 
 class GuideWritePermission(BasePermission):
@@ -1197,6 +1209,26 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             by_status[key] = RequestDocument.objects.filter(status=key).count()
 
         return Response({'total': total, 'by_status': by_status})
+
+
+class ExternalRequestDocumentViewSet(viewsets.ReadOnlyModelViewSet):
+    """외부 시스템용 고정 API Key 읽기 전용 조회.
+
+    /api/external/v1/documents/ — 로그인 계정과 무관하게 X-API-Key 헤더 하나로 접근한다.
+    내부 결재 액션(submit/approve-step/delete 등)이 있는 RequestDocumentViewSet 과는
+    완전히 분리된 클래스라 실수로도 쓰기 액션이 노출되지 않는다. draft 포함 전체 상태를 반환한다
+    (내부용 get_queryset() 의 draft 접근 제한과 달리 API Key 소지자는 전체를 조회할 수 있음 — 의도된 동작).
+    """
+    queryset = RequestDocument.objects.select_related('requester', 'designated_pl').all()
+    serializer_class = ExternalRequestDocumentSerializer
+    authentication_classes = [ExternalApiKeyAuthentication]
+    permission_classes = [HasExternalApiKey]
+    pagination_class = None
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['status', 'product_name']
+    search_fields = ['title', 'product_name', 'requester_name', 'requester_department']
+    ordering_fields = ['created_at', 'submitted_at']
+    ordering = ['-created_at']
 
 
 class VOCViewSet(viewsets.ModelViewSet):
