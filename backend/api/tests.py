@@ -200,6 +200,62 @@ class DraftVisibilityTest(TestCase):
         self.assertIn(self.draft.id, self._visible_ids(self.master))
 
 
+@override_settings(EXTERNAL_API_KEY='test-external-key-123')
+class ExternalApiKeyAccessTest(TestCase):
+    """외부 API Key(read-only) 엔드포인트 — 인증/권한/노출 범위 검증."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.author = UserProfile.objects.create(loginid='author', mail='a@c.com', role='NONE')
+        self.draft = RequestDocument.objects.create(
+            title='draft doc', requester=self.author, requester_name='a',
+            requester_email='a@c.com', requester_department='d', product_name='p',
+            status='draft', additional_notes='{"detail": {"secret": "v"}}',
+        )
+        self.approved = RequestDocument.objects.create(
+            title='approved doc', requester=self.author, requester_name='a',
+            requester_email='a@c.com', requester_department='d', product_name='p',
+            status='approved',
+        )
+
+    def test_missing_key_returns_401_or_403(self):
+        res = self.client.get('/api/external/v1/documents/')
+        self.assertIn(res.status_code, (401, 403))
+
+    def test_wrong_key_returns_401(self):
+        res = self.client.get('/api/external/v1/documents/', HTTP_X_API_KEY='wrong-key')
+        self.assertEqual(res.status_code, 401)
+
+    def test_correct_key_lists_all_statuses_including_draft(self):
+        res = self.client.get('/api/external/v1/documents/', HTTP_X_API_KEY='test-external-key-123')
+        self.assertEqual(res.status_code, 200)
+        ids = {row['id'] for row in res.json()}
+        self.assertIn(self.draft.id, ids)
+        self.assertIn(self.approved.id, ids)
+
+    def test_correct_key_returns_additional_notes(self):
+        res = self.client.get(
+            f'/api/external/v1/documents/{self.draft.id}/', HTTP_X_API_KEY='test-external-key-123'
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertIn('secret', res.json()['additional_notes'])
+
+    def test_write_methods_not_exposed(self):
+        """ReadOnlyModelViewSet 이므로 POST/PATCH/DELETE 라우트 자체가 없어야 한다."""
+        res = self.client.post(
+            '/api/external/v1/documents/', {'title': 'x'}, HTTP_X_API_KEY='test-external-key-123'
+        )
+        self.assertEqual(res.status_code, 405)
+
+    def test_internal_endpoint_unaffected_by_api_key_header(self):
+        """내부 /api/documents/ 응답은 X-API-Key 헤더 유무와 무관하게 동일해야 한다(기존 인증 규칙 불변).
+        AUTH_MODE(dev/sso)에 따라 실제 상태 코드가 달라질 수 있어 값 자체는 고정하지 않는다."""
+        res_without = self.client.get('/api/documents/')
+        res_with = self.client.get('/api/documents/', HTTP_X_API_KEY='test-external-key-123')
+        self.assertEqual(res_without.status_code, res_with.status_code)
+
+
 class EnqueueTest(TestCase):
     def setUp(self):
         self.requester = UserProfile.objects.create(
