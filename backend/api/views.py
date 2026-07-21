@@ -237,8 +237,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or default
 
     def _validate_bb_mapping(self, document):
-        """J-ayer 행 bb 매핑 검증. 문제 있으면 error 문자열 반환, 없으면 None."""
+        """J-ayer 행 bb 매핑 검증. 문제 있으면 error 문자열 반환, 없으면 None.
+
+        기등록/layer삭제(new_or_copy) 행은 프론트(isNocSpecial, constants.ts)에서도
+        매핑 대상·검증에서 제외하므로 여기서도 동일하게 제외해야 한다(R-19).
+        """
         import json
+        NOC_SPECIAL = ('기등록', 'layer삭제')
         try:
             detail = json.loads(document.additional_notes or '{}')
             jayer_rows = detail.get('jayerRows', [])
@@ -248,7 +253,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 for bb in bb_rows
                 if bb.get('sourceJayerRowId')
             }
-            unmapped = [r for r in jayer_rows if r.get('process_id') and r.get('id') not in mapped_jayer_ids]
+            unmapped = [
+                r for r in jayer_rows
+                if r.get('process_id')
+                and r.get('new_or_copy') not in NOC_SPECIAL
+                and r.get('id') not in mapped_jayer_ids
+            ]
             if unmapped:
                 return '모든 원본 데이터에 bb 을 매핑해야 상신할 수 있습니다.'
         except (json.JSONDecodeError, TypeError):
