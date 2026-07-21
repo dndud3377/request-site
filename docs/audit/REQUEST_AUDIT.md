@@ -372,10 +372,14 @@
 - 심각도: 🟡보통 · 상태: 🔍점검필요 · 결정/메모:
 
 ### [R-19] 🔴 백엔드 매핑 검증이 기등록/layer삭제 행을 제외하지 않음 → 상신 실패 위험  (관련: F-5.7, F-3.10, F-Z.10)
-- 위치: `backend/api/views.py:154-171` `_validate_bb_mapping`; 프론트 `index.tsx:2101-2109` `validate(5)`
+- 위치: `backend/api/views.py:239-256`(현 라인 기준) `_validate_bb_mapping`; 프론트 `index.tsx:2653-2657` `validate(5)`
 - 증상/의심: **프론트는** 매핑 필수 대상을 `!disabled && !isNocSpecial(new_or_copy) && process_id`로 제한(기등록·layer삭제 제외). **백엔드는** `process_id가 있고 매핑 안 된 모든 행`을 unmapped로 본다(기등록·layer삭제 미제외). 따라서 `기등록`/`layer삭제` 활성 행(process_id 보유, bb 매핑 대상 아님)이 있으면 **프론트 검증은 통과하지만 백엔드 submit/resubmit이 "모든 원본 데이터에 bb을 매핑해야 상신할 수 있습니다" 에러로 차단** → 사용자가 정상 입력했는데 상신 실패.
-- 재현/근거: F-1.5 Merge로 기등록 행 생성(또는 J-layer에서 new_or_copy=기등록 수동 설정) → 다른 행 매핑 완료 후 상신 → 백엔드 400. (FIX_PROGRESS.md 목표 #6 "상신 실패 없어야 함"과 정면 충돌)
-- 심각도: 🔴치명 · 상태: 🔍점검필요 · 결정/메모: 프론트·백엔드 제외 규칙을 일치시켜야 함(백엔드에 disabled/isNocSpecial 제외 추가). ※ 저장 시 disabled 행은 제외되지만 기등록/layer삭제는 활성이라 저장됨.
+- 재현/근거: F-1.5 Merge로 기등록 행 생성(또는 J-layer에서 new_or_copy=기등록 수동 설정) → 다른 행 매핑 완료 후 상신 → 백엔드 400. **수동 재현 확인(2026-07-21):** Merge 없이 Step3에서 신규 행 1개에 `process_id` 입력 + `new_or_copy='기등록'` 선택만으로 상신 시 동일 400 재현됨(사용자 확인).
+- 심각도: 🔴치명 · 상태: ✅수정완료
+- 결정/메모 (2026-07-21): `_validate_bb_mapping`의 `unmapped` 산출 조건에 `r.get('new_or_copy') not in ('기등록', 'layer삭제')` 제외 조건 추가(프론트 `isNocSpecial`과 규칙 일치). disabled 행은 기존대로 저장 시(`index.tsx:2727`) 이미 제외되므로 별도 처리 불필요.
+  - `backend/api/tests.py`에 `BbMappingValidationTest` 회귀 테스트 3건 추가: ① 기등록/layer삭제 unmapped 행은 통과 ② 일반(신규) unmapped 행은 여전히 차단 ③ 정상 매핑된 행은 통과.
+  - 검증: 원격 세션에 docker/MySQL/Django 미설치라 `python manage.py test` 실행 불가 — `python3 -m py_compile`로 두 파일 구문 검증만 완료(에러 0). **사용자가 `docker exec -it <backend_container> python manage.py test` 실행 후 결과 확인 필요.**
+  - 커밋: (아직 미커밋 — 사용자 확인 후 커밋 예정)
 
 ### [R-20] 상신 성공 토스트의 메신저 발송 안내가 항상 미발화 (dead path)  (관련: F-X.3)
 - 위치: 프론트 `index.tsx:2381-2383`(`submitRes.data.email_sent`); 백엔드 `views.py:216`(`'email_sent': False` 하드코딩)
@@ -437,3 +441,4 @@ cd frontend && CI=true npx react-scripts test --watchAll=false --passWithNoTests
 - 2026-06-30: R-06 ⏸️보류. **R-07 🟢정상 확정(유지)**, **R-08 ✅수정완료**(잘못된 주석 삭제). **R-09 ✅수정완료**(상신 update 중복 제거), **R-10 ✅수정완료**(로드 실패 알림+저장/상신 차단으로 덮어쓰기 방지), **R-11 🟢의도된동작 확정**.
 - 2026-06-30: R-12/R-16 재검토 진행 중. **R-13 ✅수정완료**(CLONE 원본 필수화 + NEW 전환 초기화 버그 수정), **R-14 🟢(기존)**, **R-15 🟢의도된동작 확정**(0행 카운터로 확인), **R-17 ✅수정완료**(bb_entries 전 항목 필수).
 - 2026-06-30: **R-12 ✅수정완료**(flow 옵션 id 키 전환, R-01과 동일 방식), **R-16 ✅수정완료**(비활성 SD의 TBV/TLV 항목 영구 삭제 — 사용자 결정).
+- 2026-07-21: **R-19 ✅수정완료** — `_validate_bb_mapping`에 프론트 `isNocSpecial`과 동일한 기등록/layer삭제 제외 규칙 추가 + `BbMappingValidationTest` 회귀 테스트 3건 추가(`backend/api/tests.py`). 원격 세션 제약으로 `manage.py test` 미실행(구문 검증만 완료) — 사용자 실행 확인 필요.

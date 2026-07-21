@@ -431,3 +431,50 @@ class HybridImmediateSendTest(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             mailer.enqueue_rejected(self.doc)
         mock_async.assert_not_called()
+
+
+class BbMappingValidationTest(TestCase):
+    """_validate_bb_mapping — 상신 시 J-layer 행의 Backbone 매핑 필수 검증 (R-19).
+
+    프론트(isNocSpecial, constants.ts)와 동일하게 new_or_copy가 기등록/layer삭제인
+    행은 process_id가 있고 매핑이 안 되어 있어도 검증 대상에서 제외돼야 한다.
+    """
+
+    def setUp(self):
+        import json
+        from .views import RequestDocumentViewSet
+        self._json = json
+        self._view = RequestDocumentViewSet()
+        self.requester = UserProfile.objects.create(
+            loginid='req', mail='req@company.com', role='NONE'
+        )
+
+    def _make_doc_with_jayer(self, jayer_rows, bb_rows=None):
+        doc = _make_document(self.requester)
+        doc.additional_notes = self._json.dumps({
+            'jayerRows': jayer_rows,
+            'bbRows': bb_rows or [],
+        })
+        doc.save()
+        return doc
+
+    def test_noc_special_row_excluded_even_when_unmapped(self):
+        doc = self._make_doc_with_jayer([
+            {'id': 'j1', 'process_id': 'P1', 'new_or_copy': '기등록'},
+            {'id': 'j2', 'process_id': 'P2', 'new_or_copy': 'layer삭제'},
+        ])
+        self.assertIsNone(self._view._validate_bb_mapping(doc))
+
+    def test_normal_unmapped_row_still_blocks_submit(self):
+        doc = self._make_doc_with_jayer([
+            {'id': 'j1', 'process_id': 'P1', 'new_or_copy': '신규'},
+        ])
+        err = self._view._validate_bb_mapping(doc)
+        self.assertIsNotNone(err)
+
+    def test_mapped_normal_row_passes(self):
+        doc = self._make_doc_with_jayer(
+            [{'id': 'j1', 'process_id': 'P1', 'new_or_copy': '신규'}],
+            bb_rows=[{'sourceJayerRowId': 'j1'}],
+        )
+        self.assertIsNone(self._view._validate_bb_mapping(doc))
