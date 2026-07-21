@@ -41,6 +41,9 @@ EXTERNAL_API_KEY=<위에서 생성한 값>
   - `?status=approved` / `?product_name=...` (filterset)
   - `?search=키워드` (title/product_name/requester_name/requester_department 대상)
   - `?ordering=created_at` / `?ordering=-submitted_at`
+- **이 엔드포인트 전용 추가 파라미터** (둘 다 옵트인 — 미지정 시 기존과 동일하게 동작):
+  - `?p_approved=true` : 결재 **회차(round) 상관없이** P단계가 한 번이라도 합의(`approved`)된 적 있는 문서만 반환. 반려 후 재상신되어 최신 회차의 P단계가 아직 `pending`이어도, 과거 회차에서 합의된 적 있으면 포함된다. `true`/`false` 외 값은 `400`.
+  - `?fields=product_name,additional_notes` : 응답에 담을 필드를 직접 선택(콤마 구분). 허용되지 않는 필드명이 있으면 `400`(에러 메시지에 허용 필드 전체 목록 포함). 미지정 시 전체 필드 반환(기존과 동일).
 - **페이지네이션 없음**: 전체 목록을 한 번에 반환(내부 `/api/documents/`와 동일 컨벤션).
 
 ### 요청 헤더
@@ -85,6 +88,8 @@ X-API-Key: <EXTERNAL_API_KEY 값>
 | `X-API-Key` 값이 서버 설정과 불일치 | `401 Unauthorized` |
 | `EXTERNAL_API_KEY` 서버에 미설정(빈 값) | 어떤 키를 보내도 `401` |
 | 쓰기 메서드(POST 등) 호출 | `405 Method Not Allowed` |
+| `p_approved` 값이 `true`/`false`가 아님 | `400 Bad Request` |
+| `fields`에 존재하지 않는 필드명 포함 | `400 Bad Request` (허용 필드 목록 안내) |
 
 ---
 
@@ -99,6 +104,10 @@ curl -H "X-API-Key: <키>" "https://<서버주소>/api/external/v1/documents/?st
 
 # 상세 조회
 curl -H "X-API-Key: <키>" https://<서버주소>/api/external/v1/documents/123/
+
+# product_name 검색 + P단계 합의 완료 이력 있는 문서만 + 원하는 필드만
+curl -H "X-API-Key: <키>" \
+  "https://<서버주소>/api/external/v1/documents/?product_name=PROD-A&p_approved=true&fields=product_name,additional_notes"
 ```
 
 ---
@@ -113,7 +122,8 @@ curl -H "X-API-Key: <키>" https://<서버주소>/api/external/v1/documents/123/
   - 단, 로그인 사용자 컨텍스트에 의존하는 권한 플래그(`can_edit`/`can_withdraw`/`pause_request` 등, 내부 `DocPermFieldsMixin`)는 외부 요청에 의미가 없으므로 제외했다.
 - **키 유출 시 영향**: 단일 고정 키이므로 유출되면 회수(재발급) 전까지 전체 이력(모든 상태 + 개인정보 포함)이 노출된다. **주기적 키 교체를 권장**한다.
 - **HTTPS 필수**: 운영은 nginx가 443(HTTPS)만 개방하므로 키가 평문 네트워크로 노출되지 않는다. 개발(10011, HTTP)에서 테스트 시에는 키 노출에 유의.
-- **Rate limiting / 접근 로깅은 현재 미구현**이다. 실제 운영 노출 전 과다 조회 방지(Throttle)·접근 로그 적재 여부를 별도로 결정해야 한다.
+- **Rate limiting / 영속 접근 로깅은 현재 미구현**이다. 실제 운영 노출 전 과다 조회 방지(Throttle)·접근 로그 적재(DB/파일) 여부를 별도로 결정해야 한다.
+- **필터 조건 서버 콘솔 출력**: `/api/external/v1/documents/` 목록 조회 시마다 `product_name`/`p_approved`/`fields` 파라미터와 매칭 건수를 `print()`로 서버 콘솔에 남긴다(`docker logs`로 확인). **HTTP 응답 바디에는 포함되지 않으며**, DB에 영속 저장되지도 않는다(위 "영속 접근 로깅 미구현"과는 별개의 즉시성 디버그 출력).
 - **CORS**: 서버-투-서버(curl/backend) 호출에는 적용되지 않는다. 외부 시스템이 브라우저 JS로 직접 호출하는 경우에만 `CORS_ALLOWED_ORIGINS`에 해당 도메인 추가가 필요하다(현재 미추가).
 
 ---

@@ -13,12 +13,13 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS
+from rest_framework.exceptions import ValidationError
 from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import connection, transaction
 from django.contrib.auth import get_user_model
 User = get_user_model()
-from django.db.models import Q, Max, Min
+from django.db.models import Q, Max, Min, Exists, OuterRef
 from .models import (
     RequestDocument, ApprovalStep, PauseRequest, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
@@ -1218,6 +1219,11 @@ class ExternalRequestDocumentViewSet(viewsets.ReadOnlyModelViewSet):
     내부 결재 액션(submit/approve-step/delete 등)이 있는 RequestDocumentViewSet 과는
     완전히 분리된 클래스라 실수로도 쓰기 액션이 노출되지 않는다. draft 포함 전체 상태를 반환한다
     (내부용 get_queryset() 의 draft 접근 제한과 달리 API Key 소지자는 전체를 조회할 수 있음 — 의도된 동작).
+
+    옵트인 쿼리파라미터(둘 다 미지정 시 기존과 동일하게 동작):
+    - `p_approved=true` : 결재 회차(round) 상관없이 P단계가 한 번이라도 합의(approved)된
+      적 있는 문서만 반환.
+    - `fields=a,b,c` : 응답에 담을 필드를 호출자가 직접 선택(허용되지 않는 필드명은 400).
     """
     queryset = RequestDocument.objects.select_related('requester', 'designated_pl').all()
     serializer_class = ExternalRequestDocumentSerializer
@@ -1229,6 +1235,60 @@ class ExternalRequestDocumentViewSet(viewsets.ReadOnlyModelViewSet):
     search_fields = ['title', 'product_name', 'requester_name', 'requester_department']
     ordering_fields = ['created_at', 'submitted_at']
     ordering = ['-created_at']
+
+    def initial(self, request, *args, **kwargs):
+        # 인증/권한 확인(super().initial) 통과 후에만 파라미터 형식을 검증한다.
+        super().initial(request, *args, **kwargs)
+        self._validate_query_params(request)
+
+    def _validate_query_params(self, request):
+        p_approved_param = request.query_params.get('p_approved')
+        if p_approved_param is not None and p_approved_param.lower() not in ('true', 'false'):
+            raise ValidationError({'p_approved': "'true' 또는 'false' 만 허용됩니다."})
+
+        fields_param = request.query_params.get('fields')
+        if fields_param:
+            requested = {f.strip() for f in fields_param.split(',') if f.strip()}
+            allowed = set(ExternalRequestDocumentSerializer.Meta.fields)
+            invalid = requested - allowed
+            if invalid:
+                raise ValidationError({
+                    'fields': f"허용되지 않는 필드입니다: {sorted(invalid)}. 허용 필드: {sorted(allowed)}",
+                })
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        p_approved_param = self.request.query_params.get('p_approved')
+        if p_approved_param is not None and p_approved_param.lower() == 'true':
+            p_step_approved = ApprovalStep.objects.filter(
+                document=OuterRef('pk'), agent='P', action='approved',
+            )
+            qs = qs.filter(Exists(p_step_approved))
+        return qs
+
+    def get_serializer(self, *args, **kwargs):
+        fields_param = self.request.query_params.get('fields')
+        if fields_param:
+            kwargs['fields'] = [f.strip() for f in fields_param.split(',') if f.strip()]
+        return super().get_serializer(*args, **kwargs)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # 서버 로그 전용 — 호출자에게 보내는 HTTP 응답에는 포함하지 않는다.
+        print(
+            f"[ExternalAPI] product_name={request.query_params.get('product_name', '(전체)')!r} "
+            f"p_approved={request.query_params.get('p_approved', '(미적용)')!r} "
+            f"fields={request.query_params.get('fields', '(전체 필드)')!r} "
+            f"-> {queryset.count()}건 매칭"
+        )
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
 
 class VOCViewSet(viewsets.ModelViewSet):
