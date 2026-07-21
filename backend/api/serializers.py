@@ -187,12 +187,30 @@ class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSeriali
         return obj.designated_pl.loginid if obj.designated_pl else None
 
 
-class ExternalRequestDocumentSerializer(serializers.ModelSerializer):
+class DynamicFieldsSerializerMixin:
+    """생성 시 `fields`(문자열 이터러블)를 넘기면 그 필드만 남기고 나머지는 제거한다.
+
+    `fields` 를 넘기지 않으면(None) 기존과 동일하게 Meta.fields 전체를 반환한다
+    (하위 호환 유지 — 호출자가 옵트인할 때만 응답 필드를 축소).
+    """
+
+    def __init__(self, *args, **kwargs):
+        requested_fields = kwargs.pop('fields', None)
+        super().__init__(*args, **kwargs)
+        if requested_fields is not None:
+            allowed = set(requested_fields)
+            for field_name in set(self.fields) - allowed:
+                self.fields.pop(field_name)
+
+
+class ExternalRequestDocumentSerializer(DynamicFieldsSerializerMixin, serializers.ModelSerializer):
     """외부 API Key 인증 전용 조회(read-only) serializer.
 
     additional_notes(위저드 상세 JSON) 포함 전체 필드를 노출한다. 로그인 사용자
     컨텍스트에 의존하는 권한 플래그(can_edit/can_withdraw 등, DocPermFieldsMixin)는
     외부 요청에는 의미가 없으므로 포함하지 않는다.
+
+    `fields` 쿼리파라미터(뷰에서 전달)로 응답 필드를 호출자가 선택할 수 있다.
     """
     approval_steps = ApprovalStepSerializer(many=True, read_only=True)
     requester_loginid = serializers.SerializerMethodField()
