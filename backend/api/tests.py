@@ -255,6 +255,56 @@ class ExternalApiKeyAccessTest(TestCase):
         res_with = self.client.get('/api/documents/', HTTP_X_API_KEY='test-external-key-123')
         self.assertEqual(res_without.status_code, res_with.status_code)
 
+    def test_p_approved_true_filters_to_any_round_p_approval(self):
+        """p_approved=true 는 회차(round) 상관없이 P단계가 한 번이라도 approved 였던 문서를 포함한다."""
+        ApprovalStep.objects.create(document=self.approved, agent='P', action='approved', round=1)
+
+        # 과거 회차에서 P 합의된 적 있으나(반려 후 재상신으로) 최신 회차는 아직 pending인 문서도 포함돼야 한다
+        resubmitted = RequestDocument.objects.create(
+            title='resubmitted doc', requester=self.author, requester_name='a',
+            requester_email='a@c.com', requester_department='d', product_name='p',
+            status='under_review',
+        )
+        ApprovalStep.objects.create(document=resubmitted, agent='P', action='approved', round=1)
+        ApprovalStep.objects.create(document=resubmitted, agent='P', action='pending', round=2)
+
+        res = self.client.get(
+            '/api/external/v1/documents/?p_approved=true', HTTP_X_API_KEY='test-external-key-123'
+        )
+        self.assertEqual(res.status_code, 200)
+        ids = {row['id'] for row in res.json()}
+        self.assertIn(self.approved.id, ids)
+        self.assertIn(resubmitted.id, ids)
+        self.assertNotIn(self.draft.id, ids)  # P단계 이력 자체가 없음
+
+    def test_p_approved_omitted_returns_everything(self):
+        """p_approved 미지정 시 기존과 동일하게 P단계 이력과 무관하게 전부 반환된다(회귀)."""
+        res = self.client.get('/api/external/v1/documents/', HTTP_X_API_KEY='test-external-key-123')
+        ids = {row['id'] for row in res.json()}
+        self.assertIn(self.draft.id, ids)
+
+    def test_invalid_p_approved_value_returns_400(self):
+        res = self.client.get(
+            '/api/external/v1/documents/?p_approved=maybe', HTTP_X_API_KEY='test-external-key-123'
+        )
+        self.assertEqual(res.status_code, 400)
+
+    def test_fields_param_restricts_response_fields(self):
+        res = self.client.get(
+            '/api/external/v1/documents/?fields=product_name,additional_notes',
+            HTTP_X_API_KEY='test-external-key-123',
+        )
+        self.assertEqual(res.status_code, 200)
+        row = res.json()[0]
+        self.assertEqual(set(row.keys()), {'product_name', 'additional_notes'})
+
+    def test_invalid_fields_param_returns_400(self):
+        res = self.client.get(
+            '/api/external/v1/documents/?fields=not_a_real_field',
+            HTTP_X_API_KEY='test-external-key-123',
+        )
+        self.assertEqual(res.status_code, 400)
+
 
 class EnqueueTest(TestCase):
     def setUp(self):
