@@ -956,7 +956,9 @@ export default function PermissionPage(): React.ReactElement {
     if (newRole === user.role) return;
     setChangingRoleId(user.id);
     try {
-      await usersAPI.assignRole(user.id, newRole);
+      const { data: updated } = await usersAPI.assignRole(user.id, newRole);
+      setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
+      setUsersForAssignment(prev => prev.filter(u => u.id !== updated.id));
       addToast(t('permission.role_change_success'), 'success');
     } catch (err: unknown) {
       addToast(err instanceof Error ? err.message : t('permission.role_change_error'), 'error');
