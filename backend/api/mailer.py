@@ -33,6 +33,7 @@ from django.conf import settings
 from django.db import connection, transaction
 from django.db.models import Max
 from django.utils import timezone
+from django.utils.html import escape
 
 from .models import ApprovalStep, MailNotification, UserProfile
 
@@ -78,6 +79,14 @@ AGENT_LABEL = {
     'O': 'O',
     'E': 'E',
     'RA': '후결자',
+}
+
+# agent 가 없는 이벤트(반려/완료/통보)에서 KPI "결재 단계" 타일에 표시할 상태 문구
+EVENT_STATUS_LABEL = {
+    'rejected': '반려',
+    'approved': '승인 완료',
+    'notify_submitted': '상신 통보',
+    'notify_approved': '결재 완료 통보',
 }
 
 
@@ -265,19 +274,104 @@ def _voc_link(voc_id):
 _HISTORY_LINK_EVENTS = ('approved', 'notify_approved')
 
 
+def _kpi_grid(tiles):
+    """(label, value) 튜플 4개를 히어로+KPI 카드 이메일의 2x2 타일 그리드 HTML로 렌더링한다.
+
+    label/value 는 사용자 입력을 포함할 수 있으므로(의뢰자 이름 등) 여기서 escape 한다.
+    """
+    cells = []
+    for i, (label, value) in enumerate(tiles):
+        pad = 'padding:0 6px 12px 0;' if i % 2 == 0 else 'padding:0 0 12px 6px;'
+        cells.append(
+            f'<td width="50%" style="{pad}">'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            'style="background:#f7faff;border:1px solid #e2e8f0;border-radius:10px;">'
+            '<tr><td style="padding:13px 15px;">'
+            f'<div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:#64748b;'
+            f'text-transform:uppercase;">{escape(label)}</div>'
+            f'<div style="margin-top:5px;font-size:15px;font-weight:700;color:#0f172a;">'
+            f'{escape(str(value))}</div>'
+            '</td></tr></table></td>'
+        )
+    rows = ''.join(f'<tr>{cells[i]}{cells[i + 1]}</tr>' for i in range(0, len(cells), 2))
+    return f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{rows}</table>'
+
+
+def _render_hero_kpi_email(headline, document, kpi_tiles, note_value, link, link_text):
+    """히어로 헤더 + KPI 카드형 트랜잭셔널 이메일 본문(HTML)을 렌더링한다.
+
+    document.title / note_value 는 사용자 입력이므로 escape 하고, 특이사항의 줄바꿈은
+    white-space:pre-wrap 으로 그대로 살린다(별도 개행 변환 불필요).
+    """
+    title_html = escape(document.title)
+    kpi_html = _kpi_grid(kpi_tiles)
+    note_html = escape(note_value) if note_value else '-'
+    headline_html = escape(headline)
+
+    return f'''<!--[if mso]>
+<table role="presentation" align="center" width="600" cellpadding="0" cellspacing="0"><tr><td>
+<![endif]-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="width:100%;max-width:600px;margin:0 auto;background:#eef4ff;border-radius:14px;overflow:hidden;border:1px solid #dbe4f7;">
+  <tr>
+    <td bgcolor="#2563eb" style="background:linear-gradient(135deg,#2563eb 0%,#3b82f6 100%);padding:30px 32px 26px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr><td style="font-size:12px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.75);text-transform:uppercase;">제품 소개 지도 의뢰 시스템</td></tr>
+        <tr><td style="padding-top:12px;font-size:19px;line-height:1.45;font-weight:700;color:#ffffff;">{headline_html}</td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:28px 32px 4px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #dbe4f7;border-radius:12px;margin-bottom:20px;">
+        <tr><td style="padding:18px 18px 4px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
+            <tr><td>
+              <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:#3b5486;text-transform:uppercase;">의뢰서 제목</div>
+              <div style="margin-top:6px;font-size:17px;font-weight:700;color:#0f172a;line-height:1.5;">{title_html}</div>
+            </td></tr>
+          </table>
+          {kpi_html}
+        </td></tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+        <tr><td style="background:#ffffff;border:1px solid #dbe4f7;border-radius:10px;padding:14px 16px;">
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:#2563eb;text-transform:uppercase;">특이사항</div>
+          <div style="margin-top:5px;font-size:14px;font-weight:500;color:#0f172a;line-height:1.6;white-space:pre-wrap;">{note_html}</div>
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:22px 32px 6px;">
+      <table role="presentation" cellpadding="0" cellspacing="0">
+        <tr><td bgcolor="#2563eb" style="border-radius:8px;">
+          <a href="{link}" style="display:inline-block;padding:12px 22px;font-size:13.5px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">{link_text} →</a>
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 32px 30px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="border-top:1px solid #e2e8f0;font-size:0;line-height:0;">&nbsp;</td></tr></table>
+      <p style="margin:16px 0 0;font-size:11.5px;line-height:1.7;color:#94a3b8;">본 메일은 제품 소개 지도 의뢰 시스템에서 자동 발송되었습니다. 이 메일에는 회신하지 마세요.</p>
+    </td>
+  </tr>
+</table>
+<!--[if mso]>
+</td></tr></table>
+<![endif]-->'''
+
+
 def _build_message(event_type, document, agent=None, recipient_name=None):
     """이벤트 유형별 제목/본문(HTML)을 생성한다.
 
     recipient_name 이 주어지면(개인 지정 메일) 제목 맨 앞에 "[{이름}님] "을 붙인다.
+    본문은 히어로 헤더 + KPI 카드형 템플릿(_render_hero_kpi_email)을 공통으로 사용한다.
     """
     use_history = event_type in _HISTORY_LINK_EVENTS
     link = _detail_link(document, use_history)
     link_text = '이력조회에서 확인하기' if use_history else '결재 현황에서 확인하기'
-    link_html = f'<p><a href="{link}">{link_text}</a></p>'
-    base_info = (
-        f'<p>의뢰서: {document.title}</p>'
-        f'<p>의뢰자: {document.requester_name}</p>'
-    )
     name_prefix = f'[{recipient_name}님] ' if recipient_name else ''
 
     if event_type == 'stage_arrival':
@@ -285,39 +379,43 @@ def _build_message(event_type, document, agent=None, recipient_name=None):
         if agent == 'RA':
             # 후결 요청은 접미(- 라벨) 없이 고정 문구
             subject = f'[후결 요청] {document.title}'
+            headline = '후결 요청이 도착했습니다.'
         else:
             subject = f'{name_prefix}[결재 요청] {document.title} - {label}'
-        contents = (
-            f'<p>{label} 단계 결재가 도착했습니다.</p>'
-            f'{base_info}{link_html}'
-        )
+            headline = f'{label} 단계 결재가 도착했습니다.'
+        stage_value = label
     elif event_type == 'rejected':
         subject = f'[반려] {document.title}'
-        contents = (
-            '<p>요청하신 의뢰서가 반려되었습니다.</p>'
-            f'{base_info}{link_html}'
-        )
+        headline = '요청하신 의뢰서가 반려되었습니다.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'approved':
         subject = f'[승인 완료] {document.title}'
-        contents = (
-            '<p>의뢰서 결재가 모두 완료되었습니다.</p>'
-            f'{base_info}{link_html}'
-        )
+        headline = '의뢰서 결재가 모두 완료되었습니다.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'notify_submitted':
         subject = f'[상신 통보] {document.title}'
-        contents = (
-            '<p>아래 의뢰서가 상신되어 통보드립니다. (통보처 수신)</p>'
-            f'{base_info}{link_html}'
-        )
+        headline = '아래 의뢰서가 상신되어 통보드립니다. (통보처 수신)'
+        stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'notify_approved':
         subject = f'[결재 완료 통보] {document.title}'
-        contents = (
-            '<p>아래 의뢰서의 결재가 완료되어 통보드립니다. (통보처 수신)</p>'
-            f'{base_info}{link_html}'
-        )
+        headline = '아래 의뢰서의 결재가 완료되어 통보드립니다. (통보처 수신)'
+        stage_value = EVENT_STATUS_LABEL[event_type]
     else:
         subject = f'[알림] {document.title}'
-        contents = f'{base_info}{link_html}'
+        headline = '새로운 알림이 있습니다.'
+        stage_value = '-'
+
+    submitted_at_str = document.submitted_at.strftime('%Y-%m-%d') if document.submitted_at else '-'
+    production_date_str = document.production_date.strftime('%Y-%m-%d') if document.production_date else '-'
+    kpi_tiles = [
+        ('결재 단계', stage_value),
+        ('의뢰자', document.requester_name),
+        ('상신일', submitted_at_str),
+        ('생산 진행일', production_date_str),
+    ]
+    note_value = (document.reference_materials or '').strip()
+
+    contents = _render_hero_kpi_email(headline, document, kpi_tiles, note_value, link, link_text)
 
     return subject, contents
 
