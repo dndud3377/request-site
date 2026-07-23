@@ -89,6 +89,43 @@ EVENT_STATUS_LABEL = {
     'notify_approved': '결재 완료 통보',
 }
 
+# 이벤트 타입별 히어로+KPI 카드 이메일 색상 테마
+EVENT_THEME = {
+    'stage_arrival': {
+        'hero': ('#2563eb', '#3b82f6'),
+        'outer_bg': '#eef4ff', 'outer_border': '#dbe4f7',
+        'label_color': '#3b5486',
+        'tile_bg': '#f7faff', 'tile_border': '#e2e8f0',
+        'note_label_color': '#2563eb',
+        'footer_border': '#e2e8f0',
+    },
+    'rejected': {
+        'hero': ('#dc2626', '#ef4444'),
+        'outer_bg': '#fdf2f2', 'outer_border': '#f8d3d3',
+        'label_color': '#9f5252',
+        'tile_bg': '#fef7f7', 'tile_border': '#f1dede',
+        'note_label_color': '#dc2626',
+        'footer_border': '#f1dede',
+    },
+    'approved': {
+        'hero': ('#16a34a', '#22c55e'),
+        'outer_bg': '#f0faf4', 'outer_border': '#cdecd9',
+        'label_color': '#3f7a56',
+        'tile_bg': '#f6fdf9', 'tile_border': '#dcefe3',
+        'note_label_color': '#16a34a',
+        'footer_border': '#dcefe3',
+    },
+    'notify_submitted': {
+        'hero': ('#7c3aed', '#8b5cf6'),
+        'outer_bg': '#f6f2fe', 'outer_border': '#e1d3fb',
+        'label_color': '#6b5490',
+        'tile_bg': '#faf8ff', 'tile_border': '#ece3fb',
+        'note_label_color': '#7c3aed',
+        'footer_border': '#ece3fb',
+    },
+}
+EVENT_THEME['notify_approved'] = EVENT_THEME['notify_submitted']
+
 
 # --------------------------------------------------------------------------- #
 # 수신자 해석
@@ -274,7 +311,7 @@ def _voc_link(voc_id):
 _HISTORY_LINK_EVENTS = ('approved', 'notify_approved')
 
 
-def _kpi_grid(tiles):
+def _kpi_grid(tiles, tile_bg, tile_border):
     """(label, value) 튜플 4개를 히어로+KPI 카드 이메일의 2x2 타일 그리드 HTML로 렌더링한다.
 
     label/value 는 사용자 입력을 포함할 수 있으므로(의뢰자 이름 등) 여기서 escape 한다.
@@ -284,8 +321,8 @@ def _kpi_grid(tiles):
         pad = 'padding:0 6px 12px 0;' if i % 2 == 0 else 'padding:0 0 12px 6px;'
         cells.append(
             f'<td width="50%" style="{pad}">'
-            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-            'style="background:#f7faff;border:1px solid #e2e8f0;border-radius:10px;">'
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'style="background:{tile_bg};border:1px solid {tile_border};border-radius:10px;">'
             '<tr><td style="padding:13px 15px;">'
             f'<div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:#64748b;'
             f'text-transform:uppercase;">{escape(label)}</div>'
@@ -297,14 +334,17 @@ def _kpi_grid(tiles):
     return f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{rows}</table>'
 
 
-def _render_hero_kpi_email(headline, document, kpi_tiles, note_value, link, link_text):
+def _render_hero_kpi_email(event_type, headline, document, kpi_tiles, note_value, link, link_text):
     """히어로 헤더 + KPI 카드형 트랜잭셔널 이메일 본문(HTML)을 렌더링한다.
 
     document.title / note_value 는 사용자 입력이므로 escape 하고, 특이사항의 줄바꿈은
-    white-space:pre-wrap 으로 그대로 살린다(별도 개행 변환 불필요).
+    white-space:pre-wrap 으로 그대로 살린다(별도 개행 변환 불필요). 색상은 event_type 별
+    EVENT_THEME 를 사용하고, 매핑에 없는 타입은 stage_arrival(블루) 테마로 대체한다.
     """
+    theme = EVENT_THEME.get(event_type, EVENT_THEME['stage_arrival'])
+    hero_from, hero_to = theme['hero']
     title_html = escape(document.title)
-    kpi_html = _kpi_grid(kpi_tiles)
+    kpi_html = _kpi_grid(kpi_tiles, theme['tile_bg'], theme['tile_border'])
     note_html = escape(note_value) if note_value else '-'
     headline_html = escape(headline)
 
@@ -312,9 +352,9 @@ def _render_hero_kpi_email(headline, document, kpi_tiles, note_value, link, link
 <table role="presentation" align="center" width="600" cellpadding="0" cellspacing="0"><tr><td>
 <![endif]-->
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-       style="width:100%;max-width:600px;margin:0 auto;background:#eef4ff;border-radius:14px;overflow:hidden;border:1px solid #dbe4f7;">
+       style="width:100%;max-width:600px;margin:0 auto;background:{theme['outer_bg']};border-radius:14px;overflow:hidden;border:1px solid {theme['outer_border']};">
   <tr>
-    <td bgcolor="#2563eb" style="background:linear-gradient(135deg,#2563eb 0%,#3b82f6 100%);padding:30px 32px 26px;">
+    <td bgcolor="{hero_from}" style="background:linear-gradient(135deg,{hero_from} 0%,{hero_to} 100%);padding:30px 32px 26px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         <tr><td style="font-size:12px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.75);text-transform:uppercase;">제품 소개 지도 의뢰 시스템</td></tr>
         <tr><td style="padding-top:12px;font-size:19px;line-height:1.45;font-weight:700;color:#ffffff;">{headline_html}</td></tr>
@@ -323,11 +363,11 @@ def _render_hero_kpi_email(headline, document, kpi_tiles, note_value, link, link
   </tr>
   <tr>
     <td style="padding:28px 32px 4px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #dbe4f7;border-radius:12px;margin-bottom:20px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid {theme['outer_border']};border-radius:12px;margin-bottom:20px;">
         <tr><td style="padding:18px 18px 4px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
             <tr><td>
-              <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:#3b5486;text-transform:uppercase;">의뢰서 제목</div>
+              <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:{theme['label_color']};text-transform:uppercase;">의뢰서 제목</div>
               <div style="margin-top:6px;font-size:17px;font-weight:700;color:#0f172a;line-height:1.5;">{title_html}</div>
             </td></tr>
           </table>
@@ -335,8 +375,8 @@ def _render_hero_kpi_email(headline, document, kpi_tiles, note_value, link, link
         </td></tr>
       </table>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;">
-        <tr><td style="background:#ffffff;border:1px solid #dbe4f7;border-radius:10px;padding:14px 16px;">
-          <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:#2563eb;text-transform:uppercase;">특이사항</div>
+        <tr><td style="background:#ffffff;border:1px solid {theme['outer_border']};border-radius:10px;padding:14px 16px;">
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:{theme['note_label_color']};text-transform:uppercase;">특이사항</div>
           <div style="margin-top:5px;font-size:14px;font-weight:500;color:#0f172a;line-height:1.6;white-space:pre-wrap;">{note_html}</div>
         </td></tr>
       </table>
@@ -345,7 +385,7 @@ def _render_hero_kpi_email(headline, document, kpi_tiles, note_value, link, link
   <tr>
     <td style="padding:22px 32px 6px;">
       <table role="presentation" cellpadding="0" cellspacing="0">
-        <tr><td bgcolor="#2563eb" style="border-radius:8px;">
+        <tr><td bgcolor="{hero_from}" style="border-radius:8px;">
           <a href="{link}" style="display:inline-block;padding:12px 22px;font-size:13.5px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">{link_text} →</a>
         </td></tr>
       </table>
@@ -353,7 +393,7 @@ def _render_hero_kpi_email(headline, document, kpi_tiles, note_value, link, link
   </tr>
   <tr>
     <td style="padding:24px 32px 30px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="border-top:1px solid #e2e8f0;font-size:0;line-height:0;">&nbsp;</td></tr></table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="border-top:1px solid {theme['footer_border']};font-size:0;line-height:0;">&nbsp;</td></tr></table>
       <p style="margin:16px 0 0;font-size:11.5px;line-height:1.7;color:#94a3b8;">본 메일은 제품 소개 지도 의뢰 시스템에서 자동 발송되었습니다. 이 메일에는 회신하지 마세요.</p>
     </td>
   </tr>
@@ -367,7 +407,8 @@ def _build_message(event_type, document, agent=None, recipient_name=None):
     """이벤트 유형별 제목/본문(HTML)을 생성한다.
 
     recipient_name 이 주어지면(개인 지정 메일) 제목 맨 앞에 "[{이름}님] "을 붙인다.
-    본문은 히어로 헤더 + KPI 카드형 템플릿(_render_hero_kpi_email)을 공통으로 사용한다.
+    본문은 히어로 헤더 + KPI 카드형 템플릿(_render_hero_kpi_email)을 공통으로 사용하며,
+    히어로/버튼/카드 테두리 색상은 event_type 별 EVENT_THEME 를 따른다.
     """
     use_history = event_type in _HISTORY_LINK_EVENTS
     link = _detail_link(document, use_history)
@@ -415,7 +456,7 @@ def _build_message(event_type, document, agent=None, recipient_name=None):
     ]
     note_value = (document.reference_materials or '').strip()
 
-    contents = _render_hero_kpi_email(headline, document, kpi_tiles, note_value, link, link_text)
+    contents = _render_hero_kpi_email(event_type, headline, document, kpi_tiles, note_value, link, link_text)
 
     return subject, contents
 
