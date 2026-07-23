@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
 import { documentsAPI } from '../api/client';
@@ -35,7 +35,12 @@ export default function HistoryPage(): React.ReactElement {
   const [pageIdx, setPageIdx] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<RequestDocument | null>(null);
 
+  // fetchDocs 는 search 가 바뀔 때마다 재실행되는데, 응답이 요청 순서와 다르게
+  // 도착할 수 있다. 시퀀스 토큰으로 "가장 최근에 보낸 요청"의 응답만 반영한다.
+  const fetchSeqRef = useRef(0);
+
   const fetchDocs = useCallback(() => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     setError(false);
     const params: Record<string, string> = { status: 'approved' };
@@ -43,11 +48,18 @@ export default function HistoryPage(): React.ReactElement {
     documentsAPI
       .list(params)
       .then((r) => {
+        if (seq !== fetchSeqRef.current) return; // 이미 더 최신 요청이 나간 뒤 도착한 응답 — 무시
         const data = r.data;
         setDocs(Array.isArray(data) ? data : (data as any).results ?? []);
       })
-      .catch(() => { setError(true); setDocs([]); })
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (seq !== fetchSeqRef.current) return;
+        setError(true); setDocs([]);
+      })
+      .finally(() => {
+        if (seq !== fetchSeqRef.current) return;
+        setLoading(false);
+      });
   }, [search]);
 
   useEffect(() => {
