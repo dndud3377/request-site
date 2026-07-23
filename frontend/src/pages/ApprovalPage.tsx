@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { documentsAPI, usersAPI } from '../api/client';
@@ -181,6 +181,11 @@ export default function ApprovalPage(): React.ReactElement {
     return 0;
   }, [currentUser, isTourMode]);
 
+  // fetchDocs 는 filter/search 가 바뀔 때마다 재실행되는데, 응답이 요청 순서와
+  // 다르게 도착할 수 있다(느린 "전체 목록" 요청이 빠른 "검색" 요청보다 늦게 도착 등).
+  // 시퀀스 토큰으로 "가장 최근에 보낸 요청"의 응답만 반영하고 나머지는 버린다.
+  const fetchSeqRef = useRef(0);
+
   const fetchDocs = useCallback(() => {
     if (isTourMode) {
       setAllDocs(TOUR_APPROVAL_DOCS);
@@ -189,6 +194,7 @@ export default function ApprovalPage(): React.ReactElement {
       setLoading(false);
       return;
     }
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     setError(false);
     const params: Record<string, string> = {};
@@ -196,6 +202,7 @@ export default function ApprovalPage(): React.ReactElement {
     documentsAPI
       .list(params)
       .then((r) => {
+        if (seq !== fetchSeqRef.current) return; // 이미 더 최신 요청이 나간 뒤 도착한 응답 — 무시
         const data = r.data;
         let all: RequestDocument[] = Array.isArray(data) ? data : (data as any).results ?? [];
         // 결재 현황: approved 제외
@@ -203,8 +210,14 @@ export default function ApprovalPage(): React.ReactElement {
         setAllDocs(all);
         setDocs(applyClientFilter(all));
       })
-      .catch(() => { setError(true); setAllDocs([]); setDocs([]); })
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (seq !== fetchSeqRef.current) return;
+        setError(true); setAllDocs([]); setDocs([]);
+      })
+      .finally(() => {
+        if (seq !== fetchSeqRef.current) return;
+        setLoading(false);
+      });
   }, [filter, search, applyClientFilter]);
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
