@@ -209,7 +209,8 @@ export default function ApprovalPage(): React.ReactElement {
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
 
-  // 메일 딥링크(?id=) — 목록과 무관하게 해당 문서를 직접 조회해 상세 모달을 바로 연다.
+  // 메일 딥링크(?id=) — 해당 문서를 직접 조회해 상세 모달을 열고, 배경 목록도 그
+  // 문서 제목으로 자동 검색되게 한다(필터 탭은 검색과 충돌하지 않도록 전체로 리셋).
   useEffect(() => {
     if (isTourMode) return;
     const id = new URLSearchParams(location.search).get('id');
@@ -219,6 +220,8 @@ export default function ApprovalPage(): React.ReactElement {
         setSelected(res.data);
         setPageIdx(0);
         setModalOpen(true);
+        setFilter('');
+        setSearch(res.data.title);
       })
       .catch(() => { /* 존재하지 않거나 접근 불가한 문서 — 조용히 무시 */ });
   }, [location.search, isTourMode]);
