@@ -33,7 +33,7 @@
 
 | 필드 | 의미 |
 |------|------|
-| `agent` | `PL`(검토) / `R` / `P` / `J` / `O` / `E` |
+| `agent` | `PL`(검토) / `R` / `RV`(검토자) / `P` / `PV`(검토자, 2026-07) / `J` / `O` / `E` / `EV`(검토자, 2026-07) / `RA`(후결자) |
 | `action` | `pending`(대기) / `approved`(합의) / `rejected`(반려) |
 | `assignee` / `assignee_name` | 담당자 |
 | `round` | **상신 회차**(재상신 시 +1). 화면은 항상 max(round)만 표시 |
@@ -49,9 +49,9 @@
 ## 2. 결재 흐름 전체 (case별)
 
 ```
-draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)──▶ ┌─ P ─(합의)─▶ J ─┐
-                     │                              │                 ├─▶ 모두 합의 시 approved
-                     │                              └─ O [, E] ───────┘
+draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)──▶ ┌─ P[검토중,+검토자PV] ─(전원합의)─▶ J ─┐
+                     │                              │                                       ├─▶ 모두 합의 시 approved
+                     │                              └─ O [, E[검토중,+검토자EV]] ────────────┘
                      └─(반려)─▶ rejected ──(재상신, round+1)──▶ PL 검토 …
 
 어느 단계든 반려 → rejected
@@ -59,7 +59,10 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 [Only MAP 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ R ─(합의)─▶ approved   (P/O/E 단계 없음)
 ```
 
-핵심: **PL → R → (P → J) ∥ (O [+E])**. R 합의 후 두 경로(path1=P→J, path2=O[+E])가 **병렬** 진행되고, J·O·(E) 가 **모두** 합의돼야 문서가 `approved`가 된다.
+핵심: **PL → R → (P[→검토자 PV] → J) ∥ (O [+E[→검토자 EV]])**. R 합의 후 두 경로(path1=P→J, path2=O[+E])가 **병렬** 진행된다.
+P/E는 (2026-07부터) O/J와 동일하게 **검토중(claim) 방식**이며, 선점한 담당자가 다중 검토자(PV/EV)를 추가 지정할 수 있다 —
+지정 시 **담당자+검토자 전원 합의**가 끝나야 그 단계가 완료된 것으로 본다(검토자 없으면 담당자 합의만으로 완료, 하위호환).
+최종적으로 J·O·(E, 있으면 검토자까지) 가 **모두** 합의돼야 문서가 `approved`가 된다.
 
 > **예외 — 요청 목적 'Only MAP'**: `RequestDocument.is_only_map()`이 참이면 결재 경로를
 > **R 단계까지만** 진행한다. R 합의 시 P/O/E 단계를 생성하지 않고 곧바로 `approved`가 된다.
@@ -91,13 +94,24 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 - **Only MAP 예외**: `document.is_only_map()`이 참이면 P/O/E를 **생성하지 않고** `status → approved`로
   바로 전이한다(R 합의 = 최종 승인). 승인 메일(`enqueue_approved`)이 발송된다.
 
-### Case F — P 합의 (`approve_step` agent='P', `views.py:272`)
-- 동작: P `approved` → **J(due: P당일 포함 4영업일)** 생성. (path1은 P→J 순차)
+### Case F — P 합의 (`approve_step` agent='P'/'PV', `views.py:487`)
+- ✅ **P 검토중 + 다중 검토자(2026-07)**: P도 J·O·E와 동일하게 **지정하기가 아닌 검토중(claim) 방식**으로 전환됐다
+  (`_CLAIM_AGENTS`에 `P` 포함). R 합의로 생성된 P pending step은 담당 팀원(TE_P) 누구나 `claim_step`으로 선점한다.
+- 선점한 담당자 본인(+MASTER)은 `assign-reviewers/`로 **검토자(PV, 다중 가능)**를 추가로 지정할 수 있다
+  (`assign_reviewers`, agent 코드 `PV`). 지정은 **본인 합의 전까지만** 가능하며, 지정 시 각 검토자에게 즉시 메일이 발송된다.
+- 동작: P(담당자) `approved` → 지정된 검토자(PV)가 있으면 **검토자 전원 합의까지** 기다렸다가,
+  담당자+검토자 **전원 합의 완료 시점**에 **J(due: P 담당자 합의일 포함 4영업일)**를 생성한다(`_advance_after_p_review`).
+  검토자가 지정되지 않았으면 담당자 합의만으로 즉시 J가 생성된다(하위호환).
+- PV(검토자)는 **담당자(P) 합의 후에만** 처리 가능(순차 진행, R단계 RV와 동일한 가드).
+- 어느 쪽(담당자 또는 검토자 중 누구든)이 반려해도 즉시 `status → rejected`.
 
-### Case G — J / O / E 최종 합의 (`approve_step` agent in J/O/E, `views.py:284`)
-- 동작: J·O·(E 있으면 E)가 **모두** `approved`일 때만 `status → approved`. 그 전엔 `under_review` 유지.
+### Case G — J / O / E 최종 합의 (`approve_step` agent in J/O/E/EV/RA, `views.py:500`)
+- 동작: J·O·(E 있으면 **E 담당자+검토자 EV 전원**)·(RA 있으면 RA 전원)가 **모두** `approved`일 때만 `status → approved`. 그 전엔 `under_review` 유지.
 - ✅ **검토중(claim) 방식(2026-07)**: J·O·E는 지정하기 없이 **담당 팀원 누구나 '검토중'을 눌러 스스로 선점**한다.
   먼저 누른 1명이 assignee로 고정(취소·재클릭 불가)되고, **그 담당자만** 합의/반려할 수 있다(`_can_act_on_step`).
+- ✅ **E 검토중 + 다중 검토자(2026-07)**: E도 P와 동일하게 검토중 선점 후 담당자 본인이 검토자(EV, 다중 가능)를
+  `assign-reviewers/`로 지정할 수 있다. 최종 승인 판정 시 E는 **담당자+검토자(EV) 전원 합의**(`_stage_reviewers_complete`)를
+  요구하며, 검토자가 없으면 담당자 합의만으로 충분하다(하위호환). EV도 **담당자(E) 합의 후에만** 처리 가능(순차 가드).
 - J 합의/반려 시 **본인 담당 step만 처리**: `assignee__loginid=caller_loginid` 필터로 해당 J step을 조회한다 (MASTER는 첫 번째 pending step).
   최종 판정은 `all(s.action == 'approved' for s in j_steps)`로, 검토중 방식에서는 J step이 1개이므로 그 1명의 합의로 완료된다.
   (과거 다중 배정된 J 문서는 하위호환으로 전원 합의 로직이 그대로 적용된다.)
@@ -120,18 +134,30 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
   만 가능(`_can_withdraw`, 2026-06 추가). 그 외 호출은 403. 그룹 판정은
   `requester.member_groups` 기준(approved 메일 수신자 규칙과 동일).
 
-### Case K — 담당자 지정 (`assign_step`, `views.py:331` 부근) — **R·P 전용**
+### Case K — 담당자 지정 (`assign_step`, `views.py:331` 부근) — **R 전용**
 - 동작: 현재 회차의 해당 agent pending step에 assignee 지정.
 - ✅ 권한: 프론트 `canUserAssign`과 동일(`_can_assign_step`) —
-  MASTER / 같은 팀(역할↔agent 일치) + 미지정일 때만. **PL·J·O·E 단계는 지정 불가**(J/O/E는 검토중 방식).
-  또한 `agent`는 `R·P·J·O·E`만 허용(`agent='PL'`로 지정 PL을 덮어쓰는 우회 차단).
+  MASTER / 같은 팀(역할↔agent 일치) + 미지정일 때만. **PL·J·O·E·P 단계는 지정 불가**(J/O/E/P는 검토중 방식, ⚠️ 2026-07 P 포함으로 변경).
+  또한 `agent`는 `R·P·J·O·E`만 허용(`agent='PL'`로 지정 PL을 덮어쓰는 우회 차단. `P`는 화이트리스트엔 남아 있으나 `_can_assign_step`이 항상 403 반환).
 
-### Case K-2 — 검토중 선점 (`claim_step`, 2026-07) — **J·O·E 전용**
-- 동작: 현재 회차의 해당 J/O/E pending step에 **요청자 본인을 assignee로 고정**(취소·재클릭 불가).
-- ✅ 권한(`_can_claim_step`): MASTER / 같은 팀(역할↔agent 일치) + pending + 미배정일 때만. `agent`는 `J·O·E`만 허용.
+### Case K-2 — 검토중 선점 (`claim_step`, 2026-07, **P 2026-07 추가**) — **J·O·E·P 전용**
+- 동작: 현재 회차의 해당 J/O/E/P pending step에 **요청자 본인을 assignee로 고정**(취소·재클릭 불가).
+- ✅ 권한(`_can_claim_step`): MASTER / 같은 팀(역할↔agent 일치) + pending + 미배정일 때만. `agent`는 `J·O·E·P`만 허용.
 - ✅ 동시성: 문서 행 락(`select_for_update`)으로 중복 선점을 막고, 이미 배정된 경우 `409`를 반환한다.
   프론트 UI: "추가" 버튼으로 여러 명을 목록에 쌓은 뒤 "확인" 클릭 시 `assignStepMultiJ` API 호출.
   권한: `TE_J` 또는 `MASTER`.
+
+### Case K-3 — P/E 검토자 지정 (`assign_reviewers`, 2026-07) — **P·E 전용, 다중 검토자**
+- 동작: 검토중(K-2)으로 P/E를 선점한 담당자 본인이 `assign-reviewers/`(payload `agent`, `reviewer_loginids` 배열)로
+  같은 팀(TE_P/TE_E) 인원 여러 명을 **검토자(PV/EV)**로 지정한다. 지정된 인원마다 pending `PV`/`EV` step이 생성되고
+  즉시 단계 도착 메일이 발송된다(`mailer.enqueue_stage_arrival`, `recipient_name` 개인화).
+- ✅ 권한: 해당 단계의 assignee 본인(검토중을 선점한 담당자) + MASTER만. 선점 전(assignee 없음)이거나
+  본인이 이미 합의한 뒤(`step.action != 'pending'`)에는 지정할 수 없다(400/403).
+- ✅ 다중·누적: 요청마다 **새 loginid만 추가**하며 이미 지정된(대기/합의) 검토자는 건드리지 않는다.
+  ⚠️ 지정 취소/변경 기능은 이번 범위에 없다(후속 작업으로 보류).
+- 담당자 본인은 검토자로 지정할 수 없고, 후보는 같은 팀 역할(TE_P/TE_E)이어야 한다.
+- 완료 조건: 담당자 + 지정된 검토자 **전원 합의**가 끝나야 해당 단계가 완료로 간주된다(Case F/G 참고,
+  `_stage_reviewers_complete`). 검토자가 하나도 없으면 담당자 합의만으로 즉시 완료(하위호환).
 
 ### Case L — 지정 PL 변경 (`change_designee`)
 - 권한: **의뢰자 본인 또는 MASTER만**. 현재 회차 PL step의 assignee 교체.
@@ -203,13 +229,14 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 - **PL 검토 pending**: "PL 검토(담당자명)" 단일 행, 기한 없음. **다중 PL이면 아직 미합의한 담당자명을 ` / `로 연결** 표시.
 - **R 미합의**: R 단계 단일 행(담당자 유무로 상태 결정).
 - **R 합의 후(병렬)**: 한 의뢰서를 **2행**으로 분리 표시 — path1(P/J), path2(O[/E]). rowSpan으로 좌측 공통열 병합.
-  - path1 단계 텍스트: 현재 pending인 P(담당자명) 또는 **J**. **J는 검토중 방식이라 담당자 이름을 표시하지 않는다**. 둘 다 끝나면 "결재완료".
-  - path1 done 조건: P pending 없음 AND J pending step 0개(= 합의 완료).
-  - path2 단계 텍스트: pending인 O/E를 ` / `로 연결(검토중 담당자명 표시). 끝나면 "결재완료".
+  - path1 단계 텍스트: 현재 pending인 **P(담당자명)** → 담당자 합의 후 지정된 검토자(PV)가 남아 있으면 **검토자(이름 / 이름...)** → 모두 끝나면 **J**(검토중 방식이라 담당자 이름 미표시). 전부 끝나면 "결재완료".
+  - path1 done 조건(2026-07): P pending 없음 AND PV pending 0개 AND **J 가 생성됐고** J pending 0개(= 담당자+검토자+J 전원 합의 완료). ⚠️ J 미생성 상태(검토자 대기 중)를 완료로 오판하지 않도록 J 존재 여부를 함께 확인한다.
+  - path2 단계 텍스트: pending인 O/E를 ` / `로 연결(검토중 담당자명 표시), E 담당자 합의 후 지정된 검토자(EV)가 남아 있으면 함께 나열. 모두 끝나면 "결재완료".
 
 ### 3.4 상태 배지 (`resolvePathStatus`)
 - pending step에 `assignee_loginid`가 없으면 **`unassigned`(라벨: 대기중)**, 있으면 `under_review`(검토중).
-- J·O·E도 검토중 방식으로 전환되어, 선점 전에는 **대기중**, 선점 후에는 **검토중**으로 표시된다.
+- J·O·E·P도 검토중 방식으로 전환되어(2026-07 P 포함), 선점 전에는 **대기중**, 선점 후에는 **검토중**으로 표시된다.
+  PV/EV(검토자)는 지정 즉시 assignee가 확정되므로 항상 `under_review`로 표시된다(대기중 상태 없음).
 - **중단(pause)**: `getDocTableRows` 가 pause 문서를 단일 행으로 렌더해 **`pause` 뱃지(라벨 'PAUSE') + 멈춘 현재 단계 텍스트**(예: `PAUSE JOB`)를 함께 표시한다. 중단 '요청중'(확정 전)에는 뱃지는 검토중 그대로 두고 현재단계 칸에 '중단 요청중' 칩만 붙인다(`.pause-req-chip`). 목록에 '중단' 필터 탭 추가.
 
 ### 3.5 완료 예정일
@@ -225,10 +252,11 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 
 | 액션 | 버튼 노출 조건(프론트) | 호출 API |
 |------|----------------------|----------|
-| 합의 / 반려 (R·P·J·O·E) | `canUserAgree`가 참 | `approveStep` / `rejectStep` |
+| 합의 / 반려 (R·RV·P·PV·J·O·E·EV·RA) | `canUserAgree`가 참 | `approveStep` / `rejectStep` |
 | PL 합의 / 반려 / **수정 후 상신** | PL 검토 단계 + 본인 | `peerApprove` / `peerReject` / `/request`로 이동(peerSubmit) |
-| 담당자 지정 (R·P) | `canUserAssign`가 참 | `assignStep` |
-| 검토중 (J·O·E) | `canUserClaim`가 참 | `claimStep` |
+| 담당자 지정 (R) | `canUserAssign`가 참 | `assignStep` |
+| 검토중 (J·O·E·P, 2026-07 P 포함) | `canUserClaim`가 참 | `claimStep` |
+| 검토자 지정 (P·E, 2026-07, 다중) | `canUserAssignReviewers`가 참(검토중 선점한 담당자 본인) | `assignReviewers` |
 | 지정자 변경 | PL/MASTER | `changeDesignee` |
 | 철회 | PL/MASTER | `withdraw`(임시저장으로) 또는 `delete`(삭제) 선택 |
 | 수정 후 재상신 | rejected/draft | `/request`로 이동(editDocId) |
@@ -240,9 +268,11 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 처리 중 `processing`으로 버튼 비활성화(더블클릭 방지), 결과는 토스트로 안내, 실패 시 `common.process_error`.
 
 ### 3.7 결재 가능 판정 (`ApprovalFlow.tsx`)
-- `canUserAgree`: MASTER 항상 / PL은 자기 PL단계 assignee일 때 / 나머지(R·P·J·O·E)는 assignee 본인(R·P는 지정, J·O·E는 검토중 선점으로 배정됨).
-- `canUserAssign`: **R·P 전용** — 같은 팀 + pending + 담당자 미지정일 때. PL·J·O·E는 지정 불가.
-- `canUserClaim`: **J·O·E 전용** — 같은 팀 + pending + 미배정일 때 '검토중'으로 선점 가능.
+- `canUserAgree`: MASTER 항상 / PL은 자기 PL단계 assignee일 때 / 나머지(R·RV·P·PV·J·O·E·EV·RA)는 assignee 본인(R은 지정, J·O·E·P는 검토중 선점, RV·PV·EV·RA는 지정으로 배정됨).
+  단, RV/PV/EV는 각각 담당자(R/P/E) 합의 후에만 실제 처리 가능(프론트는 `ApprovalPage.tsx` 호출부에서 `mainStepApproved` 게이트로 actable 대상에서 제외).
+- `canUserAssign`: **R 전용**(2026-07, P 제외) — 같은 팀 + pending + 담당자 미지정일 때. PL·J·O·E·P는 지정 불가.
+- `canUserClaim`: **J·O·E·P 전용**(2026-07 P 추가) — 같은 팀 + pending + 미배정일 때 '검토중'으로 선점 가능.
+- `canUserAssignReviewers`(2026-07 신설): **P·E 전용** — 검토중을 선점한 담당자 본인(assignee) + MASTER, 본인 합의 전(pending)까지만 검토자(PV/EV, 다중) 지정 가능.
 
 ---
 
@@ -255,8 +285,9 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 | 철회 | `withdraw/` | - |
 | 합의 | `approve-step/` | `agent`, `comment`, `approver_name` |
 | 반려 | `reject-step/` | `agent`, `comment` |
-| 담당자 지정 (R·P) | `assign-step/` | `agent`, `assignee_loginid`, `assignee_name` |
-| 검토중 선점 (J·O·E) | `claim-step/` | `agent` |
+| 담당자 지정 (R) | `assign-step/` | `agent`, `assignee_loginid`, `assignee_name` |
+| 검토중 선점 (J·O·E·P) | `claim-step/` | `agent` |
+| 검토자 지정 (P·E, 다중, 2026-07) | `assign-reviewers/` | `agent`(P/E), `reviewer_loginids`(배열) |
 | 중단 요청 | `request-pause/` | `reason`(필수) |
 | 중단 확인 | `confirm-pause/` | `agent` |
 | 재개 | `resume/` | - (pause → under_review) |
@@ -278,9 +309,10 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 |-----------|-----------|--------|
 | `submit`/`resubmit` | stage_arrival(PL) | 지정 PL **전원**(각 PL step별 발송) |
 | `peer_approve`/`peer_submit` | stage_arrival(R) | TE_R 미지정 시 고정 주소 |
-| `approve_step`(R) | stage_arrival(P·O[·E]) | P 고정 주소 / O·E 팀 전원 |
-| `approve_step`(P) | stage_arrival(J) | TE_J 미지정 시 고정 주소 |
-| `approve_step`(J·O·E 전부 합의) | approved | 작성자가 속한 모든 그룹 멤버 전원 |
+| `approve_step`(R) | stage_arrival(P·O[·E]) | 미배정 시 **P·O·E 팀 전원**(2026-07 P도 검토중 전환으로 O·E와 동일하게 팀 브로드캐스트) |
+| `approve_step`(P, 검토자 없을 때) | stage_arrival(J) | TE_J 미지정 시 고정 주소 |
+| `assign_reviewers`(P/E, 2026-07) | stage_arrival(PV/EV) | 지정된 검토자 **각 1명**(지정 즉시 개인화 메일 발송) |
+| `approve_step`(J·O·E[+검토자 전원]·RA[전원] 모두 합의) | approved | 작성자가 속한 모든 그룹 멤버 전원 |
 | `reject_step`/`peer_reject` | rejected | 요청서 작성자 1명 |
 | `submit`/`resubmit` | notify_submitted | **통보처 전원**(`detail.notifiers`) |
 | `approve_step`(최종 승인) | notify_approved | **통보처 전원**(`detail.notifiers`) |
@@ -327,6 +359,12 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 5. **최종 완료예정 path1 추정치가 달력일 +4**(영업일 아님) — 표시값 부정확 가능.
 6. **하드코딩 한국어 다수**(규칙 G 위반): '지정자가 변경되었습니다.'(`:435`),
    '의뢰서가 삭제되었습니다.'(`:488`) 등 — i18n 이관 필요.
+7. ✅ **(2026-07 해결) P·E 검토중(claim) 전환 + 다중 검토자(PV/EV)** — P·E도 지정하기 대신 검토중 방식으로 바꾸고,
+   선점한 담당자가 `assign-reviewers/`로 여러 명의 검토자를 추가 지정할 수 있게 했다. 담당자+검토자 전원 합의가
+   끝나야 해당 단계가 완료로 간주된다(`_stage_reviewers_complete`). 검토자 없으면 기존과 동일하게 담당자 합의만으로 완료.
+   ⚠️ **검토자 지정 변경/취소 기능은 범위 밖** — 한 번 지정된 검토자는 API로 제거할 수 없다(후속 작업으로 보류).
+   ⚠️ **RV/PV/EV 알림 메일은 지정 시점에 개인화 발송**(R의 RV는 담당자 합의 시점에 발송되던 것과 다른 타이밍이므로,
+   R·P·E 간 메일 발송 시점 차이를 인지하고 있어야 한다).
 
 ---
 
@@ -341,6 +379,7 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 - **(2026-06-13, 위 2026-07 개방으로 상위 완화됨) 원본 라인/Part ID는 MAP 정보 섹션에만 표시**: 기존에는 `source_line`/`source_partid`가 '상세 정보' 섹션(`section_detail`)과 'MAP 정보' 섹션(`section_map`, `map_type === 'CLONE'`) 두 곳에 중복 노출됐다. '상세 정보' 쪽 블록을 제거하여 **MAP 정보 섹션(CLONE)에서만** 보이도록 한다.
 - 각 step에서 작성한 내용은 상세 보기에서 별도 페이지/섹션으로 분리 렌더된다: J-layer→`job_li`, O-layer→`ovl_li`(table/info 탭, info 탭에 `partial_shot`·TBV·TLV), Backbone→`bb`, MAP 변경 내용→`section_map`.
 - **(2026-06-22)** J-ayer `📊 export` 버튼에 `data-tour="export-jayer"`, 결재 경로 탭 카드에 `data-tour="approval-route-tab"`을 부여했다(전체 가이드 투어 강조용, 실제 동작 변경 없음).
+- **(2026-07) P/E단계 검토자(PV/EV) 결재 경로 표시**: R단계와 동일한 패턴으로, P/E 행에 **담당자(합의자) + 지정된 검토자(PV/EV, 있을 때만)**를 함께 표시한다(`getStepDisplays`, `roleLabel`). 검토자가 없으면 기존과 동일하게 담당자 행만 보인다.
 - **(2026-06-23)** 재상신 변경 이력 강조용으로 J-ayer 변경 행의 '이력 확인' 버튼에 `data-tour="jayer-hist-btn"`을 부여했다(투어에서 변경 전/후 비교 모달 시연용, 실제 동작 변경 없음).
 
 ---
