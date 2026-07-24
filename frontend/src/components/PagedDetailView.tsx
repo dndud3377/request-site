@@ -1327,6 +1327,20 @@ type Page = { label: string; content: React.ReactNode };
       rvSteps.forEach((s) => out.push({ ...stepToInfo(s), roleLabel: t('approval.stage_reviewer' as any) }));
       return out;
     }
+    // P/E단계: 담당자(P/E, 검토중) + 검토자(PV/EV, 다중 지정 시)를 한 행에 함께 표시
+    if (agent === 'P' || agent === 'E') {
+      const reviewAgent = agent === 'P' ? 'PV' : 'EV';
+      const out: StepDisplayInfo[] = [];
+      const mainSteps = allSteps.filter((s) => s.agent === agent && (s.round ?? 1) === round);
+      if (mainSteps.length === 0) {
+        out.push({ status: 'waiting', label: t('approval.step_pending'), roleLabel: t('approval.role_agreer' as any) });
+      } else {
+        mainSteps.forEach((s) => out.push({ ...stepToInfo(s), roleLabel: t('approval.role_agreer' as any) }));
+      }
+      const reviewSteps = allSteps.filter((s) => s.agent === reviewAgent && (s.round ?? 1) === round);
+      reviewSteps.forEach((s) => out.push({ ...stepToInfo(s), roleLabel: t('approval.stage_reviewer' as any) }));
+      return out;
+    }
     const steps = allSteps.filter((s) => s.agent === agent && (s.round ?? 1) === round);
     if (steps.length === 0) return [{ status: 'waiting', label: t('approval.step_pending') }];
     return steps.map(stepToInfo);
