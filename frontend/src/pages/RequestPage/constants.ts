@@ -10,7 +10,27 @@ import {
 // ===== Option Constants =====
 export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'Only MAP', '기타'] as const;
 export const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
-export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay 변경', 'ADI CD 변경', 'FirstA 변경'] as const;
+export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay 변경', 'ADI CD 변경', 'FirstA 변경', '완성된 MAP 변경'] as const;
+
+// '완성된 MAP 변경' 기타 목적: 결재완료 요청서의 MAP 정보만 불러와 수정하는 단독 전용 항목.
+export const OTHER_PURPOSE_MAP_CHANGE = '완성된 MAP 변경';
+
+// '완성된 MAP 변경' 프리필 시 참조 문서 detail 에서 복사할 MAP 관련 키.
+// 이 키들만 현재 detail 위에 병합하고(기본정보·표는 유지·비움), 변경이력 diff 비교 기준이 된다.
+export const MAP_DETAIL_KEYS: (keyof DetailFormState)[] = [
+  'map_type', 'map_change', 'map_value_x', 'map_value_y', 'map_reason',
+  'map_change_top', 'map_value_x_top', 'map_value_y_top',
+  'map_change_bottom', 'map_value_x_bottom', 'map_value_y_bottom',
+  'ea_change', 'ea_value',
+  'only_prodc',
+  'prodc_top_line', 'prodc_top_process', 'prodc_top_product',
+  'prodc_middle_use', 'prodc_middle_line', 'prodc_middle_process', 'prodc_middle_product',
+  'prodc_bottom_line', 'prodc_bottom_process', 'prodc_bottom_product',
+  'mshot_change', 'mshot_image_copy', 'mshot_image_copy_top', 'mshot_image_copy_bottom',
+  'photo_backside', 'eds_backside', 'inter', 'inter_xs', 'inter_ys',
+  'tsv', 'rf', 'fullchip', 'split', 'st', 'ecc', 'labelsideshot', 'hpkglabelheight',
+  'rev_yn', 'rev_entries', 'source_line', 'source_partid',
+];
 
 export { ST_CELL_COLOR } from '../../utils/stCellColor';
 
