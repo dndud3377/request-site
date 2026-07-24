@@ -463,6 +463,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if not main_step or main_step.action != 'approved':
                 return Response({'error': '담당자 합의가 먼저 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # P/E 담당자 합의 시 함께 지정된 검토자(PV/EV) 생성 — 별도 지정 API 없이
+        # 이 합의 요청 한 번으로 담당자 합의 + 검토자 지정이 함께 처리된다.
+        if agent in ('P', 'E'):
+            review_loginids = request.data.get('reviewer_loginids')
+            if review_loginids:
+                caller_loginid = getattr(request.user, 'loginid', '')
+                err = self._create_reviewers(document, step, review_loginids, caller_loginid, max_round)
+                if err:
+                    return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         step.action = 'approved'
         step.acted_at = timezone.now()
         step.comment = comment
@@ -656,76 +666,54 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         return Response({'message': '담당자가 지정되었습니다.'})
 
-    @action(detail=True, methods=['post'], url_path='assign-reviewers')
-    @transaction.atomic
-    def assign_reviewers(self, request, pk=None):
-        """P/E 단계 검토자(PV/EV) 지정 — 검토중을 선점한 담당자 본인이 여러 명을 지정한다.
+    def _create_reviewers(self, document, step, review_loginids, caller_loginid, round_no):
+        """P/E 담당자 합의 시 함께 지정된 검토자(PV/EV) pending step을 생성한다.
 
-        담당자 합의만으로는 단계가 끝나지 않고, 지정된 검토자 전원이 합의해야
-        해당 단계가 완료된 것으로 본다(P → J 생성 트리거 / E → 최종 승인 게이트).
-        기존에 지정된(대기/합의) 검토자는 그대로 두고, 목록에 있는 새 loginid만 추가한다
-        (이미 지정된 사람은 무시). 담당자 본인 합의 전까지만 지정할 수 있다.
+        R 담당자 지정(assign_step)에서 검토자를 함께 고르는 것과 동일하게,
+        P/E는 담당자 본인이 합의(approve-step) 시점에 검토자를 함께 지정한다
+        (별도 지정 API 없이 한 번의 합의 클릭으로 담당자 합의 + 검토자 지정이 함께 처리됨).
+        전원 유효성 검증을 먼저 마친 뒤에만 생성한다(문제가 있으면 아무 것도 만들지 않고
+        error 문자열을 반환 — approve_step이 이 호출을 담당자 단계 저장 전에 수행해 안전하다).
         """
-        document = self.get_object()
-        agent = request.data.get('agent')
-        loginids = request.data.get('reviewer_loginids')
-
-        if agent not in self._REVIEW_AGENT_OF:
-            return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
-        if not isinstance(loginids, list):
-            return Response({'error': '검토자 목록이 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if document.status == 'pause':
-            return Response({'error': '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        max_round = self._max_round(document)
-        step = ApprovalStep.objects.select_for_update().filter(
-            document=document, agent=agent, action='pending', round=max_round
-        ).first()
-        if not step:
-            return Response({'error': '해당 단계를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        role = getattr(request.user, 'role', '')
-        caller_loginid = getattr(request.user, 'loginid', '')
-        is_owner = bool(step.assignee_id and step.assignee.loginid == caller_loginid)
-        if role != 'MASTER' and not is_owner:
-            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
-        if not step.assignee_id:
-            return Response({'error': '먼저 검토중으로 선점해야 검토자를 지정할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
-        if step.action != 'pending':
-            return Response({'error': '이미 합의된 단계에는 검토자를 지정할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        review_agent = self._REVIEW_AGENT_OF.get(step.agent)
+        if not review_agent or not review_loginids:
+            return None
+        team_role = self._REVIEW_TEAM_ROLE[review_agent]
 
         cleaned = []
-        for lid in loginids:
+        for lid in review_loginids:
             lid = str(lid or '').strip()
             if lid and lid not in cleaned:
                 cleaned.append(lid)
+        if not cleaned:
+            return None
 
-        review_agent = self._REVIEW_AGENT_OF[agent]
-        team_role = self._REVIEW_TEAM_ROLE[review_agent]
         existing_loginids = set(
             ApprovalStep.objects.filter(
-                document=document, agent=review_agent, round=max_round
+                document=document, agent=review_agent, round=round_no
             ).exclude(assignee__isnull=True).values_list('assignee__loginid', flat=True)
         )
 
+        to_create = []
         for lid in cleaned:
             if lid in existing_loginids:
                 continue
             if lid == caller_loginid:
-                return Response({'error': '담당자 본인은 검토자로 지정할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+                return '담당자 본인은 검토자로 지정할 수 없습니다.'
             try:
                 reviewer_user = User.objects.get(loginid=lid, role=team_role)
             except User.DoesNotExist:
-                return Response({'error': f'유효하지 않은 검토자입니다: {lid}'}, status=status.HTTP_400_BAD_REQUEST)
+                return f'유효하지 않은 검토자입니다: {lid}'
+            to_create.append(reviewer_user)
+            existing_loginids.add(lid)
+
+        for reviewer_user in to_create:
             rv_step = ApprovalStep.objects.create(
-                document=document, agent=review_agent, action='pending', round=max_round,
+                document=document, agent=review_agent, action='pending', round=round_no,
                 assignee=reviewer_user, assignee_name=(reviewer_user.username or reviewer_user.loginid),
             )
-            existing_loginids.add(lid)
             mailer.enqueue_stage_arrival(document, review_agent, rv_step, recipient_name=rv_step.assignee_name)
-
-        return Response({'message': '검토자가 지정되었습니다.'})
+        return None
 
     @action(detail=True, methods=['post'], url_path='claim-step')
     @transaction.atomic
@@ -734,7 +722,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         먼저 누른 1명이 해당 단계의 assignee 로 고정되며(취소·재클릭 불가),
         이후 그 사용자만 합의/반려할 수 있다. 동시 선점 경합은 문서 행을 잠가 직렬화한다.
-        P 는 선점 후 assign-reviewers/ 로 검토자(PV, 다중)를 추가로 지정할 수 있다.
+        P/E 는 선점 후 담당자 본인이 approve-step/ 합의 요청에 reviewer_loginids 를 함께 보내
+        검토자(PV/EV, 다중)를 합의와 동시에 지정할 수 있다(`_create_reviewers`).
         """
         document = self.get_object()
         agent = request.data.get('agent')
