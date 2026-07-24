@@ -41,6 +41,8 @@ import {
   INITIAL_DETAIL,
   INITIAL_FORM,
   DETAIL_REQUIRED,
+  OTHER_PURPOSE_MAP_CHANGE,
+  MAP_DETAIL_KEYS,
   JAYER_EDITABLE_COLS,
   OAYER_EDITABLE_COLS,
   LOADED_LOCK_COLS,
@@ -196,6 +198,13 @@ export default function RequestPage(): React.ReactElement {
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [mapTypeChangeConfirm, setMapTypeChangeConfirm] = useState<{ targetType: string } | null>(null);
   const [onlyMapConfirm, setOnlyMapConfirm] = useState(false);
+  // 완성된 MAP 변경(기타 목적) — 결재완료 요청서의 MAP 정보만 불러와 수정하는 단독 전용 모드
+  const [mapChangeDocId, setMapChangeDocId] = useState<number | null>(null);
+  const [mapChangeDocLabel, setMapChangeDocLabel] = useState<string>('');
+  const [mapChangeResetConfirm, setMapChangeResetConfirm] = useState(false); // 전환 진입 시 전체 초기화 확인
+  const [mapChangeLeaveConfirm, setMapChangeLeaveConfirm] = useState(false);  // 다른 목적으로 전환/해제 확인
+  const [pendingSwitchOp, setPendingSwitchOp] = useState<string | null>(null); // 전환하려는 대상 기타 목적(null=해제)
+  const [mapChangeBaseline, setMapChangeBaseline] = useState<DetailFormState | null>(null); // 원본 MAP 스냅샷(변경이력 diff 기준)
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -700,6 +709,10 @@ export default function RequestPage(): React.ReactElement {
             : (parsed.detail.other_purpose ? [parsed.detail.other_purpose] : []);
           setDetail({ ...parsed.detail, other_purpose: normalizedOtherPurpose, bb_entries: loadedBbEntries, notifiers: parsed.detail.notifiers ?? [] });
           setPostApprovers(Array.isArray(parsed.detail.post_approvers) ? parsed.detail.post_approvers : []);
+          // 완성된 MAP 변경 문서 재열기: 원본 MAP 스냅샷(변경이력 diff 기준)을 history[0] 에서 복원
+          if (normalizedOtherPurpose.includes(OTHER_PURPOSE_MAP_CHANGE) && parsed.history?.[0]?.detail) {
+            setMapChangeBaseline(parsed.history[0].detail as DetailFormState);
+          }
         }
         if (parsed.jayerRows) {
           const fSets: FilterSet[] = (() => { try { return JSON.parse(localStorage.getItem('jayerFilterSets') ?? '[]'); } catch { return []; } })();
@@ -1178,6 +1191,7 @@ export default function RequestPage(): React.ReactElement {
   // Derived booleans for Step 1 conditional rendering
   const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
   const isOnlyMap = detail.request_purpose === 'Only MAP';
+  const isMapChangeMode = detail.other_purpose.includes(OTHER_PURPOSE_MAP_CHANGE);
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === '변경 있음';
   const isProdc = detail.only_prodc === 'Yes';
@@ -2108,6 +2122,122 @@ export default function RequestPage(): React.ReactElement {
     addToast(t('request.toast_merge_complete', { jayerMatched: mergeStats!.jayerMatched, oayerMatched: mergeStats!.oayerMatched, unmatched: mergeStats!.jayerUnmatchedRef + mergeStats!.oayerUnmatchedRef }), 'success');
   };
 
+  // ===== 완성된 MAP 변경 (기타 목적 단독 전용) =====
+  // 진입 시 다른 기타 목적/모든 STEP 입력을 초기화하면 안내가 필요한 "입력 있음" 상태인지 판단.
+  const mapChangeWouldResetData = () =>
+    detail.other_purpose.some((o) => o !== OTHER_PURPOSE_MAP_CHANGE) ||
+    !!detail.map_type ||
+    !!detail.change_purpose_note ||
+    refDocId !== null ||
+    detail.flow_chart.some((f) => f.location || f.product_name || f.process_id) ||
+    jayerRows.some((r) => r.layerid || r.sp || r.sd || r.process_id) ||
+    oayerRows.some((r) => r.layerid || r.sp || r.sd || r.process_id) ||
+    bbRows.length > 0;
+
+  // 기타 목적에서 '완성된 MAP 변경' 클릭: 입력이 있으면 초기화 확인 모달, 없으면 바로 적용.
+  const handleSelectMapChangePurpose = () => {
+    if (isMapChangeMode) return;
+    if (mapChangeWouldResetData()) setMapChangeResetConfirm(true);
+    else applyMapChangeMode();
+  };
+
+  // 단독 전용 모드 적용: 기본정보(라인·조합법·제품·조리법·고객/요구사항·통보처)는 유지하고
+  // 나머지 STEP(흐름도·Backbone·MAP·J/O/bb·partial_shot 등)을 초기화한 뒤 map_type 을 FIX 로 고정한다.
+  const applyMapChangeMode = () => {
+    setDetail((prev) => ({
+      ...INITIAL_DETAIL,
+      request_purpose: prev.request_purpose,
+      line: prev.line,
+      process_selection: prev.process_selection,
+      partid_selection: prev.partid_selection,
+      process_id: prev.process_id,
+      customer_name: prev.customer_name,
+      customer_requirement: prev.customer_requirement,
+      notifiers: prev.notifiers,
+      flow_chart: [makeRow()],
+      bb_entries: INITIAL_DETAIL.bb_entries.map((e) => ({ ...e })),
+      rev_entries: [],
+      tbvtlv_entries: [],
+      other_purpose: [OTHER_PURPOSE_MAP_CHANGE],
+      map_type: 'FIX',
+    }));
+    setRefDocId(null);
+    setRefDocLabel('');
+    setRefJayerRows([]);
+    setRefOayerRows([]);
+    setJayerRows([makeJayerRow()]);
+    setOayerRows([makeOayerRow()]);
+    setBbRows([]);
+    setBbExternalData([]);
+    setMappedJayerRowIds(new Set());
+    setStagedMappings({});
+    setSelectedJayerRowId(null);
+    setJayerChecked(new Set());
+    setOayerChecked(new Set());
+    setBbChecked(new Set());
+    setErrors({});
+    setMapChangeDocId(null);
+    setMapChangeDocLabel('');
+    setMapChangeBaseline(null);
+    setMapChangeResetConfirm(false);
+  };
+
+  // 대상(결재완료) 요청서 선택 → MAP 키만 현재 detail 에 병합, map_type=FIX 유지.
+  // 프리필 직후 detail 을 원본 스냅샷(mapChangeBaseline)으로 저장해 상신 시 변경이력 diff 기준으로 쓴다.
+  const handleMapChangeDocSelect = async (label: string) => {
+    const doc = approvedDocs.find((d) => d.title === label);
+    if (!doc) {
+      setMapChangeDocId(null);
+      setMapChangeBaseline(null);
+      return;
+    }
+    setMapChangeDocId(doc.id);
+    isLoadingEditRef.current = true; // 라인/prodc 변경 effect 가 프리필값을 지우지 않도록 가드
+    try {
+      const res = await documentsAPI.get(doc.id);
+      const parsed = JSON.parse(res.data.additional_notes ?? '{}');
+      const src: Partial<DetailFormState> = parsed.detail ?? {};
+      const mapPatch: Partial<DetailFormState> = {};
+      MAP_DETAIL_KEYS.forEach((key) => {
+        if (src[key] !== undefined) (mapPatch as Record<string, unknown>)[key] = src[key];
+      });
+      const next: DetailFormState = { ...detail, ...mapPatch, map_type: 'FIX' };
+      setDetail(next);
+      // 스냅샷은 완전 격리(중첩 배열 공유 방지) — diff 기준의 무결성 보장
+      setMapChangeBaseline(JSON.parse(JSON.stringify(next)) as DetailFormState);
+    } catch {
+      setMapChangeBaseline(null);
+      addToast(t('request.map_change_load_fail'), 'error');
+    }
+  };
+
+  // 완성된 MAP 변경 → 다른 기타 목적으로 전환(nextOp) 또는 해제(null).
+  // 불러온/수정한 MAP 이 있으면 전환 확인 모달, 없으면 바로 전환한다.
+  const mapChangeHasData = () =>
+    mapChangeDocId !== null ||
+    MAP_DETAIL_KEYS.some((k) => JSON.stringify(detail[k]) !== JSON.stringify(INITIAL_DETAIL[k]));
+
+  const handleLeaveMapChange = (nextOp: string | null) => {
+    setPendingSwitchOp(nextOp);
+    if (mapChangeHasData()) setMapChangeLeaveConfirm(true);
+    else exitMapChangeMode(nextOp);
+  };
+
+  const exitMapChangeMode = (nextOp: string | null) => {
+    const mapReset: Partial<DetailFormState> = {};
+    MAP_DETAIL_KEYS.forEach((key) => { (mapReset as Record<string, unknown>)[key] = INITIAL_DETAIL[key]; });
+    setDetail((prev) => ({
+      ...prev,
+      ...mapReset, // map_type 포함 MAP 키 전체 초기화 (FIX 해제)
+      other_purpose: nextOp ? [nextOp] : [],
+    }));
+    setMapChangeDocId(null);
+    setMapChangeDocLabel('');
+    setMapChangeBaseline(null);
+    setMapChangeLeaveConfirm(false);
+    setPendingSwitchOp(null);
+  };
+
   // ===== Bb Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
   // 특정 bb_entry(id)에서 나온 결과표 행을 제거하고 그 원본 J행 매핑을 해제한다(재매핑 가능).
   // 항목 삭제/수정 시 stale 매핑이 남지 않도록 공용으로 사용.
@@ -2693,7 +2823,19 @@ export default function RequestPage(): React.ReactElement {
 
     // 반려된 문서 재상신 시 이전 스냅샷을 history 에 누적
     let history: HistorySnapshot[] = [];
-    if (shouldAddHistory && prevParsedRef.current) {
+    if (isMapChangeMode && mapChangeBaseline) {
+      // 완성된 MAP 변경: 원본(결재완료본)의 MAP 스냅샷을 단일 이력으로 결정적 기록한다.
+      // (append 가 아니라 항상 [baseline] — draft 왕복·재상신에도 diff 기준이 '원본 MAP' 으로 고정)
+      history = [
+        {
+          timestamp: new Date().toISOString(),
+          detail: mapChangeBaseline,
+          jayerRows: [],
+          oayerRows: [],
+          bbRows: [],
+        },
+      ];
+    } else if (shouldAddHistory && prevParsedRef.current) {
       const prev = prevParsedRef.current;
       history = [
         ...prev.history,
@@ -3102,6 +3244,13 @@ export default function RequestPage(): React.ReactElement {
           handleRequestPurposeSelect={handleRequestPurposeSelect}
           handleRefDocSelect={handleRefDocSelect}
           handleMergeClick={handleMergeClick}
+          isMapChangeMode={isMapChangeMode}
+          mapChangeDocLabel={mapChangeDocLabel}
+          setMapChangeDocLabel={setMapChangeDocLabel}
+          mapChangeDocId={mapChangeDocId}
+          handleSelectMapChangePurpose={handleSelectMapChangePurpose}
+          handleLeaveMapChange={handleLeaveMapChange}
+          handleMapChangeDocSelect={handleMapChangeDocSelect}
           handleFlowChange={handleFlowChange}
           handleFlowStepBlur={handleFlowStepBlur}
           handleFlowDeleteRow={handleFlowDeleteRow}
@@ -3133,6 +3282,7 @@ export default function RequestPage(): React.ReactElement {
           availableRevLayers={availableRevLayers}
           isProdc={isProdc}
           isMapRegistered={isMapRegistered}
+          isMapChangeMode={isMapChangeMode}
           hasMapChange={hasMapChange}
           hasEaChange={hasEaChange}
           mshotDeleteMode={mshotDeleteMode}
@@ -3813,6 +3963,24 @@ export default function RequestPage(): React.ReactElement {
         onConfirm={handleOnlyMapConfirm}
         title={t('request.only_map_confirm_title')}
         message={t('request.only_map_confirm_msg')}
+        danger
+      />
+
+      <ConfirmModal
+        isOpen={mapChangeResetConfirm}
+        onClose={() => setMapChangeResetConfirm(false)}
+        onConfirm={applyMapChangeMode}
+        title={t('request.map_change_reset_title')}
+        message={t('request.map_change_reset_msg')}
+        danger
+      />
+
+      <ConfirmModal
+        isOpen={mapChangeLeaveConfirm}
+        onClose={() => { setMapChangeLeaveConfirm(false); setPendingSwitchOp(null); }}
+        onConfirm={() => exitMapChangeMode(pendingSwitchOp)}
+        title={t('request.map_change_leave_title')}
+        message={t('request.map_change_leave_msg')}
         danger
       />
 
