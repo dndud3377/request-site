@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { DetailFormState, FlowChartRow, RequestDocument, GuideFeatureKey } from '../../../types';
-import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE } from '../constants';
+import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_MAP_CHANGE } from '../constants';
 
 interface Step1Props {
   detail: DetailFormState;
@@ -31,6 +31,13 @@ interface Step1Props {
   handleRequestPurposeSelect: (val: string) => void;
   handleRefDocSelect: (label: string) => void;
   handleMergeClick: () => void;
+  isMapChangeMode: boolean;
+  mapChangeDocLabel: string;
+  setMapChangeDocLabel: React.Dispatch<React.SetStateAction<string>>;
+  mapChangeDocId: number | null;
+  handleSelectMapChangePurpose: () => void;
+  handleLeaveMapChange: (nextOp: string | null) => void;
+  handleMapChangeDocSelect: (label: string) => void;
   handleFlowChange: (id: string, field: keyof Omit<FlowChartRow, 'id'>, value: string) => void;
   handleFlowStepBlur: (rowId: string, field: 'step_from' | 'step_to') => void;
   handleFlowDeleteRow: (id: string) => void;
@@ -67,6 +74,13 @@ const Step1: React.FC<Step1Props> = ({
   handleRequestPurposeSelect,
   handleRefDocSelect,
   handleMergeClick,
+  isMapChangeMode,
+  mapChangeDocLabel,
+  setMapChangeDocLabel,
+  mapChangeDocId,
+  handleSelectMapChangePurpose,
+  handleLeaveMapChange,
+  handleMapChangeDocSelect,
   handleFlowChange,
   handleFlowStepBlur,
   handleFlowDeleteRow,
@@ -184,6 +198,17 @@ const Step1: React.FC<Step1Props> = ({
                       className={`map-type-btn${selected ? ' active' : ''}`}
                       onClick={() => {
                         if (disableOptional) return;
+                        // '완성된 MAP 변경'은 단독 전용 — 진입/해제는 전용 핸들러로 처리
+                        if (val === OTHER_PURPOSE_MAP_CHANGE) {
+                          if (isMapChangeMode) handleLeaveMapChange(null); // 다시 눌러 해제
+                          else handleSelectMapChangePurpose();
+                          return;
+                        }
+                        // 완성된 MAP 변경이 켜진 상태에서 다른 목적 클릭 → 그 목적으로 전환
+                        if (isMapChangeMode) {
+                          handleLeaveMapChange(val);
+                          return;
+                        }
                         handleDetailSet(
                           'other_purpose',
                           selected
@@ -226,6 +251,24 @@ const Step1: React.FC<Step1Props> = ({
                 >
                   Merge
                 </button>
+              </div>
+            )}
+
+            {/* 완성된 MAP 변경: 대상(결재완료) 요청서 검색 → 선택 즉시 MAP 정보 프리필(Merge 없음) */}
+            {isMapChangeMode && (
+              <div style={{ maxWidth: 460 }}>
+                <AutocompleteInput
+                  label={t('request.map_change_target')}
+                  value={mapChangeDocLabel}
+                  options={approvedDocs.map((d) => d.title)}
+                  onChange={(v) => {
+                    setMapChangeDocLabel(v);
+                    if (mapChangeDocId !== null) handleMapChangeDocSelect('');
+                  }}
+                  onSelect={handleMapChangeDocSelect}
+                  placeholder={t('request.map_change_placeholder')}
+                  disabled={disableOptional}
+                />
               </div>
             )}
 
