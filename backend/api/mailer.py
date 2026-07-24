@@ -75,9 +75,11 @@ AGENT_LABEL = {
     'R': 'R',
     'RV': '검토자',
     'P': 'P',
+    'PV': '검토자',
     'J': 'J',
     'O': 'O',
     'E': 'E',
+    'EV': '검토자',
     'RA': '후결자',
 }
 
@@ -212,8 +214,8 @@ def resolve_stage_recipients(document, agent, step=None):
             recipients = [step.assignee.mail]
         else:
             recipients = _team_emails('R')
-    elif agent in ('RV', 'RA'):
-        # RV(검토자)/RA(후결자): 항상 지정된 그 1명(호출 시점에 이미 assignee 확정)
+    elif agent in ('RV', 'RA', 'PV', 'EV'):
+        # RV/PV/EV(검토자)/RA(후결자): 항상 지정된 그 1명(호출 시점에 이미 assignee 확정)
         recipients = []
         if step is not None and step.assignee and step.assignee.mail:
             recipients = [step.assignee.mail]
