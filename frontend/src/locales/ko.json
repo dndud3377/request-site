@@ -137,6 +137,8 @@
     "map_type_fix": "FIX",
     "map_change_target": "완성된 MAP 변경 · 대상 요청서",
     "map_change_placeholder": "결재 완료된 요청서를 검색하세요",
+    "map_change_apply": "적용",
+    "map_change_loaded": "선택한 요청서의 MAP 정보를 불러왔습니다.",
     "map_change_load_fail": "MAP 정보 로드에 실패했습니다.",
     "map_change_reset_title": "완성된 MAP 변경으로 전환",
     "map_change_reset_msg": "완성된 MAP 변경은 단독으로만 진행됩니다. 계속하면 선택된 다른 기타 목적과 모든 STEP 입력(흐름도·특이사항·Backbone·MAP·J-layer·O-layer)이 초기화됩니다. 진행하시겠습니까?",

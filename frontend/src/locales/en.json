@@ -137,6 +137,8 @@
     "map_type_fix": "FIX",
     "map_change_target": "Completed MAP change · target request",
     "map_change_placeholder": "Search an approved request",
+    "map_change_apply": "Apply",
+    "map_change_loaded": "Loaded MAP info from the selected request.",
     "map_change_load_fail": "Failed to load MAP info.",
     "map_change_reset_title": "Switch to Completed MAP Change",
     "map_change_reset_msg": "Completed MAP Change runs on its own. Continuing will reset any other selected purposes and all STEP inputs (Flow Chart, Notes, Backbone, MAP, J-layer, O-layer). Do you want to continue?",
