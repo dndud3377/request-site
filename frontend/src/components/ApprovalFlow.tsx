@@ -10,12 +10,15 @@ export const ROLE_TO_AGENT: Partial<Record<UserRole, string>> = {
 };
 
 // 검토중(claim) 방식으로 전환된 단계 — 지정하기 대신 담당 역할이 스스로 선점한다.
-export const CLAIM_AGENTS = ['J', 'O', 'E'];
+export const CLAIM_AGENTS = ['J', 'O', 'E', 'P'];
 
-// 담당자 지정(지정하기) 가능 여부: R·P 전용
+// P/E 단계 검토자 agent 코드 (담당자가 검토중 선점 후 지정, 다중 가능)
+export const REVIEW_AGENT_OF: Partial<Record<string, string>> = { P: 'PV', E: 'EV' };
+
+// 담당자 지정(지정하기) 가능 여부: R 전용
 // - PL: 상신 시 이미 지정됨 → 불필요
-// - J/O/E: 검토중(claim) 방식 → 지정하기 없음
-// - R·P: 같은 팀, pending, 아직 담당자 없음
+// - J/O/E/P: 검토중(claim) 방식 → 지정하기 없음
+// - R: 같은 팀, pending, 아직 담당자 없음
 export const canUserAssign = (user: { role: UserRoleWithNull } | MockUser, step: ApprovalStepFrontend): boolean => {
   if (!user.role) return false;
   if (step.agent === 'PL' || CLAIM_AGENTS.includes(step.agent)) return false;
@@ -23,7 +26,7 @@ export const canUserAssign = (user: { role: UserRoleWithNull } | MockUser, step:
   return !!agent && step.agent === agent && step.action === 'pending' && !step.assignee_loginid;
 };
 
-// 검토중(claim) 가능 여부: J/O/E 단계에서 담당 역할이 아직 미배정 단계를 선점
+// 검토중(claim) 가능 여부: J/O/E/P 단계에서 담당 역할이 아직 미배정 단계를 선점
 // - 같은 팀(역할↔agent 일치), pending, 아직 담당자 없음
 export const canUserClaim = (user: { role: UserRoleWithNull } | MockUser, step: ApprovalStepFrontend): boolean => {
   if (!user.role) return false;
@@ -35,9 +38,9 @@ export const canUserClaim = (user: { role: UserRoleWithNull } | MockUser, step: 
 
 // 합의/반려 가능 여부
 // - MASTER: 항상 가능
-// - J/O/E(검토중): 누군가 검토중으로 선점(assignee 존재)하면 같은 팀(역할↔agent) 누구나 합의/반려
+// - J/O/E/P(검토중): 누군가 검토중으로 선점(assignee 존재)하면 같은 팀(역할↔agent) 누구나 합의/반려
 // - PL 역할: agent='PL' 단계에서 본인이 assignee일 때 (검토 처리)
-// - 나머지(R·RV·P·RA): 담당자로 지정된 본인
+// - 나머지(R·RV·PV·EV·RA): 담당자로 지정된 본인
 export const canUserAgree = (user: { role: UserRoleWithNull; username: string } | MockUser, step: ApprovalStepFrontend): boolean => {
   if (user.role === 'MASTER') return true;
   if (step.action !== 'pending') return false;
@@ -49,5 +52,13 @@ export const canUserAgree = (user: { role: UserRoleWithNull; username: string } 
   if (user.role === 'PL' && step.agent === 'PL') {
     return step.assignee_loginid === user.username;
   }
+  return step.assignee_loginid === user.username;
+};
+
+// P/E 검토자 지정 가능 여부: 검토중을 선점한 담당자 본인(+MASTER)만, 본인 합의 전까지
+export const canUserAssignReviewers = (user: { role: UserRoleWithNull; username: string } | MockUser, step: ApprovalStepFrontend): boolean => {
+  if (!REVIEW_AGENT_OF[step.agent]) return false;
+  if (step.action !== 'pending' || !step.assignee_loginid) return false;
+  if (user.role === 'MASTER') return true;
   return step.assignee_loginid === user.username;
 };
