@@ -29,6 +29,7 @@ interface StepMapProps {
   availableRevLayers: string[];
   isProdc: boolean;
   isMapRegistered: boolean;
+  isMapChangeMode: boolean;
   hasMapChange: boolean;
   hasEaChange: boolean;
   mshotDeleteMode: boolean;
@@ -68,6 +69,7 @@ const StepMap: React.FC<StepMapProps> = ({
   availableRevLayers,
   isProdc,
   isMapRegistered,
+  isMapChangeMode,
   hasMapChange,
   hasEaChange,
   mshotDeleteMode,
@@ -120,14 +122,15 @@ const StepMap: React.FC<StepMapProps> = ({
             <GuideBadge fk="step2_map_type" tk={t('guide.feat.step2_map_type' as never)} />
           </label>
           <div style={{ display: 'flex', gap: '8px', marginTop: 4 }}>
-            {(['NEW', 'CLONE', 'EXISTING'] as const).map((val) => {
-              const labelKey = val === 'NEW' ? 'map_type_new' : val === 'CLONE' ? 'map_type_borrow' : 'map_type_registered';
+            {(['NEW', 'CLONE', 'EXISTING', 'FIX'] as const).map((val) => {
+              const labelKey = val === 'NEW' ? 'map_type_new' : val === 'CLONE' ? 'map_type_borrow' : val === 'EXISTING' ? 'map_type_registered' : 'map_type_fix';
               return (
                 <button
                   key={val}
                   type="button"
                   className={`map-type-btn${detail.map_type === val ? ' active' : ''}`}
                   onClick={() => handleMapTypeSelect(val)}
+                  disabled={isMapChangeMode && val !== 'FIX'}
                 >
                   {t(`request.${labelKey}`)}
                 </button>
