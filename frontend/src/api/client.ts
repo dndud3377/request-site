@@ -264,6 +264,14 @@ const assignStep = async (
   return { data };
 };
 
+const assignReviewers = async (docId: number, agent: 'P' | 'E', reviewerLoginids: string[]) => {
+  const data = await post<{ message: string }>(`/documents/${docId}/assign-reviewers/`, {
+    agent,
+    reviewer_loginids: reviewerLoginids,
+  });
+  return { data };
+};
+
 const changePostApprover = async (docId: number, oldLoginid: string, newLoginid: string) => {
   const data = await post<{ message: string; document: RequestDocument }>(
     `/documents/${docId}/change-post-approver/`,
@@ -336,6 +344,7 @@ export const documentsAPI = {
   approveStep,
   rejectStep,
   assignStep,
+  assignReviewers,
   changePostApprover,
   claimStep,
   requestPause,

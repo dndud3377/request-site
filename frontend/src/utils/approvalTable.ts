@@ -3,21 +3,21 @@ import type { TFunction } from 'i18next';
 import { RequestDocument } from '../types';
 import { formatDate } from './date';
 
-// R단계 하위 역할 라벨: R=단계명(RFG) 그대로 / RV=검토자 / RA=후결자, 그 외는 agent_* 사용
+// R/P/E단계 하위 역할 라벨: R=단계명(RFG) 그대로 / RV·PV·EV=검토자 / RA=후결자, 그 외는 agent_* 사용
 const stageLabel = (agent: string, t: TFunction): string => {
-  if (agent === 'RV') return t('approval.stage_reviewer' as any);
+  if (agent === 'RV' || agent === 'PV' || agent === 'EV') return t('approval.stage_reviewer' as any);
   if (agent === 'RA') return t('approval.stage_post' as any);
   return t(`approval.agent_${agent}` as any);
 };
 
-// TE_O/TE_E는 담당자 지정 불필요 — 나머지 단계에서 담당자 미지정 시 'unassigned' 반환
+// TE_O/TE_E/TE_P는 담당자 지정 불필요(검토중 방식) — 나머지 단계에서 담당자 미지정 시 'unassigned' 반환
 export const getDisplayStatus = (doc: RequestDocument): string => {
   if (doc.status !== 'under_review') return doc.status;
   const steps = doc.approval_steps ?? [];
   const maxRound = steps.reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
   const pending = steps.filter((s) => (s.round ?? 1) === maxRound && s.action === 'pending');
   const needsAssignment = pending.some(
-    (s) => s.agent !== 'O' && s.agent !== 'E' && !s.assignee_loginid
+    (s) => s.agent !== 'O' && s.agent !== 'E' && s.agent !== 'P' && !s.assignee_loginid
   );
   return needsAssignment ? 'unassigned' : 'under_review';
 };
@@ -176,19 +176,23 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
     }];
   }
 
-  // 병렬 단계: 경로1(P→J) ∥ 경로2(O[+E]) ∥ 경로3(후결자 RA). 존재하는 경로만 행으로 만든다.
+  // 병렬 단계: 경로1(P[→검토자 PV]→J) ∥ 경로2(O[+E[→검토자 EV]]) ∥ 경로3(후결자 RA). 존재하는 경로만 행으로 만든다.
   const rows: DocTableRow[] = [];
   const pStep = currentSteps.find(s => s.agent === 'P');
+  const pvSteps = currentSteps.filter(s => s.agent === 'PV');
   const jSteps = currentSteps.filter(s => s.agent === 'J');
   const oStep = currentSteps.find(s => s.agent === 'O');
   const eStep = currentSteps.find(s => s.agent === 'E');
+  const evSteps = currentSteps.filter(s => s.agent === 'EV');
   const raSteps = currentSteps.filter(s => s.agent === 'RA');
 
-  // 경로1: P/J
-  if (pStep || jSteps.length > 0) {
+  // 경로1: P(→검토자 PV, 다중 가능)→J. 담당자 합의만으로 끝나지 않고 검토자 전원 합의까지 끝나야
+  // J 가 생성되므로, 담당자 합의 후 검토자가 아직 남아 있으면 '검토자' 단계로 표시한다.
+  if (pStep || pvSteps.length > 0 || jSteps.length > 0) {
     const path1PendingP = pStep?.action === 'pending' ? pStep : undefined;
+    const pvPendingSteps = pvSteps.filter(s => s.action === 'pending');
     const jPendingSteps = jSteps.filter(s => s.action === 'pending');
-    const path1Done = !path1PendingP && jPendingSteps.length === 0;
+    const path1Done = !path1PendingP && pvPendingSteps.length === 0 && jSteps.length > 0 && jPendingSteps.length === 0;
     let stageText: string; let dueDate: string | null; let pathStatus: string;
     if (path1Done) {
       stageText = t('common.status_approved');
@@ -198,6 +202,13 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
       stageText = buildStageText(path1PendingP, false, t);
       dueDate = path1PendingP.due_date ?? null;
       pathStatus = doc.status === 'rejected' ? 'rejected' : path1PendingP.assignee_loginid ? 'under_review' : 'unassigned';
+    } else if (pvPendingSteps.length > 0) {
+      // 담당자는 합의했으나 지정된 검토자가 아직 남아 있음
+      const label = t('approval.stage_reviewer' as any);
+      const names = pvPendingSteps.map(s => s.assignee_name).filter(Boolean);
+      stageText = names.length > 0 ? `${label}(${names.join(' / ')})` : label;
+      dueDate = pvPendingSteps[0]?.due_date ?? null;
+      pathStatus = doc.status === 'rejected' ? 'rejected' : 'under_review';
     } else {
       // J는 검토중(claim) 방식 — 담당자 이름은 노출하지 않는다.
       stageText = t('approval.agent_J' as any);
@@ -208,23 +219,33 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
     rows.push({ pathKey: 'path1', stageText, dueDate, isDone: path1Done, pathStatus });
   }
 
-  // 경로2: O/E
+  // 경로2: O/E(→검토자 EV, 다중 가능). E 담당자 합의만으로 끝나지 않고 검토자 전원 합의까지 필요.
   if (oStep || eStep) {
-    const p2Pending = ([oStep, eStep] as (typeof oStep)[]).filter(
+    const p2MainPending = ([oStep, eStep] as (typeof oStep)[]).filter(
       (s): s is NonNullable<typeof oStep> => !!s && s.action === 'pending'
     );
-    const done = p2Pending.length === 0;
+    const evPendingSteps = evSteps.filter(s => s.action === 'pending');
+    const done = p2MainPending.length === 0 && evPendingSteps.length === 0;
     const stageText = done
       ? t('common.status_approved')
-      : p2Pending.map(s => {
-          const l = t(`approval.agent_${s.agent}` as any);
-          return s.assignee_name ? `${l}(${s.assignee_name})` : l;
-        }).join(' / ');
-    const dueDate = p2Pending.reduce<string | null>((m, s) => {
+      : [
+          ...p2MainPending.map(s => {
+            const l = t(`approval.agent_${s.agent}` as any);
+            return s.assignee_name ? `${l}(${s.assignee_name})` : l;
+          }),
+          ...evPendingSteps.map(s => {
+            const l = t('approval.stage_reviewer' as any);
+            return s.assignee_name ? `${l}(${s.assignee_name})` : l;
+          }),
+        ].join(' / ');
+    const dueDate = ([...p2MainPending, ...evPendingSteps]).reduce<string | null>((m, s) => {
       if (!s.due_date) return m;
       return !m || s.due_date > m ? s.due_date : m;
     }, null);
-    rows.push({ pathKey: 'path2', stageText, dueDate, isDone: done, pathStatus: resolvePathStatus(p2Pending[0], done, doc.status) });
+    rows.push({
+      pathKey: 'path2', stageText, dueDate, isDone: done,
+      pathStatus: resolvePathStatus(p2MainPending[0] ?? evPendingSteps[0], done, doc.status),
+    });
   }
 
   // 경로3: 후결자(RA) — 미합의 후결자 이름을 표시 (다른 단계와 동일한 '라벨(이름)' 형식)

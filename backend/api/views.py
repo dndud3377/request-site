@@ -140,14 +140,19 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     _ROLE_TO_AGENT = {'TE_R': 'R', 'TE_P': 'P', 'TE_J': 'J', 'TE_O': 'O', 'TE_E': 'E'}
 
     # 검토중(claim) 방식으로 전환된 단계 — 담당자 지정 대신 담당 역할 누구나 스스로 선점한다.
-    _CLAIM_AGENTS = ('J', 'O', 'E')
+    _CLAIM_AGENTS = ('J', 'O', 'E', 'P')
+
+    # P/E 단계의 검토자 agent 코드 (담당자가 검토중 선점 후 지정, 다중 가능)
+    _REVIEW_AGENT_OF = {'P': 'PV', 'E': 'EV'}
+    # 검토자 agent → 지정 가능한 팀 역할
+    _REVIEW_TEAM_ROLE = {'PV': 'TE_P', 'EV': 'TE_E'}
 
     def _can_act_on_step(self, user, step):
         """합의/반려 인가 (canUserAgree 동일).
 
         - MASTER: 항상 허용
-        - J/O/E(검토중): 누군가 검토중으로 선점(assignee 존재)하면 같은 팀(역할↔agent) 누구나 합의/반려
-        - 그 외(PL/R/RV/P/RA): 해당 step 의 assignee 본인만 (지정으로 배정됨)
+        - J/O/E/P(검토중): 누군가 검토중으로 선점(assignee 존재)하면 같은 팀(역할↔agent) 누구나 합의/반려
+        - 그 외(PL/R/RV/PV/EV/RA): 해당 step 의 assignee 본인만 (지정으로 배정됨)
         """
         role = getattr(user, 'role', '')
         if role == 'MASTER':
@@ -164,8 +169,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """담당자 지정(지정하기) 인가 (canUserAssign 동일 + MASTER 허용).
 
         - MASTER: 항상 허용
-        - PL 단계 / J·O·E(검토중 방식): 지정하기 개념 없음 → 불가
-        - R·P: 같은 팀(역할↔agent 일치) + 아직 미지정일 때만
+        - PL 단계 / J·O·E·P(검토중 방식): 지정하기 개념 없음 → 불가
+        - R: 같은 팀(역할↔agent 일치) + 아직 미지정일 때만
         """
         role = getattr(user, 'role', '')
         if role == 'MASTER':
@@ -181,8 +186,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """검토중(claim) 인가.
 
         - MASTER: claim 불필요(바로 합의 가능)하나 편의상 허용
-        - J/O/E: 같은 팀(역할↔agent 일치) + pending + 아직 미배정일 때만
-        - 그 외 단계(PL/R/P): 검토중 방식 아님 → 불가
+        - J/O/E/P: 같은 팀(역할↔agent 일치) + pending + 아직 미배정일 때만
+        - 그 외 단계(PL/R/RV/PV/EV/RA): 검토중 방식 아님 → 불가
         """
         if step.agent not in self._CLAIM_AGENTS:
             return False
@@ -197,7 +202,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """중단 요청 '확인' 인가.
 
         - MASTER: 항상 허용
-        - 담당자(assignee)가 있는 단계: 그 담당자 본인만 (PL·R·P·검토중 선점된 J/O/E)
+        - 담당자(assignee)가 있는 단계: 그 담당자 본인만 (PL·R·지정된 PV/EV/RA·검토중 선점된 J/O/E/P)
         - 담당자 미배정 단계: 같은 팀(역할↔agent 일치) 누구나
         """
         role = getattr(user, 'role', '')
@@ -407,7 +412,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         agent = request.data.get('agent')
         comment = request.data.get('comment', '')
 
-        if agent not in ('R', 'RV', 'P', 'J', 'O', 'E', 'RA'):
+        if agent not in ('R', 'RV', 'P', 'PV', 'J', 'O', 'E', 'EV', 'RA'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # 동시 합의 lost-update 방지: 문서 행을 잠가 같은 문서의 상태전이를 직렬화한다.
@@ -421,9 +426,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         max_round = self._max_round(document)
 
         # 잠근 뒤 최신 커밋본을 읽기 위해 locking read 사용
-        # RA(후결자) 다중 담당자: 호출자의 assignee 단계만 조회.
-        # J/O/E(검토중)는 회차당 단일 단계이므로 assignee 필터 없이 조회 → 같은 팀 누구나 합의(인가는 _can_act_on_step).
-        if agent == 'RA':
+        # RA(후결자)/PV/EV(검토자) 다중 담당자: 호출자의 assignee 단계만 조회.
+        # J/O/E/P(검토중)는 회차당 단일 단계이므로 assignee 필터 없이 조회 → 같은 팀 누구나 합의(인가는 _can_act_on_step).
+        if agent in ('RA', 'PV', 'EV'):
             role = getattr(request.user, 'role', '')
             caller_loginid = getattr(request.user, 'loginid', '')
             if role == 'MASTER':
@@ -449,6 +454,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if agent == 'RV':
             r_step = ApprovalStep.objects.filter(document=document, agent='R', round=max_round).first()
             if not r_step or r_step.action != 'approved':
+                return Response({'error': '담당자 합의가 먼저 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # PV/EV(검토자)는 담당자(P/E) 합의 후에만 처리 가능(순차 진행)
+        if agent in ('PV', 'EV'):
+            main_agent = 'P' if agent == 'PV' else 'E'
+            main_step = ApprovalStep.objects.filter(document=document, agent=main_agent, round=max_round).first()
+            if not main_step or main_step.action != 'approved':
                 return Response({'error': '담당자 합의가 먼저 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         step.action = 'approved'
@@ -479,25 +491,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             # 검토자 합의 → 병렬 단계로 전환
             new_status = self._advance_to_parallel(document, step, current_round)
 
-        elif agent == 'P':
-            # P 합의 → J(due: P포함 4영업일) 생성
-            from .utils import calculate_business_due_date
-            import datetime
-            p_date = step.acted_at.date() if step.acted_at else datetime.date.today()
-            j_due = calculate_business_due_date(p_date, 4)
-            j_step = ApprovalStep.objects.create(
-                document=document, agent='J', action='pending',
-                round=current_round, due_date=j_due,
-            )
-            mailer.enqueue_stage_arrival(document, 'J', j_step)
+        elif agent in ('P', 'PV'):
+            # P 담당자 + 지정된 검토자(PV) 전원 합의가 끝나야 J 생성(검토자 없으면 담당자 합의만으로 완료)
+            self._advance_after_p_review(document, current_round)
             new_status = 'under_review'
 
-        elif agent in ('J', 'O', 'E', 'RA'):
-            # J + O + [E] + 후결자(RA) 모두 합의 시 최종 승인.
+        elif agent in ('J', 'O', 'E', 'EV', 'RA'):
+            # J + O + [E, 검토자(EV) 포함] + 후결자(RA) 모두 합의 시 최종 승인.
             # (Only MAP 은 P/O/E 없이 후결자만 종단 경로)
             j_steps = list(ApprovalStep.objects.select_for_update().filter(document=document, agent='J', round=current_round))
             o_step = ApprovalStep.objects.select_for_update().filter(document=document, agent='O', round=current_round).order_by('-id').first()
-            e_step = ApprovalStep.objects.select_for_update().filter(document=document, agent='E', round=current_round).order_by('-id').first()
+            e_exists = ApprovalStep.objects.select_for_update().filter(document=document, agent='E', round=current_round).exists()
             ra_steps = list(ApprovalStep.objects.select_for_update().filter(document=document, agent='RA', round=current_round))
 
             # 후결자: 존재하는 RA 전원 합의 (없으면 해당 경로 없음으로 간주 → True)
@@ -509,7 +513,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             else:
                 j_approved = len(j_steps) > 0 and all(s.action == 'approved' for s in j_steps)
                 o_approved = o_step and o_step.action == 'approved'
-                e_ok = (e_step is None) or (e_step.action == 'approved')
+                # E: 담당자 합의 + 지정된 검토자(EV) 전원 합의까지 끝나야 완료
+                e_ok = (not e_exists) or self._stage_reviewers_complete(document, 'E', current_round)
                 all_approved = j_approved and o_approved and e_ok and ra_ok
             if all_approved:
                 new_status = 'approved'
@@ -534,7 +539,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         agent = request.data.get('agent')
         comment = request.data.get('comment', '')
 
-        if agent not in ('R', 'RV', 'P', 'J', 'O', 'E', 'RA'):
+        if agent not in ('R', 'RV', 'P', 'PV', 'J', 'O', 'E', 'EV', 'RA'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         # 문서 행을 잠가 합의(approve_step)와 반려가 동시에 같은 문서를 전이시키는 경쟁을 직렬화한다.
@@ -545,9 +550,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         max_round = self._max_round(document)
 
-        # RA(후결자) 다중 담당자: 호출자의 assignee 단계만 조회.
-        # J/O/E(검토중)는 회차당 단일 단계이므로 assignee 필터 없이 조회 → 같은 팀 누구나 반려(인가는 _can_act_on_step).
-        if agent == 'RA':
+        # RA(후결자)/PV/EV(검토자) 다중 담당자: 호출자의 assignee 단계만 조회.
+        # J/O/E/P(검토중)는 회차당 단일 단계이므로 assignee 필터 없이 조회 → 같은 팀 누구나 반려(인가는 _can_act_on_step).
+        if agent in ('RA', 'PV', 'EV'):
             role = getattr(request.user, 'role', '')
             caller_loginid = getattr(request.user, 'loginid', '')
             if role == 'MASTER':
@@ -651,13 +656,85 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         return Response({'message': '담당자가 지정되었습니다.'})
 
+    @action(detail=True, methods=['post'], url_path='assign-reviewers')
+    @transaction.atomic
+    def assign_reviewers(self, request, pk=None):
+        """P/E 단계 검토자(PV/EV) 지정 — 검토중을 선점한 담당자 본인이 여러 명을 지정한다.
+
+        담당자 합의만으로는 단계가 끝나지 않고, 지정된 검토자 전원이 합의해야
+        해당 단계가 완료된 것으로 본다(P → J 생성 트리거 / E → 최종 승인 게이트).
+        기존에 지정된(대기/합의) 검토자는 그대로 두고, 목록에 있는 새 loginid만 추가한다
+        (이미 지정된 사람은 무시). 담당자 본인 합의 전까지만 지정할 수 있다.
+        """
+        document = self.get_object()
+        agent = request.data.get('agent')
+        loginids = request.data.get('reviewer_loginids')
+
+        if agent not in self._REVIEW_AGENT_OF:
+            return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(loginids, list):
+            return Response({'error': '검토자 목록이 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if document.status == 'pause':
+            return Response({'error': '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        max_round = self._max_round(document)
+        step = ApprovalStep.objects.select_for_update().filter(
+            document=document, agent=agent, action='pending', round=max_round
+        ).first()
+        if not step:
+            return Response({'error': '해당 단계를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        role = getattr(request.user, 'role', '')
+        caller_loginid = getattr(request.user, 'loginid', '')
+        is_owner = bool(step.assignee_id and step.assignee.loginid == caller_loginid)
+        if role != 'MASTER' and not is_owner:
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        if not step.assignee_id:
+            return Response({'error': '먼저 검토중으로 선점해야 검토자를 지정할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if step.action != 'pending':
+            return Response({'error': '이미 합의된 단계에는 검토자를 지정할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        cleaned = []
+        for lid in loginids:
+            lid = str(lid or '').strip()
+            if lid and lid not in cleaned:
+                cleaned.append(lid)
+
+        review_agent = self._REVIEW_AGENT_OF[agent]
+        team_role = self._REVIEW_TEAM_ROLE[review_agent]
+        existing_loginids = set(
+            ApprovalStep.objects.filter(
+                document=document, agent=review_agent, round=max_round
+            ).exclude(assignee__isnull=True).values_list('assignee__loginid', flat=True)
+        )
+
+        for lid in cleaned:
+            if lid in existing_loginids:
+                continue
+            if lid == caller_loginid:
+                return Response({'error': '담당자 본인은 검토자로 지정할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                reviewer_user = User.objects.get(loginid=lid, role=team_role)
+            except User.DoesNotExist:
+                return Response({'error': f'유효하지 않은 검토자입니다: {lid}'}, status=status.HTTP_400_BAD_REQUEST)
+            rv_step = ApprovalStep.objects.create(
+                document=document, agent=review_agent, action='pending', round=max_round,
+                assignee=reviewer_user, assignee_name=(reviewer_user.username or reviewer_user.loginid),
+            )
+            existing_loginids.add(lid)
+            mailer.enqueue_stage_arrival(document, review_agent, rv_step, recipient_name=rv_step.assignee_name)
+
+        return Response({'message': '검토자가 지정되었습니다.'})
+
     @action(detail=True, methods=['post'], url_path='claim-step')
     @transaction.atomic
     def claim_step(self, request, pk=None):
-        """검토중(claim) — J/O/E 단계를 담당 역할 사용자가 스스로 선점한다.
+        """검토중(claim) — J/O/E/P 단계를 담당 역할 사용자가 스스로 선점한다.
 
         먼저 누른 1명이 해당 단계의 assignee 로 고정되며(취소·재클릭 불가),
         이후 그 사용자만 합의/반려할 수 있다. 동시 선점 경합은 문서 행을 잠가 직렬화한다.
+        P 는 선점 후 assign-reviewers/ 로 검토자(PV, 다중)를 추가로 지정할 수 있다.
         """
         document = self.get_object()
         agent = request.data.get('agent')
@@ -902,6 +979,38 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     users.append(u)
                     seen.add(lid)
         return users
+
+    def _stage_reviewers_complete(self, document, agent, round_no):
+        """P/E 단계가 담당자 + 지정된 검토자(PV/EV) 전원 합의로 끝났는지 여부.
+
+        검토자가 하나도 지정되지 않았으면 담당자 합의만으로 완료(하위호환).
+        """
+        main_step = ApprovalStep.objects.filter(document=document, agent=agent, round=round_no).first()
+        if not main_step or main_step.action != 'approved':
+            return False
+        review_agent = self._REVIEW_AGENT_OF.get(agent)
+        reviewer_steps = ApprovalStep.objects.filter(document=document, agent=review_agent, round=round_no)
+        return all(s.action == 'approved' for s in reviewer_steps)
+
+    def _advance_after_p_review(self, document, round_no):
+        """P 단계가 담당자+검토자 전원 합의로 완료됐을 때만 J(due: P포함 4영업일)를 생성한다.
+
+        아직 검토자 합의가 남아 있으면 아무 것도 하지 않는다(J 는 완료 시점에 1회만 생성).
+        """
+        if not self._stage_reviewers_complete(document, 'P', round_no):
+            return
+        if ApprovalStep.objects.filter(document=document, agent='J', round=round_no).exists():
+            return
+        main_step = ApprovalStep.objects.filter(document=document, agent='P', round=round_no).first()
+        from .utils import calculate_business_due_date
+        import datetime
+        p_date = main_step.acted_at.date() if main_step and main_step.acted_at else datetime.date.today()
+        j_due = calculate_business_due_date(p_date, 4)
+        j_step = ApprovalStep.objects.create(
+            document=document, agent='J', action='pending',
+            round=round_no, due_date=j_due,
+        )
+        mailer.enqueue_stage_arrival(document, 'J', j_step)
 
     def _advance_to_parallel(self, document, step, round_no):
         """R단계(담당자[→검토자]) 완료 후 병렬 단계 생성 → 반환할 새 status.
