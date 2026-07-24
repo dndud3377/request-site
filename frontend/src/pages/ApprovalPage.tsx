@@ -7,7 +7,7 @@ import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView from '../components/PagedDetailView';
-import { canUserAgree, canUserAssign, canUserClaim, canUserAssignReviewers, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
+import { canUserAgree, canUserAssign, canUserClaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend } from '../types';
 import { formatDate } from '../utils/date';
 import { getDocTableRows, getDueDateDisplay, getFinalCompletionDate, getCurrentRound } from '../utils/approvalTable';
@@ -107,13 +107,12 @@ export default function ApprovalPage(): React.ReactElement {
   const [changingDesigneeDropdownOpen, setChangingDesigneeDropdownOpen] = useState(false);
   const changingDesigneeRef = React.useRef<HTMLDivElement>(null);
 
-  // 검토자 지정 UI (P/E 검토중 담당자 본인 — 다중 선택 후 확인)
-  const [reviewerPickerOpen, setReviewerPickerOpen] = useState(false);
+  // 검토자 선택 UI (P/E 담당자 본인 — 합의 버튼과 함께 노출, R 담당자지정 드롭다운과 동일한 스타일)
+  // 드롭다운에서 이름을 클릭하면 바로 추가되고(별도 '추가'/'확인' 버튼 없음), '합의' 클릭 시 그 순간
+  // 선택돼 있는 검토자 지정 + 담당자 합의가 한 번의 요청으로 함께 처리된다.
   const [reviewerCandidates, setReviewerCandidates] = useState<UserWithRole[]>([]);
   const [reviewerSelectedIds, setReviewerSelectedIds] = useState<string[]>([]);
-  const [reviewerQuery, setReviewerQuery] = useState('');
   const [reviewerDropdownOpen, setReviewerDropdownOpen] = useState(false);
-  const reviewerPickerRef = React.useRef<HTMLDivElement>(null);
 
   const handleLoadTeamMembers = async (agent: AgentType): Promise<UserWithRole[]> => {
     // 투어: 실제 API 대신 샘플 팀 인원을 반환(실제 지정 UI와 동일하게 select 채움)
@@ -470,9 +469,9 @@ export default function ApprovalPage(): React.ReactElement {
     setTeamMembers([]);
     setChangingDesigneeOpen(false);
     setChangingDesigneeUserId('');
-    setReviewerPickerOpen(false);
     setReviewerSelectedIds([]);
     setReviewerCandidates([]);
+    setReviewerDropdownOpen(false);
     setModalOpen(true);
   };
 
@@ -517,7 +516,9 @@ export default function ApprovalPage(): React.ReactElement {
           await refreshAndSelect(selected.id);
         }
       } else if (pendingAction.type === 'agree') {
-        await documentsAPI.approveStep(selected.id, pendingAction.agent, commentInput || undefined, currentUser.name);
+        // P/E 담당자 합의 시, 지금 선택돼 있는 검토자(PV/EV)를 함께 지정한다(별도 확인 없이 한 번에 처리).
+        const reviewerLoginids = REVIEW_AGENT_OF[pendingAction.agent] ? reviewerSelectedIds : undefined;
+        await documentsAPI.approveStep(selected.id, pendingAction.agent, commentInput || undefined, currentUser.name, reviewerLoginids);
         addToast(t('approval.agree_success', { agent: t(`approval.agent_${pendingAction.agent}` as any) }), 'success');
         setModalOpen(false);
         fetchDocs();
@@ -531,6 +532,8 @@ export default function ApprovalPage(): React.ReactElement {
     } finally {
       setProcessing(false);
       setPendingAction(null);
+      setReviewerSelectedIds([]);
+      setReviewerDropdownOpen(false);
     }
   };
 
@@ -653,21 +656,6 @@ export default function ApprovalPage(): React.ReactElement {
     setProcessing(true);
     try {
       await documentsAPI.assignStep(selected.id, agent, loginid, userName, reviewerLoginid);
-      await refreshAndSelect(selected.id);
-    } catch {
-      addToast(t('common.process_error'), 'error');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const handleAssignReviewers = async (agent: 'P' | 'E', loginids: string[]) => {
-    if (!selected || loginids.length === 0) return;
-    if (isTourMode) return;
-    setProcessing(true);
-    try {
-      await documentsAPI.assignReviewers(selected.id, agent, loginids);
-      addToast(t('approval.assign_reviewers_success'), 'success');
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');
@@ -1066,11 +1054,11 @@ export default function ApprovalPage(): React.ReactElement {
           const isPLStep = actableStep?.agent === 'PL';
           // 검토중(claim) 가능 단계: J/O/E/P 중 담당 역할이 아직 미배정인 단계를 선점
           const claimableStep = isTourMode ? undefined : pendingSteps.find((s) => canUserClaim(currentUser, s));
-          // 검토자 지정 가능 단계: P/E 검토중을 선점한 담당자 본인(합의 전)
-          const reviewerAssignableStep = isTourMode ? undefined : pendingSteps.find((s) => canUserAssignReviewers(currentUser, s));
-          const existingReviewerLoginids = reviewerAssignableStep
+          // 검토자 선택 UI 대상: 지금 '합의'를 누를 수 있는 단계가 P/E일 때 그 단계에 검토자를 함께 지정한다.
+          const reviewerPickStep = (!isTourMode && actableStep && REVIEW_AGENT_OF[actableStep.agent]) ? actableStep : undefined;
+          const existingReviewerLoginids = reviewerPickStep
             ? (selected?.approval_steps ?? [])
-                .filter((s) => s.agent === REVIEW_AGENT_OF[reviewerAssignableStep.agent] && (s.round ?? 1) === currentRound)
+                .filter((s) => s.agent === REVIEW_AGENT_OF[reviewerPickStep.agent] && (s.round ?? 1) === currentRound)
                 .map((s) => s.assignee_loginid)
                 .filter((v): v is string => !!v)
             : [];
@@ -1434,83 +1422,28 @@ export default function ApprovalPage(): React.ReactElement {
                   </button>
                 </>
               )}
-              {/* 검토자 지정 (P/E 검토중 담당자 본인 — 다중 선택) */}
-              {reviewerAssignableStep && !reviewerPickerOpen && !assigningOpen && !changingDesigneeOpen && (
-                <button
-                  className="btn btn-secondary"
-                  disabled={processing}
-                  onClick={async () => {
-                    setReviewerPickerOpen(true);
-                    setReviewerSelectedIds([]);
-                    setReviewerQuery('');
-                    setReviewerDropdownOpen(false);
-                    setLoadingMembers(true);
-                    const members = await handleLoadTeamMembers(reviewerAssignableStep.agent);
-                    setReviewerCandidates(members);
-                    setLoadingMembers(false);
-                  }}
-                >
-                  {t('approval.assign_reviewers_btn')}
-                </button>
-              )}
-              {reviewerAssignableStep && reviewerPickerOpen && (
+              {/* PL 검토 단계 액션 */}
+              {actableStep && isPLStep && selected && (
                 <>
-                  <div ref={reviewerPickerRef} style={{ position: 'relative' }}>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={reviewerQuery}
-                      placeholder={loadingMembers ? t('common.loading') : t('approval.assign_reviewers_search_placeholder')}
-                      disabled={loadingMembers}
-                      autoComplete="off"
-                      style={{ fontSize: '0.85rem', padding: '4px 8px', width: 200 }}
-                      onChange={(e) => { setReviewerQuery(e.target.value); setReviewerDropdownOpen(true); }}
-                      onFocus={() => setReviewerDropdownOpen(true)}
-                    />
-                    {reviewerDropdownOpen && !loadingMembers && (() => {
-                      const q = reviewerQuery.toLowerCase();
-                      const options = reviewerCandidates.filter((u) =>
-                        u.loginid !== reviewerAssignableStep.assignee_loginid &&
-                        !existingReviewerLoginids.includes(u.loginid) &&
-                        !reviewerSelectedIds.includes(u.loginid) &&
-                        (!q || u.name.toLowerCase().includes(q) || u.loginid.toLowerCase().includes(q))
-                      );
-                      return (
-                        <ul style={{
-                          position: 'absolute', bottom: '100%', left: 0, right: 0,
-                          background: 'var(--bg-modal)', border: '1px solid var(--border)',
-                          borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)',
-                          margin: 0, padding: 0, listStyle: 'none',
-                          maxHeight: 220, overflowY: 'auto', zIndex: 9999,
-                        }}>
-                          {options.length === 0 ? (
-                            <li style={{ padding: '8px 12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                              {t('approval.no_team_members')}
-                            </li>
-                          ) : options.map((u) => (
-                            <li
-                              key={u.loginid}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                setReviewerSelectedIds((prev) => [...prev, u.loginid]);
-                                setReviewerQuery('');
-                              }}
-                              style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
-                              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-secondary)'; }}
-                              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                            >
-                              <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{u.name}</span>
-                              <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>
-                                {u.loginid}{u.mail ? ` · ${u.mail}` : ''}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      );
-                    })()}
-                  </div>
-                  {reviewerSelectedIds.length > 0 && (
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  <button className="btn btn-primary" disabled={processing} onClick={() => triggerAgree(actableStep.agent, true)}>
+                    {t('approval.agree')}
+                  </button>
+                  <button className="btn btn-danger" disabled={processing} onClick={() => triggerReject(actableStep.agent, true)}>
+                    {t('approval.reject')}
+                  </button>
+                  <button className="btn btn-secondary" disabled={processing} onClick={() => handlePeerSubmitNav(selected)}>
+                    {t('approval.peer_submit')}
+                  </button>
+                </>
+              )}
+              {/* 일반 단계 액션 */}
+              {actableStep && !isPLStep && (
+                <>
+                  {/* 검토자 선택 (P/E 담당자 본인 — R 담당자지정 드롭다운과 동일한 스타일).
+                      드롭다운에서 이름을 클릭하면 바로 추가되고, '합의'를 누르면 그 순간 선택된
+                      검토자 지정 + 담당자 합의가 한 번의 요청으로 함께 처리된다. */}
+                  {reviewerPickStep && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       {reviewerSelectedIds.map((lid) => {
                         const u = reviewerCandidates.find((c) => c.loginid === lid);
                         return (
@@ -1529,51 +1462,56 @@ export default function ApprovalPage(): React.ReactElement {
                           </span>
                         );
                       })}
+                      <div className="assign-dropdown" style={{ position: 'relative' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          disabled={processing}
+                          onClick={async () => {
+                            if (!reviewerDropdownOpen && reviewerCandidates.length === 0 && !loadingMembers) {
+                              setLoadingMembers(true);
+                              const members = await handleLoadTeamMembers(reviewerPickStep.agent);
+                              setReviewerCandidates(members);
+                              setLoadingMembers(false);
+                            }
+                            setReviewerDropdownOpen((o) => !o);
+                          }}
+                          style={{ minWidth: 110, display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}
+                        >
+                          <span>{t('approval.assign_reviewer_select_placeholder')}</span>
+                          <span aria-hidden="true">▾</span>
+                        </button>
+                        {reviewerDropdownOpen && (
+                          <ul className="assign-dropdown-list">
+                            {loadingMembers ? (
+                              <li className="assign-dropdown-empty">{t('common.loading')}</li>
+                            ) : (() => {
+                              const options = reviewerCandidates.filter((u) =>
+                                u.loginid !== reviewerPickStep.assignee_loginid &&
+                                !existingReviewerLoginids.includes(u.loginid) &&
+                                !reviewerSelectedIds.includes(u.loginid)
+                              );
+                              return options.length === 0 ? (
+                                <li className="assign-dropdown-empty">{t('approval.no_team_members')}</li>
+                              ) : options.map((u) => (
+                                <li
+                                  key={u.loginid}
+                                  className="assign-dropdown-item"
+                                  onClick={() => {
+                                    setReviewerSelectedIds((prev) => [...prev, u.loginid]);
+                                    setReviewerDropdownOpen(false);
+                                  }}
+                                >
+                                  <strong>{u.name}</strong>
+                                  <span className="assign-dropdown-dept">{u.mail}</span>
+                                </li>
+                              ));
+                            })()}
+                          </ul>
+                        )}
+                      </div>
                     </div>
                   )}
-                  <button
-                    className="btn btn-primary btn-sm"
-                    disabled={reviewerSelectedIds.length === 0 || processing || loadingMembers}
-                    onClick={async () => {
-                      await handleAssignReviewers(reviewerAssignableStep.agent as 'P' | 'E', reviewerSelectedIds);
-                      setReviewerPickerOpen(false);
-                      setReviewerSelectedIds([]);
-                      setReviewerQuery('');
-                      setReviewerDropdownOpen(false);
-                    }}
-                  >
-                    {t('common.confirm')}
-                  </button>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      setReviewerPickerOpen(false);
-                      setReviewerSelectedIds([]);
-                      setReviewerQuery('');
-                      setReviewerDropdownOpen(false);
-                    }}
-                  >
-                    {t('common.cancel')}
-                  </button>
-                </>
-              )}
-              {/* PL 검토 단계 액션 */}
-              {actableStep && isPLStep && selected && (
-                <>
-                  <button className="btn btn-primary" disabled={processing} onClick={() => triggerAgree(actableStep.agent, true)}>
-                    {t('approval.agree')}
-                  </button>
-                  <button className="btn btn-danger" disabled={processing} onClick={() => triggerReject(actableStep.agent, true)}>
-                    {t('approval.reject')}
-                  </button>
-                  <button className="btn btn-secondary" disabled={processing} onClick={() => handlePeerSubmitNav(selected)}>
-                    {t('approval.peer_submit')}
-                  </button>
-                </>
-              )}
-              {/* 일반 단계 액션 */}
-              {actableStep && !isPLStep && (
-                <>
                   <button
                     className="btn btn-primary"
                     disabled={processing}

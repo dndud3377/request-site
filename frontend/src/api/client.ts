@@ -231,10 +231,20 @@ const deleteDocument = async (id: number) => {
   return { data };
 };
 
-const approveStep = async (docId: number, agent: AgentType, comment?: string, approverName?: string) => {
+const approveStep = async (
+  docId: number,
+  agent: AgentType,
+  comment?: string,
+  approverName?: string,
+  reviewerLoginids?: string[]
+) => {
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/approve-step/`,
-    { agent, comment: comment ?? '', approver_name: approverName ?? '' }
+    {
+      agent, comment: comment ?? '', approver_name: approverName ?? '',
+      // P/E 담당자 합의 시 검토자(PV/EV, 다중)를 함께 지정 — 별도 API 없이 한 번에 처리
+      ...((agent === 'P' || agent === 'E') && reviewerLoginids?.length ? { reviewer_loginids: reviewerLoginids } : {}),
+    }
   );
   return { data };
 };
@@ -260,14 +270,6 @@ const assignStep = async (
     assignee_name: assigneeName,
     // R(RFG) 단계: 검토자(RV) 함께 지정 ('' 이면 검토자 없음)
     ...(agent === 'R' ? { reviewer_loginid: reviewerLoginid ?? '' } : {}),
-  });
-  return { data };
-};
-
-const assignReviewers = async (docId: number, agent: 'P' | 'E', reviewerLoginids: string[]) => {
-  const data = await post<{ message: string }>(`/documents/${docId}/assign-reviewers/`, {
-    agent,
-    reviewer_loginids: reviewerLoginids,
   });
   return { data };
 };
@@ -344,7 +346,6 @@ export const documentsAPI = {
   approveStep,
   rejectStep,
   assignStep,
-  assignReviewers,
   changePostApprover,
   claimStep,
   requestPause,

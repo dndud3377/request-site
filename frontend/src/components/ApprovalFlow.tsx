@@ -55,10 +55,12 @@ export const canUserAgree = (user: { role: UserRoleWithNull; username: string } 
   return step.assignee_loginid === user.username;
 };
 
-// P/E 검토자 지정 가능 여부: 검토중을 선점한 담당자 본인(+MASTER)만, 본인 합의 전까지
-export const canUserAssignReviewers = (user: { role: UserRoleWithNull; username: string } | MockUser, step: ApprovalStepFrontend): boolean => {
+// P/E 검토자 선택 UI 노출 가능 여부: 이 단계에 합의할 수 있는 사람(=담당자 본인/MASTER)과 동일하다.
+// R 담당자 지정과 달리 별도 지정 API가 없다 — 검토자를 고른 뒤 '합의'를 누르면 그 요청 한 번에
+// 담당자 합의 + 검토자 지정이 함께 처리된다(canUserAgree와 조건이 같지만 P/E 전용으로 한정).
+export const canUserPickReviewers = (user: { role: UserRoleWithNull; username: string } | MockUser, step: ApprovalStepFrontend): boolean => {
   if (!REVIEW_AGENT_OF[step.agent]) return false;
-  if (step.action !== 'pending' || !step.assignee_loginid) return false;
+  if (step.action !== 'pending') return false;
   if (user.role === 'MASTER') return true;
-  return step.assignee_loginid === user.username;
+  return !!step.assignee_loginid && step.assignee_loginid === user.username;
 };
