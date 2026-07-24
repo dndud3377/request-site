@@ -7,7 +7,7 @@ import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView from '../components/PagedDetailView';
-import { canUserAgree, canUserAssign, canUserClaim, ROLE_TO_AGENT } from '../components/ApprovalFlow';
+import { canUserAgree, canUserAssign, canUserClaim, canUserAssignReviewers, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend } from '../types';
 import { formatDate } from '../utils/date';
 import { getDocTableRows, getDueDateDisplay, getFinalCompletionDate, getCurrentRound } from '../utils/approvalTable';
@@ -106,6 +106,14 @@ export default function ApprovalPage(): React.ReactElement {
   const [changingDesigneeQuery, setChangingDesigneeQuery] = useState('');
   const [changingDesigneeDropdownOpen, setChangingDesigneeDropdownOpen] = useState(false);
   const changingDesigneeRef = React.useRef<HTMLDivElement>(null);
+
+  // 검토자 지정 UI (P/E 검토중 담당자 본인 — 다중 선택 후 확인)
+  const [reviewerPickerOpen, setReviewerPickerOpen] = useState(false);
+  const [reviewerCandidates, setReviewerCandidates] = useState<UserWithRole[]>([]);
+  const [reviewerSelectedIds, setReviewerSelectedIds] = useState<string[]>([]);
+  const [reviewerQuery, setReviewerQuery] = useState('');
+  const [reviewerDropdownOpen, setReviewerDropdownOpen] = useState(false);
+  const reviewerPickerRef = React.useRef<HTMLDivElement>(null);
 
   const handleLoadTeamMembers = async (agent: AgentType): Promise<UserWithRole[]> => {
     // 투어: 실제 API 대신 샘플 팀 인원을 반환(실제 지정 UI와 동일하게 select 채움)
@@ -462,6 +470,9 @@ export default function ApprovalPage(): React.ReactElement {
     setTeamMembers([]);
     setChangingDesigneeOpen(false);
     setChangingDesigneeUserId('');
+    setReviewerPickerOpen(false);
+    setReviewerSelectedIds([]);
+    setReviewerCandidates([]);
     setModalOpen(true);
   };
 
@@ -642,6 +653,21 @@ export default function ApprovalPage(): React.ReactElement {
     setProcessing(true);
     try {
       await documentsAPI.assignStep(selected.id, agent, loginid, userName, reviewerLoginid);
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleAssignReviewers = async (agent: 'P' | 'E', loginids: string[]) => {
+    if (!selected || loginids.length === 0) return;
+    if (isTourMode) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.assignReviewers(selected.id, agent, loginids);
+      addToast(t('approval.assign_reviewers_success'), 'success');
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');
@@ -1025,17 +1051,28 @@ export default function ApprovalPage(): React.ReactElement {
           const assignableStep = isTourMode
             ? selected?.approval_steps?.find((s) => s.agent === 'R' && s.action === 'pending' && !s.assignee_loginid)
             : pendingSteps.find((s) => canUserAssign(currentUser, s));
-          // RV(검토자)는 담당자(R) 합의 후에만 처리 가능 → 그 전엔 actable 에서 제외
-          const rHandlerApproved = (selected?.approval_steps ?? []).some(
-            (s) => s.agent === 'R' && s.action === 'approved'
-              && (s.round ?? 1) === getCurrentRound(selected as RequestDocument)
+          // RV/PV/EV(검토자)는 담당자(R/P/E) 합의 후에만 처리 가능 → 그 전엔 actable 에서 제외
+          const currentRound = getCurrentRound(selected as RequestDocument);
+          const mainStepApproved = (mainAgent: string) => (selected?.approval_steps ?? []).some(
+            (s) => s.agent === mainAgent && s.action === 'approved' && (s.round ?? 1) === currentRound
           );
-          const actableStep = pendingSteps.find(
-            (s) => canUserAgree(currentUser, s) && (s.agent !== 'RV' || rHandlerApproved)
-          );
+          const REVIEW_MAIN_AGENT: Record<string, string> = { RV: 'R', PV: 'P', EV: 'E' };
+          const actableStep = pendingSteps.find((s) => {
+            if (!canUserAgree(currentUser, s)) return false;
+            const mainAgent = REVIEW_MAIN_AGENT[s.agent];
+            return !mainAgent || mainStepApproved(mainAgent);
+          });
           const isPLStep = actableStep?.agent === 'PL';
-          // 검토중(claim) 가능 단계: J/O/E 중 담당 역할이 아직 미배정인 단계를 선점
+          // 검토중(claim) 가능 단계: J/O/E/P 중 담당 역할이 아직 미배정인 단계를 선점
           const claimableStep = isTourMode ? undefined : pendingSteps.find((s) => canUserClaim(currentUser, s));
+          // 검토자 지정 가능 단계: P/E 검토중을 선점한 담당자 본인(합의 전)
+          const reviewerAssignableStep = isTourMode ? undefined : pendingSteps.find((s) => canUserAssignReviewers(currentUser, s));
+          const existingReviewerLoginids = reviewerAssignableStep
+            ? (selected?.approval_steps ?? [])
+                .filter((s) => s.agent === REVIEW_AGENT_OF[reviewerAssignableStep.agent] && (s.round ?? 1) === currentRound)
+                .map((s) => s.assignee_loginid)
+                .filter((v): v is string => !!v)
+            : [];
 
           // 지정자 변경 가능 여부: 원 PL 또는 MASTER, under_review, PL 단계 pending
           const hasPendingPLStep = (selected?.approval_steps ?? []).some(s => s.agent === 'PL' && s.action === 'pending');
@@ -1391,6 +1428,129 @@ export default function ApprovalPage(): React.ReactElement {
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={() => { setAssigningOpen(false); setAssigningUserId(''); setAssigningReviewerId(''); setAssignDropdownOpen(false); setAssignReviewerDropdownOpen(false); }}
+                  >
+                    {t('common.cancel')}
+                  </button>
+                </>
+              )}
+              {/* 검토자 지정 (P/E 검토중 담당자 본인 — 다중 선택) */}
+              {reviewerAssignableStep && !reviewerPickerOpen && !assigningOpen && !changingDesigneeOpen && (
+                <button
+                  className="btn btn-secondary"
+                  disabled={processing}
+                  onClick={async () => {
+                    setReviewerPickerOpen(true);
+                    setReviewerSelectedIds([]);
+                    setReviewerQuery('');
+                    setReviewerDropdownOpen(false);
+                    setLoadingMembers(true);
+                    const members = await handleLoadTeamMembers(reviewerAssignableStep.agent);
+                    setReviewerCandidates(members);
+                    setLoadingMembers(false);
+                  }}
+                >
+                  {t('approval.assign_reviewers_btn')}
+                </button>
+              )}
+              {reviewerAssignableStep && reviewerPickerOpen && (
+                <>
+                  <div ref={reviewerPickerRef} style={{ position: 'relative' }}>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={reviewerQuery}
+                      placeholder={loadingMembers ? t('common.loading') : t('approval.assign_reviewers_search_placeholder')}
+                      disabled={loadingMembers}
+                      autoComplete="off"
+                      style={{ fontSize: '0.85rem', padding: '4px 8px', width: 200 }}
+                      onChange={(e) => { setReviewerQuery(e.target.value); setReviewerDropdownOpen(true); }}
+                      onFocus={() => setReviewerDropdownOpen(true)}
+                    />
+                    {reviewerDropdownOpen && !loadingMembers && (() => {
+                      const q = reviewerQuery.toLowerCase();
+                      const options = reviewerCandidates.filter((u) =>
+                        u.loginid !== reviewerAssignableStep.assignee_loginid &&
+                        !existingReviewerLoginids.includes(u.loginid) &&
+                        !reviewerSelectedIds.includes(u.loginid) &&
+                        (!q || u.name.toLowerCase().includes(q) || u.loginid.toLowerCase().includes(q))
+                      );
+                      return (
+                        <ul style={{
+                          position: 'absolute', bottom: '100%', left: 0, right: 0,
+                          background: 'var(--bg-modal)', border: '1px solid var(--border)',
+                          borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)',
+                          margin: 0, padding: 0, listStyle: 'none',
+                          maxHeight: 220, overflowY: 'auto', zIndex: 9999,
+                        }}>
+                          {options.length === 0 ? (
+                            <li style={{ padding: '8px 12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                              {t('approval.no_team_members')}
+                            </li>
+                          ) : options.map((u) => (
+                            <li
+                              key={u.loginid}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setReviewerSelectedIds((prev) => [...prev, u.loginid]);
+                                setReviewerQuery('');
+                              }}
+                              style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
+                              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-secondary)'; }}
+                              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                            >
+                              <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{u.name}</span>
+                              <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>
+                                {u.loginid}{u.mail ? ` · ${u.mail}` : ''}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      );
+                    })()}
+                  </div>
+                  {reviewerSelectedIds.length > 0 && (
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {reviewerSelectedIds.map((lid) => {
+                        const u = reviewerCandidates.find((c) => c.loginid === lid);
+                        return (
+                          <span
+                            key={lid}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: '0.82rem' }}
+                          >
+                            {u?.name ?? lid}
+                            <button
+                              type="button"
+                              onClick={() => setReviewerSelectedIds((prev) => prev.filter((x) => x !== lid))}
+                              style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1, padding: 0 }}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={reviewerSelectedIds.length === 0 || processing || loadingMembers}
+                    onClick={async () => {
+                      await handleAssignReviewers(reviewerAssignableStep.agent as 'P' | 'E', reviewerSelectedIds);
+                      setReviewerPickerOpen(false);
+                      setReviewerSelectedIds([]);
+                      setReviewerQuery('');
+                      setReviewerDropdownOpen(false);
+                    }}
+                  >
+                    {t('common.confirm')}
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setReviewerPickerOpen(false);
+                      setReviewerSelectedIds([]);
+                      setReviewerQuery('');
+                      setReviewerDropdownOpen(false);
+                    }}
                   >
                     {t('common.cancel')}
                   </button>
