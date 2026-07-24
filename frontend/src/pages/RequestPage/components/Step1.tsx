@@ -35,9 +35,11 @@ interface Step1Props {
   mapChangeDocLabel: string;
   setMapChangeDocLabel: React.Dispatch<React.SetStateAction<string>>;
   mapChangeDocId: number | null;
+  setMapChangeDocId: React.Dispatch<React.SetStateAction<number | null>>;
   handleSelectMapChangePurpose: () => void;
   handleLeaveMapChange: (nextOp: string | null) => void;
-  handleMapChangeDocSelect: (label: string) => void;
+  handleMapChangeDocPick: (label: string) => void;
+  handleMapChangeApply: () => void;
   handleFlowChange: (id: string, field: keyof Omit<FlowChartRow, 'id'>, value: string) => void;
   handleFlowStepBlur: (rowId: string, field: 'step_from' | 'step_to') => void;
   handleFlowDeleteRow: (id: string) => void;
@@ -78,9 +80,11 @@ const Step1: React.FC<Step1Props> = ({
   mapChangeDocLabel,
   setMapChangeDocLabel,
   mapChangeDocId,
+  setMapChangeDocId,
   handleSelectMapChangePurpose,
   handleLeaveMapChange,
-  handleMapChangeDocSelect,
+  handleMapChangeDocPick,
+  handleMapChangeApply,
   handleFlowChange,
   handleFlowStepBlur,
   handleFlowDeleteRow,
@@ -225,9 +229,9 @@ const Step1: React.FC<Step1Props> = ({
               </div>
             </div>
 
-            {/* Layer 추가/삭제: 참조 요청서 선택 */}
+            {/* Layer 추가/삭제: 참조 요청서 선택 (검색 툴바 크기는 완성된 MAP 변경과 동일) */}
             {detail.other_purpose.includes('Layer 추가/삭제') && (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', maxWidth: 920 }}>
                 <div style={{ flex: 1 }}>
                   <AutocompleteInput
                     label="참조 요청서"
@@ -254,21 +258,32 @@ const Step1: React.FC<Step1Props> = ({
               </div>
             )}
 
-            {/* 완성된 MAP 변경: 대상(결재완료) 요청서 검색 → 선택 즉시 MAP 정보 프리필(Merge 없음) */}
+            {/* 완성된 MAP 변경: 대상(결재완료) 요청서 검색 → '적용' 버튼으로 MAP 정보 프리필 */}
             {isMapChangeMode && (
-              <div style={{ maxWidth: 460 }}>
-                <AutocompleteInput
-                  label={t('request.map_change_target')}
-                  value={mapChangeDocLabel}
-                  options={approvedDocs.map((d) => d.title)}
-                  onChange={(v) => {
-                    setMapChangeDocLabel(v);
-                    if (mapChangeDocId !== null) handleMapChangeDocSelect('');
-                  }}
-                  onSelect={handleMapChangeDocSelect}
-                  placeholder={t('request.map_change_placeholder')}
-                  disabled={disableOptional}
-                />
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', maxWidth: 920 }}>
+                <div style={{ flex: 1 }}>
+                  <AutocompleteInput
+                    label={t('request.map_change_target')}
+                    value={mapChangeDocLabel}
+                    options={approvedDocs.map((d) => d.title)}
+                    onChange={(v) => {
+                      setMapChangeDocLabel(v);
+                      if (mapChangeDocId !== null) setMapChangeDocId(null);
+                    }}
+                    onSelect={handleMapChangeDocPick}
+                    placeholder={t('request.map_change_placeholder')}
+                    disabled={disableOptional}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={disableOptional || mapChangeDocId === null}
+                  style={disableOptional || mapChangeDocId === null ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                  onClick={handleMapChangeApply}
+                >
+                  {t('request.map_change_apply')}
+                </button>
               </div>
             )}
 

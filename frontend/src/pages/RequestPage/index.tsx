@@ -2146,7 +2146,7 @@ export default function RequestPage(): React.ReactElement {
   const applyMapChangeMode = () => {
     setDetail((prev) => ({
       ...INITIAL_DETAIL,
-      request_purpose: prev.request_purpose,
+      request_purpose: '기타', // 완성된 MAP 변경 진입 시 요청 목적을 '기타'로 자동 설정
       line: prev.line,
       process_selection: prev.process_selection,
       partid_selection: prev.partid_selection,
@@ -2182,19 +2182,20 @@ export default function RequestPage(): React.ReactElement {
     setMapChangeResetConfirm(false);
   };
 
-  // 대상(결재완료) 요청서 선택 → MAP 키만 현재 detail 에 병합, map_type=FIX 유지.
-  // 프리필 직후 detail 을 원본 스냅샷(mapChangeBaseline)으로 저장해 상신 시 변경이력 diff 기준으로 쓴다.
-  const handleMapChangeDocSelect = async (label: string) => {
+  // 대상(결재완료) 요청서 선택 — id/label 만 기록한다. 실제 프리필은 '적용' 버튼(handleMapChangeApply)에서.
+  const handleMapChangeDocPick = (label: string) => {
     const doc = approvedDocs.find((d) => d.title === label);
-    if (!doc) {
-      setMapChangeDocId(null);
-      setMapChangeBaseline(null);
-      return;
-    }
-    setMapChangeDocId(doc.id);
+    setMapChangeDocLabel(label);
+    setMapChangeDocId(doc ? doc.id : null);
+  };
+
+  // '적용' 버튼 → 선택된 요청서의 MAP 키만 현재 detail 에 병합(map_type=FIX 유지).
+  // 프리필 직후 detail 을 원본 스냅샷(mapChangeBaseline)으로 저장해 상신 시 변경이력 diff 기준으로 쓴다.
+  const handleMapChangeApply = async () => {
+    if (mapChangeDocId === null) return;
     isLoadingEditRef.current = true; // 라인/prodc 변경 effect 가 프리필값을 지우지 않도록 가드
     try {
-      const res = await documentsAPI.get(doc.id);
+      const res = await documentsAPI.get(mapChangeDocId);
       const parsed = JSON.parse(res.data.additional_notes ?? '{}');
       const src: Partial<DetailFormState> = parsed.detail ?? {};
       const mapPatch: Partial<DetailFormState> = {};
@@ -2205,6 +2206,7 @@ export default function RequestPage(): React.ReactElement {
       setDetail(next);
       // 스냅샷은 완전 격리(중첩 배열 공유 방지) — diff 기준의 무결성 보장
       setMapChangeBaseline(JSON.parse(JSON.stringify(next)) as DetailFormState);
+      addToast(t('request.map_change_loaded'), 'success');
     } catch {
       setMapChangeBaseline(null);
       addToast(t('request.map_change_load_fail'), 'error');
@@ -2604,8 +2606,8 @@ export default function RequestPage(): React.ReactElement {
         newErrors['partid_selection'] = t('request.partid_not_in_list');
         errorMessages.push(t('request.partid_not_in_list'));
       }
-      // Only MAP 모드에서는 Backbone 조합 영역 필수 검증을 우회한다.
-      if (!isOnlyMap) {
+      // Only MAP·완성된 MAP 변경 모드에서는 Backbone 조합 영역 필수 검증을 우회한다.
+      if (!isOnlyMap && !isMapChangeMode) {
         // 추가한 항목까지 모두 완전히(위치·제품·조리법) 입력돼야 진행 가능(R-17). 불필요하면 삭제하도록 유도.
         const allFilled = detail.bb_entries.every(
           (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
@@ -2763,7 +2765,7 @@ export default function RequestPage(): React.ReactElement {
       }
     }
 
-    if (currentStep === 4 && !isOnlyMap) {
+    if (currentStep === 4 && !isOnlyMap && !isMapChangeMode) {
       if (!detail.partial_shot?.trim()) {
         newErrors['partial_shot'] = t('request.required');
         errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
@@ -2929,7 +2931,7 @@ export default function RequestPage(): React.ReactElement {
     //  동일한 소스 값으로 직접 재계산한다.)
     if (step === 4) {
       const oViolations = findNocBorrowViolations(oayerRows);
-      const partialShotMissing = !isOnlyMap && !detail.partial_shot?.trim();
+      const partialShotMissing = !isOnlyMap && !isMapChangeMode && !detail.partial_shot?.trim();
       if (partialShotMissing && oViolations.length === 0) setOayerInfoTab('info');
     }
     // 탭 전환·에러 span 렌더가 끝난 뒤 DOM을 조회하도록 지연한다.
@@ -3248,9 +3250,11 @@ export default function RequestPage(): React.ReactElement {
           mapChangeDocLabel={mapChangeDocLabel}
           setMapChangeDocLabel={setMapChangeDocLabel}
           mapChangeDocId={mapChangeDocId}
+          setMapChangeDocId={setMapChangeDocId}
           handleSelectMapChangePurpose={handleSelectMapChangePurpose}
           handleLeaveMapChange={handleLeaveMapChange}
-          handleMapChangeDocSelect={handleMapChangeDocSelect}
+          handleMapChangeDocPick={handleMapChangeDocPick}
+          handleMapChangeApply={handleMapChangeApply}
           handleFlowChange={handleFlowChange}
           handleFlowStepBlur={handleFlowStepBlur}
           handleFlowDeleteRow={handleFlowDeleteRow}
