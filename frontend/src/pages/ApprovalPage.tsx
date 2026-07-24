@@ -1037,6 +1037,7 @@ export default function ApprovalPage(): React.ReactElement {
         title={selected?.title ?? ''}
         size="xl"
         footer={(() => {
+          if (!selected) return null;
           const userAgent = currentUser.role ? ROLE_TO_AGENT[currentUser.role] : undefined;
           const pendingSteps = selected?.approval_steps?.filter((s) => {
             if (s.action !== 'pending') return false;
@@ -1052,7 +1053,7 @@ export default function ApprovalPage(): React.ReactElement {
             ? selected?.approval_steps?.find((s) => s.agent === 'R' && s.action === 'pending' && !s.assignee_loginid)
             : pendingSteps.find((s) => canUserAssign(currentUser, s));
           // RV/PV/EV(검토자)는 담당자(R/P/E) 합의 후에만 처리 가능 → 그 전엔 actable 에서 제외
-          const currentRound = getCurrentRound(selected as RequestDocument);
+          const currentRound = getCurrentRound(selected);
           const mainStepApproved = (mainAgent: string) => (selected?.approval_steps ?? []).some(
             (s) => s.agent === mainAgent && s.action === 'approved' && (s.round ?? 1) === currentRound
           );
