@@ -478,3 +478,191 @@ class BbMappingValidationTest(TestCase):
             bb_rows=[{'sourceJayerRowId': 'j1'}],
         )
         self.assertIsNone(self._view._validate_bb_mapping(doc))
+
+
+@override_settings(POST_APPROVER_LOGINID='')
+class PEStageReviewerFlowTest(TestCase):
+    """P/E 단계 검토중(claim) 전환 + 다중 검토자(PV/EV) 지정·순차·게이트 검증.
+
+    R 합의까지는 실제 API(제출→PL 합의→R 지정·합의)를 통해 진행시켜, 실제 흐름과
+    동일한 조건에서 P/E 단계 신규 로직(검토자 지정/순서 가드/완료 게이트)을 검증한다.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+
+        self.requester = UserProfile.objects.create(loginid='req', mail='req@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='pl1', mail='pl1@c.com', role='PL')
+        self.r_user = UserProfile.objects.create(loginid='r1', mail='r1@c.com', role='TE_R')
+        self.p_owner = UserProfile.objects.create(loginid='p1', mail='p1@c.com', role='TE_P')
+        self.p_reviewer = UserProfile.objects.create(loginid='p2', mail='p2@c.com', role='TE_P')
+        self.p_outsider = UserProfile.objects.create(loginid='p3', mail='p3@c.com', role='TE_P')
+        self.j_user = UserProfile.objects.create(loginid='j1', mail='j1@c.com', role='TE_J')
+        self.o_user = UserProfile.objects.create(loginid='o1', mail='o1@c.com', role='TE_O')
+        self.e_owner = UserProfile.objects.create(loginid='e1', mail='e1@c.com', role='TE_E')
+        self.e_reviewer = UserProfile.objects.create(loginid='e2', mail='e2@c.com', role='TE_E')
+
+    def _advance_to_parallel(self, plel=False):
+        """draft → 제출 → PL 합의 → R 지정·합의 를 실제 API로 거쳐 P/O[/E] pending 상태로 만든다."""
+        detail = {'detail': {}, 'jayerRows': ([{'pp': 'PLEL'}] if plel else [])}
+        doc = RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps(detail),
+        )
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        return doc
+
+    # ----- P 단계 -----
+
+    def test_p_no_reviewers_creates_j_immediately_backward_compat(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists())
+
+    def test_p_assign_reviewers_requires_claim_first(self):
+        doc = self._advance_to_parallel()
+        # 아직 검토중 선점 전(assignee 없음) — 소유자가 아니므로 일반 팀원은 403
+        self.client.force_authenticate(user=self.p_owner)
+        r = self.client.post(f'/api/documents/{doc.id}/assign-reviewers/', {
+            'agent': 'P', 'reviewer_loginids': [self.p_reviewer.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 403)
+
+        # MASTER 는 소유자 검사를 통과하지만, 선점 전이라는 사실 자체로 막힌다
+        master = UserProfile.objects.create(loginid='master1', mail='m1@c.com', role='MASTER')
+        self.client.force_authenticate(user=master)
+        r = self.client.post(f'/api/documents/{doc.id}/assign-reviewers/', {
+            'agent': 'P', 'reviewer_loginids': [self.p_reviewer.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_p_assign_reviewers_denied_for_non_owner(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+
+        self.client.force_authenticate(user=self.p_outsider)
+        r = self.client.post(f'/api/documents/{doc.id}/assign-reviewers/', {
+            'agent': 'P', 'reviewer_loginids': [self.p_reviewer.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 403)
+
+    def test_p_reviewer_must_wait_for_owner_approval(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/assign-reviewers/', {
+            'agent': 'P', 'reviewer_loginids': [self.p_reviewer.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.p_reviewer)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'PV', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_p_j_created_only_after_owner_and_all_reviewers_approve(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        self.client.post(f'/api/documents/{doc.id}/assign-reviewers/', {
+            'agent': 'P', 'reviewer_loginids': [self.p_reviewer.loginid],
+        }, format='json')
+
+        # 이미 검토자를 지정한 뒤에는 추가 지정을 받을 수 있지만, 담당자 본인 합의 후에는 불가
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        # 담당자만 합의된 상태 — 검토자 미합의라 J 아직 생성되지 않음
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists())
+
+        r = self.client.post(f'/api/documents/{doc.id}/assign-reviewers/', {
+            'agent': 'P', 'reviewer_loginids': ['p3'],
+        }, format='json')
+        self.assertEqual(r.status_code, 400)  # 이미 합의된 단계에는 추가 지정 불가
+
+        self.client.force_authenticate(user=self.p_reviewer)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'PV', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists())
+
+    def test_p_reviewer_rejection_rejects_whole_document(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        self.client.post(f'/api/documents/{doc.id}/assign-reviewers/', {
+            'agent': 'P', 'reviewer_loginids': [self.p_reviewer.loginid],
+        }, format='json')
+        self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json')
+
+        self.client.force_authenticate(user=self.p_reviewer)
+        r = self.client.post(f'/api/documents/{doc.id}/reject-step/', {'agent': 'PV', 'comment': '문제 있음'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists())
+
+    # ----- E 단계(plel) + 최종 승인 게이트 -----
+
+    def test_e_reviewer_gate_blocks_final_approval_until_all_agree(self):
+        doc = self._advance_to_parallel(plel=True)
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='E', round=1).exists())
+
+        # path1: P(검토자 없음) → J
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json')
+        self.client.force_authenticate(user=self.j_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'J'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'J', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        # path2: O 합의
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        # path2: E 담당자 합의 + 검토자 지정 — 검토자 미합의라 아직 최종 승인 아님
+        self.client.force_authenticate(user=self.e_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        self.client.post(f'/api/documents/{doc.id}/assign-reviewers/', {
+            'agent': 'E', 'reviewer_loginids': [self.e_reviewer.loginid],
+        }, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'E', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+
+        # 검토자(EV) 합의 → 이제서야 최종 승인
+        self.client.force_authenticate(user=self.e_reviewer)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'EV', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'approved')
