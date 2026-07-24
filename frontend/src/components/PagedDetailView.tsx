@@ -41,10 +41,11 @@ const histBtnStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
-// ===== Row Diff Modal =====
+// ===== Row Diff Modal (가로형: 원본 표 형식 유지) =====
 
-interface DiffField { key: string; label: string; }
+interface DiffField { key: string; label: string; format?: (v: any) => string; }
 
+// 표 행 변경 전/후를 원본 표와 동일한 가로 형식(헤더=필드, 변경 전/후 2행)으로 비교
 function RowDiffModal({
   title, fields, curRow, prevRow, onClose,
 }: {
@@ -52,6 +53,59 @@ function RowDiffModal({
   fields: DiffField[];
   curRow: Record<string, any>;
   prevRow: Record<string, any>;
+  onClose: () => void;
+}) {
+  const cell = (f: DiffField, row: Record<string, any>) =>
+    (f.format ? f.format(row[f.key]) : String(row[f.key] ?? '')) || '';
+  const thS: React.CSSProperties = {
+    padding: '5px 10px', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)',
+    borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)',
+    whiteSpace: 'nowrap', textAlign: 'center',
+  };
+  const rowHeadS: React.CSSProperties = {
+    padding: '5px 12px', fontSize: '0.78rem', fontWeight: 800, whiteSpace: 'nowrap',
+    background: 'var(--bg-secondary)', textAlign: 'left',
+  };
+  const tdS: React.CSSProperties = { padding: '5px 10px', fontSize: '0.82rem', textAlign: 'center', whiteSpace: 'nowrap' };
+  const changed = fields.map((f) => cell(f, prevRow) !== cell(f, curRow));
+  return (
+    <Modal isOpen onClose={onClose} title={title}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', minWidth: 420 }}>
+          <thead>
+            <tr>
+              <th style={thS}></th>
+              {fields.map((f, i) => (
+                <th key={f.key} style={{ ...thS, color: changed[i] ? '#dc3545' : 'var(--text-muted)' }}>{f.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style={{ ...rowHeadS, color: '#dc3545' }}>변경 전</td>
+              {fields.map((f, i) => (
+                <td key={f.key} style={{ ...tdS, color: changed[i] ? '#dc3545' : 'var(--text-primary)', background: changed[i] ? 'rgba(220,53,69,0.06)' : undefined }}>{cell(f, prevRow) || '-'}</td>
+              ))}
+            </tr>
+            <tr>
+              <td style={{ ...rowHeadS, color: '#155724' }}>변경 후</td>
+              {fields.map((f, i) => (
+                <td key={f.key} style={{ ...tdS, color: changed[i] ? '#155724' : 'var(--text-primary)', fontWeight: changed[i] ? 700 : 400, background: changed[i] ? 'rgba(21,87,36,0.06)' : undefined }}>{cell(f, curRow) || '-'}</td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Modal>
+  );
+}
+
+// ===== Field-group(블록) 변경 전/후 비교 모달 (세로형) =====
+interface DiffRow { label: string; before: string; after: string; }
+
+function FieldGroupHistoryModal({ title, rows, onClose }: {
+  title: string;
+  rows: DiffRow[];
   onClose: () => void;
 }) {
   const thS: React.CSSProperties = {
@@ -72,12 +126,10 @@ function RowDiffModal({
             </tr>
           </thead>
           <tbody>
-            {fields.map(({ key, label }) => {
-              const before = String(prevRow[key] ?? '');
-              const after  = String(curRow[key]  ?? '');
+            {rows.map(({ label, before, after }) => {
               const isChanged = before !== after;
               return (
-                <tr key={key} style={{ background: isChanged ? 'rgba(220,53,69,0.05)' : undefined }}>
+                <tr key={label} style={{ background: isChanged ? 'rgba(220,53,69,0.05)' : undefined }}>
                   <td style={{ ...tdS, fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{label}</td>
                   <td style={{ ...tdS, color: isChanged ? '#dc3545' : 'var(--text-primary)' }}>{before || '-'}</td>
                   <td style={{ ...tdS, color: isChanged ? '#155724' : 'var(--text-primary)', fontWeight: isChanged ? 700 : 400 }}>{after || '-'}</td>
@@ -89,6 +141,70 @@ function RowDiffModal({
       </div>
     </Modal>
   );
+}
+
+// ===== 블록/정보탭 변경 전·후 값 포맷 헬퍼 (any: snapshot detail 은 파일 전역 규약대로 any 처리) =====
+const fmtDiffVal = (v: any): string => {
+  if (v == null) return '';
+  if (Array.isArray(v)) return v.join(', ');
+  return String(v);
+};
+
+const fmtPlate = (d: any, prefix: string): string => {
+  const line = d?.[`${prefix}_line`] || '-';
+  const process = d?.[`${prefix}_process`] || '-';
+  const product = d?.[`${prefix}_product`] || '-';
+  return `${line} / ${process} / ${product}`;
+};
+
+const fmtRevEntries = (entries: any): string => {
+  if (!Array.isArray(entries) || entries.length === 0) return '';
+  return entries.map((e: any) => `${e?.gds || '-'}: ${(e?.layers ?? []).join(',')}`).join(' | ');
+};
+
+const fmtTbvtlvEntries = (v: any): string => {
+  if (!Array.isArray(v) || v.length === 0) return '';
+  return v.map((e: any) => {
+    const sds = (e?.sds ?? []).join(', ');
+    const body = e?.noteRows?.length
+      ? e.noteRows.map((r: any) => `(${r.x || '-'},${r.y || '-'}:${r.used || '-'})`).join(' ')
+      : (e?.note || '');
+    return `[${sds}] ${body}`.trim();
+  }).join(' / ');
+};
+
+function buildMshotRows(prev: any, cur: any): DiffRow[] {
+  const rows: DiffRow[] = [
+    { label: '엠샷 변경 여부', before: fmtDiffVal(prev?.mshot_change), after: fmtDiffVal(cur?.mshot_change) },
+  ];
+  const imgKeys: [string, string][] = [
+    ['mshot_image_copy', '첨부 이미지'],
+    ['mshot_image_copy_top', '첨부 이미지(상판)'],
+    ['mshot_image_copy_bottom', '첨부 이미지(하판)'],
+  ];
+  for (const [k, label] of imgKeys) {
+    const before = fmtDiffVal(prev?.[k]);
+    const after = fmtDiffVal(cur?.[k]);
+    if (before || after) rows.push({ label, before, after });
+  }
+  return rows;
+}
+
+function buildProdcRows(prev: any, cur: any): DiffRow[] {
+  const midVal = (d: any) => d?.prodc_middle_use === '미사용' ? '미사용' : fmtPlate(d, 'prodc_middle');
+  return [
+    { label: '생산 정보', before: fmtDiffVal(prev?.only_prodc), after: fmtDiffVal(cur?.only_prodc) },
+    { label: '상판', before: fmtPlate(prev, 'prodc_top'), after: fmtPlate(cur, 'prodc_top') },
+    { label: '중판', before: midVal(prev), after: midVal(cur) },
+    { label: '하판', before: fmtPlate(prev, 'prodc_bottom'), after: fmtPlate(cur, 'prodc_bottom') },
+  ];
+}
+
+function buildRevRows(prev: any, cur: any): DiffRow[] {
+  return [
+    { label: 'REV 여부', before: fmtDiffVal(prev?.rev_yn), after: fmtDiffVal(cur?.rev_yn) },
+    { label: 'Layer / GDS', before: fmtRevEntries(prev?.rev_entries), after: fmtRevEntries(cur?.rev_entries) },
+  ];
 }
 
 // ===== Table Components =====
@@ -584,16 +700,18 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
   };
 
   // ===== FieldHistoryModal =====
+  // 1차~직전 회차 스냅샷 + 현재값을 회차 순서대로 모두 표시하고, 각 회차의 변경 유무를 함께 보여준다.
   const FieldHistoryModal = ({
-    label, fieldKey, currentValue, onClose,
-  }: { label: string; fieldKey: string; currentValue: string; onClose: () => void }) => {
+    label, fieldKey, currentValue, onClose, format,
+  }: { label: string; fieldKey: string; currentValue: string; onClose: () => void; format?: (v: any) => string }) => {
+    const fmt = (v: any) => (format ? format(v) : String(v ?? '-')) || '-';
     const rows = [
       ...history.map((snap, i) => ({
         label: `${i + 1}차 제출`,
         timestamp: snap.timestamp,
-        value: String((snap.detail as any)?.[fieldKey] ?? '-'),
+        value: fmt((snap.detail as any)?.[fieldKey]),
       })),
-      { label: '현재 (최신)', timestamp: null as string | null, value: currentValue },
+      { label: '현재 (최신)', timestamp: null as string | null, value: currentValue || '-' },
     ];
     const thStyle: React.CSSProperties = {
       textAlign: 'left', padding: '6px 10px',
@@ -609,6 +727,7 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
               <th style={thStyle}>제출 차수</th>
               <th style={thStyle}>시각</th>
               <th style={thStyle}>값</th>
+              <th style={{ ...thStyle, textAlign: 'center' }}>변경</th>
             </tr>
           </thead>
           <tbody>
@@ -629,6 +748,13 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
                     {row.timestamp ? new Date(row.timestamp).toLocaleString('ko-KR') : '-'}
                   </td>
                   <td style={{ ...tdStyle, fontWeight: isCurrent ? 700 : 400 }}>{row.value}</td>
+                  <td style={{ ...tdStyle, textAlign: 'center' }}>
+                    {i === 0
+                      ? <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>최초</span>
+                      : isChangedRow
+                        ? <span style={{ color: '#dc3545', fontWeight: 700, fontSize: '0.78rem' }}>변경됨</span>
+                        : <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>변경 없음</span>}
+                  </td>
                 </tr>
               );
             })}
@@ -727,6 +853,14 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
 
   const PLBasicSection = null;
   const [mapHistOpen, setMapHistOpen] = useState(false);
+  const [mshotHistOpen, setMshotHistOpen] = useState(false);
+  const [prodcHistOpen, setProdcHistOpen] = useState(false);
+  const [revHistOpen, setRevHistOpen] = useState(false);
+
+  // 블록(엠샷/생산정보/REV) 변경 전·후 비교 행 (직전 재상신 스냅샷 대비)
+  const mshotHistRows = prevSnap ? buildMshotRows(prevSnap.detail, detail) : [];
+  const prodcHistRows = prevSnap ? buildProdcRows(prevSnap.detail, detail) : [];
+  const revHistRows = prevSnap ? buildRevRows(prevSnap.detail, detail) : [];
 
 type Page = { label: string; content: React.ReactNode };
   const pages: Page[] = [
@@ -863,7 +997,18 @@ type Page = { label: string; content: React.ReactNode };
             const imgStyle: React.CSSProperties = { maxWidth: '300px', maxHeight: '200px', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px' };
             return (
               <div style={rowStyle}>
-                <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(mshotChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(mshotChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                  {mshotChanged && (
+                    <button
+                      onClick={() => setMshotHistOpen(true)}
+                      style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1 }}
+                    >
+                      이력 확인
+                    </button>
+                  )}
+                  {mshotHistOpen && (
+                    <FieldGroupHistoryModal title="엠샷 변경 이력" rows={mshotHistRows} onClose={() => setMshotHistOpen(false)} />
+                  )}
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
                     <div style={fieldLabel}>{t('request.mshot_change_status')}</div>
                     <div style={fieldValue}>{detail.mshot_change}</div>
@@ -909,7 +1054,18 @@ type Page = { label: string; content: React.ReactNode };
             return (
               <>
                 <div style={rowStyle}>
-                  <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(prodcChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                  <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(prodcChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                    {prodcChanged && (
+                      <button
+                        onClick={() => setProdcHistOpen(true)}
+                        style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1 }}
+                      >
+                        이력 확인
+                      </button>
+                    )}
+                    {prodcHistOpen && (
+                      <FieldGroupHistoryModal title="생산 정보 변경 이력" rows={prodcHistRows} onClose={() => setProdcHistOpen(false)} />
+                    )}
                     <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
                       <div style={fieldLabel}>{t('request.prodc_status')}</div>
                       <div style={fieldValue}>{detail.only_prodc}</div>
@@ -924,7 +1080,18 @@ type Page = { label: string; content: React.ReactNode };
                 </div>
                 {isProdc && revYn && (
                   <div style={rowStyle}>
-                    <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200, ...(revChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                    <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(revChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                      {revChanged && (
+                        <button
+                          onClick={() => setRevHistOpen(true)}
+                          style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1 }}
+                        >
+                          이력 확인
+                        </button>
+                      )}
+                      {revHistOpen && (
+                        <FieldGroupHistoryModal title="REV 변경 이력" rows={revHistRows} onClose={() => setRevHistOpen(false)} />
+                      )}
                       <div style={{ display: 'flex', alignItems: 'flex-start' }}>
                         <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
                           <div style={fieldLabel}>{t('request.rev_yn_label')}</div>
@@ -1083,6 +1250,14 @@ type Page = { label: string; content: React.ReactNode };
           const [activeTab, setActiveTab] = React.useState<'table' | 'info'>('table');
           const tbvtlvEntries = detail.tbvtlv_entries ?? [];
           const infoHasData = detail.partial_shot !== '' || tbvtlvEntries.length > 0 || (detail.tbvtlv_thickness ?? '') !== '';
+          // 정보탭 변경 이력: partial_shot / tbvtlv_thickness / tbvtlv_entries 각각의 변경 여부
+          const psChanged = changedFields.has('partial_shot');
+          const thkChanged = changedFields.has('tbvtlv_thickness');
+          const entChanged = changedFields.has('tbvtlv_entries');
+          const infoChanged = psChanged || thkChanged || entChanged;
+          const [infoHist, setInfoHist] = React.useState<{ label: string; fieldKey: string; value: string; format?: (v: any) => string } | null>(null);
+          const infoHistBtnStyle: React.CSSProperties = { position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1 };
+          const infoChangedBox: React.CSSProperties = { border: '2px solid #dc3545', borderRadius: 6, padding: '8px 10px', position: 'relative' };
           return (
             <div style={cardStyle}>
               <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1118,9 +1293,11 @@ type Page = { label: string; content: React.ReactNode };
                     }}
                   >
                     {tab.label}
-                    {tab.key === 'info' && infoHasData && (
-                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#4CAF50', display: 'inline-block' }} />
-                    )}
+                    {tab.key === 'info' && (infoChanged
+                      ? <span title="변경됨" style={{ width: 7, height: 7, borderRadius: '50%', background: '#dc3545', display: 'inline-block' }} />
+                      : infoHasData
+                        ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#4CAF50', display: 'inline-block' }} />
+                        : null)}
                   </button>
                 ))}
               </div>
@@ -1129,8 +1306,20 @@ type Page = { label: string; content: React.ReactNode };
               )}
               {activeTab === 'info' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20, fontSize: 13 }}>
+                  {infoHist && (
+                    <FieldHistoryModal
+                      label={infoHist.label}
+                      fieldKey={infoHist.fieldKey}
+                      currentValue={infoHist.value}
+                      format={infoHist.format}
+                      onClose={() => setInfoHist(null)}
+                    />
+                  )}
                   {/* Partial Shot */}
-                  <div>
+                  <div style={psChanged ? infoChangedBox : undefined}>
+                    {psChanged && (
+                      <button style={infoHistBtnStyle} onClick={() => setInfoHist({ label: t('request.partial_shot'), fieldKey: 'partial_shot', value: detail.partial_shot || '-' })}>이력 확인</button>
+                    )}
                     <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('request.partial_shot')}</div>
                     <div>
                       {detail.partial_shot
@@ -1143,10 +1332,17 @@ type Page = { label: string; content: React.ReactNode };
                   <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
                     <div style={{ fontWeight: 600, marginBottom: 8 }}>{t('request.tbvtlv')}</div>
                     {(detail.tbvtlv_thickness ?? '') !== '' && (
-                      <div style={{ marginBottom: 10 }}>
+                      <div style={{ marginBottom: 10, ...(thkChanged ? infoChangedBox : {}) }}>
+                        {thkChanged && (
+                          <button style={infoHistBtnStyle} onClick={() => setInfoHist({ label: t('request.tbvtlv_thickness'), fieldKey: 'tbvtlv_thickness', value: detail.tbvtlv_thickness || '-' })}>이력 확인</button>
+                        )}
                         <span style={{ color: 'var(--text-muted)', marginRight: 8 }}>{t('request.tbvtlv_thickness')}:</span>
                         <span style={{ fontWeight: 600 }}>{detail.tbvtlv_thickness}</span>
                       </div>
+                    )}
+                    <div style={entChanged ? infoChangedBox : undefined}>
+                    {entChanged && (
+                      <button style={infoHistBtnStyle} onClick={() => setInfoHist({ label: t('request.tbvtlv'), fieldKey: 'tbvtlv_entries', value: fmtTbvtlvEntries(detail.tbvtlv_entries), format: fmtTbvtlvEntries })}>이력 확인</button>
                     )}
                     {tbvtlvEntries.length > 0 ? (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
@@ -1186,6 +1382,7 @@ type Page = { label: string; content: React.ReactNode };
                     ) : (
                       <span style={{ color: 'var(--text-muted)' }}>—</span>
                     )}
+                    </div>
                   </div>
                 </div>
               )}
