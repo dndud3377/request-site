@@ -125,12 +125,14 @@ pages/RequestPage/
 
 - **개요**: 이미 결재 완료된 요청서의 **MAP 정보만** 불러와 수정·재상신하기 위한 기타 목적 단독 항목. `Layer 추가/삭제`의 참조 요청서 검색 UI를 재사용하되 Merge(표 병합) 대신 **StepMap 필드만 프리필**한다. 백엔드·마이그레이션 변경 없음(결재 라우팅은 `request_purpose`만 사용).
   - **옵션·상수**(`constants.ts`): `OPTION_OTHER_PURPOSE`에 `'완성된 MAP 변경'` 추가. `OTHER_PURPOSE_MAP_CHANGE` 상수, 프리필/이력 비교 대상인 `MAP_DETAIL_KEYS`(map_type·지도편차·예외구역·prodc·mshot·Map Option·REV·원본위치 등 MAP 관련 키) 신규 export.
-  - **단독 선택 + 전체 초기화**(`Step1.tsx`·`index.tsx`): 다른 기타 목적과 공존 불가. 진입 시 `handleSelectMapChangePurpose` → 입력이 있으면 `ConfirmModal`(`map_change_reset_*`)로 확인 후 `applyMapChangeMode`가 **기본정보(라인·조합법·제품·조리법·고객/요구사항·통보처)는 유지**하고 나머지 STEP(흐름도·특이사항·Backbone·MAP·J/O-layer·매핑)을 초기화하며 `map_type='FIX'` 고정. 기존 `applyOnlyMap` 패턴 준용.
+  - **단독 선택 + 전체 초기화 + 요청 목적 자동 '기타'**(`Step1.tsx`·`index.tsx`): 다른 기타 목적과 공존 불가. 진입 시 `handleSelectMapChangePurpose` → 입력이 있으면 `ConfirmModal`(`map_change_reset_*`)로 확인 후 `applyMapChangeMode`가 **요청 목적을 `기타`로 자동 설정**하고, **기본정보(라인·조합법·제품·조리법·고객/요구사항·통보처)는 유지**하며 나머지 STEP(흐름도·특이사항·Backbone·MAP·J/O-layer·매핑)을 초기화하고 `map_type='FIX'` 고정. 기존 `applyOnlyMap` 패턴 준용.
   - **다른 목적으로 전환/해제**: 완성된 MAP 변경을 켠 뒤에도 다른 목적 클릭(전환) 또는 재클릭(해제)으로 빠져나올 수 있다. `handleLeaveMapChange`→불러온/수정 MAP이 있으면 `ConfirmModal`(`map_change_leave_*`), 없으면 바로 `exitMapChangeMode`(MAP 키 전체 초기화 → FIX 해제, `other_purpose`를 전환 대상만/빈 배열로).
   - **map_type FIX**(`StepMap.tsx`): `map_type` 버튼에 `FIX`(i18n `map_type_fix`) 추가. `isMapChangeMode`일 때 FIX 외 버튼 `disabled`로 고정. `isMapRegistered`(EXISTING·CLONE)에는 미포함하므로 FIX에서 MAP 입력은 **편집·검증이 NEW와 동일하게 열린다**(별도 disable 수정 불필요).
-  - **MAP 프리필**(`handleMapChangeDocSelect`): 선택 문서 `additional_notes.detail`에서 `MAP_DETAIL_KEYS`만 현재 detail에 병합(`map_type='FIX'` 유지). 라인/prodc 변경 effect가 프리필값을 지우지 않도록 `isLoadingEditRef` 가드 사용(편집 로드와 동일).
+  - **검색 툴바 + '적용' 버튼**(`Step1.tsx`): 완성된 MAP 변경 검색 툴바는 `Layer 추가/삭제`의 Merge 버튼처럼 **요청서 선택(`handleMapChangeDocPick`) 후 '적용' 버튼(`handleMapChangeApply`)** 을 눌러야 프리필된다(선택만으로 프리필 안 함). 두 검색 툴바 크기를 `maxWidth: 920`(기존 대비 2배)으로 통일.
+  - **MAP 프리필**(`handleMapChangeApply`): 선택 문서 `additional_notes.detail`에서 `MAP_DETAIL_KEYS`만 현재 detail에 병합(`map_type='FIX'` 유지). 라인/prodc 변경 effect가 프리필값을 지우지 않도록 `isLoadingEditRef` 가드 사용(편집 로드와 동일).
+  - **다른 STEP 필수 검증 우회 (Only MAP 동일)**: 요청 목적이 `기타`라 `isOnlyMap`은 false이므로, `validate()`의 Only MAP 우회 지점(Backbone 조합영역 step1, Partial Shot step4)에 `|| isMapChangeMode` 조건을 추가해 **MAP 외 필수 입력을 무시**한다. 기본정보(라인·조합법·제품·조리법)와 MAP 필수(X/Y·사유 등)는 그대로 검증.
   - **상신 시 변경 이력(diff)**: 프리필 직후 detail을 `mapChangeBaseline`(완전 격리 복제)으로 저장하고, `buildEnrichedForm`이 이 모드에서 `history=[{detail: baseline, 표: []}]`를 **결정적 단일 항목**으로 기록(append 아님). 상세뷰(`PagedDetailView`)의 기존 `computeDetailDiff`가 원본 MAP↔수정 MAP만 강조(기본정보·표는 양쪽 동일 → 노이즈 없음). **Draft 왕복 보존**: 편집 로드 시 `history[0].detail`에서 baseline 복원.
-  - **i18n**: `map_type_fix`·`map_change_target`·`map_change_placeholder`·`map_change_load_fail`·`map_change_reset_title/msg`·`map_change_leave_title/msg` (ko/en 동시).
+  - **i18n**: `map_type_fix`·`map_change_target`·`map_change_placeholder`·`map_change_apply`·`map_change_loaded`·`map_change_load_fail`·`map_change_reset_title/msg`·`map_change_leave_title/msg` (ko/en 동시).
 
 ### 추가 변경 이력 (2026-07 — 조건부 필드 초기화 + REV i18n)
 
