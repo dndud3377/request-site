@@ -355,6 +355,54 @@ def sync_holidays():
             engine.dispose()
 
 
+def sync_design_rule():
+    """
+    DCQ 에서 공정-디자인룰 매핑 데이터를 매일 1회 가져와 api_designrule 테이블에 저장
+    """
+    engine = None
+    try:
+        engine = get_django_engine()
+    except Exception as e:
+        logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e), exc_info=True)
+        return
+
+    if not dcq_login_with_retry():
+        logger.error(_("[scheduler] DCQ 로그인 실패로 인해 공정-디자인룰 동기화를 중단합니다"))
+        return
+
+    dcq_id, _ = get_dcq_credentials()
+    if not dcq_id:
+        logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
+        return
+
+    try:
+        query = """
+            SELECT DISTINCT n7process, n7design_rule
+            FROM S.M
+            WHERE n7use_yn = 'Y'
+        """
+        df = get_data_from_dcq(query, dcq_id)
+
+        if df is None or len(df) == 0:
+            logger.warning(_("[scheduler] 공정-디자인룰 데이터가 없습니다"))
+            return
+
+        df = df.rename(columns={'n7process': 'process', 'n7design_rule': 'design_rule'})
+        df['last_synced'] = pd.Timestamp.now()
+        df = df[['process', 'design_rule', 'last_synced']]
+
+        with engine.begin() as db_conn:
+            db_conn.execute(text("DELETE FROM api_designrule"))
+            df.to_sql('api_designrule', db_conn, if_exists='append', index=False)
+
+        logger.info(_("[scheduler] 공정-디자인룰 {count}건 동기화 완료").format(count=len(df)))
+    except Exception as e:
+        logger.error(_("[scheduler] 공정-디자인룰 동기화 실패: {e}").format(e=e), exc_info=True)
+    finally:
+        if engine:
+            engine.dispose()
+
+
 def start():
     from apscheduler.schedulers.background import BackgroundScheduler
     from apscheduler.triggers.interval import IntervalTrigger
@@ -392,6 +440,14 @@ def start():
             replace_existing=True,
         )
 
+        scheduler.add_job(
+            sync_design_rule,
+            trigger=CronTrigger(hour=2, minute=0),
+            id='sync_design_rule',
+            name='공정-디자인룰 동기화',
+            replace_existing=True,
+        )
+
         from .mailer import process_mail_queue
         scheduler.add_job(
             process_mail_queue,
@@ -409,11 +465,12 @@ def start():
             pass
 
         scheduler.start()
-        logger.info(_("[scheduler] APScheduler 시작 - 1 시간 주기 DCQ 동기화 / 10 분 주기 RTDB 폼 옵션 / 매일 02:00 공휴일 동기화 등록"))
+        logger.info(_("[scheduler] APScheduler 시작 - 1 시간 주기 DCQ 동기화 / 10 분 주기 RTDB 폼 옵션 / 매일 02:00 공휴일·공정-디자인룰 동기화 등록"))
 
         threading.Thread(target=sync_form_options, daemon=True).start()
         threading.Thread(target=sync_rtdb_options, daemon=True).start()
         threading.Thread(target=sync_holidays, daemon=True).start()
+        threading.Thread(target=sync_design_rule, daemon=True).start()
     except ProgrammingError as e:
         logger.warning(_("[scheduler] 테이블이 아직 생성되지 않았습니다. 마이그레이션 후 재시작됩니다: {e}").format(e=e), exc_info=True)
 
