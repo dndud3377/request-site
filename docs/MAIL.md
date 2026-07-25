@@ -88,7 +88,8 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 
 ### 제목·본문 규칙 (2026-07 보완)
 - **모든 메일 제목에 요청서 제목이 포함**된다(`_build_message`).
-- **개인 지정 메일(R/P/E 담당자·검토자 RV/PV/EV)의 제목**은 맨 앞에 `[{이름}님] `이 붙는다(`recipient_name` 인자). **팀 전원 브로드캐스트**(무배정 R/P/O/E 도착)에는 이름을 붙이지 않는다(수신자가 여럿이라 개인화 불가).
+- **개인 지정 메일의 제목**은 맨 앞에 `[{이름}님] `이 붙는다(`recipient_name` 인자) — **R 담당자**(`assign-step/`으로 지정된 순간) + **검토자 전원(RV/PV/EV)**이 대상이다.
+  ⚠️ **P/O/E는 도착 시점에 항상 미배정 상태**(검토중 방식이라 `_advance_to_parallel`이 담당자 없이 단계를 만든 뒤 그 자리에서 곧바로 팀 전체에 발송하고, 나중에 누가 검토중을 눌러도 그 시점엔 메일이 다시 나가지 않는다)라 **P/O/E 본인 도착 메일은 개인화 대상이 아무도 없고 항상 팀 전원 브로드캐스트**다. R도 지정 전(도착 시점) 팀 전원 브로드캐스트인 것은 동일.
 - **후결자(RA) 메일 제목**은 접미(`- 단계명`) 없이 `[후결 요청] {제목}` 고정 형식.
 - **본문 링크는 해당 문서 상세로 딥링크**된다(`_detail_link`): 진행 중 이벤트(`stage_arrival`/`rejected`/`notify_submitted`)는 `{FRONTEND_URL}/approval?id={문서ID}`, 완료 관련 이벤트(`approved`/`notify_approved`)는 `{FRONTEND_URL}/history?id={문서ID}`(완료 문서는 결재현황 목록에서 빠지므로). 프론트(`ApprovalPage.tsx`/`HistoryPage.tsx`)가 `?id=` 쿼리를 감지해 목록과 무관하게 그 문서를 직접 조회 후 상세 모달을 자동으로 연다.
 
@@ -122,7 +123,39 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 
 ---
 
-## 3. 환경 변수 (.env)
+## 4. 결재 액션별 메일 발송 여부 총정리 (2026-07 정리)
+
+`backend/api/views.py`의 모든 결재 관련 액션을 기준으로, 실제로 메일이 나가는지/안 나가는지를
+전수 점검한 표. ✅=항상 발송 / 🟡=조건부(완료 시점에만) 발송 / ❌=현재 발송 안 함.
+
+| 액션(엔드포인트) | 발송 | 내용 |
+|---|:---:|---|
+| `submit` / `resubmit` (상신·재상신) | ✅ | 지정 PL **전원**에게 stage_arrival + 통보처 전원에게 notify_submitted |
+| `withdraw` (철회) | ❌ | 알림 없음 |
+| `delete` (삭제) | ❌ | 알림 없음 |
+| `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·O·[E]·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일) |
+| `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·O·[E]·[RA 각각]에게 동시 발송 |
+| `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나야 **J에게** 발송. 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨) |
+| `approve-step` P/E 합의 + `reviewer_loginids`(검토자 지정) | ✅ | 지정된 검토자(PV/EV) **각각**에게 즉시(담당자 합의와 **같은 요청**으로 처리되므로 같은 순간 발송) |
+| `approve-step` agent=J/O/E/EV/RA (병렬 경로 합의) | 🟡 | 이 합의로 **문서 전체가 approved 로 전이될 때만** approved(결재 경로 참여 전원) + notify_approved(통보처) 발송. 다른 경로가 아직 안 끝났으면 이 개별 합의는 **무메일**(침묵 — 예: J는 합의됐는데 O가 아직이면 알림 없음) |
+| `reject-step` (어느 단계든 반려) | ✅ | rejected: 작성자 + 현재 회차 기합의자 전원 |
+| `assign-step` agent=R (담당자 지정) | ✅ | 지정된 R 담당자에게 발송. **같이 고른 검토자(RV)는 이 시점엔 무메일**(R 담당자가 합의하는 시점에 발송됨) |
+| `claim-step` (검토중 선점, J/O/E/P) | ❌ | 선점(검토중 클릭) 자체는 알림 없음 |
+| `request-pause` / `confirm-pause` / `resume` / `cancel-pause` (결재 중단 전 구간) | ❌ | 전 구간 알림 없음(기존에 알려진 범위 밖 항목) |
+| `peer-approve` (PL 합의) | 🟡 | 지정 PL **전원**이 합의해야 R 생성 + R에게 발송. 아직 미합의 PL이 있으면 이 합의는 무메일 |
+| `peer-reject` (PL 반려) | ✅ | rejected |
+| `peer-submit` (PL 수정 후 상신) | 🟡 | `peer-approve`와 동일 조건 |
+| `change-designee` (지정 PL 변경) | ❌ | 새로 지정된 PL에게 알림 없음 |
+| `change-post-approver` (후결자 변경) | ❌ | 새 후결자에게 알림 없음 |
+| VOC 등록 / 댓글 | ✅ | §2 참고 |
+
+⚠️ **잠재 확인 포인트**(현재 구현상 의도적인지 재확인 필요): `claim-step`·`change-designee`·`change-post-approver`·PAUSE 전 구간은
+담당자/검토자가 바뀌거나 새로 배정되는데도 메일이 전혀 나가지 않는다. 특히 `change-designee`로 지정 PL이 바뀐 당사자와
+`change-post-approver`로 새로 지정된 후결자는 본인이 결재선에 들어온 사실을 메일로 알 수 없다.
+
+---
+
+## 5. 환경 변수 (.env)
 
 | 변수 | 의미 | 예시 |
 |------|------|------|
@@ -136,7 +169,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 
 ---
 
-## 4. DXHUB 호출 (`_send_via_dxhub`)
+## 6. DXHUB 호출 (`_send_via_dxhub`)
 
 ```
 POST {DXHUB_MAIL_URL}/api/public/gateway/mail/send
@@ -150,7 +183,7 @@ verify=False, timeout=10
 
 ---
 
-## 5. 개발 환경 검증
+## 7. 개발 환경 검증
 
 dev 에서도 결재를 진행하면 **커밋 직후 즉시 발송**(하이브리드)되므로 거의 실시간으로
 메일이 나간다(on_commit 은 스케줄러와 무관하게 동작). 추가로 `SKIP_SCHEDULER=true`
@@ -171,7 +204,7 @@ docker exec -it <backend_container> python manage.py process_mail_queue
 
 ---
 
-## 6. 테스트
+## 8. 테스트
 
 ```bash
 docker exec -it <backend_container> python manage.py test api.tests
