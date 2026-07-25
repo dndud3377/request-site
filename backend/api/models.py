@@ -299,6 +299,21 @@ class ProductProcessId(models.Model):
         return f"{self.line} / {self.product_name} / {self.process_id}"
 
 
+class DesignRule(models.Model):
+    """외부 DB 에서 매일 1회 동기화되는 공정-디자인룰 캐시"""
+    process = models.CharField(max_length=200, verbose_name='공정')
+    design_rule = models.CharField(max_length=200, verbose_name='디자인룰')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        verbose_name = '공정-디자인룰 캐시'
+        verbose_name_plural = '공정-디자인룰 캐시 목록'
+        indexes = [models.Index(fields=['process'], name='api_designrule_process_idx')]
+
+    def __str__(self):
+        return f"{self.process} / {self.design_rule}"
+
+
 class VOC(models.Model):
     """VOC (Voice of Customer) 모델"""
 
