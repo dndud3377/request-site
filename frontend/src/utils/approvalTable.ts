@@ -186,6 +186,14 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
   const evSteps = currentSteps.filter(s => s.agent === 'EV');
   const raSteps = currentSteps.filter(s => s.agent === 'RA');
 
+  // 완료된 단계들의 '라벨(이름)'을 모아 " / "로 연결. 하나도 이름이 없으면 undefined(호출부에서 기본 문구로 대체).
+  const namedApprovers = (steps: { agent: string; assignee_name?: string }[]): string | undefined => {
+    const parts = steps
+      .filter(s => s.assignee_name)
+      .map(s => `${stageLabel(s.agent, t)}(${s.assignee_name})`);
+    return parts.length > 0 ? parts.join(' / ') : undefined;
+  };
+
   // 경로1: P(→검토자 PV, 다중 가능)→J. 담당자 합의만으로 끝나지 않고 검토자 전원 합의까지 끝나야
   // J 가 생성되므로, 담당자 합의 후 검토자가 아직 남아 있으면 '검토자' 단계로 표시한다.
   if (pStep || pvSteps.length > 0 || jSteps.length > 0) {
@@ -195,7 +203,8 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
     const path1Done = !path1PendingP && pvPendingSteps.length === 0 && jSteps.length > 0 && jPendingSteps.length === 0;
     let stageText: string; let dueDate: string | null; let pathStatus: string;
     if (path1Done) {
-      stageText = t('common.status_approved');
+      // 완료 시점엔 검토중이라 가려뒀던 J 이름도 포함해 실제로 결재했던 사람 전원을 보여준다.
+      stageText = namedApprovers([...(pStep ? [pStep] : []), ...pvSteps, ...jSteps]) ?? t('common.status_approved');
       dueDate = null;
       pathStatus = doc.status === 'rejected' ? 'rejected' : 'approved';
     } else if (path1PendingP) {
@@ -210,7 +219,7 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
       dueDate = pvPendingSteps[0]?.due_date ?? null;
       pathStatus = doc.status === 'rejected' ? 'rejected' : 'under_review';
     } else {
-      // J는 검토중(claim) 방식 — 담당자 이름은 노출하지 않는다.
+      // J는 검토중(claim) 방식 — 진행 중에는 담당자 이름을 노출하지 않는다(완료 후에는 위 path1Done 분기에서 표시).
       stageText = t('approval.agent_J' as any);
       dueDate = jPendingSteps[0]?.due_date ?? null;
       const jHasUnassigned = jPendingSteps.some(s => !s.assignee_loginid);
@@ -227,10 +236,13 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
     const evPendingSteps = evSteps.filter(s => s.action === 'pending');
     const done = p2MainPending.length === 0 && evPendingSteps.length === 0;
     const stageText = done
-      ? t('common.status_approved')
+      // 완료 시점엔 검토중이라 가려뒀던 O 이름도 포함해 실제로 결재했던 사람 전원을 보여준다.
+      ? namedApprovers([...(oStep ? [oStep] : []), ...(eStep ? [eStep] : []), ...evSteps]) ?? t('common.status_approved')
       : [
           ...p2MainPending.map(s => {
             const l = t(`approval.agent_${s.agent}` as any);
+            // O는 J와 동일하게 검토중(claim) 방식이라 진행 중에는 담당자 이름을 노출하지 않는다.
+            if (s.agent === 'O') return l;
             return s.assignee_name ? `${l}(${s.assignee_name})` : l;
           }),
           ...evPendingSteps.map(s => {
@@ -248,14 +260,14 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
     });
   }
 
-  // 경로3: 후결자(RA) — 미합의 후결자 이름을 표시 (다른 단계와 동일한 '라벨(이름)' 형식)
+  // 경로3: 후결자(RA) — 미합의 후결자 이름을 표시(다른 단계와 동일한 '라벨(이름)' 형식), 완료 시 합의자 전원 표시
   if (raSteps.length > 0) {
     const raPending = raSteps.filter(s => s.action === 'pending');
     const done = raPending.length === 0;
     const label = t('approval.stage_post' as any);
     const names = raPending.map(s => s.assignee_name).filter(Boolean);
     const stageText = done
-      ? t('common.status_approved')
+      ? namedApprovers(raSteps) ?? t('common.status_approved')
       : names.length > 0 ? `${label}(${names.join(' / ')})` : label;
     const dueDate = raPending.reduce<string | null>((m, s) => {
       if (!s.due_date) return m;
