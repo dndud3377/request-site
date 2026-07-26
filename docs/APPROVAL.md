@@ -198,7 +198,16 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
   - **Only MAP**: P/O/E 없이 **후결자(RA)만** 생성 → 후결자 전원 합의 시 최종 승인. (후결자 미설정 시 즉시 승인)
 - **후결자(RA)**: **고정 1명**(`settings.POST_APPROVER_LOGINID`, `.env`, RFG 팀) + **C가문(only_prodc=YES) 추가 후결자**(상신 모달에서 PL 중 지정, `detail.post_approvers`). 최소 1명 필수(`_validate_post_approvers`). 고정은 PL 후보 목록에 안 뜸(TE_R 이라 자동 제외).
 - **최종 승인**: `J + O[+E] + 후결자(RA) 전원` 합의(Only MAP 은 RA 만). `approve_step` 최종 판정에 RA 포함.
-- **후결자 변경**: 작성자(또는 MASTER)가 결재 중 **C가문 추가 후결자(미합의 RA)** 를 교체(`change_post_approver`). **고정 후결자는 변경 불가**.
+- ✅ **후결자 추가/제거(2026-07 개편)**: 기존 1:1 스왑(`change_post_approver`) 대신 **추가**(`add-post-approver/`)와
+  **제거**(`remove-post-approver/`) 두 액션으로 분리했다. 작성자 또는 **MASTER**(프론트 노출도 동일하게 확대)가
+  R 합의 이후(병렬 단계 진입 후) 언제든 사용 가능. **역할 검증 없음**(고정 후결자=TE_R, 추가 후결자=보통 PL로
+  원래도 역할이 섞여 있어 단일 역할 강제가 무의미 — 2026-07 정책). **고정 후결자는 추가/제거 대상에서 항상 제외**되고
+  화면엔 잠금 칩으로만 표시(제거 버튼 없음). **이미 합의(approved)한 RA는 제거 불가**. 최소 인원 가드는 두 가지를
+  독립적으로 적용한다 — **Only MAP** 문서는 후결자(고정 포함 총원)가 유일한 종단 경로라 **총원 0명**을 막고,
+  **C가문(only_prodc=Yes)** 문서는 상신 시 "추가 후결자 1명 이상" 필수였던 것과 일관되게 **고정을 제외한 추가
+  후결자 0명**을 막는다(둘 다 아니면 일반 문서는 0명까지 제거 가능). 추가 시 새 후결자에게
+  즉시 `[후결 요청]` 메일 발송(`_create_reviewers`가 아니라 `add_post_approver`에서 직접 `enqueue_stage_arrival`).
+  `detail.post_approvers` 도 추가/제거마다 동기화(재상신 프리필 대비).
 - **표시**: 결재현황/홈 현재단계 — 담당자(단계명 **RFG** 그대로 표기)→검토자 순차, 병렬은 경로1(P/J)·경로2(O[/E])·**경로3(후결자(이름))** 로 최대 3행. 상세 '결재 경로' 탭은 **R 다음에 검토자(지정 시)·후결자** 행을 표시.
 - ⚠️ **`.env` 설정 필요**: `POST_APPROVER_LOGINID=<RFG팀 loginid>`. `settings/base.py` 에서 읽음(규칙 D 사전 고지·동의). ⚠️ RV/RA 알림 메일은 범위 밖.
 
@@ -268,6 +277,7 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 | 검토중 (J·O·E·P, 2026-07 P 포함) | `canUserClaim`가 참 | `claimStep` |
 | 검토자 선택 후 합의 (P·E, 2026-07, 다중) | `canUserPickReviewers`가 참(=`canUserAgree`와 동일 조건) — 별도 액션 없이 `approveStep`에 `reviewer_loginids` 동봉 | `approveStep`(agent P/E) |
 | 지정자 변경 | PL/MASTER | `changeDesignee` |
+| 후결자 추가/제거 (2026-07) | 작성자/MASTER + under_review + 병렬 진입 후 | `addPostApprover` / `removePostApprover` |
 | 철회 | PL/MASTER | `withdraw`(임시저장으로) 또는 `delete`(삭제) 선택 |
 | 수정 후 재상신 | rejected/draft | `/request`로 이동(editDocId) |
 | 중단 요청 | 작성자·under_review (`can_request_pause`) | 사유 입력 모달 → `requestPause` |
@@ -305,6 +315,8 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 | 중단 요청 취소 | `cancel-pause/` | - |
 | PL 합의/반려/수정후상신 | `peer-approve/` `peer-reject/` `peer-submit/` | `comment` |
 | 지정자 변경 | `change-designee/` | (의뢰자/MASTER) |
+| 후결자 추가 (2026-07) | `add-post-approver/` | `loginid` |
+| 후결자 제거 (2026-07) | `remove-post-approver/` | `loginid` |
 | 삭제 | DELETE `documents/{id}/` | approved는 MASTER만 |
 
 ---

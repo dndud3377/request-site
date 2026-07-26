@@ -680,3 +680,180 @@ class PEStageReviewerFlowTest(TestCase):
 
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'approved')
+
+
+@override_settings(POST_APPROVER_LOGINID='fixedpa')
+class PostApproverManagementTest(TestCase):
+    """후결자 추가(add-post-approver)/제거(remove-post-approver) 권한·보호 규칙 검증."""
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+
+        self.requester = UserProfile.objects.create(loginid='req', mail='req@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='pl1', mail='pl1@c.com', role='PL')
+        self.r_user = UserProfile.objects.create(loginid='r1', mail='r1@c.com', role='TE_R')
+        self.fixed_pa = UserProfile.objects.create(loginid='fixedpa', mail='fixedpa@c.com', role='TE_R')
+        self.extra_pl1 = UserProfile.objects.create(loginid='epl1', mail='epl1@c.com', role='PL')
+        self.extra_pl2 = UserProfile.objects.create(loginid='epl2', mail='epl2@c.com', role='PL')
+        self.outsider = UserProfile.objects.create(loginid='out1', mail='out1@c.com', role='PL')
+        self.master = UserProfile.objects.create(loginid='master1', mail='m1@c.com', role='MASTER')
+
+    def _advance_to_parallel(self, only_prodc=False, post_approvers=None):
+        detail = {
+            'detail': {'only_prodc': 'Yes' if only_prodc else 'No', 'post_approvers': post_approvers or []},
+            'jayerRows': [],
+        }
+        doc = RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps(detail),
+        )
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        return doc
+
+    def _doc_before_r_approved(self):
+        """R 합의 전(PL 검토 단계) 상태 — 병렬 진입 전 추가 차단 테스트용."""
+        doc = RequestDocument.objects.create(
+            title='doc-pre-r', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps({'detail': {}, 'jayerRows': []}),
+        )
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        return doc
+
+    # ----- 추가 -----
+
+    def test_add_post_approver_success_sends_mail(self):
+        doc = self._advance_to_parallel()
+        MailNotification.objects.all().delete()
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='RA', assignee__loginid=self.extra_pl1.loginid).exists()
+        )
+        noti = MailNotification.objects.filter(document=doc, event_type='stage_arrival').first()
+        self.assertIsNotNone(noti)
+        self.assertIn(self.extra_pl1.mail, noti.recipients)
+
+    def test_add_post_approver_allowed_for_master(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.master)
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_add_post_approver_denied_for_outsider(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.outsider)
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 403)
+
+    def test_add_post_approver_rejects_fixed_loginid(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.fixed_pa.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_add_post_approver_denied_before_r_approved(self):
+        doc = self._doc_before_r_approved()
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_add_post_approver_rejects_duplicate(self):
+        doc = self._advance_to_parallel(only_prodc=True, post_approvers=[{'loginid': self.extra_pl1.loginid, 'name': self.extra_pl1.loginid}])
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    # ----- 제거 -----
+
+    def test_remove_post_approver_success(self):
+        doc = self._advance_to_parallel(only_prodc=True, post_approvers=[{'loginid': self.extra_pl1.loginid, 'name': self.extra_pl1.loginid}])
+        self.client.force_authenticate(user=self.requester)
+        # C가문 최소 1인 규칙에 걸리지 않도록 먼저 2번째 추가 후결자를 더한다.
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl2.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(
+            ApprovalStep.objects.filter(document=doc, agent='RA', assignee__loginid=self.extra_pl1.loginid).exists()
+        )
+
+    def test_remove_post_approver_allowed_for_master(self):
+        doc = self._advance_to_parallel(only_prodc=True, post_approvers=[
+            {'loginid': self.extra_pl1.loginid, 'name': self.extra_pl1.loginid},
+            {'loginid': self.extra_pl2.loginid, 'name': self.extra_pl2.loginid},
+        ])
+        self.client.force_authenticate(user=self.master)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_remove_post_approver_denied_for_outsider(self):
+        doc = self._advance_to_parallel(only_prodc=True, post_approvers=[
+            {'loginid': self.extra_pl1.loginid, 'name': self.extra_pl1.loginid},
+            {'loginid': self.extra_pl2.loginid, 'name': self.extra_pl2.loginid},
+        ])
+        self.client.force_authenticate(user=self.outsider)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 403)
+
+    def test_remove_post_approver_rejects_fixed_loginid(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.fixed_pa.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_remove_post_approver_denied_after_approved(self):
+        doc = self._advance_to_parallel(only_prodc=True, post_approvers=[
+            {'loginid': self.extra_pl1.loginid, 'name': self.extra_pl1.loginid},
+            {'loginid': self.extra_pl2.loginid, 'name': self.extra_pl2.loginid},
+        ])
+        self.client.force_authenticate(user=self.extra_pl1)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'RA', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_remove_post_approver_blocks_last_additional_for_c_family(self):
+        doc = self._advance_to_parallel(only_prodc=True, post_approvers=[{'loginid': self.extra_pl1.loginid, 'name': self.extra_pl1.loginid}])
+        self.client.force_authenticate(user=self.requester)
+        # 고정 후결자가 있어도 C가문은 "추가" 후결자가 최소 1명이어야 하므로 막혀야 한다.
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    @override_settings(POST_APPROVER_LOGINID='')
+    def test_remove_post_approver_allows_zero_for_normal_doc(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.requester)
+        add = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(add.status_code, 200, add.content)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='RA').exists())

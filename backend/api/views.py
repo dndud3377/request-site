@@ -1192,66 +1192,21 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         return Response({'message': '지정자가 변경되었습니다.', 'document': RequestDocumentSerializer(document).data})
 
-    @action(detail=True, methods=['post'], url_path='change-post-approver')
-    @transaction.atomic
-    def change_post_approver(self, request, pk=None):
-        """후결자 변경: C가문 추가 후결자(RA)를 작성자(또는 MASTER)가 결재 중 교체.
+    def _sync_post_approvers_detail(self, document, add=None, remove_loginid=None):
+        """detail.post_approvers JSON을 add(dict, {loginid,name}) 추가 또는 remove_loginid 제거로 동기화한다.
 
-        고정 후결자(settings.POST_APPROVER_LOGINID)는 변경 불가. 아직 합의하지 않은
-        pending RA 단계의 담당자를 다른 PL 로 스왑한다. detail.post_approvers 도 갱신.
+        재상신 시 프리필/일관성 유지 목적. JSON 파싱 실패 시(손상 데이터) 조용히 건너뛴다
+        (다른 곳의 관대한 파싱 처리와 동일한 정책).
         """
-        from django.conf import settings
-        document = self.get_object()
-        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
-        user_role = getattr(request.user, 'role', '')
-        caller_loginid = getattr(request.user, 'loginid', '')
-        is_requester = bool(document.requester and document.requester.loginid == caller_loginid)
-        if user_role != 'MASTER' and not is_requester:
-            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
-
-        old_loginid = str(request.data.get('old_loginid', '') or '').strip()
-        new_loginid = str(request.data.get('new_loginid', '') or '').strip()
-        if not old_loginid or not new_loginid:
-            return Response({'error': '기존/새 후결자 loginid를 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        fixed_lid = (getattr(settings, 'POST_APPROVER_LOGINID', '') or '').strip()
-        if old_loginid == fixed_lid:
-            return Response({'error': '고정 후결자는 변경할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
-        if new_loginid == fixed_lid:
-            return Response({'error': '고정 후결자와 중복 지정할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            new_user = User.objects.get(loginid=new_loginid, role='PL')
-        except User.DoesNotExist:
-            return Response({'error': '유효하지 않은 후결자입니다(PL 이어야 합니다).'}, status=status.HTTP_400_BAD_REQUEST)
-
-        max_round = self._max_round(document)
-        # 이미 다른 후결자로 지정돼 있으면 중복 방지
-        if ApprovalStep.objects.filter(document=document, agent='RA', round=max_round,
-                                       assignee__loginid=new_loginid).exists():
-            return Response({'error': '이미 후결자로 지정된 사용자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        ra_step = ApprovalStep.objects.filter(
-            document=document, agent='RA', action='pending', round=max_round,
-            assignee__loginid=old_loginid,
-        ).first()
-        if not ra_step:
-            return Response({'error': '변경 가능한(미합의) 후결자 단계를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        ra_step.assignee = new_user
-        ra_step.assignee_name = new_user.username or new_loginid
-        ra_step.save()
-
-        # detail.post_approvers 갱신(재상신/일관성 대비)
         import json
         try:
             data = json.loads(document.additional_notes or '{}')
             detail = data.get('detail', {}) or {}
             pas = detail.get('post_approvers') or []
-            for pa in pas:
-                if str((pa or {}).get('loginid', '') or '').strip() == old_loginid:
-                    pa['loginid'] = new_loginid
-                    pa['name'] = ra_step.assignee_name
+            if remove_loginid:
+                pas = [p for p in pas if str((p or {}).get('loginid', '') or '').strip() != remove_loginid]
+            if add:
+                pas.append(add)
             detail['post_approvers'] = pas
             data['detail'] = detail
             document.additional_notes = json.dumps(data, ensure_ascii=False)
@@ -1259,7 +1214,125 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         except (json.JSONDecodeError, TypeError):
             pass
 
-        return Response({'message': '후결자가 변경되었습니다.',
+    def _can_manage_post_approver(self, user, document):
+        role = getattr(user, 'role', '')
+        if role == 'MASTER':
+            return True
+        caller_loginid = getattr(user, 'loginid', '')
+        return bool(document.requester and document.requester.loginid == caller_loginid)
+
+    @action(detail=True, methods=['post'], url_path='add-post-approver')
+    @transaction.atomic
+    def add_post_approver(self, request, pk=None):
+        """후결자 추가 — 작성자 또는 MASTER가 결재 진행 중 언제든 후결자를 추가한다.
+
+        ⚠️ 역할 검증은 하지 않는다(고정 후결자는 TE_R, 추가 후결자는 보통 PL로 애초에
+        역할이 섞여 있어 단일 역할 강제가 의미 없음 — 2026-07 정책).
+        """
+        from django.conf import settings
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+        if document.status != 'under_review':
+            return Response({'error': '진행 중인 의뢰서만 후결자를 추가할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not self._can_manage_post_approver(request.user, document):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        new_loginid = str(request.data.get('loginid', '') or '').strip()
+        if not new_loginid:
+            return Response({'error': '추가할 후결자의 loginid를 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        fixed_lid = (getattr(settings, 'POST_APPROVER_LOGINID', '') or '').strip()
+        if new_loginid == fixed_lid:
+            return Response({'error': '고정 후결자와 중복 지정할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            new_user = User.objects.get(loginid=new_loginid)
+        except User.DoesNotExist:
+            return Response({'error': '유효하지 않은 사용자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        max_round = self._max_round(document)
+        if ApprovalStep.objects.filter(document=document, agent='RA', round=max_round,
+                                       assignee__loginid=new_loginid).exists():
+            return Response({'error': '이미 후결자로 지정된 사용자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 기한 산정: 같은 회차에 이미 RA가 있으면 그 기한을 맞추고, 없으면 R 합의일 기준 6영업일로 새로 계산
+        sibling_ra = ApprovalStep.objects.filter(
+            document=document, agent='RA', round=max_round
+        ).exclude(due_date__isnull=True).order_by('-id').first()
+        if sibling_ra:
+            ra_due = sibling_ra.due_date
+        else:
+            r_step = ApprovalStep.objects.filter(document=document, agent='R', round=max_round, action='approved').first()
+            if not r_step or not r_step.acted_at:
+                return Response({'error': 'R 합의 이후에만 후결자를 추가할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+            from .utils import calculate_business_due_date
+            ra_due = calculate_business_due_date(r_step.acted_at.date(), 6)
+
+        assignee_name = new_user.username or new_user.loginid
+        ra_step = ApprovalStep.objects.create(
+            document=document, agent='RA', action='pending', is_parallel=True,
+            round=max_round, due_date=ra_due, assignee=new_user, assignee_name=assignee_name,
+        )
+        mailer.enqueue_stage_arrival(document, 'RA', ra_step)
+        self._sync_post_approvers_detail(document, add={'loginid': new_loginid, 'name': assignee_name})
+
+        return Response({'message': '후결자가 추가되었습니다.',
+                         'document': RequestDocumentSerializer(document, context={'request': request}).data})
+
+    @action(detail=True, methods=['post'], url_path='remove-post-approver')
+    @transaction.atomic
+    def remove_post_approver(self, request, pk=None):
+        """후결자 제거 — 아직 합의하지 않은(pending) 후결자만 뺄 수 있다.
+
+        고정 후결자(settings.POST_APPROVER_LOGINID)는 제거 불가. Only MAP(후결자가 유일한
+        종단 경로) 또는 C가문(only_prodc=Yes, 상신 시 최소 1명이 필수였음)인 문서는
+        마지막 남은 후결자를 제거할 수 없다 — 그 외 일반 문서는 0명까지 뺄 수 있다.
+        """
+        from django.conf import settings
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+        if document.status != 'under_review':
+            return Response({'error': '진행 중인 의뢰서만 후결자를 제거할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not self._can_manage_post_approver(request.user, document):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        target_loginid = str(request.data.get('loginid', '') or '').strip()
+        if not target_loginid:
+            return Response({'error': '제거할 후결자의 loginid를 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        fixed_lid = (getattr(settings, 'POST_APPROVER_LOGINID', '') or '').strip()
+        if target_loginid == fixed_lid:
+            return Response({'error': '고정 후결자는 제거할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        max_round = self._max_round(document)
+        ra_step = ApprovalStep.objects.filter(
+            document=document, agent='RA', action='pending', round=max_round,
+            assignee__loginid=target_loginid,
+        ).first()
+        if not ra_step:
+            return Response({'error': '제거 가능한(미합의) 후결자를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        detail = document.get_detail().get('detail', {}) or {}
+        # Only MAP: 후결자(고정 포함)가 유일한 종단 경로라 총원이 0이 되면 영영 승인될 수 없다.
+        if document.is_only_map():
+            remaining_total = ApprovalStep.objects.filter(
+                document=document, agent='RA', round=max_round
+            ).exclude(pk=ra_step.pk).count()
+            if remaining_total == 0:
+                return Response({'error': 'Only MAP 의뢰서는 최종 승인 경로인 후결자를 최소 1명 유지해야 합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        # C가문: 상신 시 "추가 후결자 1명 이상" 이 필수였던 것과 일관되게, 고정 후결자를 제외한
+        # 추가 후결자가 0명이 되는 제거는 막는다(고정 후결자는 이 최소치에 포함되지 않음).
+        if detail.get('only_prodc') == 'Yes':
+            remaining_additional = ApprovalStep.objects.filter(
+                document=document, agent='RA', round=max_round
+            ).exclude(pk=ra_step.pk).exclude(assignee__loginid=fixed_lid).count()
+            if remaining_additional == 0:
+                return Response({'error': 'C가문 제품은 (고정 후결자 외) 후결자를 최소 1명 유지해야 합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        ra_step.delete()
+        self._sync_post_approvers_detail(document, remove_loginid=target_loginid)
+
+        return Response({'message': '후결자가 제거되었습니다.',
                          'document': RequestDocumentSerializer(document, context={'request': request}).data})
 
     def _unique_title(self, base_title, exclude_id=None):
