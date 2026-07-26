@@ -146,12 +146,13 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | `peer-reject` (PL 반려) | ✅ | rejected |
 | `peer-submit` (PL 수정 후 상신) | 🟡 | `peer-approve`와 동일 조건 |
 | `change-designee` (지정 PL 변경) | ❌ | 새로 지정된 PL에게 알림 없음 |
-| `change-post-approver` (후결자 변경) | ❌ | 새 후결자에게 알림 없음 |
+| `add-post-approver` (후결자 추가, 2026-07) | ✅ | 추가된 후결자에게 즉시 `[후결 요청]` 발송(생성 시점과 동일한 stage_arrival) |
+| `remove-post-approver` (후결자 제거, 2026-07) | ❌ | 제거되는 후결자에게 별도 알림 없음(요청 범위 밖) |
 | VOC 등록 / 댓글 | ✅ | §2 참고 |
 
-⚠️ **잠재 확인 포인트**(현재 구현상 의도적인지 재확인 필요): `claim-step`·`change-designee`·`change-post-approver`·PAUSE 전 구간은
-담당자/검토자가 바뀌거나 새로 배정되는데도 메일이 전혀 나가지 않는다. 특히 `change-designee`로 지정 PL이 바뀐 당사자와
-`change-post-approver`로 새로 지정된 후결자는 본인이 결재선에 들어온 사실을 메일로 알 수 없다.
+⚠️ **잠재 확인 포인트**(현재 구현상 의도적인지 재확인 필요): `claim-step`·`change-designee`·`remove-post-approver`·PAUSE 전 구간은
+담당자/검토자가 바뀌거나 빠지는데도 메일이 전혀 나가지 않는다. 특히 `change-designee`로 지정 PL이 바뀐 당사자는
+본인이 결재선에 들어온 사실을 메일로 알 수 없다(후결자 쪽은 2026-07부터 추가 시 발송되도록 해결됨).
 
 ---
 
