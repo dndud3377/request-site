@@ -274,10 +274,18 @@ const assignStep = async (
   return { data };
 };
 
-const changePostApprover = async (docId: number, oldLoginid: string, newLoginid: string) => {
+const addPostApprover = async (docId: number, loginid: string) => {
   const data = await post<{ message: string; document: RequestDocument }>(
-    `/documents/${docId}/change-post-approver/`,
-    { old_loginid: oldLoginid, new_loginid: newLoginid }
+    `/documents/${docId}/add-post-approver/`,
+    { loginid }
+  );
+  return { data };
+};
+
+const removePostApprover = async (docId: number, loginid: string) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${docId}/remove-post-approver/`,
+    { loginid }
   );
   return { data };
 };
@@ -346,7 +354,8 @@ export const documentsAPI = {
   approveStep,
   rejectStep,
   assignStep,
-  changePostApprover,
+  addPostApprover,
+  removePostApprover,
   claimStep,
   requestPause,
   confirmPause,
