@@ -356,6 +356,54 @@ class EnqueueTest(TestCase):
         self.assertEqual(MailNotification.objects.count(), 0)
 
 
+class PlSubmitMailTest(TestCase):
+    """PL 상신(submit/resubmit) 시 지정 PL 메일 제목에 R 담당자 지정과 동일하게
+    이름 접두어("[이름님] ")가 붙는지 검증한다."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        import json
+        self._json = json
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='req', mail='req@c.com', role='NONE')
+        self.pl_a = UserProfile.objects.create(loginid='pla', mail='pla@c.com', role='PL')
+        self.pl_b = UserProfile.objects.create(loginid='plb', mail='plb@c.com', role='PL')
+
+    def _make_draft(self, status='draft'):
+        return RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps({'detail': {}, 'jayerRows': []}),
+        )
+
+    def test_submit_pl_mail_subject_has_name_prefix(self):
+        doc = self._make_draft('draft')
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/', {
+            'designated_pl_loginids': [self.pl_a.loginid, self.pl_b.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        notis = MailNotification.objects.filter(document=doc, event_type='stage_arrival').order_by('id')
+        self.assertEqual(notis.count(), 2)
+        self.assertEqual(notis[0].recipients, ['pla@c.com'])
+        self.assertTrue(notis[0].subject.startswith('[pla님] '), notis[0].subject)
+        self.assertEqual(notis[1].recipients, ['plb@c.com'])
+        self.assertTrue(notis[1].subject.startswith('[plb님] '), notis[1].subject)
+
+    def test_resubmit_pl_mail_subject_has_name_prefix(self):
+        doc = self._make_draft('rejected')
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/resubmit/', {
+            'designated_pl_loginids': [self.pl_a.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        noti = MailNotification.objects.filter(document=doc, event_type='stage_arrival').latest('id')
+        self.assertTrue(noti.subject.startswith('[pla님] '), noti.subject)
+
+
 class MessageBuildingTest(TestCase):
     """제목/본문 생성(_build_message) — 제목의 문서 제목·이름 접두어, 딥링크 라우팅."""
 
