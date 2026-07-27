@@ -333,7 +333,7 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 
 | 전이(액션) | 메일 이벤트 | 수신자 |
 |-----------|-----------|--------|
-| `submit`/`resubmit` | stage_arrival(PL) | 지정 PL **전원**(각 PL step별 발송) |
+| `submit`/`resubmit` | stage_arrival(PL) | 지정 PL **전원**(각 PL step별 발송, 제목에 `[이름님]`, 2026-07 추가) |
 | `peer_approve`/`peer_submit` | stage_arrival(R) | TE_R 미지정 시 고정 주소 |
 | `approve_step`(R) | stage_arrival(P·O[·E]) | 미배정 시 **P·O·E 팀 전원**(2026-07 P도 검토중 전환으로 O·E와 동일하게 팀 브로드캐스트) |
 | `approve_step`(P, 검토자 없을 때) | stage_arrival(J) | TE_J 미지정 시 고정 주소 |
