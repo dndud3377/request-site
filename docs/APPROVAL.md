@@ -339,7 +339,8 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 | `approve_step`(P, 검토자 없을 때) | stage_arrival(J) | TE_J 미지정 시 고정 주소 |
 | `approve_step`(P/E 합의 시 `reviewer_loginids` 동봉, 2026-07) | stage_arrival(PV/EV) | 지정된 검토자 **각 1명**(담당자 합의와 같은 요청에서 즉시 개인화 메일 발송) |
 | `approve_step`(J·O·E[+검토자 전원]·RA[전원] 모두 합의) | approved | 작성자가 속한 모든 그룹 멤버 전원 |
-| `reject_step`/`peer_reject` | rejected | 요청서 작성자 1명 |
+| `reject_step` | rejected | 작성자 + 현재 회차 기합의자 전원 |
+| `peer_reject`(PL 반려) | rejected | 작성자 + 현재 회차 기합의자 전원 + 같은 회차 미합의(pending) 나머지 지정 PL(2026-07 추가) |
 | `submit`/`resubmit` | notify_submitted | **통보처 전원**(`detail.notifiers`) |
 | `approve_step`(최종 승인) | notify_approved | **통보처 전원**(`detail.notifiers`) |
 
