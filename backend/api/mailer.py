@@ -89,6 +89,7 @@ EVENT_STATUS_LABEL = {
     'approved': '승인 완료',
     'notify_submitted': '상신 통보',
     'notify_approved': '결재 완료 통보',
+    'map_apply_failed': '원본 반영 실패',
 }
 
 # 이벤트 타입별 히어로+KPI 카드 이메일 색상 테마
@@ -127,6 +128,8 @@ EVENT_THEME = {
     },
 }
 EVENT_THEME['notify_approved'] = EVENT_THEME['notify_submitted']
+# 원본 반영 실패는 조치가 필요한 알림이라 반려와 동일한 경고(레드) 테마를 쓴다.
+EVENT_THEME['map_apply_failed'] = EVENT_THEME['rejected']
 
 
 # --------------------------------------------------------------------------- #
@@ -310,7 +313,7 @@ def _voc_link(voc_id):
 
 
 # 완료 이후 결재현황 목록에서 빠지는 이벤트 — 이력조회로 딥링크
-_HISTORY_LINK_EVENTS = ('approved', 'notify_approved')
+_HISTORY_LINK_EVENTS = ('approved', 'notify_approved', 'map_apply_failed')
 
 
 def _kpi_grid(tiles, tile_bg, tile_border):
@@ -443,6 +446,13 @@ def _build_message(event_type, document, agent=None, recipient_name=None):
         subject = f'[결재 완료 통보] {document.title}'
         headline = '아래 의뢰서의 결재가 완료되어 통보드립니다. (통보처 수신)'
         stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'map_apply_failed':
+        subject = f'[원본 반영 실패] {document.title}'
+        headline = (
+            '결재는 정상 완료됐으나, 변경한 MAP 정보를 대상(원본) 요청서에 반영하지 못했습니다. '
+            '원본 요청서 상태를 확인해 주세요.'
+        )
+        stage_value = EVENT_STATUS_LABEL[event_type]
     else:
         subject = f'[알림] {document.title}'
         headline = '새로운 알림이 있습니다.'
@@ -521,6 +531,15 @@ def enqueue_notify_approved(document):
     """결재 완료 시 통보처 알림 적재(결재 권한 없는 통보 수신자 대상)."""
     recipients = resolve_notifier_recipients(document)
     return _enqueue(document, 'notify_approved', recipients)
+
+
+def enqueue_map_apply_failed(document):
+    """'완성된 MAP 변경' 승인 후 원본 요청서 반영 실패 알림 적재(작성자 대상).
+
+    승인 자체는 정상 처리되므로 결재 흐름을 막지 않고, 작성자에게만 통보한다.
+    """
+    recipients = _apply_redirect([document.requester_email] if document.requester_email else [])
+    return _enqueue(document, 'map_apply_failed', recipients)
 
 
 # --------------------------------------------------------------------------- #
