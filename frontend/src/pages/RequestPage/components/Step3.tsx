@@ -31,6 +31,7 @@ interface Step3Props {
   oayerChecked: Set<string>;
   oayerInfoTab: 'table' | 'info';
   setOayerInfoTab: React.Dispatch<React.SetStateAction<'table' | 'info'>>;
+  oayerInfoLocked: boolean;
   detail: DetailFormState;
   setDetail: React.Dispatch<React.SetStateAction<DetailFormState>>;
   errors: Partial<Record<string, string>>;
@@ -71,6 +72,7 @@ const Step3: React.FC<Step3Props> = ({
   oayerChecked,
   oayerInfoTab,
   setOayerInfoTab,
+  oayerInfoLocked,
   detail,
   setDetail,
   errors,
@@ -363,6 +365,7 @@ const Step3: React.FC<Step3Props> = ({
                       setDetail(prev => ({ ...prev, partial_shot: prev.partial_shot === val ? '' : val }));
                       if (errors['partial_shot']) setErrors(prev => ({ ...prev, partial_shot: '' }));
                     }}
+                    disabled={oayerInfoLocked}
                   >
                     {val}
                   </button>
@@ -401,6 +404,7 @@ const Step3: React.FC<Step3Props> = ({
                           type="button"
                           className={`map-type-btn${detail.tbvtlv_thickness === val ? ' active' : ''}`}
                           onClick={() => setDetail(prev => ({ ...prev, tbvtlv_thickness: prev.tbvtlv_thickness === val ? '' : val }))}
+                          disabled={oayerInfoLocked}
                         >
                           {val}
                         </button>
@@ -420,6 +424,7 @@ const Step3: React.FC<Step3Props> = ({
                           key={sd}
                           type="button"
                           onClick={() => setTbvtlvSdsSelected(isSelected ? [] : [sd])}
+                          disabled={oayerInfoLocked}
                           style={{
                             padding: '5px 13px',
                             borderRadius: '4px',
@@ -463,6 +468,7 @@ const Step3: React.FC<Step3Props> = ({
                               value={row.x}
                               onChange={(e) => handleTbvtlvRowChange(row.id, 'x', e.target.value)}
                               onPaste={(e) => handleTbvtlvCoordPaste(e, idx, 'x')}
+                              disabled={oayerInfoLocked}
                               style={{ width: 80, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: '0.82rem', textAlign: 'center' }}
                             />
                           </td>
@@ -471,6 +477,7 @@ const Step3: React.FC<Step3Props> = ({
                               value={row.y}
                               onChange={(e) => handleTbvtlvRowChange(row.id, 'y', e.target.value)}
                               onPaste={(e) => handleTbvtlvCoordPaste(e, idx, 'y')}
+                              disabled={oayerInfoLocked}
                               style={{ width: 80, border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: '0.82rem', textAlign: 'center' }}
                             />
                           </td>
@@ -478,6 +485,7 @@ const Step3: React.FC<Step3Props> = ({
                             <select
                               value={row.used}
                               onChange={(e) => handleTbvtlvRowChange(row.id, 'used', e.target.value as 'O' | 'X')}
+                              disabled={oayerInfoLocked}
                               style={{ border: '1px solid var(--border)', borderRadius: 4, padding: '4px', fontSize: '0.8rem' }}
                             >
                               <option value="O">O</option>
@@ -490,6 +498,7 @@ const Step3: React.FC<Step3Props> = ({
                               className="btn btn-danger btn-sm"
                               style={{ fontSize: 11, padding: '2px 7px' }}
                               onClick={() => handleTbvtlvRowDelete(row.id)}
+                              disabled={oayerInfoLocked}
                             >
                               {t('common.delete')}
                             </button>
@@ -499,14 +508,14 @@ const Step3: React.FC<Step3Props> = ({
                     </tbody>
                   </table>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={handleTbvtlvRowAdd}>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={handleTbvtlvRowAdd} disabled={oayerInfoLocked}>
                       + {t('request.tbvtlv_row_add')}
                     </button>
                     <button
                       type="button"
                       className="btn btn-primary"
                       style={{ whiteSpace: 'nowrap' }}
-                      disabled={tbvtlvSdsSelected.length === 0}
+                      disabled={oayerInfoLocked || tbvtlvSdsSelected.length === 0}
                       onClick={() => {
                         if (tbvtlvSdsSelected.length === 0) return;
                         setDetail(prev => ({
@@ -543,6 +552,7 @@ const Step3: React.FC<Step3Props> = ({
                                   tbvtlv_entries: (prev.tbvtlv_entries ?? []).filter((_, i) => i !== idx),
                                 }))
                               }
+                              disabled={oayerInfoLocked}
                             >
                               {t('common.delete')}
                             </button>

@@ -2159,7 +2159,7 @@ export default function RequestPage(): React.ReactElement {
       rev_entries: [],
       tbvtlv_entries: [],
       other_purpose: [OTHER_PURPOSE_MAP_CHANGE],
-      map_type: 'FIX',
+      map_type: 'EDIT',
     }));
     setRefDocId(null);
     setRefDocLabel('');
@@ -2189,7 +2189,7 @@ export default function RequestPage(): React.ReactElement {
     setMapChangeDocId(doc ? doc.id : null);
   };
 
-  // '적용' 버튼 → 선택된 요청서의 MAP 키만 현재 detail 에 병합(map_type=FIX 유지).
+  // '적용' 버튼 → 선택된 요청서의 MAP 키만 현재 detail 에 병합(map_type=EDIT 유지).
   // 프리필 직후 detail 을 원본 스냅샷(mapChangeBaseline)으로 저장해 상신 시 변경이력 diff 기준으로 쓴다.
   const handleMapChangeApply = async () => {
     if (mapChangeDocId === null) return;
@@ -2202,7 +2202,7 @@ export default function RequestPage(): React.ReactElement {
       MAP_DETAIL_KEYS.forEach((key) => {
         if (src[key] !== undefined) (mapPatch as Record<string, unknown>)[key] = src[key];
       });
-      const next: DetailFormState = { ...detail, ...mapPatch, map_type: 'FIX' };
+      const next: DetailFormState = { ...detail, ...mapPatch, map_type: 'EDIT' };
       setDetail(next);
       // 스냅샷은 완전 격리(중첩 배열 공유 방지) — diff 기준의 무결성 보장
       setMapChangeBaseline(JSON.parse(JSON.stringify(next)) as DetailFormState);
@@ -3350,6 +3350,7 @@ export default function RequestPage(): React.ReactElement {
           oayerChecked={oayerChecked}
           oayerInfoTab={oayerInfoTab}
           setOayerInfoTab={setOayerInfoTab}
+          oayerInfoLocked={isOnlyMap || isMapChangeMode}
           detail={detail}
           setDetail={setDetail}
           errors={errors}
