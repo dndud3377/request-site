@@ -1218,8 +1218,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         role = getattr(user, 'role', '')
         if role == 'MASTER':
             return True
-        caller_loginid = getattr(user, 'loginid', '')
-        return bool(document.requester and document.requester.loginid == caller_loginid)
+        return doc_permissions.is_requester(user, document)
 
     @action(detail=True, methods=['post'], url_path='add-post-approver')
     @transaction.atomic

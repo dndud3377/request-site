@@ -784,6 +784,21 @@ class PostApproverManagementTest(TestCase):
         r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
         self.assertEqual(r.status_code, 400)
 
+    def test_add_and_remove_post_approver_success_for_legacy_requester_without_fk(self):
+        """requester FK가 비어 있는(예: SET_NULL로 탈퇴 등) 레거시 문서도 이메일 폴백으로
+        실제 상신자를 인식해야 한다."""
+        doc = self._advance_to_parallel()
+        # requester FK만 제거하고 이메일은 유지 — doc_permissions.is_requester 의 이메일
+        # 폴백 경로를 검증한다(레거시 문서/사용자 탈퇴 등으로 FK가 비는 케이스와 동일).
+        doc.requester = None
+        doc.save()
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
     def test_add_post_approver_rejects_duplicate(self):
         doc = self._advance_to_parallel(only_prodc=True, post_approvers=[{'loginid': self.extra_pl1.loginid, 'name': self.extra_pl1.loginid}])
         self.client.force_authenticate(user=self.requester)
