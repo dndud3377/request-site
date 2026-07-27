@@ -319,6 +319,11 @@ export interface DetailFormState {
 
   // C가문(only_prodc=YES) 추가 후결자 — 상신 시 PL 중 지정. 고정 후결자(.env)는 별도로 항상 포함.
   post_approvers?: NotifierRef[];
+
+  // '완성된 MAP 변경' 대상(결재완료) 요청서 id — 승인 시 서버가 이 문서에 MAP 값을 반영한다.
+  map_change_source_id?: number;
+  // 원본 요청서에 '완성된 MAP 변경'이 반영된 횟수. 변경 이력의 '완성 후 수정 n회차' 표기에 쓴다.
+  map_edit_round?: number;
 }
 
 // 통보자 참조: 화면 표시용 이름 + 메일 발송용 loginid
@@ -361,6 +366,10 @@ export interface HistorySnapshot {
   jayerRows: JayerRow[];
   oayerRows: OayerRow[];
   bbRows: BbTableRow[];
+  // '완성된 MAP 변경' 반영으로 밀려난 스냅샷임을 나타내는 회차 번호.
+  // 값이 있으면 이력 표에서 'n차 제출' 대신 '완성 후 수정 n회차'로 표시한다.
+  // (표시 문구는 프론트에서 i18n 으로 만들며, 서버는 번호만 기록한다 — 규칙 G)
+  map_edit_round?: number;
 }
 
 // ===== API Response Wrappers =====

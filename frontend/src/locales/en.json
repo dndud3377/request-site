@@ -135,6 +135,8 @@
     "map_type_borrow": "CLONE",
     "map_type_registered": "EXISTING",
     "map_type_edit": "EDIT",
+    "map_edit_round_label": "Post-completion edit #{{round}}",
+    "map_edit_round_current": "Current (post-completion edit #{{round}})",
     "map_change_target": "Completed MAP change · target request",
     "map_change_placeholder": "Search an approved request",
     "map_change_apply": "Apply",
