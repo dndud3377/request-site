@@ -134,7 +134,7 @@
     "map_type_new": "NEW",
     "map_type_borrow": "CLONE",
     "map_type_registered": "EXISTING",
-    "map_type_fix": "FIX",
+    "map_type_edit": "EDIT",
     "map_change_target": "완성된 MAP 변경 · 대상 요청서",
     "map_change_placeholder": "결재 완료된 요청서를 검색하세요",
     "map_change_apply": "적용",
