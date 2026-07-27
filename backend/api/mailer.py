@@ -20,6 +20,7 @@
 - J: 담당자(claim) 지정 시 그 1명, 미지정(도착 시점)이면 고정 주소
 - O/E: 해당 역할(TE_O/TE_E) 팀 전원
 - 반려: 요청서 작성자 + 현재 회차에서 이미 합의했던 전원(중복 제거)
+  · PL 단계에서 반려된 경우, 아직 합의/반려하지 않은 나머지 지정 PL(pending)도 포함
 - 승인 완료: 현재 회차 결재 경로에 참여했던 전원(중복 제거)
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
 """
@@ -251,13 +252,30 @@ def _current_round_step_emails(document, action=None):
 
 
 def resolve_reject_recipients(document):
-    """반려 시 수신자: 요청서 작성자 + 현재 회차에서 이미 합의했던 전원(중복 제거)."""
+    """반려 시 수신자: 요청서 작성자 + 현재 회차에서 이미 합의했던 전원(중복 제거).
+
+    PL 단계에서 반려된 경우(다중 PL 지정 시 발생 가능)에는 아직 합의/반려하지 않은
+    나머지 지정 PL(pending)에게도 반려 사실을 알리기 위해 추가로 포함한다.
+    """
+    max_round = _current_round(document)
     emails = []
     if document.requester_email:
         emails.append(document.requester_email)
     for mail in _current_round_step_emails(document, action='approved'):
         if mail not in emails:
             emails.append(mail)
+
+    if max_round is not None:
+        pl_rejected = ApprovalStep.objects.filter(
+            document=document, round=max_round, agent='PL', action='rejected',
+        ).exists()
+        if pl_rejected:
+            pending_pl_qs = ApprovalStep.objects.filter(
+                document=document, round=max_round, agent='PL', action='pending',
+            ).exclude(assignee__isnull=True).exclude(assignee__mail='')
+            for mail in pending_pl_qs.values_list('assignee__mail', flat=True).distinct():
+                if mail not in emails:
+                    emails.append(mail)
     return _apply_redirect(emails)
 
 
