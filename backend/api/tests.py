@@ -119,6 +119,34 @@ class RecipientResolutionTest(TestCase):
             ['pl3@company.com', 'r3@company.com', 'req@company.com'],
         )
 
+    def test_reject_recipients_include_pending_pl_when_pl_rejects(self):
+        # 다중 PL 지정: PL A 합의, PL B 반려, PL C 아직 미합의(pending)
+        pl_a = UserProfile.objects.create(loginid='pla', mail='pla@company.com', role='PL')
+        pl_c = UserProfile.objects.create(loginid='plc', mail='plc@company.com', role='PL')
+        ApprovalStep.objects.create(
+            document=self.doc, agent='PL', round=1, action='approved', assignee=pl_a,
+        )
+        ApprovalStep.objects.create(
+            document=self.doc, agent='PL', round=1, action='rejected',
+        )
+        ApprovalStep.objects.create(
+            document=self.doc, agent='PL', round=1, action='pending', assignee=pl_c,
+        )
+        self.assertEqual(
+            sorted(mailer.resolve_reject_recipients(self.doc)),
+            ['pla@company.com', 'plc@company.com', 'req@company.com'],
+        )
+
+    def test_reject_recipients_pl_pending_excluded_when_non_pl_step_rejects(self):
+        # PL이 아닌 단계(R)가 반려된 경우, 다른 미합의 PL은 포함되지 않는다(기존 동작 유지)
+        pl_pending = UserProfile.objects.create(loginid='pld', mail='pld@company.com', role='PL')
+        ApprovalStep.objects.create(document=self.doc, agent='PL', round=1, action='pending', assignee=pl_pending)
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='rejected')
+        self.assertEqual(
+            mailer.resolve_reject_recipients(self.doc),
+            ['req@company.com'],
+        )
+
     def test_approved_recipients_are_current_round_participants(self):
         # 이전 회차(반려됐던 회차) 참여자는 포함되지 않는다
         old = UserProfile.objects.create(loginid='old1', mail='old1@company.com', role='PL')
