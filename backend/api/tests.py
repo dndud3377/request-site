@@ -403,6 +403,25 @@ class PlSubmitMailTest(TestCase):
         noti = MailNotification.objects.filter(document=doc, event_type='stage_arrival').latest('id')
         self.assertTrue(noti.subject.startswith('[pla님] '), noti.subject)
 
+    def test_change_designee_sends_mail_to_new_pl_only(self):
+        doc = self._make_draft('draft')
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/', {
+            'designated_pl_loginids': [self.pl_a.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        MailNotification.objects.all().delete()  # 상신 시 발송분 제거하고 지정자 변경분만 확인
+
+        r = self.client.post(f'/api/documents/{doc.id}/change-designee/', {
+            'designated_pl_loginid': self.pl_b.loginid,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        notis = MailNotification.objects.filter(document=doc, event_type='stage_arrival')
+        self.assertEqual(notis.count(), 1)
+        self.assertEqual(notis[0].recipients, ['plb@c.com'])
+        self.assertTrue(notis[0].subject.startswith('[plb님] '), notis[0].subject)
+
 
 class MessageBuildingTest(TestCase):
     """제목/본문 생성(_build_message) — 제목의 문서 제목·이름 접두어, 딥링크 라우팅."""
