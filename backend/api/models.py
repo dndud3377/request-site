@@ -68,6 +68,28 @@ class RequestDocument(models.Model):
     # 요청 목적 'Only MAP' 값 (결재 경로를 R 단계까지만 진행)
     ONLY_MAP_PURPOSE = 'Only MAP'
 
+    # 기타 목적 '완성된 MAP 변경' 값 (결재 완료 시 대상 원본 요청서에 MAP 값을 반영)
+    MAP_CHANGE_PURPOSE = '완성된 MAP 변경'
+
+    # '완성된 MAP 변경' 승인 시 원본 요청서 detail 에 덮어쓸 MAP 관련 키 화이트리스트.
+    # 프론트엔드 `RequestPage/constants.ts` 의 MAP_DETAIL_KEYS 와 같은 목록이되
+    # map_type 은 제외한다 — 원본의 NEW/CLONE/EXISTING 정체성과 제목 표기를 유지해야 하기 때문.
+    # ⚠️ 프론트 MAP_DETAIL_KEYS 를 수정하면 이 목록도 함께 갱신해야 한다.
+    MAP_APPLY_KEYS = (
+        'map_change', 'map_value_x', 'map_value_y', 'map_reason',
+        'map_change_top', 'map_value_x_top', 'map_value_y_top',
+        'map_change_bottom', 'map_value_x_bottom', 'map_value_y_bottom',
+        'ea_change', 'ea_value',
+        'only_prodc',
+        'prodc_top_line', 'prodc_top_process', 'prodc_top_product',
+        'prodc_middle_use', 'prodc_middle_line', 'prodc_middle_process', 'prodc_middle_product',
+        'prodc_bottom_line', 'prodc_bottom_process', 'prodc_bottom_product',
+        'mshot_change', 'mshot_image_copy', 'mshot_image_copy_top', 'mshot_image_copy_bottom',
+        'photo_backside', 'eds_backside', 'inter', 'inter_xs', 'inter_ys',
+        'tsv', 'rf', 'fullchip', 'split', 'st', 'ecc', 'labelsideshot', 'hpkglabelheight',
+        'rev_yn', 'rev_entries', 'source_line', 'source_partid',
+    )
+
     title = models.CharField(max_length=600, verbose_name='의뢰서 제목')
     requester = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
@@ -117,6 +139,24 @@ class RequestDocument(models.Model):
         """
         inner_detail = self.get_detail().get('detail', {})
         return inner_detail.get('request_purpose') == self.ONLY_MAP_PURPOSE
+
+    def is_map_change(self):
+        """기타 목적에 '완성된 MAP 변경'이 포함됐는지 여부.
+
+        참이면 승인 시 `map_change_source_id` 가 가리키는 원본 요청서에
+        MAP 값을 반영한다(상세는 docs/REQUEST.md 참조).
+        """
+        inner_detail = self.get_detail().get('detail', {})
+        other = inner_detail.get('other_purpose') or []
+        return isinstance(other, list) and self.MAP_CHANGE_PURPOSE in other
+
+    def map_change_source_id(self):
+        """'완성된 MAP 변경' 대상(원본) 요청서 id. 없으면 None."""
+        raw = self.get_detail().get('detail', {}).get('map_change_source_id')
+        try:
+            return int(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            return None
 
     def has_ppid_plel(self):
         detail = self.get_detail()
@@ -636,6 +676,7 @@ class MailNotification(models.Model):
         ('notify_approved', '결재 완료 통보(통보처)'),
         ('voc_created', 'VOC 등록'),
         ('voc_comment', 'VOC 댓글'),
+        ('map_apply_failed', '완성 MAP 반영 실패'),
     ]
 
     STATUS_CHOICES = [
