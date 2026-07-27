@@ -1154,6 +1154,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return Response({'message': msg, 'status': 'under_review'})
 
     @action(detail=True, methods=['post'], url_path='change-designee')
+    @transaction.atomic
     def change_designee(self, request, pk=None):
         """지정자 변경: PL 단계 pending 동안 원 PL 또는 MASTER가 변경 가능"""
         document = self.get_object()
@@ -1189,6 +1190,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document.designated_pl = new_pl_user
         document.designated_pl_name = step.assignee_name
         document.save()
+
+        # 새로 지정된 PL에게 최초 상신과 동일한 결재 요청 메일 발송(이전 지정자에게는 안 감)
+        mailer.enqueue_stage_arrival(document, 'PL', step, recipient_name=step.assignee_name)
 
         return Response({'message': '지정자가 변경되었습니다.', 'document': RequestDocumentSerializer(document).data})
 
