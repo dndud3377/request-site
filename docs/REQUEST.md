@@ -121,6 +121,12 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-07 — Only MAP·완성된 MAP 변경 입력 잠금 통일 + map_type EDIT 개명)
+
+- **완성된 MAP 변경에도 흐름도/특이사항/Backbone 입력 잠금 적용**: `Step1.tsx`에 `disableFlowBb = disableOptional || isMapChangeMode` 신설, 흐름도(flow_chart) 행 전체·특이사항(change_purpose_note)·Backbone(bb_entries) 행 전체에만 적용. 기타목적 버튼 행·`Layer 추가/삭제` 참조요청서 Merge·완성된 MAP 변경 검색/적용 툴바는 기존 `disableOptional` 그대로 유지(전환·조회 경로 보존 목적 — 여기까지 잠그면 대상 문서 검색/적용이나 다른 목적으로의 전환 자체가 막힘).
+- **O-layer 정보 탭(Partial Shot·TBV/TLV) 잠금**: `Step3.tsx`에 `oayerInfoLocked` prop 추가(`index.tsx`에서 `isOnlyMap || isMapChangeMode`로 계산). Partial Shot O/X 토글, TBV/TLV 두께 토글, SD 선택 버튼, 비고 X/Y/사용여부 입력·행 추가/삭제, TBV/TLV 항목 추가/삭제 버튼 전체에 `disabled` 적용 — Only MAP·완성된 MAP 변경 두 모드 모두 대상.
+- **`map_type` 값 `FIX` → `EDIT` 개명**: 완성된 MAP 변경 전용 map_type 값의 표시/저장값을 `FIX`에서 `EDIT`으로 변경(`StepMap.tsx` 버튼 배열·비교 조건, `index.tsx`의 `applyMapChangeMode`/`handleMapChangeApply`). i18n 키도 `map_type_fix`→`map_type_edit`(ko/en 동시, 표시 텍스트 `EDIT`)로 변경. `map_type`은 `additional_notes` JSON에 스키마 없이 저장되므로 백엔드·마이그레이션 영향 없음(기존 저장된 문서의 `FIX` 값은 과거 이력에 그대로 남고 신규 저장부터 `EDIT` 적용).
+
 ### 추가 변경 이력 (2026-07 — 재상신 변경이력 표시 개선)
 
 - 상세 보기(`PagedDetailView`)의 재상신 변경 강조를 4가지로 확장. 상세는 `docs/APPROVAL.md` §7 참조.
