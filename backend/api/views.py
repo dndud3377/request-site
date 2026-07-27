@@ -320,7 +320,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     document=document, agent='PL', action='pending', round=1,
                     assignee=u, assignee_name=(u.username or u.loginid),
                 )
-                mailer.enqueue_stage_arrival(document, 'PL', pl_step)
+                mailer.enqueue_stage_arrival(document, 'PL', pl_step, recipient_name=pl_step.assignee_name)
             mailer.enqueue_notify_submitted(document)
 
         return Response({
@@ -365,7 +365,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     document=document, agent='PL', action='pending', round=new_round,
                     assignee=u, assignee_name=(u.username or u.loginid),
                 )
-                mailer.enqueue_stage_arrival(document, 'PL', pl_step)
+                mailer.enqueue_stage_arrival(document, 'PL', pl_step, recipient_name=pl_step.assignee_name)
             mailer.enqueue_notify_submitted(document)
 
         return Response({
