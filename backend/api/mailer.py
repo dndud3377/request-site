@@ -71,6 +71,25 @@ REVIEWER_AGENTS = ('RV', 'PV', 'EV')
 ROUTE_AGENTS_ONLY_MAP = ('R', 'RV', 'RA')
 ROUTE_AGENTS_DEFAULT = ('R', 'RV', 'P', 'PV', 'O', 'E', 'EV', 'J', 'RA')
 
+# 메일 본문 '결재 경로' 카드의 표시 순서. 웹 '결재 경로' 탭과 같은 순서를 쓴다
+# (검토자 RV/PV/EV 는 담당 단계 바로 뒤, 후결자 RA 는 R 다음).
+ROUTE_DISPLAY_ORDER = ('PL', 'R', 'RV', 'RA', 'P', 'PV', 'J', 'O', 'E', 'EV')
+
+# 결재 경로 카드의 상태 표기 — (라벨, 글자색, 배경색). 상태 색은 의미를 담고 있어
+# 이벤트 테마(EVENT_THEME)와 무관하게 고정한다(웹 결재 경로 탭과 동일 팔레트).
+ROUTE_STATUS_STYLE = {
+    'approved': ('합의', '#059669', 'rgba(5,150,105,0.1)'),
+    'rejected': ('반려', '#dc2626', 'rgba(220,38,38,0.1)'),
+    'reviewing': ('검토중', '#d97706', 'rgba(217,119,6,0.1)'),
+    'waiting': ('대기', '#8794a6', 'rgba(107,138,176,0.12)'),
+}
+
+# 담당자가 배정되지 않은 단계의 담당자 칸 문구
+ROUTE_UNASSIGNED_LABEL = '담당자 미지정'
+
+# 경로 카드에 싣는 코멘트 최대 길이(초과분은 잘라내고 말줄임표를 붙인다)
+ROUTE_COMMENT_MAX_LEN = 300
+
 # 담당자 미지정 시 단계별 고정 수신 주소 (담당 팀 1명 대표 주소)
 #
 # [수신자 변경 방법]
@@ -446,6 +465,115 @@ def _kpi_grid(tiles, tile_bg, tile_border):
     return f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{rows}</table>'
 
 
+def _route_rows(document):
+    """메일 '결재 경로' 카드에 실을 (단계명, 담당자, 상태키, 코멘트) 목록.
+
+    현재(최종) 회차만 담는다 — 재상신 문서라도 이전 회차 이력은 싣지 않는다.
+    라우팅(ROUTE_AGENTS_*)에 있으나 아직 step 이 생성되지 않은 단계는 '대기' 행으로
+    채워, 앞으로 남은 결재가 몇 단계인지 보이게 한다. Only MAP 이거나 plel 이 아닌
+    의뢰서에서 아예 거치지 않는 단계는 행 자체를 만들지 않는다.
+    """
+    max_round = _current_round(document)
+    if max_round is None:
+        return []
+
+    route = set(ROUTE_AGENTS_ONLY_MAP if document.is_only_map() else ROUTE_AGENTS_DEFAULT)
+    route.add('PL')  # PL 은 수신자 규칙에서만 예외이고 경로 표시에는 항상 포함된다
+    if not document.has_ppid_plel():
+        route -= {'E', 'EV'}
+
+    steps = list(
+        ApprovalStep.objects.filter(document=document, round=max_round)
+        .select_related('assignee')
+        .order_by('id')
+    )
+    steps_by_agent = {}
+    for s in steps:
+        steps_by_agent.setdefault(s.agent, []).append(s)
+
+    rows = []
+    for agent in ROUTE_DISPLAY_ORDER:
+        if agent not in route:
+            continue
+        label = AGENT_LABEL.get(agent, agent)
+        agent_steps = steps_by_agent.get(agent)
+        if not agent_steps:
+            # 아직 도달하지 않은 단계(검토자는 지정됐을 때만 생기므로 예정 표시 대상이 아니다)
+            if agent not in REVIEWER_AGENTS:
+                rows.append((label, '', 'waiting', ''))
+            continue
+        for s in agent_steps:
+            if s.action == 'approved':
+                status = 'approved'
+            elif s.action == 'rejected':
+                status = 'rejected'
+            elif s.assignee_id:
+                status = 'reviewing'
+            else:
+                status = 'waiting'
+            rows.append((label, s.assignee_name or '', status, s.comment or ''))
+    return rows
+
+
+def _render_route_card(document, theme):
+    """현재 회차 결재 경로 카드 HTML. 경로가 없으면 빈 문자열(카드 자체를 넣지 않음).
+
+    단계명/담당자/코멘트는 사용자 입력을 포함할 수 있으므로 전부 escape 하고,
+    코멘트 줄바꿈은 white-space:pre-wrap 으로 살린다. Outlook 호환을 위해
+    flex/grid 없이 table 로만 조판한다.
+    """
+    rows = _route_rows(document)
+    if not rows:
+        return ''
+
+    tr_html = []
+    last = len(rows) - 1
+    for i, (label, assignee, status, comment) in enumerate(rows):
+        border = '' if i == last else 'border-bottom:1px solid #eef1f6;'
+        status_label, status_color, status_bg = ROUTE_STATUS_STYLE[status]
+
+        if assignee:
+            name_html = f'<span style="color:#0f172a;font-weight:500;">{escape(assignee)}</span>'
+        else:
+            name_html = (
+                f'<span style="color:#94a3b8;">{escape(ROUTE_UNASSIGNED_LABEL)}</span>'
+            )
+
+        comment = (comment or '').strip()
+        if comment:
+            if len(comment) > ROUTE_COMMENT_MAX_LEN:
+                comment = comment[:ROUTE_COMMENT_MAX_LEN] + '…'
+            name_html += (
+                '<div style="margin-top:5px;font-size:12.5px;line-height:1.6;color:#475569;'
+                'font-style:italic;border-left:2px solid #dfe4ec;padding-left:9px;'
+                f'white-space:pre-wrap;">{escape(comment)}</div>'
+            )
+
+        tr_html.append(
+            f'<tr>'
+            f'<td width="78" style="padding:7px 12px 7px 0;{border}vertical-align:top;'
+            f'font-size:12px;font-weight:700;color:#334155;white-space:nowrap;">{escape(label)}</td>'
+            f'<td style="padding:7px 0;{border}vertical-align:top;font-size:13px;">{name_html}</td>'
+            f'<td align="right" style="padding:7px 0 7px 10px;{border}vertical-align:top;white-space:nowrap;">'
+            f'<span style="display:inline-block;font-size:11px;font-weight:700;border-radius:10px;'
+            f'padding:2px 9px;color:{status_color};background:{status_bg};white-space:nowrap;">'
+            f'{status_label}</span></td>'
+            f'</tr>'
+        )
+
+    round_label = f' · {_current_round(document)}회차'
+    return (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;">'
+        f'<tr><td style="background:#ffffff;border:1px solid {theme["outer_border"]};'
+        'border-radius:10px;padding:14px 16px;">'
+        '<div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;'
+        f'color:{theme["note_label_color"]};text-transform:uppercase;">결재 경로{round_label}</div>'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:9px;">'
+        f'{"".join(tr_html)}'
+        '</table></td></tr></table>'
+    )
+
+
 def _render_hero_kpi_email(event_type, headline, document, kpi_tiles, note_value, link, link_text):
     """히어로 헤더 + KPI 카드형 트랜잭셔널 이메일 본문(HTML)을 렌더링한다.
 
@@ -457,6 +585,7 @@ def _render_hero_kpi_email(event_type, headline, document, kpi_tiles, note_value
     hero_from, hero_to = theme['hero']
     title_html = escape(document.title)
     kpi_html = _kpi_grid(kpi_tiles, theme['tile_bg'], theme['tile_border'])
+    route_html = _render_route_card(document, theme)
     note_html = escape(note_value) if note_value else '-'
     headline_html = escape(headline)
 
@@ -486,6 +615,7 @@ def _render_hero_kpi_email(event_type, headline, document, kpi_tiles, note_value
           {kpi_html}
         </td></tr>
       </table>
+      {route_html}
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;">
         <tr><td style="background:#ffffff;border:1px solid {theme['outer_border']};border-radius:10px;padding:14px 16px;">
           <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:{theme['note_label_color']};text-transform:uppercase;">특이사항</div>

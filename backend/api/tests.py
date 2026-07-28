@@ -561,6 +561,120 @@ class MessageBuildingTest(TestCase):
             self.assertIn(f'https://example.com/history?id={self.doc.id}', contents)
 
 
+class RouteCardTest(TestCase):
+    """메일 본문 '결재 경로' 카드(_route_rows / _render_route_card)."""
+
+    def setUp(self):
+        self.requester = UserProfile.objects.create(
+            loginid='req', mail='req@company.com', role='NONE'
+        )
+        self.doc = _make_document(self.requester)
+
+    def _statuses(self, rows):
+        return [(label, status) for label, _name, status, _c in rows]
+
+    def test_rows_cover_status_variants_and_pending_future_stage(self):
+        pl = UserProfile.objects.create(loginid='pl9', mail='pl9@c.com', role='PL')
+        r = UserProfile.objects.create(loginid='r9', mail='r9@c.com', role='TE_R')
+        o = UserProfile.objects.create(loginid='o9', mail='o9@c.com', role='TE_O')
+        ApprovalStep.objects.create(document=self.doc, agent='PL', round=1, action='approved',
+                                    assignee=pl, assignee_name='피엘구')
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='rejected',
+                                    assignee=r, assignee_name='알구')
+        ApprovalStep.objects.create(document=self.doc, agent='O', round=1, action='pending',
+                                    assignee=o, assignee_name='오구')
+        ApprovalStep.objects.create(document=self.doc, agent='P', round=1, action='pending')
+
+        rows = mailer._route_rows(self.doc)
+        by_label = dict(self._statuses(rows))
+        self.assertEqual(by_label['PL 검토'], 'approved')
+        self.assertEqual(by_label['R'], 'rejected')
+        self.assertEqual(by_label['O'], 'reviewing')      # pending + 담당자 있음
+        self.assertEqual(by_label['P'], 'waiting')        # pending + 미배정
+        self.assertEqual(by_label['J'], 'waiting')        # step 미생성(예정)
+        self.assertNotIn('E', by_label, 'plel 이 아니면 E 는 경로에 넣지 않는다')
+
+    def test_rows_only_include_current_round(self):
+        old = UserProfile.objects.create(loginid='old9', mail='old9@c.com', role='PL')
+        new = UserProfile.objects.create(loginid='new9', mail='new9@c.com', role='PL')
+        ApprovalStep.objects.create(document=self.doc, agent='PL', round=1, action='rejected',
+                                    assignee=old, assignee_name='이전회차', comment='이전 회차 반려 사유')
+        ApprovalStep.objects.create(document=self.doc, agent='PL', round=2, action='pending',
+                                    assignee=new, assignee_name='현재회차')
+
+        names = [name for _l, name, _s, _c in mailer._route_rows(self.doc)]
+        self.assertIn('현재회차', names)
+        self.assertNotIn('이전회차', names)
+
+        html = mailer._render_route_card(self.doc, mailer.EVENT_THEME['rejected'])
+        self.assertIn('2회차', html)
+        self.assertNotIn('이전 회차 반려 사유', html)
+
+    def test_only_map_route_excludes_p_o_e_j(self):
+        import json
+        doc = RequestDocument.objects.create(
+            title='onlymap', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept', product_name='PROD-1',
+            additional_notes=json.dumps({'detail': {'request_purpose': 'Only MAP'}, 'jayerRows': []}),
+        )
+        ApprovalStep.objects.create(document=doc, agent='R', round=1, action='pending')
+        labels = [label for label, _n, _s, _c in mailer._route_rows(doc)]
+        for excluded in ('P', 'J', 'O', 'E'):
+            self.assertNotIn(excluded, labels)
+        self.assertIn('R', labels)
+
+    def test_card_renders_comment_and_omits_empty_one(self):
+        r = UserProfile.objects.create(loginid='r10', mail='r10@c.com', role='TE_R')
+        o = UserProfile.objects.create(loginid='o10', mail='o10@c.com', role='TE_O')
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='approved',
+                                    assignee=r, assignee_name='알텐', comment='바코드 매핑 확인 완료')
+        ApprovalStep.objects.create(document=self.doc, agent='O', round=1, action='approved',
+                                    assignee=o, assignee_name='오텐', comment='')
+
+        html = mailer._render_route_card(self.doc, mailer.EVENT_THEME['approved'])
+        self.assertIn('바코드 매핑 확인 완료', html)
+        self.assertEqual(html.count('border-left:2px solid'), 1,
+                         '코멘트가 없는 단계는 코멘트 줄을 만들지 않는다')
+        self.assertIn(mailer.ROUTE_UNASSIGNED_LABEL, html, '미배정 단계는 미지정으로 표기된다')
+
+    def test_card_escapes_user_input(self):
+        evil = UserProfile.objects.create(loginid='evil', mail='evil@c.com', role='TE_R')
+        ApprovalStep.objects.create(
+            document=self.doc, agent='R', round=1, action='rejected', assignee=evil,
+            assignee_name='<script>alert(1)</script>',
+            comment='<img src=x onerror="alert(2)">',
+        )
+        html = mailer._render_route_card(self.doc, mailer.EVENT_THEME['rejected'])
+        # 태그가 태그로 살아나지 않아야 한다(문자열 자체는 이스케이프된 형태로 남는다)
+        self.assertNotIn('<script>', html)
+        self.assertNotIn('<img', html)
+        self.assertIn('&lt;script&gt;alert(1)&lt;/script&gt;', html)
+        self.assertIn('&lt;img src=x onerror=&quot;alert(2)&quot;&gt;', html)
+
+    def test_card_truncates_long_comment(self):
+        r = UserProfile.objects.create(loginid='r11', mail='r11@c.com', role='TE_R')
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='rejected',
+                                    assignee=r, assignee_name='알', comment='가' * 500)
+        html = mailer._render_route_card(self.doc, mailer.EVENT_THEME['rejected'])
+        self.assertIn('가' * mailer.ROUTE_COMMENT_MAX_LEN + '…', html)
+        self.assertNotIn('가' * (mailer.ROUTE_COMMENT_MAX_LEN + 1), html)
+
+    def test_no_card_when_no_steps(self):
+        self.assertEqual(mailer._route_rows(self.doc), [])
+        self.assertEqual(mailer._render_route_card(self.doc, mailer.EVENT_THEME['rejected']), '')
+
+    @override_settings(FRONTEND_URL='https://example.com')
+    def test_route_card_included_in_all_event_mails(self):
+        r = UserProfile.objects.create(loginid='r12', mail='r12@c.com', role='TE_R')
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='approved',
+                                    assignee=r, assignee_name='알열둘', comment='확인 완료')
+        for event_type in ('stage_arrival', 'rejected', 'approved', 'notify_submitted', 'notify_approved'):
+            _, contents = mailer._build_message(event_type, self.doc, agent='R')
+            self.assertIn('결재 경로', contents, f'{event_type} 메일에 경로 카드가 있어야 한다')
+            self.assertIn('알열둘', contents)
+            self.assertIn('확인 완료', contents)
+
+
 class MailQueueProcessTest(TestCase):
     def _make_noti(self):
         return MailNotification.objects.create(
