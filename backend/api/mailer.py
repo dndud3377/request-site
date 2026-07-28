@@ -21,6 +21,7 @@
 - O/E: 해당 역할(TE_O/TE_E) 팀 전원
 - 반려: 요청서 작성자 + 현재 회차에서 이미 합의했던 전원(중복 제거)
   · PL 단계에서 반려된 경우, 아직 합의/반려하지 않은 나머지 지정 PL(pending)도 포함
+  · R 단계(R/RV)에서 반려된 경우, TE_R 권한 보유자 전원도 포함
 - 승인 완료: 현재 회차 결재 경로에 참여했던 전원(중복 제거)
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
 """
@@ -256,6 +257,9 @@ def resolve_reject_recipients(document):
 
     PL 단계에서 반려된 경우(다중 PL 지정 시 발생 가능)에는 아직 합의/반려하지 않은
     나머지 지정 PL(pending)에게도 반려 사실을 알리기 위해 추가로 포함한다.
+    R 단계(R 담당자 또는 RV 검토자)에서 반려된 경우에는 TE_R 권한 보유자 전원에게도
+    반려 사실을 알리기 위해 추가로 포함한다(검토자 지정 후 담당자가 반려하면 그
+    pending 검토자가 누락되는 문제 등을 포괄적으로 해결).
     """
     max_round = _current_round(document)
     emails = []
@@ -274,6 +278,14 @@ def resolve_reject_recipients(document):
                 document=document, round=max_round, agent='PL', action='pending',
             ).exclude(assignee__isnull=True).exclude(assignee__mail='')
             for mail in pending_pl_qs.values_list('assignee__mail', flat=True).distinct():
+                if mail not in emails:
+                    emails.append(mail)
+
+        r_rejected = ApprovalStep.objects.filter(
+            document=document, round=max_round, agent__in=('R', 'RV'), action='rejected',
+        ).exists()
+        if r_rejected:
+            for mail in _team_emails('R'):
                 if mail not in emails:
                     emails.append(mail)
     return _apply_redirect(emails)
