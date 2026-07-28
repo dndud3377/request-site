@@ -81,7 +81,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | stage_arrival | PV/EV(검토자, 2026-07) | `approve-step/`(agent P/E)에 `reviewer_loginids`를 함께 보낼 때 지정된 검토자 각각에게 개별 발송(제목에 `[이름님]`) — RV와 동일하게 담당자 합의와 같은 시점(같은 요청)에 발송된다 |
 | stage_arrival | J | 담당자(claim) 지정 시 그 1명, 미지정(도착 시점)이면 고정 주소 |
 | stage_arrival | O / E | 해당 역할(`TE_O`/`TE_E`) **팀 전원** |
-| rejected | (반려) | 요청서 작성자 **+ 현재(최종) 회차에서 이미 합의했던 전원**(중복 제거). **PL 단계 반려(2026-07 추가)**: 다중 PL 지정 시, 같은 회차의 아직 합의/반려하지 않은 나머지 지정 PL(pending)도 포함 |
+| rejected | (반려) | 요청서 작성자 **+ 현재(최종) 회차에서 이미 합의했던 전원**(중복 제거). **PL 단계 반려(2026-07 추가)**: 다중 PL 지정 시, 같은 회차의 아직 합의/반려하지 않은 나머지 지정 PL(pending)도 포함. **R 단계 반려(2026-07 추가)**: R 담당자 또는 RV(검토자)가 반려하면 `TE_R` 권한 보유자 전원도 포함(검토자 지정 후 담당자가 반려해 그 검토자가 못 받던 문제 등을 포괄적으로 해소) |
 | approved | (완료) | **현재(최종) 회차 결재 경로에 참여했던 전원**(assignee 배정된 모든 단계, 중복 제거) — 2026-07부터 "작성자 그룹 멤버" 방식에서 변경 |
 | notify_submitted | (상신·재상신) | **통보처 전원**(`detail.notifiers`) |
 | notify_approved | (완료) | **통보처 전원**(`detail.notifiers`) |
@@ -138,7 +138,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나야 **J에게** 발송. 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨) |
 | `approve-step` P/E 합의 + `reviewer_loginids`(검토자 지정) | ✅ | 지정된 검토자(PV/EV) **각각**에게 즉시(담당자 합의와 **같은 요청**으로 처리되므로 같은 순간 발송) |
 | `approve-step` agent=J/O/E/EV/RA (병렬 경로 합의) | 🟡 | 이 합의로 **문서 전체가 approved 로 전이될 때만** approved(결재 경로 참여 전원) + notify_approved(통보처) 발송. 다른 경로가 아직 안 끝났으면 이 개별 합의는 **무메일**(침묵 — 예: J는 합의됐는데 O가 아직이면 알림 없음) |
-| `reject-step` (어느 단계든 반려, PL 제외) | ✅ | rejected: 작성자 + 현재 회차 기합의자 전원 |
+| `reject-step` (어느 단계든 반려, PL 제외) | ✅ | rejected: 작성자 + 현재 회차 기합의자 전원. **R/RV 반려 시(2026-07 추가)**: `TE_R` 팀 전원도 포함 |
 | `assign-step` agent=R (담당자 지정) | ✅ | 지정된 R 담당자에게 발송. **같이 고른 검토자(RV)는 이 시점엔 무메일**(R 담당자가 합의하는 시점에 발송됨) |
 | `claim-step` (검토중 선점, J/O/E/P) | ❌ | 선점(검토중 클릭) 자체는 알림 없음 |
 | `request-pause` / `confirm-pause` / `resume` / `cancel-pause` (결재 중단 전 구간) | ❌ | 전 구간 알림 없음(기존에 알려진 범위 밖 항목) |

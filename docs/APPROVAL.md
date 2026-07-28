@@ -124,6 +124,7 @@ P/E는 (2026-07부터) O/J와 동일하게 **검토중(claim) 방식**이며, �
 
 ### Case H — 단계 반려 (`reject_step`, `views.py:312`)
 - 동작: 어느 단계든 해당 step `rejected`, `status → rejected`(즉시).
+- **메일(2026-07 추가)**: R 담당자 또는 RV(검토자)가 반려하면 작성자·기합의자 전원에 더해 `TE_R` 권한 보유자 전원에게도 반려 메일이 간다(§4.1 참고). 검토자 지정 후 담당자가 반려해 그 검토자가 통보를 못 받던 문제를 팀 전체 발송으로 포괄 해소.
 
 ### Case I — 재상신 (`resubmit`)
 - 조건: `status == 'rejected'`, 지정 PL 필수(본인 불가), bb 매핑 통과.
@@ -340,7 +341,8 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 | `approve_step`(P, 검토자 없을 때) | stage_arrival(J) | TE_J 미지정 시 고정 주소 |
 | `approve_step`(P/E 합의 시 `reviewer_loginids` 동봉, 2026-07) | stage_arrival(PV/EV) | 지정된 검토자 **각 1명**(담당자 합의와 같은 요청에서 즉시 개인화 메일 발송) |
 | `approve_step`(J·O·E[+검토자 전원]·RA[전원] 모두 합의) | approved | 작성자가 속한 모든 그룹 멤버 전원 |
-| `reject_step` | rejected | 작성자 + 현재 회차 기합의자 전원 |
+| `reject_step` (R/RV 반려 시) | rejected | 작성자 + 현재 회차 기합의자 전원 + `TE_R` 권한 보유자 전원(2026-07 추가) |
+| `reject_step` (R/RV 외 단계 반려) | rejected | 작성자 + 현재 회차 기합의자 전원 |
 | `peer_reject`(PL 반려) | rejected | 작성자 + 현재 회차 기합의자 전원 + 같은 회차 미합의(pending) 나머지 지정 PL(2026-07 추가) |
 | `submit`/`resubmit` | notify_submitted | **통보처 전원**(`detail.notifiers`) |
 | `approve_step`(최종 승인) | notify_approved | **통보처 전원**(`detail.notifiers`) |
