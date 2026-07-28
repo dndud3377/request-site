@@ -147,6 +147,29 @@ class RecipientResolutionTest(TestCase):
             ['req@company.com'],
         )
 
+    def test_reject_recipients_include_te_r_team_when_r_assignee_rejects(self):
+        # R 담당자가 반려하면 작성자 + 기합의자(PL 전원) 전원에 TE_R 팀 전체가 추가된다
+        pl_a = UserProfile.objects.create(loginid='pla2', mail='pla2@company.com', role='PL')
+        r_owner = UserProfile.objects.create(loginid='rown', mail='rown@company.com', role='TE_R')
+        r_team2 = UserProfile.objects.create(loginid='rteam2', mail='rteam2@company.com', role='TE_R')
+        ApprovalStep.objects.create(document=self.doc, agent='PL', round=1, action='approved', assignee=pl_a)
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='rejected', assignee=r_owner)
+        self.assertEqual(
+            sorted(mailer.resolve_reject_recipients(self.doc)),
+            ['pla2@company.com', 'req@company.com', 'rown@company.com', 'rteam2@company.com'],
+        )
+
+    def test_reject_recipients_include_te_r_team_when_rv_rejects(self):
+        # RV(검토자)가 반려해도 동일하게 TE_R 팀 전체가 추가된다
+        r_owner = UserProfile.objects.create(loginid='rown2', mail='rown2@company.com', role='TE_R')
+        rv_user = UserProfile.objects.create(loginid='rv1', mail='rv1@company.com', role='TE_R')
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='approved', assignee=r_owner)
+        ApprovalStep.objects.create(document=self.doc, agent='RV', round=1, action='rejected', assignee=rv_user)
+        self.assertEqual(
+            sorted(mailer.resolve_reject_recipients(self.doc)),
+            ['req@company.com', 'rown2@company.com', 'rv1@company.com'],
+        )
+
     def test_approved_recipients_are_current_round_participants(self):
         # 이전 회차(반려됐던 회차) 참여자는 포함되지 않는다
         old = UserProfile.objects.create(loginid='old1', mail='old1@company.com', role='PL')
