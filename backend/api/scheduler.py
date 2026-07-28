@@ -380,6 +380,8 @@ def sync_design_rule():
             SELECT DISTINCT n7process, n7design_rule
             FROM S.M
             WHERE n7use_yn = 'Y'
+              AND n7process IS NOT NULL AND n7process != ''
+              AND n7design_rule IS NOT NULL AND n7design_rule != ''
         """
         df = get_data_from_dcq(query, dcq_id)
 

@@ -20,6 +20,9 @@
 - J: 담당자(claim) 지정 시 그 1명, 미지정(도착 시점)이면 고정 주소
 - O/E: 해당 역할(TE_O/TE_E) 팀 전원
 - 반려: 요청서 작성자 + 현재 회차에서 이미 합의했던 전원(중복 제거)
+  · PL 단계에서 반려된 경우, 아직 합의/반려하지 않은 나머지 지정 PL(pending)도 포함
+  · 그 외 단계에서 반려된 경우, 아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원도
+    포함(반려한 본인 제외). 이미 합의를 마친 팀은 팀 전체 발송 대상이 아니다.
 - 승인 완료: 현재 회차 결재 경로에 참여했던 전원(중복 제거)
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
 """
@@ -54,6 +57,19 @@ AGENT_ROLE_MAP = {
     'O': 'TE_O',
     'E': 'TE_E',
 }
+
+# 검토자 단계 → 담당자 단계. 검토자(RV/PV/EV)는 담당자와 같은 팀 소속이라
+# 팀 이메일을 구할 때 담당자 단계로 환산한다(RV→R=TE_R, PV→P=TE_P, EV→E=TE_E).
+REVIEWER_TO_MAIN_AGENT = {'RV': 'R', 'PV': 'P', 'EV': 'E'}
+
+# 검토자 단계 — 지정됐을 때만 생성되는 선택 단계라, 실제 step 이 없으면 결재선에 없는 것으로 본다.
+REVIEWER_AGENTS = ('RV', 'PV', 'EV')
+
+# 반려 시 "잔여 결재선" 산출에 사용하는 결재선(라우팅) 단계 목록.
+# PL 은 별도 규칙(미합의 지정 PL 포함)을 따르므로 여기서 제외한다.
+# Only MAP 의뢰서는 P/O/E/J 없이 R 까지만 진행하고 후결자(RA)로 종단한다.
+ROUTE_AGENTS_ONLY_MAP = ('R', 'RV', 'RA')
+ROUTE_AGENTS_DEFAULT = ('R', 'RV', 'P', 'PV', 'O', 'E', 'EV', 'J', 'RA')
 
 # 담당자 미지정 시 단계별 고정 수신 주소 (담당 팀 1명 대표 주소)
 #
@@ -162,6 +178,37 @@ def _team_emails(agent):
     )
 
 
+def _stage_team_emails(agent):
+    """단계 담당 팀 전원의 이메일. 검토자(RV/PV/EV)는 담당자와 같은 팀이므로 환산해서 조회한다."""
+    return _team_emails(REVIEWER_TO_MAIN_AGENT.get(agent, agent))
+
+
+def post_approver_users(document):
+    """후결자(RA) User 목록 = 고정 1명(settings.POST_APPROVER_LOGINID)
+    + C가문(only_prodc=YES) 추가 후결자(detail.post_approvers). loginid 중복 제거.
+
+    후결자는 역할(role)로 판별되지 않으므로 팀 조회(_team_emails) 대신 이 함수를 쓴다.
+    결재 단계 생성(views)과 반려 수신자 산출(mailer)이 같은 규칙을 쓰도록 여기에 둔다.
+    """
+    users = []
+    seen = set()
+    fixed_lid = (getattr(settings, 'POST_APPROVER_LOGINID', '') or '').strip()
+    if fixed_lid:
+        u = UserProfile.objects.filter(loginid=fixed_lid).first()
+        if u:
+            users.append(u)
+            seen.add(u.loginid)
+    detail = document.get_detail().get('detail', {}) or {}
+    for pa in (detail.get('post_approvers') or []):
+        lid = str((pa or {}).get('loginid', '') or '').strip()
+        if lid and lid not in seen:
+            u = UserProfile.objects.filter(loginid=lid).first()
+            if u:
+                users.append(u)
+                seen.add(lid)
+    return users
+
+
 def _split_emails(value):
     """콤마로 구분된 이메일 문자열을 리스트로 분할한다(공백/빈값 제거)."""
     if not value:
@@ -253,14 +300,77 @@ def _current_round_step_emails(document, action=None):
     )
 
 
+def _remaining_stage_emails(document, max_round):
+    """반려 시점에 아직 합의를 마치지 않은 결재선 단계들의 담당 팀 이메일 전원.
+
+    '이후 단계'를 정적인 순서표로 정의하지 않고 문서의 실제 상태로 판정한다.
+    결재선(라우팅) 전체에서 이미 approved 된 단계를 빼면, 남는 것이
+    (pending / 반려된 본인 / 아직 생성되지 않은) 미완료 단계다. 이렇게 하면
+    병렬 단계(P·O·E·RA)가 서로 다른 속도로 진행돼도 누락 없이 잡히고,
+    이미 일을 마친 팀에는 불필요한 팀 전체 메일이 나가지 않는다.
+    """
+    route = ROUTE_AGENTS_ONLY_MAP if document.is_only_map() else ROUTE_AGENTS_DEFAULT
+    steps = ApprovalStep.objects.filter(document=document, round=max_round)
+    approved_agents = set(steps.filter(action='approved').values_list('agent', flat=True))
+    existing_agents = set(steps.values_list('agent', flat=True))
+
+    emails = []
+    for agent in route:
+        if agent in approved_agents:
+            # 이미 끝난 단계는 팀 전체 발송 대상이 아니다(합의자 본인은 기합의자 규칙으로 포함).
+            continue
+        if agent in REVIEWER_AGENTS and agent not in existing_agents:
+            # 검토자를 지정하지 않았으면 그 단계는 애초에 결재선에 없다.
+            continue
+        if agent == 'E' and not document.has_ppid_plel():
+            # E 는 plel 인 의뢰서에만 생성된다.
+            continue
+        if agent == 'RA':
+            emails.extend(u.mail for u in post_approver_users(document) if u.mail)
+            continue
+        emails.extend(_stage_team_emails(agent))
+    return emails
+
+
 def resolve_reject_recipients(document):
-    """반려 시 수신자: 요청서 작성자 + 현재 회차에서 이미 합의했던 전원(중복 제거)."""
+    """반려 시 수신자: 요청서 작성자 + 현재 회차에서 이미 합의했던 전원(중복 제거).
+
+    여기에 더해 반려된 단계에 따라 아래를 추가한다.
+    - PL 단계 반려: 아직 합의/반려하지 않은 나머지 지정 PL(pending). PL 은 결재선
+      팀 브로드캐스트 대상이 아니라 지정된 당사자들만 챙긴다.
+    - 그 외 단계 반려: 아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원
+      (`_remaining_stage_emails`). 반려한 본인은 이 팀 브로드캐스트에서 제외한다
+      (작성자·기합의자로 이미 포함된 주소는 그대로 유지).
+    """
+    max_round = _current_round(document)
     emails = []
     if document.requester_email:
         emails.append(document.requester_email)
     for mail in _current_round_step_emails(document, action='approved'):
         if mail not in emails:
             emails.append(mail)
+
+    if max_round is not None:
+        rejected_steps = list(
+            ApprovalStep.objects.filter(document=document, round=max_round, action='rejected')
+            .select_related('assignee')
+        )
+        rejected_agents = {s.agent for s in rejected_steps}
+
+        if 'PL' in rejected_agents:
+            pending_pl_qs = ApprovalStep.objects.filter(
+                document=document, round=max_round, agent='PL', action='pending',
+            ).exclude(assignee__isnull=True).exclude(assignee__mail='')
+            for mail in pending_pl_qs.values_list('assignee__mail', flat=True).distinct():
+                if mail not in emails:
+                    emails.append(mail)
+        elif rejected_agents:
+            rejecter_mails = {
+                s.assignee.mail for s in rejected_steps if s.assignee and s.assignee.mail
+            }
+            for mail in _remaining_stage_emails(document, max_round):
+                if mail and mail not in rejecter_mails and mail not in emails:
+                    emails.append(mail)
     return _apply_redirect(emails)
 
 

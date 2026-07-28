@@ -90,10 +90,9 @@ export default function ApprovalPage(): React.ReactElement {
   const [assigningUserId, setAssigningUserId] = useState('');
   const [assigningReviewerId, setAssigningReviewerId] = useState(''); // R단계 검토자('' = 검토자 없음)
 
-  // 후결자 변경 UI (작성자 — C가문 추가 후결자만, 고정 후결자 제외)
-  const [paChangeOpen, setPaChangeOpen] = useState(false);
-  const [paOldLoginid, setPaOldLoginid] = useState('');
-  const [paNewLoginid, setPaNewLoginid] = useState('');
+  // 후결자 관리 UI (작성자/MASTER — 고정 후결자 제외, 칩 목록 + 검색 추가)
+  const [paAddOpen, setPaAddOpen] = useState(false);
+  const [paSearchQuery, setPaSearchQuery] = useState('');
   const [paCandidates, setPaCandidates] = useState<UserWithRole[]>([]);
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
   const [assignReviewerDropdownOpen, setAssignReviewerDropdownOpen] = useState(false); // R단계 검토자 드롭다운
@@ -472,6 +471,9 @@ export default function ApprovalPage(): React.ReactElement {
     setReviewerSelectedIds([]);
     setReviewerCandidates([]);
     setReviewerDropdownOpen(false);
+    setPaAddOpen(false);
+    setPaSearchQuery('');
+    setPaCandidates([]);
     setModalOpen(true);
   };
 
@@ -664,13 +666,27 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
-  const handleChangePostApprover = async () => {
-    if (!selected || !paOldLoginid || !paNewLoginid) return;
+  const handleAddPostApprover = async (loginid: string) => {
+    if (!selected) return;
     setProcessing(true);
     try {
-      await documentsAPI.changePostApprover(selected.id, paOldLoginid, paNewLoginid);
-      addToast(t('approval.change_post_approver_success'), 'success');
-      setPaChangeOpen(false); setPaOldLoginid(''); setPaNewLoginid('');
+      await documentsAPI.addPostApprover(selected.id, loginid);
+      addToast(t('approval.post_approver_add_success'), 'success');
+      setPaSearchQuery('');
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleRemovePostApprover = async (loginid: string) => {
+    if (!selected) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.removePostApprover(selected.id, loginid);
+      addToast(t('approval.post_approver_remove_success'), 'success');
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');
@@ -1087,51 +1103,108 @@ export default function ApprovalPage(): React.ReactElement {
             pauseConfirmAgent = target?.agent;
           }
 
-          // 후결자 변경: 작성자 + under_review + 변경 가능한(미합의·고정 제외) RA 존재
+          // 후결자 관리: 작성자 또는 MASTER + under_review + 병렬 단계(R 합의 이후) 진입 후 항상 노출
           const fixedPa = selected?.post_approver_fixed_loginid ?? '';
-          const changeableRa = (selected?.approval_steps ?? []).filter(
-            (s) => s.agent === 'RA' && s.action === 'pending' && !!s.assignee_loginid && s.assignee_loginid !== fixedPa
+          const raSteps = (selected?.approval_steps ?? []).filter(
+            (s) => s.agent === 'RA' && (s.round ?? 1) === currentRound && s.assignee_loginid !== fixedPa
           );
-          const canChangePa = !!selected && isPauseRequester && selected.status === 'under_review' && changeableRa.length > 0;
+          const fixedRaStep = (selected?.approval_steps ?? []).find(
+            (s) => s.agent === 'RA' && (s.round ?? 1) === currentRound && s.assignee_loginid === fixedPa
+          );
+          const parallelReached = (selected?.approval_steps ?? []).some(
+            (s) => (s.round ?? 1) === currentRound && ['P', 'O', 'E', 'RA'].includes(s.agent)
+          );
+          const canManagePa = !!selected && (isMaster || isPauseRequester) && selected.status === 'under_review' && parallelReached;
 
           return (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
-              {/* 후결자 변경 (작성자 — C가문 추가 후결자) */}
-              {canChangePa && !paChangeOpen && (
-                <button
-                  className="btn btn-secondary"
-                  disabled={processing}
-                  onClick={async () => {
-                    setPaChangeOpen(true);
-                    setPaOldLoginid(changeableRa[0]?.assignee_loginid ?? '');
-                    setPaNewLoginid('');
-                    setLoadingMembers(true);
-                    try { const r = await usersAPI.list('PL'); setPaCandidates(r.data); } catch { setPaCandidates([]); }
-                    setLoadingMembers(false);
-                  }}
-                >
-                  {t('approval.change_post_approver')}
-                </button>
-              )}
-              {canChangePa && paChangeOpen && (
-                <>
-                  <select className="form-control" style={{ fontSize: '0.82rem', padding: '4px 8px', minWidth: 120 }}
-                    value={paOldLoginid} onChange={(e) => setPaOldLoginid(e.target.value)}>
-                    {changeableRa.map((s) => (
-                      <option key={s.id} value={s.assignee_loginid}>{s.assignee_name || s.assignee_loginid}</option>
-                    ))}
-                  </select>
-                  <span style={{ color: 'var(--text-muted)' }}>→</span>
-                  <select className="form-control" style={{ fontSize: '0.82rem', padding: '4px 8px', minWidth: 150 }}
-                    value={paNewLoginid} onChange={(e) => setPaNewLoginid(e.target.value)} disabled={loadingMembers}>
-                    <option value="">{loadingMembers ? t('common.loading') : t('approval.assign_select_placeholder')}</option>
-                    {paCandidates
-                      .filter((u) => u.loginid !== fixedPa && !(selected?.approval_steps ?? []).some((s) => s.agent === 'RA' && s.assignee_loginid === u.loginid))
-                      .map((u) => <option key={u.loginid} value={u.loginid}>{u.name} · {u.loginid}</option>)}
-                  </select>
-                  <button className="btn btn-primary btn-sm" disabled={!paNewLoginid || processing} onClick={handleChangePostApprover}>{t('common.confirm')}</button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => { setPaChangeOpen(false); setPaOldLoginid(''); setPaNewLoginid(''); }}>{t('common.cancel')}</button>
-                </>
+              {/* 후결자 관리: 고정 후결자는 잠금 칩(제거 불가), 추가 후결자는 ×로 제거, '+ 후결자 추가'로 검색해 추가 */}
+              {canManagePa && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                    {t('approval.post_approver_label')}
+                  </span>
+                  {fixedRaStep && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: '1px dashed var(--border)', borderRadius: 20, padding: '3px 10px', fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                      🔒 {fixedRaStep.assignee_name || fixedRaStep.assignee_loginid}
+                      <small style={{ fontWeight: 700, color: 'var(--text-disabled)' }}>{t('approval.post_approver_fixed_tag')}</small>
+                    </span>
+                  )}
+                  {raSteps.map((s) => (
+                    <span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 20, padding: '3px 8px 3px 10px', fontSize: '0.8rem' }}>
+                      {s.assignee_name || s.assignee_loginid}
+                      {s.action === 'pending' && (
+                        <button
+                          type="button"
+                          disabled={processing}
+                          onClick={() => handleRemovePostApprover(s.assignee_loginid || '')}
+                          style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: 1, padding: 0 }}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={processing}
+                      onClick={async () => {
+                        if (!paAddOpen && paCandidates.length === 0) {
+                          setLoadingMembers(true);
+                          try { const r = await usersAPI.list('PL'); setPaCandidates(r.data); } catch { setPaCandidates([]); }
+                          setLoadingMembers(false);
+                        }
+                        setPaAddOpen((o) => !o);
+                      }}
+                    >
+                      + {t('approval.post_approver_add_btn')}
+                    </button>
+                    {paAddOpen && (
+                      <div style={{ position: 'absolute', bottom: 'calc(100% + 4px)', left: 0, width: 240, background: 'var(--bg-modal)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)', zIndex: 9999, padding: 6 }}>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder={t('approval.post_approver_search_placeholder')}
+                          value={paSearchQuery}
+                          onChange={(e) => setPaSearchQuery(e.target.value)}
+                          autoFocus
+                          autoComplete="off"
+                          style={{ fontSize: '0.82rem', padding: '4px 8px', marginBottom: 4 }}
+                        />
+                        <ul style={{ listStyle: 'none', margin: 0, padding: 0, maxHeight: 200, overflowY: 'auto' }}>
+                          {(() => {
+                            if (loadingMembers) {
+                              return <li style={{ padding: '8px 4px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('common.loading')}</li>;
+                            }
+                            const excluded = new Set([fixedPa, ...raSteps.map((s) => s.assignee_loginid)]);
+                            const q = paSearchQuery.toLowerCase();
+                            const options = paCandidates.filter((u) =>
+                              !excluded.has(u.loginid) &&
+                              (!q || u.name.toLowerCase().includes(q) || u.loginid.toLowerCase().includes(q) || (u.mail ?? '').toLowerCase().includes(q))
+                            );
+                            if (options.length === 0) {
+                              return <li style={{ padding: '8px 4px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('approval.no_team_members')}</li>;
+                            }
+                            return options.map((u) => (
+                              <li
+                                key={u.loginid}
+                                onMouseDown={(e) => { e.preventDefault(); handleAddPostApprover(u.loginid); setPaAddOpen(false); }}
+                                style={{ padding: '6px 8px', cursor: 'pointer', borderRadius: 4 }}
+                                onMouseEnter={(ev) => { (ev.currentTarget as HTMLElement).style.background = 'var(--bg-secondary)'; }}
+                                onMouseLeave={(ev) => { (ev.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                              >
+                                <div style={{ fontWeight: 600, fontSize: '0.82rem' }}>{u.name}</div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{u.loginid}{u.mail ? ` · ${u.mail}` : ''}</div>
+                              </li>
+                            ));
+                          })()}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
               {/* 중단 요청 (작성자·진행 중) */}
               {selected && selected.can_request_pause && (

@@ -119,6 +119,128 @@ class RecipientResolutionTest(TestCase):
             ['pl3@company.com', 'r3@company.com', 'req@company.com'],
         )
 
+    def test_reject_recipients_include_pending_pl_when_pl_rejects(self):
+        # 다중 PL 지정: PL A 합의, PL B 반려, PL C 아직 미합의(pending)
+        pl_a = UserProfile.objects.create(loginid='pla', mail='pla@company.com', role='PL')
+        pl_c = UserProfile.objects.create(loginid='plc', mail='plc@company.com', role='PL')
+        ApprovalStep.objects.create(
+            document=self.doc, agent='PL', round=1, action='approved', assignee=pl_a,
+        )
+        ApprovalStep.objects.create(
+            document=self.doc, agent='PL', round=1, action='rejected',
+        )
+        ApprovalStep.objects.create(
+            document=self.doc, agent='PL', round=1, action='pending', assignee=pl_c,
+        )
+        self.assertEqual(
+            sorted(mailer.resolve_reject_recipients(self.doc)),
+            ['pla@company.com', 'plc@company.com', 'req@company.com'],
+        )
+
+    def test_reject_recipients_pl_pending_excluded_when_non_pl_step_rejects(self):
+        # PL이 아닌 단계(R)가 반려된 경우, 다른 미합의 PL은 포함되지 않는다(기존 동작 유지)
+        pl_pending = UserProfile.objects.create(loginid='pld', mail='pld@company.com', role='PL')
+        ApprovalStep.objects.create(document=self.doc, agent='PL', round=1, action='pending', assignee=pl_pending)
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='rejected')
+        self.assertEqual(
+            mailer.resolve_reject_recipients(self.doc),
+            ['req@company.com'],
+        )
+
+    def test_reject_recipients_r_reject_covers_whole_remaining_line(self):
+        # R 담당자 반려 → 아직 합의 전인 결재선(R·P·O·J) 팀 전원. 반려자 본인은 제외.
+        pl_a = UserProfile.objects.create(loginid='pla2', mail='pla2@company.com', role='PL')
+        r_owner = UserProfile.objects.create(loginid='rown', mail='rown@company.com', role='TE_R')
+        UserProfile.objects.create(loginid='rteam2', mail='rteam2@company.com', role='TE_R')
+        UserProfile.objects.create(loginid='p1', mail='p1@company.com', role='TE_P')
+        UserProfile.objects.create(loginid='o1', mail='o1@company.com', role='TE_O')
+        UserProfile.objects.create(loginid='j1', mail='j1@company.com', role='TE_J')
+        ApprovalStep.objects.create(document=self.doc, agent='PL', round=1, action='approved', assignee=pl_a)
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='rejected', assignee=r_owner)
+        self.assertEqual(
+            sorted(mailer.resolve_reject_recipients(self.doc)),
+            [
+                'j1@company.com', 'o1@company.com', 'p1@company.com',
+                'pla2@company.com', 'req@company.com', 'rteam2@company.com',
+            ],
+        )
+
+    def test_reject_recipients_rv_reject_dedups_team_member_who_already_approved(self):
+        # RV(검토자) 반려 → RV 도 TE_R 소속이라 팀 조회로 함께 잡힌다.
+        # 이미 합의한 R 담당자는 중복 없이 1회만, 반려한 RV 본인은 제외.
+        r_owner = UserProfile.objects.create(loginid='rown2', mail='rown2@company.com', role='TE_R')
+        rv_user = UserProfile.objects.create(loginid='rv1', mail='rv1@company.com', role='TE_R')
+        UserProfile.objects.create(loginid='rteam3', mail='rteam3@company.com', role='TE_R')
+        UserProfile.objects.create(loginid='p2', mail='p2@company.com', role='TE_P')
+        UserProfile.objects.create(loginid='j2', mail='j2@company.com', role='TE_J')
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='approved', assignee=r_owner)
+        ApprovalStep.objects.create(document=self.doc, agent='RV', round=1, action='rejected', assignee=rv_user)
+        recipients = mailer.resolve_reject_recipients(self.doc)
+        self.assertEqual(len(recipients), len(set(recipients)), '중복 수신자가 없어야 한다')
+        self.assertEqual(
+            sorted(recipients),
+            ['j2@company.com', 'p2@company.com', 'req@company.com',
+             'rown2@company.com', 'rteam3@company.com'],
+        )
+
+    def test_reject_recipients_skip_team_broadcast_for_already_approved_stage(self):
+        # P 반려 시 이미 합의를 마친 단계(R·O)는 팀 전체 발송 대상이 아니다.
+        # 그 단계 합의자 본인만 기합의자 규칙으로 포함된다.
+        r_owner = UserProfile.objects.create(loginid='rown3', mail='rown3@company.com', role='TE_R')
+        p_owner = UserProfile.objects.create(loginid='powner', mail='powner@company.com', role='TE_P')
+        UserProfile.objects.create(loginid='pteam2', mail='pteam2@company.com', role='TE_P')
+        o_approver = UserProfile.objects.create(loginid='oapp', mail='oapp@company.com', role='TE_O')
+        UserProfile.objects.create(loginid='oteam2', mail='oteam2@company.com', role='TE_O')
+        UserProfile.objects.create(loginid='j3', mail='j3@company.com', role='TE_J')
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='approved', assignee=r_owner)
+        ApprovalStep.objects.create(document=self.doc, agent='O', round=1, action='approved', assignee=o_approver)
+        ApprovalStep.objects.create(document=self.doc, agent='P', round=1, action='rejected', assignee=p_owner)
+        recipients = sorted(mailer.resolve_reject_recipients(self.doc))
+        self.assertEqual(
+            recipients,
+            ['j3@company.com', 'oapp@company.com', 'pteam2@company.com',
+             'req@company.com', 'rown3@company.com'],
+        )
+        self.assertNotIn('oteam2@company.com', recipients, '합의를 마친 O 팀은 팀 전체 발송 대상이 아니다')
+
+    def test_reject_recipients_j_reject_includes_pending_parallel_team(self):
+        # J 반려 시점에 병렬 단계 O 가 아직 pending 이면 TE_O 팀 전원도 포함된다
+        # (정적 단계 순서가 아니라 '아직 합의 안 끝난 단계' 기준이라 누락되지 않는다).
+        r_owner = UserProfile.objects.create(loginid='rown4', mail='rown4@company.com', role='TE_R')
+        p_owner = UserProfile.objects.create(loginid='powner2', mail='powner2@company.com', role='TE_P')
+        UserProfile.objects.create(loginid='o4a', mail='o4a@company.com', role='TE_O')
+        UserProfile.objects.create(loginid='o4b', mail='o4b@company.com', role='TE_O')
+        j_owner = UserProfile.objects.create(loginid='jown', mail='jown@company.com', role='TE_J')
+        UserProfile.objects.create(loginid='jteam2', mail='jteam2@company.com', role='TE_J')
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='approved', assignee=r_owner)
+        ApprovalStep.objects.create(document=self.doc, agent='P', round=1, action='approved', assignee=p_owner)
+        ApprovalStep.objects.create(document=self.doc, agent='O', round=1, action='pending')
+        ApprovalStep.objects.create(document=self.doc, agent='J', round=1, action='rejected', assignee=j_owner)
+        self.assertEqual(
+            sorted(mailer.resolve_reject_recipients(self.doc)),
+            ['jteam2@company.com', 'o4a@company.com', 'o4b@company.com',
+             'powner2@company.com', 'req@company.com', 'rown4@company.com'],
+        )
+
+    def test_reject_recipients_only_map_excludes_stages_not_on_route(self):
+        # Only MAP 의뢰서는 P/O/E/J 를 거치지 않으므로 그 팀들은 대상이 아니다.
+        import json
+        doc = RequestDocument.objects.create(
+            title='onlymap', requester=self.requester, requester_name='요청자',
+            requester_email='req@company.com', requester_department='개발팀',
+            product_name='PROD-1',
+            additional_notes=json.dumps({'detail': {'request_purpose': 'Only MAP'}, 'jayerRows': []}),
+        )
+        r_owner = UserProfile.objects.create(loginid='r5', mail='r5@company.com', role='TE_R')
+        UserProfile.objects.create(loginid='r5b', mail='r5b@company.com', role='TE_R')
+        UserProfile.objects.create(loginid='p5', mail='p5@company.com', role='TE_P')
+        UserProfile.objects.create(loginid='j5', mail='j5@company.com', role='TE_J')
+        ApprovalStep.objects.create(document=doc, agent='R', round=1, action='rejected', assignee=r_owner)
+        self.assertEqual(
+            sorted(mailer.resolve_reject_recipients(doc)),
+            ['r5b@company.com', 'req@company.com'],
+        )
+
     def test_approved_recipients_are_current_round_participants(self):
         # 이전 회차(반려됐던 회차) 참여자는 포함되지 않는다
         old = UserProfile.objects.create(loginid='old1', mail='old1@company.com', role='PL')
@@ -326,6 +448,73 @@ class EnqueueTest(TestCase):
         noti = mailer.enqueue_rejected(self.doc)
         self.assertIsNone(noti)
         self.assertEqual(MailNotification.objects.count(), 0)
+
+
+class PlSubmitMailTest(TestCase):
+    """PL 상신(submit/resubmit) 시 지정 PL 메일 제목에 R 담당자 지정과 동일하게
+    이름 접두어("[이름님] ")가 붙는지 검증한다."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        import json
+        self._json = json
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='req', mail='req@c.com', role='NONE')
+        self.pl_a = UserProfile.objects.create(loginid='pla', mail='pla@c.com', role='PL')
+        self.pl_b = UserProfile.objects.create(loginid='plb', mail='plb@c.com', role='PL')
+
+    def _make_draft(self, status='draft'):
+        return RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps({'detail': {}, 'jayerRows': []}),
+        )
+
+    def test_submit_pl_mail_subject_has_name_prefix(self):
+        doc = self._make_draft('draft')
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/', {
+            'designated_pl_loginids': [self.pl_a.loginid, self.pl_b.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        notis = MailNotification.objects.filter(document=doc, event_type='stage_arrival').order_by('id')
+        self.assertEqual(notis.count(), 2)
+        self.assertEqual(notis[0].recipients, ['pla@c.com'])
+        self.assertTrue(notis[0].subject.startswith('[pla님] '), notis[0].subject)
+        self.assertEqual(notis[1].recipients, ['plb@c.com'])
+        self.assertTrue(notis[1].subject.startswith('[plb님] '), notis[1].subject)
+
+    def test_resubmit_pl_mail_subject_has_name_prefix(self):
+        doc = self._make_draft('rejected')
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/resubmit/', {
+            'designated_pl_loginids': [self.pl_a.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        noti = MailNotification.objects.filter(document=doc, event_type='stage_arrival').latest('id')
+        self.assertTrue(noti.subject.startswith('[pla님] '), noti.subject)
+
+    def test_change_designee_sends_mail_to_new_pl_only(self):
+        doc = self._make_draft('draft')
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/', {
+            'designated_pl_loginids': [self.pl_a.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        MailNotification.objects.all().delete()  # 상신 시 발송분 제거하고 지정자 변경분만 확인
+
+        r = self.client.post(f'/api/documents/{doc.id}/change-designee/', {
+            'designated_pl_loginid': self.pl_b.loginid,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        notis = MailNotification.objects.filter(document=doc, event_type='stage_arrival')
+        self.assertEqual(notis.count(), 1)
+        self.assertEqual(notis[0].recipients, ['plb@c.com'])
+        self.assertTrue(notis[0].subject.startswith('[plb님] '), notis[0].subject)
 
 
 class MessageBuildingTest(TestCase):
@@ -822,3 +1011,195 @@ class MapChangeApplyTest(TestCase):
         )
         # 원본은 변경되지 않아야 한다
         self.assertEqual(self._source_notes(source)['detail']['map_value_x'], '1.0')
+
+
+@override_settings(POST_APPROVER_LOGINID='fixedpa')
+class PostApproverManagementTest(TestCase):
+    """후결자 추가(add-post-approver)/제거(remove-post-approver) 권한·보호 규칙 검증."""
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+
+        self.requester = UserProfile.objects.create(loginid='req', mail='req@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='pl1', mail='pl1@c.com', role='PL')
+        self.r_user = UserProfile.objects.create(loginid='r1', mail='r1@c.com', role='TE_R')
+        self.fixed_pa = UserProfile.objects.create(loginid='fixedpa', mail='fixedpa@c.com', role='TE_R')
+        self.extra_pl1 = UserProfile.objects.create(loginid='epl1', mail='epl1@c.com', role='PL')
+        self.extra_pl2 = UserProfile.objects.create(loginid='epl2', mail='epl2@c.com', role='PL')
+        self.outsider = UserProfile.objects.create(loginid='out1', mail='out1@c.com', role='PL')
+        self.master = UserProfile.objects.create(loginid='master1', mail='m1@c.com', role='MASTER')
+
+    def _advance_to_parallel(self, only_prodc=False, post_approvers=None):
+        detail = {
+            'detail': {'only_prodc': 'Yes' if only_prodc else 'No', 'post_approvers': post_approvers or []},
+            'jayerRows': [],
+        }
+        doc = RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps(detail),
+        )
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        return doc
+
+    def _doc_before_r_approved(self):
+        """R 합의 전(PL 검토 단계) 상태 — 병렬 진입 전 추가 차단 테스트용."""
+        doc = RequestDocument.objects.create(
+            title='doc-pre-r', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps({'detail': {}, 'jayerRows': []}),
+        )
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/', {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        return doc
+
+    # ----- 추가 -----
+
+    def test_add_post_approver_success_sends_mail(self):
+        doc = self._advance_to_parallel()
+        MailNotification.objects.all().delete()
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='RA', assignee__loginid=self.extra_pl1.loginid).exists()
+        )
+        noti = MailNotification.objects.filter(document=doc, event_type='stage_arrival').first()
+        self.assertIsNotNone(noti)
+        self.assertIn(self.extra_pl1.mail, noti.recipients)
+
+    def test_add_post_approver_allowed_for_master(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.master)
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_add_post_approver_denied_for_outsider(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.outsider)
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 403)
+
+    def test_add_post_approver_rejects_fixed_loginid(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.fixed_pa.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_add_post_approver_denied_before_r_approved(self):
+        doc = self._doc_before_r_approved()
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_add_and_remove_post_approver_success_for_legacy_requester_without_fk(self):
+        """requester FK가 비어 있는(예: SET_NULL로 탈퇴 등) 레거시 문서도 이메일 폴백으로
+        실제 상신자를 인식해야 한다."""
+        doc = self._advance_to_parallel()
+        # requester FK만 제거하고 이메일은 유지 — doc_permissions.is_requester 의 이메일
+        # 폴백 경로를 검증한다(레거시 문서/사용자 탈퇴 등으로 FK가 비는 케이스와 동일).
+        doc.requester = None
+        doc.save()
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_add_post_approver_rejects_duplicate(self):
+        doc = self._advance_to_parallel(only_prodc=True, post_approvers=[{'loginid': self.extra_pl1.loginid, 'name': self.extra_pl1.loginid}])
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    # ----- 제거 -----
+
+    def test_remove_post_approver_success(self):
+        doc = self._advance_to_parallel(only_prodc=True, post_approvers=[{'loginid': self.extra_pl1.loginid, 'name': self.extra_pl1.loginid}])
+        self.client.force_authenticate(user=self.requester)
+        # C가문 최소 1인 규칙에 걸리지 않도록 먼저 2번째 추가 후결자를 더한다.
+        r = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl2.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(
+            ApprovalStep.objects.filter(document=doc, agent='RA', assignee__loginid=self.extra_pl1.loginid).exists()
+        )
+
+    def test_remove_post_approver_allowed_for_master(self):
+        doc = self._advance_to_parallel(only_prodc=True, post_approvers=[
+            {'loginid': self.extra_pl1.loginid, 'name': self.extra_pl1.loginid},
+            {'loginid': self.extra_pl2.loginid, 'name': self.extra_pl2.loginid},
+        ])
+        self.client.force_authenticate(user=self.master)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_remove_post_approver_denied_for_outsider(self):
+        doc = self._advance_to_parallel(only_prodc=True, post_approvers=[
+            {'loginid': self.extra_pl1.loginid, 'name': self.extra_pl1.loginid},
+            {'loginid': self.extra_pl2.loginid, 'name': self.extra_pl2.loginid},
+        ])
+        self.client.force_authenticate(user=self.outsider)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 403)
+
+    def test_remove_post_approver_rejects_fixed_loginid(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.fixed_pa.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_remove_post_approver_denied_after_approved(self):
+        doc = self._advance_to_parallel(only_prodc=True, post_approvers=[
+            {'loginid': self.extra_pl1.loginid, 'name': self.extra_pl1.loginid},
+            {'loginid': self.extra_pl2.loginid, 'name': self.extra_pl2.loginid},
+        ])
+        self.client.force_authenticate(user=self.extra_pl1)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'RA', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_remove_post_approver_blocks_last_additional_for_c_family(self):
+        doc = self._advance_to_parallel(only_prodc=True, post_approvers=[{'loginid': self.extra_pl1.loginid, 'name': self.extra_pl1.loginid}])
+        self.client.force_authenticate(user=self.requester)
+        # 고정 후결자가 있어도 C가문은 "추가" 후결자가 최소 1명이어야 하므로 막혀야 한다.
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    @override_settings(POST_APPROVER_LOGINID='')
+    def test_remove_post_approver_allows_zero_for_normal_doc(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.requester)
+        add = self.client.post(f'/api/documents/{doc.id}/add-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(add.status_code, 200, add.content)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='RA').exists())

@@ -134,6 +134,7 @@ P/E는 (2026-07부터) O/J와 동일하게 **검토중(claim) 방식**이며, �
 
 ### Case H — 단계 반려 (`reject_step`, `views.py:312`)
 - 동작: 어느 단계든 해당 step `rejected`, `status → rejected`(즉시).
+- **메일(2026-07 개편)**: 작성자·기합의자 전원에 더해 **아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원**에게 반려 메일이 간다(반려자 본인 제외). '이후 단계'를 정적 순서표가 아니라 문서의 실제 상태(`결재선 − 이미 approved 된 단계`)로 판정해, 병렬 단계(P·O·E·RA)가 서로 다른 속도로 진행돼도 누락되지 않는다. 상세는 `docs/MAIL.md` §3.1.
 
 ### Case I — 재상신 (`resubmit`)
 - 조건: `status == 'rejected'`, 지정 PL 필수(본인 불가), bb 매핑 통과.
@@ -181,6 +182,7 @@ P/E는 (2026-07부터) O/J와 동일하게 **검토중(claim) 방식**이며, �
 ### Case L — 지정 PL 변경 (`change_designee`)
 - 권한: **의뢰자 본인 또는 MASTER만**. 현재 회차 PL step의 assignee 교체.
 - ⚠️ **다중 PL 미대응(보류)**: 현재는 `_get_pending_pl_step`(첫 pending PL step, = 대표)만 1:1 교체한다. 다중 PL 중 특정 담당자 지정 스왑은 후속 작업으로 보류(2026-07).
+- **메일(2026-07 추가)**: 새로 지정된 PL에게 상신 때와 동일한 stage_arrival 메일(제목 `[이름님] [결재 요청] ...`)이 즉시 발송된다. 기존 지정자에게는 별도 알림 없음.
 
 ### Case M — 결재 중단(PAUSE) 요청·확인·재개 (2026-07)
 
@@ -208,7 +210,19 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
   - **Only MAP**: P/O/E 없이 **후결자(RA)만** 생성 → 후결자 전원 합의 시 최종 승인. (후결자 미설정 시 즉시 승인)
 - **후결자(RA)**: **고정 1명**(`settings.POST_APPROVER_LOGINID`, `.env`, RFG 팀) + **C가문(only_prodc=YES) 추가 후결자**(상신 모달에서 PL 중 지정, `detail.post_approvers`). 최소 1명 필수(`_validate_post_approvers`). 고정은 PL 후보 목록에 안 뜸(TE_R 이라 자동 제외).
 - **최종 승인**: `J + O[+E] + 후결자(RA) 전원` 합의(Only MAP 은 RA 만). `approve_step` 최종 판정에 RA 포함.
-- **후결자 변경**: 작성자(또는 MASTER)가 결재 중 **C가문 추가 후결자(미합의 RA)** 를 교체(`change_post_approver`). **고정 후결자는 변경 불가**.
+- ✅ **후결자 추가/제거(2026-07 개편)**: 기존 1:1 스왑(`change_post_approver`) 대신 **추가**(`add-post-approver/`)와
+  **제거**(`remove-post-approver/`) 두 액션으로 분리했다. 작성자 또는 **MASTER**(프론트 노출도 동일하게 확대)가
+  R 합의 이후(병렬 단계 진입 후) 언제든 사용 가능. 작성자 판정은 `_can_manage_post_approver`가
+  `doc_permissions.is_requester`(FK + `requester_email` 폴백, `can_withdraw`/`can_edit`와 동일 규칙)를
+  재사용한다 — 예전엔 FK만 확인해 `requester` FK가 비어 있는 문서(탈퇴 등으로 FK가 `SET_NULL` 된 경우 포함)의
+  실제 작성자가 403을 받는 버그가 있었다(2026-07 수정). **역할 검증 없음**(고정 후결자=TE_R, 추가 후결자=보통 PL로
+  원래도 역할이 섞여 있어 단일 역할 강제가 무의미 — 2026-07 정책). **고정 후결자는 추가/제거 대상에서 항상 제외**되고
+  화면엔 잠금 칩으로만 표시(제거 버튼 없음). **이미 합의(approved)한 RA는 제거 불가**. 최소 인원 가드는 두 가지를
+  독립적으로 적용한다 — **Only MAP** 문서는 후결자(고정 포함 총원)가 유일한 종단 경로라 **총원 0명**을 막고,
+  **C가문(only_prodc=Yes)** 문서는 상신 시 "추가 후결자 1명 이상" 필수였던 것과 일관되게 **고정을 제외한 추가
+  후결자 0명**을 막는다(둘 다 아니면 일반 문서는 0명까지 제거 가능). 추가 시 새 후결자에게
+  즉시 `[후결 요청]` 메일 발송(`_create_reviewers`가 아니라 `add_post_approver`에서 직접 `enqueue_stage_arrival`).
+  `detail.post_approvers` 도 추가/제거마다 동기화(재상신 프리필 대비).
 - **표시**: 결재현황/홈 현재단계 — 담당자(단계명 **RFG** 그대로 표기)→검토자 순차, 병렬은 경로1(P/J)·경로2(O[/E])·**경로3(후결자(이름))** 로 최대 3행. 상세 '결재 경로' 탭은 **R 다음에 검토자(지정 시)·후결자** 행을 표시.
 - ⚠️ **`.env` 설정 필요**: `POST_APPROVER_LOGINID=<RFG팀 loginid>`. `settings/base.py` 에서 읽음(규칙 D 사전 고지·동의). ⚠️ RV/RA 알림 메일은 범위 밖.
 
@@ -278,6 +292,7 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 | 검토중 (J·O·E·P, 2026-07 P 포함) | `canUserClaim`가 참 | `claimStep` |
 | 검토자 선택 후 합의 (P·E, 2026-07, 다중) | `canUserPickReviewers`가 참(=`canUserAgree`와 동일 조건) — 별도 액션 없이 `approveStep`에 `reviewer_loginids` 동봉 | `approveStep`(agent P/E) |
 | 지정자 변경 | PL/MASTER | `changeDesignee` |
+| 후결자 추가/제거 (2026-07) | 작성자/MASTER + under_review + 병렬 진입 후 | `addPostApprover` / `removePostApprover` |
 | 철회 | PL/MASTER | `withdraw`(임시저장으로) 또는 `delete`(삭제) 선택 |
 | 수정 후 재상신 | rejected/draft | `/request`로 이동(editDocId) |
 | 중단 요청 | 작성자·under_review (`can_request_pause`) | 사유 입력 모달 → `requestPause` |
@@ -315,6 +330,8 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 | 중단 요청 취소 | `cancel-pause/` | - |
 | PL 합의/반려/수정후상신 | `peer-approve/` `peer-reject/` `peer-submit/` | `comment` |
 | 지정자 변경 | `change-designee/` | (의뢰자/MASTER) |
+| 후결자 추가 (2026-07) | `add-post-approver/` | `loginid` |
+| 후결자 제거 (2026-07) | `remove-post-approver/` | `loginid` |
 | 삭제 | DELETE `documents/{id}/` | approved는 MASTER만 |
 
 ---
@@ -328,13 +345,14 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 
 | 전이(액션) | 메일 이벤트 | 수신자 |
 |-----------|-----------|--------|
-| `submit`/`resubmit` | stage_arrival(PL) | 지정 PL **전원**(각 PL step별 발송) |
+| `submit`/`resubmit` | stage_arrival(PL) | 지정 PL **전원**(각 PL step별 발송, 제목에 `[이름님]`, 2026-07 추가) |
 | `peer_approve`/`peer_submit` | stage_arrival(R) | TE_R 미지정 시 고정 주소 |
 | `approve_step`(R) | stage_arrival(P·O[·E]) | 미배정 시 **P·O·E 팀 전원**(2026-07 P도 검토중 전환으로 O·E와 동일하게 팀 브로드캐스트) |
 | `approve_step`(P, 검토자 없을 때) | stage_arrival(J) | TE_J 미지정 시 고정 주소 |
 | `approve_step`(P/E 합의 시 `reviewer_loginids` 동봉, 2026-07) | stage_arrival(PV/EV) | 지정된 검토자 **각 1명**(담당자 합의와 같은 요청에서 즉시 개인화 메일 발송) |
 | `approve_step`(J·O·E[+검토자 전원]·RA[전원] 모두 합의) | approved | 작성자가 속한 모든 그룹 멤버 전원 |
-| `reject_step`/`peer_reject` | rejected | 요청서 작성자 1명 |
+| `reject_step` (R·RV·P·PV·O·E·EV·J·RA 반려) | rejected | 작성자 + 현재 회차 기합의자 전원 + **아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원**(반려자 본인 제외, 2026-07 개편 — `docs/MAIL.md` §3.1) |
+| `peer_reject`(PL 반려) | rejected | 작성자 + 현재 회차 기합의자 전원 + 같은 회차 미합의(pending) 나머지 지정 PL(2026-07 추가) |
 | `submit`/`resubmit` | notify_submitted | **통보처 전원**(`detail.notifiers`) |
 | `approve_step`(최종 승인) | notify_approved | **통보처 전원**(`detail.notifiers`) |
 
