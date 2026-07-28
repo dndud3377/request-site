@@ -18,18 +18,28 @@
 
 ## 0. 요약 (먼저 읽을 것)
 
-| 구분 | 건수 | 비고 |
-|------|------|------|
-| 🔴 치명 (Critical) | **4** | 인가 부재로 데이터 영구 삭제 / PAUSE 동결 우회 / 미인증 파일 업로드 |
-| 🟠 높음 (High) | **6** | 결재 담당 배정 검증 부재, 내 차례 필터 누락, 재상신 검토자 프리필 무효화 등 |
-| 🟡 중간 (Medium) | **8** | 이력 유실, 잔여 회차 단계 오노출, i18n 키 미정의(화면에 키 문자열 노출) 등 |
-| ⚪ 낮음/위생 (Low) | **7** | 하드코딩 문자열, `any` 사용, 테스트 깨짐, 표시 부정확 |
-| **합계** | **25** | |
+> **2차 정독(2026-07-28 추가)**: 1차에서 다루지 못한 **OIDC 인증 / 파일 업로드 / 메일 본문 렌더 /
+> 사용자 삭제 파급 / nginx·설정** 영역을 전수 정독하고 재현 테스트 19건을 추가 실행했다.
+> 여기서 **치명 3건이 더** 나왔다(저장형 XSS 권한상승 체인, id_token 만료검증 비활성화, nonce/state 검증 우회).
 
-**즉시 조치 권고 TOP 3**
-1. **[B-01] 의뢰서 삭제 인가 전무** — 로그인만 하면 (역할 `NONE` 포함) **결재 완료 문서까지 삭제** 가능. 재현✅
-2. **[B-06] PAUSE 동결 우회** — 중단(pause) 문서에서 PL 합의/반려가 그대로 동작해 결재가 재개돼 버림. 재현✅
-3. **[B-02] 업로드 API 미인증 + 확장자 무검증** — 비로그인 상태로 `.svg`(스크립트 포함) 업로드 성공. 재현✅
+| 구분 | 1차 | 2차 추가 | 합계 | 비고 |
+|------|-----|---------|------|------|
+| 🔴 치명 (Critical) | 4 | **+3** | **7** | 인가 부재 삭제 / PAUSE 우회 / 미인증 업로드 / **저장형 XSS→권한상승** / **토큰 재사용** / **CSRF** |
+| 🟠 높음 (High) | 6 | **+6** | **12** | 담당자 계정 삭제 시 결재 교착, 그룹 CASCADE 소실, 중단요청 고착, 메일 escape 누락 등 |
+| 🟡 중간 (Medium) | 8 | **+7** | **15** | 세션 갱신 불가, PII 로깅, 통계 노출, 메일 영구유실, 보안헤더 부재 등 |
+| ⚪ 낮음/위생 (Low) | 7 | **+7** | **14** | 하드코딩, `any` 83건, 데드코드, 취약한 휴리스틱 |
+| **합계** | 25 | **+23** | **48** | |
+
+**즉시 조치 권고 TOP 5** (전부 재현✅)
+1. **[B-26] 저장형 XSS → MASTER 권한 탈취** — 역할 `NONE` 사용자가 VOC 내용에 임의 HTML/스크립트를 저장할 수 있고,
+   그것을 열람한 MASTER의 세션으로 `assign-role` 이 호출되면 **공격자가 MASTER로 승격**된다. sanitizer 의존성 자체가 없다.
+2. **[B-27] OIDC id_token 만료 검증이 꺼져 있다** (`verify_exp: False`) — 한 번 유출된 id_token으로 **기한 없이 로그인** 가능.
+3. **[B-01] 의뢰서 삭제 인가 전무** — 로그인만 하면 (역할 `NONE` 포함) **결재 완료 문서까지 삭제** 가능.
+4. **[B-06] PAUSE 동결 우회** — 중단(pause) 문서에서 PL 합의/반려가 그대로 동작해 결재가 되살아난다.
+5. **[B-02+B-34] 미인증 업로드 + 무방비 `/media/` 서빙** — 비로그인으로 스크립트 포함 `.svg` 업로드 → 같은 오리진에서 실행.
+
+> 1~5는 서로 맞물린다. B-02로 올린 `.svg`를 B-34가 실행 가능하게 서빙하고, 그 스크립트가 B-01로 문서를 지우거나
+> B-26의 경로로 권한을 올린다. **개별 패치가 아니라 한 묶음으로 처리**할 것을 권한다.
 
 ---
 
@@ -689,6 +699,121 @@ curl -H "X-API-Key: $EXTERNAL_API_KEY" 'http://localhost:10011/api/external/v1/d
 
 ---
 
+### 3.Q 인증 / SSO / 세션 (T-Q) — 2차 추가
+
+#### T-Q1 OIDC 로그인 정상 경로
+- 조작: 비로그인 상태로 `/` 접속 → 자동으로 `/api/auth/oidc/login/` → ADFS 리다이렉트 → 로그인 → `/oidc-callback`
+- ✅ `access_token`·`refresh_token`이 **HttpOnly + Secure + SameSite=Lax** 쿠키로 설정
+- ✅ 최초 로그인 사용자는 `role='NONE'`으로 자동 생성되고 권한관리 화면에 실시간(SSE)으로 뜬다
+- ❌ `secure=True` 고정이라 **HTTP(개발 10011)에서는 쿠키가 저장되지 않는다** — dev는 `AUTH_MODE=dev`(Bearer) 경로를 쓰므로 우회되지만, dev에서 SSO를 시험하면 무한 리다이렉트처럼 보인다
+
+#### T-Q2 id_token 재사용(replay) — **현재 통과해버림**
+- 조작: 정상 로그인 시 브라우저 개발자도구 Network에서 `/api/auth/oidc/callback/` 요청 body의 `id_token` 값을 복사
+  → **며칠 뒤(또는 만료 후)** 그 값만으로 `POST /api/auth/oidc/callback/` 재전송
+- ✅ **기대**: 401 (만료된 토큰)
+- ❌ **실제**: 로그인 성공, 새 쿠키 발급 → §5 **B-27** 🔴
+
+#### T-Q3 nonce / state 검증
+- 조작: 위 재전송 시 `nonce_jwt` 필드를 **아예 빼고** 전송
+- ✅ **기대**: 400 (nonce 불일치/누락)
+- ❌ **실제**: nonce 검증 블록이 `if nonce_jwt and id_token_nonce:` 라 **통째로 건너뛴다** → §5 **B-28** 🔴
+- ❌ `state` 파라미터는 생성해 ADFS에 보내지만 **콜백에서 비교하지 않는다**(저장조차 안 함)
+
+#### T-Q4 세션 만료 후 갱신
+- 조작: `access_token` 쿠키를 삭제(또는 12시간 경과)한 뒤 '세션 연장' 또는 `POST /api/auth/refresh/`
+- ✅ **기대**: `refresh_token`(7일)으로 재발급
+- ❌ **실제**: `refresh_token_view`에 `@permission_classes([IsAuthenticated])`가 붙어 있어 **access_token이 살아 있어야만** 호출된다 → 만료 후에는 항상 401, 재로그인 강제. **refresh 7일 설정이 사실상 무의미** → §5 **B-36**
+- 성공 판정: 만료 상태에서 연장 버튼을 눌러 **재로그인 없이** 세션이 이어져야 정상
+
+#### T-Q5 SSO 재로그인 시 프로필 덮어쓰기
+- 조작: ADFS가 `deptname` 클레임을 주지 않는 상황(또는 값이 빈 경우)에서 재로그인
+- ❌ `user.deptname = dept_name or ''` / `user.username = user_name or ''` 라 **기존 부서·이름이 빈 문자열로 덮어써진다** → §5 **B-37**
+- 확인 방법: 권한관리 목록에서 해당 사용자의 이름/부서가 비어 있는지
+
+#### T-Q6 dev 모드 오배포 확인 (배포 점검 필수)
+```bash
+curl -s http://<host>/api/documents/ | head -c 200      # 쿠키·토큰 없이
+```
+- ✅ **기대**: 401/403
+- ❌ `AUTH_MODE=dev`로 떠 있으면 **비인증 200 + 전체 목록**이 나온다(재현✅) → §5 **B-29**
+
+#### T-Q7 로그 PII 확인
+```bash
+docker logs <backend> 2>&1 | grep "\[OIDC\]" | head -20
+```
+- ❌ 로그인 1회마다 **메일·부서·성·이름·UPN·sub**가 평문으로 남는다 → §5 **B-35**
+
+---
+
+### 3.R 파일 업로드 / 미디어 서빙 (T-R) — 2차 추가
+
+#### T-R1 미인증 업로드
+```bash
+curl -i -F "image=@evil.svg;type=image/png" http://localhost:10011/api/upload-image/
+```
+- ✅ **기대**: 401/403
+- ❌ **실제**: 200 + 저장 경로 반환(재현✅) → §5 **B-02**
+
+#### T-R2 확장자 위조
+- 조작: `evil.svg`(내용에 `<script>`) 를 `Content-Type: image/png` 으로 업로드
+- ❌ 저장 파일명이 `mshot_<uuid>.svg` — **원본 파일명의 확장자를 그대로** 사용(재현✅)
+- 조작: 반환된 `url`을 브라우저 주소창에 직접 입력
+- ❌ nginx `/media/`가 `image/svg+xml`로 서빙 → **같은 오리진에서 스크립트 실행** → §5 **B-34**
+
+#### T-R3 미디어 접근 제어
+- 조작: **로그아웃 상태**에서 다른 사람 의뢰서의 M-shot 이미지 URL 직접 접근
+- ❌ 인가 검사가 없어 URL만 알면 열람된다(UUID라 추측은 어려우나 인가는 0)
+
+#### T-R4 보안 헤더
+```bash
+curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-options|x-content-type-options|referrer-policy"
+```
+- ❌ **하나도 나오지 않는다** → CSP 없음(XSS 방어선 0), X-Frame-Options 없음(클릭재킹), nosniff 없음 → §5 **B-42**
+
+#### T-R5 크기 제한
+- ✅ 이미지 2MB / 동영상 50MB 초과 시 400. nginx `client_max_body_size 50M`, Django `DATA_UPLOAD_MAX_MEMORY_SIZE 55MB`로 일관
+
+---
+
+### 3.S 저장형 XSS / 사용자 삭제 파급 (T-S) — 2차 추가
+
+#### T-S1 VOC 저장형 XSS
+- 조작(API 직접): 아무 역할(`NONE` 포함) 사용자로
+  ```
+  POST /api/voc/  { "title":"문의", "category":"inquiry", "page":"request",
+                    "submitter_name":"홍길동", "submitter_email":"x@c.com",
+                    "content":"<img src=x onerror=\"alert(document.domain)\">" }
+  ```
+- ✅ **기대**: 서버 또는 렌더 시점에 sanitize
+- ❌ **실제**: 원문 그대로 저장(재현✅) → MASTER가 VOC 상세를 열면 `VOCPage.tsx:446`의
+  `dangerouslySetInnerHTML`로 **실행**된다 → §5 **B-26** 🔴
+- 같은 패턴: `GuidePage.tsx:268,328` · `GuideSlidePanel.tsx:132` · `HomePage.tsx:256`(공지)
+
+#### T-S2 제출자 위조
+- 위 요청에서 `submitter_user_id`를 **다른 사람의 id**로 지정
+- ❌ 그대로 저장된다(재현✅). `update_status('completed')`가 이 값으로 권한을 판정하므로 **완료 권한이 남에게 넘어간다** → §5 **B-20**
+
+#### T-S3 VOC 알림 메일 본문
+- 조작: VOC 제목을 `<b>굵게</b><script>alert(1)</script>`로 등록 → 관리자 메일 확인
+- ❌ 제목·본문에 **원문 그대로** 들어간다(재현✅). 결재 메일(`_build_message`)은 `escape()` 처리되는데 **VOC 메일만 누락** → §5 **B-33**
+
+#### T-S4 사용자 삭제가 진행 중 결재에 미치는 영향 — **회복 불가 경로 있음**
+| 삭제 대상 | 결과 | 회복 |
+|---|---|---|
+| J/O/E/P **검토중 선점자** | `assignee=None`으로 초기화 | ✅ 다른 팀원이 **재-검토중 선점 가능**(재현✅ 200) |
+| R 담당자 | `assignee=None` | ✅ `assign-step`으로 재지정 가능(미지정 상태가 됨) |
+| **RA(후결자) / RV / PV / EV** | `assignee=None`, `action=pending` 인 **고아 단계**로 잔존 | ❌ claim 불가(400), 합의 불가(400), **재지정 API 없음**(재현✅) |
+- ❌ 후결자를 새로 추가해도 **고아 RA 단계는 pending 그대로** 남아 `모든 RA approved` 조건을 영구히 막는다 →
+  **문서가 영영 승인되지 않는다**(MASTER가 대신 합의해야만 탈출) → §5 **B-30** 🟠
+- 조작 주체 주의: **MASTER가 아니어도 같은 역할끼리 서로 삭제 가능**(`UserViewSet.destroy`) — TE_O가 진행 중 O단계 담당자인 동료 TE_O를 지울 수 있다(재현✅ 204)
+
+#### T-S5 그룹 생성자 삭제
+- 조작: 멤버가 여럿인 '나만의 그룹'의 **생성자** 계정을 삭제
+- ❌ `UserGroup.creator`가 `CASCADE`라 **그룹이 통째로 사라진다**(재현✅). 남은 멤버는 예고 없이
+  임시저장 공유·철회 권한·승인 메일 수신 대상에서 빠진다. 주소록(`AddressBook.owner`)도 함께 삭제 → §5 **B-31**
+
+---
+
 ## 4. 조합(교차) 시나리오 — 단일 CASE 로는 안 잡히는 것
 
 > "각 기능별 CASE 를 종합·조합했을 때 오류가 없어야 한다" 는 요구에 대응하는 구간이다.
@@ -761,6 +886,36 @@ curl -H "X-API-Key: $EXTERNAL_API_KEY" 'http://localhost:10011/api/external/v1/d
   FROM api_mailnotification WHERE document_id = ? ORDER BY created_at;
   ```
 - ✅ 개인 지정 메일은 제목이 `[이름님] [결재 요청] ...`, 팀 브로드캐스트는 접두어 없음, 후결은 `[후결 요청] {제목}`
+
+### X-11 XSS × 권한상승 체인 (전 구간 최악 시나리오) — 2차 추가
+1. 역할 `NONE` 사용자가 VOC를 `content: <img src=x onerror="...">` 로 등록 (재현✅ — 권한 제한 없음)
+2. MASTER가 VOC 상세를 연다 → 스크립트가 **MASTER의 세션 쿠키로** 동작 시작
+   (쿠키는 HttpOnly라 토큰 값은 못 읽지만, `fetch(..., {credentials:'include'})`는 그대로 나간다)
+3. 스크립트가 `POST /api/users/{공격자id}/assign-role/ {role:'MASTER'}` 호출
+   → ✅ **성공한다**(재현✅ 200, role=MASTER) — MASTER는 모든 역할 변경 가능
+4. 승격된 공격자가 `DELETE /api/documents/{id}/` 로 **결재 완료 문서 삭제**(B-01) 또는
+   `assign-step`으로 결재선 조작(B-07)
+- ⛔ **끊어야 할 고리(우선순위 순)**: ① VOC/가이드/공지 sanitize + CSP(B-26·B-42)
+  ② 삭제 인가(B-01) ③ 업로드 인가·확장자(B-02) ④ 담당자 역할검증(B-07)
+- 검증 방법: 위 1~3을 **격리된 개발 DB**에서만 재현할 것. 운영에서 시도 금지.
+
+### X-12 담당자 계정 삭제 × 진행 중 결재 (교착) — 2차 추가
+1. 문서가 병렬 단계 진입(P/O/RA pending), RA는 고정 후결자 + 추가 후결자 2명
+2. 권한관리에서 **추가 후결자 계정을 삭제**(MASTER 또는 같은 역할 동료)
+3. ❌ 그 RA 단계는 `assignee=None, pending` 고아로 남고 **claim·합의·재지정 전부 불가**(재현✅)
+4. 작성자가 후결자를 새로 추가해도 ❌ 고아 단계가 남아 최종 승인이 **영구 차단**
+5. ✅ 유일한 탈출: MASTER가 `approve-step(agent='RA')` 로 대신 합의(assignee 필터를 안 타는 분기)
+- 같은 문제가 RV/PV/EV에도 적용. **J/O/E/P만 재-claim으로 자가 회복**된다.
+
+### X-13 PL 단계 중단요청 × 정상 진행 (요청 고착) — 2차 추가
+1. PL 검토 중 작성자가 **중단 요청**(사유 입력) → 아직 `requested`
+2. PL이 그냥 **합의**를 눌러 R 단계로 진행
+3. ❌ 중단 요청이 `requested` 그대로 남는다(재현✅) — `approve_step`/`reject_step`에는 자동취소가 있는데
+   `peer_approve`/`peer_reject`/`peer_submit`에는 **없다**(대조군 R 합의는 `cancelled` 정상)
+4. ❌ 결과: 작성자는 `can_request_pause`가 False가 되어 **다시 중단 요청 불가**(403, 재현✅),
+   담당자는 target 단계가 이미 approved라 **확인도 불가**(403, 재현✅)
+5. ✅ 유일한 탈출: 작성자/MASTER가 '중단 요청 취소'(`cancel-pause`)
+→ §5 **B-32**
 
 ---
 
@@ -1018,6 +1173,271 @@ curl -H "X-API-Key: $EXTERNAL_API_KEY" 'http://localhost:10011/api/external/v1/d
   (`checking`/`completed` 는 VOC 키가 있는데 `rejected` 만 빠짐)
 
 ---
+---
+
+## 5-2. 2차 정독에서 추가로 발견된 버그 (B-26 ~ B-47)
+
+> 1차에서 다루지 않았던 **OIDC 인증 / 업로드·미디어 / 메일 렌더 / 사용자 삭제 파급 / 인프라 설정** 영역.
+
+### 🔴 B-26 저장형 XSS → MASTER 권한 탈취 체인 **재현✅**
+- 위치
+  - 저장: `views.py:1474`(`VOCViewSet.perform_create` — sanitize 없음), `serializers.VOCSerializer(fields='__all__')`
+  - 렌더: `pages/VOCPage.tsx:446`, `pages/GuidePage.tsx:268,328`, `components/GuideSlidePanel.tsx:132`, `pages/HomePage.tsx:256`
+  - 의존성: `frontend/package.json` 에 **DOMPurify·sanitize-html 등 sanitizer가 아예 없다**
+- 내용: VOC 내용은 `RichTextEditor`(TipTap)가 만든 **HTML 문자열**을 그대로 저장하고 그대로 `dangerouslySetInnerHTML`로 렌더한다.
+  에디터를 거치지 않고 **API를 직접 호출**하면 임의 태그를 넣을 수 있다. VOC 작성은 **역할 제한이 없어** `NONE` 사용자도 가능하다.
+- 재현 결과
+  ```
+  [C-01] VOC 생성(role=NONE) -> 201 | 저장된 content == 공격 payload 원문: True
+  [C-03] (XSS로 탈취한) MASTER 세션으로 임의 사용자 MASTER 승격 -> 200 | role = MASTER
+  [C-05] 가이드 생성(TE_O) -> 201 | content 원문 저장: True
+  ```
+- 영향: 쿠키가 HttpOnly라 **토큰 값은 못 읽지만**, 스크립트가 피해자 세션으로 API를 호출하는 것은 막지 못한다.
+  피해자가 MASTER면 **역할 부여·사용자 삭제·문서 삭제**까지 한 번에 열린다(X-11).
+  CSP도 없어(B-42) 2차 방어선이 전무하다.
+- 권고: ① 서버 저장 시 허용 태그 화이트리스트로 sanitize(`bleach` 등) ② 렌더 시 DOMPurify ③ CSP `script-src 'self'` 도입.
+  ①만으로도 기존 저장분은 남으니 **마이그레이션 시 기존 레코드도 재-sanitize** 필요.
+
+### 🔴 B-27 OIDC `id_token` 만료·audience 검증이 꺼져 있다 **분석🔍**
+- 위치: `auth_views.py:313-323`
+  ```python
+  decoded_id_token = jwt.decode(..., options={
+      'verify_signature': True,
+      'verify_exp': False,   # ← 만료 검증은 ADFS가 처리하므로 생략
+      'verify_aud': False,   # ← audience 미검증
+  })
+  ```
+- 내용: 서명만 맞으면 **아무리 오래된 id_token도 영구히 유효**하다. 주석의 "만료 검증은 ADFS가 처리"는 성립하지 않는다 —
+  이 엔드포인트는 **클라이언트가 보낸 토큰을 그대로 받는** 구조라 ADFS가 개입하지 않는다.
+  `verify_aud: False` 때문에 **같은 ADFS가 다른 RP(다른 애플리케이션)에 발급한 토큰**도 통과한다.
+- 재현 방법(T-Q2): 정상 로그인 시 network 탭에서 `id_token`을 복사 → 시간이 지난 뒤 `POST /api/auth/oidc/callback/` 에
+  그 값만 담아 재전송 → **로그인 성공**
+- 영향: 로그·프록시·브라우저 히스토리·referer 등 어디서든 id_token이 한 번 유출되면 **무기한 계정 탈취**.
+  다른 사내 시스템의 토큰으로도 로그인 가능.
+- 권고: `verify_exp: True`, `verify_aud: True` + `audience=OIDC_RP_CLIENT_ID`, `iss` 검증 추가.
+
+### 🔴 B-28 nonce 검증을 호출자가 생략할 수 있고, `state`는 검증하지 않는다 **분석🔍**
+- 위치: `auth_views.py:337-356`(nonce), `auth_views.py:260`(state 생성만)
+  ```python
+  if nonce_jwt and id_token_nonce:      # ← 둘 중 하나만 없어도 검증 전체를 건너뜀
+      ...
+      except Exception:
+          logger.warning(...)            # ← 검증 실패해도 '호환성'을 이유로 그대로 진행
+  ```
+- 내용: `nonce_jwt`는 **요청 본문에 클라이언트가 넣는 값**이다. 공격자는 그냥 **빼고 보내면** 검증이 스킵된다.
+  검증에 실패해도 warning 로그만 남기고 로그인이 진행된다. `state`는 ADFS로 보내기만 하고 **저장·비교하지 않는다**.
+  코드 주석도 "CSRF 방어는 나중에 별도 처리"라고 인정하고 있다.
+- 영향: OIDC의 표준 CSRF/replay 방어(nonce·state)가 **실질적으로 없다**. B-27과 결합하면 토큰 주입 로그인이 매우 쉬워진다.
+- 권고: nonce_jwt를 클라이언트가 아닌 **서버 세션/쿠키**에 보관하고, 없거나 불일치하면 **무조건 400**.
+  `state`도 동일하게 세션 저장 후 비교.
+
+### 🔴 B-29 `AUTH_MODE=dev` 로 배포되면 전 API가 비인증 개방 **재현✅**
+- 위치: `views.py:42`(`_is_dev`), `IsAuthenticatedInProd` / `IsMasterOrReadOnly` / `IsAuthenticatedOrMasterDelete`
+- 내용: 세 permission 클래스 모두 `_is_dev() or request.user.is_authenticated` 형태라, dev 모드에서는 **인증 자체를 건너뛴다.**
+- 재현 결과
+  ```
+  [C-04] (dev모드) 비인증 GET /api/documents/  -> 200
+         (dev모드) 비인증 DELETE 승인문서      -> 204 | 문서 잔존: False
+  ```
+- 영향: 스테이징/검증 서버가 사내망에 노출돼 있으면 **로그인 없이 전체 의뢰서 열람·삭제**. `dev-login`은
+  `AUTH_MODE` 가드가 있는데 permission 쪽은 정반대로 열려 있어 **가드가 무의미**하다.
+- 권고: dev 우회를 최소 범위(읽기 전용 form-options 등)로 좁히고, **쓰기·삭제는 dev에서도 인증 요구**.
+  배포 점검 항목에 `AUTH_MODE` 확인 추가(T-Q6).
+
+---
+
+### 🟠 B-30 담당자 계정 삭제 시 RA/RV/PV/EV 단계가 고아가 되어 결재가 영구 교착 **재현✅**
+- 위치: `models.py`(`ApprovalStep.assignee = ForeignKey(..., on_delete=SET_NULL)`), `views.py:150-199`(`_can_act_on_step`/`_can_claim_step`)
+- 내용: 계정이 지워지면 `assignee=None`이 되는데,
+  - **J/O/E/P**는 `claim_step`이 `not step.assignee_id` 조건이라 ✅ 다른 팀원이 다시 선점해 회복된다.
+  - **RA/RV/PV/EV**는 claim 대상이 아니고(`_CLAIM_AGENTS`에 없음) **재지정 API도 없다** → 아무도 처리할 수 없다.
+- 재현 결과
+  ```
+  [E-01] TE_O 가 동료 TE_O(진행중 O단계 담당자) 삭제 -> 204 | assignee = None
+         → 다른 TE_O 의 재-검토중 선점: 200   (회복 가능)
+  [E-02] 후결자(RA) 계정 삭제 -> assignee = None | action = pending
+         → 다른 PL 이 RA 합의 시도: 400 / RA claim 시도: 400   (처리 불가)
+         → 작성자가 후결자 신규 추가로 회복: 200 | 고아 RA 단계는 pending 그대로: 1건
+  ```
+- 영향: `ra_ok = all(s.action=='approved' for s in ra_steps)` 이므로 고아 1건이 **최종 승인을 영구 차단**한다.
+  MASTER가 `approve-step(agent='RA')`로 대신 합의해야만 탈출(MASTER 분기만 assignee 필터를 안 탄다).
+- 부가: **MASTER가 아니어도 같은 역할끼리 서로 삭제 가능**하다(`UserViewSet.destroy`) — 진행 중 결재 담당 여부를 전혀 보지 않는다.
+- 권고: 삭제 전 "진행 중 pending 단계 담당자" 검사 후 차단하거나, `remove-post-approver`가 **고아(assignee=None) RA도 제거**할 수 있게 확장.
+
+### 🟠 B-31 그룹 생성자 계정 삭제 시 그룹이 통째로 사라진다 **재현✅**
+- 위치: `models.py` `UserGroup.creator = ForeignKey(..., on_delete=CASCADE)`, `AddressBook.owner` 동일
+- 재현 결과: `[E-03] 그룹 생성자 삭제 -> 그룹 잔존: False | 주소록 잔존: False`
+- 영향: 그룹은 **임시저장 가시성(T-F3)·철회 권한(T-L1)·승인 메일 수신자** 판정의 근거다.
+  생성자 한 명이 퇴사 처리되면 남은 멤버들이 **예고 없이** 서로의 draft를 못 보게 되고 철회 권한도 잃는다.
+  이미 발송 대상이던 승인 메일도 조용히 줄어든다(에러 없음 → 인지 불가).
+- 권고: `SET_NULL` + creator 부재 시 멤버 중 1명 승계, 또는 삭제 전 경고/이관 UI.
+
+### 🟠 B-32 PL 액션에서 중단 요청 자동취소가 누락돼 요청이 고착된다 **재현✅**
+- 위치: `views.py:484`·`593`(`_cancel_active_pause_requests` 호출 — approve_step/reject_step에만 있음) ↔
+  `views.py:1092-1140`(`peer_approve`/`peer_reject`/`peer_submit` — 호출 없음)
+- 재현 결과
+  ```
+  [D-01a] PL 합의 후 중단요청 state = requested   (cancelled 여야 정상)
+  [대조]  R  합의 후 중단요청 state = cancelled   ← 일반 단계는 정상
+  [D-01b] 작성자의 재-중단요청 -> 403 (활성 요청에 막힘)
+  [D-01c] 남은 중단요청 확인 시도 -> 403 (target이 이미 approved → 확인 불가)
+  ```
+- 영향: 유령 중단 요청이 남아 **작성자는 다시 중단 요청을 못 하고**, 담당자는 확인도 못 한다.
+  화면에는 '중단 요청중' 칩이 계속 붙어 있어 오해를 부른다. 탈출은 `cancel-pause` 뿐.
+- 권고: `_advance_after_pl` 와 `peer_reject` 에도 `_cancel_active_pause_requests(document)` 추가(B-06 가드와 함께).
+
+### 🟠 B-33 VOC 알림 메일 본문이 escape되지 않는다 **재현✅**
+- 위치: `mailer.py:658-679`(`_build_voc_message`) ↔ 대조 `mailer.py:458-461`(`_render_hero_kpi_email`은 `escape()` 사용)
+- 재현 결과
+  ```
+  [C-02] VOC 메일 제목: [VOC 등록] <b>굵게</b><script>alert(1)</script>
+         본문에 <script> 원문 포함: True | <i>이름</i> 원문 포함: True
+  [대조] 결재 메일 본문에 <script> 원문 포함: False   ← escape 정상
+  ```
+- 내용: `voc.title`·`voc.submitter_name`·`commenter_name` 을 f-string으로 직접 HTML에 넣는다.
+  결재 메일 경로는 `escape()`를 쓰는데 **VOC 경로만 빠졌다**.
+- 영향: 관리자 메일함에서 **HTML 주입**(가짜 링크·위장 문구 삽입). 메일 클라이언트에 따라 피싱으로 이어진다.
+- 권고: `_build_voc_message`에도 `escape()` 적용(제목은 메일 헤더라 태그 제거).
+
+### 🟠 B-34 `/media/` 가 인가·보안헤더 없이 원본 Content-Type으로 서빙된다 **분석🔍**
+- 위치: `nginx/nginx.conf:96-98`
+  ```nginx
+  location /media/ { alias /var/www/media/; expires 7d; }
+  ```
+- 내용: 접근 제어 없음, `Content-Disposition` 없음, `X-Content-Type-Options` 없음.
+  nginx `mime.types`가 `.svg`→`image/svg+xml`, `.html`→`text/html`로 서빙하므로 **브라우저가 실행**한다.
+- 영향: **B-02(미인증·확장자 무검증 업로드)와 결합하면 동일 오리진 저장형 XSS가 완성**된다.
+  또한 의뢰서 첨부 M-shot 이미지가 인가 없이 열람 가능하다.
+- 권고: `add_header X-Content-Type-Options nosniff always;` + 업로드 확장자 화이트리스트(B-02) +
+  민감 첨부는 Django 경유 인가 서빙으로 전환.
+
+### 🟠 B-35 OIDC 클레임(개인정보)이 평문 INFO 로그로 남는다 **분석🔍**
+- 위치: `auth_views.py:390-407`(클레임 전 필드 루프 로깅), `authentication.py:55`(토큰 payload username),
+  설정 `base.py LOGGING` — root/`api.auth_views` 모두 `level: INFO`, console 핸들러
+- 내용: 로그인 1회마다 **메일·부서·성·이름·UPN·sub·nonce**가 `docker logs`/수집기에 남는다.
+- 영향: 개인정보 로그 유출(사내 규정·개인정보보호 이슈). 로그 접근 권한이 넓을수록 위험.
+- 권고: 해당 루프를 `DEBUG` 레벨로 낮추고 운영은 `WARNING` 이상, 또는 마스킹 후 출력.
+
+---
+
+### 🟡 B-36 세션 갱신(refresh)이 access token 만료 후엔 동작하지 않는다 **분석🔍**
+- 위치: `auth_views.py:118-120`
+  ```python
+  @api_view(['POST'])
+  @permission_classes([IsAuthenticated])   # ← refresh 인데 인증을 요구
+  def refresh_token_view(request):
+  ```
+- 내용: `CookieJWTAuthentication`이 만료된 access_token에 대해 `AuthenticationFailed`를 던지므로,
+  **access가 살아 있을 때만** refresh를 호출할 수 있다. `SERVICE_JWT_REFRESH_TOKEN_LIFETIME = 7일` 설정이 사실상 사문화.
+- 영향: 12시간 지나 돌아온 사용자는 항상 **재로그인**. 세션 경고 모달 흐름(만료 10분 전)에서만 우연히 동작한다.
+- 부가: `refresh`가 **refresh_token을 회전하지 않는다**(재발급 없이 access만 갱신). `SIMPLE_JWT`의
+  `ROTATE_REFRESH_TOKENS`/`BLACKLIST_AFTER_ROTATION` 설정은 이 쿠키 흐름에 **적용되지 않는 데드 설정**이다.
+- 권고: `permission_classes([AllowAny])` + refresh_token 자체 검증만으로 처리(이미 함수 안에서 하고 있다).
+
+### 🟡 B-37 SSO 재로그인 시 이름·부서가 빈 값으로 덮어써질 수 있다 **분석🔍**
+- 위치: `auth_views.py:65-66`
+  ```python
+  user.deptname = dept_name or ''
+  user.username = user_name or ''
+  ```
+- 내용: 클레임이 없거나 비면 **기존 값을 `''`로 밀어버린다**(보존이 아님). `mail`만 `email or user.mail`로 보존된다.
+- 영향: 권한관리·결재 경로·메일 제목의 표시 이름이 빈칸이 된다. 이미 `ApprovalStep.assignee_name`에
+  복사된 이름은 그대로라 **같은 사람이 화면마다 다르게 보인다**.
+- 권고: `mail`과 동일하게 `dept_name or user.deptname` 패턴으로 통일.
+
+### 🟡 B-38 `/documents/stats/` 가 draft 가시성 규칙을 무시한다 **재현✅**
+- 위치: `views.py:1374-1382` — `RequestDocument.objects.count()` (get_queryset 미사용)
+- 재현 결과: `[D-02] 외부인 목록 건수 = 0 | stats.by_status.draft = 2 | stats.total = 2`
+- 영향: 목록에서는 숨겨진 남의 임시저장 문서가 **통계에는 집계**된다(건수 수준 정보 노출).
+- 권고: `self.filter_queryset(self.get_queryset())` 기반으로 집계.
+
+### 🟡 B-39 메일 재시도에 backoff가 없어 짧은 장애로 영구 유실된다 **분석🔍**
+- 위치: `mailer.py:741-786`(`_process_one`/`process_mail_queue`), 스케줄러 주기 1분, `max_attempts=5`
+- 내용: 실패해도 대기 없이 **1분 주기로 5회 연속** 시도한 뒤 `status='failed'`로 확정된다.
+  즉 **DXHUB가 5~6분만 죽어 있어도 그 시간대의 모든 결재 알림이 영구 유실**된다.
+  failed 행을 다시 태우는 재처리 경로도, 관리자 알림도 없다(Django admin 목록에서 눈으로 보는 것이 전부).
+- 영향: 결재 도착 알림 누락 → 결재 지연. 사용자는 메일이 안 온 사실 자체를 모른다.
+- 권고: `attempts`에 비례한 지수 backoff(다음 시도 시각 필드 추가) + `failed` 발생 시 관리자 통보.
+
+### 🟡 B-40 재상신 변경이력 diff가 오탐할 수 있다 **분석🔍**
+- 위치: `components/PagedDetailView.tsx:412-418`
+  ```ts
+  if (JSON.stringify(cur?.[k]) !== JSON.stringify(prev?.[k])) changed.add(k);
+  ```
+- 내용: ① `JSON.stringify`는 **객체 키 순서에 민감**하다. `setDetail({ ...parsed.detail, other_purpose, bb_entries, notifiers })`
+  처럼 일부 키를 뒤에 재삽입하면 저장 시 키 순서가 바뀌어 **내용이 같아도 '변경됨'** 으로 잡힌다.
+  ② 편집 로드 시 `bb_entries`에 **id를 백필**한다(`e.id ?? genId()`) → 이전 스냅샷에는 없던 `id`가 생겨
+  `bb_entries`가 **항상 변경으로 표시**된다.
+- 영향: 상세보기에서 실제로 바뀌지 않은 항목이 빨갛게 강조 → 결재자가 변경분을 신뢰하지 못한다(경고 피로).
+- 권고: 키 정렬 후 비교(`rowContentSig`처럼) + 비교 전 `id` 등 비의미 필드 제거.
+- 부가 확인 필요: `buildEnrichedForm`은 **PL '수정 후 상신'(`isPeerReviewMode`)에서도 `shouldAddHistory=true`** 로 호출된다.
+  즉 PL이 수정할 때마다 history가 쌓여 상세에 '변경 이력'으로 표시되는데, `docs/APPROVAL.md §7`은
+  "**반려 후 재상신 시** 직전 스냅샷 대비"라고만 적혀 있다 → **문서와 구현의 범위 불일치**(의도 확인 필요).
+
+### 🟡 B-41 `SECRET_KEY` 기본값이 안전하지 않고 production에서도 오버라이드되지 않는다 **분석🔍**
+- 위치: `config/settings/base.py:13`
+  ```python
+  SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-production')
+  ```
+  `production.py`는 SSL/HSTS만 설정하고 `SECRET_KEY`를 손대지 않는다.
+- 내용: `.env`에 `DJANGO_SECRET_KEY`가 없으면 **공개 저장소에 적힌 문자열**이 그대로 쓰인다.
+  이 키는 세션 서명 + **OIDC `nonce_jwt` 서명**에 쓰이므로(B-28), 키가 알려지면 nonce 위조까지 가능하다.
+- 권고: 미설정 시 기동 실패(`raise ImproperlyConfigured`)로 fail-fast.
+
+### 🟡 B-42 보안 응답 헤더가 하나도 없다 **분석🔍**
+- 위치: `nginx/nginx.conf` 전체 — `add_header`는 `/django-static/`의 `Cache-Control` 하나뿐
+- 내용: **CSP / X-Frame-Options / X-Content-Type-Options / Referrer-Policy 전부 없음**.
+  Django의 `XFrameOptionsMiddleware`는 Django 응답에만 붙고, React SPA는 별도 프론트 컨테이너가 서빙하므로 적용되지 않는다.
+- 영향: ① B-26 XSS의 2차 방어선 부재 ② 클릭재킹 가능 ③ `/media/` MIME 스니핑(B-34)
+- 권고: nginx `server` 블록에 4종 헤더 추가. 단 `/approval?embed=tour` iframe(전체 가이드)이 **동일 출처**이므로
+  `X-Frame-Options: SAMEORIGIN`(DENY 아님)으로 둘 것 — DENY로 하면 투어가 깨진다.
+
+---
+
+### ⚪ B-43 OIDC 콜백의 데드코드·취약한 휴리스틱 **분석🔍**
+- `auth_views.py:288` `auth_code = request.POST.get('code')` — **받기만 하고 전혀 사용하지 않는다**.
+  authorization code 교환(token endpoint)도, `at_hash`/`c_hash` 검증도 없다.
+- `auth_views.py:443-450` — `if username and '=' in username:` 이면 **base64 디코딩을 시도**한다.
+  loginid/UPN에 `=`가 들어가는 순간 엉뚱한 값으로 바뀔 수 있는 매우 취약한 추론이다(실패 시 `except: pass`로 조용히 넘어감).
+
+### ⚪ B-44 담당자 미지정 시 고정 수신 이메일이 코드에 하드코딩 **분석🔍**
+- 위치: `mailer.py:81-83` `UNASSIGNED_FALLBACK = {'J': 'user_J@company.com'}`
+- 주석이 "이 딕셔너리를 직접 수정하고 재시작하라"고 안내한다. 다른 설정(`P_LINE_FALLBACK`)은 `.env`로 뺐는데 J만 코드에 남아
+  **수신자 변경에 배포가 필요**하다. 규칙 D의 "설정은 코드에 하드코딩하지 않는다" 취지와 어긋난다.
+
+### ⚪ B-45 `useCellSelection` 의 키 구분자와 메모이제이션 **분석🔍**
+- 위치: `hooks/useCellSelection.ts:20-21, 48-49`
+- `const SEP = ' '`(공백)로 `${rowId} ${col}` 키를 만들고 `k.split(SEP)`로 **구조분해**한다.
+  현재 `genId()`가 `${Date.now()}_${random}` 이라 공백이 없어 동작하지만, id 생성 규칙이 바뀌면 조용히 깨진다.
+- `cellLocked`가 컴포넌트 본문에서 **매 렌더 새 함수**로 만들어지고 `clearSelectedValues`/`onCellPaste`의
+  `useCallback` deps에 들어가 있어, **매 렌더마다 document keydown/mousedown 리스너가 재등록**된다(기능 영향은 없으나 낭비).
+
+### ⚪ B-46 `title` 에 DB 유니크 제약이 없다 **재현✅**
+- 재현 결과: 순차 생성 3건 → `['같은제목', '같은제목_2', '같은제목_3']`(정상). 단 `title.unique = False`
+- `_unique_title`은 **조회 기반**이라 두 사용자가 동시에 저장하면 같은 suffix를 계산해 **중복 제목**이 생긴다.
+  또 create/update마다 `title__startswith` 전체 스캔이 돌아 문서가 늘수록 저장이 느려진다(인덱스 없음).
+
+### ⚪ B-47 `.gitignore` 규칙과 실제 추적 파일이 모순 **재현✅**
+- `.gitignore`에 `nginx.conf` / `*nginx.conf`가 있는데 `nginx/nginx.conf`·`nginx/nginx.dev.conf`는 **이미 추적 중**이다
+  (`git ls-files` 확인). 이미 추적된 파일에는 ignore가 적용되지 않아 규칙이 무의미하고, 읽는 사람을 오도한다.
+- `backend/api/certs/*.cer` 2개가 **추적되고 있으며 .gitignore에 없다**(현재는 36/26바이트 placeholder).
+  실제 인증서를 넣는 순간 커밋될 위험이 있다. 참고로 placeholder 상태에서는 `get_adfs_public_key()`가
+  파싱에 실패해 `oidc_callback`이 500('인증서 로드 실패')을 반환하므로 **SSO 로그인이 아예 되지 않는다**.
+
+### ⚪ B-48 미적용 마이그레이션 1건 (스키마 영향 없음) **재현✅**
+```
+$ python manage.py makemigrations --check --dry-run
+Migrations for 'api':
+  api/migrations/0011_alter_requestdocument_production_date.py
+    - Alter field production_date on requestdocument
+```
+- 차이는 **`verbose_name` 뿐**이다 — 마이그레이션 `0001`은 `verbose_name='request.production_date'`,
+  현재 모델은 `'실제 생산 진행 날짜'`. DB 컬럼 변경은 없으므로 **데이터·동작 영향은 없다**
+  (`models.py` 상단의 "MASKING 처리된 파일" 안내와 관련된 흔적으로 보인다).
+- 다만 CI에 `makemigrations --check`를 넣으면 **바로 실패**하고, 개발자가 `makemigrations`를 돌릴 때마다
+  이 파일이 생성돼 노이즈가 된다. 정리해 두는 편이 좋다.
+
+---
 
 ## 6. 잠재 위험 (아직 버그로 터지지 않았지만 구조적으로 위험한 것)
 
@@ -1070,6 +1490,38 @@ B-13(잘못된 버튼 노출)·X-4·X-5 의 공통 뿌리이며, 통계(`stats`)
 `ApprovalPage.fetchDocs` 의 `useCallback` 의존성에 `filter` 가 들어 있는데, 정작 필터링은 **클라이언트에서** 한다.
 탭만 눌러도 전체 목록 API 를 다시 호출한다(불필요한 왕복 + `additional_notes` 포함 대용량 응답 → R-01 과 결합해 체감 지연).
 
+### R-12 🔴 XSS 방어가 **한 겹도** 없다 (2차 추가)
+저장 시 sanitize 없음(B-26) → 렌더 시 `dangerouslySetInnerHTML` 5곳 → 응답 헤더에 CSP 없음(B-42) →
+같은 오리진 `/media/`가 임의 확장자를 실행 가능하게 서빙(B-34) → 미인증 업로드(B-02).
+**다섯 겹이 전부 뚫려 있어 어느 한 곳만 고쳐도 나머지 경로가 남는다.** 보안 항목 중 유일하게
+"개별 수정"이 아니라 **정책 수립**이 필요한 영역이다.
+
+### R-13 🟠 인증 계층이 표준 OIDC 검증을 대부분 생략하고 자체 구현으로 대체돼 있다 (2차 추가)
+`mozilla-django-oidc`가 `INSTALLED_APPS`에 들어 있지만 **실제 로그인 흐름은 `auth_views.py`의 수작업 구현**이다.
+그 과정에서 만료(B-27)·audience(B-27)·nonce(B-28)·state(B-28)·code 교환(B-43) 검증이 모두 빠졌다.
+라이브러리를 쓰지 않기로 했다면 최소한 **검증 항목 체크리스트**를 문서화하고 테스트로 고정해야 한다
+(현재 `tests.py`에 **인증 관련 테스트가 0건**이다).
+
+### R-14 🟠 사용자 삭제가 도메인 상태를 고려하지 않는다 (2차 추가)
+`UserViewSet.destroy`는 "같은 역할끼리 삭제 가능"만 검사하고, 그 사용자가 **진행 중 결재의 담당자인지,
+그룹 생성자인지** 전혀 보지 않는다. 결과가 B-30(결재 교착)·B-31(그룹 소실)이다.
+FK 정책도 일관되지 않다 — `ApprovalStep.assignee`/`RequestDocument.requester`는 `SET_NULL`인데
+`UserGroup.creator`/`AddressBook.owner`는 `CASCADE`다. **삭제 전 영향도 점검(pre-check)** 이 필요하다.
+
+### R-15 🟡 결재 알림이 "발송 실패해도 아무도 모르는" 구조다 (2차 추가)
+`_enqueue`는 수신자가 0명이면 `logger.info`만 남기고 조용히 건너뛴다(`None` 반환).
+발송은 5회 실패 후 `failed`로 굳고 재처리 경로가 없다(B-39). 두 경우 모두 **화면·관리자에게 신호가 가지 않는다.**
+결재 도착 알림은 이 시스템의 핵심 촉진 수단인데 **유실이 무음**이라는 점이 구조적 위험이다.
+
+### R-16 🟡 `PagedDetailView` 1,757줄에 `as any` 40건이 몰려 있다 (2차 추가)
+전체 `any` 사용 **83건 중 40건(48%)** 이 이 파일이다(다음이 `approvalTable.ts`·`VOCPage`·`RichTextEditor` 각 9건).
+`detail`이 스키마 없는 JSON(R-01)이라 타입이 서지 않아 `as any`로 우회한 결과다.
+규칙 I(“`any` 절대 금지”) 위반이면서, **저장 구조 문제(R-01)의 증상**이기도 하다 — 타입만 손보는 것으로는 해결되지 않는다.
+
+### R-17 ⚪ 인증 흐름에 테스트가 전무하다 (2차 추가)
+`tests.py` 75건은 **메일(mailer) 중심**이고 결재 로직 일부를 덮는다. OIDC 콜백·refresh·권한 클래스·업로드·
+XSS 저장 경로에는 테스트가 **하나도 없다**. 이번에 발견된 치명 7건 중 6건이 이 사각지대에서 나왔다.
+
 ### R-11 ⚪ 이름(`requester_name`) 기반 본인 판정이 남아 있다
 `ApprovalPage.tsx:1084` `isOriginalPL = isPL && selected?.requester_name === currentUser.name` —
 **동명이인이면 남의 문서에 '지정자 변경' 버튼이 뜬다.** 바로 아래 `isPauseRequester` 는 `requester_loginid` 를 우선 쓰므로
@@ -1097,16 +1549,47 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 - [ ] X-9 동시성 4종
 - [ ] X-10 메일 전 구간 (`api_mailnotification` 쿼리로 확인)
 
+2차 추가 CASE:
+- [ ] T-Q1~Q7 인증·SSO·세션 (특히 **Q2 재사용 / Q3 nonce 생략 / Q6 dev 모드 오배포**)
+- [ ] T-R1~R5 업로드·미디어·보안헤더
+- [ ] T-S1~S5 XSS·제출자 위조·사용자 삭제 파급
+- [ ] X-11 XSS→권한상승 체인 (**격리 DB에서만**)
+- [ ] X-12 담당자 삭제 후 결재 교착
+- [ ] X-13 PL 단계 중단요청 고착
+
 버그 수정 후 재확인:
+
+*보안 (한 묶음으로)*
+- [ ] B-26 `NONE` 사용자가 VOC에 `<img onerror>` 저장 → 렌더 시 **실행되지 않음**(sanitize) + 기존 저장분도 정화됨
+- [ ] B-42 `curl -sI` 로 **CSP / X-Frame-Options(SAMEORIGIN) / nosniff / Referrer-Policy** 4종 확인
+- [ ] B-27 만료된 `id_token` 재전송 → **401**
+- [ ] B-28 `nonce_jwt` 없이 콜백 → **400** / `state` 불일치 → **400**
+- [ ] B-29 `AUTH_MODE` 값 확인 + dev 모드에서도 쓰기·삭제는 **인증 요구**
 - [ ] B-01 무관한 사용자로 `DELETE /api/documents/{id}/` → **403**
-- [ ] B-06 pause 문서에서 `peer-approve/` → **400**
 - [ ] B-02 비로그인 `POST /api/upload-image/` → **401/403**, `.svg` 업로드 → **400**
+- [ ] B-34 업로드 파일 URL 직접 접근 시 스크립트 **미실행**
+- [ ] B-35 `docker logs | grep '\[OIDC\]'` → 개인정보 **미출력**
+- [ ] B-41 `DJANGO_SECRET_KEY` 미설정 시 **기동 실패**
+
+*결재 정합성*
+- [ ] B-06 pause 문서에서 `peer-approve/` → **400**
+- [ ] B-32 PL 합의 후 중단요청 state → **cancelled**
+- [ ] B-30 후결자 계정 삭제 후에도 최종 승인 **도달 가능**
+- [ ] B-31 그룹 생성자 삭제 후 그룹 **잔존**
 - [ ] B-04 `POST_APPROVER_LOGINID` 미설정 + Only MAP → R 합의로 approved 되지 **않음**
+- [ ] B-07 R 담당자로 TE_R 아닌 사용자 지정 → **400**
+
+*화면/UX*
 - [ ] B-11 재상신 상신 모달에 이전 검토자 **프리필됨**
 - [ ] B-12 TE_O 로 '내 차례' → 미선점 O 단계 문서 **보임**
 - [ ] B-13 재상신 문서 상세에 이전 회차 '검토중' 버튼 **없음**
-- [ ] B-14/B-15 `npm start` 후 J/O-layer 표 헤더 버튼에 한글 라벨 표시 + 영어 전환 시 VOC 유형 정상
+- [ ] B-14/B-15 J/O-layer 표 헤더 버튼에 한글 라벨 표시 + 영어 전환 시 VOC 유형 정상
+- [ ] B-36 access 만료 상태에서 '세션 연장' → **재로그인 없이** 이어짐
+- [ ] B-40 변경 없는 재상신에서 `bb_entries` 가 **강조되지 않음**
+
+*테스트*
 - [ ] `manage.py test api` → **OK (0 failures)**
+- [ ] 인증(OIDC 콜백·refresh)·업로드·XSS 저장 경로 **테스트 신규 추가**(현재 0건 — R-17)
 
 ---
 
@@ -1127,9 +1610,46 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 | PAUSE 정상 동작 | 동결(400) + 재개 기한 연장 | **정상** (5일 중단 → due +5일) |
 | i18n 정합성 | `ko.json`/`en.json` 평탄화 비교 + 전 `.ts(x)` 62개 `t()` 정적 추출 | **ko 854 / en 853, 미정의 키 9개 확인** |
 
+### 8.2 2차 정독에서 추가 수행한 검증
+
+| 항목 | 방법 | 결과 |
+|---|---|---|
+| B-26 저장형 XSS | role=`NONE` 으로 `POST /api/voc/` 에 `<img onerror>` payload | **201, content 원문 그대로 저장** |
+| B-26 권한상승 체인 | MASTER 세션으로 `POST /api/users/{id}/assign-role/ {role:'MASTER'}` | **200, role=MASTER 승격 성공** |
+| B-26 가이드 경로 | TE_O 로 `POST /api/guides/` 에 payload | **201, 원문 저장** (대조: PL 은 403) |
+| B-33 VOC 메일 escape | `mailer._build_voc_message` 직접 호출 | **`<script>` 원문 포함 True** (대조: 결재 메일 False) |
+| B-29 dev 모드 개방 | `AUTH_MODE=dev` + 비인증 요청 | **GET 200 / DELETE 승인문서 204** |
+| B-30 담당자 삭제 | RA 담당자 계정 삭제 후 처리 시도 | **claim 400 / 합의 400 / 고아 pending 1건 잔존** |
+| B-30 대조(J/O/E/P) | O 선점자 삭제 후 다른 TE_O 재선점 | **200 (자가 회복)** |
+| B-30 삭제 주체 | TE_O 가 동료 TE_O 삭제 (MASTER 아님) | **204 (허용됨)** |
+| B-31 그룹 CASCADE | 그룹 생성자 계정 삭제 | **그룹·주소록 모두 삭제됨** |
+| B-32 중단요청 고착 | PL 합의 후 PauseRequest 상태 확인 | **requested 잔존** (대조: R 합의는 cancelled) |
+| B-32 후속 영향 | 재-중단요청 / 중단확인 시도 | **403 / 403** |
+| B-38 통계 노출 | 외부인이 `/documents/` 와 `/documents/stats/` 비교 | **목록 0건 vs stats draft 2건** |
+| 대조 D-03 draft 인가 | 외부인의 남의 draft GET/PATCH/submit/DELETE | **전부 404 (정상)** |
+| 대조 D-04 수정 인가 | 무관한 PL 이 under_review/approved/rejected PATCH | **전부 403 (정상)** |
+| B-46 제목 중복 | 동일 제목 3회 생성 + 필드 메타 확인 | **`_2`/`_3` 정상, `unique=False`** |
+| B-47 추적 파일 | `git ls-files nginx/ backend/api/certs/` | **ignore 규칙과 무관하게 추적 중** |
+| i18n `any` 집계 | 전 `.ts(x)` 정적 집계 | **`any` 83건 / PagedDetailView 40건** |
+| sanitizer 의존성 | `frontend/package.json` 검색 | **DOMPurify·sanitize-html 없음** |
+| 보안 헤더 | `nginx/nginx.conf` 전수 확인 | **CSP/XFO/nosniff/Referrer-Policy 전무** |
+
 > 검증에 사용한 임시 테스트 파일은 scratchpad 에서 실행 후 **프로젝트에서 제거**했다(코드 변경 0건).
 > 프론트엔드는 이 세션에 `node_modules` 가 없어 `tsc`/`react-scripts test` 를 돌리지 못했다 →
 > 프론트 항목은 전부 **코드 정독 + 정적 분석** 근거이며, §7 체크리스트로 브라우저 확인이 필요하다.
+
+### 8.3 이번 검토에서 다루지 않은 범위 (남은 사각지대)
+
+정직하게 남겨둔다 — 아래는 **읽었지만 깊게 파지 않았거나, 실행 검증을 못 한** 영역이다.
+- `scheduler.py`(504줄) — 외부 DCQ/RTDB 연동 동기화 잡. 사내 전용 모듈(`datacenterquery`)이 없어
+  **로직 정독만 했고 실행 검증 불가**. 동기화 실패 시 폼 옵션이 비는 경로(`form_options_*` → 빈 목록)는
+  화면상 "선택지가 안 뜸"으로 나타나며, 사용자에게 원인이 보이지 않는다.
+- `utils.py`의 DCQ 로그인 — 전역 `sys.stdin` 을 교체하는 방식이라 락으로 직렬화하고 있으나,
+  gunicorn 멀티워커에서는 **프로세스별로 락이 따로 걸린다**(프로세스 간 보호 없음). 실사용 영향 확인 필요.
+- `RichTextEditor.tsx`(574줄)·`GuideTourModal`·`guideDemos/*` — 투어·에디터 UI. `any` 9건 외 기능 검증 미실시.
+- `PagedDetailView.tsx`(1,757줄) — diff 로직(B-40)과 `any` 집계만 확인. 6개 탭의 렌더 정확성은 브라우저 확인 필요.
+- ~~마이그레이션 일치 여부~~ → **실행 완료**, 결과는 B-48 참조(스키마 영향 없는 1건).
+- 성능·부하 — `additional_notes` 포함 목록 응답 크기(R-01), 문서 수백~수천 건 시 응답 시간 미측정.
 
 ---
 
