@@ -147,27 +147,98 @@ class RecipientResolutionTest(TestCase):
             ['req@company.com'],
         )
 
-    def test_reject_recipients_include_te_r_team_when_r_assignee_rejects(self):
-        # R 담당자가 반려하면 작성자 + 기합의자(PL 전원) 전원에 TE_R 팀 전체가 추가된다
+    def test_reject_recipients_r_reject_covers_whole_remaining_line(self):
+        # R 담당자 반려 → 아직 합의 전인 결재선(R·P·O·J) 팀 전원. 반려자 본인은 제외.
         pl_a = UserProfile.objects.create(loginid='pla2', mail='pla2@company.com', role='PL')
         r_owner = UserProfile.objects.create(loginid='rown', mail='rown@company.com', role='TE_R')
-        r_team2 = UserProfile.objects.create(loginid='rteam2', mail='rteam2@company.com', role='TE_R')
+        UserProfile.objects.create(loginid='rteam2', mail='rteam2@company.com', role='TE_R')
+        UserProfile.objects.create(loginid='p1', mail='p1@company.com', role='TE_P')
+        UserProfile.objects.create(loginid='o1', mail='o1@company.com', role='TE_O')
+        UserProfile.objects.create(loginid='j1', mail='j1@company.com', role='TE_J')
         ApprovalStep.objects.create(document=self.doc, agent='PL', round=1, action='approved', assignee=pl_a)
         ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='rejected', assignee=r_owner)
         self.assertEqual(
             sorted(mailer.resolve_reject_recipients(self.doc)),
-            ['pla2@company.com', 'req@company.com', 'rown@company.com', 'rteam2@company.com'],
+            [
+                'j1@company.com', 'o1@company.com', 'p1@company.com',
+                'pla2@company.com', 'req@company.com', 'rteam2@company.com',
+            ],
         )
 
-    def test_reject_recipients_include_te_r_team_when_rv_rejects(self):
-        # RV(검토자)가 반려해도 동일하게 TE_R 팀 전체가 추가된다
+    def test_reject_recipients_rv_reject_dedups_team_member_who_already_approved(self):
+        # RV(검토자) 반려 → RV 도 TE_R 소속이라 팀 조회로 함께 잡힌다.
+        # 이미 합의한 R 담당자는 중복 없이 1회만, 반려한 RV 본인은 제외.
         r_owner = UserProfile.objects.create(loginid='rown2', mail='rown2@company.com', role='TE_R')
         rv_user = UserProfile.objects.create(loginid='rv1', mail='rv1@company.com', role='TE_R')
+        UserProfile.objects.create(loginid='rteam3', mail='rteam3@company.com', role='TE_R')
+        UserProfile.objects.create(loginid='p2', mail='p2@company.com', role='TE_P')
+        UserProfile.objects.create(loginid='j2', mail='j2@company.com', role='TE_J')
         ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='approved', assignee=r_owner)
         ApprovalStep.objects.create(document=self.doc, agent='RV', round=1, action='rejected', assignee=rv_user)
+        recipients = mailer.resolve_reject_recipients(self.doc)
+        self.assertEqual(len(recipients), len(set(recipients)), '중복 수신자가 없어야 한다')
+        self.assertEqual(
+            sorted(recipients),
+            ['j2@company.com', 'p2@company.com', 'req@company.com',
+             'rown2@company.com', 'rteam3@company.com'],
+        )
+
+    def test_reject_recipients_skip_team_broadcast_for_already_approved_stage(self):
+        # P 반려 시 이미 합의를 마친 단계(R·O)는 팀 전체 발송 대상이 아니다.
+        # 그 단계 합의자 본인만 기합의자 규칙으로 포함된다.
+        r_owner = UserProfile.objects.create(loginid='rown3', mail='rown3@company.com', role='TE_R')
+        p_owner = UserProfile.objects.create(loginid='powner', mail='powner@company.com', role='TE_P')
+        UserProfile.objects.create(loginid='pteam2', mail='pteam2@company.com', role='TE_P')
+        o_approver = UserProfile.objects.create(loginid='oapp', mail='oapp@company.com', role='TE_O')
+        UserProfile.objects.create(loginid='oteam2', mail='oteam2@company.com', role='TE_O')
+        UserProfile.objects.create(loginid='j3', mail='j3@company.com', role='TE_J')
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='approved', assignee=r_owner)
+        ApprovalStep.objects.create(document=self.doc, agent='O', round=1, action='approved', assignee=o_approver)
+        ApprovalStep.objects.create(document=self.doc, agent='P', round=1, action='rejected', assignee=p_owner)
+        recipients = sorted(mailer.resolve_reject_recipients(self.doc))
+        self.assertEqual(
+            recipients,
+            ['j3@company.com', 'oapp@company.com', 'pteam2@company.com',
+             'req@company.com', 'rown3@company.com'],
+        )
+        self.assertNotIn('oteam2@company.com', recipients, '합의를 마친 O 팀은 팀 전체 발송 대상이 아니다')
+
+    def test_reject_recipients_j_reject_includes_pending_parallel_team(self):
+        # J 반려 시점에 병렬 단계 O 가 아직 pending 이면 TE_O 팀 전원도 포함된다
+        # (정적 단계 순서가 아니라 '아직 합의 안 끝난 단계' 기준이라 누락되지 않는다).
+        r_owner = UserProfile.objects.create(loginid='rown4', mail='rown4@company.com', role='TE_R')
+        p_owner = UserProfile.objects.create(loginid='powner2', mail='powner2@company.com', role='TE_P')
+        UserProfile.objects.create(loginid='o4a', mail='o4a@company.com', role='TE_O')
+        UserProfile.objects.create(loginid='o4b', mail='o4b@company.com', role='TE_O')
+        j_owner = UserProfile.objects.create(loginid='jown', mail='jown@company.com', role='TE_J')
+        UserProfile.objects.create(loginid='jteam2', mail='jteam2@company.com', role='TE_J')
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='approved', assignee=r_owner)
+        ApprovalStep.objects.create(document=self.doc, agent='P', round=1, action='approved', assignee=p_owner)
+        ApprovalStep.objects.create(document=self.doc, agent='O', round=1, action='pending')
+        ApprovalStep.objects.create(document=self.doc, agent='J', round=1, action='rejected', assignee=j_owner)
         self.assertEqual(
             sorted(mailer.resolve_reject_recipients(self.doc)),
-            ['req@company.com', 'rown2@company.com', 'rv1@company.com'],
+            ['jteam2@company.com', 'o4a@company.com', 'o4b@company.com',
+             'powner2@company.com', 'req@company.com', 'rown4@company.com'],
+        )
+
+    def test_reject_recipients_only_map_excludes_stages_not_on_route(self):
+        # Only MAP 의뢰서는 P/O/E/J 를 거치지 않으므로 그 팀들은 대상이 아니다.
+        import json
+        doc = RequestDocument.objects.create(
+            title='onlymap', requester=self.requester, requester_name='요청자',
+            requester_email='req@company.com', requester_department='개발팀',
+            product_name='PROD-1',
+            additional_notes=json.dumps({'detail': {'request_purpose': 'Only MAP'}, 'jayerRows': []}),
+        )
+        r_owner = UserProfile.objects.create(loginid='r5', mail='r5@company.com', role='TE_R')
+        UserProfile.objects.create(loginid='r5b', mail='r5b@company.com', role='TE_R')
+        UserProfile.objects.create(loginid='p5', mail='p5@company.com', role='TE_P')
+        UserProfile.objects.create(loginid='j5', mail='j5@company.com', role='TE_J')
+        ApprovalStep.objects.create(document=doc, agent='R', round=1, action='rejected', assignee=r_owner)
+        self.assertEqual(
+            sorted(mailer.resolve_reject_recipients(doc)),
+            ['r5b@company.com', 'req@company.com'],
         )
 
     def test_approved_recipients_are_current_round_participants(self):
