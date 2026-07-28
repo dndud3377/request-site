@@ -121,6 +121,30 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-07 — 완성된 MAP 변경: 대상 프리필·J/O/B 제거·승인 시 원본 반영)
+
+- **대상 요청서 검색 프리필**(`applyMapChangeMode`): 모드 진입 시 `mapChangeDocLabel`에 `detail.partid_selection`을 채워 검색어로 쓴다. 문서 제목에 제품명이 포함되므로 그대로 필터가 된다. `mapChangeDocId`는 `null` 유지 — 사용자가 목록에서 실제 문서를 골라야 '적용'이 활성화된다. 프리필은 **진입 시 1회만**(이후 검색어 편집 중일 수 있어 partid 변경에 재동기화하지 않음).
+- **J/O/B layer 완전 제거 (Only MAP 동일)**: 두 모드 공통 파생 플래그 `isMapOnlyScope = isOnlyMap || isMapChangeMode` 신설.
+  - **자동채움 차단**: 라인/조리법 변경 effect에서 `fetchJobFileLayerAndPopulateJayer`/`fetchOvlLayerAndPopulateOayer` 호출 대신 J/O를 빈 행으로 유지하고 return. (판정은 이 effect보다 아래에서 선언되는 `isOnlyMap`/`isMapChangeMode` 대신 `detail`로 직접 계산 — TDZ 회피)
+  - **상신·임시저장 강제 비움**(`buildEnrichedForm`): `jayerRows`/`oayerRows`/`bbRows`를 빈 배열로 저장. 백엔드 `_validate_bb_mapping`은 `process_id`가 있는 행만 검사하므로 상신은 정상 통과한다.
+- **`Only MAP` 매직 스트링 상수화**: `constants.ts`에 `ONLY_MAP_PURPOSE` 추가(백엔드 `RequestDocument.ONLY_MAP_PURPOSE`와 동일 값), `isOnlyMap`·`handleRequestPurposeSelect`·`applyOnlyMap`에서 사용.
+- **결재 완료 시 원본 요청서에 MAP 반영**(신규):
+  - **대상 식별**: 상신 시 `detail.map_change_source_id = mapChangeDocId` 저장(`isMapChangeMode`일 때만).
+  - **반영 시점**: `views.py` `approve_step`에서 `new_status == 'approved'`가 되는 **공통 합류점** 1곳(`_apply_map_change_to_source`). `approve_step` 최종 판정 경로와 `_advance_to_parallel` 즉시승인 경로가 모두 이 지점을 지나므로 훅은 한 곳으로 충분하다.
+  - **반영 범위**: `RequestDocument.MAP_APPLY_KEYS` — 프론트 `MAP_DETAIL_KEYS`와 같은 목록이되 **`map_type` 제외**(원본의 NEW/CLONE/EXISTING 정체성과 제목 표기 유지). ⚠️ 프론트 `MAP_DETAIL_KEYS` 수정 시 이 백엔드 상수도 함께 갱신해야 한다. 클라이언트가 임의 키를 원본에 쓰지 못하도록 **화이트리스트는 백엔드에 정의**한다.
+  - **변경 이력**: 원본 `history[]`에 **수정 직전 스냅샷 1건만** append하고 새 값은 문서 본체(`detail`)에 둔다. 스냅샷의 `jayerRows`/`oayerRows`/`bbRows`는 **원본의 현재 값을 그대로 복사**한다 — 빈 배열로 두면 `PagedDetailView`의 `computeTableDiff(표, prevSnap.표)`가 전 행을 '변경됨'으로 오탐한다. 이 구조 덕에 기존 `changedFields = diff(현재, 직전 스냅샷)` 로직이 **바뀐 MAP 필드만 정확히 강조**한다.
+  - **회차 표기**: 원본 `detail.map_edit_round = n` 저장. 2회차부터는 밀려나는 스냅샷에 `HistorySnapshot.map_edit_round = n-1`을 기록해 이력 표에서 `n차 제출` 대신 **`완성 후 수정 n회차`** 로 표시하고, 마지막 행은 `현재 (완성 후 수정 n회차)`로 표기한다. 서버는 **번호만** 기록하고 표시 문구는 프론트 i18n(`map_edit_round_label`/`map_edit_round_current`)이 만든다(규칙 G).
+
+```
+[1회차 반영 후]                    [2회차 반영 후]
+1차 제출            X=1.0          1차 제출              X=1.0
+현재(완성 후 수정 1회차) X=2.5        완성 후 수정 1회차      X=2.5
+                                  현재(완성 후 수정 2회차) X=3.0
+```
+
+  - **실패 처리**: 원본 없음·상태가 approved 아님·JSON 오류 시 **예외를 밖으로 던지지 않는다**(승인 트랜잭션 롤백 방지). 서버 로그를 남기고 `mailer.enqueue_map_apply_failed(document)`로 **작성자에게만** 메일 통보. `MailNotification.EVENT_CHOICES`에 `map_apply_failed` 추가 → **마이그레이션 `0011_alter_mailnotification_event_type`** 필요.
+  - **테스트**: `api/tests.py` `MapChangeApplyTest` 6건(반영·map_type 유지·스냅샷 표 복사·2회차 회차 기록·비대상 문서 no-op·실패 시 메일 적재).
+
 ### 추가 변경 이력 (2026-07 — Only MAP·완성된 MAP 변경 입력 잠금 통일 + map_type EDIT 개명)
 
 - **완성된 MAP 변경에도 흐름도/특이사항/Backbone 입력 잠금 적용**: `Step1.tsx`에 `disableFlowBb = disableOptional || isMapChangeMode` 신설, 흐름도(flow_chart) 행 전체·특이사항(change_purpose_note)·Backbone(bb_entries) 행 전체에만 적용. 기타목적 버튼 행·`Layer 추가/삭제` 참조요청서 Merge·완성된 MAP 변경 검색/적용 툴바는 기존 `disableOptional` 그대로 유지(전환·조회 경로 보존 목적 — 여기까지 잠그면 대상 문서 검색/적용이나 다른 목적으로의 전환 자체가 막힘).

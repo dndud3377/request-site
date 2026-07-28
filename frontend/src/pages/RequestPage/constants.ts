@@ -15,6 +15,9 @@ export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '�
 // '완성된 MAP 변경' 기타 목적: 결재완료 요청서의 MAP 정보만 불러와 수정하는 단독 전용 항목.
 export const OTHER_PURPOSE_MAP_CHANGE = '완성된 MAP 변경';
 
+// 'Only MAP' 요청 목적: StepMap 정보까지만 작성하고 결재 경로도 단축된다(backend RequestDocument.ONLY_MAP_PURPOSE 와 동일 값).
+export const ONLY_MAP_PURPOSE = 'Only MAP';
+
 // '완성된 MAP 변경' 프리필 시 참조 문서 detail 에서 복사할 MAP 관련 키.
 // 이 키들만 현재 detail 위에 병합하고(기본정보·표는 유지·비움), 변경이력 diff 비교 기준이 된다.
 export const MAP_DETAIL_KEYS: (keyof DetailFormState)[] = [

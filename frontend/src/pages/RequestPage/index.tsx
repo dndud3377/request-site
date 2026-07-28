@@ -42,6 +42,7 @@ import {
   INITIAL_FORM,
   DETAIL_REQUIRED,
   OTHER_PURPOSE_MAP_CHANGE,
+  ONLY_MAP_PURPOSE,
   MAP_DETAIL_KEYS,
   JAYER_EDITABLE_COLS,
   OAYER_EDITABLE_COLS,
@@ -491,6 +492,15 @@ export default function RequestPage(): React.ReactElement {
     setRefDocLabel('');
     setRefJayerRows([]);
     setRefOayerRows([]);
+    // Only MAP·완성된 MAP 변경은 StepMap 정보까지만 필요 → J/O 자동 재조회 없이 빈 상태로 유지한다.
+    // (isOnlyMap/isMapChangeMode 는 이 effect 아래에서 선언되므로 detail 로 직접 판정)
+    const onlyMapMode = detail.request_purpose === ONLY_MAP_PURPOSE;
+    const mapChangeMode = detail.other_purpose.includes(OTHER_PURPOSE_MAP_CHANGE);
+    if (onlyMapMode || mapChangeMode) {
+      setJayerRows([makeJayerRow()]);
+      setOayerRows([makeOayerRow()]);
+      return;
+    }
     fetchJobFileLayerAndPopulateJayer(detail.line, detail.process_id);
     fetchOvlLayerAndPopulateOayer(detail.line, detail.process_id);
   }, [detail.process_id, processIdOptions]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1190,8 +1200,10 @@ export default function RequestPage(): React.ReactElement {
   };
   // Derived booleans for Step 1 conditional rendering
   const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
-  const isOnlyMap = detail.request_purpose === 'Only MAP';
+  const isOnlyMap = detail.request_purpose === ONLY_MAP_PURPOSE;
   const isMapChangeMode = detail.other_purpose.includes(OTHER_PURPOSE_MAP_CHANGE);
+  // StepMap 정보까지만 작성하는 모드(Only MAP·완성된 MAP 변경) — J/O/bb 표와 O-layer 정보 탭을 쓰지 않는다.
+  const isMapOnlyScope = isOnlyMap || isMapChangeMode;
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === '변경 있음';
   const isProdc = detail.only_prodc === 'Yes';
@@ -1249,12 +1261,12 @@ export default function RequestPage(): React.ReactElement {
   const handleRequestPurposeSelect = (val: string) => {
     if (val === detail.request_purpose) return;
     // 이미 선택된 목적이 있을 때 Only MAP으로 바꾸면 초기화 모달을 띄운다.
-    if (val === 'Only MAP' && detail.request_purpose) {
+    if (val === ONLY_MAP_PURPOSE && detail.request_purpose) {
       setOnlyMapConfirm(true);
       return;
     }
     // 첫 선택이 Only MAP이면 초기화할 것이 없으므로 모달 없이 바로 적용.
-    if (val === 'Only MAP') {
+    if (val === ONLY_MAP_PURPOSE) {
       applyOnlyMap();
       return;
     }
@@ -1265,7 +1277,7 @@ export default function RequestPage(): React.ReactElement {
   const applyOnlyMap = () => {
     setDetail((prev) => ({
       ...prev,
-      request_purpose: 'Only MAP',
+      request_purpose: ONLY_MAP_PURPOSE,
       other_purpose: INITIAL_DETAIL.other_purpose,
       flow_chart: [makeRow()],
       change_purpose_note: INITIAL_DETAIL.change_purpose_note,
@@ -2177,7 +2189,9 @@ export default function RequestPage(): React.ReactElement {
     setBbChecked(new Set());
     setErrors({});
     setMapChangeDocId(null);
-    setMapChangeDocLabel('');
+    // 대상 요청서 검색 툴바에 제품(partid_selection)을 미리 채워 검색어로 쓴다.
+    // 문서 제목에 제품명이 포함되므로 그대로 필터가 된다. 실제 선택(id)은 사용자가 목록에서 골라야 한다.
+    setMapChangeDocLabel(detail.partid_selection);
     setMapChangeBaseline(null);
     setMapChangeResetConfirm(false);
   };
@@ -2867,10 +2881,16 @@ export default function RequestPage(): React.ReactElement {
       reference_materials: note ?? '',
       additional_notes: JSON.stringify({
         // C가문(only_prodc=YES) 추가 후결자를 detail 에 함께 저장(고정 후결자는 서버에서 추가)
-        detail: { ...detail, post_approvers: detail.only_prodc === 'Yes' ? postApprovers : [] },
-        jayerRows: (isDraft ? jayerRows : jayerRows.filter(r => !r.disabled)).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-        oayerRows: (isDraft ? oayerRows : oayerRows.filter(r => !r.disabled)).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-        bbRows,
+        detail: {
+          ...detail,
+          post_approvers: detail.only_prodc === 'Yes' ? postApprovers : [],
+          // 완성된 MAP 변경: 승인 시 서버가 원본 요청서에 MAP 값을 반영할 수 있도록 대상 문서 id 를 저장
+          ...(isMapChangeMode && mapChangeDocId !== null ? { map_change_source_id: mapChangeDocId } : {}),
+        },
+        // Only MAP·완성된 MAP 변경은 StepMap 정보까지만 필요 → J/O/bb 표를 비워 저장한다.
+        jayerRows: isMapOnlyScope ? [] : (isDraft ? jayerRows : jayerRows.filter(r => !r.disabled)).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        oayerRows: isMapOnlyScope ? [] : (isDraft ? oayerRows : oayerRows.filter(r => !r.disabled)).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        bbRows: isMapOnlyScope ? [] : bbRows,
         history,
         jayerActiveFilterIds: [...jayerActiveFilterIds],
         oayerActiveFilterIds: [...oayerActiveFilterIds],
@@ -3350,7 +3370,7 @@ export default function RequestPage(): React.ReactElement {
           oayerChecked={oayerChecked}
           oayerInfoTab={oayerInfoTab}
           setOayerInfoTab={setOayerInfoTab}
-          oayerInfoLocked={isOnlyMap || isMapChangeMode}
+          oayerInfoLocked={isMapOnlyScope}
           detail={detail}
           setDetail={setDetail}
           errors={errors}
