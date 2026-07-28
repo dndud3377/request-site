@@ -949,25 +949,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     def _get_post_approver_users(self, document):
         """후결자(RA) User 목록 = 고정 1명(settings.POST_APPROVER_LOGINID)
-        + C가문(only_prodc=YES) 추가 후결자(detail.post_approvers). loginid 중복 제거."""
-        from django.conf import settings
-        users = []
-        seen = set()
-        fixed_lid = (getattr(settings, 'POST_APPROVER_LOGINID', '') or '').strip()
-        if fixed_lid:
-            u = User.objects.filter(loginid=fixed_lid).first()
-            if u:
-                users.append(u)
-                seen.add(u.loginid)
-        detail = document.get_detail().get('detail', {}) or {}
-        for pa in (detail.get('post_approvers') or []):
-            lid = str((pa or {}).get('loginid', '') or '').strip()
-            if lid and lid not in seen:
-                u = User.objects.filter(loginid=lid).first()
-                if u:
-                    users.append(u)
-                    seen.add(lid)
-        return users
+        + C가문(only_prodc=YES) 추가 후결자(detail.post_approvers). loginid 중복 제거.
+
+        반려 메일 수신자 산출(`mailer._remaining_stage_emails`)도 같은 규칙을 써야 하므로
+        구현은 `mailer.post_approver_users` 에 두고 여기서는 위임한다."""
+        return mailer.post_approver_users(document)
 
     def _stage_reviewers_complete(self, document, agent, round_no):
         """P/E 단계가 담당자 + 지정된 검토자(PV/EV) 전원 합의로 끝났는지 여부.
