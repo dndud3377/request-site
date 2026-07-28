@@ -124,6 +124,7 @@ P/E는 (2026-07부터) O/J와 동일하게 **검토중(claim) 방식**이며, �
 
 ### Case H — 단계 반려 (`reject_step`, `views.py:312`)
 - 동작: 어느 단계든 해당 step `rejected`, `status → rejected`(즉시).
+- **메일(2026-07 개편)**: 작성자·기합의자 전원에 더해 **아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원**에게 반려 메일이 간다(반려자 본인 제외). '이후 단계'를 정적 순서표가 아니라 문서의 실제 상태(`결재선 − 이미 approved 된 단계`)로 판정해, 병렬 단계(P·O·E·RA)가 서로 다른 속도로 진행돼도 누락되지 않는다. 상세는 `docs/MAIL.md` §3.1.
 
 ### Case I — 재상신 (`resubmit`)
 - 조건: `status == 'rejected'`, 지정 PL 필수(본인 불가), bb 매핑 통과.
@@ -171,6 +172,7 @@ P/E는 (2026-07부터) O/J와 동일하게 **검토중(claim) 방식**이며, �
 ### Case L — 지정 PL 변경 (`change_designee`)
 - 권한: **의뢰자 본인 또는 MASTER만**. 현재 회차 PL step의 assignee 교체.
 - ⚠️ **다중 PL 미대응(보류)**: 현재는 `_get_pending_pl_step`(첫 pending PL step, = 대표)만 1:1 교체한다. 다중 PL 중 특정 담당자 지정 스왑은 후속 작업으로 보류(2026-07).
+- **메일(2026-07 추가)**: 새로 지정된 PL에게 상신 때와 동일한 stage_arrival 메일(제목 `[이름님] [결재 요청] ...`)이 즉시 발송된다. 기존 지정자에게는 별도 알림 없음.
 
 ### Case M — 결재 중단(PAUSE) 요청·확인·재개 (2026-07)
 
@@ -333,13 +335,13 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 
 | 전이(액션) | 메일 이벤트 | 수신자 |
 |-----------|-----------|--------|
-| `submit`/`resubmit` | stage_arrival(PL) | 지정 PL **전원**(각 PL step별 발송) |
+| `submit`/`resubmit` | stage_arrival(PL) | 지정 PL **전원**(각 PL step별 발송, 제목에 `[이름님]`, 2026-07 추가) |
 | `peer_approve`/`peer_submit` | stage_arrival(R) | TE_R 미지정 시 고정 주소 |
 | `approve_step`(R) | stage_arrival(P·O[·E]) | 미배정 시 **P·O·E 팀 전원**(2026-07 P도 검토중 전환으로 O·E와 동일하게 팀 브로드캐스트) |
 | `approve_step`(P, 검토자 없을 때) | stage_arrival(J) | TE_J 미지정 시 고정 주소 |
 | `approve_step`(P/E 합의 시 `reviewer_loginids` 동봉, 2026-07) | stage_arrival(PV/EV) | 지정된 검토자 **각 1명**(담당자 합의와 같은 요청에서 즉시 개인화 메일 발송) |
 | `approve_step`(J·O·E[+검토자 전원]·RA[전원] 모두 합의) | approved | 작성자가 속한 모든 그룹 멤버 전원 |
-| `reject_step` | rejected | 작성자 + 현재 회차 기합의자 전원 |
+| `reject_step` (R·RV·P·PV·O·E·EV·J·RA 반려) | rejected | 작성자 + 현재 회차 기합의자 전원 + **아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원**(반려자 본인 제외, 2026-07 개편 — `docs/MAIL.md` §3.1) |
 | `peer_reject`(PL 반려) | rejected | 작성자 + 현재 회차 기합의자 전원 + 같은 회차 미합의(pending) 나머지 지정 PL(2026-07 추가) |
 | `submit`/`resubmit` | notify_submitted | **통보처 전원**(`detail.notifiers`) |
 | `approve_step`(최종 승인) | notify_approved | **통보처 전원**(`detail.notifiers`) |

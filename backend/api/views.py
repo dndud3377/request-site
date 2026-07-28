@@ -320,7 +320,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     document=document, agent='PL', action='pending', round=1,
                     assignee=u, assignee_name=(u.username or u.loginid),
                 )
-                mailer.enqueue_stage_arrival(document, 'PL', pl_step)
+                mailer.enqueue_stage_arrival(document, 'PL', pl_step, recipient_name=pl_step.assignee_name)
             mailer.enqueue_notify_submitted(document)
 
         return Response({
@@ -365,7 +365,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     document=document, agent='PL', action='pending', round=new_round,
                     assignee=u, assignee_name=(u.username or u.loginid),
                 )
-                mailer.enqueue_stage_arrival(document, 'PL', pl_step)
+                mailer.enqueue_stage_arrival(document, 'PL', pl_step, recipient_name=pl_step.assignee_name)
             mailer.enqueue_notify_submitted(document)
 
         return Response({
@@ -949,25 +949,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     def _get_post_approver_users(self, document):
         """후결자(RA) User 목록 = 고정 1명(settings.POST_APPROVER_LOGINID)
-        + C가문(only_prodc=YES) 추가 후결자(detail.post_approvers). loginid 중복 제거."""
-        from django.conf import settings
-        users = []
-        seen = set()
-        fixed_lid = (getattr(settings, 'POST_APPROVER_LOGINID', '') or '').strip()
-        if fixed_lid:
-            u = User.objects.filter(loginid=fixed_lid).first()
-            if u:
-                users.append(u)
-                seen.add(u.loginid)
-        detail = document.get_detail().get('detail', {}) or {}
-        for pa in (detail.get('post_approvers') or []):
-            lid = str((pa or {}).get('loginid', '') or '').strip()
-            if lid and lid not in seen:
-                u = User.objects.filter(loginid=lid).first()
-                if u:
-                    users.append(u)
-                    seen.add(lid)
-        return users
+        + C가문(only_prodc=YES) 추가 후결자(detail.post_approvers). loginid 중복 제거.
+
+        반려 메일 수신자 산출(`mailer._remaining_stage_emails`)도 같은 규칙을 써야 하므로
+        구현은 `mailer.post_approver_users` 에 두고 여기서는 위임한다."""
+        return mailer.post_approver_users(document)
 
     def _stage_reviewers_complete(self, document, agent, round_no):
         """P/E 단계가 담당자 + 지정된 검토자(PV/EV) 전원 합의로 끝났는지 여부.
@@ -1154,6 +1140,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return Response({'message': msg, 'status': 'under_review'})
 
     @action(detail=True, methods=['post'], url_path='change-designee')
+    @transaction.atomic
     def change_designee(self, request, pk=None):
         """지정자 변경: PL 단계 pending 동안 원 PL 또는 MASTER가 변경 가능"""
         document = self.get_object()
@@ -1189,6 +1176,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document.designated_pl = new_pl_user
         document.designated_pl_name = step.assignee_name
         document.save()
+
+        # 새로 지정된 PL에게 최초 상신과 동일한 결재 요청 메일 발송(이전 지정자에게는 안 감)
+        mailer.enqueue_stage_arrival(document, 'PL', step, recipient_name=step.assignee_name)
 
         return Response({'message': '지정자가 변경되었습니다.', 'document': RequestDocumentSerializer(document).data})
 
