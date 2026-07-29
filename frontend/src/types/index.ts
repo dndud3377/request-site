@@ -578,3 +578,69 @@ export interface BbAutoFillRange {
   layerTo: string;        // 종료 Layer
   entryId: string;        // 선택된 bb_entry의 안정 id — 라인+제품을 유일하게 식별
 }
+
+
+// ===== 연간 디자인룰 통계 (홈 화면 그래프) =====
+
+/** 막대 종류 — 'etc'는 상위 N 밖 묶음, 'unclassified'는 디자인룰 판정 실패 묶음. */
+export type DesignRuleBucketKind = 'rule' | 'etc' | 'unclassified';
+
+/** 비교 연도 대비 증감 상태. 'new'는 비교 연도 0건이라 %를 낼 수 없는 경우. */
+export type DesignRuleDeltaState = 'up' | 'down' | 'flat' | 'new';
+
+/** 요청 목적별 건수. 키는 백엔드 REQUEST_PURPOSES 값. */
+export type PurposeBreakdown = Record<string, number>;
+
+export interface DesignRuleBucket {
+  key: string;
+  /** kind==='rule'일 때만 디자인룰명. etc/unclassified는 빈 문자열이며 프론트가 i18n 라벨을 붙인다. */
+  label: string;
+  kind: DesignRuleBucketKind;
+  /** 'etc'가 묶은 디자인룰 개수. rule은 1, unclassified는 0. */
+  member_count: number;
+  count: number;
+  compare_count: number | null;
+  delta_pct: number | null;
+  delta_state: DesignRuleDeltaState | null;
+  purposes: PurposeBreakdown;
+  compare_purposes: PurposeBreakdown | null;
+}
+
+export interface AnnualDesignRuleStats {
+  /** 승인 의뢰서가 하나도 없으면 null. */
+  year: number | null;
+  compare_year: number | null;
+  /** null이면 '전체'(기타 묶음 없음). */
+  top: number | null;
+  available_years: number[];
+  /** 요청 목적 표시 순서. */
+  purposes: string[];
+  buckets: DesignRuleBucket[];
+  total: number;
+  compare_total: number | null;
+}
+
+/** 미분류 사유 — 프론트가 안내 문구를 고르는 데 쓴다. */
+export type UnclassifiedReason = 'missing' | 'ambiguous' | 'empty';
+
+export interface UnclassifiedProcess {
+  process: string;
+  count: number;
+  reason: Exclude<UnclassifiedReason, 'empty'>;
+  /** reason==='ambiguous'일 때 마스터에 실제로 걸려 있는 후보 디자인룰. */
+  candidates: string[];
+}
+
+export interface UnclassifiedDocument {
+  id: number;
+  title: string;
+  process_selection: string;
+  submitted_at: string;
+  reason: UnclassifiedReason;
+}
+
+export interface UnclassifiedTargets {
+  processes: UnclassifiedProcess[];
+  documents: UnclassifiedDocument[];
+  design_rules: string[];
+}

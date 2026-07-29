@@ -7,6 +7,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 
 from . import mailer
+from . import design_rule_stats
 from .models import (
     ApprovalStep, MailNotification, RequestDocument, UserGroup, UserProfile,
 )
@@ -1467,3 +1468,365 @@ class DocumentDeleteAuthTest(TestCase):
         res = self._post_delete(self.master, doc)
         self.assertEqual(res.status_code, 200, res.content)
         self.assertFalse(ApprovalStep.objects.filter(document_id=doc.id).exists())
+
+
+# ─── 연간 디자인룰 통계 ────────────────────────────────────────────────────────
+
+class AnnualDesignRuleStatsTest(TestCase):
+    """홈 화면 연간 디자인룰 그래프 집계 규칙 (design_rule_stats)."""
+
+    def setUp(self):
+        from .models import DesignRule
+        self.author = UserProfile.objects.create(loginid='drauthor', mail='dr@c.com', role='NONE')
+        # 조합법 P1 → R1 (단일), P2 → R2 (단일), PAMB → 2개(모호)
+        DesignRule.objects.create(process='P1', design_rule='R1')
+        DesignRule.objects.create(process='P2', design_rule='R2')
+        DesignRule.objects.create(process='PAMB', design_rule='RX')
+        DesignRule.objects.create(process='PAMB', design_rule='RY')
+
+    def _doc(self, *, process, purpose, year, status='approved', month=6, submitted=True):
+        """지정 연도에 상신된 의뢰서 1건 생성."""
+        import json
+        from datetime import datetime
+        from django.utils import timezone as tz
+        doc = RequestDocument.objects.create(
+            title=f'{process}-{purpose}-{year}', requester=self.author, requester_name='a',
+            requester_email='dr@c.com', requester_department='d', product_name='p',
+            status=status,
+            additional_notes=json.dumps(
+                {'detail': {'process_selection': process, 'request_purpose': purpose}},
+                ensure_ascii=False,
+            ),
+        )
+        if submitted:
+            stamp = tz.make_aware(datetime(year, month, 1, 12, 0), tz.get_current_timezone())
+            RequestDocument.objects.filter(pk=doc.pk).update(submitted_at=stamp)
+            doc.refresh_from_db()
+        return doc
+
+    def _bucket(self, data, key):
+        for b in data['buckets']:
+            if b['key'] == key:
+                return b
+        return None
+
+    def test_counts_group_by_design_rule_and_purpose(self):
+        """조합법이 같은 디자인룰에 매핑되면 한 막대로 모이고, 목적별로 쪼개진다."""
+        self._doc(process='P1', purpose='신규', year=2025)
+        self._doc(process='P1', purpose='신규', year=2025)
+        self._doc(process='P1', purpose='차용', year=2025)
+
+        data = design_rule_stats.annual_stats(2025)
+        bucket = self._bucket(data, 'R1')
+        self.assertEqual(bucket['count'], 3)
+        self.assertEqual(bucket['purposes']['신규'], 2)
+        self.assertEqual(bucket['purposes']['차용'], 1)
+        self.assertEqual(bucket['purposes']['기타'], 0)
+
+    def test_only_approved_documents_are_counted(self):
+        """승인 외 상태(임시저장·상신됨·반려)는 집계에서 빠진다."""
+        self._doc(process='P1', purpose='신규', year=2025)
+        for state in ('draft', 'submitted', 'under_review', 'rejected', 'pause'):
+            self._doc(process='P1', purpose='신규', year=2025, status=state)
+
+        data = design_rule_stats.annual_stats(2025)
+        self.assertEqual(self._bucket(data, 'R1')['count'], 1)
+
+    def test_documents_without_submitted_at_are_ignored(self):
+        """상신일이 없으면 연도를 정할 수 없으므로 제외한다."""
+        self._doc(process='P1', purpose='신규', year=2025, submitted=False)
+        data = design_rule_stats.annual_stats(2025)
+        self.assertEqual(data['total'], 0)
+
+    def test_year_boundary_uses_local_time(self):
+        """연말·연초 경계가 Asia/Seoul 기준으로 갈린다."""
+        from datetime import datetime
+        from django.utils import timezone as tz
+        doc = self._doc(process='P1', purpose='신규', year=2025)
+        # 2025-12-31 23:30 KST → 2025년으로 집계돼야 한다(UTC 로는 2025-12-31 14:30).
+        stamp = tz.make_aware(datetime(2025, 12, 31, 23, 30), tz.get_current_timezone())
+        RequestDocument.objects.filter(pk=doc.pk).update(submitted_at=stamp)
+
+        self.assertEqual(design_rule_stats.annual_stats(2025)['total'], 1)
+        self.assertEqual(design_rule_stats.annual_stats(2026)['total'], 0)
+
+    def test_ambiguous_process_falls_into_unclassified(self):
+        """한 조합법이 디자인룰 2개에 걸리면 미분류로 간다."""
+        self._doc(process='PAMB', purpose='신규', year=2025)
+        data = design_rule_stats.annual_stats(2025)
+        self.assertIsNone(self._bucket(data, 'RX'))
+        self.assertEqual(self._bucket(data, design_rule_stats.UNCLASSIFIED_KEY)['count'], 1)
+
+    def test_unknown_and_empty_process_fall_into_unclassified(self):
+        """마스터에 없는 조합법과 빈 조합법도 미분류."""
+        self._doc(process='UNKNOWN', purpose='신규', year=2025)
+        self._doc(process='', purpose='차용', year=2025)
+        data = design_rule_stats.annual_stats(2025)
+        self.assertEqual(self._bucket(data, design_rule_stats.UNCLASSIFIED_KEY)['count'], 2)
+
+    def test_unclassified_bucket_always_present_even_when_empty(self):
+        """미분류가 0건이어도 버킷은 유지된다."""
+        self._doc(process='P1', purpose='신규', year=2025)
+        data = design_rule_stats.annual_stats(2025)
+        self.assertIsNotNone(self._bucket(data, design_rule_stats.UNCLASSIFIED_KEY))
+        self.assertEqual(self._bucket(data, design_rule_stats.UNCLASSIFIED_KEY)['count'], 0)
+
+    def test_process_override_resolves_unclassified(self):
+        """조합법 수동 매핑이 마스터에 없는 조합법을 확정시킨다."""
+        from .models import ProcessDesignRuleOverride
+        self._doc(process='UNKNOWN', purpose='신규', year=2025)
+        ProcessDesignRuleOverride.objects.create(process='UNKNOWN', design_rule='R9')
+
+        data = design_rule_stats.annual_stats(2025)
+        self.assertEqual(self._bucket(data, 'R9')['count'], 1)
+        self.assertEqual(self._bucket(data, design_rule_stats.UNCLASSIFIED_KEY)['count'], 0)
+
+    def test_process_override_wins_over_master(self):
+        """조합법 수동 매핑은 마스터 단일 매칭도 덮어쓴다."""
+        from .models import ProcessDesignRuleOverride
+        self._doc(process='P1', purpose='신규', year=2025)
+        ProcessDesignRuleOverride.objects.create(process='P1', design_rule='R-FORCED')
+
+        data = design_rule_stats.annual_stats(2025)
+        self.assertIsNone(self._bucket(data, 'R1'))
+        self.assertEqual(self._bucket(data, 'R-FORCED')['count'], 1)
+
+    def test_process_override_resolves_ambiguous_process(self):
+        """모호했던 조합법도 수동 매핑이 있으면 확정된다."""
+        from .models import ProcessDesignRuleOverride
+        self._doc(process='PAMB', purpose='신규', year=2025)
+        ProcessDesignRuleOverride.objects.create(process='PAMB', design_rule='RX')
+
+        data = design_rule_stats.annual_stats(2025)
+        self.assertEqual(self._bucket(data, 'RX')['count'], 1)
+        self.assertEqual(self._bucket(data, design_rule_stats.UNCLASSIFIED_KEY)['count'], 0)
+
+    def test_document_override_wins_over_process_override(self):
+        """의뢰서 단위 매핑이 조합법 단위 매핑보다 우선한다."""
+        from .models import ProcessDesignRuleOverride, DocumentDesignRuleOverride
+        doc = self._doc(process='P1', purpose='신규', year=2025)
+        ProcessDesignRuleOverride.objects.create(process='P1', design_rule='R-PROC')
+        DocumentDesignRuleOverride.objects.create(document=doc, design_rule='R-DOC')
+
+        data = design_rule_stats.annual_stats(2025)
+        self.assertIsNone(self._bucket(data, 'R-PROC'))
+        self.assertEqual(self._bucket(data, 'R-DOC')['count'], 1)
+
+    def test_top_n_folds_remainder_into_etc(self):
+        """상위 N 밖 디자인룰은 '기타'로 합산되고, 미분류와는 섞이지 않는다."""
+        from .models import DesignRule
+        for i in range(4):
+            DesignRule.objects.create(process=f'PX{i}', design_rule=f'RX{i}')
+            for _ in range(i + 1):     # RX0=1건 … RX3=4건
+                self._doc(process=f'PX{i}', purpose='신규', year=2025)
+        self._doc(process='UNKNOWN', purpose='신규', year=2025)   # 미분류 1건
+
+        data = design_rule_stats.annual_stats(2025, top_n=2)
+        keys = [b['key'] for b in data['buckets']]
+        # 건수 내림차순 상위 2개(RX3=4, RX2=3) + 기타 + 미분류
+        self.assertEqual(keys, ['RX3', 'RX2', design_rule_stats.ETC_KEY,
+                                design_rule_stats.UNCLASSIFIED_KEY])
+        etc = self._bucket(data, design_rule_stats.ETC_KEY)
+        self.assertEqual(etc['count'], 3)          # RX1(2) + RX0(1)
+        self.assertEqual(etc['member_count'], 2)
+        self.assertEqual(self._bucket(data, design_rule_stats.UNCLASSIFIED_KEY)['count'], 1)
+
+    def test_top_n_none_returns_every_rule_without_etc(self):
+        """top_n=None(전체)이면 기타 버킷 없이 전부 개별로 나온다."""
+        self._doc(process='P1', purpose='신규', year=2025)
+        self._doc(process='P2', purpose='신규', year=2025)
+
+        data = design_rule_stats.annual_stats(2025, top_n=None)
+        self.assertIsNone(self._bucket(data, design_rule_stats.ETC_KEY))
+        self.assertEqual(self._bucket(data, 'R1')['count'], 1)
+        self.assertEqual(self._bucket(data, 'R2')['count'], 1)
+
+    def test_top_n_ranks_by_base_year_not_compare_year(self):
+        """상위 선정 기준은 비교 연도가 아니라 기준 연도 건수다."""
+        self._doc(process='P1', purpose='신규', year=2025)          # 기준 1건
+        for _ in range(5):
+            self._doc(process='P2', purpose='신규', year=2024)      # 비교 연도만 5건
+
+        data = design_rule_stats.annual_stats(2025, compare_year=2024, top_n=1)
+        self.assertEqual(data['buckets'][0]['key'], 'R1')
+
+    def test_delta_up_and_down(self):
+        """증감률 부호와 상태."""
+        for _ in range(3):
+            self._doc(process='P1', purpose='신규', year=2025)
+        for _ in range(2):
+            self._doc(process='P1', purpose='신규', year=2024)
+
+        data = design_rule_stats.annual_stats(2025, compare_year=2024)
+        bucket = self._bucket(data, 'R1')
+        self.assertEqual(bucket['compare_count'], 2)
+        self.assertEqual(bucket['delta_pct'], 50.0)
+        self.assertEqual(bucket['delta_state'], design_rule_stats.DELTA_UP)
+
+    def test_delta_new_when_compare_is_zero(self):
+        """비교 연도 0건이면 0으로 나누지 않고 'new' 상태로 구분한다."""
+        self._doc(process='P1', purpose='신규', year=2025)
+        self._doc(process='P2', purpose='신규', year=2024)   # 비교 연도 데이터 존재
+
+        data = design_rule_stats.annual_stats(2025, compare_year=2024)
+        bucket = self._bucket(data, 'R1')
+        self.assertIsNone(bucket['delta_pct'])
+        self.assertEqual(bucket['delta_state'], design_rule_stats.DELTA_NEW)
+
+    def test_no_compare_year_leaves_compare_fields_null(self):
+        """비교 연도가 없으면 비교 필드는 모두 null."""
+        self._doc(process='P1', purpose='신규', year=2025)
+        data = design_rule_stats.annual_stats(2025)
+        bucket = self._bucket(data, 'R1')
+        self.assertIsNone(bucket['compare_count'])
+        self.assertIsNone(bucket['compare_purposes'])
+        self.assertIsNone(bucket['delta_pct'])
+        self.assertIsNone(data['compare_total'])
+
+    def test_unknown_purpose_normalizes_to_etc(self):
+        """정해진 5종 밖 목적값은 '기타'로 모은다."""
+        self._doc(process='P1', purpose='정체불명', year=2025)
+        self._doc(process='P1', purpose='', year=2025)
+        data = design_rule_stats.annual_stats(2025)
+        self.assertEqual(self._bucket(data, 'R1')['purposes']['기타'], 2)
+
+    def test_corrupt_additional_notes_does_not_crash(self):
+        """JSON 이 깨진 의뢰서는 미분류로 흘려보내고 예외를 내지 않는다."""
+        doc = self._doc(process='P1', purpose='신규', year=2025)
+        RequestDocument.objects.filter(pk=doc.pk).update(additional_notes='{not json')
+
+        data = design_rule_stats.annual_stats(2025)
+        self.assertEqual(self._bucket(data, design_rule_stats.UNCLASSIFIED_KEY)['count'], 1)
+
+    def test_available_years_lists_only_years_with_approved_docs(self):
+        self._doc(process='P1', purpose='신규', year=2023)
+        self._doc(process='P1', purpose='신규', year=2025)
+        self.assertEqual(design_rule_stats.available_years(), [2023, 2025])
+
+    def test_unclassified_targets_reports_reason_and_candidates(self):
+        """분류 모달 데이터 — 사유와 모호한 경우의 후보 디자인룰."""
+        self._doc(process='PAMB', purpose='신규', year=2025)
+        self._doc(process='UNKNOWN', purpose='신규', year=2025)
+        self._doc(process='', purpose='신규', year=2025)
+
+        targets = design_rule_stats.unclassified_targets()
+        by_process = {p['process']: p for p in targets['processes']}
+        self.assertEqual(by_process['PAMB']['reason'], design_rule_stats.REASON_AMBIGUOUS)
+        self.assertEqual(by_process['PAMB']['candidates'], ['RX', 'RY'])
+        self.assertEqual(by_process['UNKNOWN']['reason'], design_rule_stats.REASON_MISSING)
+        # 조합법이 빈 건은 조합법 매핑으로 해결할 수 없어 문서 목록에만 잡힌다
+        self.assertNotIn('', by_process)
+        reasons = {d['reason'] for d in targets['documents']}
+        self.assertIn(design_rule_stats.REASON_EMPTY, reasons)
+
+
+class AnnualDesignRuleStatsApiTest(TestCase):
+    """연간 통계 API 엔드포인트 — 파라미터 파싱과 매핑 쓰기 인가."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        from .models import DesignRule
+        self.client = APIClient()
+        self.author = UserProfile.objects.create(loginid='apiauthor', mail='api@c.com', role='NONE')
+        self.master = UserProfile.objects.create(loginid='apimaster', mail='m@c.com', role='MASTER')
+        DesignRule.objects.create(process='P1', design_rule='R1')
+        # 운영 모드에선 조회도 인증이 필요하다 — 기본은 일반 사용자로 로그인해 둔다.
+        self.client.force_authenticate(user=self.author)
+
+    def _doc(self, year):
+        import json
+        from datetime import datetime
+        from django.utils import timezone as tz
+        doc = RequestDocument.objects.create(
+            title=f'doc-{year}', requester=self.author, requester_name='a',
+            requester_email='api@c.com', requester_department='d', product_name='p',
+            status='approved',
+            additional_notes=json.dumps(
+                {'detail': {'process_selection': 'P1', 'request_purpose': '신규'}}, ensure_ascii=False
+            ),
+        )
+        stamp = tz.make_aware(datetime(year, 6, 1, 12, 0), tz.get_current_timezone())
+        RequestDocument.objects.filter(pk=doc.pk).update(submitted_at=stamp)
+        return doc
+
+    def test_empty_state_when_no_approved_documents(self):
+        res = self.client.get('/api/documents/annual-design-rule-stats/')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()['data']
+        self.assertEqual(data['available_years'], [])
+        self.assertEqual(data['buckets'], [])
+        self.assertIsNone(data['year'])
+
+    def test_defaults_to_latest_year(self):
+        self._doc(2024)
+        self._doc(2026)
+        res = self.client.get('/api/documents/annual-design-rule-stats/')
+        self.assertEqual(res.json()['data']['year'], 2026)
+
+    def test_compare_equal_to_year_is_dropped(self):
+        """같은 연도끼리 비교하면 비교가 무의미하므로 무시한다."""
+        self._doc(2026)
+        res = self.client.get('/api/documents/annual-design-rule-stats/?year=2026&compare=2026')
+        self.assertIsNone(res.json()['data']['compare_year'])
+
+    def test_invalid_params_fall_back_to_defaults(self):
+        self._doc(2026)
+        res = self.client.get('/api/documents/annual-design-rule-stats/?year=abc&top=xyz')
+        data = res.json()['data']
+        self.assertEqual(data['year'], 2026)
+        self.assertEqual(data['top'], design_rule_stats.DEFAULT_TOP_N)
+
+    def test_top_all_returns_none(self):
+        self._doc(2026)
+        res = self.client.get('/api/documents/annual-design-rule-stats/?top=all')
+        self.assertIsNone(res.json()['data']['top'])
+
+    def test_top_is_clamped_to_max(self):
+        self._doc(2026)
+        res = self.client.get('/api/documents/annual-design-rule-stats/?top=999')
+        self.assertEqual(res.json()['data']['top'], design_rule_stats.MAX_TOP_N)
+
+    def test_non_master_cannot_create_process_override(self):
+        self.client.force_authenticate(user=self.author)
+        res = self.client.post('/api/design-rule-processes/',
+                               {'process': 'PX', 'design_rule': 'RX'}, format='json')
+        self.assertEqual(res.status_code, 403)
+
+    def test_master_can_create_process_override(self):
+        self.client.force_authenticate(user=self.master)
+        res = self.client.post('/api/design-rule-processes/',
+                               {'process': 'PX', 'design_rule': 'RX'}, format='json')
+        self.assertEqual(res.status_code, 201)
+
+    def test_reposting_same_process_updates_instead_of_409(self):
+        """분류 모달에서 '다시 지정'이 자연스럽도록 upsert 로 처리한다."""
+        from .models import ProcessDesignRuleOverride
+        self.client.force_authenticate(user=self.master)
+        self.client.post('/api/design-rule-processes/',
+                         {'process': 'PX', 'design_rule': 'RX'}, format='json')
+        res = self.client.post('/api/design-rule-processes/',
+                               {'process': 'PX', 'design_rule': 'RY'}, format='json')
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(ProcessDesignRuleOverride.objects.filter(process='PX').count(), 1)
+        self.assertEqual(ProcessDesignRuleOverride.objects.get(process='PX').design_rule, 'RY')
+
+    def test_master_can_reassign_document_override(self):
+        from .models import DocumentDesignRuleOverride
+        doc = self._doc(2026)
+        self.client.force_authenticate(user=self.master)
+        self.client.post('/api/design-rule-documents/',
+                         {'document': doc.id, 'design_rule': 'RA'}, format='json')
+        res = self.client.post('/api/design-rule-documents/',
+                               {'document': doc.id, 'design_rule': 'RB'}, format='json')
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(DocumentDesignRuleOverride.objects.filter(document=doc).count(), 1)
+        self.assertEqual(DocumentDesignRuleOverride.objects.get(document=doc).design_rule, 'RB')
+
+    def test_unclassified_endpoint_returns_targets(self):
+        self._doc(2026)
+        from .models import DesignRule
+        DesignRule.objects.filter(process='P1').delete()   # P1 을 미분류로 만든다
+        res = self.client.get('/api/design-rule-processes/unclassified/')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()['data']
+        self.assertEqual([p['process'] for p in data['processes']], ['P1'])
