@@ -1,6 +1,9 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook
+from .models import (
+    RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
+    ProcessDesignRuleOverride, DocumentDesignRuleOverride,
+)
 from . import doc_permissions
 
 User = get_user_model()
@@ -391,3 +394,82 @@ class AddressBookSerializer(serializers.ModelSerializer):
         if members_input is not None:
             instance.members = self._normalize_members(members_input)
         return super().update(instance, validated_data)
+
+
+class ProcessDesignRuleOverrideSerializer(serializers.ModelSerializer):
+    """{{request.process_selection}} 단위 디자인룰 수동 매핑 (MASTER 전용)."""
+
+    # unique 제약의 기본 UniqueValidator 를 끈다 — create() 의 upsert 가 돌기 전에
+    # 400 을 내버려 '다시 지정'이 막히기 때문. 중복은 update_or_create 가 처리한다.
+    process = serializers.CharField(max_length=200, validators=[])
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True, default='')
+
+    class Meta:
+        model = ProcessDesignRuleOverride
+        fields = ['id', 'process', 'design_rule', 'created_by_name', 'created_at', 'updated_at']
+        read_only_fields = ['created_by_name', 'created_at', 'updated_at']
+
+    def validate_process(self, value):
+        value = (value or '').strip()
+        if not value:
+            raise serializers.ValidationError('조합법을 입력해주세요.')
+        return value
+
+    def validate_design_rule(self, value):
+        value = (value or '').strip()
+        if not value:
+            raise serializers.ValidationError('디자인룰을 입력해주세요.')
+        return value
+
+    def create(self, validated_data):
+        """같은 조합법이 이미 있으면 새로 만들지 않고 디자인룰만 교체한다.
+
+        `process` 가 unique 라 재등록 시 400 이 나는데, 분류 모달에서는
+        '다시 지정'이 자연스러운 조작이므로 upsert 로 처리한다.
+        """
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        obj, _created = ProcessDesignRuleOverride.objects.update_or_create(
+            process=validated_data['process'],
+            defaults={
+                'design_rule': validated_data['design_rule'],
+                'created_by': user if getattr(user, 'is_authenticated', False) else None,
+            },
+        )
+        return obj
+
+
+class DocumentDesignRuleOverrideSerializer(serializers.ModelSerializer):
+    """의뢰서 단위 디자인룰 수동 매핑 (MASTER 전용). 조합법 매핑보다 우선한다."""
+
+    # OneToOne 기본 UniqueValidator 를 끈다 — 위와 같은 이유로 재지정을 허용한다.
+    document = serializers.PrimaryKeyRelatedField(
+        queryset=RequestDocument.objects.all(), validators=[]
+    )
+    document_title = serializers.CharField(source='document.title', read_only=True, default='')
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True, default='')
+
+    class Meta:
+        model = DocumentDesignRuleOverride
+        fields = ['id', 'document', 'document_title', 'design_rule',
+                  'created_by_name', 'created_at', 'updated_at']
+        read_only_fields = ['document_title', 'created_by_name', 'created_at', 'updated_at']
+
+    def validate_design_rule(self, value):
+        value = (value or '').strip()
+        if not value:
+            raise serializers.ValidationError('디자인룰을 입력해주세요.')
+        return value
+
+    def create(self, validated_data):
+        """의뢰서당 1건(OneToOne)이므로 재지정은 교체로 처리한다."""
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        obj, _created = DocumentDesignRuleOverride.objects.update_or_create(
+            document=validated_data['document'],
+            defaults={
+                'design_rule': validated_data['design_rule'],
+                'created_by': user if getattr(user, 'is_authenticated', False) else None,
+            },
+        )
+        return obj
