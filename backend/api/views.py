@@ -98,6 +98,14 @@ class GuideWritePermission(BasePermission):
 
 
 class RequestDocumentViewSet(viewsets.ModelViewSet):
+    # REST DELETE 미허용 — 삭제는 인가가 붙은 `POST documents/{id}/delete/` 로만 처리한다.
+    # ModelViewSet 기본 destroy 는 인가 없이 어떤 상태의 문서든(결재 완료본 포함) 지울 수 있다.
+    # destroy 를 오버라이드해 405 를 반환하는 방식은 Allow 헤더에 DELETE 가 남아
+    # "허용한다고 광고하면서 405 를 주는" 모순이 생기므로, 메서드 목록에서 제외한다.
+    # ⚠️ DestroyModelMixin 을 빼는 방식은 이 클래스에서 쓸 수 없다 — 아래 `delete` 액션의
+    #    메서드명이 HTTP DELETE 와 겹쳐, 라우터 매핑이 사라지면 APIView.dispatch 가
+    #    getattr(self, 'delete') 로 그 액션을 잡아 DELETE 요청이 그대로 실행된다.
+    http_method_names = ['get', 'post', 'put', 'patch', 'head', 'options']
     queryset = RequestDocument.objects.select_related('requester', 'designated_pl').all()
     permission_classes = [IsAuthenticatedInProd]
     pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
@@ -394,20 +402,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         return Response({'message': '철회되었습니다.'})
 
-    def destroy(self, request, *args, **kwargs):
-        """REST DELETE 는 지원하지 않는다 — 삭제는 `POST delete/` 단일 경로로만 처리한다.
-
-        ModelViewSet 기본 destroy 는 인가 없이 어떤 상태의 문서든 지울 수 있어
-        (결재 완료본 포함) 경로 자체를 막고 인가가 붙은 delete 액션으로 일원화한다.
-        """
-        return Response(
-            {'error': '지원하지 않는 요청입니다. 삭제는 documents/{id}/delete/ 를 사용해주세요.'},
-            status=status.HTTP_405_METHOD_NOT_ALLOWED,
-        )
-
     @action(detail=True, methods=['post'], url_path='delete')
     def delete(self, request, pk=None):
-        """의뢰서 삭제 — approved 는 MASTER만, 그 외는 철회 가능 범위(doc_permissions.can_delete)"""
+        """의뢰서 삭제.
+
+        허용 대상은 `doc_permissions.can_delete` 가 판정한다 —
+        결재 완료(approved)본은 MASTER 만, 그 외 상태는 철회 가능 범위와 동일하다.
+        """
         document = self.get_object()
         if not doc_permissions.can_delete(request.user, document):
             return Response({'error': '삭제 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)

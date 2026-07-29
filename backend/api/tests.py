@@ -1130,6 +1130,31 @@ class DocumentDeleteAuthTest(TestCase):
         self.assertEqual(res.status_code, 405)
         self.assertTrue(self._exists(doc))
 
+    def test_405_allow_header_excludes_delete(self):
+        """405 응답의 Allow 에 DELETE 가 없어야 한다(RFC 9110 — Allow 는 '허용' 목록).
+
+        destroy 를 오버라이드해 405 를 반환하면 Allow 에 DELETE 가 남아 모순이 생기므로,
+        http_method_names 에서 제외하는 방식을 쓴다. 이 테스트가 그 방식을 고정한다.
+        """
+        doc = self._doc()
+        self.client.force_authenticate(user=self.master)
+        res = self.client.delete(f'/api/documents/{doc.id}/')
+        allow = res.headers.get('Allow', '')
+        self.assertNotIn('DELETE', allow, f'Allow 에 DELETE 가 남아 있다: {allow!r}')
+        self.assertIn('GET', allow)
+        self.assertIn('PATCH', allow)
+
+    def test_other_methods_still_work(self):
+        """delete 액션 이름이 HTTP DELETE 와 겹치므로, 다른 라우팅이 깨지지 않았는지 확인."""
+        doc = self._doc('draft')
+        self.client.force_authenticate(user=self.author)
+        self.assertEqual(self.client.get(f'/api/documents/{doc.id}/').status_code, 200)
+        self.assertEqual(
+            self.client.patch(f'/api/documents/{doc.id}/', {'title': 'x'}, format='json').status_code,
+            200,
+        )
+        self.assertEqual(self.client.get('/api/documents/').status_code, 200)
+
     def test_rest_delete_blocked_for_outsider_on_approved(self):
         """B-01 원본 재현 케이스: 무관한 사용자의 승인문서 REST DELETE."""
         doc = self._doc('approved')
