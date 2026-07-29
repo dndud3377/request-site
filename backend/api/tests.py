@@ -1061,3 +1061,128 @@ class PostApproverManagementTest(TestCase):
         r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/', {'loginid': self.extra_pl1.loginid}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
         self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='RA').exists())
+
+
+@override_settings(AUTH_MODE='sso')
+class DocumentDeleteAuthTest(TestCase):
+    """의뢰서 삭제 인가 (B-01).
+
+    - approved : MASTER 만
+    - 그 외(draft/under_review/rejected/pause) : 철회 가능 범위
+      (의뢰자 / 지정 PL / 의뢰자 그룹멤버 / MASTER)
+    - REST `DELETE /documents/{id}/` 는 405 로 차단하고 `POST delete/` 로 일원화
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+
+        self.author = UserProfile.objects.create(loginid='del_author', mail='a@c.com', role='PL')
+        self.member = UserProfile.objects.create(loginid='del_member', mail='m@c.com', role='PL')
+        self.designee = UserProfile.objects.create(loginid='del_pl', mail='p@c.com', role='PL')
+        self.outsider = UserProfile.objects.create(loginid='del_out', mail='o@c.com', role='PL')
+        self.norole = UserProfile.objects.create(loginid='del_none', mail='n@c.com', role='NONE')
+        self.master = UserProfile.objects.create(loginid='del_master', mail='ms@c.com', role='MASTER')
+
+        group = UserGroup.objects.create(name='del_team', creator=self.author)
+        group.members.add(self.author, self.member)
+
+    def _doc(self, status='under_review', requester=None, designated_pl=None):
+        return RequestDocument.objects.create(
+            title=f'del-{status}',
+            requester=self.author if requester is None else requester,
+            requester_name='작성자', requester_email='a@c.com', requester_department='d',
+            product_name='p', status=status, designated_pl=designated_pl,
+        )
+
+    def _post_delete(self, user, doc):
+        self.client.force_authenticate(user=user)
+        return self.client.post(f'/api/documents/{doc.id}/delete/')
+
+    def _exists(self, doc):
+        return RequestDocument.objects.filter(pk=doc.pk).exists()
+
+    # ----- 차단 -----
+    def test_outsider_cannot_delete(self):
+        doc = self._doc()
+        res = self._post_delete(self.outsider, doc)
+        self.assertEqual(res.status_code, 403)
+        self.assertTrue(self._exists(doc))
+
+    def test_norole_user_cannot_delete(self):
+        doc = self._doc()
+        res = self._post_delete(self.norole, doc)
+        self.assertEqual(res.status_code, 403)
+        self.assertTrue(self._exists(doc))
+
+    def test_non_master_cannot_delete_approved(self):
+        """결재 완료본은 작성자 본인이어도 지울 수 없다(이력 보존)."""
+        doc = self._doc('approved')
+        res = self._post_delete(self.author, doc)
+        self.assertEqual(res.status_code, 403)
+        self.assertTrue(self._exists(doc))
+
+    def test_rest_delete_is_blocked_with_405(self):
+        """REST DELETE 는 권한이 있어도 405 — 삭제 경로는 POST delete/ 하나뿐."""
+        doc = self._doc()
+        self.client.force_authenticate(user=self.master)
+        res = self.client.delete(f'/api/documents/{doc.id}/')
+        self.assertEqual(res.status_code, 405)
+        self.assertTrue(self._exists(doc))
+
+    def test_rest_delete_blocked_for_outsider_on_approved(self):
+        """B-01 원본 재현 케이스: 무관한 사용자의 승인문서 REST DELETE."""
+        doc = self._doc('approved')
+        self.client.force_authenticate(user=self.norole)
+        res = self.client.delete(f'/api/documents/{doc.id}/')
+        self.assertEqual(res.status_code, 405)
+        self.assertTrue(self._exists(doc))
+
+    # ----- 허용 -----
+    def test_author_can_delete_own_document(self):
+        doc = self._doc()
+        res = self._post_delete(self.author, doc)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(self._exists(doc))
+
+    def test_designated_pl_can_delete(self):
+        doc = self._doc(designated_pl=self.designee)
+        res = self._post_delete(self.designee, doc)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(self._exists(doc))
+
+    def test_group_member_can_delete(self):
+        doc = self._doc()
+        res = self._post_delete(self.member, doc)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(self._exists(doc))
+
+    def test_master_can_delete_approved(self):
+        doc = self._doc('approved')
+        res = self._post_delete(self.master, doc)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(self._exists(doc))
+
+    def test_author_can_delete_paused_document(self):
+        """중단(pause) 문서도 철회 범위와 동일하게 작성자가 삭제할 수 있다(정책 확정)."""
+        doc = self._doc('pause')
+        res = self._post_delete(self.author, doc)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(self._exists(doc))
+
+    def test_legacy_document_without_requester_fk_is_deletable_by_author(self):
+        """requester FK 가 비어 있는 레거시 문서는 이메일 폴백으로 작성자를 판별한다."""
+        doc = self._doc()
+        doc.requester = None
+        doc.save(update_fields=['requester'])
+        res = self._post_delete(self.author, doc)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(self._exists(doc))
+
+    def test_delete_cascades_approval_steps(self):
+        """삭제 시 결재 단계도 함께 사라진다(복구 불가 — 로그로만 추적)."""
+        doc = self._doc()
+        ApprovalStep.objects.create(document=doc, agent='PL', action='pending', round=1, assignee=self.designee)
+        res = self._post_delete(self.master, doc)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(ApprovalStep.objects.filter(document_id=doc.id).exists())
