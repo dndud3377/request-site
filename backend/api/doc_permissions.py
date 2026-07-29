@@ -85,11 +85,13 @@ def can_delete(user, document, co_member_ids=None):
     (`ApprovalPage` 는 can_withdraw, `HistoryPage` 는 MASTER 로 버튼을 낸다).
     can_withdraw 를 재사용하므로 requester FK 가 비어 있는 레거시 문서의
     이메일 폴백 판정도 그대로 적용된다.
+
+    ⚠️ can_withdraw 와의 차이는 **approved 분기 하나뿐**이다. 결재 완료본은
+    이력이므로 의뢰자·지정PL·그룹멤버가 지울 수 없고 MASTER 만 가능하다.
     """
-    if getattr(user, 'role', '') == 'MASTER':
-        return True
     if document.status == 'approved':
-        return False
+        return getattr(user, 'role', '') == 'MASTER'
+    # 그 외(draft/under_review/rejected/pause): 철회 범위와 동일 (can_withdraw 가 MASTER 를 포함)
     return can_withdraw(user, document, co_member_ids)
 
 
