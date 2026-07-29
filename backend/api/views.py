@@ -23,16 +23,18 @@ from django.db.models import Q, Max, Min, Exists, OuterRef
 from .models import (
     RequestDocument, ApprovalStep, PauseRequest, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
-    MapName, AddressBook,
+    MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
 )
 from .utils import LINE_TO_LINEID_MAP
 from . import mailer
 from . import doc_permissions
+from . import design_rule_stats
 from .authentication import ExternalApiKeyAuthentication
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer, ExternalRequestDocumentSerializer,
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
     UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer, AddressBookSerializer,
+    ProcessDesignRuleOverrideSerializer, DocumentDesignRuleOverrideSerializer,
 )
 import uuid
 import logging
@@ -1482,6 +1484,87 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             by_status[key] = RequestDocument.objects.filter(status=key).count()
 
         return Response({'total': total, 'by_status': by_status})
+
+    @action(detail=False, methods=['get'], url_path='annual-design-rule-stats')
+    def annual_design_rule_stats(self, request):
+        """홈 화면 연간 디자인룰별 의뢰 통계 (집계 규칙은 design_rule_stats 모듈 참조).
+
+        쿼리파라미터
+        - `year`   : 기준 연도. 생략 시 승인 건이 있는 가장 최근 연도.
+        - `compare`: 비교 연도. 생략하면 비교 필드가 모두 null 로 내려간다.
+        - `top`    : 상위 N개(1~30) 또는 `all`. 기본 10.
+        """
+        years = design_rule_stats.available_years()
+        if not years:
+            # 승인 건이 아예 없으면 빈 상태 — 프론트가 empty 안내를 띄운다.
+            return Response({'data': {
+                'year': None, 'compare_year': None, 'top': None,
+                'available_years': [], 'purposes': list(design_rule_stats.REQUEST_PURPOSES),
+                'buckets': [], 'total': 0, 'compare_total': None,
+            }})
+
+        year = self._parse_year(request.query_params.get('year'), default=years[-1])
+        compare_year = self._parse_year(request.query_params.get('compare'), default=None)
+        if compare_year == year:
+            compare_year = None
+
+        top_n = self._parse_top(request.query_params.get('top'))
+
+        data = design_rule_stats.annual_stats(year, compare_year=compare_year, top_n=top_n)
+        return Response({'data': data})
+
+    @staticmethod
+    def _parse_year(raw, default):
+        """연도 파라미터 파싱. 숫자가 아니거나 범위를 벗어나면 기본값."""
+        if raw in (None, ''):
+            return default
+        try:
+            year = int(raw)
+        except (TypeError, ValueError):
+            return default
+        # 상식적인 범위 밖 값은 무시한다(경계 datetime 생성 시 OverflowError 방지).
+        return year if 1900 <= year <= 2999 else default
+
+    @staticmethod
+    def _parse_top(raw):
+        """상위 N 파싱. `all` 이면 None(전체), 그 외는 1~MAX_TOP_N 로 클램프."""
+        if raw in (None, ''):
+            return design_rule_stats.DEFAULT_TOP_N
+        if str(raw).lower() == 'all':
+            return None
+        try:
+            top = int(raw)
+        except (TypeError, ValueError):
+            return design_rule_stats.DEFAULT_TOP_N
+        return max(1, min(top, design_rule_stats.MAX_TOP_N))
+
+
+class ProcessDesignRuleOverrideViewSet(viewsets.ModelViewSet):
+    """{{request.process_selection}} 단위 디자인룰 수동 매핑 — 읽기는 로그인, 쓰기는 MASTER.
+
+    `unclassified` 액션이 분류 모달에 필요한 대상 목록을 한 번에 내려준다.
+    """
+    queryset = ProcessDesignRuleOverride.objects.select_related('created_by').all()
+    serializer_class = ProcessDesignRuleOverrideSerializer
+    permission_classes = [IsMasterOrReadOnly]
+    pagination_class = None
+
+    @action(detail=False, methods=['get'])
+    def unclassified(self, request):
+        """미분류 대상(조합법·의뢰서)과 디자인룰 후보 목록.
+
+        쿼리파라미터 `year` 가 있으면 해당 연도 승인 건만 대상으로 한다.
+        """
+        year = RequestDocumentViewSet._parse_year(request.query_params.get('year'), default=None)
+        return Response({'data': design_rule_stats.unclassified_targets(year=year)})
+
+
+class DocumentDesignRuleOverrideViewSet(viewsets.ModelViewSet):
+    """의뢰서 단위 디자인룰 수동 매핑 — 읽기는 로그인, 쓰기는 MASTER."""
+    queryset = DocumentDesignRuleOverride.objects.select_related('created_by', 'document').all()
+    serializer_class = DocumentDesignRuleOverrideSerializer
+    permission_classes = [IsMasterOrReadOnly]
+    pagination_class = None
 
 
 class ExternalRequestDocumentViewSet(viewsets.ReadOnlyModelViewSet):
