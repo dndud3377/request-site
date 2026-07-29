@@ -394,13 +394,32 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         return Response({'message': '철회되었습니다.'})
 
+    def destroy(self, request, *args, **kwargs):
+        """REST DELETE 는 지원하지 않는다 — 삭제는 `POST delete/` 단일 경로로만 처리한다.
+
+        ModelViewSet 기본 destroy 는 인가 없이 어떤 상태의 문서든 지울 수 있어
+        (결재 완료본 포함) 경로 자체를 막고 인가가 붙은 delete 액션으로 일원화한다.
+        """
+        return Response(
+            {'error': '지원하지 않는 요청입니다. 삭제는 documents/{id}/delete/ 를 사용해주세요.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
     @action(detail=True, methods=['post'], url_path='delete')
     def delete(self, request, pk=None):
-        """의뢰서 삭제 — approved 상태는 MASTER만, 나머지는 PL/MASTER"""
+        """의뢰서 삭제 — approved 는 MASTER만, 그 외는 철회 가능 범위(doc_permissions.can_delete)"""
         document = self.get_object()
-        user_role = getattr(request.user, 'role', '')
-        if document.status == 'approved' and user_role != 'MASTER':
-            return Response({'error': '결재 완료된 문서는 MASTER만 삭제할 수 있습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        if not doc_permissions.can_delete(request.user, document):
+            return Response({'error': '삭제 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        # 삭제는 복구 불가 + ApprovalStep/PauseRequest 가 CASCADE 로 함께 사라지므로
+        # 누가 무엇을 지웠는지 서버 로그에 남긴다(감사용).
+        logging.getLogger(__name__).warning(
+            "[DELETE_DOCUMENT] user=%s(role=%s) doc=%s status=%s title=%r",
+            getattr(request.user, 'loginid', '-') or '-',
+            getattr(request.user, 'role', '-') or '-',
+            document.pk, document.status, document.title,
+        )
         document.delete()
         return Response({'message': '삭제되었습니다.'})
 
