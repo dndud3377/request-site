@@ -34,25 +34,29 @@ LINES = ['라인 1', '라인 3', '라인 4', '라인 5']
 # 라인2 는 소스 테이블 구조가 달라 RTDB 를 쓰지 않고 DCQ 단독으로 동기화한다.
 # (Line 마스터·프론트엔드 표기와 일치하도록 공백 없는 '라인2' 로 저장한다.)
 LINE2 = '라인2'
-# product_design_rule 이 비었거나 숫자(정수·소수)로만 이루어진 경우 product_desc 로 대체한다.
+# 숫자(정수·소수)로만 이루어진 값 판정용 정규식.
 # 백슬래시가 Python·Impala 문자열 리터럴에서 이스케이프로 해석되지 않도록 `\.` 대신 `[.]` 를 쓴다.
 LINE2_NUMERIC_ONLY_RE = "'^[0-9]+([.][0-9]*)?$|^[.][0-9]+$'"
+# product_design_rule 을 공정명으로 쓸 수 없는 조건. 해당하면 product_desc 로 대체한다.
+# CASE(그대로) 와 WHERE(NOT 부정형) 양쪽에서 재사용하여 두 곳의 판정 기준이 어긋나지 않게 한다.
+LINE2_DR_UNUSABLE = (
+    "product_design_rule IS NULL"
+    " OR TRIM(product_design_rule) = ''"
+    " OR TRIM(product_design_rule) = '-'"
+    f" OR TRIM(product_design_rule) REGEXP {LINE2_NUMERIC_ONLY_RE}"
+)
 LINE2_PP_QUERY = f"""
     SELECT DISTINCT
         product_id,
         CASE
-            WHEN product_design_rule IS NULL
-              OR TRIM(product_design_rule) = ''
-              OR TRIM(product_design_rule) REGEXP {LINE2_NUMERIC_ONLY_RE}
+            WHEN {LINE2_DR_UNUSABLE}
             THEN product_desc
             ELSE product_design_rule
         END AS product_design_rule
     FROM M.L
     WHERE product_id IS NOT NULL AND product_id != ''
       AND (
-            (product_design_rule IS NOT NULL
-             AND TRIM(product_design_rule) != ''
-             AND TRIM(product_design_rule) NOT REGEXP {LINE2_NUMERIC_ONLY_RE})
+            NOT ({LINE2_DR_UNUSABLE})
          OR (product_desc IS NOT NULL AND TRIM(product_desc) != '')
       )
 """
