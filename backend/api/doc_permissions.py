@@ -74,6 +74,25 @@ def can_withdraw(user, document, co_member_ids=None):
     return _shares_group_with_requester(user, document, co_member_ids)
 
 
+def can_delete(user, document, co_member_ids=None):
+    """삭제 인가 — 문서 상태별 허용 대상.
+
+    - approved : MASTER 만 (결재 완료본은 이력이므로 임의 삭제 금지)
+    - 그 외(draft/under_review/rejected/pause) : 철회 가능 범위와 동일
+      (MASTER / 의뢰자 / 지정 PL / 의뢰자가 멤버인 그룹의 멤버)
+
+    프론트의 삭제 버튼 노출 조건과 1:1 로 맞춘 규칙이다
+    (`ApprovalPage` 는 can_withdraw, `HistoryPage` 는 MASTER 로 버튼을 낸다).
+    can_withdraw 를 재사용하므로 requester FK 가 비어 있는 레거시 문서의
+    이메일 폴백 판정도 그대로 적용된다.
+    """
+    if getattr(user, 'role', '') == 'MASTER':
+        return True
+    if document.status == 'approved':
+        return False
+    return can_withdraw(user, document, co_member_ids)
+
+
 def can_edit(user, document, co_member_ids=None):
     """수정(update) 인가 — 문서 상태별 허용 대상.
 

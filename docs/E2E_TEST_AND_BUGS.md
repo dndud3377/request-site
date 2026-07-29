@@ -24,7 +24,7 @@
 
 | 구분 | 1차 | 2차 추가 | 합계 | 비고 |
 |------|-----|---------|------|------|
-| 🔴 치명 (Critical) | 4 | **+3** | **7** | 인가 부재 삭제 / PAUSE 우회 / 미인증 업로드 / **저장형 XSS→권한상승** / **토큰 재사용** / **CSRF** |
+| 🔴 치명 (Critical) | 4 | **+3** | **7** (1건 수정완료) | 인가 부재 삭제 / PAUSE 우회 / 미인증 업로드 / **저장형 XSS→권한상승** / **토큰 재사용** / **CSRF** |
 | 🟠 높음 (High) | 6 | **+6** | **12** | 담당자 계정 삭제 시 결재 교착, 그룹 CASCADE 소실, 중단요청 고착, 메일 escape 누락 등 |
 | 🟡 중간 (Medium) | 8 | **+7** | **15** | 세션 갱신 불가, PII 로깅, 통계 노출, 메일 영구유실, 보안헤더 부재 등 |
 | ⚪ 낮음/위생 (Low) | 7 | **+7** | **14** | 하드코딩, `any` 83건, 데드코드, 취약한 휴리스틱 |
@@ -34,7 +34,7 @@
 1. **[B-26] 저장형 XSS → MASTER 권한 탈취** — 역할 `NONE` 사용자가 VOC 내용에 임의 HTML/스크립트를 저장할 수 있고,
    그것을 열람한 MASTER의 세션으로 `assign-role` 이 호출되면 **공격자가 MASTER로 승격**된다. sanitizer 의존성 자체가 없다.
 2. **[B-27] OIDC id_token 만료 검증이 꺼져 있다** (`verify_exp: False`) — 한 번 유출된 id_token으로 **기한 없이 로그인** 가능.
-3. **[B-01] 의뢰서 삭제 인가 전무** — 로그인만 하면 (역할 `NONE` 포함) **결재 완료 문서까지 삭제** 가능.
+3. ~~**[B-01] 의뢰서 삭제 인가 전무**~~ → ✅ **수정 완료**(2026-07-28, `03b2240`) — 인가 적용 + REST DELETE 405 차단.
 4. **[B-06] PAUSE 동결 우회** — 중단(pause) 문서에서 PL 합의/반려가 그대로 동작해 결재가 되살아난다.
 5. **[B-02+B-34] 미인증 업로드 + 무방비 `/media/` 서빙** — 비로그인으로 스크립트 포함 `.svg` 업로드 → 같은 오리진에서 실행.
 
@@ -550,10 +550,16 @@ draft ──상신──▶ under_review ──(PL 전원 합의)──▶ R ─
 - ✅ 철회 시 `draft` 로 되돌아가고 `submitted_at=None`
 - ⚠️ **모든 회차의 결재 단계가 전량 삭제된다** → §5 **B-09**
 
-#### T-L2 삭제 — **현재 인가 없음**
-- 조작: 무관한 사용자(역할 `NONE` 포함)가 `POST /api/documents/{id}/delete/` 또는 `DELETE /api/documents/{id}/`
-- ✅ **기대**: 403
-- ❌ **실제**: 200 / 204 로 **삭제 성공**(결재 완료 문서 포함) → §5 **B-01** 🔴
+#### T-L2 삭제 권한 (B-01 수정 후 기준)
+| 로그인 | 문서 상태 | `POST delete/` 기대 |
+|---|---|---|
+| 작성자 / 지정 PL / 의뢰자 그룹멤버 | draft·under_review·rejected·**pause** | ✅ 200 (삭제) |
+| 무관한 사용자 · 역할 `NONE` | 전부 | ✅ **403** |
+| 작성자(본인이라도) | **approved** | ✅ **403** (이력 보존) |
+| MASTER | 전부 | ✅ 200 |
+- ✅ `DELETE /api/documents/{id}/` 는 권한 유무와 무관하게 **405** — 삭제는 `POST delete/` 한 경로뿐
+- ✅ 삭제 성공 시 서버 로그에 `[DELETE_DOCUMENT] user=… doc=… status=… title=…` 기록
+- ⚠️ 삭제는 복구 불가 — `ApprovalStep`·`PauseRequest` 가 CASCADE 로 함께 사라진다
 
 ---
 
@@ -924,7 +930,19 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 > 심각도: 🔴치명 / 🟠높음 / 🟡중간 / ⚪낮음
 > 상태: **재현✅** = 이번 세션에서 Django 테스트로 직접 실행해 확인 / **분석🔍** = 코드 정독으로 도출
 
-### 🔴 B-01 의뢰서 삭제에 인가가 전혀 없다 — 결재 완료 문서까지 누구나 삭제 **재현✅**
+### 🔴 B-01 의뢰서 삭제에 인가가 전혀 없다 — 결재 완료 문서까지 누구나 삭제 **재현✅** → ✅**수정완료** (`fcf57b9`·`03b2240`·`aa8865e`)
+
+> **[2026-07-28 수정 완료]**
+> - **적용 규칙**: `approved` = MASTER 전용 / 그 외(`draft`·`under_review`·`rejected`·`pause`) = 철회 가능 범위
+>   (의뢰자·지정PL·의뢰자 그룹멤버·MASTER). `doc_permissions.can_delete()` 신설, `can_withdraw` 재사용으로
+>   레거시(`requester` FK 없음) 문서의 이메일 폴백 판정 승계.
+> - **`DELETE /documents/{id}/` 는 405 로 차단**(사용자 선택) — 삭제 경로를 `POST delete/` 하나로 일원화.
+> - **감사 로그**(사용자 선택): 삭제 성공 시 `WARNING [DELETE_DOCUMENT] user=… doc=… status=… title=…` 1줄.
+> - **`pause` 문서 삭제는 허용**(사용자 선택) — 철회 범위와 동일.
+> - **프론트 변경 0건** — 기존 버튼 노출 조건이 새 서버 규칙의 부분집합이라 정상 사용자는 차이가 없다.
+> - 회귀 테스트 12건 추가(`DocumentDeleteAuthTest`). 전체 75 → 87건.
+>
+> 아래는 수정 전 기록(재발 방지용 원문 보존).
 - 위치: `backend/api/views.py:100-102`(`permission_classes = [IsAuthenticatedInProd]`), `views.py:397-405`(`delete` 액션)
 - 내용:
   1. `RequestDocumentViewSet` 은 `ModelViewSet` 이라 라우터가 **`DELETE /api/documents/{id}/`(destroy)** 를 그대로 노출한다.
@@ -1565,7 +1583,7 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 - [ ] B-27 만료된 `id_token` 재전송 → **401**
 - [ ] B-28 `nonce_jwt` 없이 콜백 → **400** / `state` 불일치 → **400**
 - [ ] B-29 `AUTH_MODE` 값 확인 + dev 모드에서도 쓰기·삭제는 **인증 요구**
-- [ ] B-01 무관한 사용자로 `DELETE /api/documents/{id}/` → **403**
+- [x] B-01 무관한 사용자로 `DELETE /api/documents/{id}/` → **405** / `POST delete/` → **403** ✅ 수정완료
 - [ ] B-02 비로그인 `POST /api/upload-image/` → **401/403**, `.svg` 업로드 → **400**
 - [ ] B-34 업로드 파일 URL 직접 접근 시 스크립트 **미실행**
 - [ ] B-35 `docker logs | grep '\[OIDC\]'` → 개인정보 **미출력**
