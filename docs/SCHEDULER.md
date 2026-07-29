@@ -71,10 +71,29 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 
 | 대상 테이블 | DCQ 소스 | 조회 컬럼 → 저장 컬럼 |
 |-------------|----------|----------------------|
-| `api_processproduct` | `M.L` | `product_design_rule` → `process`, `product_id` → `product_name` |
+| `api_processproduct` | `M.L` | `product_design_rule`(폴백 시 `product_desc`) → `process`, `product_id` → `product_name` |
 | `api_productprocessid` | `M.L` | `product_id` → `product_name`, `process_id` → `process_id` |
 
-- 두 쿼리 모두 조회 컬럼이 **NULL 이거나 빈 문자열인 행을 WHERE 에서 제외**한다.
+#### `product_desc` 폴백 규칙 (processproduct 전용)
+
+`product_design_rule` 이 아래 중 하나면 **`product_desc` 값을 대신 사용**한다. SQL 의 `CASE` 결과를
+`AS product_design_rule` 로 별칭 처리하므로 파이썬 쪽 rename 로직은 그대로다.
+
+- `NULL` 이거나 `TRIM` 후 빈 문자열인 경우
+- **정수 또는 소수 형태의 숫자로만** 이루어진 경우 — 판정 정규식 `LINE2_NUMERIC_ONLY_RE`
+  (`^[0-9]+([.][0-9]*)?$|^[.][0-9]+$`)
+
+| 예시 값 | 판정 | 저장되는 `process` |
+|---------|------|--------------------|
+| `130` / `0.13` / `13.` / `.5` | 숫자 | `product_desc` |
+| `13.5um` / `A12` / `12-3` / `-5` | 숫자 아님 | `product_design_rule` |
+
+> 정규식에 `\.` 대신 **문자 클래스 `[.]`** 를 쓴다. Python 문자열 리터럴과 Impala 문자열 리터럴
+> 양쪽에서 백슬래시가 이스케이프로 해석되는 문제를 피하기 위함이다. 음수 부호(`-`)는 숫자로 보지 않는다.
+
+- `productprocessid` 쿼리는 조회 컬럼이 **NULL 이거나 빈 문자열인 행을 WHERE 에서 제외**한다.
+- `processproduct` 쿼리는 폴백이 있으므로 `product_design_rule` 단독으로는 행을 제외하지 않고,
+  **`product_design_rule` 과 `product_desc` 가 모두 사용 불가일 때만** 행을 제외한다.
 - 저장은 다른 라인과 동일하게 `_write_if_changed()` 를 사용하므로 **변경 감지 후 `DELETE(line='라인2') → INSERT`** 로 라인2 행만 갱신한다.
 - 라인2 의 `line` 컬럼 값은 `Line` 마스터·프론트엔드 표기와 동일한 **공백 없는 `'라인2'`** 이다.
   (기존 라인들은 `scheduler.LINES` 에서 `'라인 1'` 처럼 공백이 있는 표기를 쓰고 있어 서로 다르다 — 아래 주의사항 참고.)
