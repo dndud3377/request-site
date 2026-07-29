@@ -34,11 +34,27 @@ LINES = ['라인 1', '라인 3', '라인 4', '라인 5']
 # 라인2 는 소스 테이블 구조가 달라 RTDB 를 쓰지 않고 DCQ 단독으로 동기화한다.
 # (Line 마스터·프론트엔드 표기와 일치하도록 공백 없는 '라인2' 로 저장한다.)
 LINE2 = '라인2'
-LINE2_PP_QUERY = """
-    SELECT DISTINCT product_id, product_design_rule
+# product_design_rule 이 비었거나 숫자(정수·소수)로만 이루어진 경우 product_desc 로 대체한다.
+# 백슬래시가 Python·Impala 문자열 리터럴에서 이스케이프로 해석되지 않도록 `\.` 대신 `[.]` 를 쓴다.
+LINE2_NUMERIC_ONLY_RE = "'^[0-9]+([.][0-9]*)?$|^[.][0-9]+$'"
+LINE2_PP_QUERY = f"""
+    SELECT DISTINCT
+        product_id,
+        CASE
+            WHEN product_design_rule IS NULL
+              OR TRIM(product_design_rule) = ''
+              OR TRIM(product_design_rule) REGEXP {LINE2_NUMERIC_ONLY_RE}
+            THEN product_desc
+            ELSE product_design_rule
+        END AS product_design_rule
     FROM M.L
     WHERE product_id IS NOT NULL AND product_id != ''
-      AND product_design_rule IS NOT NULL AND product_design_rule != ''
+      AND (
+            (product_design_rule IS NOT NULL
+             AND TRIM(product_design_rule) != ''
+             AND TRIM(product_design_rule) NOT REGEXP {LINE2_NUMERIC_ONLY_RE})
+         OR (product_desc IS NOT NULL AND TRIM(product_desc) != '')
+      )
 """
 LINE2_PC_QUERY = """
     SELECT DISTINCT product_id, process_id
