@@ -31,6 +31,22 @@ load_dotenv()
 
 LINES = ['라인 1', '라인 3', '라인 4', '라인 5']
 
+# 라인2 는 소스 테이블 구조가 달라 RTDB 를 쓰지 않고 DCQ 단독으로 동기화한다.
+# (Line 마스터·프론트엔드 표기와 일치하도록 공백 없는 '라인2' 로 저장한다.)
+LINE2 = '라인2'
+LINE2_PP_QUERY = """
+    SELECT DISTINCT product_id, product_design_rule
+    FROM M.L
+    WHERE product_id IS NOT NULL AND product_id != ''
+      AND product_design_rule IS NOT NULL AND product_design_rule != ''
+"""
+LINE2_PC_QUERY = """
+    SELECT DISTINCT product_id, process_id
+    FROM M.L
+    WHERE product_id IS NOT NULL AND product_id != ''
+      AND process_id IS NOT NULL AND process_id != ''
+"""
+
 # RTDB(MAIN) 조회 파라미터 - table_name 은 소스별로 다르며 {suffix} 는 라인 접미사로 치환된다.
 RTDB_TARGET = "realtimedb"
 RTDB_PP_SELECT = ["partnumber, descript, pkgtype_2"]   # 공정-품목
@@ -223,9 +239,10 @@ def sync_rtdb_options():
 
 def sync_form_options():
     """
-    DCQ 를 사용하여 외부 DB 에서 바코드-품목 / MAP 이름 데이터를
-    DataFrame 으로 가져와 Django DB 에 저장한다.
-    (공정-품목·품목-공정ID·스텝은 RTDB MAIN + DCQ fallback 구조로 sync_rtdb_options 로 분리)
+    DCQ 를 사용하여 외부 DB 에서 바코드-품목 / MAP 이름 데이터와
+    라인2 의 공정-품목 / 품목-공정ID 데이터를 DataFrame 으로 가져와 Django DB 에 저장한다.
+    (라인1·3~5 의 공정-품목·품목-공정ID·스텝은 RTDB MAIN + DCQ fallback 구조로 sync_rtdb_options 로 분리.
+     라인2 는 소스 테이블이 달라 RTDB 를 지원하지 않으므로 DCQ 단독으로 여기서 처리한다.)
     """
     engine = None
     
@@ -239,7 +256,8 @@ def sync_form_options():
         logger.error(_("[scheduler] DCQ 로그인 실패로 인해 작업을 중단합니다"))
         return
     
-    dcq_id, _ = get_dcq_credentials()
+    # NOTE: gettext 별칭 `_` 를 덮어쓰지 않도록 비밀번호는 `_pw` 로 받는다.
+    dcq_id, _pw = get_dcq_credentials()
     if dcq_id:
         get_dcq_token_info(dcq_id)
     else:
@@ -297,6 +315,48 @@ def sync_form_options():
                 logger.info(_("[scheduler] MAP 이름 {count}건 동기화 완료").format(count=len(df_mn)))
         except Exception as e:
             logger.error(_("[scheduler] MAP 이름 동기화 실패: {e}").format(e=e), exc_info=True)
+
+        # --- 라인2 공정-품목 (api_processproduct) ---
+        try:
+            df_l2_cp = get_data_from_dcq(LINE2_PP_QUERY, dcq_id)
+
+            if df_l2_cp is None or len(df_l2_cp) == 0:
+                logger.warning(_("[scheduler] {line} 공정-품목 데이터가 없습니다").format(line=LINE2))
+            else:
+                df_l2_cp = df_l2_cp.rename(
+                    columns={'product_design_rule': 'process', 'product_id': 'product_name'}
+                )
+                count = _write_if_changed(
+                    engine, 'api_processproduct', LINE2, df_l2_cp,
+                    ['process', 'product_name'],
+                    ['line', 'process', 'product_name', 'last_synced'],
+                )
+                if count is None:
+                    logger.info(_("[scheduler] {line} 공정-품목 변경 없음 - skip").format(line=LINE2))
+                else:
+                    logger.info(_("[scheduler] {line} 공정-품목 {count}건 동기화 완료").format(line=LINE2, count=count))
+        except Exception as e:
+            logger.error(_("[scheduler] {line} 공정-품목 동기화 실패: {e}").format(line=LINE2, e=e), exc_info=True)
+
+        # --- 라인2 품목-공정ID (api_productprocessid) ---
+        try:
+            df_l2_pc = get_data_from_dcq(LINE2_PC_QUERY, dcq_id)
+
+            if df_l2_pc is None or len(df_l2_pc) == 0:
+                logger.warning(_("[scheduler] {line} 품목-공정ID 데이터가 없습니다").format(line=LINE2))
+            else:
+                df_l2_pc = df_l2_pc.rename(columns={'product_id': 'product_name'})
+                count = _write_if_changed(
+                    engine, 'api_productprocessid', LINE2, df_l2_pc,
+                    ['product_name', 'process_id'],
+                    ['line', 'product_name', 'process_id', 'last_synced'],
+                )
+                if count is None:
+                    logger.info(_("[scheduler] {line} 품목-공정ID 변경 없음 - skip").format(line=LINE2))
+                else:
+                    logger.info(_("[scheduler] {line} 품목-공정ID {count}건 동기화 완료").format(line=LINE2, count=count))
+        except Exception as e:
+            logger.error(_("[scheduler] {line} 품목-공정ID 동기화 실패: {e}").format(line=LINE2, e=e), exc_info=True)
 
     finally:
         if engine:
@@ -370,7 +430,8 @@ def sync_design_rule():
         logger.error(_("[scheduler] DCQ 로그인 실패로 인해 공정-디자인룰 동기화를 중단합니다"))
         return
 
-    dcq_id, _ = get_dcq_credentials()
+    # NOTE: gettext 별칭 `_` 를 덮어쓰지 않도록 비밀번호는 `_pw` 로 받는다.
+    dcq_id, _pw = get_dcq_credentials()
     if not dcq_id:
         logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
         return

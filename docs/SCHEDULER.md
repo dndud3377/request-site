@@ -26,8 +26,8 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 
 | 잡 ID | 주기 | 함수 | 설명 |
 |-------|------|------|------|
-| `sync_rtdb_options` | **10분** | `sync_rtdb_options()` | 공정-품목 / 품목-공정ID / 스텝 (RTDB MAIN + DCQ fallback) 동기화 |
-| `sync_form_options` | 1시간 | `sync_form_options()` | 바코드-품목 / MAP 이름 (DCQ) 동기화 |
+| `sync_rtdb_options` | **10분** | `sync_rtdb_options()` | 라인1·3~5 의 공정-품목 / 품목-공정ID / 스텝 (RTDB MAIN + DCQ fallback) 동기화 |
+| `sync_form_options` | 1시간 | `sync_form_options()` | 바코드-품목 / MAP 이름 + **라인2 공정-품목 / 품목-공정ID** (DCQ 단독) 동기화 |
 | `sync_holidays` | 매일 02:00 | `sync_holidays()` | 공휴일 동기화 (act_date UNIQUE → 날짜 기준 중복 제거 후 저장) |
 | `sync_design_rule` | 매일 02:00 | `sync_design_rule()` | 공정-디자인룰(DCQ `S.M`) 동기화 → `api_designrule` 전체 갱신 |
 | `process_mail_queue` | 1분 | `process_mail_queue()` | 결재 알림 메일 큐 발송 |
@@ -62,6 +62,22 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 - MAIN(RTDB) 토큰은 동기화 **주기당 1회** 발급하여 세 소스·라인 반복에서 재사용한다.
 - **DCQ fallback 은 RTDB 가 실패한 경우에만 지연 로그인**하며, 그 로그인 상태는 세 소스가 공유한다(평소에는 DCQ 를 호출하지 않음).
 - 나머지 동기화(바코드, MAP 이름, 공휴일)는 기존 DCQ 단일 소스를 그대로 사용한다.
+
+### 라인2 (DCQ 단독, 폴백 구조 아님)
+
+라인2 는 소스 테이블 구조가 다른 라인들과 달라 **RTDB 를 지원하지 않는다.** 따라서 위 MAIN/FALLBACK
+구조를 타지 않고, 1시간 잡 `sync_form_options()` 안에서 **DCQ 단독**으로 동기화한다.
+(스텝 테이블 `api_steps2` 는 존재하지 않으므로 라인2 스텝 동기화는 없다.)
+
+| 대상 테이블 | DCQ 소스 | 조회 컬럼 → 저장 컬럼 |
+|-------------|----------|----------------------|
+| `api_processproduct` | `M.L` | `product_design_rule` → `process`, `product_id` → `product_name` |
+| `api_productprocessid` | `M.L` | `product_id` → `product_name`, `process_id` → `process_id` |
+
+- 두 쿼리 모두 조회 컬럼이 **NULL 이거나 빈 문자열인 행을 WHERE 에서 제외**한다.
+- 저장은 다른 라인과 동일하게 `_write_if_changed()` 를 사용하므로 **변경 감지 후 `DELETE(line='라인2') → INSERT`** 로 라인2 행만 갱신한다.
+- 라인2 의 `line` 컬럼 값은 `Line` 마스터·프론트엔드 표기와 동일한 **공백 없는 `'라인2'`** 이다.
+  (기존 라인들은 `scheduler.LINES` 에서 `'라인 1'` 처럼 공백이 있는 표기를 쓰고 있어 서로 다르다 — 아래 주의사항 참고.)
 
 ### 변경 감지(Change Detection) 쓰기 전략
 
@@ -106,3 +122,11 @@ RTDB MAIN 소스를 사용하려면 아래 변수를 `.env` 에 추가해야 한
 - 동기화/조회/로그인 실패 로그는 `exc_info=True` 로 남긴다. 따라서 `... 동기화 실패` / `[DCQ] 데이터 조회 실패`
   / `[RTDB] 데이터 조회 실패` 등의 로그에는 **예외 종류·메시지와 함께 전체 traceback(파일·라인·호출 스택)** 이
   같이 출력되어, 어느 파일 몇 번째 줄에서 무슨 에러가 났는지 바로 확인할 수 있다. (`scheduler.py`·`utils.py`)
+- `get_dcq_credentials()` 의 반환값을 받을 때 **비밀번호를 `_` 로 받지 않는다.** `scheduler.py` 는
+  `gettext_lazy` 를 `_` 로 import 하므로, `dcq_id, _ = get_dcq_credentials()` 로 쓰면 `_` 가 비밀번호
+  문자열로 덮여 이후 모든 `_("...")` 호출이 `TypeError: 'str' object is not callable` 로 실패한다.
+  반드시 `dcq_id, _pw = get_dcq_credentials()` 형태로 받는다.
+- **라인명 표기가 두 가지로 섞여 있다.** `scheduler.LINES` 는 `'라인 1'`(공백 포함)을 쓰지만
+  `Line` 마스터·프론트엔드·라인2 동기화는 `'라인1'`(공백 없음)을 쓴다. `api_processproduct` /
+  `api_productprocessid` 의 `line` 컬럼에 두 표기가 함께 저장되므로, 조회 시 표기 불일치로
+  빈 결과가 나올 수 있다.
