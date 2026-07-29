@@ -6,6 +6,7 @@ import StatusBadge from '../components/StatusBadge';
 import Modal, { ConfirmModal } from '../components/Modal';
 import RichTextEditor from '../components/RichTextEditor';
 import GuideTourModal from '../components/GuideTourModal';
+import AnnualDesignRuleChart from '../components/AnnualDesignRuleChart';
 import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseItem } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { shouldShowNotice, markNoticeSeen } from '../utils/noticeStorage';
@@ -596,6 +597,13 @@ export default function HomePage(): React.ReactElement {
       </div>
 
       <div className="container page">
+        {/* 연간 제품별(디자인룰) 의뢰 현황 — 역할 없는 사용자에겐 노출하지 않는다 */}
+        {!hasNoRole && (
+          <div style={{ marginBottom: 32 }}>
+            <AnnualDesignRuleChart isMaster={isMaster} />
+          </div>
+        )}
+
         {/* Recent */}
         {recent.length > 0 && (
           <div>

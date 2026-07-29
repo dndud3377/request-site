@@ -25,6 +25,8 @@ import {
   UserRole,
   AddressBook,
   NotifierRef,
+  AnnualDesignRuleStats,
+  UnclassifiedTargets,
 } from '../types';
 
 // ===== JWT 토큰 관리 =====
@@ -342,6 +344,24 @@ const getApprovedDocuments = async (product_name?: string): Promise<{ data: Requ
   return { data: Array.isArray(data) ? data : (data as any).results ?? [] };
 };
 
+/** 홈 화면 연간 디자인룰 그래프 데이터.
+ *  year/compare 미지정 시 백엔드가 가장 최근 연도를 기준으로 잡는다. */
+const annualDesignRuleStats = async (params: {
+  year?: number;
+  compare?: number;
+  top?: number | 'all';
+}): Promise<{ data: AnnualDesignRuleStats }> => {
+  const query = new URLSearchParams();
+  if (params.year !== undefined) query.append('year', String(params.year));
+  if (params.compare !== undefined) query.append('compare', String(params.compare));
+  if (params.top !== undefined) query.append('top', String(params.top));
+  const qs = query.toString();
+  const data = await get<{ data: AnnualDesignRuleStats }>(
+    `/documents/annual-design-rule-stats/${qs ? `?${qs}` : ''}`
+  );
+  return { data: data.data };
+};
+
 export const documentsAPI = {
   list: listDocuments,
   get: getDocument,
@@ -367,6 +387,31 @@ export const documentsAPI = {
   changeDesignee,
   stats: documentStats,
   getApproved: getApprovedDocuments,
+  annualDesignRuleStats,
+};
+
+// ===== 디자인룰 수동 매핑 API (쓰기는 MASTER 전용) =====
+
+const getUnclassifiedTargets = async (year?: number): Promise<{ data: UnclassifiedTargets }> => {
+  const qs = year !== undefined ? `?year=${year}` : '';
+  const data = await get<{ data: UnclassifiedTargets }>(`/design-rule-processes/unclassified/${qs}`);
+  return { data: data.data };
+};
+
+/** 조합법 단위 매핑 — 같은 조합법을 다시 지정하면 서버가 교체(upsert)한다. */
+const setProcessDesignRule = async (process: string, design_rule: string) => {
+  await post('/design-rule-processes/', { process, design_rule });
+};
+
+/** 의뢰서 단위 매핑 — 조합법 매핑보다 우선하며, 재지정 시 교체된다. */
+const setDocumentDesignRule = async (document: number, design_rule: string) => {
+  await post('/design-rule-documents/', { document, design_rule });
+};
+
+export const designRuleMappingsAPI = {
+  unclassified: getUnclassifiedTargets,
+  setProcess: setProcessDesignRule,
+  setDocument: setDocumentDesignRule,
 };
 
 // ===== VOC API =====

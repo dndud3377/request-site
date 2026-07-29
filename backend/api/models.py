@@ -354,6 +354,64 @@ class DesignRule(models.Model):
         return f"{self.process} / {self.design_rule}"
 
 
+class ProcessDesignRuleOverride(models.Model):
+    """{{request.process_selection}} 단위 디자인룰 수동 매핑 (MASTER 전용).
+
+    `DesignRule` 마스터에 없거나 서로 다른 디자인룰 2개 이상에 걸려 판정이 모호한
+    {{request.process_selection}} 을 MASTER 가 직접 하나의 디자인룰로 확정한다.
+    한 번 등록하면 같은 {{request.process_selection}} 을 쓴 과거·미래 의뢰서에 모두 적용된다.
+
+    ⚠️ 스케줄러(`sync_design_rule`)는 `api_designrule` 을 DELETE 후 재적재하므로,
+    수동 매핑은 반드시 이 별도 테이블에 보관해야 동기화 후에도 살아남는다.
+    """
+    process = models.CharField(
+        max_length=200, unique=True, verbose_name='{{request.process_selection}}'
+    )
+    design_rule = models.CharField(max_length=200, verbose_name='디자인룰')
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='process_design_rule_overrides', verbose_name='등록자'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='등록일시')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일시')
+
+    class Meta:
+        verbose_name = '{{request.process_selection}}-디자인룰 수동 매핑'
+        verbose_name_plural = '{{request.process_selection}}-디자인룰 수동 매핑 목록'
+        ordering = ['process']
+
+    def __str__(self):
+        return f"{self.process} → {self.design_rule}"
+
+
+class DocumentDesignRuleOverride(models.Model):
+    """의뢰서 단위 디자인룰 수동 매핑 (MASTER 전용).
+
+    {{request.process_selection}} 단위 매핑으로 정리되지 않는 예외 의뢰서를 하나씩 지정한다.
+    판정 우선순위상 `ProcessDesignRuleOverride` 보다 **우선**한다
+    (상세는 docs/HOME_STATS.md 참조).
+    """
+    document = models.OneToOneField(
+        RequestDocument, on_delete=models.CASCADE,
+        related_name='design_rule_override', verbose_name='의뢰서'
+    )
+    design_rule = models.CharField(max_length=200, verbose_name='디자인룰')
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='document_design_rule_overrides', verbose_name='등록자'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='등록일시')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일시')
+
+    class Meta:
+        verbose_name = '의뢰서-디자인룰 수동 매핑'
+        verbose_name_plural = '의뢰서-디자인룰 수동 매핑 목록'
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"[{self.document_id}] → {self.design_rule}"
+
+
 class VOC(models.Model):
     """VOC (Voice of Customer) 모델"""
 
