@@ -27,6 +27,7 @@ import {
   NotifierRef,
   AnnualDesignRuleStats,
   UnclassifiedTargets,
+  ValidationSystemValue,
 } from '../types';
 
 // ===== JWT 토큰 관리 =====
@@ -238,7 +239,8 @@ const approveStep = async (
   agent: AgentType,
   comment?: string,
   approverName?: string,
-  reviewerLoginids?: string[]
+  reviewerLoginids?: string[],
+  validationSystem?: ValidationSystemValue
 ) => {
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/approve-step/`,
@@ -246,6 +248,8 @@ const approveStep = async (
       agent, comment: comment ?? '', approver_name: approverName ?? '',
       // P/E 담당자 합의 시 검토자(PV/EV, 다중)를 함께 지정 — 별도 API 없이 한 번에 처리
       ...((agent === 'P' || agent === 'E') && reviewerLoginids?.length ? { reviewer_loginids: reviewerLoginids } : {}),
+      // E(MASK) 합의 시 Validation System 확정값을 함께 전달 — 같은 요청 한 번으로 처리
+      ...(agent === 'E' && validationSystem ? { validation_system: validationSystem } : {}),
     }
   );
   return { data };

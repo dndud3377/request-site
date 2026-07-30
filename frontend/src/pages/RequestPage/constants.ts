@@ -37,6 +37,15 @@ export const MAP_DETAIL_KEYS: (keyof DetailFormState)[] = [
 
 export { ST_CELL_COLOR } from '../../utils/stCellColor';
 
+// ===== Validation System 대상 판정 =====
+/** 판정 키워드 — J-layer 행의 pp 값에 포함되면 그 행은 대상 근거가 된다(대소문자 무관) */
+export const VALIDATION_KEYWORD = 'plel';
+/** detail.validation_system 에 저장되는 값 */
+export const VS_TARGET = 'YES';
+export const VS_NONTARGET = 'NO';
+/** 판정 키워드를 포함한 pp 셀 배경색 */
+export const VALIDATION_CELL_COLOR = '#fff9c4';
+
 // 엑셀식 붙여넣기용 편집 가능 컬럼 순서(표 표시 순서와 동일). No/체크박스/Update(읽기전용) 제외.
 export const JAYER_EDITABLE_COLS = ['process_id', 'sp', 'sd', 'layerid', 'pp', 'st', 'new_or_copy', 'product_name', 'step', 'item_id'] as const;
 export const OAYER_EDITABLE_COLS = ['process_id', 'sp', 'sd', 'layerid', 'pp', 'st', 'new_or_copy', 'product_name', 'step'] as const;
@@ -181,6 +190,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   tbvtlv_thickness: '',
   tbvtlv_entries: [],
   notifiers: [],
+  validation_system: VS_NONTARGET,
 };
 
 export const INITIAL_FORM: CreateDocumentInput = {

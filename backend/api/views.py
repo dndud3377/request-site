@@ -485,6 +485,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if not main_step or main_step.action != 'approved':
                 return Response({'error': '담당자 합의가 먼저 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # E(MASK) 합의 시 함께 오는 Validation System 값은 검증만 여기서 먼저 끝낸다.
+        # (@transaction.atomic 은 예외에만 롤백하므로, 아래 검토자 생성 이후에 400을 반환하면
+        #  그 쓰기가 커밋된 채로 응답만 실패해 부분 커밋이 생긴다 — 아직 쓰기가 없는 지금 걸러낸다.)
+        validation_system = request.data.get('validation_system')
+        if agent == 'E' and validation_system is not None and validation_system not in self.VALIDATION_SYSTEM_VALUES:
+            return Response(
+                {'error': '유효하지 않은 Validation System 값입니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # P/E 담당자 합의 시 함께 지정된 검토자(PV/EV) 생성 — 별도 지정 API 없이
         # 이 합의 요청 한 번으로 담당자 합의 + 검토자 지정이 함께 처리된다.
         if agent in ('P', 'E'):
@@ -494,6 +504,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 err = self._create_reviewers(document, step, review_loginids, caller_loginid, max_round)
                 if err:
                     return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        # E(MASK) 합의 시 Validation System 대상/비대상 확정값을 반영한다(값 검증은 위에서 이미 끝났다).
+        if agent == 'E' and validation_system is not None:
+            self._set_validation_system(document, validation_system)
 
         step.action = 'approved'
         step.acted_at = timezone.now()
@@ -1096,7 +1110,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         - Only MAP: P/O/E 없이 후결자(RA)만 생성(후결자 전원 합의 시 최종 승인).
           후결자가 하나도 없으면(고정 미설정 + 비 C가문) 기존처럼 즉시 승인한다.
-        - 일반: P(4영업일)·O(6영업일 병렬)·[E(plel 시 6영업일)] + 후결자(RA, 6영업일 병렬) 생성.
+        - 일반: P(4영업일)·O(6영업일 병렬)·E(6영업일 병렬) + 후결자(RA, 6영업일 병렬) 생성.
         """
         from .utils import calculate_business_due_date
         import datetime
@@ -1118,11 +1132,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             )
             mailer.enqueue_stage_arrival(document, 'P', p_step)
             mailer.enqueue_stage_arrival(document, 'O', o_step)
-            if document.has_ppid_plel():
-                e_step = ApprovalStep.objects.create(
-                    document=document, agent='E', action='pending', is_parallel=True, round=round_no, due_date=o_due,
-                )
-                mailer.enqueue_stage_arrival(document, 'E', e_step)
+            # E(MASK)는 대상/비대상 판정을 검증하는 단계라 항상 생성한다(Only MAP 제외).
+            e_step = ApprovalStep.objects.create(
+                document=document, agent='E', action='pending', is_parallel=True, round=round_no, due_date=o_due,
+            )
+            mailer.enqueue_stage_arrival(document, 'E', e_step)
 
         # 후결자(RA) 병렬 생성 — 고정 1명 + C가문 추가. 각자에게 "[후결 요청]" 메일 발송.
         for u in post_users:
@@ -1285,6 +1299,26 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         mailer.enqueue_stage_arrival(document, 'PL', step, recipient_name=step.assignee_name)
 
         return Response({'message': '지정자가 변경되었습니다.', 'document': RequestDocumentSerializer(document).data})
+
+    # Validation System 대상/비대상 값 (프론트 constants.ts 의 VS_TARGET/VS_NONTARGET 과 동일)
+    VALIDATION_SYSTEM_VALUES = ('YES', 'NO')
+
+    def _set_validation_system(self, document, value):
+        """detail.validation_system 만 덮어쓴다.
+
+        validation_system_submitted(상신 시점 상신자 값)는 건드리지 않는다.
+        JSON 파싱 실패 시 조용히 건너뛴다(_sync_post_approvers_detail 과 같은 정책).
+        """
+        import json
+        try:
+            data = json.loads(document.additional_notes or '{}')
+            detail = data.get('detail', {}) or {}
+            detail['validation_system'] = value
+            data['detail'] = detail
+            document.additional_notes = json.dumps(data, ensure_ascii=False)
+            document.save(update_fields=['additional_notes'])
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     def _sync_post_approvers_detail(self, document, add=None, remove_loginid=None):
         """detail.post_approvers JSON을 add(dict, {loginid,name}) 추가 또는 remove_loginid 제거로 동기화한다.

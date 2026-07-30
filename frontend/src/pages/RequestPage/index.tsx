@@ -56,8 +56,10 @@ import {
   TOUR_JAYER_PRODUCT,
   TOUR_JAYER_STEPS,
   TOUR_JAYER_ITEMS,
+  VS_TARGET,
+  VS_NONTARGET,
 } from './constants';
-import { formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations } from './helpers';
+import { formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, isValidationTarget } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
 import Step1 from './components/Step1';
@@ -149,6 +151,16 @@ export default function RequestPage(): React.ReactElement {
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
   const [detail, setDetail] = useState<DetailFormState>(isTourMode ? makeTourDetail() : INITIAL_DETAIL);
   const [jayerRows, setJayerRows] = useState<JayerRow[]>(isTourMode ? makeTourJayerRows() : [makeJayerRow()]);
+  // Validation System: 상신자가 토글을 직접 건드렸는지. true 면 J-layer 변경에도 자동 갱신하지 않는다.
+  // 세션 로컬 상태라 detail 에 넣지 않고 저장도 하지 않는다.
+  const [vsManuallySet, setVsManuallySet] = useState(false);
+  // J-layer 가 바뀌면 Validation System 대상 여부를 자동 갱신한다.
+  // 상신자가 토글을 직접 바꾼 뒤에는(vsManuallySet) 자동 갱신하지 않는다.
+  useEffect(() => {
+    if (vsManuallySet) return;
+    const auto = isValidationTarget(jayerRows) ? VS_TARGET : VS_NONTARGET;
+    setDetail((prev) => (prev.validation_system === auto ? prev : { ...prev, validation_system: auto }));
+  }, [jayerRows, vsManuallySet]);
   const [jayerBarcodeCache, setJayerBarcodeCache] = useState<Record<string, { label: string; spec: string }[]>>({});
   // 바코드 후보 조회 경합/부하 방지: 행별 요청 시퀀스 토큰(최신 요청만 반영) + 타이핑 디바운스 타이머
   const barcodeReqSeq = useRef<Record<string, number>>({});
@@ -717,7 +729,14 @@ export default function RequestPage(): React.ReactElement {
           const normalizedOtherPurpose = Array.isArray(parsed.detail.other_purpose)
             ? parsed.detail.other_purpose
             : (parsed.detail.other_purpose ? [parsed.detail.other_purpose] : []);
-          setDetail({ ...parsed.detail, other_purpose: normalizedOtherPurpose, bb_entries: loadedBbEntries, notifiers: parsed.detail.notifiers ?? [] });
+          // 레거시 문서(validation_system 필드 도입 전)는 저장된 J-layer로 대상 여부를 판정해 백필한다.
+          const savedVs = parsed.detail.validation_system as (typeof VS_TARGET | typeof VS_NONTARGET | undefined);
+          const backfilledVs = savedVs === VS_TARGET || savedVs === VS_NONTARGET
+            ? savedVs
+            : (isValidationTarget(Array.isArray(parsed.jayerRows) ? parsed.jayerRows : []) ? VS_TARGET : VS_NONTARGET);
+          setDetail({ ...parsed.detail, other_purpose: normalizedOtherPurpose, bb_entries: loadedBbEntries, notifiers: parsed.detail.notifiers ?? [], validation_system: backfilledVs });
+          // 불러온 문서의 값은 이미 확정된 판단이므로 자동 갱신으로 덮어쓰지 않는다.
+          setVsManuallySet(true);
           setPostApprovers(Array.isArray(parsed.detail.post_approvers) ? parsed.detail.post_approvers : []);
           // 완성된 MAP 변경 문서 재열기: 원본 MAP 스냅샷(변경이력 diff 기준)을 history[0] 에서 복원
           if (normalizedOtherPurpose.includes(OTHER_PURPOSE_MAP_CHANGE) && parsed.history?.[0]?.detail) {
@@ -2886,6 +2905,9 @@ export default function RequestPage(): React.ReactElement {
           post_approvers: detail.only_prodc === 'Yes' ? postApprovers : [],
           // 완성된 MAP 변경: 승인 시 서버가 원본 요청서에 MAP 값을 반영할 수 있도록 대상 문서 id 를 저장
           ...(isMapChangeMode && mapChangeDocId !== null ? { map_change_source_id: mapChangeDocId } : {}),
+          // 상신·재상신 시점의 상신자 판단을 고정 기록한다(임시저장에는 남기지 않는다).
+          // 이후 MASK(E)가 detail.validation_system 을 바꿔도 이 값은 유지된다.
+          ...(isDraft ? {} : { validation_system_submitted: detail.validation_system }),
         },
         // Only MAP·완성된 MAP 변경은 StepMap 정보까지만 필요 → J/O/bb 표를 비워 저장한다.
         jayerRows: isMapOnlyScope ? [] : (isDraft ? jayerRows : jayerRows.filter(r => !r.disabled)).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
@@ -3354,6 +3376,12 @@ export default function RequestPage(): React.ReactElement {
           handleJayerBulkRestore={handleJayerBulkRestore}
           cellSel={jayerCellSel}
           GuideBadge={GuideBadge}
+          validationSystem={detail.validation_system}
+          autoValidationSystem={isValidationTarget(jayerRows) ? VS_TARGET : VS_NONTARGET}
+          onValidationSystemChange={(v) => {
+            setVsManuallySet(true);
+            setDetail((prev) => ({ ...prev, validation_system: v }));
+          }}
         />
       )}
       {step === 4 && (

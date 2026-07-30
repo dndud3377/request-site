@@ -234,6 +234,9 @@ export interface BbTableRow {
   entryIdx?: number;  // [레거시 호환] 구버전 저장 문서의 출처 탭 인덱스 — entryId 없을 때 색상 fallback
 }
 
+/** Validation System 대상 여부 — 'YES'(대상) | 'NO'(비대상) */
+export type ValidationSystemValue = 'YES' | 'NO';
+
 export interface DetailFormState {
   // 항상 표시
   request_purpose: string;
@@ -324,6 +327,12 @@ export interface DetailFormState {
   map_change_source_id?: number;
   // 원본 요청서에 '완성된 MAP 변경'이 반영된 횟수. 변경 이력의 '완성 후 수정 n회차' 표기에 쓴다.
   map_edit_round?: number;
+
+  // Validation System 대상('YES')/비대상('NO'). 상신 시 자동 판정값을 기본으로 상신자가 확정하고,
+  // 결재 과정에서 MASK(E) 팀이 최종 확정한다.
+  validation_system: ValidationSystemValue;
+  // 상신·재상신 시점의 상신자 값. MASK 가 값을 바꿔도 이 값은 유지돼 두 판단의 차이를 남긴다.
+  validation_system_submitted?: ValidationSystemValue;
 }
 
 // 통보자 참조: 화면 표시용 이름 + 메일 발송용 loginid

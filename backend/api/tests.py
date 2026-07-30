@@ -593,7 +593,8 @@ class RouteCardTest(TestCase):
         self.assertEqual(by_label['O'], 'reviewing')      # pending + 담당자 있음
         self.assertEqual(by_label['P'], 'waiting')        # pending + 미배정
         self.assertEqual(by_label['J'], 'waiting')        # step 미생성(예정)
-        self.assertNotIn('E', by_label, 'plel 이 아니면 E 는 경로에 넣지 않는다')
+        self.assertIn('E', by_label, 'E(MASK)는 대상/비대상과 무관하게 항상 경로에 포함된다')
+        self.assertEqual(by_label['E'], 'waiting')  # step 미생성(예정)
 
     def test_rows_only_include_current_round(self):
         old = UserProfile.objects.create(loginid='old9', mail='old9@c.com', role='PL')
@@ -837,6 +838,45 @@ class PEStageReviewerFlowTest(TestCase):
         doc.refresh_from_db()
         return doc
 
+    def test_e_step_created_even_without_plel(self):
+        """대상 판정 키워드가 없어도 E(MASK) 단계는 항상 생성된다."""
+        doc = self._advance_to_parallel(plel=False)
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='E', round=1).exists(),
+            'E 는 대상/비대상과 무관하게 생성되어야 한다',
+        )
+
+    def test_e_step_not_created_for_only_map(self):
+        """Only MAP 문서에는 여전히 E 단계가 생기지 않는다."""
+        doc = RequestDocument.objects.create(
+            title='onlymap', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps(
+                {'detail': {'request_purpose': RequestDocument.ONLY_MAP_PURPOSE}, 'jayerRows': []}
+            ),
+        )
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/',
+                             {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        # PL 합의만으로는 R 단계가 생성될 뿐 병렬 단계(_advance_to_parallel)에는
+        # 진입하지 않으므로, R 담당자 지정·합의까지 실제로 거쳐야 Only MAP 분기가
+        # 검증된다(브리프 원안은 R 합의를 생략해 이 분기를 타지 않는 채로 통과했다).
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='E').exists())
+
     # ----- P 단계 -----
 
     def test_p_no_reviewers_creates_j_immediately_backward_compat(self):
@@ -984,6 +1024,84 @@ class PEStageReviewerFlowTest(TestCase):
 
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'approved')
+
+    # ----- E(MASK) 합의 시 Validation System 확정값 -----
+
+    def _get_detail(self, doc):
+        doc.refresh_from_db()
+        return self._json.loads(doc.additional_notes or '{}').get('detail', {})
+
+    def test_e_approve_updates_validation_system(self):
+        """MASK(E) 합의 시 보낸 validation_system 이 detail 에 반영된다."""
+        doc = self._advance_to_parallel(plel=True)
+        notes = self._json.loads(doc.additional_notes)
+        notes['detail'] = {'validation_system': 'YES', 'validation_system_submitted': 'YES'}
+        doc.additional_notes = self._json.dumps(notes)
+        doc.save()
+
+        self.client.force_authenticate(user=self.e_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/',
+            {'agent': 'E', 'comment': '', 'validation_system': 'NO'}, format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+        detail = self._get_detail(doc)
+        self.assertEqual(detail['validation_system'], 'NO')
+        self.assertEqual(detail['validation_system_submitted'], 'YES',
+                         '상신 시점 값은 MASK 수정으로 바뀌지 않는다')
+
+    def test_validation_system_ignored_for_other_agents(self):
+        """E 가 아닌 단계에서 보낸 validation_system 은 무시한다."""
+        doc = self._advance_to_parallel(plel=True)
+        notes = self._json.loads(doc.additional_notes)
+        notes['detail'] = {'validation_system': 'YES'}
+        doc.additional_notes = self._json.dumps(notes)
+        doc.save()
+
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/',
+            {'agent': 'O', 'comment': '', 'validation_system': 'NO'}, format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._get_detail(doc)['validation_system'], 'YES')
+
+    def test_invalid_validation_system_rejected(self):
+        """허용되지 않는 값은 400 이다."""
+        doc = self._advance_to_parallel(plel=True)
+        self.client.force_authenticate(user=self.e_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/',
+            {'agent': 'E', 'comment': '', 'validation_system': 'MAYBE'}, format='json',
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_invalid_validation_system_with_reviewers_creates_no_ev_step(self):
+        """유효한 reviewer_loginids 와 함께 온 잘못된 validation_system 은 400 이고,
+
+        EV 검토자 단계도 생성되지 않아야 한다(값 검증이 검토자 생성보다 먼저 실행되어
+        부분 커밋이 없어야 함을 확인).
+        """
+        doc = self._advance_to_parallel(plel=True)
+        self.client.force_authenticate(user=self.e_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/',
+            {
+                'agent': 'E', 'comment': '',
+                'reviewer_loginids': [self.e_reviewer.loginid],
+                'validation_system': 'MAYBE',
+            }, format='json',
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertFalse(
+            ApprovalStep.objects.filter(document=doc, agent='EV', round=1).exists(),
+            '값 검증 실패 시 검토자(EV) 단계도 생성되지 않아야 한다',
+        )
 
 
 class MapChangeApplyTest(TestCase):
@@ -1830,3 +1948,123 @@ class AnnualDesignRuleStatsApiTest(TestCase):
         self.assertEqual(res.status_code, 200)
         data = res.json()['data']
         self.assertEqual([p['process'] for p in data['processes']], ['P1'])
+
+
+class BackfillEStepsCommandTest(TestCase):
+    """`backfill_e_steps` — 항상 생성 규칙 배포 이전에 병렬 단계로 넘어간 문서에 E 단계 소급 생성."""
+
+    def setUp(self):
+        import json
+        self._json = json
+        self.requester = UserProfile.objects.create(loginid='bf_req', mail='bf_req@c.com', role='NONE')
+        self.e_user = UserProfile.objects.create(loginid='bf_e', mail='bf_e@c.com', role='TE_E')
+
+    def _doc(self, status='under_review', purpose=None, round_no=1, with_o=True, with_e=False, due=None):
+        """R 합의까지 끝난 상태의 문서를 ORM 으로 직접 만든다(회차/단계 조합을 자유롭게 구성하기 위함)."""
+        detail = {'detail': ({'request_purpose': purpose} if purpose else {})}
+        doc = RequestDocument.objects.create(
+            title='백필 대상', requester=self.requester, requester_name='요청자',
+            requester_email='bf_req@c.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps(detail),
+        )
+        self._add_round(doc, round_no, with_o=with_o, with_e=with_e, due=due)
+        return doc
+
+    def _add_round(self, doc, round_no, with_o=True, with_e=False, due=None):
+        ApprovalStep.objects.create(document=doc, agent='R', action='approved', round=round_no)
+        if with_o:
+            ApprovalStep.objects.create(
+                document=doc, agent='O', action='pending', is_parallel=True,
+                round=round_no, due_date=due,
+            )
+        if with_e:
+            ApprovalStep.objects.create(
+                document=doc, agent='E', action='pending', is_parallel=True, round=round_no,
+            )
+
+    def _run(self, *args):
+        from io import StringIO
+        from django.core.management import call_command
+        out = StringIO()
+        call_command('backfill_e_steps', *args, stdout=out)
+        return out.getvalue()
+
+    def _e_steps(self, doc):
+        return ApprovalStep.objects.filter(document=doc, agent='E')
+
+    def test_creates_missing_e_step_inheriting_o_due_date(self):
+        import datetime
+        due = datetime.date(2026, 8, 7)
+        doc = self._doc(due=due)
+        self._run('--apply')
+        steps = list(self._e_steps(doc))
+        self.assertEqual(len(steps), 1)
+        self.assertEqual(steps[0].action, 'pending')
+        self.assertTrue(steps[0].is_parallel)
+        self.assertEqual(steps[0].round, 1)
+        self.assertEqual(steps[0].due_date, due)
+
+    def test_dry_run_creates_nothing(self):
+        doc = self._doc()
+        out = self._run()
+        self.assertEqual(self._e_steps(doc).count(), 0)
+        self.assertIn('dry-run', out)
+
+    def test_skips_document_that_already_has_e_step(self):
+        doc = self._doc(with_e=True)
+        self._run('--apply')
+        self.assertEqual(self._e_steps(doc).count(), 1)
+
+    def test_skips_only_map_document(self):
+        doc = self._doc(purpose=RequestDocument.ONLY_MAP_PURPOSE)
+        self._run('--apply')
+        self.assertEqual(self._e_steps(doc).count(), 0)
+
+    def test_skips_document_before_parallel_stage(self):
+        doc = self._doc(with_o=False)
+        self._run('--apply')
+        self.assertEqual(self._e_steps(doc).count(), 0)
+
+    def test_skips_finished_documents(self):
+        approved = self._doc(status='approved')
+        rejected = self._doc(status='rejected')
+        self._run('--apply')
+        self.assertEqual(self._e_steps(approved).count(), 0)
+        self.assertEqual(self._e_steps(rejected).count(), 0)
+
+    def test_includes_paused_document(self):
+        doc = self._doc(status='pause')
+        self._run('--apply')
+        self.assertEqual(self._e_steps(doc).count(), 1)
+
+    def test_is_idempotent(self):
+        doc = self._doc()
+        self._run('--apply')
+        self._run('--apply')
+        self.assertEqual(self._e_steps(doc).count(), 1)
+
+    def test_backfills_current_round_only(self):
+        """재상신 문서는 최종 회차에만 소급 생성한다(이전 회차 이력은 건드리지 않는다)."""
+        doc = self._doc(round_no=1, with_e=True)
+        self._add_round(doc, 2, with_o=True, with_e=False)
+        self._run('--apply')
+        self.assertEqual(self._e_steps(doc).filter(round=1).count(), 1)
+        self.assertEqual(self._e_steps(doc).filter(round=2).count(), 1)
+
+    def test_notify_enqueues_arrival_mail(self):
+        self._doc()
+        self._run('--apply', '--notify')
+        self.assertEqual(MailNotification.objects.filter(event_type='stage_arrival').count(), 1)
+
+    def test_no_mail_without_notify_flag(self):
+        self._doc()
+        self._run('--apply')
+        self.assertEqual(MailNotification.objects.count(), 0)
+
+    def test_notify_without_apply_creates_nothing(self):
+        doc = self._doc()
+        out = self._run('--notify')
+        self.assertEqual(self._e_steps(doc).count(), 0)
+        self.assertEqual(MailNotification.objects.count(), 0)
+        self.assertIn('--notify', out)
