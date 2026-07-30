@@ -121,6 +121,17 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-07-30 — INTER 섹션 IN 적용 O/X + Xs/Ys/XYs/없음 필수 선택 그룹 추가)
+
+- **개요**: `StepMap`의 `Inter`(3번) 항목에서 `YES` 선택 시 기존 `inter_xs`/`inter_ys`(적용/미적용 독립 토글, 필수 아님) 버튼을 제거하고, 그 자리에 아래 두 버튼 그룹을 추가했다.
+  - **IN 적용 O / IN 적용 X** — 신규 필드 `in_apply: 'O' | 'X' | ''`. `map-option-btn` 버튼 스타일 재사용, 클릭 시 토글이 아니라 클릭값으로 즉시 교체(다른 버튼은 자동 비활성) — `map_type` 버튼과 동일한 단일선택 동작.
+  - **Xs / Ys / XYs / 없음** — 신규 필드 `inter_select: 'xs' | 'ys' | 'xys' | 'none' | ''`. 동일한 단일선택 버튼 방식. i18n 키 `map_opt_inter_xs`/`_ys`는 기존 키 재사용, `_xys`/`_none`은 신규 추가.
+  - 두 그룹은 **서로 완전히 독립**적으로 동작(값 연동 없음).
+- **검증**: `index.tsx`의 `validate()` step 2(`!isMapRegistered`) 블록에 `detail.inter === 'YES'`일 때 `in_apply`·`inter_select` 각각 미선택 시 `request.required` 에러 추가(기존 `map_reason`/`ea_value`와 동일 패턴). 즉 `IN 적용 O/X` 중 1개, `Xs/Ys/XYs/없음` 중 1개가 항상 필수.
+- **NO 전환 시 즉시 초기화**: `Inter`를 `NO`로 바꾸면 확인 모달 없이 `inter_xs`/`inter_ys`(레거시)와 함께 `in_apply`/`inter_select`도 곧바로 `''`로 리셋되어, 화면에 보이지 않는 값이 실수로 저장되는 것을 방지한다. `handleMapTypeChangeConfirm` 등 MAP 필드 일괄 초기화 경로(2곳)에도 동일 리셋을 추가했다.
+- **하위 호환**: 기존 `inter_xs`/`inter_ys` 필드·i18n 키(`approval.inter_xs_applied`/`_ys_applied`)는 삭제하지 않고 그대로 둔다. `PagedDetailView`는 `in_apply`가 있는(신규 작성) 문서는 새 값으로, 없는(레거시) 문서는 기존 `inter_xs`/`inter_ys` 배지로 표시한다.
+- **화이트리스트 동기화**: 프론트 `MAP_DETAIL_KEYS`(`constants.ts`)와 백엔드 `RequestDocument.MAP_APPLY_KEYS`(`models.py`)에 `in_apply`·`inter_select` 동시 추가. `detail`은 `additional_notes` JSON 저장이라 마이그레이션 불필요.
+
 ### 추가 변경 이력 (2026-07 — 완성된 MAP 변경: 대상 프리필·J/O/B 제거·승인 시 원본 반영)
 
 - **대상 요청서 검색 프리필**(`applyMapChangeMode`): 모드 진입 시 `mapChangeDocLabel`에 `detail.partid_selection`을 채워 검색어로 쓴다. 문서 제목에 제품명이 포함되므로 그대로 필터가 된다. `mapChangeDocId`는 `null` 유지 — 사용자가 목록에서 실제 문서를 골라야 '적용'이 활성화된다. 프리필은 **진입 시 1회만**(이후 검색어 편집 중일 수 있어 partid 변경에 재동기화하지 않음).
