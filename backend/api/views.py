@@ -485,6 +485,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if not main_step or main_step.action != 'approved':
                 return Response({'error': '담당자 합의가 먼저 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # E(MASK) 합의 시 함께 오는 Validation System 값은 검증만 여기서 먼저 끝낸다.
+        # (@transaction.atomic 은 예외에만 롤백하므로, 아래 검토자 생성 이후에 400을 반환하면
+        #  그 쓰기가 커밋된 채로 응답만 실패해 부분 커밋이 생긴다 — 아직 쓰기가 없는 지금 걸러낸다.)
+        validation_system = request.data.get('validation_system')
+        if agent == 'E' and validation_system is not None and validation_system not in self.VALIDATION_SYSTEM_VALUES:
+            return Response(
+                {'error': '유효하지 않은 Validation System 값입니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # P/E 담당자 합의 시 함께 지정된 검토자(PV/EV) 생성 — 별도 지정 API 없이
         # 이 합의 요청 한 번으로 담당자 합의 + 검토자 지정이 함께 처리된다.
         if agent in ('P', 'E'):
@@ -495,16 +505,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 if err:
                     return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
-        # E(MASK) 합의 시 Validation System 대상/비대상 확정값을 함께 받는다.
-        # 별도 엔드포인트 없이 이 합의 요청 한 번으로 처리한다(위 검토자 지정과 같은 패턴).
-        # 인가는 위의 _can_act_on_step 통과가 곧 'E 단계를 처리할 수 있는가'이므로 추가 검사가 없다.
-        validation_system = request.data.get('validation_system')
+        # E(MASK) 합의 시 Validation System 대상/비대상 확정값을 반영한다(값 검증은 위에서 이미 끝났다).
         if agent == 'E' and validation_system is not None:
-            if validation_system not in self.VALIDATION_SYSTEM_VALUES:
-                return Response(
-                    {'error': '유효하지 않은 Validation System 값입니다.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
             self._set_validation_system(document, validation_system)
 
         step.action = 'approved'

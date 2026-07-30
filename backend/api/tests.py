@@ -1080,6 +1080,29 @@ class PEStageReviewerFlowTest(TestCase):
         )
         self.assertEqual(r.status_code, 400, r.content)
 
+    def test_invalid_validation_system_with_reviewers_creates_no_ev_step(self):
+        """유효한 reviewer_loginids 와 함께 온 잘못된 validation_system 은 400 이고,
+
+        EV 검토자 단계도 생성되지 않아야 한다(값 검증이 검토자 생성보다 먼저 실행되어
+        부분 커밋이 없어야 함을 확인).
+        """
+        doc = self._advance_to_parallel(plel=True)
+        self.client.force_authenticate(user=self.e_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/',
+            {
+                'agent': 'E', 'comment': '',
+                'reviewer_loginids': [self.e_reviewer.loginid],
+                'validation_system': 'MAYBE',
+            }, format='json',
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertFalse(
+            ApprovalStep.objects.filter(document=doc, agent='EV', round=1).exists(),
+            '값 검증 실패 시 검토자(EV) 단계도 생성되지 않아야 한다',
+        )
+
 
 class MapChangeApplyTest(TestCase):
     """'완성된 MAP 변경' 승인 시 원본(대상) 요청서 반영 + 변경 이력 기록 검증.
