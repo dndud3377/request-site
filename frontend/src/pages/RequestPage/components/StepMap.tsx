@@ -531,7 +531,7 @@ const StepMap: React.FC<StepMapProps> = ({
                     <button
                       key={val}
                       type="button"
-                      className={`map-option-btn${detail.in_apply === val ? ' active' : ''}`}
+                      className={`map-type-btn${detail.in_apply === val ? ' active' : ''}`}
                       style={{ padding: '10px 16px' }}
                       disabled={isMapRegistered}
                       onClick={() => handleDetailSet('in_apply', val)}
@@ -550,7 +550,7 @@ const StepMap: React.FC<StepMapProps> = ({
                       <button
                         key={val}
                         type="button"
-                        className={`map-option-btn${detail.inter_select === val ? ' active' : ''}`}
+                        className={`map-type-btn${detail.inter_select === val ? ' active' : ''}`}
                         style={{ padding: '10px 16px' }}
                         disabled={isMapRegistered}
                         onClick={() => handleDetailSet('inter_select', val)}
@@ -594,7 +594,7 @@ const StepMap: React.FC<StepMapProps> = ({
                     <button
                       key={opt.name as string}
                       type="button"
-                      className={`map-option-btn${isActive ? ' active' : ''}`}
+                      className={`map-type-btn${isActive ? ' active' : ''}`}
                       disabled={isDisabled}
                       onClick={() => handleDetailSet(opt.name as string, isActive ? opt.defaultValue : opt.activeValue)}
                     >
