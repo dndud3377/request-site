@@ -1172,11 +1172,19 @@ type Page = { label: string; content: React.ReactNode };
                     <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
                       <div style={fieldLabel}>{t('request.map_opt_inter')}</div>
                       <div style={fieldValue}>
-                        {[
-                          t('approval.inter_applied'),
-                          detail.inter_xs === '적용' ? t('approval.inter_xs_applied') : null,
-                          detail.inter_ys === '적용' ? t('approval.inter_ys_applied') : null,
-                        ].filter(Boolean).join(' / ')}
+                        {(detail as any).in_apply ? (
+                          [
+                            t('approval.inter_applied'),
+                            (detail as any).in_apply === 'O' ? t('request.in_apply_o') : t('request.in_apply_x'),
+                            (detail as any).inter_select ? t(`request.map_opt_inter_${(detail as any).inter_select}` as never) : null,
+                          ].filter(Boolean).join(' / ')
+                        ) : (
+                          [
+                            t('approval.inter_applied'),
+                            detail.inter_xs === '적용' ? t('approval.inter_xs_applied') : null,
+                            detail.inter_ys === '적용' ? t('approval.inter_ys_applied') : null,
+                          ].filter(Boolean).join(' / ')
+                        )}
                       </div>
                     </div>
                   </div>
