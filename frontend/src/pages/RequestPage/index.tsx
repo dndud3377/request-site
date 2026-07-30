@@ -729,7 +729,12 @@ export default function RequestPage(): React.ReactElement {
           const normalizedOtherPurpose = Array.isArray(parsed.detail.other_purpose)
             ? parsed.detail.other_purpose
             : (parsed.detail.other_purpose ? [parsed.detail.other_purpose] : []);
-          setDetail({ ...parsed.detail, other_purpose: normalizedOtherPurpose, bb_entries: loadedBbEntries, notifiers: parsed.detail.notifiers ?? [] });
+          // 레거시 문서(validation_system 필드 도입 전)는 저장된 J-layer로 대상 여부를 판정해 백필한다.
+          const savedVs = parsed.detail.validation_system as (typeof VS_TARGET | typeof VS_NONTARGET | undefined);
+          const backfilledVs = savedVs === VS_TARGET || savedVs === VS_NONTARGET
+            ? savedVs
+            : (isValidationTarget(Array.isArray(parsed.jayerRows) ? parsed.jayerRows : []) ? VS_TARGET : VS_NONTARGET);
+          setDetail({ ...parsed.detail, other_purpose: normalizedOtherPurpose, bb_entries: loadedBbEntries, notifiers: parsed.detail.notifiers ?? [], validation_system: backfilledVs });
           // 불러온 문서의 값은 이미 확정된 판단이므로 자동 갱신으로 덮어쓰지 않는다.
           setVsManuallySet(true);
           setPostApprovers(Array.isArray(parsed.detail.post_approvers) ? parsed.detail.post_approvers : []);
