@@ -1,4 +1,5 @@
 import { FilterSet } from '../../types';
+import { VALIDATION_KEYWORD } from './constants';
 
 // ===== 순수 헬퍼 (인자만 사용 — state 비의존) =====
 
@@ -53,3 +54,15 @@ export const findNocBorrowViolations = (
   rows
     .filter((r) => !r.disabled && r.new_or_copy === '차용' && (!r.product_name?.trim() || !r.step?.trim()))
     .map((r) => r.id);
+
+/** 행 단위: 이 행의 pp 가 판정 키워드를 포함하는가 (셀 하이라이트·문서 판정 공용) */
+export const isValidationKeywordRow = (pp: string | undefined): boolean =>
+  !!pp && pp.toLowerCase().includes(VALIDATION_KEYWORD);
+
+/**
+ * 문서 단위: 활성 J-layer 행 중 하나라도 판정 키워드를 포함하면 Validation System 대상.
+ * 비활성(disabled) 행은 상신 시 저장에서 제외되므로 판정에서도 제외한다.
+ */
+export const isValidationTarget = (
+  rows: { disabled?: boolean; pp?: string }[]
+): boolean => rows.some((r) => !r.disabled && isValidationKeywordRow(r.pp));

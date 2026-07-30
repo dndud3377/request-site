@@ -1,8 +1,9 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
-import { JayerRow, FilterSet, GuideFeatureKey } from '../../../types';
-import { ST_CELL_COLOR } from '../constants';
+import { JayerRow, FilterSet, GuideFeatureKey, ValidationSystemValue } from '../../../types';
+import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET } from '../constants';
+import { isValidationKeywordRow } from '../helpers';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
 import { numberBoundaryMatch } from '../../../utils/specMatch';
 
@@ -37,6 +38,9 @@ interface Step2Props {
   handleJayerBulkRestore: () => void;
   cellSel: CellSelectionApi;
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
+  validationSystem: ValidationSystemValue;
+  autoValidationSystem: ValidationSystemValue;
+  onValidationSystemChange: (value: ValidationSystemValue) => void;
 }
 
 const ST_OPTIONS = ['O', 'O (D)', 'X'];
@@ -69,6 +73,9 @@ const Step2: React.FC<Step2Props> = ({
   handleJayerBulkRestore,
   cellSel,
   GuideBadge,
+  validationSystem,
+  autoValidationSystem,
+  onValidationSystemChange,
 }) => {
   const { t } = useTranslation();
   const renderedJayerRows = [
@@ -83,8 +90,47 @@ const Step2: React.FC<Step2Props> = ({
           🔷 {t('request.job_li')}
           <GuideBadge fk="step3_jayer_table" tk={t('guide.feat.step3_jayer_table' as never)} />
         </span>
-        <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)' }}>
-          활성 {jayerRows.filter(r => !r.disabled).length} / 전체 {jayerRows.length}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              {t('request.validation_system')}
+            </span>
+            <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+              {([
+                { value: VS_TARGET, label: t('request.validation_system_target') },
+                { value: VS_NONTARGET, label: t('request.validation_system_nontarget') },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => onValidationSystemChange(opt.value)}
+                  style={{
+                    border: 'none',
+                    padding: '3px 12px',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: validationSystem === opt.value ? 'var(--primary)' : 'transparent',
+                    color: validationSystem === opt.value ? '#fff' : 'var(--text-muted)',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {validationSystem !== autoValidationSystem && (
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                {t('request.validation_system_auto', {
+                  value: autoValidationSystem === VS_TARGET
+                    ? t('request.validation_system_target')
+                    : t('request.validation_system_nontarget'),
+                })}
+              </span>
+            )}
+          </span>
+          <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)' }}>
+            활성 {jayerRows.filter(r => !r.disabled).length} / 전체 {jayerRows.length}
+          </span>
         </span>
       </div>
       {/* 일괄 설정 툴바 */}
@@ -203,7 +249,7 @@ const Step2: React.FC<Step2Props> = ({
                     <td {...cellProps('sp', isRegistered ? regBg : undefined)}><input value={row.sp} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                     <td {...cellProps('sd', isRegistered ? regBg : undefined)}><input value={row.sd} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                     <td {...cellProps('layerid', isRegistered ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                    <td {...cellProps('pp', isRegistered ? regBg : undefined)}><input value={row.pp} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
+                    <td {...cellProps('pp', isRegistered ? regBg : undefined)}><input value={row.pp} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : isValidationKeywordRow(row.pp) ? VALIDATION_CELL_COLOR : undefined }} /></td>
                     <td {...cellProps('st', isRegistered ? regBg : undefined)}>
                       <AutocompleteInput
                         value={row.st}
