@@ -495,6 +495,18 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 if err:
                     return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        # E(MASK) 합의 시 Validation System 대상/비대상 확정값을 함께 받는다.
+        # 별도 엔드포인트 없이 이 합의 요청 한 번으로 처리한다(위 검토자 지정과 같은 패턴).
+        # 인가는 위의 _can_act_on_step 통과가 곧 'E 단계를 처리할 수 있는가'이므로 추가 검사가 없다.
+        validation_system = request.data.get('validation_system')
+        if agent == 'E' and validation_system is not None:
+            if validation_system not in self.VALIDATION_SYSTEM_VALUES:
+                return Response(
+                    {'error': '유효하지 않은 Validation System 값입니다.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            self._set_validation_system(document, validation_system)
+
         step.action = 'approved'
         step.acted_at = timezone.now()
         step.comment = comment
@@ -1285,6 +1297,26 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         mailer.enqueue_stage_arrival(document, 'PL', step, recipient_name=step.assignee_name)
 
         return Response({'message': '지정자가 변경되었습니다.', 'document': RequestDocumentSerializer(document).data})
+
+    # Validation System 대상/비대상 값 (프론트 constants.ts 의 VS_TARGET/VS_NONTARGET 과 동일)
+    VALIDATION_SYSTEM_VALUES = ('YES', 'NO')
+
+    def _set_validation_system(self, document, value):
+        """detail.validation_system 만 덮어쓴다.
+
+        validation_system_submitted(상신 시점 상신자 값)는 건드리지 않는다.
+        JSON 파싱 실패 시 조용히 건너뛴다(_sync_post_approvers_detail 과 같은 정책).
+        """
+        import json
+        try:
+            data = json.loads(document.additional_notes or '{}')
+            detail = data.get('detail', {}) or {}
+            detail['validation_system'] = value
+            data['detail'] = detail
+            document.additional_notes = json.dumps(data, ensure_ascii=False)
+            document.save(update_fields=['additional_notes'])
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     def _sync_post_approvers_detail(self, document, add=None, remove_loginid=None):
         """detail.post_approvers JSON을 add(dict, {loginid,name}) 추가 또는 remove_loginid 제거로 동기화한다.

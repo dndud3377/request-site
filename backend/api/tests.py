@@ -1025,6 +1025,61 @@ class PEStageReviewerFlowTest(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'approved')
 
+    # ----- E(MASK) 합의 시 Validation System 확정값 -----
+
+    def _get_detail(self, doc):
+        doc.refresh_from_db()
+        return self._json.loads(doc.additional_notes or '{}').get('detail', {})
+
+    def test_e_approve_updates_validation_system(self):
+        """MASK(E) 합의 시 보낸 validation_system 이 detail 에 반영된다."""
+        doc = self._advance_to_parallel(plel=True)
+        notes = self._json.loads(doc.additional_notes)
+        notes['detail'] = {'validation_system': 'YES', 'validation_system_submitted': 'YES'}
+        doc.additional_notes = self._json.dumps(notes)
+        doc.save()
+
+        self.client.force_authenticate(user=self.e_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/',
+            {'agent': 'E', 'comment': '', 'validation_system': 'NO'}, format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+        detail = self._get_detail(doc)
+        self.assertEqual(detail['validation_system'], 'NO')
+        self.assertEqual(detail['validation_system_submitted'], 'YES',
+                         '상신 시점 값은 MASK 수정으로 바뀌지 않는다')
+
+    def test_validation_system_ignored_for_other_agents(self):
+        """E 가 아닌 단계에서 보낸 validation_system 은 무시한다."""
+        doc = self._advance_to_parallel(plel=True)
+        notes = self._json.loads(doc.additional_notes)
+        notes['detail'] = {'validation_system': 'YES'}
+        doc.additional_notes = self._json.dumps(notes)
+        doc.save()
+
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/',
+            {'agent': 'O', 'comment': '', 'validation_system': 'NO'}, format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._get_detail(doc)['validation_system'], 'YES')
+
+    def test_invalid_validation_system_rejected(self):
+        """허용되지 않는 값은 400 이다."""
+        doc = self._advance_to_parallel(plel=True)
+        self.client.force_authenticate(user=self.e_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/',
+            {'agent': 'E', 'comment': '', 'validation_system': 'MAYBE'}, format='json',
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+
 
 class MapChangeApplyTest(TestCase):
     """'완성된 MAP 변경' 승인 시 원본(대상) 요청서 반영 + 변경 이력 기록 검증.
