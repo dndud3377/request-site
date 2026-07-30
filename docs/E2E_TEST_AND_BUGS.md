@@ -135,7 +135,7 @@ FAILED (failures=2, errors=1)
 ```
 draft ──상신──▶ under_review ──(PL 전원 합의)──▶ R ──(합의)──▶ [RV] ──▶
                                        ┌── 경로1: P ─[PV]─▶ J ──┐
-                                       ├── 경로2: O [+ E ─[EV]] ┼─▶ 전원 합의 ▶ approved
+                                       ├── 경로2: O, E ─[EV] ┼─▶ 전원 합의 ▶ approved
                                        └── 경로3: RA(후결자, 병렬)┘
   어느 단계든 반려 ──▶ rejected ──재상신(round+1)──▶ under_review
   under_review ──중단요청→전원확인──▶ pause ──재개──▶ under_review (멈춘 단계부터)
@@ -883,7 +883,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 | 같은 문서를 두 탭에서 동시 편집 후 저장 | ⚠️ **마지막 저장이 통째로 이김**(낙관적 잠금 없음) → R-05 |
 
 ### X-10 메일 전 구간 (1건의 문서로 끝까지)
-상신 → PL 합의 → R 도착 → R 지정 → RV 도착 → 병렬 도착(P·O·[E]·RA) → PV 지정 → J 도착 → 승인
+상신 → PL 합의 → R 도착 → R 지정 → RV 도착 → 병렬 도착(P·O·E·RA) → PV 지정 → J 도착 → 승인
 - ✅ 각 전이마다 `MailNotification` 이 1행씩 쌓이고 **커밋 직후 즉시 1회 발송**
 - ✅ 실패분은 `pending` 으로 남아 APScheduler `process_mail_queue`(1분 주기)가 **최대 5회** 재시도 후 `failed`
 - ✅ 검증 쿼리
