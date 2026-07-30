@@ -1127,6 +1127,11 @@ export default function ApprovalPage(): React.ReactElement {
                 .map((s) => s.assignee_loginid)
                 .filter((v): v is string => !!v)
             : [];
+          // MASK(E) 는 2차 검토자 1명 이상 지정이 필수다 — 아직 아무도 없으면 '합의'를 막는다.
+          // (P 단계의 검토자는 선택 사항이라 이 판정에서 제외된다.)
+          const needsReviewerPick = reviewerPickStep?.agent === 'E'
+            && reviewerSelectedIds.length === 0
+            && existingReviewerLoginids.length === 0;
 
           // 지정자 변경 가능 여부: 원 PL 또는 MASTER, under_review, PL 단계 pending
           const hasPendingPLStep = (selected?.approval_steps ?? []).some(s => s.agent === 'PL' && s.action === 'pending');
@@ -1632,11 +1637,18 @@ export default function ApprovalPage(): React.ReactElement {
                           </ul>
                         )}
                       </div>
+                      {needsReviewerPick && (
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                          {!loadingMembers && reviewerCandidates.length === 0
+                            ? t('approval.reviewer_required_empty')
+                            : t('approval.reviewer_required_hint')}
+                        </span>
+                      )}
                     </div>
                   )}
                   <button
                     className="btn btn-primary"
-                    disabled={processing}
+                    disabled={processing || needsReviewerPick}
                     onClick={() => triggerAgree(actableStep.agent)}
                   >
                     {t('approval.agree')}
