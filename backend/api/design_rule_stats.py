@@ -16,9 +16,14 @@ HTTP 없이 집계 규칙만 직접 검증할 수 있다.
    ④ 그 외 전부 미분류
    ③ 에서 한 조합법이 서로 다른 디자인룰 2개 이상에 걸리면 판정이 모호하므로
    미분류로 보내고 MASTER 가 직접 고르게 한다.
+   ①②③ 으로 매칭된 값이라도 숫자로 해석되지 않아 나노 표시(`_to_nano_label`)를
+   만들 수 없으면 미분류로 보낸다 — X축 막대명이 항상 "N나노" 형태이길 보장한다.
 4. 상위 N — **기준 연도** 건수 내림차순. N 밖은 `기타` 하나로 합산하고,
    `미분류` 는 기타와 합치지 않고 항상 별도 버킷으로 유지한다.
 5. 요청 목적 — `detail.request_purpose`. 정해진 5종 밖이거나 비면 `기타`.
+6. 표시 — X축/표/드릴다운의 디자인룰명은 `값(마이크론) × 1000` 을 "N나노" 로 표시한다
+   (예: `0.13` → `130나노`). 서버 저장·매칭에 쓰이는 실제 값(`key`)은 원본 문자열
+   그대로 유지되고, `label` 만 표시용으로 변환된다.
 """
 import json
 from collections import defaultdict
@@ -134,10 +139,27 @@ def _empty_purposes():
     return {purpose: 0 for purpose in REQUEST_PURPOSES}
 
 
+def _to_nano_label(value):
+    """디자인룰 값(마이크론 단위 문자열)을 나노 표시 라벨로 변환한다.
+
+    `값 × 1000` 을 불필요한 0을 제거한 형태로 "…나노" 로 반환한다
+    (예: "0.001" → "1나노", "0.13" → "130나노"). 숫자로 파싱할 수 없으면
+    `None` — 호출부가 이를 미분류로 보낼지 판단한다.
+    """
+    try:
+        nm = float(value.strip()) * 1000
+    except (TypeError, ValueError, AttributeError):
+        return None
+    text = f'{nm:.6f}'.rstrip('0').rstrip('.')
+    return f'{text}나노'
+
+
 def _collect_year(year, resolved, doc_overrides):
     """한 연도의 {디자인룰 키: {목적: 건수}} 를 집계한다.
 
-    미분류는 `UNCLASSIFIED_KEY` 로 모인다.
+    미분류는 `UNCLASSIFIED_KEY` 로 모인다. 조합법/의뢰서 매핑으로 디자인룰이
+    확정됐더라도 그 값이 숫자로 해석되지 않아 나노 표시를 만들 수 없으면
+    미분류로 보낸다(`docs/HOME_STATS.md` 판정 우선순위 3번 참조).
     """
     start, end = _local_year_range(year)
     rows = _approved_queryset().filter(
@@ -153,6 +175,9 @@ def _collect_year(year, resolved, doc_overrides):
         if not rule:
             process = (detail.get('process_selection') or '').strip()
             rule = resolved.get(process) if process else None
+
+        if rule and _to_nano_label(rule) is None:
+            rule = None
 
         counts[rule or UNCLASSIFIED_KEY][purpose] += 1
     return counts
@@ -240,7 +265,7 @@ def annual_stats(year, compare_year=None, top_n=DEFAULT_TOP_N):
         pct, state = _delta(base_total, comp_total)
         buckets.append({
             'key': key,
-            'label': key,
+            'label': _to_nano_label(key),
             'kind': KIND_RULE,
             'member_count': 1,
             'count': base_total,
@@ -304,13 +329,18 @@ def annual_stats(year, compare_year=None, top_n=DEFAULT_TOP_N):
 
 
 # 미분류 사유 — 프론트가 i18n 문구를 고르는 데 쓴다.
-REASON_MISSING = 'missing'        # 마스터에 조합법이 아예 없음
-REASON_AMBIGUOUS = 'ambiguous'    # 디자인룰 2개 이상에 걸려 판정 모호
-REASON_EMPTY = 'empty'            # 의뢰서에 조합법 값이 비어 있음
+REASON_MISSING = 'missing'          # 마스터에 조합법이 아예 없음
+REASON_AMBIGUOUS = 'ambiguous'      # 디자인룰 2개 이상에 걸려 판정 모호
+REASON_EMPTY = 'empty'              # 의뢰서에 조합법 값이 비어 있음
+REASON_NON_NUMERIC = 'non_numeric'  # 매칭은 됐지만 값이 숫자가 아니라 나노 표시 불가
 
 
 def design_rule_options():
-    """수동 매핑 select 에 채울 디자인룰 후보(마스터 + 기존 수동 매핑) 정렬 목록."""
+    """수동 매핑 select 에 채울 디자인룰 후보 — 나노값 오름차순 `{value, label}` 목록.
+
+    숫자로 변환되지 않는(나노 표시 불가) 마스터 값은 후보에서 제외한다 —
+    골라도 다시 미분류로 돌아갈 뿐이라 혼란만 준다.
+    """
     values = {
         (r or '').strip()
         for r in DesignRule.objects.values_list('design_rule', flat=True)
@@ -319,19 +349,31 @@ def design_rule_options():
         (r or '').strip()
         for r in ProcessDesignRuleOverride.objects.values_list('design_rule', flat=True)
     }
-    return sorted(v for v in values if v)
+
+    options = []
+    for value in values:
+        if not value:
+            continue
+        label = _to_nano_label(value)
+        if label is None:
+            continue
+        options.append((float(value.strip()) * 1000, value, label))
+    options.sort(key=lambda item: item[0])
+    return [{'value': value, 'label': label} for _nm, value, label in options]
 
 
 def unclassified_targets(year=None):
     """미분류로 빠진 대상을 분류 모달용으로 정리해 반환한다.
 
     `year` 가 주어지면 해당 연도 승인 건만, 없으면 전체 승인 건을 대상으로 한다.
+    조합법/의뢰서 매핑으로 디자인룰이 확정됐더라도 값이 숫자가 아니어서 나노
+    표시를 만들 수 없으면(`REASON_NON_NUMERIC`) 여기 미분류 목록에도 함께 잡힌다.
 
     반환 dict
     - `processes`: 조합법 단위 정리 대상. 사유(`reason`)와, 모호한 경우
       마스터에 실제로 걸려 있는 후보(`candidates`)를 함께 준다.
     - `documents`: 의뢰서 단위 정리 대상(조합법이 비어 조합법 매핑으로는
-      해결할 수 없는 건을 앞에 둔다).
+      해결할 수 없는 건을 앞에 둔다). 모호한 경우 `candidates`도 함께 준다.
     - `design_rules`: select 후보 목록.
     """
     resolved, ambiguous = build_process_design_rule_map()
@@ -358,11 +400,37 @@ def unclassified_targets(year=None):
     for doc_id, title, notes, submitted_at in qs.only(
         'id', 'title', 'additional_notes', 'submitted_at'
     ).values_list('id', 'title', 'additional_notes', 'submitted_at'):
-        if doc_overrides.get(doc_id):
-            continue
         process = (_parse_detail(notes).get('process_selection') or '').strip()
-        if process and resolved.get(process):
+
+        doc_rule = doc_overrides.get(doc_id)
+        if doc_rule:
+            if _to_nano_label(doc_rule) is not None:
+                continue  # 의뢰서 단위로 숫자 값이 확정됨 — 분류 완료
+            documents.append({
+                'id': doc_id,
+                'title': title,
+                'process_selection': process,
+                'submitted_at': submitted_at,
+                'reason': REASON_NON_NUMERIC,
+                'candidates': [],
+            })
             continue
+
+        rule = resolved.get(process) if process else None
+        if process and rule:
+            if _to_nano_label(rule) is not None:
+                continue  # 조합법 매핑으로 숫자 값이 확정됨 — 분류 완료
+            process_counts[process] += 1
+            documents.append({
+                'id': doc_id,
+                'title': title,
+                'process_selection': process,
+                'submitted_at': submitted_at,
+                'reason': REASON_NON_NUMERIC,
+                'candidates': [],
+            })
+            continue
+
         if process:
             process_counts[process] += 1
         documents.append({
@@ -373,13 +441,16 @@ def unclassified_targets(year=None):
             'reason': REASON_AMBIGUOUS if process in ambiguous else (
                 REASON_MISSING if process else REASON_EMPTY
             ),
+            'candidates': sorted(candidates.get(process, ())) if process in ambiguous else [],
         })
 
     processes = [
         {
             'process': process,
             'count': count,
-            'reason': REASON_AMBIGUOUS if process in ambiguous else REASON_MISSING,
+            'reason': REASON_AMBIGUOUS if process in ambiguous else (
+                REASON_NON_NUMERIC if resolved.get(process) else REASON_MISSING
+            ),
             'candidates': sorted(candidates.get(process, ())),
         }
         for process, count in process_counts.items()

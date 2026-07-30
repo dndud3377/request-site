@@ -20,7 +20,7 @@
 |------|-----|
 | 대상 상태 | `status='approved'` (결재 완료)만 |
 | 연도 기준 | `submitted_at` (최초 상신일)의 **Asia/Seoul 로컬 연도** |
-| X축 | 디자인룰 (`DesignRule.design_rule`) |
+| X축 | 디자인룰 (`DesignRule.design_rule`) — 화면에는 **"N나노"** 로 표시(§2 참조) |
 | Y축 | 의뢰서 건수 |
 | 드릴다운 | 요청 목적(`detail.request_purpose`)별 건수 |
 
@@ -39,6 +39,18 @@
 2. **조합법 단위 수동 매핑** — `ProcessDesignRuleOverride` (MASTER 지정)
 3. **`DesignRule` 마스터의 단일 매칭** — 한 조합법이 디자인룰 **하나**에만 걸릴 때
 4. 그 외 전부 → **미분류**
+
+①②③ 으로 값이 정해졌더라도, 그 값이 **숫자로 해석되지 않아 나노 표시를 만들 수
+없으면** 역시 미분류로 보낸다(`design_rule_stats._to_nano_label`). X축 막대명이
+항상 "N나노" 형태이길 보장하기 위한 규칙이며, 분류 모달의 "조합법"/"의뢰서" 탭에
+`non_numeric` 사유로 나타나 MASTER 가 다시 고를 수 있다.
+
+### 나노 표시 규칙
+
+디자인룰 마스터 값은 마이크론(µm) 단위 문자열이다. 화면에는 `값 × 1000` 을
+불필요한 0 을 제거한 "N나노" 형태로 표시한다 (`0.13` → `130나노`, `0.001` → `1나노`).
+**서버 저장·매칭에 쓰이는 실제 값(`key`, 수동 매핑 API 페이로드)은 항상 원본
+문자열 그대로**이고, `label`/`design_rule_label` 만 표시용으로 변환된다.
 
 ### 왜 "단일 매칭"만 인정하는가
 
@@ -121,8 +133,8 @@ GET /api/documents/annual-design-rule-stats/
     "purposes": ["신규", "차용", "신규+차용", "Only MAP", "기타"],
     "buckets": [
       {
-        "key": "DR-A10",
-        "label": "DR-A10",         // etc/unclassified 는 "" — 프론트가 i18n 라벨을 붙인다
+        "key": "0.13",             // 서버 저장·매칭용 원본 값
+        "label": "130나노",        // 표시용. etc/unclassified 는 "" — 프론트가 i18n 라벨을 붙인다
         "kind": "rule",            // rule | etc | unclassified
         "member_count": 1,         // etc 가 묶은 디자인룰 수
         "count": 42,
@@ -150,25 +162,42 @@ GET /api/design-rule-processes/unclassified/?year=2026
 `year` 생략 시 전체 승인 건이 대상. 응답 `data`:
 
 - `processes[]` — `{ process, count, reason, candidates[] }`
-  - `reason`: `missing`(마스터에 없음) / `ambiguous`(디자인룰 2개 이상에 중복)
-  - `candidates`: `ambiguous` 일 때 마스터에 실제로 걸린 후보들
-- `documents[]` — `{ id, title, process_selection, submitted_at, reason }`
+  - `reason`: `missing`(마스터에 없음) / `ambiguous`(디자인룰 2개 이상에 중복) /
+    `non_numeric`(매칭은 됐지만 값이 숫자가 아니라 나노 표시 불가)
+  - `candidates`: `ambiguous` 일 때 마스터에 실제로 걸린 후보들. 그 외엔 빈 배열
+- `documents[]` — `{ id, title, process_selection, submitted_at, reason, candidates[] }`
   - `reason` 에 `empty`(조합법 미입력)가 추가된다. 조합법이 빈 건은 조합법 매핑으로
     해결할 수 없어 **문서 목록에만** 나타나며, 목록 앞쪽에 정렬된다.
-- `design_rules[]` — select 후보(마스터 + 기존 수동 매핑)
+  - `candidates` 는 `processes[]` 와 동일한 규칙(해당 조합법이 `ambiguous` 일 때만 채워짐)
+- `design_rules[]` — select 후보. `{ value, label }` 객체 배열이며 나노값 오름차순
+  정렬. **숫자로 변환되지 않는 마스터 값은 후보에서 제외**한다(골라도 다시
+  미분류로 돌아갈 뿐이라 혼란만 주므로)
 
-### 6-3. 수동 매핑 등록
+### 6-3. 수동 매핑 등록·조회·해제
 
 ```
-POST /api/design-rule-processes/   { "process": "RCP-1001", "design_rule": "DR-A10" }
-POST /api/design-rule-documents/   { "document": 123,        "design_rule": "DR-A10" }
+POST   /api/design-rule-processes/       { "process": "RCP-1001", "design_rule": "0.13" }
+POST   /api/design-rule-documents/       { "document": 123,        "design_rule": "0.13" }
+GET    /api/design-rule-processes/       — 조합법 단위 매핑 전체 목록 (재분류 탭 데이터)
+GET    /api/design-rule-documents/       — 의뢰서 단위 매핑 전체 목록 (재분류 탭 데이터)
+DELETE /api/design-rule-processes/{id}/  — 매핑 해제("분류 해제")
+DELETE /api/design-rule-documents/{id}/  — 매핑 해제("분류 해제")
 ```
 
-**쓰기는 MASTER 만** (`IsMasterOrReadOnly`). 그 외 역할은 403.
+**쓰기(POST/DELETE)는 MASTER 만** (`IsMasterOrReadOnly`). 그 외 역할은 403. 조회(GET)는
+로그인만 있으면 된다.
 
 이미 지정된 조합법·의뢰서에 다시 POST 하면 **400 이 아니라 교체(upsert)** 된다.
 분류 모달에서 '다시 지정'이 자연스러운 조작이기 때문에, 기본 `UniqueValidator` 를 끄고
 `update_or_create` 로 처리한다.
+
+`DELETE` 로 매핑을 지우면 판정 우선순위(§2)상 **한 단계 아래로** 떨어진다 — 조합법
+매핑을 지우면 마스터에 값이 남아 있는 한 그 값으로, 없으면 미분류로 간다. 의뢰서
+매핑을 지우면 조합법 매핑(또는 마스터, 또는 미분류)으로 떨어진다. **"미분류로
+되돌아간다"고 항상 보장되진 않는다** — 분류 모달의 "분류 해제" 확인 문구도 이를
+명시한다. GET 목록·`design_rule_label` 필드는 `ProcessDesignRuleOverrideSerializer` /
+`DocumentDesignRuleOverrideSerializer` 에서 내려주며, `design_rule_label` 이 나노
+변환에 실패하면 원본 값을 그대로 보여준다.
 
 ---
 
@@ -182,6 +211,23 @@ POST /api/design-rule-documents/   { "document": 123,        "design_rule": "DR-
 | `표 보기` | 색에 의존하지 않는 표 형태 병행 표시 |
 | 막대 클릭 | 요청 목적별 KPI 드릴다운 열림. **같은 막대 재클릭 시 닫힘** |
 | 미분류 막대 → `분류하기` | MASTER 에게만 보이는 분류 모달 |
+
+### 분류 모달 — 조합법 / 의뢰서 / 재분류
+
+3개 탭으로 구성된다.
+
+- **조합법** — 미분류(또는 `non_numeric`) 조합법을 조합법 단위로 일괄 지정
+- **의뢰서** — 조합법 단위로 정리 안 되는 예외 건을 의뢰서 하나씩 지정. `missing` /
+  `ambiguous` / `non_numeric` 사유가 있는 건은 그 사유가 함께 표시된다
+- **재분류** — **이미 분류된** 매핑을 다시 확인·수정. 연도 필터 없이 전체를 보여주며,
+  숫자로 정상 표시되는(나노 변환 성공) 매핑만 노출한다 — 비숫자 매핑은 "조합법"/"의뢰서"
+  탭에서 `non_numeric` 사유로 이미 다루므로 여기서는 중복 노출하지 않는다. 드롭다운
+  맨 아래 "↩ 분류 해제" 를 고르면 그 매핑을 지운다(§6-3의 DELETE)
+
+**드롭다운에서 값을 고르는 즉시 저장된다** — 권한 관리 화면(`PermissionPage`)의 역할
+변경과 같은 방식으로, 별도 저장/취소 버튼이 없다. 처리 중인 행의 select 만 잠기고,
+성공하면 그 행이 목록에서 사라지며(또는 재분류 탭이면 값이 갱신되며) 부모 차트도
+함께 새로고침된다. 모달은 사용자가 "닫기"를 눌러야만 닫힌다.
 
 ### 역할별 노출
 

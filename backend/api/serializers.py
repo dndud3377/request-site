@@ -5,6 +5,7 @@ from .models import (
     ProcessDesignRuleOverride, DocumentDesignRuleOverride,
 )
 from . import doc_permissions
+from . import design_rule_stats
 
 User = get_user_model()
 
@@ -403,11 +404,17 @@ class ProcessDesignRuleOverrideSerializer(serializers.ModelSerializer):
     # 400 을 내버려 '다시 지정'이 막히기 때문. 중복은 update_or_create 가 처리한다.
     process = serializers.CharField(max_length=200, validators=[])
     created_by_name = serializers.CharField(source='created_by.username', read_only=True, default='')
+    design_rule_label = serializers.SerializerMethodField()
 
     class Meta:
         model = ProcessDesignRuleOverride
-        fields = ['id', 'process', 'design_rule', 'created_by_name', 'created_at', 'updated_at']
+        fields = ['id', 'process', 'design_rule', 'design_rule_label',
+                  'created_by_name', 'created_at', 'updated_at']
         read_only_fields = ['created_by_name', 'created_at', 'updated_at']
+
+    def get_design_rule_label(self, obj):
+        """차트와 동일한 나노 표시. 숫자가 아니면 원본 값을 그대로 보여준다."""
+        return design_rule_stats._to_nano_label(obj.design_rule) or obj.design_rule
 
     def validate_process(self, value):
         value = (value or '').strip()
@@ -448,12 +455,17 @@ class DocumentDesignRuleOverrideSerializer(serializers.ModelSerializer):
     )
     document_title = serializers.CharField(source='document.title', read_only=True, default='')
     created_by_name = serializers.CharField(source='created_by.username', read_only=True, default='')
+    design_rule_label = serializers.SerializerMethodField()
 
     class Meta:
         model = DocumentDesignRuleOverride
-        fields = ['id', 'document', 'document_title', 'design_rule',
+        fields = ['id', 'document', 'document_title', 'design_rule', 'design_rule_label',
                   'created_by_name', 'created_at', 'updated_at']
         read_only_fields = ['document_title', 'created_by_name', 'created_at', 'updated_at']
+
+    def get_design_rule_label(self, obj):
+        """차트와 동일한 나노 표시. 숫자가 아니면 원본 값을 그대로 보여준다."""
+        return design_rule_stats._to_nano_label(obj.design_rule) or obj.design_rule
 
     def validate_design_rule(self, value):
         value = (value or '').strip()

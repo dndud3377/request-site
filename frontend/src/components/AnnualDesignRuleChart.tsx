@@ -544,7 +544,7 @@ export default function AnnualDesignRuleChart({ isMaster }: Props): React.ReactE
         <DesignRuleClassifyModal
           year={stats.year}
           onClose={() => setShowClassify(false)}
-          onSaved={() => { setShowClassify(false); void load(); }}
+          onChanged={() => void load()}
         />
       )}
     </div>

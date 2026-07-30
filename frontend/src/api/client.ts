@@ -27,6 +27,8 @@ import {
   NotifierRef,
   AnnualDesignRuleStats,
   UnclassifiedTargets,
+  ProcessDesignRuleOverride,
+  DocumentDesignRuleOverride,
 } from '../types';
 
 // ===== JWT 토큰 관리 =====
@@ -408,10 +410,32 @@ const setDocumentDesignRule = async (document: number, design_rule: string) => {
   await post('/design-rule-documents/', { document, design_rule });
 };
 
+/** 조합법 단위 매핑 전체 목록 — "재분류" 탭에서 이미 분류된 것을 다시 고칠 때 쓴다. */
+const listProcessDesignRuleOverrides = async (): Promise<ProcessDesignRuleOverride[]> =>
+  get<ProcessDesignRuleOverride[]>('/design-rule-processes/');
+
+/** 의뢰서 단위 매핑 전체 목록 — "재분류" 탭에서 이미 분류된 것을 다시 고칠 때 쓴다. */
+const listDocumentDesignRuleOverrides = async (): Promise<DocumentDesignRuleOverride[]> =>
+  get<DocumentDesignRuleOverride[]>('/design-rule-documents/');
+
+/** 조합법 매핑 해제 — 되돌아갈 곳(마스터 값/미분류)은 판정 우선순위에 달렸다. */
+const deleteProcessDesignRuleOverride = async (id: number): Promise<void> => {
+  await request(`/design-rule-processes/${id}/`, { method: 'DELETE' });
+};
+
+/** 의뢰서 매핑 해제 — 되돌아갈 곳(조합법 매핑/미분류)은 판정 우선순위에 달렸다. */
+const deleteDocumentDesignRuleOverride = async (id: number): Promise<void> => {
+  await request(`/design-rule-documents/${id}/`, { method: 'DELETE' });
+};
+
 export const designRuleMappingsAPI = {
   unclassified: getUnclassifiedTargets,
   setProcess: setProcessDesignRule,
   setDocument: setDocumentDesignRule,
+  listProcessOverrides: listProcessDesignRuleOverrides,
+  listDocumentOverrides: listDocumentDesignRuleOverrides,
+  deleteProcessOverride: deleteProcessDesignRuleOverride,
+  deleteDocumentOverride: deleteDocumentDesignRuleOverride,
 };
 
 // ===== VOC API =====
