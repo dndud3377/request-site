@@ -93,6 +93,23 @@ P/E는 (2026-07부터) O/J와 동일하게 **검토중(claim) 방식**이며, �
 - **E(MASK) 생성 조건(2026-07 변경)**: 이전에는 J-layer `pp` 에 `plel` 이 있을 때만 생성했으나, MASK 팀이 Validation System 대상/비대상 판정 자체를 검증하는 주체이므로 **대상/비대상과 무관하게 항상 생성**한다. Only MAP 의뢰서는 기존대로 P/O/E/J 없이 R→RA 로 끝난다. 판정 조건 함수 `has_ppid_plel()` 은 삭제됐다.
 - **Only MAP 예외**: `document.is_only_map()`이 참이면 P/O/E를 **생성하지 않고** `status → approved`로
   바로 전이한다(R 합의 = 최종 승인). 승인 메일(`enqueue_approved`)이 발송된다.
+- ⚠️ **배포 후 1회 소급 실행 필요 — `backfill_e_steps` (2026-07)**: E '항상 생성'은
+  `_advance_to_parallel` 이 실행되는 시점부터만 적용되므로, **배포 이전에 이미 병렬 단계로
+  넘어간 진행 중 문서**에는 E 단계가 영영 생기지 않는다. 그 문서들은 ① E 검증 없이 최종
+  승인되고(`views.py` 최종 판정의 `e_ok = (not e_exists) or ...`), ② 메일 결재 경로 카드
+  (`mailer._route_rows` → `ROUTE_AGENTS_DEFAULT`)에 끝내 '대기'로 남는 E 행이 표시된다.
+  배포 직후 아래 커맨드를 1회 실행해 상태를 맞춘다.
+  ```bash
+  docker exec -it <backend> python manage.py backfill_e_steps            # 대상 조회(dry-run)
+  docker exec -it <backend> python manage.py backfill_e_steps --apply    # 실제 생성(메일 미발송)
+  docker exec -it <backend> python manage.py backfill_e_steps --apply --notify  # 생성 + 도착 메일 적재
+  ```
+  - 대상: `status` 가 `under_review`/`pause` + Only MAP 아님 + **현재(최종) 회차**에 O 단계 있음
+    (= 병렬 단계 통과) + 현재 회차에 E 단계 없음. 기한은 같은 회차 O 단계의 `due_date` 를 물려받는다.
+  - 기본은 dry-run 이고 `--apply` 를 붙여야 생성한다. 이미 E 가 있는 문서는 건너뛰므로 **재실행해도 안전**하다.
+  - 메일은 기본 미발송(`--notify` opt-in) — 대상이 많을 때 배포 직후 MASK 팀에 메일이 한꺼번에
+    나가는 것을 막기 위함이다. 미발송이어도 MASK 팀은 결재 현황 목록에서 새 건을 확인할 수 있다.
+  - 반려 후 재상신(회차 증가) 문서는 `_advance_to_parallel` 을 다시 타므로 커맨드 없이 정상 생성된다.
 
 ### Case F — P 합의 (`approve_step` agent='P'/'PV', `views.py:504`)
 - ✅ **P 검토중 + 다중 검토자(2026-07)**: P도 J·O·E와 동일하게 **지정하기가 아닌 검토중(claim) 방식**으로 전환됐다
