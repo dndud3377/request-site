@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import Modal from './Modal';
+import Modal, { ConfirmModal } from './Modal';
 import { useToast } from './Toast';
 import { designRuleMappingsAPI } from '../api/client';
 import {
@@ -47,6 +47,10 @@ export default function DesignRuleClassifyModal({
   const [error, setError] = useState(false);
   // 지금 처리 중인 행 하나만 표시 — 그 행의 select 만 잠근다.
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  // "분류 해제" 선택 시 확인창(ConfirmModal)에 띄울 문구와, 확인했을 때 실행할 동작.
+  const [pendingUnclassify, setPendingUnclassify] = useState<{
+    message: string; onConfirm: () => void;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -106,12 +110,14 @@ export default function DesignRuleClassifyModal({
   const handleReclassifyProcess = useCallback((row: ProcessDesignRuleOverride, value: string) => {
     if (!value || value === row.design_rule) return;
     if (value === UNCLASSIFY_VALUE) {
-      if (!window.confirm(t('home.chart.classify_unclassify_confirm'))) return;
-      void runAction(
-        `ro:${row.id}`,
-        () => designRuleMappingsAPI.deleteProcessOverride(row.id),
-        t('home.chart.classify_unclassify_done'),
-      );
+      setPendingUnclassify({
+        message: t('home.chart.classify_unclassify_confirm'),
+        onConfirm: () => void runAction(
+          `ro:${row.id}`,
+          () => designRuleMappingsAPI.deleteProcessOverride(row.id),
+          t('home.chart.classify_unclassify_done'),
+        ),
+      });
       return;
     }
     void runAction(
@@ -124,12 +130,14 @@ export default function DesignRuleClassifyModal({
   const handleReclassifyDocument = useCallback((row: DocumentDesignRuleOverride, value: string) => {
     if (!value || value === row.design_rule) return;
     if (value === UNCLASSIFY_VALUE) {
-      if (!window.confirm(t('home.chart.classify_unclassify_confirm'))) return;
-      void runAction(
-        `do:${row.id}`,
-        () => designRuleMappingsAPI.deleteDocumentOverride(row.id),
-        t('home.chart.classify_unclassify_done'),
-      );
+      setPendingUnclassify({
+        message: t('home.chart.classify_unclassify_confirm'),
+        onConfirm: () => void runAction(
+          `do:${row.id}`,
+          () => designRuleMappingsAPI.deleteDocumentOverride(row.id),
+          t('home.chart.classify_unclassify_done'),
+        ),
+      });
       return;
     }
     void runAction(
@@ -207,6 +215,7 @@ export default function DesignRuleClassifyModal({
   };
 
   return (
+    <>
     <Modal
       isOpen
       onClose={onClose}
@@ -357,5 +366,16 @@ export default function DesignRuleClassifyModal({
         </>
       )}
     </Modal>
+    <ConfirmModal
+      isOpen={!!pendingUnclassify}
+      onClose={() => setPendingUnclassify(null)}
+      onConfirm={() => pendingUnclassify?.onConfirm()}
+      title={t('common.confirm')}
+      message={pendingUnclassify?.message ?? ''}
+      confirmLabel={t('home.chart.classify_unclassify_option')}
+      danger
+      topLevel
+    />
+    </>
   );
 }
