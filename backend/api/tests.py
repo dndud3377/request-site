@@ -857,19 +857,23 @@ class PEStageReviewerFlowTest(TestCase):
             ),
         )
         self.client.force_authenticate(user=self.requester)
-        self.client.post(f'/api/documents/{doc.id}/submit/',
-                         {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/submit/',
+                             {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
         self.client.force_authenticate(user=self.pl_user)
-        self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
 
         # PL 합의만으로는 R 단계가 생성될 뿐 병렬 단계(_advance_to_parallel)에는
         # 진입하지 않으므로, R 담당자 지정·합의까지 실제로 거쳐야 Only MAP 분기가
         # 검증된다(브리프 원안은 R 합의를 생략해 이 분기를 타지 않는 채로 통과했다).
         self.client.force_authenticate(user=self.r_user)
-        self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
             'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
         }, format='json')
-        self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
 
         self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='E').exists())
 
