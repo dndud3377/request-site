@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ExcelJS from 'exceljs';
-import { RequestDocument, UserRole, DetailFormState, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot } from '../types';
 import Modal from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
-import { VALIDATION_CELL_COLOR } from '../pages/RequestPage/constants';
-import { isValidationKeywordRow } from '../pages/RequestPage/helpers';
+import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET } from '../pages/RequestPage/constants';
+import { isValidationKeywordRow, isValidationTarget } from '../pages/RequestPage/helpers';
 
 // ===== Table Components =====
 
@@ -617,6 +617,16 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
 
   // '완성된 MAP 변경'이 이 문서에 반영된 횟수(0이면 미반영) — 변경 이력 라벨 표기에 사용
   const mapEditRound = Number(detail.map_edit_round ?? 0);
+
+  // Validation System 표시값. detail 키가 없는 레거시 문서는 저장된 J-layer 로 폴백 판정한다.
+  const vsCurrent: ValidationSystemValue =
+    (detail.validation_system === VS_TARGET || detail.validation_system === VS_NONTARGET)
+      ? detail.validation_system
+      : (isValidationTarget(jayer) ? VS_TARGET : VS_NONTARGET);
+  const vsSubmitted = detail.validation_system_submitted;
+  const vsLabel = (v: ValidationSystemValue) =>
+    v === VS_TARGET ? t('request.validation_system_target') : t('request.validation_system_nontarget');
+
   const prevSnap = history.length > 0 ? history[history.length - 1] : null;
   const changedFields = prevSnap ? computeDetailDiff(detail, prevSnap.detail) : new Set<string>();
   const { changedIds: changedJayerIds, prevRowMap: prevJayerMap } = prevSnap
@@ -1251,6 +1261,26 @@ type Page = { label: string; content: React.ReactNode };
               <button data-tour="export-jayer" onClick={exportJayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
             </div>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              {t('request.validation_system')}
+            </span>
+            <span style={{
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              padding: '2px 10px',
+              borderRadius: 4,
+              background: vsCurrent === VS_TARGET ? 'var(--primary)' : 'var(--border)',
+              color: vsCurrent === VS_TARGET ? '#fff' : 'var(--text-secondary)',
+            }}>
+              {vsLabel(vsCurrent)}
+            </span>
+            {vsSubmitted && vsSubmitted !== vsCurrent && (
+              <span style={{ fontSize: '0.75rem', color: 'var(--danger)' }}>
+                {t('request.validation_system_changed', { from: vsLabel(vsSubmitted), to: vsLabel(vsCurrent) })}
+              </span>
+            )}
+          </div>
           <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} />
         </div>
       ),
@@ -1433,13 +1463,6 @@ type Page = { label: string; content: React.ReactNode };
   const getStep = (agent: string, round: number) =>
     allSteps.find((s) => s.agent === agent && (s.round ?? 1) === round);
 
-  const hasPlel = (() => {
-    try {
-      const parsed = JSON.parse(doc.additional_notes ?? '{}');
-      return (parsed?.jayerRows ?? []).some((r: any) => r.pp?.toLowerCase().includes('plel'));
-    } catch { return false; }
-  })();
-
   const isOnlyMap = (() => {
     try {
       const parsed = JSON.parse(doc.additional_notes ?? '{}');
@@ -1519,9 +1542,6 @@ type Page = { label: string; content: React.ReactNode };
 
   // 한 단계(agent·round)의 표시 정보 목록. PL/J 등 다중 담당자는 담당자별로 여러 항목을 반환한다.
   const getStepDisplays = (agent: string, round: number): StepDisplayInfo[] => {
-    if (agent === 'E' && !hasPlel) {
-      return [{ status: 'na', label: t('approval.step_na') }];
-    }
     if (isOnlyMap && ['P', 'J', 'O', 'E'].includes(agent)) {
       return [{ status: 'na', label: t('approval.step_na') }];
     }
@@ -1663,7 +1683,7 @@ type Page = { label: string; content: React.ReactNode };
           <div key={key} style={teamRowStyle}>
             <div style={teamLabelStyle}>{label}</div>
             <div style={historyListStyle}>
-              {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) ? (
+              {isOnlyMap && ['P', 'J', 'O', 'E'].includes(key) ? (
                 <div style={historyItemStyle(false)}>
                   <span style={{ ...statusBadgeStyle('na') }}>{t('approval.step_na')}</span>
                 </div>
