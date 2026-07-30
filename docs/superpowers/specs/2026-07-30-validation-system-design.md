@@ -100,9 +100,10 @@ export const isValidationTarget = (
 |---|---|---|
 | `frontend/src/pages/RequestPage/components/Step2.tsx` | 206 | 상신 J-layer 표 |
 | `frontend/src/pages/RequestPage/components/Step3.tsx` | 300 | 상신 O-layer 표 |
-| `frontend/src/components/PagedDetailView.tsx` | 265 | 상세보기 O-layer 표 |
-| `frontend/src/components/PagedDetailView.tsx` | 328 | 상세보기 J-layer 표 |
-| `frontend/src/components/PagedDetailView.tsx` | 542, 574 | 엑셀 내보내기 셀 채우기 |
+| `frontend/src/components/PagedDetailView.tsx` | 265 | 상세보기 J-layer 표 (`JayerTable`, `request.jayer_row_history`) |
+| `frontend/src/components/PagedDetailView.tsx` | 328 | 상세보기 O-layer 표 (`OayerTable`, `request.oayer_row_history`) |
+| `frontend/src/components/PagedDetailView.tsx` | 542 | J-layer 엑셀 내보내기(`exportJayer`, pp = col 5) |
+| `frontend/src/components/PagedDetailView.tsx` | 574 | O-layer 엑셀 내보내기(`exportOayer`, pp = col 6) |
 
 색상 `#fff9c4` 도 함께 상수(`VALIDATION_CELL_COLOR`)로 뺀다. 기존 `ST_CELL_COLOR` 와 같은 자리.
 
@@ -128,7 +129,7 @@ E step 의 due_date 는 기존과 동일(`o_due`, 6영업일), `is_parallel=True
 
 | 파일:라인 | 변경 |
 |---|---|
-| `frontend/src/components/PagedDetailView.tsx:1434` | `hasPlel` 게이트 제거 — 결재 경로 탭에 E/EV 행 항상 표시 |
+| `frontend/src/components/PagedDetailView.tsx:1434, 1520, 1664` | `hasPlel` 정의(1434)와 사용처 2곳 제거 — 1520 `getStepDisplays()` 의 `agent === 'E' && !hasPlel → 'na'` 분기, 1664 렌더의 동일 조건. `isOnlyMap` 분기는 **유지**한다 |
 | `frontend/src/components/ApprovalRouteDiagram.tsx:7` | 파일 상단 주석의 "E(EUV)는 plel 존재 시에만" 문구 제거. **렌더링 변경 없음** — `Box label={agent('E')} dim`(56행)은 이미 조건 없이 항상 그린다. 실제 안내 문구는 69행이 i18n `approval.route_diagram.note_e` 로 출력하므로 §5-3 에서 처리 |
 
 ### 5-3. i18n 문구 수정 (ko/en 동시)
