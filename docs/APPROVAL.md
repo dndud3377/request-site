@@ -89,8 +89,8 @@ P/E는 (2026-07부터) O/J와 동일하게 **검토중(claim) 방식**이며, �
 
 ### Case E — R 합의 (`approve_step` agent='R', `views.py:250`)
 - 동작: R `approved` → **P(due: R당일 포함 4영업일), O(due: 6영업일, 병렬)** 동시 생성.
-  추가로 `has_ppid_plel()`이 참이면 **E**(due: 6영업일, 병렬)도 생성.
-- `has_ppid_plel()`(`models.py:106`): J-layer 행 중 `pp` 값에 `plel`(대소문자 무관) 포함이 하나라도 있으면 E 단계 생성.
+  추가로 **E**(due: 6영업일, 병렬)도 항상 생성한다.
+- **E(MASK) 생성 조건(2026-07 변경)**: 이전에는 J-layer `pp` 에 `plel` 이 있을 때만 생성했으나, MASK 팀이 Validation System 대상/비대상 판정 자체를 검증하는 주체이므로 **대상/비대상과 무관하게 항상 생성**한다. Only MAP 의뢰서는 기존대로 P/O/E/J 없이 R→RA 로 끝난다. 판정 조건 함수 `has_ppid_plel()` 은 삭제됐다.
 - **Only MAP 예외**: `document.is_only_map()`이 참이면 P/O/E를 **생성하지 않고** `status → approved`로
   바로 전이한다(R 합의 = 최종 승인). 승인 메일(`enqueue_approved`)이 발송된다.
 
@@ -206,10 +206,10 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 
 - **담당자(R)**: PL 전원 합의 후 생성되는 기존 R 단계(RFG 팀 1명). **지정하기**로 지정.
 - **검토자(RV)**: 지정하기에서 담당자와 **함께** 지정(선택 — '검토자 없음' 가능, RFG 팀). 지정 시 `RV` 단계 생성(`assign_step` 확장, `reviewer_loginid`). 담당자 합의 **후에만** 처리 가능(`approve_step` 순차 가드).
-- **전환(병렬)**: 담당자(검토자 있으면 검토자까지) 합의 시 `_advance_to_parallel` → **P(4영업일)·O(6영업일)·[E(plel)] + 후결자(RA, 6영업일 병렬)** 생성.
+- **전환(병렬)**: 담당자(검토자 있으면 검토자까지) 합의 시 `_advance_to_parallel` → **P(4영업일)·O(6영업일)·E(6영업일, 병렬, 항상 생성) + 후결자(RA, 6영업일 병렬)** 생성.
   - **Only MAP**: P/O/E 없이 **후결자(RA)만** 생성 → 후결자 전원 합의 시 최종 승인. (후결자 미설정 시 즉시 승인)
 - **후결자(RA)**: **고정 1명**(`settings.POST_APPROVER_LOGINID`, `.env`, RFG 팀) + **C가문(only_prodc=YES) 추가 후결자**(상신 모달에서 PL 중 지정, `detail.post_approvers`). 최소 1명 필수(`_validate_post_approvers`). 고정은 PL 후보 목록에 안 뜸(TE_R 이라 자동 제외).
-- **최종 승인**: `J + O[+E] + 후결자(RA) 전원` 합의(Only MAP 은 RA 만). `approve_step` 최종 판정에 RA 포함.
+- **최종 승인**: `J + O + E + 후결자(RA) 전원` 합의(Only MAP 은 RA 만). `approve_step` 최종 판정에 RA 포함.
 - ✅ **후결자 추가/제거(2026-07 개편)**: 기존 1:1 스왑(`change_post_approver`) 대신 **추가**(`add-post-approver/`)와
   **제거**(`remove-post-approver/`) 두 액션으로 분리했다. 작성자 또는 **MASTER**(프론트 노출도 동일하게 확대)가
   R 합의 이후(병렬 단계 진입 후) 언제든 사용 가능. 작성자 판정은 `_can_manage_post_approver`가
@@ -439,7 +439,7 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 
 - **시드**: 문서 3건 — A(R 합의 후 병렬 진행, 목록 2행 분기, **재상신 이력 1건 포함** → 상세에서 변경 필드·행 강조) / B(PL 검토 중, 단일 행) / C(R 담당자 지정 대기, 단일 행). `MY`(내 결재) 필터는 사용자 역할과 무관하게 `TOUR_APPROVAL_MY_IDS`(A·C)로 고정한다. 지정하기 시연용 샘플 팀원은 `TOUR_ASSIGN_MEMBERS`.
   - 문서 A 병렬 상태: 경로1은 **P 검토중 / J 대기**(P→J 순차라 J 단계는 아직 미생성), 경로2는 **O 검토중**(담당자 지정). P·J 동시 검토중으로 보이지 않게 한다.
-- **결재 경로 다이어그램**: `frontend/src/components/ApprovalRouteDiagram.tsx`. **전체 가이드의 첫 단계(독립 컴포넌트)로 분리**되어, 결재현황 페이지(iframe)에는 더 이상 렌더하지 않는다. 최종 경로 `제품담당자→검토→RFG→[경로1 PHPSI→JOB]∥[경로2 OVL(+EUV)]→완료`와 조건(E는 plel 시·Only MAP은 R까지·반려 시 처음 PL 검토부터 새 회차로 재상신하거나 철회)을 안내한다. 박스는 약어(code) 없이 **이름(label)만** 표시하며, 완료 박스만 현재처럼 `✓ + 완료`를 유지한다.
+- **결재 경로 다이어그램**: `frontend/src/components/ApprovalRouteDiagram.tsx`. **전체 가이드의 첫 단계(독립 컴포넌트)로 분리**되어, 결재현황 페이지(iframe)에는 더 이상 렌더하지 않는다. 최종 경로 `제품담당자→검토→RFG→[경로1 PHPSI→JOB]∥[경로2 OVL(+EUV)]→완료`와 조건(EUV(E) 단계는 항상 진행되며 Validation System 대상/비대상 판정을 확인·Only MAP은 R까지·반려 시 처음 PL 검토부터 새 회차로 재상신하거나 철회)을 안내한다. 박스는 약어(code) 없이 **이름(label)만** 표시하며, 완료 박스만 현재처럼 `✓ + 완료`를 유지한다.
 - **지정하기 시연(실제 기능과 동일)**: 운영 지정 UI를 **커스텀 드롭다운(버튼→후보 목록→항목 클릭)+확인/취소**로 통일했고, 투어도 동일 UI를 쓴다. `open-assign`이 커서로 각 요소를 **실제 클릭**(지정하기→드롭다운 펼침→첫 후보 선택→확인). '확인' onClick은 `handleAssign`을 호출하며, 투어 모드에서는 `handleAssign`/`handleLoadTeamMembers`가 API 대신 **로컬 상태로 담당자를 배정**(샘플 `TOUR_ASSIGN_MEMBERS`)하고 토스트(`approval.assign_success`)를 띄운다. 배정 후 `assignee_loginid`가 채워져 지정 UI가 사라진다(실제 동작과 동일). 캡션은 **상단(topCaption)**으로 띄워 하단 footer 지정 UI를 가리지 않는다.
 - **명령 수신**(부모 모달 → iframe `postMessage`): `tour-reset` · `my-filter`/`all-filter` · `open-detail`(대표 문서 A 제목 클릭→상세) · `open-assign`(문서 C 상세→지정하기→드롭다운→후보→확인까지 실제 배정) · `open-rowdiff`(문서 A J-ayer '이력 확인'→변경 전/후 모달) · `page-jayer`/`page-route`(상세 탭 이동, MASTER 기준 인덱스 2/5) · `pause`/`resume`.
 - **`data-tour` 앵커**(투어 전용): `approval-stage`(현재 단계 컬럼·문서 A 행) · `assign-btn`(지정하기 버튼) · `assign-select`(드롭다운 버튼) · `assign-option`(첫 후보 항목) · `assign-confirm`(확인 버튼) · `jayer-hist-btn`(이력 확인 버튼).
