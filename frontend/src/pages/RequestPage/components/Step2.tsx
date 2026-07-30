@@ -2,7 +2,8 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { JayerRow, FilterSet, GuideFeatureKey } from '../../../types';
-import { ST_CELL_COLOR } from '../constants';
+import { ST_CELL_COLOR, VALIDATION_CELL_COLOR } from '../constants';
+import { isValidationKeywordRow } from '../helpers';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
 import { numberBoundaryMatch } from '../../../utils/specMatch';
 
@@ -203,7 +204,7 @@ const Step2: React.FC<Step2Props> = ({
                     <td {...cellProps('sp', isRegistered ? regBg : undefined)}><input value={row.sp} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                     <td {...cellProps('sd', isRegistered ? regBg : undefined)}><input value={row.sd} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                     <td {...cellProps('layerid', isRegistered ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                    <td {...cellProps('pp', isRegistered ? regBg : undefined)}><input value={row.pp} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : row.pp?.toLowerCase().includes('plel') ? '#fff9c4' : undefined }} /></td>
+                    <td {...cellProps('pp', isRegistered ? regBg : undefined)}><input value={row.pp} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : isValidationKeywordRow(row.pp) ? VALIDATION_CELL_COLOR : undefined }} /></td>
                     <td {...cellProps('st', isRegistered ? regBg : undefined)}>
                       <AutocompleteInput
                         value={row.st}
