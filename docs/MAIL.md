@@ -110,7 +110,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
                                                   (pending / 반려된 본인 / 아직 생성 안 된 미래 단계)
 ```
 
-- **결재선(라우팅)**: 일반 문서 `R·RV·P·PV·O·E·EV·J·RA` / Only MAP 문서 `R·RV·RA`(P/O/E/J 없음). `E`계열은 `has_ppid_plel()`인 의뢰서에만 포함된다. PL 은 위 표대로 별도 규칙이라 이 라우팅에서 제외한다.
+- **결재선(라우팅)**: 일반 문서 `R·RV·P·PV·O·E·EV·J·RA` / Only MAP 문서 `R·RV·RA`(P/O/E/J 없음). PL 은 위 표대로 별도 규칙이라 이 라우팅에서 제외한다.
 - **검토자(RV/PV/EV)**: 지정됐을 때만 생성되는 선택 단계라, 해당 step 이 실제로 없으면 결재선에 없는 것으로 본다. 이들은 각각 담당자와 같은 팀(`TE_R`/`TE_P`/`TE_E`) 소속이므로 팀 조회 한 번에 함께 잡히고, 기존 dedup 으로 **중복 발송되지 않는다**.
 - **후결자(RA)**: 역할(role)로 판별되지 않으므로 팀 조회 대신 `post_approver_users()`(고정 후결자 + C가문 추가 후결자)로 예정자 전원을 구한다. 결재 단계 생성(`views`)과 같은 함수를 공유한다.
 
@@ -157,7 +157,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
   | 검토중 | `action='pending'` + assignee 있음 | `#d97706` |
   | 대기 | `action='pending'` + 미배정, 또는 **step 미생성(예정)** | `#8794a6` |
 
-- **경로에서 빠지는 단계**: Only MAP 의뢰서의 `P·O·E·J`, `has_ppid_plel()`이 아닌 의뢰서의 `E·EV`는 행 자체를 만들지 않는다(라우팅은 반려 수신자 산출과 같은 `ROUTE_AGENTS_*` 상수를 재사용). 검토자(`RV/PV/EV`)는 지정됐을 때만 생성되는 선택 단계라 **step 이 없으면 '대기' 행도 만들지 않는다**(지정되지 않은 검토자를 예정 단계로 오해하지 않도록).
+- **경로에서 빠지는 단계**: Only MAP 의뢰서의 `P·O·E·J` 는 행 자체를 만들지 않는다(라우팅은 반려 수신자 산출과 같은 `ROUTE_AGENTS_*` 상수를 재사용). 검토자(`RV/PV/EV`)는 지정됐을 때만 생성되는 선택 단계라 **step 이 없으면 '대기' 행도 만들지 않는다**(지정되지 않은 검토자를 예정 단계로 오해하지 않도록).
 - **담당자 미지정**: `assignee_name`이 비면 `담당자 미지정`(`ROUTE_UNASSIGNED_LABEL`)으로 표시한다. 무배정 상태로 팀 전체에 브로드캐스트되는 P·O·E·J 도착 메일에서 자주 나타난다.
 - **코멘트**: 코멘트가 있는 단계만 담당자 이름 아래에 인용 스타일로 붙인다(합의 의견·반려 사유·`[수정 후 상신]` 태그 전부). `ROUTE_COMMENT_MAX_LEN`(300자) 초과분은 잘라내고 `…`를 붙여 긴 사유가 본문을 밀어내지 않게 한다. 줄바꿈은 `white-space:pre-wrap`으로 살린다.
 - **보안**: 단계명·담당자명·코멘트 모두 `escape()` 처리한다. Outlook 호환을 위해 `<table>`로만 조판하고 flex/grid를 쓰지 않는다.
@@ -188,8 +188,8 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | `submit` / `resubmit` (상신·재상신) | ✅ | 지정 PL **전원**에게 stage_arrival(제목에 `[이름님]`, 2026-07 추가) + 통보처 전원에게 notify_submitted |
 | `withdraw` (철회) | ❌ | 알림 없음 |
 | `delete` (삭제) | ❌ | 알림 없음 |
-| `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·O·[E]·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일) |
-| `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·O·[E]·[RA 각각]에게 동시 발송 |
+| `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·O·E·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일) |
+| `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·O·E·[RA 각각]에게 동시 발송 |
 | `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나야 **J에게** 발송. 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨) |
 | `approve-step` P/E 합의 + `reviewer_loginids`(검토자 지정) | ✅ | 지정된 검토자(PV/EV) **각각**에게 즉시(담당자 합의와 **같은 요청**으로 처리되므로 같은 순간 발송) |
 | `approve-step` agent=J/O/E/EV/RA (병렬 경로 합의) | 🟡 | 이 합의로 **문서 전체가 approved 로 전이될 때만** approved(결재 경로 참여 전원) + notify_approved(통보처) 발송. 다른 경로가 아직 안 끝났으면 이 개별 합의는 **무메일**(침묵 — 예: J는 합의됐는데 O가 아직이면 알림 없음) |
