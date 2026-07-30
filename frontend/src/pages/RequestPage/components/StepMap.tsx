@@ -499,8 +499,9 @@ const StepMap: React.FC<StepMapProps> = ({
         </div>
 
         {/* Inter (Map Option 위 별도 항목) — prodc_status 와 동일하게 제목 + YES/NO 드롭다운.
-            YES 선택 시 오른쪽에 Xs/Ys 세부 토글 노출 */}
-        <div className="full-width flex-row" style={{ alignItems: 'flex-end' }}>
+            YES 선택 시 아래로 IN 적용 O/X(in_apply) + Xs/Ys/XYs/없음(inter_select) 필수 선택 그룹 노출.
+            NO 로 전환 시 확인 모달 없이 관련 값을 즉시 초기화한다(잘못된 값이 저장되지 않도록). */}
+        <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
             <label className="form-label">{t('request.map_opt_inter')}</label>
             <select
@@ -513,6 +514,8 @@ const StepMap: React.FC<StepMapProps> = ({
                 if (next === 'NO') {
                   handleDetailSet('inter_xs', '미적용');
                   handleDetailSet('inter_ys', '미적용');
+                  handleDetailSet('in_apply', '');
+                  handleDetailSet('inter_select', '');
                 }
               }}
             >
@@ -521,26 +524,45 @@ const StepMap: React.FC<StepMapProps> = ({
             </select>
           </div>
           {detail.inter === 'YES' && (
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                type="button"
-                className={`map-option-btn${detail.inter_xs === '적용' ? ' active' : ''}`}
-                style={{ padding: '10px 16px' }}
-                disabled={isMapRegistered}
-                onClick={() => handleDetailSet('inter_xs', detail.inter_xs === '적용' ? '미적용' : '적용')}
-              >
-                {t('request.map_opt_inter_xs')}
-              </button>
-              <button
-                type="button"
-                className={`map-option-btn${detail.inter_ys === '적용' ? ' active' : ''}`}
-                style={{ padding: '10px 16px' }}
-                disabled={isMapRegistered}
-                onClick={() => handleDetailSet('inter_ys', detail.inter_ys === '적용' ? '미적용' : '적용')}
-              >
-                {t('request.map_opt_inter_ys')}
-              </button>
-            </div>
+            <>
+              <div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {(['O', 'X'] as const).map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      className={`map-option-btn${detail.in_apply === val ? ' active' : ''}`}
+                      style={{ padding: '10px 16px' }}
+                      disabled={isMapRegistered}
+                      onClick={() => handleDetailSet('in_apply', val)}
+                    >
+                      {t(val === 'O' ? 'request.in_apply_o' : 'request.in_apply_x')}
+                    </button>
+                  ))}
+                </div>
+                {errors.in_apply && <span className="form-error">{errors.in_apply}</span>}
+              </div>
+              <div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {(['xs', 'ys', 'xys', 'none'] as const).map((val) => {
+                    const labelKey = val === 'xs' ? 'map_opt_inter_xs' : val === 'ys' ? 'map_opt_inter_ys' : val === 'xys' ? 'map_opt_inter_xys' : 'map_opt_inter_none';
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        className={`map-option-btn${detail.inter_select === val ? ' active' : ''}`}
+                        style={{ padding: '10px 16px' }}
+                        disabled={isMapRegistered}
+                        onClick={() => handleDetailSet('inter_select', val)}
+                      >
+                        {t(`request.${labelKey}`)}
+                      </button>
+                    );
+                  })}
+                </div>
+                {errors.inter_select && <span className="form-error">{errors.inter_select}</span>}
+              </div>
+            </>
           )}
         </div>
 

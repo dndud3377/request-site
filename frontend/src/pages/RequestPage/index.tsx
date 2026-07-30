@@ -1365,6 +1365,8 @@ export default function RequestPage(): React.ReactElement {
       inter: INITIAL_DETAIL.inter,
       inter_xs: INITIAL_DETAIL.inter_xs,
       inter_ys: INITIAL_DETAIL.inter_ys,
+      in_apply: INITIAL_DETAIL.in_apply,
+      inter_select: INITIAL_DETAIL.inter_select,
       tsv: INITIAL_DETAIL.tsv,
       rf: INITIAL_DETAIL.rf,
       fullchip: INITIAL_DETAIL.fullchip,
@@ -2727,6 +2729,16 @@ export default function RequestPage(): React.ReactElement {
           errorMessages.push('예외 구역 값: 필수 입력 항목입니다.');
         }
       }
+      if (detail.inter === 'YES') {
+        if (!detail.in_apply?.trim()) {
+          newErrors['in_apply'] = t('request.required');
+          errorMessages.push('IN 적용 여부: 필수 선택 항목입니다.');
+        }
+        if (!detail.inter_select?.trim()) {
+          newErrors['inter_select'] = t('request.required');
+          errorMessages.push('IN 적용 대상: 필수 선택 항목입니다.');
+        }
+      }
       if (detail.only_prodc === 'Yes') {
         (['top', 'bottom'] as const).forEach((region) => {
           if (!detail[`prodc_${region}_line` as keyof DetailFormState]?.toString().trim()) {
@@ -3047,6 +3059,8 @@ export default function RequestPage(): React.ReactElement {
       inter: INITIAL_DETAIL.inter,
       inter_xs: INITIAL_DETAIL.inter_xs,
       inter_ys: INITIAL_DETAIL.inter_ys,
+      in_apply: INITIAL_DETAIL.in_apply,
+      inter_select: INITIAL_DETAIL.inter_select,
       tsv: INITIAL_DETAIL.tsv,
       rf: INITIAL_DETAIL.rf,
       fullchip: INITIAL_DETAIL.fullchip,
