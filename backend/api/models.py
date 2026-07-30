@@ -158,15 +158,6 @@ class RequestDocument(models.Model):
         except (TypeError, ValueError):
             return None
 
-    def has_ppid_plel(self):
-        detail = self.get_detail()
-        jayer_rows = detail.get('jayerRows', [])
-        for row in jayer_rows:
-            pp = row.get('pp', '')
-            if 'plel' in pp.lower():  # 대소문자 구분 없음
-                return True
-        return False
-
 
 class Holiday(models.Model):
     """대한민국 공휴일 캐시 (스케줄러 동기화)"""

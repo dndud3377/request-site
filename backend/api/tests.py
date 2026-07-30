@@ -593,7 +593,8 @@ class RouteCardTest(TestCase):
         self.assertEqual(by_label['O'], 'reviewing')      # pending + 담당자 있음
         self.assertEqual(by_label['P'], 'waiting')        # pending + 미배정
         self.assertEqual(by_label['J'], 'waiting')        # step 미생성(예정)
-        self.assertNotIn('E', by_label, 'plel 이 아니면 E 는 경로에 넣지 않는다')
+        self.assertIn('E', by_label, 'E(MASK)는 대상/비대상과 무관하게 항상 경로에 포함된다')
+        self.assertEqual(by_label['E'], 'waiting')  # step 미생성(예정)
 
     def test_rows_only_include_current_round(self):
         old = UserProfile.objects.create(loginid='old9', mail='old9@c.com', role='PL')
@@ -836,6 +837,41 @@ class PEStageReviewerFlowTest(TestCase):
 
         doc.refresh_from_db()
         return doc
+
+    def test_e_step_created_even_without_plel(self):
+        """대상 판정 키워드가 없어도 E(MASK) 단계는 항상 생성된다."""
+        doc = self._advance_to_parallel(plel=False)
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='E', round=1).exists(),
+            'E 는 대상/비대상과 무관하게 생성되어야 한다',
+        )
+
+    def test_e_step_not_created_for_only_map(self):
+        """Only MAP 문서에는 여전히 E 단계가 생기지 않는다."""
+        doc = RequestDocument.objects.create(
+            title='onlymap', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps(
+                {'detail': {'request_purpose': RequestDocument.ONLY_MAP_PURPOSE}, 'jayerRows': []}
+            ),
+        )
+        self.client.force_authenticate(user=self.requester)
+        self.client.post(f'/api/documents/{doc.id}/submit/',
+                         {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.client.force_authenticate(user=self.pl_user)
+        self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+
+        # PL 합의만으로는 R 단계가 생성될 뿐 병렬 단계(_advance_to_parallel)에는
+        # 진입하지 않으므로, R 담당자 지정·합의까지 실제로 거쳐야 Only MAP 분기가
+        # 검증된다(브리프 원안은 R 합의를 생략해 이 분기를 타지 않는 채로 통과했다).
+        self.client.force_authenticate(user=self.r_user)
+        self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+        }, format='json')
+        self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='E').exists())
 
     # ----- P 단계 -----
 

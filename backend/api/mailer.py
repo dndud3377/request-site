@@ -341,9 +341,6 @@ def _remaining_stage_emails(document, max_round):
         if agent in REVIEWER_AGENTS and agent not in existing_agents:
             # 검토자를 지정하지 않았으면 그 단계는 애초에 결재선에 없다.
             continue
-        if agent == 'E' and not document.has_ppid_plel():
-            # E 는 plel 인 의뢰서에만 생성된다.
-            continue
         if agent == 'RA':
             emails.extend(u.mail for u in post_approver_users(document) if u.mail)
             continue
@@ -473,8 +470,8 @@ def _route_rows(document):
 
     현재(최종) 회차만 담는다 — 재상신 문서라도 이전 회차 이력은 싣지 않는다.
     라우팅(ROUTE_AGENTS_*)에 있으나 아직 step 이 생성되지 않은 단계는 '대기' 행으로
-    채워, 앞으로 남은 결재가 몇 단계인지 보이게 한다. Only MAP 이거나 plel 이 아닌
-    의뢰서에서 아예 거치지 않는 단계는 행 자체를 만들지 않는다.
+    채워, 앞으로 남은 결재가 몇 단계인지 보이게 한다. Only MAP 의뢰서처럼 아예
+    거치지 않는 단계는 행 자체를 만들지 않는다.
     """
     max_round = _current_round(document)
     if max_round is None:
@@ -482,8 +479,6 @@ def _route_rows(document):
 
     route = set(ROUTE_AGENTS_ONLY_MAP if document.is_only_map() else ROUTE_AGENTS_DEFAULT)
     route.add('PL')  # PL 은 수신자 규칙에서만 예외이고 경로 표시에는 항상 포함된다
-    if not document.has_ppid_plel():
-        route -= {'E', 'EV'}
 
     steps = list(
         ApprovalStep.objects.filter(document=document, round=max_round)
