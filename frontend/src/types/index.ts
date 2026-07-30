@@ -592,8 +592,9 @@ export type DesignRuleDeltaState = 'up' | 'down' | 'flat' | 'new';
 export type PurposeBreakdown = Record<string, number>;
 
 export interface DesignRuleBucket {
+  /** 서버 저장·매칭에 쓰이는 원본 값. etc/unclassified는 고정 sentinel 키. */
   key: string;
-  /** kind==='rule'일 때만 디자인룰명. etc/unclassified는 빈 문자열이며 프론트가 i18n 라벨을 붙인다. */
+  /** kind==='rule'일 때만 "N나노" 형태의 표시용 라벨. etc/unclassified는 빈 문자열이며 프론트가 i18n 라벨을 붙인다. */
   label: string;
   kind: DesignRuleBucketKind;
   /** 'etc'가 묶은 디자인룰 개수. rule은 1, unclassified는 0. */
@@ -620,8 +621,9 @@ export interface AnnualDesignRuleStats {
   compare_total: number | null;
 }
 
-/** 미분류 사유 — 프론트가 안내 문구를 고르는 데 쓴다. */
-export type UnclassifiedReason = 'missing' | 'ambiguous' | 'empty';
+/** 미분류 사유 — 프론트가 안내 문구를 고르는 데 쓴다.
+ * non_numeric: 조합법/의뢰서에 디자인룰이 매칭됐지만 값이 숫자가 아니라 나노 표시를 만들 수 없음. */
+export type UnclassifiedReason = 'missing' | 'ambiguous' | 'empty' | 'non_numeric';
 
 export interface UnclassifiedProcess {
   process: string;
@@ -637,10 +639,43 @@ export interface UnclassifiedDocument {
   process_selection: string;
   submitted_at: string;
   reason: UnclassifiedReason;
+  /** reason==='ambiguous'일 때 마스터에 실제로 걸려 있는 후보 디자인룰. 그 외엔 빈 배열. */
+  candidates: string[];
+}
+
+/** 분류 모달 select 후보 — value는 저장용 원본 값, label은 "N나노" 표시용. */
+export interface DesignRuleOption {
+  value: string;
+  label: string;
 }
 
 export interface UnclassifiedTargets {
   processes: UnclassifiedProcess[];
   documents: UnclassifiedDocument[];
-  design_rules: string[];
+  design_rules: DesignRuleOption[];
+}
+
+/** 조합법 단위 디자인룰 수동 매핑 — "재분류" 탭에서 이미 분류된 것을 다시 고칠 때 쓴다. */
+export interface ProcessDesignRuleOverride {
+  id: number;
+  process: string;
+  design_rule: string;
+  /** "N나노" 표시용. 숫자가 아니면 원본 값 그대로. */
+  design_rule_label: string;
+  created_by_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 의뢰서 단위 디자인룰 수동 매핑 — "재분류" 탭에서 이미 분류된 것을 다시 고칠 때 쓴다. */
+export interface DocumentDesignRuleOverride {
+  id: number;
+  document: number;
+  document_title: string;
+  design_rule: string;
+  /** "N나노" 표시용. 숫자가 아니면 원본 값 그대로. */
+  design_rule_label: string;
+  created_by_name: string;
+  created_at: string;
+  updated_at: string;
 }
