@@ -421,6 +421,7 @@
     "comment_reject_label": "반려 이유 (선택)",
     "comment_agree_placeholder": "합의 이유를 입력하세요...",
     "comment_reject_placeholder": "반려 이유를 입력하세요...",
+    "validation_system_confirm": "Validation System 확정",
     "current_role": "현재 역할:",
     "agent_PL": "검토",
     "agent_R": "RFG",

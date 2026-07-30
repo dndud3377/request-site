@@ -422,6 +422,7 @@
     "comment_reject_label": "Reason (optional)",
     "comment_agree_placeholder": "Enter reason for agreement...",
     "comment_reject_placeholder": "Enter reason for rejection...",
+    "validation_system_confirm": "Confirm Validation System",
     "agent_PL": "Review",
     "agent_R": "RFG",
     "agent_RV": "Reviewer",
