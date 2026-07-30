@@ -495,6 +495,28 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # E(MASK) 담당자 합의에는 2차 검토자(EV) 지정이 필수다 — MASK 검증은 2인 확인 절차라서
+        # 담당자 혼자 합의로 단계를 넘길 수 없다. (P 단계의 PV 는 지금까지대로 선택 사항이다.)
+        #
+        # 여기(어떤 쓰기보다 먼저)에서 걸러야 한다 — @transaction.atomic 은 예외에만 롤백하므로
+        # 검토자 생성이나 값 반영 이후에 400 을 반환하면 그 쓰기가 커밋된 채 응답만 실패한다.
+        #
+        # 이 규칙은 앞으로의 합의에만 적용된다. 이미 검토자 없이 E 합의를 마친 기존 문서는
+        # _stage_reviewers_complete() 의 하위호환 분기로 그대로 승인될 수 있어야 한다
+        # (E 단계가 이미 approved 라 검토자를 지정할 경로가 없어, 소급 적용하면 영구 정지된다).
+        if agent == 'E':
+            requested_reviewers = [
+                str(lid or '').strip() for lid in (request.data.get('reviewer_loginids') or [])
+            ]
+            has_existing_reviewer = ApprovalStep.objects.filter(
+                document=document, agent='EV', round=max_round
+            ).exists()
+            if not any(requested_reviewers) and not has_existing_reviewer:
+                return Response(
+                    {'error': '2차 검토자를 1명 이상 지정해야 합니다.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         # P/E 담당자 합의 시 함께 지정된 검토자(PV/EV) 생성 — 별도 지정 API 없이
         # 이 합의 요청 한 번으로 담당자 합의 + 검토자 지정이 함께 처리된다.
         if agent in ('P', 'E'):
