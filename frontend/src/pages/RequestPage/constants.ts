@@ -190,6 +190,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   tbvtlv_thickness: '',
   tbvtlv_entries: [],
   notifiers: [],
+  validation_system: VS_NONTARGET,
 };
 
 export const INITIAL_FORM: CreateDocumentInput = {

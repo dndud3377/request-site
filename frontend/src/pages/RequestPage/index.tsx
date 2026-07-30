@@ -2886,6 +2886,9 @@ export default function RequestPage(): React.ReactElement {
           post_approvers: detail.only_prodc === 'Yes' ? postApprovers : [],
           // 완성된 MAP 변경: 승인 시 서버가 원본 요청서에 MAP 값을 반영할 수 있도록 대상 문서 id 를 저장
           ...(isMapChangeMode && mapChangeDocId !== null ? { map_change_source_id: mapChangeDocId } : {}),
+          // 상신·재상신 시점의 상신자 판단을 고정 기록한다(임시저장에는 남기지 않는다).
+          // 이후 MASK(E)가 detail.validation_system 을 바꿔도 이 값은 유지된다.
+          ...(isDraft ? {} : { validation_system_submitted: detail.validation_system }),
         },
         // Only MAP·완성된 MAP 변경은 StepMap 정보까지만 필요 → J/O/bb 표를 비워 저장한다.
         jayerRows: isMapOnlyScope ? [] : (isDraft ? jayerRows : jayerRows.filter(r => !r.disabled)).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
