@@ -1478,11 +1478,11 @@ class AnnualDesignRuleStatsTest(TestCase):
     def setUp(self):
         from .models import DesignRule
         self.author = UserProfile.objects.create(loginid='drauthor', mail='dr@c.com', role='NONE')
-        # 조합법 P1 → R1 (단일), P2 → R2 (단일), PAMB → 2개(모호)
-        DesignRule.objects.create(process='P1', design_rule='R1')
-        DesignRule.objects.create(process='P2', design_rule='R2')
-        DesignRule.objects.create(process='PAMB', design_rule='RX')
-        DesignRule.objects.create(process='PAMB', design_rule='RY')
+        # 조합법 P1 → 0.1(100나노) (단일), P2 → 0.2(200나노) (단일), PAMB → 2개(모호)
+        DesignRule.objects.create(process='P1', design_rule='0.1')
+        DesignRule.objects.create(process='P2', design_rule='0.2')
+        DesignRule.objects.create(process='PAMB', design_rule='0.3')
+        DesignRule.objects.create(process='PAMB', design_rule='0.4')
 
     def _doc(self, *, process, purpose, year, status='approved', month=6, submitted=True):
         """지정 연도에 상신된 의뢰서 1건 생성."""
@@ -1517,11 +1517,19 @@ class AnnualDesignRuleStatsTest(TestCase):
         self._doc(process='P1', purpose='차용', year=2025)
 
         data = design_rule_stats.annual_stats(2025)
-        bucket = self._bucket(data, 'R1')
+        bucket = self._bucket(data, '0.1')
         self.assertEqual(bucket['count'], 3)
         self.assertEqual(bucket['purposes']['신규'], 2)
         self.assertEqual(bucket['purposes']['차용'], 1)
         self.assertEqual(bucket['purposes']['기타'], 0)
+
+    def test_bucket_label_shows_nano_while_key_stays_raw(self):
+        """key는 원본 값을 유지하고, 화면 표시용 label만 나노로 변환된다."""
+        self._doc(process='P1', purpose='신규', year=2025)
+        data = design_rule_stats.annual_stats(2025)
+        bucket = self._bucket(data, '0.1')
+        self.assertIsNotNone(bucket)
+        self.assertEqual(bucket['label'], '100나노')
 
     def test_only_approved_documents_are_counted(self):
         """승인 외 상태(임시저장·상신됨·반려)는 집계에서 빠진다."""
@@ -1530,7 +1538,7 @@ class AnnualDesignRuleStatsTest(TestCase):
             self._doc(process='P1', purpose='신규', year=2025, status=state)
 
         data = design_rule_stats.annual_stats(2025)
-        self.assertEqual(self._bucket(data, 'R1')['count'], 1)
+        self.assertEqual(self._bucket(data, '0.1')['count'], 1)
 
     def test_documents_without_submitted_at_are_ignored(self):
         """상신일이 없으면 연도를 정할 수 없으므로 제외한다."""
@@ -1554,7 +1562,28 @@ class AnnualDesignRuleStatsTest(TestCase):
         """한 조합법이 디자인룰 2개에 걸리면 미분류로 간다."""
         self._doc(process='PAMB', purpose='신규', year=2025)
         data = design_rule_stats.annual_stats(2025)
-        self.assertIsNone(self._bucket(data, 'RX'))
+        self.assertIsNone(self._bucket(data, '0.3'))
+        self.assertEqual(self._bucket(data, design_rule_stats.UNCLASSIFIED_KEY)['count'], 1)
+
+    def test_non_numeric_resolved_process_value_falls_into_unclassified(self):
+        """조합법이 매칭됐어도 그 값이 숫자가 아니면 미분류로 처리한다."""
+        from .models import DesignRule
+        DesignRule.objects.create(process='PTEXT', design_rule='TEXT-A')
+        self._doc(process='PTEXT', purpose='신규', year=2025)
+
+        data = design_rule_stats.annual_stats(2025)
+        self.assertIsNone(self._bucket(data, 'TEXT-A'))
+        self.assertEqual(self._bucket(data, design_rule_stats.UNCLASSIFIED_KEY)['count'], 1)
+
+    def test_non_numeric_document_override_falls_into_unclassified(self):
+        """의뢰서 단위 override 값이 숫자가 아니면 미분류로 처리한다."""
+        from .models import DocumentDesignRuleOverride
+        doc = self._doc(process='P1', purpose='신규', year=2025)
+        DocumentDesignRuleOverride.objects.create(document=doc, design_rule='TEXT-B')
+
+        data = design_rule_stats.annual_stats(2025)
+        self.assertIsNone(self._bucket(data, 'TEXT-B'))
+        self.assertIsNone(self._bucket(data, '0.1'))
         self.assertEqual(self._bucket(data, design_rule_stats.UNCLASSIFIED_KEY)['count'], 1)
 
     def test_unknown_and_empty_process_fall_into_unclassified(self):
@@ -1575,59 +1604,59 @@ class AnnualDesignRuleStatsTest(TestCase):
         """조합법 수동 매핑이 마스터에 없는 조합법을 확정시킨다."""
         from .models import ProcessDesignRuleOverride
         self._doc(process='UNKNOWN', purpose='신규', year=2025)
-        ProcessDesignRuleOverride.objects.create(process='UNKNOWN', design_rule='R9')
+        ProcessDesignRuleOverride.objects.create(process='UNKNOWN', design_rule='0.9')
 
         data = design_rule_stats.annual_stats(2025)
-        self.assertEqual(self._bucket(data, 'R9')['count'], 1)
+        self.assertEqual(self._bucket(data, '0.9')['count'], 1)
         self.assertEqual(self._bucket(data, design_rule_stats.UNCLASSIFIED_KEY)['count'], 0)
 
     def test_process_override_wins_over_master(self):
         """조합법 수동 매핑은 마스터 단일 매칭도 덮어쓴다."""
         from .models import ProcessDesignRuleOverride
         self._doc(process='P1', purpose='신규', year=2025)
-        ProcessDesignRuleOverride.objects.create(process='P1', design_rule='R-FORCED')
+        ProcessDesignRuleOverride.objects.create(process='P1', design_rule='0.11')
 
         data = design_rule_stats.annual_stats(2025)
-        self.assertIsNone(self._bucket(data, 'R1'))
-        self.assertEqual(self._bucket(data, 'R-FORCED')['count'], 1)
+        self.assertIsNone(self._bucket(data, '0.1'))
+        self.assertEqual(self._bucket(data, '0.11')['count'], 1)
 
     def test_process_override_resolves_ambiguous_process(self):
         """모호했던 조합법도 수동 매핑이 있으면 확정된다."""
         from .models import ProcessDesignRuleOverride
         self._doc(process='PAMB', purpose='신규', year=2025)
-        ProcessDesignRuleOverride.objects.create(process='PAMB', design_rule='RX')
+        ProcessDesignRuleOverride.objects.create(process='PAMB', design_rule='0.3')
 
         data = design_rule_stats.annual_stats(2025)
-        self.assertEqual(self._bucket(data, 'RX')['count'], 1)
+        self.assertEqual(self._bucket(data, '0.3')['count'], 1)
         self.assertEqual(self._bucket(data, design_rule_stats.UNCLASSIFIED_KEY)['count'], 0)
 
     def test_document_override_wins_over_process_override(self):
         """의뢰서 단위 매핑이 조합법 단위 매핑보다 우선한다."""
         from .models import ProcessDesignRuleOverride, DocumentDesignRuleOverride
         doc = self._doc(process='P1', purpose='신규', year=2025)
-        ProcessDesignRuleOverride.objects.create(process='P1', design_rule='R-PROC')
-        DocumentDesignRuleOverride.objects.create(document=doc, design_rule='R-DOC')
+        ProcessDesignRuleOverride.objects.create(process='P1', design_rule='0.12')
+        DocumentDesignRuleOverride.objects.create(document=doc, design_rule='0.13')
 
         data = design_rule_stats.annual_stats(2025)
-        self.assertIsNone(self._bucket(data, 'R-PROC'))
-        self.assertEqual(self._bucket(data, 'R-DOC')['count'], 1)
+        self.assertIsNone(self._bucket(data, '0.12'))
+        self.assertEqual(self._bucket(data, '0.13')['count'], 1)
 
     def test_top_n_folds_remainder_into_etc(self):
         """상위 N 밖 디자인룰은 '기타'로 합산되고, 미분류와는 섞이지 않는다."""
         from .models import DesignRule
         for i in range(4):
-            DesignRule.objects.create(process=f'PX{i}', design_rule=f'RX{i}')
-            for _ in range(i + 1):     # RX0=1건 … RX3=4건
+            DesignRule.objects.create(process=f'PX{i}', design_rule=f'0.5{i}')
+            for _ in range(i + 1):     # 0.50=1건 … 0.53=4건
                 self._doc(process=f'PX{i}', purpose='신규', year=2025)
         self._doc(process='UNKNOWN', purpose='신규', year=2025)   # 미분류 1건
 
         data = design_rule_stats.annual_stats(2025, top_n=2)
         keys = [b['key'] for b in data['buckets']]
-        # 건수 내림차순 상위 2개(RX3=4, RX2=3) + 기타 + 미분류
-        self.assertEqual(keys, ['RX3', 'RX2', design_rule_stats.ETC_KEY,
+        # 건수 내림차순 상위 2개(0.53=4, 0.52=3) + 기타 + 미분류
+        self.assertEqual(keys, ['0.53', '0.52', design_rule_stats.ETC_KEY,
                                 design_rule_stats.UNCLASSIFIED_KEY])
         etc = self._bucket(data, design_rule_stats.ETC_KEY)
-        self.assertEqual(etc['count'], 3)          # RX1(2) + RX0(1)
+        self.assertEqual(etc['count'], 3)          # 0.51(2) + 0.50(1)
         self.assertEqual(etc['member_count'], 2)
         self.assertEqual(self._bucket(data, design_rule_stats.UNCLASSIFIED_KEY)['count'], 1)
 
@@ -1638,8 +1667,8 @@ class AnnualDesignRuleStatsTest(TestCase):
 
         data = design_rule_stats.annual_stats(2025, top_n=None)
         self.assertIsNone(self._bucket(data, design_rule_stats.ETC_KEY))
-        self.assertEqual(self._bucket(data, 'R1')['count'], 1)
-        self.assertEqual(self._bucket(data, 'R2')['count'], 1)
+        self.assertEqual(self._bucket(data, '0.1')['count'], 1)
+        self.assertEqual(self._bucket(data, '0.2')['count'], 1)
 
     def test_top_n_ranks_by_base_year_not_compare_year(self):
         """상위 선정 기준은 비교 연도가 아니라 기준 연도 건수다."""
@@ -1648,7 +1677,7 @@ class AnnualDesignRuleStatsTest(TestCase):
             self._doc(process='P2', purpose='신규', year=2024)      # 비교 연도만 5건
 
         data = design_rule_stats.annual_stats(2025, compare_year=2024, top_n=1)
-        self.assertEqual(data['buckets'][0]['key'], 'R1')
+        self.assertEqual(data['buckets'][0]['key'], '0.1')
 
     def test_delta_up_and_down(self):
         """증감률 부호와 상태."""
@@ -1658,7 +1687,7 @@ class AnnualDesignRuleStatsTest(TestCase):
             self._doc(process='P1', purpose='신규', year=2024)
 
         data = design_rule_stats.annual_stats(2025, compare_year=2024)
-        bucket = self._bucket(data, 'R1')
+        bucket = self._bucket(data, '0.1')
         self.assertEqual(bucket['compare_count'], 2)
         self.assertEqual(bucket['delta_pct'], 50.0)
         self.assertEqual(bucket['delta_state'], design_rule_stats.DELTA_UP)
@@ -1669,7 +1698,7 @@ class AnnualDesignRuleStatsTest(TestCase):
         self._doc(process='P2', purpose='신규', year=2024)   # 비교 연도 데이터 존재
 
         data = design_rule_stats.annual_stats(2025, compare_year=2024)
-        bucket = self._bucket(data, 'R1')
+        bucket = self._bucket(data, '0.1')
         self.assertIsNone(bucket['delta_pct'])
         self.assertEqual(bucket['delta_state'], design_rule_stats.DELTA_NEW)
 
@@ -1677,7 +1706,7 @@ class AnnualDesignRuleStatsTest(TestCase):
         """비교 연도가 없으면 비교 필드는 모두 null."""
         self._doc(process='P1', purpose='신규', year=2025)
         data = design_rule_stats.annual_stats(2025)
-        bucket = self._bucket(data, 'R1')
+        bucket = self._bucket(data, '0.1')
         self.assertIsNone(bucket['compare_count'])
         self.assertIsNone(bucket['compare_purposes'])
         self.assertIsNone(bucket['delta_pct'])
@@ -1688,7 +1717,7 @@ class AnnualDesignRuleStatsTest(TestCase):
         self._doc(process='P1', purpose='정체불명', year=2025)
         self._doc(process='P1', purpose='', year=2025)
         data = design_rule_stats.annual_stats(2025)
-        self.assertEqual(self._bucket(data, 'R1')['purposes']['기타'], 2)
+        self.assertEqual(self._bucket(data, '0.1')['purposes']['기타'], 2)
 
     def test_corrupt_additional_notes_does_not_crash(self):
         """JSON 이 깨진 의뢰서는 미분류로 흘려보내고 예외를 내지 않는다."""
@@ -1712,12 +1741,42 @@ class AnnualDesignRuleStatsTest(TestCase):
         targets = design_rule_stats.unclassified_targets()
         by_process = {p['process']: p for p in targets['processes']}
         self.assertEqual(by_process['PAMB']['reason'], design_rule_stats.REASON_AMBIGUOUS)
-        self.assertEqual(by_process['PAMB']['candidates'], ['RX', 'RY'])
+        self.assertEqual(by_process['PAMB']['candidates'], ['0.3', '0.4'])
         self.assertEqual(by_process['UNKNOWN']['reason'], design_rule_stats.REASON_MISSING)
         # 조합법이 빈 건은 조합법 매핑으로 해결할 수 없어 문서 목록에만 잡힌다
         self.assertNotIn('', by_process)
         reasons = {d['reason'] for d in targets['documents']}
         self.assertIn(design_rule_stats.REASON_EMPTY, reasons)
+
+    def test_unclassified_targets_flags_non_numeric_reason(self):
+        """매칭은 됐지만 비숫자인 값은 조합법/의뢰서 목록에 non_numeric 사유로 뜬다."""
+        from .models import DesignRule, DocumentDesignRuleOverride
+        DesignRule.objects.create(process='PTEXT', design_rule='TEXT-A')
+        self._doc(process='PTEXT', purpose='신규', year=2025)
+        doc2 = self._doc(process='P1', purpose='신규', year=2025)
+        DocumentDesignRuleOverride.objects.create(document=doc2, design_rule='TEXT-B')
+
+        targets = design_rule_stats.unclassified_targets()
+        by_process = {p['process']: p for p in targets['processes']}
+        self.assertEqual(by_process['PTEXT']['reason'], design_rule_stats.REASON_NON_NUMERIC)
+
+        doc2_entry = next(d for d in targets['documents'] if d['id'] == doc2.id)
+        self.assertEqual(doc2_entry['reason'], design_rule_stats.REASON_NON_NUMERIC)
+
+    def test_design_rule_options_returns_numeric_only_sorted_value_label_pairs(self):
+        """옵션은 숫자로 변환되는 값만, 나노값 오름차순 {value,label} 로 나온다."""
+        from .models import DesignRule
+        DesignRule.objects.create(process='PTEXT', design_rule='TEXT-A')  # 비숫자 — 후보 제외
+        DesignRule.objects.create(process='PBIG', design_rule='1')        # 1000나노
+
+        options = design_rule_stats.design_rule_options()
+        values = [o['value'] for o in options]
+        self.assertNotIn('TEXT-A', values)
+        self.assertIn('0.1', values)
+        # 나노값 기준 오름차순 — 0.1(100나노) 이 1(1000나노) 보다 앞에 와야 한다
+        self.assertLess(values.index('0.1'), values.index('1'))
+        entry = next(o for o in options if o['value'] == '0.1')
+        self.assertEqual(entry['label'], '100나노')
 
 
 class AnnualDesignRuleStatsApiTest(TestCase):
