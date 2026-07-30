@@ -296,6 +296,8 @@ export interface DetailFormState {
   inter: string;
   inter_xs: string;
   inter_ys: string;
+  in_apply: string;
+  inter_select: string;
   tsv: string;
   rf: string;
   fullchip: string;
