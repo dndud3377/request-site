@@ -1,5 +1,5 @@
-import { FilterSet } from '../../types';
-import { VALIDATION_KEYWORD } from './constants';
+import { FilterSet, ValidationSystemValue } from '../../types';
+import { VALIDATION_KEYWORD, VS_NA, VS_TARGET } from './constants';
 
 // ===== 순수 헬퍼 (인자만 사용 — state 비의존) =====
 
@@ -66,3 +66,13 @@ export const isValidationKeywordRow = (pp: string | undefined): boolean =>
 export const isValidationTarget = (
   rows: { disabled?: boolean; pp?: string }[]
 ): boolean => rows.some((r) => !r.disabled && isValidationKeywordRow(r.pp));
+
+/**
+ * 문서 단위 자동 판정값. 판정 키워드가 하나라도 있으면 '대상'(VS_TARGET),
+ * 아예 없으면 판정이 성립하지 않으므로 '해당없음'(VS_NA).
+ * '비대상'(VS_NONTARGET)은 자동 판정으로 나오지 않는다 — 키워드가 있는 문서에서
+ * 상신자가 직접 토글했을 때만 나오며, 그 판단이 맞는지는 MASK(E)가 검증한다.
+ */
+export const autoValidationSystem = (
+  rows: { disabled?: boolean; pp?: string }[]
+): ValidationSystemValue => (isValidationTarget(rows) ? VS_TARGET : VS_NA);
