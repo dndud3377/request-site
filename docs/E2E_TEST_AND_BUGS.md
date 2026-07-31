@@ -453,11 +453,11 @@ draft ──상신──▶ under_review ──(PL 전원 합의)──▶ R ─
 - ✅ 결재현황이 **경로1·경로2·경로3 = 최대 3행** 으로 rowSpan 분기
 - ✅ 기한은 **주말 + `Holiday(isholiday='Y')` 제외** 영업일 계산
 
-#### T-I4 E 단계 무조건 생성 (2026-07 변경)
+#### T-I4 E 단계 조건부 생성
 | J-layer `pp` 값 | 기대 |
 |---|---|
-| 어느 행이든 `plel` 포함(대소문자 무관) | ✅ E 단계 생성 |
-| 전 행에 없음 | ✅ E 단계도 생성(대상/비대상과 무관하게 항상 생성) |
+| 어느 행이든 `plel` 포함(대소문자 무관) | ✅ E 단계 생성, Validation System 은 `대상`(상신자가 `비대상`으로 토글 가능) |
+| 전 행에 없음 | ✅ E 단계 미생성, Validation System 은 `해당없음`(토글 비활성) |
 
 #### T-I5 후결자(RA)
 - ✅ 고정 후결자(`.env POST_APPROVER_LOGINID`)는 **항상 포함**, 화면에 🔒 잠금 칩(제거 버튼 없음)
@@ -1092,7 +1092,8 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 근본 원인: `additional_notes` 가 `JSONField` 가 아니라 **`TextField`** 라 DB 가 깨진 JSON 도 받는다.
   `get_detail()` 도 실패 시 조용히 `{}` 를 돌려주므로 `is_only_map()`·`_validate_post_approvers`
   **전부 무음으로 오판**한다 → Only MAP 문서가 일반 경로를 타거나, C가문 후결자 검증이 스킵된다.
-  (`has_ppid_plel()` 은 삭제됐고 E 단계는 이제 조건 없이 항상 생성되므로 이 항목의 영향에서 제외됐다.)
+  `has_ppid_plel()` 도 같은 `get_detail()` 을 쓰므로, JSON 이 깨진 문서는 `plel` 이 있어도
+  E 단계가 생성되지 않는다.
 - 권고: 파싱 실패 시 **400 으로 거부**(관대한 통과 대신). 중기적으로 `JSONField` 전환 + 마이그레이션.
 
 ### 🟡 B-08 `change_designee` 만 `requester` FK 직접 비교라 레거시 문서에서 작성자가 403 **재현✅**
