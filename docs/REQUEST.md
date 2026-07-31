@@ -146,6 +146,11 @@ pages/RequestPage/
 - **상신 UI**: 위저드 3단계(J-layer) 표 상단 토글. J-layer 가 바뀌면 자동 판정으로 값이 갱신되지만, 상신자가 토글을 직접 누르면 이후에는 J-layer 를 고쳐도 자동 갱신하지 않는다. **단 키워드가 전부 사라지면** 수동 설정 이력과 무관하게 `'NA'` 로 되돌아가고 토글이 비활성(희미 + '해당없음' 표기)된다 — 그러지 않으면 저장값은 `'NO'` 인데 E 단계는 생기지 않는 불일치가 남는다.
 - **MASK 확정**: `POST /api/documents/<id>/approve-step/` 의 기존 optional body 필드 `validation_system` 으로 처리한다(별도 엔드포인트 신설 없음). `agent='E'` 일 때만 반영되며(다른 agent 값이면 무시), `'YES'|'NO'` 외 값은 400 — E 단계는 키워드가 있는 문서에만 생기므로 MASK 가 `'NA'` 를 보낼 경로는 없다. 이 값 검증은 검토자(EV) 생성보다 먼저 실행돼 부분 커밋을 막는다. `validation_system_submitted` 는 이 요청으로 바뀌지 않는다.
 - **레거시 문서**: 두 키가 없는 문서는 저장된 `jayerRows` 로 그때그때 폴백 판정해 보여준다(위저드 J-layer 단계·MASK 담당자 합의 모달·상세보기 J-layer 탭 공통).
+- **사내 용어 교체 (⚠️ 여기 한 곳만 고친다)**: 저장소에 커밋된 `Validation System` 은 **가명**이다. 사내 정식 용어로 바꿀 때는 `frontend/src/locales/ko.json` 과 `en.json` 의 **`request.validation_system` 값 한 줄씩**만 고치면 된다. 작성 3단계 J-layer 표 상단 라벨, 상세보기 J-layer 탭 라벨, MASK(E) 결재 모달 제목(`approval.validation_system_confirm`), 전체 가이드 결재 경로 주석(`approval.route_diagram.note_e`)이 모두 따라 바뀐다 — 뒤의 두 문구는 값 안에서 i18next 중첩 참조 `$t(request.validation_system)` 로 이 키를 가리키기 때문이다.
+  - **다른 문구에 용어를 직접 쓰지 말 것.** 새 문구가 필요하면 반드시 `$t(request.validation_system)` 으로 참조한다. 하드코딩하면 `frontend/src/locales/terminology.test.ts` 가 실패한다.
+  - **변수·상수·키 이름(`validation_system`, `VS_TARGET`, `autoValidationSystem` 등)은 가명 그대로 둔다.** 사용자에게 보이지 않는다.
+  - **`plel` 은 가명이 아니라 실제 사내 값**이라 교체 대상이 아니다(`VALIDATION_KEYWORD`, `RequestDocument.VALIDATION_KEYWORD`).
+  - 백엔드 `views.py` 의 400 에러 메시지 `'유효하지 않은 Validation System 값입니다.'` 는 i18n 밖이라 자동 반영되지 않는다. UI 가 `YES`/`NO` 만 보내므로 요청을 직접 위조할 때만 노출되는 방어 메시지다.
 
 ### 추가 변경 이력 (2026-07 — 완성된 MAP 변경: 대상 프리필·J/O/B 제거·승인 시 원본 반영)
 
