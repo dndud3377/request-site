@@ -1,4 +1,5 @@
-import { isValidationKeywordRow, isValidationTarget } from './helpers';
+import { autoValidationSystem, isValidationKeywordRow, isValidationTarget } from './helpers';
+import { VS_NA, VS_TARGET } from './constants';
 
 describe('isValidationKeywordRow', () => {
   it('pp 가 판정 키워드를 포함하면 true', () => {
@@ -36,5 +37,23 @@ describe('isValidationTarget', () => {
 
   it('pp 가 없는 행도 안전하게 처리한다', () => {
     expect(isValidationTarget([{}, { pp: undefined }])).toBe(false);
+  });
+});
+
+describe('autoValidationSystem', () => {
+  it('활성 행에 키워드가 있으면 대상', () => {
+    expect(autoValidationSystem([{ pp: 'ABC' }, { pp: 'PLEL' }])).toBe(VS_TARGET);
+  });
+
+  it('키워드가 아예 없으면 해당없음 — 비대상이 아니다', () => {
+    expect(autoValidationSystem([{ pp: 'ABC' }])).toBe(VS_NA);
+  });
+
+  it('비활성 행에만 키워드가 있으면 해당없음', () => {
+    expect(autoValidationSystem([{ pp: 'PLEL', disabled: true }])).toBe(VS_NA);
+  });
+
+  it('빈 배열이면 해당없음', () => {
+    expect(autoValidationSystem([])).toBe(VS_NA);
   });
 });
