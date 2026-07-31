@@ -434,7 +434,7 @@
     "comment_reject_label": "Reason (optional)",
     "comment_agree_placeholder": "Enter reason for agreement...",
     "comment_reject_placeholder": "Enter reason for rejection...",
-    "validation_system_confirm": "Confirm Validation System",
+    "validation_system_confirm": "Confirm $t(request.validation_system)",
     "agent_PL": "Review",
     "agent_R": "RFG",
     "agent_RV": "Reviewer",
@@ -465,7 +465,7 @@
       "desc": "The approval stages a request goes through from intake to completion.",
       "product_owner": "Product Owner",
       "done": "Done",
-      "note_e": "The EUV (E) stage runs only when plel (yellow cell) items are present, and verifies whether the Validation System classification is correct.",
+      "note_e": "The EUV (E) stage runs only when plel (yellow cell) items are present, and verifies whether the $t(request.validation_system) classification is correct.",
       "note_onlymap": "'Only MAP' requests proceed only up to RFG (R); later stages are skipped.",
       "note_reject": "If rejected at any stage, the whole request becomes 'Rejected' and no further stages proceed; the requester can resubmit it as a new round from the start (PL review) by designating a peer PL, or withdraw it back to a draft."
     }
