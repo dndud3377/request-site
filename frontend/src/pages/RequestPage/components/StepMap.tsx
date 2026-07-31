@@ -248,6 +248,7 @@ const StepMap: React.FC<StepMapProps> = ({
                               <button
                                 key={layer}
                                 type="button"
+                                className={`map-type-btn${isSelected ? ' active' : ''}`}
                                 // 드래그 다중 선택: 첫 버튼에서 add/remove 모드를 정하고 지나가는 버튼에 적용
                                 onMouseDown={() => {
                                   const mode: 'add' | 'remove' = isSelected ? 'remove' : 'add';
@@ -256,17 +257,6 @@ const StepMap: React.FC<StepMapProps> = ({
                                 }}
                                 onMouseEnter={() => {
                                   if (revDrag.current) applyRevLayer(layer, revDrag.current.mode);
-                                }}
-                                style={{
-                                  padding: '5px 13px',
-                                  borderRadius: '4px',
-                                  border: `1.5px solid ${isSelected ? 'var(--accent, #1976D2)' : '#ccc'}`,
-                                  backgroundColor: isSelected ? 'var(--accent, #1976D2)' : '#fff',
-                                  color: isSelected ? '#fff' : '#333',
-                                  cursor: 'pointer',
-                                  fontSize: '13px',
-                                  fontWeight: isSelected ? 600 : 400,
-                                  transition: 'all 0.15s',
                                 }}
                               >
                                 {layer}
@@ -531,7 +521,7 @@ const StepMap: React.FC<StepMapProps> = ({
                     <button
                       key={val}
                       type="button"
-                      className={`map-option-btn${detail.in_apply === val ? ' active' : ''}`}
+                      className={`map-type-btn${detail.in_apply === val ? ' active' : ''}`}
                       style={{ padding: '10px 16px' }}
                       disabled={isMapRegistered}
                       onClick={() => handleDetailSet('in_apply', val)}
@@ -550,7 +540,7 @@ const StepMap: React.FC<StepMapProps> = ({
                       <button
                         key={val}
                         type="button"
-                        className={`map-option-btn${detail.inter_select === val ? ' active' : ''}`}
+                        className={`map-type-btn${detail.inter_select === val ? ' active' : ''}`}
                         style={{ padding: '10px 16px' }}
                         disabled={isMapRegistered}
                         onClick={() => handleDetailSet('inter_select', val)}
@@ -594,7 +584,7 @@ const StepMap: React.FC<StepMapProps> = ({
                     <button
                       key={opt.name as string}
                       type="button"
-                      className={`map-option-btn${isActive ? ' active' : ''}`}
+                      className={`map-type-btn${isActive ? ' active' : ''}`}
                       disabled={isDisabled}
                       onClick={() => handleDetailSet(opt.name as string, isActive ? opt.defaultValue : opt.activeValue)}
                     >
