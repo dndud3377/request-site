@@ -423,19 +423,9 @@ const Step3: React.FC<Step3Props> = ({
                         <button
                           key={sd}
                           type="button"
+                          className={`map-type-btn${isSelected ? ' active' : ''}`}
                           onClick={() => setTbvtlvSdsSelected(isSelected ? [] : [sd])}
                           disabled={oayerInfoLocked}
-                          style={{
-                            padding: '5px 13px',
-                            borderRadius: '4px',
-                            border: `1.5px solid ${isSelected ? 'var(--accent, #1976D2)' : '#ccc'}`,
-                            backgroundColor: isSelected ? 'var(--accent, #1976D2)' : '#fff',
-                            color: isSelected ? '#fff' : '#333',
-                            cursor: 'pointer',
-                            fontSize: '13px',
-                            fontWeight: isSelected ? 600 : 400,
-                            transition: 'all 0.15s',
-                          }}
                         >
                           {sd}
                         </button>
