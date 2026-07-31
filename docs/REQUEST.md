@@ -121,7 +121,10 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
-### 추가 변경 이력 (2026-07-30 — INTER 섹션 IN 적용 O/X + Xs/Ys/XYs/없음 필수 선택 그룹 추가)
+### 추가 변경 이력 (2026-07-31 — CLONE 원본 Part ID 8자리 코드 정리 + 대문자 자동 변환)
+
+- **원본 Part ID 옵션을 "_" 앞 8자리 코드로 정리**: StepMap의 원본 위치/Part ID 블록(`map_type === 'CLONE'` 전용)에서, 원본 Part ID 후보 목록을 내려주는 백엔드 `form_options_mapname`(`backend/api/views.py`)이 `MapName.partid` 원본 값을 그대로 내려주던 것을, `partid.split('_')[0]`(첫 "_" 앞부분)만 추출 → **길이가 정확히 8자리(순수 문자 수 기준)인 값만** 필터링 → 중복 제거 → 정렬해서 반환하도록 수정.
+- **직접 입력 시 대문자 자동 변환 + 8자리 제한**: 공용 컴포넌트 `AutocompleteInput`(`frontend/src/components/AutocompleteInput.tsx`)에 optional prop `uppercase`·`maxLength`를 추가(미지정 시 기존 동작 그대로라 다른 사용처는 영향 없음). `StepMap.tsx`의 원본 Part ID `AutocompleteInput`에 `uppercase maxLength={8}`을 적용해, 드롭다운 선택이 아니라 사용자가 직접 타이핑할 때 영문이 자동으로 대문자로 변환되고 최대 8자까지만 입력할 수 있다.
 
 - **개요**: `StepMap`의 `Inter`(3번) 항목에서 `YES` 선택 시 기존 `inter_xs`/`inter_ys`(적용/미적용 독립 토글, 필수 아님) 버튼을 제거하고, 그 자리에 아래 두 버튼 그룹을 추가했다.
   - **IN 적용 O / IN 적용 X** — 신규 필드 `in_apply: 'O' | 'X' | ''`. `map-option-btn` 버튼 스타일 재사용, 클릭 시 토글이 아니라 클릭값으로 즉시 교체(다른 버튼은 자동 비활성) — `map_type` 버튼과 동일한 단일선택 동작.
