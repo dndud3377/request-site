@@ -2173,18 +2173,19 @@ def form_options_barcode(request):
 
 @require_GET
 def form_options_mapname(request):
-    """원본 위치(라인명) → partid 목록 반환"""
+    """원본 위치(라인명) → partid 목록 반환("_" 앞 8자리 코드만, 중복 제거·정렬)"""
     line = request.GET.get('line', '')
     lineid = LINE_TO_LINEID_MAP.get(line)
     if not lineid:
         return JsonResponse({'options': []})
 
-    options = list(
+    raw_partids = (
         MapName.objects.filter(lineid=lineid)
         .values_list('partid', flat=True)
         .distinct()
-        .order_by('partid')
     )
+    codes = {p.split('_')[0] for p in raw_partids if len(p.split('_')[0]) == 8}
+    options = sorted(codes)
     return JsonResponse({'options': options})
 
 
