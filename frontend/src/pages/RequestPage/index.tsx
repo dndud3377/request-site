@@ -26,6 +26,7 @@ import {
   UserWithRole,
   AddressBook,
   TbvtlvNoteRow,
+  ValidationSystemValue,
 } from '../../types';
 import GuideSlidePanel from '../../components/GuideSlidePanel';
 import { GUIDE_DEMO_KEYS } from '../../components/guideDemos';
@@ -58,8 +59,9 @@ import {
   TOUR_JAYER_ITEMS,
   VS_TARGET,
   VS_NONTARGET,
+  VS_NA,
 } from './constants';
-import { formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, isValidationTarget } from './helpers';
+import { formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, autoValidationSystem } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
 import Step1 from './components/Step1';
@@ -154,11 +156,18 @@ export default function RequestPage(): React.ReactElement {
   // Validation System: 상신자가 토글을 직접 건드렸는지. true 면 J-layer 변경에도 자동 갱신하지 않는다.
   // 세션 로컬 상태라 detail 에 넣지 않고 저장도 하지 않는다.
   const [vsManuallySet, setVsManuallySet] = useState(false);
-  // J-layer 가 바뀌면 Validation System 대상 여부를 자동 갱신한다.
-  // 상신자가 토글을 직접 바꾼 뒤에는(vsManuallySet) 자동 갱신하지 않는다.
+  // J-layer 가 바뀌면 Validation System 판정을 자동 갱신한다.
+  // 상신자가 토글을 직접 바꾼 뒤에는(vsManuallySet) 자동 갱신하지 않는다. 단 판정 키워드가
+  // 전부 사라지면 판정 자체가 성립하지 않으므로 수동 설정 이력과 무관하게 '해당없음'으로
+  // 되돌린다 — 그러지 않으면 '비대상'만 남고 E 단계는 생기지 않는 불일치가 남는다.
   useEffect(() => {
+    const auto = autoValidationSystem(jayerRows);
+    if (auto === VS_NA) {
+      setVsManuallySet(false);
+      setDetail((prev) => (prev.validation_system === VS_NA ? prev : { ...prev, validation_system: VS_NA }));
+      return;
+    }
     if (vsManuallySet) return;
-    const auto = isValidationTarget(jayerRows) ? VS_TARGET : VS_NONTARGET;
     setDetail((prev) => (prev.validation_system === auto ? prev : { ...prev, validation_system: auto }));
   }, [jayerRows, vsManuallySet]);
   const [jayerBarcodeCache, setJayerBarcodeCache] = useState<Record<string, { label: string; spec: string }[]>>({});
@@ -729,11 +738,11 @@ export default function RequestPage(): React.ReactElement {
           const normalizedOtherPurpose = Array.isArray(parsed.detail.other_purpose)
             ? parsed.detail.other_purpose
             : (parsed.detail.other_purpose ? [parsed.detail.other_purpose] : []);
-          // 레거시 문서(validation_system 필드 도입 전)는 저장된 J-layer로 대상 여부를 판정해 백필한다.
-          const savedVs = parsed.detail.validation_system as (typeof VS_TARGET | typeof VS_NONTARGET | undefined);
-          const backfilledVs = savedVs === VS_TARGET || savedVs === VS_NONTARGET
+          // 레거시 문서(validation_system 필드 도입 전)는 저장된 J-layer로 판정해 백필한다.
+          const savedVs = parsed.detail.validation_system as (ValidationSystemValue | undefined);
+          const backfilledVs = savedVs === VS_TARGET || savedVs === VS_NONTARGET || savedVs === VS_NA
             ? savedVs
-            : (isValidationTarget(Array.isArray(parsed.jayerRows) ? parsed.jayerRows : []) ? VS_TARGET : VS_NONTARGET);
+            : autoValidationSystem(Array.isArray(parsed.jayerRows) ? parsed.jayerRows : []);
           setDetail({ ...parsed.detail, other_purpose: normalizedOtherPurpose, bb_entries: loadedBbEntries, notifiers: parsed.detail.notifiers ?? [], validation_system: backfilledVs });
           // 불러온 문서의 값은 이미 확정된 판단이므로 자동 갱신으로 덮어쓰지 않는다.
           setVsManuallySet(true);
@@ -3391,7 +3400,7 @@ export default function RequestPage(): React.ReactElement {
           cellSel={jayerCellSel}
           GuideBadge={GuideBadge}
           validationSystem={detail.validation_system}
-          autoValidationSystem={isValidationTarget(jayerRows) ? VS_TARGET : VS_NONTARGET}
+          autoValidationSystem={autoValidationSystem(jayerRows)}
           onValidationSystemChange={(v) => {
             setVsManuallySet(true);
             setDetail((prev) => ({ ...prev, validation_system: v }));

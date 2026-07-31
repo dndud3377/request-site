@@ -234,8 +234,12 @@ export interface BbTableRow {
   entryIdx?: number;  // [레거시 호환] 구버전 저장 문서의 출처 탭 인덱스 — entryId 없을 때 색상 fallback
 }
 
-/** Validation System 대상 여부 — 'YES'(대상) | 'NO'(비대상) */
-export type ValidationSystemValue = 'YES' | 'NO';
+/**
+ * Validation System 판정 — 'YES'(대상) | 'NO'(비대상) | 'NA'(해당없음).
+ * 'NA' 는 J-layer 에 판정 키워드가 하나도 없어 판정이 성립하지 않는 상태로,
+ * 이때는 E(MASK) 단계도 결재 경로에 포함되지 않는다.
+ */
+export type ValidationSystemValue = 'YES' | 'NO' | 'NA';
 
 export interface DetailFormState {
   // 항상 표시

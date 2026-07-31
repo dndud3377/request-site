@@ -1110,7 +1110,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         - Only MAP: P/O/E 없이 후결자(RA)만 생성(후결자 전원 합의 시 최종 승인).
           후결자가 하나도 없으면(고정 미설정 + 비 C가문) 기존처럼 즉시 승인한다.
-        - 일반: P(4영업일)·O(6영업일 병렬)·E(6영업일 병렬) + 후결자(RA, 6영업일 병렬) 생성.
+        - 일반: P(4영업일)·O(6영업일 병렬)·[E(plel 시 6영업일 병렬)] + 후결자(RA, 6영업일 병렬) 생성.
         """
         from .utils import calculate_business_due_date
         import datetime
@@ -1132,11 +1132,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             )
             mailer.enqueue_stage_arrival(document, 'P', p_step)
             mailer.enqueue_stage_arrival(document, 'O', o_step)
-            # E(MASK)는 대상/비대상 판정을 검증하는 단계라 항상 생성한다(Only MAP 제외).
-            e_step = ApprovalStep.objects.create(
-                document=document, agent='E', action='pending', is_parallel=True, round=round_no, due_date=o_due,
-            )
-            mailer.enqueue_stage_arrival(document, 'E', e_step)
+            # E(MASK)는 판정 키워드(plel)가 있는 의뢰서에만 생성한다 — 키워드가 아예 없으면
+            # Validation System 판정이 '해당없음'이라 MASK 가 검증할 대상 자체가 없다.
+            if document.has_ppid_plel():
+                e_step = ApprovalStep.objects.create(
+                    document=document, agent='E', action='pending', is_parallel=True, round=round_no, due_date=o_due,
+                )
+                mailer.enqueue_stage_arrival(document, 'E', e_step)
 
         # 후결자(RA) 병렬 생성 — 고정 1명 + C가문 추가. 각자에게 "[후결 요청]" 메일 발송.
         for u in post_users:
