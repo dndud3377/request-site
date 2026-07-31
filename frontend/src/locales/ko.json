@@ -433,7 +433,7 @@
     "comment_reject_label": "반려 이유 (선택)",
     "comment_agree_placeholder": "합의 이유를 입력하세요...",
     "comment_reject_placeholder": "반려 이유를 입력하세요...",
-    "validation_system_confirm": "Validation System 확정",
+    "validation_system_confirm": "$t(request.validation_system) 확정",
     "current_role": "현재 역할:",
     "agent_PL": "검토",
     "agent_R": "RFG",
@@ -465,7 +465,7 @@
       "desc": "의뢰가 접수된 뒤 완료까지 거치는 결재 단계입니다.",
       "product_owner": "제품담당자",
       "done": "완료",
-      "note_e": "EUV(E) 단계는 plel(노란 셀) 항목이 있는 경우에만 진행되며, Validation System 대상/비대상 판정이 맞는지 확인합니다.",
+      "note_e": "EUV(E) 단계는 plel(노란 셀) 항목이 있는 경우에만 진행되며, $t(request.validation_system) 대상/비대상 판정이 맞는지 확인합니다.",
       "note_onlymap": "'Only MAP' 의뢰는 RFG(R)까지만 진행하고 이후 단계는 생략됩니다.",
       "note_reject": "어느 단계에서든 반려되면 의뢰서 전체가 '반려' 상태가 되어 이후 단계는 진행되지 않으며, 요청자가 동료 PL을 지정해 처음(PL 검토)부터 새 회차로 재상신하거나 임시저장으로 철회할 수 있습니다."
     }
