@@ -188,6 +188,7 @@
     "validation_system": "Validation System",
     "validation_system_target": "Target",
     "validation_system_nontarget": "Non-target",
+    "validation_system_na": "N/A",
     "validation_system_auto": "Auto: {{value}}",
     "validation_system_changed": "Submitted {{from}} → Confirmed {{to}}",
     "col_bb_process_id": "BB Process",
@@ -464,7 +465,7 @@
       "desc": "The approval stages a request goes through from intake to completion.",
       "product_owner": "Product Owner",
       "done": "Done",
-      "note_e": "The EUV (E) stage always runs and verifies whether the Validation System classification is correct.",
+      "note_e": "The EUV (E) stage runs only when plel (yellow cell) items are present, and verifies whether the Validation System classification is correct.",
       "note_onlymap": "'Only MAP' requests proceed only up to RFG (R); later stages are skipped.",
       "note_reject": "If rejected at any stage, the whole request becomes 'Rejected' and no further stages proceed; the requester can resubmit it as a new round from the start (PL review) by designating a peer PL, or withdraw it back to a draft."
     }
@@ -653,7 +654,7 @@
       "steps": {
         "route": {
           "title": "Approval Route",
-          "description": "The final approval route of this system. After Review (PL) and RFG, Route 1 (PHPSI→JOB) and Route 2 (OVL·EUV) proceed in parallel. (MAP-only requests stop at R.)"
+          "description": "The final approval route of this system. After Review (PL) and RFG, Route 1 (PHPSI→JOB) and Route 2 (OVL·EUV) proceed in parallel. (E only when plel exists; MAP-only requests stop at R.)"
         },
         "request": {
           "title": "Create a Request",
