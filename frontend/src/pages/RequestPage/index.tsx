@@ -1474,7 +1474,8 @@ export default function RequestPage(): React.ReactElement {
   // 조건부 필드를 '변경 없음/미사용/없음'으로 되돌리면 숨겨진 하위 값까지 비운다.
   // (숨김 상태로 state 에 잔존해 backend 에 잘못 저장되는 것을 막기 위함 — 감사 R-2~R-5)
 
-  // C가문(only_prodc) — No 로 전환 시 REV·상/중/하판·지도편차(prodc) 값 전체 초기화
+  // C가문(only_prodc) — No 로 전환 시 상/중/하판·지도편차(prodc) 값 전체 초기화.
+  // REV(rev_yn/rev_entries)는 C가문과 독립된 항목이므로 여기서 건드리지 않는다.
   const handleOnlyProdcChange = (value: string) => {
     isLoadingEditRef.current = false;
     if (value !== 'No') {
@@ -1485,8 +1486,6 @@ export default function RequestPage(): React.ReactElement {
     setDetail((prev) => ({
       ...prev,
       only_prodc: 'No',
-      rev_yn: '',
-      rev_entries: [],
       prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
       prodc_middle_use: '', prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
       prodc_bottom_line: '', prodc_bottom_process: '', prodc_bottom_product: '',
@@ -1496,8 +1495,6 @@ export default function RequestPage(): React.ReactElement {
       map_value_x_bottom: '', map_value_y_bottom: '',
     }));
     setProdcCopyRegion(null);
-    setRevLayersSelected([]);
-    setRevGds('');
     setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
     setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
     setErrors((prev) => ({
