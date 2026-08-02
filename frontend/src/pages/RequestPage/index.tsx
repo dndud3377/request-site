@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI, addressBooksAPI } from '../../api/client';
 import { useToast } from '../../components/Toast';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
@@ -2091,7 +2091,7 @@ export default function RequestPage(): React.ReactElement {
     } catch {
       setRefJayerRows([]);
       setRefOayerRows([]);
-      addToast('요청서 데이터 로드 실패', 'error');
+      addToast(t('request.merge_ref_load_fail'), 'error');
     }
   };
 
@@ -3562,7 +3562,7 @@ export default function RequestPage(): React.ReactElement {
       <Modal
         isOpen={mergeConfirmOpen}
         onClose={() => setMergeConfirmOpen(false)}
-        title="Merge 확인"
+        title={t('request.merge_confirm_title')}
         size="md"
         style={{ maxWidth: '420px' }}
         footer={
@@ -3579,13 +3579,25 @@ export default function RequestPage(): React.ReactElement {
         <div style={{ color: 'var(--text-secondary)', lineHeight: 2 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', marginBottom: '4px' }}>
             <span>{t('request.jayer')}</span>
-            <span>기등록 <b>{mergeStats?.jayerMatched ?? 0}</b>건 / 미매칭 <b>{mergeStats?.jayerUnmatchedRef ?? 0}</b>건 추가 예정</span>
+            <span>
+              <Trans
+                i18nKey="request.merge_confirm_counts"
+                values={{ matched: mergeStats?.jayerMatched ?? 0, unmatched: mergeStats?.jayerUnmatchedRef ?? 0 }}
+                components={[<span />, <b />, <span />, <b />]}
+              />
+            </span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', marginBottom: '12px' }}>
             <span>{t('request.oayer')}</span>
-            <span>기등록 <b>{mergeStats?.oayerMatched ?? 0}</b>건 / 미매칭 <b>{mergeStats?.oayerUnmatchedRef ?? 0}</b>건 추가 예정</span>
+            <span>
+              <Trans
+                i18nKey="request.merge_confirm_counts"
+                values={{ matched: mergeStats?.oayerMatched ?? 0, unmatched: mergeStats?.oayerUnmatchedRef ?? 0 }}
+                components={[<span />, <b />, <span />, <b />]}
+              />
+            </span>
           </div>
-          <p style={{ margin: 0 }}>진행하시겠습니까?</p>
+          <p style={{ margin: 0 }}>{t('request.merge_confirm_proceed')}</p>
         </div>
       </Modal>
 
