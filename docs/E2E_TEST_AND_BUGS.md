@@ -70,7 +70,7 @@ docker ps --format "{{.Names}}"        # backend/frontend 컨테이너명 확인
 
 ### 1.3 `.env` 선행 확인 (안 하면 결재가 멈추거나 조용히 건너뛴다 — §5 R-03 참조)
 ```bash
-grep -E "POST_APPROVER_LOGINID|MAIL_REDIRECT_TO|DXHUB_MAIL_URL|EXTERNAL_API_KEY|P_LINE_FALLBACK" .env
+grep -E "POST_APPROVER_LOGINID|MAIL_REDIRECT_TO|DXHUB_MAIL_URL|EXTERNAL_API_KEY" .env
 ```
 - `POST_APPROVER_LOGINID` : **RFG 팀(TE_R) loginid**. 비어 있으면 후결자(RA)가 아예 안 생기고,
   **Only MAP 의뢰서는 R 합의 즉시 `approved`** 로 끝나 후결 단계가 통째로 사라진다(재현✅ B-04).
@@ -1421,8 +1421,9 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 
 ### ⚪ B-44 담당자 미지정 시 고정 수신 이메일이 코드에 하드코딩 **분석🔍**
 - 위치: `mailer.py:81-83` `UNASSIGNED_FALLBACK = {'J': 'user_J@company.com'}`
-- 주석이 "이 딕셔너리를 직접 수정하고 재시작하라"고 안내한다. 다른 설정(`P_LINE_FALLBACK`)은 `.env`로 뺐는데 J만 코드에 남아
-  **수신자 변경에 배포가 필요**하다. 규칙 D의 "설정은 코드에 하드코딩하지 않는다" 취지와 어긋난다.
+- 주석이 "이 딕셔너리를 직접 수정하고 재시작하라"고 안내한다. **수신자 변경에 배포가 필요**하다.
+  규칙 D의 "설정은 코드에 하드코딩하지 않는다" 취지와 어긋난다.
+  (참고: 비교 대상이었던 P 단계 라인별 `.env` 설정 `P_LINE_FALLBACK`은 미사용 상태로 코드에서 삭제됨 — 2026-08)
 
 ### ⚪ B-45 `useCellSelection` 의 키 구분자와 메모이제이션 **분석🔍**
 - 위치: `hooks/useCellSelection.ts:20-21, 48-49`
@@ -1474,8 +1475,9 @@ B-13(잘못된 버튼 노출)·X-4·X-5 의 공통 뿌리이며, 통계(`stats`)
 - 권고: `cancelled` 액션 추가 + 반려 시 같은 회차 pending 일괄 전이.
 
 ### R-03 🟠 `.env` 값에 결재 경로가 직접 의존하는데 검증 시점이 없다
-`POST_APPROVER_LOGINID`(B-04), `MAIL_REDIRECT_TO`(전 메일 하이재킹), `EXTERNAL_API_KEY`(비면 모든 키 거부),
-`P_LINE_FALLBACK`(JSON 파싱 실패 시 조용히 `{}`) 모두 **잘못돼도 기동은 성공**하고 런타임에 조용히 다른 동작을 한다.
+`POST_APPROVER_LOGINID`(B-04), `MAIL_REDIRECT_TO`(전 메일 하이재킹), `EXTERNAL_API_KEY`(비면 모든 키 거부)
+모두 **잘못돼도 기동은 성공**하고 런타임에 조용히 다른 동작을 한다.
+(`P_LINE_FALLBACK`은 미사용 상태로 코드에서 삭제됨 — 2026-08)
 - 권고: `AppConfig.ready()` 또는 `manage.py check` 커스텀 체크로 기동 시 경고.
 
 ### R-04 🟠 P/E 검토자(PV/EV) 지정 취소·변경 API가 없다
