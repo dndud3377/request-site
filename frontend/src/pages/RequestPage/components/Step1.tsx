@@ -237,7 +237,7 @@ const Step1: React.FC<Step1Props> = ({
               <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', maxWidth: 920 }}>
                 <div style={{ flex: 1 }}>
                   <AutocompleteInput
-                    label="참조 요청서"
+                    label={t('request.merge_ref_doc')}
                     value={refDocLabel}
                     options={approvedDocs.map((d) => d.title)}
                     onChange={(v) => {
@@ -245,7 +245,7 @@ const Step1: React.FC<Step1Props> = ({
                       if (refDocId !== null) setRefDocId(null);
                     }}
                     onSelect={handleRefDocSelect}
-                    placeholder="이력에서 요청서를 선택하세요"
+                    placeholder={t('request.merge_ref_placeholder')}
                     disabled={disableOptional}
                   />
                 </div>
@@ -256,7 +256,7 @@ const Step1: React.FC<Step1Props> = ({
                   style={disableOptional || refDocId === null ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
                   onClick={handleMergeClick}
                 >
-                  Merge
+                  {t('request.merge_button')}
                 </button>
               </div>
             )}
