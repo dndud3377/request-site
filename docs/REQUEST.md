@@ -114,12 +114,56 @@ pages/RequestPage/
 ---
 
 ## 4. 알려진 pre-existing 이슈 (이번 리팩토링 무관)
-- `tsc --noEmit` 기준 전체 47개 error 존재 — i18n `t()` 의 strict 키 타입 + `Set` 순회(es5 target). CRA(Babel) 빌드는 통과하므로 런타임 영향 없음.
+- `tsc --noEmit` 기준 전체 **24개** error 존재(2026-08-02 실측) — i18n `t()` 의 strict 키 타입 + `Set` 순회(es5 target).
+  아래 §3.2·§5 에 적힌 **베이스라인 47개는 옛 값**이므로, 후속 작업에서는 "작업 직전 실측값과 동일한지"로 판단할 것.
+- ⚠️ `npx react-scripts build` 는 **현재 실패한다**(`Navbar.tsx:227` 의 `t('profile.name')` — i18n strict 키 타입 TS2345).
+  이번 변경 이전 커밋에서도 동일하게 실패하는 pre-existing 이슈다. "CRA 빌드는 통과한다"는 과거 기술은 더 이상 사실이 아니다.
 - 하드코딩 한글 문자열 다수 잔존 (예: `MshotImageUpload` 의 "Ctrl+V 로 이미지를 붙여넣으세요", `Step2~Step4`/`StepMap` 의 "활성/전체", "STEP 정렬", "+ 행 추가", "선택 비활성화", "범위 추가", "특정 제품 삭제 필요", `FilterManageModal` 의 "저장된 필터/새 필터 만들기/전체 삭제/닫기/키워드 입력 후 Enter" 등). CLAUDE.md 규칙 G(i18n) 위반이나, 분리 시 동작 보존 위해 원문 그대로 이동. 추후 `request.*` 키로 일괄 이관 필요.
 
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 추가 변경 이력 (2026-08-02 — StepMap: EDIT 버튼 잠금 + REV 독립 + CLONE/EXISTING 잠금 범위 재정의)
+
+- **개요**: StepMap(위저드 2단계)의 세 가지 입력 제어를 조정했다. ① `EDIT` 버튼을 '완성된 MAP 변경' 모드 전용으로 잠그고,
+  ② `REV 여부`를 `Only C가문 제품`에서 완전히 분리해 그 **위**의 독립 항목으로 올렸으며,
+  ③ CLONE/EXISTING 일괄 잠금에서 `REV 여부`와 `Only C가문 제품` 셀렉트를 **잠금 대상에서 제외**했다.
+  백엔드·마이그레이션·i18n 신규 키 변경은 **없다**(`MAP_DETAIL_KEYS`/`MAP_APPLY_KEYS`도 키 추가·삭제 없음).
+
+- **① EDIT 버튼 활성 조건 반전**(`StepMap.tsx`): `disabled={isMapChangeMode && val !== 'EDIT'}` →
+  `disabled={val === 'EDIT' ? !isMapChangeMode : isMapChangeMode}`.
+  일반 상황에서는 `EDIT` 만 비활성이고, '완성된 MAP 변경' 진입 시에만 `EDIT` 이 활성 + 나머지 3개가 잠긴다(기존 동작 유지).
+  값 자체는 여전히 `applyMapChangeMode` 가 `map_type='EDIT'` 로 자동 설정하므로 이 버튼은 사실상 상태 표시용이다.
+
+- **② REV 여부 독립**(`StepMap.tsx`·`index.tsx`): REV 블록(`rev_yn`·Layer 드래그 선택·GDS·추가 항목 표)을
+  `{isProdc && (...)}` 래퍼 밖으로 꺼내 `Only C가문 제품` **위**에 독립 `full-width` 섹션으로 배치했다. props·state 변경 없음.
+  - `handleOnlyProdcChange`(index.tsx)에서 **C가문 No 전환 시 REV 초기화(`rev_yn`/`rev_entries`/`revLayersSelected`/`revGds`)를 제거**했다.
+    이제 REV 는 `REV 여부`를 `NO` 로 바꿀 때만 초기화된다.
+  - **유지되는 REV 초기화 경로**: 메인 라인 변경 effect(R-6)와 `handleMapTypeChangeConfirm`(map_type 전환 시 MAP 전체 초기화).
+    둘 다 J-layer 가 통째로 재생성되는 경로라 REV 만 남기면 고아 데이터가 된다.
+  - **결재 상세/이력조회 동반 수정**(`PagedDetailView.tsx`): REV 블록이 C가문 블록 안에 중첩돼 `isProdc && revYn` 조건이었던 것을
+    **독립 블록 + `revYn` 조건**으로 분리했다. 이 수정이 없으면 `C가문 No + REV YES` 문서의 REV 가 결재 화면에서 보이지 않는다.
+    이동하면서 불필요하던 `(detail as any)` 캐스팅 2곳을 제거했다(`detail` 은 이미 `Partial<DetailFormState>`).
+
+- **③ CLONE/EXISTING 잠금 범위 재정의**: `isMapRegistered`(= CLONE·EXISTING) 일괄 잠금을 아래처럼 나눴다.
+
+| 항목 | 이전 | 변경 후 |
+|------|------|---------|
+| `REV 여부` 버튼 + 하위 전체 | 잠금 | **선택 가능** (YES 시 기존 기능 그대로) |
+| `Only C가문 제품` 셀렉트 | 잠금 | **선택 가능** |
+| 제품 해당 위치 라디오 3개 | 잠금 없음 | **잠금 추가** |
+| ProdcRow 북/중/남 (사용여부·라인·조합법·제품) | 잠금 없음 | **잠금 추가** |
+| 지도편차 북/남 X·Y·사유, 예외구역, X표시, Inter, Map Option | 잠금 | 잠금 유지 |
+
+  - 즉 **C가문 Yes 를 고를 수는 있으나 Yes 로 펼쳐지는 하위 입력은 전부 잠긴다.**
+  - `ProdcRow.tsx` 에 optional prop `disabled?: boolean` 신설(미지정 시 기존 동작) → 내부 `<select>`·`AutocompleteInput`·`FormSelect` 로 전달.
+  - 공용 `FormSelect.tsx` 에도 optional `disabled?: boolean` 을 추가했다(미지정 시 기존 동작이라 다른 사용처 무영향).
+  - **검증(`validate()` step 2) 수정 없음**: C가문 필수 검증이 이미 `if (!isMapRegistered)` 블록 안에 있어 "잠금 = 검증 제외"가 그대로 성립한다.
+
+- **알려진 제약(의도된 현행 유지)**: REV Layer 후보(`availableRevLayers`)는 J-layer 표(`jayerRows`)에서 뽑는다.
+  `Only MAP`·`완성된 MAP 변경` 모드는 J/O 표를 강제로 비우므로 **후보가 0개**가 되어 REV 항목을 새로 추가할 수 없다(불러온 항목 삭제만 가능).
+  두 모드에서는 REV Layer 를 쓸 일이 없다는 판단으로 직접 입력은 도입하지 않았다.
 
 ### 추가 변경 이력 (2026-08-02 — Layer 추가/삭제 Merge 3-way 판정 + 참조 1건 제한)
 
@@ -382,10 +426,10 @@ pages/RequestPage/
 
 ## 5. 검증 방법
 ```bash
-# 타입체크 (전체 error 47개 = 정상)
+# 타입체크 (2026-08-02 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
 cd frontend && npx tsc --noEmit 2>&1 | grep -c "error TS"
 
-# 테스트 (현재 테스트 파일 없음 → passWithNoTests)
+# 테스트 (helpers.test.ts 20건)
 cd frontend && CI=true npx react-scripts test --watchAll=false --passWithNoTests
 
 # 개발 서버 확인 경로
