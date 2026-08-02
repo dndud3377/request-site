@@ -121,6 +121,38 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-08-02 — Layer 추가/삭제 Merge 3-way 판정 + 참조 1건 제한)
+
+- **개요**: `Layer 추가/삭제` Merge 를 기획 의도대로 **3-way 판정**으로 재구현하고, 참조 요청서를 **의뢰서당 1건**으로 제한했다.
+  참조 요청서를 A, 작성 중인 의뢰서를 B 라 할 때 J-layer 는 J-layer 끼리, O-layer 는 O-layer 끼리 **독립 비교**한다.
+
+| 구분 | 조건 | `col_st` | `col_new_or_copy` |
+|------|------|----------|-------------------|
+| ① 신규 | **B 에만** 있음 | `O` | `신규` |
+| ② layer 삭제 | **A 에만** 있음 → B 표에 행 추가 | `X` | `layer삭제` |
+| ③ 기등록 | A·B **양쪽** 존재 | `X` | `기등록` |
+
+- **"존재" 정의(핵심)**: `!disabled && new_or_copy !== 'layer삭제'`. `layer삭제` 는 그 시점에 **이미 지워진 layer** 이므로 **부재**로 본다.
+  따라서 A 에서 `layer삭제` 인 layer 가 B 에 있으면 "A 엔 없던 것이 B 에 생김" → **①(신규)** 이 된다. A·B 양쪽에 대칭 적용한다.
+- **`computeLayerMerge(curRows, refRows)` 신설**(`helpers.ts`): `{ merged, stats }` 를 돌려주는 **순수 함수**. 확인 모달의 미리보기와 실제 반영이
+  **같은 함수 한 번의 계산**에서 나오므로 숫자와 표 결과가 구조적으로 어긋날 수 없다(기존에는 `makeKey`·매칭 로직이 두 핸들러에 복붙돼 있었다).
+  - 비교 키 = `process_id||sp||sd||pp` (`layerid` 미포함, 각 값 `trim()` 정규화). 운영 데이터상 이 4개로 행이 유일하게 식별된다.
+  - 비활성 행·이미 `layer삭제` 인 행은 **건드리지 않는다**.
+  - ② 행 추가 시 **비활성이 아닌 모든 행(= `layer삭제` 포함)의 키**와 대조해 중복 행을 만들지 않는다.
+  - ② 행은 `loaded:true`(원본 컬럼 읽기전용) + `disabled:false` 로 넣는다 — 필터에 걸려 숨겨지면 상신 저장에서 빠져 삭제 정보가 유실되기 때문.
+  - `sortOrder` 는 `base + index` 로 부여(기존 `Date.now()` 는 같은 밀리초에 전부 동일값이 됐다).
+- **참조 요청서 1건 제한**: `DetailFormState` 에 `merge_ref_doc_id: number | null` · `merge_ref_doc_label: string` 추가.
+  Merge 완료 시 기록하고, 값이 있으면 **참조 선택 입력과 Merge 버튼을 모두 영구 잠근다**(`Step1.tsx` `isMergeDone`).
+  `additional_notes.detail` 에 저장되므로 **임시저장 후 재진입·재상신에도 잠금이 유지**된다. 필드 도입 전 문서는 로드 시 `null`/`''` 로 백필한다.
+  **DB 스키마·마이그레이션 변경 없음**(JSON 칼럼).
+- **J↔O 동기화는 Merge 시점에 의도적으로 우회한다**: Merge 결과는 오직 A 기준이어야 하므로 `handleMergeConfirm` 은 `handleJayerChange` 를 거치지 않고
+  `setJayerRows`/`setOayerRows` 를 직접 호출한다. Merge **이후** 수동 편집은 기존 J↔O 동기화 규칙(위 "J↔O 동기화" 항목)을 그대로 따른다.
+- **i18n**: `toast_merge_complete`·`merge_confirm_counts` 를 3-way 로 교체하고 `merge_confirm_once_warning`·`merge_already_done` 추가(ko/en 동시).
+- **상수화**: `NOC_NEW`·`NOC_BORROW`·`NOC_REGISTERED`·`NOC_LAYER_DELETE`·`ST_O`·`ST_X`(`constants.ts`). `isNocSpecial` 도 이 상수를 쓰도록 정리.
+- **테스트**: `helpers.test.ts` 에 `computeLayerMerge` 12건 추가(①②③·A/B 의 `layer삭제` 부재 처리·중복 방지·비활성 행·공백 정규화·`sortOrder`·멱등성·빈 표·복합 시나리오).
+- **남은 이슈**: B 의 **비활성** 행과 키가 같은 A 행은 여전히 ② 로 추가되어 표에 나란히 보인다(비활성 행은 상신 저장에서 제외되므로 최종 문서에는 남지 않는다).
+  Merge 를 **되돌리는 기능은 없다** — 확인 모달의 경고로만 안내한다.
+
 ### 추가 변경 이력 (2026-08-02 — Layer 추가/삭제 Merge 하드코딩 i18n 이관)
 
 - **개요**: `Layer 추가/삭제` 참조 요청서 Merge 기능에만 남아 있던 하드코딩 문자열을 `request.merge_*` 키로 이관했다. 동작 변경 없음(문구 출력 경로만 변경).
