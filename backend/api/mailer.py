@@ -95,8 +95,6 @@ ROUTE_COMMENT_MAX_LEN = 300
 # [수신자 변경 방법]
 #   아래 딕셔너리의 이메일 문자열을 직접 수정한다(수정 후 백엔드 재시작 필요).
 #   R/J 단계만 여기서 관리한다.
-#   P 단계는 "라인별"로 주소가 달라지므로 여기 두지 않고,
-#   settings 의 P_LINE_FALLBACK(.env 환경변수)에서 관리한다.
 UNASSIGNED_FALLBACK = {
     'J': 'user_J@company.com',
 }
@@ -228,36 +226,6 @@ def post_approver_users(document):
     return users
 
 
-def _split_emails(value):
-    """콤마로 구분된 이메일 문자열을 리스트로 분할한다(공백/빈값 제거)."""
-    if not value:
-        return []
-    return [addr.strip() for addr in str(value).split(',') if addr.strip()]
-
-
-# ---------------------------------------------------------------------------
-# [추후 사용 예정] P 단계 담당자 미지정 시 라인별 고정 수신자
-# ---------------------------------------------------------------------------
-# 라인마다 다른 고정 주소로 발송이 필요해지면 아래 함수를 활성화하고
-# resolve_stage_recipients 의 P 분기에서 _team_emails('P') 대신 호출한다.
-# 설정은 .env 의 P_LINE_FALLBACK (settings/base.py 주석 참고).
-#
-# def _p_line_fallback_recipients(document):
-#     line_map = getattr(settings, 'P_LINE_FALLBACK', {}) or {}
-#     if not line_map:
-#         return []
-#     line = (document.get_detail().get('detail', {}) or {}).get('line', '')
-#     line = (line or '').strip()
-#     if line and line in line_map:
-#         return _split_emails(line_map[line])
-#     # 라인 미매칭/미지정 → 등록된 모든 라인 수신자
-#     recipients = []
-#     for value in line_map.values():
-#         recipients.extend(_split_emails(value))
-#     return recipients
-# ---------------------------------------------------------------------------
-
-
 def resolve_stage_recipients(document, agent, step=None):
     """단계 도착 시 수신자 이메일 목록을 반환한다."""
     if agent in TEAM_BROADCAST_AGENTS:
@@ -272,7 +240,6 @@ def resolve_stage_recipients(document, agent, step=None):
             recipients = [document.designated_pl.mail]
     elif agent == 'P':
         # P: 담당자 지정 시 그 1명, 미지정 시 TE_P 권한 보유 전원
-        # (라인별 고정 수신자로 전환하려면 위의 주석 처리된 _p_line_fallback_recipients 활용)
         if step is not None and step.assignee and step.assignee.mail:
             recipients = [step.assignee.mail]
         else:
