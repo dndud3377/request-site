@@ -59,7 +59,7 @@ import {
   VS_TARGET,
   VS_NONTARGET,
 } from './constants';
-import { formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, isValidationTarget } from './helpers';
+import { formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, isValidationTarget, computeLayerMerge, MergeStats } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
 import Step1 from './components/Step1';
@@ -207,7 +207,7 @@ export default function RequestPage(): React.ReactElement {
   const [refJayerRows, setRefJayerRows] = useState<JayerRow[]>([]);
   const [refOayerRows, setRefOayerRows] = useState<OayerRow[]>([]);
   const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
-  const [mergeStats, setMergeStats] = useState<{ jayerMatched: number; jayerUnmatchedRef: number; oayerMatched: number; oayerUnmatchedRef: number } | null>(null);
+  const [mergePreview, setMergePreview] = useState<{ jayer: MergeStats; oayer: MergeStats } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [mapTypeChangeConfirm, setMapTypeChangeConfirm] = useState<{ targetType: string } | null>(null);
   const [onlyMapConfirm, setOnlyMapConfirm] = useState(false);
@@ -734,7 +734,16 @@ export default function RequestPage(): React.ReactElement {
           const backfilledVs = savedVs === VS_TARGET || savedVs === VS_NONTARGET
             ? savedVs
             : (isValidationTarget(Array.isArray(parsed.jayerRows) ? parsed.jayerRows : []) ? VS_TARGET : VS_NONTARGET);
-          setDetail({ ...parsed.detail, other_purpose: normalizedOtherPurpose, bb_entries: loadedBbEntries, notifiers: parsed.detail.notifiers ?? [], validation_system: backfilledVs });
+          setDetail({
+            ...parsed.detail,
+            other_purpose: normalizedOtherPurpose,
+            bb_entries: loadedBbEntries,
+            notifiers: parsed.detail.notifiers ?? [],
+            validation_system: backfilledVs,
+            // Merge 잠금 필드 도입 전 문서는 값이 없다 → 미Merge 로 백필한다.
+            merge_ref_doc_id: parsed.detail.merge_ref_doc_id ?? null,
+            merge_ref_doc_label: parsed.detail.merge_ref_doc_label ?? '',
+          });
           // 불러온 문서의 값은 이미 확정된 판단이므로 자동 갱신으로 덮어쓰지 않는다.
           setVsManuallySet(true);
           setPostApprovers(Array.isArray(parsed.detail.post_approvers) ? parsed.detail.post_approvers : []);
@@ -2095,64 +2104,29 @@ export default function RequestPage(): React.ReactElement {
     }
   };
 
+  // 미리보기·실제 반영을 같은 순수 함수(computeLayerMerge)로 계산해 모달 건수와 표 결과가 어긋날 수 없게 한다.
+  // J-layer 와 O-layer 는 각각 독립 호출한다 — 한쪽 판정이 다른 쪽으로 전파되면 안 된다.
   const handleMergeClick = () => {
-    const makeKey = (r: { process_id: string; sp: string; sd: string; pp: string }) =>
-      `${r.process_id}||${r.sp}||${r.sd}||${r.pp}`;
-
-    const activeJayerKeys = new Set(jayerRows.filter((r) => !r.disabled).map(makeKey));
-    const activeRefJayerKeys = new Set(refJayerRows.filter((r) => !r.disabled).map(makeKey));
-    const jayerMatched = [...activeJayerKeys].filter((k) => activeRefJayerKeys.has(k)).length;
-    const jayerUnmatchedRef = [...activeRefJayerKeys].filter((k) => !activeJayerKeys.has(k)).length;
-
-    const activeOayerKeys = new Set(oayerRows.filter((r) => !r.disabled).map(makeKey));
-    const activeRefOayerKeys = new Set(refOayerRows.filter((r) => !r.disabled).map(makeKey));
-    const oayerMatched = [...activeOayerKeys].filter((k) => activeRefOayerKeys.has(k)).length;
-    const oayerUnmatchedRef = [...activeRefOayerKeys].filter((k) => !activeOayerKeys.has(k)).length;
-
-    setMergeStats({ jayerMatched, jayerUnmatchedRef, oayerMatched, oayerUnmatchedRef });
+    setMergePreview({
+      jayer: computeLayerMerge(jayerRows, refJayerRows).stats,
+      oayer: computeLayerMerge(oayerRows, refOayerRows).stats,
+    });
     setMergeConfirmOpen(true);
   };
 
   const handleMergeConfirm = () => {
-    const makeKey = (r: { process_id: string; sp: string; sd: string; pp: string }) =>
-      `${r.process_id}||${r.sp}||${r.sd}||${r.pp}`;
-
-    const refJayerKeyMap = new Map<string, JayerRow>();
-    refJayerRows.filter((r) => !r.disabled).forEach((r) => refJayerKeyMap.set(makeKey(r), r));
-    const activeJayerKeys = new Set(jayerRows.filter((r) => !r.disabled).map(makeKey));
-
-    const mergedJayer: JayerRow[] = jayerRows.map((r) => {
-      if (!r.disabled && refJayerKeyMap.has(makeKey(r))) {
-        return { ...r, st: 'X', new_or_copy: '기등록' };
-      }
-      return r;
-    });
-    refJayerRows.filter((r) => !r.disabled).forEach((r) => {
-      if (!activeJayerKeys.has(makeKey(r))) {
-        mergedJayer.push({ ...r, id: genId(), sortOrder: Date.now(), loaded: true });
-      }
-    });
-    setJayerRows(mergedJayer);
-
-    const refOayerKeyMap = new Map<string, OayerRow>();
-    refOayerRows.filter((r) => !r.disabled).forEach((r) => refOayerKeyMap.set(makeKey(r), r));
-    const activeOayerKeys = new Set(oayerRows.filter((r) => !r.disabled).map(makeKey));
-
-    const mergedOayer: OayerRow[] = oayerRows.map((r) => {
-      if (!r.disabled && refOayerKeyMap.has(makeKey(r))) {
-        return { ...r, st: 'X', new_or_copy: '기등록' };
-      }
-      return r;
-    });
-    refOayerRows.filter((r) => !r.disabled).forEach((r) => {
-      if (!activeOayerKeys.has(makeKey(r))) {
-        mergedOayer.push({ ...r, id: genId(), sortOrder: Date.now(), loaded: true });
-      }
-    });
-    setOayerRows(mergedOayer);
-
+    const jayer = computeLayerMerge(jayerRows, refJayerRows);
+    const oayer = computeLayerMerge(oayerRows, refOayerRows);
+    setJayerRows(jayer.merged);
+    setOayerRows(oayer.merged);
+    // 참조 요청서는 의뢰서당 1건 — 문서에 기록해 임시저장 후 재진입해도 재Merge 를 막는다.
+    setDetail((prev) => ({ ...prev, merge_ref_doc_id: refDocId, merge_ref_doc_label: refDocLabel }));
     setMergeConfirmOpen(false);
-    addToast(t('request.toast_merge_complete', { jayerMatched: mergeStats!.jayerMatched, oayerMatched: mergeStats!.oayerMatched, unmatched: mergeStats!.jayerUnmatchedRef + mergeStats!.oayerUnmatchedRef }), 'success');
+    addToast(t('request.toast_merge_complete', {
+      added: jayer.stats.added + oayer.stats.added,
+      registered: jayer.stats.registered + oayer.stats.registered,
+      deleted: jayer.stats.deleted + oayer.stats.deleted,
+    }), 'success');
   };
 
   // ===== 완성된 MAP 변경 (기타 목적 단독 전용) =====
@@ -3577,26 +3551,22 @@ export default function RequestPage(): React.ReactElement {
         }
       >
         <div style={{ color: 'var(--text-secondary)', lineHeight: 2 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', marginBottom: '4px' }}>
-            <span>{t('request.jayer')}</span>
-            <span>
-              <Trans
-                i18nKey="request.merge_confirm_counts"
-                values={{ matched: mergeStats?.jayerMatched ?? 0, unmatched: mergeStats?.jayerUnmatchedRef ?? 0 }}
-                components={[<span />, <b />, <span />, <b />]}
-              />
-            </span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', marginBottom: '12px' }}>
-            <span>{t('request.oayer')}</span>
-            <span>
-              <Trans
-                i18nKey="request.merge_confirm_counts"
-                values={{ matched: mergeStats?.oayerMatched ?? 0, unmatched: mergeStats?.oayerUnmatchedRef ?? 0 }}
-                components={[<span />, <b />, <span />, <b />]}
-              />
-            </span>
-          </div>
+          {([
+            [t('request.jayer'), mergePreview?.jayer],
+            [t('request.oayer'), mergePreview?.oayer],
+          ] as const).map(([label, s]) => (
+            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', marginBottom: '4px' }}>
+              <span>{label}</span>
+              <span>
+                <Trans
+                  i18nKey="request.merge_confirm_counts"
+                  values={{ added: s?.added ?? 0, registered: s?.registered ?? 0, deleted: s?.deleted ?? 0 }}
+                  components={[<span />, <b />, <span />, <b />, <span />, <b />]}
+                />
+              </span>
+            </div>
+          ))}
+          <p style={{ margin: '12px 0 0', color: 'var(--danger)' }}>{t('request.merge_confirm_once_warning')}</p>
           <p style={{ margin: 0 }}>{t('request.merge_confirm_proceed')}</p>
         </div>
       </Modal>
