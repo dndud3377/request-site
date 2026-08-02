@@ -168,6 +168,8 @@ const StepMap: React.FC<StepMapProps> = ({
                   onChange={(v) => handleDetailSet('source_partid', v)}
                   error={errors.source_partid}
                   style={{ flex: 1 }}
+                  uppercase
+                  maxLength={8}
                 />
               </div>
             </div>
