@@ -1072,81 +1072,84 @@ type Page = { label: string; content: React.ReactNode };
 
           {(isR || isO || isP) && detail.only_prodc && (() => {
             const prodcChanged = ['only_prodc','prodc_top_line','prodc_top_process','prodc_top_product','prodc_middle_use','prodc_middle_line','prodc_middle_process','prodc_middle_product','prodc_bottom_line','prodc_bottom_process','prodc_bottom_product'].some((k) => changedFields.has(k));
-            const revChanged = changedFields.has('rev_yn') || changedFields.has('rev_entries');
-            const revYn = (detail as any).rev_yn as string | undefined;
-            const revEntries = (detail as any).rev_entries as Array<{ layers: string[]; gds: string }> | undefined;
             return (
-              <>
-                <div style={rowStyle}>
-                  <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(prodcChanged ? { border: '2px solid #dc3545' } : {}) }}>
-                    {prodcChanged && (
-                      <button
-                        onClick={() => setProdcHistOpen(true)}
-                        style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1 }}
-                      >
-                        이력 확인
-                      </button>
-                    )}
-                    {prodcHistOpen && (
-                      <FieldGroupHistoryModal title="생산 정보 변경 이력" rows={prodcHistRows} onClose={() => setProdcHistOpen(false)} />
-                    )}
-                    <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
-                      <div style={fieldLabel}>{t('request.prodc_status')}</div>
-                      <div style={fieldValue}>{detail.only_prodc}</div>
+              <div style={rowStyle}>
+                <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(prodcChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                  {prodcChanged && (
+                    <button
+                      onClick={() => setProdcHistOpen(true)}
+                      style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1 }}
+                    >
+                      이력 확인
+                    </button>
+                  )}
+                  {prodcHistOpen && (
+                    <FieldGroupHistoryModal title="생산 정보 변경 이력" rows={prodcHistRows} onClose={() => setProdcHistOpen(false)} />
+                  )}
+                  <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
+                    <div style={fieldLabel}>{t('request.prodc_status')}</div>
+                    <div style={fieldValue}>{detail.only_prodc}</div>
+                  </div>
+                  {isProdc && buildProdcInfo() && (
+                    <div style={{ flex: 1 }}>
+                      <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
+                      <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildProdcInfo()}</div>
                     </div>
-                    {isProdc && buildProdcInfo() && (
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* REV — C가문(only_prodc)과 독립된 항목이므로 C가문 Yes/No 와 무관하게 표시한다. */}
+          {(isR || isO || isP) && (() => {
+            const revChanged = changedFields.has('rev_yn') || changedFields.has('rev_entries');
+            const revYn = detail.rev_yn;
+            const revEntries = detail.rev_entries;
+            if (!revYn) return null;
+            return (
+              <div style={rowStyle}>
+                <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(revChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                  {revChanged && (
+                    <button
+                      onClick={() => setRevHistOpen(true)}
+                      style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1 }}
+                    >
+                      이력 확인
+                    </button>
+                  )}
+                  {revHistOpen && (
+                    <FieldGroupHistoryModal title="REV 변경 이력" rows={revHistRows} onClose={() => setRevHistOpen(false)} />
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                    <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
+                      <div style={fieldLabel}>{t('request.rev_yn_label')}</div>
+                      <div style={fieldValue}>{revYn}</div>
+                    </div>
+                    {revYn === 'YES' && Array.isArray(revEntries) && revEntries.length > 0 && (
                       <div style={{ flex: 1 }}>
-                        <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
-                        <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildProdcInfo()}</div>
+                        <div style={{ ...fieldLabel, marginBottom: 6 }}>{t('request.rev_layer_gds')}</div>
+                        {/* 카드형 + Layer pill (디자인 B) */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {revEntries.map((entry, idx) => (
+                            <div key={idx} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: 'var(--bg-card)', border: '1px solid var(--border)', borderLeft: '4px solid var(--accent)', borderRadius: 8, padding: '8px 12px' }}>
+                              <div style={{ flex: '0 0 auto', minWidth: 110 }}>
+                                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>{t('request.rev_gds')}</div>
+                                <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--accent)' }}>{entry.gds}</div>
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                {(entry.layers ?? []).map((layer, li) => (
+                                  <span key={li} style={{ background: 'var(--accent-light)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 999, padding: '2px 10px', fontSize: '0.78rem', fontWeight: 700 }}>{layer}</span>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
                 </div>
-                {isProdc && revYn && (
-                  <div style={rowStyle}>
-                    <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(revChanged ? { border: '2px solid #dc3545' } : {}) }}>
-                      {revChanged && (
-                        <button
-                          onClick={() => setRevHistOpen(true)}
-                          style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1 }}
-                        >
-                          이력 확인
-                        </button>
-                      )}
-                      {revHistOpen && (
-                        <FieldGroupHistoryModal title="REV 변경 이력" rows={revHistRows} onClose={() => setRevHistOpen(false)} />
-                      )}
-                      <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-                        <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
-                          <div style={fieldLabel}>{t('request.rev_yn_label')}</div>
-                          <div style={fieldValue}>{revYn}</div>
-                        </div>
-                        {revYn === 'YES' && Array.isArray(revEntries) && revEntries.length > 0 && (
-                          <div style={{ flex: 1 }}>
-                            <div style={{ ...fieldLabel, marginBottom: 6 }}>{t('request.rev_layer_gds')}</div>
-                            {/* 카드형 + Layer pill (디자인 B) */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                              {revEntries.map((entry, idx) => (
-                                <div key={idx} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: 'var(--bg-card)', border: '1px solid var(--border)', borderLeft: '4px solid var(--accent)', borderRadius: 8, padding: '8px 12px' }}>
-                                  <div style={{ flex: '0 0 auto', minWidth: 110 }}>
-                                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>{t('request.rev_gds')}</div>
-                                    <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--accent)' }}>{entry.gds}</div>
-                                  </div>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                    {(entry.layers ?? []).map((layer, li) => (
-                                      <span key={li} style={{ background: 'var(--accent-light)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 999, padding: '2px 10px', fontSize: '0.78rem', fontWeight: 700 }}>{layer}</span>
-                                    ))}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
+              </div>
             );
           })()}
 
