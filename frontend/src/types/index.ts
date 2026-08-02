@@ -335,6 +335,11 @@ export interface DetailFormState {
   validation_system: ValidationSystemValue;
   // 상신·재상신 시점의 상신자 값. MASK 가 값을 바꿔도 이 값은 유지돼 두 판단의 차이를 남긴다.
   validation_system_submitted?: ValidationSystemValue;
+
+  // 'Layer 추가/삭제' Merge 를 완료한 참조 요청서. 참조는 의뢰서당 1건만 지정할 수 있으므로,
+  // 이 값이 null 이 아니면 참조 선택·Merge 버튼을 영구 잠근다(임시저장 후 재진입해도 유지).
+  merge_ref_doc_id: number | null;
+  merge_ref_doc_label: string;   // 잠긴 입력에 표시할 문서 제목
 }
 
 // 통보자 참조: 화면 표시용 이름 + 메일 발송용 loginid
