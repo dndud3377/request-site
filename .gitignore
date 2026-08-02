@@ -42,6 +42,12 @@ frontend/build/
 *.swo
 .DS_Store
 
+# Claude Code local-only harness (개인 AI 작업 도구 — 공동작업자와 충돌방지)
+.claude/
+.superpowers/
+.mcp.json
+AGENTS.md
+
 # Docker
 *.override.yml
 

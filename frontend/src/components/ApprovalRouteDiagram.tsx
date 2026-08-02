@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 /**
  * 결재 경로 다이어그램 (전체 가이드 전용)
  * 최종 결재 경로: PL(검토) → R(RFG) → [경로1: P(PHPSI) → J(JOB)] ∥ [경로2: O(OVL) (+E(EUV))] → 완료
- * E(EUV)는 plel 존재 시에만, Only MAP 의뢰는 R까지만 진행한다는 조건을 주석으로 안내한다.
+ * Only MAP 의뢰는 R까지만 진행한다는 조건을 주석으로 안내한다.
  */
 const Box: React.FC<{ label: string; dim?: boolean }> = ({ label, dim }) => (
   <div className={`route-diagram-box${dim ? ' dim' : ''}`}>

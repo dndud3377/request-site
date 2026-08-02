@@ -138,6 +138,20 @@ pages/RequestPage/
 - **인라인 스타일 토글 버튼도 `map-type-btn`으로 통일**: `StepMap`의 **REV Layer 드래그 다중선택 버튼**, `Step3`의 **TBV/TLV SD 선택 버튼**이 각각 하드코딩된 인라인 스타일(파란 배경 활성)을 쓰고 있던 것을 `map-type-btn` 클래스로 교체했다. **스타일만 변경**했고 드래그 다중선택·단일선택 동작 로직은 그대로다.
 - **상세보기 INTER 블록 상시 노출 + "없음" 표시**: `PagedDetailView`의 MAP 탭에서 `Inter`(3번) 블록이 기존에는 `inter === 'YES'`일 때만 렌더링되던 것을 **항상 렌더링**하도록 바꾸고, `NO`일 때는 Map Option 블록과 동일하게 회색 `없음` 텍스트를 표시한다. `YES`일 때 표시 로직(신규 `in_apply`/`inter_select` vs 레거시 `inter_xs`/`inter_ys` 배지)은 기존과 동일하다.
 
+### 추가 변경 이력 (2026-07 — Validation System 대상/비대상)
+
+- **저장 위치**: `additional_notes` JSON 의 `detail` 하위. 모델 필드가 아니므로 마이그레이션이 없다.
+
+| 키 | 값 | 설명 |
+|---|---|---|
+| `validation_system` | `'YES'`(대상) / `'NO'`(비대상) | 현재 유효값. 상신 시 상신자가 확정하고, 결재 과정에서 MASK(E) 팀이 최종 확정한다 |
+| `validation_system_submitted` | `'YES'` / `'NO'` | 상신·재상신 시점의 상신자 값. MASK 가 값을 바꿔도 유지돼 두 판단의 차이를 남긴다. 임시저장에는 기록하지 않는다 |
+
+- **자동 판정**: 활성(비-disabled) J-layer 행의 `pp` 에 판정 키워드가 하나라도 있으면 대상(`isValidationTarget()`, `RequestPage/helpers.ts`). 판정 단일 소스는 이 프론트 함수이며, 백엔드는 판정을 재계산하지 않고 저장된 값을 그대로 신뢰한다.
+- **상신 UI**: 위저드 3단계(J-layer) 표 상단 토글. J-layer 가 바뀌면 자동 판정으로 값이 갱신되지만, 상신자가 토글을 직접 누르면 이후에는 J-layer 를 고쳐도 자동 갱신하지 않는다.
+- **MASK 확정**: `POST /api/documents/<id>/approve-step/` 의 기존 optional body 필드 `validation_system` 으로 처리한다(별도 엔드포인트 신설 없음). `agent='E'` 일 때만 반영되며(다른 agent 값이면 무시), `'YES'|'NO'` 외 값은 400. 이 값 검증은 검토자(EV) 생성보다 먼저 실행돼 부분 커밋을 막는다. `validation_system_submitted` 는 이 요청으로 바뀌지 않는다.
+- **레거시 문서**: 두 키가 없는 문서는 저장된 `jayerRows` 로 그때그때 폴백 판정해 보여준다(위저드 J-layer 단계·MASK 담당자 합의 모달·상세보기 J-layer 탭 공통).
+
 ### 추가 변경 이력 (2026-07 — 완성된 MAP 변경: 대상 프리필·J/O/B 제거·승인 시 원본 반영)
 
 - **대상 요청서 검색 프리필**(`applyMapChangeMode`): 모드 진입 시 `mapChangeDocLabel`에 `detail.partid_selection`을 채워 검색어로 쓴다. 문서 제목에 제품명이 포함되므로 그대로 필터가 된다. `mapChangeDocId`는 `null` 유지 — 사용자가 목록에서 실제 문서를 골라야 '적용'이 활성화된다. 프리필은 **진입 시 1회만**(이후 검색어 편집 중일 수 있어 partid 변경에 재동기화하지 않음).

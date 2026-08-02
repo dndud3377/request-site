@@ -135,7 +135,7 @@ FAILED (failures=2, errors=1)
 ```
 draft ──상신──▶ under_review ──(PL 전원 합의)──▶ R ──(합의)──▶ [RV] ──▶
                                        ┌── 경로1: P ─[PV]─▶ J ──┐
-                                       ├── 경로2: O [+ E ─[EV]] ┼─▶ 전원 합의 ▶ approved
+                                       ├── 경로2: O, E ─[EV] ┼─▶ 전원 합의 ▶ approved
                                        └── 경로3: RA(후결자, 병렬)┘
   어느 단계든 반려 ──▶ rejected ──재상신(round+1)──▶ under_review
   under_review ──중단요청→전원확인──▶ pause ──재개──▶ under_review (멈춘 단계부터)
@@ -449,15 +449,15 @@ draft ──상신──▶ under_review ──(PL 전원 합의)──▶ R ─
 
 #### T-I3 R 합의 → 병렬 전환
 - 조작: R(검토자 있으면 RV 까지) 합의
-- ✅ **P(4영업일) / O(6영업일) / [E(pp에 `plel` 포함 시)] / RA(후결자, 6영업일)** 동시 생성
+- ✅ **P(4영업일) / O(6영업일) / E(6영업일) / RA(후결자, 6영업일)** 동시 생성
 - ✅ 결재현황이 **경로1·경로2·경로3 = 최대 3행** 으로 rowSpan 분기
 - ✅ 기한은 **주말 + `Holiday(isholiday='Y')` 제외** 영업일 계산
 
-#### T-I4 E 단계 조건부 생성
+#### T-I4 E 단계 무조건 생성 (2026-07 변경)
 | J-layer `pp` 값 | 기대 |
 |---|---|
 | 어느 행이든 `plel` 포함(대소문자 무관) | ✅ E 단계 생성 |
-| 전 행에 없음 | ✅ E 단계 미생성, 경로2 는 O 만 |
+| 전 행에 없음 | ✅ E 단계도 생성(대상/비대상과 무관하게 항상 생성) |
 
 #### T-I5 후결자(RA)
 - ✅ 고정 후결자(`.env POST_APPROVER_LOGINID`)는 **항상 포함**, 화면에 🔒 잠금 칩(제거 버튼 없음)
@@ -883,7 +883,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 | 같은 문서를 두 탭에서 동시 편집 후 저장 | ⚠️ **마지막 저장이 통째로 이김**(낙관적 잠금 없음) → R-05 |
 
 ### X-10 메일 전 구간 (1건의 문서로 끝까지)
-상신 → PL 합의 → R 도착 → R 지정 → RV 도착 → 병렬 도착(P·O·[E]·RA) → PV 지정 → J 도착 → 승인
+상신 → PL 합의 → R 도착 → R 지정 → RV 도착 → 병렬 도착(P·O·E·RA) → PV 지정 → J 도착 → 승인
 - ✅ 각 전이마다 `MailNotification` 이 1행씩 쌓이고 **커밋 직후 즉시 1회 발송**
 - ✅ 실패분은 `pending` 으로 남아 APScheduler `process_mail_queue`(1분 주기)가 **최대 5회** 재시도 후 `failed`
 - ✅ 검증 쿼리
@@ -1090,8 +1090,9 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   정상 JSON(미매핑) → '모든 원본 데이터에 bb 을 매핑해야 상신할 수 있습니다.'
   ```
 - 근본 원인: `additional_notes` 가 `JSONField` 가 아니라 **`TextField`** 라 DB 가 깨진 JSON 도 받는다.
-  `get_detail()` 도 실패 시 조용히 `{}` 를 돌려주므로 `is_only_map()`·`has_ppid_plel()`·`_validate_post_approvers`
-  **전부 무음으로 오판**한다 → Only MAP 문서가 일반 경로를 타거나, E 단계가 안 생기거나, C가문 후결자 검증이 스킵된다.
+  `get_detail()` 도 실패 시 조용히 `{}` 를 돌려주므로 `is_only_map()`·`_validate_post_approvers`
+  **전부 무음으로 오판**한다 → Only MAP 문서가 일반 경로를 타거나, C가문 후결자 검증이 스킵된다.
+  (`has_ppid_plel()` 은 삭제됐고 E 단계는 이제 조건 없이 항상 생성되므로 이 항목의 영향에서 제외됐다.)
 - 권고: 파싱 실패 시 **400 으로 거부**(관대한 통과 대신). 중기적으로 `JSONField` 전환 + 마이그레이션.
 
 ### 🟡 B-08 `change_designee` 만 `requester` FK 직접 비교라 레거시 문서에서 작성자가 403 **재현✅**
