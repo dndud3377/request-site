@@ -221,6 +221,25 @@ draft ──상신──▶ under_review ──(PL 전원 합의)──▶ R ─
 - ✅ 병합 통계 모달 → 확인 시 J/O 표에 행 추가, 병합 행은 `loaded=true` 라 **`process_id·sp·sd·layerid·pp` 5개 컬럼이 읽기전용**
 - ❌ 병합 행의 원본 컬럼이 편집되면 `LOADED_LOCK_COLS` 회귀
 
+##### T-B7 사양 (기획 의도 — 2026-08-02 확정)
+A = 이미 결재완료된 **참조 요청서**, B = **지금 작성 중인 요청서**. Merge 는 B 를 A 와 대조해 3-way 로 분류한다.
+
+| 구분 | 조건 | `col_st` | `col_new_or_copy` |
+|------|------|----------|-------------------|
+| ① 신규 | **B 에만** 있음 (A 에 없음) | `O` | `신규` |
+| ② layer 삭제 | **A 에만** 있음 (B 에 없음) → B 표에 행 추가 | `X` | `layer삭제` |
+| ③ 기등록 | A·B **양쪽** 존재 | `X` | `기등록` |
+
+- **비교 축 분리(필수)**: J-layer 는 J-layer 끼리, O-layer 는 O-layer 끼리만 비교한다.
+- **J↔O 동기화 차단(필수)**: Merge 결과는 **오직 A 기준**으로 결정된다. J 행이 바뀌었다고 같은 `layerid` 의 O 행이 따라 바뀌면 **안 된다**.
+  A 대조 결과 `기등록`인 행이 동기화 규칙 때문에 `신규` 등으로 뒤집히는 일이 없어야 한다.
+- ✅ 판정: 위 표대로 `st`/`new_or_copy` 가 설정되고, 모달 건수 = 실제 표 반영 건수
+- ❌ 회귀 신호: ① 이 반영되지 않음 / ② 행이 A 원본 값(`신규` 등)을 그대로 들고 들어옴 / J·O 값이 서로 전염됨
+
+> **의도된 동작 (버그 아님)**: `handleMergeConfirm` 이 `handleJayerChange` 를 거치지 않고 `setJayerRows`·`setOayerRows` 를
+> 직접 호출해 **T-D1 의 J↔O 동기화를 우회**하는 것은 위 "J↔O 동기화 차단" 요구사항을 만족하기 위한 **의도된 설계**다.
+> 이전 검토에서 "동기화 누락"으로 분류했던 항목은 철회한다. 다만 Merge **이후** 사용자가 셀을 편집할 때의 전파는 B-52 참조.
+
 ---
 
 ### 3.C 의뢰서 작성 — STEP 2 MAP (T-C)
@@ -1455,6 +1474,81 @@ Migrations for 'api':
   (`models.py` 상단의 "MASKING 처리된 파일" 안내와 관련된 흔적으로 보인다).
 - 다만 CI에 `makemigrations --check`를 넣으면 **바로 실패**하고, 개발자가 `makemigrations`를 돌릴 때마다
   이 파일이 생성돼 노이즈가 된다. 정리해 두는 편이 좋다.
+
+---
+
+## 5-3. Merge 기획 의도 대조에서 발견된 버그 (B-49 ~ B-56)
+
+> 2026-08-02, `Layer 추가/삭제` Merge 의 기획 의도(**T-B7 사양** 참조)를 확정한 뒤 코드를 재대조해 나온 항목.
+> 대상 코드는 전부 프론트 `frontend/src/pages/RequestPage/index.tsx` 의 `handleMergeClick`(2098~) / `handleMergeConfirm`(2116~) 이다.
+> **백엔드에는 J/O-layer Merge 로직이 존재하지 않는다** (`views.py:646` 의 `merged_detail` 은 '완성된 MAP 변경' 전용, 무관).
+
+### 🟠 B-49 ① 신규 판정이 아예 구현돼 있지 않다 (사양 ① 미구현)
+- 위치: `index.tsx:2124-2129`
+```js
+const mergedJayer = jayerRows.map((r) => {
+  if (!r.disabled && refJayerKeyMap.has(makeKey(r))) {
+    return { ...r, st: 'X', new_or_copy: '기등록' };   // ③ 만 처리
+  }
+  return r;                                            // ← ① 이어야 할 행을 그대로 둔다
+});
+```
+- 내용: **B 에만 있는 행(A 에 없음)** 은 사양상 `st='O'` / `new_or_copy='신규'` 가 되어야 하는데,
+  `return r` 로 **원래 값이 그대로 유지**된다. 통계에도 잡히지 않아 확인 모달에 **신규 건수 자체가 없다**.
+- 영향: Merge 를 눌러도 "이번에 추가되는 layer" 가 표시되지 않는다.
+  **"미매칭이 1건 있는데 모달에 0건으로 나온다"는 현상의 가장 유력한 원인** — 모달의 두 숫자는 ③과 ②뿐이라 ①은 어떤 값으로도 나타나지 않는다.
+
+### 🟠 B-50 ② layer 삭제 행이 A 원본 값을 그대로 들고 들어온다 (사양 ② 미구현)
+- 위치: `index.tsx:2130-2134`
+```js
+refJayerRows.filter((r) => !r.disabled).forEach((r) => {
+  if (!activeJayerKeys.has(makeKey(r))) {
+    mergedJayer.push({ ...r, id: genId(), sortOrder: Date.now(), loaded: true });
+  }                        // ↑ st / new_or_copy 를 덮어쓰지 않는다
+});
+```
+- 내용: A 에만 있는 행은 `st='X'` / `new_or_copy='layer삭제'` 로 추가돼야 하는데,
+  `{ ...r }` 로 **A 의 `st`·`new_or_copy` 를 그대로 복사**한다. A 는 결재완료 문서라 그 값은 대개 `O`/`신규` 다.
+- 영향: **삭제되어야 할 layer 가 '신규'로 표시**된다. 사양과 정반대 값이라 그대로 상신되면 후속 공정이 오판한다. O-layer(`2147-2151`)도 동일.
+
+### 🟠 B-51 Merge 가 멱등하지 않다 — 두 번 누르면 `layer삭제` 가 `기등록` 으로 뒤집힌다
+- 내용: 1회차 Merge 로 추가된 ② 행들은 B 의 활성 행이 된다. 같은 A 로 2회차 Merge 를 누르면
+  그 행들의 키가 `activeJayerKeys` 에 들어가 있으므로 **③(기등록)으로 매칭**되어 `new_or_copy` 가 `layer삭제` → `기등록` 으로 덮인다.
+- 재현: 참조 요청서 선택 → Merge → 확인 → **같은 문서로 다시 Merge → 확인** → 노란색(`layer삭제`) 행이 회색(`기등록`)으로 바뀜
+- 영향: 실수로 두 번 누르면 삭제 대상 정보가 조용히 소실된다. 되돌릴 UI 가 없다.
+
+### 🟡 B-52 Merge 이후 셀 편집이 J↔O 로 전파돼 A 기준 판정을 뒤집을 수 있다
+- 내용: Merge **시점** 의 J↔O 격리는 의도대로 동작한다(T-B7 참조). 그러나 Merge **이후** 사용자가 셀을 편집하면
+  `handleJayerChange`(`index.tsx:1676~`)의 J→O 동기화가 다시 살아난다.
+  `기등록`·`layer삭제` 는 `isNocSpecial`(`constants.ts:55`) 로 송·수신이 모두 차단되어 보호되지만,
+  **B-49 를 고쳐 ① 이 `신규` 로 채워지면 그 행은 "참여행" 이라 전파 대상**이 된다.
+- 영향: A 대조로 정한 값이 같은 `layerid` 의 반대편 표로 전염될 수 있다(사양 "J↔O 동기화 차단" 위반).
+  B-49 수정과 **반드시 함께** 검토해야 한다.
+
+### 🟡 B-53 매칭 키에 `layerid` 가 없고, `Set` 중복 제거로 건수가 축약된다
+- 위치: `index.tsx:2099`, `2117` — `makeKey = process_id||sp||sd||pp` (**`layerid` 미포함**)
+- 내용: 같은 `(process_id, sp, sd, pp)` 에 `layerid` 만 다른 행이 A 에 2개 있으면
+  `new Set(...)` 이 **1개 키로 축약**해 둘을 구분하지 못한다. 통계뿐 아니라 `handleMergeConfirm` 도 같은 키를 쓰므로
+  그 행이 **표에 추가조차 되지 않는다**.
+- 전제: 운영 데이터상 4-tuple 중복은 없다고 확인됨(2026-08-02) → **현재 재현 미확인**. 다만 `Layer 추가/삭제` 는 정의상
+  layer 단위 기능이므로 키에 `layerid` 를 넣는 편이 사양과 일치한다.
+
+### 🟡 B-54 통계와 실제 반영이 서로 다른 코드에서 계산된다
+- 위치: `handleMergeClick`(2098) 과 `handleMergeConfirm`(2116) 에 `makeKey` 와 매칭 로직이 **각각 복붙**돼 있다.
+- 내용: 두 곳이 어긋나면 **모달 숫자와 실제 표 반영이 달라진다**. 지금도 B-49 때문에 실제로 어긋나 있다
+  (모달은 ①을 세지 않고, 반영도 하지 않는다 — 우연히 일치할 뿐 구조적 보장이 없다).
+- 권고: `computeMerge(curJ, curO, refJ, refO) → { mergedJayer, mergedOayer, stats }` 순수 함수로 단일화.
+
+### ⚪ B-55 push 되는 행이 모두 같은 `sortOrder` 를 받는다
+- 위치: `index.tsx:2132`, `2149` — `sortOrder: Date.now()`
+- 내용: `forEach` 루프가 같은 밀리초에 돌면 추가된 행 전부가 **동일한 `sortOrder`** 를 갖는다.
+  `sort((a,b) => a.sortOrder - b.sortOrder)` 는 안정 정렬이라 즉시 깨지진 않지만, 저장·재로드 시 순서 보장이 없다.
+
+### ⚪ B-56 B 의 비활성 행과 키가 같은 A 행이 중복으로 추가된다
+- 내용: B 의 `disabled` 행은 `activeJayerKeys` 에서 제외된다. 그 키가 A 에 있으면 "②(A에만 있음)" 로 판정되어
+  **같은 `process_id/sp/sd/pp` 행이 하나 더 push** 된다 → 표에 비활성 행과 신규 행이 나란히 보인다.
+- 참고: 결재완료 문서(A)는 상신 시 `jayerRows.filter(r => !r.disabled)` (`index.tsx:2925-2926`)로 저장되어
+  **비활성 행이 아예 없다**. 따라서 이 문제는 **B 쪽 비활성 행**에서만 발생한다.
 
 ---
 
