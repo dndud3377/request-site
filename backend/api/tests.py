@@ -969,6 +969,36 @@ class PEStageReviewerFlowTest(TestCase):
         self.assertEqual(p_step.action, 'pending')
         self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='PV', round=1).exists())
 
+    def test_p_reviewer_mail_shows_owner_as_approved_not_reviewing(self):
+        """담당자 합의 + 검토자 지정을 한 요청으로 처리할 때, 검토자에게 가는 메일의
+        결재 경로 카드에서 담당자(P) 행은 '검토중'이 아니라 '합의'로 표시돼야 한다.
+        (담당자 승인 저장 전에 검토자 메일을 만들면 담당자가 아직 pending 으로 읽혀 버그가 난다.)
+        """
+        import re
+
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {
+            'agent': 'P', 'comment': '', 'reviewer_loginids': [self.p_reviewer.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        # route rows 자체(현재 커밋본 기준)가 이미 담당자를 합의로 읽어야 한다.
+        rows = {label: st for label, _name, st, _c in mailer._route_rows(doc)}
+        self.assertEqual(rows['P'], 'approved')
+
+        # 검토자(PV)에게 실제로 적재된 메일 본문에서 P 행만 뽑아 상태를 확인한다
+        # (본문은 enqueue 시점에 이미 고정된 HTML — 담당자 저장 전에 만들어지면 검토중으로 굳어버린다).
+        noti = MailNotification.objects.filter(
+            document=doc, event_type='stage_arrival', recipients=[self.p_reviewer.mail]
+        ).latest('id')
+        p_row_match = re.search(r'<tr>(?:(?!</tr>).)*?>P</td>(?:(?!</tr>).)*?</tr>', noti.contents, re.S)
+        self.assertIsNotNone(p_row_match, 'P 행이 메일 본문에 있어야 한다')
+        p_row_html = p_row_match.group(0)
+        self.assertIn('합의', p_row_html)
+        self.assertNotIn('검토중', p_row_html)
+
     def test_p_reviewer_rejection_rejects_whole_document(self):
         doc = self._advance_to_parallel()
         self.client.force_authenticate(user=self.p_owner)
@@ -986,6 +1016,30 @@ class PEStageReviewerFlowTest(TestCase):
         self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists())
 
     # ----- E 단계(plel) + 최종 승인 게이트 -----
+
+    def test_e_reviewer_mail_shows_owner_as_approved_not_reviewing(self):
+        """P 단계와 동일한 버그가 E 단계(EV 검토자)에도 있었다 — 회귀 확인."""
+        import re
+
+        doc = self._advance_to_parallel(plel=True)
+        self.client.force_authenticate(user=self.e_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {
+            'agent': 'E', 'comment': '', 'reviewer_loginids': [self.e_reviewer.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        rows = {label: st for label, _name, st, _c in mailer._route_rows(doc)}
+        self.assertEqual(rows['E'], 'approved')
+
+        noti = MailNotification.objects.filter(
+            document=doc, event_type='stage_arrival', recipients=[self.e_reviewer.mail]
+        ).latest('id')
+        e_row_match = re.search(r'<tr>(?:(?!</tr>).)*?>E</td>(?:(?!</tr>).)*?</tr>', noti.contents, re.S)
+        self.assertIsNotNone(e_row_match, 'E 행이 메일 본문에 있어야 한다')
+        e_row_html = e_row_match.group(0)
+        self.assertIn('합의', e_row_html)
+        self.assertNotIn('검토중', e_row_html)
 
     def test_e_reviewer_gate_blocks_final_approval_until_all_agree(self):
         doc = self._advance_to_parallel(plel=True)

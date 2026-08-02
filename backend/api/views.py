@@ -497,11 +497,15 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         # P/E 담당자 합의 시 함께 지정된 검토자(PV/EV) 생성 — 별도 지정 API 없이
         # 이 합의 요청 한 번으로 담당자 합의 + 검토자 지정이 함께 처리된다.
+        # 검증은 담당자 단계를 승인 저장하기 전에 마쳐(문제가 있으면 아무 것도 만들지 않음),
+        # 실제 생성(+검토자 메일 발송)은 담당자 승인 저장 이후에 한다 — 그래야 검토자에게 가는
+        # 메일의 결재 경로 카드가 담당자 상태를 '검토중'이 아닌 '합의'로 정확히 읽는다.
+        reviewer_users = []
         if agent in ('P', 'E'):
             review_loginids = request.data.get('reviewer_loginids')
             if review_loginids:
                 caller_loginid = getattr(request.user, 'loginid', '')
-                err = self._create_reviewers(document, step, review_loginids, caller_loginid, max_round)
+                reviewer_users, err = self._validate_reviewers(document, step, review_loginids, caller_loginid, max_round)
                 if err:
                     return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -515,6 +519,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not step.assignee_name:
             step.assignee_name = request.data.get('approver_name', '')
         step.save()
+
+        if reviewer_users:
+            self._create_reviewers(document, step, reviewer_users, max_round)
 
         # 결재가 진행되어 단계가 넘어가면 진행 중이던 중단 요청은 무효 처리
         self._cancel_active_pause_requests(document)
@@ -784,18 +791,15 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         return Response({'message': '담당자가 지정되었습니다.'})
 
-    def _create_reviewers(self, document, step, review_loginids, caller_loginid, round_no):
-        """P/E 담당자 합의 시 함께 지정된 검토자(PV/EV) pending step을 생성한다.
+    def _validate_reviewers(self, document, step, review_loginids, caller_loginid, round_no):
+        """P/E 담당자 합의 시 함께 지정할 검토자(PV/EV) loginid 목록을 검증한다(DB 쓰기 없음).
 
-        R 담당자 지정(assign_step)에서 검토자를 함께 고르는 것과 동일하게,
-        P/E는 담당자 본인이 합의(approve-step) 시점에 검토자를 함께 지정한다
-        (별도 지정 API 없이 한 번의 합의 클릭으로 담당자 합의 + 검토자 지정이 함께 처리됨).
-        전원 유효성 검증을 먼저 마친 뒤에만 생성한다(문제가 있으면 아무 것도 만들지 않고
-        error 문자열을 반환 — approve_step이 이 호출을 담당자 단계 저장 전에 수행해 안전하다).
+        담당자 단계를 승인 저장하기 전에 호출해, 문제가 있으면 아무 것도 만들거나 바꾸지 않고
+        error 문자열만 반환한다. 실제 생성은 `_create_reviewers`(담당자 승인 저장 후 호출)가 한다.
         """
         review_agent = self._REVIEW_AGENT_OF.get(step.agent)
         if not review_agent or not review_loginids:
-            return None
+            return [], None
         team_role = self._REVIEW_TEAM_ROLE[review_agent]
 
         cleaned = []
@@ -804,7 +808,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if lid and lid not in cleaned:
                 cleaned.append(lid)
         if not cleaned:
-            return None
+            return [], None
 
         existing_loginids = set(
             ApprovalStep.objects.filter(
@@ -817,21 +821,33 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if lid in existing_loginids:
                 continue
             if lid == caller_loginid:
-                return '담당자 본인은 검토자로 지정할 수 없습니다.'
+                return [], '담당자 본인은 검토자로 지정할 수 없습니다.'
             try:
                 reviewer_user = User.objects.get(loginid=lid, role=team_role)
             except User.DoesNotExist:
-                return f'유효하지 않은 검토자입니다: {lid}'
+                return [], f'유효하지 않은 검토자입니다: {lid}'
             to_create.append(reviewer_user)
             existing_loginids.add(lid)
 
-        for reviewer_user in to_create:
+        return to_create, None
+
+    def _create_reviewers(self, document, step, reviewer_users, round_no):
+        """검증된 검토자(PV/EV) pending step을 생성하고 개인화 메일을 발송한다.
+
+        R 담당자 지정(assign_step)에서 검토자를 함께 고르는 것과 동일하게,
+        P/E는 담당자 본인이 합의(approve-step) 시점에 검토자를 함께 지정한다
+        (별도 지정 API 없이 한 번의 합의 클릭으로 담당자 합의 + 검토자 지정이 함께 처리됨).
+        ⚠️ 반드시 담당자(P/E) 단계가 '합의'로 저장된 *이후*에 호출해야 한다 — 그래야 검토자에게
+        가는 메일의 결재 경로 카드(`mailer._route_rows`)가 담당자 상태를 '검토중'이 아닌
+        '합의'로 정확히 읽는다.
+        """
+        review_agent = self._REVIEW_AGENT_OF[step.agent]
+        for reviewer_user in reviewer_users:
             rv_step = ApprovalStep.objects.create(
                 document=document, agent=review_agent, action='pending', round=round_no,
                 assignee=reviewer_user, assignee_name=(reviewer_user.username or reviewer_user.loginid),
             )
             mailer.enqueue_stage_arrival(document, review_agent, rv_step, recipient_name=rv_step.assignee_name)
-        return None
 
     @action(detail=True, methods=['post'], url_path='claim-step')
     @transaction.atomic

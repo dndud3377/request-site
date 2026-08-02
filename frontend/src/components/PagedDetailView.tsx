@@ -1178,13 +1178,13 @@ type Page = { label: string; content: React.ReactNode };
 
             return (
               <>
-                {/* Inter — YES 일 때만, 버튼이 아닌 글자(코멘트)로 표시 (Xs/Ys 는 선택 시에만) */}
-                {detail.inter === 'YES' && (
-                  <div style={rowStyle}>
-                    <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
-                      <div style={fieldLabel}>{t('request.map_opt_inter')}</div>
-                      <div style={fieldValue}>
-                        {(detail as any).in_apply ? (
+                {/* Inter — 항상 표시. YES 면 버튼이 아닌 글자(코멘트)로 표시, NO 면 Map Option 과 동일하게 "없음" 표시 */}
+                <div style={rowStyle}>
+                  <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200 }}>
+                    <div style={fieldLabel}>{t('request.map_opt_inter')}</div>
+                    <div style={fieldValue}>
+                      {detail.inter === 'YES' ? (
+                        (detail as any).in_apply ? (
                           [
                             t('approval.inter_applied'),
                             (detail as any).in_apply === 'O' ? t('request.in_apply_o') : t('request.in_apply_x'),
@@ -1196,11 +1196,13 @@ type Page = { label: string; content: React.ReactNode };
                             detail.inter_xs === '적용' ? t('approval.inter_xs_applied') : null,
                             detail.inter_ys === '적용' ? t('approval.inter_ys_applied') : null,
                           ].filter(Boolean).join(' / ')
-                        )}
-                      </div>
+                        )
+                      ) : (
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
+                      )}
                     </div>
                   </div>
-                )}
+                </div>
                 {/* Map Option — 별도 섹션 박스 */}
                 <div style={rowStyle}>
                   <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(mapOptionChanged ? { border: '2px solid #dc3545' } : {}) }}>

@@ -124,13 +124,19 @@ pages/RequestPage/
 ### 추가 변경 이력 (2026-07-30 — INTER 섹션 IN 적용 O/X + Xs/Ys/XYs/없음 필수 선택 그룹 추가)
 
 - **개요**: `StepMap`의 `Inter`(3번) 항목에서 `YES` 선택 시 기존 `inter_xs`/`inter_ys`(적용/미적용 독립 토글, 필수 아님) 버튼을 제거하고, 그 자리에 아래 두 버튼 그룹을 추가했다.
-  - **IN 적용 O / IN 적용 X** — 신규 필드 `in_apply: 'O' | 'X' | ''`. `map-option-btn` 버튼 스타일 재사용, 클릭 시 토글이 아니라 클릭값으로 즉시 교체(다른 버튼은 자동 비활성) — `map_type` 버튼과 동일한 단일선택 동작.
+  - **IN 적용 O / IN 적용 X** — 신규 필드 `in_apply: 'O' | 'X' | ''`. 클릭 시 토글이 아니라 클릭값으로 즉시 교체(다른 버튼은 자동 비활성) — `map_type` 버튼과 동일한 단일선택 동작(버튼 스타일은 이후 `map-type-btn`으로 재변경됨, 아래 2026-07-31 이력 참조).
   - **Xs / Ys / XYs / 없음** — 신규 필드 `inter_select: 'xs' | 'ys' | 'xys' | 'none' | ''`. 동일한 단일선택 버튼 방식. i18n 키 `map_opt_inter_xs`/`_ys`는 기존 키 재사용, `_xys`/`_none`은 신규 추가.
   - 두 그룹은 **서로 완전히 독립**적으로 동작(값 연동 없음).
 - **검증**: `index.tsx`의 `validate()` step 2(`!isMapRegistered`) 블록에 `detail.inter === 'YES'`일 때 `in_apply`·`inter_select` 각각 미선택 시 `request.required` 에러 추가(기존 `map_reason`/`ea_value`와 동일 패턴). 즉 `IN 적용 O/X` 중 1개, `Xs/Ys/XYs/없음` 중 1개가 항상 필수.
 - **NO 전환 시 즉시 초기화**: `Inter`를 `NO`로 바꾸면 확인 모달 없이 `inter_xs`/`inter_ys`(레거시)와 함께 `in_apply`/`inter_select`도 곧바로 `''`로 리셋되어, 화면에 보이지 않는 값이 실수로 저장되는 것을 방지한다. `handleMapTypeChangeConfirm` 등 MAP 필드 일괄 초기화 경로(2곳)에도 동일 리셋을 추가했다.
 - **하위 호환**: 기존 `inter_xs`/`inter_ys` 필드·i18n 키(`approval.inter_xs_applied`/`_ys_applied`)는 삭제하지 않고 그대로 둔다. `PagedDetailView`는 `in_apply`가 있는(신규 작성) 문서는 새 값으로, 없는(레거시) 문서는 기존 `inter_xs`/`inter_ys` 배지로 표시한다.
 - **화이트리스트 동기화**: 프론트 `MAP_DETAIL_KEYS`(`constants.ts`)와 백엔드 `RequestDocument.MAP_APPLY_KEYS`(`models.py`)에 `in_apply`·`inter_select` 동시 추가. `detail`은 `additional_notes` JSON 저장이라 마이그레이션 불필요.
+
+### 추가 변경 이력 (2026-07-31 — StepMap 버튼 스타일 통일 + 상세보기 INTER 표시 개선)
+
+- **버튼 스타일 `map-type-btn` 통일**: 위 IN 적용 O/X·Xs/Ys/XYs/없음 2개 그룹과 기존 **Map Option(10개 토글)** 이 쓰던 `map-option-btn`(채워진 배경 활성 스타일)을 `map-type-btn`(외곽선 강조 활성 스타일, MAP 요청 목적 버튼과 동일)으로 통일했다. 이로써 `map-option-btn`을 쓰는 곳이 없어져 `global.css`에서 해당 클래스 정의를 삭제했다.
+- **인라인 스타일 토글 버튼도 `map-type-btn`으로 통일**: `StepMap`의 **REV Layer 드래그 다중선택 버튼**, `Step3`의 **TBV/TLV SD 선택 버튼**이 각각 하드코딩된 인라인 스타일(파란 배경 활성)을 쓰고 있던 것을 `map-type-btn` 클래스로 교체했다. **스타일만 변경**했고 드래그 다중선택·단일선택 동작 로직은 그대로다.
+- **상세보기 INTER 블록 상시 노출 + "없음" 표시**: `PagedDetailView`의 MAP 탭에서 `Inter`(3번) 블록이 기존에는 `inter === 'YES'`일 때만 렌더링되던 것을 **항상 렌더링**하도록 바꾸고, `NO`일 때는 Map Option 블록과 동일하게 회색 `없음` 텍스트를 표시한다. `YES`일 때 표시 로직(신규 `in_apply`/`inter_select` vs 레거시 `inter_xs`/`inter_ys` 배지)은 기존과 동일하다.
 
 ### 추가 변경 이력 (2026-07 — Validation System 대상/비대상)
 
