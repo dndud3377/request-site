@@ -121,6 +121,14 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-08-02 — Layer 추가/삭제 Merge 하드코딩 i18n 이관)
+
+- **개요**: `Layer 추가/삭제` 참조 요청서 Merge 기능에만 남아 있던 하드코딩 문자열을 `request.merge_*` 키로 이관했다. 동작 변경 없음(문구 출력 경로만 변경).
+- **i18n 키 추가(ko/en 동시)**: `merge_ref_doc`(참조 요청서 라벨)·`merge_ref_placeholder`·`merge_ref_load_fail`(참조 문서 로드 실패 토스트)·`merge_button`(Merge 버튼)·`merge_confirm_title`(Merge 확인 모달 제목)·`merge_confirm_counts`(기등록/미매칭 건수 안내)·`merge_confirm_proceed`.
+- **적용 위치**: `Step1.tsx` 참조 요청서 `AutocompleteInput`의 `label`/`placeholder`·Merge 버튼 라벨, `index.tsx`의 `handleRefDocSelect` 실패 토스트·Merge 확인 모달(제목·건수·진행 문구).
+- **`Trans` 최초 도입**: 건수 안내는 숫자만 `<b>`로 강조하는 기존 UI를 유지해야 해 `react-i18next`의 `Trans`(`components={[<span />, <b />, <span />, <b />]}`)로 렌더링한다. 코드베이스에서 `Trans` 사용은 이 지점이 처음이며, 나머지 문자열은 기존 관례대로 `t()`를 쓴다.
+- **미해결(별도 과제)**: Merge 매칭 키(`process_id||sp||sd||pp`)에 `layerid`가 빠져 있고 `Set` 중복 제거로 집계되어, **모달의 미매칭 건수가 실제보다 적게 나오고 해당 행이 병합에서도 누락**된다. 또한 `handleMergeConfirm`은 `setJayerRows`/`setOayerRows`를 직접 호출해 **J↔O `st`/`new_or_copy` 동기화(4.1 J↔O 동기화 항목)를 우회**한다. 이번 변경 범위 밖.
+
 ### 추가 변경 이력 (2026-07-30 — INTER 섹션 IN 적용 O/X + Xs/Ys/XYs/없음 필수 선택 그룹 추가)
 
 - **개요**: `StepMap`의 `Inter`(3번) 항목에서 `YES` 선택 시 기존 `inter_xs`/`inter_ys`(적용/미적용 독립 토글, 필수 아님) 버튼을 제거하고, 그 자리에 아래 두 버튼 그룹을 추가했다.
