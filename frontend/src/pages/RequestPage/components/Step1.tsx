@@ -105,6 +105,9 @@ const Step1: React.FC<Step1Props> = ({
   // 흐름도·특이사항·Backbone 전용 잠금: 완성된 MAP 변경도 Only MAP과 동일하게 잠그되,
   // 기타목적 버튼·참조요청서 Merge·완성된 MAP 변경 검색/적용 툴바는 잠그지 않는다(전환·조회 경로 보존).
   const disableFlowBb = disableOptional || isMapChangeMode;
+  // 참조 요청서는 의뢰서당 1건만 지정할 수 있다. Merge 를 마치면 선택·Merge 를 모두 영구 잠근다
+  // (문서에 저장되므로 임시저장 후 재진입해도 유지된다).
+  const isMergeDone = detail.merge_ref_doc_id !== null;
 
   return (
     <div className="form-section">
@@ -234,30 +237,37 @@ const Step1: React.FC<Step1Props> = ({
 
             {/* Layer 추가/삭제: 참조 요청서 선택 (검색 툴바 크기는 완성된 MAP 변경과 동일) */}
             {detail.other_purpose.includes('Layer 추가/삭제') && (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', maxWidth: 920 }}>
-                <div style={{ flex: 1 }}>
-                  <AutocompleteInput
-                    label={t('request.merge_ref_doc')}
-                    value={refDocLabel}
-                    options={approvedDocs.map((d) => d.title)}
-                    onChange={(v) => {
-                      setRefDocLabel(v);
-                      if (refDocId !== null) setRefDocId(null);
-                    }}
-                    onSelect={handleRefDocSelect}
-                    placeholder={t('request.merge_ref_placeholder')}
-                    disabled={disableOptional}
-                  />
+              <div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', maxWidth: 920 }}>
+                  <div style={{ flex: 1 }}>
+                    <AutocompleteInput
+                      label={t('request.merge_ref_doc')}
+                      value={isMergeDone ? detail.merge_ref_doc_label : refDocLabel}
+                      options={approvedDocs.map((d) => d.title)}
+                      onChange={(v) => {
+                        setRefDocLabel(v);
+                        if (refDocId !== null) setRefDocId(null);
+                      }}
+                      onSelect={handleRefDocSelect}
+                      placeholder={t('request.merge_ref_placeholder')}
+                      disabled={disableOptional || isMergeDone}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={disableOptional || isMergeDone || refDocId === null}
+                    style={disableOptional || isMergeDone || refDocId === null ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                    onClick={handleMergeClick}
+                  >
+                    {t('request.merge_button')}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={disableOptional || refDocId === null}
-                  style={disableOptional || refDocId === null ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                  onClick={handleMergeClick}
-                >
-                  {t('request.merge_button')}
-                </button>
+                {isMergeDone && (
+                  <div style={{ marginTop: '4px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    ⓘ {t('request.merge_already_done')}
+                  </div>
+                )}
               </div>
             )}
 
