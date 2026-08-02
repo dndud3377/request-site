@@ -121,10 +121,52 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-08-02 — Layer 추가/삭제 Merge 3-way 판정 + 참조 1건 제한)
+
+- **개요**: `Layer 추가/삭제` Merge 를 기획 의도대로 **3-way 판정**으로 재구현하고, 참조 요청서를 **의뢰서당 1건**으로 제한했다.
+  참조 요청서를 A, 작성 중인 의뢰서를 B 라 할 때 J-layer 는 J-layer 끼리, O-layer 는 O-layer 끼리 **독립 비교**한다.
+
+| 구분 | 조건 | `col_st` | `col_new_or_copy` |
+|------|------|----------|-------------------|
+| ① 신규 | **B 에만** 있음 | `O` | `신규` |
+| ② layer 삭제 | **A 에만** 있음 → B 표에 행 추가 | `X` | `layer삭제` |
+| ③ 기등록 | A·B **양쪽** 존재 | `X` | `기등록` |
+
+- **"존재" 정의(핵심)**: `!disabled && new_or_copy !== 'layer삭제'`. `layer삭제` 는 그 시점에 **이미 지워진 layer** 이므로 **부재**로 본다.
+  따라서 A 에서 `layer삭제` 인 layer 가 B 에 있으면 "A 엔 없던 것이 B 에 생김" → **①(신규)** 이 된다. A·B 양쪽에 대칭 적용한다.
+- **`computeLayerMerge(curRows, refRows)` 신설**(`helpers.ts`): `{ merged, stats }` 를 돌려주는 **순수 함수**. 확인 모달의 미리보기와 실제 반영이
+  **같은 함수 한 번의 계산**에서 나오므로 숫자와 표 결과가 구조적으로 어긋날 수 없다(기존에는 `makeKey`·매칭 로직이 두 핸들러에 복붙돼 있었다).
+  - 비교 키 = `process_id||sp||sd||pp` (`layerid` 미포함, 각 값 `trim()` 정규화). 운영 데이터상 이 4개로 행이 유일하게 식별된다.
+  - 비활성 행·이미 `layer삭제` 인 행은 **건드리지 않는다**.
+  - ② 행 추가 시 **비활성이 아닌 모든 행(= `layer삭제` 포함)의 키**와 대조해 중복 행을 만들지 않는다.
+  - ② 행은 `loaded:true`(원본 컬럼 읽기전용) + `disabled:false` 로 넣는다 — 필터에 걸려 숨겨지면 상신 저장에서 빠져 삭제 정보가 유실되기 때문.
+  - `sortOrder` 는 `base + index` 로 부여(기존 `Date.now()` 는 같은 밀리초에 전부 동일값이 됐다).
+- **참조 요청서 1건 제한**: `DetailFormState` 에 `merge_ref_doc_id: number | null` · `merge_ref_doc_label: string` 추가.
+  Merge 완료 시 기록하고, 값이 있으면 **참조 선택 입력과 Merge 버튼을 모두 영구 잠근다**(`Step1.tsx` `isMergeDone`).
+  `additional_notes.detail` 에 저장되므로 **임시저장 후 재진입·재상신에도 잠금이 유지**된다. 필드 도입 전 문서는 로드 시 `null`/`''` 로 백필한다.
+  **DB 스키마·마이그레이션 변경 없음**(JSON 칼럼).
+- **J↔O 동기화는 Merge 시점에 의도적으로 우회한다**: Merge 결과는 오직 A 기준이어야 하므로 `handleMergeConfirm` 은 `handleJayerChange` 를 거치지 않고
+  `setJayerRows`/`setOayerRows` 를 직접 호출한다. Merge **이후** 수동 편집은 기존 J↔O 동기화 규칙(위 "J↔O 동기화" 항목)을 그대로 따른다.
+- **i18n**: `toast_merge_complete`·`merge_confirm_counts` 를 3-way 로 교체하고 `merge_confirm_once_warning`·`merge_already_done` 추가(ko/en 동시).
+- **상수화**: `NOC_NEW`·`NOC_BORROW`·`NOC_REGISTERED`·`NOC_LAYER_DELETE`·`ST_O`·`ST_X`(`constants.ts`). `isNocSpecial` 도 이 상수를 쓰도록 정리.
+- **테스트**: `helpers.test.ts` 에 `computeLayerMerge` 12건 추가(①②③·A/B 의 `layer삭제` 부재 처리·중복 방지·비활성 행·공백 정규화·`sortOrder`·멱등성·빈 표·복합 시나리오).
+- **남은 이슈**: B 의 **비활성** 행과 키가 같은 A 행은 여전히 ② 로 추가되어 표에 나란히 보인다(비활성 행은 상신 저장에서 제외되므로 최종 문서에는 남지 않는다).
+  Merge 를 **되돌리는 기능은 없다** — 확인 모달의 경고로만 안내한다.
+
+### 추가 변경 이력 (2026-08-02 — Layer 추가/삭제 Merge 하드코딩 i18n 이관)
+
+- **개요**: `Layer 추가/삭제` 참조 요청서 Merge 기능에만 남아 있던 하드코딩 문자열을 `request.merge_*` 키로 이관했다. 동작 변경 없음(문구 출력 경로만 변경).
+- **i18n 키 추가(ko/en 동시)**: `merge_ref_doc`(참조 요청서 라벨)·`merge_ref_placeholder`·`merge_ref_load_fail`(참조 문서 로드 실패 토스트)·`merge_button`(Merge 버튼)·`merge_confirm_title`(Merge 확인 모달 제목)·`merge_confirm_counts`(기등록/미매칭 건수 안내)·`merge_confirm_proceed`.
+- **적용 위치**: `Step1.tsx` 참조 요청서 `AutocompleteInput`의 `label`/`placeholder`·Merge 버튼 라벨, `index.tsx`의 `handleRefDocSelect` 실패 토스트·Merge 확인 모달(제목·건수·진행 문구).
+- **`Trans` 최초 도입**: 건수 안내는 숫자만 `<b>`로 강조하는 기존 UI를 유지해야 해 `react-i18next`의 `Trans`(`components={[<span />, <b />, <span />, <b />]}`)로 렌더링한다. 코드베이스에서 `Trans` 사용은 이 지점이 처음이며, 나머지 문자열은 기존 관례대로 `t()`를 쓴다.
+- **미해결(별도 과제)**: Merge 매칭 키(`process_id||sp||sd||pp`)에 `layerid`가 빠져 있고 `Set` 중복 제거로 집계되어, **모달의 미매칭 건수가 실제보다 적게 나오고 해당 행이 병합에서도 누락**된다. 또한 `handleMergeConfirm`은 `setJayerRows`/`setOayerRows`를 직접 호출해 **J↔O `st`/`new_or_copy` 동기화(4.1 J↔O 동기화 항목)를 우회**한다. 이번 변경 범위 밖.
+
 ### 추가 변경 이력 (2026-07-31 — CLONE 원본 Part ID 8자리 코드 정리 + 대문자 자동 변환)
 
 - **원본 Part ID 옵션을 "_" 앞 8자리 코드로 정리**: StepMap의 원본 위치/Part ID 블록(`map_type === 'CLONE'` 전용)에서, 원본 Part ID 후보 목록을 내려주는 백엔드 `form_options_mapname`(`backend/api/views.py`)이 `MapName.partid` 원본 값을 그대로 내려주던 것을, `partid.split('_')[0]`(첫 "_" 앞부분)만 추출 → **길이가 정확히 8자리(순수 문자 수 기준)인 값만** 필터링 → 중복 제거 → 정렬해서 반환하도록 수정.
 - **직접 입력 시 대문자 자동 변환 + 8자리 제한**: 공용 컴포넌트 `AutocompleteInput`(`frontend/src/components/AutocompleteInput.tsx`)에 optional prop `uppercase`·`maxLength`를 추가(미지정 시 기존 동작 그대로라 다른 사용처는 영향 없음). `StepMap.tsx`의 원본 Part ID `AutocompleteInput`에 `uppercase maxLength={8}`을 적용해, 드롭다운 선택이 아니라 사용자가 직접 타이핑할 때 영문이 자동으로 대문자로 변환되고 최대 8자까지만 입력할 수 있다.
+
+### 추가 변경 이력 (2026-07-30 — INTER 섹션 IN 적용 O/X + Xs/Ys/XYs/없음 필수 선택 그룹 추가)
 
 - **개요**: `StepMap`의 `Inter`(3번) 항목에서 `YES` 선택 시 기존 `inter_xs`/`inter_ys`(적용/미적용 독립 토글, 필수 아님) 버튼을 제거하고, 그 자리에 아래 두 버튼 그룹을 추가했다.
   - **IN 적용 O / IN 적용 X** — 신규 필드 `in_apply: 'O' | 'X' | ''`. 클릭 시 토글이 아니라 클릭값으로 즉시 교체(다른 버튼은 자동 비활성) — `map_type` 버튼과 동일한 단일선택 동작(버튼 스타일은 이후 `map-type-btn`으로 재변경됨, 아래 2026-07-31 이력 참조).

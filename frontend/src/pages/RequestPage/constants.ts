@@ -51,8 +51,16 @@ export const JAYER_EDITABLE_COLS = ['process_id', 'sp', 'sd', 'layerid', 'pp', '
 export const OAYER_EDITABLE_COLS = ['process_id', 'sp', 'sd', 'layerid', 'pp', 'st', 'new_or_copy', 'product_name', 'step'] as const;
 // 자동채움/병합으로 "불러온" 행에서 읽기전용으로 잠그는 컬럼(수동 추가 행은 편집 허용)
 export const LOADED_LOCK_COLS = ['process_id', 'sp', 'sd', 'layerid', 'pp'] as const;
+// J/O-layer 표의 col_new_or_copy · col_st 저장값(그대로 DB 에 들어간다).
+export const NOC_NEW = '신규';
+export const NOC_BORROW = '차용';
+export const NOC_REGISTERED = '기등록';
+export const NOC_LAYER_DELETE = 'layer삭제';
+export const ST_O = 'O';
+export const ST_X = 'X';
+
 // new_or_copy가 이 값이면 J↔O 동기화(송신·수신)에서 제외하고 bb 원본 데이터 목록에서도 숨긴다.
-export const isNocSpecial = (noc?: string): boolean => noc === '기등록' || noc === 'layer삭제';
+export const isNocSpecial = (noc?: string): boolean => noc === NOC_REGISTERED || noc === NOC_LAYER_DELETE;
 
 // ===== Shared Types =====
 export type CRegion = 'top' | 'middle' | 'bottom';
@@ -193,6 +201,8 @@ export const INITIAL_DETAIL: DetailFormState = {
   tbvtlv_entries: [],
   notifiers: [],
   validation_system: VS_NONTARGET,
+  merge_ref_doc_id: null,
+  merge_ref_doc_label: '',
 };
 
 export const INITIAL_FORM: CreateDocumentInput = {
