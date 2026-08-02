@@ -130,7 +130,9 @@ const StepMap: React.FC<StepMapProps> = ({
                   type="button"
                   className={`map-type-btn${detail.map_type === val ? ' active' : ''}`}
                   onClick={() => handleMapTypeSelect(val)}
-                  disabled={isMapChangeMode && val !== 'EDIT'}
+                  // EDIT 는 기타 목적 '완성된 MAP 변경' 전용 값이다.
+                  // 그 모드에서만 EDIT 를 활성화하고, 반대로 그 모드에서는 나머지 3개를 잠근다.
+                  disabled={val === 'EDIT' ? !isMapChangeMode : isMapChangeMode}
                 >
                   {t(`request.${labelKey}`)}
                 </button>
@@ -176,7 +178,140 @@ const StepMap: React.FC<StepMapProps> = ({
           </div>
         )}
 
-        {/* Only C가문 제품 */}
+        {/* REV 여부 — C가문(only_prodc)과 무관한 독립 항목. map_type 종류와 상관없이 항상 선택 가능하다.
+            (CLONE/EXISTING 에서도 잠그지 않는다 — isMapRegistered 를 걸지 않는 이유) */}
+        <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <label className="form-label" style={{ marginBottom: 0 }}>{t('request.rev_yn_label')}<GuideBadge fk="step2_rev" tk={t('guide.feat.step2_rev' as never)} /></label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {(['YES', 'NO'] as const).map((val) => (
+              <button
+                key={val}
+                type="button"
+                className={`map-type-btn${detail.rev_yn === val ? ' active' : ''}`}
+                onClick={() => {
+                  if (val === 'NO') {
+                    setDetail((prev) => ({ ...prev, rev_yn: val, rev_entries: [] }));
+                    setRevLayersSelected([]);
+                    setRevGds('');
+                  } else {
+                    setDetail((prev) => ({ ...prev, rev_yn: val }));
+                  }
+                }}
+              >
+                {val}
+              </button>
+            ))}
+          </div>
+
+          {detail.rev_yn === 'YES' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* 입력 행: Layer 버튼 + GDS version + 추가 버튼 */}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>Layer</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxWidth: '480px', userSelect: 'none' }}>
+                    {availableRevLayers.length > 0 ? availableRevLayers.map((layer) => {
+                      const isSelected = revLayersSelected.includes(layer);
+                      return (
+                        <button
+                          key={layer}
+                          type="button"
+                          className={`map-type-btn${isSelected ? ' active' : ''}`}
+                          // 드래그 다중 선택: 첫 버튼에서 add/remove 모드를 정하고 지나가는 버튼에 적용
+                          onMouseDown={() => {
+                            const mode: 'add' | 'remove' = isSelected ? 'remove' : 'add';
+                            revDrag.current = { mode };
+                            applyRevLayer(layer, mode);
+                          }}
+                          onMouseEnter={() => {
+                            if (revDrag.current) applyRevLayer(layer, revDrag.current.mode);
+                          }}
+                        >
+                          {layer}
+                        </button>
+                      );
+                    }) : (
+                      <span style={{ fontSize: '13px', color: '#999' }}>
+                        {(detail.rev_entries ?? []).length > 0
+                          ? t('request.rev_all_added')
+                          : t('request.jayer_no_layer_data')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>{t('request.rev_gds')}</label>
+                  <input
+                    className="form-control"
+                    style={{ width: '360px' }}
+                    value={revGds}
+                    onChange={(e) => setRevGds(e.target.value)}
+                    placeholder={t('request.rev_gds_placeholder')}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  style={{ whiteSpace: 'nowrap' }}
+                  disabled={revLayersSelected.length === 0 || !revGds.trim()}
+                  onClick={() => {
+                    if (revLayersSelected.length === 0 || !revGds.trim()) return;
+                    setDetail((prev) => ({
+                      ...prev,
+                      rev_entries: [...(prev.rev_entries ?? []), { layers: revLayersSelected, gds: revGds.trim() }],
+                    }));
+                    setRevLayersSelected([]);
+                    setRevGds('');
+                  }}
+                >
+                  {t('request.rev_add')}
+                </button>
+              </div>
+
+              {/* 추가된 항목 목록 */}
+              {(detail.rev_entries ?? []).length > 0 && (
+                <div className="table-wrapper" style={{ maxWidth: '640px', marginTop: '4px' }}>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '55%' }}>{t('request.rev_layer')}</th>
+                        <th style={{ width: '30%' }}>{t('request.rev_gds')}</th>
+                        <th style={{ width: '15%', textAlign: 'center' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(detail.rev_entries ?? []).map((entry, idx) => (
+                        <tr key={idx}>
+                          <td>{entry.layers.join(', ')}</td>
+                          <td>{entry.gds}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              onClick={() =>
+                                setDetail((prev) => ({
+                                  ...prev,
+                                  rev_entries: (prev.rev_entries ?? []).filter((_, i) => i !== idx),
+                                }))
+                              }
+                            >
+                              {t('common.delete')}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Only C가문 제품 — Yes/No 선택 자체는 CLONE/EXISTING 에서도 열어두고,
+            Yes 일 때 펼쳐지는 하위 입력(적용 위치·북/중/남 라인·조합법·제품)만 잠근다. */}
         <div className="full-width" data-tour="map-cfamily" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
             <label className="form-label">{t('request.prodc_status')}<GuideBadge fk="step2_cfamily" tk={t('guide.feat.step2_cfamily' as never)} /></label>
@@ -185,7 +320,6 @@ const StepMap: React.FC<StepMapProps> = ({
               name="only_prodc"
               value={detail.only_prodc}
               onChange={(e) => handleOnlyProdcChange(e.target.value)}
-              disabled={isMapRegistered}
             >
               <option value="No">No</option>
               <option value="Yes">Yes</option>
@@ -196,153 +330,22 @@ const StepMap: React.FC<StepMapProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 <span className="form-label" style={{ marginBottom: 0 }}>{t('request.prodc_apply_region')}</span>
                 {(['top', 'middle', 'bottom'] as CRegion[]).map((region) => (
-                  <label key={region} className="radio-item" style={{ cursor: 'pointer' }}>
+                  <label key={region} className="radio-item" style={{ cursor: isMapRegistered ? 'not-allowed' : 'pointer' }}>
                     <input
                       type="radio"
                       name="prodc_copy_region"
                       checked={prodcCopyRegion === region}
                       onChange={() => handleProdcRegionSelect(region)}
+                      disabled={isMapRegistered}
                     />
                     <span className="radio-custom" />
                     {t(`request.prodc_${region}`)}
                   </label>
                 ))}
               </div>
-              <ProdcRow region="top"    detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={topProcessOptions}    productOptions={topProductOptions}    onProcessChange={handleProdcProcessChange} errors={errors} />
-              <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={middleProcessOptions} productOptions={middleProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} />
-              <ProdcRow region="bottom" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={bottomProcessOptions} productOptions={bottomProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} />
-
-              {/* REV 여부 */}
-              <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '14px', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <label className="form-label" style={{ marginBottom: 0 }}>{t('request.rev_yn_label')}<GuideBadge fk="step2_rev" tk={t('guide.feat.step2_rev' as never)} /></label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {(['YES', 'NO'] as const).map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className={`map-type-btn${detail.rev_yn === val ? ' active' : ''}`}
-                      onClick={() => {
-                        if (val === 'NO') {
-                          setDetail((prev) => ({ ...prev, rev_yn: val, rev_entries: [] }));
-                          setRevLayersSelected([]);
-                          setRevGds('');
-                        } else {
-                          setDetail((prev) => ({ ...prev, rev_yn: val }));
-                        }
-                      }}
-                      disabled={isMapRegistered}
-                    >
-                      {val}
-                    </button>
-                  ))}
-                </div>
-
-                {detail.rev_yn === 'YES' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {/* 입력 행: Layer 버튼 + GDS version + 추가 버튼 */}
-                    <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label className="form-label" style={{ marginBottom: 0 }}>Layer</label>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxWidth: '480px', userSelect: 'none' }}>
-                          {availableRevLayers.length > 0 ? availableRevLayers.map((layer) => {
-                            const isSelected = revLayersSelected.includes(layer);
-                            return (
-                              <button
-                                key={layer}
-                                type="button"
-                                className={`map-type-btn${isSelected ? ' active' : ''}`}
-                                // 드래그 다중 선택: 첫 버튼에서 add/remove 모드를 정하고 지나가는 버튼에 적용
-                                onMouseDown={() => {
-                                  const mode: 'add' | 'remove' = isSelected ? 'remove' : 'add';
-                                  revDrag.current = { mode };
-                                  applyRevLayer(layer, mode);
-                                }}
-                                onMouseEnter={() => {
-                                  if (revDrag.current) applyRevLayer(layer, revDrag.current.mode);
-                                }}
-                              >
-                                {layer}
-                              </button>
-                            );
-                          }) : (
-                            <span style={{ fontSize: '13px', color: '#999' }}>
-                              {(detail.rev_entries ?? []).length > 0
-                                ? t('request.rev_all_added')
-                                : t('request.jayer_no_layer_data')}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label className="form-label" style={{ marginBottom: 0 }}>{t('request.rev_gds')}</label>
-                        <input
-                          className="form-control"
-                          style={{ width: '360px' }}
-                          value={revGds}
-                          onChange={(e) => setRevGds(e.target.value)}
-                          placeholder={t('request.rev_gds_placeholder')}
-                        />
-                      </div>
-
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        style={{ whiteSpace: 'nowrap' }}
-                        disabled={revLayersSelected.length === 0 || !revGds.trim()}
-                        onClick={() => {
-                          if (revLayersSelected.length === 0 || !revGds.trim()) return;
-                          setDetail((prev) => ({
-                            ...prev,
-                            rev_entries: [...(prev.rev_entries ?? []), { layers: revLayersSelected, gds: revGds.trim() }],
-                          }));
-                          setRevLayersSelected([]);
-                          setRevGds('');
-                        }}
-                      >
-                        {t('request.rev_add')}
-                      </button>
-                    </div>
-
-                    {/* 추가된 항목 목록 */}
-                    {(detail.rev_entries ?? []).length > 0 && (
-                      <div className="table-wrapper" style={{ maxWidth: '640px', marginTop: '4px' }}>
-                        <table className="table">
-                          <thead>
-                            <tr>
-                              <th style={{ width: '55%' }}>{t('request.rev_layer')}</th>
-                              <th style={{ width: '30%' }}>{t('request.rev_gds')}</th>
-                              <th style={{ width: '15%', textAlign: 'center' }}></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(detail.rev_entries ?? []).map((entry, idx) => (
-                              <tr key={idx}>
-                                <td>{entry.layers.join(', ')}</td>
-                                <td>{entry.gds}</td>
-                                <td style={{ textAlign: 'center' }}>
-                                  <button
-                                    type="button"
-                                    className="btn btn-danger btn-sm"
-                                    onClick={() =>
-                                      setDetail((prev) => ({
-                                        ...prev,
-                                        rev_entries: (prev.rev_entries ?? []).filter((_, i) => i !== idx),
-                                      }))
-                                    }
-                                  >
-                                    {t('common.delete')}
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              <ProdcRow region="top"    detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={topProcessOptions}    productOptions={topProductOptions}    onProcessChange={handleProdcProcessChange} errors={errors} disabled={isMapRegistered} />
+              <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={middleProcessOptions} productOptions={middleProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} disabled={isMapRegistered} />
+              <ProdcRow region="bottom" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={bottomProcessOptions} productOptions={bottomProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} disabled={isMapRegistered} />
             </div>
           )}
         </div>
