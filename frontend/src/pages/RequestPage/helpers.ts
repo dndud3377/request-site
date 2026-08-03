@@ -1,5 +1,5 @@
 import { FilterSet, ValidationSystemValue } from '../../types';
-import { VALIDATION_KEYWORD, VS_NA, VS_TARGET } from './constants';
+import { VALIDATION_KEYWORD, NOC_NEW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, genId, VS_NA, VS_TARGET } from './constants';
 
 // ===== 순수 헬퍼 (인자만 사용 — state 비의존) =====
 
@@ -54,6 +54,95 @@ export const findNocBorrowViolations = (
   rows
     .filter((r) => !r.disabled && r.new_or_copy === '차용' && (!r.product_name?.trim() || !r.step?.trim()))
     .map((r) => r.id);
+
+// ===== Layer 추가/삭제 Merge (참조 요청서 A ↔ 작성 중 요청서 B) =====
+
+/** Merge 비교에 필요한 최소 형태 — JayerRow / OayerRow 양쪽을 받는다. */
+export interface MergeComparableRow {
+  id: string;
+  sortOrder: number;
+  disabled: boolean;
+  manuallyDisabled: boolean;
+  process_id: string;
+  sp: string;
+  sd: string;
+  pp: string;
+  st: string;
+  new_or_copy: string;
+  loaded?: boolean;
+}
+
+/** Merge 결과 건수 — 확인 모달의 미리보기와 실제 반영이 같은 계산에서 나온다. */
+export interface MergeStats {
+  added: number;       // ① B 에만 있음 → 신규
+  registered: number;  // ③ A·B 양쪽 → 기등록
+  deleted: number;     // ② A 에만 있음 → layer삭제 행으로 추가
+}
+
+/** 비교 키 — layerid 는 포함하지 않는다(운영 데이터상 이 4개로 행이 유일하게 식별된다). */
+const mergeKey = (r: { process_id: string; sp: string; sd: string; pp: string }): string =>
+  [r.process_id, r.sp, r.sd, r.pp].map((v) => (v ?? '').trim()).join('||');
+
+/**
+ * 그 요청서에 이 layer 가 "존재"하는가.
+ * new_or_copy='layer삭제' 는 그 시점에 이미 지워진 layer 이므로 **부재**로 본다.
+ * 따라서 A 에서 삭제된 layer 가 B 에 있으면 "A 엔 없던 것이 B 에 생김" → 신규가 된다.
+ */
+const isMergePresent = (r: MergeComparableRow): boolean =>
+  !r.disabled && r.new_or_copy !== NOC_LAYER_DELETE;
+
+/**
+ * 참조 요청서(A)를 기준으로 작성 중인 요청서(B)의 layer 표를 3-way 로 재판정한다.
+ * J-layer 는 J-layer 끼리, O-layer 는 O-layer 끼리 각각 독립 호출한다(표 간 값 전파 없음).
+ *
+ * | 구분 | 조건 | st | new_or_copy |
+ * |------|------|----|-------------|
+ * | ①    | B 에만 있음 | O | 신규 |
+ * | ②    | A 에만 있음 → B 에 행 추가 | X | layer삭제 |
+ * | ③    | A·B 양쪽 존재 | X | 기등록 |
+ *
+ * 비활성 행과 이미 layer삭제 인 행은 건드리지 않는다.
+ */
+export const computeLayerMerge = <T extends MergeComparableRow>(
+  curRows: T[],
+  refRows: T[]
+): { merged: T[]; stats: MergeStats } => {
+  const refPresentKeys = new Set(refRows.filter(isMergePresent).map(mergeKey));
+  const curPresentKeys = new Set(curRows.filter(isMergePresent).map(mergeKey));
+  // 비활성이 아닌 모든 행(layer삭제 포함). A 행을 추가할 때 같은 키가 이미 있으면 중복을 만들지 않는다.
+  const curActiveKeys = new Set(curRows.filter((r) => !r.disabled).map(mergeKey));
+
+  const stats: MergeStats = { added: 0, registered: 0, deleted: 0 };
+
+  const merged: T[] = curRows.map((r) => {
+    if (!isMergePresent(r)) return r; // 비활성 / 이미 layer삭제 → 유지
+    if (refPresentKeys.has(mergeKey(r))) {
+      stats.registered += 1;
+      return { ...r, st: ST_X, new_or_copy: NOC_REGISTERED };
+    }
+    stats.added += 1;
+    return { ...r, st: ST_O, new_or_copy: NOC_NEW };
+  });
+
+  // sortOrder 는 base+index 로 부여해 같은 밀리초에 추가돼도 순서가 결정적이다.
+  const base = Date.now();
+  refRows.filter(isMergePresent).forEach((r, i) => {
+    if (curActiveKeys.has(mergeKey(r))) return;
+    stats.deleted += 1;
+    merged.push({
+      ...r,
+      id: genId(),
+      sortOrder: base + i,
+      loaded: true,          // 원본 컬럼(LOADED_LOCK_COLS) 읽기전용
+      disabled: false,       // 필터에 걸려 숨겨지면 삭제 정보가 상신 시 누락되므로 항상 활성
+      manuallyDisabled: false,
+      st: ST_X,
+      new_or_copy: NOC_LAYER_DELETE,
+    });
+  });
+
+  return { merged, stats };
+};
 
 /** 행 단위: 이 행의 pp 가 판정 키워드를 포함하는가 (셀 하이라이트·문서 판정 공용) */
 export const isValidationKeywordRow = (pp: string | undefined): boolean =>
