@@ -189,9 +189,9 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | `submit` / `resubmit` (상신·재상신) | ✅ | 지정 PL **전원**에게 stage_arrival(제목에 `[이름님]`, 2026-07 추가) + 통보처 전원에게 notify_submitted |
 | `withdraw` (철회) | ❌ | 알림 없음 |
 | `delete` (삭제) | ❌ | 알림 없음 |
-| `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·O·[E]·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일) |
-| `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·O·[E]·[RA 각각]에게 동시 발송 |
-| `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나야 **J에게** 발송. 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨) |
+| `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·O·E·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일). **P 단계가 생성되면 TE_J에게 notify_p_arrival도 함께 발송(2026-08 추가)** |
+| `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·O·E·[RA 각각]에게 동시 발송. **P 단계 생성 시 TE_J notify_p_arrival도 동일하게 발송** |
+| `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나야 **J에게** 발송(+**TE_O에게 notify_p_completed 동시 발송, 2026-08 추가**). 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨) |
 | `approve-step` P/E 합의 + `reviewer_loginids`(검토자 지정) | ✅ | 지정된 검토자(PV/EV) **각각**에게 즉시(담당자 합의와 **같은 요청**으로 처리되므로 같은 순간 발송) |
 | `approve-step` agent=J/O/E/EV/RA (병렬 경로 합의) | 🟡 | 이 합의로 **문서 전체가 approved 로 전이될 때만** approved(결재 경로 참여 전원) + notify_approved(통보처) 발송. 다른 경로가 아직 안 끝났으면 이 개별 합의는 **무메일**(침묵 — 예: J는 합의됐는데 O가 아직이면 알림 없음) |
 | `reject-step` (어느 단계든 반려, PL 제외) | ✅ | rejected: 작성자 + 현재 회차 기합의자 전원 **+ 아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원**(반려자 본인 제외, 2026-07 개편). §3.1 참고 |
