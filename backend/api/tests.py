@@ -593,7 +593,16 @@ class RouteCardTest(TestCase):
         self.assertEqual(by_label['O'], 'reviewing')      # pending + 담당자 있음
         self.assertEqual(by_label['P'], 'waiting')        # pending + 미배정
         self.assertEqual(by_label['J'], 'waiting')        # step 미생성(예정)
-        self.assertIn('E', by_label, 'E(MASK)는 대상/비대상과 무관하게 항상 경로에 포함된다')
+        self.assertNotIn('E', by_label, 'plel 이 아니면 E 는 경로에 넣지 않는다')
+
+    def test_rows_include_e_stage_when_plel(self):
+        """plel 인 의뢰서는 E 단계가 아직 생성 전이어도 경로에 '대기' 행으로 실린다."""
+        import json
+        self.doc.additional_notes = json.dumps({'jayerRows': [{'pp': 'PLEL'}]})
+        self.doc.save(update_fields=['additional_notes'])
+        ApprovalStep.objects.create(document=self.doc, agent='PL', round=1, action='approved')
+
+        by_label = dict(self._statuses(mailer._route_rows(self.doc)))
         self.assertEqual(by_label['E'], 'waiting')  # step 미생성(예정)
 
     def test_rows_only_include_current_round(self):
@@ -838,12 +847,20 @@ class PEStageReviewerFlowTest(TestCase):
         doc.refresh_from_db()
         return doc
 
-    def test_e_step_created_even_without_plel(self):
-        """대상 판정 키워드가 없어도 E(MASK) 단계는 항상 생성된다."""
+    def test_e_step_not_created_without_plel(self):
+        """판정 키워드가 아예 없으면(=해당없음) E(MASK) 단계를 생성하지 않는다."""
         doc = self._advance_to_parallel(plel=False)
+        self.assertFalse(
+            ApprovalStep.objects.filter(document=doc, agent='E', round=1).exists(),
+            'plel 이 없으면 MASK 가 검증할 대상이 없으므로 E 는 생성되지 않아야 한다',
+        )
+
+    def test_e_step_created_with_plel(self):
+        """판정 키워드가 하나라도 있으면 E(MASK) 단계를 생성한다."""
+        doc = self._advance_to_parallel(plel=True)
         self.assertTrue(
             ApprovalStep.objects.filter(document=doc, agent='E', round=1).exists(),
-            'E 는 대상/비대상과 무관하게 생성되어야 한다',
+            'plel 이 있으면 E 는 병렬 단계로 생성되어야 한다',
         )
 
     def test_e_step_not_created_for_only_map(self):
@@ -2061,123 +2078,3 @@ class AnnualDesignRuleStatsApiTest(TestCase):
         self.assertEqual(res.status_code, 200)
         data = res.json()['data']
         self.assertEqual([p['process'] for p in data['processes']], ['P1'])
-
-
-class BackfillEStepsCommandTest(TestCase):
-    """`backfill_e_steps` — 항상 생성 규칙 배포 이전에 병렬 단계로 넘어간 문서에 E 단계 소급 생성."""
-
-    def setUp(self):
-        import json
-        self._json = json
-        self.requester = UserProfile.objects.create(loginid='bf_req', mail='bf_req@c.com', role='NONE')
-        self.e_user = UserProfile.objects.create(loginid='bf_e', mail='bf_e@c.com', role='TE_E')
-
-    def _doc(self, status='under_review', purpose=None, round_no=1, with_o=True, with_e=False, due=None):
-        """R 합의까지 끝난 상태의 문서를 ORM 으로 직접 만든다(회차/단계 조합을 자유롭게 구성하기 위함)."""
-        detail = {'detail': ({'request_purpose': purpose} if purpose else {})}
-        doc = RequestDocument.objects.create(
-            title='백필 대상', requester=self.requester, requester_name='요청자',
-            requester_email='bf_req@c.com', requester_department='dept',
-            product_name='PROD-1', status=status,
-            additional_notes=self._json.dumps(detail),
-        )
-        self._add_round(doc, round_no, with_o=with_o, with_e=with_e, due=due)
-        return doc
-
-    def _add_round(self, doc, round_no, with_o=True, with_e=False, due=None):
-        ApprovalStep.objects.create(document=doc, agent='R', action='approved', round=round_no)
-        if with_o:
-            ApprovalStep.objects.create(
-                document=doc, agent='O', action='pending', is_parallel=True,
-                round=round_no, due_date=due,
-            )
-        if with_e:
-            ApprovalStep.objects.create(
-                document=doc, agent='E', action='pending', is_parallel=True, round=round_no,
-            )
-
-    def _run(self, *args):
-        from io import StringIO
-        from django.core.management import call_command
-        out = StringIO()
-        call_command('backfill_e_steps', *args, stdout=out)
-        return out.getvalue()
-
-    def _e_steps(self, doc):
-        return ApprovalStep.objects.filter(document=doc, agent='E')
-
-    def test_creates_missing_e_step_inheriting_o_due_date(self):
-        import datetime
-        due = datetime.date(2026, 8, 7)
-        doc = self._doc(due=due)
-        self._run('--apply')
-        steps = list(self._e_steps(doc))
-        self.assertEqual(len(steps), 1)
-        self.assertEqual(steps[0].action, 'pending')
-        self.assertTrue(steps[0].is_parallel)
-        self.assertEqual(steps[0].round, 1)
-        self.assertEqual(steps[0].due_date, due)
-
-    def test_dry_run_creates_nothing(self):
-        doc = self._doc()
-        out = self._run()
-        self.assertEqual(self._e_steps(doc).count(), 0)
-        self.assertIn('dry-run', out)
-
-    def test_skips_document_that_already_has_e_step(self):
-        doc = self._doc(with_e=True)
-        self._run('--apply')
-        self.assertEqual(self._e_steps(doc).count(), 1)
-
-    def test_skips_only_map_document(self):
-        doc = self._doc(purpose=RequestDocument.ONLY_MAP_PURPOSE)
-        self._run('--apply')
-        self.assertEqual(self._e_steps(doc).count(), 0)
-
-    def test_skips_document_before_parallel_stage(self):
-        doc = self._doc(with_o=False)
-        self._run('--apply')
-        self.assertEqual(self._e_steps(doc).count(), 0)
-
-    def test_skips_finished_documents(self):
-        approved = self._doc(status='approved')
-        rejected = self._doc(status='rejected')
-        self._run('--apply')
-        self.assertEqual(self._e_steps(approved).count(), 0)
-        self.assertEqual(self._e_steps(rejected).count(), 0)
-
-    def test_includes_paused_document(self):
-        doc = self._doc(status='pause')
-        self._run('--apply')
-        self.assertEqual(self._e_steps(doc).count(), 1)
-
-    def test_is_idempotent(self):
-        doc = self._doc()
-        self._run('--apply')
-        self._run('--apply')
-        self.assertEqual(self._e_steps(doc).count(), 1)
-
-    def test_backfills_current_round_only(self):
-        """재상신 문서는 최종 회차에만 소급 생성한다(이전 회차 이력은 건드리지 않는다)."""
-        doc = self._doc(round_no=1, with_e=True)
-        self._add_round(doc, 2, with_o=True, with_e=False)
-        self._run('--apply')
-        self.assertEqual(self._e_steps(doc).filter(round=1).count(), 1)
-        self.assertEqual(self._e_steps(doc).filter(round=2).count(), 1)
-
-    def test_notify_enqueues_arrival_mail(self):
-        self._doc()
-        self._run('--apply', '--notify')
-        self.assertEqual(MailNotification.objects.filter(event_type='stage_arrival').count(), 1)
-
-    def test_no_mail_without_notify_flag(self):
-        self._doc()
-        self._run('--apply')
-        self.assertEqual(MailNotification.objects.count(), 0)
-
-    def test_notify_without_apply_creates_nothing(self):
-        doc = self._doc()
-        out = self._run('--notify')
-        self.assertEqual(self._e_steps(doc).count(), 0)
-        self.assertEqual(MailNotification.objects.count(), 0)
-        self.assertIn('--notify', out)

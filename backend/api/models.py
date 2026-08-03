@@ -71,6 +71,10 @@ class RequestDocument(models.Model):
     # 기타 목적 '완성된 MAP 변경' 값 (결재 완료 시 대상 원본 요청서에 MAP 값을 반영)
     MAP_CHANGE_PURPOSE = '완성된 MAP 변경'
 
+    # J-layer 행의 pp 에 이 키워드가 있으면 E(MASK) 단계가 결재 경로에 포함된다(대소문자 무관).
+    # 프론트엔드 `RequestPage/constants.ts` 의 VALIDATION_KEYWORD 와 같은 값이어야 한다.
+    VALIDATION_KEYWORD = 'plel'
+
     # '완성된 MAP 변경' 승인 시 원본 요청서 detail 에 덮어쓸 MAP 관련 키 화이트리스트.
     # 프론트엔드 `RequestPage/constants.ts` 의 MAP_DETAIL_KEYS 와 같은 목록이되
     # map_type 은 제외한다 — 원본의 NEW/CLONE/EXISTING 정체성과 제목 표기를 유지해야 하기 때문.
@@ -157,6 +161,22 @@ class RequestDocument(models.Model):
             return int(raw) if raw is not None else None
         except (TypeError, ValueError):
             return None
+
+    def has_ppid_plel(self):
+        """J-layer 행의 pp 중 하나라도 판정 키워드(plel)를 포함하는지 여부.
+
+        참이면 E(MASK) 단계가 결재 경로에 포함된다 — MASK 팀이 Validation System
+        대상/비대상 판정이 맞는지 검증한다. 거짓이면(키워드가 아예 없으면) 판정
+        자체가 성립하지 않으므로('해당없음') E 단계를 생성하지 않는다.
+        jayerRows 는 additional_notes JSON 최상위에 저장되며, 상신 시 비활성
+        (disabled) 행은 저장에서 제외되므로 여기서 따로 거르지 않는다.
+        """
+        jayer_rows = self.get_detail().get('jayerRows', [])
+        for row in jayer_rows:
+            pp = row.get('pp', '') or ''
+            if self.VALIDATION_KEYWORD in pp.lower():
+                return True
+        return False
 
 
 class Holiday(models.Model):

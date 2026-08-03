@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { JayerRow, FilterSet, GuideFeatureKey, ValidationSystemValue } from '../../../types';
-import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET } from '../constants';
+import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA } from '../constants';
 import { isValidationKeywordRow } from '../helpers';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
 import { numberBoundaryMatch } from '../../../utils/specMatch';
@@ -83,6 +83,12 @@ const Step2: React.FC<Step2Props> = ({
     ...jayerRows.filter(r => r.disabled).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
   ];
   const renderedJayerIds = renderedJayerRows.map(r => r.id);
+  // 판정 키워드가 하나도 없으면 대상/비대상을 고를 수 없다 — 판정 자체가 성립하지 않는다('해당없음').
+  const vsNotApplicable = autoValidationSystem === VS_NA;
+  const vsLabel = (v: ValidationSystemValue) =>
+    v === VS_TARGET ? t('request.validation_system_target')
+      : v === VS_NONTARGET ? t('request.validation_system_nontarget')
+        : t('request.validation_system_na');
   return (
     <div className="form-section">
       <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -95,7 +101,13 @@ const Step2: React.FC<Step2Props> = ({
             <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
               {t('request.validation_system')}
             </span>
-            <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+            <div style={{
+              display: 'flex',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              overflow: 'hidden',
+              opacity: vsNotApplicable ? 0.45 : 1,
+            }}>
               {([
                 { value: VS_TARGET, label: t('request.validation_system_target') },
                 { value: VS_NONTARGET, label: t('request.validation_system_nontarget') },
@@ -103,28 +115,29 @@ const Step2: React.FC<Step2Props> = ({
                 <button
                   key={opt.value}
                   type="button"
+                  disabled={vsNotApplicable}
                   onClick={() => onValidationSystemChange(opt.value)}
                   style={{
                     border: 'none',
                     padding: '3px 12px',
                     fontSize: '0.78rem',
                     fontWeight: 600,
-                    cursor: 'pointer',
-                    background: validationSystem === opt.value ? 'var(--primary)' : 'transparent',
-                    color: validationSystem === opt.value ? '#fff' : 'var(--text-muted)',
+                    cursor: vsNotApplicable ? 'not-allowed' : 'pointer',
+                    background: !vsNotApplicable && validationSystem === opt.value ? 'var(--primary)' : 'transparent',
+                    color: !vsNotApplicable && validationSystem === opt.value ? '#fff' : 'var(--text-muted)',
                   }}
                 >
                   {opt.label}
                 </button>
               ))}
             </div>
-            {validationSystem !== autoValidationSystem && (
+            {vsNotApplicable ? (
+              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                {t('request.validation_system_na')}
+              </span>
+            ) : validationSystem !== autoValidationSystem && (
               <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                {t('request.validation_system_auto', {
-                  value: autoValidationSystem === VS_TARGET
-                    ? t('request.validation_system_target')
-                    : t('request.validation_system_nontarget'),
-                })}
+                {t('request.validation_system_auto', { value: vsLabel(autoValidationSystem) })}
               </span>
             )}
           </span>
