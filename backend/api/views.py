@@ -1110,6 +1110,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return
         if ApprovalStep.objects.filter(document=document, agent='J', round=round_no).exists():
             return
+        mailer.enqueue_notify_p_completed(document)
         main_step = ApprovalStep.objects.filter(document=document, agent='P', round=round_no).first()
         from .utils import calculate_business_due_date
         import datetime
@@ -1147,6 +1148,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 document=document, agent='O', action='pending', is_parallel=True, round=round_no, due_date=o_due,
             )
             mailer.enqueue_stage_arrival(document, 'P', p_step)
+            mailer.enqueue_notify_p_arrival(document)
             mailer.enqueue_stage_arrival(document, 'O', o_step)
             # E(MASK)는 대상/비대상 판정을 검증하는 단계라 항상 생성한다(Only MAP 제외).
             e_step = ApprovalStep.objects.create(
@@ -1154,14 +1156,15 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             )
             mailer.enqueue_stage_arrival(document, 'E', e_step)
 
-        # 후결자(RA) 병렬 생성 — 고정 1명 + C가문 추가. 각자에게 "[후결 요청]" 메일 발송.
+        # 후결자(RA) 병렬 생성 — 고정 1명 + C가문 추가. 각자에게 개별 메일 발송
+        # (고정 후결자는 "[후결 요청]", 그 외는 다른 단계와 동일한 형식 — mailer 에서 자동 분기).
         for u in post_users:
             ra_step = ApprovalStep.objects.create(
                 document=document, agent='RA', action='pending', is_parallel=True,
                 round=round_no, due_date=ra_due,
                 assignee=u, assignee_name=(u.username or u.loginid),
             )
-            mailer.enqueue_stage_arrival(document, 'RA', ra_step)
+            mailer.enqueue_stage_arrival(document, 'RA', ra_step, recipient_name=ra_step.assignee_name)
         return 'under_review'
 
     def _resolve_designated_pls(self, request):
@@ -1416,7 +1419,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             document=document, agent='RA', action='pending', is_parallel=True,
             round=max_round, due_date=ra_due, assignee=new_user, assignee_name=assignee_name,
         )
-        mailer.enqueue_stage_arrival(document, 'RA', ra_step)
+        mailer.enqueue_stage_arrival(document, 'RA', ra_step, recipient_name=ra_step.assignee_name)
         self._sync_post_approvers_detail(document, add={'loginid': new_loginid, 'name': assignee_name})
 
         return Response({'message': '후결자가 추가되었습니다.',
