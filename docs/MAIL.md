@@ -17,6 +17,11 @@
 4. **반려 수신자를 "잔여 결재선" 기준으로 개편** — PL 을 제외한 어느 단계에서 반려되든, 작성자·기합의자에 더해 **아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원**(반려자 본인 제외)에게 반려 메일을 보냄. 정적 단계 순서표가 아니라 문서의 실제 상태로 판정해 병렬 단계 누락이 없다(§3.1).
 5. **메일 본문에 결재 경로 카드 추가** — 모든 결재 메일에 **현재 회차의 결재 경로 + 단계별 의견**을 실어, 웹에 들어가지 않아도 진행 상황과 반려 사유를 메일에서 바로 확인할 수 있게 함(§3 "결재 경로 카드").
 
+### RA 제목 분기 + P 단계 통보 (2026-08)
+1. **RA(후결자) 제목 분기** — 고정 후결자(`settings.POST_APPROVER_LOGINID`)는 기존대로 `[후결 요청] {제목}`, 그 외 추가 후결자(C가문)는 다른 개인 지정 메일과 동일한 `[이름님] [결재 요청] {제목}` 형식으로 분리(§3 표, §3 "제목·본문 규칙").
+2. **`stage_arrival` 제목 접미사 삭제** — 모든 단계의 메일 제목에서 `- {단계라벨}` 접미사를 제거. 단계 구분은 본문 KPI 카드로만 표시.
+3. **P 단계 도착/완료 통보 신설** — P 단계가 생성되면 `notify_p_arrival`로 TE_J 팀 전원에게, P 단계(담당자+검토자) 합의가 모두 끝나면 `notify_p_completed`로 TE_O 팀 전원에게 참고용 통보 메일을 발송(§3 표, §4 표).
+
 ---
 
 ## 1. 아키텍처 (하이브리드: 즉시 발송 + 영속 큐 재시도)
@@ -84,7 +89,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | stage_arrival | PL 검토 | 지정 PL **전원**(각 PL step의 `assignee.mail`, 다중 지정 시 각각 발송, 제목에 `[이름님]`, 2026-07 추가) |
 | stage_arrival | R | 담당자 지정 시 그 1명(제목에 `[이름님]`), **미지정(도착 시점)이면 TE_R 팀 전원** |
 | stage_arrival | RV(검토자) | 담당자 합의로 검토자 차례가 된 시점에 그 1명(제목에 `[이름님]`) |
-| stage_arrival | RA(후결자) | 병렬 진행 시작 시 후결자 각각에게 개별 발송(제목 `[후결 요청]`) |
+| stage_arrival | RA(후결자) | 병렬 진행 시작 시 후결자 각각에게 개별 발송. **고정 후결자**(`settings.POST_APPROVER_LOGINID`)는 제목 `[후결 요청]` 고정, **그 외(C가문 추가 후결자)**는 다른 개인 지정 메일과 동일하게 `[이름님] [결재 요청] {제목}` 형식(2026-08 변경) |
 | stage_arrival | P | 담당자(claim) 지정 시 그 1명, 미지정 시 TE_P **팀 전원** |
 | stage_arrival | PV/EV(검토자, 2026-07) | `approve-step/`(agent P/E)에 `reviewer_loginids`를 함께 보낼 때 지정된 검토자 각각에게 개별 발송(제목에 `[이름님]`) — RV와 동일하게 담당자 합의와 같은 시점(같은 요청)에 발송된다 |
 | stage_arrival | J | 담당자(claim) 지정 시 그 1명, 미지정(도착 시점)이면 고정 주소 |
@@ -93,6 +98,8 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | approved | (완료) | **현재(최종) 회차 결재 경로에 참여했던 전원**(assignee 배정된 모든 단계, 중복 제거) — 2026-07부터 "작성자 그룹 멤버" 방식에서 변경 |
 | notify_submitted | (상신·재상신) | **통보처 전원**(`detail.notifiers`) |
 | notify_approved | (완료) | **통보처 전원**(`detail.notifiers`) |
+| notify_p_arrival | (P 단계 도착, 2026-08 추가) | **TE_J 팀 전원** — 결재 권한과 무관한 참고 통보. P 단계 생성 시점(`_advance_to_parallel`)에 `stage_arrival`(P)과 같이 발송 |
+| notify_p_completed | (P 단계 완료, 2026-08 추가) | **TE_O 팀 전원** — 결재 권한과 무관한 참고 통보. P 담당자+검토자(PV) 전원 합의가 끝나 J가 생성되는 시점(`_advance_after_p_review`)에 발송 |
 
 ### 3.1 반려(rejected) 수신자 상세 — 잔여 결재선 기준 (2026-07 개편)
 
@@ -118,23 +125,24 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 - 병렬 단계(P·O·E·RA)가 서로 다른 속도로 진행돼도 누락이 없다. 예: **J 반려 시점에 O 가 아직 pending 이면 `TE_O` 팀 전원이 포함**된다(정적 순서표 방식에서는 J 가 O 보다 뒤 단계라 빠지던 케이스).
 - **이미 일을 마친 팀에는 팀 전체 메일이 나가지 않는다.** 예: P 반려 시 O 가 이미 합의를 마쳤다면 `TE_O` 팀 전체가 아니라 **그 합의자 본인만** 기합의자 규칙으로 포함된다.
 
-### 제목·본문 규칙 (2026-07 보완)
+### 제목·본문 규칙 (2026-08 개편)
 - **모든 메일 제목에 요청서 제목이 포함**된다(`_build_message`).
-- **개인 지정 메일의 제목**은 맨 앞에 `[{이름}님] `이 붙는다(`recipient_name` 인자) — **지정 PL 전원**(`submit`/`resubmit` 시점, 2026-07 추가) + **R 담당자**(`assign-step/`으로 지정된 순간) + **검토자 전원(RV/PV/EV)**이 대상이다.
+- **`stage_arrival` 제목은 모든 단계 공통으로 `{name_prefix}[결재 요청] {제목}` 형식**(2026-08부터 단계 접미사 `- {단계라벨}` 삭제). 단계 구분은 본문 KPI 카드의 "결재 단계" 타일로만 표시한다.
+- **개인 지정 메일의 제목**은 맨 앞에 `[{이름}님] `이 붙는다(`recipient_name` 인자) — **지정 PL 전원**(`submit`/`resubmit` 시점) + **R 담당자**(`assign-step/`으로 지정된 순간) + **검토자 전원(RV/PV/EV)** + **추가 후결자(RA, 2026-08 추가)**가 대상이다.
   ⚠️ **P/O/E는 도착 시점에 항상 미배정 상태**(검토중 방식이라 `_advance_to_parallel`이 담당자 없이 단계를 만든 뒤 그 자리에서 곧바로 팀 전체에 발송하고, 나중에 누가 검토중을 눌러도 그 시점엔 메일이 다시 나가지 않는다)라 **P/O/E 본인 도착 메일은 개인화 대상이 아무도 없고 항상 팀 전원 브로드캐스트**다. R도 지정 전(도착 시점) 팀 전원 브로드캐스트인 것은 동일.
-- **후결자(RA) 메일 제목**은 접미(`- 단계명`) 없이 `[후결 요청] {제목}` 고정 형식.
+- **후결자(RA) 메일 제목**: 고정 후결자(`settings.POST_APPROVER_LOGINID`)는 `[후결 요청] {제목}` 고정 형식, 그 외(추가 후결자)는 위 공통 규칙대로 `[이름님] [결재 요청] {제목}` (2026-08 변경 — `mailer._is_fixed_post_approver()`가 `step.assignee.loginid`를 설정값과 비교해 판별).
 - **본문 링크는 해당 문서 상세로 딥링크**된다(`_detail_link`): 진행 중 이벤트(`stage_arrival`/`rejected`/`notify_submitted`)는 `{FRONTEND_URL}/approval?id={문서ID}`, 완료 관련 이벤트(`approved`/`notify_approved`)는 `{FRONTEND_URL}/history?id={문서ID}`(완료 문서는 결재현황 목록에서 빠지므로). 프론트(`ApprovalPage.tsx`/`HistoryPage.tsx`)가 `?id=` 쿼리를 감지해 목록과 무관하게 그 문서를 직접 조회 후 상세 모달을 자동으로 연다.
 
 ### 본문 디자인 — 히어로 헤더 + KPI 카드 (2026-07 개편)
-- 본문 HTML은 `_render_hero_kpi_email()`(공통 템플릿) + `_kpi_grid()`(2x2 타일)로 렌더링되며, 모든 이벤트 타입(`stage_arrival`/`rejected`/`approved`/`notify_submitted`/`notify_approved`)이 이 템플릿을 공유한다.
+- 본문 HTML은 `_render_hero_kpi_email()`(공통 템플릿) + `_kpi_grid()`(2x2 타일)로 렌더링되며, 모든 이벤트 타입(`stage_arrival`/`rejected`/`approved`/`notify_submitted`/`notify_approved`/`notify_p_arrival`/`notify_p_completed`)이 이 템플릿을 공유한다.
 - 구성: 솔리드 컬러 히어로(시스템명 + 이벤트 안내 문구) → 흰 카드(의뢰서 제목 + KPI 타일 4개: 결재 단계/의뢰자/상신일/생산 진행일) → **결재 경로 카드**(2026-07 추가, 아래 참고) → 특이사항(`reference_materials`) 카드 → CTA 버튼 → 푸터. 카드 바깥은 연한 색조 배경.
 - **이벤트별 색상 테마**(`EVENT_THEME`): 히어로/버튼/카드 테두리/KPI 타일 배경을 이벤트 타입에 따라 통일된 팔레트로 분기한다.
   - `stage_arrival`: 블루 `#2563eb → #3b82f6`
   - `rejected`: 레드 `#dc2626 → #ef4444`
   - `approved`: 그린 `#16a34a → #22c55e`
-  - `notify_submitted`/`notify_approved`: 퍼플 `#7c3aed → #8b5cf6`
+  - `notify_submitted`/`notify_approved`/`notify_p_arrival`/`notify_p_completed`: 퍼플 `#7c3aed → #8b5cf6`
   - `EVENT_THEME`에 없는 이벤트 타입은 `stage_arrival`(블루) 테마로 대체된다.
-- **결재 단계** 타일: `stage_arrival`은 `AGENT_LABEL`, 그 외 이벤트는 `EVENT_STATUS_LABEL`(반려/승인 완료/상신 통보/결재 완료 통보)을 표시한다.
+- **결재 단계** 타일: `stage_arrival`은 `AGENT_LABEL`, 그 외 이벤트는 `EVENT_STATUS_LABEL`(반려/승인 완료/상신 통보/결재 완료 통보/P 단계 도착 통보/P 단계 완료 통보)을 표시한다.
 - **생산 진행일**(`document.production_date`)과 **특이사항**(`document.reference_materials`, 상신 화면의 "특이사항" 입력값)은 값이 없으면 `-`로 표시한다.
 - 사용자 입력이 들어가는 값(제목·의뢰자·특이사항)은 전부 `django.utils.html.escape()`로 이스케이프한다.
 - Outlook 호환을 위해 `<table role="presentation">` 기반 레이아웃 + `bgcolor` 폴백 + `<!--[if mso]>` 조건부 주석을 사용한다(플렉스박스/그리드 미사용).
@@ -189,9 +197,9 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | `submit` / `resubmit` (상신·재상신) | ✅ | 지정 PL **전원**에게 stage_arrival(제목에 `[이름님]`, 2026-07 추가) + 통보처 전원에게 notify_submitted |
 | `withdraw` (철회) | ❌ | 알림 없음 |
 | `delete` (삭제) | ❌ | 알림 없음 |
-| `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·O·E·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일) |
-| `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·O·E·[RA 각각]에게 동시 발송 |
-| `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나야 **J에게** 발송. 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨) |
+| `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·O·E·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일). **P 단계가 생성되면 TE_J에게 notify_p_arrival도 함께 발송(2026-08 추가)** |
+| `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·O·E·[RA 각각]에게 동시 발송. **P 단계 생성 시 TE_J notify_p_arrival도 동일하게 발송** |
+| `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나야 **J에게** 발송(+**TE_O에게 notify_p_completed 동시 발송, 2026-08 추가**). 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨) |
 | `approve-step` P/E 합의 + `reviewer_loginids`(검토자 지정) | ✅ | 지정된 검토자(PV/EV) **각각**에게 즉시(담당자 합의와 **같은 요청**으로 처리되므로 같은 순간 발송) |
 | `approve-step` agent=J/O/E/EV/RA (병렬 경로 합의) | 🟡 | 이 합의로 **문서 전체가 approved 로 전이될 때만** approved(결재 경로 참여 전원) + notify_approved(통보처) 발송. 다른 경로가 아직 안 끝났으면 이 개별 합의는 **무메일**(침묵 — 예: J는 합의됐는데 O가 아직이면 알림 없음) |
 | `reject-step` (어느 단계든 반려, PL 제외) | ✅ | rejected: 작성자 + 현재 회차 기합의자 전원 **+ 아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원**(반려자 본인 제외, 2026-07 개편). §3.1 참고 |
@@ -202,7 +210,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | `peer-reject` (PL 반려) | ✅ | rejected: 작성자 + 현재 회차 기합의자 전원 **+ 같은 회차의 미합의(pending) 나머지 지정 PL**(2026-07 추가) |
 | `peer-submit` (PL 수정 후 상신) | 🟡 | `peer-approve`와 동일 조건 |
 | `change-designee` (지정 PL 변경) | ✅ | 새로 지정된 PL에게 상신 시와 동일한 stage_arrival 발송(제목에 `[이름님]`, 2026-07 추가). 기존 지정자에게는 알림 없음 |
-| `add-post-approver` (후결자 추가, 2026-07) | ✅ | 추가된 후결자에게 즉시 `[후결 요청]` 발송(생성 시점과 동일한 stage_arrival) |
+| `add-post-approver` (후결자 추가, 2026-07) | ✅ | 추가된 후결자에게 즉시 stage_arrival 발송(생성 시점과 동일). 고정 후결자와 중복 지정이 API에서 차단되므로 **이 경로는 항상 추가 후결자 형식**(`[이름님] [결재 요청] {제목}`, 2026-08 변경) |
 | `remove-post-approver` (후결자 제거, 2026-07) | ❌ | 제거되는 후결자에게 별도 알림 없음(요청 범위 밖) |
 | VOC 등록 / 댓글 | ✅ | §2 참고 |
 
