@@ -16,11 +16,13 @@ interface ProdcRowProps {
   productOptions: string[];
   onProcessChange: (region: CRegion, value: string) => void;
   errors?: Partial<Record<string, string>>;
+  /** 행 전체를 읽기전용으로 잠근다(CLONE/EXISTING 에서 C가문 하위 입력 차단). 미지정 시 기존대로 편집 가능. */
+  disabled?: boolean;
 }
 
 const REGION_LABEL_KEY = { top: 'prodc_top', middle: 'prodc_middle', bottom: 'prodc_bottom' } as const;
 
-const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValue, onLineChange, lineOptions, processOptions, productOptions, onProcessChange, errors = {} }) => {
+const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValue, onLineChange, lineOptions, processOptions, productOptions, onProcessChange, errors = {}, disabled = false }) => {
   const { t } = useTranslation();
   const showSelects = region !== 'middle' || detail.prodc_middle_use === '사용';
   return (
@@ -37,6 +39,7 @@ const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValu
           onChange={onChange}
           placeholder={t('request.select_placeholder')}
           className="flex-col"
+          disabled={disabled}
         />
       )}
       {showSelects && (
@@ -51,6 +54,7 @@ const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValu
               name={`prodc_${region}_line`}
               value={detail[`prodc_${region}_line` as keyof DetailFormState] as string}
               onChange={(e) => onLineChange(region, e.target.value)}
+              disabled={disabled}
             >
               <option value="">{t('request.select_placeholder')}</option>
               {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -64,6 +68,7 @@ const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValu
               options={processOptions}
               onChange={(v) => { onSetValue(`prodc_${region}_process`, v); onProcessChange(region, v); }}
               error={errors[`prodc_${region}_process`]}
+              disabled={disabled}
             />
           </div>
           <div className="flex-col" style={{ flex: 1 }}>
@@ -73,6 +78,7 @@ const ProdcRow: React.FC<ProdcRowProps> = ({ region, detail, onChange, onSetValu
               options={productOptions}
               onChange={(v) => onSetValue(`prodc_${region}_product`, v)}
               error={errors[`prodc_${region}_product`]}
+              disabled={disabled}
             />
           </div>
         </>

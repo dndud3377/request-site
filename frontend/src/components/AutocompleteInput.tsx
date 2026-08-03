@@ -17,6 +17,8 @@ interface AutocompleteInputProps {
   disabled?: boolean;
   dropdownFontSize?: string;
   dropdownDirection?: 'up' | 'down';
+  uppercase?: boolean;
+  maxLength?: number;
 }
 
 export default function AutocompleteInput({
@@ -35,6 +37,8 @@ export default function AutocompleteInput({
   disabled,
   dropdownFontSize = '0.9rem',
   dropdownDirection = 'down',
+  uppercase,
+  maxLength,
 }: AutocompleteInputProps): React.ReactElement {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -136,11 +140,12 @@ export default function AutocompleteInput({
         className={`form-control${error ? ' error' : ''}`}
         value={value}
         placeholder={placeholder ?? '입력 또는 선택'}
-        onChange={(e) => { if (!disabled) { onChange(e.target.value); setOpen(true); } }}
+        onChange={(e) => { if (!disabled) { onChange(uppercase ? e.target.value.toUpperCase() : e.target.value); setOpen(true); } }}
         onFocus={() => { if (!disabled) setOpen(true); }}
         onBlur={() => { if (onBlur) setTimeout(onBlur, 120); }}
         autoComplete="off"
         disabled={disabled}
+        maxLength={maxLength}
         style={disabled ? { backgroundColor: 'var(--bg-secondary)', cursor: 'not-allowed', opacity: 0.6 } : inputStyle}
       />
       {error && !hideErrorMessage && <span className="form-error">{error}</span>}

@@ -114,12 +114,177 @@ pages/RequestPage/
 ---
 
 ## 4. 알려진 pre-existing 이슈 (이번 리팩토링 무관)
-- `tsc --noEmit` 기준 전체 47개 error 존재 — i18n `t()` 의 strict 키 타입 + `Set` 순회(es5 target). CRA(Babel) 빌드는 통과하므로 런타임 영향 없음.
+- `tsc --noEmit` 기준 전체 **24개** error 존재(2026-08-02 실측) — i18n `t()` 의 strict 키 타입 + `Set` 순회(es5 target).
+  아래 §3.2·§5 에 적힌 **베이스라인 47개는 옛 값**이므로, 후속 작업에서는 "작업 직전 실측값과 동일한지"로 판단할 것.
+- ⚠️ `npx react-scripts build` 는 **현재 실패한다**(`Navbar.tsx:227` 의 `t('profile.name')` — i18n strict 키 타입 TS2345).
+  이번 변경 이전 커밋에서도 동일하게 실패하는 pre-existing 이슈다. "CRA 빌드는 통과한다"는 과거 기술은 더 이상 사실이 아니다.
 - 하드코딩 한글 문자열 다수 잔존 (예: `MshotImageUpload` 의 "Ctrl+V 로 이미지를 붙여넣으세요", `Step2~Step4`/`StepMap` 의 "활성/전체", "STEP 정렬", "+ 행 추가", "선택 비활성화", "범위 추가", "특정 제품 삭제 필요", `FilterManageModal` 의 "저장된 필터/새 필터 만들기/전체 삭제/닫기/키워드 입력 후 Enter" 등). CLAUDE.md 규칙 G(i18n) 위반이나, 분리 시 동작 보존 위해 원문 그대로 이동. 추후 `request.*` 키로 일괄 이관 필요.
 
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 추가 변경 이력 (2026-08-03 — C가문 제품 해당 위치 게이트 + ONLY 스코프 + 리전별 지도편차)
+
+- **개요**: C가문(`only_prodc='Yes'`) 영역을 ① **제품 해당 위치 게이트** → ② **ONLY 북쪽/ONLY 남쪽 스코프** →
+  ③ **리전별 지도편차 개별 선택** → ④ **X표시 자동 `수정`** 순으로 재구성했다.
+  백엔드는 `MAP_APPLY_KEYS` 한 줄만 바뀌고 **마이그레이션은 없다**(`additional_notes` JSON).
+
+#### ① 영속 필드 `prodc_scope` 신설 (`prodcCopyRegion` 이관)
+
+| | 이전 | 이후 |
+|---|---|---|
+| 저장 위치 | `useState<CRegion \| null>` (**저장 안 됨**) | `detail.prodc_scope` (`additional_notes` JSON) |
+| 값 | `top`/`middle`/`bottom`/`null` | `''`/`top`/`middle`/`bottom`/`only_top`/`only_bottom` |
+
+- 기존에는 UI state 라 **임시저장·재상신·편집 로드 시 선택이 사라졌다**. 스코프가 필수 검증을 좌우하므로 영속화가 필수였다(동시 해소).
+- `MAP_DETAIL_KEYS`(프론트)·`MAP_APPLY_KEYS`(백엔드)에 **동시 추가**.
+- **레거시 백필**(`inferProdcScope`, `constants.ts`): 값이 없는 옛 문서는 편집 로드 시 저장값으로 역추론한다 —
+  북·남 둘 다 있으면 `'top'`, 한쪽만 있으면 그쪽 `only_*`, 아무것도 없으면 `''`.
+  백필하지 않으면 기존 C가문 문서가 게이트에 걸려 입력이 잠겨 보인다. (`북/중/남` 셋은 잠금·필수 규칙이 동일해 어느 값으로 백필되든 동작이 같다)
+
+#### ② 게이트 + ONLY 스코프
+
+- **게이트**: `prodc_scope`가 `''`이면 C가문 하위 3개 영역(**판별 정보 북/중/남 · 지도편차 북/남 · X표시 이미지 북/남**)을 전부 잠근다.
+  라디오 아래 안내문(`request.prodc_scope_first`) 노출, `validate()` step2 에 `prodc_scope` required 추가.
+  **게이트 밖**(잠그지 않음): 예외구역·Inter·Map Option·REV·map_type·원본 위치 — C가문과 무관한 항목들.
+- **파생 판정**(`index.tsx`): `prodcScopeSet` / `prodcRegionOff(region)` / `prodcLocked(region)` / `regionHasMapChange(region)` / `anyRegionMapChange`.
+  `prodcLocked = isMapRegistered || !prodcScopeSet || prodcRegionOff(region)` 하나로 세 잠금 사유를 합친다.
+- **스코프 전환**(`handleProdcScopeSelect` → `applyProdcScope`): 지울 입력이 있으면 **확인 모달**(`prodc_scope_change_*`)을 거친다.
+  적용은 **단일 `setDetail`**로 원자 처리 — 이전 주 리전 초기화 → 죽는 리전의 `prodc_*`·`map_value_*`·`mshot_image_copy_*` 초기화 → 주 리전에 메인 라인·조합법 복사.
+  ⚠️ **제품(`prodc_{r}_product`)만은 `setDetail` 밖에서 `handleProdcProcessChange` 호출 뒤에 `handleDetailSet` 으로 넣는다** —
+  그 핸들러가 리전 제품을 `''`로 비우므로 순서가 바뀌면 복사한 값이 지워진다(기존 핸들러의 호출 순서와 동일한 이유).
+
+#### ③ 리전별 지도편차 고정 해제
+
+- `map_change_top`/`map_change_bottom`은 타입·`INITIAL_DETAIL`(`'변경 있음'`)·화이트리스트에 **이미 있었으나 UI 가 한 번도 쓰지 않던 필드**였다
+  (셀렉트가 `disabled value="변경 있음"` 하드코딩). 이제 실제 셀렉트로 연결돼 처음으로 살아난다.
+- `handleRegionMapChangeChange`(신규): `변경 없음` 전환 시 그 리전 X/Y 초기화, 양쪽 다 `변경 없음`이면 공용 `map_reason`도 초기화.
+- **기존 문서 호환**: 저장된 값이 전부 `'변경 있음'`이라 화면·검증 결과가 종전과 동일하다.
+
+#### ④ X표시(M-shot) 자동 전환
+
+- C가문을 **Yes 로 바꾸는 순간** `mshot_change='수정'`으로 자동 설정한다. **`handleOnlyProdcChange`의 사용자 상호작용 경로 한 곳에만** 건다 —
+  편집 로드·프리필에 걸면 저장된 `mshot_change`가 덮어써져 기존 문서가 훼손된다.
+- **No 로 되돌리면** `mshot_change`를 `'없음'`으로 복구하고 이미지 3종(`mshot_image_copy`·`_top`·`_bottom`)도 초기화한다
+  (C가문을 되돌린 뒤 원하지 않은 X표시 정보가 저장되는 것을 막기 위함).
+
+#### 최종 잠금·필수 매트릭스
+
+| `prodc_scope` | 북쪽행 | 중간행 | 남쪽행 | 지도편차 북 | 지도편차 남 | 상호검증 | 이미지 북 | 이미지 남 |
+|---|---|---|---|---|---|---|---|---|
+| `''` (게이트) | 잠금 | 잠금 | 잠금 | 잠금 | 잠금 | 스킵 | 잠금 | 잠금 |
+| `top`/`middle`/`bottom` | 필수 | 선택 | 필수 | 선택가능 | 선택가능 | **조건부** | 필수 | 필수 |
+| `only_top` | 필수 | 잠금 | 잠금 | 선택가능 | 잠금 | 스킵 | 필수 | 잠금 |
+| `only_bottom` | 잠금 | 잠금 | 필수 | 잠금 | 선택가능 | 스킵 | 잠금 | 필수 |
+
+- **잠금 = 회색 비활성 + 값 초기화 + 필수(`*`) 표기 제거**. 죽은 리전은 `validate()`에서도 제외된다.
+- **상호검증**(X 절대값 동일·부호 반대, Y 동일)은 **북·남이 모두 살아있고 모두 `변경 있음`일 때만** 실행한다.
+  ONLY 스코프이거나 한쪽이 `변경 없음`이면 비교 대상 자체가 없다.
+- `map_reason`은 `anyRegionMapChange`(한 리전이라도 `변경 있음`)일 때만 필수.
+- CLONE/EXISTING 은 위와 무관하게 전 행이 잠긴다(단 `Only C가문 제품` 셀렉트·`REV 여부`는 선택 가능 — 아래 2026-08-02 이력).
+
+#### 상세보기(`PagedDetailView`)
+
+- `buildProdcInfo()` 맨 앞에 `[제품 해당 위치] ONLY 북쪽` 행 추가.
+- C가문 MAP 칩을 **리전별 `변경 없음`/`변경 있음` 표기**로 바꾸고, 노출 조건을 `map_change_*` 존재까지 확장해
+  **양쪽 다 `변경 없음`이어도 칩이 뜨도록** 했다(기존에는 X 값이 있어야만 표시).
+- `prodcChanged` 키 배열·`buildProdcRows` 이력 표에 `prodc_scope` 추가.
+
+#### i18n (ko/en 동시)
+
+`request.prodc_only_top` · `prodc_only_bottom` · `prodc_scope_first` · `prodc_scope_change_title` · `prodc_scope_change_msg`
+
+#### 남은 이슈
+
+- **가이드 데모 미갱신**: `components/guideDemos/Step2CfamilyDemo.tsx`(전체 가이드의 C가문 애니메이션 데모)는 여전히
+  `북쪽/중간/남쪽` 3지선다만 보여준다. ONLY 스코프·게이트가 반영돼 있지 않아 실제 화면과 다르다. 이번 범위 밖.
+
+### 추가 변경 이력 (2026-08-02 — StepMap: EDIT 버튼 잠금 + REV 독립 + CLONE/EXISTING 잠금 범위 재정의)
+
+- **개요**: StepMap(위저드 2단계)의 세 가지 입력 제어를 조정했다. ① `EDIT` 버튼을 '완성된 MAP 변경' 모드 전용으로 잠그고,
+  ② `REV 여부`를 `Only C가문 제품`에서 완전히 분리해 그 **위**의 독립 항목으로 올렸으며,
+  ③ CLONE/EXISTING 일괄 잠금에서 `REV 여부`와 `Only C가문 제품` 셀렉트를 **잠금 대상에서 제외**했다.
+  백엔드·마이그레이션·i18n 신규 키 변경은 **없다**(`MAP_DETAIL_KEYS`/`MAP_APPLY_KEYS`도 키 추가·삭제 없음).
+
+- **① EDIT 버튼 활성 조건 반전**(`StepMap.tsx`): `disabled={isMapChangeMode && val !== 'EDIT'}` →
+  `disabled={val === 'EDIT' ? !isMapChangeMode : isMapChangeMode}`.
+  일반 상황에서는 `EDIT` 만 비활성이고, '완성된 MAP 변경' 진입 시에만 `EDIT` 이 활성 + 나머지 3개가 잠긴다(기존 동작 유지).
+  값 자체는 여전히 `applyMapChangeMode` 가 `map_type='EDIT'` 로 자동 설정하므로 이 버튼은 사실상 상태 표시용이다.
+
+- **② REV 여부 독립**(`StepMap.tsx`·`index.tsx`): REV 블록(`rev_yn`·Layer 드래그 선택·GDS·추가 항목 표)을
+  `{isProdc && (...)}` 래퍼 밖으로 꺼내 `Only C가문 제품` **위**에 독립 `full-width` 섹션으로 배치했다. props·state 변경 없음.
+  - `handleOnlyProdcChange`(index.tsx)에서 **C가문 No 전환 시 REV 초기화(`rev_yn`/`rev_entries`/`revLayersSelected`/`revGds`)를 제거**했다.
+    이제 REV 는 `REV 여부`를 `NO` 로 바꿀 때만 초기화된다.
+  - **유지되는 REV 초기화 경로**: 메인 라인 변경 effect(R-6)와 `handleMapTypeChangeConfirm`(map_type 전환 시 MAP 전체 초기화).
+    둘 다 J-layer 가 통째로 재생성되는 경로라 REV 만 남기면 고아 데이터가 된다.
+  - **결재 상세/이력조회 동반 수정**(`PagedDetailView.tsx`): REV 블록이 C가문 블록 안에 중첩돼 `isProdc && revYn` 조건이었던 것을
+    **독립 블록 + `revYn` 조건**으로 분리했다. 이 수정이 없으면 `C가문 No + REV YES` 문서의 REV 가 결재 화면에서 보이지 않는다.
+    이동하면서 불필요하던 `(detail as any)` 캐스팅 2곳을 제거했다(`detail` 은 이미 `Partial<DetailFormState>`).
+
+- **③ CLONE/EXISTING 잠금 범위 재정의**: `isMapRegistered`(= CLONE·EXISTING) 일괄 잠금을 아래처럼 나눴다.
+
+| 항목 | 이전 | 변경 후 |
+|------|------|---------|
+| `REV 여부` 버튼 + 하위 전체 | 잠금 | **선택 가능** (YES 시 기존 기능 그대로) |
+| `Only C가문 제품` 셀렉트 | 잠금 | **선택 가능** |
+| 제품 해당 위치 라디오 3개 | 잠금 없음 | **잠금 추가** |
+| ProdcRow 북/중/남 (사용여부·라인·조합법·제품) | 잠금 없음 | **잠금 추가** |
+| 지도편차 북/남 X·Y·사유, 예외구역, X표시, Inter, Map Option | 잠금 | 잠금 유지 |
+
+  - 즉 **C가문 Yes 를 고를 수는 있으나 Yes 로 펼쳐지는 하위 입력은 전부 잠긴다.**
+  - `ProdcRow.tsx` 에 optional prop `disabled?: boolean` 신설(미지정 시 기존 동작) → 내부 `<select>`·`AutocompleteInput`·`FormSelect` 로 전달.
+  - 공용 `FormSelect.tsx` 에도 optional `disabled?: boolean` 을 추가했다(미지정 시 기존 동작이라 다른 사용처 무영향).
+  - **검증(`validate()` step 2) 수정 없음**: C가문 필수 검증이 이미 `if (!isMapRegistered)` 블록 안에 있어 "잠금 = 검증 제외"가 그대로 성립한다.
+
+- **알려진 제약(의도된 현행 유지)**: REV Layer 후보(`availableRevLayers`)는 J-layer 표(`jayerRows`)에서 뽑는다.
+  `Only MAP`·`완성된 MAP 변경` 모드는 J/O 표를 강제로 비우므로 **후보가 0개**가 되어 REV 항목을 새로 추가할 수 없다(불러온 항목 삭제만 가능).
+  두 모드에서는 REV Layer 를 쓸 일이 없다는 판단으로 직접 입력은 도입하지 않았다.
+
+### 추가 변경 이력 (2026-08-02 — Layer 추가/삭제 Merge 3-way 판정 + 참조 1건 제한)
+
+- **개요**: `Layer 추가/삭제` Merge 를 기획 의도대로 **3-way 판정**으로 재구현하고, 참조 요청서를 **의뢰서당 1건**으로 제한했다.
+  참조 요청서를 A, 작성 중인 의뢰서를 B 라 할 때 J-layer 는 J-layer 끼리, O-layer 는 O-layer 끼리 **독립 비교**한다.
+
+| 구분 | 조건 | `col_st` | `col_new_or_copy` |
+|------|------|----------|-------------------|
+| ① 신규 | **B 에만** 있음 | `O` | `신규` |
+| ② layer 삭제 | **A 에만** 있음 → B 표에 행 추가 | `X` | `layer삭제` |
+| ③ 기등록 | A·B **양쪽** 존재 | `X` | `기등록` |
+
+- **"존재" 정의(핵심)**: `!disabled && new_or_copy !== 'layer삭제'`. `layer삭제` 는 그 시점에 **이미 지워진 layer** 이므로 **부재**로 본다.
+  따라서 A 에서 `layer삭제` 인 layer 가 B 에 있으면 "A 엔 없던 것이 B 에 생김" → **①(신규)** 이 된다. A·B 양쪽에 대칭 적용한다.
+- **`computeLayerMerge(curRows, refRows)` 신설**(`helpers.ts`): `{ merged, stats }` 를 돌려주는 **순수 함수**. 확인 모달의 미리보기와 실제 반영이
+  **같은 함수 한 번의 계산**에서 나오므로 숫자와 표 결과가 구조적으로 어긋날 수 없다(기존에는 `makeKey`·매칭 로직이 두 핸들러에 복붙돼 있었다).
+  - 비교 키 = `process_id||sp||sd||pp` (`layerid` 미포함, 각 값 `trim()` 정규화). 운영 데이터상 이 4개로 행이 유일하게 식별된다.
+  - 비활성 행·이미 `layer삭제` 인 행은 **건드리지 않는다**.
+  - ② 행 추가 시 **비활성이 아닌 모든 행(= `layer삭제` 포함)의 키**와 대조해 중복 행을 만들지 않는다.
+  - ② 행은 `loaded:true`(원본 컬럼 읽기전용) + `disabled:false` 로 넣는다 — 필터에 걸려 숨겨지면 상신 저장에서 빠져 삭제 정보가 유실되기 때문.
+  - `sortOrder` 는 `base + index` 로 부여(기존 `Date.now()` 는 같은 밀리초에 전부 동일값이 됐다).
+- **참조 요청서 1건 제한**: `DetailFormState` 에 `merge_ref_doc_id: number | null` · `merge_ref_doc_label: string` 추가.
+  Merge 완료 시 기록하고, 값이 있으면 **참조 선택 입력과 Merge 버튼을 모두 영구 잠근다**(`Step1.tsx` `isMergeDone`).
+  `additional_notes.detail` 에 저장되므로 **임시저장 후 재진입·재상신에도 잠금이 유지**된다. 필드 도입 전 문서는 로드 시 `null`/`''` 로 백필한다.
+  **DB 스키마·마이그레이션 변경 없음**(JSON 칼럼).
+- **J↔O 동기화는 Merge 시점에 의도적으로 우회한다**: Merge 결과는 오직 A 기준이어야 하므로 `handleMergeConfirm` 은 `handleJayerChange` 를 거치지 않고
+  `setJayerRows`/`setOayerRows` 를 직접 호출한다. Merge **이후** 수동 편집은 기존 J↔O 동기화 규칙(위 "J↔O 동기화" 항목)을 그대로 따른다.
+- **i18n**: `toast_merge_complete`·`merge_confirm_counts` 를 3-way 로 교체하고 `merge_confirm_once_warning`·`merge_already_done` 추가(ko/en 동시).
+- **상수화**: `NOC_NEW`·`NOC_BORROW`·`NOC_REGISTERED`·`NOC_LAYER_DELETE`·`ST_O`·`ST_X`(`constants.ts`). `isNocSpecial` 도 이 상수를 쓰도록 정리.
+- **테스트**: `helpers.test.ts` 에 `computeLayerMerge` 12건 추가(①②③·A/B 의 `layer삭제` 부재 처리·중복 방지·비활성 행·공백 정규화·`sortOrder`·멱등성·빈 표·복합 시나리오).
+- **남은 이슈**: B 의 **비활성** 행과 키가 같은 A 행은 여전히 ② 로 추가되어 표에 나란히 보인다(비활성 행은 상신 저장에서 제외되므로 최종 문서에는 남지 않는다).
+  Merge 를 **되돌리는 기능은 없다** — 확인 모달의 경고로만 안내한다.
+
+### 추가 변경 이력 (2026-08-02 — Layer 추가/삭제 Merge 하드코딩 i18n 이관)
+
+- **개요**: `Layer 추가/삭제` 참조 요청서 Merge 기능에만 남아 있던 하드코딩 문자열을 `request.merge_*` 키로 이관했다. 동작 변경 없음(문구 출력 경로만 변경).
+- **i18n 키 추가(ko/en 동시)**: `merge_ref_doc`(참조 요청서 라벨)·`merge_ref_placeholder`·`merge_ref_load_fail`(참조 문서 로드 실패 토스트)·`merge_button`(Merge 버튼)·`merge_confirm_title`(Merge 확인 모달 제목)·`merge_confirm_counts`(기등록/미매칭 건수 안내)·`merge_confirm_proceed`.
+- **적용 위치**: `Step1.tsx` 참조 요청서 `AutocompleteInput`의 `label`/`placeholder`·Merge 버튼 라벨, `index.tsx`의 `handleRefDocSelect` 실패 토스트·Merge 확인 모달(제목·건수·진행 문구).
+- **`Trans` 최초 도입**: 건수 안내는 숫자만 `<b>`로 강조하는 기존 UI를 유지해야 해 `react-i18next`의 `Trans`(`components={[<span />, <b />, <span />, <b />]}`)로 렌더링한다. 코드베이스에서 `Trans` 사용은 이 지점이 처음이며, 나머지 문자열은 기존 관례대로 `t()`를 쓴다.
+- **미해결(별도 과제)**: Merge 매칭 키(`process_id||sp||sd||pp`)에 `layerid`가 빠져 있고 `Set` 중복 제거로 집계되어, **모달의 미매칭 건수가 실제보다 적게 나오고 해당 행이 병합에서도 누락**된다. 또한 `handleMergeConfirm`은 `setJayerRows`/`setOayerRows`를 직접 호출해 **J↔O `st`/`new_or_copy` 동기화(4.1 J↔O 동기화 항목)를 우회**한다. 이번 변경 범위 밖.
+
+### 추가 변경 이력 (2026-07-31 — CLONE 원본 Part ID 8자리 코드 정리 + 대문자 자동 변환)
+
+- **원본 Part ID 옵션을 "_" 앞 8자리 코드로 정리**: StepMap의 원본 위치/Part ID 블록(`map_type === 'CLONE'` 전용)에서, 원본 Part ID 후보 목록을 내려주는 백엔드 `form_options_mapname`(`backend/api/views.py`)이 `MapName.partid` 원본 값을 그대로 내려주던 것을, `partid.split('_')[0]`(첫 "_" 앞부분)만 추출 → **길이가 정확히 8자리(순수 문자 수 기준)인 값만** 필터링 → 중복 제거 → 정렬해서 반환하도록 수정.
+- **직접 입력 시 대문자 자동 변환 + 8자리 제한**: 공용 컴포넌트 `AutocompleteInput`(`frontend/src/components/AutocompleteInput.tsx`)에 optional prop `uppercase`·`maxLength`를 추가(미지정 시 기존 동작 그대로라 다른 사용처는 영향 없음). `StepMap.tsx`의 원본 Part ID `AutocompleteInput`에 `uppercase maxLength={8}`을 적용해, 드롭다운 선택이 아니라 사용자가 직접 타이핑할 때 영문이 자동으로 대문자로 변환되고 최대 8자까지만 입력할 수 있다.
 
 ### 추가 변경 이력 (2026-07-30 — INTER 섹션 IN 적용 O/X + Xs/Ys/XYs/없음 필수 선택 그룹 추가)
 
@@ -343,10 +508,10 @@ pages/RequestPage/
 
 ## 5. 검증 방법
 ```bash
-# 타입체크 (전체 error 47개 = 정상)
+# 타입체크 (2026-08-02 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
 cd frontend && npx tsc --noEmit 2>&1 | grep -c "error TS"
 
-# 테스트 (현재 테스트 파일 없음 → passWithNoTests)
+# 테스트 (helpers.test.ts 20건)
 cd frontend && CI=true npx react-scripts test --watchAll=false --passWithNoTests
 
 # 개발 서버 확인 경로

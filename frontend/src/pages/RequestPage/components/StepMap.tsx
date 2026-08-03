@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { DetailFormState, GuideFeatureKey } from '../../../types';
-import { CRegion } from '../constants';
+import { CRegion, ProdcScope, PRODC_SCOPE_OPTIONS } from '../constants';
 import { sanitizeSignedDecimal } from '../helpers';
 import ProdcRow from './ProdcRow';
 import MshotImageUpload from './MshotImageUpload';
@@ -21,7 +21,17 @@ interface StepMapProps {
   middleProcessOptions: string[];
   bottomProcessOptions: string[];
   handleProdcLineChange: (region: CRegion, value: string) => void;
-  prodcCopyRegion: CRegion | null;
+  /** 제품 해당 위치 미선택(게이트) 여부 — false 면 C가문 하위 입력을 전부 잠근다 */
+  prodcScopeSet: boolean;
+  /** 리전 최종 잠금 판정(게이트 + ONLY 스코프 + CLONE/EXISTING) */
+  prodcLocked: (region: CRegion) => boolean;
+  /** ONLY 스코프에서 쓰지 않는 리전인가(필수 표기 제거용) */
+  prodcRegionOff: (region: CRegion) => boolean;
+  /** 리전 지도편차가 '변경 있음'으로 살아있는가 */
+  regionHasMapChange: (region: 'top' | 'bottom') => boolean;
+  anyRegionMapChange: boolean;
+  handleProdcScopeSelect: (scope: ProdcScope) => void;
+  handleRegionMapChangeChange: (region: 'top' | 'bottom', value: string) => void;
   revLayersSelected: string[];
   setRevLayersSelected: React.Dispatch<React.SetStateAction<string[]>>;
   revGds: string;
@@ -39,7 +49,6 @@ interface StepMapProps {
   handleMapTypeSelect: (val: string) => void;
   handleDetailChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
   handleDetailSet: (name: string, value: string) => void;
-  handleProdcRegionSelect: (region: CRegion) => void;
   handleProdcProcessChange: (region: CRegion, value: string) => void;
   handleOnlyProdcChange: (value: string) => void;
   handleMapChangeChange: (value: string) => void;
@@ -61,7 +70,13 @@ const StepMap: React.FC<StepMapProps> = ({
   middleProcessOptions,
   bottomProcessOptions,
   handleProdcLineChange,
-  prodcCopyRegion,
+  prodcScopeSet,
+  prodcLocked,
+  prodcRegionOff,
+  regionHasMapChange,
+  anyRegionMapChange,
+  handleProdcScopeSelect,
+  handleRegionMapChangeChange,
   revLayersSelected,
   setRevLayersSelected,
   revGds,
@@ -79,7 +94,6 @@ const StepMap: React.FC<StepMapProps> = ({
   handleMapTypeSelect,
   handleDetailChange,
   handleDetailSet,
-  handleProdcRegionSelect,
   handleProdcProcessChange,
   handleOnlyProdcChange,
   handleMapChangeChange,
@@ -130,7 +144,9 @@ const StepMap: React.FC<StepMapProps> = ({
                   type="button"
                   className={`map-type-btn${detail.map_type === val ? ' active' : ''}`}
                   onClick={() => handleMapTypeSelect(val)}
-                  disabled={isMapChangeMode && val !== 'EDIT'}
+                  // EDIT 는 기타 목적 '완성된 MAP 변경' 전용 값이다.
+                  // 그 모드에서만 EDIT 를 활성화하고, 반대로 그 모드에서는 나머지 3개를 잠근다.
+                  disabled={val === 'EDIT' ? !isMapChangeMode : isMapChangeMode}
                 >
                   {t(`request.${labelKey}`)}
                 </button>
@@ -168,13 +184,148 @@ const StepMap: React.FC<StepMapProps> = ({
                   onChange={(v) => handleDetailSet('source_partid', v)}
                   error={errors.source_partid}
                   style={{ flex: 1 }}
+                  uppercase
+                  maxLength={8}
                 />
               </div>
             </div>
           </div>
         )}
 
-        {/* Only C가문 제품 */}
+        {/* REV 여부 — C가문(only_prodc)과 무관한 독립 항목. map_type 종류와 상관없이 항상 선택 가능하다.
+            (CLONE/EXISTING 에서도 잠그지 않는다 — isMapRegistered 를 걸지 않는 이유) */}
+        <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <label className="form-label" style={{ marginBottom: 0 }}>{t('request.rev_yn_label')}<GuideBadge fk="step2_rev" tk={t('guide.feat.step2_rev' as never)} /></label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {(['YES', 'NO'] as const).map((val) => (
+              <button
+                key={val}
+                type="button"
+                className={`map-type-btn${detail.rev_yn === val ? ' active' : ''}`}
+                onClick={() => {
+                  if (val === 'NO') {
+                    setDetail((prev) => ({ ...prev, rev_yn: val, rev_entries: [] }));
+                    setRevLayersSelected([]);
+                    setRevGds('');
+                  } else {
+                    setDetail((prev) => ({ ...prev, rev_yn: val }));
+                  }
+                }}
+              >
+                {val}
+              </button>
+            ))}
+          </div>
+
+          {detail.rev_yn === 'YES' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* 입력 행: Layer 버튼 + GDS version + 추가 버튼 */}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>Layer</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxWidth: '480px', userSelect: 'none' }}>
+                    {availableRevLayers.length > 0 ? availableRevLayers.map((layer) => {
+                      const isSelected = revLayersSelected.includes(layer);
+                      return (
+                        <button
+                          key={layer}
+                          type="button"
+                          className={`map-type-btn${isSelected ? ' active' : ''}`}
+                          // 드래그 다중 선택: 첫 버튼에서 add/remove 모드를 정하고 지나가는 버튼에 적용
+                          onMouseDown={() => {
+                            const mode: 'add' | 'remove' = isSelected ? 'remove' : 'add';
+                            revDrag.current = { mode };
+                            applyRevLayer(layer, mode);
+                          }}
+                          onMouseEnter={() => {
+                            if (revDrag.current) applyRevLayer(layer, revDrag.current.mode);
+                          }}
+                        >
+                          {layer}
+                        </button>
+                      );
+                    }) : (
+                      <span style={{ fontSize: '13px', color: '#999' }}>
+                        {(detail.rev_entries ?? []).length > 0
+                          ? t('request.rev_all_added')
+                          : t('request.jayer_no_layer_data')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>{t('request.rev_gds')}</label>
+                  <input
+                    className="form-control"
+                    style={{ width: '360px' }}
+                    value={revGds}
+                    onChange={(e) => setRevGds(e.target.value)}
+                    placeholder={t('request.rev_gds_placeholder')}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  style={{ whiteSpace: 'nowrap' }}
+                  disabled={revLayersSelected.length === 0 || !revGds.trim()}
+                  onClick={() => {
+                    if (revLayersSelected.length === 0 || !revGds.trim()) return;
+                    setDetail((prev) => ({
+                      ...prev,
+                      rev_entries: [...(prev.rev_entries ?? []), { layers: revLayersSelected, gds: revGds.trim() }],
+                    }));
+                    setRevLayersSelected([]);
+                    setRevGds('');
+                  }}
+                >
+                  {t('request.rev_add')}
+                </button>
+              </div>
+
+              {/* 추가된 항목 목록 */}
+              {(detail.rev_entries ?? []).length > 0 && (
+                <div className="table-wrapper" style={{ maxWidth: '640px', marginTop: '4px' }}>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '55%' }}>{t('request.rev_layer')}</th>
+                        <th style={{ width: '30%' }}>{t('request.rev_gds')}</th>
+                        <th style={{ width: '15%', textAlign: 'center' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(detail.rev_entries ?? []).map((entry, idx) => (
+                        <tr key={idx}>
+                          <td>{entry.layers.join(', ')}</td>
+                          <td>{entry.gds}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              onClick={() =>
+                                setDetail((prev) => ({
+                                  ...prev,
+                                  rev_entries: (prev.rev_entries ?? []).filter((_, i) => i !== idx),
+                                }))
+                              }
+                            >
+                              {t('common.delete')}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Only C가문 제품 — Yes/No 선택 자체는 CLONE/EXISTING 에서도 열어두고,
+            Yes 일 때 펼쳐지는 하위 입력(적용 위치·북/중/남 라인·조합법·제품)만 잠근다. */}
         <div className="full-width" data-tour="map-cfamily" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
             <label className="form-label">{t('request.prodc_status')}<GuideBadge fk="step2_cfamily" tk={t('guide.feat.step2_cfamily' as never)} /></label>
@@ -183,7 +334,6 @@ const StepMap: React.FC<StepMapProps> = ({
               name="only_prodc"
               value={detail.only_prodc}
               onChange={(e) => handleOnlyProdcChange(e.target.value)}
-              disabled={isMapRegistered}
             >
               <option value="No">No</option>
               <option value="Yes">Yes</option>
@@ -191,156 +341,33 @@ const StepMap: React.FC<StepMapProps> = ({
           </div>
           {isProdc && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <span className="form-label" style={{ marginBottom: 0 }}>{t('request.prodc_apply_region')}</span>
-                {(['top', 'middle', 'bottom'] as CRegion[]).map((region) => (
-                  <label key={region} className="radio-item" style={{ cursor: 'pointer' }}>
+              {/* 제품 해당 위치 — 이것을 먼저 골라야 아래 판별 정보·지도편차·X표시 이미지가 열린다(게이트). */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                <span className="form-label" style={{ marginBottom: 0 }}>
+                  {t('request.prodc_apply_region')} <span className="required">*</span>
+                </span>
+                {PRODC_SCOPE_OPTIONS.map((opt) => (
+                  <label key={opt.value} className="radio-item" style={{ cursor: isMapRegistered ? 'not-allowed' : 'pointer' }}>
                     <input
                       type="radio"
-                      name="prodc_copy_region"
-                      checked={prodcCopyRegion === region}
-                      onChange={() => handleProdcRegionSelect(region)}
+                      name="prodc_scope"
+                      checked={detail.prodc_scope === opt.value}
+                      onChange={() => handleProdcScopeSelect(opt.value)}
+                      disabled={isMapRegistered}
                     />
                     <span className="radio-custom" />
-                    {t(`request.prodc_${region}`)}
+                    {t(`request.${opt.labelKey}`)}
                   </label>
                 ))}
               </div>
-              <ProdcRow region="top"    detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={topProcessOptions}    productOptions={topProductOptions}    onProcessChange={handleProdcProcessChange} errors={errors} />
-              <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={middleProcessOptions} productOptions={middleProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} />
-              <ProdcRow region="bottom" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={bottomProcessOptions} productOptions={bottomProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} />
-
-              {/* REV 여부 */}
-              <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '14px', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <label className="form-label" style={{ marginBottom: 0 }}>{t('request.rev_yn_label')}<GuideBadge fk="step2_rev" tk={t('guide.feat.step2_rev' as never)} /></label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {(['YES', 'NO'] as const).map((val) => (
-                    <button
-                      key={val}
-                      type="button"
-                      className={`map-type-btn${detail.rev_yn === val ? ' active' : ''}`}
-                      onClick={() => {
-                        if (val === 'NO') {
-                          setDetail((prev) => ({ ...prev, rev_yn: val, rev_entries: [] }));
-                          setRevLayersSelected([]);
-                          setRevGds('');
-                        } else {
-                          setDetail((prev) => ({ ...prev, rev_yn: val }));
-                        }
-                      }}
-                      disabled={isMapRegistered}
-                    >
-                      {val}
-                    </button>
-                  ))}
-                </div>
-
-                {detail.rev_yn === 'YES' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {/* 입력 행: Layer 버튼 + GDS version + 추가 버튼 */}
-                    <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label className="form-label" style={{ marginBottom: 0 }}>Layer</label>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxWidth: '480px', userSelect: 'none' }}>
-                          {availableRevLayers.length > 0 ? availableRevLayers.map((layer) => {
-                            const isSelected = revLayersSelected.includes(layer);
-                            return (
-                              <button
-                                key={layer}
-                                type="button"
-                                className={`map-type-btn${isSelected ? ' active' : ''}`}
-                                // 드래그 다중 선택: 첫 버튼에서 add/remove 모드를 정하고 지나가는 버튼에 적용
-                                onMouseDown={() => {
-                                  const mode: 'add' | 'remove' = isSelected ? 'remove' : 'add';
-                                  revDrag.current = { mode };
-                                  applyRevLayer(layer, mode);
-                                }}
-                                onMouseEnter={() => {
-                                  if (revDrag.current) applyRevLayer(layer, revDrag.current.mode);
-                                }}
-                              >
-                                {layer}
-                              </button>
-                            );
-                          }) : (
-                            <span style={{ fontSize: '13px', color: '#999' }}>
-                              {(detail.rev_entries ?? []).length > 0
-                                ? t('request.rev_all_added')
-                                : t('request.jayer_no_layer_data')}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        <label className="form-label" style={{ marginBottom: 0 }}>{t('request.rev_gds')}</label>
-                        <input
-                          className="form-control"
-                          style={{ width: '360px' }}
-                          value={revGds}
-                          onChange={(e) => setRevGds(e.target.value)}
-                          placeholder={t('request.rev_gds_placeholder')}
-                        />
-                      </div>
-
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        style={{ whiteSpace: 'nowrap' }}
-                        disabled={revLayersSelected.length === 0 || !revGds.trim()}
-                        onClick={() => {
-                          if (revLayersSelected.length === 0 || !revGds.trim()) return;
-                          setDetail((prev) => ({
-                            ...prev,
-                            rev_entries: [...(prev.rev_entries ?? []), { layers: revLayersSelected, gds: revGds.trim() }],
-                          }));
-                          setRevLayersSelected([]);
-                          setRevGds('');
-                        }}
-                      >
-                        {t('request.rev_add')}
-                      </button>
-                    </div>
-
-                    {/* 추가된 항목 목록 */}
-                    {(detail.rev_entries ?? []).length > 0 && (
-                      <div className="table-wrapper" style={{ maxWidth: '640px', marginTop: '4px' }}>
-                        <table className="table">
-                          <thead>
-                            <tr>
-                              <th style={{ width: '55%' }}>{t('request.rev_layer')}</th>
-                              <th style={{ width: '30%' }}>{t('request.rev_gds')}</th>
-                              <th style={{ width: '15%', textAlign: 'center' }}></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(detail.rev_entries ?? []).map((entry, idx) => (
-                              <tr key={idx}>
-                                <td>{entry.layers.join(', ')}</td>
-                                <td>{entry.gds}</td>
-                                <td style={{ textAlign: 'center' }}>
-                                  <button
-                                    type="button"
-                                    className="btn btn-danger btn-sm"
-                                    onClick={() =>
-                                      setDetail((prev) => ({
-                                        ...prev,
-                                        rev_entries: (prev.rev_entries ?? []).filter((_, i) => i !== idx),
-                                      }))
-                                    }
-                                  >
-                                    {t('common.delete')}
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              {!prodcScopeSet && (
+                <span className={errors.prodc_scope ? 'form-error' : ''} style={errors.prodc_scope ? undefined : { fontSize: '13px', color: '#999' }}>
+                  {t('request.prodc_scope_first')}
+                </span>
+              )}
+              <ProdcRow region="top"    detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={topProcessOptions}    productOptions={topProductOptions}    onProcessChange={handleProdcProcessChange} errors={errors} disabled={prodcLocked('top')} />
+              <ProdcRow region="middle" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={middleProcessOptions} productOptions={middleProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} disabled={prodcLocked('middle')} />
+              <ProdcRow region="bottom" detail={detail} onChange={handleDetailChange} onSetValue={handleDetailSet} onLineChange={handleProdcLineChange} lineOptions={lineOptions} processOptions={bottomProcessOptions} productOptions={bottomProductOptions}  onProcessChange={handleProdcProcessChange} errors={errors} disabled={prodcLocked('bottom')} />
             </div>
           )}
         </div>
@@ -349,43 +376,63 @@ const StepMap: React.FC<StepMapProps> = ({
         {isProdc ? (
           <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <label className="form-label">{t('request.map')}<GuideBadge fk="step2_map_deviation" tk={t('guide.feat.step2_map_deviation' as never)} /></label>
-            {(['top', 'bottom'] as const).map((region) => (
-              <div key={region} className="flex-row" style={{ alignItems: 'flex-start', gap: '12px' }}>
-                <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
-                  <label className="form-label">{t(`request.prodc_${region}`)}</label>
-                  <select className="form-control" disabled value="변경 있음">
-                    <option value="변경 있음">{t('request.map_has_change')}</option>
-                  </select>
+            {(['top', 'bottom'] as const).map((region) => {
+              // 리전 지도편차는 '변경 없음/있음'을 개별 선택한다(고정값이 아니다).
+              // X/Y 는 그 리전이 살아있고 '변경 있음'일 때만 입력·필수.
+              const selectLocked = prodcLocked(region);
+              const valueLocked = selectLocked || !regionHasMapChange(region);
+              const required = regionHasMapChange(region);
+              return (
+                <div key={region} className="flex-row" style={{ alignItems: 'flex-start', gap: '12px' }}>
+                  <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
+                    <label className="form-label">{t(`request.prodc_${region}`)}</label>
+                    <select
+                      className="form-control"
+                      name={`map_change_${region}`}
+                      value={detail[`map_change_${region}`]}
+                      onChange={(e) => handleRegionMapChangeChange(region, e.target.value)}
+                      disabled={selectLocked}
+                    >
+                      <option value="변경 없음">{t('request.map_no_change')}</option>
+                      <option value="변경 있음">{t('request.map_has_change')}</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">{t('request.map_value_x')} {required && <span className="required">*</span>}</label>
+                    <input
+                      className={`form-control${errors[`map_value_x_${region}`] ? ' error' : ''}`}
+                      name={`map_value_x_${region}`}
+                      value={detail[`map_value_x_${region}` as keyof DetailFormState] as string}
+                      onChange={(e) => handleDetailSet(`map_value_x_${region}`, sanitizeSignedDecimal(e.target.value))}
+                      inputMode="decimal"
+                      disabled={valueLocked}
+                    />
+                    {errors[`map_value_x_${region}`] && <span className="form-error">{errors[`map_value_x_${region}`]}</span>}
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label className="form-label">{t('request.map_value_y')} {required && <span className="required">*</span>}</label>
+                    <input
+                      className={`form-control${errors[`map_value_y_${region}`] ? ' error' : ''}`}
+                      name={`map_value_y_${region}`}
+                      value={detail[`map_value_y_${region}` as keyof DetailFormState] as string}
+                      onChange={(e) => handleDetailSet(`map_value_y_${region}`, sanitizeSignedDecimal(e.target.value))}
+                      inputMode="decimal"
+                      disabled={valueLocked}
+                    />
+                    {errors[`map_value_y_${region}`] && <span className="form-error">{errors[`map_value_y_${region}`]}</span>}
+                  </div>
                 </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">{t('request.map_value_x')} <span className="required">*</span></label>
-                  <input
-                    className={`form-control${errors[`map_value_x_${region}`] ? ' error' : ''}`}
-                    name={`map_value_x_${region}`}
-                    value={detail[`map_value_x_${region}` as keyof DetailFormState] as string}
-                    onChange={(e) => handleDetailSet(`map_value_x_${region}`, sanitizeSignedDecimal(e.target.value))}
-                    inputMode="decimal"
-                    disabled={isMapRegistered}
-                  />
-                  {errors[`map_value_x_${region}`] && <span className="form-error">{errors[`map_value_x_${region}`]}</span>}
-                </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">{t('request.map_value_y')} <span className="required">*</span></label>
-                  <input
-                    className={`form-control${errors[`map_value_y_${region}`] ? ' error' : ''}`}
-                    name={`map_value_y_${region}`}
-                    value={detail[`map_value_y_${region}` as keyof DetailFormState] as string}
-                    onChange={(e) => handleDetailSet(`map_value_y_${region}`, sanitizeSignedDecimal(e.target.value))}
-                    inputMode="decimal"
-                    disabled={isMapRegistered}
-                  />
-                  {errors[`map_value_y_${region}`] && <span className="form-error">{errors[`map_value_y_${region}`]}</span>}
-                </div>
-              </div>
-            ))}
+              );
+            })}
             <div className="form-group" style={{ flex: 3 }}>
-              <label className="form-label">{t('request.map_reason')} <span className="required">*</span></label>
-              <input className={`form-control${errors.map_reason ? ' error' : ''}`} name="map_reason" value={detail.map_reason} onChange={handleDetailChange} disabled={isMapRegistered} />
+              <label className="form-label">{t('request.map_reason')} {anyRegionMapChange && <span className="required">*</span>}</label>
+              <input
+                className={`form-control${errors.map_reason ? ' error' : ''}`}
+                name="map_reason"
+                value={detail.map_reason}
+                onChange={handleDetailChange}
+                disabled={isMapRegistered || !prodcScopeSet || !anyRegionMapChange}
+              />
               {errors.map_reason && <span className="form-error">{errors.map_reason}</span>}
             </div>
           </div>
@@ -462,27 +509,22 @@ const StepMap: React.FC<StepMapProps> = ({
           {mshotEditAddMode && isProdc && (
             <div className="form-group" style={{ marginTop: '8px' }}>
               <label className="form-label">{t('request.mshot_change_image_attach_area')}</label>
+              {/* ONLY 스코프로 죽은 리전의 첨부칸은 회색 잠금으로 남긴다(값도 이미 비워져 있다). */}
               <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                <div style={{ flex: 1, minWidth: '280px' }}>
-                  <div className="form-label" style={{ marginBottom: '6px' }}>{t('request.prodc_top')} <span className="required">*</span></div>
-                  <MshotImageUpload
-                    fieldName="mshot_image_copy_top"
-                    value={detail.mshot_image_copy_top}
-                    error={errors.mshot_image_copy_top}
-                    disabled={isMapRegistered}
-                    onPaste={handleImagePaste}
-                  />
-                </div>
-                <div style={{ flex: 1, minWidth: '280px' }}>
-                  <div className="form-label" style={{ marginBottom: '6px' }}>{t('request.prodc_bottom')} <span className="required">*</span></div>
-                  <MshotImageUpload
-                    fieldName="mshot_image_copy_bottom"
-                    value={detail.mshot_image_copy_bottom}
-                    error={errors.mshot_image_copy_bottom}
-                    disabled={isMapRegistered}
-                    onPaste={handleImagePaste}
-                  />
-                </div>
+                {(['top', 'bottom'] as const).map((region) => (
+                  <div key={region} style={{ flex: 1, minWidth: '280px' }}>
+                    <div className="form-label" style={{ marginBottom: '6px' }}>
+                      {t(`request.prodc_${region}`)} {!prodcRegionOff(region) && <span className="required">*</span>}
+                    </div>
+                    <MshotImageUpload
+                      fieldName={region === 'top' ? 'mshot_image_copy_top' : 'mshot_image_copy_bottom'}
+                      value={region === 'top' ? detail.mshot_image_copy_top : detail.mshot_image_copy_bottom}
+                      error={region === 'top' ? errors.mshot_image_copy_top : errors.mshot_image_copy_bottom}
+                      disabled={prodcLocked(region)}
+                      onPaste={handleImagePaste}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
           )}
