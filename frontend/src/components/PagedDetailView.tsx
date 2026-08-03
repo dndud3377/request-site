@@ -196,6 +196,7 @@ function buildProdcRows(prev: any, cur: any): DiffRow[] {
   const midVal = (d: any) => d?.prodc_middle_use === '미사용' ? '미사용' : fmtPlate(d, 'prodc_middle');
   return [
     { label: '생산 정보', before: fmtDiffVal(prev?.only_prodc), after: fmtDiffVal(cur?.only_prodc) },
+    { label: '제품 해당 위치', before: fmtDiffVal(prev?.prodc_scope), after: fmtDiffVal(cur?.prodc_scope) },
     { label: '상판', before: fmtPlate(prev, 'prodc_top'), after: fmtPlate(cur, 'prodc_top') },
     { label: '중판', before: midVal(prev), after: midVal(cur) },
     { label: '하판', before: fmtPlate(prev, 'prodc_bottom'), after: fmtPlate(cur, 'prodc_bottom') },
@@ -851,8 +852,22 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
     { label: t('request.process_id'), value: detail.process_id || '-', fieldKey: 'process_id', changed: changedFields.has('process_id') },
   ];
 
+  /** 제품 해당 위치(prodc_scope) 표시 라벨. 값이 없는 옛 문서는 표시하지 않는다. */
+  const prodcScopeLabel = (): string => {
+    switch (detail.prodc_scope) {
+      case 'top': return t('request.prodc_top');
+      case 'middle': return t('request.prodc_middle');
+      case 'bottom': return t('request.prodc_bottom');
+      case 'only_top': return t('request.prodc_only_top');
+      case 'only_bottom': return t('request.prodc_only_bottom');
+      default: return '';
+    }
+  };
+
   const buildProdcInfo = (): string => {
     const lines: string[] = [];
+    const scope = prodcScopeLabel();
+    if (scope) lines.push(`[${t('request.prodc_apply_region')}] ${scope}`);
     if (detail.prodc_top_line || detail.prodc_top_process || detail.prodc_top_product) {
       lines.push(`[상판] ${detail.prodc_top_line || '-'} / ${detail.prodc_top_process || '-'} / ${detail.prodc_top_product || '-'}`);
     }
@@ -991,12 +1006,20 @@ type Page = { label: string; content: React.ReactNode };
           {(isR || isO || isJ || isP) && (detail.map_change || (detail as any).map_change_top || detail.ea_change) && (
             <div style={rowStyle}>
               {(isR || isO || isP) && (() => {
-                if (isProdc && ((detail as any).map_value_x_top || (detail as any).map_value_x_bottom)) {
-                  const topVal = `X: ${(detail as any).map_value_x_top ? `${(detail as any).map_value_x_top}um` : '-'} / Y: ${(detail as any).map_value_y_top ? `${(detail as any).map_value_y_top}um` : '-'}`;
-                  const botVal = `X: ${(detail as any).map_value_x_bottom ? `${(detail as any).map_value_x_bottom}um` : '-'} / Y: ${(detail as any).map_value_y_bottom ? `${(detail as any).map_value_y_bottom}um` : '-'}`;
+                if (isProdc && (detail.map_change_top || detail.map_change_bottom
+                  || detail.map_value_x_top || detail.map_value_x_bottom)) {
+                  // 리전별로 '변경 없음/있음'을 함께 표기한다(둘 다 '변경 없음'이어도 칩을 띄운다).
+                  const regionLine = (region: 'top' | 'bottom'): string => {
+                    const label = t(region === 'top' ? 'request.prodc_top' : 'request.prodc_bottom');
+                    const change = detail[`map_change_${region}`];
+                    if (change === '변경 없음') return `[${label}] ${t('request.map_no_change')}`;
+                    const x = detail[`map_value_x_${region}`];
+                    const y = detail[`map_value_y_${region}`];
+                    return `[${label}] X: ${x ? `${x}um` : '-'} / Y: ${y ? `${y}um` : '-'}`;
+                  };
                   const reasonPart = detail.map_reason ? ` / 사유: ${detail.map_reason}` : '';
-                  const mapValue = `[${t('request.prodc_top')}] ${topVal}\n[${t('request.prodc_bottom')}] ${botVal}${reasonPart}`;
-                  const mapChanged = ['map_value_x_top','map_value_y_top','map_value_x_bottom','map_value_y_bottom','map_reason'].some(k => changedFields.has(k));
+                  const mapValue = `${regionLine('top')}\n${regionLine('bottom')}${reasonPart}`;
+                  const mapChanged = ['map_change_top','map_value_x_top','map_value_y_top','map_change_bottom','map_value_x_bottom','map_value_y_bottom','map_reason'].some(k => changedFields.has(k));
                   return <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change_top" />;
                 }
                 if (!isProdc && detail.map_change) {
@@ -1071,7 +1094,7 @@ type Page = { label: string; content: React.ReactNode };
           })()}
 
           {(isR || isO || isP) && detail.only_prodc && (() => {
-            const prodcChanged = ['only_prodc','prodc_top_line','prodc_top_process','prodc_top_product','prodc_middle_use','prodc_middle_line','prodc_middle_process','prodc_middle_product','prodc_bottom_line','prodc_bottom_process','prodc_bottom_product'].some((k) => changedFields.has(k));
+            const prodcChanged = ['only_prodc','prodc_scope','prodc_top_line','prodc_top_process','prodc_top_product','prodc_middle_use','prodc_middle_line','prodc_middle_process','prodc_middle_product','prodc_bottom_line','prodc_bottom_process','prodc_bottom_product'].some((k) => changedFields.has(k));
             return (
               <div style={rowStyle}>
                 <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(prodcChanged ? { border: '2px solid #dc3545' } : {}) }}>

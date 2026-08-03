@@ -124,6 +124,82 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-08-03 — C가문 제품 해당 위치 게이트 + ONLY 스코프 + 리전별 지도편차)
+
+- **개요**: C가문(`only_prodc='Yes'`) 영역을 ① **제품 해당 위치 게이트** → ② **ONLY 북쪽/ONLY 남쪽 스코프** →
+  ③ **리전별 지도편차 개별 선택** → ④ **X표시 자동 `수정`** 순으로 재구성했다.
+  백엔드는 `MAP_APPLY_KEYS` 한 줄만 바뀌고 **마이그레이션은 없다**(`additional_notes` JSON).
+
+#### ① 영속 필드 `prodc_scope` 신설 (`prodcCopyRegion` 이관)
+
+| | 이전 | 이후 |
+|---|---|---|
+| 저장 위치 | `useState<CRegion \| null>` (**저장 안 됨**) | `detail.prodc_scope` (`additional_notes` JSON) |
+| 값 | `top`/`middle`/`bottom`/`null` | `''`/`top`/`middle`/`bottom`/`only_top`/`only_bottom` |
+
+- 기존에는 UI state 라 **임시저장·재상신·편집 로드 시 선택이 사라졌다**. 스코프가 필수 검증을 좌우하므로 영속화가 필수였다(동시 해소).
+- `MAP_DETAIL_KEYS`(프론트)·`MAP_APPLY_KEYS`(백엔드)에 **동시 추가**.
+- **레거시 백필**(`inferProdcScope`, `constants.ts`): 값이 없는 옛 문서는 편집 로드 시 저장값으로 역추론한다 —
+  북·남 둘 다 있으면 `'top'`, 한쪽만 있으면 그쪽 `only_*`, 아무것도 없으면 `''`.
+  백필하지 않으면 기존 C가문 문서가 게이트에 걸려 입력이 잠겨 보인다. (`북/중/남` 셋은 잠금·필수 규칙이 동일해 어느 값으로 백필되든 동작이 같다)
+
+#### ② 게이트 + ONLY 스코프
+
+- **게이트**: `prodc_scope`가 `''`이면 C가문 하위 3개 영역(**판별 정보 북/중/남 · 지도편차 북/남 · X표시 이미지 북/남**)을 전부 잠근다.
+  라디오 아래 안내문(`request.prodc_scope_first`) 노출, `validate()` step2 에 `prodc_scope` required 추가.
+  **게이트 밖**(잠그지 않음): 예외구역·Inter·Map Option·REV·map_type·원본 위치 — C가문과 무관한 항목들.
+- **파생 판정**(`index.tsx`): `prodcScopeSet` / `prodcRegionOff(region)` / `prodcLocked(region)` / `regionHasMapChange(region)` / `anyRegionMapChange`.
+  `prodcLocked = isMapRegistered || !prodcScopeSet || prodcRegionOff(region)` 하나로 세 잠금 사유를 합친다.
+- **스코프 전환**(`handleProdcScopeSelect` → `applyProdcScope`): 지울 입력이 있으면 **확인 모달**(`prodc_scope_change_*`)을 거친다.
+  적용은 **단일 `setDetail`**로 원자 처리 — 이전 주 리전 초기화 → 죽는 리전의 `prodc_*`·`map_value_*`·`mshot_image_copy_*` 초기화 → 주 리전에 메인 라인·조합법 복사.
+  ⚠️ **제품(`prodc_{r}_product`)만은 `setDetail` 밖에서 `handleProdcProcessChange` 호출 뒤에 `handleDetailSet` 으로 넣는다** —
+  그 핸들러가 리전 제품을 `''`로 비우므로 순서가 바뀌면 복사한 값이 지워진다(기존 핸들러의 호출 순서와 동일한 이유).
+
+#### ③ 리전별 지도편차 고정 해제
+
+- `map_change_top`/`map_change_bottom`은 타입·`INITIAL_DETAIL`(`'변경 있음'`)·화이트리스트에 **이미 있었으나 UI 가 한 번도 쓰지 않던 필드**였다
+  (셀렉트가 `disabled value="변경 있음"` 하드코딩). 이제 실제 셀렉트로 연결돼 처음으로 살아난다.
+- `handleRegionMapChangeChange`(신규): `변경 없음` 전환 시 그 리전 X/Y 초기화, 양쪽 다 `변경 없음`이면 공용 `map_reason`도 초기화.
+- **기존 문서 호환**: 저장된 값이 전부 `'변경 있음'`이라 화면·검증 결과가 종전과 동일하다.
+
+#### ④ X표시(M-shot) 자동 전환
+
+- C가문을 **Yes 로 바꾸는 순간** `mshot_change='수정'`으로 자동 설정한다. **`handleOnlyProdcChange`의 사용자 상호작용 경로 한 곳에만** 건다 —
+  편집 로드·프리필에 걸면 저장된 `mshot_change`가 덮어써져 기존 문서가 훼손된다.
+- **No 로 되돌리면** `mshot_change`를 `'없음'`으로 복구하고 이미지 3종(`mshot_image_copy`·`_top`·`_bottom`)도 초기화한다
+  (C가문을 되돌린 뒤 원하지 않은 X표시 정보가 저장되는 것을 막기 위함).
+
+#### 최종 잠금·필수 매트릭스
+
+| `prodc_scope` | 북쪽행 | 중간행 | 남쪽행 | 지도편차 북 | 지도편차 남 | 상호검증 | 이미지 북 | 이미지 남 |
+|---|---|---|---|---|---|---|---|---|
+| `''` (게이트) | 잠금 | 잠금 | 잠금 | 잠금 | 잠금 | 스킵 | 잠금 | 잠금 |
+| `top`/`middle`/`bottom` | 필수 | 선택 | 필수 | 선택가능 | 선택가능 | **조건부** | 필수 | 필수 |
+| `only_top` | 필수 | 잠금 | 잠금 | 선택가능 | 잠금 | 스킵 | 필수 | 잠금 |
+| `only_bottom` | 잠금 | 잠금 | 필수 | 잠금 | 선택가능 | 스킵 | 잠금 | 필수 |
+
+- **잠금 = 회색 비활성 + 값 초기화 + 필수(`*`) 표기 제거**. 죽은 리전은 `validate()`에서도 제외된다.
+- **상호검증**(X 절대값 동일·부호 반대, Y 동일)은 **북·남이 모두 살아있고 모두 `변경 있음`일 때만** 실행한다.
+  ONLY 스코프이거나 한쪽이 `변경 없음`이면 비교 대상 자체가 없다.
+- `map_reason`은 `anyRegionMapChange`(한 리전이라도 `변경 있음`)일 때만 필수.
+- CLONE/EXISTING 은 위와 무관하게 전 행이 잠긴다(단 `Only C가문 제품` 셀렉트·`REV 여부`는 선택 가능 — 아래 2026-08-02 이력).
+
+#### 상세보기(`PagedDetailView`)
+
+- `buildProdcInfo()` 맨 앞에 `[제품 해당 위치] ONLY 북쪽` 행 추가.
+- C가문 MAP 칩을 **리전별 `변경 없음`/`변경 있음` 표기**로 바꾸고, 노출 조건을 `map_change_*` 존재까지 확장해
+  **양쪽 다 `변경 없음`이어도 칩이 뜨도록** 했다(기존에는 X 값이 있어야만 표시).
+- `prodcChanged` 키 배열·`buildProdcRows` 이력 표에 `prodc_scope` 추가.
+
+#### i18n (ko/en 동시)
+
+`request.prodc_only_top` · `prodc_only_bottom` · `prodc_scope_first` · `prodc_scope_change_title` · `prodc_scope_change_msg`
+
+#### 남은 이슈
+
+- **가이드 데모 미갱신**: `components/guideDemos/Step2CfamilyDemo.tsx`(전체 가이드의 C가문 애니메이션 데모)는 여전히
+  `북쪽/중간/남쪽` 3지선다만 보여준다. ONLY 스코프·게이트가 반영돼 있지 않아 실제 화면과 다르다. 이번 범위 밖.
+
 ### 추가 변경 이력 (2026-08-02 — StepMap: EDIT 버튼 잠금 + REV 독립 + CLONE/EXISTING 잠금 범위 재정의)
 
 - **개요**: StepMap(위저드 2단계)의 세 가지 입력 제어를 조정했다. ① `EDIT` 버튼을 '완성된 MAP 변경' 모드 전용으로 잠그고,

@@ -271,6 +271,12 @@ export interface DetailFormState {
   bb_entries: Array<{ id: string; location: string; product: string; process_id: string }>;
 
   only_prodc: string;
+  /**
+   * C가문(only_prodc='Yes') 의 '제품 해당 위치'.
+   * '' 는 미선택(게이트 — 하위 입력 전체 잠금)이고, 'only_top'/'only_bottom' 은
+   * 그 리전 하나만 사용하는 스코프라 나머지 리전을 초기화·잠금·필수해제한다.
+   */
+  prodc_scope: '' | 'top' | 'middle' | 'bottom' | 'only_top' | 'only_bottom';
   prodc_top_line: string;
   prodc_top_process: string;
   prodc_top_product: string;

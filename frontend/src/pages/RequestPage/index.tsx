@@ -32,6 +32,7 @@ import { GUIDE_DEMO_KEYS } from '../../components/guideDemos';
 import {
   OPTION_LINE,
   CRegion,
+  ProdcScope,
   genId,
   makeRow,
   makeBbEntry,
@@ -44,6 +45,8 @@ import {
   OTHER_PURPOSE_MAP_CHANGE,
   ONLY_MAP_PURPOSE,
   MAP_DETAIL_KEYS,
+  PRODC_SCOPE_OPTIONS,
+  inferProdcScope,
   JAYER_EDITABLE_COLS,
   OAYER_EDITABLE_COLS,
   LOADED_LOCK_COLS,
@@ -295,7 +298,8 @@ export default function RequestPage(): React.ReactElement {
   const [jayerSortBySp, setJayerSortBySp] = useState(false);
   const [oayerSortBySp, setOayerSortBySp] = useState(false);
   const [productionDate, setProductionDate] = useState<string>('');
-  const [prodcCopyRegion, setProdcCopyRegion] = useState<CRegion | null>(null);
+  // 제품 해당 위치 전환 확인 모달(전환하면 지워질 입력이 있을 때만 값이 들어간다)
+  const [prodcScopeConfirm, setProdcScopeConfirm] = useState<ProdcScope | null>(null);
   const [revLayersSelected, setRevLayersSelected] = useState<string[]>([]);
   const [revGds, setRevGds] = useState<string>('');
   const [oayerInfoTab, setOayerInfoTab] = useState<'table' | 'info'>('table');
@@ -398,12 +402,12 @@ export default function RequestPage(): React.ReactElement {
       setProcessIdOptions([]);
       setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
       setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
-      setProdcCopyRegion(null);
       setRevLayersSelected([]); setRevGds('');
       setDetail((prev) => ({
         ...prev,
         process_selection: '', partid_selection: '', process_id: '',
-        // 메인 라인 변경 시 C가문 리전·지도편차·REV 값도 초기화(옛 라인 기준 잔존 방지 — 감사 R-6)
+        // 메인 라인 변경 시 C가문 스코프·리전·지도편차·REV 값도 초기화(옛 라인 기준 잔존 방지 — 감사 R-6)
+        prodc_scope: '',
         prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
         prodc_middle_use: '', prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
         prodc_bottom_line: '', prodc_bottom_process: '', prodc_bottom_product: '',
@@ -743,6 +747,9 @@ export default function RequestPage(): React.ReactElement {
             // Merge 잠금 필드 도입 전 문서는 값이 없다 → 미Merge 로 백필한다.
             merge_ref_doc_id: parsed.detail.merge_ref_doc_id ?? null,
             merge_ref_doc_label: parsed.detail.merge_ref_doc_label ?? '',
+            // prodc_scope 도입 전 문서는 값이 없다 → 저장된 리전 값으로 역추론해 백필한다.
+            // (백필하지 않으면 '미선택' 게이트에 걸려 기존 C가문 문서의 입력이 잠겨 보인다)
+            prodc_scope: parsed.detail.prodc_scope || inferProdcScope(parsed.detail),
           });
           // 불러온 문서의 값은 이미 확정된 판단이므로 자동 갱신으로 덮어쓰지 않는다.
           setVsManuallySet(true);
@@ -1235,6 +1242,21 @@ export default function RequestPage(): React.ReactElement {
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === '변경 있음';
   const isProdc = detail.only_prodc === 'Yes';
+  // ===== C가문 '제품 해당 위치'(prodc_scope) 파생 판정 =====
+  // 게이트: 위치를 고르기 전에는 C가문 하위 입력(판별 정보·지도편차·X표시 이미지)을 전부 잠근다.
+  const prodcScopeSet = !!detail.prodc_scope;
+  const isOnlyTopScope = detail.prodc_scope === 'only_top';
+  const isOnlyBottomScope = detail.prodc_scope === 'only_bottom';
+  /** ONLY 스코프에서 '쓰지 않는' 리전인가 — 값 초기화·잠금·필수해제 대상 */
+  const prodcRegionOff = (region: CRegion) =>
+    (isOnlyTopScope && region !== 'top') || (isOnlyBottomScope && region !== 'bottom');
+  /** 게이트 + ONLY 스코프 + CLONE/EXISTING 을 합친 리전 최종 잠금 판정 */
+  const prodcLocked = (region: CRegion) =>
+    isMapRegistered || !prodcScopeSet || prodcRegionOff(region);
+  /** 리전 지도편차가 실제로 '변경 있음'으로 살아있는가(X/Y 입력·필수 판정의 기준) */
+  const regionHasMapChange = (region: 'top' | 'bottom') =>
+    !prodcRegionOff(region) && detail[`map_change_${region}`] === '변경 있음';
+  const anyRegionMapChange = regionHasMapChange('top') || regionHasMapChange('bottom');
   const mshotDeleteMode = detail.mshot_change === '삭제';
   const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
   const usedRevLayers = new Set((detail.rev_entries ?? []).flatMap((e) => e.layers));
@@ -1374,6 +1396,7 @@ export default function RequestPage(): React.ReactElement {
       ea_change: INITIAL_DETAIL.ea_change,
       ea_value: INITIAL_DETAIL.ea_value,
       only_prodc: INITIAL_DETAIL.only_prodc,
+      prodc_scope: INITIAL_DETAIL.prodc_scope,
       prodc_top_line: INITIAL_DETAIL.prodc_top_line,
       prodc_top_process: INITIAL_DETAIL.prodc_top_process,
       prodc_top_product: INITIAL_DETAIL.prodc_top_product,
@@ -1406,7 +1429,6 @@ export default function RequestPage(): React.ReactElement {
       rev_yn: INITIAL_DETAIL.rev_yn,
       rev_entries: INITIAL_DETAIL.rev_entries,
     }));
-    setProdcCopyRegion(null);
     setRevLayersSelected([]);
     setRevGds('');
     setErrors({});
@@ -1447,26 +1469,116 @@ export default function RequestPage(): React.ReactElement {
     else setBottomProductOptions([]);
   };
 
-  const handleProdcRegionSelect = (region: CRegion) => {
-    const next = prodcCopyRegion === region ? null : region;
+  // ===== C가문 '제품 해당 위치'(prodc_scope) 선택 =====
+  // 스코프별 주 리전(메인 라인·조합법·제품을 복사해 넣을 곳). ONLY 스코프는 그 리전 하나만 쓴다.
+  const scopePrimaryRegion = (scope: ProdcScope): CRegion | null => {
+    if (scope === 'only_top') return 'top';
+    if (scope === 'only_bottom') return 'bottom';
+    return scope === '' ? null : scope;
+  };
+  /** 그 스코프에서 '쓰지 않는' 리전 목록 — 값 초기화 대상 */
+  const scopeOffRegions = (scope: ProdcScope): CRegion[] => {
+    if (scope === 'only_top') return ['middle', 'bottom'];
+    if (scope === 'only_bottom') return ['top', 'middle'];
+    return [];
+  };
 
-    if (prodcCopyRegion && prodcCopyRegion !== region) {
-      handleDetailSet(`prodc_${prodcCopyRegion}_line`, '');
-      handleDetailSet(`prodc_${prodcCopyRegion}_process`, '');
-      handleDetailSet(`prodc_${prodcCopyRegion}_product`, '');
-      handleProdcProcessChange(prodcCopyRegion, '');
-      // 중앙에서 다른 위치로 전환하면 중앙 사용여부를 미사용으로 되돌린다
-      if (prodcCopyRegion === 'middle') handleDetailSet('prodc_middle_use', '미사용');
+  /** 스코프를 next 로 바꿀 때 지워질 사용자 입력이 실제로 존재하는가(확인 모달 노출 판단) */
+  const prodcScopeWouldClear = (next: ProdcScope): boolean => {
+    const prev = scopePrimaryRegion(detail.prodc_scope);
+    const cleared = new Set<CRegion>(scopeOffRegions(next));
+    // 주 리전이 바뀌면 이전 주 리전 값도 지워진다(기존 동작 계승)
+    if (prev && prev !== scopePrimaryRegion(next)) cleared.add(prev);
+    return Array.from(cleared).some((r) =>
+      !!(detail[`prodc_${r}_line` as keyof DetailFormState]
+        || detail[`prodc_${r}_process` as keyof DetailFormState]
+        || detail[`prodc_${r}_product` as keyof DetailFormState]
+        || (r !== 'middle' && (detail[`map_value_x_${r}` as keyof DetailFormState]
+          || detail[`map_value_y_${r}` as keyof DetailFormState]
+          || detail[`mshot_image_copy_${r}` as keyof DetailFormState])))
+    );
+  };
+
+  /** 스코프 실제 적용 — 초기화·복사를 단일 setDetail 로 원자 처리한다. */
+  const applyProdcScope = (next: ProdcScope) => {
+    isLoadingEditRef.current = false;
+    const prevPrimary = scopePrimaryRegion(detail.prodc_scope);
+    const nextPrimary = scopePrimaryRegion(next);
+    const offRegions = scopeOffRegions(next);
+    // 지울 리전 = ONLY 로 인해 죽는 리전 + (주 리전이 바뀐 경우) 이전 주 리전
+    const clearRegions = new Set<CRegion>(offRegions);
+    if (prevPrimary && prevPrimary !== nextPrimary) clearRegions.add(prevPrimary);
+
+    setDetail((prev) => {
+      const patch: Record<string, unknown> = { ...prev };
+      patch.prodc_scope = next;
+      clearRegions.forEach((r) => {
+        patch[`prodc_${r}_line`] = '';
+        patch[`prodc_${r}_process`] = '';
+        patch[`prodc_${r}_product`] = '';
+        if (r === 'middle') patch.prodc_middle_use = '미사용';
+        else {
+          patch[`map_value_x_${r}`] = '';
+          patch[`map_value_y_${r}`] = '';
+          patch[`mshot_image_copy_${r}`] = '';
+        }
+      });
+      if (nextPrimary) {
+        // 주 리전에는 메인 라인·조합법을 복사한다(기존 '적용 위치' 동작).
+        // 제품은 여기서 넣지 않는다 — 아래 handleProdcProcessChange 가 리전 제품을 ''로 비우므로
+        // 그 뒤에 handleDetailSet 으로 넣어야 값이 살아남는다(기존 핸들러의 호출 순서와 동일).
+        if (nextPrimary === 'middle') patch.prodc_middle_use = '사용';
+        patch[`prodc_${nextPrimary}_line`] = prev.line;
+        patch[`prodc_${nextPrimary}_process`] = prev.process_selection;
+      }
+      return patch as unknown as DetailFormState;
+    });
+
+    // 옵션 캐시는 setDetail 밖에서 갱신(리전 라인 기준 제품 목록 재조회)
+    clearRegions.forEach((r) => handleProdcProcessChange(r, ''));
+    if (nextPrimary) {
+      handleProdcProcessChange(nextPrimary, detail.process_selection, detail.line);
+      handleDetailSet(`prodc_${nextPrimary}_product`, detail.partid_selection);
     }
 
-    setProdcCopyRegion(next);
-    if (next) {
-      // 중앙 선택 시 사용여부를 '사용'으로 바꿔 행이 펼쳐지고 데이터가 채워지도록 한다
-      if (next === 'middle') handleDetailSet('prodc_middle_use', '사용');
-      handleDetailSet(`prodc_${next}_line`, detail.line);
-      handleDetailSet(`prodc_${next}_process`, detail.process_selection);
-      handleProdcProcessChange(next, detail.process_selection, detail.line);
-      handleDetailSet(`prodc_${next}_product`, detail.partid_selection);
+    setErrors((prev) => {
+      const nextErrors: Record<string, string> = { ...prev, prodc_scope: '' };
+      clearRegions.forEach((r) => {
+        nextErrors[`prodc_${r}_line`] = '';
+        nextErrors[`prodc_${r}_process`] = '';
+        nextErrors[`prodc_${r}_product`] = '';
+        if (r !== 'middle') {
+          nextErrors[`map_value_x_${r}`] = '';
+          nextErrors[`map_value_y_${r}`] = '';
+          nextErrors[`mshot_image_copy_${r}`] = '';
+        }
+      });
+      return nextErrors;
+    });
+    setProdcScopeConfirm(null);
+  };
+
+  /** 라디오 클릭 진입점 — 지울 데이터가 있으면 확인 모달을 거친다. */
+  const handleProdcScopeSelect = (next: ProdcScope) => {
+    if (next === detail.prodc_scope) return;
+    if (prodcScopeWouldClear(next)) setProdcScopeConfirm(next);
+    else applyProdcScope(next);
+  };
+
+  /** 리전별 지도 편차 변경 — '변경 없음' 전환 시 그 리전 X/Y 를 비운다. */
+  const handleRegionMapChangeChange = (region: 'top' | 'bottom', value: string) => {
+    isLoadingEditRef.current = false;
+    setDetail((prev) => {
+      if (value !== '변경 없음') return { ...prev, [`map_change_${region}`]: value };
+      const next = { ...prev, [`map_change_${region}`]: value, [`map_value_x_${region}`]: '', [`map_value_y_${region}`]: '' };
+      // 양쪽 다 '변경 없음'이 되면 공용 사유도 비운다(숨은 값이 저장되지 않도록).
+      const other = region === 'top' ? 'bottom' : 'top';
+      const otherOff = (isOnlyTopScope && other !== 'top') || (isOnlyBottomScope && other !== 'bottom');
+      if (otherOff || prev[`map_change_${other}`] === '변경 없음') next.map_reason = '';
+      return next;
+    });
+    if (value === '변경 없음') {
+      setErrors((prev) => ({ ...prev, [`map_value_x_${region}`]: '', [`map_value_y_${region}`]: '', map_reason: '' }));
     }
   };
 
@@ -1474,18 +1586,21 @@ export default function RequestPage(): React.ReactElement {
   // 조건부 필드를 '변경 없음/미사용/없음'으로 되돌리면 숨겨진 하위 값까지 비운다.
   // (숨김 상태로 state 에 잔존해 backend 에 잘못 저장되는 것을 막기 위함 — 감사 R-2~R-5)
 
-  // C가문(only_prodc) — No 로 전환 시 상/중/하판·지도편차(prodc) 값 전체 초기화.
+  // C가문(only_prodc) — No 로 전환 시 상/중/하판·지도편차(prodc)·X표시 값 전체 초기화.
   // REV(rev_yn/rev_entries)는 C가문과 독립된 항목이므로 여기서 건드리지 않는다.
   const handleOnlyProdcChange = (value: string) => {
     isLoadingEditRef.current = false;
     if (value !== 'No') {
-      setDetail((prev) => ({ ...prev, only_prodc: value }));
+      // Yes 전환 시 X표시 변경 여부를 '수정'으로 자동 설정한다(C가문은 X표시 수정이 기본 전제).
+      // 편집 로드·프리필 경로에는 걸지 않는다 — 저장된 mshot_change 가 덮어써지기 때문.
+      setDetail((prev) => ({ ...prev, only_prodc: value, mshot_change: '수정' }));
       if (errors['only_prodc']) setErrors((prev) => ({ ...prev, only_prodc: '' }));
       return;
     }
     setDetail((prev) => ({
       ...prev,
       only_prodc: 'No',
+      prodc_scope: '',
       prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
       prodc_middle_use: '', prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
       prodc_bottom_line: '', prodc_bottom_process: '', prodc_bottom_product: '',
@@ -1493,14 +1608,18 @@ export default function RequestPage(): React.ReactElement {
       map_value_x_top: '', map_value_y_top: '',
       map_change_bottom: INITIAL_DETAIL.map_change_bottom,
       map_value_x_bottom: '', map_value_y_bottom: '',
+      // Yes 전환 시 자동으로 넣었던 '수정'과 그때 붙여넣은 이미지를 함께 되돌린다
+      // (C가문을 되돌린 뒤 원하지 않은 X표시 정보가 저장되는 것을 막기 위함).
+      mshot_change: INITIAL_DETAIL.mshot_change,
+      mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '',
     }));
-    setProdcCopyRegion(null);
     setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
     setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
     setErrors((prev) => ({
       ...prev,
-      only_prodc: '', prodc_top_line: '', prodc_top_process: '', prodc_bottom_line: '', prodc_bottom_process: '',
+      only_prodc: '', prodc_scope: '', prodc_top_line: '', prodc_top_process: '', prodc_bottom_line: '', prodc_bottom_process: '',
       map_value_x_top: '', map_value_y_top: '', map_value_x_bottom: '', map_value_y_bottom: '', map_reason: '',
+      mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '',
     }));
   };
 
@@ -2658,45 +2777,51 @@ export default function RequestPage(): React.ReactElement {
       }
       if (!isMapRegistered) {
       if (detail.only_prodc === 'Yes') {
-        // C가문 Yes: top/bottom X/Y 필수 + 부호·동일값 검증
-        if (!detail.map_value_x_top?.trim()) {
-          newErrors['map_value_x_top'] = t('request.required');
-          errorMessages.push('MAP 변경 X (북쪽): 필수 입력 항목입니다.');
+        // 제품 해당 위치(prodc_scope)를 먼저 골라야 나머지 C가문 입력이 열린다.
+        if (!prodcScopeSet) {
+          newErrors['prodc_scope'] = t('request.required');
+          errorMessages.push('제품 해당 위치: 필수 선택 항목입니다.');
         }
-        if (!detail.map_value_y_top?.trim()) {
-          newErrors['map_value_y_top'] = t('request.required');
-          errorMessages.push('MAP 변경 Y (북쪽): 필수 입력 항목입니다.');
-        }
-        if (!detail.map_value_x_bottom?.trim()) {
-          newErrors['map_value_x_bottom'] = t('request.required');
-          errorMessages.push('MAP 변경 X (남쪽): 필수 입력 항목입니다.');
-        }
-        if (!detail.map_value_y_bottom?.trim()) {
-          newErrors['map_value_y_bottom'] = t('request.required');
-          errorMessages.push('MAP 변경 Y (남쪽): 필수 입력 항목입니다.');
-        }
-        if (!detail.map_reason?.trim()) {
+        // C가문 Yes: 살아있는(ONLY 로 죽지 않은) 리전 중 '변경 있음'인 곳만 X/Y 필수.
+        const REGION_LABEL = { top: '북쪽', bottom: '남쪽' } as const;
+        (['top', 'bottom'] as const).forEach((region) => {
+          if (!regionHasMapChange(region)) return;
+          if (!detail[`map_value_x_${region}`]?.trim()) {
+            newErrors[`map_value_x_${region}`] = t('request.required');
+            errorMessages.push(`MAP 변경 X (${REGION_LABEL[region]}): 필수 입력 항목입니다.`);
+          }
+          if (!detail[`map_value_y_${region}`]?.trim()) {
+            newErrors[`map_value_y_${region}`] = t('request.required');
+            errorMessages.push(`MAP 변경 Y (${REGION_LABEL[region]}): 필수 입력 항목입니다.`);
+          }
+        });
+        // 사유는 한 리전이라도 '변경 있음'일 때만 필수
+        if (anyRegionMapChange && !detail.map_reason?.trim()) {
           newErrors['map_reason'] = t('request.required');
           errorMessages.push('MAP 변경 사유: 필수 입력 항목입니다.');
         }
-        // X값 부호 반대 + 절대값 동일 검증
-        if (detail.map_value_x_top?.trim() && detail.map_value_x_bottom?.trim()) {
-          const xTop = parseFloat(detail.map_value_x_top);
-          const xBot = parseFloat(detail.map_value_x_bottom);
-          if (!isNaN(xTop) && !isNaN(xBot)) {
-            // 절대값은 항상 동일해야 하고, 0이 아닐 때만 부호가 서로 반대여야 한다
-            // (0/0 은 부호 개념이 없으므로 Y처럼 허용).
-            if (Math.abs(xTop) !== Math.abs(xBot) || (xTop !== 0 && Math.sign(xTop) === Math.sign(xBot))) {
-              newErrors['map_value_x_bottom'] = t('request.map_x_sign_error');
-              errorMessages.push(t('request.map_x_sign_error'));
+        // 북·남 상호검증은 두 리전이 모두 살아있고 모두 '변경 있음'일 때만 성립한다
+        // (ONLY 스코프이거나 한쪽이 '변경 없음'이면 비교 대상 자체가 없다).
+        if (regionHasMapChange('top') && regionHasMapChange('bottom')) {
+          // X값 부호 반대 + 절대값 동일 검증
+          if (detail.map_value_x_top?.trim() && detail.map_value_x_bottom?.trim()) {
+            const xTop = parseFloat(detail.map_value_x_top);
+            const xBot = parseFloat(detail.map_value_x_bottom);
+            if (!isNaN(xTop) && !isNaN(xBot)) {
+              // 절대값은 항상 동일해야 하고, 0이 아닐 때만 부호가 서로 반대여야 한다
+              // (0/0 은 부호 개념이 없으므로 Y처럼 허용).
+              if (Math.abs(xTop) !== Math.abs(xBot) || (xTop !== 0 && Math.sign(xTop) === Math.sign(xBot))) {
+                newErrors['map_value_x_bottom'] = t('request.map_x_sign_error');
+                errorMessages.push(t('request.map_x_sign_error'));
+              }
             }
           }
-        }
-        // Y값 동일 검증
-        if (detail.map_value_y_top?.trim() && detail.map_value_y_bottom?.trim()) {
-          if (detail.map_value_y_top.trim() !== detail.map_value_y_bottom.trim()) {
-            newErrors['map_value_y_bottom'] = t('request.map_y_equal_error');
-            errorMessages.push(t('request.map_y_equal_error'));
+          // Y값 동일 검증
+          if (detail.map_value_y_top?.trim() && detail.map_value_y_bottom?.trim()) {
+            if (detail.map_value_y_top.trim() !== detail.map_value_y_bottom.trim()) {
+              newErrors['map_value_y_bottom'] = t('request.map_y_equal_error');
+              errorMessages.push(t('request.map_y_equal_error'));
+            }
           }
         }
       } else if (detail.map_change === '변경 있음') {
@@ -2731,6 +2856,8 @@ export default function RequestPage(): React.ReactElement {
       }
       if (detail.only_prodc === 'Yes') {
         (['top', 'bottom'] as const).forEach((region) => {
+          // ONLY 스코프로 죽은 리전은 값이 비워져 있으므로 필수 검증 대상이 아니다.
+          if (prodcRegionOff(region)) return;
           if (!detail[`prodc_${region}_line` as keyof DetailFormState]?.toString().trim()) {
             newErrors[`prodc_${region}_line`] = t('request.required');
             errorMessages.push(`C가문 ${region === 'top' ? '북쪽' : '남쪽'} 위치: 필수 입력 항목입니다.`);
@@ -2747,11 +2874,12 @@ export default function RequestPage(): React.ReactElement {
       }
       if (detail.mshot_change === '추가' || detail.mshot_change === '수정') {
         if (detail.only_prodc === 'Yes') {
-          if (!detail.mshot_image_copy_top) {
+          // ONLY 스코프로 죽은 리전의 이미지는 필수가 아니다(값도 비워져 있다).
+          if (!prodcRegionOff('top') && !detail.mshot_image_copy_top) {
             newErrors['mshot_image_copy_top'] = t('request.required');
             errorMessages.push('X표시 이미지 (북쪽): 필수 입력 항목입니다.');
           }
-          if (!detail.mshot_image_copy_bottom) {
+          if (!prodcRegionOff('bottom') && !detail.mshot_image_copy_bottom) {
             newErrors['mshot_image_copy_bottom'] = t('request.required');
             errorMessages.push('X표시 이미지 (남쪽): 필수 입력 항목입니다.');
           }
@@ -3033,6 +3161,7 @@ export default function RequestPage(): React.ReactElement {
       ea_change: INITIAL_DETAIL.ea_change,
       ea_value: INITIAL_DETAIL.ea_value,
       only_prodc: INITIAL_DETAIL.only_prodc,
+      prodc_scope: INITIAL_DETAIL.prodc_scope,
       prodc_top_line: INITIAL_DETAIL.prodc_top_line,
       prodc_top_process: INITIAL_DETAIL.prodc_top_process,
       prodc_top_product: INITIAL_DETAIL.prodc_top_product,
@@ -3069,7 +3198,6 @@ export default function RequestPage(): React.ReactElement {
       tbvtlv_entries: INITIAL_DETAIL.tbvtlv_entries,
     }));
     setErrors({});
-    setProdcCopyRegion(null);
     setRevLayersSelected([]);
     setRevGds('');
   };
@@ -3305,7 +3433,13 @@ export default function RequestPage(): React.ReactElement {
           middleProcessOptions={middleProcessOptions}
           bottomProcessOptions={bottomProcessOptions}
           handleProdcLineChange={handleProdcLineChange}
-          prodcCopyRegion={prodcCopyRegion}
+          prodcScopeSet={prodcScopeSet}
+          prodcLocked={prodcLocked}
+          prodcRegionOff={prodcRegionOff}
+          regionHasMapChange={regionHasMapChange}
+          anyRegionMapChange={anyRegionMapChange}
+          handleProdcScopeSelect={handleProdcScopeSelect}
+          handleRegionMapChangeChange={handleRegionMapChangeChange}
           revLayersSelected={revLayersSelected}
           setRevLayersSelected={setRevLayersSelected}
           revGds={revGds}
@@ -3323,7 +3457,6 @@ export default function RequestPage(): React.ReactElement {
           handleMapTypeSelect={handleMapTypeSelect}
           handleDetailChange={handleDetailChange}
           handleDetailSet={handleDetailSet}
-          handleProdcRegionSelect={handleProdcRegionSelect}
           handleProdcProcessChange={handleProdcProcessChange}
           handleOnlyProdcChange={handleOnlyProdcChange}
           handleMapChangeChange={handleMapChangeChange}
@@ -4000,6 +4133,15 @@ export default function RequestPage(): React.ReactElement {
         onConfirm={handleMapTypeChangeConfirm}
         title={t('request.map_type_change_confirm_title')}
         message={t('request.map_type_change_confirm_msg')}
+        danger
+      />
+
+      <ConfirmModal
+        isOpen={prodcScopeConfirm !== null}
+        onClose={() => setProdcScopeConfirm(null)}
+        onConfirm={() => { if (prodcScopeConfirm !== null) applyProdcScope(prodcScopeConfirm); }}
+        title={t('request.prodc_scope_change_title')}
+        message={t('request.prodc_scope_change_msg')}
         danger
       />
 
