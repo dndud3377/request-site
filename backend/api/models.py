@@ -84,7 +84,7 @@ class RequestDocument(models.Model):
         'map_change_top', 'map_value_x_top', 'map_value_y_top',
         'map_change_bottom', 'map_value_x_bottom', 'map_value_y_bottom',
         'ea_change', 'ea_value',
-        'only_prodc',
+        'only_prodc', 'prodc_scope',
         'prodc_top_line', 'prodc_top_process', 'prodc_top_product',
         'prodc_middle_use', 'prodc_middle_line', 'prodc_middle_process', 'prodc_middle_product',
         'prodc_bottom_line', 'prodc_bottom_process', 'prodc_bottom_product',

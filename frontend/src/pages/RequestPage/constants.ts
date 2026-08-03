@@ -25,7 +25,7 @@ export const MAP_DETAIL_KEYS: (keyof DetailFormState)[] = [
   'map_change_top', 'map_value_x_top', 'map_value_y_top',
   'map_change_bottom', 'map_value_x_bottom', 'map_value_y_bottom',
   'ea_change', 'ea_value',
-  'only_prodc',
+  'only_prodc', 'prodc_scope',
   'prodc_top_line', 'prodc_top_process', 'prodc_top_product',
   'prodc_middle_use', 'prodc_middle_line', 'prodc_middle_process', 'prodc_middle_product',
   'prodc_bottom_line', 'prodc_bottom_process', 'prodc_bottom_product',
@@ -56,11 +56,46 @@ export const JAYER_EDITABLE_COLS = ['process_id', 'sp', 'sd', 'layerid', 'pp', '
 export const OAYER_EDITABLE_COLS = ['process_id', 'sp', 'sd', 'layerid', 'pp', 'st', 'new_or_copy', 'product_name', 'step'] as const;
 // 자동채움/병합으로 "불러온" 행에서 읽기전용으로 잠그는 컬럼(수동 추가 행은 편집 허용)
 export const LOADED_LOCK_COLS = ['process_id', 'sp', 'sd', 'layerid', 'pp'] as const;
+// J/O-layer 표의 col_new_or_copy · col_st 저장값(그대로 DB 에 들어간다).
+export const NOC_NEW = '신규';
+export const NOC_BORROW = '차용';
+export const NOC_REGISTERED = '기등록';
+export const NOC_LAYER_DELETE = 'layer삭제';
+export const ST_O = 'O';
+export const ST_X = 'X';
+
 // new_or_copy가 이 값이면 J↔O 동기화(송신·수신)에서 제외하고 bb 원본 데이터 목록에서도 숨긴다.
-export const isNocSpecial = (noc?: string): boolean => noc === '기등록' || noc === 'layer삭제';
+export const isNocSpecial = (noc?: string): boolean => noc === NOC_REGISTERED || noc === NOC_LAYER_DELETE;
 
 // ===== Shared Types =====
 export type CRegion = 'top' | 'middle' | 'bottom';
+/** C가문 '제품 해당 위치'. '' = 미선택(게이트), 'only_*' = 그 리전 하나만 사용. */
+export type ProdcScope = DetailFormState['prodc_scope'];
+/** 라디오 표시 순서 — 기존 3개 뒤에 ONLY 2개를 이어붙인다. */
+export const PRODC_SCOPE_OPTIONS: {
+  value: Exclude<ProdcScope, ''>;
+  labelKey: 'prodc_top' | 'prodc_middle' | 'prodc_bottom' | 'prodc_only_top' | 'prodc_only_bottom';
+}[] = [
+  { value: 'top', labelKey: 'prodc_top' },
+  { value: 'middle', labelKey: 'prodc_middle' },
+  { value: 'bottom', labelKey: 'prodc_bottom' },
+  { value: 'only_top', labelKey: 'prodc_only_top' },
+  { value: 'only_bottom', labelKey: 'prodc_only_bottom' },
+];
+
+/**
+ * prodc_scope 가 없는 옛 문서를 저장값으로 역추론한다(편집 로드 백필).
+ * 북·남 둘 다 있으면 'top'(북/중/남 셋은 잠금·필수 규칙이 동일해 어느 값이든 동작이 같다),
+ * 한쪽만 있으면 그쪽 ONLY 스코프로 본다.
+ */
+export function inferProdcScope(d: Partial<DetailFormState>): ProdcScope {
+  const hasTop = !!(d.prodc_top_line || d.prodc_top_process || d.prodc_top_product);
+  const hasBottom = !!(d.prodc_bottom_line || d.prodc_bottom_process || d.prodc_bottom_product);
+  if (hasTop && hasBottom) return 'top';
+  if (hasTop) return 'only_top';
+  if (hasBottom) return 'only_bottom';
+  return '';
+}
 
 // ===== Row Factories =====
 export const genId = () => `${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -162,6 +197,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   bb_zone: '존재',
   bb_entries: [makeBbEntry()],
   only_prodc: 'No',
+  prodc_scope: '',
   prodc_top_line: '',
   prodc_top_process: '',
   prodc_top_product: '',
@@ -198,6 +234,8 @@ export const INITIAL_DETAIL: DetailFormState = {
   tbvtlv_entries: [],
   notifiers: [],
   validation_system: VS_NONTARGET,
+  merge_ref_doc_id: null,
+  merge_ref_doc_label: '',
 };
 
 export const INITIAL_FORM: CreateDocumentInput = {

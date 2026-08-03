@@ -1110,6 +1110,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return
         if ApprovalStep.objects.filter(document=document, agent='J', round=round_no).exists():
             return
+        mailer.enqueue_notify_p_completed(document)
         main_step = ApprovalStep.objects.filter(document=document, agent='P', round=round_no).first()
         from .utils import calculate_business_due_date
         import datetime
@@ -1147,6 +1148,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 document=document, agent='O', action='pending', is_parallel=True, round=round_no, due_date=o_due,
             )
             mailer.enqueue_stage_arrival(document, 'P', p_step)
+            mailer.enqueue_notify_p_arrival(document)
             mailer.enqueue_stage_arrival(document, 'O', o_step)
             # E(MASK)는 판정 키워드(plel)가 있는 의뢰서에만 생성한다 — 키워드가 아예 없으면
             # Validation System 판정이 '해당없음'이라 MASK 가 검증할 대상 자체가 없다.
@@ -1156,14 +1158,15 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 )
                 mailer.enqueue_stage_arrival(document, 'E', e_step)
 
-        # 후결자(RA) 병렬 생성 — 고정 1명 + C가문 추가. 각자에게 "[후결 요청]" 메일 발송.
+        # 후결자(RA) 병렬 생성 — 고정 1명 + C가문 추가. 각자에게 개별 메일 발송
+        # (고정 후결자는 "[후결 요청]", 그 외는 다른 단계와 동일한 형식 — mailer 에서 자동 분기).
         for u in post_users:
             ra_step = ApprovalStep.objects.create(
                 document=document, agent='RA', action='pending', is_parallel=True,
                 round=round_no, due_date=ra_due,
                 assignee=u, assignee_name=(u.username or u.loginid),
             )
-            mailer.enqueue_stage_arrival(document, 'RA', ra_step)
+            mailer.enqueue_stage_arrival(document, 'RA', ra_step, recipient_name=ra_step.assignee_name)
         return 'under_review'
 
     def _resolve_designated_pls(self, request):
@@ -1418,7 +1421,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             document=document, agent='RA', action='pending', is_parallel=True,
             round=max_round, due_date=ra_due, assignee=new_user, assignee_name=assignee_name,
         )
-        mailer.enqueue_stage_arrival(document, 'RA', ra_step)
+        mailer.enqueue_stage_arrival(document, 'RA', ra_step, recipient_name=ra_step.assignee_name)
         self._sync_post_approvers_detail(document, add={'loginid': new_loginid, 'name': assignee_name})
 
         return Response({'message': '후결자가 추가되었습니다.',
@@ -2191,18 +2194,19 @@ def form_options_barcode(request):
 
 @require_GET
 def form_options_mapname(request):
-    """원본 위치(라인명) → partid 목록 반환"""
+    """원본 위치(라인명) → partid 목록 반환("_" 앞 8자리 코드만, 중복 제거·정렬)"""
     line = request.GET.get('line', '')
     lineid = LINE_TO_LINEID_MAP.get(line)
     if not lineid:
         return JsonResponse({'options': []})
 
-    options = list(
+    raw_partids = (
         MapName.objects.filter(lineid=lineid)
         .values_list('partid', flat=True)
         .distinct()
-        .order_by('partid')
     )
+    codes = {p.split('_')[0] for p in raw_partids if len(p.split('_')[0]) == 8}
+    options = sorted(codes)
     return JsonResponse({'options': options})
 
 

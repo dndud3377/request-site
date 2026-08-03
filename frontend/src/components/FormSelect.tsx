@@ -12,6 +12,8 @@ interface FormSelectProps {
   style?: React.CSSProperties;
   className?: string;
   visibility?: 'visible' | 'hidden';
+  /** 미지정 시 기존대로 편집 가능(기존 사용처 동작 불변). */
+  disabled?: boolean;
 }
 
 const FormSelect: React.FC<FormSelectProps> = ({
@@ -26,6 +28,7 @@ const FormSelect: React.FC<FormSelectProps> = ({
   style,
   className,
   visibility,
+  disabled,
 }) => (
   <div
     className={`form-group${className ? ` ${className}` : ''}`}
@@ -40,6 +43,7 @@ const FormSelect: React.FC<FormSelectProps> = ({
       name={name}
       value={value}
       onChange={onChange}
+      disabled={disabled}
     >
       {placeholder && <option value="">{placeholder}</option>}
       {options.map((v) => (
