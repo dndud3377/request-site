@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>참조 요청서 Merge — BEFORE/AFTER 매핑 계획서 (Mock)</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1f2430;
+    --text-secondary: #4b5563;
+    --muted: #8a93a3;
+    --border: #dde1e8;
+    --border-light: #eceff4;
+    --accent: #2563eb;
+    --accent-soft: #eff6ff;
+    --green: #16a34a;
+    --green-soft: #eefaf1;
+    --amber: #b45309;
+    --amber-soft: #fff7ed;
+    --danger: #dc3545;
+    --danger-soft: #fdeced;
+    --purple: #7c3aed;
+    --purple-soft: #f5f0ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171d;
+      --card: #1b1f27;
+      --text: #e8eaf0;
+      --text-secondary: #b6bdcb;
+      --muted: #8a93a3;
+      --border: #333a47;
+      --border-light: #272d38;
+      --accent: #5b8dff;
+      --accent-soft: #1d2740;
+      --green: #4ade80;
+      --green-soft: #16281d;
+      --amber: #fbbf24;
+      --amber-soft: #2c2312;
+      --danger: #f87171;
+      --danger-soft: #2e1a1c;
+      --purple: #a78bfa;
+      --purple-soft: #241d38;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 80px;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    font-size: 15px; line-height: 1.65;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 1.55rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+  h2 {
+    font-size: 1.12rem; margin: 40px 0 12px; padding-bottom: 8px;
+    border-bottom: 2px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 0.98rem; margin: 22px 0 8px; color: var(--text); }
+  p { margin: 8px 0; color: var(--text-secondary); }
+  code {
+    background: var(--border-light); padding: 1px 5px; border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86em;
+  }
+  .sub { color: var(--muted); font-size: 0.88rem; margin: 0 0 18px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 20px; margin: 14px 0;
+  }
+  .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+  th, td { border-bottom: 1px solid var(--border-light); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--border-light); font-weight: 600; font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; }
+  ul, ol { margin: 8px 0; padding-left: 20px; color: var(--text-secondary); }
+  li { margin: 4px 0; }
+  .badge {
+    display: inline-block; padding: 1px 7px; border-radius: 20px;
+    font-size: 0.72rem; font-weight: 700; white-space: nowrap;
+  }
+  .b-j { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); }
+  .b-o { background: var(--purple-soft); color: var(--purple); border: 1px solid var(--purple); }
+  .b-new { background: var(--green-soft); color: var(--green); border: 1px solid var(--green); }
+  .b-del { background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger); }
+  .b-chg { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber); }
+  .b-auto { background: var(--border-light); color: var(--muted); border: 1px solid var(--border); }
+  .tag-q { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber); }
+
+  /* ===== Mock UI ===== */
+  .mock {
+    border: 2px dashed var(--accent); border-radius: 12px;
+    padding: 18px; background: var(--card); margin: 16px 0;
+  }
+  .mock-label {
+    display: inline-block; background: var(--accent); color: #fff;
+    font-size: 0.72rem; font-weight: 700; padding: 2px 10px;
+    border-radius: 20px; margin-bottom: 14px;
+  }
+  .form-label { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px; }
+  .btn {
+    padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); font-size: 0.85rem;
+    cursor: pointer; font-family: inherit; white-space: nowrap;
+  }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .purpose-btn {
+    padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text-secondary); font-size: 0.82rem; cursor: pointer;
+    font-family: inherit;
+  }
+  .purpose-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .purpose-btn.solo { border-style: dashed; }
+  .input {
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--card); color: var(--text); font-size: 0.85rem; width: 100%; font-family: inherit;
+  }
+  .row-flex { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+  .summary-bar {
+    display: flex; gap: 14px; flex-wrap: wrap; align-items: center;
+    background: var(--border-light); border-radius: 8px; padding: 8px 12px;
+    font-size: 0.83rem; color: var(--text-secondary); margin: 14px 0;
+  }
+  .panel-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 820px) { .panel-2 { grid-template-columns: 1fr; } }
+  .panel {
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--card);
+  }
+  .panel-title {
+    font-size: 0.82rem; font-weight: 700; padding: 8px 12px;
+    background: var(--border-light); border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  }
+  .panel-body { max-height: 290px; overflow: auto; }
+  .pick-row { cursor: pointer; }
+  .pick-row:hover td { background: var(--border-light); }
+  .pick-row.sel td { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+  .pick-row.unreg td { font-style: italic; color: var(--muted); }
+  .hint { font-size: 0.8rem; color: var(--muted); padding: 10px 12px; }
+  .apply-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
+  }
+  .apply-hint { font-size: 0.82rem; color: var(--text-secondary); flex: 1; min-width: 200px; }
+  .pair-chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px;
+    background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 6px;
+    font-size: 0.78rem; margin: 3px 4px 3px 0;
+  }
+  .pair-chip button {
+    border: none; background: none; color: var(--danger); cursor: pointer;
+    font-size: 0.85rem; padding: 0; line-height: 1;
+  }
+  .x-btn {
+    border: none; background: none; color: var(--danger); cursor: pointer; font-size: 0.85rem;
+  }
+  .cell-chg { color: var(--amber); font-weight: 700; }
+  .cell-none { color: var(--muted); font-style: italic; }
+  .grp-before { background: var(--danger-soft) !important; }
+  .grp-after { background: var(--green-soft) !important; }
+  .note {
+    border-left: 3px solid var(--accent); background: var(--accent-soft);
+    padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 12px 0;
+    font-size: 0.87rem; color: var(--text-secondary);
+  }
+  .warn { border-left-color: var(--amber); background: var(--amber-soft); }
+  .flow { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; margin: 10px 0; }
+  .flow-step {
+    flex: 1; min-width: 150px; border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; background: var(--card); font-size: 0.82rem;
+  }
+  .flow-step b { display: block; font-size: 0.86rem; margin-bottom: 3px; color: var(--text); }
+  .flow-step span { color: var(--muted); }
+  .q { counter-increment: qq; }
+  .file-list code { display: inline-block; margin-right: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>참조 요청서 Merge — BEFORE / AFTER 매핑 기능 계획서</h1>
+  <p class="sub">대상: 의뢰서 작성 STEP 1 · 기타 목적 → 참조 요청서 Merge &nbsp;|&nbsp; 작성일 2026-08-03 &nbsp;|&nbsp; 브랜치 <code>claude/request-detail-other-purpose-ixuxi0</code> &nbsp;|&nbsp; <b>상태: 승인 대기 (코드 미작성)</b></p>
+
+  <div class="note">
+    이 문서는 <b>구현 전 계획서</b>입니다. 아래 §3 의 Mock 은 <b>실제로 클릭이 되는 시뮬레이션</b>이라 매핑 → 적용 흐름을 직접 눌러보실 수 있습니다.
+    §6 의 <b>확인 요청 항목 5가지</b>에 답을 주시면 그대로 구현에 착수하겠습니다.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>1. 확정된 요구사항</h2>
+
+  <div class="scroll-x">
+  <table>
+    <thead><tr><th style="width:34px">#</th><th style="width:210px">항목</th><th>확정 내용</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>사용 가능한 기타 목적</td><td><code>Layer 추가/삭제</code> · <code>STEPSEQ 변경</code> · <code>Overlay 변경</code> 3개에서 참조 요청서 Merge 사용</td></tr>
+      <tr><td>2</td><td>중복 노출 방지</td><td>3개 중 <b>2개 이상을 골라도 Merge 블록은 1개만</b> 표시 (참조 요청서도 1건)</td></tr>
+      <tr><td>3</td><td>표시 항목</td><td><code>process_id</code> / <code>sp</code> / <code>sd</code> / <code>pp</code> / <code>layerid</code>(= 표의 <code>col_layer</code>) 5개 + 맨 앞 <code>J-ayer</code>/<code>O-ayer</code> 배지</td></tr>
+      <tr><td>4</td><td>같은 줄 판정</td><td><code>process_id</code> + <code>layerid</code> 가 같고 <code>sp</code>/<code>sd</code>/<code>pp</code> 중 <b>하나라도 다르면</b> 같은 줄(A→BEFORE, B→AFTER). 5개 모두 같으면 <b>변경 없음</b> 으로 표에서 제외</td></tr>
+      <tr><td>5</td><td>한쪽에만 있을 때</td><td>대칭 처리 — B 에만 있으면 <code>BEFORE=미등록</code>, A 에만 있으면 <code>AFTER=미등록</code></td></tr>
+      <tr><td>6</td><td>1:1 이 아닐 때</td><td>같은 <code>process_id+layerid</code> 그룹에 A·B 행이 여러 개면 자동 매칭하지 않고 <b>BB 매핑처럼 사용자가 직접 짝을 지어 적용</b></td></tr>
+      <tr><td>7</td><td>표 구성</td><td><b>표 2개</b> — ① <b>BEFORE/AFTER 표</b>(미확정, 각각 <code>미등록</code> 항목 포함) ② <b>변경전/변경후 표</b>(확정된 짝)</td></tr>
+      <tr><td>8</td><td>수정 가능 범위</td><td>자동으로 맺어진 짝이 틀렸으면 <b>해제 후 다시 매핑</b> 가능 (셀 값 직접 편집은 범위 밖)</td></tr>
+      <tr><td>9</td><td>기존 3-way Merge</td><td><b>현행 유지</b> — Merge 확정 시 J/O 표의 <code>st</code>/<code>new_or_copy</code> 재판정(신규·기등록·layer삭제)은 지금 그대로 동작. BEFORE/AFTER·변경전/변경후 표는 <b>결과를 보여주는 별도 화면</b></td></tr>
+      <tr><td>10</td><td>저장·노출</td><td>확정된 변경전/변경후 결과를 문서에 저장 → <b>의뢰 상세 페이지(결재/이력)에도 표시</b></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>2. 동작 흐름</h2>
+  <div class="flow">
+    <div class="flow-step"><b>① 기타 목적 선택</b><span>Layer 추가/삭제 · STEPSEQ 변경 · Overlay 변경 중 1개 이상 → Merge 블록 1개 노출</span></div>
+    <div class="flow-step"><b>② 참조 요청서 선택</b><span>결재완료 문서 검색 → J/O 행 로드</span></div>
+    <div class="flow-step"><b>③ Merge 실행</b><span>확인 모달 → <b>기존 3-way 재판정 그대로 J/O 표에 반영</b> + 비교 결과 생성</span></div>
+    <div class="flow-step"><b>④ 자동 판정</b><span>1:1 성립 → 변경전/변경후 표<br>모호 → BEFORE/AFTER 표</span></div>
+    <div class="flow-step"><b>⑤ 수동 매핑</b><span>BEFORE 1행 + AFTER 1행(또는 미등록) 선택 → 매핑 → <b>적용</b></span></div>
+    <div class="flow-step"><b>⑥ 저장</b><span>상신·임시저장 시 함께 저장 → 상세 페이지 노출</span></div>
+  </div>
+
+  <h3>자동 매칭 규칙 (같은 <code>process_id + layerid</code> 그룹 단위)</h3>
+  <div class="scroll-x">
+  <table>
+    <thead><tr><th>그룹 안의 A 행 수</th><th>B 행 수</th><th>처리</th><th>가는 곳</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>1</td><td>값이 모두 같으면 <b>제외</b>, 하나라도 다르면 자동 1:1</td><td>변경전/변경후 표</td></tr>
+      <tr><td>N (≥1)</td><td>0</td><td>각 행을 <code>AFTER=미등록</code> 과 자동 짝 (모호성 없음)</td><td>변경전/변경후 표</td></tr>
+      <tr><td>0</td><td>N (≥1)</td><td>각 행을 <code>BEFORE=미등록</code> 과 자동 짝 (모호성 없음)</td><td>변경전/변경후 표</td></tr>
+      <tr><td colspan="2"><b>둘 다 ≥1 이고 한쪽이라도 ≥2</b></td><td><b>자동 매칭하지 않음</b> — 사용자가 직접 매핑</td><td>BEFORE/AFTER 표</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p style="font-size:0.85rem"><b>비교 대상</b>: J-ayer 는 J-ayer 끼리, O-ayer 는 O-ayer 끼리만. 비활성(<code>disabled</code>) 행과 <code>layerid</code> 가 빈 행은 비교에서 제외합니다.</p>
+
+  <!-- ============================================================ -->
+  <h2>3. UI Mock <span style="font-size:0.8rem;font-weight:400;color:var(--muted)">— 실제로 클릭해보실 수 있습니다</span></h2>
+
+  <div class="mock">
+    <span class="mock-label">STEP 1 · 기타 목적 영역</span>
+
+    <div style="margin-bottom:14px">
+      <span class="form-label">기타 목적</span>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="purpose-btn active">Layer 추가/삭제</button>
+        <button class="purpose-btn active">STEPSEQ 변경</button>
+        <button class="purpose-btn">공법 추가/변경</button>
+        <button class="purpose-btn">Overlay 변경</button>
+        <button class="purpose-btn">ADI CD 변경</button>
+        <button class="purpose-btn">FirstA 변경</button>
+        <button class="purpose-btn solo">완성된 MAP 변경</button>
+      </div>
+      <p style="font-size:0.8rem;margin:6px 0 0">
+        ⓘ <b>Layer 추가/삭제 · STEPSEQ 변경</b> 2개를 선택했지만 아래 참조 요청서 블록은 <b>1개만</b> 나타납니다. (요구사항 #2)
+      </p>
+    </div>
+
+    <div class="row-flex" style="max-width:920px">
+      <div style="flex:1;min-width:240px">
+        <span class="form-label">참조 요청서</span>
+        <input class="input" value="라인1(기타-[Layer 추가/삭제])_MAP(EDIT)_A공법_제품X_PROC_X1_요청서_260715" readonly />
+      </div>
+      <button class="btn btn-primary" onclick="alert('실제 화면에서는 기존과 동일한 Merge 확인 모달(신규/기등록/layer삭제 건수)이 먼저 열리고,\n확인하면 J/O 표 재판정 + 아래 비교 표 생성이 함께 실행됩니다.')">Merge</button>
+    </div>
+
+    <div class="summary-bar">
+      <span>📊 비교 결과</span>
+      <span>변경 없음 <b>12</b>건 (표에서 제외)</span>
+      <span>자동 확정 <b id="cntAuto">4</b>건</span>
+      <span style="color:var(--amber)">수동 매핑 필요 <b id="cntManual">4</b>건</span>
+    </div>
+
+    <!-- ① BEFORE / AFTER -->
+    <h3 style="margin-top:18px">① BEFORE / AFTER — 자동으로 짝을 지을 수 없는 항목</h3>
+    <div class="panel-2">
+      <div class="panel">
+        <div class="panel-title"><span>BEFORE — 참조 요청서 (A)</span><span style="font-weight:400;color:var(--muted)" id="beforeCount"></span></div>
+        <div class="panel-body">
+          <table>
+            <thead><tr><th>구분</th><th>공법</th><th>SP</th><th>SD</th><th>PP</th><th>Layer</th></tr></thead>
+            <tbody id="beforeBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title"><span>AFTER — 현재 작성 중 요청서 (B)</span><span style="font-weight:400;color:var(--muted)" id="afterCount"></span></div>
+        <div class="panel-body">
+          <table>
+            <thead><tr><th>구분</th><th>공법</th><th>SP</th><th>SD</th><th>PP</th><th>Layer</th></tr></thead>
+            <tbody id="afterBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="apply-bar">
+      <span class="apply-hint" id="applyHint">BEFORE 에서 한 행, AFTER 에서 한 행을 클릭하면 짝이 만들어집니다. (<code>미등록</code> 도 선택할 수 있습니다)</span>
+      <button class="btn" id="btnPair" disabled onclick="addPair()">+ 매핑 추가</button>
+      <button class="btn btn-primary" id="btnApply" disabled onclick="applyPairs()">✔ 적용 (0건)</button>
+    </div>
+    <div id="stagedBox" style="margin-top:8px"></div>
+
+    <!-- ② 변경전 / 변경후 -->
+    <h3 style="margin-top:22px">② 변경전 / 변경후 — 확정된 짝</h3>
+    <div class="panel">
+      <div class="panel-body" style="max-height:none">
+        <div class="scroll-x">
+          <table>
+            <thead>
+              <tr>
+                <th rowspan="2" style="vertical-align:middle">구분</th>
+                <th colspan="5" class="grp-before" style="text-align:center">변경전 (참조 요청서 A)</th>
+                <th colspan="5" class="grp-after" style="text-align:center">변경후 (현재 요청서 B)</th>
+                <th rowspan="2" style="vertical-align:middle">판정</th>
+                <th rowspan="2" style="vertical-align:middle">확정</th>
+                <th rowspan="2" style="vertical-align:middle"></th>
+              </tr>
+              <tr>
+                <th class="grp-before">공법</th><th class="grp-before">SP</th><th class="grp-before">SD</th><th class="grp-before">PP</th><th class="grp-before">Layer</th>
+                <th class="grp-after">공법</th><th class="grp-after">SP</th><th class="grp-after">SD</th><th class="grp-after">PP</th><th class="grp-after">Layer</th>
+              </tr>
+            </thead>
+            <tbody id="resultBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:0.8rem;margin-top:8px">
+      · 바뀐 셀은 <span class="cell-chg">주황 굵게</span>로 표시합니다. &nbsp;·&nbsp; <b>확정</b> 열의 <code>자동</code>/<code>수동</code>은 짝이 어떻게 맺어졌는지를 뜻합니다.<br>
+      · 오른쪽 <b>✕</b> 를 누르면 짝이 해제되어 두 행이 다시 위 BEFORE/AFTER 표로 돌아갑니다. (요구사항 #8 — 짝 재지정)
+    </p>
+  </div>
+
+  <div class="note warn">
+    <b>Mock 사용법</b> — ② 표에는 자동 확정 4건이 이미 들어 있습니다. ① 표에서 <code>L50</code> 그룹(A 2행 · B 2행)을 원하는 대로 짝지어 <b>매핑 추가 → 적용</b> 해보시고,
+    ② 표의 <b>✕</b> 로 자동 짝을 해제해 다시 맺어보십시오. 이 동작이 그대로 구현될 동작입니다.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>4. 구현 계획</h2>
+
+  <h3>작업 단계</h3>
+  <ol>
+    <li><b>Merge 블록 노출 조건 확장</b> — <code>Layer 추가/삭제</code> 단독 조건 → 3개 목적 중 <b>하나라도</b> 포함이면 노출(<code>MERGE_ENABLED_PURPOSES</code> 상수 신설). 선택 해제 시 초기화 effect도 같은 조건으로 변경.</li>
+    <li><b>비교 계산 함수 신설</b> — <code>helpers.ts</code> 에 <code>computeBeforeAfter(refJ, refO, curJ, curO)</code> 순수 함수 추가. 반환: <code>{ pairs: Pair[]; unmatchedBefore: Row[]; unmatchedAfter: Row[] }</code>. 기존 <code>computeLayerMerge</code> 는 <b>수정하지 않음</b>(요구사항 #9).</li>
+    <li><b>상태·핸들러</b> — <code>index.tsx</code> 에 <code>baPairs</code> / <code>baUnmatched</code> / <code>baSelBefore</code> / <code>baSelAfter</code> / <code>baStaged</code> 추가. <code>handleMergeConfirm</code> 에서 3-way 반영 직후 <code>computeBeforeAfter</code> 결과를 함께 세팅.</li>
+    <li><b>UI 컴포넌트 신설</b> — <code>components/BeforeAfterPanel.tsx</code> (BEFORE/AFTER 2단 + 매핑/적용 + 변경전/변경후 표). Step1 에서 Merge 블록 아래에 렌더.</li>
+    <li><b>저장</b> — <code>DetailFormState</code> 에 <code>merge_pairs: MergePair[]</code> 추가, <code>INITIAL_DETAIL</code>·로드 백필(<code>?? []</code>) 처리.</li>
+    <li><b>상세 페이지 노출</b> — <code>PagedDetailView.tsx</code> 에 "변경전/변경후" 카드 추가(값이 있을 때만).</li>
+    <li><b>i18n</b> — <code>ko.json</code>/<code>en.json</code> 동시 추가.</li>
+    <li><b>테스트</b> — <code>helpers.test.ts</code> 에 <code>computeBeforeAfter</code> 케이스 추가.</li>
+  </ol>
+
+  <h3>영향 받는 파일 (7개 + 문서)</h3>
+  <div class="scroll-x">
+  <table class="file-list">
+    <thead><tr><th style="width:290px">파일</th><th>변경 내용</th><th style="width:70px">규모</th></tr></thead>
+    <tbody>
+      <tr><td><code>frontend/src/pages/RequestPage/constants.ts</code></td><td><code>MERGE_ENABLED_PURPOSES</code> 상수, <code>MergePair</code> 타입, <code>INITIAL_DETAIL.merge_pairs</code></td><td>소</td></tr>
+      <tr><td><code>frontend/src/pages/RequestPage/helpers.ts</code></td><td><code>computeBeforeAfter</code> 순수 함수 신설 (기존 <code>computeLayerMerge</code> 무변경)</td><td>중</td></tr>
+      <tr><td><code>frontend/src/pages/RequestPage/index.tsx</code></td><td>상태 5종 + 핸들러(<code>handleBaSelect</code>/<code>handleBaPair</code>/<code>handleBaApply</code>/<code>handleBaUnpair</code>), 노출 조건 2곳</td><td>중</td></tr>
+      <tr><td><code>frontend/src/pages/RequestPage/components/Step1.tsx</code></td><td>노출 조건 변경 + <code>BeforeAfterPanel</code> 렌더</td><td>소</td></tr>
+      <tr><td><code>frontend/src/pages/RequestPage/components/BeforeAfterPanel.tsx</code></td><td><b>신규 파일</b> — Mock §3 그대로</td><td>대</td></tr>
+      <tr><td><code>frontend/src/components/PagedDetailView.tsx</code></td><td>상세 페이지 "변경전/변경후" 카드</td><td>소</td></tr>
+      <tr><td><code>frontend/src/types/index.ts</code></td><td><code>DetailFormState.merge_pairs</code></td><td>소</td></tr>
+      <tr><td><code>frontend/src/locales/ko.json</code> · <code>en.json</code></td><td>신규 키 (아래 목록)</td><td>소</td></tr>
+      <tr><td><code>frontend/src/pages/RequestPage/helpers.test.ts</code></td><td><code>computeBeforeAfter</code> 테스트</td><td>중</td></tr>
+      <tr><td><code>docs/REQUEST.md</code></td><td>변경 이력 절 추가 (규칙 C-4)</td><td>소</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p style="font-size:0.85rem"><b>백엔드 변경 없음</b> — <code>additional_notes</code> JSON 안에만 저장되므로 모델·마이그레이션·API 변경이 없습니다.</p>
+
+  <h3>저장 데이터 구조</h3>
+  <div class="card" style="font-family:ui-monospace,Menlo,monospace;font-size:0.82rem;white-space:pre;overflow-x:auto;color:var(--text-secondary)">detail.merge_pairs: [
+  {
+    "table": "J",                 // 'J' | 'O'  → 표 맨 앞 배지
+    "before": { "process_id": "PROC_X1", "sp": "SP02", "sd": "SD02", "pp": "PP02", "layerid": "L20" },
+    "after":  { "process_id": "PROC_X1", "sp": "SP02X","sd": "SD02", "pp": "PP02", "layerid": "L20" },
+    "kind":   "changed",          // 'changed' | 'added' | 'deleted'
+    "matched": "auto"             // 'auto' | 'manual'
+  },
+  { "table": "J", "before": null, "after": { ... }, "kind": "added",   "matched": "auto"   },
+  { "table": "O", "before": { ... }, "after": null, "kind": "deleted", "matched": "manual" }
+]</div>
+  <p style="font-size:0.85rem"><code>before: null</code> = BEFORE 미등록, <code>after: null</code> = AFTER 미등록. 기존 <code>merge_ref_doc_id</code>/<code>merge_ref_doc_label</code> 은 그대로 사용합니다.</p>
+
+  <h3>i18n 키 (ko/en 동시 추가)</h3>
+  <div class="scroll-x">
+  <table>
+    <thead><tr><th style="width:230px">키</th><th>ko</th><th>en</th></tr></thead>
+    <tbody>
+      <tr><td><code>request.ba_section_title</code></td><td>BEFORE / AFTER</td><td>BEFORE / AFTER</td></tr>
+      <tr><td><code>request.ba_before</code></td><td>변경전 (참조 요청서)</td><td>Before (Reference)</td></tr>
+      <tr><td><code>request.ba_after</code></td><td>변경후 (현재 요청서)</td><td>After (Current)</td></tr>
+      <tr><td><code>request.ba_unregistered</code></td><td>미등록</td><td>Not registered</td></tr>
+      <tr><td><code>request.ba_result_title</code></td><td>변경전 / 변경후</td><td>Before / After Result</td></tr>
+      <tr><td><code>request.ba_pair_add</code></td><td>매핑 추가</td><td>Add mapping</td></tr>
+      <tr><td><code>request.ba_apply</code></td><td>적용 ({{count}}건)</td><td>Apply ({{count}})</td></tr>
+      <tr><td><code>request.ba_unpair</code></td><td>매핑 해제</td><td>Unpair</td></tr>
+      <tr><td><code>request.ba_hint_select</code></td><td>BEFORE·AFTER 에서 각각 한 행을 선택하세요</td><td>Select one row from each side</td></tr>
+      <tr><td><code>request.ba_hint_same_table</code></td><td>J-ayer 는 J-ayer 끼리만 매핑할 수 있습니다</td><td>J-ayer can only map to J-ayer</td></tr>
+      <tr><td><code>request.ba_summary</code></td><td>변경 없음 {{same}}건 · 자동 확정 {{auto}}건 · 수동 매핑 필요 {{manual}}건</td><td>Unchanged {{same}} · Auto {{auto}} · Manual {{manual}}</td></tr>
+      <tr><td><code>request.ba_kind_changed</code> / <code>_added</code> / <code>_deleted</code></td><td>변경 / 추가 / 삭제</td><td>Changed / Added / Deleted</td></tr>
+      <tr><td><code>request.ba_empty</code></td><td>매핑할 항목이 없습니다</td><td>Nothing to map</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>5. 검증 계획</h2>
+
+  <h3>자동 테스트</h3>
+  <ul>
+    <li><code>computeBeforeAfter</code> — ① 5개 값 완전 일치 → 결과 제외 ② <code>sp</code>만 다름 → 자동 <code>changed</code> ③ A만 존재 → <code>deleted</code>(AFTER 미등록) ④ B만 존재 → <code>added</code>(BEFORE 미등록) ⑤ 같은 키 A2:B2 → 자동 매칭 없이 미매칭으로 분류 ⑥ A3:B0 → 3건 자동 <code>deleted</code> ⑦ <code>layerid</code> 빈 행 제외 ⑧ 비활성 행 제외 ⑨ J/O 독립 ⑩ 공백 <code>trim</code> 정규화 ⑪ 멱등성</li>
+    <li>실행: <code>cd frontend &amp;&amp; npm test -- --watchAll=false --passWithNoTests</code></li>
+  </ul>
+
+  <h3>수동 검증 시나리오 (규칙 C-2-1)</h3>
+  <div class="scroll-x">
+  <table>
+    <thead><tr><th style="width:130px">시나리오</th><th>조작 순서</th><th style="width:280px">성공 판정</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>① 노출 조건</b></td>
+        <td>의뢰서 작성 → 라인·조합법·제품·조리법 입력 → 요청 목적 <code>신규</code> → 기타 목적에서 <b>STEPSEQ 변경</b> 클릭 → 이어서 <b>Layer 추가/삭제</b>·<b>Overlay 변경</b> 도 클릭</td>
+        <td>참조 요청서 입력칸+Merge 버튼이 <b>1개만</b> 표시. 3개를 모두 해제하면 블록이 사라지고 선택값 초기화</td>
+      </tr>
+      <tr>
+        <td><b>② 자동 매칭</b></td>
+        <td>참조 요청서 선택 → <b>Merge</b> → 확인 모달 승인</td>
+        <td>기존처럼 J/O 표가 재판정되고, 아래에 요약 바 + BEFORE/AFTER 표 + 변경전/변경후 표가 나타남. 5개 값이 모두 같은 행은 <b>어느 표에도 안 나옴</b></td>
+      </tr>
+      <tr>
+        <td><b>③ 수동 매핑</b></td>
+        <td>BEFORE 에서 1행 클릭 → AFTER 에서 1행 클릭 → <b>매핑 추가</b> → <b>적용</b></td>
+        <td>두 행이 BEFORE/AFTER 표에서 사라지고 변경전/변경후 표에 한 줄로 추가됨. <b>확정</b> 열이 <code>수동</code></td>
+      </tr>
+      <tr>
+        <td><b>④ 미등록 매핑</b></td>
+        <td>BEFORE 에서 <code>미등록</code> 행 클릭 → AFTER 에서 아무 행 클릭 → 매핑 추가 → 적용</td>
+        <td>변경전 칸이 <code>미등록</code>(회색 이탤릭)으로, 판정이 <code>추가</code>로 표시됨</td>
+      </tr>
+      <tr>
+        <td><b>⑤ 짝 재지정</b></td>
+        <td>변경전/변경후 표에서 자동 확정 행의 <b>✕</b> 클릭</td>
+        <td>해당 행이 사라지고 BEFORE/AFTER 표에 두 행이 되살아남 → 다시 매핑 가능</td>
+      </tr>
+      <tr>
+        <td><b>⑥ 저장·재진입</b></td>
+        <td>임시저장 → 목록에서 다시 열기</td>
+        <td>변경전/변경후 표 내용이 그대로 복원됨</td>
+      </tr>
+      <tr>
+        <td><b>⑦ 상세 노출</b></td>
+        <td>상신 → <b>결재 현황</b>에서 해당 의뢰서 행 클릭 → 상세 1페이지 스크롤</td>
+        <td>"변경전/변경후" 카드가 보이고 J/O 배지·5개 항목이 작성 화면과 동일하게 표시. <b>실패 신호</b>: 카드가 비어 있거나 <code>미등록</code>이 <code>-</code> 로만 보임</td>
+      </tr>
+      <tr>
+        <td><b>⑧ 회귀</b></td>
+        <td>기타 목적을 <code>공법 추가/변경</code> 만 선택</td>
+        <td>참조 요청서 블록이 <b>나타나지 않음</b> (기존 동작 유지). <code>완성된 MAP 변경</code> 단독 전용 동작도 그대로</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>잠재 이슈 · 주의사항</h3>
+  <ul>
+    <li><b>조리법 변경 시 초기화</b> — <code>process_id</code> 가 바뀌면 J/O 가 재조회되어 참조 상태가 초기화됩니다(<code>index.tsx:507-510</code>). 새로 만든 <code>merge_pairs</code> 도 <b>같이 비워야</b> 유령 데이터가 남지 않습니다.</li>
+    <li><b>Merge 후 J/O 수동 편집</b> — 3-way 반영 후 사용자가 J/O 행을 고치면 저장된 <code>merge_pairs</code> 와 실제 표가 어긋날 수 있습니다. <b>표시 전용 스냅샷</b>(Merge 시점 기록)으로 정의하고 상세 페이지에도 "Merge 시점 기준" 문구를 답니다.</li>
+    <li><b>기존 매칭 키 결함</b> — <code>computeLayerMerge</code> 의 키에 <code>layerid</code> 가 빠져 있는 알려진 문제(<code>docs/REQUEST.md:282</code>)는 이번 범위에서 <b>건드리지 않습니다</b>(요구사항 #9 = 현행 유지). 새 <code>computeBeforeAfter</code> 는 <code>process_id+layerid</code> 를 쓰므로 두 계산의 기준이 다릅니다 — 의도된 분리입니다.</li>
+    <li><b>구버전 문서</b> — <code>merge_pairs</code> 없는 기존 문서는 <code>?? []</code> 백필. 상세 페이지에서도 빈 배열이면 카드를 아예 숨깁니다.</li>
+    <li><b>성능</b> — J/O 각 수백 행 규모에서 그룹핑은 <code>Map</code> 기반 O(n). 문제 없습니다.</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2>6. 확인 요청 항목 <span class="badge tag-q">답변 필요</span></h2>
+  <p>아래 5가지는 제 판단으로 기본값을 정해 Mock 에 반영했습니다. <b>그대로 좋으면 "전부 OK"</b>, 다르면 해당 번호만 짚어주세요.</p>
+  <div class="scroll-x">
+  <table>
+    <thead><tr><th style="width:30px">#</th><th style="width:210px">항목</th><th>Mock 에 반영한 기본값</th><th style="width:230px">대안</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>1</td><td><b>표 위치</b></td>
+        <td>STEP 1 의 참조 요청서 블록 <b>바로 아래 인라인</b> (BB 매핑이 STEP 4 인라인인 것과 동일)</td>
+        <td>별도 모달로 띄우기</td>
+      </tr>
+      <tr>
+        <td>2</td><td><b>한쪽만 있는 그룹의 자동 처리</b></td>
+        <td>A만 N행(또는 B만 N행)인 그룹은 <b>모호성이 없으므로 자동으로 미등록과 짝</b> → 변경전/변경후 표로 직행</td>
+        <td>미등록 짝도 사용자가 직접 확정하게(=BEFORE/AFTER 표에 남김)</td>
+      </tr>
+      <tr>
+        <td>3</td><td><b>수동 매핑 자유도</b></td>
+        <td><code>layerid</code> 가 <b>달라도</b> 매핑 허용(같은 J/O 종류 안에서는 자유) — layer 자체가 바뀌는 경우를 표현하기 위해</td>
+        <td>같은 <code>process_id+layerid</code> 그룹 안에서만 매핑 허용</td>
+      </tr>
+      <tr>
+        <td>4</td><td><b>참조 요청서 잠금</b></td>
+        <td><b>현행 유지</b> — Merge 확정 시점에 참조 요청서 영구 잠금 (요구사항 #9 "기존 유지"에 맞춤)</td>
+        <td>매핑 <code>적용</code> 시점으로 늦추기 / 초기화 버튼 추가</td>
+      </tr>
+      <tr>
+        <td>5</td><td><b>미매핑 잔여 행</b></td>
+        <td>BEFORE/AFTER 에 짝 없이 남은 행이 있어도 <b>상신 차단하지 않음</b>(경고만)</td>
+        <td>전부 매핑해야 다음 STEP 진행 가능하도록 검증 추가</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note" style="margin-top:26px">
+    <b>승인 요청</b> — §6 답변과 함께 <b>"진행"</b> 이라고 해주시면 위 계획대로 구현에 착수합니다.
+    구현은 파일별 개별 커밋(규칙 E)으로 <code>claude/request-detail-other-purpose-ixuxi0</code> 브랜치에 올리고,
+    완료 후 테스트 결과 + §5 수동 검증 시나리오 + <code>docs/REQUEST.md</code> 갱신까지 보고하겠습니다.
+  </div>
+
+</div>
+
+<script>
+(function () {
+  var UNREG = '미등록';
+
+  // 자동 확정 4건 (요구사항 #4·#5 반영)
+  var result = [
+    { table:'J', before:{p:'PROC_X1',sp:'SP02',sd:'SD02',pp:'PP02',l:'L20'}, after:{p:'PROC_X1',sp:'SP02X',sd:'SD02',pp:'PP02',l:'L20'}, matched:'자동' },
+    { table:'J', before:{p:'PROC_X1',sp:'SP03',sd:'SD03',pp:'PP03',l:'L30'}, after:{p:'PROC_X1',sp:'SP03',sd:'SD03',pp:'PP03X',l:'L30'}, matched:'자동' },
+    { table:'J', before:{p:'PROC_X1',sp:'SP04',sd:'SD04',pp:'PP04',l:'L40'}, after:null, matched:'자동' },
+    { table:'O', before:{p:'PROC_X1',sp:'SP11',sd:'SD11',pp:'PP11',l:'L11'}, after:{p:'PROC_X1',sp:'SP11',sd:'SD11X',pp:'PP11',l:'L11'}, matched:'자동' }
+  ];
+
+  // 미매칭 — L50 그룹이 A 2행 : B 2행 이라 자동 매칭 불가 + B에만 있는 L60
+  var before = [
+    { id:'b1', table:'J', p:'PROC_X1', sp:'SP05', sd:'SD05', pp:'PP05', l:'L50' },
+    { id:'b2', table:'J', p:'PROC_X1', sp:'SP06', sd:'SD06', pp:'PP06', l:'L50' }
+  ];
+  var after = [
+    { id:'a1', table:'J', p:'PROC_X1', sp:'SP05', sd:'SD05X', pp:'PP05', l:'L50' },
+    { id:'a2', table:'J', p:'PROC_X1', sp:'SP07', sd:'SD07', pp:'PP07', l:'L50' },
+    { id:'a3', table:'J', p:'PROC_X1', sp:'SP08', sd:'SD08', pp:'PP08', l:'L60' }
+  ];
+
+  var selB = null, selA = null, staged = [];
+
+  function badge(tb) {
+    return '<span class="badge ' + (tb === 'J' ? 'b-j">J-ayer' : 'b-o">O-ayer') + '</span>';
+  }
+  function esc(s) { return String(s == null ? '' : s); }
+
+  function renderList(rows, bodyId, countId, side) {
+    var body = document.getElementById(bodyId);
+    var sel = side === 'B' ? selB : selA;
+    var html = '';
+    // 미등록 고정 행
+    html += '<tr class="pick-row unreg' + (sel === UNREG ? ' sel' : '') +
+            '" data-side="' + side + '" data-id="' + UNREG + '">' +
+            '<td colspan="6">' + UNREG + ' — 상대쪽에만 존재하는 항목과 짝지을 때 선택</td></tr>';
+    rows.forEach(function (r) {
+      html += '<tr class="pick-row' + (sel === r.id ? ' sel' : '') + '" data-side="' + side + '" data-id="' + r.id + '">' +
+        '<td>' + badge(r.table) + '</td><td>' + esc(r.p) + '</td><td>' + esc(r.sp) + '</td>' +
+        '<td>' + esc(r.sd) + '</td><td>' + esc(r.pp) + '</td><td>' + esc(r.l) + '</td></tr>';
+    });
+    if (rows.length === 0) {
+      html += '<tr><td colspan="6" class="hint">남은 항목이 없습니다.</td></tr>';
+    }
+    body.innerHTML = html;
+    document.getElementById(countId).textContent = rows.length + '행';
+  }
+
+  function cell(v, other, key) {
+    if (v == null) return '<td class="cell-none">' + UNREG + '</td>';
+    var changed = other != null && other[key] !== v[key];
+    return '<td' + (changed ? ' class="cell-chg"' : '') + '>' + esc(v[key]) + '</td>';
+  }
+
+  function kindOf(pair) {
+    if (!pair.before) return '<span class="badge b-new">추가</span>';
+    if (!pair.after) return '<span class="badge b-del">삭제</span>';
+    return '<span class="badge b-chg">변경</span>';
+  }
+
+  function renderResult() {
+    var body = document.getElementById('resultBody');
+    if (result.length === 0) {
+      body.innerHTML = '<tr><td colspan="14" class="hint">확정된 항목이 없습니다.</td></tr>';
+      return;
+    }
+    body.innerHTML = result.map(function (r, i) {
+      var keys = ['p', 'sp', 'sd', 'pp', 'l'];
+      var bTds = keys.map(function (k) { return cell(r.before, r.after, k); }).join('');
+      var aTds = keys.map(function (k) { return cell(r.after, r.before, k); }).join('');
+      return '<tr><td>' + badge(r.table) + '</td>' + bTds + aTds +
+        '<td>' + kindOf(r) + '</td>' +
+        '<td><span class="badge b-auto">' + r.matched + '</span></td>' +
+        '<td><button class="x-btn" title="매핑 해제" data-unpair="' + i + '">✕</button></td></tr>';
+    }).join('');
+  }
+
+  function renderStaged() {
+    var box = document.getElementById('stagedBox');
+    if (staged.length === 0) { box.innerHTML = ''; }
+    else {
+      box.innerHTML = staged.map(function (s, i) {
+        var bt = s.before ? (s.before.l + ' / ' + s.before.sp) : UNREG;
+        var at = s.after ? (s.after.l + ' / ' + s.after.sp) : UNREG;
+        return '<span class="pair-chip">' + bt + ' → ' + at +
+               ' <button title="취소" data-unstage="' + i + '">✕</button></span>';
+      }).join('');
+    }
+    var btn = document.getElementById('btnApply');
+    btn.textContent = '✔ 적용 (' + staged.length + '건)';
+    btn.disabled = staged.length === 0;
+  }
+
+  function refreshButtons() {
+    var ok = selB !== null && selA !== null;
+    document.getElementById('btnPair').disabled = !ok;
+    var hint = document.getElementById('applyHint');
+    if (!ok) {
+      hint.innerHTML = 'BEFORE 에서 한 행, AFTER 에서 한 행을 클릭하면 짝이 만들어집니다. (<code>미등록</code> 도 선택할 수 있습니다)';
+    } else if (selB === UNREG && selA === UNREG) {
+      hint.innerHTML = '<span style="color:var(--danger)">양쪽 모두 미등록은 짝지을 수 없습니다.</span>';
+      document.getElementById('btnPair').disabled = true;
+    } else {
+      hint.innerHTML = '선택됨 — <b>매핑 추가</b> 를 누르세요.';
+    }
+    document.getElementById('cntManual').textContent = before.length + after.length;
+    document.getElementById('cntAuto').textContent = result.length;
+  }
+
+  function renderAll() {
+    renderList(before, 'beforeBody', 'beforeCount', 'B');
+    renderList(after, 'afterBody', 'afterCount', 'A');
+    renderResult();
+    renderStaged();
+    refreshButtons();
+  }
+
+  document.addEventListener('click', function (e) {
+    var row = e.target.closest ? e.target.closest('.pick-row') : null;
+    if (row) {
+      var side = row.getAttribute('data-side');
+      var id = row.getAttribute('data-id');
+      if (side === 'B') selB = (selB === id ? null : id);
+      else selA = (selA === id ? null : id);
+      renderAll();
+      return;
+    }
+    var un = e.target.getAttribute && e.target.getAttribute('data-unpair');
+    if (un !== null && un !== undefined) {
+      var p = result.splice(Number(un), 1)[0];
+      if (p.before) before.push({ id: 'r' + Date.now() + 'b', table: p.table, p: p.before.p, sp: p.before.sp, sd: p.before.sd, pp: p.before.pp, l: p.before.l });
+      if (p.after) after.push({ id: 'r' + Date.now() + 'a', table: p.table, p: p.after.p, sp: p.after.sp, sd: p.after.sd, pp: p.after.pp, l: p.after.l });
+      renderAll();
+      return;
+    }
+    var us = e.target.getAttribute && e.target.getAttribute('data-unstage');
+    if (us !== null && us !== undefined) {
+      var s = staged.splice(Number(us), 1)[0];
+      if (s.before) before.push(s.before);
+      if (s.after) after.push(s.after);
+      renderAll();
+    }
+  });
+
+  window.addPair = function () {
+    var b = selB === UNREG ? null : before.filter(function (r) { return r.id === selB; })[0];
+    var a = selA === UNREG ? null : after.filter(function (r) { return r.id === selA; })[0];
+    if (b && a && b.table !== a.table) {
+      alert('J-ayer 는 J-ayer 끼리만 매핑할 수 있습니다.');
+      return;
+    }
+    staged.push({ table: (b || a).table, before: b || null, after: a || null });
+    if (b) before = before.filter(function (r) { return r.id !== b.id; });
+    if (a) after = after.filter(function (r) { return r.id !== a.id; });
+    selB = null; selA = null;
+    renderAll();
+  };
+
+  window.applyPairs = function () {
+    staged.forEach(function (s) {
+      result.push({
+        table: s.table,
+        before: s.before ? { p: s.before.p, sp: s.before.sp, sd: s.before.sd, pp: s.before.pp, l: s.before.l } : null,
+        after: s.after ? { p: s.after.p, sp: s.after.sp, sd: s.after.sd, pp: s.after.pp, l: s.after.l } : null,
+        matched: '수동'
+      });
+    });
+    staged = [];
+    renderAll();
+  };
+
+  renderAll();
+})();
+</script>
+</body>
+</html>
