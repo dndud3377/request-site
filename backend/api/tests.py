@@ -534,9 +534,18 @@ class MessageBuildingTest(TestCase):
             self.assertIn(self.doc.title, subject)
 
     @override_settings(FRONTEND_URL='https://example.com')
-    def test_ra_subject_uses_post_approver_prefix_without_suffix(self):
-        subject, _ = mailer._build_message('stage_arrival', self.doc, agent='RA')
+    def test_ra_fixed_post_approver_subject_is_post_approver_request(self):
+        subject, _ = mailer._build_message(
+            'stage_arrival', self.doc, agent='RA', recipient_name='홍길동', is_fixed_post_approver=True,
+        )
         self.assertEqual(subject, f'[후결 요청] {self.doc.title}')
+
+    @override_settings(FRONTEND_URL='https://example.com')
+    def test_ra_additional_post_approver_subject_matches_other_stages(self):
+        subject, _ = mailer._build_message(
+            'stage_arrival', self.doc, agent='RA', recipient_name='홍길동', is_fixed_post_approver=False,
+        )
+        self.assertEqual(subject, f'[홍길동님] [결재 요청] {self.doc.title}')
 
     @override_settings(FRONTEND_URL='https://example.com')
     def test_personal_assignment_subject_has_name_prefix(self):
@@ -548,6 +557,11 @@ class MessageBuildingTest(TestCase):
     def test_broadcast_subject_has_no_name_prefix(self):
         subject, _ = mailer._build_message('stage_arrival', self.doc, agent='R')
         self.assertFalse(subject.startswith('['), '팀 브로드캐스트 제목엔 이름 접두어가 없어야 한다')
+
+    @override_settings(FRONTEND_URL='https://example.com')
+    def test_stage_arrival_subject_has_no_stage_suffix(self):
+        subject, _ = mailer._build_message('stage_arrival', self.doc, agent='R', recipient_name='홍길동')
+        self.assertEqual(subject, f'[홍길동님] [결재 요청] {self.doc.title}')
 
     @override_settings(FRONTEND_URL='https://example.com')
     def test_in_progress_links_point_to_approval_page(self):
@@ -887,6 +901,24 @@ class PEStageReviewerFlowTest(TestCase):
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
         self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists())
+
+    def test_p_arrival_notifies_te_j(self):
+        doc = self._advance_to_parallel()
+        noti = MailNotification.objects.filter(document=doc, event_type='notify_p_arrival').first()
+        self.assertIsNotNone(noti)
+        self.assertIn(self.j_user.mail, noti.recipients)
+        self.assertEqual(noti.subject, f'[P 도착 통보] {doc.title}')
+
+    def test_p_completion_notifies_te_o(self):
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        noti = MailNotification.objects.filter(document=doc, event_type='notify_p_completed').first()
+        self.assertIsNotNone(noti)
+        self.assertIn(self.o_user.mail, noti.recipients)
+        self.assertEqual(noti.subject, f'[P 완료 통보] {doc.title}')
 
     def test_p_reviewer_loginids_denied_before_claim(self):
         doc = self._advance_to_parallel()
@@ -1377,6 +1409,19 @@ class PostApproverManagementTest(TestCase):
         noti = MailNotification.objects.filter(document=doc, event_type='stage_arrival').first()
         self.assertIsNotNone(noti)
         self.assertIn(self.extra_pl1.mail, noti.recipients)
+        self.assertEqual(noti.subject, f'[{self.extra_pl1.loginid}님] [결재 요청] {doc.title}')
+
+    def test_initial_ra_subjects_differ_between_fixed_and_additional(self):
+        doc = self._advance_to_parallel(only_prodc=True, post_approvers=[
+            {'loginid': self.extra_pl1.loginid, 'name': self.extra_pl1.loginid},
+        ])
+        notis = {
+            tuple(n.recipients)[0]: n.subject
+            for n in MailNotification.objects.filter(document=doc, event_type='stage_arrival')
+            if n.recipients
+        }
+        self.assertEqual(notis[self.fixed_pa.mail], f'[후결 요청] {doc.title}')
+        self.assertEqual(notis[self.extra_pl1.mail], f'[{self.extra_pl1.loginid}님] [결재 요청] {doc.title}')
 
     def test_add_post_approver_allowed_for_master(self):
         doc = self._advance_to_parallel()

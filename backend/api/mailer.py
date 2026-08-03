@@ -15,7 +15,9 @@
 - PL 검토: 지정 PL 각각 1명(다중 지정 시 개별 발송)
 - R: 담당자 지정 시 그 1명(제목에 "[이름님]" 표시), 미지정(도착 시점)이면 TE_R 팀 전원
 - RV(검토자): 담당자 합의로 검토자 차례가 되는 시점에 그 1명(제목에 "[이름님]" 표시)
-- RA(후결자): 병렬 진행 시작 시 각 후결자에게 개별 발송("[후결 요청]" 제목)
+- RA(후결자): 병렬 진행 시작 시 각 후결자에게 개별 발송
+  · 고정 후결자(settings.POST_APPROVER_LOGINID)는 "[후결 요청]" 제목 고정
+  · 그 외(C가문 추가 후결자)는 다른 단계와 동일하게 "[이름님] [결재 요청] {제목}" 형식
 - P: 담당자 지정 시 그 1명, 미지정 시 TE_P 권한 보유 전원
 - J: 담당자(claim) 지정 시 그 1명, 미지정(도착 시점)이면 고정 주소
 - O/E: 해당 역할(TE_O/TE_E) 팀 전원
@@ -24,6 +26,8 @@
   · 그 외 단계에서 반려된 경우, 아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원도
     포함(반려한 본인 제외). 이미 합의를 마친 팀은 팀 전체 발송 대상이 아니다.
 - 승인 완료: 현재 회차 결재 경로에 참여했던 전원(중복 제거)
+- P 단계 도착 통보(notify_p_arrival): TE_J 팀 전원(참고용, 결재 권한과 무관)
+- P 단계 완료 통보(notify_p_completed): TE_O 팀 전원(참고용, 결재 권한과 무관)
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
 """
 import logging
@@ -95,8 +99,6 @@ ROUTE_COMMENT_MAX_LEN = 300
 # [수신자 변경 방법]
 #   아래 딕셔너리의 이메일 문자열을 직접 수정한다(수정 후 백엔드 재시작 필요).
 #   R/J 단계만 여기서 관리한다.
-#   P 단계는 "라인별"로 주소가 달라지므로 여기 두지 않고,
-#   settings 의 P_LINE_FALLBACK(.env 환경변수)에서 관리한다.
 UNASSIGNED_FALLBACK = {
     'J': 'user_J@company.com',
 }
@@ -125,6 +127,8 @@ EVENT_STATUS_LABEL = {
     'notify_submitted': '상신 통보',
     'notify_approved': '결재 완료 통보',
     'map_apply_failed': '원본 반영 실패',
+    'notify_p_arrival': 'P 단계 도착 통보',
+    'notify_p_completed': 'P 단계 완료 통보',
 }
 
 # 이벤트 타입별 히어로+KPI 카드 이메일 색상 테마
@@ -163,6 +167,9 @@ EVENT_THEME = {
     },
 }
 EVENT_THEME['notify_approved'] = EVENT_THEME['notify_submitted']
+# P 단계 도착/완료 통보(TE_J/TE_O)도 다른 통보 이벤트와 같은 보라 테마를 쓴다.
+EVENT_THEME['notify_p_arrival'] = EVENT_THEME['notify_submitted']
+EVENT_THEME['notify_p_completed'] = EVENT_THEME['notify_submitted']
 # 원본 반영 실패는 조치가 필요한 알림이라 반려와 동일한 경고(레드) 테마를 쓴다.
 EVENT_THEME['map_apply_failed'] = EVENT_THEME['rejected']
 
@@ -228,34 +235,15 @@ def post_approver_users(document):
     return users
 
 
-def _split_emails(value):
-    """콤마로 구분된 이메일 문자열을 리스트로 분할한다(공백/빈값 제거)."""
-    if not value:
-        return []
-    return [addr.strip() for addr in str(value).split(',') if addr.strip()]
+def _is_fixed_post_approver(step):
+    """RA 담당자가 고정 후결자(settings.POST_APPROVER_LOGINID)인지 여부.
 
-
-# ---------------------------------------------------------------------------
-# [추후 사용 예정] P 단계 담당자 미지정 시 라인별 고정 수신자
-# ---------------------------------------------------------------------------
-# 라인마다 다른 고정 주소로 발송이 필요해지면 아래 함수를 활성화하고
-# resolve_stage_recipients 의 P 분기에서 _team_emails('P') 대신 호출한다.
-# 설정은 .env 의 P_LINE_FALLBACK (settings/base.py 주석 참고).
-#
-# def _p_line_fallback_recipients(document):
-#     line_map = getattr(settings, 'P_LINE_FALLBACK', {}) or {}
-#     if not line_map:
-#         return []
-#     line = (document.get_detail().get('detail', {}) or {}).get('line', '')
-#     line = (line or '').strip()
-#     if line and line in line_map:
-#         return _split_emails(line_map[line])
-#     # 라인 미매칭/미지정 → 등록된 모든 라인 수신자
-#     recipients = []
-#     for value in line_map.values():
-#         recipients.extend(_split_emails(value))
-#     return recipients
-# ---------------------------------------------------------------------------
+    메일 제목 분기(고정 후결자만 "[후결 요청]" 고정 문구)에 쓰인다.
+    """
+    if not step or not step.assignee:
+        return False
+    fixed_lid = (getattr(settings, 'POST_APPROVER_LOGINID', '') or '').strip()
+    return bool(fixed_lid) and step.assignee.loginid == fixed_lid
 
 
 def resolve_stage_recipients(document, agent, step=None):
@@ -272,7 +260,6 @@ def resolve_stage_recipients(document, agent, step=None):
             recipients = [document.designated_pl.mail]
     elif agent == 'P':
         # P: 담당자 지정 시 그 1명, 미지정 시 TE_P 권한 보유 전원
-        # (라인별 고정 수신자로 전환하려면 위의 주석 처리된 _p_line_fallback_recipients 활용)
         if step is not None and step.assignee and step.assignee.mail:
             recipients = [step.assignee.mail]
         else:
@@ -643,10 +630,13 @@ def _render_hero_kpi_email(event_type, headline, document, kpi_tiles, note_value
 <![endif]-->'''
 
 
-def _build_message(event_type, document, agent=None, recipient_name=None):
+def _build_message(event_type, document, agent=None, recipient_name=None, is_fixed_post_approver=False):
     """이벤트 유형별 제목/본문(HTML)을 생성한다.
 
     recipient_name 이 주어지면(개인 지정 메일) 제목 맨 앞에 "[{이름}님] "을 붙인다.
+    is_fixed_post_approver: agent='RA'이고 그 담당자가 고정 후결자(settings.POST_APPROVER_LOGINID)일
+    때만 True — 이 경우에만 "[후결 요청]" 고정 제목을 쓰고, 그 외 RA(추가 후결자)는 다른 단계와
+    동일한 제목 규칙을 따른다.
     본문은 히어로 헤더 + KPI 카드형 템플릿(_render_hero_kpi_email)을 공통으로 사용하며,
     히어로/버튼/카드 테두리 색상은 event_type 별 EVENT_THEME 를 따른다.
     """
@@ -657,13 +647,11 @@ def _build_message(event_type, document, agent=None, recipient_name=None):
 
     if event_type == 'stage_arrival':
         label = AGENT_LABEL.get(agent, agent)
-        if agent == 'RA':
-            # 후결 요청은 접미(- 라벨) 없이 고정 문구
+        if agent == 'RA' and is_fixed_post_approver:
             subject = f'[후결 요청] {document.title}'
-            headline = '후결 요청이 도착했습니다.'
         else:
-            subject = f'{name_prefix}[결재 요청] {document.title} - {label}'
-            headline = f'{label} 단계 결재가 도착했습니다.'
+            subject = f'{name_prefix}[결재 요청] {document.title}'
+        headline = '후결 요청이 도착했습니다.' if agent == 'RA' else f'{label} 단계 결재가 도착했습니다.'
         stage_value = label
     elif event_type == 'rejected':
         subject = f'[반려] {document.title}'
@@ -680,6 +668,14 @@ def _build_message(event_type, document, agent=None, recipient_name=None):
     elif event_type == 'notify_approved':
         subject = f'[결재 완료 통보] {document.title}'
         headline = '아래 의뢰서의 결재가 완료되어 통보드립니다. (통보처 수신)'
+        stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'notify_p_arrival':
+        subject = f'[P 도착 통보] {document.title}'
+        headline = 'P 단계에 결재가 도착하여 통보드립니다. (TE_J 수신)'
+        stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'notify_p_completed':
+        subject = f'[P 완료 통보] {document.title}'
+        headline = 'P 단계 결재가 완료되어 통보드립니다. (TE_O 수신)'
         stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'map_apply_failed':
         subject = f'[원본 반영 실패] {document.title}'
@@ -711,7 +707,7 @@ def _build_message(event_type, document, agent=None, recipient_name=None):
 # --------------------------------------------------------------------------- #
 # 큐 적재 (enqueue) — 결재 트랜잭션 안에서 호출
 # --------------------------------------------------------------------------- #
-def _enqueue(document, event_type, recipients, agent=None, recipient_name=None):
+def _enqueue(document, event_type, recipients, agent=None, recipient_name=None, is_fixed_post_approver=False):
     """수신자가 있을 때만 MailNotification 행을 적재한다."""
     if not recipients:
         logger.info(
@@ -719,7 +715,7 @@ def _enqueue(document, event_type, recipients, agent=None, recipient_name=None):
             "(event=%s, doc=%s, agent=%s)", event_type, document.pk, agent
         )
         return None
-    subject, contents = _build_message(event_type, document, agent, recipient_name)
+    subject, contents = _build_message(event_type, document, agent, recipient_name, is_fixed_post_approver)
     noti = MailNotification.objects.create(
         document=document,
         event_type=event_type,
@@ -739,9 +735,15 @@ def enqueue_stage_arrival(document, agent, step=None, recipient_name=None):
 
     recipient_name: 개인 지정(담당자/검토자) 메일일 때만 넘긴다 — 제목 맨 앞에 "[이름님]" 표시용.
     팀 전원 브로드캐스트(무배정 도착)에는 넘기지 않는다(수신자가 여럿이라 개인화 불가).
+    agent='RA'인 경우 step.assignee가 고정 후결자(settings.POST_APPROVER_LOGINID)인지 여기서
+    직접 판별해 제목 분기에 사용한다(호출부는 recipient_name만 넘기면 된다).
     """
     recipients = resolve_stage_recipients(document, agent, step)
-    return _enqueue(document, 'stage_arrival', recipients, agent=agent, recipient_name=recipient_name)
+    is_fixed = agent == 'RA' and _is_fixed_post_approver(step)
+    return _enqueue(
+        document, 'stage_arrival', recipients,
+        agent=agent, recipient_name=recipient_name, is_fixed_post_approver=is_fixed,
+    )
 
 
 def enqueue_rejected(document):
@@ -775,6 +777,18 @@ def enqueue_map_apply_failed(document):
     """
     recipients = _apply_redirect([document.requester_email] if document.requester_email else [])
     return _enqueue(document, 'map_apply_failed', recipients)
+
+
+def enqueue_notify_p_arrival(document):
+    """P 단계 도착 통보 적재(TE_J 팀 전원 대상, 결재 권한과 무관한 참고 통보)."""
+    recipients = _apply_redirect(_team_emails('J'))
+    return _enqueue(document, 'notify_p_arrival', recipients)
+
+
+def enqueue_notify_p_completed(document):
+    """P 단계 완료 통보 적재(TE_O 팀 전원 대상, 결재 권한과 무관한 참고 통보)."""
+    recipients = _apply_redirect(_team_emails('O'))
+    return _enqueue(document, 'notify_p_completed', recipients)
 
 
 # --------------------------------------------------------------------------- #
