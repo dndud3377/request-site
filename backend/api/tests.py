@@ -832,6 +832,7 @@ class PEStageReviewerFlowTest(TestCase):
         self.o_user = UserProfile.objects.create(loginid='o1', mail='o1@c.com', role='TE_O')
         self.e_owner = UserProfile.objects.create(loginid='e1', mail='e1@c.com', role='TE_E')
         self.e_reviewer = UserProfile.objects.create(loginid='e2', mail='e2@c.com', role='TE_E')
+        self.e_reviewer2 = UserProfile.objects.create(loginid='e3', mail='e3@c.com', role='TE_E')
 
     def _advance_to_parallel(self, plel=False):
         """draft → 제출 → PL 합의 → R 지정·합의 를 실제 API로 거쳐 P/O[/E] pending 상태로 만든다."""
@@ -1291,6 +1292,35 @@ class PEStageReviewerFlowTest(TestCase):
         e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
         self.assertEqual(e_step.action, 'pending')
         self.assertIn('재검토', e_step.comment)
+
+    def test_reviewer_added_on_reapproval_is_created(self):
+        """되감긴 뒤 재합의하며 검토자를 추가하면 그 검토자의 EV step 이 실제로 생성된다."""
+        doc = self._advance_to_parallel(plel=True)
+        self._set_detail(doc, {'validation_system': 'NO'})
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+
+        # 상신자가 값을 바꿔 E 단계를 되감는다.
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.data['rewound'])
+
+        # E 담당자가 검토자를 한 명 더 붙여 재합의한다(step 은 이미 선점 상태다).
+        self.client.force_authenticate(user=self.e_owner)
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/',
+            {'agent': 'E', 'comment': '재확인함',
+             'reviewer_loginids': [self.e_reviewer.loginid, self.e_reviewer2.loginid]},
+            format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.assertTrue(
+            ApprovalStep.objects.filter(
+                document=doc, agent='EV', round=1, assignee__loginid=self.e_reviewer2.loginid
+            ).exists(),
+            '새로 추가한 검토자의 EV step 이 조용히 버려져서는 안 된다',
+        )
 
     def test_update_blocked_after_e_stage_complete(self):
         """E 단계가 통과하면 수정 창이 닫힌다(검토자 없이 합의하면 그대로 완료된다)."""

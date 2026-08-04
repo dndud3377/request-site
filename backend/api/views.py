@@ -839,12 +839,6 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         '합의'로 정확히 읽는다.
         """
         review_agent = self._REVIEW_AGENT_OF[step.agent]
-        # 되감기(_rewind_e_stage) 후 담당자가 다시 합의하면 그 회차 검토자 step 이 이미 존재한다.
-        # 지정 이력을 보존하려고 남겨둔 것이므로 다시 만들지 않는다(같은 검토자가 바뀐 값을 재확인).
-        if ApprovalStep.objects.filter(
-            document=document, agent=review_agent, round=round_no
-        ).exists():
-            return
         for reviewer_user in reviewer_users:
             rv_step = ApprovalStep.objects.create(
                 document=document, agent=review_agent, action='pending', round=round_no,
