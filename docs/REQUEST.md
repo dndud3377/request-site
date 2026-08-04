@@ -309,12 +309,29 @@ pages/RequestPage/
   검사 제외) — ① 유효 행 1개 이상 ② 불완전 행(한쪽만 채움) 0개 ③ `STEP_ID` 중복 0개. 중복·불완전은 붙여넣기를
   거부하지 않고 표에 남겨 셀을 오류 표시한 뒤 게이트에서만 막는다(그 자리에서 고칠 수 있게).
 
-- **필수 입력 우회**(`ADI CD 변경`만 단독 선택했을 때만 — 다른 목적과 함께면 미적용): `validate(4)`의
-  `if (currentStep === 4 && !isOnlyMap && !isMapChangeMode)`에 `&& !isAdiCdOnly`를 추가해 Partial Shot 등을 건너뛴다.
-  이것이 **유일하게 손댄 검증 로직**이다 — `map_type` 필수 검증은 자동 고정으로 이미 통과하고, STEP2 조건부 필수
+- **필수 입력 우회**(`ADI CD 변경`만 단독 선택했을 때만 — 다른 목적과 함께면 미적용): 판정은 `isAdiCdOnly`
+  (`other_purpose.length === 1 && other_purpose[0] === 'ADI CD 변경'`) 하나로 통일한다. 다른 기타 목적을 함께
+  켜는 순간 `false` 로 뒤집혀 아래 우회가 **전부 해제**되고 원래 필수로 되돌아온다(중복 선택은 항상 가능하다).
+  우회 대상은 **2곳뿐**이다:
+  - `validate(1)`의 `if (!isOnlyMap && !isMapChangeMode && !isAdiCdOnly)` — **Backbone 조합 영역**(`bb_entries`)
+    필수 검증. ADI CD 만 요청하는데 무관한 위치·제품·조리법 3칸을 채우거나 기본 행을 지워야만 STEP1 을 벗어날 수
+    있던 문제를 없앤다. 검증만 끄고 **입력창은 잠그지 않으며**(회신: UI 는 유연하게), 사용자가 넣은 값은
+    **거르지 않고 그대로 저장**한다.
+  - `validate(4)`의 `if (currentStep === 4 && !isOnlyMap && !isMapChangeMode && !isAdiCdOnly)` — Partial Shot 등.
+  나머지는 손대지 않았다 — `map_type` 필수 검증은 자동 고정으로 이미 통과하고, STEP2 조건부 필수
   (C가문·MAP 변경·IN 등)는 사용자가 StepMap 값을 바꾸지 않는 한(기본값이면 미발동) 자연히 통과하며, STEP3/5의
   J/O NOC·Backbone 매핑 검증은 건드리지 않았다(조건부 검증을 강제 우회하면 반쪽 모순 데이터가 결재로 올라간다).
   상신 모달의 지정 PL은 결재 경로를 정하는 값이라 ADI CD 단독이어도 여전히 필수다.
+
+- **`scrollToFirstError` 조건 동기화**: `partialShotMissing` 계산식은 `validate(4)`의 우회 조건과 **반드시 같은
+  판정**이어야 한다. `!isAdiCdOnly` 가 검증부에만 있고 이쪽에 빠져 있어, ADI CD 단독 + Partial Shot 미입력 상태에서
+  STEP4 검증이 실패하면 **존재하지도 않는 오류 때문에 'OVL 정보' 탭으로 잘못 전환**되던 것을 고쳤다.
+  두 식은 앞으로도 함께 바꿔야 한다.
+
+- **저장 페이로드는 비우지 않는다**(`isMapOnlyScope` 에 ADI CD 를 넣지 않는다): `jayerRows` 는 프론트 표시용이
+  아니라 백엔드 로직의 입력값이다 — `models.py has_ppid_plel()` 이 이 값으로 **E(MASK) 결재 단계 생성 여부**를
+  정하고, `views.py _validate_jayer_bb_mapping()` 이 프론트 STEP5 와 **같은 Bb 매핑 규칙을 서버에서 이중 검증**한다.
+  `[]` 로 비우면 둘 다 무력화되어, "J-layer 에 조회된 행이 있으면 Bb 매핑을 끝내고 상신한다"는 규칙이 깨진다.
 
 - **문서 제목**: `MAP(${map_type})` 조립(`index.tsx`)에 `'ADI'`가 그대로 들어간다. 이 문자열을 파싱/필터링하는
   다른 코드는 없다(전체 검색 결과 이 한 곳뿐) — 목록·필터·검색에 영향 없음.
