@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ExcelJS from 'exceljs';
-import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep } from '../types';
 import Modal from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
@@ -89,6 +89,41 @@ function MergePairsTable({ pairs }: { pairs: MergePair[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** ADI CD 변경 — 변경전/변경후 스텝 표 (읽기 전용). 작성 화면(AdiCdPanel)과 같은 좌/우 구성. */
+function AdiCdStepsTable({ before, after, deleteAll }: { before: AdiCdStep[]; after: AdiCdStep[]; deleteAll: boolean }) {
+  const { t } = useTranslation();
+  const filled = (rows: AdiCdStep[]) => rows.filter((r) => r.step_id.trim() || r.step_desc.trim());
+  const beforeRows = filled(before);
+  const afterRows = filled(after);
+
+  const renderTable = (rows: AdiCdStep[]) => (
+    <table className="table" style={{ fontSize: '0.8rem' }}>
+      <thead><tr><th>STEP_ID</th><th>STEP_DESC</th></tr></thead>
+      <tbody>
+        {rows.map((r) => <tr key={r.id}><td>{r.step_id}</td><td>{r.step_desc}</td></tr>)}
+        {rows.length === 0 && (
+          <tr><td colSpan={2} style={{ color: 'var(--text-muted)' }}>{t('common.no_data')}</td></tr>
+        )}
+      </tbody>
+    </table>
+  );
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div>
+        <div style={{ fontWeight: 700, fontSize: '0.82rem', marginBottom: 4 }}>{t('request.adi_cd_before')}</div>
+        {renderTable(beforeRows)}
+      </div>
+      <div>
+        <div style={{ fontWeight: 700, fontSize: '0.82rem', marginBottom: 4 }}>{t('request.adi_cd_after')}</div>
+        {deleteAll
+          ? <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{t('request.adi_cd_delete_all_note')}</div>
+          : renderTable(afterRows)}
+      </div>
     </div>
   );
 }
@@ -1054,6 +1089,19 @@ type Page = { label: string; content: React.ReactNode };
                 </span>
               </div>
               <MergePairsTable pairs={detail.merge_pairs ?? []} />
+            </div>
+          )}
+
+          {((detail.adi_cd_before ?? []).some((r) => r.step_id.trim() || r.step_desc.trim())
+            || (detail.adi_cd_after ?? []).some((r) => r.step_id.trim() || r.step_desc.trim())
+            || detail.adi_cd_delete_all) && (
+            <div style={cardStyle}>
+              <div style={sectionTitle}>{t('request.adi_cd_section_title')}</div>
+              <AdiCdStepsTable
+                before={detail.adi_cd_before ?? []}
+                after={detail.adi_cd_after ?? []}
+                deleteAll={!!detail.adi_cd_delete_all}
+              />
             </div>
           )}
 

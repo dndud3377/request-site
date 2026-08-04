@@ -360,6 +360,18 @@ export interface DetailFormState {
   merge_pairs: MergePair[];
   merge_unmatched_before: MergeUnmatchedRow[];
   merge_unmatched_after: MergeUnmatchedRow[];
+
+  // '기타 목적 > ADI CD 변경' — 변경전/변경후 스텝 표. AFTER는 전체 삭제 요청 시 delete_all=true, 표는 비운다.
+  adi_cd_before: AdiCdStep[];
+  adi_cd_after: AdiCdStep[];
+  adi_cd_delete_all: boolean;
+}
+
+/** ADI CD 변경 스텝 표 1행 — STEP_ID/STEP_DESC 2컬럼 고정. */
+export interface AdiCdStep {
+  id: string;
+  step_id: string;
+  step_desc: string;
 }
 
 // ===== 참조 요청서 Merge — BEFORE/AFTER 비교 =====

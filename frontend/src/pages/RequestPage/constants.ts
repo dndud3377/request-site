@@ -5,6 +5,7 @@ import {
   JayerRow,
   OayerRow,
   BbTableRow,
+  AdiCdStep,
 } from '../../types';
 
 // ===== Option Constants =====
@@ -28,6 +29,20 @@ export const MERGE_UNREGISTERED_ID = '__merge_unregistered__';
 
 // 'Only MAP' 요청 목적: StepMap 정보까지만 작성하고 결재 경로도 단축된다(backend RequestDocument.ONLY_MAP_PURPOSE 와 동일 값).
 export const ONLY_MAP_PURPOSE = 'Only MAP';
+
+// '기타 목적 > ADI CD 변경': 특정 제품 ADI CD 스텝 개수 증감/전체삭제 요청. 진입 시 map_type 을 이 값으로 고정한다
+// ('완성된 MAP 변경'이 map_type='EDIT' 로 고정하는 것과 동일한 패턴).
+export const OTHER_PURPOSE_ADI_CD = 'ADI CD 변경';
+export const ADI_CD_MAP_TYPE = 'ADI';
+// 초기 빈 템플릿 행 수
+export const ADI_CD_TEMPLATE_ROWS = 5;
+// 붙여넣기 허용 최대 행 수(초과 시 거부)
+export const ADI_CD_MAX_ROWS = 500;
+// 헤더 탐색 시 위에서부터 볼 최대 행 수(제목 행·빈 행이 섞여 있을 수 있어 첫 행만 보지 않는다)
+export const ADI_CD_HEADER_SCAN_ROWS = 5;
+// 헤더 라벨 — 의뢰자가 엑셀 원본과 대조해야 하므로 번역하지 않는다.
+export const ADI_CD_STEP_ID_LABEL = 'STEP_ID';
+export const ADI_CD_STEP_DESC_LABEL = 'STEP_DESC';
 
 // '완성된 MAP 변경' 프리필 시 참조 문서 detail 에서 복사할 MAP 관련 키.
 // 이 키들만 현재 detail 위에 병합하고(기본정보·표는 유지·비움), 변경이력 diff 비교 기준이 된다.
@@ -178,6 +193,12 @@ export const makeBbRow = (): BbTableRow => ({
   remark: '',
 });
 
+export const makeAdiCdStep = (): AdiCdStep => ({
+  id: genId(),
+  step_id: '',
+  step_desc: '',
+});
+
 // ===== Initial States =====
 export const INITIAL_DETAIL: DetailFormState = {
   request_purpose: '',
@@ -250,6 +271,9 @@ export const INITIAL_DETAIL: DetailFormState = {
   merge_pairs: [],
   merge_unmatched_before: [],
   merge_unmatched_after: [],
+  adi_cd_before: [],
+  adi_cd_after: [],
+  adi_cd_delete_all: false,
 };
 
 export const INITIAL_FORM: CreateDocumentInput = {
