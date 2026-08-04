@@ -98,38 +98,97 @@ grep -E "POST_APPROVER_LOGINID|MAIL_REDIRECT_TO|DXHUB_MAIL_URL|EXTERNAL_API_KEY"
 ```bash
 docker exec -it <backend> python manage.py test api -v 2
 ```
-컨테이너 없이(이번 세션처럼 MySQL 이 없을 때) sqlite 로 돌리려면 — 프로젝트 파일은 건드리지 않는다:
+
+#### 1.4.1 Docker·MySQL 없이 백엔드 테스트 돌리기 (검증된 레시피 — 2026-08-04 실행 성공)
+
+원격 세션처럼 **docker 데몬도 MySQL 도 없는 환경**에서도 전체 백엔드 테스트가 돈다.
+아래는 실제로 성공한 순서다. **프로젝트 파일은 하나도 건드리지 않는다**(전부 프로젝트 밖에 만든다).
+
 ```bash
-# 임시 설정 파일(프로젝트 밖)
-cat > /tmp/test_settings.py <<'EOF'
+SP=/tmp/e2e            # 아무 작업 디렉터리(프로젝트 밖)
+mkdir -p $SP/stubs && python3 -m venv $SP/venv
+
+# 1) 의존성 — requirements.txt 를 그대로 쓰지 않는다.
+#    mysqlclient 는 libmysqlclient-dev + gcc 가 필요해 실패하고, sqlite 로 돌리므로 불필요하다.
+#    requirements.txt 에 없는 mozilla-django-oidc / PyJWT 는 INSTALLED_APPS·auth_views 가 쓰므로 반드시 넣는다.
+$SP/venv/bin/pip install -q \
+  Django==4.2.13 djangorestframework==3.15.1 django-cors-headers==4.3.1 \
+  djangorestframework-simplejwt==5.3.1 Pillow==10.3.0 python-dotenv==1.0.1 \
+  django-filter==24.2 django-apscheduler==0.6.2 pandas==2.2.2 sqlalchemy==2.0.30 \
+  requests==2.31.0 pymysql==1.1.1 mozilla-django-oidc PyJWT
+
+# 2) 사내 전용 모듈 스텁 — utils.py 가 import 하므로 없으면 죽는다.
+cat > $SP/stubs/datacenterquery.py <<'EOF'
+def login(*a, **k):   raise RuntimeError('stub: 테스트에서 호출되면 안 된다')
+def getData(*a, **k): raise RuntimeError('stub: 테스트에서 호출되면 안 된다')
+EOF
+
+# 3) sqlite 테스트 설정
+cat > $SP/stubs/test_settings.py <<'EOF'
 from config.settings.base import *
 DEBUG = True
 DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}}
 EOF
-cd backend && PYTHONPATH=/tmp DJANGO_SETTINGS_MODULE=test_settings python manage.py test api
-```
-> 사내 전용 모듈 `datacenterquery` 가 없으면 import 에서 죽는다. 같은 경로에 스텁을 두면 통과한다.
 
-**프론트엔드**
+# 4) 실행
+cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
+  $SP/venv/bin/python manage.py test api
+```
+- 소요: pip 설치 **약 20초**, 테스트 실행 **약 4초**.
+- `staticfiles.W004`(static 디렉터리 없음) 경고 1건은 무해하다.
+- **임시 재현 테스트를 붙이려면** `$SP/stubs/` 에 `verify_xxx.py` 를 두고
+  `manage.py test verify_xxx` 로 부르면 된다 — 프로젝트의 `api/tests.py` 를 오염시키지 않는다.
+  (§5-4 의 B-06·B-32·B-57·B-63 재현이 이 방식으로 확인됐다.)
+
+**프론트엔드** (검증된 레시피 — 2026-08-04 실행 성공)
 ```bash
-cd frontend && npm ci
-CI=true npx react-scripts test --watchAll=false --passWithNoTests    # 테스트 파일 없음 → 통과
-npx tsc --noEmit 2>&1 | grep -c "error TS"                          # 47 = 기존 baseline (docs/REQUEST.md §4)
+cd frontend && npm ci                                               # 약 30초, 1667 packages
+CI=true npx react-scripts test --watchAll=false --passWithNoTests    # 67건 통과
+npx tsc --noEmit 2>&1 | grep -c "error TS"                          # 24 (baseline 47 → 감소)
 ```
 
 ### 1.5 실행 결과
 
-#### 2026-08-04 (3차) — **자동 테스트 실행 불가**
-이 세션 컨테이너에는 **Django 가 설치돼 있지 않고**(`ModuleNotFoundError: No module named 'django'`)
-프론트엔드 `node_modules` 도 없다. 따라서 3차에서 추가한 B-57~B-63 은 **전부 `분석🔍`(코드 정독)** 이며,
-런타임 재현은 §7 체크리스트의 수동 시나리오로 확인해야 한다. 대신 아래는 실제로 수행했다.
+#### 2026-08-04 (3차) 실행 결과 — **백엔드·프론트 모두 실행 성공**
+
+> 처음엔 "Django 미설치 → 실행 불가" 로 판단했으나, **§1.4.1 레시피로 전부 돌릴 수 있었다.**
+> docker 데몬만 없을 뿐 pypi·npm 은 열려 있다. 아래는 실제 출력이다.
+
+**백엔드** — `manage.py test api` (sqlite)
+```
+Ran 167 tests in 3.993s
+FAILED (failures=2, errors=1)
+```
+| 실패 테스트 | 판정 |
+|---|---|
+| `ExternalApiKeyAccessTest.test_wrong_key_returns_401` → `AssertionError: 403 != 401` | **B-19 여전히 red** |
+| `MessageBuildingTest.test_broadcast_subject_has_no_name_prefix` | **B-22 여전히 red** |
+| `HybridImmediateSendTest.test_enqueue_schedules_immediate_send_on_commit` → `AttributeError: 'NoneType'` | **B-23 여전히 red** |
+
+> ⇒ **1차(2026-07-28)에 지적한 3건이 그대로 남아 있다.** 테스트가 75 → 167건으로 늘어나는 동안
+> 이 3건은 손대지 않았다는 뜻이며, **CI 가 여전히 돌지 않는다는 신호**다.
+
+**프론트엔드**
+```
+Test Suites: 2 passed, 2 total      (terminology.test.ts, RequestPage/helpers.test.ts)
+Tests:       67 passed, 67 total
+npx tsc --noEmit | grep -c "error TS"  →  24
+```
+- 1차 문서의 "테스트 파일 없음 → 통과" 서술은 **현재와 다르다** — 실제로 **67건이 존재하고 전부 통과**한다.
+- `tsc` 오류 24건 내역 (baseline 47 → 24 로 감소)
+
+| 유형 | 건수 | 비고 |
+|---|---|---|
+| **미정의 i18n 키**(TS2345) | **16** | `request.btn_all_*`·`btn_reset` 12 / `profile.*` 3 / `guide.search_placeholder` 1 → **B-14 를 타입체커가 이미 잡고 있다** |
+| `Set` 반복(TS2802, `--downlevelIteration`) | 6 | `index.tsx` 4 · `PagedDetailView` 1 · `Step4` 1 |
+| `string \| null` 할당(TS2322) | 2 | `VOCPage.tsx:149, 202` |
+
+**그 외 정적 검증**
 
 | 항목 | 방법 | 결과 |
 |---|---|---|
 | 문서의 전 `파일:라인` 참조 | 심볼 grep 으로 현재 위치 대조 | **약 90건 중 60건 이상이 어긋나 있어 정정** |
-| i18n 키 정합성 | `ko.json`/`en.json` 평탄화 비교 + 사용처 grep | **ko 1003 / en 1002**, `voc.page_other` 여전히 ko 전용 (B-15 유효) |
-| 미정의 i18n 키 | `request.btn_all_*`·`btn_reset`·`guide.search_placeholder`·`profile.*` 조회 | **ko/en 양쪽 모두 없음** (B-14 유효) |
-| 테스트 케이스 수 | `tests.py` 의 `def test_` 집계 | **167건** (1차 75 → 2차 87 → 현재 167) |
+| i18n 키 정합성 | `ko.json`/`en.json` 평탄화 비교 | **ko 1003 / en 1002**, `voc.page_other` 여전히 ko 전용 (B-15 유효) |
 
 #### 2026-07-28 (1차) 실행 결과
 
@@ -1063,10 +1122,13 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   3. `_can_confirm_pause`(`views.py:211`)는 단계 assignee 본인을 허용 → **지정 PL 본인이 확인해 `pause` 확정 가능**.
   4. 그 상태에서 `peer_approve` → `_advance_after_pl`(`views.py:1263`)이 **조건 없이 `document.status = 'under_review'`
      로 덮어쓴다**(`:1283`, `:1287`) → 되살아나고 R 단계까지 생성된다.
-- 재현 결과
+- 재현 결과 (**2026-08-04 재실행 — 여전히 재현됨**)
   ```
+  [사전]  request-pause=200  confirm-pause=200  | status = pause     ← PL 단계에서 pause 확정 성립
   [B-06a] pause 문서 peer-approve -> 200 | status = under_review | R단계 생성: True
   [B-06b] pause 문서 peer-reject  -> 200 | status = rejected
+  [B-32]  PauseRequest.state = confirmed (cancelled 여야 정상) | 작성자 재-중단요청 -> 403
+  [대조]  pause 문서 approve-step -> 400 / claim-step -> 400        ← 일반 단계는 정상 차단
   ```
 - 영향: 작성자가 요청하고 팀이 확인해 **정식으로 멈춘 결재를 PL 이 혼자 되살리거나 끝내버린다.**
   `PauseRequest` 는 `confirmed` 로 남아 있어 상태가 어긋난다(문서는 `under_review` 인데 활성 중단요청 존재 →
@@ -1177,6 +1239,15 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 | `profile.name` / `profile.email` / `profile.department` | `Navbar.tsx:227,231,235` | 프로필 드롭다운 라벨. `\|\| '이름'` 폴백을 뒀지만 **i18next 가 키 문자열(truthy)을 반환해 폴백이 절대 안 걸린다** |
 - 검증 결과(**2026-08-04 재확인**): `ko.json`/`en.json` **양쪽 모두** `request.btn*` 5종 **0개**, `profile` 섹션 **없음**,
   `guide.search_placeholder` **없음** — 사용처 라인만 밀렸고 **버그는 그대로**다.
+- 🔥 **타입체커가 이미 잡고 있다**(2026-08-04 `npx tsc --noEmit` 실행): 전체 오류 24건 중 **16건이 이 버그**다.
+  ```
+  Step2.tsx(124,107): error TS2345: Argument of type '["request.btn_all_o"]' is not assignable ...
+  Navbar.tsx(227,55): error TS2345: Argument of type '["profile.name"]' is not assignable ...
+  GuidePage.tsx(216,28): error TS2345: Argument of type '["guide.search_placeholder"]' ...
+  ```
+  i18next 의 키 타입이 `ko.json` 에서 생성되므로 **정의되지 않은 키는 컴파일 단계에서 이미 오류**다.
+  즉 이 버그는 "정적 분석으로 발견" 수준이 아니라 **빌드 경고를 무시하고 있는 상태**이며,
+  `tsc --noEmit` 을 CI 게이트로 걸면 즉시 재발 방지된다. (나머지 8건은 §1.5 표 참조 — 별개 유형)
 - 영향: 의뢰서 작성 핵심 화면(J/O-layer 일괄 편집 버튼)에 개발용 키가 그대로 보인다. **규칙 G 위반.**
 - 권고: ko/en 동시 추가.
 
@@ -1407,7 +1478,8 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 
 ### 🟠 B-32 PL 액션에서 중단 요청 자동취소가 누락돼 요청이 고착된다 **재현✅**
 - 위치: `views.py:234`(`_cancel_active_pause_requests` 정의) — 호출은 `:521`(`approve_step`)·`:723`(`reject_step`) **2곳뿐** ↔
-  `views.py:1263`(`_advance_after_pl`)·`:1305`(`peer_reject`)에는 **호출 없음** — **2026-08-04 미수정 확인**
+  `views.py:1263`(`_advance_after_pl`)·`:1305`(`peer_reject`)에는 **호출 없음** — **2026-08-04 재실행으로 재현 재확인**
+  (`PauseRequest.state = confirmed` 잔존 + 작성자 재-중단요청 403 — B-06 재현 블록 참조)
 - 재현 결과
   ```
   [D-01a] PL 합의 후 중단요청 state = requested   (cancelled 여야 정상)
@@ -1559,7 +1631,11 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   실제 인증서를 넣는 순간 커밋될 위험이 있다. 참고로 placeholder 상태에서는 `get_adfs_public_key()`가
   파싱에 실패해 `oidc_callback`이 500('인증서 로드 실패')을 반환하므로 **SSO 로그인이 아예 되지 않는다**.
 
-### ⚪ B-48 미적용 마이그레이션 1건 (스키마 영향 없음) **재현✅**
+### ⚪ B-48 미적용 마이그레이션 1건 (스키마 영향 없음) — ✅ **해소 확인**(2026-08-04)
+
+> **2026-08-04 재실행**: `manage.py makemigrations --check --dry-run` → **`No changes detected`(exit 0)**.
+> 그 사이 마이그레이션이 `0012_design_rule_overrides` 까지 추가되면서 정리된 것으로 보인다.
+> 아래는 1차 기록(원문 보존).
 ```
 $ python manage.py makemigrations --check --dry-run
 Migrations for 'api':
@@ -1700,8 +1776,9 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 > 이 컬럼은 J/O-layer·BB·MAP·통보처·후결자·Validation System·Merge 스냅샷·history 를 **전부** 담는
 > 스키마 없는 `TextField` 라(R-01), 한 번의 잘못된 저장이 결재 경로 자체를 바꾼다.
 >
-> **⚠️ 이 절의 7건은 전부 `분석🔍`** 이다 — 이 세션 컨테이너에 Django·node_modules 가 없어 실행 검증을 못 했다(§1.5).
-> 각 항목에 **코드 근거 라인**과 **브라우저 재현 절차**를 함께 적었으니, 그것으로 확인할 것.
+> **검증 상태**: 백엔드에서 관찰 가능한 **B-57·B-63 은 `재현✅`**(§1.4.1 레시피로 실행, 출력은 각 항목에 첨부).
+> 나머지 6건(B-58·59·60·61·62·64)은 **프론트 위저드 상태 전이가 있어야 재현되는 항목**이라 `분석🔍` 이며,
+> §7 의 브라우저 수동 시나리오로 확인해야 한다. 각 항목에 코드 근거 라인과 재현 절차를 함께 적었다.
 
 ### 저장 경로 지도 (읽기 전에)
 
@@ -1717,7 +1794,7 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 
 ---
 
-### 🟠 B-57 C가문이 아닌 문서의 **추가 후결자가 저장 때마다 전량 삭제**된다 **분석🔍**
+### 🟠 B-57 C가문이 아닌 문서의 **추가 후결자가 저장 때마다 전량 삭제**된다 **재현✅**(2026-08-04)
 - 위치
   - 저장: `RequestPage/index.tsx:3351`
     ```ts
@@ -1742,7 +1819,16 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
   조용히 빠지고, 아무 에러도 나지 않는다.
   (C가문 문서는 `_validate_post_approvers`(`views.py:283`)가 재상신을 400 으로 막아 주므로 이 경로에서 보호된다.
    **보호받지 못하는 쪽이 일반 문서**라는 점이 이 버그의 핵심이다.)
-- 재현 절차: 일반 의뢰서(only_prodc=No) 상신 → R 합의로 병렬 진입 → 결재현황 상세에서 **'+ 후결자 추가'** 로 1명 추가
+- **재현 결과**(2026-08-04, `APIClient` 로 전 구간 완주 — 프론트 저장 payload 는 `only_prodc='No'` + `post_approvers=[]` 로 재현)
+  ```
+  [사전] 병렬 진입 status=under_review
+  [1] add-post-approver -> 200 | detail.post_approvers=[{'loginid':'extrara','name':'extrara'}] | RA=['extrara','fixedra']
+  [2] 재상신 직전 PATCH -> 200 | detail.post_approvers=[]        ← 저장 한 번에 소실
+  [3] 재상신 후 round=2 RA 단계 = ['fixedra']                     ← 추가 후결자 단계가 생성되지 않음
+  ```
+  **`add-post-approver` 는 일반 문서에서도 200 으로 통과**하고(전제 확인), 그 뒤 저장 한 번으로
+  `detail.post_approvers` 가 비고, 재상신 후 RA 는 고정 후결자 1명만 생성된다.
+- 브라우저 재현 절차: 일반 의뢰서(only_prodc=No) 상신 → R 합의로 병렬 진입 → 결재현황 상세에서 **'+ 후결자 추가'** 로 1명 추가
   → 그 문서를 반려 → 작성자가 '수정 후 재상신' → STEP5 상신 →
   **결재 경로 탭에 추가했던 후결자의 RA 단계가 없으면 버그.**
 - 권고: 삼항을 없애고 `post_approvers: postApprovers` 로 저장하되, `only_prodc` 를 'No' 로 바꾸는 핸들러
@@ -1897,7 +1983,7 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
   더 나은 방향은 **저장 직전에 "현재 모드에서 쓰이지 않는 키" 를 일괄 제거**하는 정규화 단계를
   `buildEnrichedForm` 에 두는 것이다 — B-60 과 같은 유형이 반복되고 있어 개별 핸들러 패치는 또 새는다.
 
-### ⚪ B-63 `additional_notes` 최상위가 dict 가 아니면 **파싱은 성공하고 500 이 난다** **분석🔍**
+### ⚪ B-63 `additional_notes` 최상위가 dict 가 아니면 **파싱은 성공하고 500 이 난다** **재현✅**(2026-08-04)
 - 위치: `models.py:132-137`(`get_detail`), `views.py:254`(`_validate_bb_mapping`),
   `views.py:1391`(`_get_validation_system`), `:1400`(`_set_validation_system`), `:1457`(`_sync_post_approvers_detail`),
   `serializers.py:156-166`(`get_notifier_mails`)
@@ -1909,7 +1995,16 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
   `_sync_post_approvers_detail` 은 조용히 넘어가야 할 자리인데 `AttributeError` 를 못 잡아 500 을 낸다.
 - 영향: 정상 사용에서는 나오지 않지만 **외부 API·수동 DB 편집·마이그레이션 사고로 한 문서만 이 상태가 되면**
   그 문서의 조회·상신·후결자 변경·VS 변경이 전부 500 이 된다. `TextField` 라 DB 가 막아 주지 않는다(R-01).
-- 재현 절차(격리 DB): `RequestDocument.objects.filter(pk=N).update(additional_notes='[]')` 후
+- **재현 결과**(2026-08-04)
+  ```
+  additional_notes='[]'    | get_detail() -> []    | is_only_map() -> AttributeError
+  additional_notes='null'  | get_detail() -> None  | is_only_map() -> AttributeError
+  additional_notes='"x"'   | get_detail() -> 'x'   | is_only_map() -> AttributeError
+  ```
+  즉 **`get_detail()` 자체는 예외를 던지지 않고 비-dict 를 그대로 돌려주며**, 크래시는 그 값을 쓰는
+  호출부(`is_only_map`·`has_ppid_plel`·`_validate_bb_mapping` 등)에서 난다.
+  → **정규화 지점은 `get_detail()` 하나**라는 권고가 그대로 유효하다.
+- 브라우저/스크립트 재현 절차(격리 DB): `RequestDocument.objects.filter(pk=N).update(additional_notes='[]')` 후
   `POST /api/documents/N/submit/` → **500** 이면 재현.
 - 권고: `get_detail()` 에서 **dict 가 아니면 `{}` 를 반환**하도록 한 곳에서 정규화하고, 나머지는 전부 그것을 경유한다.
   (VS-13 을 이 범위로 확장한 항목이다.) 중기적으로는 `JSONField` 전환(R-01).
@@ -2104,7 +2199,8 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
       MAP 칩에 **`[북판]` 줄이 보이지 않음**
 
 *테스트*
-- [ ] `manage.py test api` → **OK (0 failures)** — 현재 167건, 이 세션 실행 불가(§1.5)
+- [ ] `manage.py test api` → **OK (0 failures)** — 현재 167건 중 **3건 red**(B-19·B-22·B-23), §1.4.1 레시피로 재현 가능
+- [ ] `npx tsc --noEmit` → **0건** (현재 24건, 그중 16건이 B-14) — **CI 게이트로 걸 것**
 - [ ] 인증(OIDC 콜백·refresh)·업로드·XSS 저장 경로 **테스트 신규 추가**(현재 0건 — R-17)
 - [ ] **`additional_notes` 저장 회귀 테스트 신규 추가** — 위 B-57~B-63 은 전부 서버 단위 테스트로 고정 가능하다
       (`buildEnrichedForm` 상당의 payload 를 만들어 PATCH → `get_detail()` 결과 단언)
@@ -2156,7 +2252,8 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 
 > 검증에 사용한 임시 테스트 파일은 scratchpad 에서 실행 후 **프로젝트에서 제거**했다(코드 변경 0건).
 > 프론트엔드는 그 세션에 `node_modules` 가 없어 `tsc`/`react-scripts test` 를 돌리지 못했다 →
-> 프론트 항목은 전부 **코드 정독 + 정적 분석** 근거이며, §7 체크리스트로 브라우저 확인이 필요하다.
+> 1·2차의 프론트 항목은 **코드 정독 + 정적 분석** 근거다.
+> (3차에서는 `npm ci` 로 프론트 테스트·타입체크까지 실행했다 — §1.5 참조.)
 
 ### 8.3 3차 정독에서 수행한 검증 (2026-08-04)
 
@@ -2173,7 +2270,13 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 | 필터 정의 저장소 | `jayerFilterSets`(localStorage) vs `jayerActiveFilterIds`(additional_notes) | **저장 위치 비대칭 확인**(B-58) |
 | Merge 유령값 반증 | `other_purpose` 감시 effect(`index.tsx:588-598`) 확인 | **Merge 키는 정상 정리됨 — ADI CD 만 누락**(B-60) |
 | i18n 정합성 | `ko.json`/`en.json` 평탄화 비교 + 미정의 키 조회 | **ko 1003 / en 1002**, B-14·B-15 유효 |
-| 자동 테스트 | `python -c "import django"` | **미설치 — 실행 불가**(§1.5) |
+| **백엔드 자동 테스트** | §1.4.1 레시피(venv + sqlite + `datacenterquery` 스텁) | **167건 실행, 2 failures / 1 error — B-19·B-22·B-23 이 1차 이후 그대로 red** |
+| **프론트 자동 테스트** | `npm ci` → `react-scripts test` | **67건 전부 통과**(1차 문서의 "테스트 파일 없음" 서술은 낡음) |
+| **타입 체크** | `npx tsc --noEmit` | **24건** — 그중 **16건이 B-14(미정의 i18n 키)** |
+| **B-06 / B-32 재현** | 임시 테스트를 프로젝트 밖(`$SP/stubs/verify_rest.py`)에 두고 실행 | **pause 확정 후 peer-approve 200 + R 생성 / PauseRequest confirmed 잔존 / 재-중단요청 403** — 전부 재현 |
+| **B-06 대조군** | 같은 pause 문서에 `approve-step`·`claim-step` | **둘 다 400** — 일반 단계는 정상 차단 |
+| **B-57 재현** | 상신→PL합의→R합의→후결자추가→반려→PATCH→재상신 전 구간 완주 | **재상신 후 RA = 고정 1명뿐, 추가 후결자 단계 미생성** |
+| **B-63 재현** | `additional_notes` 를 `'[]'`/`'null'`/`'"x"'` 로 바꿔 `get_detail()`·`is_only_map()` 호출 | **get_detail() 은 비-dict 를 그대로 반환, 호출부에서 `AttributeError`** |
 
 **위치 변경 요약** (자주 참조되는 것만; 그 외는 각 항목에 반영)
 
@@ -2205,8 +2308,8 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
   gunicorn 멀티워커에서는 **프로세스별로 락이 따로 걸린다**(프로세스 간 보호 없음). 실사용 영향 확인 필요.
 - `RichTextEditor.tsx`(574줄)·`GuideTourModal`·`guideDemos/*` — 투어·에디터 UI. `any` 9건 외 기능 검증 미실시.
 - `PagedDetailView.tsx`(1,757줄) — diff 로직(B-40)과 `any` 집계만 확인. 6개 탭의 렌더 정확성은 브라우저 확인 필요.
-- ~~마이그레이션 일치 여부~~ → 1차에 **실행 완료**, 결과는 B-48 참조(스키마 영향 없는 1건).
-  단 **2026-08-04 세션에서는 Django 미설치로 재확인하지 못했다** — B-48 의 현재 유효성은 미검증이다.
+- ~~마이그레이션 일치 여부~~ → 1·3차 모두 **실행 완료**. 3차 결과는 **`No changes detected`(exit 0)** →
+  B-48 은 **해소됨**(§5-2 참조).
 - 성능·부하 — `additional_notes` 포함 목록 응답 크기(R-01), 문서 수백~수천 건 시 응답 시간 미측정.
 - **3차 추가분(2026-08-04)**
   - ~~조건부 토글의 유령값 여부 미확인~~ → **재확인 완료**. `map_change`·리전 지도편차·`ea_change`·
