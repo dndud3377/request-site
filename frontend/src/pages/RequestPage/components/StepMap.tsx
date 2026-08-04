@@ -136,8 +136,12 @@ const StepMap: React.FC<StepMapProps> = ({
             <GuideBadge fk="step2_map_type" tk={t('guide.feat.step2_map_type' as never)} />
           </label>
           <div style={{ display: 'flex', gap: '8px', marginTop: 4 }}>
-            {(['NEW', 'CLONE', 'EXISTING', 'EDIT'] as const).map((val) => {
-              const labelKey = val === 'NEW' ? 'map_type_new' : val === 'CLONE' ? 'map_type_borrow' : val === 'EXISTING' ? 'map_type_registered' : 'map_type_edit';
+            {(['NEW', 'CLONE', 'EXISTING', 'EDIT', 'ADI'] as const).map((val) => {
+              const labelKey = val === 'NEW' ? 'map_type_new' : val === 'CLONE' ? 'map_type_borrow' : val === 'EXISTING' ? 'map_type_registered' : val === 'EDIT' ? 'map_type_edit' : 'map_type_adi';
+              // ADI 는 기타 목적 'ADI CD 변경' 전용 값 — Step1 버튼이 자동 고정하므로 여기서는 항상 잠금(표시 전용).
+              // 고정돼 있는 동안은 EDIT 와 동일하게 나머지 4개도 전부 잠근다.
+              const isAdiLocked = detail.map_type === 'ADI';
+              const disabled = val === 'ADI' ? true : isAdiLocked ? true : val === 'EDIT' ? !isMapChangeMode : isMapChangeMode;
               return (
                 <button
                   key={val}
@@ -146,7 +150,7 @@ const StepMap: React.FC<StepMapProps> = ({
                   onClick={() => handleMapTypeSelect(val)}
                   // EDIT 는 기타 목적 '완성된 MAP 변경' 전용 값이다.
                   // 그 모드에서만 EDIT 를 활성화하고, 반대로 그 모드에서는 나머지 3개를 잠근다.
-                  disabled={val === 'EDIT' ? !isMapChangeMode : isMapChangeMode}
+                  disabled={disabled}
                 >
                   {t(`request.${labelKey}`)}
                 </button>
