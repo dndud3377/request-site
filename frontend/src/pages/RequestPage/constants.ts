@@ -15,6 +15,17 @@ export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '�
 // '완성된 MAP 변경' 기타 목적: 결재완료 요청서의 MAP 정보만 불러와 수정하는 단독 전용 항목.
 export const OTHER_PURPOSE_MAP_CHANGE = '완성된 MAP 변경';
 
+// 참조 요청서 Merge(+ BEFORE/AFTER 비교)를 쓸 수 있는 기타 목적.
+// 여러 개를 함께 골라도 참조 요청서는 의뢰서당 1건이므로 블록은 하나만 노출한다.
+export const MERGE_ENABLED_PURPOSES = ['Layer 추가/삭제', 'STEPSEQ 변경', 'Overlay 변경'] as const;
+
+/** 기타 목적에 Merge 사용 항목이 하나라도 포함됐는가 */
+export const isMergePurposeSelected = (otherPurpose: string[]): boolean =>
+  otherPurpose.some((o) => (MERGE_ENABLED_PURPOSES as readonly string[]).includes(o));
+
+// BEFORE/AFTER 표의 '미등록' 행 선택 id — 실제 행 id 와 겹치지 않도록 예약어를 쓴다.
+export const MERGE_UNREGISTERED_ID = '__merge_unregistered__';
+
 // 'Only MAP' 요청 목적: StepMap 정보까지만 작성하고 결재 경로도 단축된다(backend RequestDocument.ONLY_MAP_PURPOSE 와 동일 값).
 export const ONLY_MAP_PURPOSE = 'Only MAP';
 
@@ -231,6 +242,9 @@ export const INITIAL_DETAIL: DetailFormState = {
   validation_system: VS_NONTARGET,
   merge_ref_doc_id: null,
   merge_ref_doc_label: '',
+  merge_pairs: [],
+  merge_unmatched_before: [],
+  merge_unmatched_after: [],
 };
 
 export const INITIAL_FORM: CreateDocumentInput = {

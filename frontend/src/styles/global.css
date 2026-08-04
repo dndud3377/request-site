@@ -4564,3 +4564,74 @@ select.form-control option {
 .adr-maprow-reason { font-size: 0.75rem; color: var(--text-muted); flex: none; }
 .adr-maprow-reason.warn { color: var(--warning); }
 .adr-maprow-count { font-size: 0.75rem; color: var(--text-muted); flex: none; font-variant-numeric: tabular-nums; }
+
+/* ── 참조 요청서 Merge — BEFORE/AFTER 비교 패널 ── */
+.ba-panel { margin: 12px 0 4px; }
+.ba-summary {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  background: var(--bg-secondary); border-radius: var(--radius-sm);
+  padding: 7px 12px; font-size: 0.82rem; color: var(--text-secondary);
+}
+.ba-gate {
+  border-radius: var(--radius-sm); padding: 7px 12px; margin-top: 8px;
+  font-size: 0.83rem; font-weight: 600; border: 1px solid transparent;
+}
+.ba-gate-ng { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
+.ba-gate-ok { background: var(--success-light); color: var(--success); border-color: var(--success); }
+.ba-section-title {
+  font-size: 0.86rem; font-weight: 700; color: var(--text-primary); margin: 16px 0 8px;
+}
+.ba-split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 900px) { .ba-split { grid-template-columns: 1fr; } }
+.ba-pane {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  overflow: hidden; background: var(--bg-card);
+}
+.ba-pane-title {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 7px 11px; background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border); font-size: 0.8rem; font-weight: 700;
+}
+.ba-pane-count { font-weight: 400; color: var(--text-muted); }
+.ba-pane-scroll { max-height: 300px; overflow: auto; }
+.ba-result-scroll { overflow-x: auto; }
+.ba-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.ba-table th, .ba-table td {
+  padding: 6px 8px; text-align: left; white-space: nowrap;
+  border-bottom: 1px solid var(--border-light);
+}
+.ba-table th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--bg-primary); font-size: 0.76rem; font-weight: 600;
+  color: var(--text-secondary);
+}
+.ba-result-table th { position: static; }
+.ba-pick { cursor: pointer; }
+.ba-pick:hover td { background: var(--bg-card-hover); }
+.ba-pick-selected td { background: var(--accent-light); box-shadow: inset 2px 0 0 var(--accent); }
+.ba-pick-unreg td { font-style: italic; color: var(--text-muted); }
+.ba-hint { color: var(--text-muted); font-size: 0.78rem; padding: 10px 8px; white-space: normal; }
+.ba-badge {
+  display: inline-block; padding: 1px 7px; border-radius: 999px;
+  font-size: 0.7rem; font-weight: 700; white-space: nowrap; border: 1px solid;
+}
+.ba-badge-j { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+.ba-badge-o { background: rgba(124, 58, 237, 0.1); color: #7c3aed; border-color: #7c3aed; }
+.ba-badge-changed { background: var(--warning-light); color: var(--warning); border-color: var(--warning); }
+.ba-badge-added { background: var(--success-light); color: var(--success); border-color: var(--success); }
+.ba-badge-deleted { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
+.ba-group-before { background: var(--danger-light) !important; text-align: center !important; }
+.ba-group-after { background: var(--success-light) !important; text-align: center !important; }
+.ba-cell-changed { color: var(--warning); font-weight: 700; }
+.ba-cell-unreg { color: var(--text-muted); font-style: italic; text-align: center; }
+.ba-apply-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+}
+.ba-apply-hint { flex: 1; min-width: 220px; font-size: 0.81rem; color: var(--text-secondary); }
+.ba-apply-hint-error { color: var(--danger); font-weight: 600; }
+.ba-note { margin-top: 6px; font-size: 0.76rem; color: var(--text-muted); line-height: 1.5; }
+.ba-unpair-btn {
+  border: none; background: none; color: var(--danger);
+  cursor: pointer; font-size: 0.85rem; padding: 0 4px; line-height: 1;
+}
