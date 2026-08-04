@@ -30,6 +30,21 @@ const AGENT_TO_ROLE: Record<string, string> = {
 // ===== Utils =====
 // 결재 현황 테이블 계산 헬퍼는 utils/approvalTable 로 이동(HomePage 최근 의뢰 현황과 공유).
 
+// '내 차례'·단계별 필터 판정: 진행 중(under_review) 문서의 **현재 회차** pending 단계만 본다.
+// 반려된 문서는 status 만 rejected 로 바뀌고 잔여 pending step 이 이력으로 남으며, 재상신하면
+// 이전 회차 step 도 pending 인 채로 남는다. 이를 걸러내지 않으면 이미 끝난 문서가 계속
+// '내 차례'와 단계 탭(및 탭 카운트)에 잡힌다.
+const hasActivePendingStep = (
+  doc: RequestDocument,
+  match: (step: ApprovalStepFrontend) => boolean,
+): boolean => {
+  if (doc.status !== 'under_review') return false;
+  const round = getCurrentRound(doc);
+  return (doc.approval_steps ?? []).some(
+    (s) => s.action === 'pending' && (s.round ?? 1) === round && match(s)
+  );
+};
+
 // 중단 요청 '확인' 가능 여부(프론트 가드): MASTER / 담당자 본인 / (미배정 시) 같은 팀
 const canConfirmPauseStep = (
   user: { role?: UserRole | string | null; username?: string },
@@ -149,16 +164,12 @@ export default function ApprovalPage(): React.ReactElement {
       if (role === 'NONE' || !role) return [];
       // TE_* 역할: 내 loginid(username)가 assignee_loginid인 pending 단계가 있는 문서
       return all.filter((d) =>
-        (d.approval_steps ?? []).some(
-          (s) => s.action === 'pending' && s.assignee_loginid === currentUser.username
-        )
+        hasActivePendingStep(d, (s) => s.assignee_loginid === currentUser.username)
       );
     }
     if (filter.startsWith('agent_')) {
       const agent = filter.replace('agent_', '') as AgentType;
-      return all.filter((d) =>
-        (d.approval_steps ?? []).some((s) => s.agent === agent && s.action === 'pending')
-      );
+      return all.filter((d) => hasActivePendingStep(d, (s) => s.agent === agent));
     }
     return all;
   }, [filter, currentUser, isTourMode]);
@@ -182,11 +193,11 @@ export default function ApprovalPage(): React.ReactElement {
         (d.approval_steps ?? []).some(s => s.agent === 'PL' && s.assignee_loginid === currentUser.username)
       ).length;
       if (role === 'NONE' || !role) return 0;
-      return base.filter(d => (d.approval_steps ?? []).some(s => s.action === 'pending' && s.assignee_loginid === currentUser.username)).length;
+      return base.filter(d => hasActivePendingStep(d, s => s.assignee_loginid === currentUser.username)).length;
     }
     if (key.startsWith('agent_')) {
       const agent = key.replace('agent_', '') as AgentType;
-      return base.filter(d => (d.approval_steps ?? []).some(s => s.agent === agent && s.action === 'pending')).length;
+      return base.filter(d => hasActivePendingStep(d, s => s.agent === agent)).length;
     }
     return 0;
   }, [currentUser, isTourMode]);
@@ -1092,8 +1103,14 @@ export default function ApprovalPage(): React.ReactElement {
         footer={(() => {
           if (!selected) return null;
           const userAgent = currentUser.role ? ROLE_TO_AGENT[currentUser.role] : undefined;
+          // 진행 중(under_review) 문서의 현재 회차 단계만 대상 — 반려/승인된 문서에는 잔여
+          // pending step 이 이력으로 남고 재상신 시 이전 회차 step 도 남으므로, 상태·회차를
+          // 확인하지 않으면 종료된 문서에서도 합의/반려/검토중/지정하기 버튼이 노출된다.
+          const currentRound = getCurrentRound(selected);
           const pendingSteps = selected?.approval_steps?.filter((s) => {
             if (s.action !== 'pending') return false;
+            if (selected.status !== 'under_review') return false;
+            if ((s.round ?? 1) !== currentRound) return false;
             if (isMaster) return true;
             if (isPL && s.agent === 'PL') return true;
             // 본인이 배정된 단계(RV 검토자·RA 후결자 포함)도 노출
@@ -1106,7 +1123,6 @@ export default function ApprovalPage(): React.ReactElement {
             ? selected?.approval_steps?.find((s) => s.agent === 'R' && s.action === 'pending' && !s.assignee_loginid)
             : pendingSteps.find((s) => canUserAssign(currentUser, s));
           // RV/PV/EV(검토자)는 담당자(R/P/E) 합의 후에만 처리 가능 → 그 전엔 actable 에서 제외
-          const currentRound = getCurrentRound(selected);
           const mainStepApproved = (mainAgent: string) => (selected?.approval_steps ?? []).some(
             (s) => s.agent === mainAgent && s.action === 'approved' && (s.round ?? 1) === currentRound
           );
