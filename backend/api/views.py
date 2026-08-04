@@ -1094,7 +1094,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'message': '변경 사항이 없습니다.', 'rewound': False})
 
         actor = getattr(request.user, 'username', '') or getattr(request.user, 'loginid', '')
-        self._set_validation_system(document, value, changed_by=actor)
+        if not self._set_validation_system(document, value, changed_by=actor):
+            return Response(
+                {'error': '의뢰서 데이터가 손상되어 값을 저장할 수 없습니다.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         rewound = self._rewind_e_stage(document, max_round, previous, value, actor)
 
         return Response({'message': '변경했습니다.', 'rewound': rewound})
@@ -1384,26 +1388,28 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return None
 
     def _set_validation_system(self, document, value, changed_by=None):
-        """detail.validation_system 을 덮어쓴다.
+        """detail.validation_system 을 덮어쓴다. 저장했으면 True, 못 했으면 False.
 
         changed_by 가 주어지면 마지막 변경 주체/시각도 함께 남긴다 — 판정 주체가
         상신자 하나이므로, 그 유일한 공급원의 변경을 추적할 지점이 필요하다.
         validation_system_submitted(상신 시점 상신자 값)는 건드리지 않는다.
-        JSON 파싱 실패 시 조용히 건너뛴다(_sync_post_approvers_detail 과 같은 정책).
+        파싱 실패를 조용히 삼키면 호출부가 '저장됐다'고 착각해 E 단계를 되감으므로
+        (저장은 안 됐는데 MASK 재검토만 발생), 성공 여부를 반드시 돌려준다.
         """
         import json
         try:
             data = json.loads(document.additional_notes or '{}')
             detail = data.get('detail', {}) or {}
-            detail['validation_system'] = value
-            if changed_by is not None:
-                detail['validation_system_changed_by'] = changed_by
-                detail['validation_system_changed_at'] = timezone.now().isoformat()
-            data['detail'] = detail
-            document.additional_notes = json.dumps(data, ensure_ascii=False)
-            document.save(update_fields=['additional_notes'])
         except (json.JSONDecodeError, TypeError):
-            pass
+            return False
+        detail['validation_system'] = value
+        if changed_by is not None:
+            detail['validation_system_changed_by'] = changed_by
+            detail['validation_system_changed_at'] = timezone.now().isoformat()
+        data['detail'] = detail
+        document.additional_notes = json.dumps(data, ensure_ascii=False)
+        document.save(update_fields=['additional_notes'])
+        return True
 
     def _rewind_e_stage(self, document, round_no, previous, value, actor):
         """E 담당자가 이미 합의한 뒤 값이 바뀌면 그 회차 E 단계를 재검토로 되감는다.

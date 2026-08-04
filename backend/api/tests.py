@@ -1238,6 +1238,25 @@ class PEStageReviewerFlowTest(TestCase):
             ApprovalStep.objects.get(document=doc, agent='E', round=1).action, 'approved',
         )
 
+    def test_broken_detail_json_does_not_rewind(self):
+        """additional_notes 가 깨져 저장에 실패하면 500 이고, E 단계를 되감지 않는다."""
+        doc = self._advance_to_parallel(plel=True)
+        self._set_detail(doc, {'validation_system': 'NO'})
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+
+        # 저장을 실패시키기 위해 additional_notes 를 깨뜨린다.
+        # _set_detail 은 json.loads 를 쓰므로 여기서는 쓸 수 없다.
+        doc.additional_notes = '{"detail": broken'
+        doc.save(update_fields=['additional_notes'])
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
+        self.assertEqual(r.status_code, 500, r.content)
+
+        e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
+        self.assertEqual(e_step.action, 'approved', '저장이 실패했으면 되감아서는 안 된다')
+        self.assertNotIn('재검토', e_step.comment)
+
     def test_update_blocked_after_e_stage_complete(self):
         """E 단계가 통과하면 수정 창이 닫힌다(검토자 없이 합의하면 그대로 완료된다)."""
         doc = self._advance_to_parallel(plel=True)
