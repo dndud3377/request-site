@@ -1,4 +1,4 @@
-import { FilterSet } from '../../types';
+import { FilterSet, MergePair, MergeRowInfo, MergeTable, MergeUnmatchedRow } from '../../types';
 import { VALIDATION_KEYWORD, NOC_NEW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, genId } from './constants';
 
 // ===== 순수 헬퍼 (인자만 사용 — state 비의존) =====
@@ -142,6 +142,154 @@ export const computeLayerMerge = <T extends MergeComparableRow>(
   });
 
   return { merged, stats };
+};
+
+// ===== 참조 요청서 Merge — BEFORE/AFTER 비교 =====
+
+/** 비교에 필요한 최소 형태 — JayerRow / OayerRow 양쪽을 받는다. */
+export interface BaComparableRow {
+  id: string;
+  disabled: boolean;
+  process_id: string;
+  sp: string;
+  sd: string;
+  pp: string;
+  layerid: string;
+}
+
+/** 비교·표시 대상 5개 항목 */
+const BA_FIELDS = ['process_id', 'sp', 'sd', 'pp', 'layerid'] as const;
+
+const baNorm = (v: string | undefined): string => (v ?? '').trim();
+
+/** 같은 줄로 볼지 판정하는 키 — process_id + layerid (나머지 3개가 다르면 '변경'으로 본다) */
+const baKey = (r: BaComparableRow): string => `${baNorm(r.process_id)}||${baNorm(r.layerid)}`;
+
+/** 표시·저장용 5개 항목만 뽑아 공백을 정규화한다. */
+export const toMergeRowInfo = (r: BaComparableRow): MergeRowInfo => ({
+  process_id: baNorm(r.process_id),
+  sp: baNorm(r.sp),
+  sd: baNorm(r.sd),
+  pp: baNorm(r.pp),
+  layerid: baNorm(r.layerid),
+});
+
+/** 5개 항목이 모두 같은가 (= 변경 없음 → 어느 표에도 싣지 않는다) */
+const baSame = (a: MergeRowInfo, b: MergeRowInfo): boolean => BA_FIELDS.every((f) => a[f] === b[f]);
+
+/** 비활성 행과 layerid 가 빈 행은 비교 대상이 아니다. */
+const baTarget = (r: BaComparableRow): boolean => !r.disabled && baNorm(r.layerid) !== '';
+
+const toUnmatched = (r: BaComparableRow, table: MergeTable): MergeUnmatchedRow => ({
+  id: `${table}_${r.id}`,
+  table,
+  ...toMergeRowInfo(r),
+});
+
+export interface BeforeAfterResult {
+  /** 자동으로 짝이 확정된 항목 (변경전/변경후 표) */
+  pairs: MergePair[];
+  /** 자동으로 짝지을 수 없어 사용자가 직접 매핑할 항목 (BEFORE/AFTER 표) */
+  unmatchedBefore: MergeUnmatchedRow[];
+  unmatchedAfter: MergeUnmatchedRow[];
+  /** 5개 항목이 모두 같아 표에서 제외한 건수 (요약 표시용) */
+  sameCount: number;
+}
+
+/**
+ * 참조 요청서(A)와 작성 중인 요청서(B)를 `process_id + layerid` 그룹으로 묶어 비교한다.
+ *
+ * | 그룹 안 A 행 수 | B 행 수 | 처리 |
+ * |---|---|---|
+ * | 1 | 1 | 5개 값이 모두 같으면 제외, 하나라도 다르면 자동 1:1 짝 |
+ * | N(≥1) | 0 | 각 행을 AFTER=미등록 과 자동 짝 (모호성 없음) |
+ * | 0 | N(≥1) | 각 행을 BEFORE=미등록 과 자동 짝 (모호성 없음) |
+ * | 둘 다 ≥1 이고 한쪽이라도 ≥2 | | 자동 매칭하지 않고 BEFORE/AFTER 표로 (사용자가 직접 매핑) |
+ *
+ * J-ayer 는 J-ayer 끼리, O-ayer 는 O-ayer 끼리 독립 비교한다(표 간 값 전파 없음).
+ */
+export const computeBeforeAfter = (
+  refJayer: BaComparableRow[],
+  refOayer: BaComparableRow[],
+  curJayer: BaComparableRow[],
+  curOayer: BaComparableRow[]
+): BeforeAfterResult => {
+  const pairs: MergePair[] = [];
+  const unmatchedBefore: MergeUnmatchedRow[] = [];
+  const unmatchedAfter: MergeUnmatchedRow[] = [];
+  let sameCount = 0;
+
+  const compareTable = (table: MergeTable, refRows: BaComparableRow[], curRows: BaComparableRow[]) => {
+    const refs = (refRows ?? []).filter(baTarget);
+    const curs = (curRows ?? []).filter(baTarget);
+
+    const group = (rows: BaComparableRow[]): Map<string, BaComparableRow[]> => {
+      const m = new Map<string, BaComparableRow[]>();
+      rows.forEach((r) => {
+        const k = baKey(r);
+        const list = m.get(k);
+        if (list) list.push(r);
+        else m.set(k, [r]);
+      });
+      return m;
+    };
+    const refMap = group(refs);
+    const curMap = group(curs);
+
+    // 키 순서: 참조 요청서에 나온 순서 → 현재 요청서에만 있는 키. 입력이 같으면 결과 순서도 같다.
+    const keys: string[] = [];
+    const seen = new Set<string>();
+    [...refs, ...curs].forEach((r) => {
+      const k = baKey(r);
+      if (!seen.has(k)) { seen.add(k); keys.push(k); }
+    });
+
+    keys.forEach((k) => {
+      const a = refMap.get(k) ?? [];
+      const b = curMap.get(k) ?? [];
+
+      if (a.length === 1 && b.length === 1) {
+        const before = toMergeRowInfo(a[0]);
+        const after = toMergeRowInfo(b[0]);
+        if (baSame(before, after)) { sameCount += 1; return; }
+        pairs.push({
+          table,
+          beforeId: `${table}_${a[0].id}`, before,
+          afterId: `${table}_${b[0].id}`, after,
+          kind: 'changed',
+        });
+        return;
+      }
+      if (a.length === 0) {
+        // 참조에 없던 항목 → BEFORE 미등록 (짝지을 상대가 하나뿐이라 자동 확정)
+        b.forEach((r) => pairs.push({
+          table,
+          beforeId: null, before: null,
+          afterId: `${table}_${r.id}`, after: toMergeRowInfo(r),
+          kind: 'added',
+        }));
+        return;
+      }
+      if (b.length === 0) {
+        // 현재 요청서에서 사라진 항목 → AFTER 미등록
+        a.forEach((r) => pairs.push({
+          table,
+          beforeId: `${table}_${r.id}`, before: toMergeRowInfo(r),
+          afterId: null, after: null,
+          kind: 'deleted',
+        }));
+        return;
+      }
+      // 양쪽 모두 있고 한쪽이라도 2행 이상 → 어느 행끼리 짝인지 알 수 없으므로 사용자에게 맡긴다.
+      a.forEach((r) => unmatchedBefore.push(toUnmatched(r, table)));
+      b.forEach((r) => unmatchedAfter.push(toUnmatched(r, table)));
+    });
+  };
+
+  compareTable('J', refJayer, curJayer);
+  compareTable('O', refOayer, curOayer);
+
+  return { pairs, unmatchedBefore, unmatchedAfter, sameCount };
 };
 
 /** 행 단위: 이 행의 pp 가 판정 키워드를 포함하는가 (셀 하이라이트·문서 판정 공용) */
