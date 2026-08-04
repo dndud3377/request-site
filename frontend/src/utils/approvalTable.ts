@@ -42,6 +42,8 @@ export const getDueDateDisplay = (
 
 // 최종 완료 예상일: max(path1_end, path2_end, path3_end(후결자))
 export const getFinalCompletionDate = (doc: RequestDocument): string => {
+  // 반려된 문서는 잔여 pending step 의 due_date 가 남아 있어도 진행 예정이 아니다.
+  if (doc.status === 'rejected') return '-';
   const maxRound = getCurrentRound(doc);
   const currentSteps = (doc.approval_steps ?? []).filter(s => (s.round ?? 1) === maxRound);
   // 병렬 단계(P/O/E/RA)가 시작돼야 최종 완료예정 산출 가능
@@ -124,6 +126,24 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
       dueDate: pending[0]?.due_date ?? null,
       isDone: false,
       pathStatus: 'pause',
+    }];
+  }
+
+  // 반려: 문서 status 만 rejected 로 바뀌고 잔여 pending step 은 이력으로 남으므로,
+  // 아래 진행 중 분기들이 그 잔여 단계를 '아직 진행 중'으로 오판한다(R 반려 후 검토자(RV)
+  // 단계로 넘어간 것처럼 보이던 문제). 반려 시점의 단계명은 그대로 보여주되(어느 단계에서
+  // 반려됐는지 알 수 있도록) 상태는 항상 rejected 로 고정한다.
+  if (doc.status === 'rejected') {
+    const rejectedSteps = currentSteps.filter(s => s.action === 'rejected');
+    const stageText = rejectedSteps.length > 0
+      ? rejectedSteps.map(s => buildStageText(s, false, t)).join(' / ')
+      : '-';
+    return [{
+      pathKey: 'single',
+      stageText,
+      dueDate: null,
+      isDone: true,
+      pathStatus: 'rejected',
     }];
   }
 
