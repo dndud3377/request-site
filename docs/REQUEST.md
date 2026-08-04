@@ -241,6 +241,35 @@ pages/RequestPage/
   `Only MAP`·`완성된 MAP 변경` 모드는 J/O 표를 강제로 비우므로 **후보가 0개**가 되어 REV 항목을 새로 추가할 수 없다(불러온 항목 삭제만 가능).
   두 모드에서는 REV Layer 를 쓸 일이 없다는 판단으로 직접 입력은 도입하지 않았다.
 
+### 추가 변경 이력 (2026-08-04 — BEFORE/AFTER 완전 일치 선소진 + 행 단위 선택 표시)
+
+- **개요**: 참조 요청서 Merge 의 BEFORE/AFTER 비교에서 **완전 일치 짝이 모호 판정에 휩쓸려 미매칭으로 뜨던 문제**를 고치고,
+  매핑 표의 행 선택 표시를 bb 매핑과 동일한 **행 단위 테두리**로 바꿨다. **백엔드·마이그레이션·i18n 키 변경 없음.**
+
+- **① 완전 일치 선소진**(`helpers.ts` `computeBeforeAfter`):
+  - **증상**: A=[X], B=[Y, Z] 에서 X 와 Y 는 5개 값(`process_id`/`sp`/`sd`/`pp`/`layerid`)이 모두 같고,
+    Z 는 X 와 `process_id`·`layerid` 만 같고 `sp`/`sd`/`pp` 중 하나가 다른 경우.
+    세 행이 같은 그룹 키(`process_id + layerid`)로 묶여 "A 1행·B 2행 → 모호" 분기에 걸려 **X·Y·Z 가 전부 BEFORE/AFTER 표로** 밀려났다.
+    완전 일치를 제외하는 `baSame` 검사가 `a.length === 1 && b.length === 1` 일 때만 돌았기 때문이다.
+  - **수정**: 그룹 판정 **전에** 5개 값이 모두 같은 A↔B 짝을 먼저 소진한다(`sameCount += 1`, 어느 표에도 싣지 않음).
+    남은 행에만 기존 4개 분기(자동 1:1 `changed` / `added` / `deleted` / 모호→미매칭)를 적용한다.
+    위 예시는 X↔Y 가 '변경 없음'으로 빠지고 **Z 만 `BEFORE=미등록`(`added`) 으로 자동 확정**되어 BEFORE/AFTER 표가 비고 게이트를 통과한다.
+  - **한 A 행은 한 B 행만 소진한다** — 소진된 A 행을 남은 B 행과 다시 짝지어 복제하지 않는다.
+    재사용이 필요하면 BEFORE/AFTER 표에서 사용자가 직접 1:N 매핑한다(기존 동작 유지).
+  - 완전 일치가 1단계로 이관되어 1:1 분기 안의 `baSame` 검사는 제거했다(그 시점엔 반드시 '변경'이다).
+  - **3-way `computeLayerMerge` 는 손대지 않았다** — 비교 키가 다른 별개 계산이다(위 2026-08-03 항목 참조).
+
+- **② 행 단위 선택 표시**(`styles/global.css` `.ba-pick*`):
+  - **증상**: `.ba-pick-selected td { box-shadow: inset 2px 0 0 var(--accent) }` 가 **각 `td` 마다** 왼쪽 2px 파란 막대를 그려
+    선택한 행에 칼럼 개수만큼 세로선이 생겼다.
+  - **수정**: 배경·테두리를 `tr` 로 올려 bb 매핑(`.bb-jayer-selected`)과 동일하게 `outline: 1px solid var(--accent)` 한 줄로 감싼다.
+    `.ba-pick:hover`(특이도 0,2,0)에 지지 않도록 `.ba-pick.ba-pick-selected` 로 특이도를 맞추고 뒤에 배치했다.
+    `outline-offset: -1px` 은 `.ba-pane-scroll`(`overflow: auto`)에서 테두리가 잘리지 않게 한다.
+  - `BeforeAfterPanel.tsx` 는 이미 `tr` 에 클래스를 주고 있어 **수정 없음**(CSS 만 변경).
+
+- **테스트**: `helpers.test.ts` 에 `computeBeforeAfter` **4건 추가**
+  (사용자 시나리오 X/Y/Z · 완전 일치 제외 후 1:1 `changed` · 완전 일치 제외 후 잔여만 미매칭 · A 1행이 동일 B 2행을 모두 소진하지 않음).
+
 ### 추가 변경 이력 (2026-08-03 — 참조 요청서 Merge 3개 목적 공용화 + BEFORE/AFTER 비교)
 
 - **개요**: 참조 요청서 Merge 를 `Layer 추가/삭제` 전용에서 **`STEPSEQ 변경`·`Overlay 변경` 까지 공용**으로 넓히고,

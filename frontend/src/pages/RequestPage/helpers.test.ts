@@ -219,6 +219,56 @@ describe('computeBeforeAfter', () => {
     expect(res.unmatchedAfter.map((x) => x.id)).toEqual(['J_b1', 'J_b2']);
   });
 
+  it('완전 일치 짝이 있으면 같은 그룹에 다른 행이 있어도 BEFORE/AFTER 에 싣지 않는다', () => {
+    // A=[X], B=[Y(X와 5개 값 동일), Z(process_id·layerid 만 같고 sp 다름)]
+    const x = r('x', { layerid: 'L1' });
+    const y = { ...r('y', { layerid: 'L1' }), sp: x.sp, sd: x.sd, pp: x.pp };
+    const z = { ...r('z', { layerid: 'L1' }), sd: x.sd, pp: x.pp };
+    const res = computeBeforeAfter([x], [], [y, z], []);
+    expect(res.unmatchedBefore).toEqual([]);
+    expect(res.unmatchedAfter).toEqual([]);
+    expect(res.sameCount).toBe(1);
+    // X 는 Y 에 소진됐으므로 Z 는 BEFORE 미등록(added) 으로 자동 확정된다.
+    expect(res.pairs).toHaveLength(1);
+    expect(res.pairs[0]).toMatchObject({ kind: 'added', beforeId: null, afterId: 'J_z' });
+  });
+
+  it('완전 일치 짝을 뺀 나머지가 1:1 이면 자동 changed 로 확정한다', () => {
+    const a1 = r('a1', { layerid: 'L1' });
+    const b1 = { ...r('b1', { layerid: 'L1' }), sp: a1.sp, sd: a1.sd, pp: a1.pp };  // a1 과 완전 일치
+    const a2 = r('a2', { layerid: 'L1' });
+    const b2 = { ...r('b2', { layerid: 'L1' }), sd: a2.sd, pp: a2.pp };             // a2 와 sp 만 다름
+    const res = computeBeforeAfter([a1, a2], [], [b1, b2], []);
+    expect(res.sameCount).toBe(1);
+    expect(res.unmatchedBefore).toEqual([]);
+    expect(res.unmatchedAfter).toEqual([]);
+    expect(res.pairs).toHaveLength(1);
+    expect(res.pairs[0]).toMatchObject({ kind: 'changed', beforeId: 'J_a2', afterId: 'J_b2' });
+  });
+
+  it('완전 일치를 뺀 나머지가 여전히 모호하면 그 잔여만 미매칭으로 남는다', () => {
+    const a1 = r('a1', { layerid: 'L1' });
+    const b1 = { ...r('b1', { layerid: 'L1' }), sp: a1.sp, sd: a1.sd, pp: a1.pp };  // a1 과 완전 일치
+    const refs = [a1, r('a2', { layerid: 'L1' })];
+    const curs = [b1, r('b2', { layerid: 'L1' }), r('b3', { layerid: 'L1' })];
+    const res = computeBeforeAfter(refs, [], curs, []);
+    expect(res.sameCount).toBe(1);
+    expect(res.pairs).toEqual([]);
+    expect(res.unmatchedBefore.map((x) => x.id)).toEqual(['J_a2']);
+    expect(res.unmatchedAfter.map((x) => x.id)).toEqual(['J_b2', 'J_b3']);
+  });
+
+  it('완전 일치 A 행 1개가 동일한 B 행 2개를 모두 소진하지는 않는다', () => {
+    const a1 = r('a1', { layerid: 'L1' });
+    const same = { sp: a1.sp, sd: a1.sd, pp: a1.pp, layerid: 'L1' };
+    const res = computeBeforeAfter([a1], [], [{ ...r('b1'), ...same }, { ...r('b2'), ...same }], []);
+    expect(res.sameCount).toBe(1);
+    // 남은 B 1행은 짝지을 A 가 없으므로 BEFORE 미등록(added) 으로 자동 확정된다.
+    expect(res.pairs).toHaveLength(1);
+    expect(res.pairs[0]).toMatchObject({ kind: 'added', afterId: 'J_b2' });
+    expect(res.unmatchedAfter).toEqual([]);
+  });
+
   it('A 3행·B 0행이면 모호성이 없으므로 3건 모두 자동 deleted', () => {
     const refs = [r('a1', { layerid: 'L1' }), r('a2', { layerid: 'L1' }), r('a3', { layerid: 'L1' })];
     const res = computeBeforeAfter(refs, [], [], []);
