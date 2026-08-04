@@ -640,6 +640,46 @@ select.form-control option {
 .badge-checking { background: var(--warning-light); color: var(--warning); }
 .badge-completed { background: var(--success-light); color: var(--success); }
 
+/* ===== Validation System 대상/비대상 =====
+   문서 상태 badge(.badge-*)와 같은 관용구 — 반투명 배경 + 동색 진한 글씨.
+   값마다 의미색을 달리해 선택 상태가 아니라 '값' 자체를 색으로 읽게 한다. */
+.vs-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.vs-badge-YES { background: var(--warning-light); color: var(--warning); }
+.vs-badge-NO { background: var(--info-light); color: var(--info); }
+.vs-badge-NA { background: rgba(107, 138, 176, 0.15); color: var(--text-muted); }
+
+.vs-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+.vs-toggle-locked { opacity: 0.45; }
+
+.vs-toggle-btn {
+  border: none;
+  padding: 3px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.vs-toggle-btn + .vs-toggle-btn { border-left: 1px solid var(--border); }
+.vs-toggle-btn:disabled { cursor: not-allowed; }
+/* 선택된 쪽만 의미색으로 채운다 — 흰 배경에 흰 글씨로 사라지던 문제를 막는다 */
+.vs-toggle-active-YES { background: var(--warning); color: #fff; }
+.vs-toggle-active-NO { background: var(--info); color: #fff; }
+
 /* 중단(PAUSE) 요청/확인 UI */
 .pause-req-chip {
   display: inline-flex; align-items: center; gap: 4px;
@@ -4641,4 +4681,55 @@ select.form-control option {
 .ba-unpair-btn {
   border: none; background: none; color: var(--danger);
   cursor: pointer; font-size: 0.85rem; padding: 0 4px; line-height: 1;
+}
+
+/* ── ADI CD 변경 — 변경전/변경후 스텝 표 ── */
+.adi-cd-panel { margin: 12px 0 4px; }
+.adi-cd-split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 900px) { .adi-cd-split { grid-template-columns: 1fr; } }
+.adi-cd-pane {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  overflow: hidden; background: var(--bg-card); padding: 8px;
+}
+.adi-cd-pane-title {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  font-size: 0.85rem; font-weight: 700; margin-bottom: 6px;
+}
+.adi-cd-delete-all-toggle {
+  display: flex; align-items: center; gap: 4px; font-size: 0.78rem;
+  font-weight: 500; color: var(--text-secondary); cursor: pointer;
+}
+.adi-cd-pane-scroll { max-height: 320px; overflow: auto; }
+.adi-cd-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.adi-cd-table th, .adi-cd-table td {
+  padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--border-light);
+}
+.adi-cd-table th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--bg-primary); font-size: 0.76rem; font-weight: 600;
+  color: var(--text-secondary);
+}
+.adi-cd-cell {
+  width: 100%; box-sizing: border-box; padding: 4px 6px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.82rem;
+}
+.adi-cd-cell-error { border-color: var(--danger); background: var(--danger-light); }
+.adi-cd-row-remove {
+  border: none; background: none; color: var(--danger);
+  cursor: pointer; font-size: 0.85rem; padding: 0 4px; line-height: 1;
+}
+.adi-cd-add-row { margin-top: 6px; font-size: 0.78rem; padding: 4px 10px; }
+.adi-cd-empty-hint { color: var(--text-muted); font-size: 0.78rem; padding: 10px 8px; }
+.adi-cd-delete-all-note {
+  color: var(--text-muted); font-size: 0.82rem; padding: 16px 8px; text-align: center;
+}
+.adi-cd-note { margin-top: 6px; font-size: 0.76rem; color: var(--text-muted); line-height: 1.5; }
+
+/* ── ADI CD 컬럼 매핑 모달 ── */
+.adi-cd-map-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.adi-cd-map-table th, .adi-cd-map-table td {
+  padding: 5px 8px; text-align: left; border: 1px solid var(--border-light); white-space: nowrap;
+}
+.adi-cd-skip-header-label {
+  display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 0.82rem;
 }

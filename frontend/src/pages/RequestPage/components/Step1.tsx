@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next';
 import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { DetailFormState, FlowChartRow, RequestDocument, GuideFeatureKey } from '../../../types';
-import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_MAP_CHANGE, isMergePurposeSelected } from '../constants';
+import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_MAP_CHANGE, OTHER_PURPOSE_ADI_CD, isMergePurposeSelected } from '../constants';
 import BeforeAfterPanel from './BeforeAfterPanel';
+import AdiCdPanel, { AdiCdField, AdiCdSide } from './AdiCdPanel';
 
 interface Step1Props {
   detail: DetailFormState;
@@ -56,6 +57,14 @@ interface Step1Props {
   handleBbEntryChange: (idx: number, field: 'location' | 'product' | 'process_id', value: string) => void;
   handleBbEntryDelete: (idx: number) => void;
   handleBbEntryAdd: () => void;
+  isAdiCdSelected: boolean;
+  handleSelectAdiCdPurpose: () => void;
+  handleLeaveAdiCd: () => void;
+  handleAdiCdCellChange: (side: AdiCdSide, id: string, field: AdiCdField, value: string) => void;
+  handleAdiCdAddRow: (side: AdiCdSide) => void;
+  handleAdiCdRemoveRow: (side: AdiCdSide, id: string) => void;
+  handleAdiCdPasteRaw: (side: AdiCdSide, raw: string) => void;
+  handleAdiCdToggleDeleteAll: (next: boolean) => void;
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
 }
 
@@ -109,6 +118,14 @@ const Step1: React.FC<Step1Props> = ({
   handleBbEntryChange,
   handleBbEntryDelete,
   handleBbEntryAdd,
+  isAdiCdSelected,
+  handleSelectAdiCdPurpose,
+  handleLeaveAdiCd,
+  handleAdiCdCellChange,
+  handleAdiCdAddRow,
+  handleAdiCdRemoveRow,
+  handleAdiCdPasteRaw,
+  handleAdiCdToggleDeleteAll,
   GuideBadge,
 }) => {
   const { t } = useTranslation();
@@ -238,6 +255,11 @@ const Step1: React.FC<Step1Props> = ({
                           handleLeaveMapChange(val);
                           return;
                         }
+                        // ADI CD 변경: 완성된 MAP 변경과 달리 단독 전용이 아니다 — 다른 목적과 함께 켤 수 있다.
+                        if (val === OTHER_PURPOSE_ADI_CD) {
+                          if (isAdiCdSelected) handleLeaveAdiCd(); else handleSelectAdiCdPurpose();
+                          return;
+                        }
                         handleDetailSet(
                           'other_purpose',
                           selected
@@ -311,6 +333,20 @@ const Step1: React.FC<Step1Props> = ({
                   />
                 )}
               </div>
+            )}
+
+            {/* ADI CD 변경: 변경전/변경후 스텝 표 — map_type 은 index.tsx 가 'ADI' 로 자동 고정한다 */}
+            {isAdiCdSelected && (
+              <AdiCdPanel
+                before={detail.adi_cd_before}
+                after={detail.adi_cd_after}
+                deleteAll={detail.adi_cd_delete_all}
+                onCellChange={handleAdiCdCellChange}
+                onAddRow={handleAdiCdAddRow}
+                onRemoveRow={handleAdiCdRemoveRow}
+                onPasteRaw={handleAdiCdPasteRaw}
+                onToggleDeleteAll={handleAdiCdToggleDeleteAll}
+              />
             )}
 
             {/* 완성된 MAP 변경: 대상(결재완료) 요청서 검색 → '적용' 버튼으로 MAP 정보 프리필 */}

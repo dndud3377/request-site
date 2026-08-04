@@ -1,5 +1,8 @@
-import { FilterSet, ValidationSystemValue, MergePair, MergeRowInfo, MergeTable, MergeUnmatchedRow } from '../../types';
-import { VALIDATION_KEYWORD, NOC_NEW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, genId, VS_NA, VS_TARGET } from './constants';
+import { FilterSet, ValidationSystemValue, MergePair, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep } from '../../types';
+import {
+  VALIDATION_KEYWORD, NOC_NEW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, genId, VS_NA, VS_TARGET,
+  ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL,
+} from './constants';
 
 // ===== 순수 헬퍼 (인자만 사용 — state 비의존) =====
 
@@ -331,3 +334,144 @@ export const isValidationTarget = (
 export const autoValidationSystem = (
   rows: { disabled?: boolean; pp?: string }[]
 ): ValidationSystemValue => (isValidationTarget(rows) ? VS_TARGET : VS_NA);
+
+// ===== ADI CD 변경 — 변경전/변경후 스텝 표 붙여넣기 =====
+
+/** 한 줄을 탭 구분으로 나누되, `"..."` 로 감싼 셀 안의 탭·이스케이프된 `""` 를 존중한다(엑셀 TSV 규칙). */
+const parseTsvLine = (line: string): string[] => {
+  const cells: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i += 1; } else { inQuotes = false; }
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"' && cur === '') {
+      inQuotes = true;
+    } else if (ch === '\t') {
+      cells.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  cells.push(cur);
+  return cells;
+};
+
+/**
+ * 클립보드 원문(`text/plain`, 엑셀은 TSV 를 넣는다)을 2차원 배열로 분해한다.
+ * 개행 정규화 → 인용 인식 TSV 분해 → 가장자리 완전 빈 행 제거.
+ */
+export const parseClipboardTable = (raw: string): string[][] => {
+  const normalized = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const rows = normalized.split('\n').map(parseTsvLine);
+  const isBlankRow = (row: string[]): boolean => row.every((c) => c.trim() === '');
+  let start = 0;
+  let end = rows.length;
+  while (start < end && isBlankRow(rows[start])) start += 1;
+  while (end > start && isBlankRow(rows[end - 1])) end -= 1;
+  return rows.slice(start, end);
+};
+
+const normalizeHeaderCell = (s: string): string => s.toUpperCase().replace(/[\s_-]/g, '');
+const ADI_CD_STEP_ID_KEY = normalizeHeaderCell(ADI_CD_STEP_ID_LABEL);
+const ADI_CD_STEP_DESC_KEY = normalizeHeaderCell(ADI_CD_STEP_DESC_LABEL);
+
+export interface AdiCdHeaderMatch {
+  headerRow: number;
+  stepIdCol: number;
+  stepDescCol: number;
+}
+
+/**
+ * 위에서부터 최대 `ADI_CD_HEADER_SCAN_ROWS` 행 안에서 STEP_ID/STEP_DESC 헤더를 모두 포함한 행을 찾는다.
+ * 첫 행만 보지 않는 이유: 엑셀 상단 제목 행·빈 행까지 통째로 드래그하는 일이 흔하다.
+ * 열 순서가 뒤바뀌어 있어도 인덱스로 정확히 잡는다.
+ */
+export const detectAdiCdHeader = (grid: string[][]): AdiCdHeaderMatch | null => {
+  const scanRows = Math.min(grid.length, ADI_CD_HEADER_SCAN_ROWS);
+  for (let i = 0; i < scanRows; i += 1) {
+    const row = grid[i];
+    const stepIdCol = row.findIndex((c) => normalizeHeaderCell(c) === ADI_CD_STEP_ID_KEY);
+    const stepDescCol = row.findIndex((c) => normalizeHeaderCell(c) === ADI_CD_STEP_DESC_KEY);
+    if (stepIdCol !== -1 && stepDescCol !== -1 && stepIdCol !== stepDescCol) {
+      return { headerRow: i, stepIdCol, stepDescCol };
+    }
+  }
+  return null;
+};
+
+export interface AdiCdPasteDecision {
+  header: AdiCdHeaderMatch | null;
+  columnCount: number;
+  /** 2열 + 헤더 인식 성공만 즉시 적용, 그 외(3열 이상 또는 헤더 인식 실패)는 컬럼 매핑 모달이 필요하다. */
+  needsModal: boolean;
+}
+
+/** 붙여넣은 표를 즉시 적용할지, 컬럼 매핑 모달을 띄울지 판정한다. */
+export const decideAdiCdPaste = (grid: string[][]): AdiCdPasteDecision => {
+  const columnCount = grid.reduce((max, row) => Math.max(max, row.length), 0);
+  const header = detectAdiCdHeader(grid);
+  return { header, columnCount, needsModal: columnCount > 2 || !header };
+};
+
+/**
+ * 헤더 행 아래(또는 지정한 시작 행부터) STEP_ID/STEP_DESC 두 열만 취해 `.trim()` 하고,
+ * 두 값이 모두 빈 행은 드롭한다. 나머지 열은 전부 버린다.
+ */
+export const buildAdiCdRows = (
+  grid: string[][],
+  mapping: { stepIdCol: number; stepDescCol: number },
+  dataStartRow: number
+): AdiCdStep[] => {
+  const rows: AdiCdStep[] = [];
+  for (let i = dataStartRow; i < grid.length; i += 1) {
+    const row = grid[i];
+    const step_id = (row[mapping.stepIdCol] ?? '').trim();
+    const step_desc = (row[mapping.stepDescCol] ?? '').trim();
+    if (!step_id && !step_desc) continue;
+    rows.push({ id: genId(), step_id, step_desc });
+  }
+  return rows;
+};
+
+export interface AdiCdValidationResult {
+  /** STEP_ID/STEP_DESC 중 한쪽만 채워진 행 id */
+  incompleteIds: string[];
+  /** STEP_ID 가 다른 행과 중복된 행 id */
+  duplicateIds: string[];
+  /** 두 값이 모두 채워진 행 수 (완전히 빈 행은 세지 않는다) */
+  validCount: number;
+}
+
+/** 게이트 통과 조건 3가지(유효 행 1개 이상 / 불완전 행 0개 / STEP_ID 중복 0개)를 판정한다. */
+export const validateAdiCdRows = (rows: AdiCdStep[]): AdiCdValidationResult => {
+  const incompleteIds: string[] = [];
+  const duplicateIds: string[] = [];
+  let validCount = 0;
+  const idRowsById = new Map<string, string[]>();
+
+  rows.forEach((r) => {
+    const id = r.step_id.trim();
+    const desc = r.step_desc.trim();
+    if (!id && !desc) return; // 완전히 빈 행은 세지 않는다
+    if (id && desc) validCount += 1;
+    else incompleteIds.push(r.id);
+    if (id) {
+      const list = idRowsById.get(id) ?? [];
+      list.push(r.id);
+      idRowsById.set(id, list);
+    }
+  });
+
+  idRowsById.forEach((ids) => {
+    if (ids.length > 1) duplicateIds.push(...ids);
+  });
+
+  return { incompleteIds, duplicateIds, validCount };
+};

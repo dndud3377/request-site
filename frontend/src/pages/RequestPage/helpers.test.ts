@@ -1,5 +1,10 @@
-import { autoValidationSystem, isValidationKeywordRow, isValidationTarget, computeLayerMerge, MergeComparableRow, computeBeforeAfter, BaComparableRow } from './helpers';
+import {
+  autoValidationSystem, isValidationKeywordRow, isValidationTarget, computeLayerMerge, MergeComparableRow,
+  computeBeforeAfter, BaComparableRow,
+  parseClipboardTable, detectAdiCdHeader, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows,
+} from './helpers';
 import { VS_NA, VS_TARGET } from './constants';
+import { AdiCdStep } from '../../types';
 
 describe('isValidationKeywordRow', () => {
   it('pp 가 판정 키워드를 포함하면 true', () => {
@@ -319,5 +324,140 @@ describe('computeBeforeAfter', () => {
     expect(computeBeforeAfter([], [], [], [])).toEqual({
       pairs: [], unmatchedBefore: [], unmatchedAfter: [], sameCount: 0,
     });
+  });
+});
+
+describe('parseClipboardTable', () => {
+  it('탭으로 셀을 나눈다', () => {
+    expect(parseClipboardTable('a\tb\tc')).toEqual([['a', 'b', 'c']]);
+  });
+
+  it('\\r\\n, \\r 을 \\n 으로 정규화한다', () => {
+    expect(parseClipboardTable('a\tb\r\nc\td\re\tf')).toEqual([['a', 'b'], ['c', 'd'], ['e', 'f']]);
+  });
+
+  it('인용된 셀 안의 탭·이스케이프된 큰따옴표를 보존한다', () => {
+    expect(parseClipboardTable('"a\tb"\t"say ""hi"""')).toEqual([['a\tb', 'say "hi"']]);
+  });
+
+  it('가장자리 완전 빈 행만 제거하고 중간 빈 행은 남긴다', () => {
+    expect(parseClipboardTable('\n\na\tb\n\nc\td\n\n')).toEqual([['a', 'b'], [''], ['c', 'd']]);
+  });
+});
+
+describe('detectAdiCdHeader', () => {
+  it('첫 행에서 헤더를 찾는다', () => {
+    expect(detectAdiCdHeader([['STEP_ID', 'STEP_DESC'], ['S1', 'D1']]))
+      .toEqual({ headerRow: 0, stepIdCol: 0, stepDescCol: 1 });
+  });
+
+  it('공백·언더스코어·대소문자를 정규화해 매칭한다', () => {
+    expect(detectAdiCdHeader([['step id', 'Step-Desc']]))
+      .toEqual({ headerRow: 0, stepIdCol: 0, stepDescCol: 1 });
+  });
+
+  it('열 순서가 뒤바뀌어도 인덱스로 정확히 잡는다', () => {
+    expect(detectAdiCdHeader([['STEP_DESC', 'STEP_ID']]))
+      .toEqual({ headerRow: 0, stepIdCol: 1, stepDescCol: 0 });
+  });
+
+  it('제목 행·빈 행이 섞여 있어도 최대 5행 안에서 찾는다', () => {
+    expect(detectAdiCdHeader([['제목'], [''], ['번호', 'STEP_ID', 'STEP_DESC', '비고'], ['1', 'S1', 'D1', '']]))
+      .toEqual({ headerRow: 2, stepIdCol: 1, stepDescCol: 2 });
+  });
+
+  it('5행을 넘어가면 찾지 못한다', () => {
+    const grid = [['1'], ['2'], ['3'], ['4'], ['5'], ['STEP_ID', 'STEP_DESC']];
+    expect(detectAdiCdHeader(grid)).toBeNull();
+  });
+
+  it('헤더가 없으면 null', () => {
+    expect(detectAdiCdHeader([['S1', 'D1']])).toBeNull();
+  });
+});
+
+describe('decideAdiCdPaste', () => {
+  it('2열 + 헤더 인식 성공 → 모달 불필요', () => {
+    const d = decideAdiCdPaste([['STEP_ID', 'STEP_DESC'], ['S1', 'D1']]);
+    expect(d.needsModal).toBe(false);
+    expect(d.columnCount).toBe(2);
+  });
+
+  it('2열 + 헤더 없음 → 모달 필요', () => {
+    expect(decideAdiCdPaste([['S1', 'D1']]).needsModal).toBe(true);
+  });
+
+  it('3열 이상 + 헤더 인식 성공 → 모달 필요(단, 인식된 열 정보는 함께 돌려준다)', () => {
+    const d = decideAdiCdPaste([['번호', 'STEP_ID', 'STEP_DESC'], ['1', 'S1', 'D1']]);
+    expect(d.needsModal).toBe(true);
+    expect(d.header).toEqual({ headerRow: 0, stepIdCol: 1, stepDescCol: 2 });
+  });
+
+  it('3열 이상 + 헤더 없음 → 모달 필요, header 는 null', () => {
+    const d = decideAdiCdPaste([['1', 'S1', 'D1']]);
+    expect(d.needsModal).toBe(true);
+    expect(d.header).toBeNull();
+  });
+});
+
+describe('buildAdiCdRows', () => {
+  it('지정한 시작 행부터 두 열만 취해 trim 한다', () => {
+    const rows = buildAdiCdRows(
+      [['STEP_ID', 'STEP_DESC'], [' S1 ', ' D1 '], ['S2', 'D2']],
+      { stepIdCol: 0, stepDescCol: 1 },
+      1
+    );
+    expect(rows.map((r) => ({ step_id: r.step_id, step_desc: r.step_desc }))).toEqual([
+      { step_id: 'S1', step_desc: 'D1' },
+      { step_id: 'S2', step_desc: 'D2' },
+    ]);
+  });
+
+  it('두 값이 모두 빈 행은 드롭한다', () => {
+    const rows = buildAdiCdRows([['', ''], ['S1', 'D1'], [' ', ' ']], { stepIdCol: 0, stepDescCol: 1 }, 0);
+    expect(rows).toHaveLength(1);
+  });
+
+  it('매핑된 두 열 외 나머지 열은 버린다', () => {
+    const rows = buildAdiCdRows([['1', 'S1', 'D1', '비고']], { stepIdCol: 1, stepDescCol: 2 }, 0);
+    expect(rows[0].step_id).toBe('S1');
+    expect(rows[0].step_desc).toBe('D1');
+  });
+
+  it('각 행에 고유 id 를 부여한다', () => {
+    const rows = buildAdiCdRows([['S1', 'D1'], ['S2', 'D2']], { stepIdCol: 0, stepDescCol: 1 }, 0);
+    expect(rows[0].id).not.toBe(rows[1].id);
+  });
+});
+
+describe('validateAdiCdRows', () => {
+  const step = (over: Partial<AdiCdStep>): AdiCdStep => ({ id: `id_${Math.random()}`, step_id: '', step_desc: '', ...over });
+
+  it('완전히 빈 행은 세지 않는다', () => {
+    expect(validateAdiCdRows([step({}), step({ step_id: 'S1', step_desc: 'D1' })])).toEqual({
+      incompleteIds: [], duplicateIds: [], validCount: 1,
+    });
+  });
+
+  it('한쪽만 채워진 행은 불완전으로 잡는다', () => {
+    const r = step({ id: 'r1', step_id: 'S1', step_desc: '' });
+    expect(validateAdiCdRows([r])).toEqual({ incompleteIds: ['r1'], duplicateIds: [], validCount: 0 });
+  });
+
+  it('STEP_ID 가 중복되면 두 행 모두 잡는다', () => {
+    const a = step({ id: 'a', step_id: 'DUP', step_desc: 'D1' });
+    const b = step({ id: 'b', step_id: 'DUP', step_desc: 'D2' });
+    const result = validateAdiCdRows([a, b]);
+    expect(result.duplicateIds.sort()).toEqual(['a', 'b']);
+    expect(result.validCount).toBe(2);
+  });
+
+  it('정상 표는 전부 0개, validCount 는 행 수만큼', () => {
+    const rows = [step({ step_id: 'S1', step_desc: 'D1' }), step({ step_id: 'S2', step_desc: 'D2' })];
+    expect(validateAdiCdRows(rows)).toEqual({ incompleteIds: [], duplicateIds: [], validCount: 2 });
+  });
+
+  it('빈 배열이면 전부 0', () => {
+    expect(validateAdiCdRows([])).toEqual({ incompleteIds: [], duplicateIds: [], validCount: 0 });
   });
 });
