@@ -44,7 +44,7 @@ export const ValidationSystemToggle: React.FC<ValidationSystemToggleProps> = ({
   const locked = notApplicable || disabled;
   return (
     <span className={`vs-toggle${locked ? ' vs-toggle-locked' : ''}`}>
-      {[VS_TARGET, VS_NONTARGET].map((opt) => {
+      {([VS_TARGET, VS_NONTARGET] as const).map((opt) => {
         const active = !notApplicable && value === opt;
         return (
           <button
