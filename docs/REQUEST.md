@@ -241,6 +241,63 @@ pages/RequestPage/
   `Only MAP`·`완성된 MAP 변경` 모드는 J/O 표를 강제로 비우므로 **후보가 0개**가 되어 REV 항목을 새로 추가할 수 없다(불러온 항목 삭제만 가능).
   두 모드에서는 REV Layer 를 쓸 일이 없다는 판단으로 직접 입력은 도입하지 않았다.
 
+### 추가 변경 이력 (2026-08-04 — ADI CD 변경: 변경전/변경후 스텝 표)
+
+- **개요**: `기타 목적 > ADI CD 변경`은 특정 제품의 ADI CD 스텝 개수를 늘리거나(10→13) 줄이거나(10→7) 전부 삭제하는 요청에 쓰는데,
+  변경 전/후 스텝 정보를 기록할 곳이 없었다. **변경전/변경후 2컬럼 표(`STEP_ID`/`STEP_DESC`)**를 STEP1에 추가했다.
+  완성된 MAP 변경과 달리 **단독 전용이 아니다** — 다른 기타 목적과 함께 선택할 수 있다. **백엔드·마이그레이션 변경 없음**
+  (`detail`은 `additional_notes` JSON 문자열로 저장되고, 결재 라우팅은 `request_purpose`만 사용한다).
+
+- **저장 필드**(`DetailFormState`): `adi_cd_before`/`adi_cd_after`(`AdiCdStep[]`, `{ id, step_id, step_desc }`) · `adi_cd_delete_all`(boolean).
+  구버전 문서는 로드 시 `[]`/`false`로 백필한다.
+
+- **진입/해제**(`index.tsx`): 기타 목적 버튼에서 `ADI CD 변경`을 켜면 `handleSelectAdiCdPurpose`가 `detail.map_type`을
+  `'ADI'`로 자동 고정하고 양쪽 표에 빈 5행 템플릿을 깐다(`ADI_CD_TEMPLATE_ROWS`). 재클릭(해제)은 표에 값이 있으면
+  `ConfirmModal` 확인 후 초기화(`exitAdiCd`), 없으면 바로 해제한다. `map_type`은 해제 시 `'ADI'`였을 때만 되돌린다
+  (완성된 MAP 변경으로 전환되는 경로는 `INITIAL_DETAIL` 전체 리셋이 이미 처리하므로 별도 처리 불필요).
+
+- **StepMap 잠금**(`StepMap.tsx`): `map_type` 4버튼 배열(`NEW`/`CLONE`/`EXISTING`/`EDIT`)에 `'ADI'`를 5번째로 추가하고
+  **항상 비활성**(표시 전용 — 실제 선택은 Step1 버튼에서만) 처리했다. `detail.map_type==='ADI'`인 동안은 EDIT 잠금 패턴과
+  동일하게 나머지 4개도 전부 잠근다.
+
+- **붙여넣기 파싱**(`helpers.ts`, 순수 함수 — `parseClipboardTable`/`detectAdiCdHeader`/`decideAdiCdPaste`/`buildAdiCdRows`/`validateAdiCdRows`):
+  입력은 `text/plain`(엑셀 TSV). 인용 인식 TSV 분해 → 위에서부터 최대 5행 안에서 `STEP_ID`/`STEP_DESC` 헤더 탐색
+  (공백·언더스코어·대소문자 정규화, 열 순서 무관) → 헤더 행 아래 두 열만 취해 `.trim()`, 두 값 모두 빈 행은 드롭 →
+  500행 초과·결과 0행은 거부. 표에 이미 값이 있으면 `ConfirmModal` 확인 후 전체 교체(`AdiCdPanel`은 원문 텍스트만
+  올려보내고, 파싱·모달 판정·적용은 상태를 소유한 `index.tsx`가 한다).
+
+- **컬럼 매핑 모달**(`AdiCdColumnMapModal.tsx`, 신규): 2열+헤더 인식 성공만 모달 없이 즉시 적용, 그 외(3열 이상 또는
+  헤더 인식 실패)는 모달을 띄운다. 인식된 열이 있으면 미리 선택해 두고, 헤더 인식 실패 시 "첫 행을 헤더로 제외"
+  체크박스는 꺼진 채로 시작한다(헤더 여부 판단을 사람에게 맡긴다). `STEP_ID`/`STEP_DESC` 헤더 라벨은 의뢰자가
+  엑셀 원본과 대조해야 하므로 **번역하지 않는다**.
+
+- **표 UI**(`AdiCdPanel.tsx`, 신규): 좌 변경전/우 변경후, 셀 단위 편집(빈 2컬럼 템플릿에서 시작), 행 추가/삭제,
+  오류 셀 하이라이트(`validateAdiCdRows`를 그대로 재사용 — 게이트가 보는 값과 항상 같다). 변경후 상단 "전체 삭제"
+  토글은 켜면 AFTER를 비우고 비활성화하며, **변경전에 유효 행이 없으면 선택할 수 없다**(삭제할 대상이 없으므로).
+
+- **게이트**(`addAdiCdGateError`, `addBaGateError`와 동일 패턴 — `validate(1)`·`validate(5)` 양쪽에서 호출):
+  ADI CD가 켜져 있으면 다른 목적과 함께 선택해도 항상 적용된다. BEFORE/AFTER 각각 독립 검사(AFTER는 전체 삭제 시
+  검사 제외) — ① 유효 행 1개 이상 ② 불완전 행(한쪽만 채움) 0개 ③ `STEP_ID` 중복 0개. 중복·불완전은 붙여넣기를
+  거부하지 않고 표에 남겨 셀을 오류 표시한 뒤 게이트에서만 막는다(그 자리에서 고칠 수 있게).
+
+- **필수 입력 우회**(`ADI CD 변경`만 단독 선택했을 때만 — 다른 목적과 함께면 미적용): `validate(4)`의
+  `if (currentStep === 4 && !isOnlyMap && !isMapChangeMode)`에 `&& !isAdiCdOnly`를 추가해 Partial Shot 등을 건너뛴다.
+  이것이 **유일하게 손댄 검증 로직**이다 — `map_type` 필수 검증은 자동 고정으로 이미 통과하고, STEP2 조건부 필수
+  (C가문·MAP 변경·IN 등)는 사용자가 StepMap 값을 바꾸지 않는 한(기본값이면 미발동) 자연히 통과하며, STEP3/5의
+  J/O NOC·Backbone 매핑 검증은 건드리지 않았다(조건부 검증을 강제 우회하면 반쪽 모순 데이터가 결재로 올라간다).
+  상신 모달의 지정 PL은 결재 경로를 정하는 값이라 ADI CD 단독이어도 여전히 필수다.
+
+- **문서 제목**: `MAP(${map_type})` 조립(`index.tsx`)에 `'ADI'`가 그대로 들어간다. 이 문자열을 파싱/필터링하는
+  다른 코드는 없다(전체 검색 결과 이 한 곳뿐) — 목록·필터·검색에 영향 없음.
+
+- **상세 페이지**(`PagedDetailView.tsx`): `MergePairsTable` 패턴으로 `AdiCdStepsTable`을 추가했다. 변경전/변경후 중
+  하나라도 채워진 행이 있거나 전체 삭제가 켜져 있을 때만 STEP1 페이지에 카드로 노출한다.
+
+- **i18n**: `request.adi_cd_*` 20개 + `request.map_type_adi`를 ko/en 동시 추가.
+
+- **테스트**: `helpers.test.ts`에 `parseClipboardTable`·`detectAdiCdHeader`·`decideAdiCdPaste`·`buildAdiCdRows`·
+  `validateAdiCdRows` 26건 추가. 전체 63건 통과. `npx tsc --noEmit` 전체 에러 24개로 이번 변경 전과 동일(신규 0).
+
 ### 추가 변경 이력 (2026-08-03 — 참조 요청서 Merge 3개 목적 공용화 + BEFORE/AFTER 비교)
 
 - **개요**: 참조 요청서 Merge 를 `Layer 추가/삭제` 전용에서 **`STEPSEQ 변경`·`Overlay 변경` 까지 공용**으로 넓히고,
