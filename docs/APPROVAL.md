@@ -421,6 +421,10 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 
 ## 7. 상세 보기(PagedDetailView) 변경 이력
 
+- **(2026-08) Validation System 판정 주체를 상신자로 단일화**: 대상/비대상을 정하는 주체는 **상신자 하나**다. MASK(E) 합의 모달의 확정 토글을 제거하고(`approve-step` 의 `validation_system` 수용도 삭제), 결재현황 상세보기 J-layer 탭에 **상신자 본인에게만** 활성화되는 토글을 뒀다(`POST /documents/<id>/validation-system/`). 수정 창은 상신 직후부터 **E 단계 통과 전**까지. E 담당자 합의 후 값이 바뀌면 **E 단계만** `pending` 으로 되감고(EV step 은 지정 이력 보존을 위해 삭제하지 않음) 사유를 `comment` 에 남긴다 — 반려처럼 새 회차를 돌리지 않는다.
+- **(2026-08) MASK(E/EV) 반려 → '수정 요청'**: E/EV 단계의 `reject-step` 은 `document.status` 와 `round` 를 건드리지 않고 사유를 step `comment` 에 덧붙인 뒤 상신자에게 `revision_requested` 메일만 보낸다. E 가 결재선 마지막 병렬 블록에 있어 반려 시 PL 부터 전 단계를 재결재해야 하는 비용이 과했기 때문이다. **E/EV 가 아닌 단계의 반려는 기존 동작 그대로다.**
+- **(2026-08) 대상/비대상 UI 가 흰 배경에 사라지던 버그 수정**: 정의된 적 없는 `var(--primary)` 를 배경으로 쓰고 있어(미정의 커스텀 속성 → `background` 가 초기값 `transparent` 로 계산) **선택된 항목이 흰 배경에 흰 글씨**로 찍혔다. 사용처 3곳을 모두 제거하고 문서 상태 badge(`.badge-*`)와 같은 관용구의 `.vs-badge` / `.vs-toggle` 로 재작성했다(대상=warning, 비대상=info, 해당없음=회색). 공용 컴포넌트는 `frontend/src/components/ValidationSystem.tsx`.
+
 - **(2026-07) INTER 표시 = 글자 코멘트**: INTER 섹션은 `inter === 'YES'` **일 때만** 노출하며, YES/NO 값 태그·버튼식 태그 없이 **글자**로 표시한다 — `INTER 적용`, Xs 적용 시 `Xs 적용`, Ys 적용 시 `Ys 적용`(` / ` 연결). Xs/Ys 는 선택 안 할 수 있으므로 적용된 것만 붙는다. (i18n: `approval.inter_applied`/`inter_xs_applied`/`inter_ys_applied`)
 - **(2026-07) REV 여부 표 = 카드형(B)**: 상세보기 REV 표를 accent 좌측 rail 카드 + **Layer pill** 형태로 교체해 눈에 띄게 했다. 하드코딩 문자열(`REV 여부`·`GDS version`·`Layer / GDS version` 등)은 `request.rev_*` i18n 키로 이관.
 - **(2026-07) Inter·Map Option 을 각각 별도 섹션 박스로**: `map_opt_inter`(YES 시 Xs/Ys 포함)와 `map_option_title`(옵션 태그) 블록을 map/mshot 등 다른 항목과 동일한 `chipBase` 박스(rowStyle) 로 감싸 **두 개의 독립 섹션**으로 표시한다. 기존에는 맨 div 로 렌더돼 다른 섹션과 디자인이 달랐다. (INTER 표기는 위 항목으로 다시 변경됨)

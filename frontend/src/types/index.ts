@@ -340,11 +340,15 @@ export interface DetailFormState {
   // 원본 요청서에 '완성된 MAP 변경'이 반영된 횟수. 변경 이력의 '완성 후 수정 n회차' 표기에 쓴다.
   map_edit_round?: number;
 
-  // Validation System 대상('YES')/비대상('NO'). 상신 시 자동 판정값을 기본으로 상신자가 확정하고,
-  // 결재 과정에서 MASK(E) 팀이 최종 확정한다.
+  // Validation System 대상('YES')/비대상('NO'). 판정 주체는 상신자 하나이며,
+  // MASK(E) 팀은 값을 바꾸지 않고 확인 후 합의만 한다.
   validation_system: ValidationSystemValue;
-  // 상신·재상신 시점의 상신자 값. MASK 가 값을 바꿔도 이 값은 유지돼 두 판단의 차이를 남긴다.
+  // 상신·재상신 시점의 상신자 값. 이후 상신자가 결재 중에 값을 바꿔도 이 값은 유지돼
+  // '상신 시 판단'과 '현재 값'의 차이를 남긴다.
   validation_system_submitted?: ValidationSystemValue;
+  // 마지막으로 값을 바꾼 사람과 시각. 판정 주체가 상신자 하나뿐이라 변경 추적 지점이 필요하다.
+  validation_system_changed_by?: string;
+  validation_system_changed_at?: string;
 
   // 참조 요청서 Merge 를 완료한 문서. 참조는 의뢰서당 1건만 지정할 수 있어 값이 있으면
   // 선택·Merge 버튼을 잠그고, '재선택' 버튼으로만 해제한다(임시저장 후 재진입해도 유지).
@@ -356,6 +360,18 @@ export interface DetailFormState {
   merge_pairs: MergePair[];
   merge_unmatched_before: MergeUnmatchedRow[];
   merge_unmatched_after: MergeUnmatchedRow[];
+
+  // '기타 목적 > ADI CD 변경' — 변경전/변경후 스텝 표. AFTER는 전체 삭제 요청 시 delete_all=true, 표는 비운다.
+  adi_cd_before: AdiCdStep[];
+  adi_cd_after: AdiCdStep[];
+  adi_cd_delete_all: boolean;
+}
+
+/** ADI CD 변경 스텝 표 1행 — STEP_ID/STEP_DESC 2컬럼 고정. */
+export interface AdiCdStep {
+  id: string;
+  step_id: string;
+  step_desc: string;
 }
 
 // ===== 참조 요청서 Merge — BEFORE/AFTER 비교 =====

@@ -94,6 +94,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | stage_arrival | PV/EV(검토자, 2026-07) | `approve-step/`(agent P/E)에 `reviewer_loginids`를 함께 보낼 때 지정된 검토자 각각에게 개별 발송(제목에 `[이름님]`) — RV와 동일하게 담당자 합의와 같은 시점(같은 요청)에 발송된다 |
 | stage_arrival | J | 담당자(claim) 지정 시 그 1명, 미지정(도착 시점)이면 고정 주소 |
 | stage_arrival | O / E | 해당 역할(`TE_O`/`TE_E`) **팀 전원** |
+| revision_requested | MASK(E/EV) 담당자가 '수정 요청'을 누를 때 | **요청서 작성자 본인만**. 대상/비대상을 바꿀 수 있는 유일한 주체이기 때문. 결재 상태는 되돌아가지 않는다 |
 | rejected | (반려) | 요청서 작성자 **+ 현재(최종) 회차에서 이미 합의했던 전원**(중복 제거) **+ 아래 반려 단계별 추가분**. 상세는 §3.1 참고 |
 | approved | (완료) | **현재(최종) 회차 결재 경로에 참여했던 전원**(assignee 배정된 모든 단계, 중복 제거) — 2026-07부터 "작성자 그룹 멤버" 방식에서 변경 |
 | notify_submitted | (상신·재상신) | **통보처 전원**(`detail.notifiers`) |
@@ -131,10 +132,10 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 - **개인 지정 메일의 제목**은 맨 앞에 `[{이름}님] `이 붙는다(`recipient_name` 인자) — **지정 PL 전원**(`submit`/`resubmit` 시점) + **R 담당자**(`assign-step/`으로 지정된 순간) + **검토자 전원(RV/PV/EV)** + **추가 후결자(RA, 2026-08 추가)**가 대상이다.
   ⚠️ **P/O/E는 도착 시점에 항상 미배정 상태**(검토중 방식이라 `_advance_to_parallel`이 담당자 없이 단계를 만든 뒤 그 자리에서 곧바로 팀 전체에 발송하고, 나중에 누가 검토중을 눌러도 그 시점엔 메일이 다시 나가지 않는다)라 **P/O/E 본인 도착 메일은 개인화 대상이 아무도 없고 항상 팀 전원 브로드캐스트**다. R도 지정 전(도착 시점) 팀 전원 브로드캐스트인 것은 동일.
 - **후결자(RA) 메일 제목**: 고정 후결자(`settings.POST_APPROVER_LOGINID`)는 `[후결 요청] {제목}` 고정 형식, 그 외(추가 후결자)는 위 공통 규칙대로 `[이름님] [결재 요청] {제목}` (2026-08 변경 — `mailer._is_fixed_post_approver()`가 `step.assignee.loginid`를 설정값과 비교해 판별).
-- **본문 링크는 해당 문서 상세로 딥링크**된다(`_detail_link`): 진행 중 이벤트(`stage_arrival`/`rejected`/`notify_submitted`)는 `{FRONTEND_URL}/approval?id={문서ID}`, 완료 관련 이벤트(`approved`/`notify_approved`)는 `{FRONTEND_URL}/history?id={문서ID}`(완료 문서는 결재현황 목록에서 빠지므로). 프론트(`ApprovalPage.tsx`/`HistoryPage.tsx`)가 `?id=` 쿼리를 감지해 목록과 무관하게 그 문서를 직접 조회 후 상세 모달을 자동으로 연다.
+- **본문 링크는 해당 문서 상세로 딥링크**된다(`_detail_link`): 진행 중 이벤트(`stage_arrival`/`rejected`/`revision_requested`/`notify_submitted`)는 `{FRONTEND_URL}/approval?id={문서ID}`, 완료 관련 이벤트(`approved`/`notify_approved`)는 `{FRONTEND_URL}/history?id={문서ID}`(완료 문서는 결재현황 목록에서 빠지므로). 프론트(`ApprovalPage.tsx`/`HistoryPage.tsx`)가 `?id=` 쿼리를 감지해 목록과 무관하게 그 문서를 직접 조회 후 상세 모달을 자동으로 연다.
 
 ### 본문 디자인 — 히어로 헤더 + KPI 카드 (2026-07 개편)
-- 본문 HTML은 `_render_hero_kpi_email()`(공통 템플릿) + `_kpi_grid()`(2x2 타일)로 렌더링되며, 모든 이벤트 타입(`stage_arrival`/`rejected`/`approved`/`notify_submitted`/`notify_approved`/`notify_p_arrival`/`notify_p_completed`)이 이 템플릿을 공유한다.
+- 본문 HTML은 `_render_hero_kpi_email()`(공통 템플릿) + `_kpi_grid()`(2x2 타일)로 렌더링되며, 모든 이벤트 타입(`stage_arrival`/`rejected`/`revision_requested`/`approved`/`notify_submitted`/`notify_approved`/`notify_p_arrival`/`notify_p_completed`)이 이 템플릿을 공유한다.
 - 구성: 솔리드 컬러 히어로(시스템명 + 이벤트 안내 문구) → 흰 카드(의뢰서 제목 + KPI 타일 4개: 결재 단계/의뢰자/상신일/생산 진행일) → **결재 경로 카드**(2026-07 추가, 아래 참고) → 특이사항(`reference_materials`) 카드 → CTA 버튼 → 푸터. 카드 바깥은 연한 색조 배경.
 - **이벤트별 색상 테마**(`EVENT_THEME`): 히어로/버튼/카드 테두리/KPI 타일 배경을 이벤트 타입에 따라 통일된 팔레트로 분기한다.
   - `stage_arrival`: 블루 `#2563eb → #3b82f6`

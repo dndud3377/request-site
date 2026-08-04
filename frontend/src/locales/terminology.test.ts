@@ -7,7 +7,7 @@ const TERM_KEY = 'request.validation_system' as const;
 
 /** 위 용어를 `$t()` 로 참조해야 하는 파생 문구들 */
 const DERIVED_KEYS = [
-  'approval.validation_system_confirm',
+  'approval.validation_system_updated',
   'approval.route_diagram.note_e',
 ] as const;
 

@@ -270,6 +270,63 @@ pages/RequestPage/
 - **테스트**: `helpers.test.ts` 에 `computeBeforeAfter` **4건 추가**
   (사용자 시나리오 X/Y/Z · 완전 일치 제외 후 1:1 `changed` · 완전 일치 제외 후 잔여만 미매칭 · A 1행이 동일 B 2행을 모두 소진하지 않음).
 
+### 추가 변경 이력 (2026-08-04 — ADI CD 변경: 변경전/변경후 스텝 표)
+
+- **개요**: `기타 목적 > ADI CD 변경`은 특정 제품의 ADI CD 스텝 개수를 늘리거나(10→13) 줄이거나(10→7) 전부 삭제하는 요청에 쓰는데,
+  변경 전/후 스텝 정보를 기록할 곳이 없었다. **변경전/변경후 2컬럼 표(`STEP_ID`/`STEP_DESC`)**를 STEP1에 추가했다.
+  완성된 MAP 변경과 달리 **단독 전용이 아니다** — 다른 기타 목적과 함께 선택할 수 있다. **백엔드·마이그레이션 변경 없음**
+  (`detail`은 `additional_notes` JSON 문자열로 저장되고, 결재 라우팅은 `request_purpose`만 사용한다).
+
+- **저장 필드**(`DetailFormState`): `adi_cd_before`/`adi_cd_after`(`AdiCdStep[]`, `{ id, step_id, step_desc }`) · `adi_cd_delete_all`(boolean).
+  구버전 문서는 로드 시 `[]`/`false`로 백필한다.
+
+- **진입/해제**(`index.tsx`): 기타 목적 버튼에서 `ADI CD 변경`을 켜면 `handleSelectAdiCdPurpose`가 `detail.map_type`을
+  `'ADI'`로 자동 고정하고 양쪽 표에 빈 5행 템플릿을 깐다(`ADI_CD_TEMPLATE_ROWS`). 재클릭(해제)은 표에 값이 있으면
+  `ConfirmModal` 확인 후 초기화(`exitAdiCd`), 없으면 바로 해제한다. `map_type`은 해제 시 `'ADI'`였을 때만 되돌린다
+  (완성된 MAP 변경으로 전환되는 경로는 `INITIAL_DETAIL` 전체 리셋이 이미 처리하므로 별도 처리 불필요).
+
+- **StepMap 잠금**(`StepMap.tsx`): `map_type` 4버튼 배열(`NEW`/`CLONE`/`EXISTING`/`EDIT`)에 `'ADI'`를 5번째로 추가하고
+  **항상 비활성**(표시 전용 — 실제 선택은 Step1 버튼에서만) 처리했다. `detail.map_type==='ADI'`인 동안은 EDIT 잠금 패턴과
+  동일하게 나머지 4개도 전부 잠근다.
+
+- **붙여넣기 파싱**(`helpers.ts`, 순수 함수 — `parseClipboardTable`/`detectAdiCdHeader`/`decideAdiCdPaste`/`buildAdiCdRows`/`validateAdiCdRows`):
+  입력은 `text/plain`(엑셀 TSV). 인용 인식 TSV 분해 → 위에서부터 최대 5행 안에서 `STEP_ID`/`STEP_DESC` 헤더 탐색
+  (공백·언더스코어·대소문자 정규화, 열 순서 무관) → 헤더 행 아래 두 열만 취해 `.trim()`, 두 값 모두 빈 행은 드롭 →
+  500행 초과·결과 0행은 거부. 표에 이미 값이 있으면 `ConfirmModal` 확인 후 전체 교체(`AdiCdPanel`은 원문 텍스트만
+  올려보내고, 파싱·모달 판정·적용은 상태를 소유한 `index.tsx`가 한다).
+
+- **컬럼 매핑 모달**(`AdiCdColumnMapModal.tsx`, 신규): 2열+헤더 인식 성공만 모달 없이 즉시 적용, 그 외(3열 이상 또는
+  헤더 인식 실패)는 모달을 띄운다. 인식된 열이 있으면 미리 선택해 두고, 헤더 인식 실패 시 "첫 행을 헤더로 제외"
+  체크박스는 꺼진 채로 시작한다(헤더 여부 판단을 사람에게 맡긴다). `STEP_ID`/`STEP_DESC` 헤더 라벨은 의뢰자가
+  엑셀 원본과 대조해야 하므로 **번역하지 않는다**.
+
+- **표 UI**(`AdiCdPanel.tsx`, 신규): 좌 변경전/우 변경후, 셀 단위 편집(빈 2컬럼 템플릿에서 시작), 행 추가/삭제,
+  오류 셀 하이라이트(`validateAdiCdRows`를 그대로 재사용 — 게이트가 보는 값과 항상 같다). 변경후 상단 "전체 삭제"
+  토글은 켜면 AFTER를 비우고 비활성화하며, **변경전에 유효 행이 없으면 선택할 수 없다**(삭제할 대상이 없으므로).
+
+- **게이트**(`addAdiCdGateError`, `addBaGateError`와 동일 패턴 — `validate(1)`·`validate(5)` 양쪽에서 호출):
+  ADI CD가 켜져 있으면 다른 목적과 함께 선택해도 항상 적용된다. BEFORE/AFTER 각각 독립 검사(AFTER는 전체 삭제 시
+  검사 제외) — ① 유효 행 1개 이상 ② 불완전 행(한쪽만 채움) 0개 ③ `STEP_ID` 중복 0개. 중복·불완전은 붙여넣기를
+  거부하지 않고 표에 남겨 셀을 오류 표시한 뒤 게이트에서만 막는다(그 자리에서 고칠 수 있게).
+
+- **필수 입력 우회**(`ADI CD 변경`만 단독 선택했을 때만 — 다른 목적과 함께면 미적용): `validate(4)`의
+  `if (currentStep === 4 && !isOnlyMap && !isMapChangeMode)`에 `&& !isAdiCdOnly`를 추가해 Partial Shot 등을 건너뛴다.
+  이것이 **유일하게 손댄 검증 로직**이다 — `map_type` 필수 검증은 자동 고정으로 이미 통과하고, STEP2 조건부 필수
+  (C가문·MAP 변경·IN 등)는 사용자가 StepMap 값을 바꾸지 않는 한(기본값이면 미발동) 자연히 통과하며, STEP3/5의
+  J/O NOC·Backbone 매핑 검증은 건드리지 않았다(조건부 검증을 강제 우회하면 반쪽 모순 데이터가 결재로 올라간다).
+  상신 모달의 지정 PL은 결재 경로를 정하는 값이라 ADI CD 단독이어도 여전히 필수다.
+
+- **문서 제목**: `MAP(${map_type})` 조립(`index.tsx`)에 `'ADI'`가 그대로 들어간다. 이 문자열을 파싱/필터링하는
+  다른 코드는 없다(전체 검색 결과 이 한 곳뿐) — 목록·필터·검색에 영향 없음.
+
+- **상세 페이지**(`PagedDetailView.tsx`): `MergePairsTable` 패턴으로 `AdiCdStepsTable`을 추가했다. 변경전/변경후 중
+  하나라도 채워진 행이 있거나 전체 삭제가 켜져 있을 때만 STEP1 페이지에 카드로 노출한다.
+
+- **i18n**: `request.adi_cd_*` 20개 + `request.map_type_adi`를 ko/en 동시 추가.
+
+- **테스트**: `helpers.test.ts`에 `parseClipboardTable`·`detectAdiCdHeader`·`decideAdiCdPaste`·`buildAdiCdRows`·
+  `validateAdiCdRows` 26건 추가. 전체 63건 통과. `npx tsc --noEmit` 전체 에러 24개로 이번 변경 전과 동일(신규 0).
+
 ### 추가 변경 이력 (2026-08-03 — 참조 요청서 Merge 3개 목적 공용화 + BEFORE/AFTER 비교)
 
 - **개요**: 참조 요청서 Merge 를 `Layer 추가/삭제` 전용에서 **`STEPSEQ 변경`·`Overlay 변경` 까지 공용**으로 넓히고,
@@ -391,15 +448,19 @@ pages/RequestPage/
 
 | 키 | 값 | 설명 |
 |---|---|---|
-| `validation_system` | `'YES'`(대상) / `'NO'`(비대상) / `'NA'`(해당없음) | 현재 유효값. 상신 시 상신자가 확정하고, 결재 과정에서 MASK(E) 팀이 최종 확정한다 |
-| `validation_system_submitted` | `'YES'` / `'NO'` / `'NA'` | 상신·재상신 시점의 상신자 값. MASK 가 값을 바꿔도 유지돼 두 판단의 차이를 남긴다. 임시저장에는 기록하지 않는다 |
+| `validation_system` | `'YES'`(대상) / `'NO'`(비대상) / `'NA'`(해당없음) | 현재 유효값. **판정 주체는 상신자 하나** — 상신 시 정하고, 결재 중에도 상신자 본인만 바꾼다. MASK(E) 팀은 확인 후 합의만 한다 |
+| `validation_system_submitted` | `'YES'` / `'NO'` / `'NA'` | 상신·재상신 시점의 상신자 값. 이후 상신자가 결재 중에 바꿔도 유지돼 '상신 시 판단'과 '현재 값'의 차이를 남긴다. 임시저장에는 기록하지 않는다 |
+| `validation_system_changed_by` | 문자열 | 마지막으로 값을 바꾼 사람(이름 또는 loginid). 상신 시점에는 기록되지 않고, 결재 중 변경 시에만 남는다 |
+| `validation_system_changed_at` | ISO 8601 문자열 | 마지막 변경 시각 |
 
 - **3상태의 의미**: 판정 키워드(`plel`)가 J-layer 에 **하나도 없으면** 판정 자체가 성립하지 않으므로 `'NA'`(해당없음)이고, 이때는 **E(MASK) 단계도 결재 경로에 생성되지 않는다**(`docs/APPROVAL.md` Case E). 키워드가 있으면 자동 판정은 `'YES'`(대상)이며, 상신자가 토글로 `'NO'`(비대상)를 고를 수 있다 — 그 판단이 맞는지 검증하는 것이 MASK(E) 단계의 역할이다. 즉 `'NO'` 는 자동 판정으로는 나오지 않는다.
 - **자동 판정**: `autoValidationSystem()`(`RequestPage/helpers.ts`) — 활성(비-disabled) J-layer 행의 `pp` 에 키워드가 하나라도 있으면 `'YES'`, 아니면 `'NA'`. 판정 단일 소스는 이 프론트 함수이며, 백엔드는 저장된 값을 그대로 신뢰한다. 다만 **E 단계 생성 여부만은** 백엔드 `RequestDocument.has_ppid_plel()` 이 저장된 `jayerRows` 를 직접 스캔해 결정한다(상신 시 disabled 행은 저장에서 제외되므로 두 판정 기준은 일치한다).
 - **상신 UI**: 위저드 3단계(J-layer) 표 상단 토글. J-layer 가 바뀌면 자동 판정으로 값이 갱신되지만, 상신자가 토글을 직접 누르면 이후에는 J-layer 를 고쳐도 자동 갱신하지 않는다. **단 키워드가 전부 사라지면** 수동 설정 이력과 무관하게 `'NA'` 로 되돌아가고 토글이 비활성(희미 + '해당없음' 표기)된다 — 그러지 않으면 저장값은 `'NO'` 인데 E 단계는 생기지 않는 불일치가 남는다.
-- **MASK 확정**: `POST /api/documents/<id>/approve-step/` 의 기존 optional body 필드 `validation_system` 으로 처리한다(별도 엔드포인트 신설 없음). `agent='E'` 일 때만 반영되며(다른 agent 값이면 무시), `'YES'|'NO'` 외 값은 400 — E 단계는 키워드가 있는 문서에만 생기므로 MASK 가 `'NA'` 를 보낼 경로는 없다. 이 값 검증은 검토자(EV) 생성보다 먼저 실행돼 부분 커밋을 막는다. `validation_system_submitted` 는 이 요청으로 바뀌지 않는다.
+- **상신자 변경 (결재 진행 중)**: `POST /api/documents/<id>/validation-system/` — body `{"value": "YES"|"NO"}`. 인가는 **상신자 본인 또는 MASTER**. 수정 창은 `status ∈ {under_review, pause}` 이면서 **E(MASK) 단계가 통과되기 전**까지 열린다(백엔드 `_stage_reviewers_complete(doc,'E',round)` 가 판정 — E 담당자 합의 + EV 전원 합의로 닫힌다). 값 변경 시 `validation_system_changed_by/at` 이 함께 기록되고, `validation_system_submitted` 는 바뀌지 않는다.
+  - **되감기**: E 담당자가 이미 합의한 뒤 값이 **실제로 달라지면** 그 회차 `E` step 을 `pending` 으로 되돌린다(응답 `rewound: true`). 되감기 폭은 **E 단계 하나** — 반려처럼 새 회차를 만들지 않아 P/J/O/R 결재는 그대로 살아 있다. `EV` step 은 **삭제하지 않고** `action` 만 되돌려 지정 이력을 보존하며, 사유는 각 step 의 `comment` 에 덧붙는다(`acted_at` 은 이전 합의 시각 유지).
+- **MASK 는 값을 바꾸지 않는다**: `approve-step` 의 `validation_system` 수용은 제거됐다. MASK 가 이견이면 `reject-step` 이 **수정 요청**으로 동작한다(§`docs/APPROVAL.md`).
 - **레거시 문서**: 두 키가 없는 문서는 저장된 `jayerRows` 로 그때그때 폴백 판정해 보여준다(위저드 J-layer 단계·MASK 담당자 합의 모달·상세보기 J-layer 탭 공통).
-- **사내 용어 교체 (⚠️ 여기 한 곳만 고친다)**: 저장소에 커밋된 `Validation System` 은 **가명**이다. 사내 정식 용어로 바꿀 때는 `frontend/src/locales/ko.json` 과 `en.json` 의 **`request.validation_system` 값 한 줄씩**만 고치면 된다. 작성 3단계 J-layer 표 상단 라벨, 상세보기 J-layer 탭 라벨, MASK(E) 결재 모달 제목(`approval.validation_system_confirm`), 전체 가이드 결재 경로 주석(`approval.route_diagram.note_e`)이 모두 따라 바뀐다 — 뒤의 두 문구는 값 안에서 i18next 중첩 참조 `$t(request.validation_system)` 로 이 키를 가리키기 때문이다.
+- **사내 용어 교체 (⚠️ 여기 한 곳만 고친다)**: 저장소에 커밋된 `Validation System` 은 **가명**이다. 사내 정식 용어로 바꿀 때는 `frontend/src/locales/ko.json` 과 `en.json` 의 **`request.validation_system` 값 한 줄씩**만 고치면 된다. 작성 3단계 J-layer 표 상단 라벨, 상세보기 J-layer 탭 라벨, 전체 가이드 결재 경로 주석(`approval.route_diagram.note_e`)이 모두 따라 바뀐다 — 뒤의 두 문구는 값 안에서 i18next 중첩 참조 `$t(request.validation_system)` 로 이 키를 가리키기 때문이다.
   - **다른 문구에 용어를 직접 쓰지 말 것.** 새 문구가 필요하면 반드시 `$t(request.validation_system)` 으로 참조한다. 하드코딩하면 `frontend/src/locales/terminology.test.ts` 가 실패한다.
   - **변수·상수·키 이름(`validation_system`, `VS_TARGET`, `autoValidationSystem` 등)은 가명 그대로 둔다.** 사용자에게 보이지 않는다.
   - **`plel` 은 가명이 아니라 실제 사내 값**이라 교체 대상이 아니다(`VALIDATION_KEYWORD`, `RequestDocument.VALIDATION_KEYWORD`).

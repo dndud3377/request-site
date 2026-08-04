@@ -1572,6 +1572,31 @@ refJayerRows.filter((r) => !r.disabled).forEach((r) => {
 - **보류 사유(2026-08-02)**: B 의 비활성 행도 상신 시 저장에서 제외되므로 **최종 문서에는 중복이 남지 않는다**.
   작성 중 화면에만 두 행이 나란히 보이는 수준이라 이번 범위에서 제외했다.
 
+### Validation System 리뷰(2026-08-04) — 이번에 고치지 않은 MEDIUM/LOW 10건
+
+2026-08-03 "Validation System 판정 주체 상신자 단일화" 구현에 대한 코드 리뷰 결과 중,
+BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지는 아래에 기록만 한다.
+
+**MEDIUM**
+
+| # | 위치 | 증상 |
+|---|---|---|
+| VS-06 | `backend/api/views.py` `_rewind_e_stage` | 되감기가 MASK 팀에 아무 알림도 보내지 않는다. 다른 모든 전이는 메일을 적재하는데 되감기만 조용하다. `claim_step` 이 `assignee` 를 남겨두므로 "내 결재" 목록에는 다시 뜬다 |
+| VS-07 | `frontend/src/pages/ApprovalPage.tsx:943, 963, 970` | '수정 요청' 버튼을 눌러도 모달 제목이 `approval.modal_reject_title`("… 반려"), 라벨이 "반려 이유 (선택)", 확인 버튼이 빨간 `btn-danger` 다. 성공 토스트만 분기돼 있다 |
+| VS-08 | `backend/api/views.py:701-707`, `backend/api/mailer.py:344-355, 703-709` | `enqueue_revision_requested(document)` 가 comment 를 받지 않아 **수정 사유가 메일 본문에 실리지 않는다.** 상신자는 결재 경로 탭을 직접 뒤져야 한다 |
+| VS-09 | `frontend/src/pages/ApprovalPage.tsx:507-509` | 모든 실패를 `common.process_error` 로 뭉갠다. 백엔드는 "MASK 검토가 끝난 의뢰서는 변경할 수 없습니다" 같은 구체적 사유를 준다 |
+| VS-10 | `frontend/src/pages/ApprovalPage.tsx:488` | `isOwner` 에 `requester_name` 폴백이 없다. 형제 검사(`:1126-1128`)와 `backend/api/doc_permissions.py:26-29` 에는 있다. fail-closed 라 손상은 없고 기능만 안 보인다 |
+| VS-11 | `frontend/src/pages/ApprovalPage.tsx:498-510` | `processing` in-flight 가드가 없다(규칙 J). 연타하면 동시 POST 가 나가고 토스트 순서가 뒤집힌다. `select_for_update` 가 직렬화하므로 데이터 손상은 없다 |
+| VS-12 | `frontend/src/pages/ApprovalPage.tsx:502-505` | 백엔드의 `"변경 사항이 없습니다"` 응답을 `rewound` 만 보고 분기해 "값을 변경했습니다"로 표시한다 |
+
+**LOW**
+
+| # | 위치 | 증상 |
+|---|---|---|
+| VS-13 | `backend/api/views.py` `_get_validation_system` | `(JSONDecodeError, TypeError)` 만 잡는다. `json.loads('[]')` 처럼 비-dict 가 나오면 `data.get` 에서 `AttributeError` → 500. 기존 `_set_validation_system` 에도 있던 구멍이라 회귀는 아니다 |
+| VS-14 | `docs/REQUEST.md:319, 322` | 레거시 문서 항목이 아직 "MASK 담당자 합의 모달"을 언급한다(그 모달은 삭제됐다). 용어 교체 항목의 "뒤의 두 문구"도 실제로는 한 개만 나열한다 |
+| VS-15 | `backend/api/views.py:669-670`, `1079` | 문서가 `pause` 상태면 MASK 가 수정 요청을 보낼 수 없는데, 상신자는 `pause` 중에도 값을 바꿀 수 있다. 사소한 비대칭 |
+
 ---
 
 ## 6. 잠재 위험 (아직 버그로 터지지 않았지만 구조적으로 위험한 것)

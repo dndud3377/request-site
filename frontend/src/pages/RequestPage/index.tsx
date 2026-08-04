@@ -29,6 +29,7 @@ import {
   ValidationSystemValue,
   MergePair,
   MergeSnapshot,
+  AdiCdStep,
 } from '../../types';
 import GuideSlidePanel from '../../components/GuideSlidePanel';
 import { GUIDE_DEMO_KEYS } from '../../components/guideDemos';
@@ -67,10 +68,19 @@ import {
   VS_NA,
   isMergePurposeSelected,
   MERGE_UNREGISTERED_ID,
+  OTHER_PURPOSE_ADI_CD,
+  ADI_CD_MAP_TYPE,
+  ADI_CD_TEMPLATE_ROWS,
+  ADI_CD_MAX_ROWS,
+  makeAdiCdStep,
 } from './constants';
-import { formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter } from './helpers';
+import {
+  formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
+  parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, AdiCdHeaderMatch,
+} from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
+import AdiCdColumnMapModal from './components/AdiCdColumnMapModal';
 import Step1 from './components/Step1';
 import StepMap from './components/StepMap';
 import Step2 from './components/Step2';
@@ -269,6 +279,10 @@ export default function RequestPage(): React.ReactElement {
   const [mapChangeLeaveConfirm, setMapChangeLeaveConfirm] = useState(false);  // 다른 목적으로 전환/해제 확인
   const [pendingSwitchOp, setPendingSwitchOp] = useState<string | null>(null); // 전환하려는 대상 기타 목적(null=해제)
   const [mapChangeBaseline, setMapChangeBaseline] = useState<DetailFormState | null>(null); // 원본 MAP 스냅샷(변경이력 diff 기준)
+  // ADI CD 변경(기타 목적) — 변경전/변경후 스텝 표
+  const [adiCdLeaveConfirm, setAdiCdLeaveConfirm] = useState(false); // 해제 시 표에 값이 있으면 초기화 확인
+  const [adiCdMapModal, setAdiCdMapModal] = useState<{ side: 'before' | 'after'; grid: string[][]; header: AdiCdHeaderMatch | null } | null>(null);
+  const [adiCdPendingApply, setAdiCdPendingApply] = useState<{ side: 'before' | 'after'; rows: AdiCdStep[] } | null>(null); // 표에 값이 있을 때 붙여넣기 전체 교체 확인
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -799,6 +813,10 @@ export default function RequestPage(): React.ReactElement {
             merge_pairs: parsed.detail.merge_pairs ?? [],
             merge_unmatched_before: parsed.detail.merge_unmatched_before ?? [],
             merge_unmatched_after: parsed.detail.merge_unmatched_after ?? [],
+            // ADI CD 변경 도입 전 문서는 값이 없다 → 같은 이유로 빈 값 백필.
+            adi_cd_before: parsed.detail.adi_cd_before ?? [],
+            adi_cd_after: parsed.detail.adi_cd_after ?? [],
+            adi_cd_delete_all: parsed.detail.adi_cd_delete_all ?? false,
             // prodc_scope 도입 전 문서는 값이 없다 → 저장된 리전 값으로 역추론해 백필한다.
             // (백필하지 않으면 '미선택' 게이트에 걸려 기존 C가문 문서의 입력이 잠겨 보인다)
             prodc_scope: parsed.detail.prodc_scope || inferProdcScope(parsed.detail),
@@ -1291,6 +1309,10 @@ export default function RequestPage(): React.ReactElement {
   const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
   const isOnlyMap = detail.request_purpose === ONLY_MAP_PURPOSE;
   const isMapChangeMode = detail.other_purpose.includes(OTHER_PURPOSE_MAP_CHANGE);
+  // ADI CD 변경: 다른 기타 목적과 함께 선택할 수 있다(완성된 MAP 변경과 달리 단독 전용이 아니다).
+  const isAdiCdSelected = detail.other_purpose.includes(OTHER_PURPOSE_ADI_CD);
+  // 기타 목적 7개 중 ADI CD 변경만 단독 선택한 경우 — 이후 STEP 필수 입력을 건너뛴다.
+  const isAdiCdOnly = detail.other_purpose.length === 1 && detail.other_purpose[0] === OTHER_PURPOSE_ADI_CD;
   // StepMap 정보까지만 작성하는 모드(Only MAP·완성된 MAP 변경) — J/O/bb 표와 O-layer 정보 탭을 쓰지 않는다.
   const isMapOnlyScope = isOnlyMap || isMapChangeMode;
   const hasMapChange = detail.map_change === '변경 있음';
@@ -2533,6 +2555,103 @@ export default function RequestPage(): React.ReactElement {
     setPendingSwitchOp(null);
   };
 
+  // ===== ADI CD 변경 (기타 목적 — 완성된 MAP 변경과 달리 단독 전용이 아니다) =====
+  const adiCdSideKey = (side: 'before' | 'after'): 'adi_cd_before' | 'adi_cd_after' =>
+    side === 'before' ? 'adi_cd_before' : 'adi_cd_after';
+
+  const adiCdSideHasData = (side: 'before' | 'after') =>
+    detail[adiCdSideKey(side)].some((r) => r.step_id.trim() || r.step_desc.trim());
+
+  const adiCdHasData = () =>
+    adiCdSideHasData('before') || adiCdSideHasData('after') || detail.adi_cd_delete_all;
+
+  // 기타 목적에서 'ADI CD 변경' 클릭(진입): map_type 을 ADI 로 고정하고 빈 템플릿을 깐다.
+  const handleSelectAdiCdPurpose = () => {
+    setDetail((prev) => ({
+      ...prev,
+      other_purpose: [...prev.other_purpose, OTHER_PURPOSE_ADI_CD],
+      map_type: ADI_CD_MAP_TYPE,
+      adi_cd_before: Array.from({ length: ADI_CD_TEMPLATE_ROWS }, () => makeAdiCdStep()),
+      adi_cd_after: Array.from({ length: ADI_CD_TEMPLATE_ROWS }, () => makeAdiCdStep()),
+      adi_cd_delete_all: false,
+    }));
+  };
+
+  // 재클릭(해제): 표에 값이 있으면 확인 모달, 없으면 바로 해제.
+  const handleLeaveAdiCd = () => {
+    if (adiCdHasData()) setAdiCdLeaveConfirm(true);
+    else exitAdiCd();
+  };
+
+  const exitAdiCd = () => {
+    setDetail((prev) => ({
+      ...prev,
+      other_purpose: prev.other_purpose.filter((o) => o !== OTHER_PURPOSE_ADI_CD),
+      map_type: prev.map_type === ADI_CD_MAP_TYPE ? '' : prev.map_type,
+      adi_cd_before: [],
+      adi_cd_after: [],
+      adi_cd_delete_all: false,
+    }));
+    setAdiCdLeaveConfirm(false);
+  };
+
+  const handleAdiCdCellChange = (side: 'before' | 'after', id: string, field: 'step_id' | 'step_desc', value: string) => {
+    const key = adiCdSideKey(side);
+    setDetail((prev) => ({ ...prev, [key]: prev[key].map((r) => (r.id === id ? { ...r, [field]: value } : r)) }));
+  };
+
+  const handleAdiCdAddRow = (side: 'before' | 'after') => {
+    const key = adiCdSideKey(side);
+    setDetail((prev) => ({ ...prev, [key]: [...prev[key], makeAdiCdStep()] }));
+  };
+
+  const handleAdiCdRemoveRow = (side: 'before' | 'after', id: string) => {
+    const key = adiCdSideKey(side);
+    setDetail((prev) => ({ ...prev, [key]: prev[key].filter((r) => r.id !== id) }));
+  };
+
+  // 전체 삭제 토글: 켜면 AFTER 를 비우고, 끄면 빈 템플릿으로 되돌린다(변경전이 비어 있으면 Panel 이 토글을 막는다).
+  const handleAdiCdToggleDeleteAll = (next: boolean) => {
+    setDetail((prev) => ({
+      ...prev,
+      adi_cd_delete_all: next,
+      adi_cd_after: next ? [] : Array.from({ length: ADI_CD_TEMPLATE_ROWS }, () => makeAdiCdStep()),
+    }));
+  };
+
+  const commitAdiCdRows = (side: 'before' | 'after', rows: AdiCdStep[]) => {
+    setDetail((prev) => ({ ...prev, [adiCdSideKey(side)]: rows }));
+  };
+
+  // 파싱된 행을 실제로 적용 — 500행 초과·0행 거부, 표에 이미 값이 있으면 확인 모달 후 전체 교체.
+  const requestAdiCdApply = (side: 'before' | 'after', rows: AdiCdStep[]) => {
+    if (rows.length === 0) { addToast(t('request.adi_cd_paste_empty'), 'error'); return; }
+    if (rows.length > ADI_CD_MAX_ROWS) { addToast(t('request.adi_cd_paste_too_many', { max: ADI_CD_MAX_ROWS }), 'error'); return; }
+    if (adiCdSideHasData(side)) setAdiCdPendingApply({ side, rows });
+    else commitAdiCdRows(side, rows);
+  };
+
+  // 붙여넣기 원문 → 파싱 → 모달 필요 여부 판정(§5). 실제 적용은 requestAdiCdApply 로 위임.
+  const handleAdiCdPasteRaw = (side: 'before' | 'after', raw: string) => {
+    const grid = parseClipboardTable(raw);
+    if (grid.length === 0) { addToast(t('request.adi_cd_paste_empty'), 'error'); return; }
+    const decision = decideAdiCdPaste(grid);
+    if (!decision.needsModal && decision.header) {
+      const rows = buildAdiCdRows(grid, decision.header, decision.header.headerRow + 1);
+      requestAdiCdApply(side, rows);
+      return;
+    }
+    setAdiCdMapModal({ side, grid, header: decision.header });
+  };
+
+  const handleAdiCdMapConfirm = (mapping: { stepIdCol: number; stepDescCol: number; skipFirstRow: boolean }) => {
+    if (!adiCdMapModal) return;
+    const rows = buildAdiCdRows(adiCdMapModal.grid, mapping, mapping.skipFirstRow ? 1 : 0);
+    const side = adiCdMapModal.side;
+    setAdiCdMapModal(null);
+    requestAdiCdApply(side, rows);
+  };
+
   // ===== Bb Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
   // 특정 bb_entry(id)에서 나온 결과표 행을 제거하고 그 원본 J행 매핑을 해제한다(재매핑 가능).
   // 항목 삭제/수정 시 stale 매핑이 남지 않도록 공용으로 사용.
@@ -2896,6 +3015,34 @@ export default function RequestPage(): React.ReactElement {
     errorMessages.push(msg);
   };
 
+  /**
+   * ADI CD 변경 게이트 — 켜져 있으면 항상 적용된다(다른 목적과 함께 선택해도).
+   * BEFORE/AFTER 각각 독립 검사(AFTER 는 전체 삭제 시 검사 제외): 유효 행 1개 이상 / 불완전 행 0개 / STEP_ID 중복 0개.
+   */
+  const addAdiCdGateError = (
+    newErrors: Partial<Record<string, string>>,
+    errorMessages: string[]
+  ) => {
+    if (!isAdiCdSelected) return;
+    const checkSide = (side: 'before' | 'after', rows: AdiCdStep[]) => {
+      const result = validateAdiCdRows(rows);
+      const key = side === 'before' ? 'adi_cd_before' : 'adi_cd_after';
+      if (result.validCount === 0) {
+        const msg = t(`request.adi_cd_gate_${side}_empty` as never) as string;
+        newErrors[key] = msg;
+        errorMessages.push(msg);
+        return;
+      }
+      if (result.incompleteIds.length > 0 || result.duplicateIds.length > 0) {
+        const msg = t(`request.adi_cd_gate_${side}_invalid` as never) as string;
+        newErrors[key] = msg;
+        errorMessages.push(msg);
+      }
+    };
+    checkSide('before', detail.adi_cd_before);
+    if (!detail.adi_cd_delete_all) checkSide('after', detail.adi_cd_after);
+  };
+
   const validate = (currentStep: number): { valid: boolean; errors: string[] } => {
     const newErrors: Partial<Record<string, string>> = {};
     const errorMessages: string[] = [];
@@ -2941,6 +3088,7 @@ export default function RequestPage(): React.ReactElement {
         errorMessages.push(t('request.flow_step_not_in_list'));
       }
       addBaGateError(newErrors, errorMessages);
+      addAdiCdGateError(newErrors, errorMessages);
     }
 
     if (currentStep === 2) {
@@ -3093,7 +3241,7 @@ export default function RequestPage(): React.ReactElement {
       }
     }
 
-    if (currentStep === 4 && !isOnlyMap && !isMapChangeMode) {
+    if (currentStep === 4 && !isOnlyMap && !isMapChangeMode && !isAdiCdOnly) {
       if (!detail.partial_shot?.trim()) {
         newErrors['partial_shot'] = t('request.required');
         errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
@@ -3138,6 +3286,7 @@ export default function RequestPage(): React.ReactElement {
       }
       // 초안 복원 등으로 STEP 1 검증을 건너뛴 경우를 대비한 최종 안전망
       addBaGateError(newErrors, errorMessages);
+      addAdiCdGateError(newErrors, errorMessages);
     }
 
     setErrors(newErrors);
@@ -3614,6 +3763,14 @@ export default function RequestPage(): React.ReactElement {
           handleBbEntryChange={handleBbEntryChange}
           handleBbEntryDelete={handleBbEntryDelete}
           handleBbEntryAdd={handleBbEntryAdd}
+          isAdiCdSelected={isAdiCdSelected}
+          handleSelectAdiCdPurpose={handleSelectAdiCdPurpose}
+          handleLeaveAdiCd={handleLeaveAdiCd}
+          handleAdiCdCellChange={handleAdiCdCellChange}
+          handleAdiCdAddRow={handleAdiCdAddRow}
+          handleAdiCdRemoveRow={handleAdiCdRemoveRow}
+          handleAdiCdPasteRaw={handleAdiCdPasteRaw}
+          handleAdiCdToggleDeleteAll={handleAdiCdToggleDeleteAll}
           GuideBadge={GuideBadge}
         />
       )}
@@ -4378,6 +4535,33 @@ export default function RequestPage(): React.ReactElement {
         title={t('request.map_change_leave_title')}
         message={t('request.map_change_leave_msg')}
         danger
+      />
+
+      <ConfirmModal
+        isOpen={adiCdLeaveConfirm}
+        onClose={() => setAdiCdLeaveConfirm(false)}
+        onConfirm={exitAdiCd}
+        title={t('request.adi_cd_leave_title')}
+        message={t('request.adi_cd_leave_msg')}
+        danger
+      />
+
+      <ConfirmModal
+        isOpen={adiCdPendingApply !== null}
+        onClose={() => setAdiCdPendingApply(null)}
+        onConfirm={() => { if (adiCdPendingApply) commitAdiCdRows(adiCdPendingApply.side, adiCdPendingApply.rows); }}
+        title={t('request.adi_cd_replace_title')}
+        message={t('request.adi_cd_replace_msg')}
+        danger
+      />
+
+      <AdiCdColumnMapModal
+        isOpen={adiCdMapModal !== null}
+        grid={adiCdMapModal?.grid ?? []}
+        initialStepIdCol={adiCdMapModal?.header?.stepIdCol ?? null}
+        initialStepDescCol={adiCdMapModal?.header?.stepDescCol ?? null}
+        onCancel={() => setAdiCdMapModal(null)}
+        onConfirm={handleAdiCdMapConfirm}
       />
 
       <ConfirmModal

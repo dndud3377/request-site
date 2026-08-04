@@ -129,6 +129,7 @@ EVENT_STATUS_LABEL = {
     'map_apply_failed': '원본 반영 실패',
     'notify_p_arrival': 'P 단계 도착 통보',
     'notify_p_completed': 'P 단계 완료 통보',
+    'revision_requested': '수정 요청',
 }
 
 # 이벤트 타입별 히어로+KPI 카드 이메일 색상 테마
@@ -172,6 +173,8 @@ EVENT_THEME['notify_p_arrival'] = EVENT_THEME['notify_submitted']
 EVENT_THEME['notify_p_completed'] = EVENT_THEME['notify_submitted']
 # 원본 반영 실패는 조치가 필요한 알림이라 반려와 동일한 경고(레드) 테마를 쓴다.
 EVENT_THEME['map_apply_failed'] = EVENT_THEME['rejected']
+# 수정 요청: 결재를 되돌리진 않지만 상신자의 조치가 필요하다는 점에서 반려와 같은 주의 테마
+EVENT_THEME['revision_requested'] = EVENT_THEME['rejected']
 
 
 # --------------------------------------------------------------------------- #
@@ -336,6 +339,21 @@ def _remaining_stage_emails(document, max_round):
             continue
         emails.extend(_stage_team_emails(agent))
     return emails
+
+
+def resolve_revision_request_recipients(document):
+    """수정 요청 수신자: 의뢰서 작성자 본인.
+
+    대상/비대상을 바꿀 수 있는 유일한 주체가 상신자이므로 다른 수신자를 두지 않는다.
+    작성자 이메일이 비어 있으면 메일이 아예 적재되지 않으므로(_enqueue) 여기서 경고를 남긴다.
+    """
+    if not document.requester_email:
+        logger.warning(
+            "[mailer] 수정 요청 메일 수신자를 찾지 못했습니다 (doc=%s) — 작성자 이메일이 비어 있습니다.",
+            document.pk,
+        )
+        return []
+    return _apply_redirect([document.requester_email])
 
 
 def resolve_reject_recipients(document):
@@ -682,6 +700,13 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
         subject = f'[P 완료 통보] {document.title}'
         headline = 'P 단계 결재가 완료되어 통보드립니다. (TE_O 수신)'
         stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'revision_requested':
+        subject = f'[수정 요청] {document.title}'
+        headline = (
+            'Validation System 대상/비대상 확인 요청이 도착했습니다. '
+            '결재 현황에서 의뢰서를 열어 값을 확인해 주세요.'
+        )
+        stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'map_apply_failed':
         subject = f'[원본 반영 실패] {document.title}'
         headline = (
@@ -755,6 +780,15 @@ def enqueue_rejected(document):
     """반려 알림 적재."""
     recipients = resolve_reject_recipients(document)
     return _enqueue(document, 'rejected', recipients)
+
+
+def enqueue_revision_requested(document):
+    """MASK(E/EV) 수정 요청 알림 적재.
+
+    반려와 달리 결재 상태를 되돌리지 않는다 — 상신자에게 확인을 요청하는 알림일 뿐이다.
+    """
+    recipients = resolve_revision_request_recipients(document)
+    return _enqueue(document, 'revision_requested', recipients)
 
 
 def enqueue_approved(document):
