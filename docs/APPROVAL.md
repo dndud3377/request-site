@@ -421,6 +421,11 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 
 ## 7. 상세 보기(PagedDetailView) 변경 이력
 
+- **(2026-08) 합성 값 항목의 '이력 확인' 비교 불가 버그 수정**: `FieldHistoryModal` 은 과거 회차 값을 `snap.detail[fieldKey]` **단일 필드**로만 만들고 현재 행만 칩의 **합성 문자열**을 그대로 썼다. 그래서 지도 편차처럼 여러 필드를 합쳐 보여주는 항목은 `초기: 변경있음` / `현재: 변경있음 / X: 555um / Y: 444um` 처럼 **형식이 달라 값 비교가 불가능**했다.
+  - `FieldHistoryModal` · `Chip` 에 `buildValue?: (d: Partial<DetailFormState>) => string` 을 추가했다. 넘기면 **회차 스냅샷과 현재 값을 모두 같은 함수**로 만들어 형식이 일치한다(`fieldKey` 는 단일 필드 항목 전용으로 선택 인자화).
+  - 칩 표시값과 이력 값을 한 함수로 공유하도록 생성기를 분리했다 — `buildPurposeValue`(의뢰 목적 + `other_purpose`) / `buildMapValue`(지도 편차: C가문 상·하판 리전별 + 일반, X·Y·사유 포함) / `buildEaValue`(EA 변경 + 값) / `buildBbValue`(뼈찜 항목 목록).
+  - `buildMapValue` 는 C가문 여부를 **현재 문서가 아니라 각 스냅샷 자신의 `only_prodc`** 로 판별한다(회차 중간에 C가문 Yes/No 가 바뀐 문서도 그 회차 형식대로 보인다).
+  - 저장값 판정 문자열은 상수화했다(`MAP_NO_CHANGE = '변경 없음'`, `PRODC_YES = 'Yes'`). 표시 문구 자체는 위 2026-07 항목의 관례대로 하드코딩 유지.
 - **(2026-08) Validation System 판정 주체를 상신자로 단일화**: 대상/비대상을 정하는 주체는 **상신자 하나**다. MASK(E) 합의 모달의 확정 토글을 제거하고(`approve-step` 의 `validation_system` 수용도 삭제), 결재현황 상세보기 J-layer 탭에 **상신자 본인에게만** 활성화되는 토글을 뒀다(`POST /documents/<id>/validation-system/`). 수정 창은 상신 직후부터 **E 단계 통과 전**까지. E 담당자 합의 후 값이 바뀌면 **E 단계만** `pending` 으로 되감고(EV step 은 지정 이력 보존을 위해 삭제하지 않음) 사유를 `comment` 에 남긴다 — 반려처럼 새 회차를 돌리지 않는다.
 - **(2026-08) MASK(E/EV) 반려 → '수정 요청'**: E/EV 단계의 `reject-step` 은 `document.status` 와 `round` 를 건드리지 않고 사유를 step `comment` 에 덧붙인 뒤 상신자에게 `revision_requested` 메일만 보낸다. E 가 결재선 마지막 병렬 블록에 있어 반려 시 PL 부터 전 단계를 재결재해야 하는 비용이 과했기 때문이다. **E/EV 가 아닌 단계의 반려는 기존 동작 그대로다.**
 - **(2026-08) 대상/비대상 UI 가 흰 배경에 사라지던 버그 수정**: 정의된 적 없는 `var(--primary)` 를 배경으로 쓰고 있어(미정의 커스텀 속성 → `background` 가 초기값 `transparent` 로 계산) **선택된 항목이 흰 배경에 흰 글씨**로 찍혔다. 사용처 3곳을 모두 제거하고 문서 상태 badge(`.badge-*`)와 같은 관용구의 `.vs-badge` / `.vs-toggle` 로 재작성했다(대상=warning, 비대상=info, 해당없음=회색). 공용 컴포넌트는 `frontend/src/components/ValidationSystem.tsx`.
