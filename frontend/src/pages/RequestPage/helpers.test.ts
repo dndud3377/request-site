@@ -1,4 +1,4 @@
-import { autoValidationSystem, isValidationKeywordRow, isValidationTarget, computeLayerMerge, MergeComparableRow } from './helpers';
+import { autoValidationSystem, isValidationKeywordRow, isValidationTarget, computeLayerMerge, MergeComparableRow, computeBeforeAfter, BaComparableRow } from './helpers';
 import { VS_NA, VS_TARGET } from './constants';
 
 describe('isValidationKeywordRow', () => {
@@ -161,5 +161,113 @@ describe('autoValidationSystem', () => {
 
   it('빈 배열이면 해당없음', () => {
     expect(autoValidationSystem([])).toBe(VS_NA);
+  });
+});
+
+describe('computeBeforeAfter', () => {
+  // 비교 키는 process_id + layerid — 같은 layerid 를 여러 행에 주면 '모호한 그룹'이 된다.
+  const r = (id: string, over: Partial<BaComparableRow> = {}): BaComparableRow => ({
+    id,
+    disabled: false,
+    process_id: 'P1',
+    sp: `SP_${id}`,
+    sd: `SD_${id}`,
+    pp: `PP_${id}`,
+    layerid: `L_${id}`,
+    ...over,
+  });
+
+  it('5개 값이 모두 같으면 어느 표에도 싣지 않는다', () => {
+    const res = computeBeforeAfter([r('a')], [], [r('a')], []);
+    expect(res.pairs).toEqual([]);
+    expect(res.unmatchedBefore).toEqual([]);
+    expect(res.unmatchedAfter).toEqual([]);
+    expect(res.sameCount).toBe(1);
+  });
+
+  it('process_id·layerid 가 같고 sp 만 다르면 자동 1:1 (changed)', () => {
+    const before = r('a');
+    const after = { ...r('b'), layerid: 'L_a', sd: 'SD_a', pp: 'PP_a' };
+    const res = computeBeforeAfter([before], [], [after], []);
+    expect(res.pairs).toHaveLength(1);
+    expect(res.pairs[0]).toMatchObject({ table: 'J', kind: 'changed', beforeId: 'J_a', afterId: 'J_b' });
+    expect(res.pairs[0].before).toMatchObject({ sp: 'SP_a', layerid: 'L_a' });
+    expect(res.pairs[0].after).toMatchObject({ sp: 'SP_b', layerid: 'L_a' });
+    expect(res.unmatchedAfter).toEqual([]);
+  });
+
+  it('참조에만 있으면 AFTER 미등록(deleted) 으로 자동 확정', () => {
+    const res = computeBeforeAfter([r('a')], [], [], []);
+    expect(res.pairs).toHaveLength(1);
+    expect(res.pairs[0]).toMatchObject({ kind: 'deleted', after: null, afterId: null });
+    expect(res.pairs[0].before).toMatchObject({ layerid: 'L_a' });
+  });
+
+  it('현재 요청서에만 있으면 BEFORE 미등록(added) 으로 자동 확정', () => {
+    const res = computeBeforeAfter([], [], [r('b')], []);
+    expect(res.pairs).toHaveLength(1);
+    expect(res.pairs[0]).toMatchObject({ kind: 'added', before: null, beforeId: null });
+    expect(res.pairs[0].after).toMatchObject({ layerid: 'L_b' });
+  });
+
+  it('같은 그룹에 A 2행·B 2행이면 자동 매칭하지 않고 미매칭으로 분류한다', () => {
+    const refs = [r('a1', { layerid: 'L1' }), r('a2', { layerid: 'L1' })];
+    const curs = [r('b1', { layerid: 'L1' }), r('b2', { layerid: 'L1' })];
+    const res = computeBeforeAfter(refs, [], curs, []);
+    expect(res.pairs).toEqual([]);
+    expect(res.unmatchedBefore.map((x) => x.id)).toEqual(['J_a1', 'J_a2']);
+    expect(res.unmatchedAfter.map((x) => x.id)).toEqual(['J_b1', 'J_b2']);
+  });
+
+  it('A 3행·B 0행이면 모호성이 없으므로 3건 모두 자동 deleted', () => {
+    const refs = [r('a1', { layerid: 'L1' }), r('a2', { layerid: 'L1' }), r('a3', { layerid: 'L1' })];
+    const res = computeBeforeAfter(refs, [], [], []);
+    expect(res.pairs).toHaveLength(3);
+    expect(res.pairs.every((p) => p.kind === 'deleted')).toBe(true);
+    expect(res.unmatchedBefore).toEqual([]);
+  });
+
+  it('layerid 가 빈 행은 비교에서 제외한다', () => {
+    const res = computeBeforeAfter([r('a', { layerid: '' })], [], [r('b', { layerid: '  ' })], []);
+    expect(res.pairs).toEqual([]);
+    expect(res.unmatchedBefore).toEqual([]);
+    expect(res.unmatchedAfter).toEqual([]);
+  });
+
+  it('비활성 행은 비교에서 제외한다', () => {
+    const res = computeBeforeAfter([r('a', { disabled: true })], [], [r('b', { disabled: true })], []);
+    expect(res.pairs).toEqual([]);
+  });
+
+  it('J-ayer 와 O-ayer 는 독립 비교한다 (같은 키여도 섞이지 않는다)', () => {
+    const jRef = [r('j1', { layerid: 'L1' })];
+    const oCur = [r('o1', { layerid: 'L1' })];
+    const res = computeBeforeAfter(jRef, [], [], oCur);
+    expect(res.pairs).toHaveLength(2);
+    expect(res.pairs.find((p) => p.table === 'J')).toMatchObject({ kind: 'deleted' });
+    expect(res.pairs.find((p) => p.table === 'O')).toMatchObject({ kind: 'added' });
+  });
+
+  it('앞뒤 공백은 정규화해 비교한다', () => {
+    const res = computeBeforeAfter(
+      [r('a', { process_id: ' P1 ', layerid: ' L1 ', sp: ' S1 ', sd: 'D', pp: 'P' })],
+      [],
+      [r('b', { process_id: 'P1', layerid: 'L1', sp: 'S1', sd: 'D', pp: 'P' })],
+      []
+    );
+    expect(res.pairs).toEqual([]);
+    expect(res.sameCount).toBe(1);
+  });
+
+  it('같은 입력이면 항상 같은 결과를 낸다 (멱등)', () => {
+    const refs = [r('a1', { layerid: 'L1' }), r('a2', { layerid: 'L2' })];
+    const curs = [r('b1', { layerid: 'L2' }), r('b2', { layerid: 'L3' })];
+    expect(computeBeforeAfter(refs, [], curs, [])).toEqual(computeBeforeAfter(refs, [], curs, []));
+  });
+
+  it('빈 표끼리는 아무 것도 만들지 않는다', () => {
+    expect(computeBeforeAfter([], [], [], [])).toEqual({
+      pairs: [], unmatchedBefore: [], unmatchedAfter: [], sameCount: 0,
+    });
   });
 });

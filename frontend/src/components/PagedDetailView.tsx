@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ExcelJS from 'exceljs';
-import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo } from '../types';
 import Modal from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
@@ -28,6 +28,68 @@ function FlowChartTable({ rows }: { rows: FlowChartRow[] }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+/**
+ * 참조 요청서 Merge 의 변경전/변경후 표 (읽기 전용).
+ * 작성 화면(BeforeAfterPanel)의 확정 표와 같은 형식 — 미등록은 5칸을 합쳐 한 줄로 보여준다.
+ */
+function MergePairsTable({ pairs }: { pairs: MergePair[] }) {
+  const { t } = useTranslation();
+  const fields: (keyof MergeRowInfo)[] = ['process_id', 'sp', 'sd', 'pp', 'layerid'];
+
+  const cells = (info: MergeRowInfo | null, other: MergeRowInfo | null) => {
+    if (!info) {
+      return <td colSpan={5} className="ba-cell-unreg">{t('request.ba_unregistered')}</td>;
+    }
+    return (
+      <>
+        {fields.map((f) => (
+          <td key={f} className={other && other[f] !== info[f] ? 'ba-cell-changed' : undefined}>
+            {info[f] || '—'}
+          </td>
+        ))}
+      </>
+    );
+  };
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table className="ba-table ba-result-table">
+        <thead>
+          <tr>
+            <th rowSpan={2}>{t('request.ba_table_division')}</th>
+            <th colSpan={5} className="ba-group-before">{t('request.ba_before_col')}</th>
+            <th colSpan={5} className="ba-group-after">{t('request.ba_after_col')}</th>
+            <th rowSpan={2}>{t('request.ba_kind')}</th>
+          </tr>
+          <tr>
+            {(['before', 'after'] as const).map((side) => fields.map((f) => (
+              <th key={`${side}_${f}`} className={side === 'before' ? 'ba-group-before' : 'ba-group-after'}>
+                {t(f === 'process_id' ? 'request.process_id'
+                  : f === 'layerid' ? 'request.col_layer'
+                  : `request.col_${f}`)}
+              </th>
+            )))}
+          </tr>
+        </thead>
+        <tbody>
+          {pairs.map((pair, i) => (
+            <tr key={`${pair.beforeId ?? 'none'}_${pair.afterId ?? 'none'}_${i}`}>
+              <td>
+                <span className={`ba-badge ba-badge-${pair.table === 'J' ? 'j' : 'o'}`}>
+                  {t(pair.table === 'J' ? 'request.jayer' : 'request.oayer')}
+                </span>
+              </td>
+              {cells(pair.before, pair.after)}
+              {cells(pair.after, pair.before)}
+              <td><span className={`ba-badge ba-badge-${pair.kind}`}>{t(`request.ba_kind_${pair.kind}`)}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -980,6 +1042,18 @@ type Page = { label: string; content: React.ReactNode };
             <div style={cardStyle}>
               <div style={sectionTitle}>{t('request.flow_chart')}</div>
               <FlowChartTable rows={detail.flow_chart ?? []} />
+            </div>
+          )}
+
+          {(detail.merge_pairs?.length ?? 0) > 0 && (
+            <div style={cardStyle}>
+              <div style={sectionTitle}>
+                {t('request.ba_result_title')}
+                <span style={{ marginLeft: 8, fontSize: '0.76rem', fontWeight: 400, color: 'var(--text-muted)' }}>
+                  ({t('request.ba_detail_note')})
+                </span>
+              </div>
+              <MergePairsTable pairs={detail.merge_pairs ?? []} />
             </div>
           )}
 

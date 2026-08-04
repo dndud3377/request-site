@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { DetailFormState, FlowChartRow, RequestDocument, GuideFeatureKey } from '../../../types';
-import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_MAP_CHANGE } from '../constants';
+import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_MAP_CHANGE, isMergePurposeSelected } from '../constants';
+import BeforeAfterPanel from './BeforeAfterPanel';
 
 interface Step1Props {
   detail: DetailFormState;
@@ -31,6 +32,14 @@ interface Step1Props {
   handleRequestPurposeSelect: (val: string) => void;
   handleRefDocSelect: (label: string) => void;
   handleMergeClick: () => void;
+  handleMergeReselect: () => void;
+  hasMergeSnapshot: boolean;
+  baSameCount: number;
+  baSelBefore: string | null;
+  baSelAfter: string | null;
+  handleBaSelect: (side: 'before' | 'after', id: string) => void;
+  handleBaApply: () => void;
+  handleBaUnpair: (index: number) => void;
   isMapChangeMode: boolean;
   mapChangeDocLabel: string;
   setMapChangeDocLabel: React.Dispatch<React.SetStateAction<string>>;
@@ -76,6 +85,14 @@ const Step1: React.FC<Step1Props> = ({
   handleRequestPurposeSelect,
   handleRefDocSelect,
   handleMergeClick,
+  handleMergeReselect,
+  hasMergeSnapshot,
+  baSameCount,
+  baSelBefore,
+  baSelAfter,
+  handleBaSelect,
+  handleBaApply,
+  handleBaUnpair,
   isMapChangeMode,
   mapChangeDocLabel,
   setMapChangeDocLabel,
@@ -105,9 +122,11 @@ const Step1: React.FC<Step1Props> = ({
   // 흐름도·특이사항·Backbone 전용 잠금: 완성된 MAP 변경도 Only MAP과 동일하게 잠그되,
   // 기타목적 버튼·참조요청서 Merge·완성된 MAP 변경 검색/적용 툴바는 잠그지 않는다(전환·조회 경로 보존).
   const disableFlowBb = disableOptional || isMapChangeMode;
-  // 참조 요청서는 의뢰서당 1건만 지정할 수 있다. Merge 를 마치면 선택·Merge 를 모두 영구 잠근다
-  // (문서에 저장되므로 임시저장 후 재진입해도 유지된다).
+  // 참조 요청서는 의뢰서당 1건만 지정할 수 있다. Merge 를 마치면 선택·Merge 를 잠그고,
+  // 바꾸려면 '재선택' 버튼을 쓴다(문서에 저장되므로 임시저장 후 재진입해도 유지된다).
   const isMergeDone = detail.merge_ref_doc_id !== null;
+  // Merge 사용 목적(Layer 추가/삭제·STEPSEQ 변경·Overlay 변경)을 하나라도 골랐으면 블록을 1개만 노출한다.
+  const showMergeBlock = isMergePurposeSelected(detail.other_purpose);
 
   return (
     <div className="form-section">
@@ -235,8 +254,8 @@ const Step1: React.FC<Step1Props> = ({
               </div>
             </div>
 
-            {/* Layer 추가/삭제: 참조 요청서 선택 (검색 툴바 크기는 완성된 MAP 변경과 동일) */}
-            {detail.other_purpose.includes('Layer 추가/삭제') && (
+            {/* 참조 요청서 Merge — Layer 추가/삭제·STEPSEQ 변경·Overlay 변경 공용 (여러 개를 골라도 1개만) */}
+            {showMergeBlock && (
               <div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', maxWidth: 920 }}>
                   <div style={{ flex: 1 }}>
@@ -262,11 +281,34 @@ const Step1: React.FC<Step1Props> = ({
                   >
                     {t('request.merge_button')}
                   </button>
+                  {/* 재선택: Merge 결과·매핑을 비우고 J/O 표를 Merge 직전으로 되돌린다 */}
+                  {isMergeDone && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handleMergeReselect}
+                      title={hasMergeSnapshot ? undefined : t('request.merge_reselect_no_snapshot')}
+                    >
+                      ↻ {t('request.merge_reselect')}
+                    </button>
+                  )}
                 </div>
                 {isMergeDone && (
                   <div style={{ marginTop: '4px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                     ⓘ {t('request.merge_already_done')}
                   </div>
+                )}
+                {/* 변경전/변경후 비교 — Merge 를 마쳐 비교 결과가 있을 때만 */}
+                {isMergeDone && (
+                  <BeforeAfterPanel
+                    detail={detail}
+                    sameCount={baSameCount}
+                    selBefore={baSelBefore}
+                    selAfter={baSelAfter}
+                    onSelect={handleBaSelect}
+                    onApply={handleBaApply}
+                    onUnpair={handleBaUnpair}
+                  />
                 )}
               </div>
             )}

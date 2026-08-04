@@ -350,10 +350,62 @@ export interface DetailFormState {
   validation_system_changed_by?: string;
   validation_system_changed_at?: string;
 
-  // 'Layer 추가/삭제' Merge 를 완료한 참조 요청서. 참조는 의뢰서당 1건만 지정할 수 있으므로,
-  // 이 값이 null 이 아니면 참조 선택·Merge 버튼을 영구 잠근다(임시저장 후 재진입해도 유지).
+  // 참조 요청서 Merge 를 완료한 문서. 참조는 의뢰서당 1건만 지정할 수 있어 값이 있으면
+  // 선택·Merge 버튼을 잠그고, '재선택' 버튼으로만 해제한다(임시저장 후 재진입해도 유지).
   merge_ref_doc_id: number | null;
   merge_ref_doc_label: string;   // 잠긴 입력에 표시할 문서 제목
+
+  // 참조 요청서 Merge 의 변경전/변경후 비교 결과. 확정된 짝과 아직 짝이 없는 행을 나눠 저장해
+  // 임시저장 후 재진입에도 화면이 그대로 복원된다(상세 페이지 표시에도 merge_pairs 를 쓴다).
+  merge_pairs: MergePair[];
+  merge_unmatched_before: MergeUnmatchedRow[];
+  merge_unmatched_after: MergeUnmatchedRow[];
+}
+
+// ===== 참조 요청서 Merge — BEFORE/AFTER 비교 =====
+
+/** 비교 표에 싣는 행 정보. 이 5개 항목만 보여주고 저장한다. */
+export interface MergeRowInfo {
+  process_id: string;
+  sp: string;
+  sd: string;
+  pp: string;
+  layerid: string;
+}
+
+/** 아직 짝이 없어 BEFORE/AFTER 표에 남아 있는 행. id 는 `J_`/`O_` 접두사로 표를 구분한다. */
+export interface MergeUnmatchedRow extends MergeRowInfo {
+  id: string;
+  table: MergeTable;
+}
+
+/** J-ayer 끼리, O-ayer 끼리만 비교·매핑한다. */
+export type MergeTable = 'J' | 'O';
+
+/**
+ * 확정된 변경전/변경후 한 쌍.
+ * before 가 null 이면 '미등록'(참조에 없던 항목이 새로 생김 = added),
+ * after 가 null 이면 '미등록'(참조에 있던 항목이 사라짐 = deleted).
+ * beforeId/afterId 는 매핑 해제 시 원래 표로 되돌리기 위한 출처 행 id 다.
+ */
+export interface MergePair {
+  table: MergeTable;
+  beforeId: string | null;
+  before: MergeRowInfo | null;
+  afterId: string | null;
+  after: MergeRowInfo | null;
+  kind: 'changed' | 'added' | 'deleted';
+}
+
+/**
+ * '재선택' 롤백용 스냅샷 — Merge 로 3-way 재판정을 반영하기 **직전**의 J/O 표.
+ * additional_notes 최상위(detail 형제)에 저장해 임시저장·재진입 후에도 롤백할 수 있다.
+ */
+export interface MergeSnapshot {
+  jayerRows: JayerRow[];
+  oayerRows: OayerRow[];
+  refDocId: number | null;
+  savedAt: string;   // ISO 8601
 }
 
 // 통보자 참조: 화면 표시용 이름 + 메일 발송용 loginid
