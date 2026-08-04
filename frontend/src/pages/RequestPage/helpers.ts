@@ -199,9 +199,12 @@ export interface BeforeAfterResult {
 /**
  * 참조 요청서(A)와 작성 중인 요청서(B)를 `process_id + layerid` 그룹으로 묶어 비교한다.
  *
- * | 그룹 안 A 행 수 | B 행 수 | 처리 |
+ * 그룹 안에서 **5개 값이 모두 같은 짝을 먼저 소진**한 뒤(= 변경 없음, 어느 표에도 싣지 않는다),
+ * 남은 행에만 아래 판정을 적용한다.
+ *
+ * | 남은 A 행 수 | B 행 수 | 처리 |
  * |---|---|---|
- * | 1 | 1 | 5개 값이 모두 같으면 제외, 하나라도 다르면 자동 1:1 짝 |
+ * | 1 | 1 | 자동 1:1 짝 (완전 일치는 이미 빠졌으므로 반드시 '변경') |
  * | N(≥1) | 0 | 각 행을 AFTER=미등록 과 자동 짝 (모호성 없음) |
  * | 0 | N(≥1) | 각 행을 BEFORE=미등록 과 자동 짝 (모호성 없음) |
  * | 둘 다 ≥1 이고 한쪽이라도 ≥2 | | 자동 매칭하지 않고 BEFORE/AFTER 표로 (사용자가 직접 매핑) |
@@ -245,17 +248,32 @@ export const computeBeforeAfter = (
     });
 
     keys.forEach((k) => {
-      const a = refMap.get(k) ?? [];
-      const b = curMap.get(k) ?? [];
+      const aAll = refMap.get(k) ?? [];
+      const bAll = curMap.get(k) ?? [];
 
+      // ① 5개 값이 모두 같은 짝을 먼저 소진한다. 같은 그룹에 다른 행이 더 있어도 이 짝은
+      //    '변경 없음'이므로 어느 표에도 싣지 않으며, 아래 모호 판정의 대상도 되지 않는다.
+      //    한 A 행은 한 B 행만 소진한다(짝을 여러 개로 복제하지 않는다).
+      const usedB = new Set<string>();
+      const a: BaComparableRow[] = [];
+      aAll.forEach((ar) => {
+        const info = toMergeRowInfo(ar);
+        const hit = bAll.find((br) => !usedB.has(br.id) && baSame(info, toMergeRowInfo(br)));
+        if (hit) {
+          usedB.add(hit.id);
+          sameCount += 1;
+          return;
+        }
+        a.push(ar);
+      });
+      const b = bAll.filter((br) => !usedB.has(br.id));
+
+      // ② 완전 일치가 빠진 나머지에만 자동/수동 판정을 적용한다.
       if (a.length === 1 && b.length === 1) {
-        const before = toMergeRowInfo(a[0]);
-        const after = toMergeRowInfo(b[0]);
-        if (baSame(before, after)) { sameCount += 1; return; }
         pairs.push({
           table,
-          beforeId: `${table}_${a[0].id}`, before,
-          afterId: `${table}_${b[0].id}`, after,
+          beforeId: `${table}_${a[0].id}`, before: toMergeRowInfo(a[0]),
+          afterId: `${table}_${b[0].id}`, after: toMergeRowInfo(b[0]),
           kind: 'changed',
         });
         return;

@@ -4607,8 +4607,15 @@ select.form-control option {
 }
 .ba-result-table th { position: static; }
 .ba-pick { cursor: pointer; }
-.ba-pick:hover td { background: var(--bg-card-hover); }
-.ba-pick-selected td { background: var(--accent-light); box-shadow: inset 2px 0 0 var(--accent); }
+.ba-pick:hover { background: var(--bg-card-hover); }
+/* 선택 표시는 bb 매핑(.bb-jayer-selected)과 동일하게 행 단위 테두리로 준다.
+   hover(0,2,0)와 특이도를 맞추고 뒤에 두어 선택 상태가 이긴다.
+   outline-offset 은 .ba-pane-scroll(overflow:auto)에 테두리가 잘리지 않게 한다. */
+.ba-pick.ba-pick-selected {
+  background: var(--accent-light);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
 .ba-pick-unreg td { font-style: italic; color: var(--text-muted); }
 .ba-hint { color: var(--text-muted); font-size: 0.78rem; padding: 10px 8px; white-space: normal; }
 .ba-badge {
