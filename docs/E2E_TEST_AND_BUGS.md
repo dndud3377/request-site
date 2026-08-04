@@ -11,8 +11,13 @@
 > - `docs/FIX_PROGRESS.md` : 과거 수정 작업의 진행 기록
 > - **이 문서** : **페이지를 가로지르는 E2E 흐름 단위**의 CASE 테스트 + 교차 조합 + 신규 버그 (역할 중복 없음)
 >
-> ⚠️ 이 문서의 버그 항목 중 `재현✅` 표시는 **이 세션에서 Django 테스트로 실제 실행해 결과를 확인**한 것이고,
+> ⚠️ 이 문서의 버그 항목 중 `재현✅` 표시는 **당시 세션에서 Django 테스트로 실제 실행해 결과를 확인**한 것이고,
 > `분석🔍` 표시는 코드 정독으로 도출했으나 런타임 실행까지는 하지 못한 것이다. 근거를 각 항목에 명시했다.
+>
+> 📌 **2026-08-04 갱신** — 코드가 여러 차례 바뀌어 문서의 `파일:라인` 참조가 실제와 어긋나 있었다.
+> **전 항목의 코드 위치를 현재 코드 기준으로 재검증·정정**했고, 함께 수행한 3차 정독
+> (**`additional_notes` 저장 정합성** 집중)에서 나온 신규 7건을 **§5-4** 에 추가했다.
+> 라인 번호는 다시 밀린다 — 위치는 **함수/심볼 이름을 먼저 적고 라인은 보조**로 병기한다.
 
 ---
 
@@ -22,13 +27,16 @@
 > 사용자 삭제 파급 / nginx·설정** 영역을 전수 정독하고 재현 테스트 19건을 추가 실행했다.
 > 여기서 **치명 3건이 더** 나왔다(저장형 XSS 권한상승 체인, id_token 만료검증 비활성화, nonce/state 검증 우회).
 
-| 구분 | 1차 | 2차 추가 | 합계 | 비고 |
-|------|-----|---------|------|------|
-| 🔴 치명 (Critical) | 4 | **+3** | **7** (1건 수정완료) | 인가 부재 삭제 / PAUSE 우회 / 미인증 업로드 / **저장형 XSS→권한상승** / **토큰 재사용** / **CSRF** |
-| 🟠 높음 (High) | 6 | **+6** | **12** | 담당자 계정 삭제 시 결재 교착, 그룹 CASCADE 소실, 중단요청 고착, 메일 escape 누락 등 |
-| 🟡 중간 (Medium) | 8 | **+7** | **15** | 세션 갱신 불가, PII 로깅, 통계 노출, 메일 영구유실, 보안헤더 부재 등 |
-| ⚪ 낮음/위생 (Low) | 7 | **+7** | **14** | 하드코딩, `any` 83건, 데드코드, 취약한 휴리스틱 |
-| **합계** | 25 | **+23** | **48** | |
+| 구분 | 1차 | 2차 추가 | 3차 추가 | 합계 | 비고 |
+|------|-----|---------|---------|------|------|
+| 🔴 치명 (Critical) | 4 | **+3** | 0 | **7** (1건 수정완료) | 인가 부재 삭제 / PAUSE 우회 / 미인증 업로드 / **저장형 XSS→권한상승** / **토큰 재사용** / **CSRF** |
+| 🟠 높음 (High) | 6 | **+6** | **+3** | **15** | 담당자 계정 삭제 시 결재 교착, 그룹 CASCADE 소실, 중단요청 고착, **후결자 소실**, **필터 행 소실** 등 |
+| 🟡 중간 (Medium) | 8 | **+7** | **+3** | **18** | 세션 갱신 불가, PII 로깅, 통계 노출, **detail 유령값**, **blob 덮어쓰기** 등 |
+| ⚪ 낮음/위생 (Low) | 7 | **+7** | **+1** | **15** | 하드코딩, `any` 83건, 데드코드, 취약한 휴리스틱 |
+| **합계** | 25 | **+23** | **+7** | **55** | |
+
+> 3차(2026-08-04)는 **`additional_notes` 저장 정합성**만 파고들었다 — "저장되면 안 되는 값이 남는가 / 저장돼야 하는 값이
+> 사라지는가". 결과는 §5-4 (B-57 ~ B-63). 신규 7건 중 **5건이 값 소실**, 2건이 유령값·크래시다.
 
 **즉시 조치 권고 TOP 5** (전부 재현✅)
 1. **[B-26] 저장형 XSS → MASTER 권한 탈취** — 역할 `NONE` 사용자가 VOC 내용에 임의 HTML/스크립트를 저장할 수 있고,
@@ -40,6 +48,13 @@
 
 > 1~5는 서로 맞물린다. B-02로 올린 `.svg`를 B-34가 실행 가능하게 서빙하고, 그 스크립트가 B-01로 문서를 지우거나
 > B-26의 경로로 권한을 올린다. **개별 패치가 아니라 한 묶음으로 처리**할 것을 권한다.
+
+**데이터 정합성 즉시 조치 권고 (3차, 2026-08-04)** — 보안 TOP5 와 별개 트랙이다.
+1. **[B-57] 추가 후결자 소실** — C가문이 아닌 문서에서 `add-post-approver` 로 넣은 후결자가
+   재상신/재개/PL수정후상신 저장 한 번에 `detail.post_approvers = []` 로 지워져, 재상신 후 **RA 단계가 안 생긴다.**
+2. **[B-58] 필터로 가려진 J/O 행이 상신 시 문서에서 빠진다** — 게다가 필터 정의는 `localStorage` 에만 있어
+   **같은 문서를 다른 PC 에서 상신하면 저장 결과가 달라진다.**
+3. **[B-59] 고아 bb 행** — 필터 비활성화 경로만 `unmapJayerRows` 를 부르지 않아, 원본 J행이 없는 bb 행이 저장된다.
 
 ---
 
@@ -101,7 +116,21 @@ CI=true npx react-scripts test --watchAll=false --passWithNoTests    # 테스트
 npx tsc --noEmit 2>&1 | grep -c "error TS"                          # 47 = 기존 baseline (docs/REQUEST.md §4)
 ```
 
-### 1.5 이번 세션 실제 실행 결과 (2026-07-28)
+### 1.5 실행 결과
+
+#### 2026-08-04 (3차) — **자동 테스트 실행 불가**
+이 세션 컨테이너에는 **Django 가 설치돼 있지 않고**(`ModuleNotFoundError: No module named 'django'`)
+프론트엔드 `node_modules` 도 없다. 따라서 3차에서 추가한 B-57~B-63 은 **전부 `분석🔍`(코드 정독)** 이며,
+런타임 재현은 §7 체크리스트의 수동 시나리오로 확인해야 한다. 대신 아래는 실제로 수행했다.
+
+| 항목 | 방법 | 결과 |
+|---|---|---|
+| 문서의 전 `파일:라인` 참조 | 심볼 grep 으로 현재 위치 대조 | **약 90건 중 60건 이상이 어긋나 있어 정정** |
+| i18n 키 정합성 | `ko.json`/`en.json` 평탄화 비교 + 사용처 grep | **ko 1003 / en 1002**, `voc.page_other` 여전히 ko 전용 (B-15 유효) |
+| 미정의 i18n 키 | `request.btn_all_*`·`btn_reset`·`guide.search_placeholder`·`profile.*` 조회 | **ko/en 양쪽 모두 없음** (B-14 유효) |
+| 테스트 케이스 수 | `tests.py` 의 `def test_` 집계 | **167건** (1차 75 → 2차 87 → 현재 167) |
+
+#### 2026-07-28 (1차) 실행 결과
 
 ```
 Ran 75 tests in 1.397s
@@ -113,7 +142,8 @@ FAILED (failures=2, errors=1)
 | `HybridImmediateSendTest.test_enqueue_schedules_immediate_send_on_commit` | TE_R 사용자가 없어 수신자 0 → `_enqueue` 가 `None` 반환 → `noti.id` AttributeError. `.env` 의 `MAIL_REDIRECT_TO` 가 있어야만 통과 | **환경 의존 테스트** (B-23) |
 | `ExternalApiKeyAccessTest.test_wrong_key_returns_401` | `ExternalApiKeyAuthentication` 에 `authenticate_header()` 가 없어 DRF 가 401→403 으로 변환 | **코드/문서 불일치** (B-19) |
 
-> ⇒ **현재 `manage.py test api` 는 red 다.** CI 가 돌고 있지 않다는 신호이므로, 아래 CASE 검증 전에 먼저 green 을 만들 것을 권한다.
+> ⇒ **1차 시점 `manage.py test api` 는 red 였다.** CI 가 돌고 있지 않다는 신호이므로, 아래 CASE 검증 전에 먼저 green 을 만들 것을 권한다.
+> (2026-08-04 현재 테스트는 167건으로 늘었으나 이 세션에서는 실행 불가 — red/green 여부 미확인.)
 
 ---
 
@@ -603,13 +633,17 @@ A = 이미 결재완료된 **참조 요청서**, B = **지금 작성 중인 요�
 - ✅ **전원 확인 시** `pause` 전이 + 배지 `PAUSE` + 현재단계 텍스트 유지
 
 #### T-M3 동결
-| 조작 | 기대 |
-|---|---|
-| pause 문서에 `approve-step/` | ✅ 400 |
-| `reject-step/` | ✅ 400 |
-| `assign-step/` | ✅ 400 |
-| `claim-step/` | ✅ 400 |
-| **`peer-approve/` / `peer-reject/` / `peer-submit/`** | ❌ **그대로 동작해버림** → §5 **B-06** 🔴 |
+| 조작 | 백엔드 | 프론트 버튼 노출 |
+|---|---|---|
+| pause 문서에 `approve-step/` | ✅ 400 (`views.py:445`) | ⚠️ **'합의' 버튼은 그대로 보인다** → 누르면 400 토스트 |
+| `reject-step/` | ✅ 400 (`views.py:677`) | ⚠️ 위와 동일 |
+| `assign-step/` | ✅ 400 (`views.py:752`) | ⚠️ '담당자 지정' 버튼 그대로 |
+| `claim-step/` | ✅ 400 (`views.py:876`) | ⚠️ **'검토중' 버튼 그대로** |
+| **`peer-approve/` / `peer-reject/` / `peer-submit/`** | ❌ **그대로 동작해버림** → §5 **B-06** 🔴 | ❌ 버튼도 그대로 |
+
+> 프론트 판정 헬퍼(`ApprovalFlow.tsx` 의 `canUserAgree:44` / `canUserAssign:22` / `canUserClaim:31`)는
+> **`document.status` 를 아예 보지 않는다.** 서버가 내려주는 플래그를 쓰는 중단·재개 버튼(`can_request_pause`/`can_resume`)과 달리
+> 결재 액션 버튼은 클라이언트 계산이라 pause 를 모른다. 백엔드가 막으므로 데이터 손상은 없고 **UX 결함**이다(R-07 의 증상).
 
 #### T-M4 재개 + 기한 연장
 - 조작: 작성자 → pause 문서를 `/request` 로 열어 수정 → **재개** 클릭
@@ -818,7 +852,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - ✅ **기대**: 서버 또는 렌더 시점에 sanitize
 - ❌ **실제**: 원문 그대로 저장(재현✅) → MASTER가 VOC 상세를 열면 `VOCPage.tsx:446`의
   `dangerouslySetInnerHTML`로 **실행**된다 → §5 **B-26** 🔴
-- 같은 패턴: `GuidePage.tsx:268,328` · `GuideSlidePanel.tsx:132` · `HomePage.tsx:256`(공지)
+- 같은 패턴: `GuidePage.tsx:268,328` · `GuideSlidePanel.tsx:132` · `HomePage.tsx:257`(공지)
 
 #### T-S2 제출자 위조
 - 위 요청에서 `submitter_user_id`를 **다른 사람의 id**로 지정
@@ -888,6 +922,8 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 2. ❌ 그 상태에서 PL 이 **'합의'** 를 누르면 그대로 성공하며 `under_review` 로 되돌아가고 **R 단계까지 생성**된다(재현✅) → B-06 🔴
 3. ❌ '반려' 도 동작해 `rejected` 로 간다(재현✅)
 4. ✅ 반면 R/P/J/O/E 단계에서는 400 으로 정상 차단
+5. ⚠️ 다만 **버튼은 어느 단계에서든 그대로 노출**된다 — TE_O 로 pause 문서 상세를 열면 '검토중' 버튼이 보이고,
+   누르면 `claim_step` 가드(`views.py:876`)에 걸려 400 토스트가 뜬다(T-M3 표 참조)
 
 ### X-7 PAUSE × 기한 연장 × 재상신
 1. O 단계에서 중단 확정 → 5일 뒤 재개 → ✅ pending 단계 `due_date` 가 +5일
@@ -953,7 +989,9 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 ## 5. 발견된 버그
 
 > 심각도: 🔴치명 / 🟠높음 / 🟡중간 / ⚪낮음
-> 상태: **재현✅** = 이번 세션에서 Django 테스트로 직접 실행해 확인 / **분석🔍** = 코드 정독으로 도출
+> 상태: **재현✅** = 발견 당시 세션에서 Django 테스트로 직접 실행해 확인 / **분석🔍** = 코드 정독으로 도출
+>
+> 📌 각 항목의 `위치` 는 **2026-08-04 기준 코드**로 정정했다(함수명 우선, 라인은 보조).
 
 ### 🔴 B-01 의뢰서 삭제에 인가가 전혀 없다 — 결재 완료 문서까지 누구나 삭제 **재현✅** → ✅**수정완료** (`fcf57b9`·`03b2240`·`aa8865e`)
 
@@ -967,8 +1005,12 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 > - **프론트 변경 0건** — 기존 버튼 노출 조건이 새 서버 규칙의 부분집합이라 정상 사용자는 차이가 없다.
 > - 회귀 테스트 12건 추가(`DocumentDeleteAuthTest`). 전체 75 → 87건.
 >
+> **현재 코드 확인(2026-08-04)** — `RequestDocumentViewSet.http_method_names`(`views.py:111`)에서 `delete` 가 빠져
+> REST `DELETE /api/documents/{id}/` 는 **405**, 삭제는 `POST documents/{id}/delete/`(`views.py:407-428`) 한 경로뿐이며
+> `doc_permissions.can_delete` 인가 + `[DELETE_DOCUMENT]` WARNING 감사 로그가 붙어 있다. **수정 상태 유지됨.**
+>
 > 아래는 수정 전 기록(재발 방지용 원문 보존).
-- 위치: `backend/api/views.py:100-102`(`permission_classes = [IsAuthenticatedInProd]`), `views.py:397-405`(`delete` 액션)
+- 위치(수정 전 기준): `backend/api/views.py` 의 `permission_classes = [IsAuthenticatedInProd]`, `delete` 액션
 - 내용:
   1. `RequestDocumentViewSet` 은 `ModelViewSet` 이라 라우터가 **`DELETE /api/documents/{id}/`(destroy)** 를 그대로 노출한다.
      `destroy` 오버라이드가 없고 permission 은 "인증만" → **상태·역할·작성자 무관하게 누구나 삭제**.
@@ -985,12 +1027,25 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   개발 모드(`AUTH_MODE=dev`)에서는 `IsAuthenticatedInProd` 가 비인증도 통과시키므로 **로그인조차 필요 없다.**
 - 권고: `destroy` 를 오버라이드해 `delete` 액션과 같은 인가로 통일하고, 두 경로 모두 **"작성자 or 지정PL or MASTER, approved 는 MASTER 전용"** 으로 명시 구현. 또는 소프트 삭제 전환.
 
-### 🔴 B-06 PAUSE 동결이 PL 단계 액션에는 적용되지 않는다 **재현✅**
-- 위치: `views.py:1092-1140`(`peer_approve`/`peer_reject`/`peer_submit`), `views.py:1142`(`change_designee`)
-- 내용: `approve_step`·`reject_step`·`assign_step`·`claim_step` 에는 모두
-  `if document.status == 'pause': return 400` 가드가 있으나, **PL 단계 전용 액션 4개에는 없다.**
-  중단 요청은 PL 검토 단계에서도 가능하므로(`request_pause` 는 pending step 이면 무엇이든 target 으로 잡는다)
-  "PL 단계에서 pause 확정" 상태가 실제로 만들어진다.
+### 🔴 B-06 PAUSE 동결이 PL 단계 액션에는 적용되지 않는다 **재현✅** — ⚠️ **미수정 (2026-08-04 재확인)**
+- 위치(현재 코드)
+  | 액션 | pause 가드 | 라인 |
+  |---|---|---|
+  | `approve_step` | ✅ 있음 | `views.py:431` (가드 `:445`) |
+  | `reject_step` | ✅ 있음 | `views.py:665` (가드 `:677`) |
+  | `assign_step` | ✅ 있음 | `views.py:734` (가드 `:752`) |
+  | `claim_step` | ✅ 있음 | `views.py:859` (가드 `:876`) |
+  | **`peer_approve`** | ❌ **없음** | `views.py:1291` |
+  | **`peer_reject`** | ❌ **없음** | `views.py:1305` |
+  | **`peer_submit`** | ❌ **없음** | `views.py:1326` |
+  | **`change_designee`** | ❌ **없음** | `views.py:1341` |
+- 내용: 일반 단계 액션 4개에는 모두 `if document.status == 'pause': return 400` 가드가 있으나,
+  **PL 단계 전용 액션 4개에는 없다.** 경로가 실제로 성립하는지도 코드로 확인했다.
+  1. `submit`(`views.py:296`) 이 `status='under_review'` + `agent='PL'` pending 단계를 만든다.
+  2. `can_request_pause`(`doc_permissions.py:140`)는 `under_review` 만 요구 → **PL 검토 중에도 중단 요청 가능**.
+  3. `_can_confirm_pause`(`views.py:211`)는 단계 assignee 본인을 허용 → **지정 PL 본인이 확인해 `pause` 확정 가능**.
+  4. 그 상태에서 `peer_approve` → `_advance_after_pl`(`views.py:1263`)이 **조건 없이 `document.status = 'under_review'`
+     로 덮어쓴다**(`:1283`, `:1287`) → 되살아나고 R 단계까지 생성된다.
 - 재현 결과
   ```
   [B-06a] pause 문서 peer-approve -> 200 | status = under_review | R단계 생성: True
@@ -998,11 +1053,16 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   ```
 - 영향: 작성자가 요청하고 팀이 확인해 **정식으로 멈춘 결재를 PL 이 혼자 되살리거나 끝내버린다.**
   `PauseRequest` 는 `confirmed` 로 남아 있어 상태가 어긋난다(문서는 `under_review` 인데 활성 중단요청 존재 →
-  `can_request_pause` 가 계속 False → **작성자가 다시 중단 요청도 못 한다**).
-- 권고: 4개 액션 앞에 동일 가드 추가. 공통 데코레이터/헬퍼로 빼서 향후 액션 추가 시 누락 방지.
+  `can_request_pause` 가 계속 False → **작성자가 다시 중단 요청도 못 한다**). B-32 와 같은 뿌리다 —
+  `_cancel_active_pause_requests`(`views.py:234`)는 `approve_step`(`:521`)·`reject_step`(`:723`)에서만 호출된다.
+- 부가(프론트): 결재 액션 버튼 노출 판정(`ApprovalFlow.tsx` `canUserAgree:44`/`canUserAssign:22`/`canUserClaim:31`)에
+  **문서 상태 검사가 없어**, pause 문서에서도 '합의/반려/검토중/담당자 지정' 버튼이 그대로 보인다.
+  일반 단계는 서버가 400 으로 막지만 사용자에겐 "눌렀는데 에러"로 보인다(T-M3 표).
+- 권고: 4개 액션 앞에 동일 가드 추가 + `_advance_after_pl`·`peer_reject` 에 `_cancel_active_pause_requests` 호출 추가(B-32 동시 해결).
+  공통 데코레이터/헬퍼로 빼서 향후 액션 추가 시 누락 방지. 프론트는 서버가 step 별 가능 플래그를 내려주는 방식으로 통일(R-07).
 
 ### 🔴 B-02 업로드 API가 미인증 + 확장자 무검증 **재현✅**
-- 위치: `views.py:1718-1758`(`upload_image`), `views.py:1765-1804`(`upload_video`)
+- 위치: `views.py:2073`(`upload_image`), `views.py:2120`(`upload_video`) — **2026-08-04 미수정 확인**
 - 내용: 두 뷰 모두 `@csrf_exempt @require_POST` 인 **순수 Django 뷰**로, DRF permission 이 걸리지 않는다.
   검증은 (a) **클라이언트가 보낸 `Content-Type`** 이 `image/`·`video/` 로 시작하는지, (b) 크기(2MB/50MB) 뿐이다.
   저장 파일명 확장자는 **업로더가 준 원본 파일명**에서 그대로 떼어 쓴다(`image.name.split('.')[-1]`).
@@ -1019,7 +1079,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   실제 바이트 검사(Pillow `Image.open`) + `/media/` 응답에 `Content-Disposition: attachment`·`X-Content-Type-Options: nosniff`.
 
 ### 🔴 B-04 `POST_APPROVER_LOGINID` 미설정 시 Only MAP 결재가 통째로 생략된다 **재현✅**
-- 위치: `views.py:990-1031`(`_advance_to_parallel`), `mailer.post_approver_users`
+- 위치: `views.py:1185-1230`(`_advance_to_parallel`, 즉시 승인 분기 `:1198-1200`), `mailer.py:215`(`post_approver_users`)
 - 내용: Only MAP 문서는 P/O/E/J 가 없어 **후결자(RA)가 유일한 종단 경로**다. 그런데 후결자가 0명이면
   `if not post_users: return 'approved'` 로 **R 합의 즉시 최종 승인**된다.
   후결자는 `.env POST_APPROVER_LOGINID` 로만 들어오므로, 값이 비어 있거나 그 loginid 의 계정이 없으면(오타/퇴사/DB 미생성)
@@ -1028,18 +1088,19 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   ```
   [B-04] Only MAP, POST_APPROVER_LOGINID='' → R 합의: 200 | 문서 status = approved
   ```
-- 영향: 후결 결재가 **무음으로 스킵**된 채 승인 완료 메일까지 나간다. `remove-post-approver` 는 "최소 1명 유지" 를
-  막고 있는데(views.py:1306) 정작 **애초에 0명인 경우는 막지 않아** 정책이 앞뒤가 안 맞는다.
+- 영향: 후결 결재가 **무음으로 스킵**된 채 승인 완료 메일까지 나간다. `remove_post_approver` 는 "최소 1명 유지" 를
+  막고 있는데(`views.py:1545`, Only MAP 가드 `:1586-1591` / C가문 가드 `:1594-1598`) 정작
+  **애초에 0명인 경우는 막지 않아** 정책이 앞뒤가 안 맞는다.
 - 권고: 기동 시 `settings.POST_APPROVER_LOGINID` 실존 검증(`manage.py check` 또는 앱 ready) + 미설정 시
   `_advance_to_parallel` 에서 승인 대신 **에러/경고 로그 + 관리자 알림**.
 
 ---
 
 ### 🟠 B-07 `assign-step`(R 담당자)에 역할 검증이 없고, 담당자 이름을 클라이언트가 정한다 **재현✅**
-- 위치: `views.py:637-645`
-- 내용: 검토자(RV)는 `User.objects.get(loginid=..., role='TE_R')` 로 **TE_R 을 강제**하는데,
-  **담당자(assignee)는 `User.objects.get(loginid=...)`** 뿐이다. 게다가 `step.assignee_name` 은
-  **요청 본문의 `assignee_name` 을 그대로** 저장한다(실제 사용자명과 대조하지 않음).
+- 위치: `views.py:767-775`(담당자 조회·이름 저장) ↔ 대조 `views.py:789`(검토자 RV) — **2026-08-04 미수정 확인**
+- 내용: 검토자(RV)는 `User.objects.get(loginid=reviewer_loginid, role='TE_R')`(`:789`) 로 **TE_R 을 강제**하는데,
+  **담당자(assignee)는 `User.objects.get(loginid=assignee_loginid)`**(`:769`) 뿐이다. 게다가 `step.assignee_name` 은
+  **요청 본문의 `assignee_name` 을 그대로**(`:775`) 저장한다(실제 사용자명과 대조하지 않음).
 - 재현 결과
   ```
   [B-07] R 담당자로 role=NONE 사용자 지정 -> 200
@@ -1050,18 +1111,19 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 권고: `role='TE_R'` 필터 추가 + `assignee_name` 은 서버에서 `user.username or user.loginid` 로 파생.
 
 ### 🟠 B-11 재상신 시 '검토자(지정 PL) 프리필' 이 상신 모달 직전에 지워진다 **분석🔍**
-- 위치: `frontend/src/pages/RequestPage/index.tsx:696` (프리필) ↔ **`:3083` `setDesignees([])`**
+- 위치: `frontend/src/pages/RequestPage/index.tsx:782-789` (프리필 `setDesignees(prevDesignees)`) ↔
+  **`:3576` `setDesignees([])`**(`handleSubmitClick` 내부) — **2026-08-04 미수정 확인**
 - 내용: 편집 로드에서 이전 회차 PL 담당자를 `setDesignees(prevDesignees)` 로 채워두는데,
   STEP5 의 **상신 버튼 핸들러 `handleSubmitClick` 이 모달을 열기 직전에 `setDesignees([])` 를 무조건 호출**한다.
   결과적으로 모달은 **항상 비어서** 열린다.
-  같은 함수에서 `postApprovers` 는 지우지 않아 후결자만 프리필이 살아 있는 **비대칭** 상태다.
+  같은 함수에서 `postApprovers`(프리필은 `:826`)는 지우지 않아 후결자만 프리필이 살아 있는 **비대칭** 상태다.
 - 영향: `docs/APPROVAL.md` Case I / `docs/REQUEST.md`(2026-07) 에 명시된 기능이 **동작하지 않는다.**
   재상신 때마다 검토자를 매번 다시 검색·선택해야 하고, 다중 PL 이었다면 누구였는지 알 수 없어 결재선이 바뀔 수 있다.
 - 재현 방법: 반려 문서 → '수정 후 재상신' → STEP5 → 상신 → **검토자 칸이 비어 있으면 버그**
 - 권고: `setDesignees([])` 를 `if (!isEditMode) setDesignees([])` 로 한정하거나, 프리필 값을 별도 ref 에 보관 후 복원.
 
 ### 🟠 B-12 '내 차례' 필터가 claim 방식 단계를 못 잡는다 **분석🔍**
-- 위치: `ApprovalPage.tsx:147-151`, `:181`
+- 위치: `ApprovalPage.tsx:146-151`(`applyClientFilter` 의 TE_* 분기), `:181`(`getTabCount` 동일 분기) — **2026-08-04 미수정 확인**
 - 내용: TE_* 역할의 '내 차례' 판정이
   ```ts
   (d.approval_steps ?? []).some(s => s.action === 'pending' && s.assignee_loginid === currentUser.username)
@@ -1075,11 +1137,11 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   탭 카운트(`getTabCount`)에도 동일 적용.
 
 ### 🟠 B-13 상세 모달의 결재 버튼이 **회차(round)를 거르지 않는다** **분석🔍** (재현 근거✅)
-- 위치: `ApprovalPage.tsx:1046-1053`(`pendingSteps`), `:1083`(`hasPendingPLStep`)
+- 위치: `ApprovalPage.tsx:1081-1088`(`pendingSteps`), `:1119`(`hasPendingPLStep`) — **2026-08-04 미수정 확인**
 - 내용: `pendingSteps` 는 `action === 'pending'` 만 보고 **`round` 필터가 없다.**
   반려는 반려당한 step 하나만 `rejected` 로 바꾸므로 **같은 회차의 다른 pending step(P/J/O/E/PL)은 그대로 남고**,
   재상신하면 새 회차가 추가되면서 두 회차의 pending 이 공존한다(재현✅ X-4: 회차 `[1, 2]` 공존, 1회차 PL 단계 `pending` 잔존).
-  목록 표(`approvalTable.ts:113`)는 `maxRound` 로 거르는데 **상세 footer 만 안 거른다.**
+  목록 표(`approvalTable.ts:112-113` `getDocTableRows`)는 `maxRound` 로 거르는데 **상세 footer 만 안 거른다.**
 - 영향:
   1. 2회차가 PL 검토 중인데 **1회차 J/O 단계를 보고 '검토중' 버튼이 노출** → 클릭 시 백엔드는 max_round 에서 그 agent 를 못 찾아 **400 '해당 단계를 찾을 수 없습니다'**
   2. `canChangeDesignee` 도 잔여 1회차 PL step 때문에 참이 될 수 있다.
@@ -1093,40 +1155,46 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 
 | 키 | 사용처 | 화면에 보이는 것 |
 |---|---|---|
-| `request.btn_all_o` / `btn_all_x` / `btn_all_new` / `btn_all_copy` / `btn_reset` | `RequestPage/components/Step2.tsx:94-102`, `Step3.tsx:200-208` | **J·O-layer 표 헤더의 일괄 버튼 5종**에 `request.btn_all_o` 같은 문자열 |
+| `request.btn_all_o` / `btn_all_x` / `btn_all_new` / `btn_all_copy` / `btn_reset` | `RequestPage/components/Step2.tsx:124-132`, `Step3.tsx:201-208` | **J·O-layer 표 헤더의 일괄 버튼 5종**에 `request.btn_all_o` 같은 문자열 |
 | `guide.search_placeholder` | `GuidePage.tsx:216` | 가이드 검색창 placeholder |
 | `profile.name` / `profile.email` / `profile.department` | `Navbar.tsx:227,231,235` | 프로필 드롭다운 라벨. `\|\| '이름'` 폴백을 뒀지만 **i18next 가 키 문자열(truthy)을 반환해 폴백이 절대 안 걸린다** |
-- 검증 결과: `ko.json` 에 `request.btn*` 키 **0개**, `profile` 섹션 **없음**, `guide.search_placeholder` **없음**
+- 검증 결과(**2026-08-04 재확인**): `ko.json`/`en.json` **양쪽 모두** `request.btn*` 5종 **0개**, `profile` 섹션 **없음**,
+  `guide.search_placeholder` **없음** — 사용처 라인만 밀렸고 **버그는 그대로**다.
 - 영향: 의뢰서 작성 핵심 화면(J/O-layer 일괄 편집 버튼)에 개발용 키가 그대로 보인다. **규칙 G 위반.**
 - 권고: ko/en 동시 추가.
 
 ### 🟠 B-15 `voc.page_other` 가 `ko.json` 에만 있다 **재현✅**
-- 위치: `locales/ko.json:428` (en.json 없음), 사용처 `VOCPage.tsx:26`
-- 검증: ko 854키 / en 853키 — 차이 정확히 이 1개
+- 위치: `locales/ko.json` (en.json 없음), 사용처 `VOCPage.tsx:26`
+- 검증(**2026-08-04 재확인**): ko **1003키** / en **1002키** — 차이는 여전히 **정확히 `voc.page_other` 1개**
 - 영향: 영어 전환 시 VOC 페이지 선택지에 `voc.page_other` 노출. **규칙 G(동시 추가) 위반.**
 
 ---
 
 ### 🟡 B-03 `additional_notes` JSON 이 깨지면 BB 매핑 검증이 통과된다 **재현✅**
-- 위치: `views.py:244-271`(`_validate_bb_mapping` 의 `except (JSONDecodeError, TypeError): pass`)
+- 위치: `views.py:254-281`(`_validate_bb_mapping`, 관대한 `except (JSONDecodeError, TypeError): pass` 는 `:279-280`) — **2026-08-04 미수정 확인**
 - 재현 결과
   ```
   깨진 JSON  → _validate_bb_mapping = None      (= 검증 통과)
   정상 JSON(미매핑) → '모든 원본 데이터에 bb 을 매핑해야 상신할 수 있습니다.'
   ```
-- 근본 원인: `additional_notes` 가 `JSONField` 가 아니라 **`TextField`** 라 DB 가 깨진 JSON 도 받는다.
-  `get_detail()` 도 실패 시 조용히 `{}` 를 돌려주므로 `is_only_map()`·`_validate_post_approvers`
-  **전부 무음으로 오판**한다 → Only MAP 문서가 일반 경로를 타거나, C가문 후결자 검증이 스킵된다.
-  `has_ppid_plel()` 도 같은 `get_detail()` 을 쓰므로, JSON 이 깨진 문서는 `plel` 이 있어도
-  E 단계가 생성되지 않는다.
+- 근본 원인: `additional_notes` 가 `JSONField` 가 아니라 **`TextField`**(`models.py:108`)라 DB 가 깨진 JSON 도 받는다.
+  `get_detail()`(`models.py:132-137`)도 실패 시 조용히 `{}` 를 돌려주므로 `is_only_map()`(`:139`)·
+  `_validate_post_approvers`(`views.py:283`) **전부 무음으로 오판**한다 → Only MAP 문서가 일반 경로를 타거나,
+  C가문 후결자 검증이 스킵된다. `has_ppid_plel()`(`models.py:164`)도 같은 `get_detail()` 을 쓰므로,
+  JSON 이 깨진 문서는 `plel` 이 있어도 E 단계가 생성되지 않는다.
 - 권고: 파싱 실패 시 **400 으로 거부**(관대한 통과 대신). 중기적으로 `JSONField` 전환 + 마이그레이션.
+- 관련: 파싱이 성공해도 **최상위가 dict 가 아니면 `AttributeError` → 500** 이 되는 별개 구멍이 있다 → **B-63**.
 
 ### 🟡 B-08 `change_designee` 만 `requester` FK 직접 비교라 레거시 문서에서 작성자가 403 **재현✅**
-- 위치: `views.py:1150-1154`
+- 위치: `views.py:1349-1353`(`change_designee`) — **2026-08-04 미수정 확인**
   ```python
-  is_requester = (document.requester and document.requester.loginid == caller_loginid)
+  is_requester = (
+      document.requester and document.requester.loginid == caller_loginid
+  )
   ```
-- 내용: 다른 곳은 모두 `doc_permissions.is_requester`(FK + **`requester_email` 폴백**)를 쓴다.
+- 내용: 다른 곳은 모두 `doc_permissions.is_requester`(FK + **`requester_email` 폴백**, `doc_permissions.py:26-29`)를 쓴다.
+  같은 파일 안에서도 `_can_manage_post_approver`(`views.py:1479`)·`update_validation_system`(`views.py:1078`)·
+  `cancel_pause`(`views.py:1046`)는 전부 헬퍼를 쓰고 **`change_designee` 만 직접 비교**다.
   `requester` FK 는 `on_delete=SET_NULL` 이라 **작성자 계정이 삭제되거나, `perform_create` 이전에 만들어진 레거시 문서**는 FK 가 비어 있다.
 - 재현 결과
   ```
@@ -1137,14 +1205,14 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 권고: `doc_permissions.is_requester(request.user, document)` 로 교체.
 
 ### 🟡 B-09 철회 시 **모든 회차의 결재 이력이 전량 삭제**된다 **재현✅**
-- 위치: `views.py:393` `ApprovalStep.objects.filter(document=document).delete()`
+- 위치: `views.py:403` (`withdraw` 안의 `ApprovalStep.objects.filter(document=document).delete()`) — **2026-08-04 미수정 확인**
 - 재현 결과: 1·2회차 합쳐 4건의 단계가 있는 문서를 철회 → **0건**
 - 영향: "1회차에 누가 언제 왜 반려했는지" 가 영구 소실된다. 감사 추적 불가.
   결재 이력을 담는 별도 테이블이 없고 `ApprovalStep` 자체가 이력이라 복구 수단이 없다.
 - 권고: 철회는 **현재 회차 pending step 만** 삭제하거나, 전 회차를 `withdrawn` 으로 마킹해 보존.
 
 ### 🟡 B-17 `resolvePathStatus`/`getDisplayStatus` 가 `pause` 를 반영하지 못하는 경로가 있다 **분석🔍**
-- 위치: `utils/approvalTable.ts:14-23`(`getDisplayStatus`), `:89-98`(`resolvePathStatus`)
+- 위치: `utils/approvalTable.ts:14`(`getDisplayStatus`), `:89`(`resolvePathStatus`)
 - 내용: `getDisplayStatus` 는 `doc.status !== 'under_review'` 면 원본 상태를 그대로 반환하므로 pause 는 정상이나,
   `resolvePathStatus` 는 `docStatus === 'rejected'` 만 특별 처리하고 **pause 는 분기하지 않는다**.
   `getDocTableRows` 가 pause 를 앞단에서 가로채기 때문에 지금은 드러나지 않지만,
@@ -1152,28 +1220,28 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 권고: `resolvePathStatus` 에도 `if (docStatus === 'pause') return 'pause';` 추가.
 
 ### 🟡 B-18 '최종 완료예정' path1 추정치가 **영업일이 아니라 달력일** **분석🔍**
-- 위치: `utils/approvalTable.ts:61-69`
+- 위치: `utils/approvalTable.ts:61-67` (`d.setDate(d.getDate() + 4)`)
 - 내용: J 단계가 아직 없을 때 `P.due + 4` 를 **달력일**로 더한다. 백엔드 실제 J 기한은
   `calculate_business_due_date(p_date, 4)`(주말·공휴일 제외)라 **최대 4일 이상 차이**날 수 있다.
 - 영향: 목록의 '최종 완료예정' 이 실제보다 이르게 표시 → 일정 관리 오판.
 - 권고: J 미생성 시 `-`/`(예상)` 표기하거나 서버가 예상 기한을 내려주기.
 
 ### 🟡 B-19 외부 API 잘못된 키가 401 이 아니라 403 **재현✅**(기존 테스트가 실패)
-- 위치: `authentication.py:84-102`(`ExternalApiKeyAuthentication`)
+- 위치: `authentication.py:84`(`ExternalApiKeyAuthentication`) — **2026-08-04 미수정 확인**(`authenticate_header` grep 결과 0건)
 - 내용: `AuthenticationFailed` 를 던지지만 클래스에 **`authenticate_header()` 가 없어** DRF 가 401 → 403 으로 변환한다.
-- 근거: `tests.py::ExternalApiKeyAccessTest.test_wrong_key_returns_401` 이 `AssertionError: 403 != 401` 로 실패
+- 근거: `tests.py:349 ExternalApiKeyAccessTest.test_wrong_key_returns_401` 이 `AssertionError: 403 != 401` 로 실패
 - 영향: 외부 연동 측이 "인증 실패(재시도/키 갱신)" 와 "권한 없음(포기)" 를 구분 못 한다. `docs/EXTERNAL_API.md` 와 불일치.
 - 권고: `def authenticate_header(self, request): return 'X-API-Key'` 추가.
 
 ### 🟡 B-20 VOC 제출자 정보를 클라이언트가 정한다 **분석🔍**
-- 위치: `views.py:1474-1476`(`VOCViewSet.perform_create`), `serializers.VOCSerializer(fields='__all__')`
+- 위치: `views.py:1827-1829`(`VOCViewSet.perform_create` — `serializer.save()` 뿐), `serializers.VOCSerializer(fields='__all__')` — **2026-08-04 미수정 확인**
 - 내용: `submitter_user_id`·`submitter_name`·`submitter_email` 이 **요청 본문 그대로** 저장된다(서버 파생 없음).
-  `update_status` 의 '완료' 권한이 `voc.submitter_user_id != request.user.id` 로 판정되므로,
+  `update_status`(`views.py:1832`)의 '완료' 권한이 `voc.submitter_user_id != request.user.id`(`:1841`) 로 판정되므로,
   **작성 시 남의 id 를 넣으면 그 사람만 완료 처리할 수 있게 되거나** 신고자를 위조할 수 있다.
 - 권고: `perform_create` 에서 `request.user` 로 강제 세팅 + 해당 필드 `read_only`.
 
 ### 🟡 B-21 VOC 상태를 바꿔도 `responded_at` 이 안 채워진다 **분석🔍**
-- 위치: `views.py:1478-1505`(`update_status`)
+- 위치: `views.py:1832-1858`(`update_status`, 저장은 `:1856-1857`) — **2026-08-04 미수정 확인**
 - 내용: `voc.status` 만 저장하고 `responded_at` 은 건드리지 않는다(모델에 필드는 있음). 항상 `null`.
 - 권고: 완료/거부 시 `responded_at = timezone.now()`.
 
@@ -1184,32 +1252,33 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 |---|---|
 | `HistoryPage.tsx:183` | 삭제 버튼 `삭제` |
 | `HistoryPage.tsx:220-223` | `문서 삭제` / `"…" 문서를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.` / `삭제` |
-| `ApprovalPage.tsx:557` | `지정자가 변경되었습니다.` |
-| `ApprovalPage.tsx:729` | `의뢰서가 삭제되었습니다.` |
-| `ApprovalPage.tsx:1030` | `의뢰서가 완전히 삭제됩니다. 복구할 수 없습니다.` |
-| `RequestPage/index.tsx:2600,2617,2640,…` | `validate()` 의 `errorMessages` 다수 (`… 필수 입력 항목입니다.` 등) |
-| `RequestPage/index.tsx:2789` | `모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다.` |
-| `RequestPage/index.tsx:3124,3145,3156` | `수정 후 상신되었습니다.` / `재상신되었습니다.` / `오류 발생: …` / `알 수 없는 오류` |
+| `ApprovalPage.tsx:593` | `지정자가 변경되었습니다.` |
+| `ApprovalPage.tsx:765` | `의뢰서가 삭제되었습니다.` |
+| `ApprovalPage.tsx:1066` | `의뢰서가 완전히 삭제됩니다. 복구할 수 없습니다.` |
+| `RequestPage/index.tsx` `validate()` 내부 | `errorMessages` 다수 (`… 필수 입력 항목입니다.` 등) |
+| `RequestPage/index.tsx` `handleSubmit` 주변(`:3608`, `:3623` 인근) | `수정 후 상신되었습니다.` / `재상신되었습니다.` / `오류 발생: …` / `알 수 없는 오류` |
+| `RequestPage/index.tsx:2974`, `:2990` | `필터 "…"이 삭제되었습니다.` / `모든 필터가 삭제되었습니다.` |
 | `RequestPage/components/*` | `활성/전체`, `STEP 정렬`, `+ 행 추가`, `선택 비활성화`, `범위 추가`, `Ctrl+V 로 이미지를 붙여넣으세요` 등 (REQUEST.md §4 에 기록된 기존 항목) |
 > 백엔드 응답 메시지(`'권한이 없습니다.'` 등)도 전부 한국어 고정이라 영어 사용자에게 그대로 노출된다.
 
 ### ⚪ B-22 절대 통과할 수 없는 테스트가 있다 **재현✅**
-- 위치: `tests.py:546-549` `test_broadcast_subject_has_no_name_prefix`
+- 위치: `tests.py:557` `test_broadcast_subject_has_no_name_prefix`
 - 내용: `_build_message('stage_arrival', doc, agent='R')` 의 제목은 **항상 `[결재 요청] {제목} - R`** 인데
   `assertFalse(subject.startswith('['))` 로 단언한다 → 구현이 어떻든 실패.
 - 의도 추정: "이름 접두어(`[홍길동님] `)가 없어야 한다" 였을 것 → `assertFalse(subject.startswith('[홍'))` 가 아니라
   `self.assertNotIn('님] ', subject)` 또는 `assertTrue(subject.startswith('[결재 요청]'))` 로 고쳐야 한다.
 
 ### ⚪ B-23 테스트가 개발자 `.env` 에 의존한다 **재현✅**
-- 위치: `config/settings/base.py:7` `load_dotenv()` + `tests.py:609-614`
+- 위치: `config/settings/base.py:6` `load_dotenv()` + `tests.py:749`
 - 내용: `test_enqueue_schedules_immediate_send_on_commit` 은 TE_R 사용자를 만들지 않아 수신자가 0명이라
   `_enqueue` 가 `None` 을 반환한다. **`.env` 에 `MAIL_REDIRECT_TO` 가 설정돼 있을 때만** 수신자가 강제로 채워져 통과한다.
 - 영향: CI/다른 개발자 환경에서 재현 불가한 실패. 설정 의존 없는 테스트여야 한다.
 - 권고: `@override_settings(MAIL_REDIRECT_TO='x@company.com')` 또는 TE_R 사용자 생성 추가.
 
 ### ⚪ B-24 `any` 사용 (규칙 I 위반) **재현✅**
-- `ApprovalPage.tsx:213` — `(data as any).results`
+- `ApprovalPage.tsx:213`, `:515` — `(data as any).results` (2026-08-04 재확인, 1곳 더 늘었다)
 - `HistoryPage.tsx:53` — `(data as any).results`
+> 이 외에 `ApprovalPage.tsx:544, 556, 943, 1675` 의 `t(\`approval.agent_${...}\` as any)` 는 i18next 키 타입 우회다(별개 유형).
 > `documentsAPI.list` 의 반환 타입은 이미 `{ results, count }` 로 좁혀져 있어 캐스팅 자체가 불필요하다.
 
 ### ⚪ B-25 `StatusBadge` 가 VOC '거부' 를 결재 '반려' 로 표시 **분석🔍**
@@ -1226,8 +1295,8 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 
 ### 🔴 B-26 저장형 XSS → MASTER 권한 탈취 체인 **재현✅**
 - 위치
-  - 저장: `views.py:1474`(`VOCViewSet.perform_create` — sanitize 없음), `serializers.VOCSerializer(fields='__all__')`
-  - 렌더: `pages/VOCPage.tsx:446`, `pages/GuidePage.tsx:268,328`, `components/GuideSlidePanel.tsx:132`, `pages/HomePage.tsx:256`
+  - 저장: `views.py:1827`(`VOCViewSet.perform_create` — sanitize 없음), `serializers.VOCSerializer(fields='__all__')`
+  - 렌더: `pages/VOCPage.tsx:446`, `pages/GuidePage.tsx:268,328`, `components/GuideSlidePanel.tsx:132`, `pages/HomePage.tsx:257`
   - 의존성: `frontend/package.json` 에 **DOMPurify·sanitize-html 등 sanitizer가 아예 없다**
 - 내용: VOC 내용은 `RichTextEditor`(TipTap)가 만든 **HTML 문자열**을 그대로 저장하고 그대로 `dangerouslySetInnerHTML`로 렌더한다.
   에디터를 거치지 않고 **API를 직접 호출**하면 임의 태그를 넣을 수 있다. VOC 작성은 **역할 제한이 없어** `NONE` 사용자도 가능하다.
@@ -1244,7 +1313,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   ①만으로도 기존 저장분은 남으니 **마이그레이션 시 기존 레코드도 재-sanitize** 필요.
 
 ### 🔴 B-27 OIDC `id_token` 만료·audience 검증이 꺼져 있다 **분석🔍**
-- 위치: `auth_views.py:313-323`
+- 위치: `auth_views.py:316-323` (`verify_exp` `:320` / `verify_aud` `:321`) — **2026-08-04 미수정 확인**
   ```python
   decoded_id_token = jwt.decode(..., options={
       'verify_signature': True,
@@ -1262,7 +1331,8 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 권고: `verify_exp: True`, `verify_aud: True` + `audience=OIDC_RP_CLIENT_ID`, `iss` 검증 추가.
 
 ### 🔴 B-28 nonce 검증을 호출자가 생략할 수 있고, `state`는 검증하지 않는다 **분석🔍**
-- 위치: `auth_views.py:337-356`(nonce), `auth_views.py:260`(state 생성만)
+- 위치: `auth_views.py:337-356`(nonce — `if nonce_jwt and id_token_nonce:` 는 `:337`, 실패 무시 `:355-356`),
+  `auth_views.py:259-260`(state 를 URL 에 붙이기만 함), `:291`(`nonce_jwt` 를 요청 본문에서 받음) — **2026-08-04 미수정 확인**
   ```python
   if nonce_jwt and id_token_nonce:      # ← 둘 중 하나만 없어도 검증 전체를 건너뜀
       ...
@@ -1277,7 +1347,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   `state`도 동일하게 세션 저장 후 비교.
 
 ### 🔴 B-29 `AUTH_MODE=dev` 로 배포되면 전 API가 비인증 개방 **재현✅**
-- 위치: `views.py:42`(`_is_dev`), `IsAuthenticatedInProd` / `IsMasterOrReadOnly` / `IsAuthenticatedOrMasterDelete`
+- 위치: `views.py:44`(`_is_dev`), `IsMasterOrReadOnly`(`:48`) / `IsAuthenticatedInProd`(`:57`) / `IsAuthenticatedOrMasterDelete`(`:64`) — **2026-08-04 미수정 확인**
 - 내용: 세 permission 클래스 모두 `_is_dev() or request.user.is_authenticated` 형태라, dev 모드에서는 **인증 자체를 건너뛴다.**
 - 재현 결과
   ```
@@ -1292,7 +1362,8 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 ---
 
 ### 🟠 B-30 담당자 계정 삭제 시 RA/RV/PV/EV 단계가 고아가 되어 결재가 영구 교착 **재현✅**
-- 위치: `models.py`(`ApprovalStep.assignee = ForeignKey(..., on_delete=SET_NULL)`), `views.py:150-199`(`_can_act_on_step`/`_can_claim_step`)
+- 위치: `models.py`(`ApprovalStep.assignee = ForeignKey(..., on_delete=SET_NULL)`),
+  `views.py:160`(`_can_act_on_step`) / `:178`(`_can_assign_step`) / `:195`(`_can_claim_step`), `views.py:2445`(`UserViewSet.destroy`)
 - 내용: 계정이 지워지면 `assignee=None`이 되는데,
   - **J/O/E/P**는 `claim_step`이 `not step.assignee_id` 조건이라 ✅ 다른 팀원이 다시 선점해 회복된다.
   - **RA/RV/PV/EV**는 claim 대상이 아니고(`_CLAIM_AGENTS`에 없음) **재지정 API도 없다** → 아무도 처리할 수 없다.
@@ -1318,8 +1389,8 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 권고: `SET_NULL` + creator 부재 시 멤버 중 1명 승계, 또는 삭제 전 경고/이관 UI.
 
 ### 🟠 B-32 PL 액션에서 중단 요청 자동취소가 누락돼 요청이 고착된다 **재현✅**
-- 위치: `views.py:484`·`593`(`_cancel_active_pause_requests` 호출 — approve_step/reject_step에만 있음) ↔
-  `views.py:1092-1140`(`peer_approve`/`peer_reject`/`peer_submit` — 호출 없음)
+- 위치: `views.py:234`(`_cancel_active_pause_requests` 정의) — 호출은 `:521`(`approve_step`)·`:723`(`reject_step`) **2곳뿐** ↔
+  `views.py:1263`(`_advance_after_pl`)·`:1305`(`peer_reject`)에는 **호출 없음** — **2026-08-04 미수정 확인**
 - 재현 결과
   ```
   [D-01a] PL 합의 후 중단요청 state = requested   (cancelled 여야 정상)
@@ -1332,7 +1403,8 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 권고: `_advance_after_pl` 와 `peer_reject` 에도 `_cancel_active_pause_requests(document)` 추가(B-06 가드와 함께).
 
 ### 🟠 B-33 VOC 알림 메일 본문이 escape되지 않는다 **재현✅**
-- 위치: `mailer.py:658-679`(`_build_voc_message`) ↔ 대조 `mailer.py:458-461`(`_render_hero_kpi_email`은 `escape()` 사용)
+- 위치: `mailer.py:855-877`(`_build_voc_message` — `voc.title`/`voc.submitter_name` 을 f-string 직삽입, `:860-862`) ↔
+  대조 `mailer.py:585`(`_render_hero_kpi_email` 은 `escape()` 사용, `:594-598`) — **2026-08-04 미수정 확인**
 - 재현 결과
   ```
   [C-02] VOC 메일 제목: [VOC 등록] <b>굵게</b><script>alert(1)</script>
@@ -1345,7 +1417,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 권고: `_build_voc_message`에도 `escape()` 적용(제목은 메일 헤더라 태그 제거).
 
 ### 🟠 B-34 `/media/` 가 인가·보안헤더 없이 원본 Content-Type으로 서빙된다 **분석🔍**
-- 위치: `nginx/nginx.conf:96-98`
+- 위치: `nginx/nginx.conf:95-99` — **2026-08-04 미수정 확인**(`add_header` 는 `/django-static/` 의 `Cache-Control`(`:92`) 하나뿐)
   ```nginx
   location /media/ { alias /var/www/media/; expires 7d; }
   ```
@@ -1357,7 +1429,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   민감 첨부는 Django 경유 인가 서빙으로 전환.
 
 ### 🟠 B-35 OIDC 클레임(개인정보)이 평문 INFO 로그로 남는다 **분석🔍**
-- 위치: `auth_views.py:390-407`(클레임 전 필드 루프 로깅), `authentication.py:55`(토큰 payload username),
+- 위치: `auth_views.py:390-407`(클레임 전 필드 루프 로깅), `authentication.py:55`(토큰 payload username 을 INFO 로 출력),
   설정 `base.py LOGGING` — root/`api.auth_views` 모두 `level: INFO`, console 핸들러
 - 내용: 로그인 1회마다 **메일·부서·성·이름·UPN·sub·nonce**가 `docker logs`/수집기에 남는다.
 - 영향: 개인정보 로그 유출(사내 규정·개인정보보호 이슈). 로그 접근 권한이 넓을수록 위험.
@@ -1391,13 +1463,13 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 권고: `mail`과 동일하게 `dept_name or user.deptname` 패턴으로 통일.
 
 ### 🟡 B-38 `/documents/stats/` 가 draft 가시성 규칙을 무시한다 **재현✅**
-- 위치: `views.py:1374-1382` — `RequestDocument.objects.count()` (get_queryset 미사용)
+- 위치: `views.py:1646-1655`(`stats`) — `RequestDocument.objects.count()` (get_queryset 미사용) — **2026-08-04 미수정 확인**
 - 재현 결과: `[D-02] 외부인 목록 건수 = 0 | stats.by_status.draft = 2 | stats.total = 2`
 - 영향: 목록에서는 숨겨진 남의 임시저장 문서가 **통계에는 집계**된다(건수 수준 정보 노출).
 - 권고: `self.filter_queryset(self.get_queryset())` 기반으로 집계.
 
 ### 🟡 B-39 메일 재시도에 backoff가 없어 짧은 장애로 영구 유실된다 **분석🔍**
-- 위치: `mailer.py:741-786`(`_process_one`/`process_mail_queue`), 스케줄러 주기 1분, `max_attempts=5`
+- 위치: `mailer.py:938`(`_process_one`) / `:973`(`process_mail_queue`), 스케줄러 주기 1분, `max_attempts=5`
 - 내용: 실패해도 대기 없이 **1분 주기로 5회 연속** 시도한 뒤 `status='failed'`로 확정된다.
   즉 **DXHUB가 5~6분만 죽어 있어도 그 시간대의 모든 결재 알림이 영구 유실**된다.
   failed 행을 다시 태우는 재처리 경로도, 관리자 알림도 없다(Django admin 목록에서 눈으로 보는 것이 전부).
@@ -1405,7 +1477,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 권고: `attempts`에 비례한 지수 backoff(다음 시도 시각 필드 추가) + `failed` 발생 시 관리자 통보.
 
 ### 🟡 B-40 재상신 변경이력 diff가 오탐할 수 있다 **분석🔍**
-- 위치: `components/PagedDetailView.tsx:412-418`
+- 위치: `components/PagedDetailView.tsx:513-518`(`computeDetailDiff`), 호출 `:742` — **2026-08-04 미수정 확인**
   ```ts
   if (JSON.stringify(cur?.[k]) !== JSON.stringify(prev?.[k])) changed.add(k);
   ```
@@ -1420,7 +1492,7 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   "**반려 후 재상신 시** 직전 스냅샷 대비"라고만 적혀 있다 → **문서와 구현의 범위 불일치**(의도 확인 필요).
 
 ### 🟡 B-41 `SECRET_KEY` 기본값이 안전하지 않고 production에서도 오버라이드되지 않는다 **분석🔍**
-- 위치: `config/settings/base.py:13`
+- 위치: `config/settings/base.py:11` — **2026-08-04 미수정 확인**
   ```python
   SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-production')
   ```
@@ -1440,19 +1512,19 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 ---
 
 ### ⚪ B-43 OIDC 콜백의 데드코드·취약한 휴리스틱 **분석🔍**
-- `auth_views.py:288` `auth_code = request.POST.get('code')` — **받기만 하고 전혀 사용하지 않는다**.
+- `auth_views.py:288` `auth_code = request.POST.get('code') or request.data.get('code')` — **받기만 하고 전혀 사용하지 않는다**.
   authorization code 교환(token endpoint)도, `at_hash`/`c_hash` 검증도 없다.
-- `auth_views.py:443-450` — `if username and '=' in username:` 이면 **base64 디코딩을 시도**한다.
+- `auth_views.py:444-450` — `if username and '=' in username:` 이면 **base64 디코딩을 시도**한다.
   loginid/UPN에 `=`가 들어가는 순간 엉뚱한 값으로 바뀔 수 있는 매우 취약한 추론이다(실패 시 `except: pass`로 조용히 넘어감).
 
 ### ⚪ B-44 담당자 미지정 시 고정 수신 이메일이 코드에 하드코딩 **분석🔍**
-- 위치: `mailer.py:81-83` `UNASSIGNED_FALLBACK = {'J': 'user_J@company.com'}`
+- 위치: `mailer.py:102` `UNASSIGNED_FALLBACK = {'J': 'user_J@company.com'}` (사용처 `mailer.py:286`)
 - 주석이 "이 딕셔너리를 직접 수정하고 재시작하라"고 안내한다. **수신자 변경에 배포가 필요**하다.
   규칙 D의 "설정은 코드에 하드코딩하지 않는다" 취지와 어긋난다.
   (참고: 비교 대상이었던 P 단계 라인별 `.env` 설정 `P_LINE_FALLBACK`은 미사용 상태로 코드에서 삭제됨 — 2026-08)
 
 ### ⚪ B-45 `useCellSelection` 의 키 구분자와 메모이제이션 **분석🔍**
-- 위치: `hooks/useCellSelection.ts:20-21, 48-49`
+- 위치: `hooks/useCellSelection.ts:20-21`(`SEP`/`keyOf`), 이후 `k.split(SEP)` 구간
 - `const SEP = ' '`(공백)로 `${rowId} ${col}` 키를 만들고 `k.split(SEP)`로 **구조분해**한다.
   현재 `genId()`가 `${Date.now()}_${random}` 이라 공백이 없어 동작하지만, id 생성 규칙이 바뀌면 조용히 깨진다.
 - `cellLocked`가 컴포넌트 본문에서 **매 렌더 새 함수**로 만들어지고 `clearSelectedValues`/`onCellPaste`의
@@ -1488,14 +1560,19 @@ Migrations for 'api':
 ## 5-3. Merge 기획 의도 대조에서 발견된 버그 (B-49 ~ B-56)
 
 > 2026-08-02, `Layer 추가/삭제` Merge 의 기획 의도(**T-B7 사양** 참조)를 확정한 뒤 코드를 재대조해 나온 항목.
-> 대상 코드는 전부 프론트 `frontend/src/pages/RequestPage/index.tsx` 의 `handleMergeClick`(2098~) / `handleMergeConfirm`(2116~) 이다.
-> **백엔드에는 J/O-layer Merge 로직이 존재하지 않는다** (`views.py:646` 의 `merged_detail` 은 '완성된 MAP 변경' 전용, 무관).
+> 대상 코드는 전부 프론트 `frontend/src/pages/RequestPage/index.tsx` 의 `handleMergeClick` / `handleMergeConfirm` 이었다.
+> **백엔드에는 J/O-layer Merge 로직이 존재하지 않는다** (`views.py:648-654` 의 `merged_detail` 은 '완성된 MAP 변경' 전용, 무관).
+>
+> ⚠️ **2026-08-04 위치 갱신** — 수정 결과 판정 로직이 `RequestPage/helpers.ts` 의 순수 함수 `computeLayerMerge` 로 이동했다.
+> 아래 B-49~B-56 본문에 인용된 `index.tsx:21xx` 코드 블록은 **더 이상 존재하지 않는 수정 전 원문**이다(재발 방지용 보존).
+> 현재 위치: `index.tsx:2301`(`handleMergeClick` — `stats` 만 사용) / `:2309`(`handleMergeConfirm` — `merged` 만 사용) /
+> `:2327`(`merge_ref_doc_id` 기록) / `helpers.ts`(`computeLayerMerge` 본체).
 >
 > **처리 현황 (2026-08-02)** — B-49·B-50·B-51·B-54·B-55 **수정 완료**, B-52·B-53 **철회**(기획 확인 결과 버그 아님), B-56 **보류**.
 > 판정 로직은 순수 함수 `computeLayerMerge`(`RequestPage/helpers.ts`)로 분리했고 단위 테스트 12건이 붙어 있다.
 
 ### 🟠 B-49 ① 신규 판정이 아예 구현돼 있지 않다 (사양 ① 미구현) — ✅ **수정 완료**(2026-08-02)
-- 위치: `index.tsx:2124-2129`
+- 위치(수정 전): `index.tsx` 구 `handleMergeConfirm`
 ```js
 const mergedJayer = jayerRows.map((r) => {
   if (!r.disabled && refJayerKeyMap.has(makeKey(r))) {
@@ -1511,7 +1588,7 @@ const mergedJayer = jayerRows.map((r) => {
 - **수정(2026-08-02)**: `computeLayerMerge` 가 ①을 `st='O'`/`new_or_copy='신규'` 로 판정하고 `stats.added` 로 집계한다. 확인 모달도 3-way 로 바꿨다.
 
 ### 🟠 B-50 ② layer 삭제 행이 A 원본 값을 그대로 들고 들어온다 (사양 ② 미구현) — ✅ **수정 완료**(2026-08-02)
-- 위치: `index.tsx:2130-2134`
+- 위치(수정 전): `index.tsx` 구 `handleMergeConfirm` 의 push 루프
 ```js
 refJayerRows.filter((r) => !r.disabled).forEach((r) => {
   if (!activeJayerKeys.has(makeKey(r))) {
@@ -1521,7 +1598,7 @@ refJayerRows.filter((r) => !r.disabled).forEach((r) => {
 ```
 - 내용: A 에만 있는 행은 `st='X'` / `new_or_copy='layer삭제'` 로 추가돼야 하는데,
   `{ ...r }` 로 **A 의 `st`·`new_or_copy` 를 그대로 복사**한다. A 는 결재완료 문서라 그 값은 대개 `O`/`신규` 다.
-- 영향: **삭제되어야 할 layer 가 '신규'로 표시**된다. 사양과 정반대 값이라 그대로 상신되면 후속 공정이 오판한다. O-layer(`2147-2151`)도 동일.
+- 영향: **삭제되어야 할 layer 가 '신규'로 표시**된다. 사양과 정반대 값이라 그대로 상신되면 후속 공정이 오판한다. O-layer 도 동일.
 - **수정(2026-08-02)**: `computeLayerMerge` 가 ② 행을 `st='X'`/`new_or_copy='layer삭제'` 로 **덮어써서** 추가한다.
   또한 A 의 `layer삭제` 행은 **부재**로 보므로 ② 대상에서 제외된다(사양 확정).
 
@@ -1536,15 +1613,15 @@ refJayerRows.filter((r) => !r.disabled).forEach((r) => {
 
 ### ⚪ B-52 ~~Merge 이후 셀 편집이 J↔O 로 전파돼 A 기준 판정을 뒤집을 수 있다~~ — 🚫 **철회**(의도된 동작)
 - 내용: Merge **시점** 의 J↔O 격리는 의도대로 동작한다(T-B7 참조). 그러나 Merge **이후** 사용자가 셀을 편집하면
-  `handleJayerChange`(`index.tsx:1676~`)의 J→O 동기화가 다시 살아난다.
-  `기등록`·`layer삭제` 는 `isNocSpecial`(`constants.ts:55`) 로 송·수신이 모두 차단되어 보호되지만,
+  `handleJayerChange`(`index.tsx:1877~`)의 J→O 동기화가 다시 살아난다.
+  `기등록`·`layer삭제` 는 `isNocSpecial`(`constants.ts:93`) 로 송·수신이 모두 차단되어 보호되지만,
   **B-49 를 고쳐 ① 이 `신규` 로 채워지면 그 행은 "참여행" 이라 전파 대상**이 된다.
 - 영향: A 대조로 정한 값이 같은 `layerid` 의 반대편 표로 전염될 수 있다(사양 "J↔O 동기화 차단" 위반).
 - **철회 사유(2026-08-02)**: 기획 확인 결과 "J↔O 동기화 차단"은 **Merge 시점에만** 요구되는 것이고,
   Merge **이후** 수동 편집은 기존 J↔O 동기화 규칙(T-D1)을 그대로 따르는 것이 의도된 동작이다. 조치하지 않는다.
 
 ### ⚪ B-53 ~~매칭 키에 `layerid` 가 없고, `Set` 중복 제거로 건수가 축약된다~~ — 🚫 **철회**(사양상 키에 포함하지 않음)
-- 위치: `index.tsx:2099`, `2117` — `makeKey = process_id||sp||sd||pp` (**`layerid` 미포함**)
+- 위치(수정 전): `index.tsx` 구 `makeKey = process_id||sp||sd||pp` (**`layerid` 미포함**). 현재는 `helpers.ts` `computeLayerMerge` 내부.
 - 내용: 같은 `(process_id, sp, sd, pp)` 에 `layerid` 만 다른 행이 A 에 2개 있으면
   `new Set(...)` 이 **1개 키로 축약**해 둘을 구분하지 못한다. 통계뿐 아니라 `handleMergeConfirm` 도 같은 키를 쓰므로
   그 행이 **표에 추가조차 되지 않는다**.
@@ -1552,14 +1629,14 @@ refJayerRows.filter((r) => !r.disabled).forEach((r) => {
   다만 값 앞뒤 공백 때문에 오매칭이 나지 않도록 **`trim()` 정규화만** `computeLayerMerge` 에 추가했다.
 
 ### 🟡 B-54 통계와 실제 반영이 서로 다른 코드에서 계산된다 — ✅ **수정 완료**(2026-08-02)
-- 위치: `handleMergeClick`(2098) 과 `handleMergeConfirm`(2116) 에 `makeKey` 와 매칭 로직이 **각각 복붙**돼 있다.
+- 위치(수정 전): `handleMergeClick` 과 `handleMergeConfirm` 에 `makeKey` 와 매칭 로직이 **각각 복붙**돼 있었다.
 - 내용: 두 곳이 어긋나면 **모달 숫자와 실제 표 반영이 달라진다**. 지금도 B-49 때문에 실제로 어긋나 있다
   (모달은 ①을 세지 않고, 반영도 하지 않는다 — 우연히 일치할 뿐 구조적 보장이 없다).
 - **수정(2026-08-02)**: `computeLayerMerge(curRows, refRows) → { merged, stats }` 순수 함수로 단일화.
   `handleMergeClick` 은 `stats` 만, `handleMergeConfirm` 은 `merged` 만 쓴다 → 모달 숫자와 표 반영이 어긋날 수 없다.
 
 ### ⚪ B-55 push 되는 행이 모두 같은 `sortOrder` 를 받는다 — ✅ **수정 완료**(2026-08-02)
-- 위치: `index.tsx:2132`, `2149` — `sortOrder: Date.now()`
+- 위치(수정 전): `index.tsx` 구 push 루프 2곳 — `sortOrder: Date.now()`
 - 내용: `forEach` 루프가 같은 밀리초에 돌면 추가된 행 전부가 **동일한 `sortOrder`** 를 갖는다.
   `sort((a,b) => a.sortOrder - b.sortOrder)` 는 안정 정렬이라 즉시 깨지진 않지만, 저장·재로드 시 순서 보장이 없다.
 - **수정(2026-08-02)**: `base + index` 로 부여해 추가 행마다 서로 다른 값을 갖는다.
@@ -1567,8 +1644,9 @@ refJayerRows.filter((r) => !r.disabled).forEach((r) => {
 ### ⚪ B-56 B 의 비활성 행과 키가 같은 A 행이 중복으로 추가된다 — ⏸ **보류**(영향 경미)
 - 내용: B 의 `disabled` 행은 `activeJayerKeys` 에서 제외된다. 그 키가 A 에 있으면 "②(A에만 있음)" 로 판정되어
   **같은 `process_id/sp/sd/pp` 행이 하나 더 push** 된다 → 표에 비활성 행과 신규 행이 나란히 보인다.
-- 참고: 결재완료 문서(A)는 상신 시 `jayerRows.filter(r => !r.disabled)` (`index.tsx:2925-2926`)로 저장되어
+- 참고: 결재완료 문서(A)는 상신 시 `jayerRows.filter(r => !r.disabled)` (`index.tsx:3359-3360`, `buildEnrichedForm`)로 저장되어
   **비활성 행이 아예 없다**. 따라서 이 문제는 **B 쪽 비활성 행**에서만 발생한다.
+  ⚠️ 단 이 "비활성 행은 저장에서 빠진다" 는 성질 자체가 별도 결함의 원인이다 → **B-58 / B-59**.
 - **보류 사유(2026-08-02)**: B 의 비활성 행도 상신 시 저장에서 제외되므로 **최종 문서에는 중복이 남지 않는다**.
   작성 중 화면에만 두 행이 나란히 보이는 수준이라 이번 범위에서 제외했다.
 
@@ -1581,32 +1659,227 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 
 | # | 위치 | 증상 |
 |---|---|---|
-| VS-06 | `backend/api/views.py` `_rewind_e_stage` | 되감기가 MASK 팀에 아무 알림도 보내지 않는다. 다른 모든 전이는 메일을 적재하는데 되감기만 조용하다. `claim_step` 이 `assignee` 를 남겨두므로 "내 결재" 목록에는 다시 뜬다 |
-| VS-07 | `frontend/src/pages/ApprovalPage.tsx:943, 963, 970` | '수정 요청' 버튼을 눌러도 모달 제목이 `approval.modal_reject_title`("… 반려"), 라벨이 "반려 이유 (선택)", 확인 버튼이 빨간 `btn-danger` 다. 성공 토스트만 분기돼 있다 |
-| VS-08 | `backend/api/views.py:701-707`, `backend/api/mailer.py:344-355, 703-709` | `enqueue_revision_requested(document)` 가 comment 를 받지 않아 **수정 사유가 메일 본문에 실리지 않는다.** 상신자는 결재 경로 탭을 직접 뒤져야 한다 |
-| VS-09 | `frontend/src/pages/ApprovalPage.tsx:507-509` | 모든 실패를 `common.process_error` 로 뭉갠다. 백엔드는 "MASK 검토가 끝난 의뢰서는 변경할 수 없습니다" 같은 구체적 사유를 준다 |
-| VS-10 | `frontend/src/pages/ApprovalPage.tsx:488` | `isOwner` 에 `requester_name` 폴백이 없다. 형제 검사(`:1126-1128`)와 `backend/api/doc_permissions.py:26-29` 에는 있다. fail-closed 라 손상은 없고 기능만 안 보인다 |
-| VS-11 | `frontend/src/pages/ApprovalPage.tsx:498-510` | `processing` in-flight 가드가 없다(규칙 J). 연타하면 동시 POST 가 나가고 토스트 순서가 뒤집힌다. `select_for_update` 가 직렬화하므로 데이터 손상은 없다 |
-| VS-12 | `frontend/src/pages/ApprovalPage.tsx:502-505` | 백엔드의 `"변경 사항이 없습니다"` 응답을 `rewound` 만 보고 분기해 "값을 변경했습니다"로 표시한다 |
+| VS-06 | `backend/api/views.py:1424` `_rewind_e_stage` | 되감기가 MASK 팀에 아무 알림도 보내지 않는다. 다른 모든 전이는 메일을 적재하는데 되감기만 조용하다. `claim_step` 이 `assignee` 를 남겨두므로 "내 결재" 목록에는 다시 뜬다 |
+| VS-07 | `frontend/src/pages/ApprovalPage.tsx:943` 인근 (반려 모달) | '수정 요청' 버튼을 눌러도 모달 제목이 `approval.modal_reject_title`("… 반려"), 라벨이 "반려 이유 (선택)", 확인 버튼이 빨간 `btn-danger` 다. 성공 토스트만 분기돼 있다 |
+| VS-08 | `backend/api/views.py:709-715`(`reject_step` 의 E/EV 분기), `backend/api/mailer.py:785`(`enqueue_revision_requested`) | `enqueue_revision_requested(document)` 가 comment 를 받지 않아 **수정 사유가 메일 본문에 실리지 않는다.** 상신자는 결재 경로 탭을 직접 뒤져야 한다 |
+| VS-09 | `frontend/src/pages/ApprovalPage.tsx` `handleValidationSystemChange`(`:497~`) | 모든 실패를 `common.process_error` 로 뭉갠다. 백엔드는 "MASK 검토가 끝난 의뢰서는 변경할 수 없습니다" 같은 구체적 사유를 준다 |
+| VS-10 | `frontend/src/pages/ApprovalPage.tsx:488`(`canEditValidationSystem` 의 `isOwner`) | `isOwner` 에 `requester_name` 폴백이 없다. 형제 검사(`:1125-1129` `isPauseRequester`)와 `backend/api/doc_permissions.py:26-29` 에는 있다. fail-closed 라 손상은 없고 기능만 안 보인다 |
+| VS-11 | `frontend/src/pages/ApprovalPage.tsx` `handleValidationSystemChange` | `processing` in-flight 가드가 없다(규칙 J). 연타하면 동시 POST 가 나가고 토스트 순서가 뒤집힌다. `select_for_update` 가 직렬화하므로 데이터 손상은 없다 |
+| VS-12 | `frontend/src/pages/ApprovalPage.tsx` `handleValidationSystemChange` | 백엔드의 `"변경 사항이 없습니다"`(`views.py:1434`) 응답을 `rewound` 만 보고 분기해 "값을 변경했습니다"로 표시한다 |
 
 **LOW**
 
 | # | 위치 | 증상 |
 |---|---|---|
-| VS-13 | `backend/api/views.py` `_get_validation_system` | `(JSONDecodeError, TypeError)` 만 잡는다. `json.loads('[]')` 처럼 비-dict 가 나오면 `data.get` 에서 `AttributeError` → 500. 기존 `_set_validation_system` 에도 있던 구멍이라 회귀는 아니다 |
+| VS-13 | `backend/api/views.py:1391` `_get_validation_system` | `(JSONDecodeError, TypeError)` 만 잡는다. `json.loads('[]')` 처럼 비-dict 가 나오면 `data.get` 에서 `AttributeError` → 500. 기존 `_set_validation_system`(`:1400`)에도 있던 구멍이라 회귀는 아니다 → **범위를 넓혀 B-63 으로 승격** |
 | VS-14 | `docs/REQUEST.md:319, 322` | 레거시 문서 항목이 아직 "MASK 담당자 합의 모달"을 언급한다(그 모달은 삭제됐다). 용어 교체 항목의 "뒤의 두 문구"도 실제로는 한 개만 나열한다 |
-| VS-15 | `backend/api/views.py:669-670`, `1079` | 문서가 `pause` 상태면 MASK 가 수정 요청을 보낼 수 없는데, 상신자는 `pause` 중에도 값을 바꿀 수 있다. 사소한 비대칭 |
+| VS-15 | `backend/api/views.py:677`(`reject_step` pause 가드) ↔ `:1082`(`update_validation_system` 는 `('under_review','pause')` 허용) | 문서가 `pause` 상태면 MASK 가 수정 요청을 보낼 수 없는데, 상신자는 `pause` 중에도 값을 바꿀 수 있다. 사소한 비대칭 |
+
+---
+
+## 5-4. 3차 정독 — `additional_notes` 저장 정합성 (B-57 ~ B-63)
+
+> 2026-08-04. 주제 하나만 봤다: **`additional_notes` 에 저장되면 안 되는 값이 남는가, 저장돼야 하는 값이 사라지는가.**
+> 이 컬럼은 J/O-layer·BB·MAP·통보처·후결자·Validation System·Merge 스냅샷·history 를 **전부** 담는
+> 스키마 없는 `TextField` 라(R-01), 한 번의 잘못된 저장이 결재 경로 자체를 바꾼다.
+>
+> **⚠️ 이 절의 7건은 전부 `분석🔍`** 이다 — 이 세션 컨테이너에 Django·node_modules 가 없어 실행 검증을 못 했다(§1.5).
+> 각 항목에 **코드 근거 라인**과 **브라우저 재현 절차**를 함께 적었으니, 그것으로 확인할 것.
+
+### 저장 경로 지도 (읽기 전에)
+
+| # | 경로 | 저장 방식 | 코드 |
+|---|---|---|---|
+| ① | 의뢰서 작성/편집 화면의 임시저장·자동저장·상신·재상신·재개·PL수정후상신 | **`additional_notes` blob 통째로 PATCH** | `RequestPage/index.tsx:3297` `buildEnrichedForm` → `client.ts:176` `patch` |
+| ② | Validation System 변경 | 서버가 `detail.validation_system` **부분 수정** | `views.py:1400` `_set_validation_system` |
+| ③ | 후결자 추가/제거 | 서버가 `detail.post_approvers` **부분 수정** | `views.py:1457` `_sync_post_approvers_detail` |
+| ④ | '완성된 MAP 변경' 승인 | 서버가 **원본(다른) 문서**의 `detail`+`history` 수정 | `views.py:584` `_apply_map_change_to_source` |
+
+> ①은 blob 전체를 덮어쓰고 ②③④는 부분 수정이다. **①이 나중에 실행되면 ②③④의 결과가 사라진다** — B-62 의 뿌리이며,
+> B-57·B-61 은 그 구체적 발현이다.
+
+---
+
+### 🟠 B-57 C가문이 아닌 문서의 **추가 후결자가 저장 때마다 전량 삭제**된다 **분석🔍**
+- 위치
+  - 저장: `RequestPage/index.tsx:3351`
+    ```ts
+    post_approvers: detail.only_prodc === 'Yes' ? postApprovers : [],
+    ```
+  - 서버 기록: `views.py:1487` `add_post_approver` → `views.py:1457` `_sync_post_approvers_detail`
+  - 소비: `mailer.py:230-237` `post_approver_users` → `views.py:1221-1229` `_advance_to_parallel` (RA 단계 생성)
+- 내용: `add_post_approver` 에는 **`only_prodc` 검사가 없다**(`views.py:1487-1540`). 프론트의 후결자 관리 UI도
+  `canManagePa`(`ApprovalPage.tsx:1153`)가 `isMaster || isPauseRequester` + `under_review` + 병렬 진입만 보므로
+  **일반 문서(only_prodc ≠ 'Yes')에도 후결자를 추가할 수 있다.**
+  그런데 작성 화면의 저장은 `only_prodc === 'Yes'` 가 아니면 **무조건 `[]`** 를 쓴다.
+  편집 로드가 `detail.post_approvers` 를 `postApprovers` state 로 복원해 두어도(`index.tsx:826`) 이 삼항이 그 값을 버린다.
+- 발현 경로 3가지 (모두 `buildEnrichedForm(..., isDraft=false)` → PATCH)
+  1. **반려 → 재상신** (`index.tsx:3623` → `resubmit`)
+  2. **PAUSE → 재개** (`index.tsx:3623` → `resume`)
+  3. **PL '수정 후 상신'** (`index.tsx:3608` → `peer_submit`)
+- 영향: 재상신 경로가 가장 나쁘다. `resubmit`(`views.py:343`)은 RA 단계를 만들지 않고,
+  RA 는 나중에 `_advance_to_parallel` 이 **`detail.post_approvers` 를 다시 읽어** 생성한다.
+  그 값이 `[]` 가 됐으므로 **추가 후결자의 결재 단계가 아예 생성되지 않는다** — 반려 전에 결재선에 있던 사람이
+  조용히 빠지고, 아무 에러도 나지 않는다.
+  (C가문 문서는 `_validate_post_approvers`(`views.py:283`)가 재상신을 400 으로 막아 주므로 이 경로에서 보호된다.
+   **보호받지 못하는 쪽이 일반 문서**라는 점이 이 버그의 핵심이다.)
+- 재현 절차: 일반 의뢰서(only_prodc=No) 상신 → R 합의로 병렬 진입 → 결재현황 상세에서 **'+ 후결자 추가'** 로 1명 추가
+  → 그 문서를 반려 → 작성자가 '수정 후 재상신' → STEP5 상신 →
+  **결재 경로 탭에 추가했던 후결자의 RA 단계가 없으면 버그.**
+- 권고: 삼항을 없애고 `post_approvers: postApprovers` 로 저장하되, `only_prodc` 를 'No' 로 바꾸는 핸들러
+  (`index.tsx:1665-1700`)에서 `setPostApprovers([])` 를 함께 호출해 **초기화 책임을 상태 변경 시점으로 옮긴다.**
+  근본적으로는 후결자를 `detail` blob 이 아니라 `ApprovalStep(agent='RA')` 단일 진실원천으로 두는 것이 맞다.
+
+### 🟠 B-58 필터로 비활성화된 J/O 행이 **상신 시 문서에서 사라지고**, 그 판정이 `localStorage` 에 달려 있다 **분석🔍**
+- 위치
+  - 저장 제외: `index.tsx:3359-3360`
+    ```ts
+    jayerRows: isMapOnlyScope ? [] : (isDraft ? jayerRows : jayerRows.filter(r => !r.disabled))...
+    ```
+  - `disabled` 산출: `helpers.ts:31` `calcDisabled = row.manuallyDisabled || filterSets.some(...)`
+  - 필터 정의 저장소: **`localStorage`** — `index.tsx:836`, `:2963`, `:2971`, `:3995`, `:4015` (`jayerFilterSets`/`oayerFilterSets`)
+  - 활성 필터 id 저장소: **`additional_notes`** — `index.tsx:3364-3365` (`jayerActiveFilterIds`/`oayerActiveFilterIds`)
+- 내용: 표 헤더의 필터 버튼(`components/Step2.tsx:148-151`)은 행을 `disabled` 로 만든다. 상신 저장은 `disabled` 행을 제외한다.
+  즉 **"보기 필터"처럼 생긴 UI 가 실제로는 문서에서 행을 영구히 빼는 조작**이다.
+  더 나쁜 것은 저장 위치의 비대칭이다 — **어떤 필터가 켜져 있었는지(id)는 문서에 저장되지만, 그 필터가 무슨 조건인지(정의)는
+  브라우저 `localStorage` 에만 있다.**
+- 영향
+  1. **같은 문서를 다른 PC/브라우저에서 열면 결과가 달라진다.** 편집 로드(`index.tsx:836-843`)가
+     `localStorage` 에서 `fSets` 를 읽는데 그 브라우저엔 정의가 없으므로 `calcDisabled` 는 `manuallyDisabled` 만 반영한다
+     → **필터로 빠졌던 행이 되살아난 채로** 상신된다. 반대로 원 작성자 PC 에서는 계속 빠진다.
+  2. 필터를 켠 채 상신하면 **가려진 행이 문서에서 소실**되는데, 확인 모달도 경고도 없다
+     (수동 비활성화 `handleJayerBulkDisable`(`:2097`)은 사용자가 명시적으로 누른 조작이라 성격이 다르다).
+  3. Validation System 판정(`helpers.ts:324` `isValidationTarget`)도 `!r.disabled` 를 쓰므로,
+     **`plel` 이 필터로 가려진 행에만 있으면 문서가 '해당없음'이 되고 E(MASK) 단계가 생성되지 않는다.**
+     백엔드 `has_ppid_plel`(`models.py:164`)은 저장된 행만 보므로 서버도 같은 결론을 낸다 — 즉 **아무도 이상을 눈치채지 못한다.**
+- 재현 절차: STEP3 J-layer 표에서 `+ 필터` 로 특정 `pp` 를 거르는 필터를 만들어 **켠 상태로** 상신 →
+  상세보기 J-layer 탭에 그 행들이 **없으면** 1·2 확인. 이어서 **다른 브라우저(시크릿 창)** 로 같은 문서를 재상신하면
+  그 행들이 **다시 포함**된다 → 1 확인.
+- 권고: ① 상신 확인 모달에 "활성 필터로 제외되는 행 N건" 을 명시하고 동의를 받는다.
+  ② 필터 정의(`FilterSet`)를 `localStorage` 가 아니라 `additional_notes`(또는 사용자 설정 API)에 저장해
+  `jayerActiveFilterIds` 와 저장 위치를 맞춘다. ③ 최소한 필터 비활성화와 수동 비활성화를 **다른 필드로 분리**해,
+  저장 제외는 `manuallyDisabled` 만 보게 한다.
+
+### 🟠 B-59 필터 비활성화 경로만 `unmapJayerRows` 를 부르지 않아 **고아 bb 행이 저장**된다 **분석🔍**
+- 위치
+  - 해제 헬퍼: `index.tsx:1843` `unmapJayerRows` — 호출처는 **3곳뿐**
+    `:1862`(`unmapIfMapped` — 셀 편집/붙여넣기), `:1880`(`handleJayerChange`), `:2102`(`handleJayerBulkDisable`)
+  - **호출하지 않는 경로**: `components/Step2.tsx:148-151`(필터 토글), `index.tsx:2964`·`:2972`(필터 삭제),
+    `:3996`·`:4016`(필터 저장/수정) — 전부 `calcDisabled` 로 `disabled` 만 바꾼다
+  - 저장: `index.tsx:3361` `bbRows: isMapOnlyScope ? [] : bbRows` (**필터링 없이 전량 저장**)
+- 내용: 매핑된 J행이 **수동으로** 비활성화되면 `unmapJayerRows` 가 해당 bb 행을 지운다(`:2102`, 주석도 그렇게 적혀 있다).
+  그런데 **필터로** 비활성화되는 경로에는 그 호출이 없다. 결과적으로
+  **J행은 저장에서 빠지고(B-58) bb 행만 남는다.**
+- 영향
+  1. `additional_notes.bbRows` 에 **존재하지 않는 `sourceJayerRowId` 를 가리키는 행**이 남는다.
+  2. 백엔드 검증은 통과한다 — `_validate_bb_mapping`(`views.py:254-281`)은 "저장된 jayerRows 중 미매핑이 있는가"만 보고
+     **반대 방향(원본 없는 bb 행)은 보지 않는다.**
+  3. 그 문서를 다시 편집하면 `mappedJayerRowIds` 가 bb 행 기준으로 복원되므로(`index.tsx:872-876`)
+     **고아 매핑이 계속 따라다닌다.**
+  4. 상세보기 BB 탭에 원본을 특정할 수 없는 행이 표시된다.
+- 재현 절차: J-layer 행 몇 개에 bb 매핑을 건 뒤, **그 행들을 거르는 필터를 켜고** 상신 →
+  상세보기 **BB 탭의 행 수 > J-layer 탭에서 매핑된 행 수** 면 버그.
+- 권고: `calcDisabled` 로 `disabled` 가 새로 `true` 가 되는 모든 지점에서 `unmapIfMapped` 를 함께 호출한다.
+  더 안전한 쪽은 **저장 시점 정리** — `buildEnrichedForm` 에서 `bbRows` 를 저장 대상 `jayerRows` 의 id 로 필터링한다
+  (`handleMergeReselectConfirm`(`:2356`)이 이미 그 방식을 쓴다).
+
+### 🟡 B-60 'Only MAP' 전환이 **ADI CD 표와 `map_type` 을 지우지 않아 유령값이 저장**된다 **분석🔍**
+- 위치: `index.tsx:1403-1430` `applyOnlyMap` ↔ 대조 `index.tsx:2586-2596` `exitAdiCd`
+- 내용: 기타 목적 'ADI CD 변경' 을 선택하면 `handleSelectAdiCdPurpose`(`:2569`)가
+  `map_type='ADI'` 고정 + `adi_cd_before/after` 템플릿을 깐다.
+  이 목적을 **재클릭으로 해제**하면 `exitAdiCd` 가 `adi_cd_before: []`, `adi_cd_after: []`,
+  `adi_cd_delete_all: false`, `map_type` 원복까지 전부 정리한다.
+  그런데 **요청 목적을 'Only MAP' 으로 바꾸는 경로**(`applyOnlyMap`)는 `other_purpose: []` 로 비우기만 하고
+  `adi_cd_*` 와 `map_type` 을 **건드리지 않는다.**
+- 영향: 목적에 'ADI CD 변경' 이 없는데 `detail.adi_cd_before/after` 에 입력값이 남아 저장된다.
+  `map_type` 이 `'ADI'` 로 남으면 자동 생성 제목(`index.tsx:3303`)까지 `..._MAP(ADI)_...` 로 오염된다.
+  Merge 관련 키(`merge_ref_doc_id`·`merge_pairs` 등)는 `other_purpose` 감시 effect(`index.tsx:588-598`)가
+  `clearMergeComparison()` 을 태워 정리되므로 **ADI CD 만 빠져 있는 비대칭**이다.
+- 재현 절차: STEP1 → 기타 목적 **'ADI CD 변경'** 체크 → 변경전/후 표에 값 입력 →
+  요청 목적을 **'Only MAP'** 으로 변경(확인 모달 승인) → 임시저장 →
+  상세보기(또는 `additional_notes`)에 `adi_cd_before` 값이 남아 있고 제목이 `MAP(ADI)` 면 버그.
+- 권고: `applyOnlyMap` 에 `exitAdiCd` 와 같은 초기화를 추가하거나, `other_purpose` 감시 effect 를 하나 더 두어
+  'ADI CD 변경' 이 빠지면 `adi_cd_*`·`map_type` 을 정리한다(Merge 와 동일한 패턴).
+
+### 🟡 B-61 `validation_system_submitted`(상신 시점 판단)가 **PL 수정후상신·재개 저장에 덮어써진다** **분석🔍**
+- 위치: `index.tsx:3356`
+  ```ts
+  ...(isDraft ? {} : { validation_system_submitted: detail.validation_system }),
+  ```
+- 내용: 이 키의 정의는 "**상신·재상신 시점의 상신자 판단**을 고정 기록"(같은 파일 주석, `views.py:1405` 주석도 동일)이다.
+  서버의 `_set_validation_system`(`views.py:1400-1422`)은 이 키를 **일부러 건드리지 않는다.**
+  그런데 저장 조건이 `isDraft` 하나뿐이라, **상신자가 아닌 주체의 저장에도 값이 갱신**된다.
+  - **PL '수정 후 상신'** (`index.tsx:3608`, `buildEnrichedForm(submitNote, true)` → `isDraft=false`)
+  - **PAUSE 재개** (`index.tsx:3623`, 동일)
+- 영향: 상신자가 상신 시 'YES' 로 판단 → 이후 `update_validation_system` 으로 'NO' 로 변경
+  (`validation_system` 만 바뀌고 `submitted` 는 'YES' 유지) → 그 뒤 PL 이 '수정 후 상신' 하면
+  `submitted` 가 **'NO' 로 덮인다.** 상세보기가 이 값을 '상신 시점 판단'으로 표시하므로
+  (`PagedDetailView.tsx:734` `vsSubmitted`), **MASK(E) 가 검증해야 할 "원래 판단"의 근거가 소실**된다.
+  변경 추적용 `validation_system_changed_by/at`(`views.py:1416-1418`)은 blob 에 그대로 실려 살아남기 때문에,
+  "바꾼 사람 기록은 있는데 바꾸기 전 값은 없는" 어긋난 상태가 된다.
+- 재현 절차: 상신자가 VS='YES' 로 상신 → 결재현황 상세에서 VS 를 'NO' 로 변경 →
+  지정 PL 로 로그인해 '수정 후 상신' → 상세보기의 **'상신 시 판단' 이 'NO' 로 바뀌어 있으면 버그**(원래 'YES' 여야 한다).
+- 권고: 저장 조건을 `isDraft` 가 아니라 **"신규 상신 또는 재상신일 때만"** 으로 좁힌다
+  (`!isDraft && !isPeerReviewMode && !isResumeMode`). 근본적으로는 이 값을 클라이언트가 아니라
+  `submit`/`resubmit` 액션에서 **서버가 기록**해야 한다.
+
+### 🟡 B-62 작성 화면 저장이 `additional_notes` **blob 전체를 덮어써** 서버측 부분 수정을 되돌린다 **분석🔍**
+- 위치: `client.ts:176-178`(`patch` 로 `additional_notes` 통째 전송) ↔
+  서버 부분 수정 3곳 — `views.py:1400`(`_set_validation_system`) / `:1457`(`_sync_post_approvers_detail`) /
+  `:584`(`_apply_map_change_to_source`, **다른 문서**를 수정)
+- 내용: 작성 화면은 문서를 열 때 `additional_notes` 를 파싱해 state 로 펼치고(`index.tsx:766-880`),
+  저장할 때 그 state 로 **JSON 전체를 다시 만들어 보낸다**(`:3347`). 즉 **로드 시점 스냅샷 기준의 통째 덮어쓰기**다.
+  `RequestDocumentSerializer.update`(`serializers.py:167-173`)는 `requester_*` 만 막고 `additional_notes` 는 그대로 받는다.
+  `perform_update`(`views.py:1642`)도 제목만 손댄다. **버전·`updated_at` 비교가 어디에도 없다.**
+- 영향
+  1. 화면을 연 뒤 서버에서 바뀐 `validation_system`·`post_approvers` 가 저장 한 번에 **되돌아간다**(B-57·B-61 의 상위 원인).
+  2. `can_edit` 대상이 **의뢰자·지정PL·의뢰자 그룹멤버**로 넓어(R-05) 두 사람이 동시에 열면
+     먼저 저장한 쪽 작업이 **흔적 없이** 사라진다. 20분 자동저장(`index.tsx:3395` `handleIdleAutoSave`)이
+     사용자가 인지하지 못한 채 이 덮어쓰기를 일으킬 수 있다.
+  3. '완성된 MAP 변경' 승인이 원본 문서에 써 넣은 `map_edit_round`·`history`(`views.py:646-655`)도,
+     그 원본을 이후 누군가 편집·저장하면 같은 방식으로 유실된다.
+- 재현 절차: 작성자가 반려 문서를 `/request` 로 연 채 **닫지 말고**, 다른 탭(또는 다른 사람)이
+  결재현황에서 후결자를 추가하거나 VS 를 변경 → 원래 탭에서 '임시저장' →
+  방금 서버에서 바뀐 값이 **원래대로 돌아가 있으면** 재현.
+- 권고: ① `PATCH` 에 `updated_at`(또는 버전) 을 함께 보내 불일치 시 **409** 로 거부하고 사용자에게 재로드를 안내한다.
+  ② 서버가 소유하는 키(`validation_system*`, `post_approvers`, `map_edit_round`, `history`)는
+  **클라이언트 blob 에서 제외하고 serializer 가 기존 값을 보존**하도록 병합 저장으로 바꾼다.
+  ②만으로도 B-57·B-61 이 함께 닫힌다.
+
+### ⚪ B-63 `additional_notes` 최상위가 dict 가 아니면 **파싱은 성공하고 500 이 난다** **분석🔍**
+- 위치: `models.py:132-137`(`get_detail`), `views.py:254`(`_validate_bb_mapping`),
+  `views.py:1391`(`_get_validation_system`), `:1400`(`_set_validation_system`), `:1457`(`_sync_post_approvers_detail`),
+  `serializers.py:156-166`(`get_notifier_mails`)
+- 내용: 이 지점들은 모두 `json.loads(...)` 후 곧바로 `.get(...)` 을 호출하고, 예외는
+  **`(json.JSONDecodeError, TypeError)` 만** 잡는다. `additional_notes` 가 `'[]'`·`'"x"'`·`'null'` 처럼
+  **유효한 JSON 이지만 dict 가 아니면** `json.loads` 는 성공하고 `.get` 에서 **`AttributeError`** 가 난다 → **500**.
+  B-03(깨진 JSON → 조용히 통과)과는 **정반대 방향의 같은 뿌리**다: 하나는 너무 관대하고 하나는 잡지 못한다.
+  `serializers.get_notifier_mails` 는 `except Exception` 이라 유일하게 안전하고,
+  `_sync_post_approvers_detail` 은 조용히 넘어가야 할 자리인데 `AttributeError` 를 못 잡아 500 을 낸다.
+- 영향: 정상 사용에서는 나오지 않지만 **외부 API·수동 DB 편집·마이그레이션 사고로 한 문서만 이 상태가 되면**
+  그 문서의 조회·상신·후결자 변경·VS 변경이 전부 500 이 된다. `TextField` 라 DB 가 막아 주지 않는다(R-01).
+- 재현 절차(격리 DB): `RequestDocument.objects.filter(pk=N).update(additional_notes='[]')` 후
+  `POST /api/documents/N/submit/` → **500** 이면 재현.
+- 권고: `get_detail()` 에서 **dict 가 아니면 `{}` 를 반환**하도록 한 곳에서 정규화하고, 나머지는 전부 그것을 경유한다.
+  (VS-13 을 이 범위로 확장한 항목이다.) 중기적으로는 `JSONField` 전환(R-01).
 
 ---
 
 ## 6. 잠재 위험 (아직 버그로 터지지 않았지만 구조적으로 위험한 것)
 
 ### R-01 🔴 `additional_notes` 가 `TextField` — 도메인 데이터 전체가 스키마 없는 문자열
-J/O-layer·BB·MAP·통보처·후결자·history 가 **전부 이 한 칼럼**에 들어간다.
-- DB 레벨 제약이 0 → 깨진 JSON 도 저장되고 `get_detail()` 이 조용히 `{}` 반환(B-03)
+- 위치: `models.py:108` (`additional_notes = models.TextField(...)`), 파싱 진입점 `models.py:132` `get_detail()`
+- J/O-layer·BB·MAP·통보처·후결자·Validation System·Merge 스냅샷·history 가 **전부 이 한 칼럼**에 들어간다.
+- DB 레벨 제약이 0 → 깨진 JSON 도 저장되고 `get_detail()` 이 조용히 `{}` 반환(B-03).
+  유효 JSON 이지만 dict 가 아니면 반대로 **500**(B-63).
+- **저장 주체가 4곳인데 조율 장치가 없다** — 작성 화면은 blob 통째 덮어쓰기, 서버는 부분 수정.
+  낙관적 잠금도 병합도 없어 나중에 저장한 쪽이 이긴다 → **B-57 / B-61 / B-62** 가 전부 여기서 나왔다.
 - 쿼리·인덱싱·집계 불가. 문서 1건이 커질수록 목록 API 가 통째로 무거워짐
-  (`RequestDocumentListSerializer` 가 **목록에도 `additional_notes` 를 포함**한다 → 문서 수백 건이면 응답 수십 MB)
-- 완화: 최소한 목록 serializer 에서 `additional_notes` 를 빼고 필요한 파생값만 내려주기 → 중기적으로 JSONField 전환
+  (`RequestDocumentListSerializer`(`serializers.py:176-192`)가 **목록에도 `additional_notes` 를 포함**한다 →
+  문서 수백 건이면 응답 수십 MB)
+- 완화: ① 목록 serializer 에서 `additional_notes` 를 빼고 필요한 파생값만 내려주기
+  ② **서버 소유 키를 blob 에서 분리**(B-62 권고) ③ 중기적으로 JSONField 전환 + 마이그레이션
+> **3차 정독(§5-4) 7건 중 5건이 이 항목의 직접적 증상이다.** 개별 패치보다 저장 구조 정리가 근본 해법이다.
 
 ### R-02 🟠 결재 단계에 '취소/무효' 상태가 없다
 `ApprovalStep.ACTION_CHOICES = pending / approved / rejected` 뿐이라, **반려로 회차가 끝나도 나머지 단계는 영원히 `pending`** 이다.
@@ -1625,17 +1898,20 @@ B-13(잘못된 버튼 노출)·X-4·X-5 의 공통 뿌리이며, 통계(`stats`)
 (휴직·퇴사 시 MASTER 가 대신 합의하는 것 외엔 방법 없음). `APPROVAL.md §6-7` 에도 제약으로 기록돼 있다.
 
 ### R-05 🟡 문서 수정에 낙관적 잠금이 없다
-`PATCH /documents/{id}/` 는 `updated_at` 비교 없이 통째로 덮어쓴다. 반려 문서는 **의뢰자·지정PL·의뢰자 그룹멤버**가
-모두 편집 가능하므로(`can_edit`), 두 사람이 동시에 열어 저장하면 **먼저 저장한 쪽 작업이 흔적 없이 사라진다.**
-`/request` 는 20분 자동저장까지 돌아 충돌 확률이 낮지 않다.
+`PATCH /documents/{id}/`(`views.py:1635` `update` → `:1642` `perform_update`)는 `updated_at` 비교 없이 통째로 덮어쓴다.
+반려 문서는 **의뢰자·지정PL·의뢰자 그룹멤버**가 모두 편집 가능하므로(`can_edit`), 두 사람이 동시에 열어 저장하면
+**먼저 저장한 쪽 작업이 흔적 없이 사라진다.** `/request` 는 20분 자동저장(`index.tsx:3395`)까지 돌아 충돌 확률이 낮지 않다.
+- 사용자 간 충돌뿐 아니라 **사용자 ↔ 서버 부분수정** 충돌도 같은 뿌리다 → **B-62** 참조.
 
 ### R-06 🟡 `submitted` 는 데드 상태값
 `STATUS_CHOICES` 에 있지만 어떤 코드도 이 값을 만들지 않는다. 그런데 `withdraw`·`can_edit` 는 이 값을 분기에 포함하고 있어
 읽는 사람을 오도한다.
 
 ### R-07 🟡 결재 판정 규칙이 프론트·백엔드에 **이중 구현**돼 있다
-`ApprovalFlow.tsx`(canUserAgree/canUserAssign/canUserClaim) ↔ `views.py`(`_can_act_on_step`/`_can_assign_step`/`_can_claim_step`)
-가 "1:1 일치" 를 전제로 각각 손으로 유지된다. 이미 B-12(내 차례 필터)·B-13(회차 필터)에서 어긋났다.
+`ApprovalFlow.tsx`(`canUserAssign:22` / `canUserClaim:31` / `canUserAgree:44`) ↔
+`views.py`(`_can_act_on_step:160` / `_can_assign_step:178` / `_can_claim_step:195`)
+가 "1:1 일치" 를 전제로 각각 손으로 유지된다. 이미 B-12(내 차례 필터)·B-13(회차 필터)에서 어긋났고,
+**프론트 3종에는 `document.status` 검사 자체가 없어** pause 문서에서도 결재 버튼이 노출된다(B-06 부가, T-M3).
 - 권고: 서버가 step 별 `can_agree`/`can_claim`/`can_assign` 플래그를 내려주고 프론트는 그걸 렌더만 하기
   (이미 `can_edit`/`can_withdraw` 는 그 방식이라 선례가 있다).
 
@@ -1684,9 +1960,10 @@ FK 정책도 일관되지 않다 — `ApprovalStep.assignee`/`RequestDocument.re
 XSS 저장 경로에는 테스트가 **하나도 없다**. 이번에 발견된 치명 7건 중 6건이 이 사각지대에서 나왔다.
 
 ### R-11 ⚪ 이름(`requester_name`) 기반 본인 판정이 남아 있다
-`ApprovalPage.tsx:1084` `isOriginalPL = isPL && selected?.requester_name === currentUser.name` —
-**동명이인이면 남의 문서에 '지정자 변경' 버튼이 뜬다.** 바로 아래 `isPauseRequester` 는 `requester_loginid` 를 우선 쓰므로
-같은 파일 안에서도 규칙이 다르다. `applyClientFilter` 의 PL 판정(`:138`)도 동일 문제.
+`ApprovalPage.tsx:1120` `isOriginalPL = isPL && selected?.requester_name === currentUser.name` —
+**동명이인이면 남의 문서에 '지정자 변경' 버튼이 뜬다.** 바로 아래 `isPauseRequester`(`:1125-1129`)는
+`requester_loginid` 를 우선 쓰므로 같은 파일 안에서도 규칙이 다르다.
+`applyClientFilter` 의 PL 판정(`:137`)과 `getTabCount`(`:174`)도 동일 문제.
 serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으로 통일하면 된다.
 
 ---
@@ -1733,7 +2010,8 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 - [ ] B-41 `DJANGO_SECRET_KEY` 미설정 시 **기동 실패**
 
 *결재 정합성*
-- [ ] B-06 pause 문서에서 `peer-approve/` → **400**
+- [ ] B-06 pause 문서에서 `peer-approve/` / `peer-reject/` / `peer-submit/` / `change-designee/` → **전부 400**
+- [ ] B-06(프론트) pause 문서 상세에서 '합의/반려/검토중/담당자 지정' 버튼이 **보이지 않음**
 - [ ] B-32 PL 합의 후 중단요청 state → **cancelled**
 - [ ] B-30 후결자 계정 삭제 후에도 최종 승인 **도달 가능**
 - [ ] B-31 그룹 생성자 삭제 후 그룹 **잔존**
@@ -1748,13 +2026,39 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 - [ ] B-36 access 만료 상태에서 '세션 연장' → **재로그인 없이** 이어짐
 - [ ] B-40 변경 없는 재상신에서 `bb_entries` 가 **강조되지 않음**
 
+*`additional_notes` 저장 정합성 (3차 · §5-4)*
+
+전부 **브라우저에서 상신·재상신까지 완주한 뒤 상세보기(또는 저장된 `additional_notes`)로** 확인한다.
+자동 테스트가 없는 영역이므로 이 수동 시나리오가 검증의 핵심이다.
+
+- [ ] **B-57** 일반 의뢰서(only_prodc=No) 상신 → R 합의 → 결재현황 상세에서 '+ 후결자 추가' 1명 →
+      반려 → 작성자가 '수정 후 재상신' → **결재 경로 탭에 그 후결자의 RA 단계가 남아 있음**
+      (실패 신호: RA 가 고정 후결자 1명뿐)
+- [ ] **B-58a** J-layer 필터를 켠 채 상신 → 상세보기 J-layer 탭에 **가려졌던 행이 그대로 있음**
+      (또는 상신 확인 모달이 "제외되는 행 N건" 을 명시)
+- [ ] **B-58b** 같은 문서를 **시크릿 창(다른 localStorage)** 에서 열어 재상신 → 저장되는 J/O 행 집합이 **원래와 동일**
+- [ ] **B-58c** `plel` 이 필터로 가려진 행에만 있는 문서 → 상신 후 결재 경로에 **E(MASK) 단계가 정상 생성**
+- [ ] **B-59** bb 매핑을 건 J행을 필터로 가린 뒤 상신 → 상세보기 **BB 탭 행 수 = 매핑된 J행 수**
+      (실패 신호: 원본을 특정할 수 없는 bb 행이 더 있음)
+- [ ] **B-60** 기타목적 'ADI CD 변경' 입력 → 요청목적을 'Only MAP' 으로 전환 → 임시저장 →
+      `detail.adi_cd_before/after` 가 **비어 있고** 제목에 `MAP(ADI)` 가 **없음**
+- [ ] **B-61** 상신자가 VS='YES' 상신 → VS 를 'NO' 로 변경 → 지정 PL 이 '수정 후 상신' →
+      상세보기 **'상신 시 판단' 이 여전히 'YES'**
+- [ ] **B-62** 작성 화면을 연 채 다른 탭에서 후결자 추가/VS 변경 → 원래 탭에서 '임시저장' →
+      **409 등으로 거부되거나 서버 변경분이 보존됨**(실패 신호: 조용히 원복)
+- [ ] **B-63** (격리 DB) `additional_notes='[]'` 인 문서 조회·상신 → **500 이 아님**
+
 *테스트*
-- [ ] `manage.py test api` → **OK (0 failures)**
+- [ ] `manage.py test api` → **OK (0 failures)** — 현재 167건, 이 세션 실행 불가(§1.5)
 - [ ] 인증(OIDC 콜백·refresh)·업로드·XSS 저장 경로 **테스트 신규 추가**(현재 0건 — R-17)
+- [ ] **`additional_notes` 저장 회귀 테스트 신규 추가** — 위 B-57~B-63 은 전부 서버 단위 테스트로 고정 가능하다
+      (`buildEnrichedForm` 상당의 payload 를 만들어 PATCH → `get_detail()` 결과 단언)
 
 ---
 
-## 8. 이번 세션에서 실제로 수행한 검증 (근거)
+## 8. 실제로 수행한 검증 (근거)
+
+### 8.1 1차 정독에서 수행한 검증 (2026-07-28)
 
 | 항목 | 방법 | 결과 |
 |---|---|---|
@@ -1796,10 +2100,45 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 | 보안 헤더 | `nginx/nginx.conf` 전수 확인 | **CSP/XFO/nosniff/Referrer-Policy 전무** |
 
 > 검증에 사용한 임시 테스트 파일은 scratchpad 에서 실행 후 **프로젝트에서 제거**했다(코드 변경 0건).
-> 프론트엔드는 이 세션에 `node_modules` 가 없어 `tsc`/`react-scripts test` 를 돌리지 못했다 →
+> 프론트엔드는 그 세션에 `node_modules` 가 없어 `tsc`/`react-scripts test` 를 돌리지 못했다 →
 > 프론트 항목은 전부 **코드 정독 + 정적 분석** 근거이며, §7 체크리스트로 브라우저 확인이 필요하다.
 
-### 8.3 이번 검토에서 다루지 않은 범위 (남은 사각지대)
+### 8.3 3차 정독에서 수행한 검증 (2026-08-04)
+
+| 항목 | 방법 | 결과 |
+|---|---|---|
+| 전 버그 항목의 코드 위치 | 심볼(함수·상수·문자열) grep 으로 현재 라인 대조 | **약 90건 중 60건 이상 정정** — 아래 "위치 변경 요약" |
+| B-06 경로 성립 여부 | `submit`→`can_request_pause`→`_can_confirm_pause`→`_advance_after_pl` 코드 추적 | **PL 단계 pause 확정 → peer_approve 부활 경로 성립 확인**(가드 4개 부재) |
+| pause 프론트 가드 | `ApprovalFlow.tsx` 판정 3종에 `status` 참조 여부 grep | **0건 — 상태 검사 없음** |
+| `additional_notes` 저장 경로 전수 | 쓰기 지점 4곳(①~④) + 읽기 소비처 추적 | **B-57 ~ B-63 도출** |
+| `post_approvers` 소실 체인 | `index.tsx:3351` → `mailer.py:230` → `views.py:1221` 연결 확인 | **RA 단계 미생성까지 이어짐 확인**(B-57) |
+| 필터 ↔ 저장 상호작용 | `calcDisabled` 호출 5경로 vs `unmapJayerRows` 호출 3경로 대조 | **필터 경로에만 unmap 누락**(B-59) |
+| 필터 정의 저장소 | `jayerFilterSets`(localStorage) vs `jayerActiveFilterIds`(additional_notes) | **저장 위치 비대칭 확인**(B-58) |
+| Merge 유령값 반증 | `other_purpose` 감시 effect(`index.tsx:588-598`) 확인 | **Merge 키는 정상 정리됨 — ADI CD 만 누락**(B-60) |
+| i18n 정합성 | `ko.json`/`en.json` 평탄화 비교 + 미정의 키 조회 | **ko 1003 / en 1002**, B-14·B-15 유효 |
+| 자동 테스트 | `python -c "import django"` | **미설치 — 실행 불가**(§1.5) |
+
+**위치 변경 요약** (자주 참조되는 것만; 그 외는 각 항목에 반영)
+
+| 심볼 | 문서(구) | 현재 |
+|---|---|---|
+| `peer_approve` / `peer_reject` / `peer_submit` / `change_designee` | `views.py:1092-1142` | **`:1291` / `:1305` / `:1326` / `:1341`** |
+| `_advance_to_parallel` | `:990-1031` | **`:1185`** |
+| `_validate_bb_mapping` | `:244-271` | **`:254`** |
+| `withdraw` 의 step 전량 삭제 | `:393` | **`:403`** |
+| `assign_step` 담당자 조회·이름 | `:637-645` | **`:767-775`** |
+| `upload_image` / `upload_video` | `:1718` / `:1765` | **`:2073` / `:2120`** |
+| `VOCViewSet.perform_create` / `update_status` | `:1474` / `:1478` | **`:1827` / `:1832`** |
+| `stats` | `:1374` | **`:1647`** |
+| `_cancel_active_pause_requests` 호출 | `:484` · `:593` | **`:521` · `:723`** |
+| `ApprovalPage` `pendingSteps` | `:1046-1053` | **`:1081-1088`** |
+| `ApprovalPage` 내 차례 필터 | `:147-151` | **`:146-151`** |
+| `RequestPage` `setDesignees([])` | `:3083` | **`:3576`** |
+| `mailer._build_voc_message` | `:658-679` | **`:855`** |
+| `PagedDetailView` diff | `:412-418` | **`:513-518`** |
+| Merge 로직 | `index.tsx:2098-2151` | **`helpers.ts` `computeLayerMerge`** (함수로 이동) |
+
+### 8.4 이번 검토에서 다루지 않은 범위 (남은 사각지대)
 
 정직하게 남겨둔다 — 아래는 **읽었지만 깊게 파지 않았거나, 실행 검증을 못 한** 영역이다.
 - `scheduler.py`(504줄) — 외부 DCQ/RTDB 연동 동기화 잡. 사내 전용 모듈(`datacenterquery`)이 없어
@@ -1809,8 +2148,18 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
   gunicorn 멀티워커에서는 **프로세스별로 락이 따로 걸린다**(프로세스 간 보호 없음). 실사용 영향 확인 필요.
 - `RichTextEditor.tsx`(574줄)·`GuideTourModal`·`guideDemos/*` — 투어·에디터 UI. `any` 9건 외 기능 검증 미실시.
 - `PagedDetailView.tsx`(1,757줄) — diff 로직(B-40)과 `any` 집계만 확인. 6개 탭의 렌더 정확성은 브라우저 확인 필요.
-- ~~마이그레이션 일치 여부~~ → **실행 완료**, 결과는 B-48 참조(스키마 영향 없는 1건).
+- ~~마이그레이션 일치 여부~~ → 1차에 **실행 완료**, 결과는 B-48 참조(스키마 영향 없는 1건).
+  단 **2026-08-04 세션에서는 Django 미설치로 재확인하지 못했다** — B-48 의 현재 유효성은 미검증이다.
 - 성능·부하 — `additional_notes` 포함 목록 응답 크기(R-01), 문서 수백~수천 건 시 응답 시간 미측정.
+- **3차 추가분(2026-08-04)**
+  - `additional_notes` 외의 `detail` 하위 조건부 필드 전수 — `map_type` 전환(`index.tsx:1451`)과
+    `only_prodc`→No(`:1665`)는 초기화 로직을 확인했으나, `rev_yn`·`inter`·`ea_change`·`mshot_change` 등
+    **나머지 토글의 유령값 여부는 확인하지 못했다.** B-60 과 같은 유형이 더 있을 수 있다.
+  - `_apply_map_change_to_source`(`views.py:584`)의 실행 검증 — 승인 트랜잭션 안에서 **다른 문서**를 수정하고
+    실패해도 예외를 삼키는 구조라, 원본 문서가 동시에 편집될 때의 거동은 정독만 했다.
+  - `design_rule_stats.py`(`:120` `_parse_detail`)의 `additional_notes` 소비 경로 — 통계 집계라 결재에 영향은 없으나 미검증.
+  - 프론트 자동 테스트 — `helpers.ts` 에는 `computeLayerMerge` 단위 테스트 12건이 있으나
+    **`buildEnrichedForm` 의 저장 payload 를 검증하는 테스트는 0건**이다(§7 마지막 항목).
 
 ---
 
