@@ -1090,6 +1090,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             )
 
         previous = self._get_validation_system(document)
+        if previous not in self.VALIDATION_SYSTEM_VALUES:
+            # 키가 없거나 값이 깨진 레거시 문서 — 상신자가 화면에서 보고 있는 값과
+            # 같은 기준으로 비교해야 '보이는 값을 눌렀는데 되감겼다'가 발생하지 않는다.
+            previous = self.VALIDATION_SYSTEM_LEGACY_DEFAULT
         if previous == value:
             return Response({'message': '변경 사항이 없습니다.', 'rewound': False})
 
@@ -1377,6 +1381,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     # Validation System 대상/비대상 값 (프론트 constants.ts 의 VS_TARGET/VS_NONTARGET 과 동일)
     VALIDATION_SYSTEM_VALUES = ('YES', 'NO')
+    # 저장값이 없는 레거시 문서를 상세보기가 '대상'으로 표시한다
+    # (PagedDetailView.tsx 의 vsCurrent 폴백). 변경 여부 판정을 화면과 같은 기준으로
+    # 맞추기 위한 값이므로, 프론트 폴백을 바꾸면 이 값도 함께 바꿔야 한다.
+    VALIDATION_SYSTEM_LEGACY_DEFAULT = 'YES'
 
     def _get_validation_system(self, document):
         """detail.validation_system 현재값. 키가 없거나 파싱 실패면 None."""

@@ -1249,13 +1249,48 @@ class PEStageReviewerFlowTest(TestCase):
         doc.additional_notes = '{"detail": broken'
         doc.save(update_fields=['additional_notes'])
 
+        # 읽기도 실패하므로 previous 는 레거시 기본값('YES')으로 정규화된다.
+        # 저장 경로를 타려면 그와 다른 값을 보내야 한다.
         self.client.force_authenticate(user=self.requester)
-        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'NO'}, format='json')
         self.assertEqual(r.status_code, 500, r.content)
 
         e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
         self.assertEqual(e_step.action, 'approved', '저장이 실패했으면 되감아서는 안 된다')
         self.assertNotIn('재검토', e_step.comment)
+
+    def test_legacy_doc_clicking_displayed_value_does_not_rewind(self):
+        """저장값이 없는 레거시 문서에서 화면에 보이는 값('대상')을 그대로 클릭하면 되감지 않는다.
+
+        상세보기(PagedDetailView 의 vsCurrent 폴백)가 키 없는 문서를 '대상'으로 표시하므로,
+        백엔드도 같은 기준으로 비교해야 사용자가 '바꾸지 않았는데 되감겼다'를 겪지 않는다.
+        """
+        doc = self._advance_to_parallel(plel=True)
+        # _set_detail 을 호출하지 않는다 → detail 은 {} 이고 validation_system 키가 없다.
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(r.data['rewound'], '보이는 값과 같으므로 변경이 아니다')
+
+        e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
+        self.assertEqual(e_step.action, 'approved')
+
+    def test_legacy_doc_real_change_still_rewinds(self):
+        """레거시 폴백을 적용해도 진짜 변경('비대상' 선택)은 그대로 되감는다."""
+        doc = self._advance_to_parallel(plel=True)
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'NO'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.data['rewound'])
+
+        self.assertEqual(self._get_detail(doc)['validation_system'], 'NO')
+        e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
+        self.assertEqual(e_step.action, 'pending')
+        self.assertIn('재검토', e_step.comment)
 
     def test_update_blocked_after_e_stage_complete(self):
         """E 단계가 통과하면 수정 창이 닫힌다(검토자 없이 합의하면 그대로 완료된다)."""
