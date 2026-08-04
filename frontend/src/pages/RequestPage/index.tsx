@@ -3061,8 +3061,9 @@ export default function RequestPage(): React.ReactElement {
         newErrors['partid_selection'] = t('request.partid_not_in_list');
         errorMessages.push(t('request.partid_not_in_list'));
       }
-      // Only MAP·완성된 MAP 변경 모드에서는 Backbone 조합 영역 필수 검증을 우회한다.
-      if (!isOnlyMap && !isMapChangeMode) {
+      // Only MAP·완성된 MAP 변경·ADI CD 단독 모드에서는 Backbone 조합 영역 필수 검증을 우회한다.
+      // (ADI CD 는 다른 기타 목적과 함께 고르면 isAdiCdOnly 가 false 가 되어 필수로 되돌아온다)
+      if (!isOnlyMap && !isMapChangeMode && !isAdiCdOnly) {
         // 추가한 항목까지 모두 완전히(위치·제품·조리법) 입력돼야 진행 가능(R-17). 불필요하면 삭제하도록 유도.
         const allFilled = detail.bb_entries.every(
           (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
@@ -3422,7 +3423,8 @@ export default function RequestPage(): React.ReactElement {
     //  동일한 소스 값으로 직접 재계산한다.)
     if (step === 4) {
       const oViolations = findNocBorrowViolations(oayerRows);
-      const partialShotMissing = !isOnlyMap && !isMapChangeMode && !detail.partial_shot?.trim();
+      // validate(4) 의 우회 조건과 반드시 같은 판정이어야 한다 — 어긋나면 없는 오류로 탭이 전환된다.
+      const partialShotMissing = !isOnlyMap && !isMapChangeMode && !isAdiCdOnly && !detail.partial_shot?.trim();
       if (partialShotMissing && oViolations.length === 0) setOayerInfoTab('info');
     }
     // 탭 전환·에러 span 렌더가 끝난 뒤 DOM을 조회하도록 지연한다.
