@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>참조 요청서 Merge — BEFORE/AFTER 매핑 계획서 (Mock v2)</title>
+<title>참조 요청서 Merge — BEFORE/AFTER 매핑 계획서 (Mock v3)</title>
 <style>
   :root {
     --bg: #f6f7f9;
@@ -84,7 +84,6 @@
   .b-new { background: var(--green-soft); color: var(--green); border: 1px solid var(--green); }
   .b-del { background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger); }
   .b-chg { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber); }
-  .b-use { background: var(--border-light); color: var(--muted); border: 1px solid var(--border); }
   .tag-q { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber); }
   .tag-new { background: var(--green-soft); color: var(--green); border: 1px solid var(--green); }
 
@@ -123,10 +122,7 @@
     background: var(--border-light); border-radius: 8px; padding: 8px 12px;
     font-size: 0.83rem; color: var(--text-secondary); margin: 14px 0 10px;
   }
-  .gate {
-    border-radius: 8px; padding: 8px 12px; font-size: 0.84rem; margin: 0 0 14px;
-    border: 1px solid transparent;
-  }
+  .gate { border-radius: 8px; padding: 8px 12px; font-size: 0.84rem; margin: 0 0 14px; border: 1px solid transparent; }
   .gate-ng { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); font-weight: 600; }
   .gate-ok { background: var(--green-soft); color: var(--green); border-color: var(--green); font-weight: 600; }
   .panel-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -166,27 +162,28 @@
   }
   .flow-step b { display: block; font-size: 0.86rem; margin-bottom: 3px; color: var(--text); }
   .flow-step span { color: var(--muted); }
-  .chg-row td { color: var(--green); font-weight: 600; }
   .file-list code { display: inline-block; margin-right: 4px; }
+  .newrow td:first-child { position: relative; }
+  .newrow td { background: var(--green-soft); }
 </style>
 </head>
 <body>
 <div class="wrap">
 
-  <h1>참조 요청서 Merge — BEFORE / AFTER 매핑 계획서 <span class="badge tag-new" style="vertical-align:middle">v2</span></h1>
+  <h1>참조 요청서 Merge — BEFORE / AFTER 매핑 계획서 <span class="badge tag-new" style="vertical-align:middle">v3</span></h1>
   <p class="sub">대상: 의뢰서 작성 STEP 1 · 기타 목적 → 참조 요청서 Merge &nbsp;|&nbsp; 2026-08-03 &nbsp;|&nbsp; 브랜치 <code>claude/request-detail-other-purpose-ixuxi0</code> &nbsp;|&nbsp; <b>상태: 승인 대기 (코드 미작성)</b></p>
 
   <div class="note">
-    <b>v2 변경점</b> — ① Merge 옆 <b>재선택</b> 버튼(J/O 표까지 Merge 이전으로 롤백) ② <b>AFTER 전량 매핑 필수</b> ③ <code>미등록</code>은 <b>한 줄</b>로 표시
-    ④ <b>확정 컬럼 삭제</b> ⑤ <b>매핑 추가 버튼 없이 선택 후 바로 적용</b> ⑥ <b>BEFORE 행은 여러 번 재사용 가능</b>.
-    §3 Mock 은 실제로 클릭됩니다. §7 의 <b>확인 요청 6가지</b>만 답해주시면 착수합니다.
+    <b>v3 변경점</b> — ① <b>매핑 해제 시 BEFORE 행도 표로 복귀</b>(v2 Mock 결함 수정) ② BEFORE 표의 <b>사용 컬럼 삭제</b>
+    ③ <b>J/O 스냅샷을 문서에 저장</b> → 임시저장 후 다음 날 다시 열어도 <b>재선택으로 J/O 롤백 가능</b>.
+    §3 Mock 은 실제로 클릭됩니다. §7 의 <b>확인 요청 5가지</b>만 답해주시면 착수합니다.
   </div>
 
   <!-- ============================================================ -->
   <h2>1. 확정된 요구사항</h2>
   <div class="scroll-x">
   <table>
-    <thead><tr><th style="width:34px">#</th><th style="width:190px">항목</th><th>확정 내용</th><th style="width:56px">회차</th></tr></thead>
+    <thead><tr><th style="width:34px">#</th><th style="width:190px">항목</th><th>확정 내용</th><th style="width:52px">회차</th></tr></thead>
     <tbody>
       <tr><td>1</td><td>사용 가능한 기타 목적</td><td><code>Layer 추가/삭제</code> · <code>STEPSEQ 변경</code> · <code>Overlay 변경</code></td><td>v1</td></tr>
       <tr><td>2</td><td>중복 노출 방지</td><td>2개 이상 선택해도 Merge 블록은 <b>1개만</b></td><td>v1</td></tr>
@@ -199,13 +196,16 @@
       <tr><td>9</td><td>저장·노출</td><td>확정 결과를 문서에 저장 → <b>의뢰 상세 페이지에도 표시</b></td><td>v1</td></tr>
       <tr><td>10</td><td>표 위치</td><td>STEP 1 참조 요청서 블록 <b>바로 아래 인라인</b></td><td>v2</td></tr>
       <tr><td>11</td><td>한쪽만 있는 그룹</td><td>모호성이 없으므로 <b>미등록과 자동 짝</b> → 변경전/변경후로 직행</td><td>v2</td></tr>
-      <tr><td>12</td><td>매핑 자유도</td><td><code>layerid</code> 가 <b>달라도</b> 매핑 가능 (단, J-ayer↔J-ayer / O-ayer↔O-ayer 만)</td><td>v2</td></tr>
-      <tr><td>13</td><td><b>재선택 버튼</b></td><td>영구 잠금 폐지. Merge 버튼 옆 <b>재선택</b> → 두 표 초기화 + <b>J/O 표도 Merge 직전 상태로 롤백</b> + 참조 요청서 재선택 가능</td><td>v2</td></tr>
-      <tr><td>14</td><td><b>매핑 필수 범위</b></td><td><b>AFTER 는 전부 매핑되어야 함.</b> BEFORE 는 남아도 무방</td><td>v2</td></tr>
-      <tr><td>15</td><td><b>미등록 표기</b></td><td>컬럼별로 나누지 않고 <b><code>미등록</code> 한 줄</b>로 병합 표시</td><td>v2</td></tr>
-      <tr><td>16</td><td><b>확정 컬럼</b></td><td>자동/수동 표시 컬럼 <b>삭제</b></td><td>v2</td></tr>
-      <tr><td>17</td><td><b>적용 방식</b></td><td>스테이징(매핑 추가) 없이 <b>양쪽 선택 → 적용 즉시 확정</b></td><td>v2</td></tr>
-      <tr><td>18</td><td><b>BEFORE 재사용</b></td><td>BEFORE 행은 <b>여러 번 선택 가능</b>(1:N). AFTER 행은 1회만</td><td>v2</td></tr>
+      <tr><td>12</td><td>매핑 자유도</td><td><code>layerid</code> 가 달라도 매핑 가능 (J-ayer↔J-ayer / O-ayer↔O-ayer 만)</td><td>v2</td></tr>
+      <tr><td>13</td><td>재선택 버튼</td><td>영구 잠금 폐지. Merge 옆 <b>재선택</b> → 두 표 초기화 + <b>J/O 표 롤백</b> + 참조 요청서 재선택</td><td>v2</td></tr>
+      <tr><td>14</td><td>매핑 필수 범위</td><td><b>AFTER 는 전부 매핑되어야 함.</b> BEFORE 는 남아도 무방</td><td>v2</td></tr>
+      <tr><td>15</td><td>미등록 표기</td><td>컬럼별로 나누지 않고 <b><code>미등록</code> 한 줄</b>로 병합 표시</td><td>v2</td></tr>
+      <tr><td>16</td><td>확정 컬럼</td><td>자동/수동 표시 컬럼 <b>삭제</b></td><td>v2</td></tr>
+      <tr><td>17</td><td>적용 방식</td><td>스테이징 없이 <b>양쪽 선택 → 적용 즉시 확정</b></td><td>v2</td></tr>
+      <tr><td>18</td><td>BEFORE 재사용</td><td>BEFORE 행은 <b>여러 번 선택 가능</b>(1:N). AFTER 행은 1회만</td><td>v2</td></tr>
+      <tr><td>19</td><td><b>매핑 해제 복귀</b></td><td>✕ 로 해제하면 <b>BEFORE 행과 AFTER 행이 모두</b> 각자의 표로 되돌아온다. (자동 확정된 짝도 동일) 이미 목록에 있는 BEFORE 행은 중복 추가하지 않는다</td><td>v3</td></tr>
+      <tr><td>20</td><td><b>사용 컬럼 삭제</b></td><td>BEFORE 표의 <b>사용 횟수 컬럼 제거</b> — 재사용은 가능하되 표시는 하지 않는다</td><td>v3</td></tr>
+      <tr><td>21</td><td><b>스냅샷 영구 저장</b></td><td>Merge 직전 J/O 스냅샷을 <b>문서에 함께 저장</b> → 임시저장·재진입·재상신 이후에도 <b>재선택으로 J/O 완전 롤백</b> 가능</td><td>v3</td></tr>
     </tbody>
   </table>
   </div>
@@ -215,13 +215,13 @@
   <div class="flow">
     <div class="flow-step"><b>① 기타 목적 선택</b><span>3개 중 1개 이상 → Merge 블록 1개 노출</span></div>
     <div class="flow-step"><b>② 참조 요청서 선택</b><span>결재완료 문서 검색 → J/O 행 로드</span></div>
-    <div class="flow-step"><b>③ Merge 실행</b><span>확인 모달 → J/O 스냅샷 저장 → 3-way 재판정 반영 + 비교 결과 생성</span></div>
+    <div class="flow-step"><b>③ Merge 실행</b><span>확인 모달 → <b>J/O 스냅샷을 문서에 저장</b> → 3-way 재판정 반영 + 비교 결과 생성</span></div>
     <div class="flow-step"><b>④ 자동 판정</b><span>1:1·한쪽만 → 변경전/변경후 표<br>모호 → BEFORE/AFTER 표</span></div>
-    <div class="flow-step"><b>⑤ 수동 매핑</b><span>BEFORE 1행 + AFTER 1행 선택 → <b>적용</b> 즉시 확정 (반복)</span></div>
+    <div class="flow-step"><b>⑤ 수동 매핑</b><span>BEFORE 1행 + AFTER 1행 선택 → <b>적용</b> 즉시 확정 (해제는 ✕, 양쪽 복귀)</span></div>
     <div class="flow-step"><b>⑥ 게이트</b><span>AFTER 가 <b>0행</b>이 되어야 다음 STEP·상신 가능</span></div>
-    <div class="flow-step"><b>⑦ 저장</b><span>상신·임시저장 시 함께 저장 → 상세 페이지 노출</span></div>
+    <div class="flow-step"><b>⑦ 저장</b><span>매핑 결과 + 스냅샷 저장 → 상세 페이지 노출</span></div>
   </div>
-  <p style="font-size:0.85rem">언제든 <b>재선택</b> 버튼으로 ②~⑤ 를 통째로 되돌릴 수 있습니다(③에서 저장한 스냅샷으로 J/O 표까지 복구).</p>
+  <p style="font-size:0.85rem"><b>재선택</b>은 언제든 가능합니다 — 오늘 임시저장하고 <b>내일 다시 열어도</b> 저장된 스냅샷으로 J/O 표까지 Merge 이전으로 되돌립니다. (#21)</p>
 
   <h3>자동 매칭 규칙 (같은 <code>process_id + layerid</code> 그룹 단위)</h3>
   <div class="scroll-x">
@@ -266,14 +266,15 @@
       <button class="btn btn-warn" onclick="doReselect()">↻ 재선택</button>
     </div>
     <p style="font-size:0.8rem;margin:6px 0 0">
-      ⓘ <b>재선택</b>: 확인 모달 후 두 표를 비우고 <b>J/O 표를 Merge 직전 상태로 되돌린 뒤</b> 참조 요청서를 다시 고를 수 있습니다. (#13)
+      ⓘ <b>재선택</b>: 확인 모달 후 두 표를 비우고 <b>J/O 표를 Merge 직전 상태로 되돌린 뒤</b> 참조 요청서를 다시 고를 수 있습니다.
+      스냅샷이 문서에 저장되므로 <b>임시저장 후 재진입해도 동일하게 동작</b>합니다. (#13 · #21)
     </p>
 
     <div class="summary-bar">
       <span>📊 비교 결과</span>
       <span>변경 없음 <b>12</b>건 (표에서 제외)</span>
-      <span>자동 확정 <b id="cntAuto">4</b>건</span>
-      <span style="color:var(--amber)">수동 매핑 대기 AFTER <b id="cntManual">3</b>건</span>
+      <span>확정 <b id="cntAuto">4</b>건</span>
+      <span style="color:var(--amber)">매핑 대기 AFTER <b id="cntManual">3</b>건</span>
     </div>
     <div class="gate gate-ng" id="gateBar"></div>
 
@@ -283,7 +284,7 @@
         <div class="panel-title"><span>BEFORE — 참조 요청서 (A)</span><span style="font-weight:400;color:var(--muted)" id="beforeCount"></span></div>
         <div class="panel-body">
           <table>
-            <thead><tr><th>구분</th><th>공법</th><th>SP</th><th>SD</th><th>PP</th><th>Layer</th><th style="width:52px">사용</th></tr></thead>
+            <thead><tr><th>구분</th><th>공법</th><th>SP</th><th>SD</th><th>PP</th><th>Layer</th></tr></thead>
             <tbody id="beforeBody"></tbody>
           </table>
         </div>
@@ -304,7 +305,7 @@
       <button class="btn btn-primary" id="btnApply" disabled onclick="applyPair()">✔ 적용</button>
     </div>
     <p style="font-size:0.79rem;margin:6px 0 0;color:var(--muted)">
-      · BEFORE 행은 <b>여러 번 선택 가능</b>(선택해도 목록에 남고 <b>사용</b> 배지가 올라감) / AFTER 행은 적용되면 목록에서 사라집니다. (#18)<br>
+      · BEFORE 행은 <b>여러 번 선택 가능</b>(적용해도 목록에 남음, 사용 횟수는 표시하지 않음 #20) / AFTER 행은 적용되면 목록에서 사라집니다.<br>
       · <code>미등록</code> 은 양쪽 모두 <b>횟수 제한 없이</b> 사용할 수 있습니다.
     </p>
 
@@ -333,14 +334,13 @@
     </div>
     <p style="font-size:0.79rem;margin-top:8px;color:var(--muted)">
       · 바뀐 셀은 <span class="cell-chg">주황 굵게</span>. &nbsp;·&nbsp; <code>미등록</code> 은 5칸을 합쳐 <b>한 줄</b>로 표시합니다. (#15)<br>
-      · <b>확정(자동/수동) 컬럼은 없앴습니다.</b> (#16) &nbsp;·&nbsp; ✕ 를 누르면 짝이 풀리고 AFTER 행이 위 표로 돌아갑니다.
+      · <b>✕ 를 누르면 짝이 풀리고 BEFORE·AFTER 행이 모두 위 표로 되돌아옵니다</b> — 자동 확정된 짝도 동일합니다. (#19)
     </p>
   </div>
 
   <div class="note warn">
-    <b>Mock 사용법</b> — ① 표에서 BEFORE 한 행 + AFTER 한 행을 클릭하고 <b>적용</b>을 누르세요(반복).
-    같은 BEFORE 행을 두 번 이상 쓸 수 있고, AFTER 가 0행이 되면 상단 게이트가 초록으로 바뀝니다.
-    ② 표의 <b>✕</b> 로 해제, 상단 <b>↻ 재선택</b> 으로 전체 롤백을 확인해보세요.
+    <b>Mock 확인 포인트</b> — ② 표에서 자동 확정 4건 중 아무 줄이나 <b>✕</b> 를 눌러보세요.
+    <b>BEFORE 쪽 행이 초록 배경으로 왼쪽 표에 되살아납니다</b>(v2 결함 수정). 되살아난 행은 다시 다른 AFTER 와 매핑할 수 있습니다.
   </div>
 
   <!-- ============================================================ -->
@@ -348,14 +348,14 @@
 
   <h3>작업 단계</h3>
   <ol>
-    <li><b>Merge 블록 노출 조건 확장</b> — <code>MERGE_ENABLED_PURPOSES</code> 상수 신설, 3개 목적 중 하나라도 포함이면 노출. 해제 시 초기화 effect 도 동일 조건으로 변경.</li>
+    <li><b>Merge 블록 노출 조건 확장</b> — <code>MERGE_ENABLED_PURPOSES</code> 상수 신설, 3개 목적 중 하나라도 포함이면 노출. 해제 시 초기화 effect 도 동일 조건.</li>
     <li><b>비교 계산 함수 신설</b> — <code>helpers.ts</code> 에 <code>computeBeforeAfter(refJ, refO, curJ, curO)</code> 순수 함수. 반환 <code>{ pairs, unmatchedBefore, unmatchedAfter }</code>. 기존 <code>computeLayerMerge</code> <b>무변경</b>.</li>
-    <li><b>스냅샷 &amp; 재선택</b> — <code>handleMergeConfirm</code> 에서 3-way 반영 <b>직전</b>의 <code>jayerRows</code>/<code>oayerRows</code> 를 <code>mergeSnapshot</code> 에 저장. <code>handleMergeReselect</code> 는 ConfirmModal 확인 후 스냅샷 복원 + 두 표·<code>merge_pairs</code>·참조 요청서 상태 초기화.</li>
-    <li><b>상태·핸들러</b> — <code>baPairs</code>/<code>baBefore</code>/<code>baAfter</code>/<code>baSelBefore</code>/<code>baSelAfter</code>/<code>mergeSnapshot</code> + <code>handleBaSelect</code>·<code>handleBaApply</code>·<code>handleBaUnpair</code>.</li>
-    <li><b>UI 컴포넌트 신설</b> — <code>components/BeforeAfterPanel.tsx</code> (Mock §3 그대로). Step1 인라인 렌더.</li>
-    <li><b>게이트 검증</b> — <code>validate()</code> 에 "AFTER 미매핑 잔여 0" 검사 추가(다음 STEP·상신 차단, 임시저장은 허용).</li>
-    <li><b>저장</b> — <code>DetailFormState.merge_pairs</code> 추가, <code>INITIAL_DETAIL</code>·로드 백필(<code>?? []</code>).</li>
-    <li><b>상세 페이지 노출</b> — <code>PagedDetailView.tsx</code> 에 "변경전/변경후" 카드(값 있을 때만).</li>
+    <li><b>스냅샷 저장 &amp; 재선택</b> — <code>handleMergeConfirm</code> 에서 3-way 반영 <b>직전</b>의 <code>jayerRows</code>/<code>oayerRows</code> 를 <code>mergeSnapshot</code> 상태에 담고 <b>문서 저장 페이로드에도 포함</b>(#21). <code>handleMergeReselect</code> 는 ConfirmModal 확인 후 스냅샷 복원 + 두 표·<code>merge_pairs</code>·<code>mergeSnapshot</code>·참조 요청서 상태 초기화.</li>
+    <li><b>상태·핸들러</b> — <code>baPairs</code>/<code>baBefore</code>/<code>baAfter</code>/<code>baSelBefore</code>/<code>baSelAfter</code>/<code>mergeSnapshot</code> + <code>handleBaSelect</code>·<code>handleBaApply</code>·<code>handleBaUnpair</code>(양쪽 복귀·중복 방지 #19).</li>
+    <li><b>UI 컴포넌트 신설</b> — <code>components/BeforeAfterPanel.tsx</code> (Mock §3 그대로, 사용 컬럼 없음 #20). Step1 인라인 렌더.</li>
+    <li><b>게이트 검증</b> — <code>validate()</code> 에 "AFTER 미매핑 잔여 0" 검사 추가.</li>
+    <li><b>저장</b> — <code>DetailFormState.merge_pairs</code> + <code>additional_notes.mergeSnapshot</code>. 로드 시 백필(<code>?? []</code> / <code>?? null</code>).</li>
+    <li><b>상세 페이지 노출</b> — <code>PagedDetailView.tsx</code> 에 "변경전/변경후" 카드(값 있을 때만). <code>mergeSnapshot</code> 은 상세에 표시하지 않음.</li>
     <li><b>i18n</b> — ko/en 동시 추가. <b>테스트</b> — <code>helpers.test.ts</code> 케이스 추가.</li>
   </ol>
 
@@ -364,33 +364,48 @@
   <table class="file-list">
     <thead><tr><th style="width:290px">파일</th><th>변경 내용</th><th style="width:60px">규모</th></tr></thead>
     <tbody>
-      <tr><td><code>RequestPage/constants.ts</code></td><td><code>MERGE_ENABLED_PURPOSES</code>, <code>MergePair</code> 타입, <code>INITIAL_DETAIL.merge_pairs</code></td><td>소</td></tr>
+      <tr><td><code>RequestPage/constants.ts</code></td><td><code>MERGE_ENABLED_PURPOSES</code>, <code>MergePair</code>·<code>MergeSnapshot</code> 타입, <code>INITIAL_DETAIL.merge_pairs</code></td><td>소</td></tr>
       <tr><td><code>RequestPage/helpers.ts</code></td><td><code>computeBeforeAfter</code> 신설 (기존 함수 무변경)</td><td>중</td></tr>
-      <tr><td><code>RequestPage/index.tsx</code></td><td>상태 6종·핸들러 4종·스냅샷 롤백·게이트 검증·노출 조건 2곳</td><td>중</td></tr>
+      <tr><td><code>RequestPage/index.tsx</code></td><td>상태 6종·핸들러 4종·스냅샷 저장/복원·게이트 검증·노출 조건 2곳·저장 페이로드(<code>buildEnrichedForm</code>)·로드 파싱</td><td>중</td></tr>
       <tr><td><code>RequestPage/components/Step1.tsx</code></td><td>노출 조건 + 재선택 버튼 + 패널 렌더</td><td>소</td></tr>
       <tr><td><code>RequestPage/components/BeforeAfterPanel.tsx</code></td><td><b>신규</b></td><td>대</td></tr>
       <tr><td><code>components/PagedDetailView.tsx</code></td><td>"변경전/변경후" 카드</td><td>소</td></tr>
-      <tr><td><code>types/index.ts</code></td><td><code>DetailFormState.merge_pairs</code></td><td>소</td></tr>
+      <tr><td><code>types/index.ts</code></td><td><code>DetailFormState.merge_pairs</code>, <code>MergeSnapshot</code></td><td>소</td></tr>
       <tr><td><code>locales/ko.json</code> · <code>en.json</code></td><td>신규 키 (아래)</td><td>소</td></tr>
       <tr><td><code>RequestPage/helpers.test.ts</code></td><td><code>computeBeforeAfter</code> 테스트</td><td>중</td></tr>
       <tr><td><code>docs/REQUEST.md</code></td><td>변경 이력 절 추가 (규칙 C-4)</td><td>소</td></tr>
     </tbody>
   </table>
   </div>
-  <p style="font-size:0.85rem"><b>백엔드 변경 없음</b> — <code>additional_notes</code> JSON 저장이라 모델·마이그레이션·API 무변경.</p>
+  <p style="font-size:0.85rem"><b>백엔드 변경 없음</b> — <code>additional_notes</code> 는 <code>TextField</code>(MySQL <code>longtext</code>, 최대 4GB)라 스냅샷을 함께 넣어도 <b>스키마·마이그레이션 변경이 필요 없습니다</b>.</p>
 
   <h3>저장 데이터 구조</h3>
-  <div class="card" style="font-family:ui-monospace,Menlo,monospace;font-size:0.82rem;white-space:pre;overflow-x:auto;color:var(--text-secondary)">detail.merge_pairs: [
-  {
-    "table": "J",                 // 'J' | 'O'  → 맨 앞 배지
-    "before": { "process_id":"PROC_X1", "sp":"SP02", "sd":"SD02", "pp":"PP02", "layerid":"L20" },
-    "after":  { "process_id":"PROC_X1", "sp":"SP02X","sd":"SD02", "pp":"PP02", "layerid":"L20" },
-    "kind":   "changed"           // 'changed' | 'added' | 'deleted'
+  <div class="card" style="font-family:ui-monospace,Menlo,monospace;font-size:0.82rem;white-space:pre;overflow-x:auto;color:var(--text-secondary)">additional_notes = {
+  detail: {
+    ...,
+    merge_ref_doc_id: 123,
+    merge_ref_doc_label: "라인1(기타-[Layer 추가/삭제])_...",
+    merge_pairs: [
+      { "table":"J",
+        "before":{ "process_id":"PROC_X1","sp":"SP02","sd":"SD02","pp":"PP02","layerid":"L20" },
+        "after" :{ "process_id":"PROC_X1","sp":"SP02X","sd":"SD02","pp":"PP02","layerid":"L20" },
+        "kind"  :"changed" },                       // 'changed' | 'added' | 'deleted'
+      { "table":"J", "before":null,      "after":{...}, "kind":"added"   },   // BEFORE 미등록
+      { "table":"O", "before":{...},     "after":null,  "kind":"deleted" }    // AFTER 미등록
+    ]
   },
-  { "table":"J", "before": null,   "after": { ... }, "kind":"added"   },  // BEFORE 미등록
-  { "table":"O", "before": { ... },"after": null,    "kind":"deleted" }   // AFTER 미등록
-]
-// 'matched'(자동/수동) 필드는 확정 컬럼 삭제(#16)에 따라 저장하지 않음</div>
+  jayerRows: [...], oayerRows: [...], bbRows: [...], history: [...],
+
+  mergeSnapshot: {            // ★ v3 신규 — 재선택 롤백용 (Merge 직전 상태)
+    jayerRows: [...],
+    oayerRows: [...],
+    refDocId: 123,
+    savedAt: "2026-08-03T09:12:44.000Z"
+  }
+}
+// 'matched'(자동/수동) 필드는 확정 컬럼 삭제(#16)에 따라 저장하지 않음
+// mergeSnapshot 은 detail 바깥 형제 키 → PagedDetailView 의 변경 이력 diff(detail 기준)에 영향 없음
+// 재선택 완료 · 조리법 변경 · 3개 목적 전체 해제 시 mergeSnapshot 은 null 로 정리</div>
 
   <h3>i18n 키 (ko/en 동시)</h3>
   <div class="scroll-x">
@@ -403,13 +418,12 @@
       <tr><td><code>request.ba_result_title</code></td><td>변경전 / 변경후</td><td>Before / After</td></tr>
       <tr><td><code>request.ba_apply</code></td><td>적용</td><td>Apply</td></tr>
       <tr><td><code>request.ba_unpair</code></td><td>매핑 해제</td><td>Unpair</td></tr>
-      <tr><td><code>request.ba_used_count</code></td><td>사용 {{count}}</td><td>Used {{count}}</td></tr>
       <tr><td><code>request.ba_hint_select</code></td><td>BEFORE·AFTER 에서 각각 한 행을 선택한 뒤 적용을 누르세요</td><td>Select one row on each side, then Apply</td></tr>
       <tr><td><code>request.ba_hint_same_table</code></td><td>J-ayer 는 J-ayer 끼리만 매핑할 수 있습니다</td><td>J-ayer maps to J-ayer only</td></tr>
       <tr><td><code>request.ba_hint_both_unreg</code></td><td>양쪽 모두 미등록은 선택할 수 없습니다</td><td>Both sides cannot be unregistered</td></tr>
       <tr><td><code>request.ba_gate_ng</code></td><td>AFTER 항목 {{count}}건이 아직 매핑되지 않았습니다</td><td>{{count}} AFTER item(s) not mapped yet</td></tr>
       <tr><td><code>request.ba_gate_ok</code></td><td>모든 AFTER 항목이 매핑되었습니다</td><td>All AFTER items mapped</td></tr>
-      <tr><td><code>request.ba_summary</code></td><td>변경 없음 {{same}}건 · 자동 확정 {{auto}}건 · 매핑 대기 {{manual}}건</td><td>Unchanged {{same}} · Auto {{auto}} · Pending {{manual}}</td></tr>
+      <tr><td><code>request.ba_summary</code></td><td>변경 없음 {{same}}건 · 확정 {{done}}건 · 매핑 대기 {{pending}}건</td><td>Unchanged {{same}} · Confirmed {{done}} · Pending {{pending}}</td></tr>
       <tr><td><code>request.ba_kind_changed</code>/<code>_added</code>/<code>_deleted</code></td><td>변경 / 추가 / 삭제</td><td>Changed / Added / Deleted</td></tr>
       <tr><td><code>request.merge_reselect</code></td><td>재선택</td><td>Reselect</td></tr>
       <tr><td><code>request.merge_reselect_confirm_title</code></td><td>참조 요청서 재선택</td><td>Reselect reference</td></tr>
@@ -418,6 +432,7 @@
     </tbody>
   </table>
   </div>
+  <p style="font-size:0.82rem;color:var(--muted)">v2 의 <code>request.ba_used_count</code> 키는 사용 컬럼 삭제(#20)로 <b>추가하지 않습니다</b>.</p>
 
   <!-- ============================================================ -->
   <h2>5. 검증 계획</h2>
@@ -435,80 +450,78 @@
     <tbody>
       <tr><td><b>① 노출 조건</b></td><td>의뢰서 작성 → 라인·조합법·제품·조리법 입력 → 기타 목적에서 <b>STEPSEQ 변경</b> → 이어서 <b>Layer 추가/삭제</b>·<b>Overlay 변경</b> 클릭</td><td>참조 요청서 블록이 <b>1개만</b> 노출. 3개 모두 해제하면 블록·표 사라지고 상태 초기화</td></tr>
       <tr><td><b>② 자동 매칭</b></td><td>참조 요청서 선택 → <b>Merge</b> → 확인 모달 승인</td><td>J/O 표가 기존처럼 재판정되고, 아래에 요약 바 + 게이트 + 두 표 표시. 5개 값 동일 행은 어느 표에도 없음</td></tr>
-      <tr><td><b>③ 즉시 적용</b></td><td>BEFORE 1행 클릭 → AFTER 1행 클릭 → <b>적용</b></td><td>중간 단계 없이 바로 변경전/변경후 표에 한 줄 추가. AFTER 행은 목록에서 사라지고 <b>BEFORE 행은 남으며 '사용 1' 배지</b></td></tr>
-      <tr><td><b>④ BEFORE 재사용</b></td><td>같은 BEFORE 행을 다시 클릭 → 다른 AFTER 행 선택 → 적용</td><td>두 번째 줄이 추가되고 배지가 <b>사용 2</b> 로 증가 (#18)</td></tr>
-      <tr><td><b>⑤ 미등록 매핑</b></td><td>BEFORE 의 <code>미등록</code> 행 → AFTER 1행 → 적용</td><td>변경전 칸이 5칸 합친 <b>미등록 한 줄</b>, 판정 <code>추가</code></td></tr>
-      <tr><td><b>⑥ 게이트</b></td><td>AFTER 를 일부만 매핑한 채 <b>다음 STEP</b> 클릭</td><td>이동 차단 + "AFTER 항목 n건이 아직 매핑되지 않았습니다" 에러. 전부 매핑하면 게이트가 초록으로 바뀌고 이동 가능 (#14)</td></tr>
-      <tr><td><b>⑦ 짝 해제</b></td><td>변경전/변경후 표에서 <b>✕</b> 클릭</td><td>줄이 사라지고 AFTER 행이 되살아남 + BEFORE 사용 배지 감소, 게이트 다시 빨강</td></tr>
-      <tr><td><b>⑧ 재선택</b></td><td>Merge 후 J-ayer 표 한 셀을 수정 → <b>↻ 재선택</b> → 확인</td><td>두 표가 사라지고 <b>J/O 표가 Merge 직전 상태(수정분 포함 롤백)</b> 로 복구. 참조 요청서 입력이 비워지고 다시 선택 가능 (#13)</td></tr>
-      <tr><td><b>⑨ 저장·재진입</b></td><td>임시저장 → 목록에서 다시 열기</td><td>변경전/변경후 표가 그대로 복원. (재선택 버튼 동작은 §7-1 답변에 따름)</td></tr>
-      <tr><td><b>⑩ 상세 노출</b></td><td>상신 → <b>결재 현황</b> → 의뢰서 행 클릭 → 상세 1페이지</td><td>"변경전/변경후" 카드에 J/O 배지·5개 항목·미등록 한 줄이 작성 화면과 동일하게 표시. <b>실패 신호</b>: 카드가 비거나 미등록이 <code>-</code> 로만 보임</td></tr>
-      <tr><td><b>⑪ 회귀</b></td><td>기타 목적을 <code>공법 추가/변경</code> 만 선택 / <code>완성된 MAP 변경</code> 선택</td><td>참조 요청서 블록 미노출, 완성된 MAP 변경 단독 전용 동작 그대로</td></tr>
+      <tr><td><b>③ 즉시 적용</b></td><td>BEFORE 1행 클릭 → AFTER 1행 클릭 → <b>적용</b></td><td>중간 단계 없이 변경전/변경후 표에 한 줄 추가. AFTER 행은 사라지고 <b>BEFORE 행은 목록에 남음(배지 없음)</b></td></tr>
+      <tr><td><b>④ BEFORE 재사용</b></td><td>같은 BEFORE 행을 다시 클릭 → 다른 AFTER 선택 → 적용</td><td>두 번째 줄이 추가됨. BEFORE 표에 사용 컬럼이 <b>없어야</b> 정상 (#20)</td></tr>
+      <tr><td><b>⑤ 미등록 매핑</b></td><td>BEFORE 의 <code>미등록</code> → AFTER 1행 → 적용</td><td>변경전 칸이 5칸 합친 <b>미등록 한 줄</b>, 판정 <code>추가</code></td></tr>
+      <tr><td><b>⑥ 해제 복귀</b></td><td>변경전/변경후 표에서 <b>자동 확정된</b> 줄의 <b>✕</b> 클릭</td><td><b>BEFORE 행과 AFTER 행이 모두</b> 위 표로 되살아남 (#19). 같은 BEFORE 를 이미 쓰고 있었다면 <b>중복 행이 생기지 않아야</b> 함. 게이트는 다시 빨강</td></tr>
+      <tr><td><b>⑦ 게이트</b></td><td>AFTER 를 일부만 매핑한 채 <b>다음 STEP</b> 클릭</td><td>이동 차단 + "AFTER 항목 n건이 아직 매핑되지 않았습니다" 에러. 전부 매핑하면 초록으로 바뀌고 이동 가능 (#14)</td></tr>
+      <tr><td><b>⑧ 즉시 재선택</b></td><td>Merge 후 J-ayer 표 한 셀 수정 → <b>↻ 재선택</b> → 확인</td><td>두 표가 사라지고 <b>J/O 표가 Merge 직전 상태(수정분 포함 롤백)</b> 로 복구, 참조 요청서 입력이 비워짐</td></tr>
+      <tr><td><b>⑨ 다음 날 재선택</b> ★</td><td>Merge·매핑 후 <b>임시저장</b> → 브라우저 닫기 → 다시 로그인 → 임시저장 문서 열기 → <b>↻ 재선택</b></td><td><b>저장된 스냅샷으로 J/O 표가 Merge 이전으로 롤백</b>되고 두 표·매핑이 초기화됨 (#21). <b>실패 신호</b>: 버튼이 비활성이거나 J/O 가 그대로 남음</td></tr>
+      <tr><td><b>⑩ 저장·복원</b></td><td>임시저장 → 다시 열기</td><td>변경전/변경후 표와 BEFORE/AFTER 잔여 항목이 그대로 복원</td></tr>
+      <tr><td><b>⑪ 상세 노출</b></td><td>상신 → <b>결재 현황</b> → 의뢰서 행 클릭 → 상세 1페이지</td><td>"변경전/변경후" 카드에 J/O 배지·5개 항목·미등록 한 줄 표시. <b>실패 신호</b>: 카드가 비거나 미등록이 <code>-</code> 로만 보임</td></tr>
+      <tr><td><b>⑫ 회귀</b></td><td>기타 목적을 <code>공법 추가/변경</code> 만 선택 / <code>완성된 MAP 변경</code> 선택</td><td>참조 요청서 블록 미노출, 완성된 MAP 변경 단독 전용 동작 그대로</td></tr>
     </tbody>
   </table>
   </div>
 
   <h3>잠재 이슈 · 주의사항</h3>
   <ul>
-    <li><b>재선택 롤백의 범위</b> — 스냅샷은 <b>Merge 직전</b> 시점이므로, Merge 이후 사용자가 J/O 를 수동 편집했다면 그 편집도 함께 사라집니다. ConfirmModal 문구에 명시합니다.</li>
-    <li><b>임시저장 후 재진입</b> — 스냅샷을 문서에 저장하지 않으면 재진입 후에는 J/O 롤백이 불가합니다(§7-1 에서 결정).</li>
-    <li><b>조리법 변경 시 초기화</b> — <code>process_id</code> 변경 시 J/O 재조회로 참조 상태가 초기화됩니다(<code>index.tsx:507-510</code>). <code>merge_pairs</code>·스냅샷도 함께 비웁니다.</li>
-    <li><b>Merge 후 J/O 수동 편집</b> — 저장되는 <code>merge_pairs</code> 는 <b>Merge 시점 스냅샷</b> 성격입니다. 상세 페이지 카드에도 "Merge 시점 기준" 문구를 답니다.</li>
-    <li><b>기존 매칭 키 결함</b> — <code>computeLayerMerge</code> 키에 <code>layerid</code> 가 빠진 알려진 문제(<code>docs/REQUEST.md:282</code>)는 이번 범위 밖(#8 현행 유지). 새 함수는 <code>process_id+layerid</code> 기준이라 두 계산의 기준이 다릅니다 — 의도된 분리입니다.</li>
-    <li><b>구버전 문서</b> — <code>merge_pairs</code> 없는 문서는 <code>?? []</code> 백필, 상세 카드는 빈 배열이면 숨김.</li>
+    <li><b>재선택 롤백의 범위</b> — 스냅샷은 <b>Merge 직전</b> 시점이므로 Merge 이후의 수동 편집도 함께 사라집니다. ConfirmModal 문구에 명시합니다.</li>
+    <li><b>스냅샷 정리 시점</b> — 재선택 완료·조리법(<code>process_id</code>) 변경·3개 목적 전체 해제 시 <code>mergeSnapshot = null</code> 로 비웁니다. 안 비우면 다른 조리법의 옛 J/O 로 롤백되는 사고가 납니다.</li>
+    <li><b>저장 용량</b> — <code>additional_notes</code> 가 J/O 행 수만큼 커집니다(대략 1.6~2배). <code>TextField</code>(<code>longtext</code>)라 한계는 없지만, 목록 API 가 <code>additional_notes</code> 를 통째로 내려주므로 <b>목록 응답이 무거워질 수 있습니다</b> — 필요 시 목록 직렬화에서 제외하는 별도 과제로 남깁니다.</li>
+    <li><b>해제 시 중복 방지</b> — 같은 BEFORE 행이 이미 목록에 있으면 다시 추가하지 않습니다(행 id 기준). id 가 없는 자동 확정 짝은 <code>table+5개 값</code> 조합 키로 비교합니다.</li>
+    <li><b>기존 매칭 키 결함</b> — <code>computeLayerMerge</code> 키에 <code>layerid</code> 가 빠진 알려진 문제(<code>docs/REQUEST.md:282</code>)는 이번 범위 밖(#8). 새 함수는 <code>process_id+layerid</code> 기준 — 의도된 분리입니다.</li>
+    <li><b>구버전 문서</b> — <code>merge_pairs</code>/<code>mergeSnapshot</code> 없는 문서는 백필. 스냅샷이 없으면 재선택 버튼에 "J/O 롤백 없이 매핑만 초기화됩니다" 툴팁을 답니다.</li>
   </ul>
 
   <!-- ============================================================ -->
-  <h2>6. v1 대비 변경 요약</h2>
+  <h2>6. 회차별 변경 요약</h2>
   <div class="scroll-x">
   <table>
-    <thead><tr><th style="width:150px">항목</th><th>v1</th><th>v2 (확정)</th></tr></thead>
+    <thead><tr><th style="width:150px">항목</th><th>v1</th><th>v2</th><th>v3 (확정)</th></tr></thead>
     <tbody>
-      <tr><td>참조 요청서 잠금</td><td>Merge 후 영구 잠금</td><td><b>재선택 버튼</b> — 표 초기화 + J/O 롤백</td></tr>
-      <tr><td>적용 방식</td><td>매핑 추가(스테이징) → 적용 n건</td><td><b>선택 → 적용 즉시 확정</b></td></tr>
-      <tr><td>BEFORE 사용</td><td>1회</td><td><b>여러 번(1:N)</b>, 사용 배지 표시</td></tr>
-      <tr><td>미등록 표기</td><td>컬럼마다 표시</td><td><b>한 줄 병합</b></td></tr>
-      <tr><td>확정 컬럼</td><td>자동/수동 표시</td><td><b>삭제</b></td></tr>
-      <tr><td>미매핑 잔여</td><td>경고만</td><td><b>AFTER 0건이어야 진행 가능</b></td></tr>
+      <tr><td>참조 요청서 잠금</td><td>영구 잠금</td><td>재선택 버튼</td><td>재선택 + <b>재진입 후에도 롤백</b></td></tr>
+      <tr><td>적용 방식</td><td>매핑 추가 → 적용 n건</td><td>선택 → 즉시 적용</td><td>동일</td></tr>
+      <tr><td>BEFORE 사용</td><td>1회</td><td>여러 번 + 사용 배지</td><td>여러 번, <b>배지 삭제</b></td></tr>
+      <tr><td>매핑 해제</td><td>AFTER 만 복귀</td><td>AFTER 만 복귀</td><td><b>BEFORE·AFTER 모두 복귀</b></td></tr>
+      <tr><td>미등록 표기</td><td>컬럼마다</td><td>한 줄 병합</td><td>동일</td></tr>
+      <tr><td>확정 컬럼</td><td>자동/수동</td><td>삭제</td><td>동일</td></tr>
+      <tr><td>미매핑 잔여</td><td>경고만</td><td>AFTER 0건 필수</td><td>동일</td></tr>
+      <tr><td>J/O 스냅샷</td><td>—</td><td>메모리에만</td><td><b>문서에 저장</b></td></tr>
     </tbody>
   </table>
   </div>
 
   <!-- ============================================================ -->
   <h2>7. 확인 요청 항목 <span class="badge tag-q">답변 필요</span></h2>
-  <p>새 요구사항을 반영하며 생긴 6가지입니다. Mock 에는 <b>기본값</b>을 넣어두었습니다. <b>"전부 OK"</b> 또는 바꿀 번호만 알려주세요.</p>
+  <p>v2 의 1번(임시저장 후 롤백)은 <b>해결</b>되었습니다. 남은 5가지입니다 — <b>"전부 OK"</b> 또는 바꿀 번호만 알려주세요.</p>
   <div class="scroll-x">
   <table>
     <thead><tr><th style="width:28px">#</th><th style="width:180px">항목</th><th>Mock 기본값</th><th style="width:220px">대안</th></tr></thead>
     <tbody>
       <tr>
-        <td>1</td><td><b>임시저장 후 재선택</b></td>
-        <td>J/O 스냅샷은 <b>문서에 저장하지 않음</b> → 재진입 후 재선택을 누르면 <b>표·매핑만 초기화</b>되고 J/O 표는 그대로. 버튼에 안내 문구 표시</td>
-        <td>스냅샷도 문서에 저장해 재진입 후에도 완전 롤백 (저장 용량 약 2배)</td>
-      </tr>
-      <tr>
-        <td>2</td><td><b>게이트 적용 시점</b></td>
+        <td>1</td><td><b>게이트 적용 시점</b></td>
         <td>AFTER 미매핑이 남으면 <b>다음 STEP 이동·상신 차단</b>, <b>임시저장은 허용</b></td>
-        <td>상신에서만 차단(STEP 이동은 자유) / 임시저장도 차단</td>
+        <td>상신에서만 차단 / 임시저장도 차단</td>
       </tr>
       <tr>
-        <td>3</td><td><b>남은 BEFORE 행의 의미</b></td>
-        <td>매핑되지 않고 남은 BEFORE 행은 <b>변경 사항으로 기록하지 않음</b>(무시). 3-way Merge 가 이미 <code>layer삭제</code> 행으로 처리하기 때문</td>
+        <td>2</td><td><b>남은 BEFORE 행의 의미</b></td>
+        <td>매핑되지 않고 남은 BEFORE 행은 <b>변경 사항으로 기록하지 않음</b>(무시). 3-way Merge 가 이미 <code>layer삭제</code> 행으로 처리</td>
         <td>남은 BEFORE 를 <code>AFTER=미등록</code>(삭제)로 자동 기록</td>
       </tr>
       <tr>
-        <td>4</td><td><b>판정 컬럼</b></td>
-        <td><b>유지</b> — 변경/추가/삭제 배지 (삭제 대상은 '확정(자동·수동)' 컬럼만으로 이해)</td>
+        <td>3</td><td><b>판정 컬럼</b></td>
+        <td><b>유지</b> — 변경/추가/삭제 배지 (삭제 요청은 '확정' 컬럼만으로 이해)</td>
         <td>판정 컬럼도 삭제</td>
       </tr>
       <tr>
-        <td>5</td><td><b>AFTER 의 미등록 항목</b></td>
+        <td>4</td><td><b>AFTER 의 미등록 항목</b></td>
         <td><b>유지</b> — BEFORE 행을 "삭제됨"으로 명시할 때 사용, 횟수 제한 없음</td>
-        <td>AFTER 는 전량 매핑이 원칙이므로 미등록 항목 제거</td>
+        <td>AFTER 는 전량 매핑이 원칙이므로 제거</td>
       </tr>
       <tr>
-        <td>6</td><td><b>같은 짝 중복 방지</b></td>
-        <td>동일한 BEFORE↔AFTER 조합은 이미 AFTER 가 소진되므로 자연히 불가. <b>BEFORE+미등록 조합만 중복 가능</b> → 그대로 허용</td>
+        <td>5</td><td><b>같은 짝 중복</b></td>
+        <td>AFTER 가 소진되므로 자연히 불가. <b>BEFORE+미등록 조합만 중복 가능</b> → 그대로 허용</td>
         <td>BEFORE+미등록 중복도 차단</td>
       </tr>
     </tbody>
@@ -527,11 +540,16 @@
 (function () {
   var UNREG = '미등록';
 
+  // 자동 확정 4건 — 해제하면 양쪽 행이 각 표로 복귀해야 한다 (#19)
   var initialResult = [
-    { table:'J', before:{p:'PROC_X1',sp:'SP02',sd:'SD02',pp:'PP02',l:'L20'}, after:{p:'PROC_X1',sp:'SP02X',sd:'SD02',pp:'PP02',l:'L20'} },
-    { table:'J', before:{p:'PROC_X1',sp:'SP03',sd:'SD03',pp:'PP03',l:'L30'}, after:{p:'PROC_X1',sp:'SP03',sd:'SD03',pp:'PP03X',l:'L30'} },
-    { table:'J', before:{p:'PROC_X1',sp:'SP04',sd:'SD04',pp:'PP04',l:'L40'}, after:null },
-    { table:'O', before:{p:'PROC_X1',sp:'SP11',sd:'SD11',pp:'PP11',l:'L11'}, after:{p:'PROC_X1',sp:'SP11',sd:'SD11X',pp:'PP11',l:'L11'} }
+    { table:'J', beforeId:'ab1', before:{p:'PROC_X1',sp:'SP02',sd:'SD02',pp:'PP02',l:'L20'},
+                 afterId:'aa1',  after:{p:'PROC_X1',sp:'SP02X',sd:'SD02',pp:'PP02',l:'L20'} },
+    { table:'J', beforeId:'ab2', before:{p:'PROC_X1',sp:'SP03',sd:'SD03',pp:'PP03',l:'L30'},
+                 afterId:'aa2',  after:{p:'PROC_X1',sp:'SP03',sd:'SD03',pp:'PP03X',l:'L30'} },
+    { table:'J', beforeId:'ab3', before:{p:'PROC_X1',sp:'SP04',sd:'SD04',pp:'PP04',l:'L40'},
+                 afterId:null,   after:null },
+    { table:'O', beforeId:'ab4', before:{p:'PROC_X1',sp:'SP11',sd:'SD11',pp:'PP11',l:'L11'},
+                 afterId:'aa4',  after:{p:'PROC_X1',sp:'SP11',sd:'SD11X',pp:'PP11',l:'L11'} }
   ];
   var initialBefore = [
     { id:'b1', table:'J', p:'PROC_X1', sp:'SP05', sd:'SD05', pp:'PP05', l:'L50' },
@@ -543,7 +561,7 @@
     { id:'a3', table:'J', p:'PROC_X1', sp:'SP08', sd:'SD08', pp:'PP08', l:'L60' }
   ];
 
-  var result, before, after, useCount, selB, selA;
+  var result, before, after, selB, selA, flash;
 
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
@@ -551,25 +569,23 @@
     result = clone(initialResult);
     before = clone(initialBefore);
     after = clone(initialAfter);
-    useCount = {};
-    selB = null; selA = null;
+    selB = null; selA = null; flash = {};
   }
 
   function badge(tb) { return '<span class="badge ' + (tb === 'J' ? 'b-j">J-ayer' : 'b-o">O-ayer') + '</span>'; }
   function esc(s) { return String(s == null ? '' : s); }
+  function has(list, id) { return list.some(function (r) { return r.id === id; }); }
 
   function renderBefore() {
     var html = '<tr class="pick-row unreg' + (selB === UNREG ? ' sel' : '') + '" data-side="B" data-id="' + UNREG + '">' +
-               '<td colspan="6">' + UNREG + ' — AFTER 에만 새로 생긴 항목과 짝지을 때</td>' +
-               '<td>' + (useCount[UNREG + '|B'] ? '<span class="badge b-use">' + useCount[UNREG + '|B'] + '</span>' : '') + '</td></tr>';
+               '<td colspan="6">' + UNREG + ' — AFTER 에만 새로 생긴 항목과 짝지을 때</td></tr>';
     before.forEach(function (r) {
-      var n = useCount[r.id] || 0;
-      html += '<tr class="pick-row' + (selB === r.id ? ' sel' : '') + '" data-side="B" data-id="' + r.id + '">' +
+      html += '<tr class="pick-row' + (selB === r.id ? ' sel' : '') + (flash[r.id] ? ' newrow' : '') +
+        '" data-side="B" data-id="' + r.id + '">' +
         '<td>' + badge(r.table) + '</td><td>' + esc(r.p) + '</td><td>' + esc(r.sp) + '</td>' +
-        '<td>' + esc(r.sd) + '</td><td>' + esc(r.pp) + '</td><td>' + esc(r.l) + '</td>' +
-        '<td>' + (n ? '<span class="badge b-use">사용 ' + n + '</span>' : '') + '</td></tr>';
+        '<td>' + esc(r.sd) + '</td><td>' + esc(r.pp) + '</td><td>' + esc(r.l) + '</td></tr>';
     });
-    if (before.length === 0) html += '<tr><td colspan="7" class="hint">항목이 없습니다.</td></tr>';
+    if (before.length === 0) html += '<tr><td colspan="6" class="hint">항목이 없습니다.</td></tr>';
     document.getElementById('beforeBody').innerHTML = html;
     document.getElementById('beforeCount').textContent = before.length + '행 (재사용 가능)';
   }
@@ -578,7 +594,8 @@
     var html = '<tr class="pick-row unreg' + (selA === UNREG ? ' sel' : '') + '" data-side="A" data-id="' + UNREG + '">' +
                '<td colspan="6">' + UNREG + ' — BEFORE 항목이 삭제됐음을 표시할 때</td></tr>';
     after.forEach(function (r) {
-      html += '<tr class="pick-row' + (selA === r.id ? ' sel' : '') + '" data-side="A" data-id="' + r.id + '">' +
+      html += '<tr class="pick-row' + (selA === r.id ? ' sel' : '') + (flash[r.id] ? ' newrow' : '') +
+        '" data-side="A" data-id="' + r.id + '">' +
         '<td>' + badge(r.table) + '</td><td>' + esc(r.p) + '</td><td>' + esc(r.sp) + '</td>' +
         '<td>' + esc(r.sd) + '</td><td>' + esc(r.pp) + '</td><td>' + esc(r.l) + '</td></tr>';
     });
@@ -664,15 +681,23 @@
       var id = row.getAttribute('data-id');
       if (side === 'B') selB = (selB === id ? null : id);
       else selA = (selA === id ? null : id);
+      flash = {};
       renderAll();
       return;
     }
     var un = e.target.getAttribute && e.target.getAttribute('data-unpair');
     if (un !== null && un !== undefined) {
       var p = result.splice(Number(un), 1)[0];
-      if (p.after) after.push({ id: 'r' + Date.now(), table: p.table, p: p.after.p, sp: p.after.sp, sd: p.after.sd, pp: p.after.pp, l: p.after.l });
-      if (p.beforeId) useCount[p.beforeId] = Math.max(0, (useCount[p.beforeId] || 1) - 1);
-      else if (!p.before) useCount[UNREG + '|B'] = Math.max(0, (useCount[UNREG + '|B'] || 1) - 1);
+      flash = {};
+      // #19 — BEFORE·AFTER 양쪽 복귀. 이미 목록에 있는 BEFORE 는 중복 추가하지 않는다.
+      if (p.before && p.beforeId && !has(before, p.beforeId)) {
+        before.push({ id: p.beforeId, table: p.table, p: p.before.p, sp: p.before.sp, sd: p.before.sd, pp: p.before.pp, l: p.before.l });
+        flash[p.beforeId] = true;
+      }
+      if (p.after && p.afterId && !has(after, p.afterId)) {
+        after.push({ id: p.afterId, table: p.table, p: p.after.p, sp: p.after.sp, sd: p.after.sd, pp: p.after.pp, l: p.after.l });
+        flash[p.afterId] = true;
+      }
       renderAll();
     }
   });
@@ -683,15 +708,14 @@
     if (b && a && b.table !== a.table) return;
     result.push({
       table: (b || a).table,
-      before: b ? { p: b.p, sp: b.sp, sd: b.sd, pp: b.pp, l: b.l } : null,
       beforeId: b ? b.id : null,
+      before: b ? { p: b.p, sp: b.sp, sd: b.sd, pp: b.pp, l: b.l } : null,
+      afterId: a ? a.id : null,
       after: a ? { p: a.p, sp: a.sp, sd: a.sd, pp: a.pp, l: a.l } : null
     });
-    // BEFORE 는 목록에 남고 사용 횟수만 증가 (#18) / AFTER 는 목록에서 제거
-    if (b) useCount[b.id] = (useCount[b.id] || 0) + 1;
-    else useCount[UNREG + '|B'] = (useCount[UNREG + '|B'] || 0) + 1;
+    // BEFORE 는 목록에 남고(재사용), AFTER 만 목록에서 제거
     if (a) after = after.filter(function (r) { return r.id !== a.id; });
-    selB = null; selA = null;
+    selB = null; selA = null; flash = {};
     renderAll();
   };
 
@@ -699,7 +723,7 @@
     if (!confirm('참조 요청서 재선택\n\nMerge 결과와 매핑 내용이 모두 사라지고 J/O 표가 Merge 이전 상태로 돌아갑니다.\nMerge 이후 직접 수정한 내용도 함께 사라집니다.\n\n진행할까요?')) return;
     reset();
     renderAll();
-    alert('실제 화면에서는 여기서\n· J/O 표가 Merge 직전 스냅샷으로 복구되고\n· 참조 요청서 입력이 비워져 다시 선택할 수 있게 됩니다.\n\n(이 Mock 은 비교 표만 초기 상태로 되돌립니다)');
+    alert('실제 화면에서는 여기서\n· 문서에 저장된 스냅샷으로 J/O 표가 Merge 직전 상태로 복구되고\n· 참조 요청서 입력이 비워져 다시 선택할 수 있게 됩니다.\n(임시저장 후 다음 날 열어도 동일하게 동작합니다)\n\n이 Mock 은 비교 표만 초기 상태로 되돌립니다.');
   };
 
   reset();
