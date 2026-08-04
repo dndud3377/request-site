@@ -200,6 +200,10 @@ function RowDiffModal({
   );
 }
 
+// 지도 편차/C가문 판정에 쓰는 저장값(백엔드 저장 문자열과 동일)
+const MAP_NO_CHANGE = '변경 없음';
+const PRODC_YES = 'Yes';
+
 // ===== Field-group(블록) 변경 전/후 비교 모달 (세로형) =====
 interface DiffRow { label: string; before: string; after: string; }
 
@@ -827,8 +831,20 @@ export default function PagedDetailView({
   // ===== FieldHistoryModal =====
   // 1차~직전 회차 스냅샷 + 현재값을 회차 순서대로 모두 표시하고, 각 회차의 변경 유무를 함께 보여준다.
   const FieldHistoryModal = ({
-    label, fieldKey, currentValue, onClose, format,
-  }: { label: string; fieldKey: string; currentValue: string; onClose: () => void; format?: (v: any) => string }) => {
+    label, fieldKey, currentValue, onClose, format, buildValue,
+  }: {
+    label: string;
+    /** 단일 필드 항목의 키. 합성 값 항목은 fieldKey 대신 buildValue 를 넘긴다. */
+    fieldKey?: string;
+    currentValue: string;
+    onClose: () => void;
+    format?: (v: any) => string;
+    /**
+     * 여러 필드를 합쳐 한 줄로 보여주는 항목(지도 편차·EA 등)의 값 생성기.
+     * 회차 스냅샷과 현재 값을 같은 함수로 만들어야 값 비교가 성립한다.
+     */
+    buildValue?: (d: Partial<DetailFormState>) => string;
+  }) => {
     const fmt = (v: any) => (format ? format(v) : String(v ?? '-')) || '-';
     // '완성된 MAP 변경' 반영으로 밀려난 스냅샷은 '완성 후 수정 n회차'를 라벨로 쓴다.
     // 현재 값은 마지막 반영 회차(map_edit_round)가 있으면 그 회차 라벨을 함께 표기한다.
@@ -838,14 +854,16 @@ export default function PagedDetailView({
           ? t('request.map_edit_round_label', { round: snap.map_edit_round })
           : `${i + 1}차 제출`,
         timestamp: snap.timestamp,
-        value: fmt((snap.detail as any)?.[fieldKey]),
+        value: buildValue
+          ? (buildValue(snap.detail ?? {}) || '-')
+          : fmt(fieldKey ? (snap.detail as any)?.[fieldKey] : undefined),
       })),
       {
         label: mapEditRound > 0
           ? t('request.map_edit_round_current', { round: mapEditRound })
           : '현재 (최신)',
         timestamp: null as string | null,
-        value: currentValue || '-',
+        value: (buildValue ? buildValue(detail) : currentValue) || '-',
       },
     ];
     const thStyle: React.CSSProperties = {
@@ -901,23 +919,26 @@ export default function PagedDetailView({
 
   // ===== Chip =====
   const Chip = ({
-    label, value, style, changed, fieldKey,
+    label, value, style, changed, fieldKey, buildValue,
   }: {
     label: string;
     value: string | undefined | null;
     style?: React.CSSProperties;
     changed?: boolean;
     fieldKey?: string;
+    /** 합성 값 칩(지도 편차·EA·뼈찜 등)의 회차별 값 생성기 — 칩 표시와 동일한 함수를 넘긴다. */
+    buildValue?: (d: Partial<DetailFormState>) => string;
   }) => {
     const [histOpen, setHistOpen] = useState(false);
     if (!value) return null;
+    const canShowHistory = !!fieldKey || !!buildValue;
     const merged = { ...chipBase, ...style };
     const changedBorder: React.CSSProperties = changed
       ? { border: '2px solid #dc3545', position: 'relative' }
       : {};
     return (
       <div style={{ ...merged, ...changedBorder }}>
-        {changed && fieldKey && (
+        {changed && canShowHistory && (
           <>
             <button
               onClick={(e) => { e.stopPropagation(); setHistOpen(true); }}
@@ -935,6 +956,7 @@ export default function PagedDetailView({
                 label={label}
                 fieldKey={fieldKey}
                 currentValue={value}
+                buildValue={buildValue}
                 onClose={() => setHistOpen(false)}
               />
             )}
@@ -946,16 +968,64 @@ export default function PagedDetailView({
     );
   };
 
-  // other_purpose 는 배열(신규)이며, 구버전 문서는 문자열일 수 있어 양쪽 모두 처리한다.
-  const opRaw = detail.other_purpose as unknown as string[] | string | undefined;
-  const otherPurposeText = Array.isArray(opRaw)
-    ? opRaw.map((o) => `[${o}]`).join('')
-    : (opRaw || '');
-  const purposeValue = detail.request_purpose
-    ? (otherPurposeText ? `${detail.request_purpose}(${otherPurposeText})` : detail.request_purpose)
-    : '-';
-  const basicRow = [
-    { label: t('request.request_purpose'), value: purposeValue, fieldKey: 'request_purpose', changed: changedFields.has('request_purpose') || changedFields.has('other_purpose') },
+  // ===== 합성 값(여러 필드를 한 줄로 합쳐 보여주는 항목) 표시값 생성기 =====
+  // 칩 표시와 '이력 확인' 모달이 반드시 같은 함수를 써야 회차별 값 비교가 성립한다.
+  // (단일 필드만 넘기면 과거 회차는 대표 필드 값만, 현재 행만 합성 값으로 나와 비교가 깨진다.)
+
+  /** 의뢰 목적 — other_purpose 는 배열(신규)이며, 구버전 문서는 문자열일 수 있어 양쪽 모두 처리한다. */
+  const buildPurposeValue = (d: Partial<DetailFormState>): string => {
+    const opRaw = d.other_purpose as unknown as string[] | string | undefined;
+    const otherPurposeText = Array.isArray(opRaw)
+      ? opRaw.map((o) => `[${o}]`).join('')
+      : (opRaw || '');
+    if (!d.request_purpose) return '-';
+    return otherPurposeText ? `${d.request_purpose}(${otherPurposeText})` : d.request_purpose;
+  };
+
+  /** 지도 편차 — C가문(상/하판 리전별)인지 여부를 스냅샷 자체의 only_prodc 로 판별한다. */
+  const buildMapValue = (d: Partial<DetailFormState>): string => {
+    if (d.only_prodc === PRODC_YES) {
+      const regionLine = (region: 'top' | 'bottom'): string => {
+        const label = t(region === 'top' ? 'request.prodc_top' : 'request.prodc_bottom');
+        if (d[`map_change_${region}`] === MAP_NO_CHANGE) return `[${label}] ${t('request.map_no_change')}`;
+        const x = d[`map_value_x_${region}`];
+        const y = d[`map_value_y_${region}`];
+        return `[${label}] X: ${x ? `${x}um` : '-'} / Y: ${y ? `${y}um` : '-'}`;
+      };
+      const reasonPart = d.map_reason ? ` / 사유: ${d.map_reason}` : '';
+      return `${regionLine('top')}\n${regionLine('bottom')}${reasonPart}`;
+    }
+    if (!d.map_change) return '';
+    return `변경: ${d.map_change}`
+      + (d.map_value_x ? ` / X: ${d.map_value_x}um` : '')
+      + (d.map_value_y ? ` / Y: ${d.map_value_y}um` : '')
+      + (d.map_reason ? ` / 사유: ${d.map_reason}` : '');
+  };
+
+  /** Exclusive Area — 변경 여부 + 값(mm) */
+  const buildEaValue = (d: Partial<DetailFormState>): string => {
+    if (!d.ea_change) return '';
+    return `변경: ${d.ea_change}${d.ea_value ? ` / 값: ${d.ea_value}mm` : ''}`;
+  };
+
+  /** 뼈찜(Backbone) — 등록된 항목 목록 */
+  const buildBbValue = (d: Partial<DetailFormState>): string => {
+    const entries = d.bb_entries;
+    if (!Array.isArray(entries) || entries.length === 0) return '-';
+    return entries
+      .map((e, i) => `[${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.process_id || '-'}`)
+      .join('\n');
+  };
+
+  const purposeValue = buildPurposeValue(detail);
+  const basicRow: {
+    label: string;
+    value: string;
+    fieldKey?: string;
+    buildValue?: (d: Partial<DetailFormState>) => string;
+    changed: boolean;
+  }[] = [
+    { label: t('request.request_purpose'), value: purposeValue, buildValue: buildPurposeValue, changed: changedFields.has('request_purpose') || changedFields.has('other_purpose') },
     { label: t('request.line'), value: detail.line || '-', fieldKey: 'line', changed: changedFields.has('line') },
     { label: t('request.process_selection'), value: detail.process_selection || '-', fieldKey: 'process_selection', changed: changedFields.has('process_selection') },
     { label: t('request.partid_selection'), value: detail.partid_selection || '-', fieldKey: 'partid_selection', changed: changedFields.has('partid_selection') },
@@ -995,7 +1065,7 @@ export default function PagedDetailView({
     return lines.join('\n');
   };
 
-  const isProdc = detail.only_prodc === 'Yes';
+  const isProdc = detail.only_prodc === PRODC_YES;
   const mshotChange = detail.mshot_change || '없음';
   const mshotHasDetail = mshotChange === '추가' || mshotChange === '수정';
   const mshotIsDelete = mshotChange === '삭제';
@@ -1023,7 +1093,7 @@ type Page = { label: string; content: React.ReactNode };
             <div style={sectionTitle}>{t('approval.section_basic')}</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {basicRow.map((item) => (
-                <Chip key={item.label} label={item.label} value={item.value} changed={item.changed} fieldKey={item.fieldKey} />
+                <Chip key={item.label} label={item.label} value={item.value} changed={item.changed} fieldKey={item.fieldKey} buildValue={item.buildValue} />
               ))}
             </div>
             {(detail.customer_name || detail.customer_requirement) && (
@@ -1051,15 +1121,11 @@ type Page = { label: string; content: React.ReactNode };
             {/* 원본 라인/Part ID는 MAP 정보 섹션(CLONE)에서만 표시한다. */}
 
             {(isJ || isE || isO || isP) && detail.bb_zone && (() => {
-              const bbValue = Array.isArray(detail.bb_entries) && detail.bb_entries.length > 0
-                ? detail.bb_entries.map((e: { location: string; product: string; process_id: string }, i: number) =>
-                    `[${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.process_id || '-'}`
-                  ).join('\n')
-                : '-';
+              const bbValue = buildBbValue(detail);
               const bbChanged = changedFields.has('bb_zone') || changedFields.has('bb_entries');
               return (
                 <div style={rowStyle}>
-                  <Chip label={t('request.bb_status')} value={bbValue} style={chipWide} changed={bbChanged} fieldKey="bb_zone" />
+                  <Chip label={t('request.bb_status')} value={bbValue} style={chipWide} changed={bbChanged} buildValue={buildBbValue} />
                 </div>
               );
             })()}
@@ -1141,34 +1207,21 @@ type Page = { label: string; content: React.ReactNode };
           {(isR || isO || isJ || isP) && (detail.map_change || (detail as any).map_change_top || detail.ea_change) && (
             <div style={rowStyle}>
               {(isR || isO || isP) && (() => {
-                if (isProdc && (detail.map_change_top || detail.map_change_bottom
-                  || detail.map_value_x_top || detail.map_value_x_bottom)) {
-                  // 리전별로 '변경 없음/있음'을 함께 표기한다(둘 다 '변경 없음'이어도 칩을 띄운다).
-                  const regionLine = (region: 'top' | 'bottom'): string => {
-                    const label = t(region === 'top' ? 'request.prodc_top' : 'request.prodc_bottom');
-                    const change = detail[`map_change_${region}`];
-                    if (change === '변경 없음') return `[${label}] ${t('request.map_no_change')}`;
-                    const x = detail[`map_value_x_${region}`];
-                    const y = detail[`map_value_y_${region}`];
-                    return `[${label}] X: ${x ? `${x}um` : '-'} / Y: ${y ? `${y}um` : '-'}`;
-                  };
-                  const reasonPart = detail.map_reason ? ` / 사유: ${detail.map_reason}` : '';
-                  const mapValue = `${regionLine('top')}\n${regionLine('bottom')}${reasonPart}`;
-                  const mapChanged = ['map_change_top','map_value_x_top','map_value_y_top','map_change_bottom','map_value_x_bottom','map_value_y_bottom','map_reason'].some(k => changedFields.has(k));
-                  return <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change_top" />;
-                }
-                if (!isProdc && detail.map_change) {
-                  const mapValue = `변경: ${detail.map_change}${detail.map_value_x ? ` / X: ${detail.map_value_x}um` : ''}${detail.map_value_y ? ` / Y: ${detail.map_value_y}um` : ''}${detail.map_reason ? ` / 사유: ${detail.map_reason}` : ''}`;
-                  const mapChanged = changedFields.has('map_change') || changedFields.has('map_value_x') || changedFields.has('map_value_y') || changedFields.has('map_reason');
-                  return <Chip label={t('request.map')} value={mapValue} style={chipWide} changed={mapChanged} fieldKey="map_change" />;
-                }
-                return null;
+                // 리전별로 '변경 없음/있음'을 함께 표기한다(둘 다 '변경 없음'이어도 칩을 띄운다).
+                const isProdcMap = isProdc && !!(detail.map_change_top || detail.map_change_bottom
+                  || detail.map_value_x_top || detail.map_value_x_bottom);
+                const isPlainMap = !isProdc && !!detail.map_change;
+                if (!isProdcMap && !isPlainMap) return null;
+                const mapChanged = (isProdcMap
+                  ? ['map_change_top','map_value_x_top','map_value_y_top','map_change_bottom','map_value_x_bottom','map_value_y_bottom','map_reason']
+                  : ['map_change','map_value_x','map_value_y','map_reason']
+                ).some(k => changedFields.has(k));
+                return <Chip label={t('request.map')} value={buildMapValue(detail)} style={chipWide} changed={mapChanged} buildValue={buildMapValue} />;
               })()}
               {(isR || isO || isP) && detail.ea_change && (() => {
-                const eaValue = `변경: ${detail.ea_change}${detail.ea_value ? ` / 값: ${detail.ea_value}mm` : ''}`;
                 const eaChanged = changedFields.has('ea_change') || changedFields.has('ea_value');
                 return (
-                  <Chip label={t('request.ea_change')} value={eaValue} style={chipWide} changed={eaChanged} fieldKey="ea_change" />
+                  <Chip label={t('request.ea_change')} value={buildEaValue(detail)} style={chipWide} changed={eaChanged} buildValue={buildEaValue} />
                 );
               })()}
             </div>
