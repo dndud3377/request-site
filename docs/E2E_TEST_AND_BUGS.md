@@ -16,7 +16,7 @@
 >
 > 📌 **2026-08-04 갱신** — 코드가 여러 차례 바뀌어 문서의 `파일:라인` 참조가 실제와 어긋나 있었다.
 > **전 항목의 코드 위치를 현재 코드 기준으로 재검증·정정**했고, 함께 수행한 3차 정독
-> (**`additional_notes` 저장 정합성** 집중)에서 나온 신규 7건을 **§5-4** 에 추가했다.
+> (**`additional_notes` 저장 정합성** 집중)에서 나온 신규 8건을 **§5-4** 에 추가했다.
 > 라인 번호는 다시 밀린다 — 위치는 **함수/심볼 이름을 먼저 적고 라인은 보조**로 병기한다.
 
 ---
@@ -31,12 +31,13 @@
 |------|-----|---------|---------|------|------|
 | 🔴 치명 (Critical) | 4 | **+3** | 0 | **7** (1건 수정완료) | 인가 부재 삭제 / PAUSE 우회 / 미인증 업로드 / **저장형 XSS→권한상승** / **토큰 재사용** / **CSRF** |
 | 🟠 높음 (High) | 6 | **+6** | **+3** | **15** | 담당자 계정 삭제 시 결재 교착, 그룹 CASCADE 소실, 중단요청 고착, **후결자 소실**, **필터 행 소실** 등 |
-| 🟡 중간 (Medium) | 8 | **+7** | **+3** | **18** | 세션 갱신 불가, PII 로깅, 통계 노출, **detail 유령값**, **blob 덮어쓰기** 등 |
+| 🟡 중간 (Medium) | 8 | **+7** | **+4** | **19** | 세션 갱신 불가, PII 로깅, 통계 노출, **detail 유령값 2종**, **blob 덮어쓰기** 등 |
 | ⚪ 낮음/위생 (Low) | 7 | **+7** | **+1** | **15** | 하드코딩, `any` 83건, 데드코드, 취약한 휴리스틱 |
-| **합계** | 25 | **+23** | **+7** | **55** | |
+| **합계** | 25 | **+23** | **+8** | **56** | |
 
 > 3차(2026-08-04)는 **`additional_notes` 저장 정합성**만 파고들었다 — "저장되면 안 되는 값이 남는가 / 저장돼야 하는 값이
-> 사라지는가". 결과는 §5-4 (B-57 ~ B-63). 신규 7건 중 **5건이 값 소실**, 2건이 유령값·크래시다.
+> 사라지는가". 결과는 §5-4 (B-57 ~ B-64). 신규 8건 중 **4건이 값 소실**(B-57·58·59·61),
+> **2건이 유령값**(B-60·64), 1건이 blob 덮어쓰기(B-62), 1건이 크래시(B-63)다.
 
 **즉시 조치 권고 TOP 5** (전부 재현✅)
 1. **[B-26] 저장형 XSS → MASTER 권한 탈취** — 역할 `NONE` 사용자가 VOC 내용에 임의 HTML/스크립트를 저장할 수 있고,
@@ -302,10 +303,23 @@ A = 이미 결재완료된 **참조 요청서**, B = **지금 작성 중인 요�
 
 #### T-C4 조건부 섹션 해제 시 하위값 초기화
 - 조작: C가문 `Yes` → 상/중/하판 채움 → 다시 `No` 로 변경 → **임시저장 후 상세보기**
-- ✅ 저장된 JSON 에 `prodc_*`·REV·지도편차 값이 **남아 있지 않다**
+- ✅ 저장된 JSON 에 `prodc_*`·지도편차(리전)·X표시 값이 **남아 있지 않다**(`handleOnlyProdcChange`)
 - ❌ 남아 있으면 감사 R-2~R-6 회귀 (백엔드에 유령 값 저장)
-- 동일 검증: `map_change=변경 없음` → `map_value_x/y`·`map_reason` 초기화 / `ea_change=변경 없음` → `ea_value` 초기화 /
-  `mshot_change=없음|삭제` → `mshot_image_*` 초기화
+- 동일 검증(**2026-08-04 코드 확인 — 아래 4종은 정상 동작**)
+
+| 조작 | 초기화 대상 | 핸들러 |
+|---|---|---|
+| `map_change=변경 없음` | `map_value_x/y`·`map_reason` | `index.tsx:1703` |
+| `map_change_{top\|bottom}=변경 없음` | 그 리전 `map_value_x/y` (+양쪽 다 없음이면 `map_reason`) | `index.tsx:1645` |
+| `ea_change=변경 없음` | `ea_value` | `index.tsx:1714` |
+| `mshot_change=없음\|삭제` | `mshot_image_copy{,_top,_bottom}` | `index.tsx:1724` |
+| `inter=NO` | `inter_xs`·`inter_ys`·`in_apply`·`inter_select` | `StepMap.tsx:548` |
+| `rev_yn=NO` | `rev_entries` | `StepMap.tsx:210` |
+
+- ❌ **반대 방향(`No` → `Yes`)은 정리되지 않는다** — C가문으로 전환하면 일반 지도편차
+  (`map_change`/`map_value_x`/`map_value_y`)가 화면에서 사라진 채 값만 남아 저장된다 → §5 **B-64**
+- 추가 검증: C가문 `Yes` 상태에서 **`prodc_scope` 를 ONLY 스코프로 바꿔** 한 리전을 끄고 임시저장 →
+  꺼진 리전의 `map_change_{r}` 이 `변경 있음` 으로 남아 있으면 **B-64(b)**
 
 #### T-C5 숫자 전용 입력
 - 조작: MAP X/Y(일반 6개) 와 예외구역 값에 `--1.2.3abc` 붙여넣기
@@ -386,8 +400,10 @@ A = 이미 결재완료된 **참조 요청서**, B = **지금 작성 중인 요�
 |---|---|
 | 매핑된 J행의 아무 셀 수정 | ✅ bb 행 제거 + **원본 목록에 재노출**(재매핑 가능) |
 | 매핑된 J행 붙여넣기 / Delete | ✅ 동일 |
-| 매핑된 J행 **비활성화** | ✅ bb 행 제거, 원본 목록에도 안 뜸. **복원 시 목록 복귀** |
+| 매핑된 J행 **수동** 비활성화(체크 → '선택 비활성화') | ✅ bb 행 제거, 원본 목록에도 안 뜸. **복원 시 목록 복귀** |
+| 매핑된 J행이 **필터로** 비활성화 | ❌ **bb 행이 그대로 남는다**(`unmapJayerRows` 미호출) → §5 **B-59** |
 | 라인/조합법/조리법 변경 | ✅ `bbRows`·`mappedJayerRowIds`·`stagedMappings` 전부 초기화(고아 bb 방지) |
+| 참조 요청서 '재선택'(Merge 롤백) | ✅ 스냅샷에 없는 J행의 bb 매핑을 함께 정리(`handleMergeReselectConfirm`) |
 
 #### T-E5 매핑 필수 검증 (프론트 + 백엔드 이중)
 - 조작: 활성 + `process_id` 있는 J행을 매핑하지 않고 **상신**
@@ -933,7 +949,8 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 1. PL-A 가 임시저장 → 같은 그룹 PL-D 가 목록에서 확인 ✅
 2. PL-D 가 그 문서를 상신 → ✅ 가능(그룹 멤버는 `can_edit` 대상)
 3. 무관한 사용자로 임시저장 문서 조회 → ✅ 404/미노출
-4. ❌ 그러나 **상신 이후**(draft 가 아님)에는 목록 필터가 걸리지 않으므로 무관한 사용자가 **삭제 가능** → B-01 🔴
+4. ~~상신 이후에는 무관한 사용자가 삭제 가능~~ → ✅ **수정 완료**(B-01, `03b2240`).
+   현재는 `doc_permissions.can_delete` 가 상태별로 인가하고 REST `DELETE` 는 405 다 → 기대 동작은 **T-L2 표** 참조
 
 ### X-9 동시성
 | 시나리오 | 기대 |
@@ -1677,7 +1694,7 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 
 ---
 
-## 5-4. 3차 정독 — `additional_notes` 저장 정합성 (B-57 ~ B-63)
+## 5-4. 3차 정독 — `additional_notes` 저장 정합성 (B-57 ~ B-64)
 
 > 2026-08-04. 주제 하나만 봤다: **`additional_notes` 에 저장되면 안 되는 값이 남는가, 저장돼야 하는 값이 사라지는가.**
 > 이 컬럼은 J/O-layer·BB·MAP·통보처·후결자·Validation System·Merge 스냅샷·history 를 **전부** 담는
@@ -1711,6 +1728,8 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 - 내용: `add_post_approver` 에는 **`only_prodc` 검사가 없다**(`views.py:1487-1540`). 프론트의 후결자 관리 UI도
   `canManagePa`(`ApprovalPage.tsx:1153`)가 `isMaster || isPauseRequester` + `under_review` + 병렬 진입만 보므로
   **일반 문서(only_prodc ≠ 'Yes')에도 후결자를 추가할 수 있다.**
+  `remove_post_approver` 의 docstring(`views.py:1548-1551`)도 *"그 외 일반 문서는 0명까지 뺄 수 있다"* 라고 적어
+  **일반 문서에 추가 후결자가 존재하는 것을 정상 상태로 전제**한다 — 저장 쪽만 그 전제를 어기고 있다.
   그런데 작성 화면의 저장은 `only_prodc === 'Yes'` 가 아니면 **무조건 `[]`** 를 쓴다.
   편집 로드가 `detail.post_approvers` 를 `postApprovers` state 로 복원해 두어도(`index.tsx:826`) 이 삼항이 그 값을 버린다.
 - 발현 경로 3가지 (모두 `buildEnrichedForm(..., isDraft=false)` → PATCH)
@@ -1845,6 +1864,38 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
   ② 서버가 소유하는 키(`validation_system*`, `post_approvers`, `map_edit_round`, `history`)는
   **클라이언트 blob 에서 제외하고 serializer 가 기존 값을 보존**하도록 병합 저장으로 바꾼다.
   ②만으로도 B-57·B-61 이 함께 닫힌다.
+
+### 🟡 B-64 **C가문으로 전환할 때만** 반대편 지도편차 값이 정리되지 않는다 **분석🔍**
+- 위치
+  - (a) `index.tsx:1667` `handleOnlyProdcChange` — **`No` 분기(`:1676-1691`)는 리전 값을 전부 지우는데
+    `Yes` 분기(`:1669-1675`)는 `only_prodc` 와 `mshot_change='수정'` 만 설정**하고 끝난다.
+  - (b) `index.tsx:1579` `handleProdcScopeChange` — 꺼지는 리전의 `map_value_x/y_{r}`·`mshot_image_copy_{r}` 는 지우지만
+    **`map_change_{r}` 은 지우지 않는다**(`:1591-1600`).
+  - 렌더 분기: `components/StepMap.tsx:380` — `isProdc` 면 리전 UI 만, 아니면 일반 UI 만 그린다(둘은 배타).
+- 내용
+  - **(a)** 일반 모드에서 `map_change='변경 있음'` + X/Y/사유를 입력한 뒤 C가문 `Yes` 로 전환하면,
+    화면에는 리전별 UI 만 뜨고 일반 필드는 **렌더 자체가 안 되는데 state 에는 그대로 남아** 저장된다.
+    `validate()` 도 `if (isProdc) {...} else if (detail.map_change === '변경 있음')`(`index.tsx:3158`) 구조라
+    C가문 모드에서는 일반 분기를 **아예 건너뛴다** → 검증에도 안 걸린다.
+  - **(b)** `prodc_scope` 를 `only_bottom` 등으로 바꿔 북판을 끄면 `map_value_x_top/y_top` 은 비워지는데
+    `map_change_top` 은 `'변경 있음'` 인 채 남는다.
+- 영향
+  1. **(a)** 화면 표시는 안전하다 — 상세보기도 `isProdc` 로 분기해(`PagedDetailView.tsx:1144`) 리전 값만 보여준다.
+     문제는 **`additional_notes` 를 그대로 노출하는 외부 API**(`ExternalRequestDocumentSerializer`)와
+     후속 공정이다. `detail.map_change`/`map_value_x` 를 읽는 소비자는 **C가문 문서에서 전혀 다른 지도편차 값**을 본다.
+  2. **(b)** 이쪽은 **화면에도 보인다.** 상세보기의 `regionLine`(`PagedDetailView.tsx:1147-1154`)이
+     top/bottom 두 줄을 **스코프와 무관하게 항상 출력**하므로, 쓰지 않는 리전이
+     `[북판] X: - / Y: -` 로 표시된다(`map_change_top !== '변경 없음'` 이라 '변경 없음' 문구도 안 나온다).
+     결재자가 존재하지 않는 리전 편차를 검토 대상으로 오인할 수 있다.
+- 재현 절차
+  - **(a)** STEP2 에서 C가문 `No` 상태로 지도편차 `변경 있음` + X/Y/사유 입력 → C가문을 `Yes` 로 전환 →
+    임시저장 → 저장된 `detail.map_change` 가 `'변경 있음'` 이고 `map_value_x` 에 값이 남아 있으면 버그.
+  - **(b)** C가문 `Yes` + 북/남 모두 `변경 있음` 입력 → `prodc_scope` 를 **'남판만'** 으로 변경(확인 모달 승인) →
+    임시저장 후 상세보기 → **MAP 칩에 `[북판]` 줄이 그대로 보이면** 버그.
+- 권고: `handleOnlyProdcChange` 의 `Yes` 분기에 `map_change`·`map_value_x`·`map_value_y` 초기화를 추가하고
+  (`No` 분기와 대칭), `handleProdcScopeChange` 의 `clearRegions` 루프에 `map_change_{r}` 을 포함시킨다.
+  더 나은 방향은 **저장 직전에 "현재 모드에서 쓰이지 않는 키" 를 일괄 제거**하는 정규화 단계를
+  `buildEnrichedForm` 에 두는 것이다 — B-60 과 같은 유형이 반복되고 있어 개별 핸들러 패치는 또 새는다.
 
 ### ⚪ B-63 `additional_notes` 최상위가 dict 가 아니면 **파싱은 성공하고 500 이 난다** **분석🔍**
 - 위치: `models.py:132-137`(`get_detail`), `views.py:254`(`_validate_bb_mapping`),
@@ -2047,6 +2098,10 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 - [ ] **B-62** 작성 화면을 연 채 다른 탭에서 후결자 추가/VS 변경 → 원래 탭에서 '임시저장' →
       **409 등으로 거부되거나 서버 변경분이 보존됨**(실패 신호: 조용히 원복)
 - [ ] **B-63** (격리 DB) `additional_notes='[]'` 인 문서 조회·상신 → **500 이 아님**
+- [ ] **B-64a** 일반 모드에서 지도편차 '변경 있음' + X/Y 입력 → C가문 `Yes` 로 전환 → 임시저장 →
+      저장 JSON 의 `map_change`/`map_value_x/y` 가 **비어 있음**
+- [ ] **B-64b** C가문 북·남 모두 '변경 있음' → `prodc_scope` 를 '남판만' 으로 변경 → 임시저장 → 상세보기 →
+      MAP 칩에 **`[북판]` 줄이 보이지 않음**
 
 *테스트*
 - [ ] `manage.py test api` → **OK (0 failures)** — 현재 167건, 이 세션 실행 불가(§1.5)
@@ -2111,6 +2166,8 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
 | B-06 경로 성립 여부 | `submit`→`can_request_pause`→`_can_confirm_pause`→`_advance_after_pl` 코드 추적 | **PL 단계 pause 확정 → peer_approve 부활 경로 성립 확인**(가드 4개 부재) |
 | pause 프론트 가드 | `ApprovalFlow.tsx` 판정 3종에 `status` 참조 여부 grep | **0건 — 상태 검사 없음** |
 | `additional_notes` 저장 경로 전수 | 쓰기 지점 4곳(①~④) + 읽기 소비처 추적 | **B-57 ~ B-63 도출** |
+| 조건부 필드 초기화 전수(2차 확인) | `map_change`·리전·`ea_change`·`mshot_change`·`inter`·`rev_yn`·`only_prodc`·`prodc_scope` 핸들러 대조 | **6종 정상 / `only_prodc` Yes 방향·`prodc_scope` off 리전 2곳 누락 → B-64** |
+| §3·§4 시나리오 본문 재확인 | T-C4·T-E4·T-G6·T-I5·T-L2·X-8 을 코드와 대조 | **X-8 이 수정 완료된 B-01 을 현재형으로 서술 → 정정**, `title max_length=600`·`DraftVisibilityTest` 등은 정확 |
 | `post_approvers` 소실 체인 | `index.tsx:3351` → `mailer.py:230` → `views.py:1221` 연결 확인 | **RA 단계 미생성까지 이어짐 확인**(B-57) |
 | 필터 ↔ 저장 상호작용 | `calcDisabled` 호출 5경로 vs `unmapJayerRows` 호출 3경로 대조 | **필터 경로에만 unmap 누락**(B-59) |
 | 필터 정의 저장소 | `jayerFilterSets`(localStorage) vs `jayerActiveFilterIds`(additional_notes) | **저장 위치 비대칭 확인**(B-58) |
@@ -2152,9 +2209,10 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
   단 **2026-08-04 세션에서는 Django 미설치로 재확인하지 못했다** — B-48 의 현재 유효성은 미검증이다.
 - 성능·부하 — `additional_notes` 포함 목록 응답 크기(R-01), 문서 수백~수천 건 시 응답 시간 미측정.
 - **3차 추가분(2026-08-04)**
-  - `additional_notes` 외의 `detail` 하위 조건부 필드 전수 — `map_type` 전환(`index.tsx:1451`)과
-    `only_prodc`→No(`:1665`)는 초기화 로직을 확인했으나, `rev_yn`·`inter`·`ea_change`·`mshot_change` 등
-    **나머지 토글의 유령값 여부는 확인하지 못했다.** B-60 과 같은 유형이 더 있을 수 있다.
+  - ~~조건부 토글의 유령값 여부 미확인~~ → **재확인 완료**. `map_change`·리전 지도편차·`ea_change`·
+    `mshot_change`·`inter`·`rev_yn` 6종은 모두 하위값을 정상 초기화한다(T-C4 표).
+    누락은 `only_prodc` 의 **Yes 방향**과 `prodc_scope` 의 **off 리전 `map_change_{r}`** 2곳이었다 → **B-64**.
+    다만 `detail` 필드 수가 많아 **전수는 아니다** — 저장 직전 정규화(B-64 권고)가 없는 한 같은 유형이 또 나올 수 있다.
   - `_apply_map_change_to_source`(`views.py:584`)의 실행 검증 — 승인 트랜잭션 안에서 **다른 문서**를 수정하고
     실패해도 예외를 삼키는 구조라, 원본 문서가 동시에 편집될 때의 거동은 정독만 했다.
   - `design_rule_stats.py`(`:120` `_parse_detail`)의 `additional_notes` 소비 경로 — 통계 집계라 결재에 영향은 없으나 미검증.
