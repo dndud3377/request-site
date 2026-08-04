@@ -26,6 +26,8 @@ import {
   UserWithRole,
   AddressBook,
   TbvtlvNoteRow,
+  MergePair,
+  MergeSnapshot,
 } from '../../types';
 import GuideSlidePanel from '../../components/GuideSlidePanel';
 import { GUIDE_DEMO_KEYS } from '../../components/guideDemos';
@@ -61,8 +63,10 @@ import {
   TOUR_JAYER_ITEMS,
   VS_TARGET,
   VS_NONTARGET,
+  isMergePurposeSelected,
+  MERGE_UNREGISTERED_ID,
 } from './constants';
-import { formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, isValidationTarget, computeLayerMerge, MergeStats } from './helpers';
+import { formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, isValidationTarget, computeLayerMerge, MergeStats, computeBeforeAfter } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
 import Step1 from './components/Step1';
@@ -211,6 +215,41 @@ export default function RequestPage(): React.ReactElement {
   const [refOayerRows, setRefOayerRows] = useState<OayerRow[]>([]);
   const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
   const [mergePreview, setMergePreview] = useState<{ jayer: MergeStats; oayer: MergeStats } | null>(null);
+  // 재선택 롤백용 — Merge 로 3-way 재판정을 반영하기 '직전'의 J/O 표. 문서에도 저장해
+  // 임시저장 후 재진입·재상신 이후에도 되돌릴 수 있다.
+  const [mergeSnapshot, setMergeSnapshot] = useState<MergeSnapshot | null>(null);
+  const [mergeReselectConfirm, setMergeReselectConfirm] = useState(false);
+  // BEFORE/AFTER 표에서 지금 선택한 행 id ('미등록'은 MERGE_UNREGISTERED_ID). 저장하지 않는 화면 상태.
+  const [baSelBefore, setBaSelBefore] = useState<string | null>(null);
+  const [baSelAfter, setBaSelAfter] = useState<string | null>(null);
+  // 5개 값이 모두 같아 비교 표에서 제외한 건수(요약 표시 전용 — 저장하지 않는다)
+  const [baSameCount, setBaSameCount] = useState(0);
+
+  /**
+   * 비교 결과·스냅샷·참조 문서 기록을 모두 지운다(J/O 표는 건드리지 않는다).
+   * 조리법 변경·Merge 목적 전체 해제·재선택에서 공통으로 쓴다.
+   */
+  const clearMergeComparison = () => {
+    setMergeSnapshot(null);
+    setBaSelBefore(null);
+    setBaSelAfter(null);
+    setBaSameCount(0);
+    setDetail((prev) => (
+      prev.merge_ref_doc_id === null
+        && (prev.merge_pairs?.length ?? 0) === 0
+        && (prev.merge_unmatched_before?.length ?? 0) === 0
+        && (prev.merge_unmatched_after?.length ?? 0) === 0
+        ? prev   // 이미 비어 있으면 새 객체를 만들지 않는다(불필요한 리렌더 방지)
+        : {
+          ...prev,
+          merge_ref_doc_id: null,
+          merge_ref_doc_label: '',
+          merge_pairs: [],
+          merge_unmatched_before: [],
+          merge_unmatched_after: [],
+        }
+    ));
+  };
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [mapTypeChangeConfirm, setMapTypeChangeConfirm] = useState<{ targetType: string } | null>(null);
   const [onlyMapConfirm, setOnlyMapConfirm] = useState(false);
@@ -508,6 +547,8 @@ export default function RequestPage(): React.ReactElement {
     setRefDocLabel('');
     setRefJayerRows([]);
     setRefOayerRows([]);
+    // 조리법이 바뀌면 J/O 가 통째로 재조회되므로 옛 스냅샷으로 롤백되면 안 된다 → 비교 상태 전부 정리.
+    clearMergeComparison();
     // Only MAP·완성된 MAP 변경은 StepMap 정보까지만 필요 → J/O 자동 재조회 없이 빈 상태로 유지한다.
     // (isOnlyMap/isMapChangeMode 는 이 effect 아래에서 선언되므로 detail 로 직접 판정)
     const onlyMapMode = detail.request_purpose === ONLY_MAP_PURPOSE;
@@ -522,11 +563,14 @@ export default function RequestPage(): React.ReactElement {
   }, [detail.process_id, processIdOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!detail.other_purpose.includes('Layer 추가/삭제')) {
+    // Merge 사용 목적(Layer 추가/삭제·STEPSEQ 변경·Overlay 변경)을 모두 해제하면 참조·비교 상태를 비운다.
+    // (J/O 표는 되돌리지 않는다 — 되돌리려면 '재선택' 버튼을 쓴다)
+    if (!isMergePurposeSelected(detail.other_purpose)) {
       setRefDocId(null);
       setRefDocLabel('');
       setRefJayerRows([]);
       setRefOayerRows([]);
+      clearMergeComparison();
     }
   }, [detail.other_purpose]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -747,6 +791,10 @@ export default function RequestPage(): React.ReactElement {
             // Merge 잠금 필드 도입 전 문서는 값이 없다 → 미Merge 로 백필한다.
             merge_ref_doc_id: parsed.detail.merge_ref_doc_id ?? null,
             merge_ref_doc_label: parsed.detail.merge_ref_doc_label ?? '',
+            // BEFORE/AFTER 비교 도입 전 문서도 같은 이유로 빈 배열 백필.
+            merge_pairs: parsed.detail.merge_pairs ?? [],
+            merge_unmatched_before: parsed.detail.merge_unmatched_before ?? [],
+            merge_unmatched_after: parsed.detail.merge_unmatched_after ?? [],
             // prodc_scope 도입 전 문서는 값이 없다 → 저장된 리전 값으로 역추론해 백필한다.
             // (백필하지 않으면 '미선택' 게이트에 걸려 기존 C가문 문서의 입력이 잠겨 보인다)
             prodc_scope: parsed.detail.prodc_scope || inferProdcScope(parsed.detail),
@@ -759,6 +807,8 @@ export default function RequestPage(): React.ReactElement {
             setMapChangeBaseline(parsed.history[0].detail as DetailFormState);
           }
         }
+        // 재선택 롤백용 스냅샷 복원 — 없으면 null(옛 문서는 매핑만 초기화된다).
+        setMergeSnapshot(parsed.mergeSnapshot ?? null);
         if (parsed.jayerRows) {
           const fSets: FilterSet[] = (() => { try { return JSON.parse(localStorage.getItem('jayerFilterSets') ?? '[]'); } catch { return []; } })();
           const savedActiveIds: Set<string> = new Set(Array.isArray(parsed.jayerActiveFilterIds) ? parsed.jayerActiveFilterIds : []);
@@ -2233,16 +2283,130 @@ export default function RequestPage(): React.ReactElement {
   const handleMergeConfirm = () => {
     const jayer = computeLayerMerge(jayerRows, refJayerRows);
     const oayer = computeLayerMerge(oayerRows, refOayerRows);
+    // BEFORE/AFTER 비교는 3-way 반영과 무관하게 '참조 원본 대 작성 원본'으로 계산한다
+    // (반영 후 표로 계산하면 layer삭제로 추가된 행이 B 쪽에 섞여 비교가 왜곡된다).
+    const ba = computeBeforeAfter(refJayerRows, refOayerRows, jayerRows, oayerRows);
+    // 재선택 롤백용 스냅샷 — 반영 '직전' 상태를 남긴다.
+    setMergeSnapshot({
+      jayerRows,
+      oayerRows,
+      refDocId,
+      savedAt: new Date().toISOString(),
+    });
     setJayerRows(jayer.merged);
     setOayerRows(oayer.merged);
-    // 참조 요청서는 의뢰서당 1건 — 문서에 기록해 임시저장 후 재진입해도 재Merge 를 막는다.
-    setDetail((prev) => ({ ...prev, merge_ref_doc_id: refDocId, merge_ref_doc_label: refDocLabel }));
+    // 참조 요청서는 의뢰서당 1건 — 문서에 기록해 임시저장 후 재진입해도 재Merge 를 막는다('재선택'으로만 해제).
+    setDetail((prev) => ({
+      ...prev,
+      merge_ref_doc_id: refDocId,
+      merge_ref_doc_label: refDocLabel,
+      merge_pairs: ba.pairs,
+      merge_unmatched_before: ba.unmatchedBefore,
+      merge_unmatched_after: ba.unmatchedAfter,
+    }));
+    setBaSameCount(ba.sameCount);
+    setBaSelBefore(null);
+    setBaSelAfter(null);
     setMergeConfirmOpen(false);
     addToast(t('request.toast_merge_complete', {
       added: jayer.stats.added + oayer.stats.added,
       registered: jayer.stats.registered + oayer.stats.registered,
       deleted: jayer.stats.deleted + oayer.stats.deleted,
     }), 'success');
+  };
+
+  // ===== 참조 요청서 재선택 / BEFORE·AFTER 매핑 =====
+
+  /**
+   * 재선택 확정 — 저장된 스냅샷으로 J/O 표를 Merge 직전 상태로 되돌리고 참조·비교 상태를 비운다.
+   * Merge 이후의 수동 편집도 함께 사라지므로 ConfirmModal 로 먼저 경고한다.
+   */
+  const handleMergeReselectConfirm = () => {
+    if (mergeSnapshot) {
+      setJayerRows(mergeSnapshot.jayerRows);
+      setOayerRows(mergeSnapshot.oayerRows);
+      // Merge 로 추가됐던 행에 걸린 bb 매핑은 롤백하면 고아가 되므로 함께 정리한다.
+      const keepIds = new Set(mergeSnapshot.jayerRows.map((r) => r.id));
+      setBbRows((prev) => prev.filter((r) => !r.sourceJayerRowId || keepIds.has(r.sourceJayerRowId)));
+      setMappedJayerRowIds((prev) => new Set(Array.from(prev).filter((id) => keepIds.has(id))));
+      setStagedMappings((prev) => Object.fromEntries(
+        Object.entries(prev).filter(([id]) => keepIds.has(id))
+      ));
+      setSelectedJayerRowId((prev) => (prev && !keepIds.has(prev) ? null : prev));
+    }
+    setRefDocId(null);
+    setRefDocLabel('');
+    setRefJayerRows([]);
+    setRefOayerRows([]);
+    clearMergeComparison();
+    addToast(t('request.toast_merge_reselect'), 'info');
+  };
+
+  /** BEFORE/AFTER 표에서 행 선택(같은 행을 다시 누르면 해제) */
+  const handleBaSelect = (side: 'before' | 'after', id: string) => {
+    if (side === 'before') setBaSelBefore((prev) => (prev === id ? null : id));
+    else setBaSelAfter((prev) => (prev === id ? null : id));
+  };
+
+  /**
+   * 선택한 BEFORE·AFTER 를 즉시 확정한다(스테이징 단계 없음).
+   * BEFORE 행은 여러 짝에 재사용할 수 있어 목록에 남기고, AFTER 행만 목록에서 뺀다.
+   */
+  const handleBaApply = () => {
+    if (baSelBefore === null || baSelAfter === null) return;
+    const before = baSelBefore === MERGE_UNREGISTERED_ID
+      ? undefined
+      : detail.merge_unmatched_before.find((r) => r.id === baSelBefore);
+    const after = baSelAfter === MERGE_UNREGISTERED_ID
+      ? undefined
+      : detail.merge_unmatched_after.find((r) => r.id === baSelAfter);
+    if (!before && !after) return;                                   // 양쪽 미등록은 의미가 없다
+    if (before && after && before.table !== after.table) return;     // J-ayer ↔ O-ayer 교차 금지
+    const table = (before ?? after)!.table;
+    const pair: MergePair = {
+      table,
+      beforeId: before ? before.id : null,
+      before: before ? { process_id: before.process_id, sp: before.sp, sd: before.sd, pp: before.pp, layerid: before.layerid } : null,
+      afterId: after ? after.id : null,
+      after: after ? { process_id: after.process_id, sp: after.sp, sd: after.sd, pp: after.pp, layerid: after.layerid } : null,
+      kind: !before ? 'added' : (!after ? 'deleted' : 'changed'),
+    };
+    setDetail((prev) => ({
+      ...prev,
+      merge_pairs: [...prev.merge_pairs, pair],
+      merge_unmatched_after: after
+        ? prev.merge_unmatched_after.filter((r) => r.id !== after.id)
+        : prev.merge_unmatched_after,
+    }));
+    setBaSelBefore(null);
+    setBaSelAfter(null);
+  };
+
+  /**
+   * 확정된 짝을 해제한다. BEFORE·AFTER 행이 각자의 표로 되돌아가되,
+   * 재사용 중이라 이미 목록에 있는 행은 중복으로 추가하지 않는다.
+   */
+  const handleBaUnpair = (index: number) => {
+    setDetail((prev) => {
+      const pair = prev.merge_pairs[index];
+      if (!pair) return prev;
+      const nextBefore = [...prev.merge_unmatched_before];
+      const nextAfter = [...prev.merge_unmatched_after];
+      if (pair.before && pair.beforeId && !nextBefore.some((r) => r.id === pair.beforeId)) {
+        nextBefore.push({ id: pair.beforeId, table: pair.table, ...pair.before });
+      }
+      if (pair.after && pair.afterId && !nextAfter.some((r) => r.id === pair.afterId)) {
+        nextAfter.push({ id: pair.afterId, table: pair.table, ...pair.after });
+      }
+      return {
+        ...prev,
+        merge_pairs: prev.merge_pairs.filter((_, i) => i !== index),
+        merge_unmatched_before: nextBefore,
+        merge_unmatched_after: nextAfter,
+      };
+    });
+    setBaSelBefore(null);
+    setBaSelAfter(null);
   };
 
   // ===== 완성된 MAP 변경 (기타 목적 단독 전용) =====
@@ -2713,6 +2877,21 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // ===== Validation =====
+  /**
+   * BEFORE/AFTER 게이트 — AFTER 항목이 하나라도 짝 없이 남아 있으면 진행을 막는다.
+   * (BEFORE 잔여는 허용한다. 임시저장은 이 검증을 타지 않는다)
+   */
+  const addBaGateError = (
+    newErrors: Partial<Record<string, string>>,
+    errorMessages: string[]
+  ) => {
+    const pending = detail.merge_unmatched_after?.length ?? 0;
+    if (pending === 0) return;
+    const msg = t('request.ba_gate_ng', { count: pending });
+    newErrors['merge_unmatched_after'] = msg;
+    errorMessages.push(msg);
+  };
+
   const validate = (currentStep: number): { valid: boolean; errors: string[] } => {
     const newErrors: Partial<Record<string, string>> = {};
     const errorMessages: string[] = [];
@@ -2757,6 +2936,7 @@ export default function RequestPage(): React.ReactElement {
       if (flowStepInvalid) {
         errorMessages.push(t('request.flow_step_not_in_list'));
       }
+      addBaGateError(newErrors, errorMessages);
     }
 
     if (currentStep === 2) {
@@ -2952,6 +3132,8 @@ export default function RequestPage(): React.ReactElement {
         newErrors['oayer_noc_required'] = t('request.oayer_noc_required' as never, { count: oViolations.length });
         errorMessages.push(t('request.oayer_noc_required' as never, { count: oViolations.length }) as string);
       }
+      // 초안 복원 등으로 STEP 1 검증을 건너뛴 경우를 대비한 최종 안전망
+      addBaGateError(newErrors, errorMessages);
     }
 
     setErrors(newErrors);
@@ -3027,6 +3209,9 @@ export default function RequestPage(): React.ReactElement {
         history,
         jayerActiveFilterIds: [...jayerActiveFilterIds],
         oayerActiveFilterIds: [...oayerActiveFilterIds],
+        // 참조 요청서 '재선택'으로 J/O 를 Merge 이전으로 되돌리기 위한 스냅샷.
+        // detail 형제 키라 상세 페이지의 변경 이력 diff(detail 기준)에는 잡히지 않는다.
+        mergeSnapshot,
       }),
     };
   };
@@ -3401,6 +3586,14 @@ export default function RequestPage(): React.ReactElement {
           handleRequestPurposeSelect={handleRequestPurposeSelect}
           handleRefDocSelect={handleRefDocSelect}
           handleMergeClick={handleMergeClick}
+          handleMergeReselect={() => setMergeReselectConfirm(true)}
+          hasMergeSnapshot={mergeSnapshot !== null}
+          baSameCount={baSameCount}
+          baSelBefore={baSelBefore}
+          baSelAfter={baSelAfter}
+          handleBaSelect={handleBaSelect}
+          handleBaApply={handleBaApply}
+          handleBaUnpair={handleBaUnpair}
           isMapChangeMode={isMapChangeMode}
           mapChangeDocLabel={mapChangeDocLabel}
           setMapChangeDocLabel={setMapChangeDocLabel}
@@ -4151,6 +4344,17 @@ export default function RequestPage(): React.ReactElement {
         onConfirm={handleOnlyMapConfirm}
         title={t('request.only_map_confirm_title')}
         message={t('request.only_map_confirm_msg')}
+        danger
+      />
+
+      <ConfirmModal
+        isOpen={mergeReselectConfirm}
+        onClose={() => setMergeReselectConfirm(false)}
+        onConfirm={handleMergeReselectConfirm}
+        title={t('request.merge_reselect_confirm_title')}
+        message={mergeSnapshot
+          ? t('request.merge_reselect_confirm_msg')
+          : t('request.merge_reselect_no_snapshot')}
         danger
       />
 
