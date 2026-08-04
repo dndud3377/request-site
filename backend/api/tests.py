@@ -832,6 +832,7 @@ class PEStageReviewerFlowTest(TestCase):
         self.o_user = UserProfile.objects.create(loginid='o1', mail='o1@c.com', role='TE_O')
         self.e_owner = UserProfile.objects.create(loginid='e1', mail='e1@c.com', role='TE_E')
         self.e_reviewer = UserProfile.objects.create(loginid='e2', mail='e2@c.com', role='TE_E')
+        self.e_reviewer2 = UserProfile.objects.create(loginid='e3', mail='e3@c.com', role='TE_E')
 
     def _advance_to_parallel(self, plel=False):
         """draft → 제출 → PL 합의 → R 지정·합의 를 실제 API로 거쳐 P/O[/E] pending 상태로 만든다."""
@@ -1237,6 +1238,150 @@ class PEStageReviewerFlowTest(TestCase):
         self.assertEqual(
             ApprovalStep.objects.get(document=doc, agent='E', round=1).action, 'approved',
         )
+
+    def test_broken_detail_json_does_not_rewind(self):
+        """additional_notes 가 깨져 저장에 실패하면 500 이고, E 단계를 되감지 않는다."""
+        doc = self._advance_to_parallel(plel=True)
+        self._set_detail(doc, {'validation_system': 'NO'})
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+
+        # 저장을 실패시키기 위해 additional_notes 를 깨뜨린다.
+        # _set_detail 은 json.loads 를 쓰므로 여기서는 쓸 수 없다.
+        doc.additional_notes = '{"detail": broken'
+        doc.save(update_fields=['additional_notes'])
+
+        # 읽기도 실패하므로 previous 는 레거시 기본값('YES')으로 정규화된다.
+        # 저장 경로를 타려면 그와 다른 값을 보내야 한다.
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'NO'}, format='json')
+        self.assertEqual(r.status_code, 500, r.content)
+
+        e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
+        self.assertEqual(e_step.action, 'approved', '저장이 실패했으면 되감아서는 안 된다')
+        self.assertNotIn('재검토', e_step.comment)
+
+    def test_legacy_doc_clicking_displayed_value_does_not_rewind(self):
+        """저장값이 없는 레거시 문서에서 화면에 보이는 값('대상')을 그대로 클릭하면 되감지 않는다.
+
+        상세보기(PagedDetailView 의 vsCurrent 폴백)가 키 없는 문서를 '대상'으로 표시하므로,
+        백엔드도 같은 기준으로 비교해야 사용자가 '바꾸지 않았는데 되감겼다'를 겪지 않는다.
+        """
+        doc = self._advance_to_parallel(plel=True)
+        # _set_detail 을 호출하지 않는다 → detail 은 {} 이고 validation_system 키가 없다.
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(r.data['rewound'], '보이는 값과 같으므로 변경이 아니다')
+
+        e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
+        self.assertEqual(e_step.action, 'approved')
+
+    def test_legacy_doc_real_change_still_rewinds(self):
+        """레거시 폴백을 적용해도 진짜 변경('비대상' 선택)은 그대로 되감는다."""
+        doc = self._advance_to_parallel(plel=True)
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'NO'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.data['rewound'])
+
+        self.assertEqual(self._get_detail(doc)['validation_system'], 'NO')
+        e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
+        self.assertEqual(e_step.action, 'pending')
+        self.assertIn('재검토', e_step.comment)
+
+    def test_reviewer_added_on_reapproval_is_created(self):
+        """되감긴 뒤 재합의하며 검토자를 추가하면 그 검토자의 EV step 이 실제로 생성된다."""
+        doc = self._advance_to_parallel(plel=True)
+        self._set_detail(doc, {'validation_system': 'NO'})
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+
+        # 상신자가 값을 바꿔 E 단계를 되감는다.
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.data['rewound'])
+
+        # E 담당자가 검토자를 한 명 더 붙여 재합의한다(step 은 이미 선점 상태다).
+        self.client.force_authenticate(user=self.e_owner)
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/',
+            {'agent': 'E', 'comment': '재확인함',
+             'reviewer_loginids': [self.e_reviewer.loginid, self.e_reviewer2.loginid]},
+            format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.assertTrue(
+            ApprovalStep.objects.filter(
+                document=doc, agent='EV', round=1, assignee__loginid=self.e_reviewer2.loginid
+            ).exists(),
+            '새로 추가한 검토자의 EV step 이 조용히 버려져서는 안 된다',
+        )
+
+    def test_e_approval_preserves_revision_request_history(self):
+        """E 가 빈 코멘트로 최종 합의해도 수정 요청 이력이 지워지지 않는다.
+
+        ApprovalStep 에 이력 전용 필드가 없어 comment 가 유일한 저장소다.
+        여기를 덮어쓰면 설계 결정 Q3/Q6(이력 보존)이 실행 시점에 무효화된다.
+        """
+        doc = self._advance_to_parallel(plel=True)
+        self.client.force_authenticate(user=self.e_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        r = self.client.post(
+            f'/api/documents/{doc.id}/reject-step/',
+            {'agent': 'E', 'comment': '대상으로 보입니다'}, format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+        # 같은 담당자가 빈 코멘트로 합의한다(step 은 이미 선점 상태다).
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/',
+            {'agent': 'E', 'comment': ''}, format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+        e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
+        self.assertEqual(e_step.action, 'approved')
+        self.assertIn('수정 요청', e_step.comment, '합의가 수정 요청 이력을 지워서는 안 된다')
+        self.assertIn('대상으로 보입니다', e_step.comment)
+
+    def test_e_approval_appends_comment_to_existing_history(self):
+        """E 가 코멘트를 달고 합의하면 기존 이력 아래에 마커와 함께 덧붙는다."""
+        doc = self._advance_to_parallel(plel=True)
+        self.client.force_authenticate(user=self.e_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        self.client.post(
+            f'/api/documents/{doc.id}/reject-step/',
+            {'agent': 'E', 'comment': '대상으로 보입니다'}, format='json',
+        )
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/',
+            {'agent': 'E', 'comment': '수정 확인했습니다'}, format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+        e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
+        self.assertIn('수정 요청', e_step.comment)
+        self.assertIn('[합의 ', e_step.comment)
+        self.assertIn('수정 확인했습니다', e_step.comment)
+
+    def test_non_mask_approval_still_overwrites_comment(self):
+        """E/EV 가 아닌 단계의 합의는 기존대로 comment 를 덮어쓴다(회귀 방지)."""
+        doc = self._advance_to_parallel(plel=True)
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/',
+            {'agent': 'O', 'comment': '확인'}, format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+        o_step = ApprovalStep.objects.get(document=doc, agent='O', round=1)
+        self.assertEqual(o_step.comment, '확인', '다른 단계의 comment 처리는 바뀌지 않는다')
 
     def test_update_blocked_after_e_stage_complete(self):
         """E 단계가 통과하면 수정 창이 닫힌다(검토자 없이 합의하면 그대로 완료된다)."""

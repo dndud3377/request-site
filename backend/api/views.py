@@ -501,7 +501,15 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         step.action = 'approved'
         step.acted_at = timezone.now()
-        step.comment = comment
+        # E/EV 의 comment 는 '수정 요청'(reject_step)과 '되감기'(_rewind_e_stage) 이력이
+        # 쌓이는 유일한 저장소다 — ApprovalStep 에 이력 전용 필드가 없다. 덮어쓰면
+        # 설계 결정(이력 보존)이 최종 합의 시점에 통째로 무효화되므로 덧붙인다.
+        if step.agent in ('E', 'EV') and step.comment:
+            if comment:
+                stamp = timezone.now().strftime('%Y-%m-%d %H:%M')
+                step.comment = f'{step.comment}\n[합의 {stamp}] {comment}'
+        else:
+            step.comment = comment
         if not step.assignee_name:
             step.assignee_name = request.data.get('approver_name', '')
         step.save()
@@ -839,12 +847,6 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         '합의'로 정확히 읽는다.
         """
         review_agent = self._REVIEW_AGENT_OF[step.agent]
-        # 되감기(_rewind_e_stage) 후 담당자가 다시 합의하면 그 회차 검토자 step 이 이미 존재한다.
-        # 지정 이력을 보존하려고 남겨둔 것이므로 다시 만들지 않는다(같은 검토자가 바뀐 값을 재확인).
-        if ApprovalStep.objects.filter(
-            document=document, agent=review_agent, round=round_no
-        ).exists():
-            return
         for reviewer_user in reviewer_users:
             rv_step = ApprovalStep.objects.create(
                 document=document, agent=review_agent, action='pending', round=round_no,
@@ -1090,11 +1092,19 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             )
 
         previous = self._get_validation_system(document)
+        if previous not in self.VALIDATION_SYSTEM_VALUES:
+            # 키가 없거나 값이 깨진 레거시 문서 — 상신자가 화면에서 보고 있는 값과
+            # 같은 기준으로 비교해야 '보이는 값을 눌렀는데 되감겼다'가 발생하지 않는다.
+            previous = self.VALIDATION_SYSTEM_LEGACY_DEFAULT
         if previous == value:
             return Response({'message': '변경 사항이 없습니다.', 'rewound': False})
 
         actor = getattr(request.user, 'username', '') or getattr(request.user, 'loginid', '')
-        self._set_validation_system(document, value, changed_by=actor)
+        if not self._set_validation_system(document, value, changed_by=actor):
+            return Response(
+                {'error': '의뢰서 데이터가 손상되어 값을 저장할 수 없습니다.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         rewound = self._rewind_e_stage(document, max_round, previous, value, actor)
 
         return Response({'message': '변경했습니다.', 'rewound': rewound})
@@ -1373,6 +1383,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     # Validation System 대상/비대상 값 (프론트 constants.ts 의 VS_TARGET/VS_NONTARGET 과 동일)
     VALIDATION_SYSTEM_VALUES = ('YES', 'NO')
+    # 저장값이 없는 레거시 문서를 상세보기가 '대상'으로 표시한다
+    # (PagedDetailView.tsx 의 vsCurrent 폴백). 변경 여부 판정을 화면과 같은 기준으로
+    # 맞추기 위한 값이므로, 프론트 폴백을 바꾸면 이 값도 함께 바꿔야 한다.
+    VALIDATION_SYSTEM_LEGACY_DEFAULT = 'YES'
 
     def _get_validation_system(self, document):
         """detail.validation_system 현재값. 키가 없거나 파싱 실패면 None."""
@@ -1384,26 +1398,28 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return None
 
     def _set_validation_system(self, document, value, changed_by=None):
-        """detail.validation_system 을 덮어쓴다.
+        """detail.validation_system 을 덮어쓴다. 저장했으면 True, 못 했으면 False.
 
         changed_by 가 주어지면 마지막 변경 주체/시각도 함께 남긴다 — 판정 주체가
         상신자 하나이므로, 그 유일한 공급원의 변경을 추적할 지점이 필요하다.
         validation_system_submitted(상신 시점 상신자 값)는 건드리지 않는다.
-        JSON 파싱 실패 시 조용히 건너뛴다(_sync_post_approvers_detail 과 같은 정책).
+        파싱 실패를 조용히 삼키면 호출부가 '저장됐다'고 착각해 E 단계를 되감으므로
+        (저장은 안 됐는데 MASK 재검토만 발생), 성공 여부를 반드시 돌려준다.
         """
         import json
         try:
             data = json.loads(document.additional_notes or '{}')
             detail = data.get('detail', {}) or {}
-            detail['validation_system'] = value
-            if changed_by is not None:
-                detail['validation_system_changed_by'] = changed_by
-                detail['validation_system_changed_at'] = timezone.now().isoformat()
-            data['detail'] = detail
-            document.additional_notes = json.dumps(data, ensure_ascii=False)
-            document.save(update_fields=['additional_notes'])
         except (json.JSONDecodeError, TypeError):
-            pass
+            return False
+        detail['validation_system'] = value
+        if changed_by is not None:
+            detail['validation_system_changed_by'] = changed_by
+            detail['validation_system_changed_at'] = timezone.now().isoformat()
+        data['detail'] = detail
+        document.additional_notes = json.dumps(data, ensure_ascii=False)
+        document.save(update_fields=['additional_notes'])
+        return True
 
     def _rewind_e_stage(self, document, round_no, previous, value, actor):
         """E 담당자가 이미 합의한 뒤 값이 바뀌면 그 회차 E 단계를 재검토로 되감는다.
