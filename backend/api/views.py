@@ -149,6 +149,27 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     # 역할 → 담당 agent 매핑 (프론트 ROLE_TO_AGENT 와 동일)
     _ROLE_TO_AGENT = {'TE_R': 'R', 'TE_P': 'P', 'TE_J': 'J', 'TE_O': 'O', 'TE_E': 'E'}
 
+    def _blocked_progress_response(self, document):
+        """결재를 진행할 수 없는 문서 상태면 400 Response, 진행 가능하면 None 을 반환한다.
+
+        반려(reject_step/peer_reject)는 문서 status 만 rejected 로 바꾸고 잔여 pending step 은
+        이력으로 그대로 남긴다. 그래서 상태를 확인하지 않으면 종료된 문서의 잔여 단계를 계속
+        합의/반려/지정/선점할 수 있고, P·PV 합의와 _advance_after_pl 은 status 를 다시
+        under_review 로 덮어써 **반려된 문서가 되살아난다**. 진행 중(under_review)인 문서만
+        결재 액션을 허용해 이를 차단한다.
+        """
+        if document.status == 'pause':
+            return Response(
+                {'error': '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if document.status != 'under_review':
+            return Response(
+                {'error': '이미 종료되었거나 결재가 진행 중이 아닌 의뢰서입니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return None
+
     # 검토중(claim) 방식으로 전환된 단계 — 담당자 지정 대신 담당 역할 누구나 스스로 선점한다.
     _CLAIM_AGENTS = ('J', 'O', 'E', 'P')
 
@@ -442,8 +463,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         #  읽어 approved 전이가 누락되던 문제를 막는다.)
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
 
-        if document.status == 'pause':
-            return Response({'error': '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
 
         max_round = self._max_round(document)
 
@@ -674,8 +696,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 문서 행을 잠가 합의(approve_step)와 반려가 동시에 같은 문서를 전이시키는 경쟁을 직렬화한다.
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
 
-        if document.status == 'pause':
-            return Response({'error': '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
 
         max_round = self._max_round(document)
 
@@ -749,8 +772,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if agent not in ('R', 'P', 'J', 'O', 'E'):
             return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if document.status == 'pause':
-            return Response({'error': '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
 
         max_round = self._max_round(document)
 
@@ -873,8 +897,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 동시 선점 경합 방지: 문서 행을 잠가 같은 단계의 중복 배정을 막는다.
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
 
-        if document.status == 'pause':
-            return Response({'error': '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
 
         max_round = self._max_round(document)
 
@@ -1280,18 +1305,20 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                         document=document, agent='R', action='pending', round=step.round,
                     )
                     mailer.enqueue_stage_arrival(document, 'R', r_step)
-                document.status = 'under_review'
-                document.save(update_fields=['status'])
                 return True
 
-            document.status = 'under_review'
-            document.save(update_fields=['status'])
+            # 아직 미합의 PL 이 남았으면 문서 상태는 그대로 둔다. (호출부가 under_review 인
+            # 문서만 넘겨주므로 여기서 status 를 덮어쓸 필요가 없다. 예전엔 무조건
+            # under_review 를 저장해, 다른 PL 이 반려해 rejected 가 된 문서를 되살렸다.)
             return False
 
     @action(detail=True, methods=['post'], url_path='peer-approve')
     def peer_approve(self, request, pk=None):
         """지정 PL 합의: 본인 PL 단계 approved → 전원 합의 시 R 단계 생성(다중 PL)"""
         document = self.get_object()
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
         step = self._get_caller_pl_step(document, request.user)
         if not step:
             return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1306,6 +1333,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def peer_reject(self, request, pk=None):
         """지정 PL 반려: 본인 PL 단계 rejected → 문서 즉시 반려(다중 PL 중 1명이라도 반려 시)"""
         document = self.get_object()
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
         step = self._get_caller_pl_step(document, request.user)
         if not step:
             return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1327,6 +1357,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def peer_submit(self, request, pk=None):
         """지정 PL 수정 후 상신: 문서는 이미 update됨. 본인 PL 단계 approved(태그) → 전원 합의 시 R 생성"""
         document = self.get_object()
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
         step = self._get_caller_pl_step(document, request.user)
         if not step:
             return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
