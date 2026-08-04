@@ -485,16 +485,6 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if not main_step or main_step.action != 'approved':
                 return Response({'error': '담당자 합의가 먼저 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # E(MASK) 합의 시 함께 오는 Validation System 값은 검증만 여기서 먼저 끝낸다.
-        # (@transaction.atomic 은 예외에만 롤백하므로, 아래 검토자 생성 이후에 400을 반환하면
-        #  그 쓰기가 커밋된 채로 응답만 실패해 부분 커밋이 생긴다 — 아직 쓰기가 없는 지금 걸러낸다.)
-        validation_system = request.data.get('validation_system')
-        if agent == 'E' and validation_system is not None and validation_system not in self.VALIDATION_SYSTEM_VALUES:
-            return Response(
-                {'error': '유효하지 않은 Validation System 값입니다.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         # P/E 담당자 합의 시 함께 지정된 검토자(PV/EV) 생성 — 별도 지정 API 없이
         # 이 합의 요청 한 번으로 담당자 합의 + 검토자 지정이 함께 처리된다.
         # 검증은 담당자 단계를 승인 저장하기 전에 마쳐(문제가 있으면 아무 것도 만들지 않음),
@@ -508,10 +498,6 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 reviewer_users, err = self._validate_reviewers(document, step, review_loginids, caller_loginid, max_round)
                 if err:
                     return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
-
-        # E(MASK) 합의 시 Validation System 대상/비대상 확정값을 반영한다(값 검증은 위에서 이미 끝났다).
-        if agent == 'E' and validation_system is not None:
-            self._set_validation_system(document, validation_system)
 
         step.action = 'approved'
         step.acted_at = timezone.now()
@@ -709,6 +695,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not self._can_act_on_step(request.user, step):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
+        # MASK(E/EV)는 반려로 결재를 되돌리지 않는다 — 대상/비대상 판정 주체가 상신자 하나이므로,
+        # 이견은 '수정 요청'으로 상신자에게 사유만 전달하고 결재 상태(status/round)는 그대로 둔다.
+        # 되돌릴 게 없으니 PL 부터 전 단계를 재결재하는 반려의 비용이 발생하지 않는다.
+        if agent in ('E', 'EV'):
+            stamp = timezone.now().strftime('%Y-%m-%d %H:%M')
+            entry = f'[수정 요청 {stamp}] {comment}'.strip()
+            step.comment = f'{step.comment}\n{entry}'.strip() if step.comment else entry
+            step.save(update_fields=['comment'])
+            mailer.enqueue_revision_requested(document)
+            return Response({'message': '수정 요청을 보냈습니다.', 'status': document.status})
+
         step.action = 'rejected'
         step.acted_at = timezone.now()
         step.comment = comment
@@ -842,6 +839,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         '합의'로 정확히 읽는다.
         """
         review_agent = self._REVIEW_AGENT_OF[step.agent]
+        # 되감기(_rewind_e_stage) 후 담당자가 다시 합의하면 그 회차 검토자 step 이 이미 존재한다.
+        # 지정 이력을 보존하려고 남겨둔 것이므로 다시 만들지 않는다(같은 검토자가 바뀐 값을 재확인).
+        if ApprovalStep.objects.filter(
+            document=document, agent=review_agent, round=round_no
+        ).exists():
+            return
         for reviewer_user in reviewer_users:
             rv_step = ApprovalStep.objects.create(
                 document=document, agent=review_agent, action='pending', round=round_no,
@@ -1048,6 +1051,53 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             'message': '중단 요청을 취소했습니다.',
             'document': RequestDocumentSerializer(document, context={'request': request}).data,
         })
+
+    @action(detail=True, methods=['post'], url_path='validation-system')
+    @transaction.atomic
+    def update_validation_system(self, request, pk=None):
+        """진행 중 문서의 Validation System 대상/비대상을 상신자 본인이 변경한다.
+
+        판정 주체는 상신자 하나다 — MASK(E) 팀은 확인 후 '합의'만 하고 값을 바꾸지 않는다.
+        수정 창은 상신 직후부터 E 단계가 통과되기 전까지 열려 있다. E 담당자가 이미 합의한
+        뒤라면 그 합의를 재검토(pending)로 되감아, MASK 가 검증한 값과 최종 확정값이
+        어긋나는 것을 막는다(되감기 폭은 E 단계 하나 — 반려처럼 새 회차를 돌리지 않는다).
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        value = request.data.get('value')
+        if value not in self.VALIDATION_SYSTEM_VALUES:
+            return Response(
+                {'error': '유효하지 않은 Validation System 값입니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        role = getattr(request.user, 'role', '')
+        if role != 'MASTER' and not doc_permissions.is_requester(request.user, document):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if document.status not in ('under_review', 'pause'):
+            return Response(
+                {'error': '진행 중인 의뢰서만 변경할 수 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        max_round = self._max_round(document)
+        if self._stage_reviewers_complete(document, 'E', max_round):
+            return Response(
+                {'error': 'MASK 검토가 끝난 의뢰서는 변경할 수 없습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        previous = self._get_validation_system(document)
+        if previous == value:
+            return Response({'message': '변경 사항이 없습니다.', 'rewound': False})
+
+        actor = getattr(request.user, 'username', '') or getattr(request.user, 'loginid', '')
+        self._set_validation_system(document, value, changed_by=actor)
+        rewound = self._rewind_e_stage(document, max_round, previous, value, actor)
+
+        return Response({'message': '변경했습니다.', 'rewound': rewound})
 
     def _get_pending_pl_step(self, document):
         """현재 회차의 pending PL 단계 반환(첫 번째). 없으면 None."""
@@ -1324,9 +1374,20 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     # Validation System 대상/비대상 값 (프론트 constants.ts 의 VS_TARGET/VS_NONTARGET 과 동일)
     VALIDATION_SYSTEM_VALUES = ('YES', 'NO')
 
-    def _set_validation_system(self, document, value):
-        """detail.validation_system 만 덮어쓴다.
+    def _get_validation_system(self, document):
+        """detail.validation_system 현재값. 키가 없거나 파싱 실패면 None."""
+        import json
+        try:
+            data = json.loads(document.additional_notes or '{}')
+            return (data.get('detail') or {}).get('validation_system')
+        except (json.JSONDecodeError, TypeError):
+            return None
 
+    def _set_validation_system(self, document, value, changed_by=None):
+        """detail.validation_system 을 덮어쓴다.
+
+        changed_by 가 주어지면 마지막 변경 주체/시각도 함께 남긴다 — 판정 주체가
+        상신자 하나이므로, 그 유일한 공급원의 변경을 추적할 지점이 필요하다.
         validation_system_submitted(상신 시점 상신자 값)는 건드리지 않는다.
         JSON 파싱 실패 시 조용히 건너뛴다(_sync_post_approvers_detail 과 같은 정책).
         """
@@ -1335,11 +1396,47 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             data = json.loads(document.additional_notes or '{}')
             detail = data.get('detail', {}) or {}
             detail['validation_system'] = value
+            if changed_by is not None:
+                detail['validation_system_changed_by'] = changed_by
+                detail['validation_system_changed_at'] = timezone.now().isoformat()
             data['detail'] = detail
             document.additional_notes = json.dumps(data, ensure_ascii=False)
             document.save(update_fields=['additional_notes'])
         except (json.JSONDecodeError, TypeError):
             pass
+
+    def _rewind_e_stage(self, document, round_no, previous, value, actor):
+        """E 담당자가 이미 합의한 뒤 값이 바뀌면 그 회차 E 단계를 재검토로 되감는다.
+
+        되감기 폭은 E 단계 하나다 — 반려처럼 PL 부터 새 회차를 돌리지 않으므로
+        이미 끝난 P/J/O/R 결재는 그대로 살아 있다.
+        EV(2차 검토자) step 은 삭제하지 않고 action 만 되돌려 지정 이력을 보존하고,
+        되감은 사유는 comment 에 덧붙인다(acted_at 은 이전 합의 시각 그대로 남긴다).
+        되감았으면 True.
+        """
+        e_step = ApprovalStep.objects.select_for_update().filter(
+            document=document, agent='E', round=round_no
+        ).first()
+        if not e_step or e_step.action != 'approved':
+            return False
+
+        stamp = timezone.now().strftime('%Y-%m-%d %H:%M')
+        note = (
+            f'[재검토 {stamp}] 상신자가 Validation System 을 '
+            f'{previous or "-"} → {value} 로 변경 (변경: {actor})'
+        )
+
+        def _append(step):
+            step.comment = f'{step.comment}\n{note}'.strip() if step.comment else note
+            step.action = 'pending'
+            step.save(update_fields=['action', 'comment'])
+
+        _append(e_step)
+        for ev_step in ApprovalStep.objects.select_for_update().filter(
+            document=document, agent='EV', round=round_no, action='approved'
+        ):
+            _append(ev_step)
+        return True
 
     def _sync_post_approvers_detail(self, document, add=None, remove_loginid=None):
         """detail.post_approvers JSON을 add(dict, {loginid,name}) 추가 또는 remove_loginid 제거로 동기화한다.

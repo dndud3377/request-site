@@ -1128,19 +1128,65 @@ class PEStageReviewerFlowTest(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'approved')
 
-    # ----- E(MASK) 합의 시 Validation System 확정값 -----
+    # ----- Validation System: 판정 주체는 상신자 하나 -----
 
     def _get_detail(self, doc):
         doc.refresh_from_db()
         return self._json.loads(doc.additional_notes or '{}').get('detail', {})
 
-    def test_e_approve_updates_validation_system(self):
-        """MASK(E) 합의 시 보낸 validation_system 이 detail 에 반영된다."""
-        doc = self._advance_to_parallel(plel=True)
+    def _set_detail(self, doc, detail):
         notes = self._json.loads(doc.additional_notes)
-        notes['detail'] = {'validation_system': 'YES', 'validation_system_submitted': 'YES'}
+        notes['detail'] = detail
         doc.additional_notes = self._json.dumps(notes)
         doc.save()
+
+    def _approve_e(self, doc, reviewers=None):
+        """E 담당자가 선점 후 합의한다. reviewers 를 주면 EV 2차 검토자를 함께 지정한다."""
+        self.client.force_authenticate(user=self.e_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        body = {'agent': 'E', 'comment': '확인함'}
+        if reviewers:
+            body['reviewer_loginids'] = reviewers
+        return self.client.post(f'/api/documents/{doc.id}/approve-step/', body, format='json')
+
+    def test_requester_updates_validation_system(self):
+        """상신자는 진행 중 문서의 대상/비대상을 바꿀 수 있고, 변경 주체·시각이 기록된다."""
+        doc = self._advance_to_parallel(plel=True)
+        self._set_detail(doc, {'validation_system': 'NO', 'validation_system_submitted': 'NO'})
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(r.data['rewound'], 'E 합의 전이면 되감을 것이 없다')
+
+        detail = self._get_detail(doc)
+        self.assertEqual(detail['validation_system'], 'YES')
+        self.assertEqual(detail['validation_system_submitted'], 'NO',
+                         '상신 시점 값은 이후 변경으로 바뀌지 않는다')
+        self.assertTrue(detail.get('validation_system_changed_by'))
+        self.assertTrue(detail.get('validation_system_changed_at'))
+
+    def test_non_requester_cannot_update_validation_system(self):
+        """상신자(또는 MASTER)가 아니면 값을 바꿀 수 없다 — MASK 도 마찬가지다."""
+        doc = self._advance_to_parallel(plel=True)
+        self._set_detail(doc, {'validation_system': 'NO'})
+
+        self.client.force_authenticate(user=self.e_owner)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+        self.assertEqual(self._get_detail(doc)['validation_system'], 'NO')
+
+    def test_invalid_validation_system_value_rejected(self):
+        """허용되지 않는 값은 400 이다."""
+        doc = self._advance_to_parallel(plel=True)
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'MAYBE'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_approve_step_ignores_validation_system(self):
+        """E 합의 요청에 값을 실어 보내도 더 이상 반영되지 않는다(판정 주체는 상신자다)."""
+        doc = self._advance_to_parallel(plel=True)
+        self._set_detail(doc, {'validation_system': 'YES'})
 
         self.client.force_authenticate(user=self.e_owner)
         self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
@@ -1149,62 +1195,98 @@ class PEStageReviewerFlowTest(TestCase):
             {'agent': 'E', 'comment': '', 'validation_system': 'NO'}, format='json',
         )
         self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self._get_detail(doc)['validation_system'], 'YES')
 
-        detail = self._get_detail(doc)
-        self.assertEqual(detail['validation_system'], 'NO')
-        self.assertEqual(detail['validation_system_submitted'], 'YES',
-                         '상신 시점 값은 MASK 수정으로 바뀌지 않는다')
-
-    def test_validation_system_ignored_for_other_agents(self):
-        """E 가 아닌 단계에서 보낸 validation_system 은 무시한다."""
+    def test_change_after_e_approval_rewinds_only_e_stage(self):
+        """E 담당자 합의 뒤 값이 바뀌면 E 단계만 재검토로 되감고, EV 지정 이력은 남긴다."""
         doc = self._advance_to_parallel(plel=True)
-        notes = self._json.loads(doc.additional_notes)
-        notes['detail'] = {'validation_system': 'YES'}
-        doc.additional_notes = self._json.dumps(notes)
-        doc.save()
+        self._set_detail(doc, {'validation_system': 'NO', 'validation_system_submitted': 'NO'})
+        r = self._approve_e(doc, reviewers=[self.e_reviewer.loginid])
+        self.assertEqual(r.status_code, 200, r.content)
 
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.data['rewound'])
+
+        e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
+        self.assertEqual(e_step.action, 'pending', 'E 합의는 재검토로 되돌아간다')
+        self.assertIn('재검토', e_step.comment)
+        self.assertIsNotNone(e_step.acted_at, '이전 합의 시각은 이력으로 남긴다')
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='EV', round=1).exists(),
+            'EV 지정 이력은 삭제하지 않는다',
+        )
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review', '되감기 폭은 E 단계 하나다')
+        self.assertFalse(
+            ApprovalStep.objects.filter(document=doc, round=2).exists(),
+            '반려와 달리 새 회차를 만들지 않는다',
+        )
+
+    def test_same_value_does_not_rewind(self):
+        """같은 값으로 다시 저장하면 되감지 않는다."""
+        doc = self._advance_to_parallel(plel=True)
+        self._set_detail(doc, {'validation_system': 'NO'})
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'NO'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(r.data['rewound'])
+        self.assertEqual(
+            ApprovalStep.objects.get(document=doc, agent='E', round=1).action, 'approved',
+        )
+
+    def test_update_blocked_after_e_stage_complete(self):
+        """E 단계가 통과하면 수정 창이 닫힌다(검토자 없이 합의하면 그대로 완료된다)."""
+        doc = self._advance_to_parallel(plel=True)
+        self._set_detail(doc, {'validation_system': 'NO'})
+        self.assertEqual(self._approve_e(doc).status_code, 200)
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(self._get_detail(doc)['validation_system'], 'NO')
+
+    # ----- MASK 는 반려하지 않고 '수정 요청'만 한다 -----
+
+    def test_e_reject_becomes_revision_request(self):
+        """E 반려는 결재를 되돌리지 않고 상신자에게 수정 요청 메일만 보낸다."""
+        doc = self._advance_to_parallel(plel=True)
+        self.client.force_authenticate(user=self.e_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        r = self.client.post(
+            f'/api/documents/{doc.id}/reject-step/',
+            {'agent': 'E', 'comment': '대상으로 보입니다'}, format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review', '수정 요청은 문서를 반려 상태로 만들지 않는다')
+        e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
+        self.assertEqual(e_step.action, 'pending', '단계도 대기 그대로다')
+        self.assertIn('수정 요청', e_step.comment)
+        self.assertFalse(
+            ApprovalStep.objects.filter(document=doc, round=2).exists(),
+            '새 회차를 만들지 않는다',
+        )
+        self.assertTrue(
+            MailNotification.objects.filter(document=doc, event_type='revision_requested').exists(),
+            '상신자에게 수정 요청 메일이 적재되어야 한다',
+        )
+
+    def test_non_mask_reject_still_rejects_document(self):
+        """E/EV 가 아닌 단계의 반려는 기존대로 문서를 반려 처리한다(회귀 방지)."""
+        doc = self._advance_to_parallel(plel=True)
         self.client.force_authenticate(user=self.o_user)
         self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
         r = self.client.post(
-            f'/api/documents/{doc.id}/approve-step/',
-            {'agent': 'O', 'comment': '', 'validation_system': 'NO'}, format='json',
+            f'/api/documents/{doc.id}/reject-step/', {'agent': 'O', 'comment': 'x'}, format='json',
         )
         self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(self._get_detail(doc)['validation_system'], 'YES')
-
-    def test_invalid_validation_system_rejected(self):
-        """허용되지 않는 값은 400 이다."""
-        doc = self._advance_to_parallel(plel=True)
-        self.client.force_authenticate(user=self.e_owner)
-        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
-        r = self.client.post(
-            f'/api/documents/{doc.id}/approve-step/',
-            {'agent': 'E', 'comment': '', 'validation_system': 'MAYBE'}, format='json',
-        )
-        self.assertEqual(r.status_code, 400, r.content)
-
-    def test_invalid_validation_system_with_reviewers_creates_no_ev_step(self):
-        """유효한 reviewer_loginids 와 함께 온 잘못된 validation_system 은 400 이고,
-
-        EV 검토자 단계도 생성되지 않아야 한다(값 검증이 검토자 생성보다 먼저 실행되어
-        부분 커밋이 없어야 함을 확인).
-        """
-        doc = self._advance_to_parallel(plel=True)
-        self.client.force_authenticate(user=self.e_owner)
-        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
-        r = self.client.post(
-            f'/api/documents/{doc.id}/approve-step/',
-            {
-                'agent': 'E', 'comment': '',
-                'reviewer_loginids': [self.e_reviewer.loginid],
-                'validation_system': 'MAYBE',
-            }, format='json',
-        )
-        self.assertEqual(r.status_code, 400, r.content)
-        self.assertFalse(
-            ApprovalStep.objects.filter(document=doc, agent='EV', round=1).exists(),
-            '값 검증 실패 시 검토자(EV) 단계도 생성되지 않아야 한다',
-        )
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
 
 
 class MapChangeApplyTest(TestCase):
