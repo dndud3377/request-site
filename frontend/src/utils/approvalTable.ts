@@ -197,6 +197,7 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
   }
 
   // 병렬 단계: 경로1(P[→검토자 PV]→J) ∥ 경로2(O[+E[→검토자 EV]]) ∥ 경로3(후결자 RA). 존재하는 경로만 행으로 만든다.
+  // (반려 문서는 위 rejected 분기에서 이미 반환되므로 아래 경로별 상태 계산에서는 다시 확인하지 않는다.)
   const rows: DocTableRow[] = [];
   const pStep = currentSteps.find(s => s.agent === 'P');
   const pvSteps = currentSteps.filter(s => s.agent === 'PV');
@@ -226,24 +227,24 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
       // 완료 시점엔 검토중이라 가려뒀던 J 이름도 포함해 실제로 결재했던 사람 전원을 보여준다.
       stageText = namedApprovers([...(pStep ? [pStep] : []), ...pvSteps, ...jSteps]) ?? t('common.status_approved');
       dueDate = null;
-      pathStatus = doc.status === 'rejected' ? 'rejected' : 'approved';
+      pathStatus = 'approved';
     } else if (path1PendingP) {
       stageText = buildStageText(path1PendingP, false, t);
       dueDate = path1PendingP.due_date ?? null;
-      pathStatus = doc.status === 'rejected' ? 'rejected' : path1PendingP.assignee_loginid ? 'under_review' : 'unassigned';
+      pathStatus = path1PendingP.assignee_loginid ? 'under_review' : 'unassigned';
     } else if (pvPendingSteps.length > 0) {
       // 담당자는 합의했으나 지정된 검토자가 아직 남아 있음
       const label = t('approval.stage_reviewer' as any);
       const names = pvPendingSteps.map(s => s.assignee_name).filter(Boolean);
       stageText = names.length > 0 ? `${label}(${names.join(' / ')})` : label;
       dueDate = pvPendingSteps[0]?.due_date ?? null;
-      pathStatus = doc.status === 'rejected' ? 'rejected' : 'under_review';
+      pathStatus = 'under_review';
     } else {
       // J는 검토중(claim) 방식 — 진행 중에는 담당자 이름을 노출하지 않는다(완료 후에는 위 path1Done 분기에서 표시).
       stageText = t('approval.agent_J' as any);
       dueDate = jPendingSteps[0]?.due_date ?? null;
       const jHasUnassigned = jPendingSteps.some(s => !s.assignee_loginid);
-      pathStatus = doc.status === 'rejected' ? 'rejected' : jHasUnassigned ? 'unassigned' : 'under_review';
+      pathStatus = jHasUnassigned ? 'unassigned' : 'under_review';
     }
     rows.push({ pathKey: 'path1', stageText, dueDate, isDone: path1Done, pathStatus });
   }
@@ -298,7 +299,7 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
       stageText,
       dueDate,
       isDone: done,
-      pathStatus: doc.status === 'rejected' ? 'rejected' : done ? 'approved' : 'under_review',
+      pathStatus: done ? 'approved' : 'under_review',
     });
   }
 
