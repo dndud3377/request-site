@@ -501,7 +501,15 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         step.action = 'approved'
         step.acted_at = timezone.now()
-        step.comment = comment
+        # E/EV 의 comment 는 '수정 요청'(reject_step)과 '되감기'(_rewind_e_stage) 이력이
+        # 쌓이는 유일한 저장소다 — ApprovalStep 에 이력 전용 필드가 없다. 덮어쓰면
+        # 설계 결정(이력 보존)이 최종 합의 시점에 통째로 무효화되므로 덧붙인다.
+        if step.agent in ('E', 'EV') and step.comment:
+            if comment:
+                stamp = timezone.now().strftime('%Y-%m-%d %H:%M')
+                step.comment = f'{step.comment}\n[합의 {stamp}] {comment}'
+        else:
+            step.comment = comment
         if not step.assignee_name:
             step.assignee_name = request.data.get('approver_name', '')
         step.save()
