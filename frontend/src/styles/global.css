@@ -4675,3 +4675,54 @@ select.form-control option {
   border: none; background: none; color: var(--danger);
   cursor: pointer; font-size: 0.85rem; padding: 0 4px; line-height: 1;
 }
+
+/* ── ADI CD 변경 — 변경전/변경후 스텝 표 ── */
+.adi-cd-panel { margin: 12px 0 4px; }
+.adi-cd-split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 900px) { .adi-cd-split { grid-template-columns: 1fr; } }
+.adi-cd-pane {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  overflow: hidden; background: var(--bg-card); padding: 8px;
+}
+.adi-cd-pane-title {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  font-size: 0.85rem; font-weight: 700; margin-bottom: 6px;
+}
+.adi-cd-delete-all-toggle {
+  display: flex; align-items: center; gap: 4px; font-size: 0.78rem;
+  font-weight: 500; color: var(--text-secondary); cursor: pointer;
+}
+.adi-cd-pane-scroll { max-height: 320px; overflow: auto; }
+.adi-cd-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.adi-cd-table th, .adi-cd-table td {
+  padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--border-light);
+}
+.adi-cd-table th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--bg-primary); font-size: 0.76rem; font-weight: 600;
+  color: var(--text-secondary);
+}
+.adi-cd-cell {
+  width: 100%; box-sizing: border-box; padding: 4px 6px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.82rem;
+}
+.adi-cd-cell-error { border-color: var(--danger); background: var(--danger-light); }
+.adi-cd-row-remove {
+  border: none; background: none; color: var(--danger);
+  cursor: pointer; font-size: 0.85rem; padding: 0 4px; line-height: 1;
+}
+.adi-cd-add-row { margin-top: 6px; font-size: 0.78rem; padding: 4px 10px; }
+.adi-cd-empty-hint { color: var(--text-muted); font-size: 0.78rem; padding: 10px 8px; }
+.adi-cd-delete-all-note {
+  color: var(--text-muted); font-size: 0.82rem; padding: 16px 8px; text-align: center;
+}
+.adi-cd-note { margin-top: 6px; font-size: 0.76rem; color: var(--text-muted); line-height: 1.5; }
+
+/* ── ADI CD 컬럼 매핑 모달 ── */
+.adi-cd-map-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.adi-cd-map-table th, .adi-cd-map-table td {
+  padding: 5px 8px; text-align: left; border: 1px solid var(--border-light); white-space: nowrap;
+}
+.adi-cd-skip-header-label {
+  display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 0.82rem;
+}
