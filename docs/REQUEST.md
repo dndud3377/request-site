@@ -241,6 +241,59 @@ pages/RequestPage/
   `Only MAP`·`완성된 MAP 변경` 모드는 J/O 표를 강제로 비우므로 **후보가 0개**가 되어 REV 항목을 새로 추가할 수 없다(불러온 항목 삭제만 가능).
   두 모드에서는 REV Layer 를 쓸 일이 없다는 판단으로 직접 입력은 도입하지 않았다.
 
+### 추가 변경 이력 (2026-08-03 — 참조 요청서 Merge 3개 목적 공용화 + BEFORE/AFTER 비교)
+
+- **개요**: 참조 요청서 Merge 를 `Layer 추가/삭제` 전용에서 **`STEPSEQ 변경`·`Overlay 변경` 까지 공용**으로 넓히고,
+  A(참조)와 B(작성 중)의 차이를 **BEFORE/AFTER 매핑 표 + 변경전/변경후 표**로 보여주고 문서에 저장한다.
+  기획·화면 설계는 `docs/merge_before_after_mockup.html`(클릭 가능한 mock 계획서) 참조. **백엔드·마이그레이션 변경 없음.**
+
+- **노출 조건**: `MERGE_ENABLED_PURPOSES = ['Layer 추가/삭제','STEPSEQ 변경','Overlay 변경']`(`constants.ts`).
+  `isMergePurposeSelected()` 로 판정해 **여러 개를 골라도 블록은 1개만** 노출한다(참조 요청서는 의뢰서당 1건이므로).
+  3개를 모두 해제하면 참조·비교 상태를 비운다(J/O 표는 되돌리지 않는다 — 되돌리려면 '재선택').
+
+- **`computeBeforeAfter(refJ, refO, curJ, curO)` 신설**(`helpers.ts`): `{ pairs, unmatchedBefore, unmatchedAfter, sameCount }` 를 돌려주는 **순수 함수**.
+  비교 키는 **`process_id + layerid`** 이며(3-way 의 `computeLayerMerge` 키와 **의도적으로 다르다**), 그룹 단위로 판정한다.
+
+| 그룹 안 A 행 수 | B 행 수 | 처리 | 가는 곳 |
+|---|---|---|---|
+| 1 | 1 | 5개 값(`process_id`/`sp`/`sd`/`pp`/`layerid`)이 모두 같으면 **제외**, 하나라도 다르면 자동 1:1 (`changed`) | 변경전/변경후 |
+| N(≥1) | 0 | 각 행을 `AFTER=미등록` 과 자동 짝 (`deleted`) | 변경전/변경후 |
+| 0 | N(≥1) | 각 행을 `BEFORE=미등록` 과 자동 짝 (`added`) | 변경전/변경후 |
+| 둘 다 ≥1 이고 한쪽이라도 ≥2 | | **자동 매칭 안 함** — 사용자가 직접 매핑 | BEFORE/AFTER |
+
+  - 비활성(`disabled`) 행과 `layerid` 가 빈 행은 비교 대상에서 제외한다. J-ayer 는 J-ayer 끼리만 비교·매핑한다.
+  - 미매칭 행 id 는 `J_<rowId>` / `O_<rowId>` 로 접두사를 붙여 두 표 사이의 id 충돌을 막는다.
+
+- **매핑 UI**(`components/BeforeAfterPanel.tsx`, STEP 1 인라인): BEFORE/AFTER 각 표의 첫 행은 항상 `미등록`(횟수 제한 없음).
+  **양쪽 한 행씩 선택하면 `적용` 으로 즉시 확정**(스테이징 단계 없음)되고, `BEFORE 행은 목록에 남아 여러 번 재사용(1:N)`,
+  AFTER 행만 목록에서 빠진다. 확정 표의 `✕` 로 해제하면 **BEFORE·AFTER 양쪽이 각자의 표로 복귀**하며,
+  재사용 중이라 이미 목록에 있는 행은 중복 추가하지 않는다.
+
+- **게이트**: `AFTER 미매핑 잔여 0` 이어야 다음 STEP 이동·상신이 가능하다(`addBaGateError` → `validate(1)`·`validate(5)`).
+  **BEFORE 잔여는 허용**하며(3-way 가 이미 `layer삭제` 행으로 처리), **임시저장은 차단하지 않는다.**
+
+- **재선택(영구 잠금 폐지)**: Merge 후에도 `재선택` 버튼으로 되돌릴 수 있다.
+  `handleMergeConfirm` 이 3-way 반영 **직전**의 J/O 를 `mergeSnapshot` 에 담고, 저장 시 **`additional_notes.mergeSnapshot`**(detail 형제 키)로 남긴다
+  → **임시저장 후 재진입·재상신 이후에도 J/O 완전 롤백**. 롤백으로 사라진 행에 걸린 bb 매핑·스테이징도 함께 정리한다.
+  `mergeSnapshot` 은 detail 바깥이라 상세 페이지의 변경 이력 diff(detail 기준)에 잡히지 않는다.
+  **정리 시점**: 재선택 완료 · 조리법(`process_id`) 변경 · Merge 목적 전체 해제 → `null`.
+
+- **저장 필드**(`DetailFormState`): `merge_pairs`(확정 짝) · `merge_unmatched_before` · `merge_unmatched_after`.
+  구버전 문서는 로드 시 `?? []` 로 백필한다. `merge_ref_doc_id`/`merge_ref_doc_label` 은 기존 그대로 쓴다.
+
+- **상세 페이지**: `PagedDetailView` 의 `MergePairsTable` — `merge_pairs` 가 있을 때만 STEP 1 페이지에 카드로 노출.
+  값은 **Merge 시점 스냅샷**이므로 제목 옆에 그 사실을 표기한다(Merge 이후 J/O 를 수동 편집하면 실제 표와 달라질 수 있다).
+
+- **i18n**: `request.ba_*` 27개 + `merge_reselect*` 4개 + `toast_merge_reselect` 를 ko/en 동시 추가.
+  영구 잠금 폐지에 맞춰 `merge_confirm_once_warning`·`merge_already_done` 문구를 '재선택으로 변경 가능'으로 고쳤다.
+
+- **테스트**: `helpers.test.ts` 에 `computeBeforeAfter` **12건** 추가(자동 1:1·미등록 자동 짝·모호 그룹 미매칭·A3:B0·`layerid` 빈 행·비활성 행·J/O 독립·공백 정규화·멱등·빈 표). 전체 **32건 통과**.
+
+- **알려진 제약**: ① `merge_pairs` 는 Merge 시점 기록이라 이후 J/O 수동 편집과 어긋날 수 있다(의도).
+  ② `mergeSnapshot` 저장으로 `additional_notes` 가 커진다(J/O 행 수만큼, 대략 1.6~2배). `TextField`(MySQL `longtext`)라 한계는 없지만
+  **목록 API 가 `additional_notes` 를 통째로 내려주므로** 문서가 쌓이면 목록 응답이 무거워질 수 있다(목록 직렬화 제외는 별도 과제).
+  ③ 3-way `computeLayerMerge` 는 이번 범위에서 **손대지 않았다** — 키에 `layerid` 가 빠진 기존 이슈(아래 2026-08-02 항목)도 그대로다.
+
 ### 추가 변경 이력 (2026-08-02 — Layer 추가/삭제 Merge 3-way 판정 + 참조 1건 제한)
 
 - **개요**: `Layer 추가/삭제` Merge 를 기획 의도대로 **3-way 판정**으로 재구현하고, 참조 요청서를 **의뢰서당 1건**으로 제한했다.
@@ -502,10 +555,10 @@ pages/RequestPage/
 
 ## 5. 검증 방법
 ```bash
-# 타입체크 (2026-08-02 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
+# 타입체크 (2026-08-03 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
 cd frontend && npx tsc --noEmit 2>&1 | grep -c "error TS"
 
-# 테스트 (helpers.test.ts 20건)
+# 테스트 (helpers.test.ts 32건)
 cd frontend && CI=true npx react-scripts test --watchAll=false --passWithNoTests
 
 # 개발 서버 확인 경로
