@@ -12,8 +12,6 @@ import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFronten
 import { formatDate } from '../utils/date';
 import { getDocTableRows, getDueDateDisplay, getFinalCompletionDate, getCurrentRound } from '../utils/approvalTable';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS } from './approvalTourSeed';
-import { VS_TARGET, VS_NONTARGET } from './RequestPage/constants';
-import { isValidationTarget } from './RequestPage/helpers';
 
 // 전체 가이드 상세 모달에서 특정 페이지로 이동하기 위한 페이지 인덱스
 // (MASTER 역할 기준 페이지 순서: 0 상세 · 1 MAP · 2 JOB · 3 OVL · 4 BB · 5 결재 경로)
@@ -114,8 +112,6 @@ export default function ApprovalPage(): React.ReactElement {
   const [reviewerCandidates, setReviewerCandidates] = useState<UserWithRole[]>([]);
   const [reviewerSelectedIds, setReviewerSelectedIds] = useState<string[]>([]);
   const [reviewerDropdownOpen, setReviewerDropdownOpen] = useState(false);
-  // MASK(E) 합의 시 확정할 Validation System 값. 모달을 열 때 문서의 현재 값으로 초기화한다.
-  const [validationSystemInput, setValidationSystemInput] = useState<ValidationSystemValue>(VS_NONTARGET);
 
   const handleLoadTeamMembers = async (agent: AgentType): Promise<UserWithRole[]> => {
     // 투어: 실제 API 대신 샘플 팀 인원을 반환(실제 지정 UI와 동일하게 select 채움)
@@ -481,6 +477,38 @@ export default function ApprovalPage(): React.ReactElement {
     setModalOpen(true);
   };
 
+  /**
+   * Validation System 수정 창.
+   * 상신자 본인(또는 MASTER)이고, 진행 중이며, MASK(E) 검토가 끝나기 전까지 열려 있다.
+   * 백엔드 _stage_reviewers_complete 와 같은 규칙 — E 담당자 합의 + EV 전원 합의로 닫힌다.
+   */
+  const canEditValidationSystem = (doc: RequestDocument | null): boolean => {
+    if (!doc || isTourMode) return false;
+    if (doc.status !== 'under_review' && doc.status !== 'pause') return false;
+    const isOwner = currentUser.role === 'MASTER' || doc.requester_loginid === currentUser.username;
+    if (!isOwner) return false;
+    const steps = doc.approval_steps ?? [];
+    const maxRound = steps.reduce((m, st) => Math.max(m, st.round), 1);
+    const eStep = steps.find((st) => st.agent === 'E' && st.round === maxRound);
+    if (!eStep || eStep.action !== 'approved') return true;
+    const evSteps = steps.filter((st) => st.agent === 'EV' && st.round === maxRound);
+    return evSteps.some((st) => st.action !== 'approved');
+  };
+
+  const handleValidationSystemChange = async (value: ValidationSystemValue) => {
+    if (!selected) return;
+    try {
+      const { data } = await documentsAPI.updateValidationSystem(selected.id, value);
+      addToast(
+        data.rewound ? t('approval.validation_system_rewound') : t('approval.validation_system_updated'),
+        'success'
+      );
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    }
+  };
+
   const refreshAndSelect = async (docId: number) => {
     const listResult = await documentsAPI.list({});
     const listData = listResult.data;
@@ -492,24 +520,10 @@ export default function ApprovalPage(): React.ReactElement {
     if (freshDoc) setSelected(freshDoc);
   };
 
-  // 문서의 현재 Validation System 값. 키가 없는 레거시 문서는 저장된 J-layer 로 폴백 판정한다.
-  const readValidationSystem = (doc: RequestDocument): ValidationSystemValue => {
-    try {
-      const parsed = JSON.parse(doc.additional_notes ?? '{}');
-      const saved = parsed?.detail?.validation_system;
-      if (saved === VS_TARGET || saved === VS_NONTARGET) return saved;
-      return isValidationTarget(parsed?.jayerRows ?? []) ? VS_TARGET : VS_NONTARGET;
-    } catch {
-      return VS_NONTARGET;
-    }
-  };
-
   // 합의/반려 버튼 클릭 → comment 모달 열기
   const triggerAgree = (agent: AgentType, isPeer = false) => {
     setPendingAction({ type: 'agree', agent, isPeer });
     setCommentInput('');
-    // MASK(E) 합의 모달의 토글은 문서의 현재 값에서 시작한다.
-    if (selected) setValidationSystemInput(readValidationSystem(selected));
     setCommentModalOpen(true);
   };
 
@@ -538,14 +552,17 @@ export default function ApprovalPage(): React.ReactElement {
       } else if (pendingAction.type === 'agree') {
         // P/E 담당자 합의 시, 지금 선택돼 있는 검토자(PV/EV)를 함께 지정한다(별도 확인 없이 한 번에 처리).
         const reviewerLoginids = REVIEW_AGENT_OF[pendingAction.agent] ? reviewerSelectedIds : undefined;
-        const validationSystem = pendingAction.agent === 'E' ? validationSystemInput : undefined;
-        await documentsAPI.approveStep(selected.id, pendingAction.agent, commentInput || undefined, currentUser.name, reviewerLoginids, validationSystem);
+        await documentsAPI.approveStep(selected.id, pendingAction.agent, commentInput || undefined, currentUser.name, reviewerLoginids);
         addToast(t('approval.agree_success', { agent: t(`approval.agent_${pendingAction.agent}` as any) }), 'success');
         setModalOpen(false);
         fetchDocs();
       } else {
         await documentsAPI.rejectStep(selected.id, pendingAction.agent, commentInput || undefined);
-        addToast(t('approval.reject_success'), 'error');
+        const isMaskStage = pendingAction.agent === 'E' || pendingAction.agent === 'EV';
+        addToast(
+          isMaskStage ? t('approval.request_revision_success') : t('approval.reject_success'),
+          isMaskStage ? 'success' : 'error'
+        );
         await refreshAndSelect(selected.id);
       }
     } catch {
@@ -942,36 +959,6 @@ export default function ApprovalPage(): React.ReactElement {
           }
         >
           <div>
-            {pendingAction.agent === 'E' && pendingAction.type === 'agree' && (
-              <div style={{ marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
-                <p style={{ marginBottom: 6, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                  {t('approval.validation_system_confirm')}
-                </p>
-                <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
-                  {([
-                    { value: VS_TARGET, label: t('request.validation_system_target') },
-                    { value: VS_NONTARGET, label: t('request.validation_system_nontarget') },
-                  ] as const).map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setValidationSystemInput(opt.value)}
-                      style={{
-                        border: 'none',
-                        padding: '5px 16px',
-                        fontSize: '0.85rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        background: validationSystemInput === opt.value ? 'var(--primary)' : 'transparent',
-                        color: validationSystemInput === opt.value ? '#fff' : 'var(--text-muted)',
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
             <p style={{ marginBottom: 8, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
               {pendingAction.type === 'agree' ? t('approval.comment_agree_label') : t('approval.comment_reject_label')}
             </p>
@@ -1646,7 +1633,9 @@ export default function ApprovalPage(): React.ReactElement {
                     disabled={processing}
                     onClick={() => triggerReject(actableStep.agent)}
                   >
-                    {t('approval.reject')}
+                    {actableStep.agent === 'E' || actableStep.agent === 'EV'
+                      ? t('approval.request_revision')
+                      : t('approval.reject')}
                   </button>
                 </>
               )}
@@ -1708,6 +1697,8 @@ export default function ApprovalPage(): React.ReactElement {
               role={isTourMode ? 'MASTER' : (currentUser.role as UserRole)}
               pageIdx={pageIdx}
               setPageIdx={setPageIdx}
+              canEditValidationSystem={canEditValidationSystem(selected)}
+              onValidationSystemChange={handleValidationSystemChange}
             />
           </div>
         )}

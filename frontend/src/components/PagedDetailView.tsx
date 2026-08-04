@@ -7,6 +7,7 @@ import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
 import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget } from '../pages/RequestPage/helpers';
+import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 
 // ===== Table Components =====
 
@@ -477,9 +478,14 @@ export interface PagedDetailViewProps {
   role: UserRole;
   pageIdx: number;
   setPageIdx: (idx: number) => void;
+  /** 상신자 본인이 Validation System 값을 바꿀 수 있는 상태인지(호출부가 판정) */
+  canEditValidationSystem?: boolean;
+  onValidationSystemChange?: (value: ValidationSystemValue) => void;
 }
 
-export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: PagedDetailViewProps): React.ReactElement {
+export default function PagedDetailView({
+  doc, role, pageIdx, setPageIdx, canEditValidationSystem = false, onValidationSystemChange,
+}: PagedDetailViewProps): React.ReactElement {
   const { t } = useTranslation();
   let detail: Partial<DetailFormState> = {};
   let jayer: JayerRow[] = [];
@@ -629,10 +635,11 @@ export default function PagedDetailView({ doc, role, pageIdx, setPageIdx }: Page
       ? detail.validation_system
       : VS_TARGET);
   const vsSubmitted = detail.validation_system_submitted;
-  const vsLabel = (v: ValidationSystemValue) =>
-    v === VS_TARGET ? t('request.validation_system_target')
-      : v === VS_NONTARGET ? t('request.validation_system_nontarget')
-        : t('request.validation_system_na');
+  const vsLabel = useValidationSystemLabel();
+  // 판정 키워드가 없는 문서(해당없음)는 고를 값 자체가 없으므로 토글을 열지 않는다.
+  const vsEditable = canEditValidationSystem && !!onValidationSystemChange && hasPlel;
+  const vsChangedBy = detail.validation_system_changed_by;
+  const vsChangedAt = (detail.validation_system_changed_at ?? '').slice(0, 16).replace('T', ' ');
 
   const prevSnap = history.length > 0 ? history[history.length - 1] : null;
   const changedFields = prevSnap ? computeDetailDiff(detail, prevSnap.detail) : new Set<string>();
@@ -1307,19 +1314,19 @@ type Page = { label: string; content: React.ReactNode };
             <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
               {t('request.validation_system')}
             </span>
-            <span style={{
-              fontSize: '0.82rem',
-              fontWeight: 700,
-              padding: '2px 10px',
-              borderRadius: 4,
-              background: vsCurrent === VS_TARGET ? 'var(--primary)' : 'var(--border)',
-              color: vsCurrent === VS_TARGET ? '#fff' : 'var(--text-secondary)',
-            }}>
-              {vsLabel(vsCurrent)}
-            </span>
+            {vsEditable ? (
+              <ValidationSystemToggle value={vsCurrent} onChange={(v) => onValidationSystemChange?.(v)} />
+            ) : (
+              <ValidationSystemBadge value={vsCurrent} />
+            )}
             {hasPlel && vsSubmitted && vsSubmitted !== vsCurrent && (
               <span style={{ fontSize: '0.75rem', color: 'var(--danger)' }}>
                 {t('request.validation_system_changed', { from: vsLabel(vsSubmitted), to: vsLabel(vsCurrent) })}
+              </span>
+            )}
+            {vsChangedBy && (
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                {t('request.validation_system_changed_by', { name: vsChangedBy, at: vsChangedAt })}
               </span>
             )}
           </div>

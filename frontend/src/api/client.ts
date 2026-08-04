@@ -241,8 +241,7 @@ const approveStep = async (
   agent: AgentType,
   comment?: string,
   approverName?: string,
-  reviewerLoginids?: string[],
-  validationSystem?: ValidationSystemValue
+  reviewerLoginids?: string[]
 ) => {
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/approve-step/`,
@@ -250,8 +249,6 @@ const approveStep = async (
       agent, comment: comment ?? '', approver_name: approverName ?? '',
       // P/E 담당자 합의 시 검토자(PV/EV, 다중)를 함께 지정 — 별도 API 없이 한 번에 처리
       ...((agent === 'P' || agent === 'E') && reviewerLoginids?.length ? { reviewer_loginids: reviewerLoginids } : {}),
-      // E(MASK) 합의 시 Validation System 확정값을 함께 전달 — 같은 요청 한 번으로 처리
-      ...(agent === 'E' && validationSystem ? { validation_system: validationSystem } : {}),
     }
   );
   return { data };
@@ -261,6 +258,18 @@ const rejectStep = async (docId: number, agent: AgentType, comment?: string) => 
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/reject-step/`,
     { agent, comment: comment ?? '' }
+  );
+  return { data };
+};
+
+/**
+ * 진행 중 문서의 Validation System 값을 상신자 본인이 변경한다.
+ * MASK(E) 담당자가 이미 합의한 뒤라면 백엔드가 E 단계를 재검토(pending)로 되감는다.
+ */
+const updateValidationSystem = async (docId: number, value: ValidationSystemValue) => {
+  const data = await post<{ message: string; rewound: boolean }>(
+    `/documents/${docId}/validation-system/`,
+    { value }
   );
   return { data };
 };
@@ -379,6 +388,7 @@ export const documentsAPI = {
   delete: deleteDocument,
   approveStep,
   rejectStep,
+  updateValidationSystem,
   assignStep,
   addPostApprover,
   removePostApprover,
