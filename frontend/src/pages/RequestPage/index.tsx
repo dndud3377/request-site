@@ -46,9 +46,7 @@ import {
   INITIAL_DETAIL,
   INITIAL_FORM,
   DETAIL_REQUIRED,
-  OTHER_PURPOSE_MAP_CHANGE,
   ONLY_MAP_PURPOSE,
-  MAP_DETAIL_KEYS,
   PRODC_SCOPE_OPTIONS,
   inferProdcScope,
   JAYER_EDITABLE_COLS,
@@ -272,13 +270,6 @@ export default function RequestPage(): React.ReactElement {
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [mapTypeChangeConfirm, setMapTypeChangeConfirm] = useState<{ targetType: string } | null>(null);
   const [onlyMapConfirm, setOnlyMapConfirm] = useState(false);
-  // 완성된 MAP 변경(기타 목적) — 결재완료 요청서의 MAP 정보만 불러와 수정하는 단독 전용 모드
-  const [mapChangeDocId, setMapChangeDocId] = useState<number | null>(null);
-  const [mapChangeDocLabel, setMapChangeDocLabel] = useState<string>('');
-  const [mapChangeResetConfirm, setMapChangeResetConfirm] = useState(false); // 전환 진입 시 전체 초기화 확인
-  const [mapChangeLeaveConfirm, setMapChangeLeaveConfirm] = useState(false);  // 다른 목적으로 전환/해제 확인
-  const [pendingSwitchOp, setPendingSwitchOp] = useState<string | null>(null); // 전환하려는 대상 기타 목적(null=해제)
-  const [mapChangeBaseline, setMapChangeBaseline] = useState<DetailFormState | null>(null); // 원본 MAP 스냅샷(변경이력 diff 기준)
   // ADI CD 변경(기타 목적) — 변경전/변경후 스텝 표
   const [adiCdLeaveConfirm, setAdiCdLeaveConfirm] = useState(false); // 해제 시 표에 값이 있으면 초기화 확인
   const [adiCdMapModal, setAdiCdMapModal] = useState<{ side: 'before' | 'after'; grid: string[][]; header: AdiCdHeaderMatch | null } | null>(null);
@@ -572,11 +563,9 @@ export default function RequestPage(): React.ReactElement {
     setRefOayerRows([]);
     // 조리법이 바뀌면 J/O 가 통째로 재조회되므로 옛 스냅샷으로 롤백되면 안 된다 → 비교 상태 전부 정리.
     clearMergeComparison();
-    // Only MAP·완성된 MAP 변경은 StepMap 정보까지만 필요 → J/O 자동 재조회 없이 빈 상태로 유지한다.
-    // (isOnlyMap/isMapChangeMode 는 이 effect 아래에서 선언되므로 detail 로 직접 판정)
-    const onlyMapMode = detail.request_purpose === ONLY_MAP_PURPOSE;
-    const mapChangeMode = detail.other_purpose.includes(OTHER_PURPOSE_MAP_CHANGE);
-    if (onlyMapMode || mapChangeMode) {
+    // Only MAP 은 StepMap 정보까지만 필요 → J/O 자동 재조회 없이 빈 상태로 유지한다.
+    // (isOnlyMap 은 이 effect 아래에서 선언되므로 detail 로 직접 판정)
+    if (detail.request_purpose === ONLY_MAP_PURPOSE) {
       setJayerRows([makeJayerRow()]);
       setOayerRows([makeOayerRow()]);
       return;
@@ -824,10 +813,6 @@ export default function RequestPage(): React.ReactElement {
           // 불러온 문서의 값은 이미 확정된 판단이므로 자동 갱신으로 덮어쓰지 않는다.
           setVsManuallySet(true);
           setPostApprovers(Array.isArray(parsed.detail.post_approvers) ? parsed.detail.post_approvers : []);
-          // 완성된 MAP 변경 문서 재열기: 원본 MAP 스냅샷(변경이력 diff 기준)을 history[0] 에서 복원
-          if (normalizedOtherPurpose.includes(OTHER_PURPOSE_MAP_CHANGE) && parsed.history?.[0]?.detail) {
-            setMapChangeBaseline(parsed.history[0].detail as DetailFormState);
-          }
         }
         // 재선택 롤백용 스냅샷 복원 — 없으면 null(옛 문서는 매핑만 초기화된다).
         setMergeSnapshot(parsed.mergeSnapshot ?? null);
@@ -1308,13 +1293,10 @@ export default function RequestPage(): React.ReactElement {
   // Derived booleans for Step 1 conditional rendering
   const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
   const isOnlyMap = detail.request_purpose === ONLY_MAP_PURPOSE;
-  const isMapChangeMode = detail.other_purpose.includes(OTHER_PURPOSE_MAP_CHANGE);
-  // ADI CD 변경: 다른 기타 목적과 함께 선택할 수 있다(완성된 MAP 변경과 달리 단독 전용이 아니다).
+  // ADI CD 변경: 다른 기타 목적과 함께 선택할 수 있다(단독 전용이 아니다).
   const isAdiCdSelected = detail.other_purpose.includes(OTHER_PURPOSE_ADI_CD);
-  // 기타 목적 7개 중 ADI CD 변경만 단독 선택한 경우 — 이후 STEP 필수 입력을 건너뛴다.
+  // 기타 목적 6개 중 ADI CD 변경만 단독 선택한 경우 — 이후 STEP 필수 입력을 건너뛴다.
   const isAdiCdOnly = detail.other_purpose.length === 1 && detail.other_purpose[0] === OTHER_PURPOSE_ADI_CD;
-  // StepMap 정보까지만 작성하는 모드(Only MAP·완성된 MAP 변경) — J/O/bb 표와 O-layer 정보 탭을 쓰지 않는다.
-  const isMapOnlyScope = isOnlyMap || isMapChangeMode;
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === '변경 있음';
   const isProdc = detail.only_prodc === 'Yes';
@@ -2435,127 +2417,7 @@ export default function RequestPage(): React.ReactElement {
     setBaSelAfter(null);
   };
 
-  // ===== 완성된 MAP 변경 (기타 목적 단독 전용) =====
-  // 진입 시 다른 기타 목적/모든 STEP 입력을 초기화하면 안내가 필요한 "입력 있음" 상태인지 판단.
-  const mapChangeWouldResetData = () =>
-    detail.other_purpose.some((o) => o !== OTHER_PURPOSE_MAP_CHANGE) ||
-    !!detail.map_type ||
-    !!detail.change_purpose_note ||
-    refDocId !== null ||
-    detail.flow_chart.some((f) => f.location || f.product_name || f.process_id) ||
-    jayerRows.some((r) => r.layerid || r.sp || r.sd || r.process_id) ||
-    oayerRows.some((r) => r.layerid || r.sp || r.sd || r.process_id) ||
-    bbRows.length > 0;
-
-  // 기타 목적에서 '완성된 MAP 변경' 클릭: 입력이 있으면 초기화 확인 모달, 없으면 바로 적용.
-  const handleSelectMapChangePurpose = () => {
-    if (isMapChangeMode) return;
-    if (mapChangeWouldResetData()) setMapChangeResetConfirm(true);
-    else applyMapChangeMode();
-  };
-
-  // 단독 전용 모드 적용: 기본정보(라인·조합법·제품·조리법·고객/요구사항·통보처)는 유지하고
-  // 나머지 STEP(흐름도·Backbone·MAP·J/O/bb·partial_shot 등)을 초기화한 뒤 map_type 을 FIX 로 고정한다.
-  const applyMapChangeMode = () => {
-    setDetail((prev) => ({
-      ...INITIAL_DETAIL,
-      request_purpose: '기타', // 완성된 MAP 변경 진입 시 요청 목적을 '기타'로 자동 설정
-      line: prev.line,
-      process_selection: prev.process_selection,
-      partid_selection: prev.partid_selection,
-      process_id: prev.process_id,
-      customer_name: prev.customer_name,
-      customer_requirement: prev.customer_requirement,
-      notifiers: prev.notifiers,
-      flow_chart: [makeRow()],
-      bb_entries: INITIAL_DETAIL.bb_entries.map((e) => ({ ...e })),
-      rev_entries: [],
-      tbvtlv_entries: [],
-      other_purpose: [OTHER_PURPOSE_MAP_CHANGE],
-      map_type: 'EDIT',
-    }));
-    setRefDocId(null);
-    setRefDocLabel('');
-    setRefJayerRows([]);
-    setRefOayerRows([]);
-    setJayerRows([makeJayerRow()]);
-    setOayerRows([makeOayerRow()]);
-    setBbRows([]);
-    setBbExternalData([]);
-    setMappedJayerRowIds(new Set());
-    setStagedMappings({});
-    setSelectedJayerRowId(null);
-    setJayerChecked(new Set());
-    setOayerChecked(new Set());
-    setBbChecked(new Set());
-    setErrors({});
-    setMapChangeDocId(null);
-    // 대상 요청서 검색 툴바에 제품(partid_selection)을 미리 채워 검색어로 쓴다.
-    // 문서 제목에 제품명이 포함되므로 그대로 필터가 된다. 실제 선택(id)은 사용자가 목록에서 골라야 한다.
-    setMapChangeDocLabel(detail.partid_selection);
-    setMapChangeBaseline(null);
-    setMapChangeResetConfirm(false);
-  };
-
-  // 대상(결재완료) 요청서 선택 — id/label 만 기록한다. 실제 프리필은 '적용' 버튼(handleMapChangeApply)에서.
-  const handleMapChangeDocPick = (label: string) => {
-    const doc = approvedDocs.find((d) => d.title === label);
-    setMapChangeDocLabel(label);
-    setMapChangeDocId(doc ? doc.id : null);
-  };
-
-  // '적용' 버튼 → 선택된 요청서의 MAP 키만 현재 detail 에 병합(map_type=EDIT 유지).
-  // 프리필 직후 detail 을 원본 스냅샷(mapChangeBaseline)으로 저장해 상신 시 변경이력 diff 기준으로 쓴다.
-  const handleMapChangeApply = async () => {
-    if (mapChangeDocId === null) return;
-    isLoadingEditRef.current = true; // 라인/prodc 변경 effect 가 프리필값을 지우지 않도록 가드
-    try {
-      const res = await documentsAPI.get(mapChangeDocId);
-      const parsed = JSON.parse(res.data.additional_notes ?? '{}');
-      const src: Partial<DetailFormState> = parsed.detail ?? {};
-      const mapPatch: Partial<DetailFormState> = {};
-      MAP_DETAIL_KEYS.forEach((key) => {
-        if (src[key] !== undefined) (mapPatch as Record<string, unknown>)[key] = src[key];
-      });
-      const next: DetailFormState = { ...detail, ...mapPatch, map_type: 'EDIT' };
-      setDetail(next);
-      // 스냅샷은 완전 격리(중첩 배열 공유 방지) — diff 기준의 무결성 보장
-      setMapChangeBaseline(JSON.parse(JSON.stringify(next)) as DetailFormState);
-      addToast(t('request.map_change_loaded'), 'success');
-    } catch {
-      setMapChangeBaseline(null);
-      addToast(t('request.map_change_load_fail'), 'error');
-    }
-  };
-
-  // 완성된 MAP 변경 → 다른 기타 목적으로 전환(nextOp) 또는 해제(null).
-  // 불러온/수정한 MAP 이 있으면 전환 확인 모달, 없으면 바로 전환한다.
-  const mapChangeHasData = () =>
-    mapChangeDocId !== null ||
-    MAP_DETAIL_KEYS.some((k) => JSON.stringify(detail[k]) !== JSON.stringify(INITIAL_DETAIL[k]));
-
-  const handleLeaveMapChange = (nextOp: string | null) => {
-    setPendingSwitchOp(nextOp);
-    if (mapChangeHasData()) setMapChangeLeaveConfirm(true);
-    else exitMapChangeMode(nextOp);
-  };
-
-  const exitMapChangeMode = (nextOp: string | null) => {
-    const mapReset: Partial<DetailFormState> = {};
-    MAP_DETAIL_KEYS.forEach((key) => { (mapReset as Record<string, unknown>)[key] = INITIAL_DETAIL[key]; });
-    setDetail((prev) => ({
-      ...prev,
-      ...mapReset, // map_type 포함 MAP 키 전체 초기화 (FIX 해제)
-      other_purpose: nextOp ? [nextOp] : [],
-    }));
-    setMapChangeDocId(null);
-    setMapChangeDocLabel('');
-    setMapChangeBaseline(null);
-    setMapChangeLeaveConfirm(false);
-    setPendingSwitchOp(null);
-  };
-
-  // ===== ADI CD 변경 (기타 목적 — 완성된 MAP 변경과 달리 단독 전용이 아니다) =====
+  // ===== ADI CD 변경 (기타 목적 — 단독 전용이 아니라 다른 목적과 함께 선택할 수 있다) =====
   const adiCdSideKey = (side: 'before' | 'after'): 'adi_cd_before' | 'adi_cd_after' =>
     side === 'before' ? 'adi_cd_before' : 'adi_cd_after';
 
@@ -3061,9 +2923,9 @@ export default function RequestPage(): React.ReactElement {
         newErrors['partid_selection'] = t('request.partid_not_in_list');
         errorMessages.push(t('request.partid_not_in_list'));
       }
-      // Only MAP·완성된 MAP 변경·ADI CD 단독 모드에서는 Backbone 조합 영역 필수 검증을 우회한다.
+      // Only MAP·ADI CD 단독 모드에서는 Backbone 조합 영역 필수 검증을 우회한다.
       // (ADI CD 는 다른 기타 목적과 함께 고르면 isAdiCdOnly 가 false 가 되어 필수로 되돌아온다)
-      if (!isOnlyMap && !isMapChangeMode && !isAdiCdOnly) {
+      if (!isOnlyMap && !isAdiCdOnly) {
         // 추가한 항목까지 모두 완전히(위치·제품·조리법) 입력돼야 진행 가능(R-17). 불필요하면 삭제하도록 유도.
         const allFilled = detail.bb_entries.every(
           (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
@@ -3242,7 +3104,7 @@ export default function RequestPage(): React.ReactElement {
       }
     }
 
-    if (currentStep === 4 && !isOnlyMap && !isMapChangeMode && !isAdiCdOnly) {
+    if (currentStep === 4 && !isOnlyMap && !isAdiCdOnly) {
       if (!detail.partial_shot?.trim()) {
         newErrors['partial_shot'] = t('request.required');
         errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
@@ -3305,19 +3167,7 @@ export default function RequestPage(): React.ReactElement {
 
     // 반려된 문서 재상신 시 이전 스냅샷을 history 에 누적
     let history: HistorySnapshot[] = [];
-    if (isMapChangeMode && mapChangeBaseline) {
-      // 완성된 MAP 변경: 원본(결재완료본)의 MAP 스냅샷을 단일 이력으로 결정적 기록한다.
-      // (append 가 아니라 항상 [baseline] — draft 왕복·재상신에도 diff 기준이 '원본 MAP' 으로 고정)
-      history = [
-        {
-          timestamp: new Date().toISOString(),
-          detail: mapChangeBaseline,
-          jayerRows: [],
-          oayerRows: [],
-          bbRows: [],
-        },
-      ];
-    } else if (shouldAddHistory && prevParsedRef.current) {
+    if (shouldAddHistory && prevParsedRef.current) {
       const prev = prevParsedRef.current;
       history = [
         ...prev.history,
@@ -3350,16 +3200,14 @@ export default function RequestPage(): React.ReactElement {
         detail: {
           ...detail,
           post_approvers: detail.only_prodc === 'Yes' ? postApprovers : [],
-          // 완성된 MAP 변경: 승인 시 서버가 원본 요청서에 MAP 값을 반영할 수 있도록 대상 문서 id 를 저장
-          ...(isMapChangeMode && mapChangeDocId !== null ? { map_change_source_id: mapChangeDocId } : {}),
           // 상신·재상신 시점의 상신자 판단을 고정 기록한다(임시저장에는 남기지 않는다).
           // 이후 MASK(E)가 detail.validation_system 을 바꿔도 이 값은 유지된다.
           ...(isDraft ? {} : { validation_system_submitted: detail.validation_system }),
         },
-        // Only MAP·완성된 MAP 변경은 StepMap 정보까지만 필요 → J/O/bb 표를 비워 저장한다.
-        jayerRows: isMapOnlyScope ? [] : (isDraft ? jayerRows : jayerRows.filter(r => !r.disabled)).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-        oayerRows: isMapOnlyScope ? [] : (isDraft ? oayerRows : oayerRows.filter(r => !r.disabled)).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-        bbRows: isMapOnlyScope ? [] : bbRows,
+        // Only MAP 은 StepMap 정보까지만 필요 → J/O/bb 표를 비워 저장한다.
+        jayerRows: isOnlyMap ? [] : (isDraft ? jayerRows : jayerRows.filter(r => !r.disabled)).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        oayerRows: isOnlyMap ? [] : (isDraft ? oayerRows : oayerRows.filter(r => !r.disabled)).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        bbRows: isOnlyMap ? [] : bbRows,
         history,
         jayerActiveFilterIds: [...jayerActiveFilterIds],
         oayerActiveFilterIds: [...oayerActiveFilterIds],
@@ -3424,7 +3272,7 @@ export default function RequestPage(): React.ReactElement {
     if (step === 4) {
       const oViolations = findNocBorrowViolations(oayerRows);
       // validate(4) 의 우회 조건과 반드시 같은 판정이어야 한다 — 어긋나면 없는 오류로 탭이 전환된다.
-      const partialShotMissing = !isOnlyMap && !isMapChangeMode && !isAdiCdOnly && !detail.partial_shot?.trim();
+      const partialShotMissing = !isOnlyMap && !isAdiCdOnly && !detail.partial_shot?.trim();
       if (partialShotMissing && oViolations.length === 0) setOayerInfoTab('info');
     }
     // 탭 전환·에러 span 렌더가 끝난 뒤 DOM을 조회하도록 지연한다.
@@ -3749,15 +3597,6 @@ export default function RequestPage(): React.ReactElement {
           handleBaSelect={handleBaSelect}
           handleBaApply={handleBaApply}
           handleBaUnpair={handleBaUnpair}
-          isMapChangeMode={isMapChangeMode}
-          mapChangeDocLabel={mapChangeDocLabel}
-          setMapChangeDocLabel={setMapChangeDocLabel}
-          mapChangeDocId={mapChangeDocId}
-          setMapChangeDocId={setMapChangeDocId}
-          handleSelectMapChangePurpose={handleSelectMapChangePurpose}
-          handleLeaveMapChange={handleLeaveMapChange}
-          handleMapChangeDocPick={handleMapChangeDocPick}
-          handleMapChangeApply={handleMapChangeApply}
           handleFlowChange={handleFlowChange}
           handleFlowStepBlur={handleFlowStepBlur}
           handleFlowDeleteRow={handleFlowDeleteRow}
@@ -3803,7 +3642,6 @@ export default function RequestPage(): React.ReactElement {
           availableRevLayers={availableRevLayers}
           isProdc={isProdc}
           isMapRegistered={isMapRegistered}
-          isMapChangeMode={isMapChangeMode}
           hasMapChange={hasMapChange}
           hasEaChange={hasEaChange}
           mshotDeleteMode={mshotDeleteMode}
@@ -3872,7 +3710,7 @@ export default function RequestPage(): React.ReactElement {
           oayerChecked={oayerChecked}
           oayerInfoTab={oayerInfoTab}
           setOayerInfoTab={setOayerInfoTab}
-          oayerInfoLocked={isMapOnlyScope}
+          oayerInfoLocked={isOnlyMap}
           detail={detail}
           setDetail={setDetail}
           errors={errors}
@@ -4518,24 +4356,6 @@ export default function RequestPage(): React.ReactElement {
         message={mergeSnapshot
           ? t('request.merge_reselect_confirm_msg')
           : t('request.merge_reselect_no_snapshot')}
-        danger
-      />
-
-      <ConfirmModal
-        isOpen={mapChangeResetConfirm}
-        onClose={() => setMapChangeResetConfirm(false)}
-        onConfirm={applyMapChangeMode}
-        title={t('request.map_change_reset_title')}
-        message={t('request.map_change_reset_msg')}
-        danger
-      />
-
-      <ConfirmModal
-        isOpen={mapChangeLeaveConfirm}
-        onClose={() => { setMapChangeLeaveConfirm(false); setPendingSwitchOp(null); }}
-        onConfirm={() => exitMapChangeMode(pendingSwitchOp)}
-        title={t('request.map_change_leave_title')}
-        message={t('request.map_change_leave_msg')}
         danger
       />
 
