@@ -507,6 +507,30 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if not main_step or main_step.action != 'approved':
                 return Response({'error': '담당자 합의가 먼저 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # E(MASK) 담당자 합의에는 2차 검토자(EV) 지정이 필수다 — MASK 검증은 2인 확인 절차라서
+        # 담당자 혼자 합의로 단계를 넘길 수 없다. (P 단계의 PV 는 지금까지대로 선택 사항이다.)
+        #
+        # 여기(어떤 쓰기보다 먼저)에서 걸러야 한다 — @transaction.atomic 은 예외에만 롤백하므로
+        # 검토자 생성 이후에 400 을 반환하면 그 쓰기가 커밋된 채 응답만 실패한다.
+        #
+        # 이 규칙은 앞으로의 합의에만 적용된다. 이미 검토자 없이 E 합의를 마친 기존 문서는
+        # _stage_reviewers_complete() 의 하위호환 분기로 그대로 승인될 수 있어야 한다
+        # (E 단계가 이미 approved 라 검토자를 지정할 경로가 없어, 소급 적용하면 영구 정지된다).
+        if agent == 'E':
+            requested_reviewers = [
+                str(lid or '').strip() for lid in (request.data.get('reviewer_loginids') or [])
+            ]
+            # 이 배포 이전에 되감겨(구 _rewind_e_stage) EV step 이 살아남은 문서를 흡수한다.
+            # 새 로직에서는 되감기가 EV 를 삭제하므로 이 분기는 기존 문서에만 걸린다.
+            has_existing_reviewer = ApprovalStep.objects.filter(
+                document=document, agent='EV', round=max_round
+            ).exists()
+            if not any(requested_reviewers) and not has_existing_reviewer:
+                return Response(
+                    {'error': '2차 검토자를 1명 이상 지정해야 합니다.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         # P/E 담당자 합의 시 함께 지정된 검토자(PV/EV) 생성 — 별도 지정 API 없이
         # 이 합의 요청 한 번으로 담당자 합의 + 검토자 지정이 함께 처리된다.
         # 검증은 담당자 단계를 승인 저장하기 전에 마쳐(문제가 있으면 아무 것도 만들지 않음),
@@ -1459,8 +1483,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         되감기 폭은 E 단계 하나다 — 반려처럼 PL 부터 새 회차를 돌리지 않으므로
         이미 끝난 P/J/O/R 결재는 그대로 살아 있다.
-        EV(2차 검토자) step 은 삭제하지 않고 action 만 되돌려 지정 이력을 보존하고,
-        되감은 사유는 comment 에 덧붙인다(acted_at 은 이전 합의 시각 그대로 남긴다).
+        EV(2차 검토자) step 은 회차 전체(상태 무관)를 삭제한다 — 검토자 필수 지정 규칙과
+        맞물려, 남겨두면(구 동작) 그 검토자가 재지정 후보에서 제외된 채 남아 아무도 고를
+        수 없는 잠금이 된다. E 단계 되감은 사유는 comment 에 덧붙인다
+        (acted_at 은 이전 합의 시각 그대로 남긴다).
         되감았으면 True.
         """
         e_step = ApprovalStep.objects.select_for_update().filter(
@@ -1481,10 +1507,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             step.save(update_fields=['action', 'comment'])
 
         _append(e_step)
-        for ev_step in ApprovalStep.objects.select_for_update().filter(
-            document=document, agent='EV', round=round_no, action='approved'
-        ):
-            _append(ev_step)
+        # 값이 바뀌었으니 MASK 검증을 처음부터 다시 한다 — 검토자 선정도 그 '처음'에 포함된다.
+        # step 을 남겨 두면(구 동작) 그 검토자가 재지정 후보에서 제외된 채 남아,
+        # '검토자 필수' 규칙과 맞물려 담당자가 아무도 고를 수 없는 잠금이 된다.
+        ApprovalStep.objects.filter(
+            document=document, agent='EV', round=round_no
+        ).delete()
         return True
 
     def _sync_post_approvers_detail(self, document, add=None, remove_loginid=None):
