@@ -723,9 +723,6 @@ export default function PagedDetailView({
     await downloadBuffer(wb, `${doc.title}_BB_${getNowString()}.xlsx`);
   };
 
-  // '완성된 MAP 변경'이 이 문서에 반영된 횟수(0이면 미반영) — 변경 이력 라벨 표기에 사용
-  const mapEditRound = Number(detail.map_edit_round ?? 0);
-
   // 판정 키워드(plel) 유무 — E(MASK) 단계가 결재 경로에 포함되는지의 기준(백엔드 has_ppid_plel 과 동일).
   const hasPlel = isValidationTarget(jayer);
   // Validation System 표시값. detail 키가 없는 레거시 문서는 저장된 J-layer 로 폴백 판정한다.
@@ -846,22 +843,16 @@ export default function PagedDetailView({
     buildValue?: (d: Partial<DetailFormState>) => string;
   }) => {
     const fmt = (v: any) => (format ? format(v) : String(v ?? '-')) || '-';
-    // '완성된 MAP 변경' 반영으로 밀려난 스냅샷은 '완성 후 수정 n회차'를 라벨로 쓴다.
-    // 현재 값은 마지막 반영 회차(map_edit_round)가 있으면 그 회차 라벨을 함께 표기한다.
     const rows = [
       ...history.map((snap, i) => ({
-        label: snap.map_edit_round
-          ? t('request.map_edit_round_label', { round: snap.map_edit_round })
-          : `${i + 1}차 제출`,
+        label: `${i + 1}차 제출`,
         timestamp: snap.timestamp,
         value: buildValue
           ? (buildValue(snap.detail ?? {}) || '-')
           : fmt(fieldKey ? (snap.detail as any)?.[fieldKey] : undefined),
       })),
       {
-        label: mapEditRound > 0
-          ? t('request.map_edit_round_current', { round: mapEditRound })
-          : '현재 (최신)',
+        label: '현재 (최신)',
         timestamp: null as string | null,
         value: (buildValue ? buildValue(detail) : currentValue) || '-',
       },
