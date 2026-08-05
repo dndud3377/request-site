@@ -530,6 +530,7 @@
     "assign_reviewer_none": "No reviewer",
     "assign_reviewer_help": "If a reviewer is set, the flow is Handler → Reviewer. 'No reviewer' advances right after the handler approves.",
     "assign_reviewer_select_placeholder": "Select reviewer",
+    "reviewer_required_hint": "Select at least one second reviewer to approve.",
     "post_approver_fixed_tag": "Fixed",
     "post_approver_label": "Post-approver",
     "post_approver_add_btn": "Add post-approver",
