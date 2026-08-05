@@ -592,9 +592,6 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document.save()
 
         if new_status == 'approved':
-            # '완성된 MAP 변경'이면 대상(원본) 요청서에 MAP 값을 반영한다.
-            # 실패해도 승인은 유지하고 작성자에게만 메일로 통보한다.
-            self._apply_map_change_to_source(document)
             mailer.enqueue_approved(document)
             mailer.enqueue_notify_approved(document)
 
@@ -602,85 +599,6 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             'message': '처리되었습니다.',
             'status': new_status,
         })
-
-    def _apply_map_change_to_source(self, document):
-        """'완성된 MAP 변경' 승인 시 대상(원본) 요청서에 MAP 값을 반영한다.
-
-        - 반영 범위: `RequestDocument.MAP_APPLY_KEYS` (map_type 제외 — 원본의
-          NEW/CLONE/EXISTING 정체성과 제목 표기를 유지해야 하므로).
-        - 이력: 원본 `history[]` 에 '수정 직전' 스냅샷 1건을 append 한다.
-          J/O/bb 표는 이번 반영으로 바뀌지 않으므로 원본의 현재 값을 그대로 복사한다
-          (빈 배열로 두면 상세 화면의 표 diff 가 전 행을 '변경됨'으로 오탐한다).
-          2회차부터는 밀려나는 스냅샷에 직전 회차 번호(map_edit_round)를 기록해
-          이력 표에서 '완성 후 수정 n회차'로 표시되게 한다.
-        - 실패(원본 없음/미승인/JSON 오류)해도 예외를 밖으로 던지지 않는다.
-          승인 트랜잭션을 롤백하지 않고 작성자에게 실패 메일만 보낸다.
-        """
-        import copy
-        import json
-
-        if not document.is_map_change():
-            return
-
-        logger = logging.getLogger(__name__)
-        source_id = document.map_change_source_id()
-        try:
-            if source_id is None:
-                raise ValueError('map_change_source_id 가 없습니다.')
-
-            source = RequestDocument.objects.select_for_update().filter(pk=source_id).first()
-            if source is None:
-                raise ValueError(f'원본 요청서(id={source_id})를 찾을 수 없습니다.')
-            if source.status != 'approved':
-                raise ValueError(
-                    f'원본 요청서(id={source_id}) 상태가 approved 가 아닙니다(status={source.status}).'
-                )
-
-            new_detail = document.get_detail().get('detail', {})
-            source_notes = source.get_detail()
-            source_detail = source_notes.get('detail', {})
-            if not isinstance(source_detail, dict):
-                raise ValueError(f'원본 요청서(id={source_id}) detail 형식이 올바르지 않습니다.')
-
-            history = source_notes.get('history', [])
-            if not isinstance(history, list):
-                history = []
-
-            prev_round = source_detail.get('map_edit_round') or 0
-            try:
-                prev_round = int(prev_round)
-            except (TypeError, ValueError):
-                prev_round = 0
-            next_round = prev_round + 1
-
-            # 수정 직전 스냅샷 보존 — 표는 변경되지 않으므로 원본 현재 값을 그대로 복사한다.
-            snapshot = {
-                'timestamp': timezone.now().isoformat(),
-                'detail': copy.deepcopy(source_detail),
-                'jayerRows': copy.deepcopy(source_notes.get('jayerRows', []) or []),
-                'oayerRows': copy.deepcopy(source_notes.get('oayerRows', []) or []),
-                'bbRows': copy.deepcopy(source_notes.get('bbRows', []) or []),
-            }
-            # 1회차 반영이면 원본의 마지막 제출분이라 기본 'n차 제출' 라벨을 그대로 쓴다.
-            if prev_round > 0:
-                snapshot['map_edit_round'] = prev_round
-            history.append(snapshot)
-
-            merged_detail = copy.deepcopy(source_detail)
-            for key in RequestDocument.MAP_APPLY_KEYS:
-                if key in new_detail:
-                    merged_detail[key] = copy.deepcopy(new_detail[key])
-            merged_detail['map_edit_round'] = next_round
-
-            source_notes['detail'] = merged_detail
-            source_notes['history'] = history
-            source.additional_notes = json.dumps(source_notes, ensure_ascii=False)
-            source.save(update_fields=['additional_notes'])
-        except Exception:
-            logger.exception(
-                '[map_change] 원본 반영 실패 (doc=%s, source_id=%s)', document.pk, source_id
-            )
-            mailer.enqueue_map_apply_failed(document)
 
     @action(detail=True, methods=['post'], url_path='reject-step')
     @transaction.atomic

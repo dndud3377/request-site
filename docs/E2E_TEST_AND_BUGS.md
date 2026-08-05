@@ -300,12 +300,6 @@ draft ──상신──▶ under_review ──(PL 전원 합의)──▶ R ─
 - ❌ 라인/제품까지 비면 `applyOnlyMap` 범위 회귀
 - 추가: **첫 선택**(기존 목적 없음)일 때는 모달 없이 바로 적용돼야 한다
 
-#### T-B6 기타 목적 `완성된 MAP 변경` 단독 동작
-- 조작: 기타 목적에서 **완성된 MAP 변경** 클릭 → (입력이 있으면) 초기화 확인 → 검색 툴바에서 **결재완료 문서 선택 → '적용'**
-- ✅ 요청 목적이 자동 `기타`, `map_type=EDIT` 고정, STEP2 MAP 필드만 프리필. **선택만으로는 프리필되지 않고 '적용'을 눌러야 함**
-- ✅ 다른 기타 목적을 클릭하면 이탈 확인 모달 → MAP 키 전체 초기화
-- ❌ '적용' 없이 프리필되거나, 라인/제품이 지워지면 회귀
-
 #### T-B7 `Layer 추가/삭제` 참조 요청서 Merge
 - 조작: 기타 목적 `Layer 추가/삭제` → 참조 요청서 검색 → 선택 → **Merge**
 - ✅ 병합 통계 모달 → 확인 시 J/O 표에 행 추가, 병합 행은 `loaded=true` 라 **`process_id·sp·sd·layerid·pp` 5개 컬럼이 읽기전용**
@@ -430,7 +424,7 @@ A = 이미 결재완료된 **참조 요청서**, B = **지금 작성 중인 요�
 - ✅ 경고 모달(무시하고 진행 가능)
 - 조작: TBV/TLV 비고표 X칸에 엑셀 2열(탭 구분) 여러 줄 붙여넣기
 - ✅ X·Y 동시 채움 + 행 수 초과분 자동 생성
-- 조작: Only MAP / 완성된 MAP 변경 모드
+- 조작: Only MAP 모드
 - ✅ Partial Shot·TBV/TLV·SD 버튼·비고표가 **전부 비활성**이고 필수 검증도 우회
 
 ---
@@ -660,10 +654,6 @@ A = 이미 결재완료된 **참조 요청서**, B = **지금 작성 중인 요�
 - 조작: 반려 문서 재상신 화면 진입 → STEP5 → **상신** 클릭
 - ✅ **기대**: 이전 회차에 지정했던 PL 이 상신 모달 검토자 칸에 **미리 채워져** 있고 수정 가능
 - ❌ **실제**: 항상 **비어 있음** → §5 **B-11**
-
-#### T-K4 완성된 MAP 변경 문서의 이력
-- ✅ 상신 시 `history=[{detail: 원본 MAP 스냅샷}]` **단일 항목**(append 아님) — 재상신·draft 왕복에도 diff 기준이 '원본 MAP' 으로 고정
-- ✅ 상세뷰에서 **MAP 관련 항목만** 강조(기본정보·표는 양쪽 동일 → 노이즈 없음)
 
 ---
 
@@ -965,12 +955,6 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 3. RA 가 반려 → ✅ `rejected`. 반려 메일은 **R·RV·RA 라인에만**(P/O/E/J 팀 제외)
 4. 재상신 → ✅ 새 회차에서 동일 경로
 5. ⚠️ `.env POST_APPROVER_LOGINID` 가 비어 있으면 3번이 아니라 **R 합의 순간 `approved`** — 결재가 통째로 생략된다(B-04)
-
-### X-2 완성된 MAP 변경 × 재상신 × 이력 diff
-1. 결재완료 문서를 원본으로 '완성된 MAP 변경' 프리필 → 상신 → 반려
-2. 재상신 화면 재진입 → ✅ `history[0].detail` 에서 baseline 이 복원돼 **diff 기준이 여전히 '원본 MAP'**
-3. ✅ 상세뷰에서 기본정보·J/O/BB 표는 강조되지 않고 **MAP 항목만** 강조
-4. ❌ 여기서 기준이 '직전 재상신본' 으로 바뀌면 회귀
 
 ### X-3 J행 비활성화 × BB 매핑 × 상신 × 재편집
 1. J행 10개 전부 매핑 → 그중 3개를 **비활성화**
@@ -1654,7 +1638,7 @@ Migrations for 'api':
 
 > 2026-08-02, `Layer 추가/삭제` Merge 의 기획 의도(**T-B7 사양** 참조)를 확정한 뒤 코드를 재대조해 나온 항목.
 > 대상 코드는 전부 프론트 `frontend/src/pages/RequestPage/index.tsx` 의 `handleMergeClick` / `handleMergeConfirm` 이었다.
-> **백엔드에는 J/O-layer Merge 로직이 존재하지 않는다** (`views.py:648-654` 의 `merged_detail` 은 '완성된 MAP 변경' 전용, 무관).
+> **백엔드에는 J/O-layer Merge 로직이 존재하지 않는다.**
 >
 > ⚠️ **2026-08-04 위치 갱신** — 수정 결과 판정 로직이 `RequestPage/helpers.ts` 의 순수 함수 `computeLayerMerge` 로 이동했다.
 > 아래 B-49~B-56 본문에 인용된 `index.tsx:21xx` 코드 블록은 **더 이상 존재하지 않는 수정 전 원문**이다(재발 방지용 보존).
@@ -1787,9 +1771,8 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 | ① | 의뢰서 작성/편집 화면의 임시저장·자동저장·상신·재상신·재개·PL수정후상신 | **`additional_notes` blob 통째로 PATCH** | `RequestPage/index.tsx:3297` `buildEnrichedForm` → `client.ts:176` `patch` |
 | ② | Validation System 변경 | 서버가 `detail.validation_system` **부분 수정** | `views.py:1400` `_set_validation_system` |
 | ③ | 후결자 추가/제거 | 서버가 `detail.post_approvers` **부분 수정** | `views.py:1457` `_sync_post_approvers_detail` |
-| ④ | '완성된 MAP 변경' 승인 | 서버가 **원본(다른) 문서**의 `detail`+`history` 수정 | `views.py:584` `_apply_map_change_to_source` |
 
-> ①은 blob 전체를 덮어쓰고 ②③④는 부분 수정이다. **①이 나중에 실행되면 ②③④의 결과가 사라진다** — B-62 의 뿌리이며,
+> ①은 blob 전체를 덮어쓰고 ②③은 부분 수정이다. **①이 나중에 실행되면 ②③의 결과가 사라진다** — B-62 의 뿌리이며,
 > B-57·B-61 은 그 구체적 발현이다.
 
 ---
@@ -1930,8 +1913,7 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 
 ### 🟡 B-62 작성 화면 저장이 `additional_notes` **blob 전체를 덮어써** 서버측 부분 수정을 되돌린다 **분석🔍**
 - 위치: `client.ts:176-178`(`patch` 로 `additional_notes` 통째 전송) ↔
-  서버 부분 수정 3곳 — `views.py:1400`(`_set_validation_system`) / `:1457`(`_sync_post_approvers_detail`) /
-  `:584`(`_apply_map_change_to_source`, **다른 문서**를 수정)
+  서버 부분 수정 2곳 — `views.py:1400`(`_set_validation_system`) / `:1457`(`_sync_post_approvers_detail`)
 - 내용: 작성 화면은 문서를 열 때 `additional_notes` 를 파싱해 state 로 펼치고(`index.tsx:766-880`),
   저장할 때 그 state 로 **JSON 전체를 다시 만들어 보낸다**(`:3347`). 즉 **로드 시점 스냅샷 기준의 통째 덮어쓰기**다.
   `RequestDocumentSerializer.update`(`serializers.py:167-173`)는 `requester_*` 만 막고 `additional_notes` 는 그대로 받는다.
@@ -1941,13 +1923,11 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
   2. `can_edit` 대상이 **의뢰자·지정PL·의뢰자 그룹멤버**로 넓어(R-05) 두 사람이 동시에 열면
      먼저 저장한 쪽 작업이 **흔적 없이** 사라진다. 20분 자동저장(`index.tsx:3395` `handleIdleAutoSave`)이
      사용자가 인지하지 못한 채 이 덮어쓰기를 일으킬 수 있다.
-  3. '완성된 MAP 변경' 승인이 원본 문서에 써 넣은 `map_edit_round`·`history`(`views.py:646-655`)도,
-     그 원본을 이후 누군가 편집·저장하면 같은 방식으로 유실된다.
 - 재현 절차: 작성자가 반려 문서를 `/request` 로 연 채 **닫지 말고**, 다른 탭(또는 다른 사람)이
   결재현황에서 후결자를 추가하거나 VS 를 변경 → 원래 탭에서 '임시저장' →
   방금 서버에서 바뀐 값이 **원래대로 돌아가 있으면** 재현.
 - 권고: ① `PATCH` 에 `updated_at`(또는 버전) 을 함께 보내 불일치 시 **409** 로 거부하고 사용자에게 재로드를 안내한다.
-  ② 서버가 소유하는 키(`validation_system*`, `post_approvers`, `map_edit_round`, `history`)는
+  ② 서버가 소유하는 키(`validation_system*`, `post_approvers`, `history`)는
   **클라이언트 blob 에서 제외하고 serializer 가 기존 값을 보존**하도록 병합 저장으로 바꾼다.
   ②만으로도 B-57·B-61 이 함께 닫힌다.
 
@@ -2316,8 +2296,6 @@ serializer 가 `requester_loginid` 를 이미 내려주므로 전부 그것으�
     `mshot_change`·`inter`·`rev_yn` 6종은 모두 하위값을 정상 초기화한다(T-C4 표).
     누락은 `only_prodc` 의 **Yes 방향**과 `prodc_scope` 의 **off 리전 `map_change_{r}`** 2곳이었다 → **B-64**.
     다만 `detail` 필드 수가 많아 **전수는 아니다** — 저장 직전 정규화(B-64 권고)가 없는 한 같은 유형이 또 나올 수 있다.
-  - `_apply_map_change_to_source`(`views.py:584`)의 실행 검증 — 승인 트랜잭션 안에서 **다른 문서**를 수정하고
-    실패해도 예외를 삼키는 구조라, 원본 문서가 동시에 편집될 때의 거동은 정독만 했다.
   - `design_rule_stats.py`(`:120` `_parse_detail`)의 `additional_notes` 소비 경로 — 통계 집계라 결재에 영향은 없으나 미검증.
   - 프론트 자동 테스트 — `helpers.ts` 에는 `computeLayerMerge` 단위 테스트 12건이 있으나
     **`buildEnrichedForm` 의 저장 payload 를 검증하는 테스트는 0건**이다(§7 마지막 항목).

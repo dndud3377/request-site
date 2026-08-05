@@ -127,15 +127,10 @@ P/E는 (2026-07부터) O/J와 동일하게 **검토중(claim) 방식**이며, �
 - ✅ 동시성: 두 결재자가 거의 동시에 마지막 합의를 눌러도 문서 행 락(`select_for_update`)으로
   직렬화되어 approved 전이가 누락되지 않는다(2026-06 수정).
 
-> **승인 완료 후처리 — '완성된 MAP 변경' 원본 반영(2026-07)**: `new_status == 'approved'`가 되는
-> 공통 지점에서 `_apply_map_change_to_source(document)`가 호출된다. 문서의 기타 목적에
-> `완성된 MAP 변경`이 있으면 `detail.map_change_source_id`가 가리키는 **원본(결재완료) 요청서**에
-> MAP 값(`RequestDocument.MAP_APPLY_KEYS`, **map_type 제외**)을 덮어쓰고, 원본 `history[]`에
-> 수정 직전 스냅샷 1건을 append + `detail.map_edit_round`를 증가시킨다.
-> 이 지점은 `approve_step` 최종 판정과 `_advance_to_parallel` 즉시승인(Only MAP) **양쪽의 합류점**이라
-> 훅이 한 곳으로 충분하다. 반영 실패(원본 없음·상태 불일치·JSON 오류)해도 **예외를 던지지 않아
-> 승인은 그대로 유지**되며, `mailer.enqueue_map_apply_failed`로 작성자에게만 실패 메일을 보낸다.
-> 상세는 `docs/REQUEST.md` 참조.
+> **승인 완료 후처리(2026-08-05 기준)**: `new_status == 'approved'`가 되는 공통 지점에서는
+> 승인 메일(`enqueue_approved`)과 통보처 메일(`enqueue_notify_approved`)만 적재한다.
+> 2026-07 에 있던 '완성된 MAP 변경' 원본 반영 훅(`_apply_map_change_to_source`)은
+> **기능과 함께 2026-08-05 삭제**됐다(상세는 `docs/REQUEST.md` 삭제 이력 참조).
 
 ### Case H — 단계 반려 (`reject_step`, `views.py:312`)
 - 동작: 어느 단계든 해당 step `rejected`, `status → rejected`(즉시).

@@ -124,11 +124,46 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-08-05 — 기타 목적 '완성된 MAP 변경' 기능 삭제)
+
+- **개요**: 결재 완료된 요청서의 MAP 정보만 불러와 수정·재상신하고 승인 시 원본에 되반영하던
+  기타 목적 `완성된 MAP 변경`을 **프런트·백엔드·i18n·문서에서 완전히 제거**했다.
+  테스트 기간 중이라 이 목적으로 상신된 의뢰서가 없어 **데이터 마이그레이션은 하지 않았다.**
+
+- **프런트**
+  - `constants.ts`: `OPTION_OTHER_PURPOSE` 에서 옵션 제거(7 → 6개), `OTHER_PURPOSE_MAP_CHANGE`·`MAP_DETAIL_KEYS` 삭제.
+  - `index.tsx`: 전용 state 6개(`mapChangeDocId`/`mapChangeDocLabel`/reset·leave 확인/`pendingSwitchOp`/`mapChangeBaseline`)와
+    핸들러 8개(`applyMapChangeMode`·`handleMapChangeApply`·`exitMapChangeMode` 등), `ConfirmModal` 2개 삭제.
+    파생 플래그 `isMapChangeMode`·`isMapOnlyScope` 제거 → 사용처는 **`isOnlyMap` 으로 환원**.
+    `buildEnrichedForm` 의 baseline 단일 history 분기와 `detail.map_change_source_id` 저장 제거.
+  - `Step1.tsx`: 대상 요청서 검색 툴바·'적용' 버튼 삭제, 기타 목적 버튼의 단독 전용 진입/전환 분기 제거,
+    `disableFlowBb` 별칭 삭제 후 13곳을 `disableOptional` 로 치환.
+  - `StepMap.tsx`: `map_type` 값 **`EDIT` 삭제**(버튼 5 → 4개: `NEW`/`CLONE`/`EXISTING`/`ADI`).
+    `disabled` 계산은 ADI 잠금만 남겨 단순화했다.
+  - `PagedDetailView.tsx`: 변경 이력의 `완성 후 수정 n회차` 라벨 제거 → `n차 제출` / `현재 (최신)` 로 환원.
+  - `types/index.ts`: `DetailFormState.map_change_source_id`·`map_edit_round`, `HistorySnapshot.map_edit_round` 삭제.
+  - i18n **12키** ko/en 동시 삭제(`map_type_edit`, `map_edit_round_*`, `map_change_*`).
+    ⚠️ 지도 편차 `map_change`(변경 있음/없음) 계열은 **별개 기능이라 그대로 유지**한다.
+
+- **백엔드**
+  - `models.py`: `MAP_CHANGE_PURPOSE`·`MAP_APPLY_KEYS` 상수, `is_map_change()`·`map_change_source_id()` 헬퍼 삭제.
+  - `views.py`: `approve_step` 승인 후처리 훅과 `_apply_map_change_to_source()`(78줄) 삭제.
+  - `mailer.py`: `map_apply_failed` 라벨·테마·이력 링크 대상·본문 분기·`enqueue_map_apply_failed()` 삭제.
+    기존에 적재된 레거시 행은 `_build_message` 의 `else` 폴백이 `[알림]` 제목으로 처리한다.
+  - `MailNotification.EVENT_CHOICES` 에서 `map_apply_failed` 제거 → **마이그레이션 `0013_alter_mailnotification_event_type`**.
+    `choices` 변경뿐이라 **테이블 스키마는 바뀌지 않지만 배포 시 `migrate` 는 실행해야 한다.**
+    (`0011` 은 이미 적용된 이력이라 삭제하지 않았다.)
+  - `tests.py`: `MapChangeApplyTest`(6건) 삭제 → 백엔드 테스트 167건 → **161건**.
+
+- **결재 경로 영향 없음**: 라우팅은 `request_purpose` 만 쓰므로 `Only MAP` 단축 경로(`is_only_map()`)와
+  일반 경로 모두 그대로다.
+
 ### 추가 변경 이력 (2026-08-03 — C가문 제품 해당 위치 게이트 + ONLY 스코프 + 리전별 지도편차)
 
 - **개요**: C가문(`only_prodc='Yes'`) 영역을 ① **제품 해당 위치 게이트** → ② **ONLY 북쪽/ONLY 남쪽 스코프** →
   ③ **리전별 지도편차 개별 선택** → ④ **X표시 자동 `수정`** 순으로 재구성했다.
   백엔드는 `MAP_APPLY_KEYS` 한 줄만 바뀌고 **마이그레이션은 없다**(`additional_notes` JSON).
+  (`MAP_APPLY_KEYS` 는 2026-08-05 '완성된 MAP 변경' 삭제와 함께 없어졌다 — `prodc_scope` 저장 자체는 그대로다.)
 
 #### ① 영속 필드 `prodc_scope` 신설 (`prodcCopyRegion` 이관)
 
@@ -138,7 +173,7 @@ pages/RequestPage/
 | 값 | `top`/`middle`/`bottom`/`null` | `''`/`top`/`middle`/`bottom`/`only_top`/`only_bottom` |
 
 - 기존에는 UI state 라 **임시저장·재상신·편집 로드 시 선택이 사라졌다**. 스코프가 필수 검증을 좌우하므로 영속화가 필수였다(동시 해소).
-- `MAP_DETAIL_KEYS`(프론트)·`MAP_APPLY_KEYS`(백엔드)에 **동시 추가**.
+- `MAP_DETAIL_KEYS`(프론트)·`MAP_APPLY_KEYS`(백엔드)에 **동시 추가**. ※ 두 상수는 2026-08-05 삭제됨.
 - **레거시 백필**(`inferProdcScope`, `constants.ts`): 값이 없는 옛 문서는 편집 로드 시 저장값으로 역추론한다 —
   북·남 둘 다 있으면 `'top'`, 한쪽만 있으면 그쪽 `only_*`, 아무것도 없으면 `''`.
   백필하지 않으면 기존 C가문 문서가 게이트에 걸려 입력이 잠겨 보인다. (`북/중/남` 셋은 잠금·필수 규칙이 동일해 어느 값으로 백필되든 동작이 같다)
@@ -205,12 +240,10 @@ pages/RequestPage/
 - **개요**: StepMap(위저드 2단계)의 세 가지 입력 제어를 조정했다. ① `EDIT` 버튼을 '완성된 MAP 변경' 모드 전용으로 잠그고,
   ② `REV 여부`를 `Only C가문 제품`에서 완전히 분리해 그 **위**의 독립 항목으로 올렸으며,
   ③ CLONE/EXISTING 일괄 잠금에서 `REV 여부`와 `Only C가문 제품` 셀렉트를 **잠금 대상에서 제외**했다.
-  백엔드·마이그레이션·i18n 신규 키 변경은 **없다**(`MAP_DETAIL_KEYS`/`MAP_APPLY_KEYS`도 키 추가·삭제 없음).
+  백엔드·마이그레이션·i18n 신규 키 변경은 **없다**.
 
-- **① EDIT 버튼 활성 조건 반전**(`StepMap.tsx`): `disabled={isMapChangeMode && val !== 'EDIT'}` →
-  `disabled={val === 'EDIT' ? !isMapChangeMode : isMapChangeMode}`.
-  일반 상황에서는 `EDIT` 만 비활성이고, '완성된 MAP 변경' 진입 시에만 `EDIT` 이 활성 + 나머지 3개가 잠긴다(기존 동작 유지).
-  값 자체는 여전히 `applyMapChangeMode` 가 `map_type='EDIT'` 로 자동 설정하므로 이 버튼은 사실상 상태 표시용이다.
+- **① EDIT 버튼 활성 조건 반전**: ⚠️ **폐기됨** — `map_type='EDIT'` 는 2026-08-05 '완성된 MAP 변경' 기능과 함께 삭제됐다.
+  현재 `map_type` 버튼은 `NEW`/`CLONE`/`EXISTING`/`ADI` 4개다.
 
 - **② REV 여부 독립**(`StepMap.tsx`·`index.tsx`): REV 블록(`rev_yn`·Layer 드래그 선택·GDS·추가 항목 표)을
   `{isProdc && (...)}` 래퍼 밖으로 꺼내 `Only C가문 제품` **위**에 독립 `full-width` 섹션으로 배치했다. props·state 변경 없음.
@@ -238,8 +271,8 @@ pages/RequestPage/
   - **검증(`validate()` step 2) 수정 없음**: C가문 필수 검증이 이미 `if (!isMapRegistered)` 블록 안에 있어 "잠금 = 검증 제외"가 그대로 성립한다.
 
 - **알려진 제약(의도된 현행 유지)**: REV Layer 후보(`availableRevLayers`)는 J-layer 표(`jayerRows`)에서 뽑는다.
-  `Only MAP`·`완성된 MAP 변경` 모드는 J/O 표를 강제로 비우므로 **후보가 0개**가 되어 REV 항목을 새로 추가할 수 없다(불러온 항목 삭제만 가능).
-  두 모드에서는 REV Layer 를 쓸 일이 없다는 판단으로 직접 입력은 도입하지 않았다.
+  `Only MAP` 모드는 J/O 표를 강제로 비우므로 **후보가 0개**가 되어 REV 항목을 새로 추가할 수 없다(불러온 항목 삭제만 가능).
+  이 모드에서는 REV Layer 를 쓸 일이 없다는 판단으로 직접 입력은 도입하지 않았다.
 
 ### 추가 변경 이력 (2026-08-04 — BEFORE/AFTER 완전 일치 선소진 + 행 단위 선택 표시)
 
@@ -274,7 +307,7 @@ pages/RequestPage/
 
 - **개요**: `기타 목적 > ADI CD 변경`은 특정 제품의 ADI CD 스텝 개수를 늘리거나(10→13) 줄이거나(10→7) 전부 삭제하는 요청에 쓰는데,
   변경 전/후 스텝 정보를 기록할 곳이 없었다. **변경전/변경후 2컬럼 표(`STEP_ID`/`STEP_DESC`)**를 STEP1에 추가했다.
-  완성된 MAP 변경과 달리 **단독 전용이 아니다** — 다른 기타 목적과 함께 선택할 수 있다. **백엔드·마이그레이션 변경 없음**
+  이 목적은 **단독 전용이 아니다** — 다른 기타 목적과 함께 선택할 수 있다. **백엔드·마이그레이션 변경 없음**
   (`detail`은 `additional_notes` JSON 문자열로 저장되고, 결재 라우팅은 `request_purpose`만 사용한다).
 
 - **저장 필드**(`DetailFormState`): `adi_cd_before`/`adi_cd_after`(`AdiCdStep[]`, `{ id, step_id, step_desc }`) · `adi_cd_delete_all`(boolean).
@@ -282,8 +315,7 @@ pages/RequestPage/
 
 - **진입/해제**(`index.tsx`): 기타 목적 버튼에서 `ADI CD 변경`을 켜면 `handleSelectAdiCdPurpose`가 `detail.map_type`을
   `'ADI'`로 자동 고정하고 양쪽 표에 빈 5행 템플릿을 깐다(`ADI_CD_TEMPLATE_ROWS`). 재클릭(해제)은 표에 값이 있으면
-  `ConfirmModal` 확인 후 초기화(`exitAdiCd`), 없으면 바로 해제한다. `map_type`은 해제 시 `'ADI'`였을 때만 되돌린다
-  (완성된 MAP 변경으로 전환되는 경로는 `INITIAL_DETAIL` 전체 리셋이 이미 처리하므로 별도 처리 불필요).
+  `ConfirmModal` 확인 후 초기화(`exitAdiCd`), 없으면 바로 해제한다. `map_type`은 해제 시 `'ADI'`였을 때만 되돌린다.
 
 - **StepMap 잠금**(`StepMap.tsx`): `map_type` 4버튼 배열(`NEW`/`CLONE`/`EXISTING`/`EDIT`)에 `'ADI'`를 5번째로 추가하고
   **항상 비활성**(표시 전용 — 실제 선택은 Step1 버튼에서만) 처리했다. `detail.map_type==='ADI'`인 동안은 EDIT 잠금 패턴과
@@ -313,11 +345,11 @@ pages/RequestPage/
   (`other_purpose.length === 1 && other_purpose[0] === 'ADI CD 변경'`) 하나로 통일한다. 다른 기타 목적을 함께
   켜는 순간 `false` 로 뒤집혀 아래 우회가 **전부 해제**되고 원래 필수로 되돌아온다(중복 선택은 항상 가능하다).
   우회 대상은 **2곳뿐**이다:
-  - `validate(1)`의 `if (!isOnlyMap && !isMapChangeMode && !isAdiCdOnly)` — **Backbone 조합 영역**(`bb_entries`)
+  - `validate(1)`의 `if (!isOnlyMap && !isAdiCdOnly)` — **Backbone 조합 영역**(`bb_entries`)
     필수 검증. ADI CD 만 요청하는데 무관한 위치·제품·조리법 3칸을 채우거나 기본 행을 지워야만 STEP1 을 벗어날 수
     있던 문제를 없앤다. 검증만 끄고 **입력창은 잠그지 않으며**(회신: UI 는 유연하게), 사용자가 넣은 값은
     **거르지 않고 그대로 저장**한다.
-  - `validate(4)`의 `if (currentStep === 4 && !isOnlyMap && !isMapChangeMode && !isAdiCdOnly)` — Partial Shot 등.
+  - `validate(4)`의 `if (currentStep === 4 && !isOnlyMap && !isAdiCdOnly)` — Partial Shot 등.
   나머지는 손대지 않았다 — `map_type` 필수 검증은 자동 고정으로 이미 통과하고, STEP2 조건부 필수
   (C가문·MAP 변경·IN 등)는 사용자가 StepMap 값을 바꾸지 않는 한(기본값이면 미발동) 자연히 통과하며, STEP3/5의
   J/O NOC·Backbone 매핑 검증은 건드리지 않았다(조건부 검증을 강제 우회하면 반쪽 모순 데이터가 결재로 올라간다).
@@ -451,7 +483,7 @@ pages/RequestPage/
 - **검증**: `index.tsx`의 `validate()` step 2(`!isMapRegistered`) 블록에 `detail.inter === 'YES'`일 때 `in_apply`·`inter_select` 각각 미선택 시 `request.required` 에러 추가(기존 `map_reason`/`ea_value`와 동일 패턴). 즉 `IN 적용 O/X` 중 1개, `Xs/Ys/XYs/없음` 중 1개가 항상 필수.
 - **NO 전환 시 즉시 초기화**: `Inter`를 `NO`로 바꾸면 확인 모달 없이 `inter_xs`/`inter_ys`(레거시)와 함께 `in_apply`/`inter_select`도 곧바로 `''`로 리셋되어, 화면에 보이지 않는 값이 실수로 저장되는 것을 방지한다. `handleMapTypeChangeConfirm` 등 MAP 필드 일괄 초기화 경로(2곳)에도 동일 리셋을 추가했다.
 - **하위 호환**: 기존 `inter_xs`/`inter_ys` 필드·i18n 키(`approval.inter_xs_applied`/`_ys_applied`)는 삭제하지 않고 그대로 둔다. `PagedDetailView`는 `in_apply`가 있는(신규 작성) 문서는 새 값으로, 없는(레거시) 문서는 기존 `inter_xs`/`inter_ys` 배지로 표시한다.
-- **화이트리스트 동기화**: 프론트 `MAP_DETAIL_KEYS`(`constants.ts`)와 백엔드 `RequestDocument.MAP_APPLY_KEYS`(`models.py`)에 `in_apply`·`inter_select` 동시 추가. `detail`은 `additional_notes` JSON 저장이라 마이그레이션 불필요.
+- **화이트리스트 동기화**: 프론트 `MAP_DETAIL_KEYS`(`constants.ts`)와 백엔드 `RequestDocument.MAP_APPLY_KEYS`(`models.py`)에 `in_apply`·`inter_select` 동시 추가. `detail`은 `additional_notes` JSON 저장이라 마이그레이션 불필요. ※ 두 상수는 2026-08-05 삭제됨(`in_apply`·`inter_select` 저장은 그대로).
 
 ### 추가 변경 이력 (2026-07-31 — StepMap 버튼 스타일 통일 + 상세보기 INTER 표시 개선)
 
@@ -483,35 +515,10 @@ pages/RequestPage/
   - **`plel` 은 가명이 아니라 실제 사내 값**이라 교체 대상이 아니다(`VALIDATION_KEYWORD`, `RequestDocument.VALIDATION_KEYWORD`).
   - 백엔드 `views.py` 의 400 에러 메시지 `'유효하지 않은 Validation System 값입니다.'` 는 i18n 밖이라 자동 반영되지 않는다. UI 가 `YES`/`NO` 만 보내므로 요청을 직접 위조할 때만 노출되는 방어 메시지다.
 
-### 추가 변경 이력 (2026-07 — 완성된 MAP 변경: 대상 프리필·J/O/B 제거·승인 시 원본 반영)
+### 추가 변경 이력 (2026-07 — O-layer 정보 탭 입력 잠금)
 
-- **대상 요청서 검색 프리필**(`applyMapChangeMode`): 모드 진입 시 `mapChangeDocLabel`에 `detail.partid_selection`을 채워 검색어로 쓴다. 문서 제목에 제품명이 포함되므로 그대로 필터가 된다. `mapChangeDocId`는 `null` 유지 — 사용자가 목록에서 실제 문서를 골라야 '적용'이 활성화된다. 프리필은 **진입 시 1회만**(이후 검색어 편집 중일 수 있어 partid 변경에 재동기화하지 않음).
-- **J/O/B layer 완전 제거 (Only MAP 동일)**: 두 모드 공통 파생 플래그 `isMapOnlyScope = isOnlyMap || isMapChangeMode` 신설.
-  - **자동채움 차단**: 라인/조리법 변경 effect에서 `fetchJobFileLayerAndPopulateJayer`/`fetchOvlLayerAndPopulateOayer` 호출 대신 J/O를 빈 행으로 유지하고 return. (판정은 이 effect보다 아래에서 선언되는 `isOnlyMap`/`isMapChangeMode` 대신 `detail`로 직접 계산 — TDZ 회피)
-  - **상신·임시저장 강제 비움**(`buildEnrichedForm`): `jayerRows`/`oayerRows`/`bbRows`를 빈 배열로 저장. 백엔드 `_validate_bb_mapping`은 `process_id`가 있는 행만 검사하므로 상신은 정상 통과한다.
-- **`Only MAP` 매직 스트링 상수화**: `constants.ts`에 `ONLY_MAP_PURPOSE` 추가(백엔드 `RequestDocument.ONLY_MAP_PURPOSE`와 동일 값), `isOnlyMap`·`handleRequestPurposeSelect`·`applyOnlyMap`에서 사용.
-- **결재 완료 시 원본 요청서에 MAP 반영**(신규):
-  - **대상 식별**: 상신 시 `detail.map_change_source_id = mapChangeDocId` 저장(`isMapChangeMode`일 때만).
-  - **반영 시점**: `views.py` `approve_step`에서 `new_status == 'approved'`가 되는 **공통 합류점** 1곳(`_apply_map_change_to_source`). `approve_step` 최종 판정 경로와 `_advance_to_parallel` 즉시승인 경로가 모두 이 지점을 지나므로 훅은 한 곳으로 충분하다.
-  - **반영 범위**: `RequestDocument.MAP_APPLY_KEYS` — 프론트 `MAP_DETAIL_KEYS`와 같은 목록이되 **`map_type` 제외**(원본의 NEW/CLONE/EXISTING 정체성과 제목 표기 유지). ⚠️ 프론트 `MAP_DETAIL_KEYS` 수정 시 이 백엔드 상수도 함께 갱신해야 한다. 클라이언트가 임의 키를 원본에 쓰지 못하도록 **화이트리스트는 백엔드에 정의**한다.
-  - **변경 이력**: 원본 `history[]`에 **수정 직전 스냅샷 1건만** append하고 새 값은 문서 본체(`detail`)에 둔다. 스냅샷의 `jayerRows`/`oayerRows`/`bbRows`는 **원본의 현재 값을 그대로 복사**한다 — 빈 배열로 두면 `PagedDetailView`의 `computeTableDiff(표, prevSnap.표)`가 전 행을 '변경됨'으로 오탐한다. 이 구조 덕에 기존 `changedFields = diff(현재, 직전 스냅샷)` 로직이 **바뀐 MAP 필드만 정확히 강조**한다.
-  - **회차 표기**: 원본 `detail.map_edit_round = n` 저장. 2회차부터는 밀려나는 스냅샷에 `HistorySnapshot.map_edit_round = n-1`을 기록해 이력 표에서 `n차 제출` 대신 **`완성 후 수정 n회차`** 로 표시하고, 마지막 행은 `현재 (완성 후 수정 n회차)`로 표기한다. 서버는 **번호만** 기록하고 표시 문구는 프론트 i18n(`map_edit_round_label`/`map_edit_round_current`)이 만든다(규칙 G).
-
-```
-[1회차 반영 후]                    [2회차 반영 후]
-1차 제출            X=1.0          1차 제출              X=1.0
-현재(완성 후 수정 1회차) X=2.5        완성 후 수정 1회차      X=2.5
-                                  현재(완성 후 수정 2회차) X=3.0
-```
-
-  - **실패 처리**: 원본 없음·상태가 approved 아님·JSON 오류 시 **예외를 밖으로 던지지 않는다**(승인 트랜잭션 롤백 방지). 서버 로그를 남기고 `mailer.enqueue_map_apply_failed(document)`로 **작성자에게만** 메일 통보. `MailNotification.EVENT_CHOICES`에 `map_apply_failed` 추가 → **마이그레이션 `0011_alter_mailnotification_event_type`** 필요.
-  - **테스트**: `api/tests.py` `MapChangeApplyTest` 6건(반영·map_type 유지·스냅샷 표 복사·2회차 회차 기록·비대상 문서 no-op·실패 시 메일 적재).
-
-### 추가 변경 이력 (2026-07 — Only MAP·완성된 MAP 변경 입력 잠금 통일 + map_type EDIT 개명)
-
-- **완성된 MAP 변경에도 흐름도/특이사항/Backbone 입력 잠금 적용**: `Step1.tsx`에 `disableFlowBb = disableOptional || isMapChangeMode` 신설, 흐름도(flow_chart) 행 전체·특이사항(change_purpose_note)·Backbone(bb_entries) 행 전체에만 적용. 기타목적 버튼 행·`Layer 추가/삭제` 참조요청서 Merge·완성된 MAP 변경 검색/적용 툴바는 기존 `disableOptional` 그대로 유지(전환·조회 경로 보존 목적 — 여기까지 잠그면 대상 문서 검색/적용이나 다른 목적으로의 전환 자체가 막힘).
-- **O-layer 정보 탭(Partial Shot·TBV/TLV) 잠금**: `Step3.tsx`에 `oayerInfoLocked` prop 추가(`index.tsx`에서 `isOnlyMap || isMapChangeMode`로 계산). Partial Shot O/X 토글, TBV/TLV 두께 토글, SD 선택 버튼, 비고 X/Y/사용여부 입력·행 추가/삭제, TBV/TLV 항목 추가/삭제 버튼 전체에 `disabled` 적용 — Only MAP·완성된 MAP 변경 두 모드 모두 대상.
-- **`map_type` 값 `FIX` → `EDIT` 개명**: 완성된 MAP 변경 전용 map_type 값의 표시/저장값을 `FIX`에서 `EDIT`으로 변경(`StepMap.tsx` 버튼 배열·비교 조건, `index.tsx`의 `applyMapChangeMode`/`handleMapChangeApply`). i18n 키도 `map_type_fix`→`map_type_edit`(ko/en 동시, 표시 텍스트 `EDIT`)로 변경. `map_type`은 `additional_notes` JSON에 스키마 없이 저장되므로 백엔드·마이그레이션 영향 없음(기존 저장된 문서의 `FIX` 값은 과거 이력에 그대로 남고 신규 저장부터 `EDIT` 적용).
+- **O-layer 정보 탭(Partial Shot·TBV/TLV) 잠금**: `Step3.tsx`에 `oayerInfoLocked` prop 추가(`index.tsx`에서 `isOnlyMap`으로 계산). Partial Shot O/X 토글, TBV/TLV 두께 토글, SD 선택 버튼, 비고 X/Y/사용여부 입력·행 추가/삭제, TBV/TLV 항목 추가/삭제 버튼 전체에 `disabled` 적용.
+  > 도입 당시에는 `Only MAP`·`완성된 MAP 변경` 두 모드가 대상이었으나, 후자는 2026-08-05 삭제되어 현재는 `Only MAP` 전용이다.
 
 ### 추가 변경 이력 (2026-07 — 재상신 변경이력 표시 개선)
 
@@ -520,19 +527,6 @@ pages/RequestPage/
   - **J/O/BB 표 이력**: 세로 3열 → **원본 표 형식 가로 비교**(변경 전/후 2행, 바뀐 셀 강조).
   - **O-ayer 정보탭**(Partial Shot·TBV/TLV): 누락돼 있던 변경 강조·이력 확인·탭 배지 추가.
   - **n회차 이력**: `FieldHistoryModal`에 회차별 변경(최초/변경됨/변경 없음) 열 추가. `history[]` 누적 구조는 불변.
-
-### 추가 변경 이력 (2026-07 — 기타 목적 '완성된 MAP 변경' 추가)
-
-- **개요**: 이미 결재 완료된 요청서의 **MAP 정보만** 불러와 수정·재상신하기 위한 기타 목적 단독 항목. `Layer 추가/삭제`의 참조 요청서 검색 UI를 재사용하되 Merge(표 병합) 대신 **StepMap 필드만 프리필**한다. 백엔드·마이그레이션 변경 없음(결재 라우팅은 `request_purpose`만 사용).
-  - **옵션·상수**(`constants.ts`): `OPTION_OTHER_PURPOSE`에 `'완성된 MAP 변경'` 추가. `OTHER_PURPOSE_MAP_CHANGE` 상수, 프리필/이력 비교 대상인 `MAP_DETAIL_KEYS`(map_type·지도편차·예외구역·prodc·mshot·Map Option·REV·원본위치 등 MAP 관련 키) 신규 export.
-  - **단독 선택 + 전체 초기화 + 요청 목적 자동 '기타'**(`Step1.tsx`·`index.tsx`): 다른 기타 목적과 공존 불가. 진입 시 `handleSelectMapChangePurpose` → 입력이 있으면 `ConfirmModal`(`map_change_reset_*`)로 확인 후 `applyMapChangeMode`가 **요청 목적을 `기타`로 자동 설정**하고, **기본정보(라인·조합법·제품·조리법·고객/요구사항·통보처)는 유지**하며 나머지 STEP(흐름도·특이사항·Backbone·MAP·J/O-layer·매핑)을 초기화하고 `map_type='FIX'` 고정. 기존 `applyOnlyMap` 패턴 준용.
-  - **다른 목적으로 전환/해제**: 완성된 MAP 변경을 켠 뒤에도 다른 목적 클릭(전환) 또는 재클릭(해제)으로 빠져나올 수 있다. `handleLeaveMapChange`→불러온/수정 MAP이 있으면 `ConfirmModal`(`map_change_leave_*`), 없으면 바로 `exitMapChangeMode`(MAP 키 전체 초기화 → FIX 해제, `other_purpose`를 전환 대상만/빈 배열로).
-  - **map_type FIX**(`StepMap.tsx`): `map_type` 버튼에 `FIX`(i18n `map_type_fix`) 추가. `isMapChangeMode`일 때 FIX 외 버튼 `disabled`로 고정. `isMapRegistered`(EXISTING·CLONE)에는 미포함하므로 FIX에서 MAP 입력은 **편집·검증이 NEW와 동일하게 열린다**(별도 disable 수정 불필요).
-  - **검색 툴바 + '적용' 버튼**(`Step1.tsx`): 완성된 MAP 변경 검색 툴바는 `Layer 추가/삭제`의 Merge 버튼처럼 **요청서 선택(`handleMapChangeDocPick`) 후 '적용' 버튼(`handleMapChangeApply`)** 을 눌러야 프리필된다(선택만으로 프리필 안 함). 두 검색 툴바 크기를 `maxWidth: 920`(기존 대비 2배)으로 통일.
-  - **MAP 프리필**(`handleMapChangeApply`): 선택 문서 `additional_notes.detail`에서 `MAP_DETAIL_KEYS`만 현재 detail에 병합(`map_type='FIX'` 유지). 라인/prodc 변경 effect가 프리필값을 지우지 않도록 `isLoadingEditRef` 가드 사용(편집 로드와 동일).
-  - **다른 STEP 필수 검증 우회 (Only MAP 동일)**: 요청 목적이 `기타`라 `isOnlyMap`은 false이므로, `validate()`의 Only MAP 우회 지점(Backbone 조합영역 step1, Partial Shot step4)에 `|| isMapChangeMode` 조건을 추가해 **MAP 외 필수 입력을 무시**한다. 기본정보(라인·조합법·제품·조리법)와 MAP 필수(X/Y·사유 등)는 그대로 검증.
-  - **상신 시 변경 이력(diff)**: 프리필 직후 detail을 `mapChangeBaseline`(완전 격리 복제)으로 저장하고, `buildEnrichedForm`이 이 모드에서 `history=[{detail: baseline, 표: []}]`를 **결정적 단일 항목**으로 기록(append 아님). 상세뷰(`PagedDetailView`)의 기존 `computeDetailDiff`가 원본 MAP↔수정 MAP만 강조(기본정보·표는 양쪽 동일 → 노이즈 없음). **Draft 왕복 보존**: 편집 로드 시 `history[0].detail`에서 baseline 복원.
-  - **i18n**: `map_type_fix`·`map_change_target`·`map_change_placeholder`·`map_change_apply`·`map_change_loaded`·`map_change_load_fail`·`map_change_reset_title/msg`·`map_change_leave_title/msg` (ko/en 동시).
 
 ### 추가 변경 이력 (2026-07 — 조건부 필드 초기화 + REV i18n)
 

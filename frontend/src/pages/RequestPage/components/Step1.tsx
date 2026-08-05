@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { DetailFormState, FlowChartRow, RequestDocument, GuideFeatureKey } from '../../../types';
-import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_MAP_CHANGE, OTHER_PURPOSE_ADI_CD, isMergePurposeSelected } from '../constants';
+import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_ADI_CD, isMergePurposeSelected } from '../constants';
 import BeforeAfterPanel from './BeforeAfterPanel';
 import AdiCdPanel, { AdiCdField, AdiCdSide } from './AdiCdPanel';
 
@@ -41,15 +41,6 @@ interface Step1Props {
   handleBaSelect: (side: 'before' | 'after', id: string) => void;
   handleBaApply: () => void;
   handleBaUnpair: (index: number) => void;
-  isMapChangeMode: boolean;
-  mapChangeDocLabel: string;
-  setMapChangeDocLabel: React.Dispatch<React.SetStateAction<string>>;
-  mapChangeDocId: number | null;
-  setMapChangeDocId: React.Dispatch<React.SetStateAction<number | null>>;
-  handleSelectMapChangePurpose: () => void;
-  handleLeaveMapChange: (nextOp: string | null) => void;
-  handleMapChangeDocPick: (label: string) => void;
-  handleMapChangeApply: () => void;
   handleFlowChange: (id: string, field: keyof Omit<FlowChartRow, 'id'>, value: string) => void;
   handleFlowStepBlur: (rowId: string, field: 'step_from' | 'step_to') => void;
   handleFlowDeleteRow: (id: string) => void;
@@ -102,15 +93,6 @@ const Step1: React.FC<Step1Props> = ({
   handleBaSelect,
   handleBaApply,
   handleBaUnpair,
-  isMapChangeMode,
-  mapChangeDocLabel,
-  setMapChangeDocLabel,
-  mapChangeDocId,
-  setMapChangeDocId,
-  handleSelectMapChangePurpose,
-  handleLeaveMapChange,
-  handleMapChangeDocPick,
-  handleMapChangeApply,
   handleFlowChange,
   handleFlowStepBlur,
   handleFlowDeleteRow,
@@ -136,9 +118,6 @@ const Step1: React.FC<Step1Props> = ({
     detail.process_id !== '';
   // Only MAP 모드: 기타목적·흐름도·특이사항·Backbone·참조요청서는 초기화 후 작성 불가
   const disableOptional = !canSelectPurpose || isOnlyMap;
-  // 흐름도·특이사항·Backbone 전용 잠금: 완성된 MAP 변경도 Only MAP과 동일하게 잠그되,
-  // 기타목적 버튼·참조요청서 Merge·완성된 MAP 변경 검색/적용 툴바는 잠그지 않는다(전환·조회 경로 보존).
-  const disableFlowBb = disableOptional || isMapChangeMode;
   // 참조 요청서는 의뢰서당 1건만 지정할 수 있다. Merge 를 마치면 선택·Merge 를 잠그고,
   // 바꾸려면 '재선택' 버튼을 쓴다(문서에 저장되므로 임시저장 후 재진입해도 유지된다).
   const isMergeDone = detail.merge_ref_doc_id !== null;
@@ -244,18 +223,7 @@ const Step1: React.FC<Step1Props> = ({
                       className={`map-type-btn${selected ? ' active' : ''}`}
                       onClick={() => {
                         if (disableOptional) return;
-                        // '완성된 MAP 변경'은 단독 전용 — 진입/해제는 전용 핸들러로 처리
-                        if (val === OTHER_PURPOSE_MAP_CHANGE) {
-                          if (isMapChangeMode) handleLeaveMapChange(null); // 다시 눌러 해제
-                          else handleSelectMapChangePurpose();
-                          return;
-                        }
-                        // 완성된 MAP 변경이 켜진 상태에서 다른 목적 클릭 → 그 목적으로 전환
-                        if (isMapChangeMode) {
-                          handleLeaveMapChange(val);
-                          return;
-                        }
-                        // ADI CD 변경: 완성된 MAP 변경과 달리 단독 전용이 아니다 — 다른 목적과 함께 켤 수 있다.
+                        // ADI CD 변경: 단독 전용이 아니라 다른 목적과 함께 켤 수 있다.
                         if (val === OTHER_PURPOSE_ADI_CD) {
                           if (isAdiCdSelected) handleLeaveAdiCd(); else handleSelectAdiCdPurpose();
                           return;
@@ -349,35 +317,6 @@ const Step1: React.FC<Step1Props> = ({
               />
             )}
 
-            {/* 완성된 MAP 변경: 대상(결재완료) 요청서 검색 → '적용' 버튼으로 MAP 정보 프리필 */}
-            {isMapChangeMode && (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', maxWidth: 920 }}>
-                <div style={{ flex: 1 }}>
-                  <AutocompleteInput
-                    label={t('request.map_change_target')}
-                    value={mapChangeDocLabel}
-                    options={approvedDocs.map((d) => d.title)}
-                    onChange={(v) => {
-                      setMapChangeDocLabel(v);
-                      if (mapChangeDocId !== null) setMapChangeDocId(null);
-                    }}
-                    onSelect={handleMapChangeDocPick}
-                    placeholder={t('request.map_change_placeholder')}
-                    disabled={disableOptional}
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={disableOptional || mapChangeDocId === null}
-                  style={disableOptional || mapChangeDocId === null ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                  onClick={handleMapChangeApply}
-                >
-                  {t('request.map_change_apply')}
-                </button>
-              </div>
-            )}
-
             {/* 흐름도 */}
             <div className="form-group">
               <label className="form-label">{t('request.flow_chart')}<GuideBadge fk="step1_flow_chart" tk={t('guide.feat.step1_flow_chart' as never)} /></label>
@@ -390,7 +329,7 @@ const Step1: React.FC<Step1Props> = ({
                         className="form-control"
                         value={row.location}
                         onChange={(e) => handleFlowChange(row.id, 'location', e.target.value)}
-                        disabled={disableFlowBb}
+                        disabled={disableOptional}
                       >
                         <option value="">{t('request.select_placeholder')}</option>
                         {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -404,7 +343,7 @@ const Step1: React.FC<Step1Props> = ({
                         options={FlowProductOptions[row.id] || []}
                         placeholder={t('request.select_placeholder')}
                         style={{ width: '100%' }}
-                        disabled={disableFlowBb}
+                        disabled={disableOptional}
                       />
                     </div>
                     <div className="form-group flex-col" style={{ marginBottom: 0 }}>
@@ -415,7 +354,7 @@ const Step1: React.FC<Step1Props> = ({
                         options={FlowProcessIdOptions[row.id] || []}
                         placeholder={t('request.select_placeholder')}
                         style={{ width: '100%' }}
-                        disabled={disableFlowBb}
+                        disabled={disableOptional}
                       />
                     </div>
                     <div className="form-group flex-col" style={{ marginBottom: 0 }}>
@@ -430,7 +369,7 @@ const Step1: React.FC<Step1Props> = ({
                           style={{ minWidth: '80px' }}
                           error={errors[`flow_step_${row.id}_step_from`]}
                           hideErrorMessage
-                          disabled={disableFlowBb || (FlowLayerIdOptions[row.id] || []).length === 0}
+                          disabled={disableOptional || (FlowLayerIdOptions[row.id] || []).length === 0}
                         />
                         <span style={{ whiteSpace: 'nowrap' }}>~</span>
                         <AutocompleteInput
@@ -442,7 +381,7 @@ const Step1: React.FC<Step1Props> = ({
                           style={{ minWidth: '80px' }}
                           error={errors[`flow_step_${row.id}_step_to`]}
                           hideErrorMessage
-                          disabled={disableFlowBb || (FlowLayerIdOptions[row.id] || []).length === 0}
+                          disabled={disableOptional || (FlowLayerIdOptions[row.id] || []).length === 0}
                         />
                       </div>
                     </div>
@@ -452,14 +391,14 @@ const Step1: React.FC<Step1Props> = ({
                         className="btn btn-danger"
                         style={{ padding: '6px 10px', marginBottom: '2px' }}
                         onClick={() => handleFlowDeleteRow(row.id)}
-                        disabled={disableFlowBb}
+                        disabled={disableOptional}
                       >
                         {t('request.bb_delete')}
                       </button>
                     )}
                   </div>
                 ))}
-                <button type="button" className="btn btn-secondary" onClick={handleFlowAddRow} disabled={disableFlowBb}>
+                <button type="button" className="btn btn-secondary" onClick={handleFlowAddRow} disabled={disableOptional}>
                   + {t('request.flow_add_row')}
                 </button>
               </div>
@@ -473,7 +412,7 @@ const Step1: React.FC<Step1Props> = ({
                 value={detail.change_purpose_note}
                 onChange={handleDetailChange}
                 rows={3}
-                disabled={disableFlowBb}
+                disabled={disableOptional}
               />
             </div>
           </div>
@@ -495,7 +434,7 @@ const Step1: React.FC<Step1Props> = ({
                     className="form-control"
                     value={entry.location}
                     onChange={(e) => handleBbEntryChange(idx, 'location', e.target.value)}
-                    disabled={disableFlowBb}
+                    disabled={disableOptional}
                   >
                     <option value="">{t('request.select_placeholder')}</option>
                     {lineOptions.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -509,7 +448,7 @@ const Step1: React.FC<Step1Props> = ({
                     options={BbProductOptions[entry.id] || []}
                     placeholder={t('request.select_placeholder')}
                     style={{ width: '100%' }}
-                    disabled={disableFlowBb}
+                    disabled={disableOptional}
                   />
                 </div>
                 <div className="form-group flex-col" style={{ marginBottom: 0 }}>
@@ -520,7 +459,7 @@ const Step1: React.FC<Step1Props> = ({
                     options={BbProductidOptions[entry.id] || []}
                     placeholder={t('request.select_placeholder')}
                     style={{ width: '100%' }}
-                    disabled={disableFlowBb}
+                    disabled={disableOptional}
                   />
                 </div>
                 {detail.bb_entries.length > 1 && (
@@ -529,7 +468,7 @@ const Step1: React.FC<Step1Props> = ({
                     className="btn btn-danger"
                     style={{ padding: '6px 10px', marginBottom: '2px' }}
                     onClick={() => handleBbEntryDelete(idx)}
-                    disabled={disableFlowBb}
+                    disabled={disableOptional}
                   >
                     {t('request.bb_delete')}
                   </button>
@@ -537,7 +476,7 @@ const Step1: React.FC<Step1Props> = ({
               </div>
             ))}
             <div>
-              <button type="button" className="btn btn-secondary" onClick={handleBbEntryAdd} disabled={disableFlowBb}>
+              <button type="button" className="btn btn-secondary" onClick={handleBbEntryAdd} disabled={disableOptional}>
                 + {t('request.bb_add')}
               </button>
             </div>
