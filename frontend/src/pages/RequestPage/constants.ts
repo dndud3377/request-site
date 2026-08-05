@@ -11,10 +11,7 @@ import {
 // ===== Option Constants =====
 export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'Only MAP', '기타'] as const;
 export const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
-export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay 변경', 'ADI CD 변경', 'FirstA 변경', '완성된 MAP 변경'] as const;
-
-// '완성된 MAP 변경' 기타 목적: 결재완료 요청서의 MAP 정보만 불러와 수정하는 단독 전용 항목.
-export const OTHER_PURPOSE_MAP_CHANGE = '완성된 MAP 변경';
+export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay 변경', 'ADI CD 변경', 'FirstA 변경'] as const;
 
 // 참조 요청서 Merge(+ BEFORE/AFTER 비교)를 쓸 수 있는 기타 목적.
 // 여러 개를 함께 골라도 참조 요청서는 의뢰서당 1건이므로 블록은 하나만 노출한다.
@@ -30,8 +27,7 @@ export const MERGE_UNREGISTERED_ID = '__merge_unregistered__';
 // 'Only MAP' 요청 목적: StepMap 정보까지만 작성하고 결재 경로도 단축된다(backend RequestDocument.ONLY_MAP_PURPOSE 와 동일 값).
 export const ONLY_MAP_PURPOSE = 'Only MAP';
 
-// '기타 목적 > ADI CD 변경': 특정 제품 ADI CD 스텝 개수 증감/전체삭제 요청. 진입 시 map_type 을 이 값으로 고정한다
-// ('완성된 MAP 변경'이 map_type='EDIT' 로 고정하는 것과 동일한 패턴).
+// '기타 목적 > ADI CD 변경': 특정 제품 ADI CD 스텝 개수 증감/전체삭제 요청. 진입 시 map_type 을 이 값으로 고정한다.
 export const OTHER_PURPOSE_ADI_CD = 'ADI CD 변경';
 export const ADI_CD_MAP_TYPE = 'ADI';
 // 초기 빈 템플릿 행 수
@@ -43,23 +39,6 @@ export const ADI_CD_HEADER_SCAN_ROWS = 5;
 // 헤더 라벨 — 의뢰자가 엑셀 원본과 대조해야 하므로 번역하지 않는다.
 export const ADI_CD_STEP_ID_LABEL = 'STEP_ID';
 export const ADI_CD_STEP_DESC_LABEL = 'STEP_DESC';
-
-// '완성된 MAP 변경' 프리필 시 참조 문서 detail 에서 복사할 MAP 관련 키.
-// 이 키들만 현재 detail 위에 병합하고(기본정보·표는 유지·비움), 변경이력 diff 비교 기준이 된다.
-export const MAP_DETAIL_KEYS: (keyof DetailFormState)[] = [
-  'map_type', 'map_change', 'map_value_x', 'map_value_y', 'map_reason',
-  'map_change_top', 'map_value_x_top', 'map_value_y_top',
-  'map_change_bottom', 'map_value_x_bottom', 'map_value_y_bottom',
-  'ea_change', 'ea_value',
-  'only_prodc', 'prodc_scope',
-  'prodc_top_line', 'prodc_top_process', 'prodc_top_product',
-  'prodc_middle_use', 'prodc_middle_line', 'prodc_middle_process', 'prodc_middle_product',
-  'prodc_bottom_line', 'prodc_bottom_process', 'prodc_bottom_product',
-  'mshot_change', 'mshot_image_copy', 'mshot_image_copy_top', 'mshot_image_copy_bottom',
-  'photo_backside', 'eds_backside', 'inter', 'inter_xs', 'inter_ys', 'in_apply', 'inter_select',
-  'tsv', 'rf', 'fullchip', 'split', 'st', 'ecc', 'labelsideshot', 'hpkglabelheight',
-  'rev_yn', 'rev_entries', 'source_line', 'source_partid',
-];
 
 export { ST_CELL_COLOR } from '../../utils/stCellColor';
 
