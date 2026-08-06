@@ -258,7 +258,9 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
     const done = p2MainPending.length === 0 && evPendingSteps.length === 0;
     const stageText = done
       // 완료 시점엔 검토중이라 가려뒀던 O 이름도 포함해 실제로 결재했던 사람 전원을 보여준다.
-      ? namedApprovers([...(oStep ? [oStep] : []), ...(eStep ? [eStep] : []), ...evSteps]) ?? t('common.status_approved')
+      // skip(건너뜀) 된 EV 는 판단하지 않았으므로 결재자로 표시하지 않는다.
+      ? namedApprovers([...(oStep ? [oStep] : []), ...(eStep ? [eStep] : []),
+                        ...evSteps.filter((s) => s.action === 'approved')]) ?? t('common.status_approved')
       : [
           ...p2MainPending.map(s => {
             const l = t(`approval.agent_${s.agent}` as any);
