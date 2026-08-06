@@ -16,7 +16,7 @@
 
 ```
 pages/RequestPage/
-├── index.tsx                       # 4,452줄  메인 컴포넌트 — 상태·핸들러·effect·검증·저장/상신·조립
+├── index.tsx                       # 4,548줄  메인 컴포넌트 — 상태·핸들러·effect·검증·저장/상신·조립
 ├── constants.ts                    #   343줄  상수·팩토리·초기 상태 (외부 state 비의존)
 ├── helpers.ts                      #   477줄  순수 헬퍼 (아래 'helpers.ts export 목록' 참조)
 ├── helpers.test.ts                 #   463줄  helpers.ts 단위 테스트 (63건)
@@ -28,8 +28,8 @@ pages/RequestPage/
     ├── BeforeAfterPanel.tsx        #   227줄  참조 요청서 Merge BEFORE/AFTER 매핑 패널 (step 1 인라인)
     ├── AdiCdPanel.tsx              #   139줄  ADI CD 변경전/변경후 스텝 표 (step 1 인라인)
     ├── AdiCdColumnMapModal.tsx     #   128줄  ADI CD 붙여넣기 컬럼 매핑 모달
-    ├── Step1.tsx                   #   528줄  step 1 — 기본정보(라인/목적/흐름도/뼈찜entry/고객/생산일)
-    ├── StepMap.tsx                 #   646줄  step 2 — MAP(타입/원본/PRODC/REV/지도편차/예외/M-shot/맵옵션)
+    ├── Step1.tsx                   #   538줄  step 1 — 기본정보(라인/목적/흐름도/뼈찜entry/고객/생산일)
+    ├── StepMap.tsx                 #   695줄  step 2 — MAP(타입/원본/PRODC/REV/지도편차/예외/M-shot/맵옵션/삭제·수정 이유)
     ├── Step2.tsx                   #   298줄  step 3 — J-layer 표
     ├── Step3.tsx                   #   591줄  step 4 — O-layer 표 + TBV/TLV·partial_shot 정보 탭
     └── Step4.tsx                   #   539줄  step 5 — Backbone(bb) 자동채움·매핑·결과 표
@@ -51,9 +51,10 @@ pages/RequestPage/
 
 | 분류 | export |
 |---|---|
-| 목적 옵션 | `OPTION_REQUEST_PURPOSE`, `OPTION_LINE`, `OPTION_OTHER_PURPOSE`, `ONLY_MAP_PURPOSE` |
+| 목적 옵션 | `OPTION_REQUEST_PURPOSE`, `OPTION_LINE`, `OPTION_OTHER_PURPOSE`, `ONLY_MAP_PURPOSE`, `MAP_DELETE_EDIT_PURPOSE`, `OTHER_PURPOSE_LAB` |
 | Merge | `MERGE_ENABLED_PURPOSES`, `isMergePurposeSelected`, `MERGE_UNREGISTERED_ID` |
 | ADI CD | `OTHER_PURPOSE_ADI_CD`, `ADI_CD_MAP_TYPE`, `ADI_CD_TEMPLATE_ROWS`, `ADI_CD_MAX_ROWS`, `ADI_CD_HEADER_SCAN_ROWS`, `ADI_CD_STEP_ID_LABEL`, `ADI_CD_STEP_DESC_LABEL` |
+| MAP 삭제/수정 | `MAP_TYPE_EDIT_REQ`, `MAP_TYPE_DELETE_REQ`, `isMapDeleteEditType` |
 | Validation System | `VALIDATION_KEYWORD`, `VS_TARGET`, `VS_NONTARGET`, `VS_NA`, `VALIDATION_CELL_COLOR` |
 | 표 컬럼 | `JAYER_EDITABLE_COLS`, `OAYER_EDITABLE_COLS`, `LOADED_LOCK_COLS` |
 | NOC/ST 값 | `NOC_NEW`, `NOC_BORROW`, `NOC_REGISTERED`, `NOC_LAYER_DELETE`, `ST_O`, `ST_X`, `isNocSpecial` |
@@ -135,7 +136,7 @@ pages/RequestPage/
 | 1차 | 독립 단위 분리(상수·팩토리·ProdcRow/Mshot/Wizard) | ✅ | 4,083 → 3,795 |
 | 2차 | 5개 Step 컴포넌트 분리(renderStepN → StepN) | ✅ | 3,795 → 2,242 |
 | 3차 | 순수 헬퍼(helpers.ts) + 공유 필터 모달(FilterManageModal) 분리 | ✅ | 2,242 → 2,028 |
-| **현황** | **3차 종료 후 기능 추가분 누적** — 참조 요청서 Merge/BEFORE·AFTER 비교, ADI CD 변경, C가문 `prodc_scope` 게이트·ONLY 스코프, Validation System, 가이드 투어 등 | — | **2,028 → 4,452** (2026-08-06 실측) |
+| **현황** | **3차 종료 후 기능 추가분 누적** — 참조 요청서 Merge/BEFORE·AFTER 비교, ADI CD 변경, C가문 `prodc_scope` 게이트·ONLY 스코프, Validation System, 가이드 투어, MAP 삭제/수정·연구소 제품 등 | — | **2,028 → 4,548** (2026-08-06 실측) |
 
 > ⚠️ 위 1~3차 수치는 **2026-06 리팩토링 당시의 기록**이다. 이후 신규 기능이 index.tsx 에 계속 쌓여
 > 현재는 4,452줄로, 리팩토링 종료 시점(2,028줄)의 2배가 넘는다. §3.1 의 "2,028줄을 합리적 종료점으로
@@ -191,6 +192,102 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-08-06 — 마이그레이션 leaf 충돌 해소 + 0009 번호 예약)
+
+- **개요**: 기존 마이그레이션 그래프에 leaf(끝 노드)가 2개 있어(`0013_alter_approvalstep_action`,
+  `0013_alter_mailnotification_event_type` 이 같은 부모 `0012_design_rule_overrides` 를 가리킴)
+  `manage.py test`/`migrate` 가 `CommandError: Conflicting migrations detected` 로 **아예 실행되지
+  않는** 상태였다. 두 파일이 서로 다른 브랜치에서 각각 만들어져 병합된 결과다.
+- **재정렬**(전부 `git mv` 로 이력 보존, `dependencies` 를 새 체인에 맞게 갱신):
+
+  | 이전 | 이후 |
+  |---|---|
+  | `0009_alter_approvalstep_agent` | → `0010_alter_approvalstep_agent` |
+  | `0010_designrule` | → `0011_designrule` |
+  | `0011_alter_mailnotification_event_type` | → `0012_alter_mailnotification_event_type` |
+  | `0012_design_rule_overrides` | → `0013_design_rule_overrides` |
+  | `0013_alter_mailnotification_event_type`(08-05 04:19 생성) | → `0014_alter_mailnotification_event_type` |
+  | `0013_alter_approvalstep_action`(08-06 00:47 생성) | → `0015_alter_approvalstep_action` |
+
+- **`0009` 번호는 비워둔다**: 사내 메신저(Knox 채팅방/알림) 기능이 추가되면서 생길 `UserProfile`
+  마이그레이션 자리다. 보안상 이 저장소에는 내용을 넣지 않는다. 그때까지 `0010`(재정렬 전 `0009`)은
+  그대로 `0008` 을 의존성으로 유지한다 — 존재하지 않는 파일을 가리키면 이 저장소 단독으로 `migrate`
+  가 깨진다. `0009` 파일이 실제로 추가되는 시점에 `0008→0009`, `0009→0010` 의존성 연결은 **그
+  작업에서 함께** 처리해야 한다.
+- **모델 필드 변경 없음** — 순서만 바뀐 것이라 이미 옛 번호로 배포된 DB 에도 안전하다
+  (`makemigrations --check --dry-run` → `No changes detected` 확인).
+- **다른 문서의 번호 참조도 함께 갱신**: 이 파일 §4.1 2026-08-05 항목(`0013`→`0014`),
+  `docs/HOME_STATS.md` §8(`0012`→`0013`). `docs/E2E_TEST_AND_BUGS.md` B-48 의 `0012_design_rule_overrides`
+  언급은 **2026-08-04 원문 보존 기록**이라 손대지 않았다(당시 실측 그대로 남겨야 하는 이력).
+- **검증**: `makemigrations --check --dry-run` → `No changes detected`. `showmigrations` → 단일
+  체인, leaf 1개. 이후 처음으로 백엔드 테스트 실행 가능해짐 — 187건 중 184건 통과(실패 3건은
+  마이그레이션과 무관한 선행 버그, 세션 시작 전 커밋에서도 동일하게 실패함을 별도 워크트리로 확인).
+
+### 추가 변경 이력 (2026-08-06 — 요청 목적 'MAP 삭제/수정' + 기타 목적 '연구소 제품')
+
+- **개요**: 요청 목적에 `MAP 삭제/수정` 을, 기타 목적에 `연구소 제품` 을 추가했다. 계획·인터뷰
+  과정과 결재 경로 다이어그램은 `docs/map_delete_edit_mockup.html`(mock 계획서, 확정본 v2) 참조.
+
+- **연구소 제품** — `Only MAP` 전용 기타 목적. 결재 경로는 바꾸지 않는다(**Only MAP 경로 그대로**,
+  PL→R→후결자). 선택 시 기존 C가문(`only_prodc=Yes`) 후결자 메커니즘을 그대로 켤 뿐이다 — 새로
+  만든 결재 로직은 없다.
+  - `index.tsx`: 파생 플래그 `isLabProduct`/`requiresPostApprover`(= C가문 **또는** 연구소 제품)
+    신설. 후결자 관련 조건 3곳(저장 payload·상신 차단·UI 노출)을 `only_prodc==='Yes'` 단일 비교에서
+    이 플래그로 교체.
+  - `Step1.tsx`: 기타 목적 버튼 잠금을 항목별로 분리(`otherPurposeDisabled`) — `연구소 제품`은
+    `Only MAP` 일 때만 열리고 다른 목적에서는 이것만 잠긴다(나머지 6개는 반대).
+  - `Only MAP` 을 해제하면 확인 모달 후 `연구소 제품`·지정한 후결자를 함께 초기화한다
+    (`applyLeaveMapOnlyScope`). `연구소 제품`만 껐다 켜도 후결자는 함께 초기화된다.
+  - **백엔드**: `RequestDocument.requires_post_approver()`(C가문 또는 연구소 제품) 신설,
+    `_validate_post_approvers`·`remove_post_approver` 두 곳 모두 이 헬퍼로 판정(후자는 처음엔
+    누락했다가 발견해 별도 수정 — `docs/APPROVAL.md` §6-9·Case O 참조).
+
+- **MAP 삭제/수정** — `Only MAP` 과 동일하게 MAP 정보만 작성한다(Step1 부가 항목·J/O/Backbone
+  잠금·초기화, 결재 경로는 다름 — `docs/APPROVAL.md` **Case O**).
+  - `constants.ts`: `MAP_DELETE_EDIT_PURPOSE`·`MAP_TYPE_EDIT_REQ`·`MAP_TYPE_DELETE_REQ`
+    (`isMapDeleteEditType`) 신설. ⚠️ 과거 '완성된 MAP 변경' 기능이 쓰다 2026-08-05 삭제된
+    `map_type='EDIT'` 값은 레거시 문서와 섞이므로 재사용하지 않고 `EDIT_REQ`를 썼다.
+  - `index.tsx`: `applyOnlyMap()` → `applyMapOnlyScope(purpose)` 로 일반화해 `Only MAP`·
+    `MAP 삭제/수정` 이 초기화 로직을 공유한다. `MAP 삭제/수정` 진입 시엔 `map_type` 을 비운다
+    (`ADI` 와 달리 후보가 2개라 자동 고정할 수 없어 STEP2 에서 직접 고른다). `validate(2)` 에
+    이유 모드 조기 분기 추가 — 숨긴 항목은 검증도 건너뛰고 이유 필수만 본다(HTML 태그를 걷어내고
+    판정, 이미지만 있어도 통과).
+  - `StepMap.tsx`: `map_type` 버튼 4개(`NEW`/`CLONE`/`EXISTING`/`ADI`) → 6개(`수정`/`삭제` 추가).
+    `MAP 삭제/수정` 목적일 때만 `수정`/`삭제` 가 열리고 나머지 4개가 잠기며(그 반대도 성립),
+    `ADI` 의 "표시 전용 잠금" 패턴을 그대로 따른다. `수정`/`삭제` 선택 시 **아래 MAP 블록 전체를
+    렌더하지 않는다**(잠금이 아니라 숨김) — 원본 위치·REV·C가문·지도편차·예외구역·X표시·Inter·
+    Map Option 이 전부 사라지고 이유 입력칸만 남는다.
+  - **이유 입력칸**: 새 컴포넌트를 만들지 않고 기존 `RichTextEditor`(Tiptap, 공지·가이드·VOC 3곳
+    에서 이미 사용 중)를 재사용했다. 글·이미지 붙여넣기가 이미 구현돼 있어(`uploadImageAPI.upload()`)
+    요구사항을 그대로 만족한다. 고정 높이(320px) `div` 로 감싸 내용이 길어져도 **칸 내부에서만
+    스크롤**된다(에디터가 이미 `flex:1`+`overflowY:auto` 구조라 컴포넌트 자체는 수정 불필요).
+    저장 필드는 `detail.map_change_reason`(HTML 문자열, 수정·삭제 공용 — 전환 시 값 유지, 라벨만
+    바뀐다). ⚠️ C가문 지도편차 사유인 기존 `map_reason` 과는 **별개 필드**다.
+  - `PagedDetailView.tsx`: MAP 정보 섹션에 이유 카드 추가(수정/삭제일 때만, 라벨 분기). 렌더는
+    공지·가이드·VOC 와 동일하게 `dangerouslySetInnerHTML` — **sanitize 없음**(기존 관행과 동일
+    수준의 위험이며 이번에 새로 생기거나 해소되지도 않았다).
+  - **결재 경로**: PL 전원 합의 직후 **P·R·J·O 병렬 생성**(E·후결자 없음, 고정 후결자도 안 붙는
+    유일한 경로). 상세는 `docs/APPROVAL.md` **Case O**.
+
+- **저장 구조**: 전부 `additional_notes` JSON 하위(`request_purpose`/`other_purpose`/`map_type`/
+  `map_change_reason`)라 **마이그레이션 없음**.
+
+- **i18n**: `request.map_type_edit_req`·`map_type_delete_req`·`map_change_reason_edit`·
+  `map_change_reason_delete`·`map_change_reason_help`·`map_change_reason_placeholder`·
+  `map_delete_edit_confirm_title`·`map_delete_edit_confirm_msg`·`map_only_leave_confirm_title`·
+  `map_only_leave_confirm_msg`·`lab_product_only_map_hint` 11키 ko/en 동시 추가. 기존
+  `post_approver_help`/`post_approver_required` 문구도 연구소 제품을 언급하도록 함께 수정.
+
+- **테스트**: 프론트 `approvalTable.test.ts`(신규, 7건 — 결재현황 목록의 R 표시 회귀·신규 시나리오),
+  백엔드 `MapDeleteEditRouteTest`(7건)·`LabProductPostApproverTest`(5건, 후결자 제거 가드 재현
+  포함). 전체 프론트 74건 / 백엔드 188건(실패 3건은 무관한 선행 버그) 통과.
+
+- **작업 중 발견해 함께 고친 버그 3건**(요청 범위 밖이었으나 이 기능이 드러낸 결함이라 즉시 수정
+  — 상세는 `docs/APPROVAL.md` §6-9·Case O):
+  1. 결재현황 목록이 병렬 구성원이 된 R 을 표시하지 않던 문제(`approvalTable.ts` `path0` 추가).
+  2. 결재 상세 후결자(RA) 행이 이 경로에서 '대기'로 영구 표시되던 문제(`PagedDetailView.tsx`).
+  3. `remove-post-approver` 최소인원 가드가 연구소 제품을 놓치던 문제(`views.py`).
+
 ### 추가 변경 이력 (2026-08-05 — 기타 목적 '완성된 MAP 변경' 기능 삭제)
 
 - **개요**: 결재 완료된 요청서의 MAP 정보만 불러와 수정·재상신하고 승인 시 원본에 되반영하던
@@ -217,9 +314,10 @@ pages/RequestPage/
   - `views.py`: `approve_step` 승인 후처리 훅과 `_apply_map_change_to_source()`(78줄) 삭제.
   - `mailer.py`: `map_apply_failed` 라벨·테마·이력 링크 대상·본문 분기·`enqueue_map_apply_failed()` 삭제.
     기존에 적재된 레거시 행은 `_build_message` 의 `else` 폴백이 `[알림]` 제목으로 처리한다.
-  - `MailNotification.EVENT_CHOICES` 에서 `map_apply_failed` 제거 → **마이그레이션 `0013_alter_mailnotification_event_type`**.
+  - `MailNotification.EVENT_CHOICES` 에서 `map_apply_failed` 제거 → **마이그레이션 `0014_alter_mailnotification_event_type`**
+    (2026-08-06 마이그레이션 재정렬로 번호가 `0013`→`0014`로 바뀌었다 — 아래 2026-08-06 이력 참조).
     `choices` 변경뿐이라 **테이블 스키마는 바뀌지 않지만 배포 시 `migrate` 는 실행해야 한다.**
-    (`0011` 은 이미 적용된 이력이라 삭제하지 않았다.)
+    (`0012_alter_mailnotification_event_type`(재정렬 전 `0011`)은 이미 적용된 이력이라 삭제하지 않았다.)
   - `tests.py`: `MapChangeApplyTest`(6건) 삭제 → 백엔드 테스트 167건 → **161건**.
 
 - **결재 경로 영향 없음**: 라우팅은 `request_purpose` 만 쓰므로 `Only MAP` 단축 경로(`is_only_map()`)와
