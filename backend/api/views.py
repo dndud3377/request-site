@@ -1610,8 +1610,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """후결자 제거 — 아직 합의하지 않은(pending) 후결자만 뺄 수 있다.
 
         고정 후결자(settings.POST_APPROVER_LOGINID)는 제거 불가. Only MAP(후결자가 유일한
-        종단 경로) 또는 C가문(only_prodc=Yes, 상신 시 최소 1명이 필수였음)인 문서는
-        마지막 남은 후결자를 제거할 수 없다 — 그 외 일반 문서는 0명까지 뺄 수 있다.
+        종단 경로) 또는 requires_post_approver() 대상(C가문·연구소 제품, 상신 시 최소 1명이
+        필수였음)인 문서는 마지막 남은 후결자를 제거할 수 없다 — 그 외 일반 문서는 0명까지 뺄 수 있다.
         """
         from django.conf import settings
         document = self.get_object()
@@ -1637,7 +1637,6 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not ra_step:
             return Response({'error': '제거 가능한(미합의) 후결자를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        detail = document.get_detail().get('detail', {}) or {}
         # Only MAP: 후결자(고정 포함)가 유일한 종단 경로라 총원이 0이 되면 영영 승인될 수 없다.
         if document.is_only_map():
             remaining_total = ApprovalStep.objects.filter(
@@ -1645,14 +1644,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             ).exclude(pk=ra_step.pk).count()
             if remaining_total == 0:
                 return Response({'error': 'Only MAP 의뢰서는 최종 승인 경로인 후결자를 최소 1명 유지해야 합니다.'}, status=status.HTTP_400_BAD_REQUEST)
-        # C가문: 상신 시 "추가 후결자 1명 이상" 이 필수였던 것과 일관되게, 고정 후결자를 제외한
-        # 추가 후결자가 0명이 되는 제거는 막는다(고정 후결자는 이 최소치에 포함되지 않음).
-        if detail.get('only_prodc') == 'Yes':
+        # requires_post_approver(): 상신 시 "추가 후결자 1명 이상" 이 필수였던 대상(C가문·연구소
+        # 제품)과 일관되게, 고정 후결자를 제외한 추가 후결자가 0명이 되는 제거는 막는다
+        # (고정 후결자는 이 최소치에 포함되지 않음). 이전엔 only_prodc 만 직접 비교해 연구소
+        # 제품 문서는 이 가드를 빠져나갔다(상신 검증은 통과시켜 놓고 진행 중엔 무력화됨).
+        if document.requires_post_approver():
             remaining_additional = ApprovalStep.objects.filter(
                 document=document, agent='RA', round=max_round
             ).exclude(pk=ra_step.pk).exclude(assignee__loginid=fixed_lid).count()
             if remaining_additional == 0:
-                return Response({'error': 'C가문 제품은 (고정 후결자 외) 후결자를 최소 1명 유지해야 합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': 'C가문 제품·연구소 제품은 (고정 후결자 외) 후결자를 최소 1명 유지해야 합니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         ra_step.delete()
         self._sync_post_approvers_detail(document, remove_loginid=target_loginid)
