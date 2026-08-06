@@ -5,7 +5,7 @@ import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, Flow
 import Modal from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
-import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA } from '../pages/RequestPage/constants';
+import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, MAP_TYPE_EDIT_REQ, isMapDeleteEditType } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 
@@ -1191,6 +1191,30 @@ type Page = { label: string; content: React.ReactNode };
               )}
               {detail.map_type === 'CLONE' && detail.source_partid && (
                 <Chip label={t('request.source_partid_selection')} value={detail.source_partid} changed={changedFields.has('source_partid')} fieldKey="source_partid" />
+              )}
+            </div>
+          )}
+
+          {/* MAP 삭제/수정 이유 — 작성 화면과 동일하게 이 모드에서는 이것만 있으면 된다.
+              본문은 RichTextEditor 가 만든 HTML 이라 공지·가이드·VOC 와 같은 방식으로 렌더한다. */}
+          {isMapDeleteEditType(detail.map_type) && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 6 }}>
+                {detail.map_type === MAP_TYPE_EDIT_REQ
+                  ? t('request.map_change_reason_edit')
+                  : t('request.map_change_reason_delete')}
+              </div>
+              {detail.map_change_reason ? (
+                <div
+                  style={{
+                    border: changedFields.has('map_change_reason') ? '2px solid var(--danger)' : '1px solid var(--border)',
+                    borderRadius: 6, padding: '10px 12px', maxHeight: 420, overflowY: 'auto',
+                    background: 'var(--bg-secondary)', fontSize: '0.86rem', lineHeight: 1.6,
+                  }}
+                  dangerouslySetInnerHTML={{ __html: detail.map_change_reason }}
+                />
+              ) : (
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>-</span>
               )}
             </div>
           )}
