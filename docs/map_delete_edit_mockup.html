@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MAP 삭제/수정 + 연구소 제품 — 기능 계획서 (Mock v1)</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1f2430;
+    --text-secondary: #4b5563;
+    --muted: #8a93a3;
+    --border: #dde1e8;
+    --border-light: #eceff4;
+    --accent: #2563eb;
+    --accent-soft: #eff6ff;
+    --green: #16a34a;
+    --green-soft: #eefaf1;
+    --amber: #b45309;
+    --amber-soft: #fff7ed;
+    --danger: #dc3545;
+    --danger-soft: #fdeced;
+    --purple: #7c3aed;
+    --purple-soft: #f5f0ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171d;
+      --card: #1b1f27;
+      --text: #e8eaf0;
+      --text-secondary: #b6bdcb;
+      --muted: #8a93a3;
+      --border: #333a47;
+      --border-light: #272d38;
+      --accent: #5b8dff;
+      --accent-soft: #1d2740;
+      --green: #4ade80;
+      --green-soft: #16281d;
+      --amber: #fbbf24;
+      --amber-soft: #2c2312;
+      --danger: #f87171;
+      --danger-soft: #2e1a1c;
+      --purple: #a78bfa;
+      --purple-soft: #241d38;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 80px;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    font-size: 15px; line-height: 1.65;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 1.55rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+  h2 {
+    font-size: 1.12rem; margin: 40px 0 12px; padding-bottom: 8px;
+    border-bottom: 2px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 0.98rem; margin: 24px 0 8px; color: var(--text); }
+  p { margin: 8px 0; color: var(--text-secondary); }
+  .sub { color: var(--muted); font-size: 0.88rem; margin-bottom: 22px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 20px; margin: 14px 0;
+  }
+  code {
+    background: var(--border-light); padding: 1px 5px; border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.86em;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.88rem; }
+  th, td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--border-light); font-weight: 600; }
+  .tbl-scroll { overflow-x: auto; }
+  .tag {
+    display: inline-block; padding: 1px 8px; border-radius: 20px;
+    font-size: 0.74rem; font-weight: 600; vertical-align: middle;
+  }
+  .tag-new { background: var(--green-soft); color: var(--green); }
+  .tag-mod { background: var(--accent-soft); color: var(--accent); }
+  .tag-be  { background: var(--purple-soft); color: var(--purple); }
+  .tag-open{ background: var(--amber-soft); color: var(--amber); }
+  .note {
+    border-left: 3px solid var(--accent); background: var(--accent-soft);
+    padding: 10px 14px; margin: 12px 0; border-radius: 0 6px 6px 0;
+  }
+  .warn {
+    border-left: 3px solid var(--amber); background: var(--amber-soft);
+    padding: 10px 14px; margin: 12px 0; border-radius: 0 6px 6px 0;
+  }
+  .danger {
+    border-left: 3px solid var(--danger); background: var(--danger-soft);
+    padding: 10px 14px; margin: 12px 0; border-radius: 0 6px 6px 0;
+  }
+
+  /* ── UI mock ── */
+  .mock {
+    background: var(--card); border: 1.5px solid var(--border);
+    border-radius: 10px; padding: 16px 18px; margin: 12px 0;
+  }
+  .mock-label { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+  .req { color: var(--danger); }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 2px; }
+  .mbtn {
+    padding: 6px 14px; border-radius: 6px; font-size: 0.85rem;
+    border: 1.5px solid var(--border); background: var(--card);
+    color: var(--text-secondary); cursor: default; white-space: nowrap;
+  }
+  .mbtn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+  .mbtn.off { opacity: 0.38; }
+  .mbtn.newitem { border-style: dashed; border-color: var(--green); color: var(--green); }
+  .editor-box {
+    border: 1.5px solid var(--border); border-radius: 8px; overflow: hidden; margin-top: 6px;
+  }
+  .editor-toolbar {
+    display: flex; gap: 4px; flex-wrap: wrap; padding: 6px 8px;
+    background: var(--border-light); border-bottom: 1px solid var(--border);
+  }
+  .tb {
+    width: 26px; height: 24px; display: grid; place-items: center;
+    background: var(--card); border: 1px solid var(--border); border-radius: 4px;
+    font-size: 0.75rem; color: var(--text-secondary);
+  }
+  .editor-body {
+    height: 200px; overflow-y: auto; padding: 10px 12px;
+    background: var(--card); font-size: 0.86rem; color: var(--text-secondary);
+  }
+  .editor-body .ph { color: var(--muted); }
+  .fake-img {
+    width: 190px; height: 78px; border: 1px dashed var(--border);
+    border-radius: 6px; display: grid; place-items: center;
+    color: var(--muted); font-size: 0.76rem; margin: 8px 0;
+    background: var(--border-light);
+  }
+  .scrollhint { font-size: 0.74rem; color: var(--muted); margin-top: 4px; }
+
+  /* ── route diagram ── */
+  .route { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+  .node {
+    padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: 600;
+    border: 1.5px solid var(--border); background: var(--card); white-space: nowrap;
+  }
+  .node.pl { border-color: var(--purple); color: var(--purple); background: var(--purple-soft); }
+  .node.par { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .node.ra { border-color: var(--amber); color: var(--amber); background: var(--amber-soft); }
+  .node.done { border-color: var(--green); color: var(--green); background: var(--green-soft); }
+  .node.gone { opacity: 0.35; text-decoration: line-through; }
+  .arrow { color: var(--muted); font-size: 1rem; }
+  .par-group {
+    display: inline-flex; flex-direction: column; gap: 5px;
+    border: 1.5px dashed var(--accent); border-radius: 8px; padding: 8px 10px;
+    background: var(--accent-soft);
+  }
+  .par-title { font-size: 0.7rem; color: var(--accent); font-weight: 700; letter-spacing: 0.02em; }
+
+  ul, ol { margin: 8px 0; padding-left: 22px; color: var(--text-secondary); }
+  li { margin: 4px 0; }
+  .file { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.84rem; }
+  .q {
+    background: var(--amber-soft); border: 1px solid var(--amber);
+    border-radius: 8px; padding: 14px 16px; margin: 12px 0;
+  }
+  .q h4 { margin: 0 0 6px; font-size: 0.92rem; color: var(--amber); }
+  .opt { margin: 5px 0; padding-left: 4px; }
+  .rec { font-weight: 700; color: var(--green); }
+  .toc { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0 0; }
+  .toc a {
+    font-size: 0.82rem; padding: 5px 11px; border-radius: 20px;
+    background: var(--card); border: 1px solid var(--border);
+    color: var(--text-secondary); text-decoration: none;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>MAP 삭제/수정 &amp; 연구소 제품 — 기능 계획서</h1>
+  <div class="sub">
+    Mock v1 · 2026-08-06 · 대상: <code>frontend/src/pages/RequestPage/</code> + <code>backend/api/</code><br />
+    이 문서는 <b>구현 전 합의용</b>입니다. 아래 <a href="#open">§7 미결정 항목</a> 4건에 답을 주시면 착수합니다.
+  </div>
+
+  <div class="toc">
+    <a href="#f1">1. 연구소 제품</a>
+    <a href="#f2">2. MAP 삭제/수정</a>
+    <a href="#f3">3. 이유 입력칸</a>
+    <a href="#route">4. 결재 경로</a>
+    <a href="#data">5. 저장 구조</a>
+    <a href="#files">6. 파일별 변경</a>
+    <a href="#open">7. 미결정</a>
+    <a href="#risk">8. 리스크</a>
+  </div>
+
+  <!-- ══════════════════ 1 ══════════════════ -->
+  <h2 id="f1">1. 연구소 제품 <span class="tag tag-new">신규</span></h2>
+
+  <p><b>규칙</b> — <code>연구소 제품</code>은 요청 목적이 <code>Only MAP</code>일 때만 선택할 수 있고,
+  선택 시 상신에 후결자 지정이 <b>필수</b>가 됩니다. <code>Only MAP</code>을 해제하면 자동으로 함께 해제됩니다.</p>
+
+  <h3>1.1 화면 — STEP 1 기타 목적</h3>
+
+  <div class="mock">
+    <div class="mock-label">요청 목적 <span class="req">*</span></div>
+    <div class="btn-row">
+      <span class="mbtn">신규</span>
+      <span class="mbtn">차용</span>
+      <span class="mbtn">신규+차용</span>
+      <span class="mbtn active">Only MAP</span>
+      <span class="mbtn">MAP 삭제/수정</span>
+      <span class="mbtn">기타</span>
+    </div>
+
+    <div class="mock-label" style="margin-top:16px">기타 목적</div>
+    <div class="btn-row">
+      <span class="mbtn off">Layer 추가/삭제</span>
+      <span class="mbtn off">STEPSEQ 변경</span>
+      <span class="mbtn off">공법 추가/변경</span>
+      <span class="mbtn off">Overlay 변경</span>
+      <span class="mbtn off">ADI CD 변경</span>
+      <span class="mbtn off">FirstA 변경</span>
+      <span class="mbtn newitem">연구소 제품</span>
+    </div>
+    <div class="scrollhint">↑ <code>Only MAP</code> 선택 상태 — 기타 목적 6개는 잠기고 <b>연구소 제품만 선택 가능</b></div>
+  </div>
+
+  <div class="note">
+    <b>현재 코드와의 차이</b> — 지금은 <code>Only MAP</code>이면
+    <code>disableOptional = !canSelectPurpose || isOnlyMap</code> 한 줄로 기타 목적 버튼이
+    <b>전부</b> 잠깁니다(<span class="file">Step1.tsx:120</span>).
+    여기에 <code>연구소 제품</code>만 예외로 여는 분기를 추가합니다.
+    나머지 목적(신규·차용·기타 등)에서는 반대로 <code>연구소 제품</code>만 잠깁니다.
+  </div>
+
+  <h3>1.2 상태 전이</h3>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>조작</th><th>결과</th><th>구현 위치</th></tr>
+    <tr>
+      <td>다른 목적 → <code>Only MAP</code></td>
+      <td>기존 <code>applyOnlyMap()</code> 그대로 (기타 목적 전체 초기화). 이후 <code>연구소 제품</code> 버튼만 활성</td>
+      <td><span class="file">index.tsx:1385</span></td>
+    </tr>
+    <tr>
+      <td><code>Only MAP</code> + <code>연구소 제품</code> 켬</td>
+      <td><code>other_purpose = ['연구소 제품']</code>. 상신 모달에 후결자 입력 노출 + 필수</td>
+      <td><span class="file">Step1.tsx</span> / <span class="file">index.tsx:4040</span></td>
+    </tr>
+    <tr>
+      <td><code>Only MAP</code> → 다른 목적으로 전환</td>
+      <td><b>연구소 제품 자동 해제</b> + 지정했던 후결자 목록(<code>postApprovers</code>) 초기화</td>
+      <td><span class="file">index.tsx</span> <code>handleRequestPurposeSelect</code></td>
+    </tr>
+  </table>
+  </div>
+
+  <h3>1.3 후결자 필수 조건 확장</h3>
+  <p>현재 <code>only_prodc === 'Yes'</code>(C가문) 단일 조건이 <b>4곳에 각각 하드코딩</b>돼 있습니다.
+  이를 공통 판정으로 바꿔 <code>연구소 제품</code>을 OR 조건으로 추가합니다.</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>위치</th><th>현재</th><th>변경 후</th></tr>
+    <tr>
+      <td><span class="file">index.tsx:3202</span> 저장</td>
+      <td><code>only_prodc==='Yes' ? postApprovers : []</code></td>
+      <td rowspan="3"><code>requiresPostApprover</code> 파생 플래그<br/>= <code>only_prodc==='Yes' || 연구소제품 선택</code></td>
+    </tr>
+    <tr><td><span class="file">index.tsx:3446</span> 상신 차단</td><td><code>only_prodc==='Yes' &amp;&amp; 없음</code></td></tr>
+    <tr><td><span class="file">index.tsx:4040</span> UI 노출</td><td><code>only_prodc==='Yes' &amp;&amp; (…)</code></td></tr>
+    <tr>
+      <td><span class="file">views.py:304</span> 서버 검증 <span class="tag tag-be">BE</span></td>
+      <td><code>_validate_post_approvers()</code>가 <code>only_prodc</code>만 확인</td>
+      <td>동일 OR 조건 추가 — <b>프론트만 고치면 서버 검증을 우회</b>하므로 필수</td>
+    </tr>
+  </table>
+  </div>
+
+  <!-- ══════════════════ 2 ══════════════════ -->
+  <h2 id="f2">2. MAP 삭제/수정 <span class="tag tag-new">신규</span></h2>
+
+  <p><b>규칙</b> — 요청 목적 <code>MAP 삭제/수정</code>은 <code>Only MAP</code>과 동일하게
+  MAP 정보만 작성합니다. STEP 2 의 MAP 목적에 <code>수정</code>/<code>삭제</code>가 추가되고
+  둘 중 <b>하나를 반드시</b> 골라야 합니다.</p>
+
+  <h3>2.1 화면 — STEP 2 MAP 요청 목적</h3>
+
+  <div class="mock">
+    <div class="mock-label">MAP 요청 목적 <span class="req">*</span> <span style="color:var(--muted);font-weight:400">— 일반 목적 선택 시</span></div>
+    <div class="btn-row">
+      <span class="mbtn active">신규(NEW)</span>
+      <span class="mbtn">차용(CLONE)</span>
+      <span class="mbtn">기등록(EXISTING)</span>
+      <span class="mbtn off">ADI</span>
+      <span class="mbtn off newitem">수정</span>
+      <span class="mbtn off newitem">삭제</span>
+    </div>
+
+    <div class="mock-label" style="margin-top:18px">MAP 요청 목적 <span class="req">*</span> <span style="color:var(--muted);font-weight:400">— <code>MAP 삭제/수정</code> 선택 시</span></div>
+    <div class="btn-row">
+      <span class="mbtn off">신규(NEW)</span>
+      <span class="mbtn off">차용(CLONE)</span>
+      <span class="mbtn off">기등록(EXISTING)</span>
+      <span class="mbtn off">ADI</span>
+      <span class="mbtn active newitem">수정</span>
+      <span class="mbtn newitem">삭제</span>
+    </div>
+    <div class="scrollhint">↑ 6개 버튼은 <b>항상 표시</b>되고 활성 여부만 뒤집힙니다 (기존 <code>ADI</code> 처리 방식과 동일)</div>
+  </div>
+
+  <div class="note">
+    <b>선례를 그대로 따릅니다</b> — <code>ADI</code>는 이미
+    "STEP 1 의 기타 목적 버튼이 <code>map_type</code>을 자동 고정하고, STEP 2 버튼은 표시 전용으로 잠금"
+    패턴입니다(<span class="file">StepMap.tsx:137-141</span>).
+    <code>수정</code>/<code>삭제</code>는 여기서 한 발 더 나가 <b>둘 사이 전환은 사용자가 직접</b> 합니다.
+  </div>
+
+  <h3>2.2 STEP 2 나머지 항목 — 전부 숨김</h3>
+  <p><code>수정</code>/<code>삭제</code>를 고르면 MAP 요청 목적 버튼과 이유 입력칸만 남고
+  <b>그 아래 모든 블록을 렌더하지 않습니다</b>(잠금이 아니라 <b>숨김</b>).</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>블록</th><th>일반</th><th>수정/삭제</th></tr>
+    <tr><td>MAP 요청 목적 버튼</td><td>표시</td><td class="rec">표시</td></tr>
+    <tr><td>수정 이유 / 삭제 이유 <span class="tag tag-new">신규</span></td><td>—</td><td class="rec">표시 (유일한 입력)</td></tr>
+    <tr><td>원본 위치·Part ID (CLONE 전용)</td><td>조건부</td><td>숨김</td></tr>
+    <tr><td>REV 여부 + 하위 전체</td><td>표시</td><td>숨김</td></tr>
+    <tr><td>Only C가문 제품 + 북/중/남 + 지도편차</td><td>표시</td><td>숨김</td></tr>
+    <tr><td>예외구역 / X표시(M-shot) / Inter / Map Option</td><td>표시</td><td>숨김</td></tr>
+  </table>
+  </div>
+
+  <div class="warn">
+    <b>검증 동반 수정 필수</b> — <code>validate(2)</code>는 지금
+    <code>map_type==='CLONE'</code>→원본 필수, <code>only_prodc==='Yes'</code>→C가문 필수,
+    <code>inter==='YES'</code>→IN 필수 등을 검사합니다(<span class="file">index.tsx:2957~</span>).
+    숨긴 항목은 값이 <code>INITIAL_DETAIL</code> 기본값이라 대부분 자연히 통과하지만,
+    <b>숨김 = 검증 제외</b>를 명시적으로 걸어 두지 않으면 나중에 기본값이 바뀔 때 조용히 깨집니다.
+    → <code>isMapDeleteEdit</code>일 때 step 2 검증은 <b>이유 필수 하나만</b> 남깁니다.
+  </div>
+
+  <h3>2.3 STEP 1 / STEP 3·4·5 취급</h3>
+  <p><code>Only MAP</code>과 <b>완전히 동일</b>하게 처리합니다.</p>
+  <ul>
+    <li>STEP 1 — 라인·조합법·제품·조리법·고객·생산일만 입력. 기타 목적·흐름도·Backbone·참조 요청서는 잠금 + 초기화</li>
+    <li>STEP 3·4·5 — J-layer / O-layer / Backbone 표를 비우고 저장 시 <code>[]</code></li>
+    <li>기존 <code>applyOnlyMap()</code>의 초기화 로직을 <b>공통 함수로 추출</b>해 두 목적이 함께 씁니다</li>
+  </ul>
+
+  <div class="danger">
+    <b>단 한 가지 다릅니다 — 후결자</b><br/>
+    <code>연구소 제품</code>은 <code>Only MAP</code> 전용이므로, <code>MAP 삭제/수정</code>에서는
+    기타 목적 전체가 잠기고 <code>연구소 제품</code>도 <b>선택 불가</b>입니다.
+  </div>
+
+  <!-- ══════════════════ 3 ══════════════════ -->
+  <h2 id="f3">3. 수정 이유 / 삭제 이유 입력칸 <span class="tag tag-new">신규</span></h2>
+
+  <p>글·이미지를 함께 붙여넣을 수 있어야 하고 내용이 길 수 있으므로,
+  <b>이미 이 저장소에 있는 <code>RichTextEditor</code>를 재사용</b>합니다.</p>
+
+  <div class="note">
+    <b>새로 만들지 않습니다</b> — <span class="file">frontend/src/components/RichTextEditor.tsx</span>(574줄, Tiptap 기반)가
+    이미 공지사항(<span class="file">HomePage</span>)·가이드(<span class="file">GuidePage</span>)·VOC(<span class="file">VOCPage</span>)
+    <b>3곳에서 쓰이고 있습니다</b>. 이미지 붙여넣기(<code>onPaste</code> → <code>uploadImageAPI.upload()</code>),
+    서체·색·정렬·밑줄 툴바가 모두 들어 있습니다. props 는 <code>{ value, onChange, readOnly?, placeholder? }</code> 뿐입니다.
+  </div>
+
+  <h3>3.1 화면</h3>
+
+  <div class="mock">
+    <div class="mock-label">수정 이유 <span class="req">*</span></div>
+    <div class="editor-box">
+      <div class="editor-toolbar">
+        <span class="tb">B</span><span class="tb">I</span><span class="tb">U</span>
+        <span class="tb">A</span><span class="tb">🎨</span>
+        <span class="tb">≡</span><span class="tb">☰</span>
+        <span class="tb">🖼</span><span class="tb">🎬</span>
+      </div>
+      <div class="editor-body">
+        <div>기존 MAP 의 좌표 기준이 잘못 등록되어 있어 수정이 필요합니다.</div>
+        <div class="fake-img">📋 붙여넣은 이미지</div>
+        <div>위 캡처의 빨간 영역이 실제 위치와 어긋납니다.</div>
+        <div class="ph" style="margin-top:8px">…내용이 길어지면 이 칸 안에서만 스크롤</div>
+      </div>
+    </div>
+    <div class="scrollhint">높이 <b>고정 320px</b> · 내용이 넘치면 <b>칸 내부 세로 스크롤</b> · 페이지 전체는 늘어나지 않음</div>
+  </div>
+
+  <h3>3.2 기술 사항</h3>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>항목</th><th>내용</th></tr>
+    <tr><td>저장 형식</td><td><b>HTML 문자열</b> — 공지/가이드/VOC 와 동일. <code>additional_notes</code> JSON 안에 들어감</td></tr>
+    <tr><td>이미지</td><td>붙여넣는 즉시 <code>uploadImageAPI.upload()</code>로 <b>서버 업로드</b> 후 <code>&lt;img src="경로"&gt;</code> 삽입. base64 가 JSON 에 박히지 않음</td></tr>
+    <tr><td>고정 높이</td><td>에디터는 <code>flex:1</code> + 내부 <code>overflowY:auto</code> 구조라, <b>높이 고정 래퍼 <code>div</code> 하나만</b> 씌우면 요구대로 동작 (컴포넌트 수정 불필요)</td></tr>
+    <tr><td>결재 상세 표시</td><td><span class="file">PagedDetailView.tsx</span> STEP 2 페이지에 카드 추가. 렌더는 기존 관례대로 <code>dangerouslySetInnerHTML</code></td></tr>
+  </table>
+  </div>
+
+  <div class="danger">
+    <b>⚠ XSS 관련 — 사실 그대로 적습니다</b><br/>
+    기존 공지·가이드·VOC 도 전부 <code>dangerouslySetInnerHTML</code>로 렌더하며,
+    <b>이 저장소에는 현재 sanitize(DOMPurify 등) 처리가 없습니다</b>(전체 검색으로 확인).
+    이번 기능도 같은 방식이면 <b>동일한 수준의 위험을 그대로 따라갑니다</b> — 새로 생기는 위험은 아니지만 없어지지도 않습니다.
+    작성자가 사내 인증 사용자로 한정된다는 점이 현재의 유일한 완화 요소입니다.
+    <br/><b>→ 별도 과제로 분리할지, 이번에 함께 처리할지 판단이 필요합니다(§7 Q4 아님 — 아래 §8 참조).</b>
+  </div>
+
+  <!-- ══════════════════ 4 ══════════════════ -->
+  <h2 id="route">4. 결재 경로</h2>
+
+  <h3>4.1 현재 (참고)</h3>
+  <div class="card">
+    <div class="mock-label">일반 의뢰서</div>
+    <div class="route">
+      <span class="node pl">PL 검토</span><span class="arrow">→</span>
+      <span class="node">R (RFG)</span><span class="arrow">→</span>
+      <span class="par-group">
+        <span class="par-title">병렬</span>
+        <span class="node par">P</span>
+        <span class="node par">O</span>
+        <span class="node par">E ※plel 있을 때만</span>
+        <span class="node ra">RA 후결자</span>
+      </span>
+      <span class="arrow">→</span>
+      <span class="node">J ※P 완료 후 생성</span>
+    </div>
+    <div class="mock-label" style="margin-top:14px">Only MAP</div>
+    <div class="route">
+      <span class="node pl">PL 검토</span><span class="arrow">→</span>
+      <span class="node">R (RFG)</span><span class="arrow">→</span>
+      <span class="node ra">RA 후결자만</span>
+      <span class="arrow">→</span><span class="node done">승인</span>
+      <span style="margin-left:8px"><span class="node gone">P</span><span class="node gone">O</span><span class="node gone">E</span><span class="node gone">J</span></span>
+    </div>
+  </div>
+
+  <h3>4.2 Only MAP + 연구소 제품 <span class="tag tag-mod">변경</span></h3>
+  <div class="card">
+    <div class="route">
+      <span class="node pl">PL 검토</span><span class="arrow">→</span>
+      <span class="node">R (RFG)</span><span class="arrow">→</span>
+      <span class="par-group">
+        <span class="par-title">병렬 — 후결자</span>
+        <span class="node ra">RA 고정 1명</span>
+        <span class="node ra">RA 지정 후결자 (PL 중 1명 이상) <span class="tag tag-new">추가</span></span>
+      </span>
+      <span class="arrow">→</span><span class="node done">승인</span>
+    </div>
+    <p style="margin-top:10px">
+      경로 <b>구조는 그대로</b>이고, <code>RA</code> 인원만 늘어납니다.
+      백엔드 <code>post_approver_users()</code>가 이미 "고정 1명 + <code>detail.post_approvers</code>"를 합치므로
+      <b>결재 생성 로직은 수정이 없습니다</b> — 검증 조건만 넓히면 됩니다.
+    </p>
+  </div>
+
+  <h3>4.3 MAP 삭제/수정 <span class="tag tag-new">신규 경로</span></h3>
+  <div class="card">
+    <div class="route">
+      <span class="node pl">PL 검토</span><span class="arrow">→</span>
+      <span class="par-group">
+        <span class="par-title">병렬 4단계</span>
+        <span class="node par">P</span>
+        <span class="node par">R</span>
+        <span class="node par">J</span>
+        <span class="node par">O</span>
+      </span>
+      <span class="arrow">→</span><span class="node done">전원 합의 시 승인</span>
+    </div>
+    <p style="margin-top:10px">
+      상신 절차(지정 PL·검토자·통보처)는 기존과 동일합니다.
+      결재 현황 화면에서는 <b>현재 O·E 가 병렬로 보이는 것과 같은 방식</b>으로 4개가 나란히 표시됩니다.
+    </p>
+  </div>
+
+  <div class="warn">
+    <b>구조상 가장 큰 변경입니다</b> — 근거를 그대로 적습니다.
+    <ul style="margin-top:6px">
+      <li><b>R 의 역할이 바뀝니다.</b> 현재 <code>R</code>은 병렬 단계를 여는 <b>관문</b>이고,
+      <code>_advance_to_parallel()</code>이 R 합의 시점에 P/O/E/RA 를 만듭니다(<span class="file">views.py:1205</span>).
+      새 경로에서는 R 이 <b>병렬 구성원 중 하나</b>가 되므로, PL 합의 직후 4개를 한 번에 생성하는 <b>별도 분기</b>가 필요합니다.</li>
+      <li><b>J 의 생성 시점이 바뀝니다.</b> 현재 <code>J</code>는 P 가 담당자+검토자까지 완료돼야
+      <code>_advance_after_p_review()</code>에서 생성됩니다(<span class="file">views.py:1165</span>).
+      새 경로에서는 처음부터 병렬로 존재해야 합니다.</li>
+      <li><b>최종 승인 판정이 바뀝니다.</b> 현재 판정은
+      "J + O + [E·EV] + RA 전원 합의"(<span class="file">views.py:611</span>)이며 P 는 J 의 선행조건으로만 반영됩니다.
+      새 경로는 "P + R + J + O 전원 합의"라 <b>별도 판정 분기</b>가 필요합니다.</li>
+    </ul>
+  </div>
+
+  <!-- ══════════════════ 5 ══════════════════ -->
+  <h2 id="data">5. 저장 구조</h2>
+
+  <p>전부 <code>additional_notes</code> JSON 의 <code>detail</code> 하위이므로
+  <b>DB 마이그레이션이 없습니다</b>(<code>MailNotification</code> 같은 <code>choices</code> 변경도 없음).</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>필드</th><th>타입</th><th>값</th><th>비고</th></tr>
+    <tr><td><code>request_purpose</code></td><td>string</td><td><code>'MAP 삭제/수정'</code> 추가</td><td>이미 §2 커밋으로 옵션만 추가됨</td></tr>
+    <tr><td><code>other_purpose</code></td><td>string[]</td><td><code>'연구소 제품'</code> 추가</td><td>이미 §2 커밋으로 옵션만 추가됨</td></tr>
+    <tr><td><code>map_type</code></td><td>string</td><td><code>'EDIT_REQ'</code> / <code>'DELETE_REQ'</code> <span class="tag tag-open">명칭 미정</span></td><td>기존 <code>NEW/CLONE/EXISTING/ADI</code>에 2개 추가</td></tr>
+    <tr><td><code>map_edit_reason</code> <span class="tag tag-new">신규</span></td><td>string(HTML)</td><td>수정 이유 본문</td><td rowspan="2">§7 Q3 에 따라 1개로 합칠 수 있음</td></tr>
+    <tr><td><code>map_delete_reason</code> <span class="tag tag-new">신규</span></td><td>string(HTML)</td><td>삭제 이유 본문</td></tr>
+  </table>
+  </div>
+
+  <div class="warn">
+    <b><code>map_type</code> 값 이름 주의</b> — 과거 <code>'EDIT'</code>이 '완성된 MAP 변경' 기능에 쓰이다
+    2026-08-05 에 삭제된 이력이 있습니다(<code>docs/REQUEST.md</code>).
+    같은 이름을 재사용하면 <b>그때 저장된 레거시 문서와 구분되지 않으므로</b>
+    <code>'EDIT'</code>은 피하고 다른 값을 씁니다.
+  </div>
+
+  <!-- ══════════════════ 6 ══════════════════ -->
+  <h2 id="files">6. 파일별 변경 계획</h2>
+  <p>CLAUDE.md 규칙 E 에 따라 <b>파일별 개별 커밋</b>으로 진행합니다.</p>
+
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>#</th><th>파일</th><th>변경</th></tr>
+    <tr><td>1</td><td class="file">RequestPage/constants.ts</td>
+        <td><code>MAP_DELETE_EDIT_PURPOSE</code>·<code>OTHER_PURPOSE_LAB</code>·<code>MAP_TYPE_EDIT/DELETE</code> 상수 추가, <code>INITIAL_DETAIL</code>에 이유 필드 2개</td></tr>
+    <tr><td>2</td><td class="file">types/index.ts</td>
+        <td><code>DetailFormState</code>에 <code>map_edit_reason</code>·<code>map_delete_reason</code> 추가</td></tr>
+    <tr><td>3</td><td class="file">RequestPage/index.tsx</td>
+        <td>파생 플래그 <code>isMapDeleteEdit</code>·<code>isLabProduct</code>·<code>requiresPostApprover</code> 신설<br/>
+            <code>applyOnlyMap()</code>→ 공통 초기화 함수로 추출해 두 목적이 공유<br/>
+            <code>handleRequestPurposeSelect</code>에 연구소 제품 자동 해제<br/>
+            <code>validate(2)</code>에 수정/삭제 분기, 후결자 조건 3곳 교체</td></tr>
+    <tr><td>4</td><td class="file">RequestPage/components/Step1.tsx</td>
+        <td>기타 목적 <code>disabled</code> 계산을 항목별로 분리(연구소 제품만 예외)</td></tr>
+    <tr><td>5</td><td class="file">RequestPage/components/StepMap.tsx</td>
+        <td><code>map_type</code> 배열에 <code>수정</code>·<code>삭제</code> 추가 + 활성 조건, 수정/삭제 시 하위 블록 전체 숨김 + <code>RichTextEditor</code> 렌더</td></tr>
+    <tr><td>6</td><td class="file">locales/ko.json · en.json</td>
+        <td><code>request.map_type_edit_req</code>·<code>map_type_delete_req</code>·<code>map_edit_reason</code>·<code>map_delete_reason</code>·<code>lab_product_*</code> <b>ko/en 동시</b> (규칙 G)</td></tr>
+    <tr><td>7</td><td class="file">components/PagedDetailView.tsx</td>
+        <td>STEP 2 페이지에 이유 카드 추가 (수정/삭제일 때만)</td></tr>
+    <tr><td>8</td><td class="file">backend/api/views.py <span class="tag tag-be">BE</span></td>
+        <td><code>_validate_post_approvers()</code> 조건 확장<br/>
+            <code>MAP 삭제/수정</code> 병렬 4단계 생성 분기 + 최종 승인 판정 분기</td></tr>
+    <tr><td>9</td><td class="file">backend/api/models.py <span class="tag tag-be">BE</span></td>
+        <td><code>is_map_delete_edit()</code> 헬퍼 + 목적 상수 (<code>is_only_map()</code>과 동일 패턴)</td></tr>
+    <tr><td>10</td><td class="file">backend/api/tests.py <span class="tag tag-be">BE</span></td>
+        <td>새 경로 단계 생성·최종 승인·후결자 검증 테스트 추가</td></tr>
+    <tr><td>11</td><td class="file">docs/REQUEST.md · APPROVAL.md</td>
+        <td>기능 변경 이력 + 결재 경로 추가 (규칙 C-4)</td></tr>
+  </table>
+  </div>
+
+  <!-- ══════════════════ 7 ══════════════════ -->
+  <h2 id="open">7. 미결정 항목 — 답변 필요 <span class="tag tag-open">4건</span></h2>
+
+  <div class="q">
+    <h4>Q1. MAP 삭제/수정 경로에 E(EUV)와 후결자(RA)를 넣나요?</h4>
+    <div class="opt">(a) <span class="rec">추천</span> — <b>E 제외 + 고정 후결자 RA 유지</b>.
+      현재 모든 의뢰서가 고정 후결자를 받는 관례를 깨지 않습니다. 승인 판정 = P·R·J·O·RA 전원</div>
+    <div class="opt">(b) — <b>E·RA 모두 제외</b>. 오직 4개. 승인 판정 = P·R·J·O 전원</div>
+    <div class="opt">(c) — <b>E 도 조건부 포함</b>. 단 J-layer 가 비어 <code>has_ppid_plel()</code>이 항상 거짓이라 <b>실제로는 생성되지 않습니다</b></div>
+  </div>
+
+  <div class="q">
+    <h4>Q2. 네 단계의 '검토자'(P→PV, R→RV) 기능은 유지하나요?</h4>
+    <div class="opt">(a) <span class="rec">추천</span> — <b>기존대로 유지</b>. 단계 완료 판정 로직(<code>_stage_reviewers_complete</code>)을 그대로 재사용해 변경 범위가 최소</div>
+    <div class="opt">(b) — <b>담당자만</b>. 단순하지만 기존 단계 로직에 예외 분기를 새로 넣어야 합니다</div>
+  </div>
+
+  <div class="q">
+    <h4>Q3. 이유 필드를 1개로 합치나요, 2개로 나누나요?</h4>
+    <div class="opt">(a) <span class="rec">추천</span> — <b>필드 2개 분리 + 필수</b>.
+      <code>수정</code>↔<code>삭제</code>를 오갈 때 각자 쓴 내용이 보존됩니다</div>
+    <div class="opt">(b) — <b>필드 1개 + 필수</b>. 라벨만 바뀌고 전환 시 내용이 섞이거나 초기화 확인 모달이 필요합니다</div>
+    <div class="opt">(c) — <b>선택(비워도 상신 가능)</b></div>
+  </div>
+
+  <div class="q">
+    <h4>Q4. Only MAP 해제 시 연구소 제품·후결자가 사라지는데 확인 모달을 띄우나요?</h4>
+    <div class="opt">(a) <span class="rec">추천</span> — <b>확인 모달</b>. 기존 <code>map_type</code> 전환·<code>Only MAP</code> 전환 모달과 동일 관례</div>
+    <div class="opt">(b) — <b>조용히 해제</b></div>
+  </div>
+
+  <!-- ══════════════════ 8 ══════════════════ -->
+  <h2 id="risk">8. 리스크 · 사전 보고</h2>
+
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>리스크</th><th>내용</th><th>대응</th></tr>
+    <tr>
+      <td><b>결재 경로 구조 변경</b><br/>(가장 큼)</td>
+      <td>R 을 관문에서 병렬 구성원으로, J 를 P 종속에서 독립 병렬로 바꾸는 것은
+          <b>기존 3개 함수의 전제를 건드립니다</b>. 회귀 시 기존 의뢰서 결재가 멈출 수 있습니다</td>
+      <td>기존 경로 코드는 <b>건드리지 않고</b> <code>is_map_delete_edit()</code> 분기를 <b>새로 추가</b>하는 방식으로만 구현.
+          백엔드 테스트로 기존 161건 + 신규 케이스 전부 검증</td>
+    </tr>
+    <tr>
+      <td><b>HTML 저장 = XSS</b></td>
+      <td>기존 공지·가이드·VOC 와 동일하게 sanitize 없이 <code>dangerouslySetInnerHTML</code> 렌더.
+          <b>새 위험은 아니나 해소되지도 않습니다</b></td>
+      <td>이번 범위에 포함할지 <b>별도 판단 요청</b>.
+          포함 시 <code>DOMPurify</code> 도입 + 기존 4개 렌더 지점 동시 적용 권장</td>
+    </tr>
+    <tr>
+      <td><code>additional_notes</code> 비대화</td>
+      <td>이유 본문(HTML)이 JSON 에 들어갑니다. 이미지는 경로만 들어가지만 텍스트는 길 수 있습니다.
+          목록 API 가 <code>additional_notes</code>를 통째로 내려주는 기존 이슈와 겹칩니다</td>
+      <td><code>TextField</code>(longtext)라 한계는 없음. 목록 직렬화 제외는 기존 과제로 유지</td>
+    </tr>
+    <tr>
+      <td>CRA 빌드 실패</td>
+      <td><code>npx react-scripts build</code>는 이번 작업 전부터 <code>Navbar.tsx:227</code> 로 실패 중</td>
+      <td>회귀 판정은 <code>tsc --noEmit</code> 총수(현재 24개)와 테스트 통과로 합니다</td>
+    </tr>
+  </table>
+  </div>
+
+  <div class="note" style="margin-top:26px">
+    <b>다음 단계</b> — §7 의 Q1~Q4 에 답을 주시면(예: <code>Q1(a) Q2(a) Q3(a) Q4(a)</code>),
+    그에 맞춰 규칙 A 형식의 최종 작업 계획을 드리고 파일별 개별 커밋으로 착수합니다.<br/>
+    작업 순서는 <b>프론트(1~7) → 백엔드(8~10) → 문서(11)</b> 를 제안합니다.
+    결재 경로(8)는 가장 위험하므로 <b>프론트 완료 후 별도로 확인받고</b> 진행하겠습니다.
+  </div>
+
+</div>
+</body>
+</html>
