@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>MAP 삭제/수정 + 연구소 제품 — 기능 계획서 (Mock v1)</title>
+<title>MAP 삭제/수정 + 연구소 제품 — 기능 계획서 (Mock v2 확정)</title>
 <style>
   :root {
     --bg: #f6f7f9;
@@ -178,8 +178,8 @@
 
   <h1>MAP 삭제/수정 &amp; 연구소 제품 — 기능 계획서</h1>
   <div class="sub">
-    Mock v1 · 2026-08-06 · 대상: <code>frontend/src/pages/RequestPage/</code> + <code>backend/api/</code><br />
-    이 문서는 <b>구현 전 합의용</b>입니다. 아래 <a href="#open">§7 미결정 항목</a> 4건에 답을 주시면 착수합니다.
+    <b>Mock v2 (확정본)</b> · 2026-08-06 · 대상: <code>frontend/src/pages/RequestPage/</code> + <code>backend/api/</code><br />
+    미결정 항목 6건이 <b>모두 확정</b>되었습니다. <a href="#decided">§7 확정 사항</a> 참조 — 이 문서 승인 시 바로 착수합니다.
   </div>
 
   <div class="toc">
@@ -189,8 +189,23 @@
     <a href="#route">4. 결재 경로</a>
     <a href="#data">5. 저장 구조</a>
     <a href="#files">6. 파일별 변경</a>
-    <a href="#open">7. 미결정</a>
+    <a href="#decided">7. 확정 사항</a>
     <a href="#risk">8. 리스크</a>
+  </div>
+
+  <div class="card" style="border-color:var(--green)">
+    <h3 style="margin-top:0;color:var(--green)">확정된 결정 6건</h3>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>#</th><th>결정</th></tr>
+      <tr><td>1</td><td>MAP 삭제/수정 경로에 <b>E(EUV)·후결자(RA) 모두 제외</b> → <code>P·R·J·O</code> 4개만</td></tr>
+      <tr><td>2</td><td>네 단계의 <b>검토자(P→PV, R→RV) 기능은 기존대로 유지</b></td></tr>
+      <tr><td>3</td><td>이유 필드는 <b>1개</b>(<code>map_change_reason</code>) + <b>필수</b>. 라벨만 수정/삭제로 바뀜</td></tr>
+      <tr><td>4</td><td><code>수정</code>↔<code>삭제</code> 전환 시 <b>작성한 내용은 그대로 유지</b>(라벨만 변경, 모달 없음)</td></tr>
+      <tr><td>5</td><td><code>Only MAP</code> 해제 시 <b>확인 모달</b> 후 연구소 제품·후결자 해제</td></tr>
+      <tr><td>6</td><td><code>연구소 제품</code>만 해제해도 <b>후결자 목록 함께 초기화</b></td></tr>
+    </table>
+    </div>
   </div>
 
   <!-- ══════════════════ 1 ══════════════════ -->
@@ -462,22 +477,29 @@
     <div class="route">
       <span class="node pl">PL 검토</span><span class="arrow">→</span>
       <span class="par-group">
-        <span class="par-title">병렬 4단계</span>
-        <span class="node par">P</span>
-        <span class="node par">R</span>
+        <span class="par-title">병렬 4단계 (+각 검토자)</span>
+        <span class="node par">P → PV 검토자</span>
+        <span class="node par">R → RV 검토자</span>
         <span class="node par">J</span>
         <span class="node par">O</span>
       </span>
-      <span class="arrow">→</span><span class="node done">전원 합의 시 승인</span>
+      <span class="arrow">→</span><span class="node done">4단계 전원 합의 시 승인</span>
+      <span style="margin-left:10px"><span class="node gone">E</span><span class="node gone">EV</span><span class="node gone">RA 후결자</span></span>
     </div>
     <p style="margin-top:10px">
       상신 절차(지정 PL·검토자·통보처)는 기존과 동일합니다.
       결재 현황 화면에서는 <b>현재 O·E 가 병렬로 보이는 것과 같은 방식</b>으로 4개가 나란히 표시됩니다.
     </p>
+    <div class="danger" style="margin-bottom:0">
+      <b>이 경로에만 적용되는 예외 — 고정 후결자도 붙지 않습니다.</b><br/>
+      현재 <b>모든 의뢰서</b>가 <code>settings.POST_APPROVER_LOGINID</code> 고정 후결자 1명을 받습니다
+      (<span class="file">mailer.py:215 post_approver_users()</span>). MAP 삭제/수정은 이 관례에서 <b>유일하게 벗어나는</b> 경로가 됩니다.
+      의도된 결정이며, <code>_advance_*</code> 신규 분기에서 <code>RA</code> 생성 자체를 하지 않는 방식으로 구현합니다.
+    </div>
   </div>
 
   <div class="warn">
-    <b>구조상 가장 큰 변경입니다</b> — 근거를 그대로 적습니다.
+    <b>구조상 가장 큰 변경입니다</b> — 바뀌는 전제 4가지를 근거와 함께 적습니다.
     <ul style="margin-top:6px">
       <li><b>R 의 역할이 바뀝니다.</b> 현재 <code>R</code>은 병렬 단계를 여는 <b>관문</b>이고,
       <code>_advance_to_parallel()</code>이 R 합의 시점에 P/O/E/RA 를 만듭니다(<span class="file">views.py:1205</span>).
@@ -488,8 +510,29 @@
       <li><b>최종 승인 판정이 바뀝니다.</b> 현재 판정은
       "J + O + [E·EV] + RA 전원 합의"(<span class="file">views.py:611</span>)이며 P 는 J 의 선행조건으로만 반영됩니다.
       새 경로는 "P + R + J + O 전원 합의"라 <b>별도 판정 분기</b>가 필요합니다.</li>
+      <li><b>판정을 트리거하는 지점이 늘어납니다. <span class="tag tag-open">신규 발견</span></b>
+      승인 판정은 지금 <code>elif agent in ('J','O','E','EV','RA')</code> 분기<b>에서만</b> 돌고,
+      <code>P·PV</code> 합의는 J 생성만 합니다(<span class="file">views.py:605-611</span>).
+      새 경로에선 <b>P 나 R 이 마지막 합의자</b>가 될 수 있으므로,
+      <code>P·PV·R·RV</code> 합의 시에도 판정이 돌도록 분기를 추가해야 합니다.
+      이걸 놓치면 <b>네 단계가 다 합의됐는데도 문서가 승인되지 않고 멈춥니다.</b></li>
     </ul>
   </div>
+
+  <h3>4.4 메일·반려 수신자 경로 정의 <span class="tag tag-be">BE</span></h3>
+  <p>메일 본문의 '결재 경로' 카드와 반려 수신자 산출은 <b>별도 상수</b>를 씁니다.
+  새 경로용 세 번째 상수를 추가하지 않으면 <b>메일에 없는 단계(E·RA)가 표시</b>됩니다.</p>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>상수</th><th>값</th><th>비고</th></tr>
+    <tr><td><code>ROUTE_AGENTS_DEFAULT</code></td><td><code>R, RV, P, PV, O, E, EV, J, RA</code></td><td>기존 — 변경 없음</td></tr>
+    <tr><td><code>ROUTE_AGENTS_ONLY_MAP</code></td><td><code>R, RV, RA</code></td><td>기존 — 변경 없음</td></tr>
+    <tr><td><code>ROUTE_AGENTS_MAP_DELETE_EDIT</code> <span class="tag tag-new">신규</span></td><td><code>P, PV, R, RV, J, O</code></td><td>E·EV·RA 없음</td></tr>
+  </table>
+  </div>
+  <p style="font-size:0.86rem">적용 지점 2곳: <span class="file">mailer.py:321</span>(경로 카드) ·
+  <span class="file">mailer.py:488</span>(반려 수신자). 현재 둘 다 <code>is_only_map()</code> 3항 연산자라
+  <b>3분기로 확장</b>합니다.</p>
 
   <!-- ══════════════════ 5 ══════════════════ -->
   <h2 id="data">5. 저장 구조</h2>
@@ -503,9 +546,22 @@
     <tr><td><code>request_purpose</code></td><td>string</td><td><code>'MAP 삭제/수정'</code> 추가</td><td>이미 §2 커밋으로 옵션만 추가됨</td></tr>
     <tr><td><code>other_purpose</code></td><td>string[]</td><td><code>'연구소 제품'</code> 추가</td><td>이미 §2 커밋으로 옵션만 추가됨</td></tr>
     <tr><td><code>map_type</code></td><td>string</td><td><code>'EDIT_REQ'</code> / <code>'DELETE_REQ'</code> <span class="tag tag-open">명칭 미정</span></td><td>기존 <code>NEW/CLONE/EXISTING/ADI</code>에 2개 추가</td></tr>
-    <tr><td><code>map_edit_reason</code> <span class="tag tag-new">신규</span></td><td>string(HTML)</td><td>수정 이유 본문</td><td rowspan="2">§7 Q3 에 따라 1개로 합칠 수 있음</td></tr>
-    <tr><td><code>map_delete_reason</code> <span class="tag tag-new">신규</span></td><td>string(HTML)</td><td>삭제 이유 본문</td></tr>
+    <tr><td><code>map_change_reason</code> <span class="tag tag-new">신규</span></td><td>string(HTML)</td><td>수정/삭제 <b>공용</b> 이유 본문</td><td>필드 1개 확정. <code>수정</code>↔<code>삭제</code> 전환 시 값 유지, <b>라벨만</b> 교체</td></tr>
   </table>
+  </div>
+
+  <div class="warn">
+    <b>필드 1개 선택의 실제 결과 — 미리 알려드립니다.</b><br/>
+    <code>수정</code>으로 이유를 쓴 뒤 <code>삭제</code>로 바꾸면 그 글이 <b>그대로 '삭제 이유'로 상신</b>됩니다
+    (확정 4번: 전환 시 유지, 모달 없음).
+    이는 요청하신 동작이지만, 결재자가 '삭제 이유' 자리에서 수정 관련 설명을 보게 될 수 있습니다.
+    → 완화책으로 <b>버튼 전환 시 입력칸에 포커스를 주고 라벨을 강조</b>해 사용자가 알아채도록 하겠습니다(동작 변경 아님).
+  </div>
+
+  <div class="note">
+    <b>이름을 <code>map_change_reason</code> 으로 하는 이유</b> —
+    기존 <code>map_reason</code>(C가문 지도편차 사유)과 <b>완전히 다른 필드</b>라 이름이 겹치면 안 됩니다.
+    <code>map_reason</code> 은 그대로 두고 새 키를 씁니다.
   </div>
 
   <div class="warn">
@@ -523,9 +579,9 @@
   <table>
     <tr><th>#</th><th>파일</th><th>변경</th></tr>
     <tr><td>1</td><td class="file">RequestPage/constants.ts</td>
-        <td><code>MAP_DELETE_EDIT_PURPOSE</code>·<code>OTHER_PURPOSE_LAB</code>·<code>MAP_TYPE_EDIT/DELETE</code> 상수 추가, <code>INITIAL_DETAIL</code>에 이유 필드 2개</td></tr>
+        <td><code>MAP_DELETE_EDIT_PURPOSE</code>·<code>OTHER_PURPOSE_LAB</code>·<code>MAP_TYPE_EDIT_REQ/DELETE_REQ</code> 상수 추가, <code>INITIAL_DETAIL</code>에 <code>map_change_reason: ''</code></td></tr>
     <tr><td>2</td><td class="file">types/index.ts</td>
-        <td><code>DetailFormState</code>에 <code>map_edit_reason</code>·<code>map_delete_reason</code> 추가</td></tr>
+        <td><code>DetailFormState</code>에 <code>map_change_reason: string</code> 추가</td></tr>
     <tr><td>3</td><td class="file">RequestPage/index.tsx</td>
         <td>파생 플래그 <code>isMapDeleteEdit</code>·<code>isLabProduct</code>·<code>requiresPostApprover</code> 신설<br/>
             <code>applyOnlyMap()</code>→ 공통 초기화 함수로 추출해 두 목적이 공유<br/>
@@ -536,51 +592,74 @@
     <tr><td>5</td><td class="file">RequestPage/components/StepMap.tsx</td>
         <td><code>map_type</code> 배열에 <code>수정</code>·<code>삭제</code> 추가 + 활성 조건, 수정/삭제 시 하위 블록 전체 숨김 + <code>RichTextEditor</code> 렌더</td></tr>
     <tr><td>6</td><td class="file">locales/ko.json · en.json</td>
-        <td><code>request.map_type_edit_req</code>·<code>map_type_delete_req</code>·<code>map_edit_reason</code>·<code>map_delete_reason</code>·<code>lab_product_*</code> <b>ko/en 동시</b> (규칙 G)</td></tr>
+        <td><code>request.map_type_edit_req</code>·<code>map_type_delete_req</code>·<code>map_change_reason_edit</code>·<code>map_change_reason_delete</code>(라벨 2종)·<code>lab_product_*</code>·확인 모달 문구 <b>ko/en 동시</b> (규칙 G)</td></tr>
     <tr><td>7</td><td class="file">components/PagedDetailView.tsx</td>
-        <td>STEP 2 페이지에 이유 카드 추가 (수정/삭제일 때만)</td></tr>
-    <tr><td>8</td><td class="file">backend/api/views.py <span class="tag tag-be">BE</span></td>
-        <td><code>_validate_post_approvers()</code> 조건 확장<br/>
-            <code>MAP 삭제/수정</code> 병렬 4단계 생성 분기 + 최종 승인 판정 분기</td></tr>
-    <tr><td>9</td><td class="file">backend/api/models.py <span class="tag tag-be">BE</span></td>
-        <td><code>is_map_delete_edit()</code> 헬퍼 + 목적 상수 (<code>is_only_map()</code>과 동일 패턴)</td></tr>
-    <tr><td>10</td><td class="file">backend/api/tests.py <span class="tag tag-be">BE</span></td>
-        <td>새 경로 단계 생성·최종 승인·후결자 검증 테스트 추가</td></tr>
-    <tr><td>11</td><td class="file">docs/REQUEST.md · APPROVAL.md</td>
+        <td>STEP 2 페이지에 이유 카드 추가 (수정/삭제일 때만, <code>map_type</code>에 따라 라벨 분기)</td></tr>
+    <tr><td>8</td><td class="file">backend/api/models.py <span class="tag tag-be">BE</span></td>
+        <td><code>MAP_DELETE_EDIT_PURPOSE</code> 상수 + <code>is_map_delete_edit()</code> 헬퍼 (<code>is_only_map()</code>과 동일 패턴)</td></tr>
+    <tr><td>9</td><td class="file">backend/api/mailer.py <span class="tag tag-be">BE</span></td>
+        <td><code>ROUTE_AGENTS_MAP_DELETE_EDIT</code> 신설 + 적용 2곳(<span class="file">:321</span>·<span class="file">:488</span>)을 3분기로 확장</td></tr>
+    <tr><td>10</td><td class="file">backend/api/views.py <span class="tag tag-be">BE</span></td>
+        <td><code>_validate_post_approvers()</code> 조건 확장(연구소 제품 OR)<br/>
+            PL 합의 후 <b>P·R·J·O 동시 생성</b> 분기 (RA·E 생성 안 함)<br/>
+            <b>승인 판정 분기 + 트리거 확장</b> — <code>P·PV·R·RV</code> 합의 시에도 판정이 돌도록</td></tr>
+    <tr><td>11</td><td class="file">backend/api/tests.py <span class="tag tag-be">BE</span></td>
+        <td>새 경로: 4단계 생성 · RA/E 미생성 · <b>P 가 마지막 합의자일 때 승인</b> · <b>R 이 마지막일 때 승인</b> · 검토자 포함 완료 · 연구소 제품 후결자 검증</td></tr>
+    <tr><td>12</td><td class="file">docs/REQUEST.md · APPROVAL.md</td>
         <td>기능 변경 이력 + 결재 경로 추가 (규칙 C-4)</td></tr>
   </table>
   </div>
 
   <!-- ══════════════════ 7 ══════════════════ -->
-  <h2 id="open">7. 미결정 항목 — 답변 필요 <span class="tag tag-open">4건</span></h2>
+  <h2 id="decided">7. 확정 사항 <span class="tag" style="background:var(--green-soft);color:var(--green)">6건 확정</span></h2>
 
-  <div class="q">
-    <h4>Q1. MAP 삭제/수정 경로에 E(EUV)와 후결자(RA)를 넣나요?</h4>
-    <div class="opt">(a) <span class="rec">추천</span> — <b>E 제외 + 고정 후결자 RA 유지</b>.
-      현재 모든 의뢰서가 고정 후결자를 받는 관례를 깨지 않습니다. 승인 판정 = P·R·J·O·RA 전원</div>
-    <div class="opt">(b) — <b>E·RA 모두 제외</b>. 오직 4개. 승인 판정 = P·R·J·O 전원</div>
-    <div class="opt">(c) — <b>E 도 조건부 포함</b>. 단 J-layer 가 비어 <code>has_ppid_plel()</code>이 항상 거짓이라 <b>실제로는 생성되지 않습니다</b></div>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>#</th><th>항목</th><th>확정 내용</th><th>구현 영향</th></tr>
+    <tr>
+      <td>1</td><td>E·후결자 포함 여부</td>
+      <td><b>둘 다 제외</b> — <code>P·R·J·O</code> 4개만</td>
+      <td>고정 후결자도 생성 안 함(§4.3 예외). 승인 판정 = 네 단계 전원</td>
+    </tr>
+    <tr>
+      <td>2</td><td>검토자(PV·RV)</td>
+      <td><b>기존대로 유지</b></td>
+      <td><code>_stage_reviewers_complete()</code> 그대로 재사용 → 변경 범위 최소</td>
+    </tr>
+    <tr>
+      <td>3</td><td>이유 필드 수</td>
+      <td><b>1개</b>(<code>map_change_reason</code>) + <b>필수</b></td>
+      <td><code>validate(2)</code>에서 빈 값이면 진행 차단</td>
+    </tr>
+    <tr>
+      <td>4</td><td>수정↔삭제 전환</td>
+      <td><b>내용 유지</b>, 라벨만 교체 (모달 없음)</td>
+      <td>전환 시 입력칸 포커스 + 라벨 강조로 인지 보조</td>
+    </tr>
+    <tr>
+      <td>5</td><td>Only MAP 해제</td>
+      <td><b>확인 모달</b> 후 연구소 제품·후결자 해제</td>
+      <td>기존 <code>ConfirmModal</code> 재사용. 지울 값이 없으면 모달 생략</td>
+    </tr>
+    <tr>
+      <td>6</td><td>연구소 제품만 해제</td>
+      <td><b>후결자 목록 함께 초기화</b></td>
+      <td>안 보이는 값이 저장되는 것을 방지</td>
+    </tr>
+  </table>
   </div>
 
-  <div class="q">
-    <h4>Q2. 네 단계의 '검토자'(P→PV, R→RV) 기능은 유지하나요?</h4>
-    <div class="opt">(a) <span class="rec">추천</span> — <b>기존대로 유지</b>. 단계 완료 판정 로직(<code>_stage_reviewers_complete</code>)을 그대로 재사용해 변경 범위가 최소</div>
-    <div class="opt">(b) — <b>담당자만</b>. 단순하지만 기존 단계 로직에 예외 분기를 새로 넣어야 합니다</div>
-  </div>
-
-  <div class="q">
-    <h4>Q3. 이유 필드를 1개로 합치나요, 2개로 나누나요?</h4>
-    <div class="opt">(a) <span class="rec">추천</span> — <b>필드 2개 분리 + 필수</b>.
-      <code>수정</code>↔<code>삭제</code>를 오갈 때 각자 쓴 내용이 보존됩니다</div>
-    <div class="opt">(b) — <b>필드 1개 + 필수</b>. 라벨만 바뀌고 전환 시 내용이 섞이거나 초기화 확인 모달이 필요합니다</div>
-    <div class="opt">(c) — <b>선택(비워도 상신 가능)</b></div>
-  </div>
-
-  <div class="q">
-    <h4>Q4. Only MAP 해제 시 연구소 제품·후결자가 사라지는데 확인 모달을 띄우나요?</h4>
-    <div class="opt">(a) <span class="rec">추천</span> — <b>확인 모달</b>. 기존 <code>map_type</code> 전환·<code>Only MAP</code> 전환 모달과 동일 관례</div>
-    <div class="opt">(b) — <b>조용히 해제</b></div>
-  </div>
+  <h3>7.1 확정에 따라 정해진 부수 동작</h3>
+  <ul>
+    <li><b>요청 목적을 <code>MAP 삭제/수정</code> 으로 바꾸면</b> <code>map_type</code> 을 <code>''</code> 로 비우고
+      STEP 2 에서 <code>수정</code>/<code>삭제</code> 중 하나를 직접 고르게 합니다
+      (<code>ADI</code> 처럼 자동 고정할 수 없음 — 후보가 2개라서). 기존 <code>map_type</code> 값이 있으면
+      <b>기존 전환 확인 모달</b>(<code>handleMapTypeChangeConfirm</code>)을 그대로 태웁니다.</li>
+    <li><b>반려·재상신</b>은 기존 규칙 그대로입니다(전체 반려 → 새 회차로 PL 검토부터).
+      새 경로도 <code>round</code> 단위로 동일하게 재생성됩니다.</li>
+    <li><b>임시저장</b>은 이유가 비어 있어도 차단하지 않습니다(기존 임시저장 정책과 동일).
+      필수 검증은 다음 STEP 이동·상신에서만 겁니다.</li>
+  </ul>
 
   <!-- ══════════════════ 8 ══════════════════ -->
   <h2 id="risk">8. 리스크 · 사전 보고</h2>
@@ -616,11 +695,39 @@
   </table>
   </div>
 
+  <h2>9. 진행 순서 제안</h2>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>단계</th><th>범위</th><th>완료 판정</th></tr>
+    <tr>
+      <td><b>1차</b> — 화면</td>
+      <td>파일 1~7 (프론트 전체: 연구소 제품 · MAP 삭제/수정 · 이유 에디터)</td>
+      <td><code>tsc</code> 총수 24개 불변 · 테스트 67건 통과 · 브라우저 수동 시나리오</td>
+    </tr>
+    <tr>
+      <td><b>2차</b> — 결재 경로 <span class="tag tag-open">별도 확인</span></td>
+      <td>파일 8~11 (백엔드: 새 경로 · 메일 · 후결자 검증 · 테스트)</td>
+      <td>백엔드 테스트 161건 + 신규 케이스 통과</td>
+    </tr>
+    <tr>
+      <td><b>3차</b> — 문서</td>
+      <td>파일 12</td>
+      <td><code>REQUEST.md</code>·<code>APPROVAL.md</code> 이력 반영</td>
+    </tr>
+  </table>
+  </div>
+
+  <div class="warn">
+    <b>2차(결재 경로)는 1차 완료 후 다시 확인받고 착수하겠습니다.</b>
+    §8 표의 첫 줄대로 기존 결재 흐름을 건드릴 위험이 가장 큰 구간이고,
+    1차만으로도 화면 동작은 전부 확인할 수 있기 때문입니다
+    (1차만 반영된 상태에서 <code>MAP 삭제/수정</code> 문서를 상신하면 <b>기존 일반 경로</b>로 흘러갑니다 —
+    2차 전까지는 상신하지 않는 것을 전제로 합니다).
+  </div>
+
   <div class="note" style="margin-top:26px">
-    <b>다음 단계</b> — §7 의 Q1~Q4 에 답을 주시면(예: <code>Q1(a) Q2(a) Q3(a) Q4(a)</code>),
-    그에 맞춰 규칙 A 형식의 최종 작업 계획을 드리고 파일별 개별 커밋으로 착수합니다.<br/>
-    작업 순서는 <b>프론트(1~7) → 백엔드(8~10) → 문서(11)</b> 를 제안합니다.
-    결재 경로(8)는 가장 위험하므로 <b>프론트 완료 후 별도로 확인받고</b> 진행하겠습니다.
+    <b>다음 단계</b> — 이 계획서를 승인해 주시면 규칙 A 형식의 최종 작업 계획을 제시하고
+    <b>1차(프론트)</b>부터 파일별 개별 커밋으로 착수합니다.
   </div>
 
 </div>
