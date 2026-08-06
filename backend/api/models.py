@@ -68,6 +68,13 @@ class RequestDocument(models.Model):
     # 요청 목적 'Only MAP' 값 (결재 경로를 R 단계까지만 진행)
     ONLY_MAP_PURPOSE = 'Only MAP'
 
+    # 요청 목적 'MAP 삭제/수정' 값 (PL 합의 후 P·R·J·O 를 병렬로 진행)
+    # 프론트엔드 `RequestPage/constants.ts` 의 MAP_DELETE_EDIT_PURPOSE 와 같은 값이어야 한다.
+    MAP_DELETE_EDIT_PURPOSE = 'MAP 삭제/수정'
+
+    # 기타 목적 '연구소 제품' — C가문과 마찬가지로 상신 시 후결자 지정이 필수다.
+    OTHER_PURPOSE_LAB = '연구소 제품'
+
     # J-layer 행의 pp 에 이 키워드가 있으면 E(MASK) 단계가 결재 경로에 포함된다(대소문자 무관).
     # 프론트엔드 `RequestPage/constants.ts` 의 VALIDATION_KEYWORD 와 같은 값이어야 한다.
     VALIDATION_KEYWORD = 'plel'
@@ -121,6 +128,30 @@ class RequestDocument(models.Model):
         """
         inner_detail = self.get_detail().get('detail', {})
         return inner_detail.get('request_purpose') == self.ONLY_MAP_PURPOSE
+
+    def is_map_delete_edit(self):
+        """요청 목적이 'MAP 삭제/수정' 인지 여부.
+
+        이 의뢰서는 MAP 의 수정/삭제 이유만 담으므로 결재 경로가 다르다 —
+        PL 합의 직후 P·R·J·O 를 병렬로 만들고, 네 단계 전원 합의 시 승인한다.
+        E(MASK)와 후결자(RA)는 생성하지 않는다(고정 후결자도 붙지 않는 유일한 경로).
+        """
+        inner_detail = self.get_detail().get('detail', {})
+        return inner_detail.get('request_purpose') == self.MAP_DELETE_EDIT_PURPOSE
+
+    def requires_post_approver(self):
+        """상신 시 후결자 지정이 필수인가 — C가문(only_prodc=YES) 또는 기타 목적 '연구소 제품'.
+
+        결재 경로·후결자 생성 로직은 그대로이고 '필수 판정 조건'만 넓힌 것이다.
+        프론트엔드의 requiresPostApprover 와 같은 기준이어야 한다.
+        """
+        inner_detail = self.get_detail().get('detail', {}) or {}
+        if inner_detail.get('only_prodc') == 'Yes':
+            return True
+        other = inner_detail.get('other_purpose') or []
+        if isinstance(other, str):
+            other = [other]
+        return self.OTHER_PURPOSE_LAB in other
 
     def has_ppid_plel(self):
         """J-layer 행의 pp 중 하나라도 판정 키워드(plel)를 포함하는지 여부.
