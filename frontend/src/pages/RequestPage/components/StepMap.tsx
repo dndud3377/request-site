@@ -1,17 +1,25 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
+import RichTextEditor from '../../../components/RichTextEditor';
 import { DetailFormState, GuideFeatureKey } from '../../../types';
-import { CRegion, ProdcScope, PRODC_SCOPE_OPTIONS } from '../constants';
+import { CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_EDIT_REQ, MAP_TYPE_DELETE_REQ } from '../constants';
 import { sanitizeSignedDecimal } from '../helpers';
 import ProdcRow from './ProdcRow';
 import MshotImageUpload from './MshotImageUpload';
 
 const SELECT_W = '300px';
 
+/** 이유 입력칸 고정 높이 — 내용이 길어지면 이 안에서만 스크롤한다 */
+const REASON_EDITOR_HEIGHT = 320;
+
 interface StepMapProps {
   detail: DetailFormState;
   errors: Partial<Record<string, string>>;
+  /** 요청 목적이 'MAP 삭제/수정' 인가 — 수정/삭제 버튼을 열고 나머지 4개를 잠근다 */
+  isMapDeleteEdit: boolean;
+  /** map_type 이 '수정'/'삭제' 인가 — 이유 입력칸만 남기고 하위 MAP 블록을 전부 숨긴다 */
+  isMapReasonMode: boolean;
   lineOptions: string[];
   sourcePartIdOptions: string[];
   topProductOptions: string[];
@@ -60,6 +68,8 @@ interface StepMapProps {
 const StepMap: React.FC<StepMapProps> = ({
   detail,
   errors,
+  isMapDeleteEdit,
+  isMapReasonMode,
   lineOptions,
   sourcePartIdOptions,
   topProductOptions,
@@ -133,12 +143,22 @@ const StepMap: React.FC<StepMapProps> = ({
             {t('request.map_type')} <span className="required">*</span>
             <GuideBadge fk="step2_map_type" tk={t('guide.feat.step2_map_type' as never)} />
           </label>
-          <div style={{ display: 'flex', gap: '8px', marginTop: 4 }}>
-            {(['NEW', 'CLONE', 'EXISTING', 'ADI'] as const).map((val) => {
-              const labelKey = val === 'NEW' ? 'map_type_new' : val === 'CLONE' ? 'map_type_borrow' : val === 'EXISTING' ? 'map_type_registered' : 'map_type_adi';
+          <div style={{ display: 'flex', gap: '8px', marginTop: 4, flexWrap: 'wrap' }}>
+            {([
+              { val: 'NEW', labelKey: 'map_type_new' },
+              { val: 'CLONE', labelKey: 'map_type_borrow' },
+              { val: 'EXISTING', labelKey: 'map_type_registered' },
+              { val: 'ADI', labelKey: 'map_type_adi' },
+              { val: MAP_TYPE_EDIT_REQ, labelKey: 'map_type_edit_req' },
+              { val: MAP_TYPE_DELETE_REQ, labelKey: 'map_type_delete_req' },
+            ] as const).map(({ val, labelKey }) => {
+              // 수정/삭제는 요청 목적 'MAP 삭제/수정' 전용 — 그 목적일 때만 열리고, 반대로 나머지 4개는 잠긴다.
+              const isReasonBtn = val === MAP_TYPE_EDIT_REQ || val === MAP_TYPE_DELETE_REQ;
               // ADI 는 기타 목적 'ADI CD 변경' 전용 값 — Step1 버튼이 자동 고정하므로 항상 잠금(표시 전용).
-              // ADI 로 고정돼 있는 동안은 나머지 3개도 전부 잠가 이탈을 막는다.
-              const disabled = val === 'ADI' || detail.map_type === 'ADI';
+              // ADI 로 고정돼 있는 동안은 나머지도 전부 잠가 이탈을 막는다.
+              const disabled = isMapDeleteEdit
+                ? !isReasonBtn
+                : isReasonBtn || val === 'ADI' || detail.map_type === 'ADI';
               return (
                 <button
                   key={val}
@@ -155,6 +175,34 @@ const StepMap: React.FC<StepMapProps> = ({
           {errors.map_type && <span className="form-error">{errors.map_type}</span>}
         </div>
 
+        {/* 수정/삭제 이유 — MAP 삭제/수정 전용. 이 모드에서는 아래 MAP 블록을 전부 숨기고 이 칸만 남긴다. */}
+        {isMapReasonMode && (
+          <div className="full-width">
+            <label className="form-label">
+              {detail.map_type === MAP_TYPE_EDIT_REQ
+                ? t('request.map_change_reason_edit')
+                : t('request.map_change_reason_delete')}{' '}
+              <span className="required">*</span>
+            </label>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 6px' }}>
+              {t('request.map_change_reason_help')}
+            </p>
+            {/* 고정 높이 래퍼 — 에디터 본문이 내부에서만 스크롤되도록 한다(페이지가 늘어나지 않음). */}
+            <div style={{ height: REASON_EDITOR_HEIGHT, display: 'flex', flexDirection: 'column' }}>
+              <RichTextEditor
+                value={detail.map_change_reason || ''}
+                onChange={(html) => handleDetailSet('map_change_reason', html)}
+                placeholder={t('request.map_change_reason_placeholder')}
+              />
+            </div>
+            {errors.map_change_reason && <span className="form-error">{errors.map_change_reason}</span>}
+          </div>
+        )}
+
+        {/* ▼▼ 아래는 모두 MAP 삭제/수정('수정'·'삭제')에서 렌더하지 않는다 —
+               이유 입력칸 하나만 남기는 것이 이 모드의 요구사항이다.
+               validate(2) 도 같은 조건으로 이 항목들의 검증을 건너뛴다(짝을 맞춰야 함). ▼▼ */}
+        {!isMapReasonMode && (<>
         {/* 원본 위치/Part ID (CLONE 전용) */}
         {detail.map_type === 'CLONE' && (
           <div className="full-width">
@@ -637,6 +685,7 @@ const StepMap: React.FC<StepMapProps> = ({
             </div>
           );
         })()}
+        </>)}
 
       </div>
     </div>
