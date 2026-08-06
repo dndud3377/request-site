@@ -5,7 +5,7 @@ import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, Flow
 import Modal from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
-import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA } from '../pages/RequestPage/constants';
+import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, MAP_TYPE_EDIT_REQ, isMapDeleteEditType } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 
@@ -1195,6 +1195,30 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
+          {/* MAP 삭제/수정 이유 — 작성 화면과 동일하게 이 모드에서는 이것만 있으면 된다.
+              본문은 RichTextEditor 가 만든 HTML 이라 공지·가이드·VOC 와 같은 방식으로 렌더한다. */}
+          {isMapDeleteEditType(detail.map_type) && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 6 }}>
+                {detail.map_type === MAP_TYPE_EDIT_REQ
+                  ? t('request.map_change_reason_edit')
+                  : t('request.map_change_reason_delete')}
+              </div>
+              {detail.map_change_reason ? (
+                <div
+                  style={{
+                    border: changedFields.has('map_change_reason') ? '2px solid var(--danger)' : '1px solid var(--border)',
+                    borderRadius: 6, padding: '10px 12px', maxHeight: 420, overflowY: 'auto',
+                    background: 'var(--bg-secondary)', fontSize: '0.86rem', lineHeight: 1.6,
+                  }}
+                  dangerouslySetInnerHTML={{ __html: detail.map_change_reason }}
+                />
+              ) : (
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>-</span>
+              )}
+            </div>
+          )}
+
           {(isR || isO || isJ || isP) && (detail.map_change || (detail as any).map_change_top || detail.ea_change) && (
             <div style={rowStyle}>
               {(isR || isO || isP) && (() => {
@@ -1685,6 +1709,14 @@ type Page = { label: string; content: React.ReactNode };
     } catch { return false; }
   })();
 
+  // MAP 삭제/수정: P·R·J·O 병렬 경로라 E·RA 는 아예 만들지 않는다(고정 후결자도 없다).
+  const isMapDeleteEdit = (() => {
+    try {
+      const parsed = JSON.parse(doc.additional_notes ?? '{}');
+      return parsed?.detail?.request_purpose === 'MAP 삭제/수정';
+    } catch { return false; }
+  })();
+
   // 통보처: 결재 경로와 별개로 표시(결재 권한 없음). detail.notifiers 에서 이름만 읽는다.
   const notifiers: { loginid: string; name: string }[] = (() => {
     try {
@@ -1769,6 +1801,11 @@ type Page = { label: string; content: React.ReactNode };
       return [{ status: 'na', label: t('approval.step_na') }];
     }
     if (isOnlyMap && ['P', 'J', 'O', 'E'].includes(agent)) {
+      return [{ status: 'na', label: t('approval.step_na') }];
+    }
+    // MAP 삭제/수정은 RA(후결자)를 아예 만들지 않는다 — 없이도 fallback 을 타면
+    // '대기'로 보여 영원히 끝나지 않는 단계처럼 오해를 준다(E 처럼 명시적 na 분기 필요).
+    if (isMapDeleteEdit && agent === 'RA') {
       return [{ status: 'na', label: t('approval.step_na') }];
     }
     // R단계: 합의자(R) + 검토자(RV, 지정 시)를 한 행에 함께 표시
@@ -1910,7 +1947,7 @@ type Page = { label: string; content: React.ReactNode };
           <div key={key} style={teamRowStyle}>
             <div style={teamLabelStyle}>{label}</div>
             <div style={historyListStyle}>
-              {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) ? (
+              {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) || (isMapDeleteEdit && key === 'RA') ? (
                 <div style={historyItemStyle(false)}>
                   <span style={{ ...statusBadgeStyle('na') }}>{t('approval.step_na')}</span>
                 </div>

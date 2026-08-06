@@ -13,7 +13,7 @@ class Migration(migrations.Migration):
     """
 
     dependencies = [
-        ('api', '0011_alter_mailnotification_event_type'),
+        ('api', '0012_alter_mailnotification_event_type'),
     ]
 
     operations = [

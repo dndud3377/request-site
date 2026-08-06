@@ -40,7 +40,7 @@ export const getDueDateDisplay = (
   return { text: formatDate(dueDate), cls: '' };
 };
 
-// 최종 완료 예상일: max(path1_end, path2_end, path3_end(후결자))
+// 최종 완료 예상일: max(path0_end(R), path1_end, path2_end, path3_end(후결자))
 export const getFinalCompletionDate = (doc: RequestDocument): string => {
   // 반려된 문서는 잔여 pending step 의 due_date 가 남아 있어도 진행 예정이 아니다.
   if (doc.status === 'rejected') return '-';
@@ -55,6 +55,14 @@ export const getFinalCompletionDate = (doc: RequestDocument): string => {
   const oStep = currentSteps.find(s => s.agent === 'O');
   const eStep = currentSteps.find(s => s.agent === 'E');
   const raSteps = currentSteps.filter(s => s.agent === 'RA');
+  // MAP 삭제/수정 경로에서는 R 이 관문이 아니라 병렬 구성원이라 P/O 와 동시에 아직 pending 일 수 있다.
+  // 기존 경로(일반·Only MAP)는 R 합의가 끝나야만 parallelPresent 가 되므로 이 값은 항상 없다(영향 없음).
+  const rStep = currentSteps.find(s => s.agent === 'R');
+  const rvStep = currentSteps.find(s => s.agent === 'RV');
+
+  // path0: R(+RV). due 는 다른 경로와 동일하게 완료 여부와 무관하게 후보에 넣는다.
+  const path0Dates = [rStep?.due_date, rvStep?.due_date].filter(Boolean) as string[];
+  const path0End = path0Dates.length > 0 ? path0Dates.reduce((a, b) => (a > b ? a : b)) : null;
 
   // path2: max(O.due, E.due)
   const path2Dates = [oStep?.due_date, eStep?.due_date].filter(Boolean) as string[];
@@ -74,13 +82,13 @@ export const getFinalCompletionDate = (doc: RequestDocument): string => {
   const raDates = raSteps.map(s => s.due_date).filter(Boolean) as string[];
   const path3End = raDates.length > 0 ? raDates.reduce((a, b) => (a > b ? a : b)) : null;
 
-  const candidates = [path1End, path2End, path3End].filter(Boolean) as string[];
+  const candidates = [path0End, path1End, path2End, path3End].filter(Boolean) as string[];
   if (candidates.length === 0) return '-';
   return formatDate(candidates.reduce((a, b) => (a > b ? a : b)));
 };
 
 export interface DocTableRow {
-  pathKey: 'single' | 'path1' | 'path2' | 'path3';
+  pathKey: 'single' | 'path0' | 'path1' | 'path2' | 'path3';
   stageText: string;
   dueDate: string | null;
   isDone: boolean;
@@ -206,6 +214,10 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
   const eStep = currentSteps.find(s => s.agent === 'E');
   const evSteps = currentSteps.filter(s => s.agent === 'EV');
   const raSteps = currentSteps.filter(s => s.agent === 'RA');
+  // MAP 삭제/수정 경로 전용 — R 이 관문이 아니라 병렬 구성원이라 P/O 와 동시에 pending 일 수 있다.
+  // 기존 경로(일반·Only MAP)는 parallelPresent 가 될 때 R 이 이미 항상 approved 라 아래 조건이 걸리지 않는다.
+  const rStep = currentSteps.find(s => s.agent === 'R');
+  const rvStep = currentSteps.find(s => s.agent === 'RV');
 
   // 완료된 단계들의 '라벨(이름)'을 모아 " / "로 연결. 하나도 이름이 없으면 undefined(호출부에서 기본 문구로 대체).
   const namedApprovers = (steps: { agent: string; assignee_name?: string }[]): string | undefined => {
@@ -214,6 +226,22 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
       .map(s => `${stageLabel(s.agent, t)}(${s.assignee_name})`);
     return parts.length > 0 ? parts.join(' / ') : undefined;
   };
+
+  // 경로0: R(+RV). 완료(담당자 합의 + 검토자 있으면 그 합의까지)면 행을 만들지 않는다 —
+  // 기존 경로는 이 시점에 R 이 항상 이미 끝나 있으므로(관문) 이 분기가 한 번도 걸리지 않아
+  // 기존 화면은 그대로다. MAP 삭제/수정만 R 이 남아 있는 동안 이 행으로 보인다.
+  const rDone = !!rStep && rStep.action === 'approved' && (!rvStep || rvStep.action === 'approved');
+  if (rStep && !rDone) {
+    const pendingStep = rStep.action === 'pending' ? rStep : rvStep;
+    const stageText = buildStageText(pendingStep, false, t);
+    rows.push({
+      pathKey: 'path0',
+      stageText,
+      dueDate: pendingStep?.due_date ?? null,
+      isDone: false,
+      pathStatus: pendingStep?.assignee_loginid ? 'under_review' : 'unassigned',
+    });
+  }
 
   // 경로1: P(→검토자 PV, 다중 가능)→J. 담당자 합의만으로 끝나지 않고 검토자 전원 합의까지 끝나야
   // J 가 생성되므로, 담당자 합의 후 검토자가 아직 남아 있으면 '검토자' 단계로 표시한다.

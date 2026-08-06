@@ -73,7 +73,22 @@ REVIEWER_AGENTS = ('RV', 'PV', 'EV')
 # PL 은 별도 규칙(미합의 지정 PL 포함)을 따르므로 여기서 제외한다.
 # Only MAP 의뢰서는 P/O/E/J 없이 R 까지만 진행하고 후결자(RA)로 종단한다.
 ROUTE_AGENTS_ONLY_MAP = ('R', 'RV', 'RA')
+# 'MAP 삭제/수정' 의뢰서는 PL 합의 후 P·R·J·O 를 병렬로 진행한다.
+# E(MASK)·EV 와 후결자(RA)는 생성하지 않으므로 경로에서도 빠진다(고정 후결자도 없는 유일한 경로).
+ROUTE_AGENTS_MAP_DELETE_EDIT = ('P', 'PV', 'R', 'RV', 'J', 'O')
 ROUTE_AGENTS_DEFAULT = ('R', 'RV', 'P', 'PV', 'O', 'E', 'EV', 'J', 'RA')
+
+
+def route_agents_for(document):
+    """의뢰서의 요청 목적에 맞는 결재선(라우팅) 단계 목록을 돌려준다.
+
+    경로 카드 표시와 반려 수신자 산출이 같은 규칙을 쓰도록 여기에 모은다.
+    """
+    if document.is_map_delete_edit():
+        return ROUTE_AGENTS_MAP_DELETE_EDIT
+    if document.is_only_map():
+        return ROUTE_AGENTS_ONLY_MAP
+    return ROUTE_AGENTS_DEFAULT
 
 # 메일 본문 '결재 경로' 카드의 표시 순서. 웹 '결재 경로' 탭과 같은 순서를 쓴다
 # (검토자 RV/PV/EV 는 담당 단계 바로 뒤, 후결자 RA 는 R 다음).
@@ -318,7 +333,7 @@ def _remaining_stage_emails(document, max_round):
     병렬 단계(P·O·E·RA)가 서로 다른 속도로 진행돼도 누락 없이 잡히고,
     이미 일을 마친 팀에는 불필요한 팀 전체 메일이 나가지 않는다.
     """
-    route = ROUTE_AGENTS_ONLY_MAP if document.is_only_map() else ROUTE_AGENTS_DEFAULT
+    route = route_agents_for(document)
     steps = ApprovalStep.objects.filter(document=document, round=max_round)
     approved_agents = set(steps.filter(action='approved').values_list('agent', flat=True))
     existing_agents = set(steps.values_list('agent', flat=True))
@@ -485,7 +500,7 @@ def _route_rows(document):
     if max_round is None:
         return []
 
-    route = set(ROUTE_AGENTS_ONLY_MAP if document.is_only_map() else ROUTE_AGENTS_DEFAULT)
+    route = set(route_agents_for(document))
     route.add('PL')  # PL 은 수신자 규칙에서만 예외이고 경로 표시에는 항상 포함된다
     if not document.has_ppid_plel():
         route -= {'E', 'EV'}

@@ -251,7 +251,8 @@ DELETE /api/design-rule-documents/{id}/  — 매핑 해제("분류 해제")
 
 ## 8. 주의사항
 
-- **마이그레이션 필수** — 배포 시 `python manage.py migrate` (`0012_design_rule_overrides`).
+- **마이그레이션 필수** — 배포 시 `python manage.py migrate` (`0013_design_rule_overrides`,
+  2026-08-06 재정렬 전 번호는 `0012`. 상세는 `docs/REQUEST.md` §4.1 2026-08-06 이력 참조).
   누락하면 그래프 API 가 500 을 낸다.
 - **개발 환경에서 전부 미분류로 보이면** 버그가 아니라 데이터 부재다.
   `api_designrule` 은 스케줄러(`sync_design_rule`, 매일 02:00)로만 채워지므로

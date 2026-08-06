@@ -1760,6 +1760,231 @@ class PEStageReviewerFlowTest(TestCase):
 
 
 @override_settings(POST_APPROVER_LOGINID='fixedpa')
+class MapDeleteEditRouteTest(TestCase):
+    """'MAP 삭제/수정' 전용 결재 경로 — PL 합의 후 P·R·J·O 병렬, E·RA 미생성.
+
+    기존 일반 경로/Only MAP 경로는 건드리지 않고 새 분기만 탄다는 것을 함께 확인한다.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='mreq', mail='mreq@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='mpl', mail='mpl@c.com', role='PL')
+        self.r_user = UserProfile.objects.create(loginid='mr', mail='mr@c.com', role='TE_R')
+        self.p_user = UserProfile.objects.create(loginid='mp', mail='mp@c.com', role='TE_P')
+        self.p_reviewer = UserProfile.objects.create(loginid='mp2', mail='mp2@c.com', role='TE_P')
+        self.j_user = UserProfile.objects.create(loginid='mj', mail='mj@c.com', role='TE_J')
+        self.o_user = UserProfile.objects.create(loginid='mo', mail='mo@c.com', role='TE_O')
+        UserProfile.objects.create(loginid='fixedpa', mail='fpa@c.com', role='TE_R')
+
+    def _make_doc(self, purpose=None, detail_extra=None, jayer_rows=None):
+        detail = {'request_purpose': purpose or RequestDocument.MAP_DELETE_EDIT_PURPOSE}
+        detail.update(detail_extra or {})
+        return RequestDocument.objects.create(
+            title='mde', requester=self.requester, requester_name='요청자',
+            requester_email='mreq@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps({'detail': detail, 'jayerRows': jayer_rows or []}),
+        )
+
+    def _submit_and_pl_approve(self, doc):
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/',
+                             {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        return doc
+
+    def _assign_and_approve(self, doc, agent, user):
+        """R 은 assign-step(지정하기), P/J/O 는 claim-step(검토중 선점) 방식이다 — 실제 API 규칙과 동일."""
+        self.client.force_authenticate(user=user)
+        if agent == 'R':
+            r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+                'agent': agent, 'assignee_loginid': user.loginid, 'assignee_name': user.loginid,
+            }, format='json')
+        else:
+            r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': agent}, format='json')
+        self.assertIn(r.status_code, (200, 400), r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/',
+                             {'agent': agent, 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        return r
+
+    def test_pl_approval_creates_four_parallel_steps(self):
+        """PL 합의 직후 P·R·J·O 가 한꺼번에 병렬로 생성된다(J 가 P 를 기다리지 않는다)."""
+        doc = self._submit_and_pl_approve(self._make_doc())
+        agents = set(ApprovalStep.objects.filter(document=doc, round=1)
+                     .exclude(agent='PL').values_list('agent', flat=True))
+        self.assertEqual(agents, {'P', 'R', 'J', 'O'}, f'실제 생성된 단계: {agents}')
+        for a in ('P', 'R', 'J', 'O'):
+            st = ApprovalStep.objects.get(document=doc, agent=a, round=1)
+            self.assertTrue(st.is_parallel, f'{a} 는 병렬 단계여야 한다')
+
+    def test_no_e_and_no_post_approver_steps(self):
+        """E(MASK)와 후결자(RA)는 생성하지 않는다 — 고정 후결자도 붙지 않는다."""
+        doc = self._submit_and_pl_approve(self._make_doc(jayer_rows=[{'pp': 'PLEL'}]))
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='E', round=1).exists(),
+                         'plel 이 있어도 MAP 삭제/수정 경로에는 E 를 만들지 않는다')
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='RA', round=1).exists(),
+                         '고정 후결자가 설정돼 있어도 RA 를 만들지 않는다')
+
+    def test_approved_when_p_is_last(self):
+        """P 가 마지막 합의자여도 최종 승인된다(일반 경로는 P 로 승인 판정을 하지 않는다)."""
+        doc = self._submit_and_pl_approve(self._make_doc())
+        for agent, user in (('R', self.r_user), ('J', self.j_user), ('O', self.o_user)):
+            self._assign_and_approve(doc, agent, user)
+        self.assertEqual(doc.status, 'under_review', '아직 P 가 남아 승인되면 안 된다')
+        self._assign_and_approve(doc, 'P', self.p_user)
+        self.assertEqual(doc.status, 'approved', 'P 합의로 네 단계가 모두 끝나면 승인돼야 한다')
+
+    def test_approved_when_r_is_last(self):
+        """R 이 마지막 합의자여도 최종 승인된다(R 은 관문이 아니라 병렬 구성원이다)."""
+        doc = self._submit_and_pl_approve(self._make_doc())
+        for agent, user in (('P', self.p_user), ('J', self.j_user), ('O', self.o_user)):
+            self._assign_and_approve(doc, agent, user)
+        self.assertEqual(doc.status, 'under_review', '아직 R 이 남아 승인되면 안 된다')
+        self._assign_and_approve(doc, 'R', self.r_user)
+        self.assertEqual(doc.status, 'approved', 'R 합의로 네 단계가 모두 끝나면 승인돼야 한다')
+
+    def test_p_reviewer_blocks_final_approval(self):
+        """P 검토자(PV)가 지정돼 있으면 그 합의까지 끝나야 승인된다(검토자 기능 유지)."""
+        doc = self._submit_and_pl_approve(self._make_doc())
+        for agent, user in (('R', self.r_user), ('J', self.j_user), ('O', self.o_user)):
+            self._assign_and_approve(doc, agent, user)
+        self.client.force_authenticate(user=self.p_user)
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        # P 는 담당자 본인이 합의와 동시에 reviewer_loginids 로 검토자(PV, 다중)를 지정한다.
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {
+            'agent': 'P', 'comment': '', 'reviewer_loginids': [self.p_reviewer.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review', 'PV 가 남아 있으면 아직 승인되면 안 된다')
+
+        self.client.force_authenticate(user=self.p_reviewer)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/',
+                             {'agent': 'PV', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'approved', 'PV 합의로 P 단계가 끝나면 승인돼야 한다')
+
+    def test_route_agents_exclude_e_and_ra(self):
+        """메일 경로 카드·반려 수신자용 결재선에 E/EV/RA 가 포함되지 않는다."""
+        from api import mailer
+        doc = self._make_doc()
+        self.assertEqual(mailer.route_agents_for(doc), mailer.ROUTE_AGENTS_MAP_DELETE_EDIT)
+        self.assertNotIn('RA', mailer.route_agents_for(doc))
+        self.assertNotIn('E', mailer.route_agents_for(doc))
+        # 기존 두 경로는 그대로여야 한다.
+        only_map = self._make_doc(purpose=RequestDocument.ONLY_MAP_PURPOSE)
+        self.assertEqual(mailer.route_agents_for(only_map), mailer.ROUTE_AGENTS_ONLY_MAP)
+        normal = self._make_doc(purpose='신규')
+        self.assertEqual(mailer.route_agents_for(normal), mailer.ROUTE_AGENTS_DEFAULT)
+
+    def test_normal_purpose_still_uses_gate_route(self):
+        """일반 목적은 기존대로 PL 합의 시 R 만 생성된다(회귀 방지)."""
+        doc = self._submit_and_pl_approve(self._make_doc(purpose='신규'))
+        agents = set(ApprovalStep.objects.filter(document=doc, round=1)
+                     .exclude(agent='PL').values_list('agent', flat=True))
+        self.assertEqual(agents, {'R'}, f'일반 목적은 R 만 생겨야 한다. 실제: {agents}')
+
+
+class LabProductPostApproverTest(TestCase):
+    """'연구소 제품' 도 C가문과 동일하게 상신 시 후결자 지정이 필수다."""
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='lreq', mail='lreq@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='lpl', mail='lpl@c.com', role='PL')
+        self.r_user = UserProfile.objects.create(loginid='lr1', mail='lr1@c.com', role='TE_R')
+
+    def _doc(self, detail):
+        return RequestDocument.objects.create(
+            title='lab', requester=self.requester, requester_name='요청자',
+            requester_email='lreq@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps({'detail': detail, 'jayerRows': []}),
+        )
+
+    def _submit(self, doc):
+        self.client.force_authenticate(user=self.requester)
+        return self.client.post(f'/api/documents/{doc.id}/submit/',
+                                {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+
+    def test_lab_product_requires_post_approver(self):
+        doc = self._doc({'request_purpose': RequestDocument.ONLY_MAP_PURPOSE,
+                         'other_purpose': [RequestDocument.OTHER_PURPOSE_LAB],
+                         'post_approvers': []})
+        self.assertTrue(doc.requires_post_approver())
+        r = self._submit(doc)
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_lab_product_with_post_approver_passes(self):
+        doc = self._doc({'request_purpose': RequestDocument.ONLY_MAP_PURPOSE,
+                         'other_purpose': [RequestDocument.OTHER_PURPOSE_LAB],
+                         'post_approvers': [{'loginid': 'lpl', 'name': 'lpl'}]})
+        r = self._submit(doc)
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_cfamily_still_requires_post_approver(self):
+        """기존 C가문 규칙은 그대로다(회귀 방지)."""
+        doc = self._doc({'request_purpose': '신규', 'only_prodc': 'Yes', 'post_approvers': []})
+        self.assertTrue(doc.requires_post_approver())
+        self.assertEqual(self._submit(doc).status_code, 400)
+
+    @override_settings(POST_APPROVER_LOGINID='labfixedpa')
+    def test_lab_product_last_additional_post_approver_cannot_be_removed(self):
+        """상신 시 강제한 '후결자 최소 1명'을 결재 진행 중 remove-post-approver 로
+
+        무력화할 수 없어야 한다 — only_prodc 만 보던 예전 가드는 연구소 제품을
+        놓쳐 마지막 1명까지 제거가 허용됐었다(재현·수정 확인)."""
+        UserProfile.objects.create(loginid='labfixedpa', mail='lfpa@c.com', role='TE_R')
+        doc = self._doc({'request_purpose': RequestDocument.ONLY_MAP_PURPOSE,
+                         'other_purpose': [RequestDocument.OTHER_PURPOSE_LAB],
+                         'post_approvers': [{'loginid': 'lpl', 'name': 'lpl'}]})
+        r = self._submit(doc)
+        self.assertEqual(r.status_code, 200, r.content)
+
+        # PL 합의 → R 지정·합의까지 실제로 거쳐야 RA(후결자, 고정+lpl) 단계가 생성된다.
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='RA', assignee__loginid='lpl').exists(),
+            '사전 조건: lpl 이 추가 후결자로 등록돼 있어야 한다',
+        )
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/',
+                             {'loginid': 'lpl'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('연구소 제품', r.json().get('error', ''))
+
+    def test_plain_document_does_not_require(self):
+        doc = self._doc({'request_purpose': '신규', 'other_purpose': ['FirstA 변경']})
+        self.assertFalse(doc.requires_post_approver())
+        self.assertEqual(self._submit(doc).status_code, 200)
+
+
+@override_settings(POST_APPROVER_LOGINID='fixedpa')
 class PostApproverManagementTest(TestCase):
     """후결자 추가(add-post-approver)/제거(remove-post-approver) 권한·보호 규칙 검증."""
 

@@ -56,7 +56,13 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 
 어느 단계든 반려 → rejected
 
-[Only MAP 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ R ─(합의)─▶ approved   (P/O/E 단계 없음)
+[Only MAP 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ R ─(합의)─▶ approved   (P/O/E 단계 없음, 후결자(RA)만 종단)
+
+[MAP 삭제/수정 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ ┌─ P[검토중,+검토자PV] ─┐
+                                                  ├─ R[+검토자RV]        ├─▶ 네 단계 모두 합의 시 approved
+                                                  ├─ J[검토중]           │
+                                                  └─ O[검토중]           ┘
+                                                  (E·후결자(RA) 없음 — R 은 관문이 아니라 병렬 구성원, 2026-08)
 ```
 
 핵심: **PL → R → (P[→검토자 PV] → J) ∥ (O, E[→검토자 EV])**. R 합의 후 두 경로(path1=P→J, path2=O+E)가 **병렬** 진행된다.
@@ -71,6 +77,11 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 > **R 단계까지만** 진행한다. R 합의 시 P/O/E 단계를 생성하지 않고 곧바로 `approved`가 된다.
 > 판정값 `request_purpose`는 `additional_notes` JSON의 `detail` 하위에 저장된다
 > (상수 `RequestDocument.ONLY_MAP_PURPOSE = 'Only MAP'`).
+
+> **예외 — 요청 목적 'MAP 삭제/수정' (2026-08)**: `RequestDocument.is_map_delete_edit()`이
+> 참이면 PL 전원 합의 직후 **P·R·J·O 를 한 번에 병렬 생성**한다(`ROUTE_AGENTS_MAP_DELETE_EDIT`
+> = `P·PV·R·RV·J·O`). E(MASK)와 후결자(RA)는 만들지 않는다 — **모든 문서가 받던 고정 후결자
+> 조차 이 경로에는 붙지 않는 유일한 예외**다. 상세는 아래 **Case O** 참조.
 
 ### Case A — 상신 (`submit`)
 - 조건: `status == 'draft'`, **지정 PL 필수**(role='PL'인 사용자, **본인 지정 불가**), `_validate_bb_mapping` 통과.
@@ -235,7 +246,11 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 - **검토자(RV)**: 지정하기에서 담당자와 **함께** 지정(선택 — '검토자 없음' 가능, RFG 팀). 지정 시 `RV` 단계 생성(`assign_step` 확장, `reviewer_loginid`). 담당자 합의 **후에만** 처리 가능(`approve_step` 순차 가드).
 - **전환(병렬)**: 담당자(검토자 있으면 검토자까지) 합의 시 `_advance_to_parallel` → **P(4영업일)·O(6영업일)·E(6영업일, 병렬, `plel` 시에만) + 후결자(RA, 6영업일 병렬)** 생성.
   - **Only MAP**: P/O/E 없이 **후결자(RA)만** 생성 → 후결자 전원 합의 시 최종 승인. (후결자 미설정 시 즉시 승인)
-- **후결자(RA)**: **고정 1명**(`settings.POST_APPROVER_LOGINID`, `.env`, RFG 팀) + **C가문(only_prodc=YES) 추가 후결자**(상신 모달에서 PL 중 지정, `detail.post_approvers`). 최소 1명 필수(`_validate_post_approvers`). 고정은 PL 후보 목록에 안 뜸(TE_R 이라 자동 제외).
+- **후결자(RA)**: **고정 1명**(`settings.POST_APPROVER_LOGINID`, `.env`, RFG 팀) + **추가 후결자**(상신 모달에서 PL 중 지정, `detail.post_approvers`). 추가 후결자가 필수인 대상은
+  `RequestDocument.requires_post_approver()`(C가문 `only_prodc=YES` **또는** 기타 목적 `연구소 제품`, 2026-08 확장) 로 판정하며 최소 1명 필수(`_validate_post_approvers`). 고정은 PL 후보 목록에 안 뜸(TE_R 이라 자동 제외).
+  - **연구소 제품(2026-08)**: 요청 목적이 `Only MAP` 일 때만 선택 가능한 기타 목적이다(그 외 목적에서는 버튼 잠금).
+    선택 시 결재 경로 자체는 바뀌지 않는다 — **Only MAP 경로(PL→R→RA) 그대로**이고, `requires_post_approver()` 가
+    참이 되어 상신 모달에 후결자 입력이 열리고 필수가 될 뿐이다(기존 C가문 메커니즘 재사용, 신규 로직 없음).
 - **최종 승인**: `J + O + E + 후결자(RA) 전원` 합의(Only MAP 은 RA 만). `approve_step` 최종 판정에 RA 포함.
 - ✅ **후결자 추가/제거(2026-07 개편)**: 기존 1:1 스왑(`change_post_approver`) 대신 **추가**(`add-post-approver/`)와
   **제거**(`remove-post-approver/`) 두 액션으로 분리했다. 작성자 또는 **MASTER**(프론트 노출도 동일하게 확대)가
@@ -246,8 +261,8 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
   원래도 역할이 섞여 있어 단일 역할 강제가 무의미 — 2026-07 정책). **고정 후결자는 추가/제거 대상에서 항상 제외**되고
   화면엔 잠금 칩으로만 표시(제거 버튼 없음). **이미 합의(approved)한 RA는 제거 불가**. 최소 인원 가드는 두 가지를
   독립적으로 적용한다 — **Only MAP** 문서는 후결자(고정 포함 총원)가 유일한 종단 경로라 **총원 0명**을 막고,
-  **C가문(only_prodc=Yes)** 문서는 상신 시 "추가 후결자 1명 이상" 필수였던 것과 일관되게 **고정을 제외한 추가
-  후결자 0명**을 막는다(둘 다 아니면 일반 문서는 0명까지 제거 가능). 추가 시 새 후결자에게
+  **`requires_post_approver()` 대상(C가문·연구소 제품)** 문서는 상신 시 "추가 후결자 1명 이상" 필수였던 것과
+  일관되게 **고정을 제외한 추가 후결자 0명**을 막는다(둘 다 아니면 일반 문서는 0명까지 제거 가능). 추가 시 새 후결자에게
   즉시 `[후결 요청]` 메일 발송(`_create_reviewers`가 아니라 `add_post_approver`에서 직접 `enqueue_stage_arrival`).
   `detail.post_approvers` 도 추가/제거마다 동기화(재상신 프리필 대비).
 - **표시**: 결재현황/홈 현재단계 — 담당자(단계명 **RFG** 그대로 표기)→검토자 순차, 병렬은 경로1(P/J)·경로2(O/E)·**경로3(후결자(이름))** 로 최대 3행. 상세 '결재 경로' 탭은 **R 다음에 검토자(지정 시)·후결자** 행을 표시.
@@ -261,6 +276,58 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 - **검토자 지정 라벨 제거**: 지정하기 시 검토자 드롭다운 위 '검토자' 라벨 span 삭제(드롭다운 자체가 '검토자 없음' placeholder 로 구분).
 - **검토중(J/O/E) 팀 공동 합의**: 검토중으로 **선점(assignee 존재)** 되면 **같은 팀(역할↔agent) 누구나 합의/반려** 가능(`_can_act_on_step`/`canUserAgree`). 선점 전에는 먼저 검토중 필요. 검토중 버튼은 선점 즉시 숨김(`canUserClaim`=assignee 있으면 false). `approve_step`/`reject_step`에서 J를 assignee 필터 밖으로(회차당 단일), **RA(후결자)만** assignee 필터 유지. ⚠️ 표시되는 담당자명은 **선점자**(검토를 시작한 사람)이며, 다른 팀원이 합의해도 이름은 선점자로 남는다(감사기록은 `acted_at`/comment).
 - **결재경로 검토자 통합**: 상세 '결재 경로' 탭에서 검토자(RV) **별도 행 제거** → **R단계 행에 회차별 `합의자(R) + 검토자(RV, 지정 시)`** 함께 표시(`StepDisplayInfo.roleLabel`, i18n `approval.role_agreer`).
+
+### Case O — 요청 목적 'MAP 삭제/수정': P·R·J·O 병렬 경로 (2026-08)
+
+MAP 정보만 수정/삭제하는 의뢰서 전용 경로. 판정: `RequestDocument.is_map_delete_edit()`
+(`request_purpose == RequestDocument.MAP_DELETE_EDIT_PURPOSE`, 값 `'MAP 삭제/수정'`).
+작성 화면은 `docs/REQUEST.md`, 화면·경로 설계 원본은 `docs/map_delete_edit_mockup.html` 참조.
+
+- **상신까지는 동일**: `submit`(지정 PL) → `peer_approve`(PL 전원 합의)까지 다른 경로와 완전히 같다.
+- **PL 전원 합의 직후 4단계 동시 생성**(`_advance_after_pl` → `_create_map_delete_edit_parallel`):
+  **P·R·J·O 를 한 번에 병렬**(`is_parallel=True`, 공통 기한 6영업일)로 만든다. **E(MASK)와
+  후결자(RA)는 만들지 않는다** — 이 경로가 유일하게 **고정 후결자조차 붙지 않는** 문서 유형이다.
+  결재선 상수 `mailer.ROUTE_AGENTS_MAP_DELETE_EDIT = ('P','PV','R','RV','J','O')`
+  (`mailer.route_agents_for(document)` 로 세 경로가 공통 판정).
+- **R 이 관문이 아니라 병렬 구성원**: 다른 모든 경로는 R 합의가 있어야 병렬 단계가 열리므로 병렬
+  진입 시점엔 R 이 항상 이미 끝나 있다. 이 경로만 R 이 P·J·O 와 **동시에** pending 이며, 네 단계
+  중 아무 순서로나 끝날 수 있다(`test_approved_when_p_is_last`/`test_approved_when_r_is_last` 로 검증).
+- **검토자(PV/RV)는 그대로**: P/R 각각 담당자 합의 시 지정된 검토자까지 전원 합의해야 그 단계가
+  끝난다(`_stage_reviewers_complete`, 기존 로직 재사용). J/O 는 기존과 동일하게 검토중(claim) 방식.
+- **최종 승인 판정**(`approve_step` 최우선 분기, `_map_delete_edit_all_approved`):
+  P·R·J·O **네 단계 모두** 완료(담당자+검토자)일 때만 `approved`. 일반 경로의 최종 판정은
+  `agent in ('J','O','E','EV','RA')` 합의 시에만 돌고 `P`/`R` 합의는 판정을 트리거하지 않으므로
+  (P 는 J 생성만, R 은 병렬 전환만 함), **이 경로 전용으로 판정 분기를 따로 추가**했다 — 없으면
+  네 단계가 다 끝나도 문서가 `under_review` 에 멈춘다.
+- **연구소 제품과는 무관**: `연구소 제품`은 `Only MAP` 전용 기타 목적이라(Case N) 이 경로와는
+  동시에 선택될 수 없다 — `MAP 삭제/수정` 문서는 기타 목적 전체가 잠긴다(`docs/REQUEST.md`).
+
+#### 화면 표시 버그 2건 + 수정 (2026-08)
+
+R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전엔 존재한 적이 없어서, 기존 화면
+코드 두 곳이 그 경우를 다뤄본 적이 없었다. 배포 전에 발견해 함께 고쳤다.
+
+- **결재현황 목록에 R 이 안 보이던 문제**(`frontend/src/utils/approvalTable.ts`):
+  `getDocTableRows`/`getFinalCompletionDate` 는 병렬 시작 판정을 `P/O/E/RA` 존재로만 했다.
+  기존 경로는 이 시점에 R 이 항상 이미 `approved` 라 문제가 없었지만, 이 경로는 R 이 마지막까지
+  남을 수 있어 **P/O 가 끝나면 목록이 "다 끝난 것"처럼 보였다**(문서 상태는 여전히 `under_review`).
+  `path0`(R+RV) 행을 P/O/RA 와 같은 패턴으로 추가했다 — **R+RV 가 이미 끝났으면 행을 만들지 않아**
+  기존 경로 화면은 그대로다(`approvalTable.test.ts` 로 회귀 고정). 완료예정일 계산도 R 의 기한을
+  후보에 포함했다.
+- **결재 상세 후결자(RA) 행이 '대기'로 영구 표시되던 문제**(`components/PagedDetailView.tsx`):
+  이 컴포넌트는 모든 문서에 RA 가 최소 1명(고정) 있다고 전제해 "RA 가 아예 없는 문서"를
+  다뤄본 적이 없었다. `isMapDeleteEdit` 판정을 추가해, `E`가 `!hasPlel` 일 때 쓰는 것과 같은
+  `해당없음`(na) 분기를 RA 에도 걸었다.
+
+#### 후결자 최소인원 가드 누락 수정 (2026-08)
+
+`remove-post-approver`(Case N)의 최소인원 가드가 `detail.get('only_prodc')=='Yes'` 를 직접
+비교하고 있어, 상신 시엔 `requires_post_approver()`(C가문 **또는** 연구소 제품)로 후결자 1명
+이상을 강제해 놓고도 **결재 진행 중엔 연구소 제품 문서의 마지막 추가 후결자를 제거할 수 있었다**
+(고정 후결자만 남는 상태로 상신 검증이 무력화됨 — Only MAP 의 "총원 0명 금지" 가드는 고정
+후결자가 있으면 걸리지 않아 이 경우를 막지 못한다). `requires_post_approver()` 재사용으로 수정.
+재현·수정 확인은 `LabProductPostApproverTest.test_lab_product_last_additional_post_approver_cannot_be_removed`
+(수정 전 코드로 되돌려 실제 200이 나옴을 먼저 확인한 뒤 수정).
 
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)
 - start_date(당일 포함) 기준 n번째 영업일. 주말 + `Holiday(isholiday='Y')` 제외.
@@ -470,11 +537,24 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
      버튼이 그대로 노출**됐고(위 백엔드 부활 버그를 실제로 클릭할 수 있는 경로였다),
      `canUserAgree`/`canUserClaim`/`canUserAssign` 은 step 만 보고 문서 상태·회차를 보지 않는다.
    - **프론트 목록 필터**: `hasActivePendingStep` 헬퍼로 통일(§3.2).
+9. ✅ **(2026-08 해결) 'MAP 삭제/수정' 경로 도입으로 새로 드러난 화면·백엔드 결함 3건** — 상세는 Case O 참조.
+   - 결재현황 목록(`approvalTable.ts`)이 병렬 구성원이 된 R 을 어디에도 표시하지 않던 문제 → `path0` 행 추가.
+   - 결재 상세 RA 행이 이 경로에서 '대기'로 영구 표시되던 문제 → `isMapDeleteEdit` na 분기 추가.
+   - `remove-post-approver` 최소인원 가드가 `only_prodc` 만 봐서 연구소 제품 문서는 마지막 후결자
+     제거가 막히지 않던 문제 → `requires_post_approver()` 재사용으로 수정.
+   앞의 두 화면 버그는 "R 이 병렬 진입 시점에 아직 안 끝나 있는" 상황을 처음 만들어낸 이 경로가
+   드러낸 것이지 이 경로만의 문제가 아니다 — 기존 두 경로는 그 시점에 R 이 항상 이미 끝나 있어
+   증상이 나타난 적이 없었을 뿐이다.
 
 ---
 
 ## 7. 상세 보기(PagedDetailView) 변경 이력
 
+- **(2026-08) 'MAP 삭제/수정' 이유 카드 + RA 행 '해당없음' 처리**: '결재 경로' 탭 위쪽에
+  MAP 정보 섹션(`section_map`)의 STEP1 페이지에 수정/삭제 이유 카드를 추가했다(본문은
+  `RichTextEditor` 가 만든 HTML — 공지·가이드·VOC 와 동일하게 `dangerouslySetInnerHTML` 로
+  렌더, 변경 시 빨간 테두리). '결재 경로' 탭의 후결자(RA) 행은 이 경로에서 항상 없으므로
+  `isMapDeleteEdit` 판정으로 '해당없음'(na) 표시한다(§6-9, Case O 참조).
 - **(2026-08) 합성 값 항목의 '이력 확인' 비교 불가 버그 수정**: `FieldHistoryModal` 은 과거 회차 값을 `snap.detail[fieldKey]` **단일 필드**로만 만들고 현재 행만 칩의 **합성 문자열**을 그대로 썼다. 그래서 지도 편차처럼 여러 필드를 합쳐 보여주는 항목은 `초기: 변경있음` / `현재: 변경있음 / X: 555um / Y: 444um` 처럼 **형식이 달라 값 비교가 불가능**했다.
   - `FieldHistoryModal` · `Chip` 에 `buildValue?: (d: Partial<DetailFormState>) => string` 을 추가했다. 넘기면 **회차 스냅샷과 현재 값을 모두 같은 함수**로 만들어 형식이 일치한다(`fieldKey` 는 단일 필드 항목 전용으로 선택 인자화).
   - 칩 표시값과 이력 값을 한 함수로 공유하도록 생성기를 분리했다 — `buildPurposeValue`(의뢰 목적 + `other_purpose`) / `buildMapValue`(지도 편차: C가문 상·하판 리전별 + 일반, X·Y·사유 포함) / `buildEaValue`(EA 변경 + 값) / `buildBbValue`(뼈찜 항목 목록).

@@ -10,23 +10,29 @@
 
 ## 1. 파일 구조 (2026-06 리팩토링 후)
 
-기존 단일 파일 `pages/RequestPage.tsx`(4,083줄)를 폴더로 전환하고, **동작에 영향이 없도록** 독립 단위 → 5개 Step 컴포넌트 순으로 분리했다. **모든 분리는 로직 복사 + props 주입만** 수행했으며 동작/문구 변경은 없다(검증: `tsc` 에러 총수 47개 불변).
+기존 단일 파일 `pages/RequestPage.tsx`(4,083줄)를 폴더로 전환하고, **동작에 영향이 없도록** 독립 단위 → 5개 Step 컴포넌트 순으로 분리했다. **모든 분리는 로직 복사 + props 주입만** 수행했으며 동작/문구 변경은 없다(당시 검증: `tsc` 에러 총수 47개 불변 — 이 47은 **2026-06 당시 값**이고 현재 베이스라인은 §4 참조).
+
+> 아래 줄수는 **2026-08-06 `wc -l` 실측값**이다. 리팩토링 직후(3차 종료 시점)와 달라진 이유는 §3 표의 '현황' 행 참조.
 
 ```
 pages/RequestPage/
-├── index.tsx                       # 메인 컴포넌트 (현재 ~2,028줄) — 상태·핸들러·effect·조립
-├── constants.ts                    # 상수·팩토리·초기 상태 (외부 state 비의존)
-├── helpers.ts                      # 순수 헬퍼 (formatUpdatedDate/shouldDisableRow/calcDisabled/emptyDraftWords)
+├── index.tsx                       # 4,548줄  메인 컴포넌트 — 상태·핸들러·effect·검증·저장/상신·조립
+├── constants.ts                    #   343줄  상수·팩토리·초기 상태 (외부 state 비의존)
+├── helpers.ts                      #   477줄  순수 헬퍼 (아래 'helpers.ts export 목록' 참조)
+├── helpers.test.ts                 #   463줄  helpers.ts 단위 테스트 (63건)
 └── components/
-    ├── ProdcRow.tsx                # PRODC 북/중/남 공통 행 (REGION_LABEL_KEY 동봉)
-    ├── MshotImageUpload.tsx        # M-shot 이미지 붙여넣기 영역 (자기완결)
-    ├── WizardIndicator.tsx         # 상단 단계 인디케이터 (자기완결)
-    ├── FilterManageModal.tsx       # J/O 필터 관리 모달 (공유 — jayer↔oayer props 매개변수화)
-    ├── Step1.tsx                   # step 1 — 기본정보(라인/목적/흐름도/뼈찜entry/고객/생산일)
-    ├── StepMap.tsx                 # step 2 — MAP(타입/원본/PRODC/REV/지도편차/예외/M-shot/맵옵션)
-    ├── Step2.tsx                   # step 3 — J-layer 표
-    ├── Step3.tsx                   # step 4 — O-layer 표 + TBV/TLV·partial_shot 정보 탭
-    └── Step4.tsx                   # step 5 — Backbone(bb) 자동채움·매핑·결과 표
+    ├── ProdcRow.tsx                #    90줄  PRODC 북/중/남 공통 행 (REGION_LABEL_KEY 동봉)
+    ├── MshotImageUpload.tsx        #    51줄  M-shot 이미지 붙여넣기 영역 (자기완결)
+    ├── WizardIndicator.tsx         #    33줄  상단 단계 인디케이터 (자기완결)
+    ├── FilterManageModal.tsx       #   185줄  J/O 필터 관리 모달 (공유 — jayer↔oayer props 매개변수화)
+    ├── BeforeAfterPanel.tsx        #   227줄  참조 요청서 Merge BEFORE/AFTER 매핑 패널 (step 1 인라인)
+    ├── AdiCdPanel.tsx              #   139줄  ADI CD 변경전/변경후 스텝 표 (step 1 인라인)
+    ├── AdiCdColumnMapModal.tsx     #   128줄  ADI CD 붙여넣기 컬럼 매핑 모달
+    ├── Step1.tsx                   #   538줄  step 1 — 기본정보(라인/목적/흐름도/뼈찜entry/고객/생산일)
+    ├── StepMap.tsx                 #   695줄  step 2 — MAP(타입/원본/PRODC/REV/지도편차/예외/M-shot/맵옵션/삭제·수정 이유)
+    ├── Step2.tsx                   #   298줄  step 3 — J-layer 표
+    ├── Step3.tsx                   #   591줄  step 4 — O-layer 표 + TBV/TLV·partial_shot 정보 탭
+    └── Step4.tsx                   #   539줄  step 5 — Backbone(bb) 자동채움·매핑·결과 표
 ```
 
 > ⚠️ **Step 파일명 ↔ step 번호 매핑 주의** (기존 `renderStepN` 명명을 그대로 보존):
@@ -39,38 +45,76 @@ pages/RequestPage/
 - `GuideBadge` 는 index.tsx 에 남아 있고 `React.FC<{ fk; tk }>` 타입의 prop 으로 각 Step 에 전달 → 배지 호출부(`<GuideBadge fk tk/>`)·클로저(`toggleSlidePanel`/`slidePanel`) 변경 0.
 - `t`(useTranslation), `ST_CELL_COLOR`, `AutocompleteInput`, `FormSelect`, `ProdcRow`, `MshotImageUpload` 등 **import 가능한 것은 Step 파일에서 직접 import**.
 - 파생 불리언(`isProdc`/`isMapRegistered`/`hasMapChange`/`hasEaChange`/`mshotDeleteMode`/`mshotEditAddMode`/`availableRevLayers`)은 동일값 보장을 위해 **props 로 전달**(Step 내부 재계산 금지).
-- 검증: 매 분리 후 `tsc` 전체 error 가 47개로 유지되는지 확인. 신규 `TS2304/2305/2307/2552/6133` 발생 시 즉시 수정.
+- 검증: 매 분리 후 `tsc` 전체 error 총수가 **작업 직전 실측값과 동일**한지 확인(§4 참조 — 2026-08-06 기준 24개). 신규 `TS2304/2305/2307/2552/6133` 발생 시 즉시 수정.
 
-### `constants.ts` export 목록
-- 옵션: `OPTION_REQUEST_PURPOSE`, `OPTION_LINE`, `OPTION_OTHER_PURPOSE`, `ST_CELL_COLOR`
-- 공용 타입: `CRegion` (`'top' | 'middle' | 'bottom'`)
-- 팩토리: `genId`, `makeRow`, `makeJayerRow`, `makeOayerRow`, `makeBbRow`
-- 초기 상태: `INITIAL_DETAIL`, `INITIAL_FORM`, `DETAIL_REQUIRED`
+### `constants.ts` export 목록 (2026-08-06 실측)
 
-> `ST_CELL_COLOR` 는 `components/PagedDetailView.tsx` 에도 **동일 정의가 중복** 존재한다(상세보기 전용). 추후 공통 모듈로 합치는 것을 고려할 수 있으나, 이번 범위 밖이라 그대로 둔다.
+| 분류 | export |
+|---|---|
+| 목적 옵션 | `OPTION_REQUEST_PURPOSE`, `OPTION_LINE`, `OPTION_OTHER_PURPOSE`, `ONLY_MAP_PURPOSE`, `MAP_DELETE_EDIT_PURPOSE`, `OTHER_PURPOSE_LAB` |
+| Merge | `MERGE_ENABLED_PURPOSES`, `isMergePurposeSelected`, `MERGE_UNREGISTERED_ID` |
+| ADI CD | `OTHER_PURPOSE_ADI_CD`, `ADI_CD_MAP_TYPE`, `ADI_CD_TEMPLATE_ROWS`, `ADI_CD_MAX_ROWS`, `ADI_CD_HEADER_SCAN_ROWS`, `ADI_CD_STEP_ID_LABEL`, `ADI_CD_STEP_DESC_LABEL` |
+| MAP 삭제/수정 | `MAP_TYPE_EDIT_REQ`, `MAP_TYPE_DELETE_REQ`, `isMapDeleteEditType` |
+| Validation System | `VALIDATION_KEYWORD`, `VS_TARGET`, `VS_NONTARGET`, `VS_NA`, `VALIDATION_CELL_COLOR` |
+| 표 컬럼 | `JAYER_EDITABLE_COLS`, `OAYER_EDITABLE_COLS`, `LOADED_LOCK_COLS` |
+| NOC/ST 값 | `NOC_NEW`, `NOC_BORROW`, `NOC_REGISTERED`, `NOC_LAYER_DELETE`, `ST_O`, `ST_X`, `isNocSpecial` |
+| C가문 스코프 | `PRODC_SCOPE_OPTIONS`, `inferProdcScope` |
+| 색상(재수출) | `ST_CELL_COLOR` |
+| 공용 타입 | `CRegion` (`'top' \| 'middle' \| 'bottom'`), `ProdcScope` |
+| 팩토리 | `genId`, `makeRow`, `makeBbEntry`, `makeJayerRow`, `makeOayerRow`, `makeBbRow`, `makeAdiCdStep` |
+| 초기 상태 | `INITIAL_DETAIL`, `INITIAL_FORM`, `DETAIL_REQUIRED` |
+| 가이드 투어 시드 | `makeTourDetail`, `makeTourJayerRows`, `makeTourOayerRows`, `makeTourBbRows`, `makeTourBbExternalData`, `TOUR_JAYER_LAYERS`, `TOUR_JAYER_PRODUCT`, `TOUR_JAYER_STEPS`, `TOUR_JAYER_ITEMS` |
+
+> ✅ `ST_CELL_COLOR` 중복은 **해소됐다**. 현재는 공통 모듈 `src/utils/stCellColor.ts` 가 단일 정의이고,
+> `constants.ts` 는 이를 **재수출**(`export { ST_CELL_COLOR } from '../../utils/stCellColor'`)할 뿐이다.
+> `components/PagedDetailView.tsx` 도 공통 모듈에서 직접 import 한다.
+
+### `helpers.ts` export 목록 (2026-08-06 실측 — 순수 함수/타입 24개)
+
+| 분류 | export |
+|---|---|
+| 표 행 유틸 | `formatUpdatedDate`, `shouldDisableRow`, `calcDisabled`, `emptyDraftWords`, `sanitizeSignedDecimal`, `findNocBorrowViolations` |
+| 3-way Merge | `MergeComparableRow`(타입), `MergeStats`(타입), `computeLayerMerge` |
+| BEFORE/AFTER 비교 | `BaComparableRow`(타입), `toMergeRowInfo`, `BeforeAfterResult`(타입), `computeBeforeAfter` |
+| Validation System | `isValidationKeywordRow`, `isValidationTarget`, `autoValidationSystem` |
+| ADI CD 붙여넣기 | `parseClipboardTable`, `AdiCdHeaderMatch`(타입), `detectAdiCdHeader`, `AdiCdPasteDecision`(타입), `decideAdiCdPaste`, `buildAdiCdRows`, `AdiCdValidationResult`(타입), `validateAdiCdRows` |
 
 ---
 
 ## 2. 메인 컴포넌트(index.tsx) 내부 구성
 
 ### 2.1 상태(state) 그룹
-- **옵션 캐시**: `lineOptions`, `processOptions`, `productOptions`, `processIdOptions`, `top/middle/bottomProductOptions`, `Bb*Options`, `Flow*Options`
-- **위저드**: `step`, `form`, `detail`, `errors`
-- **J-layer**: `jayerRows`, `jayerChecked`, `jayerDragInfo`(ref), `jayerFilterSets`, `jayerActiveFilterIds`, `jayerFilterModalOpen`, `jayerNewFilter`, `jayerBarcodeCache`
-- **O-layer**: `oayerRows`, `oayerChecked`, `oayerDragInfo`(ref), `oayerFilterSets`, `oayerActiveFilterIds`, `oayerFilterModalOpen`
-- **뼈찜(Bb)**: `bbRows`, `bbExternalData`, `bbExternalLoading`, `activeBbTab`, `bbChecked`, `bbAutoFillRanges`, `showAutoFillPanel`, `isBbSorted`, `bbSearchQueries`, `stagedMappings`, `mappedJayerRowIds`, `selectedJayerRowId`
-- **참조문서 병합**: `refDocId`, `refDocLabel`, `refJayerRows`, `refOayerRows`, `mergeConfirmOpen`, `mergeStats`
-- **저장/상신**: `saving`, `submitting`, `confirmOpen`, `submitNote`, `savedId`, 각종 confirm 모달 상태
 
-### 2.2 핸들러 그룹 (접두사별)
+> 규모(2026-08-06 실측): `useState` **112**개 · `useEffect` **25**개 · `handle*` 핸들러 **89**개.
+
+- **옵션 캐시**: `lineOptions`, `processOptions`, `productOptions`, `processIdOptions`, `top/middle/bottomProductOptions`, `top/middle/bottomProcessOptions`, `Bb*Options`, `Flow*Options`, `sourcePartIdOptions`
+- **위저드**: `step`, `form`, `detail`, `errors`
+- **J-layer**: `jayerRows`, `jayerChecked`, `jayerDragInfo`(ref), `jayerFilterSets`, `jayerActiveFilterIds`, `jayerFilterModalOpen`, `jayerNewFilter`, `jayerBarcodeCache`, `jayerSortBySp`
+- **O-layer**: `oayerRows`, `oayerChecked`, `oayerDragInfo`(ref), `oayerFilterSets`, `oayerActiveFilterIds`, `oayerFilterModalOpen`, `oayerNewFilter`, `oayerSortBySp`, `oayerInfoTab`
+- **뼈찜(Bb)**: `bbRows`, `bbExternalData`, `bbExternalLoading`, `activeBbTab`, `bbChecked`, `bbAutoFillRanges`, `showAutoFillPanel`, `bbSearchQueries`, `stagedMappings`, `mappedJayerRowIds`, `selectedJayerRowId`, `bbExtCache`(ref), `bbExtPrevPid`(ref)
+- **참조문서 병합**: `refDocId`, `refDocLabel`, `refJayerRows`, `refOayerRows`, `mergeConfirmOpen`, `mergePreview`, `mergeSnapshot`, `mergeReselectConfirm`
+- **BEFORE/AFTER 비교**: `baSelBefore`, `baSelAfter`, `baSameCount`
+- **ADI CD 변경**: `adiCdLeaveConfirm`, `adiCdMapModal`, `adiCdPendingApply`
+- **C가문(PRODC)**: `prodcScopeConfirm`
+- **REV**: `revLayersSelected`, `revGds`
+- **TBV/TLV**: `tbvtlvSdsSelected`, `tbvtlvNoteRows`, `tbvtlvWarnModal`
+- **Validation System**: `vsManuallySet` (상신자가 토글을 직접 눌렀는지 — 이후 자동 판정 갱신 중단)
+- **지정 PL / 수신참조 / 주소록**: `designees`, `designeeSearchQuery`, `designeeDropdownOpen`, `designeeError`, `plUserOptions`, `postApprovers`, `postApprover*`, `notifierUserOptions`, `notifier*`, `addressBooks`, `abLoadOpen`, `abSaveOpen`, `abSaveMode`, `abSaveNewName`, `abConfirm`, `abLoadQuery`
+- **가이드**: `featureGuideKeys`, `slidePanel` (`GuideBadge` 클릭 시 열리는 슬라이드 패널)
+- **가이드 투어**(`?embed=tour`): `tourJCursor`, `tourJChip`, `tourJClicking`, `tourRef`, `snapStateRef`
+- **저장/상신**: `saving`, `submitting`, `confirmOpen`, `submitNote`, `savedId`, `loadError`, `editDocStatus`, `productionDate`, `isPersistingRef`, `isLoadingEditRef`, `originalRequesterRef`, 각종 confirm 모달 상태(`deleteConfirm`, `mapTypeChangeConfirm`, `onlyMapConfirm`, `bbResetConfirm`, `specialCareConfirm`, `filterDeleteConfirm`, `filterAllDeleteConfirm`)
+
+### 2.2 핸들러 그룹 (접두사별 — 2026-08-06 실측, 총 89개)
 | 접두사 | 개수 | 비고 |
 |--------|------|------|
-| `handleJayer*` | 10 | J-layer 행 편집/체크/드래그/일괄처리 |
-| `handleOayer*` | 10 | O-layer (J-layer와 대칭 구조) |
-| `handleBb*` | 8 | 뼈찜 표 + 외부 데이터 매핑 |
-| `handleFlow*` | 3 | Flow chart 행 |
-| `handleMap*` / `handleMerge*` / `handleFilter*` / `handleProdc*` / `handleDetail*` / `handleApply*` | 각 2 | |
-| 기타 (`handleSubmit`, `handleSave`, `handleReset`, `handleStage`, `handleSort`, `handleRange`, `handleRadio`, `handleImage`, `handleRef`, `handleNext`/`handlePrev` 등) | 1~2 | |
+| `handleJayer*` | 11 | J-layer 행 편집/붙여넣기/체크/드래그/일괄처리 |
+| `handleOayer*` | 11 | O-layer (J-layer와 대칭 구조) |
+| `handleBb*` | 8 | 뼈찜 표 + entry + 외부 데이터 매핑 |
+| `handleAdiCd*` | 6 | ADI CD 셀 편집·행 추가/삭제·전체삭제 토글·붙여넣기·컬럼 매핑 |
+| `handleFlow*` | 4 | Flow chart 행 |
+| `handleMap*` / `handleMerge*` / `handleProdc*` / `handleBa*` | 각 3 | `handleBa*` = BEFORE/AFTER 선택·적용·해제 |
+| `handleFilter*` / `handleDetail*` / `handleApply*` | 각 2 | |
+| 기타 단일 핸들러 | 각 1 | `handleSubmitClick`, `handleSubmit`, `handleSaveDraft`, `handleIdleAutoSave`, `handleReset`, `handleNextStep`, `handlePrevStep`, `handleRequestPurposeSelect`, `handleSelectAdiCdPurpose`, `handleLeaveAdiCd`, `handleOnlyMapConfirm`, `handleOnlyProdcChange`, `handleRegionMapChangeChange`, `handleEaChangeChange`, `handleMshotChangeChange`, `handleRadioChange`, `handleImagePaste`, `handleRefDocSelect`, `handleStageMapping`, `handleClearStaging`, `handleSortBbRows`, `handleResetBbRows`, `handleOpenAutoFillPanel`, `handleAddRange`, `handleRemoveRange`, `handleRangeChange`, `handlePartidSelectionBlur`, `handleDragEnd` 등 |
 
 ### 2.3 렌더 함수 → Step 컴포넌트 (✅ 분리 완료)
 메인 `return` 은 `step` 값에 따라 §1의 Step 컴포넌트를 렌더한다. 기존 `renderStepN()` 인라인 렌더 함수는 모두 제거되고 `components/StepN.tsx` 로 분리됨.
@@ -92,6 +136,11 @@ pages/RequestPage/
 | 1차 | 독립 단위 분리(상수·팩토리·ProdcRow/Mshot/Wizard) | ✅ | 4,083 → 3,795 |
 | 2차 | 5개 Step 컴포넌트 분리(renderStepN → StepN) | ✅ | 3,795 → 2,242 |
 | 3차 | 순수 헬퍼(helpers.ts) + 공유 필터 모달(FilterManageModal) 분리 | ✅ | 2,242 → 2,028 |
+| **현황** | **3차 종료 후 기능 추가분 누적** — 참조 요청서 Merge/BEFORE·AFTER 비교, ADI CD 변경, C가문 `prodc_scope` 게이트·ONLY 스코프, Validation System, 가이드 투어, MAP 삭제/수정·연구소 제품 등 | — | **2,028 → 4,548** (2026-08-06 실측) |
+
+> ⚠️ 위 1~3차 수치는 **2026-06 리팩토링 당시의 기록**이다. 이후 신규 기능이 index.tsx 에 계속 쌓여
+> 현재는 4,452줄로, 리팩토링 종료 시점(2,028줄)의 2배가 넘는다. §3.1 의 "2,028줄을 합리적 종료점으로
+> 인정" 결론은 **그 시점의 판단**이며, 재분리 필요성은 현재 규모 기준으로 다시 판단해야 한다.
 
 ### 3.1 커스텀 훅으로 핸들러 추출 — ⛔ 검증 결과 비권장
 
@@ -99,30 +148,145 @@ pages/RequestPage/
 
 - **Jayer ↔ Bb 교차 쓰기**: `handleJayerBulkDisable` 이 `setSelectedJayerRowId`·`setStagedMappings`(Bb 매핑 state)를 변경.
 - **Bb ↔ Jayer 교차 읽기/쓰기**: `handleApplyMappings`·`buildAutoFillRows` 가 `jayerRows`·`detail.bb_entries`·`bbExternalData` 를 읽고 `setMappedJayerRowIds`(jayer 결합)를 씀.
-- **16개 effect 의 연쇄 동기화**: 대부분 `detail.*` 에 키를 두고 옵션 캐시 + `setDetail` 연쇄 초기화 + jayer/oayer 행 채우기를 교차 수행. 전부 `eslint-disable react-hooks/exhaustive-deps` 로 **의존성 배열을 의도적으로 부분 지정**, 공유 `isLoadingEditRef` 가드 ref 사용.
+- **effect 의 연쇄 동기화**(판단 당시 16개 → **2026-08-06 실측 25개**): 대부분 `detail.*` 에 키를 두고 옵션 캐시 + `setDetail` 연쇄 초기화 + jayer/oayer 행 채우기를 교차 수행. 전부 `eslint-disable react-hooks/exhaustive-deps` 로 **의존성 배열을 의도적으로 부분 지정**, 공유 `isLoadingEditRef` 가드 ref 사용.
 
-→ 훅으로 옮기면 (1) 주입 의존성이 도메인당 15~30개로 폭증해 복잡도가 오히려 증가하고, (2) **state 소유권 이동이 클로저 캡처·effect 실행 타이밍을 바꿔 `tsc` 가 못 잡는 런타임 버그**(stale closure / effect 순서)를 유발할 수 있다. "기존 기능 무손상 최우선" 원칙과 충돌하므로 **현 상태(2,028줄)를 합리적 종료점으로 인정**한다.
+→ 훅으로 옮기면 (1) 주입 의존성이 도메인당 15~30개로 폭증해 복잡도가 오히려 증가하고, (2) **state 소유권 이동이 클로저 캡처·effect 실행 타이밍을 바꿔 `tsc` 가 못 잡는 런타임 버그**(stale closure / effect 순서)를 유발할 수 있다. "기존 기능 무손상 최우선" 원칙과 충돌하므로 **당시 상태(2,028줄)를 합리적 종료점으로 인정**했다(2026-06 판단 — 현재 규모는 §3 표의 '현황' 행 참조).
 
 > 굳이 추가로 줄여야 한다면: 남은 confirm/merge/submit 모달(8~28줄, 이미 공용 `ConfirmModal`/`Modal` 기반)을 컴포넌트화할 수 있으나 props 주입 오버헤드 대비 이득이 적다. 훅 추출이 정말 필요해지면 **도메인이 아니라 응집된 한 덩어리**(예: 옵션-fetch effect 묶음)부터, 광범위한 수동 회귀 테스트를 동반해 시도할 것.
 
 ### 3.2 분리 작업 진행 원칙 (필수 — 후속 작업 시에도 동일)
 - 한 번에 한 단위씩, **파일별 개별 커밋** (CLAUDE.md 규칙 E).
 - **state 소유권은 index.tsx 에 유지**, JSX·순수 함수만 이동(props 주입). 이것이 `tsc` 로 완전 검증 가능한 안전 패턴.
-- 각 단계마다 검증: `npx tsc --noEmit` 의 전체 error 개수가 **베이스라인(47개)과 동일**한지 확인. 47개는 모두 기존 i18n strict 키 타이핑 / es5 target `Set` 순회 관련 pre-existing(파일만 이동, 총수 불변 = 신규 0 증명). 신규 `TS2304/2305/2307/2552/6133`(미정의·import·미사용) 발생 시 즉시 수정.
+- 각 단계마다 검증: `npx tsc --noEmit` 의 전체 error 개수가 **작업 직전 실측값과 동일**한지 확인(고정 상수가 아니다 — 2026-06 당시 47개 → **2026-08-06 실측 24개**). 이 error 들은 모두 기존 i18n strict 키 타이핑 / es5 target `Set` 순회 관련 pre-existing 이므로, 파일만 이동했다면 총수가 불변인 것이 곧 신규 0 의 증명이다. 신규 `TS2304/2305/2307/2552/6133`(미정의·import·미사용) 발생 시 즉시 수정.
 - 동작 동일성이 핵심. 로직/문구 변경 금지(요청 시에만).
 
 ---
 
 ## 4. 알려진 pre-existing 이슈 (이번 리팩토링 무관)
-- `tsc --noEmit` 기준 전체 **24개** error 존재(2026-08-02 실측) — i18n `t()` 의 strict 키 타입 + `Set` 순회(es5 target).
-  아래 §3.2·§5 에 적힌 **베이스라인 47개는 옛 값**이므로, 후속 작업에서는 "작업 직전 실측값과 동일한지"로 판단할 것.
-- ⚠️ `npx react-scripts build` 는 **현재 실패한다**(`Navbar.tsx:227` 의 `t('profile.name')` — i18n strict 키 타입 TS2345).
-  이번 변경 이전 커밋에서도 동일하게 실패하는 pre-existing 이슈다. "CRA 빌드는 통과한다"는 과거 기술은 더 이상 사실이 아니다.
-- 하드코딩 한글 문자열 다수 잔존 (예: `MshotImageUpload` 의 "Ctrl+V 로 이미지를 붙여넣으세요", `Step2~Step4`/`StepMap` 의 "활성/전체", "STEP 정렬", "+ 행 추가", "선택 비활성화", "범위 추가", "특정 제품 삭제 필요", `FilterManageModal` 의 "저장된 필터/새 필터 만들기/전체 삭제/닫기/키워드 입력 후 Enter" 등). CLAUDE.md 규칙 G(i18n) 위반이나, 분리 시 동작 보존 위해 원문 그대로 이동. 추후 `request.*` 키로 일괄 이관 필요.
+> 아래는 모두 **2026-08-06 재실측**으로 확인한 현재 상태다.
+
+- `tsc --noEmit` 기준 전체 **24개** error 존재 — i18n `t()` 의 strict 키 타입 + `Set` 순회(es5 target).
+  파일별 분포: `Step3.tsx` 6 · `Step2.tsx` 6 · `RequestPage/index.tsx` 4 · `Navbar.tsx` 3 · `VOCPage.tsx` 2 · `Step4.tsx` 1 · `GuidePage.tsx` 1 · `PagedDetailView.tsx` 1.
+  **베이스라인은 고정 상수가 아니다** — 2026-06 문서에 적힌 47개는 옛 값이고, 후속 작업에서는 "작업 직전 실측값과 동일한지"로 판단할 것.
+- ⚠️ `npx react-scripts build` 는 **현재도 실패한다**(종료코드 1). 원인은 그대로 `Navbar.tsx:227` 의 `t('profile.name')` — i18n strict 키 타입 TS2345.
+  ```
+  $ CI=true npx react-scripts build
+  Failed to compile.
+  TS2345: Argument of type '["profile.name"]' is not assignable to parameter of type ...
+    > 227 |   <span className="dropdown-label">{t('profile.name') || '이름'}</span>
+  ```
+  이전 커밋에서도 동일하게 실패하는 pre-existing 이슈다. "CRA 빌드는 통과한다"는 과거 기술은 더 이상 사실이 아니다.
+- 테스트는 통과한다: `npx react-scripts test --watchAll=false` → **2 suites / 67건 전부 통과**
+  (`RequestPage/helpers.test.ts` 63건 + `locales/terminology.test.ts` 4건).
+- 하드코딩 한글 문자열 다수 잔존 — CLAUDE.md 규칙 G(i18n) 위반이나, 분리 시 동작 보존 위해 원문 그대로 이동했다. 추후 `request.*` 키로 일괄 이관 필요. 현존 확인된 예:
+
+  | 파일 | 문자열 |
+  |---|---|
+  | `MshotImageUpload.tsx` | "Ctrl+V 로 이미지를 붙여넣으세요" |
+  | `Step2.tsx` / `Step3.tsx` | `활성 N / 전체 N`, "STEP 정렬", "+ 행 추가", "선택 비활성화" |
+  | `Step4.tsx` | "+ 행 추가", "범위 추가" |
+  | `StepMap.tsx` | "특정 제품 삭제 필요" |
+  | `FilterManageModal.tsx` | "저장된 필터", "저장된 필터가 없습니다.", "새 필터 만들기", "필터 수정", "수정 적용", "+ 추가", "수정", "삭제", "전체 삭제", "닫기", "키워드 입력 후 Enter", "🔵 STEPSEQ / 🟢 STEP 설명 / 🟠 PPID" |
 
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 추가 변경 이력 (2026-08-06 — 마이그레이션 leaf 충돌 해소 + 0009 번호 예약)
+
+- **개요**: 기존 마이그레이션 그래프에 leaf(끝 노드)가 2개 있어(`0013_alter_approvalstep_action`,
+  `0013_alter_mailnotification_event_type` 이 같은 부모 `0012_design_rule_overrides` 를 가리킴)
+  `manage.py test`/`migrate` 가 `CommandError: Conflicting migrations detected` 로 **아예 실행되지
+  않는** 상태였다. 두 파일이 서로 다른 브랜치에서 각각 만들어져 병합된 결과다.
+- **재정렬**(전부 `git mv` 로 이력 보존, `dependencies` 를 새 체인에 맞게 갱신):
+
+  | 이전 | 이후 |
+  |---|---|
+  | `0009_alter_approvalstep_agent` | → `0010_alter_approvalstep_agent` |
+  | `0010_designrule` | → `0011_designrule` |
+  | `0011_alter_mailnotification_event_type` | → `0012_alter_mailnotification_event_type` |
+  | `0012_design_rule_overrides` | → `0013_design_rule_overrides` |
+  | `0013_alter_mailnotification_event_type`(08-05 04:19 생성) | → `0014_alter_mailnotification_event_type` |
+  | `0013_alter_approvalstep_action`(08-06 00:47 생성) | → `0015_alter_approvalstep_action` |
+
+- **`0009` 번호는 비워둔다**: 사내 메신저(Knox 채팅방/알림) 기능이 추가되면서 생길 `UserProfile`
+  마이그레이션 자리다. 보안상 이 저장소에는 내용을 넣지 않는다. 그때까지 `0010`(재정렬 전 `0009`)은
+  그대로 `0008` 을 의존성으로 유지한다 — 존재하지 않는 파일을 가리키면 이 저장소 단독으로 `migrate`
+  가 깨진다. `0009` 파일이 실제로 추가되는 시점에 `0008→0009`, `0009→0010` 의존성 연결은 **그
+  작업에서 함께** 처리해야 한다.
+- **모델 필드 변경 없음** — 순서만 바뀐 것이라 이미 옛 번호로 배포된 DB 에도 안전하다
+  (`makemigrations --check --dry-run` → `No changes detected` 확인).
+- **다른 문서의 번호 참조도 함께 갱신**: 이 파일 §4.1 2026-08-05 항목(`0013`→`0014`),
+  `docs/HOME_STATS.md` §8(`0012`→`0013`). `docs/E2E_TEST_AND_BUGS.md` B-48 의 `0012_design_rule_overrides`
+  언급은 **2026-08-04 원문 보존 기록**이라 손대지 않았다(당시 실측 그대로 남겨야 하는 이력).
+- **검증**: `makemigrations --check --dry-run` → `No changes detected`. `showmigrations` → 단일
+  체인, leaf 1개. 이후 처음으로 백엔드 테스트 실행 가능해짐 — 187건 중 184건 통과(실패 3건은
+  마이그레이션과 무관한 선행 버그, 세션 시작 전 커밋에서도 동일하게 실패함을 별도 워크트리로 확인).
+
+### 추가 변경 이력 (2026-08-06 — 요청 목적 'MAP 삭제/수정' + 기타 목적 '연구소 제품')
+
+- **개요**: 요청 목적에 `MAP 삭제/수정` 을, 기타 목적에 `연구소 제품` 을 추가했다. 계획·인터뷰
+  과정과 결재 경로 다이어그램은 `docs/map_delete_edit_mockup.html`(mock 계획서, 확정본 v2) 참조.
+
+- **연구소 제품** — `Only MAP` 전용 기타 목적. 결재 경로는 바꾸지 않는다(**Only MAP 경로 그대로**,
+  PL→R→후결자). 선택 시 기존 C가문(`only_prodc=Yes`) 후결자 메커니즘을 그대로 켤 뿐이다 — 새로
+  만든 결재 로직은 없다.
+  - `index.tsx`: 파생 플래그 `isLabProduct`/`requiresPostApprover`(= C가문 **또는** 연구소 제품)
+    신설. 후결자 관련 조건 3곳(저장 payload·상신 차단·UI 노출)을 `only_prodc==='Yes'` 단일 비교에서
+    이 플래그로 교체.
+  - `Step1.tsx`: 기타 목적 버튼 잠금을 항목별로 분리(`otherPurposeDisabled`) — `연구소 제품`은
+    `Only MAP` 일 때만 열리고 다른 목적에서는 이것만 잠긴다(나머지 6개는 반대).
+  - `Only MAP` 을 해제하면 확인 모달 후 `연구소 제품`·지정한 후결자를 함께 초기화한다
+    (`applyLeaveMapOnlyScope`). `연구소 제품`만 껐다 켜도 후결자는 함께 초기화된다.
+  - **백엔드**: `RequestDocument.requires_post_approver()`(C가문 또는 연구소 제품) 신설,
+    `_validate_post_approvers`·`remove_post_approver` 두 곳 모두 이 헬퍼로 판정(후자는 처음엔
+    누락했다가 발견해 별도 수정 — `docs/APPROVAL.md` §6-9·Case O 참조).
+
+- **MAP 삭제/수정** — `Only MAP` 과 동일하게 MAP 정보만 작성한다(Step1 부가 항목·J/O/Backbone
+  잠금·초기화, 결재 경로는 다름 — `docs/APPROVAL.md` **Case O**).
+  - `constants.ts`: `MAP_DELETE_EDIT_PURPOSE`·`MAP_TYPE_EDIT_REQ`·`MAP_TYPE_DELETE_REQ`
+    (`isMapDeleteEditType`) 신설. ⚠️ 과거 '완성된 MAP 변경' 기능이 쓰다 2026-08-05 삭제된
+    `map_type='EDIT'` 값은 레거시 문서와 섞이므로 재사용하지 않고 `EDIT_REQ`를 썼다.
+  - `index.tsx`: `applyOnlyMap()` → `applyMapOnlyScope(purpose)` 로 일반화해 `Only MAP`·
+    `MAP 삭제/수정` 이 초기화 로직을 공유한다. `MAP 삭제/수정` 진입 시엔 `map_type` 을 비운다
+    (`ADI` 와 달리 후보가 2개라 자동 고정할 수 없어 STEP2 에서 직접 고른다). `validate(2)` 에
+    이유 모드 조기 분기 추가 — 숨긴 항목은 검증도 건너뛰고 이유 필수만 본다(HTML 태그를 걷어내고
+    판정, 이미지만 있어도 통과).
+  - `StepMap.tsx`: `map_type` 버튼 4개(`NEW`/`CLONE`/`EXISTING`/`ADI`) → 6개(`수정`/`삭제` 추가).
+    `MAP 삭제/수정` 목적일 때만 `수정`/`삭제` 가 열리고 나머지 4개가 잠기며(그 반대도 성립),
+    `ADI` 의 "표시 전용 잠금" 패턴을 그대로 따른다. `수정`/`삭제` 선택 시 **아래 MAP 블록 전체를
+    렌더하지 않는다**(잠금이 아니라 숨김) — 원본 위치·REV·C가문·지도편차·예외구역·X표시·Inter·
+    Map Option 이 전부 사라지고 이유 입력칸만 남는다.
+  - **이유 입력칸**: 새 컴포넌트를 만들지 않고 기존 `RichTextEditor`(Tiptap, 공지·가이드·VOC 3곳
+    에서 이미 사용 중)를 재사용했다. 글·이미지 붙여넣기가 이미 구현돼 있어(`uploadImageAPI.upload()`)
+    요구사항을 그대로 만족한다. 고정 높이(320px) `div` 로 감싸 내용이 길어져도 **칸 내부에서만
+    스크롤**된다(에디터가 이미 `flex:1`+`overflowY:auto` 구조라 컴포넌트 자체는 수정 불필요).
+    저장 필드는 `detail.map_change_reason`(HTML 문자열, 수정·삭제 공용 — 전환 시 값 유지, 라벨만
+    바뀐다). ⚠️ C가문 지도편차 사유인 기존 `map_reason` 과는 **별개 필드**다.
+  - `PagedDetailView.tsx`: MAP 정보 섹션에 이유 카드 추가(수정/삭제일 때만, 라벨 분기). 렌더는
+    공지·가이드·VOC 와 동일하게 `dangerouslySetInnerHTML` — **sanitize 없음**(기존 관행과 동일
+    수준의 위험이며 이번에 새로 생기거나 해소되지도 않았다).
+  - **결재 경로**: PL 전원 합의 직후 **P·R·J·O 병렬 생성**(E·후결자 없음, 고정 후결자도 안 붙는
+    유일한 경로). 상세는 `docs/APPROVAL.md` **Case O**.
+
+- **저장 구조**: 전부 `additional_notes` JSON 하위(`request_purpose`/`other_purpose`/`map_type`/
+  `map_change_reason`)라 **마이그레이션 없음**.
+
+- **i18n**: `request.map_type_edit_req`·`map_type_delete_req`·`map_change_reason_edit`·
+  `map_change_reason_delete`·`map_change_reason_help`·`map_change_reason_placeholder`·
+  `map_delete_edit_confirm_title`·`map_delete_edit_confirm_msg`·`map_only_leave_confirm_title`·
+  `map_only_leave_confirm_msg`·`lab_product_only_map_hint` 11키 ko/en 동시 추가. 기존
+  `post_approver_help`/`post_approver_required` 문구도 연구소 제품을 언급하도록 함께 수정.
+
+- **테스트**: 프론트 `approvalTable.test.ts`(신규, 7건 — 결재현황 목록의 R 표시 회귀·신규 시나리오),
+  백엔드 `MapDeleteEditRouteTest`(7건)·`LabProductPostApproverTest`(5건, 후결자 제거 가드 재현
+  포함). 전체 프론트 74건 / 백엔드 188건(실패 3건은 무관한 선행 버그) 통과.
+
+- **작업 중 발견해 함께 고친 버그 3건**(요청 범위 밖이었으나 이 기능이 드러낸 결함이라 즉시 수정
+  — 상세는 `docs/APPROVAL.md` §6-9·Case O):
+  1. 결재현황 목록이 병렬 구성원이 된 R 을 표시하지 않던 문제(`approvalTable.ts` `path0` 추가).
+  2. 결재 상세 후결자(RA) 행이 이 경로에서 '대기'로 영구 표시되던 문제(`PagedDetailView.tsx`).
+  3. `remove-post-approver` 최소인원 가드가 연구소 제품을 놓치던 문제(`views.py`).
 
 ### 추가 변경 이력 (2026-08-05 — 기타 목적 '완성된 MAP 변경' 기능 삭제)
 
@@ -150,9 +314,10 @@ pages/RequestPage/
   - `views.py`: `approve_step` 승인 후처리 훅과 `_apply_map_change_to_source()`(78줄) 삭제.
   - `mailer.py`: `map_apply_failed` 라벨·테마·이력 링크 대상·본문 분기·`enqueue_map_apply_failed()` 삭제.
     기존에 적재된 레거시 행은 `_build_message` 의 `else` 폴백이 `[알림]` 제목으로 처리한다.
-  - `MailNotification.EVENT_CHOICES` 에서 `map_apply_failed` 제거 → **마이그레이션 `0013_alter_mailnotification_event_type`**.
+  - `MailNotification.EVENT_CHOICES` 에서 `map_apply_failed` 제거 → **마이그레이션 `0014_alter_mailnotification_event_type`**
+    (2026-08-06 마이그레이션 재정렬로 번호가 `0013`→`0014`로 바뀌었다 — 아래 2026-08-06 이력 참조).
     `choices` 변경뿐이라 **테이블 스키마는 바뀌지 않지만 배포 시 `migrate` 는 실행해야 한다.**
-    (`0011` 은 이미 적용된 이력이라 삭제하지 않았다.)
+    (`0012_alter_mailnotification_event_type`(재정렬 전 `0011`)은 이미 적용된 이력이라 삭제하지 않았다.)
   - `tests.py`: `MapChangeApplyTest`(6건) 삭제 → 백엔드 테스트 167건 → **161건**.
 
 - **결재 경로 영향 없음**: 라우팅은 `request_purpose` 만 쓰므로 `Only MAP` 단축 경로(`is_only_map()`)와
@@ -662,11 +827,14 @@ pages/RequestPage/
 
 ## 5. 검증 방법
 ```bash
-# 타입체크 (2026-08-03 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
+# 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
 cd frontend && npx tsc --noEmit 2>&1 | grep -c "error TS"
 
-# 테스트 (helpers.test.ts 32건)
+# 테스트 (2026-08-06 실측: 2 suites / 67건 — helpers.test.ts 63건 + terminology.test.ts 4건)
 cd frontend && CI=true npx react-scripts test --watchAll=false --passWithNoTests
+
+# ⚠️ 프로덕션 빌드는 pre-existing TS2345 로 실패한다(§4). 통과 여부로 회귀를 판단하지 말 것.
+cd frontend && CI=true npx react-scripts build
 
 # 개발 서버 확인 경로
 http://localhost:10011  → /request

@@ -265,6 +265,12 @@ export interface DetailFormState {
   map_value_x: string;
   map_value_y: string;
   map_reason: string;
+  /**
+   * 'MAP 삭제/수정' 요청 목적 전용 이유(RichTextEditor 의 HTML 문자열).
+   * map_type 이 EDIT_REQ/DELETE_REQ 일 때만 쓰이며, 둘 사이를 오가도 값은 유지되고 라벨만 바뀐다.
+   * ⚠️ C가문 지도편차 사유인 map_reason 과는 별개 필드다.
+   */
+  map_change_reason: string;
 
   // Exclusive Area
   ea_change: string;
