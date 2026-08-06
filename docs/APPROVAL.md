@@ -56,7 +56,13 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 
 어느 단계든 반려 → rejected
 
-[Only MAP 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ R ─(합의)─▶ approved   (P/O/E 단계 없음)
+[Only MAP 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ R ─(합의)─▶ approved   (P/O/E 단계 없음, 후결자(RA)만 종단)
+
+[MAP 삭제/수정 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ ┌─ P[검토중,+검토자PV] ─┐
+                                                  ├─ R[+검토자RV]        ├─▶ 네 단계 모두 합의 시 approved
+                                                  ├─ J[검토중]           │
+                                                  └─ O[검토중]           ┘
+                                                  (E·후결자(RA) 없음 — R 은 관문이 아니라 병렬 구성원, 2026-08)
 ```
 
 핵심: **PL → R → (P[→검토자 PV] → J) ∥ (O, E[→검토자 EV])**. R 합의 후 두 경로(path1=P→J, path2=O+E)가 **병렬** 진행된다.
@@ -71,6 +77,11 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 > **R 단계까지만** 진행한다. R 합의 시 P/O/E 단계를 생성하지 않고 곧바로 `approved`가 된다.
 > 판정값 `request_purpose`는 `additional_notes` JSON의 `detail` 하위에 저장된다
 > (상수 `RequestDocument.ONLY_MAP_PURPOSE = 'Only MAP'`).
+
+> **예외 — 요청 목적 'MAP 삭제/수정' (2026-08)**: `RequestDocument.is_map_delete_edit()`이
+> 참이면 PL 전원 합의 직후 **P·R·J·O 를 한 번에 병렬 생성**한다(`ROUTE_AGENTS_MAP_DELETE_EDIT`
+> = `P·PV·R·RV·J·O`). E(MASK)와 후결자(RA)는 만들지 않는다 — **모든 문서가 받던 고정 후결자
+> 조차 이 경로에는 붙지 않는 유일한 예외**다. 상세는 아래 **Case O** 참조.
 
 ### Case A — 상신 (`submit`)
 - 조건: `status == 'draft'`, **지정 PL 필수**(role='PL'인 사용자, **본인 지정 불가**), `_validate_bb_mapping` 통과.
