@@ -302,15 +302,15 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return None
 
     def _validate_post_approvers(self, document):
-        """C가문(only_prodc=YES) 문서는 상신 시 추가 후결자(detail.post_approvers)를
-        1명 이상 지정해야 한다. 문제 있으면 error 문자열, 없으면 None.
+        """C가문(only_prodc=YES) 또는 '연구소 제품' 문서는 상신 시 추가 후결자
+        (detail.post_approvers)를 1명 이상 지정해야 한다. 문제 있으면 error 문자열, 없으면 None.
         (고정 후결자 1명은 별도로 항상 포함되므로 여기서는 추가분만 검증한다.)"""
         detail = document.get_detail().get('detail', {}) or {}
-        if detail.get('only_prodc') == 'Yes':
+        if document.requires_post_approver():
             valid = [p for p in (detail.get('post_approvers') or [])
                      if str((p or {}).get('loginid', '') or '').strip()]
             if not valid:
-                return 'C가문 제품은 후결자를 1명 이상 지정해야 합니다.'
+                return 'C가문 제품·연구소 제품은 후결자를 1명 이상 지정해야 합니다.'
         return None
 
     @action(detail=True, methods=['post'])
@@ -587,7 +587,23 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     action='skip', acted_at=timezone.now(),
                 )
 
-        if agent == 'R':
+        # 'MAP 삭제/수정' 은 P·R·J·O 가 모두 병렬 구성원이라, 넷 중 무엇이 마지막이 되든
+        # 여기서 최종 승인을 판정해야 한다. 아래 일반 경로 분기는 P·R 합의로는 승인 판정을
+        # 하지 않으므로(P 는 J 생성만 함), 이 분기가 없으면 네 단계가 다 합의돼도 문서가 멈춘다.
+        if document.is_map_delete_edit():
+            if agent == 'R':
+                # 담당자 합의 → 검토자(RV)가 있으면 그 차례를 알린다(단계는 아직 미완료).
+                rv_step = ApprovalStep.objects.filter(
+                    document=document, agent='RV', action='pending', round=current_round
+                ).first()
+                if rv_step:
+                    mailer.enqueue_stage_arrival(document, 'RV', rv_step, recipient_name=rv_step.assignee_name)
+            elif agent == 'P' and self._stage_reviewers_complete(document, 'P', current_round):
+                # J 는 이미 병렬로 존재하므로 생성하지 않고, 완료 통보만 일반 경로와 동일하게 보낸다.
+                mailer.enqueue_notify_p_completed(document)
+            new_status = 'approved' if self._map_delete_edit_all_approved(document, current_round) else 'under_review'
+
+        elif agent == 'R':
             # 담당자 합의 → 검토자(RV)가 있으면 대기(검토자 차례 — 지금 메일 발송), 없으면 병렬 단계로 전환
             rv_step = ApprovalStep.objects.filter(
                 document=document, agent='RV', action='pending', round=current_round
@@ -1184,6 +1200,47 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         )
         mailer.enqueue_stage_arrival(document, 'J', j_step)
 
+    def _create_map_delete_edit_parallel(self, document, round_no):
+        """'MAP 삭제/수정': PL 합의 직후 P·R·J·O 를 병렬로 생성한다.
+
+        기존 일반 경로와 다른 점 — 기존 코드는 건드리지 않고 이 분기만 새로 탄다.
+        - R 이 병렬을 여는 관문이 아니라 병렬 구성원 중 하나다.
+        - J 가 P 완료를 기다리지 않고 처음부터 존재한다.
+        - E(MASK)와 후결자(RA)는 만들지 않는다 — 고정 후결자도 붙지 않는 유일한 경로다.
+        검토자(PV/RV)는 기존과 동일하게 각 담당자가 지정하며, 단계 완료 판정도 그대로 쓴다.
+        """
+        from .utils import calculate_business_due_date
+        import datetime
+        if ApprovalStep.objects.filter(
+            document=document, agent__in=('P', 'R', 'J', 'O'), round=round_no
+        ).exists():
+            return  # 동시 합의 중복 생성 방지
+        due = calculate_business_due_date(datetime.date.today(), 6)
+        for agent in ('P', 'R', 'J', 'O'):
+            created = ApprovalStep.objects.create(
+                document=document, agent=agent, action='pending',
+                is_parallel=True, round=round_no, due_date=due,
+            )
+            mailer.enqueue_stage_arrival(document, agent, created)
+        # P 도착 통보는 일반 경로와 동일하게 보낸다(수신자 규칙이 같다).
+        mailer.enqueue_notify_p_arrival(document)
+
+    def _map_delete_edit_all_approved(self, document, round_no):
+        """'MAP 삭제/수정' 최종 승인 판정 — P·R·J·O 네 단계가 모두 완료됐는가.
+
+        각 단계는 담당자 + 지정된 검토자(PV/RV) 전원 합의로 완료된다
+        (검토자가 없으면 담당자 합의만으로 완료 — _stage_reviewers_complete 와 동일 규칙).
+        """
+        for agent in ('P', 'R', 'J', 'O'):
+            main = ApprovalStep.objects.select_for_update().filter(
+                document=document, agent=agent, round=round_no,
+            ).first()
+            if not main or main.action != 'approved':
+                return False
+            if agent in ('P', 'R') and not self._stage_reviewers_complete(document, agent, round_no):
+                return False
+        return True
+
     def _advance_to_parallel(self, document, step, round_no):
         """R단계(담당자[→검토자]) 완료 후 병렬 단계 생성 → 반환할 새 status.
 
@@ -1276,6 +1333,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             step.save()
 
             if self._all_pl_approved(document, step.round):
+                # 'MAP 삭제/수정' 은 R 이 관문이 아니라 병렬 구성원이므로 여기서 4단계를 한 번에 만든다.
+                if document.is_map_delete_edit():
+                    self._create_map_delete_edit_parallel(document, step.round)
+                    return True
                 # 전원 합의 → R 생성(중복 방지: 이미 있으면 재생성하지 않음)
                 if not ApprovalStep.objects.filter(document=document, agent='R', round=step.round).exists():
                     r_step = ApprovalStep.objects.create(
