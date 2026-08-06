@@ -1724,7 +1724,7 @@ type Page = { label: string; content: React.ReactNode };
   };
 
   type StepDisplayInfo = {
-    status: 'approved' | 'rejected' | 'reviewing' | 'unassigned' | 'waiting' | 'na';
+    status: 'approved' | 'rejected' | 'skipped' | 'reviewing' | 'unassigned' | 'waiting' | 'na';
     label: string;
     roleLabel?: string; // R단계 내 역할 구분(합의자/검토자)
     assignee?: string;
@@ -1746,6 +1746,14 @@ type Page = { label: string; content: React.ReactNode };
     };
     if (s.action === 'rejected') return {
       status: 'rejected', label: t('approval.reject'),
+      assignee: s.assignee_name || undefined, email,
+      date: formatDateTime(s.acted_at),
+      comment: s.comment || undefined,
+    };
+    // EV 는 1명만 합의하면 단계가 끝나므로(OR) 남은 검토자가 skip 으로 닫힌다.
+    // comment 를 반드시 싣는다 — 그 검토자가 남긴 수정 요청 이력이 화면에서 사라지면 안 된다.
+    if (s.action === 'skip') return {
+      status: 'skipped', label: t('approval.step_skip'),
       assignee: s.assignee_name || undefined, email,
       date: formatDateTime(s.acted_at),
       comment: s.comment || undefined,
@@ -1803,6 +1811,7 @@ type Page = { label: string; content: React.ReactNode };
     const colors: Record<StepDisplayInfo['status'], React.CSSProperties> = {
       approved:   { background: 'rgba(5,150,105,0.1)',   color: '#059669' },
       rejected:   { background: 'rgba(220,38,38,0.1)',   color: '#dc2626' },
+      skipped:    { background: 'rgba(107,138,176,0.12)', color: '#8794a6' },
       reviewing:  { background: 'rgba(217,119,6,0.1)',   color: '#d97706' },
       unassigned: { background: 'rgba(107,138,176,0.15)', color: '#6b8ab0' },
       waiting:    { background: 'rgba(107,138,176,0.1)', color: '#adb5bd' },

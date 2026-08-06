@@ -165,6 +165,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
   | 반려 | `action='rejected'` | `#dc2626` |
   | 검토중 | `action='pending'` + assignee 있음 | `#d97706` |
   | 대기 | `action='pending'` + 미배정, 또는 **step 미생성(예정)** | `#8794a6` |
+  | 건너뜀 | `action='skip'` (EV OR 마감 — 다른 검토자가 먼저 합의) | `#8794a6` |
 
 - **경로에서 빠지는 단계**: Only MAP 의뢰서의 `P·O·E·J`, `has_ppid_plel()`이 아닌 의뢰서의 `E·EV`는 행 자체를 만들지 않는다(라우팅은 반려 수신자 산출과 같은 `ROUTE_AGENTS_*` 상수를 재사용). 검토자(`RV/PV/EV`)는 지정됐을 때만 생성되는 선택 단계라 **step 이 없으면 '대기' 행도 만들지 않는다**(지정되지 않은 검토자를 예정 단계로 오해하지 않도록).
 - **담당자 미지정**: `assignee_name`이 비면 `담당자 미지정`(`ROUTE_UNASSIGNED_LABEL`)으로 표시한다. 무배정 상태로 팀 전체에 브로드캐스트되는 P·O·E·J 도착 메일에서 자주 나타난다.

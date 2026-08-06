@@ -491,7 +491,7 @@ export default function ApprovalPage(): React.ReactElement {
   /**
    * Validation System 수정 창.
    * 상신자 본인(또는 MASTER)이고, 진행 중이며, MASK(E) 검토가 끝나기 전까지 열려 있다.
-   * 백엔드 _stage_reviewers_complete 와 같은 규칙 — E 담당자 합의 + EV 전원 합의로 닫힌다.
+   * 백엔드 _stage_reviewers_complete 와 같은 규칙 — E 담당자 합의 + EV 중 1명 합의로 닫힌다.
    */
   const canEditValidationSystem = (doc: RequestDocument | null): boolean => {
     if (!doc || isTourMode) return false;
@@ -503,17 +503,17 @@ export default function ApprovalPage(): React.ReactElement {
     const eStep = steps.find((st) => st.agent === 'E' && st.round === maxRound);
     if (!eStep || eStep.action !== 'approved') return true;
     const evSteps = steps.filter((st) => st.agent === 'EV' && st.round === maxRound);
-    return evSteps.some((st) => st.action !== 'approved');
+    // EV 는 1명만 합의해도 MASK 검증이 끝난다(OR) — 백엔드 _stage_reviewers_complete 와 같은 규칙.
+    // EV 가 하나도 없으면 백엔드는 '담당자 합의만으로 완료'(하위호환)로 보므로 창도 닫혀야 한다.
+    if (evSteps.length === 0) return false;
+    return evSteps.every((st) => st.action !== 'approved');
   };
 
   const handleValidationSystemChange = async (value: ValidationSystemValue) => {
     if (!selected) return;
     try {
-      const { data } = await documentsAPI.updateValidationSystem(selected.id, value);
-      addToast(
-        data.rewound ? t('approval.validation_system_rewound') : t('approval.validation_system_updated'),
-        'success'
-      );
+      await documentsAPI.updateValidationSystem(selected.id, value);
+      addToast(t('approval.validation_system_updated'), 'success');
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');
@@ -1130,6 +1130,13 @@ export default function ApprovalPage(): React.ReactElement {
                 .map((s) => s.assignee_loginid)
                 .filter((v): v is string => !!v)
             : [];
+          // MASK(E) 는 2차 검토자 1명 이상 지정이 필수다 — 아직 아무도 없으면 '합의'를 막는다.
+          // (P 단계의 검토자는 선택 사항이라 이 판정에서 제외된다.)
+          // existingReviewerLoginids 를 함께 보는 이유: 이 배포 이전에 되감겨 EV step 이
+          // 살아남은 문서에서, 후보에서 제외된 그 검토자 때문에 잠기지 않게 한다.
+          const needsReviewerPick = reviewerPickStep?.agent === 'E'
+            && reviewerSelectedIds.length === 0
+            && existingReviewerLoginids.length === 0;
 
           // 지정자 변경 가능 여부: 원 PL 또는 MASTER, under_review, PL 단계 pending
           const hasPendingPLStep = (selected?.approval_steps ?? []).some(s => s.agent === 'PL' && s.action === 'pending');
@@ -1635,11 +1642,16 @@ export default function ApprovalPage(): React.ReactElement {
                           </ul>
                         )}
                       </div>
+                      {needsReviewerPick && (
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                          {t('approval.reviewer_required_hint')}
+                        </span>
+                      )}
                     </div>
                   )}
                   <button
                     className="btn btn-primary"
-                    disabled={processing}
+                    disabled={processing || needsReviewerPick}
                     onClick={() => triggerAgree(actableStep.agent)}
                   >
                     {t('approval.agree')}

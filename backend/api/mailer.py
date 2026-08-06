@@ -86,6 +86,9 @@ ROUTE_STATUS_STYLE = {
     'rejected': ('반려', '#dc2626', 'rgba(220,38,38,0.1)'),
     'reviewing': ('검토중', '#d97706', 'rgba(217,119,6,0.1)'),
     'waiting': ('대기', '#8794a6', 'rgba(107,138,176,0.12)'),
+    # EV 는 1명만 합의하면 단계가 끝나므로(OR) 남은 검토자는 skip 으로 닫힌다.
+    # 색은 '대기' 와 같은 회색 계열 — 판단하지 않았다는 뜻이라 주의를 끌 필요가 없다.
+    'skipped': ('건너뜀', '#8794a6', 'rgba(107,138,176,0.12)'),
 }
 
 # 담당자가 배정되지 않은 단계의 담당자 칸 문구
@@ -512,6 +515,8 @@ def _route_rows(document):
                 status = 'approved'
             elif s.action == 'rejected':
                 status = 'rejected'
+            elif s.action == 'skip':
+                status = 'skipped'
             elif s.assignee_id:
                 status = 'reviewing'
             else:

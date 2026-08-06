@@ -45,7 +45,7 @@ export type VocStatus = 'checking' | 'completed' | 'rejected';
 export type VocCategory = 'inquiry' | 'error_report' | 'feature_request' | 'task_request';
 
 export type AgentType = 'PL' | 'R' | 'RV' | 'P' | 'PV' | 'J' | 'O' | 'E' | 'EV' | 'RA';
-export type StepAction = 'pending' | 'approved' | 'rejected';
+export type StepAction = 'pending' | 'approved' | 'rejected' | 'skip';
 
 // 역할 → 담당자 매핑 (null 제외)
 export const ROLE_TO_AGENT: Partial<Record<UserRole, AgentType>> = {

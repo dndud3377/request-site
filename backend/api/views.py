@@ -507,6 +507,31 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if not main_step or main_step.action != 'approved':
                 return Response({'error': '담당자 합의가 먼저 필요합니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # E(MASK) 담당자 합의에는 2차 검토자(EV) 지정이 필수다 — MASK 검증은 2인 확인 절차라서
+        # 담당자 혼자 합의로 단계를 넘길 수 없다. (P 단계의 PV 는 지금까지대로 선택 사항이다.)
+        #
+        # 여기(어떤 쓰기보다 먼저)에서 걸러야 한다 — @transaction.atomic 은 예외에만 롤백하므로
+        # 검토자 생성 이후에 400 을 반환하면 그 쓰기가 커밋된 채 응답만 실패한다.
+        #
+        # 이 규칙은 앞으로의 합의에만 적용된다. 이미 검토자 없이 E 합의를 마친 기존 문서는
+        # _stage_reviewers_complete() 의 하위호환 분기로 그대로 승인될 수 있어야 한다
+        # (E 단계가 이미 approved 라 검토자를 지정할 경로가 없어, 소급 적용하면 영구 정지된다).
+        if agent == 'E':
+            requested_reviewers = [
+                str(lid or '').strip() for lid in (request.data.get('reviewer_loginids') or [])
+            ]
+            # 되감기가 있던 배포에서 E 가 pending 으로 되감긴 뒤 EV step 이 살아남은
+            # 레거시 문서를 흡수한다. 되감기를 없앤 뒤로는 같은 회차에서 E 가 다시 합의되는
+            # 경로가 없어, 이 분기는 그 레거시 문서에만 걸린다.
+            has_existing_reviewer = ApprovalStep.objects.filter(
+                document=document, agent='EV', round=max_round
+            ).exists()
+            if not any(requested_reviewers) and not has_existing_reviewer:
+                return Response(
+                    {'error': '2차 검토자를 1명 이상 지정해야 합니다.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         # P/E 담당자 합의 시 함께 지정된 검토자(PV/EV) 생성 — 별도 지정 API 없이
         # 이 합의 요청 한 번으로 담당자 합의 + 검토자 지정이 함께 처리된다.
         # 검증은 담당자 단계를 승인 저장하기 전에 마쳐(문제가 있으면 아무 것도 만들지 않음),
@@ -523,7 +548,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         step.action = 'approved'
         step.acted_at = timezone.now()
-        # E/EV 의 comment 는 '수정 요청'(reject_step)과 '되감기'(_rewind_e_stage) 이력이
+        # E/EV 의 comment 는 '수정 요청'(reject_step)과 'Validation System 값 변경'
+        # (_note_validation_system_change) 이력이
         # 쌓이는 유일한 저장소다 — ApprovalStep 에 이력 전용 필드가 없다. 덮어쓰면
         # 설계 결정(이력 보존)이 최종 합의 시점에 통째로 무효화되므로 덧붙인다.
         if step.agent in ('E', 'EV') and step.comment:
@@ -544,6 +570,22 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         new_status = document.status
         current_round = step.round
+
+        # EV(2차 검토자)는 1명만 합의하면 MASK 검증이 끝난다(OR) — 같은 회차의 남은 검토자는
+        # 더 볼 것이 없으므로 'skip' 으로 닫는다. pending 으로 두면 결재 경로에 '검토중' 으로
+        # 영구 표시되고, 그 사람이 뒤늦게 누르면 이미 승인된 문서를 다시 건드린다.
+        #
+        # select_for_update 로 잠그는 이유: get_object() 가 문서 락보다 먼저 실행되는 평문
+        # SELECT 라 이 트랜잭션의 읽기 스냅샷은 락 획득 이전에 고정된다. 평문으로 읽으면
+        # 직전에 커밋된 다른 EV 의 변경을 못 보고 일부를 놓칠 수 있다.
+        if agent == 'EV' and self._stage_reviewers_complete(document, 'E', current_round):
+            pending_evs = list(ApprovalStep.objects.select_for_update().filter(
+                document=document, agent='EV', action='pending', round=current_round,
+            ))
+            if pending_evs:
+                ApprovalStep.objects.filter(id__in=[s.id for s in pending_evs]).update(
+                    action='skip', acted_at=timezone.now(),
+                )
 
         if agent == 'R':
             # 담당자 합의 → 검토자(RV)가 있으면 대기(검토자 차례 — 지금 메일 발송), 없으면 병렬 단계로 전환
@@ -1003,9 +1045,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """진행 중 문서의 Validation System 대상/비대상을 상신자 본인이 변경한다.
 
         판정 주체는 상신자 하나다 — MASK(E) 팀은 확인 후 '합의'만 하고 값을 바꾸지 않는다.
-        수정 창은 상신 직후부터 E 단계가 통과되기 전까지 열려 있다. E 담당자가 이미 합의한
-        뒤라면 그 합의를 재검토(pending)로 되감아, MASK 가 검증한 값과 최종 확정값이
-        어긋나는 것을 막는다(되감기 폭은 E 단계 하나 — 반려처럼 새 회차를 돌리지 않는다).
+        수정 창은 상신 직후부터 **EV(2차 검토자) 중 1명이 합의하기 전까지** 열려 있다
+        (E 단계 완료 판정이 OR 이므로 그 시점에 게이트가 닫힌다).
+
+        되감지 않는다 — 값 변경 사실은 E step comment 에 note 로만 남는다
+        (_note_validation_system_change). 그래서 E 담당자 본인의 재확인은 강제되지 않는다.
+        이 트레이드오프는 되감기가 만들던 잠금·이력 소실보다 낫다고 판단해 의도적으로 택했다.
         """
         document = self.get_object()
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
@@ -1040,7 +1085,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             # 같은 기준으로 비교해야 '보이는 값을 눌렀는데 되감겼다'가 발생하지 않는다.
             previous = self.VALIDATION_SYSTEM_LEGACY_DEFAULT
         if previous == value:
-            return Response({'message': '변경 사항이 없습니다.', 'rewound': False})
+            return Response({'message': '변경 사항이 없습니다.'})
 
         actor = getattr(request.user, 'username', '') or getattr(request.user, 'loginid', '')
         if not self._set_validation_system(document, value, changed_by=actor):
@@ -1048,9 +1093,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 {'error': '의뢰서 데이터가 손상되어 값을 저장할 수 없습니다.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-        rewound = self._rewind_e_stage(document, max_round, previous, value, actor)
+        self._note_validation_system_change(document, max_round, previous, value, actor)
 
-        return Response({'message': '변경했습니다.', 'rewound': rewound})
+        return Response({'message': '변경했습니다.'})
 
     def _get_pending_pl_step(self, document):
         """현재 회차의 pending PL 단계 반환(첫 번째). 없으면 None."""
@@ -1093,15 +1138,29 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return mailer.post_approver_users(document)
 
     def _stage_reviewers_complete(self, document, agent, round_no):
-        """P/E 단계가 담당자 + 지정된 검토자(PV/EV) 전원 합의로 끝났는지 여부.
+        """P/E 단계가 담당자 + 지정된 검토자(PV/EV) 합의로 끝났는지 여부.
+
+        완료 판정이 단계마다 다르다:
+        - E/EV: **OR** — 검토자 중 1명만 합의하면 완료. MASK 검증은 담당자 판단을
+          한 사람이 더 확인하면 충분하다는 것이 원래 의도다. 나머지 검토자는
+          호출부(approve_step)에서 'skip' 으로 닫는다.
+        - P/PV: **AND** — 전원 합의. 기존 동작 그대로다(이번 변경 범위 밖).
 
         검토자가 하나도 지정되지 않았으면 담당자 합의만으로 완료(하위호환).
+        ⚠️ 이 가드를 빼면 안 된다 — 검토자 없이 E 합의를 마친 레거시 문서에는
+        검토자를 지정할 경로가 없어, any() 가 False 를 돌려주면 영구 잠긴다.
         """
         main_step = ApprovalStep.objects.filter(document=document, agent=agent, round=round_no).first()
         if not main_step or main_step.action != 'approved':
             return False
         review_agent = self._REVIEW_AGENT_OF.get(agent)
-        reviewer_steps = ApprovalStep.objects.filter(document=document, agent=review_agent, round=round_no)
+        reviewer_steps = list(ApprovalStep.objects.filter(
+            document=document, agent=review_agent, round=round_no
+        ))
+        if not reviewer_steps:
+            return True
+        if review_agent == 'EV':
+            return any(s.action == 'approved' for s in reviewer_steps)
         return all(s.action == 'approved' for s in reviewer_steps)
 
     def _advance_after_p_review(self, document, round_no):
@@ -1372,14 +1431,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document.save(update_fields=['additional_notes'])
         return True
 
-    def _rewind_e_stage(self, document, round_no, previous, value, actor):
-        """E 담당자가 이미 합의한 뒤 값이 바뀌면 그 회차 E 단계를 재검토로 되감는다.
+    def _note_validation_system_change(self, document, round_no, previous, value, actor):
+        """E 담당자가 이미 합의한 뒤 값이 바뀌면 그 사실을 E step comment 에 남긴다.
 
-        되감기 폭은 E 단계 하나다 — 반려처럼 PL 부터 새 회차를 돌리지 않으므로
-        이미 끝난 P/J/O/R 결재는 그대로 살아 있다.
-        EV(2차 검토자) step 은 삭제하지 않고 action 만 되돌려 지정 이력을 보존하고,
-        되감은 사유는 comment 에 덧붙인다(acted_at 은 이전 합의 시각 그대로 남긴다).
-        되감았으면 True.
+        되감지 않는다(2026-08-06 결정). EV 는 1명만 합의해도 단계가 끝나므로(OR),
+        아직 아무도 합의하지 않았다면 이후 합의하는 검토자가 바뀐 값을 보고 판단하게 된다.
+        E 담당자 본인이 재확인하지 않는 리스크는 사용자가 명시적으로 수용했고, 그래서
+        '언제 무엇이 어떻게 바뀌었는지' 를 남기는 이 note 가 유일한 감사 추적이다.
+
+        ApprovalStep 에 이력 전용 필드가 없어 comment 가 저장소다.
+        action 과 acted_at 은 건드리지 않는다. note 를 남겼으면 True.
         """
         e_step = ApprovalStep.objects.select_for_update().filter(
             document=document, agent='E', round=round_no
@@ -1389,20 +1450,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         stamp = timezone.now().strftime('%Y-%m-%d %H:%M')
         note = (
-            f'[재검토 {stamp}] 상신자가 Validation System 을 '
+            f'[값 변경 {stamp}] 상신자가 Validation System 을 '
             f'{previous or "-"} → {value} 로 변경 (변경: {actor})'
         )
-
-        def _append(step):
-            step.comment = f'{step.comment}\n{note}'.strip() if step.comment else note
-            step.action = 'pending'
-            step.save(update_fields=['action', 'comment'])
-
-        _append(e_step)
-        for ev_step in ApprovalStep.objects.select_for_update().filter(
-            document=document, agent='EV', round=round_no, action='approved'
-        ):
-            _append(ev_step)
+        e_step.comment = f'{e_step.comment}\n{note}'.strip() if e_step.comment else note
+        e_step.save(update_fields=['comment'])
         return True
 
     def _sync_post_approvers_detail(self, document, add=None, remove_loginid=None):
