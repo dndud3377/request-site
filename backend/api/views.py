@@ -520,8 +520,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             requested_reviewers = [
                 str(lid or '').strip() for lid in (request.data.get('reviewer_loginids') or [])
             ]
-            # 이 배포 이전에 되감겨(구 _rewind_e_stage) EV step 이 살아남은 문서를 흡수한다.
-            # 새 로직에서는 되감기가 EV 를 삭제하므로 이 분기는 기존 문서에만 걸린다.
+            # 되감기가 있던 배포에서 E 가 pending 으로 되감긴 뒤 EV step 이 살아남은
+            # 레거시 문서를 흡수한다. 되감기를 없앤 뒤로는 같은 회차에서 E 가 다시 합의되는
+            # 경로가 없어, 이 분기는 그 레거시 문서에만 걸린다.
             has_existing_reviewer = ApprovalStep.objects.filter(
                 document=document, agent='EV', round=max_round
             ).exists()
@@ -547,7 +548,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         step.action = 'approved'
         step.acted_at = timezone.now()
-        # E/EV 의 comment 는 '수정 요청'(reject_step)과 '되감기'(_rewind_e_stage) 이력이
+        # E/EV 의 comment 는 '수정 요청'(reject_step)과 'Validation System 값 변경'
+        # (_note_validation_system_change) 이력이
         # 쌓이는 유일한 저장소다 — ApprovalStep 에 이력 전용 필드가 없다. 덮어쓰면
         # 설계 결정(이력 보존)이 최종 합의 시점에 통째로 무효화되므로 덧붙인다.
         if step.agent in ('E', 'EV') and step.comment:
@@ -1125,9 +1127,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """진행 중 문서의 Validation System 대상/비대상을 상신자 본인이 변경한다.
 
         판정 주체는 상신자 하나다 — MASK(E) 팀은 확인 후 '합의'만 하고 값을 바꾸지 않는다.
-        수정 창은 상신 직후부터 E 단계가 통과되기 전까지 열려 있다. E 담당자가 이미 합의한
-        뒤라면 그 합의를 재검토(pending)로 되감아, MASK 가 검증한 값과 최종 확정값이
-        어긋나는 것을 막는다(되감기 폭은 E 단계 하나 — 반려처럼 새 회차를 돌리지 않는다).
+        수정 창은 상신 직후부터 **EV(2차 검토자) 중 1명이 합의하기 전까지** 열려 있다
+        (E 단계 완료 판정이 OR 이므로 그 시점에 게이트가 닫힌다).
+
+        되감지 않는다 — 값 변경 사실은 E step comment 에 note 로만 남는다
+        (_note_validation_system_change). 그래서 E 담당자 본인의 재확인은 강제되지 않는다.
+        이 트레이드오프는 되감기가 만들던 잠금·이력 소실보다 낫다고 판단해 의도적으로 택했다.
         """
         document = self.get_object()
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
@@ -1162,7 +1167,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             # 같은 기준으로 비교해야 '보이는 값을 눌렀는데 되감겼다'가 발생하지 않는다.
             previous = self.VALIDATION_SYSTEM_LEGACY_DEFAULT
         if previous == value:
-            return Response({'message': '변경 사항이 없습니다.', 'rewound': False})
+            return Response({'message': '변경 사항이 없습니다.'})
 
         actor = getattr(request.user, 'username', '') or getattr(request.user, 'loginid', '')
         if not self._set_validation_system(document, value, changed_by=actor):
@@ -1170,9 +1175,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 {'error': '의뢰서 데이터가 손상되어 값을 저장할 수 없습니다.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-        rewound = self._rewind_e_stage(document, max_round, previous, value, actor)
+        self._note_validation_system_change(document, max_round, previous, value, actor)
 
-        return Response({'message': '변경했습니다.', 'rewound': rewound})
+        return Response({'message': '변경했습니다.'})
 
     def _get_pending_pl_step(self, document):
         """현재 회차의 pending PL 단계 반환(첫 번째). 없으면 None."""
@@ -1508,16 +1513,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document.save(update_fields=['additional_notes'])
         return True
 
-    def _rewind_e_stage(self, document, round_no, previous, value, actor):
-        """E 담당자가 이미 합의한 뒤 값이 바뀌면 그 회차 E 단계를 재검토로 되감는다.
+    def _note_validation_system_change(self, document, round_no, previous, value, actor):
+        """E 담당자가 이미 합의한 뒤 값이 바뀌면 그 사실을 E step comment 에 남긴다.
 
-        되감기 폭은 E 단계 하나다 — 반려처럼 PL 부터 새 회차를 돌리지 않으므로
-        이미 끝난 P/J/O/R 결재는 그대로 살아 있다.
-        EV(2차 검토자) step 은 회차 전체(상태 무관)를 삭제한다 — 검토자 필수 지정 규칙과
-        맞물려, 남겨두면(구 동작) 그 검토자가 재지정 후보에서 제외된 채 남아 아무도 고를
-        수 없는 잠금이 된다. E 단계 되감은 사유는 comment 에 덧붙인다
-        (acted_at 은 이전 합의 시각 그대로 남긴다).
-        되감았으면 True.
+        되감지 않는다(2026-08-06 결정). EV 는 1명만 합의해도 단계가 끝나므로(OR),
+        아직 아무도 합의하지 않았다면 이후 합의하는 검토자가 바뀐 값을 보고 판단하게 된다.
+        E 담당자 본인이 재확인하지 않는 리스크는 사용자가 명시적으로 수용했고, 그래서
+        '언제 무엇이 어떻게 바뀌었는지' 를 남기는 이 note 가 유일한 감사 추적이다.
+
+        ApprovalStep 에 이력 전용 필드가 없어 comment 가 저장소다.
+        action 과 acted_at 은 건드리지 않는다. note 를 남겼으면 True.
         """
         e_step = ApprovalStep.objects.select_for_update().filter(
             document=document, agent='E', round=round_no
@@ -1527,22 +1532,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         stamp = timezone.now().strftime('%Y-%m-%d %H:%M')
         note = (
-            f'[재검토 {stamp}] 상신자가 Validation System 을 '
+            f'[값 변경 {stamp}] 상신자가 Validation System 을 '
             f'{previous or "-"} → {value} 로 변경 (변경: {actor})'
         )
-
-        def _append(step):
-            step.comment = f'{step.comment}\n{note}'.strip() if step.comment else note
-            step.action = 'pending'
-            step.save(update_fields=['action', 'comment'])
-
-        _append(e_step)
-        # 값이 바뀌었으니 MASK 검증을 처음부터 다시 한다 — 검토자 선정도 그 '처음'에 포함된다.
-        # step 을 남겨 두면(구 동작) 그 검토자가 재지정 후보에서 제외된 채 남아,
-        # '검토자 필수' 규칙과 맞물려 담당자가 아무도 고를 수 없는 잠금이 된다.
-        ApprovalStep.objects.filter(
-            document=document, agent='EV', round=round_no
-        ).delete()
+        e_step.comment = f'{e_step.comment}\n{note}'.strip() if e_step.comment else note
+        e_step.save(update_fields=['comment'])
         return True
 
     def _sync_post_approvers_detail(self, document, add=None, remove_loginid=None):
