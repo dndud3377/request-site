@@ -491,7 +491,7 @@ export default function ApprovalPage(): React.ReactElement {
   /**
    * Validation System 수정 창.
    * 상신자 본인(또는 MASTER)이고, 진행 중이며, MASK(E) 검토가 끝나기 전까지 열려 있다.
-   * 백엔드 _stage_reviewers_complete 와 같은 규칙 — E 담당자 합의 + EV 전원 합의로 닫힌다.
+   * 백엔드 _stage_reviewers_complete 와 같은 규칙 — E 담당자 합의 + EV 중 1명 합의로 닫힌다.
    */
   const canEditValidationSystem = (doc: RequestDocument | null): boolean => {
     if (!doc || isTourMode) return false;
@@ -503,17 +503,17 @@ export default function ApprovalPage(): React.ReactElement {
     const eStep = steps.find((st) => st.agent === 'E' && st.round === maxRound);
     if (!eStep || eStep.action !== 'approved') return true;
     const evSteps = steps.filter((st) => st.agent === 'EV' && st.round === maxRound);
-    return evSteps.some((st) => st.action !== 'approved');
+    // EV 는 1명만 합의해도 MASK 검증이 끝난다(OR) — 백엔드 _stage_reviewers_complete 와 같은 규칙.
+    // EV 가 하나도 없으면 백엔드는 '담당자 합의만으로 완료'(하위호환)로 보므로 창도 닫혀야 한다.
+    if (evSteps.length === 0) return false;
+    return evSteps.every((st) => st.action !== 'approved');
   };
 
   const handleValidationSystemChange = async (value: ValidationSystemValue) => {
     if (!selected) return;
     try {
-      const { data } = await documentsAPI.updateValidationSystem(selected.id, value);
-      addToast(
-        data.rewound ? t('approval.validation_system_rewound') : t('approval.validation_system_updated'),
-        'success'
-      );
+      await documentsAPI.updateValidationSystem(selected.id, value);
+      addToast(t('approval.validation_system_updated'), 'success');
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');
