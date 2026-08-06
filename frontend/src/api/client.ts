@@ -264,10 +264,10 @@ const rejectStep = async (docId: number, agent: AgentType, comment?: string) => 
 
 /**
  * 진행 중 문서의 Validation System 값을 상신자 본인이 변경한다.
- * MASK(E) 담당자가 이미 합의한 뒤라면 백엔드가 E 단계를 재검토(pending)로 되감는다.
+ * MASK(E) 담당자가 이미 합의한 뒤라면 백엔드가 변경 사실을 E step 의견에 기록한다(되감지 않는다).
  */
 const updateValidationSystem = async (docId: number, value: ValidationSystemValue) => {
-  const data = await post<{ message: string; rewound: boolean }>(
+  const data = await post<{ message: string }>(
     `/documents/${docId}/validation-system/`,
     { value }
   );
