@@ -214,6 +214,9 @@ class ApprovalStep(models.Model):
         ('pending', '대기'),
         ('approved', '합의'),
         ('rejected', '반려'),
+        # EV(2차 검토자)는 1명만 합의하면 단계가 끝난다(OR) — 그때 남은 EV 를 이 값으로 닫는다.
+        # 삭제하지 않는 이유: 누가 지정됐었는지와 왜 판단하지 않았는지가 감사 추적에 필요하다.
+        ('skip', '건너뜀'),
     ]
 
     document = models.ForeignKey(
