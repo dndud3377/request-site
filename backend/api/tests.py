@@ -1802,10 +1802,14 @@ class MapDeleteEditRouteTest(TestCase):
         return doc
 
     def _assign_and_approve(self, doc, agent, user):
+        """R 은 assign-step(지정하기), P/J/O 는 claim-step(검토중 선점) 방식이다 — 실제 API 규칙과 동일."""
         self.client.force_authenticate(user=user)
-        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
-            'agent': agent, 'assignee_loginid': user.loginid, 'assignee_name': user.loginid,
-        }, format='json')
+        if agent == 'R':
+            r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+                'agent': agent, 'assignee_loginid': user.loginid, 'assignee_name': user.loginid,
+            }, format='json')
+        else:
+            r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': agent}, format='json')
         self.assertIn(r.status_code, (200, 400), r.content)
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/',
                              {'agent': agent, 'comment': ''}, format='json')
@@ -1855,16 +1859,12 @@ class MapDeleteEditRouteTest(TestCase):
         for agent, user in (('R', self.r_user), ('J', self.j_user), ('O', self.o_user)):
             self._assign_and_approve(doc, agent, user)
         self.client.force_authenticate(user=self.p_user)
-        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
-            'agent': 'P', 'assignee_loginid': self.p_user.loginid, 'assignee_name': self.p_user.loginid,
-        }, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
-        r = self.client.post(f'/api/documents/{doc.id}/assign-reviewers/', {
-            'agent': 'P', 'reviewers': [{'loginid': self.p_reviewer.loginid, 'name': self.p_reviewer.loginid}],
+        # P 는 담당자 본인이 합의와 동시에 reviewer_loginids 로 검토자(PV, 다중)를 지정한다.
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {
+            'agent': 'P', 'comment': '', 'reviewer_loginids': [self.p_reviewer.loginid],
         }, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-        r = self.client.post(f'/api/documents/{doc.id}/approve-step/',
-                             {'agent': 'P', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'under_review', 'PV 가 남아 있으면 아직 승인되면 안 된다')
