@@ -453,23 +453,40 @@
     </div>
   </div>
 
-  <h3>4.2 Only MAP + 연구소 제품 <span class="tag tag-mod">변경</span></h3>
+  <h3>4.2 Only MAP + 연구소 제품 <span class="tag" style="background:var(--green-soft);color:var(--green)">결재 경로 변경 없음</span></h3>
   <div class="card">
     <div class="route">
       <span class="node pl">PL 검토</span><span class="arrow">→</span>
       <span class="node">R (RFG)</span><span class="arrow">→</span>
-      <span class="par-group">
-        <span class="par-title">병렬 — 후결자</span>
-        <span class="node ra">RA 고정 1명</span>
-        <span class="node ra">RA 지정 후결자 (PL 중 1명 이상) <span class="tag tag-new">추가</span></span>
-      </span>
+      <span class="node ra">RA 후결자</span>
       <span class="arrow">→</span><span class="node done">승인</span>
     </div>
     <p style="margin-top:10px">
-      경로 <b>구조는 그대로</b>이고, <code>RA</code> 인원만 늘어납니다.
-      백엔드 <code>post_approver_users()</code>가 이미 "고정 1명 + <code>detail.post_approvers</code>"를 합치므로
-      <b>결재 생성 로직은 수정이 없습니다</b> — 검증 조건만 넓히면 됩니다.
+      <b>§4.1 의 Only MAP 경로와 완전히 같습니다.</b> 다이어그램에 새로 그릴 것이 없습니다.
     </p>
+
+    <div class="note" style="margin-bottom:0">
+      <b>결재 쪽에 새로 만드는 기능은 없습니다.</b><br/>
+      후결자 지정은 <b>이미 완성된 기존 기능</b>입니다 — 상신 모달의 후결자 입력칸,
+      <code>detail.post_approvers</code> 저장, <code>post_approver_users()</code>의
+      "고정 1명 + 지정 인원" 병합, <code>RA</code> 단계 생성·메일까지 전부 이미 동작합니다.
+      지금은 그 기능이 <b>C가문(<code>only_prodc='Yes'</code>) 문서에만 열려 있을 뿐</b>입니다.
+      <br/><br/>
+      이번 작업은 <b>그 문을 여는 조건 한 가지를 넓히는 것</b>이 전부입니다:
+      <code>C가문</code> → <code>C가문 <b>또는</b> 연구소 제품</code>.
+    </div>
+  </div>
+
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>구성 요소</th><th>이번 작업</th></tr>
+    <tr><td>결재 경로 구조 (PL → R → RA → 승인)</td><td class="rec">변경 없음</td></tr>
+    <tr><td><code>RA</code> 단계 생성 로직 (<span class="file">views.py</span> <code>_advance_to_parallel</code>)</td><td class="rec">변경 없음</td></tr>
+    <tr><td>후결자 병합 (<span class="file">mailer.py</span> <code>post_approver_users()</code>)</td><td class="rec">변경 없음</td></tr>
+    <tr><td>상신 모달 후결자 입력 UI</td><td class="rec">변경 없음 — 노출 <b>조건</b>만 교체</td></tr>
+    <tr><td>후결자 메일·결재 현황 표시</td><td class="rec">변경 없음</td></tr>
+    <tr><td><b>노출·필수 판정 조건</b> (프론트 3곳 + 백엔드 1곳)</td><td><b>이것만 수정</b> — <code>only_prodc==='Yes'</code> → <code>requiresPostApprover</code></td></tr>
+  </table>
   </div>
 
   <h3>4.3 MAP 삭제/수정 <span class="tag tag-new">신규 경로</span></h3>
