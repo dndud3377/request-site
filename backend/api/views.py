@@ -569,6 +569,22 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         new_status = document.status
         current_round = step.round
 
+        # EV(2차 검토자)는 1명만 합의하면 MASK 검증이 끝난다(OR) — 같은 회차의 남은 검토자는
+        # 더 볼 것이 없으므로 'skip' 으로 닫는다. pending 으로 두면 결재 경로에 '검토중' 으로
+        # 영구 표시되고, 그 사람이 뒤늦게 누르면 이미 승인된 문서를 다시 건드린다.
+        #
+        # select_for_update 로 잠그는 이유: get_object() 가 문서 락보다 먼저 실행되는 평문
+        # SELECT 라 이 트랜잭션의 읽기 스냅샷은 락 획득 이전에 고정된다. 평문으로 읽으면
+        # 직전에 커밋된 다른 EV 의 변경을 못 보고 일부를 놓칠 수 있다.
+        if agent == 'EV' and self._stage_reviewers_complete(document, 'E', current_round):
+            pending_evs = list(ApprovalStep.objects.select_for_update().filter(
+                document=document, agent='EV', action='pending', round=current_round,
+            ))
+            if pending_evs:
+                ApprovalStep.objects.filter(id__in=[s.id for s in pending_evs]).update(
+                    action='skip', acted_at=timezone.now(),
+                )
+
         if agent == 'R':
             # 담당자 합의 → 검토자(RV)가 있으면 대기(검토자 차례 — 지금 메일 발송), 없으면 병렬 단계로 전환
             rv_step = ApprovalStep.objects.filter(
@@ -1199,15 +1215,29 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return mailer.post_approver_users(document)
 
     def _stage_reviewers_complete(self, document, agent, round_no):
-        """P/E 단계가 담당자 + 지정된 검토자(PV/EV) 전원 합의로 끝났는지 여부.
+        """P/E 단계가 담당자 + 지정된 검토자(PV/EV) 합의로 끝났는지 여부.
+
+        완료 판정이 단계마다 다르다:
+        - E/EV: **OR** — 검토자 중 1명만 합의하면 완료. MASK 검증은 담당자 판단을
+          한 사람이 더 확인하면 충분하다는 것이 원래 의도다. 나머지 검토자는
+          호출부(approve_step)에서 'skip' 으로 닫는다.
+        - P/PV: **AND** — 전원 합의. 기존 동작 그대로다(이번 변경 범위 밖).
 
         검토자가 하나도 지정되지 않았으면 담당자 합의만으로 완료(하위호환).
+        ⚠️ 이 가드를 빼면 안 된다 — 검토자 없이 E 합의를 마친 레거시 문서에는
+        검토자를 지정할 경로가 없어, any() 가 False 를 돌려주면 영구 잠긴다.
         """
         main_step = ApprovalStep.objects.filter(document=document, agent=agent, round=round_no).first()
         if not main_step or main_step.action != 'approved':
             return False
         review_agent = self._REVIEW_AGENT_OF.get(agent)
-        reviewer_steps = ApprovalStep.objects.filter(document=document, agent=review_agent, round=round_no)
+        reviewer_steps = list(ApprovalStep.objects.filter(
+            document=document, agent=review_agent, round=round_no
+        ))
+        if not reviewer_steps:
+            return True
+        if review_agent == 'EV':
+            return any(s.action == 'approved' for s in reviewer_steps)
         return all(s.action == 'approved' for s in reviewer_steps)
 
     def _advance_after_p_review(self, document, round_no):
