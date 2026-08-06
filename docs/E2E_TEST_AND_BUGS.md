@@ -225,7 +225,7 @@ FAILED (failures=2, errors=1)
 ```
 draft ──상신──▶ under_review ──(PL 전원 합의)──▶ R ──(합의)──▶ [RV] ──▶
                                        ┌── 경로1: P ─[PV]─▶ J ──┐
-                                       ├── 경로2: O, E ─[EV] ┼─▶ 전원 합의 ▶ approved
+                                       ├── 경로2: O, E ─[EV 중 1명] ┼─▶ 합의 ▶ approved
                                        └── 경로3: RA(후결자, 병렬)┘
   어느 단계든 반려 ──▶ rejected ──재상신(round+1)──▶ under_review
   under_review ──중단요청→전원확인──▶ pause ──재개──▶ under_review (멈춘 단계부터)
@@ -631,7 +631,7 @@ A = 이미 결재완료된 **참조 요청서**, B = **지금 작성 중인 요�
 | 상태 | 기대 |
 |---|---|
 | J·O 합의, E 담당자만 합의(EV 대기) | ✅ `under_review` 유지 |
-| EV 까지 전원 합의 + RA 전원 합의 | ✅ `approved` + 승인 메일 + 통보처 메일 |
+| EV 중 1명 합의(OR) + RA 전원 합의 | ✅ `approved` + 승인 메일 + 통보처 메일. 남은 EV 는 `skip` |
 | 두 결재자가 **거의 동시에** 마지막 합의 | ✅ 문서 행 락으로 직렬화 → approved 누락 없음 |
 
 #### T-J6 어느 단계든 반려
@@ -778,12 +778,13 @@ A = 이미 결재완료된 **참조 요청서**, B = **지금 작성 중인 요�
 | 경로1 진행 중 | `P(담당자)` → `검토자(이름)` → `J`(**진행 중엔 이름 미표시**) |
 | 경로1 완료 | `P(이름) / 검토자(이름) / JOB(이름)` — **완료 시엔 전원 이름 노출** |
 | 경로2 진행 중 | `O`(이름 미표시) / `E(담당자)` |
+| 경로2 완료 | `O(이름) / E(이름) / 검토자(합의한 EV 이름)` — **`skip` 된 EV 는 결재자로 표시하지 않는다** |
 | 경로3 | `후결자(미합의자 이름)` |
 | pause | 단일 행 + `PAUSE` 배지 |
 
 #### T-O2 상태 배지
 - ✅ pending 인데 담당자 없음 → **`대기중`(unassigned)** / 있음 → **`검토중`**
-- ✅ PV/EV 는 지정 즉시 담당자 확정이라 항상 `검토중`
+- ✅ PV/EV 는 지정 즉시 담당자 확정이라 pending 이면 항상 `검토중`. EV 가 `skip` 이면 `건너뜀`(회색)
 - ✅ **홈과 결재현황이 같은 헬퍼(`approvalTable.ts`)** 를 쓰므로 두 화면 표시가 항상 일치
 
 #### T-O3 정렬 3단
@@ -1752,13 +1753,13 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 
 | # | 위치 | 증상 |
 |---|---|---|
-| VS-06 | `backend/api/views.py:1424` `_rewind_e_stage` | 되감기가 MASK 팀에 아무 알림도 보내지 않는다. 다른 모든 전이는 메일을 적재하는데 되감기만 조용하다. `claim_step` 이 `assignee` 를 남겨두므로 "내 결재" 목록에는 다시 뜬다 |
+| ~~VS-06~~ | ~~`_rewind_e_stage`~~ | ✅ **(2026-08-06 해결)** 되감기 자체를 제거해 자연 소멸. 값 변경은 E step `comment` 의 `[값 변경 …]` note 로만 남는다(`_note_validation_system_change`). 근거: `docs/superpowers/plans/2026-08-06-mask-ev-or-consensus-and-remove-rewind/` |
 | VS-07 | `frontend/src/pages/ApprovalPage.tsx:943` 인근 (반려 모달) | '수정 요청' 버튼을 눌러도 모달 제목이 `approval.modal_reject_title`("… 반려"), 라벨이 "반려 이유 (선택)", 확인 버튼이 빨간 `btn-danger` 다. 성공 토스트만 분기돼 있다 |
 | VS-08 | `backend/api/views.py:709-715`(`reject_step` 의 E/EV 분기), `backend/api/mailer.py:785`(`enqueue_revision_requested`) | `enqueue_revision_requested(document)` 가 comment 를 받지 않아 **수정 사유가 메일 본문에 실리지 않는다.** 상신자는 결재 경로 탭을 직접 뒤져야 한다 |
 | VS-09 | `frontend/src/pages/ApprovalPage.tsx` `handleValidationSystemChange`(`:497~`) | 모든 실패를 `common.process_error` 로 뭉갠다. 백엔드는 "MASK 검토가 끝난 의뢰서는 변경할 수 없습니다" 같은 구체적 사유를 준다 |
 | VS-10 | `frontend/src/pages/ApprovalPage.tsx:488`(`canEditValidationSystem` 의 `isOwner`) | `isOwner` 에 `requester_name` 폴백이 없다. 형제 검사(`:1125-1129` `isPauseRequester`)와 `backend/api/doc_permissions.py:26-29` 에는 있다. fail-closed 라 손상은 없고 기능만 안 보인다 |
 | VS-11 | `frontend/src/pages/ApprovalPage.tsx` `handleValidationSystemChange` | `processing` in-flight 가드가 없다(규칙 J). 연타하면 동시 POST 가 나가고 토스트 순서가 뒤집힌다. `select_for_update` 가 직렬화하므로 데이터 손상은 없다 |
-| VS-12 | `frontend/src/pages/ApprovalPage.tsx` `handleValidationSystemChange` | 백엔드의 `"변경 사항이 없습니다"`(`views.py:1434`) 응답을 `rewound` 만 보고 분기해 "값을 변경했습니다"로 표시한다 |
+| ~~VS-12~~ | ~~`handleValidationSystemChange`~~ | ✅ **(2026-08-06 해결)** 응답 `rewound` 필드를 제거하고 토스트를 단일 문구로 단일화해 자연 소멸. 근거: `docs/superpowers/plans/2026-08-06-mask-ev-or-consensus-and-remove-rewind/` |
 
 **LOW**
 
