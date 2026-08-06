@@ -1907,6 +1907,7 @@ class LabProductPostApproverTest(TestCase):
         self.client = APIClient()
         self.requester = UserProfile.objects.create(loginid='lreq', mail='lreq@c.com', role='NONE')
         self.pl_user = UserProfile.objects.create(loginid='lpl', mail='lpl@c.com', role='PL')
+        self.r_user = UserProfile.objects.create(loginid='lr1', mail='lr1@c.com', role='TE_R')
 
     def _doc(self, detail):
         return RequestDocument.objects.create(
@@ -1941,6 +1942,41 @@ class LabProductPostApproverTest(TestCase):
         doc = self._doc({'request_purpose': '신규', 'only_prodc': 'Yes', 'post_approvers': []})
         self.assertTrue(doc.requires_post_approver())
         self.assertEqual(self._submit(doc).status_code, 400)
+
+    @override_settings(POST_APPROVER_LOGINID='labfixedpa')
+    def test_lab_product_last_additional_post_approver_cannot_be_removed(self):
+        """상신 시 강제한 '후결자 최소 1명'을 결재 진행 중 remove-post-approver 로
+
+        무력화할 수 없어야 한다 — only_prodc 만 보던 예전 가드는 연구소 제품을
+        놓쳐 마지막 1명까지 제거가 허용됐었다(재현·수정 확인)."""
+        UserProfile.objects.create(loginid='labfixedpa', mail='lfpa@c.com', role='TE_R')
+        doc = self._doc({'request_purpose': RequestDocument.ONLY_MAP_PURPOSE,
+                         'other_purpose': [RequestDocument.OTHER_PURPOSE_LAB],
+                         'post_approvers': [{'loginid': 'lpl', 'name': 'lpl'}]})
+        r = self._submit(doc)
+        self.assertEqual(r.status_code, 200, r.content)
+
+        # PL 합의 → R 지정·합의까지 실제로 거쳐야 RA(후결자, 고정+lpl) 단계가 생성된다.
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='RA', assignee__loginid='lpl').exists(),
+            '사전 조건: lpl 이 추가 후결자로 등록돼 있어야 한다',
+        )
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-post-approver/',
+                             {'loginid': 'lpl'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn('연구소 제품', r.json().get('error', ''))
 
     def test_plain_document_does_not_require(self):
         doc = self._doc({'request_purpose': '신규', 'other_purpose': ['FirstA 변경']})
