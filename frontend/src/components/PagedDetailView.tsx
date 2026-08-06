@@ -1709,6 +1709,14 @@ type Page = { label: string; content: React.ReactNode };
     } catch { return false; }
   })();
 
+  // MAP 삭제/수정: P·R·J·O 병렬 경로라 E·RA 는 아예 만들지 않는다(고정 후결자도 없다).
+  const isMapDeleteEdit = (() => {
+    try {
+      const parsed = JSON.parse(doc.additional_notes ?? '{}');
+      return parsed?.detail?.request_purpose === 'MAP 삭제/수정';
+    } catch { return false; }
+  })();
+
   // 통보처: 결재 경로와 별개로 표시(결재 권한 없음). detail.notifiers 에서 이름만 읽는다.
   const notifiers: { loginid: string; name: string }[] = (() => {
     try {
@@ -1793,6 +1801,11 @@ type Page = { label: string; content: React.ReactNode };
       return [{ status: 'na', label: t('approval.step_na') }];
     }
     if (isOnlyMap && ['P', 'J', 'O', 'E'].includes(agent)) {
+      return [{ status: 'na', label: t('approval.step_na') }];
+    }
+    // MAP 삭제/수정은 RA(후결자)를 아예 만들지 않는다 — 없이도 fallback 을 타면
+    // '대기'로 보여 영원히 끝나지 않는 단계처럼 오해를 준다(E 처럼 명시적 na 분기 필요).
+    if (isMapDeleteEdit && agent === 'RA') {
       return [{ status: 'na', label: t('approval.step_na') }];
     }
     // R단계: 합의자(R) + 검토자(RV, 지정 시)를 한 행에 함께 표시
@@ -1934,7 +1947,7 @@ type Page = { label: string; content: React.ReactNode };
           <div key={key} style={teamRowStyle}>
             <div style={teamLabelStyle}>{label}</div>
             <div style={historyListStyle}>
-              {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) ? (
+              {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) || (isMapDeleteEdit && key === 'RA') ? (
                 <div style={historyItemStyle(false)}>
                   <span style={{ ...statusBadgeStyle('na') }}>{t('approval.step_na')}</span>
                 </div>
