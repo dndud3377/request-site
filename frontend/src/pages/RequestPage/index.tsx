@@ -47,6 +47,10 @@ import {
   INITIAL_FORM,
   DETAIL_REQUIRED,
   ONLY_MAP_PURPOSE,
+  MAP_DELETE_EDIT_PURPOSE,
+  OTHER_PURPOSE_LAB,
+  MAP_TYPE_EDIT_REQ,
+  isMapDeleteEditType,
   PRODC_SCOPE_OPTIONS,
   inferProdcScope,
   JAYER_EDITABLE_COLS,
@@ -269,7 +273,8 @@ export default function RequestPage(): React.ReactElement {
   };
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [mapTypeChangeConfirm, setMapTypeChangeConfirm] = useState<{ targetType: string } | null>(null);
-  const [onlyMapConfirm, setOnlyMapConfirm] = useState(false);
+  // Only MAP / MAP 삭제/수정 진입·이탈 확인 모달 — 전환 대상 목적을 함께 들고 있는다.
+  const [onlyMapConfirm, setOnlyMapConfirm] = useState<{ targetPurpose: string } | null>(null);
   // ADI CD 변경(기타 목적) — 변경전/변경후 스텝 표
   const [adiCdLeaveConfirm, setAdiCdLeaveConfirm] = useState(false); // 해제 시 표에 값이 있으면 초기화 확인
   const [adiCdMapModal, setAdiCdMapModal] = useState<{ side: 'before' | 'after'; grid: string[][]; header: AdiCdHeaderMatch | null } | null>(null);
@@ -809,6 +814,8 @@ export default function RequestPage(): React.ReactElement {
             // prodc_scope 도입 전 문서는 값이 없다 → 저장된 리전 값으로 역추론해 백필한다.
             // (백필하지 않으면 '미선택' 게이트에 걸려 기존 C가문 문서의 입력이 잠겨 보인다)
             prodc_scope: parsed.detail.prodc_scope || inferProdcScope(parsed.detail),
+            // MAP 삭제/수정 도입 전 문서는 값이 없다 → 빈 문자열 백필(undefined 면 RichTextEditor 가 깨진다).
+            map_change_reason: parsed.detail.map_change_reason ?? '',
           });
           // 불러온 문서의 값은 이미 확정된 판단이므로 자동 갱신으로 덮어쓰지 않는다.
           setVsManuallySet(true);
@@ -1293,6 +1300,18 @@ export default function RequestPage(): React.ReactElement {
   // Derived booleans for Step 1 conditional rendering
   const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
   const isOnlyMap = detail.request_purpose === ONLY_MAP_PURPOSE;
+  // 'MAP 삭제/수정': Only MAP 과 동일하게 MAP 정보만 작성한다(J/O/Backbone 비움 + Step1 부가항목 잠금).
+  const isMapDeleteEdit = detail.request_purpose === MAP_DELETE_EDIT_PURPOSE;
+  // Step1 부가 입력(기타 목적·흐름도·Backbone·참조 요청서) 잠금 + STEP3~5 비움 대상 목적.
+  const isMapOnlyScope = isOnlyMap || isMapDeleteEdit;
+  // StepMap 에서 '수정'/'삭제' 를 고른 상태 — 이유 입력칸만 남기고 나머지 MAP 블록은 숨긴다.
+  const isMapReasonMode = isMapDeleteEditType(detail.map_type);
+  // '연구소 제품'(Only MAP 전용) — 선택 시 기존 C가문 후결자 기능이 그대로 켜진다.
+  const isLabProduct = detail.other_purpose.includes(OTHER_PURPOSE_LAB);
+  // 상신 시 후결자 지정이 필수인가 — C가문 또는 연구소 제품.
+  // (결재 경로·후결자 생성 로직은 그대로이고, 이 '문을 여는 조건'만 넓힌 것이다)
+  // (isProdc 는 아래에서 선언되므로 TDZ 를 피해 detail 로 직접 판정한다)
+  const requiresPostApprover = detail.only_prodc === 'Yes' || isLabProduct;
   // ADI CD 변경: 다른 기타 목적과 함께 선택할 수 있다(단독 전용이 아니다).
   const isAdiCdSelected = detail.other_purpose.includes(OTHER_PURPOSE_ADI_CD);
   // 기타 목적 6개 중 ADI CD 변경만 단독 선택한 경우 — 이후 STEP 필수 입력을 건너뛴다.
@@ -1366,40 +1385,64 @@ export default function RequestPage(): React.ReactElement {
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
   };
 
+  /** 'Only MAP'/'MAP 삭제/수정' 전환 시 지워질 값이 하나라도 있는가 (확인 모달 노출 판정) */
+  const mapOnlyScopeHasData = (): boolean =>
+    detail.other_purpose.length > 0 ||
+    !!detail.change_purpose_note?.trim() ||
+    detail.flow_chart.some((r) => Object.entries(r).some(([k, v]) => k !== 'id' && !!String(v ?? '').trim())) ||
+    detail.bb_entries.some((e) => !!e.location?.trim() || !!e.product?.trim() || !!e.process_id?.trim()) ||
+    refDocId !== null ||
+    postApprovers.length > 0;
+
   const handleRequestPurposeSelect = (val: string) => {
     if (val === detail.request_purpose) return;
-    // 이미 선택된 목적이 있을 때 Only MAP으로 바꾸면 초기화 모달을 띄운다.
-    if (val === ONLY_MAP_PURPOSE && detail.request_purpose) {
-      setOnlyMapConfirm(true);
+    // Only MAP / MAP 삭제/수정 로 바꾸면 Step1 부가항목과 J/O/Bb 가 초기화되므로 확인을 받는다.
+    // (지울 값이 아예 없으면 모달 없이 바로 적용 — 기존 Only MAP 동작과 동일한 판단)
+    if (val === ONLY_MAP_PURPOSE || val === MAP_DELETE_EDIT_PURPOSE) {
+      if (detail.request_purpose && mapOnlyScopeHasData()) {
+        setOnlyMapConfirm({ targetPurpose: val });
+        return;
+      }
+      applyMapOnlyScope(val);
       return;
     }
-    // 첫 선택이 Only MAP이면 초기화할 것이 없으므로 모달 없이 바로 적용.
-    if (val === ONLY_MAP_PURPOSE) {
-      applyOnlyMap();
+    // Only MAP → 다른 목적: '연구소 제품'과 지정 후결자는 Only MAP 전용이라 함께 해제한다.
+    if (isMapOnlyScope && (isLabProduct || postApprovers.length > 0)) {
+      setOnlyMapConfirm({ targetPurpose: val });
       return;
     }
     handleDetailSet('request_purpose', val);
   };
 
-  // Only MAP 적용 → 라인/조합법/제품/조리법/고객/요구사항/생산일을 제외한 Step1 항목 초기화
-  const applyOnlyMap = () => {
+  /**
+   * 'Only MAP'/'MAP 삭제/수정' 적용 → 라인/조합법/제품/조리법/고객/요구사항/생산일을 제외한 Step1 항목 초기화.
+   * 두 목적 모두 StepMap 정보까지만 작성하므로 초기화 범위가 같다.
+   */
+  const applyMapOnlyScope = (purpose: string) => {
     setDetail((prev) => ({
       ...prev,
-      request_purpose: ONLY_MAP_PURPOSE,
+      request_purpose: purpose,
       other_purpose: INITIAL_DETAIL.other_purpose,
       flow_chart: [makeRow()],
       change_purpose_note: INITIAL_DETAIL.change_purpose_note,
       bb_entries: INITIAL_DETAIL.bb_entries.map((e) => ({ ...e })),
-      // Only MAP은 StepMap 정보까지만 필요 → O-layer 정보 탭(partial_shot/TBV·TLV) 초기화
+      // StepMap 정보까지만 필요 → O-layer 정보 탭(partial_shot/TBV·TLV) 초기화
       partial_shot: INITIAL_DETAIL.partial_shot,
       tbvtlv_thickness: INITIAL_DETAIL.tbvtlv_thickness,
       tbvtlv_entries: [],
+      // MAP 삭제/수정 은 '수정'/'삭제' 중 하나를 StepMap 에서 직접 골라야 하므로 map_type 을 비운다
+      // (후보가 2개라 ADI 처럼 자동 고정할 수 없다). Only MAP 은 기존대로 손대지 않는다.
+      ...(purpose === MAP_DELETE_EDIT_PURPOSE
+        ? { map_type: INITIAL_DETAIL.map_type, map_change_reason: INITIAL_DETAIL.map_change_reason }
+        : {}),
     }));
     setRefDocId(null);
     setRefDocLabel('');
     setRefJayerRows([]);
     setRefOayerRows([]);
-    // Only MAP은 StepMap 정보까지만 필요 → J-layer/O-layer/Backbone 표 데이터 비우기
+    // 후결자는 '연구소 제품'(Only MAP 전용)에 딸린 값이라 목적을 바꾸면 함께 비운다.
+    setPostApprovers([]);
+    // StepMap 정보까지만 필요 → J-layer/O-layer/Backbone 표 데이터 비우기
     setJayerRows([makeJayerRow()]);
     setOayerRows([makeOayerRow()]);
     setBbRows([]);
@@ -1413,9 +1456,24 @@ export default function RequestPage(): React.ReactElement {
     setErrors((prev) => ({ ...prev, request_purpose: '', bb_entries: '' }));
   };
 
+  /** Only MAP/MAP 삭제/수정 에서 벗어날 때 — 전용 값('연구소 제품'·후결자)만 정리한다 */
+  const applyLeaveMapOnlyScope = (purpose: string) => {
+    setDetail((prev) => ({
+      ...prev,
+      request_purpose: purpose,
+      other_purpose: prev.other_purpose.filter((o) => o !== OTHER_PURPOSE_LAB),
+    }));
+    setPostApprovers([]);
+    setErrors((prev) => ({ ...prev, request_purpose: '' }));
+  };
+
   const handleOnlyMapConfirm = () => {
-    applyOnlyMap();
-    setOnlyMapConfirm(false);
+    if (!onlyMapConfirm) return;
+    const target = onlyMapConfirm.targetPurpose;
+    // 진입(Only MAP·MAP 삭제/수정)이면 전체 초기화, 이탈이면 전용 값만 정리한다.
+    if (target === ONLY_MAP_PURPOSE || target === MAP_DELETE_EDIT_PURPOSE) applyMapOnlyScope(target);
+    else applyLeaveMapOnlyScope(target);
+    setOnlyMapConfirm(null);
   };
 
   const handleMapTypeSelect = (val: string) => {
@@ -2925,7 +2983,7 @@ export default function RequestPage(): React.ReactElement {
       }
       // Only MAP·ADI CD 단독 모드에서는 Backbone 조합 영역 필수 검증을 우회한다.
       // (ADI CD 는 다른 기타 목적과 함께 고르면 isAdiCdOnly 가 false 가 되어 필수로 되돌아온다)
-      if (!isOnlyMap && !isAdiCdOnly) {
+      if (!isMapOnlyScope && !isAdiCdOnly) {
         // 추가한 항목까지 모두 완전히(위치·제품·조리법) 입력돼야 진행 가능(R-17). 불필요하면 삭제하도록 유도.
         const allFilled = detail.bb_entries.every(
           (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
@@ -2958,6 +3016,29 @@ export default function RequestPage(): React.ReactElement {
       if (!detail.map_type?.trim()) {
         newErrors['map_type'] = t('request.required');
         errorMessages.push('MAP 요청 목적: 필수 입력 항목입니다.');
+      }
+      // MAP 삭제/수정('수정'·'삭제')은 이유 입력칸 하나만 화면에 남는다.
+      // 나머지 MAP 블록은 렌더 자체를 하지 않으므로 검증도 전부 건너뛴다
+      // — '숨김 = 검증 제외'를 여기서 명시적으로 끊어 두지 않으면, 나중에 INITIAL_DETAIL
+      //   기본값이 바뀔 때 화면에 없는 항목 때문에 진행이 막히는 버그가 생긴다.
+      if (isMapReasonMode) {
+        // RichTextEditor 는 빈 내용도 '<p></p>' 같은 빈 태그를 남기므로 태그를 걷어내고 판정한다.
+        const reasonText = (detail.map_change_reason || '')
+          .replace(/<[^>]*>/g, '')
+          .replace(/&nbsp;/g, ' ')
+          .trim();
+        const hasImage = /<img\b/i.test(detail.map_change_reason || '');
+        if (!reasonText && !hasImage) {
+          newErrors['map_change_reason'] = t('request.required');
+          errorMessages.push(
+            detail.map_type === MAP_TYPE_EDIT_REQ
+              ? 'MAP 수정 이유: 필수 입력 항목입니다.'
+              : 'MAP 삭제 이유: 필수 입력 항목입니다.'
+          );
+        }
+        // 정식 종료와 동일한 판정 기준(newErrors 기준)을 쓴다.
+        setErrors(newErrors);
+        return { valid: Object.keys(newErrors).length === 0, errors: errorMessages };
       }
       // CLONE(차용)은 원본 위치/Part ID가 필수(R-13). EXISTING/NEW는 해당 없음.
       if (detail.map_type === 'CLONE') {
@@ -3104,7 +3185,7 @@ export default function RequestPage(): React.ReactElement {
       }
     }
 
-    if (currentStep === 4 && !isOnlyMap && !isAdiCdOnly) {
+    if (currentStep === 4 && !isMapOnlyScope && !isAdiCdOnly) {
       if (!detail.partial_shot?.trim()) {
         newErrors['partial_shot'] = t('request.required');
         errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
@@ -3199,15 +3280,15 @@ export default function RequestPage(): React.ReactElement {
         // C가문(only_prodc=YES) 추가 후결자를 detail 에 함께 저장(고정 후결자는 서버에서 추가)
         detail: {
           ...detail,
-          post_approvers: detail.only_prodc === 'Yes' ? postApprovers : [],
+          post_approvers: requiresPostApprover ? postApprovers : [],
           // 상신·재상신 시점의 상신자 판단을 고정 기록한다(임시저장에는 남기지 않는다).
           // 이후 MASK(E)가 detail.validation_system 을 바꿔도 이 값은 유지된다.
           ...(isDraft ? {} : { validation_system_submitted: detail.validation_system }),
         },
         // Only MAP 은 StepMap 정보까지만 필요 → J/O/bb 표를 비워 저장한다.
-        jayerRows: isOnlyMap ? [] : (isDraft ? jayerRows : jayerRows.filter(r => !r.disabled)).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-        oayerRows: isOnlyMap ? [] : (isDraft ? oayerRows : oayerRows.filter(r => !r.disabled)).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-        bbRows: isOnlyMap ? [] : bbRows,
+        jayerRows: isMapOnlyScope ? [] : (isDraft ? jayerRows : jayerRows.filter(r => !r.disabled)).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        oayerRows: isMapOnlyScope ? [] : (isDraft ? oayerRows : oayerRows.filter(r => !r.disabled)).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        bbRows: isMapOnlyScope ? [] : bbRows,
         history,
         jayerActiveFilterIds: [...jayerActiveFilterIds],
         oayerActiveFilterIds: [...oayerActiveFilterIds],
@@ -3272,7 +3353,7 @@ export default function RequestPage(): React.ReactElement {
     if (step === 4) {
       const oViolations = findNocBorrowViolations(oayerRows);
       // validate(4) 의 우회 조건과 반드시 같은 판정이어야 한다 — 어긋나면 없는 오류로 탭이 전환된다.
-      const partialShotMissing = !isOnlyMap && !isAdiCdOnly && !detail.partial_shot?.trim();
+      const partialShotMissing = !isMapOnlyScope && !isAdiCdOnly && !detail.partial_shot?.trim();
       if (partialShotMissing && oViolations.length === 0) setOayerInfoTab('info');
     }
     // 탭 전환·에러 span 렌더가 끝난 뒤 DOM을 조회하도록 지연한다.
@@ -3443,7 +3524,7 @@ export default function RequestPage(): React.ReactElement {
       return;
     }
     // C가문(only_prodc=YES): 추가 후결자 1명 이상 필수
-    if (!isPeerReviewMode && !isResumeMode && detail.only_prodc === 'Yes' && postApprovers.length === 0) {
+    if (!isPeerReviewMode && !isResumeMode && requiresPostApprover && postApprovers.length === 0) {
       addToast(t('request.post_approver_required'), 'error');
       return;
     }
@@ -3566,7 +3647,8 @@ export default function RequestPage(): React.ReactElement {
         <Step1
           detail={detail}
           errors={errors}
-          isOnlyMap={isOnlyMap}
+          isOnlyMap={isMapOnlyScope}
+          isLabProductAllowed={isOnlyMap}
           lineOptions={lineOptions}
           processOptions={processOptions}
           productOptions={productOptions}
@@ -3619,6 +3701,8 @@ export default function RequestPage(): React.ReactElement {
         <StepMap
           detail={detail}
           errors={errors}
+          isMapDeleteEdit={isMapDeleteEdit}
+          isMapReasonMode={isMapReasonMode}
           lineOptions={lineOptions}
           sourcePartIdOptions={sourcePartIdOptions}
           topProductOptions={topProductOptions}
@@ -3710,7 +3794,7 @@ export default function RequestPage(): React.ReactElement {
           oayerChecked={oayerChecked}
           oayerInfoTab={oayerInfoTab}
           setOayerInfoTab={setOayerInfoTab}
-          oayerInfoLocked={isOnlyMap}
+          oayerInfoLocked={isMapOnlyScope}
           detail={detail}
           setDetail={setDetail}
           errors={errors}
@@ -4037,7 +4121,7 @@ export default function RequestPage(): React.ReactElement {
           </div>
 
           {/* 후결자: C가문(only_prodc=YES) 일 때만 — PL 중 1명 이상 지정(고정 후결자는 서버가 항상 포함) */}
-          {detail.only_prodc === 'Yes' && (
+          {requiresPostApprover && (
             <div className="form-group" style={{ marginTop: 12 }}>
               <label className="form-label">
                 {t('request.post_approver_label')} <span style={{ color: 'var(--danger)' }}>*</span>
@@ -4340,11 +4424,23 @@ export default function RequestPage(): React.ReactElement {
       />
 
       <ConfirmModal
-        isOpen={onlyMapConfirm}
-        onClose={() => setOnlyMapConfirm(false)}
+        isOpen={onlyMapConfirm !== null}
+        onClose={() => setOnlyMapConfirm(null)}
         onConfirm={handleOnlyMapConfirm}
-        title={t('request.only_map_confirm_title')}
-        message={t('request.only_map_confirm_msg')}
+        title={
+          onlyMapConfirm?.targetPurpose === MAP_DELETE_EDIT_PURPOSE
+            ? t('request.map_delete_edit_confirm_title')
+            : onlyMapConfirm?.targetPurpose === ONLY_MAP_PURPOSE
+              ? t('request.only_map_confirm_title')
+              : t('request.map_only_leave_confirm_title')
+        }
+        message={
+          onlyMapConfirm?.targetPurpose === MAP_DELETE_EDIT_PURPOSE
+            ? t('request.map_delete_edit_confirm_msg')
+            : onlyMapConfirm?.targetPurpose === ONLY_MAP_PURPOSE
+              ? t('request.only_map_confirm_msg')
+              : t('request.map_only_leave_confirm_msg')
+        }
         danger
       />
 
