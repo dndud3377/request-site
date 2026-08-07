@@ -20,18 +20,19 @@ class DocPermFieldsMixin(serializers.Serializer):
     pause_request = serializers.SerializerMethodField()
     post_approver_fixed_loginid = serializers.SerializerMethodField()
     requester_loginid = serializers.SerializerMethodField()
+    shared_group_name = serializers.CharField(source='shared_group.name', read_only=True, default=None)
 
     def _perm_user(self):
         request = self.context.get('request')
         return getattr(request, 'user', None) if request else None
 
-    def _co_member_ids(self):
-        # 목록 직렬화 시 호출자 그룹 동료를 1회만 계산해 문서별 쿼리를 피한다.
-        cached = getattr(self, '_cached_co_ids', None)
+    def _my_group_ids(self):
+        # 목록 직렬화 시 호출자가 속한 그룹 id 를 1회만 계산해 문서별 쿼리를 피한다.
+        cached = getattr(self, '_cached_group_ids', None)
         if cached is None:
             user = self._perm_user()
-            cached = doc_permissions.co_member_ids_for(user) if user else set()
-            self._cached_co_ids = cached
+            cached = doc_permissions.my_group_ids_for(user) if user else set()
+            self._cached_group_ids = cached
         return cached
 
     def get_requester_loginid(self, obj):
@@ -39,11 +40,11 @@ class DocPermFieldsMixin(serializers.Serializer):
 
     def get_can_edit(self, obj):
         user = self._perm_user()
-        return bool(user and doc_permissions.can_edit(user, obj, self._co_member_ids()))
+        return bool(user and doc_permissions.can_edit(user, obj, self._my_group_ids()))
 
     def get_can_withdraw(self, obj):
         user = self._perm_user()
-        return bool(user and doc_permissions.can_withdraw(user, obj, self._co_member_ids()))
+        return bool(user and doc_permissions.can_withdraw(user, obj, self._my_group_ids()))
 
     def get_can_request_pause(self, obj):
         user = self._perm_user()
@@ -144,9 +145,12 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw', 'notifier_mails',
             'can_request_pause', 'can_resume', 'pause_request', 'post_approver_fixed_loginid',
+            'shared_group', 'shared_group_name',
         ]
+        # shared_group 은 전체 저장(PUT/PATCH)에 값이 빠져 초기화되는 일이 없도록 read-only 로 두고,
+        # 변경은 전용 액션 POST documents/{id}/set-shared-group/ 으로만 한다.
         read_only_fields = ['status', 'created_at', 'updated_at', 'submitted_at',
-                            'designated_pl_loginid', 'designated_pl_name']
+                            'designated_pl_loginid', 'designated_pl_name', 'shared_group']
 
     def get_designated_pl_loginid(self, obj):
         return obj.designated_pl.loginid if obj.designated_pl else None
@@ -185,7 +189,9 @@ class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSeriali
             'additional_notes', 'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw',
             'can_request_pause', 'can_resume', 'pause_request', 'post_approver_fixed_loginid',
+            'shared_group', 'shared_group_name',
         ]
+        read_only_fields = ['shared_group']
 
     def get_designated_pl_loginid(self, obj):
         return obj.designated_pl.loginid if obj.designated_pl else None
