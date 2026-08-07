@@ -3,10 +3,15 @@
 views.py 와 serializers.py 가 동일 규칙을 공유하기 위해 별도 모듈로 분리한다
 (views ↔ serializers 순환 import 방지).
 
-`co_member_ids` 인자: 목록 직렬화처럼 한 호출자가 여러 문서를 검사할 때,
-"호출자와 그룹을 공유하는 사용자 id 집합"을 미리 계산해 넘기면 문서마다
-그룹 쿼리를 다시 날리지 않는다(성능). 단건 호출(액션)에서는 None 으로 두면
-그때그때 쿼리로 판정한다.
+`my_group_ids` 인자: 목록 직렬화처럼 한 호출자가 여러 문서를 검사할 때,
+"호출자가 멤버인 그룹 id 집합"을 미리 계산해 넘기면 문서마다 그룹 쿼리를
+다시 날리지 않는다(성능). 단건 호출(액션)에서는 None 으로 두면 그때그때
+쿼리로 판정한다.
+
+공유 기준은 **문서에 지정된 그룹 1개**(RequestDocument.shared_group)다.
+작성자가 지정하지 않으면(null) 작성자 본인과 MASTER 외에는 아무도 볼 수 없다.
+"의뢰자와 아무 그룹이나 공유하면 접근 가능"하던 종전 규칙은, 그룹을 여러 개
+가진 사용자의 임시저장이 모든 그룹에 노출되는 문제 때문에 폐기했다.
 """
 from django.contrib.auth import get_user_model
 from django.db.models import Max
@@ -38,30 +43,27 @@ def pending_pl_step(document):
     ).first()
 
 
-def co_member_ids_for(user):
-    """user 와 '나만의 그룹'을 공유하는 사용자 id 집합(자기 자신 포함 가능)."""
+def my_group_ids_for(user):
+    """user 가 멤버인 '나만의 그룹' id 집합."""
     if not getattr(user, 'loginid', ''):
         return set()
-    group_ids = user.member_groups.values_list('id', flat=True)
-    return set(
-        User.objects.filter(member_groups__in=group_ids).values_list('id', flat=True)
-    )
+    return set(user.member_groups.values_list('id', flat=True))
 
 
-def _shares_group_with_requester(user, document, co_member_ids):
-    """호출자가 '의뢰자가 멤버인 그룹'의 멤버인지."""
-    if not document.requester_id:
+def is_shared_group_member(user, document, my_group_ids=None):
+    """호출자가 문서에 지정된 공유 그룹(shared_group)의 멤버인지.
+
+    공유 그룹이 지정되지 않은 문서는 누구와도 공유되지 않는다.
+    """
+    if not document.shared_group_id:
         return False
-    if co_member_ids is not None:
-        return document.requester_id in co_member_ids
-    return User.objects.filter(
-        loginid=user.loginid,
-        member_groups__in=document.requester.member_groups.all(),
-    ).exists()
+    if my_group_ids is not None:
+        return document.shared_group_id in my_group_ids
+    return user.member_groups.filter(pk=document.shared_group_id).exists()
 
 
-def can_withdraw(user, document, co_member_ids=None):
-    """철회 인가: MASTER / 의뢰자 / 지정 PL / 의뢰자가 멤버인 그룹의 멤버."""
+def can_withdraw(user, document, my_group_ids=None):
+    """철회 인가: MASTER / 의뢰자 / 지정 PL / 문서 공유 그룹(shared_group)의 멤버."""
     if getattr(user, 'role', '') == 'MASTER':
         return True
     loginid = getattr(user, 'loginid', '')
@@ -71,35 +73,39 @@ def can_withdraw(user, document, co_member_ids=None):
         return True
     if document.designated_pl and document.designated_pl.loginid == loginid:
         return True
-    return _shares_group_with_requester(user, document, co_member_ids)
+    return is_shared_group_member(user, document, my_group_ids)
 
 
-def can_delete(user, document, co_member_ids=None):
+def can_delete(user, document, my_group_ids=None):
     """삭제 인가 — 문서 상태별 허용 대상.
 
     - approved : MASTER 만 (결재 완료본은 이력이므로 임의 삭제 금지)
-    - 그 외(draft/under_review/rejected/pause) : 철회 가능 범위와 동일
-      (MASTER / 의뢰자 / 지정 PL / 의뢰자가 멤버인 그룹의 멤버)
+    - 그 외(draft/under_review/rejected/pause) : MASTER / 의뢰자 / 지정 PL
 
-    프론트의 삭제 버튼 노출 조건과 1:1 로 맞춘 규칙이다
+    ⚠️ 공유 그룹 멤버는 **삭제할 수 없다**. 남의 임시저장을 함께 수정·상신하는 것과
+    통째로 지우는 것은 위험도가 다르므로, 삭제는 문서 주인(의뢰자)과 지정 PL,
+    MASTER 로 제한한다(2026-08 정책). 이 점이 can_withdraw 와의 두 번째 차이다.
+
+    프론트의 삭제 버튼 노출 조건과 맞춘 규칙이다
     (`ApprovalPage` 는 can_withdraw, `HistoryPage` 는 MASTER 로 버튼을 낸다).
-    can_withdraw 를 재사용하므로 requester FK 가 비어 있는 레거시 문서의
-    이메일 폴백 판정도 그대로 적용된다.
-
-    ⚠️ can_withdraw 와의 차이는 **approved 분기 하나뿐**이다. 결재 완료본은
-    이력이므로 의뢰자·지정PL·그룹멤버가 지울 수 없고 MASTER 만 가능하다.
     """
     if document.status == 'approved':
         return getattr(user, 'role', '') == 'MASTER'
-    # 그 외(draft/under_review/rejected/pause): 철회 범위와 동일 (can_withdraw 가 MASTER 를 포함)
-    return can_withdraw(user, document, co_member_ids)
+    if getattr(user, 'role', '') == 'MASTER':
+        return True
+    loginid = getattr(user, 'loginid', '')
+    if not loginid:
+        return False
+    if is_requester(user, document):
+        return True
+    return bool(document.designated_pl and document.designated_pl.loginid == loginid)
 
 
-def can_edit(user, document, co_member_ids=None):
+def can_edit(user, document, my_group_ids=None):
     """수정(update) 인가 — 문서 상태별 허용 대상.
 
-    - draft     : 작성자(의뢰자) 또는 MASTER
-    - rejected  : 철회 가능 범위와 동일(의뢰자/지정PL/의뢰자 그룹멤버/MASTER)
+    - draft     : 작성자(의뢰자) / 문서 공유 그룹의 멤버 / MASTER
+    - rejected  : 철회 가능 범위와 동일(의뢰자/지정PL/공유 그룹 멤버/MASTER)
     - under_review/submitted : PL 검토 단계 pending 시 그 지정 PL 또는 MASTER
     - approved  : MASTER 만
     """
@@ -110,9 +116,10 @@ def can_edit(user, document, co_member_ids=None):
         return False
     st = document.status
     if st == 'draft':
-        return is_requester(user, document)
+        # 공유 그룹 멤버는 남의 임시저장을 이어서 수정·상신할 수 있다(삭제는 불가 — can_delete).
+        return is_requester(user, document) or is_shared_group_member(user, document, my_group_ids)
     if st == 'rejected':
-        return can_withdraw(user, document, co_member_ids)
+        return can_withdraw(user, document, my_group_ids)
     if st in ('under_review', 'submitted'):
         from .models import ApprovalStep
         max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1

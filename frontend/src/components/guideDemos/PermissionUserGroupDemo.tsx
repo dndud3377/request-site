@@ -227,7 +227,7 @@ const PermissionUserGroupDemo: React.FC<{ embedded?: boolean; paused?: boolean }
                     <li>{t(pk('intro_b5'))}</li>
                   </ul>
                 </div>
-                {/* 멤버 vs 비멤버 비교 미니 애니메이션 — 멤버 쪽에만 그룹 탭·메일·임시저장이 차례로 등장 */}
+                {/* 멤버 vs 비멤버 비교 미니 애니메이션 — 멤버 쪽에만 그룹 탭·통보처·임시저장이 차례로 등장 */}
                 <div className={`guide-demo-cmp${paused ? ' paused' : ''}`} aria-hidden="true">
                   <div className="gdc-note">{t(pk('cmp_note'))}</div>
                   <div className="gdc-cols">
@@ -237,7 +237,7 @@ const PermissionUserGroupDemo: React.FC<{ embedded?: boolean; paused?: boolean }
                         <span className="gdc-tab">{roleLabel(ACTIVE_ROLE)}</span>
                         <span className="gdc-tab grp pop p1">👥 {t(pk('cmp_group'))}</span>
                       </div>
-                      <div className="gdc-row pop p2">📧 {t(pk('cmp_mail_yes'))} <span className="gdc-mark ok">✓</span></div>
+                      <div className="gdc-row pop p2">📇 {t(pk('cmp_notifier_yes'))} <span className="gdc-mark ok">✓</span></div>
                       <div className="gdc-row pop p3">📝 {t(pk('cmp_draft_yes'))} <span className="gdc-mark ok">✓</span></div>
                     </div>
                     <div className="gdc-col nonmember">
@@ -245,7 +245,7 @@ const PermissionUserGroupDemo: React.FC<{ embedded?: boolean; paused?: boolean }
                       <div className="gdc-tabs">
                         <span className="gdc-tab">{roleLabel(ACTIVE_ROLE)}</span>
                       </div>
-                      <div className="gdc-row muted">✕ {t(pk('cmp_mail_no'))}</div>
+                      <div className="gdc-row muted">✕ {t(pk('cmp_notifier_no'))}</div>
                       <div className="gdc-row muted">✕ {t(pk('cmp_draft_no'))}</div>
                     </div>
                   </div>

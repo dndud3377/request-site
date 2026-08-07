@@ -173,9 +173,9 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 ### Case J — 철회 (`withdraw`, `views.py:189`)
 - 조건: status가 under_review/rejected/submitted.
 - 동작: `status → draft`, `submitted_at=None`, **현재 문서의 모든 step 삭제**.
-- ✅ 권한: MASTER / 의뢰자 PL 본인 / 지정 PL 본인 / **의뢰자가 멤버인 '나만의 그룹'의 멤버**
-  만 가능(`_can_withdraw`, 2026-06 추가). 그 외 호출은 403. 그룹 판정은
-  `requester.member_groups` 기준(approved 메일 수신자 규칙과 동일).
+- ✅ 권한: MASTER / 의뢰자 PL 본인 / 지정 PL 본인 / **문서에 지정된 공유 그룹(`shared_group`)의 멤버**
+  만 가능(`can_withdraw`). 그 외 호출은 403.
+  **(2026-08)** 판정 기준을 "의뢰자와 아무 그룹이나 공유" → "문서의 공유 그룹 멤버"로 변경했다(§9 참조).
 
 ### Case K — 담당자 지정 (`assign_step`, `views.py:331` 부근) — **R 전용**
 - 동작: 현재 회차의 해당 agent pending step에 assignee 지정.
@@ -444,7 +444,8 @@ R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전
 
 ## 4.1 결재 알림 메일 (DXHUB) — 2026-06 추가
 
-각 전이 시점에 해당 단계 권한자/작성자/그룹멤버에게 알림 메일을 보낸다.
+각 전이 시점에 해당 단계 권한자·작성자·결재 참여자·통보처에게 알림 메일을 보낸다.
+(**나만의 그룹은 메일 발송 대상 기준이 아니다** — 그룹은 통보처 일괄 추가와 임시저장 공유에만 쓰인다. §9 참조.)
 적재(enqueue)는 결재 트랜잭션 안에서 수행되고, 커밋 직후 즉시 1회 발송(거의 실시간)하며,
 실패분은 백그라운드 큐(`MailNotification` + APScheduler `process_mail_queue`, 1분 주기)가
 최대 5회 재시도한다(하이브리드).
@@ -456,7 +457,7 @@ R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전
 | `approve_step`(R) | stage_arrival(P·O·E) | 미배정 시 **P·O·E 팀 전원**(2026-07 P도 검토중 전환으로 O·E와 동일하게 팀 브로드캐스트) |
 | `approve_step`(P, 검토자 없을 때) | stage_arrival(J) | TE_J 미지정 시 고정 주소 |
 | `approve_step`(P/E 합의 시 `reviewer_loginids` 동봉, 2026-07) | stage_arrival(PV/EV) | 지정된 검토자 **각 1명**(담당자 합의와 같은 요청에서 즉시 개인화 메일 발송) |
-| `approve_step`(J·O·E[+검토자 중 1명]·RA[전원] 모두 합의) | approved | 작성자가 속한 모든 그룹 멤버 전원 |
+| `approve_step`(J·O·E[+검토자 중 1명]·RA[전원] 모두 합의) | approved | **현재(최종) 회차 결재 경로에 참여했던 전원**(중복 제거). 2026-07부터 '작성자 그룹 멤버' 방식에서 변경 — `mailer.resolve_approved_recipients` |
 | `reject_step` (R·RV·P·PV·O·E·EV·J·RA 반려) | rejected | 작성자 + 현재 회차 기합의자 전원 + **아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원**(반려자 본인 제외, 2026-07 개편 — `docs/MAIL.md` §3.1) |
 | `peer_reject`(PL 반려) | rejected | 작성자 + 현재 회차 기합의자 전원 + 같은 회차 미합의(pending) 나머지 지정 PL(2026-07 추가) |
 | `submit`/`resubmit` | notify_submitted | **통보처 전원**(`detail.notifiers`) |
@@ -620,19 +621,51 @@ R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전
 
 ---
 
-## 9. 임시저장(draft) 그룹 가시성
+## 9. 임시저장(draft) 공유 그룹
 
-임시저장(`status='draft'`) 문서는 **작성자 본인 + 작성자와 그룹을 공유하는 멤버 + MASTER** 에게만 보인다. 그 외 상태(상신/반려/완료)는 종전대로 전원에게 노출된다.
+임시저장(`status='draft'`) 문서는 **작성자 본인 + 문서에 지정된 공유 그룹의 멤버 + MASTER** 에게만
+보인다. 그 외 상태(상신/반려/완료)는 종전대로 전원에게 노출된다.
 
-- 구현: `RequestDocumentViewSet.get_queryset`(`backend/api/views.py`).
+### 9-1. 공유 대상은 '그룹 1개' (2026-08 정책 변경)
+
+예전에는 "작성자와 **아무 그룹이나** 공유하면 볼 수 있다"였다. 그래서 그룹을 3개 가진
+사용자의 임시저장은 **세 그룹 전원**에게 노출됐다. 이제 작성자가 문서마다 그룹 하나를
+지정해야 하고, 지정하지 않으면 아무에게도 공유되지 않는다.
+
+- 필드: `RequestDocument.shared_group` (FK → `UserGroup`, null 허용, `SET_NULL`, 마이그레이션 `0016`)
+- 지정 UI: **결재 현황 → 임시저장 행(또는 상세 모달) → `👥 그룹 지정`** → 내가 속한 그룹 중 1개 선택 / '공유 안 함'
+- 지정 API: `POST /api/documents/{id}/set-shared-group/` body `{"group_id": <id>|null}`
+  - 인가: **의뢰자 본인 또는 MASTER 만**. 공유 그룹 멤버는 문서를 수정·상신할 수는 있어도 공유 범위는 못 바꾼다.
+  - 지정 가능한 그룹은 **호출자가 멤버인 그룹**뿐(남의 그룹에 문서를 밀어 넣을 수 없다).
+  - serializer 에서 `shared_group` 은 **read-only** — 전체 저장(PUT/PATCH)에 값이 빠져 공유가 초기화되는 것을 막는다.
+- 조회 구현: `RequestDocumentViewSet.get_queryset`(`backend/api/views.py`)
   ```python
-  qs.filter(~Q(status='draft') | Q(requester=user) | Q(requester_id__in=comember_ids))
+  qs.filter(~Q(status='draft') | Q(requester=user) | Q(shared_group_id__in=my_group_ids))
   ```
-  - `comember_ids` = 사용자가 멤버로 속한 모든 `UserGroup`(`user.member_groups`)의 멤버 id 집합(본인 포함).
+  - `my_group_ids` = 호출자가 멤버인 `UserGroup` id 집합(`user.member_groups`).
   - MASTER 및 비인증(개발 모드)은 전체 조회.
-- '나만의 그룹' 기준: 사용자가 **멤버로 속한 모든 그룹**(creator가 만든 그룹 + 남이 추가해준 그룹). 같은 그룹에 속한 사용자끼리 서로의 draft 를 볼 수 있다.
-- 테스트: `backend/api/tests.py::DraftVisibilityTest`(작성자·그룹멤버·외부인·MASTER 가시성).
-- 결재현황 페이지의 '임시저장' 필터(`status === 'draft'`)는 그대로이며, 백엔드 필터로 인해 그룹 멤버에게만 해당 draft가 내려온다.
+
+### 9-2. 공유 그룹 멤버가 할 수 있는 것
+
+| 동작 | 공유 그룹 멤버 | 근거 |
+|---|---|---|
+| 조회 | ✅ | `get_queryset` |
+| 수정 · 임시저장 | ✅ | `can_edit`(draft 분기) |
+| 상신 · 재상신 | ✅ | `submit`/`resubmit` 의 `can_edit` 인가 |
+| 철회 | ✅ | `can_withdraw` |
+| **삭제** | ❌ | `can_delete` — 의뢰자 / 지정 PL / MASTER 만 |
+| **공유 그룹 변경** | ❌ | `set_shared_group` — 의뢰자 / MASTER 만 |
+
+### 9-3. 의뢰자는 최초 작성자로 고정
+
+그룹원 B가 A의 임시저장을 수정·상신해도 **의뢰자는 A** 다.
+- 백엔드: `RequestDocumentSerializer.update` 가 `requester_name/_email/_department` 를 무시하고,
+  `requester` FK 는 `perform_create` 에서만 설정되므로 수정 시 바뀌지 않는다.
+- 프론트: `RequestPage` 가 편집 모드 진입 시 원본 의뢰자를 `originalRequesterRef` 에 보관해 그대로 다시 보낸다.
+
+- 테스트: `backend/api/tests.py::DraftVisibilityTest`, `::SharedGroupDraftTest`
+- ⚠️ 마이그레이션 시 기존 draft 는 전부 `shared_group=null` → **작성자 본인·MASTER 에게만** 보이게 된다
+  (데이터 손실은 없고 노출 범위만 좁아진다). 계속 공유하려면 작성자가 다시 지정해야 한다.
 
 ---
 

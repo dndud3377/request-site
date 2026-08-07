@@ -107,6 +107,9 @@ export interface RequestDocument {
   designated_pl_name?: string;
   approval_steps?: ApprovalStepFrontend[];
   notifier_mails?: Record<string, string>; // 통보처 loginid → 이메일 (결재 경로 탭 표시용)
+  // 임시저장 공유 그룹 — 작성자가 지정한 그룹 1개. 변경은 set-shared-group 액션으로만 한다(읽기 전용).
+  shared_group?: number | null;
+  shared_group_name?: string | null;
   // 서버가 요청자 기준으로 계산해 내려주는 권한 플래그 (읽기 전용)
   requester_loginid?: string | null;
   can_edit?: boolean;

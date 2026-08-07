@@ -101,6 +101,13 @@ class RequestDocument(models.Model):
         related_name='designated_reviews', verbose_name='지정 PL'
     )
     designated_pl_name = models.CharField(max_length=100, blank=True, verbose_name='지정 PL 이름')
+    # 임시저장(draft) 공유 대상 그룹. 작성자가 자기가 속한 그룹 중 **하나**를 지정한다.
+    # null 이면 아무에게도 공유하지 않는다(작성자 본인과 MASTER 만 조회 가능).
+    # 그룹이 삭제되면 SET_NULL 로 공유가 끊기고 문서 자체는 남는다.
+    shared_group = models.ForeignKey(
+        'UserGroup', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='shared_documents', verbose_name='임시저장 공유 그룹'
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일')
     submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='상신일')
@@ -662,7 +669,13 @@ class ProductBarcode(models.Model):
 
 
 class UserGroup(models.Model):
-    """나만의 그룹 — 알림 발송 대상 그룹 (멤버만 조회·관리 가능)"""
+    """나만의 그룹 — 같은 역할 사용자 묶음 (멤버만 조회·관리 가능).
+
+    쓰임새는 두 가지다. 그룹 자체가 메일 발송 대상이 되지는 **않는다**.
+    - 상신 모달의 통보처: 그룹을 골라 멤버 전원을 통보처(detail.notifiers)에 한 번에 추가
+    - 임시저장 공유: 작성자가 문서마다 그룹 1개를 지정하면(RequestDocument.shared_group)
+      그 그룹 멤버만 해당 draft 를 조회·수정·상신할 수 있다
+    """
     name       = models.CharField(max_length=100, verbose_name='그룹 이름')
     creator    = models.ForeignKey(
         'UserProfile', on_delete=models.CASCADE,

@@ -231,6 +231,15 @@ const withdrawDocument = async (id: number) => {
   return { data };
 };
 
+// 임시저장 공유 그룹 지정/해제 — groupId=null 이면 해제(작성자 본인·MASTER 만 호출 가능)
+const setSharedGroup = async (id: number, groupId: number | null) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${id}/set-shared-group/`,
+    { group_id: groupId }
+  );
+  return { data };
+};
+
 const deleteDocument = async (id: number) => {
   const data = await post<{ message: string }>(`/documents/${id}/delete/`);
   return { data };
@@ -386,6 +395,7 @@ export const documentsAPI = {
   resubmit: resubmitDocument,
   withdraw: withdrawDocument,
   delete: deleteDocument,
+  setSharedGroup,
   approveStep,
   rejectStep,
   updateValidationSystem,

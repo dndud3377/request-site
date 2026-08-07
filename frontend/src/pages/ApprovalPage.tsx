@@ -1,14 +1,14 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { documentsAPI, usersAPI } from '../api/client';
+import { documentsAPI, usersAPI, userGroupsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView from '../components/PagedDetailView';
 import { canUserAgree, canUserAssign, canUserClaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
-import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue } from '../types';
+import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup } from '../types';
 import { formatDate } from '../utils/date';
 import { getDocTableRows, getDueDateDisplay, getFinalCompletionDate, getCurrentRound } from '../utils/approvalTable';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS } from './approvalTourSeed';
@@ -746,6 +746,49 @@ export default function ApprovalPage(): React.ReactElement {
   const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
   const [withdrawDoc, setWithdrawDoc] = useState<RequestDocument | null>(null);
 
+  // 임시저장 공유 그룹 지정 모달 — 내가 속한 그룹 중 하나를 골라 draft 를 공유한다.
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareDoc, setShareDoc] = useState<RequestDocument | null>(null);
+  const [shareGroupId, setShareGroupId] = useState<number | null>(null);
+  const [myGroups, setMyGroups] = useState<UserGroup[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+
+  // 공유 그룹을 지정할 수 있는 사람 = 의뢰자 본인 또는 MASTER, 대상은 임시저장 문서뿐.
+  // (공유 그룹 멤버는 수정·상신은 되어도 공유 범위는 못 바꾼다 — 서버 인가와 동일 규칙)
+  const canSetSharedGroup = (doc: RequestDocument): boolean =>
+    doc.status === 'draft' &&
+    (currentUser.role === 'MASTER' || doc.requester_loginid === currentUser.username);
+
+  const handleShareClick = (doc: RequestDocument) => {
+    setShareDoc(doc);
+    setShareGroupId(doc.shared_group ?? null);
+    setShareModalOpen(true);
+    setGroupsLoading(true);
+    userGroupsAPI.list()
+      .then(setMyGroups)
+      .catch(() => setMyGroups([]))
+      .finally(() => setGroupsLoading(false));
+  };
+
+  const handleShareSave = async () => {
+    if (!shareDoc) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.setSharedGroup(shareDoc.id, shareGroupId);
+      addToast(
+        shareGroupId === null ? t('approval.share_group_cleared') : t('approval.share_group_saved'),
+        'success',
+      );
+      setShareModalOpen(false);
+      setShareDoc(null);
+      fetchDocs();
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const handleWithdrawClick = (doc: RequestDocument) => {
     setWithdrawDoc(doc);
     setWithdrawModalOpen(true);
@@ -929,6 +972,11 @@ export default function ApprovalPage(): React.ReactElement {
                                 {t('approval.edit_resubmit')}
                               </button>
                             )}
+                            {canSetSharedGroup(doc) && (
+                              <button className="btn btn-secondary btn-sm" onClick={() => handleShareClick(doc)} disabled={processing}>
+                                👥 {doc.shared_group_name ?? t('approval.share_group_btn')}
+                              </button>
+                            )}
                             {doc.can_withdraw && (doc.status === 'under_review' || doc.status === 'rejected' || doc.status === 'draft') && (
                               <button className="btn btn-secondary btn-sm" onClick={() => handleWithdrawClick(doc)} disabled={processing}>
                                 {t('approval.withdraw')}
@@ -1028,6 +1076,64 @@ export default function ApprovalPage(): React.ReactElement {
       )}
 
       {/* 철회/삭제 선택 모달 */}
+      {/* 임시저장 공유 그룹 지정 모달 — 내가 속한 그룹 중 1개(또는 공유 안 함) */}
+      {shareModalOpen && shareDoc && (
+        <Modal
+          isOpen={shareModalOpen}
+          onClose={() => { setShareModalOpen(false); setShareDoc(null); }}
+          title={t('approval.share_group_title')}
+          size="md"
+          topLevel
+          footer={
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => { setShareModalOpen(false); setShareDoc(null); }} disabled={processing}>
+                {t('common.cancel')}
+              </button>
+              <button className="btn btn-primary" onClick={handleShareSave} disabled={processing || groupsLoading}>
+                {processing ? t('common.loading') : t('common.save')}
+              </button>
+            </div>
+          }
+        >
+          <div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '0 0 12px' }}>
+              {t('approval.share_group_help')}
+            </p>
+            {groupsLoading ? (
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('common.loading')}</p>
+            ) : myGroups.length === 0 ? (
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('approval.share_group_empty')}</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="shared-group"
+                    checked={shareGroupId === null}
+                    onChange={() => setShareGroupId(null)}
+                  />
+                  <span style={{ fontSize: '0.9rem' }}>{t('approval.share_group_none')}</span>
+                </label>
+                {myGroups.map((g) => (
+                  <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="shared-group"
+                      checked={shareGroupId === g.id}
+                      onChange={() => setShareGroupId(g.id)}
+                    />
+                    <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{g.name}</span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      {t('group.member_count', { count: g.members.length })}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
       {withdrawModalOpen && (
         <Modal
           isOpen={withdrawModalOpen}
@@ -1292,6 +1398,11 @@ export default function ApprovalPage(): React.ReactElement {
               {selected && selected.can_edit && (selected.status === 'rejected' || selected.status === 'draft') && (
                 <button className="btn btn-primary" onClick={() => handleEditResubmit(selected)}>
                   {t('approval.edit_resubmit')}
+                </button>
+              )}
+              {selected && canSetSharedGroup(selected) && (
+                <button className="btn btn-secondary" onClick={() => handleShareClick(selected)} disabled={processing}>
+                  👥 {selected.shared_group_name ?? t('approval.share_group_btn')}
                 </button>
               )}
               {selected && selected.can_withdraw && (selected.status === 'under_review' || selected.status === 'rejected' || selected.status === 'draft') && (
