@@ -16,33 +16,70 @@ Django 의 `AlterField` 는 "이전 마이그레이션 상태"와 비교해 변�
 상태는 처음부터 BigAutoField 라고 기록돼 있어 AlterField 로는 실제 ALTER 문이 전혀
 나오지 않는다(상태상 무변경으로 판단). 그래서 RunPython + raw SQL 로 강제 정정한다.
 
-MySQL 전용이다 — sqlite(로컬/CI 테스트)는애초에 int/bigint 구분이 없어 이 드리프트가
+MySQL 전용이다 — sqlite(로컬/CI 테스트)는 애초에 int/bigint 구분이 없어 이 드리프트가
 발생할 수 없으므로 vendor 체크로 건너뛴다.
+
+⚠️ 1차 시도(FOREIGN_KEY_CHECKS=0 만으로 두 컬럼을 MODIFY)는 3780 에러로 실패했다.
+MySQL/InnoDB 에서 FOREIGN_KEY_CHECKS 는 DML 참조무결성 검사만 끌 뿐, ALTER TABLE
+시점에 InnoDB 가 수행하는 "FK 로 연결된 두 컬럼의 타입이 서로 맞는가" DDL 검증은
+끄지 못한다. 그래서 이번엔 제약을 실제로 DROP 했다가 두 컬럼을 바꾸고 다시 ADD 한다.
 """
 
 from django.db import migrations
+
+_FK_LOOKUP_SQL = """
+    SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'api_usergroup_members'
+      AND COLUMN_NAME = 'usergroup_id'
+      AND REFERENCED_TABLE_NAME = 'api_usergroup'
+"""
+
+
+def _find_fk_name(cursor):
+    cursor.execute(_FK_LOOKUP_SQL)
+    row = cursor.fetchone()
+    return row[0] if row else None
 
 
 def fix_usergroup_pk_to_bigint(apps, schema_editor):
     if schema_editor.connection.vendor != "mysql":
         return
     with schema_editor.connection.cursor() as cursor:
-        # FK 제약이 걸린 컬럼(usergroup_id)과 그 대상(id)의 타입을 동시에 바꿔야 하므로
-        # 잠깐 FK 체크를 끈다. 컬럼을 넓히는(int→bigint) 변경이라 기존 데이터는 안전하다.
-        cursor.execute("SET FOREIGN_KEY_CHECKS=0")
+        # 이름을 하드코딩하지 않고 조회한다 — Django 가 자동 생성하는 제약 이름은
+        # 테이블/컬럼명 해시가 붙어 환경마다 달라질 수 있다.
+        fk_name = _find_fk_name(cursor)
+        if fk_name:
+            cursor.execute(f"ALTER TABLE api_usergroup_members DROP FOREIGN KEY `{fk_name}`")
+
         cursor.execute("ALTER TABLE api_usergroup MODIFY id BIGINT NOT NULL AUTO_INCREMENT")
         cursor.execute("ALTER TABLE api_usergroup_members MODIFY usergroup_id BIGINT NOT NULL")
-        cursor.execute("SET FOREIGN_KEY_CHECKS=1")
+
+        if fk_name:
+            cursor.execute(
+                f"ALTER TABLE api_usergroup_members "
+                f"ADD CONSTRAINT `{fk_name}` FOREIGN KEY (usergroup_id) "
+                f"REFERENCES api_usergroup (id) ON DELETE CASCADE"
+            )
 
 
 def reverse_usergroup_pk_to_bigint(apps, schema_editor):
     if schema_editor.connection.vendor != "mysql":
         return
     with schema_editor.connection.cursor() as cursor:
-        cursor.execute("SET FOREIGN_KEY_CHECKS=0")
+        fk_name = _find_fk_name(cursor)
+        if fk_name:
+            cursor.execute(f"ALTER TABLE api_usergroup_members DROP FOREIGN KEY `{fk_name}`")
+
         cursor.execute("ALTER TABLE api_usergroup_members MODIFY usergroup_id INT NOT NULL")
         cursor.execute("ALTER TABLE api_usergroup MODIFY id INT NOT NULL AUTO_INCREMENT")
-        cursor.execute("SET FOREIGN_KEY_CHECKS=1")
+
+        if fk_name:
+            cursor.execute(
+                f"ALTER TABLE api_usergroup_members "
+                f"ADD CONSTRAINT `{fk_name}` FOREIGN KEY (usergroup_id) "
+                f"REFERENCES api_usergroup (id) ON DELETE CASCADE"
+            )
 
 
 class Migration(migrations.Migration):
