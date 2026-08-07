@@ -735,8 +735,8 @@ export default function ApprovalPage(): React.ReactElement {
       await documentsAPI.removePostApprover(selected.id, loginid);
       addToast(t('approval.post_approver_remove_success'), 'success');
       await refreshAndSelect(selected.id);
-    } catch {
-      addToast(t('common.process_error'), 'error');
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : t('common.process_error'), 'error');
     } finally {
       setProcessing(false);
     }

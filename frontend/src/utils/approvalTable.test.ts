@@ -31,63 +31,30 @@ const makeDoc = (steps: ApprovalStepFrontend[]): RequestDocument => ({
   approval_steps: steps,
 });
 
+// MAP 삭제/수정 문서 — request_purpose 를 additional_notes 에 심어야 isMapDeleteEditDoc 이 인식한다.
+const makeMdeDoc = (steps: ApprovalStepFrontend[]): RequestDocument => ({
+  ...makeDoc(steps),
+  additional_notes: JSON.stringify({ detail: { request_purpose: 'MAP 삭제/수정' } }),
+});
+
 describe('getDocTableRows — 기존 경로 회귀 확인', () => {
-  it('일반 경로: R 이 이미 approved 면 path0 행을 만들지 않는다(기존 화면 그대로)', () => {
+  it('일반 경로: R 이 이미 approved 면 R 을 위한 별도 행이 없다(기존 화면 그대로)', () => {
     const doc = makeDoc([
       makeStep({ agent: 'R', action: 'approved', due_date: '2026-08-10' }),
       makeStep({ agent: 'P', action: 'pending', due_date: '2026-08-14' }),
       makeStep({ agent: 'O', action: 'pending', due_date: '2026-08-16' }),
     ]);
     const rows = getDocTableRows(doc, t);
-    expect(rows.some((r) => r.pathKey === 'path0')).toBe(false);
     expect(rows.map((r) => r.pathKey)).toEqual(['path1', 'path2']);
   });
 
-  it('Only MAP 경로: R 이 approved 후 RA 만 있으면 path0 없이 path3 만 있다', () => {
+  it('Only MAP 경로: R 이 approved 후 RA 만 있으면 path3 만 있다', () => {
     const doc = makeDoc([
       makeStep({ agent: 'R', action: 'approved', due_date: '2026-08-10' }),
       makeStep({ agent: 'RA', action: 'pending', due_date: '2026-08-18', assignee_name: '후결자1' }),
     ]);
     const rows = getDocTableRows(doc, t);
     expect(rows.map((r) => r.pathKey)).toEqual(['path3']);
-  });
-});
-
-describe('getDocTableRows — MAP 삭제/수정 (R 이 병렬 구성원)', () => {
-  it('R 이 아직 pending 이면 P/O 가 이미 끝났어도 path0 행으로 보인다', () => {
-    const doc = makeDoc([
-      makeStep({ agent: 'R', action: 'pending', due_date: '2026-08-12', assignee_loginid: 'r1', assignee_name: 'r1' }),
-      makeStep({ agent: 'P', action: 'approved', due_date: '2026-08-12' }),
-      makeStep({ agent: 'J', action: 'approved', due_date: '2026-08-12' }),
-      makeStep({ agent: 'O', action: 'approved', due_date: '2026-08-12' }),
-    ]);
-    const rows = getDocTableRows(doc, t);
-    const path0 = rows.find((r) => r.pathKey === 'path0');
-    expect(path0).toBeDefined();
-    expect(path0!.isDone).toBe(false);
-    expect(path0!.pathStatus).toBe('under_review');
-    expect(path0!.dueDate).toBe('2026-08-12');
-  });
-
-  it('R 담당자 미지정이면 path0 이 unassigned 로 뜬다', () => {
-    const doc = makeDoc([
-      makeStep({ agent: 'R', action: 'pending', due_date: '2026-08-12' }),
-      makeStep({ agent: 'P', action: 'pending', due_date: '2026-08-12' }),
-      makeStep({ agent: 'O', action: 'pending', due_date: '2026-08-12' }),
-    ]);
-    const rows = getDocTableRows(doc, t);
-    const path0 = rows.find((r) => r.pathKey === 'path0');
-    expect(path0!.pathStatus).toBe('unassigned');
-  });
-
-  it('R 이 approved 로 끝나면 path0 행이 사라진다(P/O 만 남는다)', () => {
-    const doc = makeDoc([
-      makeStep({ agent: 'R', action: 'approved', due_date: '2026-08-12', assignee_name: 'r1' }),
-      makeStep({ agent: 'P', action: 'pending', due_date: '2026-08-12' }),
-      makeStep({ agent: 'O', action: 'pending', due_date: '2026-08-12' }),
-    ]);
-    const rows = getDocTableRows(doc, t);
-    expect(rows.some((r) => r.pathKey === 'path0')).toBe(false);
   });
 });
 
@@ -112,5 +79,102 @@ describe('getFinalCompletionDate — R 의 기한도 후보에 포함', () => {
     // path1 = J.due(08-15), path2 = O.due(08-14) → 기존과 동일하게 max는 08-15.
     // R(08-10)이 더 늦은 날짜였다면 이 테스트가 그 값을 반영해 실패했을 것이다.
     expect(getFinalCompletionDate(doc)).toBe('2026. 8. 15.');
+  });
+});
+
+describe('getDocTableRows — MAP 삭제/수정: (R/J/P/O) 단일 행', () => {
+  it('네 단계 모두 pending 이면 (R/J/P/O) 순서 그대로 보인다', () => {
+    const doc = makeMdeDoc([
+      makeStep({ agent: 'R', action: 'pending' }),
+      makeStep({ agent: 'P', action: 'pending' }),
+      makeStep({ agent: 'J', action: 'pending' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].pathKey).toBe('parallel4');
+    expect(rows[0].stageText).toBe('(R/J/P/O)');
+    expect(rows[0].isDone).toBe(false);
+  });
+
+  it('P 가 합의되면 P 만 목록에서 빠진다(J 는 P 완료를 기다리지 않고 이미 병렬로 대기 중)', () => {
+    const doc = makeMdeDoc([
+      makeStep({ agent: 'R', action: 'pending' }),
+      makeStep({ agent: 'P', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'pending' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    expect(rows[0].stageText).toBe('(R/J/O)');
+  });
+
+  it('P 담당자는 합의했지만 지정된 검토자(PV)가 남아 있으면 P 는 아직 빠지지 않는다', () => {
+    const doc = makeMdeDoc([
+      makeStep({ agent: 'R', action: 'pending' }),
+      makeStep({ agent: 'P', action: 'approved' }),
+      makeStep({ agent: 'PV', action: 'pending' }),
+      makeStep({ agent: 'J', action: 'pending' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    expect(rows[0].stageText).toBe('(R/J/P/O)');
+  });
+
+  it('R 담당자는 합의했지만 검토자(RV)가 남아 있으면 R 은 아직 빠지지 않는다', () => {
+    const doc = makeMdeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'RV', action: 'pending' }),
+      makeStep({ agent: 'P', action: 'pending' }),
+      makeStep({ agent: 'J', action: 'pending' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    expect(rows[0].stageText).toBe('(R/J/P/O)');
+  });
+
+  it('세 단계가 끝나고 O 하나만 남으면 (O) 만 보인다', () => {
+    const doc = makeMdeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'P', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'approved' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    expect(rows[0].stageText).toBe('(O)');
+  });
+
+  it('네 단계 모두 담당자 지정 없이 pending 이어도 글자 구분 없이 그대로 나열한다(대기 표시만)', () => {
+    const doc = makeMdeDoc([
+      makeStep({ agent: 'R', action: 'pending' }),
+      makeStep({ agent: 'P', action: 'pending' }),
+      makeStep({ agent: 'J', action: 'pending' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    expect(rows[0].stageText).toBe('(R/J/P/O)');
+    expect(rows[0].pathStatus).toBe('unassigned');
+  });
+
+  it('네 단계 모두 끝나면 이름 목록으로 표시된다', () => {
+    const doc = makeMdeDoc([
+      makeStep({ agent: 'R', action: 'approved', assignee_name: 'r1' }),
+      makeStep({ agent: 'P', action: 'approved', assignee_name: 'p1' }),
+      makeStep({ agent: 'J', action: 'approved', assignee_name: 'j1' }),
+      makeStep({ agent: 'O', action: 'approved', assignee_name: 'o1' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    expect(rows[0].isDone).toBe(true);
+    expect(rows[0].stageText).toContain('r1');
+    expect(rows[0].stageText).toContain('o1');
+  });
+
+  it('일반 문서는 이 분기를 타지 않는다(회귀 방지)', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'P', action: 'pending' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    expect(rows.some(r => r.pathKey === 'parallel4')).toBe(false);
   });
 });
