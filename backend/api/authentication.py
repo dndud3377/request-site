@@ -100,3 +100,12 @@ class ExternalApiKeyAuthentication(BaseAuthentication):
             raise AuthenticationFailed('유효하지 않은 API Key입니다.')
 
         return (AnonymousUser(), None)
+
+    def authenticate_header(self, request):
+        """401 응답에 실을 WWW-Authenticate 스킴.
+
+        이 메서드가 없으면 DRF 는 AuthenticationFailed 를 **403** 으로 낮춰 응답한다
+        (`rest_framework.views.exception_handler`). 잘못된 키는 "권한 없음"이 아니라
+        "인증 실패"이므로 401 이 맞다.
+        """
+        return 'X-API-Key'
