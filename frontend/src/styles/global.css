@@ -640,6 +640,26 @@ select.form-control option {
 .badge-checking { background: var(--warning-light); color: var(--warning); }
 .badge-completed { background: var(--success-light); color: var(--success); }
 
+/* ===== 경로2(O+E) 상태점 — 대표 뱃지 하나로 안 드러나는 개별 진행 상태 표시(docs/APPROVAL.md §3.3) ===== */
+.dot-ind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+}
+
+.dot-ind .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-ind .dot-wait { background: var(--text-muted); opacity: 0.4; }
+.dot-ind .dot-review { background: var(--warning); }
+.dot-ind .dot-done { background: var(--success); }
+
 /* ===== Validation System 대상/비대상 =====
    문서 상태 badge(.badge-*)와 같은 관용구 — 반투명 배경 + 동색 진한 글씨.
    값마다 의미색을 달리해 선택 상태가 아니라 '값' 자체를 색으로 읽게 한다. */
