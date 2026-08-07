@@ -96,12 +96,20 @@ export const getFinalCompletionDate = (doc: RequestDocument): string => {
   return formatDate(candidates.reduce((a, b) => (a > b ? a : b)));
 };
 
+export interface DocSubStage {
+  label: string;
+  state: 'wait' | 'review' | 'done';
+  name?: string;
+}
+
 export interface DocTableRow {
   pathKey: 'single' | 'path1' | 'path2' | 'path3' | 'parallel4';
   stageText: string;
   dueDate: string | null;
   isDone: boolean;
   pathStatus: string; // 경로별 상태 (StatusBadge에 전달)
+  // 경로2(O+E)가 진행 중일 때만 채워짐 — O/E 개별 상태를 상태점으로 보여주기 위함(§3.3 참고)
+  subStages?: DocSubStage[];
 }
 
 // 경로별 상태 계산: pending의 assignee 여부에 따라 unassigned / under_review / approved
@@ -353,9 +361,28 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
       if (!s.due_date) return m;
       return !m || s.due_date > m ? s.due_date : m;
     }, null);
+    // O·E가 같이 있고 아직 진행 중일 때만 상태점용 개별 상태를 채운다(둘 다 pending일 수 있어
+    // 대표 뱃지 하나로는 "한쪽만 검토중" 같은 중간 상태가 안 드러나기 때문 — docs/APPROVAL.md §3.3).
+    const subStages: DocSubStage[] | undefined = (!done && oStep && eStep)
+      ? [
+          { label: t('approval.agent_O' as any), state: oStep.action === 'approved' ? 'done' : (oStep.assignee_loginid ? 'review' : 'wait') },
+          {
+            label: t('approval.agent_E' as any),
+            state: eStep.action !== 'approved'
+              ? (eStep.assignee_loginid ? 'review' : 'wait')
+              : (evPendingSteps.length > 0 ? 'review' : 'done'),
+            name: eStep.assignee_name,
+          },
+        ]
+      : undefined;
+    // 대표 뱃지: 배열에서 먼저 오는 항목만 보던 기존 로직 대신, O·E·EV 중 하나라도 배정돼 있으면 검토중으로 판정한다
+    // (예전엔 O가 미배정이면 E가 이미 검토중이어도 뱃지가 '대기중'으로 보이는 문제가 있었음).
+    // doc.status==='rejected'/'pause' 는 이 지점에 도달하기 전에 이미 위에서 early return 됐다(§3.3).
+    const anyAssigned = [...p2MainPending, ...evPendingSteps].some(s => s.assignee_loginid);
     rows.push({
       pathKey: 'path2', stageText, dueDate, isDone: done,
-      pathStatus: resolvePathStatus(p2MainPending[0] ?? evPendingSteps[0], done, doc.status),
+      pathStatus: done ? 'approved' : (anyAssigned ? 'under_review' : 'unassigned'),
+      subStages,
     });
   }
 
