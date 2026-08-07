@@ -115,7 +115,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - 동작: R `approved` → **P(due: R당일 포함 4영업일), J(due: 6영업일, 병렬), O(due: 6영업일, 병렬)** 동시 생성.
   추가로 **E**(due: 6영업일, 병렬)는 `plel` 인 의뢰서에만 생성한다.
 - ✅ **(2026-08) J 도 이 시점에 생성**된다(예전엔 P 완료 후 생성). J 도착 메일(`stage_arrival(J)`)도
-  여기서 발송된다 — 수신자 규칙(미배정 J = `UNASSIGNED_FALLBACK` 고정 주소)은 바뀌지 않았다.
+  여기서 발송되며, 수신자도 **미배정 시 TE_J 팀 전원**으로 바뀌었다(예전엔 고정 주소 1곳).
+  J 가 팀원 누구나 선점하는 병렬 단계가 됐는데 대표 주소로만 보내면 자기 차례를 알 수 없다.
 - **E(MASK) 생성 조건**: `document.has_ppid_plel()` — 저장된 J-layer 행의 `pp` 에 판정 키워드
   `plel`(대소문자 무관)이 **하나라도 있으면** E 단계를 생성한다. 하나도 없으면 Validation System
   판정이 `NA`(해당없음)라 MASK 가 검증할 대상 자체가 없으므로 E 단계를 만들지 않고, 메일 결재
@@ -506,7 +507,7 @@ R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전
 |-----------|-----------|--------|
 | `submit`/`resubmit` | stage_arrival(PL) | 지정 PL **전원**(각 PL step별 발송, 제목에 `[이름님]`, 2026-07 추가) |
 | `peer_approve`/`peer_submit` | stage_arrival(R) | TE_R 미지정 시 고정 주소 |
-| `approve_step`(R) | stage_arrival(P·**J**·O·E) | 미배정 시 P·O·E 는 팀 전원, **J 는 고정 주소**(`UNASSIGNED_FALLBACK`). **(2026-08)** J 도착 메일이 P 완료 시점에서 이 시점으로 앞당겨졌다 |
+| `approve_step`(R) | stage_arrival(P·**J**·O·E) | 미배정 시 **P·J·O·E 모두 팀 전원**. **(2026-08)** J 도착 메일이 P 완료 시점에서 이 시점으로 앞당겨졌고, 수신자도 고정 주소 1곳 → TE_J 팀 전원으로 바뀌었다 |
 | `approve_step`(P/E 합의 시 `reviewer_loginids` 동봉, 2026-07) | stage_arrival(PV/EV) | 지정된 검토자 **각 1명**(담당자 합의와 같은 요청에서 즉시 개인화 메일 발송) |
 | `approve_step`(J·O·E[+검토자 전원]·RA[전원] 모두 합의) | approved | **현재(최종) 회차 결재 경로에 참여했던 전원**(중복 제거). 2026-07부터 '작성자 그룹 멤버' 방식에서 변경 — `mailer.resolve_approved_recipients` |
 | `reject_step` (R·RV·P·PV·O·E·EV·J·RA 반려) | rejected | 작성자 + 현재 회차 기합의자 전원 + **아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원**(반려자 본인 제외, 2026-07 개편 — `docs/MAIL.md` §3.1) |

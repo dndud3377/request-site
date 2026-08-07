@@ -182,7 +182,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 - **주소록(2026-07)**: 상신 모달의 '통보처 불러오기'는 주소록(`AddressBook`) 구성원을 `detail.notifiers`에 채우는 것뿐이라 발송 로직은 동일하다. 이메일 미등록자는 위 `.exclude(mail='')`로 자동 제외되므로, 상신 화면에서 인라인 경고로 미리 안내한다.
 
 - 단계 → 역할 매핑: `AGENT_ROLE_MAP` (PL→PL, R→TE_R, P→TE_P, J→TE_J, O→TE_O, E→TE_E). 무배정 단계 도착 시 팀 브로드캐스트(`_team_emails`)뿐 아니라, R/RV 반려 시 `TE_R` 팀 전원 포함(2026-07 추가)에도 동일하게 쓰인다.
-- J 미지정 고정 주소: `UNASSIGNED_FALLBACK` = `user_J@company.com` (R은 2026-07부터 팀 전원 브로드캐스트로 전환되어 고정 주소 사용 안 함)
+- ⚠️ **(2026-08) 고정 주소 폴백 폐지**: J 미지정 시 쓰던 `UNASSIGNED_FALLBACK` = `user_J@company.com` 을 **딕셔너리째 삭제**했다. J 가 R 합의 시점의 독립 병렬 단계가 되어 TE_J 팀원 누구나 선점·합의하므로, R·P 와 동일하게 **미배정이면 팀 전원 / 배정 후엔 그 담당자 1명** 규칙을 쓴다. 이로써 하드코딩 수신 주소(`docs/E2E_TEST_AND_BUGS.md` B-44)도 사라져 코드에 고정 주소가 남지 않는다.
 - 이메일이 빈(`mail=''`) 사용자는 수신 대상에서 제외된다.
 - `MAIL_REDIRECT_TO` 가 설정되면 위 결과를 무시하고 **전원 그 주소로 강제**(개발/검증용).
 
@@ -198,7 +198,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | `submit` / `resubmit` (상신·재상신) | ✅ | 지정 PL **전원**에게 stage_arrival(제목에 `[이름님]`, 2026-07 추가) + 통보처 전원에게 notify_submitted |
 | `withdraw` (철회) | ❌ | 알림 없음 |
 | `delete` (삭제) | ❌ | 알림 없음 |
-| `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일). **(2026-08) J 도착 메일이 여기로 앞당겨졌다** — 미배정 J 의 수신자 규칙(고정 주소 `UNASSIGNED_FALLBACK`)은 그대로다 |
+| `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일). **(2026-08) J 도착 메일이 여기로 앞당겨졌고**, 미배정 J 의 수신자도 고정 주소 1곳 → **TE_J 팀 전원**으로 바뀌었다 |
 | `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(위와 동일) |
 | `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나면 **TE_O·TE_J 에게 notify_p_completed 발송**. 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨). **(2026-08) 이 시점의 J 생성·J 도착 메일은 R 합의 시점으로 이동**했다 |
 | `approve-step` P/E 합의 + `reviewer_loginids`(검토자 지정) | ✅ | 지정된 검토자(PV/EV) **각각**에게 즉시(담당자 합의와 **같은 요청**으로 처리되므로 같은 순간 발송) |
