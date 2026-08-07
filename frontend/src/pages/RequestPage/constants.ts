@@ -35,11 +35,13 @@ export const MAP_DELETE_EDIT_PURPOSE = 'MAP 삭제/수정';
 // (C가문 only_prodc='Yes' 와 동일한 기존 후결자 기능을 그대로 쓴다 — 결재 경로는 바뀌지 않는다).
 export const OTHER_PURPOSE_LAB = '연구소 제품';
 
-// MAP 삭제/수정 전용 map_type 값.
+// MAP 삭제/수정 전용 map_type 값. 한글 그대로 저장한다 — 다른 요청 목적 값들(신규/차용/기타 등)과
+// 동일한 관례이고, 문서 제목(`MAP(${map_type})`)·상세 Chip 처럼 i18n 을 거치지 않고 원문이 그대로
+// 노출되는 지점에서도 "수정"/"삭제" 로 보이게 하기 위함이다.
 // ⚠️ 과거 '완성된 MAP 변경' 기능이 쓰다 2026-08-05 에 삭제된 'EDIT' 는 재사용하지 않는다
 //    (그때 저장된 레거시 문서와 구분되지 않는다).
-export const MAP_TYPE_EDIT_REQ = 'EDIT_REQ';
-export const MAP_TYPE_DELETE_REQ = 'DELETE_REQ';
+export const MAP_TYPE_EDIT_REQ = '수정';
+export const MAP_TYPE_DELETE_REQ = '삭제';
 
 /** map_type 이 MAP 삭제/수정 전용 값인가 */
 export const isMapDeleteEditType = (mapType?: string): boolean =>
