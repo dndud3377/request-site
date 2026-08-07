@@ -7,7 +7,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0015_alter_approvalstep_action"),
+        ("api", "0016_fix_usergroup_pk_bigint"),
     ]
 
     operations = [
