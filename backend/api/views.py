@@ -615,14 +615,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             # 검토자 합의 → 병렬 단계로 전환
             new_status = self._advance_to_parallel(document, step, current_round)
 
-        elif agent in ('P', 'PV'):
-            # P 담당자 + 지정된 검토자(PV) 전원 합의가 끝나야 J 생성(검토자 없으면 담당자 합의만으로 완료)
-            self._advance_after_p_review(document, current_round)
-            new_status = 'under_review'
+        elif agent in ('P', 'PV', 'J', 'O', 'E', 'EV', 'RA'):
+            # (2026-08) J 가 P 뒤 순차 단계에서 병렬 단계로 분리되면서 P 도 마지막 합의자가 될 수
+            # 있게 됐다. 그래서 P/PV 합의도 이 최종 판정 분기를 타야 한다 — 예전처럼 P 를 판정에서
+            # 제외하면 P 가 마지막일 때 아무도 판정을 돌리지 않아 문서가 under_review 에 영구 정지한다.
+            if agent in ('P', 'PV'):
+                # P 담당자 + 지정된 검토자(PV) 전원 합의가 끝나면 완료 통보만 보낸다.
+                # (J 는 R 합의 시점에 이미 병렬로 생성돼 있어 여기서 만들지 않는다)
+                self._notify_after_p_review(document, current_round)
 
-        elif agent in ('J', 'O', 'E', 'EV', 'RA'):
-            # J + O + [E, 검토자(EV) 포함] + 후결자(RA) 모두 합의 시 최종 승인.
-            # (Only MAP 은 P/O/E 없이 후결자만 종단 경로)
+            # P + J + O + [E, 검토자(EV) 포함] + 후결자(RA) 모두 합의 시 최종 승인.
+            # (Only MAP 은 P/O/E/J 없이 후결자만 종단 경로)
             j_steps = list(ApprovalStep.objects.select_for_update().filter(document=document, agent='J', round=current_round))
             o_step = ApprovalStep.objects.select_for_update().filter(document=document, agent='O', round=current_round).order_by('-id').first()
             e_exists = ApprovalStep.objects.select_for_update().filter(document=document, agent='E', round=current_round).exists()
@@ -637,9 +640,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             else:
                 j_approved = len(j_steps) > 0 and all(s.action == 'approved' for s in j_steps)
                 o_approved = o_step and o_step.action == 'approved'
+                # P: 담당자 합의 + 지정된 검토자(PV) 전원 합의까지 끝나야 완료.
+                # J 분리 전에는 "J 가 존재한다 = P 가 끝났다" 였기에 판정에서 생략했지만,
+                # 이제 J 는 P 와 무관하게 R 합의 시점부터 존재하므로 명시적으로 확인해야 한다.
+                p_ok = self._stage_reviewers_complete(document, 'P', current_round)
                 # E: 담당자 합의 + 지정된 검토자(EV) 전원 합의까지 끝나야 완료
                 e_ok = (not e_exists) or self._stage_reviewers_complete(document, 'E', current_round)
-                all_approved = j_approved and o_approved and e_ok and ra_ok
+                all_approved = p_ok and j_approved and o_approved and e_ok and ra_ok
             if all_approved:
                 new_status = 'approved'
 
@@ -1172,26 +1179,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return True
         return all(s.action == 'approved' for s in reviewer_steps)
 
-    def _advance_after_p_review(self, document, round_no):
-        """P 단계가 담당자+검토자 전원 합의로 완료됐을 때만 J(due: P포함 4영업일)를 생성한다.
+    def _notify_after_p_review(self, document, round_no):
+        """P 단계가 담당자+검토자(PV) 전원 합의로 완료된 시점에 완료 통보를 보낸다.
 
-        아직 검토자 합의가 남아 있으면 아무 것도 하지 않는다(J 는 완료 시점에 1회만 생성).
+        아직 검토자 합의가 남아 있으면 아무 것도 하지 않는다(통보는 완료 시점에 1회만).
+
+        (2026-08) 예전에는 이 시점에 J 단계를 생성했다. J 가 R 합의 시점의 병렬 단계로
+        분리되면서 생성 책임은 `_advance_to_parallel` 로 옮겼고, 여기에는 통보만 남았다.
         """
         if not self._stage_reviewers_complete(document, 'P', round_no):
             return
-        if ApprovalStep.objects.filter(document=document, agent='J', round=round_no).exists():
-            return
         mailer.enqueue_notify_p_completed(document)
-        main_step = ApprovalStep.objects.filter(document=document, agent='P', round=round_no).first()
-        from .utils import calculate_business_due_date
-        import datetime
-        p_date = main_step.acted_at.date() if main_step and main_step.acted_at else datetime.date.today()
-        j_due = calculate_business_due_date(p_date, 4)
-        j_step = ApprovalStep.objects.create(
-            document=document, agent='J', action='pending',
-            round=round_no, due_date=j_due,
-        )
-        mailer.enqueue_stage_arrival(document, 'J', j_step)
 
     def _create_map_delete_edit_parallel(self, document, round_no):
         """'MAP 삭제/수정': PL 합의 직후 P·R·J·O 를 병렬로 생성한다.
@@ -1215,8 +1213,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 is_parallel=True, round=round_no, due_date=due,
             )
             mailer.enqueue_stage_arrival(document, agent, created)
-        # P 도착 통보는 일반 경로와 동일하게 보낸다(수신자 규칙이 같다).
-        mailer.enqueue_notify_p_arrival(document)
+        # (2026-08) TE_J 참고 통보(notify_p_arrival)는 폐지했다 — 이 경로는 J 가 처음부터
+        # 병렬이라 TE_J 가 위 stage_arrival(J) 결재 요청 메일을 이미 받는다(일반 경로와 동일).
 
     def _map_delete_edit_all_approved(self, document, round_no):
         """'MAP 삭제/수정' 최종 승인 판정 — P·R·J·O 네 단계가 모두 완료됐는가.
@@ -1237,9 +1235,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def _advance_to_parallel(self, document, step, round_no):
         """R단계(담당자[→검토자]) 완료 후 병렬 단계 생성 → 반환할 새 status.
 
-        - Only MAP: P/O/E 없이 후결자(RA)만 생성(후결자 전원 합의 시 최종 승인).
+        - Only MAP: P/J/O/E 없이 후결자(RA)만 생성(후결자 전원 합의 시 최종 승인).
           후결자가 하나도 없으면(고정 미설정 + 비 C가문) 기존처럼 즉시 승인한다.
-        - 일반: P(4영업일)·O(6영업일 병렬)·[E(plel 시 6영업일 병렬)] + 후결자(RA, 6영업일 병렬) 생성.
+        - 일반: P(4영업일)·J(6영업일 병렬)·O(6영업일 병렬)·[E(plel 시 6영업일 병렬)]
+          + 후결자(RA, 6영업일 병렬) 생성.
+
+        (2026-08) J 는 예전에 P 완료 후 생성되는 순차 단계였다. 이제 P 와 무관한 병렬 단계로
+        분리돼 여기서 함께 생성되며, 기한도 P(4영업일)가 아니라 O/E 와 같은 6영업일이다.
         """
         from .utils import calculate_business_due_date
         import datetime
@@ -1256,11 +1258,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             p_step = ApprovalStep.objects.create(
                 document=document, agent='P', action='pending', round=round_no, due_date=p_due,
             )
+            j_step = ApprovalStep.objects.create(
+                document=document, agent='J', action='pending', is_parallel=True, round=round_no, due_date=o_due,
+            )
             o_step = ApprovalStep.objects.create(
                 document=document, agent='O', action='pending', is_parallel=True, round=round_no, due_date=o_due,
             )
             mailer.enqueue_stage_arrival(document, 'P', p_step)
-            mailer.enqueue_notify_p_arrival(document)
+            mailer.enqueue_stage_arrival(document, 'J', j_step)
             mailer.enqueue_stage_arrival(document, 'O', o_step)
             # E(MASK)는 판정 키워드(plel)가 있는 의뢰서에만 생성한다 — 키워드가 아예 없으면
             # Validation System 판정이 '해당없음'이라 MASK 가 검증할 대상 자체가 없다.
