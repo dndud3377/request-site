@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
-import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI, addressBooksAPI } from '../../api/client';
+import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI, addressBooksAPI, userGroupsAPI } from '../../api/client';
 import { useToast } from '../../components/Toast';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
 import { useCellSelection } from '../../hooks/useCellSelection';
@@ -25,6 +25,7 @@ import {
   GuideFeatureKey,
   UserWithRole,
   AddressBook,
+  UserGroup,
   TbvtlvNoteRow,
   ValidationSystemValue,
   MergePair,
@@ -330,6 +331,12 @@ export default function RequestPage(): React.ReactElement {
   const [abLoadQuery, setAbLoadQuery] = useState('');
   const [abLoadRect, setAbLoadRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const abLoadInputRef = useRef<HTMLInputElement>(null);
+  // 나만의 그룹 — 상신 모달에서 그룹 멤버 전원을 통보처에 한 번에 '추가'
+  const [userGroups, setUserGroups] = useState<UserGroup[]>([]);
+  const [groupLoadOpen, setGroupLoadOpen] = useState(false);
+  const [groupLoadQuery, setGroupLoadQuery] = useState('');
+  const [groupLoadRect, setGroupLoadRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const groupLoadInputRef = useRef<HTMLInputElement>(null);
   const prevParsedRef = useRef<{
     detail: DetailFormState;
     jayerRows: JayerRow[];
@@ -1239,6 +1246,32 @@ export default function RequestPage(): React.ReactElement {
     }
     addToast(t('addressbook.loaded', { name: book.name }), 'success');
   };
+  // 나만의 그룹 불러오기 — 그룹 멤버를 현재 통보처에 '추가'한다.
+  // 주소록(loadAddressBook)은 세트 교체가 목적이라 덮어쓰지만, 그룹은 여러 개를 겹쳐
+  // 넣을 수 있어야 하므로 append 하고 이미 담긴 사람과 본인은 건너뛴다.
+  const loadNotifierGroup = (group: UserGroup) => {
+    const existing = new Set((detail.notifiers ?? []).map((n) => n.loginid));
+    const added = group.members.filter(
+      (m) => m.loginid !== currentUser.username && !existing.has(m.loginid)
+    );
+    setGroupLoadOpen(false);
+    setGroupLoadRect(null);
+    setGroupLoadQuery('');
+    if (added.length === 0) {
+      addToast(t('request.notifier_group_none_added', { name: group.name }), 'warning');
+      return;
+    }
+    setDetail((prev) => ({
+      ...prev,
+      notifiers: [...(prev.notifiers ?? []), ...added.map((m) => ({ loginid: m.loginid, name: m.name }))],
+    }));
+    const noMail = added.filter((m) => !m.mail).length;
+    if (noMail > 0) {
+      addToast(t('addressbook.warn_no_mail', { count: noMail }), 'warning');
+    }
+    addToast(t('request.notifier_group_loaded', { name: group.name, count: added.length }), 'success');
+  };
+
   const loadAddressBook = (book: AddressBook) => {
     if ((detail.notifiers ?? []).length > 0) {
       setAbConfirm({
@@ -3503,6 +3536,12 @@ export default function RequestPage(): React.ReactElement {
       } catch {
         setAddressBooks([]);
       }
+      // 내가 속한 나만의 그룹 로드(통보처 일괄 추가용)
+      try {
+        setUserGroups(await userGroupsAPI.list());
+      } catch {
+        setUserGroups([]);
+      }
     }
     setDesignees([]);
     setDesigneeSearchQuery('');
@@ -4215,15 +4254,22 @@ export default function RequestPage(): React.ReactElement {
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
-                onClick={() => { setAbLoadOpen((v) => !v); setAbSaveOpen(false); setAbLoadQuery(''); setAbLoadRect(null); }}
+                onClick={() => { setAbLoadOpen((v) => !v); setAbSaveOpen(false); setGroupLoadOpen(false); setAbLoadQuery(''); setAbLoadRect(null); }}
               >
                 📁 {t('addressbook.load_btn')}
               </button>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
+                onClick={() => { setGroupLoadOpen((v) => !v); setAbLoadOpen(false); setAbSaveOpen(false); setGroupLoadQuery(''); setGroupLoadRect(null); }}
+              >
+                👥 {t('request.notifier_group_btn')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
                 style={{ marginLeft: 'auto' }}
-                onClick={() => { setAbSaveOpen((v) => !v); setAbLoadOpen(false); setAbSaveMode('new'); setAbSaveNewName(''); }}
+                onClick={() => { setAbSaveOpen((v) => !v); setAbLoadOpen(false); setGroupLoadOpen(false); setAbSaveMode('new'); setAbSaveNewName(''); }}
               >
                 💾 {t('addressbook.save_btn')}
               </button>
@@ -4273,6 +4319,59 @@ export default function RequestPage(): React.ReactElement {
                         >
                           <span style={{ fontWeight: 600 }}>{b.name}</span>
                           <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>{t('addressbook.member_count', { count: b.member_count })}</span>
+                        </div>
+                      ));
+                    })()}
+                  </div>,
+                  document.body
+                )}
+              </div>
+            )}
+
+            {/* 그룹 불러오기: 검색 입력 + 포털 드롭다운(내가 속한 나만의 그룹 이름 필터) */}
+            {groupLoadOpen && (
+              <div style={{ position: 'relative', marginBottom: 8 }}>
+                <input
+                  ref={groupLoadInputRef}
+                  className="form-control"
+                  placeholder={t('request.notifier_group_search_placeholder')}
+                  value={groupLoadQuery}
+                  autoFocus
+                  autoComplete="off"
+                  style={{ fontSize: '0.85rem' }}
+                  onChange={(e) => {
+                    setGroupLoadQuery(e.target.value);
+                    if (groupLoadInputRef.current) {
+                      const r = groupLoadInputRef.current.getBoundingClientRect();
+                      setGroupLoadRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                    }
+                  }}
+                  onFocus={() => {
+                    if (groupLoadInputRef.current) {
+                      const r = groupLoadInputRef.current.getBoundingClientRect();
+                      setGroupLoadRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                    }
+                  }}
+                  onBlur={() => setTimeout(() => setGroupLoadRect(null), 150)}
+                />
+                {groupLoadRect && createPortal(
+                  <div style={{ position: 'fixed', top: groupLoadRect.top, left: groupLoadRect.left, width: groupLoadRect.width, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', zIndex: 9999, maxHeight: 280, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
+                    {(() => {
+                      const q = groupLoadQuery.trim().toLowerCase();
+                      const filtered = userGroups.filter((g) => !q || g.name.toLowerCase().includes(q));
+                      if (filtered.length === 0) {
+                        return <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{userGroups.length === 0 ? t('request.notifier_group_empty_list') : t('request.search_no_result')}</div>;
+                      }
+                      return filtered.map((g) => (
+                        <div
+                          key={g.id}
+                          style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border)' }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = '')}
+                          onMouseDown={(e) => { e.preventDefault(); loadNotifierGroup(g); }}
+                        >
+                          <span style={{ fontWeight: 600 }}>{g.name}</span>
+                          <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>{t('addressbook.member_count', { count: g.members.length })}</span>
                         </div>
                       ));
                     })()}
