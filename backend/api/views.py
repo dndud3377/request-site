@@ -1653,7 +1653,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 document=document, agent='RA', round=max_round
             ).exclude(pk=ra_step.pk).exclude(assignee__loginid=fixed_lid).count()
             if remaining_additional == 0:
-                return Response({'error': 'C가문 제품·연구소 제품은 (고정 후결자 외) 후결자를 최소 1명 유지해야 합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': 'C가문 제품·연구소 제품은 (고정 후결자 외) 후결자를 최소 1명 유지해야 합니다. 변경을 원하시면 1명 추가 후 삭제하시기 바랍니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         ra_step.delete()
         self._sync_post_approvers_detail(document, remove_loginid=target_loginid)
