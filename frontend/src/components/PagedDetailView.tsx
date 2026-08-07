@@ -1781,7 +1781,8 @@ type Page = { label: string; content: React.ReactNode };
       date: formatDateTime(s.acted_at),
       comment: s.comment || undefined,
     };
-    // EV 는 1명만 합의하면 단계가 끝나므로(OR) 남은 검토자가 skip 으로 닫힌다.
+    // (2026-08 이전 OR 시절 문서에만 남는 이력) 그때는 EV 1명 합의로 단계가 끝나면 남은
+    // 검토자가 skip 으로 닫혔다. 지금은 EV도 전원 합의(AND)라 새로 생기지 않는다.
     // comment 를 반드시 싣는다 — 그 검토자가 남긴 수정 요청 이력이 화면에서 사라지면 안 된다.
     if (s.action === 'skip') return {
       status: 'skipped', label: t('approval.step_skip'),
