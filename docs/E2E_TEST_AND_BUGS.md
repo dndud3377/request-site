@@ -477,14 +477,20 @@ A = 이미 결재완료된 **참조 요청서**, B = **지금 작성 중인 요�
 - ✅ 라인·제품·조합법·조리법이 모두 있을 때만 동작, 토스트 `auto_save_success`
 - ✅ 수동 저장/상신 중이면 건너뜀(중복 create 방지)
 
-#### T-F3 임시저장 그룹 가시성
+#### T-F3 임시저장 공유 그룹 가시성 **(2026-08-07 정책 변경)**
+공유 대상은 작성자가 문서마다 지정하는 **그룹 1개**(`RequestDocument.shared_group`)다.
+결재 현황 → 임시저장 행 → `👥 그룹 지정` 으로 지정/해제한다.
+
 | 로그인 | 기대 |
 |---|---|
 | 작성자 본인 | ✅ 보임 |
-| 작성자와 **같은 '나만의 그룹'** 멤버 | ✅ 보임 |
+| 문서에 **지정된** 공유 그룹의 멤버 | ✅ 보임 · 수정 · 상신 가능 (삭제·공유대상 변경은 불가) |
+| 작성자와 **다른** 그룹만 공유하는 멤버 | ✅ **안 보임** (그룹이 3개여도 지정한 1개에만 공유) |
+| 공유 그룹 **미지정** 문서 | ✅ 작성자 본인·MASTER 외 **안 보임** |
 | 무관한 사용자 | ✅ **안 보임** (목록에도 상세 조회에도) |
 | MASTER | ✅ 전부 보임 |
-> 자동 커버: `backend/api/tests.py::DraftVisibilityTest`
+> 자동 커버: `backend/api/tests.py::DraftVisibilityTest`, `::SharedGroupDraftTest`
+> ⚠️ 기존 임시저장 문서는 `shared_group=null` 로 마이그레이션된다 → **작성자 본인·MASTER 에게만** 보이게 된다(데이터 손실 없음, 노출 범위만 축소).
 
 #### T-F4 로드 실패 시 덮어쓰기 차단
 - 조작: 존재하지 않는 `?editDocId=99999` 로 `/request` 진입 후 저장/상신 시도
@@ -817,7 +823,11 @@ A = 이미 결재완료된 **참조 요청서**, B = **지금 작성 중인 요�
 #### T-P4 나만의 그룹
 - ✅ 멤버인 그룹만 조회, 생성자와 **동일 role** 인 사용자만 멤버 추가 가능
 - ✅ 모든 멤버가 이름 변경·멤버 추가/제거·삭제 가능
-- ✅ 그룹 멤버는 서로의 **임시저장 문서**를 볼 수 있고 **철회**도 가능(T-F3, T-L1)
+- ✅ **(2026-08-07)** 그룹의 쓰임새는 두 가지다 — 그룹 자체가 메일 발송 대상이 되지는 **않는다**.
+  1. **통보처 일괄 추가**: 상신 모달 통보처 블록의 `👥 그룹 불러오기` → 멤버 전원이 통보처에 추가(append, 본인·중복 제외)
+  2. **임시저장 공유**: 작성자가 문서마다 그룹 **1개**를 지정해야 그 그룹 멤버에게만 보인다(T-F3)
+- ✅ 그룹 멤버는 **지정된** 임시저장 문서를 보고 **수정·상신·철회**까지 가능. **삭제는 불가**(의뢰자·지정 PL·MASTER 만)
+> 자동 커버: `backend/api/tests.py::SharedGroupDraftTest`
 
 #### T-P5 외부 API
 ```bash
@@ -826,7 +836,7 @@ curl -H "X-API-Key: $EXTERNAL_API_KEY" 'http://localhost:10011/api/external/v1/d
 - ✅ 키 없음 → 403 / 잘못된 키 → 인증 실패 / 올바른 키 → **draft 포함 전체** 반환
 - ✅ 쓰기 메서드 미노출(ReadOnly), 내부 `/api/documents/` 는 `X-API-Key` 로 접근 불가
 - ✅ `fields` 에 허용되지 않는 이름 → 400
-- ⚠️ 잘못된 키의 응답 코드가 **401 이 아니라 403** → §5 **B-19**
+- ✅ **(2026-08-07)** 잘못된 키 → **401** (B-19 수정 완료)
 
 ---
 
@@ -1299,12 +1309,21 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 영향: 목록의 '최종 완료예정' 이 실제보다 이르게 표시 → 일정 관리 오판.
 - 권고: J 미생성 시 `-`/`(예상)` 표기하거나 서버가 예상 기한을 내려주기.
 
-### 🟡 B-19 외부 API 잘못된 키가 401 이 아니라 403 **재현✅**(기존 테스트가 실패)
+### ✅ B-19 외부 API 잘못된 키가 401 이 아니라 403 — **2026-08-07 수정 완료**
+- 조치: `ExternalApiKeyAuthentication.authenticate_header()` 추가(`return 'X-API-Key'`).
+  `ExternalApiKeyAccessTest` 11건 통과.
+- ⚠️ 외부 연동 영향: 잘못된 키의 응답 코드가 **403 → 401** 로 바뀐다(정상 키·키 없음 경로는 불변).
+
+<details><summary>수정 전 기록</summary>
+
+#### 🟡 B-19 외부 API 잘못된 키가 401 이 아니라 403 **재현✅**(기존 테스트가 실패)
 - 위치: `authentication.py:84`(`ExternalApiKeyAuthentication`) — **2026-08-04 미수정 확인**(`authenticate_header` grep 결과 0건)
 - 내용: `AuthenticationFailed` 를 던지지만 클래스에 **`authenticate_header()` 가 없어** DRF 가 401 → 403 으로 변환한다.
 - 근거: `tests.py:349 ExternalApiKeyAccessTest.test_wrong_key_returns_401` 이 `AssertionError: 403 != 401` 로 실패
 - 영향: 외부 연동 측이 "인증 실패(재시도/키 갱신)" 와 "권한 없음(포기)" 를 구분 못 한다. `docs/EXTERNAL_API.md` 와 불일치.
 - 권고: `def authenticate_header(self, request): return 'X-API-Key'` 추가.
+
+</details>
 
 ### 🟡 B-20 VOC 제출자 정보를 클라이언트가 정한다 **분석🔍**
 - 위치: `views.py:1827-1829`(`VOCViewSet.perform_create` — `serializer.save()` 뿐), `serializers.VOCSerializer(fields='__all__')` — **2026-08-04 미수정 확인**
@@ -1334,19 +1353,36 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 | `RequestPage/components/*` | `활성/전체`, `STEP 정렬`, `+ 행 추가`, `선택 비활성화`, `범위 추가`, `Ctrl+V 로 이미지를 붙여넣으세요` 등 (REQUEST.md §4 에 기록된 기존 항목) |
 > 백엔드 응답 메시지(`'권한이 없습니다.'` 등)도 전부 한국어 고정이라 영어 사용자에게 그대로 노출된다.
 
-### ⚪ B-22 절대 통과할 수 없는 테스트가 있다 **재현✅**
+### ✅ B-22 절대 통과할 수 없는 테스트가 있다 — **2026-08-07 수정 완료**
+- 조치: 단언을 `assertEqual(subject, f'[결재 요청] {title}')` 로 교체.
+  `[결재 요청]` 접두어는 2026-08-03(a1121dc)에 도입된 **의도된 구현**이고, 테스트가
+  2026-07-24(6d3a756) 기준에 머물러 있던 것이 원인이었다.
+
+<details><summary>수정 전 기록</summary>
+
+#### ⚪ B-22 절대 통과할 수 없는 테스트가 있다 **재현✅**
 - 위치: `tests.py:557` `test_broadcast_subject_has_no_name_prefix`
 - 내용: `_build_message('stage_arrival', doc, agent='R')` 의 제목은 **항상 `[결재 요청] {제목} - R`** 인데
   `assertFalse(subject.startswith('['))` 로 단언한다 → 구현이 어떻든 실패.
 - 의도 추정: "이름 접두어(`[홍길동님] `)가 없어야 한다" 였을 것 → `assertFalse(subject.startswith('[홍'))` 가 아니라
   `self.assertNotIn('님] ', subject)` 또는 `assertTrue(subject.startswith('[결재 요청]'))` 로 고쳐야 한다.
 
-### ⚪ B-23 테스트가 개발자 `.env` 에 의존한다 **재현✅**
+</details>
+
+### ✅ B-23 테스트가 개발자 `.env` 에 의존한다 — **2026-08-07 수정 완료**
+- 조치: `HybridImmediateSendTest.setUp` 에 TE_R 사용자를 추가해 `.env` 없이도 수신자가 잡히게 했다.
+  (R 미배정 도착 → TE_R 팀 전원 발송은 2026-07-28 bd27b86 에서 도입된 규칙)
+
+<details><summary>수정 전 기록</summary>
+
+#### ⚪ B-23 테스트가 개발자 `.env` 에 의존한다 **재현✅**
 - 위치: `config/settings/base.py:6` `load_dotenv()` + `tests.py:749`
 - 내용: `test_enqueue_schedules_immediate_send_on_commit` 은 TE_R 사용자를 만들지 않아 수신자가 0명이라
   `_enqueue` 가 `None` 을 반환한다. **`.env` 에 `MAIL_REDIRECT_TO` 가 설정돼 있을 때만** 수신자가 강제로 채워져 통과한다.
 - 영향: CI/다른 개발자 환경에서 재현 불가한 실패. 설정 의존 없는 테스트여야 한다.
 - 권고: `@override_settings(MAIL_REDIRECT_TO='x@company.com')` 또는 TE_R 사용자 생성 추가.
+
+</details>
 
 ### ⚪ B-24 `any` 사용 (규칙 I 위반) **재현✅**
 - `ApprovalPage.tsx:213`, `:515` — `(data as any).results` (2026-08-04 재확인, 1곳 더 늘었다)
