@@ -347,6 +347,9 @@ R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전
   **진행 중(`under_review`) 문서의 현재 회차 pending 단계만** 대상으로 본다. 예전엔 상태·회차를
   보지 않아 ① 반려 문서의 잔여 pending 단계 ② 재상신으로 회차가 올라간 뒤 남은 **이전 회차**
   pending 단계 때문에 이미 끝난 문서가 계속 '내 차례'·단계 탭에 잡혔다(탭 카운트도 동일 적용).
+- ✅ **(2026-08) '내 차례'에 검토 항목 조건 OR 추가**: `hasMyPendingReviewItem` — 진행 중 + 현재 회차
+  J 단계가 pending + **내가 검토자인 미확인 검토 항목이 1건 이상**이면 담당자가 아니어도 MY 에 뜬다.
+  판정값은 목록 응답의 `my_pending_review_items`(개수)다. §10 참조.
 
 ### 3.2.1 목록 정렬 (2026-07, `sortedDocs`)
 우선순위: **양산일 정렬(켜짐) > 단계별 필터(진입 순서) > 기본(상신 오래된 순)**.
@@ -451,6 +454,12 @@ R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전
 | 지정자 변경 | `change-designee/` | (의뢰자/MASTER) |
 | 후결자 추가 (2026-07) | `add-post-approver/` | `loginid` |
 | 후결자 제거 (2026-07) | `remove-post-approver/` | `loginid` |
+| 검토 항목 추가 (2026-08) | `review-item-add/` | `title` |
+| 검토 항목 제목 수정 (2026-08) | `review-item-rename/` | `item_id`, `title` |
+| 검토 항목 삭제 (2026-08) | `review-item-delete/` | `item_id` |
+| 항목 검토자 지정 (2026-08) | `review-item-reviewer-add/` | `item_id`, `loginid` |
+| 항목 검토자 해제 (2026-08) | `review-item-reviewer-remove/` | `item_id`, `loginid` |
+| 항목 확인/확인취소 (2026-08) | `review-item-confirm/` | `item_id`, `confirmed` |
 | 삭제 | DELETE `documents/{id}/` | approved는 MASTER만 |
 
 ---
@@ -679,6 +688,67 @@ R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전
 - 테스트: `backend/api/tests.py::DraftVisibilityTest`, `::SharedGroupDraftTest`
 - ⚠️ 마이그레이션 시 기존 draft 는 전부 `shared_group=null` → **작성자 본인·MASTER 에게만** 보이게 된다
   (데이터 손실은 없고 노출 범위만 좁아진다). 계속 공유하려면 작성자가 다시 지정해야 한다.
+
+---
+
+## 10. J 단계 검토 항목 (2026-08)
+
+의뢰 상세 모달 **'J-ayer 정보' 탭 안의 서브탭**(`JOB Layer 목록` / `검토 항목`)이다.
+결재선(`ApprovalStep`)과는 완전히 분리돼 있어 **결재 경로 탭·결재 현황 목록·상태 배지에는
+전혀 나타나지 않는다.** 항목이 모두 완료돼도 J 단계가 자동 합의되지 않고, 반대로 항목이
+남아 있어도 합의할 수 있다.
+
+### 10-1. 데이터 모델
+
+| 모델 | 역할 |
+|------|------|
+| `ReviewItemMaster` | 전역 마스터 목록. 삭제는 행 삭제가 아니라 `is_active=False` (사본의 출처 보존) |
+| `DocumentReviewItem` | 문서별 사본. `title` 을 따로 보관해 **박제된 문서가 자기 시점 제목을 유지**한다 |
+| `DocumentReviewItemReviewer` | 항목별 검토자와 확인 상태(`confirmed`, `confirmed_at`) |
+
+마이그레이션: `0018_reviewitemmaster_documentreviewitem_and_more.py`
+
+### 10-2. 동기화 정책 (단일 소스: `backend/api/review_items.py`)
+
+1. **채우기 시점** — 문서에 **J 단계가 생성되는 순간** 마스터의 활성 항목을 복사한다(제목만,
+   검토자는 빈 상태). 연결 지점은 J 단계를 만드는 두 곳뿐이다 —
+   `_advance_after_p_review`(일반 경로: P 완료 후) / `_create_map_delete_edit_parallel`('MAP 삭제/수정': PL 합의 직후).
+   → **J 단계를 거치지 않는 경로(Only MAP 등)에는 항목이 생기지 않는다.**
+2. **전파** — 어느 문서에서든 항목을 추가·제목수정·삭제하면 마스터에 반영하고, 같은 변경을
+   **전파 대상 문서**에도 적용한다. 전파 대상 = `status ∈ (under_review, pause)` **AND**
+   현재 회차에 pending 인 J 단계가 있는 문서.
+3. **삭제 전파 예외** — 다른 문서에서 이미 확인(`confirmed`)한 검토자가 있는 사본은 남긴다(기록 보존).
+   삭제를 지시한 원본 문서의 사본은 확인 기록과 무관하게 지운다.
+4. **박제** — 결재가 끝난 문서는 전파 대상에서 빠져 그 시점 목록으로 굳는다.
+5. **재상신** — 항목·검토자 지정은 그대로 두고 **확인 상태만 초기화**(`reset_confirmations`)한 뒤,
+   새 회차 J 단계가 열릴 때 마스터를 다시 따라잡는다. 즉 반려돼 있는 동안 다른 문서에서 추가된
+   항목이 이때 들어온다.
+
+> ⚠️ '현재 회차' 판정에 `MAX(round)` 중첩 서브쿼리를 쓰면 안 된다. 중첩 서브쿼리 안의 `OuterRef` 는
+> 가장 가까운 바깥 쿼리(`ApprovalStep`)에 묶여 `U0.document_id = V0.id` 라는 잘못된 상관식이 만들어지고
+> 대상이 **항상 0건**이 된다. `sync_target_documents` 는 "더 큰 round 의 단계가 없다"로 판정한다.
+
+### 10-3. 인가
+
+| 동작 | 조건 |
+|------|------|
+| 서브탭 노출 | 역할이 `TE_J` 또는 `MASTER` |
+| 항목 추가·제목수정·삭제 / 검토자 지정·해제 | 위 + 문서가 진행 중 + **현재 회차 J 단계가 '검토중'으로 선점(assignee 존재)** + 합의 전 |
+| 확인 / 확인취소 | 위 단계 조건 + **그 항목의 검토자 본인** |
+| 확인한 검토자 지정 해제 | ❌ 불가(400) — 검토 기록 보존 |
+
+선점 전에는 읽기 전용, J 합의 후에는 잠긴다. 반려 문서도 읽기 전용이다.
+
+### 10-4. 화면
+
+- 결재 현황 상세: 편집 가능(위 인가 조건에 따름). 서브탭 점 — 미완료 있으면 🔴, 전부 완료면 🟢, 0건이면 없음.
+- 이력 조회 상세: **읽기 전용**. 목록 응답에는 항목이 없어 `openDetail` 이 상세를 한 번 더 받아 연다.
+- 컴포넌트: `frontend/src/components/ReviewItems.tsx` (상태·핸들러는 호출부가 소유)
+
+### 10-5. 테스트
+
+`backend/api/tests.py::ReviewItemSyncTest` (11건) — A(결재중)·B(완료)·C(원본)·D(결재중) 전파,
+반려 문서의 재상신 따라잡기, 확인 기록이 있는 사본의 삭제 보존, 상태별 인가, MY 탭 개수 필드.
 
 ---
 
