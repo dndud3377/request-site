@@ -8,6 +8,10 @@ import { bbTabColor } from '../utils/bbTabColors';
 import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
+import ReviewItems, { ReviewItemsProps } from './ReviewItems';
+
+/** J-ayer 검토 항목 패널에 그대로 넘겨주는 props (호출부가 상태·핸들러를 소유한다) */
+export type ReviewItemsPanelProps = ReviewItemsProps;
 
 // ===== Table Components =====
 
@@ -582,12 +586,17 @@ export interface PagedDetailViewProps {
   /** 상신자 본인이 Validation System 값을 바꿀 수 있는 상태인지(호출부가 판정) */
   canEditValidationSystem?: boolean;
   onValidationSystemChange?: (value: ValidationSystemValue) => void;
+  /** J-ayer 검토 항목 — 넘기지 않으면 서브탭 자체가 뜨지 않는다(이력 조회 등 읽기 전용 화면) */
+  reviewItems?: ReviewItemsPanelProps;
 }
 
 export default function PagedDetailView({
   doc, role, pageIdx, setPageIdx, canEditValidationSystem = false, onValidationSystemChange,
+  reviewItems,
 }: PagedDetailViewProps): React.ReactElement {
   const { t } = useTranslation();
+  // J-ayer 정보 안의 서브탭. 검토 항목은 J 권한자에게만 열리므로 기본은 기존 표다.
+  const [jayerSubtab, setJayerSubtab] = useState<'table' | 'items'>('table');
   let detail: Partial<DetailFormState> = {};
   let jayer: JayerRow[] = [];
   let oayer: OayerRow[] = [];
@@ -1499,6 +1508,31 @@ type Page = { label: string; content: React.ReactNode };
               <button data-tour="export-jayer" onClick={exportJayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
             </div>
           </div>
+          {reviewItems && (
+            <div className="ri-subtabs">
+              <button
+                type="button"
+                className={`ri-subtab${jayerSubtab === 'table' ? ' active' : ''}`}
+                onClick={() => setJayerSubtab('table')}
+              >
+                {t('request.job_li')}
+              </button>
+              <button
+                type="button"
+                className={`ri-subtab${jayerSubtab === 'items' ? ' active' : ''}`}
+                onClick={() => setJayerSubtab('items')}
+              >
+                {t('request.ri_subtab_items')}
+                {reviewItems.items.length > 0 && (
+                  <span className={`ri-dot ${reviewItems.items.some((it) => !it.is_done) ? 'ri-dot-open' : 'ri-dot-done'}`} />
+                )}
+              </button>
+            </div>
+          )}
+          {reviewItems && jayerSubtab === 'items' ? (
+            <ReviewItems {...reviewItems} />
+          ) : (
+          <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
               {t('request.validation_system')}
@@ -1520,6 +1554,8 @@ type Page = { label: string; content: React.ReactNode };
             )}
           </div>
           <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} />
+          </>
+          )}
         </div>
       ),
     });
