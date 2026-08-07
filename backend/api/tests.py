@@ -556,7 +556,8 @@ class MessageBuildingTest(TestCase):
     @override_settings(FRONTEND_URL='https://example.com')
     def test_broadcast_subject_has_no_name_prefix(self):
         subject, _ = mailer._build_message('stage_arrival', self.doc, agent='R')
-        self.assertFalse(subject.startswith('['), '팀 브로드캐스트 제목엔 이름 접두어가 없어야 한다')
+        # 이름 접두어("[홍길동님] ")만 없어야 한다. 단계 라벨 "[결재 요청]" 은 브로드캐스트에도 붙는다.
+        self.assertEqual(subject, f'[결재 요청] {self.doc.title}')
 
     @override_settings(FRONTEND_URL='https://example.com')
     def test_stage_arrival_subject_has_no_stage_suffix(self):
@@ -743,6 +744,9 @@ class HybridImmediateSendTest(TestCase):
         self.requester = UserProfile.objects.create(
             loginid='req', mail='req@company.com', role='NONE'
         )
+        # R 단계 미배정 도착은 TE_R 팀 전원에게 발송된다. 팀원이 없으면 수신자 0명이라
+        # _enqueue 가 적재를 건너뛰므로(None 반환) 즉시 발송 예약 자체가 검증되지 않는다.
+        UserProfile.objects.create(loginid='te_r', mail='ter@company.com', role='TE_R')
         self.doc = _make_document(self.requester)
 
     @patch('api.mailer._send_now_async')
