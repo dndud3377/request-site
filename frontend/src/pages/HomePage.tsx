@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { documentsAPI, noticesAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
+import StageDots from '../components/StageDots';
 import Modal, { ConfirmModal } from '../components/Modal';
 import RichTextEditor from '../components/RichTextEditor';
 import GuideTourModal from '../components/GuideTourModal';
@@ -672,6 +673,7 @@ export default function HomePage(): React.ReactElement {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <StatusBadge status={row.pathStatus} />
                               <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{row.stageText}</span>
+                              {row.subStages && <StageDots subStages={row.subStages} />}
                               {idx === 0 && doc.pause_request?.state === 'requested' && (
                                 <span className="pause-req-chip">⏸ {t('approval.pause_requested_chip')}</span>
                               )}
