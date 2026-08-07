@@ -826,3 +826,102 @@ class VocHistory(models.Model):
 
     def __str__(self):
         return f"VOC #{self.voc.id} - {self.action} ({self.acted_at})"
+
+
+class ReviewItemMaster(models.Model):
+    """{{agent_J}} 검토 항목 마스터 목록 — 전역 1개, 상신 시 문서로 복사되는 원본.
+
+    - 문서 상세에서 항목을 추가·수정·삭제하면 이 마스터에도 그대로 반영된다.
+    - 삭제는 행을 지우지 않고 is_active=False 로 남긴다. 이미 복사돼 검토가 진행된
+      문서 사본(DocumentReviewItem)이 어느 마스터 항목에서 왔는지를 잃지 않기 위해서다.
+    - 검토자는 마스터에 두지 않는다. 상속되는 것은 **제목뿐**이며 검토자는 문서마다
+      새로 지정한다.
+    """
+
+    title = models.CharField(max_length=300, verbose_name='항목 제목')
+    is_active = models.BooleanField(default=True, verbose_name='활성 여부')
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='created_review_items', verbose_name='최초 등록자'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일시')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일시')
+
+    class Meta:
+        verbose_name = '검토 항목 마스터'
+        verbose_name_plural = '검토 항목 마스터 목록'
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{'' if self.is_active else '[삭제] '}{self.title}"
+
+
+class DocumentReviewItem(models.Model):
+    """의뢰서에 복사된 검토 항목 (마스터 항목 1건의 문서별 사본).
+
+    상신·재상신 시 마스터의 활성 항목이 여기로 복사되고, 그 뒤 결재가 진행 중인
+    동안에는 마스터 변경(추가·제목 수정·삭제)이 이 사본에도 전파된다. 결재가 끝난
+    문서는 전파 대상에서 빠져 그 시점 목록으로 굳는다.
+
+    title 을 마스터와 따로 갖는 이유: 전파 대상에서 빠진 문서가 이후 마스터 제목이
+    바뀌어도 자기 시점의 제목을 그대로 보존해야 하기 때문이다.
+    """
+
+    document = models.ForeignKey(
+        RequestDocument, on_delete=models.CASCADE,
+        related_name='review_items', verbose_name='의뢰서'
+    )
+    master = models.ForeignKey(
+        ReviewItemMaster, on_delete=models.CASCADE,
+        related_name='copies', verbose_name='마스터 항목'
+    )
+    title = models.CharField(max_length=300, verbose_name='항목 제목(사본)')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일시')
+
+    class Meta:
+        unique_together = ('document', 'master')
+        verbose_name = '의뢰서 검토 항목'
+        verbose_name_plural = '의뢰서 검토 항목 목록'
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.document.title} - {self.title}"
+
+    def is_done(self):
+        """검토자가 1명 이상이고 전원이 확인했는가."""
+        reviewers = list(self.reviewers.all())
+        return bool(reviewers) and all(r.confirmed for r in reviewers)
+
+
+class DocumentReviewItemReviewer(models.Model):
+    """검토 항목별 검토자와 확인 상태.
+
+    - {{agent_J}} 권한자가 항목마다 지정한다. 결재선(ApprovalStep)에는 나타나지 않으므로
+      결재 경로·상태 배지에는 영향을 주지 않는다.
+    - 확인(confirmed)한 검토자는 지정 해제할 수 없다(기록 보존).
+    - 재상신 시 지정은 남기고 confirmed 만 초기화한다.
+    """
+
+    item = models.ForeignKey(
+        DocumentReviewItem, on_delete=models.CASCADE,
+        related_name='reviewers', verbose_name='검토 항목'
+    )
+    user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='review_item_assignments', verbose_name='검토자'
+    )
+    # 사용자 계정이 지워져도 누가 검토자였는지는 남겨야 하므로 표시값을 함께 저장한다.
+    loginid = models.CharField(max_length=150, verbose_name='검토자 로그인 ID')
+    name = models.CharField(max_length=100, blank=True, verbose_name='검토자 이름')
+    confirmed = models.BooleanField(default=False, verbose_name='확인 여부')
+    confirmed_at = models.DateTimeField(null=True, blank=True, verbose_name='확인일시')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='지정일시')
+
+    class Meta:
+        unique_together = ('item', 'loginid')
+        verbose_name = '검토 항목 검토자'
+        verbose_name_plural = '검토 항목 검토자 목록'
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.item.title} - {self.loginid}{' ✓' if self.confirmed else ''}"
