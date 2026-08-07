@@ -439,8 +439,9 @@
     "col_current_stage_completion": "현재 단계 완료 기한",
     "col_final_completion": "최종 완료 예상일",
     "col_due_date": "완료 기한",
-    "path_label_phpsi_job": "경로1",
-    "path_label_ovl_euv": "경로2",
+    "path_label_1": "경로1",
+    "path_label_2": "경로2",
+    "path_label_3": "경로3",
     "due_date_undecided": "미확정",
     "view_detail": "상세보기",
     "agree": "합의",
@@ -743,7 +744,7 @@
       "steps": {
         "route": {
           "title": "결재 경로",
-          "description": "이 시스템의 최종 결재 경로입니다. 검토(PL)·RFG 이후 경로1(PHPSI→JOB)과 경로2(OVL·EUV)가 병렬로 진행됩니다. (E는 plel 존재 시, Only MAP 의뢰는 R까지)"
+          "description": "이 시스템의 최종 결재 경로입니다. 검토(PL)·RFG 이후 경로1(PHPSI), 경로2(JOB), 경로3(OVL·EUV)이 병렬로 진행됩니다. (E는 plel 존재 시, Only MAP 의뢰는 R까지)"
         },
         "request": {
           "title": "요청서 작성",
@@ -780,7 +781,7 @@
           "description": "상신한 의뢰의 결재 경로와 진행 단계를 확인하고, 상세에서 표를 엑셀로 내려받습니다.",
           "flow": {
             "intro": "결재 현황에서는 상신된 의뢰의 진행 상태를 단계별로 확인할 수 있습니다.",
-            "route": "의뢰가 거치는 최종 결재 경로입니다. 검토(PL)·RFG 이후 경로1(PHPSI→JOB)과 경로2(OVL·EUV)가 병렬로 진행됩니다.",
+            "route": "의뢰가 거치는 최종 결재 경로입니다. 검토(PL)·RFG 이후 경로1(PHPSI), 경로2(JOB), 경로3(OVL·EUV)이 병렬로 진행됩니다.",
             "my_filter": "'MY' 필터를 누르면 내가 상신했거나 내 결재가 필요한 의뢰만 모아 볼 수 있습니다.",
             "stage_mail": "'현재 단계' 열에는 진행 중인 결재 단계와 지정 담당자가 표시되며, 해당 부서·담당자에게 자동으로 메일이 발송됩니다.",
             "assign_btn": "검토(PL)·RFG 단계는 상세에서 '지정하기'로 같은 팀 인원 중 담당자를 지정합니다. JOB·OVL·EUV 단계는 지정 없이 담당 팀원 누구나 '검토중'을 눌러 스스로 맡습니다.",
