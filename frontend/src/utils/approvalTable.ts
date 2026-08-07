@@ -1,7 +1,16 @@
 // 결재 현황 테이블 계산 헬퍼 — ApprovalPage 와 HomePage(최근 의뢰 현황)가 동일한 표를 그리도록 공유한다.
 import type { TFunction } from 'i18next';
-import { RequestDocument } from '../types';
+import { RequestDocument, ApprovalStepFrontend } from '../types';
 import { formatDate } from './date';
+import { MAP_DELETE_EDIT_PURPOSE } from '../pages/RequestPage/constants';
+
+/** 요청 목적이 'MAP 삭제/수정' 인가 — PagedDetailView 의 isOnlyMap/isMapDeleteEdit 과 동일한 판정 방식 */
+const isMapDeleteEditDoc = (doc: RequestDocument): boolean => {
+  try {
+    const parsed = JSON.parse(doc.additional_notes ?? '{}');
+    return parsed?.detail?.request_purpose === MAP_DELETE_EDIT_PURPOSE;
+  } catch { return false; }
+};
 
 // R/P/E단계 하위 역할 라벨: R=단계명(RFG) 그대로 / RV·PV·EV=검토자 / RA=후결자, 그 외는 agent_* 사용
 const stageLabel = (agent: string, t: TFunction): string => {
@@ -88,7 +97,7 @@ export const getFinalCompletionDate = (doc: RequestDocument): string => {
 };
 
 export interface DocTableRow {
-  pathKey: 'single' | 'path0' | 'path1' | 'path2' | 'path3';
+  pathKey: 'single' | 'path1' | 'path2' | 'path3' | 'parallel4';
   stageText: string;
   dueDate: string | null;
   isDone: boolean;
@@ -227,21 +236,60 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
     return parts.length > 0 ? parts.join(' / ') : undefined;
   };
 
-  // 경로0: R(+RV). 완료(담당자 합의 + 검토자 있으면 그 합의까지)면 행을 만들지 않는다 —
-  // 기존 경로는 이 시점에 R 이 항상 이미 끝나 있으므로(관문) 이 분기가 한 번도 걸리지 않아
-  // 기존 화면은 그대로다. MAP 삭제/수정만 R 이 남아 있는 동안 이 행으로 보인다.
-  const rDone = !!rStep && rStep.action === 'approved' && (!rvStep || rvStep.action === 'approved');
-  if (rStep && !rDone) {
-    const pendingStep = rStep.action === 'pending' ? rStep : rvStep;
-    const stageText = buildStageText(pendingStep, false, t);
-    rows.push({
-      pathKey: 'path0',
-      stageText,
-      dueDate: pendingStep?.due_date ?? null,
+  // MAP 삭제/수정 전용: P·R·J·O 네 단계가 진짜 동시 병렬이라 기존 path0~3(경로별 개별 행) 대신
+  // 하나의 행에 "(R/J/P/O)" 형태로 모아 보여주고, 각 단계가 끝날 때마다 글자를 하나씩 지운다.
+  if (isMapDeleteEditDoc(doc)) {
+    const stepDone = (s?: ApprovalStepFrontend) => s?.action === 'approved';
+    const stepUnassigned = (s?: ApprovalStepFrontend) => !!s && s.action === 'pending' && !s.assignee_loginid;
+
+    const jPendingSteps = jSteps.filter(s => s.action === 'pending');
+    const pvPendingSteps = pvSteps.filter(s => s.action === 'pending');
+
+    const doneMap: Record<'R' | 'J' | 'P' | 'O', boolean> = {
+      R: stepDone(rStep) && (!rvStep || stepDone(rvStep)),
+      J: jSteps.length > 0 && jSteps.every(s => s.action === 'approved'),
+      P: stepDone(pStep) && pvPendingSteps.length === 0,
+      O: stepDone(oStep),
+    };
+    const unassignedMap: Record<'R' | 'J' | 'P' | 'O', boolean> = {
+      R: stepUnassigned(rStep),
+      J: jPendingSteps.some(s => !s.assignee_loginid),
+      P: stepUnassigned(pStep),
+      O: stepUnassigned(oStep),
+    };
+    // 표시 순서는 요청 그대로 R → J → P → O 고정(담당자 지정 여부로 구분하지 않는다).
+    const order: ('R' | 'J' | 'P' | 'O')[] = ['R', 'J', 'P', 'O'];
+    const remaining = order.filter(a => !doneMap[a]);
+
+    if (remaining.length === 0) {
+      // 네 단계 모두 끝났다 — 다른 경로가 완료 시 이름을 전부 드러내는 것과 동일하게 처리.
+      const allMainSteps = [rStep, pStep, ...jSteps, oStep].filter(Boolean) as ApprovalStepFrontend[];
+      const allReviewSteps = [rvStep, ...pvSteps].filter(Boolean) as ApprovalStepFrontend[];
+      return [{
+        pathKey: 'parallel4',
+        stageText: namedApprovers([...allMainSteps, ...allReviewSteps]) ?? t('common.status_approved'),
+        dueDate: null,
+        isDone: true,
+        pathStatus: 'approved',
+      }];
+    }
+
+    const anyUnassigned = remaining.some(a => unassignedMap[a]);
+    const dueCandidates = [rStep?.due_date, pStep?.due_date, ...jSteps.map(s => s.due_date), oStep?.due_date]
+      .filter(Boolean) as string[];
+    return [{
+      pathKey: 'parallel4',
+      stageText: `(${remaining.join('/')})`,
+      dueDate: dueCandidates.length > 0 ? dueCandidates.reduce((a, b) => (a > b ? a : b)) : null,
       isDone: false,
-      pathStatus: pendingStep?.assignee_loginid ? 'under_review' : 'unassigned',
-    });
+      pathStatus: anyUnassigned ? 'unassigned' : 'under_review',
+    }];
   }
+
+  // ⚠️ R 이 병렬 진입 후에도 pending 으로 남는 경우는 MAP 삭제/수정 경로뿐이며, 그 경로는
+  // 위 isMapDeleteEditDoc 분기에서 이미 return 되므로 여기 아래에는 절대 도달하지 않는다
+  // (다른 모든 경로는 R 이 관문이라 parallelPresent 시점엔 R 이 항상 이미 approved 다 —
+  // 그래서 여기엔 R 을 위한 행이 없다. rStep/rvStep 은 위 isMapDeleteEditDoc 분기에서만 쓰인다).
 
   // 경로1: P(→검토자 PV, 다중 가능)→J. 담당자 합의만으로 끝나지 않고 검토자 전원 합의까지 끝나야
   // J 가 생성되므로, 담당자 합의 후 검토자가 아직 남아 있으면 '검토자' 단계로 표시한다.
