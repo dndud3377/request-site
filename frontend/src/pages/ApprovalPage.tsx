@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { documentsAPI, usersAPI, userGroupsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
+import StageDots from '../components/StageDots';
 import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
@@ -952,6 +953,7 @@ export default function ApprovalPage(): React.ReactElement {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <StatusBadge status={row.pathStatus} />
                           <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{row.stageText}</span>
+                          {row.subStages && <StageDots subStages={row.subStages} />}
                           {idx === 0 && doc.pause_request?.state === 'requested' && (
                             <span className="pause-req-chip">⏸ {t('approval.pause_requested_chip')}</span>
                           )}

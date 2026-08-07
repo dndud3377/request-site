@@ -58,6 +58,69 @@ describe('getDocTableRows — 기존 경로 회귀 확인', () => {
   });
 });
 
+describe('getDocTableRows — 경로2(O+E) 상태점(subStages)', () => {
+  it('O·E 둘 다 대기중이면 subStages도 둘 다 wait, 대표 뱃지는 unassigned', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+      makeStep({ agent: 'E', action: 'pending' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    const path2 = rows.find((r) => r.pathKey === 'path2')!;
+    expect(path2.pathStatus).toBe('unassigned');
+    expect(path2.subStages?.map((s) => s.state)).toEqual(['wait', 'wait']);
+  });
+
+  it('O는 아직 미배정, E만 선점됐으면 대표 뱃지가 under_review로 바뀐다(예전엔 O 우선이라 unassigned로 보이던 버그)', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+      makeStep({ agent: 'E', action: 'pending', assignee_loginid: 'e1', assignee_name: '홍길동' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    const path2 = rows.find((r) => r.pathKey === 'path2')!;
+    expect(path2.pathStatus).toBe('under_review');
+    expect(path2.subStages).toEqual([
+      { label: 'approval.agent_O', state: 'wait' },
+      { label: 'approval.agent_E', state: 'review', name: '홍길동' },
+    ]);
+  });
+
+  it('O가 완료되고 E가 아직 미배정이면 O는 done, E는 wait, 대표 뱃지는 unassigned', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'O', action: 'approved', assignee_name: '김철수' }),
+      makeStep({ agent: 'E', action: 'pending' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    const path2 = rows.find((r) => r.pathKey === 'path2')!;
+    expect(path2.pathStatus).toBe('unassigned');
+    expect(path2.subStages?.map((s) => s.state)).toEqual(['done', 'wait']);
+  });
+
+  it('O·E 모두 완료되면(검토자 없음) subStages는 비고 대표 뱃지는 approved', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'O', action: 'approved', assignee_name: '김철수' }),
+      makeStep({ agent: 'E', action: 'approved', assignee_name: '홍길동' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    const path2 = rows.find((r) => r.pathKey === 'path2')!;
+    expect(path2.pathStatus).toBe('approved');
+    expect(path2.subStages).toBeUndefined();
+  });
+
+  it('E만 있고 O가 없으면(이론상 발생 안 하지만) subStages를 채우지 않는다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'E', action: 'pending' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    const path2 = rows.find((r) => r.pathKey === 'path2')!;
+    expect(path2.subStages).toBeUndefined();
+  });
+});
+
 describe('getFinalCompletionDate — R 의 기한도 후보에 포함', () => {
   it('R 이 가장 늦은 기한이면 그 날짜가 최종 완료예정일이 된다', () => {
     const doc = makeDoc([
