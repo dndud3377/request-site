@@ -41,11 +41,18 @@ class RecipientResolutionTest(TestCase):
             ['pl@company.com'],
         )
 
-    def test_j_unassigned_uses_fixed_fallback(self):
+    def test_j_unassigned_broadcasts_to_whole_team(self):
+        """(2026-08) 미배정 J 는 고정 주소가 아니라 TE_J 팀 전원에게 간다(R/P 와 동일 규칙).
+
+        J 가 R 합의 시점의 독립 병렬 단계가 되면서 팀원 누구나 선점·합의하게 됐는데, 대표
+        주소 1곳으로만 보내면 팀원 개개인이 자기 차례를 알 수 없다.
+        """
+        UserProfile.objects.create(loginid='j1', mail='j1@company.com', role='TE_J')
+        UserProfile.objects.create(loginid='j2', mail='j2@company.com', role='TE_J')
         step = ApprovalStep.objects.create(document=self.doc, agent='J')
         self.assertEqual(
-            mailer.resolve_stage_recipients(self.doc, 'J', step),
-            ['user_J@company.com'],
+            sorted(mailer.resolve_stage_recipients(self.doc, 'J', step)),
+            ['j1@company.com', 'j2@company.com'],
         )
 
     def test_r_unassigned_broadcasts_to_whole_team(self):
@@ -455,11 +462,12 @@ class EnqueueTest(TestCase):
         self.doc = _make_document(self.requester)
 
     def test_enqueue_creates_pending_row(self):
+        UserProfile.objects.create(loginid='j1', mail='j1@company.com', role='TE_J')
         step = ApprovalStep.objects.create(document=self.doc, agent='J')
         noti = mailer.enqueue_stage_arrival(self.doc, 'J', step)
         self.assertIsNotNone(noti)
         self.assertEqual(noti.status, 'pending')
-        self.assertEqual(noti.recipients, ['user_J@company.com'])
+        self.assertEqual(noti.recipients, ['j1@company.com'])
 
     def test_enqueue_skips_when_no_recipient(self):
         self.doc.requester_email = ''
@@ -972,22 +980,39 @@ class PEStageReviewerFlowTest(TestCase):
                             'P 는 4영업일 그대로라 J 와 같을 수 없다')
 
     def test_j_stage_arrival_mail_sent_at_r_approval(self):
-        """(2026-08) J 도착 메일이 P 완료 시점이 아니라 R 합의 시점에 적재된다.
+        """(2026-08) J 도착 메일이 P 완료 시점이 아니라 R 합의 시점에 TE_J 팀 전원에게 적재된다.
 
-        검증 대상은 '발송 시점'이다 — 수신자 규칙(미배정 J 는 고정 주소 폴백)은 이 변경으로
-        건드리지 않았다. MailNotification 에 agent 필드가 없어 본문 문구로 J 메일을 식별한다.
+        MailNotification 에 agent 필드가 없어 본문 문구로 J 메일을 식별한다.
         """
         doc = self._advance_to_parallel()
-        self.assertTrue(
-            MailNotification.objects.filter(
-                document=doc, event_type='stage_arrival',
-                contents__contains='J 단계 결재가 도착했습니다.',
-            ).exists(),
-            'R 합의 시점(= P 가 아직 pending)에 J 도착 메일이 적재돼야 한다',
-        )
+        noti = MailNotification.objects.filter(
+            document=doc, event_type='stage_arrival',
+            contents__contains='J 단계 결재가 도착했습니다.',
+        ).first()
+        self.assertIsNotNone(noti, 'R 합의 시점(= P 가 아직 pending)에 J 도착 메일이 적재돼야 한다')
+        self.assertIn(self.j_user.mail, noti.recipients,
+                      '미배정 J 는 고정 주소가 아니라 TE_J 팀 전원에게 가야 한다')
         self.assertEqual(
             ApprovalStep.objects.get(document=doc, agent='P', round=1).action, 'pending',
             'P 는 아직 진행 중인데 J 메일이 이미 나갔다는 것이 이 테스트의 핵심이다',
+        )
+
+    def test_j_unassigned_arrival_has_no_hardcoded_fallback_address(self):
+        """(2026-08) 폐지한 고정 주소(user_J@company.com)로는 더 이상 발송되지 않는다."""
+        doc = self._advance_to_parallel()
+        for noti in MailNotification.objects.filter(document=doc):
+            self.assertNotIn('user_J@company.com', noti.recipients)
+
+    def test_j_arrival_after_claim_goes_to_that_assignee_only(self):
+        """J 가 이미 선점된 상태에서 도착 메일을 만들면 그 담당자 1명에게만 간다(P/R 과 동일 규칙)."""
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'J'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        j_step = ApprovalStep.objects.get(document=doc, agent='J', round=1)
+        self.assertEqual(
+            mailer.resolve_stage_recipients(doc, 'J', j_step), [self.j_user.mail]
         )
 
     def test_p_completion_notifies_te_o_and_te_j(self):
