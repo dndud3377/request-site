@@ -269,7 +269,7 @@ class RecipientResolutionTest(TestCase):
 
 
 class DraftVisibilityTest(TestCase):
-    """임시저장(draft) 문서는 작성자 본인 + 그룹 공유 멤버 + MASTER 에게만 보인다."""
+    """임시저장(draft) 문서는 작성자 본인 + 지정된 공유 그룹 멤버 + MASTER 에게만 보인다."""
 
     def setUp(self):
         from rest_framework.test import APIRequestFactory
@@ -279,16 +279,20 @@ class DraftVisibilityTest(TestCase):
 
         self.author = UserProfile.objects.create(loginid='author', mail='a@c.com', role='NONE')
         self.member = UserProfile.objects.create(loginid='member', mail='m@c.com', role='NONE')
+        self.other_member = UserProfile.objects.create(loginid='other', mail='ot@c.com', role='NONE')
         self.outsider = UserProfile.objects.create(loginid='out', mail='o@c.com', role='NONE')
         self.master = UserProfile.objects.create(loginid='master', mail='ms@c.com', role='MASTER')
 
-        group = UserGroup.objects.create(name='team', creator=self.author)
-        group.members.add(self.author, self.member)
+        self.group = UserGroup.objects.create(name='team', creator=self.author)
+        self.group.members.add(self.author, self.member)
+        # 작성자가 속한 '다른' 그룹 — 공유 대상으로 지정하지 않았으므로 보이면 안 된다.
+        self.other_group = UserGroup.objects.create(name='team2', creator=self.author)
+        self.other_group.members.add(self.author, self.other_member)
 
         self.draft = RequestDocument.objects.create(
             title='draft doc', requester=self.author, requester_name='a',
             requester_email='a@c.com', requester_department='d', product_name='p',
-            status='draft',
+            status='draft', shared_group=self.group,
         )
         self.submitted = RequestDocument.objects.create(
             title='submitted doc', requester=self.author, requester_name='a',
@@ -310,8 +314,22 @@ class DraftVisibilityTest(TestCase):
         self.assertIn(self.draft.id, ids)
         self.assertIn(self.submitted.id, ids)
 
-    def test_group_member_sees_draft(self):
+    def test_shared_group_member_sees_draft(self):
         self.assertIn(self.draft.id, self._visible_ids(self.member))
+
+    def test_member_of_other_group_cannot_see_draft(self):
+        """작성자와 그룹을 공유해도 그 문서의 공유 그룹이 아니면 보이지 않는다."""
+        ids = self._visible_ids(self.other_member)
+        self.assertNotIn(self.draft.id, ids)
+        self.assertIn(self.submitted.id, ids)
+
+    def test_unshared_draft_is_author_only(self):
+        """공유 그룹 미지정 draft 는 작성자 본인과 MASTER 만 본다."""
+        self.draft.shared_group = None
+        self.draft.save(update_fields=['shared_group'])
+        self.assertIn(self.draft.id, self._visible_ids(self.author))
+        self.assertIn(self.draft.id, self._visible_ids(self.master))
+        self.assertNotIn(self.draft.id, self._visible_ids(self.member))
 
     def test_outsider_cannot_see_draft(self):
         ids = self._visible_ids(self.outsider)
@@ -2198,8 +2216,8 @@ class DocumentDeleteAuthTest(TestCase):
     """의뢰서 삭제 인가 (B-01).
 
     - approved : MASTER 만
-    - 그 외(draft/under_review/rejected/pause) : 철회 가능 범위
-      (의뢰자 / 지정 PL / 의뢰자 그룹멤버 / MASTER)
+    - 그 외(draft/under_review/rejected/pause) : 의뢰자 / 지정 PL / MASTER
+      (공유 그룹 멤버는 수정·상신은 되어도 삭제는 불가 — 2026-08 정책)
     - REST `DELETE /documents/{id}/` 는 405 로 차단하고 `POST delete/` 로 일원화
     """
 
@@ -2214,8 +2232,8 @@ class DocumentDeleteAuthTest(TestCase):
         self.norole = UserProfile.objects.create(loginid='del_none', mail='n@c.com', role='NONE')
         self.master = UserProfile.objects.create(loginid='del_master', mail='ms@c.com', role='MASTER')
 
-        group = UserGroup.objects.create(name='del_team', creator=self.author)
-        group.members.add(self.author, self.member)
+        self.group = UserGroup.objects.create(name='del_team', creator=self.author)
+        self.group.members.add(self.author, self.member)
 
     def _doc(self, status='under_review', requester=None, designated_pl=None):
         return RequestDocument.objects.create(
@@ -2223,6 +2241,7 @@ class DocumentDeleteAuthTest(TestCase):
             requester=self.author if requester is None else requester,
             requester_name='작성자', requester_email='a@c.com', requester_department='d',
             product_name='p', status=status, designated_pl=designated_pl,
+            shared_group=self.group,
         )
 
     def _post_delete(self, user, doc):
@@ -2250,6 +2269,13 @@ class DocumentDeleteAuthTest(TestCase):
         doc = self._doc('approved')
         res = self._post_delete(self.author, doc)
         self.assertEqual(res.status_code, 403)
+        self.assertTrue(self._exists(doc))
+
+    def test_shared_group_member_cannot_delete(self):
+        """공유 그룹 멤버는 수정·상신은 되어도 삭제는 불가(2026-08 정책)."""
+        doc = self._doc()
+        res = self._post_delete(self.member, doc)
+        self.assertEqual(res.status_code, 403, res.content)
         self.assertTrue(self._exists(doc))
 
     def test_rest_delete_is_blocked_with_405(self):
@@ -2306,11 +2332,6 @@ class DocumentDeleteAuthTest(TestCase):
         self.assertEqual(res.status_code, 200, res.content)
         self.assertFalse(self._exists(doc))
 
-    def test_group_member_can_delete(self):
-        doc = self._doc()
-        res = self._post_delete(self.member, doc)
-        self.assertEqual(res.status_code, 200, res.content)
-        self.assertFalse(self._exists(doc))
 
     def test_master_can_delete_approved(self):
         doc = self._doc('approved')
@@ -2762,3 +2783,179 @@ class AnnualDesignRuleStatsApiTest(TestCase):
         self.assertEqual(res.status_code, 200)
         data = res.json()['data']
         self.assertEqual([p['process'] for p in data['processes']], ['P1'])
+
+
+@override_settings(AUTH_MODE='sso')
+class SharedGroupDraftTest(TestCase):
+    """임시저장 공유 그룹(RequestDocument.shared_group).
+
+    - 공유 대상은 작성자가 고른 그룹 **1개**. 미지정이면 작성자 본인·MASTER 만 접근.
+    - 공유 그룹 멤버: 수정 / 임시저장 / 상신 가능, 삭제·공유대상 변경 불가.
+    - 그룹원이 수정·상신해도 의뢰자는 최초 작성자로 유지된다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        import json
+        self._json = json
+        self.client = APIClient()
+
+        self.author = UserProfile.objects.create(
+            loginid='sg_author', username='작성자A', mail='a@c.com',
+            deptname='개발팀', role='PL',
+        )
+        self.member = UserProfile.objects.create(
+            loginid='sg_member', username='그룹원B', mail='m@c.com',
+            deptname='품질팀', role='PL',
+        )
+        self.other_member = UserProfile.objects.create(loginid='sg_other', mail='ot@c.com', role='PL')
+        self.outsider = UserProfile.objects.create(loginid='sg_out', mail='o@c.com', role='PL')
+        self.master = UserProfile.objects.create(loginid='sg_master', mail='ms@c.com', role='MASTER')
+        self.pl = UserProfile.objects.create(loginid='sg_pl', mail='pl@c.com', role='PL')
+
+        self.group = UserGroup.objects.create(name='공유팀', creator=self.author)
+        self.group.members.add(self.author, self.member)
+        # 작성자가 속한 다른 그룹 — 이 문서의 공유 대상은 아니다.
+        self.other_group = UserGroup.objects.create(name='다른팀', creator=self.author)
+        self.other_group.members.add(self.author, self.other_member)
+        # 작성자가 속하지 않은 남의 그룹
+        self.foreign_group = UserGroup.objects.create(name='남의팀', creator=self.outsider)
+        self.foreign_group.members.add(self.outsider)
+
+    def _draft(self, shared_group=None, status='draft'):
+        return RequestDocument.objects.create(
+            title='공유 대상 의뢰서', requester=self.author, requester_name='작성자A',
+            requester_email='a@c.com', requester_department='개발팀', product_name='PROD-1',
+            status=status, shared_group=shared_group,
+            additional_notes=self._json.dumps({'detail': {}, 'jayerRows': []}),
+        )
+
+    # ----- 공유 그룹 지정 액션 -----
+    def test_author_can_set_and_clear_shared_group(self):
+        doc = self._draft()
+        self.client.force_authenticate(user=self.author)
+        r = self.client.post(f'/api/documents/{doc.id}/set-shared-group/',
+                             {'group_id': self.group.id}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.shared_group_id, self.group.id)
+        self.assertEqual(r.json()['document']['shared_group_name'], '공유팀')
+
+        r = self.client.post(f'/api/documents/{doc.id}/set-shared-group/',
+                             {'group_id': None}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        self.assertIsNone(doc.shared_group_id)
+
+    def test_cannot_share_to_group_i_am_not_member_of(self):
+        doc = self._draft()
+        self.client.force_authenticate(user=self.author)
+        r = self.client.post(f'/api/documents/{doc.id}/set-shared-group/',
+                             {'group_id': self.foreign_group.id}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        doc.refresh_from_db()
+        self.assertIsNone(doc.shared_group_id)
+
+    def test_shared_group_member_cannot_change_shared_group(self):
+        """멤버는 문서를 수정할 수는 있어도 공유 범위는 바꾸지 못한다."""
+        doc = self._draft(self.group)
+        self.client.force_authenticate(user=self.member)
+        r = self.client.post(f'/api/documents/{doc.id}/set-shared-group/',
+                             {'group_id': None}, format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.shared_group_id, self.group.id)
+
+    def test_shared_group_is_read_only_on_patch(self):
+        """전체 저장(PATCH)에는 shared_group 이 딸려가지 않는다(초기화 방지)."""
+        doc = self._draft(self.group)
+        self.client.force_authenticate(user=self.author)
+        r = self.client.patch(f'/api/documents/{doc.id}/',
+                              {'shared_group': None, 'title': '제목변경'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.shared_group_id, self.group.id)
+
+    # ----- 수정 / 상신 인가 -----
+    def test_shared_group_member_can_edit_draft(self):
+        doc = self._draft(self.group)
+        self.client.force_authenticate(user=self.member)
+        r = self.client.patch(f'/api/documents/{doc.id}/', {'title': 'B가 수정'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_non_shared_group_member_cannot_edit_draft(self):
+        """작성자와 다른 그룹을 공유할 뿐인 사용자는 수정할 수 없다.
+
+        조회 스코프(get_queryset)에서 이미 빠지므로 403 이 아니라 404 다
+        — 문서의 존재 자체를 노출하지 않는 편이 낫다.
+        """
+        doc = self._draft(self.group)
+        self.client.force_authenticate(user=self.other_member)
+        r = self.client.patch(f'/api/documents/{doc.id}/', {'title': 'x'}, format='json')
+        self.assertEqual(r.status_code, 404, r.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.title, '공유 대상 의뢰서')
+
+    def test_unshared_draft_cannot_be_edited_by_group_member(self):
+        doc = self._draft(None)
+        self.client.force_authenticate(user=self.member)
+        r = self.client.patch(f'/api/documents/{doc.id}/', {'title': 'x'}, format='json')
+        self.assertEqual(r.status_code, 404, r.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.title, '공유 대상 의뢰서')
+
+    def test_shared_group_member_can_submit(self):
+        doc = self._draft(self.group)
+        self.client.force_authenticate(user=self.member)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/',
+                             {'designated_pl_loginids': [self.pl.loginid]}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+
+    def test_outsider_cannot_submit_unshared_draft(self):
+        """조회 스코프를 통과하더라도(MASTER 아님) 상신은 인가로 막힌다."""
+        doc = self._draft(None)
+        self.client.force_authenticate(user=self.outsider)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/',
+                             {'designated_pl_loginids': [self.pl.loginid]}, format='json')
+        self.assertIn(r.status_code, (403, 404), r.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'draft')
+
+    # ----- 의뢰자 고정 -----
+    def test_requester_unchanged_when_group_member_edits_and_submits(self):
+        """B(그룹원)가 A의 임시저장을 수정·상신해도 의뢰자는 A로 남는다."""
+        doc = self._draft(self.group)
+        self.client.force_authenticate(user=self.member)
+
+        r = self.client.patch(f'/api/documents/{doc.id}/', {
+            'title': 'B가 이어서 작성',
+            'requester_name': '그룹원B',
+            'requester_email': 'm@c.com',
+            'requester_department': '품질팀',
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        r = self.client.post(f'/api/documents/{doc.id}/submit/',
+                             {'designated_pl_loginids': [self.pl.loginid]}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.requester_id, self.author.id)
+        self.assertEqual(doc.requester_name, '작성자A')
+        self.assertEqual(doc.requester_email, 'a@c.com')
+        self.assertEqual(doc.requester_department, '개발팀')
+
+    def test_requester_unchanged_on_resubmit_by_group_member(self):
+        doc = self._draft(self.group, status='rejected')
+        self.client.force_authenticate(user=self.member)
+        r = self.client.patch(f'/api/documents/{doc.id}/',
+                              {'requester_name': '그룹원B'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/resubmit/',
+                             {'designated_pl_loginids': [self.pl.loginid]}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.requester_id, self.author.id)
+        self.assertEqual(doc.requester_name, '작성자A')
