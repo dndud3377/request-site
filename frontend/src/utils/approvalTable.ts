@@ -363,6 +363,10 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
     }, null);
     // O·E가 같이 있고 아직 진행 중일 때만 상태점용 개별 상태를 채운다(둘 다 pending일 수 있어
     // 대표 뱃지 하나로는 "한쪽만 검토중" 같은 중간 상태가 안 드러나기 때문 — docs/APPROVAL.md §3.3).
+    // E 상태점 이름: 아직 합의하지 않은 검토자(evPendingSteps)가 있으면 그 이름들(다중이면 ' / '로
+    // 연결)을 보여준다 — 공이 담당자에서 검토자에게 넘어갔음을 나타낸다. 검토자가 아직 지정되지
+    // 않았으면(=담당자만 선점한 단계) 담당자 이름을 그대로 보여준다.
+    const eReviewerNames = evPendingSteps.map(s => s.assignee_name).filter(Boolean).join(' / ') || undefined;
     const subStages: DocSubStage[] | undefined = (!done && oStep && eStep)
       ? [
           { label: t('approval.agent_O' as any), state: oStep.action === 'approved' ? 'done' : (oStep.assignee_loginid ? 'review' : 'wait') },
@@ -371,7 +375,7 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
             state: eStep.action !== 'approved'
               ? (eStep.assignee_loginid ? 'review' : 'wait')
               : (evPendingSteps.length > 0 ? 'review' : 'done'),
-            name: eStep.assignee_name,
+            name: evPendingSteps.length > 0 ? eReviewerNames : eStep.assignee_name,
           },
         ]
       : undefined;
