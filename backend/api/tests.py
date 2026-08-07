@@ -9,7 +9,8 @@ from django.test import TestCase, override_settings
 from . import mailer
 from . import design_rule_stats
 from .models import (
-    ApprovalStep, MailNotification, RequestDocument, UserGroup, UserProfile,
+    ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
+    RequestDocument, ReviewItemMaster, UserGroup, UserProfile,
 )
 
 
@@ -2959,3 +2960,322 @@ class SharedGroupDraftTest(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.requester_id, self.author.id)
         self.assertEqual(doc.requester_name, '작성자A')
+
+
+class ReviewItemSyncTest(TestCase):
+    """J 단계 검토 항목 — 마스터 목록 ↔ 문서 사본 동기화 (review_items.py).
+
+    확정 정책(2026-08):
+    - 채우기는 **J 단계가 생성되는 시점**에만 한다(J 를 거치지 않는 경로는 채우지 않는다).
+    - 항목 추가·제목수정·삭제는 마스터와 '결재 진행 중 + 현재 회차 J 단계 pending' 문서에 전파된다.
+    - 결재가 끝난 문서는 전파 대상이 아니다(그 시점 목록으로 굳는다).
+    - 삭제 전파는 이미 확인한 검토자가 있는 문서를 건너뛴다.
+    - 재상신하면 항목·검토자는 남고 확인 상태만 초기화되며, 새 J 단계에서 마스터를 따라잡는다.
+
+    결재 경로는 'MAP 삭제/수정'(PL 합의 직후 P·R·J·O 병렬 생성)을 쓴다 — J 단계에
+    가장 짧게 도달하는 실제 경로다.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='ri_req', mail='rireq@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='ri_pl', mail='ripl@c.com', role='PL')
+        self.r_user = UserProfile.objects.create(loginid='ri_r', mail='rir@c.com', role='TE_R')
+        self.p_user = UserProfile.objects.create(loginid='ri_p', mail='rip@c.com', role='TE_P')
+        self.j_user = UserProfile.objects.create(loginid='ri_j', username='이재이', mail='rij@c.com', role='TE_J')
+        self.j_user2 = UserProfile.objects.create(loginid='ri_j2', username='김검토', mail='rij2@c.com', role='TE_J')
+        self.o_user = UserProfile.objects.create(loginid='ri_o', mail='rio@c.com', role='TE_O')
+
+    # ----- 흐름 헬퍼 -----
+    def _doc_at_j(self, title='ri'):
+        """'MAP 삭제/수정' 문서를 만들어 상신 → PL 합의까지 진행(= J 단계 pending 생성)."""
+        doc = RequestDocument.objects.create(
+            title=title, requester=self.requester, requester_name='요청자',
+            requester_email='rireq@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps({
+                'detail': {'request_purpose': RequestDocument.MAP_DELETE_EDIT_PURPOSE},
+                'jayerRows': [],
+            }),
+        )
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/',
+                             {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='J', action='pending').exists(),
+            'J 단계가 생성돼야 이 테스트가 성립한다',
+        )
+        return doc
+
+    def _claim_j(self, doc, user=None):
+        self.client.force_authenticate(user=user or self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'J'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def _finish(self, doc):
+        """P·R·J·O 를 모두 합의시켜 문서를 완료(approved) 상태로 만든다."""
+        for agent, user in (('R', self.r_user), ('J', self.j_user), ('O', self.o_user), ('P', self.p_user)):
+            self.client.force_authenticate(user=user)
+            if agent == 'R':
+                self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+                    'agent': agent, 'assignee_loginid': user.loginid, 'assignee_name': user.loginid,
+                }, format='json')
+            else:
+                self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': agent}, format='json')
+            r = self.client.post(f'/api/documents/{doc.id}/approve-step/',
+                                 {'agent': agent, 'comment': ''}, format='json')
+            self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'approved')
+        return doc
+
+    def _add_item(self, doc, title, user=None):
+        self.client.force_authenticate(user=user or self.j_user)
+        return self.client.post(f'/api/documents/{doc.id}/review-item-add/',
+                                {'title': title}, format='json')
+
+    def _titles(self, doc):
+        return list(DocumentReviewItem.objects.filter(document=doc).values_list('title', flat=True))
+
+    # ----- 채우기 시점 -----
+    def test_j_stage_creation_fills_from_master(self):
+        """J 단계가 열리는 순간 마스터의 활성 항목이 제목만 복사된다(검토자는 빈 상태)."""
+        ReviewItemMaster.objects.create(title='항목1')
+        ReviewItemMaster.objects.create(title='항목2')
+        ReviewItemMaster.objects.create(title='지워진 항목', is_active=False)
+
+        doc = self._doc_at_j()
+        self.assertEqual(self._titles(doc), ['항목1', '항목2'],
+                         '비활성 항목은 복사되지 않아야 한다')
+        self.assertFalse(
+            DocumentReviewItemReviewer.objects.filter(item__document=doc).exists(),
+            '검토자는 상속되지 않는다 — 문서마다 새로 지정한다',
+        )
+
+    def test_only_map_route_without_j_stage_is_not_filled(self):
+        """J 단계를 거치지 않는 문서에는 검토 항목을 채우지 않는다."""
+        ReviewItemMaster.objects.create(title='항목1')
+        doc = RequestDocument.objects.create(
+            title='onlymap', requester=self.requester, requester_name='요청자',
+            requester_email='rireq@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps({
+                'detail': {'request_purpose': RequestDocument.ONLY_MAP_PURPOSE}, 'jayerRows': [],
+            }),
+        )
+        self.client.force_authenticate(user=self.requester)
+        self.client.post(f'/api/documents/{doc.id}/submit/',
+                         {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.client.force_authenticate(user=self.pl_user)
+        self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='J').exists())
+        self.assertEqual(self._titles(doc), [])
+
+    # ----- 전파 (사용자 시나리오 A·B·C·D) -----
+    def test_add_propagates_to_in_progress_documents_only(self):
+        """C 에서 추가한 항목이 결재 중인 A·D 에는 들어가고, 완료된 B 에는 들어가지 않는다."""
+        doc_a = self._doc_at_j('A')
+        doc_b = self._finish(self._doc_at_j('B'))
+        doc_c = self._doc_at_j('C')
+        doc_d = self._doc_at_j('D')
+
+        self._claim_j(doc_c)
+        r = self._add_item(doc_c, '차용 Layer 정합성 확인')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.assertEqual(self._titles(doc_c), ['차용 Layer 정합성 확인'])
+        self.assertEqual(self._titles(doc_a), ['차용 Layer 정합성 확인'], 'A(결재중)에도 적용돼야 한다')
+        self.assertEqual(self._titles(doc_d), ['차용 Layer 정합성 확인'], 'D(결재중)에도 적용돼야 한다')
+        self.assertEqual(self._titles(doc_b), [], 'B(결재완료)는 그 시점 목록으로 굳는다')
+        self.assertEqual(ReviewItemMaster.objects.filter(is_active=True).count(), 1,
+                         '마스터에도 등록돼야 한다')
+
+    def test_rename_propagates_to_master_and_in_progress_documents(self):
+        doc_a = self._doc_at_j('A')
+        doc_b = self._finish(self._doc_at_j('B'))
+        doc_c = self._doc_at_j('C')
+        self._claim_j(doc_c)
+        self._add_item(doc_c, '원래 제목')
+        # B 는 완료 문서지만 사본을 갖고 있는 상태를 만들어, 이름 변경이 닿지 않음을 확인한다.
+        DocumentReviewItem.objects.create(
+            document=doc_b, master=ReviewItemMaster.objects.get(title='원래 제목'), title='원래 제목',
+        )
+
+        item = DocumentReviewItem.objects.get(document=doc_c)
+        r = self.client.post(f'/api/documents/{doc_c.id}/review-item-rename/',
+                             {'item_id': item.id, 'title': '바뀐 제목'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.assertEqual(self._titles(doc_c), ['바뀐 제목'])
+        self.assertEqual(self._titles(doc_a), ['바뀐 제목'])
+        self.assertEqual(self._titles(doc_b), ['원래 제목'], '완료 문서는 자기 시점 제목을 보존한다')
+        self.assertEqual(ReviewItemMaster.objects.get(pk=item.master_id).title, '바뀐 제목')
+
+    def test_delete_propagates_but_keeps_copies_with_confirmed_reviewer(self):
+        """삭제는 마스터 비활성 + 전파, 단 이미 확인한 검토자가 있는 다른 문서 사본은 남긴다."""
+        doc_a = self._doc_at_j('A')
+        doc_c = self._doc_at_j('C')
+        doc_d = self._doc_at_j('D')
+        self._claim_j(doc_c)
+        self._add_item(doc_c, '삭제될 항목')
+
+        # A 에서는 검토자가 이미 확인을 마친 상태로 만든다.
+        self._claim_j(doc_a, self.j_user2)
+        item_a = DocumentReviewItem.objects.get(document=doc_a)
+        self.client.force_authenticate(user=self.j_user2)
+        r = self.client.post(f'/api/documents/{doc_a.id}/review-item-reviewer-add/',
+                             {'item_id': item_a.id, 'loginid': self.j_user2.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc_a.id}/review-item-confirm/',
+                             {'item_id': item_a.id, 'confirmed': True}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        item_c = DocumentReviewItem.objects.get(document=doc_c)
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc_c.id}/review-item-delete/',
+                             {'item_id': item_c.id}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.assertEqual(self._titles(doc_c), [], '지시한 원본 문서에서는 삭제된다')
+        self.assertEqual(self._titles(doc_d), [], '확인 기록이 없는 문서에서도 삭제된다')
+        self.assertEqual(self._titles(doc_a), ['삭제될 항목'],
+                         '확인 기록이 있는 문서에서는 남긴다')
+        self.assertFalse(ReviewItemMaster.objects.get(title='삭제될 항목').is_active)
+
+    def test_rejected_document_catches_up_when_j_reopens(self):
+        """반려된 A 는 재상신으로 J 가 다시 열릴 때, 그동안 D 에 추가된 항목을 따라잡는다."""
+        doc_a = self._doc_at_j('A')
+        doc_d = self._doc_at_j('D')
+
+        # A 에 항목 하나를 만들어 검토자 확인까지 마친 뒤 J 에서 반려한다.
+        self._claim_j(doc_a)
+        self._add_item(doc_a, '기존 항목')
+        item_a = DocumentReviewItem.objects.get(document=doc_a, title='기존 항목')
+        self.client.post(f'/api/documents/{doc_a.id}/review-item-reviewer-add/',
+                         {'item_id': item_a.id, 'loginid': self.j_user.loginid}, format='json')
+        self.client.post(f'/api/documents/{doc_a.id}/review-item-confirm/',
+                         {'item_id': item_a.id, 'confirmed': True}, format='json')
+        r = self.client.post(f'/api/documents/{doc_a.id}/reject-step/',
+                             {'agent': 'J', 'comment': '반려'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc_a.refresh_from_db()
+        self.assertEqual(doc_a.status, 'rejected')
+
+        # A 가 반려돼 있는 동안 D 에서 새 항목을 추가한다 → A 는 전파 대상이 아니다.
+        self._claim_j(doc_d, self.j_user2)
+        self._add_item(doc_d, '나중에 추가된 항목', user=self.j_user2)
+        self.assertEqual(self._titles(doc_a), ['기존 항목'], '반려 문서에는 전파되지 않는다')
+
+        # A 재상신 → PL 합의 → 새 회차 J 생성 시점에 마스터를 따라잡는다.
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc_a.id}/resubmit/',
+                             {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc_a.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.assertEqual(sorted(self._titles(doc_a)), ['기존 항목', '나중에 추가된 항목'])
+        reviewer = DocumentReviewItemReviewer.objects.get(item__document=doc_a, loginid=self.j_user.loginid)
+        self.assertFalse(reviewer.confirmed, '재상신 시 확인 상태만 초기화된다')
+        self.assertIsNone(reviewer.confirmed_at)
+
+    # ----- 인가 -----
+    def test_edit_requires_claimed_and_unapproved_j_stage(self):
+        doc = self._doc_at_j()
+
+        r = self._add_item(doc, '선점 전')
+        self.assertEqual(r.status_code, 403, '검토중 선점 전에는 읽기 전용이다')
+
+        self._claim_j(doc)
+        r = self._add_item(doc, '선점 후')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        r = self._add_item(doc, 'O 팀 시도', user=self.o_user)
+        self.assertEqual(r.status_code, 403, 'J 권한이 없으면 편집할 수 없다')
+
+        self.client.force_authenticate(user=self.j_user)
+        self.client.post(f'/api/documents/{doc.id}/approve-step/',
+                         {'agent': 'J', 'comment': ''}, format='json')
+        r = self._add_item(doc, '합의 후')
+        self.assertEqual(r.status_code, 403, 'J 합의 후에는 검토 항목이 잠긴다')
+
+    def test_confirmed_reviewer_cannot_be_removed(self):
+        doc = self._doc_at_j()
+        self._claim_j(doc)
+        self._add_item(doc, '항목')
+        item = DocumentReviewItem.objects.get(document=doc)
+
+        self.client.post(f'/api/documents/{doc.id}/review-item-reviewer-add/',
+                         {'item_id': item.id, 'loginid': self.j_user2.loginid}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/review-item-reviewer-remove/',
+                             {'item_id': item.id, 'loginid': self.j_user2.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, '확인 전에는 해제할 수 있다')
+
+        self.client.post(f'/api/documents/{doc.id}/review-item-reviewer-add/',
+                         {'item_id': item.id, 'loginid': self.j_user2.loginid}, format='json')
+        self.client.force_authenticate(user=self.j_user2)
+        self.client.post(f'/api/documents/{doc.id}/review-item-confirm/',
+                         {'item_id': item.id, 'confirmed': True}, format='json')
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/review-item-reviewer-remove/',
+                             {'item_id': item.id, 'loginid': self.j_user2.loginid}, format='json')
+        self.assertEqual(r.status_code, 400, '확인한 검토자는 해제할 수 없다')
+
+    def test_only_assigned_reviewer_can_confirm(self):
+        doc = self._doc_at_j()
+        self._claim_j(doc)
+        self._add_item(doc, '항목')
+        item = DocumentReviewItem.objects.get(document=doc)
+
+        self.client.force_authenticate(user=self.j_user2)
+        r = self.client.post(f'/api/documents/{doc.id}/review-item-confirm/',
+                             {'item_id': item.id, 'confirmed': True}, format='json')
+        self.assertEqual(r.status_code, 403, '검토자로 지정되지 않았으면 확인할 수 없다')
+
+    def test_item_of_another_document_is_rejected(self):
+        """다른 문서의 항목 id 를 보내도 이 문서에서 처리되지 않는다."""
+        doc_c = self._doc_at_j('C')
+        doc_d = self._doc_at_j('D')
+        self._claim_j(doc_c)
+        self._add_item(doc_c, '항목')
+        self._claim_j(doc_d, self.j_user2)
+        item_c = DocumentReviewItem.objects.get(document=doc_c)
+
+        self.client.force_authenticate(user=self.j_user2)
+        r = self.client.post(f'/api/documents/{doc_d.id}/review-item-rename/',
+                             {'item_id': item_c.id, 'title': 'x'}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    # ----- 목록 필드 (결재 현황 MY 탭 조건) -----
+    def test_my_pending_review_items_counts_only_my_unconfirmed(self):
+        doc = self._doc_at_j()
+        self._claim_j(doc)
+        self._add_item(doc, '항목1')
+        self._add_item(doc, '항목2')
+        item1, item2 = DocumentReviewItem.objects.filter(document=doc).order_by('id')
+        for item in (item1, item2):
+            self.client.post(f'/api/documents/{doc.id}/review-item-reviewer-add/',
+                             {'item_id': item.id, 'loginid': self.j_user2.loginid}, format='json')
+
+        self.client.force_authenticate(user=self.j_user2)
+        rows = {d['id']: d for d in self.client.get('/api/documents/').json()}
+        self.assertEqual(rows[doc.id]['my_pending_review_items'], 2)
+
+        self.client.post(f'/api/documents/{doc.id}/review-item-confirm/',
+                         {'item_id': item1.id, 'confirmed': True}, format='json')
+        rows = {d['id']: d for d in self.client.get('/api/documents/').json()}
+        self.assertEqual(rows[doc.id]['my_pending_review_items'], 1)
+
+        self.client.force_authenticate(user=self.o_user)
+        rows = {d['id']: d for d in self.client.get('/api/documents/').json()}
+        self.assertEqual(rows[doc.id]['my_pending_review_items'], 0,
+                         '검토자로 지정되지 않은 사용자에게는 0 이어야 한다')
