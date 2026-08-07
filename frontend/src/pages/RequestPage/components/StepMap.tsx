@@ -11,7 +11,7 @@ import MshotImageUpload from './MshotImageUpload';
 const SELECT_W = '300px';
 
 /** 이유 입력칸 고정 높이 — 내용이 길어지면 이 안에서만 스크롤한다 */
-const REASON_EDITOR_HEIGHT = 320;
+const REASON_EDITOR_HEIGHT = 640;
 
 interface StepMapProps {
   detail: DetailFormState;
