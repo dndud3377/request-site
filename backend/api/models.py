@@ -101,6 +101,13 @@ class RequestDocument(models.Model):
         related_name='designated_reviews', verbose_name='지정 PL'
     )
     designated_pl_name = models.CharField(max_length=100, blank=True, verbose_name='지정 PL 이름')
+    # 임시저장(draft) 공유 대상 그룹. 작성자가 자기가 속한 그룹 중 **하나**를 지정한다.
+    # null 이면 아무에게도 공유하지 않는다(작성자 본인과 MASTER 만 조회 가능).
+    # 그룹이 삭제되면 SET_NULL 로 공유가 끊기고 문서 자체는 남는다.
+    shared_group = models.ForeignKey(
+        'UserGroup', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='shared_documents', verbose_name='임시저장 공유 그룹'
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일')
     submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='상신일')
