@@ -118,23 +118,20 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
 
     def get_queryset(self):
-        """임시저장(draft) 문서는 작성자 본인 + 작성자와 그룹을 공유하는 멤버 + MASTER 에게만 노출.
+        """임시저장(draft) 문서는 작성자 본인 + 문서에 지정된 공유 그룹의 멤버 + MASTER 에게만 노출.
 
         그 외 상태(상신/반려/완료)는 종전대로 전원에게 노출한다.
-        '나만의 그룹' = 사용자가 멤버로 속한 모든 UserGroup. 같은 그룹에 속한 사용자끼리는
-        서로의 draft 를 볼 수 있다.
+        공유 대상은 작성자가 문서마다 고른 **그룹 1개**(shared_group)다. 지정하지 않은
+        draft 는 작성자 본인과 MASTER 외에는 보이지 않는다.
         """
         qs = super().get_queryset()
         user = self.request.user
         # 비인증(개발 모드 등) 또는 MASTER 는 전체 조회
         if not getattr(user, 'is_authenticated', False) or getattr(user, 'role', None) == 'MASTER':
             return qs
-        my_group_ids = user.member_groups.values_list('id', flat=True)
-        comember_ids = list(
-            User.objects.filter(member_groups__in=my_group_ids).values_list('id', flat=True)
-        )
+        my_group_ids = list(user.member_groups.values_list('id', flat=True))
         return qs.filter(
-            ~Q(status='draft') | Q(requester=user) | Q(requester_id__in=comember_ids)
+            ~Q(status='draft') | Q(requester=user) | Q(shared_group_id__in=my_group_ids)
         )
 
     def get_serializer_class(self):
@@ -315,13 +312,20 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
-        """상신: draft → under_review, PL 검토 단계 생성 (지정 PL 필수)"""
+        """상신: draft → under_review, PL 검토 단계 생성 (지정 PL 필수)
+
+        인가는 수정 권한(can_edit)과 같다 — 작성자 본인, 문서 공유 그룹 멤버, MASTER.
+        조회 스코프(get_queryset)만으로는 draft 를 볼 수 있는 사람이 곧 상신도 할 수 있게
+        되므로 여기서 명시적으로 막는다.
+        """
         document = self.get_object()
         if document.status != 'draft':
             return Response(
                 {'error': '임시저장 상태의 의뢰서만 상신할 수 있습니다.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        if not self._can_edit(request.user, document):
+            return Response({'error': '상신 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         pl_users, err = self._resolve_designated_pls(request)
         if err:
@@ -362,13 +366,18 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def resubmit(self, request, pk=None):
-        """재상신: rejected → under_review, PL 검토 단계 생성 (지정 PL 필수)"""
+        """재상신: rejected → under_review, PL 검토 단계 생성 (지정 PL 필수)
+
+        인가는 수정 권한(can_edit)과 같다 — 반려 문서는 의뢰자/지정 PL/공유 그룹 멤버/MASTER.
+        """
         document = self.get_object()
         if document.status != 'rejected':
             return Response(
                 {'error': '반려된 의뢰서만 재상신할 수 있습니다.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        if not self._can_edit(request.user, document):
+            return Response({'error': '재상신 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         pl_users, err = self._resolve_designated_pls(request)
         if err:
@@ -1696,6 +1705,39 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         user = self.request.user
         requester = user if getattr(user, 'is_authenticated', False) else None
         serializer.save(title=self._unique_title(base_title), requester=requester)
+
+    @action(detail=True, methods=['post'], url_path='set-shared-group')
+    def set_shared_group(self, request, pk=None):
+        """임시저장 공유 그룹 지정/해제 — body `{"group_id": <id> | null}`.
+
+        - 인가: 의뢰자 본인 또는 MASTER 만. 공유 그룹 멤버는 문서를 수정·상신할 수는 있어도
+          공유 범위 자체는 바꿀 수 없다(2026-08 정책).
+        - 지정할 수 있는 그룹은 **호출자가 멤버인 그룹**뿐이다. 남의 그룹에 내 문서를
+          밀어 넣지 못하게 막는다.
+        - PUT/PATCH 전체 저장에 값이 딸려와 초기화되지 않도록 serializer 에서는 read-only 이며,
+          공유 대상 변경은 이 액션으로만 한다.
+        """
+        document = self.get_object()
+        user = request.user
+        if getattr(user, 'role', '') != 'MASTER' and not doc_permissions.is_requester(user, document):
+            return Response({'error': '공유 그룹을 지정할 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        group_id = request.data.get('group_id', None)
+        if group_id in (None, ''):
+            document.shared_group = None
+            document.save(update_fields=['shared_group'])
+            return Response({'message': '공유 그룹 지정을 해제했습니다.',
+                             'document': RequestDocumentSerializer(document, context={'request': request}).data})
+
+        group = UserGroup.objects.filter(pk=group_id, members=user).first()
+        if group is None:
+            return Response({'error': '내가 속한 그룹만 공유 대상으로 지정할 수 있습니다.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        document.shared_group = group
+        document.save(update_fields=['shared_group'])
+        return Response({'message': f"‘{group.name}’ 그룹에 공유했습니다.",
+                         'document': RequestDocumentSerializer(document, context={'request': request}).data})
 
     def update(self, request, *args, **kwargs):
         """수정(PUT/PATCH) 인가: 상태별 권한이 없으면 403."""
