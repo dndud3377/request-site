@@ -1218,7 +1218,9 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {(isR || isO || isJ || isP) && (detail.map_change || (detail as any).map_change_top || detail.ea_change) && (
+          {/* MAP 삭제/수정 모드는 이 아래 항목들을 작성 화면에서부터 숨긴다 — 저장된 값은
+              INITIAL_DETAIL 기본값('변경 없음'/'No'/'없음' 등)일 뿐이라 상세에서도 함께 숨긴다. */}
+          {!isMapDeleteEditType(detail.map_type) && (isR || isO || isJ || isP) && (detail.map_change || (detail as any).map_change_top || detail.ea_change) && (
             <div style={rowStyle}>
               {(isR || isO || isP) && (() => {
                 // 리전별로 '변경 없음/있음'을 함께 표기한다(둘 다 '변경 없음'이어도 칩을 띄운다).
@@ -1241,7 +1243,7 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {(isR || isO || isP) && detail.mshot_change && (() => {
+          {!isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && detail.mshot_change && (() => {
             const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy') || changedFields.has('mshot_image_copy_top') || changedFields.has('mshot_image_copy_bottom');
             const imgStyle: React.CSSProperties = { maxWidth: '300px', maxHeight: '200px', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px' };
             return (
@@ -1295,7 +1297,7 @@ type Page = { label: string; content: React.ReactNode };
             );
           })()}
 
-          {(isR || isO || isP) && detail.only_prodc && (() => {
+          {!isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && detail.only_prodc && (() => {
             const prodcChanged = ['only_prodc','prodc_scope','prodc_top_line','prodc_top_process','prodc_top_product','prodc_middle_use','prodc_middle_line','prodc_middle_process','prodc_middle_product','prodc_bottom_line','prodc_bottom_process','prodc_bottom_product'].some((k) => changedFields.has(k));
             return (
               <div style={rowStyle}>
@@ -1378,7 +1380,7 @@ type Page = { label: string; content: React.ReactNode };
             );
           })()}
 
-          {(isR || isO || isP) && (() => {
+          {!isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && (() => {
             const mapOptionDefs = [
               { label: t('request.map_opt_photo_backside'), fieldKey: 'photo_backside', activeValue: '적용' },
               { label: t('request.map_opt_eds_backside'),   fieldKey: 'eds_backside',   activeValue: '적용' },
