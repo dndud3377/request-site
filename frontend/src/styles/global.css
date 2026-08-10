@@ -640,25 +640,33 @@ select.form-control option {
 .badge-checking { background: var(--warning-light); color: var(--warning); }
 .badge-completed { background: var(--success-light); color: var(--success); }
 
-/* ===== 경로2(O+E) 상태점 — 대표 뱃지 하나로 안 드러나는 개별 진행 상태 표시(docs/APPROVAL.md §3.3) ===== */
-.dot-ind {
+.badge-na { background: rgba(107, 138, 176, 0.1); color: var(--text-disabled); }
+
+/* ===== 병렬 합의 단계 '현재 단계' 3행 2열 그리드(docs/APPROVAL.md §3.3) =====
+   6칸이 항상 같은 자리에 있어 이 문서의 경로에 없는 단계도 '해당없음'으로 드러난다. */
+.stage-grid {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 3px 22px;
+  width: max-content;
+}
+
+.stage-cell {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 0.78rem;
-  color: var(--text-primary);
+  gap: 6px;
+  white-space: nowrap;
 }
 
-.dot-ind .dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  display: inline-block;
+/* 뱃지가 단계명 왼쪽에 오므로 폭을 고정해야 뒤따르는 단계명이 세로로 정렬된다
+   (라벨 길이가 '완료' 2자 ~ '해당없음' 4자로 제각각이다). */
+.stage-cell-badge {
+  min-width: 62px;
+  justify-content: center;
 }
 
-.dot-ind .dot-wait { background: var(--text-muted); opacity: 0.4; }
-.dot-ind .dot-review { background: var(--warning); }
-.dot-ind .dot-done { background: var(--success); }
+.stage-cell-name { font-size: 0.82rem; font-weight: 500; color: var(--text-primary); }
+.stage-cell-name.muted { color: var(--text-disabled); }
 
 /* ===== Validation System 대상/비대상 =====
    문서 상태 badge(.badge-*)와 같은 관용구 — 반투명 배경 + 동색 진한 글씨.
@@ -2003,30 +2011,6 @@ select.form-control option {
   background: rgba(5, 150, 105, 0.1);
   color: var(--success);
   border: 1px solid rgba(5, 150, 105, 0.3);
-}
-
-/* due_date 기한 초과 */
-.due-date-overdue {
-  color: var(--danger);
-  font-weight: 700;
-}
-
-/* due_date 오늘 마감 */
-.due-date-today {
-  color: var(--warning);
-  font-weight: 700;
-}
-
-/* due_date 완료된 경로 */
-.due-date-done {
-  color: var(--text-disabled);
-  text-decoration: line-through;
-}
-
-/* due_date 미확정 */
-.due-date-undecided {
-  color: var(--text-disabled);
-  font-style: italic;
 }
 
 /* ===== Approval Flow ===== */
