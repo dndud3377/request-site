@@ -123,6 +123,7 @@
   "request": {
     "title": "New Request",
     "subtitle": "Product Introduction Map Request Form",
+    "step_move": "Go to {{label}}",
     "section_detail": "Request Details",
     "section_map": "Map Information",
     "job_li": "J-ayer Info",

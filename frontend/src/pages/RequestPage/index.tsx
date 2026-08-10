@@ -373,6 +373,12 @@ export default function RequestPage(): React.ReactElement {
   const [tbvtlvWarnModal, setTbvtlvWarnModal] = useState(false);
   const [bbResetConfirm, setBbResetConfirm] = useState(false);
   const [specialCareConfirm, setSpecialCareConfirm] = useState(false);
+  // 관문 모달(특이사항·TBV/TLV)이 뜬 시점의 최종 목적지 단계. 탭으로 여러 단계를 건너뛰는 도중
+  // 모달이 뜨면 '계속 진행' 후 원래 목적지까지 이어서 가야 하므로 보관한다.
+  const [pendingStepTarget, setPendingStepTarget] = useState<number | null>(null);
+  // 이번 이동에서 사용자가 이미 확인한 관문. 한 번에 여러 단계를 건너뛰면 step1·step4 관문이
+  // 연달아 뜰 수 있는데, 확인 기록이 없으면 두 모달이 서로를 다시 띄워 무한 반복된다.
+  const ackedStepGatesRef = useRef<{ specialCare: boolean; tbvtlv: boolean }>({ specialCare: false, tbvtlv: false });
   const [filterDeleteConfirm, setFilterDeleteConfirm] = useState<{
     type: 'jayer' | 'oayer';
     filterId: string;
@@ -3379,11 +3385,14 @@ export default function RequestPage(): React.ReactElement {
 
   // 검증 실패 시 첫 번째 오류 필드로 스크롤·강조한다.
   // O-layer(step 4)의 partial_shot 오류는 'info' 탭에 있으므로 먼저 탭을 전환한다.
-  const scrollToFirstError = () => {
+  // atStep: 오류가 발생한 단계. 탭 클릭으로 여러 단계를 건너뛸 때는 setStep 직후 호출되는데
+  // 그 시점의 `step` state 는 아직 갱신 전이라 신뢰할 수 없어, 대상 단계를 인자로 받는다.
+  // (기본값이 `step` 이므로 인자 없이 부르는 기존 호출부는 동작이 완전히 동일하다.)
+  const scrollToFirstError = (atStep: number = step) => {
     // O-ayer 표(oayer_noc_*)는 'table' 탭, Partial Shot 은 'info' 탭 — 에러가 있는 탭으로만 전환한다.
     // (validate()가 방금 setErrors 했더라도 이 시점의 `errors` state는 아직 갱신 전이라 신뢰할 수 없어,
     //  동일한 소스 값으로 직접 재계산한다.)
-    if (step === 4) {
+    if (atStep === 4) {
       const oViolations = findNocBorrowViolations(oayerRows);
       // validate(4) 의 우회 조건과 반드시 같은 판정이어야 한다 — 어긋나면 없는 오류로 탭이 전환된다.
       const partialShotMissing = !isMapOnlyScope && !isAdiCdOnly && !detail.partial_shot?.trim();
@@ -3409,40 +3418,77 @@ export default function RequestPage(): React.ReactElement {
     }, 60);
   };
 
-  const handleNextStep = (skipTbvtlvWarn = false, skipSpecialCare = false) => {
-    if (step === 1 || step === 2 || step === 3 || step === 4) {
-      const result = validate(step);
-      if (!result.valid) {
-        result.errors.forEach(msg => addToast(msg, 'error'));
-        scrollToFirstError();
-        return;
-      }
-    }
-    if (step === 1 && !detail.customer_requirement.trim() && !skipSpecialCare) {
-      setSpecialCareConfirm(true);
+  // 단계 이동의 단일 진입점 — '다음'/'이전' 버튼과 단계 인디케이터 탭 클릭이 모두 이 함수를 쓴다.
+  //  · 뒤로(target < step): 검증 없이 즉시 이동. 이미 통과해서 지나온 단계이고, 되돌아가 값을 고치면
+  //    다시 앞으로 나갈 때 아래 전진 규칙이 그 단계를 처음부터 재검증하므로 안전하다.
+  //  · 앞으로(target > step): 현재 단계부터 target 직전까지를 순서대로 검증하고, 처음 막힌 단계에
+  //    멈춰 오류를 보여준다. **통과 여부를 캐시하지 않는다** — 되돌아가 필수값을 지웠다면 그 즉시
+  //    다시 막혀야 하기 때문이다(한 번 통과했다는 기록을 남기면 이 요구사항이 깨진다).
+  const goToStep = (target: number) => {
+    if (target === step || target < 1 || target > 5) return;
+
+    if (target < step) {
+      setStep(target);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    if (step === 4 && !skipTbvtlvWarn) {
-      const hasTbvtlvActive = oayerRows.some(
-        r => !r.disabled && (r.sd.toUpperCase().includes('TBV') || r.sd.toUpperCase().includes('TLV'))
-      );
-      if (hasTbvtlvActive) {
-        const thicknessEmpty = !detail.tbvtlv_thickness.trim();
-        const entriesEmpty = (detail.tbvtlv_entries ?? []).length === 0;
-        if (thicknessEmpty || entriesEmpty) {
-          setTbvtlvWarnModal(true);
-          return;
+
+    for (let s = step; s < target; s++) {
+      const result = validate(s);
+      if (!result.valid) {
+        result.errors.forEach(msg => addToast(msg, 'error'));
+        // 여러 단계를 건너뛰던 중이라면 처음 막힌 단계로 옮겨 오류 위치를 보여준다.
+        if (s !== step) setStep(s);
+        scrollToFirstError(s);
+        return;
+      }
+      // 검증은 통과했으나 사용자 확인이 필요한 관문. 확인 후 원래 목적지까지 이어서 가야 하므로
+      // 목적지를 보관하고, 관문이 있는 단계로 먼저 이동해 둔다(취소하면 그 단계에 머문다).
+      if (s === 1 && !ackedStepGatesRef.current.specialCare && !detail.customer_requirement.trim()) {
+        setPendingStepTarget(target);
+        setSpecialCareConfirm(true);
+        return;
+      }
+      if (s === 4 && !ackedStepGatesRef.current.tbvtlv) {
+        const hasTbvtlvActive = oayerRows.some(
+          r => !r.disabled && (r.sd.toUpperCase().includes('TBV') || r.sd.toUpperCase().includes('TLV'))
+        );
+        if (hasTbvtlvActive) {
+          const thicknessEmpty = !detail.tbvtlv_thickness.trim();
+          const entriesEmpty = (detail.tbvtlv_entries ?? []).length === 0;
+          if (thicknessEmpty || entriesEmpty) {
+            if (s !== step) setStep(s);
+            setPendingStepTarget(target);
+            setTbvtlvWarnModal(true);
+            return;
+          }
         }
       }
     }
-    setStep((s) => s + 1);
+
+    setPendingStepTarget(null);
+    ackedStepGatesRef.current = { specialCare: false, tbvtlv: false };
+    setStep(target);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handlePrevStep = () => {
-    setStep((s) => s - 1);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  // 사용자가 새로 시작하는 이동('다음'/'이전' 버튼·탭 클릭)의 진입점.
+  // 관문 확인 기록을 여기서만 비운다 — ConfirmModal 이 onConfirm 직후 항상 onClose 를 부르므로
+  // onClose 에서 비우면 방금 이어서 뜬 다음 관문의 기록까지 지워진다.
+  const startStepMove = (target: number) => {
+    ackedStepGatesRef.current = { specialCare: false, tbvtlv: false };
+    goToStep(target);
   };
+
+  // 관문 모달의 '계속 진행' — 그 관문을 확인 처리하고 원래 목적지까지 이어서 이동한다.
+  const resumePendingStep = (gate: 'specialCare' | 'tbvtlv') => {
+    ackedStepGatesRef.current = { ...ackedStepGatesRef.current, [gate]: true };
+    goToStep(pendingStepTarget ?? step + 1);
+  };
+
+  const handleNextStep = () => startStepMove(step + 1);
+
+  const handlePrevStep = () => startStepMove(step - 1);
 
   const handleReset = () => {
     setDetail(prev => ({
@@ -3673,6 +3719,9 @@ export default function RequestPage(): React.ReactElement {
 
       <WizardIndicator
         currentStep={step}
+        // 투어 모드는 URL 이 단계를 지정하는 읽기 전용 미리보기라 탭 이동을 막는다.
+        onStepClick={isTourMode ? undefined : startStepMove}
+        stepTitle={(label) => t('request.step_move' as never, { label }) as string}
         steps={[
           t('request.section_detail'),
           t('request.section_map'),
@@ -4021,7 +4070,7 @@ export default function RequestPage(): React.ReactElement {
       <ConfirmModal
         isOpen={tbvtlvWarnModal}
         onClose={() => setTbvtlvWarnModal(false)}
-        onConfirm={() => handleNextStep(true)}
+        onConfirm={() => resumePendingStep('tbvtlv')}
         title={t('request.tbvtlv_warn_title')}
         message={t('request.tbvtlv_warn_body')}
         confirmLabel={t('request.tbvtlv_warn_proceed')}
@@ -4593,7 +4642,7 @@ export default function RequestPage(): React.ReactElement {
       <ConfirmModal
         isOpen={specialCareConfirm}
         onClose={() => setSpecialCareConfirm(false)}
-        onConfirm={() => handleNextStep(false, true)}
+        onConfirm={() => resumePendingStep('specialCare')}
         title={t('request.tbvtlv_warn_title')}
         message={t('request.special_care_confirm')}
         confirmLabel={t('request.tbvtlv_warn_proceed')}

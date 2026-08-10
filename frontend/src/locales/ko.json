@@ -123,6 +123,7 @@
   "request": {
     "title": "의뢰서 작성",
     "subtitle": "제품 소개 지도 제작 의뢰서",
+    "step_move": "{{label}} 단계로 이동",
     "section_detail": "의뢰 상세",
     "section_map": "MAP 정보",
     "job_li": "J-ayer 정보",
