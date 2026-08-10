@@ -24,14 +24,17 @@ from .models import (
     RequestDocument, ApprovalStep, PauseRequest, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
+    DocumentReviewItem, DocumentReviewItemReviewer,
 )
 from .utils import LINE_TO_LINEID_MAP
 from . import mailer
 from . import doc_permissions
 from . import design_rule_stats
+from . import review_items as review_items_sync
 from .authentication import ExternalApiKeyAuthentication
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer, ExternalRequestDocumentSerializer,
+    DocumentReviewItemSerializer,
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
     UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer, AddressBookSerializer,
     ProcessDesignRuleOverrideSerializer, DocumentDesignRuleOverrideSerializer,
@@ -108,7 +111,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     #    메서드명이 HTTP DELETE 와 겹쳐, 라우터 매핑이 사라지면 APIView.dispatch 가
     #    getattr(self, 'delete') 로 그 액션을 잡아 DELETE 요청이 그대로 실행된다.
     http_method_names = ['get', 'post', 'put', 'patch', 'head', 'options']
-    queryset = RequestDocument.objects.select_related('requester', 'designated_pl').all()
+    # review_items__reviewers 프리페치: 목록 직렬화의 my_pending_review_items 가 문서마다
+    # 항목·검토자를 다시 조회하지 않도록 한다.
+    queryset = RequestDocument.objects.select_related('requester', 'designated_pl').prefetch_related(
+        'review_items__reviewers'
+    ).all()
     permission_classes = [IsAuthenticatedInProd]
     pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -397,6 +404,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             document.designated_pl = rep
             document.designated_pl_name = rep.username or rep.loginid
             document.save()
+
+            # 검토 항목·검토자 지정은 그대로 두고 확인 상태만 초기화한다.
+            # (새 회차 J 단계가 열릴 때 fill_from_master 로 마스터 최신본과 다시 맞춘다)
+            review_items_sync.reset_confirmations(document)
 
             # 새 회차에 지정 PL 전원의 pending 단계를 생성(이전 회차는 이력 보존)
             new_round = self._max_round(document, default=0) + 1
@@ -1207,6 +1218,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             document=document, agent='J', action='pending',
             round=round_no, due_date=j_due,
         )
+        # 검토 항목은 J 단계가 열리는 이 시점에 마스터 최신본으로 채운다(review_items.py §1).
+        review_items_sync.fill_from_master(document)
         mailer.enqueue_stage_arrival(document, 'J', j_step)
 
     def _create_map_delete_edit_parallel(self, document, round_no):
@@ -1231,6 +1244,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 is_parallel=True, round=round_no, due_date=due,
             )
             mailer.enqueue_stage_arrival(document, agent, created)
+        # 이 경로는 J 가 처음부터 존재한다 — 일반 경로와 같은 시점에 검토 항목을 채운다.
+        review_items_sync.fill_from_master(document)
         # P 도착 통보는 일반 경로와 동일하게 보낸다(수신자 규칙이 같다).
         mailer.enqueue_notify_p_arrival(document)
 
@@ -1738,6 +1753,184 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document.save(update_fields=['shared_group'])
         return Response({'message': f"‘{group.name}’ 그룹에 공유했습니다.",
                          'document': RequestDocumentSerializer(document, context={'request': request}).data})
+
+    # ===== J 단계 검토 항목 (동기화 규칙은 review_items.py 단일 소스) =====
+
+    def _review_items_response(self, document, request, message=''):
+        """변경 후 문서의 검토 항목 최신 목록을 돌려준다(프론트가 그대로 갈아끼운다)."""
+        items = DocumentReviewItem.objects.filter(document=document).prefetch_related('reviewers')
+        payload = {'review_items': DocumentReviewItemSerializer(items, many=True).data}
+        if message:
+            payload['message'] = message
+        return Response(payload)
+
+    def _get_review_item(self, document, request):
+        """body 의 item_id 로 이 문서의 검토 항목을 찾는다. (item, error_response) 반환."""
+        item = DocumentReviewItem.objects.filter(
+            document=document, pk=request.data.get('item_id'),
+        ).first()
+        if item is None:
+            return None, Response({'error': '검토 항목을 찾을 수 없습니다.'},
+                                  status=status.HTTP_400_BAD_REQUEST)
+        return item, None
+
+    def _guard_review_item_edit(self, request, document):
+        """편집 인가 — J 권한자 + 검토중 선점 + 합의 전 + 진행 중 문서. 통과면 None."""
+        if not review_items_sync.can_edit_items(request.user, document):
+            return Response(
+                {'error': '검토 항목을 편집할 수 없는 상태이거나 권한이 없습니다.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return None
+
+    @action(detail=True, methods=['post'], url_path='review-item-add')
+    @transaction.atomic
+    def review_item_add(self, request, pk=None):
+        """검토 항목 추가 — body `{"title": "..."}`.
+
+        마스터에 등록되고, 결재 진행 중이면서 현재 회차 J 단계가 pending 인 다른 문서에도
+        같은 항목이 추가된다(review_items.py §2).
+        """
+        document = self.get_object()
+        blocked = self._guard_review_item_edit(request, document)
+        if blocked:
+            return blocked
+
+        title = (request.data.get('title') or '').strip()
+        if not title:
+            return Response({'error': '항목 제목을 입력해 주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(title) > 300:
+            return Response({'error': '항목 제목은 300자를 넘을 수 없습니다.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        review_items_sync.add_item(document, title, user=request.user)
+        return self._review_items_response(document, request, '검토 항목을 추가했습니다.')
+
+    @action(detail=True, methods=['post'], url_path='review-item-rename')
+    @transaction.atomic
+    def review_item_rename(self, request, pk=None):
+        """검토 항목 제목 수정 — body `{"item_id": n, "title": "..."}`. 마스터·타 문서에 전파."""
+        document = self.get_object()
+        blocked = self._guard_review_item_edit(request, document)
+        if blocked:
+            return blocked
+
+        item, err = self._get_review_item(document, request)
+        if err:
+            return err
+
+        title = (request.data.get('title') or '').strip()
+        if not title:
+            return Response({'error': '항목 제목을 입력해 주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(title) > 300:
+            return Response({'error': '항목 제목은 300자를 넘을 수 없습니다.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        review_items_sync.rename_item(item, title)
+        return self._review_items_response(document, request, '항목 제목을 수정했습니다.')
+
+    @action(detail=True, methods=['post'], url_path='review-item-delete')
+    @transaction.atomic
+    def review_item_delete(self, request, pk=None):
+        """검토 항목 삭제 — body `{"item_id": n}`.
+
+        마스터가 비활성화되고 전파 대상 문서의 사본도 지워진다. 단 다른 문서에서 이미
+        확인한 검토자가 있는 사본은 기록 보존을 위해 남는다(review_items.py §3).
+        """
+        document = self.get_object()
+        blocked = self._guard_review_item_edit(request, document)
+        if blocked:
+            return blocked
+
+        item, err = self._get_review_item(document, request)
+        if err:
+            return err
+
+        review_items_sync.delete_item(item)
+        return self._review_items_response(document, request, '검토 항목을 삭제했습니다.')
+
+    @action(detail=True, methods=['post'], url_path='review-item-reviewer-add')
+    @transaction.atomic
+    def review_item_reviewer_add(self, request, pk=None):
+        """항목 검토자 지정 — body `{"item_id": n, "loginid": "..."}`.
+
+        이 문서에만 적용된다(검토자는 마스터로 전파되지 않는다 — review_items.py 머리말).
+        """
+        document = self.get_object()
+        blocked = self._guard_review_item_edit(request, document)
+        if blocked:
+            return blocked
+
+        item, err = self._get_review_item(document, request)
+        if err:
+            return err
+
+        loginid = (request.data.get('loginid') or '').strip()
+        target = User.objects.filter(loginid=loginid).first()
+        if target is None:
+            return Response({'error': '사용자를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if target.role not in review_items_sync.EDIT_ROLES:
+            return Response({'error': '검토 항목의 검토자로 지정할 수 없는 역할입니다.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        DocumentReviewItemReviewer.objects.get_or_create(
+            item=item, loginid=target.loginid,
+            defaults={'user': target, 'name': target.username or target.loginid},
+        )
+        return self._review_items_response(document, request, '검토자를 지정했습니다.')
+
+    @action(detail=True, methods=['post'], url_path='review-item-reviewer-remove')
+    @transaction.atomic
+    def review_item_reviewer_remove(self, request, pk=None):
+        """항목 검토자 지정 해제 — body `{"item_id": n, "loginid": "..."}`.
+
+        이미 확인(confirmed)한 검토자는 해제할 수 없다(검토 기록 보존).
+        """
+        document = self.get_object()
+        blocked = self._guard_review_item_edit(request, document)
+        if blocked:
+            return blocked
+
+        item, err = self._get_review_item(document, request)
+        if err:
+            return err
+
+        reviewer = DocumentReviewItemReviewer.objects.filter(
+            item=item, loginid=(request.data.get('loginid') or '').strip(),
+        ).first()
+        if reviewer is None:
+            return Response({'error': '지정된 검토자가 아닙니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if reviewer.confirmed:
+            return Response({'error': '이미 확인한 검토자는 지정을 해제할 수 없습니다.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        reviewer.delete()
+        return self._review_items_response(document, request, '검토자 지정을 해제했습니다.')
+
+    @action(detail=True, methods=['post'], url_path='review-item-confirm')
+    @transaction.atomic
+    def review_item_confirm(self, request, pk=None):
+        """검토자 본인의 확인 / 확인 취소 — body `{"item_id": n, "confirmed": true|false}`.
+
+        항목이 모두 확인돼도 J 단계가 자동 합의되지는 않는다(합의는 담당자가 따로 누른다).
+        """
+        document = self.get_object()
+        if not review_items_sync.can_confirm_items(document):
+            return Response({'error': '지금은 확인할 수 없는 상태입니다.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        item, err = self._get_review_item(document, request)
+        if err:
+            return err
+
+        reviewer = DocumentReviewItemReviewer.objects.filter(
+            item=item, loginid=getattr(request.user, 'loginid', ''),
+        ).first()
+        if reviewer is None:
+            return Response({'error': '이 항목의 검토자가 아닙니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        review_items_sync.confirm(reviewer, bool(request.data.get('confirmed', True)))
+        return self._review_items_response(document, request)
 
     def update(self, request, *args, **kwargs):
         """수정(PUT/PATCH) 인가: 상태별 권한이 없으면 403."""

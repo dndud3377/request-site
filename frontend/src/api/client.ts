@@ -1,5 +1,6 @@
 import {
   RequestDocument,
+  ReviewItem,
   VOC,
   VocComment,
   Stats,
@@ -316,6 +317,56 @@ const removePostApprover = async (docId: number, loginid: string) => {
   return { data };
 };
 
+// ===== J-ayer 검토 항목 =====
+// 추가·제목수정·삭제는 마스터와 '결재 중 + 현재 회차 J 단계 대기' 문서에 함께 반영된다.
+// 모든 응답은 이 문서의 최신 항목 목록을 돌려주므로 호출부는 그대로 갈아끼우면 된다.
+
+type ReviewItemsResponse = { review_items: ReviewItem[]; message?: string };
+
+const addReviewItem = async (docId: number, title: string) => {
+  const data = await post<ReviewItemsResponse>(`/documents/${docId}/review-item-add/`, { title });
+  return { data };
+};
+
+const renameReviewItem = async (docId: number, itemId: number, title: string) => {
+  const data = await post<ReviewItemsResponse>(`/documents/${docId}/review-item-rename/`, {
+    item_id: itemId,
+    title,
+  });
+  return { data };
+};
+
+const deleteReviewItem = async (docId: number, itemId: number) => {
+  const data = await post<ReviewItemsResponse>(`/documents/${docId}/review-item-delete/`, {
+    item_id: itemId,
+  });
+  return { data };
+};
+
+const addReviewItemReviewer = async (docId: number, itemId: number, loginid: string) => {
+  const data = await post<ReviewItemsResponse>(`/documents/${docId}/review-item-reviewer-add/`, {
+    item_id: itemId,
+    loginid,
+  });
+  return { data };
+};
+
+const removeReviewItemReviewer = async (docId: number, itemId: number, loginid: string) => {
+  const data = await post<ReviewItemsResponse>(`/documents/${docId}/review-item-reviewer-remove/`, {
+    item_id: itemId,
+    loginid,
+  });
+  return { data };
+};
+
+const confirmReviewItem = async (docId: number, itemId: number, confirmed: boolean) => {
+  const data = await post<ReviewItemsResponse>(`/documents/${docId}/review-item-confirm/`, {
+    item_id: itemId,
+    confirmed,
+  });
+  return { data };
+};
+
 const claimStep = async (docId: number, agent: AgentType) => {
   const data = await post<{ message: string }>(`/documents/${docId}/claim-step/`, {
     agent,
@@ -403,6 +454,12 @@ export const documentsAPI = {
   addPostApprover,
   removePostApprover,
   claimStep,
+  addReviewItem,
+  renameReviewItem,
+  deleteReviewItem,
+  addReviewItemReviewer,
+  removeReviewItemReviewer,
+  confirmReviewItem,
   requestPause,
   confirmPause,
   resume: resumeDocument,
