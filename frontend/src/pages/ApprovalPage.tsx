@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { documentsAPI, usersAPI, userGroupsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
-import StageDots from '../components/StageDots';
+import StageGrid from '../components/StageGrid';
 import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
@@ -12,7 +12,7 @@ import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem } from '../types';
 import { formatDate } from '../utils/date';
-import { getDocTableRows, getDueDateDisplay, getFinalCompletionDate, getCurrentRound } from '../utils/approvalTable';
+import { getDocTableRows, getFinalCompletionDate, getCurrentRound } from '../utils/approvalTable';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS } from './approvalTourSeed';
 
 // 전체 가이드 상세 모달에서 특정 페이지로 이동하기 위한 페이지 인덱스
@@ -984,7 +984,6 @@ export default function ApprovalPage(): React.ReactElement {
                 <th>{t('approval.col_product')}</th>
                 <th>{t('approval.col_requester')}</th>
                 <th>{t('approval.col_current_stage')}</th>
-                <th>{t('approval.col_current_stage_completion')}</th>
                 <th>{t('approval.col_final_completion')}</th>
                 <th
                   onClick={toggleProdDateSort}
@@ -1000,92 +999,75 @@ export default function ApprovalPage(): React.ReactElement {
               </tr>
             </thead>
             <tbody>
-              {sortedDocs.flatMap((doc) => {
-                const rows = getDocTableRows(doc, t);
-                const isParallel = rows.length >= 2;
+              {sortedDocs.map((doc) => {
+                // 병렬 진입 후에도 문서 1건은 표 1행이다 — 경로별 행 분리·rowSpan 병합은 없어졌고,
+                // 현재 단계 칸 안의 3행 2열 그리드가 6개 경로를 모두 보여준다(docs/APPROVAL.md §3.3).
+                const row = getDocTableRows(doc, t)[0];
                 const isPaused = doc.status === 'pause';
-                const undecided = t('approval.due_date_undecided');
-                return rows.map((row, idx) => {
-                  const dd = getDueDateDisplay(row.dueDate, row.isDone, undecided);
-                  return (
-                    <tr
-                      key={`${doc.id}-${idx}`}
-                      className={isParallel ? (idx === 0 ? 'doc-row-first' : 'doc-row-second') : ''}
+                return (
+                  <tr key={doc.id}>
+                    <td>
+                      {isNone ? (
+                        <span
+                          data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-doc-title' : undefined}
+                          style={{ fontWeight: 600, fontSize: '0.9rem' }}
+                        >
+                          {doc.title}
+                        </span>
+                      ) : (
+                        <button
+                          data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-doc-title' : undefined}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 600, fontSize: '0.9rem', textAlign: 'left', padding: 0 }}
+                          onClick={() => openDetail(doc)}
+                        >
+                          {doc.title}
+                        </button>
+                      )}
+                    </td>
+                    <td>{doc.product_name}</td>
+                    <td>
+                      <div>{doc.requester_name}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{doc.requester_department}</div>
+                    </td>
+                    <td
+                      style={{ fontWeight: 500 }}
+                      data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-stage' : undefined}
                     >
-                      {idx === 0 && (
-                        <td rowSpan={rows.length}>
-                          {isNone ? (
-                            <span
-                              data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-doc-title' : undefined}
-                              style={{ fontWeight: 600, fontSize: '0.9rem' }}
-                            >
-                              {doc.title}
-                            </span>
-                          ) : (
-                            <button
-                              data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-doc-title' : undefined}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 600, fontSize: '0.9rem', textAlign: 'left', padding: 0 }}
-                              onClick={() => openDetail(doc)}
-                            >
-                              {doc.title}
-                            </button>
-                          )}
-                        </td>
-                      )}
-                      {idx === 0 && <td rowSpan={rows.length}>{doc.product_name}</td>}
-                      {idx === 0 && (
-                        <td rowSpan={rows.length}>
-                          <div>{doc.requester_name}</div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{doc.requester_department}</div>
-                        </td>
-                      )}
-                      <td
-                        style={{ fontWeight: 500 }}
-                        data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id && idx === 0 ? 'approval-stage' : undefined}
-                      >
+                      {row.cells ? (
+                        <StageGrid cells={row.cells} />
+                      ) : (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <StatusBadge status={row.pathStatus} />
-                          {row.subStages ? (
-                            <StageDots subStages={row.subStages} />
-                          ) : (
-                            <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{row.stageText}</span>
-                          )}
-                          {idx === 0 && doc.pause_request?.state === 'requested' && (
+                          <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{row.stageText}</span>
+                          {row.pauseRequested && (
                             <span className="pause-req-chip">⏸ {t('approval.pause_requested_chip')}</span>
                           )}
                         </div>
-                      </td>
-                      <td>
-                        {isPaused
-                          ? <span style={{ color: 'var(--text-muted)' }}>{t('approval.filter_pause')}</span>
-                          : <span className={dd.cls}>{dd.text}</span>}
-                      </td>
-                      {idx === 0 && <td rowSpan={rows.length}>{isPaused ? <span style={{ color: 'var(--text-muted)' }}>{t('approval.filter_pause')}</span> : getFinalCompletionDate(doc)}</td>}
-                      {idx === 0 && <td rowSpan={rows.length}>{doc.production_date ? formatDate(doc.production_date) : '-'}</td>}
-                      {idx === 0 && (
-                        <td rowSpan={rows.length}>
-                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                            {doc.can_edit && (doc.status === 'rejected' || doc.status === 'draft') && (
-                              <button className="btn btn-primary btn-sm" onClick={() => handleEditResubmit(doc)}>
-                                {t('approval.edit_resubmit')}
-                              </button>
-                            )}
-                            {canSetSharedGroup(doc) && (
-                              <button className="btn btn-secondary btn-sm" onClick={() => handleShareClick(doc)} disabled={processing}>
-                                👥 {doc.shared_group_name ?? t('approval.share_group_btn')}
-                              </button>
-                            )}
-                            {doc.can_withdraw && (doc.status === 'under_review' || doc.status === 'rejected' || doc.status === 'draft') && (
-                              <button className="btn btn-secondary btn-sm" onClick={() => handleWithdrawClick(doc)} disabled={processing}>
-                                {t('approval.withdraw')}
-                              </button>
-                            )}
-                          </div>
-                        </td>
                       )}
-                    </tr>
-                  );
-                });
+                    </td>
+                    <td>{isPaused ? <span style={{ color: 'var(--text-muted)' }}>{t('approval.filter_pause')}</span> : getFinalCompletionDate(doc)}</td>
+                    <td>{doc.production_date ? formatDate(doc.production_date) : '-'}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        {doc.can_edit && (doc.status === 'rejected' || doc.status === 'draft') && (
+                          <button className="btn btn-primary btn-sm" onClick={() => handleEditResubmit(doc)}>
+                            {t('approval.edit_resubmit')}
+                          </button>
+                        )}
+                        {canSetSharedGroup(doc) && (
+                          <button className="btn btn-secondary btn-sm" onClick={() => handleShareClick(doc)} disabled={processing}>
+                            👥 {doc.shared_group_name ?? t('approval.share_group_btn')}
+                          </button>
+                        )}
+                        {doc.can_withdraw && (doc.status === 'under_review' || doc.status === 'rejected' || doc.status === 'draft') && (
+                          <button className="btn btn-secondary btn-sm" onClick={() => handleWithdrawClick(doc)} disabled={processing}>
+                            {t('approval.withdraw')}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
               })}
             </tbody>
           </table>
