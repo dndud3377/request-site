@@ -26,7 +26,7 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 
 | 잡 ID | 주기 | 함수 | 설명 |
 |-------|------|------|------|
-| `sync_rtdb_options` | **10분** | `sync_rtdb_options()` | 라인1·3~5 의 공정-품목 / 품목-공정ID / 스텝 (RTDB MAIN + DCQ fallback) 동기화 |
+| `sync_rtdb_options` | **10분** | `sync_rtdb_options()` | 라인1·3~5·`nv` 의 공정-품목 / 품목-공정ID / 스텝 (RTDB MAIN + DCQ fallback) 동기화 (`nv` 는 스텝 제외) |
 | `sync_form_options` | 1시간 | `sync_form_options()` | 바코드-품목 / MAP 이름 + **라인2 공정-품목 / 품목-공정ID** (DCQ 단독) 동기화 |
 | `sync_holidays` | 매일 02:00 | `sync_holidays()` | 공휴일 동기화 (act_date UNIQUE → 날짜 기준 중복 제거 후 저장) |
 | `sync_design_rule` | 매일 02:00 | `sync_design_rule()` | 공정-디자인룰(DCQ `S.M`) 동기화 → `api_designrule` 전체 갱신 |
@@ -58,6 +58,8 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 쓰기:      다를 때만 DELETE(line) → to_sql(대상 테이블)
 ```
 
+- **스텝은 `STEP_TABLE_MAP` 에 등록된 라인만** 동기화한다. 등록되지 않은 라인(`nv`)은 **RTDB 조회 자체를 건너뛴다**
+  (조회부터 하면 매 주기 빈 결과 → 불필요한 DCQ fallback 로그인이 발생하므로, `fetch()` 호출 전에 판정한다).
 - MAIN 이 **예외로 실패하거나 빈 결과(0건)** 이면 FALLBACK(DCQ)을 실행한다.
 - MAIN(RTDB) 토큰은 동기화 **주기당 1회** 발급하여 세 소스·라인 반복에서 재사용한다.
 - **DCQ fallback 은 RTDB 가 실패한 경우에만 지연 로그인**하며, 그 로그인 상태는 세 소스가 공유한다(평소에는 DCQ 를 호출하지 않음).
@@ -102,6 +104,26 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 - 저장은 다른 라인과 동일하게 `_write_if_changed()` 를 사용하므로 **변경 감지 후 `DELETE(line='라인2') → INSERT`** 로 라인2 행만 갱신한다.
 - 라인2 의 `line` 컬럼 값은 `Line` 마스터·프론트엔드 표기와 동일한 **공백 없는 `'라인2'`** 이다.
   (기존 라인들은 `scheduler.LINES` 에서 `'라인 1'` 처럼 공백이 있는 표기를 쓰고 있어 서로 다르다 — 아래 주의사항 참고.)
+
+### `nv` (RTDB MAIN/FALLBACK 구조, 스텝 없음)
+
+`nv` 는 라인1·3~5 와 **동일한 MAIN/FALLBACK 구조**를 그대로 탄다. `scheduler.LINE_NV` 상수로 정의하고
+`LINES` 에 포함시키면 `sync_rtdb_options()` 의 기존 반복이 공정-품목·품목-공정ID 를 처리하므로
+**전용 쿼리·저장 코드가 없다.**
+
+| 항목 | 값 |
+|------|-----|
+| `line` 컬럼 값 | `'nv'` (`Line` 마스터·프론트엔드 표기와 동일) |
+| RTDB 접미사 | `utils.LINE_SUFFIX_MAP['nv'] = 'lineN'` → `A_lineN.B` / `X_lineN.Y` |
+| 외부 DB lineid | `utils.LINE_TO_LINEID_MAP['nv']` (MAP 이름 동기화 `WHERE` 절에 자동 포함) |
+| 스텝 | **없음** — `STEP_TABLE_MAP` 미등록이라 스텝 조회를 skip 한다 |
+| 저장 | 다른 라인과 동일하게 `_write_if_changed()` (변경 감지 후 `DELETE(line='nv') → INSERT`) |
+
+- `Line` 마스터에 행이 있어야 의뢰상세 라인 드롭다운에 노출된다 → 배포 시 `python manage.py seed_lines` 실행.
+- 조회 API(`form-options/processes` / `products` / `process-id`)는 `line` 파라미터를 그대로 필터에 넘기므로
+  **엔드포인트 추가·수정이 없다.**
+- 스텝 기반 API(`job-file-layer` / `ovl-layer` / `layer-ids` / `bb-external`)는 `views.py` 의 `model_map` 에
+  `nv` 가 없으므로 **항상 빈 목록**을 반환한다(스텝 테이블이 없으므로 의도된 동작).
 
 ### 변경 감지(Change Detection) 쓰기 전략
 
