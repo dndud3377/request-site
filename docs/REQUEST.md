@@ -127,6 +127,52 @@ pages/RequestPage/
 | 4 | `Step3` | O-layer 표 + TBV/TLV·partial_shot 정보 탭 |
 | 5 | `Step4` | 뼈찜(Bb) 표 + 자동채움·매핑 |
 
+### 2.4 단계 이동 규칙 (`goToStep` — 2026-08-10 신설)
+
+'다음'/'이전' 버튼과 **상단 인디케이터 탭 클릭**이 모두 `goToStep(target)` 하나를 거친다.
+
+| 방향 | 규칙 |
+|---|---|
+| 뒤로 (`target < step`) | **검증 없이 즉시 이동.** 이미 통과해서 지나온 단계다. |
+| 앞으로 (`target > step`) | `현재 step` ~ `target-1` 을 **순서대로 `validate()`**. 전부 통과해야 `target` 도달. |
+| 전진 실패 | **처음 막힌 단계에 멈추고**(`setStep(s)`) 오류 토스트 + `scrollToFirstError(s)`. |
+| 현재 단계 클릭 / 범위 밖 | 무동작. |
+
+- **통과 여부를 캐시하지 않는다 [중요].** "한 번 통과했다"는 기록을 남기면, 뒤로 돌아가 필수값을
+  지운 뒤에도 앞으로 나갈 수 있게 되어 검증이 무력화된다. 전진할 때마다 매번 새로 `validate()` 한다.
+  이 때문에 인디케이터는 **회색 잠금 표시를 하지 않고 클릭 시점에 판정**한다
+  (`validate()` 가 `setErrors` 부작용을 가져 렌더 중 호출이 불가능한 이유도 있다).
+- **전진 시작점이 `1` 이 아니라 `현재 step` 인 이유**: 각 단계의 입력은 그 단계 화면에서만 편집할 수
+  있으므로, 지나온 단계를 깨뜨리려면 반드시 그 단계로 되돌아가야 한다. 되돌아가면 `step` 이 낮아져
+  다음 전진 때 그 단계부터 재검증된다.
+
+#### 관문 모달 2개 (검증 통과 후 사용자 확인)
+
+`step 1` 특이사항 미기재(`specialCareConfirm`) · `step 4` TBV/TLV 미입력(`tbvtlvWarnModal`).
+탭으로 여러 단계를 건너뛸 때도 **그대로 통과해야 한다**(탭으로 우회 불가).
+
+- `pendingStepTarget` (state): 모달이 뜬 시점의 **최종 목적지**. `'계속 진행'` 시 `step+1` 이 아니라
+  이 목적지까지 이어서 이동한다. 없으면 여러 단계 점프 중 목적지가 유실된다.
+- `ackedStepGatesRef` (ref): 이번 이동에서 **이미 확인한 관문**. 없으면 step1 관문 확인 →
+  step4 관문 → `'계속 진행'` → step1 관문 재등장으로 **두 모달이 무한 반복**된다.
+- ⚠️ 확인 기록을 비우는 곳은 **`startStepMove` 한 곳뿐이다.** 공용 `ConfirmModal` 은
+  `onClick={() => { onConfirm(); onClose(); }}`(`components/Modal.tsx`)로 **onConfirm 직후 항상
+  onClose 를 부르므로**, `onClose` 에서 비우면 방금 이어서 뜬 다음 관문의 기록까지 지워진다.
+- `startStepMove` = 사용자가 새로 시작하는 이동(버튼·탭) / `resumePendingStep(gate)` = 모달 '계속 진행'.
+- step 4 관문은 **관문이 있는 단계로 먼저 이동한 뒤** 모달을 띄운다 → 취소하면 그 단계(4)에 머물러
+  바로 값을 채울 수 있다.
+
+#### 인디케이터(`WizardIndicator`)
+
+- optional prop `onStepClick?: (step: number) => void` · `stepTitle?: (label: string) => string`.
+  **미지정 시 기존 표시 전용 동작 그대로**(클릭·키보드 비활성).
+- 현재 단계는 클릭 대상에서 제외. 클릭 가능한 단계는 `.wizard-step.clickable`(커서·hover·focus 표시),
+  `role="button"` + `tabIndex=0` + Enter/Space 키 지원.
+- **투어 모드(`?embed=tour`)는 `onStepClick={undefined}`** — URL 이 단계를 지정하는 읽기 전용
+  미리보기라 탭 이동을 막는다.
+- `scrollToFirstError(atStep = step)`: 탭 점프 시 `setStep` 직후 호출되면 클로저의 `step` 이 아직
+  갱신 전이라 신뢰할 수 없어 대상 단계를 인자로 받는다. 기본값이 `step` 이라 기존 호출부는 불변.
+
 ---
 
 ## 3. 리팩토링 진행 현황 & 향후 방향
@@ -191,6 +237,30 @@ pages/RequestPage/
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 추가 변경 이력 (2026-08-10 — 단계 인디케이터 탭 클릭 이동)
+
+- **개요**: '다음'/'이전' 버튼으로만 가능하던 단계 이동에 **상단 인디케이터 탭 클릭**을 추가했다.
+  뒤로는 자유, 앞으로는 사이 단계가 모두 검증을 통과할 때만 이동한다. 규칙 전문은 **§2.4** 참조.
+  **백엔드·마이그레이션·`validate()` 본문·Step 컴포넌트 변경 없음.**
+- `index.tsx`: `goToStep(target)` 신설(단계 이동 단일 진입점) + `startStepMove`/`resumePendingStep`.
+  기존 `handleNextStep`/`handlePrevStep` 은 `startStepMove(step±1)` 로 위임하는 한 줄 래퍼가 됐다
+  — **'다음'/'이전' 버튼 동작은 완전히 동일**하다(검증 → 관문 모달 → 이동 순서 보존).
+  `pendingStepTarget` state · `ackedStepGatesRef` ref 신설, `scrollToFirstError(atStep = step)` 인자화.
+- `components/WizardIndicator.tsx`: optional `onStepClick`/`stepTitle` 추가(미지정 시 기존 동작).
+- `styles/global.css`: `.wizard-step.clickable` 커서·hover·`:focus-visible` 추가(기존 `.wizard-step` 불변).
+- **i18n**: `request.step_move` 1키 ko/en 동시 추가(툴팁).
+- **구현 중 발견해 설계로 막은 함정 2건** — 둘 다 여러 단계를 한 번에 건너뛸 때만 나타난다:
+  1. 관문 모달 `onConfirm` 이 `handleNextStep(true)` 처럼 **목적지를 `step+1` 로 고정**하고 있어
+     점프 목적지가 유실됨 → `pendingStepTarget` 으로 해결.
+  2. `ConfirmModal` 이 `onConfirm(); onClose();` 를 연달아 부르는 구조라, step1 관문 확인 후
+     이어서 뜬 step4 관문의 상태를 `onClose` 가 되돌려 **두 모달이 무한 반복**됨
+     → 확인 기록(`ackedStepGatesRef`)을 `startStepMove` 에서만 비우도록 해결.
+- **검증**: `tsc --noEmit` 24개(작업 직전 실측과 동일, 파일별 분포도 동일 — 신규 0),
+  `react-scripts test` 3 suites / 84건 통과. `react-scripts build` 는 선행 이슈(`Navbar.tsx:227`)로
+  **여전히 실패**하며 이번 변경과 무관함을 실행으로 확인했다.
+- **자동 테스트 한계**: `goToStep` 은 `setErrors` 부작용이 있는 `validate()` 에 의존해 순수 함수
+  단위 테스트로 분리할 수 없다. 억지 추상화 대신 **수동 시나리오 검증을 핵심**으로 둔다.
 
 ### 추가 변경 이력 (2026-08-06 — 마이그레이션 leaf 충돌 해소 + 0009 번호 예약)
 
