@@ -248,11 +248,11 @@
 <div class="card">
   <div class="grid">
     <div class="cell"><span class="b b-wait">대기중</span><span class="nm">PHPSI</span></div>
-    <div class="cell"><span class="b b-wait">대기중</span><span class="nm">후결자(정고정)</span></div>
+    <div class="cell"><span class="b b-rev">검토중</span><span class="nm">후결자(정고정)</span></div>
     <div class="cell"><span class="b b-wait">대기중</span><span class="nm">JOB</span></div>
     <div class="cell"><span class="b b-wait">대기중</span><span class="nm">MASK</span></div>
     <div class="cell"><span class="b b-wait">대기중</span><span class="nm">OVL</span></div>
-    <div class="cell"><span class="b b-wait">대기중</span><span class="nm">추가후결자(이순신)</span></div>
+    <div class="cell"><span class="b b-rev">검토중</span><span class="nm">추가후결자(이순신)</span></div>
   </div>
   <p style="font-size:0.8rem;color:var(--muted);margin-top:10px;">
     1열 = <code>PHPSI · JOB · OVL</code> / 2열 = <code>고정 후결자 · MASK · 추가 후결자</code> (고정 배치, 순서 불변)
@@ -353,11 +353,11 @@
         <td>홍길동<div class="dept">개발1팀</div></td>
         <td><div class="grid">
           <div class="cell"><span class="b b-wait">대기중</span><span class="nm">PHPSI</span></div>
-          <div class="cell"><span class="b b-wait">대기중</span><span class="nm">후결자</span></div>
+          <div class="cell"><span class="b b-rev">검토중</span><span class="nm">후결자(정고정)</span></div>
           <div class="cell"><span class="b b-wait">대기중</span><span class="nm">JOB</span></div>
           <div class="cell"><span class="b b-wait">대기중</span><span class="nm">MASK</span></div>
           <div class="cell"><span class="b b-wait">대기중</span><span class="nm">OVL</span></div>
-          <div class="cell"><span class="b b-wait">대기중</span><span class="nm">추가후결자</span></div>
+          <div class="cell"><span class="b b-rev">검토중</span><span class="nm">추가후결자(이순신)</span></div>
         </div></td>
         <td>08/18</td>
       </tr></tbody>
@@ -392,18 +392,20 @@
   <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
     <div class="card" style="margin:0;"><div class="grid">
       <div class="cell"><span class="b b-rev">검토중</span><span class="nm">PHPSI(박영희)</span></div>
-      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">후결자</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">후결자(정고정)</span></div>
       <div class="cell"><span class="b b-wait">대기중</span><span class="nm">JOB</span></div>
       <div class="cell"><span class="b b-rev">검토중</span><span class="nm">MASK(강동원)</span></div>
       <div class="cell"><span class="b b-rev">검토중</span><span class="nm">OVL</span></div>
-      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">추가후결자</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">추가후결자(이순신)</span></div>
     </div></div>
   </div>
 </div>
 <div class="note">
   <strong>비대칭 규칙 유지</strong>(확정 사양 #8) — OVL 은 선점됐어도 이름을 쓰지 않고, MASK·PHPSI 는 쓴다.<br />
-  <strong>후결자 정확도 개선</strong> — 변경 전에는 후결자가 미선점이어도 항상 <span class="b b-rev">검토중</span> 이었으나,
-  변경 후에는 <span class="b b-wait">대기중</span> 으로 정확히 구분된다.
+  <strong>후결자는 <span class="b b-wait">대기중</span> 을 거치지 않는다</strong> — J·O·E·P 는 검토중(claim) 방식이라
+  선점 전에 담당자가 없지만, 후결자(RA)는 단계가 만들어질 때 이미 담당자가 확정돼 있다.
+  그래서 병렬 진입 직후부터 곧바로 <span class="b b-rev">검토중</span> 이다(현행 동작과 동일).
+  <b>대기중</b> 은 '담당자 미배정'이라는 뜻으로만 쓴다.
 </div>
 
 <!-- T6 -->
@@ -427,11 +429,11 @@
   <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
     <div class="card" style="margin:0;"><div class="grid">
       <div class="cell"><span class="b b-rev">검토중</span><span class="nm">PHPSI(최민수 / 정검토)</span></div>
-      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">후결자</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">후결자(정고정)</span></div>
       <div class="cell done"><span class="b b-done">완료</span><span class="nm">JOB</span></div>
       <div class="cell"><span class="b b-rev">검토중</span><span class="nm">MASK(강동원)</span></div>
       <div class="cell"><span class="b b-rev">검토중</span><span class="nm">OVL</span></div>
-      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">추가후결자</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">추가후결자(이순신)</span></div>
     </div></div>
   </div>
 </div>
@@ -517,7 +519,7 @@
   <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
     <div class="card" style="margin:0;"><div class="grid">
       <div class="cell"><span class="b b-wait">대기중</span><span class="nm">PHPSI</span></div>
-      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">후결자</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">후결자(정고정)</span></div>
       <div class="cell"><span class="b b-wait">대기중</span><span class="nm">JOB</span></div>
       <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">MASK</span></div>
       <div class="cell"><span class="b b-wait">대기중</span><span class="nm">OVL</span></div>
@@ -652,7 +654,7 @@
   <div class="cmp-col"><span class="cmp-head cmp-after">변경 후 — 대상 칸마다</span>
     <div class="card" style="margin:0;"><div class="grid">
       <div class="cell"><span class="b b-rev">검토중</span><span class="nm">PHPSI(박영희)</span><span class="chip">⏸ 중단 요청중</span></div>
-      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">후결자</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">후결자(정고정)</span></div>
       <div class="cell"><span class="b b-rev">검토중</span><span class="nm">JOB</span><span class="chip">⏸ 중단 요청중</span></div>
       <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">MASK</span></div>
       <div class="cell"><span class="b b-wait">대기중</span><span class="nm">OVL</span></div>
@@ -765,7 +767,7 @@
       <td>PL·RFG 행은 날짜 컬럼 삭제의 영향을 그대로 받음</td>
     </tr>
     <tr>
-      <td>후결자 미선점이 <b>대기중</b>으로 정확해짐</td>
+      <td>비대상 단계가 <b>해당없음</b>으로 명시됨</td>
       <td>—</td>
     </tr>
     <tr>
