@@ -14,6 +14,7 @@ LINES = [
     {'name': '라인3', 'order': 3},
     {'name': '라인4', 'order': 4},
     {'name': '라인5', 'order': 5},
+    {'name': 'nv', 'order': 6},
 ]
 
 

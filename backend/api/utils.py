@@ -36,6 +36,7 @@ LINE_SUFFIX_MAP = {
     'LINE3': 'line3',
     'LINE4': 'line4',
     'LINE5': 'line5',
+    'nv': 'lineN',
 }
 
 # 라인명 → 외부 DB lineid 매핑 (api_mapname 동기화용)
@@ -45,6 +46,7 @@ LINE_TO_LINEID_MAP = {
     '라인3': 'ccccc',
     '라인4': 'ddddd',
     '라인5': 'eeeee',
+    'nv': 'fffff',
 }
 
 

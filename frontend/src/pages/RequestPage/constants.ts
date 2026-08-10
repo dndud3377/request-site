@@ -10,7 +10,7 @@ import {
 
 // ===== Option Constants =====
 export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'Only MAP', 'MAP 삭제/수정', '기타'] as const;
-export const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5'] as const;
+export const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5', 'nv'] as const;
 export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay 변경', 'ADI CD 변경', 'FirstA 변경', '연구소 제품'] as const;
 
 // 참조 요청서 Merge(+ BEFORE/AFTER 비교)를 쓸 수 있는 기타 목적.
