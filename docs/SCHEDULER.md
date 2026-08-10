@@ -108,16 +108,32 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 ### `nv` (RTDB MAIN/FALLBACK 구조, 스텝 없음)
 
 `nv` 는 라인1·3~5 와 **동일한 MAIN/FALLBACK 구조**를 그대로 탄다. `scheduler.LINE_NV` 상수로 정의하고
-`LINES` 에 포함시키면 `sync_rtdb_options()` 의 기존 반복이 공정-품목·품목-공정ID 를 처리하므로
-**전용 쿼리·저장 코드가 없다.**
+`LINES` 에 포함시키면 `sync_rtdb_options()` 의 기존 반복이 공정-품목·품목-공정ID 를 처리한다.
+다만 **DCQ(FALLBACK) 소스 테이블만 접미사 규칙을 따르지 않아** 라인별 오버라이드로 분기한다.
 
 | 항목 | 값 |
 |------|-----|
 | `line` 컬럼 값 | `'nv'` (`Line` 마스터·프론트엔드 표기와 동일) |
-| RTDB 접미사 | `utils.LINE_SUFFIX_MAP['nv'] = 'lineN'` → `A_lineN.B` / `X_lineN.Y` |
+| RTDB(MAIN) 접미사 | `utils.LINE_SUFFIX_MAP['nv'] = 'lineN'` → `A_lineN.B` / `X_lineN.Y` (다른 라인과 동일 규칙) |
+| DCQ(FALLBACK) 소스 | **접미사 규칙 아님** — 공정-품목 `N.V` / 품목-공정ID `N.V2` (아래 참조) |
 | 외부 DB lineid | `utils.LINE_TO_LINEID_MAP['nv']` (MAP 이름 동기화 `WHERE` 절에 자동 포함) |
 | 스텝 | **없음** — `STEP_TABLE_MAP` 미등록이라 스텝 조회를 skip 한다 |
 | 저장 | 다른 라인과 동일하게 `_write_if_changed()` (변경 감지 후 `DELETE(line='nv') → INSERT`) |
+
+#### DCQ fallback 쿼리 오버라이드
+
+다른 라인의 DCQ fallback 쿼리는 접미사로 `A.B_{suffix}` / `A.B_{suffix}_processproduct` 를 만들지만,
+`nv` 는 소스 테이블이 달라 이 규칙으로 만들 수 없다. `DCQ_PP_QUERY_OVERRIDE` / `DCQ_PC_QUERY_OVERRIDE`
+딕셔너리에 라인별 쿼리를 등록하고, **등록되지 않은 라인은 기존 접미사 기반 기본 쿼리**를 그대로 쓴다.
+
+| 대상 | 상수 | 소스 테이블 |
+|------|------|-------------|
+| `api_processproduct` | `NV_DCQ_PP_QUERY` | `N.V` — `partnumber, descript, pkgtype_2` |
+| `api_productprocessid` | `NV_DCQ_PC_QUERY` | `N.V2` — `partnumber, processid` |
+
+> `nv` 의 공정-품목 fallback 쿼리에는 다른 라인과 달리 **`WHERE` 절이 없다.** DCQ fallback 경로에서는
+> 빈 값 행이 걸러지지 않을 수 있다(RTDB MAIN 정상 동작 시에는 `RTDB_PP_FILTER` 가 적용된다).
+> 조회 컬럼명은 다른 라인과 같으므로 rename·저장 로직은 공용 코드를 그대로 재사용한다.
 
 - `Line` 마스터에 행이 있어야 의뢰상세 라인 드롭다운에 노출된다 → 배포 시 `python manage.py seed_lines` 실행.
 - 조회 API(`form-options/processes` / `products` / `process-id`)는 `line` 파라미터를 그대로 필터에 넘기므로
