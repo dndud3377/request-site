@@ -1627,6 +1627,34 @@ select.form-control option {
   gap: 10px;
 }
 
+/* 클릭으로 이동 가능한 단계(현재 단계 제외). 이동 가부는 클릭 시점에 판정하므로
+   여기서는 '누를 수 있다'만 알린다 — 통과 여부를 미리 회색으로 표시하지 않는다. */
+.wizard-step.clickable {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  margin: -2px -6px;
+  transition: var(--transition);
+}
+
+.wizard-step.clickable:hover {
+  background: var(--bg-secondary);
+}
+
+.wizard-step.clickable:hover .wizard-step-circle {
+  transform: scale(1.08);
+  border-color: var(--accent);
+}
+
+.wizard-step.clickable:hover .wizard-step-label {
+  color: var(--accent);
+}
+
+.wizard-step.clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .wizard-step-circle {
   width: 34px;
   height: 34px;
