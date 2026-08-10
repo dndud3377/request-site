@@ -256,11 +256,24 @@ pages/RequestPage/
   2. `ConfirmModal` 이 `onConfirm(); onClose();` 를 연달아 부르는 구조라, step1 관문 확인 후
      이어서 뜬 step4 관문의 상태를 `onClose` 가 되돌려 **두 모달이 무한 반복**됨
      → 확인 기록(`ackedStepGatesRef`)을 `startStepMove` 에서만 비우도록 해결.
-- **검증**: `tsc --noEmit` 24개(작업 직전 실측과 동일, 파일별 분포도 동일 — 신규 0),
-  `react-scripts test` 3 suites / 84건 통과. `react-scripts build` 는 선행 이슈(`Navbar.tsx:227`)로
-  **여전히 실패**하며 이번 변경과 무관함을 실행으로 확인했다.
-- **자동 테스트 한계**: `goToStep` 은 `setErrors` 부작용이 있는 `validate()` 에 의존해 순수 함수
-  단위 테스트로 분리할 수 없다. 억지 추상화 대신 **수동 시나리오 검증을 핵심**으로 둔다.
+- **테스트**: `components/WizardIndicator.test.tsx` **신규 11건** — 코드베이스 최초의 컴포넌트
+  테스트다. `setupTests.ts` 가 없어 `jest-dom` 매처가 등록되지 않으므로 **전역 설정 파일을 만들지
+  않고 표준 DOM 단언만** 쓴다(다른 테스트 영향 0). 커버: prop 미지정 시 기존 동작 보존 ·
+  현재 단계 제외 · 클릭 시 단계 번호 · Enter/Space · 그 밖의 키 무반응 · 툴팁 · done/active 회귀.
+- **검증(2026-08-10 실행)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` | 24개 | **24개** (파일별 분포 동일 — 신규 0) |
+  | `react-scripts test` | 3 suites / 84건 | **4 suites / 95건 통과** |
+  | 백엔드 `manage.py test api` | — | **201건 통과 (OK)** |
+  | `react-scripts build` | 실패(`Navbar.tsx:227`) | **실패(동일)** — 선행 이슈, 무관 |
+
+  ⚠️ RTL 13 + React 18 조합에서 `ReactDOMTestUtils.act is deprecated` 경고가 뜨지만
+  **테스트는 전부 통과**한다. 라이브러리 버전 문제라 이번 범위에서 손대지 않았다.
+- **자동 테스트 한계**: `goToStep` 의 이동 판정 자체는 `setErrors` 부작용이 있는 `validate()` 에
+  의존해 순수 함수 단위 테스트로 분리할 수 없다. 억지 추상화 대신 **수동 시나리오 검증을
+  핵심**으로 둔다(재검증·다단계 점프·관문 모달 연속 경로).
 
 ### 추가 변경 이력 (2026-08-06 — 마이그레이션 leaf 충돌 해소 + 0009 번호 예약)
 
