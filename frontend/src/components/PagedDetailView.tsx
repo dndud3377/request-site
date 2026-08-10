@@ -1800,12 +1800,10 @@ type Page = { label: string; content: React.ReactNode };
     email?: string;
     date?: string;
     comment?: string;
-    dueDate?: string;
   };
 
   // 단일 ApprovalStep → 표시 정보
   const stepToInfo = (s: NonNullable<ReturnType<typeof getStep>>): StepDisplayInfo => {
-    const dueDate = s.due_date ? s.due_date.slice(5).replace('-', '/') : undefined; // MM/DD
     const email = s.assignee_mail || undefined;
     if (s.action === 'approved') return {
       status: 'approved', label: t('approval.agree'),
@@ -1829,8 +1827,8 @@ type Page = { label: string; content: React.ReactNode };
       comment: s.comment || undefined,
     };
     // pending
-    if (!s.assignee_name) return { status: 'unassigned', label: t('approval.step_unassigned'), dueDate };
-    return { status: 'reviewing', label: t('common.status_under_review'), assignee: s.assignee_name || undefined, email, dueDate };
+    if (!s.assignee_name) return { status: 'unassigned', label: t('approval.step_unassigned') };
+    return { status: 'reviewing', label: t('common.status_under_review'), assignee: s.assignee_name || undefined, email };
   };
 
   // 한 단계(agent·round)의 표시 정보 목록. PL/J 등 다중 담당자는 담당자별로 여러 항목을 반환한다.
@@ -2011,11 +2009,6 @@ type Page = { label: string; content: React.ReactNode };
                             )}
                             {info.date && (
                               <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{info.date}</span>
-                            )}
-                            {info.dueDate && (
-                              <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                                {t('approval.col_due_date')}: {info.dueDate}
-                              </span>
                             )}
                             {info.comment && (
                               <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.78rem', whiteSpace: 'pre-wrap' }}>

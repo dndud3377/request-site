@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>결재현황 '현재 단계' 3행 2열 그리드 — 변경 전/후 Mock</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1f2430;
+    --text-secondary: #4b5563;
+    --muted: #8a93a3;
+    --disabled: #adb5bd;
+    --border: #dde1e8;
+    --border-light: #eceff4;
+    --accent: #2563eb;
+    --accent-soft: #eff6ff;
+    --green: #059669;
+    --green-soft: #e7f6f0;
+    --amber: #d97706;
+    --amber-soft: #fff7ed;
+    --danger: #dc2626;
+    --danger-soft: #fdeced;
+    --slate: #6b8ab0;
+    --slate-soft: #eef2f7;
+    --pause: #7c3aed;
+    --pause-soft: #f5f0ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171d;
+      --card: #1b1f27;
+      --text: #e8eaf0;
+      --text-secondary: #b6bdcb;
+      --muted: #8a93a3;
+      --disabled: #6b7280;
+      --border: #333a47;
+      --border-light: #272d38;
+      --accent: #5b8dff;
+      --accent-soft: #1d2740;
+      --green: #4ade80;
+      --green-soft: #16281d;
+      --amber: #fbbf24;
+      --amber-soft: #2c2312;
+      --danger: #f87171;
+      --danger-soft: #2e1a1c;
+      --slate: #93a7c4;
+      --slate-soft: #232a35;
+      --pause: #a78bfa;
+      --pause-soft: #241d38;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 80px;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    font-size: 15px; line-height: 1.65;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  h1 { font-size: 1.55rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); font-size: 0.88rem; margin: 0 0 8px; }
+  h2 {
+    font-size: 1.12rem; margin: 40px 0 12px; padding-bottom: 8px;
+    border-bottom: 2px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 0.95rem; margin: 22px 0 8px; color: var(--text-secondary); }
+  p { margin: 8px 0; }
+  code {
+    background: var(--slate-soft); border: 1px solid var(--border-light);
+    border-radius: 4px; padding: 1px 5px; font-size: 0.84em;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px; margin: 12px 0;
+  }
+  .note {
+    background: var(--amber-soft); border-left: 3px solid var(--amber);
+    padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 12px 0;
+    font-size: 0.87rem; color: var(--text-secondary);
+  }
+  .note strong { color: var(--amber); }
+  .warn {
+    background: var(--danger-soft); border-left: 3px solid var(--danger);
+    padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 12px 0;
+    font-size: 0.87rem; color: var(--text-secondary);
+  }
+  .warn strong { color: var(--danger); }
+
+  /* ===== 비교 레이아웃 ===== */
+  .cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 14px 0 26px; }
+  @media (max-width: 1000px) { .cmp { grid-template-columns: 1fr; } }
+  .cmp-col { min-width: 0; }
+  .cmp-head {
+    font-size: 0.78rem; font-weight: 800; letter-spacing: 0.03em;
+    padding: 4px 10px; border-radius: 20px; display: inline-block; margin-bottom: 8px;
+  }
+  .cmp-before { background: var(--slate-soft); color: var(--slate); }
+  .cmp-after  { background: var(--accent-soft); color: var(--accent); }
+
+  /* ===== 목록 테이블 ===== */
+  .tw { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+  table.list { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+  table.list th {
+    background: var(--slate-soft); color: var(--text-secondary);
+    font-weight: 700; font-size: 0.75rem; text-align: left;
+    padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  table.list td {
+    padding: 9px 10px; border-bottom: 1px solid var(--border-light);
+    vertical-align: middle;
+  }
+  table.list tr:last-child td { border-bottom: none; }
+  .row-second td { border-top: none; }
+  .doc-title { color: var(--accent); font-weight: 700; }
+  .dept { font-size: 0.72rem; color: var(--muted); }
+  .del-col { text-decoration: line-through; opacity: 0.45; }
+
+  /* ===== 뱃지 ===== */
+  .b {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 0.7rem; font-weight: 800; white-space: nowrap; line-height: 1.5;
+  }
+  .b-na    { background: var(--slate-soft); color: var(--disabled); }
+  .b-wait  { background: var(--slate-soft); color: var(--slate); }
+  .b-rev   { background: var(--amber-soft); color: var(--amber); }
+  .b-done  { background: var(--green-soft); color: var(--green); }
+  .b-rej   { background: var(--danger-soft); color: var(--danger); }
+  .b-pause { background: var(--pause-soft); color: var(--pause); }
+
+  /* ===== 3행 2열 그리드 (제안안) ===== */
+  .grid {
+    display: grid; grid-template-columns: max-content max-content;
+    gap: 3px 22px; width: max-content;
+  }
+  .cell { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  /* 뱃지가 앞에 오므로 폭을 고정해야 뒤따르는 단계명이 세로로 정렬된다 */
+  .cell .b { min-width: 62px; text-align: center; }
+  .cell .nm { font-weight: 500; }
+  .cell.off .nm { color: var(--disabled); }
+  .cell.done .nm { color: var(--disabled); }
+
+  /* ===== 현행 상태점 ===== */
+  .dot-ind { display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .dot-wait { background: var(--muted); opacity: 0.4; }
+  .dot-review { background: var(--amber); }
+  .dot-done { background: var(--green); }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 0.66rem; font-weight: 800; color: var(--pause);
+    background: var(--pause-soft); border: 1px dashed var(--pause);
+    border-radius: 12px; padding: 1px 7px;
+  }
+  .due-over { color: var(--danger); font-weight: 700; }
+  .due-today { color: var(--amber); font-weight: 700; }
+  .due-undecided { color: var(--muted); }
+
+  /* ===== 상태 타임라인 라벨 ===== */
+  .tl {
+    display: inline-block; font-size: 0.72rem; font-weight: 800;
+    background: var(--accent-soft); color: var(--accent);
+    border-radius: 4px; padding: 2px 8px; margin-right: 6px;
+  }
+  .stage-label { font-size: 0.9rem; font-weight: 700; margin: 26px 0 2px; }
+  .stage-desc { font-size: 0.82rem; color: var(--muted); margin: 0 0 8px; }
+
+  /* ===== 규칙 표 ===== */
+  table.rules { border-collapse: collapse; width: 100%; font-size: 0.84rem; }
+  table.rules th, table.rules td {
+    border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top;
+  }
+  table.rules th { background: var(--slate-soft); font-weight: 700; font-size: 0.78rem; }
+  table.rules td.no { text-align: center; color: var(--muted); width: 34px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0 0; font-size: 0.8rem; }
+  .legend span.i { display: inline-flex; align-items: center; gap: 6px; }
+  hr.sep { border: none; border-top: 1px dashed var(--border); margin: 30px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>결재현황 '현재 단계' — 3행 2열 그리드 개편</h1>
+<p class="sub">
+  변경 전/후 비교 Mock · 대상: <code>ApprovalPage</code> / <code>HomePage</code> 목록의 <b>병렬 합의 단계</b>
+  · 작성 근거: 인터뷰 확정 사양 17항목
+</p>
+
+<div class="note">
+  <strong>적용 범위</strong> — 결재 프로세스 중 <b>병렬 합의 단계에만</b> 적용한다.
+  <code>PL 상신 → PL 검토자 확인 → R단계 → R 담당자 확인 → R 검토자 확인</code> 까지는 <b>현행 그대로</b> 유지한다.
+</div>
+
+<div class="legend">
+  <span class="i"><span class="b b-na">해당없음</span> 이 문서의 결재 경로에 없는 단계</span>
+  <span class="i"><span class="b b-wait">대기중</span> 경로에 있으나 아직 미선점/미생성</span>
+  <span class="i"><span class="b b-rev">검토중</span> 담당자 선점됨</span>
+  <span class="i"><span class="b b-done">완료</span> 담당자+검토자 전원 합의</span>
+</div>
+
+<!-- ================= 1. 표 골격 ================= -->
+<h2>1. 표 골격 — 컬럼 변화</h2>
+
+<div class="cmp">
+  <div class="cmp-col">
+    <span class="cmp-head cmp-before">변경 전 · 8컬럼</span>
+    <div class="tw">
+      <table class="list">
+        <thead><tr>
+          <th>제목</th><th>제품명</th><th>의뢰자</th><th>현재 단계</th>
+          <th class="del-col">현재예정</th><th>최종예정</th><th>양산일</th><th></th>
+        </tr></thead>
+        <tbody><tr>
+          <td colspan="8" style="color:var(--muted);font-size:0.8rem;">
+            문서 1건이 경로 수만큼 <b>2~3행</b>으로 분할 (rowSpan 병합)
+          </td>
+        </tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="cmp-col">
+    <span class="cmp-head cmp-after">변경 후 · 7컬럼</span>
+    <div class="tw">
+      <table class="list">
+        <thead><tr>
+          <th>제목</th><th>제품명</th><th>의뢰자</th><th>현재 단계</th>
+          <th>최종예정</th><th>양산일</th><th></th>
+        </tr></thead>
+        <tbody><tr>
+          <td colspan="7" style="color:var(--muted);font-size:0.8rem;">
+            문서 1건 = <b>표 1행</b>. 현재 단계 칸 안에 3행 2열 그리드
+          </td>
+        </tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="warn">
+  <strong>'현재예정' 컬럼은 표 전체에서 삭제</strong>됩니다 — 컬럼 단위라 행별로 남길 수 없어,
+  현행 유지하기로 한 <b>PL·RFG 단계 행에서도 날짜가 사라집니다</b>. 최종예정 하나만 남습니다.
+</div>
+
+<h3>그리드 배치</h3>
+<div class="card">
+  <div class="grid">
+    <div class="cell"><span class="b b-wait">대기중</span><span class="nm">PHPSI</span></div>
+    <div class="cell"><span class="b b-rev">검토중</span><span class="nm">후결자(정고정)</span></div>
+    <div class="cell"><span class="b b-wait">대기중</span><span class="nm">JOB</span></div>
+    <div class="cell"><span class="b b-wait">대기중</span><span class="nm">MASK</span></div>
+    <div class="cell"><span class="b b-wait">대기중</span><span class="nm">OVL</span></div>
+    <div class="cell"><span class="b b-rev">검토중</span><span class="nm">추가후결자(이순신)</span></div>
+  </div>
+  <p style="font-size:0.8rem;color:var(--muted);margin-top:10px;">
+    1열 = <code>PHPSI · JOB · OVL</code> / 2열 = <code>고정 후결자 · MASK · 추가 후결자</code> (고정 배치, 순서 불변)
+  </p>
+</div>
+
+<hr class="sep" />
+
+<!-- ================= 2. 프로세스 타임라인 ================= -->
+<h2>2. 프로세스 진행에 따른 변화</h2>
+<p class="sub">
+  시나리오 — <b>ABC 의뢰</b> / plel 있음(MASK 대상) / 지정 PL 2명 / 고정 후결자 <b>정고정</b> / 추가 후결자 <b>이순신</b>
+</p>
+
+<!-- T1 -->
+<div class="stage-label"><span class="tl">T1</span> 상신 직후 — PL 검토중</div>
+<p class="stage-desc">병렬 이전 구간 → 변경 없음</p>
+<div class="cmp">
+  <div class="cmp-col"><span class="cmp-head cmp-before">변경 전</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>현재 단계</th><th class="del-col">현재예정</th><th>최종예정</th></tr></thead>
+      <tbody><tr>
+        <td><span class="b b-rev">검토중</span> 검토(박피엘 / 김피엘)</td>
+        <td class="del-col"><span class="due-undecided">미확정</span></td><td>-</td>
+      </tr></tbody>
+    </table></div>
+  </div>
+  <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>현재 단계</th><th>최종예정</th></tr></thead>
+      <tbody><tr>
+        <td><span class="b b-rev">검토중</span> 검토(박피엘 / 김피엘)</td><td>-</td>
+      </tr></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- T2 -->
+<div class="stage-label"><span class="tl">T2·T3</span> RFG 단계 (담당자 미지정 → 지정 → 검토자)</div>
+<p class="stage-desc">병렬 이전 구간 → 변경 없음</p>
+<div class="cmp">
+  <div class="cmp-col"><span class="cmp-head cmp-before">변경 전</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>현재 단계</th><th class="del-col">현재예정</th><th>최종예정</th></tr></thead>
+      <tbody>
+        <tr><td><span class="b b-wait">대기중</span> RFG</td><td class="del-col">08/12</td><td>-</td></tr>
+        <tr><td><span class="b b-rev">검토중</span> RFG(김철수)</td><td class="del-col">08/12</td><td>-</td></tr>
+        <tr><td><span class="b b-rev">검토중</span> 검토자(이검토)</td><td class="del-col">08/13</td><td>-</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>현재 단계</th><th>최종예정</th></tr></thead>
+      <tbody>
+        <tr><td><span class="b b-wait">대기중</span> RFG</td><td>-</td></tr>
+        <tr><td><span class="b b-rev">검토중</span> RFG(김철수)</td><td>-</td></tr>
+        <tr><td><span class="b b-rev">검토중</span> 검토자(이검토)</td><td>-</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- T4 -->
+<div class="stage-label"><span class="tl">T4</span> RFG 합의 → 병렬 진입 (P·J·O·E·RA 동시 생성) ★여기서부터 변경★</div>
+<div class="cmp">
+  <div class="cmp-col"><span class="cmp-head cmp-before">변경 전 — 3행 분할</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>제목</th><th>의뢰자</th><th>현재 단계</th><th class="del-col">현재예정</th><th>최종예정</th></tr></thead>
+      <tbody>
+        <tr>
+          <td rowspan="3"><span class="doc-title">ABC 의뢰</span></td>
+          <td rowspan="3">홍길동<div class="dept">개발1팀</div></td>
+          <td><span class="b b-wait">대기중</span> PHPSI</td>
+          <td class="del-col">08/14</td>
+          <td rowspan="3">08/18</td>
+        </tr>
+        <tr class="row-second">
+          <td><span class="b b-wait">대기중</span>
+            <span class="dot-ind"><span class="dot dot-wait"></span>JOB</span>
+            <span class="dot-ind"><span class="dot dot-wait"></span>OVL</span>
+            <span class="dot-ind"><span class="dot dot-wait"></span>MASK</span>
+          </td>
+          <td class="del-col">08/18</td>
+        </tr>
+        <tr class="row-second">
+          <td><span class="b b-rev">검토중</span> 후결자(정고정 / 이순신)</td>
+          <td class="del-col">08/18</td>
+        </tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="cmp-col"><span class="cmp-head cmp-after">변경 후 — 1행 그리드</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>제목</th><th>의뢰자</th><th>현재 단계</th><th>최종예정</th></tr></thead>
+      <tbody><tr>
+        <td><span class="doc-title">ABC 의뢰</span></td>
+        <td>홍길동<div class="dept">개발1팀</div></td>
+        <td><div class="grid">
+          <div class="cell"><span class="b b-wait">대기중</span><span class="nm">PHPSI</span></div>
+          <div class="cell"><span class="b b-rev">검토중</span><span class="nm">후결자(정고정)</span></div>
+          <div class="cell"><span class="b b-wait">대기중</span><span class="nm">JOB</span></div>
+          <div class="cell"><span class="b b-wait">대기중</span><span class="nm">MASK</span></div>
+          <div class="cell"><span class="b b-wait">대기중</span><span class="nm">OVL</span></div>
+          <div class="cell"><span class="b b-rev">검토중</span><span class="nm">추가후결자(이순신)</span></div>
+        </div></td>
+        <td>08/18</td>
+      </tr></tbody>
+    </table></div>
+  </div>
+</div>
+<div class="note">
+  변경 전의 상태점(<span class="dot-ind"><span class="dot dot-wait"></span></span>
+  <span class="dot-ind"><span class="dot dot-review"></span></span>
+  <span class="dot-ind"><span class="dot dot-done"></span></span>)이 하던 일을 6칸 뱃지가 전부 대신하므로
+  <code>StageDots</code> 컴포넌트는 폐기한다.
+  <b>대기중 칸은 이름을 표시하지 않는다</b>(확정 사양 #7).
+</div>
+
+<!-- T5 -->
+<div class="stage-label"><span class="tl">T5</span> PHPSI·OVL·MASK 선점 / JOB 미선점</div>
+<div class="cmp">
+  <div class="cmp-col"><span class="cmp-head cmp-before">변경 전</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>현재 단계</th><th class="del-col">현재예정</th></tr></thead>
+      <tbody>
+        <tr><td><span class="b b-rev">검토중</span> PHPSI(박영희)</td><td class="del-col">08/14</td></tr>
+        <tr class="row-second"><td><span class="b b-rev">검토중</span>
+          <span class="dot-ind"><span class="dot dot-wait"></span>JOB</span>
+          <span class="dot-ind"><span class="dot dot-review"></span>OVL</span>
+          <span class="dot-ind"><span class="dot dot-review"></span>MASK(강동원)</span>
+        </td><td class="del-col">08/18</td></tr>
+        <tr class="row-second"><td><span class="b b-rev">검토중</span> 후결자(정고정 / 이순신)</td><td class="del-col">08/18</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
+    <div class="card" style="margin:0;"><div class="grid">
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">PHPSI(박영희)</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">후결자(정고정)</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">JOB</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">MASK(강동원)</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">OVL</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">추가후결자(이순신)</span></div>
+    </div></div>
+  </div>
+</div>
+<div class="note">
+  <strong>비대칭 규칙 유지</strong>(확정 사양 #8) — OVL 은 선점됐어도 이름을 쓰지 않고, MASK·PHPSI 는 쓴다.<br />
+  <strong>후결자는 <span class="b b-wait">대기중</span> 을 거치지 않는다</strong> — J·O·E·P 는 검토중(claim) 방식이라
+  선점 전에 담당자가 없지만, 후결자(RA)는 단계가 만들어질 때 이미 담당자가 확정돼 있다.
+  그래서 병렬 진입 직후부터 곧바로 <span class="b b-rev">검토중</span> 이다(현행 동작과 동일).
+  <b>대기중</b> 은 '담당자 미배정'이라는 뜻으로만 쓴다.
+</div>
+
+<!-- T6 -->
+<div class="stage-label"><span class="tl">T6</span> PHPSI 담당자 합의 + 검토자(최민수·정검토) 지정 / JOB 합의 완료</div>
+<div class="cmp">
+  <div class="cmp-col"><span class="cmp-head cmp-before">변경 전</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>현재 단계</th></tr></thead>
+      <tbody>
+        <tr><td><span class="b b-rev">검토중</span> 검토자(최민수 / 정검토)
+          <span style="color:var(--danger);font-size:0.72rem;">← 단계명 PHPSI 소실</span></td></tr>
+        <tr class="row-second"><td><span class="b b-rev">검토중</span>
+          <span class="dot-ind"><span class="dot dot-review"></span>OVL</span>
+          <span class="dot-ind"><span class="dot dot-review"></span>MASK(강동원)</span>
+          <span style="color:var(--danger);font-size:0.72rem;">← 완료된 JOB 이 사라짐</span>
+        </td></tr>
+        <tr class="row-second"><td><span class="b b-rev">검토중</span> 후결자(정고정 / 이순신)</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
+    <div class="card" style="margin:0;"><div class="grid">
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">PHPSI(최민수 / 정검토)</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">후결자(정고정)</span></div>
+      <div class="cell done"><span class="b b-done">완료</span><span class="nm">JOB</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">MASK(강동원)</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">OVL</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">추가후결자(이순신)</span></div>
+    </div></div>
+  </div>
+</div>
+<div class="note">
+  <strong>검토자 단계에서도 단계명 유지</strong>(확정 사양 #9) —
+  <code>PHPSI(박영희)</code> → <code>PHPSI(최민수 / 정검토)</code>.
+  '검토자' 라는 글자로 바뀌지 않고 <b>단계명은 그대로, 이름만 미합의 검토자로</b> 교체된다.
+  RV·PV·EV 세 검토자 모두 동일 규칙.<br />
+  <strong>완료 단계가 사라지지 않는다</strong> — 변경 전엔 합의가 끝난 JOB 이 화면에서 사라졌지만,
+  변경 후엔 <span class="b b-done">완료</span> 로 남는다.
+</div>
+
+<!-- T7 -->
+<div class="stage-label"><span class="tl">T7</span> MASK 담당자 합의 + 검토자(김검토) 지정 / 고정 후결자 합의 / PHPSI 전원 합의</div>
+<div class="cmp">
+  <div class="cmp-col"><span class="cmp-head cmp-before">변경 전</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>현재 단계</th></tr></thead>
+      <tbody>
+        <tr><td><span class="b b-done">결재완료</span> PHPSI(박영희) / 검토자(최민수) / 검토자(정검토)</td></tr>
+        <tr class="row-second"><td><span class="b b-rev">검토중</span>
+          <span class="dot-ind"><span class="dot dot-review"></span>OVL</span>
+          <span class="dot-ind"><span class="dot dot-review"></span>MASK(김검토)</span>
+        </td></tr>
+        <tr class="row-second"><td><span class="b b-rev">검토중</span> 후결자(이순신)</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
+    <div class="card" style="margin:0;"><div class="grid">
+      <div class="cell done"><span class="b b-done">완료</span><span class="nm">PHPSI</span></div>
+      <div class="cell done"><span class="b b-done">완료</span><span class="nm">후결자</span></div>
+      <div class="cell done"><span class="b b-done">완료</span><span class="nm">JOB</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">MASK(김검토)</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">OVL</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">추가후결자(이순신)</span></div>
+    </div></div>
+  </div>
+</div>
+<div class="warn">
+  <strong>완료 단계는 이름을 표시하지 않는다</strong>(확정 사양 #7, Q-d 답변 (c)) —
+  변경 전 <code>PHPSI(박영희) / 검토자(최민수) / 검토자(정검토)</code> 로 보이던 결재자 이름이
+  <b>목록에서는 더 이상 보이지 않습니다</b>. 상세 모달 '결재 경로' 탭에서 확인해야 합니다.<br />
+  같은 이유로 <b>JOB·OVL 은 이름이 한 번도 표시되지 않습니다</b>(진행 중 숨김 + 완료 시 숨김).
+</div>
+<div class="note">
+  <strong>일부만 합의한 경우 미합의자만 표시</strong>(확정 사양 #10) —
+  후결자 2명(정고정·이순신) 중 정고정만 합의 → 고정 후결자 칸은 <span class="b b-done">완료</span>,
+  추가 후결자 칸은 <code>추가후결자(이순신)</code>.
+  MASK 도 EV 2명 중 1명 합의 시 남은 사람만 <code>MASK(김검토)</code> 로 표시.
+</div>
+
+<!-- T8 -->
+<div class="stage-label"><span class="tl">T8</span> 전원 합의 → approved</div>
+<div class="card">
+  <p style="margin:0;font-size:0.86rem;color:var(--text-secondary);">
+    변경 전·후 모두 <b>결재현황 목록에서 사라진다</b> — <code>ApprovalPage.tsx:320</code> 이 approved 를 제외하므로 동일.
+    (이력 페이지에서 확인)
+  </p>
+</div>
+
+<hr class="sep" />
+
+<!-- ================= 3. 예외 경로 ================= -->
+<h2>3. 예외 경로</h2>
+
+<h3>① plel 없음 + 추가 후결자 미지정</h3>
+<div class="cmp">
+  <div class="cmp-col"><span class="cmp-head cmp-before">변경 전</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>현재 단계</th></tr></thead>
+      <tbody>
+        <tr><td><span class="b b-wait">대기중</span> PHPSI</td></tr>
+        <tr class="row-second"><td><span class="b b-wait">대기중</span>
+          <span class="dot-ind"><span class="dot dot-wait"></span>JOB</span>
+          <span class="dot-ind"><span class="dot dot-wait"></span>OVL</span>
+          <span style="color:var(--muted);font-size:0.72rem;">← MASK 칸 자체가 없음</span>
+        </td></tr>
+        <tr class="row-second"><td><span class="b b-rev">검토중</span> 후결자(정고정)</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
+    <div class="card" style="margin:0;"><div class="grid">
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">PHPSI</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">후결자(정고정)</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">JOB</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">MASK</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">OVL</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">추가후결자</span></div>
+    </div></div>
+  </div>
+</div>
+<div class="note">
+  비대상 단계가 <b>사라지지 않고 <span class="b b-na">해당없음</span> 으로 명시</b>된다 — 개편의 핵심 목적.
+  판정 기준은 step 존재 여부가 아니라 <b>결재 경로 포함 여부</b>(<code>hasPlel</code>, <code>detail.post_approvers</code>)라
+  병렬 진입 직후부터 정확히 표시된다.
+</div>
+
+<h3>② Only MAP — PHPSI·JOB·OVL·MASK 없음, 후결자만 종단</h3>
+<div class="cmp">
+  <div class="cmp-col"><span class="cmp-head cmp-before">변경 전</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>현재 단계</th></tr></thead>
+      <tbody><tr><td><span class="b b-rev">검토중</span> 후결자(정고정 / 이순신)</td></tr></tbody>
+    </table></div>
+  </div>
+  <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
+    <div class="card" style="margin:0;"><div class="grid">
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">PHPSI</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">후결자(정고정)</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">JOB</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">MASK</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">OVL</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">추가후결자(이순신)</span></div>
+    </div></div>
+  </div>
+</div>
+
+<h3>③ MAP 삭제/수정 — P·R·J·O 병렬, MASK·후결자 없음</h3>
+<div class="cmp">
+  <div class="cmp-col"><span class="cmp-head cmp-before">변경 전</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>현재 단계</th></tr></thead>
+      <tbody><tr><td><span class="b b-rev">검토중</span> (R/J/P/O)
+        <span style="color:var(--muted);font-size:0.72rem;">← 끝난 글자를 하나씩 지움</span></td></tr></tbody>
+    </table></div>
+  </div>
+  <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
+    <div class="card" style="margin:0;"><div class="grid">
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">PHPSI(박영희)</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">RFG(김철수)</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">JOB</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">MASK</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">OVL</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">추가후결자</span></div>
+    </div></div>
+  </div>
+</div>
+<div class="note">
+  <strong>고정 후결자 자리를 RFG 가 차지</strong>(확정 사양 #5) — 이 경로는 후결자를 아예 만들지 않는
+  유일한 문서 유형이라 2열 1행이 비고, 병렬 구성원인 R 을 그 자리에 넣는다.
+  <b>RV(검토자)를 지정해도 이름은 담당자 그대로 유지</b>한다(Q-b 답변) — 이 칸만 #9 규칙의 예외.
+</div>
+
+<hr class="sep" />
+
+<!-- ================= 4. 반려 / 중단 ================= -->
+<h2>4. 반려 · 중단(PAUSE)</h2>
+
+<h3>① 반려 — 현행 유지 (그리드 아님)</h3>
+<div class="cmp">
+  <div class="cmp-col"><span class="cmp-head cmp-before">변경 전</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>현재 단계</th><th class="del-col">현재예정</th><th>최종예정</th></tr></thead>
+      <tbody><tr><td><span class="b b-rej">반려됨</span> MASK(강동원)</td><td class="del-col">-</td><td>-</td></tr></tbody>
+    </table></div>
+  </div>
+  <div class="cmp-col"><span class="cmp-head cmp-after">변경 후 — 동일</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>현재 단계</th><th>최종예정</th></tr></thead>
+      <tbody><tr><td><span class="b b-rej">반려됨</span> MASK(강동원)</td><td>-</td></tr></tbody>
+    </table></div>
+  </div>
+</div>
+
+<h3>② 중단 확정(PAUSE) — 병렬 단계 중</h3>
+<div class="cmp">
+  <div class="cmp-col"><span class="cmp-head cmp-before">변경 전 — 단일 행</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>현재 단계</th><th class="del-col">현재예정</th><th>최종예정</th></tr></thead>
+      <tbody><tr><td><span class="b b-pause">PAUSE</span> JOB / OVL</td>
+        <td class="del-col" style="color:var(--muted);">중단</td>
+        <td style="color:var(--muted);">중단</td></tr></tbody>
+    </table></div>
+  </div>
+  <div class="cmp-col"><span class="cmp-head cmp-after">변경 후 — 전 칸 PAUSE</span>
+    <div class="card" style="margin:0;"><div class="grid">
+      <div class="cell"><span class="b b-pause">PAUSE</span><span class="nm">PHPSI</span></div>
+      <div class="cell"><span class="b b-pause">PAUSE</span><span class="nm">후결자</span></div>
+      <div class="cell"><span class="b b-pause">PAUSE</span><span class="nm">JOB</span></div>
+      <div class="cell"><span class="b b-pause">PAUSE</span><span class="nm">MASK</span></div>
+      <div class="cell"><span class="b b-pause">PAUSE</span><span class="nm">OVL</span></div>
+      <div class="cell"><span class="b b-pause">PAUSE</span><span class="nm">추가후결자</span></div>
+    </div></div>
+  </div>
+</div>
+<div class="note">
+  확정 사양 #12 (Q-i 답변 (a)) — <b>6칸 전부 PAUSE 뱃지로 덮는다</b>.
+  해당없음 칸도 PAUSE 로 덮을지는 위 Mock 대로 <b>전 칸 일괄</b>로 그렸다.
+  최종예정 칸은 현행처럼 <b>중단</b>(회색) 표기 유지.
+</div>
+
+<h3>③ 중단 확정(PAUSE) — 병렬 진입 이전</h3>
+<div class="card">
+  <table class="list" style="width:auto;">
+    <tbody><tr><td><span class="b b-pause">PAUSE</span> RFG</td></tr></tbody>
+  </table>
+  <p style="font-size:0.82rem;color:var(--muted);margin:8px 0 0;">
+    확정 사양 #13 (Q-j 답변) — 그리드가 없는 구간이므로 <b>현행 단일 행 유지</b>.
+  </p>
+</div>
+
+<h3>④ 중단 '요청중' (확정 전) — 대상 단계 칸에만 칩</h3>
+<div class="cmp">
+  <div class="cmp-col"><span class="cmp-head cmp-before">변경 전 — 행 맨 앞에 1개</span>
+    <div class="tw"><table class="list">
+      <thead><tr><th>현재 단계</th></tr></thead>
+      <tbody>
+        <tr><td><span class="b b-rev">검토중</span> PHPSI(박영희)
+          <span class="chip">⏸ 중단 요청중</span></td></tr>
+        <tr class="row-second"><td><span class="b b-rev">검토중</span>
+          <span class="dot-ind"><span class="dot dot-review"></span>JOB</span>
+          <span class="dot-ind"><span class="dot dot-wait"></span>OVL</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="cmp-col"><span class="cmp-head cmp-after">변경 후 — 대상 칸마다</span>
+    <div class="card" style="margin:0;"><div class="grid">
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">PHPSI(박영희)</span><span class="chip">⏸ 중단 요청중</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">후결자(정고정)</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">JOB</span><span class="chip">⏸ 중단 요청중</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">MASK</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">OVL</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">추가후결자</span></div>
+    </div></div>
+  </div>
+</div>
+<div class="note">
+  확정 사양 #14 (Q-k 답변 (b)) — <code>pause_request.target_step_ids</code> 에 포함된 단계 칸에만 칩을 붙인다.
+  뱃지는 확정 전이므로 원래 상태(검토중/대기중) 그대로 둔다.
+</div>
+
+<hr class="sep" />
+
+<!-- ================= 5. 상세 모달 ================= -->
+<h2>5. 상세 모달 '결재 경로' 탭 — 기한 표기만 삭제</h2>
+<div class="cmp">
+  <div class="cmp-col"><span class="cmp-head cmp-before">변경 전</span>
+    <div class="card" style="margin:0;font-size:0.82rem;">
+      <div style="display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-light);">
+        <b style="min-width:56px;">PHPSI</b>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span style="font-size:0.72rem;font-weight:700;color:var(--text-secondary);margin-right:6px;">합의자</span>
+            <span class="b b-done">합의</span> 박영희
+            <span style="color:var(--muted);font-size:0.75rem;">park@x.com</span>
+            <span style="color:var(--muted);font-size:0.78rem;">2026. 8. 12.</span>
+          </div>
+          <div>
+            <span style="font-size:0.72rem;font-weight:700;color:var(--text-secondary);margin-right:6px;">검토자</span>
+            <span class="b b-rev">검토중</span> 최민수
+            <span style="color:var(--muted);font-size:0.75rem;">choi@x.com</span>
+            <span style="color:var(--danger);font-size:0.75rem;">완료예정: 08/14</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
+    <div class="card" style="margin:0;font-size:0.82rem;">
+      <div style="display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--border-light);">
+        <b style="min-width:56px;">PHPSI</b>
+        <div>
+          <div style="margin-bottom:4px;">
+            <span style="font-size:0.72rem;font-weight:700;color:var(--text-secondary);margin-right:6px;">합의자</span>
+            <span class="b b-done">합의</span> 박영희
+            <span style="color:var(--muted);font-size:0.75rem;">park@x.com</span>
+            <span style="color:var(--muted);font-size:0.78rem;">2026. 8. 12.</span>
+          </div>
+          <div>
+            <span style="font-size:0.72rem;font-weight:700;color:var(--text-secondary);margin-right:6px;">검토자</span>
+            <span class="b b-rev">검토중</span> 최민수
+            <span style="color:var(--muted);font-size:0.75rem;">choi@x.com</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="note">
+  확정 사양 #15 (Q-c 답변 (a)) — <b>합의자/검토자 roleLabel 구조는 그대로</b> 두고
+  <code>완료예정: MM/DD</code> 표기만 제거한다. 목록의 단계명 유지 규칙(#9)은 이 탭에 적용하지 않는다.
+</div>
+
+<hr class="sep" />
+
+<!-- ================= 6. 규칙 요약 ================= -->
+<h2>6. 확정 사양 17항목</h2>
+<table class="rules">
+  <thead><tr><th style="width:34px;">#</th><th style="width:210px;">항목</th><th>결정</th></tr></thead>
+  <tbody>
+    <tr><td class="no">1</td><td>'현재예정' 컬럼</td><td>삭제 (표 전체). '최종예정'만 유지</td></tr>
+    <tr><td class="no">2</td><td>병렬 <b>이전</b> (PL·RFG·RV)</td><td><b>현행 유지</b> — 단일 행 텍스트</td></tr>
+    <tr><td class="no">3</td><td>병렬 <b>단계</b></td><td>3행 2열 그리드, 문서 1건 = 표 1행 (rowSpan 제거)</td></tr>
+    <tr><td class="no">4</td><td>그리드 배치</td><td>1열 <code>PHPSI / JOB / OVL</code> · 2열 <code>후결자(고정) / MASK / 추가후결자</code></td></tr>
+    <tr><td class="no">5</td><td>MAP 삭제·수정</td><td>2열 1행에 <code>RFG</code>. RV 지정돼도 담당자 이름 고정</td></tr>
+    <tr><td class="no">6</td><td>뱃지</td><td>해당없음 / 대기중 / 검토중 / 완료 (4종)</td></tr>
+    <tr><td class="no">7</td><td>이름 — 대기중·완료</td><td><b>표시 안 함</b></td></tr>
+    <tr><td class="no">8</td><td>이름 — 검토중</td><td><code>단계명(이름)</code>. 단 <b>JOB·OVL 은 숨김</b>(비대칭 유지)</td></tr>
+    <tr><td class="no">9</td><td>이름 — 검토자 단계</td><td><b>단계명 유지 + 미합의 검토자 이름</b> → <code>PHPSI(최민수 / 정검토)</code></td></tr>
+    <tr><td class="no">10</td><td>이름 — 일부만 합의</td><td><b>미합의자만</b> 표시</td></tr>
+    <tr><td class="no">11</td><td>반려</td><td>현행 단일 행 유지</td></tr>
+    <tr><td class="no">12</td><td>PAUSE (병렬 중)</td><td>그리드 <b>전 칸 PAUSE</b></td></tr>
+    <tr><td class="no">13</td><td>PAUSE (병렬 이전)</td><td>현행 단일 행</td></tr>
+    <tr><td class="no">14</td><td>'⏸ 중단 요청중' 칩</td><td><b>대상 단계 칸에만</b></td></tr>
+    <tr><td class="no">15</td><td>상세 '결재 경로' 탭</td><td>기한 표기만 삭제. 검토자 표시는 현행 유지</td></tr>
+    <tr><td class="no">16</td><td>홈 화면</td><td>그리드 동일 적용. <b>'나의 의뢰 현황' 데이터 변경은 별도 작업</b></td></tr>
+    <tr><td class="no">17</td><td><code>StageDots</code></td><td>폐기 (6칸 뱃지가 대체)</td></tr>
+  </tbody>
+</table>
+
+<h2>7. 이 개편으로 얻는 것 / 잃는 것</h2>
+<table class="rules">
+  <thead><tr><th style="width:50%;">얻는 것</th><th>잃는 것</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>문서 1건 = 1행 (경로별 행 분할·rowSpan 소멸)</td>
+      <td>단계별 완료예정일 (최종예정 1개만 남음)</td>
+    </tr>
+    <tr>
+      <td>6개 경로가 <b>항상 같은 자리</b>에 고정 표시</td>
+      <td><b>완료 단계의 결재자 이름</b> (상세 모달에서만 확인)</td>
+    </tr>
+    <tr>
+      <td>완료·비대상 단계가 사라지지 않음</td>
+      <td>JOB·OVL 은 이름이 한 번도 안 보임</td>
+    </tr>
+    <tr>
+      <td>표현 문법 통일 (점/텍스트 혼재 해소)</td>
+      <td>PL·RFG 행은 날짜 컬럼 삭제의 영향을 그대로 받음</td>
+    </tr>
+    <tr>
+      <td>비대상 단계가 <b>해당없음</b>으로 명시됨</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td>검토자 단계에서 단계명이 소실되지 않음</td>
+      <td>—</td>
+    </tr>
+  </tbody>
+</table>
+
+<p style="margin-top:34px;font-size:0.78rem;color:var(--muted);">
+  이 Mock 은 설계 확정용이며 실제 구현 색상·간격은 <code>frontend/src/styles/global.css</code> 의 토큰을 따른다.
+</p>
+
+</div>
+</body>
+</html>
