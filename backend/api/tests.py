@@ -1114,8 +1114,8 @@ class PEStageReviewerFlowTest(TestCase):
         self.assertIn('합의', e_row_html)
         self.assertNotIn('검토중', e_row_html)
 
-    def test_e_reviewer_gate_blocks_final_approval_until_any_agrees(self):
-        """EV 는 OR — 아무도 합의하지 않으면 최종 승인이 막히고, 1명이 합의하면 통과한다."""
+    def test_e_reviewer_gate_blocks_final_approval_until_all_agree(self):
+        """EV 는 AND — 검토자 중 1명만 합의해서는 최종 승인이 막히고, 전원 합의해야 통과한다."""
         doc = self._advance_to_parallel(plel=True)
         self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='E', round=1).exists())
 
@@ -1146,8 +1146,16 @@ class PEStageReviewerFlowTest(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'under_review')
 
-        # 검토자(EV) 중 1명 합의 → 나머지가 남아 있어도 최종 승인
+        # 검토자(EV) 중 1명만 합의 — 나머지가 남아 있으면 아직 최종 승인이 아니다
         self.client.force_authenticate(user=self.e_reviewer)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'EV', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review', '검토자가 아직 한 명 남아 있으면 승인되면 안 된다')
+
+        # 남은 검토자도 합의 → 전원 합의로 최종 승인
+        self.client.force_authenticate(user=self.e_reviewer2)
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'EV', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
 
@@ -1230,8 +1238,8 @@ class PEStageReviewerFlowTest(TestCase):
     def test_validation_system_change_does_not_rewind_e(self):
         """E 담당자 합의 뒤 값이 바뀌어도 되감지 않는다 — comment 에 note 만 덧붙는다.
 
-        (2026-08-06) EV 는 1명만 합의해도 단계가 끝나므로(OR), 아직 아무도 합의하지
-        않았다면 이후 합의하는 검토자가 바뀐 값을 보고 판단한다.
+        EV 는 지정된 검토자 전원이 합의해야 단계가 끝나므로(AND), 아직 합의하지 않은
+        검토자가 있다면 그 사람이 바뀐 값을 보고 판단한다.
         """
         doc = self._advance_to_parallel(plel=True)
         self._set_detail(doc, {'validation_system': 'NO', 'validation_system_submitted': 'NO'})
@@ -1553,10 +1561,10 @@ class PEStageReviewerFlowTest(TestCase):
         self.assertEqual(o_step.comment, '확인', '다른 단계의 comment 처리는 바뀌지 않는다')
 
     def test_update_blocked_after_e_stage_complete(self):
-        """E 담당자 합의만으로는 수정 창이 닫히지 않고, EV 1명이 합의하면 닫힌다.
+        """E 담당자 합의·검토자 일부 합의만으로는 수정 창이 닫히지 않고, 전원 합의해야 닫힌다.
 
-        _stage_reviewers_complete 가 EV 를 OR 로 판정하므로(2026-08-06) 게이트도
-        '검토자 중 1명이 합의한 시점' 에 닫힌다.
+        _stage_reviewers_complete 가 EV 도 P/PV 와 동일하게 AND 로 판정하므로(2026-08),
+        게이트도 '지정된 검토자 전원이 합의한 시점' 에 닫힌다.
         """
         doc = self._advance_to_parallel(plel=True)
         self._set_detail(doc, {'validation_system': 'NO'})
@@ -1569,17 +1577,26 @@ class PEStageReviewerFlowTest(TestCase):
         r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
 
-        # 검토자 1명이 합의하면 MASK 검증이 끝난 것이므로 창이 닫힌다.
+        # 검토자 1명만 합의 — 아직 한 명이 남아 있으므로 창은 계속 열려 있다.
         self.client.force_authenticate(user=self.e_reviewer)
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'EV', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
 
         self.client.force_authenticate(user=self.requester)
         r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'NO'}, format='json')
-        self.assertEqual(r.status_code, 400, r.content)
-        self.assertEqual(self._get_detail(doc)['validation_system'], 'YES')
+        self.assertEqual(r.status_code, 200, r.content)  # 검토자가 아직 한 명 남아 있으면 수정 창이 닫히면 안 된다
 
-    # ----- EV(2차 검토자) OR 합의 + 남은 검토자 skip 마감 -----
+        # 남은 검토자도 합의하면 MASK 검증이 끝난 것이므로 창이 닫힌다.
+        self.client.force_authenticate(user=self.e_reviewer2)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'EV', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(self._get_detail(doc)['validation_system'], 'NO')
+
+    # ----- EV(2차 검토자) 전원 합의(AND) -----
 
     def _approve_j_o(self, doc):
         """J·O 를 합의 처리해 최종 승인 판정이 E/EV 만 남도록 만든다."""
@@ -1593,8 +1610,8 @@ class PEStageReviewerFlowTest(TestCase):
         self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
         self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O', 'comment': ''}, format='json')
 
-    def test_ev_single_approval_completes_e_stage(self):
-        """EV 2명 중 1명만 합의해도 E 단계가 끝나 문서가 최종 승인된다(OR)."""
+    def test_ev_all_reviewers_required_to_complete_e_stage(self):
+        """EV 2명 중 1명만 합의해서는 E 단계가 끝나지 않고, 전원 합의해야 문서가 최종 승인된다(AND)."""
         doc = self._advance_to_parallel(plel=True)
         self._approve_j_o(doc)
         self.assertEqual(
@@ -1608,10 +1625,17 @@ class PEStageReviewerFlowTest(TestCase):
         self.assertEqual(r.status_code, 200, r.content)
 
         doc.refresh_from_db()
-        self.assertEqual(doc.status, 'approved', '검토자 1명 합의로 E 단계가 완료된다')
+        self.assertEqual(doc.status, 'under_review', '검토자 1명만 합의했으면 아직 최종 승인이 아니다')
 
-    def test_ev_remaining_steps_are_skipped(self):
-        """EV 1명이 합의하면 같은 회차의 남은 EV step 은 skip 으로 닫힌다."""
+        self.client.force_authenticate(user=self.e_reviewer2)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'EV', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'approved', '검토자 전원 합의로 E 단계가 완료된다')
+
+    def test_ev_remaining_step_stays_pending_after_one_approves(self):
+        """(2026-08) EV 1명이 합의해도 나머지 검토자는 자동으로 닫히지 않고 pending 그대로 남는다 — 각자 직접 합의해야 한다."""
         doc = self._advance_to_parallel(plel=True)
         self.assertEqual(
             self._approve_e(doc, reviewers=[self.e_reviewer.loginid, self.e_reviewer2.loginid]).status_code, 200
@@ -1621,11 +1645,11 @@ class PEStageReviewerFlowTest(TestCase):
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'EV', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
 
-        skipped = ApprovalStep.objects.get(
+        remaining = ApprovalStep.objects.get(
             document=doc, agent='EV', round=1, assignee__loginid=self.e_reviewer2.loginid
         )
-        self.assertEqual(skipped.action, 'skip', 'pending 으로 두면 결재 경로에 검토중으로 영구 표시된다')
-        self.assertIsNotNone(skipped.acted_at, '마감 시각이 있어야 이력으로 읽힌다')
+        self.assertEqual(remaining.action, 'pending', '전원 합의(AND)이므로 나머지 검토자를 자동으로 닫으면 안 된다')
+        self.assertIsNone(remaining.acted_at)
         self.assertEqual(
             ApprovalStep.objects.get(
                 document=doc, agent='EV', round=1, assignee__loginid=self.e_reviewer.loginid
@@ -1635,7 +1659,7 @@ class PEStageReviewerFlowTest(TestCase):
         )
 
     def test_ev_skip_is_not_applied_to_pv(self):
-        """P 검토자(PV)는 여전히 AND — 1명 합의로는 완료되지 않고 나머지도 pending 이다."""
+        """P 검토자(PV)는 원래부터 AND — 1명 합의로는 완료되지 않고 나머지도 pending 이다(EV도 2026-08부터 동일 규칙)."""
         doc = self._advance_to_parallel(plel=True)
         self.client.force_authenticate(user=self.p_owner)
         self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
@@ -1678,8 +1702,8 @@ class PEStageReviewerFlowTest(TestCase):
 
         self.assertTrue(RequestDocumentViewSet()._stage_reviewers_complete(doc, 'E', 1))
 
-    def test_validation_system_blocked_after_any_ev_approval(self):
-        """EV 1명이 합의하면 그 시점에 값 수정 창이 닫힌다(400)."""
+    def test_validation_system_blocked_after_all_ev_approval(self):
+        """EV 1명만 합의했을 땐 값 수정 창이 열려 있고, 전원 합의해야 닫힌다(400)."""
         doc = self._advance_to_parallel(plel=True)
         self._set_detail(doc, {'validation_system': 'NO'})
         self.assertEqual(
@@ -1690,6 +1714,13 @@ class PEStageReviewerFlowTest(TestCase):
 
         self.client.force_authenticate(user=self.requester)
         r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)  # 검토자가 아직 한 명 남아 있으면 수정 창이 닫히면 안 된다
+
+        self.client.force_authenticate(user=self.e_reviewer2)
+        self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'EV', 'comment': ''}, format='json')
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'NO'}, format='json')
         self.assertEqual(r.status_code, 400, r.content)
         self.assertEqual(r.data['error'], 'MASK 검토가 끝난 의뢰서는 변경할 수 없습니다.')
 

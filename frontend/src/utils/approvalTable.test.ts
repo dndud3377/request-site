@@ -119,6 +119,75 @@ describe('getDocTableRows — 경로2(O+E) 상태점(subStages)', () => {
     const path2 = rows.find((r) => r.pathKey === 'path2')!;
     expect(path2.subStages).toBeUndefined();
   });
+
+  it('A가 E를 선점만 하고 검토자를 아직 지정하지 않았으면 E 상태점 이름은 A(담당자)다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+      makeStep({ agent: 'E', action: 'pending', assignee_loginid: 'a', assignee_name: 'A' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    const path2 = rows.find((r) => r.pathKey === 'path2')!;
+    const eSub = path2.subStages?.find((s) => s.label === 'approval.agent_E');
+    expect(eSub).toEqual({ label: 'approval.agent_E', state: 'review', name: 'A' });
+  });
+
+  it('A가 담당자 합의 + 검토자 B를 지정하면 E 상태점 이름이 A에서 B로 바뀐다(AND, 검토자 미합의 상태)', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+      makeStep({ agent: 'E', action: 'approved', assignee_loginid: 'a', assignee_name: 'A' }),
+      makeStep({ agent: 'EV', action: 'pending', assignee_loginid: 'b', assignee_name: 'B' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    const path2 = rows.find((r) => r.pathKey === 'path2')!;
+    const eSub = path2.subStages?.find((s) => s.label === 'approval.agent_E');
+    expect(eSub).toEqual({ label: 'approval.agent_E', state: 'review', name: 'B' });
+  });
+
+  it('검토자가 B·C 2명 지정돼 있고 둘 다 미합의면 E 상태점 이름이 "B / C"로 합쳐진다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+      makeStep({ agent: 'E', action: 'approved', assignee_loginid: 'a', assignee_name: 'A' }),
+      makeStep({ agent: 'EV', action: 'pending', assignee_loginid: 'b', assignee_name: 'B' }),
+      makeStep({ agent: 'EV', action: 'pending', assignee_loginid: 'c', assignee_name: 'C' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    const path2 = rows.find((r) => r.pathKey === 'path2')!;
+    const eSub = path2.subStages?.find((s) => s.label === 'approval.agent_E');
+    expect(eSub).toEqual({ label: 'approval.agent_E', state: 'review', name: 'B / C' });
+  });
+
+  it('B·C 중 B가 먼저 합의하면(AND, 아직 미완료) E 상태점 이름이 남은 C만 보여준다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+      makeStep({ agent: 'E', action: 'approved', assignee_loginid: 'a', assignee_name: 'A' }),
+      makeStep({ agent: 'EV', action: 'approved', assignee_loginid: 'b', assignee_name: 'B' }),
+      makeStep({ agent: 'EV', action: 'pending', assignee_loginid: 'c', assignee_name: 'C' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    const path2 = rows.find((r) => r.pathKey === 'path2')!;
+    const eSub = path2.subStages?.find((s) => s.label === 'approval.agent_E');
+    expect(eSub).toEqual({ label: 'approval.agent_E', state: 'review', name: 'C' });
+  });
+
+  it('검토자 B·C 전원 합의(AND 완료)면 O도 끝났을 때 완료 텍스트에 O·E·검토자 전원 이름이 나열된다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'O', action: 'approved', assignee_name: '김철수' }),
+      makeStep({ agent: 'E', action: 'approved', assignee_name: 'A' }),
+      makeStep({ agent: 'EV', action: 'approved', assignee_name: 'B' }),
+      makeStep({ agent: 'EV', action: 'approved', assignee_name: 'C' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    const path2 = rows.find((r) => r.pathKey === 'path2')!;
+    expect(path2.isDone).toBe(true);
+    expect(path2.pathStatus).toBe('approved');
+    expect(path2.subStages).toBeUndefined();
+    ['김철수', 'A', 'B', 'C'].forEach((name) => expect(path2.stageText).toContain(name));
+  });
 });
 
 describe('getFinalCompletionDate — R 의 기한도 후보에 포함', () => {

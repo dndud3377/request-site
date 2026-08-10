@@ -672,8 +672,11 @@ export default function HomePage(): React.ReactElement {
                           <td style={{ fontWeight: 500 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <StatusBadge status={row.pathStatus} />
-                              <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{row.stageText}</span>
-                              {row.subStages && <StageDots subStages={row.subStages} />}
+                              {row.subStages ? (
+                                <StageDots subStages={row.subStages} />
+                              ) : (
+                                <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{row.stageText}</span>
+                              )}
                               {idx === 0 && doc.pause_request?.state === 'requested' && (
                                 <span className="pause-req-chip">⏸ {t('approval.pause_requested_chip')}</span>
                               )}

@@ -591,21 +591,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         new_status = document.status
         current_round = step.round
 
-        # EV(2차 검토자)는 1명만 합의하면 MASK 검증이 끝난다(OR) — 같은 회차의 남은 검토자는
-        # 더 볼 것이 없으므로 'skip' 으로 닫는다. pending 으로 두면 결재 경로에 '검토중' 으로
-        # 영구 표시되고, 그 사람이 뒤늦게 누르면 이미 승인된 문서를 다시 건드린다.
-        #
-        # select_for_update 로 잠그는 이유: get_object() 가 문서 락보다 먼저 실행되는 평문
-        # SELECT 라 이 트랜잭션의 읽기 스냅샷은 락 획득 이전에 고정된다. 평문으로 읽으면
-        # 직전에 커밋된 다른 EV 의 변경을 못 보고 일부를 놓칠 수 있다.
-        if agent == 'EV' and self._stage_reviewers_complete(document, 'E', current_round):
-            pending_evs = list(ApprovalStep.objects.select_for_update().filter(
-                document=document, agent='EV', action='pending', round=current_round,
-            ))
-            if pending_evs:
-                ApprovalStep.objects.filter(id__in=[s.id for s in pending_evs]).update(
-                    action='skip', acted_at=timezone.now(),
-                )
+        # (2026-08) EV 는 P/PV 와 동일하게 지정된 검토자 전원 합의(AND)로 바뀌어, 1명 합의로
+        # 나머지를 자동 'skip' 처리하던 동작을 없앴다. 남은 검토자는 pending 상태로 남아
+        # 각자 직접 합의해야 한다. 'skip' 값 자체는 그 이전(OR 시절) 문서의 이력으로만 남는다.
 
         # 'MAP 삭제/수정' 은 P·R·J·O 가 모두 병렬 구성원이라, 넷 중 무엇이 마지막이 되든
         # 여기서 최종 승인을 판정해야 한다. 아래 일반 경로 분기는 P·R 합의로는 승인 판정을
@@ -1176,15 +1164,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def _stage_reviewers_complete(self, document, agent, round_no):
         """P/E 단계가 담당자 + 지정된 검토자(PV/EV) 합의로 끝났는지 여부.
 
-        완료 판정이 단계마다 다르다:
-        - E/EV: **OR** — 검토자 중 1명만 합의하면 완료. MASK 검증은 담당자 판단을
-          한 사람이 더 확인하면 충분하다는 것이 원래 의도다. 나머지 검토자는
-          호출부(approve_step)에서 'skip' 으로 닫는다.
-        - P/PV: **AND** — 전원 합의. 기존 동작 그대로다(이번 변경 범위 밖).
+        P/PV·E/EV 모두 **AND** — 지정된 검토자 전원이 합의해야 완료다(2026-08 변경 전에는
+        EV만 OR 로 1명 합의 시 완료 처리하고 나머지를 자동 'skip' 했으나, 지정한 검토자
+        전원의 확인이 필요하다는 요구사항에 맞춰 P/PV와 동일한 규칙으로 통일했다).
 
         검토자가 하나도 지정되지 않았으면 담당자 합의만으로 완료(하위호환).
         ⚠️ 이 가드를 빼면 안 된다 — 검토자 없이 E 합의를 마친 레거시 문서에는
-        검토자를 지정할 경로가 없어, any() 가 False 를 돌려주면 영구 잠긴다.
+        검토자를 지정할 경로가 없어, all() 이 False 를 돌려주면 영구 잠긴다.
         """
         main_step = ApprovalStep.objects.filter(document=document, agent=agent, round=round_no).first()
         if not main_step or main_step.action != 'approved':
@@ -1195,8 +1181,6 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         ))
         if not reviewer_steps:
             return True
-        if review_agent == 'EV':
-            return any(s.action == 'approved' for s in reviewer_steps)
         return all(s.action == 'approved' for s in reviewer_steps)
 
     def _advance_after_p_review(self, document, round_no):
@@ -1519,8 +1503,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def _note_validation_system_change(self, document, round_no, previous, value, actor):
         """E 담당자가 이미 합의한 뒤 값이 바뀌면 그 사실을 E step comment 에 남긴다.
 
-        되감지 않는다(2026-08-06 결정). EV 는 1명만 합의해도 단계가 끝나므로(OR),
-        아직 아무도 합의하지 않았다면 이후 합의하는 검토자가 바뀐 값을 보고 판단하게 된다.
+        되감지 않는다(2026-08-06 결정). EV 는 지정된 검토자 전원이 합의해야 단계가 끝나므로(AND),
+        아직 합의하지 않은 검토자가 있다면 그 사람들이 바뀐 값을 보고 판단하게 된다.
         E 담당자 본인이 재확인하지 않는 리스크는 사용자가 명시적으로 수용했고, 그래서
         '언제 무엇이 어떻게 바뀌었는지' 를 남기는 이 note 가 유일한 감사 추적이다.
 
