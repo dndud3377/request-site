@@ -73,19 +73,14 @@ export const getFinalCompletionDate = (doc: RequestDocument): string => {
   const path0Dates = [rStep?.due_date, rvStep?.due_date].filter(Boolean) as string[];
   const path0End = path0Dates.length > 0 ? path0Dates.reduce((a, b) => (a > b ? a : b)) : null;
 
-  // path2: max(O.due, E.due)
-  const path2Dates = [oStep?.due_date, eStep?.due_date].filter(Boolean) as string[];
+  // path2: max(J.due, O.due, E.due) — J 는 P 뒤 순차가 아니라 O/E 와 같은 병렬 단계다(2026-08).
+  const path2Dates = [jStep?.due_date, oStep?.due_date, eStep?.due_date].filter(Boolean) as string[];
   const path2End = path2Dates.length > 0 ? path2Dates.reduce((a, b) => (a > b ? a : b)) : null;
 
-  // path1: J.due or estimated (P.due + 4 calendar days)
-  let path1End: string | null = null;
-  if (jStep?.due_date) {
-    path1End = jStep.due_date;
-  } else if (pStep?.due_date) {
-    const d = new Date(pStep.due_date);
-    d.setDate(d.getDate() + 4);
-    path1End = d.toISOString().slice(0, 10);
-  }
+  // path1: P.due. 예전에는 J 가 P 완료 후에야 생성돼 J 기한을 'P.due + 4 달력일'로 추정했지만
+  // (영업일이 아니라 실제 값과 어긋났다), 이제 J 는 R 합의 시점부터 실제 due_date 를 가지고
+  // path2 후보로 들어가므로 추정이 필요 없다.
+  const path1End: string | null = pStep?.due_date ?? null;
 
   // path3: 후결자(RA) 최대 due
   const raDates = raSteps.map(s => s.due_date).filter(Boolean) as string[];
@@ -299,57 +294,51 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
   // (다른 모든 경로는 R 이 관문이라 parallelPresent 시점엔 R 이 항상 이미 approved 다 —
   // 그래서 여기엔 R 을 위한 행이 없다. rStep/rvStep 은 위 isMapDeleteEditDoc 분기에서만 쓰인다).
 
-  // 경로1: P(→검토자 PV, 다중 가능)→J. 담당자 합의만으로 끝나지 않고 검토자 전원 합의까지 끝나야
-  // J 가 생성되므로, 담당자 합의 후 검토자가 아직 남아 있으면 '검토자' 단계로 표시한다.
-  if (pStep || pvSteps.length > 0 || jSteps.length > 0) {
+  // 경로1: P(→검토자 PV, 다중 가능). 담당자 합의만으로 끝나지 않고 검토자 전원 합의까지 끝나야
+  // 완료이므로, 담당자 합의 후 검토자가 아직 남아 있으면 '검토자' 단계로 표시한다.
+  // (2026-08) J 는 이 경로에서 빠져 O/E 와 같은 병렬 단계가 됐다 — 아래 경로2에서 함께 표시한다.
+  if (pStep || pvSteps.length > 0) {
     const path1PendingP = pStep?.action === 'pending' ? pStep : undefined;
     const pvPendingSteps = pvSteps.filter(s => s.action === 'pending');
-    const jPendingSteps = jSteps.filter(s => s.action === 'pending');
-    const path1Done = !path1PendingP && pvPendingSteps.length === 0 && jSteps.length > 0 && jPendingSteps.length === 0;
+    const path1Done = !path1PendingP && pvPendingSteps.length === 0;
     let stageText: string; let dueDate: string | null; let pathStatus: string;
     if (path1Done) {
-      // 완료 시점엔 검토중이라 가려뒀던 J 이름도 포함해 실제로 결재했던 사람 전원을 보여준다.
-      stageText = namedApprovers([...(pStep ? [pStep] : []), ...pvSteps, ...jSteps]) ?? t('common.status_approved');
+      stageText = namedApprovers([...(pStep ? [pStep] : []), ...pvSteps]) ?? t('common.status_approved');
       dueDate = null;
       pathStatus = 'approved';
     } else if (path1PendingP) {
       stageText = buildStageText(path1PendingP, false, t);
       dueDate = path1PendingP.due_date ?? null;
       pathStatus = path1PendingP.assignee_loginid ? 'under_review' : 'unassigned';
-    } else if (pvPendingSteps.length > 0) {
+    } else {
       // 담당자는 합의했으나 지정된 검토자가 아직 남아 있음
       const label = t('approval.stage_reviewer' as any);
       const names = pvPendingSteps.map(s => s.assignee_name).filter(Boolean);
       stageText = names.length > 0 ? `${label}(${names.join(' / ')})` : label;
       dueDate = pvPendingSteps[0]?.due_date ?? null;
       pathStatus = 'under_review';
-    } else {
-      // J는 검토중(claim) 방식 — 진행 중에는 담당자 이름을 노출하지 않는다(완료 후에는 위 path1Done 분기에서 표시).
-      stageText = t('approval.agent_J' as any);
-      dueDate = jPendingSteps[0]?.due_date ?? null;
-      const jHasUnassigned = jPendingSteps.some(s => !s.assignee_loginid);
-      pathStatus = jHasUnassigned ? 'unassigned' : 'under_review';
     }
     rows.push({ pathKey: 'path1', stageText, dueDate, isDone: path1Done, pathStatus });
   }
 
-  // 경로2: O/E(→검토자 EV, 다중 가능). E 담당자 합의만으로 끝나지 않고 검토자 전원 합의까지 필요.
-  if (oStep || eStep) {
-    const p2MainPending = ([oStep, eStep] as (typeof oStep)[]).filter(
+  // 경로2: J/O/E(→검토자 EV, 다중 가능). E 담당자 합의만으로 끝나지 않고 검토자 전원 합의까지 필요.
+  // (2026-08) J 가 P 뒤 순차 단계에서 분리돼 O/E 와 같은 병렬 단계가 되면서 이 행에 합류했다.
+  if (jSteps.length > 0 || oStep || eStep) {
+    const p2MainPending = ([...jSteps, oStep, eStep] as (typeof oStep)[]).filter(
       (s): s is NonNullable<typeof oStep> => !!s && s.action === 'pending'
     );
     const evPendingSteps = evSteps.filter(s => s.action === 'pending');
     const done = p2MainPending.length === 0 && evPendingSteps.length === 0;
     const stageText = done
-      // 완료 시점엔 검토중이라 가려뒀던 O 이름도 포함해 실제로 결재했던 사람 전원을 보여준다.
+      // 완료 시점엔 검토중이라 가려뒀던 J·O 이름도 포함해 실제로 결재했던 사람 전원을 보여준다.
       // skip(건너뜀) 된 EV 는 판단하지 않았으므로 결재자로 표시하지 않는다.
-      ? namedApprovers([...(oStep ? [oStep] : []), ...(eStep ? [eStep] : []),
+      ? namedApprovers([...jSteps, ...(oStep ? [oStep] : []), ...(eStep ? [eStep] : []),
                         ...evSteps.filter((s) => s.action === 'approved')]) ?? t('common.status_approved')
       : [
           ...p2MainPending.map(s => {
             const l = t(`approval.agent_${s.agent}` as any);
-            // O는 J와 동일하게 검토중(claim) 방식이라 진행 중에는 담당자 이름을 노출하지 않는다.
-            if (s.agent === 'O') return l;
+            // J·O는 검토중(claim) 방식이라 진행 중에는 담당자 이름을 노출하지 않는다(E만 표시).
+            if (s.agent === 'O' || s.agent === 'J') return l;
             return s.assignee_name ? `${l}(${s.assignee_name})` : l;
           }),
           ...evPendingSteps.map(s => {
@@ -361,21 +350,34 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
       if (!s.due_date) return m;
       return !m || s.due_date > m ? s.due_date : m;
     }, null);
-    // O·E가 같이 있고 아직 진행 중일 때만 상태점용 개별 상태를 채운다(둘 다 pending일 수 있어
-    // 대표 뱃지 하나로는 "한쪽만 검토중" 같은 중간 상태가 안 드러나기 때문 — docs/APPROVAL.md §3.3).
-    const subStages: DocSubStage[] | undefined = (!done && oStep && eStep)
+    // J·O(+E)가 한 행에 모여 있고 아직 진행 중이면 상태점용 개별 상태를 채운다(여럿이 동시에
+    // pending 일 수 있어 대표 뱃지 하나로는 "한쪽만 검토중" 같은 중간 상태가 안 드러나기 때문
+    // — docs/APPROVAL.md §3.3). 화면은 subStages 가 있으면 stageText 대신 상태점만 렌더한다.
+    // E 상태점 이름: 아직 합의하지 않은 검토자(evPendingSteps)가 있으면 그 이름들(다중이면 ' / '로
+    // 연결)을 보여준다 — 공이 담당자에서 검토자에게 넘어갔음을 나타낸다. 검토자가 아직 지정되지
+    // 않았으면(=담당자만 선점한 단계) 담당자 이름을 그대로 보여준다.
+    const eReviewerNames = evPendingSteps.map(s => s.assignee_name).filter(Boolean).join(' / ') || undefined;
+    const jPendingSteps = jSteps.filter(s => s.action === 'pending');
+    const subStages: DocSubStage[] | undefined = (!done && jSteps.length > 0 && oStep)
       ? [
-          { label: t('approval.agent_O' as any), state: oStep.action === 'approved' ? 'done' : (oStep.assignee_loginid ? 'review' : 'wait') },
+          // J 는 검토중(claim) 방식이라 진행 중에는 이름을 노출하지 않는다(stageText 규칙과 동일).
           {
-            label: t('approval.agent_E' as any),
-            state: eStep.action !== 'approved'
-              ? (eStep.assignee_loginid ? 'review' : 'wait')
-              : (evPendingSteps.length > 0 ? 'review' : 'done'),
-            name: eStep.assignee_name,
+            label: t('approval.agent_J' as any),
+            state: jPendingSteps.length === 0
+              ? 'done'
+              : (jPendingSteps.some(s => s.assignee_loginid) ? 'review' : 'wait'),
           },
+          { label: t('approval.agent_O' as any), state: oStep.action === 'approved' ? 'done' : (oStep.assignee_loginid ? 'review' : 'wait') },
+          ...(eStep ? [{
+            label: t('approval.agent_E' as any),
+            state: (eStep.action !== 'approved'
+              ? (eStep.assignee_loginid ? 'review' : 'wait')
+              : (evPendingSteps.length > 0 ? 'review' : 'done')) as DocSubStage['state'],
+            name: evPendingSteps.length > 0 ? eReviewerNames : eStep.assignee_name,
+          }] : []),
         ]
       : undefined;
-    // 대표 뱃지: 배열에서 먼저 오는 항목만 보던 기존 로직 대신, O·E·EV 중 하나라도 배정돼 있으면 검토중으로 판정한다
+    // 대표 뱃지: 배열에서 먼저 오는 항목만 보던 기존 로직 대신, J·O·E·EV 중 하나라도 배정돼 있으면 검토중으로 판정한다
     // (예전엔 O가 미배정이면 E가 이미 검토중이어도 뱃지가 '대기중'으로 보이는 문제가 있었음).
     // doc.status==='rejected'/'pause' 는 이 지점에 도달하기 전에 이미 위에서 early return 됐다(§3.3).
     const anyAssigned = [...p2MainPending, ...evPendingSteps].some(s => s.assignee_loginid);

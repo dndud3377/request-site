@@ -20,7 +20,7 @@
 ### RA 제목 분기 + P 단계 통보 (2026-08)
 1. **RA(후결자) 제목 분기** — 고정 후결자(`settings.POST_APPROVER_LOGINID`)는 기존대로 `[후결 요청] {제목}`, 그 외 추가 후결자(C가문)는 다른 개인 지정 메일과 동일한 `[이름님] [결재 요청] {제목}` 형식으로 분리(§3 표, §3 "제목·본문 규칙").
 2. **`stage_arrival` 제목 접미사 삭제** — 모든 단계의 메일 제목에서 `- {단계라벨}` 접미사를 제거. 단계 구분은 본문 KPI 카드로만 표시.
-3. **P 단계 도착/완료 통보 신설** — P 단계가 생성되면 `notify_p_arrival`로 TE_J 팀 전원에게, P 단계(담당자+검토자) 합의가 모두 끝나면 `notify_p_completed`로 TE_O 팀 전원에게 참고용 통보 메일을 발송(§3 표, §4 표).
+3. **P 단계 완료 통보 신설** — P 단계(담당자+검토자) 합의가 모두 끝나면 `notify_p_completed`로 **TE_O + TE_J 팀 전원**에게 참고용 통보 메일을 발송(§3 표, §4 표). ⚠️ **(2026-08) `notify_p_arrival`(P 도착 → TE_J) 은 폐지**됐다 — J 가 R 합의 시점의 독립 병렬 단계가 되면서 TE_J 가 `stage_arrival`(J) 결재 요청 메일을 직접 받게 돼 중복이 됐고, 대신 TE_J 를 이 완료 통보 수신자에 합류시켰다.
 
 ---
 
@@ -99,8 +99,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | approved | (완료) | **현재(최종) 회차 결재 경로에 참여했던 전원**(assignee 배정된 모든 단계, 중복 제거) — 2026-07부터 "작성자 그룹 멤버" 방식에서 변경. ⚠️ **'나만의 그룹'은 더 이상 어떤 메일의 수신자 기준도 아니다**(2026-08 문서 정정 — 코드에는 이미 없었는데 모델 docstring·가이드 문구에만 남아 있었다) |
 | notify_submitted | (상신·재상신) | **통보처 전원**(`detail.notifiers`). 통보처는 개별 검색·주소록 불러오기 외에 **'나만의 그룹' 일괄 추가**(2026-08)로도 채울 수 있으나, 저장 포맷이 같아 발송 로직은 동일하다 |
 | notify_approved | (완료) | **통보처 전원**(`detail.notifiers`) |
-| notify_p_arrival | (P 단계 도착, 2026-08 추가) | **TE_J 팀 전원** — 결재 권한과 무관한 참고 통보. P 단계 생성 시점(`_advance_to_parallel`)에 `stage_arrival`(P)과 같이 발송 |
-| notify_p_completed | (P 단계 완료, 2026-08 추가) | **TE_O 팀 전원** — 결재 권한과 무관한 참고 통보. P 담당자+검토자(PV) 전원 합의가 끝나 J가 생성되는 시점(`_advance_after_p_review`)에 발송 |
+| notify_p_completed | (P 단계 완료, 2026-08 추가) | **TE_O + TE_J 팀 전원** — 결재 권한과 무관한 참고 통보. P 담당자+검토자(PV) 전원 합의로 P 단계가 완료되는 시점(`_notify_after_p_review`)에 발송. 수신자 중복은 `_apply_redirect` 가 제거한다 |
 
 ### 3.1 반려(rejected) 수신자 상세 — 잔여 결재선 기준 (2026-07 개편)
 
@@ -135,13 +134,13 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 - **본문 링크는 해당 문서 상세로 딥링크**된다(`_detail_link`): 진행 중 이벤트(`stage_arrival`/`rejected`/`revision_requested`/`notify_submitted`)는 `{FRONTEND_URL}/approval?id={문서ID}`, 완료 관련 이벤트(`approved`/`notify_approved`)는 `{FRONTEND_URL}/history?id={문서ID}`(완료 문서는 결재현황 목록에서 빠지므로). 프론트(`ApprovalPage.tsx`/`HistoryPage.tsx`)가 `?id=` 쿼리를 감지해 목록과 무관하게 그 문서를 직접 조회 후 상세 모달을 자동으로 연다.
 
 ### 본문 디자인 — 히어로 헤더 + KPI 카드 (2026-07 개편)
-- 본문 HTML은 `_render_hero_kpi_email()`(공통 템플릿) + `_kpi_grid()`(2x2 타일)로 렌더링되며, 모든 이벤트 타입(`stage_arrival`/`rejected`/`revision_requested`/`approved`/`notify_submitted`/`notify_approved`/`notify_p_arrival`/`notify_p_completed`)이 이 템플릿을 공유한다.
+- 본문 HTML은 `_render_hero_kpi_email()`(공통 템플릿) + `_kpi_grid()`(2x2 타일)로 렌더링되며, 모든 이벤트 타입(`stage_arrival`/`rejected`/`revision_requested`/`approved`/`notify_submitted`/`notify_approved`/`notify_p_completed`)이 이 템플릿을 공유한다.
 - 구성: 솔리드 컬러 히어로(시스템명 + 이벤트 안내 문구) → 흰 카드(의뢰서 제목 + KPI 타일 4개: 결재 단계/의뢰자/상신일/생산 진행일) → **결재 경로 카드**(2026-07 추가, 아래 참고) → 특이사항(`reference_materials`) 카드 → CTA 버튼 → 푸터. 카드 바깥은 연한 색조 배경.
 - **이벤트별 색상 테마**(`EVENT_THEME`): 히어로/버튼/카드 테두리/KPI 타일 배경을 이벤트 타입에 따라 통일된 팔레트로 분기한다.
   - `stage_arrival`: 블루 `#2563eb → #3b82f6`
   - `rejected`: 레드 `#dc2626 → #ef4444`
   - `approved`: 그린 `#16a34a → #22c55e`
-  - `notify_submitted`/`notify_approved`/`notify_p_arrival`/`notify_p_completed`: 퍼플 `#7c3aed → #8b5cf6`
+  - `notify_submitted`/`notify_approved`/`notify_p_completed`: 퍼플 `#7c3aed → #8b5cf6`
   - `EVENT_THEME`에 없는 이벤트 타입은 `stage_arrival`(블루) 테마로 대체된다.
 - **결재 단계** 타일: `stage_arrival`은 `AGENT_LABEL`, 그 외 이벤트는 `EVENT_STATUS_LABEL`(반려/승인 완료/상신 통보/결재 완료 통보/P 단계 도착 통보/P 단계 완료 통보)을 표시한다.
 - **생산 진행일**(`document.production_date`)과 **특이사항**(`document.reference_materials`, 상신 화면의 "특이사항" 입력값)은 값이 없으면 `-`로 표시한다.
@@ -183,7 +182,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 - **주소록(2026-07)**: 상신 모달의 '통보처 불러오기'는 주소록(`AddressBook`) 구성원을 `detail.notifiers`에 채우는 것뿐이라 발송 로직은 동일하다. 이메일 미등록자는 위 `.exclude(mail='')`로 자동 제외되므로, 상신 화면에서 인라인 경고로 미리 안내한다.
 
 - 단계 → 역할 매핑: `AGENT_ROLE_MAP` (PL→PL, R→TE_R, P→TE_P, J→TE_J, O→TE_O, E→TE_E). 무배정 단계 도착 시 팀 브로드캐스트(`_team_emails`)뿐 아니라, R/RV 반려 시 `TE_R` 팀 전원 포함(2026-07 추가)에도 동일하게 쓰인다.
-- J 미지정 고정 주소: `UNASSIGNED_FALLBACK` = `user_J@company.com` (R은 2026-07부터 팀 전원 브로드캐스트로 전환되어 고정 주소 사용 안 함)
+- ⚠️ **(2026-08) 고정 주소 폴백 폐지**: J 미지정 시 쓰던 `UNASSIGNED_FALLBACK` = `user_J@company.com` 을 **딕셔너리째 삭제**했다. J 가 R 합의 시점의 독립 병렬 단계가 되어 TE_J 팀원 누구나 선점·합의하므로, R·P 와 동일하게 **미배정이면 팀 전원 / 배정 후엔 그 담당자 1명** 규칙을 쓴다. 이로써 하드코딩 수신 주소(`docs/E2E_TEST_AND_BUGS.md` B-44)도 사라져 코드에 고정 주소가 남지 않는다.
 - 이메일이 빈(`mail=''`) 사용자는 수신 대상에서 제외된다.
 - `MAIL_REDIRECT_TO` 가 설정되면 위 결과를 무시하고 **전원 그 주소로 강제**(개발/검증용).
 
@@ -199,9 +198,9 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | `submit` / `resubmit` (상신·재상신) | ✅ | 지정 PL **전원**에게 stage_arrival(제목에 `[이름님]`, 2026-07 추가) + 통보처 전원에게 notify_submitted |
 | `withdraw` (철회) | ❌ | 알림 없음 |
 | `delete` (삭제) | ❌ | 알림 없음 |
-| `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·O·E·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일). **P 단계가 생성되면 TE_J에게 notify_p_arrival도 함께 발송(2026-08 추가)** |
-| `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·O·E·[RA 각각]에게 동시 발송. **P 단계 생성 시 TE_J notify_p_arrival도 동일하게 발송** |
-| `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나야 **J에게** 발송(+**TE_O에게 notify_p_completed 동시 발송, 2026-08 추가**). 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨) |
+| `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일). **(2026-08) J 도착 메일이 여기로 앞당겨졌고**, 미배정 J 의 수신자도 고정 주소 1곳 → **TE_J 팀 전원**으로 바뀌었다 |
+| `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(위와 동일) |
+| `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나면 **TE_O·TE_J 에게 notify_p_completed 발송**. 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨). **(2026-08) 이 시점의 J 생성·J 도착 메일은 R 합의 시점으로 이동**했다 |
 | `approve-step` P/E 합의 + `reviewer_loginids`(검토자 지정) | ✅ | 지정된 검토자(PV/EV) **각각**에게 즉시(담당자 합의와 **같은 요청**으로 처리되므로 같은 순간 발송) |
 | `approve-step` agent=J/O/E/EV/RA (병렬 경로 합의) | 🟡 | 이 합의로 **문서 전체가 approved 로 전이될 때만** approved(결재 경로 참여 전원) + notify_approved(통보처) 발송. 다른 경로가 아직 안 끝났으면 이 개별 합의는 **무메일**(침묵 — 예: J는 합의됐는데 O가 아직이면 알림 없음) |
 | `reject-step` (어느 단계든 반려, PL 제외) | ✅ | rejected: 작성자 + 현재 회차 기합의자 전원 **+ 아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원**(반려자 본인 제외, 2026-07 개편). §3.1 참고 |

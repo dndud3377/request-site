@@ -7,9 +7,10 @@ import StageDots from '../components/StageDots';
 import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
-import PagedDetailView from '../components/PagedDetailView';
+import PagedDetailView, { ReviewItemsPanelProps } from '../components/PagedDetailView';
+import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
-import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup } from '../types';
+import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem } from '../types';
 import { formatDate } from '../utils/date';
 import { getDocTableRows, getDueDateDisplay, getFinalCompletionDate, getCurrentRound } from '../utils/approvalTable';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS } from './approvalTourSeed';
@@ -43,6 +44,13 @@ const hasActivePendingStep = (
     (s) => s.action === 'pending' && (s.round ?? 1) === round && match(s)
   );
 };
+
+// 검토 항목 때문에 MY 탭에 떠야 하는 문서인지.
+// 조건: 진행 중 + 현재 회차 J 단계가 대기 + 내가 검토자인 미확인 항목이 1건 이상.
+// 기존 MY 조건(내가 담당자인 pending 단계)과는 OR 로 합쳐진다.
+const hasMyPendingReviewItem = (doc: RequestDocument): boolean =>
+  (doc.my_pending_review_items ?? 0) > 0 &&
+  hasActivePendingStep(doc, (s) => s.agent === 'J');
 
 // 중단 요청 '확인' 가능 여부(프론트 가드): MASTER / 담당자 본인 / (미배정 시) 같은 팀
 const canConfirmPauseStep = (
@@ -126,6 +134,8 @@ export default function ApprovalPage(): React.ReactElement {
   // 드롭다운에서 이름을 클릭하면 바로 추가되고(별도 '추가'/'확인' 버튼 없음), '합의' 클릭 시 그 순간
   // 선택돼 있는 검토자 지정 + 담당자 합의가 한 번의 요청으로 함께 처리된다.
   const [reviewerCandidates, setReviewerCandidates] = useState<UserWithRole[]>([]);
+  // 검토 항목의 검토자 후보 (J 권한자 = TE_J + MASTER). 상세 모달을 열 때 1회 적재.
+  const [reviewItemCandidates, setReviewItemCandidates] = useState<UserWithRole[]>([]);
   const [reviewerSelectedIds, setReviewerSelectedIds] = useState<string[]>([]);
   const [reviewerDropdownOpen, setReviewerDropdownOpen] = useState(false);
 
@@ -160,8 +170,10 @@ export default function ApprovalPage(): React.ReactElement {
       }
       if (role === 'NONE' || !role) return [];
       // TE_* 역할: 내 loginid(username)가 assignee_loginid인 pending 단계가 있는 문서
+      // 또는 내가 검토자로 지정된 미확인 검토 항목이 있는 문서(OR)
       return all.filter((d) =>
-        hasActivePendingStep(d, (s) => s.assignee_loginid === currentUser.username)
+        hasActivePendingStep(d, (s) => s.assignee_loginid === currentUser.username) ||
+        hasMyPendingReviewItem(d)
       );
     }
     if (filter.startsWith('agent_')) {
@@ -190,7 +202,10 @@ export default function ApprovalPage(): React.ReactElement {
         (d.approval_steps ?? []).some(s => s.agent === 'PL' && s.assignee_loginid === currentUser.username)
       ).length;
       if (role === 'NONE' || !role) return 0;
-      return base.filter(d => hasActivePendingStep(d, s => s.assignee_loginid === currentUser.username)).length;
+      return base.filter(d =>
+        hasActivePendingStep(d, s => s.assignee_loginid === currentUser.username) ||
+        hasMyPendingReviewItem(d)
+      ).length;
     }
     if (key.startsWith('agent_')) {
       const agent = key.replace('agent_', '') as AgentType;
@@ -486,6 +501,17 @@ export default function ApprovalPage(): React.ReactElement {
     setPaAddOpen(false);
     setPaSearchQuery('');
     setPaCandidates([]);
+    // 검토 항목 검토자 후보는 J 권한자에게만 필요하다.
+    if (!isTourMode && (currentUser.role === 'TE_J' || currentUser.role === 'MASTER')) {
+      try {
+        const [teJ, masters] = await Promise.all([usersAPI.list('TE_J'), usersAPI.list('MASTER')]);
+        setReviewItemCandidates([...teJ.data, ...masters.data]);
+      } catch {
+        setReviewItemCandidates([]);
+      }
+    } else {
+      setReviewItemCandidates([]);
+    }
     setModalOpen(true);
   };
 
@@ -518,6 +544,73 @@ export default function ApprovalPage(): React.ReactElement {
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');
+    }
+  };
+
+  // ===== J-ayer 검토 항목 =====
+
+  /** 현재 회차의 J 단계 (없으면 undefined) */
+  const currentJStep = (doc: RequestDocument): ApprovalStepFrontend | undefined => {
+    const round = getCurrentRound(doc);
+    return (doc.approval_steps ?? []).find((s) => s.agent === 'J' && (s.round ?? 1) === round);
+  };
+
+  /**
+   * 검토 항목 패널 props. 백엔드 review_items.can_edit_items / can_confirm_items 와 같은 규칙이다.
+   * 반환값이 undefined 면 서브탭 자체가 뜨지 않는다(J 권한이 없거나 J 단계가 없는 문서).
+   */
+  const buildReviewItemsProps = (doc: RequestDocument | null): ReviewItemsPanelProps | undefined => {
+    if (!doc || isTourMode) return undefined;
+    const isJ = currentUser.role === 'TE_J' || currentUser.role === 'MASTER';
+    if (!isJ) return undefined;
+    const items = doc.review_items ?? [];
+    const jStep = currentJStep(doc);
+    if (!jStep && items.length === 0) return undefined;
+
+    const inProgress = doc.status === 'under_review' || doc.status === 'pause';
+    const stageOpen = inProgress && !!jStep && jStep.action === 'pending' && !!jStep.assignee_loginid;
+
+    let notice: ReviewItemsNotice;
+    if (doc.status === 'rejected') notice = 'rejected';
+    else if (jStep && jStep.action !== 'pending') notice = 'approved';
+    else if (!jStep || !jStep.assignee_loginid) notice = 'unclaimed';
+    else notice = 'edit';
+
+    return {
+      items,
+      canEdit: stageOpen,
+      canConfirm: stageOpen,
+      currentLoginid: currentUser.username,
+      candidates: reviewItemCandidates,
+      notice,
+      claimerName: jStep?.assignee_name ?? '',
+      onAdd: (title) => runReviewItemAction(() => documentsAPI.addReviewItem(doc.id, title)),
+      onRename: (itemId, title) => runReviewItemAction(() => documentsAPI.renameReviewItem(doc.id, itemId, title)),
+      onDelete: (itemId) => {
+        if (!window.confirm(t('request.ri_delete_confirm'))) return;
+        runReviewItemAction(() => documentsAPI.deleteReviewItem(doc.id, itemId));
+      },
+      onAddReviewer: (itemId, loginid) => runReviewItemAction(() => documentsAPI.addReviewItemReviewer(doc.id, itemId, loginid)),
+      onRemoveReviewer: (itemId, loginid) => runReviewItemAction(() => documentsAPI.removeReviewItemReviewer(doc.id, itemId, loginid)),
+      onConfirm: (itemId, confirmed) => runReviewItemAction(() => documentsAPI.confirmReviewItem(doc.id, itemId, confirmed)),
+    };
+  };
+
+  /** 검토 항목 변경 공통 처리 — 응답의 최신 목록으로 갈아끼우고 목록(MY 조건)도 새로 받는다. */
+  const runReviewItemAction = async (
+    call: () => Promise<{ data: { review_items: ReviewItem[]; message?: string } }>,
+  ): Promise<void> => {
+    if (!selected) return;
+    setProcessing(true);
+    try {
+      const res = await call();
+      setSelected({ ...selected, review_items: res.data.review_items });
+      if (res.data.message) addToast(res.data.message, 'success');
+      await refreshAndSelect(selected.id);
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -952,8 +1045,11 @@ export default function ApprovalPage(): React.ReactElement {
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <StatusBadge status={row.pathStatus} />
-                          <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{row.stageText}</span>
-                          {row.subStages && <StageDots subStages={row.subStages} />}
+                          {row.subStages ? (
+                            <StageDots subStages={row.subStages} />
+                          ) : (
+                            <span style={{ color: row.isDone ? 'var(--text-disabled)' : 'var(--text-primary)' }}>{row.stageText}</span>
+                          )}
                           {idx === 0 && doc.pause_request?.state === 'requested' && (
                             <span className="pause-req-chip">⏸ {t('approval.pause_requested_chip')}</span>
                           )}
@@ -1840,6 +1936,7 @@ export default function ApprovalPage(): React.ReactElement {
               setPageIdx={setPageIdx}
               canEditValidationSystem={canEditValidationSystem(selected)}
               onValidationSystemChange={handleValidationSystemChange}
+              reviewItems={buildReviewItemsProps(selected)}
             />
           </div>
         )}

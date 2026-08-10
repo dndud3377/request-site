@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
-    ProcessDesignRuleOverride, DocumentDesignRuleOverride,
+    ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
 )
 from . import doc_permissions
 from . import design_rule_stats
@@ -131,8 +131,26 @@ class ApprovalStepSerializer(serializers.ModelSerializer):
         return obj.assignee.mail if obj.assignee else None
 
 
+class DocumentReviewItemReviewerSerializer(serializers.ModelSerializer):
+    """검토 항목의 검토자 1명. 결재선(ApprovalStep)과 무관하므로 결재 경로에는 쓰이지 않는다."""
+
+    class Meta:
+        model = DocumentReviewItemReviewer
+        fields = ['id', 'loginid', 'name', 'confirmed', 'confirmed_at']
+
+
+class DocumentReviewItemSerializer(serializers.ModelSerializer):
+    reviewers = DocumentReviewItemReviewerSerializer(many=True, read_only=True)
+    is_done = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = DocumentReviewItem
+        fields = ['id', 'title', 'reviewers', 'is_done', 'created_at']
+
+
 class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer):
     approval_steps = ApprovalStepSerializer(many=True, read_only=True)
+    review_items = DocumentReviewItemSerializer(many=True, read_only=True)
     designated_pl_loginid = serializers.SerializerMethodField()
     notifier_mails = serializers.SerializerMethodField()
 
@@ -145,7 +163,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw', 'notifier_mails',
             'can_request_pause', 'can_resume', 'pause_request', 'post_approver_fixed_loginid',
-            'shared_group', 'shared_group_name',
+            'shared_group', 'shared_group_name', 'review_items',
         ]
         # shared_group 은 전체 저장(PUT/PATCH)에 값이 빠져 초기화되는 일이 없도록 read-only 로 두고,
         # 변경은 전용 액션 POST documents/{id}/set-shared-group/ 으로만 한다.
@@ -180,6 +198,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
 class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSerializer):
     approval_steps = ApprovalStepSerializer(many=True, read_only=True)
     designated_pl_loginid = serializers.SerializerMethodField()
+    my_pending_review_items = serializers.SerializerMethodField()
 
     class Meta:
         model = RequestDocument
@@ -189,12 +208,26 @@ class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSeriali
             'additional_notes', 'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw',
             'can_request_pause', 'can_resume', 'pause_request', 'post_approver_fixed_loginid',
-            'shared_group', 'shared_group_name',
+            'shared_group', 'shared_group_name', 'my_pending_review_items',
         ]
         read_only_fields = ['shared_group']
 
     def get_designated_pl_loginid(self, obj):
         return obj.designated_pl.loginid if obj.designated_pl else None
+
+    def get_my_pending_review_items(self, obj):
+        """호출자가 검토자로 지정됐지만 아직 확인하지 않은 검토 항목 수.
+
+        결재 현황 MY 탭 노출 조건에 쓰인다(목록에 항목 전체를 실어 보내지 않기 위해
+        개수만 준다). 문서 상태·J 단계 조건은 프론트가 approval_steps 로 함께 본다.
+        """
+        loginid = getattr(self._perm_user(), 'loginid', '')
+        if not loginid:
+            return 0
+        return sum(
+            1 for item in obj.review_items.all()
+            if any(r.loginid == loginid and not r.confirmed for r in item.reviewers.all())
+        )
 
 
 class DynamicFieldsSerializerMixin:

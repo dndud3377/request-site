@@ -24,14 +24,17 @@ from .models import (
     RequestDocument, ApprovalStep, PauseRequest, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
+    DocumentReviewItem, DocumentReviewItemReviewer,
 )
 from .utils import LINE_TO_LINEID_MAP
 from . import mailer
 from . import doc_permissions
 from . import design_rule_stats
+from . import review_items as review_items_sync
 from .authentication import ExternalApiKeyAuthentication
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer, ExternalRequestDocumentSerializer,
+    DocumentReviewItemSerializer,
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
     UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer, AddressBookSerializer,
     ProcessDesignRuleOverrideSerializer, DocumentDesignRuleOverrideSerializer,
@@ -108,7 +111,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     #    메서드명이 HTTP DELETE 와 겹쳐, 라우터 매핑이 사라지면 APIView.dispatch 가
     #    getattr(self, 'delete') 로 그 액션을 잡아 DELETE 요청이 그대로 실행된다.
     http_method_names = ['get', 'post', 'put', 'patch', 'head', 'options']
-    queryset = RequestDocument.objects.select_related('requester', 'designated_pl').all()
+    # review_items__reviewers 프리페치: 목록 직렬화의 my_pending_review_items 가 문서마다
+    # 항목·검토자를 다시 조회하지 않도록 한다.
+    queryset = RequestDocument.objects.select_related('requester', 'designated_pl').prefetch_related(
+        'review_items__reviewers'
+    ).all()
     permission_classes = [IsAuthenticatedInProd]
     pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -398,6 +405,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             document.designated_pl_name = rep.username or rep.loginid
             document.save()
 
+            # 검토 항목·검토자 지정은 그대로 두고 확인 상태만 초기화한다.
+            # (새 회차 J 단계가 열릴 때 fill_from_master 로 마스터 최신본과 다시 맞춘다)
+            review_items_sync.reset_confirmations(document)
+
             # 새 회차에 지정 PL 전원의 pending 단계를 생성(이전 회차는 이력 보존)
             new_round = self._max_round(document, default=0) + 1
             for u in pl_users:
@@ -580,21 +591,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         new_status = document.status
         current_round = step.round
 
-        # EV(2차 검토자)는 1명만 합의하면 MASK 검증이 끝난다(OR) — 같은 회차의 남은 검토자는
-        # 더 볼 것이 없으므로 'skip' 으로 닫는다. pending 으로 두면 결재 경로에 '검토중' 으로
-        # 영구 표시되고, 그 사람이 뒤늦게 누르면 이미 승인된 문서를 다시 건드린다.
-        #
-        # select_for_update 로 잠그는 이유: get_object() 가 문서 락보다 먼저 실행되는 평문
-        # SELECT 라 이 트랜잭션의 읽기 스냅샷은 락 획득 이전에 고정된다. 평문으로 읽으면
-        # 직전에 커밋된 다른 EV 의 변경을 못 보고 일부를 놓칠 수 있다.
-        if agent == 'EV' and self._stage_reviewers_complete(document, 'E', current_round):
-            pending_evs = list(ApprovalStep.objects.select_for_update().filter(
-                document=document, agent='EV', action='pending', round=current_round,
-            ))
-            if pending_evs:
-                ApprovalStep.objects.filter(id__in=[s.id for s in pending_evs]).update(
-                    action='skip', acted_at=timezone.now(),
-                )
+        # (2026-08) EV 는 P/PV 와 동일하게 지정된 검토자 전원 합의(AND)로 바뀌어, 1명 합의로
+        # 나머지를 자동 'skip' 처리하던 동작을 없앴다. 남은 검토자는 pending 상태로 남아
+        # 각자 직접 합의해야 한다. 'skip' 값 자체는 그 이전(OR 시절) 문서의 이력으로만 남는다.
 
         # 'MAP 삭제/수정' 은 P·R·J·O 가 모두 병렬 구성원이라, 넷 중 무엇이 마지막이 되든
         # 여기서 최종 승인을 판정해야 한다. 아래 일반 경로 분기는 P·R 합의로는 승인 판정을
@@ -627,14 +626,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             # 검토자 합의 → 병렬 단계로 전환
             new_status = self._advance_to_parallel(document, step, current_round)
 
-        elif agent in ('P', 'PV'):
-            # P 담당자 + 지정된 검토자(PV) 전원 합의가 끝나야 J 생성(검토자 없으면 담당자 합의만으로 완료)
-            self._advance_after_p_review(document, current_round)
-            new_status = 'under_review'
+        elif agent in ('P', 'PV', 'J', 'O', 'E', 'EV', 'RA'):
+            # (2026-08) J 가 P 뒤 순차 단계에서 병렬 단계로 분리되면서 P 도 마지막 합의자가 될 수
+            # 있게 됐다. 그래서 P/PV 합의도 이 최종 판정 분기를 타야 한다 — 예전처럼 P 를 판정에서
+            # 제외하면 P 가 마지막일 때 아무도 판정을 돌리지 않아 문서가 under_review 에 영구 정지한다.
+            if agent in ('P', 'PV'):
+                # P 담당자 + 지정된 검토자(PV) 전원 합의가 끝나면 완료 통보만 보낸다.
+                # (J 는 R 합의 시점에 이미 병렬로 생성돼 있어 여기서 만들지 않는다)
+                self._notify_after_p_review(document, current_round)
 
-        elif agent in ('J', 'O', 'E', 'EV', 'RA'):
-            # J + O + [E, 검토자(EV) 포함] + 후결자(RA) 모두 합의 시 최종 승인.
-            # (Only MAP 은 P/O/E 없이 후결자만 종단 경로)
+            # P + J + O + [E, 검토자(EV) 포함] + 후결자(RA) 모두 합의 시 최종 승인.
+            # (Only MAP 은 P/O/E/J 없이 후결자만 종단 경로)
             j_steps = list(ApprovalStep.objects.select_for_update().filter(document=document, agent='J', round=current_round))
             o_step = ApprovalStep.objects.select_for_update().filter(document=document, agent='O', round=current_round).order_by('-id').first()
             e_exists = ApprovalStep.objects.select_for_update().filter(document=document, agent='E', round=current_round).exists()
@@ -649,9 +651,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             else:
                 j_approved = len(j_steps) > 0 and all(s.action == 'approved' for s in j_steps)
                 o_approved = o_step and o_step.action == 'approved'
+                # P: 담당자 합의 + 지정된 검토자(PV) 전원 합의까지 끝나야 완료.
+                # J 분리 전에는 "J 가 존재한다 = P 가 끝났다" 였기에 판정에서 생략했지만,
+                # 이제 J 는 P 와 무관하게 R 합의 시점부터 존재하므로 명시적으로 확인해야 한다.
+                p_ok = self._stage_reviewers_complete(document, 'P', current_round)
                 # E: 담당자 합의 + 지정된 검토자(EV) 전원 합의까지 끝나야 완료
                 e_ok = (not e_exists) or self._stage_reviewers_complete(document, 'E', current_round)
-                all_approved = j_approved and o_approved and e_ok and ra_ok
+                all_approved = p_ok and j_approved and o_approved and e_ok and ra_ok
             if all_approved:
                 new_status = 'approved'
 
@@ -1165,15 +1171,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def _stage_reviewers_complete(self, document, agent, round_no):
         """P/E 단계가 담당자 + 지정된 검토자(PV/EV) 합의로 끝났는지 여부.
 
-        완료 판정이 단계마다 다르다:
-        - E/EV: **OR** — 검토자 중 1명만 합의하면 완료. MASK 검증은 담당자 판단을
-          한 사람이 더 확인하면 충분하다는 것이 원래 의도다. 나머지 검토자는
-          호출부(approve_step)에서 'skip' 으로 닫는다.
-        - P/PV: **AND** — 전원 합의. 기존 동작 그대로다(이번 변경 범위 밖).
+        P/PV·E/EV 모두 **AND** — 지정된 검토자 전원이 합의해야 완료다(2026-08 변경 전에는
+        EV만 OR 로 1명 합의 시 완료 처리하고 나머지를 자동 'skip' 했으나, 지정한 검토자
+        전원의 확인이 필요하다는 요구사항에 맞춰 P/PV와 동일한 규칙으로 통일했다).
 
         검토자가 하나도 지정되지 않았으면 담당자 합의만으로 완료(하위호환).
         ⚠️ 이 가드를 빼면 안 된다 — 검토자 없이 E 합의를 마친 레거시 문서에는
-        검토자를 지정할 경로가 없어, any() 가 False 를 돌려주면 영구 잠긴다.
+        검토자를 지정할 경로가 없어, all() 이 False 를 돌려주면 영구 잠긴다.
         """
         main_step = ApprovalStep.objects.filter(document=document, agent=agent, round=round_no).first()
         if not main_step or main_step.action != 'approved':
@@ -1184,30 +1188,19 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         ))
         if not reviewer_steps:
             return True
-        if review_agent == 'EV':
-            return any(s.action == 'approved' for s in reviewer_steps)
         return all(s.action == 'approved' for s in reviewer_steps)
 
-    def _advance_after_p_review(self, document, round_no):
-        """P 단계가 담당자+검토자 전원 합의로 완료됐을 때만 J(due: P포함 4영업일)를 생성한다.
+    def _notify_after_p_review(self, document, round_no):
+        """P 단계가 담당자+검토자(PV) 전원 합의로 완료된 시점에 완료 통보를 보낸다.
 
-        아직 검토자 합의가 남아 있으면 아무 것도 하지 않는다(J 는 완료 시점에 1회만 생성).
+        아직 검토자 합의가 남아 있으면 아무 것도 하지 않는다(통보는 완료 시점에 1회만).
+
+        (2026-08) 예전에는 이 시점에 J 단계를 생성했다. J 가 R 합의 시점의 병렬 단계로
+        분리되면서 생성 책임은 `_advance_to_parallel` 로 옮겼고, 여기에는 통보만 남았다.
         """
         if not self._stage_reviewers_complete(document, 'P', round_no):
             return
-        if ApprovalStep.objects.filter(document=document, agent='J', round=round_no).exists():
-            return
         mailer.enqueue_notify_p_completed(document)
-        main_step = ApprovalStep.objects.filter(document=document, agent='P', round=round_no).first()
-        from .utils import calculate_business_due_date
-        import datetime
-        p_date = main_step.acted_at.date() if main_step and main_step.acted_at else datetime.date.today()
-        j_due = calculate_business_due_date(p_date, 4)
-        j_step = ApprovalStep.objects.create(
-            document=document, agent='J', action='pending',
-            round=round_no, due_date=j_due,
-        )
-        mailer.enqueue_stage_arrival(document, 'J', j_step)
 
     def _create_map_delete_edit_parallel(self, document, round_no):
         """'MAP 삭제/수정': PL 합의 직후 P·R·J·O 를 병렬로 생성한다.
@@ -1231,8 +1224,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 is_parallel=True, round=round_no, due_date=due,
             )
             mailer.enqueue_stage_arrival(document, agent, created)
-        # P 도착 통보는 일반 경로와 동일하게 보낸다(수신자 규칙이 같다).
-        mailer.enqueue_notify_p_arrival(document)
+        # 이 경로는 J 가 처음부터 존재한다 — 일반 경로와 같은 시점에 검토 항목을 채운다.
+        review_items_sync.fill_from_master(document)
+        # (2026-08) TE_J 참고 통보(notify_p_arrival)는 폐지했다 — 이 경로는 J 가 처음부터
+        # 병렬이라 TE_J 가 위 stage_arrival(J) 결재 요청 메일을 이미 받는다(일반 경로와 동일).
 
     def _map_delete_edit_all_approved(self, document, round_no):
         """'MAP 삭제/수정' 최종 승인 판정 — P·R·J·O 네 단계가 모두 완료됐는가.
@@ -1253,9 +1248,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def _advance_to_parallel(self, document, step, round_no):
         """R단계(담당자[→검토자]) 완료 후 병렬 단계 생성 → 반환할 새 status.
 
-        - Only MAP: P/O/E 없이 후결자(RA)만 생성(후결자 전원 합의 시 최종 승인).
+        - Only MAP: P/J/O/E 없이 후결자(RA)만 생성(후결자 전원 합의 시 최종 승인).
           후결자가 하나도 없으면(고정 미설정 + 비 C가문) 기존처럼 즉시 승인한다.
-        - 일반: P(4영업일)·O(6영업일 병렬)·[E(plel 시 6영업일 병렬)] + 후결자(RA, 6영업일 병렬) 생성.
+        - 일반: P(4영업일)·J(6영업일 병렬)·O(6영업일 병렬)·[E(plel 시 6영업일 병렬)]
+          + 후결자(RA, 6영업일 병렬) 생성.
+
+        (2026-08) J 는 예전에 P 완료 후 생성되는 순차 단계였다. 이제 P 와 무관한 병렬 단계로
+        분리돼 여기서 함께 생성되며, 기한도 P(4영업일)가 아니라 O/E 와 같은 6영업일이다.
         """
         from .utils import calculate_business_due_date
         import datetime
@@ -1272,12 +1271,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             p_step = ApprovalStep.objects.create(
                 document=document, agent='P', action='pending', round=round_no, due_date=p_due,
             )
+            j_step = ApprovalStep.objects.create(
+                document=document, agent='J', action='pending', is_parallel=True, round=round_no, due_date=o_due,
+            )
             o_step = ApprovalStep.objects.create(
                 document=document, agent='O', action='pending', is_parallel=True, round=round_no, due_date=o_due,
             )
             mailer.enqueue_stage_arrival(document, 'P', p_step)
-            mailer.enqueue_notify_p_arrival(document)
+            mailer.enqueue_stage_arrival(document, 'J', j_step)
             mailer.enqueue_stage_arrival(document, 'O', o_step)
+            # 검토 항목은 J 단계가 열리는 이 시점에 마스터 최신본으로 채운다(review_items.py §1).
+            review_items_sync.fill_from_master(document)
             # E(MASK)는 판정 키워드(plel)가 있는 의뢰서에만 생성한다 — 키워드가 아예 없으면
             # Validation System 판정이 '해당없음'이라 MASK 가 검증할 대상 자체가 없다.
             if document.has_ppid_plel():
@@ -1504,8 +1508,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def _note_validation_system_change(self, document, round_no, previous, value, actor):
         """E 담당자가 이미 합의한 뒤 값이 바뀌면 그 사실을 E step comment 에 남긴다.
 
-        되감지 않는다(2026-08-06 결정). EV 는 1명만 합의해도 단계가 끝나므로(OR),
-        아직 아무도 합의하지 않았다면 이후 합의하는 검토자가 바뀐 값을 보고 판단하게 된다.
+        되감지 않는다(2026-08-06 결정). EV 는 지정된 검토자 전원이 합의해야 단계가 끝나므로(AND),
+        아직 합의하지 않은 검토자가 있다면 그 사람들이 바뀐 값을 보고 판단하게 된다.
         E 담당자 본인이 재확인하지 않는 리스크는 사용자가 명시적으로 수용했고, 그래서
         '언제 무엇이 어떻게 바뀌었는지' 를 남기는 이 note 가 유일한 감사 추적이다.
 
@@ -1738,6 +1742,184 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document.save(update_fields=['shared_group'])
         return Response({'message': f"‘{group.name}’ 그룹에 공유했습니다.",
                          'document': RequestDocumentSerializer(document, context={'request': request}).data})
+
+    # ===== J 단계 검토 항목 (동기화 규칙은 review_items.py 단일 소스) =====
+
+    def _review_items_response(self, document, request, message=''):
+        """변경 후 문서의 검토 항목 최신 목록을 돌려준다(프론트가 그대로 갈아끼운다)."""
+        items = DocumentReviewItem.objects.filter(document=document).prefetch_related('reviewers')
+        payload = {'review_items': DocumentReviewItemSerializer(items, many=True).data}
+        if message:
+            payload['message'] = message
+        return Response(payload)
+
+    def _get_review_item(self, document, request):
+        """body 의 item_id 로 이 문서의 검토 항목을 찾는다. (item, error_response) 반환."""
+        item = DocumentReviewItem.objects.filter(
+            document=document, pk=request.data.get('item_id'),
+        ).first()
+        if item is None:
+            return None, Response({'error': '검토 항목을 찾을 수 없습니다.'},
+                                  status=status.HTTP_400_BAD_REQUEST)
+        return item, None
+
+    def _guard_review_item_edit(self, request, document):
+        """편집 인가 — J 권한자 + 검토중 선점 + 합의 전 + 진행 중 문서. 통과면 None."""
+        if not review_items_sync.can_edit_items(request.user, document):
+            return Response(
+                {'error': '검토 항목을 편집할 수 없는 상태이거나 권한이 없습니다.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return None
+
+    @action(detail=True, methods=['post'], url_path='review-item-add')
+    @transaction.atomic
+    def review_item_add(self, request, pk=None):
+        """검토 항목 추가 — body `{"title": "..."}`.
+
+        마스터에 등록되고, 결재 진행 중이면서 현재 회차 J 단계가 pending 인 다른 문서에도
+        같은 항목이 추가된다(review_items.py §2).
+        """
+        document = self.get_object()
+        blocked = self._guard_review_item_edit(request, document)
+        if blocked:
+            return blocked
+
+        title = (request.data.get('title') or '').strip()
+        if not title:
+            return Response({'error': '항목 제목을 입력해 주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(title) > 300:
+            return Response({'error': '항목 제목은 300자를 넘을 수 없습니다.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        review_items_sync.add_item(document, title, user=request.user)
+        return self._review_items_response(document, request, '검토 항목을 추가했습니다.')
+
+    @action(detail=True, methods=['post'], url_path='review-item-rename')
+    @transaction.atomic
+    def review_item_rename(self, request, pk=None):
+        """검토 항목 제목 수정 — body `{"item_id": n, "title": "..."}`. 마스터·타 문서에 전파."""
+        document = self.get_object()
+        blocked = self._guard_review_item_edit(request, document)
+        if blocked:
+            return blocked
+
+        item, err = self._get_review_item(document, request)
+        if err:
+            return err
+
+        title = (request.data.get('title') or '').strip()
+        if not title:
+            return Response({'error': '항목 제목을 입력해 주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(title) > 300:
+            return Response({'error': '항목 제목은 300자를 넘을 수 없습니다.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        review_items_sync.rename_item(item, title)
+        return self._review_items_response(document, request, '항목 제목을 수정했습니다.')
+
+    @action(detail=True, methods=['post'], url_path='review-item-delete')
+    @transaction.atomic
+    def review_item_delete(self, request, pk=None):
+        """검토 항목 삭제 — body `{"item_id": n}`.
+
+        마스터가 비활성화되고 전파 대상 문서의 사본도 지워진다. 단 다른 문서에서 이미
+        확인한 검토자가 있는 사본은 기록 보존을 위해 남는다(review_items.py §3).
+        """
+        document = self.get_object()
+        blocked = self._guard_review_item_edit(request, document)
+        if blocked:
+            return blocked
+
+        item, err = self._get_review_item(document, request)
+        if err:
+            return err
+
+        review_items_sync.delete_item(item)
+        return self._review_items_response(document, request, '검토 항목을 삭제했습니다.')
+
+    @action(detail=True, methods=['post'], url_path='review-item-reviewer-add')
+    @transaction.atomic
+    def review_item_reviewer_add(self, request, pk=None):
+        """항목 검토자 지정 — body `{"item_id": n, "loginid": "..."}`.
+
+        이 문서에만 적용된다(검토자는 마스터로 전파되지 않는다 — review_items.py 머리말).
+        """
+        document = self.get_object()
+        blocked = self._guard_review_item_edit(request, document)
+        if blocked:
+            return blocked
+
+        item, err = self._get_review_item(document, request)
+        if err:
+            return err
+
+        loginid = (request.data.get('loginid') or '').strip()
+        target = User.objects.filter(loginid=loginid).first()
+        if target is None:
+            return Response({'error': '사용자를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if target.role not in review_items_sync.EDIT_ROLES:
+            return Response({'error': '검토 항목의 검토자로 지정할 수 없는 역할입니다.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        DocumentReviewItemReviewer.objects.get_or_create(
+            item=item, loginid=target.loginid,
+            defaults={'user': target, 'name': target.username or target.loginid},
+        )
+        return self._review_items_response(document, request, '검토자를 지정했습니다.')
+
+    @action(detail=True, methods=['post'], url_path='review-item-reviewer-remove')
+    @transaction.atomic
+    def review_item_reviewer_remove(self, request, pk=None):
+        """항목 검토자 지정 해제 — body `{"item_id": n, "loginid": "..."}`.
+
+        이미 확인(confirmed)한 검토자는 해제할 수 없다(검토 기록 보존).
+        """
+        document = self.get_object()
+        blocked = self._guard_review_item_edit(request, document)
+        if blocked:
+            return blocked
+
+        item, err = self._get_review_item(document, request)
+        if err:
+            return err
+
+        reviewer = DocumentReviewItemReviewer.objects.filter(
+            item=item, loginid=(request.data.get('loginid') or '').strip(),
+        ).first()
+        if reviewer is None:
+            return Response({'error': '지정된 검토자가 아닙니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if reviewer.confirmed:
+            return Response({'error': '이미 확인한 검토자는 지정을 해제할 수 없습니다.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        reviewer.delete()
+        return self._review_items_response(document, request, '검토자 지정을 해제했습니다.')
+
+    @action(detail=True, methods=['post'], url_path='review-item-confirm')
+    @transaction.atomic
+    def review_item_confirm(self, request, pk=None):
+        """검토자 본인의 확인 / 확인 취소 — body `{"item_id": n, "confirmed": true|false}`.
+
+        항목이 모두 확인돼도 J 단계가 자동 합의되지는 않는다(합의는 담당자가 따로 누른다).
+        """
+        document = self.get_object()
+        if not review_items_sync.can_confirm_items(document):
+            return Response({'error': '지금은 확인할 수 없는 상태입니다.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        item, err = self._get_review_item(document, request)
+        if err:
+            return err
+
+        reviewer = DocumentReviewItemReviewer.objects.filter(
+            item=item, loginid=getattr(request.user, 'loginid', ''),
+        ).first()
+        if reviewer is None:
+            return Response({'error': '이 항목의 검토자가 아닙니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        review_items_sync.confirm(reviewer, bool(request.data.get('confirmed', True)))
+        return self._review_items_response(document, request)
 
     def update(self, request, *args, **kwargs):
         """수정(PUT/PATCH) 인가: 상태별 권한이 없으면 403."""

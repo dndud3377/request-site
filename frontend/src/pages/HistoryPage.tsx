@@ -4,7 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { documentsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal, { ConfirmModal } from '../components/Modal';
-import PagedDetailView from '../components/PagedDetailView';
+import PagedDetailView, { ReviewItemsPanelProps } from '../components/PagedDetailView';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { RequestDocument } from '../types';
@@ -66,8 +66,39 @@ export default function HistoryPage(): React.ReactElement {
     fetchDocs();
   }, [fetchDocs]);
 
-  const openDetail = (doc: RequestDocument) => {
-    setSelected(doc);
+  /**
+   * 이력 조회의 검토 항목은 **읽기 전용**이다 — 결재가 끝난 문서라 편집·확인이 모두 닫혀 있다.
+   * J 권한자(TE_J/MASTER)에게만 서브탭을 노출하고, 항목이 없으면 아예 띄우지 않는다.
+   */
+  const reviewItemsReadonly = (doc: RequestDocument): ReviewItemsPanelProps | undefined => {
+    const isJ = currentUser.role === 'TE_J' || currentUser.role === 'MASTER';
+    const items = doc.review_items ?? [];
+    if (!isJ || items.length === 0) return undefined;
+    const noop = (): void => undefined;
+    return {
+      items,
+      canEdit: false,
+      canConfirm: false,
+      currentLoginid: currentUser.username,
+      candidates: [],
+      notice: 'approved',
+      onAdd: noop,
+      onRename: noop,
+      onDelete: noop,
+      onAddReviewer: noop,
+      onRemoveReviewer: noop,
+      onConfirm: noop,
+    };
+  };
+
+  // 목록 응답에는 검토 항목이 없으므로 상세를 한 번 더 받아 연다(실패하면 목록 행 그대로).
+  const openDetail = async (doc: RequestDocument) => {
+    try {
+      const detail = await documentsAPI.get(doc.id);
+      setSelected(detail.data);
+    } catch {
+      setSelected(doc);
+    }
     setPageIdx(0);
     setModalOpen(true);
   };
@@ -209,6 +240,7 @@ export default function HistoryPage(): React.ReactElement {
             role="MASTER"
             pageIdx={pageIdx}
             setPageIdx={setPageIdx}
+            reviewItems={reviewItemsReadonly(selected)}
           />
         </Modal>
       )}

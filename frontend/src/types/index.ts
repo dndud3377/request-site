@@ -89,6 +89,27 @@ export interface PauseRequestInfo {
 
 // ===== Domain Models =====
 
+/** 검토 항목의 검토자 1명 (결재선 ApprovalStep 과 무관 — 결재 경로에는 표시되지 않는다) */
+export interface ReviewItemReviewer {
+  id: number;
+  loginid: string;
+  name: string;
+  confirmed: boolean;
+  confirmed_at: string | null;
+}
+
+/**
+ * J-ayer 검토 항목. 마스터 목록의 문서별 사본이며, J 단계가 열리는 시점에 채워진다.
+ * 결재가 진행 중인 동안에는 다른 문서에서의 추가·제목수정·삭제가 함께 반영된다.
+ */
+export interface ReviewItem {
+  id: number;
+  title: string;
+  reviewers: ReviewItemReviewer[];
+  is_done: boolean;
+  created_at: string;
+}
+
 export interface RequestDocument {
   id: number;
   title: string;
@@ -118,6 +139,8 @@ export interface RequestDocument {
   can_resume?: boolean;        // 재개 가능(작성자 본인·pause 상태)
   pause_request?: PauseRequestInfo | null; // 활성 중단 요청 (없으면 null)
   post_approver_fixed_loginid?: string | null; // 고정 후결자(.env) loginid — '🔒 고정' 표시/변경 잠금용
+  review_items?: ReviewItem[];                 // J-ayer 검토 항목 (상세 응답)
+  my_pending_review_items?: number;            // 내가 검토자인 미확인 항목 수 (목록 응답, MY 탭 조건)
 }
 
 export type CreateDocumentInput = Omit<

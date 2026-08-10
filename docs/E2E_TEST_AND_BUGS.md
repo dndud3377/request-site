@@ -1627,8 +1627,13 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - `auth_views.py:444-450` — `if username and '=' in username:` 이면 **base64 디코딩을 시도**한다.
   loginid/UPN에 `=`가 들어가는 순간 엉뚱한 값으로 바뀔 수 있는 매우 취약한 추론이다(실패 시 `except: pass`로 조용히 넘어감).
 
-### ⚪ B-44 담당자 미지정 시 고정 수신 이메일이 코드에 하드코딩 **분석🔍**
-- 위치: `mailer.py:102` `UNASSIGNED_FALLBACK = {'J': 'user_J@company.com'}` (사용처 `mailer.py:286`)
+### ✅ B-44 담당자 미지정 시 고정 수신 이메일이 코드에 하드코딩 **해결(2026-08)**
+- **해결**: J 병렬 분리와 함께 `UNASSIGNED_FALLBACK` 딕셔너리를 **삭제**했다. J 도 R·P 와 동일하게
+  "미배정이면 팀 전원(`_team_emails`), 배정 후엔 그 담당자 1명" 규칙을 쓴다(`mailer.py resolve_stage_recipients`).
+  이 딕셔너리가 유일한 하드코딩 수신 주소였으므로 코드에 남은 고정 주소는 없다.
+  회귀 고정: `RecipientResolutionTest.test_j_unassigned_broadcasts_to_whole_team`,
+  `PEStageReviewerFlowTest.test_j_unassigned_arrival_has_no_hardcoded_fallback_address`
+- (이하 원래 지적 내용) 위치: `mailer.py:102` `UNASSIGNED_FALLBACK = {'J': 'user_J@company.com'}` (사용처 `mailer.py:286`)
 - 주석이 "이 딕셔너리를 직접 수정하고 재시작하라"고 안내한다. **수신자 변경에 배포가 필요**하다.
   규칙 D의 "설정은 코드에 하드코딩하지 않는다" 취지와 어긋난다.
   (참고: 비교 대상이었던 P 단계 라인별 `.env` 설정 `P_LINE_FALLBACK`은 미사용 상태로 코드에서 삭제됨 — 2026-08)

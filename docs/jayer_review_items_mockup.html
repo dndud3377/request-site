@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>J-ayer 검토 항목 서브탭 — Mockup</title>
+<style>
+:root{
+  --bg-primary:#f0f5ff; --bg-secondary:#e4edff; --bg-card:#fff; --bg-card-hover:#f5f8ff;
+  --accent:#2563eb; --accent-hover:#1d4ed8; --accent-light:rgba(37,99,235,.1);
+  --text-primary:#0f172a; --text-secondary:#334f7a; --text-muted:#6b85ae; --text-disabled:#9db3cc;
+  --border:#c9d9f0; --border-light:#dce8fb;
+  --success:#059669; --success-light:rgba(5,150,105,.1);
+  --warning:#d97706; --warning-light:rgba(217,119,6,.1);
+  --danger:#dc2626; --danger-light:rgba(220,38,38,.1);
+  --radius-sm:6px; --radius-md:10px; --radius-lg:16px;
+  --shadow-md:0 4px 12px rgba(37,99,235,.12); --shadow-lg:0 8px 24px rgba(37,99,235,.18);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter','Noto Sans KR',sans-serif;background:var(--bg-primary);color:var(--text-primary);padding:24px;line-height:1.5}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:1.35rem;margin-bottom:4px}
+.sub{color:var(--text-muted);font-size:.86rem;margin-bottom:18px}
+
+/* ── 상태 스위처 ── */
+.switcher{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:18px;box-shadow:var(--shadow-md)}
+.switcher h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin-bottom:10px}
+.sw-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.sw-row:last-child{margin-bottom:0}
+.sw-label{font-size:.76rem;font-weight:700;color:var(--text-muted);min-width:96px}
+.sw-btn{font-size:.8rem;padding:5px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-card);color:var(--text-secondary);cursor:pointer;transition:all .15s}
+.sw-btn:hover{background:var(--bg-card-hover)}
+.sw-btn.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+
+/* ── 모달 ── */
+.modal{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);overflow:hidden}
+.modal-head{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.modal-title{font-size:1rem;font-weight:700}
+.badge-status{font-size:.72rem;font-weight:700;padding:2px 10px;border-radius:10px;background:var(--warning-light);color:var(--warning)}
+.modal-body{padding:18px 20px}
+.modal-foot{padding:12px 20px;border-top:1px solid var(--border);background:var(--bg-secondary);display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+
+/* ── 탭 ── */
+.tabs{display:flex;border-bottom:2px solid var(--border);margin-bottom:20px;gap:0;flex-wrap:wrap}
+.tab{background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;padding:8px 16px;cursor:pointer;font-size:.9rem;color:var(--text-muted);white-space:nowrap}
+.tab.on{border-bottom-color:var(--accent);color:var(--accent);font-weight:700}
+
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 20px}
+.card-title{font-size:.85rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+.count{font-size:.8rem;font-weight:500;color:var(--text-muted);text-transform:none;letter-spacing:0}
+.btn-xs{font-size:.75rem;padding:2px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-card);color:var(--text-secondary);cursor:pointer}
+
+/* ── 서브탭 ── */
+.subtabs{display:flex;gap:0;margin-bottom:14px;border-bottom:2px solid var(--border)}
+.subtab{padding:7px 18px;font-size:.85rem;background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;color:var(--text-secondary);display:flex;align-items:center;gap:5px}
+.subtab.on{color:var(--accent);font-weight:700;border-bottom-color:var(--accent)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.dot.red{background:#dc3545} .dot.green{background:#4CAF50}
+
+/* ── 안내 배너 ── */
+.notice{display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:var(--radius-md);font-size:.83rem;margin-bottom:14px}
+.notice.info{background:var(--accent-light);color:var(--text-secondary);border:1px solid var(--border)}
+.notice.lock{background:var(--bg-secondary);color:var(--text-muted);border:1px solid var(--border)}
+.notice b{color:var(--text-primary)}
+
+/* ── 항목 ── */
+.items{display:flex;flex-direction:column;gap:10px}
+.item{border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 14px;background:var(--bg-card);transition:all .15s}
+.item.done{background:var(--success-light);border-color:rgba(5,150,105,.35)}
+.item.mine{border-color:var(--danger);border-width:2px;padding:11px 13px}
+.item-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.item-no{min-width:22px;height:22px;border-radius:50%;background:var(--bg-secondary);color:var(--text-secondary);font-size:.72rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.item-title{font-size:.92rem;font-weight:600;flex:1;min-width:180px}
+.item-title input{width:100%;font:inherit;padding:4px 8px;border:1px solid var(--accent);border-radius:var(--radius-sm)}
+.badge{font-size:.72rem;font-weight:700;padding:2px 10px;border-radius:10px;white-space:nowrap}
+.badge.ing{background:var(--warning-light);color:var(--warning)}
+.badge.done{background:var(--success-light);color:var(--success)}
+.icon-btn{background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:.78rem;padding:2px 4px}
+.icon-btn:hover{color:var(--danger)}
+
+.rv-label{font-size:.72rem;color:var(--text-muted);font-weight:600;margin-right:2px}
+.rv-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:.79rem;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary)}
+.chip.ok{background:var(--success-light);border-color:rgba(5,150,105,.4);color:var(--success);font-weight:600}
+.chip.me{border-color:var(--accent);border-width:1.5px;background:var(--accent-light);color:var(--accent);font-weight:700}
+.chip.ok.me{background:var(--success-light);border-color:var(--success);color:var(--success)}
+.chip .x{cursor:pointer;color:var(--text-muted);font-size:.9rem;line-height:1}
+.chip .x.off{color:var(--text-disabled);cursor:not-allowed}
+.chip .lockicon{font-size:.7rem;opacity:.65}
+.add-rv{position:relative}
+.add-rv-btn{font-size:.78rem;padding:3px 10px;border:1px dashed var(--border);border-radius:999px;background:var(--bg-card);color:var(--accent);cursor:pointer}
+.dropdown{position:absolute;top:100%;left:0;margin-top:4px;z-index:20;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);min-width:230px;max-height:220px;overflow-y:auto;padding:4px 0}
+.dd-item{padding:7px 12px;cursor:pointer;font-size:.83rem;display:flex;justify-content:space-between;gap:10px}
+.dd-item:hover{background:var(--bg-card-hover)}
+.dd-item .mail{color:var(--text-muted);font-size:.75rem}
+.dd-item.dis{opacity:.45;cursor:not-allowed}
+.dd-empty{padding:8px 12px;color:var(--text-muted);font-size:.8rem}
+
+.confirm-bar{margin-top:10px;padding-top:9px;border-top:1px dashed var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.confirm-hint{font-size:.78rem;color:var(--text-muted)}
+.btn-confirm{font-size:.8rem;font-weight:700;padding:4px 14px;border-radius:var(--radius-sm);border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+.btn-undo{font-size:.78rem;padding:4px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);cursor:pointer}
+
+.add-item{margin-top:14px;padding-top:14px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap}
+.add-item input{flex:1;min-width:220px;font-size:.88rem;padding:7px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);background:#fff}
+.btn-primary{font-size:.85rem;font-weight:600;padding:7px 18px;border-radius:var(--radius-sm);border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+.btn-secondary{font-size:.85rem;padding:7px 16px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);cursor:pointer}
+.btn-danger{font-size:.85rem;padding:7px 16px;border-radius:var(--radius-sm);border:1px solid var(--danger);background:var(--danger);color:#fff;cursor:pointer}
+.empty{padding:26px;text-align:center;color:var(--text-muted);font-size:.86rem;border:1px dashed var(--border);border-radius:var(--radius-md)}
+
+/* ── 표(왼쪽 서브탭) ── */
+table.tbl{width:100%;border-collapse:collapse;font-size:.8rem}
+table.tbl th{background:var(--bg-secondary);border:1px solid var(--border);padding:5px 8px;font-weight:700;color:var(--text-secondary);white-space:nowrap}
+table.tbl td{border:1px solid var(--border-light);padding:5px 8px;text-align:center}
+
+/* ── MY 탭 설명 ── */
+.my-panel{margin-top:18px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 18px;box-shadow:var(--shadow-md)}
+.my-panel h2{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin-bottom:10px}
+.filter-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.ft{font-size:.8rem;padding:5px 13px;border-radius:999px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary)}
+.ft.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.my-list{border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden}
+.my-row{display:flex;gap:12px;padding:8px 12px;font-size:.84rem;border-bottom:1px solid var(--border-light);align-items:center}
+.my-row:last-child{border-bottom:none}
+.my-row .t{color:var(--accent);font-weight:600;flex:1}
+.my-row .why{font-size:.75rem;color:var(--text-muted)}
+.my-row.gone{opacity:.4;text-decoration:line-through}
+.legend{margin-top:10px;font-size:.78rem;color:var(--text-muted);line-height:1.7}
+.legend code{background:var(--bg-secondary);padding:1px 5px;border-radius:4px;font-size:.75rem}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>J-ayer 정보 › <span style="color:var(--accent)">검토 항목</span> 서브탭 — Mockup</h1>
+  <p class="sub">결재 현황 / 이력 조회 상세 모달 안. 아래 버튼으로 <b>보는 사람의 역할</b>과 <b>J 단계 상태</b>를 바꿔가며 확인하세요.</p>
+
+  <div class="switcher">
+    <h2>미리보기 상태</h2>
+    <div class="sw-row">
+      <span class="sw-label">로그인 사용자</span>
+      <button class="sw-btn on" data-user="j1">이재이 (TE_J · 검토중 선점자)</button>
+      <button class="sw-btn" data-user="j2">김검토 (TE_J · 항목 1·3 검토자)</button>
+      <button class="sw-btn" data-user="master">관리자 (MASTER)</button>
+      <button class="sw-btn" data-user="o1">박오벨 (TE_O · J권한 없음)</button>
+    </div>
+    <div class="sw-row">
+      <span class="sw-label">J 단계 상태</span>
+      <button class="sw-btn" data-stage="unclaimed">검토중 누르기 전 (담당자 없음)</button>
+      <button class="sw-btn on" data-stage="claimed">검토중 (선점됨)</button>
+      <button class="sw-btn" data-stage="approved">J 단계 합의 완료</button>
+    </div>
+    <div class="sw-row">
+      <span class="sw-label">문서 상태</span>
+      <button class="sw-btn on" data-doc="under_review">진행중</button>
+      <button class="sw-btn" data-doc="pause">중단(pause)</button>
+      <button class="sw-btn" data-doc="rejected">반려</button>
+    </div>
+  </div>
+
+  <!-- ===== 상세 모달 ===== -->
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">P1234_ABC 신규 MAP 생성 의뢰</span>
+      <span class="badge-status" id="docBadge">검토중</span>
+    </div>
+    <div class="modal-body">
+      <div class="tabs">
+        <button class="tab">의뢰 상세</button>
+        <button class="tab">MAP 정보</button>
+        <button class="tab on">J-ayer 정보</button>
+        <button class="tab">O-ayer 정보</button>
+        <button class="tab">뼈찜 정보</button>
+        <button class="tab">결재 경로</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>J-ayer 정보</span>
+          <span style="display:flex;align-items:center;gap:8px">
+            <span class="count" id="tblCount">전체 4건</span>
+            <button class="btn-xs">📊 export</button>
+          </span>
+        </div>
+
+        <!-- 서브탭 -->
+        <div class="subtabs">
+          <button class="subtab" id="stTable">JOB Layer 목록</button>
+          <button class="subtab on" id="stItems">검토 항목 <span class="dot red" id="stDot"></span></button>
+        </div>
+
+        <!-- 왼쪽 서브탭: 기존 표 (참고용) -->
+        <div id="paneTable" class="hidden">
+          <div style="margin-bottom:10px;font-size:.82rem;color:var(--text-secondary)">
+            <b>Validation System</b> &nbsp;<span class="badge ing">대상</span>
+          </div>
+          <table class="tbl">
+            <thead><tr><th>Update 날짜</th><th>조리법 ID</th><th>SP</th><th>SD</th><th>PP</th><th>ST</th><th>신규/차용</th><th>제품명</th><th>Step</th><th>항목 ID</th></tr></thead>
+            <tbody>
+              <tr><td>2026-08-01</td><td>PRC-1001</td><td>10</td><td>A1</td><td>plel_chk</td><td>S1</td><td>신규</td><td>ABC-01</td><td>0100</td><td>IT-9001</td></tr>
+              <tr><td>2026-08-01</td><td>PRC-1002</td><td>20</td><td>A2</td><td>norm</td><td>S2</td><td>차용</td><td>ABC-02</td><td>0200</td><td>IT-9002</td></tr>
+              <tr><td>2026-08-02</td><td>PRC-1003</td><td>30</td><td>B1</td><td>norm</td><td>S1</td><td>기등록</td><td>ABC-03</td><td>0300</td><td>IT-9003</td></tr>
+              <tr><td>2026-08-02</td><td>PRC-1004</td><td>40</td><td>B2</td><td>plel_chk</td><td>S3</td><td>신규</td><td>ABC-04</td><td>0400</td><td>IT-9004</td></tr>
+            </tbody>
+          </table>
+          <p style="margin-top:10px;font-size:.78rem;color:var(--text-muted)">※ 기존 화면 그대로. 이번 변경으로 건드리지 않습니다.</p>
+        </div>
+
+        <!-- 오른쪽 서브탭: 검토 항목 -->
+        <div id="paneItems">
+          <div class="notice info" id="noticeEdit">
+            <span>✏️</span>
+            <div><b>이재이</b> 님이 이 단계를 검토중입니다. J 권한자 누구나 항목을 추가하고 항목마다 검토자를 지정할 수 있습니다.
+            <br />항목이 모두 완료되지 않아도 <b>합의는 가능</b>하며, 모두 완료돼도 자동 합의되지 않습니다.</div>
+          </div>
+          <div class="notice lock hidden" id="noticeUnclaimed">
+            <span>🔒</span>
+            <div>아직 아무도 <b>검토중</b>을 누르지 않았습니다. 아래 <b>[검토중]</b> 버튼을 눌러 이 단계를 맡으면 항목 추가·검토자 지정이 열립니다. <br />지금은 읽기 전용입니다.</div>
+          </div>
+          <div class="notice lock hidden" id="noticeApproved">
+            <span>🔒</span>
+            <div>J 단계가 <b>합의 완료</b>되어 검토 항목이 잠겼습니다. 기록은 그대로 보존되며 더 이상 수정할 수 없습니다.</div>
+          </div>
+          <div class="notice lock hidden" id="noticeRejected">
+            <span>🔒</span>
+            <div>반려된 의뢰서입니다. 재상신되면 항목과 검토자는 그대로 남고 <b>확인 상태만 초기화</b>됩니다.</div>
+          </div>
+
+          <div class="items" id="itemList"></div>
+
+          <div class="add-item" id="addItemBar">
+            <input id="newItemInput" placeholder="검토 항목 제목을 입력하세요 (예: PRC-1003 차용 Layer 정합성 확인)" />
+            <button class="btn-primary" id="addItemBtn">＋ 항목 추가</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-foot" id="modalFoot"></div>
+  </div>
+
+  <!-- ===== MY 탭 연동 ===== -->
+  <div class="my-panel">
+    <h2>결재 현황 › MY 탭 연동 (요구사항 6번)</h2>
+    <div class="filter-tabs">
+      <span class="ft">전체</span><span class="ft on">MY</span><span class="ft">임시저장</span><span class="ft">반려</span><span class="ft">중단</span>
+    </div>
+    <div class="my-list" id="myList"></div>
+    <div class="legend">
+      노출 조건 = <code>문서 status = under_review</code> <b>AND</b> <code>현재 회차 J 단계 action = pending</code> <b>AND</b> <code>내가 검토자인 미확인 항목 ≥ 1</code><br />
+      기존 MY 조건(내가 담당자인 pending 단계)과는 <b>OR</b> 로 합쳐집니다 — 둘 중 하나만 맞아도 목록에 뜹니다.<br />
+      결재 현황 목록의 열·상태 뱃지와 <b>결재 경로 탭에는 이 검토자가 전혀 표시되지 않습니다</b> (요구사항 3번).
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== Mock 상태 =====
+const USERS = {
+  j1:     { name:'이재이', loginid:'jaeyi',  role:'TE_J',   mail:'jaeyi@corp.com'  },
+  j2:     { name:'김검토', loginid:'kimrv',  role:'TE_J',   mail:'kimrv@corp.com'  },
+  master: { name:'관리자', loginid:'admin',  role:'MASTER', mail:'admin@corp.com'  },
+  o1:     { name:'박오벨', loginid:'parkovl',role:'TE_O',   mail:'parkovl@corp.com'},
+};
+const CANDIDATES = [
+  { name:'이재이', loginid:'jaeyi',   mail:'jaeyi@corp.com',   role:'TE_J' },
+  { name:'김검토', loginid:'kimrv',   mail:'kimrv@corp.com',   role:'TE_J' },
+  { name:'최제이', loginid:'choij',   mail:'choij@corp.com',   role:'TE_J' },
+  { name:'한지웅', loginid:'hanjw',   mail:'hanjw@corp.com',   role:'TE_J' },
+  { name:'관리자', loginid:'admin',   mail:'admin@corp.com',   role:'MASTER' },
+];
+
+let state = { user:'j1', stage:'claimed', doc:'under_review', pane:'items', dropdownFor:null, editingId:null };
+
+let items = [
+  { id:1, title:'PRC-1001 신규 Layer 스펙 정합성 확인', reviewers:[
+      { loginid:'kimrv', name:'김검토', confirmed:false, at:null },
+      { loginid:'choij', name:'최제이', confirmed:true,  at:'2026-08-06 10:12' },
+  ]},
+  { id:2, title:'차용 행 Update 날짜 최신본 여부 확인', reviewers:[
+      { loginid:'choij', name:'최제이', confirmed:true, at:'2026-08-06 10:20' },
+      { loginid:'hanjw', name:'한지웅', confirmed:true, at:'2026-08-06 11:03' },
+  ]},
+  { id:3, title:'plel 판정 대상 행 Validation System 값 재확인', reviewers:[
+      { loginid:'kimrv', name:'김검토', confirmed:false, at:null },
+  ]},
+  { id:4, title:'기등록 행 항목 ID 중복 여부 확인', reviewers:[] },
+];
+let nextId = 5;
+
+const me       = () => USERS[state.user];
+const isJ      = () => me().role === 'TE_J' || me().role === 'MASTER';
+// 편집 가능: J권한 + J단계 선점됨 + 아직 합의 전 + 문서가 진행중이거나 중단중
+const canEdit  = () => isJ() && state.stage === 'claimed' && (state.doc === 'under_review' || state.doc === 'pause');
+const isDone   = (it) => it.reviewers.length > 0 && it.reviewers.every(r => r.confirmed);
+const myPend   = (it) => it.reviewers.some(r => r.loginid === me().loginid && !r.confirmed);
+const myRow    = (it) => it.reviewers.find(r => r.loginid === me().loginid);
+
+// ===== 렌더 =====
+function render(){
+  document.querySelectorAll('[data-user]').forEach(b=>b.classList.toggle('on', b.dataset.user===state.user));
+  document.querySelectorAll('[data-stage]').forEach(b=>b.classList.toggle('on', b.dataset.stage===state.stage));
+  document.querySelectorAll('[data-doc]').forEach(b=>b.classList.toggle('on', b.dataset.doc===state.doc));
+
+  const badge = document.getElementById('docBadge');
+  badge.textContent = state.doc==='under_review' ? '검토중' : state.doc==='pause' ? '중단' : '반려';
+  badge.style.background = state.doc==='rejected' ? 'rgba(220,38,38,.1)' : state.doc==='pause' ? 'rgba(180,130,10,.13)' : 'rgba(217,119,6,.1)';
+  badge.style.color      = state.doc==='rejected' ? '#dc2626' : state.doc==='pause' ? '#92600a' : '#d97706';
+
+  // 서브탭 노출 — J권한자(TE_J/MASTER)에게만
+  const stItems = document.getElementById('stItems');
+  stItems.style.display = isJ() ? '' : 'none';
+  if (!isJ()) state.pane = 'table';
+
+  // 서브탭 점: 빨강=미완료 항목 있음 / 초록=전부 완료 / 항목 0개면 없음
+  const dot = document.getElementById('stDot');
+  const anyOpen = items.some(it => !isDone(it));
+  dot.className = items.length===0 ? 'hidden' : (anyOpen ? 'dot red' : 'dot green');
+
+  document.getElementById('stTable').classList.toggle('on', state.pane==='table');
+  document.getElementById('stItems').classList.toggle('on', state.pane==='items');
+  document.getElementById('paneTable').classList.toggle('hidden', state.pane!=='table');
+  document.getElementById('paneItems').classList.toggle('hidden', state.pane!=='items');
+
+  // 안내 배너
+  const showUnclaimed = isJ() && state.stage==='unclaimed';
+  const showApproved  = isJ() && state.stage==='approved';
+  const showRejected  = isJ() && state.stage==='claimed' && state.doc==='rejected';
+  document.getElementById('noticeUnclaimed').classList.toggle('hidden', !showUnclaimed);
+  document.getElementById('noticeApproved').classList.toggle('hidden', !showApproved);
+  document.getElementById('noticeRejected').classList.toggle('hidden', !showRejected);
+  document.getElementById('noticeEdit').classList.toggle('hidden', !canEdit());
+
+  renderItems();
+  document.getElementById('addItemBar').classList.toggle('hidden', !canEdit());
+  renderFoot();
+  renderMy();
+}
+
+function renderItems(){
+  const box = document.getElementById('itemList');
+  if (items.length === 0){
+    box.innerHTML = '<div class="empty">등록된 검토 항목이 없습니다.'
+      + (canEdit() ? ' 아래에서 첫 항목을 추가하세요.' : '') + '</div>';
+    return;
+  }
+  box.innerHTML = items.map((it, i) => {
+    const done = isDone(it);
+    const mine = myPend(it) && state.doc !== 'rejected';
+    const mineRow = myRow(it);
+
+    const chips = it.reviewers.map(r => {
+      const isMe = r.loginid === me().loginid;
+      const cls = 'chip' + (r.confirmed ? ' ok' : '') + (isMe ? ' me' : '');
+      // 확인한 검토자는 삭제 불가 (3라운드 확정)
+      const x = !canEdit() ? ''
+        : r.confirmed
+          ? '<span class="x off" title="확인한 검토자는 삭제할 수 없습니다">🔒</span>'
+          : `<span class="x" title="검토자 제거" onclick="removeReviewer(${it.id},'${r.loginid}')">×</span>`;
+      return `<span class="${cls}">${r.confirmed ? '✓' : '○'} ${r.name}${isMe ? ' (나)' : ''}${x}</span>`;
+    }).join('');
+
+    const addBtn = canEdit()
+      ? `<span class="add-rv">
+           <button class="add-rv-btn" onclick="toggleDropdown(${it.id})">＋ 검토자</button>
+           ${state.dropdownFor===it.id ? dropdownHtml(it) : ''}
+         </span>`
+      : '';
+
+    const titleCell = (state.editingId===it.id && canEdit())
+      ? `<span class="item-title"><input id="editInput" value="${escapeAttr(it.title)}"
+            onkeydown="if(event.key==='Enter')saveTitle(${it.id});if(event.key==='Escape')cancelEdit()"
+            onblur="saveTitle(${it.id})" /></span>`
+      : `<span class="item-title">${escapeHtml(it.title)}</span>`;
+
+    const actions = canEdit()
+      ? `<button class="icon-btn" title="제목 수정" onclick="startEdit(${it.id})">✏️</button>
+         <button class="icon-btn" title="항목 삭제" onclick="removeItem(${it.id})">🗑</button>`
+      : '';
+
+    // 내가 검토자인 항목에만 확인/철회 바
+    let confirmBar = '';
+    if (mineRow && (state.doc==='under_review' || state.doc==='pause') && state.stage==='claimed'){
+      confirmBar = mineRow.confirmed
+        ? `<div class="confirm-bar">
+             <span class="confirm-hint">✓ ${mineRow.at} 에 확인했습니다.</span>
+             <button class="btn-undo" onclick="toggleConfirm(${it.id})">확인 취소</button>
+           </div>`
+        : `<div class="confirm-bar">
+             <span class="confirm-hint">내가 이 항목의 검토자입니다.</span>
+             <button class="btn-confirm" onclick="toggleConfirm(${it.id})">확인</button>
+           </div>`;
+    }
+
+    return `<div class="item ${done?'done':''} ${mine?'mine':''}">
+      <div class="item-head">
+        <span class="item-no">${i+1}</span>
+        ${titleCell}
+        <span class="badge ${done?'done':'ing'}">${done?'검토완료':'검토중'}</span>
+        ${actions}
+      </div>
+      <div class="rv-row">
+        <span class="rv-label">검토자</span>
+        ${chips || '<span style="font-size:.8rem;color:var(--text-muted)">지정된 검토자가 없습니다</span>'}
+        ${addBtn}
+      </div>
+      ${confirmBar}
+    </div>`;
+  }).join('');
+}
+
+function dropdownHtml(it){
+  const taken = new Set(it.reviewers.map(r=>r.loginid));
+  const rows = CANDIDATES.map(c => taken.has(c.loginid)
+    ? `<div class="dd-item dis"><span>${c.name} <span style="font-size:.7rem">· 지정됨</span></span><span class="mail">${c.mail}</span></div>`
+    : `<div class="dd-item" onclick="addReviewer(${it.id},'${c.loginid}')"><span><b>${c.name}</b></span><span class="mail">${c.mail}</span></div>`
+  ).join('');
+  return `<div class="dropdown">${rows || '<div class="dd-empty">후보가 없습니다</div>'}</div>`;
+}
+
+function renderFoot(){
+  const foot = document.getElementById('modalFoot');
+  let html = '';
+  if (state.doc==='under_review' || state.doc==='pause'){
+    if (isJ() && state.stage==='unclaimed'){
+      html += `<button class="btn-secondary" onclick="setStage('claimed')">검토중</button>`;
+    } else if (isJ() && state.stage==='claimed'){
+      html += `<button class="btn-primary" onclick="setStage('approved')">합의</button>
+               <button class="btn-danger">반려</button>`;
+    }
+  }
+  html += `<button class="btn-secondary">닫기</button>`;
+  foot.innerHTML = html;
+}
+
+function renderMy(){
+  const box = document.getElementById('myList');
+  const stageOk = state.stage==='claimed' && state.doc==='under_review';
+  const iAmPendingReviewer = items.some(it => it.reviewers.some(r => r.loginid===me().loginid && !r.confirmed));
+  const show = stageOk && iAmPendingReviewer;
+
+  const reason = !isJ()            ? 'J 권한이 없어 검토자로 지정될 수 없음'
+    : state.doc!=='under_review'   ? `문서 상태가 ${state.doc==='pause'?'중단':'반려'} → MY 조건 미충족`
+    : state.stage==='unclaimed'    ? 'J 단계 미선점 — 이 사용자는 담당자 조건으로 뜰 수 있음'
+    : state.stage==='approved'     ? 'J 단계 합의 완료 → MY 에서 사라짐'
+    : !iAmPendingReviewer          ? '내 미확인 항목이 없음 → MY 에서 사라짐'
+    : '내 미확인 항목 있음';
+
+  box.innerHTML = `
+    <div class="my-row ${show?'':'gone'}">
+      <span class="t">P1234_ABC 신규 MAP 생성 의뢰</span>
+      <span class="why">${show ? '표시됨 · ' : '표시 안 됨 · '}${reason}</span>
+    </div>
+    <div class="my-row gone">
+      <span class="t">P5678_XYZ MAP 삭제/수정 의뢰</span>
+      <span class="why">표시 안 됨 · 검토자로 지정되지 않은 문서</span>
+    </div>`;
+}
+
+// ===== 액션 =====
+function setStage(s){ state.stage = s; state.dropdownFor=null; render(); }
+function toggleDropdown(id){ state.dropdownFor = state.dropdownFor===id ? null : id; render(); }
+function addReviewer(itemId, loginid){
+  const c = CANDIDATES.find(x=>x.loginid===loginid);
+  const it = items.find(x=>x.id===itemId);
+  if (c && it && !it.reviewers.some(r=>r.loginid===loginid))
+    it.reviewers.push({ loginid:c.loginid, name:c.name, confirmed:false, at:null });
+  state.dropdownFor = null; render();
+}
+function removeReviewer(itemId, loginid){
+  const it = items.find(x=>x.id===itemId);
+  const r = it.reviewers.find(x=>x.loginid===loginid);
+  if (r && r.confirmed) return;               // 확인한 검토자는 삭제 불가
+  it.reviewers = it.reviewers.filter(x=>x.loginid!==loginid);
+  render();
+}
+function removeItem(id){ items = items.filter(x=>x.id!==id); render(); }
+function startEdit(id){ state.editingId = id; render(); setTimeout(()=>document.getElementById('editInput')?.select(),0); }
+function cancelEdit(){ state.editingId = null; render(); }
+function saveTitle(id){
+  const el = document.getElementById('editInput');
+  if (el){ const v = el.value.trim(); const it = items.find(x=>x.id===id); if (it && v) it.title = v; }
+  state.editingId = null; render();
+}
+function toggleConfirm(itemId){
+  const it = items.find(x=>x.id===itemId);
+  const r = it.reviewers.find(x=>x.loginid===me().loginid);
+  if (!r) return;
+  r.confirmed = !r.confirmed;
+  r.at = r.confirmed ? nowStr() : null;
+  render();
+}
+function nowStr(){
+  const d = new Date(), p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function escapeHtml(s){ return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function escapeAttr(s){ return escapeHtml(s); }
+
+// ===== 바인딩 =====
+document.querySelectorAll('[data-user]').forEach(b=>b.onclick=()=>{ state.user=b.dataset.user; state.dropdownFor=null; state.editingId=null; state.pane='items'; render(); });
+document.querySelectorAll('[data-stage]').forEach(b=>b.onclick=()=>{ state.stage=b.dataset.stage; state.dropdownFor=null; render(); });
+document.querySelectorAll('[data-doc]').forEach(b=>b.onclick=()=>{ state.doc=b.dataset.doc; state.dropdownFor=null; render(); });
+document.getElementById('stTable').onclick=()=>{ state.pane='table'; render(); };
+document.getElementById('stItems').onclick=()=>{ state.pane='items'; render(); };
+document.getElementById('addItemBtn').onclick=()=>{
+  const el = document.getElementById('newItemInput');
+  const v = el.value.trim();
+  if (!v) return;
+  items.push({ id:nextId++, title:v, reviewers:[] });
+  el.value=''; render();
+};
+document.getElementById('newItemInput').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('addItemBtn').click(); });
+
+render();
+</script>
+</body>
+</html>
