@@ -81,17 +81,19 @@ const baseDoc = (id: number, title: string, notes: string): Omit<RequestDocument
   submitted_at: '2026-06-17T08:00:00Z',
 });
 
-// A: R 합의 완료 → 병렬 진행(경로1 PHPSI·JOB / 경로2 OVL) — 목록에서 2행으로 분기 표시
+// A: R 합의 완료 → 병렬 진행(경로1 PHPSI / 경로2 JOB·OVL) — 목록에서 2행으로 분기 표시
 // 재상신 이력이 있어 상세에서 변경 필드/행이 강조된다.
 const docA: RequestDocument = {
   ...baseDoc(9001, '샘플 의뢰서 A (병렬 진행)', NOTES_WITH_HISTORY),
   approval_steps: [
     step(1, 'PL', 'approved', { assignee_name: '김검토', acted_at: '2026-06-17T10:00:00Z' }),
     step(2, 'R', 'approved', { assignee_name: '이RFG', acted_at: '2026-06-18T09:00:00Z' }),
-    // 경로1(PHPSI→JOB)은 순차 — P가 검토중일 때 J는 아직 생성 전(대기)이므로 J 단계는 두지 않는다.
+    // 경로1(PHPSI) — 검토중(담당자 선점).
     step(3, 'P', 'pending', { assignee_name: '박PHPSI', assignee_loginid: 'tour-p', due_date: '2026-06-24' }),
-    // 경로2(OVL)는 병렬로 검토중 — 담당자 지정해 '검토중'으로 표시.
-    step(4, 'O', 'pending', { assignee_name: '한OVL', assignee_loginid: 'tour-o', due_date: '2026-06-25' }),
+    // 경로2(JOB·OVL) — (2026-08) J 는 P 뒤 순차가 아니라 R 합의 시점부터 O 와 같은 병렬 단계다.
+    // JOB 은 아직 아무도 선점하지 않은 '대기중', OVL 은 선점된 '검토중' 으로 상태점 차이를 보여준다.
+    step(4, 'J', 'pending', { due_date: '2026-06-25' }),
+    step(5, 'O', 'pending', { assignee_name: '한OVL', assignee_loginid: 'tour-o', due_date: '2026-06-25' }),
   ],
 };
 

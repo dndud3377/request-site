@@ -467,8 +467,9 @@
     "col_current_stage_completion": "Stage Due Date",
     "col_final_completion": "Final Expected Completion",
     "col_due_date": "Due Date",
-    "path_label_phpsi_job": "Path 1",
-    "path_label_ovl_euv": "Path 2",
+    "path_label_1": "Path 1",
+    "path_label_2": "Path 2",
+    "path_label_3": "Path 3",
     "due_date_undecided": "TBD",
     "view_detail": "View",
     "agree": "Agree",
@@ -770,7 +771,7 @@
       "steps": {
         "route": {
           "title": "Approval Route",
-          "description": "The final approval route of this system. After Review (PL) and RFG, Route 1 (PHPSI→JOB) and Route 2 (OVL·EUV) proceed in parallel. (E only when plel exists; MAP-only requests stop at R.)"
+          "description": "The final approval route of this system. After Review (PL) and RFG, Route 1 (PHPSI), Route 2 (JOB) and Route 3 (OVL·EUV) proceed in parallel. (E only when plel exists; MAP-only requests stop at R.)"
         },
         "request": {
           "title": "Create a Request",
@@ -807,7 +808,7 @@
           "description": "Check the approval route and progress of submitted requests, and export tables to Excel from the detail view.",
           "flow": {
             "intro": "The Approval Status page lets you track the progress of submitted requests stage by stage.",
-            "route": "This is the final approval route a request goes through. After Review (PL) and RFG, Path 1 (PHPSI→JOB) and Path 2 (OVL·EUV) run in parallel.",
+            "route": "This is the final approval route a request goes through. After Review (PL) and RFG, Path 1 (PHPSI), Path 2 (JOB) and Path 3 (OVL·EUV) run in parallel.",
             "my_filter": "The 'MY' filter shows only requests you submitted or that need your approval.",
             "stage_mail": "The 'Current Stage' column shows the active approval step and its assignee, and a mail is sent automatically to the relevant team/assignee.",
             "assign_btn": "For the Review (PL) and RFG steps, click 'Assign' in the detail to designate an approver from the same team. For the JOB, OVL, and EUV steps, any team member can take the step themselves by clicking 'Review' — no assignment needed.",

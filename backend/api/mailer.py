@@ -26,8 +26,7 @@
   · 그 외 단계에서 반려된 경우, 아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원도
     포함(반려한 본인 제외). 이미 합의를 마친 팀은 팀 전체 발송 대상이 아니다.
 - 승인 완료: 현재 회차 결재 경로에 참여했던 전원(중복 제거)
-- P 단계 도착 통보(notify_p_arrival): TE_J 팀 전원(참고용, 결재 권한과 무관)
-- P 단계 완료 통보(notify_p_completed): TE_O 팀 전원(참고용, 결재 권한과 무관)
+- P 단계 완료 통보(notify_p_completed): TE_O + TE_J 팀 전원(참고용, 결재 권한과 무관)
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
 """
 import logging
@@ -76,7 +75,7 @@ ROUTE_AGENTS_ONLY_MAP = ('R', 'RV', 'RA')
 # 'MAP 삭제/수정' 의뢰서는 PL 합의 후 P·R·J·O 를 병렬로 진행한다.
 # E(MASK)·EV 와 후결자(RA)는 생성하지 않으므로 경로에서도 빠진다(고정 후결자도 없는 유일한 경로).
 ROUTE_AGENTS_MAP_DELETE_EDIT = ('P', 'PV', 'R', 'RV', 'J', 'O')
-ROUTE_AGENTS_DEFAULT = ('R', 'RV', 'P', 'PV', 'O', 'E', 'EV', 'J', 'RA')
+ROUTE_AGENTS_DEFAULT = ('R', 'RV', 'P', 'PV', 'J', 'O', 'E', 'EV', 'RA')
 
 
 def route_agents_for(document):
@@ -113,17 +112,14 @@ ROUTE_UNASSIGNED_LABEL = '담당자 미지정'
 # 경로 카드에 싣는 코멘트 최대 길이(초과분은 잘라내고 말줄임표를 붙인다)
 ROUTE_COMMENT_MAX_LEN = 300
 
-# 담당자 미지정 시 단계별 고정 수신 주소 (담당 팀 1명 대표 주소)
-#
-# [수신자 변경 방법]
-#   아래 딕셔너리의 이메일 문자열을 직접 수정한다(수정 후 백엔드 재시작 필요).
-#   R/J 단계만 여기서 관리한다.
-UNASSIGNED_FALLBACK = {
-    'J': 'user_J@company.com',
-}
-
 # 단계 도착 시 팀 전원에게 보내는 단계 (담당자 지정 개념이 없는 병렬 단계 + 미배정 R)
 TEAM_BROADCAST_AGENTS = ('O', 'E')
+
+# (2026-08) 담당자 미지정 시 쓰던 고정 수신 주소(UNASSIGNED_FALLBACK = {'J': ...})를 삭제했다.
+# J 가 R 합의 시점의 독립 병렬 단계가 되면서 TE_J 팀원 누구나 선점·합의하는 구조가 됐는데,
+# 도착 메일만 대표 주소 1곳으로 가면 팀원 개개인이 자기 차례를 알 수 없다. 이제 J 도
+# P/R 과 동일하게 "미배정이면 팀 전원, 배정 후엔 그 담당자 1명" 규칙을 쓴다.
+# (하드코딩된 고정 주소 문제 `docs/E2E_TEST_AND_BUGS.md` B-44 도 함께 해소된다.)
 
 # 메일 본문 표기용 단계 라벨 (마스킹된 비즈니스 용어 대신 코드 사용)
 AGENT_LABEL = {
@@ -145,7 +141,6 @@ EVENT_STATUS_LABEL = {
     'approved': '승인 완료',
     'notify_submitted': '상신 통보',
     'notify_approved': '결재 완료 통보',
-    'notify_p_arrival': 'P 단계 도착 통보',
     'notify_p_completed': 'P 단계 완료 통보',
     'revision_requested': '수정 요청',
 }
@@ -186,8 +181,7 @@ EVENT_THEME = {
     },
 }
 EVENT_THEME['notify_approved'] = EVENT_THEME['notify_submitted']
-# P 단계 도착/완료 통보(TE_J/TE_O)도 다른 통보 이벤트와 같은 보라 테마를 쓴다.
-EVENT_THEME['notify_p_arrival'] = EVENT_THEME['notify_submitted']
+# P 단계 완료 통보(TE_O/TE_J)도 다른 통보 이벤트와 같은 보라 테마를 쓴다.
 EVENT_THEME['notify_p_completed'] = EVENT_THEME['notify_submitted']
 # 수정 요청: 결재를 되돌리진 않지만 상신자의 조치가 필요하다는 점에서 반려와 같은 주의 테마
 EVENT_THEME['revision_requested'] = EVENT_THEME['rejected']
@@ -283,24 +277,22 @@ def resolve_stage_recipients(document, agent, step=None):
             recipients = [step.assignee.mail]
         else:
             recipients = _team_emails('P')
-    elif agent == 'R':
-        # R: 담당자 지정 시 그 1명, 미지정(도착 시점) 시 TE_R 권한 보유 전원
+    elif agent in ('R', 'J'):
+        # R/J: 담당자 지정 시 그 1명, 미지정(도착 시점) 시 해당 팀(TE_R/TE_J) 권한 보유 전원.
+        # J 는 2026-08 병렬 분리 전까지 고정 주소 폴백을 썼다(위 주석 참고).
         if step is not None and step.assignee and step.assignee.mail:
             recipients = [step.assignee.mail]
         else:
-            recipients = _team_emails('R')
+            recipients = _team_emails(agent)
     elif agent in ('RV', 'RA', 'PV', 'EV'):
         # RV/PV/EV(검토자)/RA(후결자): 항상 지정된 그 1명(호출 시점에 이미 assignee 확정)
         recipients = []
         if step is not None and step.assignee and step.assignee.mail:
             recipients = [step.assignee.mail]
     else:
-        # J: 담당자 지정 시 그 1명, 미지정 시 고정 주소
-        if step is not None and step.assignee and step.assignee.mail:
-            recipients = [step.assignee.mail]
-        else:
-            fallback = UNASSIGNED_FALLBACK.get(agent)
-            recipients = [fallback] if fallback else []
+        # 위에서 PL·R·J·P·O·E·RV·PV·EV·RA 를 모두 다루므로 여기 오는 agent 는 없다.
+        # 새 단계가 생겼는데 규칙을 안 넣은 경우 — 엉뚱한 곳으로 보내는 대신 발송하지 않는다.
+        recipients = []
     return _apply_redirect(recipients)
 
 
@@ -710,13 +702,9 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
         subject = f'[결재 완료 통보] {document.title}'
         headline = '아래 의뢰서의 결재가 완료되어 통보드립니다. (통보처 수신)'
         stage_value = EVENT_STATUS_LABEL[event_type]
-    elif event_type == 'notify_p_arrival':
-        subject = f'[P 도착 통보] {document.title}'
-        headline = 'P 단계에 결재가 도착하여 통보드립니다. (TE_J 수신)'
-        stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'notify_p_completed':
         subject = f'[P 완료 통보] {document.title}'
-        headline = 'P 단계 결재가 완료되어 통보드립니다. (TE_O 수신)'
+        headline = 'P 단계 결재가 완료되어 통보드립니다. (TE_O·TE_J 수신)'
         stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'revision_requested':
         subject = f'[수정 요청] {document.title}'
@@ -820,15 +808,15 @@ def enqueue_notify_approved(document):
     return _enqueue(document, 'notify_approved', recipients)
 
 
-def enqueue_notify_p_arrival(document):
-    """P 단계 도착 통보 적재(TE_J 팀 전원 대상, 결재 권한과 무관한 참고 통보)."""
-    recipients = _apply_redirect(_team_emails('J'))
-    return _enqueue(document, 'notify_p_arrival', recipients)
-
-
 def enqueue_notify_p_completed(document):
-    """P 단계 완료 통보 적재(TE_O 팀 전원 대상, 결재 권한과 무관한 참고 통보)."""
-    recipients = _apply_redirect(_team_emails('O'))
+    """P 단계 완료 통보 적재(TE_O + TE_J 팀 전원 대상, 결재 권한과 무관한 참고 통보).
+
+    TE_J 는 예전에 P 단계 '도착' 시점에 notify_p_arrival 로 참고 통보를 받았다. J 가 R 합의
+    시점부터 독립 병렬 단계가 되면서 TE_J 는 stage_arrival(J) 결재 요청 메일을 직접 받게 돼
+    도착 통보가 중복이 됐고, 대신 P 진행 상황을 알 수 있도록 이 완료 통보에 합류시켰다.
+    """
+    # _apply_redirect 가 빈 주소 제거 + 중복 제거(순서 보존)까지 하므로 두 팀을 그대로 이어 붙인다.
+    recipients = _apply_redirect(_team_emails('O') + _team_emails('J'))
     return _enqueue(document, 'notify_p_completed', recipients)
 
 
