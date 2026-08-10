@@ -99,6 +99,20 @@ STEP_TABLE_MAP = {
 }
 STEP_COLUMNS = ['processid', 'stepseq', 'descript', 'recipeid', 'areaname', 'eqptype', 'updated', 'layerid']
 
+# nv 는 DCQ(FALLBACK) 소스 테이블이 다른 라인들과 달라 라인 접미사로 만들 수 없다.
+# (RTDB(MAIN) 경로는 다른 라인과 동일하게 접미사 치환을 쓴다.)
+NV_DCQ_PP_QUERY = """
+    SELECT DISTINCT partnumber, descript, pkgtype_2
+    FROM N.V
+"""
+NV_DCQ_PC_QUERY = """
+    SELECT DISTINCT partnumber, processid
+    FROM N.V2
+"""
+# 라인별 DCQ fallback 쿼리 오버라이드. 없는 라인은 접미사 기반 기본 쿼리를 쓴다.
+DCQ_PP_QUERY_OVERRIDE = {LINE_NV: NV_DCQ_PP_QUERY}
+DCQ_PC_QUERY_OVERRIDE = {LINE_NV: NV_DCQ_PC_QUERY}
+
 
 def _write_if_changed(engine, table, line, df, key_cols, order_cols):
     """
@@ -188,11 +202,13 @@ def sync_rtdb_options():
 
             # --- 공정-품목 (api_processproduct) ---
             try:
-                dcq_cp = f"""
-                    SELECT DISTINCT partnumber, descript, pkgtype_2
-                    FROM A.B_{suffix}
-                    WHERE X IS NOT NULL AND X != ''
-                """
+                dcq_cp = DCQ_PP_QUERY_OVERRIDE.get(line)
+                if dcq_cp is None:
+                    dcq_cp = f"""
+                        SELECT DISTINCT partnumber, descript, pkgtype_2
+                        FROM A.B_{suffix}
+                        WHERE X IS NOT NULL AND X != ''
+                    """
                 df_cp = fetch(RTDB_PP_SELECT, RTDB_PP_FILTER, RTDB_PP_TABLE, suffix, dcq_cp)
                 if df_cp is None or len(df_cp) == 0:
                     logger.warning(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 데이터가 없습니다").format(line=line))
@@ -212,10 +228,12 @@ def sync_rtdb_options():
 
             # --- 품목-공정ID (api_productprocessid) ---
             try:
-                dcq_pc = f"""
-                    SELECT DISTINCT partnumber, processid
-                    FROM A.B_{suffix}_processproduct
-                """
+                dcq_pc = DCQ_PC_QUERY_OVERRIDE.get(line)
+                if dcq_pc is None:
+                    dcq_pc = f"""
+                        SELECT DISTINCT partnumber, processid
+                        FROM A.B_{suffix}_processproduct
+                    """
                 df_pc = fetch(RTDB_PC_SELECT, RTDB_PC_FILTER, RTDB_PC_TABLE, suffix, dcq_pc)
                 if df_pc is None or len(df_pc) == 0:
                     logger.warning(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 데이터가 없습니다").format(line=line))
