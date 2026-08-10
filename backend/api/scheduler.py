@@ -29,7 +29,11 @@ from .utils import (
 logger = logging.getLogger(__name__)
 load_dotenv()
 
-LINES = ['라인 1', '라인 3', '라인 4', '라인 5']
+# nv 는 RTDB(MAIN)+DCQ(fallback) 구조를 그대로 쓰지만 스텝 테이블이 없다.
+# (Line 마스터·프론트엔드 표기와 일치하도록 공백 없는 'nv' 로 저장한다.)
+LINE_NV = 'nv'
+
+LINES = ['라인 1', '라인 3', '라인 4', '라인 5', LINE_NV]
 
 # 라인2 는 소스 테이블 구조가 달라 RTDB 를 쓰지 않고 DCQ 단독으로 동기화한다.
 # (Line 마스터·프론트엔드 표기와 일치하도록 공백 없는 '라인2' 로 저장한다.)
@@ -230,19 +234,21 @@ def sync_rtdb_options():
                 logger.error(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
 
             # --- 스텝 (api_steps: 라인별 단독 테이블) ---
-            try:
-                dcq_ps = f"""
-                    SELECT processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid
-                    FROM A.B_{suffix}_step
-                    WHERE X = 'Y'
-                """
-                df_ps = fetch(RTDB_STEP_SELECT, RTDB_STEP_FILTER, RTDB_STEP_TABLE, suffix, dcq_ps)
-                if df_ps is None or len(df_ps) == 0:
-                    logger.warning(_("[scheduler] {line} {{request.col_step}} 데이터가 없습니다").format(line=line))
-                else:
-                    table_name = STEP_TABLE_MAP.get(line)
-                    if not table_name:
-                        logger.warning(_("[scheduler] 알 수 없는 {{request.line}}: {line}").format(line=line))
+            # 스텝 테이블이 없는 라인(nv)은 조회 자체를 건너뛴다.
+            # (조회부터 하면 매 10 분마다 빈 결과 → 불필요한 DCQ fallback 로그인이 발생한다.)
+            table_name = STEP_TABLE_MAP.get(line)
+            if not table_name:
+                logger.info(_("[scheduler] {line} {{request.col_step}} 테이블 없음 - skip").format(line=line))
+            else:
+                try:
+                    dcq_ps = f"""
+                        SELECT processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid
+                        FROM A.B_{suffix}_step
+                        WHERE X = 'Y'
+                    """
+                    df_ps = fetch(RTDB_STEP_SELECT, RTDB_STEP_FILTER, RTDB_STEP_TABLE, suffix, dcq_ps)
+                    if df_ps is None or len(df_ps) == 0:
+                        logger.warning(_("[scheduler] {line} {{request.col_step}} 데이터가 없습니다").format(line=line))
                     else:
                         df_ps['last_synced'] = pd.Timestamp.now()
                         df_ps = df_ps[STEP_COLUMNS + ['last_synced']]
@@ -250,8 +256,8 @@ def sync_rtdb_options():
                             db_conn.execute(text(f"DELETE FROM {table_name}"))
                             df_ps.to_sql(table_name, db_conn, if_exists='append', index=False)
                         logger.info(_("[scheduler] {line} {{request.col_step}} {count}건 동기화 완료").format(line=line, count=len(df_ps)))
-            except Exception as e:
-                logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
+                except Exception as e:
+                    logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
     finally:
         if engine:
             engine.dispose()
