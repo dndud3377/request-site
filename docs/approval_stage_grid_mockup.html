@@ -135,6 +135,8 @@
     gap: 3px 22px; width: max-content;
   }
   .cell { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  /* 뱃지가 앞에 오므로 폭을 고정해야 뒤따르는 단계명이 세로로 정렬된다 */
+  .cell .b { min-width: 62px; text-align: center; }
   .cell .nm { font-weight: 500; }
   .cell.off .nm { color: var(--disabled); }
   .cell.done .nm { color: var(--disabled); }
@@ -245,12 +247,12 @@
 <h3>그리드 배치</h3>
 <div class="card">
   <div class="grid">
-    <div class="cell"><span class="nm">PHPSI</span><span class="b b-wait">대기중</span></div>
-    <div class="cell"><span class="nm">후결자(정고정)</span><span class="b b-wait">대기중</span></div>
-    <div class="cell"><span class="nm">JOB</span><span class="b b-wait">대기중</span></div>
-    <div class="cell"><span class="nm">MASK</span><span class="b b-wait">대기중</span></div>
-    <div class="cell"><span class="nm">OVL</span><span class="b b-wait">대기중</span></div>
-    <div class="cell"><span class="nm">추가후결자(이순신)</span><span class="b b-wait">대기중</span></div>
+    <div class="cell"><span class="b b-wait">대기중</span><span class="nm">PHPSI</span></div>
+    <div class="cell"><span class="b b-wait">대기중</span><span class="nm">후결자(정고정)</span></div>
+    <div class="cell"><span class="b b-wait">대기중</span><span class="nm">JOB</span></div>
+    <div class="cell"><span class="b b-wait">대기중</span><span class="nm">MASK</span></div>
+    <div class="cell"><span class="b b-wait">대기중</span><span class="nm">OVL</span></div>
+    <div class="cell"><span class="b b-wait">대기중</span><span class="nm">추가후결자(이순신)</span></div>
   </div>
   <p style="font-size:0.8rem;color:var(--muted);margin-top:10px;">
     1열 = <code>PHPSI · JOB · OVL</code> / 2열 = <code>고정 후결자 · MASK · 추가 후결자</code> (고정 배치, 순서 불변)
@@ -350,12 +352,12 @@
         <td><span class="doc-title">ABC 의뢰</span></td>
         <td>홍길동<div class="dept">개발1팀</div></td>
         <td><div class="grid">
-          <div class="cell"><span class="nm">PHPSI</span><span class="b b-wait">대기중</span></div>
-          <div class="cell"><span class="nm">후결자</span><span class="b b-wait">대기중</span></div>
-          <div class="cell"><span class="nm">JOB</span><span class="b b-wait">대기중</span></div>
-          <div class="cell"><span class="nm">MASK</span><span class="b b-wait">대기중</span></div>
-          <div class="cell"><span class="nm">OVL</span><span class="b b-wait">대기중</span></div>
-          <div class="cell"><span class="nm">추가후결자</span><span class="b b-wait">대기중</span></div>
+          <div class="cell"><span class="b b-wait">대기중</span><span class="nm">PHPSI</span></div>
+          <div class="cell"><span class="b b-wait">대기중</span><span class="nm">후결자</span></div>
+          <div class="cell"><span class="b b-wait">대기중</span><span class="nm">JOB</span></div>
+          <div class="cell"><span class="b b-wait">대기중</span><span class="nm">MASK</span></div>
+          <div class="cell"><span class="b b-wait">대기중</span><span class="nm">OVL</span></div>
+          <div class="cell"><span class="b b-wait">대기중</span><span class="nm">추가후결자</span></div>
         </div></td>
         <td>08/18</td>
       </tr></tbody>
@@ -389,12 +391,12 @@
   </div>
   <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
     <div class="card" style="margin:0;"><div class="grid">
-      <div class="cell"><span class="nm">PHPSI(박영희)</span><span class="b b-rev">검토중</span></div>
-      <div class="cell"><span class="nm">후결자</span><span class="b b-wait">대기중</span></div>
-      <div class="cell"><span class="nm">JOB</span><span class="b b-wait">대기중</span></div>
-      <div class="cell"><span class="nm">MASK(강동원)</span><span class="b b-rev">검토중</span></div>
-      <div class="cell"><span class="nm">OVL</span><span class="b b-rev">검토중</span></div>
-      <div class="cell"><span class="nm">추가후결자</span><span class="b b-wait">대기중</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">PHPSI(박영희)</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">후결자</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">JOB</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">MASK(강동원)</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">OVL</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">추가후결자</span></div>
     </div></div>
   </div>
 </div>
@@ -424,12 +426,12 @@
   </div>
   <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
     <div class="card" style="margin:0;"><div class="grid">
-      <div class="cell"><span class="nm">PHPSI(최민수 / 정검토)</span><span class="b b-rev">검토중</span></div>
-      <div class="cell"><span class="nm">후결자</span><span class="b b-wait">대기중</span></div>
-      <div class="cell done"><span class="nm">JOB</span><span class="b b-done">완료</span></div>
-      <div class="cell"><span class="nm">MASK(강동원)</span><span class="b b-rev">검토중</span></div>
-      <div class="cell"><span class="nm">OVL</span><span class="b b-rev">검토중</span></div>
-      <div class="cell"><span class="nm">추가후결자</span><span class="b b-wait">대기중</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">PHPSI(최민수 / 정검토)</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">후결자</span></div>
+      <div class="cell done"><span class="b b-done">완료</span><span class="nm">JOB</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">MASK(강동원)</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">OVL</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">추가후결자</span></div>
     </div></div>
   </div>
 </div>
@@ -460,12 +462,12 @@
   </div>
   <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
     <div class="card" style="margin:0;"><div class="grid">
-      <div class="cell done"><span class="nm">PHPSI</span><span class="b b-done">완료</span></div>
-      <div class="cell done"><span class="nm">후결자</span><span class="b b-done">완료</span></div>
-      <div class="cell done"><span class="nm">JOB</span><span class="b b-done">완료</span></div>
-      <div class="cell"><span class="nm">MASK(김검토)</span><span class="b b-rev">검토중</span></div>
-      <div class="cell"><span class="nm">OVL</span><span class="b b-rev">검토중</span></div>
-      <div class="cell"><span class="nm">추가후결자(이순신)</span><span class="b b-rev">검토중</span></div>
+      <div class="cell done"><span class="b b-done">완료</span><span class="nm">PHPSI</span></div>
+      <div class="cell done"><span class="b b-done">완료</span><span class="nm">후결자</span></div>
+      <div class="cell done"><span class="b b-done">완료</span><span class="nm">JOB</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">MASK(김검토)</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">OVL</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">추가후결자(이순신)</span></div>
     </div></div>
   </div>
 </div>
@@ -514,12 +516,12 @@
   </div>
   <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
     <div class="card" style="margin:0;"><div class="grid">
-      <div class="cell"><span class="nm">PHPSI</span><span class="b b-wait">대기중</span></div>
-      <div class="cell"><span class="nm">후결자</span><span class="b b-wait">대기중</span></div>
-      <div class="cell"><span class="nm">JOB</span><span class="b b-wait">대기중</span></div>
-      <div class="cell off"><span class="nm">MASK</span><span class="b b-na">해당없음</span></div>
-      <div class="cell"><span class="nm">OVL</span><span class="b b-wait">대기중</span></div>
-      <div class="cell off"><span class="nm">추가후결자</span><span class="b b-na">해당없음</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">PHPSI</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">후결자</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">JOB</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">MASK</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">OVL</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">추가후결자</span></div>
     </div></div>
   </div>
 </div>
@@ -539,12 +541,12 @@
   </div>
   <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
     <div class="card" style="margin:0;"><div class="grid">
-      <div class="cell off"><span class="nm">PHPSI</span><span class="b b-na">해당없음</span></div>
-      <div class="cell"><span class="nm">후결자(정고정)</span><span class="b b-rev">검토중</span></div>
-      <div class="cell off"><span class="nm">JOB</span><span class="b b-na">해당없음</span></div>
-      <div class="cell off"><span class="nm">MASK</span><span class="b b-na">해당없음</span></div>
-      <div class="cell off"><span class="nm">OVL</span><span class="b b-na">해당없음</span></div>
-      <div class="cell"><span class="nm">추가후결자(이순신)</span><span class="b b-rev">검토중</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">PHPSI</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">후결자(정고정)</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">JOB</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">MASK</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">OVL</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">추가후결자(이순신)</span></div>
     </div></div>
   </div>
 </div>
@@ -560,12 +562,12 @@
   </div>
   <div class="cmp-col"><span class="cmp-head cmp-after">변경 후</span>
     <div class="card" style="margin:0;"><div class="grid">
-      <div class="cell"><span class="nm">PHPSI(박영희)</span><span class="b b-rev">검토중</span></div>
-      <div class="cell"><span class="nm">RFG(김철수)</span><span class="b b-rev">검토중</span></div>
-      <div class="cell"><span class="nm">JOB</span><span class="b b-wait">대기중</span></div>
-      <div class="cell off"><span class="nm">MASK</span><span class="b b-na">해당없음</span></div>
-      <div class="cell"><span class="nm">OVL</span><span class="b b-wait">대기중</span></div>
-      <div class="cell off"><span class="nm">추가후결자</span><span class="b b-na">해당없음</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">PHPSI(박영희)</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">RFG(김철수)</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">JOB</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">MASK</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">OVL</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">추가후결자</span></div>
     </div></div>
   </div>
 </div>
@@ -608,12 +610,12 @@
   </div>
   <div class="cmp-col"><span class="cmp-head cmp-after">변경 후 — 전 칸 PAUSE</span>
     <div class="card" style="margin:0;"><div class="grid">
-      <div class="cell"><span class="nm">PHPSI</span><span class="b b-pause">PAUSE</span></div>
-      <div class="cell"><span class="nm">후결자</span><span class="b b-pause">PAUSE</span></div>
-      <div class="cell"><span class="nm">JOB</span><span class="b b-pause">PAUSE</span></div>
-      <div class="cell"><span class="nm">MASK</span><span class="b b-pause">PAUSE</span></div>
-      <div class="cell"><span class="nm">OVL</span><span class="b b-pause">PAUSE</span></div>
-      <div class="cell"><span class="nm">추가후결자</span><span class="b b-pause">PAUSE</span></div>
+      <div class="cell"><span class="b b-pause">PAUSE</span><span class="nm">PHPSI</span></div>
+      <div class="cell"><span class="b b-pause">PAUSE</span><span class="nm">후결자</span></div>
+      <div class="cell"><span class="b b-pause">PAUSE</span><span class="nm">JOB</span></div>
+      <div class="cell"><span class="b b-pause">PAUSE</span><span class="nm">MASK</span></div>
+      <div class="cell"><span class="b b-pause">PAUSE</span><span class="nm">OVL</span></div>
+      <div class="cell"><span class="b b-pause">PAUSE</span><span class="nm">추가후결자</span></div>
     </div></div>
   </div>
 </div>
@@ -649,12 +651,12 @@
   </div>
   <div class="cmp-col"><span class="cmp-head cmp-after">변경 후 — 대상 칸마다</span>
     <div class="card" style="margin:0;"><div class="grid">
-      <div class="cell"><span class="nm">PHPSI(박영희)</span><span class="b b-rev">검토중</span><span class="chip">⏸ 중단 요청중</span></div>
-      <div class="cell"><span class="nm">후결자</span><span class="b b-wait">대기중</span></div>
-      <div class="cell"><span class="nm">JOB</span><span class="b b-rev">검토중</span><span class="chip">⏸ 중단 요청중</span></div>
-      <div class="cell off"><span class="nm">MASK</span><span class="b b-na">해당없음</span></div>
-      <div class="cell"><span class="nm">OVL</span><span class="b b-wait">대기중</span></div>
-      <div class="cell off"><span class="nm">추가후결자</span><span class="b b-na">해당없음</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">PHPSI(박영희)</span><span class="chip">⏸ 중단 요청중</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">후결자</span></div>
+      <div class="cell"><span class="b b-rev">검토중</span><span class="nm">JOB</span><span class="chip">⏸ 중단 요청중</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">MASK</span></div>
+      <div class="cell"><span class="b b-wait">대기중</span><span class="nm">OVL</span></div>
+      <div class="cell off"><span class="b b-na">해당없음</span><span class="nm">추가후결자</span></div>
     </div></div>
   </div>
 </div>
