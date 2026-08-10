@@ -42,11 +42,18 @@ class RecipientResolutionTest(TestCase):
             ['pl@company.com'],
         )
 
-    def test_j_unassigned_uses_fixed_fallback(self):
+    def test_j_unassigned_broadcasts_to_whole_team(self):
+        """(2026-08) 미배정 J 는 고정 주소가 아니라 TE_J 팀 전원에게 간다(R/P 와 동일 규칙).
+
+        J 가 R 합의 시점의 독립 병렬 단계가 되면서 팀원 누구나 선점·합의하게 됐는데, 대표
+        주소 1곳으로만 보내면 팀원 개개인이 자기 차례를 알 수 없다.
+        """
+        UserProfile.objects.create(loginid='j1', mail='j1@company.com', role='TE_J')
+        UserProfile.objects.create(loginid='j2', mail='j2@company.com', role='TE_J')
         step = ApprovalStep.objects.create(document=self.doc, agent='J')
         self.assertEqual(
-            mailer.resolve_stage_recipients(self.doc, 'J', step),
-            ['user_J@company.com'],
+            sorted(mailer.resolve_stage_recipients(self.doc, 'J', step)),
+            ['j1@company.com', 'j2@company.com'],
         )
 
     def test_r_unassigned_broadcasts_to_whole_team(self):
@@ -456,11 +463,12 @@ class EnqueueTest(TestCase):
         self.doc = _make_document(self.requester)
 
     def test_enqueue_creates_pending_row(self):
+        UserProfile.objects.create(loginid='j1', mail='j1@company.com', role='TE_J')
         step = ApprovalStep.objects.create(document=self.doc, agent='J')
         noti = mailer.enqueue_stage_arrival(self.doc, 'J', step)
         self.assertIsNotNone(noti)
         self.assertEqual(noti.status, 'pending')
-        self.assertEqual(noti.recipients, ['user_J@company.com'])
+        self.assertEqual(noti.recipients, ['j1@company.com'])
 
     def test_enqueue_skips_when_no_recipient(self):
         self.doc.requester_email = ''
@@ -934,23 +942,81 @@ class PEStageReviewerFlowTest(TestCase):
 
     # ----- P 단계 -----
 
-    def test_p_no_reviewers_creates_j_immediately_backward_compat(self):
+    def test_p_no_reviewers_completes_stage_immediately_backward_compat(self):
+        """검토자를 지정하지 않으면 담당자 합의만으로 P 단계가 완료된다(하위호환).
+
+        (2026-08) 완료 여부를 'J 생성'으로 확인하던 것을 완료 통보 적재로 바꿨다 —
+        J 는 이제 R 합의 시점부터 병렬로 존재하므로 P 완료의 지표가 될 수 없다.
+        """
         doc = self._advance_to_parallel()
         self.client.force_authenticate(user=self.p_owner)
         r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
-        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists())
+        self.assertTrue(
+            MailNotification.objects.filter(document=doc, event_type='notify_p_completed').exists()
+        )
 
-    def test_p_arrival_notifies_te_j(self):
+    def test_j_created_in_parallel_at_r_approval(self):
+        """(2026-08) J 는 P 를 기다리지 않고 R 합의 시점에 O/E 와 함께 생성된다."""
         doc = self._advance_to_parallel()
-        noti = MailNotification.objects.filter(document=doc, event_type='notify_p_arrival').first()
-        self.assertIsNotNone(noti)
-        self.assertIn(self.j_user.mail, noti.recipients)
-        self.assertEqual(noti.subject, f'[P 도착 통보] {doc.title}')
+        j_step = ApprovalStep.objects.filter(document=doc, agent='J', round=1).first()
+        self.assertIsNotNone(j_step, 'J 는 R 합의 즉시 병렬 단계로 생성돼야 한다')
+        self.assertEqual(j_step.action, 'pending')
+        self.assertTrue(j_step.is_parallel)
+        self.assertIsNone(j_step.assignee, '검토중(claim) 방식이라 생성 시점엔 미배정이다')
+        # P 는 아직 pending — J 가 P 완료와 무관하게 존재한다는 뜻이다.
+        self.assertEqual(
+            ApprovalStep.objects.get(document=doc, agent='P', round=1).action, 'pending'
+        )
 
-    def test_p_completion_notifies_te_o(self):
+    def test_j_due_date_matches_o_and_e(self):
+        """(2026-08) J 의 기한은 P(4영업일)가 아니라 O/E 와 동일한 6영업일이다."""
+        doc = self._advance_to_parallel(plel=True)
+        steps = {s.agent: s for s in ApprovalStep.objects.filter(document=doc, round=1)}
+        self.assertEqual(steps['J'].due_date, steps['O'].due_date)
+        self.assertEqual(steps['J'].due_date, steps['E'].due_date)
+        self.assertNotEqual(steps['J'].due_date, steps['P'].due_date,
+                            'P 는 4영업일 그대로라 J 와 같을 수 없다')
+
+    def test_j_stage_arrival_mail_sent_at_r_approval(self):
+        """(2026-08) J 도착 메일이 P 완료 시점이 아니라 R 합의 시점에 TE_J 팀 전원에게 적재된다.
+
+        MailNotification 에 agent 필드가 없어 본문 문구로 J 메일을 식별한다.
+        """
+        doc = self._advance_to_parallel()
+        noti = MailNotification.objects.filter(
+            document=doc, event_type='stage_arrival',
+            contents__contains='J 단계 결재가 도착했습니다.',
+        ).first()
+        self.assertIsNotNone(noti, 'R 합의 시점(= P 가 아직 pending)에 J 도착 메일이 적재돼야 한다')
+        self.assertIn(self.j_user.mail, noti.recipients,
+                      '미배정 J 는 고정 주소가 아니라 TE_J 팀 전원에게 가야 한다')
+        self.assertEqual(
+            ApprovalStep.objects.get(document=doc, agent='P', round=1).action, 'pending',
+            'P 는 아직 진행 중인데 J 메일이 이미 나갔다는 것이 이 테스트의 핵심이다',
+        )
+
+    def test_j_unassigned_arrival_has_no_hardcoded_fallback_address(self):
+        """(2026-08) 폐지한 고정 주소(user_J@company.com)로는 더 이상 발송되지 않는다."""
+        doc = self._advance_to_parallel()
+        for noti in MailNotification.objects.filter(document=doc):
+            self.assertNotIn('user_J@company.com', noti.recipients)
+
+    def test_j_arrival_after_claim_goes_to_that_assignee_only(self):
+        """J 가 이미 선점된 상태에서 도착 메일을 만들면 그 담당자 1명에게만 간다(P/R 과 동일 규칙)."""
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'J'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        j_step = ApprovalStep.objects.get(document=doc, agent='J', round=1)
+        self.assertEqual(
+            mailer.resolve_stage_recipients(doc, 'J', j_step), [self.j_user.mail]
+        )
+
+    def test_p_completion_notifies_te_o_and_te_j(self):
         doc = self._advance_to_parallel()
         self.client.force_authenticate(user=self.p_owner)
         self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
@@ -959,6 +1025,8 @@ class PEStageReviewerFlowTest(TestCase):
         noti = MailNotification.objects.filter(document=doc, event_type='notify_p_completed').first()
         self.assertIsNotNone(noti)
         self.assertIn(self.o_user.mail, noti.recipients)
+        # (2026-08) 폐지된 notify_p_arrival 대신 TE_J 도 이 완료 통보를 받는다.
+        self.assertIn(self.j_user.mail, noti.recipients)
         self.assertEqual(noti.subject, f'[P 완료 통보] {doc.title}')
 
     def test_p_reviewer_loginids_denied_before_claim(self):
@@ -1008,7 +1076,7 @@ class PEStageReviewerFlowTest(TestCase):
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'PV', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 400)
 
-    def test_p_j_created_only_after_owner_and_all_reviewers_approve(self):
+    def test_p_stage_completes_only_after_owner_and_all_reviewers_approve(self):
         doc = self._advance_to_parallel()
         self.client.force_authenticate(user=self.p_owner)
         self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
@@ -1021,13 +1089,17 @@ class PEStageReviewerFlowTest(TestCase):
         self.assertTrue(
             ApprovalStep.objects.filter(document=doc, agent='PV', round=1, assignee__loginid=self.p_reviewer.loginid).exists()
         )
-        # 담당자만 합의된 상태 — 검토자 미합의라 J 아직 생성되지 않음
-        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists())
+        # 담당자만 합의된 상태 — 검토자 미합의라 P 단계는 아직 완료가 아니다(완료 통보 없음)
+        self.assertFalse(
+            MailNotification.objects.filter(document=doc, event_type='notify_p_completed').exists()
+        )
 
         self.client.force_authenticate(user=self.p_reviewer)
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'PV', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
-        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists())
+        self.assertTrue(
+            MailNotification.objects.filter(document=doc, event_type='notify_p_completed').exists()
+        )
 
     def test_p_reviewer_self_designation_rejected(self):
         doc = self._advance_to_parallel()
@@ -1086,7 +1158,14 @@ class PEStageReviewerFlowTest(TestCase):
 
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'rejected')
-        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists())
+        # (2026-08) J 는 R 합의 시점에 이미 만들어져 있으므로 '미생성' 이 아니라 '진행 불가' 를 본다 —
+        # 반려 문서는 _blocked_progress_response 가드로 잔여 pending 단계를 처리할 수 없다(§6-8).
+        self.assertEqual(
+            ApprovalStep.objects.get(document=doc, agent='J', round=1).action, 'pending'
+        )
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'J'}, format='json')
+        self.assertEqual(r.status_code, 400, '반려된 문서의 잔여 J 단계는 진행할 수 없어야 한다')
 
     # ----- E 단계(plel) + 최종 승인 게이트 -----
 
@@ -1161,6 +1240,87 @@ class PEStageReviewerFlowTest(TestCase):
 
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'approved')
+
+    # ----- (2026-08) J 병렬 분리 후 최종 승인 판정에 P 가 포함된다 -----
+
+    def test_general_route_approved_when_p_is_last(self):
+        """J·O 를 먼저 끝내고 P 를 마지막에 합의해도 문서가 승인된다.
+
+        J 분리 전에는 P 뒤에 항상 J 가 있어 P 가 마지막이 될 수 없었고, 그래서 P/PV 합의는
+        최종 승인 판정을 돌리지 않았다. 그 상태로 J 만 분리하면 이 문서가 under_review 에
+        영구 정지한다 — 판정 트리거에 P/PV 를 넣은 이유다.
+        """
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.j_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'J'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'J', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review', 'P 가 남아 있으면 아직 승인이 아니다')
+
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'approved', 'P 가 마지막이어도 최종 승인돼야 한다')
+
+    def test_general_route_not_approved_while_p_pending(self):
+        """P 가 미완료면 J·O 가 모두 합의돼도 승인되지 않는다(P 를 판정 조건에 넣은 효과)."""
+        doc = self._advance_to_parallel()
+        for user, agent in ((self.j_user, 'J'), (self.o_user, 'O')):
+            self.client.force_authenticate(user=user)
+            self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': agent}, format='json')
+            r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': agent, 'comment': ''}, format='json')
+            self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertEqual(ApprovalStep.objects.get(document=doc, agent='P', round=1).action, 'pending')
+
+    def test_general_route_not_approved_while_p_reviewer_pending(self):
+        """P 담당자만 합의하고 검토자(PV)가 남아 있으면 J·O 가 끝나도 승인되지 않는다."""
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {
+            'agent': 'P', 'comment': '', 'reviewer_loginids': [self.p_reviewer.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        for user, agent in ((self.j_user, 'J'), (self.o_user, 'O')):
+            self.client.force_authenticate(user=user)
+            self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': agent}, format='json')
+            self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': agent, 'comment': ''}, format='json')
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review', 'PV 가 남아 있으면 승인되면 안 된다')
+
+        self.client.force_authenticate(user=self.p_reviewer)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'PV', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'approved', 'PV 까지 합의하면 최종 승인된다')
+
+    def test_j_can_be_approved_before_p(self):
+        """J 는 P 완료를 기다리지 않고 곧바로 선점·합의할 수 있다(순차 가드가 없어야 한다)."""
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'J'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'J', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(
+            ApprovalStep.objects.get(document=doc, agent='J', round=1).action, 'approved'
+        )
 
     # ----- Validation System: 판정 주체는 상신자 하나 -----
 
@@ -1674,8 +1834,8 @@ class PEStageReviewerFlowTest(TestCase):
         self.assertEqual(r.status_code, 200, r.content)
 
         self.assertFalse(
-            ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists(),
-            'PV 가 OR 로 새어 나가면 검토자 1명 합의로 J 가 생성된다',
+            MailNotification.objects.filter(document=doc, event_type='notify_p_completed').exists(),
+            'PV 가 OR 로 새어 나가면 검토자 1명 합의로 P 단계가 완료 처리된다',
         )
         self.assertEqual(
             ApprovalStep.objects.get(

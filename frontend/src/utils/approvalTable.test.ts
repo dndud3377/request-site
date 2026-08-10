@@ -58,22 +58,24 @@ describe('getDocTableRows — 기존 경로 회귀 확인', () => {
   });
 });
 
-describe('getDocTableRows — 경로2(O+E) 상태점(subStages)', () => {
-  it('O·E 둘 다 대기중이면 subStages도 둘 다 wait, 대표 뱃지는 unassigned', () => {
+describe('getDocTableRows — 경로2(J+O+E) 상태점(subStages)', () => {
+  it('J·O·E 모두 대기중이면 subStages도 전부 wait, 대표 뱃지는 unassigned', () => {
     const doc = makeDoc([
       makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'pending' }),
       makeStep({ agent: 'O', action: 'pending' }),
       makeStep({ agent: 'E', action: 'pending' }),
     ]);
     const rows = getDocTableRows(doc, t);
     const path2 = rows.find((r) => r.pathKey === 'path2')!;
     expect(path2.pathStatus).toBe('unassigned');
-    expect(path2.subStages?.map((s) => s.state)).toEqual(['wait', 'wait']);
+    expect(path2.subStages?.map((s) => s.state)).toEqual(['wait', 'wait', 'wait']);
   });
 
   it('O는 아직 미배정, E만 선점됐으면 대표 뱃지가 under_review로 바뀐다(예전엔 O 우선이라 unassigned로 보이던 버그)', () => {
     const doc = makeDoc([
       makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'pending' }),
       makeStep({ agent: 'O', action: 'pending' }),
       makeStep({ agent: 'E', action: 'pending', assignee_loginid: 'e1', assignee_name: '홍길동' }),
     ]);
@@ -81,6 +83,7 @@ describe('getDocTableRows — 경로2(O+E) 상태점(subStages)', () => {
     const path2 = rows.find((r) => r.pathKey === 'path2')!;
     expect(path2.pathStatus).toBe('under_review');
     expect(path2.subStages).toEqual([
+      { label: 'approval.agent_J', state: 'wait' },
       { label: 'approval.agent_O', state: 'wait' },
       { label: 'approval.agent_E', state: 'review', name: '홍길동' },
     ]);
@@ -89,18 +92,20 @@ describe('getDocTableRows — 경로2(O+E) 상태점(subStages)', () => {
   it('O가 완료되고 E가 아직 미배정이면 O는 done, E는 wait, 대표 뱃지는 unassigned', () => {
     const doc = makeDoc([
       makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'pending' }),
       makeStep({ agent: 'O', action: 'approved', assignee_name: '김철수' }),
       makeStep({ agent: 'E', action: 'pending' }),
     ]);
     const rows = getDocTableRows(doc, t);
     const path2 = rows.find((r) => r.pathKey === 'path2')!;
     expect(path2.pathStatus).toBe('unassigned');
-    expect(path2.subStages?.map((s) => s.state)).toEqual(['done', 'wait']);
+    expect(path2.subStages?.map((s) => s.state)).toEqual(['wait', 'done', 'wait']);
   });
 
-  it('O·E 모두 완료되면(검토자 없음) subStages는 비고 대표 뱃지는 approved', () => {
+  it('J·O·E 모두 완료되면(검토자 없음) subStages는 비고 대표 뱃지는 approved', () => {
     const doc = makeDoc([
       makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'approved', assignee_name: '최잡' }),
       makeStep({ agent: 'O', action: 'approved', assignee_name: '김철수' }),
       makeStep({ agent: 'E', action: 'approved', assignee_name: '홍길동' }),
     ]);
@@ -110,7 +115,7 @@ describe('getDocTableRows — 경로2(O+E) 상태점(subStages)', () => {
     expect(path2.subStages).toBeUndefined();
   });
 
-  it('E만 있고 O가 없으면(이론상 발생 안 하지만) subStages를 채우지 않는다', () => {
+  it('E만 있고 J·O가 없으면(이론상 발생 안 하지만) subStages를 채우지 않는다', () => {
     const doc = makeDoc([
       makeStep({ agent: 'R', action: 'approved' }),
       makeStep({ agent: 'E', action: 'pending' }),
@@ -123,6 +128,7 @@ describe('getDocTableRows — 경로2(O+E) 상태점(subStages)', () => {
   it('A가 E를 선점만 하고 검토자를 아직 지정하지 않았으면 E 상태점 이름은 A(담당자)다', () => {
     const doc = makeDoc([
       makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'pending' }),
       makeStep({ agent: 'O', action: 'pending' }),
       makeStep({ agent: 'E', action: 'pending', assignee_loginid: 'a', assignee_name: 'A' }),
     ]);
@@ -135,6 +141,7 @@ describe('getDocTableRows — 경로2(O+E) 상태점(subStages)', () => {
   it('A가 담당자 합의 + 검토자 B를 지정하면 E 상태점 이름이 A에서 B로 바뀐다(AND, 검토자 미합의 상태)', () => {
     const doc = makeDoc([
       makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'pending' }),
       makeStep({ agent: 'O', action: 'pending' }),
       makeStep({ agent: 'E', action: 'approved', assignee_loginid: 'a', assignee_name: 'A' }),
       makeStep({ agent: 'EV', action: 'pending', assignee_loginid: 'b', assignee_name: 'B' }),
@@ -148,6 +155,7 @@ describe('getDocTableRows — 경로2(O+E) 상태점(subStages)', () => {
   it('검토자가 B·C 2명 지정돼 있고 둘 다 미합의면 E 상태점 이름이 "B / C"로 합쳐진다', () => {
     const doc = makeDoc([
       makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'pending' }),
       makeStep({ agent: 'O', action: 'pending' }),
       makeStep({ agent: 'E', action: 'approved', assignee_loginid: 'a', assignee_name: 'A' }),
       makeStep({ agent: 'EV', action: 'pending', assignee_loginid: 'b', assignee_name: 'B' }),
@@ -162,6 +170,7 @@ describe('getDocTableRows — 경로2(O+E) 상태점(subStages)', () => {
   it('B·C 중 B가 먼저 합의하면(AND, 아직 미완료) E 상태점 이름이 남은 C만 보여준다', () => {
     const doc = makeDoc([
       makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'pending' }),
       makeStep({ agent: 'O', action: 'pending' }),
       makeStep({ agent: 'E', action: 'approved', assignee_loginid: 'a', assignee_name: 'A' }),
       makeStep({ agent: 'EV', action: 'approved', assignee_loginid: 'b', assignee_name: 'B' }),
@@ -173,9 +182,10 @@ describe('getDocTableRows — 경로2(O+E) 상태점(subStages)', () => {
     expect(eSub).toEqual({ label: 'approval.agent_E', state: 'review', name: 'C' });
   });
 
-  it('검토자 B·C 전원 합의(AND 완료)면 O도 끝났을 때 완료 텍스트에 O·E·검토자 전원 이름이 나열된다', () => {
+  it('검토자 B·C 전원 합의(AND 완료)면 J·O도 끝났을 때 완료 텍스트에 J·O·E·검토자 전원 이름이 나열된다', () => {
     const doc = makeDoc([
       makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'approved', assignee_name: '최잡' }),
       makeStep({ agent: 'O', action: 'approved', assignee_name: '김철수' }),
       makeStep({ agent: 'E', action: 'approved', assignee_name: 'A' }),
       makeStep({ agent: 'EV', action: 'approved', assignee_name: 'B' }),
@@ -186,7 +196,92 @@ describe('getDocTableRows — 경로2(O+E) 상태점(subStages)', () => {
     expect(path2.isDone).toBe(true);
     expect(path2.pathStatus).toBe('approved');
     expect(path2.subStages).toBeUndefined();
-    ['김철수', 'A', 'B', 'C'].forEach((name) => expect(path2.stageText).toContain(name));
+    ['최잡', '김철수', 'A', 'B', 'C'].forEach((name) => expect(path2.stageText).toContain(name));
+  });
+});
+
+describe('getDocTableRows — J 병렬 분리(2026-08)', () => {
+  it('경로1은 P(+PV)만으로 완료된다 — J 가 아직 진행 중이어도 P 가 끝나면 approved 로 보인다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'P', action: 'approved', assignee_name: '홍길동' }),
+      makeStep({ agent: 'J', action: 'pending' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+    ]);
+    const path1 = getDocTableRows(doc, t).find((r) => r.pathKey === 'path1')!;
+    expect(path1.isDone).toBe(true);
+    expect(path1.pathStatus).toBe('approved');
+    expect(path1.stageText).toContain('홍길동');
+  });
+
+  it('P 가 아직 진행 중이어도 J 는 경로2 상태점에 함께 나타난다(P 를 기다리지 않는다)', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'P', action: 'pending', assignee_loginid: 'p1', assignee_name: '홍길동' }),
+      makeStep({ agent: 'J', action: 'pending' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    expect(rows.map((r) => r.pathKey)).toEqual(['path1', 'path2']);
+    const path2 = rows.find((r) => r.pathKey === 'path2')!;
+    expect(path2.subStages?.map((s) => s.label)).toEqual(['approval.agent_J', 'approval.agent_O']);
+  });
+
+  it('J 는 검토중으로 선점돼도 상태점에 이름을 노출하지 않는다(O 와 동일 규칙)', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'pending', assignee_loginid: 'j1', assignee_name: '최잡' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+    ]);
+    const path2 = getDocTableRows(doc, t).find((r) => r.pathKey === 'path2')!;
+    const jSub = path2.subStages?.find((s) => s.label === 'approval.agent_J');
+    expect(jSub).toEqual({ label: 'approval.agent_J', state: 'review' });
+    // 선점된 단계가 하나라도 있으면 대표 뱃지는 검토중
+    expect(path2.pathStatus).toBe('under_review');
+  });
+
+  it('E 가 없는(비 plel) 문서도 J·O 두 개의 상태점을 채운다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'approved', assignee_name: '최잡' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+    ]);
+    const path2 = getDocTableRows(doc, t).find((r) => r.pathKey === 'path2')!;
+    expect(path2.subStages?.map((s) => s.state)).toEqual(['done', 'wait']);
+  });
+
+  it('J 만 남고 O·E 가 끝나도 경로2 는 완료로 보이지 않는다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'pending' }),
+      makeStep({ agent: 'O', action: 'approved', assignee_name: '김철수' }),
+      makeStep({ agent: 'E', action: 'approved', assignee_name: 'A' }),
+    ]);
+    const path2 = getDocTableRows(doc, t).find((r) => r.pathKey === 'path2')!;
+    expect(path2.isDone).toBe(false);
+    expect(path2.subStages?.map((s) => s.state)).toEqual(['wait', 'done', 'done']);
+  });
+});
+
+describe('getFinalCompletionDate — J 는 O/E 와 같은 병렬 후보', () => {
+  it('J 의 기한이 가장 늦으면 그 날짜가 최종 완료예정일이 된다(추정치 없이 실제 값)', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved', due_date: '2026-08-10' }),
+      makeStep({ agent: 'P', action: 'pending', due_date: '2026-08-13' }),
+      makeStep({ agent: 'J', action: 'pending', due_date: '2026-08-17' }),
+      makeStep({ agent: 'O', action: 'pending', due_date: '2026-08-17' }),
+    ]);
+    expect(getFinalCompletionDate(doc)).toBe('2026. 8. 17.');
+  });
+
+  it('P 만 남고 J·O 가 끝나도 P 의 기한이 최종 완료예정일로 남는다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved', due_date: '2026-08-10' }),
+      makeStep({ agent: 'P', action: 'pending', due_date: '2026-08-20' }),
+      makeStep({ agent: 'J', action: 'approved', due_date: '2026-08-17' }),
+      makeStep({ agent: 'O', action: 'approved', due_date: '2026-08-17' }),
+    ]);
+    expect(getFinalCompletionDate(doc)).toBe('2026. 8. 20.');
   });
 });
 
@@ -208,7 +303,7 @@ describe('getFinalCompletionDate — R 의 기한도 후보에 포함', () => {
       makeStep({ agent: 'J', action: 'pending', due_date: '2026-08-15' }),
       makeStep({ agent: 'O', action: 'pending', due_date: '2026-08-14' }),
     ]);
-    // path1 = J.due(08-15), path2 = O.due(08-14) → 기존과 동일하게 max는 08-15.
+    // path1 = P.due(08-12), path2 = max(J 08-15, O 08-14) → max는 08-15.
     // R(08-10)이 더 늦은 날짜였다면 이 테스트가 그 값을 반영해 실패했을 것이다.
     expect(getFinalCompletionDate(doc)).toBe('2026. 8. 15.');
   });
