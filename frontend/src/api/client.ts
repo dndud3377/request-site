@@ -1,5 +1,6 @@
 import {
   RequestDocument,
+  RejectionSnapshot,
   ReviewItem,
   VOC,
   VocComment,
@@ -417,6 +418,29 @@ const getApprovedDocuments = async (product_name?: string): Promise<{ data: Requ
   const qs = '?' + new URLSearchParams(params).toString();
   const data = await get<RequestDocument[]>(`/documents/${qs}`);
   return { data: Array.isArray(data) ? data : (data as any).results ?? [] };
+};
+
+// ===== 반려 이력 API (이력 조회 '반려' 탭) =====
+// 적재는 서버의 반려 액션에서만 일어나므로 여기엔 조회·삭제만 둔다.
+
+const listRejectionSnapshots = async (
+  params?: Record<string, string>
+): Promise<{ data: RejectionSnapshot[] }> => {
+  const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+  const data = await get<{ results: RejectionSnapshot[] } | RejectionSnapshot[]>(
+    `/rejection-snapshots/${qs}`
+  );
+  return { data: Array.isArray(data) ? data : data.results ?? [] };
+};
+
+/** 반려 이력 1건 삭제 (MASTER 전용 — 서버가 403 으로 막는다) */
+const deleteRejectionSnapshot = async (id: number): Promise<void> => {
+  await request(`/rejection-snapshots/${id}/`, { method: 'DELETE' });
+};
+
+export const rejectionSnapshotsAPI = {
+  list: listRejectionSnapshots,
+  delete: deleteRejectionSnapshot,
 };
 
 /** 홈 화면 연간 디자인룰 그래프 데이터.
