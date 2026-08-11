@@ -575,6 +575,14 @@ export interface UserWithRole {
   role: UserRole;
   mail: string;
   role_assigned_at?: string | null;
+  /** 메일을 수신할 라인 이름 목록(권한 관리 '이메일 설정'). 빈 배열이면 해당 메일을 받지 않는다. */
+  mail_lines?: string[];
+}
+
+/** PATCH /users/{id}/mail-lines/ 응답 */
+export interface MailLinesResponse {
+  id: number;
+  mail_lines: string[];
 }
 
 export interface CreateUserInput {
