@@ -87,6 +87,22 @@ export interface PauseRequestInfo {
   created_at: string;
 }
 
+// 의뢰서 철회 요청 상태 ('확정'은 문서가 삭제되므로 저장되지 않는다)
+export type WithdrawState = 'requested' | 'rejected' | 'cancelled';
+
+// 확인 대기 중인 철회 요청 정보 (서버 withdraw_request 필드)
+export interface WithdrawRequestInfo {
+  id: number;
+  state: WithdrawState;
+  reason: string;
+  requester_loginid?: string | null;
+  requester_name: string;
+  round: number;
+  target_step_ids: number[];    // 요청 시점의 pending 단계 id (전원 확인 시 의뢰서 삭제)
+  confirmed_step_ids: number[]; // '철회 확인'된 단계 id
+  created_at: string;
+}
+
 // ===== Domain Models =====
 
 /** 검토 항목의 검토자 1명 (결재선 ApprovalStep 과 무관 — 결재 경로에는 표시되지 않는다) */
@@ -138,6 +154,7 @@ export interface RequestDocument {
   can_request_pause?: boolean; // 중단 요청 가능(작성자 본인·진행 중·기존 요청 없음)
   can_resume?: boolean;        // 재개 가능(작성자 본인·pause 상태)
   pause_request?: PauseRequestInfo | null; // 활성 중단 요청 (없으면 null)
+  withdraw_request?: WithdrawRequestInfo | null; // 확인 대기 중인 철회 요청 (없으면 null)
   post_approver_fixed_loginid?: string | null; // 고정 후결자(.env) loginid — '🔒 고정' 표시/변경 잠금용
   review_items?: ReviewItem[];                 // J-ayer 검토 항목 (상세 응답)
   my_pending_review_items?: number;            // 내가 검토자인 미확인 항목 수 (목록 응답, MY 탭 조건)
