@@ -156,6 +156,10 @@ EVENT_STATUS_LABEL = {
     'notify_approved': '결재 완료 통보',
     'notify_p_completed': 'P 단계 완료 통보',
     'revision_requested': '수정 요청',
+    'withdraw_requested': '철회 요청',
+    'withdraw_completed': '철회 완료',
+    'withdraw_rejected': '철회 거부',
+    'withdraw_cancelled': '철회 요청 취소',
 }
 
 # 이벤트 타입별 히어로+KPI 카드 이메일 색상 테마
@@ -198,6 +202,12 @@ EVENT_THEME['notify_approved'] = EVENT_THEME['notify_submitted']
 EVENT_THEME['notify_p_completed'] = EVENT_THEME['notify_submitted']
 # 수정 요청: 결재를 되돌리진 않지만 상신자의 조치가 필요하다는 점에서 반려와 같은 주의 테마
 EVENT_THEME['revision_requested'] = EVENT_THEME['rejected']
+# 철회 요청/완료: 결재가 멈추거나 문서가 사라지는 알림이라 반려와 같은 주의(레드) 테마
+EVENT_THEME['withdraw_requested'] = EVENT_THEME['rejected']
+EVENT_THEME['withdraw_completed'] = EVENT_THEME['rejected']
+# 철회 거부/취소: 결재가 그대로 이어진다는 정보성 통보라 통보 계열(퍼플) 테마
+EVENT_THEME['withdraw_rejected'] = EVENT_THEME['notify_submitted']
+EVENT_THEME['withdraw_cancelled'] = EVENT_THEME['notify_submitted']
 
 
 # --------------------------------------------------------------------------- #
@@ -447,6 +457,103 @@ def resolve_notifier_recipients(document):
     return _apply_redirect(emails)
 
 
+def resolve_withdraw_target_recipients(document, step_ids):
+    """철회 요청 확인 대상 단계의 수신자.
+
+    단계마다 "담당자가 배정돼 있으면 그 1명, 미배정이면 그 단계 담당 팀 전원"이다 —
+    확인 인가(`views._can_confirm_pause`, 중단 확인과 동일 규칙)와 같은 기준이라,
+    실제로 '철회 확인'을 누를 수 있는 사람에게만 메일이 간다.
+
+    ⚠️ 통보처는 여기에 포함하지 않는다(2026-08 결정) — 통보처는 확인 주체가 아니므로
+    철회 '완료' 시점에만 통보받는다.
+    """
+    emails = []
+    steps = (
+        ApprovalStep.objects.filter(document=document, id__in=list(step_ids or []))
+        .select_related('assignee')
+    )
+    for step in steps:
+        if step.assignee and step.assignee.mail:
+            emails.append(step.assignee.mail)
+        else:
+            emails.extend(_stage_team_emails(step.agent))
+    return _apply_redirect(emails)
+
+
+def _designated_pl_emails(document):
+    """상신 시 지정된 PL 전원의 이메일 = 최종 회차 PL 단계 담당자들.
+
+    PL 단계가 아직 없는(임시저장 등) 문서는 대표 지정 PL(designated_pl)로 보조 판정한다.
+    """
+    max_round = _current_round(document)
+    if max_round is not None:
+        emails = list(
+            ApprovalStep.objects.filter(document=document, agent='PL', round=max_round)
+            .exclude(assignee__isnull=True).exclude(assignee__mail='')
+            .values_list('assignee__mail', flat=True).distinct()
+        )
+        if emails:
+            return emails
+    if document.designated_pl and document.designated_pl.mail:
+        return [document.designated_pl.mail]
+    return []
+
+
+def _reached_stage_emails(document):
+    """**실제로 결재가 진행된** 단계의 담당 팀 전원 이메일.
+
+    "진행됐다"의 기준은 단계(ApprovalStep)가 생성됐는지다 — R 단계까지만 열린 문서라면
+    TE_R 만 대상이 되고, 아직 열리지 않은 P·J·O·E 팀에는 철회 완료 메일이 가지 않는다.
+    회차는 구분하지 않는다(반려 후 재상신된 문서에서 이전 회차에 결재했던 팀도 대상).
+
+    - 검토자(RV/PV/EV)는 담당자와 같은 팀이므로 `_stage_team_emails` 가 환산한다.
+    - 후결자(RA)는 역할(팀)이 아니라 지정된 개인이므로 그 담당자 본인만 넣는다.
+    - PL 은 팀 브로드캐스트 대상이 아니다(지정 PL 은 `_designated_pl_emails` 로 따로 포함).
+    """
+    emails = []
+    steps = ApprovalStep.objects.filter(document=document).select_related('assignee')
+    for step in steps:
+        if step.agent == 'PL':
+            continue
+        if step.agent == 'RA':
+            if step.assignee and step.assignee.mail:
+                emails.append(step.assignee.mail)
+            continue
+        emails.extend(_stage_team_emails(step.agent))
+    return emails
+
+
+def resolve_withdraw_completed_recipients(document):
+    """철회 완료(문서 삭제) 통보 수신자.
+
+    ① 상신 시 지정된 PL 전원  ② 통보처 전원  ③ 실제로 결재가 진행된 단계의 담당 팀 전원
+    ④ 의뢰서 작성자 본인. 중복·빈 주소는 `_apply_redirect` 가 정리한다.
+
+    ⚠️ ③ 은 "TE_R·TE_P·TE_J·TE_O·TE_E 5개 팀 전원"이 아니다(2026-08 결정) —
+    R 단계까지만 진행된 의뢰서는 TE_R 에게만 통보된다(`_reached_stage_emails`).
+    """
+    emails = []
+    emails.extend(_designated_pl_emails(document))
+    emails.extend(resolve_notifier_recipients(document))
+    emails.extend(_reached_stage_emails(document))
+    if document.requester_email:
+        emails.append(document.requester_email)
+    return _apply_redirect(emails)
+
+
+def resolve_withdraw_rejected_recipients(document, withdraw_request):
+    """철회 거부 수신자: 철회를 요청한 사람(+ 의뢰서 작성자).
+
+    요청자와 작성자가 다를 수 있어(지정 PL·공유 그룹 멤버가 철회를 요청한 경우) 둘 다 넣는다.
+    """
+    emails = []
+    if withdraw_request.requester_id and withdraw_request.requester.mail:
+        emails.append(withdraw_request.requester.mail)
+    if document.requester_email:
+        emails.append(document.requester_email)
+    return _apply_redirect(emails)
+
+
 # --------------------------------------------------------------------------- #
 # 메일 본문 생성
 # --------------------------------------------------------------------------- #
@@ -469,6 +576,9 @@ def _voc_link(voc_id):
 
 # 완료 이후 결재현황 목록에서 빠지는 이벤트 — 이력조회로 딥링크
 _HISTORY_LINK_EVENTS = ('approved', 'notify_approved')
+
+# 딥링크 버튼을 싣지 않는 이벤트 — 발송 시점에 의뢰서가 이미 삭제돼 링크가 죽는다.
+_NO_LINK_EVENTS = ('withdraw_completed',)
 
 
 def _kpi_grid(tiles, tile_bg, tile_border):
@@ -627,6 +737,18 @@ def _render_hero_kpi_email(event_type, headline, document, kpi_tiles, note_value
     route_html = _render_route_card(document, theme)
     note_html = escape(note_value) if note_value else '-'
     headline_html = escape(headline)
+    # link 가 없으면 버튼 블록을 통째로 비운다 — 철회 완료 메일은 문서가 이미 삭제돼
+    # 딥링크가 죽은 링크가 되므로 버튼을 싣지 않는다.
+    button_html = f'''  <tr>
+    <td style="padding:22px 32px 6px;">
+      <table role="presentation" cellpadding="0" cellspacing="0">
+        <tr><td bgcolor="{hero_from}" style="border-radius:8px;">
+          <a href="{link}" style="display:inline-block;padding:12px 22px;font-size:13.5px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">{link_text} →</a>
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+''' if link else ''
 
     return f'''<!--[if mso]>
 <table role="presentation" align="center" width="600" cellpadding="0" cellspacing="0"><tr><td>
@@ -663,16 +785,7 @@ def _render_hero_kpi_email(event_type, headline, document, kpi_tiles, note_value
       </table>
     </td>
   </tr>
-  <tr>
-    <td style="padding:22px 32px 6px;">
-      <table role="presentation" cellpadding="0" cellspacing="0">
-        <tr><td bgcolor="{hero_from}" style="border-radius:8px;">
-          <a href="{link}" style="display:inline-block;padding:12px 22px;font-size:13.5px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">{link_text} →</a>
-        </td></tr>
-      </table>
-    </td>
-  </tr>
-  <tr>
+{button_html}  <tr>
     <td style="padding:24px 32px 30px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="border-top:1px solid {theme['footer_border']};font-size:0;line-height:0;">&nbsp;</td></tr></table>
       <p style="margin:16px 0 0;font-size:11.5px;line-height:1.7;color:#94a3b8;">본 메일은 제품 소개 지도 의뢰 시스템에서 자동 발송되었습니다. 이 메일에는 회신하지 마세요.</p>
@@ -684,10 +797,12 @@ def _render_hero_kpi_email(event_type, headline, document, kpi_tiles, note_value
 <![endif]-->'''
 
 
-def _build_message(event_type, document, agent=None, recipient_name=None, is_fixed_post_approver=False):
+def _build_message(event_type, document, agent=None, recipient_name=None, is_fixed_post_approver=False,
+                   note_override=None):
     """이벤트 유형별 제목/본문(HTML)을 생성한다.
 
     recipient_name 이 주어지면(개인 지정 메일) 제목 맨 앞에 "[{이름}님] "을 붙인다.
+    note_override: '특이사항' 칸을 의뢰서 참고자료 대신 이 값으로 채운다(철회 사유 등).
     is_fixed_post_approver: agent='RA'이고 그 담당자가 고정 후결자(settings.POST_APPROVER_LOGINID)일
     때만 True — 이 경우에만 "[후결 요청]" 고정 제목을 쓰고, 그 외 RA(추가 후결자)는 다른 단계와
     동일한 제목 규칙을 따른다.
@@ -695,7 +810,7 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
     히어로/버튼/카드 테두리 색상은 event_type 별 EVENT_THEME 를 따른다.
     """
     use_history = event_type in _HISTORY_LINK_EVENTS
-    link = _detail_link(document, use_history)
+    link = '' if event_type in _NO_LINK_EVENTS else _detail_link(document, use_history)
     link_text = '이력조회에서 확인하기' if use_history else '결재 현황에서 확인하기'
     name_prefix = f'[{recipient_name}님] ' if recipient_name else ''
 
@@ -734,6 +849,25 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
             '결재 현황에서 의뢰서를 열어 값을 확인해 주세요.'
         )
         stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'withdraw_requested':
+        subject = f'[철회 요청] {document.title}'
+        headline = (
+            '의뢰서 철회 요청이 도착했습니다. 결재 현황에서 내용을 확인한 뒤 '
+            "'철회 확인' 또는 '철회 거부'를 선택해 주세요."
+        )
+        stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'withdraw_completed':
+        subject = f'[철회 완료] {document.title}'
+        headline = '아래 의뢰서가 철회되어 삭제되었습니다. 더 이상 조회할 수 없습니다.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'withdraw_rejected':
+        subject = f'[철회 거부] {document.title}'
+        headline = '요청하신 의뢰서 철회가 거부되었습니다. 결재는 그대로 진행됩니다.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'withdraw_cancelled':
+        subject = f'[철회 요청 취소] {document.title}'
+        headline = '의뢰서 철회 요청이 취소되었습니다. 결재를 그대로 진행해 주세요.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
     else:
         subject = f'[알림] {document.title}'
         headline = '새로운 알림이 있습니다.'
@@ -747,7 +881,7 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
         ('상신일', submitted_at_str),
         ('생산 진행일', production_date_str),
     ]
-    note_value = (document.reference_materials or '').strip()
+    note_value = (note_override or document.reference_materials or '').strip()
 
     contents = _render_hero_kpi_email(event_type, headline, document, kpi_tiles, note_value, link, link_text)
 
@@ -757,7 +891,8 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
 # --------------------------------------------------------------------------- #
 # 큐 적재 (enqueue) — 결재 트랜잭션 안에서 호출
 # --------------------------------------------------------------------------- #
-def _enqueue(document, event_type, recipients, agent=None, recipient_name=None, is_fixed_post_approver=False):
+def _enqueue(document, event_type, recipients, agent=None, recipient_name=None, is_fixed_post_approver=False,
+             note_override=None):
     """수신자가 있을 때만 MailNotification 행을 적재한다."""
     if not recipients:
         logger.info(
@@ -765,7 +900,9 @@ def _enqueue(document, event_type, recipients, agent=None, recipient_name=None, 
             "(event=%s, doc=%s, agent=%s)", event_type, document.pk, agent
         )
         return None
-    subject, contents = _build_message(event_type, document, agent, recipient_name, is_fixed_post_approver)
+    subject, contents = _build_message(
+        event_type, document, agent, recipient_name, is_fixed_post_approver, note_override,
+    )
     noti = MailNotification.objects.create(
         document=document,
         event_type=event_type,
@@ -839,6 +976,41 @@ def enqueue_notify_p_completed(document):
     # _apply_redirect 가 빈 주소 제거 + 중복 제거(순서 보존)까지 하므로 두 팀을 그대로 이어 붙인다.
     recipients = _apply_redirect(_team_emails('O') + _team_emails('J'))
     return _enqueue(document, 'notify_p_completed', recipients)
+
+
+def enqueue_withdraw_requested(document, withdraw_request):
+    """철회 요청 접수 알림 적재 — 확인 대상 단계의 담당자/팀 대상(통보처 제외)."""
+    recipients = resolve_withdraw_target_recipients(document, withdraw_request.target_step_ids)
+    return _enqueue(
+        document, 'withdraw_requested', recipients, note_override=withdraw_request.reason,
+    )
+
+
+def enqueue_withdraw_completed(document, reason=''):
+    """철회 완료(문서 삭제) 통보 적재.
+
+    ⚠️ **반드시 `document.delete()` 앞에서 호출**해야 한다 — 본문(결재 경로 카드·수신자)이
+    문서와 결재 단계를 읽어 만들어지기 때문이다. 적재된 본문은 HTML 로 굳으므로 문서가
+    지워져도 내용은 그대로 남고, `MailNotification.document` FK 만 SET_NULL 로 비워진다.
+    """
+    recipients = resolve_withdraw_completed_recipients(document)
+    return _enqueue(document, 'withdraw_completed', recipients, note_override=reason)
+
+
+def enqueue_withdraw_rejected(document, withdraw_request):
+    """철회 거부 알림 적재 — 철회를 요청한 사람과 의뢰서 작성자 대상."""
+    recipients = resolve_withdraw_rejected_recipients(document, withdraw_request)
+    return _enqueue(
+        document, 'withdraw_rejected', recipients, note_override=withdraw_request.reason,
+    )
+
+
+def enqueue_withdraw_cancelled(document, withdraw_request):
+    """철회 요청 취소 알림 적재 — 요청 메일을 받았던 확인 대상 단계 담당자/팀 대상."""
+    recipients = resolve_withdraw_target_recipients(document, withdraw_request.target_step_ids)
+    return _enqueue(
+        document, 'withdraw_cancelled', recipients, note_override=withdraw_request.reason,
+    )
 
 
 # --------------------------------------------------------------------------- #
