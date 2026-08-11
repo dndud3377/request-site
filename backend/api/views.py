@@ -842,7 +842,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 # Only MAP: 후결자(RA)만 종단 경로 — RA 전원 합의 시 최종 승인
                 all_approved = len(ra_steps) > 0 and ra_ok
             else:
-                j_approved = len(j_steps) > 0 and all(s.action == 'approved' for s in j_steps)
+                # J 를 뺀 경로('Overlay 변경' 단독)는 J step 이 아예 없다. 아래 기본 판정은
+                # len(j_steps) > 0 을 요구하므로, 이 분기가 없으면 나머지 단계가 모두 합의돼도
+                # 판정이 영원히 False 가 되어 문서가 under_review 에 영구 정지한다.
+                j_approved = (
+                    True if document.skip_j_stage()
+                    else (len(j_steps) > 0 and all(s.action == 'approved' for s in j_steps))
+                )
                 o_approved = o_step and o_step.action == 'approved'
                 # P: 담당자 합의 + 지정된 검토자(PV) 전원 합의까지 끝나야 완료.
                 # J 분리 전에는 "J 가 존재한다 = P 가 끝났다" 였기에 판정에서 생략했지만,
@@ -1467,17 +1473,20 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             p_step = ApprovalStep.objects.create(
                 document=document, agent='P', action='pending', round=round_no, due_date=p_due,
             )
-            j_step = ApprovalStep.objects.create(
-                document=document, agent='J', action='pending', is_parallel=True, round=round_no, due_date=o_due,
-            )
             o_step = ApprovalStep.objects.create(
                 document=document, agent='O', action='pending', is_parallel=True, round=round_no, due_date=o_due,
             )
             mailer.enqueue_stage_arrival(document, 'P', p_step)
-            mailer.enqueue_stage_arrival(document, 'J', j_step)
             mailer.enqueue_stage_arrival(document, 'O', o_step)
-            # 검토 항목은 J 단계가 열리는 이 시점에 마스터 최신본으로 채운다(review_items.py §1).
-            review_items_sync.fill_from_master(document)
+            # 기타 목적이 'Overlay 변경' 하나뿐이면 J 단계 자체를 만들지 않는다(경로에서 제외).
+            if not document.skip_j_stage():
+                j_step = ApprovalStep.objects.create(
+                    document=document, agent='J', action='pending', is_parallel=True, round=round_no, due_date=o_due,
+                )
+                mailer.enqueue_stage_arrival(document, 'J', j_step)
+                # 검토 항목은 J 단계가 열리는 이 시점에 마스터 최신본으로 채운다(review_items.py §1).
+                # J 가 없는 문서는 다룰 단계가 없으므로 채우지 않는다.
+                review_items_sync.fill_from_master(document)
             # E(MASK)는 판정 키워드(plel)가 있는 의뢰서에만 생성한다 — 키워드가 아예 없으면
             # Validation System 판정이 '해당없음'이라 MASK 가 검증할 대상 자체가 없다.
             if document.has_ppid_plel():
