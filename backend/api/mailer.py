@@ -27,6 +27,10 @@
     포함(반려한 본인 제외). 이미 합의를 마친 팀은 팀 전체 발송 대상이 아니다.
 - 승인 완료: 현재 회차 결재 경로에 참여했던 전원(중복 제거)
 - P 단계 완료 통보(notify_p_completed): TE_O + TE_J 팀 전원(참고용, 결재 권한과 무관)
+- 라인 수신 설정(mail_lines) 필터: 위에서 산출된 수신자 중, 의뢰서의 라인(detail.line)을
+  권한 관리 '이메일 설정'에서 끈 사람을 제외한다(`_filter_by_mail_lines`). 대상 역할은
+  TE_R/P/J/O/E·MASTER 이고 PL·NONE 은 적용받지 않는다. 담당자로 지정된 단계의 결재 요청
+  메일도 예외 없이 필터를 탄다. VOC 메일은 라인 개념이 없어 필터 대상이 아니다.
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
 """
 import logging
@@ -37,7 +41,7 @@ from urllib3.exceptions import InsecureRequestWarning
 
 from django.conf import settings
 from django.db import connection, transaction
-from django.db.models import Max
+from django.db.models import Max, Q
 from django.utils import timezone
 from django.utils.html import escape
 
@@ -213,8 +217,59 @@ EVENT_THEME['withdraw_cancelled'] = EVENT_THEME['notify_submitted']
 # --------------------------------------------------------------------------- #
 # 수신자 해석
 # --------------------------------------------------------------------------- #
-def _apply_redirect(recipients):
-    """MAIL_REDIRECT_TO 가 설정돼 있으면 모든 수신자를 해당 주소로 강제한다."""
+def _document_line(document):
+    """의뢰서의 라인(detail.line). 값이 없으면 빈 문자열."""
+    detail = document.get_detail().get('detail', {}) or {}
+    if not isinstance(detail, dict):
+        return ''
+    return str(detail.get('line') or '').strip()
+
+
+def _filter_by_mail_lines(recipients, document):
+    """수신자 중 이 의뢰서의 라인을 메일 수신 대상에서 뺀 사람을 제외한다.
+
+    - 대상 역할은 `UserProfile.MAIL_LINE_FILTER_ROLES`(TE_R/P/J/O/E·MASTER)뿐이다.
+      PL·NONE 은 이 설정을 쓰지 않으므로 라인과 무관하게 그대로 통과한다.
+    - 의뢰서에 라인 값이 없으면(임시저장 등) 필터가 성립하지 않으므로 그대로 통과시킨다.
+    - 한 주소를 여러 사용자가 공유할 수 있으므로, **그 주소로 받아야 할 사람이
+      한 명이라도 있으면 제외하지 않는다**(수신 누락 방지).
+    """
+    line = _document_line(document)
+    if not line or not recipients:
+        return list(recipients)
+
+    filter_roles = UserProfile.MAIL_LINE_FILTER_ROLES
+    # 이 라인을 끈 사람(= 필터 대상 역할이면서 mail_lines 에 이 라인이 없는 사용자)의 주소
+    blocked = set(
+        UserProfile.objects.filter(role__in=filter_roles)
+        .exclude(mail='')
+        .exclude(mail_lines__name=line)
+        .values_list('mail', flat=True)
+    )
+    if not blocked:
+        return list(recipients)
+    # 같은 주소를 쓰면서 이 라인을 받아야 하는 사람(필터 비대상 역할 또는 이 라인을 켠 사람)
+    receiving = set(
+        UserProfile.objects.exclude(mail='')
+        .filter(Q(mail_lines__name=line) | ~Q(role__in=filter_roles))
+        .values_list('mail', flat=True)
+    )
+    blocked -= receiving
+    return [addr for addr in recipients if (addr or '').strip() not in blocked]
+
+
+def _apply_redirect(recipients, document=None):
+    """수신자 목록을 정리한다 — 라인 수신 설정 필터 → MAIL_REDIRECT_TO 강제 순.
+
+    document 를 넘기면 그 의뢰서의 라인을 끈 사람을 먼저 제외한다(결재·통보·철회 메일 전부).
+    VOC 메일은 라인 개념이 없으므로 document 를 넘기지 않아 필터를 타지 않는다.
+    """
+    if document is not None and recipients:
+        filtered = _filter_by_mail_lines(recipients, document)
+        if not filtered:
+            # 라인 설정으로 수신자가 전부 빠졌다 — MAIL_REDIRECT_TO 가 있어도 보내지 않는다.
+            return []
+        recipients = filtered
     redirect_to = getattr(settings, 'MAIL_REDIRECT_TO', '') or ''
     redirect_to = redirect_to.strip()
     if redirect_to:
@@ -316,7 +371,7 @@ def resolve_stage_recipients(document, agent, step=None):
         # 위에서 PL·R·J·P·O·E·RV·PV·EV·RA 를 모두 다루므로 여기 오는 agent 는 없다.
         # 새 단계가 생겼는데 규칙을 안 넣은 경우 — 엉뚱한 곳으로 보내는 대신 발송하지 않는다.
         recipients = []
-    return _apply_redirect(recipients)
+    return _apply_redirect(recipients, document)
 
 
 def _current_round(document):
@@ -384,7 +439,7 @@ def resolve_revision_request_recipients(document):
             document.pk,
         )
         return []
-    return _apply_redirect([document.requester_email])
+    return _apply_redirect([document.requester_email], document)
 
 
 def resolve_reject_recipients(document):
@@ -426,12 +481,12 @@ def resolve_reject_recipients(document):
             for mail in _remaining_stage_emails(document, max_round):
                 if mail and mail not in rejecter_mails and mail not in emails:
                     emails.append(mail)
-    return _apply_redirect(emails)
+    return _apply_redirect(emails, document)
 
 
 def resolve_approved_recipients(document):
     """승인 완료 시 수신자: 현재 회차 결재 경로에 참여했던 전원(중복 제거)."""
-    return _apply_redirect(_current_round_step_emails(document))
+    return _apply_redirect(_current_round_step_emails(document), document)
 
 
 def resolve_notifier_recipients(document):
@@ -447,14 +502,14 @@ def resolve_notifier_recipients(document):
         if isinstance(n, dict) and n.get('loginid')
     ]
     if not loginids:
-        return _apply_redirect([])
+        return _apply_redirect([], document)
     emails = list(
         UserProfile.objects.filter(loginid__in=loginids)
         .exclude(mail='')
         .distinct()
         .values_list('mail', flat=True)
     )
-    return _apply_redirect(emails)
+    return _apply_redirect(emails, document)
 
 
 def resolve_withdraw_target_recipients(document, step_ids):
@@ -477,7 +532,7 @@ def resolve_withdraw_target_recipients(document, step_ids):
             emails.append(step.assignee.mail)
         else:
             emails.extend(_stage_team_emails(step.agent))
-    return _apply_redirect(emails)
+    return _apply_redirect(emails, document)
 
 
 def _designated_pl_emails(document):
@@ -538,7 +593,7 @@ def resolve_withdraw_completed_recipients(document):
     emails.extend(_reached_stage_emails(document))
     if document.requester_email:
         emails.append(document.requester_email)
-    return _apply_redirect(emails)
+    return _apply_redirect(emails, document)
 
 
 def resolve_withdraw_rejected_recipients(document, withdraw_request):
@@ -551,7 +606,7 @@ def resolve_withdraw_rejected_recipients(document, withdraw_request):
         emails.append(withdraw_request.requester.mail)
     if document.requester_email:
         emails.append(document.requester_email)
-    return _apply_redirect(emails)
+    return _apply_redirect(emails, document)
 
 
 # --------------------------------------------------------------------------- #
@@ -974,7 +1029,7 @@ def enqueue_notify_p_completed(document):
     도착 통보가 중복이 됐고, 대신 P 진행 상황을 알 수 있도록 이 완료 통보에 합류시켰다.
     """
     # _apply_redirect 가 빈 주소 제거 + 중복 제거(순서 보존)까지 하므로 두 팀을 그대로 이어 붙인다.
-    recipients = _apply_redirect(_team_emails('O') + _team_emails('J'))
+    recipients = _apply_redirect(_team_emails('O') + _team_emails('J'), document)
     return _enqueue(document, 'notify_p_completed', recipients)
 
 

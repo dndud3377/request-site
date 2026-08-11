@@ -1915,6 +1915,20 @@ select.form-control option {
   cursor: not-allowed;
 }
 
+/* 권한 관리 '이메일 설정' 라인 토글 — map-type-btn 을 표 안에 들어갈 크기로 줄이고,
+   켜진 라인은 연한 파란 배경으로 표시한다. */
+.mail-line-btn {
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  border-radius: 5px;
+}
+
+.mail-line-btn.active {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* Header action buttons inside <th> */
 .th-header-btns {
   display: flex;

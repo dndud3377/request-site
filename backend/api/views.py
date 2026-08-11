@@ -2847,7 +2847,7 @@ class UserViewSet(viewsets.ModelViewSet):
     ordering = ['id']
 
     def get_permissions(self):
-        if self.action in ('assign_role', 'destroy'):
+        if self.action in ('assign_role', 'destroy', 'mail_lines'):
             from rest_framework.permissions import IsAuthenticated
             return [IsAuthenticated()]
         return super().get_permissions()
@@ -2856,10 +2856,12 @@ class UserViewSet(viewsets.ModelViewSet):
         return UserSerializer
 
     def get_queryset(self):
+        # mail_lines 는 목록 응답에 항상 포함되므로 미리 가져와 N+1 조회를 피한다.
+        qs = User.objects.prefetch_related('mail_lines')
         role = self.request.query_params.get('role')
         if role:
-            return User.objects.filter(role=role)
-        return User.objects.all()
+            return qs.filter(role=role)
+        return qs
 
     @action(detail=False, methods=['get'], url_path='for-assignment')
     def for_assignment(self, request):
@@ -2884,6 +2886,44 @@ class UserViewSet(viewsets.ModelViewSet):
             'current_role': u.role,
         } for u in users]
         return Response(data)
+
+    @action(detail=True, methods=['patch'], url_path='mail-lines')
+    def mail_lines(self, request, pk=None):
+        """라인별 메일 수신 설정 변경 (권한 관리 '이메일 설정' 컬럼).
+
+        - 본인 행은 본인이, 그 외에는 MASTER 만 바꿀 수 있다.
+        - 대상 역할은 UserProfile.MAIL_LINE_FILTER_ROLES 뿐이다(PL·NONE 은 이 설정을 쓰지 않음).
+        - 요청 본문: {"lines": ["라인1", "라인3"]} — 활성 라인 이름 배열(전체 교체).
+          빈 배열은 '모든 라인 메일을 받지 않는다'는 뜻이다.
+        """
+        user = self.get_object()
+        caller = request.user
+        is_master = caller.is_authenticated and getattr(caller, 'role', '') == 'MASTER'
+        if not (is_master or (caller.is_authenticated and caller.pk == user.pk)):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if user.role not in User.MAIL_LINE_FILTER_ROLES:
+            return Response(
+                {'error': '이 역할은 라인별 메일 수신 설정을 사용하지 않습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        names = request.data.get('lines')
+        if not isinstance(names, list) or any(not isinstance(n, str) for n in names):
+            return Response(
+                {'error': 'lines 는 라인 이름 문자열 배열이어야 합니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        names = list(dict.fromkeys(names))
+        lines = list(Line.objects.filter(is_active=True, name__in=names))
+        if len(lines) != len(names):
+            return Response(
+                {'error': '존재하지 않는 라인이 포함돼 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.mail_lines.set(lines)
+        return Response({'id': user.id, 'mail_lines': [line.name for line in lines]})
 
     @action(detail=True, methods=['post'], url_path='assign-role')
     def assign_role(self, request, pk=None):
@@ -2925,6 +2965,8 @@ class UserViewSet(viewsets.ModelViewSet):
             'role': role,
             'mail': user.mail or '',
             'role_assigned_at': user.role_assigned_at.isoformat() if user.role_assigned_at else None,
+            # 역할 변경 응답/브로드캐스트로 행 전체가 교체되므로 라인 설정도 함께 실어 보낸다.
+            'mail_lines': list(user.mail_lines.values_list('name', flat=True)),
         }
         broadcaster.broadcast('user_updated', payload)
 
