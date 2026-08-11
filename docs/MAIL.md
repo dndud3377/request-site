@@ -125,6 +125,38 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 - 병렬 단계(P·O·E·RA)가 서로 다른 속도로 진행돼도 누락이 없다. 예: **J 반려 시점에 O 가 아직 pending 이면 `TE_O` 팀 전원이 포함**된다(정적 순서표 방식에서는 J 가 O 보다 뒤 단계라 빠지던 케이스).
 - **이미 일을 마친 팀에는 팀 전체 메일이 나가지 않는다.** 예: P 반려 시 O 가 이미 합의를 마쳤다면 `TE_O` 팀 전체가 아니라 **그 합의자 본인만** 기합의자 규칙으로 포함된다.
 
+### 3.2 철회(withdraw_*) 수신자 상세 (2026-08 신설)
+
+철회는 `요청 → 현재 단계 전원 확인 → 의뢰서 완전 삭제` 절차라 이벤트가 4종이다
+(결재 흐름은 `docs/APPROVAL.md` Case J).
+
+| 이벤트 | 시점 | 수신자 |
+|---|---|---|
+| `withdraw_requested` | 철회 요청 접수 | **확인 대상 단계**의 담당자(assignee) 1명, 미배정 단계면 그 **담당 팀 전원**(`resolve_withdraw_target_recipients`). ⚠️ **통보처는 제외** — 확인 주체가 아니다 |
+| `withdraw_completed` | 철회 확정(문서 삭제 직전) · 즉시 삭제 경로 | ① 상신 시 **지정된 PL 전원** ② **통보처 전원** ③ **실제로 결재가 진행된 단계의 담당 팀 전원** ④ **작성자**(`resolve_withdraw_completed_recipients`) |
+| `withdraw_rejected` | 대상 단계가 철회 거부 | 철회를 **요청한 사람** + 의뢰서 **작성자** |
+| `withdraw_cancelled` | 요청자가 철회 요청 취소 | 요청 메일을 받았던 **확인 대상 단계**의 담당자/팀 |
+
+**"실제로 결재가 진행된 팀" 판정**(`_reached_stage_emails`) — 기준은 **단계(ApprovalStep)가
+생성됐는지**다. `TE_R`+`TE_P`+`TE_J`+`TE_O`+`TE_E` 5개 팀 전원에게 뿌리지 않는다.
+
+```
+지금까지 생성된 모든 ApprovalStep 의 agent  →  그 담당 팀
+  R 단계까지만 열린 의뢰서  →  TE_R 만
+  R 합의 후 병렬(P·J·O·E) 진입  →  열린 단계의 팀까지
+```
+
+- 회차는 구분하지 않는다 — 반려 후 재상신된 문서에서 **이전 회차에 결재했던 팀도 포함**된다.
+- 검토자(RV/PV/EV)는 담당자와 같은 팀이라 `_stage_team_emails` 가 환산한다.
+- 후결자(RA)는 역할이 아니라 지정된 개인이므로 **그 담당자 본인만** 넣는다.
+- PL 은 팀 브로드캐스트 대상이 아니다 — 지정 PL 은 위 ① 규칙(최종 회차 PL 단계 담당자)으로 들어온다.
+
+⚠️ **`withdraw_completed` 메일에는 상세 딥링크 버튼이 없다**(`_NO_LINK_EVENTS`). 발송 시점에
+의뢰서가 이미 삭제돼 링크가 죽기 때문이다. 본문(결재 경로 카드 포함)은 **삭제 전에** 렌더해
+큐에 적재하므로 내용은 그대로 남고, `MailNotification.document` FK 만 `SET_NULL` 로 비워진다.
+
+⚠️ 네 이벤트 모두 본문 '특이사항' 칸에 **철회 사유**를 싣는다(`note_override`).
+
 ### 제목·본문 규칙 (2026-08 개편)
 - **모든 메일 제목에 요청서 제목이 포함**된다(`_build_message`).
 - **`stage_arrival` 제목은 모든 단계 공통으로 `{name_prefix}[결재 요청] {제목}` 형식**(2026-08부터 단계 접미사 `- {단계라벨}` 삭제). 단계 구분은 본문 KPI 카드의 "결재 단계" 타일로만 표시한다.
@@ -141,6 +173,8 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
   - `rejected`: 레드 `#dc2626 → #ef4444`
   - `approved`: 그린 `#16a34a → #22c55e`
   - `notify_submitted`/`notify_approved`/`notify_p_completed`: 퍼플 `#7c3aed → #8b5cf6`
+  - `withdraw_requested`/`withdraw_completed`: 레드(반려와 동일) — 결재가 멈추거나 문서가 사라지는 알림
+  - `withdraw_rejected`/`withdraw_cancelled`: 퍼플(통보와 동일) — 결재가 그대로 이어진다는 정보성 통보
   - `EVENT_THEME`에 없는 이벤트 타입은 `stage_arrival`(블루) 테마로 대체된다.
 - **결재 단계** 타일: `stage_arrival`은 `AGENT_LABEL`, 그 외 이벤트는 `EVENT_STATUS_LABEL`(반려/승인 완료/상신 통보/결재 완료 통보/P 단계 도착 통보/P 단계 완료 통보)을 표시한다.
 - **생산 진행일**(`document.production_date`)과 **특이사항**(`document.reference_materials`, 상신 화면의 "특이사항" 입력값)은 값이 없으면 `-`로 표시한다.
@@ -213,7 +247,10 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | 액션(엔드포인트) | 발송 | 내용 |
 |---|:---:|---|
 | `submit` / `resubmit` (상신·재상신) | ✅ | 지정 PL **전원**에게 stage_arrival(제목에 `[이름님]`, 2026-07 추가) + 통보처 전원에게 notify_submitted |
-| `withdraw` (철회) | ❌ | 알림 없음 |
+| `withdraw` (철회 요청·즉시삭제) | ✅ | 진행 중 문서는 확인 대상 단계에 `withdraw_requested`. 임시저장·반려·(MASTER)완료 문서는 즉시 삭제되며 `withdraw_completed`. §3.2 참고 |
+| `confirm-withdraw` (철회 확인) | 🟡 | 대상 단계 **전원 확인이 끝나 삭제될 때만** `withdraw_completed`. 아직 남은 단계가 있으면 무메일 |
+| `reject-withdraw` (철회 거부) | ✅ | 철회 요청자 + 작성자에게 `withdraw_rejected` |
+| `cancel-withdraw` (철회 요청 취소) | ✅ | 확인 대상 단계 담당자/팀에게 `withdraw_cancelled` |
 | `delete` (삭제) | ❌ | 알림 없음 |
 | `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일). **(2026-08) J 도착 메일이 여기로 앞당겨졌고**, 미배정 J 의 수신자도 고정 주소 1곳 → **TE_J 팀 전원**으로 바뀌었다 |
 | `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(위와 동일) |
