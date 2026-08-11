@@ -12,7 +12,10 @@ import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseI
 import { useAuth } from '../contexts/AuthContext';
 import { shouldShowNotice, markNoticeSeen } from '../utils/noticeStorage';
 import { formatDate } from '../utils/date';
-import { getDocTableRows, getFinalCompletionDate } from '../utils/approvalTable';
+import { getDocTableRows, getFinalCompletionDate, isMyDocument, submittedSortKey } from '../utils/approvalTable';
+
+// 홈 '나의 의뢰 현황' 에 보여줄 최대 건수 (그 이상은 '전체 보기' 로 결재현황 MY 탭에서 본다)
+const MY_REQUESTS_LIMIT = 5;
 
 const CATEGORY_ICON: Record<ReleaseCategory, string> = {
   new: '🆕',
@@ -505,14 +508,21 @@ export default function HomePage(): React.ReactElement {
     return () => window.removeEventListener('show-notice', handler);
   }, []);
 
-  // 최근 의뢰 로드
+  // 나의 의뢰 현황 로드 — 결재현황 MY 탭과 같은 판정(isMyDocument)을 쓴다.
+  // 완료(approved)건은 빼고, 결재현황 기본 정렬과 같은 '상신 오래된 순'으로 최대 5건.
   useEffect(() => {
+    if (hasNoRole) { setRecent([]); return; }
     documentsAPI.list({}).then((r) => {
       const data = r.data;
       const all: RequestDocument[] = Array.isArray(data) ? data : (data as any).results ?? [];
-      setRecent(all.filter((d) => d.status !== 'approved').slice(0, 5));
+      setRecent(
+        all
+          .filter((d) => d.status !== 'approved' && isMyDocument(d, currentUser))
+          .sort((a, b) => submittedSortKey(a).localeCompare(submittedSortKey(b)))
+          .slice(0, MY_REQUESTS_LIMIT)
+      );
     }).catch(() => {});
-  }, []);
+  }, [hasNoRole, currentUser]);
 
   const handleCloseModal = useCallback((hideToday: boolean) => {
     const maxUpdatedAt = allNotices.reduce((max, n) => (n.updated_at > max ? n.updated_at : max), '');
@@ -598,16 +608,9 @@ export default function HomePage(): React.ReactElement {
       </div>
 
       <div className="container page">
-        {/* 연간 제품별(디자인룰) 의뢰 현황 — 역할 없는 사용자에겐 노출하지 않는다 */}
+        {/* 나의 의뢰 현황 — 연간 차트보다 위에 둔다. 역할 없는 사용자에겐 노출하지 않는다. */}
         {!hasNoRole && (
           <div style={{ marginBottom: 32 }}>
-            <AnnualDesignRuleChart isMaster={isMaster} />
-          </div>
-        )}
-
-        {/* Recent */}
-        {recent.length > 0 && (
-          <div>
             <div
               style={{
                 display: 'flex',
@@ -616,15 +619,21 @@ export default function HomePage(): React.ReactElement {
                 marginBottom: 16,
               }}
             >
-              <h2 className="section-title">{t('home.recent_title')}</h2>
+              <h2 className="section-title">{t('home.my_requests_title')}</h2>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
-                onClick={() => goOrAlert('/approval')}
+                onClick={() => goOrAlert('/approval?filter=my')}
               >
                 {t('home.view_all')} →
               </button>
             </div>
+            {recent.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-icon">📭</div>
+                <p>{t('home.my_requests_empty')}</p>
+              </div>
+            ) : (
             <div className="table-wrapper">
               <table className="table">
                 <thead>
@@ -679,6 +688,14 @@ export default function HomePage(): React.ReactElement {
                 </tbody>
               </table>
             </div>
+            )}
+          </div>
+        )}
+
+        {/* 연간 제품별(디자인룰) 의뢰 현황 — 역할 없는 사용자에겐 노출하지 않는다 */}
+        {!hasNoRole && (
+          <div>
+            <AnnualDesignRuleChart isMaster={isMaster} />
           </div>
         )}
       </div>
