@@ -299,6 +299,64 @@ class PauseRequest(models.Model):
         return self.state in ('requested', 'confirmed')
 
 
+class WithdrawRequest(models.Model):
+    """의뢰서 철회 요청.
+
+    진행 중(under_review/submitted) 의뢰서의 철회는 즉시 처리되지 않는다. 의뢰자가 사유와
+    함께 철회를 요청하면 생성되고, 요청 시점의 현재(pending) 결재 단계가 '전원' 확인해야
+    철회가 확정된다. 확정되는 순간 **의뢰서가 완전히 삭제**된다(복구 불가).
+
+    확인 대기(requested) 동안에는 결재가 동결되며, 이 구간에서만 요청자가 취소(cancelled)할
+    수 있다. 대상 단계가 거부(rejected)하면 요청이 무효화되고 결재가 그대로 이어진다.
+
+    한 문서에 활성 요청(state=requested)은 1건만 존재한다. 확인 현황은
+    target_step_ids(요청 시점 pending 단계 id) 대비 confirmed_step_ids 로 추적한다.
+
+    ⚠️ 철회가 확정되면 문서가 삭제되므로 이 레코드도 CASCADE 로 함께 사라진다 —
+    'confirmed' 상태는 저장되지 않으며, 철회 이력은 서버 로그(`[WITHDRAW_DOCUMENT]`)에만
+    남는다(2026-08 결정: 이력 보존 불필요).
+    """
+
+    STATE_CHOICES = [
+        ('requested', '요청됨'),      # 확인 대기 (결재 동결)
+        ('rejected', '거부됨'),       # 대상 단계가 거부 → 결재 계속
+        ('cancelled', '취소됨'),      # 요청자가 취소 → 결재 계속
+    ]
+
+    document = models.ForeignKey(
+        RequestDocument, on_delete=models.CASCADE,
+        related_name='withdraw_requests', verbose_name='의뢰서'
+    )
+    requester = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='withdraw_requests', verbose_name='요청자'
+    )
+    requester_name = models.CharField(max_length=100, blank=True, verbose_name='요청자 이름')
+    reason = models.TextField(verbose_name='철회 사유')
+    round = models.PositiveSmallIntegerField(default=1, verbose_name='요청 회차')
+    state = models.CharField(
+        max_length=10, choices=STATE_CHOICES, default='requested', verbose_name='상태'
+    )
+    # 요청 시점의 현재(pending) 결재 단계 id 목록 — 이 단계 전원이 확인해야 철회 확정
+    target_step_ids = models.JSONField(default=list, verbose_name='대상 단계 id')
+    # '철회 확인'을 누른 단계 id 목록
+    confirmed_step_ids = models.JSONField(default=list, verbose_name='확인된 단계 id')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='요청일시')
+    resolved_at = models.DateTimeField(null=True, blank=True, verbose_name='거부·취소일시')
+
+    class Meta:
+        verbose_name = '철회 요청'
+        verbose_name_plural = '철회 요청 목록'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.document.title} - 철회({self.state})"
+
+    def is_active(self):
+        """확인 대기 상태(결재가 동결된 진행 중 요청)."""
+        return self.state == 'requested'
+
+
 class Line(models.Model):
     """{{request.line}} 마스터 데이터"""
     name = models.CharField(max_length=50, unique=True, verbose_name='{{request.line}} 이름')
@@ -751,6 +809,11 @@ class MailNotification(models.Model):
         ('approved', '승인 완료'),
         ('notify_submitted', '상신 통보(통보처)'),
         ('notify_approved', '결재 완료 통보(통보처)'),
+        # 철회 (2026-08) — event_type 은 max_length=20 이므로 아래 키 길이를 넘기지 않는다.
+        ('withdraw_requested', '철회 요청'),
+        ('withdraw_completed', '철회 완료'),
+        ('withdraw_rejected', '철회 거부'),
+        ('withdraw_cancelled', '철회 요청 취소'),
         ('voc_created', 'VOC 등록'),
         ('voc_comment', 'VOC 댓글'),
     ]
