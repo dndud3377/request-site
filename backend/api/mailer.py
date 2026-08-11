@@ -76,6 +76,8 @@ ROUTE_AGENTS_ONLY_MAP = ('R', 'RV', 'RA')
 # E(MASK)·EV 와 후결자(RA)는 생성하지 않으므로 경로에서도 빠진다(고정 후결자도 없는 유일한 경로).
 ROUTE_AGENTS_MAP_DELETE_EDIT = ('P', 'PV', 'R', 'RV', 'J', 'O')
 ROUTE_AGENTS_DEFAULT = ('R', 'RV', 'P', 'PV', 'J', 'O', 'E', 'EV', 'RA')
+# 기타 목적이 'Overlay 변경' 하나뿐인 의뢰서는 일반 경로에서 J 만 빠진다(나머지는 동일).
+ROUTE_AGENTS_NO_J = tuple(a for a in ROUTE_AGENTS_DEFAULT if a != 'J')
 
 
 def route_agents_for(document):
@@ -87,6 +89,8 @@ def route_agents_for(document):
         return ROUTE_AGENTS_MAP_DELETE_EDIT
     if document.is_only_map():
         return ROUTE_AGENTS_ONLY_MAP
+    if document.skip_j_stage():
+        return ROUTE_AGENTS_NO_J
     return ROUTE_AGENTS_DEFAULT
 
 # 메일 본문 '결재 경로' 카드의 표시 순서. 웹 '결재 경로' 탭과 같은 순서를 쓴다
