@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
-    RejectionSnapshot,
+    RejectionSnapshot, assign_default_mail_lines,
 )
 from . import doc_permissions
 from . import design_rule_stats
@@ -111,11 +111,16 @@ class DocPermFieldsMixin(serializers.Serializer):
 
 class UserSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source='username', allow_blank=True, required=False)
+    # 라인별 메일 수신 설정(권한 관리 '이메일 설정' 컬럼). 라인 '이름' 배열로 내려준다.
+    # 변경은 이 직렬화기가 아니라 전용 엔드포인트(users/{id}/mail-lines/)로만 한다.
+    mail_lines = serializers.SlugRelatedField(
+        many=True, read_only=True, slug_field='name',
+    )
 
     class Meta:
         model = User
-        fields = ['id', 'loginid', 'name', 'mail', 'role', 'deptname', 'role_assigned_at']
-        read_only_fields = ['role_assigned_at']
+        fields = ['id', 'loginid', 'name', 'mail', 'role', 'deptname', 'role_assigned_at', 'mail_lines']
+        read_only_fields = ['role_assigned_at', 'mail_lines']
 
     def create(self, validated_data):
         loginid = self.context.get('loginid')
@@ -131,6 +136,10 @@ class UserSerializer(serializers.ModelSerializer):
                 'username': validated_data.get('username', ''),
             }
         )
+
+        if created:
+            # 새 사용자는 모든 라인의 메일을 받는 상태로 시작한다(권한 관리 '이메일 설정').
+            assign_default_mail_lines(user)
 
         if not created:
             user.role = validated_data.get('role', user.role)
