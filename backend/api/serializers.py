@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
+    RejectionSnapshot,
 )
 from . import doc_permissions
 from . import design_rule_stats
@@ -524,3 +525,31 @@ class DocumentDesignRuleOverrideSerializer(serializers.ModelSerializer):
             },
         )
         return obj
+
+
+class RejectionSnapshotSerializer(serializers.ModelSerializer):
+    """반려 이력 1건. 프론트 RejectionSnapshot 타입과 1:1 매핑.
+
+    approval_steps 는 DB 에 JSON 문자열로 보관하지만, 프론트가 문서 응답과 똑같이
+    다룰 수 있도록 배열로 풀어서 내려준다(문자열이 깨져 있으면 빈 배열).
+    """
+
+    approval_steps = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RejectionSnapshot
+        fields = [
+            'id', 'source_document_id', 'title', 'product_name',
+            'requester_name', 'requester_department', 'requester_loginid',
+            'submitted_at', 'additional_notes', 'approval_steps',
+            'round', 'rejected_at', 'rejected_agent',
+            'rejected_by_name', 'rejected_by_loginid', 'reject_comment',
+        ]
+
+    def get_approval_steps(self, obj):
+        import json
+        try:
+            steps = json.loads(obj.approval_steps or '[]')
+        except (json.JSONDecodeError, TypeError):
+            return []
+        return steps if isinstance(steps, list) else []
