@@ -9,7 +9,7 @@ from .sse import broadcaster
 from django.db import connections
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
-from rest_framework import viewsets, status, filters
+from rest_framework import viewsets, status, filters, mixins
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS
@@ -24,13 +24,14 @@ from .models import (
     RequestDocument, ApprovalStep, PauseRequest, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
-    DocumentReviewItem, DocumentReviewItemReviewer,
+    DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot,
 )
 from .utils import LINE_TO_LINEID_MAP
 from . import mailer
 from . import doc_permissions
 from . import design_rule_stats
 from . import review_items as review_items_sync
+from . import rejection_snapshots
 from .authentication import ExternalApiKeyAuthentication
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer, ExternalRequestDocumentSerializer,
@@ -38,6 +39,7 @@ from .serializers import (
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
     UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer, AddressBookSerializer,
     ProcessDesignRuleOverrideSerializer, DocumentDesignRuleOverrideSerializer,
+    RejectionSnapshotSerializer,
 )
 import uuid
 import logging
@@ -739,6 +741,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document.status = 'rejected'
         document.save()
 
+        # 반려 시점을 이력 조회 '반려' 탭에 남긴다(재상신해도 사라지지 않는 별도 적재).
+        rejection_snapshots.create_from_reject(document, step, request.user)
+
         mailer.enqueue_rejected(document)
 
         return Response({'message': '반려되었습니다.', 'status': 'rejected'})
@@ -1400,6 +1405,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
             document.status = 'rejected'
             document.save()
+            # 지정 PL 반려도 동일하게 이력 조회 '반려' 탭에 적재한다.
+            rejection_snapshots.create_from_reject(document, step, request.user)
             mailer.enqueue_rejected(document)
 
         return Response({'message': '반려되었습니다.', 'status': 'rejected'})
@@ -2022,6 +2029,24 @@ class DocumentDesignRuleOverrideViewSet(viewsets.ModelViewSet):
     serializer_class = DocumentDesignRuleOverrideSerializer
     permission_classes = [IsMasterOrReadOnly]
     pagination_class = None
+
+
+class RejectionSnapshotViewSet(mixins.DestroyModelMixin, viewsets.ReadOnlyModelViewSet):
+    """반려 이력 조회 — 이력 조회 화면의 '반려' 탭 데이터.
+
+    적재는 반려 API(`reject-step`/`peer-reject`)에서만 일어나므로 생성·수정 라우트는 두지 않는다.
+    조회는 이력 조회에 들어올 수 있는 사람 전원, 삭제는 MASTER 만 가능하다
+    (`IsAuthenticatedOrMasterDelete`). 원본 문서가 지워져도 이력은 남는다.
+    """
+
+    queryset = RejectionSnapshot.objects.all()
+    serializer_class = RejectionSnapshotSerializer
+    permission_classes = [IsAuthenticatedOrMasterDelete]
+    pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['title', 'product_name', 'requester_name', 'requester_department']
+    ordering_fields = ['rejected_at', 'submitted_at']
+    ordering = ['-rejected_at']
 
 
 class ExternalRequestDocumentViewSet(viewsets.ReadOnlyModelViewSet):
