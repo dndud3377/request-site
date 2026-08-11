@@ -1,7 +1,8 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    RequestDocumentViewSet, ExternalRequestDocumentViewSet, VOCViewSet, LineViewSet, AdminNoticeViewSet, VocHistoryViewSet,
+    RequestDocumentViewSet, ExternalRequestDocumentViewSet, RejectionSnapshotViewSet,
+    VOCViewSet, LineViewSet, AdminNoticeViewSet, VocHistoryViewSet,
     UserViewSet, GuideViewSet, UserGroupViewSet, AddressBookViewSet,
     ProcessDesignRuleOverrideViewSet, DocumentDesignRuleOverrideViewSet,
     health_check, upload_image, upload_video, user_events,
@@ -14,6 +15,7 @@ from .auth_views_dev import dev_login_view
 
 router = DefaultRouter()
 router.register(r'documents', RequestDocumentViewSet, basename='document')
+router.register(r'rejection-snapshots', RejectionSnapshotViewSet, basename='rejection-snapshot')
 router.register(r'voc', VOCViewSet, basename='voc')
 router.register(r'voc-histories', VocHistoryViewSet, basename='voc-history')
 router.register(r'lines', LineViewSet, basename='line')

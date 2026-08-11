@@ -143,6 +143,30 @@ export interface RequestDocument {
   my_pending_review_items?: number;            // 내가 검토자인 미확인 항목 수 (목록 응답, MY 탭 조건)
 }
 
+/**
+ * 반려 이력 1건 — 반려가 확정된 순간의 의뢰서를 통째로 얼려 둔 것.
+ * 이력 조회 '반려' 탭의 행 하나에 대응한다. 재상신·승인으로 원본 문서가 바뀌어도,
+ * 원본이 삭제돼도 이 레코드는 그대로 남는다(회차마다 1건씩 누적).
+ */
+export interface RejectionSnapshot {
+  id: number;
+  source_document_id: number;   // 원본 의뢰서 id (문서가 삭제돼도 유지)
+  title: string;
+  product_name: string;
+  requester_name: string;
+  requester_department: string;
+  requester_loginid: string;
+  submitted_at: string | null;
+  additional_notes: string;                 // 반려 시점 상세 폼·표 전체 JSON
+  approval_steps: ApprovalStepFrontend[];   // 반려 시점 결재 단계
+  round: number;                            // 몇 회차에서 반려됐는지
+  rejected_at: string;
+  rejected_agent: string;
+  rejected_by_name: string;
+  rejected_by_loginid: string;
+  reject_comment: string;
+}
+
 export type CreateDocumentInput = Omit<
   RequestDocument,
   'id' | 'status' | 'created_at' | 'updated_at' | 'submitted_at' | 'approval_steps'

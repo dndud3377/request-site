@@ -926,3 +926,66 @@ class DocumentReviewItemReviewer(models.Model):
 
     def __str__(self):
         return f"{self.item.title} - {self.loginid}{' ✓' if self.confirmed else ''}"
+
+
+class RejectionSnapshot(models.Model):
+    """반려 시점의 의뢰서를 통째로 얼려 보관하는 이력.
+
+    반려는 문서의 status 만 rejected 로 바꾸고, 재상신하면 같은 레코드가 under_review 로
+    되돌아간다. 그래서 문서만으로는 "언제 무슨 내용으로 반려됐는지"가 남지 않는다.
+    이 모델은 반려가 일어나는 순간의 폼 내용(additional_notes)과 결재 단계(approval_steps)를
+    복사해 두어, 이후 재상신·승인으로 문서가 바뀌어도 그 시점을 그대로 다시 볼 수 있게 한다.
+
+    - 회차마다 1행씩 쌓인다(3번 반려 = 3행).
+    - 원본 문서가 삭제돼도 이력은 남긴다(document 는 SET_NULL, source_document_id 로 추적).
+    - {{agent_E}}(MASK)의 '수정 요청'은 문서 status 를 바꾸지 않는 별개 동작이라 여기에 쌓이지 않는다.
+    """
+
+    document = models.ForeignKey(
+        RequestDocument, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='rejection_snapshots', verbose_name='의뢰서'
+    )
+    # 문서가 삭제돼 document 링크가 끊긴 뒤에도 어떤 문서였는지 추적하기 위한 원본 id.
+    source_document_id = models.IntegerField(verbose_name='원본 의뢰서 ID')
+
+    # ===== 목록 표시용 복사본 (문서가 바뀌거나 삭제돼도 반려 당시 값을 유지한다) =====
+    title = models.CharField(max_length=600, verbose_name='의뢰서 제목')
+    product_name = models.CharField(max_length=200, verbose_name='{{request.partid_selection}}')
+    requester_name = models.CharField(max_length=100, verbose_name='의뢰자 이름')
+    requester_department = models.CharField(max_length=100, blank=True, verbose_name='부서')
+    requester_loginid = models.CharField(max_length=150, blank=True, verbose_name='의뢰자 로그인 ID')
+    submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='상신일')
+
+    # ===== 상세 재현용 스냅샷 =====
+    # 반려 시점 상세 폼·표 전체 JSON (RequestDocument.additional_notes 원문 복사)
+    additional_notes = models.TextField(blank=True, verbose_name='상세 정보(JSON)')
+    # 반려 시점 결재 단계 전체 JSON 배열 (ApprovalStepSerializer 와 같은 형태)
+    approval_steps = models.TextField(blank=True, verbose_name='결재 단계(JSON)')
+
+    # ===== 반려 메타 =====
+    round = models.PositiveSmallIntegerField(default=1, verbose_name='반려된 회차')
+    rejected_at = models.DateTimeField(verbose_name='반려일시')
+    rejected_agent = models.CharField(max_length=2, blank=True, verbose_name='반려 단계')
+    rejected_by_name = models.CharField(max_length=100, blank=True, verbose_name='반려자 이름')
+    rejected_by_loginid = models.CharField(max_length=150, blank=True, verbose_name='반려자 로그인 ID')
+    reject_comment = models.TextField(blank=True, verbose_name='반려 사유')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='적재일시')
+
+    class Meta:
+        verbose_name = '반려 이력'
+        verbose_name_plural = '반려 이력 목록'
+        ordering = ['-rejected_at', '-id']
+        indexes = [
+            models.Index(fields=['-rejected_at']),
+            models.Index(fields=['source_document_id']),
+        ]
+
+    def __str__(self):
+        return f"[반려 {self.round}회차] {self.title}"
+
+    def get_detail(self):
+        """additional_notes JSON 파싱 (RequestDocument.get_detail 과 동일 규약)"""
+        try:
+            return json.loads(self.additional_notes or '{}')
+        except (json.JSONDecodeError, TypeError):
+            return {}
