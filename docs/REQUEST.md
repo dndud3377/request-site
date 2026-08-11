@@ -238,6 +238,36 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-08-11 — 임시저장 재진입 시 `source_partid` 유실 수정 + 왕복 테스트 신설)
+
+- **문제**: 임시저장(또는 반려) 문서를 `편집`으로 다시 열면 **원본 제품 이름(`source_partid`)이 항상
+  빈 값**이 됐다. `map_type='CLONE'` 문서에서는 상신 필수값이라, 그대로 임시저장하면 DB 값까지
+  덮어써 영구 유실됐다.
+- **원인**: `index.tsx` 의 `[detail.source_line]` effect 하나만 다른 연쇄 초기화 effect
+  (라인·조합법·제품·조리법)와 달리 **`isLoadingEditRef` 로드 가드가 없었다.** 편집 로드가
+  `source_line` 을 채우는 순간 effect 가 돌아 하위 값을 초기화했다.
+- **수정**: 해당 effect 의 `setDetail(... source_partid: '')` 를 `if (!isLoadingEditRef.current)` 로 감쌌다.
+  **사용자가 직접 원본 위치를 바꿀 때의 초기화는 변경 없음** — `source_line` select 는
+  `handleDetailChange`(`index.tsx:1393`)를 쓰고, 이 핸들러가 먼저 로드 가드를 해제한다.
+  옵션 fetch(`getMapNames`)·`sourcePartIdOptions` 갱신은 종전 그대로 무조건 수행한다.
+- **범위**: 프론트 1개 effect. 백엔드·마이그레이션·저장 payload 구조·i18n **변경 없음.**
+- **신규 테스트**: `pages/RequestPage/draftRoundTrip.test.tsx` (5건) — 「모든 항목을 채운 문서를
+  편집 모드로 로드 → 곧바로 임시저장」의 payload 를 `detail` **전 항목 단위로 비교**해 유실을 잡는다.
+  후속 기능 추가 때도 이 테스트가 왕복 유실을 자동으로 잡아 준다.
+  - ⚠️ `RichTextEditor` 는 tiptap(ESM)이라 jest 가 파싱하지 못해 **mock 으로 대체**한다.
+  - ⚠️ CRA jest 설정이 `resetMocks: true` 라 `jest.fn` 구현이 매 테스트마다 지워진다 →
+    API mock 은 **평범한 함수**로 둔다.
+- **검증(2026-08-11 실행)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` | 24개 | **24개** (파일별 분포 동일 — 신규 0) |
+  | `react-scripts test` | 4 suites / 119건 | **5 suites / 124건 통과** |
+  | 백엔드 `manage.py test api` | 256건 OK | **256건 OK** |
+
+- **함께 발견했으나 고치지 않은 건**: 저장된 필터가 켜져 있으면 **다시 열기만 해도**
+  `detail.tbvtlv_entries` 가 삭제된다 → `docs/DATA_FLOW_AUDIT.md` **R-10** 참조(처리 방침 미정).
+
 ### 추가 변경 이력 (2026-08-11 — 특이사항·변경 요청 목적 입력 개방 / 상세보기 역할 조건 정리)
 
 - **Step1 `change_purpose_note`(특이사항·변경 요청 목적) 입력 개방**
