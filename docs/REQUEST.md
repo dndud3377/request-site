@@ -794,6 +794,14 @@ pages/RequestPage/
   - **O-ayer 정보탭**(Partial Shot·TBV/TLV): 누락돼 있던 변경 강조·이력 확인·탭 배지 추가.
   - **n회차 이력**: `FieldHistoryModal`에 회차별 변경(최초/변경됨/변경 없음) 열 추가. `history[]` 누적 구조는 불변.
 
+### 추가 변경 이력 (2026-08 — 엠샷 이력 모달 이미지 표시)
+
+- 「엠샷 변경 이력」 모달의 첨부 이미지 행이 **파일 경로 문자열**(`mshot_images/mshot_….png`)로 보이던 것을 **썸네일 이미지**로 바꿨다. 대상은 `mshot_image_copy` / `_top` / `_bottom` 3종.
+  - `PagedDetailView.tsx`의 `DiffRow` 에 선택적 `kind?: 'text' | 'image'` 추가. `buildMshotRows` 의 이미지 행에만 `kind: 'image'` 를 부여하므로 **생산정보·REV 이력 모달은 종전과 동일한 텍스트 표시**다.
+  - `FieldGroupHistoryModal` 은 `kind === 'image'` 이고 값이 있을 때만 `<img src={/media/<경로>}>` 를 그린다. 값이 비면(신규 첨부의 '변경 전', 삭제의 '변경 후') 기존과 같이 `-` 로 둔다 — 빈 `src` 로 깨진 이미지가 뜨는 것을 막는다.
+  - 썸네일 크기 상수: `DIFF_THUMB_MAX_WIDTH=220` / `DIFF_THUMB_MAX_HEIGHT=150` (블록 본체의 300×200 보다 작게 두어 변경 전·후가 한 화면에 들어온다). 경로 prefix 는 `MEDIA_URL_PREFIX='/media/'`.
+  - 테두리 색은 표의 기존 색 규칙을 따른다 — 변경 전 `#dc3545`, 변경 후 `#155724`. 확대(클릭) 동작은 없다.
+
 ### 추가 변경 이력 (2026-07 — 조건부 필드 초기화 + REV i18n)
 
 - **조건부 섹션 '해제' 시 하위 값 초기화(감사 R-2~R-6)**: 숨겨진 채 state 에 남아 backend 에 잘못 저장되던 값들을 비운다. `index.tsx` 핸들러 + `StepMap` select 연결.
