@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
-import { documentsAPI, rejectionSnapshotsAPI } from '../api/client';
+import { documentsAPI, linesAPI, rejectionSnapshotsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal, { ConfirmModal } from '../components/Modal';
 import PagedDetailView, { ReviewItemsPanelProps } from '../components/PagedDetailView';
@@ -18,7 +18,11 @@ const FILTER_MY = 'my';
 const FILTER_REJECTED = 'rejected';
 const LINE_FILTER_PREFIX = 'line_';
 
-/** 라인 선택값 → i18n 키 접미사. 값 자체(`라인1`)는 데이터라 라벨로 쓰지 않는다. */
+/**
+ * 라인 선택값 → i18n 키 접미사.
+ * 라인 목록은 마스터 데이터(`GET /api/lines/`)라 여기 없는 이름이 얼마든지 올 수 있다.
+ * 그런 라인은 번역 키가 없으므로 이름을 그대로 라벨로 쓴다(`lineLabel` 참조).
+ */
 const LINE_I18N_SUFFIX: Record<string, string> = {
   라인1: '1',
   라인2: '2',
@@ -75,7 +79,7 @@ type DeleteTarget =
   | { kind: 'snapshot'; snapshot: RejectionSnapshot };
 
 export default function HistoryPage(): React.ReactElement {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const addToast = useToast();
   const location = useLocation();
   const { currentUser } = useAuth();
@@ -83,6 +87,8 @@ export default function HistoryPage(): React.ReactElement {
   const isNone = currentUser.role === 'NONE';
   const [docs, setDocs] = useState<RequestDocument[]>([]);
   const [snapshots, setSnapshots] = useState<RejectionSnapshot[]>([]);
+  // 라인 탭 목록. 의뢰서 작성 화면과 같은 마스터를 쓰고, 조회 전·실패 시에는 기본 선택지로 둔다.
+  const [lineOptions, setLineOptions] = useState<string[]>(OPTION_LINE as unknown as string[]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [search, setSearch] = useState('');
@@ -130,6 +136,12 @@ export default function HistoryPage(): React.ReactElement {
     fetchDocs();
   }, [fetchDocs]);
 
+  useEffect(() => {
+    linesAPI.list()
+      .then((lines) => { if (lines.length > 0) setLineOptions(lines.map((l) => l.name)); })
+      .catch(() => { /* 폴백 유지 */ });
+  }, []);
+
   /**
    * MY: 내가 의뢰자이거나, 결재 단계 담당자였던 문서.
    * 이력 조회는 결재가 끝난 문서라 진행 중 단계가 없으므로, 결재 현황의 MY(내 pending 단계)와 달리
@@ -151,13 +163,25 @@ export default function HistoryPage(): React.ReactElement {
     return all;
   }, [isMyDoc]);
 
+  /**
+   * 라인 탭 라벨. 번역 키가 있는 라인은 번역문을, 없는 라인은 마스터의 이름을 그대로 쓴다.
+   * (키 존재 여부를 확인하지 않으면 i18next 가 없는 키를 그대로 반환해 `history.filter_line_…`
+   *  같은 원문이 탭에 노출된다.)
+   */
+  const lineLabel = useCallback((line: string): string => {
+    const suffix = LINE_I18N_SUFFIX[line];
+    if (!suffix) return line;
+    const key = `history.filter_line_${suffix}`;
+    return i18n.exists(key) ? t(key as 'history.filter_line_1') : line;
+  }, [t, i18n]);
+
   const filterTabs = useMemo(() => {
     const base = [
       { key: FILTER_ALL, label: t('history.filter_all') },
       { key: FILTER_MY, label: t('history.filter_my') },
-      ...OPTION_LINE.map((line) => ({
+      ...lineOptions.map((line) => ({
         key: `${LINE_FILTER_PREFIX}${line}`,
-        label: t(`history.filter_line_${LINE_I18N_SUFFIX[line]}` as 'history.filter_line_1'),
+        label: lineLabel(line),
       })),
       { key: FILTER_REJECTED, label: t('history.filter_rejected') },
     ];
@@ -165,7 +189,7 @@ export default function HistoryPage(): React.ReactElement {
       const count = key === FILTER_REJECTED ? snapshots.length : filterDocs(docs, key).length;
       return { key, label: count > 0 ? `${label}(${count})` : label };
     });
-  }, [t, docs, snapshots, filterDocs]);
+  }, [t, docs, snapshots, filterDocs, lineOptions, lineLabel]);
 
   const visibleDocs = useMemo(
     () => (isRejectedTab ? [] : filterDocs(docs, filter)),
@@ -279,18 +303,6 @@ export default function HistoryPage(): React.ReactElement {
         <p>{t('history.subtitle')}</p>
       </div>
 
-      <div className="filter-tabs">
-        {filterTabs.map((tab) => (
-          <button
-            key={tab.key}
-            className={`filter-tab ${filter === tab.key ? 'active' : ''}`}
-            onClick={() => setFilter(tab.key)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
       <div className="toolbar">
         <div className="search-box">
           <span className="search-icon">🔍</span>
@@ -299,6 +311,17 @@ export default function HistoryPage(): React.ReactElement {
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('history.search_placeholder')}
           />
+        </div>
+        <div className="filter-tabs">
+          {filterTabs.map((tab) => (
+            <button
+              key={tab.key}
+              className={`filter-tab ${filter === tab.key ? 'active' : ''}`}
+              onClick={() => setFilter(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
