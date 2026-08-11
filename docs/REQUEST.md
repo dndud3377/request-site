@@ -238,6 +238,23 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-08-11 — 특이사항·변경 요청 목적 입력 개방 / 상세보기 역할 조건 정리)
+
+- **Step1 `change_purpose_note`(특이사항·변경 요청 목적) 입력 개방**
+  (`components/Step1.tsx`): `disabled={disableOptional}` → `disabled={!canSelectPurpose}`.
+  이제 요청 목적이 `Only MAP` · `MAP 삭제/수정` 이어도 **입력할 수 있다.**
+  잠기는 조건은 라인·조합법·제품 이름·조리법 미선택(`!canSelectPurpose`) **하나뿐**이다.
+  - **초기화 동작은 변경 없음**: `Only MAP`/`MAP 삭제/수정` 으로 **전환**하면
+    `applyMapOnlyScope`(`index.tsx`)가 `change_purpose_note` 를 `''` 로 되돌린다.
+    전환 확인 모달 판정(`mapOnlyScopeHasData`)에도 이 필드가 그대로 포함된다.
+    → 입력은 가능하되 목적을 바꾸면 비워지므로, **목적을 먼저 고르고 나서 작성**해야 한다.
+  - `disableOptional`(기타 목적·흐름도·Backbone·참조 요청서)은 **무변경**.
+- **상세보기 `change_purpose_note` 노출 조건 정리**
+  (`components/PagedDetailView.tsx`): `((isO && !isR && !isJ) || role === 'MASTER' || isPL || isP)`
+  → `detail.change_purpose_note` 유무만 판정. `isP`/`isR`/`isJ`/`isO` 가 모두 `true` 상수라
+  기존 조건식은 **항상 참인 죽은 코드**였다(전원 공개 동작은 그대로 유지 — 화면 변화 없음).
+  이 조건식이 유일한 사용처였던 `isPL` 상수도 함께 제거했다.
+
 ### 추가 변경 이력 (2026-08-11 — 뼈찜(bb_ref) 항목 상세보기 용어 연동)
 
 - **문제**: 상세보기(`components/PagedDetailView.tsx` `buildBbValue`)가 뼈찜 항목을
@@ -951,7 +968,7 @@ pages/RequestPage/
 - **J↔O col_st·col_new_or_copy 양방향 동기화**: `layerid`(col_layer) 값이 동일한 J-layer 행과 O-layer 행 사이에서 `st`·`new_or_copy` 값을 자동 반영. 개별 셀 편집(`handleJayerChange`/`handleOayerChange`)과 일괄 버튼(`handleJayer/OayerSetAll`·`handleJayer/OayerResetField`) 모두 적용. `new_or_copy === '기등록'` 행은 덮어쓰지 않으며, `layerid`가 빈 행은 동기화 제외.
 - **col_st·col_new_or_copy 드롭다운 잘림 방지**: `AutocompleteInput`에서 `dropdownDirection="up"` 시 `createPortal` + `position: fixed`로 렌더해 `.wizard-table-wrapper`의 overflow 클리핑을 우회. 열린 상태에서 scroll 이벤트로 위치를 갱신. `dropdownDirection="down"` 분기(Step1·StepMap 등)는 기존 동작 무변경.
 
-- **Step1 요청 목적 'Only MAP'**: 기존 `'MAP 변경'` 옵션을 `'Only MAP'`로 변경(라벨·DB 저장값 동시 변경 — `OPTION_REQUEST_PURPOSE`). 선택 시 **초기화 확인 모달**(`only_map_confirm_*` i18n) 노출 후 확인하면 *기타 목적·흐름도·특이사항·Backbone(`bb_entries`)·참조 요청서*를 초기화하고 입력을 비활성화한다(Step1 `disableOptional = !canSelectPurpose || isOnlyMap`). **유지(편집 가능)**: 라인·조합법·제품 이름·조리법·고객/업체명·요구 사항·실제 생산 진행 날짜. 검증에서는 Only MAP일 때 **Backbone 필수 검증만 우회**한다.
+- **Step1 요청 목적 'Only MAP'**: 기존 `'MAP 변경'` 옵션을 `'Only MAP'`로 변경(라벨·DB 저장값 동시 변경 — `OPTION_REQUEST_PURPOSE`). 선택 시 **초기화 확인 모달**(`only_map_confirm_*` i18n) 노출 후 확인하면 *기타 목적·흐름도·특이사항·Backbone(`bb_entries`)·참조 요청서*를 초기화하고 입력을 비활성화한다(Step1 `disableOptional = !canSelectPurpose || isOnlyMap`). ※ 2026-08-11 변경: *특이사항(`change_purpose_note`)* 은 **초기화만 되고 입력은 가능**하다(§4.1 2026-08-11 항목 참조). **유지(편집 가능)**: 라인·조합법·제품 이름·조리법·고객/업체명·요구 사항·실제 생산 진행 날짜. 검증에서는 Only MAP일 때 **Backbone 필수 검증만 우회**한다.
 - **StepMap MAP 목적 변경 초기화 범위**: `handleMapTypeChangeConfirm`이 더 이상 `INITIAL_DETAIL` 전체로 초기화하지 않고, **StepMap 필드(원본·C가문·지도편차·예외구역·X표시·Map Option·REV)만** 초기화한다. Step1/3/4/5 데이터(`bb_entries`·`partial_shot`·`tbvtlv_*` 등)는 보존된다.
 - **원본 위치/제품 CLONE 전용**: StepMap의 원본 위치/Part ID 블록은 `map_type === 'CLONE'`일 때만 표시된다.
 - **Map Option 11번 추가**: `hpkglabelheight`(i18n `map_opt_hpkglabelheight`, ko `11번`/en `11`). `types`·`INITIAL_DETAIL`·`StepMap`·`PagedDetailView`·`handleReset`·MAP 목적 변경 초기화에 반영. `detail`은 `additional_notes`에 JSON 저장되므로 백엔드 마이그레이션 불필요.
