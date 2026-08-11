@@ -238,6 +238,27 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-08-11 — 뼈찜(bb_ref) 항목 상세보기 용어 연동)
+
+- **문제**: 상세보기(`components/PagedDetailView.tsx` `buildBbValue`)가 뼈찜 항목을
+  `[1] 위치: … / 제품: … / 조리법: …` 로 **한국어 라벨을 하드코딩**하고 있어,
+  작성 화면(Step1)이 쓰는 i18n 용어와 어긋나고 영어(en) 전환 시에도 한국어로 고정됐다.
+- **수정**: 라벨 3개를 Step1(`components/Step1.tsx:442/454/465`)과 **동일한 키 그대로** 사용하도록 교체.
+
+  | 필드 | i18n 키 | ko | en |
+  |---|---|---|---|
+  | `entry.location` | `request.bb_ref_line` | 뼈찜 위치 선택 | Bone Stew Location |
+  | `entry.product` | `request.bb_ref_part_id` | 뼈찜 제품 이름 선택 | Bone Stew Product Name |
+  | `entry.process_id` | `request.bb_ref_process_id` | 뼈찜 조리법 | Bone Stew Cooking Method |
+
+- **범위**: 라벨(표시 문자열)만 변경. 저장 값(`location`/`product`/`process_id`)·데이터 구조·백엔드·마이그레이션 **변경 없음**.
+  i18n 키도 **신규 추가 없이 기존 키 재사용**이다.
+- `buildBbValue` 는 상세 칩(`bb_status`)과 **'이력 확인' 모달(회차별 값 비교)** 이 공유하므로 두 곳에 함께 반영된다.
+- **연동 상태 전수 확인 결과**: 뼈찜 정보 표 헤더(`col_bb_process_id`/`col_bb_partid`/`col_bb_layer`/`col_bb_stepseq`/`col_bb_step`)와
+  칩 제목(`bb_status`)은 이미 i18n 연동되어 있었다. `bb_entries` 를 표시하는 상세 화면은 `PagedDetailView.tsx` **한 곳뿐**이다.
+- **미조치(요청 범위 밖, 기록만)**: 같은 파일의 `buildMapValue`/`buildEaValue` 는 `변경:`·`사유:`·`값:` 을 여전히 하드코딩한다.
+  `RequestPage/constants.ts` 의 `bb_zone: '존재'` 는 라벨이 아니라 **저장 값**이라 i18n 대상이 아니다.
+
 ### 추가 변경 이력 (2026-08-10 — 단계 인디케이터 탭 클릭 이동)
 
 - **개요**: '다음'/'이전' 버튼으로만 가능하던 단계 이동에 **상단 인디케이터 탭 클릭**을 추가했다.
