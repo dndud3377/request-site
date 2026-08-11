@@ -34,6 +34,7 @@ const AGENT_TO_ROLE: Record<string, string> = {
 // 결재 현황 테이블 계산 헬퍼는 utils/approvalTable 로 이동(HomePage 최근 의뢰 현황과 공유).
 
 // 중단 요청 '확인' 가능 여부(프론트 가드): MASTER / 담당자 본인 / (미배정 시) 같은 팀
+// 철회 요청 확인·거부도 같은 규칙을 쓴다(서버 `_can_confirm_pause` 를 두 액션이 공유).
 const canConfirmPauseStep = (
   user: { role?: UserRole | string | null; username?: string },
   step: ApprovalStepFrontend,
@@ -790,9 +791,10 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
-  // 철회 모달 상태
+  // 철회 모달 상태 (사유 입력 → 철회 요청 또는 즉시 삭제)
   const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
   const [withdrawDoc, setWithdrawDoc] = useState<RequestDocument | null>(null);
+  const [withdrawReasonInput, setWithdrawReasonInput] = useState('');
 
   // 임시저장 공유 그룹 지정 모달 — 내가 속한 그룹 중 하나를 골라 draft 를 공유한다.
   const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -837,20 +839,31 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
+  // 결재가 진행 중인 문서만 '현재 단계 전원 확인' 절차를 거친다.
+  // 그 외(임시저장·반려)는 확인할 상대가 없어 즉시 삭제된다 — 사유도 선택 사항.
+  const needsWithdrawConfirm = (doc: RequestDocument): boolean =>
+    doc.status === 'under_review' || doc.status === 'submitted';
+
   const handleWithdrawClick = (doc: RequestDocument) => {
     setWithdrawDoc(doc);
+    setWithdrawReasonInput('');
     setWithdrawModalOpen(true);
   };
 
-  const handleWithdrawToDraft = async () => {
+  const submitWithdraw = async () => {
     if (!withdrawDoc) return;
     setProcessing(true);
     try {
-      await documentsAPI.withdraw(withdrawDoc.id);
-      addToast(t('approval.withdraw_success'), 'success');
+      const r = await documentsAPI.withdraw(withdrawDoc.id, withdrawReasonInput.trim());
       setWithdrawModalOpen(false);
-      setModalOpen(false);
-      fetchDocs();
+      if (r.data.deleted) {
+        addToast(t('approval.withdraw_success'), 'success');
+        setModalOpen(false);
+        fetchDocs();
+      } else {
+        addToast(t('approval.withdraw_requested_toast'), 'success');
+        await refreshAndSelect(withdrawDoc.id);
+      }
     } catch {
       addToast(t('common.process_error'), 'error');
     } finally {
@@ -859,20 +872,51 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
-  const handleDelete = async () => {
-    if (!withdrawDoc) return;
+  const handleConfirmWithdraw = async (agent: AgentType) => {
+    if (!selected) return;
     setProcessing(true);
     try {
-      await documentsAPI.delete(withdrawDoc.id);
-      addToast('의뢰서가 삭제되었습니다.', 'success');
-      setWithdrawModalOpen(false);
-      setModalOpen(false);
-      fetchDocs();
+      const r = await documentsAPI.confirmWithdraw(selected.id, agent);
+      if (r.data.deleted) {
+        addToast(t('approval.withdraw_confirmed_toast'), 'success');
+        setModalOpen(false);
+        fetchDocs();
+      } else {
+        addToast(t('approval.withdraw_confirm_progress_toast'), 'success');
+        await refreshAndSelect(selected.id);
+      }
     } catch {
       addToast(t('common.process_error'), 'error');
     } finally {
       setProcessing(false);
-      setWithdrawDoc(null);
+    }
+  };
+
+  const handleRejectWithdraw = async () => {
+    if (!selected) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.rejectWithdraw(selected.id);
+      addToast(t('approval.withdraw_rejected_toast'), 'success');
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleCancelWithdraw = async () => {
+    if (!selected) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.cancelWithdraw(selected.id);
+      addToast(t('approval.withdraw_cancelled_toast'), 'success');
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -998,6 +1042,12 @@ export default function ApprovalPage(): React.ReactElement {
                           )}
                         </div>
                       )}
+                      {/* 철회 요청중 칩은 단일 행·그리드 표시 양쪽에서 모두 보여야 한다 */}
+                      {doc.withdraw_request && (
+                        <div style={{ marginTop: 4 }}>
+                          <span className="withdraw-req-chip">🗑️ {t('approval.withdraw_requested_chip')}</span>
+                        </div>
+                      )}
                     </td>
                     <td>{isPaused ? <span style={{ color: 'var(--text-muted)' }}>{t('approval.filter_pause')}</span> : getFinalCompletionDate(doc)}</td>
                     <td>{doc.production_date ? formatDate(doc.production_date) : '-'}</td>
@@ -1109,7 +1159,6 @@ export default function ApprovalPage(): React.ReactElement {
         </Modal>
       )}
 
-      {/* 철회/삭제 선택 모달 */}
       {/* 임시저장 공유 그룹 지정 모달 — 내가 속한 그룹 중 1개(또는 공유 안 함) */}
       {shareModalOpen && shareDoc && (
         <Modal
@@ -1168,55 +1217,54 @@ export default function ApprovalPage(): React.ReactElement {
         </Modal>
       )}
 
-      {withdrawModalOpen && (
+      {/* 철회 모달 — 사유를 받아 철회 요청(진행 중) 또는 즉시 삭제(임시저장·반려)를 실행한다 */}
+      {withdrawModalOpen && withdrawDoc && (
         <Modal
           isOpen={withdrawModalOpen}
           onClose={() => { setWithdrawModalOpen(false); setWithdrawDoc(null); }}
-          title="철회 방식 선택"
+          title={t('approval.withdraw_modal_title')}
           size="md"
           topLevel
           footer={
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button
-                className="btn btn-secondary"
-                onClick={handleWithdrawToDraft}
-                disabled={processing}
-              >
-                임시저장
-              </button>
-              <button
                 className="btn btn-danger"
-                onClick={handleDelete}
-                disabled={processing}
+                onClick={submitWithdraw}
+                disabled={processing || (needsWithdrawConfirm(withdrawDoc) && !withdrawReasonInput.trim())}
               >
-                삭제
+                {needsWithdrawConfirm(withdrawDoc)
+                  ? t('approval.withdraw_submit')
+                  : t('approval.withdraw_submit_immediate')}
               </button>
               <button
                 className="btn btn-secondary"
                 onClick={() => { setWithdrawModalOpen(false); setWithdrawDoc(null); }}
                 disabled={processing}
               >
-                취소
+                {t('common.cancel')}
               </button>
             </div>
           }
         >
           <div>
-            <p style={{ fontSize: '0.95rem', color: 'var(--text-secondary)', marginBottom: 8 }}>
-              의뢰서를 철회하는 방식을 선택해주세요.
+            <div className="withdraw-warning">⚠️ {t('approval.withdraw_warning')}</div>
+            <p style={{ margin: '12px 0 8px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+              {t('approval.withdraw_reason_label')}
+              {needsWithdrawConfirm(withdrawDoc) && <span style={{ color: 'var(--danger)' }}> *</span>}
             </p>
-            <div style={{ background: 'var(--bg-secondary)', padding: '12px', borderRadius: 'var(--radius-sm)', marginTop: 12 }}>
-              <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: 8 }}>📝 임시저장</p>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
-                의뢰서가 임시저장 상태로 돌아갑니다. 이후 수정하여 재상신할 수 있습니다.
-              </p>
-            </div>
-            <div style={{ background: '#fff0f0', padding: '12px', borderRadius: 'var(--radius-sm)', marginTop: 8 }}>
-              <p style={{ fontSize: '0.85rem', fontWeight: 600, color: '#dc3545', marginBottom: 8 }}>🗑️ 삭제</p>
-              <p style={{ fontSize: '0.8rem', color: '#dc3545', margin: 0 }}>
-                의뢰서가 완전히 삭제됩니다. 복구할 수 없습니다.
-              </p>
-            </div>
+            <textarea
+              className="form-control"
+              rows={4}
+              value={withdrawReasonInput}
+              onChange={(e) => setWithdrawReasonInput(e.target.value)}
+              placeholder={t('approval.withdraw_reason_placeholder')}
+              style={{ width: '100%', resize: 'vertical' }}
+            />
+            <p style={{ marginTop: 6, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              {needsWithdrawConfirm(withdrawDoc)
+                ? t('approval.withdraw_reason_hint')
+                : t('approval.withdraw_immediate_hint')}
+            </p>
           </div>
         </Modal>
       )}
@@ -1301,6 +1349,22 @@ export default function ApprovalPage(): React.ReactElement {
             );
             pauseConfirmAgent = target?.agent;
           }
+
+          // 철회 요청 관련 버튼 노출 계산 (확인 인가는 중단 확인과 동일 규칙)
+          const wr = selected?.withdraw_request;
+          let withdrawConfirmAgent: AgentType | undefined;
+          if (wr) {
+            const target = (selected?.approval_steps ?? []).find(
+              (s) => s.action === 'pending'
+                && wr.target_step_ids.includes(s.id)
+                && !wr.confirmed_step_ids.includes(s.id)
+                && canConfirmPauseStep(currentUser, s)
+            );
+            withdrawConfirmAgent = target?.agent;
+          }
+          // 철회 요청 취소는 '요청한 본인'만 — 작성자가 아니라 요청자 기준(서버와 동일)
+          const canCancelWithdraw = !!wr
+            && (isMaster || (!!wr.requester_loginid && wr.requester_loginid === currentUser.username));
 
           // 후결자 관리: 작성자 또는 MASTER + under_review + 병렬 단계(R 합의 이후) 진입 후 항상 노출
           const fixedPa = selected?.post_approver_fixed_loginid ?? '';
@@ -1439,7 +1503,26 @@ export default function ApprovalPage(): React.ReactElement {
                   👥 {selected.shared_group_name ?? t('approval.share_group_btn')}
                 </button>
               )}
-              {selected && selected.can_withdraw && (selected.status === 'under_review' || selected.status === 'rejected' || selected.status === 'draft') && (
+              {/* 철회 확인 (현재 단계 담당자/팀) — 전원 확인 시 의뢰서가 삭제된다 */}
+              {withdrawConfirmAgent && (
+                <button className="btn btn-danger" onClick={() => handleConfirmWithdraw(withdrawConfirmAgent as AgentType)} disabled={processing}>
+                  {t('approval.withdraw_confirm')}
+                </button>
+              )}
+              {/* 철회 거부 (확인할 수 있는 사람이면 거부도 가능) */}
+              {withdrawConfirmAgent && (
+                <button className="btn btn-secondary" onClick={handleRejectWithdraw} disabled={processing}>
+                  {t('approval.withdraw_reject')}
+                </button>
+              )}
+              {/* 철회 요청 취소 (요청자 본인·확인 완료 전) */}
+              {canCancelWithdraw && (
+                <button className="btn btn-secondary" onClick={handleCancelWithdraw} disabled={processing}>
+                  {t('approval.withdraw_cancel')}
+                </button>
+              )}
+              {/* 철회 요청 중에는 중복 요청을 막기 위해 철회 버튼을 감춘다 */}
+              {selected && selected.can_withdraw && !wr && (selected.status === 'under_review' || selected.status === 'rejected' || selected.status === 'draft') && (
                 <button className="btn btn-secondary" onClick={() => handleWithdrawClick(selected)} disabled={processing}>
                   {t('approval.withdraw')}
                 </button>
@@ -1860,6 +1943,40 @@ export default function ApprovalPage(): React.ReactElement {
                       {t('approval.pause_resume_hint')}
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* 철회 요청 배너 — 확인 현황과 '확정 시 삭제' 경고를 함께 보여준다 */}
+            {selected.withdraw_request && (
+              <div className="pause-banner withdraw-banner">
+                <div style={{ fontSize: '1.2rem', lineHeight: 1.2 }} aria-hidden="true">🗑️</div>
+                <div style={{ flex: 1 }}>
+                  <p className="pause-banner-title">
+                    {t('approval.withdraw_banner_requested', { name: selected.withdraw_request.requester_name })}
+                  </p>
+                  <p className="pause-banner-reason">“{selected.withdraw_request.reason}”</p>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 700, marginBottom: 6 }}>
+                    ⚠️ {t('approval.withdraw_banner_warning')}
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+                    {t('approval.withdraw_confirm_status')}
+                  </div>
+                  <div className="pause-confirm-track">
+                    {(selected.approval_steps ?? [])
+                      .filter((s) => selected.withdraw_request!.target_step_ids.includes(s.id))
+                      .map((s) => {
+                        const done = selected.withdraw_request!.confirmed_step_ids.includes(s.id);
+                        const mine = !done && s.action === 'pending' && canConfirmPauseStep(currentUser, s);
+                        const label = t(`approval.agent_${s.agent}` as any);
+                        return (
+                          <span key={s.id} className={`pause-cf ${done ? 'done' : mine ? 'mine' : ''}`}>
+                            <span className="pause-cf-dot" aria-hidden="true" />
+                            {label} · {done ? t('approval.pause_cf_done') : mine ? t('approval.pause_cf_mine') : t('approval.pause_cf_wait')}
+                          </span>
+                        );
+                      })}
+                  </div>
                 </div>
               </div>
             )}
