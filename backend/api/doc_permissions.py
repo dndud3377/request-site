@@ -76,6 +76,20 @@ def can_withdraw(user, document, my_group_ids=None):
     return is_shared_group_member(user, document, my_group_ids)
 
 
+def can_cancel_withdraw(user, withdraw_request):
+    """철회 요청 취소 인가: 그 요청을 낸 본인 또는 MASTER.
+
+    철회는 문서 작성자뿐 아니라 지정 PL·공유 그룹 멤버도 요청할 수 있으므로(can_withdraw),
+    취소 주체는 문서 작성자가 아니라 **요청자 본인**으로 판정한다.
+    """
+    if getattr(user, 'role', '') == 'MASTER':
+        return True
+    loginid = getattr(user, 'loginid', '')
+    if not loginid or not withdraw_request.requester_id:
+        return False
+    return withdraw_request.requester.loginid == loginid
+
+
 def can_delete(user, document, my_group_ids=None):
     """삭제 인가 — 문서 상태별 허용 대상.
 

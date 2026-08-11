@@ -19,6 +19,7 @@ class DocPermFieldsMixin(serializers.Serializer):
     can_request_pause = serializers.SerializerMethodField()
     can_resume = serializers.SerializerMethodField()
     pause_request = serializers.SerializerMethodField()
+    withdraw_request = serializers.SerializerMethodField()
     post_approver_fixed_loginid = serializers.SerializerMethodField()
     requester_loginid = serializers.SerializerMethodField()
     shared_group_name = serializers.CharField(source='shared_group.name', read_only=True, default=None)
@@ -81,6 +82,30 @@ class DocPermFieldsMixin(serializers.Serializer):
             'target_step_ids': pr.target_step_ids or [],
             'confirmed_step_ids': pr.confirmed_step_ids or [],
             'created_at': pr.created_at,
+        }
+
+    def get_withdraw_request(self, obj):
+        """확인 대기(requested) 중인 철회 요청 정보. 없으면 None.
+
+        프론트가 철회 요청 배너·확인 현황·확인/거부/취소 버튼을 렌더하는 데 사용한다.
+        거부·취소된 요청은 결재가 그대로 이어지므로 내려보내지 않는다.
+        """
+        wr = next(
+            (w for w in obj.withdraw_requests.all() if w.state == 'requested'),
+            None,
+        )
+        if not wr:
+            return None
+        return {
+            'id': wr.id,
+            'state': wr.state,
+            'reason': wr.reason,
+            'requester_loginid': wr.requester.loginid if wr.requester_id else None,
+            'requester_name': wr.requester_name,
+            'round': wr.round,
+            'target_step_ids': wr.target_step_ids or [],
+            'confirmed_step_ids': wr.confirmed_step_ids or [],
+            'created_at': wr.created_at,
         }
 
 
@@ -163,7 +188,8 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'status', 'production_date', 'created_at', 'updated_at', 'submitted_at',
             'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw', 'notifier_mails',
-            'can_request_pause', 'can_resume', 'pause_request', 'post_approver_fixed_loginid',
+            'can_request_pause', 'can_resume', 'pause_request', 'withdraw_request',
+            'post_approver_fixed_loginid',
             'shared_group', 'shared_group_name', 'review_items',
         ]
         # shared_group 은 전체 저장(PUT/PATCH)에 값이 빠져 초기화되는 일이 없도록 read-only 로 두고,
@@ -208,7 +234,8 @@ class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSeriali
             'product_name', 'status', 'production_date', 'created_at', 'submitted_at',
             'additional_notes', 'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw',
-            'can_request_pause', 'can_resume', 'pause_request', 'post_approver_fixed_loginid',
+            'can_request_pause', 'can_resume', 'pause_request', 'withdraw_request',
+            'post_approver_fixed_loginid',
             'shared_group', 'shared_group_name', 'my_pending_review_items',
         ]
         read_only_fields = ['shared_group']

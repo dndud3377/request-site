@@ -195,12 +195,51 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - ✅ **다중 지정 PL(2026-07)**: Case A와 동일하게 `designated_pl_loginids` 배열을 받아 새 회차에 PL step **전원**을 생성한다(전원 합의).
 - ✅ **검토자 프리필(2026-07)**: 수정·재상신 화면 진입 시 이전 회차에 지정했던 PL 담당자를 상신 모달의 검토자(designees)에 **미리 채운다**(통보처처럼). `doc.approval_steps` 중 최신 회차 `agent='PL'` step의 assignee로 복원하며, **수정(추가/삭제) 가능**하다. 구현: `RequestPage` 편집 로드 `useEffect`.
 
-### Case J — 철회 (`withdraw`, `views.py:189`)
-- 조건: status가 under_review/rejected/submitted.
-- 동작: `status → draft`, `submitted_at=None`, **현재 문서의 모든 step 삭제**.
-- ✅ 권한: MASTER / 의뢰자 PL 본인 / 지정 PL 본인 / **문서에 지정된 공유 그룹(`shared_group`)의 멤버**
-  만 가능(`can_withdraw`). 그 외 호출은 403.
+### Case J — 철회 (`withdraw` / `confirm-withdraw` / `reject-withdraw` / `cancel-withdraw`, 2026-08 전면 개편)
+
+⚠️ **철회는 더 이상 임시저장(draft)으로 되돌리는 동작이 아니다.** 철회가 확정되면 의뢰서를
+**완전히 삭제**한다(복구 불가). 진행 중인 결재는 현재 단계의 **확인**을 받아야 철회된다.
+모델 `WithdrawRequest`(`models.py`), 마이그레이션 `0020`.
+
+- ✅ 권한(요청 자격): MASTER / 의뢰자 PL 본인 / 지정 PL 본인 / **문서에 지정된 공유 그룹
+  (`shared_group`)의 멤버**(`can_withdraw`). 그 외 호출은 403.
   **(2026-08)** 판정 기준을 "의뢰자와 아무 그룹이나 공유" → "문서의 공유 그룹 멤버"로 변경했다(§9 참조).
+
+**문서 상태별 분기 (`withdraw`)**
+
+| 상태 | 동작 | 사유 |
+|---|---|---|
+| `draft` | 확인 없이 **즉시 삭제** (결재선이 없다) | 선택 |
+| `rejected` | 확인 없이 **즉시 삭제** (결재선이 종료됐다) | 선택 |
+| `approved` | **MASTER 만** 즉시 삭제, 그 외 403 (결재 완료본 = 이력, `can_delete` 와 같은 기준) | 선택 |
+| `under_review` / `submitted` | **철회 요청 생성** → 현재 단계 전원 확인 시 삭제 | **필수** |
+| `pause` | 400 — 재개한 뒤 철회한다 | - |
+
+응답의 `deleted`(bool)로 "이미 삭제됨"과 "요청만 접수됨"을 구분한다.
+
+**요청 → 확인 → 삭제**
+
+- **철회 요청**: 요청 시점의 현재(pending) 결재 단계 id 를 `target_step_ids` 로 기록한다.
+  한 문서에 활성 요청(`state='requested'`)은 1건뿐이다. 상태 뱃지는 그대로 유지되고,
+  목록 현재단계 칸에 '철회 요청중' 칩만 붙는다.
+- **철회 확인 (`confirm_withdraw`)**: 인가는 **중단 확인과 같은 규칙**(`_can_confirm_pause`)이다 —
+  담당자(assignee)가 있는 단계는 그 담당자 본인, 미배정 단계는 같은 팀(역할↔agent 일치) 누구나
+  1명, MASTER 는 항상. 병렬 단계면 **target 단계 전원**이 확인해야 확정된다
+  (`confirmed_step_ids` 누적, `set(target) ⊆ set(confirmed)`).
+  확정되는 순간 완료 메일을 적재한 뒤 `document.delete()` 를 호출한다.
+- **철회 거부 (`reject_withdraw`)**: 확인할 수 있는 사람이면 거부도 할 수 있다. 단계 **하나만
+  거부해도** 요청 전체가 `rejected` 로 무효화되고 결재가 그대로 이어진다.
+- **요청 취소 (`cancel_withdraw`)**: **요청자 본인**(문서 작성자가 아니다 —
+  `can_cancel_withdraw`)/MASTER 가 확인 완료 전에만 거둬들인다(`cancelled`).
+  ⚠️ 확정 이후에는 문서가 이미 삭제돼 되돌릴 수 없다 — **되돌릴 수 있는 구간은 확인 대기 중뿐**이다.
+- **동결**: 확인 대기(`requested`) 동안 `approve_step`/`reject_step`/`assign_step`/`claim_step` 이
+  400 으로 차단된다(`_blocked_progress_response`). 확인 도중 단계가 넘어가면 대상 단계가 끝나
+  확인이 영영 완료되지 않기 때문이다. 거부·취소되면 즉시 풀린다.
+- ⚠️ **철회 이력은 남지 않는다**(2026-08 결정). 문서 삭제 시 `ApprovalStep`·`WithdrawRequest` 가
+  CASCADE 로 함께 사라지고, 누가 왜 철회했는지는 서버 로그
+  `[WITHDRAW_DOCUMENT] user=… doc=… reason=…` 에만 남는다.
+- **메일**: 요청/완료/거부/취소 4종이 발송된다. 수신자 규칙은 `docs/MAIL.md` §3.2.
+- 테스트: `backend/api/tests.py::WithdrawFlowTest`
 
 ### Case K — 담당자 지정 (`assign_step`, `views.py:331` 부근) — **R 전용**
 - 동작: 현재 회차의 해당 agent pending step에 assignee 지정.
@@ -510,7 +549,9 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 | 검토자 선택 후 합의 (P·E, 2026-07, 다중) | `canUserPickReviewers`가 참(=`canUserAgree`와 동일 조건) — 별도 액션 없이 `approveStep`에 `reviewer_loginids` 동봉 | `approveStep`(agent P/E) |
 | 지정자 변경 | PL/MASTER | `changeDesignee` |
 | 후결자 추가/제거 (2026-07) | 작성자/MASTER + under_review + 병렬 진입 후 | `addPostApprover` / `removePostApprover` |
-| 철회 | PL/MASTER | `withdraw`(임시저장으로) 또는 `delete`(삭제) 선택 |
+| 철회 | `can_withdraw` + 철회 요청중이 아닐 때 | 사유 입력 모달 → `withdraw`(진행 중이면 철회 요청, 그 외 즉시 삭제) |
+| 철회 확인 / 거부 | 현재 pending 단계 담당자/팀+MASTER (요청중) | `confirmWithdraw` / `rejectWithdraw` |
+| 철회 요청 취소 | 철회 요청자 본인/MASTER (요청중) | `cancelWithdraw` |
 | 수정 후 재상신 | rejected/draft | `/request`로 이동(editDocId) |
 | 중단 요청 | 작성자·under_review (`can_request_pause`) | 사유 입력 모달 → `requestPause` |
 | 중단 확인 | 현재 pending 단계 담당자/팀+MASTER (요청중) | `confirmPause` |
@@ -536,7 +577,10 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 |------|-----|------|
 | 상신 | `submit/` | `designated_pl_loginid` |
 | 재상신 | `resubmit/` | `designated_pl_loginid` |
-| 철회 | `withdraw/` | - |
+| 철회 | `withdraw/` | `reason`(진행 중 문서는 필수) |
+| 철회 확인 | `confirm-withdraw/` | `agent` |
+| 철회 거부 | `reject-withdraw/` | - |
+| 철회 요청 취소 | `cancel-withdraw/` | - |
 | 합의 | `approve-step/` | `agent`, `comment`, `approver_name`, (P/E만) `reviewer_loginids`(배열, 담당자 합의와 검토자 지정을 한 번에 처리 — P는 선택, **E는 필수(2026-08, 비어 있으면 400)**) |
 | 반려 | `reject-step/` | `agent`, `comment` |
 | 담당자 지정 (R) | `assign-step/` | `agent`, `assignee_loginid`, `assignee_name` |
@@ -781,7 +825,7 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 | 조회 | ✅ | `get_queryset` |
 | 수정 · 임시저장 | ✅ | `can_edit`(draft 분기) |
 | 상신 · 재상신 | ✅ | `submit`/`resubmit` 의 `can_edit` 인가 |
-| 철회 | ✅ | `can_withdraw` |
+| 철회(요청·즉시삭제) | ✅ | `can_withdraw` — 확정 시 문서가 삭제된다(Case J) |
 | **삭제** | ❌ | `can_delete` — 의뢰자 / 지정 PL / MASTER 만 |
 | **공유 그룹 변경** | ❌ | `set_shared_group` — 의뢰자 / MASTER 만 |
 

@@ -228,8 +228,37 @@ const changeDesignee = async (docId: number, designatedPlLoginid: string) => {
   return { data };
 };
 
-const withdrawDocument = async (id: number) => {
-  const data = await post<{ message: string }>(`/documents/${id}/withdraw/`);
+// ===== 철회 =====
+// 철회가 확정되면 의뢰서는 완전히 삭제된다(복구 불가). 진행 중(under_review) 문서는
+// 즉시 삭제되지 않고 현재 단계 전원의 확인을 받는 '철회 요청'이 만들어진다 —
+// 응답의 deleted 로 두 경우를 구분한다(true = 이미 삭제됨).
+const withdrawDocument = async (id: number, reason: string) => {
+  const data = await post<{ message: string; deleted: boolean; document?: RequestDocument }>(
+    `/documents/${id}/withdraw/`,
+    { reason }
+  );
+  return { data };
+};
+
+const confirmWithdraw = async (docId: number, agent: AgentType) => {
+  const data = await post<{ message: string; deleted: boolean; document?: RequestDocument }>(
+    `/documents/${docId}/confirm-withdraw/`,
+    { agent }
+  );
+  return { data };
+};
+
+const rejectWithdraw = async (docId: number) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${docId}/reject-withdraw/`
+  );
+  return { data };
+};
+
+const cancelWithdraw = async (docId: number) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${docId}/cancel-withdraw/`
+  );
   return { data };
 };
 
@@ -469,6 +498,9 @@ export const documentsAPI = {
   submit: submitDocument,
   resubmit: resubmitDocument,
   withdraw: withdrawDocument,
+  confirmWithdraw,
+  rejectWithdraw,
+  cancelWithdraw,
   delete: deleteDocument,
   setSharedGroup,
   approveStep,
