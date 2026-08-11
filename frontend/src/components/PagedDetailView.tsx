@@ -779,7 +779,6 @@ export default function PagedDetailView({
     ? computeTableDiff(bb, prevSnap.bbRows ?? [])
     : { changedIds: new Set<string>(), prevRowMap: new Map<string, BbTableRow>() };
 
-  const isPL = role === 'PL';
   // 모든 팀이 상세 보기의 전체 탭·섹션을 동일하게 볼 수 있도록 역할 게이팅을 개방한다.
   const isP = true;
   const isR = true;
@@ -1153,7 +1152,7 @@ type Page = { label: string; content: React.ReactNode };
               );
             })()}
 
-            {((isO && !isR && !isJ) || role === 'MASTER' || isPL || isP) && detail.change_purpose_note && (
+            {detail.change_purpose_note && (
               <div style={rowStyle}>
                 <Chip label={t('request.change_purpose_note')} value={detail.change_purpose_note} style={chipFull} changed={changedFields.has('change_purpose_note')} fieldKey="change_purpose_note" />
               </div>
