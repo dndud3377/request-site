@@ -21,7 +21,8 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 from django.db.models import Q, Max, Min, Exists, OuterRef
 from .models import (
-    RequestDocument, ApprovalStep, PauseRequest, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
+    RequestDocument, ApprovalStep, PauseRequest, WithdrawRequest, VOC, VocComment, Line, ProcessProduct,
+    ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
     DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot,
@@ -174,6 +175,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 {'error': '이미 종료되었거나 결재가 진행 중이 아닌 의뢰서입니다.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # 철회 요청 확인 대기 중에는 결재를 동결한다 — 확인 도중 단계가 넘어가면 대상 단계
+        # (target_step_ids)가 이미 끝나 버려 확인이 영영 완료되지 않는다.
+        if self._active_withdraw_request(document):
+            return Response(
+                {'error': '철회 요청 확인 대기 중인 의뢰서입니다. 철회가 거부·취소되어야 결재를 진행할 수 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return None
 
     # 검토중(claim) 방식으로 전환된 단계 — 담당자 지정 대신 담당 역할 누구나 스스로 선점한다.
@@ -266,6 +274,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         PauseRequest.objects.filter(
             document=document, state='requested'
         ).update(state='cancelled')
+
+    def _active_withdraw_request(self, document):
+        """문서의 확인 대기(requested) 철회 요청. 없으면 None."""
+        return WithdrawRequest.objects.filter(
+            document=document, state='requested'
+        ).order_by('-created_at').first()
 
     # 의뢰자/철회/수정 권한은 serializers 와 공유하기 위해 doc_permissions 모듈에 둔다.
     def _can_withdraw(self, user, document):
@@ -426,26 +440,203 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             'document': RequestDocumentSerializer(document).data,
         })
 
+    # 확인 절차 없이 즉시 삭제되는 문서 상태 — 결재선이 아직 없거나(draft) 이미 종료돼
+    # (rejected/approved) '확인'을 받을 진행 중 단계가 존재하지 않는다.
+    _WITHDRAW_IMMEDIATE_STATUSES = ('draft', 'rejected', 'approved')
+    # 현재 단계 전원의 확인을 받아야 철회되는 상태
+    _WITHDRAW_CONFIRM_STATUSES = ('under_review', 'submitted')
+
+    def _delete_withdrawn_document(self, request, document, reason):
+        """철회 확정 — 완료 메일을 먼저 적재한 뒤 문서를 완전히 삭제한다.
+
+        메일 적재가 먼저여야 한다(`enqueue_withdraw_completed` 주석 참고). 삭제는 복구
+        불가이고 ApprovalStep/WithdrawRequest 가 CASCADE 로 함께 사라지므로, 누가 왜
+        철회했는지를 서버 로그에 남긴다(철회 이력 테이블은 두지 않는다 — 2026-08 결정).
+        """
+        mailer.enqueue_withdraw_completed(document, reason)
+        logging.getLogger(__name__).warning(
+            "[WITHDRAW_DOCUMENT] user=%s(role=%s) doc=%s status=%s title=%r reason=%r",
+            getattr(request.user, 'loginid', '-') or '-',
+            getattr(request.user, 'role', '-') or '-',
+            document.pk, document.status, document.title, reason,
+        )
+        document.delete()
+
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def withdraw(self, request, pk=None):
-        """철회: under_review/rejected → draft, 단계 초기화"""
+        """철회: 문서 상태에 따라 즉시 삭제하거나 '철회 요청'을 생성한다.
+
+        철회는 더 이상 임시저장(draft)으로 되돌리는 동작이 아니다 — 철회가 확정되면
+        의뢰서를 **완전히 삭제**한다(2026-08 정책 변경, 복구 불가).
+
+        - draft / rejected : 확인할 진행 중 단계가 없다 → 즉시 삭제
+        - approved         : 결재 완료본이라 MASTER 만 즉시 삭제(`can_delete` 와 같은 기준)
+        - under_review / submitted : 철회 요청 생성 → 현재 단계 전원 확인 시 삭제.
+          이 경로만 **사유(reason) 필수**이고, 확인 대기 동안 결재가 동결된다.
+        - pause            : 재개한 뒤 철회해야 한다(400).
+        """
         document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
         if not self._can_withdraw(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
-        if document.status not in ('under_review', 'rejected', 'submitted'):
+
+        reason = (request.data.get('reason') or '').strip()
+
+        if document.status in self._WITHDRAW_IMMEDIATE_STATUSES:
+            # 결재 완료본은 이력이므로 임의 삭제를 막는다(delete 액션의 can_delete 와 동일 규칙).
+            if document.status == 'approved' and getattr(request.user, 'role', '') != 'MASTER':
+                return Response(
+                    {'error': '결재가 완료된 의뢰서는 MASTER 만 철회할 수 있습니다.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            self._delete_withdrawn_document(request, document, reason)
+            return Response({'message': '의뢰서가 철회되어 삭제되었습니다.', 'deleted': True})
+
+        if document.status not in self._WITHDRAW_CONFIRM_STATUSES:
             return Response(
-                {'error': '철회할 수 없는 상태입니다.'},
-                status=status.HTTP_400_BAD_REQUEST
+                {'error': '철회할 수 없는 상태입니다. 중단된 의뢰서는 재개한 뒤 철회해 주세요.'},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-        with transaction.atomic():
-            document.status = 'draft'
-            document.submitted_at = None
-            document.save()
+        if not reason:
+            return Response({'error': '철회 사유를 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+        if self._active_withdraw_request(document):
+            return Response(
+                {'error': '이미 진행 중인 철회 요청이 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-            ApprovalStep.objects.filter(document=document).delete()
+        max_round = self._max_round(document)
+        pending = list(ApprovalStep.objects.filter(
+            document=document, action='pending', round=max_round
+        ))
+        if not pending:
+            return Response(
+                {'error': '진행 중인 결재 단계가 없습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        return Response({'message': '철회되었습니다.'})
+        wr = WithdrawRequest.objects.create(
+            document=document,
+            requester=request.user if getattr(request.user, 'loginid', '') else None,
+            requester_name=getattr(request.user, 'username', '') or getattr(request.user, 'loginid', ''),
+            reason=reason,
+            round=max_round,
+            target_step_ids=[s.id for s in pending],
+            confirmed_step_ids=[],
+        )
+        mailer.enqueue_withdraw_requested(document, wr)
+
+        return Response({
+            'message': '철회 요청이 접수되었습니다. 현재 단계의 확인을 기다립니다.',
+            'deleted': False,
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'], url_path='confirm-withdraw')
+    @transaction.atomic
+    def confirm_withdraw(self, request, pk=None):
+        """철회 확인: 현재 단계 담당자/팀이 철회 요청을 확인한다.
+
+        요청 시점의 pending 단계 '전원'이 확인하면 그 순간 의뢰서가 **완전히 삭제**된다
+        (병렬 단계 대응). 확인 인가는 중단 확인과 같은 규칙(`_can_confirm_pause`)이다 —
+        담당자가 있는 단계는 그 담당자 본인, 미배정 단계는 같은 팀 누구나, MASTER 는 항상.
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        wr = self._active_withdraw_request(document)
+        if not wr:
+            return Response({'error': '진행 중인 철회 요청이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        agent = request.data.get('agent')
+        max_round = self._max_round(document)
+
+        candidates = ApprovalStep.objects.select_for_update().filter(
+            document=document, agent=agent, action='pending',
+            round=max_round, id__in=wr.target_step_ids,
+        )
+        step = next((s for s in candidates if self._can_confirm_pause(request.user, s)), None)
+        if not step:
+            return Response({'error': '확인 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        confirmed = list(wr.confirmed_step_ids or [])
+        if step.id not in confirmed:
+            confirmed.append(step.id)
+        wr.confirmed_step_ids = confirmed
+
+        if set(wr.target_step_ids or []).issubset(set(confirmed)):
+            # 전원 확인 → 철회 확정. 문서와 함께 이 요청(wr)도 CASCADE 로 사라진다.
+            self._delete_withdrawn_document(request, document, wr.reason)
+            return Response({'message': '철회가 확정되어 의뢰서가 삭제되었습니다.', 'deleted': True})
+
+        wr.save()
+        return Response({
+            'message': '확인했습니다. 다른 단계의 확인을 기다립니다.',
+            'deleted': False,
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'], url_path='reject-withdraw')
+    @transaction.atomic
+    def reject_withdraw(self, request, pk=None):
+        """철회 거부: 확인 대상 단계가 철회 요청을 거부한다 → 결재가 그대로 이어진다.
+
+        인가는 확인(confirm_withdraw)과 동일하다 — 확인할 수 있는 사람이 거부도 할 수 있다.
+        단계 하나만 거부해도 요청 전체가 무효가 된다(전원 확인이 성립할 수 없으므로).
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        wr = self._active_withdraw_request(document)
+        if not wr:
+            return Response({'error': '진행 중인 철회 요청이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        max_round = self._max_round(document)
+        candidates = ApprovalStep.objects.filter(
+            document=document, action='pending', round=max_round, id__in=wr.target_step_ids,
+        )
+        if not any(self._can_confirm_pause(request.user, s) for s in candidates):
+            return Response({'error': '거부 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        wr.state = 'rejected'
+        wr.resolved_at = timezone.now()
+        wr.save(update_fields=['state', 'resolved_at'])
+        mailer.enqueue_withdraw_rejected(document, wr)
+
+        return Response({
+            'message': '철회 요청을 거부했습니다. 결재를 계속 진행할 수 있습니다.',
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'], url_path='cancel-withdraw')
+    @transaction.atomic
+    def cancel_withdraw(self, request, pk=None):
+        """철회 요청 취소: 확인 완료 전(requested) 요청을 요청자 본인/MASTER 가 거둬들인다.
+
+        철회가 확정되면 의뢰서가 삭제돼 되돌릴 수 없으므로, 잘못 눌렀을 때 되돌릴 수 있는
+        구간은 **확인 대기 중뿐**이다(2026-08 정책).
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        wr = self._active_withdraw_request(document)
+        if not wr:
+            return Response({'error': '취소할 철회 요청이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not doc_permissions.can_cancel_withdraw(request.user, wr):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        wr.state = 'cancelled'
+        wr.resolved_at = timezone.now()
+        wr.save(update_fields=['state', 'resolved_at'])
+        mailer.enqueue_withdraw_cancelled(document, wr)
+
+        return Response({
+            'message': '철회 요청을 취소했습니다.',
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
 
     @action(detail=True, methods=['post'], url_path='delete')
     def delete(self, request, pk=None):
