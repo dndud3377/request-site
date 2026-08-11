@@ -10,7 +10,7 @@ from . import mailer
 from . import design_rule_stats
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
-    RequestDocument, ReviewItemMaster, UserGroup, UserProfile,
+    RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup, UserProfile,
 )
 
 
@@ -3470,3 +3470,241 @@ class ReviewItemSyncTest(TestCase):
         rows = {d['id']: d for d in self.client.get('/api/documents/').json()}
         self.assertEqual(rows[doc.id]['my_pending_review_items'], 0,
                          '검토자로 지정되지 않은 사용자에게는 0 이어야 한다')
+
+
+class RejectionSnapshotTest(TestCase):
+    """반려 이력(RejectionSnapshot) 적재 — 이력 조회 '반려' 탭의 데이터 원본.
+
+    반려는 문서 status 만 바꾸고 재상신하면 되돌아가므로, 반려 시점이 별도 테이블에
+    남는지(그리고 이후 문서 변경에 흔들리지 않는지)를 실제 API 흐름으로 확인한다.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+
+        self.requester = UserProfile.objects.create(loginid='req', mail='req@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='pl1', mail='pl1@c.com', role='PL')
+        self.r_user = UserProfile.objects.create(loginid='r1', mail='r1@c.com', role='TE_R')
+        self.e_user = UserProfile.objects.create(loginid='e1', mail='e1@c.com', role='TE_E')
+        self.master = UserProfile.objects.create(loginid='m1', mail='m1@c.com', role='MASTER')
+
+    # ----- 헬퍼 -----
+
+    def _make_doc(self, detail=None, jayer_rows=None):
+        payload = {'detail': detail or {}, 'jayerRows': jayer_rows or []}
+        return RequestDocument.objects.create(
+            title='라인1(신규)_MAP(NEW)_요청서', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='개발팀',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps(payload, ensure_ascii=False),
+        )
+
+    def _submit(self, doc):
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/',
+                             {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def _resubmit(self, doc):
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/resubmit/',
+                             {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def _advance_to_r(self, doc):
+        """제출 → PL 합의 → R 담당자 지정 까지. R 단계가 pending 인 상태로 둔다."""
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': 'r1',
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def _reject_at_r(self, doc, comment='R 반려 사유'):
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/reject-step/',
+                             {'agent': 'R', 'comment': comment}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    # ----- 적재 -----
+
+    def test_reject_step_creates_snapshot(self):
+        doc = self._make_doc(detail={'line': '라인1'})
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self._reject_at_r(doc)
+
+        snaps = RejectionSnapshot.objects.all()
+        self.assertEqual(snaps.count(), 1)
+        snap = snaps.first()
+        self.assertEqual(snap.source_document_id, doc.id)
+        self.assertEqual(snap.title, doc.title)
+        self.assertEqual(snap.product_name, 'PROD-1')
+        self.assertEqual(snap.requester_name, '요청자')
+        self.assertEqual(snap.requester_department, '개발팀')
+        self.assertEqual(snap.rejected_agent, 'R')
+        self.assertEqual(snap.rejected_by_loginid, 'r1')
+        self.assertEqual(snap.reject_comment, 'R 반려 사유')
+        self.assertEqual(snap.round, 1)
+        self.assertIsNotNone(snap.rejected_at)
+        self.assertEqual(snap.get_detail().get('detail', {}).get('line'), '라인1')
+
+    def test_snapshot_keeps_rejected_step_in_approval_steps_json(self):
+        """결재 경로 탭을 반려 당시로 재현할 수 있도록, 단계 JSON 에 반려 표시가 담겨야 한다."""
+        doc = self._make_doc()
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self._reject_at_r(doc)
+
+        steps = self._json.loads(RejectionSnapshot.objects.first().approval_steps)
+        rejected = [s for s in steps if s['action'] == 'rejected']
+        self.assertEqual(len(rejected), 1)
+        self.assertEqual(rejected[0]['agent'], 'R')
+        self.assertEqual(rejected[0]['assignee_loginid'], 'r1')
+
+    def test_peer_reject_creates_snapshot(self):
+        """지정 PL 반려도 동일하게 적재된다."""
+        doc = self._make_doc()
+        self._submit(doc)
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-reject/',
+                             {'comment': 'PL 반려'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        snap = RejectionSnapshot.objects.get()
+        self.assertEqual(snap.rejected_agent, 'PL')
+        self.assertEqual(snap.rejected_by_loginid, 'pl1')
+        self.assertEqual(snap.reject_comment, 'PL 반려')
+
+    def test_three_rejections_accumulate_three_rows(self):
+        """3번 반려되면 3행. 회차도 1/2/3 으로 쌓인다."""
+        doc = self._make_doc()
+        self._submit(doc)
+        for _ in range(3):
+            self._advance_to_r(doc)
+            self._reject_at_r(doc)
+            doc.refresh_from_db()
+            self.assertEqual(doc.status, 'rejected')
+            self._resubmit(doc)
+
+        self.assertEqual(RejectionSnapshot.objects.count(), 3)
+        self.assertEqual(
+            list(RejectionSnapshot.objects.order_by('round').values_list('round', flat=True)),
+            [1, 2, 3],
+        )
+
+    def test_snapshot_is_frozen_after_document_changes(self):
+        """재상신하며 내용을 바꿔도 이미 적재된 스냅샷은 반려 당시 그대로여야 한다."""
+        doc = self._make_doc(detail={'line': '라인1', 'process_id': 'BEFORE'})
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self._reject_at_r(doc)
+
+        doc.refresh_from_db()
+        doc.title = '수정된 제목'
+        doc.additional_notes = self._json.dumps(
+            {'detail': {'line': '라인5', 'process_id': 'AFTER'}, 'jayerRows': []}, ensure_ascii=False
+        )
+        doc.save()
+
+        snap = RejectionSnapshot.objects.get()
+        self.assertEqual(snap.title, '라인1(신규)_MAP(NEW)_요청서')
+        self.assertEqual(snap.get_detail()['detail']['process_id'], 'BEFORE')
+        self.assertEqual(snap.get_detail()['detail']['line'], '라인1')
+
+    def test_mask_revision_request_does_not_create_snapshot(self):
+        """E(MASK)의 '수정 요청'은 반려가 아니다 — 문서 status 도 스냅샷도 바뀌지 않는다."""
+        doc = self._make_doc(jayer_rows=[{'pp': 'PLEL'}])
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/',
+                             {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.e_user)
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/reject-step/',
+                             {'agent': 'E', 'comment': '수정해주세요'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertEqual(RejectionSnapshot.objects.count(), 0)
+
+    def test_snapshot_survives_document_deletion(self):
+        """원본 문서를 지워도 이력은 남는다(document 만 끊기고 source_document_id 는 유지)."""
+        doc = self._make_doc()
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self._reject_at_r(doc)
+        doc_id = doc.id
+
+        self.client.force_authenticate(user=self.master)
+        r = self.client.post(f'/api/documents/{doc_id}/delete/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(RequestDocument.objects.filter(id=doc_id).exists())
+
+        snap = RejectionSnapshot.objects.get()
+        self.assertIsNone(snap.document_id)
+        self.assertEqual(snap.source_document_id, doc_id)
+        self.assertEqual(snap.title, '라인1(신규)_MAP(NEW)_요청서')
+
+    # ----- API -----
+
+    def test_list_api_returns_newest_first(self):
+        doc = self._make_doc()
+        self._submit(doc)
+        for _ in range(2):
+            self._advance_to_r(doc)
+            self._reject_at_r(doc)
+            doc.refresh_from_db()
+            self._resubmit(doc)
+
+        self.client.force_authenticate(user=self.requester)
+        res = self.client.get('/api/rejection-snapshots/')
+        self.assertEqual(res.status_code, 200, res.content)
+        rows = res.json()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual([row['round'] for row in rows], [2, 1], '반려일 최신순이어야 한다')
+        self.assertIsInstance(rows[0]['approval_steps'], list,
+                             'approval_steps 는 문자열이 아니라 배열로 내려가야 한다')
+
+    def test_list_api_supports_search(self):
+        doc = self._make_doc()
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self._reject_at_r(doc)
+
+        self.client.force_authenticate(user=self.requester)
+        self.assertEqual(len(self.client.get('/api/rejection-snapshots/?search=PROD-1').json()), 1)
+        self.assertEqual(len(self.client.get('/api/rejection-snapshots/?search=없는제품').json()), 0)
+
+    def test_delete_allowed_for_master_only(self):
+        doc = self._make_doc()
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self._reject_at_r(doc)
+        snap_id = RejectionSnapshot.objects.get().id
+
+        self.client.force_authenticate(user=self.requester)
+        res = self.client.delete(f'/api/rejection-snapshots/{snap_id}/')
+        self.assertEqual(res.status_code, 403)
+        self.assertTrue(RejectionSnapshot.objects.filter(id=snap_id).exists())
+
+        self.client.force_authenticate(user=self.master)
+        res = self.client.delete(f'/api/rejection-snapshots/{snap_id}/')
+        self.assertEqual(res.status_code, 204, res.content)
+        self.assertFalse(RejectionSnapshot.objects.filter(id=snap_id).exists())
+
+    def test_snapshot_cannot_be_created_through_api(self):
+        """적재는 반려 API 에서만 일어난다 — 직접 POST 는 허용하지 않는다."""
+        self.client.force_authenticate(user=self.master)
+        res = self.client.post('/api/rejection-snapshots/', {'title': 'x'}, format='json')
+        self.assertEqual(res.status_code, 405)
