@@ -729,6 +729,18 @@ select.form-control option {
 .pause-cf.mine { background: var(--pause-light); color: var(--pause); border-color: var(--pause); }
 .pause-cf-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 
+/* 철회 요청/확인 UI — 확인 현황(.pause-cf*)은 중단과 같은 컴포넌트를 재사용하고,
+   배너·칩만 '삭제된다'는 경고가 드러나도록 위험(danger) 색으로 덮어쓴다. */
+.withdraw-req-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.66rem; font-weight: 700; color: var(--danger);
+  background: var(--danger-light); border: 1px dashed var(--danger);
+  border-radius: 12px; padding: 1px 7px;
+}
+.pause-banner.withdraw-banner { background: var(--danger-light); border-color: var(--danger); }
+.pause-banner.withdraw-banner .pause-banner-title { color: var(--danger); }
+.pause-banner.withdraw-banner .pause-cf.mine { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
+
 
 /* ===== Search & Filter ===== */
 .toolbar {
