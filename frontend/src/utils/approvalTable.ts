@@ -12,12 +12,31 @@ const isMapDeleteEditDoc = (doc: RequestDocument): boolean => {
   } catch { return false; }
 };
 
-// R/P/E단계 하위 역할 라벨: R=단계명(RFG) 그대로 / RV·PV·EV=검토자 / RA=후결자, 그 외는 agent_* 사용
-const stageLabel = (agent: string, t: TFunction): string => {
-  if (agent === 'RV' || agent === 'PV' || agent === 'EV') return t('approval.stage_reviewer' as any);
-  if (agent === 'RA') return t('approval.stage_post' as any);
+/**
+ * 단계 라벨. 검토자·후결자도 '검토자'/'후결자' 가 아니라 **그 단계의 이름**으로 표기한다(2026-08).
+ * - `RV`(R단계 검토자) → `RFG` — 담당자든 검토자든 같은 R 단계다.
+ * - `RA` 중 고정 후결자(.env POST_APPROVER_LOGINID)는 RFG 팀 1명이므로 → `RFG`
+ * - `RA` 중 PL 이 지정한 추가 후결자 → `추가후결자`
+ * PV/EV 는 병렬 그리드에서만 나타나고 거기서 이미 담당 단계명을 유지하므로 여기 오지 않는다.
+ */
+const stageLabel = (agent: string, t: TFunction, isFixedPostApprover = false): string => {
+  if (agent === 'PV' || agent === 'EV') return t('approval.stage_reviewer' as any);
+  if (agent === 'RV') return t('approval.agent_R' as any);
+  if (agent === 'RA') {
+    return isFixedPostApprover ? t('approval.agent_R' as any) : t('approval.stage_post_extra' as any);
+  }
   return t(`approval.agent_${agent}` as any);
 };
+
+/** 이 step 의 담당자가 고정 후결자인지 (목록 응답의 post_approver_fixed_loginid 와 비교) */
+const isFixedPostApproverStep = (
+  step: { agent: string; assignee_loginid?: string },
+  fixedLoginid: string,
+): boolean => step.agent === 'RA' && !!fixedLoginid && step.assignee_loginid === fixedLoginid;
+
+/** 문서의 고정 후결자 loginid (설정이 비어 있으면 빈 문자열 = 전부 추가 후결자로 본다) */
+const fixedPostApproverLoginid = (doc: RequestDocument): string =>
+  (doc.post_approver_fixed_loginid ?? '').trim();
 
 // TE_O/TE_E/TE_P는 담당자 지정 불필요(검토중 방식) — 나머지 단계에서 담당자 미지정 시 'unassigned' 반환
 export const getDisplayStatus = (doc: RequestDocument): string => {
@@ -135,13 +154,14 @@ export const resolvePathStatus = (
 };
 
 const buildStageText = (
-  step: { agent: string; assignee_name?: string } | undefined,
+  step: { agent: string; assignee_name?: string; assignee_loginid?: string } | undefined,
   isDone: boolean,
   t: TFunction,
+  fixedLoginid = '',
 ): string => {
   if (isDone) return t('common.status_approved');
   if (!step) return t('common.status_approved');
-  const label = stageLabel(step.agent, t);
+  const label = stageLabel(step.agent, t, isFixedPostApproverStep(step, fixedLoginid));
   return step.assignee_name ? `${label}(${step.assignee_name})` : label;
 };
 
@@ -215,7 +235,7 @@ const buildParallelGrid = (
 
   // 고정 후결자(.env POST_APPROVER_LOGINID)와 PL 이 지정한 추가 후결자를 분리한다.
   // 고정 loginid 를 못 받은 경우(설정 없음)엔 전부 추가 후결자로 본다.
-  const fixedLoginid = (doc.post_approver_fixed_loginid ?? '').trim();
+  const fixedLoginid = fixedPostApproverLoginid(doc);
   const raSteps = of('RA');
   const fixedRaSteps = fixedLoginid ? raSteps.filter(s => s.assignee_loginid === fixedLoginid) : [];
   const extraRaSteps = fixedLoginid ? raSteps.filter(s => s.assignee_loginid !== fixedLoginid) : raSteps;
@@ -238,7 +258,9 @@ const buildParallelGrid = (
           main: of('R'), reviewers: of('RV'), showName: true, nameSource: 'main',
         }
       : {
-          slot: 'RA_FIXED', label: t('approval.stage_post' as any),
+          // 고정 후결자는 .env 로 지정하는 RFG 팀 1명이라 단계명도 RFG 로 쓴다(2026-08).
+          // 일반 경로 그리드에는 RFG 담당자 칸이 따로 없어 이름이 겹치지 않는다.
+          slot: 'RA_FIXED', label: t('approval.agent_R' as any),
           main: fixedRaSteps, showName: true,
         },
     // J·O 는 검토중(claim) 방식이라 진행 중 담당자 이름을 노출하지 않는다(기존 규칙 유지).
@@ -279,8 +301,9 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
       }];
     }
     const pending = currentSteps.filter(s => s.action === 'pending');
+    const fixedLoginid = fixedPostApproverLoginid(doc);
     const stageText = pending.length > 0
-      ? pending.map(s => stageLabel(s.agent, t)).join(' / ')
+      ? pending.map(s => stageLabel(s.agent, t, isFixedPostApproverStep(s, fixedLoginid))).join(' / ')
       : '-';
     return [{ pathKey: 'single', stageText, isDone: false, pathStatus: 'pause' }];
   }
@@ -291,8 +314,9 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
   // 반려됐는지 알 수 있도록) 상태는 항상 rejected 로 고정한다.
   if (doc.status === 'rejected') {
     const rejectedSteps = currentSteps.filter(s => s.action === 'rejected');
+    const rejectedFixedLoginid = fixedPostApproverLoginid(doc);
     const stageText = rejectedSteps.length > 0
-      ? rejectedSteps.map(s => buildStageText(s, false, t)).join(' / ')
+      ? rejectedSteps.map(s => buildStageText(s, false, t, rejectedFixedLoginid)).join(' / ')
       : '-';
     return [{ pathKey: 'single', stageText, isDone: true, pathStatus: 'rejected' }];
   }
@@ -348,3 +372,68 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
     cells,
   }];
 };
+
+/* ===================== '내 차례'(MY) 판정 — 2026-08 공용화 =====================
+ * 결재현황 MY 탭과 홈 '나의 의뢰 현황'이 **같은 목록**을 보여주도록 판정을 여기로 옮겼다.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * '내 차례'·단계별 필터 판정: 진행 중(under_review) 문서의 **현재 회차** pending 단계만 본다.
+ * 반려된 문서는 status 만 rejected 로 바뀌고 잔여 pending step 이 이력으로 남으며, 재상신하면
+ * 이전 회차 step 도 pending 인 채로 남는다. 이를 걸러내지 않으면 이미 끝난 문서가 계속
+ * '내 차례'와 단계 탭(및 탭 카운트)에 잡힌다.
+ */
+export const hasActivePendingStep = (
+  doc: RequestDocument,
+  match: (step: ApprovalStepFrontend) => boolean,
+): boolean => {
+  if (doc.status !== 'under_review') return false;
+  const round = getCurrentRound(doc);
+  return (doc.approval_steps ?? []).some(
+    (s) => s.action === 'pending' && (s.round ?? 1) === round && match(s)
+  );
+};
+
+/**
+ * 검토 항목 때문에 MY 에 떠야 하는 문서인지.
+ * 조건: 진행 중 + 현재 회차 J 단계가 대기 + 내가 검토자인 미확인 항목이 1건 이상.
+ * 기존 MY 조건(내가 담당자인 pending 단계)과는 OR 로 합쳐진다.
+ */
+export const hasMyPendingReviewItem = (doc: RequestDocument): boolean =>
+  (doc.my_pending_review_items ?? 0) > 0 &&
+  hasActivePendingStep(doc, (s) => s.agent === 'J');
+
+export interface MyFilterUser {
+  role?: string | null;
+  /** loginid */
+  username: string;
+  name: string;
+}
+
+/**
+ * MY('내 차례') 판정 — 결재현황 MY 탭과 홈 '나의 의뢰 현황'이 공유한다.
+ *
+ * - MASTER: 전체
+ * - NONE/역할 없음: 없음
+ * - PL: **내가 작성한 문서**(상태 무관) OR **내가 담당인 현재 회차 pending 단계가 있는 문서**
+ *   ✅ (2026-08) 예전에는 `designated_pl_loginid` 와 PL step 존재만 봐서 ① PL 이 **추가
+ *   후결자(RA)로 지정된 문서**가 안 잡히고 ② **이미 합의를 마친 문서도 계속 남아** 있었다.
+ *   pending 단계 기준으로 바꿔 둘 다 해결한다(그 대신 반려·임시저장 문서에서 '내가 지정 PL'
+ *   이라는 이유만으로 뜨던 건은 빠진다 — 반려는 별도 탭이 있고, MY 는 진행 중 문서만 본다).
+ * - TE_*: 내가 담당인 pending 단계가 있는 문서 OR 내가 검토자인 미확인 검토 항목이 있는 문서
+ */
+export const isMyDocument = (doc: RequestDocument, user: MyFilterUser): boolean => {
+  const role = user.role;
+  if (role === 'MASTER') return true;
+  if (role === 'NONE' || !role) return false;
+  if (role === 'PL') {
+    return doc.requester_name === user.name
+      || hasActivePendingStep(doc, (s) => s.assignee_loginid === user.username);
+  }
+  return hasActivePendingStep(doc, (s) => s.assignee_loginid === user.username)
+    || hasMyPendingReviewItem(doc);
+};
+
+/** 상신 오래된 순 정렬 키 — submitted_at 없는 draft 는 created_at 으로 대체(결재현황 기본 정렬과 동일) */
+export const submittedSortKey = (doc: RequestDocument): string =>
+  doc.submitted_at ?? doc.created_at ?? '';
