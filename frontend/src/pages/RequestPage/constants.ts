@@ -35,6 +35,10 @@ export const MAP_DELETE_EDIT_PURPOSE = 'MAP 삭제/수정';
 // (C가문 only_prodc='Yes' 와 동일한 기존 후결자 기능을 그대로 쓴다 — 결재 경로는 바뀌지 않는다).
 export const OTHER_PURPOSE_LAB = '연구소 제품';
 
+// '기타 목적 > Overlay 변경': 이것 **하나만** 선택된 의뢰서는 일반 결재 경로에서 J 단계가 빠진다
+// (backend RequestDocument.OTHER_PURPOSE_OVERLAY / skip_j_stage 와 동일 값·기준).
+export const OTHER_PURPOSE_OVERLAY = 'Overlay 변경';
+
 // MAP 삭제/수정 전용 map_type 값. 한글 그대로 저장한다 — 다른 요청 목적 값들(신규/차용/기타 등)과
 // 동일한 관례이고, 문서 제목(`MAP(${map_type})`)·상세 Chip 처럼 i18n 을 거치지 않고 원문이 그대로
 // 노출되는 지점에서도 "수정"/"삭제" 로 보이게 하기 위함이다.
