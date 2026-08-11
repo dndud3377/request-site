@@ -96,10 +96,14 @@ ROUTE_DISPLAY_ORDER = ('PL', 'R', 'RV', 'RA', 'P', 'PV', 'J', 'O', 'E', 'EV')
 # 결재 경로 카드의 상태 표기 — (라벨, 글자색, 배경색). 상태 색은 의미를 담고 있어
 # 이벤트 테마(EVENT_THEME)와 무관하게 고정한다(웹 결재 경로 탭과 동일 팔레트).
 ROUTE_STATUS_STYLE = {
-    'approved': ('합의', '#059669', 'rgba(5,150,105,0.1)'),
+    # (2026-08) 라벨을 웹 결재현황 '현재 단계' 그리드와 맞췄다: 합의→완료, 대기→대기중.
+    'approved': ('완료', '#059669', 'rgba(5,150,105,0.1)'),
     'rejected': ('반려', '#dc2626', 'rgba(220,38,38,0.1)'),
     'reviewing': ('검토중', '#d97706', 'rgba(217,119,6,0.1)'),
-    'waiting': ('대기', '#8794a6', 'rgba(107,138,176,0.12)'),
+    'waiting': ('대기중', '#8794a6', 'rgba(107,138,176,0.12)'),
+    # (2026-08) 이 의뢰서의 결재 경로에 없는 단계. 예전엔 행 자체를 만들지 않아 "왜 없는지"가
+    # 드러나지 않았다. 웹 그리드처럼 행을 남기고 해당없음으로 표시한다.
+    'na': ('해당없음', '#adb5bd', 'rgba(107,138,176,0.1)'),
     # (2026-08 이전 OR 시절 문서에만 남는 이력) EV 1명 합의로 단계가 끝나면 남은 검토자는
     # skip 으로 닫혔다. 지금은 EV도 전원 합의(AND)라 새로 생기지 않는다.
     # 색은 '대기' 와 같은 회색 계열 — 판단하지 않았다는 뜻이라 주의를 끌 필요가 없다.
@@ -134,6 +138,15 @@ AGENT_LABEL = {
     'EV': '검토자',
     'RA': '후결자',
 }
+
+# (2026-08) 후결자 행 라벨을 웹 그리드와 맞춘다.
+#  - 고정 후결자(settings.POST_APPROVER_LOGINID)는 RFG 팀 1명이라 단계명 R 로 표기한다.
+#    ⚠️ 세로 목록인 메일 카드에서는 R(담당자) 행과 라벨이 같아져 'R' 이 두 줄 나온다.
+#    웹 그리드에는 일반 경로에 R 담당자 칸이 없어 겹치지 않지만, 메일은 겹친다 —
+#    두 화면의 표기를 같게 가져가기로 한 결정에 따른 것이다(담당자 이름으로 구분한다).
+#  - PL 이 지정한 추가 후결자는 '추가후결자'.
+POST_APPROVER_FIXED_LABEL = 'R'
+POST_APPROVER_EXTRA_LABEL = '추가후결자'
 
 # agent 가 없는 이벤트(반려/완료/통보)에서 KPI "결재 단계" 타일에 표시할 상태 문구
 EVENT_STATUS_LABEL = {
@@ -509,9 +522,13 @@ def _route_rows(document):
 
     rows = []
     for agent in ROUTE_DISPLAY_ORDER:
-        if agent not in route:
-            continue
         label = AGENT_LABEL.get(agent, agent)
+        # 검토자(RV/PV/EV)는 지정됐을 때만 생기는 선택 단계라, 경로 밖이어도 '해당없음' 행을
+        # 만들지 않는다(지정하지 않은 것과 거치지 않는 것을 구분할 수 없다).
+        if agent not in route:
+            if agent not in REVIEWER_AGENTS:
+                rows.append((label, '', 'na', ''))
+            continue
         agent_steps = steps_by_agent.get(agent)
         if not agent_steps:
             # 아직 도달하지 않은 단계(검토자는 지정됐을 때만 생기므로 예정 표시 대상이 아니다)
@@ -529,7 +546,11 @@ def _route_rows(document):
                 status = 'reviewing'
             else:
                 status = 'waiting'
-            rows.append((label, s.assignee_name or '', status, s.comment or ''))
+            row_label = label
+            if agent == 'RA':
+                row_label = (POST_APPROVER_FIXED_LABEL if _is_fixed_post_approver(s)
+                             else POST_APPROVER_EXTRA_LABEL)
+            rows.append((row_label, s.assignee_name or '', status, s.comment or ''))
     return rows
 
 
