@@ -1,5 +1,7 @@
 import type { TFunction } from 'i18next';
-import { getDocTableRows, getFinalCompletionDate, StageCell, StageCellSlot } from './approvalTable';
+import {
+  getDocTableRows, getFinalCompletionDate, isMyDocument, StageCell, StageCellSlot,
+} from './approvalTable';
 import { ApprovalStepFrontend, RequestDocument } from '../types';
 
 // 번역 결과의 정확한 문구는 검증 대상이 아니므로 키를 그대로 돌려주는 스텁을 쓴다.
@@ -76,7 +78,8 @@ describe('getDocTableRows — 병렬 이전 구간은 기존 단일 행 그대�
     ]);
     const rows = getDocTableRows(doc, t);
     expect(rows[0].pathKey).toBe('single');
-    expect(rows[0].stageText).toBe('approval.stage_reviewer(이검토)');
+    // 라벨은 '검토자' 가 아니라 단계명 RFG 다(2026-08) — 아래 stageLabel describe 참고
+    expect(rows[0].stageText).toBe('approval.agent_R(이검토)');
   });
 });
 
@@ -265,16 +268,20 @@ describe('getDocTableRows — MAP 삭제/수정: 고정 후결자 자리에 RFG'
     expect(cell.name).toBe('김철수');
   });
 
-  it('일반 문서의 2열 1행은 계속 후결자다(회귀 방지)', () => {
+  it('일반 문서의 2열 1행은 계속 고정 후결자를 가리킨다(회귀 방지)', () => {
+    // 고정 후결자도 라벨이 RFG 라 라벨만으로는 MDE 의 R 담당자와 구분되지 않는다.
+    // 이 칸이 실제로 어느 step 을 집는지(담당자 이름)로 확인한다.
     const doc = {
       ...makeDoc([
-        makeStep({ agent: 'R', action: 'approved' }),
+        makeStep({ agent: 'R', action: 'approved', assignee_name: '김철수' }),
         makeStep({ agent: 'P', action: 'pending' }),
         makeStep({ agent: 'RA', action: 'pending', assignee_loginid: 'fixed', assignee_name: '정고정' }),
       ]),
       post_approver_fixed_loginid: 'fixed',
     };
-    expect(cellAt(doc, 'RA_FIXED').label).toBe('approval.stage_post');
+    const cell = cellAt(doc, 'RA_FIXED');
+    expect(cell.name).toBe('정고정');
+    expect(cell.name).not.toBe('김철수');
   });
 });
 
@@ -380,5 +387,126 @@ describe('getFinalCompletionDate — 단계별 기한 표시는 없어졌지만 
   it('병렬 진입 전에는 -', () => {
     const doc = makeDoc([makeStep({ agent: 'R', action: 'pending', due_date: '2026-08-12' })]);
     expect(getFinalCompletionDate(doc)).toBe('-');
+  });
+});
+
+describe('stageLabel — 검토자·고정 후결자도 단계명으로 표기(2026-08)', () => {
+  it('R단계 검토자(RV)는 "검토자" 가 아니라 RFG 로 표기된다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved', assignee_name: '김철수' }),
+      makeStep({ agent: 'RV', action: 'pending', assignee_loginid: 'rv1', assignee_name: '이검토' }),
+    ]);
+    expect(getDocTableRows(doc, t)[0].stageText).toBe('approval.agent_R(이검토)');
+  });
+
+  it('RV 단계에서 반려된 문서도 RFG(이름) 로 표기된다', () => {
+    const doc: RequestDocument = {
+      ...makeDoc([
+        makeStep({ agent: 'R', action: 'approved', assignee_name: '김철수' }),
+        makeStep({ agent: 'RV', action: 'rejected', assignee_name: '이검토' }),
+      ]),
+      status: 'rejected',
+    };
+    expect(getDocTableRows(doc, t)[0].stageText).toBe('approval.agent_R(이검토)');
+  });
+
+  it('그리드의 고정 후결자 칸 라벨은 RFG 다', () => {
+    const doc = {
+      ...makeDoc([
+        makeStep({ agent: 'R', action: 'approved' }),
+        makeStep({ agent: 'P', action: 'pending' }),
+        makeStep({ agent: 'RA', action: 'pending', assignee_loginid: 'fixed', assignee_name: '정고정' }),
+        makeStep({ agent: 'RA', action: 'pending', assignee_loginid: 'extra', assignee_name: '이순신' }),
+      ]),
+      post_approver_fixed_loginid: 'fixed',
+    };
+    expect(cellAt(doc, 'RA_FIXED').label).toBe('approval.agent_R');
+    expect(cellAt(doc, 'RA_EXTRA').label).toBe('approval.stage_post_extra');
+  });
+
+  it('고정 후결자가 반려한 문서도 RFG(이름), 추가 후결자는 추가후결자(이름)', () => {
+    const base = (rejectedLoginid: string) => ({
+      ...makeDoc([
+        makeStep({ agent: 'R', action: 'approved' }),
+        makeStep({ agent: 'RA', action: 'rejected', assignee_loginid: rejectedLoginid, assignee_name: '반려자' }),
+      ]),
+      status: 'rejected' as const,
+      post_approver_fixed_loginid: 'fixed',
+    });
+    expect(getDocTableRows(base('fixed'), t)[0].stageText).toBe('approval.agent_R(반려자)');
+    expect(getDocTableRows(base('extra'), t)[0].stageText).toBe('approval.stage_post_extra(반려자)');
+  });
+});
+
+describe('isMyDocument — 결재현황 MY 탭 / 홈 나의 의뢰 현황 공용 판정', () => {
+  const me = { role: 'PL', username: 'me', name: '나' };
+
+  const docBy = (requesterName: string, steps: ApprovalStepFrontend[] = []): RequestDocument => ({
+    ...makeDoc(steps),
+    requester_name: requesterName,
+  });
+
+  it('MASTER 는 전체, 역할 없음(NONE)은 없음', () => {
+    const doc = docBy('남');
+    expect(isMyDocument(doc, { role: 'MASTER', username: 'm', name: 'M' })).toBe(true);
+    expect(isMyDocument(doc, { role: 'NONE', username: 'n', name: 'N' })).toBe(false);
+    expect(isMyDocument(doc, { role: null, username: 'n', name: 'N' })).toBe(false);
+  });
+
+  it('PL: 내가 작성한 문서는 상태와 무관하게 잡힌다', () => {
+    const draft: RequestDocument = { ...docBy('나'), status: 'draft' };
+    expect(isMyDocument(draft, me)).toBe(true);
+  });
+
+  it('PL: 내가 담당인 PL 단계가 pending 이면 잡힌다', () => {
+    const doc = docBy('남', [makeStep({ agent: 'PL', action: 'pending', assignee_loginid: 'me' })]);
+    expect(isMyDocument(doc, me)).toBe(true);
+  });
+
+  it('PL: 내가 이미 합의한 문서는 빠진다', () => {
+    const doc = docBy('남', [
+      makeStep({ agent: 'PL', action: 'approved', assignee_loginid: 'me' }),
+      makeStep({ agent: 'R', action: 'pending', assignee_loginid: 'other' }),
+    ]);
+    expect(isMyDocument(doc, me)).toBe(false);
+  });
+
+  it('PL: 추가 후결자(RA)로 지정된 문서도 잡힌다', () => {
+    const doc = docBy('남', [
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'P', action: 'pending' }),
+      makeStep({ agent: 'RA', action: 'pending', assignee_loginid: 'me', assignee_name: '나' }),
+    ]);
+    expect(isMyDocument(doc, me)).toBe(true);
+  });
+
+  it('TE_*: 내가 담당인 pending 단계가 있으면 잡히고, 합의를 마치면 빠진다', () => {
+    const teP = { role: 'TE_P', username: 'p1', name: '박영희' };
+    const pending = docBy('남', [
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'P', action: 'pending', assignee_loginid: 'p1' }),
+    ]);
+    const approved = docBy('남', [
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'P', action: 'approved', assignee_loginid: 'p1' }),
+    ]);
+    expect(isMyDocument(pending, teP)).toBe(true);
+    expect(isMyDocument(approved, teP)).toBe(false);
+  });
+
+  it('반려 문서의 잔여 pending 단계로는 잡히지 않는다', () => {
+    const doc: RequestDocument = {
+      ...docBy('남', [makeStep({ agent: 'P', action: 'pending', assignee_loginid: 'p1' })]),
+      status: 'rejected',
+    };
+    expect(isMyDocument(doc, { role: 'TE_P', username: 'p1', name: '박' })).toBe(false);
+  });
+
+  it('이전 회차의 pending 단계로는 잡히지 않는다', () => {
+    const doc = docBy('남', [
+      makeStep({ agent: 'PL', action: 'pending', assignee_loginid: 'me', round: 1 }),
+      makeStep({ agent: 'PL', action: 'pending', assignee_loginid: 'other', round: 2 }),
+    ]);
+    expect(isMyDocument(doc, me)).toBe(false);
   });
 });

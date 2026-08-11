@@ -635,7 +635,9 @@ class RouteCardTest(TestCase):
         self.assertEqual(by_label['O'], 'reviewing')      # pending + 담당자 있음
         self.assertEqual(by_label['P'], 'waiting')        # pending + 미배정
         self.assertEqual(by_label['J'], 'waiting')        # step 미생성(예정)
-        self.assertNotIn('E', by_label, 'plel 이 아니면 E 는 경로에 넣지 않는다')
+        # (2026-08) plel 이 아니면 E 는 거치지 않지만, 행 자체는 남기고 '해당없음'으로 표시한다
+        # — 웹 결재현황 그리드와 같은 규칙. 예전에는 행을 아예 만들지 않아 왜 없는지 알 수 없었다.
+        self.assertEqual(by_label['E'], 'na')
 
     def test_rows_include_e_stage_when_plel(self):
         """plel 인 의뢰서는 E 단계가 아직 생성 전이어도 경로에 '대기' 행으로 실린다."""
@@ -671,10 +673,43 @@ class RouteCardTest(TestCase):
             additional_notes=json.dumps({'detail': {'request_purpose': 'Only MAP'}, 'jayerRows': []}),
         )
         ApprovalStep.objects.create(document=doc, agent='R', round=1, action='pending')
-        labels = [label for label, _n, _s, _c in mailer._route_rows(doc)]
+        rows = mailer._route_rows(doc)
+        by_label = {label: status for label, _n, status, _c in rows}
+        # (2026-08) 거치지 않는 단계도 행은 남기고 '해당없음'으로 표시한다(웹 그리드와 동일).
         for excluded in ('P', 'J', 'O', 'E'):
-            self.assertNotIn(excluded, labels)
-        self.assertIn('R', labels)
+            self.assertEqual(by_label[excluded], 'na')
+        self.assertEqual(by_label['R'], 'waiting')
+
+    @override_settings(POST_APPROVER_LOGINID='fixedpa')
+    def test_post_approver_rows_split_fixed_and_extra(self):
+        """후결자 행 라벨은 고정(R)과 추가후결자로 갈린다 — 웹 그리드의 두 칸과 같은 구분."""
+        fixed = UserProfile.objects.create(loginid='fixedpa', mail='fix@c.com', role='TE_R')
+        extra = UserProfile.objects.create(loginid='extrapa', mail='ext@c.com', role='PL')
+        ApprovalStep.objects.create(document=self.doc, agent='RA', round=1, action='pending',
+                                    assignee=fixed, assignee_name='정고정')
+        ApprovalStep.objects.create(document=self.doc, agent='RA', round=1, action='pending',
+                                    assignee=extra, assignee_name='이순신')
+
+        by_name = {name: label for label, name, _s, _c in mailer._route_rows(self.doc)}
+        self.assertEqual(by_name['정고정'], mailer.POST_APPROVER_FIXED_LABEL)
+        self.assertEqual(by_name['이순신'], mailer.POST_APPROVER_EXTRA_LABEL)
+
+    def test_map_delete_edit_marks_absent_stages_as_na(self):
+        """MAP 삭제/수정 은 E·후결자를 만들지 않는다 — 행을 지우지 않고 해당없음으로 남긴다."""
+        import json
+        doc = RequestDocument.objects.create(
+            title='mde', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept', product_name='PROD-1',
+            additional_notes=json.dumps(
+                {'detail': {'request_purpose': 'MAP 삭제/수정'}, 'jayerRows': []}
+            ),
+        )
+        ApprovalStep.objects.create(document=doc, agent='R', round=1, action='pending')
+        by_label = {label: status for label, _n, status, _c in mailer._route_rows(doc)}
+        self.assertEqual(by_label['E'], 'na')
+        self.assertEqual(by_label['후결자'], 'na')
+        # 이 경로에 실제로 있는 단계는 해당없음이 아니다
+        self.assertEqual(by_label['P'], 'waiting')
 
     def test_card_renders_comment_and_omits_empty_one(self):
         r = UserProfile.objects.create(loginid='r10', mail='r10@c.com', role='TE_R')
@@ -1116,7 +1151,7 @@ class PEStageReviewerFlowTest(TestCase):
 
     def test_p_reviewer_mail_shows_owner_as_approved_not_reviewing(self):
         """담당자 합의 + 검토자 지정을 한 요청으로 처리할 때, 검토자에게 가는 메일의
-        결재 경로 카드에서 담당자(P) 행은 '검토중'이 아니라 '합의'로 표시돼야 한다.
+        결재 경로 카드에서 담당자(P) 행은 '검토중'이 아니라 '완료'로 표시돼야 한다.
         (담당자 승인 저장 전에 검토자 메일을 만들면 담당자가 아직 pending 으로 읽혀 버그가 난다.)
         """
         import re
@@ -1141,7 +1176,8 @@ class PEStageReviewerFlowTest(TestCase):
         p_row_match = re.search(r'<tr>(?:(?!</tr>).)*?>P</td>(?:(?!</tr>).)*?</tr>', noti.contents, re.S)
         self.assertIsNotNone(p_row_match, 'P 행이 메일 본문에 있어야 한다')
         p_row_html = p_row_match.group(0)
-        self.assertIn('합의', p_row_html)
+        # (2026-08) 경로 카드의 approved 라벨은 '합의' → '완료' 로 바뀌었다(웹 그리드와 통일).
+        self.assertIn('완료', p_row_html)
         self.assertNotIn('검토중', p_row_html)
 
     def test_p_reviewer_rejection_rejects_whole_document(self):
@@ -1190,7 +1226,8 @@ class PEStageReviewerFlowTest(TestCase):
         e_row_match = re.search(r'<tr>(?:(?!</tr>).)*?>E</td>(?:(?!</tr>).)*?</tr>', noti.contents, re.S)
         self.assertIsNotNone(e_row_match, 'E 행이 메일 본문에 있어야 한다')
         e_row_html = e_row_match.group(0)
-        self.assertIn('합의', e_row_html)
+        # (2026-08) 경로 카드의 approved 라벨은 '합의' → '완료' 로 바뀌었다(웹 그리드와 통일).
+        self.assertIn('완료', e_row_html)
         self.assertNotIn('검토중', e_row_html)
 
     def test_e_reviewer_gate_blocks_final_approval_until_all_agree(self):

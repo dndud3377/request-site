@@ -12,7 +12,10 @@ import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem } from '../types';
 import { formatDate } from '../utils/date';
-import { getDocTableRows, getFinalCompletionDate, getCurrentRound } from '../utils/approvalTable';
+import {
+  getDocTableRows, getFinalCompletionDate, getCurrentRound,
+  hasActivePendingStep, isMyDocument,
+} from '../utils/approvalTable';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS } from './approvalTourSeed';
 
 // 전체 가이드 상세 모달에서 특정 페이지로 이동하기 위한 페이지 인덱스
@@ -29,28 +32,6 @@ const AGENT_TO_ROLE: Record<string, string> = {
 
 // ===== Utils =====
 // 결재 현황 테이블 계산 헬퍼는 utils/approvalTable 로 이동(HomePage 최근 의뢰 현황과 공유).
-
-// '내 차례'·단계별 필터 판정: 진행 중(under_review) 문서의 **현재 회차** pending 단계만 본다.
-// 반려된 문서는 status 만 rejected 로 바뀌고 잔여 pending step 이 이력으로 남으며, 재상신하면
-// 이전 회차 step 도 pending 인 채로 남는다. 이를 걸러내지 않으면 이미 끝난 문서가 계속
-// '내 차례'와 단계 탭(및 탭 카운트)에 잡힌다.
-const hasActivePendingStep = (
-  doc: RequestDocument,
-  match: (step: ApprovalStepFrontend) => boolean,
-): boolean => {
-  if (doc.status !== 'under_review') return false;
-  const round = getCurrentRound(doc);
-  return (doc.approval_steps ?? []).some(
-    (s) => s.action === 'pending' && (s.round ?? 1) === round && match(s)
-  );
-};
-
-// 검토 항목 때문에 MY 탭에 떠야 하는 문서인지.
-// 조건: 진행 중 + 현재 회차 J 단계가 대기 + 내가 검토자인 미확인 항목이 1건 이상.
-// 기존 MY 조건(내가 담당자인 pending 단계)과는 OR 로 합쳐진다.
-const hasMyPendingReviewItem = (doc: RequestDocument): boolean =>
-  (doc.my_pending_review_items ?? 0) > 0 &&
-  hasActivePendingStep(doc, (s) => s.agent === 'J');
 
 // 중단 요청 '확인' 가능 여부(프론트 가드): MASTER / 담당자 본인 / (미배정 시) 같은 팀
 const canConfirmPauseStep = (
@@ -90,7 +71,11 @@ export default function ApprovalPage(): React.ReactElement {
   const [allDocs, setAllDocs] = useState<RequestDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [filter, setFilter] = useState('');
+  // 초기 탭은 `?filter=my` 로 지정할 수 있다 — 홈 '나의 의뢰 현황'의 '전체 보기' 가 이 경로로 온다.
+  // 쿼리 파라미터로 받으면 새로고침·링크 공유에도 탭이 유지된다.
+  const [filter, setFilter] = useState(
+    () => new URLSearchParams(location.search).get('filter') ?? ''
+  );
   const [search, setSearch] = useState('');
   // 양산일 3단 정렬(오름차순→내림차순→원래 상태). 필터 탭 전환 시 자동 해제.
   const [prodDateSort, setProdDateSort] = useState<'asc' | 'desc' | null>(null);
@@ -156,26 +141,8 @@ export default function ApprovalPage(): React.ReactElement {
     if (filter === 'draft') return all.filter(d => d.status === 'draft');
     if (filter === 'rejected') return all.filter(d => d.status === 'rejected');
     if (filter === 'pause') return all.filter(d => d.status === 'pause');
-    if (filter === 'my') {
-      const role = currentUser.role;
-      if (role === 'MASTER') return all;
-      if (role === 'PL') {
-        return all.filter((d) =>
-          d.requester_name === currentUser.name ||
-          d.designated_pl_loginid === currentUser.username ||
-          (d.approval_steps ?? []).some(
-            (s) => s.agent === 'PL' && s.assignee_loginid === currentUser.username
-          )
-        );
-      }
-      if (role === 'NONE' || !role) return [];
-      // TE_* 역할: 내 loginid(username)가 assignee_loginid인 pending 단계가 있는 문서
-      // 또는 내가 검토자로 지정된 미확인 검토 항목이 있는 문서(OR)
-      return all.filter((d) =>
-        hasActivePendingStep(d, (s) => s.assignee_loginid === currentUser.username) ||
-        hasMyPendingReviewItem(d)
-      );
-    }
+    // MY 판정은 홈 '나의 의뢰 현황'과 공유한다(utils/approvalTable.isMyDocument).
+    if (filter === 'my') return all.filter((d) => isMyDocument(d, currentUser));
     if (filter.startsWith('agent_')) {
       const agent = filter.replace('agent_', '') as AgentType;
       return all.filter((d) => hasActivePendingStep(d, (s) => s.agent === agent));
@@ -193,20 +160,7 @@ export default function ApprovalPage(): React.ReactElement {
     if (key === 'draft') return base.filter(d => d.status === 'draft').length;
     if (key === 'rejected') return base.filter(d => d.status === 'rejected').length;
     if (key === 'pause') return base.filter(d => d.status === 'pause').length;
-    if (key === 'my') {
-      const role = currentUser.role;
-      if (role === 'MASTER') return base.length;
-      if (role === 'PL') return base.filter(d =>
-        d.requester_name === currentUser.name ||
-        d.designated_pl_loginid === currentUser.username ||
-        (d.approval_steps ?? []).some(s => s.agent === 'PL' && s.assignee_loginid === currentUser.username)
-      ).length;
-      if (role === 'NONE' || !role) return 0;
-      return base.filter(d =>
-        hasActivePendingStep(d, s => s.assignee_loginid === currentUser.username) ||
-        hasMyPendingReviewItem(d)
-      ).length;
-    }
+    if (key === 'my') return base.filter(d => isMyDocument(d, currentUser)).length;
     if (key.startsWith('agent_')) {
       const agent = key.replace('agent_', '') as AgentType;
       return base.filter(d => hasActivePendingStep(d, s => s.agent === agent)).length;
