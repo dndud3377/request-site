@@ -20,6 +20,7 @@ import {
   CreateGuideInput,
   UserInfo,
   UserWithRole,
+  MailLinesResponse,
   CreateUserInput,
   UserForAssignment,
   UserGroup,
@@ -749,12 +750,19 @@ const assignRole = async (userId: number, role: UserRole): Promise<{ data: UserW
   return { data };
 };
 
+/** 라인별 메일 수신 설정 전체 교체 (본인 또는 MASTER 만 가능) */
+const updateMailLines = async (userId: number, lines: string[]): Promise<{ data: MailLinesResponse }> => {
+  const data = await patch<MailLinesResponse>(`/users/${userId}/mail-lines/`, { lines });
+  return { data };
+};
+
 export const usersAPI = {
   list: listUsers,
   create: createUser,
   remove: deleteUser,
   forAssignment: getUsersForAssignment,
   assignRole: assignRole,
+  updateMailLines: updateMailLines,
 };
 
 // ===== 나만의 그룹 API =====
