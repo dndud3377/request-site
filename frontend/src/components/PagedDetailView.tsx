@@ -1008,12 +1008,16 @@ export default function PagedDetailView({
     return `변경: ${d.ea_change}${d.ea_value ? ` / 값: ${d.ea_value}mm` : ''}`;
   };
 
-  /** 뼈찜(Backbone) — 등록된 항목 목록 */
+  /** 뼈찜(Backbone) — 등록된 항목 목록. 라벨은 의뢰서 작성(Step1)과 동일한 i18n 키를 그대로 쓴다. */
   const buildBbValue = (d: Partial<DetailFormState>): string => {
     const entries = d.bb_entries;
     if (!Array.isArray(entries) || entries.length === 0) return '-';
     return entries
-      .map((e, i) => `[${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.process_id || '-'}`)
+      .map((e, i) => (
+        `[${i + 1}] ${t('request.bb_ref_line')}: ${e.location || '-'}`
+        + ` / ${t('request.bb_ref_part_id')}: ${e.product || '-'}`
+        + ` / ${t('request.bb_ref_process_id')}: ${e.process_id || '-'}`
+      ))
       .join('\n');
   };
 
