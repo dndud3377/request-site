@@ -93,6 +93,29 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 > = `P·PV·R·RV·J·O`). E(MASK)와 후결자(RA)는 만들지 않는다 — **모든 문서가 받던 고정 후결자
 > 조차 이 경로에는 붙지 않는 유일한 예외**다. 상세는 아래 **Case O** 참조.
 
+> **예외 — 기타 목적 'Overlay 변경' 단독 (2026-08)**: `RequestDocument.skip_j_stage()`가 참이면
+> **일반 경로에서 J 단계를 아예 만들지 않는다**(`PL → R → P ∥ O ∥ [E] ∥ RA`). 판정은
+> `detail.other_purpose` 가 **정확히 `['Overlay 변경']` 한 개**일 때만 참이다 — 다른 기타 목적을
+> 함께 골랐으면(예: `Overlay 변경 + STEPSEQ 변경`) 그 목적의 검토가 남아 있으므로 J 를 유지한다
+> (상수 `RequestDocument.OTHER_PURPOSE_OVERLAY`, 프론트 `RequestPage/constants.ts` 의
+> `OTHER_PURPOSE_OVERLAY` 와 같은 값). 구버전 문서의 문자열 저장도 배열로 정규화해 처리한다.
+> - **적용 범위는 일반 경로만**이다. `MAP 삭제/수정`은 P·R·J·O 가 한 묶음의 병렬이라 제외하고
+>   (`skip_j_stage()`가 `is_map_delete_edit()`이면 곧바로 거짓), `Only MAP`은 원래 J 가 없다.
+> - **최종 승인 판정**: `j_approved` 는 원래 `len(j_steps) > 0` 을 요구해, J 를 만들지 않으면
+>   나머지 단계가 모두 합의돼도 판정이 영원히 거짓이 되어 문서가 `under_review` 에 영구 정지한다.
+>   그래서 `skip_j_stage()` 인 문서는 `j_approved = True` 로 둔다(Case G).
+> - **검토 항목**: J 단계 전용 기능이므로 이 문서는 `fill_from_master()` 로 채우지 않는다
+>   (J step 이 없으면 `review_items.is_stage_open()` 이 항상 거짓이라 화면도 닫힌다).
+> - **메일**: `mailer.ROUTE_AGENTS_NO_J` — 반려 시 잔여 결재선 수신자와 '결재 경로' 카드에서
+>   J 가 함께 빠진다. **결재 상세 '결재 경로' 탭**은 J 행을 `해당없음`으로 표시한다
+>   (E·RA 와 같은 na 분기 — 없으면 '대기'로 영구 표시된다). 결재현황 목록 그리드의 J 칸은
+>   step 이 없으면 자동으로 `해당없음` 이 되어 별도 처리가 없다.
+> - 테스트: `test_j_step_not_created_when_other_purpose_is_overlay_only`,
+>   `test_j_step_created_when_overlay_selected_with_others`,
+>   `test_overlay_only_document_approved_without_j`
+> - ⚠️ 판정은 **단계 생성 시점**에 이뤄진다 — 이미 J step 이 생성된 기존 문서는 영향이 없고,
+>   재상신(round+1)하면 새 회차부터 규칙이 적용된다.
+
 ### Case A — 상신 (`submit`)
 - 조건: `status == 'draft'`, **지정 PL 필수**(role='PL'인 사용자, **본인 지정 불가**), `_validate_bb_mapping` 통과.
 - ✅ **다중 지정 PL(2026-07)**: payload `designated_pl_loginids: [...]`(배열, 단일 `designated_pl_loginid` 도 호환). 지정 PL **전원**에 대해 `agent='PL', round=1` pending step을 각각 생성한다(`_resolve_designated_pls`로 파싱·검증). `document.designated_pl` FK 에는 **대표(첫 번째)** 만 기록(표시/하위호환용).
@@ -114,6 +137,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 ### Case E — R 합의 (`approve_step` agent='R', `views.py:250`)
 - 동작: R `approved` → **P(due: R당일 포함 4영업일), J(due: 6영업일, 병렬), O(due: 6영업일, 병렬)** 동시 생성.
   추가로 **E**(due: 6영업일, 병렬)는 `plel` 인 의뢰서에만 생성한다.
+- ✅ **(2026-08) 기타 목적 'Overlay 변경' 단독이면 J 를 생성하지 않는다**(`document.skip_j_stage()`).
+  J 도착 메일과 검토 항목 채우기(`fill_from_master`)도 함께 건너뛴다 — 위 예외 항목 참조.
 - ✅ **(2026-08) J 도 이 시점에 생성**된다(예전엔 P 완료 후 생성). J 도착 메일(`stage_arrival(J)`)도
   여기서 발송되며, 수신자도 **미배정 시 TE_J 팀 전원**으로 바뀌었다(예전엔 고정 주소 1곳).
   J 가 팀원 누구나 선점하는 병렬 단계가 됐는데 대표 주소로만 보내면 자기 차례를 알 수 없다.
@@ -148,6 +173,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 ### Case G — P / J / O / E 최종 합의 (`approve_step` agent in P/PV/J/O/E/EV/RA, `views.py:509`)
 - 동작: **P(담당자+PV 전원)**·J·O·(E 있으면 **E 담당자 + EV 전원**)·(RA 있으면 RA 전원)가 **모두**
   `approved`일 때만 `status → approved`. 그 전엔 `under_review` 유지.
+- ✅ **(2026-08) J 를 뺀 문서(`skip_j_stage()`)는 `j_approved` 를 참으로 둔다** — J step 이 없으면
+  기본 판정(`len(j_steps) > 0`)이 영원히 거짓이라 문서가 `under_review` 에 영구 정지한다.
 - ✅ **(2026-08) 판정 트리거·조건에 P/PV 포함**: J 분리로 P 가 마지막 합의자가 될 수 있게 됐다.
   트리거에서 빠지면 P 가 마지막일 때 아무도 판정을 돌리지 않아 문서가 `under_review` 에 영구 정지하고,
   조건에서 빠지면 P 미완료인데도 J·O·E·RA 만으로 승인돼 버린다 — 둘 다 필요하다.
