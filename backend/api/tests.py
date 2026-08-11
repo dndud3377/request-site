@@ -11,6 +11,7 @@ from . import design_rule_stats
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
     RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup, UserProfile,
+    WithdrawRequest,
 )
 
 
@@ -2591,6 +2592,287 @@ class DocumentDeleteAuthTest(TestCase):
         res = self._post_delete(self.master, doc)
         self.assertEqual(res.status_code, 200, res.content)
         self.assertFalse(ApprovalStep.objects.filter(document_id=doc.id).exists())
+
+
+class WithdrawFlowTest(TestCase):
+    """철회 = '요청 → 현재 단계 전원 확인 → 완전 삭제' (2026-08 개편).
+
+    - draft/rejected 는 확인 없이 즉시 삭제, approved 는 MASTER 만
+    - under_review/submitted 는 사유 필수 + 철회 요청 생성 → 전원 확인 시 삭제
+    - 확인 대기 중에는 결재 동결, 요청자만 취소 가능, 대상 단계는 거부 가능
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+
+        self.author = UserProfile.objects.create(
+            loginid='wd_author', mail='wd_a@c.com', role='PL', username='의뢰자'
+        )
+        self.pl = UserProfile.objects.create(loginid='wd_pl', mail='wd_pl@c.com', role='PL', username='지정PL')
+        self.rfg = UserProfile.objects.create(loginid='wd_r', mail='wd_r@c.com', role='TE_R', username='R담당')
+        self.rfg2 = UserProfile.objects.create(loginid='wd_r2', mail='wd_r2@c.com', role='TE_R', username='R팀원')
+        self.job = UserProfile.objects.create(loginid='wd_j', mail='wd_j@c.com', role='TE_J', username='J팀원')
+        self.outsider = UserProfile.objects.create(loginid='wd_out', mail='wd_o@c.com', role='NONE')
+        self.master = UserProfile.objects.create(loginid='wd_master', mail='wd_m@c.com', role='MASTER')
+
+    def _doc(self, status='under_review'):
+        return RequestDocument.objects.create(
+            title=f'wd-{status}',
+            requester=self.author,
+            requester_name='의뢰자', requester_email='wd_a@c.com', requester_department='d',
+            product_name='p', status=status, designated_pl=self.pl,
+        )
+
+    def _step(self, doc, agent, action='pending', assignee=None, round=1):
+        return ApprovalStep.objects.create(
+            document=doc, agent=agent, action=action, round=round,
+            assignee=assignee, assignee_name=(assignee.username if assignee else ''),
+        )
+
+    def _post(self, user, doc, path, payload=None):
+        self.client.force_authenticate(user=user)
+        return self.client.post(f'/api/documents/{doc.id}/{path}/', payload or {}, format='json')
+
+    def _exists(self, doc):
+        return RequestDocument.objects.filter(pk=doc.pk).exists()
+
+    def _events(self):
+        return list(MailNotification.objects.values_list('event_type', flat=True))
+
+    # ----- 인가 / 상태 가드 -----
+    def test_outsider_cannot_withdraw(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        res = self._post(self.outsider, doc, 'withdraw', {'reason': 'x'})
+        self.assertEqual(res.status_code, 403)
+        self.assertTrue(self._exists(doc))
+
+    def test_paused_document_cannot_be_withdrawn(self):
+        """중단 문서는 재개한 뒤 철회해야 한다."""
+        doc = self._doc('pause')
+        res = self._post(self.author, doc, 'withdraw', {'reason': 'x'})
+        self.assertEqual(res.status_code, 400)
+        self.assertTrue(self._exists(doc))
+
+    def test_reason_required_for_in_progress_document(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        res = self._post(self.author, doc, 'withdraw', {'reason': '   '})
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(WithdrawRequest.objects.filter(document=doc).exists())
+
+    def test_in_progress_document_without_pending_step_is_rejected(self):
+        """진행 중인데 pending 단계가 없으면 확인받을 상대가 없다 → 400."""
+        doc = self._doc()
+        self._step(doc, 'R', action='approved', assignee=self.rfg)
+        res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertEqual(res.status_code, 400)
+        self.assertTrue(self._exists(doc))
+
+    def test_duplicate_request_is_blocked(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self.assertEqual(self._post(self.author, doc, 'withdraw', {'reason': '1'}).status_code, 200)
+        res = self._post(self.author, doc, 'withdraw', {'reason': '2'})
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(WithdrawRequest.objects.filter(document=doc).count(), 1)
+
+    # ----- 즉시 삭제 경로 -----
+    def test_draft_is_deleted_immediately(self):
+        doc = self._doc('draft')
+        res = self._post(self.author, doc, 'withdraw', {'reason': ''})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(self._exists(doc))
+
+    def test_rejected_is_deleted_immediately(self):
+        doc = self._doc('rejected')
+        self._step(doc, 'R', action='rejected', assignee=self.rfg)
+        res = self._post(self.author, doc, 'withdraw', {'reason': '재작성'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(self._exists(doc))
+        self.assertIn('withdraw_completed', self._events())
+
+    def test_approved_is_master_only(self):
+        doc = self._doc('approved')
+        self.assertEqual(self._post(self.author, doc, 'withdraw', {'reason': 'x'}).status_code, 403)
+        self.assertTrue(self._exists(doc))
+        self.assertEqual(self._post(self.master, doc, 'withdraw', {'reason': 'x'}).status_code, 200)
+        self.assertFalse(self._exists(doc))
+
+    # ----- 요청 → 확인 → 삭제 -----
+    def test_request_creates_pending_withdraw_and_mails_target_only(self):
+        """철회 요청 메일은 확인 대상 단계에만 간다(통보처 제외)."""
+        doc = self._doc()
+        r_step = self._step(doc, 'R', assignee=self.rfg)
+        res = self._post(self.author, doc, 'withdraw', {'reason': '스펙 변경'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(res.data['deleted'])
+        self.assertTrue(self._exists(doc))
+
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertEqual(wr.state, 'requested')
+        self.assertEqual(wr.target_step_ids, [r_step.id])
+
+        noti = MailNotification.objects.get(event_type='withdraw_requested')
+        self.assertEqual(noti.recipients, ['wd_r@c.com'])
+        self.assertIn('스펙 변경', noti.contents)
+
+    def test_partial_confirm_keeps_document(self):
+        """병렬 단계 중 하나만 확인하면 아직 삭제되지 않는다."""
+        doc = self._doc()
+        r_step = self._step(doc, 'R', assignee=self.rfg)
+        j_step = self._step(doc, 'J', assignee=self.job)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+
+        res = self._post(self.rfg, doc, 'confirm-withdraw', {'agent': 'R'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(res.data['deleted'])
+        self.assertTrue(self._exists(doc))
+
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertEqual(wr.confirmed_step_ids, [r_step.id])
+        self.assertIn(j_step.id, wr.target_step_ids)
+
+    def test_all_confirm_deletes_document_and_mails_completed(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._step(doc, 'J', assignee=self.job)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+
+        self._post(self.rfg, doc, 'confirm-withdraw', {'agent': 'R'})
+        res = self._post(self.job, doc, 'confirm-withdraw', {'agent': 'J'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(self._exists(doc))
+        # 문서가 사라져도 결재 단계·철회 요청까지 CASCADE 로 정리된다(이력 미보존)
+        self.assertFalse(ApprovalStep.objects.filter(document_id=doc.id).exists())
+        self.assertFalse(WithdrawRequest.objects.filter(document_id=doc.id).exists())
+        self.assertIn('withdraw_completed', self._events())
+
+    def test_unassigned_step_can_be_confirmed_by_team_member(self):
+        """담당자 미배정 단계는 같은 팀 누구나 1명이 확인하면 그 단계는 확인 완료."""
+        doc = self._doc()
+        self._step(doc, 'R')  # 미배정
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        res = self._post(self.rfg2, doc, 'confirm-withdraw', {'agent': 'R'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(self._exists(doc))
+
+    def test_unassigned_step_mails_whole_team(self):
+        doc = self._doc()
+        self._step(doc, 'R')
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        noti = MailNotification.objects.get(event_type='withdraw_requested')
+        self.assertCountEqual(noti.recipients, ['wd_r@c.com', 'wd_r2@c.com'])
+
+    def test_other_team_cannot_confirm(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        res = self._post(self.job, doc, 'confirm-withdraw', {'agent': 'R'})
+        self.assertEqual(res.status_code, 403)
+        self.assertTrue(self._exists(doc))
+
+    # ----- 거부 / 취소 -----
+    def test_target_step_can_reject_withdraw(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+
+        res = self._post(self.rfg, doc, 'reject-withdraw')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(self._exists(doc))
+        self.assertEqual(WithdrawRequest.objects.get(document=doc).state, 'rejected')
+        noti = MailNotification.objects.get(event_type='withdraw_rejected')
+        self.assertIn('wd_a@c.com', noti.recipients)
+
+    def test_requester_can_cancel_before_confirm(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '잘못 눌렀다'})
+
+        res = self._post(self.author, doc, 'cancel-withdraw')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(self._exists(doc))
+        self.assertEqual(WithdrawRequest.objects.get(document=doc).state, 'cancelled')
+        noti = MailNotification.objects.get(event_type='withdraw_cancelled')
+        self.assertEqual(noti.recipients, ['wd_r@c.com'])
+
+    def test_non_requester_cannot_cancel(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        res = self._post(self.rfg, doc, 'cancel-withdraw')
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(WithdrawRequest.objects.get(document=doc).state, 'requested')
+
+    def test_withdraw_button_returns_after_cancel(self):
+        """취소하면 다시 철회를 요청할 수 있다."""
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '1'})
+        self._post(self.author, doc, 'cancel-withdraw')
+        res = self._post(self.author, doc, 'withdraw', {'reason': '2'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(WithdrawRequest.objects.filter(document=doc, state='requested').count(), 1)
+
+    # ----- 결재 동결 -----
+    def test_approval_is_frozen_while_withdraw_pending(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+
+        res = self._post(self.rfg, doc, 'approve-step', {'agent': 'R', 'comment': ''})
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(ApprovalStep.objects.get(document=doc, agent='R').action, 'pending')
+
+    def test_approval_resumes_after_reject(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self._post(self.rfg, doc, 'reject-withdraw')
+
+        res = self._post(self.rfg, doc, 'approve-step', {'agent': 'R', 'comment': ''})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(ApprovalStep.objects.get(document=doc, agent='R').action, 'approved')
+
+    # ----- 철회 완료 메일 수신자 -----
+    def test_completed_mail_covers_only_reached_teams(self):
+        """R 단계까지만 진행된 문서는 TE_R 에게만 통보된다(TE_J 등 미도달 팀 제외)."""
+        doc = self._doc()
+        self._step(doc, 'PL', action='approved', assignee=self.pl)
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self._post(self.rfg, doc, 'confirm-withdraw', {'agent': 'R'})
+
+        noti = MailNotification.objects.get(event_type='withdraw_completed')
+        self.assertIn('wd_r@c.com', noti.recipients)    # 도달한 팀
+        self.assertIn('wd_r2@c.com', noti.recipients)   # 도달한 팀 전원
+        self.assertIn('wd_pl@c.com', noti.recipients)   # 지정 PL
+        self.assertIn('wd_a@c.com', noti.recipients)    # 작성자
+        self.assertNotIn('wd_j@c.com', noti.recipients)  # 아직 열리지 않은 J 팀
+
+    def test_completed_mail_includes_reached_parallel_teams(self):
+        """J 단계가 열린 뒤라면 TE_J 도 통보 대상이다."""
+        doc = self._doc()
+        self._step(doc, 'R', action='approved', assignee=self.rfg)
+        self._step(doc, 'J', assignee=self.job)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self._post(self.job, doc, 'confirm-withdraw', {'agent': 'J'})
+
+        noti = MailNotification.objects.get(event_type='withdraw_completed')
+        self.assertIn('wd_j@c.com', noti.recipients)
+        self.assertIn('wd_r@c.com', noti.recipients)
+
+    def test_completed_mail_has_no_dead_deeplink(self):
+        """문서가 삭제되므로 상세 딥링크 버튼을 싣지 않는다."""
+        doc = self._doc('draft')
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        noti = MailNotification.objects.get(event_type='withdraw_completed')
+        self.assertNotIn(f'/approval?id={doc.id}', noti.contents)
 
 
 # ─── 연간 디자인룰 통계 ────────────────────────────────────────────────────────
