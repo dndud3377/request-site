@@ -208,8 +208,15 @@ function RowDiffModal({
 const MAP_NO_CHANGE = '변경 없음';
 const PRODC_YES = 'Yes';
 
+// 업로드 이미지 경로 prefix (백엔드는 'mshot_images/xxx.png' 상대경로만 저장한다)
+const MEDIA_URL_PREFIX = '/media/';
+// 이력 모달 안 썸네일 크기 — 변경 전·후를 한 화면에서 대조하기 위해 본체(300x200)보다 작게 둔다
+const DIFF_THUMB_MAX_WIDTH = 220;
+const DIFF_THUMB_MAX_HEIGHT = 150;
+
 // ===== Field-group(블록) 변경 전/후 비교 모달 (세로형) =====
-interface DiffRow { label: string; before: string; after: string; }
+/** kind='image' 인 행은 값(파일 경로)을 파일명 대신 썸네일 이미지로 그린다. 미지정이면 텍스트다. */
+interface DiffRow { label: string; before: string; after: string; kind?: 'text' | 'image'; }
 
 function FieldGroupHistoryModal({ title, rows, onClose }: {
   title: string;
@@ -222,6 +229,17 @@ function FieldGroupHistoryModal({ title, rows, onClose }: {
     borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)',
   };
   const tdS: React.CSSProperties = { padding: '5px 10px', fontSize: '0.82rem', verticalAlign: 'top' };
+  const thumbStyle = (borderColor: string): React.CSSProperties => ({
+    maxWidth: DIFF_THUMB_MAX_WIDTH, maxHeight: DIFF_THUMB_MAX_HEIGHT,
+    borderRadius: 4, border: `1px solid ${borderColor}`, display: 'block',
+  });
+  /** 셀 내용 생성 — 이미지 행이고 값이 있을 때만 <img>, 값이 없으면 기존과 같이 '-' 다. */
+  const renderCell = (row: DiffRow, value: string, alt: string, borderColor: string): React.ReactNode => {
+    if (row.kind === 'image' && value) {
+      return <img src={`${MEDIA_URL_PREFIX}${value}`} alt={alt} style={thumbStyle(borderColor)} />;
+    }
+    return value || '-';
+  };
   return (
     <Modal isOpen onClose={onClose} title={title}>
       <div style={{ overflowX: 'auto' }}>
@@ -234,13 +252,14 @@ function FieldGroupHistoryModal({ title, rows, onClose }: {
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ label, before, after }) => {
+            {rows.map((row) => {
+              const { label, before, after } = row;
               const isChanged = before !== after;
               return (
                 <tr key={label} style={{ background: isChanged ? 'rgba(220,53,69,0.05)' : undefined }}>
                   <td style={{ ...tdS, fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{label}</td>
-                  <td style={{ ...tdS, color: isChanged ? '#dc3545' : 'var(--text-primary)' }}>{before || '-'}</td>
-                  <td style={{ ...tdS, color: isChanged ? '#155724' : 'var(--text-primary)', fontWeight: isChanged ? 700 : 400 }}>{after || '-'}</td>
+                  <td style={{ ...tdS, color: isChanged ? '#dc3545' : 'var(--text-primary)' }}>{renderCell(row, before, `${label} 변경 전`, '#dc3545')}</td>
+                  <td style={{ ...tdS, color: isChanged ? '#155724' : 'var(--text-primary)', fontWeight: isChanged ? 700 : 400 }}>{renderCell(row, after, `${label} 변경 후`, '#155724')}</td>
                 </tr>
               );
             })}
@@ -293,7 +312,7 @@ function buildMshotRows(prev: any, cur: any): DiffRow[] {
   for (const [k, label] of imgKeys) {
     const before = fmtDiffVal(prev?.[k]);
     const after = fmtDiffVal(cur?.[k]);
-    if (before || after) rows.push({ label, before, after });
+    if (before || after) rows.push({ label, before, after, kind: 'image' });
   }
   return rows;
 }
