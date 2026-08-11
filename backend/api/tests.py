@@ -10,7 +10,7 @@ from . import mailer
 from . import design_rule_stats
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
-    RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup, UserProfile,
+    Line, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup, UserProfile,
     WithdrawRequest,
 )
 
@@ -4027,3 +4027,170 @@ class RejectionSnapshotTest(TestCase):
         self.client.force_authenticate(user=self.master)
         res = self.client.post('/api/rejection-snapshots/', {'title': 'x'}, format='json')
         self.assertEqual(res.status_code, 405)
+
+
+class MailLineFilterTest(TestCase):
+    """라인별 메일 수신 설정(UserProfile.mail_lines) 필터 검증.
+
+    권한 관리 '이메일 설정'에서 끈 라인의 의뢰서 메일은 그 사람에게 가지 않는다.
+    """
+
+    def setUp(self):
+        import json
+        self.line1 = Line.objects.create(name='라인1', order=1)
+        self.line3 = Line.objects.create(name='라인3', order=3)
+        self.requester = UserProfile.objects.create(
+            loginid='mlf_req', mail='mlf_req@company.com', role='NONE'
+        )
+        self.doc = _make_document(self.requester)
+        self.doc.additional_notes = json.dumps({'detail': {'line': '라인1'}})
+        self.doc.save()
+
+    def _make_j(self, loginid, lines):
+        user = UserProfile.objects.create(
+            loginid=loginid, mail=f'{loginid}@company.com', role='TE_J'
+        )
+        user.mail_lines.set(lines)
+        return user
+
+    def test_team_broadcast_excludes_user_who_turned_line_off(self):
+        """팀 전체 발송에서 라인1을 끈 사람만 빠진다."""
+        self._make_j('mlf_j_on', [self.line1, self.line3])
+        self._make_j('mlf_j_off', [self.line3])
+        step = ApprovalStep.objects.create(document=self.doc, agent='J')
+        recipients = mailer.resolve_stage_recipients(self.doc, 'J', step)
+        self.assertIn('mlf_j_on@company.com', recipients)
+        self.assertNotIn('mlf_j_off@company.com', recipients)
+
+    def test_assigned_user_with_line_off_gets_no_mail(self):
+        """담당자로 지정돼 있어도 그 라인을 껐으면 메일이 나가지 않는다."""
+        user = self._make_j('mlf_j_assigned', [self.line3])
+        step = ApprovalStep.objects.create(document=self.doc, agent='J', assignee=user)
+        self.assertEqual(mailer.resolve_stage_recipients(self.doc, 'J', step), [])
+        self.assertIsNone(mailer.enqueue_stage_arrival(self.doc, 'J', step))
+
+    def test_pl_role_is_not_filtered(self):
+        """PL 은 라인 설정 대상이 아니라 mail_lines 가 비어 있어도 그대로 받는다."""
+        pl = UserProfile.objects.create(loginid='mlf_pl', mail='mlf_pl@company.com', role='PL')
+        step = ApprovalStep.objects.create(document=self.doc, agent='PL', assignee=pl)
+        self.assertEqual(
+            mailer.resolve_stage_recipients(self.doc, 'PL', step), ['mlf_pl@company.com']
+        )
+
+    def test_document_without_line_is_not_filtered(self):
+        """라인 값이 없는 의뢰서는 필터가 성립하지 않아 전원 수신한다."""
+        self._make_j('mlf_j_noline', [])
+        doc = _make_document(self.requester)  # additional_notes 없음 → detail.line 없음
+        step = ApprovalStep.objects.create(document=doc, agent='J')
+        self.assertIn('mlf_j_noline@company.com', mailer.resolve_stage_recipients(doc, 'J', step))
+
+    def test_notifier_recipients_are_filtered(self):
+        """통보처로 지정된 사람도 라인을 껐으면 통보 메일을 받지 않는다."""
+        import json
+        self._make_j('mlf_noti_on', [self.line1])
+        self._make_j('mlf_noti_off', [self.line3])
+        self.doc.additional_notes = json.dumps({'detail': {
+            'line': '라인1',
+            'notifiers': [{'loginid': 'mlf_noti_on'}, {'loginid': 'mlf_noti_off'}],
+        }})
+        self.doc.save()
+        recipients = mailer.resolve_notifier_recipients(self.doc)
+        self.assertIn('mlf_noti_on@company.com', recipients)
+        self.assertNotIn('mlf_noti_off@company.com', recipients)
+
+    def test_reject_recipients_are_filtered(self):
+        """반려 메일(잔여 결재선 팀 브로드캐스트)도 필터를 탄다."""
+        self._make_j('mlf_rej_on', [self.line1])
+        self._make_j('mlf_rej_off', [self.line3])
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='rejected')
+        recipients = mailer.resolve_reject_recipients(self.doc)
+        self.assertIn('mlf_rej_on@company.com', recipients)
+        self.assertNotIn('mlf_rej_off@company.com', recipients)
+
+    @override_settings(VOC_MASTER_EMAIL='mlf_j_off@company.com')
+    def test_voc_mail_is_not_filtered(self):
+        """VOC 메일은 라인 개념이 없으므로 필터를 타지 않는다."""
+        self._make_j('mlf_j_off', [self.line3])
+        self.assertEqual(
+            mailer._resolve_voc_master_recipients(), ['mlf_j_off@company.com']
+        )
+
+    def test_shared_address_is_kept_when_someone_still_receives(self):
+        """같은 주소를 쓰는 사람 중 한 명이라도 받아야 하면 주소를 빼지 않는다."""
+        keep = UserProfile.objects.create(
+            loginid='mlf_share_on', mail='shared@company.com', role='TE_J'
+        )
+        keep.mail_lines.set([self.line1])
+        drop = UserProfile.objects.create(
+            loginid='mlf_share_off', mail='shared@company.com', role='TE_J'
+        )
+        drop.mail_lines.set([self.line3])
+        step = ApprovalStep.objects.create(document=self.doc, agent='J')
+        self.assertIn('shared@company.com', mailer.resolve_stage_recipients(self.doc, 'J', step))
+
+
+class MailLinesApiTest(TestCase):
+    """PATCH /api/users/{id}/mail-lines/ 권한·검증 규칙."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.line1 = Line.objects.create(name='라인1', order=1)
+        self.line3 = Line.objects.create(name='라인3', order=3)
+        self.owner = UserProfile.objects.create(
+            loginid='mla_owner', mail='mla_owner@company.com', role='TE_J'
+        )
+        self.owner.mail_lines.set([self.line1, self.line3])
+        self.other = UserProfile.objects.create(
+            loginid='mla_other', mail='mla_other@company.com', role='TE_J'
+        )
+        self.master = UserProfile.objects.create(
+            loginid='mla_master', mail='mla_master@company.com', role='MASTER'
+        )
+        self.pl = UserProfile.objects.create(
+            loginid='mla_pl', mail='mla_pl@company.com', role='PL'
+        )
+
+    def _patch(self, user_id, lines):
+        return self.client.patch(
+            f'/api/users/{user_id}/mail-lines/', {'lines': lines}, format='json'
+        )
+
+    def test_owner_can_update_own_lines(self):
+        self.client.force_authenticate(user=self.owner)
+        res = self._patch(self.owner.id, ['라인3'])
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json()['mail_lines'], ['라인3'])
+        self.assertEqual(
+            list(self.owner.mail_lines.values_list('name', flat=True)), ['라인3']
+        )
+
+    def test_empty_list_turns_all_lines_off(self):
+        self.client.force_authenticate(user=self.owner)
+        res = self._patch(self.owner.id, [])
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(self.owner.mail_lines.count(), 0)
+
+    def test_other_user_cannot_update(self):
+        self.client.force_authenticate(user=self.other)
+        self.assertEqual(self._patch(self.owner.id, []).status_code, 403)
+
+    def test_master_can_update_anyone(self):
+        self.client.force_authenticate(user=self.master)
+        res = self._patch(self.owner.id, ['라인1'])
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_pl_role_is_rejected(self):
+        self.client.force_authenticate(user=self.pl)
+        self.assertEqual(self._patch(self.pl.id, ['라인1']).status_code, 400)
+
+    def test_unknown_line_is_rejected(self):
+        self.client.force_authenticate(user=self.owner)
+        self.assertEqual(self._patch(self.owner.id, ['라인9']).status_code, 400)
+
+    def test_invalid_payload_is_rejected(self):
+        self.client.force_authenticate(user=self.owner)
+        res = self.client.patch(
+            f'/api/users/{self.owner.id}/mail-lines/', {'lines': '라인1'}, format='json'
+        )
+        self.assertEqual(res.status_code, 400)

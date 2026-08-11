@@ -2965,6 +2965,8 @@ class UserViewSet(viewsets.ModelViewSet):
             'role': role,
             'mail': user.mail or '',
             'role_assigned_at': user.role_assigned_at.isoformat() if user.role_assigned_at else None,
+            # 역할 변경 응답/브로드캐스트로 행 전체가 교체되므로 라인 설정도 함께 실어 보낸다.
+            'mail_lines': list(user.mail_lines.values_list('name', flat=True)),
         }
         broadcaster.broadcast('user_updated', payload)
 
