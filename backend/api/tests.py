@@ -901,9 +901,10 @@ class PEStageReviewerFlowTest(TestCase):
         self.e_reviewer = UserProfile.objects.create(loginid='e2', mail='e2@c.com', role='TE_E')
         self.e_reviewer2 = UserProfile.objects.create(loginid='e3', mail='e3@c.com', role='TE_E')
 
-    def _advance_to_parallel(self, plel=False):
+    def _advance_to_parallel(self, plel=False, other_purpose=None):
         """draft → 제출 → PL 합의 → R 지정·합의 를 실제 API로 거쳐 P/O[/E] pending 상태로 만든다."""
-        detail = {'detail': {}, 'jayerRows': ([{'pp': 'PLEL'}] if plel else [])}
+        inner = {} if other_purpose is None else {'other_purpose': other_purpose}
+        detail = {'detail': inner, 'jayerRows': ([{'pp': 'PLEL'}] if plel else [])}
         doc = RequestDocument.objects.create(
             title='doc', requester=self.requester, requester_name='요청자',
             requester_email='req@c.com', requester_department='dept',
@@ -1322,6 +1323,53 @@ class PEStageReviewerFlowTest(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'under_review')
         self.assertEqual(ApprovalStep.objects.get(document=doc, agent='P', round=1).action, 'pending')
+
+    # ----- 기타 목적 'Overlay 변경' 단독: 일반 경로에서 J 를 뺀다 -----
+
+    def test_j_step_not_created_when_other_purpose_is_overlay_only(self):
+        """기타 목적이 'Overlay 변경' 하나뿐이면 R 합의 시 J 단계를 만들지 않는다."""
+        doc = self._advance_to_parallel(other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY])
+        self.assertFalse(
+            ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists(),
+            "'Overlay 변경' 단독 문서에는 J 단계가 생성되지 않아야 한다",
+        )
+        # 나머지 병렬 단계는 그대로다.
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='P', round=1).exists())
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='O', round=1).exists())
+
+    def test_j_step_created_when_overlay_selected_with_others(self):
+        """다른 기타 목적을 함께 골랐으면 J 단계는 그대로 생성된다."""
+        doc = self._advance_to_parallel(
+            other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY, 'STEPSEQ 변경']
+        )
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists(),
+            '기타 목적이 2개 이상이면 J 를 빼지 않는다',
+        )
+
+    def test_overlay_only_document_approved_without_j(self):
+        """J 없는 문서도 P·O 합의만으로 최종 승인된다(under_review 영구 정지 회귀 방지).
+
+        최종 판정의 j_approved 는 원래 `len(j_steps) > 0` 을 요구해, J 를 만들지 않으면
+        나머지가 모두 합의돼도 영원히 False 가 된다 — skip_j_stage 분기가 그 정지를 막는다.
+        """
+        doc = self._advance_to_parallel(other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY])
+
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review', 'P 가 남아 있으면 아직 승인이 아니다')
+
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'approved', 'J 가 없는 경로도 P·O 합의로 승인돼야 한다')
 
     def test_general_route_not_approved_while_p_reviewer_pending(self):
         """P 담당자만 합의하고 검토자(PV)가 남아 있으면 J·O 가 끝나도 승인되지 않는다."""
