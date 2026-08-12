@@ -2374,7 +2374,8 @@ class VOCViewSet(viewsets.ModelViewSet):
             )
 
         voc.status = new_status
-        voc.save(update_fields=['status'])
+        voc.responded_at = timezone.now()
+        voc.save(update_fields=['status', 'responded_at'])
         return Response(VOCSerializer(voc).data)
 
     @action(detail=True, methods=['post'])
