@@ -109,6 +109,12 @@ const autoMatchItemId = (
 // product_name 타이핑 시 바코드 후보 조회를 디바운스하는 지연(ms). Impala 백엔드 중복 호출 감소.
 const BARCODE_DEBOUNCE_MS = 300;
 
+// 오늘 날짜를 <input type="date"> 가 쓰는 'YYYY-MM-DD' 로. toISOString 은 UTC 기준이라 쓰지 않는다.
+const todayISO = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 // 전체 가이드 되감기(seek)용 투어 상태 스냅샷 — 프리뷰가 정주행 중 챕터별로 캡처해 두었다가
 // 되감을 때 그대로 복원한다. (mappedJayerRowIds는 직렬화 위해 배열로 보관)
 export interface TourSnapshot {
@@ -293,6 +299,17 @@ export default function RequestPage(): React.ReactElement {
   // 편집 대상 문서의 상태 — 'pause' 이면 상신 대신 '재개'(resume) 로 동작한다.
   const [editDocStatus, setEditDocStatus] = useState<string | null>(null);
   const isResumeMode = editDocStatus === 'pause';
+
+  // 이력 바로 등록 (MASTER 전용) — 결재 경로를 타지 않고 상신일·결재 완료일을 직접 지정한다.
+  const [directHistoryOpen, setDirectHistoryOpen] = useState(false);
+  const [directSubmittedAt, setDirectSubmittedAt] = useState(todayISO());
+  const [directApprovedAt, setDirectApprovedAt] = useState(todayISO());
+  const [directHistoryError, setDirectHistoryError] = useState('');
+  // 노출 조건: MASTER + 아직 결재선이 없는 문서(신규 작성·임시저장 재진입).
+  // 반려 재상신·지정 PL 수정·재개는 이미 결재가 진행된 문서라 대상이 아니다.
+  const canDirectHistory =
+    currentUser.role === 'MASTER' && !isPeerReviewMode &&
+    (editDocStatus === null || editDocStatus === 'draft');
 
   // 동료 PL 지정 (상신 모달) — 다중 지정(전원 합의)
   const [designees, setDesignees] = useState<{ loginid: string; name: string }[]>([]);
@@ -3283,9 +3300,16 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // ===== API =====
-  const buildEnrichedForm = (note?: string, shouldAddHistory = false, isDraft = false): CreateDocumentInput => {
-    const now = new Date();
-    const dateStr = `${String(now.getFullYear()).slice(2)}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+  // 제목 끝의 `_요청서_YYMMDD`. 기본은 오늘이지만, 이력 바로 등록은 직접 지정한 상신일을 넣는다.
+  const titleDateStr = (isoDate?: string): string => {
+    const d = isoDate ? new Date(`${isoDate}T12:00:00`) : new Date();
+    return `${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  };
+
+  const buildEnrichedForm = (
+    note?: string, shouldAddHistory = false, isDraft = false, submittedDate?: string,
+  ): CreateDocumentInput => {
+    const dateStr = titleDateStr(submittedDate);
     const purposePart = detail.other_purpose.length
       ? `${detail.request_purpose}-${detail.other_purpose.map((o) => `[${o}]`).join('')}`
       : detail.request_purpose;
@@ -3604,6 +3628,57 @@ export default function RequestPage(): React.ReactElement {
     setAbLoadOpen(false);
     setAbSaveOpen(false);
     setConfirmOpen(true);
+  };
+
+  // 이력 바로 등록 — 상신과 동일한 문서 내용 검증을 통과해야 날짜 모달이 열린다.
+  // (결재선 관련 입력인 지정 PL·후결자·통보자는 결재를 돌리지 않으므로 요구하지 않는다.)
+  const handleDirectHistoryClick = () => {
+    const result = validate(5);
+    if (!result.valid) {
+      result.errors.forEach(msg => addToast(msg, 'error'));
+      scrollToFirstError();
+      return;
+    }
+    setDirectSubmittedAt(todayISO());
+    setDirectApprovedAt(todayISO());
+    setDirectHistoryError('');
+    setDirectHistoryOpen(true);
+  };
+
+  const handleDirectHistoryRegister = async () => {
+    if (loadError) { addToast(t('request.edit_load_failed'), 'error'); return; } // 로드 실패 시 덮어쓰기 차단(R-10)
+    if (!directSubmittedAt || !directApprovedAt) {
+      setDirectHistoryError(t('request.direct_history_date_required'));
+      return;
+    }
+    if (directApprovedAt < directSubmittedAt) {
+      setDirectHistoryError(t('request.direct_history_date_order'));
+      return;
+    }
+    if (isPersistingRef.current) return;
+    isPersistingRef.current = true;
+    setSubmitting(true);
+    try {
+      // 제목의 `_요청서_YYMMDD` 도 입력한 상신일을 따른다.
+      const enriched = buildEnrichedForm('', false, false, directSubmittedAt);
+      let docId = savedId;
+      if (!docId) {
+        const res = await documentsAPI.create(enriched);
+        docId = res.data.id;
+        setSavedId(docId);
+      } else {
+        await documentsAPI.update(docId, enriched);
+      }
+      await documentsAPI.directApprove(docId!, directSubmittedAt, directApprovedAt);
+      setDirectHistoryOpen(false);
+      addToast(t('request.direct_history_success'), 'success');
+      setTimeout(() => navigate('/history'), 1500);
+    } catch (err) {
+      addToast(`오류 발생: ${err instanceof Error ? err.message : '알 수 없는 오류'}`, 'error');
+    } finally {
+      setSubmitting(false);
+      isPersistingRef.current = false;
+    }
   };
 
   const handleSubmit = async () => {
@@ -3968,9 +4043,16 @@ export default function RequestPage(): React.ReactElement {
               다음 →
             </button>
           ) : (
-            <button className="btn btn-primary" onClick={handleSubmitClick} disabled={submitting || loadError}>
-              📤 {submitting ? t('common.loading') : (isResumeMode ? t('approval.resume') : t('request.submit'))}
-            </button>
+            <>
+              {canDirectHistory && (
+                <button className="btn btn-secondary" onClick={handleDirectHistoryClick} disabled={submitting || loadError}>
+                  📋 {t('request.direct_history')}
+                </button>
+              )}
+              <button className="btn btn-primary" onClick={handleSubmitClick} disabled={submitting || loadError}>
+                📤 {submitting ? t('common.loading') : (isResumeMode ? t('approval.resume') : t('request.submit'))}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -4081,6 +4163,46 @@ export default function RequestPage(): React.ReactElement {
         message={t('request.tbvtlv_warn_body')}
         confirmLabel={t('request.tbvtlv_warn_proceed')}
       />
+
+      <Modal
+        isOpen={directHistoryOpen}
+        onClose={() => setDirectHistoryOpen(false)}
+        title={t('request.direct_history')}
+        size="sm"
+        style={{ maxWidth: '420px' }}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setDirectHistoryOpen(false)}>
+              {t('common.cancel')}
+            </button>
+            <button className="btn btn-primary" onClick={handleDirectHistoryRegister} disabled={submitting}>
+              📋 {submitting ? t('common.loading') : t('request.direct_history_register')}
+            </button>
+          </>
+        }
+      >
+        <div className="form-group">
+          <label className="form-label">{t('request.direct_history_submitted_at')}</label>
+          <input
+            type="date"
+            className="form-control"
+            value={directSubmittedAt}
+            onChange={(e) => { setDirectSubmittedAt(e.target.value); setDirectHistoryError(''); }}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">{t('request.direct_history_approved_at')}</label>
+          <input
+            type="date"
+            className="form-control"
+            value={directApprovedAt}
+            onChange={(e) => { setDirectApprovedAt(e.target.value); setDirectHistoryError(''); }}
+          />
+        </div>
+        {directHistoryError && (
+          <p style={{ margin: 0, color: 'var(--danger)', fontSize: '0.85rem' }}>{directHistoryError}</p>
+        )}
+      </Modal>
 
       <Modal
         isOpen={confirmOpen}
