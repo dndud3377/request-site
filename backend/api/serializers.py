@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
-    RejectionSnapshot, assign_default_mail_lines,
+    RejectionSnapshot,
 )
 from . import doc_permissions
 from . import design_rule_stats
@@ -119,8 +119,11 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'loginid', 'name', 'mail', 'role', 'deptname', 'role_assigned_at', 'mail_lines']
-        read_only_fields = ['role_assigned_at', 'mail_lines']
+        fields = [
+            'id', 'loginid', 'name', 'mail', 'role', 'deptname', 'role_assigned_at',
+            'receive_all_mail', 'mail_lines',
+        ]
+        read_only_fields = ['role_assigned_at', 'receive_all_mail', 'mail_lines']
 
     def create(self, validated_data):
         loginid = self.context.get('loginid')
@@ -136,10 +139,6 @@ class UserSerializer(serializers.ModelSerializer):
                 'username': validated_data.get('username', ''),
             }
         )
-
-        if created:
-            # 새 사용자는 모든 라인의 메일을 받는 상태로 시작한다(권한 관리 '이메일 설정').
-            assign_default_mail_lines(user)
 
         if not created:
             user.role = validated_data.get('role', user.role)

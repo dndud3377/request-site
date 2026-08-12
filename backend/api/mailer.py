@@ -28,7 +28,8 @@
 - 승인 완료: 현재 회차 결재 경로에 참여했던 전원(중복 제거)
 - P 단계 완료 통보(notify_p_completed): TE_O + TE_J 팀 전원(참고용, 결재 권한과 무관)
 - 라인 수신 설정(mail_lines) 필터: 위에서 산출된 수신자 중, 의뢰서의 라인(detail.line)을
-  권한 관리 '이메일 설정'에서 끈 사람을 제외한다(`_filter_by_mail_lines`). 대상 역할은
+  권한 관리 '이메일 설정'에서 끈 사람을 제외한다(`_filter_by_mail_lines`). '전체 받기'
+  (receive_all_mail, 기본값)가 켜져 있으면 라인과 무관하게 전부 받는다. 대상 역할은
   TE_R/P/J/O/E·MASTER 이고 PL·NONE 은 적용받지 않는다. 담당자로 지정된 단계의 결재 요청
   메일도 예외 없이 필터를 탄다. VOC 메일은 라인 개념이 없어 필터 대상이 아니다.
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
@@ -232,6 +233,7 @@ def _document_line(document):
 def _filter_by_mail_lines(recipients, document):
     """수신자 중 이 의뢰서의 라인을 메일 수신 대상에서 뺀 사람을 제외한다.
 
+    - '전체 받기'(receive_all_mail)가 켜진 사람은 라인과 무관하게 그대로 통과한다(기본 상태).
     - 대상 역할은 `UserProfile.MAIL_LINE_FILTER_ROLES`(TE_R/P/J/O/E·MASTER)뿐이다.
       PL·NONE 은 이 설정을 쓰지 않으므로 라인과 무관하게 그대로 통과한다.
     - 의뢰서에 라인 값이 없으면(임시저장 등) 필터가 성립하지 않으므로 그대로 통과시킨다.
@@ -243,19 +245,20 @@ def _filter_by_mail_lines(recipients, document):
         return list(recipients)
 
     filter_roles = UserProfile.MAIL_LINE_FILTER_ROLES
-    # 이 라인을 끈 사람(= 필터 대상 역할이면서 mail_lines 에 이 라인이 없는 사용자)의 주소
+    # 이 라인을 끈 사람 = 필터 대상 역할 + 전체 받기 해제 + mail_lines 에 이 라인이 없는 사용자
     blocked = set(
-        UserProfile.objects.filter(role__in=filter_roles)
+        UserProfile.objects.filter(role__in=filter_roles, receive_all_mail=False)
         .exclude(mail='')
         .exclude(mail_lines__name=line)
         .values_list('mail', flat=True)
     )
     if not blocked:
         return list(recipients)
-    # 같은 주소를 쓰면서 이 라인을 받아야 하는 사람(필터 비대상 역할 또는 이 라인을 켠 사람)
+    # 같은 주소를 쓰면서 이 라인을 받아야 하는 사람
+    # (전체 받기 사용자 · 필터 비대상 역할 · 이 라인을 켠 사람)
     receiving = set(
         UserProfile.objects.exclude(mail='')
-        .filter(Q(mail_lines__name=line) | ~Q(role__in=filter_roles))
+        .filter(Q(receive_all_mail=True) | Q(mail_lines__name=line) | ~Q(role__in=filter_roles))
         .values_list('mail', flat=True)
     )
     blocked -= receiving

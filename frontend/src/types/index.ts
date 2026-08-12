@@ -575,13 +575,16 @@ export interface UserWithRole {
   role: UserRole;
   mail: string;
   role_assigned_at?: string | null;
-  /** 메일을 수신할 라인 이름 목록(권한 관리 '이메일 설정'). 빈 배열이면 해당 메일을 받지 않는다. */
+  /** '전체 받기' — 켜져 있으면 라인 구분 없이 모든 의뢰서 메일을 받는다(기본값). */
+  receive_all_mail?: boolean;
+  /** 전체 받기를 껐을 때 메일을 수신할 라인 이름 목록(권한 관리 '이메일 설정'). */
   mail_lines?: string[];
 }
 
 /** PATCH /users/{id}/mail-lines/ 응답 */
 export interface MailLinesResponse {
   id: number;
+  receive_all_mail: boolean;
   mail_lines: string[];
 }
 

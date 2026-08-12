@@ -17,8 +17,6 @@ from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 
-from .models import assign_default_mail_lines
-
 User = get_user_model()
 
 logger = logging.getLogger(__name__)
@@ -60,10 +58,6 @@ def create_or_update_user_from_oidc(claims):
             'role': 'NONE',
         }
     )
-
-    if created:
-        # 새 사용자는 모든 라인의 메일을 받는 상태로 시작한다(권한 관리 '이메일 설정').
-        assign_default_mail_lines(user)
 
     if not created:
         user.mail = email or user.mail

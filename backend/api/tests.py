@@ -4078,9 +4078,9 @@ class RejectionSnapshotTest(TestCase):
 
 
 class MailLineFilterTest(TestCase):
-    """라인별 메일 수신 설정(UserProfile.mail_lines) 필터 검증.
+    """라인별 메일 수신 설정(receive_all_mail / mail_lines) 필터 검증.
 
-    권한 관리 '이메일 설정'에서 끈 라인의 의뢰서 메일은 그 사람에게 가지 않는다.
+    '전체 받기'가 켜져 있으면(기본값) 전부 받고, 끈 뒤 고른 라인의 메일만 받는다.
     """
 
     def setUp(self):
@@ -4094,9 +4094,11 @@ class MailLineFilterTest(TestCase):
         self.doc.additional_notes = json.dumps({'detail': {'line': '라인1'}})
         self.doc.save()
 
-    def _make_j(self, loginid, lines):
+    def _make_j(self, loginid, lines, receive_all=False):
+        """TE_J 사용자 생성. 기본은 '전체 받기'를 끄고 지정한 라인만 받는 상태."""
         user = UserProfile.objects.create(
-            loginid=loginid, mail=f'{loginid}@company.com', role='TE_J'
+            loginid=loginid, mail=f'{loginid}@company.com', role='TE_J',
+            receive_all_mail=receive_all,
         )
         user.mail_lines.set(lines)
         return user
@@ -4166,11 +4168,13 @@ class MailLineFilterTest(TestCase):
     def test_shared_address_is_kept_when_someone_still_receives(self):
         """같은 주소를 쓰는 사람 중 한 명이라도 받아야 하면 주소를 빼지 않는다."""
         keep = UserProfile.objects.create(
-            loginid='mlf_share_on', mail='shared@company.com', role='TE_J'
+            loginid='mlf_share_on', mail='shared@company.com', role='TE_J',
+            receive_all_mail=False,
         )
         keep.mail_lines.set([self.line1])
         drop = UserProfile.objects.create(
-            loginid='mlf_share_off', mail='shared@company.com', role='TE_J'
+            loginid='mlf_share_off', mail='shared@company.com', role='TE_J',
+            receive_all_mail=False,
         )
         drop.mail_lines.set([self.line3])
         step = ApprovalStep.objects.create(document=self.doc, agent='J')
@@ -4186,7 +4190,8 @@ class MailLinesApiTest(TestCase):
         self.line1 = Line.objects.create(name='라인1', order=1)
         self.line3 = Line.objects.create(name='라인3', order=3)
         self.owner = UserProfile.objects.create(
-            loginid='mla_owner', mail='mla_owner@company.com', role='TE_J'
+            loginid='mla_owner', mail='mla_owner@company.com', role='TE_J',
+            receive_all_mail=False,
         )
         self.owner.mail_lines.set([self.line1, self.line3])
         self.other = UserProfile.objects.create(
@@ -4201,7 +4206,8 @@ class MailLinesApiTest(TestCase):
 
     def _patch(self, user_id, lines):
         return self.client.patch(
-            f'/api/users/{user_id}/mail-lines/', {'lines': lines}, format='json'
+            f'/api/users/{user_id}/mail-lines/',
+            {'receive_all': False, 'lines': lines}, format='json',
         )
 
     def test_owner_can_update_own_lines(self):
@@ -4240,5 +4246,89 @@ class MailLinesApiTest(TestCase):
         self.client.force_authenticate(user=self.owner)
         res = self.client.patch(
             f'/api/users/{self.owner.id}/mail-lines/', {'lines': '라인1'}, format='json'
+        )
+        self.assertEqual(res.status_code, 400)
+
+
+class ReceiveAllMailTest(TestCase):
+    """'전체 받기'(receive_all_mail) 동작 검증 — 기본값이자 라인 필터를 무력화하는 상태."""
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.line1 = Line.objects.create(name='라인1', order=1)
+        self.line3 = Line.objects.create(name='라인3', order=3)
+        self.requester = UserProfile.objects.create(
+            loginid='ram_req', mail='ram_req@company.com', role='NONE'
+        )
+        self.doc = _make_document(self.requester)
+        self.doc.additional_notes = json.dumps({'detail': {'line': '라인1'}})
+        self.doc.save()
+
+    def test_new_user_defaults_to_receive_all(self):
+        """새 사용자는 라인을 하나도 고르지 않아도 전체 받기 상태로 시작한다."""
+        user = UserProfile.objects.create(
+            loginid='ram_new', mail='ram_new@company.com', role='TE_J'
+        )
+        self.assertTrue(user.receive_all_mail)
+        self.assertEqual(user.mail_lines.count(), 0)
+        step = ApprovalStep.objects.create(document=self.doc, agent='J')
+        self.assertIn('ram_new@company.com', mailer.resolve_stage_recipients(self.doc, 'J', step))
+
+    def test_receive_all_user_gets_mail_for_any_line(self):
+        """전체 받기 사용자는 어느 라인의 의뢰서든 받는다."""
+        import json
+        user = UserProfile.objects.create(
+            loginid='ram_all', mail='ram_all@company.com', role='TE_J', receive_all_mail=True
+        )
+        user.mail_lines.set([self.line3])  # 남아 있어도 전체 받기가 우선한다
+        for line in ('라인1', '라인3', '라인5'):
+            self.doc.additional_notes = json.dumps({'detail': {'line': line}})
+            self.doc.save()
+            step = ApprovalStep.objects.create(document=self.doc, agent='J')
+            self.assertIn(
+                'ram_all@company.com', mailer.resolve_stage_recipients(self.doc, 'J', step),
+                f'{line} 의뢰서에서 전체 받기 사용자가 빠졌다',
+            )
+
+    def test_api_receive_all_clears_selected_lines(self):
+        """전체 받기를 켜면 개별 라인 선택은 비워진다."""
+        user = UserProfile.objects.create(
+            loginid='ram_api', mail='ram_api@company.com', role='TE_J', receive_all_mail=False
+        )
+        user.mail_lines.set([self.line1])
+        self.client.force_authenticate(user=user)
+        res = self.client.patch(
+            f'/api/users/{user.id}/mail-lines/', {'receive_all': True}, format='json'
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json(), {'id': user.id, 'receive_all_mail': True, 'mail_lines': []})
+        user.refresh_from_db()
+        self.assertTrue(user.receive_all_mail)
+        self.assertEqual(user.mail_lines.count(), 0)
+
+    def test_api_selecting_lines_turns_receive_all_off(self):
+        """라인을 고르면 전체 받기가 해제된다."""
+        user = UserProfile.objects.create(
+            loginid='ram_api2', mail='ram_api2@company.com', role='TE_J'
+        )
+        self.client.force_authenticate(user=user)
+        res = self.client.patch(
+            f'/api/users/{user.id}/mail-lines/',
+            {'receive_all': False, 'lines': ['라인1']}, format='json',
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        user.refresh_from_db()
+        self.assertFalse(user.receive_all_mail)
+        self.assertEqual(list(user.mail_lines.values_list('name', flat=True)), ['라인1'])
+
+    def test_api_rejects_non_boolean_receive_all(self):
+        user = UserProfile.objects.create(
+            loginid='ram_api3', mail='ram_api3@company.com', role='TE_J'
+        )
+        self.client.force_authenticate(user=user)
+        res = self.client.patch(
+            f'/api/users/{user.id}/mail-lines/', {'receive_all': 'yes'}, format='json'
         )
         self.assertEqual(res.status_code, 400)
