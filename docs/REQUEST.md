@@ -135,7 +135,7 @@ pages/RequestPage/
 |---|---|
 | 뒤로 (`target < step`) | **검증 없이 즉시 이동.** 이미 통과해서 지나온 단계다. |
 | 앞으로 (`target > step`) | `현재 step` ~ `target-1` 을 **순서대로 `validate()`**. 전부 통과해야 `target` 도달. |
-| 전진 실패 | **처음 막힌 단계에 멈추고**(`setStep(s)`) 오류 토스트 + `scrollToFirstError(s)`. |
+| 전진 실패 | **처음 막힌 단계에 멈추고**(`setStep(s)`) 오류 토스트 + `scrollToFirstError(s)`. 단 `validate()` 가 `redirectStep` 을 돌려주면 그 단계로 보낸다(입력칸이 다른 단계에 있는 오류 — 현재는 `bb_entries` → STEP1). |
 | 현재 단계 클릭 / 범위 밖 | 무동작. |
 
 - **통과 여부를 캐시하지 않는다 [중요].** "한 번 통과했다"는 기록을 남기면, 뒤로 돌아가 필수값을
@@ -267,6 +267,41 @@ pages/RequestPage/
 
   ⚠️ `tsc` 베이스라인은 이 문서 §4 에 적힌 24개가 아니라 **작업 직전 실측 22개**였다.
   (`VOCPage.tsx` 2건이 그 사이 해소됨 — 베이스라인은 고정 상수가 아니라는 §3.2 원칙대로 매번 실측할 것)
+
+### 추가 변경 이력 (2026-08-12 — Backbone 조합 영역 조건부 필수 + J/O-ayer st·new_or_copy 필수)
+
+- **Backbone 조합 영역(`bb_entries`)이 STEP1 무조건 필수에서 조건부 필수로 바뀌었다.**
+  이 값이 실제로 필요한 문서는 **J-ayer 표에 `st` 가 'O 계열'인 활성 행이 있는 문서**뿐인데,
+  기존에는 그와 무관하게 STEP1 을 벗어나려면 위치·제품·조리법 3칸을 반드시 채워야 했다.
+  - **판정 근거는 J-ayer 표 하나뿐이다** — O-ayer 는 보지 않는다. 활성 행(`!disabled`)만 본다.
+  - **'O 계열' = `'O'` 또는 `'O (D)'`** (`isStO`, `constants.ts`). 표의 st 선택지는 이 둘과 `'X'` 셋뿐이다.
+  - `new_or_copy`(신규/차용)는 **판정에 쓰지 않는다.** `기등록`·`layer삭제` 는 st 가 자동으로 `'X'` 가 되고,
+    신규/차용 행은 st 가 O 로 따라오므로 st 하나로 충분하다.
+  - 순수 헬퍼 3종을 `helpers.ts` 에 추가했다(단위테스트 `helpers.test.ts` 동봉):
+    `requiresBbEntries(jayerRows)` / `findBbEntryViolations(entries, required)` / `findEmptyStNocViolations(rows)`.
+- **검증 시점과 차단 동작**
+  | 단계 | 검사 |
+  |---|---|
+  | STEP1 → 2 | 필수 여부와 무관하게 **일부만 채운 항목**만 막는다(3칸 중 일부만 채운 값은 언제나 오류). 필수 상태로 되돌아온 경우엔 완전 입력을 요구한다. |
+  | STEP3 → 4 | J-ayer 기준으로 처음 판정. 필수인데 미완성이면 **모달 없이 STEP1 로 즉시 이동** + 에러 토스트 + 해당 항목 스크롤·강조. |
+  | STEP5 상신 | 초안 복원 등으로 단계를 건너뛴 경로 대비 안전망(동일 검사 반복). 여기서 막혀도 STEP1 로 이동한다. |
+  - 이동 방식: `validate()` 가 `redirectStep?: number` 를 함께 반환하고, `goToStep`·`handleSubmitClick` 이 그 값으로
+    `setStep` 한다. **`bb_entries` 오류 하나만 남았을 때만** 이동한다 — 다른 오류가 섞여 있으면 그 오류는 현재
+    단계에서 고쳐야 하므로 이동하지 않는다.
+  - `validate(1)`·`validate(4)` 에 있던 **`isOnlyMap`/`isAdiCdOnly` 우회 분기 중 Backbone 몫은 제거**했다.
+    그 문서들은 J-ayer 에 O 행이 생기지 않아 조건 자체로 걸러진다(§ADI CD 절의 "우회 대상 2곳" 중 첫 항목이 없어졌다).
+  - **STEP1 라벨의 `*` 는 동적**이다 — 필수일 때만 `*`, 아닐 때는 안내 문구(`bb_entries_optional_hint`)를 보여준다
+    (`Step1.tsx` prop `bbEntriesRequired`, CSS `.form-label .form-hint`).
+- **J/O-ayer 표의 `st`·`new_or_copy` 공란 금지**: 활성 행은 두 값을 반드시 채워야 한다(`findEmptyStNocViolations`).
+  검증 시점은 차용 행 검증과 같다(J = STEP3→4, O = STEP4→5, 상신 시 재검사). 에러 표시도 같은 방식 —
+  행별 키 `jayer_stnoc_${id}_st`/`_new_or_copy`(O 는 `oayer_stnoc_*`)로 해당 셀에 빨간 테두리 + `field-error-target`
+  스크롤, 안내는 토스트(`jayer_stnoc_required`/`oayer_stnoc_required`, count 보간) 하나로만.
+- **`layer삭제` 행의 `st` 잠금**: `layer삭제` 는 st 가 항상 `'X'` 다(선택 시 자동 설정은 기존 동작).
+  이제 **셀 편집(`disabled`)과 붙여넣기(`isLayerCellLocked` 의 `col === 'st'`) 양쪽에서 값을 바꿀 수 없다.**
+  J·O-ayer 표 모두 적용. 같은 행의 다른 컬럼은 그대로 편집 가능하다.
+- **신규 i18n 키** (ko/en 동시): `request.bb_entries_optional_hint` / `bb_entries_required` / `bb_entries_partial`
+  / `stnoc_field_error` / `jayer_stnoc_required` / `oayer_stnoc_required`.
+- 백엔드 변경 없음(마이그레이션 없음).
 
 ### 추가 변경 이력 (2026-08-11 — 임시저장 재진입 시 `source_partid` 유실 수정 + 왕복 테스트 신설)
 
@@ -708,11 +743,10 @@ pages/RequestPage/
 - **필수 입력 우회**(`ADI CD 변경`만 단독 선택했을 때만 — 다른 목적과 함께면 미적용): 판정은 `isAdiCdOnly`
   (`other_purpose.length === 1 && other_purpose[0] === 'ADI CD 변경'`) 하나로 통일한다. 다른 기타 목적을 함께
   켜는 순간 `false` 로 뒤집혀 아래 우회가 **전부 해제**되고 원래 필수로 되돌아온다(중복 선택은 항상 가능하다).
-  우회 대상은 **2곳뿐**이다:
-  - `validate(1)`의 `if (!isOnlyMap && !isAdiCdOnly)` — **Backbone 조합 영역**(`bb_entries`)
-    필수 검증. ADI CD 만 요청하는데 무관한 위치·제품·조리법 3칸을 채우거나 기본 행을 지워야만 STEP1 을 벗어날 수
-    있던 문제를 없앤다. 검증만 끄고 **입력창은 잠그지 않으며**(회신: UI 는 유연하게), 사용자가 넣은 값은
-    **거르지 않고 그대로 저장**한다.
+  우회 대상은 당시 **2곳**이었고, 지금은 **1곳뿐**이다:
+  - ~~`validate(1)`의 `if (!isOnlyMap && !isAdiCdOnly)` — **Backbone 조합 영역**(`bb_entries`) 필수 검증~~
+    → **2026-08-12 제거.** Backbone 은 J-ayer 표 기준 조건부 필수로 바뀌어, ADI CD 단독 문서는 조건 자체로
+    걸러진다(§4.1 2026-08-12 항목). 입력창을 잠그지 않고 넣은 값을 그대로 저장하는 동작은 그대로다.
   - `validate(4)`의 `if (currentStep === 4 && !isOnlyMap && !isAdiCdOnly)` — Partial Shot 등.
   나머지는 손대지 않았다 — `map_type` 필수 검증은 자동 고정으로 이미 통과하고, STEP2 조건부 필수
   (C가문·MAP 변경·IN 등)는 사용자가 StepMap 값을 바꾸지 않는 한(기본값이면 미발동) 자연히 통과하며, STEP3/5의

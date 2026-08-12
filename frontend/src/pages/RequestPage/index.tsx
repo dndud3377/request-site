@@ -58,6 +58,7 @@ import {
   OAYER_EDITABLE_COLS,
   LOADED_LOCK_COLS,
   isNocSpecial,
+  NOC_LAYER_DELETE,
   makeTourDetail,
   makeTourJayerRows,
   makeTourOayerRows,
@@ -78,7 +79,8 @@ import {
   makeAdiCdStep,
 } from './constants';
 import {
-  formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
+  formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, findEmptyStNocViolations,
+  requiresBbEntries, findBbEntryViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, AdiCdHeaderMatch,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
@@ -2166,8 +2168,11 @@ export default function RequestPage(): React.ReactElement {
 
   // 엑셀식 셀 선택 + 붙여넣기 (J/O 표 공용 훅). 붙여넣기 후 자동채움/바코드 조회 연동.
   // 셀 단위 잠금: 비활성/기등록 행은 전체 잠금, 불러온(loaded) 행은 LOADED_LOCK_COLS만 잠금
+  // layer삭제 행의 st 는 항상 'X' 로 고정이므로 붙여넣기로도 덮어쓸 수 없다.
   const isLayerCellLocked = (row: { disabled?: boolean; new_or_copy?: string; loaded?: boolean }, col: string): boolean =>
-    !!row.disabled || row.new_or_copy === '기등록' || (!!row.loaded && (LOADED_LOCK_COLS as readonly string[]).includes(col));
+    !!row.disabled || row.new_or_copy === '기등록'
+    || (row.new_or_copy === NOC_LAYER_DELETE && col === 'st')
+    || (!!row.loaded && (LOADED_LOCK_COLS as readonly string[]).includes(col));
   const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, handleJayerAfterPaste, isLayerCellLocked, (changes) => unmapIfMapped(changes.map((c) => c.rowId)));
   const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, handleOayerAfterPaste, isLayerCellLocked);
 
@@ -2983,6 +2988,44 @@ export default function RequestPage(): React.ReactElement {
 
   // ===== Validation =====
   /**
+   * Backbone 조합 영역(STEP1) 검증 — required 에 따라 판정 기준이 달라진다.
+   *  · required=true  : 모든 항목이 완전히(위치·제품·조리법) 입력돼야 한다. 불필요한 항목은 삭제하도록 유도.
+   *  · required=false : 빈 항목은 허용하고, 일부만 채운 항목만 막는다.
+   * 판정 자체는 helpers 의 순수 함수(findBbEntryViolations)가 하고, 여기서는 메시지만 붙인다.
+   */
+  const addBbEntryError = (
+    newErrors: Partial<Record<string, string>>,
+    errorMessages: string[],
+    required: boolean
+  ) => {
+    if (findBbEntryViolations(detail.bb_entries, required).length === 0) return;
+    const msg = t(required ? 'request.bb_entries_required' : 'request.bb_entries_partial');
+    newErrors['bb_entries'] = msg;
+    errorMessages.push(msg);
+  };
+
+  /**
+   * J/O-layer 표의 st·new_or_copy 공란 검증 — 활성 행은 두 값을 반드시 채워야 한다.
+   * 오류 셀은 차용 행 검증(jayer_noc_*)과 같은 방식으로 표 안에서 강조한다.
+   */
+  const addStNocError = (
+    newErrors: Partial<Record<string, string>>,
+    errorMessages: string[],
+    table: 'jayer' | 'oayer',
+    rows: { id: string; disabled: boolean; st: string; new_or_copy: string }[]
+  ) => {
+    const violations = findEmptyStNocViolations(rows);
+    if (violations.length === 0) return;
+    violations.forEach((id) => {
+      newErrors[`${table}_stnoc_${id}_st`] = t('request.stnoc_field_error');
+      newErrors[`${table}_stnoc_${id}_new_or_copy`] = t('request.stnoc_field_error');
+    });
+    const msg = t(`request.${table}_stnoc_required` as never, { count: violations.length }) as string;
+    newErrors[`${table}_stnoc_required`] = msg;
+    errorMessages.push(msg);
+  };
+
+  /**
    * BEFORE/AFTER 게이트 — AFTER 항목이 하나라도 짝 없이 남아 있으면 진행을 막는다.
    * (BEFORE 잔여는 허용한다. 임시저장은 이 검증을 타지 않는다)
    */
@@ -3025,7 +3068,8 @@ export default function RequestPage(): React.ReactElement {
     if (!detail.adi_cd_delete_all) checkSide('after', detail.adi_cd_after);
   };
 
-  const validate = (currentStep: number): { valid: boolean; errors: string[] } => {
+  // redirectStep: 오류를 고칠 수 있는 단계가 currentStep 이 아닐 때만 채워진다(현재는 Backbone 조합 영역 → STEP1).
+  const validate = (currentStep: number): { valid: boolean; errors: string[]; redirectStep?: number } => {
     const newErrors: Partial<Record<string, string>> = {};
     const errorMessages: string[] = [];
 
@@ -3043,18 +3087,11 @@ export default function RequestPage(): React.ReactElement {
         newErrors['partid_selection'] = t('request.partid_not_in_list');
         errorMessages.push(t('request.partid_not_in_list'));
       }
-      // Only MAP·ADI CD 단독 모드에서는 Backbone 조합 영역 필수 검증을 우회한다.
-      // (ADI CD 는 다른 기타 목적과 함께 고르면 isAdiCdOnly 가 false 가 되어 필수로 되돌아온다)
-      if (!isMapOnlyScope && !isAdiCdOnly) {
-        // 추가한 항목까지 모두 완전히(위치·제품·조리법) 입력돼야 진행 가능(R-17). 불필요하면 삭제하도록 유도.
-        const allFilled = detail.bb_entries.every(
-          (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
-        );
-        if (!allFilled) {
-          newErrors['bb_entries'] = t('request.required');
-          errorMessages.push('Backbone 조합 영역: 모든 항목을 입력하거나 불필요한 항목은 삭제하세요.');
-        }
-      }
+      // Backbone 조합 영역은 STEP1 에서 더 이상 무조건 필수가 아니다.
+      // 필수 여부는 J-layer 표(st 가 'O 계열'인 활성 행의 존재)가 정하며, 그 검증은 STEP3→4 에서 한다.
+      // 여기서는 '일부만 채운 항목'만 막는다 — 세 칸 중 일부만 채워진 항목은 어떤 경우에도 잘못된 값이다.
+      // (Only MAP·ADI CD 단독 모드용 우회 분기는 필요 없다. 그 문서들은 J-layer 에 O 행이 생기지 않는다.)
+      addBbEntryError(newErrors, errorMessages, requiresBbEntries(jayerRows));
       // 흐름도 Step(step_from/step_to)은 목록에 있는 값만 허용 (목록 밖 값이면 해당 필드를 표시하고 진행 차단)
       let flowStepInvalid = false;
       detail.flow_chart.forEach((row) => {
@@ -3236,6 +3273,7 @@ export default function RequestPage(): React.ReactElement {
     // "활성 + process_id 있는 J-layer 행은 Bb 매핑 필수" 규칙으로도 간접 검증된다.
 
     if (currentStep === 3) {
+      addStNocError(newErrors, errorMessages, 'jayer', jayerRows);
       const violations = findNocBorrowViolations(jayerRows);
       violations.forEach((id) => {
         newErrors[`jayer_noc_${id}_product_name`] = t('request.jayer_noc_field_error' as never);
@@ -3245,6 +3283,9 @@ export default function RequestPage(): React.ReactElement {
         newErrors['jayer_noc_required'] = t('request.jayer_noc_required' as never, { count: violations.length });
         errorMessages.push(t('request.jayer_noc_required' as never, { count: violations.length }) as string);
       }
+      // J-layer 에 st='O 계열' 활성 행이 있으면 Backbone 조합 영역(STEP1)이 필수가 된다.
+      // 여기서 처음 판정되므로, 막히면 goToStep 이 STEP1 로 되돌려 보낸다.
+      if (requiresBbEntries(jayerRows)) addBbEntryError(newErrors, errorMessages, true);
     }
 
     if (currentStep === 4 && !isMapOnlyScope && !isAdiCdOnly) {
@@ -3252,6 +3293,7 @@ export default function RequestPage(): React.ReactElement {
         newErrors['partial_shot'] = t('request.required');
         errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
       }
+      addStNocError(newErrors, errorMessages, 'oayer', oayerRows);
       const oViolations = findNocBorrowViolations(oayerRows);
       oViolations.forEach((id) => {
         newErrors[`oayer_noc_${id}_product_name`] = t('request.oayer_noc_field_error' as never);
@@ -3291,12 +3333,23 @@ export default function RequestPage(): React.ReactElement {
         errorMessages.push(t('request.oayer_noc_required' as never, { count: oViolations.length }) as string);
       }
       // 초안 복원 등으로 STEP 1 검증을 건너뛴 경우를 대비한 최종 안전망
+      addStNocError(newErrors, errorMessages, 'jayer', jayerRows);
+      addStNocError(newErrors, errorMessages, 'oayer', oayerRows);
+      addBbEntryError(newErrors, errorMessages, requiresBbEntries(jayerRows));
       addBaGateError(newErrors, errorMessages);
       addAdiCdGateError(newErrors, errorMessages);
     }
 
     setErrors(newErrors);
-    return { valid: Object.keys(newErrors).length === 0, errors: errorMessages };
+    // Backbone 조합 영역은 STEP1 에만 입력칸이 있다. 다른 단계에서 이 오류 하나로만 막혔다면
+    // 사용자가 고칠 수 있는 곳이 STEP1 뿐이므로 그리로 돌려보낸다(다른 오류가 섞여 있으면
+    // 그 오류는 현재 단계에서 고쳐야 하므로 이동하지 않는다).
+    const bbOnly = newErrors['bb_entries'] !== undefined && Object.keys(newErrors).length === 1;
+    return {
+      valid: Object.keys(newErrors).length === 0,
+      errors: errorMessages,
+      redirectStep: bbOnly && currentStep !== 1 ? 1 : undefined,
+    };
   };
 
   // ===== API =====
@@ -3467,9 +3520,10 @@ export default function RequestPage(): React.ReactElement {
       const result = validate(s);
       if (!result.valid) {
         result.errors.forEach(msg => addToast(msg, 'error'));
-        // 여러 단계를 건너뛰던 중이라면 처음 막힌 단계로 옮겨 오류 위치를 보여준다.
-        if (s !== step) setStep(s);
-        scrollToFirstError(s);
+        // Backbone 조합 영역만 막았다면 입력칸이 있는 STEP1 로 되돌려 보낸다(확인 모달 없이 즉시).
+        const errorStep = result.redirectStep ?? s;
+        if (errorStep !== step) setStep(errorStep);
+        scrollToFirstError(errorStep);
         return;
       }
       // 검증은 통과했으나 사용자 확인이 필요한 관문. 확인 후 원래 목적지까지 이어서 가야 하므로
@@ -3584,7 +3638,9 @@ export default function RequestPage(): React.ReactElement {
     const result = validate(5);
     if (!result.valid) {
       result.errors.forEach(msg => addToast(msg, 'error'));
-      scrollToFirstError();
+      // 상신에서도 Backbone 조합 영역만 막았다면 고칠 수 있는 STEP1 로 이동시킨다.
+      if (result.redirectStep) setStep(result.redirectStep);
+      scrollToFirstError(result.redirectStep ?? 5);
       return;
     }
     // peer review 모드가 아닐 때만 PL 목록 로드
@@ -3817,6 +3873,7 @@ export default function RequestPage(): React.ReactElement {
           detail={detail}
           errors={errors}
           isOnlyMap={isMapOnlyScope}
+          bbEntriesRequired={requiresBbEntries(jayerRows)}
           isLabProductAllowed={isOnlyMap}
           lineOptions={lineOptions}
           processOptions={processOptions}
