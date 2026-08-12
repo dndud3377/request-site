@@ -64,14 +64,33 @@ APScheduler 1분 주기 ─ process_mail_queue() ─ DXHUB API 발송  ← 안�
 
 | 이벤트 | 트리거 | 수신자 |
 |--------|--------|--------|
-| `voc_created` | POST /api/voc/ (신규 등록) | `VOC_MASTER_EMAIL` 고정 주소 |
-| `voc_comment` | POST /api/voc/{id}/comment/ | VOC 제출자(`submitter_email`) + 기존 댓글 작성자(`author_email`) - 본인 제외 |
+| `voc_created` | POST /api/voc/ (신규 등록) | **`role='MASTER'` 사용자 전원**의 `mail` |
+| `voc_comment` | POST /api/voc/{id}/comment/ | VOC 제출자 + 기존 답글 작성자(`author_email`) - 본인 제외 |
+
+> **2026-08 변경**: 등록 알림 수신자를 `VOC_MASTER_EMAIL` 고정 주소에서 MASTER 계정
+> 전원으로 바꿨다. MASTER 가 늘어나도 설정 변경 없이 반영된다.
+> 제출자 주소는 `submitter` FK 가 있으면 계정의 `mail` 을 우선한다
+> (`_voc_submitter_email`) — 프론트가 보낸 `submitter_email` 은 개발 모드에서
+> 실제 계정 정보와 다를 수 있다.
+
+#### 답글 알림은 두 통으로 나눠 보낸다
+
+제출자에게 가는 메일에만 **"답변이 만족스러우셨다면 답변 완료 처리 해주세요."**
+안내를 싣는다. 한 통에 여러 수신자를 담으면 본문을 개인화할 수 없으므로,
+`enqueue_voc_comment` 가 (제출자용, 그 외 참여자용) `MailNotification` 2건을 적재한다.
+
+A 가 등록 → B 가 답글 → C 가 답글:
+
+| 시점 | 제출자용 | 그 외 참여자용 |
+|------|---------|--------------|
+| A 등록 | — | MASTER 전원 (`voc_created`) |
+| B 답글 | A (완료 안내 **포함**) | 없음 |
+| C 답글 | A (완료 안내 **포함**) | B (안내 없음) |
 
 ### 2.2 환경 변수
 
-| 변수 | 의미 | 예시 |
-|------|------|------|
-| `VOC_MASTER_EMAIL` | VOC 등록 알림 고정 수신자 (쉼표로 여러 명 가능). 비우면 발송 안 함. | `master@company.com` |
+VOC 등록 알림은 더 이상 환경 변수를 쓰지 않는다(MASTER 역할로 판단).
+2026-08 이전에 쓰던 `VOC_MASTER_EMAIL` 설정은 제거했다.
 
 > `MAIL_REDIRECT_TO` 가 설정된 개발 환경에서는 VOC 알림도 동일하게 해당 주소로 강제 발송된다.
 
@@ -226,7 +245,12 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 - **생산 진행일**(`document.production_date`)과 **특이사항**(`document.reference_materials`, 상신 화면의 "특이사항" 입력값)은 값이 없으면 `-`로 표시한다.
 - 사용자 입력이 들어가는 값(제목·의뢰자·특이사항)은 전부 `django.utils.html.escape()`로 이스케이프한다.
 - Outlook 호환을 위해 `<table role="presentation">` 기반 레이아웃 + `bgcolor` 폴백 + `<!--[if mso]>` 조건부 주석을 사용한다(플렉스박스/그리드 미사용).
-- VOC 메일(`_build_voc_message`)은 이번 개편 범위에서 제외 — 기존 `<p>` 기반 포맷 유지.
+- VOC 메일도 2026-08 부터 같은 디자인 계열을 쓴다. 다만 `_render_hero_kpi_email` 은
+  의뢰서와 결재 경로 카드를 필수로 요구해 재사용할 수 없어, VOC 전용
+  `_render_voc_email` 을 따로 두고 `EVENT_THEME` 색상 테마만 공유한다
+  (`voc_created`=블루, `voc_comment`=퍼플). 카드 구성은 VOC 제목 → 2×2 정보 타일
+  (유형/관련 페이지/작성자/상태) → 내용 → (제출자에게만) 완료 처리 안내 → 상세 버튼.
+  VOC 내용은 RichTextEditor 가 만든 HTML 이라 `_html_to_text` 로 평문화한 뒤 escape 한다.
 
 ### 결재 경로 카드 (2026-07 추가)
 

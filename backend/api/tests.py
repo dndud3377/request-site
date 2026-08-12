@@ -4157,12 +4157,14 @@ class MailLineFilterTest(TestCase):
         self.assertIn('mlf_rej_on@company.com', recipients)
         self.assertNotIn('mlf_rej_off@company.com', recipients)
 
-    @override_settings(VOC_MASTER_EMAIL='mlf_j_off@company.com')
     def test_voc_mail_is_not_filtered(self):
-        """VOC 메일은 라인 개념이 없으므로 필터를 타지 않는다."""
-        self._make_j('mlf_j_off', [self.line3])
+        """VOC 등록 메일은 MASTER 전원에게 가며, 라인 개념이 없어 필터를 타지 않는다."""
+        master = UserProfile.objects.create(
+            loginid='mlf_master', mail='mlf_master@company.com', role='MASTER'
+        )
+        master.mail_lines.set([self.line3])  # 라인1을 껐지만 VOC 메일은 그대로 받는다
         self.assertEqual(
-            mailer._resolve_voc_master_recipients(), ['mlf_j_off@company.com']
+            mailer._resolve_voc_master_recipients(), ['mlf_master@company.com']
         )
 
     def test_shared_address_is_kept_when_someone_still_receives(self):

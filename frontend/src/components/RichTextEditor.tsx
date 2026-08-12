@@ -65,7 +65,12 @@ interface Props {
   placeholder?: string;
 }
 
-const EMOJI_LIST = ['✅','⚠️','📌','💡','🔍','📝','🚨','✨','👉','❌','🎯','📊','🔧','📋','👆','🔺','📎','💬'];
+// 에디터 본문 최소 높이(px). 높이를 직접 지정하지 않는 사용처(VOC 등록·공지 작성)의
+// 입력칸 크기를 결정한다. 자체 높이를 갖는 사용처(가이드=flex, MAP 변경 사유=고정 높이)는
+// 이 값보다 커서 영향을 받지 않는다.
+const EDITOR_MIN_HEIGHT = 240;
+
+const EMOJI_LIST =['✅','⚠️','📌','💡','🔍','📝','🚨','✨','👉','❌','🎯','📊','🔧','📋','👆','🔺','📎','💬'];
 
 // ===== 엑셀 색상 팔레트 =====
 
@@ -552,7 +557,7 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
         <EditorContent
           editor={editor}
           style={{
-            minHeight: 120,
+            minHeight: EDITOR_MIN_HEIGHT,
             padding: '12px 14px',
             fontSize: 14,
             lineHeight: 1.7,

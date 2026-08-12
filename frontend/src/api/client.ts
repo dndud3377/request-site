@@ -4,6 +4,7 @@ import {
   ReviewItem,
   VOC,
   VocComment,
+  UserRoleWithNull,
   Stats,
   Line,
   CreateDocumentInput,
@@ -609,10 +610,10 @@ const updateVocResponse = async (id: number, response: string) => {
 
 const addVocComment = async (id: number, comment: {
   author_name: string;
-  author_role: string;
+  // 로그인 직후 등 역할이 아직 정해지지 않은 상태(null)도 그대로 보낼 수 있어야 한다.
+  author_role: UserRoleWithNull;
   is_submitter: boolean;
   content: string;
-  is_reject_reason: boolean;
 }) => {
   const data = await post<VOC>(`/voc/${id}/comment/`, comment);
   return { data };

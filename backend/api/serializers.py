@@ -315,17 +315,24 @@ class ExternalRequestDocumentSerializer(DynamicFieldsSerializerMixin, serializer
 class VocCommentSerializer(serializers.ModelSerializer):
     class Meta:
         model = VocComment
-        fields = ['id', 'voc', 'author_name', 'author_role', 'author_email', 'is_submitter', 'content', 'is_reject_reason', 'created_at']
+        fields = ['id', 'voc', 'author_name', 'author_role', 'author_email', 'is_submitter', 'content', 'created_at']
         read_only_fields = ['id', 'created_at', 'author_email']
 
 
 class VOCSerializer(serializers.ModelSerializer):
     comments = VocCommentSerializer(many=True, read_only=True)
+    # 프론트는 이 값으로 "내 VOC" 를 판정한다 — id 가 아니라 loginid 로 비교해야
+    # 개발 모드의 목 사용자 id 와 DB id 가 어긋나도 판정이 어긋나지 않는다.
+    submitter_loginid = serializers.SerializerMethodField()
 
     class Meta:
         model = VOC
         fields = '__all__'
-        read_only_fields = ['created_at', 'responded_at', 'status']
+        # submitter 는 등록 시 서버가 request.user 로 확정한다(VOCViewSet.perform_create).
+        read_only_fields = ['created_at', 'responded_at', 'status', 'submitter']
+
+    def get_submitter_loginid(self, obj):
+        return obj.submitter.loginid if obj.submitter_id else ''
 
 
 class LineSerializer(serializers.ModelSerializer):

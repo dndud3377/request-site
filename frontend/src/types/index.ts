@@ -40,7 +40,8 @@ export type Status =
   | 'approved'
   | 'rejected';
 
-export type VocStatus = 'checking' | 'completed' | 'rejected';
+// VOC 는 결재가 아니므로 반려 개념이 없다 — 잘못 올린 글도 답변 완료로 마무리한다.
+export type VocStatus = 'checking' | 'completed';
 
 export type VocCategory = 'inquiry' | 'error_report' | 'feature_request' | 'task_request';
 
@@ -199,7 +200,6 @@ export interface VocComment {
   author_role: UserRole;
   is_submitter: boolean;
   content: string;
-  is_reject_reason: boolean;
   created_at: string;
 }
 
@@ -209,7 +209,13 @@ export interface VOC {
   category: VocCategory;
   submitter_name: string;
   submitter_email: string;
-  submitter_user_id?: number;
+  /** 제출자 계정 PK. 등록 시 서버가 확정하므로 응답 전용이다. */
+  submitter?: number | null;
+  /**
+   * 제출자 계정의 loginid. "내 VOC" 판정은 id 가 아니라 이 값으로 한다 —
+   * 개발 모드의 목 사용자 id 는 DB 의 실제 user.id 와 어긋날 수 있다.
+   */
+  submitter_loginid: string;
   content: string;
   page?: VocPage;
   comments: VocComment[];
@@ -217,11 +223,12 @@ export interface VOC {
   created_at: string;
 }
 
-export type CreateVocInput = Omit<VOC, 'id' | 'comments' | 'status' | 'created_at'>;
+export type CreateVocInput = Omit<
+  VOC, 'id' | 'comments' | 'status' | 'created_at' | 'submitter' | 'submitter_loginid'
+>;
 
 export type AddVocCommentInput = {
   content: string;
-  is_reject_reason?: boolean;
 };
 
 export interface Stats {
