@@ -9,7 +9,7 @@ import {
 } from '../../types';
 
 // ===== Option Constants =====
-export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'Only MAP', 'MAP 삭제/수정', '기타'] as const;
+export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'Only MAP', 'MAP 삭제', '기타'] as const;
 export const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5', 'nv'] as const;
 export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay 변경', 'ADI CD 변경', 'FirstA 변경', '연구소 제품'] as const;
 
@@ -27,9 +27,11 @@ export const MERGE_UNREGISTERED_ID = '__merge_unregistered__';
 // 'Only MAP' 요청 목적: StepMap 정보까지만 작성하고 결재 경로도 단축된다(backend RequestDocument.ONLY_MAP_PURPOSE 와 동일 값).
 export const ONLY_MAP_PURPOSE = 'Only MAP';
 
-// 'MAP 삭제/수정' 요청 목적: Only MAP 과 동일하게 MAP 정보만 작성하되,
-// StepMap 에서 '수정'/'삭제' 중 하나를 고르고 그 이유만 입력한다(나머지 MAP 항목은 숨김).
-export const MAP_DELETE_EDIT_PURPOSE = 'MAP 삭제/수정';
+// 'MAP 삭제' 요청 목적: Only MAP 과 동일하게 MAP 정보만 작성하되,
+// StepMap 에서 map_type 이 '삭제'로 자동 고정되고 그 이유만 입력한다(나머지 MAP 항목은 숨김).
+// (2026-08) 예전에는 '수정'/'삭제' 를 고르는 'MAP 삭제' 이었다. '수정'을 없애면서
+// 저장값도 'MAP 삭제' 로 바꿨다 — 백엔드 RequestDocument.MAP_DELETE_EDIT_PURPOSE 와 같은 값이어야 한다.
+export const MAP_DELETE_EDIT_PURPOSE = 'MAP 삭제';
 
 // '기타 목적 > 연구소 제품': Only MAP 일 때만 선택 가능하며, 선택 시 상신에 후결자 지정이 필수가 된다
 // (C가문 only_prodc='Yes' 와 동일한 기존 후결자 기능을 그대로 쓴다 — 결재 경로는 바뀌지 않는다).
@@ -39,17 +41,17 @@ export const OTHER_PURPOSE_LAB = '연구소 제품';
 // (backend RequestDocument.OTHER_PURPOSE_OVERLAY / skip_j_stage 와 동일 값·기준).
 export const OTHER_PURPOSE_OVERLAY = 'Overlay 변경';
 
-// MAP 삭제/수정 전용 map_type 값. 한글 그대로 저장한다 — 다른 요청 목적 값들(신규/차용/기타 등)과
+// MAP 삭제 전용 map_type 값. 한글 그대로 저장한다 — 다른 요청 목적 값들(신규/차용/기타 등)과
 // 동일한 관례이고, 문서 제목(`MAP(${map_type})`)·상세 Chip 처럼 i18n 을 거치지 않고 원문이 그대로
-// 노출되는 지점에서도 "수정"/"삭제" 로 보이게 하기 위함이다.
+// 노출되는 지점에서도 "삭제" 로 보이게 하기 위함이다.
 // ⚠️ 과거 '완성된 MAP 변경' 기능이 쓰다 2026-08-05 에 삭제된 'EDIT' 는 재사용하지 않는다
 //    (그때 저장된 레거시 문서와 구분되지 않는다).
-export const MAP_TYPE_EDIT_REQ = '수정';
+// (2026-08) 짝이었던 '수정'(MAP_TYPE_EDIT_REQ)은 요청 목적에서 '수정'이 빠지면서 함께 삭제됐다.
 export const MAP_TYPE_DELETE_REQ = '삭제';
 
-/** map_type 이 MAP 삭제/수정 전용 값인가 */
+/** map_type 이 MAP 삭제 전용 값인가 */
 export const isMapDeleteEditType = (mapType?: string): boolean =>
-  mapType === MAP_TYPE_EDIT_REQ || mapType === MAP_TYPE_DELETE_REQ;
+  mapType === MAP_TYPE_DELETE_REQ;
 
 // '기타 목적 > ADI CD 변경': 특정 제품 ADI CD 스텝 개수 증감/전체삭제 요청. 진입 시 map_type 을 이 값으로 고정한다.
 export const OTHER_PURPOSE_ADI_CD = 'ADI CD 변경';
@@ -221,7 +223,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   map_value_x: '',
   map_value_y: '',
   map_reason: '',
-  // MAP 삭제/수정 전용 이유(RichTextEditor 의 HTML). 수정↔삭제 전환 시에도 값은 유지되고 라벨만 바뀐다.
+  // MAP 삭제 전용 이유(RichTextEditor 의 HTML). 수정↔삭제 전환 시에도 값은 유지되고 라벨만 바뀐다.
   // ⚠️ C가문 지도편차 사유인 위 map_reason 과는 완전히 다른 필드다.
   map_change_reason: '',
   map_change_top: '변경 있음',

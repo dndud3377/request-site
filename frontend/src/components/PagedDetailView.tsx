@@ -1226,13 +1226,13 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {/* MAP 삭제/수정 이유 — 작성 화면과 동일하게 이 모드에서는 이것만 있으면 된다.
-              수정/삭제 어느 쪽이든 상세에서는 라벨을 'MAP 수정 이유' 하나로 통일한다(요청 반영).
+          {/* MAP 삭제 이유 — 작성 화면과 동일하게 이 모드에서는 이것만 있으면 된다.
+              (2026-08) '수정'이 없어지면서 라벨도 작성 화면과 같은 'MAP 삭제 이유' 하나가 됐다.
               본문은 RichTextEditor 가 만든 HTML 이라 공지·가이드·VOC 와 같은 방식으로 렌더한다. */}
           {isMapDeleteEditType(detail.map_type) && (
             <div style={{ marginTop: 10 }}>
               <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 6 }}>
-                {t('request.map_change_reason_edit')}
+                {t('request.map_change_reason_delete')}
               </div>
               {detail.map_change_reason ? (
                 <div
@@ -1249,7 +1249,7 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {/* MAP 삭제/수정 모드는 이 아래 항목들을 작성 화면에서부터 숨긴다 — 저장된 값은
+          {/* MAP 삭제 모드는 이 아래 항목들을 작성 화면에서부터 숨긴다 — 저장된 값은
               INITIAL_DETAIL 기본값('변경 없음'/'No'/'없음' 등)일 뿐이라 상세에서도 함께 숨긴다. */}
           {!isMapDeleteEditType(detail.map_type) && (isR || isO || isJ || isP) && (detail.map_change || (detail as any).map_change_top || detail.ea_change) && (
             <div style={rowStyle}>
@@ -1768,16 +1768,16 @@ type Page = { label: string; content: React.ReactNode };
     } catch { return false; }
   })();
 
-  // MAP 삭제/수정: P·R·J·O 병렬 경로라 E·RA 는 아예 만들지 않는다(고정 후결자도 없다).
+  // MAP 삭제: P·R·J·O 병렬 경로라 E·RA 는 아예 만들지 않는다(고정 후결자도 없다).
   const isMapDeleteEdit = (() => {
     try {
       const parsed = JSON.parse(doc.additional_notes ?? '{}');
-      return parsed?.detail?.request_purpose === 'MAP 삭제/수정';
+      return parsed?.detail?.request_purpose === 'MAP 삭제';
     } catch { return false; }
   })();
 
   // 기타 목적이 'Overlay 변경' 하나뿐이면 결재 경로에서 J 를 뺀다(백엔드 skip_j_stage 와 동일 기준).
-  // 'MAP 삭제/수정' 은 J 가 병렬 묶음의 구성원이라 제외 대상이 아니다.
+  // 'MAP 삭제' 은 J 가 병렬 묶음의 구성원이라 제외 대상이 아니다.
   const skipJStage = (() => {
     if (isMapDeleteEdit) return false;
     try {
@@ -1873,7 +1873,7 @@ type Page = { label: string; content: React.ReactNode };
     if (isOnlyMap && ['P', 'J', 'O', 'E'].includes(agent)) {
       return [{ status: 'na', label: t('approval.step_na') }];
     }
-    // MAP 삭제/수정은 RA(후결자)를 아예 만들지 않는다 — 없이도 fallback 을 타면
+    // MAP 삭제은 RA(후결자)를 아예 만들지 않는다 — 없이도 fallback 을 타면
     // '대기'로 보여 영원히 끝나지 않는 단계처럼 오해를 준다(E 처럼 명시적 na 분기 필요).
     if (isMapDeleteEdit && agent === 'RA') {
       return [{ status: 'na', label: t('approval.step_na') }];

@@ -34,10 +34,10 @@ const makeDoc = (steps: ApprovalStepFrontend[]): RequestDocument => ({
   approval_steps: steps,
 });
 
-// MAP 삭제/수정 문서 — request_purpose 를 additional_notes 에 심어야 isMapDeleteEditDoc 이 인식한다.
+// MAP 삭제 문서 — request_purpose 를 additional_notes 에 심어야 isMapDeleteEditDoc 이 인식한다.
 const makeMdeDoc = (steps: ApprovalStepFrontend[]): RequestDocument => ({
   ...makeDoc(steps),
-  additional_notes: JSON.stringify({ detail: { request_purpose: 'MAP 삭제/수정' } }),
+  additional_notes: JSON.stringify({ detail: { request_purpose: 'MAP 삭제' } }),
 });
 
 /** 그리드 한 행을 꺼낸다(병렬 단계 문서는 항상 1행). */
@@ -237,7 +237,7 @@ describe('getDocTableRows — 검토자 단계에서도 단계명이 유지된�
   });
 });
 
-describe('getDocTableRows — MAP 삭제/수정: 고정 후결자 자리에 RFG', () => {
+describe('getDocTableRows — MAP 삭제: 고정 후결자 자리에 RFG', () => {
   const mde = (steps: ApprovalStepFrontend[]) => makeMdeDoc([
     makeStep({ agent: 'P', action: 'pending' }),
     makeStep({ agent: 'J', action: 'pending' }),
@@ -363,7 +363,7 @@ describe('getFinalCompletionDate — 단계별 기한 표시는 없어졌지만 
     expect(getFinalCompletionDate(doc)).toBe('2026. 8. 20.');
   });
 
-  it('MAP 삭제/수정: R 이 가장 늦은 기한이면 그 날짜가 최종 완료예정일이 된다', () => {
+  it('MAP 삭제: R 이 가장 늦은 기한이면 그 날짜가 최종 완료예정일이 된다', () => {
     const doc = makeMdeDoc([
       makeStep({ agent: 'R', action: 'pending', due_date: '2026-09-01' }),
       makeStep({ agent: 'P', action: 'approved', due_date: '2026-08-12' }),

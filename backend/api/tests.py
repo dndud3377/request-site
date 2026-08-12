@@ -696,13 +696,13 @@ class RouteCardTest(TestCase):
         self.assertEqual(by_name['이순신'], mailer.POST_APPROVER_EXTRA_LABEL)
 
     def test_map_delete_edit_marks_absent_stages_as_na(self):
-        """MAP 삭제/수정 은 E·후결자를 만들지 않는다 — 행을 지우지 않고 해당없음으로 남긴다."""
+        """MAP 삭제 은 E·후결자를 만들지 않는다 — 행을 지우지 않고 해당없음으로 남긴다."""
         import json
         doc = RequestDocument.objects.create(
             title='mde', requester=self.requester, requester_name='요청자',
             requester_email='req@c.com', requester_department='dept', product_name='PROD-1',
             additional_notes=json.dumps(
-                {'detail': {'request_purpose': 'MAP 삭제/수정'}, 'jayerRows': []}
+                {'detail': {'request_purpose': 'MAP 삭제'}, 'jayerRows': []}
             ),
         )
         ApprovalStep.objects.create(document=doc, agent='R', round=1, action='pending')
@@ -2061,7 +2061,7 @@ class PEStageReviewerFlowTest(TestCase):
 
 @override_settings(POST_APPROVER_LOGINID='fixedpa')
 class MapDeleteEditRouteTest(TestCase):
-    """'MAP 삭제/수정' 전용 결재 경로 — PL 합의 후 P·R·J·O 병렬, E·RA 미생성.
+    """'MAP 삭제' 전용 결재 경로 — PL 합의 후 P·R·J·O 병렬, E·RA 미생성.
 
     기존 일반 경로/Only MAP 경로는 건드리지 않고 새 분기만 탄다는 것을 함께 확인한다.
     """
@@ -2131,7 +2131,7 @@ class MapDeleteEditRouteTest(TestCase):
         """E(MASK)와 후결자(RA)는 생성하지 않는다 — 고정 후결자도 붙지 않는다."""
         doc = self._submit_and_pl_approve(self._make_doc(jayer_rows=[{'pp': 'PLEL'}]))
         self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='E', round=1).exists(),
-                         'plel 이 있어도 MAP 삭제/수정 경로에는 E 를 만들지 않는다')
+                         'plel 이 있어도 MAP 삭제 경로에는 E 를 만들지 않는다')
         self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='RA', round=1).exists(),
                          '고정 후결자가 설정돼 있어도 RA 를 만들지 않는다')
 
@@ -3530,7 +3530,7 @@ class ReviewItemSyncTest(TestCase):
     - 삭제 전파는 이미 확인한 검토자가 있는 문서를 건너뛴다.
     - 재상신하면 항목·검토자는 남고 확인 상태만 초기화되며, 새 J 단계에서 마스터를 따라잡는다.
 
-    결재 경로는 'MAP 삭제/수정'(PL 합의 직후 P·R·J·O 병렬 생성)을 쓴다 — J 단계에
+    결재 경로는 'MAP 삭제'(PL 합의 직후 P·R·J·O 병렬 생성)을 쓴다 — J 단계에
     가장 짧게 도달하는 실제 경로다.
     """
 
@@ -3549,7 +3549,7 @@ class ReviewItemSyncTest(TestCase):
 
     # ----- 흐름 헬퍼 -----
     def _doc_at_j(self, title='ri'):
-        """'MAP 삭제/수정' 문서를 만들어 상신 → PL 합의까지 진행(= J 단계 pending 생성)."""
+        """'MAP 삭제' 문서를 만들어 상신 → PL 합의까지 진행(= J 단계 pending 생성)."""
         doc = RequestDocument.objects.create(
             title=title, requester=self.requester, requester_name='요청자',
             requester_email='rireq@c.com', requester_department='dept',

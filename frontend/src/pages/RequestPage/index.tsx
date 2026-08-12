@@ -50,7 +50,7 @@ import {
   ONLY_MAP_PURPOSE,
   MAP_DELETE_EDIT_PURPOSE,
   OTHER_PURPOSE_LAB,
-  MAP_TYPE_EDIT_REQ,
+  MAP_TYPE_DELETE_REQ,
   isMapDeleteEditType,
   PRODC_SCOPE_OPTIONS,
   inferProdcScope,
@@ -274,7 +274,7 @@ export default function RequestPage(): React.ReactElement {
   };
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [mapTypeChangeConfirm, setMapTypeChangeConfirm] = useState<{ targetType: string } | null>(null);
-  // Only MAP / MAP 삭제/수정 진입·이탈 확인 모달 — 전환 대상 목적을 함께 들고 있는다.
+  // Only MAP / MAP 삭제 진입·이탈 확인 모달 — 전환 대상 목적을 함께 들고 있는다.
   const [onlyMapConfirm, setOnlyMapConfirm] = useState<{ targetPurpose: string } | null>(null);
   // ADI CD 변경(기타 목적) — 변경전/변경후 스텝 표
   const [adiCdLeaveConfirm, setAdiCdLeaveConfirm] = useState(false); // 해제 시 표에 값이 있으면 초기화 확인
@@ -833,7 +833,7 @@ export default function RequestPage(): React.ReactElement {
             // prodc_scope 도입 전 문서는 값이 없다 → 저장된 리전 값으로 역추론해 백필한다.
             // (백필하지 않으면 '미선택' 게이트에 걸려 기존 C가문 문서의 입력이 잠겨 보인다)
             prodc_scope: parsed.detail.prodc_scope || inferProdcScope(parsed.detail),
-            // MAP 삭제/수정 도입 전 문서는 값이 없다 → 빈 문자열 백필(undefined 면 RichTextEditor 가 깨진다).
+            // MAP 삭제 도입 전 문서는 값이 없다 → 빈 문자열 백필(undefined 면 RichTextEditor 가 깨진다).
             map_change_reason: parsed.detail.map_change_reason ?? '',
           });
           // 불러온 문서의 값은 이미 확정된 판단이므로 자동 갱신으로 덮어쓰지 않는다.
@@ -1345,7 +1345,7 @@ export default function RequestPage(): React.ReactElement {
   // Derived booleans for Step 1 conditional rendering
   const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
   const isOnlyMap = detail.request_purpose === ONLY_MAP_PURPOSE;
-  // 'MAP 삭제/수정': Only MAP 과 동일하게 MAP 정보만 작성한다(J/O/Backbone 비움 + Step1 부가항목 잠금).
+  // 'MAP 삭제': Only MAP 과 동일하게 MAP 정보만 작성한다(J/O/Backbone 비움 + Step1 부가항목 잠금).
   const isMapDeleteEdit = detail.request_purpose === MAP_DELETE_EDIT_PURPOSE;
   // Step1 부가 입력(기타 목적·흐름도·Backbone·참조 요청서) 잠금 + STEP3~5 비움 대상 목적.
   const isMapOnlyScope = isOnlyMap || isMapDeleteEdit;
@@ -1430,7 +1430,7 @@ export default function RequestPage(): React.ReactElement {
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
   };
 
-  /** 'Only MAP'/'MAP 삭제/수정' 전환 시 지워질 값이 하나라도 있는가 (확인 모달 노출 판정) */
+  /** 'Only MAP'/'MAP 삭제' 전환 시 지워질 값이 하나라도 있는가 (확인 모달 노출 판정) */
   const mapOnlyScopeHasData = (): boolean =>
     detail.other_purpose.length > 0 ||
     !!detail.change_purpose_note?.trim() ||
@@ -1441,7 +1441,7 @@ export default function RequestPage(): React.ReactElement {
 
   const handleRequestPurposeSelect = (val: string) => {
     if (val === detail.request_purpose) return;
-    // Only MAP / MAP 삭제/수정 로 바꾸면 Step1 부가항목과 J/O/Bb 가 초기화되므로 확인을 받는다.
+    // Only MAP / MAP 삭제 로 바꾸면 Step1 부가항목과 J/O/Bb 가 초기화되므로 확인을 받는다.
     // (지울 값이 아예 없으면 모달 없이 바로 적용 — 기존 Only MAP 동작과 동일한 판단)
     if (val === ONLY_MAP_PURPOSE || val === MAP_DELETE_EDIT_PURPOSE) {
       if (detail.request_purpose && mapOnlyScopeHasData()) {
@@ -1460,7 +1460,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   /**
-   * 'Only MAP'/'MAP 삭제/수정' 적용 → 라인/조합법/제품/조리법/고객/요구사항/생산일을 제외한 Step1 항목 초기화.
+   * 'Only MAP'/'MAP 삭제' 적용 → 라인/조합법/제품/조리법/고객/요구사항/생산일을 제외한 Step1 항목 초기화.
    * 두 목적 모두 StepMap 정보까지만 작성하므로 초기화 범위가 같다.
    */
   const applyMapOnlyScope = (purpose: string) => {
@@ -1475,10 +1475,10 @@ export default function RequestPage(): React.ReactElement {
       partial_shot: INITIAL_DETAIL.partial_shot,
       tbvtlv_thickness: INITIAL_DETAIL.tbvtlv_thickness,
       tbvtlv_entries: [],
-      // MAP 삭제/수정 은 '수정'/'삭제' 중 하나를 StepMap 에서 직접 골라야 하므로 map_type 을 비운다
-      // (후보가 2개라 ADI 처럼 자동 고정할 수 없다). Only MAP 은 기존대로 손대지 않는다.
+      // MAP 삭제 는 후보가 '삭제' 하나뿐이라 ADI CD 변경 과 동일하게 자동 고정한다(2026-08).
+      // 이유는 새로 입력해야 하므로 비운다. Only MAP 은 기존대로 손대지 않는다.
       ...(purpose === MAP_DELETE_EDIT_PURPOSE
-        ? { map_type: INITIAL_DETAIL.map_type, map_change_reason: INITIAL_DETAIL.map_change_reason }
+        ? { map_type: MAP_TYPE_DELETE_REQ, map_change_reason: INITIAL_DETAIL.map_change_reason }
         : {}),
     }));
     setRefDocId(null);
@@ -1501,7 +1501,7 @@ export default function RequestPage(): React.ReactElement {
     setErrors((prev) => ({ ...prev, request_purpose: '', bb_entries: '' }));
   };
 
-  /** Only MAP/MAP 삭제/수정 에서 벗어날 때 — 전용 값('연구소 제품'·후결자)만 정리한다 */
+  /** Only MAP/MAP 삭제 에서 벗어날 때 — 전용 값('연구소 제품'·후결자)만 정리한다 */
   const applyLeaveMapOnlyScope = (purpose: string) => {
     setDetail((prev) => ({
       ...prev,
@@ -1515,7 +1515,7 @@ export default function RequestPage(): React.ReactElement {
   const handleOnlyMapConfirm = () => {
     if (!onlyMapConfirm) return;
     const target = onlyMapConfirm.targetPurpose;
-    // 진입(Only MAP·MAP 삭제/수정)이면 전체 초기화, 이탈이면 전용 값만 정리한다.
+    // 진입(Only MAP·MAP 삭제)이면 전체 초기화, 이탈이면 전용 값만 정리한다.
     if (target === ONLY_MAP_PURPOSE || target === MAP_DELETE_EDIT_PURPOSE) applyMapOnlyScope(target);
     else applyLeaveMapOnlyScope(target);
     setOnlyMapConfirm(null);
@@ -3062,7 +3062,7 @@ export default function RequestPage(): React.ReactElement {
         newErrors['map_type'] = t('request.required');
         errorMessages.push('MAP 요청 목적: 필수 입력 항목입니다.');
       }
-      // MAP 삭제/수정('수정'·'삭제')은 이유 입력칸 하나만 화면에 남는다.
+      // MAP 삭제('수정'·'삭제')은 이유 입력칸 하나만 화면에 남는다.
       // 나머지 MAP 블록은 렌더 자체를 하지 않으므로 검증도 전부 건너뛴다
       // — '숨김 = 검증 제외'를 여기서 명시적으로 끊어 두지 않으면, 나중에 INITIAL_DETAIL
       //   기본값이 바뀔 때 화면에 없는 항목 때문에 진행이 막히는 버그가 생긴다.
@@ -3075,11 +3075,7 @@ export default function RequestPage(): React.ReactElement {
         const hasImage = /<img\b/i.test(detail.map_change_reason || '');
         if (!reasonText && !hasImage) {
           newErrors['map_change_reason'] = t('request.required');
-          errorMessages.push(
-            detail.map_type === MAP_TYPE_EDIT_REQ
-              ? 'MAP 수정 이유: 필수 입력 항목입니다.'
-              : 'MAP 삭제 이유: 필수 입력 항목입니다.'
-          );
+          errorMessages.push('MAP 삭제 이유: 필수 입력 항목입니다.');
         }
         // 정식 종료와 동일한 판정 기준(newErrors 기준)을 쓴다.
         setErrors(newErrors);

@@ -788,7 +788,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 나머지를 자동 'skip' 처리하던 동작을 없앴다. 남은 검토자는 pending 상태로 남아
         # 각자 직접 합의해야 한다. 'skip' 값 자체는 그 이전(OR 시절) 문서의 이력으로만 남는다.
 
-        # 'MAP 삭제/수정' 은 P·R·J·O 가 모두 병렬 구성원이라, 넷 중 무엇이 마지막이 되든
+        # 'MAP 삭제' 은 P·R·J·O 가 모두 병렬 구성원이라, 넷 중 무엇이 마지막이 되든
         # 여기서 최종 승인을 판정해야 한다. 아래 일반 경로 분기는 P·R 합의로는 승인 판정을
         # 하지 않으므로(P 는 J 생성만 함), 이 분기가 없으면 네 단계가 다 합의돼도 문서가 멈춘다.
         if document.is_map_delete_edit():
@@ -1405,7 +1405,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         mailer.enqueue_notify_p_completed(document)
 
     def _create_map_delete_edit_parallel(self, document, round_no):
-        """'MAP 삭제/수정': PL 합의 직후 P·R·J·O 를 병렬로 생성한다.
+        """'MAP 삭제': PL 합의 직후 P·R·J·O 를 병렬로 생성한다.
 
         기존 일반 경로와 다른 점 — 기존 코드는 건드리지 않고 이 분기만 새로 탄다.
         - R 이 병렬을 여는 관문이 아니라 병렬 구성원 중 하나다.
@@ -1432,7 +1432,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 병렬이라 TE_J 가 위 stage_arrival(J) 결재 요청 메일을 이미 받는다(일반 경로와 동일).
 
     def _map_delete_edit_all_approved(self, document, round_no):
-        """'MAP 삭제/수정' 최종 승인 판정 — P·R·J·O 네 단계가 모두 완료됐는가.
+        """'MAP 삭제' 최종 승인 판정 — P·R·J·O 네 단계가 모두 완료됐는가.
 
         각 단계는 담당자 + 지정된 검토자(PV/RV) 전원 합의로 완료된다
         (검토자가 없으면 담당자 합의만으로 완료 — _stage_reviewers_complete 와 동일 규칙).
@@ -1551,7 +1551,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             step.save()
 
             if self._all_pl_approved(document, step.round):
-                # 'MAP 삭제/수정' 은 R 이 관문이 아니라 병렬 구성원이므로 여기서 4단계를 한 번에 만든다.
+                # 'MAP 삭제' 은 R 이 관문이 아니라 병렬 구성원이므로 여기서 4단계를 한 번에 만든다.
                 if document.is_map_delete_edit():
                     self._create_map_delete_edit_parallel(document, step.round)
                     return True

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import RichTextEditor from '../../../components/RichTextEditor';
 import { DetailFormState, GuideFeatureKey } from '../../../types';
-import { CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_EDIT_REQ, MAP_TYPE_DELETE_REQ } from '../constants';
+import { CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ, ADI_CD_MAP_TYPE } from '../constants';
 import { sanitizeSignedDecimal } from '../helpers';
 import ProdcRow from './ProdcRow';
 import MshotImageUpload from './MshotImageUpload';
@@ -16,7 +16,7 @@ const REASON_EDITOR_HEIGHT = 640;
 interface StepMapProps {
   detail: DetailFormState;
   errors: Partial<Record<string, string>>;
-  /** 요청 목적이 'MAP 삭제/수정' 인가 — 수정/삭제 버튼을 열고 나머지 4개를 잠근다 */
+  /** 요청 목적이 'MAP 삭제' 인가 — '삭제' 버튼만 열고 나머지 3개를 잠근다 */
   isMapDeleteEdit: boolean;
   /** map_type 이 '수정'/'삭제' 인가 — 이유 입력칸만 남기고 하위 MAP 블록을 전부 숨긴다 */
   isMapReasonMode: boolean;
@@ -148,17 +148,13 @@ const StepMap: React.FC<StepMapProps> = ({
               { val: 'NEW', labelKey: 'map_type_new' },
               { val: 'CLONE', labelKey: 'map_type_borrow' },
               { val: 'EXISTING', labelKey: 'map_type_registered' },
-              { val: 'ADI', labelKey: 'map_type_adi' },
-              { val: MAP_TYPE_EDIT_REQ, labelKey: 'map_type_edit_req' },
               { val: MAP_TYPE_DELETE_REQ, labelKey: 'map_type_delete_req' },
             ] as const).map(({ val, labelKey }) => {
-              // 수정/삭제는 요청 목적 'MAP 삭제/수정' 전용 — 그 목적일 때만 열리고, 반대로 나머지 4개는 잠긴다.
-              const isReasonBtn = val === MAP_TYPE_EDIT_REQ || val === MAP_TYPE_DELETE_REQ;
-              // ADI 는 기타 목적 'ADI CD 변경' 전용 값 — Step1 버튼이 자동 고정하므로 항상 잠금(표시 전용).
-              // ADI 로 고정돼 있는 동안은 나머지도 전부 잠가 이탈을 막는다.
-              const disabled = isMapDeleteEdit
-                ? !isReasonBtn
-                : isReasonBtn || val === 'ADI' || detail.map_type === 'ADI';
+              // 삭제는 요청 목적 'MAP 삭제' 전용 — 그 목적일 때만 열리고, 반대로 나머지 3개는 잠긴다.
+              const isReasonBtn = val === MAP_TYPE_DELETE_REQ;
+              // (2026-08) ADI 버튼은 목록에서 제거했다. 기타 목적 'ADI CD 변경' 이 map_type 을
+              // 'ADI' 로 자동 고정하는 동작은 그대로이고, 그동안은 아래 안내 문구만 보인다.
+              const disabled = isMapDeleteEdit ? !isReasonBtn : isReasonBtn || detail.map_type === ADI_CD_MAP_TYPE;
               return (
                 <button
                   key={val}
@@ -172,17 +168,20 @@ const StepMap: React.FC<StepMapProps> = ({
               );
             })}
           </div>
+          {/* ADI 는 기타 목적 'ADI CD 변경' 이 자동 고정하는 값이라 고를 버튼이 없다 — 상태만 알린다. */}
+          {detail.map_type === ADI_CD_MAP_TYPE && (
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '6px 0 0' }}>
+              {t('request.map_type_adi_fixed')}
+            </p>
+          )}
           {errors.map_type && <span className="form-error">{errors.map_type}</span>}
         </div>
 
-        {/* 수정/삭제 이유 — MAP 삭제/수정 전용. 이 모드에서는 아래 MAP 블록을 전부 숨기고 이 칸만 남긴다. */}
+        {/* 삭제 이유 — MAP 삭제 전용. 이 모드에서는 아래 MAP 블록을 전부 숨기고 이 칸만 남긴다. */}
         {isMapReasonMode && (
           <div className="full-width">
             <label className="form-label">
-              {detail.map_type === MAP_TYPE_EDIT_REQ
-                ? t('request.map_change_reason_edit')
-                : t('request.map_change_reason_delete')}{' '}
-              <span className="required">*</span>
+              {t('request.map_change_reason_delete')} <span className="required">*</span>
             </label>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 6px' }}>
               {t('request.map_change_reason_help')}
@@ -199,7 +198,7 @@ const StepMap: React.FC<StepMapProps> = ({
           </div>
         )}
 
-        {/* ▼▼ 아래는 모두 MAP 삭제/수정('수정'·'삭제')에서 렌더하지 않는다 —
+        {/* ▼▼ 아래는 모두 MAP 삭제('삭제')에서 렌더하지 않는다 —
                이유 입력칸 하나만 남기는 것이 이 모드의 요구사항이다.
                validate(2) 도 같은 조건으로 이 항목들의 검증을 건너뛴다(짝을 맞춰야 함). ▼▼ */}
         {!isMapReasonMode && (<>

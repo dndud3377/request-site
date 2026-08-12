@@ -4,7 +4,7 @@ import { RequestDocument, ApprovalStepFrontend } from '../types';
 import { formatDate } from './date';
 import { MAP_DELETE_EDIT_PURPOSE } from '../pages/RequestPage/constants';
 
-/** 요청 목적이 'MAP 삭제/수정' 인가 — PagedDetailView 의 isOnlyMap/isMapDeleteEdit 과 동일한 판정 방식 */
+/** 요청 목적이 'MAP 삭제' 인가 — PagedDetailView 의 isOnlyMap/isMapDeleteEdit 과 동일한 판정 방식 */
 const isMapDeleteEditDoc = (doc: RequestDocument): boolean => {
   try {
     const parsed = JSON.parse(doc.additional_notes ?? '{}');
@@ -70,7 +70,7 @@ export const getFinalCompletionDate = (doc: RequestDocument): string => {
   const oStep = currentSteps.find(s => s.agent === 'O');
   const eStep = currentSteps.find(s => s.agent === 'E');
   const raSteps = currentSteps.filter(s => s.agent === 'RA');
-  // MAP 삭제/수정 경로에서는 R 이 관문이 아니라 병렬 구성원이라 P/O 와 동시에 아직 pending 일 수 있다.
+  // MAP 삭제 경로에서는 R 이 관문이 아니라 병렬 구성원이라 P/O 와 동시에 아직 pending 일 수 있다.
   // 기존 경로(일반·Only MAP)는 R 합의가 끝나야만 parallelPresent 가 되므로 이 값은 항상 없다(영향 없음).
   const rStep = currentSteps.find(s => s.agent === 'R');
   const rvStep = currentSteps.find(s => s.agent === 'RV');
@@ -100,7 +100,7 @@ export const getFinalCompletionDate = (doc: RequestDocument): string => {
  * '현재 단계' 칸 안에 3행 2열 고정 그리드를 그린다.
  *
  *   1열            2열
- *   PHPSI(P)       후결자(고정 RA)   ← MAP 삭제/수정 은 이 자리에 RFG(R)
+ *   PHPSI(P)       후결자(고정 RA)   ← MAP 삭제 은 이 자리에 RFG(R)
  *   JOB(J)         MASK(E)
  *   OVL(O)         추가후결자(RA)
  *
@@ -183,7 +183,7 @@ interface CellSpec {
   /**
    * 담당자 합의 후 검토자가 남았을 때 어느 이름을 쓸지.
    * 'reviewer'(기본) = 미합의 검토자 이름으로 교체 / 'main' = 담당자 이름 고정
-   * MAP 삭제/수정 의 RFG 칸만 'main' 이다.
+   * MAP 삭제 의 RFG 칸만 'main' 이다.
    */
   nameSource?: 'reviewer' | 'main';
 }
@@ -250,7 +250,7 @@ const buildParallelGrid = (
       slot: 'P', label: t('approval.agent_P' as any),
       main: of('P'), reviewers: of('PV'), showName: true,
     },
-    // MAP 삭제/수정 은 후결자를 아예 만들지 않는 유일한 경로다. 대신 이 경로에서만 R 이
+    // MAP 삭제 은 후결자를 아예 만들지 않는 유일한 경로다. 대신 이 경로에서만 R 이
     // 관문이 아니라 P·J·O 와 동시에 도는 병렬 구성원이라, 비는 이 자리에 RFG 를 넣는다.
     RA_FIXED: isMde
       ? {
@@ -286,7 +286,7 @@ const toPausedGrid = (cells: StageCell[]): StageCell[] =>
 export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
   const maxRound = getCurrentRound(doc);
   const currentSteps = (doc.approval_steps ?? []).filter(s => (s.round ?? 1) === maxRound);
-  // 병렬 단계(P/O/E/RA) 시작 여부. MAP 삭제/수정 도 P·O 가 함께 생기므로 이 판정에 걸린다.
+  // 병렬 단계(P/O/E/RA) 시작 여부. MAP 삭제 도 P·O 가 함께 생기므로 이 판정에 걸린다.
   const parallelPresent = currentSteps.some(s => ['P', 'O', 'E', 'RA'].includes(s.agent));
 
   // 중단(PAUSE): 병렬 진입 후면 그리드 전 칸을 PAUSE 로, 그 이전이면 기존 단일 행으로 보여준다.
