@@ -238,6 +238,36 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-08-12 — MASTER '이력에 바로 등록')
+
+- **개요**: MASTER 가 step 5 에서 `상신하기` 대신 `📋 이력에 바로 등록` 을 눌러, **결재 경로를 전혀
+  거치지 않고** 문서를 이력 조회에 올린다. 상신일·결재 완료일은 모달에서 직접 입력한다.
+  **사양 전문은 `docs/HISTORY.md` §4.5** 참조.
+- **신규 API**: `POST /api/documents/{id}/direct-approve/` — MASTER 전용, `draft` 만.
+  `status='approved'` + 완료 기록 `ApprovalStep` 1행 생성. **메일 발송 없음. 마이그레이션 없음.**
+- `index.tsx`:
+  - 모듈 스코프 `todayISO()` 신설(`toISOString` 은 UTC 기준이라 쓰지 않는다).
+  - `canDirectHistory` — `role='MASTER'` && `!isPeerReviewMode` && `editDocStatus ∈ {null, 'draft'}`.
+  - `handleDirectHistoryClick`(검증 후 모달 열기) · `handleDirectHistoryRegister`(저장 → 등록 → `/history`).
+  - `buildEnrichedForm` 에 **4번째 optional 인자 `submittedDate`** 추가. 제목 끝의 `_요청서_YYMMDD`
+    를 만드는 로직은 `titleDateStr(isoDate?)` 로 분리했고, **인자를 주지 않으면 종전대로 오늘 날짜**다
+    → 기존 호출부(임시저장·자동저장·상신·재상신·peer) **동작 불변**.
+- **검증에서 생략하는 것은 결재선 입력뿐**이다 — 지정 PL·후결자·통보자. 5단계 위저드 필수값과
+  서버측 Backbone 매핑 검증은 상신과 완전히 동일하게 적용된다.
+- **i18n**: `request.direct_history*` 7키 ko/en 동시 추가.
+- **영향 파일**: `backend/api/views.py`, `backend/api/tests.py`, `frontend/src/api/client.ts`,
+  `pages/RequestPage/index.tsx`, `locales/ko.json`·`en.json`, `docs/HISTORY.md`
+- **검증(2026-08-12 실행)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` | 22개 | **22개** (파일별 분포 동일 — 신규 0) |
+  | `react-scripts test` | 5 suites / 124건 | **5 suites / 124건 통과** |
+  | 백엔드 `manage.py test api` | 279건 | **288건 OK** (신규 `DirectHistoryRegisterTest` 9건) |
+
+  ⚠️ `tsc` 베이스라인은 이 문서 §4 에 적힌 24개가 아니라 **작업 직전 실측 22개**였다.
+  (`VOCPage.tsx` 2건이 그 사이 해소됨 — 베이스라인은 고정 상수가 아니라는 §3.2 원칙대로 매번 실측할 것)
+
 ### 추가 변경 이력 (2026-08-11 — 임시저장 재진입 시 `source_partid` 유실 수정 + 왕복 테스트 신설)
 
 - **문제**: 임시저장(또는 반려) 문서를 `편집`으로 다시 열면 **원본 제품 이름(`source_partid`)이 항상
