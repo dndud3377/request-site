@@ -109,6 +109,13 @@ const autoMatchItemId = (
 // product_name 타이핑 시 바코드 후보 조회를 디바운스하는 지연(ms). Impala 백엔드 중복 호출 감소.
 const BARCODE_DEBOUNCE_MS = 300;
 
+// 상신 모달 크기 — 지정자·후결자·합의자·통보자를 한 화면에서 다루도록 기존(520px)의 2배로 넓혔다.
+// 세로는 공용 `.modal-body { max-height: 82vh }` 안에서만 늘릴 수 있어 최소 높이로 지정한다.
+const SUBMIT_MODAL_MAX_WIDTH = '1040px';
+const SUBMIT_MODAL_MIN_BODY_HEIGHT = '62vh';
+// 특이사항 입력칸 줄 수(기존 3줄 → 넓어진 모달에 맞춰 확대).
+const SUBMIT_NOTE_ROWS = 10;
+
 // 전체 가이드 되감기(seek)용 투어 상태 스냅샷 — 프리뷰가 정주행 중 챕터별로 캡처해 두었다가
 // 되감을 때 그대로 복원한다. (mappedJayerRowIds는 직렬화 위해 배열로 보관)
 export interface TourSnapshot {
@@ -4083,7 +4090,9 @@ export default function RequestPage(): React.ReactElement {
         onClose={() => setConfirmOpen(false)}
         title={isPeerReviewMode ? t('approval.peer_submit') : isResumeMode ? t('approval.resume') : t('request.submit')}
         size="md"
-        style={{ maxWidth: '520px' }}
+        // 상신 모달은 지정자·후결자·합의자·통보자를 한 번에 다루므로 가로/세로를 넓게 잡는다(2026-08).
+        style={{ maxWidth: SUBMIT_MODAL_MAX_WIDTH }}
+        bodyStyle={{ minHeight: SUBMIT_MODAL_MIN_BODY_HEIGHT }}
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setConfirmOpen(false)}>
@@ -4104,7 +4113,8 @@ export default function RequestPage(): React.ReactElement {
           <label className="form-label">{t('request.submit_note_label')}</label>
           <textarea
             className="form-control"
-            rows={3}
+            rows={SUBMIT_NOTE_ROWS}
+            style={{ resize: 'vertical' }}
             placeholder={t('request.submit_note_placeholder')}
             value={submitNote}
             onChange={(e) => setSubmitNote(e.target.value)}
