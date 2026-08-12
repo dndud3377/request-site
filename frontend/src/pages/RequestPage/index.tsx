@@ -84,7 +84,7 @@ import {
 import {
   formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, AdiCdHeaderMatch,
-  deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs,
+  deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -2596,24 +2596,7 @@ export default function RequestPage(): React.ReactElement {
   const handleBaPasteRaw = (pairId: string, side: BaSide, raw: string) => {
     const grid = parseMergePasteRows(raw);
     if (grid.length === 0) return;
-    setDetail((prev) => {
-      const startIdx = prev.merge_pairs.findIndex((p) => p.id === pairId);
-      if (startIdx === -1) return prev;
-      const next = [...prev.merge_pairs];
-      grid.forEach((cells, i) => {
-        const idx = startIdx + i;
-        while (next.length <= idx) next.push(emptyMergePair(next[next.length - 1]?.table));
-        const target = next[idx];
-        const info = { ...(target[side] ?? emptyMergeRowInfo()) };
-        MERGE_MANUAL_FIELDS.forEach((f, c) => {
-          const cell = cells[c];
-          if (cell !== undefined) info[f] = cell;
-        });
-        const updated = { ...target, [side]: normalizeMergeSide(info) } as MergePair;
-        next[idx] = { ...updated, kind: deriveMergeKind(updated.before, updated.after) };
-      });
-      return { ...prev, merge_pairs: next };
-    });
+    setDetail((prev) => ({ ...prev, merge_pairs: applyMergePaste(prev.merge_pairs, pairId, side, grid) }));
   };
 
   const handleBaTableChange = (pairId: string, table: MergeTable) => {
