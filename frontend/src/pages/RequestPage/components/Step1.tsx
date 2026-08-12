@@ -122,7 +122,7 @@ const Step1: React.FC<Step1Props> = ({
     detail.process_selection !== '' &&
     detail.partid_selection !== '' &&
     detail.process_id !== '';
-  // Only MAP / MAP 삭제/수정 모드: 기타목적·흐름도·Backbone·참조요청서는 초기화 후 작성 불가
+  // Only MAP / MAP 삭제 모드: 기타목적·흐름도·Backbone·참조요청서는 초기화 후 작성 불가
   // (특이사항·변경 요청 목적은 초기화되지만 작성은 가능 — change_purpose_note 는 disableOptional 대상 아님)
   const disableOptional = !canSelectPurpose || isOnlyMap;
   /**
@@ -420,7 +420,7 @@ const Step1: React.FC<Step1Props> = ({
 
             <div className="form-group">
               <label className="form-label">{t('request.change_purpose_note')}</label>
-              {/* 특이사항·변경 요청 목적은 Only MAP / MAP 삭제/수정 에서도 입력할 수 있다.
+              {/* 특이사항·변경 요청 목적은 Only MAP / MAP 삭제 에서도 입력할 수 있다.
                   (목적 전환 시 값이 초기화되는 동작은 그대로 — applyMapOnlyScope) */}
               <textarea
                 className="form-control"

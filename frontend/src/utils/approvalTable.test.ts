@@ -34,10 +34,10 @@ const makeDoc = (steps: ApprovalStepFrontend[]): RequestDocument => ({
   approval_steps: steps,
 });
 
-// MAP 삭제/수정 문서 — request_purpose 를 additional_notes 에 심어야 isMapDeleteEditDoc 이 인식한다.
+// MAP 삭제 문서 — request_purpose 를 additional_notes 에 심어야 isMapDeleteEditDoc 이 인식한다.
 const makeMdeDoc = (steps: ApprovalStepFrontend[]): RequestDocument => ({
   ...makeDoc(steps),
-  additional_notes: JSON.stringify({ detail: { request_purpose: 'MAP 삭제/수정' } }),
+  additional_notes: JSON.stringify({ detail: { request_purpose: 'MAP 삭제' } }),
 });
 
 /** 그리드 한 행을 꺼낸다(병렬 단계 문서는 항상 1행). */
@@ -52,16 +52,46 @@ const cellAt = (doc: RequestDocument, slot: StageCellSlot): StageCell =>
   gridOf(doc).find((c) => c.slot === slot)!;
 
 describe('getDocTableRows — 병렬 이전 구간은 기존 단일 행 그대로', () => {
-  it('PL 검토중: 미합의 PL 이름을 이어 붙인 단일 행', () => {
+  // (2026-08) PL 검토 단계는 지정 검토자와 영업/기술지원 합의자(SA)가 병렬이라
+  // 단일 행이 아니라 1열 2줄 그리드로 그린다.
+  it('PL 검토중: 미합의 PL 이름을 이어 붙인 PL 칸 + 합의자 미지정이면 해당없음', () => {
     const doc = makeDoc([
-      makeStep({ agent: 'PL', action: 'pending', assignee_name: '박피엘' }),
-      makeStep({ agent: 'PL', action: 'pending', assignee_name: '김피엘' }),
+      makeStep({ agent: 'PL', action: 'pending', assignee_name: '박피엘', assignee_loginid: 'pl1' }),
+      makeStep({ agent: 'PL', action: 'pending', assignee_name: '김피엘', assignee_loginid: 'pl2' }),
     ]);
     const rows = getDocTableRows(doc, t);
     expect(rows).toHaveLength(1);
-    expect(rows[0].pathKey).toBe('single');
-    expect(rows[0].stageText).toBe('approval.agent_PL(박피엘 / 김피엘)');
-    expect(rows[0].cells).toBeUndefined();
+    expect(rows[0].pathKey).toBe('grid');
+    expect(rows[0].gridColumns).toBe(1);
+    expect(rows[0].cells!.map((c) => c.slot)).toEqual(['PL', 'SA']);
+
+    const pl = rows[0].cells!.find((c) => c.slot === 'PL')!;
+    expect(pl.state).toBe('review');
+    expect(pl.name).toBe('박피엘 / 김피엘');
+
+    const sa = rows[0].cells!.find((c) => c.slot === 'SA')!;
+    expect(sa.state).toBe('na');
+  });
+
+  it('PL 검토중 + 합의자 지정: 합의자 칸이 검토중으로 함께 표시된다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'PL', action: 'pending', assignee_name: '박피엘', assignee_loginid: 'pl1' }),
+      makeStep({ agent: 'SA', action: 'pending', assignee_name: '이영업', assignee_loginid: 'sa1' }),
+    ]);
+    const sa = getDocTableRows(doc, t)[0].cells!.find((c) => c.slot === 'SA')!;
+    expect(sa.state).toBe('review');
+    expect(sa.name).toBe('이영업');
+  });
+
+  it('PL 전원 합의 후에도 합의자가 남아 있으면 PL 검토 단계가 이어진다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'PL', action: 'approved', assignee_name: '박피엘' }),
+      makeStep({ agent: 'SA', action: 'pending', assignee_name: '이영업', assignee_loginid: 'sa1' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    expect(rows[0].pathKey).toBe('grid');
+    expect(rows[0].cells!.find((c) => c.slot === 'PL')!.state).toBe('done');
+    expect(rows[0].cells!.find((c) => c.slot === 'SA')!.state).toBe('review');
   });
 
   it('RFG 담당자 미지정: 단일 행 + 대기중', () => {
@@ -237,7 +267,7 @@ describe('getDocTableRows — 검토자 단계에서도 단계명이 유지된�
   });
 });
 
-describe('getDocTableRows — MAP 삭제/수정: 고정 후결자 자리에 RFG', () => {
+describe('getDocTableRows — MAP 삭제: 고정 후결자 자리에 RFG', () => {
   const mde = (steps: ApprovalStepFrontend[]) => makeMdeDoc([
     makeStep({ agent: 'P', action: 'pending' }),
     makeStep({ agent: 'J', action: 'pending' }),
@@ -363,7 +393,7 @@ describe('getFinalCompletionDate — 단계별 기한 표시는 없어졌지만 
     expect(getFinalCompletionDate(doc)).toBe('2026. 8. 20.');
   });
 
-  it('MAP 삭제/수정: R 이 가장 늦은 기한이면 그 날짜가 최종 완료예정일이 된다', () => {
+  it('MAP 삭제: R 이 가장 늦은 기한이면 그 날짜가 최종 완료예정일이 된다', () => {
     const doc = makeMdeDoc([
       makeStep({ agent: 'R', action: 'pending', due_date: '2026-09-01' }),
       makeStep({ agent: 'P', action: 'approved', due_date: '2026-08-12' }),

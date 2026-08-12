@@ -78,11 +78,11 @@ REVIEWER_AGENTS = ('RV', 'PV', 'EV')
 # 반려 시 "잔여 결재선" 산출에 사용하는 결재선(라우팅) 단계 목록.
 # PL 은 별도 규칙(미합의 지정 PL 포함)을 따르므로 여기서 제외한다.
 # Only MAP 의뢰서는 P/O/E/J 없이 R 까지만 진행하고 후결자(RA)로 종단한다.
-ROUTE_AGENTS_ONLY_MAP = ('R', 'RV', 'RA')
-# 'MAP 삭제/수정' 의뢰서는 PL 합의 후 P·R·J·O 를 병렬로 진행한다.
+ROUTE_AGENTS_ONLY_MAP = ('SA', 'R', 'RV', 'RA')
+# 'MAP 삭제' 의뢰서는 PL 합의 후 P·R·J·O 를 병렬로 진행한다.
 # E(MASK)·EV 와 후결자(RA)는 생성하지 않으므로 경로에서도 빠진다(고정 후결자도 없는 유일한 경로).
-ROUTE_AGENTS_MAP_DELETE_EDIT = ('P', 'PV', 'R', 'RV', 'J', 'O')
-ROUTE_AGENTS_DEFAULT = ('R', 'RV', 'P', 'PV', 'J', 'O', 'E', 'EV', 'RA')
+ROUTE_AGENTS_MAP_DELETE_EDIT = ('SA', 'P', 'PV', 'R', 'RV', 'J', 'O')
+ROUTE_AGENTS_DEFAULT = ('SA', 'R', 'RV', 'P', 'PV', 'J', 'O', 'E', 'EV', 'RA')
 # 기타 목적이 'Overlay 변경' 하나뿐인 의뢰서는 일반 경로에서 J 만 빠진다(나머지는 동일).
 ROUTE_AGENTS_NO_J = tuple(a for a in ROUTE_AGENTS_DEFAULT if a != 'J')
 
@@ -102,7 +102,7 @@ def route_agents_for(document):
 
 # 메일 본문 '결재 경로' 카드의 표시 순서. 웹 '결재 경로' 탭과 같은 순서를 쓴다
 # (검토자 RV/PV/EV 는 담당 단계 바로 뒤, 후결자 RA 는 R 다음).
-ROUTE_DISPLAY_ORDER = ('PL', 'R', 'RV', 'RA', 'P', 'PV', 'J', 'O', 'E', 'EV')
+ROUTE_DISPLAY_ORDER = ('PL', 'SA', 'R', 'RV', 'RA', 'P', 'PV', 'J', 'O', 'E', 'EV')
 
 # 결재 경로 카드의 상태 표기 — (라벨, 글자색, 배경색). 상태 색은 의미를 담고 있어
 # 이벤트 테마(EVENT_THEME)와 무관하게 고정한다(웹 결재 경로 탭과 동일 팔레트).
@@ -148,6 +148,7 @@ AGENT_LABEL = {
     'E': 'E',
     'EV': '검토자',
     'RA': '후결자',
+    'SA': '영업/기술지원 합의자',
 }
 
 # (2026-08) 후결자 행 라벨을 웹 그리드와 맞춘다.
@@ -375,13 +376,13 @@ def resolve_stage_recipients(document, agent, step=None):
             recipients = [step.assignee.mail]
         else:
             recipients = _team_emails(agent)
-    elif agent in ('RV', 'RA', 'PV', 'EV'):
-        # RV/PV/EV(검토자)/RA(후결자): 항상 지정된 그 1명(호출 시점에 이미 assignee 확정)
+    elif agent in ('RV', 'RA', 'PV', 'EV', 'SA'):
+        # RV/PV/EV(검토자)/RA(후결자)/SA(합의자): 항상 지정된 그 1명(호출 시점에 이미 assignee 확정)
         recipients = []
         if step is not None and step.assignee and step.assignee.mail:
             recipients = [step.assignee.mail]
     else:
-        # 위에서 PL·R·J·P·O·E·RV·PV·EV·RA 를 모두 다루므로 여기 오는 agent 는 없다.
+        # 위에서 PL·R·J·P·O·E·RV·PV·EV·RA·SA 를 모두 다루므로 여기 오는 agent 는 없다.
         # 새 단계가 생겼는데 규칙을 안 넣은 경우 — 엉뚱한 곳으로 보내는 대신 발송하지 않는다.
         recipients = []
     return _apply_redirect(recipients, document)
@@ -435,6 +436,15 @@ def _remaining_stage_emails(document, max_round):
             continue
         if agent == 'RA':
             emails.extend(u.mail for u in post_approver_users(document) if u.mail)
+            continue
+        if agent == 'SA':
+            # 합의자는 팀이 아니라 지정된 개인이라, 실제 생성된 단계의 담당자만 대상이다
+            # (지정하지 않았으면 단계가 없어 아무에게도 보내지 않는다).
+            emails.extend(
+                m for m in steps.filter(agent='SA')
+                .exclude(assignee__isnull=True).exclude(assignee__mail='')
+                .values_list('assignee__mail', flat=True) if m
+            )
             continue
         emails.extend(_stage_team_emails(agent))
     return emails
@@ -583,7 +593,8 @@ def _reached_stage_emails(document):
     for step in steps:
         if step.agent == 'PL':
             continue
-        if step.agent == 'RA':
+        if step.agent in ('RA', 'SA'):
+            # 후결자(RA)·합의자(SA)는 역할(팀)이 아니라 지정된 개인이다.
             if step.assignee and step.assignee.mail:
                 emails.append(step.assignee.mail)
             continue
@@ -709,6 +720,11 @@ def _route_rows(document):
             continue
         agent_steps = steps_by_agent.get(agent)
         if not agent_steps:
+            # SA(합의자)는 PL 과 동시에 만들어지므로, 단계가 없다 = 아무도 지정하지 않았다
+            # → '예정'이 아니라 '해당없음'이다(웹 결재현황 그리드와 같은 표기).
+            if agent == 'SA':
+                rows.append((label, '', 'na', ''))
+                continue
             # 아직 도달하지 않은 단계(검토자는 지정됐을 때만 생기므로 예정 표시 대상이 아니다)
             if agent not in REVIEWER_AGENTS:
                 rows.append((label, '', 'waiting', ''))

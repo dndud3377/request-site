@@ -45,7 +45,8 @@ export type VocStatus = 'checking' | 'completed';
 
 export type VocCategory = 'inquiry' | 'error_report' | 'feature_request' | 'task_request';
 
-export type AgentType = 'PL' | 'R' | 'RV' | 'P' | 'PV' | 'J' | 'O' | 'E' | 'EV' | 'RA';
+// SA = 영업/기술지원 합의자(PL 검토와 병렬, 상신 시 지정했을 때만 존재)
+export type AgentType = 'PL' | 'R' | 'RV' | 'P' | 'PV' | 'J' | 'O' | 'E' | 'EV' | 'RA' | 'SA';
 export type StepAction = 'pending' | 'approved' | 'rejected' | 'skip';
 
 // 역할 → 담당자 매핑 (null 제외)
@@ -340,7 +341,7 @@ export interface DetailFormState {
   map_value_y: string;
   map_reason: string;
   /**
-   * 'MAP 삭제/수정' 요청 목적 전용 이유(RichTextEditor 의 HTML 문자열).
+   * 'MAP 삭제' 요청 목적 전용 이유(RichTextEditor 의 HTML 문자열).
    * map_type 이 EDIT_REQ/DELETE_REQ 일 때만 쓰이며, 둘 사이를 오가도 값은 유지되고 라벨만 바뀐다.
    * ⚠️ C가문 지도편차 사유인 map_reason 과는 별개 필드다.
    */
@@ -414,6 +415,12 @@ export interface DetailFormState {
 
   // C가문(only_prodc=YES) 추가 후결자 — 상신 시 PL 중 지정. 고정 후결자(.env)는 별도로 항상 포함.
   post_approvers?: NotifierRef[];
+
+  // 영업/기술지원 합의자 — PL 검토와 병렬인 결재 단계. 상신 시 PL 중 지정(다중, 전원 합의).
+  // 예외 구역 값을 기본값(일반 300 / C가문 500)과 다르게 바꾼 의뢰서는 지정이 필수이며,
+  // 지정하지 않으려면 sales_agreer_none_reason 에 사유를 남긴다.
+  sales_agreers?: NotifierRef[];
+  sales_agreer_none_reason?: string;
 
   // Validation System 대상('YES')/비대상('NO'). 판정 주체는 상신자 하나이며,
   // MASK(E) 팀은 값을 바꾸지 않고 확인 후 합의만 한다.

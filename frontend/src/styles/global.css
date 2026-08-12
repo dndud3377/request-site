@@ -1683,6 +1683,13 @@ select.form-control option {
   outline-offset: 2px;
 }
 
+/* 이 의뢰서에서 아예 들어갈 수 없는 단계(예: Only MAP 의 J-ayer·O-ayer·Backbone).
+   숨기지 않고 흐리게 남겨 전체 흐름 중 어디까지 작성하는지 보이게 한다. */
+.wizard-step.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .wizard-step-circle {
   width: 34px;
   height: 34px;

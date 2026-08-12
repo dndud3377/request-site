@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
@@ -50,8 +50,12 @@ import {
   ONLY_MAP_PURPOSE,
   MAP_DELETE_EDIT_PURPOSE,
   OTHER_PURPOSE_LAB,
-  MAP_TYPE_EDIT_REQ,
+  MAP_TYPE_DELETE_REQ,
   isMapDeleteEditType,
+  EA_NO_CHANGE,
+  EA_HAS_CHANGE,
+  EA_DEFAULT_NORMAL,
+  eaDefaultValue,
   PRODC_SCOPE_OPTIONS,
   inferProdcScope,
   JAYER_EDITABLE_COLS,
@@ -110,6 +114,17 @@ const autoMatchItemId = (
 
 // product_name 타이핑 시 바코드 후보 조회를 디바운스하는 지연(ms). Impala 백엔드 중복 호출 감소.
 const BARCODE_DEBOUNCE_MS = 300;
+
+// 작성 마법사 단계: 1 기본 정보 / 2 MAP 정보 / 3 J-ayer / 4 O-ayer / 5 Backbone
+const STEP_MAP_INFO = 2;
+const STEP_LAST = 5;
+
+// 상신 모달 크기 — 지정자·후결자·합의자·통보자를 한 화면에서 다루도록 기존(520px)의 2배로 넓혔다.
+// 세로는 공용 `.modal-body { max-height: 82vh }` 안에서만 늘릴 수 있어 최소 높이로 지정한다.
+const SUBMIT_MODAL_MAX_WIDTH = '1040px';
+const SUBMIT_MODAL_MIN_BODY_HEIGHT = '62vh';
+// 특이사항 입력칸 줄 수(기존 3줄 → 넓어진 모달에 맞춰 확대).
+const SUBMIT_NOTE_ROWS = 10;
 
 // 오늘 날짜를 <input type="date"> 가 쓰는 'YYYY-MM-DD' 로. toISOString 은 UTC 기준이라 쓰지 않는다.
 const todayISO = (): string => {
@@ -282,7 +297,7 @@ export default function RequestPage(): React.ReactElement {
   };
   const [deleteConfirm, setDeleteConfirm] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [mapTypeChangeConfirm, setMapTypeChangeConfirm] = useState<{ targetType: string } | null>(null);
-  // Only MAP / MAP 삭제/수정 진입·이탈 확인 모달 — 전환 대상 목적을 함께 들고 있는다.
+  // Only MAP / MAP 삭제 진입·이탈 확인 모달 — 전환 대상 목적을 함께 들고 있는다.
   const [onlyMapConfirm, setOnlyMapConfirm] = useState<{ targetPurpose: string } | null>(null);
   // ADI CD 변경(기타 목적) — 변경전/변경후 스텝 표
   const [adiCdLeaveConfirm, setAdiCdLeaveConfirm] = useState(false); // 해제 시 표에 값이 있으면 초기화 확인
@@ -329,6 +344,17 @@ export default function RequestPage(): React.ReactElement {
   const [postApproverDropdownRect, setPostApproverDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const postApproverInputRef = useRef<HTMLInputElement>(null);
   const postApproverContainerRef = useRef<HTMLDivElement>(null);
+
+  // 영업/기술지원 합의자 — PL 검토와 병렬인 결재 단계. 상신 모달에서 PL 중 지정한다.
+  // 예외 구역 값을 기본값과 다르게 바꾼 의뢰서는 지정(또는 미지정 사유)이 필수다.
+  const [salesAgreers, setSalesAgreers] = useState<{ loginid: string; name: string }[]>([]);
+  const [salesAgreerSearch, setSalesAgreerSearch] = useState('');
+  const [salesAgreerDropdownOpen, setSalesAgreerDropdownOpen] = useState(false);
+  const [salesAgreerDropdownRect, setSalesAgreerDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const salesAgreerInputRef = useRef<HTMLInputElement>(null);
+  const salesAgreerContainerRef = useRef<HTMLDivElement>(null);
+  // '지정하지 않음' 사유 — 합의자가 필수인데 아무도 지정하지 않을 때 입력한다.
+  const [salesAgreerNoneReason, setSalesAgreerNoneReason] = useState('');
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // 통보자 다중 지정 (상신 모달) — 결재 권한 없이 상신·결재완료 메일만 받는 인원
@@ -852,12 +878,15 @@ export default function RequestPage(): React.ReactElement {
             // prodc_scope 도입 전 문서는 값이 없다 → 저장된 리전 값으로 역추론해 백필한다.
             // (백필하지 않으면 '미선택' 게이트에 걸려 기존 C가문 문서의 입력이 잠겨 보인다)
             prodc_scope: parsed.detail.prodc_scope || inferProdcScope(parsed.detail),
-            // MAP 삭제/수정 도입 전 문서는 값이 없다 → 빈 문자열 백필(undefined 면 RichTextEditor 가 깨진다).
+            // MAP 삭제 도입 전 문서는 값이 없다 → 빈 문자열 백필(undefined 면 RichTextEditor 가 깨진다).
             map_change_reason: parsed.detail.map_change_reason ?? '',
           });
           // 불러온 문서의 값은 이미 확정된 판단이므로 자동 갱신으로 덮어쓰지 않는다.
           setVsManuallySet(true);
           setPostApprovers(Array.isArray(parsed.detail.post_approvers) ? parsed.detail.post_approvers : []);
+          // 재상신·수정 시 이전 지정을 그대로 되살린다(작성자가 모달에서 바꿀 수 있다).
+          setSalesAgreers(Array.isArray(parsed.detail.sales_agreers) ? parsed.detail.sales_agreers : []);
+          setSalesAgreerNoneReason(parsed.detail.sales_agreer_none_reason ?? '');
         }
         // 재선택 롤백용 스냅샷 복원 — 없으면 null(옛 문서는 매핑만 초기화된다).
         setMergeSnapshot(parsed.mergeSnapshot ?? null);
@@ -1146,8 +1175,8 @@ export default function RequestPage(): React.ReactElement {
             map_value_x: '',
             map_value_y: '',
             map_reason: '',
-            ea_change: '변경 없음',
-            ea_value: '',
+            ea_change: EA_NO_CHANGE,
+            ea_value: EA_DEFAULT_NORMAL,  // 바로 위에서 only_prodc 를 'No' 로 되돌리므로 300 이다
             mshot_change: '없음',
           }));
           break;
@@ -1227,6 +1256,18 @@ export default function RequestPage(): React.ReactElement {
       if (postApproverContainerRef.current && !postApproverContainerRef.current.contains(e.target as Node)) {
         setPostApproverDropdownOpen(false);
         setPostApproverDropdownRect(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // 영업/기술지원 합의자 지정 드롭다운 외부 클릭 감지
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (salesAgreerContainerRef.current && !salesAgreerContainerRef.current.contains(e.target as Node)) {
+        setSalesAgreerDropdownOpen(false);
+        setSalesAgreerDropdownRect(null);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -1364,10 +1405,21 @@ export default function RequestPage(): React.ReactElement {
   // Derived booleans for Step 1 conditional rendering
   const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
   const isOnlyMap = detail.request_purpose === ONLY_MAP_PURPOSE;
-  // 'MAP 삭제/수정': Only MAP 과 동일하게 MAP 정보만 작성한다(J/O/Backbone 비움 + Step1 부가항목 잠금).
+  // 'MAP 삭제': Only MAP 과 동일하게 MAP 정보만 작성한다(J/O/Backbone 비움 + Step1 부가항목 잠금).
   const isMapDeleteEdit = detail.request_purpose === MAP_DELETE_EDIT_PURPOSE;
   // Step1 부가 입력(기타 목적·흐름도·Backbone·참조 요청서) 잠금 + STEP3~5 비움 대상 목적.
   const isMapOnlyScope = isOnlyMap || isMapDeleteEdit;
+  // (2026-08) 이 목적들은 J-ayer·O-ayer·Backbone 을 아예 작성하지 않는다. 예전에는 그 단계들에
+  // 들어가 입력까지 할 수 있었지만 저장 시 전부 버려져(빈 배열) 혼란을 줬다 — 이제 단계 자체를
+  // 막고 MAP 정보(2단계)에서 바로 상신한다.
+  const lastStep = isMapOnlyScope ? STEP_MAP_INFO : STEP_LAST;
+  /** 이 의뢰서에서 들어갈 수 없는 단계(인디케이터에 흐리게 표시) */
+  const disabledSteps = useMemo(
+    () => (isMapOnlyScope
+      ? Array.from({ length: STEP_LAST - STEP_MAP_INFO }, (_, i) => STEP_MAP_INFO + 1 + i)
+      : []),
+    [isMapOnlyScope],
+  );
   // StepMap 에서 '수정'/'삭제' 를 고른 상태 — 이유 입력칸만 남기고 나머지 MAP 블록은 숨긴다.
   const isMapReasonMode = isMapDeleteEditType(detail.map_type);
   // '연구소 제품'(Only MAP 전용) — 선택 시 기존 C가문 후결자 기능이 그대로 켜진다.
@@ -1376,12 +1428,19 @@ export default function RequestPage(): React.ReactElement {
   // (결재 경로·후결자 생성 로직은 그대로이고, 이 '문을 여는 조건'만 넓힌 것이다)
   // (isProdc 는 아래에서 선언되므로 TDZ 를 피해 detail 로 직접 판정한다)
   const requiresPostApprover = detail.only_prodc === 'Yes' || isLabProduct;
+  // 상신 시 영업/기술지원 합의자 지정이 필수인가 — 예외 구역을 '변경 있음'으로 두고
+  // 값까지 기본값(일반 300 / C가문 500)과 다르게 바꿨을 때.
+  // 백엔드 RequestDocument.requires_sales_agreer 와 같은 기준이어야 한다.
+  const requiresSalesAgreer =
+    detail.ea_change === EA_HAS_CHANGE
+    && !!detail.ea_value?.trim()
+    && detail.ea_value.trim() !== eaDefaultValue(detail.only_prodc);
   // ADI CD 변경: 다른 기타 목적과 함께 선택할 수 있다(단독 전용이 아니다).
   const isAdiCdSelected = detail.other_purpose.includes(OTHER_PURPOSE_ADI_CD);
   // 기타 목적 6개 중 ADI CD 변경만 단독 선택한 경우 — 이후 STEP 필수 입력을 건너뛴다.
   const isAdiCdOnly = detail.other_purpose.length === 1 && detail.other_purpose[0] === OTHER_PURPOSE_ADI_CD;
   const hasMapChange = detail.map_change === '변경 있음';
-  const hasEaChange = detail.ea_change === '변경 있음';
+  const hasEaChange = detail.ea_change === EA_HAS_CHANGE;
   const isProdc = detail.only_prodc === 'Yes';
   // ===== C가문 '제품 해당 위치'(prodc_scope) 파생 판정 =====
   // 게이트: 위치를 고르기 전에는 C가문 하위 입력(판별 정보·지도편차·X표시 이미지)을 전부 잠근다.
@@ -1449,7 +1508,7 @@ export default function RequestPage(): React.ReactElement {
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
   };
 
-  /** 'Only MAP'/'MAP 삭제/수정' 전환 시 지워질 값이 하나라도 있는가 (확인 모달 노출 판정) */
+  /** 'Only MAP'/'MAP 삭제' 전환 시 지워질 값이 하나라도 있는가 (확인 모달 노출 판정) */
   const mapOnlyScopeHasData = (): boolean =>
     detail.other_purpose.length > 0 ||
     !!detail.change_purpose_note?.trim() ||
@@ -1460,7 +1519,7 @@ export default function RequestPage(): React.ReactElement {
 
   const handleRequestPurposeSelect = (val: string) => {
     if (val === detail.request_purpose) return;
-    // Only MAP / MAP 삭제/수정 로 바꾸면 Step1 부가항목과 J/O/Bb 가 초기화되므로 확인을 받는다.
+    // Only MAP / MAP 삭제 로 바꾸면 Step1 부가항목과 J/O/Bb 가 초기화되므로 확인을 받는다.
     // (지울 값이 아예 없으면 모달 없이 바로 적용 — 기존 Only MAP 동작과 동일한 판단)
     if (val === ONLY_MAP_PURPOSE || val === MAP_DELETE_EDIT_PURPOSE) {
       if (detail.request_purpose && mapOnlyScopeHasData()) {
@@ -1479,7 +1538,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   /**
-   * 'Only MAP'/'MAP 삭제/수정' 적용 → 라인/조합법/제품/조리법/고객/요구사항/생산일을 제외한 Step1 항목 초기화.
+   * 'Only MAP'/'MAP 삭제' 적용 → 라인/조합법/제품/조리법/고객/요구사항/생산일을 제외한 Step1 항목 초기화.
    * 두 목적 모두 StepMap 정보까지만 작성하므로 초기화 범위가 같다.
    */
   const applyMapOnlyScope = (purpose: string) => {
@@ -1494,10 +1553,10 @@ export default function RequestPage(): React.ReactElement {
       partial_shot: INITIAL_DETAIL.partial_shot,
       tbvtlv_thickness: INITIAL_DETAIL.tbvtlv_thickness,
       tbvtlv_entries: [],
-      // MAP 삭제/수정 은 '수정'/'삭제' 중 하나를 StepMap 에서 직접 골라야 하므로 map_type 을 비운다
-      // (후보가 2개라 ADI 처럼 자동 고정할 수 없다). Only MAP 은 기존대로 손대지 않는다.
+      // MAP 삭제 는 후보가 '삭제' 하나뿐이라 ADI CD 변경 과 동일하게 자동 고정한다(2026-08).
+      // 이유는 새로 입력해야 하므로 비운다. Only MAP 은 기존대로 손대지 않는다.
       ...(purpose === MAP_DELETE_EDIT_PURPOSE
-        ? { map_type: INITIAL_DETAIL.map_type, map_change_reason: INITIAL_DETAIL.map_change_reason }
+        ? { map_type: MAP_TYPE_DELETE_REQ, map_change_reason: INITIAL_DETAIL.map_change_reason }
         : {}),
     }));
     setRefDocId(null);
@@ -1520,7 +1579,7 @@ export default function RequestPage(): React.ReactElement {
     setErrors((prev) => ({ ...prev, request_purpose: '', bb_entries: '' }));
   };
 
-  /** Only MAP/MAP 삭제/수정 에서 벗어날 때 — 전용 값('연구소 제품'·후결자)만 정리한다 */
+  /** Only MAP/MAP 삭제 에서 벗어날 때 — 전용 값('연구소 제품'·후결자)만 정리한다 */
   const applyLeaveMapOnlyScope = (purpose: string) => {
     setDetail((prev) => ({
       ...prev,
@@ -1534,7 +1593,7 @@ export default function RequestPage(): React.ReactElement {
   const handleOnlyMapConfirm = () => {
     if (!onlyMapConfirm) return;
     const target = onlyMapConfirm.targetPurpose;
-    // 진입(Only MAP·MAP 삭제/수정)이면 전체 초기화, 이탈이면 전용 값만 정리한다.
+    // 진입(Only MAP·MAP 삭제)이면 전체 초기화, 이탈이면 전용 값만 정리한다.
     if (target === ONLY_MAP_PURPOSE || target === MAP_DELETE_EDIT_PURPOSE) applyMapOnlyScope(target);
     else applyLeaveMapOnlyScope(target);
     setOnlyMapConfirm(null);
@@ -1773,7 +1832,14 @@ export default function RequestPage(): React.ReactElement {
     if (value !== 'No') {
       // Yes 전환 시 X표시 변경 여부를 '수정'으로 자동 설정한다(C가문은 X표시 수정이 기본 전제).
       // 편집 로드·프리필 경로에는 걸지 않는다 — 저장된 mshot_change 가 덮어써지기 때문.
-      setDetail((prev) => ({ ...prev, only_prodc: value, mshot_change: '수정' }));
+      // 예외 구역이 '변경 없음'이면 기본값도 C가문 기준(500)으로 함께 갱신한다.
+      // '변경 있음'이면 사용자가 직접 넣은 값이므로 건드리지 않는다.
+      setDetail((prev) => ({
+        ...prev,
+        only_prodc: value,
+        mshot_change: '수정',
+        ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(value) } : {}),
+      }));
       if (errors['only_prodc']) setErrors((prev) => ({ ...prev, only_prodc: '' }));
       return;
     }
@@ -1792,6 +1858,8 @@ export default function RequestPage(): React.ReactElement {
       // (C가문을 되돌린 뒤 원하지 않은 X표시 정보가 저장되는 것을 막기 위함).
       mshot_change: INITIAL_DETAIL.mshot_change,
       mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '',
+      // 예외 구역이 '변경 없음'이면 기본값도 일반 기준(300)으로 되돌린다(Yes 전환의 반대 동작).
+      ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: EA_DEFAULT_NORMAL } : {}),
     }));
     setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
     setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
@@ -1814,13 +1882,14 @@ export default function RequestPage(): React.ReactElement {
     }
   };
 
-  // 예외 구역(ea_change) — '변경 없음' 전환 시 값 초기화
+  // 예외 구역(ea_change) — '변경 없음' 전환 시 C가문 여부에 맞는 기본값(300/500)을 되돌려 넣는다.
+  // (2026-08) 예전에는 값을 비웠다. 이제 '변경 없음'도 기본값을 그대로 저장·표시한다.
   const handleEaChangeChange = (value: string) => {
     isLoadingEditRef.current = false;
-    setDetail((prev) => value === '변경 없음'
-      ? { ...prev, ea_change: value, ea_value: '' }
+    setDetail((prev) => value === EA_NO_CHANGE
+      ? { ...prev, ea_change: value, ea_value: eaDefaultValue(prev.only_prodc) }
       : { ...prev, ea_change: value });
-    if (value === '변경 없음' && errors['ea_value']) setErrors((prev) => ({ ...prev, ea_value: '' }));
+    if (value === EA_NO_CHANGE && errors['ea_value']) setErrors((prev) => ({ ...prev, ea_value: '' }));
   };
 
   // X표시(mshot_change) — 추가/수정 이외(없음·삭제)로 전환 시 붙여넣은 이미지 경로 전체 초기화
@@ -3116,7 +3185,7 @@ export default function RequestPage(): React.ReactElement {
         newErrors['map_type'] = t('request.required');
         errorMessages.push('MAP 요청 목적: 필수 입력 항목입니다.');
       }
-      // MAP 삭제/수정('수정'·'삭제')은 이유 입력칸 하나만 화면에 남는다.
+      // MAP 삭제('수정'·'삭제')은 이유 입력칸 하나만 화면에 남는다.
       // 나머지 MAP 블록은 렌더 자체를 하지 않으므로 검증도 전부 건너뛴다
       // — '숨김 = 검증 제외'를 여기서 명시적으로 끊어 두지 않으면, 나중에 INITIAL_DETAIL
       //   기본값이 바뀔 때 화면에 없는 항목 때문에 진행이 막히는 버그가 생긴다.
@@ -3129,11 +3198,7 @@ export default function RequestPage(): React.ReactElement {
         const hasImage = /<img\b/i.test(detail.map_change_reason || '');
         if (!reasonText && !hasImage) {
           newErrors['map_change_reason'] = t('request.required');
-          errorMessages.push(
-            detail.map_type === MAP_TYPE_EDIT_REQ
-              ? 'MAP 수정 이유: 필수 입력 항목입니다.'
-              : 'MAP 삭제 이유: 필수 입력 항목입니다.'
-          );
+          errorMessages.push('MAP 삭제 이유: 필수 입력 항목입니다.');
         }
         // 정식 종료와 동일한 판정 기준(newErrors 기준)을 쓴다.
         setErrors(newErrors);
@@ -3213,7 +3278,7 @@ export default function RequestPage(): React.ReactElement {
           errorMessages.push('MAP 변경 사유: 필수 입력 항목입니다.');
         }
       }
-      if (detail.ea_change === '변경 있음') {
+      if (detail.ea_change === EA_HAS_CHANGE) {
         if (!detail.ea_value?.trim()) {
           newErrors['ea_value'] = t('request.required');
           errorMessages.push('예외 구역 값: 필수 입력 항목입니다.');
@@ -3403,6 +3468,9 @@ export default function RequestPage(): React.ReactElement {
         detail: {
           ...detail,
           post_approvers: requiresPostApprover ? postApprovers : [],
+          // 합의자는 필수 조건과 무관하게 지정한 그대로 저장한다(선택 지정도 실제 결재 단계가 된다).
+          sales_agreers: salesAgreers,
+          sales_agreer_none_reason: salesAgreers.length === 0 ? salesAgreerNoneReason.trim() : '',
           // 상신·재상신 시점의 상신자 판단을 고정 기록한다(임시저장에는 남기지 않는다).
           // 이후 MASK(E)가 detail.validation_system 을 바꿔도 이 값은 유지된다.
           ...(isDraft ? {} : { validation_system_submitted: detail.validation_system }),
@@ -3508,7 +3576,7 @@ export default function RequestPage(): React.ReactElement {
   //    멈춰 오류를 보여준다. **통과 여부를 캐시하지 않는다** — 되돌아가 필수값을 지웠다면 그 즉시
   //    다시 막혀야 하기 때문이다(한 번 통과했다는 기록을 남기면 이 요구사항이 깨진다).
   const goToStep = (target: number) => {
-    if (target === step || target < 1 || target > 5) return;
+    if (target === step || target < 1 || target > lastStep) return;
 
     if (target < step) {
       setStep(target);
@@ -3635,7 +3703,9 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleSubmitClick = async () => {
-    const result = validate(5);
+    // 마지막 단계의 검증만 돌린다 — 앞 단계들은 전진할 때 이미 통과했다.
+    // Only MAP·MAP 삭제 는 2단계가 마지막이므로 5단계(J-ayer↔Backbone 매핑) 검증을 돌리면 안 된다.
+    const result = validate(lastStep);
     if (!result.valid) {
       result.errors.forEach(msg => addToast(msg, 'error'));
       // 상신에서도 Backbone 조합 영역만 막았다면 고칠 수 있는 STEP1 로 이동시킨다.
@@ -3750,6 +3820,12 @@ export default function RequestPage(): React.ReactElement {
       addToast(t('request.post_approver_required'), 'error');
       return;
     }
+    // 예외 구역 값을 기본값과 다르게 바꾼 의뢰서: 합의자 1명 이상 또는 미지정 사유 필수
+    if (!isPeerReviewMode && !isResumeMode && requiresSalesAgreer
+        && salesAgreers.length === 0 && !salesAgreerNoneReason.trim()) {
+      addToast(t('request.sales_agreer_required'), 'error');
+      return;
+    }
     if (isPersistingRef.current) return;
     isPersistingRef.current = true;
     setSubmitting(true);
@@ -3859,6 +3935,8 @@ export default function RequestPage(): React.ReactElement {
         // 투어 모드는 URL 이 단계를 지정하는 읽기 전용 미리보기라 탭 이동을 막는다.
         onStepClick={isTourMode ? undefined : startStepMove}
         stepTitle={(label) => t('request.step_move' as never, { label }) as string}
+        disabledSteps={disabledSteps}
+        disabledStepTitle={(label) => t('request.step_locked_map_only' as never, { label }) as string}
         steps={[
           t('request.section_detail'),
           t('request.section_map'),
@@ -4095,7 +4173,8 @@ export default function RequestPage(): React.ReactElement {
           <button className="btn btn-secondary" onClick={handleSaveDraft} disabled={saving || loadError}>
             💾 {saving ? t('common.loading') : t('request.save_draft')}
           </button>
-          {step < 5 ? (
+          {/* Only MAP·MAP 삭제 는 MAP 정보(2단계)가 마지막이라 여기서 바로 상신한다. */}
+          {step < lastStep ? (
             <button className="btn btn-primary" onClick={() => handleNextStep()}>
               다음 →
             </button>
@@ -4266,7 +4345,9 @@ export default function RequestPage(): React.ReactElement {
         onClose={() => setConfirmOpen(false)}
         title={isPeerReviewMode ? t('approval.peer_submit') : isResumeMode ? t('approval.resume') : t('request.submit')}
         size="md"
-        style={{ maxWidth: '520px' }}
+        // 상신 모달은 지정자·후결자·합의자·통보자를 한 번에 다루므로 가로/세로를 넓게 잡는다(2026-08).
+        style={{ maxWidth: SUBMIT_MODAL_MAX_WIDTH }}
+        bodyStyle={{ minHeight: SUBMIT_MODAL_MIN_BODY_HEIGHT }}
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setConfirmOpen(false)}>
@@ -4287,7 +4368,8 @@ export default function RequestPage(): React.ReactElement {
           <label className="form-label">{t('request.submit_note_label')}</label>
           <textarea
             className="form-control"
-            rows={3}
+            rows={SUBMIT_NOTE_ROWS}
+            style={{ resize: 'vertical' }}
             placeholder={t('request.submit_note_placeholder')}
             value={submitNote}
             onChange={(e) => setSubmitNote(e.target.value)}
@@ -4475,6 +4557,100 @@ export default function RequestPage(): React.ReactElement {
               </div>
             </div>
           )}
+
+          {/* 영업/기술지원 합의자: PL 검토와 병렬인 결재 단계. PL 중 지정(다중, 전원 합의).
+              예외 구역 값을 기본값과 다르게 바꾼 의뢰서는 지정 또는 미지정 사유가 필수다. */}
+          <div className="form-group" style={{ marginTop: 12 }}>
+            <label className="form-label">
+              {t('request.sales_agreer_label')}
+              {requiresSalesAgreer && <span style={{ color: 'var(--danger)' }}> *</span>}
+            </label>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 6px' }}>
+              {requiresSalesAgreer ? t('request.sales_agreer_help_required') : t('request.sales_agreer_help')}
+            </p>
+            {salesAgreers.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                {salesAgreers.map((p) => (
+                  <span key={p.loginid} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: '0.82rem' }}>
+                    {p.name}
+                    <button type="button" onClick={() => setSalesAgreers((prev) => prev.filter((x) => x.loginid !== p.loginid))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 2px', fontSize: '0.85rem', lineHeight: 1 }}>✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div ref={salesAgreerContainerRef} style={{ position: 'relative' }}>
+              <input
+                ref={salesAgreerInputRef}
+                className="form-control"
+                placeholder={t('request.sales_agreer_placeholder')}
+                value={salesAgreerSearch}
+                onChange={(e) => {
+                  setSalesAgreerSearch(e.target.value);
+                  setSalesAgreerDropdownOpen(true);
+                  if (salesAgreerInputRef.current) {
+                    const r = salesAgreerInputRef.current.getBoundingClientRect();
+                    setSalesAgreerDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                  }
+                }}
+                onFocus={() => {
+                  setSalesAgreerDropdownOpen(true);
+                  if (salesAgreerInputRef.current) {
+                    const r = salesAgreerInputRef.current.getBoundingClientRect();
+                    setSalesAgreerDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                  }
+                }}
+                autoComplete="off"
+              />
+              {salesAgreerDropdownOpen && salesAgreerDropdownRect && createPortal(
+                <div style={{ position: 'fixed', top: salesAgreerDropdownRect.top, left: salesAgreerDropdownRect.left, width: salesAgreerDropdownRect.width, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', zIndex: 9999, maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
+                  {(() => {
+                    const q = salesAgreerSearch.toLowerCase();
+                    const filtered = plUserOptions.filter(u =>
+                      !salesAgreers.some(p => p.loginid === u.loginid) &&
+                      (!q ||
+                        u.name.toLowerCase().includes(q) ||
+                        u.loginid.toLowerCase().includes(q) ||
+                        (u.mail ?? '').toLowerCase().includes(q) ||
+                        (u.deptname ?? '').toLowerCase().includes(q))
+                    );
+                    if (filtered.length === 0) {
+                      return <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('request.search_no_result')}</div>;
+                    }
+                    return filtered.map(u => (
+                      <div
+                        key={u.loginid}
+                        style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.875rem', borderBottom: '1px solid var(--border)' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '')}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setSalesAgreers((prev) => [...prev, { loginid: u.loginid, name: u.name }]);
+                          setSalesAgreerSearch('');
+                        }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{u.name}</span>
+                        <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>
+                          {u.loginid}{u.mail ? ` · ${u.mail}` : ''}{u.deptname ? ` · ${u.deptname}` : ''}
+                        </span>
+                      </div>
+                    ));
+                  })()}
+                </div>,
+                document.body
+              )}
+            </div>
+            {/* 필수인데 아무도 지정하지 않았다면 사유를 받는다 — 사유만 있으면 상신할 수 있다. */}
+            {requiresSalesAgreer && salesAgreers.length === 0 && (
+              <div style={{ marginTop: 6 }}>
+                <input
+                  className="form-control"
+                  placeholder={t('request.sales_agreer_none_reason_placeholder')}
+                  value={salesAgreerNoneReason}
+                  onChange={(e) => setSalesAgreerNoneReason(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
 
           {/* 통보자: 결재 권한 없이 상신·결재완료 메일만 받는 인원 (다중) */}
           <div className="form-group" data-tour="submit-notifier" style={{ marginTop: 12 }}>

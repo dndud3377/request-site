@@ -138,6 +138,16 @@ pages/RequestPage/
 | 전진 실패 | **처음 막힌 단계에 멈추고**(`setStep(s)`) 오류 토스트 + `scrollToFirstError(s)`. 단 `validate()` 가 `redirectStep` 을 돌려주면 그 단계로 보낸다(입력칸이 다른 단계에 있는 오류 — 현재는 `bb_entries` → STEP1). |
 | 현재 단계 클릭 / 범위 밖 | 무동작. |
 
+- **범위 밖의 상한은 고정 5가 아니라 `lastStep` 이다 (2026-08).**
+  `Only MAP` / `MAP 삭제` 는 J-ayer·O-ayer·Backbone 을 작성하지 않으므로 `lastStep = 2`(MAP 정보)다.
+  `goToStep` 이 `target > lastStep` 을 막으므로 **버튼·인디케이터 탭·키보드 모두 한 곳에서 차단**된다.
+  - 하단 버튼: `step < lastStep` 이면 `다음 →`, 아니면 `📤 상신` → 2단계에서 바로 상신한다.
+  - `handleSubmitClick` 은 `validate(5)` 가 아니라 **`validate(lastStep)`** 을 돌린다.
+    5단계 검증은 J-ayer↔Backbone 매핑 검사라 이 경로에서는 돌면 안 된다.
+  - 인디케이터는 `disabledSteps` 로 3·4·5 를 **흐리게(opacity .4) 남긴다** — 숨기지 않는 이유는
+    전체 흐름 중 어디까지 작성하는지 보이고, 요청 목적을 되돌리면 그대로 살아나기 때문이다.
+  - ⚠️ 잠긴 단계에는 **완료(✓) 표시를 하지 않는다.** 지나온 단계가 아니라 '거치지 않는' 단계다.
+
 - **통과 여부를 캐시하지 않는다 [중요].** "한 번 통과했다"는 기록을 남기면, 뒤로 돌아가 필수값을
   지운 뒤에도 앞으로 나갈 수 있게 되어 검증이 무력화된다. 전진할 때마다 매번 새로 `validate()` 한다.
   이 때문에 인디케이터는 **회색 잠금 표시를 하지 않고 클릭 시점에 판정**한다
@@ -302,6 +312,67 @@ pages/RequestPage/
 - **신규 i18n 키** (ko/en 동시): `request.bb_entries_optional_hint` / `bb_entries_required` / `bb_entries_partial`
   / `stnoc_field_error` / `jayer_stnoc_required` / `oayer_stnoc_required`.
 - 백엔드 변경 없음(마이그레이션 없음).
+
+### 추가 변경 이력 (2026-08-12 — MAP 삭제 단순화 / ADI 버튼 제거 / 상신 모달 확대 / 예외 구역 기본값 / 영업·기술지원 합의자)
+
+#### ① 요청 목적 'MAP 삭제/수정' → 'MAP 삭제'
+
+- 요청 목적에서 **'수정'을 제거**하고 저장값을 `MAP 삭제` 로 변경했다.
+  - 프론트: `constants.ts` `MAP_DELETE_EDIT_PURPOSE` / `OPTION_REQUEST_PURPOSE`
+  - 백엔드: `models.py` `RequestDocument.MAP_DELETE_EDIT_PURPOSE`
+  - ⚠️ 두 값은 **항상 같아야 한다** — 다르면 결재 경로(`mailer.route_agents_for`) 판정이 깨진다.
+- `map_type` 후보가 `삭제` 하나뿐이라, 목적 선택 시 **자동 고정**한다(`applyMapOnlyScope`).
+  예전에는 후보가 2개라 사용자가 StepMap 에서 직접 골라야 했다.
+- `MAP_TYPE_EDIT_REQ('수정')` 상수와 i18n 키(`map_type_edit_req`, `map_change_reason_edit`)를 삭제했다.
+- 상세보기 이유 라벨도 `MAP 삭제 이유` 하나로 통일(`PagedDetailView`).
+
+#### ② StepMap 의 ADI 버튼 제거
+
+- `map_type` 버튼 목록에서 `ADI` 를 뺐다. 기타 목적 **'ADI CD 변경'이 `map_type='ADI'` 로
+  자동 고정하는 동작은 그대로**이며, 고정된 동안은 버튼 대신 안내 문구(`map_type_adi_fixed`)를 띄운다.
+
+#### ③ 상신 모달 확대
+
+- `maxWidth` 520px → **1040px**(상수 `SUBMIT_MODAL_MAX_WIDTH`).
+- 공용 `.modal-body { max-height: 82vh }` 는 **건드리지 않고**, `Modal` 에 `bodyStyle` prop 을
+  새로 만들어 이 모달에만 최소 높이(62vh)를 준다 — 다른 모달에 영향이 없다.
+- 특이사항 textarea `rows` 3 → **10**, 세로 리사이즈 허용.
+
+#### ④ 예외 구역(ea_change) 기본값을 C가문 여부에 연동
+
+| only_prodc | 기본값 |
+|---|---|
+| `No` (일반) | **300** |
+| `Yes` (C가문) | **500** |
+
+- `변경 없음` 선택지 라벨에 적용 기본값을 함께 표시한다(`no_change_with_default`, 예: `변경 없음(300)`).
+- 값 칸을 **숨기지 않고 표시한 뒤 잠근다** — 실제로 저장되는 기본값이 보이도록 한 것이다.
+- C가문 Yes/No 를 전환하면 `변경 없음` 상태일 때만 기본값을 함께 갱신한다.
+  `변경 있음`이면 사용자가 직접 넣은 값이므로 건드리지 않는다.
+- 상수: `EA_NO_CHANGE` / `EA_HAS_CHANGE` / `EA_DEFAULT_NORMAL` / `EA_DEFAULT_PRODC` / `eaDefaultValue()`
+- ⚠️ 백엔드 `RequestDocument.EA_*` 와 **같은 값**이어야 한다(합의자 필수 판정이 양쪽에서 동일해야 함).
+
+#### ⑤ Only MAP · MAP 삭제: J-ayer·O-ayer·Backbone 단계 차단 (2026-08-12)
+
+- 이 두 목적은 원래도 저장 시 `jayerRows/oayerRows/bbRows` 를 **빈 배열로 버렸는데**,
+  화면에서는 그 단계에 들어가 입력까지 할 수 있어 "입력했는데 사라진다"는 혼란이 있었다.
+- 이제 **단계 자체를 막는다** — `lastStep = 2`(MAP 정보)이고, 2단계 하단 버튼이 `다음 →` 대신
+  **`📤 상신`** 이 된다. 상세 규칙은 위 **§2.4 단계 이동 규칙** 참조.
+- 인디케이터의 3·4·5 는 숨기지 않고 흐리게 남긴다(`WizardIndicator.disabledSteps`).
+- ⚠️ 기타 목적 **'ADI CD 변경'(`isAdiCdOnly`)은 이번 범위가 아니다.** 같은 자리에서 3·4단계 검증을
+  건너뛰지만(`validate`), 단계 이동은 종전대로 열려 있다.
+
+#### ⑥ 영업/기술지원 합의자(SA) — 신설 결재 단계
+
+작성자가 **상신 모달에서 PL 권한자 중 지정**하는 결재 단계다. 자세한 결재 흐름은
+`docs/APPROVAL.md` **Case P** 참조.
+
+- 저장 위치: `detail.sales_agreers` (`[{loginid, name}]`), 미지정 사유는 `detail.sales_agreer_none_reason`
+- **지정 필수 조건**(`requiresSalesAgreer` / `RequestDocument.requires_sales_agreer`):
+  `ea_change === '변경 있음'` **이고** `ea_value` 가 기본값(300/500)과 **다를 때**.
+  이때 합의자 1명 이상 또는 미지정 사유가 없으면 상신이 막힌다.
+- 재상신 시 이전 회차 지정이 모달에 그대로 채워지고, 작성자가 바꿀 수 있다.
+
 
 ### 추가 변경 이력 (2026-08-11 — 임시저장 재진입 시 `source_partid` 유실 수정 + 왕복 테스트 신설)
 

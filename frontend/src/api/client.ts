@@ -224,6 +224,23 @@ const peerReject = async (docId: number, comment?: string) => {
   return { data };
 };
 
+// 영업/기술지원 합의자(SA) — PL 검토와 병렬인 단계. 담당자 본인만 처리할 수 있다.
+const salesAgree = async (docId: number, comment?: string) => {
+  const data = await post<{ message: string; status: string }>(
+    `/documents/${docId}/sales-agree/`,
+    { comment: comment ?? '' }
+  );
+  return { data };
+};
+
+const salesReject = async (docId: number, comment?: string) => {
+  const data = await post<{ message: string; status: string }>(
+    `/documents/${docId}/sales-reject/`,
+    { comment: comment ?? '' }
+  );
+  return { data };
+};
+
 const peerSubmit = async (docId: number, comment?: string) => {
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/peer-submit/`,
@@ -535,6 +552,8 @@ export const documentsAPI = {
   cancelPause,
   peerApprove,
   peerReject,
+  salesAgree,
+  salesReject,
   peerSubmit,
   changeDesignee,
   stats: documentStats,

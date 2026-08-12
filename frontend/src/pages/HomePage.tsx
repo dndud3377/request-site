@@ -669,7 +669,7 @@ export default function HomePage(): React.ReactElement {
                         </td>
                         <td style={{ fontWeight: 500 }}>
                           {row.cells ? (
-                            <StageGrid cells={row.cells} />
+                            <StageGrid cells={row.cells} columns={row.gridColumns} />
                           ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <StatusBadge status={row.pathStatus} />
