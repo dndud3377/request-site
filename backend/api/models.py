@@ -40,10 +40,12 @@ class UserProfile(AbstractBaseUser):
     role     = models.CharField(max_length=10, choices=ROLE_CHOICES, default='NONE', verbose_name='역할')
     # 역할이 마지막으로 배정된 시각(권한 관리에서 '최근 추가순' 정렬용). NONE→역할 배정 시 갱신.
     role_assigned_at = models.DateTimeField(null=True, blank=True, verbose_name='역할 배정 시각')
-    # 의뢰서 메일을 받을 라인 목록(권한 관리 '이메일 설정' 컬럼).
+    # 권한 관리 '이메일 설정'의 '전체 받기' — 켜져 있으면 라인 구분 없이 모든 의뢰서 메일을 받는다.
+    # 기본값이자 신규 사용자의 시작 상태다. 이 값이 True 인 동안 mail_lines 는 쓰이지 않는다.
+    receive_all_mail = models.BooleanField(default=True, verbose_name='메일 전체 받기')
+    # 전체 받기를 껐을 때 메일을 받을 라인 목록.
     # 의뢰서의 detail.line 이 여기 없으면 그 사람에게는 메일을 보내지 않는다(mailer._filter_by_mail_lines).
-    # ⚠️ 빈 집합은 '미설정'이 아니라 '본인이 전부 껐다 = 메일 0통'을 뜻한다.
-    #    그래서 사용자 생성 시점에 항상 활성 라인 전체를 채워 넣는다(assign_default_mail_lines).
+    # ⚠️ 전체 받기가 꺼진 상태의 빈 집합은 '본인이 전부 껐다 = 메일 0통'을 뜻한다.
     mail_lines = models.ManyToManyField(
         'Line', blank=True, related_name='subscribers', verbose_name='메일 수신 라인'
     )
@@ -385,18 +387,6 @@ class Line(models.Model):
 
     def __str__(self):
         return self.name
-
-
-def assign_default_mail_lines(user):
-    """새로 만들어진 사용자에게 활성 라인 전체를 메일 수신 라인으로 채운다.
-
-    빈 집합은 '본인이 전부 껐다 = 메일 0통'을 뜻하므로(UserProfile.mail_lines 주석),
-    '아직 설정하지 않은 사용자'가 빈 집합으로 남지 않도록 생성 시점에 기본값을 준다.
-    이미 설정이 있는 사용자는 건드리지 않는다.
-    """
-    if user.mail_lines.exists():
-        return
-    user.mail_lines.set(Line.objects.filter(is_active=True))
 
 
 class ProcessProduct(models.Model):
