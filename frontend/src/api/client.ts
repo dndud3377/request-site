@@ -750,9 +750,19 @@ const assignRole = async (userId: number, role: UserRole): Promise<{ data: UserW
   return { data };
 };
 
-/** 라인별 메일 수신 설정 전체 교체 (본인 또는 MASTER 만 가능) */
-const updateMailLines = async (userId: number, lines: string[]): Promise<{ data: MailLinesResponse }> => {
-  const data = await patch<MailLinesResponse>(`/users/${userId}/mail-lines/`, { lines });
+/**
+ * 메일 수신 설정 변경 (본인 또는 MASTER 만 가능).
+ * receiveAll=true 면 '전체 받기'로 전환되고 개별 라인 선택은 비워진다.
+ */
+const updateMailLines = async (
+  userId: number,
+  receiveAll: boolean,
+  lines: string[] = [],
+): Promise<{ data: MailLinesResponse }> => {
+  const data = await patch<MailLinesResponse>(`/users/${userId}/mail-lines/`, {
+    receive_all: receiveAll,
+    lines,
+  });
   return { data };
 };
 
