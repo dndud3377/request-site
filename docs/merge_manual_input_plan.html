@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>참조 요청서 '적용' + 변경전/변경후 수기 입력 계획서</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1f2430; --text-secondary: #4b5563;
+    --muted: #8a93a3; --border: #dde1e8; --border-light: #eceff4;
+    --accent: #2563eb; --accent-soft: #eff6ff;
+    --green: #16a34a; --green-soft: #eefaf1;
+    --amber: #b45309; --amber-soft: #fff7ed;
+    --danger: #dc3545; --danger-soft: #fdeced;
+    --purple: #7c3aed; --purple-soft: #f5f0ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171d; --card: #1b1f27; --text: #e8eaf0; --text-secondary: #b6bdcb;
+      --muted: #8a93a3; --border: #333a47; --border-light: #272d38;
+      --accent: #5b8dff; --accent-soft: #1d2740;
+      --green: #4ade80; --green-soft: #16281d;
+      --amber: #fbbf24; --amber-soft: #2c2312;
+      --danger: #f87171; --danger-soft: #2e1a1c;
+      --purple: #a78bfa; --purple-soft: #241d38;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 80px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    font-size: 15px; line-height: 1.65;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 1.55rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+  h2 { font-size: 1.12rem; margin: 40px 0 12px; padding-bottom: 8px; border-bottom: 2px solid var(--border); letter-spacing: -0.01em; }
+  h3 { font-size: 0.98rem; margin: 22px 0 8px; }
+  p { margin: 8px 0; color: var(--text-secondary); }
+  code { background: var(--border-light); padding: 1px 5px; border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86em; }
+  .sub { color: var(--muted); font-size: 0.88rem; margin: 0 0 18px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin: 14px 0; }
+  .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+  th, td { border-bottom: 1px solid var(--border-light); padding: 7px 9px; text-align: left; vertical-align: middle; }
+  th { background: var(--border-light); font-weight: 600; font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; }
+  ul, ol { margin: 8px 0; padding-left: 20px; color: var(--text-secondary); }
+  li { margin: 4px 0; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+  .b-j { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); }
+  .b-o { background: var(--purple-soft); color: var(--purple); border: 1px solid var(--purple); }
+  .b-new { background: var(--green-soft); color: var(--green); border: 1px solid var(--green); }
+  .b-del { background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger); }
+  .b-chg { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber); }
+  .b-empty { background: var(--border-light); color: var(--muted); border: 1px solid var(--border); }
+  .tag-new { background: var(--green-soft); color: var(--green); border: 1px solid var(--green); }
+  .tag-keep { background: var(--border-light); color: var(--muted); border: 1px solid var(--border); }
+  .tag-q { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber); }
+  .mock { border: 2px dashed var(--accent); border-radius: 12px; padding: 18px; background: var(--card); margin: 16px 0; }
+  .mock-label { display: inline-block; background: var(--accent); color: #fff; font-size: 0.72rem; font-weight: 700;
+    padding: 2px 10px; border-radius: 20px; margin-bottom: 14px; }
+  .form-label { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px; }
+  .btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card);
+    color: var(--text); font-size: 0.85rem; cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--card);
+    color: var(--text); font-size: 0.85rem; width: 100%; font-family: inherit; }
+  .row-flex { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+  .radio-row { display: flex; gap: 18px; align-items: center; margin-bottom: 10px; font-size: 0.88rem; }
+  .radio-row label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .summary-bar { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; background: var(--border-light);
+    border-radius: 8px; padding: 8px 12px; font-size: 0.83rem; color: var(--text-secondary); margin: 14px 0 10px; }
+  .gate { border-radius: 8px; padding: 8px 12px; font-size: 0.84rem; margin: 0 0 14px; border: 1px solid transparent; }
+  .gate-ng { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); font-weight: 600; }
+  .gate-ok { background: var(--green-soft); color: var(--green); border-color: var(--green); font-weight: 600; }
+  .grp-before { background: var(--danger-soft) !important; text-align: center !important; }
+  .grp-after { background: var(--green-soft) !important; text-align: center !important; }
+  .cell-none { color: var(--muted); font-style: italic; text-align: center; cursor: pointer; }
+  .cell-none:hover { background: var(--accent-soft); }
+  .x-btn { border: none; background: none; color: var(--danger); cursor: pointer; font-size: 0.9rem; padding: 0 3px; }
+  .r-btn { border: none; background: none; color: var(--text-secondary); cursor: pointer; font-size: 0.9rem; padding: 0 3px; }
+  .cell-in { width: 100%; min-width: 62px; padding: 3px 5px; border: 1px solid transparent; border-radius: 4px;
+    background: transparent; color: var(--text); font-size: 0.82rem; font-family: inherit; }
+  .cell-in:hover { border-color: var(--border); }
+  .cell-in:focus { border-color: var(--accent); outline: none; background: var(--card); }
+  .cell-in.err { border-color: var(--danger); background: var(--danger-soft); }
+  .cell-in.diff { color: var(--amber); font-weight: 700; }
+  .cell-ro { color: var(--muted); text-align: center; }
+  .mini-sel { padding: 2px 4px; font-size: 0.75rem; border-radius: 5px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); font-family: inherit; }
+  .demo-tip { font-size: 0.8rem; color: var(--muted); margin-top: 8px; line-height: 1.6; }
+  .kv { display: grid; grid-template-columns: 150px 1fr; gap: 4px 14px; font-size: 0.87rem; }
+  .kv dt { color: var(--muted); font-weight: 600; }
+  .kv dd { margin: 0; color: var(--text-secondary); }
+  .note { border-left: 3px solid var(--amber); background: var(--amber-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 12px 0; }
+  .note.stop { border-left-color: var(--danger); background: var(--danger-soft); }
+  .note.ok { border-left-color: var(--green); background: var(--green-soft); }
+  .note p { color: var(--text); margin: 4px 0; }
+  .steps { counter-reset: s; list-style: none; padding-left: 0; }
+  .steps li { counter-increment: s; position: relative; padding-left: 34px; margin: 10px 0; color: var(--text-secondary); }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: 1px; width: 24px; height: 24px;
+    border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.78rem; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; }
+  .paste-box { width: 100%; min-height: 90px; font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.8rem; padding: 8px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--border-light); color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>참조 요청서 '적용' + 변경전/변경후 수기 입력 — 작업 계획서</h1>
+<p class="sub">
+  대상: 의뢰서 작성 STEP 1 · 기타 목적 <code>Overlay 변경</code> / <code>Layer 추가/삭제</code> / <code>STEPSEQ 변경</code><br />
+  작성일 2026-08-12 · 브랜치 <code>claude/requisition-merge-feature-update-88q0ku</code> · <b>rev.3</b> (미결 전건 확정 반영) · <b>승인 전이므로 코드는 아직 한 줄도 작성하지 않았습니다</b>
+</p>
+
+<div class="note ok">
+  <p><b>📌 목표</b> — 참조 요청서를 <b>'없음'으로 확정</b>해도 변경전/변경후 표가 열려, 엑셀 붙여넣기 + 수기 입력으로 직접 채울 수 있게 한다.</p>
+</div>
+
+<div class="card" style="border-color: var(--accent)">
+  <h3 style="margin-top:0">rev.2 에서 확정된 4건</h3>
+  <ol>
+    <li><b>버튼 이름은 기존 <code>Merge</code> 유지</b> — 이름 충돌이 없어지므로 표 ① 의 확정 버튼도 <b>적용</b> 그대로 둡니다. (i18n 변경 없음)</li>
+    <li><b>상세 페이지 문구 반영</b> — <code>ba_detail_note</code> "Merge 시점 기준" → "작성자 편집 반영".</li>
+    <li><b>'없음' 은 직접입력 모드가 아니라 '없음' 으로 확정되는 값</b> — 라디오에서 '없음' 을 고르고 <code>Merge</code> 를 누르면 참조 요청서가 <b>'없음'으로 확정·잠금</b>되고, 그 결과로 변경전/변경후 표가 열립니다.</li>
+    <li><b>값 비교 강조 유지</b> — 양쪽에 값이 있으면 기존처럼 컬럼끼리 비교해 <b>다른 칸을 강조</b>합니다. 수기로 입력·붙여넣기한 값에도 실시간 적용됩니다.</li>
+    <li><b>모드 전환은 항상 모달 → 확인 시 초기화</b> <span class="badge tag-q">rev.3</span> — 있음 ↔ 없음 을 바꿀 때 반드시 확인 모달을 거치고, 확인해야 초기화와 함께 전환됩니다.</li>
+  </ol>
+</div>
+
+<h2>1. 현재 동작 (변경 전)</h2>
+<div class="card">
+  <table>
+    <tbody>
+      <tr><th style="width:150px">노출 조건</th><td><code>MERGE_ENABLED_PURPOSES</code> = Layer 추가/삭제 · STEPSEQ 변경 · Overlay 변경 중 <b>하나라도</b> 선택 → 블록 1개 노출 (<code>Step1.tsx:258</code>)</td></tr>
+      <tr><th>참조 선택</th><td>결재완료 문서 자동완성 <code>AutocompleteInput</code> → 선택해야만 <b>Merge</b> 버튼 활성</td></tr>
+      <tr><th>Merge 버튼</th><td>확인 모달(3-way 건수 미리보기) → <code>computeLayerMerge</code> 로 J/O 표 반영 + <code>computeBeforeAfter</code> 로 비교 표 생성</td></tr>
+      <tr><th>표 ①</th><td><b>BEFORE / AFTER</b> — 자동으로 짝지을 수 없는 항목. 좌우에서 한 행씩 클릭 → <b>적용</b> 으로 확정 (1:N 재사용, 미등록 선택 가능)</td></tr>
+      <tr><th>표 ②</th><td><b>변경전 / 변경후</b> — 확정된 짝. 구분(J/O) + 변경전 5칸 + 변경후 5칸 + 판정 + ✕(해제). <b>전부 읽기 전용</b></td></tr>
+      <tr><th>게이트</th><td><code>merge_unmatched_after</code> 가 1건이라도 남으면 다음 STEP·상신 차단</td></tr>
+      <tr><th>저장</th><td><code>detail.merge_pairs</code> / <code>merge_unmatched_before</code> / <code>merge_unmatched_after</code> / <code>merge_ref_doc_id</code> · 롤백용 <code>additional_notes.mergeSnapshot</code> — <b>백엔드·마이그레이션 없음</b></td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:10px">
+    <b>버튼 이름:</b> rev.2 결정에 따라 참조 요청서 옆 버튼은 <code>request.merge_button</code> = <b>Merge</b> 그대로, 표 ① 의 확정 버튼은 <code>request.ba_apply</code> = <b>적용</b> 그대로 둡니다. <b>i18n 라벨 변경 없음.</b>
+  </p>
+</div>
+
+<h2>2. 인터뷰 결정사항 (전 항목 확정)</h2>
+<div class="card scroll-x">
+  <table>
+    <thead><tr><th style="width:210px">항목</th><th>결정</th></tr></thead>
+    <tbody>
+      <tr><td>참조 '없음' 선택 UI</td><td><b>라디오 2개</b> — ○ 참조 요청서 있음 / ○ 없음. '없음' 이면 자동완성 입력 비활성 + <code>Merge</code> 버튼 활성 → 누르면 <b>참조 요청서 = 없음</b> 으로 확정·잠금되고 표가 열림</td></tr>
+      <tr><td>버튼 이름 <span class="badge tag-q">rev.2</span></td><td><b>Merge 유지</b> (표 ① 확정 버튼도 '적용' 유지)</td></tr>
+      <tr><td>모드 전환 <span class="badge tag-q">rev.3</span></td><td>있음 ↔ 없음 전환 시 <b>항상 확인 모달</b> → 확인해야 <b>초기화 + 전환</b>, 취소하면 라디오도 되돌아감</td></tr>
+      <tr><td>값 비교 강조 <span class="badge tag-q">rev.2</span></td><td>양쪽에 값이 있는 행은 <b>컬럼별로 비교해 다른 칸을 강조</b>(<code>.ba-cell-changed</code>) — 수기 입력에도 실시간 적용</td></tr>
+      <tr><td>수기 표 구조</td><td><b>기존 확정 표 1개 그대로</b> (짝 단위 1행 = 변경전 + 변경후) → 요청 6번의 행 수 동기화가 <b>구조적으로 자동 보장</b></td></tr>
+      <tr><td>편집 허용 범위</td><td><b>참조가 있을 때도</b> 행 추가·편집 허용, <b>자동 생성된 짝도 전부 편집 가능</b></td></tr>
+      <tr><td>선택 가능한 뱃지</td><td><b>구분(J-ayer / O-ayer)만</b> — 기본 <b>J-ayer</b>, <b>드롭다운</b> 으로 선택</td></tr>
+      <tr><td>미등록 지정</td><td><b>새 행은 양쪽 모두 '미등록' 상태로 시작</b>. 값을 넣었다가 되돌릴 땐 ✕ 옆의 <b>↺ 초기화</b> 버튼</td></tr>
+      <tr><td>layer 컬럼</td><td><b>컬럼 유지</b>, 수기로 채운 쪽은 <b>읽기 전용 —</b> (입력 대상은 process_id / SP / SD / PP 4칸)</td></tr>
+      <tr><td>판정 컬럼</td><td><b>미등록 여부로 자동 결정</b> — 변경전 미등록=추가 / 변경후 미등록=삭제 / 양쪽 값 있음=변경</td></tr>
+      <tr><td>붙여넣기 열 기준</td><td><b>항상 그 쪽의 첫 칸(process_id)부터 고정</b> — 어느 칸을 클릭했든 동일</td></tr>
+      <tr><td>상신 게이트</td><td><b>4칸 필수 입력</b> (미등록 쪽은 검사 제외)</td></tr>
+      <tr><td>J/O 표(STEP2·3) 연동</td><td><b>연동 없음</b> — 수기 값은 변경전/변경후 기록 전용. 3-way 반영·롤백 스냅샷 없음</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>3. 변경 후 화면 — 참조 요청서 블록</h2>
+
+<div class="mock">
+  <span class="mock-label">MOCK · STEP 1 — 기타 목적에 Overlay 변경 선택 시</span>
+  <div class="radio-row">
+    <label><input type="radio" name="mode" id="modeRef" checked onclick="return askMode('ref')" /> 참조 요청서 있음</label>
+    <label><input type="radio" name="mode" id="modeNone" onclick="return askMode('none')" /> 참조 요청서 없음</label>
+  </div>
+  <div class="row-flex">
+    <div style="flex:1; min-width:280px">
+      <span class="form-label">참조 요청서</span>
+      <input class="input" id="refInput" placeholder="이력에서 요청서를 선택하세요" />
+    </div>
+    <button class="btn btn-primary" id="applyBtn">Merge</button>
+    <button class="btn" id="resetBtn">↻ 재선택</button>
+  </div>
+  <p class="demo-tip" id="modeTip">
+    참조 요청서를 고르고 <b>Merge</b> → 기존과 동일하게 3-way 반영 + 비교 표가 자동 생성됩니다.
+  </p>
+</div>
+
+<table style="margin-top:6px">
+  <thead><tr><th style="width:120px">모드</th><th>Merge 버튼을 눌렀을 때</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>참조 있음</b><br /><span class="badge tag-keep">기존 유지</span></td>
+      <td>확인 모달(3-way 건수) → <code>computeLayerMerge</code> J/O 반영 + <code>computeBeforeAfter</code> 비교 표 생성 + <code>mergeSnapshot</code> 저장. <b>표 ② 가 편집 가능해진 것만 차이</b></td>
+    </tr>
+    <tr>
+      <td><b>참조 없음</b><br /><span class="badge tag-new">신규</span></td>
+      <td>
+        참조 요청서가 <b>'없음' 으로 확정</b>됩니다 — 입력란에 <i>없음</i> 이 표시되고 라디오·입력이 잠깁니다(참조 있음 모드에서 문서를 확정했을 때와 같은 취급).
+        그 결과로 표 ② 가 <b>양쪽 미등록 1행</b>으로 열립니다. 표 ① (BEFORE/AFTER 매핑)은 짝지을 참조가 없으므로 노출하지 않습니다.
+        3-way 확인 모달·J/O 반영·<code>mergeSnapshot</code> 은 없습니다. 되돌릴 땐 <b>↻ 재선택</b> (경고 모달 후 표를 비우고 라디오 잠금 해제)
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>4. 변경 후 화면 — 변경전 / 변경후 표 (동작하는 데모)</h2>
+
+<div class="mock">
+  <span class="mock-label">MOCK · 실제로 붙여넣기·편집이 동작합니다</span>
+
+  <div class="summary-bar">
+    <span>변경 없음 <b>0</b>건</span>
+    <span>확정 <b id="sumRows">1</b>건</span>
+    <span id="sumKinds">추가 0 · 삭제 0 · 변경 0</span>
+  </div>
+  <div class="gate gate-ng" id="gateBox">항목을 입력하세요 — 다음 STEP·상신이 차단됩니다.</div>
+
+  <div class="scroll-x">
+    <table id="baTable">
+      <thead>
+        <tr>
+          <th rowspan="2" style="width:96px">구분</th>
+          <th colspan="5" class="grp-before">변경전</th>
+          <th colspan="5" class="grp-after">변경후</th>
+          <th rowspan="2" style="width:70px">판정</th>
+          <th rowspan="2" style="width:64px"></th>
+        </tr>
+        <tr>
+          <th class="grp-before">process_id</th><th class="grp-before">SP</th><th class="grp-before">SD</th><th class="grp-before">PP</th><th class="grp-before">layer</th>
+          <th class="grp-after">process_id</th><th class="grp-after">SP</th><th class="grp-after">SD</th><th class="grp-after">PP</th><th class="grp-after">layer</th>
+        </tr>
+      </thead>
+      <tbody id="baBody"></tbody>
+    </table>
+  </div>
+
+  <div class="row-flex" style="margin-top:10px">
+    <button class="btn" onclick="addRow()">+ 행 추가</button>
+    <button class="btn" onclick="resetAll()">↻ 표 초기화</button>
+  </div>
+
+  <p class="demo-tip">
+    <b>데모 사용법</b> — ① '미등록' 칸을 클릭하면 입력 칸으로 바뀝니다. ② 아래 샘플을 복사해 <b>process_id 칸에 붙여넣기</b> 하면 4열 × N행이 한 번에 들어갑니다.
+    ③ 반대쪽 행 수가 자동으로 맞춰집니다. ④ ↺ 는 그 행을 양쪽 미등록으로 되돌리고, ✕ 는 행을 지웁니다.
+  </p>
+  <textarea class="paste-box" spellcheck="false" onclick="this.select()">A1234	SP01	SD01	PP01
+A1234	SP01	SD02	PP01
+A1234	SP02	SD01	PP02
+B5678	SP03	SD04	PP03</textarea>
+</div>
+
+<h3>표의 상세 규칙</h3>
+<div class="card">
+  <ul>
+    <li><b>미등록 표시</b> — 그 쪽 4칸이 모두 비면 5칸을 합쳐 <i>미등록</i> 한 줄로 그립니다(현재 자동 표시와 동일). 클릭하면 입력 칸으로 전환되고 첫 칸에 포커스가 갑니다.</li>
+    <li><b>양쪽 모두 미등록인 행</b> — 판정 뱃지는 <span class="badge b-empty">미작성</span>, 게이트에서 오류로 잡힙니다(빈 행을 남긴 채 상신 불가).</li>
+    <li><b>행 수 동기화(요청 6)</b> — 한 행이 곧 변경전+변경후 한 쌍이라 <b>구조적으로 항상 같습니다.</b> 변경후 3번째 행에 4행을 붙여넣으면 3~6행이 채워지고, 없던 4~6행이 생기며 그 행들의 변경전은 미등록이 됩니다.</li>
+    <li><b>붙여넣기</b> — 클릭한 칸이 아니라 <b>그 쪽 첫 칸(process_id)부터</b> 4칸을 채웁니다. 5열 이상이면 앞 4열만 쓰고, 4열 미만이면 채운 칸만 반영합니다. 행이 모자라면 자동 생성.</li>
+    <li><b>layer 칸</b> — 수기로 채운 쪽은 항상 <span class="cell-ro">—</span> 이며 입력·붙여넣기 대상이 아닙니다. 참조 요청서에서 자동 생성된 행은 원래 값을 유지합니다.</li>
+    <li><b>구분</b> — 새 행은 <b>J-ayer</b> 로 시작, 드롭다운으로 O-ayer 로 바꿉니다. 자동 생성 행의 구분도 바꿀 수 있습니다.</li>
+    <li><b>판정</b> — 사용자가 고르지 않습니다. 변경전 미등록 → <span class="badge b-new">추가</span>, 변경후 미등록 → <span class="badge b-del">삭제</span>, 양쪽 값 있음 → <span class="badge b-chg">변경</span> 로 매 편집마다 재계산합니다.</li>
+    <li><b>값 비교 강조(요청 4번)</b> — 양쪽에 값이 있는 행은 변경전·변경후를 컬럼별로 대조해 <b>다른 값을 <span style="color:var(--amber);font-weight:700">주황 굵게</span></b> 표시합니다(기존 <code>.ba-cell-changed</code> 규칙 그대로). 입력·붙여넣기 즉시 갱신되고, 한쪽이 미등록이면 비교 대상이 없으므로 강조하지 않습니다.</li>
+    <li><b>✕ 버튼</b> — 참조 있음 모드에서 자동 생성된 짝을 지우면 기존처럼 BEFORE/AFTER 표로 되돌립니다. 수기로 추가한 행은 그냥 사라집니다.</li>
+  </ul>
+</div>
+
+<h2>5. 데이터 모델 변경 (프론트 전용 · 백엔드/마이그레이션 없음)</h2>
+<div class="card scroll-x">
+  <table>
+    <thead><tr><th style="width:230px">위치</th><th>변경</th><th style="width:88px">구분</th></tr></thead>
+    <tbody>
+      <tr><td><code>MergePair.id</code></td><td>행 식별자(<code>genId()</code>). 편집·삭제·초기화의 키. 기존 문서는 로드 시 백필</td><td><span class="badge tag-new">신규</span></td></tr>
+      <tr><td><code>MergePair.before / after</code></td><td><code>MergeRowInfo | null</code> 그대로. <b>null = 미등록</b> — 의미 변경 없음</td><td><span class="badge tag-keep">유지</span></td></tr>
+      <tr><td><code>MergePair.kind</code></td><td>저장은 유지하되 <b>편집 시마다 미등록 여부로 재계산</b>. 양쪽 미등록이면 화면에만 '미작성' 표시</td><td><span class="badge tag-keep">유지</span></td></tr>
+      <tr><td><code>DetailFormState.merge_ref_mode</code></td><td><code>'ref' | 'none'</code> — 라디오 상태이자 <b>확정된 참조 값</b>. 구버전 문서는 모두 <code>'ref'</code> 로 백필(기존 화면 그대로)</td><td><span class="badge tag-new">신규</span></td></tr>
+      <tr><td><code>DetailFormState.merge_applied</code></td><td><code>boolean</code> — '없음' 으로 확정했는지. <code>merge_ref_doc_id</code> 가 null 이어도 잠금·패널 노출을 판단하는 근거(<code>isMergeDone = merge_ref_doc_id !== null || merge_applied</code>)</td><td><span class="badge tag-new">신규</span></td></tr>
+      <tr><td><code>merge_ref_doc_label</code></td><td>'없음' 확정 시 잠긴 입력에 표시할 값으로 <code>t('request.merge_ref_none')</code> 를 넣습니다</td><td><span class="badge tag-keep">유지</span></td></tr>
+      <tr><td><code>merge_unmatched_before/after</code></td><td>'없음' 모드에선 항상 빈 배열</td><td><span class="badge tag-keep">유지</span></td></tr>
+      <tr><td><code>additional_notes.mergeSnapshot</code></td><td>'없음' 모드에선 만들지 않음(J/O 를 건드리지 않으므로 롤백 대상이 없음)</td><td><span class="badge tag-keep">유지</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>6. 게이트(상신 차단) 규칙</h2>
+<div class="card">
+  <table>
+    <thead><tr><th style="width:150px">검사</th><th>내용</th><th style="width:120px">적용 모드</th></tr></thead>
+    <tbody>
+      <tr><td>미매핑 AFTER</td><td><code>merge_unmatched_after</code> 0건 <span class="badge tag-keep">기존</span></td><td>참조 있음</td></tr>
+      <tr><td>유효 행 1건 이상</td><td>표가 완전히 비어 있으면 차단</td><td>참조 없음</td></tr>
+      <tr><td><b>4칸 필수</b></td><td>미등록이 아닌 쪽은 process_id / SP / SD / PP 가 <b>모두</b> 채워져야 함. 한 칸이라도 비면 그 칸을 빨갛게 표시하고 차단</td><td>양쪽 모두</td></tr>
+      <tr><td>빈 행 금지</td><td>양쪽 모두 미등록인 행이 남아 있으면 차단</td><td>양쪽 모두</td></tr>
+    </tbody>
+  </table>
+  <p>임시저장은 지금과 같이 게이트를 타지 않습니다(작성 도중 저장 가능).</p>
+</div>
+
+<h2>7. 결정 완료 항목 (미결 없음)</h2>
+
+<div class="note ok">
+  <p><b>① 버튼 이름 — 결정: 기존 <code>Merge</code> 유지</b></p>
+  <p>참조 요청서 옆 버튼은 <code>request.merge_button</code> = "Merge" 그대로, 표 ① 확정 버튼은 <code>request.ba_apply</code> = "적용" 그대로. 이름 충돌이 없으므로 i18n 라벨 변경이 없습니다.</p>
+</div>
+
+<div class="note ok">
+  <p><b>② 상세 페이지 문구 — 결정: 반영</b></p>
+  <p><code>request.ba_detail_note</code> "Merge 시점 기준" → <b>"작성자 편집 반영"</b> (ko/en 동시). 자동 생성 행까지 편집 가능해진 사실과 문구를 일치시킵니다. 동작 변경은 없습니다.</p>
+</div>
+
+<div class="note ok">
+  <p><b>③ '없음' 의 성격 — 결정: 직접입력 모드가 아니라 '없음' 으로 확정되는 값</b></p>
+  <p>'없음' 을 고르고 <code>Merge</code> 를 누르면 <b>참조 요청서 = 없음</b> 으로 확정되어 입력란·라디오가 잠기고(참조 문서를 확정했을 때와 같은 취급) 그 결과 표가 열립니다.
+  화면 어디에도 '직접 입력 모드' 라는 별도 개념을 두지 않습니다 — 표가 편집 가능한 것은 두 모드 공통 성질입니다.</p>
+</div>
+
+<div class="note ok">
+  <p><b>④ 모드 전환 — 결정: 항상 모달로 확인, 확인 시 무조건 초기화</b></p>
+  <p>'있음 ↔ 없음' 라디오를 누르면 <b>전환 전에 확인 모달</b>을 띄웁니다. <b>확인</b>을 누르면 그때 비로소 초기화와 함께 모드가 바뀌고, <b>취소</b>면 라디오는 원래 위치 그대로 되돌아갑니다(전환도 초기화도 일어나지 않음).</p>
+  <p><b>초기화 대상</b> — <code>merge_pairs</code> · <code>merge_unmatched_before/after</code> · <code>merge_ref_doc_id</code> · <code>merge_ref_doc_label</code> · <code>merge_applied</code> · 참조 문서 캐시(<code>refJayerRows</code>/<code>refOayerRows</code>) · BEFORE/AFTER 선택 상태.
+  '있음' 에서 이미 Merge 로 J/O 표를 바꿔 놓았다면 기존 <b>재선택</b> 과 동일하게 <code>mergeSnapshot</code> 으로 J/O 표를 Merge 직전으로 되돌린 뒤 스냅샷도 비웁니다.</p>
+  <p>확정 여부·입력 데이터 유무와 무관하게 <b>항상</b> 모달을 띄웁니다(지시대로 예외를 두지 않습니다).</p>
+</div>
+
+<h2>8. 영향 받는 파일</h2>
+<div class="card scroll-x">
+  <table>
+    <thead><tr><th style="width:330px">파일</th><th>변경 내용</th></tr></thead>
+    <tbody>
+      <tr><td><code>frontend/src/types/index.ts</code></td><td><code>MergePair.id</code>, <code>merge_ref_mode</code>, <code>merge_applied</code> 추가</td></tr>
+      <tr><td><code>.../RequestPage/constants.ts</code></td><td>초기값, 수기 입력 컬럼 상수(<code>MERGE_MANUAL_FIELDS</code>), 기본 구분값 상수</td></tr>
+      <tr><td><code>.../RequestPage/helpers.ts</code></td><td>순수 함수 3개 신설 — <code>parseMergePasteRows</code>(TSV 파싱) · <code>deriveMergeKind</code> · <code>validateMergePairs</code>(4칸 필수·빈 행)</td></tr>
+      <tr><td><code>.../components/BeforeAfterPanel.tsx</code></td><td>표 ② 를 편집 가능하게 — 입력 셀 · 붙여넣기 · 행 추가/삭제/초기화 · 구분 드롭다운 · 오류 표시. 표 ① 은 '있음' 모드에서만 렌더</td></tr>
+      <tr><td><code>.../components/Step1.tsx</code></td><td>모드 라디오 2개, '없음' 확정 시 입력 비활성·잠금 표시, <code>isMergeDone</code> 판정 확장 (버튼 라벨은 변경 없음)</td></tr>
+      <tr><td><code>.../RequestPage/index.tsx</code></td><td>핸들러 신설(<code>handleBaCellChange</code> / <code>handleBaPaste</code> / <code>handleBaAddRow</code> / <code>handleBaResetRow</code>), <b>모드 전환 확인 모달</b>(<code>mergeModeConfirm</code> 상태 + 기존 <code>ConfirmModal</code> 재사용, 확인 시 <code>clearMergeComparison</code>·스냅샷 롤백 실행), 게이트 확장, 문서 로드 백필</td></tr>
+      <tr><td><code>frontend/src/locales/ko.json · en.json</code></td><td>신규 키 ko/en <b>동시</b> 추가 (규칙 G)</td></tr>
+      <tr><td><code>frontend/src/components/PagedDetailView.tsx</code></td><td><code>MergePairsTable</code> — 미작성/미등록 표시 및 주석 문구 정합 (읽기 전용 유지)</td></tr>
+      <tr><td><code>frontend/src/styles/global.css</code></td><td><code>.ba-cell-input</code> / <code>.ba-cell-error</code> / <code>.ba-row-reset</code> 등 추가</td></tr>
+      <tr><td><code>.../RequestPage/helpers.test.ts</code></td><td>파싱·판정·검증 단위 테스트 추가</td></tr>
+      <tr><td><code>docs/REQUEST.md</code></td><td>UI 흐름·저장 필드·게이트 갱신 (규칙 C-4)</td></tr>
+    </tbody>
+  </table>
+  <p><b>백엔드 변경 없음</b> — 값은 모두 <code>additional_notes</code> JSON 안에 저장됩니다. 마이그레이션도 없습니다.</p>
+</div>
+
+<h2>9. 추가할 i18n 키 (ko / en 동시)</h2>
+<div class="card scroll-x">
+  <table>
+    <thead><tr><th style="width:230px">키</th><th>ko</th></tr></thead>
+    <tbody>
+      <tr><td><code>request.merge_button</code></td><td><b>Merge</b> — 변경 없음 <span class="badge tag-keep">유지</span></td></tr>
+      <tr><td><code>request.merge_mode_ref</code></td><td>참조 요청서 있음</td></tr>
+      <tr><td><code>request.merge_mode_none</code></td><td>참조 요청서 없음</td></tr>
+      <tr><td><code>request.merge_ref_none</code></td><td>없음 <span style="color:var(--muted)">(확정 후 잠긴 입력란에 표시)</span></td></tr>
+      <tr><td><code>request.merge_none_done</code></td><td>이 의뢰서는 참조 요청서 '없음' 으로 확정되었습니다. 바꾸려면 '재선택'을 누르세요.</td></tr>
+      <tr><td><code>request.merge_mode_change_title</code></td><td>참조 요청서 모드 변경</td></tr>
+      <tr><td><code>request.merge_mode_change_confirm</code></td><td>참조 요청서 모드를 바꾸면 입력한 변경전/변경후 내용이 모두 사라집니다. 진행하시겠습니까?</td></tr>
+      <tr><td><code>request.ba_manual_hint</code></td><td>미등록 칸을 클릭해 값을 입력하거나, 엑셀에서 4열을 복사해 붙여넣으세요.</td></tr>
+      <tr><td><code>request.ba_add_row</code></td><td>행 추가</td></tr>
+      <tr><td><code>request.ba_reset_row</code></td><td>미등록으로 되돌리기</td></tr>
+      <tr><td><code>request.ba_kind_empty</code></td><td>미작성</td></tr>
+      <tr><td><code>request.ba_gate_manual_empty</code></td><td>변경전/변경후 항목을 1건 이상 입력하세요.</td></tr>
+      <tr><td><code>request.ba_gate_manual_incomplete</code></td><td>미입력 칸이 {{count}}개 있습니다 — process_id·SP·SD·PP 를 모두 채우세요.</td></tr>
+      <tr><td><code>request.ba_gate_manual_blank_row</code></td><td>양쪽 모두 미등록인 행이 {{count}}건 있습니다.</td></tr>
+      <tr><td><code>request.ba_paste_hint</code></td><td>엑셀 4열(process_id·SP·SD·PP)을 복사해 붙여넣으면 여러 행이 한 번에 입력됩니다.</td></tr>
+      <tr><td><code>request.ba_apply</code></td><td><b>적용</b> — 변경 없음 <span class="badge tag-keep">유지</span></td></tr>
+      <tr><td><code>request.ba_detail_note</code> <span class="badge tag-q">수정</span></td><td>Merge 시점 기준 → <b>작성자 편집 반영</b></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>10. 작업 순서</h2>
+<ol class="steps">
+  <li><b>타입·상수</b> — <code>MergePair.id</code>, <code>merge_ref_mode</code>, <code>merge_applied</code> 추가 및 초기값·백필 (커밋 1)</li>
+  <li><b>순수 함수 + 단위 테스트</b> — 붙여넣기 파싱·판정 계산·검증. 테스트를 먼저 통과시킨 뒤 UI 로 넘어갑니다 (커밋 2)</li>
+  <li><b>BeforeAfterPanel 편집화</b> — 입력 셀·미등록 전환·붙여넣기·행 추가/삭제/초기화·구분 드롭다운 (커밋 3)</li>
+  <li><b>Step1 라디오 + 버튼 라벨</b> — 모드 전환·비활성 규칙·패널 노출 조건 (커밋 4)</li>
+  <li><b>index.tsx 핸들러·게이트</b> — 상태 갱신 및 상신 검증 (커밋 5)</li>
+  <li><b>i18n ko/en 동시 추가 · CSS</b> (커밋 6)</li>
+  <li><b>상세 페이지 정합 · <code>docs/REQUEST.md</code> 갱신</b> (커밋 7)</li>
+  <li><b>검증</b> — 백엔드 테스트(sqlite 절차) · <code>npm test</code> · <code>tsc --noEmit</code> 실행 결과 + 아래 수동 시나리오 보고 (규칙 C)</li>
+</ol>
+<p>규칙 E 에 따라 <b>파일별 개별 커밋</b>으로 진행합니다.</p>
+
+<h2>11. 수동 검증 시나리오 (완료 후 제공 예정)</h2>
+<div class="card">
+  <ol>
+    <li><code>http://localhost:10011</code> → 의뢰서 작성 → STEP 1 → 기타 목적 <b>Overlay 변경</b> 클릭 → 참조 요청서 블록에 <b>라디오 2개</b>가 보이고 버튼 이름이 <b>적용</b>인지 확인</li>
+    <li><b>참조 요청서 없음</b> 라디오 → 입력란에 <i>없음</i> 이 뜨고 비활성 → <b>Merge</b> → 입력란·라디오가 잠기고 안내 문구가 뜨며 변경전/변경후 표가 <b>미등록 / 미등록 1행</b>으로 열리는지 확인</li>
+    <li>변경전 '미등록' 칸 클릭 → 입력 칸 전환 → 엑셀에서 <b>4열 10행</b> 복사 후 붙여넣기 → <b>10행</b>이 생기고 변경후가 전부 미등록인지, 판정이 전부 <b>추가</b>인지 확인</li>
+    <li>변경후 3번째 행 클릭 → 4행짜리 데이터 붙여넣기 → 3~6행이 채워지고 변경전 행 수도 함께 유지·확장되는지 확인 (요청 6번)</li>
+    <li>임의 행의 구분 드롭다운을 <b>O-ayer</b> 로 변경 → 뱃지 색이 보라색으로 바뀌는지 확인</li>
+    <li>한 행의 변경전·변경후를 <b>둘 다</b> 채우고 SD 만 서로 다르게 입력 → 판정이 <b>변경</b>이 되고 <b>SD 칸만 주황 굵게</b> 강조되는지 확인 (요청 4번)</li>
+    <li>값이 든 행의 <b>↺</b> 클릭 → 그 행이 양쪽 미등록으로 돌아가고 판정이 <b>미작성</b>이 되는지 확인</li>
+    <li>한 행의 SP 만 비운 채 <b>다음 STEP</b> → 해당 칸이 빨갛게 표시되고 상신이 차단되는지 확인 (4칸 필수)</li>
+    <li>값이 든 상태에서 라디오를 <b>참조 요청서 있음</b> 으로 변경 → <b>확인 모달</b>이 먼저 뜨는지 확인 → <b>취소</b> → 라디오가 '없음' 그대로이고 표도 그대로인지 확인 → 다시 눌러 <b>확인</b> → 표가 비워지고 모드가 바뀌는지 확인</li>
+    <li>'있음' 으로 Merge 를 끝낸 뒤 라디오를 <b>없음</b> 으로 변경 → 확인 시 J-ayer/O-ayer 표(STEP2·3)가 <b>Merge 직전 상태로 복구</b>되는지 확인</li>
+    <li>임시저장 → 목록에서 재진입 → 표·모드·구분이 그대로 복원되는지 확인</li>
+    <li><b>참조 있음</b> 모드로 기존 Merge 를 수행 → 표 ①·② 가 기존대로 동작하고, 표 ② 의 셀을 직접 고칠 수 있는지 확인 (기존 회귀 없음)</li>
+    <li>상신 후 상세 페이지 STEP1 카드에서 표가 동일하게 보이는지 확인</li>
+  </ol>
+</div>
+
+<h2>12. 승인 요청</h2>
+<div class="note ok">
+  <p>미결 4건이 모두 확정되었습니다. <b>이 계획서(rev.2)대로 진행할까요?</b> 승인해 주시면 10장의 순서대로 파일별 개별 커밋으로 착수하겠습니다.</p>
+</div>
+
+</div>
+
+<script>
+  var FIELDS = ['process_id', 'sp', 'sd', 'pp'];
+  var rows = [];
+  var uid = 0;
+  var editing = {};   // rowId_side → true (미등록 셀을 클릭해 입력 모드로 연 상태)
+
+  function blankSide() { return { process_id: '', sp: '', sd: '', pp: '' }; }
+  function newRow() { uid += 1; return { id: 'r' + uid, table: 'J', before: blankSide(), after: blankSide() }; }
+  function isUnreg(side) { return FIELDS.every(function (f) { return !side[f].trim(); }); }
+  function kindOf(row) {
+    var b = isUnreg(row.before), a = isUnreg(row.after);
+    if (b && a) return 'empty';
+    if (b) return 'added';
+    if (a) return 'deleted';
+    return 'changed';
+  }
+  var KIND_LABEL = { added: '추가', deleted: '삭제', changed: '변경', empty: '미작성' };
+  var KIND_CLASS = { added: 'b-new', deleted: 'b-del', changed: 'b-chg', empty: 'b-empty' };
+
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+
+  function sideCells(row, side) {
+    var data = row[side];
+    var other = row[side === 'before' ? 'after' : 'before'];
+    // 양쪽에 값이 있을 때만 컬럼끼리 비교해 다른 값을 강조한다(기존 .ba-cell-changed 규칙).
+    var compare = !isUnreg(data) && !isUnreg(other);
+    var key = row.id + '_' + side;
+    if (isUnreg(data) && !editing[key]) {
+      return '<td colspan="5" class="cell-none" onclick="openEdit(\'' + row.id + '\',\'' + side + '\')">미등록</td>';
+    }
+    var html = '';
+    FIELDS.forEach(function (f, i) {
+      var bad = !data[f].trim() && !isUnreg(data);
+      var diff = compare && data[f].trim() !== other[f].trim();
+      html += '<td><input class="cell-in' + (bad ? ' err' : '') + (diff ? ' diff' : '') + '" data-row="' + row.id + '" data-side="' + side + '" data-field="' + f + '"'
+        + ' value="' + esc(data[f]) + '" placeholder="' + f + '"'
+        + ' oninput="onCell(this)" onblur="onBlur(this)" onpaste="onPaste(event, this)" /></td>';
+    });
+    html += '<td class="cell-ro">—</td>';
+    return html;
+  }
+
+  function render() {
+    var body = document.getElementById('baBody');
+    if (rows.length === 0) rows.push(newRow());
+    body.innerHTML = rows.map(function (row) {
+      var k = kindOf(row);
+      return '<tr>'
+        + '<td><select class="mini-sel" onchange="setTable(\'' + row.id + '\', this.value)">'
+        +   '<option value="J"' + (row.table === 'J' ? ' selected' : '') + '>J-ayer</option>'
+        +   '<option value="O"' + (row.table === 'O' ? ' selected' : '') + '>O-ayer</option>'
+        + '</select> <span class="badge ' + (row.table === 'J' ? 'b-j' : 'b-o') + '">' + (row.table === 'J' ? 'J' : 'O') + '</span></td>'
+        + sideCells(row, 'before')
+        + sideCells(row, 'after')
+        + '<td><span class="badge ' + KIND_CLASS[k] + '">' + KIND_LABEL[k] + '</span></td>'
+        + '<td style="white-space:nowrap">'
+        +   '<button class="r-btn" title="미등록으로 되돌리기" onclick="resetRow(\'' + row.id + '\')">↺</button>'
+        +   '<button class="x-btn" title="행 삭제" onclick="delRow(\'' + row.id + '\')">✕</button>'
+        + '</td></tr>';
+    }).join('');
+    updateGate();
+  }
+
+  function updateGate() {
+    var incomplete = 0, blank = 0, counts = { added: 0, deleted: 0, changed: 0 };
+    rows.forEach(function (row) {
+      var k = kindOf(row);
+      if (k === 'empty') { blank += 1; return; }
+      counts[k] += 1;
+      ['before', 'after'].forEach(function (side) {
+        var d = row[side];
+        if (isUnreg(d)) return;
+        FIELDS.forEach(function (f) { if (!d[f].trim()) incomplete += 1; });
+      });
+    });
+    var valid = rows.length - blank;
+    document.getElementById('sumRows').textContent = valid;
+    document.getElementById('sumKinds').textContent =
+      '추가 ' + counts.added + ' · 삭제 ' + counts.deleted + ' · 변경 ' + counts.changed;
+    var box = document.getElementById('gateBox');
+    var msgs = [];
+    if (valid === 0) msgs.push('변경전/변경후 항목을 1건 이상 입력하세요.');
+    if (incomplete > 0) msgs.push('미입력 칸이 ' + incomplete + '개 있습니다 — process_id·SP·SD·PP 를 모두 채우세요.');
+    if (blank > 0) msgs.push('양쪽 모두 미등록인 행이 ' + blank + '건 있습니다.');
+    if (msgs.length === 0) {
+      box.className = 'gate gate-ok';
+      box.textContent = '모든 항목이 입력되었습니다 — 다음 STEP 진행 가능';
+    } else {
+      box.className = 'gate gate-ng';
+      box.textContent = msgs.join(' / ') + ' — 다음 STEP·상신이 차단됩니다.';
+    }
+  }
+
+  function findRow(id) { return rows.filter(function (r) { return r.id === id; })[0]; }
+
+  function openEdit(id, side) { editing[id + '_' + side] = true; render(); focusCell(id, side, 'process_id'); }
+  function focusCell(id, side, field) {
+    var el = document.querySelector('input[data-row="' + id + '"][data-side="' + side + '"][data-field="' + field + '"]');
+    if (el) el.focus();
+  }
+  // 입력 중에는 포커스를 잃지 않도록 전체 렌더 대신 그 행의 강조·오류 클래스만 갱신한다.
+  function onCell(el) {
+    var row = findRow(el.dataset.row);
+    row[el.dataset.side][el.dataset.field] = el.value;
+    refreshRow(row);
+    updateGate();
+  }
+  function refreshRow(row) {
+    ['before', 'after'].forEach(function (side) {
+      var data = row[side];
+      var other = row[side === 'before' ? 'after' : 'before'];
+      var compare = !isUnreg(data) && !isUnreg(other);
+      FIELDS.forEach(function (f) {
+        var el = document.querySelector('input[data-row="' + row.id + '"][data-side="' + side + '"][data-field="' + f + '"]');
+        if (!el) return;
+        el.classList.toggle('err', !data[f].trim() && !isUnreg(data));
+        el.classList.toggle('diff', compare && data[f].trim() !== other[f].trim());
+      });
+    });
+  }
+  function onBlur(el) {
+    var row = findRow(el.dataset.row);
+    if (isUnreg(row[el.dataset.side])) { delete editing[row.id + '_' + el.dataset.side]; render(); }
+  }
+  function setTable(id, v) { findRow(id).table = v; render(); }
+  function resetRow(id) {
+    var row = findRow(id);
+    row.before = blankSide(); row.after = blankSide();
+    delete editing[id + '_before']; delete editing[id + '_after'];
+    render();
+  }
+  function delRow(id) {
+    rows = rows.filter(function (r) { return r.id !== id; });
+    if (rows.length === 0) rows.push(newRow());
+    render();
+  }
+  function addRow() { rows.push(newRow()); render(); }
+  function resetAll() { rows = [newRow()]; editing = {}; render(); }
+
+  // 붙여넣기 — 클릭한 칸과 무관하게 그 쪽 첫 칸(process_id)부터, 클릭한 '행'부터 아래로 채운다.
+  function onPaste(e, el) {
+    var text = (e.clipboardData || window.clipboardData).getData('text');
+    var lines = text.split(/\r?\n/).filter(function (l) { return l.length > 0; });
+    if (lines.length === 0) return;
+    e.preventDefault();
+    var side = el.dataset.side;
+    var startIdx = rows.map(function (r) { return r.id; }).indexOf(el.dataset.row);
+    lines.forEach(function (line, i) {
+      var cells = line.split('\t');
+      var idx = startIdx + i;
+      while (rows.length <= idx) rows.push(newRow());
+      var target = rows[idx][side];
+      FIELDS.forEach(function (f, c) { if (cells[c] !== undefined) target[f] = cells[c].trim(); });
+      editing[rows[idx].id + '_' + side] = true;
+    });
+    render();
+  }
+
+  var curMode = 'ref';
+
+  // 모드 전환은 항상 확인을 거친다. 취소하면 라디오를 원래 위치로 되돌리고 아무것도 바꾸지 않는다.
+  function askMode(m) {
+    if (m === curMode) return true;
+    var ok = window.confirm('참조 요청서 모드를 바꾸면 입력한 변경전/변경후 내용이 모두 사라집니다.\n진행하시겠습니까?');
+    if (!ok) {
+      document.getElementById(curMode === 'ref' ? 'modeRef' : 'modeNone').checked = true;
+      return false;
+    }
+    curMode = m;
+    resetAll();          // 표 초기화
+    setMode(m);
+    return true;
+  }
+
+  function setMode(m) {
+    var input = document.getElementById('refInput');
+    var applyBtn = document.getElementById('applyBtn');
+    var resetBtn = document.getElementById('resetBtn');
+    var tip = document.getElementById('modeTip');
+    if (m === 'none') {
+      input.value = '없음'; input.disabled = true;
+      applyBtn.disabled = false;
+      tip.innerHTML = '<b>Merge</b> 를 누르면 참조 요청서가 <b>\'없음\'으로 확정</b>되어 입력란·라디오가 잠기고, 아래 변경전/변경후 표가 <b>미등록 / 미등록 1행</b>으로 열립니다. BEFORE/AFTER 매핑 표는 나오지 않습니다.';
+    } else {
+      input.value = ''; input.disabled = false; input.placeholder = '이력에서 요청서를 선택하세요';
+      applyBtn.disabled = false;
+      tip.innerHTML = '참조 요청서를 고르고 <b>Merge</b> → 기존과 동일하게 3-way 반영 + 비교 표가 자동 생성됩니다.';
+    }
+    resetBtn.textContent = '↻ 재선택';
+  }
+
+  render();
+</script>
+</body>
+</html>

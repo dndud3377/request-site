@@ -25,7 +25,7 @@ pages/RequestPage/
     ├── MshotImageUpload.tsx        #    51줄  M-shot 이미지 붙여넣기 영역 (자기완결)
     ├── WizardIndicator.tsx         #    33줄  상단 단계 인디케이터 (자기완결)
     ├── FilterManageModal.tsx       #   185줄  J/O 필터 관리 모달 (공유 — jayer↔oayer props 매개변수화)
-    ├── BeforeAfterPanel.tsx        #   227줄  참조 요청서 Merge BEFORE/AFTER 매핑 패널 (step 1 인라인)
+    ├── BeforeAfterPanel.tsx        #   참조 요청서 BEFORE/AFTER 매핑 + 변경전/변경후 직접 입력 패널 (step 1 인라인)
     ├── AdiCdPanel.tsx              #   139줄  ADI CD 변경전/변경후 스텝 표 (step 1 인라인)
     ├── AdiCdColumnMapModal.tsx     #   128줄  ADI CD 붙여넣기 컬럼 매핑 모달
     ├── Step1.tsx                   #   538줄  step 1 — 기본정보(라인/목적/흐름도/뼈찜entry/고객/생산일)
@@ -52,7 +52,7 @@ pages/RequestPage/
 | 분류 | export |
 |---|---|
 | 목적 옵션 | `OPTION_REQUEST_PURPOSE`, `OPTION_LINE`, `OPTION_OTHER_PURPOSE`, `ONLY_MAP_PURPOSE`, `MAP_DELETE_EDIT_PURPOSE`, `OTHER_PURPOSE_LAB` |
-| Merge | `MERGE_ENABLED_PURPOSES`, `isMergePurposeSelected`, `MERGE_UNREGISTERED_ID` |
+| Merge | `MERGE_ENABLED_PURPOSES`, `isMergePurposeSelected`, `MERGE_UNREGISTERED_ID`, `MERGE_MANUAL_FIELDS`, `MERGE_DEFAULT_TABLE` |
 | ADI CD | `OTHER_PURPOSE_ADI_CD`, `ADI_CD_MAP_TYPE`, `ADI_CD_TEMPLATE_ROWS`, `ADI_CD_MAX_ROWS`, `ADI_CD_HEADER_SCAN_ROWS`, `ADI_CD_STEP_ID_LABEL`, `ADI_CD_STEP_DESC_LABEL` |
 | MAP 삭제/수정 | `MAP_TYPE_EDIT_REQ`, `MAP_TYPE_DELETE_REQ`, `isMapDeleteEditType` |
 | Validation System | `VALIDATION_KEYWORD`, `VS_TARGET`, `VS_NONTARGET`, `VS_NA`, `VALIDATION_CELL_COLOR` |
@@ -76,6 +76,7 @@ pages/RequestPage/
 | 표 행 유틸 | `formatUpdatedDate`, `shouldDisableRow`, `calcDisabled`, `emptyDraftWords`, `sanitizeSignedDecimal`, `findNocBorrowViolations` |
 | 3-way Merge | `MergeComparableRow`(타입), `MergeStats`(타입), `computeLayerMerge` |
 | BEFORE/AFTER 비교 | `BaComparableRow`(타입), `toMergeRowInfo`, `BeforeAfterResult`(타입), `computeBeforeAfter` |
+| 변경전/변경후 직접 입력 | `isMergeSideEmpty`, `normalizeMergeSide`, `deriveMergeKind`, `emptyMergeRowInfo`, `emptyMergePair`, `parseMergePasteRows`, `validateMergePairs` |
 | Validation System | `isValidationKeywordRow`, `isValidationTarget`, `autoValidationSystem` |
 | ADI CD 붙여넣기 | `parseClipboardTable`, `AdiCdHeaderMatch`(타입), `detectAdiCdHeader`, `AdiCdPasteDecision`(타입), `decideAdiCdPaste`, `buildAdiCdRows`, `AdiCdValidationResult`(타입), `validateAdiCdRows` |
 
@@ -92,7 +93,7 @@ pages/RequestPage/
 - **J-layer**: `jayerRows`, `jayerChecked`, `jayerDragInfo`(ref), `jayerFilterSets`, `jayerActiveFilterIds`, `jayerFilterModalOpen`, `jayerNewFilter`, `jayerBarcodeCache`, `jayerSortBySp`
 - **O-layer**: `oayerRows`, `oayerChecked`, `oayerDragInfo`(ref), `oayerFilterSets`, `oayerActiveFilterIds`, `oayerFilterModalOpen`, `oayerNewFilter`, `oayerSortBySp`, `oayerInfoTab`
 - **뼈찜(Bb)**: `bbRows`, `bbExternalData`, `bbExternalLoading`, `activeBbTab`, `bbChecked`, `bbAutoFillRanges`, `showAutoFillPanel`, `bbSearchQueries`, `stagedMappings`, `mappedJayerRowIds`, `selectedJayerRowId`, `bbExtCache`(ref), `bbExtPrevPid`(ref)
-- **참조문서 병합**: `refDocId`, `refDocLabel`, `refJayerRows`, `refOayerRows`, `mergeConfirmOpen`, `mergePreview`, `mergeSnapshot`, `mergeReselectConfirm`
+- **참조문서 병합**: `refDocId`, `refDocLabel`, `refJayerRows`, `refOayerRows`, `mergeConfirmOpen`, `mergePreview`, `mergeSnapshot`, `mergeReselectConfirm`, `mergeModeConfirm`
 - **BEFORE/AFTER 비교**: `baSelBefore`, `baSelAfter`, `baSameCount`
 - **ADI CD 변경**: `adiCdLeaveConfirm`, `adiCdMapModal`, `adiCdPendingApply`
 - **C가문(PRODC)**: `prodcScopeConfirm`
@@ -743,6 +744,55 @@ pages/RequestPage/
 - **알려진 제약(의도된 현행 유지)**: REV Layer 후보(`availableRevLayers`)는 J-layer 표(`jayerRows`)에서 뽑는다.
   `Only MAP` 모드는 J/O 표를 강제로 비우므로 **후보가 0개**가 되어 REV 항목을 새로 추가할 수 없다(불러온 항목 삭제만 가능).
   이 모드에서는 REV Layer 를 쓸 일이 없다는 판단으로 직접 입력은 도입하지 않았다.
+
+### 추가 변경 이력 (2026-08-12 — 참조 요청서 '없음' + 변경전/변경후 직접 입력)
+
+- **개요**: 참조 요청서가 **없을 수도 있다**는 요구에 맞춰 STEP1 참조 블록에 **있음/없음 라디오**를 넣고,
+  변경전/변경후 표를 **직접 입력·엑셀 붙여넣기로 채울 수 있게** 했다. 기획·화면은 `docs/merge_manual_input_plan.html`(동작 데모 포함) 참조.
+  **백엔드·마이그레이션 변경 없음**(값은 모두 `additional_notes` JSON).
+
+- **모드**(`detail.merge_ref_mode` = `'ref' | 'none'`, `detail.merge_applied`):
+  - `ref` — 기존 그대로. 참조 문서를 고르고 `Merge` → 3-way 반영 + `computeBeforeAfter` 로 비교 표 생성.
+  - `none` — `Merge` 를 누르면 **참조 = 없음 으로 확정**(입력란에 `없음` 표시·라디오 잠금)되고 변경전/변경후 표가
+    **양쪽 미등록 1행**으로 열린다. 확인 모달·3-way 반영·`mergeSnapshot` 은 없고 **J/O 표(STEP2·3)와 연동되지 않는다**.
+    짝지을 참조가 없으므로 BEFORE/AFTER 매핑 표(①)는 감춘다(`BeforeAfterPanel` 의 `manualOnly`).
+  - **모드 전환은 항상 확인 모달**(`merge_mode_change_*`)을 거치고, 확인해야 **초기화 + 전환**이 함께 일어난다.
+    취소하면 라디오도 원래 값 그대로다. 확인 시 스냅샷이 있으면 J/O 를 Merge 직전으로 되돌린다(`rollbackMergeSnapshot`).
+  - **버튼 이름은 기존 `Merge` 유지**(표 ① 의 확정 버튼 `적용` 과 이름이 겹치지 않도록).
+
+- **표 직접 입력**(`BeforeAfterPanel`): **자동 생성된 짝을 포함해 모든 행**을 편집한다.
+  - 입력 대상은 `process_id`/`SP`/`SD`/`PP` **4칸**(`MERGE_MANUAL_FIELDS`). `layer` 는 컬럼을 유지하되 **읽기 전용 `—`**.
+  - **미등록**: 새 행은 양쪽 미등록으로 시작한다. 미등록 셀을 클릭하면 입력 칸으로 바뀌고, 4칸을 모두 비운 채 포커스를 벗어나면
+    다시 미등록(`null`)으로 접힌다. `✕`(행 삭제) 옆의 **`↺`** 로 그 행을 양쪽 미등록으로 되돌린다.
+  - **붙여넣기**: 커서 위치와 무관하게 **항상 그 쪽 첫 칸(`process_id`)부터** 채운다(`parseMergePasteRows`).
+    5열 이상은 앞 4열만 쓰고, 4열 미만이면 채운 칸만 반영한다. 행이 모자라면 새 행을 만들어 **행 수가 양쪽 함께** 늘어난다
+    (한 행 = 변경전+변경후 한 쌍이라 행 수 동기화는 구조적으로 보장된다).
+  - **구분**(J-ayer/O-ayer): 행마다 드롭다운으로 고른다. 새 행 기본값은 `MERGE_DEFAULT_TABLE`(J), 직전 행의 구분을 따라간다.
+  - **판정**: 사용자가 고르지 않고 `deriveMergeKind` 가 미등록 여부로 계산한다 — 변경전 미등록 `추가` / 변경후 미등록 `삭제` /
+    양쪽 값 있음 `변경` / 양쪽 미등록 `미작성`(`empty`, 게이트가 막는다).
+  - **값 비교 강조**: 양쪽에 값이 있는 행만 컬럼끼리 대조해 다른 칸을 강조한다(기존 `.ba-cell-changed` 규칙, 입력 즉시 갱신).
+
+- **게이트 추가**(`addBaGateError`, `validateMergePairs`): 기존 `AFTER 미매핑 0` 에 더해
+  **① 미등록이 아닌 쪽은 4칸 필수**(`ba_gate_manual_incomplete`) **② 양쪽 미등록인 빈 행 0건**(`ba_gate_manual_blank_row`)
+  **③ `none` 모드는 유효 행 1건 이상**(`ba_gate_manual_empty`). `layer` 는 수기 대상이 아니라 검사하지 않는다. 임시저장은 여전히 차단하지 않는다.
+
+- **저장 필드**: `MergePair.id`(행 식별자) 추가 — 자동 생성 짝은 출처 id 로 만든 **결정적 값**(`autoPairId`)이라
+  `computeBeforeAfter` 의 순수성이 유지된다. 구버전 문서는 로드 시 `id`(`genId`)·`kind`·`merge_ref_mode`(`'ref'`)·
+  `merge_applied`(참조 문서 id 유무)로 백필한다.
+
+- **상세 페이지**: `MergePairsTable` 은 읽기 전용 그대로이되 판정을 저장값 대신 `deriveMergeKind` 로 계산해 작성 화면과 항상 일치시킨다.
+  전 행 편집이 가능해졌으므로 `ba_detail_note` 를 **'작성자 편집 반영'** 으로 바꿨다(기존 'Merge 시점 기준').
+
+- **i18n**(ko/en 동시 15개): `merge_mode_ref`·`merge_mode_none`·`merge_ref_none`·`merge_none_done`·`merge_mode_change_title/confirm`,
+  `ba_kind_empty`·`ba_add_row`·`ba_reset_row`·`ba_cell_edit_hint`·`ba_paste_hint`·`ba_gate_manual_empty/incomplete/blank_row`, `ba_detail_note` 문구 변경.
+
+- **테스트**: `helpers.test.ts` 에 26건 추가(`isMergeSideEmpty`/`normalizeMergeSide`/`deriveMergeKind`/`parseMergePasteRows`/
+  `emptyMergePair`/`validateMergePairs`) → 파일 84건 통과, 프론트 전체 **145건 통과**. 백엔드 279건 통과(변경 없음).
+  `draftRoundTrip.test.tsx` 픽스처를 신규 `merge_pairs` 형태(행 id·판정·모드 포함)로 갱신했다.
+
+- **알려진 제약**: ① `none` 모드의 값은 J/O 표와 연동되지 않는다(의도 — 기록 전용).
+  ② 자동 생성 행도 편집 가능해져 `merge_pairs` 는 더 이상 'Merge 시점 스냅샷'이 아니다(문구를 함께 바꿨다).
+  ③ 3-way `computeLayerMerge` 는 이번에도 손대지 않았다.
 
 ### 추가 변경 이력 (2026-08-04 — BEFORE/AFTER 완전 일치 선소진 + 행 단위 선택 표시)
 

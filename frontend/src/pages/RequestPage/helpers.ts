@@ -1,7 +1,8 @@
-import { FilterSet, ValidationSystemValue, MergePair, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep } from '../../types';
+import { FilterSet, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep } from '../../types';
 import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, isStO, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL,
+  MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE,
 } from './constants';
 
 // ===== 순수 헬퍼 (인자만 사용 — state 비의존) =====
@@ -225,6 +226,14 @@ const baSame = (a: MergeRowInfo, b: MergeRowInfo): boolean => BA_FIELDS.every((f
 /** 비활성 행과 layerid 가 빈 행은 비교 대상이 아니다. */
 const baTarget = (r: BaComparableRow): boolean => !r.disabled && baNorm(r.layerid) !== '';
 
+/**
+ * 자동 확정 짝의 행 id — 출처 행 id 로 만들어 **같은 입력이면 항상 같은 값**이 되게 한다
+ * (genId 를 쓰면 computeBeforeAfter 가 순수 함수가 아니게 된다). 한 짝의 beforeId·afterId
+ * 조합은 자동 판정에서 유일하므로 중복되지 않는다.
+ */
+const autoPairId = (beforeId: string | null, afterId: string | null): string =>
+  `pair_${beforeId ?? 'none'}__${afterId ?? 'none'}`;
+
 const toUnmatched = (r: BaComparableRow, table: MergeTable): MergeUnmatchedRow => ({
   id: `${table}_${r.id}`,
   table,
@@ -316,6 +325,7 @@ export const computeBeforeAfter = (
       // ② 완전 일치가 빠진 나머지에만 자동/수동 판정을 적용한다.
       if (a.length === 1 && b.length === 1) {
         pairs.push({
+          id: autoPairId(`${table}_${a[0].id}`, `${table}_${b[0].id}`),
           table,
           beforeId: `${table}_${a[0].id}`, before: toMergeRowInfo(a[0]),
           afterId: `${table}_${b[0].id}`, after: toMergeRowInfo(b[0]),
@@ -326,6 +336,7 @@ export const computeBeforeAfter = (
       if (a.length === 0) {
         // 참조에 없던 항목 → BEFORE 미등록 (짝지을 상대가 하나뿐이라 자동 확정)
         b.forEach((r) => pairs.push({
+          id: autoPairId(null, `${table}_${r.id}`),
           table,
           beforeId: null, before: null,
           afterId: `${table}_${r.id}`, after: toMergeRowInfo(r),
@@ -336,6 +347,7 @@ export const computeBeforeAfter = (
       if (b.length === 0) {
         // 현재 요청서에서 사라진 항목 → AFTER 미등록
         a.forEach((r) => pairs.push({
+          id: autoPairId(`${table}_${r.id}`, null),
           table,
           beforeId: `${table}_${r.id}`, before: toMergeRowInfo(r),
           afterId: null, after: null,
@@ -353,6 +365,118 @@ export const computeBeforeAfter = (
   compareTable('O', refOayer, curOayer);
 
   return { pairs, unmatchedBefore, unmatchedAfter, sameCount };
+};
+
+// ===== 변경전/변경후 표 직접 입력 =====
+
+/** 값이 하나도 없는 쪽 = '미등록'. null 도 미등록으로 본다. */
+export const isMergeSideEmpty = (info: MergeRowInfo | null): boolean =>
+  !info || MERGE_MANUAL_FIELDS.every((f) => baNorm(info[f]) === '');
+
+/** 4칸이 모두 빈 쪽은 null(미등록)로 접는다 — 저장 형식을 자동 계산 결과와 같게 유지한다. */
+export const normalizeMergeSide = (info: MergeRowInfo | null): MergeRowInfo | null =>
+  isMergeSideEmpty(info) ? null : info;
+
+/** 판정은 사용자가 고르지 않고 양쪽 미등록 여부로 계산한다. */
+export const deriveMergeKind = (before: MergeRowInfo | null, after: MergeRowInfo | null): MergePairKind => {
+  const b = isMergeSideEmpty(before);
+  const a = isMergeSideEmpty(after);
+  if (b && a) return 'empty';
+  if (b) return 'added';
+  if (a) return 'deleted';
+  return 'changed';
+};
+
+/** 값이 비어 있는 수기 입력용 한 쪽. layerid 는 수기 대상이 아니라 항상 빈 값이다. */
+export const emptyMergeRowInfo = (): MergeRowInfo => ({
+  process_id: '', sp: '', sd: '', pp: '', layerid: '',
+});
+
+/** 양쪽 미등록으로 시작하는 새 행. 수기 행은 되돌릴 출처가 없어 beforeId/afterId 가 null 이다. */
+export const emptyMergePair = (table: MergeTable = MERGE_DEFAULT_TABLE): MergePair => ({
+  id: genId(),
+  table,
+  beforeId: null, before: null,
+  afterId: null, after: null,
+  kind: 'empty',
+});
+
+/**
+ * 엑셀 붙여넣기 원문을 4칸 표로 파싱한다.
+ * 열은 **항상 process_id 부터** 채우므로(커서 위치와 무관) 앞 4열만 쓰고 나머지는 버린다.
+ * 4열보다 적으면 채운 칸만 반영한다(부족한 칸은 undefined 로 남겨 호출부가 기존 값을 유지한다).
+ */
+export const parseMergePasteRows = (raw: string): (string | undefined)[][] =>
+  raw
+    .split(/\r?\n/)
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const cells = line.split('\t');
+      return MERGE_MANUAL_FIELDS.map((_, i) => (cells[i] === undefined ? undefined : cells[i].trim()));
+    });
+
+/**
+ * 붙여넣기 결과를 표에 반영한다 — 시작 행부터 아래로 채우고, 행이 모자라면 새 행을 만든다.
+ * 한 행이 변경전+변경후 한 쌍이므로 **행을 늘리면 반대쪽 행 수도 함께 늘어난다**
+ * (새로 생긴 행의 반대쪽은 미등록으로 남는다). 새 행의 구분은 직전 행을 따라간다.
+ */
+export const applyMergePaste = (
+  pairs: MergePair[],
+  startPairId: string,
+  side: 'before' | 'after',
+  grid: (string | undefined)[][]
+): MergePair[] => {
+  const startIdx = pairs.findIndex((p) => p.id === startPairId);
+  if (startIdx === -1 || grid.length === 0) return pairs;
+  const next = [...pairs];
+  grid.forEach((cells, i) => {
+    const idx = startIdx + i;
+    while (next.length <= idx) next.push(emptyMergePair(next[next.length - 1]?.table));
+    const target = next[idx];
+    const info = { ...(target[side] ?? emptyMergeRowInfo()) };
+    MERGE_MANUAL_FIELDS.forEach((f, c) => {
+      const cell = cells[c];
+      if (cell !== undefined) info[f] = cell;
+    });
+    const updated: MergePair = { ...target, [side]: normalizeMergeSide(info) };
+    next[idx] = { ...updated, kind: deriveMergeKind(updated.before, updated.after) };
+  });
+  return next;
+};
+
+/** 상신 게이트용 집계. */
+export interface MergePairsValidation {
+  /** 미등록이 아닌 쪽에서 비어 있는 칸 수 (4칸 필수) */
+  incompleteCells: number;
+  /** 양쪽 모두 미등록인 행 수 */
+  blankRows: number;
+  /** 한쪽이라도 값이 있는 행 수 */
+  validCount: number;
+}
+
+/**
+ * 변경전/변경후 표 검증 — 미등록이 아닌 쪽은 process_id·sp·sd·pp 4칸을 모두 채워야 한다.
+ * layerid 는 수기 입력 대상이 아니므로 검사하지 않는다.
+ */
+export const validateMergePairs = (pairs: MergePair[]): MergePairsValidation => {
+  let incompleteCells = 0;
+  let blankRows = 0;
+  let validCount = 0;
+  (pairs ?? []).forEach((pair) => {
+    const sides: (MergeRowInfo | null)[] = [pair.before, pair.after];
+    if (sides.every(isMergeSideEmpty)) {
+      blankRows += 1;
+      return;
+    }
+    validCount += 1;
+    sides.forEach((side) => {
+      if (isMergeSideEmpty(side)) return;
+      MERGE_MANUAL_FIELDS.forEach((f) => {
+        if (baNorm(side![f]) === '') incompleteCells += 1;
+      });
+    });
+  });
+  return { incompleteCells, blankRows, validCount };
 };
 
 /** 행 단위: 이 행의 pp 가 판정 키워드를 포함하는가 (셀 하이라이트·문서 판정 공용) */

@@ -144,9 +144,18 @@ const fixtureDetail = {
   validation_system: 'NO',
   merge_ref_doc_id: 77,
   merge_ref_doc_label: '참조 요청서 제목',
+  merge_ref_mode: 'ref',
+  merge_applied: true,
+  // 행 id·판정은 표를 직접 편집하기 위해 필요한 값이라 왕복에서 유지돼야 한다
+  // (id 가 없는 구버전 문서는 로드 시 백필되므로 여기서는 신규 형태를 그대로 쓴다).
   merge_pairs: [{
+    id: 'pair_J_b1__J_a1',
+    table: 'J',
+    beforeId: 'J_b1',
     before: { id: 'J_b1', table: 'jayer', process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01' },
+    afterId: 'J_a1',
     after: { id: 'J_a1', table: 'jayer', process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02' },
+    kind: 'changed',
   }],
   merge_unmatched_before: [{ id: 'J_b2', table: 'jayer', process_id: PROCESS_ID, sp: 'SP03', sd: 'SD03', pp: 'PP03', layerid: 'L03' }],
   merge_unmatched_after: [{ id: 'J_a2', table: 'jayer', process_id: PROCESS_ID, sp: 'SP04', sd: 'SD04', pp: 'PP04', layerid: 'L04' }],

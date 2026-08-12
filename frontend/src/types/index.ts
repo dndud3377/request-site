@@ -437,6 +437,12 @@ export interface DetailFormState {
   merge_ref_doc_id: number | null;
   merge_ref_doc_label: string;   // 잠긴 입력에 표시할 문서 제목
 
+  // 참조 요청서를 '있음/없음' 중 무엇으로 확정했는가. 'none' 은 참조 문서 없이 변경전/변경후를
+  // 직접 채우는 경우로, merge_ref_doc_id 가 null 인 채로 확정된다.
+  merge_ref_mode: MergeRefMode;
+  // 확정 여부. 'none' 은 문서 id 가 없어 merge_ref_doc_id 로 판단할 수 없으므로 별도 플래그를 둔다.
+  merge_applied: boolean;
+
   // 참조 요청서 Merge 의 변경전/변경후 비교 결과. 확정된 짝과 아직 짝이 없는 행을 나눠 저장해
   // 임시저장 후 재진입에도 화면이 그대로 복원된다(상세 페이지 표시에도 merge_pairs 를 쓴다).
   merge_pairs: MergePair[];
@@ -476,20 +482,30 @@ export interface MergeUnmatchedRow extends MergeRowInfo {
 /** J-ayer 끼리, O-ayer 끼리만 비교·매핑한다. */
 export type MergeTable = 'J' | 'O';
 
+/** 참조 요청서를 지정했는가('ref'), 참조 없이 직접 채우는가('none'). */
+export type MergeRefMode = 'ref' | 'none';
+
 /**
- * 확정된 변경전/변경후 한 쌍.
+ * 변경전/변경후 한 쌍.
  * before 가 null 이면 '미등록'(참조에 없던 항목이 새로 생김 = added),
- * after 가 null 이면 '미등록'(참조에 있던 항목이 사라짐 = deleted).
- * beforeId/afterId 는 매핑 해제 시 원래 표로 되돌리기 위한 출처 행 id 다.
+ * after 가 null 이면 '미등록'(참조에 있던 항목이 사라짐 = deleted),
+ * 양쪽 다 null 이면 아직 아무것도 입력하지 않은 행 = empty(상신 게이트가 막는다).
+ * beforeId/afterId 는 매핑 해제 시 원래 표로 되돌리기 위한 출처 행 id 이며,
+ * 수기로 추가한 행은 되돌릴 곳이 없으므로 null 이다.
  */
 export interface MergePair {
+  /** 행 식별자 — 셀 편집·삭제·초기화의 키. 구버전 문서는 로드 시 백필한다. */
+  id: string;
   table: MergeTable;
   beforeId: string | null;
   before: MergeRowInfo | null;
   afterId: string | null;
   after: MergeRowInfo | null;
-  kind: 'changed' | 'added' | 'deleted';
+  kind: MergePairKind;
 }
+
+/** 판정 — 사용자가 고르지 않고 양쪽 미등록 여부로 매번 계산한다. */
+export type MergePairKind = 'changed' | 'added' | 'deleted' | 'empty';
 
 /**
  * '재선택' 롤백용 스냅샷 — Merge 로 3-way 재판정을 반영하기 **직전**의 J/O 표.

@@ -4755,6 +4755,39 @@ select.form-control option {
   border: none; background: none; color: var(--danger);
   cursor: pointer; font-size: 0.85rem; padding: 0 4px; line-height: 1;
 }
+.ba-reset-btn {
+  border: none; background: none; color: var(--text-secondary);
+  cursor: pointer; font-size: 0.85rem; padding: 0 4px; line-height: 1;
+}
+.ba-reset-btn:hover { color: var(--accent); }
+.ba-row-actions { white-space: nowrap; }
+
+/* 변경전/변경후 표 직접 입력 — 셀은 평소 입력칸처럼 보이지 않다가 hover/focus 에서 드러난다. */
+.ba-cell-input {
+  width: 100%; min-width: 58px; padding: 2px 4px;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-primary);
+  font-size: 0.82rem; font-family: inherit;
+}
+.ba-cell-input:hover { border-color: var(--border); }
+.ba-cell-input:focus { border-color: var(--accent); outline: none; background: var(--bg-card); }
+.ba-cell-input-error { border-color: var(--danger); background: var(--danger-light); }
+.ba-cell-readonly { color: var(--text-muted); text-align: center; }
+.ba-cell-unreg-click { cursor: pointer; }
+.ba-cell-unreg-click:hover { background: var(--bg-card-hover); }
+.ba-table-select {
+  padding: 2px 4px; font-size: 0.75rem; font-family: inherit;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-card); color: var(--text-primary);
+}
+
+/* 참조 요청서 있음/없음 라디오 */
+.merge-mode-row { display: flex; gap: 18px; align-items: center; margin-bottom: 8px; }
+.merge-mode-option {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.85rem; color: var(--text-secondary); cursor: pointer;
+}
+.merge-mode-option input:disabled { cursor: not-allowed; }
 
 /* ── ADI CD 변경 — 변경전/변경후 스텝 표 ── */
 .adi-cd-panel { margin: 12px 0 4px; }

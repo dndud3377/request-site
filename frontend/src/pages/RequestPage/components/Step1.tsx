@@ -2,9 +2,9 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
-import { DetailFormState, FlowChartRow, RequestDocument, GuideFeatureKey } from '../../../types';
+import { DetailFormState, FlowChartRow, RequestDocument, GuideFeatureKey, MergeRefMode, MergeTable } from '../../../types';
 import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_ADI_CD, OTHER_PURPOSE_LAB, isMergePurposeSelected } from '../constants';
-import BeforeAfterPanel from './BeforeAfterPanel';
+import BeforeAfterPanel, { BaField, BaSide } from './BeforeAfterPanel';
 import AdiCdPanel, { AdiCdField, AdiCdSide } from './AdiCdPanel';
 
 interface Step1Props {
@@ -42,9 +42,16 @@ interface Step1Props {
   baSameCount: number;
   baSelBefore: string | null;
   baSelAfter: string | null;
-  handleBaSelect: (side: 'before' | 'after', id: string) => void;
+  handleBaSelect: (side: BaSide, id: string) => void;
   handleBaApply: () => void;
   handleBaUnpair: (index: number) => void;
+  handleMergeModeSelect: (mode: MergeRefMode) => void;
+  handleBaCellChange: (pairId: string, side: BaSide, field: BaField, value: string) => void;
+  handleBaCellBlur: (pairId: string, side: BaSide) => void;
+  handleBaPasteRaw: (pairId: string, side: BaSide, raw: string) => void;
+  handleBaTableChange: (pairId: string, table: MergeTable) => void;
+  handleBaAddRow: () => void;
+  handleBaResetRow: (pairId: string) => void;
   handleFlowChange: (id: string, field: keyof Omit<FlowChartRow, 'id'>, value: string) => void;
   handleFlowStepBlur: (rowId: string, field: 'step_from' | 'step_to') => void;
   handleFlowDeleteRow: (id: string) => void;
@@ -99,6 +106,13 @@ const Step1: React.FC<Step1Props> = ({
   handleBaSelect,
   handleBaApply,
   handleBaUnpair,
+  handleMergeModeSelect,
+  handleBaCellChange,
+  handleBaCellBlur,
+  handleBaPasteRaw,
+  handleBaTableChange,
+  handleBaAddRow,
+  handleBaResetRow,
   handleFlowChange,
   handleFlowStepBlur,
   handleFlowDeleteRow,
@@ -132,9 +146,12 @@ const Step1: React.FC<Step1Props> = ({
    */
   const otherPurposeDisabled = (val: string): boolean =>
     val === OTHER_PURPOSE_LAB ? !canSelectPurpose || !isLabProductAllowed : disableOptional;
-  // 참조 요청서는 의뢰서당 1건만 지정할 수 있다. Merge 를 마치면 선택·Merge 를 잠그고,
+  // 참조 요청서는 의뢰서당 1건만 지정할 수 있다. 확정하면 모드 선택·참조 선택·Merge 를 잠그고,
   // 바꾸려면 '재선택' 버튼을 쓴다(문서에 저장되므로 임시저장 후 재진입해도 유지된다).
-  const isMergeDone = detail.merge_ref_doc_id !== null;
+  // '없음' 으로 확정한 경우는 문서 id 가 없으므로 merge_applied 로 판단한다.
+  const isMergeDone = detail.merge_ref_doc_id !== null || detail.merge_applied;
+  // '없음' 으로 확정 — 짝지을 참조가 없어 BEFORE/AFTER 매핑 표를 감추고 변경전/변경후만 쓴다.
+  const isMergeNone = detail.merge_ref_mode === 'none';
   // Merge 사용 목적(Layer 추가/삭제·STEPSEQ 변경·Overlay 변경)을 하나라도 골랐으면 블록을 1개만 노출한다.
   const showMergeBlock = isMergePurposeSelected(detail.other_purpose);
 
@@ -261,11 +278,30 @@ const Step1: React.FC<Step1Props> = ({
             {/* 참조 요청서 Merge — Layer 추가/삭제·STEPSEQ 변경·Overlay 변경 공용 (여러 개를 골라도 1개만) */}
             {showMergeBlock && (
               <div>
+                {/* 참조 요청서 있음/없음 — 바꿀 때는 index.tsx 가 확인 모달을 먼저 띄운다(내용이 모두 초기화된다) */}
+                <div className="merge-mode-row">
+                  {([
+                    { value: 'ref' as MergeRefMode, label: t('request.merge_mode_ref') },
+                    { value: 'none' as MergeRefMode, label: t('request.merge_mode_none') },
+                  ]).map((opt) => (
+                    <label key={opt.value} className="merge-mode-option">
+                      <input
+                        type="radio"
+                        name="merge_ref_mode"
+                        value={opt.value}
+                        checked={detail.merge_ref_mode === opt.value}
+                        disabled={disableOptional || isMergeDone}
+                        onChange={() => handleMergeModeSelect(opt.value)}
+                      />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', maxWidth: 920 }}>
                   <div style={{ flex: 1 }}>
                     <AutocompleteInput
                       label={t('request.merge_ref_doc')}
-                      value={isMergeDone ? detail.merge_ref_doc_label : refDocLabel}
+                      value={isMergeNone ? t('request.merge_ref_none') : (isMergeDone ? detail.merge_ref_doc_label : refDocLabel)}
                       options={approvedDocs.map((d) => d.title)}
                       onChange={(v) => {
                         setRefDocLabel(v);
@@ -273,14 +309,14 @@ const Step1: React.FC<Step1Props> = ({
                       }}
                       onSelect={handleRefDocSelect}
                       placeholder={t('request.merge_ref_placeholder')}
-                      disabled={disableOptional || isMergeDone}
+                      disabled={disableOptional || isMergeDone || isMergeNone}
                     />
                   </div>
                   <button
                     type="button"
                     className="btn btn-primary"
-                    disabled={disableOptional || isMergeDone || refDocId === null}
-                    style={disableOptional || isMergeDone || refDocId === null ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                    disabled={disableOptional || isMergeDone || (!isMergeNone && refDocId === null)}
+                    style={disableOptional || isMergeDone || (!isMergeNone && refDocId === null) ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
                     onClick={handleMergeClick}
                   >
                     {t('request.merge_button')}
@@ -299,19 +335,26 @@ const Step1: React.FC<Step1Props> = ({
                 </div>
                 {isMergeDone && (
                   <div style={{ marginTop: '4px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                    ⓘ {t('request.merge_already_done')}
+                    ⓘ {t(isMergeNone ? 'request.merge_none_done' : 'request.merge_already_done')}
                   </div>
                 )}
-                {/* 변경전/변경후 비교 — Merge 를 마쳐 비교 결과가 있을 때만 */}
+                {/* 변경전/변경후 표 — 참조를 Merge 했거나 '없음' 으로 확정했을 때 */}
                 {isMergeDone && (
                   <BeforeAfterPanel
                     detail={detail}
                     sameCount={baSameCount}
+                    manualOnly={isMergeNone}
                     selBefore={baSelBefore}
                     selAfter={baSelAfter}
                     onSelect={handleBaSelect}
                     onApply={handleBaApply}
                     onUnpair={handleBaUnpair}
+                    onCellChange={handleBaCellChange}
+                    onCellBlur={handleBaCellBlur}
+                    onPasteRaw={handleBaPasteRaw}
+                    onTableChange={handleBaTableChange}
+                    onAddRow={handleBaAddRow}
+                    onResetRow={handleBaResetRow}
                   />
                 )}
               </div>

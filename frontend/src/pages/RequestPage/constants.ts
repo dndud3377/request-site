@@ -6,6 +6,7 @@ import {
   OayerRow,
   BbTableRow,
   AdiCdStep,
+  MergeTable,
 } from '../../types';
 
 // ===== Option Constants =====
@@ -23,6 +24,13 @@ export const isMergePurposeSelected = (otherPurpose: string[]): boolean =>
 
 // BEFORE/AFTER 표의 '미등록' 행 선택 id — 실제 행 id 와 겹치지 않도록 예약어를 쓴다.
 export const MERGE_UNREGISTERED_ID = '__merge_unregistered__';
+
+// 변경전/변경후 표에서 직접 입력할 수 있는 컬럼. layerid 는 참조 요청서에서 온 값만 표시하고
+// 수기로는 채우지 않는다(읽기 전용 '—').
+export const MERGE_MANUAL_FIELDS = ['process_id', 'sp', 'sd', 'pp'] as const;
+
+// 수기로 추가한 행의 기본 구분 — 사용자가 드롭다운으로 O-ayer 로 바꿀 수 있다.
+export const MERGE_DEFAULT_TABLE: MergeTable = 'J';
 
 // 'Only MAP' 요청 목적: StepMap 정보까지만 작성하고 결재 경로도 단축된다(backend RequestDocument.ONLY_MAP_PURPOSE 와 동일 값).
 export const ONLY_MAP_PURPOSE = 'Only MAP';
@@ -298,6 +306,8 @@ export const INITIAL_DETAIL: DetailFormState = {
   validation_system: VS_NONTARGET,
   merge_ref_doc_id: null,
   merge_ref_doc_label: '',
+  merge_ref_mode: 'ref',
+  merge_applied: false,
   merge_pairs: [],
   merge_unmatched_before: [],
   merge_unmatched_after: [],
