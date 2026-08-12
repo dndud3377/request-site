@@ -312,6 +312,7 @@
     "no": "아니오",
     "yes": "예",
     "no_change": "변경 없음",
+    "no_change_with_default": "변경 없음 ({{value}})",
     "has_change": "변경 있음",
     "select_placeholder": "선택하세요",
     "jayer_noc_required": "차용 행 {{count}}개에 제품 이름 또는 STEP이 비어 있습니다.",

@@ -3,7 +3,10 @@ import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import RichTextEditor from '../../../components/RichTextEditor';
 import { DetailFormState, GuideFeatureKey } from '../../../types';
-import { CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ, ADI_CD_MAP_TYPE } from '../constants';
+import {
+  CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ, ADI_CD_MAP_TYPE,
+  EA_NO_CHANGE, EA_HAS_CHANGE, eaDefaultValue,
+} from '../constants';
 import { sanitizeSignedDecimal } from '../helpers';
 import ProdcRow from './ProdcRow';
 import MshotImageUpload from './MshotImageUpload';
@@ -513,14 +516,16 @@ const StepMap: React.FC<StepMapProps> = ({
         <div className="full-width flex-row" data-tour="map-exception">
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
             <label className="form-label">{t('request.ea_change')}<GuideBadge fk="step2_exception_zone" tk={t('guide.feat.step2_exception_zone' as never)} /></label>
+            {/* '변경 없음'은 C가문 여부에 따라 기본값(300/500)이 정해져 있어 라벨에 그 값을 함께 보여준다. */}
             <select className="form-control" name="ea_change" value={detail.ea_change} onChange={(e) => handleEaChangeChange(e.target.value)} disabled={isMapRegistered}>
-              <option value="변경 없음">{t('request.no_change')}</option>
-              <option value="변경 있음">{t('request.has_change')}</option>
+              <option value={EA_NO_CHANGE}>{t('request.no_change_with_default', { value: eaDefaultValue(detail.only_prodc) })}</option>
+              <option value={EA_HAS_CHANGE}>{t('request.has_change')}</option>
             </select>
           </div>
-          <div className="form-group" style={{ flex: 1.5, visibility: hasEaChange ? 'visible' : 'hidden' }}>
-            <label className="form-label">{t('request.ea_value')} <span className="required">*</span></label>
-            <input className={`form-control${errors.ea_value ? ' error' : ''}`} name="ea_value" value={detail.ea_value} onChange={(e) => handleDetailSet('ea_value', sanitizeSignedDecimal(e.target.value))} inputMode="decimal" disabled={isMapRegistered} />
+          {/* 값 칸은 '변경 없음'일 때도 숨기지 않는다 — 적용되는 기본값을 그대로 보여주고 잠근다. */}
+          <div className="form-group" style={{ flex: 1.5 }}>
+            <label className="form-label">{t('request.ea_value')} {hasEaChange && <span className="required">*</span>}</label>
+            <input className={`form-control${errors.ea_value ? ' error' : ''}`} name="ea_value" value={detail.ea_value} onChange={(e) => handleDetailSet('ea_value', sanitizeSignedDecimal(e.target.value))} inputMode="decimal" disabled={isMapRegistered || !hasEaChange} />
             {errors.ea_value && <span className="form-error">{errors.ea_value}</span>}
           </div>
           <div style={{ flex: 3.5 }} />

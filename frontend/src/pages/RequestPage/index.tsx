@@ -52,6 +52,10 @@ import {
   OTHER_PURPOSE_LAB,
   MAP_TYPE_DELETE_REQ,
   isMapDeleteEditType,
+  EA_NO_CHANGE,
+  EA_HAS_CHANGE,
+  EA_DEFAULT_NORMAL,
+  eaDefaultValue,
   PRODC_SCOPE_OPTIONS,
   inferProdcScope,
   JAYER_EDITABLE_COLS,
@@ -1134,8 +1138,8 @@ export default function RequestPage(): React.ReactElement {
             map_value_x: '',
             map_value_y: '',
             map_reason: '',
-            ea_change: '변경 없음',
-            ea_value: '',
+            ea_change: EA_NO_CHANGE,
+            ea_value: EA_DEFAULT_NORMAL,  // 바로 위에서 only_prodc 를 'No' 로 되돌리므로 300 이다
             mshot_change: '없음',
           }));
           break;
@@ -1369,7 +1373,7 @@ export default function RequestPage(): React.ReactElement {
   // 기타 목적 6개 중 ADI CD 변경만 단독 선택한 경우 — 이후 STEP 필수 입력을 건너뛴다.
   const isAdiCdOnly = detail.other_purpose.length === 1 && detail.other_purpose[0] === OTHER_PURPOSE_ADI_CD;
   const hasMapChange = detail.map_change === '변경 있음';
-  const hasEaChange = detail.ea_change === '변경 있음';
+  const hasEaChange = detail.ea_change === EA_HAS_CHANGE;
   const isProdc = detail.only_prodc === 'Yes';
   // ===== C가문 '제품 해당 위치'(prodc_scope) 파생 판정 =====
   // 게이트: 위치를 고르기 전에는 C가문 하위 입력(판별 정보·지도편차·X표시 이미지)을 전부 잠근다.
@@ -1761,7 +1765,14 @@ export default function RequestPage(): React.ReactElement {
     if (value !== 'No') {
       // Yes 전환 시 X표시 변경 여부를 '수정'으로 자동 설정한다(C가문은 X표시 수정이 기본 전제).
       // 편집 로드·프리필 경로에는 걸지 않는다 — 저장된 mshot_change 가 덮어써지기 때문.
-      setDetail((prev) => ({ ...prev, only_prodc: value, mshot_change: '수정' }));
+      // 예외 구역이 '변경 없음'이면 기본값도 C가문 기준(500)으로 함께 갱신한다.
+      // '변경 있음'이면 사용자가 직접 넣은 값이므로 건드리지 않는다.
+      setDetail((prev) => ({
+        ...prev,
+        only_prodc: value,
+        mshot_change: '수정',
+        ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(value) } : {}),
+      }));
       if (errors['only_prodc']) setErrors((prev) => ({ ...prev, only_prodc: '' }));
       return;
     }
@@ -1780,6 +1791,8 @@ export default function RequestPage(): React.ReactElement {
       // (C가문을 되돌린 뒤 원하지 않은 X표시 정보가 저장되는 것을 막기 위함).
       mshot_change: INITIAL_DETAIL.mshot_change,
       mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '',
+      // 예외 구역이 '변경 없음'이면 기본값도 일반 기준(300)으로 되돌린다(Yes 전환의 반대 동작).
+      ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: EA_DEFAULT_NORMAL } : {}),
     }));
     setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
     setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
@@ -1802,13 +1815,14 @@ export default function RequestPage(): React.ReactElement {
     }
   };
 
-  // 예외 구역(ea_change) — '변경 없음' 전환 시 값 초기화
+  // 예외 구역(ea_change) — '변경 없음' 전환 시 C가문 여부에 맞는 기본값(300/500)을 되돌려 넣는다.
+  // (2026-08) 예전에는 값을 비웠다. 이제 '변경 없음'도 기본값을 그대로 저장·표시한다.
   const handleEaChangeChange = (value: string) => {
     isLoadingEditRef.current = false;
-    setDetail((prev) => value === '변경 없음'
-      ? { ...prev, ea_change: value, ea_value: '' }
+    setDetail((prev) => value === EA_NO_CHANGE
+      ? { ...prev, ea_change: value, ea_value: eaDefaultValue(prev.only_prodc) }
       : { ...prev, ea_change: value });
-    if (value === '변경 없음' && errors['ea_value']) setErrors((prev) => ({ ...prev, ea_value: '' }));
+    if (value === EA_NO_CHANGE && errors['ea_value']) setErrors((prev) => ({ ...prev, ea_value: '' }));
   };
 
   // X표시(mshot_change) — 추가/수정 이외(없음·삭제)로 전환 시 붙여넣은 이미지 경로 전체 초기화
@@ -3162,7 +3176,7 @@ export default function RequestPage(): React.ReactElement {
           errorMessages.push('MAP 변경 사유: 필수 입력 항목입니다.');
         }
       }
-      if (detail.ea_change === '변경 있음') {
+      if (detail.ea_change === EA_HAS_CHANGE) {
         if (!detail.ea_value?.trim()) {
           newErrors['ea_value'] = t('request.required');
           errorMessages.push('예외 구역 값: 필수 입력 항목입니다.');

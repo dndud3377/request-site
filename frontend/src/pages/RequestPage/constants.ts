@@ -53,6 +53,19 @@ export const MAP_TYPE_DELETE_REQ = '삭제';
 export const isMapDeleteEditType = (mapType?: string): boolean =>
   mapType === MAP_TYPE_DELETE_REQ;
 
+// 예외 구역(ea_change) 선택값. detail.ea_change 에 이 한글 문자열이 그대로 저장된다.
+export const EA_NO_CHANGE = '변경 없음';
+export const EA_HAS_CHANGE = '변경 있음';
+
+// 예외 구역 기본값 — C가문(only_prodc='Yes')이면 500, 아니면 300 (2026-08).
+// '변경 없음'이면 이 값이 ea_value 에 그대로 채워지고 입력칸은 잠긴다.
+export const EA_DEFAULT_NORMAL = '300';
+export const EA_DEFAULT_PRODC = '500';
+
+/** only_prodc 값에 맞는 예외 구역 기본값 */
+export const eaDefaultValue = (onlyProdc?: string): string =>
+  onlyProdc === 'Yes' ? EA_DEFAULT_PRODC : EA_DEFAULT_NORMAL;
+
 // '기타 목적 > ADI CD 변경': 특정 제품 ADI CD 스텝 개수 증감/전체삭제 요청. 진입 시 map_type 을 이 값으로 고정한다.
 export const OTHER_PURPOSE_ADI_CD = 'ADI CD 변경';
 export const ADI_CD_MAP_TYPE = 'ADI';
@@ -232,8 +245,9 @@ export const INITIAL_DETAIL: DetailFormState = {
   map_change_bottom: '변경 있음',
   map_value_x_bottom: '',
   map_value_y_bottom: '',
-  ea_change: '변경 없음',
-  ea_value: '',
+  ea_change: EA_NO_CHANGE,
+  // '변경 없음'의 기본값. only_prodc 는 'No' 로 시작하므로 300 이다(C가문 전환 시 500 으로 갱신된다).
+  ea_value: EA_DEFAULT_NORMAL,
   bb_zone: '존재',
   bb_entries: [makeBbEntry()],
   only_prodc: 'No',
