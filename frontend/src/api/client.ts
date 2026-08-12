@@ -612,7 +612,6 @@ const addVocComment = async (id: number, comment: {
   author_role: string;
   is_submitter: boolean;
   content: string;
-  is_reject_reason: boolean;
 }) => {
   const data = await post<VOC>(`/voc/${id}/comment/`, comment);
   return { data };
