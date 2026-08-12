@@ -1,6 +1,9 @@
 # ⚠️ MASKING 처리된 파일. 이 파일에 포함된 비즈니스 용어는 {{ko.json}} 키로 마스킹되어 있습니다. 원래 용어를 확인하려면 다음 파일을 참조하세요: frontend/src/locales/ko.json
 
+import datetime
+
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.csrf import csrf_exempt
@@ -49,6 +52,17 @@ import re
 
 def _is_dev() -> bool:
     return getattr(settings, 'AUTH_MODE', 'sso') == 'dev'
+
+
+def _as_aware_datetime(date_value):
+    """date → 그 날 12:00(로컬) 의 aware datetime. USE_TZ=True 라 naive 로 두면 경고가 난다.
+
+    자정이 아니라 정오인 이유: 화면은 `utils/date.ts` 의 `toLocaleDateString` 으로
+    **브라우저 로컬 시간대** 기준 변환을 하므로, 00:00 로 저장하면 시간대가 다른 브라우저에서
+    하루 앞뒤로 밀려 보인다. 정오면 ±11시간까지 같은 날짜로 표시된다.
+    """
+    naive = datetime.datetime.combine(date_value, datetime.time(12, 0))
+    return timezone.make_aware(naive) if timezone.is_naive(naive) else naive
 
 
 class IsMasterOrReadOnly(BasePermission):
@@ -333,6 +347,50 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 return 'C가문 제품·연구소 제품은 후결자를 1명 이상 지정해야 합니다.'
         return None
 
+    def _resolve_sales_agreers(self, document):
+        """detail.sales_agreers → (User 리스트, error).
+
+        영업/기술지원 합의자는 PL 권한자만 지정할 수 있고, PL 검토 단계와 **병렬**로 진행한다.
+        지정이 없으면 빈 리스트를 돌려준다(그 경우 SA 단계를 만들지 않고 화면에 '해당없음'으로 남는다).
+        """
+        detail = document.get_detail().get('detail', {}) or {}
+        loginids, seen = [], set()
+        for a in (detail.get('sales_agreers') or []):
+            lid = str((a or {}).get('loginid', '') or '').strip()
+            if lid and lid not in seen:
+                seen.add(lid)
+                loginids.append(lid)
+        users = []
+        for lid in loginids:
+            try:
+                users.append(User.objects.get(loginid=lid, role='PL'))
+            except User.DoesNotExist:
+                return None, f'유효하지 않은 영업/기술지원 합의자입니다: {lid}'
+        return users, None
+
+    def _validate_sales_agreers(self, document, sa_users):
+        """예외 구역 값을 기본값과 다르게 바꾼 의뢰서는 합의자 지정이 필수다.
+
+        지정하지 않으려면 사유(detail.sales_agreer_none_reason)를 남겨야 한다.
+        문제 있으면 error 문자열, 없으면 None.
+        """
+        if not document.requires_sales_agreer() or sa_users:
+            return None
+        detail = document.get_detail().get('detail', {}) or {}
+        if str(detail.get('sales_agreer_none_reason', '') or '').strip():
+            return None
+        return ('예외 구역 값을 기본값과 다르게 지정한 의뢰서는 '
+                '영업/기술지원 합의자를 1명 이상 지정하거나 지정하지 않는 사유를 입력해야 합니다.')
+
+    def _create_sales_agreer_steps(self, document, sa_users, round_no):
+        """SA 단계를 PL 단계와 같은 회차에 병렬로 생성한다(지정이 없으면 아무 것도 만들지 않는다)."""
+        for u in sa_users:
+            sa_step = ApprovalStep.objects.create(
+                document=document, agent='SA', action='pending', is_parallel=True,
+                round=round_no, assignee=u, assignee_name=(u.username or u.loginid),
+            )
+            mailer.enqueue_stage_arrival(document, 'SA', sa_step, recipient_name=sa_step.assignee_name)
+
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
         """상신: draft → under_review, PL 검토 단계 생성 (지정 PL 필수)
@@ -362,6 +420,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        sa_users, err = self._resolve_sales_agreers(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+        err = self._validate_sales_agreers(document, sa_users)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         with transaction.atomic():
             document.status = 'under_review'
             document.submitted_at = document.submitted_at or timezone.now()
@@ -379,6 +444,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     assignee=u, assignee_name=(u.username or u.loginid),
                 )
                 mailer.enqueue_stage_arrival(document, 'PL', pl_step, recipient_name=pl_step.assignee_name)
+            # 영업/기술지원 합의자는 PL 검토와 병렬이므로 같은 회차에 함께 만든다.
+            self._create_sales_agreer_steps(document, sa_users, 1)
             mailer.enqueue_notify_submitted(document)
 
         return Response({
@@ -414,6 +481,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        sa_users, err = self._resolve_sales_agreers(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+        err = self._validate_sales_agreers(document, sa_users)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
         with transaction.atomic():
             document.status = 'under_review'
             rep = pl_users[0]
@@ -433,10 +507,75 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     assignee=u, assignee_name=(u.username or u.loginid),
                 )
                 mailer.enqueue_stage_arrival(document, 'PL', pl_step, recipient_name=pl_step.assignee_name)
+            # 합의자도 새 회차에 다시 만든다(이전 회차 단계는 이력으로 남는다).
+            self._create_sales_agreer_steps(document, sa_users, new_round)
             mailer.enqueue_notify_submitted(document)
 
         return Response({
             'message': '재상신되었습니다.',
+            'document': RequestDocumentSerializer(document).data,
+        })
+
+    # '이력 바로 등록'이 남기는 완료 기록 1행의 agent 코드.
+    # 결재를 시작시키는 대기 단계가 아니라, 등록 시 입력받은 결재 완료일을 담아 두는 자리다
+    # (완료일을 저장할 수 있는 곳이 ApprovalStep.acted_at 뿐이다).
+    DIRECT_HISTORY_AGENT = 'PL'
+
+    @action(detail=True, methods=['post'], url_path='direct-approve')
+    def direct_approve(self, request, pk=None):
+        """이력 바로 등록: draft → approved (MASTER 전용, 결재 경로를 타지 않는다).
+
+        상신일·결재 완료일을 요청자가 직접 지정한다. pending 단계를 만들지 않으므로
+        결재 현황 목록에 뜨지 않고, 담당자 대기열·단계 도착 메일도 발생하지 않는다.
+        메일은 상신·완료 모두 발송하지 않는다.
+        """
+        document = self.get_object()
+
+        if getattr(request.user, 'role', None) != 'MASTER':
+            return Response({'error': '이력 바로 등록 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        if document.status != 'draft':
+            return Response(
+                {'error': '임시저장 상태의 의뢰서만 이력에 바로 등록할 수 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        submitted_date = parse_date(str(request.data.get('submitted_at') or ''))
+        approved_date = parse_date(str(request.data.get('approved_at') or ''))
+        if not submitted_date or not approved_date:
+            return Response(
+                {'error': '상신일과 결재 완료일을 YYYY-MM-DD 형식으로 입력해야 합니다.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if approved_date < submitted_date:
+            return Response(
+                {'error': '결재 완료일은 상신일보다 빠를 수 없습니다.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 문서 내용 검증은 상신과 동일하게 적용한다(결재선 관련 검증만 생략).
+        err = self._validate_bb_mapping(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            document.status = 'approved'
+            document.submitted_at = _as_aware_datetime(submitted_date)
+            document.save()
+
+            # 결재를 진행하는 것이 아니라 이미 결과가 확정된 기록 1행만 남긴다.
+            ApprovalStep.objects.filter(document=document).delete()
+            ApprovalStep.objects.create(
+                document=document,
+                agent=self.DIRECT_HISTORY_AGENT,
+                action='approved',
+                round=1,
+                acted_at=_as_aware_datetime(approved_date),
+                assignee=request.user,
+                assignee_name=(request.user.username or request.user.loginid),
+            )
+
+        return Response({
+            'message': '이력에 등록되었습니다.',
             'document': RequestDocumentSerializer(document).data,
         })
 
@@ -788,7 +927,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 나머지를 자동 'skip' 처리하던 동작을 없앴다. 남은 검토자는 pending 상태로 남아
         # 각자 직접 합의해야 한다. 'skip' 값 자체는 그 이전(OR 시절) 문서의 이력으로만 남는다.
 
-        # 'MAP 삭제/수정' 은 P·R·J·O 가 모두 병렬 구성원이라, 넷 중 무엇이 마지막이 되든
+        # 'MAP 삭제' 은 P·R·J·O 가 모두 병렬 구성원이라, 넷 중 무엇이 마지막이 되든
         # 여기서 최종 승인을 판정해야 한다. 아래 일반 경로 분기는 P·R 합의로는 승인 판정을
         # 하지 않으므로(P 는 J 생성만 함), 이 분기가 없으면 네 단계가 다 합의돼도 문서가 멈춘다.
         if document.is_map_delete_edit():
@@ -1355,12 +1494,48 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return None
         return qs.filter(assignee__loginid=caller_loginid).first()
 
+    def _get_caller_sales_agreer_step(self, document, user):
+        """호출자가 처리할 현재 회차 pending SA(영업/기술지원 합의자) 단계.
+
+        PL 단계와 동일한 규칙 — MASTER 는 첫 pending 단계, 그 외에는 본인이 담당인 단계.
+        """
+        max_round = self._max_round(document)
+        qs = ApprovalStep.objects.filter(
+            document=document, agent='SA', action='pending', round=max_round
+        )
+        if getattr(user, 'role', '') == 'MASTER':
+            return qs.first()
+        caller_loginid = getattr(user, 'loginid', '')
+        if not caller_loginid:
+            return None
+        return qs.filter(assignee__loginid=caller_loginid).first()
+
     def _all_pl_approved(self, document, round_no):
         """해당 회차의 PL 단계 전원이 approved 인지(다중 PL 전원 합의 판정)."""
         pl_steps = list(ApprovalStep.objects.filter(
             document=document, agent='PL', round=round_no
         ))
         return len(pl_steps) > 0 and all(s.action == 'approved' for s in pl_steps)
+
+    def _all_sales_agreers_approved(self, document, round_no):
+        """해당 회차의 SA(영업/기술지원 합의자) 전원이 approved 인지.
+
+        지정하지 않은 의뢰서는 SA 단계 자체가 없고, 그때는 통과로 본다
+        ('해당없음' — 합의를 기다릴 대상이 없다).
+        """
+        sa_steps = list(ApprovalStep.objects.filter(
+            document=document, agent='SA', round=round_no
+        ))
+        return all(s.action == 'approved' for s in sa_steps)
+
+    def _pl_stage_complete(self, document, round_no):
+        """PL 검토 단계가 끝났는가 — 지정 PL 전원 **AND** 영업/기술지원 합의자 전원 합의.
+
+        둘은 병렬이라 어느 쪽이 먼저 끝나도 상관없고, 마지막 한 명이 합의한 시점에
+        다음 단계(R, 또는 'MAP 삭제' 의 P·R·J·O 병렬)가 열린다.
+        """
+        return (self._all_pl_approved(document, round_no)
+                and self._all_sales_agreers_approved(document, round_no))
 
     def _get_post_approver_users(self, document):
         """후결자(RA) User 목록 = 고정 1명(settings.POST_APPROVER_LOGINID)
@@ -1405,7 +1580,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         mailer.enqueue_notify_p_completed(document)
 
     def _create_map_delete_edit_parallel(self, document, round_no):
-        """'MAP 삭제/수정': PL 합의 직후 P·R·J·O 를 병렬로 생성한다.
+        """'MAP 삭제': PL 합의 직후 P·R·J·O 를 병렬로 생성한다.
 
         기존 일반 경로와 다른 점 — 기존 코드는 건드리지 않고 이 분기만 새로 탄다.
         - R 이 병렬을 여는 관문이 아니라 병렬 구성원 중 하나다.
@@ -1432,7 +1607,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 병렬이라 TE_J 가 위 stage_arrival(J) 결재 요청 메일을 이미 받는다(일반 경로와 동일).
 
     def _map_delete_edit_all_approved(self, document, round_no):
-        """'MAP 삭제/수정' 최종 승인 판정 — P·R·J·O 네 단계가 모두 완료됐는가.
+        """'MAP 삭제' 최종 승인 판정 — P·R·J·O 네 단계가 모두 완료됐는가.
 
         각 단계는 담당자 + 지정된 검토자(PV/RV) 전원 합의로 완료된다
         (검토자가 없으면 담당자 합의만으로 완료 — _stage_reviewers_complete 와 동일 규칙).
@@ -1537,11 +1712,25 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             pl_users.append(u)
         return pl_users, None
 
-    def _advance_after_pl(self, document, step, comment):
-        """PL 단계 합의 처리 공용: 본인 단계 approved 후 전원 합의 시 R 생성.
+    def _open_stage_after_pl(self, document, round_no):
+        """PL 검토 단계 완료 후 다음 단계를 연다 — 일반 경로는 R, 'MAP 삭제' 는 P·R·J·O 병렬."""
+        # 'MAP 삭제' 은 R 이 관문이 아니라 병렬 구성원이므로 여기서 4단계를 한 번에 만든다.
+        if document.is_map_delete_edit():
+            self._create_map_delete_edit_parallel(document, round_no)
+            return
+        # R 생성(중복 방지: 이미 있으면 재생성하지 않음)
+        if not ApprovalStep.objects.filter(document=document, agent='R', round=round_no).exists():
+            r_step = ApprovalStep.objects.create(
+                document=document, agent='R', action='pending', round=round_no,
+            )
+            mailer.enqueue_stage_arrival(document, 'R', r_step)
 
-        다중 PL 전원 합의를 지원한다. 문서 행 락으로 동시 합의 시 R 중복/누락을
-        방지한다. 전원 합의면 R 생성 후 True, 아직 대기자가 있으면 False 를 반환한다.
+    def _advance_after_pl(self, document, step, comment):
+        """PL 검토 단계(PL·SA) 합의 처리 공용: 본인 단계 approved 후 단계 완료 시 다음 단계 생성.
+
+        다중 PL 전원 합의와 병렬 합의자(SA)를 함께 지원한다. 문서 행 락으로 동시 합의 시
+        R 중복/누락을 방지한다. 단계가 완료되면 다음 단계 생성 후 True,
+        아직 대기자가 있으면 False 를 반환한다.
         """
         with transaction.atomic():
             RequestDocument.objects.select_for_update().get(pk=document.pk)
@@ -1550,20 +1739,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             step.comment = comment
             step.save()
 
-            if self._all_pl_approved(document, step.round):
-                # 'MAP 삭제/수정' 은 R 이 관문이 아니라 병렬 구성원이므로 여기서 4단계를 한 번에 만든다.
-                if document.is_map_delete_edit():
-                    self._create_map_delete_edit_parallel(document, step.round)
-                    return True
-                # 전원 합의 → R 생성(중복 방지: 이미 있으면 재생성하지 않음)
-                if not ApprovalStep.objects.filter(document=document, agent='R', round=step.round).exists():
-                    r_step = ApprovalStep.objects.create(
-                        document=document, agent='R', action='pending', round=step.round,
-                    )
-                    mailer.enqueue_stage_arrival(document, 'R', r_step)
+            if self._pl_stage_complete(document, step.round):
+                self._open_stage_after_pl(document, step.round)
                 return True
 
-            # 아직 미합의 PL 이 남았으면 문서 상태는 그대로 둔다. (호출부가 under_review 인
+            # 아직 미합의 PL·합의자가 남았으면 문서 상태는 그대로 둔다. (호출부가 under_review 인
             # 문서만 넘겨주므로 여기서 status 를 덮어쓸 필요가 없다. 예전엔 무조건
             # under_review 를 저장해, 다른 PL 이 반려해 rejected 가 된 문서를 되살렸다.)
             return False
@@ -1606,6 +1786,48 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             document.status = 'rejected'
             document.save()
             # 지정 PL 반려도 동일하게 이력 조회 '반려' 탭에 적재한다.
+            rejection_snapshots.create_from_reject(document, step, request.user)
+            mailer.enqueue_rejected(document)
+
+        return Response({'message': '반려되었습니다.', 'status': 'rejected'})
+
+    @action(detail=True, methods=['post'], url_path='sales-agree')
+    def sales_agree(self, request, pk=None):
+        """영업/기술지원 합의자 합의: 본인 SA 단계 approved → PL 과 함께 전원 합의 시 다음 단계 생성"""
+        document = self.get_object()
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
+        step = self._get_caller_sales_agreer_step(document, request.user)
+        if not step:
+            return Response({'error': '대기 중인 본인 합의 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        comment = request.data.get('comment', '')
+        all_done = self._advance_after_pl(document, step, comment)
+        msg = ('전원 합의되어 다음 단계로 진행합니다.' if all_done
+               else '합의되었습니다. 남은 지정 PL·합의자의 합의를 기다립니다.')
+        return Response({'message': msg, 'status': 'under_review'})
+
+    @action(detail=True, methods=['post'], url_path='sales-reject')
+    def sales_reject(self, request, pk=None):
+        """영업/기술지원 합의자 반려: 본인 SA 단계 rejected → 문서 즉시 반려(PL 반려와 동일)"""
+        document = self.get_object()
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
+        step = self._get_caller_sales_agreer_step(document, request.user)
+        if not step:
+            return Response({'error': '대기 중인 본인 합의 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        comment = request.data.get('comment', '')
+        with transaction.atomic():
+            step.action = 'rejected'
+            step.acted_at = timezone.now()
+            step.comment = comment
+            step.save()
+
+            document.status = 'rejected'
+            document.save()
             rejection_snapshots.create_from_reject(document, step, request.user)
             mailer.enqueue_rejected(document)
 

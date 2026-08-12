@@ -88,7 +88,9 @@ export default function ApprovalPage(): React.ReactElement {
 
   // 합의/반려 comment 모달
   const [commentModalOpen, setCommentModalOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<{ type: 'agree' | 'reject'; agent: AgentType; isPeer?: boolean } | null>(null);
+  // isPeer = PL 검토 단계(peer-approve/reject), isSalesAgreer = 영업/기술지원 합의자(sales-agree/reject).
+  // 둘 다 아니면 일반 단계(approve-step/reject-step).
+  const [pendingAction, setPendingAction] = useState<{ type: 'agree' | 'reject'; agent: AgentType; isPeer?: boolean; isSalesAgreer?: boolean } | null>(null);
   const [commentInput, setCommentInput] = useState('');
 
   // 중단 요청 사유 입력 모달
@@ -581,14 +583,14 @@ export default function ApprovalPage(): React.ReactElement {
   };
 
   // 합의/반려 버튼 클릭 → comment 모달 열기
-  const triggerAgree = (agent: AgentType, isPeer = false) => {
-    setPendingAction({ type: 'agree', agent, isPeer });
+  const triggerAgree = (agent: AgentType, isPeer = false, isSalesAgreer = false) => {
+    setPendingAction({ type: 'agree', agent, isPeer, isSalesAgreer });
     setCommentInput('');
     setCommentModalOpen(true);
   };
 
-  const triggerReject = (agent: AgentType, isPeer = false) => {
-    setPendingAction({ type: 'reject', agent, isPeer });
+  const triggerReject = (agent: AgentType, isPeer = false, isSalesAgreer = false) => {
+    setPendingAction({ type: 'reject', agent, isPeer, isSalesAgreer });
     setCommentInput('');
     setCommentModalOpen(true);
   };
@@ -598,7 +600,18 @@ export default function ApprovalPage(): React.ReactElement {
     setCommentModalOpen(false);
     setProcessing(true);
     try {
-      if (pendingAction.isPeer) {
+      if (pendingAction.isSalesAgreer) {
+        if (pendingAction.type === 'agree') {
+          await documentsAPI.salesAgree(selected.id, commentInput || undefined);
+          addToast(t('approval.agree_success', { agent: t('approval.agent_SA' as any) }), 'success');
+          setModalOpen(false);
+          fetchDocs();
+        } else {
+          await documentsAPI.salesReject(selected.id, commentInput || undefined);
+          addToast(t('approval.reject_success'), 'error');
+          await refreshAndSelect(selected.id);
+        }
+      } else if (pendingAction.isPeer) {
         if (pendingAction.type === 'agree') {
           await documentsAPI.peerApprove(selected.id, commentInput || undefined);
           addToast(t('approval.agree_success', { agent: t('approval.agent_PL' as any) }), 'success');
@@ -1032,7 +1045,7 @@ export default function ApprovalPage(): React.ReactElement {
                       data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-stage' : undefined}
                     >
                       {row.cells ? (
-                        <StageGrid cells={row.cells} />
+                        <StageGrid cells={row.cells} columns={row.gridColumns} />
                       ) : (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <StatusBadge status={row.pathStatus} />
@@ -1308,6 +1321,8 @@ export default function ApprovalPage(): React.ReactElement {
             return !mainAgent || mainStepApproved(mainAgent);
           });
           const isPLStep = actableStep?.agent === 'PL';
+          // 영업/기술지원 합의자 — PL 검토와 병렬이지만 전용 API(sales-agree/reject)를 쓴다.
+          const isSalesAgreerStep = actableStep?.agent === 'SA';
           // 검토중(claim) 가능 단계: J/O/E/P 중 담당 역할이 아직 미배정인 단계를 선점
           const claimableStep = isTourMode ? undefined : pendingSteps.find((s) => canUserClaim(currentUser, s));
           // 검토자 선택 UI 대상: 지금 '합의'를 누를 수 있는 단계가 P/E일 때 그 단계에 검토자를 함께 지정한다.
@@ -1796,8 +1811,19 @@ export default function ApprovalPage(): React.ReactElement {
                   </button>
                 </>
               )}
+              {/* 영업/기술지원 합의자 단계 액션 — '수정 후 상신'은 PL 전용이라 여기엔 없다 */}
+              {actableStep && isSalesAgreerStep && (
+                <>
+                  <button className="btn btn-primary" disabled={processing} onClick={() => triggerAgree(actableStep.agent, false, true)}>
+                    {t('approval.agree')}
+                  </button>
+                  <button className="btn btn-danger" disabled={processing} onClick={() => triggerReject(actableStep.agent, false, true)}>
+                    {t('approval.reject')}
+                  </button>
+                </>
+              )}
               {/* 일반 단계 액션 */}
-              {actableStep && !isPLStep && (
+              {actableStep && !isPLStep && !isSalesAgreerStep && (
                 <>
                   {/* 검토자 선택 (P/E 담당자 본인 — R 담당자지정 드롭다운과 동일한 스타일).
                       드롭다운에서 이름을 클릭하면 바로 추가되고, '합의'를 누르면 그 순간 선택된

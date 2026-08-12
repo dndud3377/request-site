@@ -5,6 +5,7 @@
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
 from . import mailer
 from . import design_rule_stats
@@ -696,13 +697,13 @@ class RouteCardTest(TestCase):
         self.assertEqual(by_name['이순신'], mailer.POST_APPROVER_EXTRA_LABEL)
 
     def test_map_delete_edit_marks_absent_stages_as_na(self):
-        """MAP 삭제/수정 은 E·후결자를 만들지 않는다 — 행을 지우지 않고 해당없음으로 남긴다."""
+        """MAP 삭제 은 E·후결자를 만들지 않는다 — 행을 지우지 않고 해당없음으로 남긴다."""
         import json
         doc = RequestDocument.objects.create(
             title='mde', requester=self.requester, requester_name='요청자',
             requester_email='req@c.com', requester_department='dept', product_name='PROD-1',
             additional_notes=json.dumps(
-                {'detail': {'request_purpose': 'MAP 삭제/수정'}, 'jayerRows': []}
+                {'detail': {'request_purpose': 'MAP 삭제'}, 'jayerRows': []}
             ),
         )
         ApprovalStep.objects.create(document=doc, agent='R', round=1, action='pending')
@@ -2061,7 +2062,7 @@ class PEStageReviewerFlowTest(TestCase):
 
 @override_settings(POST_APPROVER_LOGINID='fixedpa')
 class MapDeleteEditRouteTest(TestCase):
-    """'MAP 삭제/수정' 전용 결재 경로 — PL 합의 후 P·R·J·O 병렬, E·RA 미생성.
+    """'MAP 삭제' 전용 결재 경로 — PL 합의 후 P·R·J·O 병렬, E·RA 미생성.
 
     기존 일반 경로/Only MAP 경로는 건드리지 않고 새 분기만 탄다는 것을 함께 확인한다.
     """
@@ -2131,7 +2132,7 @@ class MapDeleteEditRouteTest(TestCase):
         """E(MASK)와 후결자(RA)는 생성하지 않는다 — 고정 후결자도 붙지 않는다."""
         doc = self._submit_and_pl_approve(self._make_doc(jayer_rows=[{'pp': 'PLEL'}]))
         self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='E', round=1).exists(),
-                         'plel 이 있어도 MAP 삭제/수정 경로에는 E 를 만들지 않는다')
+                         'plel 이 있어도 MAP 삭제 경로에는 E 를 만들지 않는다')
         self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='RA', round=1).exists(),
                          '고정 후결자가 설정돼 있어도 RA 를 만들지 않는다')
 
@@ -3530,7 +3531,7 @@ class ReviewItemSyncTest(TestCase):
     - 삭제 전파는 이미 확인한 검토자가 있는 문서를 건너뛴다.
     - 재상신하면 항목·검토자는 남고 확인 상태만 초기화되며, 새 J 단계에서 마스터를 따라잡는다.
 
-    결재 경로는 'MAP 삭제/수정'(PL 합의 직후 P·R·J·O 병렬 생성)을 쓴다 — J 단계에
+    결재 경로는 'MAP 삭제'(PL 합의 직후 P·R·J·O 병렬 생성)을 쓴다 — J 단계에
     가장 짧게 도달하는 실제 경로다.
     """
 
@@ -3549,7 +3550,7 @@ class ReviewItemSyncTest(TestCase):
 
     # ----- 흐름 헬퍼 -----
     def _doc_at_j(self, title='ri'):
-        """'MAP 삭제/수정' 문서를 만들어 상신 → PL 합의까지 진행(= J 단계 pending 생성)."""
+        """'MAP 삭제' 문서를 만들어 상신 → PL 합의까지 진행(= J 단계 pending 생성)."""
         doc = RequestDocument.objects.create(
             title=title, requester=self.requester, requester_name='요청자',
             requester_email='rireq@c.com', requester_department='dept',
@@ -4334,3 +4335,311 @@ class ReceiveAllMailTest(TestCase):
             f'/api/users/{user.id}/mail-lines/', {'receive_all': 'yes'}, format='json'
         )
         self.assertEqual(res.status_code, 400)
+
+
+class SalesAgreerStageTests(TestCase):
+    """영업/기술지원 합의자(SA) — PL 검토와 병렬인 결재 단계.
+
+    - 상신 시 PL 단계와 같은 회차에 병렬로 생성된다.
+    - PL 전원 + SA 전원이 합의해야 다음 단계(R)가 열린다(어느 쪽이 먼저 끝나든 무관).
+    - 지정하지 않으면 SA 단계 자체가 없고, PL 만으로 진행된다('해당없음').
+    - 예외 구역 값을 기본값과 다르게 바꾼 의뢰서는 지정(또는 미지정 사유)이 필수다.
+    - SA 반려는 PL 반려와 동일하게 문서를 즉시 반려한다.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='sreq', mail='sreq@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='spl', mail='spl@c.com', role='PL')
+        self.sa_user = UserProfile.objects.create(loginid='ssa', mail='ssa@c.com', role='PL')
+        self.sa_user2 = UserProfile.objects.create(loginid='ssa2', mail='ssa2@c.com', role='PL')
+        self.not_pl = UserProfile.objects.create(loginid='snp', mail='snp@c.com', role='TE_R')
+
+    def _make_doc(self, detail_extra=None):
+        detail = {'request_purpose': '신규'}
+        detail.update(detail_extra or {})
+        return RequestDocument.objects.create(
+            title='sa-doc', requester=self.requester, requester_name='요청자',
+            requester_email='sreq@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps({'detail': detail, 'jayerRows': []}),
+        )
+
+    def _agreers(self, *users):
+        return [{'loginid': u.loginid, 'name': u.loginid} for u in users]
+
+    def _submit(self, doc):
+        self.client.force_authenticate(user=self.requester)
+        return self.client.post(f'/api/documents/{doc.id}/submit/',
+                                {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+
+    # ---- 단계 생성 ----
+
+    def test_sa_steps_created_in_parallel_with_pl(self):
+        """지정한 합의자 수만큼 SA 단계가 PL 과 같은 회차에 병렬로 생성된다."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.sa_user, self.sa_user2)})
+        self.assertEqual(self._submit(doc).status_code, 200)
+        sa_steps = list(ApprovalStep.objects.filter(document=doc, agent='SA', round=1))
+        self.assertEqual(len(sa_steps), 2)
+        for st in sa_steps:
+            self.assertTrue(st.is_parallel, 'SA 는 PL 과 병렬인 단계여야 한다')
+            self.assertEqual(st.action, 'pending')
+        self.assertEqual(
+            {s.assignee.loginid for s in sa_steps}, {'ssa', 'ssa2'}
+        )
+
+    def test_no_sa_steps_when_not_designated(self):
+        """합의자를 지정하지 않으면 SA 단계를 만들지 않는다(화면에서 '해당없음')."""
+        doc = self._make_doc()
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='SA').exists())
+
+    def test_non_pl_user_rejected_as_agreer(self):
+        """PL 권한자가 아닌 사람은 합의자로 지정할 수 없다."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.not_pl)})
+        res = self._submit(doc)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('영업/기술지원 합의자', res.json()['error'])
+
+    # ---- 진행 판정 ----
+
+    def test_r_not_created_until_sa_also_approves(self):
+        """PL 이 먼저 합의해도 SA 가 남아 있으면 R 단계가 열리지 않는다."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.sa_user)})
+        self.assertEqual(self._submit(doc).status_code, 200)
+
+        self.client.force_authenticate(user=self.pl_user)
+        self.assertEqual(self.client.post(f'/api/documents/{doc.id}/peer-approve/', {},
+                                          format='json').status_code, 200)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R').exists(),
+                         'SA 합의 전에는 R 이 생기면 안 된다')
+
+        self.client.force_authenticate(user=self.sa_user)
+        self.assertEqual(self.client.post(f'/api/documents/{doc.id}/sales-agree/', {},
+                                          format='json').status_code, 200)
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists(),
+                        'PL·SA 전원 합의 시 R 이 열려야 한다')
+
+    def test_sa_first_then_pl_also_opens_r(self):
+        """순서가 반대여도(SA 먼저) 마지막 합의 시점에 R 이 열린다 — 병렬이므로."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.sa_user)})
+        self.assertEqual(self._submit(doc).status_code, 200)
+
+        self.client.force_authenticate(user=self.sa_user)
+        self.assertEqual(self.client.post(f'/api/documents/{doc.id}/sales-agree/', {},
+                                          format='json').status_code, 200)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R').exists())
+
+        self.client.force_authenticate(user=self.pl_user)
+        self.assertEqual(self.client.post(f'/api/documents/{doc.id}/peer-approve/', {},
+                                          format='json').status_code, 200)
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists())
+
+    def test_all_sa_must_approve(self):
+        """합의자가 여럿이면 전원 합의해야 한다(AND)."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.sa_user, self.sa_user2)})
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.pl_user)
+        self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.client.force_authenticate(user=self.sa_user)
+        self.client.post(f'/api/documents/{doc.id}/sales-agree/', {}, format='json')
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R').exists(),
+                         '합의자 1명이 남았으면 아직 진행하지 않는다')
+        self.client.force_authenticate(user=self.sa_user2)
+        self.client.post(f'/api/documents/{doc.id}/sales-agree/', {}, format='json')
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists())
+
+    def test_other_user_cannot_agree(self):
+        """본인 SA 단계가 없는 사람은 합의할 수 없다."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.sa_user)})
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.sa_user2)
+        res = self.client.post(f'/api/documents/{doc.id}/sales-agree/', {}, format='json')
+        self.assertEqual(res.status_code, 400)
+
+    # ---- 반려 ----
+
+    def test_sa_reject_rejects_document(self):
+        """합의자 반려는 PL 반려와 동일하게 문서를 즉시 반려한다."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.sa_user)})
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.sa_user)
+        res = self.client.post(f'/api/documents/{doc.id}/sales-reject/',
+                               {'comment': '검토 필요'}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+        self.assertEqual(
+            ApprovalStep.objects.get(document=doc, agent='SA', round=1).action, 'rejected'
+        )
+
+    # ---- 필수 지정 판정 (예외 구역) ----
+
+    def test_required_when_ea_value_differs_from_default(self):
+        """예외 구역 값을 기본값(300)과 다르게 바꾸면 합의자 지정이 필수다."""
+        doc = self._make_doc({'ea_change': '변경 있음', 'ea_value': '350'})
+        res = self._submit(doc)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('영업/기술지원 합의자', res.json()['error'])
+
+    def test_not_required_when_ea_value_is_default(self):
+        """'변경 있음'이어도 값이 기본값 그대로면 필수가 아니다."""
+        doc = self._make_doc({'ea_change': '변경 있음', 'ea_value': '300'})
+        self.assertEqual(self._submit(doc).status_code, 200)
+
+    def test_not_required_when_no_change(self):
+        """'변경 없음'이면 필수가 아니다."""
+        doc = self._make_doc({'ea_change': '변경 없음', 'ea_value': '300'})
+        self.assertEqual(self._submit(doc).status_code, 200)
+
+    def test_prodc_default_is_500(self):
+        """C가문(only_prodc=Yes)의 기본값은 500 이라, 500 은 필수 조건에 걸리지 않는다."""
+        base = {'ea_change': '변경 있음', 'only_prodc': 'Yes', 'post_approvers': [
+            {'loginid': self.sa_user.loginid, 'name': 'x'}]}
+        ok_doc = self._make_doc(dict(base, ea_value='500'))
+        self.assertEqual(self._submit(ok_doc).status_code, 200)
+
+        ng_doc = self._make_doc(dict(base, ea_value='300'))
+        res = self._submit(ng_doc)
+        self.assertEqual(res.status_code, 400, 'C가문에서 300 은 기본값이 아니라 합의 대상이다')
+        self.assertIn('영업/기술지원 합의자', res.json()['error'])
+
+    def test_none_reason_satisfies_requirement(self):
+        """지정하지 않는 사유를 남기면 합의자 없이도 상신할 수 있다."""
+        doc = self._make_doc({
+            'ea_change': '변경 있음', 'ea_value': '350',
+            'sales_agreer_none_reason': '영업 협의 완료(메일 참조)',
+        })
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='SA').exists())
+
+    # ---- 재상신 ----
+
+    def test_resubmit_recreates_sa_steps_in_new_round(self):
+        """재상신하면 새 회차에 SA 단계가 다시 만들어지고 이전 회차는 이력으로 남는다."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.sa_user)})
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.sa_user)
+        self.client.post(f'/api/documents/{doc.id}/sales-reject/', {'comment': 'x'}, format='json')
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+        self.client.force_authenticate(user=self.requester)
+        res = self.client.post(f'/api/documents/{doc.id}/resubmit/',
+                               {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='SA', round=2, action='pending').exists()
+        )
+        self.assertEqual(
+            ApprovalStep.objects.get(document=doc, agent='SA', round=1).action, 'rejected'
+        )
+
+
+class DirectHistoryRegisterTest(TestCase):
+    """MASTER 의 '이력 바로 등록'(POST /documents/{id}/direct-approve/) 검증.
+
+    결재 경로를 타지 않고 draft → approved 로 바로 넘어가며, 상신일·결재 완료일을
+    요청자가 직접 지정한다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        import json
+        self._json = json
+        self.client = APIClient()
+        self.master = UserProfile.objects.create(loginid='master', mail='m@c.com', role='MASTER')
+        self.requester = UserProfile.objects.create(loginid='req', mail='req@c.com', role='NONE')
+
+    def _make_doc(self, status='draft', notes=None):
+        return RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps(notes or {'detail': {}, 'jayerRows': [], 'bbRows': []}),
+        )
+
+    def _post(self, doc, submitted='2026-08-01', approved='2026-08-05'):
+        return self.client.post(
+            f'/api/documents/{doc.id}/direct-approve/',
+            {'submitted_at': submitted, 'approved_at': approved},
+            format='json',
+        )
+
+    def test_master_registers_document_directly(self):
+        doc = self._make_doc()
+        self.client.force_authenticate(user=self.master)
+        res = self._post(doc)
+        self.assertEqual(res.status_code, 200, res.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'approved')
+        self.assertEqual(timezone.localtime(doc.submitted_at).date().isoformat(), '2026-08-01')
+
+    def test_creates_single_approved_step_with_given_date(self):
+        doc = self._make_doc()
+        self.client.force_authenticate(user=self.master)
+        self.assertEqual(self._post(doc).status_code, 200)
+
+        steps = ApprovalStep.objects.filter(document=doc)
+        self.assertEqual(steps.count(), 1, '완료 기록 1행만 남는다')
+        step = steps.first()
+        self.assertEqual(step.action, 'approved')
+        self.assertEqual(timezone.localtime(step.acted_at).date().isoformat(), '2026-08-05')
+        self.assertEqual(step.assignee_id, self.master.id, '등록한 MASTER 가 담당자로 남는다')
+        self.assertEqual(step.round, 1)
+
+    def test_no_pending_step_is_created(self):
+        doc = self._make_doc()
+        self.client.force_authenticate(user=self.master)
+        self.assertEqual(self._post(doc).status_code, 200)
+        self.assertFalse(
+            ApprovalStep.objects.filter(document=doc, action='pending').exists(),
+            '결재 대기 단계가 생기면 결재 경로를 타게 된다',
+        )
+
+    def test_no_mail_is_enqueued(self):
+        doc = self._make_doc()
+        self.client.force_authenticate(user=self.master)
+        self.assertEqual(self._post(doc).status_code, 200)
+        self.assertEqual(MailNotification.objects.filter(document=doc).count(), 0)
+
+    def test_non_master_is_forbidden(self):
+        doc = self._make_doc()
+        self.client.force_authenticate(user=self.requester)
+        res = self._post(doc)
+        self.assertEqual(res.status_code, 403, res.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'draft')
+
+    def test_non_draft_document_is_rejected(self):
+        doc = self._make_doc(status='under_review')
+        self.client.force_authenticate(user=self.master)
+        self.assertEqual(self._post(doc).status_code, 400)
+
+    def test_invalid_date_is_rejected(self):
+        doc = self._make_doc()
+        self.client.force_authenticate(user=self.master)
+        self.assertEqual(self._post(doc, submitted='2026/08/01').status_code, 400)
+        self.assertEqual(self._post(doc, approved='').status_code, 400)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'draft')
+
+    def test_approved_date_before_submitted_date_is_rejected(self):
+        doc = self._make_doc()
+        self.client.force_authenticate(user=self.master)
+        res = self._post(doc, submitted='2026-08-05', approved='2026-08-01')
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_unmapped_bb_row_is_rejected(self):
+        """문서 내용 검증(Backbone 매핑)은 상신과 동일하게 적용된다."""
+        doc = self._make_doc(notes={
+            'detail': {},
+            'jayerRows': [{'id': 'j1', 'process_id': 'P1', 'new_or_copy': '신규'}],
+            'bbRows': [],
+        })
+        self.client.force_authenticate(user=self.master)
+        self.assertEqual(self._post(doc).status_code, 400)

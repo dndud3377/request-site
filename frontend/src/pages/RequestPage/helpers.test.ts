@@ -2,6 +2,7 @@ import {
   autoValidationSystem, isValidationKeywordRow, isValidationTarget, computeLayerMerge, MergeComparableRow,
   computeBeforeAfter, BaComparableRow,
   parseClipboardTable, detectAdiCdHeader, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows,
+  requiresBbEntries, findBbEntryViolations, findEmptyStNocViolations,
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste,
 } from './helpers';
@@ -44,6 +45,61 @@ describe('isValidationTarget', () => {
 
   it('pp 가 없는 행도 안전하게 처리한다', () => {
     expect(isValidationTarget([{}, { pp: undefined }])).toBe(false);
+  });
+});
+
+describe('requiresBbEntries', () => {
+  it("활성 행에 st='O' 가 있으면 필수", () => {
+    expect(requiresBbEntries([{ disabled: false, st: 'X' }, { disabled: false, st: 'O' }])).toBe(true);
+  });
+
+  it("'O (D)' 도 O 계열로 본다", () => {
+    expect(requiresBbEntries([{ disabled: false, st: 'O (D)' }])).toBe(true);
+  });
+
+  it('비활성 행은 판정에서 제외한다', () => {
+    expect(requiresBbEntries([{ disabled: true, st: 'O' }])).toBe(false);
+  });
+
+  it('O 계열 행이 없거나 표가 비면 필수가 아니다', () => {
+    expect(requiresBbEntries([{ disabled: false, st: 'X' }])).toBe(false);
+    expect(requiresBbEntries([])).toBe(false);
+  });
+});
+
+describe('findBbEntryViolations', () => {
+  const full = { id: 'a', location: 'L', product: 'P', process_id: 'C' };
+  const partial = { id: 'b', location: 'L', product: '', process_id: '' };
+  const empty = { id: 'c', location: '', product: '', process_id: '' };
+
+  it('필수일 때는 빈 항목·부분 항목 모두 위반', () => {
+    expect(findBbEntryViolations([full, partial, empty], true)).toEqual(['b', 'c']);
+  });
+
+  it('필수가 아니면 부분 입력 항목만 위반', () => {
+    expect(findBbEntryViolations([full, partial, empty], false)).toEqual(['b']);
+  });
+
+  it('공백만 있는 값은 빈 값으로 본다', () => {
+    expect(findBbEntryViolations([{ id: 'd', location: '  ', product: '', process_id: '' }], false)).toEqual([]);
+  });
+
+  it('모두 완전하면 위반 없음', () => {
+    expect(findBbEntryViolations([full], true)).toEqual([]);
+  });
+});
+
+describe('findEmptyStNocViolations', () => {
+  it('활성 행의 st 또는 new_or_copy 가 비면 위반', () => {
+    expect(findEmptyStNocViolations([
+      { id: 'a', disabled: false, st: 'O', new_or_copy: '신규' },
+      { id: 'b', disabled: false, st: '', new_or_copy: '신규' },
+      { id: 'c', disabled: false, st: 'X', new_or_copy: '' },
+    ])).toEqual(['b', 'c']);
+  });
+
+  it('비활성 행은 제외한다', () => {
+    expect(findEmptyStNocViolations([{ id: 'a', disabled: true, st: '', new_or_copy: '' }])).toEqual([]);
   });
 });
 

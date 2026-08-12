@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { JayerRow, FilterSet, GuideFeatureKey, ValidationSystemValue } from '../../../types';
-import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA } from '../constants';
+import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, NOC_LAYER_DELETE } from '../constants';
 import { isValidationKeywordRow } from '../helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from '../../../components/ValidationSystem';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
@@ -204,6 +204,10 @@ const Step2: React.FC<Step2Props> = ({
             {renderedJayerRows.map((row, idx) => {
               const isFirstDisabled = row.disabled && (idx === 0 || !renderedJayerRows[idx - 1].disabled);
               const isRegistered = row.new_or_copy === '기등록';
+              // layer삭제 행의 st 는 항상 'X' 로 고정 — 값 편집을 막는다.
+              const isLayerDeleted = row.new_or_copy === NOC_LAYER_DELETE;
+              const stError = errors[`jayer_stnoc_${row.id}_st`];
+              const nocError = errors[`jayer_stnoc_${row.id}_new_or_copy`];
               const regBg = '#e5e7eb';
               // 편집 셀 공통 props: 셀 선택(드래그/Ctrl) + 선택 하이라이트
               const cellProps = (col: string, bg?: string, extra?: React.CSSProperties) => ({
@@ -234,24 +238,30 @@ const Step2: React.FC<Step2Props> = ({
                     <td {...cellProps('sd', isRegistered ? regBg : undefined)}><input value={row.sd} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                     <td {...cellProps('layerid', isRegistered ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                     <td {...cellProps('pp', isRegistered ? regBg : undefined)}><input value={row.pp} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : isValidationKeywordRow(row.pp) ? VALIDATION_CELL_COLOR : undefined }} /></td>
-                    <td {...cellProps('st', isRegistered ? regBg : undefined)}>
+                    <td {...cellProps('st', isRegistered ? regBg : undefined)} className={stError ? 'field-error-target' : undefined}>
                       <AutocompleteInput
                         value={row.st}
                         onChange={(v) => handleJayerChange(row.id, 'st', v)}
                         options={ST_OPTIONS}
-                        disabled={row.disabled || isRegistered}
-                        inputStyle={{ backgroundColor: isRegistered ? regBg : ST_CELL_COLOR[row.st] }}
+                        disabled={row.disabled || isRegistered || isLayerDeleted}
+                        inputStyle={{
+                          backgroundColor: isRegistered ? regBg : ST_CELL_COLOR[row.st],
+                          ...(stError ? { border: '1px solid var(--danger)' } : {}),
+                        }}
                         dropdownFontSize="0.7rem"
                         dropdownDirection="up"
                       />
                     </td>
-                    <td {...cellProps('new_or_copy')}>
+                    <td {...cellProps('new_or_copy')} className={nocError ? 'field-error-target' : undefined}>
                       <AutocompleteInput
                         value={row.new_or_copy}
                         onChange={(v) => handleJayerChange(row.id, 'new_or_copy', v)}
                         options={NEW_OR_COPY_OPTIONS}
                         disabled={row.disabled}
-                        inputStyle={{ backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined }}
+                        inputStyle={{
+                          backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined,
+                          ...(nocError ? { border: '1px solid var(--danger)' } : {}),
+                        }}
                         dropdownFontSize="0.7rem"
                         dropdownDirection="up"
                       />

@@ -85,12 +85,19 @@ class RequestDocument(models.Model):
     # 요청 목적 'Only MAP' 값 (결재 경로를 R 단계까지만 진행)
     ONLY_MAP_PURPOSE = 'Only MAP'
 
-    # 요청 목적 'MAP 삭제/수정' 값 (PL 합의 후 P·R·J·O 를 병렬로 진행)
+    # 요청 목적 'MAP 삭제' 값 (PL 합의 후 P·R·J·O 를 병렬로 진행)
     # 프론트엔드 `RequestPage/constants.ts` 의 MAP_DELETE_EDIT_PURPOSE 와 같은 값이어야 한다.
-    MAP_DELETE_EDIT_PURPOSE = 'MAP 삭제/수정'
+    # (2026-08) '수정'이 빠지면서 저장값이 예전 'MAP 삭제/수정' 에서 'MAP 삭제' 로 바뀌었다.
+    MAP_DELETE_EDIT_PURPOSE = 'MAP 삭제'
 
     # 기타 목적 '연구소 제품' — C가문과 마찬가지로 상신 시 후결자 지정이 필수다.
     OTHER_PURPOSE_LAB = '연구소 제품'
+
+    # 예외 구역(ea_change/ea_value) — 기본값은 C가문 여부로 갈린다(일반 300 / C가문 500).
+    # 프론트엔드 `RequestPage/constants.ts` 의 EA_* 상수와 같은 값이어야 한다.
+    EA_HAS_CHANGE = '변경 있음'
+    EA_DEFAULT_NORMAL = '300'
+    EA_DEFAULT_PRODC = '500'
 
     # 기타 목적 'Overlay 변경' — 이것 **하나만** 선택되면 결재 경로에서 J 단계를 뺀다.
     # 프론트엔드 `RequestPage/constants.ts` 의 OPTION_OTHER_PURPOSE 항목과 같은 값이어야 한다.
@@ -158,9 +165,9 @@ class RequestDocument(models.Model):
         return inner_detail.get('request_purpose') == self.ONLY_MAP_PURPOSE
 
     def is_map_delete_edit(self):
-        """요청 목적이 'MAP 삭제/수정' 인지 여부.
+        """요청 목적이 'MAP 삭제' 인지 여부.
 
-        이 의뢰서는 MAP 의 수정/삭제 이유만 담으므로 결재 경로가 다르다 —
+        이 의뢰서는 MAP 의 삭제 이유만 담으므로 결재 경로가 다르다 —
         PL 합의 직후 P·R·J·O 를 병렬로 만들고, 네 단계 전원 합의 시 승인한다.
         E(MASK)와 후결자(RA)는 생성하지 않는다(고정 후결자도 붙지 않는 유일한 경로).
         """
@@ -181,11 +188,28 @@ class RequestDocument(models.Model):
             other = [other]
         return self.OTHER_PURPOSE_LAB in other
 
+    def requires_sales_agreer(self):
+        """상신 시 영업/기술지원 합의자(SA) 지정이 필수인가.
+
+        예외 구역을 '변경 있음'으로 두고 값까지 기본값(일반 300 / C가문 500)과 다르게 바꾼
+        의뢰서만 해당한다. '변경 없음'이거나 기본값 그대로면 합의 대상이 아니다.
+        프론트엔드 `RequestPage/index.tsx` 의 requiresSalesAgreer 와 같은 기준이어야 한다.
+        """
+        inner_detail = self.get_detail().get('detail', {}) or {}
+        if inner_detail.get('ea_change') != self.EA_HAS_CHANGE:
+            return False
+        value = str(inner_detail.get('ea_value', '') or '').strip()
+        if not value:
+            return False
+        default = (self.EA_DEFAULT_PRODC if inner_detail.get('only_prodc') == 'Yes'
+                   else self.EA_DEFAULT_NORMAL)
+        return value != default
+
     def skip_j_stage(self):
         """결재 경로에서 J(JOB) 단계를 빼는 의뢰서인가 — 기타 목적이 'Overlay 변경' **하나뿐**일 때.
 
         여러 개를 함께 골랐으면(예: Overlay 변경 + STEPSEQ 변경) 다른 목적의 검토가 남아 있으므로
-        J 를 그대로 둔다. 적용 범위는 **일반 경로만**이다 — 'MAP 삭제/수정' 은 P·R·J·O 네 단계가
+        J 를 그대로 둔다. 적용 범위는 **일반 경로만**이다 — 'MAP 삭제' 은 P·R·J·O 네 단계가
         하나의 병렬 묶음이라 제외하고, 'Only MAP' 은 원래부터 J 를 만들지 않아 판정 대상이 아니다.
         other_purpose 는 배열이지만 구버전 문서는 문자열일 수 있어 양쪽 모두 처리한다
         (requires_post_approver 와 같은 정규화).
@@ -244,6 +268,7 @@ class ApprovalStep(models.Model):
         ('E', '{{agent_E}}'),
         ('EV', '검토자'),           # E 검토자(담당자가 지정, 다중 가능)
         ('RA', '후결자'),           # 후결자(R단계 이후 병렬)
+        ('SA', '영업/기술지원 합의자'),  # PL 검토와 병렬(작성자가 상신 시 지정, 다중 가능)
     ]
 
     ACTION_CHOICES = [

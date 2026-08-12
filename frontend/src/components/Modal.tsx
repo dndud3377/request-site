@@ -10,6 +10,8 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
   topLevel?: boolean;
   style?: React.CSSProperties;
+  /** 본문(.modal-body)에만 덧입히는 스타일. 공용 CSS 를 건드리지 않고 이 모달의 높이만 조절할 때 쓴다. */
+  bodyStyle?: React.CSSProperties;
   hideFullscreen?: boolean;
 }
 
@@ -34,6 +36,7 @@ export default function Modal({
   size = 'md',
   topLevel = false,
   style,
+  bodyStyle,
   hideFullscreen = false,
 }: ModalProps): React.ReactElement | null {
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -64,7 +67,8 @@ export default function Modal({
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
         </div>
-        <div className="modal-body">{children}</div>
+        {/* 전체화면일 때는 본문이 화면을 꽉 채워야 하므로 개별 높이 지정을 무시한다. */}
+        <div className="modal-body" style={isFullscreen ? undefined : bodyStyle}>{children}</div>
         {footer && <div className="modal-footer">{footer}</div>}
       </div>
     </div>

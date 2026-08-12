@@ -37,7 +37,15 @@ const ApprovalRouteDiagram: React.FC<{ embedded?: boolean; paused?: boolean }> =
       <div className="route-diagram-flow">
         <Box label={t('approval.route_diagram.product_owner')} />
         <Arrow />
-        <Box label={agent('PL')} />
+        {/* PL 검토 단계는 지정 검토자와 영업/기술지원 합의자가 병렬이다(합의자는 지정했을 때만). */}
+        <div className="route-diagram-parallel">
+          <div className="route-diagram-path">
+            <Box label={agent('PL')} />
+          </div>
+          <div className="route-diagram-path">
+            <Box label={agent('SA')} dim />
+          </div>
+        </div>
         <Arrow />
         <Box label={t('approval.stage_handler')} />
         <Arrow />
@@ -70,6 +78,7 @@ const ApprovalRouteDiagram: React.FC<{ embedded?: boolean; paused?: boolean }> =
       </div>
 
       <ul className="route-diagram-notes">
+        <li>{t('approval.route_diagram.note_sa')}</li>
         <li>{t('approval.route_diagram.note_e')}</li>
         <li>{t('approval.route_diagram.note_onlymap')}</li>
         <li>{t('approval.route_diagram.note_reject')}</li>

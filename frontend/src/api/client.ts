@@ -198,6 +198,16 @@ const resubmitDocument = async (id: number, designatedPlLoginids: string[]) => {
   return { data };
 };
 
+/** 이력 바로 등록 (MASTER 전용) — 결재 경로를 타지 않고 draft → approved.
+ *  날짜는 모두 'YYYY-MM-DD' 형식이다. */
+const directApproveDocument = async (id: number, submittedAt: string, approvedAt: string) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${id}/direct-approve/`,
+    { submitted_at: submittedAt, approved_at: approvedAt }
+  );
+  return { data };
+};
+
 const peerApprove = async (docId: number, comment?: string) => {
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/peer-approve/`,
@@ -209,6 +219,23 @@ const peerApprove = async (docId: number, comment?: string) => {
 const peerReject = async (docId: number, comment?: string) => {
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/peer-reject/`,
+    { comment: comment ?? '' }
+  );
+  return { data };
+};
+
+// 영업/기술지원 합의자(SA) — PL 검토와 병렬인 단계. 담당자 본인만 처리할 수 있다.
+const salesAgree = async (docId: number, comment?: string) => {
+  const data = await post<{ message: string; status: string }>(
+    `/documents/${docId}/sales-agree/`,
+    { comment: comment ?? '' }
+  );
+  return { data };
+};
+
+const salesReject = async (docId: number, comment?: string) => {
+  const data = await post<{ message: string; status: string }>(
+    `/documents/${docId}/sales-reject/`,
     { comment: comment ?? '' }
   );
   return { data };
@@ -499,6 +526,7 @@ export const documentsAPI = {
   update: updateDocument,
   submit: submitDocument,
   resubmit: resubmitDocument,
+  directApprove: directApproveDocument,
   withdraw: withdrawDocument,
   confirmWithdraw,
   rejectWithdraw,
@@ -524,6 +552,8 @@ export const documentsAPI = {
   cancelPause,
   peerApprove,
   peerReject,
+  salesAgree,
+  salesReject,
   peerSubmit,
   changeDesignee,
   stats: documentStats,

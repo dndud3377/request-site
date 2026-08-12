@@ -210,7 +210,9 @@ const optionsFor = (line: string): string[] => {
 /** 편집 모드로 페이지를 띄우고 로드가 끝날 때까지 기다린다. */
 async function renderLoadedPage() {
   mockState.captured = null;
-  render(
+  // 반환값(container)은 이 렌더에만 질의를 한정하고 싶을 때 쓴다 — 전역 document 로 찾으면
+  // 같은 파일의 다른 테스트가 남긴 DOM 을 함께 잡을 수 있다. 기존 호출부는 무시해도 된다.
+  const view = render(
     <MemoryRouter initialEntries={[{ pathname: '/request', state: { editDocId: 1 } }]}>
       <ToastProvider>
         <RequestPage />
@@ -224,6 +226,7 @@ async function renderLoadedPage() {
     // eslint-disable-next-line no-await-in-loop
     await act(async () => { await Promise.resolve(); });
   }
+  return view;
 }
 
 /** '임시저장' 버튼을 눌러 서버로 나간 payload 의 additional_notes 를 파싱해 돌려준다. */
@@ -332,5 +335,79 @@ describe('임시저장 왕복 — 불러온 값이 그대로 다시 저장되는
     const savedO = saved.oayerRows as { id: string; disabled: boolean }[];
     expect(fixtureOayerRows[0].disabled).toBe(false);
     expect(savedO[0].disabled).toBe(true);
+  });
+});
+
+/**
+ * Only MAP · MAP 삭제: J-ayer·O-ayer·Backbone 단계를 아예 열지 않고 MAP 정보에서 바로 상신한다.
+ * (2026-08) 예전에는 그 단계들에 들어가 입력까지 할 수 있었지만 저장 시 전부 버려졌다.
+ */
+describe('Only MAP · MAP 삭제 — MAP 정보(2단계)가 마지막 단계', () => {
+  const LOCKED_STEPS = [3, 4, 5];
+
+  /** 요청 목적만 바꾼 문서로 편집 모드 진입 → step 2(MAP 정보)까지 이동한다. */
+  async function renderAtMapStep(purpose: string) {
+    mockState.doc = {
+      ...fixtureDoc,
+      additional_notes: JSON.stringify({
+        ...fixtureNotes,
+        // BEFORE/AFTER 미매핑이 남아 있으면 step 이동 자체가 막힌다.
+        detail: {
+          ...fixtureDetail,
+          request_purpose: purpose,
+          merge_unmatched_before: [],
+          merge_unmatched_after: [],
+        },
+      }),
+    };
+    const { container } = await renderLoadedPage();
+    const nextBtn = buttonWith(container, '다음');
+    if (!nextBtn) throw new Error('다음 버튼을 찾지 못했다');
+    await act(async () => { nextBtn.click(); });
+    return container;
+  }
+
+  const stepEls = (c: HTMLElement) => Array.from(c.querySelectorAll('.wizard-step')) as HTMLElement[];
+  const buttonWith = (c: HTMLElement, text: string) =>
+    Array.from(c.querySelectorAll('button')).find((b) => b.textContent?.includes(text));
+
+  beforeEach(() => {
+    mockState.doc = fixtureDoc;
+    mockState.optionsFor = optionsFor;
+    mockState.captured = null;
+    localStorage.clear();
+  });
+
+  it.each([['Only MAP'], ['MAP 삭제']])('%s: MAP 정보 단계에서 다음 대신 상신 버튼이 나온다', async (purpose) => {
+    const c = await renderAtMapStep(purpose);
+    expect(buttonWith(c, '다음')).toBeUndefined();
+    expect(buttonWith(c, '📤')).toBeDefined();
+  });
+
+  it.each([['Only MAP'], ['MAP 삭제']])('%s: J-ayer·O-ayer·Backbone 단계가 잠긴다', async (purpose) => {
+    const c = await renderAtMapStep(purpose);
+    const all = stepEls(c);
+    expect(all).toHaveLength(5);
+    LOCKED_STEPS.forEach((n) => {
+      expect(all[n - 1].className).toContain('disabled');
+      expect(all[n - 1].className).not.toContain('clickable');
+    });
+  });
+
+  it.each([['Only MAP'], ['MAP 삭제']])('%s: 잠긴 단계를 클릭해도 이동하지 않는다', async (purpose) => {
+    const c = await renderAtMapStep(purpose);
+    await act(async () => { stepEls(c)[2].click(); });
+    // 여전히 MAP 정보(2단계)다 — 상신 버튼이 그대로 있고 '다음'은 없다.
+    expect(buttonWith(c, '📤')).toBeDefined();
+    expect(buttonWith(c, '다음')).toBeUndefined();
+    // 클릭한 J-ayer 단계는 여전히 잠긴 상태이고, 현재 단계(MAP 정보)는 잠기지 않는다.
+    expect(stepEls(c)[2].className).toContain('disabled');
+    expect(stepEls(c)[1].className).not.toContain('disabled');
+  });
+
+  it('일반 목적(차용)은 종전대로 5단계까지 열려 있다', async () => {
+    const c = await renderAtMapStep('차용');
+    expect(buttonWith(c, '다음')).toBeDefined();
+    stepEls(c).forEach((el) => expect(el.className).not.toContain('disabled'));
   });
 });
