@@ -2325,41 +2325,56 @@ class VOCViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedOrMasterDelete]
     pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['category', 'status', 'submitter_user_id']
+    filterset_fields = ['category', 'status']
     search_fields = ['title', 'submitter_name', 'content']
     ordering = ['-created_at']
 
+    def get_queryset(self):
+        """`?mine=true` 면 로그인 사용자가 등록한 VOC 만 반환한다.
+
+        프론트가 사용자 id 를 쿼리로 보내던 방식을 대체한다 — 개발 모드의 목 사용자
+        id 는 DB 의 실제 user.id 와 어긋날 수 있어 '내 VOC' 가 오동작했다.
+        """
+        queryset = super().get_queryset()
+        if self.request.query_params.get('mine') == 'true':
+            user = self.request.user
+            loginid = getattr(user, 'loginid', '')
+            if not loginid:
+                return queryset.none()
+            queryset = queryset.filter(submitter__loginid=loginid)
+        return queryset
+
     def perform_create(self, serializer):
-        voc = serializer.save()
+        """제출자 FK 는 프론트가 보낸 값이 아니라 인증된 사용자로 서버가 확정한다."""
+        user = self.request.user
+        submitter = user if getattr(user, 'is_authenticated', False) else None
+        voc = serializer.save(submitter=submitter)
         mailer.enqueue_voc_created(voc)
 
     @action(detail=True, methods=['patch'], url_path='update-status')
     def update_status(self, request, pk=None):
-        """VOC 상태 변경 — completed: 작성자 본인만, rejected: MASTER만"""
+        """VOC 상태 변경 — completed 로만 바꿀 수 있다(작성자 본인 또는 MASTER).
+
+        VOC 는 결재가 아니므로 반려 개념이 없다. 잘못 올린 글도 답변 완료로 마무리한다.
+        """
         voc = self.get_object()
         new_status = request.data.get('status')
-        user_role = getattr(request.user, 'role', '')
 
-        if new_status == 'completed':
-            if voc.submitter_user_id != request.user.id:
-                return Response(
-                    {'error': '작성자 본인만 완료 처리할 수 있습니다.'},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-        elif new_status == 'rejected':
-            if user_role != 'MASTER':
-                return Response(
-                    {'error': 'MASTER만 반려 처리할 수 있습니다.'},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-        else:
+        if new_status != 'completed':
             return Response(
                 {'error': '유효하지 않은 상태입니다.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        is_master = getattr(request.user, 'role', '') == 'MASTER'
+        if not is_master and not doc_permissions.is_voc_submitter(request.user, voc):
+            return Response(
+                {'error': '작성자 본인 또는 관리자만 완료 처리할 수 있습니다.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         voc.status = new_status
-        voc.save()
+        voc.save(update_fields=['status'])
         return Response(VOCSerializer(voc).data)
 
     @action(detail=True, methods=['post'])
