@@ -2893,8 +2893,11 @@ class UserViewSet(viewsets.ModelViewSet):
 
         - 본인 행은 본인이, 그 외에는 MASTER 만 바꿀 수 있다.
         - 대상 역할은 UserProfile.MAIL_LINE_FILTER_ROLES 뿐이다(PL·NONE 은 이 설정을 쓰지 않음).
-        - 요청 본문: {"lines": ["라인1", "라인3"]} — 활성 라인 이름 배열(전체 교체).
-          빈 배열은 '모든 라인 메일을 받지 않는다'는 뜻이다.
+        - 요청 본문
+          · {"receive_all": true} — '전체 받기'. 라인 구분 없이 모두 받는다(기본 상태).
+            이때 lines 는 무시하고 비운다.
+          · {"receive_all": false, "lines": ["라인1", "라인3"]} — 그 라인만 받는다(전체 교체).
+            빈 배열은 '아무 메일도 받지 않는다'는 뜻이다.
         """
         user = self.get_object()
         caller = request.user
@@ -2907,6 +2910,20 @@ class UserViewSet(viewsets.ModelViewSet):
                 {'error': '이 역할은 라인별 메일 수신 설정을 사용하지 않습니다.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        receive_all = request.data.get('receive_all', False)
+        if not isinstance(receive_all, bool):
+            return Response(
+                {'error': 'receive_all 은 true/false 여야 합니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if receive_all:
+            # 전체 받기는 개별 라인 선택을 대체한다 — 남은 선택을 비워 상태를 하나로 유지한다.
+            user.receive_all_mail = True
+            user.save(update_fields=['receive_all_mail'])
+            user.mail_lines.clear()
+            return Response({'id': user.id, 'receive_all_mail': True, 'mail_lines': []})
 
         names = request.data.get('lines')
         if not isinstance(names, list) or any(not isinstance(n, str) for n in names):
@@ -2922,8 +2939,14 @@ class UserViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        user.receive_all_mail = False
+        user.save(update_fields=['receive_all_mail'])
         user.mail_lines.set(lines)
-        return Response({'id': user.id, 'mail_lines': [line.name for line in lines]})
+        return Response({
+            'id': user.id,
+            'receive_all_mail': False,
+            'mail_lines': [line.name for line in lines],
+        })
 
     @action(detail=True, methods=['post'], url_path='assign-role')
     def assign_role(self, request, pk=None):
@@ -2965,7 +2988,8 @@ class UserViewSet(viewsets.ModelViewSet):
             'role': role,
             'mail': user.mail or '',
             'role_assigned_at': user.role_assigned_at.isoformat() if user.role_assigned_at else None,
-            # 역할 변경 응답/브로드캐스트로 행 전체가 교체되므로 라인 설정도 함께 실어 보낸다.
+            # 역할 변경 응답/브로드캐스트로 행 전체가 교체되므로 메일 수신 설정도 함께 실어 보낸다.
+            'receive_all_mail': user.receive_all_mail,
             'mail_lines': list(user.mail_lines.values_list('name', flat=True)),
         }
         broadcaster.broadcast('user_updated', payload)
