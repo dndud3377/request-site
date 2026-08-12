@@ -1,6 +1,9 @@
 # ⚠️ MASKING 처리된 파일. 이 파일에 포함된 비즈니스 용어는 {{ko.json}} 키로 마스킹되어 있습니다. 원래 용어를 확인하려면 다음 파일을 참조하세요: frontend/src/locales/ko.json
 
+import datetime
+
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.csrf import csrf_exempt
@@ -49,6 +52,17 @@ import re
 
 def _is_dev() -> bool:
     return getattr(settings, 'AUTH_MODE', 'sso') == 'dev'
+
+
+def _as_aware_datetime(date_value):
+    """date → 그 날 12:00(로컬) 의 aware datetime. USE_TZ=True 라 naive 로 두면 경고가 난다.
+
+    자정이 아니라 정오인 이유: 화면은 `utils/date.ts` 의 `toLocaleDateString` 으로
+    **브라우저 로컬 시간대** 기준 변환을 하므로, 00:00 로 저장하면 시간대가 다른 브라우저에서
+    하루 앞뒤로 밀려 보인다. 정오면 ±11시간까지 같은 날짜로 표시된다.
+    """
+    naive = datetime.datetime.combine(date_value, datetime.time(12, 0))
+    return timezone.make_aware(naive) if timezone.is_naive(naive) else naive
 
 
 class IsMasterOrReadOnly(BasePermission):
@@ -437,6 +451,69 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         return Response({
             'message': '재상신되었습니다.',
+            'document': RequestDocumentSerializer(document).data,
+        })
+
+    # '이력 바로 등록'이 남기는 완료 기록 1행의 agent 코드.
+    # 결재를 시작시키는 대기 단계가 아니라, 등록 시 입력받은 결재 완료일을 담아 두는 자리다
+    # (완료일을 저장할 수 있는 곳이 ApprovalStep.acted_at 뿐이다).
+    DIRECT_HISTORY_AGENT = 'PL'
+
+    @action(detail=True, methods=['post'], url_path='direct-approve')
+    def direct_approve(self, request, pk=None):
+        """이력 바로 등록: draft → approved (MASTER 전용, 결재 경로를 타지 않는다).
+
+        상신일·결재 완료일을 요청자가 직접 지정한다. pending 단계를 만들지 않으므로
+        결재 현황 목록에 뜨지 않고, 담당자 대기열·단계 도착 메일도 발생하지 않는다.
+        메일은 상신·완료 모두 발송하지 않는다.
+        """
+        document = self.get_object()
+
+        if getattr(request.user, 'role', None) != 'MASTER':
+            return Response({'error': '이력 바로 등록 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        if document.status != 'draft':
+            return Response(
+                {'error': '임시저장 상태의 의뢰서만 이력에 바로 등록할 수 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        submitted_date = parse_date(str(request.data.get('submitted_at') or ''))
+        approved_date = parse_date(str(request.data.get('approved_at') or ''))
+        if not submitted_date or not approved_date:
+            return Response(
+                {'error': '상신일과 결재 완료일을 YYYY-MM-DD 형식으로 입력해야 합니다.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if approved_date < submitted_date:
+            return Response(
+                {'error': '결재 완료일은 상신일보다 빠를 수 없습니다.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 문서 내용 검증은 상신과 동일하게 적용한다(결재선 관련 검증만 생략).
+        err = self._validate_bb_mapping(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            document.status = 'approved'
+            document.submitted_at = _as_aware_datetime(submitted_date)
+            document.save()
+
+            # 결재를 진행하는 것이 아니라 이미 결과가 확정된 기록 1행만 남긴다.
+            ApprovalStep.objects.filter(document=document).delete()
+            ApprovalStep.objects.create(
+                document=document,
+                agent=self.DIRECT_HISTORY_AGENT,
+                action='approved',
+                round=1,
+                acted_at=_as_aware_datetime(approved_date),
+                assignee=request.user,
+                assignee_name=(request.user.username or request.user.loginid),
+            )
+
+        return Response({
+            'message': '이력에 등록되었습니다.',
             'document': RequestDocumentSerializer(document).data,
         })
 

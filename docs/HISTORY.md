@@ -94,6 +94,39 @@ PL 이 아닌 사용자도 자기가 참여했던 의뢰서를 볼 수 있다.
 
 ---
 
+## 4.5 이력 바로 등록 (MASTER — 결재 경로 없이 등록)
+
+MASTER 는 의뢰서 작성 화면에서 결재를 전혀 거치지 않고 문서를 곧바로 이 화면에 올릴 수 있다.
+
+- 진입: 의뢰서 작성 **step 5**, `상신하기` 왼쪽의 `📋 이력에 바로 등록` 버튼.
+  노출 조건은 `role='MASTER'` **이면서** 결재선이 아직 없는 문서(신규 작성 또는 임시저장 재진입)다.
+  반려 재상신·지정 PL 수정·재개(pause) 모드에서는 보이지 않는다.
+- 모달에서 **상신일 / 결재 완료일**을 직접 입력한다(기본값 = 오늘).
+- 검증은 상신과 동일하다 — 5단계 위저드 필수값 전체 + 서버측 Backbone 매핑 검증.
+  **지정 PL·후결자·통보자만 요구하지 않는다**(결재선을 만들지 않으므로).
+
+### 저장 결과
+
+| 대상 | 값 |
+|---|---|
+| `RequestDocument.status` | `approved` |
+| `RequestDocument.submitted_at` | 입력한 **상신일** (그 날 12:00 로컬) |
+| `ApprovalStep` | **1행만** — `agent='PL'`, `action='approved'`, `acted_at`=입력한 **결재 완료일**, `assignee`=등록한 MASTER, `round=1` |
+| 메일 | **발송 없음** (상신·단계 도착·완료 모두) |
+
+- 이 `ApprovalStep` 1행은 결재를 시작시키는 대기 단계가 **아니다.** 결재 완료일을 저장할 수 있는 곳이
+  `ApprovalStep.acted_at` 뿐이라 쓰는 자리이며, 처음부터 `action='approved'` 이므로 담당자 대기열·
+  단계 전개(R→P→J→O→E)·단계 도착 메일이 어디에서도 발생하지 않는다.
+- `status='approved'` 라서 결재 현황 목록에는 나타나지 않는다(`ApprovalPage.tsx` 가 `approved` 를 제외).
+- **이력 목록·상세에서 일반 결재 완료 문서와 구분 표시하지 않는다.** 화면 코드도 바뀌지 않았다 —
+  기존 계산식(`approval_steps` 중 `approved` 의 최신 `acted_at`)이 그대로 완료일을 찾아낸다.
+- **날짜를 12:00 로 저장하는 이유**: 화면은 `utils/date.ts` 의 `toLocaleDateString` 으로 **브라우저
+  로컬 시간대** 기준 변환을 한다. 00:00 로 저장하면 시간대가 다른 브라우저에서 하루 밀려 보인다.
+- 제목 끝의 `_요청서_YYMMDD` 도 **입력한 상신일**을 따른다(오늘 날짜가 아니다).
+- 마이그레이션은 없다. 기존 필드만 사용한다.
+
+---
+
 ## 5. API
 
 | 메서드 | 경로 | 설명 |
@@ -101,6 +134,7 @@ PL 이 아닌 사용자도 자기가 참여했던 의뢰서를 볼 수 있다.
 | GET | `/api/documents/?status=approved&search=…` | 결재 완료 문서 목록 (전체/MY/라인 탭) |
 | GET | `/api/documents/{id}/` | 상세(검토 항목 포함) |
 | POST | `/api/documents/{id}/delete/` | 문서 삭제 (MASTER) |
+| POST | `/api/documents/{id}/direct-approve/` | 이력 바로 등록 (**MASTER 만**, `draft` 만) — §4.5 |
 | GET | `/api/rejection-snapshots/?search=…` | 반려 이력 목록 — `rejected_at` 최신순, 페이지네이션 없음 |
 | GET | `/api/rejection-snapshots/{id}/` | 반려 이력 1건 |
 | DELETE | `/api/rejection-snapshots/{id}/` | 반려 이력 삭제 (**MASTER 만**, 그 외 403) |
@@ -126,5 +160,10 @@ PL 이 아닌 사용자도 자기가 참여했던 의뢰서를 볼 수 있다.
 `col_product`, `col_type`, `col_requester`, `col_status`, `col_submitted`, `col_approved`,
 `col_rejected`, `delete`, `delete_title`, `delete_confirm`, `delete_success`,
 `delete_snapshot_title`, `delete_snapshot_confirm`, `delete_snapshot_success`
+
+이력 바로 등록(§4.5)의 문구는 작성 화면 소속이라 `request.*` 에 있다 —
+`direct_history`, `direct_history_register`, `direct_history_submitted_at`,
+`direct_history_approved_at`, `direct_history_date_required`, `direct_history_date_order`,
+`direct_history_success`
 
 `ko.json` / `en.json` 에 같은 키가 있어야 한다.
