@@ -802,6 +802,24 @@ pages/RequestPage/
   - 썸네일 크기 상수: `DIFF_THUMB_MAX_WIDTH=220` / `DIFF_THUMB_MAX_HEIGHT=150` (블록 본체의 300×200 보다 작게 두어 변경 전·후가 한 화면에 들어온다). 경로 prefix 는 `MEDIA_URL_PREFIX='/media/'`.
   - 테두리 색은 표의 기존 색 규칙을 따른다 — 변경 전 `#dc3545`, 변경 후 `#155724`. 확대(클릭) 동작은 없다.
 
+### 추가 변경 이력 (2026-08 — 이력 확인 모드 이원화)
+
+상세 보기의 '이력 확인'이 **화면에 따라 다르게 동작**한다. `PagedDetailView` 의 `historyMode` prop 하나로 갈리며, `HistoryPage`(승인 완료 문서 전용, `status=approved`)에서만 `true` 다. `ApprovalPage`는 넘기지 않으므로 기본 `false`.
+
+| | 결재 진행 중 (`ApprovalPage`) | 이력 조회 (`HistoryPage`) |
+|---|---|---|
+| 강조·버튼 조건 | **직전 회차와 다를 때만** | **전 회차 중 한 번이라도 변경** |
+| 모달 내용 | **변경 전 / 변경 후만** | **회차별 전체**(1차·2차·…·현재) |
+
+- 대상은 9곳 전부 — 칩 14종 / O-layer 정보탭 3종 / 엠샷 / 생산정보 / REV / 지도 옵션 / J-ayer·O-ayer·뼈찜 표 행.
+- **진행 중 통일**: 종전에 칩·O-layer 정보탭만 회차별 표(`FieldHistoryModal`)로 뜨던 것을 전/후 2열로 바꿔 나머지와 맞췄다. `FieldHistoryModal` 이 `historyMode=false` 면 `FieldGroupHistoryModal` 로 위임한다.
+- **회차 축**: `roundSnaps: RoundSnapshot[]` = `history[]` + 현재값을 한 배열로 묶은 것. 이력 UI 전부가 이 배열 하나를 공유한다(결재 경로 섹션의 `rounds`(회차 번호 배열)와 다른 값이라 이름을 구분했다).
+- **판정 함수**: `computeEverChangedFields`(인접 회차 diff 합집합) / `computeTableEverChanged`(행 단위). 값이 되돌아온 필드(A→B→A)도 이력 조회에서는 잡힌다.
+- **회차별 모달 3종 추가**: `FieldGroupRoundHistoryModal`(행=항목, 열=회차 · 이미지 셀은 썸네일) / `RowRoundHistoryModal`(표 행: 행=회차, 열=필드) / 지도 옵션은 회차별 태그 목록.
+- **표 행 매칭**: `findRowInRound` — id 매칭이 원칙이고, 회차 간 겹치는 id 가 **하나도 없을 때만** 위치(index) 폴백. `computeTableDiff` 와 같은 규칙이라 강조 판정과 모달 내용이 어긋나지 않는다. 그 회차에 대응 행이 없으면 `(없음)` 으로 표시한다.
+- **블록 빌더 시그니처 변경**: `buildMshotRows(prev, cur)` → `buildMshotItems(d)` (생산정보·REV 동일). 한 회차만 받는 순수 함수라 전/후 표와 회차별 표가 같은 함수를 공유한다. 전/후 표는 `toDiffRows` 로 조립한다.
+- 전체 가이드 투어는 `ApprovalPage` 기준(`open-rowdiff`)이므로 종전 전/후 모달 그대로다.
+
 ### 추가 변경 이력 (2026-07 — 조건부 필드 초기화 + REV i18n)
 
 - **조건부 섹션 '해제' 시 하위 값 초기화(감사 R-2~R-6)**: 숨겨진 채 state 에 남아 backend 에 잘못 저장되던 값들을 비운다. `index.tsx` 핸들러 + `StepMap` select 연결.
