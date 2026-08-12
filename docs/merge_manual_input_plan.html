@@ -85,6 +85,7 @@
   .cell-in:hover { border-color: var(--border); }
   .cell-in:focus { border-color: var(--accent); outline: none; background: var(--card); }
   .cell-in.err { border-color: var(--danger); background: var(--danger-soft); }
+  .cell-in.diff { color: var(--amber); font-weight: 700; }
   .cell-ro { color: var(--muted); text-align: center; }
   .mini-sel { padding: 2px 4px; font-size: 0.75rem; border-radius: 5px; border: 1px solid var(--border);
     background: var(--card); color: var(--text); font-family: inherit; }
@@ -112,11 +113,21 @@
 <h1>참조 요청서 '적용' + 변경전/변경후 수기 입력 — 작업 계획서</h1>
 <p class="sub">
   대상: 의뢰서 작성 STEP 1 · 기타 목적 <code>Overlay 변경</code> / <code>Layer 추가/삭제</code> / <code>STEPSEQ 변경</code><br />
-  작성일 2026-08-12 · 브랜치 <code>claude/requisition-merge-feature-update-88q0ku</code> · 인터뷰 3라운드 반영본 · <b>승인 전이므로 코드는 아직 한 줄도 작성하지 않았습니다</b>
+  작성일 2026-08-12 · 브랜치 <code>claude/requisition-merge-feature-update-88q0ku</code> · <b>rev.2</b> (미결 4건 확정 반영) · <b>승인 전이므로 코드는 아직 한 줄도 작성하지 않았습니다</b>
 </p>
 
 <div class="note ok">
-  <p><b>📌 목표</b> — 참조 요청서가 없어도 변경전/변경후 표를 엑셀 붙여넣기 + 수기 입력으로 직접 채울 수 있게 하고, 'Merge' 버튼 이름을 '적용'으로 바꾼다.</p>
+  <p><b>📌 목표</b> — 참조 요청서를 <b>'없음'으로 확정</b>해도 변경전/변경후 표가 열려, 엑셀 붙여넣기 + 수기 입력으로 직접 채울 수 있게 한다.</p>
+</div>
+
+<div class="card" style="border-color: var(--accent)">
+  <h3 style="margin-top:0">rev.2 에서 확정된 4건</h3>
+  <ol>
+    <li><b>버튼 이름은 기존 <code>Merge</code> 유지</b> — 이름 충돌이 없어지므로 표 ① 의 확정 버튼도 <b>적용</b> 그대로 둡니다. (i18n 변경 없음)</li>
+    <li><b>상세 페이지 문구 반영</b> — <code>ba_detail_note</code> "Merge 시점 기준" → "작성자 편집 반영".</li>
+    <li><b>'없음' 은 직접입력 모드가 아니라 '없음' 으로 확정되는 값</b> — 라디오에서 '없음' 을 고르고 <code>Merge</code> 를 누르면 참조 요청서가 <b>'없음'으로 확정·잠금</b>되고, 그 결과로 변경전/변경후 표가 열립니다.</li>
+    <li><b>값 비교 강조 유지</b> — 양쪽에 값이 있으면 기존처럼 컬럼끼리 비교해 <b>다른 칸을 강조</b>합니다. 수기로 입력·붙여넣기한 값에도 실시간 적용됩니다.</li>
+  </ol>
 </div>
 
 <h2>1. 현재 동작 (변경 전)</h2>
@@ -133,7 +144,7 @@
     </tbody>
   </table>
   <p style="margin-top:10px">
-    <b>참고:</b> "적용" 이라는 이름은 <u>이미</u> 표 ① 의 매핑 확정 버튼(<code>request.ba_apply</code>)에 쓰이고 있습니다. 요청 1번의 'Merge' 는 참조 요청서 옆의 <code>request.merge_button</code> 입니다 → 아래 <b>7-①</b> 참조.
+    <b>버튼 이름:</b> rev.2 결정에 따라 참조 요청서 옆 버튼은 <code>request.merge_button</code> = <b>Merge</b> 그대로, 표 ① 의 확정 버튼은 <code>request.ba_apply</code> = <b>적용</b> 그대로 둡니다. <b>i18n 라벨 변경 없음.</b>
   </p>
 </div>
 
@@ -142,7 +153,9 @@
   <table>
     <thead><tr><th style="width:210px">항목</th><th>결정</th></tr></thead>
     <tbody>
-      <tr><td>참조 '없음' 선택 UI</td><td><b>라디오 2개</b> — ○ 참조 요청서 있음 / ○ 없음. '없음' 이면 자동완성 입력 비활성 + 적용 버튼 활성</td></tr>
+      <tr><td>참조 '없음' 선택 UI</td><td><b>라디오 2개</b> — ○ 참조 요청서 있음 / ○ 없음. '없음' 이면 자동완성 입력 비활성 + <code>Merge</code> 버튼 활성 → 누르면 <b>참조 요청서 = 없음</b> 으로 확정·잠금되고 표가 열림</td></tr>
+      <tr><td>버튼 이름 <span class="badge tag-q">rev.2</span></td><td><b>Merge 유지</b> (표 ① 확정 버튼도 '적용' 유지)</td></tr>
+      <tr><td>값 비교 강조 <span class="badge tag-q">rev.2</span></td><td>양쪽에 값이 있는 행은 <b>컬럼별로 비교해 다른 칸을 강조</b>(<code>.ba-cell-changed</code>) — 수기 입력에도 실시간 적용</td></tr>
       <tr><td>수기 표 구조</td><td><b>기존 확정 표 1개 그대로</b> (짝 단위 1행 = 변경전 + 변경후) → 요청 6번의 행 수 동기화가 <b>구조적으로 자동 보장</b></td></tr>
       <tr><td>편집 허용 범위</td><td><b>참조가 있을 때도</b> 행 추가·편집 허용, <b>자동 생성된 짝도 전부 편집 가능</b></td></tr>
       <tr><td>선택 가능한 뱃지</td><td><b>구분(J-ayer / O-ayer)만</b> — 기본 <b>J-ayer</b>, <b>드롭다운</b> 으로 선택</td></tr>
@@ -162,23 +175,23 @@
   <span class="mock-label">MOCK · STEP 1 — 기타 목적에 Overlay 변경 선택 시</span>
   <div class="radio-row">
     <label><input type="radio" name="mode" checked onclick="setMode('ref')" /> 참조 요청서 있음</label>
-    <label><input type="radio" name="mode" onclick="setMode('none')" /> 참조 요청서 없음 (직접 입력)</label>
+    <label><input type="radio" name="mode" onclick="setMode('none')" /> 참조 요청서 없음</label>
   </div>
   <div class="row-flex">
     <div style="flex:1; min-width:280px">
       <span class="form-label">참조 요청서</span>
       <input class="input" id="refInput" placeholder="이력에서 요청서를 선택하세요" />
     </div>
-    <button class="btn btn-primary" id="applyBtn">적용</button>
+    <button class="btn btn-primary" id="applyBtn">Merge</button>
     <button class="btn" id="resetBtn">↻ 재선택</button>
   </div>
   <p class="demo-tip" id="modeTip">
-    참조 요청서를 고르고 <b>적용</b> → 기존과 동일하게 3-way 반영 + 비교 표가 자동 생성됩니다. (버튼 이름만 Merge → 적용)
+    참조 요청서를 고르고 <b>Merge</b> → 기존과 동일하게 3-way 반영 + 비교 표가 자동 생성됩니다.
   </p>
 </div>
 
 <table style="margin-top:6px">
-  <thead><tr><th style="width:120px">모드</th><th>적용 버튼을 눌렀을 때</th></tr></thead>
+  <thead><tr><th style="width:120px">모드</th><th>Merge 버튼을 눌렀을 때</th></tr></thead>
   <tbody>
     <tr>
       <td><b>참조 있음</b><br /><span class="badge tag-keep">기존 유지</span></td>
@@ -186,7 +199,11 @@
     </tr>
     <tr>
       <td><b>참조 없음</b><br /><span class="badge tag-new">신규</span></td>
-      <td>확인 모달 없음. 표 ① (BEFORE/AFTER 매핑) 은 <b>노출하지 않고</b>, 표 ② 만 <b>양쪽 미등록 1행</b>으로 열립니다. J/O 표·스냅샷은 건드리지 않습니다. 되돌릴 땐 <b>↻ 초기화</b> (행을 모두 비우고 라디오 잠금 해제)</td>
+      <td>
+        참조 요청서가 <b>'없음' 으로 확정</b>됩니다 — 입력란에 <i>없음</i> 이 표시되고 라디오·입력이 잠깁니다(참조 있음 모드에서 문서를 확정했을 때와 같은 취급).
+        그 결과로 표 ② 가 <b>양쪽 미등록 1행</b>으로 열립니다. 표 ① (BEFORE/AFTER 매핑)은 짝지을 참조가 없으므로 노출하지 않습니다.
+        3-way 확인 모달·J/O 반영·<code>mergeSnapshot</code> 은 없습니다. 되돌릴 땐 <b>↻ 재선택</b> (경고 모달 후 표를 비우고 라디오 잠금 해제)
+      </td>
     </tr>
   </tbody>
 </table>
@@ -247,6 +264,7 @@ B5678	SP03	SD04	PP03</textarea>
     <li><b>layer 칸</b> — 수기로 채운 쪽은 항상 <span class="cell-ro">—</span> 이며 입력·붙여넣기 대상이 아닙니다. 참조 요청서에서 자동 생성된 행은 원래 값을 유지합니다.</li>
     <li><b>구분</b> — 새 행은 <b>J-ayer</b> 로 시작, 드롭다운으로 O-ayer 로 바꿉니다. 자동 생성 행의 구분도 바꿀 수 있습니다.</li>
     <li><b>판정</b> — 사용자가 고르지 않습니다. 변경전 미등록 → <span class="badge b-new">추가</span>, 변경후 미등록 → <span class="badge b-del">삭제</span>, 양쪽 값 있음 → <span class="badge b-chg">변경</span> 로 매 편집마다 재계산합니다.</li>
+    <li><b>값 비교 강조(요청 4번)</b> — 양쪽에 값이 있는 행은 변경전·변경후를 컬럼별로 대조해 <b>다른 값을 <span style="color:var(--amber);font-weight:700">주황 굵게</span></b> 표시합니다(기존 <code>.ba-cell-changed</code> 규칙 그대로). 입력·붙여넣기 즉시 갱신되고, 한쪽이 미등록이면 비교 대상이 없으므로 강조하지 않습니다.</li>
     <li><b>✕ 버튼</b> — 참조 있음 모드에서 자동 생성된 짝을 지우면 기존처럼 BEFORE/AFTER 표로 되돌립니다. 수기로 추가한 행은 그냥 사라집니다.</li>
   </ul>
 </div>
@@ -259,8 +277,9 @@ B5678	SP03	SD04	PP03</textarea>
       <tr><td><code>MergePair.id</code></td><td>행 식별자(<code>genId()</code>). 편집·삭제·초기화의 키. 기존 문서는 로드 시 백필</td><td><span class="badge tag-new">신규</span></td></tr>
       <tr><td><code>MergePair.before / after</code></td><td><code>MergeRowInfo | null</code> 그대로. <b>null = 미등록</b> — 의미 변경 없음</td><td><span class="badge tag-keep">유지</span></td></tr>
       <tr><td><code>MergePair.kind</code></td><td>저장은 유지하되 <b>편집 시마다 미등록 여부로 재계산</b>. 양쪽 미등록이면 화면에만 '미작성' 표시</td><td><span class="badge tag-keep">유지</span></td></tr>
-      <tr><td><code>DetailFormState.merge_ref_mode</code></td><td><code>'ref' | 'none'</code> — 라디오 상태. 구버전 문서는 <code>merge_ref_doc_id !== null ? 'ref' : 'ref'</code> 로 백필(기존 화면 그대로)</td><td><span class="badge tag-new">신규</span></td></tr>
-      <tr><td><code>DetailFormState.merge_applied</code></td><td><code>boolean</code> — '없음' 모드에서 적용을 눌렀는지. 표를 다 지워도 패널이 유지되도록 하는 플래그</td><td><span class="badge tag-new">신규</span></td></tr>
+      <tr><td><code>DetailFormState.merge_ref_mode</code></td><td><code>'ref' | 'none'</code> — 라디오 상태이자 <b>확정된 참조 값</b>. 구버전 문서는 모두 <code>'ref'</code> 로 백필(기존 화면 그대로)</td><td><span class="badge tag-new">신규</span></td></tr>
+      <tr><td><code>DetailFormState.merge_applied</code></td><td><code>boolean</code> — '없음' 으로 확정했는지. <code>merge_ref_doc_id</code> 가 null 이어도 잠금·패널 노출을 판단하는 근거(<code>isMergeDone = merge_ref_doc_id !== null || merge_applied</code>)</td><td><span class="badge tag-new">신규</span></td></tr>
+      <tr><td><code>merge_ref_doc_label</code></td><td>'없음' 확정 시 잠긴 입력에 표시할 값으로 <code>t('request.merge_ref_none')</code> 를 넣습니다</td><td><span class="badge tag-keep">유지</span></td></tr>
       <tr><td><code>merge_unmatched_before/after</code></td><td>'없음' 모드에선 항상 빈 배열</td><td><span class="badge tag-keep">유지</span></td></tr>
       <tr><td><code>additional_notes.mergeSnapshot</code></td><td>'없음' 모드에선 만들지 않음(J/O 를 건드리지 않으므로 롤백 대상이 없음)</td><td><span class="badge tag-keep">유지</span></td></tr>
     </tbody>
@@ -281,23 +300,27 @@ B5678	SP03	SD04	PP03</textarea>
   <p>임시저장은 지금과 같이 게이트를 타지 않습니다(작성 도중 저장 가능).</p>
 </div>
 
-<h2>7. 확인이 필요한 사항 (규칙 K)</h2>
+<h2>7. 결정 완료 / 잔여 주의사항</h2>
 
-<div class="note stop">
-  <p><b>① '적용' 이름이 겹칩니다</b></p>
-  <p>요청 1번대로 <code>merge_button</code> 을 "적용" 으로 바꾸면, 표 ① 의 매핑 확정 버튼(<code>ba_apply</code>, 이미 "적용")과 같은 화면에 같은 이름의 버튼이 2개가 됩니다.</p>
-  <p><b>선택지</b> — 1) 그대로 둘 다 "적용" &nbsp; 2) 표 ① 버튼을 "매핑 확정" 으로 변경 &nbsp; 3) 참조 버튼을 "적용(참조 불러오기)" 으로 변경</p>
-  <p><b>추천: 2번</b> — 두 버튼의 역할이 확실히 다르고, 요청하신 "적용" 은 참조 버튼 쪽에 그대로 남기 때문입니다.</p>
+<div class="note ok">
+  <p><b>① 버튼 이름 — 결정: 기존 <code>Merge</code> 유지</b></p>
+  <p>참조 요청서 옆 버튼은 <code>request.merge_button</code> = "Merge" 그대로, 표 ① 확정 버튼은 <code>request.ba_apply</code> = "적용" 그대로. 이름 충돌이 없으므로 i18n 라벨 변경이 없습니다.</p>
+</div>
+
+<div class="note ok">
+  <p><b>② 상세 페이지 문구 — 결정: 반영</b></p>
+  <p><code>request.ba_detail_note</code> "Merge 시점 기준" → <b>"작성자 편집 반영"</b> (ko/en 동시). 자동 생성 행까지 편집 가능해진 사실과 문구를 일치시킵니다. 동작 변경은 없습니다.</p>
+</div>
+
+<div class="note ok">
+  <p><b>③ '없음' 의 성격 — 결정: 직접입력 모드가 아니라 '없음' 으로 확정되는 값</b></p>
+  <p>'없음' 을 고르고 <code>Merge</code> 를 누르면 <b>참조 요청서 = 없음</b> 으로 확정되어 입력란·라디오가 잠기고(참조 문서를 확정했을 때와 같은 취급) 그 결과 표가 열립니다.
+  화면 어디에도 '직접 입력 모드' 라는 별도 개념을 두지 않습니다 — 표가 편집 가능한 것은 두 모드 공통 성질입니다.</p>
 </div>
 
 <div class="note">
-  <p><b>② 자동 생성 행을 편집하면 "Merge 시점 스냅샷" 이라는 성격이 흐려집니다</b></p>
-  <p>상세 페이지 표에는 <code>request.ba_detail_note</code> = "Merge 시점 기준" 문구가 붙어 있습니다. 전부 편집 가능해지므로 이 문구를 "작성자 편집 반영" 등으로 바꾸는 것을 제안드립니다. (문구만 변경, 동작 무관)</p>
-</div>
-
-<div class="note">
-  <p><b>③ 라디오를 '있음 ↔ 없음' 으로 바꿀 때</b></p>
-  <p>이미 적용한 내용이 있으면 표가 사라지므로, 기존 '재선택' 과 동일하게 <b>확인 모달로 먼저 경고</b>한 뒤 초기화할 계획입니다. 다르게 원하시면 알려주세요.</p>
+  <p><b>④ 라디오를 '있음 ↔ 없음' 으로 바꿀 때</b> (잔여 — 다르게 원하시면 알려주세요)</p>
+  <p>확정 전에는 자유롭게 전환합니다. 확정 후에는 <b>↻ 재선택</b> 으로만 풀 수 있고, 입력한 표가 사라지므로 기존 재선택과 동일하게 <b>확인 모달로 먼저 경고</b>합니다.</p>
 </div>
 
 <h2>8. 영향 받는 파일</h2>
@@ -309,7 +332,7 @@ B5678	SP03	SD04	PP03</textarea>
       <tr><td><code>.../RequestPage/constants.ts</code></td><td>초기값, 수기 입력 컬럼 상수(<code>MERGE_MANUAL_FIELDS</code>), 기본 구분값 상수</td></tr>
       <tr><td><code>.../RequestPage/helpers.ts</code></td><td>순수 함수 3개 신설 — <code>parseMergePasteRows</code>(TSV 파싱) · <code>deriveMergeKind</code> · <code>validateMergePairs</code>(4칸 필수·빈 행)</td></tr>
       <tr><td><code>.../components/BeforeAfterPanel.tsx</code></td><td>표 ② 를 편집 가능하게 — 입력 셀 · 붙여넣기 · 행 추가/삭제/초기화 · 구분 드롭다운 · 오류 표시. 표 ① 은 '있음' 모드에서만 렌더</td></tr>
-      <tr><td><code>.../components/Step1.tsx</code></td><td>모드 라디오 2개, 버튼 라벨 <code>merge_button</code>, '없음' 모드일 때 입력 비활성·패널 노출 조건</td></tr>
+      <tr><td><code>.../components/Step1.tsx</code></td><td>모드 라디오 2개, '없음' 확정 시 입력 비활성·잠금 표시, <code>isMergeDone</code> 판정 확장 (버튼 라벨은 변경 없음)</td></tr>
       <tr><td><code>.../RequestPage/index.tsx</code></td><td>핸들러 신설(<code>handleBaCellChange</code> / <code>handleBaPaste</code> / <code>handleBaAddRow</code> / <code>handleBaResetRow</code> / <code>handleMergeModeChange</code>), 게이트 확장, 문서 로드 백필</td></tr>
       <tr><td><code>frontend/src/locales/ko.json · en.json</code></td><td>신규 키 ko/en <b>동시</b> 추가 (규칙 G)</td></tr>
       <tr><td><code>frontend/src/components/PagedDetailView.tsx</code></td><td><code>MergePairsTable</code> — 미작성/미등록 표시 및 주석 문구 정합 (읽기 전용 유지)</td></tr>
@@ -326,9 +349,11 @@ B5678	SP03	SD04	PP03</textarea>
   <table>
     <thead><tr><th style="width:230px">키</th><th>ko</th></tr></thead>
     <tbody>
-      <tr><td><code>request.merge_button</code> <span class="badge tag-q">수정</span></td><td>Merge → <b>적용</b></td></tr>
+      <tr><td><code>request.merge_button</code></td><td><b>Merge</b> — 변경 없음 <span class="badge tag-keep">유지</span></td></tr>
       <tr><td><code>request.merge_mode_ref</code></td><td>참조 요청서 있음</td></tr>
-      <tr><td><code>request.merge_mode_none</code></td><td>참조 요청서 없음 (직접 입력)</td></tr>
+      <tr><td><code>request.merge_mode_none</code></td><td>참조 요청서 없음</td></tr>
+      <tr><td><code>request.merge_ref_none</code></td><td>없음 <span style="color:var(--muted)">(확정 후 잠긴 입력란에 표시)</span></td></tr>
+      <tr><td><code>request.merge_none_done</code></td><td>이 의뢰서는 참조 요청서 '없음' 으로 확정되었습니다. 바꾸려면 '재선택'을 누르세요.</td></tr>
       <tr><td><code>request.merge_mode_change_confirm</code></td><td>입력한 변경전/변경후 내용이 모두 사라집니다. 진행하시겠습니까?</td></tr>
       <tr><td><code>request.ba_manual_hint</code></td><td>미등록 칸을 클릭해 값을 입력하거나, 엑셀에서 4열을 복사해 붙여넣으세요.</td></tr>
       <tr><td><code>request.ba_add_row</code></td><td>행 추가</td></tr>
@@ -338,8 +363,8 @@ B5678	SP03	SD04	PP03</textarea>
       <tr><td><code>request.ba_gate_manual_incomplete</code></td><td>미입력 칸이 {{count}}개 있습니다 — process_id·SP·SD·PP 를 모두 채우세요.</td></tr>
       <tr><td><code>request.ba_gate_manual_blank_row</code></td><td>양쪽 모두 미등록인 행이 {{count}}건 있습니다.</td></tr>
       <tr><td><code>request.ba_paste_hint</code></td><td>엑셀 4열(process_id·SP·SD·PP)을 복사해 붙여넣으면 여러 행이 한 번에 입력됩니다.</td></tr>
-      <tr><td><code>request.ba_apply</code> <span class="badge tag-q">7-① 결정 대기</span></td><td>적용 → (2번 선택 시) 매핑 확정</td></tr>
-      <tr><td><code>request.ba_detail_note</code> <span class="badge tag-q">7-② 결정 대기</span></td><td>Merge 시점 기준 → 작성자 편집 반영</td></tr>
+      <tr><td><code>request.ba_apply</code></td><td><b>적용</b> — 변경 없음 <span class="badge tag-keep">유지</span></td></tr>
+      <tr><td><code>request.ba_detail_note</code> <span class="badge tag-q">수정</span></td><td>Merge 시점 기준 → <b>작성자 편집 반영</b></td></tr>
     </tbody>
   </table>
 </div>
@@ -361,10 +386,11 @@ B5678	SP03	SD04	PP03</textarea>
 <div class="card">
   <ol>
     <li><code>http://localhost:10011</code> → 의뢰서 작성 → STEP 1 → 기타 목적 <b>Overlay 변경</b> 클릭 → 참조 요청서 블록에 <b>라디오 2개</b>가 보이고 버튼 이름이 <b>적용</b>인지 확인</li>
-    <li><b>참조 없음</b> 라디오 → 자동완성 입력이 비활성되고 적용 버튼이 활성 → <b>적용</b> → 변경전/변경후 표가 <b>미등록 / 미등록 1행</b>으로 열리는지 확인</li>
+    <li><b>참조 요청서 없음</b> 라디오 → 입력란에 <i>없음</i> 이 뜨고 비활성 → <b>Merge</b> → 입력란·라디오가 잠기고 안내 문구가 뜨며 변경전/변경후 표가 <b>미등록 / 미등록 1행</b>으로 열리는지 확인</li>
     <li>변경전 '미등록' 칸 클릭 → 입력 칸 전환 → 엑셀에서 <b>4열 10행</b> 복사 후 붙여넣기 → <b>10행</b>이 생기고 변경후가 전부 미등록인지, 판정이 전부 <b>추가</b>인지 확인</li>
     <li>변경후 3번째 행 클릭 → 4행짜리 데이터 붙여넣기 → 3~6행이 채워지고 변경전 행 수도 함께 유지·확장되는지 확인 (요청 6번)</li>
     <li>임의 행의 구분 드롭다운을 <b>O-ayer</b> 로 변경 → 뱃지 색이 보라색으로 바뀌는지 확인</li>
+    <li>한 행의 변경전·변경후를 <b>둘 다</b> 채우고 SD 만 서로 다르게 입력 → 판정이 <b>변경</b>이 되고 <b>SD 칸만 주황 굵게</b> 강조되는지 확인 (요청 4번)</li>
     <li>값이 든 행의 <b>↺</b> 클릭 → 그 행이 양쪽 미등록으로 돌아가고 판정이 <b>미작성</b>이 되는지 확인</li>
     <li>한 행의 SP 만 비운 채 <b>다음 STEP</b> → 해당 칸이 빨갛게 표시되고 상신이 차단되는지 확인 (4칸 필수)</li>
     <li>임시저장 → 목록에서 재진입 → 표·모드·구분이 그대로 복원되는지 확인</li>
@@ -375,7 +401,7 @@ B5678	SP03	SD04	PP03</textarea>
 
 <h2>12. 승인 요청</h2>
 <div class="note ok">
-  <p>위 계획대로 진행할까요? <b>7-①(적용 이름 중복)</b> 과 <b>7-②(상세 문구)</b> 만 정해 주시면 바로 착수하겠습니다.</p>
+  <p>미결 4건이 모두 확정되었습니다. <b>이 계획서(rev.2)대로 진행할까요?</b> 승인해 주시면 10장의 순서대로 파일별 개별 커밋으로 착수하겠습니다.</p>
 </div>
 
 </div>
@@ -403,6 +429,9 @@ B5678	SP03	SD04	PP03</textarea>
 
   function sideCells(row, side) {
     var data = row[side];
+    var other = row[side === 'before' ? 'after' : 'before'];
+    // 양쪽에 값이 있을 때만 컬럼끼리 비교해 다른 값을 강조한다(기존 .ba-cell-changed 규칙).
+    var compare = !isUnreg(data) && !isUnreg(other);
     var key = row.id + '_' + side;
     if (isUnreg(data) && !editing[key]) {
       return '<td colspan="5" class="cell-none" onclick="openEdit(\'' + row.id + '\',\'' + side + '\')">미등록</td>';
@@ -410,7 +439,8 @@ B5678	SP03	SD04	PP03</textarea>
     var html = '';
     FIELDS.forEach(function (f, i) {
       var bad = !data[f].trim() && !isUnreg(data);
-      html += '<td><input class="cell-in' + (bad ? ' err' : '') + '" data-row="' + row.id + '" data-side="' + side + '" data-field="' + f + '"'
+      var diff = compare && data[f].trim() !== other[f].trim();
+      html += '<td><input class="cell-in' + (bad ? ' err' : '') + (diff ? ' diff' : '') + '" data-row="' + row.id + '" data-side="' + side + '" data-field="' + f + '"'
         + ' value="' + esc(data[f]) + '" placeholder="' + f + '"'
         + ' oninput="onCell(this)" onblur="onBlur(this)" onpaste="onPaste(event, this)" /></td>';
     });
@@ -476,10 +506,25 @@ B5678	SP03	SD04	PP03</textarea>
     var el = document.querySelector('input[data-row="' + id + '"][data-side="' + side + '"][data-field="' + field + '"]');
     if (el) el.focus();
   }
+  // 입력 중에는 포커스를 잃지 않도록 전체 렌더 대신 그 행의 강조·오류 클래스만 갱신한다.
   function onCell(el) {
     var row = findRow(el.dataset.row);
     row[el.dataset.side][el.dataset.field] = el.value;
+    refreshRow(row);
     updateGate();
+  }
+  function refreshRow(row) {
+    ['before', 'after'].forEach(function (side) {
+      var data = row[side];
+      var other = row[side === 'before' ? 'after' : 'before'];
+      var compare = !isUnreg(data) && !isUnreg(other);
+      FIELDS.forEach(function (f) {
+        var el = document.querySelector('input[data-row="' + row.id + '"][data-side="' + side + '"][data-field="' + f + '"]');
+        if (!el) return;
+        el.classList.toggle('err', !data[f].trim() && !isUnreg(data));
+        el.classList.toggle('diff', compare && data[f].trim() !== other[f].trim());
+      });
+    });
   }
   function onBlur(el) {
     var row = findRow(el.dataset.row);
@@ -525,16 +570,15 @@ B5678	SP03	SD04	PP03</textarea>
     var resetBtn = document.getElementById('resetBtn');
     var tip = document.getElementById('modeTip');
     if (m === 'none') {
-      input.value = ''; input.disabled = true; input.placeholder = '참조 요청서 없음';
+      input.value = '없음'; input.disabled = true;
       applyBtn.disabled = false;
-      resetBtn.textContent = '↻ 초기화';
-      tip.innerHTML = '<b>적용</b> 을 누르면 아래 변경전/변경후 표가 <b>미등록 / 미등록 1행</b>으로 열리고, 직접 입력·붙여넣기로 채웁니다. BEFORE/AFTER 매핑 표는 나오지 않습니다.';
+      tip.innerHTML = '<b>Merge</b> 를 누르면 참조 요청서가 <b>\'없음\'으로 확정</b>되어 입력란·라디오가 잠기고, 아래 변경전/변경후 표가 <b>미등록 / 미등록 1행</b>으로 열립니다. BEFORE/AFTER 매핑 표는 나오지 않습니다.';
     } else {
-      input.disabled = false; input.placeholder = '이력에서 요청서를 선택하세요';
+      input.value = ''; input.disabled = false; input.placeholder = '이력에서 요청서를 선택하세요';
       applyBtn.disabled = false;
-      resetBtn.textContent = '↻ 재선택';
-      tip.innerHTML = '참조 요청서를 고르고 <b>적용</b> → 기존과 동일하게 3-way 반영 + 비교 표가 자동 생성됩니다. (버튼 이름만 Merge → 적용)';
+      tip.innerHTML = '참조 요청서를 고르고 <b>Merge</b> → 기존과 동일하게 3-way 반영 + 비교 표가 자동 생성됩니다.';
     }
+    resetBtn.textContent = '↻ 재선택';
   }
 
   render();
