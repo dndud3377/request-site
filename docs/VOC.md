@@ -38,7 +38,8 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
 | `content` | 내용. RichTextEditor 가 만든 **HTML** |
 | `status` | `checking`(확인중) / `completed`(완료). 기본값 `checking` |
 | `created_at` | 접수일 |
-| `response` / `responded_at` | ⚠️ **미사용.** 어디서도 값을 채우지 않는다 |
+| `responded_at` | 답변 완료 처리 시각. `update-status` 에서 기록한다 |
+| `response` | ⚠️ **미사용.** 어디서도 값을 채우지 않는다 |
 
 > 소유자 식별은 의뢰서(`RequestDocument.requester`)와 **동일한 방식**을 따른다.
 > FK 가 진실의 원천이고, 본인 판정은 `id` 가 아니라 `loginid` 로 한다(§3.1 참조).
@@ -92,6 +93,7 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
 | `submitter_loginid` | 제출자 계정의 loginid. **프론트의 "내 VOC" 판정 기준** |
 
 `created_at` / `responded_at` / `status` / `submitter` 는 읽기 전용이다.
+`status` 와 `responded_at` 은 `update-status` 액션으로만 바뀐다.
 
 ---
 
@@ -200,7 +202,7 @@ VOC 는 **결재가 아니다.** 문의글을 올리면 누구나 답글을 달�
 
 | 항목 | 내용 |
 |------|------|
-| `VOC.response` / `responded_at` | 값을 채우는 코드가 없다. 답변 완료 시각도 기록하지 않는다 |
+| `VOC.response` | 값을 채우는 코드가 없다(답변은 답글로 남긴다) |
 | `VocHistory` | 완전 미사용 모델. 레코드 생성 코드 없음 |
 | `vocAPI.updateResponse` | `client.ts` 에 정의만 있고 호출처가 없다 |
 | 필터 상호배타 | '내 VOC' 와 '유형' 을 동시에 적용할 수 없다(단일 탭 선택 UI) |
