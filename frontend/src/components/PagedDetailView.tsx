@@ -149,6 +149,24 @@ const histBtnStyle: React.CSSProperties = {
 
 interface DiffField { key: string; label: string; format?: (v: any) => string; }
 
+// 회차 축 — 1차~직전 회차 스냅샷 + 현재값을 한 배열로 묶어 모든 이력 UI 가 공유한다.
+const CURRENT_ROUND_LABEL = '현재 (최신)';
+const roundLabel = (i: number) => `${i + 1}차 제출`;
+
+/** 이력 표에서 그 회차에 대응하는 행이 없을 때 쓰는 표시값 */
+const NO_ROW_MARK = '(없음)';
+
+interface RoundSnapshot {
+  label: string;
+  timestamp: string | null;
+  detail: any;
+  jayerRows: JayerRow[];
+  oayerRows: OayerRow[];
+  bbRows: BbTableRow[];
+}
+
+const fmtRoundTime = (ts: string | null): string => (ts ? new Date(ts).toLocaleString('ko-KR') : '-');
+
 // 표 행 변경 전/후를 원본 표와 동일한 가로 형식(헤더=필드, 변경 전/후 2행)으로 비교
 function RowDiffModal({
   title, fields, curRow, prevRow, onClose,
@@ -204,6 +222,76 @@ function RowDiffModal({
   );
 }
 
+// 표 행의 회차별 이력 모달 — 헤더=원본 표의 필드, 본문 1행 = 1회차.
+// 결재 진행 중에는 쓰지 않는다(그 화면은 RowDiffModal 의 변경 전/후 2행 고정).
+function RowRoundHistoryModal({
+  title, fields, rounds, onClose,
+}: {
+  title: string;
+  fields: DiffField[];
+  rounds: { label: string; timestamp: string | null; row: Record<string, any> | null }[];
+  onClose: () => void;
+}) {
+  const cell = (f: DiffField, row: Record<string, any> | null): string => {
+    if (!row) return NO_ROW_MARK;
+    return (f.format ? f.format(row[f.key]) : String(row[f.key] ?? '')) || '';
+  };
+  const thS: React.CSSProperties = {
+    padding: '5px 10px', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)',
+    borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)',
+    whiteSpace: 'nowrap', textAlign: 'center',
+  };
+  const rowHeadS: React.CSSProperties = {
+    padding: '5px 12px', fontSize: '0.78rem', fontWeight: 800, whiteSpace: 'nowrap',
+    background: 'var(--bg-secondary)', textAlign: 'left',
+  };
+  const tdS: React.CSSProperties = { padding: '5px 10px', fontSize: '0.82rem', textAlign: 'center', whiteSpace: 'nowrap' };
+  return (
+    <Modal isOpen onClose={onClose} title={title}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', minWidth: 420 }}>
+          <thead>
+            <tr>
+              <th style={thS}>제출 차수</th>
+              <th style={thS}>시각</th>
+              {fields.map((f) => <th key={f.key} style={thS}>{f.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rounds.map((r, ri) => {
+              const isCurrent = ri === rounds.length - 1;
+              const prev = ri > 0 ? rounds[ri - 1].row : null;
+              return (
+                <tr key={r.label} style={{ background: isCurrent ? 'rgba(37,99,235,0.07)' : undefined }}>
+                  <td style={rowHeadS}>{r.label}</td>
+                  <td style={{ ...tdS, color: 'var(--text-muted)', fontSize: '0.75rem' }}>{fmtRoundTime(r.timestamp)}</td>
+                  {fields.map((f) => {
+                    const v = cell(f, r.row);
+                    const isChanged = ri > 0 && v !== cell(f, prev);
+                    return (
+                      <td
+                        key={f.key}
+                        style={{
+                          ...tdS,
+                          color: isChanged ? '#dc3545' : 'var(--text-primary)',
+                          fontWeight: isChanged || isCurrent ? 700 : 400,
+                          background: isChanged ? 'rgba(220,53,69,0.06)' : undefined,
+                        }}
+                      >
+                        {v || '-'}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Modal>
+  );
+}
+
 // 지도 편차/C가문 판정에 쓰는 저장값(백엔드 저장 문자열과 동일)
 const MAP_NO_CHANGE = '변경 없음';
 const PRODC_YES = 'Yes';
@@ -214,9 +302,34 @@ const MEDIA_URL_PREFIX = '/media/';
 const DIFF_THUMB_MAX_WIDTH = 220;
 const DIFF_THUMB_MAX_HEIGHT = 150;
 
-// ===== Field-group(블록) 변경 전/후 비교 모달 (세로형) =====
+// ===== Field-group(블록) 이력 =====
+/**
+ * 블록 한 회차분의 표시 항목. 회차별 표와 변경 전/후 표가 **같은 빌더**를 쓰므로
+ * 항목 순서·개수는 어느 회차에서나 동일해야 한다(열 정렬이 그 전제 위에 선다).
+ */
+interface DiffItem { label: string; value: string; kind?: 'text' | 'image'; }
+type GroupBuilder = (d: any) => DiffItem[];
+
 /** kind='image' 인 행은 값(파일 경로)을 파일명 대신 썸네일 이미지로 그린다. 미지정이면 텍스트다. */
 interface DiffRow { label: string; before: string; after: string; kind?: 'text' | 'image'; }
+
+/** 이미지 항목은 어느 회차에도 값이 없으면 행 자체를 감춘다(빈 줄만 늘어나는 것을 막는다). */
+const keepItemRow = (kind: DiffItem['kind'], values: string[]): boolean =>
+  kind !== 'image' || values.some((v) => !!v);
+
+/** 블록 빌더로 '변경 전/후' 2열 행을 만든다 — 결재 진행 중 화면용. */
+function toDiffRows(prev: any, cur: any, build: GroupBuilder): DiffRow[] {
+  const prevItems = build(prev);
+  const curItems = build(cur);
+  return prevItems
+    .map((item, i) => ({
+      label: item.label,
+      before: item.value,
+      after: curItems[i]?.value ?? '',
+      kind: item.kind,
+    }))
+    .filter((r) => keepItemRow(r.kind, [r.before, r.after]));
+}
 
 function FieldGroupHistoryModal({ title, rows, onClose }: {
   title: string;
@@ -270,6 +383,77 @@ function FieldGroupHistoryModal({ title, rows, onClose }: {
   );
 }
 
+// 블록의 회차별 이력 모달 — 행=항목, 열=회차. 이력 조회 화면에서만 쓴다.
+function FieldGroupRoundHistoryModal({ title, rounds, build, onClose }: {
+  title: string;
+  rounds: RoundSnapshot[];
+  build: GroupBuilder;
+  onClose: () => void;
+}) {
+  const columns = rounds.map((r) => ({ round: r, items: build(r.detail) }));
+  const template = columns.length > 0 ? columns[0].items : [];
+  const thS: React.CSSProperties = {
+    textAlign: 'left', padding: '5px 10px', fontSize: '0.78rem',
+    fontWeight: 700, color: 'var(--text-muted)',
+    borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)',
+    whiteSpace: 'nowrap',
+  };
+  const tdS: React.CSSProperties = { padding: '5px 10px', fontSize: '0.82rem', verticalAlign: 'top' };
+  const thumbStyle: React.CSSProperties = {
+    maxWidth: DIFF_THUMB_MAX_WIDTH, maxHeight: DIFF_THUMB_MAX_HEIGHT,
+    borderRadius: 4, border: '1px solid var(--border)', display: 'block',
+  };
+  return (
+    <Modal isOpen onClose={onClose} title={title}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', minWidth: 420 }}>
+          <thead>
+            <tr>
+              <th style={thS}>항목</th>
+              {columns.map(({ round }, ci) => (
+                <th key={round.label} style={{ ...thS, color: ci === columns.length - 1 ? 'var(--accent)' : 'var(--text-muted)' }}>
+                  <div>{round.label}</div>
+                  <div style={{ fontWeight: 400, fontSize: '0.7rem' }}>{fmtRoundTime(round.timestamp)}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {template.map((item, ri) => {
+              const values = columns.map((c) => c.items[ri]?.value ?? '');
+              if (!keepItemRow(item.kind, values)) return null;
+              return (
+                <tr key={item.label}>
+                  <td style={{ ...tdS, fontWeight: 600, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{item.label}</td>
+                  {values.map((v, ci) => {
+                    const isChanged = ci > 0 && v !== values[ci - 1];
+                    const isCurrent = ci === values.length - 1;
+                    return (
+                      <td
+                        key={columns[ci].round.label}
+                        style={{
+                          ...tdS,
+                          color: isChanged ? '#dc3545' : 'var(--text-primary)',
+                          fontWeight: isChanged || isCurrent ? 700 : 400,
+                          background: isChanged ? 'rgba(220,53,69,0.06)' : undefined,
+                        }}
+                      >
+                        {item.kind === 'image' && v
+                          ? <img src={`${MEDIA_URL_PREFIX}${v}`} alt={`${item.label} ${columns[ci].round.label}`} style={thumbStyle} />
+                          : (v || '-')}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Modal>
+  );
+}
+
 // ===== 블록/정보탭 변경 전·후 값 포맷 헬퍼 (any: snapshot detail 은 파일 전역 규약대로 any 처리) =====
 const fmtDiffVal = (v: any): string => {
   if (v == null) return '';
@@ -300,57 +484,73 @@ const fmtTbvtlvEntries = (v: any): string => {
   }).join(' / ');
 };
 
-function buildMshotRows(prev: any, cur: any): DiffRow[] {
-  const rows: DiffRow[] = [
-    { label: '엠샷 변경 여부', before: fmtDiffVal(prev?.mshot_change), after: fmtDiffVal(cur?.mshot_change) },
-  ];
-  const imgKeys: [string, string][] = [
-    ['mshot_image_copy', '첨부 이미지'],
-    ['mshot_image_copy_top', '첨부 이미지(상판)'],
-    ['mshot_image_copy_bottom', '첨부 이미지(하판)'],
-  ];
-  for (const [k, label] of imgKeys) {
-    const before = fmtDiffVal(prev?.[k]);
-    const after = fmtDiffVal(cur?.[k]);
-    if (before || after) rows.push({ label, before, after, kind: 'image' });
-  }
-  return rows;
-}
+/**
+ * 블록 빌더 3종 — 한 회차(detail) 하나만 받아 항목 목록을 만든다.
+ * 변경 전/후 표(진행 중)와 회차별 표(이력 조회)가 같은 함수를 공유해야 값 비교가 성립한다.
+ */
+const MSHOT_IMAGE_ITEMS: [string, string][] = [
+  ['mshot_image_copy', '첨부 이미지'],
+  ['mshot_image_copy_top', '첨부 이미지(상판)'],
+  ['mshot_image_copy_bottom', '첨부 이미지(하판)'],
+];
 
-function buildProdcRows(prev: any, cur: any): DiffRow[] {
-  const midVal = (d: any) => d?.prodc_middle_use === '미사용' ? '미사용' : fmtPlate(d, 'prodc_middle');
-  return [
-    { label: '생산 정보', before: fmtDiffVal(prev?.only_prodc), after: fmtDiffVal(cur?.only_prodc) },
-    { label: '제품 해당 위치', before: fmtDiffVal(prev?.prodc_scope), after: fmtDiffVal(cur?.prodc_scope) },
-    { label: '상판', before: fmtPlate(prev, 'prodc_top'), after: fmtPlate(cur, 'prodc_top') },
-    { label: '중판', before: midVal(prev), after: midVal(cur) },
-    { label: '하판', before: fmtPlate(prev, 'prodc_bottom'), after: fmtPlate(cur, 'prodc_bottom') },
-  ];
-}
+const buildMshotItems: GroupBuilder = (d) => [
+  { label: '엠샷 변경 여부', value: fmtDiffVal(d?.mshot_change) },
+  ...MSHOT_IMAGE_ITEMS.map(([k, label]) => ({
+    label,
+    value: fmtDiffVal(d?.[k]),
+    kind: 'image' as const,
+  })),
+];
 
-function buildRevRows(prev: any, cur: any): DiffRow[] {
-  return [
-    { label: 'REV 여부', before: fmtDiffVal(prev?.rev_yn), after: fmtDiffVal(cur?.rev_yn) },
-    { label: 'Layer / GDS', before: fmtRevEntries(prev?.rev_entries), after: fmtRevEntries(cur?.rev_entries) },
-  ];
-}
+const buildProdcItems: GroupBuilder = (d) => [
+  { label: '생산 정보', value: fmtDiffVal(d?.only_prodc) },
+  { label: '제품 해당 위치', value: fmtDiffVal(d?.prodc_scope) },
+  { label: '상판', value: fmtPlate(d, 'prodc_top') },
+  { label: '중판', value: d?.prodc_middle_use === '미사용' ? '미사용' : fmtPlate(d, 'prodc_middle') },
+  { label: '하판', value: fmtPlate(d, 'prodc_bottom') },
+];
+
+const buildRevItems: GroupBuilder = (d) => [
+  { label: 'REV 여부', value: fmtDiffVal(d?.rev_yn) },
+  { label: 'Layer / GDS', value: fmtRevEntries(d?.rev_entries) },
+];
 
 // ===== Table Components =====
+
+/**
+ * 표 3종이 공유하는 이력 props.
+ * `rounds` 는 이력 조회에서만 넘어오며, 넘어오면 행 이력이 회차별 표로 열린다.
+ */
+interface TableHistoryProps<T extends { id: string }> {
+  changedRowIds?: Set<string>;
+  prevRowMap?: Map<string, T>;
+  historyMode?: boolean;
+  rounds?: RoundSnapshot[];
+}
+
+/** 행 이력 버튼을 띄울 수 있는 상태인지 — 진행 중은 직전 행이 있어야 하고, 이력 조회는 회차만 있으면 된다. */
+function canOpenRowHistory<T extends { id: string }>(
+  rowId: string, { prevRowMap, historyMode, rounds }: TableHistoryProps<T>,
+): boolean {
+  return historyMode ? (rounds?.length ?? 0) > 1 : !!prevRowMap?.has(rowId);
+}
 
 function JayerTable({
   rows,
   changedRowIds = new Set<string>(),
   prevRowMap,
+  historyMode = false,
+  rounds = [],
 }: {
   rows: JayerRow[];
-  changedRowIds?: Set<string>;
-  prevRowMap?: Map<string, JayerRow>;
-}) {
+} & TableHistoryProps<JayerRow>) {
   const { t } = useTranslation();
   const [diffId, setDiffId] = useState<string | null>(null);
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   const diffCur = diffId ? rows.find((r) => r.id === diffId) : null;
   const diffPrev = diffId ? prevRowMap?.get(diffId) : null;
+  const diffRounds = diffId && historyMode ? buildRowTimeline(rows, rounds, (r) => r.jayerRows, diffId) : null;
   const fields: DiffField[] = [
     { key: 'updated',      label: 'Update 날짜' },
     { key: 'process_id',   label: t('request.process_id') },
@@ -364,12 +564,14 @@ function JayerTable({
     { key: 'step',         label: t('request.col_step') },
     { key: 'item_id',      label: t('request.col_item_id') },
   ];
-  const hasPrev = (prevRowMap?.size ?? 0) > 0;
+  const hasPrev = historyMode ? rounds.length > 1 : (prevRowMap?.size ?? 0) > 0;
   return (
     <>
-      {diffCur && diffPrev && (
-        <RowDiffModal title={t('request.jayer_row_history')} fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
-      )}
+      {diffRounds
+        ? <RowRoundHistoryModal title={t('request.jayer_row_history')} fields={fields} rounds={diffRounds} onClose={() => setDiffId(null)} />
+        : diffCur && diffPrev && (
+          <RowDiffModal title={t('request.jayer_row_history')} fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
+        )}
       <div style={{ overflowX: 'auto' }}>
         <table className="table table-compact" style={{ marginBottom: 8 }}>
           <thead>
@@ -385,7 +587,7 @@ function JayerTable({
                 <tr key={r.id} style={isChanged ? changedRowStyle : undefined}>
                   {hasPrev && (
                     <td style={{ textAlign: 'center' }}>
-                      {isChanged && prevRowMap?.has(r.id) && (
+                      {isChanged && canOpenRowHistory(r.id, { prevRowMap, historyMode, rounds }) && (
                         <button data-tour="jayer-hist-btn" style={histBtnStyle} onClick={() => setDiffId(r.id)}>이력 확인</button>
                       )}
                     </td>
@@ -405,16 +607,17 @@ function OayerTable({
   rows,
   changedRowIds = new Set<string>(),
   prevRowMap,
+  historyMode = false,
+  rounds = [],
 }: {
   rows: OayerRow[];
-  changedRowIds?: Set<string>;
-  prevRowMap?: Map<string, OayerRow>;
-}) {
+} & TableHistoryProps<OayerRow>) {
   const { t } = useTranslation();
   const [diffId, setDiffId] = useState<string | null>(null);
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   const diffCur = diffId ? rows.find((r) => r.id === diffId) : null;
   const diffPrev = diffId ? prevRowMap?.get(diffId) : null;
+  const diffRounds = diffId && historyMode ? buildRowTimeline(rows, rounds, (r) => r.oayerRows, diffId) : null;
   const fields: DiffField[] = [
     { key: 'updated',      label: 'Update 날짜' },
     { key: 'process_id',   label: t('request.process_id') },
@@ -427,12 +630,14 @@ function OayerTable({
     { key: 'product_name', label: t('request.col_product_name') },
     { key: 'step',         label: t('request.col_step') },
   ];
-  const hasPrev = (prevRowMap?.size ?? 0) > 0;
+  const hasPrev = historyMode ? rounds.length > 1 : (prevRowMap?.size ?? 0) > 0;
   return (
     <>
-      {diffCur && diffPrev && (
-        <RowDiffModal title={t('request.oayer_row_history')} fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
-      )}
+      {diffRounds
+        ? <RowRoundHistoryModal title={t('request.oayer_row_history')} fields={fields} rounds={diffRounds} onClose={() => setDiffId(null)} />
+        : diffCur && diffPrev && (
+          <RowDiffModal title={t('request.oayer_row_history')} fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
+        )}
       <div style={{ overflowX: 'auto' }}>
         <table className="table table-compact" style={{ marginBottom: 8 }}>
           <thead>
@@ -448,7 +653,7 @@ function OayerTable({
                 <tr key={r.id} style={isChanged ? changedRowStyle : undefined}>
                   {hasPrev && (
                     <td style={{ textAlign: 'center' }}>
-                      {isChanged && prevRowMap?.has(r.id) && (
+                      {isChanged && canOpenRowHistory(r.id, { prevRowMap, historyMode, rounds }) && (
                         <button style={histBtnStyle} onClick={() => setDiffId(r.id)}>이력 확인</button>
                       )}
                     </td>
@@ -468,15 +673,15 @@ function BbTable({
   rows,
   changedRowIds = new Set<string>(),
   prevRowMap,
+  historyMode = false,
+  rounds = [],
   tabCount = 0,
   entryIds = [],
 }: {
   rows: BbTableRow[];
-  changedRowIds?: Set<string>;
-  prevRowMap?: Map<string, BbTableRow>;
   tabCount?: number;
   entryIds?: string[];
-}) {
+} & TableHistoryProps<BbTableRow>) {
   // 탭이 2개 이상일 때만 Ref.PART ID 셀에 출처 탭 색을 적용한다.
   const multiTab = tabCount >= 2;
   // 색 인덱스: 안정 id(entryId)의 현재 위치 우선, 레거시 행(entryId 없음)은 entryIdx로 폴백.
@@ -487,6 +692,7 @@ function BbTable({
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   const diffCur = diffId ? rows.find((r) => r.id === diffId) : null;
   const diffPrev = diffId ? prevRowMap?.get(diffId) : null;
+  const diffRounds = diffId && historyMode ? buildRowTimeline(rows, rounds, (r) => r.bbRows, diffId) : null;
   const fields: DiffField[] = [
     { key: 'process_id',    label: t('request.process_id') },
     { key: 'ss',            label: t('request.col_sp') },
@@ -498,12 +704,14 @@ function BbTable({
     { key: 'bb_step',       label: t('request.col_bb_step') },
     { key: 'remark',        label: t('request.col_remark') },
   ];
-  const hasPrev = (prevRowMap?.size ?? 0) > 0;
+  const hasPrev = historyMode ? rounds.length > 1 : (prevRowMap?.size ?? 0) > 0;
   return (
     <>
-      {diffCur && diffPrev && (
-        <RowDiffModal title="뼈찜 행 변경 이력" fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
-      )}
+      {diffRounds
+        ? <RowRoundHistoryModal title="뼈찜 행 변경 이력" fields={fields} rounds={diffRounds} onClose={() => setDiffId(null)} />
+        : diffCur && diffPrev && (
+          <RowDiffModal title="뼈찜 행 변경 이력" fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
+        )}
       <div style={{ overflowX: 'auto' }}>
         <table className="table table-compact" style={{ marginBottom: 8 }}>
           <thead>
@@ -519,7 +727,7 @@ function BbTable({
                 <tr key={r.id} style={isChanged ? changedRowStyle : undefined}>
                   {hasPrev && (
                     <td style={{ textAlign: 'center' }}>
-                      {isChanged && prevRowMap?.has(r.id) && (
+                      {isChanged && canOpenRowHistory(r.id, { prevRowMap, historyMode, rounds }) && (
                         <button style={histBtnStyle} onClick={() => setDiffId(r.id)}>이력 확인</button>
                       )}
                     </td>
@@ -595,6 +803,61 @@ function computeTableDiff<T extends { id: string }>(
   return { changedIds, prevRowMap };
 }
 
+/**
+ * 이력 조회용 — 전 회차를 훑어 **한 번이라도** 바뀐 필드를 모은다.
+ * 인접 회차(1↔2, 2↔3, …, 직전↔현재)의 diff 합집합이므로, 값이 되돌아온 필드도 포함된다.
+ */
+function computeEverChangedFields(rounds: RoundSnapshot[]): Set<string> {
+  const changed = new Set<string>();
+  for (let i = 1; i < rounds.length; i++) {
+    computeDetailDiff(rounds[i].detail, rounds[i - 1].detail).forEach((k) => changed.add(k));
+  }
+  return changed;
+}
+
+/**
+ * 현재 행(rowId)에 대응하는 그 회차의 행을 찾는다.
+ * id 매칭이 원칙이고, 회차 간 id 가 통째로 재생성돼 **겹치는 id 가 하나도 없을 때만**
+ * 위치(index)로 폴백한다 — `computeTableDiff` 와 같은 규칙이라 판정이 어긋나지 않는다.
+ */
+function findRowInRound<T extends { id: string }>(cur: T[], snap: T[], rowId: string): T | null {
+  const byId = (snap ?? []).find((r) => r.id === rowId);
+  if (byId) return byId;
+  const anyIdMatch = (cur ?? []).some((r) => (snap ?? []).some((s) => s.id === r.id));
+  if (anyIdMatch) return null;
+  const idx = (cur ?? []).findIndex((r) => r.id === rowId);
+  return idx >= 0 && idx < (snap ?? []).length ? snap[idx] : null;
+}
+
+/** 현재 행 기준 회차별 값 타임라인 — 그 회차에 대응 행이 없으면 null 이다. */
+function buildRowTimeline<T extends { id: string }>(
+  cur: T[], rounds: RoundSnapshot[], pick: (r: RoundSnapshot) => T[], rowId: string,
+): { label: string; timestamp: string | null; row: T | null }[] {
+  return rounds.map((r) => ({
+    label: r.label,
+    timestamp: r.timestamp,
+    row: findRowInRound(cur, pick(r), rowId),
+  }));
+}
+
+/** 이력 조회용 — 전 회차 중 한 번이라도 내용이 바뀐(또는 생겼다 사라진) 행 id 를 모은다. */
+function computeTableEverChanged<T extends { id: string }>(
+  cur: T[], rounds: RoundSnapshot[], pick: (r: RoundSnapshot) => T[],
+): Set<string> {
+  const changedIds = new Set<string>();
+  if (rounds.length < 2) return changedIds;
+  for (const row of cur ?? []) {
+    const timeline = buildRowTimeline(cur, rounds, pick, row.id);
+    for (let i = 1; i < timeline.length; i++) {
+      const a = timeline[i - 1].row;
+      const b = timeline[i].row;
+      const sig = (r: T | null) => (r ? rowContentSig(r) : NO_ROW_MARK);
+      if (sig(a) !== sig(b)) { changedIds.add(row.id); break; }
+    }
+  }
+  return changedIds;
+}
+
 // ===== PagedDetailView =====
 
 export interface PagedDetailViewProps {
@@ -607,11 +870,17 @@ export interface PagedDetailViewProps {
   onValidationSystemChange?: (value: ValidationSystemValue) => void;
   /** J-ayer 검토 항목 — 넘기지 않으면 서브탭 자체가 뜨지 않는다(이력 조회 등 읽기 전용 화면) */
   reviewItems?: ReviewItemsPanelProps;
+  /**
+   * 이력 조회(결재 완료 문서) 화면인지. 이력 UI 의 동작이 통째로 갈린다.
+   *  - false(결재 진행 중): **직전 회차와 다를 때만** 강조·버튼, 모달은 변경 전/후만.
+   *  - true(이력 조회): **한 번이라도 바뀌었으면** 강조·버튼, 모달은 회차별 전체.
+   */
+  historyMode?: boolean;
 }
 
 export default function PagedDetailView({
   doc, role, pageIdx, setPageIdx, canEditValidationSystem = false, onValidationSystemChange,
-  reviewItems,
+  reviewItems, historyMode = false,
 }: PagedDetailViewProps): React.ReactElement {
   const { t } = useTranslation();
   // J-ayer 정보 안의 서브탭. 검토 항목은 J 권한자에게만 열리므로 기본은 기존 표다.
@@ -768,16 +1037,47 @@ export default function PagedDetailView({
   const vsChangedAt = (detail.validation_system_changed_at ?? '').slice(0, 16).replace('T', ' ');
 
   const prevSnap = history.length > 0 ? history[history.length - 1] : null;
-  const changedFields = prevSnap ? computeDetailDiff(detail, prevSnap.detail) : new Set<string>();
-  const { changedIds: changedJayerIds, prevRowMap: prevJayerMap } = prevSnap
+
+  // 회차 축 — 1차~직전 회차 + 현재. 이력 조회의 모든 이력 UI 가 이 배열 하나를 공유한다.
+  // (결재 경로 섹션의 `rounds`(회차 번호 배열)와 다른 값이라 이름을 구분한다.)
+  const roundSnaps: RoundSnapshot[] = [
+    ...history.map((snap, i) => ({
+      label: roundLabel(i),
+      timestamp: snap.timestamp,
+      detail: snap.detail ?? {},
+      jayerRows: snap.jayerRows ?? [],
+      oayerRows: snap.oayerRows ?? [],
+      bbRows: snap.bbRows ?? [],
+    })),
+    { label: CURRENT_ROUND_LABEL, timestamp: null, detail, jayerRows: jayer, oayerRows: oayer, bbRows: bb },
+  ];
+  /** 이력 UI 를 띄울 회차가 있는지 — 재상신이 한 번도 없으면 비교 대상 자체가 없다. */
+  const hasRounds = history.length > 0;
+
+  // 강조·버튼 판정 기준이 모드에 따라 갈린다(진행 중=직전 회차 대비 / 이력 조회=전 회차 중 한 번이라도).
+  const changedFields = historyMode
+    ? computeEverChangedFields(roundSnaps)
+    : (prevSnap ? computeDetailDiff(detail, prevSnap.detail) : new Set<string>());
+
+  const { changedIds: prevChangedJayerIds, prevRowMap: prevJayerMap } = prevSnap
     ? computeTableDiff(jayer, prevSnap.jayerRows ?? [])
     : { changedIds: new Set<string>(), prevRowMap: new Map<string, JayerRow>() };
-  const { changedIds: changedOayerIds, prevRowMap: prevOayerMap } = prevSnap
+  const { changedIds: prevChangedOayerIds, prevRowMap: prevOayerMap } = prevSnap
     ? computeTableDiff(oayer, prevSnap.oayerRows ?? [])
     : { changedIds: new Set<string>(), prevRowMap: new Map<string, OayerRow>() };
-  const { changedIds: changedBbIds, prevRowMap: prevBbMap } = prevSnap
+  const { changedIds: prevChangedBbIds, prevRowMap: prevBbMap } = prevSnap
     ? computeTableDiff(bb, prevSnap.bbRows ?? [])
     : { changedIds: new Set<string>(), prevRowMap: new Map<string, BbTableRow>() };
+
+  const changedJayerIds = historyMode
+    ? computeTableEverChanged(jayer, roundSnaps, (r) => r.jayerRows)
+    : prevChangedJayerIds;
+  const changedOayerIds = historyMode
+    ? computeTableEverChanged(oayer, roundSnaps, (r) => r.oayerRows)
+    : prevChangedOayerIds;
+  const changedBbIds = historyMode
+    ? computeTableEverChanged(bb, roundSnaps, (r) => r.bbRows)
+    : prevChangedBbIds;
 
   const isPL = role === 'PL';
   // 모든 팀이 상세 보기의 전체 탭·섹션을 동일하게 볼 수 있도록 역할 게이팅을 개방한다.
@@ -854,7 +1154,8 @@ export default function PagedDetailView({
   };
 
   // ===== FieldHistoryModal =====
-  // 1차~직전 회차 스냅샷 + 현재값을 회차 순서대로 모두 표시하고, 각 회차의 변경 유무를 함께 보여준다.
+  // 이력 조회에서는 1차~직전 회차 스냅샷 + 현재값을 회차 순서대로 모두 보여주고,
+  // 결재 진행 중에는 다른 이력 UI 와 통일해 **직전 회차 대비 변경 전/후만** 보여준다.
   const FieldHistoryModal = ({
     label, fieldKey, currentValue, onClose, format, buildValue,
   }: {
@@ -871,18 +1172,29 @@ export default function PagedDetailView({
     buildValue?: (d: Partial<DetailFormState>) => string;
   }) => {
     const fmt = (v: any) => (format ? format(v) : String(v ?? '-')) || '-';
+    const valueOf = (d: any) => (buildValue ? (buildValue(d ?? {}) || '-') : fmt(fieldKey ? d?.[fieldKey] : undefined));
+    const curValue = (buildValue ? buildValue(detail) : currentValue) || '-';
+
+    if (!historyMode) {
+      return (
+        <FieldGroupHistoryModal
+          title={`${label} 변경 이력`}
+          rows={[{ label, before: prevSnap ? valueOf(prevSnap.detail) : '-', after: curValue }]}
+          onClose={onClose}
+        />
+      );
+    }
+
     const rows = [
       ...history.map((snap, i) => ({
-        label: `${i + 1}차 제출`,
+        label: roundLabel(i),
         timestamp: snap.timestamp,
-        value: buildValue
-          ? (buildValue(snap.detail ?? {}) || '-')
-          : fmt(fieldKey ? (snap.detail as any)?.[fieldKey] : undefined),
+        value: valueOf(snap.detail),
       })),
       {
-        label: '현재 (최신)',
+        label: CURRENT_ROUND_LABEL,
         timestamp: null as string | null,
-        value: (buildValue ? buildValue(detail) : currentValue) || '-',
+        value: curValue,
       },
     ];
     const thStyle: React.CSSProperties = {
@@ -1095,10 +1407,16 @@ export default function PagedDetailView({
   const [prodcHistOpen, setProdcHistOpen] = useState(false);
   const [revHistOpen, setRevHistOpen] = useState(false);
 
-  // 블록(엠샷/생산정보/REV) 변경 전·후 비교 행 (직전 재상신 스냅샷 대비)
-  const mshotHistRows = prevSnap ? buildMshotRows(prevSnap.detail, detail) : [];
-  const prodcHistRows = prevSnap ? buildProdcRows(prevSnap.detail, detail) : [];
-  const revHistRows = prevSnap ? buildRevRows(prevSnap.detail, detail) : [];
+  /**
+   * 블록(엠샷/생산정보/REV) 이력 모달 — 모드에 따라 회차별 표와 변경 전/후 표가 갈린다.
+   * 두 표 모두 같은 빌더를 쓰므로 항목 라벨·순서는 어느 쪽에서나 동일하다.
+   */
+  const renderGroupHistory = (title: string, build: GroupBuilder, onClose: () => void): React.ReactNode => {
+    if (!hasRounds) return null;
+    return historyMode
+      ? <FieldGroupRoundHistoryModal title={title} rounds={roundSnaps} build={build} onClose={onClose} />
+      : <FieldGroupHistoryModal title={title} rows={toDiffRows(prevSnap?.detail, detail, build)} onClose={onClose} />;
+  };
 
 type Page = { label: string; content: React.ReactNode };
   const pages: Page[] = [
@@ -1286,7 +1604,7 @@ type Page = { label: string; content: React.ReactNode };
                     </button>
                   )}
                   {mshotHistOpen && (
-                    <FieldGroupHistoryModal title="엠샷 변경 이력" rows={mshotHistRows} onClose={() => setMshotHistOpen(false)} />
+                    renderGroupHistory('엠샷 변경 이력', buildMshotItems, () => setMshotHistOpen(false))
                   )}
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
                     <div style={fieldLabel}>{t('request.mshot_change_status')}</div>
@@ -1339,7 +1657,7 @@ type Page = { label: string; content: React.ReactNode };
                     </button>
                   )}
                   {prodcHistOpen && (
-                    <FieldGroupHistoryModal title="생산 정보 변경 이력" rows={prodcHistRows} onClose={() => setProdcHistOpen(false)} />
+                    renderGroupHistory('생산 정보 변경 이력', buildProdcItems, () => setProdcHistOpen(false))
                   )}
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
                     <div style={fieldLabel}>{t('request.prodc_status')}</div>
@@ -1374,7 +1692,7 @@ type Page = { label: string; content: React.ReactNode };
                     </button>
                   )}
                   {revHistOpen && (
-                    <FieldGroupHistoryModal title="REV 변경 이력" rows={revHistRows} onClose={() => setRevHistOpen(false)} />
+                    renderGroupHistory('REV 변경 이력', buildRevItems, () => setRevHistOpen(false))
                   )}
                   <div style={{ display: 'flex', alignItems: 'flex-start' }}>
                     <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
@@ -1483,30 +1801,40 @@ type Page = { label: string; content: React.ReactNode };
                         : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
                       }
                     </div>
-                    {mapHistOpen && prevSnap && (
-                      <Modal isOpen onClose={() => setMapHistOpen(false)} title={`${t('request.map_option_title')} 변경 이력`}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                          <div>
-                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>이전 (재상신 전)</div>
-                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                              {prevActiveOptions.length > 0
-                                ? prevActiveOptions.map(o => <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>)
-                                : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
-                              }
-                            </div>
+                    {mapHistOpen && hasRounds && (() => {
+                      // 값이 태그 목록이라 표 대신 구간별 목록으로 보여준다.
+                      // 이력 조회는 회차 전부, 결재 진행 중은 직전·현재 두 구간만 나열한다.
+                      const sections = historyMode
+                        ? roundSnaps.map((r) => ({
+                            label: r.label,
+                            timestamp: r.timestamp,
+                            opts: mapOptionDefs.filter(o => (r.detail as any)?.[o.fieldKey] === o.activeValue),
+                          }))
+                        : [
+                            { label: '이전 (재상신 전)', timestamp: prevSnap?.timestamp ?? null, opts: prevActiveOptions },
+                            { label: CURRENT_ROUND_LABEL, timestamp: null, opts: activeOptions },
+                          ];
+                      return (
+                        <Modal isOpen onClose={() => setMapHistOpen(false)} title={`${t('request.map_option_title')} 변경 이력`}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            {sections.map((s) => (
+                              <div key={s.label}>
+                                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>
+                                  {s.label}
+                                  {historyMode && <span style={{ fontWeight: 400, marginLeft: 8 }}>{fmtRoundTime(s.timestamp)}</span>}
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                  {s.opts.length > 0
+                                    ? s.opts.map(o => <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>)
+                                    : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
+                                  }
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                          <div>
-                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8 }}>현재 (최신)</div>
-                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                              {activeOptions.length > 0
-                                ? activeOptions.map(o => <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>)
-                                : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
-                              }
-                            </div>
-                          </div>
-                        </div>
-                      </Modal>
-                    )}
+                        </Modal>
+                      );
+                    })()}
                   </div>
                 </div>
               </>
@@ -1574,7 +1902,7 @@ type Page = { label: string; content: React.ReactNode };
               </span>
             )}
           </div>
-          <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} />
+          <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} />
           </>
           )}
         </div>
@@ -1641,7 +1969,7 @@ type Page = { label: string; content: React.ReactNode };
                 ))}
               </div>
               {activeTab === 'table' && (
-                <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} />
+                <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} />
               )}
               {activeTab === 'info' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20, fontSize: 13 }}>
@@ -1744,7 +2072,7 @@ type Page = { label: string; content: React.ReactNode };
               <button onClick={exportBb} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
             </div>
           </div>
-          <BbTable rows={bb} changedRowIds={changedBbIds} prevRowMap={prevBbMap} tabCount={Array.isArray(detail?.bb_entries) ? detail.bb_entries.length : 0} entryIds={Array.isArray(detail?.bb_entries) ? detail.bb_entries.map((e: { id?: string }) => e.id ?? '') : []} />
+          <BbTable rows={bb} changedRowIds={changedBbIds} prevRowMap={prevBbMap} historyMode={historyMode} rounds={roundSnaps} tabCount={Array.isArray(detail?.bb_entries) ? detail.bb_entries.length : 0} entryIds={Array.isArray(detail?.bb_entries) ? detail.bb_entries.map((e: { id?: string }) => e.id ?? '') : []} />
         </div>
       ),
     });
