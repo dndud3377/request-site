@@ -6,7 +6,7 @@ import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, Flow
 import Modal from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
-import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType } from '../pages/RequestPage/constants';
+import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
@@ -1214,7 +1214,6 @@ export default function PagedDetailView({
     ? computeTableEverChanged(bb, roundSnaps, (r) => r.bbRows, BB_DIFF_FIELDS)
     : prevChangedBbIds;
 
-  const isPL = role === 'PL';
   // 모든 팀이 상세 보기의 전체 탭·섹션을 동일하게 볼 수 있도록 역할 게이팅을 개방한다.
   const isP = true;
   const isR = true;
@@ -1494,12 +1493,16 @@ export default function PagedDetailView({
     return `변경: ${d.ea_change}${d.ea_value ? ` / 값: ${d.ea_value}mm` : ''}`;
   };
 
-  /** 뼈찜(Backbone) — 등록된 항목 목록 */
+  /** 뼈찜(Backbone) — 등록된 항목 목록. 라벨은 의뢰서 작성(Step1)과 동일한 i18n 키를 그대로 쓴다. */
   const buildBbValue = (d: Partial<DetailFormState>): string => {
     const entries = d.bb_entries;
     if (!Array.isArray(entries) || entries.length === 0) return '-';
     return entries
-      .map((e, i) => `[${i + 1}] 위치: ${e.location || '-'} / 제품: ${e.product || '-'} / 조리법: ${e.process_id || '-'}`)
+      .map((e, i) => (
+        `[${i + 1}] ${t('request.bb_ref_line')}: ${e.location || '-'}`
+        + ` / ${t('request.bb_ref_part_id')}: ${e.product || '-'}`
+        + ` / ${t('request.bb_ref_process_id')}: ${e.process_id || '-'}`
+      ))
       .join('\n');
   };
 
@@ -1678,7 +1681,7 @@ type Page = { label: string; content: React.ReactNode };
               );
             })()}
 
-            {((isO && !isR && !isJ) || role === 'MASTER' || isPL || isP) && detail.change_purpose_note && (
+            {detail.change_purpose_note && (
               <div style={rowStyle}>
                 <Chip label={t('request.change_purpose_note')} value={detail.change_purpose_note} style={chipFull} changed={changedFields.has('change_purpose_note')} fieldKey="change_purpose_note" />
               </div>
@@ -2322,6 +2325,18 @@ type Page = { label: string; content: React.ReactNode };
     } catch { return false; }
   })();
 
+  // 기타 목적이 'Overlay 변경' 하나뿐이면 결재 경로에서 J 를 뺀다(백엔드 skip_j_stage 와 동일 기준).
+  // 'MAP 삭제/수정' 은 J 가 병렬 묶음의 구성원이라 제외 대상이 아니다.
+  const skipJStage = (() => {
+    if (isMapDeleteEdit) return false;
+    try {
+      const parsed = JSON.parse(doc.additional_notes ?? '{}');
+      const raw = parsed?.detail?.other_purpose;
+      const list: string[] = Array.isArray(raw) ? raw : (typeof raw === 'string' ? [raw] : []);
+      return list.length === 1 && list[0] === OTHER_PURPOSE_OVERLAY;
+    } catch { return false; }
+  })();
+
   // 통보처: 결재 경로와 별개로 표시(결재 권한 없음). detail.notifiers 에서 이름만 읽는다.
   const notifiers: { loginid: string; name: string }[] = (() => {
     try {
@@ -2410,6 +2425,11 @@ type Page = { label: string; content: React.ReactNode };
     // MAP 삭제/수정은 RA(후결자)를 아예 만들지 않는다 — 없이도 fallback 을 타면
     // '대기'로 보여 영원히 끝나지 않는 단계처럼 오해를 준다(E 처럼 명시적 na 분기 필요).
     if (isMapDeleteEdit && agent === 'RA') {
+      return [{ status: 'na', label: t('approval.step_na') }];
+    }
+    // 'Overlay 변경' 단독 문서는 J step 이 아예 없다 — 명시하지 않으면 아래 fallback 이
+    // '대기'로 표시해 영원히 끝나지 않는 단계처럼 보인다(E·RA 와 같은 na 분기).
+    if (skipJStage && agent === 'J') {
       return [{ status: 'na', label: t('approval.step_na') }];
     }
     // R단계: 합의자(R) + 검토자(RV, 지정 시)를 한 행에 함께 표시
@@ -2551,7 +2571,7 @@ type Page = { label: string; content: React.ReactNode };
           <div key={key} style={teamRowStyle}>
             <div style={teamLabelStyle}>{label}</div>
             <div style={historyListStyle}>
-              {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) || (isMapDeleteEdit && key === 'RA') ? (
+              {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) || (isMapDeleteEdit && key === 'RA') || (skipJStage && key === 'J') ? (
                 <div style={historyItemStyle(false)}>
                   <span style={{ ...statusBadgeStyle('na') }}>{t('approval.step_na')}</span>
                 </div>

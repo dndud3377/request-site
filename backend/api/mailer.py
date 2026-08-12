@@ -27,21 +27,28 @@
     포함(반려한 본인 제외). 이미 합의를 마친 팀은 팀 전체 발송 대상이 아니다.
 - 승인 완료: 현재 회차 결재 경로에 참여했던 전원(중복 제거)
 - P 단계 완료 통보(notify_p_completed): TE_O + TE_J 팀 전원(참고용, 결재 권한과 무관)
+- 라인 수신 설정(mail_lines) 필터: 위에서 산출된 수신자 중, 의뢰서의 라인(detail.line)을
+  권한 관리 '이메일 설정'에서 끈 사람을 제외한다(`_filter_by_mail_lines`). '전체 받기'
+  (receive_all_mail, 기본값)가 켜져 있으면 라인과 무관하게 전부 받는다. 대상 역할은
+  TE_R/P/J/O/E·MASTER 이고 PL·NONE 은 적용받지 않는다. 담당자로 지정된 단계의 결재 요청
+  메일도 예외 없이 필터를 탄다. VOC 메일은 라인 개념이 없어 필터 대상이 아니다.
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
 """
 import logging
+import re
 import threading
+from html import unescape
 
 import requests
 from urllib3.exceptions import InsecureRequestWarning
 
 from django.conf import settings
 from django.db import connection, transaction
-from django.db.models import Max
+from django.db.models import Max, Q
 from django.utils import timezone
 from django.utils.html import escape
 
-from .models import ApprovalStep, MailNotification, UserProfile
+from .models import VOC, ApprovalStep, MailNotification, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +83,8 @@ ROUTE_AGENTS_ONLY_MAP = ('R', 'RV', 'RA')
 # E(MASK)·EV 와 후결자(RA)는 생성하지 않으므로 경로에서도 빠진다(고정 후결자도 없는 유일한 경로).
 ROUTE_AGENTS_MAP_DELETE_EDIT = ('P', 'PV', 'R', 'RV', 'J', 'O')
 ROUTE_AGENTS_DEFAULT = ('R', 'RV', 'P', 'PV', 'J', 'O', 'E', 'EV', 'RA')
+# 기타 목적이 'Overlay 변경' 하나뿐인 의뢰서는 일반 경로에서 J 만 빠진다(나머지는 동일).
+ROUTE_AGENTS_NO_J = tuple(a for a in ROUTE_AGENTS_DEFAULT if a != 'J')
 
 
 def route_agents_for(document):
@@ -87,6 +96,8 @@ def route_agents_for(document):
         return ROUTE_AGENTS_MAP_DELETE_EDIT
     if document.is_only_map():
         return ROUTE_AGENTS_ONLY_MAP
+    if document.skip_j_stage():
+        return ROUTE_AGENTS_NO_J
     return ROUTE_AGENTS_DEFAULT
 
 # 메일 본문 '결재 경로' 카드의 표시 순서. 웹 '결재 경로' 탭과 같은 순서를 쓴다
@@ -96,10 +107,14 @@ ROUTE_DISPLAY_ORDER = ('PL', 'R', 'RV', 'RA', 'P', 'PV', 'J', 'O', 'E', 'EV')
 # 결재 경로 카드의 상태 표기 — (라벨, 글자색, 배경색). 상태 색은 의미를 담고 있어
 # 이벤트 테마(EVENT_THEME)와 무관하게 고정한다(웹 결재 경로 탭과 동일 팔레트).
 ROUTE_STATUS_STYLE = {
-    'approved': ('합의', '#059669', 'rgba(5,150,105,0.1)'),
+    # (2026-08) 라벨을 웹 결재현황 '현재 단계' 그리드와 맞췄다: 합의→완료, 대기→대기중.
+    'approved': ('완료', '#059669', 'rgba(5,150,105,0.1)'),
     'rejected': ('반려', '#dc2626', 'rgba(220,38,38,0.1)'),
     'reviewing': ('검토중', '#d97706', 'rgba(217,119,6,0.1)'),
-    'waiting': ('대기', '#8794a6', 'rgba(107,138,176,0.12)'),
+    'waiting': ('대기중', '#8794a6', 'rgba(107,138,176,0.12)'),
+    # (2026-08) 이 의뢰서의 결재 경로에 없는 단계. 예전엔 행 자체를 만들지 않아 "왜 없는지"가
+    # 드러나지 않았다. 웹 그리드처럼 행을 남기고 해당없음으로 표시한다.
+    'na': ('해당없음', '#adb5bd', 'rgba(107,138,176,0.1)'),
     # (2026-08 이전 OR 시절 문서에만 남는 이력) EV 1명 합의로 단계가 끝나면 남은 검토자는
     # skip 으로 닫혔다. 지금은 EV도 전원 합의(AND)라 새로 생기지 않는다.
     # 색은 '대기' 와 같은 회색 계열 — 판단하지 않았다는 뜻이라 주의를 끌 필요가 없다.
@@ -135,6 +150,15 @@ AGENT_LABEL = {
     'RA': '후결자',
 }
 
+# (2026-08) 후결자 행 라벨을 웹 그리드와 맞춘다.
+#  - 고정 후결자(settings.POST_APPROVER_LOGINID)는 RFG 팀 1명이라 단계명 R 로 표기한다.
+#    ⚠️ 세로 목록인 메일 카드에서는 R(담당자) 행과 라벨이 같아져 'R' 이 두 줄 나온다.
+#    웹 그리드에는 일반 경로에 R 담당자 칸이 없어 겹치지 않지만, 메일은 겹친다 —
+#    두 화면의 표기를 같게 가져가기로 한 결정에 따른 것이다(담당자 이름으로 구분한다).
+#  - PL 이 지정한 추가 후결자는 '추가후결자'.
+POST_APPROVER_FIXED_LABEL = 'R'
+POST_APPROVER_EXTRA_LABEL = '추가후결자'
+
 # agent 가 없는 이벤트(반려/완료/통보)에서 KPI "결재 단계" 타일에 표시할 상태 문구
 EVENT_STATUS_LABEL = {
     'rejected': '반려',
@@ -143,6 +167,10 @@ EVENT_STATUS_LABEL = {
     'notify_approved': '결재 완료 통보',
     'notify_p_completed': 'P 단계 완료 통보',
     'revision_requested': '수정 요청',
+    'withdraw_requested': '철회 요청',
+    'withdraw_completed': '철회 완료',
+    'withdraw_rejected': '철회 거부',
+    'withdraw_cancelled': '철회 요청 취소',
 }
 
 # 이벤트 타입별 히어로+KPI 카드 이메일 색상 테마
@@ -185,13 +213,76 @@ EVENT_THEME['notify_approved'] = EVENT_THEME['notify_submitted']
 EVENT_THEME['notify_p_completed'] = EVENT_THEME['notify_submitted']
 # 수정 요청: 결재를 되돌리진 않지만 상신자의 조치가 필요하다는 점에서 반려와 같은 주의 테마
 EVENT_THEME['revision_requested'] = EVENT_THEME['rejected']
+# 철회 요청/완료: 결재가 멈추거나 문서가 사라지는 알림이라 반려와 같은 주의(레드) 테마
+EVENT_THEME['withdraw_requested'] = EVENT_THEME['rejected']
+EVENT_THEME['withdraw_completed'] = EVENT_THEME['rejected']
+# 철회 거부/취소: 결재가 그대로 이어진다는 정보성 통보라 통보 계열(퍼플) 테마
+EVENT_THEME['withdraw_rejected'] = EVENT_THEME['notify_submitted']
+EVENT_THEME['withdraw_cancelled'] = EVENT_THEME['notify_submitted']
+# VOC 등록: 새 요청이 도착했다는 알림이라 결재 도착과 같은 블루 테마
+EVENT_THEME['voc_created'] = EVENT_THEME['stage_arrival']
+# VOC 답글: 논의가 진행됐다는 정보성 알림이라 통보 계열(퍼플) 테마
+EVENT_THEME['voc_comment'] = EVENT_THEME['notify_submitted']
 
 
 # --------------------------------------------------------------------------- #
 # 수신자 해석
 # --------------------------------------------------------------------------- #
-def _apply_redirect(recipients):
-    """MAIL_REDIRECT_TO 가 설정돼 있으면 모든 수신자를 해당 주소로 강제한다."""
+def _document_line(document):
+    """의뢰서의 라인(detail.line). 값이 없으면 빈 문자열."""
+    detail = document.get_detail().get('detail', {}) or {}
+    if not isinstance(detail, dict):
+        return ''
+    return str(detail.get('line') or '').strip()
+
+
+def _filter_by_mail_lines(recipients, document):
+    """수신자 중 이 의뢰서의 라인을 메일 수신 대상에서 뺀 사람을 제외한다.
+
+    - '전체 받기'(receive_all_mail)가 켜진 사람은 라인과 무관하게 그대로 통과한다(기본 상태).
+    - 대상 역할은 `UserProfile.MAIL_LINE_FILTER_ROLES`(TE_R/P/J/O/E·MASTER)뿐이다.
+      PL·NONE 은 이 설정을 쓰지 않으므로 라인과 무관하게 그대로 통과한다.
+    - 의뢰서에 라인 값이 없으면(임시저장 등) 필터가 성립하지 않으므로 그대로 통과시킨다.
+    - 한 주소를 여러 사용자가 공유할 수 있으므로, **그 주소로 받아야 할 사람이
+      한 명이라도 있으면 제외하지 않는다**(수신 누락 방지).
+    """
+    line = _document_line(document)
+    if not line or not recipients:
+        return list(recipients)
+
+    filter_roles = UserProfile.MAIL_LINE_FILTER_ROLES
+    # 이 라인을 끈 사람 = 필터 대상 역할 + 전체 받기 해제 + mail_lines 에 이 라인이 없는 사용자
+    blocked = set(
+        UserProfile.objects.filter(role__in=filter_roles, receive_all_mail=False)
+        .exclude(mail='')
+        .exclude(mail_lines__name=line)
+        .values_list('mail', flat=True)
+    )
+    if not blocked:
+        return list(recipients)
+    # 같은 주소를 쓰면서 이 라인을 받아야 하는 사람
+    # (전체 받기 사용자 · 필터 비대상 역할 · 이 라인을 켠 사람)
+    receiving = set(
+        UserProfile.objects.exclude(mail='')
+        .filter(Q(receive_all_mail=True) | Q(mail_lines__name=line) | ~Q(role__in=filter_roles))
+        .values_list('mail', flat=True)
+    )
+    blocked -= receiving
+    return [addr for addr in recipients if (addr or '').strip() not in blocked]
+
+
+def _apply_redirect(recipients, document=None):
+    """수신자 목록을 정리한다 — 라인 수신 설정 필터 → MAIL_REDIRECT_TO 강제 순.
+
+    document 를 넘기면 그 의뢰서의 라인을 끈 사람을 먼저 제외한다(결재·통보·철회 메일 전부).
+    VOC 메일은 라인 개념이 없으므로 document 를 넘기지 않아 필터를 타지 않는다.
+    """
+    if document is not None and recipients:
+        filtered = _filter_by_mail_lines(recipients, document)
+        if not filtered:
+            # 라인 설정으로 수신자가 전부 빠졌다 — MAIL_REDIRECT_TO 가 있어도 보내지 않는다.
+            return []
+        recipients = filtered
     redirect_to = getattr(settings, 'MAIL_REDIRECT_TO', '') or ''
     redirect_to = redirect_to.strip()
     if redirect_to:
@@ -293,7 +384,7 @@ def resolve_stage_recipients(document, agent, step=None):
         # 위에서 PL·R·J·P·O·E·RV·PV·EV·RA 를 모두 다루므로 여기 오는 agent 는 없다.
         # 새 단계가 생겼는데 규칙을 안 넣은 경우 — 엉뚱한 곳으로 보내는 대신 발송하지 않는다.
         recipients = []
-    return _apply_redirect(recipients)
+    return _apply_redirect(recipients, document)
 
 
 def _current_round(document):
@@ -361,7 +452,7 @@ def resolve_revision_request_recipients(document):
             document.pk,
         )
         return []
-    return _apply_redirect([document.requester_email])
+    return _apply_redirect([document.requester_email], document)
 
 
 def resolve_reject_recipients(document):
@@ -403,12 +494,12 @@ def resolve_reject_recipients(document):
             for mail in _remaining_stage_emails(document, max_round):
                 if mail and mail not in rejecter_mails and mail not in emails:
                     emails.append(mail)
-    return _apply_redirect(emails)
+    return _apply_redirect(emails, document)
 
 
 def resolve_approved_recipients(document):
     """승인 완료 시 수신자: 현재 회차 결재 경로에 참여했던 전원(중복 제거)."""
-    return _apply_redirect(_current_round_step_emails(document))
+    return _apply_redirect(_current_round_step_emails(document), document)
 
 
 def resolve_notifier_recipients(document):
@@ -424,14 +515,111 @@ def resolve_notifier_recipients(document):
         if isinstance(n, dict) and n.get('loginid')
     ]
     if not loginids:
-        return _apply_redirect([])
+        return _apply_redirect([], document)
     emails = list(
         UserProfile.objects.filter(loginid__in=loginids)
         .exclude(mail='')
         .distinct()
         .values_list('mail', flat=True)
     )
-    return _apply_redirect(emails)
+    return _apply_redirect(emails, document)
+
+
+def resolve_withdraw_target_recipients(document, step_ids):
+    """철회 요청 확인 대상 단계의 수신자.
+
+    단계마다 "담당자가 배정돼 있으면 그 1명, 미배정이면 그 단계 담당 팀 전원"이다 —
+    확인 인가(`views._can_confirm_pause`, 중단 확인과 동일 규칙)와 같은 기준이라,
+    실제로 '철회 확인'을 누를 수 있는 사람에게만 메일이 간다.
+
+    ⚠️ 통보처는 여기에 포함하지 않는다(2026-08 결정) — 통보처는 확인 주체가 아니므로
+    철회 '완료' 시점에만 통보받는다.
+    """
+    emails = []
+    steps = (
+        ApprovalStep.objects.filter(document=document, id__in=list(step_ids or []))
+        .select_related('assignee')
+    )
+    for step in steps:
+        if step.assignee and step.assignee.mail:
+            emails.append(step.assignee.mail)
+        else:
+            emails.extend(_stage_team_emails(step.agent))
+    return _apply_redirect(emails, document)
+
+
+def _designated_pl_emails(document):
+    """상신 시 지정된 PL 전원의 이메일 = 최종 회차 PL 단계 담당자들.
+
+    PL 단계가 아직 없는(임시저장 등) 문서는 대표 지정 PL(designated_pl)로 보조 판정한다.
+    """
+    max_round = _current_round(document)
+    if max_round is not None:
+        emails = list(
+            ApprovalStep.objects.filter(document=document, agent='PL', round=max_round)
+            .exclude(assignee__isnull=True).exclude(assignee__mail='')
+            .values_list('assignee__mail', flat=True).distinct()
+        )
+        if emails:
+            return emails
+    if document.designated_pl and document.designated_pl.mail:
+        return [document.designated_pl.mail]
+    return []
+
+
+def _reached_stage_emails(document):
+    """**실제로 결재가 진행된** 단계의 담당 팀 전원 이메일.
+
+    "진행됐다"의 기준은 단계(ApprovalStep)가 생성됐는지다 — R 단계까지만 열린 문서라면
+    TE_R 만 대상이 되고, 아직 열리지 않은 P·J·O·E 팀에는 철회 완료 메일이 가지 않는다.
+    회차는 구분하지 않는다(반려 후 재상신된 문서에서 이전 회차에 결재했던 팀도 대상).
+
+    - 검토자(RV/PV/EV)는 담당자와 같은 팀이므로 `_stage_team_emails` 가 환산한다.
+    - 후결자(RA)는 역할(팀)이 아니라 지정된 개인이므로 그 담당자 본인만 넣는다.
+    - PL 은 팀 브로드캐스트 대상이 아니다(지정 PL 은 `_designated_pl_emails` 로 따로 포함).
+    """
+    emails = []
+    steps = ApprovalStep.objects.filter(document=document).select_related('assignee')
+    for step in steps:
+        if step.agent == 'PL':
+            continue
+        if step.agent == 'RA':
+            if step.assignee and step.assignee.mail:
+                emails.append(step.assignee.mail)
+            continue
+        emails.extend(_stage_team_emails(step.agent))
+    return emails
+
+
+def resolve_withdraw_completed_recipients(document):
+    """철회 완료(문서 삭제) 통보 수신자.
+
+    ① 상신 시 지정된 PL 전원  ② 통보처 전원  ③ 실제로 결재가 진행된 단계의 담당 팀 전원
+    ④ 의뢰서 작성자 본인. 중복·빈 주소는 `_apply_redirect` 가 정리한다.
+
+    ⚠️ ③ 은 "TE_R·TE_P·TE_J·TE_O·TE_E 5개 팀 전원"이 아니다(2026-08 결정) —
+    R 단계까지만 진행된 의뢰서는 TE_R 에게만 통보된다(`_reached_stage_emails`).
+    """
+    emails = []
+    emails.extend(_designated_pl_emails(document))
+    emails.extend(resolve_notifier_recipients(document))
+    emails.extend(_reached_stage_emails(document))
+    if document.requester_email:
+        emails.append(document.requester_email)
+    return _apply_redirect(emails, document)
+
+
+def resolve_withdraw_rejected_recipients(document, withdraw_request):
+    """철회 거부 수신자: 철회를 요청한 사람(+ 의뢰서 작성자).
+
+    요청자와 작성자가 다를 수 있어(지정 PL·공유 그룹 멤버가 철회를 요청한 경우) 둘 다 넣는다.
+    """
+    emails = []
+    if withdraw_request.requester_id and withdraw_request.requester.mail:
+        emails.append(withdraw_request.requester.mail)
+    if document.requester_email:
+        emails.append(document.requester_email)
+    return _apply_redirect(emails, document)
 
 
 # --------------------------------------------------------------------------- #
@@ -456,6 +644,9 @@ def _voc_link(voc_id):
 
 # 완료 이후 결재현황 목록에서 빠지는 이벤트 — 이력조회로 딥링크
 _HISTORY_LINK_EVENTS = ('approved', 'notify_approved')
+
+# 딥링크 버튼을 싣지 않는 이벤트 — 발송 시점에 의뢰서가 이미 삭제돼 링크가 죽는다.
+_NO_LINK_EVENTS = ('withdraw_completed',)
 
 
 def _kpi_grid(tiles, tile_bg, tile_border):
@@ -509,9 +700,13 @@ def _route_rows(document):
 
     rows = []
     for agent in ROUTE_DISPLAY_ORDER:
-        if agent not in route:
-            continue
         label = AGENT_LABEL.get(agent, agent)
+        # 검토자(RV/PV/EV)는 지정됐을 때만 생기는 선택 단계라, 경로 밖이어도 '해당없음' 행을
+        # 만들지 않는다(지정하지 않은 것과 거치지 않는 것을 구분할 수 없다).
+        if agent not in route:
+            if agent not in REVIEWER_AGENTS:
+                rows.append((label, '', 'na', ''))
+            continue
         agent_steps = steps_by_agent.get(agent)
         if not agent_steps:
             # 아직 도달하지 않은 단계(검토자는 지정됐을 때만 생기므로 예정 표시 대상이 아니다)
@@ -529,7 +724,11 @@ def _route_rows(document):
                 status = 'reviewing'
             else:
                 status = 'waiting'
-            rows.append((label, s.assignee_name or '', status, s.comment or ''))
+            row_label = label
+            if agent == 'RA':
+                row_label = (POST_APPROVER_FIXED_LABEL if _is_fixed_post_approver(s)
+                             else POST_APPROVER_EXTRA_LABEL)
+            rows.append((row_label, s.assignee_name or '', status, s.comment or ''))
     return rows
 
 
@@ -606,6 +805,18 @@ def _render_hero_kpi_email(event_type, headline, document, kpi_tiles, note_value
     route_html = _render_route_card(document, theme)
     note_html = escape(note_value) if note_value else '-'
     headline_html = escape(headline)
+    # link 가 없으면 버튼 블록을 통째로 비운다 — 철회 완료 메일은 문서가 이미 삭제돼
+    # 딥링크가 죽은 링크가 되므로 버튼을 싣지 않는다.
+    button_html = f'''  <tr>
+    <td style="padding:22px 32px 6px;">
+      <table role="presentation" cellpadding="0" cellspacing="0">
+        <tr><td bgcolor="{hero_from}" style="border-radius:8px;">
+          <a href="{link}" style="display:inline-block;padding:12px 22px;font-size:13.5px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">{link_text} →</a>
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+''' if link else ''
 
     return f'''<!--[if mso]>
 <table role="presentation" align="center" width="600" cellpadding="0" cellspacing="0"><tr><td>
@@ -642,16 +853,7 @@ def _render_hero_kpi_email(event_type, headline, document, kpi_tiles, note_value
       </table>
     </td>
   </tr>
-  <tr>
-    <td style="padding:22px 32px 6px;">
-      <table role="presentation" cellpadding="0" cellspacing="0">
-        <tr><td bgcolor="{hero_from}" style="border-radius:8px;">
-          <a href="{link}" style="display:inline-block;padding:12px 22px;font-size:13.5px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">{link_text} →</a>
-        </td></tr>
-      </table>
-    </td>
-  </tr>
-  <tr>
+{button_html}  <tr>
     <td style="padding:24px 32px 30px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="border-top:1px solid {theme['footer_border']};font-size:0;line-height:0;">&nbsp;</td></tr></table>
       <p style="margin:16px 0 0;font-size:11.5px;line-height:1.7;color:#94a3b8;">본 메일은 제품 소개 지도 의뢰 시스템에서 자동 발송되었습니다. 이 메일에는 회신하지 마세요.</p>
@@ -663,10 +865,12 @@ def _render_hero_kpi_email(event_type, headline, document, kpi_tiles, note_value
 <![endif]-->'''
 
 
-def _build_message(event_type, document, agent=None, recipient_name=None, is_fixed_post_approver=False):
+def _build_message(event_type, document, agent=None, recipient_name=None, is_fixed_post_approver=False,
+                   note_override=None):
     """이벤트 유형별 제목/본문(HTML)을 생성한다.
 
     recipient_name 이 주어지면(개인 지정 메일) 제목 맨 앞에 "[{이름}님] "을 붙인다.
+    note_override: '특이사항' 칸을 의뢰서 참고자료 대신 이 값으로 채운다(철회 사유 등).
     is_fixed_post_approver: agent='RA'이고 그 담당자가 고정 후결자(settings.POST_APPROVER_LOGINID)일
     때만 True — 이 경우에만 "[후결 요청]" 고정 제목을 쓰고, 그 외 RA(추가 후결자)는 다른 단계와
     동일한 제목 규칙을 따른다.
@@ -674,7 +878,7 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
     히어로/버튼/카드 테두리 색상은 event_type 별 EVENT_THEME 를 따른다.
     """
     use_history = event_type in _HISTORY_LINK_EVENTS
-    link = _detail_link(document, use_history)
+    link = '' if event_type in _NO_LINK_EVENTS else _detail_link(document, use_history)
     link_text = '이력조회에서 확인하기' if use_history else '결재 현황에서 확인하기'
     name_prefix = f'[{recipient_name}님] ' if recipient_name else ''
 
@@ -713,6 +917,25 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
             '결재 현황에서 의뢰서를 열어 값을 확인해 주세요.'
         )
         stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'withdraw_requested':
+        subject = f'[철회 요청] {document.title}'
+        headline = (
+            '의뢰서 철회 요청이 도착했습니다. 결재 현황에서 내용을 확인한 뒤 '
+            "'철회 확인' 또는 '철회 거부'를 선택해 주세요."
+        )
+        stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'withdraw_completed':
+        subject = f'[철회 완료] {document.title}'
+        headline = '아래 의뢰서가 철회되어 삭제되었습니다. 더 이상 조회할 수 없습니다.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'withdraw_rejected':
+        subject = f'[철회 거부] {document.title}'
+        headline = '요청하신 의뢰서 철회가 거부되었습니다. 결재는 그대로 진행됩니다.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'withdraw_cancelled':
+        subject = f'[철회 요청 취소] {document.title}'
+        headline = '의뢰서 철회 요청이 취소되었습니다. 결재를 그대로 진행해 주세요.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
     else:
         subject = f'[알림] {document.title}'
         headline = '새로운 알림이 있습니다.'
@@ -726,7 +949,7 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
         ('상신일', submitted_at_str),
         ('생산 진행일', production_date_str),
     ]
-    note_value = (document.reference_materials or '').strip()
+    note_value = (note_override or document.reference_materials or '').strip()
 
     contents = _render_hero_kpi_email(event_type, headline, document, kpi_tiles, note_value, link, link_text)
 
@@ -736,7 +959,8 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
 # --------------------------------------------------------------------------- #
 # 큐 적재 (enqueue) — 결재 트랜잭션 안에서 호출
 # --------------------------------------------------------------------------- #
-def _enqueue(document, event_type, recipients, agent=None, recipient_name=None, is_fixed_post_approver=False):
+def _enqueue(document, event_type, recipients, agent=None, recipient_name=None, is_fixed_post_approver=False,
+             note_override=None):
     """수신자가 있을 때만 MailNotification 행을 적재한다."""
     if not recipients:
         logger.info(
@@ -744,7 +968,9 @@ def _enqueue(document, event_type, recipients, agent=None, recipient_name=None, 
             "(event=%s, doc=%s, agent=%s)", event_type, document.pk, agent
         )
         return None
-    subject, contents = _build_message(event_type, document, agent, recipient_name, is_fixed_post_approver)
+    subject, contents = _build_message(
+        event_type, document, agent, recipient_name, is_fixed_post_approver, note_override,
+    )
     noti = MailNotification.objects.create(
         document=document,
         event_type=event_type,
@@ -816,57 +1042,240 @@ def enqueue_notify_p_completed(document):
     도착 통보가 중복이 됐고, 대신 P 진행 상황을 알 수 있도록 이 완료 통보에 합류시켰다.
     """
     # _apply_redirect 가 빈 주소 제거 + 중복 제거(순서 보존)까지 하므로 두 팀을 그대로 이어 붙인다.
-    recipients = _apply_redirect(_team_emails('O') + _team_emails('J'))
+    recipients = _apply_redirect(_team_emails('O') + _team_emails('J'), document)
     return _enqueue(document, 'notify_p_completed', recipients)
+
+
+def enqueue_withdraw_requested(document, withdraw_request):
+    """철회 요청 접수 알림 적재 — 확인 대상 단계의 담당자/팀 대상(통보처 제외)."""
+    recipients = resolve_withdraw_target_recipients(document, withdraw_request.target_step_ids)
+    return _enqueue(
+        document, 'withdraw_requested', recipients, note_override=withdraw_request.reason,
+    )
+
+
+def enqueue_withdraw_completed(document, reason=''):
+    """철회 완료(문서 삭제) 통보 적재.
+
+    ⚠️ **반드시 `document.delete()` 앞에서 호출**해야 한다 — 본문(결재 경로 카드·수신자)이
+    문서와 결재 단계를 읽어 만들어지기 때문이다. 적재된 본문은 HTML 로 굳으므로 문서가
+    지워져도 내용은 그대로 남고, `MailNotification.document` FK 만 SET_NULL 로 비워진다.
+    """
+    recipients = resolve_withdraw_completed_recipients(document)
+    return _enqueue(document, 'withdraw_completed', recipients, note_override=reason)
+
+
+def enqueue_withdraw_rejected(document, withdraw_request):
+    """철회 거부 알림 적재 — 철회를 요청한 사람과 의뢰서 작성자 대상."""
+    recipients = resolve_withdraw_rejected_recipients(document, withdraw_request)
+    return _enqueue(
+        document, 'withdraw_rejected', recipients, note_override=withdraw_request.reason,
+    )
+
+
+def enqueue_withdraw_cancelled(document, withdraw_request):
+    """철회 요청 취소 알림 적재 — 요청 메일을 받았던 확인 대상 단계 담당자/팀 대상."""
+    recipients = resolve_withdraw_target_recipients(document, withdraw_request.target_step_ids)
+    return _enqueue(
+        document, 'withdraw_cancelled', recipients, note_override=withdraw_request.reason,
+    )
 
 
 # --------------------------------------------------------------------------- #
 # VOC 알림
 # --------------------------------------------------------------------------- #
+# VOC 카테고리/상태 코드 → 메일에 실을 한글 라벨. 모델 choices 와 같은 값을 쓰되
+# 메일 문구는 화면 라벨과 어휘를 맞춘다("완료" → "답변완료").
+VOC_CATEGORY_LABEL = dict(VOC.CATEGORY_CHOICES)
+VOC_STATUS_LABEL = {'checking': '확인중', 'completed': '답변완료'}
+VOC_PAGE_LABEL = {
+    'request': '의뢰서 작성',
+    'approval': '결재 현황',
+    'history': '이력 조회',
+    'other': '기타',
+}
+
+# 제출자에게만 덧붙이는 안내 — 답변 완료 처리는 작성자 본인(또는 MASTER)만 할 수 있다.
+VOC_COMPLETE_GUIDE = '답변이 만족스러우셨다면 답변 완료 처리 해주세요.'
+
+
+def _html_to_text(html):
+    """RichTextEditor 가 만든 HTML 을 메일 카드에 실을 평문으로 바꾼다.
+
+    블록/개행 태그는 줄바꿈으로 바꾼 뒤 나머지 태그를 걷어낸다. 반환값은
+    _render_voc_email 에서 escape 되므로 여기서는 escape 하지 않는다.
+    """
+    if not html:
+        return ''
+    text = re.sub(r'<br\s*/?>', '\n', html, flags=re.IGNORECASE)
+    text = re.sub(r'</(p|div|li|h[1-6])>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<[^>]+>', '', text)
+    text = unescape(text).replace('\xa0', ' ')
+    # 태그 제거 과정에서 생긴 연속 빈 줄을 하나로 줄인다.
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
 def _resolve_voc_master_recipients():
-    """VOC 등록 알림 수신자: settings.VOC_MASTER_EMAIL (고정 주소)."""
-    raw = getattr(settings, 'VOC_MASTER_EMAIL', '') or ''
-    recipients = [addr.strip() for addr in raw.split(',') if addr.strip()]
-    return _apply_redirect(recipients)
+    """VOC 등록 알림 수신자: role='MASTER' 사용자 전원의 메일 주소.
+
+    MASTER 계정이 늘어나도 설정 변경 없이 자동 반영된다. 라인 수신 설정 필터는
+    VOC 에 라인 개념이 없어 타지 않는다(_apply_redirect 에 document 를 넘기지 않음).
+    """
+    emails = list(
+        UserProfile.objects.filter(role='MASTER')
+        .exclude(mail='')
+        .exclude(mail__isnull=True)
+        .values_list('mail', flat=True)
+    )
+    return _apply_redirect(emails)
+
+
+def _voc_submitter_email(voc):
+    """VOC 제출자의 메일 주소. FK 가 있으면 계정의 주소를 우선한다.
+
+    submitter_name/submitter_email 은 프론트가 보낸 값이라 개발 모드에서는 실제
+    계정 정보와 다를 수 있다. FK 는 서버가 확정하므로 그쪽이 더 정확하다.
+    """
+    if voc.submitter_id and voc.submitter.mail:
+        return voc.submitter.mail.strip()
+    return (voc.submitter_email or '').strip()
 
 
 def _resolve_voc_comment_recipients(voc, commenter_email):
-    """VOC 댓글 알림 수신자: 제출자 + 기존 댓글 작성자 집합 - 본인."""
-    emails = set()
-    if voc.submitter_email:
-        emails.add(voc.submitter_email.strip())
+    """VOC 댓글 알림 수신자를 (제출자, 그 외 참여자) 로 나눠 반환한다.
+
+    제출자에게 가는 메일에만 '답변 완료 처리' 안내를 넣어야 해서, 한 통에 모든
+    수신자를 담지 않고 본문이 다른 두 통으로 나눈다.
+    그 외 참여자 = 기존 댓글 작성자 전원 - 제출자 - 이번 댓글 작성자 본인.
+    """
+    me = (commenter_email or '').strip()
+    submitter_email = _voc_submitter_email(voc)
+
+    others = set()
     for comment in voc.comments.all():
         if comment.author_email:
-            emails.add(comment.author_email.strip())
-    emails.discard((commenter_email or '').strip())
-    return _apply_redirect(list(emails))
+            others.add(comment.author_email.strip())
+    others.discard(submitter_email)
+    others.discard(me)
+
+    submitter = [submitter_email] if submitter_email and submitter_email != me else []
+    return _apply_redirect(submitter), _apply_redirect(sorted(others))
 
 
-def _build_voc_message(event_type, voc, commenter_name=None):
-    """VOC 이벤트 유형별 제목/본문(HTML)을 생성한다."""
+def _voc_info_grid(voc, theme):
+    """VOC 메일 본문의 2x2 정보 타일. 결재 메일의 KPI 그리드와 같은 형식을 쓴다."""
+    tiles = [
+        ('유형', VOC_CATEGORY_LABEL.get(voc.category, voc.category)),
+        ('관련 페이지', VOC_PAGE_LABEL.get(voc.page, voc.page or '-')),
+        ('작성자', voc.submitter_name or '-'),
+        ('상태', VOC_STATUS_LABEL.get(voc.status, voc.status)),
+    ]
+    return _kpi_grid(tiles, theme['tile_bg'], theme['tile_border'])
+
+
+def _render_voc_email(event_type, headline, voc, body_text, guide_text, link):
+    """VOC 알림용 히어로 헤더 + 카드형 본문(HTML).
+
+    결재 알림(_render_hero_kpi_email)과 같은 디자인 언어를 쓰되, 그 함수는
+    의뢰서와 결재 경로 카드를 필수로 요구해 VOC 에는 재사용할 수 없어 별도로 둔다.
+    voc.title / body_text 는 사용자 입력이므로 escape 한다.
+    """
+    theme = EVENT_THEME.get(event_type, EVENT_THEME['stage_arrival'])
+    hero_from, hero_to = theme['hero']
+    info_html = _voc_info_grid(voc, theme)
+
+    guide_html = f'''      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+        <tr><td style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;">
+          <div style="font-size:13.5px;font-weight:600;color:#92400e;line-height:1.6;">{escape(guide_text)}</div>
+        </td></tr>
+      </table>
+''' if guide_text else ''
+
+    return f'''<!--[if mso]>
+<table role="presentation" align="center" width="600" cellpadding="0" cellspacing="0"><tr><td>
+<![endif]-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="width:100%;max-width:600px;margin:0 auto;background:{theme['outer_bg']};border-radius:14px;overflow:hidden;border:1px solid {theme['outer_border']};">
+  <tr>
+    <td bgcolor="{hero_from}" style="background:linear-gradient(135deg,{hero_from} 0%,{hero_to} 100%);padding:30px 32px 26px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr><td style="font-size:12px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.75);text-transform:uppercase;">제품 소개 지도 의뢰 시스템 · VOC</td></tr>
+        <tr><td style="padding-top:12px;font-size:19px;line-height:1.45;font-weight:700;color:#ffffff;">{escape(headline)}</td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:28px 32px 4px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid {theme['outer_border']};border-radius:12px;">
+        <tr><td style="padding:18px 18px 4px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
+            <tr><td>
+              <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:{theme['label_color']};text-transform:uppercase;">VOC 제목</div>
+              <div style="margin-top:6px;font-size:17px;font-weight:700;color:#0f172a;line-height:1.5;">{escape(voc.title)}</div>
+            </td></tr>
+          </table>
+          {info_html}
+        </td></tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+        <tr><td style="background:#ffffff;border:1px solid {theme['outer_border']};border-radius:10px;padding:14px 16px;">
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:{theme['note_label_color']};text-transform:uppercase;">내용</div>
+          <div style="margin-top:5px;font-size:14px;font-weight:500;color:#0f172a;line-height:1.6;white-space:pre-wrap;">{escape(body_text) or '-'}</div>
+        </td></tr>
+      </table>
+{guide_html}    </td>
+  </tr>
+  <tr>
+    <td style="padding:22px 32px 6px;">
+      <table role="presentation" cellpadding="0" cellspacing="0">
+        <tr><td bgcolor="{hero_from}" style="border-radius:8px;">
+          <a href="{link}" style="display:inline-block;padding:12px 22px;font-size:13.5px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">VOC 상세에서 확인하기 →</a>
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 32px 30px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="border-top:1px solid {theme['footer_border']};font-size:0;line-height:0;">&nbsp;</td></tr></table>
+      <p style="margin:16px 0 0;font-size:11.5px;line-height:1.7;color:#94a3b8;">본 메일은 제품 소개 지도 의뢰 시스템에서 자동 발송되었습니다. 이 메일에는 회신하지 마세요.</p>
+    </td>
+  </tr>
+</table>
+<!--[if mso]>
+</td></tr></table>
+<![endif]-->'''
+
+
+def _latest_comment_text(voc):
+    """가장 최근 댓글 본문. 없으면 빈 문자열."""
+    comment = voc.comments.order_by('-created_at', '-id').first()
+    return comment.content if comment else ''
+
+
+def _build_voc_message(event_type, voc, commenter_name=None, for_submitter=False):
+    """VOC 이벤트 유형별 제목/본문(HTML)을 생성한다.
+
+    for_submitter=True 면 제출자용 메일이라 '답변 완료 처리' 안내를 함께 싣는다.
+    """
     link = _voc_link(voc.id)
-    link_html = f'<p><a href="{link}">VOC 상세에서 확인하기</a></p>'
-    base_info = (
-        f'<p>제목: {voc.title}</p>'
-        f'<p>작성자: {voc.submitter_name}</p>'
-    )
+    guide_text = VOC_COMPLETE_GUIDE if for_submitter else ''
 
     if event_type == 'voc_created':
         subject = f'[VOC 등록] {voc.title}'
-        contents = (
-            '<p>새로운 VOC가 등록되었습니다.</p>'
-            f'{base_info}{link_html}'
-        )
+        headline = '새로운 VOC가 등록되었습니다.'
+        body_text = _html_to_text(voc.content)
     else:
-        subject = f'[VOC 댓글] {voc.title}'
-        contents = (
-            f'<p>{commenter_name or "누군가"}님이 댓글을 남겼습니다.</p>'
-            f'{base_info}{link_html}'
-        )
+        writer = commenter_name or '누군가'
+        subject = f'[VOC 답글] {voc.title}'
+        headline = f'{writer}님이 답글을 남겼습니다.'
+        body_text = _latest_comment_text(voc)
+
+    contents = _render_voc_email(event_type, headline, voc, body_text, guide_text, link)
     return subject, contents
 
 
-def _enqueue_voc(voc, event_type, recipients, commenter_name=None):
+def _enqueue_voc(voc, event_type, recipients, commenter_name=None, for_submitter=False):
     """VOC 알림용 MailNotification 적재 (document=None)."""
     if not recipients:
         logger.info(
@@ -874,7 +1283,9 @@ def _enqueue_voc(voc, event_type, recipients, commenter_name=None):
             event_type, voc.pk,
         )
         return None
-    subject, contents = _build_voc_message(event_type, voc, commenter_name)
+    subject, contents = _build_voc_message(
+        event_type, voc, commenter_name, for_submitter=for_submitter,
+    )
     from .models import MailNotification
     noti = MailNotification.objects.create(
         document=None,
@@ -889,15 +1300,26 @@ def _enqueue_voc(voc, event_type, recipients, commenter_name=None):
 
 
 def enqueue_voc_created(voc):
-    """VOC 신규 등록 알림 적재."""
+    """VOC 신규 등록 알림 적재 — MASTER 전원 수신."""
     recipients = _resolve_voc_master_recipients()
     return _enqueue_voc(voc, 'voc_created', recipients)
 
 
 def enqueue_voc_comment(voc, commenter_email, commenter_name=None):
-    """VOC 댓글 등록 알림 적재."""
-    recipients = _resolve_voc_comment_recipients(voc, commenter_email)
-    return _enqueue_voc(voc, 'voc_comment', recipients, commenter_name=commenter_name)
+    """VOC 답글 등록 알림 적재.
+
+    제출자와 그 외 참여자에게 본문이 다른 두 통을 보낸다 — 제출자 메일에만
+    '답변 완료 처리' 안내가 들어간다. (제출자용, 그 외용) 튜플을 반환한다.
+    """
+    submitter_recipients, other_recipients = _resolve_voc_comment_recipients(voc, commenter_email)
+    to_submitter = _enqueue_voc(
+        voc, 'voc_comment', submitter_recipients,
+        commenter_name=commenter_name, for_submitter=True,
+    )
+    to_others = _enqueue_voc(
+        voc, 'voc_comment', other_recipients, commenter_name=commenter_name,
+    )
+    return to_submitter, to_others
 
 
 # --------------------------------------------------------------------------- #

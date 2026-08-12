@@ -1,8 +1,10 @@
 import {
   RequestDocument,
+  RejectionSnapshot,
   ReviewItem,
   VOC,
   VocComment,
+  UserRoleWithNull,
   Stats,
   Line,
   CreateDocumentInput,
@@ -19,6 +21,7 @@ import {
   CreateGuideInput,
   UserInfo,
   UserWithRole,
+  MailLinesResponse,
   CreateUserInput,
   UserForAssignment,
   UserGroup,
@@ -227,8 +230,37 @@ const changeDesignee = async (docId: number, designatedPlLoginid: string) => {
   return { data };
 };
 
-const withdrawDocument = async (id: number) => {
-  const data = await post<{ message: string }>(`/documents/${id}/withdraw/`);
+// ===== 철회 =====
+// 철회가 확정되면 의뢰서는 완전히 삭제된다(복구 불가). 진행 중(under_review) 문서는
+// 즉시 삭제되지 않고 현재 단계 전원의 확인을 받는 '철회 요청'이 만들어진다 —
+// 응답의 deleted 로 두 경우를 구분한다(true = 이미 삭제됨).
+const withdrawDocument = async (id: number, reason: string) => {
+  const data = await post<{ message: string; deleted: boolean; document?: RequestDocument }>(
+    `/documents/${id}/withdraw/`,
+    { reason }
+  );
+  return { data };
+};
+
+const confirmWithdraw = async (docId: number, agent: AgentType) => {
+  const data = await post<{ message: string; deleted: boolean; document?: RequestDocument }>(
+    `/documents/${docId}/confirm-withdraw/`,
+    { agent }
+  );
+  return { data };
+};
+
+const rejectWithdraw = async (docId: number) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${docId}/reject-withdraw/`
+  );
+  return { data };
+};
+
+const cancelWithdraw = async (docId: number) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${docId}/cancel-withdraw/`
+  );
   return { data };
 };
 
@@ -419,6 +451,29 @@ const getApprovedDocuments = async (product_name?: string): Promise<{ data: Requ
   return { data: Array.isArray(data) ? data : (data as any).results ?? [] };
 };
 
+// ===== 반려 이력 API (이력 조회 '반려' 탭) =====
+// 적재는 서버의 반려 액션에서만 일어나므로 여기엔 조회·삭제만 둔다.
+
+const listRejectionSnapshots = async (
+  params?: Record<string, string>
+): Promise<{ data: RejectionSnapshot[] }> => {
+  const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+  const data = await get<{ results: RejectionSnapshot[] } | RejectionSnapshot[]>(
+    `/rejection-snapshots/${qs}`
+  );
+  return { data: Array.isArray(data) ? data : data.results ?? [] };
+};
+
+/** 반려 이력 1건 삭제 (MASTER 전용 — 서버가 403 으로 막는다) */
+const deleteRejectionSnapshot = async (id: number): Promise<void> => {
+  await request(`/rejection-snapshots/${id}/`, { method: 'DELETE' });
+};
+
+export const rejectionSnapshotsAPI = {
+  list: listRejectionSnapshots,
+  delete: deleteRejectionSnapshot,
+};
+
 /** 홈 화면 연간 디자인룰 그래프 데이터.
  *  year/compare 미지정 시 백엔드가 가장 최근 연도를 기준으로 잡는다. */
 const annualDesignRuleStats = async (params: {
@@ -445,6 +500,9 @@ export const documentsAPI = {
   submit: submitDocument,
   resubmit: resubmitDocument,
   withdraw: withdrawDocument,
+  confirmWithdraw,
+  rejectWithdraw,
+  cancelWithdraw,
   delete: deleteDocument,
   setSharedGroup,
   approveStep,
@@ -552,10 +610,10 @@ const updateVocResponse = async (id: number, response: string) => {
 
 const addVocComment = async (id: number, comment: {
   author_name: string;
-  author_role: string;
+  // 로그인 직후 등 역할이 아직 정해지지 않은 상태(null)도 그대로 보낼 수 있어야 한다.
+  author_role: UserRoleWithNull;
   is_submitter: boolean;
   content: string;
-  is_reject_reason: boolean;
 }) => {
   const data = await post<VOC>(`/voc/${id}/comment/`, comment);
   return { data };
@@ -693,12 +751,29 @@ const assignRole = async (userId: number, role: UserRole): Promise<{ data: UserW
   return { data };
 };
 
+/**
+ * 메일 수신 설정 변경 (본인 또는 MASTER 만 가능).
+ * receiveAll=true 면 '전체 받기'로 전환되고 개별 라인 선택은 비워진다.
+ */
+const updateMailLines = async (
+  userId: number,
+  receiveAll: boolean,
+  lines: string[] = [],
+): Promise<{ data: MailLinesResponse }> => {
+  const data = await patch<MailLinesResponse>(`/users/${userId}/mail-lines/`, {
+    receive_all: receiveAll,
+    lines,
+  });
+  return { data };
+};
+
 export const usersAPI = {
   list: listUsers,
   create: createUser,
   remove: deleteUser,
   forAssignment: getUsersForAssignment,
   assignRole: assignRole,
+  updateMailLines: updateMailLines,
 };
 
 // ===== 나만의 그룹 API =====

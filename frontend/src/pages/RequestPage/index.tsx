@@ -510,7 +510,13 @@ export default function RequestPage(): React.ReactElement {
 
   // 원본 위치 변경 → 원본 제품 목록 fetch
   useEffect(() => {
-    setDetail((prev) => ({ ...prev, source_partid: '' }));
+    // 하위 선택값 초기화는 '사용자가 원본 위치를 바꾼 경우'에만 해야 한다.
+    // 편집/투어 로드는 저장된 source_line 을 채우는 것뿐이라 여기서 초기화하면
+    // 불러온 source_partid 가 지워져 그대로 다시 저장될 때 영구 유실된다
+    // (다른 연쇄 초기화 effect 들과 동일한 로드 가드).
+    if (!isLoadingEditRef.current) {
+      setDetail((prev) => ({ ...prev, source_partid: '' }));
+    }
     if (!detail.source_line) {
       setSourcePartIdOptions([]);
       return;

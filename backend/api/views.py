@@ -9,7 +9,7 @@ from .sse import broadcaster
 from django.db import connections
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
-from rest_framework import viewsets, status, filters
+from rest_framework import viewsets, status, filters, mixins
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS
@@ -21,16 +21,18 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 from django.db.models import Q, Max, Min, Exists, OuterRef
 from .models import (
-    RequestDocument, ApprovalStep, PauseRequest, VOC, VocComment, Line, ProcessProduct, ProductProcessId, AdminNotice,
+    RequestDocument, ApprovalStep, PauseRequest, WithdrawRequest, VOC, VocComment, Line, ProcessProduct,
+    ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
-    DocumentReviewItem, DocumentReviewItemReviewer,
+    DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot,
 )
 from .utils import LINE_TO_LINEID_MAP
 from . import mailer
 from . import doc_permissions
 from . import design_rule_stats
 from . import review_items as review_items_sync
+from . import rejection_snapshots
 from .authentication import ExternalApiKeyAuthentication
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer, ExternalRequestDocumentSerializer,
@@ -38,6 +40,7 @@ from .serializers import (
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
     UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer, AddressBookSerializer,
     ProcessDesignRuleOverrideSerializer, DocumentDesignRuleOverrideSerializer,
+    RejectionSnapshotSerializer,
 )
 import uuid
 import logging
@@ -172,6 +175,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 {'error': '이미 종료되었거나 결재가 진행 중이 아닌 의뢰서입니다.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # 철회 요청 확인 대기 중에는 결재를 동결한다 — 확인 도중 단계가 넘어가면 대상 단계
+        # (target_step_ids)가 이미 끝나 버려 확인이 영영 완료되지 않는다.
+        if self._active_withdraw_request(document):
+            return Response(
+                {'error': '철회 요청 확인 대기 중인 의뢰서입니다. 철회가 거부·취소되어야 결재를 진행할 수 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return None
 
     # 검토중(claim) 방식으로 전환된 단계 — 담당자 지정 대신 담당 역할 누구나 스스로 선점한다.
@@ -264,6 +274,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         PauseRequest.objects.filter(
             document=document, state='requested'
         ).update(state='cancelled')
+
+    def _active_withdraw_request(self, document):
+        """문서의 확인 대기(requested) 철회 요청. 없으면 None."""
+        return WithdrawRequest.objects.filter(
+            document=document, state='requested'
+        ).order_by('-created_at').first()
 
     # 의뢰자/철회/수정 권한은 serializers 와 공유하기 위해 doc_permissions 모듈에 둔다.
     def _can_withdraw(self, user, document):
@@ -424,26 +440,203 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             'document': RequestDocumentSerializer(document).data,
         })
 
+    # 확인 절차 없이 즉시 삭제되는 문서 상태 — 결재선이 아직 없거나(draft) 이미 종료돼
+    # (rejected/approved) '확인'을 받을 진행 중 단계가 존재하지 않는다.
+    _WITHDRAW_IMMEDIATE_STATUSES = ('draft', 'rejected', 'approved')
+    # 현재 단계 전원의 확인을 받아야 철회되는 상태
+    _WITHDRAW_CONFIRM_STATUSES = ('under_review', 'submitted')
+
+    def _delete_withdrawn_document(self, request, document, reason):
+        """철회 확정 — 완료 메일을 먼저 적재한 뒤 문서를 완전히 삭제한다.
+
+        메일 적재가 먼저여야 한다(`enqueue_withdraw_completed` 주석 참고). 삭제는 복구
+        불가이고 ApprovalStep/WithdrawRequest 가 CASCADE 로 함께 사라지므로, 누가 왜
+        철회했는지를 서버 로그에 남긴다(철회 이력 테이블은 두지 않는다 — 2026-08 결정).
+        """
+        mailer.enqueue_withdraw_completed(document, reason)
+        logging.getLogger(__name__).warning(
+            "[WITHDRAW_DOCUMENT] user=%s(role=%s) doc=%s status=%s title=%r reason=%r",
+            getattr(request.user, 'loginid', '-') or '-',
+            getattr(request.user, 'role', '-') or '-',
+            document.pk, document.status, document.title, reason,
+        )
+        document.delete()
+
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def withdraw(self, request, pk=None):
-        """철회: under_review/rejected → draft, 단계 초기화"""
+        """철회: 문서 상태에 따라 즉시 삭제하거나 '철회 요청'을 생성한다.
+
+        철회는 더 이상 임시저장(draft)으로 되돌리는 동작이 아니다 — 철회가 확정되면
+        의뢰서를 **완전히 삭제**한다(2026-08 정책 변경, 복구 불가).
+
+        - draft / rejected : 확인할 진행 중 단계가 없다 → 즉시 삭제
+        - approved         : 결재 완료본이라 MASTER 만 즉시 삭제(`can_delete` 와 같은 기준)
+        - under_review / submitted : 철회 요청 생성 → 현재 단계 전원 확인 시 삭제.
+          이 경로만 **사유(reason) 필수**이고, 확인 대기 동안 결재가 동결된다.
+        - pause            : 재개한 뒤 철회해야 한다(400).
+        """
         document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
         if not self._can_withdraw(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
-        if document.status not in ('under_review', 'rejected', 'submitted'):
+
+        reason = (request.data.get('reason') or '').strip()
+
+        if document.status in self._WITHDRAW_IMMEDIATE_STATUSES:
+            # 결재 완료본은 이력이므로 임의 삭제를 막는다(delete 액션의 can_delete 와 동일 규칙).
+            if document.status == 'approved' and getattr(request.user, 'role', '') != 'MASTER':
+                return Response(
+                    {'error': '결재가 완료된 의뢰서는 MASTER 만 철회할 수 있습니다.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            self._delete_withdrawn_document(request, document, reason)
+            return Response({'message': '의뢰서가 철회되어 삭제되었습니다.', 'deleted': True})
+
+        if document.status not in self._WITHDRAW_CONFIRM_STATUSES:
             return Response(
-                {'error': '철회할 수 없는 상태입니다.'},
-                status=status.HTTP_400_BAD_REQUEST
+                {'error': '철회할 수 없는 상태입니다. 중단된 의뢰서는 재개한 뒤 철회해 주세요.'},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-        with transaction.atomic():
-            document.status = 'draft'
-            document.submitted_at = None
-            document.save()
+        if not reason:
+            return Response({'error': '철회 사유를 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+        if self._active_withdraw_request(document):
+            return Response(
+                {'error': '이미 진행 중인 철회 요청이 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-            ApprovalStep.objects.filter(document=document).delete()
+        max_round = self._max_round(document)
+        pending = list(ApprovalStep.objects.filter(
+            document=document, action='pending', round=max_round
+        ))
+        if not pending:
+            return Response(
+                {'error': '진행 중인 결재 단계가 없습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        return Response({'message': '철회되었습니다.'})
+        wr = WithdrawRequest.objects.create(
+            document=document,
+            requester=request.user if getattr(request.user, 'loginid', '') else None,
+            requester_name=getattr(request.user, 'username', '') or getattr(request.user, 'loginid', ''),
+            reason=reason,
+            round=max_round,
+            target_step_ids=[s.id for s in pending],
+            confirmed_step_ids=[],
+        )
+        mailer.enqueue_withdraw_requested(document, wr)
+
+        return Response({
+            'message': '철회 요청이 접수되었습니다. 현재 단계의 확인을 기다립니다.',
+            'deleted': False,
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'], url_path='confirm-withdraw')
+    @transaction.atomic
+    def confirm_withdraw(self, request, pk=None):
+        """철회 확인: 현재 단계 담당자/팀이 철회 요청을 확인한다.
+
+        요청 시점의 pending 단계 '전원'이 확인하면 그 순간 의뢰서가 **완전히 삭제**된다
+        (병렬 단계 대응). 확인 인가는 중단 확인과 같은 규칙(`_can_confirm_pause`)이다 —
+        담당자가 있는 단계는 그 담당자 본인, 미배정 단계는 같은 팀 누구나, MASTER 는 항상.
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        wr = self._active_withdraw_request(document)
+        if not wr:
+            return Response({'error': '진행 중인 철회 요청이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        agent = request.data.get('agent')
+        max_round = self._max_round(document)
+
+        candidates = ApprovalStep.objects.select_for_update().filter(
+            document=document, agent=agent, action='pending',
+            round=max_round, id__in=wr.target_step_ids,
+        )
+        step = next((s for s in candidates if self._can_confirm_pause(request.user, s)), None)
+        if not step:
+            return Response({'error': '확인 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        confirmed = list(wr.confirmed_step_ids or [])
+        if step.id not in confirmed:
+            confirmed.append(step.id)
+        wr.confirmed_step_ids = confirmed
+
+        if set(wr.target_step_ids or []).issubset(set(confirmed)):
+            # 전원 확인 → 철회 확정. 문서와 함께 이 요청(wr)도 CASCADE 로 사라진다.
+            self._delete_withdrawn_document(request, document, wr.reason)
+            return Response({'message': '철회가 확정되어 의뢰서가 삭제되었습니다.', 'deleted': True})
+
+        wr.save()
+        return Response({
+            'message': '확인했습니다. 다른 단계의 확인을 기다립니다.',
+            'deleted': False,
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'], url_path='reject-withdraw')
+    @transaction.atomic
+    def reject_withdraw(self, request, pk=None):
+        """철회 거부: 확인 대상 단계가 철회 요청을 거부한다 → 결재가 그대로 이어진다.
+
+        인가는 확인(confirm_withdraw)과 동일하다 — 확인할 수 있는 사람이 거부도 할 수 있다.
+        단계 하나만 거부해도 요청 전체가 무효가 된다(전원 확인이 성립할 수 없으므로).
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        wr = self._active_withdraw_request(document)
+        if not wr:
+            return Response({'error': '진행 중인 철회 요청이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        max_round = self._max_round(document)
+        candidates = ApprovalStep.objects.filter(
+            document=document, action='pending', round=max_round, id__in=wr.target_step_ids,
+        )
+        if not any(self._can_confirm_pause(request.user, s) for s in candidates):
+            return Response({'error': '거부 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        wr.state = 'rejected'
+        wr.resolved_at = timezone.now()
+        wr.save(update_fields=['state', 'resolved_at'])
+        mailer.enqueue_withdraw_rejected(document, wr)
+
+        return Response({
+            'message': '철회 요청을 거부했습니다. 결재를 계속 진행할 수 있습니다.',
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'], url_path='cancel-withdraw')
+    @transaction.atomic
+    def cancel_withdraw(self, request, pk=None):
+        """철회 요청 취소: 확인 완료 전(requested) 요청을 요청자 본인/MASTER 가 거둬들인다.
+
+        철회가 확정되면 의뢰서가 삭제돼 되돌릴 수 없으므로, 잘못 눌렀을 때 되돌릴 수 있는
+        구간은 **확인 대기 중뿐**이다(2026-08 정책).
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        wr = self._active_withdraw_request(document)
+        if not wr:
+            return Response({'error': '취소할 철회 요청이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not doc_permissions.can_cancel_withdraw(request.user, wr):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        wr.state = 'cancelled'
+        wr.resolved_at = timezone.now()
+        wr.save(update_fields=['state', 'resolved_at'])
+        mailer.enqueue_withdraw_cancelled(document, wr)
+
+        return Response({
+            'message': '철회 요청을 취소했습니다.',
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
 
     @action(detail=True, methods=['post'], url_path='delete')
     def delete(self, request, pk=None):
@@ -649,7 +842,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 # Only MAP: 후결자(RA)만 종단 경로 — RA 전원 합의 시 최종 승인
                 all_approved = len(ra_steps) > 0 and ra_ok
             else:
-                j_approved = len(j_steps) > 0 and all(s.action == 'approved' for s in j_steps)
+                # J 를 뺀 경로('Overlay 변경' 단독)는 J step 이 아예 없다. 아래 기본 판정은
+                # len(j_steps) > 0 을 요구하므로, 이 분기가 없으면 나머지 단계가 모두 합의돼도
+                # 판정이 영원히 False 가 되어 문서가 under_review 에 영구 정지한다.
+                j_approved = (
+                    True if document.skip_j_stage()
+                    else (len(j_steps) > 0 and all(s.action == 'approved' for s in j_steps))
+                )
                 o_approved = o_step and o_step.action == 'approved'
                 # P: 담당자 합의 + 지정된 검토자(PV) 전원 합의까지 끝나야 완료.
                 # J 분리 전에는 "J 가 존재한다 = P 가 끝났다" 였기에 판정에서 생략했지만,
@@ -738,6 +937,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         document.status = 'rejected'
         document.save()
+
+        # 반려 시점을 이력 조회 '반려' 탭에 남긴다(재상신해도 사라지지 않는 별도 적재).
+        rejection_snapshots.create_from_reject(document, step, request.user)
 
         mailer.enqueue_rejected(document)
 
@@ -1271,17 +1473,20 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             p_step = ApprovalStep.objects.create(
                 document=document, agent='P', action='pending', round=round_no, due_date=p_due,
             )
-            j_step = ApprovalStep.objects.create(
-                document=document, agent='J', action='pending', is_parallel=True, round=round_no, due_date=o_due,
-            )
             o_step = ApprovalStep.objects.create(
                 document=document, agent='O', action='pending', is_parallel=True, round=round_no, due_date=o_due,
             )
             mailer.enqueue_stage_arrival(document, 'P', p_step)
-            mailer.enqueue_stage_arrival(document, 'J', j_step)
             mailer.enqueue_stage_arrival(document, 'O', o_step)
-            # 검토 항목은 J 단계가 열리는 이 시점에 마스터 최신본으로 채운다(review_items.py §1).
-            review_items_sync.fill_from_master(document)
+            # 기타 목적이 'Overlay 변경' 하나뿐이면 J 단계 자체를 만들지 않는다(경로에서 제외).
+            if not document.skip_j_stage():
+                j_step = ApprovalStep.objects.create(
+                    document=document, agent='J', action='pending', is_parallel=True, round=round_no, due_date=o_due,
+                )
+                mailer.enqueue_stage_arrival(document, 'J', j_step)
+                # 검토 항목은 J 단계가 열리는 이 시점에 마스터 최신본으로 채운다(review_items.py §1).
+                # J 가 없는 문서는 다룰 단계가 없으므로 채우지 않는다.
+                review_items_sync.fill_from_master(document)
             # E(MASK)는 판정 키워드(plel)가 있는 의뢰서에만 생성한다 — 키워드가 아예 없으면
             # Validation System 판정이 '해당없음'이라 MASK 가 검증할 대상 자체가 없다.
             if document.has_ppid_plel():
@@ -1400,6 +1605,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
             document.status = 'rejected'
             document.save()
+            # 지정 PL 반려도 동일하게 이력 조회 '반려' 탭에 적재한다.
+            rejection_snapshots.create_from_reject(document, step, request.user)
             mailer.enqueue_rejected(document)
 
         return Response({'message': '반려되었습니다.', 'status': 'rejected'})
@@ -2024,6 +2231,24 @@ class DocumentDesignRuleOverrideViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
 
+class RejectionSnapshotViewSet(mixins.DestroyModelMixin, viewsets.ReadOnlyModelViewSet):
+    """반려 이력 조회 — 이력 조회 화면의 '반려' 탭 데이터.
+
+    적재는 반려 API(`reject-step`/`peer-reject`)에서만 일어나므로 생성·수정 라우트는 두지 않는다.
+    조회는 이력 조회에 들어올 수 있는 사람 전원, 삭제는 MASTER 만 가능하다
+    (`IsAuthenticatedOrMasterDelete`). 원본 문서가 지워져도 이력은 남는다.
+    """
+
+    queryset = RejectionSnapshot.objects.all()
+    serializer_class = RejectionSnapshotSerializer
+    permission_classes = [IsAuthenticatedOrMasterDelete]
+    pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['title', 'product_name', 'requester_name', 'requester_department']
+    ordering_fields = ['rejected_at', 'submitted_at']
+    ordering = ['-rejected_at']
+
+
 class ExternalRequestDocumentViewSet(viewsets.ReadOnlyModelViewSet):
     """외부 시스템용 고정 API Key 읽기 전용 조회.
 
@@ -2109,41 +2334,57 @@ class VOCViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedOrMasterDelete]
     pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['category', 'status', 'submitter_user_id']
+    filterset_fields = ['category', 'status']
     search_fields = ['title', 'submitter_name', 'content']
     ordering = ['-created_at']
 
+    def get_queryset(self):
+        """`?mine=true` 면 로그인 사용자가 등록한 VOC 만 반환한다.
+
+        프론트가 사용자 id 를 쿼리로 보내던 방식을 대체한다 — 개발 모드의 목 사용자
+        id 는 DB 의 실제 user.id 와 어긋날 수 있어 '내 VOC' 가 오동작했다.
+        """
+        queryset = super().get_queryset()
+        if self.request.query_params.get('mine') == 'true':
+            user = self.request.user
+            loginid = getattr(user, 'loginid', '')
+            if not loginid:
+                return queryset.none()
+            queryset = queryset.filter(submitter__loginid=loginid)
+        return queryset
+
     def perform_create(self, serializer):
-        voc = serializer.save()
+        """제출자 FK 는 프론트가 보낸 값이 아니라 인증된 사용자로 서버가 확정한다."""
+        user = self.request.user
+        submitter = user if getattr(user, 'is_authenticated', False) else None
+        voc = serializer.save(submitter=submitter)
         mailer.enqueue_voc_created(voc)
 
     @action(detail=True, methods=['patch'], url_path='update-status')
     def update_status(self, request, pk=None):
-        """VOC 상태 변경 — completed: 작성자 본인만, rejected: MASTER만"""
+        """VOC 상태 변경 — completed 로만 바꿀 수 있다(작성자 본인 또는 MASTER).
+
+        VOC 는 결재가 아니므로 반려 개념이 없다. 잘못 올린 글도 답변 완료로 마무리한다.
+        """
         voc = self.get_object()
         new_status = request.data.get('status')
-        user_role = getattr(request.user, 'role', '')
 
-        if new_status == 'completed':
-            if voc.submitter_user_id != request.user.id:
-                return Response(
-                    {'error': '작성자 본인만 완료 처리할 수 있습니다.'},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-        elif new_status == 'rejected':
-            if user_role != 'MASTER':
-                return Response(
-                    {'error': 'MASTER만 반려 처리할 수 있습니다.'},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-        else:
+        if new_status != 'completed':
             return Response(
                 {'error': '유효하지 않은 상태입니다.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        is_master = getattr(request.user, 'role', '') == 'MASTER'
+        if not is_master and not doc_permissions.is_voc_submitter(request.user, voc):
+            return Response(
+                {'error': '작성자 본인 또는 관리자만 완료 처리할 수 있습니다.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         voc.status = new_status
-        voc.save()
+        voc.responded_at = timezone.now()
+        voc.save(update_fields=['status', 'responded_at'])
         return Response(VOCSerializer(voc).data)
 
     @action(detail=True, methods=['post'])
@@ -2631,7 +2872,7 @@ class UserViewSet(viewsets.ModelViewSet):
     ordering = ['id']
 
     def get_permissions(self):
-        if self.action in ('assign_role', 'destroy'):
+        if self.action in ('assign_role', 'destroy', 'mail_lines'):
             from rest_framework.permissions import IsAuthenticated
             return [IsAuthenticated()]
         return super().get_permissions()
@@ -2640,10 +2881,12 @@ class UserViewSet(viewsets.ModelViewSet):
         return UserSerializer
 
     def get_queryset(self):
+        # mail_lines 는 목록 응답에 항상 포함되므로 미리 가져와 N+1 조회를 피한다.
+        qs = User.objects.prefetch_related('mail_lines')
         role = self.request.query_params.get('role')
         if role:
-            return User.objects.filter(role=role)
-        return User.objects.all()
+            return qs.filter(role=role)
+        return qs
 
     @action(detail=False, methods=['get'], url_path='for-assignment')
     def for_assignment(self, request):
@@ -2668,6 +2911,67 @@ class UserViewSet(viewsets.ModelViewSet):
             'current_role': u.role,
         } for u in users]
         return Response(data)
+
+    @action(detail=True, methods=['patch'], url_path='mail-lines')
+    def mail_lines(self, request, pk=None):
+        """라인별 메일 수신 설정 변경 (권한 관리 '이메일 설정' 컬럼).
+
+        - 본인 행은 본인이, 그 외에는 MASTER 만 바꿀 수 있다.
+        - 대상 역할은 UserProfile.MAIL_LINE_FILTER_ROLES 뿐이다(PL·NONE 은 이 설정을 쓰지 않음).
+        - 요청 본문
+          · {"receive_all": true} — '전체 받기'. 라인 구분 없이 모두 받는다(기본 상태).
+            이때 lines 는 무시하고 비운다.
+          · {"receive_all": false, "lines": ["라인1", "라인3"]} — 그 라인만 받는다(전체 교체).
+            빈 배열은 '아무 메일도 받지 않는다'는 뜻이다.
+        """
+        user = self.get_object()
+        caller = request.user
+        is_master = caller.is_authenticated and getattr(caller, 'role', '') == 'MASTER'
+        if not (is_master or (caller.is_authenticated and caller.pk == user.pk)):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if user.role not in User.MAIL_LINE_FILTER_ROLES:
+            return Response(
+                {'error': '이 역할은 라인별 메일 수신 설정을 사용하지 않습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        receive_all = request.data.get('receive_all', False)
+        if not isinstance(receive_all, bool):
+            return Response(
+                {'error': 'receive_all 은 true/false 여야 합니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if receive_all:
+            # 전체 받기는 개별 라인 선택을 대체한다 — 남은 선택을 비워 상태를 하나로 유지한다.
+            user.receive_all_mail = True
+            user.save(update_fields=['receive_all_mail'])
+            user.mail_lines.clear()
+            return Response({'id': user.id, 'receive_all_mail': True, 'mail_lines': []})
+
+        names = request.data.get('lines')
+        if not isinstance(names, list) or any(not isinstance(n, str) for n in names):
+            return Response(
+                {'error': 'lines 는 라인 이름 문자열 배열이어야 합니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        names = list(dict.fromkeys(names))
+        lines = list(Line.objects.filter(is_active=True, name__in=names))
+        if len(lines) != len(names):
+            return Response(
+                {'error': '존재하지 않는 라인이 포함돼 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.receive_all_mail = False
+        user.save(update_fields=['receive_all_mail'])
+        user.mail_lines.set(lines)
+        return Response({
+            'id': user.id,
+            'receive_all_mail': False,
+            'mail_lines': [line.name for line in lines],
+        })
 
     @action(detail=True, methods=['post'], url_path='assign-role')
     def assign_role(self, request, pk=None):
@@ -2709,6 +3013,9 @@ class UserViewSet(viewsets.ModelViewSet):
             'role': role,
             'mail': user.mail or '',
             'role_assigned_at': user.role_assigned_at.isoformat() if user.role_assigned_at else None,
+            # 역할 변경 응답/브로드캐스트로 행 전체가 교체되므로 메일 수신 설정도 함께 실어 보낸다.
+            'receive_all_mail': user.receive_all_mail,
+            'mail_lines': list(user.mail_lines.values_list('name', flat=True)),
         }
         broadcaster.broadcast('user_updated', payload)
 

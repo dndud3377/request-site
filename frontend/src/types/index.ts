@@ -40,7 +40,8 @@ export type Status =
   | 'approved'
   | 'rejected';
 
-export type VocStatus = 'checking' | 'completed' | 'rejected';
+// VOC 는 결재가 아니므로 반려 개념이 없다 — 잘못 올린 글도 답변 완료로 마무리한다.
+export type VocStatus = 'checking' | 'completed';
 
 export type VocCategory = 'inquiry' | 'error_report' | 'feature_request' | 'task_request';
 
@@ -84,6 +85,22 @@ export interface PauseRequestInfo {
   round: number;
   target_step_ids: number[];   // 요청 시점의 pending 단계 id (전원 확인 대상)
   confirmed_step_ids: number[]; // '중단 확인'된 단계 id
+  created_at: string;
+}
+
+// 의뢰서 철회 요청 상태 ('확정'은 문서가 삭제되므로 저장되지 않는다)
+export type WithdrawState = 'requested' | 'rejected' | 'cancelled';
+
+// 확인 대기 중인 철회 요청 정보 (서버 withdraw_request 필드)
+export interface WithdrawRequestInfo {
+  id: number;
+  state: WithdrawState;
+  reason: string;
+  requester_loginid?: string | null;
+  requester_name: string;
+  round: number;
+  target_step_ids: number[];    // 요청 시점의 pending 단계 id (전원 확인 시 의뢰서 삭제)
+  confirmed_step_ids: number[]; // '철회 확인'된 단계 id
   created_at: string;
 }
 
@@ -138,9 +155,34 @@ export interface RequestDocument {
   can_request_pause?: boolean; // 중단 요청 가능(작성자 본인·진행 중·기존 요청 없음)
   can_resume?: boolean;        // 재개 가능(작성자 본인·pause 상태)
   pause_request?: PauseRequestInfo | null; // 활성 중단 요청 (없으면 null)
+  withdraw_request?: WithdrawRequestInfo | null; // 확인 대기 중인 철회 요청 (없으면 null)
   post_approver_fixed_loginid?: string | null; // 고정 후결자(.env) loginid — '🔒 고정' 표시/변경 잠금용
   review_items?: ReviewItem[];                 // J-ayer 검토 항목 (상세 응답)
   my_pending_review_items?: number;            // 내가 검토자인 미확인 항목 수 (목록 응답, MY 탭 조건)
+}
+
+/**
+ * 반려 이력 1건 — 반려가 확정된 순간의 의뢰서를 통째로 얼려 둔 것.
+ * 이력 조회 '반려' 탭의 행 하나에 대응한다. 재상신·승인으로 원본 문서가 바뀌어도,
+ * 원본이 삭제돼도 이 레코드는 그대로 남는다(회차마다 1건씩 누적).
+ */
+export interface RejectionSnapshot {
+  id: number;
+  source_document_id: number;   // 원본 의뢰서 id (문서가 삭제돼도 유지)
+  title: string;
+  product_name: string;
+  requester_name: string;
+  requester_department: string;
+  requester_loginid: string;
+  submitted_at: string | null;
+  additional_notes: string;                 // 반려 시점 상세 폼·표 전체 JSON
+  approval_steps: ApprovalStepFrontend[];   // 반려 시점 결재 단계
+  round: number;                            // 몇 회차에서 반려됐는지
+  rejected_at: string;
+  rejected_agent: string;
+  rejected_by_name: string;
+  rejected_by_loginid: string;
+  reject_comment: string;
 }
 
 export type CreateDocumentInput = Omit<
@@ -158,7 +200,6 @@ export interface VocComment {
   author_role: UserRole;
   is_submitter: boolean;
   content: string;
-  is_reject_reason: boolean;
   created_at: string;
 }
 
@@ -168,7 +209,13 @@ export interface VOC {
   category: VocCategory;
   submitter_name: string;
   submitter_email: string;
-  submitter_user_id?: number;
+  /** 제출자 계정 PK. 등록 시 서버가 확정하므로 응답 전용이다. */
+  submitter?: number | null;
+  /**
+   * 제출자 계정의 loginid. "내 VOC" 판정은 id 가 아니라 이 값으로 한다 —
+   * 개발 모드의 목 사용자 id 는 DB 의 실제 user.id 와 어긋날 수 있다.
+   */
+  submitter_loginid: string;
   content: string;
   page?: VocPage;
   comments: VocComment[];
@@ -176,11 +223,12 @@ export interface VOC {
   created_at: string;
 }
 
-export type CreateVocInput = Omit<VOC, 'id' | 'comments' | 'status' | 'created_at'>;
+export type CreateVocInput = Omit<
+  VOC, 'id' | 'comments' | 'status' | 'created_at' | 'submitter' | 'submitter_loginid'
+>;
 
 export type AddVocCommentInput = {
   content: string;
-  is_reject_reason?: boolean;
 };
 
 export interface Stats {
@@ -534,6 +582,17 @@ export interface UserWithRole {
   role: UserRole;
   mail: string;
   role_assigned_at?: string | null;
+  /** '전체 받기' — 켜져 있으면 라인 구분 없이 모든 의뢰서 메일을 받는다(기본값). */
+  receive_all_mail?: boolean;
+  /** 전체 받기를 껐을 때 메일을 수신할 라인 이름 목록(권한 관리 '이메일 설정'). */
+  mail_lines?: string[];
+}
+
+/** PATCH /users/{id}/mail-lines/ 응답 */
+export interface MailLinesResponse {
+  id: number;
+  receive_all_mail: boolean;
+  mail_lines: string[];
 }
 
 export interface CreateUserInput {

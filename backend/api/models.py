@@ -29,6 +29,10 @@ class UserProfile(AbstractBaseUser):
         ('NONE', 'NONE'), ('PL', 'PL'), ('TE_R', 'TE_R'), ('TE_P', 'TE_P'),
         ('TE_J', 'TE_J'), ('TE_O', 'TE_O'), ('TE_E', 'TE_E'), ('MASTER', 'MASTER'),
     ]
+
+    # 라인별 메일 수신 설정(mail_lines)을 적용받는 역할. PL·NONE 은 설정 대상이 아니며
+    # 라인과 무관하게 기존대로 메일을 받는다(권한 관리 화면에서도 칸을 그리지 않는다).
+    MAIL_LINE_FILTER_ROLES = ('TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER')
     loginid  = models.CharField(max_length=150, unique=True, verbose_name='로그인 ID')
     mail     = models.EmailField(blank=True, default='', verbose_name='이메일')
     username = models.CharField(max_length=150, blank=True, default='', verbose_name='표시 이름')
@@ -36,6 +40,15 @@ class UserProfile(AbstractBaseUser):
     role     = models.CharField(max_length=10, choices=ROLE_CHOICES, default='NONE', verbose_name='역할')
     # 역할이 마지막으로 배정된 시각(권한 관리에서 '최근 추가순' 정렬용). NONE→역할 배정 시 갱신.
     role_assigned_at = models.DateTimeField(null=True, blank=True, verbose_name='역할 배정 시각')
+    # 권한 관리 '이메일 설정'의 '전체 받기' — 켜져 있으면 라인 구분 없이 모든 의뢰서 메일을 받는다.
+    # 기본값이자 신규 사용자의 시작 상태다. 이 값이 True 인 동안 mail_lines 는 쓰이지 않는다.
+    receive_all_mail = models.BooleanField(default=True, verbose_name='메일 전체 받기')
+    # 전체 받기를 껐을 때 메일을 받을 라인 목록.
+    # 의뢰서의 detail.line 이 여기 없으면 그 사람에게는 메일을 보내지 않는다(mailer._filter_by_mail_lines).
+    # ⚠️ 전체 받기가 꺼진 상태의 빈 집합은 '본인이 전부 껐다 = 메일 0통'을 뜻한다.
+    mail_lines = models.ManyToManyField(
+        'Line', blank=True, related_name='subscribers', verbose_name='메일 수신 라인'
+    )
     # password, last_login → AbstractBaseUser 자동 포함
 
     USERNAME_FIELD = 'loginid'
@@ -48,6 +61,10 @@ class UserProfile(AbstractBaseUser):
 
     def __str__(self):
         return f"{self.loginid} ({self.username})"
+
+    def uses_mail_line_filter(self):
+        """이 사용자의 메일에 라인 수신 설정을 적용해야 하는가."""
+        return self.role in self.MAIL_LINE_FILTER_ROLES
 
 
 User = get_user_model()
@@ -74,6 +91,10 @@ class RequestDocument(models.Model):
 
     # 기타 목적 '연구소 제품' — C가문과 마찬가지로 상신 시 후결자 지정이 필수다.
     OTHER_PURPOSE_LAB = '연구소 제품'
+
+    # 기타 목적 'Overlay 변경' — 이것 **하나만** 선택되면 결재 경로에서 J 단계를 뺀다.
+    # 프론트엔드 `RequestPage/constants.ts` 의 OPTION_OTHER_PURPOSE 항목과 같은 값이어야 한다.
+    OTHER_PURPOSE_OVERLAY = 'Overlay 변경'
 
     # J-layer 행의 pp 에 이 키워드가 있으면 E(MASK) 단계가 결재 경로에 포함된다(대소문자 무관).
     # 프론트엔드 `RequestPage/constants.ts` 의 VALIDATION_KEYWORD 와 같은 값이어야 한다.
@@ -159,6 +180,23 @@ class RequestDocument(models.Model):
         if isinstance(other, str):
             other = [other]
         return self.OTHER_PURPOSE_LAB in other
+
+    def skip_j_stage(self):
+        """결재 경로에서 J(JOB) 단계를 빼는 의뢰서인가 — 기타 목적이 'Overlay 변경' **하나뿐**일 때.
+
+        여러 개를 함께 골랐으면(예: Overlay 변경 + STEPSEQ 변경) 다른 목적의 검토가 남아 있으므로
+        J 를 그대로 둔다. 적용 범위는 **일반 경로만**이다 — 'MAP 삭제/수정' 은 P·R·J·O 네 단계가
+        하나의 병렬 묶음이라 제외하고, 'Only MAP' 은 원래부터 J 를 만들지 않아 판정 대상이 아니다.
+        other_purpose 는 배열이지만 구버전 문서는 문자열일 수 있어 양쪽 모두 처리한다
+        (requires_post_approver 와 같은 정규화).
+        """
+        if self.is_map_delete_edit():
+            return False
+        inner_detail = self.get_detail().get('detail', {}) or {}
+        other = inner_detail.get('other_purpose') or []
+        if isinstance(other, str):
+            other = [other]
+        return list(other) == [self.OTHER_PURPOSE_OVERLAY]
 
     def has_ppid_plel(self):
         """J-layer 행의 pp 중 하나라도 판정 키워드(plel)를 포함하는지 여부.
@@ -297,6 +335,64 @@ class PauseRequest(models.Model):
     def is_active(self):
         """확인 대기 또는 중단 확정 상태(진행 중인 요청)."""
         return self.state in ('requested', 'confirmed')
+
+
+class WithdrawRequest(models.Model):
+    """의뢰서 철회 요청.
+
+    진행 중(under_review/submitted) 의뢰서의 철회는 즉시 처리되지 않는다. 의뢰자가 사유와
+    함께 철회를 요청하면 생성되고, 요청 시점의 현재(pending) 결재 단계가 '전원' 확인해야
+    철회가 확정된다. 확정되는 순간 **의뢰서가 완전히 삭제**된다(복구 불가).
+
+    확인 대기(requested) 동안에는 결재가 동결되며, 이 구간에서만 요청자가 취소(cancelled)할
+    수 있다. 대상 단계가 거부(rejected)하면 요청이 무효화되고 결재가 그대로 이어진다.
+
+    한 문서에 활성 요청(state=requested)은 1건만 존재한다. 확인 현황은
+    target_step_ids(요청 시점 pending 단계 id) 대비 confirmed_step_ids 로 추적한다.
+
+    ⚠️ 철회가 확정되면 문서가 삭제되므로 이 레코드도 CASCADE 로 함께 사라진다 —
+    'confirmed' 상태는 저장되지 않으며, 철회 이력은 서버 로그(`[WITHDRAW_DOCUMENT]`)에만
+    남는다(2026-08 결정: 이력 보존 불필요).
+    """
+
+    STATE_CHOICES = [
+        ('requested', '요청됨'),      # 확인 대기 (결재 동결)
+        ('rejected', '거부됨'),       # 대상 단계가 거부 → 결재 계속
+        ('cancelled', '취소됨'),      # 요청자가 취소 → 결재 계속
+    ]
+
+    document = models.ForeignKey(
+        RequestDocument, on_delete=models.CASCADE,
+        related_name='withdraw_requests', verbose_name='의뢰서'
+    )
+    requester = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='withdraw_requests', verbose_name='요청자'
+    )
+    requester_name = models.CharField(max_length=100, blank=True, verbose_name='요청자 이름')
+    reason = models.TextField(verbose_name='철회 사유')
+    round = models.PositiveSmallIntegerField(default=1, verbose_name='요청 회차')
+    state = models.CharField(
+        max_length=10, choices=STATE_CHOICES, default='requested', verbose_name='상태'
+    )
+    # 요청 시점의 현재(pending) 결재 단계 id 목록 — 이 단계 전원이 확인해야 철회 확정
+    target_step_ids = models.JSONField(default=list, verbose_name='대상 단계 id')
+    # '철회 확인'을 누른 단계 id 목록
+    confirmed_step_ids = models.JSONField(default=list, verbose_name='확인된 단계 id')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='요청일시')
+    resolved_at = models.DateTimeField(null=True, blank=True, verbose_name='거부·취소일시')
+
+    class Meta:
+        verbose_name = '철회 요청'
+        verbose_name_plural = '철회 요청 목록'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.document.title} - 철회({self.state})"
+
+    def is_active(self):
+        """확인 대기 상태(결재가 동결된 진행 중 요청)."""
+        return self.state == 'requested'
 
 
 class Line(models.Model):
@@ -438,14 +534,19 @@ class VOC(models.Model):
     STATUS_CHOICES = [
         ('checking', '확인중'),
         ('completed', '완료'),
-        ('rejected', '거부'),
     ]
 
     title = models.CharField(max_length=200, verbose_name='제목')
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, verbose_name='유형')
+    # 제출자 식별은 의뢰서(RequestDocument.requester)와 동일한 방식을 따른다 —
+    # FK 를 진실의 원천으로 두고 등록 시 서버가 request.user 로 확정하며(views.VOCViewSet),
+    # 본인 판정은 id 가 아니라 loginid 로 한다(doc_permissions.is_voc_submitter).
+    submitter = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='vocs', verbose_name='제출자'
+    )
     submitter_name = models.CharField(max_length=100, verbose_name='제출자')
     submitter_email = models.EmailField(verbose_name='이메일')
-    submitter_user_id = models.IntegerField(null=True, blank=True, verbose_name='제출자 ID')
     page = models.CharField(max_length=20, blank=True, default='', verbose_name='관련 페이지')
     content = models.TextField(verbose_name='내용')
     response = models.TextField(blank=True, verbose_name='답변')
@@ -472,7 +573,6 @@ class VocComment(models.Model):
     author_email = models.EmailField(blank=True, default='', verbose_name='작성자 이메일')
     is_submitter = models.BooleanField(default=False, verbose_name='제출자 여부')
     content = models.TextField(verbose_name='내용')
-    is_reject_reason = models.BooleanField(default=False, verbose_name='반려 사유 여부')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='작성일시')
 
     class Meta:
@@ -751,6 +851,11 @@ class MailNotification(models.Model):
         ('approved', '승인 완료'),
         ('notify_submitted', '상신 통보(통보처)'),
         ('notify_approved', '결재 완료 통보(통보처)'),
+        # 철회 (2026-08) — event_type 은 max_length=20 이므로 아래 키 길이를 넘기지 않는다.
+        ('withdraw_requested', '철회 요청'),
+        ('withdraw_completed', '철회 완료'),
+        ('withdraw_rejected', '철회 거부'),
+        ('withdraw_cancelled', '철회 요청 취소'),
         ('voc_created', 'VOC 등록'),
         ('voc_comment', 'VOC 댓글'),
     ]
@@ -798,7 +903,6 @@ class VocHistory(models.Model):
     ACTION_CHOICES = [
         ('checking', '확인중'),
         ('completed', '완료'),
-        ('rejected', '거부'),
     ]
 
     voc = models.ForeignKey(
@@ -926,3 +1030,66 @@ class DocumentReviewItemReviewer(models.Model):
 
     def __str__(self):
         return f"{self.item.title} - {self.loginid}{' ✓' if self.confirmed else ''}"
+
+
+class RejectionSnapshot(models.Model):
+    """반려 시점의 의뢰서를 통째로 얼려 보관하는 이력.
+
+    반려는 문서의 status 만 rejected 로 바꾸고, 재상신하면 같은 레코드가 under_review 로
+    되돌아간다. 그래서 문서만으로는 "언제 무슨 내용으로 반려됐는지"가 남지 않는다.
+    이 모델은 반려가 일어나는 순간의 폼 내용(additional_notes)과 결재 단계(approval_steps)를
+    복사해 두어, 이후 재상신·승인으로 문서가 바뀌어도 그 시점을 그대로 다시 볼 수 있게 한다.
+
+    - 회차마다 1행씩 쌓인다(3번 반려 = 3행).
+    - 원본 문서가 삭제돼도 이력은 남긴다(document 는 SET_NULL, source_document_id 로 추적).
+    - {{agent_E}}(MASK)의 '수정 요청'은 문서 status 를 바꾸지 않는 별개 동작이라 여기에 쌓이지 않는다.
+    """
+
+    document = models.ForeignKey(
+        RequestDocument, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='rejection_snapshots', verbose_name='의뢰서'
+    )
+    # 문서가 삭제돼 document 링크가 끊긴 뒤에도 어떤 문서였는지 추적하기 위한 원본 id.
+    source_document_id = models.IntegerField(verbose_name='원본 의뢰서 ID')
+
+    # ===== 목록 표시용 복사본 (문서가 바뀌거나 삭제돼도 반려 당시 값을 유지한다) =====
+    title = models.CharField(max_length=600, verbose_name='의뢰서 제목')
+    product_name = models.CharField(max_length=200, verbose_name='{{request.partid_selection}}')
+    requester_name = models.CharField(max_length=100, verbose_name='의뢰자 이름')
+    requester_department = models.CharField(max_length=100, blank=True, verbose_name='부서')
+    requester_loginid = models.CharField(max_length=150, blank=True, verbose_name='의뢰자 로그인 ID')
+    submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='상신일')
+
+    # ===== 상세 재현용 스냅샷 =====
+    # 반려 시점 상세 폼·표 전체 JSON (RequestDocument.additional_notes 원문 복사)
+    additional_notes = models.TextField(blank=True, verbose_name='상세 정보(JSON)')
+    # 반려 시점 결재 단계 전체 JSON 배열 (ApprovalStepSerializer 와 같은 형태)
+    approval_steps = models.TextField(blank=True, verbose_name='결재 단계(JSON)')
+
+    # ===== 반려 메타 =====
+    round = models.PositiveSmallIntegerField(default=1, verbose_name='반려된 회차')
+    rejected_at = models.DateTimeField(verbose_name='반려일시')
+    rejected_agent = models.CharField(max_length=2, blank=True, verbose_name='반려 단계')
+    rejected_by_name = models.CharField(max_length=100, blank=True, verbose_name='반려자 이름')
+    rejected_by_loginid = models.CharField(max_length=150, blank=True, verbose_name='반려자 로그인 ID')
+    reject_comment = models.TextField(blank=True, verbose_name='반려 사유')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='적재일시')
+
+    class Meta:
+        verbose_name = '반려 이력'
+        verbose_name_plural = '반려 이력 목록'
+        ordering = ['-rejected_at', '-id']
+        indexes = [
+            models.Index(fields=['-rejected_at']),
+            models.Index(fields=['source_document_id']),
+        ]
+
+    def __str__(self):
+        return f"[반려 {self.round}회차] {self.title}"
+
+    def get_detail(self):
+        """additional_notes JSON 파싱 (RequestDocument.get_detail 과 동일 규약)"""
+        try:
+            return json.loads(self.additional_notes or '{}')
+        except (json.JSONDecodeError, TypeError):
+            return {}

@@ -238,6 +238,74 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-08-11 — 임시저장 재진입 시 `source_partid` 유실 수정 + 왕복 테스트 신설)
+
+- **문제**: 임시저장(또는 반려) 문서를 `편집`으로 다시 열면 **원본 제품 이름(`source_partid`)이 항상
+  빈 값**이 됐다. `map_type='CLONE'` 문서에서는 상신 필수값이라, 그대로 임시저장하면 DB 값까지
+  덮어써 영구 유실됐다.
+- **원인**: `index.tsx` 의 `[detail.source_line]` effect 하나만 다른 연쇄 초기화 effect
+  (라인·조합법·제품·조리법)와 달리 **`isLoadingEditRef` 로드 가드가 없었다.** 편집 로드가
+  `source_line` 을 채우는 순간 effect 가 돌아 하위 값을 초기화했다.
+- **수정**: 해당 effect 의 `setDetail(... source_partid: '')` 를 `if (!isLoadingEditRef.current)` 로 감쌌다.
+  **사용자가 직접 원본 위치를 바꿀 때의 초기화는 변경 없음** — `source_line` select 는
+  `handleDetailChange`(`index.tsx:1393`)를 쓰고, 이 핸들러가 먼저 로드 가드를 해제한다.
+  옵션 fetch(`getMapNames`)·`sourcePartIdOptions` 갱신은 종전 그대로 무조건 수행한다.
+- **범위**: 프론트 1개 effect. 백엔드·마이그레이션·저장 payload 구조·i18n **변경 없음.**
+- **신규 테스트**: `pages/RequestPage/draftRoundTrip.test.tsx` (5건) — 「모든 항목을 채운 문서를
+  편집 모드로 로드 → 곧바로 임시저장」의 payload 를 `detail` **전 항목 단위로 비교**해 유실을 잡는다.
+  후속 기능 추가 때도 이 테스트가 왕복 유실을 자동으로 잡아 준다.
+  - ⚠️ `RichTextEditor` 는 tiptap(ESM)이라 jest 가 파싱하지 못해 **mock 으로 대체**한다.
+  - ⚠️ CRA jest 설정이 `resetMocks: true` 라 `jest.fn` 구현이 매 테스트마다 지워진다 →
+    API mock 은 **평범한 함수**로 둔다.
+- **검증(2026-08-11 실행)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` | 24개 | **24개** (파일별 분포 동일 — 신규 0) |
+  | `react-scripts test` | 4 suites / 119건 | **5 suites / 124건 통과** |
+  | 백엔드 `manage.py test api` | 256건 OK | **256건 OK** |
+
+- **함께 발견했으나 고치지 않은 건**: 저장된 필터가 켜져 있으면 **다시 열기만 해도**
+  `detail.tbvtlv_entries` 가 삭제된다 → `docs/DATA_FLOW_AUDIT.md` **R-10** 참조(처리 방침 미정).
+
+### 추가 변경 이력 (2026-08-11 — 특이사항·변경 요청 목적 입력 개방 / 상세보기 역할 조건 정리)
+
+- **Step1 `change_purpose_note`(특이사항·변경 요청 목적) 입력 개방**
+  (`components/Step1.tsx`): `disabled={disableOptional}` → `disabled={!canSelectPurpose}`.
+  이제 요청 목적이 `Only MAP` · `MAP 삭제/수정` 이어도 **입력할 수 있다.**
+  잠기는 조건은 라인·조합법·제품 이름·조리법 미선택(`!canSelectPurpose`) **하나뿐**이다.
+  - **초기화 동작은 변경 없음**: `Only MAP`/`MAP 삭제/수정` 으로 **전환**하면
+    `applyMapOnlyScope`(`index.tsx`)가 `change_purpose_note` 를 `''` 로 되돌린다.
+    전환 확인 모달 판정(`mapOnlyScopeHasData`)에도 이 필드가 그대로 포함된다.
+    → 입력은 가능하되 목적을 바꾸면 비워지므로, **목적을 먼저 고르고 나서 작성**해야 한다.
+  - `disableOptional`(기타 목적·흐름도·Backbone·참조 요청서)은 **무변경**.
+- **상세보기 `change_purpose_note` 노출 조건 정리**
+  (`components/PagedDetailView.tsx`): `((isO && !isR && !isJ) || role === 'MASTER' || isPL || isP)`
+  → `detail.change_purpose_note` 유무만 판정. `isP`/`isR`/`isJ`/`isO` 가 모두 `true` 상수라
+  기존 조건식은 **항상 참인 죽은 코드**였다(전원 공개 동작은 그대로 유지 — 화면 변화 없음).
+  이 조건식이 유일한 사용처였던 `isPL` 상수도 함께 제거했다.
+
+### 추가 변경 이력 (2026-08-11 — 뼈찜(bb_ref) 항목 상세보기 용어 연동)
+
+- **문제**: 상세보기(`components/PagedDetailView.tsx` `buildBbValue`)가 뼈찜 항목을
+  `[1] 위치: … / 제품: … / 조리법: …` 로 **한국어 라벨을 하드코딩**하고 있어,
+  작성 화면(Step1)이 쓰는 i18n 용어와 어긋나고 영어(en) 전환 시에도 한국어로 고정됐다.
+- **수정**: 라벨 3개를 Step1(`components/Step1.tsx:442/454/465`)과 **동일한 키 그대로** 사용하도록 교체.
+
+  | 필드 | i18n 키 | ko | en |
+  |---|---|---|---|
+  | `entry.location` | `request.bb_ref_line` | 뼈찜 위치 선택 | Bone Stew Location |
+  | `entry.product` | `request.bb_ref_part_id` | 뼈찜 제품 이름 선택 | Bone Stew Product Name |
+  | `entry.process_id` | `request.bb_ref_process_id` | 뼈찜 조리법 | Bone Stew Cooking Method |
+
+- **범위**: 라벨(표시 문자열)만 변경. 저장 값(`location`/`product`/`process_id`)·데이터 구조·백엔드·마이그레이션 **변경 없음**.
+  i18n 키도 **신규 추가 없이 기존 키 재사용**이다.
+- `buildBbValue` 는 상세 칩(`bb_status`)과 **'이력 확인' 모달(회차별 값 비교)** 이 공유하므로 두 곳에 함께 반영된다.
+- **연동 상태 전수 확인 결과**: 뼈찜 정보 표 헤더(`col_bb_process_id`/`col_bb_partid`/`col_bb_layer`/`col_bb_stepseq`/`col_bb_step`)와
+  칩 제목(`bb_status`)은 이미 i18n 연동되어 있었다. `bb_entries` 를 표시하는 상세 화면은 `PagedDetailView.tsx` **한 곳뿐**이다.
+- **미조치(요청 범위 밖, 기록만)**: 같은 파일의 `buildMapValue`/`buildEaValue` 는 `변경:`·`사유:`·`값:` 을 여전히 하드코딩한다.
+  `RequestPage/constants.ts` 의 `bb_zone: '존재'` 는 라벨이 아니라 **저장 값**이라 i18n 대상이 아니다.
+
 ### 추가 변경 이력 (2026-08-10 — 단계 인디케이터 탭 클릭 이동)
 
 - **개요**: '다음'/'이전' 버튼으로만 가능하던 단계 이동에 **상단 인디케이터 탭 클릭**을 추가했다.
@@ -965,7 +1033,7 @@ pages/RequestPage/
 - **J↔O col_st·col_new_or_copy 양방향 동기화**: `layerid`(col_layer) 값이 동일한 J-layer 행과 O-layer 행 사이에서 `st`·`new_or_copy` 값을 자동 반영. 개별 셀 편집(`handleJayerChange`/`handleOayerChange`)과 일괄 버튼(`handleJayer/OayerSetAll`·`handleJayer/OayerResetField`) 모두 적용. `new_or_copy === '기등록'` 행은 덮어쓰지 않으며, `layerid`가 빈 행은 동기화 제외.
 - **col_st·col_new_or_copy 드롭다운 잘림 방지**: `AutocompleteInput`에서 `dropdownDirection="up"` 시 `createPortal` + `position: fixed`로 렌더해 `.wizard-table-wrapper`의 overflow 클리핑을 우회. 열린 상태에서 scroll 이벤트로 위치를 갱신. `dropdownDirection="down"` 분기(Step1·StepMap 등)는 기존 동작 무변경.
 
-- **Step1 요청 목적 'Only MAP'**: 기존 `'MAP 변경'` 옵션을 `'Only MAP'`로 변경(라벨·DB 저장값 동시 변경 — `OPTION_REQUEST_PURPOSE`). 선택 시 **초기화 확인 모달**(`only_map_confirm_*` i18n) 노출 후 확인하면 *기타 목적·흐름도·특이사항·Backbone(`bb_entries`)·참조 요청서*를 초기화하고 입력을 비활성화한다(Step1 `disableOptional = !canSelectPurpose || isOnlyMap`). **유지(편집 가능)**: 라인·조합법·제품 이름·조리법·고객/업체명·요구 사항·실제 생산 진행 날짜. 검증에서는 Only MAP일 때 **Backbone 필수 검증만 우회**한다.
+- **Step1 요청 목적 'Only MAP'**: 기존 `'MAP 변경'` 옵션을 `'Only MAP'`로 변경(라벨·DB 저장값 동시 변경 — `OPTION_REQUEST_PURPOSE`). 선택 시 **초기화 확인 모달**(`only_map_confirm_*` i18n) 노출 후 확인하면 *기타 목적·흐름도·특이사항·Backbone(`bb_entries`)·참조 요청서*를 초기화하고 입력을 비활성화한다(Step1 `disableOptional = !canSelectPurpose || isOnlyMap`). ※ 2026-08-11 변경: *특이사항(`change_purpose_note`)* 은 **초기화만 되고 입력은 가능**하다(§4.1 2026-08-11 항목 참조). **유지(편집 가능)**: 라인·조합법·제품 이름·조리법·고객/업체명·요구 사항·실제 생산 진행 날짜. 검증에서는 Only MAP일 때 **Backbone 필수 검증만 우회**한다.
 - **StepMap MAP 목적 변경 초기화 범위**: `handleMapTypeChangeConfirm`이 더 이상 `INITIAL_DETAIL` 전체로 초기화하지 않고, **StepMap 필드(원본·C가문·지도편차·예외구역·X표시·Map Option·REV)만** 초기화한다. Step1/3/4/5 데이터(`bb_entries`·`partial_shot`·`tbvtlv_*` 등)는 보존된다.
 - **원본 위치/제품 CLONE 전용**: StepMap의 원본 위치/Part ID 블록은 `map_type === 'CLONE'`일 때만 표시된다.
 - **Map Option 11번 추가**: `hpkglabelheight`(i18n `map_opt_hpkglabelheight`, ko `11번`/en `11`). `types`·`INITIAL_DETAIL`·`StepMap`·`PagedDetailView`·`handleReset`·MAP 목적 변경 초기화에 반영. `detail`은 `additional_notes`에 JSON 저장되므로 백엔드 마이그레이션 불필요.

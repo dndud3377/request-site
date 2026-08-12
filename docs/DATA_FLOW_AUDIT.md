@@ -22,6 +22,8 @@
 | R-6 메인 라인 변경 시 prodc 잔존 | **초기화 필요** | ✅ 수정됨 |
 | R-7 map_type 변경 시 Step1/뼈찜/J·O 보존 | **의도된 동작** | 유지 |
 | R-8 임시저장은 비활성 행도 저장 | **의도된 동작** | 유지 |
+| R-9 임시저장 재진입 시 `source_partid` 유실 | **로드 가드 추가** | ✅ 수정됨 (2026-08-11) |
+| R-10 필터 활성 시 재진입만으로 TBV/TLV 항목 삭제 | — | 🛑 보고됨 (처리 방침 미정) |
 | 4-1 제목 300자 초과 시 상신 실패 | **수정 (A안, 600자)** | ✅ 수정됨 |
 
 **R-2~R-5 구현 요약** (`RequestPage/index.tsx` 핸들러 + `StepMap.tsx` select 연결):
@@ -251,6 +253,30 @@ FROM api_requestdocument ORDER BY id DESC LIMIT 10;
 - 위치: `buildEnrichedForm` (`index.tsx:2578`) — `isDraft` 면 `jayerRows/oayerRows` 를 **필터 없이** 저장(비활성 행 포함), 상신 시엔 `!disabled` 만 저장.
 - 왜 위험: 임시저장 후 그대로 상신 경로가 아닌 다른 경로로 이어지면 비활성 행이 남을 수 있음(대개는 상신 시 재필터되어 정상).
 - 확인: 행 몇 개 비활성화 → 임시저장 → `detail`/`jayerRows` 에 disabled 행 포함 확인.
+
+### R-9 ✅ 임시저장 문서를 다시 열면 `source_partid`(원본 제품 이름)가 지워짐 (수정됨, 2026-08-11)
+- 위치: `index.tsx:512` 의 `[detail.source_line]` effect.
+- 현상: 이 effect 만 다른 연쇄 초기화 effect(462·524·543·560행)와 달리 **`isLoadingEditRef` 로드 가드가
+  없어서**, 편집 로드가 `source_line` 을 `''` → 저장값으로 채우는 순간 `source_partid` 를 `''` 로 지웠다.
+- 영향: `map_type='CLONE'`(차용) 문서는 `source_partid` 가 **상신 필수값**(`index.tsx:3088`)이다.
+  임시저장 → 다시 열기 → 그대로 임시저장 하면 DB 값까지 빈 값으로 덮어써 **영구 유실**됐다.
+- 수정: 다른 effect 와 동일하게 `if (!isLoadingEditRef.current)` 가드를 씌웠다. 사용자가 직접 원본 위치를
+  바꿀 때는 `handleDetailChange`(`index.tsx:1393`)가 **먼저 가드를 해제**하므로 초기화 동작은 종전과 같다.
+- 재현·회귀 테스트: `frontend/src/pages/RequestPage/draftRoundTrip.test.tsx`.
+
+### R-10 🛑 저장된 필터가 켜져 있으면 다시 열기만 해도 TBV/TLV 항목이 삭제됨 (보고됨 — 처리 방침 미정)
+- 위치: `index.tsx:738` 의 `[oayerRows]` effect(TBV/TLV 항목 정리, 주석 R-16).
+- 현상: 이 effect 에도 로드 가드가 없다. J/O 행의 `disabled` 는 문서가 아니라 **브라우저 localStorage 의
+  필터 세트**(`oayerFilterSets`)로 로드 때마다 재계산된다(`index.tsx:855`). 그래서 사용자가 행을 전혀
+  건드리지 않아도, 해당 TBV/TLV 행을 가리는 필터가 켜져 있으면 **문서를 여는 것만으로**
+  `detail.tbvtlv_entries` 가 영구 삭제되고, 이어서 임시저장하면 그대로 DB 에 반영된다.
+- 곁가지: 같은 이유로 **다른 PC·다른 브라우저에서 열면** 저장 당시 활성이던 행이 비활성으로 재계산될 수
+  있고, 그 상태로 **상신하면 비활성 행이 payload 에서 제외**된다(R-8 의 반대 방향 위험).
+- 근거(실행 확인): `draftRoundTrip.test.tsx` 의 '저장된 필터가 켜져 있어 TBV/TLV 행이 비활성화되면 …'
+  케이스 — 저장 전 `tbvtlv_entries` 1건 / `oayerRows[0].disabled=false` → 다시 열기 후 항목 0건 /
+  `disabled=true`.
+- ⚠️ **아직 고치지 않았다.** 항목 삭제 자체는 R-16 으로 의도된 동작이라, "로드 중에는 정리하지 않는다"로
+  바꿀지·필터 활성 상태를 문서에 저장할지 등은 사용자 결정 사항이다.
 
 > **공통 확인 팁:** 위 모든 항목은 §2-1 의 Django shell 쿼리로 `detail.<필드>` 를 직접 찍어
 > "화면엔 안 보이는데 값이 남아있는지"를 확정할 수 있다.

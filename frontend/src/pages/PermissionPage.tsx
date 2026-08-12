@@ -7,10 +7,15 @@ import Modal, { ConfirmModal } from '../components/Modal';
 import { UserRole, UserWithRole, UserForAssignment, UserGroup, UserGroupMember, AvailableGroupMember, GuideFeatureKey } from '../types';
 import GuideSlidePanel from '../components/GuideSlidePanel';
 import { GUIDE_DEMO_KEYS } from '../components/guideDemos';
+import { OPTION_LINE } from './RequestPage/constants';
 
 const PERMISSION_GUIDE_KEY: GuideFeatureKey = 'permission_user_group';
 
 const ALL_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
+
+// 라인별 메일 수신 설정('이메일 설정' 컬럼)을 쓰는 역할.
+// 백엔드 UserProfile.MAIL_LINE_FILTER_ROLES 와 같아야 한다 — PL·NONE 은 이 설정을 쓰지 않는다.
+const MAIL_LINE_ROLES: UserRole[] = ['TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER'];
 
 // 사용자 추가 시 배정 가능한 실제 역할(NONE 제외) — MASTER 역할 선택 드롭다운에 사용
 const ADD_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER'];
@@ -52,6 +57,14 @@ interface UserTableProps {
   onRoleChange: (user: UserWithRole, newRole: UserRole) => void;
   deletingId: number | null;
   changingRoleId: number | null;
+  /** '이메일 설정' 컬럼 표시 여부 — 라인 필터를 쓰는 역할 탭에서만 true */
+  showMailLines: boolean;
+  /** 그 행의 라인 설정을 바꿀 수 있는지 (본인 행이거나 MASTER) */
+  canEditMailLines: (user: UserWithRole) => boolean;
+  onToggleMailLine: (user: UserWithRole, line: string) => void;
+  /** '전체 받기' 버튼 클릭 — 이미 켜져 있으면 아무 일도 하지 않는다 */
+  onReceiveAll: (user: UserWithRole) => void;
+  savingMailLinesId: number | null;
 }
 
 function UserTable({
@@ -62,6 +75,11 @@ function UserTable({
   onRoleChange,
   deletingId,
   changingRoleId,
+  showMailLines,
+  canEditMailLines,
+  onToggleMailLine,
+  onReceiveAll,
+  savingMailLinesId,
 }: UserTableProps): React.ReactElement {
   const { t } = useTranslation();
 
@@ -83,6 +101,7 @@ function UserTable({
           <th style={stickyThStyle}>{t('permission.field_name')}</th>
           <th style={stickyThStyle}>{t('permission.field_email')}</th>
           <th style={stickyThStyle}>{t('permission.field_department')}</th>
+          {showMailLines && <th style={stickyThStyle}>{t('permission.field_mail_lines')}</th>}
           {showActionCol && <th style={{ ...stickyThStyle, width: isMaster ? 200 : 80 }}></th>}
         </tr>
       </thead>
@@ -93,6 +112,37 @@ function UserTable({
             <td style={tdStyle}>{user.name || '-'}</td>
             <td style={tdStyle}>{user.mail || '-'}</td>
             <td style={tdStyle}>{user.deptname || '-'}</td>
+            {showMailLines && (
+              <td style={tdStyle}>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                  {/* 전체 받기 — 켜져 있으면 개별 라인은 모두 꺼진 상태로 표시된다 */}
+                  <button
+                    type="button"
+                    className={`map-type-btn mail-line-btn${user.receive_all_mail ? ' active' : ''}`}
+                    onClick={() => onReceiveAll(user)}
+                    disabled={!canEditMailLines(user) || savingMailLinesId === user.id}
+                    aria-pressed={!!user.receive_all_mail}
+                  >
+                    {t('permission.mail_line_all')}
+                  </button>
+                  {OPTION_LINE.map((line) => {
+                    const on = !user.receive_all_mail && (user.mail_lines ?? []).includes(line);
+                    return (
+                      <button
+                        key={line}
+                        type="button"
+                        className={`map-type-btn mail-line-btn${on ? ' active' : ''}`}
+                        onClick={() => onToggleMailLine(user, line)}
+                        disabled={!canEditMailLines(user) || savingMailLinesId === user.id}
+                        aria-pressed={on}
+                      >
+                        {line}
+                      </button>
+                    );
+                  })}
+                </div>
+              </td>
+            )}
             {showActionCol && (
               <td style={{ ...tdStyle, textAlign: 'right' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
@@ -764,6 +814,11 @@ export default function PermissionPage(): React.ReactElement {
   const [guidePanelOpen, setGuidePanelOpen] = useState(false);
   const [changingRoleId, setChangingRoleId] = useState<number | null>(null);
   const [tabSearchQuery, setTabSearchQuery] = useState('');
+  // 라인별 메일 수신 설정 — 저장 중인 행, 그리고 해제 확인 모달 대상
+  const [savingMailLinesId, setSavingMailLinesId] = useState<number | null>(null);
+  const [mailLineOffTarget, setMailLineOffTarget] = useState<{ user: UserWithRole; line: string } | null>(null);
+  // 전체 받기가 켜진 상태에서 개별 라인을 고를 때의 확인 대상
+  const [mailLineAllOffTarget, setMailLineAllOffTarget] = useState<{ user: UserWithRole; line: string } | null>(null);
 
   // Group state
   const [groups, setGroups] = useState<UserGroup[]>([]);
@@ -967,6 +1022,66 @@ export default function PermissionPage(): React.ReactElement {
     }
   };
 
+  // ===== 라인별 메일 수신 설정 =====
+
+  // 본인 행은 본인이, 그 외에는 MASTER 만 바꿀 수 있다(백엔드 mail-lines 엔드포인트와 같은 규칙).
+  const canEditMailLines = useCallback(
+    (user: UserWithRole) => isMaster || user.loginid === currentUser.username,
+    [isMaster, currentUser.username]
+  );
+
+  const applyMailLines = useCallback(async (user: UserWithRole, receiveAll: boolean, nextLines: string[]) => {
+    setSavingMailLinesId(user.id);
+    try {
+      const { data } = await usersAPI.updateMailLines(user.id, receiveAll, nextLines);
+      setUsers((prev) => prev.map((u) => (
+        u.id === user.id
+          ? { ...u, receive_all_mail: data.receive_all_mail, mail_lines: data.mail_lines }
+          : u
+      )));
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : t('permission.mail_line_error'), 'error');
+    } finally {
+      setSavingMailLinesId(null);
+    }
+  }, [addToast, t]);
+
+  // 개별 라인: 켤 때는 바로 저장, 끌 때는 확인 모달을 거친다.
+  // 전체 받기가 켜진 상태에서 라인을 고르면 '전체 받기 해제' 확인 모달을 먼저 띄운다.
+  const handleToggleMailLine = useCallback((user: UserWithRole, line: string) => {
+    if (user.receive_all_mail) {
+      setMailLineAllOffTarget({ user, line });
+      return;
+    }
+    const current = user.mail_lines ?? [];
+    if (current.includes(line)) {
+      setMailLineOffTarget({ user, line });
+      return;
+    }
+    applyMailLines(user, false, [...current, line]);
+  }, [applyMailLines]);
+
+  const handleConfirmMailLineOff = useCallback(async () => {
+    if (!mailLineOffTarget) return;
+    const { user, line } = mailLineOffTarget;
+    setMailLineOffTarget(null);
+    await applyMailLines(user, false, (user.mail_lines ?? []).filter((l) => l !== line));
+  }, [mailLineOffTarget, applyMailLines]);
+
+  // 전체 받기 해제 확인 → 전체 받기를 끄고 방금 고른 라인만 켠다.
+  const handleConfirmMailLineAllOff = useCallback(async () => {
+    if (!mailLineAllOffTarget) return;
+    const { user, line } = mailLineAllOffTarget;
+    setMailLineAllOffTarget(null);
+    await applyMailLines(user, false, [line]);
+  }, [mailLineAllOffTarget, applyMailLines]);
+
+  // 전체 받기 버튼 — 이미 켜져 있으면 아무 일도 하지 않는다(항상 무언가는 선택된 상태 유지).
+  const handleReceiveAll = useCallback((user: UserWithRole) => {
+    if (user.receive_all_mail) return;
+    applyMailLines(user, true, []);
+  }, [applyMailLines]);
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeletingId(deleteTarget.id);
@@ -1159,6 +1274,11 @@ export default function PermissionPage(): React.ReactElement {
                 onRoleChange={handleRoleChange}
                 deletingId={deletingId}
                 changingRoleId={changingRoleId}
+                showMailLines={MAIL_LINE_ROLES.includes(activeTab)}
+                canEditMailLines={canEditMailLines}
+                onToggleMailLine={handleToggleMailLine}
+                onReceiveAll={handleReceiveAll}
+                savingMailLinesId={savingMailLinesId}
               />
             </div>
           )}
@@ -1175,6 +1295,29 @@ export default function PermissionPage(): React.ReactElement {
         confirmLabel={t('permission.delete_yes')}
         danger
         loading={deletingId !== null}
+      />
+
+      {/* 라인 메일 수신 해제 확인 */}
+      <ConfirmModal
+        isOpen={mailLineOffTarget !== null}
+        onClose={() => setMailLineOffTarget(null)}
+        onConfirm={handleConfirmMailLineOff}
+        title={t('permission.mail_line_off_title')}
+        message={t('permission.mail_line_off_confirm', { line: mailLineOffTarget?.line ?? '' })}
+        confirmLabel={t('permission.mail_line_off_yes')}
+        danger
+        loading={savingMailLinesId !== null}
+      />
+
+      {/* 전체 받기 해제 확인 (전체 받기 → 개별 라인 선택) */}
+      <ConfirmModal
+        isOpen={mailLineAllOffTarget !== null}
+        onClose={() => setMailLineAllOffTarget(null)}
+        onConfirm={handleConfirmMailLineAllOff}
+        title={t('permission.mail_line_all_off_title')}
+        message={t('permission.mail_line_all_off_confirm', { line: mailLineAllOffTarget?.line ?? '' })}
+        confirmLabel={t('permission.mail_line_all_off_yes')}
+        loading={savingMailLinesId !== null}
       />
 
       {/* Add User Modal */}

@@ -93,6 +93,29 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 > = `P·PV·R·RV·J·O`). E(MASK)와 후결자(RA)는 만들지 않는다 — **모든 문서가 받던 고정 후결자
 > 조차 이 경로에는 붙지 않는 유일한 예외**다. 상세는 아래 **Case O** 참조.
 
+> **예외 — 기타 목적 'Overlay 변경' 단독 (2026-08)**: `RequestDocument.skip_j_stage()`가 참이면
+> **일반 경로에서 J 단계를 아예 만들지 않는다**(`PL → R → P ∥ O ∥ [E] ∥ RA`). 판정은
+> `detail.other_purpose` 가 **정확히 `['Overlay 변경']` 한 개**일 때만 참이다 — 다른 기타 목적을
+> 함께 골랐으면(예: `Overlay 변경 + STEPSEQ 변경`) 그 목적의 검토가 남아 있으므로 J 를 유지한다
+> (상수 `RequestDocument.OTHER_PURPOSE_OVERLAY`, 프론트 `RequestPage/constants.ts` 의
+> `OTHER_PURPOSE_OVERLAY` 와 같은 값). 구버전 문서의 문자열 저장도 배열로 정규화해 처리한다.
+> - **적용 범위는 일반 경로만**이다. `MAP 삭제/수정`은 P·R·J·O 가 한 묶음의 병렬이라 제외하고
+>   (`skip_j_stage()`가 `is_map_delete_edit()`이면 곧바로 거짓), `Only MAP`은 원래 J 가 없다.
+> - **최종 승인 판정**: `j_approved` 는 원래 `len(j_steps) > 0` 을 요구해, J 를 만들지 않으면
+>   나머지 단계가 모두 합의돼도 판정이 영원히 거짓이 되어 문서가 `under_review` 에 영구 정지한다.
+>   그래서 `skip_j_stage()` 인 문서는 `j_approved = True` 로 둔다(Case G).
+> - **검토 항목**: J 단계 전용 기능이므로 이 문서는 `fill_from_master()` 로 채우지 않는다
+>   (J step 이 없으면 `review_items.is_stage_open()` 이 항상 거짓이라 화면도 닫힌다).
+> - **메일**: `mailer.ROUTE_AGENTS_NO_J` — 반려 시 잔여 결재선 수신자와 '결재 경로' 카드에서
+>   J 가 함께 빠진다. **결재 상세 '결재 경로' 탭**은 J 행을 `해당없음`으로 표시한다
+>   (E·RA 와 같은 na 분기 — 없으면 '대기'로 영구 표시된다). 결재현황 목록 그리드의 J 칸은
+>   step 이 없으면 자동으로 `해당없음` 이 되어 별도 처리가 없다.
+> - 테스트: `test_j_step_not_created_when_other_purpose_is_overlay_only`,
+>   `test_j_step_created_when_overlay_selected_with_others`,
+>   `test_overlay_only_document_approved_without_j`
+> - ⚠️ 판정은 **단계 생성 시점**에 이뤄진다 — 이미 J step 이 생성된 기존 문서는 영향이 없고,
+>   재상신(round+1)하면 새 회차부터 규칙이 적용된다.
+
 ### Case A — 상신 (`submit`)
 - 조건: `status == 'draft'`, **지정 PL 필수**(role='PL'인 사용자, **본인 지정 불가**), `_validate_bb_mapping` 통과.
 - ✅ **다중 지정 PL(2026-07)**: payload `designated_pl_loginids: [...]`(배열, 단일 `designated_pl_loginid` 도 호환). 지정 PL **전원**에 대해 `agent='PL', round=1` pending step을 각각 생성한다(`_resolve_designated_pls`로 파싱·검증). `document.designated_pl` FK 에는 **대표(첫 번째)** 만 기록(표시/하위호환용).
@@ -114,6 +137,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 ### Case E — R 합의 (`approve_step` agent='R', `views.py:250`)
 - 동작: R `approved` → **P(due: R당일 포함 4영업일), J(due: 6영업일, 병렬), O(due: 6영업일, 병렬)** 동시 생성.
   추가로 **E**(due: 6영업일, 병렬)는 `plel` 인 의뢰서에만 생성한다.
+- ✅ **(2026-08) 기타 목적 'Overlay 변경' 단독이면 J 를 생성하지 않는다**(`document.skip_j_stage()`).
+  J 도착 메일과 검토 항목 채우기(`fill_from_master`)도 함께 건너뛴다 — 위 예외 항목 참조.
 - ✅ **(2026-08) J 도 이 시점에 생성**된다(예전엔 P 완료 후 생성). J 도착 메일(`stage_arrival(J)`)도
   여기서 발송되며, 수신자도 **미배정 시 TE_J 팀 전원**으로 바뀌었다(예전엔 고정 주소 1곳).
   J 가 팀원 누구나 선점하는 병렬 단계가 됐는데 대표 주소로만 보내면 자기 차례를 알 수 없다.
@@ -148,6 +173,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 ### Case G — P / J / O / E 최종 합의 (`approve_step` agent in P/PV/J/O/E/EV/RA, `views.py:509`)
 - 동작: **P(담당자+PV 전원)**·J·O·(E 있으면 **E 담당자 + EV 전원**)·(RA 있으면 RA 전원)가 **모두**
   `approved`일 때만 `status → approved`. 그 전엔 `under_review` 유지.
+- ✅ **(2026-08) J 를 뺀 문서(`skip_j_stage()`)는 `j_approved` 를 참으로 둔다** — J step 이 없으면
+  기본 판정(`len(j_steps) > 0`)이 영원히 거짓이라 문서가 `under_review` 에 영구 정지한다.
 - ✅ **(2026-08) 판정 트리거·조건에 P/PV 포함**: J 분리로 P 가 마지막 합의자가 될 수 있게 됐다.
   트리거에서 빠지면 P 가 마지막일 때 아무도 판정을 돌리지 않아 문서가 `under_review` 에 영구 정지하고,
   조건에서 빠지면 P 미완료인데도 J·O·E·RA 만으로 승인돼 버린다 — 둘 다 필요하다.
@@ -195,12 +222,51 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - ✅ **다중 지정 PL(2026-07)**: Case A와 동일하게 `designated_pl_loginids` 배열을 받아 새 회차에 PL step **전원**을 생성한다(전원 합의).
 - ✅ **검토자 프리필(2026-07)**: 수정·재상신 화면 진입 시 이전 회차에 지정했던 PL 담당자를 상신 모달의 검토자(designees)에 **미리 채운다**(통보처처럼). `doc.approval_steps` 중 최신 회차 `agent='PL'` step의 assignee로 복원하며, **수정(추가/삭제) 가능**하다. 구현: `RequestPage` 편집 로드 `useEffect`.
 
-### Case J — 철회 (`withdraw`, `views.py:189`)
-- 조건: status가 under_review/rejected/submitted.
-- 동작: `status → draft`, `submitted_at=None`, **현재 문서의 모든 step 삭제**.
-- ✅ 권한: MASTER / 의뢰자 PL 본인 / 지정 PL 본인 / **문서에 지정된 공유 그룹(`shared_group`)의 멤버**
-  만 가능(`can_withdraw`). 그 외 호출은 403.
+### Case J — 철회 (`withdraw` / `confirm-withdraw` / `reject-withdraw` / `cancel-withdraw`, 2026-08 전면 개편)
+
+⚠️ **철회는 더 이상 임시저장(draft)으로 되돌리는 동작이 아니다.** 철회가 확정되면 의뢰서를
+**완전히 삭제**한다(복구 불가). 진행 중인 결재는 현재 단계의 **확인**을 받아야 철회된다.
+모델 `WithdrawRequest`(`models.py`), 마이그레이션 `0020`.
+
+- ✅ 권한(요청 자격): MASTER / 의뢰자 PL 본인 / 지정 PL 본인 / **문서에 지정된 공유 그룹
+  (`shared_group`)의 멤버**(`can_withdraw`). 그 외 호출은 403.
   **(2026-08)** 판정 기준을 "의뢰자와 아무 그룹이나 공유" → "문서의 공유 그룹 멤버"로 변경했다(§9 참조).
+
+**문서 상태별 분기 (`withdraw`)**
+
+| 상태 | 동작 | 사유 |
+|---|---|---|
+| `draft` | 확인 없이 **즉시 삭제** (결재선이 없다) | 선택 |
+| `rejected` | 확인 없이 **즉시 삭제** (결재선이 종료됐다) | 선택 |
+| `approved` | **MASTER 만** 즉시 삭제, 그 외 403 (결재 완료본 = 이력, `can_delete` 와 같은 기준) | 선택 |
+| `under_review` / `submitted` | **철회 요청 생성** → 현재 단계 전원 확인 시 삭제 | **필수** |
+| `pause` | 400 — 재개한 뒤 철회한다 | - |
+
+응답의 `deleted`(bool)로 "이미 삭제됨"과 "요청만 접수됨"을 구분한다.
+
+**요청 → 확인 → 삭제**
+
+- **철회 요청**: 요청 시점의 현재(pending) 결재 단계 id 를 `target_step_ids` 로 기록한다.
+  한 문서에 활성 요청(`state='requested'`)은 1건뿐이다. 상태 뱃지는 그대로 유지되고,
+  목록 현재단계 칸에 '철회 요청중' 칩만 붙는다.
+- **철회 확인 (`confirm_withdraw`)**: 인가는 **중단 확인과 같은 규칙**(`_can_confirm_pause`)이다 —
+  담당자(assignee)가 있는 단계는 그 담당자 본인, 미배정 단계는 같은 팀(역할↔agent 일치) 누구나
+  1명, MASTER 는 항상. 병렬 단계면 **target 단계 전원**이 확인해야 확정된다
+  (`confirmed_step_ids` 누적, `set(target) ⊆ set(confirmed)`).
+  확정되는 순간 완료 메일을 적재한 뒤 `document.delete()` 를 호출한다.
+- **철회 거부 (`reject_withdraw`)**: 확인할 수 있는 사람이면 거부도 할 수 있다. 단계 **하나만
+  거부해도** 요청 전체가 `rejected` 로 무효화되고 결재가 그대로 이어진다.
+- **요청 취소 (`cancel_withdraw`)**: **요청자 본인**(문서 작성자가 아니다 —
+  `can_cancel_withdraw`)/MASTER 가 확인 완료 전에만 거둬들인다(`cancelled`).
+  ⚠️ 확정 이후에는 문서가 이미 삭제돼 되돌릴 수 없다 — **되돌릴 수 있는 구간은 확인 대기 중뿐**이다.
+- **동결**: 확인 대기(`requested`) 동안 `approve_step`/`reject_step`/`assign_step`/`claim_step` 이
+  400 으로 차단된다(`_blocked_progress_response`). 확인 도중 단계가 넘어가면 대상 단계가 끝나
+  확인이 영영 완료되지 않기 때문이다. 거부·취소되면 즉시 풀린다.
+- ⚠️ **철회 이력은 남지 않는다**(2026-08 결정). 문서 삭제 시 `ApprovalStep`·`WithdrawRequest` 가
+  CASCADE 로 함께 사라지고, 누가 왜 철회했는지는 서버 로그
+  `[WITHDRAW_DOCUMENT] user=… doc=… reason=…` 에만 남는다.
+- **메일**: 요청/완료/거부/취소 4종이 발송된다. 수신자 규칙은 `docs/MAIL.md` §3.2.
+- 테스트: `backend/api/tests.py::WithdrawFlowTest`
 
 ### Case K — 담당자 지정 (`assign_step`, `views.py:331` 부근) — **R 전용**
 - 동작: 현재 회차의 해당 agent pending step에 assignee 지정.
@@ -378,6 +444,19 @@ R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전
 - ✅ **(2026-08) '내 차례'에 검토 항목 조건 OR 추가**: `hasMyPendingReviewItem` — 진행 중 + 현재 회차
   J 단계가 pending + **내가 검토자인 미확인 검토 항목이 1건 이상**이면 담당자가 아니어도 MY 에 뜬다.
   판정값은 목록 응답의 `my_pending_review_items`(개수)다. §10 참조.
+- ✅ **(2026-08) MY 판정을 `utils/approvalTable.isMyDocument` 로 공용화** — 홈 '나의 의뢰 현황'이
+  같은 판정을 쓴다(§11). 이때 **PL 분기를 pending 단계 기준으로 바꿨다**:
+  | | 예전 | 지금 |
+  |---|---|---|
+  | PL | 작성자(이름) OR `designated_pl_loginid` OR PL step 존재 | 작성자(이름) OR **내가 담당인 현재 회차 pending 단계** |
+  - **추가 후결자(RA)로 지정된 PL 이 잡힌다** — 예전엔 PL step 만 봐서 후결자로만 참여한 문서가 빠졌다.
+  - **이미 합의를 마친 문서는 빠진다** — `designated_pl_loginid` 는 문서 필드라 합의 여부를 보지 않아
+    끝난 문서가 계속 남아 있었다.
+  - 그 대신 **반려·임시저장 문서에서 '내가 지정 PL' 이라는 이유만으로 뜨던 건은 빠진다**
+    (`hasActivePendingStep` 이 `under_review` 만 본다). 반려는 별도 탭이 있고, 위 "MY 판정은 진행 중
+    문서만" 원칙과도 일치한다. **내가 작성한 문서는 상태와 무관하게 계속 뜬다.**
+- ✅ **(2026-08) `?filter=my` 쿼리 파라미터**로 진입하면 MY 탭이 열린 상태로 시작한다
+  (홈 '나의 의뢰 현황'의 '전체 보기'가 이 경로로 온다). 새로고침·링크 공유에도 탭이 유지된다.
 
 ### 3.2.1 목록 정렬 (2026-07, `sortedDocs`)
 우선순위: **양산일 정렬(켜짐) > 단계별 필터(진입 순서) > 기본(상신 오래된 순)**.
@@ -400,7 +479,9 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
   반려 후에도 잔여 `pending` step 이 남기 때문에, 이 분기가 없으면 아래 분기가 그 잔여 단계를
   진행 중으로 오판한다(§6-8).
 - **PL 검토 pending**: `검토(담당자명)`. 다중 PL 이면 아직 미합의한 담당자명을 ` / `로 연결.
-- **R → RV 순차**: R 단계 pending 이면 `RFG(이름)`, R 합의 후 RV 가 남으면 `검토자(이름)`.
+- **R → RV 순차**: R 단계 pending 이면 `RFG(이름)`, R 합의 후 RV 가 남아도 **`RFG(검토자이름)`**.
+  ✅ **(2026-08)** 검토자 단계에서 라벨이 `검토자(...)` 로 바뀌던 것을 없앴다 — 담당자든 검토자든
+  같은 R 단계이므로 단계명을 유지한다(그리드의 PHPSI/MASK 규칙과 동일). 반려 표시에도 함께 적용된다.
 
 #### 3.3.2 3행 2열 그리드 (병렬 합의 단계) — 2026-08 신설
 `P/O/E/RA` 중 하나라도 현재 회차에 있으면 그리드로 그린다. 칸 배치는 **고정**이며
@@ -424,6 +505,11 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
   - MAP 삭제/수정 → MASK·추가후결자가 `해당없음`
 - **고정/추가 후결자 분리**는 목록 응답의 `post_approver_fixed_loginid` 로 한다
   (RA step 의 `assignee_loginid` 와 비교). 설정이 비어 있으면 전부 추가 후결자로 본다.
+- ✅ **(2026-08) 고정 후결자 칸의 라벨은 `후결자` 가 아니라 `RFG`** 다 — 고정 후결자는 `.env`
+  `POST_APPROVER_LOGINID` 로 지정하는 **RFG 팀 1명**이기 때문이다(Case N). 일반 경로 그리드에는
+  RFG 담당자 칸이 따로 없어 이름이 겹치지 않는다. 추가 후결자 칸은 `추가후결자` 그대로다.
+  ⚠️ 그 결과 **2열 1행의 `RFG` 라벨이 문서 유형에 따라 다른 사람을 가리킨다** — 일반·Only MAP 경로는
+  고정 후결자, MAP 삭제/수정 경로는 R 담당자다. 두 경로가 동시에 나타날 수 없어 혼동은 없다.
 - **MAP 삭제/수정 예외**: 이 경로는 후결자를 아예 만들지 않고 대신 R 이 P·J·O 와 동시에 도는
   병렬 구성원이라, 비는 **2열 1행(고정 후결자 자리)에 `RFG` 를 넣는다**.
   ⚠️ 이 칸만 검토자(RV)를 지정해도 **담당자 이름을 그대로 유지**한다(아래 이름 규칙의 유일한 예외).
@@ -490,7 +576,9 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 | 검토자 선택 후 합의 (P·E, 2026-07, 다중) | `canUserPickReviewers`가 참(=`canUserAgree`와 동일 조건) — 별도 액션 없이 `approveStep`에 `reviewer_loginids` 동봉 | `approveStep`(agent P/E) |
 | 지정자 변경 | PL/MASTER | `changeDesignee` |
 | 후결자 추가/제거 (2026-07) | 작성자/MASTER + under_review + 병렬 진입 후 | `addPostApprover` / `removePostApprover` |
-| 철회 | PL/MASTER | `withdraw`(임시저장으로) 또는 `delete`(삭제) 선택 |
+| 철회 | `can_withdraw` + 철회 요청중이 아닐 때 | 사유 입력 모달 → `withdraw`(진행 중이면 철회 요청, 그 외 즉시 삭제) |
+| 철회 확인 / 거부 | 현재 pending 단계 담당자/팀+MASTER (요청중) | `confirmWithdraw` / `rejectWithdraw` |
+| 철회 요청 취소 | 철회 요청자 본인/MASTER (요청중) | `cancelWithdraw` |
 | 수정 후 재상신 | rejected/draft | `/request`로 이동(editDocId) |
 | 중단 요청 | 작성자·under_review (`can_request_pause`) | 사유 입력 모달 → `requestPause` |
 | 중단 확인 | 현재 pending 단계 담당자/팀+MASTER (요청중) | `confirmPause` |
@@ -516,7 +604,10 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 |------|-----|------|
 | 상신 | `submit/` | `designated_pl_loginid` |
 | 재상신 | `resubmit/` | `designated_pl_loginid` |
-| 철회 | `withdraw/` | - |
+| 철회 | `withdraw/` | `reason`(진행 중 문서는 필수) |
+| 철회 확인 | `confirm-withdraw/` | `agent` |
+| 철회 거부 | `reject-withdraw/` | - |
+| 철회 요청 취소 | `cancel-withdraw/` | - |
 | 합의 | `approve-step/` | `agent`, `comment`, `approver_name`, (P/E만) `reviewer_loginids`(배열, 담당자 합의와 검토자 지정을 한 번에 처리 — P는 선택, **E는 필수(2026-08, 비어 있으면 400)**) |
 | 반려 | `reject-step/` | `agent`, `comment` |
 | 담당자 지정 (R) | `assign-step/` | `agent`, `assignee_loginid`, `assignee_name` |
@@ -766,7 +857,7 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 | 조회 | ✅ | `get_queryset` |
 | 수정 · 임시저장 | ✅ | `can_edit`(draft 분기) |
 | 상신 · 재상신 | ✅ | `submit`/`resubmit` 의 `can_edit` 인가 |
-| 철회 | ✅ | `can_withdraw` |
+| 철회(요청·즉시삭제) | ✅ | `can_withdraw` — 확정 시 문서가 삭제된다(Case J) |
 | **삭제** | ❌ | `can_delete` — 의뢰자 / 지정 PL / MASTER 만 |
 | **공유 그룹 변경** | ❌ | `set_shared_group` — 의뢰자 / MASTER 만 |
 
@@ -846,3 +937,21 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 ---
 
 *결재 로직/화면이 바뀌면 이 문서를 반드시 함께 갱신한다.*
+
+---
+
+## 11. 홈 '나의 의뢰 현황' (2026-08)
+
+홈 화면의 **'최근 의뢰 현황'을 '나의 의뢰 현황'으로 개편**했다. 화면: `frontend/src/pages/HomePage.tsx`.
+
+- **위치**: 연간 제품별(디자인룰) 의뢰 현황 차트 **위**로 올렸다(예전엔 차트 아래).
+- **대상 판정**: 결재현황 **MY 탭과 같은 판정**을 쓴다 — `utils/approvalTable.isMyDocument`
+  (§3.2 참조. MASTER=전체 / PL=작성자 또는 내 pending 단계 / TE_*=내 pending 단계 또는 미확인 검토 항목).
+  두 화면이 같은 헬퍼를 쓰므로 홈과 결재현황 MY 탭의 목록이 어긋나지 않는다.
+- **표시 규칙**: 완료(`approved`)건 제외 → **상신 오래된 순**(`submittedSortKey`, 결재현황 기본 정렬과 동일)
+  → **최대 5건**(`MY_REQUESTS_LIMIT`).
+- **표**: 결재현황과 동일한 컬럼·그리드(§3.3). 현재 단계 칸도 같은 `getDocTableRows`/`StageGrid` 를 쓴다.
+- **'전체 보기 →'**: `/approval?filter=my` 로 이동해 **MY 탭이 열린 상태**로 결재현황을 연다.
+- **빈 상태**: 0건이면 섹션을 숨기지 않고 `home.my_requests_empty` 안내를 보여준다.
+- **역할 없는 사용자(`NONE`)**: 섹션 전체를 노출하지 않는다(연간 차트와 동일).
+- i18n: `home.my_requests_title` / `home.my_requests_empty` (`home.recent_title` 은 제거).

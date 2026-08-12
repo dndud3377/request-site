@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
+    RejectionSnapshot,
 )
 from . import doc_permissions
 from . import design_rule_stats
@@ -18,6 +19,7 @@ class DocPermFieldsMixin(serializers.Serializer):
     can_request_pause = serializers.SerializerMethodField()
     can_resume = serializers.SerializerMethodField()
     pause_request = serializers.SerializerMethodField()
+    withdraw_request = serializers.SerializerMethodField()
     post_approver_fixed_loginid = serializers.SerializerMethodField()
     requester_loginid = serializers.SerializerMethodField()
     shared_group_name = serializers.CharField(source='shared_group.name', read_only=True, default=None)
@@ -82,14 +84,46 @@ class DocPermFieldsMixin(serializers.Serializer):
             'created_at': pr.created_at,
         }
 
+    def get_withdraw_request(self, obj):
+        """확인 대기(requested) 중인 철회 요청 정보. 없으면 None.
+
+        프론트가 철회 요청 배너·확인 현황·확인/거부/취소 버튼을 렌더하는 데 사용한다.
+        거부·취소된 요청은 결재가 그대로 이어지므로 내려보내지 않는다.
+        """
+        wr = next(
+            (w for w in obj.withdraw_requests.all() if w.state == 'requested'),
+            None,
+        )
+        if not wr:
+            return None
+        return {
+            'id': wr.id,
+            'state': wr.state,
+            'reason': wr.reason,
+            'requester_loginid': wr.requester.loginid if wr.requester_id else None,
+            'requester_name': wr.requester_name,
+            'round': wr.round,
+            'target_step_ids': wr.target_step_ids or [],
+            'confirmed_step_ids': wr.confirmed_step_ids or [],
+            'created_at': wr.created_at,
+        }
+
 
 class UserSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source='username', allow_blank=True, required=False)
+    # 라인별 메일 수신 설정(권한 관리 '이메일 설정' 컬럼). 라인 '이름' 배열로 내려준다.
+    # 변경은 이 직렬화기가 아니라 전용 엔드포인트(users/{id}/mail-lines/)로만 한다.
+    mail_lines = serializers.SlugRelatedField(
+        many=True, read_only=True, slug_field='name',
+    )
 
     class Meta:
         model = User
-        fields = ['id', 'loginid', 'name', 'mail', 'role', 'deptname', 'role_assigned_at']
-        read_only_fields = ['role_assigned_at']
+        fields = [
+            'id', 'loginid', 'name', 'mail', 'role', 'deptname', 'role_assigned_at',
+            'receive_all_mail', 'mail_lines',
+        ]
+        read_only_fields = ['role_assigned_at', 'receive_all_mail', 'mail_lines']
 
     def create(self, validated_data):
         loginid = self.context.get('loginid')
@@ -162,7 +196,8 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'status', 'production_date', 'created_at', 'updated_at', 'submitted_at',
             'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw', 'notifier_mails',
-            'can_request_pause', 'can_resume', 'pause_request', 'post_approver_fixed_loginid',
+            'can_request_pause', 'can_resume', 'pause_request', 'withdraw_request',
+            'post_approver_fixed_loginid',
             'shared_group', 'shared_group_name', 'review_items',
         ]
         # shared_group 은 전체 저장(PUT/PATCH)에 값이 빠져 초기화되는 일이 없도록 read-only 로 두고,
@@ -207,7 +242,8 @@ class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSeriali
             'product_name', 'status', 'production_date', 'created_at', 'submitted_at',
             'additional_notes', 'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw',
-            'can_request_pause', 'can_resume', 'pause_request', 'post_approver_fixed_loginid',
+            'can_request_pause', 'can_resume', 'pause_request', 'withdraw_request',
+            'post_approver_fixed_loginid',
             'shared_group', 'shared_group_name', 'my_pending_review_items',
         ]
         read_only_fields = ['shared_group']
@@ -279,17 +315,24 @@ class ExternalRequestDocumentSerializer(DynamicFieldsSerializerMixin, serializer
 class VocCommentSerializer(serializers.ModelSerializer):
     class Meta:
         model = VocComment
-        fields = ['id', 'voc', 'author_name', 'author_role', 'author_email', 'is_submitter', 'content', 'is_reject_reason', 'created_at']
+        fields = ['id', 'voc', 'author_name', 'author_role', 'author_email', 'is_submitter', 'content', 'created_at']
         read_only_fields = ['id', 'created_at', 'author_email']
 
 
 class VOCSerializer(serializers.ModelSerializer):
     comments = VocCommentSerializer(many=True, read_only=True)
+    # 프론트는 이 값으로 "내 VOC" 를 판정한다 — id 가 아니라 loginid 로 비교해야
+    # 개발 모드의 목 사용자 id 와 DB id 가 어긋나도 판정이 어긋나지 않는다.
+    submitter_loginid = serializers.SerializerMethodField()
 
     class Meta:
         model = VOC
         fields = '__all__'
-        read_only_fields = ['created_at', 'responded_at', 'status']
+        # submitter 는 등록 시 서버가 request.user 로 확정한다(VOCViewSet.perform_create).
+        read_only_fields = ['created_at', 'responded_at', 'status', 'submitter']
+
+    def get_submitter_loginid(self, obj):
+        return obj.submitter.loginid if obj.submitter_id else ''
 
 
 class LineSerializer(serializers.ModelSerializer):
@@ -524,3 +567,31 @@ class DocumentDesignRuleOverrideSerializer(serializers.ModelSerializer):
             },
         )
         return obj
+
+
+class RejectionSnapshotSerializer(serializers.ModelSerializer):
+    """반려 이력 1건. 프론트 RejectionSnapshot 타입과 1:1 매핑.
+
+    approval_steps 는 DB 에 JSON 문자열로 보관하지만, 프론트가 문서 응답과 똑같이
+    다룰 수 있도록 배열로 풀어서 내려준다(문자열이 깨져 있으면 빈 배열).
+    """
+
+    approval_steps = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RejectionSnapshot
+        fields = [
+            'id', 'source_document_id', 'title', 'product_name',
+            'requester_name', 'requester_department', 'requester_loginid',
+            'submitted_at', 'additional_notes', 'approval_steps',
+            'round', 'rejected_at', 'rejected_agent',
+            'rejected_by_name', 'rejected_by_loginid', 'reject_comment',
+        ]
+
+    def get_approval_steps(self, obj):
+        import json
+        try:
+            steps = json.loads(obj.approval_steps or '[]')
+        except (json.JSONDecodeError, TypeError):
+            return []
+        return steps if isinstance(steps, list) else []

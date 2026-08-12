@@ -10,7 +10,8 @@ from . import mailer
 from . import design_rule_stats
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
-    RequestDocument, ReviewItemMaster, UserGroup, UserProfile,
+    Line, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup, UserProfile,
+    WithdrawRequest,
 )
 
 
@@ -635,7 +636,9 @@ class RouteCardTest(TestCase):
         self.assertEqual(by_label['O'], 'reviewing')      # pending + 담당자 있음
         self.assertEqual(by_label['P'], 'waiting')        # pending + 미배정
         self.assertEqual(by_label['J'], 'waiting')        # step 미생성(예정)
-        self.assertNotIn('E', by_label, 'plel 이 아니면 E 는 경로에 넣지 않는다')
+        # (2026-08) plel 이 아니면 E 는 거치지 않지만, 행 자체는 남기고 '해당없음'으로 표시한다
+        # — 웹 결재현황 그리드와 같은 규칙. 예전에는 행을 아예 만들지 않아 왜 없는지 알 수 없었다.
+        self.assertEqual(by_label['E'], 'na')
 
     def test_rows_include_e_stage_when_plel(self):
         """plel 인 의뢰서는 E 단계가 아직 생성 전이어도 경로에 '대기' 행으로 실린다."""
@@ -671,10 +674,43 @@ class RouteCardTest(TestCase):
             additional_notes=json.dumps({'detail': {'request_purpose': 'Only MAP'}, 'jayerRows': []}),
         )
         ApprovalStep.objects.create(document=doc, agent='R', round=1, action='pending')
-        labels = [label for label, _n, _s, _c in mailer._route_rows(doc)]
+        rows = mailer._route_rows(doc)
+        by_label = {label: status for label, _n, status, _c in rows}
+        # (2026-08) 거치지 않는 단계도 행은 남기고 '해당없음'으로 표시한다(웹 그리드와 동일).
         for excluded in ('P', 'J', 'O', 'E'):
-            self.assertNotIn(excluded, labels)
-        self.assertIn('R', labels)
+            self.assertEqual(by_label[excluded], 'na')
+        self.assertEqual(by_label['R'], 'waiting')
+
+    @override_settings(POST_APPROVER_LOGINID='fixedpa')
+    def test_post_approver_rows_split_fixed_and_extra(self):
+        """후결자 행 라벨은 고정(R)과 추가후결자로 갈린다 — 웹 그리드의 두 칸과 같은 구분."""
+        fixed = UserProfile.objects.create(loginid='fixedpa', mail='fix@c.com', role='TE_R')
+        extra = UserProfile.objects.create(loginid='extrapa', mail='ext@c.com', role='PL')
+        ApprovalStep.objects.create(document=self.doc, agent='RA', round=1, action='pending',
+                                    assignee=fixed, assignee_name='정고정')
+        ApprovalStep.objects.create(document=self.doc, agent='RA', round=1, action='pending',
+                                    assignee=extra, assignee_name='이순신')
+
+        by_name = {name: label for label, name, _s, _c in mailer._route_rows(self.doc)}
+        self.assertEqual(by_name['정고정'], mailer.POST_APPROVER_FIXED_LABEL)
+        self.assertEqual(by_name['이순신'], mailer.POST_APPROVER_EXTRA_LABEL)
+
+    def test_map_delete_edit_marks_absent_stages_as_na(self):
+        """MAP 삭제/수정 은 E·후결자를 만들지 않는다 — 행을 지우지 않고 해당없음으로 남긴다."""
+        import json
+        doc = RequestDocument.objects.create(
+            title='mde', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept', product_name='PROD-1',
+            additional_notes=json.dumps(
+                {'detail': {'request_purpose': 'MAP 삭제/수정'}, 'jayerRows': []}
+            ),
+        )
+        ApprovalStep.objects.create(document=doc, agent='R', round=1, action='pending')
+        by_label = {label: status for label, _n, status, _c in mailer._route_rows(doc)}
+        self.assertEqual(by_label['E'], 'na')
+        self.assertEqual(by_label['후결자'], 'na')
+        # 이 경로에 실제로 있는 단계는 해당없음이 아니다
+        self.assertEqual(by_label['P'], 'waiting')
 
     def test_card_renders_comment_and_omits_empty_one(self):
         r = UserProfile.objects.create(loginid='r10', mail='r10@c.com', role='TE_R')
@@ -865,9 +901,10 @@ class PEStageReviewerFlowTest(TestCase):
         self.e_reviewer = UserProfile.objects.create(loginid='e2', mail='e2@c.com', role='TE_E')
         self.e_reviewer2 = UserProfile.objects.create(loginid='e3', mail='e3@c.com', role='TE_E')
 
-    def _advance_to_parallel(self, plel=False):
+    def _advance_to_parallel(self, plel=False, other_purpose=None):
         """draft → 제출 → PL 합의 → R 지정·합의 를 실제 API로 거쳐 P/O[/E] pending 상태로 만든다."""
-        detail = {'detail': {}, 'jayerRows': ([{'pp': 'PLEL'}] if plel else [])}
+        inner = {} if other_purpose is None else {'other_purpose': other_purpose}
+        detail = {'detail': inner, 'jayerRows': ([{'pp': 'PLEL'}] if plel else [])}
         doc = RequestDocument.objects.create(
             title='doc', requester=self.requester, requester_name='요청자',
             requester_email='req@c.com', requester_department='dept',
@@ -1116,7 +1153,7 @@ class PEStageReviewerFlowTest(TestCase):
 
     def test_p_reviewer_mail_shows_owner_as_approved_not_reviewing(self):
         """담당자 합의 + 검토자 지정을 한 요청으로 처리할 때, 검토자에게 가는 메일의
-        결재 경로 카드에서 담당자(P) 행은 '검토중'이 아니라 '합의'로 표시돼야 한다.
+        결재 경로 카드에서 담당자(P) 행은 '검토중'이 아니라 '완료'로 표시돼야 한다.
         (담당자 승인 저장 전에 검토자 메일을 만들면 담당자가 아직 pending 으로 읽혀 버그가 난다.)
         """
         import re
@@ -1141,7 +1178,8 @@ class PEStageReviewerFlowTest(TestCase):
         p_row_match = re.search(r'<tr>(?:(?!</tr>).)*?>P</td>(?:(?!</tr>).)*?</tr>', noti.contents, re.S)
         self.assertIsNotNone(p_row_match, 'P 행이 메일 본문에 있어야 한다')
         p_row_html = p_row_match.group(0)
-        self.assertIn('합의', p_row_html)
+        # (2026-08) 경로 카드의 approved 라벨은 '합의' → '완료' 로 바뀌었다(웹 그리드와 통일).
+        self.assertIn('완료', p_row_html)
         self.assertNotIn('검토중', p_row_html)
 
     def test_p_reviewer_rejection_rejects_whole_document(self):
@@ -1190,7 +1228,8 @@ class PEStageReviewerFlowTest(TestCase):
         e_row_match = re.search(r'<tr>(?:(?!</tr>).)*?>E</td>(?:(?!</tr>).)*?</tr>', noti.contents, re.S)
         self.assertIsNotNone(e_row_match, 'E 행이 메일 본문에 있어야 한다')
         e_row_html = e_row_match.group(0)
-        self.assertIn('합의', e_row_html)
+        # (2026-08) 경로 카드의 approved 라벨은 '합의' → '완료' 로 바뀌었다(웹 그리드와 통일).
+        self.assertIn('완료', e_row_html)
         self.assertNotIn('검토중', e_row_html)
 
     def test_e_reviewer_gate_blocks_final_approval_until_all_agree(self):
@@ -1284,6 +1323,53 @@ class PEStageReviewerFlowTest(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'under_review')
         self.assertEqual(ApprovalStep.objects.get(document=doc, agent='P', round=1).action, 'pending')
+
+    # ----- 기타 목적 'Overlay 변경' 단독: 일반 경로에서 J 를 뺀다 -----
+
+    def test_j_step_not_created_when_other_purpose_is_overlay_only(self):
+        """기타 목적이 'Overlay 변경' 하나뿐이면 R 합의 시 J 단계를 만들지 않는다."""
+        doc = self._advance_to_parallel(other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY])
+        self.assertFalse(
+            ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists(),
+            "'Overlay 변경' 단독 문서에는 J 단계가 생성되지 않아야 한다",
+        )
+        # 나머지 병렬 단계는 그대로다.
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='P', round=1).exists())
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='O', round=1).exists())
+
+    def test_j_step_created_when_overlay_selected_with_others(self):
+        """다른 기타 목적을 함께 골랐으면 J 단계는 그대로 생성된다."""
+        doc = self._advance_to_parallel(
+            other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY, 'STEPSEQ 변경']
+        )
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists(),
+            '기타 목적이 2개 이상이면 J 를 빼지 않는다',
+        )
+
+    def test_overlay_only_document_approved_without_j(self):
+        """J 없는 문서도 P·O 합의만으로 최종 승인된다(under_review 영구 정지 회귀 방지).
+
+        최종 판정의 j_approved 는 원래 `len(j_steps) > 0` 을 요구해, J 를 만들지 않으면
+        나머지가 모두 합의돼도 영원히 False 가 된다 — skip_j_stage 분기가 그 정지를 막는다.
+        """
+        doc = self._advance_to_parallel(other_purpose=[RequestDocument.OTHER_PURPOSE_OVERLAY])
+
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review', 'P 가 남아 있으면 아직 승인이 아니다')
+
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'approved', 'J 가 없는 경로도 P·O 합의로 승인돼야 한다')
 
     def test_general_route_not_approved_while_p_reviewer_pending(self):
         """P 담당자만 합의하고 검토자(PV)가 남아 있으면 J·O 가 끝나도 승인되지 않는다."""
@@ -2556,6 +2642,287 @@ class DocumentDeleteAuthTest(TestCase):
         self.assertFalse(ApprovalStep.objects.filter(document_id=doc.id).exists())
 
 
+class WithdrawFlowTest(TestCase):
+    """철회 = '요청 → 현재 단계 전원 확인 → 완전 삭제' (2026-08 개편).
+
+    - draft/rejected 는 확인 없이 즉시 삭제, approved 는 MASTER 만
+    - under_review/submitted 는 사유 필수 + 철회 요청 생성 → 전원 확인 시 삭제
+    - 확인 대기 중에는 결재 동결, 요청자만 취소 가능, 대상 단계는 거부 가능
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+
+        self.author = UserProfile.objects.create(
+            loginid='wd_author', mail='wd_a@c.com', role='PL', username='의뢰자'
+        )
+        self.pl = UserProfile.objects.create(loginid='wd_pl', mail='wd_pl@c.com', role='PL', username='지정PL')
+        self.rfg = UserProfile.objects.create(loginid='wd_r', mail='wd_r@c.com', role='TE_R', username='R담당')
+        self.rfg2 = UserProfile.objects.create(loginid='wd_r2', mail='wd_r2@c.com', role='TE_R', username='R팀원')
+        self.job = UserProfile.objects.create(loginid='wd_j', mail='wd_j@c.com', role='TE_J', username='J팀원')
+        self.outsider = UserProfile.objects.create(loginid='wd_out', mail='wd_o@c.com', role='NONE')
+        self.master = UserProfile.objects.create(loginid='wd_master', mail='wd_m@c.com', role='MASTER')
+
+    def _doc(self, status='under_review'):
+        return RequestDocument.objects.create(
+            title=f'wd-{status}',
+            requester=self.author,
+            requester_name='의뢰자', requester_email='wd_a@c.com', requester_department='d',
+            product_name='p', status=status, designated_pl=self.pl,
+        )
+
+    def _step(self, doc, agent, action='pending', assignee=None, round=1):
+        return ApprovalStep.objects.create(
+            document=doc, agent=agent, action=action, round=round,
+            assignee=assignee, assignee_name=(assignee.username if assignee else ''),
+        )
+
+    def _post(self, user, doc, path, payload=None):
+        self.client.force_authenticate(user=user)
+        return self.client.post(f'/api/documents/{doc.id}/{path}/', payload or {}, format='json')
+
+    def _exists(self, doc):
+        return RequestDocument.objects.filter(pk=doc.pk).exists()
+
+    def _events(self):
+        return list(MailNotification.objects.values_list('event_type', flat=True))
+
+    # ----- 인가 / 상태 가드 -----
+    def test_outsider_cannot_withdraw(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        res = self._post(self.outsider, doc, 'withdraw', {'reason': 'x'})
+        self.assertEqual(res.status_code, 403)
+        self.assertTrue(self._exists(doc))
+
+    def test_paused_document_cannot_be_withdrawn(self):
+        """중단 문서는 재개한 뒤 철회해야 한다."""
+        doc = self._doc('pause')
+        res = self._post(self.author, doc, 'withdraw', {'reason': 'x'})
+        self.assertEqual(res.status_code, 400)
+        self.assertTrue(self._exists(doc))
+
+    def test_reason_required_for_in_progress_document(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        res = self._post(self.author, doc, 'withdraw', {'reason': '   '})
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(WithdrawRequest.objects.filter(document=doc).exists())
+
+    def test_in_progress_document_without_pending_step_is_rejected(self):
+        """진행 중인데 pending 단계가 없으면 확인받을 상대가 없다 → 400."""
+        doc = self._doc()
+        self._step(doc, 'R', action='approved', assignee=self.rfg)
+        res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertEqual(res.status_code, 400)
+        self.assertTrue(self._exists(doc))
+
+    def test_duplicate_request_is_blocked(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self.assertEqual(self._post(self.author, doc, 'withdraw', {'reason': '1'}).status_code, 200)
+        res = self._post(self.author, doc, 'withdraw', {'reason': '2'})
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(WithdrawRequest.objects.filter(document=doc).count(), 1)
+
+    # ----- 즉시 삭제 경로 -----
+    def test_draft_is_deleted_immediately(self):
+        doc = self._doc('draft')
+        res = self._post(self.author, doc, 'withdraw', {'reason': ''})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(self._exists(doc))
+
+    def test_rejected_is_deleted_immediately(self):
+        doc = self._doc('rejected')
+        self._step(doc, 'R', action='rejected', assignee=self.rfg)
+        res = self._post(self.author, doc, 'withdraw', {'reason': '재작성'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(self._exists(doc))
+        self.assertIn('withdraw_completed', self._events())
+
+    def test_approved_is_master_only(self):
+        doc = self._doc('approved')
+        self.assertEqual(self._post(self.author, doc, 'withdraw', {'reason': 'x'}).status_code, 403)
+        self.assertTrue(self._exists(doc))
+        self.assertEqual(self._post(self.master, doc, 'withdraw', {'reason': 'x'}).status_code, 200)
+        self.assertFalse(self._exists(doc))
+
+    # ----- 요청 → 확인 → 삭제 -----
+    def test_request_creates_pending_withdraw_and_mails_target_only(self):
+        """철회 요청 메일은 확인 대상 단계에만 간다(통보처 제외)."""
+        doc = self._doc()
+        r_step = self._step(doc, 'R', assignee=self.rfg)
+        res = self._post(self.author, doc, 'withdraw', {'reason': '스펙 변경'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(res.data['deleted'])
+        self.assertTrue(self._exists(doc))
+
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertEqual(wr.state, 'requested')
+        self.assertEqual(wr.target_step_ids, [r_step.id])
+
+        noti = MailNotification.objects.get(event_type='withdraw_requested')
+        self.assertEqual(noti.recipients, ['wd_r@c.com'])
+        self.assertIn('스펙 변경', noti.contents)
+
+    def test_partial_confirm_keeps_document(self):
+        """병렬 단계 중 하나만 확인하면 아직 삭제되지 않는다."""
+        doc = self._doc()
+        r_step = self._step(doc, 'R', assignee=self.rfg)
+        j_step = self._step(doc, 'J', assignee=self.job)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+
+        res = self._post(self.rfg, doc, 'confirm-withdraw', {'agent': 'R'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(res.data['deleted'])
+        self.assertTrue(self._exists(doc))
+
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertEqual(wr.confirmed_step_ids, [r_step.id])
+        self.assertIn(j_step.id, wr.target_step_ids)
+
+    def test_all_confirm_deletes_document_and_mails_completed(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._step(doc, 'J', assignee=self.job)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+
+        self._post(self.rfg, doc, 'confirm-withdraw', {'agent': 'R'})
+        res = self._post(self.job, doc, 'confirm-withdraw', {'agent': 'J'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(self._exists(doc))
+        # 문서가 사라져도 결재 단계·철회 요청까지 CASCADE 로 정리된다(이력 미보존)
+        self.assertFalse(ApprovalStep.objects.filter(document_id=doc.id).exists())
+        self.assertFalse(WithdrawRequest.objects.filter(document_id=doc.id).exists())
+        self.assertIn('withdraw_completed', self._events())
+
+    def test_unassigned_step_can_be_confirmed_by_team_member(self):
+        """담당자 미배정 단계는 같은 팀 누구나 1명이 확인하면 그 단계는 확인 완료."""
+        doc = self._doc()
+        self._step(doc, 'R')  # 미배정
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        res = self._post(self.rfg2, doc, 'confirm-withdraw', {'agent': 'R'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(self._exists(doc))
+
+    def test_unassigned_step_mails_whole_team(self):
+        doc = self._doc()
+        self._step(doc, 'R')
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        noti = MailNotification.objects.get(event_type='withdraw_requested')
+        self.assertCountEqual(noti.recipients, ['wd_r@c.com', 'wd_r2@c.com'])
+
+    def test_other_team_cannot_confirm(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        res = self._post(self.job, doc, 'confirm-withdraw', {'agent': 'R'})
+        self.assertEqual(res.status_code, 403)
+        self.assertTrue(self._exists(doc))
+
+    # ----- 거부 / 취소 -----
+    def test_target_step_can_reject_withdraw(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+
+        res = self._post(self.rfg, doc, 'reject-withdraw')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(self._exists(doc))
+        self.assertEqual(WithdrawRequest.objects.get(document=doc).state, 'rejected')
+        noti = MailNotification.objects.get(event_type='withdraw_rejected')
+        self.assertIn('wd_a@c.com', noti.recipients)
+
+    def test_requester_can_cancel_before_confirm(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '잘못 눌렀다'})
+
+        res = self._post(self.author, doc, 'cancel-withdraw')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(self._exists(doc))
+        self.assertEqual(WithdrawRequest.objects.get(document=doc).state, 'cancelled')
+        noti = MailNotification.objects.get(event_type='withdraw_cancelled')
+        self.assertEqual(noti.recipients, ['wd_r@c.com'])
+
+    def test_non_requester_cannot_cancel(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        res = self._post(self.rfg, doc, 'cancel-withdraw')
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(WithdrawRequest.objects.get(document=doc).state, 'requested')
+
+    def test_withdraw_button_returns_after_cancel(self):
+        """취소하면 다시 철회를 요청할 수 있다."""
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '1'})
+        self._post(self.author, doc, 'cancel-withdraw')
+        res = self._post(self.author, doc, 'withdraw', {'reason': '2'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(WithdrawRequest.objects.filter(document=doc, state='requested').count(), 1)
+
+    # ----- 결재 동결 -----
+    def test_approval_is_frozen_while_withdraw_pending(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+
+        res = self._post(self.rfg, doc, 'approve-step', {'agent': 'R', 'comment': ''})
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(ApprovalStep.objects.get(document=doc, agent='R').action, 'pending')
+
+    def test_approval_resumes_after_reject(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self._post(self.rfg, doc, 'reject-withdraw')
+
+        res = self._post(self.rfg, doc, 'approve-step', {'agent': 'R', 'comment': ''})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(ApprovalStep.objects.get(document=doc, agent='R').action, 'approved')
+
+    # ----- 철회 완료 메일 수신자 -----
+    def test_completed_mail_covers_only_reached_teams(self):
+        """R 단계까지만 진행된 문서는 TE_R 에게만 통보된다(TE_J 등 미도달 팀 제외)."""
+        doc = self._doc()
+        self._step(doc, 'PL', action='approved', assignee=self.pl)
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self._post(self.rfg, doc, 'confirm-withdraw', {'agent': 'R'})
+
+        noti = MailNotification.objects.get(event_type='withdraw_completed')
+        self.assertIn('wd_r@c.com', noti.recipients)    # 도달한 팀
+        self.assertIn('wd_r2@c.com', noti.recipients)   # 도달한 팀 전원
+        self.assertIn('wd_pl@c.com', noti.recipients)   # 지정 PL
+        self.assertIn('wd_a@c.com', noti.recipients)    # 작성자
+        self.assertNotIn('wd_j@c.com', noti.recipients)  # 아직 열리지 않은 J 팀
+
+    def test_completed_mail_includes_reached_parallel_teams(self):
+        """J 단계가 열린 뒤라면 TE_J 도 통보 대상이다."""
+        doc = self._doc()
+        self._step(doc, 'R', action='approved', assignee=self.rfg)
+        self._step(doc, 'J', assignee=self.job)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self._post(self.job, doc, 'confirm-withdraw', {'agent': 'J'})
+
+        noti = MailNotification.objects.get(event_type='withdraw_completed')
+        self.assertIn('wd_j@c.com', noti.recipients)
+        self.assertIn('wd_r@c.com', noti.recipients)
+
+    def test_completed_mail_has_no_dead_deeplink(self):
+        """문서가 삭제되므로 상세 딥링크 버튼을 싣지 않는다."""
+        doc = self._doc('draft')
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        noti = MailNotification.objects.get(event_type='withdraw_completed')
+        self.assertNotIn(f'/approval?id={doc.id}', noti.contents)
+
+
 # ─── 연간 디자인룰 통계 ────────────────────────────────────────────────────────
 
 class AnnualDesignRuleStatsTest(TestCase):
@@ -3470,3 +3837,500 @@ class ReviewItemSyncTest(TestCase):
         rows = {d['id']: d for d in self.client.get('/api/documents/').json()}
         self.assertEqual(rows[doc.id]['my_pending_review_items'], 0,
                          '검토자로 지정되지 않은 사용자에게는 0 이어야 한다')
+
+
+class RejectionSnapshotTest(TestCase):
+    """반려 이력(RejectionSnapshot) 적재 — 이력 조회 '반려' 탭의 데이터 원본.
+
+    반려는 문서 status 만 바꾸고 재상신하면 되돌아가므로, 반려 시점이 별도 테이블에
+    남는지(그리고 이후 문서 변경에 흔들리지 않는지)를 실제 API 흐름으로 확인한다.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+
+        self.requester = UserProfile.objects.create(loginid='req', mail='req@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='pl1', mail='pl1@c.com', role='PL')
+        self.r_user = UserProfile.objects.create(loginid='r1', mail='r1@c.com', role='TE_R')
+        self.e_user = UserProfile.objects.create(loginid='e1', mail='e1@c.com', role='TE_E')
+        self.master = UserProfile.objects.create(loginid='m1', mail='m1@c.com', role='MASTER')
+
+    # ----- 헬퍼 -----
+
+    def _make_doc(self, detail=None, jayer_rows=None):
+        payload = {'detail': detail or {}, 'jayerRows': jayer_rows or []}
+        return RequestDocument.objects.create(
+            title='라인1(신규)_MAP(NEW)_요청서', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='개발팀',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps(payload, ensure_ascii=False),
+        )
+
+    def _submit(self, doc):
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/',
+                             {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def _resubmit(self, doc):
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/resubmit/',
+                             {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def _advance_to_r(self, doc):
+        """제출 → PL 합의 → R 담당자 지정 까지. R 단계가 pending 인 상태로 둔다."""
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': 'r1',
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def _reject_at_r(self, doc, comment='R 반려 사유'):
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/reject-step/',
+                             {'agent': 'R', 'comment': comment}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    # ----- 적재 -----
+
+    def test_reject_step_creates_snapshot(self):
+        doc = self._make_doc(detail={'line': '라인1'})
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self._reject_at_r(doc)
+
+        snaps = RejectionSnapshot.objects.all()
+        self.assertEqual(snaps.count(), 1)
+        snap = snaps.first()
+        self.assertEqual(snap.source_document_id, doc.id)
+        self.assertEqual(snap.title, doc.title)
+        self.assertEqual(snap.product_name, 'PROD-1')
+        self.assertEqual(snap.requester_name, '요청자')
+        self.assertEqual(snap.requester_department, '개발팀')
+        self.assertEqual(snap.rejected_agent, 'R')
+        self.assertEqual(snap.rejected_by_loginid, 'r1')
+        self.assertEqual(snap.reject_comment, 'R 반려 사유')
+        self.assertEqual(snap.round, 1)
+        self.assertIsNotNone(snap.rejected_at)
+        self.assertEqual(snap.get_detail().get('detail', {}).get('line'), '라인1')
+
+    def test_snapshot_keeps_rejected_step_in_approval_steps_json(self):
+        """결재 경로 탭을 반려 당시로 재현할 수 있도록, 단계 JSON 에 반려 표시가 담겨야 한다."""
+        doc = self._make_doc()
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self._reject_at_r(doc)
+
+        steps = self._json.loads(RejectionSnapshot.objects.first().approval_steps)
+        rejected = [s for s in steps if s['action'] == 'rejected']
+        self.assertEqual(len(rejected), 1)
+        self.assertEqual(rejected[0]['agent'], 'R')
+        self.assertEqual(rejected[0]['assignee_loginid'], 'r1')
+
+    def test_peer_reject_creates_snapshot(self):
+        """지정 PL 반려도 동일하게 적재된다."""
+        doc = self._make_doc()
+        self._submit(doc)
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-reject/',
+                             {'comment': 'PL 반려'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        snap = RejectionSnapshot.objects.get()
+        self.assertEqual(snap.rejected_agent, 'PL')
+        self.assertEqual(snap.rejected_by_loginid, 'pl1')
+        self.assertEqual(snap.reject_comment, 'PL 반려')
+
+    def test_three_rejections_accumulate_three_rows(self):
+        """3번 반려되면 3행. 회차도 1/2/3 으로 쌓인다."""
+        doc = self._make_doc()
+        self._submit(doc)
+        for _ in range(3):
+            self._advance_to_r(doc)
+            self._reject_at_r(doc)
+            doc.refresh_from_db()
+            self.assertEqual(doc.status, 'rejected')
+            self._resubmit(doc)
+
+        self.assertEqual(RejectionSnapshot.objects.count(), 3)
+        self.assertEqual(
+            list(RejectionSnapshot.objects.order_by('round').values_list('round', flat=True)),
+            [1, 2, 3],
+        )
+
+    def test_snapshot_is_frozen_after_document_changes(self):
+        """재상신하며 내용을 바꿔도 이미 적재된 스냅샷은 반려 당시 그대로여야 한다."""
+        doc = self._make_doc(detail={'line': '라인1', 'process_id': 'BEFORE'})
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self._reject_at_r(doc)
+
+        doc.refresh_from_db()
+        doc.title = '수정된 제목'
+        doc.additional_notes = self._json.dumps(
+            {'detail': {'line': '라인5', 'process_id': 'AFTER'}, 'jayerRows': []}, ensure_ascii=False
+        )
+        doc.save()
+
+        snap = RejectionSnapshot.objects.get()
+        self.assertEqual(snap.title, '라인1(신규)_MAP(NEW)_요청서')
+        self.assertEqual(snap.get_detail()['detail']['process_id'], 'BEFORE')
+        self.assertEqual(snap.get_detail()['detail']['line'], '라인1')
+
+    def test_mask_revision_request_does_not_create_snapshot(self):
+        """E(MASK)의 '수정 요청'은 반려가 아니다 — 문서 status 도 스냅샷도 바뀌지 않는다."""
+        doc = self._make_doc(jayer_rows=[{'pp': 'PLEL'}])
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/',
+                             {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.e_user)
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/reject-step/',
+                             {'agent': 'E', 'comment': '수정해주세요'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertEqual(RejectionSnapshot.objects.count(), 0)
+
+    def test_snapshot_survives_document_deletion(self):
+        """원본 문서를 지워도 이력은 남는다(document 만 끊기고 source_document_id 는 유지)."""
+        doc = self._make_doc()
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self._reject_at_r(doc)
+        doc_id = doc.id
+
+        self.client.force_authenticate(user=self.master)
+        r = self.client.post(f'/api/documents/{doc_id}/delete/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(RequestDocument.objects.filter(id=doc_id).exists())
+
+        snap = RejectionSnapshot.objects.get()
+        self.assertIsNone(snap.document_id)
+        self.assertEqual(snap.source_document_id, doc_id)
+        self.assertEqual(snap.title, '라인1(신규)_MAP(NEW)_요청서')
+
+    # ----- API -----
+
+    def test_list_api_returns_newest_first(self):
+        doc = self._make_doc()
+        self._submit(doc)
+        for _ in range(2):
+            self._advance_to_r(doc)
+            self._reject_at_r(doc)
+            doc.refresh_from_db()
+            self._resubmit(doc)
+
+        self.client.force_authenticate(user=self.requester)
+        res = self.client.get('/api/rejection-snapshots/')
+        self.assertEqual(res.status_code, 200, res.content)
+        rows = res.json()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual([row['round'] for row in rows], [2, 1], '반려일 최신순이어야 한다')
+        self.assertIsInstance(rows[0]['approval_steps'], list,
+                             'approval_steps 는 문자열이 아니라 배열로 내려가야 한다')
+
+    def test_list_api_supports_search(self):
+        doc = self._make_doc()
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self._reject_at_r(doc)
+
+        self.client.force_authenticate(user=self.requester)
+        self.assertEqual(len(self.client.get('/api/rejection-snapshots/?search=PROD-1').json()), 1)
+        self.assertEqual(len(self.client.get('/api/rejection-snapshots/?search=없는제품').json()), 0)
+
+    def test_delete_allowed_for_master_only(self):
+        doc = self._make_doc()
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self._reject_at_r(doc)
+        snap_id = RejectionSnapshot.objects.get().id
+
+        self.client.force_authenticate(user=self.requester)
+        res = self.client.delete(f'/api/rejection-snapshots/{snap_id}/')
+        self.assertEqual(res.status_code, 403)
+        self.assertTrue(RejectionSnapshot.objects.filter(id=snap_id).exists())
+
+        self.client.force_authenticate(user=self.master)
+        res = self.client.delete(f'/api/rejection-snapshots/{snap_id}/')
+        self.assertEqual(res.status_code, 204, res.content)
+        self.assertFalse(RejectionSnapshot.objects.filter(id=snap_id).exists())
+
+    def test_snapshot_cannot_be_created_through_api(self):
+        """적재는 반려 API 에서만 일어난다 — 직접 POST 는 허용하지 않는다."""
+        self.client.force_authenticate(user=self.master)
+        res = self.client.post('/api/rejection-snapshots/', {'title': 'x'}, format='json')
+        self.assertEqual(res.status_code, 405)
+
+
+class MailLineFilterTest(TestCase):
+    """라인별 메일 수신 설정(receive_all_mail / mail_lines) 필터 검증.
+
+    '전체 받기'가 켜져 있으면(기본값) 전부 받고, 끈 뒤 고른 라인의 메일만 받는다.
+    """
+
+    def setUp(self):
+        import json
+        self.line1 = Line.objects.create(name='라인1', order=1)
+        self.line3 = Line.objects.create(name='라인3', order=3)
+        self.requester = UserProfile.objects.create(
+            loginid='mlf_req', mail='mlf_req@company.com', role='NONE'
+        )
+        self.doc = _make_document(self.requester)
+        self.doc.additional_notes = json.dumps({'detail': {'line': '라인1'}})
+        self.doc.save()
+
+    def _make_j(self, loginid, lines, receive_all=False):
+        """TE_J 사용자 생성. 기본은 '전체 받기'를 끄고 지정한 라인만 받는 상태."""
+        user = UserProfile.objects.create(
+            loginid=loginid, mail=f'{loginid}@company.com', role='TE_J',
+            receive_all_mail=receive_all,
+        )
+        user.mail_lines.set(lines)
+        return user
+
+    def test_team_broadcast_excludes_user_who_turned_line_off(self):
+        """팀 전체 발송에서 라인1을 끈 사람만 빠진다."""
+        self._make_j('mlf_j_on', [self.line1, self.line3])
+        self._make_j('mlf_j_off', [self.line3])
+        step = ApprovalStep.objects.create(document=self.doc, agent='J')
+        recipients = mailer.resolve_stage_recipients(self.doc, 'J', step)
+        self.assertIn('mlf_j_on@company.com', recipients)
+        self.assertNotIn('mlf_j_off@company.com', recipients)
+
+    def test_assigned_user_with_line_off_gets_no_mail(self):
+        """담당자로 지정돼 있어도 그 라인을 껐으면 메일이 나가지 않는다."""
+        user = self._make_j('mlf_j_assigned', [self.line3])
+        step = ApprovalStep.objects.create(document=self.doc, agent='J', assignee=user)
+        self.assertEqual(mailer.resolve_stage_recipients(self.doc, 'J', step), [])
+        self.assertIsNone(mailer.enqueue_stage_arrival(self.doc, 'J', step))
+
+    def test_pl_role_is_not_filtered(self):
+        """PL 은 라인 설정 대상이 아니라 mail_lines 가 비어 있어도 그대로 받는다."""
+        pl = UserProfile.objects.create(loginid='mlf_pl', mail='mlf_pl@company.com', role='PL')
+        step = ApprovalStep.objects.create(document=self.doc, agent='PL', assignee=pl)
+        self.assertEqual(
+            mailer.resolve_stage_recipients(self.doc, 'PL', step), ['mlf_pl@company.com']
+        )
+
+    def test_document_without_line_is_not_filtered(self):
+        """라인 값이 없는 의뢰서는 필터가 성립하지 않아 전원 수신한다."""
+        self._make_j('mlf_j_noline', [])
+        doc = _make_document(self.requester)  # additional_notes 없음 → detail.line 없음
+        step = ApprovalStep.objects.create(document=doc, agent='J')
+        self.assertIn('mlf_j_noline@company.com', mailer.resolve_stage_recipients(doc, 'J', step))
+
+    def test_notifier_recipients_are_filtered(self):
+        """통보처로 지정된 사람도 라인을 껐으면 통보 메일을 받지 않는다."""
+        import json
+        self._make_j('mlf_noti_on', [self.line1])
+        self._make_j('mlf_noti_off', [self.line3])
+        self.doc.additional_notes = json.dumps({'detail': {
+            'line': '라인1',
+            'notifiers': [{'loginid': 'mlf_noti_on'}, {'loginid': 'mlf_noti_off'}],
+        }})
+        self.doc.save()
+        recipients = mailer.resolve_notifier_recipients(self.doc)
+        self.assertIn('mlf_noti_on@company.com', recipients)
+        self.assertNotIn('mlf_noti_off@company.com', recipients)
+
+    def test_reject_recipients_are_filtered(self):
+        """반려 메일(잔여 결재선 팀 브로드캐스트)도 필터를 탄다."""
+        self._make_j('mlf_rej_on', [self.line1])
+        self._make_j('mlf_rej_off', [self.line3])
+        ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='rejected')
+        recipients = mailer.resolve_reject_recipients(self.doc)
+        self.assertIn('mlf_rej_on@company.com', recipients)
+        self.assertNotIn('mlf_rej_off@company.com', recipients)
+
+    def test_voc_mail_is_not_filtered(self):
+        """VOC 등록 메일은 MASTER 전원에게 가며, 라인 개념이 없어 필터를 타지 않는다."""
+        master = UserProfile.objects.create(
+            loginid='mlf_master', mail='mlf_master@company.com', role='MASTER'
+        )
+        master.mail_lines.set([self.line3])  # 라인1을 껐지만 VOC 메일은 그대로 받는다
+        self.assertEqual(
+            mailer._resolve_voc_master_recipients(), ['mlf_master@company.com']
+        )
+
+    def test_shared_address_is_kept_when_someone_still_receives(self):
+        """같은 주소를 쓰는 사람 중 한 명이라도 받아야 하면 주소를 빼지 않는다."""
+        keep = UserProfile.objects.create(
+            loginid='mlf_share_on', mail='shared@company.com', role='TE_J',
+            receive_all_mail=False,
+        )
+        keep.mail_lines.set([self.line1])
+        drop = UserProfile.objects.create(
+            loginid='mlf_share_off', mail='shared@company.com', role='TE_J',
+            receive_all_mail=False,
+        )
+        drop.mail_lines.set([self.line3])
+        step = ApprovalStep.objects.create(document=self.doc, agent='J')
+        self.assertIn('shared@company.com', mailer.resolve_stage_recipients(self.doc, 'J', step))
+
+
+class MailLinesApiTest(TestCase):
+    """PATCH /api/users/{id}/mail-lines/ 권한·검증 규칙."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.line1 = Line.objects.create(name='라인1', order=1)
+        self.line3 = Line.objects.create(name='라인3', order=3)
+        self.owner = UserProfile.objects.create(
+            loginid='mla_owner', mail='mla_owner@company.com', role='TE_J',
+            receive_all_mail=False,
+        )
+        self.owner.mail_lines.set([self.line1, self.line3])
+        self.other = UserProfile.objects.create(
+            loginid='mla_other', mail='mla_other@company.com', role='TE_J'
+        )
+        self.master = UserProfile.objects.create(
+            loginid='mla_master', mail='mla_master@company.com', role='MASTER'
+        )
+        self.pl = UserProfile.objects.create(
+            loginid='mla_pl', mail='mla_pl@company.com', role='PL'
+        )
+
+    def _patch(self, user_id, lines):
+        return self.client.patch(
+            f'/api/users/{user_id}/mail-lines/',
+            {'receive_all': False, 'lines': lines}, format='json',
+        )
+
+    def test_owner_can_update_own_lines(self):
+        self.client.force_authenticate(user=self.owner)
+        res = self._patch(self.owner.id, ['라인3'])
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json()['mail_lines'], ['라인3'])
+        self.assertEqual(
+            list(self.owner.mail_lines.values_list('name', flat=True)), ['라인3']
+        )
+
+    def test_empty_list_turns_all_lines_off(self):
+        self.client.force_authenticate(user=self.owner)
+        res = self._patch(self.owner.id, [])
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(self.owner.mail_lines.count(), 0)
+
+    def test_other_user_cannot_update(self):
+        self.client.force_authenticate(user=self.other)
+        self.assertEqual(self._patch(self.owner.id, []).status_code, 403)
+
+    def test_master_can_update_anyone(self):
+        self.client.force_authenticate(user=self.master)
+        res = self._patch(self.owner.id, ['라인1'])
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_pl_role_is_rejected(self):
+        self.client.force_authenticate(user=self.pl)
+        self.assertEqual(self._patch(self.pl.id, ['라인1']).status_code, 400)
+
+    def test_unknown_line_is_rejected(self):
+        self.client.force_authenticate(user=self.owner)
+        self.assertEqual(self._patch(self.owner.id, ['라인9']).status_code, 400)
+
+    def test_invalid_payload_is_rejected(self):
+        self.client.force_authenticate(user=self.owner)
+        res = self.client.patch(
+            f'/api/users/{self.owner.id}/mail-lines/', {'lines': '라인1'}, format='json'
+        )
+        self.assertEqual(res.status_code, 400)
+
+
+class ReceiveAllMailTest(TestCase):
+    """'전체 받기'(receive_all_mail) 동작 검증 — 기본값이자 라인 필터를 무력화하는 상태."""
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.line1 = Line.objects.create(name='라인1', order=1)
+        self.line3 = Line.objects.create(name='라인3', order=3)
+        self.requester = UserProfile.objects.create(
+            loginid='ram_req', mail='ram_req@company.com', role='NONE'
+        )
+        self.doc = _make_document(self.requester)
+        self.doc.additional_notes = json.dumps({'detail': {'line': '라인1'}})
+        self.doc.save()
+
+    def test_new_user_defaults_to_receive_all(self):
+        """새 사용자는 라인을 하나도 고르지 않아도 전체 받기 상태로 시작한다."""
+        user = UserProfile.objects.create(
+            loginid='ram_new', mail='ram_new@company.com', role='TE_J'
+        )
+        self.assertTrue(user.receive_all_mail)
+        self.assertEqual(user.mail_lines.count(), 0)
+        step = ApprovalStep.objects.create(document=self.doc, agent='J')
+        self.assertIn('ram_new@company.com', mailer.resolve_stage_recipients(self.doc, 'J', step))
+
+    def test_receive_all_user_gets_mail_for_any_line(self):
+        """전체 받기 사용자는 어느 라인의 의뢰서든 받는다."""
+        import json
+        user = UserProfile.objects.create(
+            loginid='ram_all', mail='ram_all@company.com', role='TE_J', receive_all_mail=True
+        )
+        user.mail_lines.set([self.line3])  # 남아 있어도 전체 받기가 우선한다
+        for line in ('라인1', '라인3', '라인5'):
+            self.doc.additional_notes = json.dumps({'detail': {'line': line}})
+            self.doc.save()
+            step = ApprovalStep.objects.create(document=self.doc, agent='J')
+            self.assertIn(
+                'ram_all@company.com', mailer.resolve_stage_recipients(self.doc, 'J', step),
+                f'{line} 의뢰서에서 전체 받기 사용자가 빠졌다',
+            )
+
+    def test_api_receive_all_clears_selected_lines(self):
+        """전체 받기를 켜면 개별 라인 선택은 비워진다."""
+        user = UserProfile.objects.create(
+            loginid='ram_api', mail='ram_api@company.com', role='TE_J', receive_all_mail=False
+        )
+        user.mail_lines.set([self.line1])
+        self.client.force_authenticate(user=user)
+        res = self.client.patch(
+            f'/api/users/{user.id}/mail-lines/', {'receive_all': True}, format='json'
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json(), {'id': user.id, 'receive_all_mail': True, 'mail_lines': []})
+        user.refresh_from_db()
+        self.assertTrue(user.receive_all_mail)
+        self.assertEqual(user.mail_lines.count(), 0)
+
+    def test_api_selecting_lines_turns_receive_all_off(self):
+        """라인을 고르면 전체 받기가 해제된다."""
+        user = UserProfile.objects.create(
+            loginid='ram_api2', mail='ram_api2@company.com', role='TE_J'
+        )
+        self.client.force_authenticate(user=user)
+        res = self.client.patch(
+            f'/api/users/{user.id}/mail-lines/',
+            {'receive_all': False, 'lines': ['라인1']}, format='json',
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        user.refresh_from_db()
+        self.assertFalse(user.receive_all_mail)
+        self.assertEqual(list(user.mail_lines.values_list('name', flat=True)), ['라인1'])
+
+    def test_api_rejects_non_boolean_receive_all(self):
+        user = UserProfile.objects.create(
+            loginid='ram_api3', mail='ram_api3@company.com', role='TE_J'
+        )
+        self.client.force_authenticate(user=user)
+        res = self.client.patch(
+            f'/api/users/{user.id}/mail-lines/', {'receive_all': 'yes'}, format='json'
+        )
+        self.assertEqual(res.status_code, 400)
