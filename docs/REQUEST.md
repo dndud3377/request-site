@@ -870,6 +870,41 @@ pages/RequestPage/
   - 썸네일 크기 상수: `DIFF_THUMB_MAX_WIDTH=220` / `DIFF_THUMB_MAX_HEIGHT=150` (블록 본체의 300×200 보다 작게 두어 변경 전·후가 한 화면에 들어온다). 경로 prefix 는 `MEDIA_URL_PREFIX='/media/'`.
   - 테두리 색은 표의 기존 색 규칙을 따른다 — 변경 전 `#dc3545`, 변경 후 `#155724`. 확대(클릭) 동작은 없다.
 
+### 추가 변경 이력 (2026-08 — 이력 확인 모드 이원화)
+
+상세 보기의 '이력 확인'이 **화면에 따라 다르게 동작**한다. `PagedDetailView` 의 `historyMode` prop 하나로 갈리며, `HistoryPage`(승인 완료 문서 전용, `status=approved`)에서만 `true` 다. `ApprovalPage`는 넘기지 않으므로 기본 `false`.
+
+| | 결재 진행 중 (`ApprovalPage`) | 이력 조회 (`HistoryPage`) |
+|---|---|---|
+| 강조·버튼 조건 | **직전 회차와 다를 때만** | **전 회차 중 한 번이라도 변경** |
+| 모달 내용 | **변경 전 / 변경 후만** | **회차별 전체**(1차·2차·…·현재) |
+
+- 대상은 9곳 전부 — 칩 14종 / O-layer 정보탭 3종 / 엠샷 / 생산정보 / REV / 지도 옵션 / J-ayer·O-ayer·뼈찜 표 행.
+- **진행 중 통일**: 종전에 칩·O-layer 정보탭만 회차별 표(`FieldHistoryModal`)로 뜨던 것을 전/후 2열로 바꿔 나머지와 맞췄다. `FieldHistoryModal` 이 `historyMode=false` 면 `FieldGroupHistoryModal` 로 위임한다.
+- **회차 축**: `roundSnaps: RoundSnapshot[]` = `history[]` + 현재값을 한 배열로 묶은 것. 이력 UI 전부가 이 배열 하나를 공유한다(결재 경로 섹션의 `rounds`(회차 번호 배열)와 다른 값이라 이름을 구분했다).
+- **판정 함수**: `computeEverChangedFields`(인접 회차 diff 합집합) / `computeTableEverChanged`(행 단위). 값이 되돌아온 필드(A→B→A)도 이력 조회에서는 잡힌다.
+- **회차별 모달 3종 추가**: `FieldGroupRoundHistoryModal`(행=항목, 열=회차 · 이미지 셀은 썸네일) / `RowRoundHistoryModal`(표 행: 행=회차, 열=필드) / 지도 옵션은 회차별 태그 목록.
+- **표 행 매칭**: `findRowInRound` — id 매칭이 원칙이고, 회차 간 겹치는 id 가 **하나도 없을 때만** 위치(index) 폴백. `computeTableDiff` 와 같은 규칙이라 강조 판정과 모달 내용이 어긋나지 않는다. 그 회차에 대응 행이 없으면 `(없음)` 으로 표시한다.
+- **블록 빌더 시그니처 변경**: `buildMshotRows(prev, cur)` → `buildMshotItems(d)` (생산정보·REV 동일). 한 회차만 받는 순수 함수라 전/후 표와 회차별 표가 같은 함수를 공유한다. 전/후 표는 `toDiffRows` 로 조립한다.
+- 전체 가이드 투어는 `ApprovalPage` 기준(`open-rowdiff`)이므로 종전 전/후 모달 그대로다.
+
+### 추가 변경 이력 (2026-08 — 이력 누락·오탐 3건 수정)
+
+**1. 흐름도(flow_chart) 이력 신설** — 그동안 이력 UI 가 아예 없어 값이 바뀌어도 표시되지 않았다.
+- 섹션 카드에 빨간 테두리 + '이력 확인'(`flowChanged = changedFields.has('flow_chart')`).
+- **블록 단위**로 표 전체를 구간별로 쌓아 보여준다(`renderFlowHistory`) — 진행 중은 `변경 전`/`변경 후`, 이력 조회는 회차별. 흐름도는 행 추가·삭제가 잦아 행끼리 짝지어 비교하면 늘고 준 것을 놓치기 때문에 행 단위를 쓰지 않는다.
+
+**2. 표로 입력한 항목을 이력에서도 표로** — REV `Layer / GDS`, O-ayer 정보탭 `TBV/TLV` 가 `G1: L1,L2` / `[3] (1,2:O)` 같은 한 줄 문자열로 눌려 있었다.
+- `DiffItem`/`DiffRow` 에 `kind: 'table'` 과 `DiffTable { headers, rows }` 추가. `buildRevTable`(GDS·Layer) / `buildTbvtlvTable`(SD 선택·No·X·Y·사용여부)이 원본 입력 표와 같은 열 구성을 만든다.
+- `DiffMiniTable` 이 렌더하며 **다른 쪽과 값이 다른 셀만 강조**한다(진행 중: 전=빨강/후=초록, 이력 조회: 직전 회차 대비 빨강). 상대 쪽에 없는 행은 행 전체가 강조된다. 셀 강조가 있으므로 그 행에는 행 전체 배경색을 입히지 않는다.
+- TBV/TLV 는 `FieldHistoryModal` 경로라 `buildTable` prop 으로 주입한다. 구버전(자유 입력 `note`) 저장분은 좌표 행이 없어 SD 칸에 `SD (note)` 형태로 함께 적어 값을 잃지 않는다.
+
+**3. J/O/BB 표 변경 오탐 제거 [동작 변경]** — 아무것도 고치지 않아도 이력이 뜨던 문제.
+- 원인: `rowContentSig` 가 `id·sortOrder·disabled·sourceJayerRowId` 만 빼고 **나머지 전 필드**를 비교했다. 화면에 없는 `loaded`·`manuallyDisabled`·`entryId`·`entryIdx` 가 포함됐는데, 이 값들은 재상신 편집 로드 때 시스템이 재계산·백필한다(`RequestPage/index.tsx:855-877`).
+- 수정: **비교 기준 = 이력 모달의 표시 컬럼**. 컬럼 정의를 모듈 상수 `JAYER_DIFF_FIELDS` / `OAYER_DIFF_FIELDS` / `BB_DIFF_FIELDS` 로 올리고, `rowContentSig(row, fields)` · `computeTableDiff(cur, prev, fields)` · `computeTableEverChanged(..., fields)` 가 이를 받는다. 표 컴포넌트는 `toDiffFields(defs, t)` 로 같은 정의에서 라벨을 만든다.
+- 정의가 한 곳이라 **행 타입에 새 내부 필드가 추가돼도 오탐이 재발하지 않는다**(종전 제외 목록 방식은 갱신을 빠뜨리면 그대로 버그였다).
+- J-ayer 이력 모달의 `Layer` 컬럼은 원본 표 헤더에 없지만 **유지**한다 — 비교 기준이므로 빼면 `layerid` 변경이 이력에서 사라진다.
+
 ### 추가 변경 이력 (2026-07 — 조건부 필드 초기화 + REV i18n)
 
 - **조건부 섹션 '해제' 시 하위 값 초기화(감사 R-2~R-6)**: 숨겨진 채 state 에 남아 backend 에 잘못 저장되던 값들을 비운다. `index.tsx` 핸들러 + `StepMap` select 연결.

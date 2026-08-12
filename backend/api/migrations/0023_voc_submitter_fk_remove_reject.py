@@ -8,7 +8,10 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0021_userprofile_mail_lines"),
+        # 0022 가 둘로 갈라져(receive_all_mail / VOC) 리프 노드가 2개가 됐다.
+        # 건드리는 모델이 서로 달라 순서 의존이 없으므로, 이 파일을 0023 으로 내려
+        # receive_all_mail 뒤에 직렬로 잇는다.
+        ("api", "0022_userprofile_receive_all_mail"),
     ]
 
     operations = [
