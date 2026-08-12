@@ -35,7 +35,9 @@
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
 """
 import logging
+import re
 import threading
+from html import unescape
 
 import requests
 from urllib3.exceptions import InsecureRequestWarning
@@ -46,7 +48,7 @@ from django.db.models import Max, Q
 from django.utils import timezone
 from django.utils.html import escape
 
-from .models import ApprovalStep, MailNotification, UserProfile
+from .models import VOC, ApprovalStep, MailNotification, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +220,10 @@ EVENT_THEME['withdraw_completed'] = EVENT_THEME['rejected']
 # 철회 거부/취소: 결재가 그대로 이어진다는 정보성 통보라 통보 계열(퍼플) 테마
 EVENT_THEME['withdraw_rejected'] = EVENT_THEME['notify_submitted']
 EVENT_THEME['withdraw_cancelled'] = EVENT_THEME['notify_submitted']
+# VOC 등록: 새 요청이 도착했다는 알림이라 결재 도착과 같은 블루 테마
+EVENT_THEME['voc_created'] = EVENT_THEME['stage_arrival']
+# VOC 답글: 논의가 진행됐다는 정보성 알림이라 통보 계열(퍼플) 테마
+EVENT_THEME['voc_comment'] = EVENT_THEME['notify_submitted']
 
 
 # --------------------------------------------------------------------------- #
@@ -1094,50 +1100,198 @@ def enqueue_withdraw_cancelled(document, withdraw_request):
 # --------------------------------------------------------------------------- #
 # VOC 알림
 # --------------------------------------------------------------------------- #
+# VOC 카테고리/상태 코드 → 메일에 실을 한글 라벨. 모델 choices 와 같은 값을 쓰되
+# 메일 문구는 화면 라벨과 어휘를 맞춘다("완료" → "답변완료").
+VOC_CATEGORY_LABEL = dict(VOC.CATEGORY_CHOICES)
+VOC_STATUS_LABEL = {'checking': '확인중', 'completed': '답변완료'}
+VOC_PAGE_LABEL = {
+    'request': '의뢰서 작성',
+    'approval': '결재 현황',
+    'history': '이력 조회',
+    'other': '기타',
+}
+
+# 제출자에게만 덧붙이는 안내 — 답변 완료 처리는 작성자 본인(또는 MASTER)만 할 수 있다.
+VOC_COMPLETE_GUIDE = '답변이 만족스러우셨다면 답변 완료 처리 해주세요.'
+
+
+def _html_to_text(html):
+    """RichTextEditor 가 만든 HTML 을 메일 카드에 실을 평문으로 바꾼다.
+
+    블록/개행 태그는 줄바꿈으로 바꾼 뒤 나머지 태그를 걷어낸다. 반환값은
+    _render_voc_email 에서 escape 되므로 여기서는 escape 하지 않는다.
+    """
+    if not html:
+        return ''
+    text = re.sub(r'<br\s*/?>', '\n', html, flags=re.IGNORECASE)
+    text = re.sub(r'</(p|div|li|h[1-6])>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<[^>]+>', '', text)
+    text = unescape(text).replace('\xa0', ' ')
+    # 태그 제거 과정에서 생긴 연속 빈 줄을 하나로 줄인다.
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
 def _resolve_voc_master_recipients():
-    """VOC 등록 알림 수신자: settings.VOC_MASTER_EMAIL (고정 주소)."""
-    raw = getattr(settings, 'VOC_MASTER_EMAIL', '') or ''
-    recipients = [addr.strip() for addr in raw.split(',') if addr.strip()]
-    return _apply_redirect(recipients)
+    """VOC 등록 알림 수신자: role='MASTER' 사용자 전원의 메일 주소.
+
+    MASTER 계정이 늘어나도 설정 변경 없이 자동 반영된다. 라인 수신 설정 필터는
+    VOC 에 라인 개념이 없어 타지 않는다(_apply_redirect 에 document 를 넘기지 않음).
+    """
+    emails = list(
+        UserProfile.objects.filter(role='MASTER')
+        .exclude(mail='')
+        .exclude(mail__isnull=True)
+        .values_list('mail', flat=True)
+    )
+    return _apply_redirect(emails)
+
+
+def _voc_submitter_email(voc):
+    """VOC 제출자의 메일 주소. FK 가 있으면 계정의 주소를 우선한다.
+
+    submitter_name/submitter_email 은 프론트가 보낸 값이라 개발 모드에서는 실제
+    계정 정보와 다를 수 있다. FK 는 서버가 확정하므로 그쪽이 더 정확하다.
+    """
+    if voc.submitter_id and voc.submitter.mail:
+        return voc.submitter.mail.strip()
+    return (voc.submitter_email or '').strip()
 
 
 def _resolve_voc_comment_recipients(voc, commenter_email):
-    """VOC 댓글 알림 수신자: 제출자 + 기존 댓글 작성자 집합 - 본인."""
-    emails = set()
-    if voc.submitter_email:
-        emails.add(voc.submitter_email.strip())
+    """VOC 댓글 알림 수신자를 (제출자, 그 외 참여자) 로 나눠 반환한다.
+
+    제출자에게 가는 메일에만 '답변 완료 처리' 안내를 넣어야 해서, 한 통에 모든
+    수신자를 담지 않고 본문이 다른 두 통으로 나눈다.
+    그 외 참여자 = 기존 댓글 작성자 전원 - 제출자 - 이번 댓글 작성자 본인.
+    """
+    me = (commenter_email or '').strip()
+    submitter_email = _voc_submitter_email(voc)
+
+    others = set()
     for comment in voc.comments.all():
         if comment.author_email:
-            emails.add(comment.author_email.strip())
-    emails.discard((commenter_email or '').strip())
-    return _apply_redirect(list(emails))
+            others.add(comment.author_email.strip())
+    others.discard(submitter_email)
+    others.discard(me)
+
+    submitter = [submitter_email] if submitter_email and submitter_email != me else []
+    return _apply_redirect(submitter), _apply_redirect(sorted(others))
 
 
-def _build_voc_message(event_type, voc, commenter_name=None):
-    """VOC 이벤트 유형별 제목/본문(HTML)을 생성한다."""
+def _voc_info_grid(voc, theme):
+    """VOC 메일 본문의 2x2 정보 타일. 결재 메일의 KPI 그리드와 같은 형식을 쓴다."""
+    tiles = [
+        ('유형', VOC_CATEGORY_LABEL.get(voc.category, voc.category)),
+        ('관련 페이지', VOC_PAGE_LABEL.get(voc.page, voc.page or '-')),
+        ('작성자', voc.submitter_name or '-'),
+        ('상태', VOC_STATUS_LABEL.get(voc.status, voc.status)),
+    ]
+    return _kpi_grid(tiles, theme['tile_bg'], theme['tile_border'])
+
+
+def _render_voc_email(event_type, headline, voc, body_text, guide_text, link):
+    """VOC 알림용 히어로 헤더 + 카드형 본문(HTML).
+
+    결재 알림(_render_hero_kpi_email)과 같은 디자인 언어를 쓰되, 그 함수는
+    의뢰서와 결재 경로 카드를 필수로 요구해 VOC 에는 재사용할 수 없어 별도로 둔다.
+    voc.title / body_text 는 사용자 입력이므로 escape 한다.
+    """
+    theme = EVENT_THEME.get(event_type, EVENT_THEME['stage_arrival'])
+    hero_from, hero_to = theme['hero']
+    info_html = _voc_info_grid(voc, theme)
+
+    guide_html = f'''      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+        <tr><td style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;">
+          <div style="font-size:13.5px;font-weight:600;color:#92400e;line-height:1.6;">{escape(guide_text)}</div>
+        </td></tr>
+      </table>
+''' if guide_text else ''
+
+    return f'''<!--[if mso]>
+<table role="presentation" align="center" width="600" cellpadding="0" cellspacing="0"><tr><td>
+<![endif]-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="width:100%;max-width:600px;margin:0 auto;background:{theme['outer_bg']};border-radius:14px;overflow:hidden;border:1px solid {theme['outer_border']};">
+  <tr>
+    <td bgcolor="{hero_from}" style="background:linear-gradient(135deg,{hero_from} 0%,{hero_to} 100%);padding:30px 32px 26px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr><td style="font-size:12px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.75);text-transform:uppercase;">제품 소개 지도 의뢰 시스템 · VOC</td></tr>
+        <tr><td style="padding-top:12px;font-size:19px;line-height:1.45;font-weight:700;color:#ffffff;">{escape(headline)}</td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:28px 32px 4px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid {theme['outer_border']};border-radius:12px;">
+        <tr><td style="padding:18px 18px 4px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
+            <tr><td>
+              <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:{theme['label_color']};text-transform:uppercase;">VOC 제목</div>
+              <div style="margin-top:6px;font-size:17px;font-weight:700;color:#0f172a;line-height:1.5;">{escape(voc.title)}</div>
+            </td></tr>
+          </table>
+          {info_html}
+        </td></tr>
+      </table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;">
+        <tr><td style="background:#ffffff;border:1px solid {theme['outer_border']};border-radius:10px;padding:14px 16px;">
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:{theme['note_label_color']};text-transform:uppercase;">내용</div>
+          <div style="margin-top:5px;font-size:14px;font-weight:500;color:#0f172a;line-height:1.6;white-space:pre-wrap;">{escape(body_text) or '-'}</div>
+        </td></tr>
+      </table>
+{guide_html}    </td>
+  </tr>
+  <tr>
+    <td style="padding:22px 32px 6px;">
+      <table role="presentation" cellpadding="0" cellspacing="0">
+        <tr><td bgcolor="{hero_from}" style="border-radius:8px;">
+          <a href="{link}" style="display:inline-block;padding:12px 22px;font-size:13.5px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">VOC 상세에서 확인하기 →</a>
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 32px 30px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="border-top:1px solid {theme['footer_border']};font-size:0;line-height:0;">&nbsp;</td></tr></table>
+      <p style="margin:16px 0 0;font-size:11.5px;line-height:1.7;color:#94a3b8;">본 메일은 제품 소개 지도 의뢰 시스템에서 자동 발송되었습니다. 이 메일에는 회신하지 마세요.</p>
+    </td>
+  </tr>
+</table>
+<!--[if mso]>
+</td></tr></table>
+<![endif]-->'''
+
+
+def _latest_comment_text(voc):
+    """가장 최근 댓글 본문. 없으면 빈 문자열."""
+    comment = voc.comments.order_by('-created_at', '-id').first()
+    return comment.content if comment else ''
+
+
+def _build_voc_message(event_type, voc, commenter_name=None, for_submitter=False):
+    """VOC 이벤트 유형별 제목/본문(HTML)을 생성한다.
+
+    for_submitter=True 면 제출자용 메일이라 '답변 완료 처리' 안내를 함께 싣는다.
+    """
     link = _voc_link(voc.id)
-    link_html = f'<p><a href="{link}">VOC 상세에서 확인하기</a></p>'
-    base_info = (
-        f'<p>제목: {voc.title}</p>'
-        f'<p>작성자: {voc.submitter_name}</p>'
-    )
+    guide_text = VOC_COMPLETE_GUIDE if for_submitter else ''
 
     if event_type == 'voc_created':
         subject = f'[VOC 등록] {voc.title}'
-        contents = (
-            '<p>새로운 VOC가 등록되었습니다.</p>'
-            f'{base_info}{link_html}'
-        )
+        headline = '새로운 VOC가 등록되었습니다.'
+        body_text = _html_to_text(voc.content)
     else:
-        subject = f'[VOC 댓글] {voc.title}'
-        contents = (
-            f'<p>{commenter_name or "누군가"}님이 댓글을 남겼습니다.</p>'
-            f'{base_info}{link_html}'
-        )
+        writer = commenter_name or '누군가'
+        subject = f'[VOC 답글] {voc.title}'
+        headline = f'{writer}님이 답글을 남겼습니다.'
+        body_text = _latest_comment_text(voc)
+
+    contents = _render_voc_email(event_type, headline, voc, body_text, guide_text, link)
     return subject, contents
 
 
-def _enqueue_voc(voc, event_type, recipients, commenter_name=None):
+def _enqueue_voc(voc, event_type, recipients, commenter_name=None, for_submitter=False):
     """VOC 알림용 MailNotification 적재 (document=None)."""
     if not recipients:
         logger.info(
@@ -1145,7 +1299,9 @@ def _enqueue_voc(voc, event_type, recipients, commenter_name=None):
             event_type, voc.pk,
         )
         return None
-    subject, contents = _build_voc_message(event_type, voc, commenter_name)
+    subject, contents = _build_voc_message(
+        event_type, voc, commenter_name, for_submitter=for_submitter,
+    )
     from .models import MailNotification
     noti = MailNotification.objects.create(
         document=None,
@@ -1160,15 +1316,26 @@ def _enqueue_voc(voc, event_type, recipients, commenter_name=None):
 
 
 def enqueue_voc_created(voc):
-    """VOC 신규 등록 알림 적재."""
+    """VOC 신규 등록 알림 적재 — MASTER 전원 수신."""
     recipients = _resolve_voc_master_recipients()
     return _enqueue_voc(voc, 'voc_created', recipients)
 
 
 def enqueue_voc_comment(voc, commenter_email, commenter_name=None):
-    """VOC 댓글 등록 알림 적재."""
-    recipients = _resolve_voc_comment_recipients(voc, commenter_email)
-    return _enqueue_voc(voc, 'voc_comment', recipients, commenter_name=commenter_name)
+    """VOC 답글 등록 알림 적재.
+
+    제출자와 그 외 참여자에게 본문이 다른 두 통을 보낸다 — 제출자 메일에만
+    '답변 완료 처리' 안내가 들어간다. (제출자용, 그 외용) 튜플을 반환한다.
+    """
+    submitter_recipients, other_recipients = _resolve_voc_comment_recipients(voc, commenter_email)
+    to_submitter = _enqueue_voc(
+        voc, 'voc_comment', submitter_recipients,
+        commenter_name=commenter_name, for_submitter=True,
+    )
+    to_others = _enqueue_voc(
+        voc, 'voc_comment', other_recipients, commenter_name=commenter_name,
+    )
+    return to_submitter, to_others
 
 
 # --------------------------------------------------------------------------- #

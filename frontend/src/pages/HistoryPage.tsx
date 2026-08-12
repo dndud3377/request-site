@@ -437,6 +437,8 @@ export default function HistoryPage(): React.ReactElement {
             pageIdx={pageIdx}
             setPageIdx={setPageIdx}
             reviewItems={reviewItemsReadonly(selected)}
+            // 결재가 끝난 문서 — 한 번이라도 바뀐 항목을 회차별로 볼 수 있게 한다.
+            historyMode
           />
         </Modal>
       )}

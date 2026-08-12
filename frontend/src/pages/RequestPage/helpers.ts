@@ -1,6 +1,6 @@
 import { FilterSet, ValidationSystemValue, MergePair, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep } from '../../types';
 import {
-  VALIDATION_KEYWORD, NOC_NEW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, genId, VS_NA, VS_TARGET,
+  VALIDATION_KEYWORD, NOC_NEW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, isStO, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL,
 } from './constants';
 
@@ -49,6 +49,48 @@ export const sanitizeSignedDecimal = (raw: string): string => {
   }
   return (neg ? '-' : '') + v;
 };
+
+/**
+ * Backbone 조합 영역(STEP1) 입력이 **필수**인가.
+ * J-layer 활성 행에 st 가 'O 계열'인 행이 하나라도 있으면 그 요청서는 BB 조합이 반드시 필요하다.
+ * (O-layer 는 판정 근거가 아니다 — J-layer 표 하나만 본다.)
+ */
+export const requiresBbEntries = (
+  jayerRows: { disabled: boolean; st: string }[]
+): boolean => jayerRows.some((r) => !r.disabled && isStO(r.st));
+
+/** Backbone 조합 영역 한 항목의 입력 상태 — 세 칸(위치·제품·조리법) 기준. */
+const bbEntryFillState = (
+  e: { location: string; product: string; process_id: string }
+): 'empty' | 'partial' | 'full' => {
+  const filled = [e.location, e.product, e.process_id].filter((v) => !!v?.trim()).length;
+  if (filled === 0) return 'empty';
+  return filled === 3 ? 'full' : 'partial';
+};
+
+/**
+ * Backbone 조합 영역에서 진행을 막아야 하는 항목 id 목록.
+ *  · required=true  : 완전히 채워지지 않은 모든 항목(빈 항목 포함) — 불필요한 항목은 삭제하도록 유도.
+ *  · required=false : 일부만 채운 항목만. 빈 항목은 그대로 두어도 된다.
+ */
+export const findBbEntryViolations = (
+  entries: { id: string; location: string; product: string; process_id: string }[],
+  required: boolean
+): string[] =>
+  entries
+    .filter((e) => {
+      const state = bbEntryFillState(e);
+      return required ? state !== 'full' : state === 'partial';
+    })
+    .map((e) => e.id);
+
+/** 활성 행 중 st 또는 new_or_copy 가 공란인 행 id 목록 (J/O-ayer 공용) */
+export const findEmptyStNocViolations = (
+  rows: { id: string; disabled: boolean; st: string; new_or_copy: string }[]
+): string[] =>
+  rows
+    .filter((r) => !r.disabled && (!r.st?.trim() || !r.new_or_copy?.trim()))
+    .map((r) => r.id);
 
 /** new_or_copy='차용' 활성 행 중 product_name·step 공란인 행 id 목록 (J/O-ayer 공용) */
 export const findNocBorrowViolations = (

@@ -62,6 +62,7 @@ import {
   OAYER_EDITABLE_COLS,
   LOADED_LOCK_COLS,
   isNocSpecial,
+  NOC_LAYER_DELETE,
   makeTourDetail,
   makeTourJayerRows,
   makeTourOayerRows,
@@ -82,7 +83,8 @@ import {
   makeAdiCdStep,
 } from './constants';
 import {
-  formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
+  formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, findEmptyStNocViolations,
+  requiresBbEntries, findBbEntryViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, AdiCdHeaderMatch,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
@@ -123,6 +125,12 @@ const SUBMIT_MODAL_MAX_WIDTH = '1040px';
 const SUBMIT_MODAL_MIN_BODY_HEIGHT = '62vh';
 // 특이사항 입력칸 줄 수(기존 3줄 → 넓어진 모달에 맞춰 확대).
 const SUBMIT_NOTE_ROWS = 10;
+
+// 오늘 날짜를 <input type="date"> 가 쓰는 'YYYY-MM-DD' 로. toISOString 은 UTC 기준이라 쓰지 않는다.
+const todayISO = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 // 전체 가이드 되감기(seek)용 투어 상태 스냅샷 — 프리뷰가 정주행 중 챕터별로 캡처해 두었다가
 // 되감을 때 그대로 복원한다. (mappedJayerRowIds는 직렬화 위해 배열로 보관)
@@ -308,6 +316,17 @@ export default function RequestPage(): React.ReactElement {
   // 편집 대상 문서의 상태 — 'pause' 이면 상신 대신 '재개'(resume) 로 동작한다.
   const [editDocStatus, setEditDocStatus] = useState<string | null>(null);
   const isResumeMode = editDocStatus === 'pause';
+
+  // 이력 바로 등록 (MASTER 전용) — 결재 경로를 타지 않고 상신일·결재 완료일을 직접 지정한다.
+  const [directHistoryOpen, setDirectHistoryOpen] = useState(false);
+  const [directSubmittedAt, setDirectSubmittedAt] = useState(todayISO());
+  const [directApprovedAt, setDirectApprovedAt] = useState(todayISO());
+  const [directHistoryError, setDirectHistoryError] = useState('');
+  // 노출 조건: MASTER + 아직 결재선이 없는 문서(신규 작성·임시저장 재진입).
+  // 반려 재상신·지정 PL 수정·재개는 이미 결재가 진행된 문서라 대상이 아니다.
+  const canDirectHistory =
+    currentUser.role === 'MASTER' && !isPeerReviewMode &&
+    (editDocStatus === null || editDocStatus === 'draft');
 
   // 동료 PL 지정 (상신 모달) — 다중 지정(전원 합의)
   const [designees, setDesignees] = useState<{ loginid: string; name: string }[]>([]);
@@ -2218,8 +2237,11 @@ export default function RequestPage(): React.ReactElement {
 
   // 엑셀식 셀 선택 + 붙여넣기 (J/O 표 공용 훅). 붙여넣기 후 자동채움/바코드 조회 연동.
   // 셀 단위 잠금: 비활성/기등록 행은 전체 잠금, 불러온(loaded) 행은 LOADED_LOCK_COLS만 잠금
+  // layer삭제 행의 st 는 항상 'X' 로 고정이므로 붙여넣기로도 덮어쓸 수 없다.
   const isLayerCellLocked = (row: { disabled?: boolean; new_or_copy?: string; loaded?: boolean }, col: string): boolean =>
-    !!row.disabled || row.new_or_copy === '기등록' || (!!row.loaded && (LOADED_LOCK_COLS as readonly string[]).includes(col));
+    !!row.disabled || row.new_or_copy === '기등록'
+    || (row.new_or_copy === NOC_LAYER_DELETE && col === 'st')
+    || (!!row.loaded && (LOADED_LOCK_COLS as readonly string[]).includes(col));
   const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, handleJayerAfterPaste, isLayerCellLocked, (changes) => unmapIfMapped(changes.map((c) => c.rowId)));
   const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, handleOayerAfterPaste, isLayerCellLocked);
 
@@ -3035,6 +3057,44 @@ export default function RequestPage(): React.ReactElement {
 
   // ===== Validation =====
   /**
+   * Backbone 조합 영역(STEP1) 검증 — required 에 따라 판정 기준이 달라진다.
+   *  · required=true  : 모든 항목이 완전히(위치·제품·조리법) 입력돼야 한다. 불필요한 항목은 삭제하도록 유도.
+   *  · required=false : 빈 항목은 허용하고, 일부만 채운 항목만 막는다.
+   * 판정 자체는 helpers 의 순수 함수(findBbEntryViolations)가 하고, 여기서는 메시지만 붙인다.
+   */
+  const addBbEntryError = (
+    newErrors: Partial<Record<string, string>>,
+    errorMessages: string[],
+    required: boolean
+  ) => {
+    if (findBbEntryViolations(detail.bb_entries, required).length === 0) return;
+    const msg = t(required ? 'request.bb_entries_required' : 'request.bb_entries_partial');
+    newErrors['bb_entries'] = msg;
+    errorMessages.push(msg);
+  };
+
+  /**
+   * J/O-layer 표의 st·new_or_copy 공란 검증 — 활성 행은 두 값을 반드시 채워야 한다.
+   * 오류 셀은 차용 행 검증(jayer_noc_*)과 같은 방식으로 표 안에서 강조한다.
+   */
+  const addStNocError = (
+    newErrors: Partial<Record<string, string>>,
+    errorMessages: string[],
+    table: 'jayer' | 'oayer',
+    rows: { id: string; disabled: boolean; st: string; new_or_copy: string }[]
+  ) => {
+    const violations = findEmptyStNocViolations(rows);
+    if (violations.length === 0) return;
+    violations.forEach((id) => {
+      newErrors[`${table}_stnoc_${id}_st`] = t('request.stnoc_field_error');
+      newErrors[`${table}_stnoc_${id}_new_or_copy`] = t('request.stnoc_field_error');
+    });
+    const msg = t(`request.${table}_stnoc_required` as never, { count: violations.length }) as string;
+    newErrors[`${table}_stnoc_required`] = msg;
+    errorMessages.push(msg);
+  };
+
+  /**
    * BEFORE/AFTER 게이트 — AFTER 항목이 하나라도 짝 없이 남아 있으면 진행을 막는다.
    * (BEFORE 잔여는 허용한다. 임시저장은 이 검증을 타지 않는다)
    */
@@ -3077,7 +3137,8 @@ export default function RequestPage(): React.ReactElement {
     if (!detail.adi_cd_delete_all) checkSide('after', detail.adi_cd_after);
   };
 
-  const validate = (currentStep: number): { valid: boolean; errors: string[] } => {
+  // redirectStep: 오류를 고칠 수 있는 단계가 currentStep 이 아닐 때만 채워진다(현재는 Backbone 조합 영역 → STEP1).
+  const validate = (currentStep: number): { valid: boolean; errors: string[]; redirectStep?: number } => {
     const newErrors: Partial<Record<string, string>> = {};
     const errorMessages: string[] = [];
 
@@ -3095,18 +3156,11 @@ export default function RequestPage(): React.ReactElement {
         newErrors['partid_selection'] = t('request.partid_not_in_list');
         errorMessages.push(t('request.partid_not_in_list'));
       }
-      // Only MAP·ADI CD 단독 모드에서는 Backbone 조합 영역 필수 검증을 우회한다.
-      // (ADI CD 는 다른 기타 목적과 함께 고르면 isAdiCdOnly 가 false 가 되어 필수로 되돌아온다)
-      if (!isMapOnlyScope && !isAdiCdOnly) {
-        // 추가한 항목까지 모두 완전히(위치·제품·조리법) 입력돼야 진행 가능(R-17). 불필요하면 삭제하도록 유도.
-        const allFilled = detail.bb_entries.every(
-          (e) => e.location?.trim() && e.product?.trim() && e.process_id?.trim()
-        );
-        if (!allFilled) {
-          newErrors['bb_entries'] = t('request.required');
-          errorMessages.push('Backbone 조합 영역: 모든 항목을 입력하거나 불필요한 항목은 삭제하세요.');
-        }
-      }
+      // Backbone 조합 영역은 STEP1 에서 더 이상 무조건 필수가 아니다.
+      // 필수 여부는 J-layer 표(st 가 'O 계열'인 활성 행의 존재)가 정하며, 그 검증은 STEP3→4 에서 한다.
+      // 여기서는 '일부만 채운 항목'만 막는다 — 세 칸 중 일부만 채워진 항목은 어떤 경우에도 잘못된 값이다.
+      // (Only MAP·ADI CD 단독 모드용 우회 분기는 필요 없다. 그 문서들은 J-layer 에 O 행이 생기지 않는다.)
+      addBbEntryError(newErrors, errorMessages, requiresBbEntries(jayerRows));
       // 흐름도 Step(step_from/step_to)은 목록에 있는 값만 허용 (목록 밖 값이면 해당 필드를 표시하고 진행 차단)
       let flowStepInvalid = false;
       detail.flow_chart.forEach((row) => {
@@ -3284,6 +3338,7 @@ export default function RequestPage(): React.ReactElement {
     // "활성 + process_id 있는 J-layer 행은 Bb 매핑 필수" 규칙으로도 간접 검증된다.
 
     if (currentStep === 3) {
+      addStNocError(newErrors, errorMessages, 'jayer', jayerRows);
       const violations = findNocBorrowViolations(jayerRows);
       violations.forEach((id) => {
         newErrors[`jayer_noc_${id}_product_name`] = t('request.jayer_noc_field_error' as never);
@@ -3293,6 +3348,9 @@ export default function RequestPage(): React.ReactElement {
         newErrors['jayer_noc_required'] = t('request.jayer_noc_required' as never, { count: violations.length });
         errorMessages.push(t('request.jayer_noc_required' as never, { count: violations.length }) as string);
       }
+      // J-layer 에 st='O 계열' 활성 행이 있으면 Backbone 조합 영역(STEP1)이 필수가 된다.
+      // 여기서 처음 판정되므로, 막히면 goToStep 이 STEP1 로 되돌려 보낸다.
+      if (requiresBbEntries(jayerRows)) addBbEntryError(newErrors, errorMessages, true);
     }
 
     if (currentStep === 4 && !isMapOnlyScope && !isAdiCdOnly) {
@@ -3300,6 +3358,7 @@ export default function RequestPage(): React.ReactElement {
         newErrors['partial_shot'] = t('request.required');
         errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
       }
+      addStNocError(newErrors, errorMessages, 'oayer', oayerRows);
       const oViolations = findNocBorrowViolations(oayerRows);
       oViolations.forEach((id) => {
         newErrors[`oayer_noc_${id}_product_name`] = t('request.oayer_noc_field_error' as never);
@@ -3339,18 +3398,36 @@ export default function RequestPage(): React.ReactElement {
         errorMessages.push(t('request.oayer_noc_required' as never, { count: oViolations.length }) as string);
       }
       // 초안 복원 등으로 STEP 1 검증을 건너뛴 경우를 대비한 최종 안전망
+      addStNocError(newErrors, errorMessages, 'jayer', jayerRows);
+      addStNocError(newErrors, errorMessages, 'oayer', oayerRows);
+      addBbEntryError(newErrors, errorMessages, requiresBbEntries(jayerRows));
       addBaGateError(newErrors, errorMessages);
       addAdiCdGateError(newErrors, errorMessages);
     }
 
     setErrors(newErrors);
-    return { valid: Object.keys(newErrors).length === 0, errors: errorMessages };
+    // Backbone 조합 영역은 STEP1 에만 입력칸이 있다. 다른 단계에서 이 오류 하나로만 막혔다면
+    // 사용자가 고칠 수 있는 곳이 STEP1 뿐이므로 그리로 돌려보낸다(다른 오류가 섞여 있으면
+    // 그 오류는 현재 단계에서 고쳐야 하므로 이동하지 않는다).
+    const bbOnly = newErrors['bb_entries'] !== undefined && Object.keys(newErrors).length === 1;
+    return {
+      valid: Object.keys(newErrors).length === 0,
+      errors: errorMessages,
+      redirectStep: bbOnly && currentStep !== 1 ? 1 : undefined,
+    };
   };
 
   // ===== API =====
-  const buildEnrichedForm = (note?: string, shouldAddHistory = false, isDraft = false): CreateDocumentInput => {
-    const now = new Date();
-    const dateStr = `${String(now.getFullYear()).slice(2)}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+  // 제목 끝의 `_요청서_YYMMDD`. 기본은 오늘이지만, 이력 바로 등록은 직접 지정한 상신일을 넣는다.
+  const titleDateStr = (isoDate?: string): string => {
+    const d = isoDate ? new Date(`${isoDate}T12:00:00`) : new Date();
+    return `${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  };
+
+  const buildEnrichedForm = (
+    note?: string, shouldAddHistory = false, isDraft = false, submittedDate?: string,
+  ): CreateDocumentInput => {
+    const dateStr = titleDateStr(submittedDate);
     const purposePart = detail.other_purpose.length
       ? `${detail.request_purpose}-${detail.other_purpose.map((o) => `[${o}]`).join('')}`
       : detail.request_purpose;
@@ -3511,9 +3588,10 @@ export default function RequestPage(): React.ReactElement {
       const result = validate(s);
       if (!result.valid) {
         result.errors.forEach(msg => addToast(msg, 'error'));
-        // 여러 단계를 건너뛰던 중이라면 처음 막힌 단계로 옮겨 오류 위치를 보여준다.
-        if (s !== step) setStep(s);
-        scrollToFirstError(s);
+        // Backbone 조합 영역만 막았다면 입력칸이 있는 STEP1 로 되돌려 보낸다(확인 모달 없이 즉시).
+        const errorStep = result.redirectStep ?? s;
+        if (errorStep !== step) setStep(errorStep);
+        scrollToFirstError(errorStep);
         return;
       }
       // 검증은 통과했으나 사용자 확인이 필요한 관문. 확인 후 원래 목적지까지 이어서 가야 하므로
@@ -3630,7 +3708,9 @@ export default function RequestPage(): React.ReactElement {
     const result = validate(lastStep);
     if (!result.valid) {
       result.errors.forEach(msg => addToast(msg, 'error'));
-      scrollToFirstError();
+      // 상신에서도 Backbone 조합 영역만 막았다면 고칠 수 있는 STEP1 로 이동시킨다.
+      if (result.redirectStep) setStep(result.redirectStep);
+      scrollToFirstError(result.redirectStep ?? 5);
       return;
     }
     // peer review 모드가 아닐 때만 PL 목록 로드
@@ -3674,6 +3754,57 @@ export default function RequestPage(): React.ReactElement {
     setAbLoadOpen(false);
     setAbSaveOpen(false);
     setConfirmOpen(true);
+  };
+
+  // 이력 바로 등록 — 상신과 동일한 문서 내용 검증을 통과해야 날짜 모달이 열린다.
+  // (결재선 관련 입력인 지정 PL·후결자·통보자는 결재를 돌리지 않으므로 요구하지 않는다.)
+  const handleDirectHistoryClick = () => {
+    const result = validate(5);
+    if (!result.valid) {
+      result.errors.forEach(msg => addToast(msg, 'error'));
+      scrollToFirstError();
+      return;
+    }
+    setDirectSubmittedAt(todayISO());
+    setDirectApprovedAt(todayISO());
+    setDirectHistoryError('');
+    setDirectHistoryOpen(true);
+  };
+
+  const handleDirectHistoryRegister = async () => {
+    if (loadError) { addToast(t('request.edit_load_failed'), 'error'); return; } // 로드 실패 시 덮어쓰기 차단(R-10)
+    if (!directSubmittedAt || !directApprovedAt) {
+      setDirectHistoryError(t('request.direct_history_date_required'));
+      return;
+    }
+    if (directApprovedAt < directSubmittedAt) {
+      setDirectHistoryError(t('request.direct_history_date_order'));
+      return;
+    }
+    if (isPersistingRef.current) return;
+    isPersistingRef.current = true;
+    setSubmitting(true);
+    try {
+      // 제목의 `_요청서_YYMMDD` 도 입력한 상신일을 따른다.
+      const enriched = buildEnrichedForm('', false, false, directSubmittedAt);
+      let docId = savedId;
+      if (!docId) {
+        const res = await documentsAPI.create(enriched);
+        docId = res.data.id;
+        setSavedId(docId);
+      } else {
+        await documentsAPI.update(docId, enriched);
+      }
+      await documentsAPI.directApprove(docId!, directSubmittedAt, directApprovedAt);
+      setDirectHistoryOpen(false);
+      addToast(t('request.direct_history_success'), 'success');
+      setTimeout(() => navigate('/history'), 1500);
+    } catch (err) {
+      addToast(`오류 발생: ${err instanceof Error ? err.message : '알 수 없는 오류'}`, 'error');
+    } finally {
+      setSubmitting(false);
+      isPersistingRef.current = false;
+    }
   };
 
   const handleSubmit = async () => {
@@ -3820,6 +3951,7 @@ export default function RequestPage(): React.ReactElement {
           detail={detail}
           errors={errors}
           isOnlyMap={isMapOnlyScope}
+          bbEntriesRequired={requiresBbEntries(jayerRows)}
           isLabProductAllowed={isOnlyMap}
           lineOptions={lineOptions}
           processOptions={processOptions}
@@ -4047,9 +4179,16 @@ export default function RequestPage(): React.ReactElement {
               다음 →
             </button>
           ) : (
-            <button className="btn btn-primary" onClick={handleSubmitClick} disabled={submitting || loadError}>
-              📤 {submitting ? t('common.loading') : (isResumeMode ? t('approval.resume') : t('request.submit'))}
-            </button>
+            <>
+              {canDirectHistory && (
+                <button className="btn btn-secondary" onClick={handleDirectHistoryClick} disabled={submitting || loadError}>
+                  📋 {t('request.direct_history')}
+                </button>
+              )}
+              <button className="btn btn-primary" onClick={handleSubmitClick} disabled={submitting || loadError}>
+                📤 {submitting ? t('common.loading') : (isResumeMode ? t('approval.resume') : t('request.submit'))}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -4160,6 +4299,46 @@ export default function RequestPage(): React.ReactElement {
         message={t('request.tbvtlv_warn_body')}
         confirmLabel={t('request.tbvtlv_warn_proceed')}
       />
+
+      <Modal
+        isOpen={directHistoryOpen}
+        onClose={() => setDirectHistoryOpen(false)}
+        title={t('request.direct_history')}
+        size="sm"
+        style={{ maxWidth: '420px' }}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setDirectHistoryOpen(false)}>
+              {t('common.cancel')}
+            </button>
+            <button className="btn btn-primary" onClick={handleDirectHistoryRegister} disabled={submitting}>
+              📋 {submitting ? t('common.loading') : t('request.direct_history_register')}
+            </button>
+          </>
+        }
+      >
+        <div className="form-group">
+          <label className="form-label">{t('request.direct_history_submitted_at')}</label>
+          <input
+            type="date"
+            className="form-control"
+            value={directSubmittedAt}
+            onChange={(e) => { setDirectSubmittedAt(e.target.value); setDirectHistoryError(''); }}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">{t('request.direct_history_approved_at')}</label>
+          <input
+            type="date"
+            className="form-control"
+            value={directApprovedAt}
+            onChange={(e) => { setDirectApprovedAt(e.target.value); setDirectHistoryError(''); }}
+          />
+        </div>
+        {directHistoryError && (
+          <p style={{ margin: 0, color: 'var(--danger)', fontSize: '0.85rem' }}>{directHistoryError}</p>
+        )}
+      </Modal>
 
       <Modal
         isOpen={confirmOpen}

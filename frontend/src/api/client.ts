@@ -4,6 +4,7 @@ import {
   ReviewItem,
   VOC,
   VocComment,
+  UserRoleWithNull,
   Stats,
   Line,
   CreateDocumentInput,
@@ -193,6 +194,16 @@ const resubmitDocument = async (id: number, designatedPlLoginids: string[]) => {
   const data = await post<{ message: string; document: RequestDocument }>(
     `/documents/${id}/resubmit/`,
     { designated_pl_loginids: designatedPlLoginids }
+  );
+  return { data };
+};
+
+/** 이력 바로 등록 (MASTER 전용) — 결재 경로를 타지 않고 draft → approved.
+ *  날짜는 모두 'YYYY-MM-DD' 형식이다. */
+const directApproveDocument = async (id: number, submittedAt: string, approvedAt: string) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${id}/direct-approve/`,
+    { submitted_at: submittedAt, approved_at: approvedAt }
   );
   return { data };
 };
@@ -515,6 +526,7 @@ export const documentsAPI = {
   update: updateDocument,
   submit: submitDocument,
   resubmit: resubmitDocument,
+  directApprove: directApproveDocument,
   withdraw: withdrawDocument,
   confirmWithdraw,
   rejectWithdraw,
@@ -628,10 +640,10 @@ const updateVocResponse = async (id: number, response: string) => {
 
 const addVocComment = async (id: number, comment: {
   author_name: string;
-  author_role: string;
+  // 로그인 직후 등 역할이 아직 정해지지 않은 상태(null)도 그대로 보낼 수 있어야 한다.
+  author_role: UserRoleWithNull;
   is_submitter: boolean;
   content: string;
-  is_reject_reason: boolean;
 }) => {
   const data = await post<VOC>(`/voc/${id}/comment/`, comment);
   return { data };

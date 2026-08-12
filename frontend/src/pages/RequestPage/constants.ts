@@ -106,7 +106,15 @@ export const NOC_BORROW = '차용';
 export const NOC_REGISTERED = '기등록';
 export const NOC_LAYER_DELETE = 'layer삭제';
 export const ST_O = 'O';
+/** st 의 또 다른 'O 계열' 값 — 표의 선택지는 'O' / 'O (D)' / 'X' 셋뿐이다. */
+export const ST_O_D = 'O (D)';
 export const ST_X = 'X';
+
+/** st 가 'O 계열'('O' 또는 'O (D)')인가 — Backbone 조합 영역 필수 판정의 근거. */
+export const isStO = (st?: string): boolean => {
+  const v = (st ?? '').trim();
+  return v === ST_O || v === ST_O_D;
+};
 
 // new_or_copy가 이 값이면 J↔O 동기화(송신·수신)에서 제외하고 bb 원본 데이터 목록에서도 숨긴다.
 export const isNocSpecial = (noc?: string): boolean => noc === NOC_REGISTERED || noc === NOC_LAYER_DELETE;

@@ -559,14 +559,19 @@ class VOC(models.Model):
     STATUS_CHOICES = [
         ('checking', '확인중'),
         ('completed', '완료'),
-        ('rejected', '거부'),
     ]
 
     title = models.CharField(max_length=200, verbose_name='제목')
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, verbose_name='유형')
+    # 제출자 식별은 의뢰서(RequestDocument.requester)와 동일한 방식을 따른다 —
+    # FK 를 진실의 원천으로 두고 등록 시 서버가 request.user 로 확정하며(views.VOCViewSet),
+    # 본인 판정은 id 가 아니라 loginid 로 한다(doc_permissions.is_voc_submitter).
+    submitter = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='vocs', verbose_name='제출자'
+    )
     submitter_name = models.CharField(max_length=100, verbose_name='제출자')
     submitter_email = models.EmailField(verbose_name='이메일')
-    submitter_user_id = models.IntegerField(null=True, blank=True, verbose_name='제출자 ID')
     page = models.CharField(max_length=20, blank=True, default='', verbose_name='관련 페이지')
     content = models.TextField(verbose_name='내용')
     response = models.TextField(blank=True, verbose_name='답변')
@@ -593,7 +598,6 @@ class VocComment(models.Model):
     author_email = models.EmailField(blank=True, default='', verbose_name='작성자 이메일')
     is_submitter = models.BooleanField(default=False, verbose_name='제출자 여부')
     content = models.TextField(verbose_name='내용')
-    is_reject_reason = models.BooleanField(default=False, verbose_name='반려 사유 여부')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='작성일시')
 
     class Meta:
@@ -924,7 +928,6 @@ class VocHistory(models.Model):
     ACTION_CHOICES = [
         ('checking', '확인중'),
         ('completed', '완료'),
-        ('rejected', '거부'),
     ]
 
     voc = models.ForeignKey(

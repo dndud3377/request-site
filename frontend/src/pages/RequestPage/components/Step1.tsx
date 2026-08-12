@@ -11,6 +11,8 @@ interface Step1Props {
   detail: DetailFormState;
   errors: Partial<Record<string, string>>;
   isOnlyMap: boolean;
+  /** Backbone 조합 영역이 필수인가 — J-layer 에 st='O 계열' 활성 행이 있을 때만 참 */
+  bbEntriesRequired: boolean;
   /** '연구소 제품'을 고를 수 있는가 — 요청 목적이 Only MAP 일 때만 참 */
   isLabProductAllowed: boolean;
   lineOptions: string[];
@@ -65,6 +67,7 @@ const Step1: React.FC<Step1Props> = ({
   detail,
   errors,
   isOnlyMap,
+  bbEntriesRequired,
   isLabProductAllowed,
   lineOptions,
   processOptions,
@@ -434,7 +437,11 @@ const Step1: React.FC<Step1Props> = ({
         {/* 3. 뼈찜 조합 영역 */}
         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <label className="form-label">
-            {t('request.bb_status')} <span className="required">*</span>
+            {t('request.bb_status')}
+            {/* J-layer 표에 st='O 계열' 활성 행이 있을 때만 필수 — 그 전에는 안내 문구만 보여준다. */}
+            {bbEntriesRequired
+              ? <span className="required">*</span>
+              : <span className="form-hint">{t('request.bb_entries_optional_hint')}</span>}
             <GuideBadge fk="step1_bb_entry" tk={t('guide.feat.step1_bb_entry' as never)} />
           </label>
           {errors.bb_entries && <span className="form-error">{errors.bb_entries}</span>}

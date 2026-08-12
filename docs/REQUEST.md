@@ -135,7 +135,7 @@ pages/RequestPage/
 |---|---|
 | 뒤로 (`target < step`) | **검증 없이 즉시 이동.** 이미 통과해서 지나온 단계다. |
 | 앞으로 (`target > step`) | `현재 step` ~ `target-1` 을 **순서대로 `validate()`**. 전부 통과해야 `target` 도달. |
-| 전진 실패 | **처음 막힌 단계에 멈추고**(`setStep(s)`) 오류 토스트 + `scrollToFirstError(s)`. |
+| 전진 실패 | **처음 막힌 단계에 멈추고**(`setStep(s)`) 오류 토스트 + `scrollToFirstError(s)`. 단 `validate()` 가 `redirectStep` 을 돌려주면 그 단계로 보낸다(입력칸이 다른 단계에 있는 오류 — 현재는 `bb_entries` → STEP1). |
 | 현재 단계 클릭 / 범위 밖 | 무동작. |
 
 - **범위 밖의 상한은 고정 5가 아니라 `lastStep` 이다 (2026-08).**
@@ -247,6 +247,71 @@ pages/RequestPage/
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 추가 변경 이력 (2026-08-12 — MASTER '이력에 바로 등록')
+
+- **개요**: MASTER 가 step 5 에서 `상신하기` 대신 `📋 이력에 바로 등록` 을 눌러, **결재 경로를 전혀
+  거치지 않고** 문서를 이력 조회에 올린다. 상신일·결재 완료일은 모달에서 직접 입력한다.
+  **사양 전문은 `docs/HISTORY.md` §4.5** 참조.
+- **신규 API**: `POST /api/documents/{id}/direct-approve/` — MASTER 전용, `draft` 만.
+  `status='approved'` + 완료 기록 `ApprovalStep` 1행 생성. **메일 발송 없음. 마이그레이션 없음.**
+- `index.tsx`:
+  - 모듈 스코프 `todayISO()` 신설(`toISOString` 은 UTC 기준이라 쓰지 않는다).
+  - `canDirectHistory` — `role='MASTER'` && `!isPeerReviewMode` && `editDocStatus ∈ {null, 'draft'}`.
+  - `handleDirectHistoryClick`(검증 후 모달 열기) · `handleDirectHistoryRegister`(저장 → 등록 → `/history`).
+  - `buildEnrichedForm` 에 **4번째 optional 인자 `submittedDate`** 추가. 제목 끝의 `_요청서_YYMMDD`
+    를 만드는 로직은 `titleDateStr(isoDate?)` 로 분리했고, **인자를 주지 않으면 종전대로 오늘 날짜**다
+    → 기존 호출부(임시저장·자동저장·상신·재상신·peer) **동작 불변**.
+- **검증에서 생략하는 것은 결재선 입력뿐**이다 — 지정 PL·후결자·통보자. 5단계 위저드 필수값과
+  서버측 Backbone 매핑 검증은 상신과 완전히 동일하게 적용된다.
+- **i18n**: `request.direct_history*` 7키 ko/en 동시 추가.
+- **영향 파일**: `backend/api/views.py`, `backend/api/tests.py`, `frontend/src/api/client.ts`,
+  `pages/RequestPage/index.tsx`, `locales/ko.json`·`en.json`, `docs/HISTORY.md`
+- **검증(2026-08-12 실행)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` | 22개 | **22개** (파일별 분포 동일 — 신규 0) |
+  | `react-scripts test` | 5 suites / 124건 | **5 suites / 124건 통과** |
+  | 백엔드 `manage.py test api` | 279건 | **288건 OK** (신규 `DirectHistoryRegisterTest` 9건) |
+
+  ⚠️ `tsc` 베이스라인은 이 문서 §4 에 적힌 24개가 아니라 **작업 직전 실측 22개**였다.
+  (`VOCPage.tsx` 2건이 그 사이 해소됨 — 베이스라인은 고정 상수가 아니라는 §3.2 원칙대로 매번 실측할 것)
+
+### 추가 변경 이력 (2026-08-12 — Backbone 조합 영역 조건부 필수 + J/O-ayer st·new_or_copy 필수)
+
+- **Backbone 조합 영역(`bb_entries`)이 STEP1 무조건 필수에서 조건부 필수로 바뀌었다.**
+  이 값이 실제로 필요한 문서는 **J-ayer 표에 `st` 가 'O 계열'인 활성 행이 있는 문서**뿐인데,
+  기존에는 그와 무관하게 STEP1 을 벗어나려면 위치·제품·조리법 3칸을 반드시 채워야 했다.
+  - **판정 근거는 J-ayer 표 하나뿐이다** — O-ayer 는 보지 않는다. 활성 행(`!disabled`)만 본다.
+  - **'O 계열' = `'O'` 또는 `'O (D)'`** (`isStO`, `constants.ts`). 표의 st 선택지는 이 둘과 `'X'` 셋뿐이다.
+  - `new_or_copy`(신규/차용)는 **판정에 쓰지 않는다.** `기등록`·`layer삭제` 는 st 가 자동으로 `'X'` 가 되고,
+    신규/차용 행은 st 가 O 로 따라오므로 st 하나로 충분하다.
+  - 순수 헬퍼 3종을 `helpers.ts` 에 추가했다(단위테스트 `helpers.test.ts` 동봉):
+    `requiresBbEntries(jayerRows)` / `findBbEntryViolations(entries, required)` / `findEmptyStNocViolations(rows)`.
+- **검증 시점과 차단 동작**
+  | 단계 | 검사 |
+  |---|---|
+  | STEP1 → 2 | 필수 여부와 무관하게 **일부만 채운 항목**만 막는다(3칸 중 일부만 채운 값은 언제나 오류). 필수 상태로 되돌아온 경우엔 완전 입력을 요구한다. |
+  | STEP3 → 4 | J-ayer 기준으로 처음 판정. 필수인데 미완성이면 **모달 없이 STEP1 로 즉시 이동** + 에러 토스트 + 해당 항목 스크롤·강조. |
+  | STEP5 상신 | 초안 복원 등으로 단계를 건너뛴 경로 대비 안전망(동일 검사 반복). 여기서 막혀도 STEP1 로 이동한다. |
+  - 이동 방식: `validate()` 가 `redirectStep?: number` 를 함께 반환하고, `goToStep`·`handleSubmitClick` 이 그 값으로
+    `setStep` 한다. **`bb_entries` 오류 하나만 남았을 때만** 이동한다 — 다른 오류가 섞여 있으면 그 오류는 현재
+    단계에서 고쳐야 하므로 이동하지 않는다.
+  - `validate(1)`·`validate(4)` 에 있던 **`isOnlyMap`/`isAdiCdOnly` 우회 분기 중 Backbone 몫은 제거**했다.
+    그 문서들은 J-ayer 에 O 행이 생기지 않아 조건 자체로 걸러진다(§ADI CD 절의 "우회 대상 2곳" 중 첫 항목이 없어졌다).
+  - **STEP1 라벨의 `*` 는 동적**이다 — 필수일 때만 `*`, 아닐 때는 안내 문구(`bb_entries_optional_hint`)를 보여준다
+    (`Step1.tsx` prop `bbEntriesRequired`, CSS `.form-label .form-hint`).
+- **J/O-ayer 표의 `st`·`new_or_copy` 공란 금지**: 활성 행은 두 값을 반드시 채워야 한다(`findEmptyStNocViolations`).
+  검증 시점은 차용 행 검증과 같다(J = STEP3→4, O = STEP4→5, 상신 시 재검사). 에러 표시도 같은 방식 —
+  행별 키 `jayer_stnoc_${id}_st`/`_new_or_copy`(O 는 `oayer_stnoc_*`)로 해당 셀에 빨간 테두리 + `field-error-target`
+  스크롤, 안내는 토스트(`jayer_stnoc_required`/`oayer_stnoc_required`, count 보간) 하나로만.
+- **`layer삭제` 행의 `st` 잠금**: `layer삭제` 는 st 가 항상 `'X'` 다(선택 시 자동 설정은 기존 동작).
+  이제 **셀 편집(`disabled`)과 붙여넣기(`isLayerCellLocked` 의 `col === 'st'`) 양쪽에서 값을 바꿀 수 없다.**
+  J·O-ayer 표 모두 적용. 같은 행의 다른 컬럼은 그대로 편집 가능하다.
+- **신규 i18n 키** (ko/en 동시): `request.bb_entries_optional_hint` / `bb_entries_required` / `bb_entries_partial`
+  / `stnoc_field_error` / `jayer_stnoc_required` / `oayer_stnoc_required`.
+- 백엔드 변경 없음(마이그레이션 없음).
 
 ### 추가 변경 이력 (2026-08-12 — MAP 삭제 단순화 / ADI 버튼 제거 / 상신 모달 확대 / 예외 구역 기본값 / 영업·기술지원 합의자)
 
@@ -749,11 +814,10 @@ pages/RequestPage/
 - **필수 입력 우회**(`ADI CD 변경`만 단독 선택했을 때만 — 다른 목적과 함께면 미적용): 판정은 `isAdiCdOnly`
   (`other_purpose.length === 1 && other_purpose[0] === 'ADI CD 변경'`) 하나로 통일한다. 다른 기타 목적을 함께
   켜는 순간 `false` 로 뒤집혀 아래 우회가 **전부 해제**되고 원래 필수로 되돌아온다(중복 선택은 항상 가능하다).
-  우회 대상은 **2곳뿐**이다:
-  - `validate(1)`의 `if (!isOnlyMap && !isAdiCdOnly)` — **Backbone 조합 영역**(`bb_entries`)
-    필수 검증. ADI CD 만 요청하는데 무관한 위치·제품·조리법 3칸을 채우거나 기본 행을 지워야만 STEP1 을 벗어날 수
-    있던 문제를 없앤다. 검증만 끄고 **입력창은 잠그지 않으며**(회신: UI 는 유연하게), 사용자가 넣은 값은
-    **거르지 않고 그대로 저장**한다.
+  우회 대상은 당시 **2곳**이었고, 지금은 **1곳뿐**이다:
+  - ~~`validate(1)`의 `if (!isOnlyMap && !isAdiCdOnly)` — **Backbone 조합 영역**(`bb_entries`) 필수 검증~~
+    → **2026-08-12 제거.** Backbone 은 J-ayer 표 기준 조건부 필수로 바뀌어, ADI CD 단독 문서는 조건 자체로
+    걸러진다(§4.1 2026-08-12 항목). 입력창을 잠그지 않고 넣은 값을 그대로 저장하는 동작은 그대로다.
   - `validate(4)`의 `if (currentStep === 4 && !isOnlyMap && !isAdiCdOnly)` — Partial Shot 등.
   나머지는 손대지 않았다 — `map_type` 필수 검증은 자동 고정으로 이미 통과하고, STEP2 조건부 필수
   (C가문·MAP 변경·IN 등)는 사용자가 StepMap 값을 바꾸지 않는 한(기본값이면 미발동) 자연히 통과하며, STEP3/5의
@@ -940,6 +1004,41 @@ pages/RequestPage/
   - `FieldGroupHistoryModal` 은 `kind === 'image'` 이고 값이 있을 때만 `<img src={/media/<경로>}>` 를 그린다. 값이 비면(신규 첨부의 '변경 전', 삭제의 '변경 후') 기존과 같이 `-` 로 둔다 — 빈 `src` 로 깨진 이미지가 뜨는 것을 막는다.
   - 썸네일 크기 상수: `DIFF_THUMB_MAX_WIDTH=220` / `DIFF_THUMB_MAX_HEIGHT=150` (블록 본체의 300×200 보다 작게 두어 변경 전·후가 한 화면에 들어온다). 경로 prefix 는 `MEDIA_URL_PREFIX='/media/'`.
   - 테두리 색은 표의 기존 색 규칙을 따른다 — 변경 전 `#dc3545`, 변경 후 `#155724`. 확대(클릭) 동작은 없다.
+
+### 추가 변경 이력 (2026-08 — 이력 확인 모드 이원화)
+
+상세 보기의 '이력 확인'이 **화면에 따라 다르게 동작**한다. `PagedDetailView` 의 `historyMode` prop 하나로 갈리며, `HistoryPage`(승인 완료 문서 전용, `status=approved`)에서만 `true` 다. `ApprovalPage`는 넘기지 않으므로 기본 `false`.
+
+| | 결재 진행 중 (`ApprovalPage`) | 이력 조회 (`HistoryPage`) |
+|---|---|---|
+| 강조·버튼 조건 | **직전 회차와 다를 때만** | **전 회차 중 한 번이라도 변경** |
+| 모달 내용 | **변경 전 / 변경 후만** | **회차별 전체**(1차·2차·…·현재) |
+
+- 대상은 9곳 전부 — 칩 14종 / O-layer 정보탭 3종 / 엠샷 / 생산정보 / REV / 지도 옵션 / J-ayer·O-ayer·뼈찜 표 행.
+- **진행 중 통일**: 종전에 칩·O-layer 정보탭만 회차별 표(`FieldHistoryModal`)로 뜨던 것을 전/후 2열로 바꿔 나머지와 맞췄다. `FieldHistoryModal` 이 `historyMode=false` 면 `FieldGroupHistoryModal` 로 위임한다.
+- **회차 축**: `roundSnaps: RoundSnapshot[]` = `history[]` + 현재값을 한 배열로 묶은 것. 이력 UI 전부가 이 배열 하나를 공유한다(결재 경로 섹션의 `rounds`(회차 번호 배열)와 다른 값이라 이름을 구분했다).
+- **판정 함수**: `computeEverChangedFields`(인접 회차 diff 합집합) / `computeTableEverChanged`(행 단위). 값이 되돌아온 필드(A→B→A)도 이력 조회에서는 잡힌다.
+- **회차별 모달 3종 추가**: `FieldGroupRoundHistoryModal`(행=항목, 열=회차 · 이미지 셀은 썸네일) / `RowRoundHistoryModal`(표 행: 행=회차, 열=필드) / 지도 옵션은 회차별 태그 목록.
+- **표 행 매칭**: `findRowInRound` — id 매칭이 원칙이고, 회차 간 겹치는 id 가 **하나도 없을 때만** 위치(index) 폴백. `computeTableDiff` 와 같은 규칙이라 강조 판정과 모달 내용이 어긋나지 않는다. 그 회차에 대응 행이 없으면 `(없음)` 으로 표시한다.
+- **블록 빌더 시그니처 변경**: `buildMshotRows(prev, cur)` → `buildMshotItems(d)` (생산정보·REV 동일). 한 회차만 받는 순수 함수라 전/후 표와 회차별 표가 같은 함수를 공유한다. 전/후 표는 `toDiffRows` 로 조립한다.
+- 전체 가이드 투어는 `ApprovalPage` 기준(`open-rowdiff`)이므로 종전 전/후 모달 그대로다.
+
+### 추가 변경 이력 (2026-08 — 이력 누락·오탐 3건 수정)
+
+**1. 흐름도(flow_chart) 이력 신설** — 그동안 이력 UI 가 아예 없어 값이 바뀌어도 표시되지 않았다.
+- 섹션 카드에 빨간 테두리 + '이력 확인'(`flowChanged = changedFields.has('flow_chart')`).
+- **블록 단위**로 표 전체를 구간별로 쌓아 보여준다(`renderFlowHistory`) — 진행 중은 `변경 전`/`변경 후`, 이력 조회는 회차별. 흐름도는 행 추가·삭제가 잦아 행끼리 짝지어 비교하면 늘고 준 것을 놓치기 때문에 행 단위를 쓰지 않는다.
+
+**2. 표로 입력한 항목을 이력에서도 표로** — REV `Layer / GDS`, O-ayer 정보탭 `TBV/TLV` 가 `G1: L1,L2` / `[3] (1,2:O)` 같은 한 줄 문자열로 눌려 있었다.
+- `DiffItem`/`DiffRow` 에 `kind: 'table'` 과 `DiffTable { headers, rows }` 추가. `buildRevTable`(GDS·Layer) / `buildTbvtlvTable`(SD 선택·No·X·Y·사용여부)이 원본 입력 표와 같은 열 구성을 만든다.
+- `DiffMiniTable` 이 렌더하며 **다른 쪽과 값이 다른 셀만 강조**한다(진행 중: 전=빨강/후=초록, 이력 조회: 직전 회차 대비 빨강). 상대 쪽에 없는 행은 행 전체가 강조된다. 셀 강조가 있으므로 그 행에는 행 전체 배경색을 입히지 않는다.
+- TBV/TLV 는 `FieldHistoryModal` 경로라 `buildTable` prop 으로 주입한다. 구버전(자유 입력 `note`) 저장분은 좌표 행이 없어 SD 칸에 `SD (note)` 형태로 함께 적어 값을 잃지 않는다.
+
+**3. J/O/BB 표 변경 오탐 제거 [동작 변경]** — 아무것도 고치지 않아도 이력이 뜨던 문제.
+- 원인: `rowContentSig` 가 `id·sortOrder·disabled·sourceJayerRowId` 만 빼고 **나머지 전 필드**를 비교했다. 화면에 없는 `loaded`·`manuallyDisabled`·`entryId`·`entryIdx` 가 포함됐는데, 이 값들은 재상신 편집 로드 때 시스템이 재계산·백필한다(`RequestPage/index.tsx:855-877`).
+- 수정: **비교 기준 = 이력 모달의 표시 컬럼**. 컬럼 정의를 모듈 상수 `JAYER_DIFF_FIELDS` / `OAYER_DIFF_FIELDS` / `BB_DIFF_FIELDS` 로 올리고, `rowContentSig(row, fields)` · `computeTableDiff(cur, prev, fields)` · `computeTableEverChanged(..., fields)` 가 이를 받는다. 표 컴포넌트는 `toDiffFields(defs, t)` 로 같은 정의에서 라벨을 만든다.
+- 정의가 한 곳이라 **행 타입에 새 내부 필드가 추가돼도 오탐이 재발하지 않는다**(종전 제외 목록 방식은 갱신을 빠뜨리면 그대로 버그였다).
+- J-ayer 이력 모달의 `Layer` 컬럼은 원본 표 헤더에 없지만 **유지**한다 — 비교 기준이므로 빼면 `layerid` 변경이 이력에서 사라진다.
 
 ### 추가 변경 이력 (2026-07 — 조건부 필드 초기화 + REV i18n)
 

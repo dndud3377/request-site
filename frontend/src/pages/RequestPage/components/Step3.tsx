@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { OayerRow, FilterSet, DetailFormState, GuideFeatureKey, TbvtlvNoteRow } from '../../../types';
-import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, genId } from '../constants';
+import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, genId, NOC_LAYER_DELETE } from '../constants';
 import { isValidationKeywordRow } from '../helpers';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
 
@@ -270,6 +270,10 @@ const Step3: React.FC<Step3Props> = ({
                 {renderedOayerRows.map((row, idx) => {
                   const isFirstDisabled = row.disabled && (idx === 0 || !renderedOayerRows[idx - 1].disabled);
                   const isRegistered = row.new_or_copy === '기등록';
+                  // layer삭제 행의 st 는 항상 'X' 로 고정 — 값 편집을 막는다.
+                  const isLayerDeleted = row.new_or_copy === NOC_LAYER_DELETE;
+                  const stError = errors[`oayer_stnoc_${row.id}_st`];
+                  const nocError = errors[`oayer_stnoc_${row.id}_new_or_copy`];
                   const regBg = '#e5e7eb';
                   const cellProps = (col: string, bg?: string, extra?: React.CSSProperties) => ({
                     onMouseDown: (e: React.MouseEvent) => cellSel.onCellMouseDown(row.id, col, e),
@@ -299,24 +303,30 @@ const Step3: React.FC<Step3Props> = ({
                         <td {...cellProps('sd', isRegistered ? regBg : undefined)}><input value={row.sd} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                         <td {...cellProps('layerid', isRegistered ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                         <td {...cellProps('pp', isRegistered ? regBg : undefined)}><input value={row.pp} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : isValidationKeywordRow(row.pp) ? VALIDATION_CELL_COLOR : undefined }} /></td>
-                        <td {...cellProps('st', isRegistered ? regBg : undefined)}>
+                        <td {...cellProps('st', isRegistered ? regBg : undefined)} className={stError ? 'field-error-target' : undefined}>
                           <AutocompleteInput
                             value={row.st}
                             onChange={(v) => handleOayerChange(row.id, 'st', v)}
                             options={ST_OPTIONS}
-                            disabled={row.disabled || isRegistered}
-                            inputStyle={{ backgroundColor: isRegistered ? regBg : ST_CELL_COLOR[row.st] }}
+                            disabled={row.disabled || isRegistered || isLayerDeleted}
+                            inputStyle={{
+                              backgroundColor: isRegistered ? regBg : ST_CELL_COLOR[row.st],
+                              ...(stError ? { border: '1px solid var(--danger)' } : {}),
+                            }}
                             dropdownFontSize="0.7rem"
                             dropdownDirection="up"
                           />
                         </td>
-                        <td {...cellProps('new_or_copy')}>
+                        <td {...cellProps('new_or_copy')} className={nocError ? 'field-error-target' : undefined}>
                           <AutocompleteInput
                             value={row.new_or_copy}
                             onChange={(v) => handleOayerChange(row.id, 'new_or_copy', v)}
                             options={NEW_OR_COPY_OPTIONS}
                             disabled={row.disabled}
-                            inputStyle={{ backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined }}
+                            inputStyle={{
+                              backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined,
+                              ...(nocError ? { border: '1px solid var(--danger)' } : {}),
+                            }}
                             dropdownFontSize="0.7rem"
                             dropdownDirection="up"
                           />

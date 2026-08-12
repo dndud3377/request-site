@@ -6,7 +6,10 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0022_userprofile_receive_all_mail"),
+        # main 병합 시 0023 이 둘(SA agent / VOC)로 갈라져 리프 노드가 2개가 됐다.
+        # 건드리는 모델이 서로 달라 순서 의존이 없으므로, 이 파일을 0024 로 올려
+        # VOC 마이그레이션 뒤에 직렬로 잇는다(0023_voc 가 쓴 해소 방식과 동일).
+        ("api", "0023_voc_submitter_fk_remove_reject"),
     ]
 
     operations = [

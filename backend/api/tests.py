@@ -5,6 +5,7 @@
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
 from . import mailer
 from . import design_rule_stats
@@ -4157,12 +4158,14 @@ class MailLineFilterTest(TestCase):
         self.assertIn('mlf_rej_on@company.com', recipients)
         self.assertNotIn('mlf_rej_off@company.com', recipients)
 
-    @override_settings(VOC_MASTER_EMAIL='mlf_j_off@company.com')
     def test_voc_mail_is_not_filtered(self):
-        """VOC 메일은 라인 개념이 없으므로 필터를 타지 않는다."""
-        self._make_j('mlf_j_off', [self.line3])
+        """VOC 등록 메일은 MASTER 전원에게 가며, 라인 개념이 없어 필터를 타지 않는다."""
+        master = UserProfile.objects.create(
+            loginid='mlf_master', mail='mlf_master@company.com', role='MASTER'
+        )
+        master.mail_lines.set([self.line3])  # 라인1을 껐지만 VOC 메일은 그대로 받는다
         self.assertEqual(
-            mailer._resolve_voc_master_recipients(), ['mlf_j_off@company.com']
+            mailer._resolve_voc_master_recipients(), ['mlf_master@company.com']
         )
 
     def test_shared_address_is_kept_when_someone_still_receives(self):
@@ -4534,3 +4537,109 @@ class SalesAgreerStageTests(TestCase):
         self.assertEqual(
             ApprovalStep.objects.get(document=doc, agent='SA', round=1).action, 'rejected'
         )
+
+
+class DirectHistoryRegisterTest(TestCase):
+    """MASTER 의 '이력 바로 등록'(POST /documents/{id}/direct-approve/) 검증.
+
+    결재 경로를 타지 않고 draft → approved 로 바로 넘어가며, 상신일·결재 완료일을
+    요청자가 직접 지정한다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        import json
+        self._json = json
+        self.client = APIClient()
+        self.master = UserProfile.objects.create(loginid='master', mail='m@c.com', role='MASTER')
+        self.requester = UserProfile.objects.create(loginid='req', mail='req@c.com', role='NONE')
+
+    def _make_doc(self, status='draft', notes=None):
+        return RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@c.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps(notes or {'detail': {}, 'jayerRows': [], 'bbRows': []}),
+        )
+
+    def _post(self, doc, submitted='2026-08-01', approved='2026-08-05'):
+        return self.client.post(
+            f'/api/documents/{doc.id}/direct-approve/',
+            {'submitted_at': submitted, 'approved_at': approved},
+            format='json',
+        )
+
+    def test_master_registers_document_directly(self):
+        doc = self._make_doc()
+        self.client.force_authenticate(user=self.master)
+        res = self._post(doc)
+        self.assertEqual(res.status_code, 200, res.content)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'approved')
+        self.assertEqual(timezone.localtime(doc.submitted_at).date().isoformat(), '2026-08-01')
+
+    def test_creates_single_approved_step_with_given_date(self):
+        doc = self._make_doc()
+        self.client.force_authenticate(user=self.master)
+        self.assertEqual(self._post(doc).status_code, 200)
+
+        steps = ApprovalStep.objects.filter(document=doc)
+        self.assertEqual(steps.count(), 1, '완료 기록 1행만 남는다')
+        step = steps.first()
+        self.assertEqual(step.action, 'approved')
+        self.assertEqual(timezone.localtime(step.acted_at).date().isoformat(), '2026-08-05')
+        self.assertEqual(step.assignee_id, self.master.id, '등록한 MASTER 가 담당자로 남는다')
+        self.assertEqual(step.round, 1)
+
+    def test_no_pending_step_is_created(self):
+        doc = self._make_doc()
+        self.client.force_authenticate(user=self.master)
+        self.assertEqual(self._post(doc).status_code, 200)
+        self.assertFalse(
+            ApprovalStep.objects.filter(document=doc, action='pending').exists(),
+            '결재 대기 단계가 생기면 결재 경로를 타게 된다',
+        )
+
+    def test_no_mail_is_enqueued(self):
+        doc = self._make_doc()
+        self.client.force_authenticate(user=self.master)
+        self.assertEqual(self._post(doc).status_code, 200)
+        self.assertEqual(MailNotification.objects.filter(document=doc).count(), 0)
+
+    def test_non_master_is_forbidden(self):
+        doc = self._make_doc()
+        self.client.force_authenticate(user=self.requester)
+        res = self._post(doc)
+        self.assertEqual(res.status_code, 403, res.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'draft')
+
+    def test_non_draft_document_is_rejected(self):
+        doc = self._make_doc(status='under_review')
+        self.client.force_authenticate(user=self.master)
+        self.assertEqual(self._post(doc).status_code, 400)
+
+    def test_invalid_date_is_rejected(self):
+        doc = self._make_doc()
+        self.client.force_authenticate(user=self.master)
+        self.assertEqual(self._post(doc, submitted='2026/08/01').status_code, 400)
+        self.assertEqual(self._post(doc, approved='').status_code, 400)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'draft')
+
+    def test_approved_date_before_submitted_date_is_rejected(self):
+        doc = self._make_doc()
+        self.client.force_authenticate(user=self.master)
+        res = self._post(doc, submitted='2026-08-05', approved='2026-08-01')
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_unmapped_bb_row_is_rejected(self):
+        """문서 내용 검증(Backbone 매핑)은 상신과 동일하게 적용된다."""
+        doc = self._make_doc(notes={
+            'detail': {},
+            'jayerRows': [{'id': 'j1', 'process_id': 'P1', 'new_or_copy': '신규'}],
+            'bbRows': [],
+        })
+        self.client.force_authenticate(user=self.master)
+        self.assertEqual(self._post(doc).status_code, 400)

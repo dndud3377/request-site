@@ -26,8 +26,6 @@ const PAGES: PageOption[] = [
   { value: 'other',    labelKey: 'voc.page_other' },
 ];
 
-const VOC_STATUSES: VocStatus[] = ['checking', 'completed', 'rejected'];
-
 const formatDate  = (d: string) => new Date(d).toLocaleDateString('ko-KR');
 const formatTime  = (d: string) =>
   new Date(d).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -56,11 +54,6 @@ export default function VOCPage(): React.ReactElement {
   const [commentText, setComment] = useState('');
   const [sendingComment, setSending] = useState(false);
 
-  // ── reject flow ──
-  const [rejectOpen, setRejectOpen]   = useState(false);
-  const [rejectReason, setRejectReason] = useState('');
-  const [rejecting, setRejecting]     = useState(false);
-
   // ── delete flow ──
   const [deleteTarget, setDeleteTarget] = useState<VOC | null>(null);
   const [deleting, setDeleting]         = useState(false);
@@ -69,7 +62,9 @@ export default function VOCPage(): React.ReactElement {
   const fetchVocs = useCallback(() => {
     setLoading(true);
     const params: Record<string, string> = {};
-    if (filter === 'my')       params.submitter_user_id = String(currentUser.id);
+    // '내 VOC' 는 사용자 id 를 보내지 않고 서버가 로그인 사용자로 판단한다
+    // (개발 모드의 목 사용자 id 는 DB 의 실제 user.id 와 어긋날 수 있다).
+    if (filter === 'my')       params.mine = 'true';
     else if (filter)           params.category = filter;
     if (searchQuery)           params.search = searchQuery;
 
@@ -80,7 +75,7 @@ export default function VOCPage(): React.ReactElement {
       })
       .catch(() => setVocs([]))
       .finally(() => setLoading(false));
-  }, [filter, searchQuery, currentUser.id]);
+  }, [filter, searchQuery]);
 
   useEffect(() => { fetchVocs(); }, [fetchVocs]);
 
@@ -113,11 +108,12 @@ export default function VOCPage(): React.ReactElement {
     const contentHtml = form.content;
     const contentText = form.content.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim();
     if (!contentText) {
-      addToast(t('voc.content') + ' 을(를) 입력해주세요.', 'error');
+      addToast(t('voc.content_required'), 'error');
       return;
     }
     setSubmitting(true);
     try {
+      // 제출자 계정(submitter)은 서버가 로그인 사용자로 확정하므로 보내지 않는다.
       const input: CreateVocInput = {
         title: form.title,
         category: form.category,
@@ -125,7 +121,6 @@ export default function VOCPage(): React.ReactElement {
         content: contentHtml,
         submitter_name: currentUser.name,
         submitter_email: currentUser.email,
-        submitter_user_id: currentUser.id,
       };
       await vocAPI.create(input);
       addToast(t('voc.submit_success'), 'success');
@@ -147,9 +142,8 @@ export default function VOCPage(): React.ReactElement {
       const res = await vocAPI.addComment(selected.id, {
         author_name: currentUser.name,
         author_role: currentUser.role,
-        is_submitter: selected.submitter_user_id === currentUser.id,
+        is_submitter: isMyVoc(selected),
         content: commentText.trim(),
-        is_reject_reason: false,
       });
       setSelected(res.data);
       setVocs((prev) => prev.map((v) => (v.id === selected.id ? res.data : v)));
@@ -162,7 +156,7 @@ export default function VOCPage(): React.ReactElement {
     }
   };
 
-  // ─────────────── mark completed (submitter) ───────────────
+  // ─────────────── mark completed (작성자 본인 또는 MASTER) ───────────────
   const handleMarkCompleted = async () => {
     if (!selected) return;
     try {
@@ -191,33 +185,6 @@ export default function VOCPage(): React.ReactElement {
     }
   };
 
-  // ─────────────── reject (master) ───────────────
-  const handleReject = async () => {
-    if (!selected || !rejectReason.trim()) return;
-    setRejecting(true);
-    try {
-      // 1. 반려 사유를 댓글로 등록
-      const withComment = await vocAPI.addComment(selected.id, {
-        author_name: currentUser.name,
-        author_role: currentUser.role,
-        is_submitter: false,
-        content: rejectReason.trim(),
-        is_reject_reason: true,
-      });
-      // 2. 상태를 rejected로 변경
-      const res = await vocAPI.updateStatus(selected.id, 'rejected');
-      setSelected(res.data);
-      setVocs((prev) => prev.map((v) => (v.id === selected.id ? res.data : v)));
-      setRejectOpen(false);
-      setRejectReason('');
-      addToast(t('voc.status_update_success'), 'success');
-    } catch {
-      addToast(t('common.error'), 'error');
-    } finally {
-      setRejecting(false);
-    }
-  };
-
   // ─────────────── helpers ───────────────
   const getCategoryLabel = (cat: VocCategory) =>
     t((CATEGORIES.find((c) => c.value === cat)?.labelKey ?? 'voc.category_inquiry') as any);
@@ -231,7 +198,9 @@ export default function VOCPage(): React.ReactElement {
     ...CATEGORIES.map((c) => ({ key: c.value, label: t(c.labelKey as any) })),
   ];
 
-  const isMyVoc = (v: VOC) => v.submitter_user_id === currentUser.id;
+  // 본인 판정은 id 가 아니라 loginid(= currentUser.username) 로 한다 — 개발 모드의
+  // 목 사용자 id 는 DB 의 실제 user.id 와 어긋날 수 있지만 loginid 는 어긋나지 않는다.
+  const isMyVoc = (v: VOC) => !!v.submitter_loginid && v.submitter_loginid === currentUser.username;
 
   // ─────────────── render ───────────────
   return (
@@ -289,7 +258,7 @@ export default function VOCPage(): React.ReactElement {
                 <th>{t('voc.page')}</th>
                 <th>{t('voc.submitter_name')}</th>
                 <th>{t('voc.status')}</th>
-                <th>접수일</th>
+                <th>{t('voc.col_created_at')}</th>
               </tr>
             </thead>
             <tbody>
@@ -378,7 +347,7 @@ export default function VOCPage(): React.ReactElement {
       {selected && (
         <Modal
           isOpen={!!selected}
-          onClose={() => { setSelected(null); setRejectOpen(false); setRejectReason(''); }}
+          onClose={() => setSelected(null)}
           title={selected.title}
           footer={
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', width: '100%' }}>
@@ -387,27 +356,18 @@ export default function VOCPage(): React.ReactElement {
                 <button
                   className="btn btn-danger"
                   style={{ marginRight: 'auto' }}
-                  onClick={() => { setDeleteTarget(selected); setSelected(null); setRejectOpen(false); setRejectReason(''); }}
+                  onClick={() => { setDeleteTarget(selected); setSelected(null); }}
                 >
                   {t('voc.delete_btn')}
                 </button>
               )}
-              {/* 반려 버튼 (MASTER, 확인중 상태에서만) */}
-              {isMaster && selected.status === 'checking' && (
-                <button
-                  className="btn btn-danger"
-                  onClick={() => setRejectOpen(true)}
-                >
-                  {t('voc.reject_btn')}
-                </button>
-              )}
-              {/* 답변완료 버튼 (작성자 본인, 확인중 상태에서만) */}
-              {isMyVoc(selected) && !isMaster && selected.status === 'checking' && (
+              {/* 답변완료 버튼 (작성자 본인 또는 MASTER, 확인중 상태에서만) */}
+              {(isMyVoc(selected) || isMaster) && selected.status === 'checking' && (
                 <button className="btn btn-primary" onClick={handleMarkCompleted}>
                   {t('voc.mark_completed')}
                 </button>
               )}
-              <button className="btn btn-secondary" onClick={() => { setSelected(null); setRejectOpen(false); setRejectReason(''); }}>
+              <button className="btn btn-secondary" onClick={() => setSelected(null)}>
                 {t('common.close')}
               </button>
             </div>
@@ -447,42 +407,6 @@ export default function VOCPage(): React.ReactElement {
               />
             </div>
 
-            {/* 반려 사유 입력 (인라인) */}
-            {rejectOpen && (
-              <div style={{
-                background: 'var(--danger-light)',
-                border: '1px solid var(--danger)',
-                borderRadius: 8,
-                padding: '14px 16px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10,
-              }}>
-                <label className="form-label" style={{ color: 'var(--danger)' }}>
-                  {t('voc.reject_btn')} — 사유 입력 후 확인
-                </label>
-                <textarea
-                  className="form-control"
-                  rows={3}
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder={t('voc.reject_reason_placeholder' as any)}
-                />
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button className="btn btn-secondary" onClick={() => { setRejectOpen(false); setRejectReason(''); }}>
-                    {t('common.cancel')}
-                  </button>
-                  <button
-                    className="btn btn-danger"
-                    onClick={handleReject}
-                    disabled={rejecting || !rejectReason.trim()}
-                  >
-                    {rejecting ? t('common.loading') : t('common.confirm')}
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* 댓글 */}
             <div className="form-group">
               <label className="form-label">{t('voc.discussion')}</label>
@@ -494,19 +418,16 @@ export default function VOCPage(): React.ReactElement {
                     <div
                       key={c.id}
                       style={{
-                        border: `1px solid ${c.is_reject_reason ? 'var(--danger, #e53e3e)' : 'var(--border-color, #e2e8f0)'}`,
+                        border: '1px solid var(--border-color, #e2e8f0)',
                         borderRadius: 6,
                         padding: '10px 14px',
-                        background: c.is_reject_reason ? 'var(--danger-light, #fff5f5)' : 'var(--bg-secondary, #f7fafc)',
+                        background: 'var(--bg-secondary, #f7fafc)',
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                         <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                           {c.author_name}
                           <span style={{ fontWeight: 400, marginLeft: 6 }}>{c.author_role}</span>
-                          {c.is_reject_reason && (
-                            <span style={{ color: 'var(--danger, #e53e3e)', marginLeft: 8 }}>[반려 사유]</span>
-                          )}
                         </span>
                         <span>{formatTime(c.created_at)}</span>
                       </div>
