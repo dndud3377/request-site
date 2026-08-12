@@ -125,6 +125,7 @@
     "title": "의뢰서 작성",
     "subtitle": "제품 소개 지도 제작 의뢰서",
     "step_move": "{{label}} 단계로 이동",
+    "step_locked_map_only": "{{label}} 단계는 이 요청 목적에서는 작성하지 않습니다.",
     "section_detail": "의뢰 상세",
     "section_map": "MAP 정보",
     "job_li": "J-ayer 정보",

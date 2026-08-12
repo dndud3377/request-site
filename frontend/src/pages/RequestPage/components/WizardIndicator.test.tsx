@@ -117,6 +117,86 @@ describe('WizardIndicator', () => {
     });
   });
 
+  describe('disabledSteps — 이 의뢰서에서 들어갈 수 없는 단계', () => {
+    // Only MAP·MAP 삭제 는 J-ayer·O-ayer·Backbone 을 작성하지 않는다(3·4·5 잠금).
+    const LOCKED = [3, 4, 5];
+
+    it('잠긴 단계는 흐리게 표시하고 클릭 대상에서 뺀다', () => {
+      const { container } = render(
+        <WizardIndicator
+          currentStep={2}
+          steps={STEPS}
+          onStepClick={jest.fn()}
+          disabledSteps={LOCKED}
+        />
+      );
+      const all = steps(container);
+      expect(all.map((el) => el.className.includes('disabled'))).toEqual([false, false, true, true, true]);
+      expect(all.map((el) => el.className.includes('clickable'))).toEqual([true, false, false, false, false]);
+      LOCKED.forEach((n) => {
+        expect(all[n - 1].getAttribute('role')).toBeNull();
+        expect(all[n - 1].getAttribute('tabindex')).toBeNull();
+        expect(all[n - 1].getAttribute('aria-disabled')).toBe('true');
+      });
+    });
+
+    it('잠긴 단계는 클릭·키보드로 이동하지 않는다', () => {
+      const onStepClick = jest.fn();
+      const { container } = render(
+        <WizardIndicator
+          currentStep={2}
+          steps={STEPS}
+          onStepClick={onStepClick}
+          disabledSteps={LOCKED}
+        />
+      );
+      const all = steps(container);
+      fireEvent.click(all[2]);
+      fireEvent.keyDown(all[4], { key: 'Enter' });
+      expect(onStepClick).not.toHaveBeenCalled();
+      // 잠기지 않은 단계는 그대로 이동한다.
+      fireEvent.click(all[0]);
+      expect(onStepClick).toHaveBeenCalledWith(1);
+    });
+
+    it('잠긴 단계에는 전용 툴팁을 붙인다', () => {
+      const { container } = render(
+        <WizardIndicator
+          currentStep={2}
+          steps={STEPS}
+          onStepClick={jest.fn()}
+          stepTitle={(label) => `${label} 단계로 이동`}
+          disabledSteps={LOCKED}
+          disabledStepTitle={(label) => `${label} 단계는 작성하지 않습니다`}
+        />
+      );
+      const all = steps(container);
+      expect(all[0].getAttribute('title')).toBe('의뢰 상세 단계로 이동');
+      expect(all[2].getAttribute('title')).toBe('J-ayer 정보 단계는 작성하지 않습니다');
+    });
+
+    it('잠긴 단계는 지나온 것으로 보지 않는다(✓ 를 붙이지 않는다)', () => {
+      // 현재 단계가 뒤에 있어도(예: 목적 변경 직후) 잠긴 단계에 완료 표시가 남으면 안 된다.
+      const { container } = render(
+        <WizardIndicator currentStep={5} steps={STEPS} onStepClick={jest.fn()} disabledSteps={[3, 4]} />
+      );
+      const circles = Array.from(container.querySelectorAll('.wizard-step-circle')) as HTMLElement[];
+      expect(circles.map((c) => c.textContent)).toEqual(['✓', '✓', '3', '4', '5']);
+      expect(circles[2].className).not.toContain('done');
+      expect(circles[3].className).not.toContain('done');
+    });
+
+    it('disabledSteps 미지정 시 기존 동작 그대로다', () => {
+      const { container } = render(
+        <WizardIndicator currentStep={3} steps={STEPS} onStepClick={jest.fn()} />
+      );
+      steps(container).forEach((el) => {
+        expect(el.className).not.toContain('disabled');
+        expect(el.getAttribute('aria-disabled')).toBeNull();
+      });
+    });
+  });
+
   describe('완료·현재 표시 (기존 동작 회귀)', () => {
     it('지나온 단계는 done(✓), 현재 단계는 active 로 표시한다', () => {
       const { container } = render(

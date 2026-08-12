@@ -125,6 +125,7 @@
     "title": "New Request",
     "subtitle": "Product Introduction Map Request Form",
     "step_move": "Go to {{label}}",
+    "step_locked_map_only": "{{label}} is not filled in for this request purpose.",
     "section_detail": "Request Details",
     "section_map": "Map Information",
     "job_li": "J-ayer Info",

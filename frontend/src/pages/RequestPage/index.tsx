@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
@@ -112,6 +112,10 @@ const autoMatchItemId = (
 
 // product_name 타이핑 시 바코드 후보 조회를 디바운스하는 지연(ms). Impala 백엔드 중복 호출 감소.
 const BARCODE_DEBOUNCE_MS = 300;
+
+// 작성 마법사 단계: 1 기본 정보 / 2 MAP 정보 / 3 J-ayer / 4 O-ayer / 5 Backbone
+const STEP_MAP_INFO = 2;
+const STEP_LAST = 5;
 
 // 상신 모달 크기 — 지정자·후결자·합의자·통보자를 한 화면에서 다루도록 기존(520px)의 2배로 넓혔다.
 // 세로는 공용 `.modal-body { max-height: 82vh }` 안에서만 늘릴 수 있어 최소 높이로 지정한다.
@@ -1386,6 +1390,17 @@ export default function RequestPage(): React.ReactElement {
   const isMapDeleteEdit = detail.request_purpose === MAP_DELETE_EDIT_PURPOSE;
   // Step1 부가 입력(기타 목적·흐름도·Backbone·참조 요청서) 잠금 + STEP3~5 비움 대상 목적.
   const isMapOnlyScope = isOnlyMap || isMapDeleteEdit;
+  // (2026-08) 이 목적들은 J-ayer·O-ayer·Backbone 을 아예 작성하지 않는다. 예전에는 그 단계들에
+  // 들어가 입력까지 할 수 있었지만 저장 시 전부 버려져(빈 배열) 혼란을 줬다 — 이제 단계 자체를
+  // 막고 MAP 정보(2단계)에서 바로 상신한다.
+  const lastStep = isMapOnlyScope ? STEP_MAP_INFO : STEP_LAST;
+  /** 이 의뢰서에서 들어갈 수 없는 단계(인디케이터에 흐리게 표시) */
+  const disabledSteps = useMemo(
+    () => (isMapOnlyScope
+      ? Array.from({ length: STEP_LAST - STEP_MAP_INFO }, (_, i) => STEP_MAP_INFO + 1 + i)
+      : []),
+    [isMapOnlyScope],
+  );
   // StepMap 에서 '수정'/'삭제' 를 고른 상태 — 이유 입력칸만 남기고 나머지 MAP 블록은 숨긴다.
   const isMapReasonMode = isMapDeleteEditType(detail.map_type);
   // '연구소 제품'(Only MAP 전용) — 선택 시 기존 C가문 후결자 기능이 그대로 켜진다.
@@ -3484,7 +3499,7 @@ export default function RequestPage(): React.ReactElement {
   //    멈춰 오류를 보여준다. **통과 여부를 캐시하지 않는다** — 되돌아가 필수값을 지웠다면 그 즉시
   //    다시 막혀야 하기 때문이다(한 번 통과했다는 기록을 남기면 이 요구사항이 깨진다).
   const goToStep = (target: number) => {
-    if (target === step || target < 1 || target > 5) return;
+    if (target === step || target < 1 || target > lastStep) return;
 
     if (target < step) {
       setStep(target);
@@ -3610,7 +3625,9 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleSubmitClick = async () => {
-    const result = validate(5);
+    // 마지막 단계의 검증만 돌린다 — 앞 단계들은 전진할 때 이미 통과했다.
+    // Only MAP·MAP 삭제 는 2단계가 마지막이므로 5단계(J-ayer↔Backbone 매핑) 검증을 돌리면 안 된다.
+    const result = validate(lastStep);
     if (!result.valid) {
       result.errors.forEach(msg => addToast(msg, 'error'));
       scrollToFirstError();
@@ -3787,6 +3804,8 @@ export default function RequestPage(): React.ReactElement {
         // 투어 모드는 URL 이 단계를 지정하는 읽기 전용 미리보기라 탭 이동을 막는다.
         onStepClick={isTourMode ? undefined : startStepMove}
         stepTitle={(label) => t('request.step_move' as never, { label }) as string}
+        disabledSteps={disabledSteps}
+        disabledStepTitle={(label) => t('request.step_locked_map_only' as never, { label }) as string}
         steps={[
           t('request.section_detail'),
           t('request.section_map'),
@@ -4022,7 +4041,8 @@ export default function RequestPage(): React.ReactElement {
           <button className="btn btn-secondary" onClick={handleSaveDraft} disabled={saving || loadError}>
             💾 {saving ? t('common.loading') : t('request.save_draft')}
           </button>
-          {step < 5 ? (
+          {/* Only MAP·MAP 삭제 는 MAP 정보(2단계)가 마지막이라 여기서 바로 상신한다. */}
+          {step < lastStep ? (
             <button className="btn btn-primary" onClick={() => handleNextStep()}>
               다음 →
             </button>

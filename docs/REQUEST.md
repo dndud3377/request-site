@@ -138,6 +138,16 @@ pages/RequestPage/
 | 전진 실패 | **처음 막힌 단계에 멈추고**(`setStep(s)`) 오류 토스트 + `scrollToFirstError(s)`. |
 | 현재 단계 클릭 / 범위 밖 | 무동작. |
 
+- **범위 밖의 상한은 고정 5가 아니라 `lastStep` 이다 (2026-08).**
+  `Only MAP` / `MAP 삭제` 는 J-ayer·O-ayer·Backbone 을 작성하지 않으므로 `lastStep = 2`(MAP 정보)다.
+  `goToStep` 이 `target > lastStep` 을 막으므로 **버튼·인디케이터 탭·키보드 모두 한 곳에서 차단**된다.
+  - 하단 버튼: `step < lastStep` 이면 `다음 →`, 아니면 `📤 상신` → 2단계에서 바로 상신한다.
+  - `handleSubmitClick` 은 `validate(5)` 가 아니라 **`validate(lastStep)`** 을 돌린다.
+    5단계 검증은 J-ayer↔Backbone 매핑 검사라 이 경로에서는 돌면 안 된다.
+  - 인디케이터는 `disabledSteps` 로 3·4·5 를 **흐리게(opacity .4) 남긴다** — 숨기지 않는 이유는
+    전체 흐름 중 어디까지 작성하는지 보이고, 요청 목적을 되돌리면 그대로 살아나기 때문이다.
+  - ⚠️ 잠긴 단계에는 **완료(✓) 표시를 하지 않는다.** 지나온 단계가 아니라 '거치지 않는' 단계다.
+
 - **통과 여부를 캐시하지 않는다 [중요].** "한 번 통과했다"는 기록을 남기면, 뒤로 돌아가 필수값을
   지운 뒤에도 앞으로 나갈 수 있게 되어 검증이 무력화된다. 전진할 때마다 매번 새로 `validate()` 한다.
   이 때문에 인디케이터는 **회색 잠금 표시를 하지 않고 클릭 시점에 판정**한다
@@ -277,7 +287,17 @@ pages/RequestPage/
 - 상수: `EA_NO_CHANGE` / `EA_HAS_CHANGE` / `EA_DEFAULT_NORMAL` / `EA_DEFAULT_PRODC` / `eaDefaultValue()`
 - ⚠️ 백엔드 `RequestDocument.EA_*` 와 **같은 값**이어야 한다(합의자 필수 판정이 양쪽에서 동일해야 함).
 
-#### ⑤ 영업/기술지원 합의자(SA) — 신설 결재 단계
+#### ⑤ Only MAP · MAP 삭제: J-ayer·O-ayer·Backbone 단계 차단 (2026-08-12)
+
+- 이 두 목적은 원래도 저장 시 `jayerRows/oayerRows/bbRows` 를 **빈 배열로 버렸는데**,
+  화면에서는 그 단계에 들어가 입력까지 할 수 있어 "입력했는데 사라진다"는 혼란이 있었다.
+- 이제 **단계 자체를 막는다** — `lastStep = 2`(MAP 정보)이고, 2단계 하단 버튼이 `다음 →` 대신
+  **`📤 상신`** 이 된다. 상세 규칙은 위 **§2.4 단계 이동 규칙** 참조.
+- 인디케이터의 3·4·5 는 숨기지 않고 흐리게 남긴다(`WizardIndicator.disabledSteps`).
+- ⚠️ 기타 목적 **'ADI CD 변경'(`isAdiCdOnly`)은 이번 범위가 아니다.** 같은 자리에서 3·4단계 검증을
+  건너뛰지만(`validate`), 단계 이동은 종전대로 열려 있다.
+
+#### ⑥ 영업/기술지원 합의자(SA) — 신설 결재 단계
 
 작성자가 **상신 모달에서 PL 권한자 중 지정**하는 결재 단계다. 자세한 결재 흐름은
 `docs/APPROVAL.md` **Case P** 참조.
