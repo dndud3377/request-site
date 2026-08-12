@@ -3,7 +3,7 @@ import {
   computeBeforeAfter, BaComparableRow,
   parseClipboardTable, detectAdiCdHeader, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows,
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
-  parseMergePasteRows, validateMergePairs,
+  parseMergePasteRows, validateMergePairs, applyMergePaste,
 } from './helpers';
 import { VS_NA, VS_TARGET } from './constants';
 import { AdiCdStep, MergePair, MergeRowInfo } from '../../types';
@@ -590,5 +590,61 @@ describe('validateMergePairs', () => {
 
   it('빈 배열이면 전부 0', () => {
     expect(validateMergePairs([])).toEqual({ incompleteCells: 0, blankRows: 0, validCount: 0 });
+  });
+});
+
+describe('applyMergePaste', () => {
+  const paste = (raw: string) => parseMergePasteRows(raw);
+  const row = (n: number) => `A${n}\tSP${n}\tSD${n}\tPP${n}`;
+
+  it('4열 10행을 변경전에 붙여넣으면 10행이 되고 변경후는 모두 미등록(삭제)이 된다', () => {
+    const start = [emptyMergePair()];
+    const raw = Array.from({ length: 10 }, (_, i) => row(i + 1)).join('\n');
+    const next = applyMergePaste(start, start[0].id, 'before', paste(raw));
+    expect(next).toHaveLength(10);
+    expect(next.every((p) => p.after === null)).toBe(true);
+    // 변경전만 채웠으므로 변경후가 미등록 → 판정은 '삭제'
+    expect(next.every((p) => p.kind === 'deleted')).toBe(true);
+    expect(next[0].before).toEqual({ process_id: 'A1', sp: 'SP1', sd: 'SD1', pp: 'PP1', layerid: '' });
+    expect(next[9].before?.process_id).toBe('A10');
+  });
+
+  it('변경전 3행 상태에서 변경후 3번째 행에 4행을 붙여넣으면 6행이 되고 변경전도 함께 늘어난다', () => {
+    // 변경전 3행 (요청 6번의 시나리오)
+    const seed = [emptyMergePair()];
+    const before3 = applyMergePaste(seed, seed[0].id, 'before', paste([row(1), row(2), row(3)].join('\n')));
+    expect(before3).toHaveLength(3);
+
+    // 변경후 3번째 행부터 4행 붙여넣기 → 3,4,5,6 행
+    const after4 = applyMergePaste(before3, before3[2].id, 'after', paste([row(7), row(8), row(9), row(10)].join('\n')));
+    expect(after4).toHaveLength(6);
+    // 3번째 행은 양쪽 값이 있어 '변경'
+    expect(after4[2].kind).toBe('changed');
+    expect(after4[2].before?.process_id).toBe('A3');
+    expect(after4[2].after?.process_id).toBe('A7');
+    // 새로 생긴 4~6행은 변경전이 미등록 → '추가'
+    expect(after4.slice(3).every((p) => p.before === null && p.kind === 'added')).toBe(true);
+    // 1~2행은 그대로
+    expect(after4[0].before?.process_id).toBe('A1');
+    expect(after4[1].after).toBeNull();
+  });
+
+  it('새로 만든 행은 직전 행의 구분을 따라간다', () => {
+    const seed = [{ ...emptyMergePair(), table: 'O' as const }];
+    const next = applyMergePaste(seed, seed[0].id, 'before', paste([row(1), row(2)].join('\n')));
+    expect(next.map((p) => p.table)).toEqual(['O', 'O']);
+  });
+
+  it('없는 행 id 나 빈 그리드면 원본을 그대로 돌려준다', () => {
+    const seed = [emptyMergePair()];
+    expect(applyMergePaste(seed, 'nope', 'before', paste(row(1)))).toBe(seed);
+    expect(applyMergePaste(seed, seed[0].id, 'before', [])).toBe(seed);
+  });
+
+  it('열이 모자란 줄은 채운 칸만 덮어쓰고 나머지 값은 유지한다', () => {
+    const seed = [emptyMergePair()];
+    const filled = applyMergePaste(seed, seed[0].id, 'before', paste(row(1)));
+    const partial = applyMergePaste(filled, filled[0].id, 'before', paste('B1\tSPX'));
+    expect(partial[0].before).toEqual({ process_id: 'B1', sp: 'SPX', sd: 'SD1', pp: 'PP1', layerid: '' });
   });
 });

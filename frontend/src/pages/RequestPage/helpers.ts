@@ -373,6 +373,35 @@ export const parseMergePasteRows = (raw: string): (string | undefined)[][] =>
       return MERGE_MANUAL_FIELDS.map((_, i) => (cells[i] === undefined ? undefined : cells[i].trim()));
     });
 
+/**
+ * 붙여넣기 결과를 표에 반영한다 — 시작 행부터 아래로 채우고, 행이 모자라면 새 행을 만든다.
+ * 한 행이 변경전+변경후 한 쌍이므로 **행을 늘리면 반대쪽 행 수도 함께 늘어난다**
+ * (새로 생긴 행의 반대쪽은 미등록으로 남는다). 새 행의 구분은 직전 행을 따라간다.
+ */
+export const applyMergePaste = (
+  pairs: MergePair[],
+  startPairId: string,
+  side: 'before' | 'after',
+  grid: (string | undefined)[][]
+): MergePair[] => {
+  const startIdx = pairs.findIndex((p) => p.id === startPairId);
+  if (startIdx === -1 || grid.length === 0) return pairs;
+  const next = [...pairs];
+  grid.forEach((cells, i) => {
+    const idx = startIdx + i;
+    while (next.length <= idx) next.push(emptyMergePair(next[next.length - 1]?.table));
+    const target = next[idx];
+    const info = { ...(target[side] ?? emptyMergeRowInfo()) };
+    MERGE_MANUAL_FIELDS.forEach((f, c) => {
+      const cell = cells[c];
+      if (cell !== undefined) info[f] = cell;
+    });
+    const updated: MergePair = { ...target, [side]: normalizeMergeSide(info) };
+    next[idx] = { ...updated, kind: deriveMergeKind(updated.before, updated.after) };
+  });
+  return next;
+};
+
 /** 상신 게이트용 집계. */
 export interface MergePairsValidation {
   /** 미등록이 아닌 쪽에서 비어 있는 칸 수 (4칸 필수) */
