@@ -112,7 +112,7 @@ export const getFinalCompletionDate = (doc: RequestDocument): string => {
 export type StageCellState = 'na' | 'wait' | 'review' | 'done' | 'pause';
 
 /** 그리드 칸 슬롯. GRID_SLOT_ORDER 의 순서가 곧 화면 배치(행 우선, 2열)다. */
-export type StageCellSlot = 'P' | 'RA_FIXED' | 'J' | 'E' | 'O' | 'RA_EXTRA';
+export type StageCellSlot = 'P' | 'RA_FIXED' | 'J' | 'E' | 'O' | 'RA_EXTRA' | 'PL' | 'SA';
 
 const GRID_SLOT_ORDER: StageCellSlot[] = ['P', 'RA_FIXED', 'J', 'E', 'O', 'RA_EXTRA'];
 
@@ -135,8 +135,10 @@ export interface DocTableRow {
   isDone: boolean;
   /** single 행의 대표 상태 (StatusBadge 에 전달, grid 행에서는 사용하지 않는다) */
   pathStatus: string;
-  /** grid 행의 6칸. 항상 GRID_SLOT_ORDER 순서·길이 6 */
+  /** grid 행의 칸. 병렬 합의 단계는 GRID_SLOT_ORDER 순서·길이 6, PL 검토 단계는 PL/SA 2칸 */
   cells?: StageCell[];
+  /** grid 행의 열 수. 병렬 합의 단계는 2열, PL 검토 단계는 1열(두 줄) */
+  gridColumns?: 1 | 2;
   /** single 행에 '중단 요청중' 칩을 붙일지 */
   pauseRequested?: boolean;
 }
@@ -245,7 +247,8 @@ const buildParallelGrid = (
     ? doc.pause_request.target_step_ids
     : [];
 
-  const specs: Record<StageCellSlot, CellSpec> = {
+  // PL/SA 는 병렬 합의 단계가 아니라 그 앞 PL 검토 단계의 칸이라 여기 오지 않는다.
+  const specs: Record<Exclude<StageCellSlot, 'PL' | 'SA'>, CellSpec> = {
     P: {
       slot: 'P', label: t('approval.agent_P' as any),
       main: of('P'), reviewers: of('PV'), showName: true,
@@ -276,7 +279,27 @@ const buildParallelGrid = (
     },
   };
 
-  return GRID_SLOT_ORDER.map(slot => buildCell(specs[slot], pauseTargetIds));
+  return GRID_SLOT_ORDER.map(slot => buildCell(specs[slot as Exclude<StageCellSlot, 'PL' | 'SA'>], pauseTargetIds));
+};
+
+/**
+ * PL 검토 단계의 2칸(세로 2줄)을 계산한다 — 1줄 PL 지정 검토자 / 2줄 영업·기술지원 합의자.
+ * 둘은 병렬이라 한쪽이 끝나도 다른 쪽이 남아 있으면 단계가 이어진다.
+ * 합의자를 지정하지 않은 의뢰서는 SA 단계 자체가 없어 '해당없음'으로 남는다.
+ */
+export const PL_STAGE_SLOT_ORDER: StageCellSlot[] = ['PL', 'SA'];
+
+const buildPlStageGrid = (
+  currentSteps: ApprovalStepFrontend[],
+  t: TFunction,
+  pauseTargetIds: number[],
+): StageCell[] => {
+  const of = (agent: string) => currentSteps.filter(s => s.agent === agent);
+  const specs: Record<'PL' | 'SA', CellSpec> = {
+    PL: { slot: 'PL', label: t('approval.agent_PL' as any), main: of('PL'), showName: true },
+    SA: { slot: 'SA', label: t('approval.agent_SA' as any), main: of('SA'), showName: true },
+  };
+  return PL_STAGE_SLOT_ORDER.map(slot => buildCell(specs[slot as 'PL' | 'SA'], pauseTargetIds));
 };
 
 /** 중단 확정(pause) 문서: 6칸을 전부 PAUSE 뱃지로 덮고 이름은 표시하지 않는다. */
@@ -323,13 +346,24 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
 
   const pauseRequested = doc.pause_request?.state === 'requested';
 
-  // PL 검토 단계 pending: R 단계 미생성 상태 (다중 PL은 아직 미합의자만 표시)
-  const plPending = currentSteps.filter(s => s.agent === 'PL' && s.action === 'pending');
-  if (plPending.length > 0) {
-    const label = t('approval.agent_PL' as any);
-    const names = plPending.map(s => s.assignee_name).filter(Boolean);
-    const stageText = names.length > 0 ? `${label}(${names.join(' / ')})` : label;
-    return [{ pathKey: 'single', stageText, isDone: false, pathStatus: 'under_review', pauseRequested }];
+  // PL 검토 단계 진행 중: R 단계 미생성 상태.
+  // (2026-08) PL 지정 검토자와 영업/기술지원 합의자(SA)가 병렬이라 한 줄로는 표현할 수 없어
+  // 병렬 합의 단계와 같은 방식의 그리드(1열 2줄)로 그린다. 한쪽이 끝나고 다른 쪽이 남아 있어도
+  // 단계는 계속 진행 중이므로 PL·SA 중 하나라도 pending 이면 이 분기를 탄다.
+  const plStagePending = currentSteps.some(
+    s => (s.agent === 'PL' || s.agent === 'SA') && s.action === 'pending'
+  );
+  if (plStagePending) {
+    const pauseTargetIds = pauseRequested ? (doc.pause_request?.target_step_ids ?? []) : [];
+    return [{
+      pathKey: 'grid',
+      stageText: '',
+      isDone: false,
+      pathStatus: 'under_review',
+      cells: buildPlStageGrid(currentSteps, t, pauseTargetIds),
+      gridColumns: 1,
+      pauseRequested,
+    }];
   }
 
   if (!parallelPresent) {

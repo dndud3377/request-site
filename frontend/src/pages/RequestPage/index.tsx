@@ -321,6 +321,17 @@ export default function RequestPage(): React.ReactElement {
   const [postApproverDropdownRect, setPostApproverDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const postApproverInputRef = useRef<HTMLInputElement>(null);
   const postApproverContainerRef = useRef<HTMLDivElement>(null);
+
+  // 영업/기술지원 합의자 — PL 검토와 병렬인 결재 단계. 상신 모달에서 PL 중 지정한다.
+  // 예외 구역 값을 기본값과 다르게 바꾼 의뢰서는 지정(또는 미지정 사유)이 필수다.
+  const [salesAgreers, setSalesAgreers] = useState<{ loginid: string; name: string }[]>([]);
+  const [salesAgreerSearch, setSalesAgreerSearch] = useState('');
+  const [salesAgreerDropdownOpen, setSalesAgreerDropdownOpen] = useState(false);
+  const [salesAgreerDropdownRect, setSalesAgreerDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const salesAgreerInputRef = useRef<HTMLInputElement>(null);
+  const salesAgreerContainerRef = useRef<HTMLDivElement>(null);
+  // '지정하지 않음' 사유 — 합의자가 필수인데 아무도 지정하지 않을 때 입력한다.
+  const [salesAgreerNoneReason, setSalesAgreerNoneReason] = useState('');
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // 통보자 다중 지정 (상신 모달) — 결재 권한 없이 상신·결재완료 메일만 받는 인원
@@ -850,6 +861,9 @@ export default function RequestPage(): React.ReactElement {
           // 불러온 문서의 값은 이미 확정된 판단이므로 자동 갱신으로 덮어쓰지 않는다.
           setVsManuallySet(true);
           setPostApprovers(Array.isArray(parsed.detail.post_approvers) ? parsed.detail.post_approvers : []);
+          // 재상신·수정 시 이전 지정을 그대로 되살린다(작성자가 모달에서 바꿀 수 있다).
+          setSalesAgreers(Array.isArray(parsed.detail.sales_agreers) ? parsed.detail.sales_agreers : []);
+          setSalesAgreerNoneReason(parsed.detail.sales_agreer_none_reason ?? '');
         }
         // 재선택 롤백용 스냅샷 복원 — 없으면 null(옛 문서는 매핑만 초기화된다).
         setMergeSnapshot(parsed.mergeSnapshot ?? null);
@@ -1225,6 +1239,18 @@ export default function RequestPage(): React.ReactElement {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // 영업/기술지원 합의자 지정 드롭다운 외부 클릭 감지
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (salesAgreerContainerRef.current && !salesAgreerContainerRef.current.contains(e.target as Node)) {
+        setSalesAgreerDropdownOpen(false);
+        setSalesAgreerDropdownRect(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
   // 지정 PL 추가/제거 (다중, 전원 합의)
   const addDesignee = (u: UserWithRole) => {
     setDesignees((prev) =>
@@ -1368,6 +1394,13 @@ export default function RequestPage(): React.ReactElement {
   // (결재 경로·후결자 생성 로직은 그대로이고, 이 '문을 여는 조건'만 넓힌 것이다)
   // (isProdc 는 아래에서 선언되므로 TDZ 를 피해 detail 로 직접 판정한다)
   const requiresPostApprover = detail.only_prodc === 'Yes' || isLabProduct;
+  // 상신 시 영업/기술지원 합의자 지정이 필수인가 — 예외 구역을 '변경 있음'으로 두고
+  // 값까지 기본값(일반 300 / C가문 500)과 다르게 바꿨을 때.
+  // 백엔드 RequestDocument.requires_sales_agreer 와 같은 기준이어야 한다.
+  const requiresSalesAgreer =
+    detail.ea_change === EA_HAS_CHANGE
+    && !!detail.ea_value?.trim()
+    && detail.ea_value.trim() !== eaDefaultValue(detail.only_prodc);
   // ADI CD 변경: 다른 기타 목적과 함께 선택할 수 있다(단독 전용이 아니다).
   const isAdiCdSelected = detail.other_purpose.includes(OTHER_PURPOSE_ADI_CD);
   // 기타 목적 6개 중 ADI CD 변경만 단독 선택한 경우 — 이후 STEP 필수 입력을 건너뛴다.
@@ -3343,6 +3376,9 @@ export default function RequestPage(): React.ReactElement {
         detail: {
           ...detail,
           post_approvers: requiresPostApprover ? postApprovers : [],
+          // 합의자는 필수 조건과 무관하게 지정한 그대로 저장한다(선택 지정도 실제 결재 단계가 된다).
+          sales_agreers: salesAgreers,
+          sales_agreer_none_reason: salesAgreers.length === 0 ? salesAgreerNoneReason.trim() : '',
           // 상신·재상신 시점의 상신자 판단을 고정 기록한다(임시저장에는 남기지 않는다).
           // 이후 MASK(E)가 detail.validation_system 을 바꿔도 이 값은 유지된다.
           ...(isDraft ? {} : { validation_system_submitted: detail.validation_system }),
@@ -3634,6 +3670,12 @@ export default function RequestPage(): React.ReactElement {
     // C가문(only_prodc=YES): 추가 후결자 1명 이상 필수
     if (!isPeerReviewMode && !isResumeMode && requiresPostApprover && postApprovers.length === 0) {
       addToast(t('request.post_approver_required'), 'error');
+      return;
+    }
+    // 예외 구역 값을 기본값과 다르게 바꾼 의뢰서: 합의자 1명 이상 또는 미지정 사유 필수
+    if (!isPeerReviewMode && !isResumeMode && requiresSalesAgreer
+        && salesAgreers.length === 0 && !salesAgreerNoneReason.trim()) {
+      addToast(t('request.sales_agreer_required'), 'error');
       return;
     }
     if (isPersistingRef.current) return;
@@ -4316,6 +4358,100 @@ export default function RequestPage(): React.ReactElement {
               </div>
             </div>
           )}
+
+          {/* 영업/기술지원 합의자: PL 검토와 병렬인 결재 단계. PL 중 지정(다중, 전원 합의).
+              예외 구역 값을 기본값과 다르게 바꾼 의뢰서는 지정 또는 미지정 사유가 필수다. */}
+          <div className="form-group" style={{ marginTop: 12 }}>
+            <label className="form-label">
+              {t('request.sales_agreer_label')}
+              {requiresSalesAgreer && <span style={{ color: 'var(--danger)' }}> *</span>}
+            </label>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 6px' }}>
+              {requiresSalesAgreer ? t('request.sales_agreer_help_required') : t('request.sales_agreer_help')}
+            </p>
+            {salesAgreers.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
+                {salesAgreers.map((p) => (
+                  <span key={p.loginid} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '2px 8px', fontSize: '0.82rem' }}>
+                    {p.name}
+                    <button type="button" onClick={() => setSalesAgreers((prev) => prev.filter((x) => x.loginid !== p.loginid))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0 2px', fontSize: '0.85rem', lineHeight: 1 }}>✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div ref={salesAgreerContainerRef} style={{ position: 'relative' }}>
+              <input
+                ref={salesAgreerInputRef}
+                className="form-control"
+                placeholder={t('request.sales_agreer_placeholder')}
+                value={salesAgreerSearch}
+                onChange={(e) => {
+                  setSalesAgreerSearch(e.target.value);
+                  setSalesAgreerDropdownOpen(true);
+                  if (salesAgreerInputRef.current) {
+                    const r = salesAgreerInputRef.current.getBoundingClientRect();
+                    setSalesAgreerDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                  }
+                }}
+                onFocus={() => {
+                  setSalesAgreerDropdownOpen(true);
+                  if (salesAgreerInputRef.current) {
+                    const r = salesAgreerInputRef.current.getBoundingClientRect();
+                    setSalesAgreerDropdownRect({ top: r.bottom + 2, left: r.left, width: r.width });
+                  }
+                }}
+                autoComplete="off"
+              />
+              {salesAgreerDropdownOpen && salesAgreerDropdownRect && createPortal(
+                <div style={{ position: 'fixed', top: salesAgreerDropdownRect.top, left: salesAgreerDropdownRect.left, width: salesAgreerDropdownRect.width, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', zIndex: 9999, maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
+                  {(() => {
+                    const q = salesAgreerSearch.toLowerCase();
+                    const filtered = plUserOptions.filter(u =>
+                      !salesAgreers.some(p => p.loginid === u.loginid) &&
+                      (!q ||
+                        u.name.toLowerCase().includes(q) ||
+                        u.loginid.toLowerCase().includes(q) ||
+                        (u.mail ?? '').toLowerCase().includes(q) ||
+                        (u.deptname ?? '').toLowerCase().includes(q))
+                    );
+                    if (filtered.length === 0) {
+                      return <div style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>{t('request.search_no_result')}</div>;
+                    }
+                    return filtered.map(u => (
+                      <div
+                        key={u.loginid}
+                        style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.875rem', borderBottom: '1px solid var(--border)' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '')}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setSalesAgreers((prev) => [...prev, { loginid: u.loginid, name: u.name }]);
+                          setSalesAgreerSearch('');
+                        }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{u.name}</span>
+                        <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>
+                          {u.loginid}{u.mail ? ` · ${u.mail}` : ''}{u.deptname ? ` · ${u.deptname}` : ''}
+                        </span>
+                      </div>
+                    ));
+                  })()}
+                </div>,
+                document.body
+              )}
+            </div>
+            {/* 필수인데 아무도 지정하지 않았다면 사유를 받는다 — 사유만 있으면 상신할 수 있다. */}
+            {requiresSalesAgreer && salesAgreers.length === 0 && (
+              <div style={{ marginTop: 6 }}>
+                <input
+                  className="form-control"
+                  placeholder={t('request.sales_agreer_none_reason_placeholder')}
+                  value={salesAgreerNoneReason}
+                  onChange={(e) => setSalesAgreerNoneReason(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
 
           {/* 통보자: 결재 권한 없이 상신·결재완료 메일만 받는 인원 (다중) */}
           <div className="form-group" data-tour="submit-notifier" style={{ marginTop: 12 }}>

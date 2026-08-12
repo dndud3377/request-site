@@ -4,6 +4,8 @@ import { StageCell, StageCellState } from '../utils/approvalTable';
 
 interface StageGridProps {
   cells: StageCell[];
+  /** 열 수. 병렬 합의 단계는 2열(기본), PL 검토 단계는 1열로 두 줄을 세로로 쌓는다. */
+  columns?: 1 | 2;
 }
 
 // 칸 상태 → 뱃지 문구. '대기중'·'검토중'·'PAUSE' 는 목록 상태뱃지와 같은 문구를 쓴다.
@@ -29,11 +31,11 @@ const STATE_BADGE_CLASS: Record<StageCellState, string> = {
  * 6칸이 항상 같은 자리에 있어서 이 문서의 결재 경로에 없는 단계도 '해당없음'으로 드러난다.
  * 뱃지가 단계명 왼쪽에 온다("대기중 PHPSI").
  */
-export default function StageGrid({ cells }: StageGridProps): React.ReactElement {
+export default function StageGrid({ cells, columns = 2 }: StageGridProps): React.ReactElement {
   const { t } = useTranslation();
 
   return (
-    <div className="stage-grid">
+    <div className="stage-grid" style={columns === 1 ? { gridTemplateColumns: 'max-content' } : undefined}>
       {cells.map((c) => (
         <span className="stage-cell" key={c.slot}>
           <span className={`badge ${STATE_BADGE_CLASS[c.state]} stage-cell-badge`}>

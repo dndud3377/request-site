@@ -1883,6 +1883,15 @@ type Page = { label: string; content: React.ReactNode };
     if (skipJStage && agent === 'J') {
       return [{ status: 'na', label: t('approval.step_na') }];
     }
+    // 영업/기술지원 합의자(SA)는 상신 시 PL 단계와 함께 만들어진다 — 그 회차에 단계가 없다는 것은
+    // 아무도 지정하지 않았다는 뜻이므로 '대기'가 아니라 '해당없음'이다(E·RA 와 같은 na 분기).
+    if (agent === 'SA') {
+      const saSteps = allSteps.filter((s) => s.agent === 'SA' && (s.round ?? 1) === round);
+      if (saSteps.length === 0) {
+        return [{ status: 'na', label: t('approval.step_na') }];
+      }
+      return saSteps.map((s) => stepToInfo(s));
+    }
     // R단계: 합의자(R) + 검토자(RV, 지정 시)를 한 행에 함께 표시
     if (agent === 'R') {
       const out: StepDisplayInfo[] = [];
@@ -1961,6 +1970,8 @@ type Page = { label: string; content: React.ReactNode };
   // 검토자(RV)는 R단계 행에 합의자와 함께 표시(getStepDisplays). 후결자(RA)는 R단계 다음 위치에 표시.
   const AGENTS: Array<{ key: string; label: string }> = [
     { key: 'PL', label: t('approval.agent_PL' as any) },
+    // 영업/기술지원 합의자는 PL 검토와 병렬이라 PL 바로 다음 줄에 온다(지정했을 때만 단계가 있다).
+    { key: 'SA', label: t('approval.agent_SA' as any) },
     { key: 'R', label: t('approval.agent_R') },
     { key: 'RA', label: t('approval.agent_RA' as any) },
     { key: 'P', label: t('approval.agent_P') },

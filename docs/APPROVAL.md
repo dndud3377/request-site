@@ -33,11 +33,11 @@
 
 | 필드 | 의미 |
 |------|------|
-| `agent` | `PL`(검토) / `R` / `RV`(검토자) / `P` / `PV`(검토자, 2026-07) / `J` / `O` / `E` / `EV`(검토자, 2026-07) / `RA`(후결자) |
+| `agent` | `PL`(검토) / `SA`(영업·기술지원 합의자, 2026-08) / `R` / `RV`(검토자) / `P` / `PV`(검토자, 2026-07) / `J` / `O` / `E` / `EV`(검토자, 2026-07) / `RA`(후결자) |
 | `action` | `pending`(대기) / `approved`(합의) / `rejected`(반려) / `skip`(건너뜀, EV 전용) |
 | `assignee` / `assignee_name` | 담당자 |
 | `round` | **상신 회차**(재상신 시 +1). 화면은 항상 max(round)만 표시 |
-| `is_parallel` | 병렬 단계 여부(O/E에 사용) |
+| `is_parallel` | 병렬 단계 여부(O/E/RA/SA에 사용) |
 | `due_date` | 완료 예정일(영업일 계산) |
 | `acted_at` / `comment` | 처리 시각 / 의견 |
 
@@ -120,11 +120,13 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - 조건: `status == 'draft'`, **지정 PL 필수**(role='PL'인 사용자, **본인 지정 불가**), `_validate_bb_mapping` 통과.
 - ✅ **다중 지정 PL(2026-07)**: payload `designated_pl_loginids: [...]`(배열, 단일 `designated_pl_loginid` 도 호환). 지정 PL **전원**에 대해 `agent='PL', round=1` pending step을 각각 생성한다(`_resolve_designated_pls`로 파싱·검증). `document.designated_pl` FK 에는 **대표(첫 번째)** 만 기록(표시/하위호환용).
 - 동작: `status → under_review`, `submitted_at` 기록, 기존 step 전체 삭제 후 PL step N개 생성. 통보처(있으면) 상신 메일 발송.
+- ✅ **영업/기술지원 합의자(SA, 2026-08)**: `detail.sales_agreers` 에 지정된 PL 권한자마다 `agent='SA', is_parallel=True` step 을 **PL 과 같은 회차에 함께** 생성한다(`_create_sales_agreer_steps`). 지정이 없으면 step 자체를 만들지 않는다(화면·메일 모두 '해당없음'). 자세한 규칙은 **Case P** 참조.
 - ⚠️ `_validate_bb_mapping`: "활성 + `process_id` 있는 J-layer 행은 모두 Bb 매핑 필수". **단 `additional_notes` JSON 파싱 실패 시 검증을 건너뛴다(통과 처리)** — 의도 확인 필요.
 
 ### Case B — PL 검토 합의 (`peer_approve`)
 - 권한: **MASTER 또는 해당 PL 단계의 assignee 본인만**(`_get_caller_pl_step`가 호출자 담당 pending PL step을 찾음).
-- ✅ **다중 PL 전원 합의(2026-07)**: 본인 PL step만 `approved` 처리 후, 현재 회차 **PL step 전원이 approved** 일 때만 `agent='R'` pending 생성(`_advance_after_pl`, 문서 행 `select_for_update` 락으로 R 중복/누락 방지). 아직 미합의 PL이 있으면 `under_review` 유지(R 미생성).
+- ✅ **다중 PL 전원 합의(2026-07)**: 본인 PL step만 `approved` 처리 후, 현재 회차 **PL step 전원이 approved** 일 때만 다음 단계를 연다(`_advance_after_pl`, 문서 행 `select_for_update` 락으로 R 중복/누락 방지). 아직 미합의 PL이 있으면 `under_review` 유지(R 미생성).
+- ✅ **(2026-08) 진행 판정에 SA 가 추가됐다** — `_pl_stage_complete` = `_all_pl_approved` **AND** `_all_sales_agreers_approved`. 즉 PL 전원 + 합의자 전원이 끝나야 `agent='R'`(또는 'MAP 삭제'의 P·R·J·O 병렬)이 생성된다.
 
 ### Case C — PL 검토 반려 (`peer_reject`)
 - 권한: MASTER 또는 assignee 본인.
@@ -419,6 +421,51 @@ R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전
 후결자가 있으면 걸리지 않아 이 경우를 막지 못한다). `requires_post_approver()` 재사용으로 수정.
 재현·수정 확인은 `LabProductPostApproverTest.test_lab_product_last_additional_post_approver_cannot_be_removed`
 (수정 전 코드로 되돌려 실제 200이 나옴을 먼저 확인한 뒤 수정).
+
+### Case P — 영업/기술지원 합의자(SA): PL 검토와 병렬인 합의 단계 (2026-08)
+
+**작성자가 상신 모달에서 PL 권한자 중 지정**하는 결재 단계다. PL 검토와 **병렬**이므로 순서가 없고,
+양쪽이 모두 끝난 시점에 다음 단계가 열린다.
+
+#### 지정·생성
+- 저장 위치: `detail.sales_agreers` = `[{loginid, name}]`. 미지정 사유는 `detail.sales_agreer_none_reason`.
+- 대상 자격: **role='PL' 만 허용**(`_resolve_sales_agreers`). 아닌 사람이 들어오면 상신이 400 으로 거절된다.
+- 생성 시점: `submit` / `resubmit` 에서 **PL step 과 같은 회차**에 `agent='SA', is_parallel=True,
+  assignee=지정자` 로 1인 1step 생성. 지정이 없으면 step 을 만들지 않는다.
+- 재상신하면 새 회차에 다시 만들어지고, 이전 회차 step 은 이력으로 남는다.
+
+#### 지정 필수 조건 (`RequestDocument.requires_sales_agreer`)
+예외 구역을 `변경 있음` 으로 두고 **값이 기본값과 다를 때**만 필수다.
+
+| only_prodc | 기본값 | 필수가 되는 예 |
+|---|---|---|
+| `No` (일반) | 300 | `ea_value = 350` |
+| `Yes` (C가문) | 500 | `ea_value = 300` |
+
+- 필수인데 합의자가 0명이면 `sales_agreer_none_reason`(미지정 사유)이 있어야 상신된다.
+- 프론트 `requiresSalesAgreer` 와 **같은 기준**이어야 한다(양쪽 모두 상신을 막는다).
+
+#### 진행 판정
+- `_pl_stage_complete(document, round)` = `_all_pl_approved` **AND** `_all_sales_agreers_approved`
+- SA step 이 하나도 없으면 `_all_sales_agreers_approved` 는 **True**(기다릴 대상이 없다 = 해당없음).
+- PL·SA 어느 쪽이 마지막이든 그 시점에 `_open_stage_after_pl` 이 다음 단계를 연다
+  (일반 경로는 R, 'MAP 삭제' 는 P·R·J·O 병렬).
+
+#### API
+| 엔드포인트 | 동작 |
+|---|---|
+| `POST /documents/{id}/sales-agree/` | 본인 SA step `approved` → 단계 완료 시 다음 단계 생성 |
+| `POST /documents/{id}/sales-reject/` | 본인 SA step `rejected` → **문서 즉시 반려**(PL 반려와 동일) |
+
+- 권한: MASTER 또는 해당 step 의 assignee 본인(`_get_caller_sales_agreer_step`).
+
+#### 화면 표시
+- 결재현황 '현재 단계': PL 검토 단계를 **1열 2줄 그리드**로 그린다(`buildPlStageGrid`).
+  1줄 = PL 지정 검토자 / 2줄 = 영업·기술지원 합의자. 합의자를 지정하지 않았으면 **해당없음**.
+  - 한쪽이 끝나고 다른 쪽이 남아 있어도 이 단계가 계속 표시된다
+    (`plStagePending` = PL·SA 중 하나라도 pending).
+- 상세 '결재 경로' 탭: PL 바로 다음 줄에 표시. 그 회차에 SA step 이 없으면 '해당없음'.
+- 메일 결재 경로 카드: `ROUTE_DISPLAY_ORDER` 에서 PL 다음. step 이 없으면 '예정'이 아니라 '해당없음'.
 
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)
 - start_date(당일 포함) 기준 n번째 영업일. 주말 + `Holiday(isholiday='Y')` 제외.

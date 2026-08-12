@@ -52,16 +52,46 @@ const cellAt = (doc: RequestDocument, slot: StageCellSlot): StageCell =>
   gridOf(doc).find((c) => c.slot === slot)!;
 
 describe('getDocTableRows — 병렬 이전 구간은 기존 단일 행 그대로', () => {
-  it('PL 검토중: 미합의 PL 이름을 이어 붙인 단일 행', () => {
+  // (2026-08) PL 검토 단계는 지정 검토자와 영업/기술지원 합의자(SA)가 병렬이라
+  // 단일 행이 아니라 1열 2줄 그리드로 그린다.
+  it('PL 검토중: 미합의 PL 이름을 이어 붙인 PL 칸 + 합의자 미지정이면 해당없음', () => {
     const doc = makeDoc([
-      makeStep({ agent: 'PL', action: 'pending', assignee_name: '박피엘' }),
-      makeStep({ agent: 'PL', action: 'pending', assignee_name: '김피엘' }),
+      makeStep({ agent: 'PL', action: 'pending', assignee_name: '박피엘', assignee_loginid: 'pl1' }),
+      makeStep({ agent: 'PL', action: 'pending', assignee_name: '김피엘', assignee_loginid: 'pl2' }),
     ]);
     const rows = getDocTableRows(doc, t);
     expect(rows).toHaveLength(1);
-    expect(rows[0].pathKey).toBe('single');
-    expect(rows[0].stageText).toBe('approval.agent_PL(박피엘 / 김피엘)');
-    expect(rows[0].cells).toBeUndefined();
+    expect(rows[0].pathKey).toBe('grid');
+    expect(rows[0].gridColumns).toBe(1);
+    expect(rows[0].cells!.map((c) => c.slot)).toEqual(['PL', 'SA']);
+
+    const pl = rows[0].cells!.find((c) => c.slot === 'PL')!;
+    expect(pl.state).toBe('review');
+    expect(pl.name).toBe('박피엘 / 김피엘');
+
+    const sa = rows[0].cells!.find((c) => c.slot === 'SA')!;
+    expect(sa.state).toBe('na');
+  });
+
+  it('PL 검토중 + 합의자 지정: 합의자 칸이 검토중으로 함께 표시된다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'PL', action: 'pending', assignee_name: '박피엘', assignee_loginid: 'pl1' }),
+      makeStep({ agent: 'SA', action: 'pending', assignee_name: '이영업', assignee_loginid: 'sa1' }),
+    ]);
+    const sa = getDocTableRows(doc, t)[0].cells!.find((c) => c.slot === 'SA')!;
+    expect(sa.state).toBe('review');
+    expect(sa.name).toBe('이영업');
+  });
+
+  it('PL 전원 합의 후에도 합의자가 남아 있으면 PL 검토 단계가 이어진다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'PL', action: 'approved', assignee_name: '박피엘' }),
+      makeStep({ agent: 'SA', action: 'pending', assignee_name: '이영업', assignee_loginid: 'sa1' }),
+    ]);
+    const rows = getDocTableRows(doc, t);
+    expect(rows[0].pathKey).toBe('grid');
+    expect(rows[0].cells!.find((c) => c.slot === 'PL')!.state).toBe('done');
+    expect(rows[0].cells!.find((c) => c.slot === 'SA')!.state).toBe('review');
   });
 
   it('RFG 담당자 미지정: 단일 행 + 대기중', () => {

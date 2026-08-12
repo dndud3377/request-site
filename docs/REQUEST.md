@@ -238,6 +238,57 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-08-12 — MAP 삭제 단순화 / ADI 버튼 제거 / 상신 모달 확대 / 예외 구역 기본값 / 영업·기술지원 합의자)
+
+#### ① 요청 목적 'MAP 삭제/수정' → 'MAP 삭제'
+
+- 요청 목적에서 **'수정'을 제거**하고 저장값을 `MAP 삭제` 로 변경했다.
+  - 프론트: `constants.ts` `MAP_DELETE_EDIT_PURPOSE` / `OPTION_REQUEST_PURPOSE`
+  - 백엔드: `models.py` `RequestDocument.MAP_DELETE_EDIT_PURPOSE`
+  - ⚠️ 두 값은 **항상 같아야 한다** — 다르면 결재 경로(`mailer.route_agents_for`) 판정이 깨진다.
+- `map_type` 후보가 `삭제` 하나뿐이라, 목적 선택 시 **자동 고정**한다(`applyMapOnlyScope`).
+  예전에는 후보가 2개라 사용자가 StepMap 에서 직접 골라야 했다.
+- `MAP_TYPE_EDIT_REQ('수정')` 상수와 i18n 키(`map_type_edit_req`, `map_change_reason_edit`)를 삭제했다.
+- 상세보기 이유 라벨도 `MAP 삭제 이유` 하나로 통일(`PagedDetailView`).
+
+#### ② StepMap 의 ADI 버튼 제거
+
+- `map_type` 버튼 목록에서 `ADI` 를 뺐다. 기타 목적 **'ADI CD 변경'이 `map_type='ADI'` 로
+  자동 고정하는 동작은 그대로**이며, 고정된 동안은 버튼 대신 안내 문구(`map_type_adi_fixed`)를 띄운다.
+
+#### ③ 상신 모달 확대
+
+- `maxWidth` 520px → **1040px**(상수 `SUBMIT_MODAL_MAX_WIDTH`).
+- 공용 `.modal-body { max-height: 82vh }` 는 **건드리지 않고**, `Modal` 에 `bodyStyle` prop 을
+  새로 만들어 이 모달에만 최소 높이(62vh)를 준다 — 다른 모달에 영향이 없다.
+- 특이사항 textarea `rows` 3 → **10**, 세로 리사이즈 허용.
+
+#### ④ 예외 구역(ea_change) 기본값을 C가문 여부에 연동
+
+| only_prodc | 기본값 |
+|---|---|
+| `No` (일반) | **300** |
+| `Yes` (C가문) | **500** |
+
+- `변경 없음` 선택지 라벨에 적용 기본값을 함께 표시한다(`no_change_with_default`, 예: `변경 없음(300)`).
+- 값 칸을 **숨기지 않고 표시한 뒤 잠근다** — 실제로 저장되는 기본값이 보이도록 한 것이다.
+- C가문 Yes/No 를 전환하면 `변경 없음` 상태일 때만 기본값을 함께 갱신한다.
+  `변경 있음`이면 사용자가 직접 넣은 값이므로 건드리지 않는다.
+- 상수: `EA_NO_CHANGE` / `EA_HAS_CHANGE` / `EA_DEFAULT_NORMAL` / `EA_DEFAULT_PRODC` / `eaDefaultValue()`
+- ⚠️ 백엔드 `RequestDocument.EA_*` 와 **같은 값**이어야 한다(합의자 필수 판정이 양쪽에서 동일해야 함).
+
+#### ⑤ 영업/기술지원 합의자(SA) — 신설 결재 단계
+
+작성자가 **상신 모달에서 PL 권한자 중 지정**하는 결재 단계다. 자세한 결재 흐름은
+`docs/APPROVAL.md` **Case P** 참조.
+
+- 저장 위치: `detail.sales_agreers` (`[{loginid, name}]`), 미지정 사유는 `detail.sales_agreer_none_reason`
+- **지정 필수 조건**(`requiresSalesAgreer` / `RequestDocument.requires_sales_agreer`):
+  `ea_change === '변경 있음'` **이고** `ea_value` 가 기본값(300/500)과 **다를 때**.
+  이때 합의자 1명 이상 또는 미지정 사유가 없으면 상신이 막힌다.
+- 재상신 시 이전 회차 지정이 모달에 그대로 채워지고, 작성자가 바꿀 수 있다.
+
+
 ### 추가 변경 이력 (2026-08-11 — 임시저장 재진입 시 `source_partid` 유실 수정 + 왕복 테스트 신설)
 
 - **문제**: 임시저장(또는 반려) 문서를 `편집`으로 다시 열면 **원본 제품 이름(`source_partid`)이 항상
