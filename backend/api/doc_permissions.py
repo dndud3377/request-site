@@ -34,6 +34,24 @@ def is_requester(user, document):
     return bool(mail and document.requester_email and document.requester_email == mail)
 
 
+def is_voc_submitter(user, voc):
+    """VOC 작성자(제출자) 본인 여부 — is_requester 와 동일한 규칙.
+
+    submitter FK(VOCViewSet.perform_create 에서 설정)의 loginid 로 판별한다.
+    user.id 를 직접 비교하지 않는 이유: 개발 모드의 프론트는 하드코딩된 목 사용자
+    정보를 화면 상태로 쓰기 때문에 id 가 DB 의 실제 user.id 와 어긋날 수 있다.
+    loginid 는 dev 로그인이 계정을 조회하는 키라 어긋나지 않는다.
+    FK 가 비어 있는 경우(비인증 등록)에만 이메일로 보조 판별한다.
+    """
+    loginid = getattr(user, 'loginid', '')
+    if not loginid:
+        return False
+    if voc.submitter_id:
+        return voc.submitter.loginid == loginid
+    mail = getattr(user, 'mail', '')
+    return bool(mail and voc.submitter_email and voc.submitter_email == mail)
+
+
 def pending_pl_step(document):
     """현재 회차의 pending PL 단계. 없으면 None."""
     from .models import ApprovalStep
