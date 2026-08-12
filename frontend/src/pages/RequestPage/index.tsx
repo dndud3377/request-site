@@ -29,7 +29,10 @@ import {
   TbvtlvNoteRow,
   ValidationSystemValue,
   MergePair,
+  MergeRefMode,
+  MergeRowInfo,
   MergeSnapshot,
+  MergeTable,
   AdiCdStep,
 } from '../../types';
 import GuideSlidePanel from '../../components/GuideSlidePanel';
@@ -76,15 +79,18 @@ import {
   ADI_CD_TEMPLATE_ROWS,
   ADI_CD_MAX_ROWS,
   makeAdiCdStep,
+  MERGE_MANUAL_FIELDS,
 } from './constants';
 import {
   formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, AdiCdHeaderMatch,
+  deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
 import AdiCdColumnMapModal from './components/AdiCdColumnMapModal';
 import Step1 from './components/Step1';
+import { BaField, BaSide } from './components/BeforeAfterPanel';
 import StepMap from './components/StepMap';
 import Step2 from './components/Step2';
 import Step3 from './components/Step3';
@@ -241,6 +247,8 @@ export default function RequestPage(): React.ReactElement {
   // 임시저장 후 재진입·재상신 이후에도 되돌릴 수 있다.
   const [mergeSnapshot, setMergeSnapshot] = useState<MergeSnapshot | null>(null);
   const [mergeReselectConfirm, setMergeReselectConfirm] = useState(false);
+  // 참조 요청서 있음/없음 전환 확인 — 확인해야 초기화와 함께 모드가 바뀐다(취소하면 아무것도 바뀌지 않는다).
+  const [mergeModeConfirm, setMergeModeConfirm] = useState<MergeRefMode | null>(null);
   // BEFORE/AFTER 표에서 지금 선택한 행 id ('미등록'은 MERGE_UNREGISTERED_ID). 저장하지 않는 화면 상태.
   const [baSelBefore, setBaSelBefore] = useState<string | null>(null);
   const [baSelAfter, setBaSelAfter] = useState<string | null>(null);
@@ -251,13 +259,15 @@ export default function RequestPage(): React.ReactElement {
    * 비교 결과·스냅샷·참조 문서 기록을 모두 지운다(J/O 표는 건드리지 않는다).
    * 조리법 변경·Merge 목적 전체 해제·재선택에서 공통으로 쓴다.
    */
-  const clearMergeComparison = () => {
+  const clearMergeComparison = (nextMode: MergeRefMode = 'ref') => {
     setMergeSnapshot(null);
     setBaSelBefore(null);
     setBaSelAfter(null);
     setBaSameCount(0);
     setDetail((prev) => (
       prev.merge_ref_doc_id === null
+        && !prev.merge_applied
+        && prev.merge_ref_mode === nextMode
         && (prev.merge_pairs?.length ?? 0) === 0
         && (prev.merge_unmatched_before?.length ?? 0) === 0
         && (prev.merge_unmatched_after?.length ?? 0) === 0
@@ -266,6 +276,8 @@ export default function RequestPage(): React.ReactElement {
           ...prev,
           merge_ref_doc_id: null,
           merge_ref_doc_label: '',
+          merge_ref_mode: nextMode,
+          merge_applied: false,
           merge_pairs: [],
           merge_unmatched_before: [],
           merge_unmatched_after: [],
@@ -822,8 +834,16 @@ export default function RequestPage(): React.ReactElement {
             // Merge 잠금 필드 도입 전 문서는 값이 없다 → 미Merge 로 백필한다.
             merge_ref_doc_id: parsed.detail.merge_ref_doc_id ?? null,
             merge_ref_doc_label: parsed.detail.merge_ref_doc_label ?? '',
+            // 모드 도입 전 문서는 모두 '참조 있음' 이다. 확정 여부는 참조 문서 id 로 판단한다.
+            merge_ref_mode: parsed.detail.merge_ref_mode ?? 'ref',
+            merge_applied: parsed.detail.merge_applied ?? (parsed.detail.merge_ref_doc_id != null),
             // BEFORE/AFTER 비교 도입 전 문서도 같은 이유로 빈 배열 백필.
-            merge_pairs: parsed.detail.merge_pairs ?? [],
+            // 행 id 도입 전 문서는 편집 키가 없으므로 로드 시 백필한다.
+            merge_pairs: (parsed.detail.merge_pairs ?? []).map((pair: MergePair) => ({
+              ...pair,
+              id: pair.id ?? genId(),
+              kind: deriveMergeKind(pair.before, pair.after),
+            })),
             merge_unmatched_before: parsed.detail.merge_unmatched_before ?? [],
             merge_unmatched_after: parsed.detail.merge_unmatched_after ?? [],
             // ADI CD 변경 도입 전 문서는 값이 없다 → 같은 이유로 빈 값 백필.
@@ -2384,6 +2404,22 @@ export default function RequestPage(): React.ReactElement {
   // 미리보기·실제 반영을 같은 순수 함수(computeLayerMerge)로 계산해 모달 건수와 표 결과가 어긋날 수 없게 한다.
   // J-layer 와 O-layer 는 각각 독립 호출한다 — 한쪽 판정이 다른 쪽으로 전파되면 안 된다.
   const handleMergeClick = () => {
+    // '없음' 은 3-way 로 반영할 참조가 없다 — 확인 모달 없이 바로 '없음' 으로 확정하고 표를 연다.
+    if (detail.merge_ref_mode === 'none') {
+      setDetail((prev) => ({
+        ...prev,
+        merge_ref_doc_id: null,
+        merge_ref_doc_label: '',
+        merge_applied: true,
+        merge_pairs: prev.merge_pairs.length > 0 ? prev.merge_pairs : [emptyMergePair()],
+        merge_unmatched_before: [],
+        merge_unmatched_after: [],
+      }));
+      setBaSameCount(0);
+      setBaSelBefore(null);
+      setBaSelAfter(null);
+      return;
+    }
     setMergePreview({
       jayer: computeLayerMerge(jayerRows, refJayerRows).stats,
       oayer: computeLayerMerge(oayerRows, refOayerRows).stats,
@@ -2411,6 +2447,8 @@ export default function RequestPage(): React.ReactElement {
       ...prev,
       merge_ref_doc_id: refDocId,
       merge_ref_doc_label: refDocLabel,
+      merge_ref_mode: 'ref',
+      merge_applied: true,
       merge_pairs: ba.pairs,
       merge_unmatched_before: ba.unmatchedBefore,
       merge_unmatched_after: ba.unmatchedAfter,
@@ -2432,24 +2470,27 @@ export default function RequestPage(): React.ReactElement {
    * 재선택 확정 — 저장된 스냅샷으로 J/O 표를 Merge 직전 상태로 되돌리고 참조·비교 상태를 비운다.
    * Merge 이후의 수동 편집도 함께 사라지므로 ConfirmModal 로 먼저 경고한다.
    */
+  const rollbackMergeSnapshot = () => {
+    if (!mergeSnapshot) return;
+    setJayerRows(mergeSnapshot.jayerRows);
+    setOayerRows(mergeSnapshot.oayerRows);
+    // Merge 로 추가됐던 행에 걸린 bb 매핑은 롤백하면 고아가 되므로 함께 정리한다.
+    const keepIds = new Set(mergeSnapshot.jayerRows.map((r) => r.id));
+    setBbRows((prev) => prev.filter((r) => !r.sourceJayerRowId || keepIds.has(r.sourceJayerRowId)));
+    setMappedJayerRowIds((prev) => new Set(Array.from(prev).filter((id) => keepIds.has(id))));
+    setStagedMappings((prev) => Object.fromEntries(
+      Object.entries(prev).filter(([id]) => keepIds.has(id))
+    ));
+    setSelectedJayerRowId((prev) => (prev && !keepIds.has(prev) ? null : prev));
+  };
+
   const handleMergeReselectConfirm = () => {
-    if (mergeSnapshot) {
-      setJayerRows(mergeSnapshot.jayerRows);
-      setOayerRows(mergeSnapshot.oayerRows);
-      // Merge 로 추가됐던 행에 걸린 bb 매핑은 롤백하면 고아가 되므로 함께 정리한다.
-      const keepIds = new Set(mergeSnapshot.jayerRows.map((r) => r.id));
-      setBbRows((prev) => prev.filter((r) => !r.sourceJayerRowId || keepIds.has(r.sourceJayerRowId)));
-      setMappedJayerRowIds((prev) => new Set(Array.from(prev).filter((id) => keepIds.has(id))));
-      setStagedMappings((prev) => Object.fromEntries(
-        Object.entries(prev).filter(([id]) => keepIds.has(id))
-      ));
-      setSelectedJayerRowId((prev) => (prev && !keepIds.has(prev) ? null : prev));
-    }
+    rollbackMergeSnapshot();
     setRefDocId(null);
     setRefDocLabel('');
     setRefJayerRows([]);
     setRefOayerRows([]);
-    clearMergeComparison();
+    clearMergeComparison(detail.merge_ref_mode);
     addToast(t('request.toast_merge_reselect'), 'info');
   };
 
@@ -2475,6 +2516,7 @@ export default function RequestPage(): React.ReactElement {
     if (before && after && before.table !== after.table) return;     // J-ayer ↔ O-ayer 교차 금지
     const table = (before ?? after)!.table;
     const pair: MergePair = {
+      id: genId(),
       table,
       beforeId: before ? before.id : null,
       before: before ? { process_id: before.process_id, sp: before.sp, sd: before.sd, pp: before.pp, layerid: before.layerid } : null,
@@ -2518,6 +2560,109 @@ export default function RequestPage(): React.ReactElement {
     });
     setBaSelBefore(null);
     setBaSelAfter(null);
+  };
+
+  // ===== 변경전/변경후 표 직접 편집 =====
+
+  /** 한 행의 한쪽을 통째로 바꾼다 — 판정(kind)은 항상 미등록 여부에서 다시 계산한다. */
+  const updateMergePair = (
+    pairId: string,
+    side: BaSide,
+    next: (info: MergeRowInfo | null) => MergeRowInfo | null
+  ) => {
+    setDetail((prev) => ({
+      ...prev,
+      merge_pairs: prev.merge_pairs.map((pair) => {
+        if (pair.id !== pairId) return pair;
+        const updated = { ...pair, [side]: next(pair[side]) } as MergePair;
+        return { ...updated, kind: deriveMergeKind(updated.before, updated.after) };
+      }),
+    }));
+  };
+
+  const handleBaCellChange = (pairId: string, side: BaSide, field: BaField, value: string) => {
+    updateMergePair(pairId, side, (info) => ({ ...(info ?? emptyMergeRowInfo()), [field]: value }));
+  };
+
+  /** 포커스를 벗어날 때 4칸이 모두 비었으면 '미등록'(null)으로 접는다. */
+  const handleBaCellBlur = (pairId: string, side: BaSide) => {
+    updateMergePair(pairId, side, normalizeMergeSide);
+  };
+
+  /**
+   * 엑셀 붙여넣기 — 붙여넣은 행부터 아래로 채운다. 열은 항상 process_id 부터 고정이며,
+   * 행이 모자라면 새 행을 만든다(반대쪽은 미등록이라 양쪽 행 수가 함께 늘어난다).
+   */
+  const handleBaPasteRaw = (pairId: string, side: BaSide, raw: string) => {
+    const grid = parseMergePasteRows(raw);
+    if (grid.length === 0) return;
+    setDetail((prev) => {
+      const startIdx = prev.merge_pairs.findIndex((p) => p.id === pairId);
+      if (startIdx === -1) return prev;
+      const next = [...prev.merge_pairs];
+      grid.forEach((cells, i) => {
+        const idx = startIdx + i;
+        while (next.length <= idx) next.push(emptyMergePair(next[next.length - 1]?.table));
+        const target = next[idx];
+        const info = { ...(target[side] ?? emptyMergeRowInfo()) };
+        MERGE_MANUAL_FIELDS.forEach((f, c) => {
+          const cell = cells[c];
+          if (cell !== undefined) info[f] = cell;
+        });
+        const updated = { ...target, [side]: normalizeMergeSide(info) } as MergePair;
+        next[idx] = { ...updated, kind: deriveMergeKind(updated.before, updated.after) };
+      });
+      return { ...prev, merge_pairs: next };
+    });
+  };
+
+  const handleBaTableChange = (pairId: string, table: MergeTable) => {
+    setDetail((prev) => ({
+      ...prev,
+      merge_pairs: prev.merge_pairs.map((pair) => (pair.id === pairId ? { ...pair, table } : pair)),
+    }));
+  };
+
+  /** 새 행은 양쪽 미등록으로 시작한다. 구분은 마지막 행을 따라간다(연속 입력 편의). */
+  const handleBaAddRow = () => {
+    setDetail((prev) => ({
+      ...prev,
+      merge_pairs: [...prev.merge_pairs, emptyMergePair(prev.merge_pairs[prev.merge_pairs.length - 1]?.table)],
+    }));
+  };
+
+  /** 그 행을 양쪽 미등록으로 되돌린다(행은 남는다 — 지우려면 ✕). */
+  const handleBaResetRow = (pairId: string) => {
+    setDetail((prev) => ({
+      ...prev,
+      merge_pairs: prev.merge_pairs.map((pair) => (
+        pair.id === pairId
+          ? { ...pair, before: null, after: null, kind: 'empty' as const }
+          : pair
+      )),
+    }));
+  };
+
+  /**
+   * 참조 요청서 있음/없음 전환 — 데이터가 무조건 초기화되므로 항상 확인 모달을 먼저 띄운다.
+   * 확인 전에는 아무것도 바꾸지 않는다(취소하면 라디오도 원래 값 그대로 남는다).
+   */
+  const handleMergeModeSelect = (mode: MergeRefMode) => {
+    if (mode === detail.merge_ref_mode) return;
+    setMergeModeConfirm(mode);
+  };
+
+  /** 확인 시: J/O 표를 Merge 직전으로 되돌리고(스냅샷이 있으면) 비교·참조 상태를 모두 비운 뒤 모드를 바꾼다. */
+  const handleMergeModeConfirm = () => {
+    const mode = mergeModeConfirm;
+    if (mode === null) return;
+    rollbackMergeSnapshot();
+    setRefDocId(null);
+    setRefDocLabel('');
+    setRefJayerRows([]);
+    setRefOayerRows([]);
+    clearMergeComparison(mode);
+    setMergeModeConfirm(null);
   };
 
   // ===== ADI CD 변경 (기타 목적 — 단독 전용이 아니라 다른 목적과 함께 선택할 수 있다) =====
@@ -2974,10 +3119,31 @@ export default function RequestPage(): React.ReactElement {
     errorMessages: string[]
   ) => {
     const pending = detail.merge_unmatched_after?.length ?? 0;
-    if (pending === 0) return;
-    const msg = t('request.ba_gate_ng', { count: pending });
-    newErrors['merge_unmatched_after'] = msg;
-    errorMessages.push(msg);
+    if (pending > 0) {
+      const msg = t('request.ba_gate_ng', { count: pending });
+      newErrors['merge_unmatched_after'] = msg;
+      errorMessages.push(msg);
+    }
+    // 표를 직접 채울 수 있으므로 확정한 짝도 검사한다 —
+    // 미등록이 아닌 쪽은 4칸 필수, 양쪽 미등록인 빈 행은 남길 수 없다.
+    // '없음' 으로 확정했으면 유효 행이 1건 이상이어야 한다.
+    if (!detail.merge_applied && detail.merge_ref_doc_id === null) return;
+    const { incompleteCells, blankRows, validCount } = validateMergePairs(detail.merge_pairs ?? []);
+    if (detail.merge_ref_mode === 'none' && validCount === 0) {
+      const msg = t('request.ba_gate_manual_empty');
+      newErrors['merge_pairs'] = msg;
+      errorMessages.push(msg);
+    }
+    if (incompleteCells > 0) {
+      const msg = t('request.ba_gate_manual_incomplete', { count: incompleteCells });
+      newErrors['merge_pairs'] = msg;
+      errorMessages.push(msg);
+    }
+    if (blankRows > 0) {
+      const msg = t('request.ba_gate_manual_blank_row', { count: blankRows });
+      newErrors['merge_pairs_blank'] = msg;
+      errorMessages.push(msg);
+    }
   };
 
   /**
@@ -3773,6 +3939,13 @@ export default function RequestPage(): React.ReactElement {
           handleBaSelect={handleBaSelect}
           handleBaApply={handleBaApply}
           handleBaUnpair={handleBaUnpair}
+          handleMergeModeSelect={handleMergeModeSelect}
+          handleBaCellChange={handleBaCellChange}
+          handleBaCellBlur={handleBaCellBlur}
+          handleBaPasteRaw={handleBaPasteRaw}
+          handleBaTableChange={handleBaTableChange}
+          handleBaAddRow={handleBaAddRow}
+          handleBaResetRow={handleBaResetRow}
           handleFlowChange={handleFlowChange}
           handleFlowStepBlur={handleFlowStepBlur}
           handleFlowDeleteRow={handleFlowDeleteRow}
@@ -4606,6 +4779,16 @@ export default function RequestPage(): React.ReactElement {
         message={mergeSnapshot
           ? t('request.merge_reselect_confirm_msg')
           : t('request.merge_reselect_no_snapshot')}
+        danger
+      />
+
+      {/* 참조 요청서 있음/없음 전환 — 확인해야 초기화와 함께 모드가 바뀐다 */}
+      <ConfirmModal
+        isOpen={mergeModeConfirm !== null}
+        onClose={() => setMergeModeConfirm(null)}
+        onConfirm={handleMergeModeConfirm}
+        title={t('request.merge_mode_change_title')}
+        message={t('request.merge_mode_change_confirm')}
         danger
       />
 
