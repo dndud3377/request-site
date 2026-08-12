@@ -198,6 +198,16 @@ const resubmitDocument = async (id: number, designatedPlLoginids: string[]) => {
   return { data };
 };
 
+/** 이력 바로 등록 (MASTER 전용) — 결재 경로를 타지 않고 draft → approved.
+ *  날짜는 모두 'YYYY-MM-DD' 형식이다. */
+const directApproveDocument = async (id: number, submittedAt: string, approvedAt: string) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${id}/direct-approve/`,
+    { submitted_at: submittedAt, approved_at: approvedAt }
+  );
+  return { data };
+};
+
 const peerApprove = async (docId: number, comment?: string) => {
   const data = await post<{ message: string; status: string }>(
     `/documents/${docId}/peer-approve/`,
@@ -499,6 +509,7 @@ export const documentsAPI = {
   update: updateDocument,
   submit: submitDocument,
   resubmit: resubmitDocument,
+  directApprove: directApproveDocument,
   withdraw: withdrawDocument,
   confirmWithdraw,
   rejectWithdraw,
