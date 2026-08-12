@@ -4332,3 +4332,205 @@ class ReceiveAllMailTest(TestCase):
             f'/api/users/{user.id}/mail-lines/', {'receive_all': 'yes'}, format='json'
         )
         self.assertEqual(res.status_code, 400)
+
+
+class SalesAgreerStageTests(TestCase):
+    """영업/기술지원 합의자(SA) — PL 검토와 병렬인 결재 단계.
+
+    - 상신 시 PL 단계와 같은 회차에 병렬로 생성된다.
+    - PL 전원 + SA 전원이 합의해야 다음 단계(R)가 열린다(어느 쪽이 먼저 끝나든 무관).
+    - 지정하지 않으면 SA 단계 자체가 없고, PL 만으로 진행된다('해당없음').
+    - 예외 구역 값을 기본값과 다르게 바꾼 의뢰서는 지정(또는 미지정 사유)이 필수다.
+    - SA 반려는 PL 반려와 동일하게 문서를 즉시 반려한다.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='sreq', mail='sreq@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='spl', mail='spl@c.com', role='PL')
+        self.sa_user = UserProfile.objects.create(loginid='ssa', mail='ssa@c.com', role='PL')
+        self.sa_user2 = UserProfile.objects.create(loginid='ssa2', mail='ssa2@c.com', role='PL')
+        self.not_pl = UserProfile.objects.create(loginid='snp', mail='snp@c.com', role='TE_R')
+
+    def _make_doc(self, detail_extra=None):
+        detail = {'request_purpose': '신규'}
+        detail.update(detail_extra or {})
+        return RequestDocument.objects.create(
+            title='sa-doc', requester=self.requester, requester_name='요청자',
+            requester_email='sreq@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps({'detail': detail, 'jayerRows': []}),
+        )
+
+    def _agreers(self, *users):
+        return [{'loginid': u.loginid, 'name': u.loginid} for u in users]
+
+    def _submit(self, doc):
+        self.client.force_authenticate(user=self.requester)
+        return self.client.post(f'/api/documents/{doc.id}/submit/',
+                                {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+
+    # ---- 단계 생성 ----
+
+    def test_sa_steps_created_in_parallel_with_pl(self):
+        """지정한 합의자 수만큼 SA 단계가 PL 과 같은 회차에 병렬로 생성된다."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.sa_user, self.sa_user2)})
+        self.assertEqual(self._submit(doc).status_code, 200)
+        sa_steps = list(ApprovalStep.objects.filter(document=doc, agent='SA', round=1))
+        self.assertEqual(len(sa_steps), 2)
+        for st in sa_steps:
+            self.assertTrue(st.is_parallel, 'SA 는 PL 과 병렬인 단계여야 한다')
+            self.assertEqual(st.action, 'pending')
+        self.assertEqual(
+            {s.assignee.loginid for s in sa_steps}, {'ssa', 'ssa2'}
+        )
+
+    def test_no_sa_steps_when_not_designated(self):
+        """합의자를 지정하지 않으면 SA 단계를 만들지 않는다(화면에서 '해당없음')."""
+        doc = self._make_doc()
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='SA').exists())
+
+    def test_non_pl_user_rejected_as_agreer(self):
+        """PL 권한자가 아닌 사람은 합의자로 지정할 수 없다."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.not_pl)})
+        res = self._submit(doc)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('영업/기술지원 합의자', res.json()['error'])
+
+    # ---- 진행 판정 ----
+
+    def test_r_not_created_until_sa_also_approves(self):
+        """PL 이 먼저 합의해도 SA 가 남아 있으면 R 단계가 열리지 않는다."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.sa_user)})
+        self.assertEqual(self._submit(doc).status_code, 200)
+
+        self.client.force_authenticate(user=self.pl_user)
+        self.assertEqual(self.client.post(f'/api/documents/{doc.id}/peer-approve/', {},
+                                          format='json').status_code, 200)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R').exists(),
+                         'SA 합의 전에는 R 이 생기면 안 된다')
+
+        self.client.force_authenticate(user=self.sa_user)
+        self.assertEqual(self.client.post(f'/api/documents/{doc.id}/sales-agree/', {},
+                                          format='json').status_code, 200)
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists(),
+                        'PL·SA 전원 합의 시 R 이 열려야 한다')
+
+    def test_sa_first_then_pl_also_opens_r(self):
+        """순서가 반대여도(SA 먼저) 마지막 합의 시점에 R 이 열린다 — 병렬이므로."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.sa_user)})
+        self.assertEqual(self._submit(doc).status_code, 200)
+
+        self.client.force_authenticate(user=self.sa_user)
+        self.assertEqual(self.client.post(f'/api/documents/{doc.id}/sales-agree/', {},
+                                          format='json').status_code, 200)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R').exists())
+
+        self.client.force_authenticate(user=self.pl_user)
+        self.assertEqual(self.client.post(f'/api/documents/{doc.id}/peer-approve/', {},
+                                          format='json').status_code, 200)
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists())
+
+    def test_all_sa_must_approve(self):
+        """합의자가 여럿이면 전원 합의해야 한다(AND)."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.sa_user, self.sa_user2)})
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.pl_user)
+        self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.client.force_authenticate(user=self.sa_user)
+        self.client.post(f'/api/documents/{doc.id}/sales-agree/', {}, format='json')
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R').exists(),
+                         '합의자 1명이 남았으면 아직 진행하지 않는다')
+        self.client.force_authenticate(user=self.sa_user2)
+        self.client.post(f'/api/documents/{doc.id}/sales-agree/', {}, format='json')
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists())
+
+    def test_other_user_cannot_agree(self):
+        """본인 SA 단계가 없는 사람은 합의할 수 없다."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.sa_user)})
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.sa_user2)
+        res = self.client.post(f'/api/documents/{doc.id}/sales-agree/', {}, format='json')
+        self.assertEqual(res.status_code, 400)
+
+    # ---- 반려 ----
+
+    def test_sa_reject_rejects_document(self):
+        """합의자 반려는 PL 반려와 동일하게 문서를 즉시 반려한다."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.sa_user)})
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.sa_user)
+        res = self.client.post(f'/api/documents/{doc.id}/sales-reject/',
+                               {'comment': '검토 필요'}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+        self.assertEqual(
+            ApprovalStep.objects.get(document=doc, agent='SA', round=1).action, 'rejected'
+        )
+
+    # ---- 필수 지정 판정 (예외 구역) ----
+
+    def test_required_when_ea_value_differs_from_default(self):
+        """예외 구역 값을 기본값(300)과 다르게 바꾸면 합의자 지정이 필수다."""
+        doc = self._make_doc({'ea_change': '변경 있음', 'ea_value': '350'})
+        res = self._submit(doc)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('영업/기술지원 합의자', res.json()['error'])
+
+    def test_not_required_when_ea_value_is_default(self):
+        """'변경 있음'이어도 값이 기본값 그대로면 필수가 아니다."""
+        doc = self._make_doc({'ea_change': '변경 있음', 'ea_value': '300'})
+        self.assertEqual(self._submit(doc).status_code, 200)
+
+    def test_not_required_when_no_change(self):
+        """'변경 없음'이면 필수가 아니다."""
+        doc = self._make_doc({'ea_change': '변경 없음', 'ea_value': '300'})
+        self.assertEqual(self._submit(doc).status_code, 200)
+
+    def test_prodc_default_is_500(self):
+        """C가문(only_prodc=Yes)의 기본값은 500 이라, 500 은 필수 조건에 걸리지 않는다."""
+        base = {'ea_change': '변경 있음', 'only_prodc': 'Yes', 'post_approvers': [
+            {'loginid': self.sa_user.loginid, 'name': 'x'}]}
+        ok_doc = self._make_doc(dict(base, ea_value='500'))
+        self.assertEqual(self._submit(ok_doc).status_code, 200)
+
+        ng_doc = self._make_doc(dict(base, ea_value='300'))
+        res = self._submit(ng_doc)
+        self.assertEqual(res.status_code, 400, 'C가문에서 300 은 기본값이 아니라 합의 대상이다')
+        self.assertIn('영업/기술지원 합의자', res.json()['error'])
+
+    def test_none_reason_satisfies_requirement(self):
+        """지정하지 않는 사유를 남기면 합의자 없이도 상신할 수 있다."""
+        doc = self._make_doc({
+            'ea_change': '변경 있음', 'ea_value': '350',
+            'sales_agreer_none_reason': '영업 협의 완료(메일 참조)',
+        })
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='SA').exists())
+
+    # ---- 재상신 ----
+
+    def test_resubmit_recreates_sa_steps_in_new_round(self):
+        """재상신하면 새 회차에 SA 단계가 다시 만들어지고 이전 회차는 이력으로 남는다."""
+        doc = self._make_doc({'sales_agreers': self._agreers(self.sa_user)})
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.sa_user)
+        self.client.post(f'/api/documents/{doc.id}/sales-reject/', {'comment': 'x'}, format='json')
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+        self.client.force_authenticate(user=self.requester)
+        res = self.client.post(f'/api/documents/{doc.id}/resubmit/',
+                               {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='SA', round=2, action='pending').exists()
+        )
+        self.assertEqual(
+            ApprovalStep.objects.get(document=doc, agent='SA', round=1).action, 'rejected'
+        )

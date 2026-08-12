@@ -93,6 +93,12 @@ class RequestDocument(models.Model):
     # 기타 목적 '연구소 제품' — C가문과 마찬가지로 상신 시 후결자 지정이 필수다.
     OTHER_PURPOSE_LAB = '연구소 제품'
 
+    # 예외 구역(ea_change/ea_value) — 기본값은 C가문 여부로 갈린다(일반 300 / C가문 500).
+    # 프론트엔드 `RequestPage/constants.ts` 의 EA_* 상수와 같은 값이어야 한다.
+    EA_HAS_CHANGE = '변경 있음'
+    EA_DEFAULT_NORMAL = '300'
+    EA_DEFAULT_PRODC = '500'
+
     # 기타 목적 'Overlay 변경' — 이것 **하나만** 선택되면 결재 경로에서 J 단계를 뺀다.
     # 프론트엔드 `RequestPage/constants.ts` 의 OPTION_OTHER_PURPOSE 항목과 같은 값이어야 한다.
     OTHER_PURPOSE_OVERLAY = 'Overlay 변경'
@@ -182,6 +188,23 @@ class RequestDocument(models.Model):
             other = [other]
         return self.OTHER_PURPOSE_LAB in other
 
+    def requires_sales_agreer(self):
+        """상신 시 영업/기술지원 합의자(SA) 지정이 필수인가.
+
+        예외 구역을 '변경 있음'으로 두고 값까지 기본값(일반 300 / C가문 500)과 다르게 바꾼
+        의뢰서만 해당한다. '변경 없음'이거나 기본값 그대로면 합의 대상이 아니다.
+        프론트엔드 `RequestPage/index.tsx` 의 requiresSalesAgreer 와 같은 기준이어야 한다.
+        """
+        inner_detail = self.get_detail().get('detail', {}) or {}
+        if inner_detail.get('ea_change') != self.EA_HAS_CHANGE:
+            return False
+        value = str(inner_detail.get('ea_value', '') or '').strip()
+        if not value:
+            return False
+        default = (self.EA_DEFAULT_PRODC if inner_detail.get('only_prodc') == 'Yes'
+                   else self.EA_DEFAULT_NORMAL)
+        return value != default
+
     def skip_j_stage(self):
         """결재 경로에서 J(JOB) 단계를 빼는 의뢰서인가 — 기타 목적이 'Overlay 변경' **하나뿐**일 때.
 
@@ -245,6 +268,7 @@ class ApprovalStep(models.Model):
         ('E', '{{agent_E}}'),
         ('EV', '검토자'),           # E 검토자(담당자가 지정, 다중 가능)
         ('RA', '후결자'),           # 후결자(R단계 이후 병렬)
+        ('SA', '영업/기술지원 합의자'),  # PL 검토와 병렬(작성자가 상신 시 지정, 다중 가능)
     ]
 
     ACTION_CHOICES = [
