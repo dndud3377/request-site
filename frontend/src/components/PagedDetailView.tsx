@@ -7,7 +7,7 @@ import Modal from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
 import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY } from '../pages/RequestPage/constants';
-import { isValidationKeywordRow, isValidationTarget } from '../pages/RequestPage/helpers';
+import { isValidationKeywordRow, isValidationTarget, deriveMergeKind } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
 
@@ -81,7 +81,7 @@ function MergePairsTable({ pairs }: { pairs: MergePair[] }) {
         </thead>
         <tbody>
           {pairs.map((pair, i) => (
-            <tr key={`${pair.beforeId ?? 'none'}_${pair.afterId ?? 'none'}_${i}`}>
+            <tr key={pair.id ?? `${pair.beforeId ?? 'none'}_${pair.afterId ?? 'none'}_${i}`}>
               <td>
                 <span className={`ba-badge ba-badge-${pair.table === 'J' ? 'j' : 'o'}`}>
                   {t(pair.table === 'J' ? 'request.jayer' : 'request.oayer')}
@@ -89,7 +89,11 @@ function MergePairsTable({ pairs }: { pairs: MergePair[] }) {
               </td>
               {cells(pair.before, pair.after)}
               {cells(pair.after, pair.before)}
-              <td><span className={`ba-badge ba-badge-${pair.kind}`}>{t(`request.ba_kind_${pair.kind}`)}</span></td>
+              <td>
+                <span className={`ba-badge ba-badge-${deriveMergeKind(pair.before, pair.after)}`}>
+                  {t(`request.ba_kind_${deriveMergeKind(pair.before, pair.after)}`)}
+                </span>
+              </td>
             </tr>
           ))}
         </tbody>
