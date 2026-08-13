@@ -1193,7 +1193,13 @@ pages/RequestPage/
   - 백엔드: `RequestDocumentSerializer.update`에서 `requester_name/email/department`를 pop해 업데이트 시 변경 차단(생성은 그대로). `requester` FK는 기존에도 `perform_update`가 안 건드려 보존됨.
   - 프론트: 편집/지정PL 로드 시 원본 requester를 `originalRequesterRef`에 보관 → `buildEnrichedForm`이 편집/지정PL 모드에선 원본 requester 사용(신규는 현재 사용자).
 
-- **J-layer 행 변경 시 Backbone 매핑 동기화**: 매핑된 J행을 **수정(어떤 컬럼이든)·붙여넣기·Delete·비활성화**하면 매핑을 해제(`unmapJayerRows`)한다.
+- **J-layer 행 변경 시 Backbone 매핑 동기화**: 매핑된 J행을 **수정·붙여넣기·Delete·비활성화**하면 매핑을 해제(`unmapJayerRows`)한다.
+  > **(2026-08 변경)** 수정·붙여넣기·Delete 는 **`BB_MIRRORED_COLS`(`process_id`·`sp`·`sd`)가 실제로 바뀔 때만** 해제한다.
+  > bb 행이 J-ayer 에서 복사해 가는 값이 이 셋뿐이고 나머지는 외부 데이터에서 오므로, `st`·`new_or_copy` 같은
+  > 컬럼 변경까지 해제하면 bb 내용이 그대로인데도 재선택만 강요됐다. 불러온(loaded) 행에서는 이 셋이
+  > `LOADED_LOCK_COLS` 로 모두 잠겨 있어 **사실상 해제되지 않고**, 수동 추가 행에서만 해제가 일어나
+  > bb 표의 값이 J-ayer 와 어긋나는 것을 막는다. 비활성화(`handleJayerBulkDisable`)는 종전대로 항상 해제한다
+  > (비활성 행은 원본 목록에도 안 떠 주인 없는 bb 행이 남기 때문).
   - 비활성화: bb 정보에서 제거(비활성이라 원본목록에도 안 뜸), 복원 시 원본목록 복귀.
   - 수정/붙여넣기/Delete: bb 행 제거 + **원본 데이터 목록에 재노출**(재매핑 가능). 상신 검증으로 재매핑 강제.
   - `useCellSelection`에 `onAfterClear` 콜백 추가(Delete 통지). `handleJayerBulkDisable`·`handleJayerChange`·`handleJayerAfterPaste`·Delete 전 경로 연결.
