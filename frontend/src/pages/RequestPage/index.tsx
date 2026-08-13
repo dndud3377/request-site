@@ -1855,15 +1855,20 @@ export default function RequestPage(): React.ReactElement {
     isLoadingEditRef.current = false;
     if (value !== 'No') {
       // Yes 전환 시 X표시 변경 여부를 '수정'으로 자동 설정한다(C가문은 X표시 수정이 기본 전제).
+      // 단, CLONE/EXISTING(isMapRegistered)은 MAP 입력칸이 전부 잠겨 실제로 값을 넣을 수 없으므로
+      // mshot_change 를 건드리지 않는다 — 안 그러면 아무 것도 안 바꿨는데 '수정'으로 상신되는 문제가 생긴다.
       // 편집 로드·프리필 경로에는 걸지 않는다 — 저장된 mshot_change 가 덮어써지기 때문.
       // 예외 구역이 '변경 없음'이면 기본값도 C가문 기준(500)으로 함께 갱신한다.
       // '변경 있음'이면 사용자가 직접 넣은 값이므로 건드리지 않는다.
-      setDetail((prev) => ({
-        ...prev,
-        only_prodc: value,
-        mshot_change: '수정',
-        ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(value) } : {}),
-      }));
+      setDetail((prev) => {
+        const isRegistered = prev.map_type === 'EXISTING' || prev.map_type === 'CLONE';
+        return {
+          ...prev,
+          only_prodc: value,
+          ...(isRegistered ? {} : { mshot_change: '수정' }),
+          ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(value) } : {}),
+        };
+      });
       if (errors['only_prodc']) setErrors((prev) => ({ ...prev, only_prodc: '' }));
       return;
     }

@@ -249,6 +249,24 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 버그 수정 (2026-08-13 — CLONE/EXISTING + C가문 Yes 전환 시 X표시 변경 여부가 '수정'으로 잘못 상신됨)
+
+- **증상**: MAP 목적이 `EXISTING`(기등록) 또는 `CLONE`(차용)일 때 C가문(`only_prodc`)을 `Yes`로
+  전환하면, 실제로는 아무 값도 입력하지 않았는데도(입력칸이 전부 잠겨 있어 입력 자체가 불가능)
+  X표시 변경 여부(`mshot_change`)가 `'수정'`으로 바뀐 채 그대로 상신됐다.
+- **원인**: `handleOnlyProdcChange`(`index.tsx`)가 C가문 `Yes` 전환 시 `map_type`과 무관하게
+  무조건 `mshot_change: '수정'`을 자동 설정하고 있었다. `EXISTING`/`CLONE`(`isMapRegistered`)은
+  MAP 관련 입력칸이 전부 잠겨 사용자가 실제로 값을 바꿀 수 없는데도 이 자동 설정만은 걸렸다.
+- **수정**: `setDetail` 콜백 안에서 `prev.map_type === 'EXISTING' || prev.map_type === 'CLONE'`
+  여부를 판정해, 이 경우에는 `mshot_change`를 건드리지 않고 기존 값을 그대로 둔다(초기값은
+  `INITIAL_DETAIL.mshot_change === '없음'`). `NEW`(신규)일 때는 기존과 동일하게 `'수정'` 자동
+  설정을 유지한다 — `NEW`는 입력칸이 잠기지 않아 실제로 X표시 변경이 필요한 경우가 많기 때문이다.
+- **범위 밖(의도적으로 유지)**: `ea_value`(예외 구역 값)의 C가문 기본값 연동(300→500)은 실제
+  계산된 기본값을 보여주는 용도라 이번 수정과 무관하게 그대로 둔다.
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx` (`handleOnlyProdcChange`, 1개 파일)
+- **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(작업 전후 동일, 신규 0) ·
+  `react-scripts test --watchAll=false` 5 suites / **174건 통과**.
+
 ### 버그 수정 (2026-08-13 — J-ayer/O-ayer 기본값을 빈 행 1개 → 빈 배열로 통일)
 
 - **배경**: §바로 위 항목(이력 바로 등록 실패)에서 `applyMapOnlyScope` 하나만 고쳤는데, 같은 "빈 행 1개"
