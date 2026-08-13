@@ -249,6 +249,28 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 버그 수정 (2026-08-13 — Only MAP/MAP 삭제: J-ayer·O-ayer 빈 행 1개로 인한 이력 바로 등록 실패)
+
+- **증상**: MASTER 가 `Only MAP` 또는 `MAP 삭제` 목적을 선택한 뒤(J/O-ayer·Backbone 표를 만지지 않고)
+  바로 `📋 이력에 바로 등록`(§4.5, `docs/HISTORY.md`)을 누르면 등록이 되지 않았다.
+- **원인**: `applyMapOnlyScope`(`index.tsx`, 목적을 Only MAP/MAP 삭제 로 바꿀 때 실행)가
+  `bbRows` 는 `[]`(완전히 빔)로 초기화하면서, `jayerRows`/`oayerRows` 는 실수로
+  `[makeJayerRow()]`/`[makeOayerRow()]`(빈 행 **1개**)로 초기화하고 있었다.
+  이 빈 행은 `disabled: false`(활성 행)라서, `이력에 바로 등록`이 실행하는 5단계 전체 검증
+  (`validate(5)` — st/new_or_copy 필수 체크 등)에 걸려 등록이 막혔다.
+  - `상신하기`(`handleSubmitClick`)는 `validate(lastStep)`을 써서 Only MAP/MAP 삭제일 때
+    `lastStep=2`라 이 검증 자체를 타지 않으므로 증상이 드러나지 않았다(저장 시점에는
+    `jayerRows: isMapOnlyScope ? [] : ...` 로 어차피 빈 배열로 버려졌기 때문에 결과물은 같았다).
+  - `이력에 바로 등록`(`handleDirectHistoryClick`)은 `validate(5)`를 고정 호출해서 문제가 드러났다.
+- **수정**: `applyMapOnlyScope`의 `setJayerRows([makeJayerRow()])` / `setOayerRows([makeOayerRow()])`를
+  `bbRows`와 동일하게 `setJayerRows([])` / `setOayerRows([])`로 변경.
+- **부작용**: Only MAP/MAP 삭제에서 다른 목적으로 되돌아갈 때(`applyLeaveMapOnlyScope`)는
+  `bbRows`와 마찬가지로 J/O-ayer 도 자동으로 빈 행이 다시 채워지지 않는다 — 표에서
+  `+ 행 추가`를 눌러야 한다(기존 `bbRows` 동작과 동일한 대칭이라 새로운 불일치는 아니다).
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx` (1개 파일, 2줄)
+- **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(작업 전후 동일, 신규 0) ·
+  `react-scripts test --watchAll=false` 5 suites / **174건 통과**.
+
 ### 추가 변경 이력 (2026-08-12 — MASTER '이력에 바로 등록')
 
 - **개요**: MASTER 가 step 5 에서 `상신하기` 대신 `📋 이력에 바로 등록` 을 눌러, **결재 경로를 전혀
