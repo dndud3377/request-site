@@ -1489,6 +1489,16 @@ export default function PagedDetailView({
     );
   };
 
+  /** CLONE/EXISTING 등 잠긴 항목용 — Map Option/Inter 와 동일한 회색 "없음" 플레이스홀더 칩. */
+  const PlaceholderChip = ({ label, style }: { label: string; style?: React.CSSProperties }) => (
+    <div style={{ ...chipBase, ...style }}>
+      <div style={fieldLabel}>{label}</div>
+      <div style={fieldValue}>
+        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
+      </div>
+    </div>
+  );
+
   // ===== 합성 값(여러 필드를 한 줄로 합쳐 보여주는 항목) 표시값 생성기 =====
   // 칩 표시와 '이력 확인' 모달이 반드시 같은 함수를 써야 회차별 값 비교가 성립한다.
   // (단일 필드만 넘기면 과거 회차는 대표 필드 값만, 현재 행만 합성 값으로 나와 비교가 깨진다.)
@@ -1591,6 +1601,10 @@ export default function PagedDetailView({
   };
 
   const isProdc = detail.only_prodc === PRODC_YES;
+  /** CLONE/EXISTING — StepMap 에서 MAP 관련 입력칸이 전부 잠기므로, 상세보기에서도
+   *  지도편차·예외구역·X표시·C가문 세부정보는 값이 있어도 회색 "없음"으로 표시한다.
+   *  (MAP 목적·원본 위치·원본 제품·C가문 Yes/No 는 잠기지 않으므로 실값 유지) */
+  const isMapRegisteredDetail = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
   const mshotChange = detail.mshot_change || '없음';
   const mshotHasDetail = mshotChange === '추가' || mshotChange === '수정';
   const mshotIsDelete = mshotChange === '삭제';
@@ -1823,9 +1837,17 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
+          {/* CLONE/EXISTING — StepMap 에서 잠겨 의미 없는 기본값이므로 회색 "없음"으로 대체한다. */}
+          {isMapRegisteredDetail && (isR || isO || isP) && (
+            <div style={rowStyle}>
+              <PlaceholderChip label={t('request.map')} style={chipWide} />
+              <PlaceholderChip label={t('request.ea_change')} style={chipWide} />
+            </div>
+          )}
+
           {/* MAP 삭제 모드는 이 아래 항목들을 작성 화면에서부터 숨긴다 — 저장된 값은
               INITIAL_DETAIL 기본값('변경 없음'/'No'/'없음' 등)일 뿐이라 상세에서도 함께 숨긴다. */}
-          {!isMapDeleteEditType(detail.map_type) && (isR || isO || isJ || isP) && (detail.map_change || (detail as any).map_change_top || detail.ea_change) && (
+          {!isMapRegisteredDetail && !isMapDeleteEditType(detail.map_type) && (isR || isO || isJ || isP) && (detail.map_change || (detail as any).map_change_top || detail.ea_change) && (
             <div style={rowStyle}>
               {(isR || isO || isP) && (() => {
                 // 리전별로 '변경 없음/있음'을 함께 표기한다(둘 다 '변경 없음'이어도 칩을 띄운다).
@@ -1848,7 +1870,14 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {!isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && detail.mshot_change && (() => {
+          {/* CLONE/EXISTING — X표시 변경 여부도 잠긴 기본값이므로 회색 "없음"으로 대체한다. */}
+          {isMapRegisteredDetail && (isR || isO || isP) && (
+            <div style={rowStyle}>
+              <PlaceholderChip label={t('request.mshot_change_status')} />
+            </div>
+          )}
+
+          {!isMapRegisteredDetail && !isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && detail.mshot_change && (() => {
             const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy') || changedFields.has('mshot_image_copy_top') || changedFields.has('mshot_image_copy_bottom');
             const imgStyle: React.CSSProperties = { maxWidth: '300px', maxHeight: '200px', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px' };
             return (
@@ -1922,7 +1951,17 @@ type Page = { label: string; content: React.ReactNode };
                     <div style={fieldLabel}>{t('request.prodc_status')}</div>
                     <div style={fieldValue}>{detail.only_prodc}</div>
                   </div>
-                  {isProdc && buildProdcInfo() && (
+                  {/* CLONE/EXISTING — C가문 Yes/No 자체는 실값을 유지하되, 잠긴 세부 정보(제품
+                      해당 위치·상/중/하판)는 회색 "없음"으로 대체한다. */}
+                  {isProdc && isMapRegisteredDetail && (
+                    <div style={{ flex: 1 }}>
+                      <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
+                      <div style={fieldValue}>
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
+                      </div>
+                    </div>
+                  )}
+                  {isProdc && !isMapRegisteredDetail && buildProdcInfo() && (
                     <div style={{ flex: 1 }}>
                       <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
                       <div style={{ ...fieldValue, whiteSpace: 'pre-line' }}>{buildProdcInfo()}</div>
