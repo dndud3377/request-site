@@ -278,6 +278,10 @@ const Step1: React.FC<Step1Props> = ({
             {/* 참조 요청서 Merge — Layer 추가/삭제·STEPSEQ 변경·Overlay 변경 공용 (여러 개를 골라도 1개만) */}
             {showMergeBlock && (
               <div>
+                <div className="form-label" style={{ marginBottom: 6 }}>
+                  {t('guide.feat.step1_ref_doc_merge')}
+                  <GuideBadge fk="step1_ref_doc_merge" tk={t('guide.feat.step1_ref_doc_merge' as never)} />
+                </div>
                 {/* 참조 요청서 있음/없음 — 바꿀 때는 index.tsx 가 확인 모달을 먼저 띄운다(내용이 모두 초기화된다) */}
                 <div className="merge-mode-row">
                   {([
@@ -362,16 +366,22 @@ const Step1: React.FC<Step1Props> = ({
 
             {/* ADI CD 변경: 변경전/변경후 스텝 표 */}
             {isAdiCdSelected && (
-              <AdiCdPanel
-                before={detail.adi_cd_before}
-                after={detail.adi_cd_after}
-                deleteAll={detail.adi_cd_delete_all}
-                onCellChange={handleAdiCdCellChange}
-                onAddRow={handleAdiCdAddRow}
-                onRemoveRow={handleAdiCdRemoveRow}
-                onPasteRaw={handleAdiCdPasteRaw}
-                onToggleDeleteAll={handleAdiCdToggleDeleteAll}
-              />
+              <div>
+                <div className="form-label" style={{ marginBottom: 6 }}>
+                  {t('guide.feat.step1_adi_cd_change')}
+                  <GuideBadge fk="step1_adi_cd_change" tk={t('guide.feat.step1_adi_cd_change' as never)} />
+                </div>
+                <AdiCdPanel
+                  before={detail.adi_cd_before}
+                  after={detail.adi_cd_after}
+                  deleteAll={detail.adi_cd_delete_all}
+                  onCellChange={handleAdiCdCellChange}
+                  onAddRow={handleAdiCdAddRow}
+                  onRemoveRow={handleAdiCdRemoveRow}
+                  onPasteRaw={handleAdiCdPasteRaw}
+                  onToggleDeleteAll={handleAdiCdToggleDeleteAll}
+                />
+              </div>
             )}
 
             {/* 흐름도 */}

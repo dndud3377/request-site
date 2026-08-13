@@ -20,7 +20,7 @@ const GuideSlidePanel: React.FC<Props> = ({ featureKey, featureTitle, isOpen, on
   const DemoComponent = GUIDE_DEMOS[featureKey];
 
   useEffect(() => {
-    if (!isOpen || !featureKey || GUIDE_DEMOS[featureKey]) return;
+    if (!isOpen || !featureKey) return;
     setLoading(true);
     guidesAPI
       .list({ feature_key: featureKey })
@@ -117,26 +117,30 @@ const GuideSlidePanel: React.FC<Props> = ({ featureKey, featureTitle, isOpen, on
             {t('guide.panel_hint')}
           </div>
 
-          {/* 바디 */}
+          {/* 바디 — 영상 가이드(빌트인 데모)가 있으면 먼저, 그 아래에 가이드 페이지 글 가이드를 이어서 보여준다 */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
-            {DemoComponent ? (
-              <DemoComponent />
-            ) : loading ? (
+            {DemoComponent && <DemoComponent />}
+            {loading ? (
               <div style={{ textAlign: 'center', padding: '40px 0', color: '#aaa', fontSize: 13 }}>
                 {t('common.loading')}
               </div>
             ) : guide ? (
               <div
                 className="guide-content-render"
-                style={{ fontSize: 14, lineHeight: 1.85, color: '#333' }}
+                style={{
+                  fontSize: 14,
+                  lineHeight: 1.85,
+                  color: '#333',
+                  ...(DemoComponent ? { marginTop: 20, paddingTop: 20, borderTop: '1px solid #e8ecf2' } : {}),
+                }}
                 dangerouslySetInnerHTML={{ __html: guide.content }}
               />
-            ) : (
+            ) : !DemoComponent ? (
               <div style={{ textAlign: 'center', padding: '40px 0', color: '#bbb' }}>
                 <div style={{ fontSize: 42, marginBottom: 10 }}>📭</div>
                 <div style={{ fontSize: 13 }}>{t('guide.no_content')}</div>
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* 하단 힌트 */}
