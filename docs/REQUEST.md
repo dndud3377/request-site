@@ -256,9 +256,14 @@ pages/RequestPage/
 - **수정 1 — 컴포넌트 마운트 기본값**(`index.tsx` `jayerRows`/`oayerRows` 최초 `useState`):
   `[makeJayerRow()]`/`[makeOayerRow()]`(빈 행 1개) → `[]`. 신규 문서를 열면 이제 두 표 모두 빈 배열로
   시작한다(투어 모드는 영향 없음 — `makeTourJayerRows()`/`makeTourOayerRows()` 그대로).
-- **수정 2 — `process_id`(조리법) 변경 감지 effect의 Only MAP 분기**: 여기도 `[makeJayerRow()]`/
-  `[makeOayerRow()]`로 남아 있던 것을 `[]`로 통일했다. Only MAP 선택 후 조리법을 바꿔도 더 이상
-  빈 행이 재생성되지 않는다(안 고쳤다면 바로 위 항목의 버그가 이 경로로 재발했다).
+- **수정 2 — `process_id`(조리법) 변경 감지 effect의 Only MAP·MAP 삭제 분기**: 여기도
+  `[makeJayerRow()]`/`[makeOayerRow()]`로 남아 있던 것을 `[]`로 통일했다. 처음엔
+  `detail.request_purpose === ONLY_MAP_PURPOSE` 만 검사해 **MAP 삭제**가 빠져 있었다 — MAP 삭제
+  선택 중 조리법을 바꾸면 이 우회를 타지 않고 `fetchJobFileLayerAndPopulateJayer`/
+  `fetchOvlLayerAndPopulateOayer` 가 실제로 실행됐다(불필요한 API 호출 + 화면에 보이지 않는 사이
+  jayerRows/oayerRows 가 실제 데이터로 잠시 채워짐 — 저장 시점엔 `buildEnrichedForm` 의
+  `isMapOnlyScope ? [] : ...` 가 있어 저장값 자체는 항상 안전했다). 조건을 `MAP_DELETE_EDIT_PURPOSE`
+  까지 포함하도록 넓혀 **Only MAP·MAP 삭제 둘 다** 재조회 자체가 일어나지 않게 고쳤다.
 - **수정 3 — `fetchJobFileLayerAndPopulateJayer`/`fetchOvlLayerAndPopulateOayer`**: API가 빈 결과를
   반환했을 때(`length === 0`) 토스트만 띄우고 표를 그대로 두던 것을, `setJayerRows([])`/
   `setOayerRows([])`를 함께 호출하도록 고쳤다. 이전에는 데이터가 있던 조리법에서 데이터가 없는
@@ -267,15 +272,8 @@ pages/RequestPage/
   의도적 동작 — 아래 테스트 Case H).
 - **검증 방법**: 신규 문서 작성 흐름(라인 → 조합법 → 제품 → 조리법 선택)을 실제로 구동하는 테스트
   `RequestPage/jayerOayerDefault.test.tsx` 신설(10 케이스) — 초기 빈 배열, 데이터 있음/없음 조리법
-  선택, 데이터 있음→없음/없음→있음 전환, 서로 다른 데이터 간 전환, API 예외, Only MAP 중 조리법 변경.
-- **🛑 조사 중 발견(이번 수정 범위 밖 — 기록만)**: `process_id` 변경 effect 의 Only MAP 분기는
-  `detail.request_purpose === ONLY_MAP_PURPOSE` 만 검사하고 `MAP_DELETE_EDIT_PURPOSE`(MAP 삭제)는
-  검사하지 않는다. 그래서 **MAP 삭제** 목적에서 조리법을 바꾸면 Only MAP 과 달리 저지되지 않고
-  `fetchJobFileLayerAndPopulateJayer`/`fetchOvlLayerAndPopulateOayer` 가 실제로 실행된다(불필요한
-  API 호출 + jayerRows/oayerRows 가 화면에 보이지 않는 사이 실제 데이터로 잠시 채워짐). 다만 저장
-  시점에는 `buildEnrichedForm` 의 `isMapOnlyScope ? [] : ...` 가 Only MAP·MAP 삭제 공통으로 적용돼
-  **저장되는 값은 항상 안전하게 `[]`** 다(위 테스트 Case J로 확인) — 데이터 유실·오염 위험은 없고,
-  낭비되는 API 호출과 불필요한 상태 변화만 있는 상태다.
+  선택, 데이터 있음→없음/없음→있음 전환, 서로 다른 데이터 간 전환, API 예외, Only MAP·MAP 삭제 중
+  조리법 변경.
 - **영향 파일**: `frontend/src/pages/RequestPage/index.tsx` (3곳),
   `frontend/src/pages/RequestPage/jayerOayerDefault.test.tsx`(신규)
 - **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(변경 없음) · `react-scripts test --watchAll=false`
