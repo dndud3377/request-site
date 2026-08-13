@@ -533,20 +533,25 @@ export default function RequestPage(): React.ReactElement {
       setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
       setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
       setRevLayersSelected([]); setRevGds('');
-      setDetail((prev) => ({
-        ...prev,
-        process_selection: '', partid_selection: '', process_id: '',
-        // 메인 라인 변경 시 C가문 스코프·리전·지도편차·REV 값도 초기화(옛 라인 기준 잔존 방지 — 감사 R-6)
-        prodc_scope: '',
-        prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
-        prodc_middle_use: '', prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
-        prodc_bottom_line: '', prodc_bottom_process: '', prodc_bottom_product: '',
-        map_change_top: INITIAL_DETAIL.map_change_top,
-        map_value_x_top: '', map_value_y_top: '',
-        map_change_bottom: INITIAL_DETAIL.map_change_bottom,
-        map_value_x_bottom: '', map_value_y_bottom: '',
-        rev_yn: '', rev_entries: [],
-      }));
+      setDetail((prev) => {
+        // CLONE/EXISTING 은 리전별 지도편차 입력칸이 전부 잠겨 있으므로 '변경 있음' 기본값 대신
+        // '변경 없음'으로 리셋한다(그 외 NEW 등은 기존 기본값을 그대로 쓴다).
+        const isRegistered = prev.map_type === 'EXISTING' || prev.map_type === 'CLONE';
+        return {
+          ...prev,
+          process_selection: '', partid_selection: '', process_id: '',
+          // 메인 라인 변경 시 C가문 스코프·리전·지도편차·REV 값도 초기화(옛 라인 기준 잔존 방지 — 감사 R-6)
+          prodc_scope: '',
+          prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
+          prodc_middle_use: '', prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
+          prodc_bottom_line: '', prodc_bottom_process: '', prodc_bottom_product: '',
+          map_change_top: isRegistered ? '변경 없음' : INITIAL_DETAIL.map_change_top,
+          map_value_x_top: '', map_value_y_top: '',
+          map_change_bottom: isRegistered ? '변경 없음' : INITIAL_DETAIL.map_change_bottom,
+          map_value_x_bottom: '', map_value_y_bottom: '',
+          rev_yn: '', rev_entries: [],
+        };
+      });
     }
   }, [detail.line]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1632,7 +1637,17 @@ export default function RequestPage(): React.ReactElement {
       return;
     }
     // 첫 선택은 초기화할 것이 없으므로 바로 적용.
-    setDetail((prev) => ({ ...prev, map_type: val }));
+    // CLONE/EXISTING 은 리전별 지도편차·예외구역 입력칸이 전부 잠기므로 처음부터 잠긴 기본값으로 맞춘다.
+    const registered = val === 'EXISTING' || val === 'CLONE';
+    setDetail((prev) => ({
+      ...prev,
+      map_type: val,
+      ...(registered ? {
+        map_change_top: '변경 없음', map_value_x_top: '', map_value_y_top: '',
+        map_change_bottom: '변경 없음', map_value_x_bottom: '', map_value_y_bottom: '',
+        ea_value: '',
+      } : {}),
+    }));
     if (errors['map_type']) setErrors((prev) => ({ ...prev, map_type: '' }));
   };
 
@@ -1641,6 +1656,8 @@ export default function RequestPage(): React.ReactElement {
     const newType = mapTypeChangeConfirm.targetType;
     // StepMap(원본·C가문·지도편차·예외구역·X표시·Map Option·REV) 필드만 초기화한다.
     // Step1/3/4/5 데이터(라인·뼈찜·partial_shot·tbvtlv 등)는 보존한다.
+    // CLONE/EXISTING 은 입력칸이 전부 잠기므로 리셋 기본값도 '변경 없음'/빈 예외구역 값으로 맞춘다.
+    const registered = newType === 'EXISTING' || newType === 'CLONE';
     setDetail((prev) => ({
       ...prev,
       map_type: newType,
@@ -1650,14 +1667,14 @@ export default function RequestPage(): React.ReactElement {
       map_value_x: INITIAL_DETAIL.map_value_x,
       map_value_y: INITIAL_DETAIL.map_value_y,
       map_reason: INITIAL_DETAIL.map_reason,
-      map_change_top: INITIAL_DETAIL.map_change_top,
+      map_change_top: registered ? '변경 없음' : INITIAL_DETAIL.map_change_top,
       map_value_x_top: INITIAL_DETAIL.map_value_x_top,
       map_value_y_top: INITIAL_DETAIL.map_value_y_top,
-      map_change_bottom: INITIAL_DETAIL.map_change_bottom,
+      map_change_bottom: registered ? '변경 없음' : INITIAL_DETAIL.map_change_bottom,
       map_value_x_bottom: INITIAL_DETAIL.map_value_x_bottom,
       map_value_y_bottom: INITIAL_DETAIL.map_value_y_bottom,
       ea_change: INITIAL_DETAIL.ea_change,
-      ea_value: INITIAL_DETAIL.ea_value,
+      ea_value: registered ? '' : INITIAL_DETAIL.ea_value,
       only_prodc: INITIAL_DETAIL.only_prodc,
       prodc_scope: INITIAL_DETAIL.prodc_scope,
       prodc_top_line: INITIAL_DETAIL.prodc_top_line,
@@ -1866,30 +1883,43 @@ export default function RequestPage(): React.ReactElement {
           ...prev,
           only_prodc: value,
           ...(isRegistered ? {} : { mshot_change: '수정' }),
-          ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(value) } : {}),
+          // CLONE/EXISTING 은 리전별 지도편차·예외구역 입력칸이 전부 잠겨 있으므로 C가문 기본값(500)을
+          // 채우지 않고 '변경 없음'/빈 값으로 고정한다.
+          ...(isRegistered
+            ? {
+                map_change_top: '변경 없음', map_value_x_top: '', map_value_y_top: '',
+                map_change_bottom: '변경 없음', map_value_x_bottom: '', map_value_y_bottom: '',
+                ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: '' } : {}),
+              }
+            : (prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(value) } : {})),
         };
       });
       if (errors['only_prodc']) setErrors((prev) => ({ ...prev, only_prodc: '' }));
       return;
     }
-    setDetail((prev) => ({
-      ...prev,
-      only_prodc: 'No',
-      prodc_scope: '',
-      prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
-      prodc_middle_use: '', prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
-      prodc_bottom_line: '', prodc_bottom_process: '', prodc_bottom_product: '',
-      map_change_top: INITIAL_DETAIL.map_change_top,
-      map_value_x_top: '', map_value_y_top: '',
-      map_change_bottom: INITIAL_DETAIL.map_change_bottom,
-      map_value_x_bottom: '', map_value_y_bottom: '',
-      // Yes 전환 시 자동으로 넣었던 '수정'과 그때 붙여넣은 이미지를 함께 되돌린다
-      // (C가문을 되돌린 뒤 원하지 않은 X표시 정보가 저장되는 것을 막기 위함).
-      mshot_change: INITIAL_DETAIL.mshot_change,
-      mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '',
-      // 예외 구역이 '변경 없음'이면 기본값도 일반 기준(300)으로 되돌린다(Yes 전환의 반대 동작).
-      ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: EA_DEFAULT_NORMAL } : {}),
-    }));
+    setDetail((prev) => {
+      const isRegistered = prev.map_type === 'EXISTING' || prev.map_type === 'CLONE';
+      return {
+        ...prev,
+        only_prodc: 'No',
+        prodc_scope: '',
+        prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
+        prodc_middle_use: '', prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
+        prodc_bottom_line: '', prodc_bottom_process: '', prodc_bottom_product: '',
+        // CLONE/EXISTING 은 리전별 지도편차 입력칸이 잠겨 있으므로 '변경 있음' 기본값으로 되돌리지 않는다.
+        map_change_top: isRegistered ? '변경 없음' : INITIAL_DETAIL.map_change_top,
+        map_value_x_top: '', map_value_y_top: '',
+        map_change_bottom: isRegistered ? '변경 없음' : INITIAL_DETAIL.map_change_bottom,
+        map_value_x_bottom: '', map_value_y_bottom: '',
+        // Yes 전환 시 자동으로 넣었던 '수정'과 그때 붙여넣은 이미지를 함께 되돌린다
+        // (C가문을 되돌린 뒤 원하지 않은 X표시 정보가 저장되는 것을 막기 위함).
+        mshot_change: INITIAL_DETAIL.mshot_change,
+        mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '',
+        // 예외 구역이 '변경 없음'이면 기본값도 일반 기준(300)으로 되돌린다(Yes 전환의 반대 동작).
+        // CLONE/EXISTING 은 예외구역 입력칸도 잠겨 있으므로 빈 값을 유지한다.
+        ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: isRegistered ? '' : EA_DEFAULT_NORMAL } : {}),
+      };
+    });
     setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
     setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
     setErrors((prev) => ({
