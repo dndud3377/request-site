@@ -249,6 +249,36 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 추가 변경 이력 (2026-08-13 — 기능 가이드 항목 3개 추가 + 영상·글 가이드 동시 노출)
+
+- **개요**: `/guide` 기능별 가이드 지식베이스(`GUIDE_STEP_FEATURES`)에 아직 배지가 없던 위저드
+  기능 3개에 가이드 배지를 신설했고, 빌트인 영상 데모와 사용자가 작성한 글 가이드가 같은
+  `feature_key`에 함께 있을 때 하나만 보이던 것을 **둘 다(영상 → 글 순서로)** 보이도록 고쳤다.
+- **신규 `feature_key` 3개** (`types/index.ts` `GuideFeatureKey`/`GUIDE_STEP_FEATURES`):
+  - `step1_ref_doc_merge` — 참조 요청서 Merge(`showMergeBlock` 블록: 참조 있음/없음, Merge,
+    BEFORE/AFTER 표). 배지를 블록 상단 소제목에 두어 **조건부 렌더를 그대로 물려받아 해당 목적을
+    선택했을 때만** 노출된다.
+  - `step1_adi_cd_change` — ADI CD 변경(`isAdiCdSelected` 블록: `AdiCdPanel` 변경전/변경후 스텝 표).
+    동일하게 블록 상단 소제목에 배지를 붙여 조건부 노출.
+  - `step2_inter` — MAP 단계 Inter 섹션(IN 적용 O/X + Xs/Ys/XYs/없음). 기존 `map_opt_inter` 라벨에
+    배지를 붙였다(이 필드 자체는 상시 노출이라 다른 배지들과 동일한 방식).
+- **영상+글 가이드 동시 노출** (`components/GuideSlidePanel.tsx`): 이전엔 `GUIDE_DEMOS[featureKey]`가
+  있으면 글 가이드 API 조회 자체를 건너뛰어 데모만 보였다. 데모 유무와 무관하게 항상
+  `guidesAPI.list({feature_key})`를 조회하도록 바꾸고, 렌더 순서를 **데모 컴포넌트 → (구분선) →
+  글 가이드**로 고정했다. 데모·글 둘 다 없을 때만 기존 "내용 없음" 빈 상태를 보여준다(데모만 있고
+  글이 없을 땐 빈 상태 문구를 생략해 불필요한 노출을 막는다).
+- **i18n**: `guide.feat.step1_ref_doc_merge` / `step1_adi_cd_change` / `step2_inter` ko/en 동시 추가.
+- **영향 파일**: `types/index.ts`, `locales/ko.json`·`en.json`,
+  `pages/RequestPage/components/Step1.tsx`·`StepMap.tsx`, `components/GuideSlidePanel.tsx`
+- **검증(2026-08-13 실행)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` | 22개 | **22개** (신규 0, 전부 기존 항목과 동일) |
+  | `react-scripts test` | 5 suites / 174건 | **5 suites / 174건 통과** |
+
+  ⚠️ 원격 세션이라 Docker 없이 실행했고, 백엔드 변경이 없어 백엔드 테스트는 별도로 돌리지 않았다.
+
 ### 추가 변경 이력 (2026-08-12 — MASTER '이력에 바로 등록')
 
 - **개요**: MASTER 가 step 5 에서 `상신하기` 대신 `📋 이력에 바로 등록` 을 눌러, **결재 경로를 전혀
