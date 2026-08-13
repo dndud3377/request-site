@@ -393,7 +393,7 @@ const Step1: React.FC<Step1Props> = ({
                     <div className="form-group flex-col" style={{ marginBottom: 0 }}>
                       <label className="form-label">{t('request.flow_line')}</label>
                       <select
-                        className="form-control"
+                        className={`form-control${errors[`flow_step_${row.id}_location`] ? ' error' : ''}`}
                         value={row.location}
                         onChange={(e) => handleFlowChange(row.id, 'location', e.target.value)}
                         disabled={disableOptional}
@@ -410,6 +410,8 @@ const Step1: React.FC<Step1Props> = ({
                         options={FlowProductOptions[row.id] || []}
                         placeholder={t('request.select_placeholder')}
                         style={{ width: '100%' }}
+                        error={errors[`flow_step_${row.id}_product_name`]}
+                        hideErrorMessage
                         disabled={disableOptional}
                       />
                     </div>
@@ -421,6 +423,8 @@ const Step1: React.FC<Step1Props> = ({
                         options={FlowProcessIdOptions[row.id] || []}
                         placeholder={t('request.select_placeholder')}
                         style={{ width: '100%' }}
+                        error={errors[`flow_step_${row.id}_process_id`]}
+                        hideErrorMessage
                         disabled={disableOptional}
                       />
                     </div>
