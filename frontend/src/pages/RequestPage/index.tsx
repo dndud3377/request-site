@@ -62,6 +62,7 @@ import {
   PRODC_SCOPE_OPTIONS,
   inferProdcScope,
   JAYER_EDITABLE_COLS,
+  isBbMirroredCol,
   OAYER_EDITABLE_COLS,
   LOADED_LOCK_COLS,
   isNocSpecial,
@@ -2054,6 +2055,24 @@ export default function RequestPage(): React.ReactElement {
   // 매핑된 행만 골라 unmap (편집/붙여넣기/Delete 공용)
   const unmapIfMapped = (ids: string[]) => unmapJayerRows(ids.filter((id) => mappedJayerRowIds.has(id)));
 
+  /**
+   * 붙여넣기·Delete 로 bb 반영 컬럼이 실제로 바뀐 행만 골라 unmap.
+   * bb 행은 J-ayer 에서 process_id/sp/sd 만 복사해 가므로, 나머지 컬럼이 바뀌어도
+   * bb 내용은 달라지지 않는다 — 그런 변경까지 매핑을 풀면 재선택만 강요된다.
+   */
+  const unmapIfBbValueChanged = (changes: { rowId: string; values: Record<string, string> }[]) => {
+    const rowById = new Map(jayerRows.map((r) => [r.id, r]));
+    const targets = changes
+      .filter(({ rowId, values }) => {
+        const row = rowById.get(rowId);
+        return Object.entries(values).some(
+          ([col, v]) => isBbMirroredCol(col) && row?.[col as keyof JayerRow] !== v,
+        );
+      })
+      .map((c) => c.rowId);
+    unmapIfMapped(targets);
+  };
+
   // 바코드 후보 조회 + 적용. seq 토큰으로 최신 요청만 반영하고(out-of-order 무시),
   // 응답 시점에 행의 product_name이 그대로일 때만 item_id를 자동 채운다.
   const runBarcodeFetch = (id: string, productName: string, seq: number) => {
@@ -2069,8 +2088,11 @@ export default function RequestPage(): React.ReactElement {
 
   const handleJayerChange = (id: string, field: keyof Omit<JayerRow, 'id'>, value: string) => {
     const changedRow = jayerRows.find(r => r.id === id);
-    // 매핑된 행을 수정하면(어떤 컬럼이든) 매핑 해제 → 원본 목록 복귀
-    if (mappedJayerRowIds.has(id)) unmapJayerRows([id]);
+    // bb 행이 J-ayer 에서 복사해 가는 값이 실제로 바뀐 경우에만 매핑을 해제한다.
+    // (예전엔 컬럼을 가리지 않고 해제해, st 하나만 바꿔도 bb 재선택을 다시 해야 했다.)
+    if (mappedJayerRowIds.has(id) && isBbMirroredCol(field) && changedRow?.[field] !== value) {
+      unmapJayerRows([id]);
+    }
     // 동기화 전파 여부: 소스 행이 참여행(활성 && 기등록/layer삭제 아님)이고,
     // 전파할 값이 특수값(기등록/layer삭제)이 아닐 때만 같은 layer의 참여행으로 전파한다.
     const layerid = changedRow?.layerid?.trim();
@@ -2129,8 +2151,8 @@ export default function RequestPage(): React.ReactElement {
 
   // 붙여넣기 후 J-layer 자동채움/바코드 조회 연동
   const handleJayerAfterPaste = (changes: { rowId: string; values: Record<string, string> }[]) => {
-    // 매핑된 행에 붙여넣기 → 매핑 해제(원본 목록 복귀)
-    unmapIfMapped(changes.map((c) => c.rowId));
+    // 붙여넣기로 bb 반영 컬럼이 바뀐 행만 매핑 해제(원본 목록 복귀)
+    unmapIfBbValueChanged(changes);
     changes.forEach(({ rowId, values }) => {
       if ('product_name' in values) {
         const pn = values.product_name;
@@ -2262,7 +2284,7 @@ export default function RequestPage(): React.ReactElement {
     !!row.disabled || row.new_or_copy === '기등록'
     || (row.new_or_copy === NOC_LAYER_DELETE && col === 'st')
     || (!!row.loaded && (LOADED_LOCK_COLS as readonly string[]).includes(col));
-  const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, handleJayerAfterPaste, isLayerCellLocked, (changes) => unmapIfMapped(changes.map((c) => c.rowId)));
+  const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, handleJayerAfterPaste, isLayerCellLocked, unmapIfBbValueChanged);
   const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, handleOayerAfterPaste, isLayerCellLocked);
 
   // 참여행(활성 && 기등록/layer삭제 아님)에만 일괄 적용 + 같은 layer의 O 참여행 동기화
