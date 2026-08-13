@@ -645,9 +645,9 @@ export default function RequestPage(): React.ReactElement {
     setRefOayerRows([]);
     // 조리법이 바뀌면 J/O 가 통째로 재조회되므로 옛 스냅샷으로 롤백되면 안 된다 → 비교 상태 전부 정리.
     clearMergeComparison();
-    // Only MAP 은 StepMap 정보까지만 필요 → J/O 자동 재조회 없이 빈 상태로 유지한다.
-    // (isOnlyMap 은 이 effect 아래에서 선언되므로 detail 로 직접 판정)
-    if (detail.request_purpose === ONLY_MAP_PURPOSE) {
+    // Only MAP·MAP 삭제는 StepMap 정보까지만 필요 → J/O 자동 재조회 없이 빈 상태로 유지한다.
+    // (isMapOnlyScope 는 이 effect 아래에서 선언되므로 detail 로 직접 판정)
+    if (detail.request_purpose === ONLY_MAP_PURPOSE || detail.request_purpose === MAP_DELETE_EDIT_PURPOSE) {
       setJayerRows([]);
       setOayerRows([]);
       return;
