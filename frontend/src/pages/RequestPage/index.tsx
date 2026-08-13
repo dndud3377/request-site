@@ -2751,7 +2751,11 @@ export default function RequestPage(): React.ReactElement {
     setMergeModeConfirm(mode);
   };
 
-  /** 확인 시: J/O 표를 Merge 직전으로 되돌리고(스냅샷이 있으면) 비교·참조 상태를 모두 비운 뒤 모드를 바꾼다. */
+  /**
+   * 확인 시: J/O 표를 Merge 직전으로 되돌리고(스냅샷이 있으면) 비교·참조 상태를 모두 비운 뒤 모드를 바꾼다.
+   * '없음'은 짝지을 참조 문서가 없어 별도 Merge 클릭이 무의미하므로, 확인 즉시 확정하고
+   * 변경전/변경후 표를 바로 연다(빈 행 1개로 시작). '있음'은 문서 선택 후 Merge 클릭이 여전히 필요하다.
+   */
   const handleMergeModeConfirm = () => {
     const mode = mergeModeConfirm;
     if (mode === null) return;
@@ -2761,6 +2765,13 @@ export default function RequestPage(): React.ReactElement {
     setRefJayerRows([]);
     setRefOayerRows([]);
     clearMergeComparison(mode);
+    if (mode === 'none') {
+      setDetail((prev) => ({
+        ...prev,
+        merge_applied: true,
+        merge_pairs: prev.merge_pairs.length > 0 ? prev.merge_pairs : [emptyMergePair()],
+      }));
+    }
     setMergeModeConfirm(null);
   };
 
