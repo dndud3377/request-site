@@ -231,11 +231,14 @@ function RowDiffModal({
   title: string;
   fields: DiffField[];
   curRow: Record<string, any>;
-  prevRow: Record<string, any>;
+  /** 이전 회차에 짝이 없는 행(이번에 새로 생긴 행)이면 null — 변경 전 칸을 '(없음)' 으로 채운다. */
+  prevRow: Record<string, any> | null;
   onClose: () => void;
 }) {
-  const cell = (f: DiffField, row: Record<string, any>) =>
-    (f.format ? f.format(row[f.key]) : String(row[f.key] ?? '')) || '';
+  const cell = (f: DiffField, row: Record<string, any> | null) => {
+    if (!row) return NO_ROW_MARK;
+    return (f.format ? f.format(row[f.key]) : String(row[f.key] ?? '')) || '';
+  };
   const thS: React.CSSProperties = {
     padding: '5px 10px', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)',
     borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)',
@@ -698,11 +701,15 @@ interface TableHistoryProps<T extends { id: string }> {
   rounds?: RoundSnapshot[];
 }
 
-/** 행 이력 버튼을 띄울 수 있는 상태인지 — 진행 중은 직전 행이 있어야 하고, 이력 조회는 회차만 있으면 된다. */
+/**
+ * 행 이력 버튼을 띄울 수 있는 상태인지 — 이전 회차가 있으면 띄운다.
+ * 짝이 없는 행(이번에 새로 생긴 행)도 "변경 전 = (없음)" 으로 보여주므로,
+ * 강조만 되고 눌러볼 수 없는 행이 남지 않는다.
+ */
 function canOpenRowHistory<T extends { id: string }>(
-  rowId: string, { prevRowMap, historyMode, rounds }: TableHistoryProps<T>,
+  _rowId: string, { rounds }: TableHistoryProps<T>,
 ): boolean {
-  return historyMode ? (rounds?.length ?? 0) > 1 : !!prevRowMap?.has(rowId);
+  return (rounds?.length ?? 0) > 1;
 }
 
 function JayerTable({
@@ -721,13 +728,14 @@ function JayerTable({
   const diffPrev = diffId ? prevRowMap?.get(diffId) : null;
   const diffRounds = diffId && historyMode ? buildRowTimeline(rows, rounds, (r) => r.jayerRows, diffId) : null;
   const fields = toDiffFields(JAYER_DIFF_FIELDS, t);
-  const hasPrev = historyMode ? rounds.length > 1 : (prevRowMap?.size ?? 0) > 0;
+  // 이전 회차가 있으면 버튼 열을 연다(짝 없는 신규 행도 '(없음)' 으로 열어 보여주므로).
+  const hasPrev = rounds.length > 1;
   return (
     <>
       {diffRounds
         ? <RowRoundHistoryModal title={t('request.jayer_row_history')} fields={fields} rounds={diffRounds} onClose={() => setDiffId(null)} />
-        : diffCur && diffPrev && (
-          <RowDiffModal title={t('request.jayer_row_history')} fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
+        : diffCur && (
+          <RowDiffModal title={t('request.jayer_row_history')} fields={fields} curRow={diffCur as any} prevRow={(diffPrev ?? null) as any} onClose={() => setDiffId(null)} />
         )}
       <div style={{ overflowX: 'auto' }}>
         <table className="table table-compact" style={{ marginBottom: 8 }}>
@@ -776,13 +784,14 @@ function OayerTable({
   const diffPrev = diffId ? prevRowMap?.get(diffId) : null;
   const diffRounds = diffId && historyMode ? buildRowTimeline(rows, rounds, (r) => r.oayerRows, diffId) : null;
   const fields = toDiffFields(OAYER_DIFF_FIELDS, t);
-  const hasPrev = historyMode ? rounds.length > 1 : (prevRowMap?.size ?? 0) > 0;
+  // 이전 회차가 있으면 버튼 열을 연다(짝 없는 신규 행도 '(없음)' 으로 열어 보여주므로).
+  const hasPrev = rounds.length > 1;
   return (
     <>
       {diffRounds
         ? <RowRoundHistoryModal title={t('request.oayer_row_history')} fields={fields} rounds={diffRounds} onClose={() => setDiffId(null)} />
-        : diffCur && diffPrev && (
-          <RowDiffModal title={t('request.oayer_row_history')} fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
+        : diffCur && (
+          <RowDiffModal title={t('request.oayer_row_history')} fields={fields} curRow={diffCur as any} prevRow={(diffPrev ?? null) as any} onClose={() => setDiffId(null)} />
         )}
       <div style={{ overflowX: 'auto' }}>
         <table className="table table-compact" style={{ marginBottom: 8 }}>
@@ -840,13 +849,14 @@ function BbTable({
   const diffPrev = diffId ? prevRowMap?.get(diffId) : null;
   const diffRounds = diffId && historyMode ? buildRowTimeline(rows, rounds, (r) => r.bbRows, diffId) : null;
   const fields = toDiffFields(BB_DIFF_FIELDS, t);
-  const hasPrev = historyMode ? rounds.length > 1 : (prevRowMap?.size ?? 0) > 0;
+  // 이전 회차가 있으면 버튼 열을 연다(짝 없는 신규 행도 '(없음)' 으로 열어 보여주므로).
+  const hasPrev = rounds.length > 1;
   return (
     <>
       {diffRounds
         ? <RowRoundHistoryModal title="뼈찜 행 변경 이력" fields={fields} rounds={diffRounds} onClose={() => setDiffId(null)} />
-        : diffCur && diffPrev && (
-          <RowDiffModal title="뼈찜 행 변경 이력" fields={fields} curRow={diffCur as any} prevRow={diffPrev as any} onClose={() => setDiffId(null)} />
+        : diffCur && (
+          <RowDiffModal title="뼈찜 행 변경 이력" fields={fields} curRow={diffCur as any} prevRow={(diffPrev ?? null) as any} onClose={() => setDiffId(null)} />
         )}
       <div style={{ overflowX: 'auto' }}>
         <table className="table table-compact" style={{ marginBottom: 8 }}>
@@ -900,43 +910,75 @@ function rowContentSig(row: any, fields: DiffFieldDef[]): string {
   return JSON.stringify(fields.map((f) => String(row?.[f.key] ?? '')));
 }
 
+/**
+ * 현재 행 ↔ 이전 회차 행 짝짓기. 세 단계를 순서대로 시도한다.
+ *
+ *  1. **id** — 손대지 않은 행. 겹치는 id 가 하나도 없으면(표가 통째로 재생성된 경우)
+ *     위치(index)로 폴백한다.
+ *  2. **sourceJayerRowId** — bb 행 전용. J-ayer 행을 고치면 그 행에 매핑된 bb 행이
+ *     삭제되고(`unmapJayerRows`), 다시 지정하면 **새 id 로 만들어져 배열 끝에 붙는다**
+ *     (`handleApplyMappings` → `makeBbRow`). id 로는 짝을 못 찾지만 어느 J-ayer 행에서
+ *     왔는지는 남아 있으므로, 그 값으로 "이 J 행에 지정됐던 이전 bb 행"을 찾는다.
+ *     한 J 행에 bb 행이 여럿이면 등장 순서대로 짝짓는다.
+ *     (`entryId` 는 키로 쓰지 않는다 — 지정이 바뀌면 그 값 자체가 바뀌므로 짝이 깨진다.)
+ *  3. 그래도 없으면 **이번 회차에 새로 생긴 행**이다(J-ayer 신규 행에서 온 bb, 수기 추가 행 등).
+ */
+function matchPrevRows<T extends { id: string }>(cur: T[], prev: T[]): Map<string, T> {
+  const matched = new Map<string, T>();
+  if (!prev || prev.length === 0) return matched;
+
+  const prevById = new Map(prev.map((r) => [r.id, r]));
+  const anyIdMatch = (cur ?? []).some((r) => prevById.has(r.id));
+
+  if (!anyIdMatch) {
+    for (let i = 0; i < (cur ?? []).length; i++) {
+      if (prev[i]) matched.set(cur[i].id, prev[i]);
+    }
+    return matched;
+  }
+
+  const usedPrevIds = new Set<string>();
+  for (const row of cur ?? []) {
+    const p = prevById.get(row.id);
+    if (p) { matched.set(row.id, p); usedPrevIds.add(p.id); }
+  }
+
+  // 남은 이전 행을 출처 J-ayer 행별로 모아 순서대로 소비한다.
+  const sourceKey = (r: T): string => String((r as { sourceJayerRowId?: string }).sourceJayerRowId ?? '');
+  const leftoverBySource = new Map<string, T[]>();
+  for (const p of prev) {
+    const key = sourceKey(p);
+    if (!key || usedPrevIds.has(p.id)) continue;
+    const bucket = leftoverBySource.get(key);
+    if (bucket) bucket.push(p);
+    else leftoverBySource.set(key, [p]);
+  }
+  for (const row of cur ?? []) {
+    if (matched.has(row.id)) continue;
+    const bucket = leftoverBySource.get(sourceKey(row));
+    const p = bucket?.shift();
+    if (p) matched.set(row.id, p);
+  }
+
+  return matched;
+}
+
 function computeTableDiff<T extends { id: string }>(
   cur: T[],
   prev: T[],
   fields: DiffFieldDef[]
 ): { changedIds: Set<string>; prevRowMap: Map<string, T> } {
   const changedIds = new Set<string>();
-  const prevRowMap = new Map<string, T>();
+  const prevRowMap = matchPrevRows(cur, prev);
 
   if (!prev || prev.length === 0) {
     return { changedIds, prevRowMap };
   }
 
-  const prevById = new Map(prev.map((r) => [r.id, r]));
-  const anyIdMatch = (cur ?? []).some((r) => prevById.has(r.id));
-
-  if (!anyIdMatch) {
-    // Positional fallback: rows were regenerated with new IDs
-    for (let i = 0; i < (cur ?? []).length; i++) {
-      const row = cur[i];
-      const p = prev[i];
-      if (!p) {
-        changedIds.add(row.id);
-      } else {
-        prevRowMap.set(row.id, p);
-        if (rowContentSig(row, fields) !== rowContentSig(p, fields)) changedIds.add(row.id);
-      }
-    }
-  } else {
-    for (const row of cur ?? []) {
-      const p = prevById.get(row.id);
-      if (!p) {
-        changedIds.add(row.id);
-      } else {
-        prevRowMap.set(row.id, p);
-        if (rowContentSig(row, fields) !== rowContentSig(p, fields)) changedIds.add(row.id);
-      }
-    }
+  for (const row of cur ?? []) {
+    const p = prevRowMap.get(row.id);
+    // 짝이 없으면 이번 회차에 새로 생긴 행이다.
+    if (!p || rowContentSig(row, fields) !== rowContentSig(p, fields)) changedIds.add(row.id);
   }
 
   return { changedIds, prevRowMap };
@@ -955,27 +997,17 @@ function computeEverChangedFields(rounds: RoundSnapshot[]): Set<string> {
 }
 
 /**
- * 현재 행(rowId)에 대응하는 그 회차의 행을 찾는다.
- * id 매칭이 원칙이고, 회차 간 id 가 통째로 재생성돼 **겹치는 id 가 하나도 없을 때만**
- * 위치(index)로 폴백한다 — `computeTableDiff` 와 같은 규칙이라 판정이 어긋나지 않는다.
+ * 현재 행 기준 회차별 값 타임라인 — 그 회차에 대응 행이 없으면 null 이다.
+ * 짝짓기는 `matchPrevRows` 와 같은 규칙(id → sourceJayerRowId → 없음)이라
+ * 강조 판정과 모달 내용이 어긋나지 않는다.
  */
-function findRowInRound<T extends { id: string }>(cur: T[], snap: T[], rowId: string): T | null {
-  const byId = (snap ?? []).find((r) => r.id === rowId);
-  if (byId) return byId;
-  const anyIdMatch = (cur ?? []).some((r) => (snap ?? []).some((s) => s.id === r.id));
-  if (anyIdMatch) return null;
-  const idx = (cur ?? []).findIndex((r) => r.id === rowId);
-  return idx >= 0 && idx < (snap ?? []).length ? snap[idx] : null;
-}
-
-/** 현재 행 기준 회차별 값 타임라인 — 그 회차에 대응 행이 없으면 null 이다. */
 function buildRowTimeline<T extends { id: string }>(
   cur: T[], rounds: RoundSnapshot[], pick: (r: RoundSnapshot) => T[], rowId: string,
 ): { label: string; timestamp: string | null; row: T | null }[] {
   return rounds.map((r) => ({
     label: r.label,
     timestamp: r.timestamp,
-    row: findRowInRound(cur, pick(r), rowId),
+    row: matchPrevRows(cur, pick(r)).get(rowId) ?? null,
   }));
 }
 
