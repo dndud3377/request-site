@@ -249,6 +249,24 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 개선 (2026-08-13 — 참조 요청서 '없음' 확정을 라디오 확인만으로 완료)
+
+- **증상/요청**: 참조 요청서 `없음` 라디오를 선택해 확인 모달까지 통과해도 곧바로 확정되지 않고,
+  `Merge` 버튼을 한 번 더 눌러야 "없음"으로 잠기고 변경전/변경후 표가 열렸다. 별도 버튼 클릭이
+  불필요하다는 사용자 지적에 따라 라디오 확인만으로 바로 확정되도록 바꿨다.
+- **수정**: `handleMergeModeConfirm`(`index.tsx`)에서 `clearMergeComparison(mode)` 직후
+  `mode === 'none'`이면 `merge_applied: true` + `merge_pairs`가 비어 있으면 `[emptyMergePair()]`을
+  함께 세팅해 즉시 확정한다. `isMergeDone`(`Step1.tsx`)이 `merge_applied` 로 판정되므로 이 시점부터
+  바로 참조 입력칸·`Merge` 버튼이 잠기고 `BeforeAfterPanel`의 변경전/변경후 표(빈 행 1개)가 열린다.
+  `있음(ref)` 전환은 문서 선택 후 `Merge` 클릭이 여전히 필요하다(3-way 반영 대상이 있으므로 미변경).
+- **`handleMergeClick`의 기존 `mode==='none'` 분기는 그대로 남겨뒀다** — 이번 수정 이전에 라디오만
+  "없음"으로 선택한 채(즉 `merge_applied: false`) 임시저장된 문서를 다시 열었을 때, `Merge` 버튼이
+  여전히 눌려 있어 그 경로로 확정할 수 있는 유일한 복구 수단이기 때문이다. 이번 변경 이후로 정상
+  흐름에서는 이 분기가 다시 실행되지 않는다(라디오 확인 시점에 이미 확정되므로).
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx` (1개 파일, 함수 1곳)
+- **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(작업 전후 동일, 신규 0) ·
+  `react-scripts test --watchAll=false` 5 suites / **174건 통과**.
+
 ### 버그 수정 (2026-08-13 — Only MAP/MAP 삭제: J-ayer·O-ayer 빈 행 1개로 인한 이력 바로 등록 실패)
 
 - **증상**: MASTER 가 `Only MAP` 또는 `MAP 삭제` 목적을 선택한 뒤(J/O-ayer·Backbone 표를 만지지 않고)
