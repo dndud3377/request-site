@@ -53,7 +53,7 @@ pages/RequestPage/
 |---|---|
 | 목적 옵션 | `OPTION_REQUEST_PURPOSE`, `OPTION_LINE`, `OPTION_OTHER_PURPOSE`, `ONLY_MAP_PURPOSE`, `MAP_DELETE_EDIT_PURPOSE`, `OTHER_PURPOSE_LAB` |
 | Merge | `MERGE_ENABLED_PURPOSES`, `isMergePurposeSelected`, `MERGE_UNREGISTERED_ID`, `MERGE_MANUAL_FIELDS`, `MERGE_DEFAULT_TABLE` |
-| ADI CD | `OTHER_PURPOSE_ADI_CD`, `ADI_CD_MAP_TYPE`, `ADI_CD_TEMPLATE_ROWS`, `ADI_CD_MAX_ROWS`, `ADI_CD_HEADER_SCAN_ROWS`, `ADI_CD_STEP_ID_LABEL`, `ADI_CD_STEP_DESC_LABEL` |
+| ADI CD | `OTHER_PURPOSE_ADI_CD`, `ADI_CD_TEMPLATE_ROWS`, `ADI_CD_MAX_ROWS`, `ADI_CD_HEADER_SCAN_ROWS`, `ADI_CD_STEP_ID_LABEL`, `ADI_CD_STEP_DESC_LABEL` |
 | MAP 삭제/수정 | `MAP_TYPE_EDIT_REQ`, `MAP_TYPE_DELETE_REQ`, `isMapDeleteEditType` |
 | Validation System | `VALIDATION_KEYWORD`, `VS_TARGET`, `VS_NONTARGET`, `VS_NA`, `VALIDATION_CELL_COLOR` |
 | 표 컬럼 | `JAYER_EDITABLE_COLS`, `OAYER_EDITABLE_COLS`, `LOADED_LOCK_COLS` |
@@ -279,6 +279,76 @@ pages/RequestPage/
 
   ⚠️ 원격 세션이라 Docker 없이 실행했고, 백엔드 변경이 없어 백엔드 테스트는 별도로 돌리지 않았다.
 
+### 버그 수정 (2026-08-13 — CLONE/EXISTING + C가문 Yes 전환 시 X표시 변경 여부가 '수정'으로 잘못 상신됨)
+
+- **증상**: MAP 목적이 `EXISTING`(기등록) 또는 `CLONE`(차용)일 때 C가문(`only_prodc`)을 `Yes`로
+  전환하면, 실제로는 아무 값도 입력하지 않았는데도(입력칸이 전부 잠겨 있어 입력 자체가 불가능)
+  X표시 변경 여부(`mshot_change`)가 `'수정'`으로 바뀐 채 그대로 상신됐다.
+- **원인**: `handleOnlyProdcChange`(`index.tsx`)가 C가문 `Yes` 전환 시 `map_type`과 무관하게
+  무조건 `mshot_change: '수정'`을 자동 설정하고 있었다. `EXISTING`/`CLONE`(`isMapRegistered`)은
+  MAP 관련 입력칸이 전부 잠겨 사용자가 실제로 값을 바꿀 수 없는데도 이 자동 설정만은 걸렸다.
+- **수정**: `setDetail` 콜백 안에서 `prev.map_type === 'EXISTING' || prev.map_type === 'CLONE'`
+  여부를 판정해, 이 경우에는 `mshot_change`를 건드리지 않고 기존 값을 그대로 둔다(초기값은
+  `INITIAL_DETAIL.mshot_change === '없음'`). `NEW`(신규)일 때는 기존과 동일하게 `'수정'` 자동
+  설정을 유지한다 — `NEW`는 입력칸이 잠기지 않아 실제로 X표시 변경이 필요한 경우가 많기 때문이다.
+- **범위 밖(의도적으로 유지)**: `ea_value`(예외 구역 값)의 C가문 기본값 연동(300→500)은 실제
+  계산된 기본값을 보여주는 용도라 이번 수정과 무관하게 그대로 둔다.
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx` (`handleOnlyProdcChange`, 1개 파일)
+- **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(작업 전후 동일, 신규 0) ·
+  `react-scripts test --watchAll=false` 5 suites / **174건 통과**.
+
+### 버그 수정 (2026-08-13 — J-ayer/O-ayer 기본값을 빈 행 1개 → 빈 배열로 통일)
+
+- **배경**: §바로 위 항목(이력 바로 등록 실패)에서 `applyMapOnlyScope` 하나만 고쳤는데, 같은 "빈 행 1개"
+  패턴이 다른 두 곳에도 남아 있어 추가로 정리했다.
+- **수정 1 — 컴포넌트 마운트 기본값**(`index.tsx` `jayerRows`/`oayerRows` 최초 `useState`):
+  `[makeJayerRow()]`/`[makeOayerRow()]`(빈 행 1개) → `[]`. 신규 문서를 열면 이제 두 표 모두 빈 배열로
+  시작한다(투어 모드는 영향 없음 — `makeTourJayerRows()`/`makeTourOayerRows()` 그대로).
+- **수정 2 — `process_id`(조리법) 변경 감지 effect의 Only MAP·MAP 삭제 분기**: 여기도
+  `[makeJayerRow()]`/`[makeOayerRow()]`로 남아 있던 것을 `[]`로 통일했다. 처음엔
+  `detail.request_purpose === ONLY_MAP_PURPOSE` 만 검사해 **MAP 삭제**가 빠져 있었다 — MAP 삭제
+  선택 중 조리법을 바꾸면 이 우회를 타지 않고 `fetchJobFileLayerAndPopulateJayer`/
+  `fetchOvlLayerAndPopulateOayer` 가 실제로 실행됐다(불필요한 API 호출 + 화면에 보이지 않는 사이
+  jayerRows/oayerRows 가 실제 데이터로 잠시 채워짐 — 저장 시점엔 `buildEnrichedForm` 의
+  `isMapOnlyScope ? [] : ...` 가 있어 저장값 자체는 항상 안전했다). 조건을 `MAP_DELETE_EDIT_PURPOSE`
+  까지 포함하도록 넓혀 **Only MAP·MAP 삭제 둘 다** 재조회 자체가 일어나지 않게 고쳤다.
+- **수정 3 — `fetchJobFileLayerAndPopulateJayer`/`fetchOvlLayerAndPopulateOayer`**: API가 빈 결과를
+  반환했을 때(`length === 0`) 토스트만 띄우고 표를 그대로 두던 것을, `setJayerRows([])`/
+  `setOayerRows([])`를 함께 호출하도록 고쳤다. 이전에는 데이터가 있던 조리법에서 데이터가 없는
+  조리법으로 바꾸면 **이전 조리법의 행이 화면에 그대로 남아 있었다**(오조회로 오인하기 쉬운 상태).
+  API 예외(네트워크 오류 등)는 기존대로 표를 건드리지 않는다(사용자 입력을 실수로 지우지 않기 위한
+  의도적 동작 — 아래 테스트 Case H).
+- **검증 방법**: 신규 문서 작성 흐름(라인 → 조합법 → 제품 → 조리법 선택)을 실제로 구동하는 테스트
+  `RequestPage/jayerOayerDefault.test.tsx` 신설(10 케이스) — 초기 빈 배열, 데이터 있음/없음 조리법
+  선택, 데이터 있음→없음/없음→있음 전환, 서로 다른 데이터 간 전환, API 예외, Only MAP·MAP 삭제 중
+  조리법 변경.
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx` (3곳),
+  `frontend/src/pages/RequestPage/jayerOayerDefault.test.tsx`(신규)
+- **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(변경 없음) · `react-scripts test --watchAll=false`
+  6 suites / **184건 통과**(기존 174 + 신규 10).
+
+### 버그 수정 (2026-08-13 — Only MAP/MAP 삭제: J-ayer·O-ayer 빈 행 1개로 인한 이력 바로 등록 실패)
+
+- **증상**: MASTER 가 `Only MAP` 또는 `MAP 삭제` 목적을 선택한 뒤(J/O-ayer·Backbone 표를 만지지 않고)
+  바로 `📋 이력에 바로 등록`(§4.5, `docs/HISTORY.md`)을 누르면 등록이 되지 않았다.
+- **원인**: `applyMapOnlyScope`(`index.tsx`, 목적을 Only MAP/MAP 삭제 로 바꿀 때 실행)가
+  `bbRows` 는 `[]`(완전히 빔)로 초기화하면서, `jayerRows`/`oayerRows` 는 실수로
+  `[makeJayerRow()]`/`[makeOayerRow()]`(빈 행 **1개**)로 초기화하고 있었다.
+  이 빈 행은 `disabled: false`(활성 행)라서, `이력에 바로 등록`이 실행하는 5단계 전체 검증
+  (`validate(5)` — st/new_or_copy 필수 체크 등)에 걸려 등록이 막혔다.
+  - `상신하기`(`handleSubmitClick`)는 `validate(lastStep)`을 써서 Only MAP/MAP 삭제일 때
+    `lastStep=2`라 이 검증 자체를 타지 않으므로 증상이 드러나지 않았다(저장 시점에는
+    `jayerRows: isMapOnlyScope ? [] : ...` 로 어차피 빈 배열로 버려졌기 때문에 결과물은 같았다).
+  - `이력에 바로 등록`(`handleDirectHistoryClick`)은 `validate(5)`를 고정 호출해서 문제가 드러났다.
+- **수정**: `applyMapOnlyScope`의 `setJayerRows([makeJayerRow()])` / `setOayerRows([makeOayerRow()])`를
+  `bbRows`와 동일하게 `setJayerRows([])` / `setOayerRows([])`로 변경.
+- **부작용**: Only MAP/MAP 삭제에서 다른 목적으로 되돌아갈 때(`applyLeaveMapOnlyScope`)는
+  `bbRows`와 마찬가지로 J/O-ayer 도 자동으로 빈 행이 다시 채워지지 않는다 — 표에서
+  `+ 행 추가`를 눌러야 한다(기존 `bbRows` 동작과 동일한 대칭이라 새로운 불일치는 아니다).
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx` (1개 파일, 2줄)
+- **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(작업 전후 동일, 신규 0) ·
+  `react-scripts test --watchAll=false` 5 suites / **174건 통과**.
+
 ### 추가 변경 이력 (2026-08-12 — MASTER '이력에 바로 등록')
 
 - **개요**: MASTER 가 step 5 에서 `상신하기` 대신 `📋 이력에 바로 등록` 을 눌러, **결재 경로를 전혀
@@ -403,6 +473,18 @@ pages/RequestPage/
   `ea_change === '변경 있음'` **이고** `ea_value` 가 기본값(300/500)과 **다를 때**.
   이때 합의자 1명 이상 또는 미지정 사유가 없으면 상신이 막힌다.
 - 재상신 시 이전 회차 지정이 모달에 그대로 채워지고, 작성자가 바꿀 수 있다.
+- **UI — 2026-08-13 개선**: 이전에는 `ea_value` 변경 여부와 무관하게 합의자 블록이 **항상** 표시되고, 검색
+  입력과 '지정하지 않는 사유' 입력이 **동시에** 보였다. 이제는:
+  - 블록 자체가 `requiresSalesAgreer` 일 때만(`ea_value`가 기본값과 다를 때만) 나타난다.
+  - 블록 안에 **"합의자 없음" 체크박스**(`salesAgreerNone` state, 신규)를 추가해 검색·선택 UI 와
+    사유 입력을 **상호 배타적**으로 만들었다 — 체크 해제(기본) 시 합의자 검색·선택만, 체크 시 사유
+    입력만 보인다. 체크 시 이미 선택된 합의자는 비운다(`setSalesAgreers([])`).
+  - 편집/재상신 로드 시 `sales_agreers`가 비어있고 `sales_agreer_none_reason`이 있으면
+    `salesAgreerNone`을 `true`로 복원한다.
+  - 저장 데이터 형태·검증 로직(`requiresSalesAgreer`, 백엔드 `requires_sales_agreer`)은 변경 없음 —
+    화면 표시 방식만 바뀌었다.
+  - 신규 i18n 키: `request.sales_agreer_none_toggle`(ko/en). 더 이상 쓰이지 않게 된
+    `request.sales_agreer_help`는 제거했다(블록이 항상 필수 상태로만 보이므로 비필수용 문구가 불필요해짐).
 
 
 ### 추가 변경 이력 (2026-08-11 — 임시저장 재진입 시 `source_partid` 유실 수정 + 왕복 테스트 신설)
@@ -863,13 +945,17 @@ pages/RequestPage/
 - **저장 필드**(`DetailFormState`): `adi_cd_before`/`adi_cd_after`(`AdiCdStep[]`, `{ id, step_id, step_desc }`) · `adi_cd_delete_all`(boolean).
   구버전 문서는 로드 시 `[]`/`false`로 백필한다.
 
-- **진입/해제**(`index.tsx`): 기타 목적 버튼에서 `ADI CD 변경`을 켜면 `handleSelectAdiCdPurpose`가 `detail.map_type`을
-  `'ADI'`로 자동 고정하고 양쪽 표에 빈 5행 템플릿을 깐다(`ADI_CD_TEMPLATE_ROWS`). 재클릭(해제)은 표에 값이 있으면
-  `ConfirmModal` 확인 후 초기화(`exitAdiCd`), 없으면 바로 해제한다. `map_type`은 해제 시 `'ADI'`였을 때만 되돌린다.
+- **진입/해제**(`index.tsx`): 기타 목적 버튼에서 `ADI CD 변경`을 켜면 `handleSelectAdiCdPurpose`가 양쪽 표에 빈 5행
+  템플릿을 깐다(`ADI_CD_TEMPLATE_ROWS`). 재클릭(해제)은 표에 값이 있으면 `ConfirmModal` 확인 후 초기화(`exitAdiCd`),
+  없으면 바로 해제한다.
+  ~~`detail.map_type`을 `'ADI'`로 자동 고정하고, 해제 시 `'ADI'`였을 때만 되돌리던 동작~~ → **2026-08-13 제거**
+  (아래 "StepMap 잠금 제거" 항목 참조).
 
-- **StepMap 잠금**(`StepMap.tsx`): `map_type` 4버튼 배열(`NEW`/`CLONE`/`EXISTING`/`EDIT`)에 `'ADI'`를 5번째로 추가하고
-  **항상 비활성**(표시 전용 — 실제 선택은 Step1 버튼에서만) 처리했다. `detail.map_type==='ADI'`인 동안은 EDIT 잠금 패턴과
-  동일하게 나머지 4개도 전부 잠근다.
+- **StepMap 잠금 — 2026-08-13 제거**: `map_type` 4버튼(`NEW`/`CLONE`/`EXISTING`/`MAP 삭제`)을 `detail.map_type==='ADI'`
+  동안 전부 비활성화하고 안내 문구(`map_type_adi_fixed`)를 띄우던 동작을 완전히 삭제했다. `ADI_CD_MAP_TYPE` 상수·
+  i18n 키(`map_type_adi_fixed`) 및 이미 미사용 상태였던 `map_type_adi`도 함께 제거했다(잔여 코드 정리).
+  이제 `ADI CD 변경`을 선택해도 map_type 은 건드리지 않으므로, 사용자가 NEW/CLONE/EXISTING/MAP 삭제 중 실제
+  map_type 을 StepMap 에서 직접 골라야 한다.
 
 - **붙여넣기 파싱**(`helpers.ts`, 순수 함수 — `parseClipboardTable`/`detectAdiCdHeader`/`decideAdiCdPaste`/`buildAdiCdRows`/`validateAdiCdRows`):
   입력은 `text/plain`(엑셀 TSV). 인용 인식 TSV 분해 → 위에서부터 최대 5행 안에서 `STEP_ID`/`STEP_DESC` 헤더 탐색
@@ -891,31 +977,27 @@ pages/RequestPage/
   검사 제외) — ① 유효 행 1개 이상 ② 불완전 행(한쪽만 채움) 0개 ③ `STEP_ID` 중복 0개. 중복·불완전은 붙여넣기를
   거부하지 않고 표에 남겨 셀을 오류 표시한 뒤 게이트에서만 막는다(그 자리에서 고칠 수 있게).
 
-- **필수 입력 우회**(`ADI CD 변경`만 단독 선택했을 때만 — 다른 목적과 함께면 미적용): 판정은 `isAdiCdOnly`
-  (`other_purpose.length === 1 && other_purpose[0] === 'ADI CD 변경'`) 하나로 통일한다. 다른 기타 목적을 함께
-  켜는 순간 `false` 로 뒤집혀 아래 우회가 **전부 해제**되고 원래 필수로 되돌아온다(중복 선택은 항상 가능하다).
-  우회 대상은 당시 **2곳**이었고, 지금은 **1곳뿐**이다:
-  - ~~`validate(1)`의 `if (!isOnlyMap && !isAdiCdOnly)` — **Backbone 조합 영역**(`bb_entries`) 필수 검증~~
-    → **2026-08-12 제거.** Backbone 은 J-ayer 표 기준 조건부 필수로 바뀌어, ADI CD 단독 문서는 조건 자체로
-    걸러진다(§4.1 2026-08-12 항목). 입력창을 잠그지 않고 넣은 값을 그대로 저장하는 동작은 그대로다.
-  - `validate(4)`의 `if (currentStep === 4 && !isOnlyMap && !isAdiCdOnly)` — Partial Shot 등.
-  나머지는 손대지 않았다 — `map_type` 필수 검증은 자동 고정으로 이미 통과하고, STEP2 조건부 필수
-  (C가문·MAP 변경·IN 등)는 사용자가 StepMap 값을 바꾸지 않는 한(기본값이면 미발동) 자연히 통과하며, STEP3/5의
-  J/O NOC·Backbone 매핑 검증은 건드리지 않았다(조건부 검증을 강제 우회하면 반쪽 모순 데이터가 결재로 올라간다).
-  상신 모달의 지정 PL은 결재 경로를 정하는 값이라 ADI CD 단독이어도 여전히 필수다.
+- **필수 입력 우회 — 2026-08-13 완전 제거**: `ADI CD 변경`만 단독 선택했을 때(`isAdiCdOnly`) STEP4(Partial Shot·
+  O-ayer st/new_or_copy·O-ayer 차용 필수)를 건너뛰던 우회를 없앴다(`validate()`의 `if (currentStep === 4 &&
+  !isOnlyMap && !isAdiCdOnly)` → `!isOnlyMap`만 남김, `isAdiCdOnly` 변수 자체도 삭제). Backbone 조합 영역
+  (`bb_entries`) 몫은 이미 2026-08-12 에 제거되어 있었으므로(§4.1 해당 항목), 이번 제거로 **ADI CD 관련 STEP 필수
+  입력 우회는 전부 사라졌다** — ADI CD 단독이어도 다른 목적과 동일하게 정상 검증을 받는다.
+  O-ayer 표를 비워 두면(행 없음) `findEmptyStNocViolations`가 빈 배열에 위반이 없다고 자연히 판정하므로, 별도
+  예외 로직 없이 "표가 비었으면 검사 대상이 없다"는 일반 규칙만으로 동일한 결과를 얻는다.
 
-- **`scrollToFirstError` 조건 동기화**: `partialShotMissing` 계산식은 `validate(4)`의 우회 조건과 **반드시 같은
-  판정**이어야 한다. `!isAdiCdOnly` 가 검증부에만 있고 이쪽에 빠져 있어, ADI CD 단독 + Partial Shot 미입력 상태에서
-  STEP4 검증이 실패하면 **존재하지도 않는 오류 때문에 'OVL 정보' 탭으로 잘못 전환**되던 것을 고쳤다.
-  두 식은 앞으로도 함께 바꿔야 한다.
+- **`scrollToFirstError` 조건 동기화 — 참고(과거 이슈)**: `partialShotMissing` 계산식은 `validate(4)`의 조건과
+  항상 같아야 했다(2026-08 초 `!isAdiCdOnly` 누락으로 존재하지 않는 오류 때문에 탭이 잘못 전환된 적이 있다).
+  이번 제거로 두 식 모두 `!isMapOnlyScope`만 남아 다시 동일해졌다 — 앞으로 `validate(4)`의 조건을 바꾸면 이
+  계산식도 함께 바꿀 것.
 
 - **저장 페이로드는 비우지 않는다**(`isMapOnlyScope` 에 ADI CD 를 넣지 않는다): `jayerRows` 는 프론트 표시용이
   아니라 백엔드 로직의 입력값이다 — `models.py has_ppid_plel()` 이 이 값으로 **E(MASK) 결재 단계 생성 여부**를
   정하고, `views.py _validate_jayer_bb_mapping()` 이 프론트 STEP5 와 **같은 Bb 매핑 규칙을 서버에서 이중 검증**한다.
   `[]` 로 비우면 둘 다 무력화되어, "J-layer 에 조회된 행이 있으면 Bb 매핑을 끝내고 상신한다"는 규칙이 깨진다.
 
-- **문서 제목**: `MAP(${map_type})` 조립(`index.tsx`)에 `'ADI'`가 그대로 들어간다. 이 문자열을 파싱/필터링하는
-  다른 코드는 없다(전체 검색 결과 이 한 곳뿐) — 목록·필터·검색에 영향 없음.
+- **문서 제목**: `MAP(${map_type})` 조립(`index.tsx`)에 실제 선택한 map_type이 들어간다.
+  ~~자동 고정으로 `'ADI'`가 그대로 들어가던 동작~~ → **2026-08-13 제거**(위 "StepMap 잠금 제거" 항목 참조) —
+  이제 ADI CD 변경 문서도 NEW/CLONE/EXISTING/MAP 삭제 중 사용자가 고른 값이 그대로 제목에 들어간다.
 
 - **상세 페이지**(`PagedDetailView.tsx`): `MergePairsTable` 패턴으로 `AdiCdStepsTable`을 추가했다. 변경전/변경후 중
   하나라도 채워진 행이 있거나 전체 삭제가 켜져 있을 때만 STEP1 페이지에 카드로 노출한다.

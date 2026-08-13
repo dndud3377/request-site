@@ -4,7 +4,7 @@ import AutocompleteInput from '../../../components/AutocompleteInput';
 import RichTextEditor from '../../../components/RichTextEditor';
 import { DetailFormState, GuideFeatureKey } from '../../../types';
 import {
-  CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ, ADI_CD_MAP_TYPE,
+  CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ,
   EA_NO_CHANGE, EA_HAS_CHANGE, eaDefaultValue,
 } from '../constants';
 import { sanitizeSignedDecimal } from '../helpers';
@@ -155,9 +155,7 @@ const StepMap: React.FC<StepMapProps> = ({
             ] as const).map(({ val, labelKey }) => {
               // 삭제는 요청 목적 'MAP 삭제' 전용 — 그 목적일 때만 열리고, 반대로 나머지 3개는 잠긴다.
               const isReasonBtn = val === MAP_TYPE_DELETE_REQ;
-              // (2026-08) ADI 버튼은 목록에서 제거했다. 기타 목적 'ADI CD 변경' 이 map_type 을
-              // 'ADI' 로 자동 고정하는 동작은 그대로이고, 그동안은 아래 안내 문구만 보인다.
-              const disabled = isMapDeleteEdit ? !isReasonBtn : isReasonBtn || detail.map_type === ADI_CD_MAP_TYPE;
+              const disabled = isMapDeleteEdit ? !isReasonBtn : isReasonBtn;
               return (
                 <button
                   key={val}
@@ -171,12 +169,6 @@ const StepMap: React.FC<StepMapProps> = ({
               );
             })}
           </div>
-          {/* ADI 는 기타 목적 'ADI CD 변경' 이 자동 고정하는 값이라 고를 버튼이 없다 — 상태만 알린다. */}
-          {detail.map_type === ADI_CD_MAP_TYPE && (
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '6px 0 0' }}>
-              {t('request.map_type_adi_fixed')}
-            </p>
-          )}
           {errors.map_type && <span className="form-error">{errors.map_type}</span>}
         </div>
 

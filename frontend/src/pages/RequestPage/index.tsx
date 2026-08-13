@@ -81,7 +81,6 @@ import {
   isMergePurposeSelected,
   MERGE_UNREGISTERED_ID,
   OTHER_PURPOSE_ADI_CD,
-  ADI_CD_MAP_TYPE,
   ADI_CD_TEMPLATE_ROWS,
   ADI_CD_MAX_ROWS,
   makeAdiCdStep,
@@ -202,7 +201,7 @@ export default function RequestPage(): React.ReactElement {
   const [step, setStep] = useState(isTourMode ? initialTourStep : 1);
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
   const [detail, setDetail] = useState<DetailFormState>(isTourMode ? makeTourDetail() : INITIAL_DETAIL);
-  const [jayerRows, setJayerRows] = useState<JayerRow[]>(isTourMode ? makeTourJayerRows() : [makeJayerRow()]);
+  const [jayerRows, setJayerRows] = useState<JayerRow[]>(isTourMode ? makeTourJayerRows() : []);
   // Validation System: 상신자가 토글을 직접 건드렸는지. true 면 J-layer 변경에도 자동 갱신하지 않는다.
   // 세션 로컬 상태라 detail 에 넣지 않고 저장도 하지 않는다.
   const [vsManuallySet, setVsManuallySet] = useState(false);
@@ -229,7 +228,7 @@ export default function RequestPage(): React.ReactElement {
   // 뼈찜 외부데이터: (항목,값) 조합별 결과 캐시 + 직전 조회 process_id(토스트용)
   const bbExtCache = useRef<Record<string, PhotoStepOption[]>>({});
   const bbExtPrevPid = useRef<Record<string, string>>({});
-  const [oayerRows, setOayerRows] = useState<OayerRow[]>(isTourMode ? makeTourOayerRows() : [makeOayerRow()]);
+  const [oayerRows, setOayerRows] = useState<OayerRow[]>(isTourMode ? makeTourOayerRows() : []);
   const [bbRows, setBbRows] = useState<BbTableRow[]>(isTourMode ? makeTourBbRows() : []);
   const [bbExternalData, setBbExternalData] = useState<PhotoStepOption[][]>(isTourMode ? (makeTourBbExternalData() as PhotoStepOption[][]) : []);
   // 전체 가이드 J-ayer 데모: 실제 표 위에 떠 있는 가짜 커서 + Ctrl C/V 칩
@@ -368,6 +367,8 @@ export default function RequestPage(): React.ReactElement {
   const salesAgreerContainerRef = useRef<HTMLDivElement>(null);
   // '지정하지 않음' 사유 — 합의자가 필수인데 아무도 지정하지 않을 때 입력한다.
   const [salesAgreerNoneReason, setSalesAgreerNoneReason] = useState('');
+  // 합의자 검색/지정 UI 와 '없음' 사유 입력은 상호 배타적이다 — 이 토글로 어느 쪽을 보여줄지 정한다.
+  const [salesAgreerNone, setSalesAgreerNone] = useState(false);
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // 통보자 다중 지정 (상신 모달) — 결재 권한 없이 상신·결재완료 메일만 받는 인원
@@ -645,11 +646,11 @@ export default function RequestPage(): React.ReactElement {
     setRefOayerRows([]);
     // 조리법이 바뀌면 J/O 가 통째로 재조회되므로 옛 스냅샷으로 롤백되면 안 된다 → 비교 상태 전부 정리.
     clearMergeComparison();
-    // Only MAP 은 StepMap 정보까지만 필요 → J/O 자동 재조회 없이 빈 상태로 유지한다.
-    // (isOnlyMap 은 이 effect 아래에서 선언되므로 detail 로 직접 판정)
-    if (detail.request_purpose === ONLY_MAP_PURPOSE) {
-      setJayerRows([makeJayerRow()]);
-      setOayerRows([makeOayerRow()]);
+    // Only MAP·MAP 삭제는 StepMap 정보까지만 필요 → J/O 자동 재조회 없이 빈 상태로 유지한다.
+    // (isMapOnlyScope 는 이 effect 아래에서 선언되므로 detail 로 직접 판정)
+    if (detail.request_purpose === ONLY_MAP_PURPOSE || detail.request_purpose === MAP_DELETE_EDIT_PURPOSE) {
+      setJayerRows([]);
+      setOayerRows([]);
       return;
     }
     fetchJobFileLayerAndPopulateJayer(detail.line, detail.process_id);
@@ -906,8 +907,11 @@ export default function RequestPage(): React.ReactElement {
           setVsManuallySet(true);
           setPostApprovers(Array.isArray(parsed.detail.post_approvers) ? parsed.detail.post_approvers : []);
           // 재상신·수정 시 이전 지정을 그대로 되살린다(작성자가 모달에서 바꿀 수 있다).
-          setSalesAgreers(Array.isArray(parsed.detail.sales_agreers) ? parsed.detail.sales_agreers : []);
-          setSalesAgreerNoneReason(parsed.detail.sales_agreer_none_reason ?? '');
+          const loadedSalesAgreers = Array.isArray(parsed.detail.sales_agreers) ? parsed.detail.sales_agreers : [];
+          const loadedSalesAgreerNoneReason = parsed.detail.sales_agreer_none_reason ?? '';
+          setSalesAgreers(loadedSalesAgreers);
+          setSalesAgreerNoneReason(loadedSalesAgreerNoneReason);
+          setSalesAgreerNone(loadedSalesAgreers.length === 0 && !!loadedSalesAgreerNoneReason.trim());
         }
         // 재선택 롤백용 스냅샷 복원 — 없으면 null(옛 문서는 매핑만 초기화된다).
         setMergeSnapshot(parsed.mergeSnapshot ?? null);
@@ -1458,8 +1462,6 @@ export default function RequestPage(): React.ReactElement {
     && detail.ea_value.trim() !== eaDefaultValue(detail.only_prodc);
   // ADI CD 변경: 다른 기타 목적과 함께 선택할 수 있다(단독 전용이 아니다).
   const isAdiCdSelected = detail.other_purpose.includes(OTHER_PURPOSE_ADI_CD);
-  // 기타 목적 6개 중 ADI CD 변경만 단독 선택한 경우 — 이후 STEP 필수 입력을 건너뛴다.
-  const isAdiCdOnly = detail.other_purpose.length === 1 && detail.other_purpose[0] === OTHER_PURPOSE_ADI_CD;
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === EA_HAS_CHANGE;
   const isProdc = detail.only_prodc === 'Yes';
@@ -1574,7 +1576,7 @@ export default function RequestPage(): React.ReactElement {
       partial_shot: INITIAL_DETAIL.partial_shot,
       tbvtlv_thickness: INITIAL_DETAIL.tbvtlv_thickness,
       tbvtlv_entries: [],
-      // MAP 삭제 는 후보가 '삭제' 하나뿐이라 ADI CD 변경 과 동일하게 자동 고정한다(2026-08).
+      // MAP 삭제 는 후보가 '삭제' 하나뿐이라 자동 고정한다(2026-08).
       // 이유는 새로 입력해야 하므로 비운다. Only MAP 은 기존대로 손대지 않는다.
       ...(purpose === MAP_DELETE_EDIT_PURPOSE
         ? { map_type: MAP_TYPE_DELETE_REQ, map_change_reason: INITIAL_DETAIL.map_change_reason }
@@ -1587,8 +1589,9 @@ export default function RequestPage(): React.ReactElement {
     // 후결자는 '연구소 제품'(Only MAP 전용)에 딸린 값이라 목적을 바꾸면 함께 비운다.
     setPostApprovers([]);
     // StepMap 정보까지만 필요 → J-layer/O-layer/Backbone 표 데이터 비우기
-    setJayerRows([makeJayerRow()]);
-    setOayerRows([makeOayerRow()]);
+    // (빈 행 1개를 남기면 활성 행으로 취급돼 st/new_or_copy 필수 검증에 걸린다 — bbRows처럼 완전히 비운다)
+    setJayerRows([]);
+    setOayerRows([]);
     setBbRows([]);
     setBbExternalData([]);
     setMappedJayerRowIds(new Set());
@@ -1852,15 +1855,20 @@ export default function RequestPage(): React.ReactElement {
     isLoadingEditRef.current = false;
     if (value !== 'No') {
       // Yes 전환 시 X표시 변경 여부를 '수정'으로 자동 설정한다(C가문은 X표시 수정이 기본 전제).
+      // 단, CLONE/EXISTING(isMapRegistered)은 MAP 입력칸이 전부 잠겨 실제로 값을 넣을 수 없으므로
+      // mshot_change 를 건드리지 않는다 — 안 그러면 아무 것도 안 바꿨는데 '수정'으로 상신되는 문제가 생긴다.
       // 편집 로드·프리필 경로에는 걸지 않는다 — 저장된 mshot_change 가 덮어써지기 때문.
       // 예외 구역이 '변경 없음'이면 기본값도 C가문 기준(500)으로 함께 갱신한다.
       // '변경 있음'이면 사용자가 직접 넣은 값이므로 건드리지 않는다.
-      setDetail((prev) => ({
-        ...prev,
-        only_prodc: value,
-        mshot_change: '수정',
-        ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(value) } : {}),
-      }));
+      setDetail((prev) => {
+        const isRegistered = prev.map_type === 'EXISTING' || prev.map_type === 'CLONE';
+        return {
+          ...prev,
+          only_prodc: value,
+          ...(isRegistered ? {} : { mshot_change: '수정' }),
+          ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(value) } : {}),
+        };
+      });
       if (errors['only_prodc']) setErrors((prev) => ({ ...prev, only_prodc: '' }));
       return;
     }
@@ -1997,6 +2005,7 @@ export default function RequestPage(): React.ReactElement {
         setJayerRows(newJayerRows);
         addToast(t('request.toast_job_auto_fill', { count: jobFileData.length }), 'info');
       } else {
+        setJayerRows([]);
         addToast(t('request.toast_job_no_data'), 'warning');
       }
     } catch (e) {
@@ -2025,6 +2034,7 @@ export default function RequestPage(): React.ReactElement {
         setOayerRows(newOayerRows);
         addToast(t('request.toast_ovl_auto_fill', { count: ovlData.length }), 'info');
       } else {
+        setOayerRows([]);
         addToast(t('request.toast_ovl_no_data'), 'warning');
       }
     } catch (e) {
@@ -2771,12 +2781,12 @@ export default function RequestPage(): React.ReactElement {
   const adiCdHasData = () =>
     adiCdSideHasData('before') || adiCdSideHasData('after') || detail.adi_cd_delete_all;
 
-  // 기타 목적에서 'ADI CD 변경' 클릭(진입): map_type 을 ADI 로 고정하고 빈 템플릿을 깐다.
+  // 기타 목적에서 'ADI CD 변경' 클릭(진입): 빈 템플릿을 깐다. map_type 은 건드리지 않는다 —
+  // 실제 map_type(NEW/CLONE/EXISTING/MAP 삭제)은 사용자가 StepMap 에서 직접 고른다.
   const handleSelectAdiCdPurpose = () => {
     setDetail((prev) => ({
       ...prev,
       other_purpose: [...prev.other_purpose, OTHER_PURPOSE_ADI_CD],
-      map_type: ADI_CD_MAP_TYPE,
       adi_cd_before: Array.from({ length: ADI_CD_TEMPLATE_ROWS }, () => makeAdiCdStep()),
       adi_cd_after: Array.from({ length: ADI_CD_TEMPLATE_ROWS }, () => makeAdiCdStep()),
       adi_cd_delete_all: false,
@@ -2793,7 +2803,6 @@ export default function RequestPage(): React.ReactElement {
     setDetail((prev) => ({
       ...prev,
       other_purpose: prev.other_purpose.filter((o) => o !== OTHER_PURPOSE_ADI_CD),
-      map_type: prev.map_type === ADI_CD_MAP_TYPE ? '' : prev.map_type,
       adi_cd_before: [],
       adi_cd_after: [],
       adi_cd_delete_all: false,
@@ -3524,7 +3533,7 @@ export default function RequestPage(): React.ReactElement {
       if (requiresBbEntries(jayerRows)) addBbEntryError(newErrors, errorMessages, true);
     }
 
-    if (currentStep === 4 && !isMapOnlyScope && !isAdiCdOnly) {
+    if (currentStep === 4 && !isMapOnlyScope) {
       if (!detail.partial_shot?.trim()) {
         newErrors['partial_shot'] = t('request.required');
         errorMessages.push('Partial Shot 계측 필요: 필수 선택 항목입니다.');
@@ -3717,7 +3726,7 @@ export default function RequestPage(): React.ReactElement {
     if (atStep === 4) {
       const oViolations = findNocBorrowViolations(oayerRows);
       // validate(4) 의 우회 조건과 반드시 같은 판정이어야 한다 — 어긋나면 없는 오류로 탭이 전환된다.
-      const partialShotMissing = !isMapOnlyScope && !isAdiCdOnly && !detail.partial_shot?.trim();
+      const partialShotMissing = !isMapOnlyScope && !detail.partial_shot?.trim();
       if (partialShotMissing && oViolations.length === 0) setOayerInfoTab('info');
     }
     // 탭 전환·에러 span 렌더가 끝난 뒤 DOM을 조회하도록 지연한다.
@@ -4737,15 +4746,34 @@ export default function RequestPage(): React.ReactElement {
           )}
 
           {/* 영업/기술지원 합의자: PL 검토와 병렬인 결재 단계. PL 중 지정(다중, 전원 합의).
-              예외 구역 값을 기본값과 다르게 바꾼 의뢰서는 지정 또는 미지정 사유가 필수다. */}
+              예외 구역 값을 기본값과 다르게 바꾼 의뢰서에서만 노출되며, 지정 또는 미지정 사유가 필수다. */}
+          {requiresSalesAgreer && (
           <div className="form-group" style={{ marginTop: 12 }}>
             <label className="form-label">
               {t('request.sales_agreer_label')}
-              {requiresSalesAgreer && <span style={{ color: 'var(--danger)' }}> *</span>}
+              <span style={{ color: 'var(--danger)' }}> *</span>
             </label>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 6px' }}>
-              {requiresSalesAgreer ? t('request.sales_agreer_help_required') : t('request.sales_agreer_help')}
+              {t('request.sales_agreer_help_required')}
             </p>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.85rem', marginBottom: 8 }}>
+              <input
+                type="checkbox"
+                checked={salesAgreerNone}
+                onChange={(e) => {
+                  const none = e.target.checked;
+                  setSalesAgreerNone(none);
+                  if (none) {
+                    setSalesAgreers([]);
+                    setSalesAgreerSearch('');
+                  } else {
+                    setSalesAgreerNoneReason('');
+                  }
+                }}
+              />
+              {t('request.sales_agreer_none_toggle')}
+            </label>
+            {!salesAgreerNone && (<>
             {salesAgreers.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
                 {salesAgreers.map((p) => (
@@ -4817,8 +4845,9 @@ export default function RequestPage(): React.ReactElement {
                 document.body
               )}
             </div>
-            {/* 필수인데 아무도 지정하지 않았다면 사유를 받는다 — 사유만 있으면 상신할 수 있다. */}
-            {requiresSalesAgreer && salesAgreers.length === 0 && (
+            </>)}
+            {/* '없음'을 선택했을 때만 사유를 받는다 — 사유만 있으면 상신할 수 있다. */}
+            {salesAgreerNone && (
               <div style={{ marginTop: 6 }}>
                 <input
                   className="form-control"
@@ -4829,6 +4858,7 @@ export default function RequestPage(): React.ReactElement {
               </div>
             )}
           </div>
+          )}
 
           {/* 통보자: 결재 권한 없이 상신·결재완료 메일만 받는 인원 (다중) */}
           <div className="form-group" data-tour="submit-notifier" style={{ marginTop: 12 }}>

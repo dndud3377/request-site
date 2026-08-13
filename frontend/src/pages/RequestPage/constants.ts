@@ -74,9 +74,8 @@ export const EA_DEFAULT_PRODC = '500';
 export const eaDefaultValue = (onlyProdc?: string): string =>
   onlyProdc === 'Yes' ? EA_DEFAULT_PRODC : EA_DEFAULT_NORMAL;
 
-// '기타 목적 > ADI CD 변경': 특정 제품 ADI CD 스텝 개수 증감/전체삭제 요청. 진입 시 map_type 을 이 값으로 고정한다.
+// '기타 목적 > ADI CD 변경': 특정 제품 ADI CD 스텝 개수 증감/전체삭제 요청.
 export const OTHER_PURPOSE_ADI_CD = 'ADI CD 변경';
-export const ADI_CD_MAP_TYPE = 'ADI';
 // 초기 빈 템플릿 행 수
 export const ADI_CD_TEMPLATE_ROWS = 5;
 // 붙여넣기 허용 최대 행 수(초과 시 거부)

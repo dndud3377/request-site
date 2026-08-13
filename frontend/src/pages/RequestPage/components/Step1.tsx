@@ -364,7 +364,7 @@ const Step1: React.FC<Step1Props> = ({
               </div>
             )}
 
-            {/* ADI CD 변경: 변경전/변경후 스텝 표 — map_type 은 index.tsx 가 'ADI' 로 자동 고정한다 */}
+            {/* ADI CD 변경: 변경전/변경후 스텝 표 */}
             {isAdiCdSelected && (
               <div>
                 <div className="form-label" style={{ marginBottom: 6 }}>
