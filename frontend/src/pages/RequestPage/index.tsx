@@ -3367,6 +3367,25 @@ export default function RequestPage(): React.ReactElement {
       if (flowStepInvalid) {
         errorMessages.push(t('request.flow_step_not_in_list'));
       }
+      // 흐름도 행 중 위치/제품이름/조리법/Step 중 하나라도 값이 있으면 나머지 전부를 채워야 상신 가능
+      let flowRowIncomplete = false;
+      detail.flow_chart.forEach((row) => {
+        const fields: (keyof Omit<FlowChartRow, 'id'>)[] = ['location', 'product_name', 'process_id', 'step_from', 'step_to'];
+        const values = fields.map((f) => (row[f] || '').trim());
+        const anyFilled = values.some((v) => !!v);
+        const allFilled = values.every((v) => !!v);
+        if (anyFilled && !allFilled) {
+          fields.forEach((f, i) => {
+            if (!values[i]) {
+              newErrors[`flow_step_${row.id}_${f}`] = t('request.flow_row_incomplete');
+            }
+          });
+          flowRowIncomplete = true;
+        }
+      });
+      if (flowRowIncomplete) {
+        errorMessages.push(t('request.flow_row_incomplete'));
+      }
       addBaGateError(newErrors, errorMessages);
       addAdiCdGateError(newErrors, errorMessages);
     }
