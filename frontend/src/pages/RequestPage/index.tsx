@@ -1586,8 +1586,9 @@ export default function RequestPage(): React.ReactElement {
     // 후결자는 '연구소 제품'(Only MAP 전용)에 딸린 값이라 목적을 바꾸면 함께 비운다.
     setPostApprovers([]);
     // StepMap 정보까지만 필요 → J-layer/O-layer/Backbone 표 데이터 비우기
-    setJayerRows([makeJayerRow()]);
-    setOayerRows([makeOayerRow()]);
+    // (빈 행 1개를 남기면 활성 행으로 취급돼 st/new_or_copy 필수 검증에 걸린다 — bbRows처럼 완전히 비운다)
+    setJayerRows([]);
+    setOayerRows([]);
     setBbRows([]);
     setBbExternalData([]);
     setMappedJayerRowIds(new Set());
