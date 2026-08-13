@@ -2,8 +2,8 @@
  * J-ayer/O-ayer 기본값(빈 배열) 및 라인/조리법 선택에 따른 재조회 동작 재현 테스트.
  *
  * 배경: 컴포넌트 마운트 기본값을 [makeJayerRow()]/[makeOayerRow()](빈 행 1개)에서 []로 바꾸고,
- * (1) process_id 변경 감지 effect의 Only MAP 분기, (2) 잡파일/OVL 레이어 조회 결과가 0건일 때
- * 표를 비우지 않던 부분을 함께 고쳤다. 이 세 지점이 라인·조리법 선택 조합별로 실제로
+ * (1) process_id 변경 감지 effect의 Only MAP·MAP 삭제 분기, (2) 잡파일/OVL 레이어 조회 결과가
+ * 0건일 때 표를 비우지 않던 부분을 함께 고쳤다. 이 지점들이 라인·조리법 선택 조합별로 실제로
  * 의도대로 동작하는지 신규 문서 작성 흐름을 그대로 구동해 확인한다.
  */
 import React from 'react';
@@ -279,7 +279,7 @@ describe('J-ayer/O-ayer 기본값 — 신규 문서에서 라인/조리법 선�
     expect(afterChange.oayerRows).toHaveLength(0);
   });
 
-  it('Case J [참고 — 현재 동작 기록]: MAP 삭제 상태에서 조리법을 바꾸면 불필요한 조회가 실제로 발생한다(저장 결과는 안전)', async () => {
+  it('Case J: MAP 삭제 선택 후 조리법을 바꿔도 Only MAP 과 동일하게 빈 배열을 유지하고 재조회하지 않는다', async () => {
     const { container } = await renderNewDoc();
     await setLineProcessProduct(container);
     await setProcessId(container, PROC_WITH_DATA);
@@ -288,14 +288,11 @@ describe('J-ayer/O-ayer 기본값 — 신규 문서에서 라인/조리법 선�
     await flushEffects();
     mockState.jobFileCalls = []; // MAP 삭제 전환 시점의 호출은 제외하고 이후만 관찰
 
-    // process_id 변경 감지 effect 의 Only MAP 분기는 'Only MAP' 문자열만 검사하므로
-    // MAP 삭제는 이 우회를 타지 않고 fetchJobFileLayerAndPopulateJayer 가 그대로 실행된다
-    // (불필요한 API 호출 + jayerRows 가 잠시 실제 데이터로 채워지는 화면 밖 상태 변화).
+    // process_id 변경 감지 effect 의 Only MAP 분기가 MAP 삭제도 함께 검사하도록 고친 뒤에는
+    // Only MAP(Case I)과 동일하게 재조회 자체가 일어나지 않는다.
     await setProcessId(container, PROC_MORE_DATA);
-    expect(mockState.jobFileCalls).toContain(PROC_MORE_DATA);
+    expect(mockState.jobFileCalls).not.toContain(PROC_MORE_DATA);
 
-    // 다만 저장 시점에는 buildEnrichedForm 이 isMapOnlyScope(Only MAP·MAP 삭제 공통) 면
-    // jayerRows/oayerRows 를 무조건 [] 로 덮어쓰므로, 실제 저장되는 값은 안전하게 비어 있다.
     const { jayerRows, oayerRows } = await captureRows();
     expect(jayerRows).toHaveLength(0);
     expect(oayerRows).toHaveLength(0);
