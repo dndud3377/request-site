@@ -854,6 +854,7 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
   - **이력 조회(`HistoryPage`)**: **한 번이라도 바뀌었으면** 표시되고, 모달이 **회차별 전체**로 나온다. 값이 되돌아온 항목(A→B→A)도 진행 중에는 표시되지 않지만 이력 조회에서는 잡힌다.
   - 투어(`open-rowdiff`)는 이 페이지 기준이므로 J-ayer 변경 전/후 모달 시연이 그대로 유지된다.
   - 상세 구현(회차 축 `roundSnaps`, `computeEverChangedFields`/`computeTableEverChanged`, 회차별 모달 3종, 표 행 매칭 규칙)은 `docs/REQUEST.md` 의 2026-08 항목 참조.
+  - **(2026-08) BB 재지정 행 이력**: bb 행 매칭에 `sourceJayerRowId` 폴백을 더해, 재지정으로 id 가 바뀐 행도 **이전 지정과 비교**된다. 같은 데이터를 다시 고르면 변경으로 잡히지 않고, 짝이 없는 신규 행은 **`(없음)` → 현재값**으로 열린다. `matchPrevRows` 참조.
 
 ---
 
