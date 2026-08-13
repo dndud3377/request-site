@@ -1069,7 +1069,13 @@ pages/RequestPage/
 - **회차 축**: `roundSnaps: RoundSnapshot[]` = `history[]` + 현재값을 한 배열로 묶은 것. 이력 UI 전부가 이 배열 하나를 공유한다(결재 경로 섹션의 `rounds`(회차 번호 배열)와 다른 값이라 이름을 구분했다).
 - **판정 함수**: `computeEverChangedFields`(인접 회차 diff 합집합) / `computeTableEverChanged`(행 단위). 값이 되돌아온 필드(A→B→A)도 이력 조회에서는 잡힌다.
 - **회차별 모달 3종 추가**: `FieldGroupRoundHistoryModal`(행=항목, 열=회차 · 이미지 셀은 썸네일) / `RowRoundHistoryModal`(표 행: 행=회차, 열=필드) / 지도 옵션은 회차별 태그 목록.
-- **표 행 매칭**: `findRowInRound` — id 매칭이 원칙이고, 회차 간 겹치는 id 가 **하나도 없을 때만** 위치(index) 폴백. `computeTableDiff` 와 같은 규칙이라 강조 판정과 모달 내용이 어긋나지 않는다. 그 회차에 대응 행이 없으면 `(없음)` 으로 표시한다.
+- **표 행 매칭**: `matchPrevRows` — 강조 판정(`computeTableDiff`)과 회차별 모달(`buildRowTimeline`)이 **같은 함수**를 쓰므로 판정과 내용이 어긋나지 않는다. 세 단계를 순서대로 시도한다.
+  1. **id** — 손대지 않은 행. 회차 간 겹치는 id 가 **하나도 없으면**(표가 통째로 재생성된 경우) 위치(index) 폴백.
+  2. **`sourceJayerRowId`** — bb 행 전용. **(2026-08 추가)** J-ayer 행을 고치면 매핑된 bb 행이 삭제되고(`unmapJayerRows`), 다시 지정하면 **새 id 로 만들어져 배열 끝에 붙는다**(`handleApplyMappings` → `makeBbRow`). id 로는 짝을 못 찾지만 **어느 J-ayer 행에서 왔는지**는 남으므로 그 값으로 이전 지정을 찾는다. 한 J 행에 bb 행이 여럿이면 **등장 순서대로** 짝짓는다.
+     - `entryId` 는 키로 쓰지 **않는다** — 지정이 바뀌면 그 값 자체가 바뀌어 짝이 깨진다.
+     - 이 덕분에 **같은 외부 데이터를 다시 고른 재지정은 변경으로 잡히지 않고**, 다른 데이터를 골랐을 때만 이전 지정과 비교돼 강조된다. (종전에는 id 가 달라져 무조건 "새 행"으로 잡히고, 그러면서도 버튼은 안 떠 **빨갛기만 하고 눌러볼 수 없는 행**이 남았다.)
+  3. 짝이 없으면 **이번 회차에 새로 생긴 행**(J-ayer 신규 행에서 온 bb, 수기 추가 행 등)이다. 이때도 모달을 열 수 있고 **변경 전 = `(없음)`** 으로 보여준다(`RowDiffModal.prevRow` 가 `null` 허용). 표 3종 공통 동작이다.
+- **이력 버튼 노출**: `canOpenRowHistory` 는 **이전 회차가 있으면**(`rounds.length > 1`) 띄운다. 종전처럼 "직전 회차에 짝이 있을 때"로 막지 않으므로, 강조만 되고 눌러볼 수 없는 행이 남지 않는다.
 - **블록 빌더 시그니처 변경**: `buildMshotRows(prev, cur)` → `buildMshotItems(d)` (생산정보·REV 동일). 한 회차만 받는 순수 함수라 전/후 표와 회차별 표가 같은 함수를 공유한다. 전/후 표는 `toDiffRows` 로 조립한다.
 - 전체 가이드 투어는 `ApprovalPage` 기준(`open-rowdiff`)이므로 종전 전/후 모달 그대로다.
 
