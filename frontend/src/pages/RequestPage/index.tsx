@@ -201,7 +201,7 @@ export default function RequestPage(): React.ReactElement {
   const [step, setStep] = useState(isTourMode ? initialTourStep : 1);
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
   const [detail, setDetail] = useState<DetailFormState>(isTourMode ? makeTourDetail() : INITIAL_DETAIL);
-  const [jayerRows, setJayerRows] = useState<JayerRow[]>(isTourMode ? makeTourJayerRows() : [makeJayerRow()]);
+  const [jayerRows, setJayerRows] = useState<JayerRow[]>(isTourMode ? makeTourJayerRows() : []);
   // Validation System: 상신자가 토글을 직접 건드렸는지. true 면 J-layer 변경에도 자동 갱신하지 않는다.
   // 세션 로컬 상태라 detail 에 넣지 않고 저장도 하지 않는다.
   const [vsManuallySet, setVsManuallySet] = useState(false);
@@ -228,7 +228,7 @@ export default function RequestPage(): React.ReactElement {
   // 뼈찜 외부데이터: (항목,값) 조합별 결과 캐시 + 직전 조회 process_id(토스트용)
   const bbExtCache = useRef<Record<string, PhotoStepOption[]>>({});
   const bbExtPrevPid = useRef<Record<string, string>>({});
-  const [oayerRows, setOayerRows] = useState<OayerRow[]>(isTourMode ? makeTourOayerRows() : [makeOayerRow()]);
+  const [oayerRows, setOayerRows] = useState<OayerRow[]>(isTourMode ? makeTourOayerRows() : []);
   const [bbRows, setBbRows] = useState<BbTableRow[]>(isTourMode ? makeTourBbRows() : []);
   const [bbExternalData, setBbExternalData] = useState<PhotoStepOption[][]>(isTourMode ? (makeTourBbExternalData() as PhotoStepOption[][]) : []);
   // 전체 가이드 J-ayer 데모: 실제 표 위에 떠 있는 가짜 커서 + Ctrl C/V 칩
@@ -646,11 +646,11 @@ export default function RequestPage(): React.ReactElement {
     setRefOayerRows([]);
     // 조리법이 바뀌면 J/O 가 통째로 재조회되므로 옛 스냅샷으로 롤백되면 안 된다 → 비교 상태 전부 정리.
     clearMergeComparison();
-    // Only MAP 은 StepMap 정보까지만 필요 → J/O 자동 재조회 없이 빈 상태로 유지한다.
-    // (isOnlyMap 은 이 effect 아래에서 선언되므로 detail 로 직접 판정)
-    if (detail.request_purpose === ONLY_MAP_PURPOSE) {
-      setJayerRows([makeJayerRow()]);
-      setOayerRows([makeOayerRow()]);
+    // Only MAP·MAP 삭제는 StepMap 정보까지만 필요 → J/O 자동 재조회 없이 빈 상태로 유지한다.
+    // (isMapOnlyScope 는 이 effect 아래에서 선언되므로 detail 로 직접 판정)
+    if (detail.request_purpose === ONLY_MAP_PURPOSE || detail.request_purpose === MAP_DELETE_EDIT_PURPOSE) {
+      setJayerRows([]);
+      setOayerRows([]);
       return;
     }
     fetchJobFileLayerAndPopulateJayer(detail.line, detail.process_id);
@@ -2000,6 +2000,7 @@ export default function RequestPage(): React.ReactElement {
         setJayerRows(newJayerRows);
         addToast(t('request.toast_job_auto_fill', { count: jobFileData.length }), 'info');
       } else {
+        setJayerRows([]);
         addToast(t('request.toast_job_no_data'), 'warning');
       }
     } catch (e) {
@@ -2028,6 +2029,7 @@ export default function RequestPage(): React.ReactElement {
         setOayerRows(newOayerRows);
         addToast(t('request.toast_ovl_auto_fill', { count: ovlData.length }), 'info');
       } else {
+        setOayerRows([]);
         addToast(t('request.toast_ovl_no_data'), 'warning');
       }
     } catch (e) {

@@ -249,6 +249,36 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 버그 수정 (2026-08-13 — J-ayer/O-ayer 기본값을 빈 행 1개 → 빈 배열로 통일)
+
+- **배경**: §바로 위 항목(이력 바로 등록 실패)에서 `applyMapOnlyScope` 하나만 고쳤는데, 같은 "빈 행 1개"
+  패턴이 다른 두 곳에도 남아 있어 추가로 정리했다.
+- **수정 1 — 컴포넌트 마운트 기본값**(`index.tsx` `jayerRows`/`oayerRows` 최초 `useState`):
+  `[makeJayerRow()]`/`[makeOayerRow()]`(빈 행 1개) → `[]`. 신규 문서를 열면 이제 두 표 모두 빈 배열로
+  시작한다(투어 모드는 영향 없음 — `makeTourJayerRows()`/`makeTourOayerRows()` 그대로).
+- **수정 2 — `process_id`(조리법) 변경 감지 effect의 Only MAP·MAP 삭제 분기**: 여기도
+  `[makeJayerRow()]`/`[makeOayerRow()]`로 남아 있던 것을 `[]`로 통일했다. 처음엔
+  `detail.request_purpose === ONLY_MAP_PURPOSE` 만 검사해 **MAP 삭제**가 빠져 있었다 — MAP 삭제
+  선택 중 조리법을 바꾸면 이 우회를 타지 않고 `fetchJobFileLayerAndPopulateJayer`/
+  `fetchOvlLayerAndPopulateOayer` 가 실제로 실행됐다(불필요한 API 호출 + 화면에 보이지 않는 사이
+  jayerRows/oayerRows 가 실제 데이터로 잠시 채워짐 — 저장 시점엔 `buildEnrichedForm` 의
+  `isMapOnlyScope ? [] : ...` 가 있어 저장값 자체는 항상 안전했다). 조건을 `MAP_DELETE_EDIT_PURPOSE`
+  까지 포함하도록 넓혀 **Only MAP·MAP 삭제 둘 다** 재조회 자체가 일어나지 않게 고쳤다.
+- **수정 3 — `fetchJobFileLayerAndPopulateJayer`/`fetchOvlLayerAndPopulateOayer`**: API가 빈 결과를
+  반환했을 때(`length === 0`) 토스트만 띄우고 표를 그대로 두던 것을, `setJayerRows([])`/
+  `setOayerRows([])`를 함께 호출하도록 고쳤다. 이전에는 데이터가 있던 조리법에서 데이터가 없는
+  조리법으로 바꾸면 **이전 조리법의 행이 화면에 그대로 남아 있었다**(오조회로 오인하기 쉬운 상태).
+  API 예외(네트워크 오류 등)는 기존대로 표를 건드리지 않는다(사용자 입력을 실수로 지우지 않기 위한
+  의도적 동작 — 아래 테스트 Case H).
+- **검증 방법**: 신규 문서 작성 흐름(라인 → 조합법 → 제품 → 조리법 선택)을 실제로 구동하는 테스트
+  `RequestPage/jayerOayerDefault.test.tsx` 신설(10 케이스) — 초기 빈 배열, 데이터 있음/없음 조리법
+  선택, 데이터 있음→없음/없음→있음 전환, 서로 다른 데이터 간 전환, API 예외, Only MAP·MAP 삭제 중
+  조리법 변경.
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx` (3곳),
+  `frontend/src/pages/RequestPage/jayerOayerDefault.test.tsx`(신규)
+- **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(변경 없음) · `react-scripts test --watchAll=false`
+  6 suites / **184건 통과**(기존 174 + 신규 10).
+
 ### 버그 수정 (2026-08-13 — Only MAP/MAP 삭제: J-ayer·O-ayer 빈 행 1개로 인한 이력 바로 등록 실패)
 
 - **증상**: MASTER 가 `Only MAP` 또는 `MAP 삭제` 목적을 선택한 뒤(J/O-ayer·Backbone 표를 만지지 않고)
