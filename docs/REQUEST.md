@@ -249,6 +249,43 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 개선 (2026-08-13 — 상세보기: CLONE/EXISTING 은 잠긴 MAP 항목을 회색 "없음"으로 표시)
+
+- **요청**: MAP 목적이 `CLONE`(차용)·`EXISTING`(기등록)이면 StepMap 작성 화면에서 지도편차·예외구역·
+  X표시 변경 여부·C가문 세부 정보(제품 해당 위치·상/중/하판) 입력칸이 전부 잠겨(`isMapRegistered`)
+  사용자가 실제로 값을 넣을 수 없는데도, 상세보기(`PagedDetailView.tsx`)에서는 저장된 기본값을
+  마치 실제 입력값처럼 그대로 보여줬다. Map Option·Inter 가 비활성일 때 쓰는 것과 같은 회색
+  "없음" 표시로 통일했다.
+- **제외(실값 유지)**: MAP 목적(`map_type`)·원본 위치(`source_line`)·원본 제품 이름(`source_partid`,
+  CLONE 전용)·C가문 제품 여부(`only_prodc` Yes/No, `prodc_status`) — 이 4개는 `isMapRegistered`
+  에서도 잠기지 않거나(C가문 Yes/No 는 여전히 사용자가 바꿀 수 있다) CLONE/EXISTING 을 식별하는
+  값 자체이므로 그대로 표시한다. REV 여부도 StepMap 주석대로 CLONE/EXISTING 에서 잠그지 않는
+  독립 항목이라 손대지 않았다.
+- **회색 "없음" 처리 대상**: 지도 편차·예외 구역(`request.map`/`request.ea_change` 칩),
+  X표시 변경 여부(`mshot_change`), C가문 세부 정보(`buildProdcInfo()` — 제품 해당 위치 +
+  상/중/하판 라인·공정·제품). C가문 세부 정보는 `Only C가문 제품(Yes/No)` 옆 칸만 "없음"으로
+  바뀌고, Yes/No 값 자체는 그대로 유지된다.
+- **구현**: `PagedDetailView.tsx`에 `isMapRegisteredDetail`(= `map_type === 'EXISTING' || 'CLONE'`)
+  파생값과, Map Option/Inter 와 동일한 회색 "없음" 스타일을 내는 `PlaceholderChip` 헬퍼를 추가했다.
+  MAP 섹션에서 `isMapRegisteredDetail`일 때는 각 항목을 `PlaceholderChip`으로, 아닐 때는 기존
+  로직(`buildMapValue`/`buildEaValue`/`buildProdcInfo`, 변경 이력 확인 버튼 포함)을 그대로 쓴다.
+- **영향 파일**: `frontend/src/components/PagedDetailView.tsx` (1개 파일). 백엔드·i18n 키·작성
+  화면(StepMap.tsx) 변경 없음 — 읽기 전용 상세보기 렌더링만 수정했다.
+- **검증(2026-08-13 실행)**: `npm ci` 후 `npx tsc --noEmit` **22개**(작업 전후 동일, 신규 0 —
+  `PagedDetailView.tsx` 관련 에러 없음) · `react-scripts test --watchAll=false` **6 suites /
+  184건 통과**(전부 pre-existing, 이번 변경과 무관).
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [승인 현황 또는 이력 페이지 → CLONE 또는 EXISTING 으로 등록된 의뢰서 행 클릭 → 상세보기의
+     "MAP 정보" 탭 이동] → 2. [지도 편차 칩·예외 구역 칩을 확인] → 3. [기대 결과: 값 텍스트가
+     아니라 회색 "없음"이 보여야 한다. 이력 확인(빨간 테두리) 버튼은 뜨지 않아야 한다.]
+  2. [같은 화면에서 "X표시 변경 여부" 칸 확인] → [기대 결과: 회색 "없음".]
+  3. [C가문 제품(`only_prodc`)이 `Yes`인 CLONE/EXISTING 문서를 열어 "Only C가문 제품" 칸 확인]
+     → [기대 결과: 좌측 `Yes` 값은 그대로 보이고, 우측 세부 정보 칸만 회색 "없음"으로 보여야
+     한다.]
+  4. [MAP 목적이 `NEW`인 일반 의뢰서를 열어 같은 항목들 확인] → [기대 결과: 기존과 동일하게 실제
+     입력값(지도편차·예외구역·X표시·C가문 세부 정보)이 그대로 보여야 한다 — 이번 변경으로 영향
+     받지 않아야 한다.]
+
 ### 기능 개선 (2026-08-13 — 참조 요청서 '없음' 확정을 라디오 확인만으로 완료)
 
 - **증상/요청**: 참조 요청서 `없음` 라디오를 선택해 확인 모달까지 통과해도 곧바로 확정되지 않고,
