@@ -280,6 +280,47 @@ pages/RequestPage/
   4. [흐름도 행을 완전히 비워둔 채(기본 신규 행) "다음" 클릭] → [기대 결과: 흐름도 관련 에러
      없이 진행된다(다른 필수 항목은 별개로 채워야 함) — 이번 변경으로 새로 막히지 않아야 한다.]
 
+### 버그 수정 (2026-08-13 — CLONE/EXISTING 상신 시 리전별 지도편차·예외구역이 잠긴 채 '변경 있음'/300 으로 저장됨)
+
+- **증상**: MAP 목적이 `CLONE`(차용)·`EXISTING`(기등록)이면 StepMap 에서 리전별 지도편차
+  (`map_change_top`/`map_change_bottom`)·예외구역(`ea_value`) 입력칸이 전부 잠기는데도, C가문
+  (`only_prodc`)을 `Yes`로 켜면 `map_change_top`/`map_change_bottom`이 `'변경 있음'`인 채로,
+  `ea_value`가 300(또는 500) 기본값인 채로 상신됐다. 사용자는 잠긴 입력칸을 고칠 방법이 없는데도
+  "값이 바뀌었다"는 상태가 그대로 저장되는 문제였다.
+- **원인**: `map_change_top`/`map_change_bottom`의 전역 기본값(`INITIAL_DETAIL`, `constants.ts:265,268`)
+  이 `'변경 있음'`으로 박혀 있고, `ea_value`도 C가문 여부에 따라 항상 300/500 기본값을 채우는데,
+  CLONE/EXISTING으로 진입·전환되는 5개 지점(`handleMapTypeSelect` 최초 선택 / `handleMapTypeChangeConfirm`
+  / `handleOnlyProdcChange` Yes·No 분기 / `line` 변경 감지 `useEffect`) 중 어디도 "잠긴 상태니까
+  반드시 변경없음/빈 값"으로 강제하지 않았다. `validate()`도 `isMapRegistered`면 이 필드들 검증을
+  통째로 건너뛰어(`index.tsx` 의 `!isMapRegistered` 가드), 잘못된 기본값이 그대로 상신됐다.
+- **수정**: 위 5개 지점에서 대상 `map_type`이 `EXISTING`/`CLONE`이면(`registered`/`isRegistered` 판정)
+  `map_change_top`/`map_change_bottom`을 `'변경 없음'`으로, X/Y 값을 빈 문자열로, `ea_value`를 빈
+  문자열(`''`)로 설정하도록 고쳤다. 그 외(NEW 등)의 기존 기본값(`'변경 있음'`/300·500)은 그대로
+  유지한다 — CLONE/EXISTING 전용 수정이다.
+- **`ea_value`를 빈 값(`''`)으로 정한 근거**: `ea_change`(변경있음/없음 상태)는 원래도 항상
+  `'변경 없음'`으로 정상 고정돼 있었다. 숫자 필드인 `ea_value`에 "변경없음"이라는 문자열을 그대로
+  넣을 수는 없어, 사용자에게 확인한 결과 빈 값으로 저장하기로 했다(대안이었던 "기존처럼 300/500
+  기본값 유지"는 채택하지 않음).
+- **범위 밖**: 이미 저장된(기존) CLONE/EXISTING 문서의 DB 데이터는 이 수정으로 자동 고쳐지지
+  않는다 — 소급 백필은 요청받지 않아 진행하지 않았다.
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx` (5개 함수/effect 수정 — 1개 파일)
+- **검증(2026-08-13 실행)**: `npm ci` 후 `npx tsc --noEmit` **22개**(작업 전후 동일, 신규 0) ·
+  `react-scripts test --watchAll=false` **7 suites / 186건 통과**(기존 184건 + 신규 재현
+  테스트 2건). 신규 테스트(`cloneMapRegionDefault.test.tsx`)는 신규 문서에서 CLONE 선택 →
+  C가문 Yes 전환(및 Yes→No→Yes 재전환) 흐름을 실제로 구동해 임시저장 payload 를 검증하며,
+  수정 전 코드로 되돌려 실제로 실패하는 것까지 확인했다(가짜 통과 아님).
+- **수동 검증 시나리오**:
+  1. [요청서 작성(`/request`) 새 문서 → Step1 라인·조합법·제품·조리법·요청 목적(예: '차용')까지
+     채우고 '다음' → Step2(MAP 정보)에서 MAP 목적 `CLONE` 선택] → 2. [Only C가문 제품을 `Yes`로
+     전환] → 3. [기대 결과: 리전별 지도편차(상판/하판) select 가 `변경 없음`으로 잠겨 있고, 예외
+     구역 값 입력칸이 빈 채로 잠겨 있어야 한다.] → 4. [임시저장 후 다시 편집으로 열어 같은 값이
+     유지되는지 확인]
+  2. [같은 문서에서 Only C가문 제품을 `No` → `Yes`로 다시 전환] → [기대 결과: 여전히 `변경 없음`/
+     빈 값이어야 한다 — '있음'/300 으로 되돌아가면 실패.]
+  3. [MAP 목적이 `NEW`(신규)인 문서에서 C가문 Yes 전환] → [기대 결과: 기존과 동일하게 리전별
+     지도편차가 `'변경 있음'` 기본값으로 열려 사용자가 직접 입력할 수 있어야 한다 — 이번 수정으로
+     영향 받지 않아야 한다.]
+
 ### 기능 개선 (2026-08-13 — 상세보기: CLONE/EXISTING 은 잠긴 MAP 항목을 회색 "없음"으로 표시)
 
 - **요청**: MAP 목적이 `CLONE`(차용)·`EXISTING`(기등록)이면 StepMap 작성 화면에서 지도편차·예외구역·
