@@ -684,9 +684,10 @@ export type GuideType = 'feature' | 'info';
 export type GuideFeatureKey =
   | 'step1_line_process' | 'step1_request_purpose' | 'step1_other_purpose'
   | 'step1_flow_chart' | 'step1_bb_entry' | 'step1_customer_vendor'
+  | 'step1_ref_doc_merge' | 'step1_adi_cd_change'
   | 'step2_map_type' | 'step2_source_location' | 'step2_map_deviation'
   | 'step2_exception_zone' | 'step2_cfamily' | 'step2_rev'
-  | 'step2_xmark' | 'step2_map_options'
+  | 'step2_xmark' | 'step2_inter' | 'step2_map_options'
   | 'step3_jayer_table' | 'step3_jayer_filter'
   | 'step4_oayer_table' | 'step4_partial_shot' | 'step4_tbvtlv'
   | 'step5_bb_autofill' | 'step5_bb_mapping' | 'step5_bb_table'
@@ -720,6 +721,8 @@ export const GUIDE_STEP_FEATURES: Record<number, { key: GuideFeatureKey; labelKe
     { key: 'step1_flow_chart',      labelKey: 'guide.feat.step1_flow_chart' },
     { key: 'step1_bb_entry',        labelKey: 'guide.feat.step1_bb_entry' },
     { key: 'step1_customer_vendor', labelKey: 'guide.feat.step1_customer_vendor' },
+    { key: 'step1_ref_doc_merge',   labelKey: 'guide.feat.step1_ref_doc_merge' },
+    { key: 'step1_adi_cd_change',   labelKey: 'guide.feat.step1_adi_cd_change' },
   ],
   2: [
     { key: 'step2_map_type',        labelKey: 'guide.feat.step2_map_type' },
@@ -729,6 +732,7 @@ export const GUIDE_STEP_FEATURES: Record<number, { key: GuideFeatureKey; labelKe
     { key: 'step2_cfamily',         labelKey: 'guide.feat.step2_cfamily' },
     { key: 'step2_rev',             labelKey: 'guide.feat.step2_rev' },
     { key: 'step2_xmark',           labelKey: 'guide.feat.step2_xmark' },
+    { key: 'step2_inter',           labelKey: 'guide.feat.step2_inter' },
     { key: 'step2_map_options',     labelKey: 'guide.feat.step2_map_options' },
   ],
   3: [
