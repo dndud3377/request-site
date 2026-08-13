@@ -267,6 +267,84 @@ pages/RequestPage/
 - **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(작업 전후 동일, 신규 0) ·
   `react-scripts test --watchAll=false` 5 suites / **174건 통과**.
 
+### 추가 변경 이력 (2026-08-13 — 기능 가이드 항목 3개 추가 + 영상·글 가이드 동시 노출)
+
+- **개요**: `/guide` 기능별 가이드 지식베이스(`GUIDE_STEP_FEATURES`)에 아직 배지가 없던 위저드
+  기능 3개에 가이드 배지를 신설했고, 빌트인 영상 데모와 사용자가 작성한 글 가이드가 같은
+  `feature_key`에 함께 있을 때 하나만 보이던 것을 **둘 다(영상 → 글 순서로)** 보이도록 고쳤다.
+- **신규 `feature_key` 3개** (`types/index.ts` `GuideFeatureKey`/`GUIDE_STEP_FEATURES`):
+  - `step1_ref_doc_merge` — 참조 요청서 Merge(`showMergeBlock` 블록: 참조 있음/없음, Merge,
+    BEFORE/AFTER 표). 배지를 블록 상단 소제목에 두어 **조건부 렌더를 그대로 물려받아 해당 목적을
+    선택했을 때만** 노출된다.
+  - `step1_adi_cd_change` — ADI CD 변경(`isAdiCdSelected` 블록: `AdiCdPanel` 변경전/변경후 스텝 표).
+    동일하게 블록 상단 소제목에 배지를 붙여 조건부 노출.
+  - `step2_inter` — MAP 단계 Inter 섹션(IN 적용 O/X + Xs/Ys/XYs/없음). 기존 `map_opt_inter` 라벨에
+    배지를 붙였다(이 필드 자체는 상시 노출이라 다른 배지들과 동일한 방식).
+- **영상+글 가이드 동시 노출** (`components/GuideSlidePanel.tsx`): 이전엔 `GUIDE_DEMOS[featureKey]`가
+  있으면 글 가이드 API 조회 자체를 건너뛰어 데모만 보였다. 데모 유무와 무관하게 항상
+  `guidesAPI.list({feature_key})`를 조회하도록 바꾸고, 렌더 순서를 **데모 컴포넌트 → (구분선) →
+  글 가이드**로 고정했다. 데모·글 둘 다 없을 때만 기존 "내용 없음" 빈 상태를 보여준다(데모만 있고
+  글이 없을 땐 빈 상태 문구를 생략해 불필요한 노출을 막는다).
+- **i18n**: `guide.feat.step1_ref_doc_merge` / `step1_adi_cd_change` / `step2_inter` ko/en 동시 추가.
+- **영향 파일**: `types/index.ts`, `locales/ko.json`·`en.json`,
+  `pages/RequestPage/components/Step1.tsx`·`StepMap.tsx`, `components/GuideSlidePanel.tsx`
+- **검증(2026-08-13 실행)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` | 22개 | **22개** (신규 0, 전부 기존 항목과 동일) |
+  | `react-scripts test` | 5 suites / 174건 | **5 suites / 174건 통과** |
+
+  ⚠️ 원격 세션이라 Docker 없이 실행했고, 백엔드 변경이 없어 백엔드 테스트는 별도로 돌리지 않았다.
+
+### 버그 수정 (2026-08-13 — CLONE/EXISTING + C가문 Yes 전환 시 X표시 변경 여부가 '수정'으로 잘못 상신됨)
+
+- **증상**: MAP 목적이 `EXISTING`(기등록) 또는 `CLONE`(차용)일 때 C가문(`only_prodc`)을 `Yes`로
+  전환하면, 실제로는 아무 값도 입력하지 않았는데도(입력칸이 전부 잠겨 있어 입력 자체가 불가능)
+  X표시 변경 여부(`mshot_change`)가 `'수정'`으로 바뀐 채 그대로 상신됐다.
+- **원인**: `handleOnlyProdcChange`(`index.tsx`)가 C가문 `Yes` 전환 시 `map_type`과 무관하게
+  무조건 `mshot_change: '수정'`을 자동 설정하고 있었다. `EXISTING`/`CLONE`(`isMapRegistered`)은
+  MAP 관련 입력칸이 전부 잠겨 사용자가 실제로 값을 바꿀 수 없는데도 이 자동 설정만은 걸렸다.
+- **수정**: `setDetail` 콜백 안에서 `prev.map_type === 'EXISTING' || prev.map_type === 'CLONE'`
+  여부를 판정해, 이 경우에는 `mshot_change`를 건드리지 않고 기존 값을 그대로 둔다(초기값은
+  `INITIAL_DETAIL.mshot_change === '없음'`). `NEW`(신규)일 때는 기존과 동일하게 `'수정'` 자동
+  설정을 유지한다 — `NEW`는 입력칸이 잠기지 않아 실제로 X표시 변경이 필요한 경우가 많기 때문이다.
+- **범위 밖(의도적으로 유지)**: `ea_value`(예외 구역 값)의 C가문 기본값 연동(300→500)은 실제
+  계산된 기본값을 보여주는 용도라 이번 수정과 무관하게 그대로 둔다.
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx` (`handleOnlyProdcChange`, 1개 파일)
+- **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(작업 전후 동일, 신규 0) ·
+  `react-scripts test --watchAll=false` 5 suites / **174건 통과**.
+
+### 버그 수정 (2026-08-13 — J-ayer/O-ayer 기본값을 빈 행 1개 → 빈 배열로 통일)
+
+- **배경**: §바로 위 항목(이력 바로 등록 실패)에서 `applyMapOnlyScope` 하나만 고쳤는데, 같은 "빈 행 1개"
+  패턴이 다른 두 곳에도 남아 있어 추가로 정리했다.
+- **수정 1 — 컴포넌트 마운트 기본값**(`index.tsx` `jayerRows`/`oayerRows` 최초 `useState`):
+  `[makeJayerRow()]`/`[makeOayerRow()]`(빈 행 1개) → `[]`. 신규 문서를 열면 이제 두 표 모두 빈 배열로
+  시작한다(투어 모드는 영향 없음 — `makeTourJayerRows()`/`makeTourOayerRows()` 그대로).
+- **수정 2 — `process_id`(조리법) 변경 감지 effect의 Only MAP·MAP 삭제 분기**: 여기도
+  `[makeJayerRow()]`/`[makeOayerRow()]`로 남아 있던 것을 `[]`로 통일했다. 처음엔
+  `detail.request_purpose === ONLY_MAP_PURPOSE` 만 검사해 **MAP 삭제**가 빠져 있었다 — MAP 삭제
+  선택 중 조리법을 바꾸면 이 우회를 타지 않고 `fetchJobFileLayerAndPopulateJayer`/
+  `fetchOvlLayerAndPopulateOayer` 가 실제로 실행됐다(불필요한 API 호출 + 화면에 보이지 않는 사이
+  jayerRows/oayerRows 가 실제 데이터로 잠시 채워짐 — 저장 시점엔 `buildEnrichedForm` 의
+  `isMapOnlyScope ? [] : ...` 가 있어 저장값 자체는 항상 안전했다). 조건을 `MAP_DELETE_EDIT_PURPOSE`
+  까지 포함하도록 넓혀 **Only MAP·MAP 삭제 둘 다** 재조회 자체가 일어나지 않게 고쳤다.
+- **수정 3 — `fetchJobFileLayerAndPopulateJayer`/`fetchOvlLayerAndPopulateOayer`**: API가 빈 결과를
+  반환했을 때(`length === 0`) 토스트만 띄우고 표를 그대로 두던 것을, `setJayerRows([])`/
+  `setOayerRows([])`를 함께 호출하도록 고쳤다. 이전에는 데이터가 있던 조리법에서 데이터가 없는
+  조리법으로 바꾸면 **이전 조리법의 행이 화면에 그대로 남아 있었다**(오조회로 오인하기 쉬운 상태).
+  API 예외(네트워크 오류 등)는 기존대로 표를 건드리지 않는다(사용자 입력을 실수로 지우지 않기 위한
+  의도적 동작 — 아래 테스트 Case H).
+- **검증 방법**: 신규 문서 작성 흐름(라인 → 조합법 → 제품 → 조리법 선택)을 실제로 구동하는 테스트
+  `RequestPage/jayerOayerDefault.test.tsx` 신설(10 케이스) — 초기 빈 배열, 데이터 있음/없음 조리법
+  선택, 데이터 있음→없음/없음→있음 전환, 서로 다른 데이터 간 전환, API 예외, Only MAP·MAP 삭제 중
+  조리법 변경.
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx` (3곳),
+  `frontend/src/pages/RequestPage/jayerOayerDefault.test.tsx`(신규)
+- **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(변경 없음) · `react-scripts test --watchAll=false`
+  6 suites / **184건 통과**(기존 174 + 신규 10).
+
 ### 버그 수정 (2026-08-13 — Only MAP/MAP 삭제: J-ayer·O-ayer 빈 행 1개로 인한 이력 바로 등록 실패)
 
 - **증상**: MASTER 가 `Only MAP` 또는 `MAP 삭제` 목적을 선택한 뒤(J/O-ayer·Backbone 표를 만지지 않고)

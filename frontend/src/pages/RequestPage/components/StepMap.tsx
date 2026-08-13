@@ -578,7 +578,7 @@ const StepMap: React.FC<StepMapProps> = ({
             NO 로 전환 시 확인 모달 없이 관련 값을 즉시 초기화한다(잘못된 값이 저장되지 않도록). */}
         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
-            <label className="form-label">{t('request.map_opt_inter')}</label>
+            <label className="form-label">{t('request.map_opt_inter')}<GuideBadge fk="step2_inter" tk={t('guide.feat.step2_inter' as never)} /></label>
             <select
               className="form-control"
               value={detail.inter}
