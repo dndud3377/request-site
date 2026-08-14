@@ -853,7 +853,7 @@ export default function ApprovalPage(): React.ReactElement {
   };
 
   // 결재가 진행 중인 문서만 '현재 단계 전원 확인' 절차를 거친다.
-  // 그 외(임시저장·반려)는 확인할 상대가 없어 즉시 삭제된다 — 사유도 선택 사항.
+  // 임시저장은 확인할 상대가 없어 확인만으로 즉시 삭제된다(사유 없음). 반려는 철회 자체가 불가.
   const needsWithdrawConfirm = (doc: RequestDocument): boolean =>
     doc.status === 'under_review' || doc.status === 'submitted';
 
@@ -1076,7 +1076,7 @@ export default function ApprovalPage(): React.ReactElement {
                             👥 {doc.shared_group_name ?? t('approval.share_group_btn')}
                           </button>
                         )}
-                        {doc.can_withdraw && (doc.status === 'under_review' || doc.status === 'rejected' || doc.status === 'draft') && (
+                        {doc.can_withdraw && (doc.status === 'under_review' || doc.status === 'draft') && (
                           <button className="btn btn-secondary btn-sm" onClick={() => handleWithdrawClick(doc)} disabled={processing}>
                             {t('approval.withdraw')}
                           </button>
@@ -1230,7 +1230,7 @@ export default function ApprovalPage(): React.ReactElement {
         </Modal>
       )}
 
-      {/* 철회 모달 — 사유를 받아 철회 요청(진행 중) 또는 즉시 삭제(임시저장·반려)를 실행한다 */}
+      {/* 철회 모달 — 진행 중 문서는 사유를 받아 철회 요청, 임시저장은 확인만 받아 즉시 삭제한다 */}
       {withdrawModalOpen && withdrawDoc && (
         <Modal
           isOpen={withdrawModalOpen}
@@ -1261,23 +1261,29 @@ export default function ApprovalPage(): React.ReactElement {
         >
           <div>
             <div className="withdraw-warning">⚠️ {t('approval.withdraw_warning')}</div>
-            <p style={{ margin: '12px 0 8px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-              {t('approval.withdraw_reason_label')}
-              {needsWithdrawConfirm(withdrawDoc) && <span style={{ color: 'var(--danger)' }}> *</span>}
-            </p>
-            <textarea
-              className="form-control"
-              rows={4}
-              value={withdrawReasonInput}
-              onChange={(e) => setWithdrawReasonInput(e.target.value)}
-              placeholder={t('approval.withdraw_reason_placeholder')}
-              style={{ width: '100%', resize: 'vertical' }}
-            />
-            <p style={{ marginTop: 6, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              {needsWithdrawConfirm(withdrawDoc)
-                ? t('approval.withdraw_reason_hint')
-                : t('approval.withdraw_immediate_hint')}
-            </p>
+            {withdrawDoc.status === 'draft' ? (
+              <p style={{ margin: '12px 0 0', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                {t('approval.withdraw_confirm_draft_message')}
+              </p>
+            ) : (
+              <>
+                <p style={{ margin: '12px 0 8px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                  {t('approval.withdraw_reason_label')}
+                  {needsWithdrawConfirm(withdrawDoc) && <span style={{ color: 'var(--danger)' }}> *</span>}
+                </p>
+                <textarea
+                  className="form-control"
+                  rows={4}
+                  value={withdrawReasonInput}
+                  onChange={(e) => setWithdrawReasonInput(e.target.value)}
+                  placeholder={t('approval.withdraw_reason_placeholder')}
+                  style={{ width: '100%', resize: 'vertical' }}
+                />
+                <p style={{ marginTop: 6, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  {t('approval.withdraw_reason_hint')}
+                </p>
+              </>
+            )}
           </div>
         </Modal>
       )}
@@ -1537,7 +1543,7 @@ export default function ApprovalPage(): React.ReactElement {
                 </button>
               )}
               {/* 철회 요청 중에는 중복 요청을 막기 위해 철회 버튼을 감춘다 */}
-              {selected && selected.can_withdraw && !wr && (selected.status === 'under_review' || selected.status === 'rejected' || selected.status === 'draft') && (
+              {selected && selected.can_withdraw && !wr && (selected.status === 'under_review' || selected.status === 'draft') && (
                 <button className="btn btn-secondary" onClick={() => handleWithdrawClick(selected)} disabled={processing}>
                   {t('approval.withdraw')}
                 </button>
