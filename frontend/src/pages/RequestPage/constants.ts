@@ -126,6 +126,10 @@ export const VALIDATION_KEYWORD = 'plel';
 export const VS_TARGET = 'YES';
 export const VS_NONTARGET = 'NO';
 export const VS_NA = 'NA';
+/** 판정 키워드는 있는데 상신자가 아직 대상/비대상을 고르지 않은 상태.
+ *  (2026-08) 예전에는 키워드가 있으면 VS_TARGET 이 자동 선택됐지만, 판정 주체가 상신자 하나이므로
+ *  자동 선택을 없애고 이 상태로 시작한다 — validate(3) 이 O-layer 단계 이동을 막는다. */
+export const VS_UNSELECTED = '';
 /** 판정 키워드를 포함한 pp 셀 배경색 */
 export const VALIDATION_CELL_COLOR = '#fff9c4';
 
@@ -265,6 +269,7 @@ export const makeAdiCdStep = (): AdiCdStep => ({
   id: genId(),
   step_id: '',
   step_desc: '',
+  unregistered: false,
 });
 
 // ===== Initial States =====
@@ -339,7 +344,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   tbvtlv_thickness: '',
   tbvtlv_entries: [],
   notifiers: [],
-  validation_system: VS_NONTARGET,
+  validation_system: VS_UNSELECTED,
   merge_ref_doc_id: null,
   merge_ref_doc_label: '',
   merge_ref_mode: 'ref',
