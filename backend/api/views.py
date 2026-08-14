@@ -1118,7 +1118,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         max_round = self._max_round(document)
 
-        # 단일 담당자 지정 (R·P 전용 — J/O/E 는 검토중(claim) 방식)
+        # 단일 담당자 지정 (실질 R 전용 — J/O/E/P 는 검토중(claim) 방식이라
+        # agent 화이트리스트에 P 가 남아 있어도 _can_assign_step 이 항상 403 을 준다)
         step = ApprovalStep.objects.filter(
             document=document, agent=agent, action='pending', round=max_round
         ).first()
@@ -1425,8 +1426,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """진행 중 문서의 Validation System 대상/비대상을 상신자 본인이 변경한다.
 
         판정 주체는 상신자 하나다 — MASK(E) 팀은 확인 후 '합의'만 하고 값을 바꾸지 않는다.
-        수정 창은 상신 직후부터 **EV(2차 검토자) 중 1명이 합의하기 전까지** 열려 있다
-        (E 단계 완료 판정이 OR 이므로 그 시점에 게이트가 닫힌다).
+        수정 창은 상신 직후부터 **E 단계가 완료되기 전까지** 열려 있다 — 게이트는
+        `_stage_reviewers_complete(document, 'E', round)` 이므로 담당자(E) 합의 + 지정된
+        EV 전원 합의(AND)가 끝나는 시점에 닫힌다. (2026-08 이전 EV 가 OR 이던 시절에는
+        'EV 1명이 합의하면 닫힘' 이었다.)
 
         되감지 않는다 — 값 변경 사실은 E step comment 에 note 로만 남는다
         (_note_validation_system_change). 그래서 E 담당자 본인의 재확인은 강제되지 않는다.

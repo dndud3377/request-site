@@ -97,6 +97,28 @@ React + Django 기반 웹 애플리케이션. 아래 규칙을 **반드시** 모
    "안 된다 / 불가능하다 / 없다" 는 **직접 실행해 확인한 뒤에만** 쓴다.
    확인 못 한 것은 "확인하지 못했다"라고 **정확히 그대로** 적는다. 추측을 사실처럼 보고하지 않는다.
 
+   **1-4. 결재 흐름을 건드렸으면 케이스 러너를 돌린다 [필수].**
+   상신·합의·반려·중단·철회·결재선 생성 로직(`backend/api/views.py` 의 결재 액션,
+   `models.py` 의 경로 판정 메서드, 프론트 결재 화면)을 바꿨으면 **개발환경에서** 아래를 돌리고
+   결과 표를 보고에 붙인다. 경우의 수 전수 목록은 `docs/APPROVAL_CASES_VALIDATION.md` 에 있다.
+
+   러너는 **개발용 사이트의 Django REST API 를 직접 호출해 케이스별 요청서를 실제로 상신**하고
+   결재를 끝까지 진행한다(`POST /api/documents/` → `submit/` → `peer-approve/` → `approve-step/` …).
+   로그인·상신·결재에 쓰는 계정은 **`@company.com` 개발용 계정**(`manage.py create_users` 시드)뿐이며,
+   실사용자 계정으로는 문서를 만들지 않는다.
+
+   ```bash
+   # 개발환경(AUTH_MODE=dev)이 떠 있어야 한다. 실제 DB 마스터 데이터로 상신한다.
+   python3 -m scripts.approval_cases.run_cases --list              # 케이스 124건 목록
+   python3 -m scripts.approval_cases.run_cases                     # 전체 실행
+   python3 -m scripts.approval_cases.run_cases --group F --group X # 바꾼 영역만
+   python3 -m scripts.approval_cases.run_cases --report /tmp/approval_cases.md
+   ```
+   - 러너는 **생성한 의뢰서를 지우지 않는다** — 화면에서 제목·목록·결재 경로 탭까지 눈으로 확인한다.
+   - 역할 계정·마스터 데이터가 부족하면 그 케이스는 `SKIP` 되고 사유가 출력된다. **SKIP 을 통과로
+     적지 않는다** — 사유를 그대로 보고한다.
+   - 상세는 `scripts/approval_cases/README.md`.
+
 2. **검증 방법 제공** — 실행 명령어 또는 확인 경로 (`http://localhost:10011`)
 
    2-1. **실제 웹 페이지 수동 검증 시나리오를 반드시 함께 제시한다 [필수].**
@@ -292,8 +314,10 @@ request-site/
 │   └── types/
 ├── docs/                       # 기능별 참조 문서
 │   ├── LOGIN.md / REQUEST.md / APPROVAL.md
+│   ├── APPROVAL_CASES_VALIDATION.md  # 결재 경우의 수 전수 목록 + 검증 지시
 │   ├── HISTORY.md / VOC.md / PERMISSION.md
 │   └── NOTICE.md
+├── scripts/approval_cases/     # 결재 경우의 수 개발환경 러너(HTTP, 실제 DB 값)
 ├── nginx/ / mysql/
 ├── docker-compose.yml / docker-compose.dev.yml
 └── CLAUDE.md

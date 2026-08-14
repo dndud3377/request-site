@@ -5,6 +5,11 @@
 > 의도와 구현이 일치하는지 검증할 때 이 문서를 기준으로 확인한다.
 > (⚠️ 표시는 "의도 확인이 필요"하거나 "현재 미구현/취약"한 부분이다.)
 
+> **경우의 수 전수 검증**: 이 문서의 case 들을 실제로 돌려 보려면
+> `docs/APPROVAL_CASES_VALIDATION.md`(경우의 수 전수 열거 + 검증 지시)와
+> `scripts/approval_cases/`(개발환경 HTTP 러너, 실제 DB 값으로 상신)를 쓴다.
+> 실행: `python3 -m scripts.approval_cases.run_cases --base-url http://localhost:10011`
+
 - 프론트 라우트: `/approval`
 - 진입 컴포넌트: `frontend/src/pages/ApprovalPage.tsx`
 - 결재 판정 헬퍼: `frontend/src/components/ApprovalFlow.tsx`
@@ -59,7 +64,7 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 
 [Only MAP 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ R ─(합의)─▶ approved   (P/O/E 단계 없음, 후결자(RA)만 종단)
 
-[MAP 삭제/수정 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ ┌─ P[검토중,+검토자PV] ─┐
+[MAP 삭제 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ ┌─ P[검토중,+검토자PV] ─┐
                                                   ├─ R[+검토자RV]        ├─▶ 네 단계 모두 합의 시 approved
                                                   ├─ J[검토중]           │
                                                   └─ O[검토중]           ┘
@@ -73,7 +78,7 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 > P(4영업일)가 아니라 **O/E 와 동일한 6영업일**이다. 이 변경으로 **P 가 마지막 합의자가 될 수
 > 있게 되어**, 최종 승인 판정 트리거에 `P`/`PV` 를 추가하고 판정 조건에도 P 완료를 명시했다
 > (예전에는 "J 가 존재한다 = P 가 끝났다" 였기에 P 를 생략했다). 적용 범위는 **일반 경로만**이며
-> Only MAP(J 없음)·MAP 삭제/수정(원래부터 J 병렬)은 그대로다.
+> Only MAP(J 없음)·MAP 삭제(원래부터 J 병렬)은 그대로다.
 P/E는 (2026-07부터) O/J와 동일하게 **검토중(claim) 방식**이며, 선점한 담당자가 다중 검토자(PV/EV)를 추가 지정할 수 있다 —
 완료 판정은 **E/EV·P/PV 모두 담당자 + 지정된 검토자 전원 합의(AND)** 로 동일하다(2026-08 이전엔 EV만
 1명 합의로 끝나는 OR 이었고 남은 EV 는 `skip` 으로 닫혔으나, 지정한 검토자 전원의 확인이 필요하다는
@@ -88,7 +93,7 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 > 판정값 `request_purpose`는 `additional_notes` JSON의 `detail` 하위에 저장된다
 > (상수 `RequestDocument.ONLY_MAP_PURPOSE = 'Only MAP'`).
 
-> **예외 — 요청 목적 'MAP 삭제/수정' (2026-08)**: `RequestDocument.is_map_delete_edit()`이
+> **예외 — 요청 목적 'MAP 삭제' (2026-08)**: `RequestDocument.is_map_delete_edit()`이
 > 참이면 PL 전원 합의 직후 **P·R·J·O 를 한 번에 병렬 생성**한다(`ROUTE_AGENTS_MAP_DELETE_EDIT`
 > = `P·PV·R·RV·J·O`). E(MASK)와 후결자(RA)는 만들지 않는다 — **모든 문서가 받던 고정 후결자
 > 조차 이 경로에는 붙지 않는 유일한 예외**다. 상세는 아래 **Case O** 참조.
@@ -99,7 +104,7 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 > 함께 골랐으면(예: `Overlay 변경 + STEPSEQ 변경`) 그 목적의 검토가 남아 있으므로 J 를 유지한다
 > (상수 `RequestDocument.OTHER_PURPOSE_OVERLAY`, 프론트 `RequestPage/constants.ts` 의
 > `OTHER_PURPOSE_OVERLAY` 와 같은 값). 구버전 문서의 문자열 저장도 배열로 정규화해 처리한다.
-> - **적용 범위는 일반 경로만**이다. `MAP 삭제/수정`은 P·R·J·O 가 한 묶음의 병렬이라 제외하고
+> - **적용 범위는 일반 경로만**이다. `MAP 삭제`은 P·R·J·O 가 한 묶음의 병렬이라 제외하고
 >   (`skip_j_stage()`가 `is_map_delete_edit()`이면 곧바로 거짓), `Only MAP`은 원래 J 가 없다.
 > - **최종 승인 판정**: `j_approved` 는 원래 `len(j_steps) > 0` 을 요구해, J 를 만들지 않으면
 >   나머지 단계가 모두 합의돼도 판정이 영원히 거짓이 되어 문서가 `under_review` 에 영구 정지한다.
@@ -118,6 +123,12 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 
 ### Case A — 상신 (`submit`)
 - 조건: `status == 'draft'`, **지정 PL 필수**(role='PL'인 사용자, **본인 지정 불가**), `_validate_bb_mapping` 통과.
+- ✅ **인가(`_can_edit` = `doc_permissions.can_edit`)**: 작성자 본인 / 문서 공유 그룹 멤버 / MASTER 만
+  상신할 수 있다(그 외 403). draft 를 **볼 수 있는 사람**과 **상신할 수 있는 사람**을 분리하기 위해
+  조회 스코프와 별개로 검사한다. `resubmit` 도 같은 규칙이다(반려 문서는 의뢰자·지정 PL·공유 그룹 멤버·MASTER).
+- **검증 순서**(하나라도 걸리면 400, 이 시점까지 DB 변경 없음): 지정 PL 파싱·검증 →
+  `_validate_bb_mapping` → `_validate_post_approvers` → `_resolve_sales_agreers` →
+  `_validate_sales_agreers`. 통과 후 한 트랜잭션에서 상태 전이 + step 생성이 이뤄진다.
 - ✅ **다중 지정 PL(2026-07)**: payload `designated_pl_loginids: [...]`(배열, 단일 `designated_pl_loginid` 도 호환). 지정 PL **전원**에 대해 `agent='PL', round=1` pending step을 각각 생성한다(`_resolve_designated_pls`로 파싱·검증). `document.designated_pl` FK 에는 **대표(첫 번째)** 만 기록(표시/하위호환용).
 - 동작: `status → under_review`, `submitted_at` 기록, 기존 step 전체 삭제 후 PL step N개 생성. 통보처(있으면) 상신 메일 발송.
 - ✅ **영업/기술지원 합의자(SA, 2026-08)**: `detail.sales_agreers` 에 지정된 PL 권한자마다 `agent='SA', is_parallel=True` step 을 **PL 과 같은 회차에 함께** 생성한다(`_create_sales_agreer_steps`). 지정이 없으면 step 자체를 만들지 않는다(화면·메일 모두 '해당없음'). 자세한 규칙은 **Case P** 참조.
@@ -199,7 +210,11 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   강제하면 영구 정지된다. ⓑ 되감기가 있던 배포에서 E 가 `pending` 으로 되감긴 뒤 EV step 이 살아남은
   레거시 문서는 `reviewer_loginids` 없이도 통과한다(살아있는 EV step 존재를 지정으로 간주).
   되감기를 없앤 뒤로는 같은 회차에서 E 가 다시 합의되는 경로가 없어 이 예외는 그 레거시 문서에만 걸린다.
-- J 합의/반려 시 **본인 담당 step만 처리**: `assignee__loginid=caller_loginid` 필터로 해당 J step을 조회한다 (MASTER는 첫 번째 pending step).
+- ⚠️ **(정정) J 합의/반려는 assignee 필터를 쓰지 않는다** — `approve_step`/`reject_step` 은
+  `RA`/`PV`/`EV` 만 호출자 assignee 로 좁혀 조회하고, **`J`·`O`·`E`·`P` 는 회차당 단일 단계라
+  필터 없이 조회한 뒤 `_can_act_on_step` 으로 인가**한다(그래서 선점자와 같은 팀이면 다른 사람도
+  합의할 수 있다 — Case N 후속 "검토중 팀 공동 합의"). 예전 서술("본인 담당 step만 처리,
+  `assignee__loginid` 필터")은 팀 공동 합의 도입 이전의 동작이다.
   최종 판정은 `all(s.action == 'approved' for s in j_steps)`로, 검토중 방식에서는 J step이 1개이므로 그 1명의 합의로 완료된다.
   (과거 다중 배정된 J 문서는 하위호환으로 전원 합의 로직이 그대로 적용된다.)
 - ✅ 동시성: 두 결재자가 거의 동시에 마지막 합의를 눌러도 문서 행 락(`select_for_update`)으로
@@ -212,6 +227,12 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 
 ### Case H — 단계 반려 (`reject_step`, `views.py:312`)
 - 동작: 어느 단계든 해당 step `rejected`, `status → rejected`(즉시).
+- ⚠️ **예외 — E/EV(MASK)의 반려는 '수정 요청'이다**(2026-08, §7 참조). `agent in ('E','EV')` 이면
+  step `action` 도 `document.status`/`round` 도 **바꾸지 않고**, 사유를 step `comment` 에
+  `[수정 요청 YYYY-MM-DD HH:MM] …` 로 덧붙인 뒤 상신자에게 `revision_requested` 메일만 보내고
+  응답 `status` 는 **현재 상태 그대로** 돌려준다. 즉 이 표현의 "어느 단계든"은 **E/EV 를 제외한**
+  단계에만 해당한다(테스트: `test_e_reject_becomes_revision_request`,
+  `test_non_mask_reject_still_rejects_document`).
 - ✅ **(2026-08) 반려 후 잔여 pending 단계 처리 차단**: 반려는 문서 `status`만 바꾸고 **잔여
   `pending` step 은 이력으로 그대로 남긴다**(설계상 의도). 예전엔 결재 액션들이 문서 상태를
   확인하지 않아 그 잔여 단계를 계속 처리할 수 있었다. 이제 `_blocked_progress_response`
@@ -280,8 +301,9 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - 동작: 현재 회차의 해당 J/O/E/P pending step에 **요청자 본인을 assignee로 고정**(취소·재클릭 불가).
 - ✅ 권한(`_can_claim_step`): MASTER / 같은 팀(역할↔agent 일치) + pending + 미배정일 때만. `agent`는 `J·O·E·P`만 허용.
 - ✅ 동시성: 문서 행 락(`select_for_update`)으로 중복 선점을 막고, 이미 배정된 경우 `409`를 반환한다.
-  프론트 UI: "추가" 버튼으로 여러 명을 목록에 쌓은 뒤 "확인" 클릭 시 `assignStepMultiJ` API 호출.
-  권한: `TE_J` 또는 `MASTER`.
+  ⚠️ **(정정) 여기 있던 "'추가' 버튼으로 여러 명을 쌓아 `assignStepMultiJ` 호출" 서술은 삭제한다** —
+  J 다중 배정 UI 와 `assignStepMultiJ` API 는 **지금 코드에 없다**(프론트 전체 검색 0건).
+  검토중(claim) 방식 전환 전의 잔재이며, 현재 J 는 팀원 1명이 선점하고 같은 팀 누구나 합의한다.
 
 ### Case K-3 — P/E 검토자 지정 (`approve_step`의 `reviewer_loginids`, 2026-07) — **P·E 전용, 다중 검토자**
 - ⚠️ **별도 지정 API 없음**: R 담당자 지정(`assign_step`이 담당자+검토자를 한 번에 받는 것)과 동일한 UX를
@@ -370,10 +392,10 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 - **검토중(J/O/E) 팀 공동 합의**: 검토중으로 **선점(assignee 존재)** 되면 **같은 팀(역할↔agent) 누구나 합의/반려** 가능(`_can_act_on_step`/`canUserAgree`). 선점 전에는 먼저 검토중 필요. 검토중 버튼은 선점 즉시 숨김(`canUserClaim`=assignee 있으면 false). `approve_step`/`reject_step`에서 J를 assignee 필터 밖으로(회차당 단일), **RA(후결자)만** assignee 필터 유지. ⚠️ 표시되는 담당자명은 **선점자**(검토를 시작한 사람)이며, 다른 팀원이 합의해도 이름은 선점자로 남는다(감사기록은 `acted_at`/comment).
 - **결재경로 검토자 통합**: 상세 '결재 경로' 탭에서 검토자(RV) **별도 행 제거** → **R단계 행에 회차별 `합의자(R) + 검토자(RV, 지정 시)`** 함께 표시(`StepDisplayInfo.roleLabel`, i18n `approval.role_agreer`).
 
-### Case O — 요청 목적 'MAP 삭제/수정': P·R·J·O 병렬 경로 (2026-08)
+### Case O — 요청 목적 'MAP 삭제': P·R·J·O 병렬 경로 (2026-08)
 
 MAP 정보만 수정/삭제하는 의뢰서 전용 경로. 판정: `RequestDocument.is_map_delete_edit()`
-(`request_purpose == RequestDocument.MAP_DELETE_EDIT_PURPOSE`, 값 `'MAP 삭제/수정'`).
+(`request_purpose == RequestDocument.MAP_DELETE_EDIT_PURPOSE`, 값 `'MAP 삭제'` — 2026-08 에 '수정'이 빠지면서 저장값이 예전 `'MAP 삭제/수정'` 에서 바뀌었다. 프론트 `RequestPage/constants.ts` 의 `MAP_DELETE_EDIT_PURPOSE` 와 같은 값이어야 한다).
 작성 화면은 `docs/REQUEST.md`, 화면·경로 설계 원본은 `docs/map_delete_edit_mockup.html` 참조.
 
 - **상신까지는 동일**: `submit`(지정 PL) → `peer_approve`(PL 전원 합의)까지 다른 경로와 완전히 같다.
@@ -393,7 +415,7 @@ MAP 정보만 수정/삭제하는 의뢰서 전용 경로. 판정: `RequestDocum
   (P 는 J 생성만, R 은 병렬 전환만 함), **이 경로 전용으로 판정 분기를 따로 추가**했다 — 없으면
   네 단계가 다 끝나도 문서가 `under_review` 에 멈춘다.
 - **연구소 제품과는 무관**: `연구소 제품`은 `Only MAP` 전용 기타 목적이라(Case N) 이 경로와는
-  동시에 선택될 수 없다 — `MAP 삭제/수정` 문서는 기타 목적 전체가 잠긴다(`docs/REQUEST.md`).
+  동시에 선택될 수 없다 — `MAP 삭제` 문서는 기타 목적 전체가 잠긴다(`docs/REQUEST.md`).
 
 #### 화면 표시 버그 2건 + 수정 (2026-08)
 
@@ -549,15 +571,15 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
   - plel 없는 문서 → MASK 가 `해당없음`
   - 추가 후결자 미지정 → 추가후결자가 `해당없음`
   - Only MAP → PHPSI·JOB·OVL·MASK 가 모두 `해당없음`(후결자만 진행)
-  - MAP 삭제/수정 → MASK·추가후결자가 `해당없음`
+  - MAP 삭제 → MASK·추가후결자가 `해당없음`
 - **고정/추가 후결자 분리**는 목록 응답의 `post_approver_fixed_loginid` 로 한다
   (RA step 의 `assignee_loginid` 와 비교). 설정이 비어 있으면 전부 추가 후결자로 본다.
 - ✅ **(2026-08) 고정 후결자 칸의 라벨은 `후결자` 가 아니라 `RFG`** 다 — 고정 후결자는 `.env`
   `POST_APPROVER_LOGINID` 로 지정하는 **RFG 팀 1명**이기 때문이다(Case N). 일반 경로 그리드에는
   RFG 담당자 칸이 따로 없어 이름이 겹치지 않는다. 추가 후결자 칸은 `추가후결자` 그대로다.
   ⚠️ 그 결과 **2열 1행의 `RFG` 라벨이 문서 유형에 따라 다른 사람을 가리킨다** — 일반·Only MAP 경로는
-  고정 후결자, MAP 삭제/수정 경로는 R 담당자다. 두 경로가 동시에 나타날 수 없어 혼동은 없다.
-- **MAP 삭제/수정 예외**: 이 경로는 후결자를 아예 만들지 않고 대신 R 이 P·J·O 와 동시에 도는
+  고정 후결자, MAP 삭제 경로는 R 담당자다. 두 경로가 동시에 나타날 수 없어 혼동은 없다.
+- **MAP 삭제 예외**: 이 경로는 후결자를 아예 만들지 않고 대신 R 이 P·J·O 와 동시에 도는
   병렬 구성원이라, 비는 **2열 1행(고정 후결자 자리)에 `RFG` 를 넣는다**.
   ⚠️ 이 칸만 검토자(RV)를 지정해도 **담당자 이름을 그대로 유지**한다(아래 이름 규칙의 유일한 예외).
 
@@ -605,7 +627,7 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 
 **최종 완료예정**(`getFinalCompletionDate`): 병렬 진입 후 max(path0End, path1End, path2End, path3End).
 그 전에는 `-`, 반려 문서도 `-`, 중단 문서는 `중단`(회색).
-- path0End = max(R.due, RV.due) — MAP 삭제/수정 에서 R 이 병렬 구성원인 경우를 위한 후보.
+- path0End = max(R.due, RV.due) — MAP 삭제 에서 R 이 병렬 구성원인 경우를 위한 후보.
 - path1End = **P.due**.
 - path2End = **max(J.due, O.due, E.due)**.
 - path3End = max(RA.due).
@@ -649,8 +671,8 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 
 | 액션 | URL | 핵심 payload |
 |------|-----|------|
-| 상신 | `submit/` | `designated_pl_loginid` |
-| 재상신 | `resubmit/` | `designated_pl_loginid` |
+| 상신 | `submit/` | **`designated_pl_loginids`(배열, 2026-07)** — 단일 `designated_pl_loginid` 도 호환(`_resolve_designated_pls`) |
+| 재상신 | `resubmit/` | 상신과 동일(배열 우선 + 단일 호환) |
 | 철회 | `withdraw/` | `reason`(진행 중 문서는 필수) |
 | 철회 확인 | `confirm-withdraw/` | `agent` |
 | 철회 거부 | `reject-withdraw/` | - |
@@ -667,6 +689,8 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 | 지정자 변경 | `change-designee/` | (의뢰자/MASTER) |
 | 후결자 추가 (2026-07) | `add-post-approver/` | `loginid` |
 | 후결자 제거 (2026-07) | `remove-post-approver/` | `loginid` |
+| Validation System 변경 (2026-08) | `validation-system/` | `value`(`'YES'`/`'NO'`) — 상신자 본인 또는 MASTER, `under_review`/`pause` 에서만, E 단계 완료 전까지 |
+| 이력 바로 등록 (MASTER 전용) | `direct-approve/` | `submitted_at`, `approved_at` — 결재선을 만들지 않고 `draft → approved` |
 | 검토 항목 추가 (2026-08) | `review-item-add/` | `title` |
 | 검토 항목 제목 수정 (2026-08) | `review-item-rename/` | `item_id`, `title` |
 | 검토 항목 삭제 (2026-08) | `review-item-delete/` | `item_id` |
@@ -774,7 +798,7 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
      버튼이 그대로 노출**됐고(위 백엔드 부활 버그를 실제로 클릭할 수 있는 경로였다),
      `canUserAgree`/`canUserClaim`/`canUserAssign` 은 step 만 보고 문서 상태·회차를 보지 않는다.
    - **프론트 목록 필터**: `hasActivePendingStep` 헬퍼로 통일(§3.2).
-9. ✅ **(2026-08 해결) 'MAP 삭제/수정' 경로 도입으로 새로 드러난 화면·백엔드 결함 3건** — 상세는 Case O 참조.
+9. ✅ **(2026-08 해결) 'MAP 삭제' 경로 도입으로 새로 드러난 화면·백엔드 결함 3건** — 상세는 Case O 참조.
    - 결재현황 목록(`approvalTable.ts`)이 병렬 구성원이 된 R 을 어디에도 표시하지 않던 문제 → `path0` 행 추가.
    - 결재 상세 RA 행이 이 경로에서 '대기'로 영구 표시되던 문제 → `isMapDeleteEdit` na 분기 추가.
    - `remove-post-approver` 최소인원 가드가 `only_prodc` 만 봐서 연구소 제품 문서는 마지막 후결자
@@ -787,7 +811,7 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 
 ## 7. 상세 보기(PagedDetailView) 변경 이력
 
-- **(2026-08) 'MAP 삭제/수정' 이유 카드 + RA 행 '해당없음' 처리**: '결재 경로' 탭 위쪽에
+- **(2026-08) 'MAP 삭제' 이유 카드 + RA 행 '해당없음' 처리**: '결재 경로' 탭 위쪽에
   MAP 정보 섹션(`section_map`)의 STEP1 페이지에 수정/삭제 이유 카드를 추가했다(본문은
   `RichTextEditor` 가 만든 HTML — 공지·가이드·VOC 와 동일하게 `dangerouslySetInnerHTML` 로
   렌더, 변경 시 빨간 테두리). '결재 경로' 탭의 후결자(RA) 행은 이 경로에서 항상 없으므로
@@ -944,7 +968,7 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 1. **채우기 시점** — 문서에 **J 단계가 생성되는 순간** 마스터의 활성 항목을 복사한다(제목만,
    검토자는 빈 상태). 연결 지점은 J 단계를 만드는 두 곳뿐이다 —
    `_advance_to_parallel`(일반 경로: R 합의 시점, J 가 병렬 단계로 생성될 때) /
-   `_create_map_delete_edit_parallel`('MAP 삭제/수정': PL 합의 직후).
+   `_create_map_delete_edit_parallel`('MAP 삭제': PL 합의 직후).
    → **J 단계를 거치지 않는 경로(Only MAP 등)에는 항목이 생기지 않는다.**
 2. **전파** — 어느 문서에서든 항목을 추가·제목수정·삭제하면 마스터에 반영하고, 같은 변경을
    **전파 대상 문서**에도 적용한다. 전파 대상 = `status ∈ (under_review, pause)` **AND**
