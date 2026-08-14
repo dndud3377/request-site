@@ -2646,7 +2646,8 @@ class DocumentDeleteAuthTest(TestCase):
 class WithdrawFlowTest(TestCase):
     """철회 = '요청 → 현재 단계 전원 확인 → 완전 삭제' (2026-08 개편).
 
-    - draft/rejected 는 확인 없이 즉시 삭제, approved 는 MASTER 만
+    - draft 는 확인 없이 즉시 삭제(사유 선택), approved 는 MASTER 만
+    - rejected 는 철회 불가(400) — 수정 후 재상신해야 한다
     - under_review/submitted 는 사유 필수 + 철회 요청 생성 → 전원 확인 시 삭제
     - 확인 대기 중에는 결재 동결, 요청자만 취소 가능, 대상 단계는 거부 가능
     """
@@ -2735,13 +2736,13 @@ class WithdrawFlowTest(TestCase):
         self.assertTrue(res.data['deleted'])
         self.assertFalse(self._exists(doc))
 
-    def test_rejected_is_deleted_immediately(self):
+    def test_rejected_cannot_be_withdrawn(self):
+        """반려 문서는 철회할 수 없다(2026-08) — 수정 후 재상신해야 한다."""
         doc = self._doc('rejected')
         self._step(doc, 'R', action='rejected', assignee=self.rfg)
         res = self._post(self.author, doc, 'withdraw', {'reason': '재작성'})
-        self.assertEqual(res.status_code, 200, res.content)
-        self.assertFalse(self._exists(doc))
-        self.assertIn('withdraw_completed', self._events())
+        self.assertEqual(res.status_code, 400)
+        self.assertTrue(self._exists(doc))
 
     def test_approved_is_master_only(self):
         doc = self._doc('approved')

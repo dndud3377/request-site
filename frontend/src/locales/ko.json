@@ -519,7 +519,7 @@
     "withdraw_reason_label": "철회 사유",
     "withdraw_reason_placeholder": "철회가 필요한 이유를 입력하세요. (현재 단계 담당자에게 함께 표시됩니다)",
     "withdraw_reason_hint": "현재 진행 중인 단계가 모두 확인해야 철회가 확정됩니다. 확인 전까지는 요청을 취소할 수 있습니다.",
-    "withdraw_immediate_hint": "결재가 진행되지 않은 의뢰서라 확인 절차 없이 바로 삭제됩니다.",
+    "withdraw_confirm_draft_message": "정말 철회하시겠습니까?",
     "withdraw_submit": "철회 요청",
     "withdraw_submit_immediate": "철회하고 삭제",
     "withdraw_success": "의뢰서가 철회되어 삭제되었습니다.",
@@ -639,7 +639,7 @@
       "note_sa": "영업/기술지원 합의자는 상신 시 지정했을 때만 생기며, PL 검토와 병렬로 진행됩니다. 예외 구역 값을 기본값(일반 300 / C가문 500)과 다르게 지정한 의뢰서는 지정이 필수입니다.",
       "note_e": "EUV(E) 단계는 plel(노란 셀) 항목이 있는 경우에만 진행되며, $t(request.validation_system) 대상/비대상 판정이 맞는지 확인합니다.",
       "note_onlymap": "'Only MAP' 의뢰는 RFG(R)까지만 진행하고 이후 단계는 생략됩니다.",
-      "note_reject": "어느 단계에서든 반려되면 의뢰서 전체가 '반려' 상태가 되어 이후 단계는 진행되지 않으며, 요청자가 동료 PL을 지정해 처음(PL 검토)부터 새 회차로 재상신하거나 임시저장으로 철회할 수 있습니다."
+      "note_reject": "어느 단계에서든 반려되면 의뢰서 전체가 '반려' 상태가 되어 이후 단계는 진행되지 않으며, 요청자가 동료 PL을 지정해 처음(PL 검토)부터 새 회차로 재상신할 수 있습니다."
     }
   },
   "history": {
