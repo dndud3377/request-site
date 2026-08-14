@@ -57,8 +57,11 @@ import {
   isMapDeleteEditType,
   EA_NO_CHANGE,
   EA_HAS_CHANGE,
-  EA_DEFAULT_NORMAL,
   eaDefaultValue,
+  MAP_NO_CHANGE,
+  MAP_TYPE_CLONE,
+  isMapRegisteredType,
+  regionMapChangeDefault,
   PRODC_SCOPE_OPTIONS,
   inferProdcScope,
   JAYER_EDITABLE_COLS,
@@ -78,6 +81,7 @@ import {
   VS_TARGET,
   VS_NONTARGET,
   VS_NA,
+  VS_UNSELECTED,
   isMergePurposeSelected,
   MERGE_UNREGISTERED_ID,
   OTHER_PURPOSE_ADI_CD,
@@ -202,13 +206,14 @@ export default function RequestPage(): React.ReactElement {
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
   const [detail, setDetail] = useState<DetailFormState>(isTourMode ? makeTourDetail() : INITIAL_DETAIL);
   const [jayerRows, setJayerRows] = useState<JayerRow[]>(isTourMode ? makeTourJayerRows() : []);
-  // Validation System: 상신자가 토글을 직접 건드렸는지. true 면 J-layer 변경에도 자동 갱신하지 않는다.
+  // Validation System: 상신자가 토글을 직접 건드렸는지. true 면 J-layer 가 바뀌어도 값을 건드리지 않는다.
   // 세션 로컬 상태라 detail 에 넣지 않고 저장도 하지 않는다.
   const [vsManuallySet, setVsManuallySet] = useState(false);
-  // J-layer 가 바뀌면 Validation System 판정을 자동 갱신한다.
-  // 상신자가 토글을 직접 바꾼 뒤에는(vsManuallySet) 자동 갱신하지 않는다. 단 판정 키워드가
-  // 전부 사라지면 판정 자체가 성립하지 않으므로 수동 설정 이력과 무관하게 '해당없음'으로
-  // 되돌린다 — 그러지 않으면 '비대상'만 남고 E 단계는 생기지 않는 불일치가 남는다.
+  // J-layer 가 바뀌면 Validation System 판정 가능 여부를 다시 본다.
+  // - 판정 키워드가 전부 사라지면 판정 자체가 성립하지 않으므로 수동 설정 이력과 무관하게
+  //   '해당없음'으로 되돌린다 — 그러지 않으면 '비대상'만 남고 E 단계는 생기지 않는 불일치가 남는다.
+  // - 키워드가 있으면 (2026-08) **자동 선택하지 않고 미선택으로 둔다.** 대상/비대상 판정은
+  //   상신자가 직접 내려야 하며, 고르기 전에는 validate(3) 이 O-layer 단계로 넘어가지 못하게 막는다.
   useEffect(() => {
     const auto = autoValidationSystem(jayerRows);
     if (auto === VS_NA) {
@@ -217,7 +222,9 @@ export default function RequestPage(): React.ReactElement {
       return;
     }
     if (vsManuallySet) return;
-    setDetail((prev) => (prev.validation_system === auto ? prev : { ...prev, validation_system: auto }));
+    // 직접 고른 적이 없으면 미선택으로 되돌린다. 'NA' 로 잠겨 있던 문서가 키워드를 갖게 된
+    // 경우도 여기서 미선택이 되어 상신자에게 선택을 요구한다.
+    setDetail((prev) => (prev.validation_system === VS_UNSELECTED ? prev : { ...prev, validation_system: VS_UNSELECTED }));
   }, [jayerRows, vsManuallySet]);
   const [jayerBarcodeCache, setJayerBarcodeCache] = useState<Record<string, { label: string; spec: string }[]>>({});
   // 바코드 후보 조회 경합/부하 방지: 행별 요청 시퀀스 토큰(최신 요청만 반영) + 타이핑 디바운스 타이머
@@ -541,9 +548,9 @@ export default function RequestPage(): React.ReactElement {
         prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
         prodc_middle_use: '', prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
         prodc_bottom_line: '', prodc_bottom_process: '', prodc_bottom_product: '',
-        map_change_top: INITIAL_DETAIL.map_change_top,
+        map_change_top: regionMapChangeDefault(prev.map_type),
         map_value_x_top: '', map_value_y_top: '',
-        map_change_bottom: INITIAL_DETAIL.map_change_bottom,
+        map_change_bottom: regionMapChangeDefault(prev.map_type),
         map_value_x_bottom: '', map_value_y_bottom: '',
         rev_yn: '', rev_entries: [],
       }));
@@ -872,11 +879,15 @@ export default function RequestPage(): React.ReactElement {
           const normalizedOtherPurpose = Array.isArray(parsed.detail.other_purpose)
             ? parsed.detail.other_purpose
             : (parsed.detail.other_purpose ? [parsed.detail.other_purpose] : []);
-          // 레거시 문서(validation_system 필드 도입 전)는 저장된 J-layer로 판정해 백필한다.
+          // 저장된 값이 실제 선택값(대상/비대상/해당없음)이면 그대로 살린다.
+          // 레거시 문서(validation_system 필드 도입 전)는 판정 키워드가 없을 때만 '해당없음'으로
+          // 백필하고, 키워드가 있으면 (2026-08) **미선택으로 두어 상신자가 직접 고르게 한다** —
+          // 예전처럼 '대상'을 자동 백필하면 사용자가 판단하지 않은 값이 그대로 남는다.
           const savedVs = parsed.detail.validation_system as (ValidationSystemValue | undefined);
+          const legacyAuto = autoValidationSystem(Array.isArray(parsed.jayerRows) ? parsed.jayerRows : []);
           const backfilledVs = savedVs === VS_TARGET || savedVs === VS_NONTARGET || savedVs === VS_NA
             ? savedVs
-            : autoValidationSystem(Array.isArray(parsed.jayerRows) ? parsed.jayerRows : []);
+            : (legacyAuto === VS_NA ? VS_NA : VS_UNSELECTED);
           setDetail({ ...parsed.detail, other_purpose: normalizedOtherPurpose, bb_entries: loadedBbEntries, notifiers: parsed.detail.notifiers ?? [], validation_system: backfilledVs,
             // Merge 잠금 필드 도입 전 문서는 값이 없다 → 미Merge 로 백필한다.
             merge_ref_doc_id: parsed.detail.merge_ref_doc_id ?? null,
@@ -1196,12 +1207,13 @@ export default function RequestPage(): React.ReactElement {
             only_prodc: 'No',
             rev_yn: '',
             rev_entries: [],
-            map_change: '변경 없음',
+            map_change: MAP_NO_CHANGE,
             map_value_x: '',
             map_value_y: '',
             map_reason: '',
             ea_change: EA_NO_CHANGE,
-            ea_value: EA_DEFAULT_NORMAL,  // 바로 위에서 only_prodc 를 'No' 로 되돌리므로 300 이다
+            // 바로 위에서 map_type='NEW'·only_prodc='No' 로 되돌리므로 300 이다
+            ea_value: eaDefaultValue('No', 'NEW'),
             mshot_change: '없음',
           }));
           break;
@@ -1428,7 +1440,7 @@ export default function RequestPage(): React.ReactElement {
     }
   };
   // Derived booleans for Step 1 conditional rendering
-  const isMapRegistered = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
+  const isMapRegistered = isMapRegisteredType(detail.map_type);
   const isOnlyMap = detail.request_purpose === ONLY_MAP_PURPOSE;
   // 'MAP 삭제': Only MAP 과 동일하게 MAP 정보만 작성한다(J/O/Backbone 비움 + Step1 부가항목 잠금).
   const isMapDeleteEdit = detail.request_purpose === MAP_DELETE_EDIT_PURPOSE;
@@ -1456,6 +1468,9 @@ export default function RequestPage(): React.ReactElement {
   // 상신 시 영업/기술지원 합의자 지정이 필수인가 — 예외 구역을 '변경 있음'으로 두고
   // 값까지 기본값(일반 300 / C가문 500)과 다르게 바꿨을 때.
   // 백엔드 RequestDocument.requires_sales_agreer 와 같은 기준이어야 한다.
+  // ⚠️ eaDefaultValue 에 map_type 을 일부러 넘기지 않는다 — 백엔드는 map_type 과 무관하게 300/500
+  //    으로만 비교하므로, 여기서 CLONE/EXISTING 의 빈 기본값('')을 쓰면 기준이 어긋난다.
+  //    CLONE/EXISTING 은 ea_change 가 항상 '변경 없음'이라 첫 조건에서 이미 걸러진다.
   const requiresSalesAgreer =
     detail.ea_change === EA_HAS_CHANGE
     && !!detail.ea_value?.trim()
@@ -1632,7 +1647,15 @@ export default function RequestPage(): React.ReactElement {
       return;
     }
     // 첫 선택은 초기화할 것이 없으므로 바로 적용.
-    setDetail((prev) => ({ ...prev, map_type: val }));
+    // 잠기는 칸(리전별 지도편차·예외구역)의 기본값은 map_type 이 정한다 — CLONE/EXISTING 이면
+    // '변경 없음'/빈 값이 되고, 그 외에는 종전 기본값 그대로다.
+    setDetail((prev) => ({
+      ...prev,
+      map_type: val,
+      map_change_top: regionMapChangeDefault(val),
+      map_change_bottom: regionMapChangeDefault(val),
+      ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(prev.only_prodc, val) } : {}),
+    }));
     if (errors['map_type']) setErrors((prev) => ({ ...prev, map_type: '' }));
   };
 
@@ -1641,6 +1664,8 @@ export default function RequestPage(): React.ReactElement {
     const newType = mapTypeChangeConfirm.targetType;
     // StepMap(원본·C가문·지도편차·예외구역·X표시·Map Option·REV) 필드만 초기화한다.
     // Step1/3/4/5 데이터(라인·뼈찜·partial_shot·tbvtlv 등)는 보존한다.
+    // 잠기는 칸의 기본값은 새 map_type 이 정한다(regionMapChangeDefault/eaDefaultValue).
+    // only_prodc 도 함께 초기화되므로 예외 구역 기본값은 그 초기값 기준으로 계산한다.
     setDetail((prev) => ({
       ...prev,
       map_type: newType,
@@ -1650,14 +1675,14 @@ export default function RequestPage(): React.ReactElement {
       map_value_x: INITIAL_DETAIL.map_value_x,
       map_value_y: INITIAL_DETAIL.map_value_y,
       map_reason: INITIAL_DETAIL.map_reason,
-      map_change_top: INITIAL_DETAIL.map_change_top,
+      map_change_top: regionMapChangeDefault(newType),
       map_value_x_top: INITIAL_DETAIL.map_value_x_top,
       map_value_y_top: INITIAL_DETAIL.map_value_y_top,
-      map_change_bottom: INITIAL_DETAIL.map_change_bottom,
+      map_change_bottom: regionMapChangeDefault(newType),
       map_value_x_bottom: INITIAL_DETAIL.map_value_x_bottom,
       map_value_y_bottom: INITIAL_DETAIL.map_value_y_bottom,
       ea_change: INITIAL_DETAIL.ea_change,
-      ea_value: INITIAL_DETAIL.ea_value,
+      ea_value: eaDefaultValue(INITIAL_DETAIL.only_prodc, newType),
       only_prodc: INITIAL_DETAIL.only_prodc,
       prodc_scope: INITIAL_DETAIL.prodc_scope,
       prodc_top_line: INITIAL_DETAIL.prodc_top_line,
@@ -1860,15 +1885,16 @@ export default function RequestPage(): React.ReactElement {
       // 편집 로드·프리필 경로에는 걸지 않는다 — 저장된 mshot_change 가 덮어써지기 때문.
       // 예외 구역이 '변경 없음'이면 기본값도 C가문 기준(500)으로 함께 갱신한다.
       // '변경 있음'이면 사용자가 직접 넣은 값이므로 건드리지 않는다.
-      setDetail((prev) => {
-        const isRegistered = prev.map_type === 'EXISTING' || prev.map_type === 'CLONE';
-        return {
-          ...prev,
-          only_prodc: value,
-          ...(isRegistered ? {} : { mshot_change: '수정' }),
-          ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(value) } : {}),
-        };
-      });
+      // 잠기는 칸(리전별 지도편차·예외구역)의 값은 map_type 이 정하므로 CLONE/EXISTING 이면
+      // C가문 기본값(500) 대신 '변경 없음'/빈 값이 들어간다.
+      setDetail((prev) => ({
+        ...prev,
+        only_prodc: value,
+        ...(isMapRegisteredType(prev.map_type) ? {} : { mshot_change: '수정' }),
+        map_change_top: regionMapChangeDefault(prev.map_type),
+        map_change_bottom: regionMapChangeDefault(prev.map_type),
+        ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(value, prev.map_type) } : {}),
+      }));
       if (errors['only_prodc']) setErrors((prev) => ({ ...prev, only_prodc: '' }));
       return;
     }
@@ -1879,16 +1905,16 @@ export default function RequestPage(): React.ReactElement {
       prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
       prodc_middle_use: '', prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
       prodc_bottom_line: '', prodc_bottom_process: '', prodc_bottom_product: '',
-      map_change_top: INITIAL_DETAIL.map_change_top,
+      map_change_top: regionMapChangeDefault(prev.map_type),
       map_value_x_top: '', map_value_y_top: '',
-      map_change_bottom: INITIAL_DETAIL.map_change_bottom,
+      map_change_bottom: regionMapChangeDefault(prev.map_type),
       map_value_x_bottom: '', map_value_y_bottom: '',
       // Yes 전환 시 자동으로 넣었던 '수정'과 그때 붙여넣은 이미지를 함께 되돌린다
       // (C가문을 되돌린 뒤 원하지 않은 X표시 정보가 저장되는 것을 막기 위함).
       mshot_change: INITIAL_DETAIL.mshot_change,
       mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '',
       // 예외 구역이 '변경 없음'이면 기본값도 일반 기준(300)으로 되돌린다(Yes 전환의 반대 동작).
-      ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: EA_DEFAULT_NORMAL } : {}),
+      ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue('No', prev.map_type) } : {}),
     }));
     setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
     setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
@@ -1913,10 +1939,11 @@ export default function RequestPage(): React.ReactElement {
 
   // 예외 구역(ea_change) — '변경 없음' 전환 시 C가문 여부에 맞는 기본값(300/500)을 되돌려 넣는다.
   // (2026-08) 예전에는 값을 비웠다. 이제 '변경 없음'도 기본값을 그대로 저장·표시한다.
+  // CLONE/EXISTING 은 입력칸이 잠기므로 eaDefaultValue 가 빈 값을 돌려준다.
   const handleEaChangeChange = (value: string) => {
     isLoadingEditRef.current = false;
     setDetail((prev) => value === EA_NO_CHANGE
-      ? { ...prev, ea_change: value, ea_value: eaDefaultValue(prev.only_prodc) }
+      ? { ...prev, ea_change: value, ea_value: eaDefaultValue(prev.only_prodc, prev.map_type) }
       : { ...prev, ea_change: value });
     if (value === EA_NO_CHANGE && errors['ea_value']) setErrors((prev) => ({ ...prev, ea_value: '' }));
   };
@@ -2836,6 +2863,18 @@ export default function RequestPage(): React.ReactElement {
     setDetail((prev) => ({ ...prev, [key]: prev[key].filter((r) => r.id !== id) }));
   };
 
+  // 행 단위 '미등록' 토글. 켜면 그 행의 STEP_ID/STEP_DESC 를 비운다 — 미등록은 값이 없는 것이
+  // 정상 상태라 잔존 값이 저장되면 안 된다. 끄면 빈 입력칸으로 돌아온다(이전 값 복원 없음).
+  const handleAdiCdToggleUnregistered = (side: 'before' | 'after', id: string, next: boolean) => {
+    const key = adiCdSideKey(side);
+    setDetail((prev) => ({
+      ...prev,
+      [key]: prev[key].map((r) => (
+        r.id === id ? { ...r, unregistered: next, step_id: '', step_desc: '' } : r
+      )),
+    }));
+  };
+
   // 전체 삭제 토글: 켜면 AFTER 를 비우고, 끄면 빈 템플릿으로 되돌린다(변경전이 비어 있으면 Panel 이 토글을 막는다).
   const handleAdiCdToggleDeleteAll = (next: boolean) => {
     setDetail((prev) => ({
@@ -3415,7 +3454,7 @@ export default function RequestPage(): React.ReactElement {
         return { valid: Object.keys(newErrors).length === 0, errors: errorMessages };
       }
       // CLONE(차용)은 원본 위치/Part ID가 필수(R-13). EXISTING/NEW는 해당 없음.
-      if (detail.map_type === 'CLONE') {
+      if (detail.map_type === MAP_TYPE_CLONE) {
         if (!detail.source_line?.trim()) {
           newErrors['source_line'] = t('request.required');
           errorMessages.push('원본 위치: 필수 입력 항목입니다.');
@@ -3561,6 +3600,13 @@ export default function RequestPage(): React.ReactElement {
       // J-layer 에 st='O 계열' 활성 행이 있으면 Backbone 조합 영역(STEP1)이 필수가 된다.
       // 여기서 처음 판정되므로, 막히면 goToStep 이 STEP1 로 되돌려 보낸다.
       if (requiresBbEntries(jayerRows)) addBbEntryError(newErrors, errorMessages, true);
+      // Validation System — 판정 키워드가 있으면 대상/비대상을 상신자가 직접 골라야 O-layer 로 넘어간다.
+      // 키워드가 없으면 판정 자체가 성립하지 않아('해당없음') 검사 대상이 아니다.
+      if (autoValidationSystem(jayerRows) !== VS_NA && !detail.validation_system) {
+        const msg = t('request.validation_system_required') as string;
+        newErrors['validation_system'] = msg;
+        errorMessages.push(msg);
+      }
     }
 
     if (currentStep === 4 && !isMapOnlyScope) {
@@ -3613,6 +3659,13 @@ export default function RequestPage(): React.ReactElement {
       addBbEntryError(newErrors, errorMessages, requiresBbEntries(jayerRows));
       addBaGateError(newErrors, errorMessages);
       addAdiCdGateError(newErrors, errorMessages);
+      // Validation System 미선택도 여기서 한 번 더 막는다 — 상신 검증은 validate(lastStep) 하나만
+      // 도는 탓에, STEP3 게이트를 거치지 않고 온 문서가 미선택 상태로 상신되면 안 된다.
+      if (autoValidationSystem(jayerRows) !== VS_NA && !detail.validation_system) {
+        const msg = t('request.validation_system_required') as string;
+        newErrors['validation_system'] = msg;
+        errorMessages.push(msg);
+      }
     }
 
     setErrors(newErrors);
@@ -4215,6 +4268,7 @@ export default function RequestPage(): React.ReactElement {
           handleAdiCdRemoveRow={handleAdiCdRemoveRow}
           handleAdiCdPasteRaw={handleAdiCdPasteRaw}
           handleAdiCdToggleDeleteAll={handleAdiCdToggleDeleteAll}
+          handleAdiCdToggleUnregistered={handleAdiCdToggleUnregistered}
           GuideBadge={GuideBadge}
         />
       )}
@@ -4294,7 +4348,7 @@ export default function RequestPage(): React.ReactElement {
           cellSel={jayerCellSel}
           GuideBadge={GuideBadge}
           validationSystem={detail.validation_system}
-          autoValidationSystem={autoValidationSystem(jayerRows)}
+          vsNotApplicable={autoValidationSystem(jayerRows) === VS_NA}
           onValidationSystemChange={(v) => {
             setVsManuallySet(true);
             setDetail((prev) => ({ ...prev, validation_system: v }));

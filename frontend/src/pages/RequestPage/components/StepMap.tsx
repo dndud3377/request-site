@@ -4,7 +4,7 @@ import AutocompleteInput from '../../../components/AutocompleteInput';
 import RichTextEditor from '../../../components/RichTextEditor';
 import { DetailFormState, GuideFeatureKey } from '../../../types';
 import {
-  CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ,
+  CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ, MAP_TYPE_CLONE,
   EA_NO_CHANGE, EA_HAS_CHANGE, eaDefaultValue,
 } from '../constants';
 import { sanitizeSignedDecimal } from '../helpers';
@@ -130,6 +130,10 @@ const StepMap: React.FC<StepMapProps> = ({
     return () => window.removeEventListener('mouseup', end);
   }, []);
 
+  // 예외 구역 '변경 없음'일 때 적용되는 기본값(일반 300 / C가문 500).
+  // CLONE/EXISTING 은 입력칸이 잠겨 값을 넣을 수 없으므로 빈 문자열이다.
+  const eaDefault = eaDefaultValue(detail.only_prodc, detail.map_type);
+
   return (
     <div className="form-section">
       <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -198,7 +202,7 @@ const StepMap: React.FC<StepMapProps> = ({
                validate(2) 도 같은 조건으로 이 항목들의 검증을 건너뛴다(짝을 맞춰야 함). ▼▼ */}
         {!isMapReasonMode && (<>
         {/* 원본 위치/Part ID (CLONE 전용) */}
-        {detail.map_type === 'CLONE' && (
+        {detail.map_type === MAP_TYPE_CLONE && (
           <div className="full-width">
             <div className="conditional-group">
               <div className="flex-row">
@@ -508,9 +512,14 @@ const StepMap: React.FC<StepMapProps> = ({
         <div className="full-width flex-row" data-tour="map-exception">
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
             <label className="form-label">{t('request.ea_change')}<GuideBadge fk="step2_exception_zone" tk={t('guide.feat.step2_exception_zone' as never)} /></label>
-            {/* '변경 없음'은 C가문 여부에 따라 기본값(300/500)이 정해져 있어 라벨에 그 값을 함께 보여준다. */}
+            {/* '변경 없음'은 C가문 여부에 따라 기본값(300/500)이 정해져 있어 라벨에 그 값을 함께 보여준다.
+                CLONE/EXISTING 은 기본값 자체가 없으므로(입력칸이 잠긴다) 값 없이 '변경 없음'만 띄운다. */}
             <select className="form-control" name="ea_change" value={detail.ea_change} onChange={(e) => handleEaChangeChange(e.target.value)} disabled={isMapRegistered}>
-              <option value={EA_NO_CHANGE}>{t('request.no_change_with_default', { value: eaDefaultValue(detail.only_prodc) })}</option>
+              <option value={EA_NO_CHANGE}>
+                {eaDefault
+                  ? t('request.no_change_with_default', { value: eaDefault })
+                  : t('request.map_no_change')}
+              </option>
               <option value={EA_HAS_CHANGE}>{t('request.has_change')}</option>
             </select>
           </div>

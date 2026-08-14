@@ -61,18 +61,45 @@ export const MAP_TYPE_DELETE_REQ = '삭제';
 export const isMapDeleteEditType = (mapType?: string): boolean =>
   mapType === MAP_TYPE_DELETE_REQ;
 
+// MAP 목적(map_type) 값 — StepMap 버튼 값이자 그대로 저장되는 값이다.
+export const MAP_TYPE_CLONE = 'CLONE';
+export const MAP_TYPE_EXISTING = 'EXISTING';
+
+/** 이미 등록된 MAP 을 그대로 쓰는 유형인가(차용·기등록).
+ *
+ * 이 유형은 StepMap 의 지도편차·예외구역·X표시·Map Option 입력칸이 전부 잠겨
+ * 사용자가 값을 바꿀 수 없다. 따라서 그 칸들의 **기본값도 NEW 와 달라야 한다**
+ * — 잠긴 채로 '변경 있음'·300 이 저장되면 "안 건드렸는데 바꾼 것"이 되기 때문이다.
+ * 아래 regionMapChangeDefault·eaDefaultValue 가 그 규칙의 단일 출처다.
+ */
+export const isMapRegisteredType = (mapType?: string): boolean =>
+  mapType === MAP_TYPE_CLONE || mapType === MAP_TYPE_EXISTING;
+
+// 지도 편차(map_change / map_change_top / map_change_bottom) 선택값.
+export const MAP_NO_CHANGE = '변경 없음';
+export const MAP_HAS_CHANGE = '변경 있음';
+
+/** 리전별(C가문 상/하판) 지도 편차 기본값 — CLONE/EXISTING 은 잠기므로 '변경 없음'이다. */
+export const regionMapChangeDefault = (mapType?: string): string =>
+  isMapRegisteredType(mapType) ? MAP_NO_CHANGE : MAP_HAS_CHANGE;
+
 // 예외 구역(ea_change) 선택값. detail.ea_change 에 이 한글 문자열이 그대로 저장된다.
 export const EA_NO_CHANGE = '변경 없음';
 export const EA_HAS_CHANGE = '변경 있음';
 
 // 예외 구역 기본값 — C가문(only_prodc='Yes')이면 500, 아니면 300 (2026-08).
 // '변경 없음'이면 이 값이 ea_value 에 그대로 채워지고 입력칸은 잠긴다.
-export const EA_DEFAULT_NORMAL = '300';
-export const EA_DEFAULT_PRODC = '500';
+// 바깥에서는 항상 eaDefaultValue() 로만 읽는다(map_type 조건이 함수 안에 있어야 하므로 export 하지 않는다).
+// ⚠️ 백엔드 RequestDocument.EA_DEFAULT_NORMAL / EA_DEFAULT_PRODC 와 같은 값이어야 한다.
+const EA_DEFAULT_NORMAL = '300';
+const EA_DEFAULT_PRODC = '500';
 
-/** only_prodc 값에 맞는 예외 구역 기본값 */
-export const eaDefaultValue = (onlyProdc?: string): string =>
-  onlyProdc === 'Yes' ? EA_DEFAULT_PRODC : EA_DEFAULT_NORMAL;
+/** only_prodc·map_type 에 맞는 예외 구역 기본값.
+ *  CLONE/EXISTING 은 입력칸이 잠겨 값을 넣을 수 없으므로 빈 값이다(300/500 을 채우지 않는다). */
+export const eaDefaultValue = (onlyProdc?: string, mapType?: string): string => {
+  if (isMapRegisteredType(mapType)) return '';
+  return onlyProdc === 'Yes' ? EA_DEFAULT_PRODC : EA_DEFAULT_NORMAL;
+};
 
 // '기타 목적 > ADI CD 변경': 특정 제품 ADI CD 스텝 개수 증감/전체삭제 요청.
 export const OTHER_PURPOSE_ADI_CD = 'ADI CD 변경';
@@ -99,6 +126,10 @@ export const VALIDATION_KEYWORD = 'plel';
 export const VS_TARGET = 'YES';
 export const VS_NONTARGET = 'NO';
 export const VS_NA = 'NA';
+/** 판정 키워드는 있는데 상신자가 아직 대상/비대상을 고르지 않은 상태.
+ *  (2026-08) 예전에는 키워드가 있으면 VS_TARGET 이 자동 선택됐지만, 판정 주체가 상신자 하나이므로
+ *  자동 선택을 없애고 이 상태로 시작한다 — validate(3) 이 O-layer 단계 이동을 막는다. */
+export const VS_UNSELECTED = '';
 /** 판정 키워드를 포함한 pp 셀 배경색 */
 export const VALIDATION_CELL_COLOR = '#fff9c4';
 
@@ -238,6 +269,7 @@ export const makeAdiCdStep = (): AdiCdStep => ({
   id: genId(),
   step_id: '',
   step_desc: '',
+  unregistered: false,
 });
 
 // ===== Initial States =====
@@ -255,22 +287,24 @@ export const INITIAL_DETAIL: DetailFormState = {
   flow_chart: [makeRow()],
   process_id: '',
   map_type: '',
-  map_change: '변경 없음',
+  map_change: MAP_NO_CHANGE,
   map_value_x: '',
   map_value_y: '',
   map_reason: '',
   // MAP 삭제 전용 이유(RichTextEditor 의 HTML). 수정↔삭제 전환 시에도 값은 유지되고 라벨만 바뀐다.
   // ⚠️ C가문 지도편차 사유인 위 map_reason 과는 완전히 다른 필드다.
   map_change_reason: '',
-  map_change_top: '변경 있음',
+  // 리전별 지도 편차·예외 구역 기본값은 map_type 에 따라 달라진다(regionMapChangeDefault/eaDefaultValue).
+  // 여기 초기값은 map_type 이 아직 비어 있는(=NEW 계열) 상태의 값이다 —
+  // CLONE/EXISTING 을 고르는 순간 각 핸들러가 위 함수로 다시 계산해 넣는다.
+  map_change_top: regionMapChangeDefault(),
   map_value_x_top: '',
   map_value_y_top: '',
-  map_change_bottom: '변경 있음',
+  map_change_bottom: regionMapChangeDefault(),
   map_value_x_bottom: '',
   map_value_y_bottom: '',
   ea_change: EA_NO_CHANGE,
-  // '변경 없음'의 기본값. only_prodc 는 'No' 로 시작하므로 300 이다(C가문 전환 시 500 으로 갱신된다).
-  ea_value: EA_DEFAULT_NORMAL,
+  ea_value: eaDefaultValue(),
   bb_zone: '존재',
   bb_entries: [makeBbEntry()],
   only_prodc: 'No',
@@ -310,7 +344,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   tbvtlv_thickness: '',
   tbvtlv_entries: [],
   notifiers: [],
-  validation_system: VS_NONTARGET,
+  validation_system: VS_UNSELECTED,
   merge_ref_doc_id: null,
   merge_ref_doc_label: '',
   merge_ref_mode: 'ref',

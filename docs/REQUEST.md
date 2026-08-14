@@ -280,6 +280,198 @@ pages/RequestPage/
   4. [흐름도 행을 완전히 비워둔 채(기본 신규 행) "다음" 클릭] → [기대 결과: 흐름도 관련 에러
      없이 진행된다(다른 필수 항목은 별개로 채워야 함) — 이번 변경으로 새로 막히지 않아야 한다.]
 
+### 기능 추가 (2026-08-14 — ADI CD 행 단위 '미등록' + Validation System 필수 선택)
+
+두 변경 모두 **"사용자가 직접 고른 값만 저장된다"** 는 같은 원칙이라 함께 진행했다.
+
+#### ① ADI CD 변경 — 행 단위 '미등록'
+
+- **요청**: 변경전/변경후 표에서 "이 STEP 은 그쪽에 등록돼 있지 않다"를 표현할 방법이 없었다.
+  한 칸만 채우면 불완전 행으로 막히고, 둘 다 비우면 아예 없는 행으로 취급됐다.
+- **구현**: `AdiCdStep` 에 `unregistered?: boolean` 신설. 표에 미등록 체크박스 열을 추가해
+  켜면 그 행의 `step_id`/`step_desc` 를 **비우고** 두 칸을 합쳐 '미등록'만 보여준다(입력 불가).
+  체크를 풀면 빈 입력칸으로 돌아온다(이전 값 복원 없음).
+  - 용례: 변경전 미등록 = 새로 생기는 STEP / 변경후 미등록 = 삭제되는 STEP.
+  - `unregistered` 를 **optional 로 둔 이유**: 이 필드 도입 전 저장 문서에는 키가 없다(없으면 `false`).
+    마이그레이션 없이 그대로 열린다.
+- **검증 규칙**(`validateAdiCdRows`, `helpers.ts`): 미등록 행은 **유효 1건으로 집계**하고
+  불완전·STEP_ID 중복 검사에서는 **제외**한다. 미등록이 아닌 행의 기존 규칙은 그대로다.
+- **상세보기**(`PagedDetailView.tsx` `AdiCdStepsTable`): 빈 값 필터에 미등록 행이 걸려
+  사라지던 것을 고쳐, 미등록 행도 '미등록'(회색)으로 표시한다.
+- **i18n**: `request.adi_cd_unregistered` ko/en 동시 추가. CSS `.adi-cd-unreg-cell` 신설.
+
+#### ② Validation System — 자동 선택 폐지, 상신자가 반드시 직접 선택
+
+- **요청**: 판정 키워드(`plel`)가 있으면 `validation_system` 이 `'YES'`(대상)로 **자동 선택**돼
+  있었다. 판정 주체는 상신자 하나이므로 자동 선택을 없애고, 고르지 않으면 O-layer 단계로
+  넘어가지 못하게 한다. **시스템의 자동 판정값도 화면에 보여주지 않는다**(순수하게 사용자 판단).
+- **구현**:
+  - `ValidationSystemValue` 에 `''`(미선택) 추가, 상수 `VS_UNSELECTED` 신설(`constants.ts`).
+    `INITIAL_DETAIL.validation_system` 도 `VS_NONTARGET` → `VS_UNSELECTED`.
+  - 자동 갱신 effect(`index.tsx`): 키워드가 있으면 `auto`(=`VS_TARGET`) 를 넣던 것을
+    **미선택으로 둔다.** 키워드가 전부 사라지면 종전대로 `VS_NA` 강제(E 단계 불일치 방지).
+  - **게이트 2곳**: `validate(3)` 이 3→4단계 이동을 막고, `validate(5)` 최종 안전망에도 같은
+    검사를 넣었다 — 상신 검증은 `validate(lastStep)` **하나만** 도는 구조라 STEP3 을 거치지
+    않고 온 문서가 미선택으로 상신되는 구멍이 남기 때문이다(기존 안전망 패턴과 동일).
+  - **레거시 백필**(`index.tsx`): VS 필드 도입 전 문서는 키워드가 없을 때만 `VS_NA` 로 백필하고,
+    키워드가 있으면 **미선택**으로 둬 상신자가 다시 고르게 한다(예전엔 `'대상'` 자동 백필).
+  - 이미 `YES`/`NO`/`NA` 가 저장된 문서는 그 값을 유지한다(로드 시 `setVsManuallySet(true)`).
+- **자동 판정 표기 제거 + 연쇄 정리**(`Step2.tsx`):
+  - `validation_system_auto` 문구("자동 판정: {{value}}") 렌더 제거 → **i18n 키도 ko/en 삭제**
+    (사용처가 이 한 곳뿐이었다).
+  - 그 문구에서만 쓰던 `vsLabel`(`useValidationSystemLabel`) 지역 변수·import 제거.
+  - prop `autoValidationSystem: ValidationSystemValue` → **`vsNotApplicable: boolean`** 으로 좁힘.
+    남는 용도가 `=== VS_NA` 판정 하나뿐이라, "판정값"이 아니라 "적용 대상인지"만 넘긴다.
+  - ⚠️ `helpers.ts` 의 `autoValidationSystem()` **함수 자체는 남긴다** — '해당없음' 판정과
+    레거시 백필에 여전히 쓰인다. 없어진 건 그 값을 **사용자에게 보여주던** 부분이다.
+- **백엔드 변경 없음(확인함)**: E(MASK) 단계 생성은 `RequestDocument.has_ppid_plel()`
+  (`models.py:225`)이 **jayerRows 의 pp 키워드로만** 판정하고 `validation_system` 값을 보지 않는다.
+  미선택 상태가 결재 경로를 깨지 않는다. 마이그레이션도 없다(`additional_notes` JSON 하위).
+- **i18n**: `request.validation_system_required` ko/en 추가(사내 용어 규칙에 따라
+  `$t(request.validation_system)` 중첩 참조 사용 — `terminology.test.ts` 통과 확인).
+
+#### 검증 (2026-08-14 실행)
+
+| 항목 | 작업 전 | 작업 후 |
+|---|---|---|
+| `npx tsc --noEmit` | 22개 | **22개** (신규 0, `TS2304/2305/2307/2552/6133` 없음) |
+| `react-scripts test` | 7 suites / 187건 | **8 suites / 201건 통과** |
+| `eslint`(수정 파일) | 경고 6건 | **5건** (신규 0 — 미사용 1건이 오히려 줄었다) |
+
+- 신규 테스트 `adiCdUnregisteredAndVs.test.tsx` **14건**. `validateAdiCdRows` 는 순수 함수라
+  단위 테스트로, 화면 동작·저장 payload 는 실제 작성 흐름을 구동해 확인한다.
+- **각 기능을 수정 전으로 되돌려 실제로 실패하는 것까지 확인**했다(가짜 통과 아님):
+  - ADI CD: 미등록 예외 처리 제거 → 단위 테스트 3건 실패
+  - VS 백필 경로: 자동 백필 복원 → 2건 실패
+  - VS effect 경로: 자동 선택 복원 → `Expected: "" / Received: "YES"` 로 실패
+- ⚠️ **검증 과정에서 발견해 보강한 것**: 편집 로드 경로는 `setVsManuallySet(true)` 때문에
+  자동 갱신 effect 가 early-return 한다. 그래서 편집 로드 테스트만으로는 **effect 경로(신규 문서에서
+  J-layer 를 API 로 불러오는 길 — 실사용 주 경로)가 전혀 커버되지 않았다.** 신규 문서 전용
+  describe 를 따로 추가해 두 경로를 모두 고정했다.
+
+#### 수동 검증 시나리오
+
+**① ADI CD 미등록**
+1. [`/request` 새 문서 → Step1 에서 라인·조합법·제품 이름·조리법 입력 → 요청 목적 '기타' →
+   기타 목적 'ADI CD 변경' 클릭] → 2. [변경전 표 첫 행에 STEP_ID `1000`, STEP_DESC `ADI` 입력 후
+   그 행의 '미등록' 체크] → 3. [기대 결과: 두 입력칸이 사라지고 회색 '미등록' 한 칸으로 바뀐다.
+   입력했던 값은 지워진다.]
+2. [체크를 다시 해제] → [기대 결과: 빈 입력칸 2개로 돌아온다(`1000`/`ADI` 는 복원되지 않는다).]
+3. [변경전은 '미등록' 1행만, 변경후는 `1000`/`ADI` 1행을 채우고 '다음 →' 클릭] → [기대 결과:
+   "변경전 표에 최소 1개 이상의 유효한 행이 필요합니다" 오류 **없이** 통과해야 한다.]
+4. [임시저장 후 결재 현황/이력에서 그 문서 상세 → 'ADI CD 변경' 섹션] → [기대 결과: 변경전 표에
+   '미등록' 행이 회색으로 보인다. 행이 통째로 사라지면 실패.]
+
+**② Validation System**
+1. [J-layer(3단계)에 PP 값이 `PLEL_...` 인 행이 있는 의뢰서를 작성 → 3단계 진입] → [기대 결과:
+   상단 Validation System 토글의 **대상/비대상 어느 쪽도 색이 차 있지 않아야** 한다.
+   '자동 판정: 대상' 같은 문구도 **보이면 안 된다**.]
+2. [아무것도 고르지 않고 '다음 →' 클릭] → [기대 결과: "Validation System 대상/비대상을
+   선택해주세요." 토스트가 뜨고 **3단계에 그대로 머문다**. 4단계(O-layer)로 넘어가면 실패.]
+3. ['대상' 또는 '비대상' 클릭 후 '다음 →'] → [기대 결과: 고른 쪽이 색으로 채워지고 4단계로 넘어간다.]
+4. [PP 에 `PLEL` 이 하나도 없는 의뢰서로 3단계 진입] → [기대 결과: 종전대로 토글이 잠기고
+   '해당없음' 배지가 뜨며, 바로 '다음 →' 으로 넘어갈 수 있어야 한다.]
+5. [미선택 상태에서 '임시저장(💾)' 클릭] → [기대 결과: 차단 없이 저장된다(초안이므로).
+   다시 열면 여전히 미선택이어야 한다.]
+
+### 리팩토링 (2026-08-14 — 잠기는 MAP 칸의 기본값을 `map_type` 이 정하도록 단일화)
+
+- **배경**: 바로 아래 항목(CLONE/EXISTING 지도편차·예외구역 버그)을 "전환 지점마다 값을 강제로
+  되돌리는" 방식으로 고쳤더니 `registered ? '변경 없음' : INITIAL_DETAIL...` 같은 조건문이
+  **5군데에 흩어졌다.** 새 전환 경로가 생기면 또 빠뜨릴 구조라, 기본값 자체가 `map_type` 을 알도록
+  바꿔 그 5군데를 함수 호출 한 줄씩으로 줄였다. **동작은 이전과 동일하다**(재현 테스트가 그대로 통과).
+- **`constants.ts` 에 신설한 단일 출처**:
+
+  | 이름 | 역할 |
+  |---|---|
+  | `MAP_TYPE_CLONE` / `MAP_TYPE_EXISTING` | `'CLONE'`/`'EXISTING'` 매직 스트링 제거(규칙 I) |
+  | `isMapRegisteredType(mapType)` | 이미 등록된 MAP 을 쓰는 유형인가(= 입력칸이 전부 잠기는 유형) |
+  | `MAP_NO_CHANGE` / `MAP_HAS_CHANGE` | 지도 편차 선택값 상수 |
+  | `regionMapChangeDefault(mapType)` | 리전별 지도편차 기본값 — CLONE/EXISTING 이면 `'변경 없음'` |
+  | `eaDefaultValue(onlyProdc, mapType)` | 예외구역 기본값 — CLONE/EXISTING 이면 `''`(인자 1개 추가) |
+
+- **`INITIAL_DETAIL` 도 이 함수들에서 파생**시켰다(`map_change_top: regionMapChangeDefault()`,
+  `ea_value: eaDefaultValue()`). `map_type` 이 비어 있는 초기 상태의 값이라 종전과 동일하다.
+- **정리한 코드**:
+  - `EA_DEFAULT_NORMAL`/`EA_DEFAULT_PRODC` 의 `export` 제거 — `map_type` 조건이 `eaDefaultValue`
+    안에 있어야 하므로 바깥에서 raw 상수를 직접 읽으면 안 된다. 이제 모듈 안에서만 쓴다.
+  - `index.tsx` 의 `isRegistered`/`registered` 지역 변수 5개와 그에 딸린 삼항 조건문 제거.
+  - `map_type === 'CLONE'` 매직 스트링 2곳(`index.tsx` validate, `StepMap.tsx` 원본 위치 블록)을
+    `MAP_TYPE_CLONE` 으로 교체.
+- **화면 변화 1건**: 예외 구역 `변경 없음` 선택지 라벨이 CLONE/EXISTING 에서는 기본값 표기 없이
+  `변경 없음` 으로만 보인다(NEW 는 종전대로 `변경 없음 (300)`). 기본값 자체가 없는 상태를 라벨이
+  그대로 반영하게 한 것이다 — i18n 키는 기존 `map_no_change` 를 재사용해 신규 키 추가는 없다.
+- **의도적으로 바꾸지 않은 것 — `requiresSalesAgreer`(`index.tsx`)**: 계획 단계에서는 여기에도
+  `map_type` 을 넘기려 했으나, 확인해 보니 **백엔드 `RequestDocument.requires_sales_agreer`
+  (`models.py:191`)는 `map_type` 과 무관하게 300/500 으로만 비교**한다. 여기서 CLONE/EXISTING 의
+  빈 기본값(`''`)을 쓰면 오히려 앞뒤 기준이 어긋나므로 인자를 넘기지 않고 그대로 뒀다
+  (CLONE/EXISTING 은 `ea_change` 가 항상 `'변경 없음'` 이라 첫 조건에서 걸러진다). 코드에 주석으로 남겼다.
+- **영향 파일**: `frontend/src/pages/RequestPage/constants.ts` ·
+  `frontend/src/pages/RequestPage/index.tsx` ·
+  `frontend/src/pages/RequestPage/components/StepMap.tsx` ·
+  `frontend/src/pages/RequestPage/cloneMapRegionDefault.test.tsx` (라벨 검증 1건 추가)
+- **검증(2026-08-14 실행)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` | 22개 | **22개** (신규 0, `TS2304/2305/2307/2552/6133` 없음) |
+  | `react-scripts test` | 7 suites / 186건 | **7 suites / 187건 통과** |
+  | `eslint`(수정 파일) | index.tsx 경고 3건 | **동일 3건**(전부 pre-existing, 신규 0) |
+
+  - **리팩토링 검증의 핵심**: 기존 재현 테스트 3건이 **코드를 고치지 않고 그대로 통과**하는 것이
+    동작 불변의 증거다.
+  - 신규 라벨 테스트도 분기를 임시로 되돌려 **실제로 실패하는 것까지 확인**했다
+    (`Expected: "변경 없음" / Received: "변경 없음 (300)"`).
+- **수동 검증 시나리오**:
+  1. [`/request` 새 문서 → Step1 채우고 Step2 진입 → MAP 목적 `NEW` 선택] → [기대 결과: 예외 구역
+     드롭다운이 `변경 없음 (300)`, 값 칸에 `300`. C가문 `Yes` 로 바꾸면 `변경 없음 (500)`/`500`.]
+  2. [같은 화면에서 MAP 목적을 `CLONE` 으로 변경 → 확인 모달 '확인'] → [기대 결과: 예외 구역
+     드롭다운이 `변경 없음`(괄호 없음), 값 칸은 **빈 채로 잠김**. 리전별 지도편차도 `변경 없음` 잠김.]
+  3. [`EXISTING` 으로도 2번 반복] → [기대 결과: `CLONE` 과 동일.]
+  4. [2번 상태에서 임시저장 → 목록에서 다시 편집으로 열기] → [기대 결과: 빈 값/`변경 없음` 이 그대로
+     유지되어야 한다. `300`·`변경 있음` 이 되살아나면 실패.]
+
+### 버그 수정 (2026-08-13 — CLONE/EXISTING 상신 시 리전별 지도편차·예외구역이 잠긴 채 '변경 있음'/300 으로 저장됨)
+
+- **증상**: MAP 목적이 `CLONE`(차용)·`EXISTING`(기등록)이면 StepMap 에서 리전별 지도편차
+  (`map_change_top`/`map_change_bottom`)·예외구역(`ea_value`) 입력칸이 전부 잠기는데도, C가문
+  (`only_prodc`)을 `Yes`로 켜면 `map_change_top`/`map_change_bottom`이 `'변경 있음'`인 채로,
+  `ea_value`가 300(또는 500) 기본값인 채로 상신됐다. 사용자는 잠긴 입력칸을 고칠 방법이 없는데도
+  "값이 바뀌었다"는 상태가 그대로 저장되는 문제였다.
+- **원인**: `map_change_top`/`map_change_bottom`의 전역 기본값(`INITIAL_DETAIL`, `constants.ts:265,268`)
+  이 `'변경 있음'`으로 박혀 있고, `ea_value`도 C가문 여부에 따라 항상 300/500 기본값을 채우는데,
+  CLONE/EXISTING으로 진입·전환되는 5개 지점(`handleMapTypeSelect` 최초 선택 / `handleMapTypeChangeConfirm`
+  / `handleOnlyProdcChange` Yes·No 분기 / `line` 변경 감지 `useEffect`) 중 어디도 "잠긴 상태니까
+  반드시 변경없음/빈 값"으로 강제하지 않았다. `validate()`도 `isMapRegistered`면 이 필드들 검증을
+  통째로 건너뛰어(`index.tsx` 의 `!isMapRegistered` 가드), 잘못된 기본값이 그대로 상신됐다.
+- **수정**: 위 5개 지점에서 대상 `map_type`이 `EXISTING`/`CLONE`이면(`registered`/`isRegistered` 판정)
+  `map_change_top`/`map_change_bottom`을 `'변경 없음'`으로, X/Y 값을 빈 문자열로, `ea_value`를 빈
+  문자열(`''`)로 설정하도록 고쳤다. 그 외(NEW 등)의 기존 기본값(`'변경 있음'`/300·500)은 그대로
+  유지한다 — CLONE/EXISTING 전용 수정이다.
+- **`ea_value`를 빈 값(`''`)으로 정한 근거**: `ea_change`(변경있음/없음 상태)는 원래도 항상
+  `'변경 없음'`으로 정상 고정돼 있었다. 숫자 필드인 `ea_value`에 "변경없음"이라는 문자열을 그대로
+  넣을 수는 없어, 사용자에게 확인한 결과 빈 값으로 저장하기로 했다(대안이었던 "기존처럼 300/500
+  기본값 유지"는 채택하지 않음).
+- **범위 밖**: 이미 저장된(기존) CLONE/EXISTING 문서의 DB 데이터는 이 수정으로 자동 고쳐지지
+  않는다 — 소급 백필은 요청받지 않아 진행하지 않았다.
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx` (5개 함수/effect 수정 — 1개 파일)
+- **검증(2026-08-13 실행)**: `npm ci` 후 `npx tsc --noEmit` **22개**(작업 전후 동일, 신규 0) ·
+  `react-scripts test --watchAll=false` **7 suites / 186건 통과**(기존 184건 + 신규 재현
+  테스트 2건). 신규 테스트(`cloneMapRegionDefault.test.tsx`)는 신규 문서에서 CLONE 선택 →
+  C가문 Yes 전환(및 Yes→No→Yes 재전환) 흐름을 실제로 구동해 임시저장 payload 를 검증하며,
+  수정 전 코드로 되돌려 실제로 실패하는 것까지 확인했다(가짜 통과 아님).
+- **수동 검증 시나리오**:
+  1. [요청서 작성(`/request`) 새 문서 → Step1 라인·조합법·제품·조리법·요청 목적(예: '차용')까지
+     채우고 '다음' → Step2(MAP 정보)에서 MAP 목적 `CLONE` 선택] → 2. [Only C가문 제품을 `Yes`로
+     전환] → 3. [기대 결과: 리전별 지도편차(상판/하판) select 가 `변경 없음`으로 잠겨 있고, 예외
+     구역 값 입력칸이 빈 채로 잠겨 있어야 한다.] → 4. [임시저장 후 다시 편집으로 열어 같은 값이
+     유지되는지 확인]
+  2. [같은 문서에서 Only C가문 제품을 `No` → `Yes`로 다시 전환] → [기대 결과: 여전히 `변경 없음`/
+     빈 값이어야 한다 — '있음'/300 으로 되돌아가면 실패.]
+  3. [MAP 목적이 `NEW`(신규)인 문서에서 C가문 Yes 전환] → [기대 결과: 기존과 동일하게 리전별
+     지도편차가 `'변경 있음'` 기본값으로 열려 사용자가 직접 입력할 수 있어야 한다 — 이번 수정으로
+     영향 받지 않아야 한다.]
+
 ### 기능 개선 (2026-08-13 — 상세보기: CLONE/EXISTING 은 잠긴 MAP 항목을 회색 "없음"으로 표시)
 
 - **요청**: MAP 목적이 `CLONE`(차용)·`EXISTING`(기등록)이면 StepMap 작성 화면에서 지도편차·예외구역·

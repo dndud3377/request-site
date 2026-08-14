@@ -67,6 +67,7 @@ interface Step1Props {
   handleAdiCdRemoveRow: (side: AdiCdSide, id: string) => void;
   handleAdiCdPasteRaw: (side: AdiCdSide, raw: string) => void;
   handleAdiCdToggleDeleteAll: (next: boolean) => void;
+  handleAdiCdToggleUnregistered: (side: 'before' | 'after', id: string, next: boolean) => void;
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
 }
 
@@ -128,6 +129,7 @@ const Step1: React.FC<Step1Props> = ({
   handleAdiCdRemoveRow,
   handleAdiCdPasteRaw,
   handleAdiCdToggleDeleteAll,
+  handleAdiCdToggleUnregistered,
   GuideBadge,
 }) => {
   const { t } = useTranslation();
@@ -380,6 +382,7 @@ const Step1: React.FC<Step1Props> = ({
                   onRemoveRow={handleAdiCdRemoveRow}
                   onPasteRaw={handleAdiCdPasteRaw}
                   onToggleDeleteAll={handleAdiCdToggleDeleteAll}
+                  onToggleUnregistered={handleAdiCdToggleUnregistered}
                 />
               </div>
             )}

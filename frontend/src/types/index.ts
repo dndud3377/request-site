@@ -310,11 +310,14 @@ export interface BbTableRow {
 }
 
 /**
- * Validation System 판정 — 'YES'(대상) | 'NO'(비대상) | 'NA'(해당없음).
+ * Validation System 판정 — 'YES'(대상) | 'NO'(비대상) | 'NA'(해당없음) | ''(미선택).
  * 'NA' 는 J-layer 에 판정 키워드가 하나도 없어 판정이 성립하지 않는 상태로,
  * 이때는 E(MASK) 단계도 결재 경로에 포함되지 않는다.
+ * '' 는 판정 키워드가 있어 대상/비대상을 골라야 하는데 상신자가 아직 고르지 않은 상태다.
+ * (2026-08) 예전에는 키워드가 있으면 'YES' 가 자동 선택됐지만, 판정은 상신자가 직접
+ * 내려야 하므로 미선택으로 두고 J-layer → O-layer 단계 이동을 막는다.
  */
-export type ValidationSystemValue = 'YES' | 'NO' | 'NA';
+export type ValidationSystemValue = 'YES' | 'NO' | 'NA' | '';
 
 export interface DetailFormState {
   // 항상 표시
@@ -460,6 +463,10 @@ export interface AdiCdStep {
   id: string;
   step_id: string;
   step_desc: string;
+  /** 이 행은 해당 쪽에 등록돼 있지 않다(변경전 미등록 = 새로 생기는 STEP,
+   *  변경후 미등록 = 삭제되는 STEP). 체크하면 step_id/step_desc 는 비우고 잠근다.
+   *  optional 인 이유: 이 필드 도입 전에 저장된 문서에는 키 자체가 없다(없으면 false). */
+  unregistered?: boolean;
 }
 
 // ===== 참조 요청서 Merge — BEFORE/AFTER 비교 =====
