@@ -16,6 +16,8 @@ export interface AdiCdPanelProps {
   onRemoveRow: (side: AdiCdSide, id: string) => void;
   onPasteRaw: (side: AdiCdSide, raw: string) => void;
   onToggleDeleteAll: (next: boolean) => void;
+  /** 행 단위 '미등록' 토글 — 켜면 그 행의 STEP_ID/STEP_DESC 를 비우고 잠근다. */
+  onToggleUnregistered: (side: AdiCdSide, id: string, next: boolean) => void;
 }
 
 /**
@@ -32,6 +34,7 @@ const AdiCdPanel: React.FC<AdiCdPanelProps> = ({
   onRemoveRow,
   onPasteRaw,
   onToggleDeleteAll,
+  onToggleUnregistered,
 }) => {
   const { t } = useTranslation();
   const beforeValidation = validateAdiCdRows(before);
@@ -57,24 +60,41 @@ const AdiCdPanel: React.FC<AdiCdPanelProps> = ({
         <tr>
           <th>{ADI_CD_STEP_ID_LABEL}</th>
           <th>{ADI_CD_STEP_DESC_LABEL}</th>
+          <th>{t('request.adi_cd_unregistered')}</th>
           <th aria-label={t('common.delete')} />
         </tr>
       </thead>
       <tbody>
         {rows.map((row) => (
           <tr key={row.id}>
+            {/* 미등록 행은 두 칸을 하나로 합쳐 '미등록'만 보여준다 — 값이 없는 것이 정상 상태라
+                빈 입력칸 2개를 남겨두면 "덜 채운 행"으로 오해된다. */}
+            {row.unregistered ? (
+              <td colSpan={2} className="adi-cd-unreg-cell">{t('request.adi_cd_unregistered')}</td>
+            ) : (
+              <>
+                <td>
+                  <input
+                    className={cellClass(validation, row.id)}
+                    value={row.step_id}
+                    onChange={(e) => onCellChange(side, row.id, 'step_id', e.target.value)}
+                  />
+                </td>
+                <td>
+                  <input
+                    className={cellClass(validation, row.id)}
+                    value={row.step_desc}
+                    onChange={(e) => onCellChange(side, row.id, 'step_desc', e.target.value)}
+                  />
+                </td>
+              </>
+            )}
             <td>
               <input
-                className={cellClass(validation, row.id)}
-                value={row.step_id}
-                onChange={(e) => onCellChange(side, row.id, 'step_id', e.target.value)}
-              />
-            </td>
-            <td>
-              <input
-                className={cellClass(validation, row.id)}
-                value={row.step_desc}
-                onChange={(e) => onCellChange(side, row.id, 'step_desc', e.target.value)}
+                type="checkbox"
+                aria-label={t('request.adi_cd_unregistered')}
+                checked={!!row.unregistered}
+                onChange={(e) => onToggleUnregistered(side, row.id, e.target.checked)}
               />
             </td>
             <td>
@@ -90,7 +110,7 @@ const AdiCdPanel: React.FC<AdiCdPanelProps> = ({
           </tr>
         ))}
         {rows.length === 0 && (
-          <tr><td colSpan={3} className="adi-cd-empty-hint">{t('request.adi_cd_empty_hint')}</td></tr>
+          <tr><td colSpan={4} className="adi-cd-empty-hint">{t('request.adi_cd_empty_hint')}</td></tr>
         )}
       </tbody>
     </table>

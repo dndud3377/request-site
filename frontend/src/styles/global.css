@@ -4820,6 +4820,11 @@ select.form-control option {
   border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.82rem;
 }
 .adi-cd-cell-error { border-color: var(--danger); background: var(--danger-light); }
+/* '미등록' 행 — 두 입력칸을 합친 자리에 상태 문구만 회색으로 남긴다(입력 불가 상태 표시). */
+.adi-cd-unreg-cell {
+  color: var(--text-muted); font-size: 0.8rem; text-align: center;
+  background: var(--bg-secondary); border-radius: var(--radius-sm); padding: 5px 6px;
+}
 .adi-cd-row-remove {
   border: none; background: none; color: var(--danger);
   cursor: pointer; font-size: 0.85rem; padding: 0 4px; line-height: 1;
