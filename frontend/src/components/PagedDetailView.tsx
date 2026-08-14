@@ -105,7 +105,8 @@ function MergePairsTable({ pairs }: { pairs: MergePair[] }) {
 /** ADI CD 변경 — 변경전/변경후 스텝 표 (읽기 전용). 작성 화면(AdiCdPanel)과 같은 좌/우 구성. */
 function AdiCdStepsTable({ before, after, deleteAll }: { before: AdiCdStep[]; after: AdiCdStep[]; deleteAll: boolean }) {
   const { t } = useTranslation();
-  const filled = (rows: AdiCdStep[]) => rows.filter((r) => r.step_id.trim() || r.step_desc.trim());
+  // '미등록' 행은 두 값이 비어 있는 것이 정상이므로 빈 행 필터에서 걸러지지 않게 함께 통과시킨다.
+  const filled = (rows: AdiCdStep[]) => rows.filter((r) => r.unregistered || r.step_id.trim() || r.step_desc.trim());
   const beforeRows = filled(before);
   const afterRows = filled(after);
 
@@ -113,7 +114,15 @@ function AdiCdStepsTable({ before, after, deleteAll }: { before: AdiCdStep[]; af
     <table className="table" style={{ fontSize: '0.8rem' }}>
       <thead><tr><th>STEP_ID</th><th>STEP_DESC</th></tr></thead>
       <tbody>
-        {rows.map((r) => <tr key={r.id}><td>{r.step_id}</td><td>{r.step_desc}</td></tr>)}
+        {rows.map((r) => (
+          <tr key={r.id}>
+            {r.unregistered ? (
+              <td colSpan={2} style={{ color: 'var(--text-muted)' }}>{t('request.adi_cd_unregistered')}</td>
+            ) : (
+              <><td>{r.step_id}</td><td>{r.step_desc}</td></>
+            )}
+          </tr>
+        ))}
         {rows.length === 0 && (
           <tr><td colSpan={2} style={{ color: 'var(--text-muted)' }}>{t('common.no_data')}</td></tr>
         )}
