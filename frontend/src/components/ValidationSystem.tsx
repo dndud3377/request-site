@@ -33,6 +33,8 @@ interface ValidationSystemToggleProps {
 /**
  * 대상/비대상 2버튼 토글.
  * 선택된 쪽만 의미색으로 채워, 흰 배경 위에서도 어느 값이 선택됐는지 확실히 읽히게 한다.
+ * 미선택('')이면 양쪽 다 채워지지 않아 "아직 고르지 않았다"가 그대로 보인다
+ * — 값이 VS_TARGET/VS_NONTARGET 둘 중 하나와만 일치하므로 별도 분기가 필요 없다.
  */
 export const ValidationSystemToggle: React.FC<ValidationSystemToggleProps> = ({
   value,

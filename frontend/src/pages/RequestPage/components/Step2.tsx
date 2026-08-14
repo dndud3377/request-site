@@ -4,7 +4,7 @@ import AutocompleteInput from '../../../components/AutocompleteInput';
 import { JayerRow, FilterSet, GuideFeatureKey, ValidationSystemValue } from '../../../types';
 import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, NOC_LAYER_DELETE } from '../constants';
 import { isValidationKeywordRow } from '../helpers';
-import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from '../../../components/ValidationSystem';
+import { ValidationSystemBadge, ValidationSystemToggle } from '../../../components/ValidationSystem';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
 import { numberBoundaryMatch } from '../../../utils/specMatch';
 
@@ -40,7 +40,8 @@ interface Step2Props {
   cellSel: CellSelectionApi;
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
   validationSystem: ValidationSystemValue;
-  autoValidationSystem: ValidationSystemValue;
+  /** 판정 키워드가 하나도 없어 대상/비대상을 고를 수 없는 문서인가('해당없음') */
+  vsNotApplicable: boolean;
   onValidationSystemChange: (value: ValidationSystemValue) => void;
 }
 
@@ -75,7 +76,7 @@ const Step2: React.FC<Step2Props> = ({
   cellSel,
   GuideBadge,
   validationSystem,
-  autoValidationSystem,
+  vsNotApplicable,
   onValidationSystemChange,
 }) => {
   const { t } = useTranslation();
@@ -84,9 +85,6 @@ const Step2: React.FC<Step2Props> = ({
     ...jayerRows.filter(r => r.disabled).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
   ];
   const renderedJayerIds = renderedJayerRows.map(r => r.id);
-  // 판정 키워드가 하나도 없으면 대상/비대상을 고를 수 없다 — 판정 자체가 성립하지 않는다('해당없음').
-  const vsNotApplicable = autoValidationSystem === VS_NA;
-  const vsLabel = useValidationSystemLabel();
   return (
     <div className="form-section">
       <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -104,13 +102,7 @@ const Step2: React.FC<Step2Props> = ({
               notApplicable={vsNotApplicable}
               onChange={onValidationSystemChange}
             />
-            {vsNotApplicable ? (
-              <ValidationSystemBadge value={VS_NA} />
-            ) : validationSystem !== autoValidationSystem && (
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                {t('request.validation_system_auto', { value: vsLabel(autoValidationSystem) })}
-              </span>
-            )}
+            {vsNotApplicable && <ValidationSystemBadge value={VS_NA} />}
           </span>
           <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)' }}>
             활성 {jayerRows.filter(r => !r.disabled).length} / 전체 {jayerRows.length}
