@@ -601,7 +601,7 @@ export const buildAdiCdRows = (
     const step_id = (row[mapping.stepIdCol] ?? '').trim();
     const step_desc = (row[mapping.stepDescCol] ?? '').trim();
     if (!step_id && !step_desc) continue;
-    rows.push({ id: genId(), step_id, step_desc });
+    rows.push({ id: genId(), step_id, step_desc, unregistered: false });
   }
   return rows;
 };
@@ -611,11 +611,13 @@ export interface AdiCdValidationResult {
   incompleteIds: string[];
   /** STEP_ID 가 다른 행과 중복된 행 id */
   duplicateIds: string[];
-  /** 두 값이 모두 채워진 행 수 (완전히 빈 행은 세지 않는다) */
+  /** 두 값이 모두 채워진 행 + '미등록' 행의 수 (완전히 빈 행은 세지 않는다) */
   validCount: number;
 }
 
-/** 게이트 통과 조건 3가지(유효 행 1개 이상 / 불완전 행 0개 / STEP_ID 중복 0개)를 판정한다. */
+/** 게이트 통과 조건 3가지(유효 행 1개 이상 / 불완전 행 0개 / STEP_ID 중복 0개)를 판정한다.
+ *  '미등록' 행은 값 자체가 없는 것이 정상이므로 유효 1건으로 세고
+ *  불완전·중복 검사에서는 제외한다. */
 export const validateAdiCdRows = (rows: AdiCdStep[]): AdiCdValidationResult => {
   const incompleteIds: string[] = [];
   const duplicateIds: string[] = [];
@@ -623,6 +625,7 @@ export const validateAdiCdRows = (rows: AdiCdStep[]): AdiCdValidationResult => {
   const idRowsById = new Map<string, string[]>();
 
   rows.forEach((r) => {
+    if (r.unregistered) { validCount += 1; return; }
     const id = r.step_id.trim();
     const desc = r.step_desc.trim();
     if (!id && !desc) return; // 완전히 빈 행은 세지 않는다
