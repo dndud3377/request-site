@@ -7,6 +7,13 @@
     python3 -m scripts.approval_cases.run_cases --case F-05 --case S-01
     python3 -m scripts.approval_cases.run_cases --report /tmp/result.md
 
+동작 방식:
+- 개발용 사이트의 **Django REST API 를 직접 호출**해 케이스별 의뢰서를 **실제로 상신**하고
+  결재를 끝까지 진행한다(화면 조작·모의 객체 없음, `POST /api/documents/` → `submit/` →
+  `peer-approve/` → `approve-step/` …).
+- 로그인은 **`@company.com` 개발용 계정**(`python manage.py create_users` 시드)만 쓴다.
+  `--mail-domain` 으로 도메인을 바꿀 수 있고, `--allow-any-account` 로 필터를 끌 수 있다.
+
 주의:
 - **개발환경(AUTH_MODE=dev)에서만** 동작한다. dev-login 이 막힌 환경에서는 즉시 중단한다.
 - 생성한 의뢰서는 **지우지 않는다** — 화면에서 제목·목록 표시까지 그대로 확인하기 위해서다
@@ -21,7 +28,7 @@ import traceback
 from .cases import CASES
 from .client import Api, ApiError
 from .flows import CaseFailure, CaseSkip, Ctx
-from .masterdata import MasterData
+from .masterdata import DEV_MAIL_DOMAIN, MasterData
 
 PASS, FAIL, SKIP, ERROR = 'PASS', 'FAIL', 'SKIP', 'ERROR'
 STATUS_MARK = {PASS: '✅', FAIL: '❌', SKIP: '⏭', ERROR: '💥'}
@@ -36,6 +43,10 @@ def parse_args(argv=None):
     p.add_argument('--list', action='store_true', help='케이스 목록만 출력')
     p.add_argument('--scan-limit', type=int, default=8, help='마스터 데이터 탐색 폭 (기본 8)')
     p.add_argument('--bootstrap', default='', help='마스터 데이터 조회에 쓸 로그인 ID(운영형 인증 환경용)')
+    p.add_argument('--mail-domain', default=DEV_MAIL_DOMAIN,
+                   help=f'상신·결재에 쓸 개발용 계정의 메일 도메인 (기본: {DEV_MAIL_DOMAIN})')
+    p.add_argument('--allow-any-account', action='store_true',
+                   help='도메인 필터를 끄고 모든 계정을 쓴다(권장하지 않음 — 실사용자 이름으로 문서가 남는다)')
     p.add_argument('--stop-on-fail', action='store_true', help='첫 실패에서 중단')
     p.add_argument('--report', default='', help='결과를 마크다운 표로 저장할 경로')
     p.add_argument('--timeout', type=int, default=30, help='HTTP 타임아웃(초)')
@@ -71,7 +82,9 @@ def main(argv=None):
         token = Actor(api, args.bootstrap).login().token
 
     print(f'[준비] {args.base_url} 마스터 데이터 탐색 중...')
-    master = MasterData(api, token=token, scan_limit=args.scan_limit)
+    master = MasterData(api, token=token, scan_limit=args.scan_limit,
+                        mail_domain=args.mail_domain,
+                        allow_any_account=args.allow_any_account)
     try:
         master.load_users()
         master.load_combos()
@@ -114,17 +127,19 @@ def main(argv=None):
           f'SKIP {counts[SKIP]} / ERROR {counts[ERROR]} (총 {len(results)}건) ===')
 
     if args.report:
-        _write_report(args.report, results, counts, args.base_url)
+        _write_report(args.report, results, counts, args.base_url, master)
         print(f'보고서 저장: {args.report}')
 
     return 1 if (counts[FAIL] or counts[ERROR]) else 0
 
 
-def _write_report(path, results, counts, base_url):
+def _write_report(path, results, counts, base_url, master=None):
     lines = [
         '# 결재 경우의 수 실행 결과',
         '',
-        f'- 대상: {base_url}',
+        f'- 대상: {base_url} (Django REST API 직접 호출로 실제 상신)',
+        (f'- 사용 계정: {"전체 계정" if master.allow_any_account else master.mail_domain + " 개발용 계정"}'
+         if master else '- 사용 계정: -'),
         f'- PASS {counts[PASS]} / FAIL {counts[FAIL]} / SKIP {counts[SKIP]} / ERROR {counts[ERROR]}',
         '',
         '| ID | 그룹 | 케이스 | 판정 | 상세 |',

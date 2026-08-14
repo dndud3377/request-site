@@ -102,6 +102,11 @@ React + Django 기반 웹 애플리케이션. 아래 규칙을 **반드시** 모
    `models.py` 의 경로 판정 메서드, 프론트 결재 화면)을 바꿨으면 **개발환경에서** 아래를 돌리고
    결과 표를 보고에 붙인다. 경우의 수 전수 목록은 `docs/APPROVAL_CASES_VALIDATION.md` 에 있다.
 
+   러너는 **개발용 사이트의 Django REST API 를 직접 호출해 케이스별 요청서를 실제로 상신**하고
+   결재를 끝까지 진행한다(`POST /api/documents/` → `submit/` → `peer-approve/` → `approve-step/` …).
+   로그인·상신·결재에 쓰는 계정은 **`@company.com` 개발용 계정**(`manage.py create_users` 시드)뿐이며,
+   실사용자 계정으로는 문서를 만들지 않는다.
+
    ```bash
    # 개발환경(AUTH_MODE=dev)이 떠 있어야 한다. 실제 DB 마스터 데이터로 상신한다.
    python3 -m scripts.approval_cases.run_cases --list              # 케이스 124건 목록

@@ -13,6 +13,11 @@ from .client import as_list
 
 VALIDATION_KEYWORD = 'plel'  # backend RequestDocument.VALIDATION_KEYWORD 와 같은 값
 
+# 개발용 계정의 메일 도메인. `python manage.py create_users` 로 만드는 시드 계정
+# (pl_user*, agent_r*, agent_p*, agent_j*, agent_o*, agent_e*, master)이 전부 이 도메인이다.
+# 러너는 **이 도메인 계정만** 골라 상신·결재한다 — 실사용자 계정으로 문서를 만들지 않기 위해서다.
+DEV_MAIL_DOMAIN = '@company.com'
+
 # 역할 → 이 역할이 필요한 이유(부족할 때 SKIP 사유로 출력)
 REQUIRED_ROLES = {
     'PL': '의뢰서 작성·상신, 지정 PL, 영업/기술지원 합의자, 추가 후결자',
@@ -48,27 +53,42 @@ class Combo:
 class MasterData:
     """개발 DB 탐색 결과 캐시."""
 
-    def __init__(self, api, token=None, scan_limit=8, log=print):
+    def __init__(self, api, token=None, scan_limit=8, log=print,
+                 mail_domain=DEV_MAIL_DOMAIN, allow_any_account=False):
         self.api = api
         self.token = token
         self.scan_limit = scan_limit
         self.log = log
+        self.mail_domain = (mail_domain or '').lower()
+        self.allow_any_account = allow_any_account
         self.users_by_role = {}
+        self.excluded_by_domain = {}  # 역할 → 도메인이 달라 제외한 인원 수
         self.combos = []          # 발견한 Combo 전부
         self.combo_plel = None    # plel 이 있는 조합(E 단계 생성용)
         self.combo_plain = None   # plel 이 없는 조합(E 단계 제외용)
 
     # ----- 사용자 -----
     def load_users(self):
+        """역할별 **개발용 계정**(메일이 `mail_domain` 인 계정)만 골라 담는다.
+
+        `--allow-any-account` 를 주면 도메인 필터를 끄지만, 기본은 개발용 계정 전용이다 —
+        러너가 만드는 의뢰서·결재 이력이 실사용자 이름으로 남지 않게 하기 위해서다.
+        """
         for role in REQUIRED_ROLES:
             res = self.api.get('/api/users/', params={'role': role}, token=self.token)
-            users = as_list(res.body) if res.ok else []
-            self.users_by_role[role] = [
+            raw = as_list(res.body) if res.ok else []
+            parsed = [
                 {'loginid': u.get('loginid') or u.get('username'),
-                 'name': u.get('username') or u.get('display_name') or '',
-                 'mail': u.get('mail') or ''}
-                for u in users if (u.get('loginid') or u.get('username'))
+                 'name': u.get('name') or u.get('username') or '',
+                 'mail': u.get('mail') or '',
+                 'deptname': u.get('deptname') or ''}
+                for u in raw if (u.get('loginid') or u.get('username'))
             ]
+            if self.mail_domain and not self.allow_any_account:
+                dev_users = [u for u in parsed if u['mail'].lower().endswith(self.mail_domain)]
+                self.excluded_by_domain[role] = len(parsed) - len(dev_users)
+                parsed = dev_users
+            self.users_by_role[role] = parsed
         return self.users_by_role
 
     def users(self, role, count=1):
@@ -136,9 +156,17 @@ class MasterData:
         if not self.combo_plel:
             lines.append(f'  ⚠️ pp 에 {VALIDATION_KEYWORD!r} 이 있는 조합을 찾지 못했다 '
                          f'— E(MASK) 단계가 필요한 케이스는 SKIP 된다.')
-        lines.append('[사용자]')
+        scope = ('전체 계정(도메인 필터 해제)' if self.allow_any_account
+                 else f'개발용 계정만({self.mail_domain})')
+        lines.append(f'[사용자] {scope}')
         for role in REQUIRED_ROLES:
             found = self.users_by_role.get(role, [])
             names = ', '.join(u['loginid'] for u in found[:4])
-            lines.append(f'  {role}: {len(found)}명 {("(" + names + ")") if names else ""}')
+            skipped = self.excluded_by_domain.get(role, 0)
+            note = f' / 도메인 불일치로 제외 {skipped}명' if skipped else ''
+            lines.append(f'  {role}: {len(found)}명 {("(" + names + ")") if names else ""}{note}')
+        if not self.allow_any_account and not any(self.users_by_role.values()):
+            lines.append(f'  ⚠️ {self.mail_domain} 계정이 하나도 없다 — '
+                         '`python manage.py create_users` 로 개발 계정을 만들거나 '
+                         '`--mail-domain` / `--allow-any-account` 를 지정한다.')
         return '\n'.join(lines)

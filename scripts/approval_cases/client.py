@@ -98,11 +98,13 @@ def as_list(body):
 class Actor:
     """특정 사용자로 로그인한 세션. 케이스는 항상 이 단위로 API 를 호출한다."""
 
-    def __init__(self, api, loginid, role='', name=''):
+    def __init__(self, api, loginid, role='', name='', mail='', deptname=''):
         self.api = api
         self.loginid = loginid
         self.role = role
         self.name = name or loginid
+        self.mail = mail
+        self.deptname = deptname
         self._token = None
 
     def login(self):
@@ -111,8 +113,12 @@ class Actor:
             raise ApiError(f'dev-login 실패({self.loginid}): {res.status} {res.error_text()}')
         self._token = res.body.get('access')
         user = res.body.get('user') or {}
+        # dev-login 응답은 auth_views.user_to_dict 형식이다:
+        # {id, username(=loginid), name, role, department, email}
         self.role = user.get('role', self.role)
-        self.name = user.get('display_name') or user.get('username') or self.name
+        self.name = user.get('name') or self.name
+        self.mail = user.get('email') or self.mail
+        self.deptname = user.get('department') or self.deptname
         return self
 
     @property

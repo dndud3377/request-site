@@ -10,6 +10,8 @@
 import datetime
 import json
 
+from .masterdata import DEV_MAIL_DOMAIN
+
 # 프론트 constants.ts 와 같은 값 (백엔드 RequestDocument 상수와도 일치해야 한다)
 PURPOSE_NEW = '신규'
 ONLY_MAP_PURPOSE = 'Only MAP'
@@ -165,10 +167,13 @@ def build_document(combo, requester, *,
     }
     additional_notes = '{"detail": broken' if broken_json else json.dumps(notes, ensure_ascii=False)
 
+    # 의뢰자 정보는 로그인한 개발용 계정의 실제 값(@company.com)을 그대로 쓴다.
+    # 계정에 메일이 비어 있을 때만 같은 도메인으로 채운다(다른 도메인을 만들어 내지 않는다).
     return {
         'title': _title(detail),
         'requester_name': requester.get('name') or requester['loginid'],
-        'requester_email': requester.get('mail') or f"{requester['loginid']}@example.com",
+        'requester_email': (requester.get('mail')
+                            or f"{requester['loginid']}{DEV_MAIL_DOMAIN}"),
         'requester_department': requester.get('deptname') or 'DEV',
         'product_name': combo.product,
         'reference_materials': '',

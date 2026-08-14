@@ -1,14 +1,43 @@
 # 결재 경우의 수 케이스 러너 (개발환경 전용)
 
 `docs/APPROVAL_CASES_VALIDATION.md` 에 열거한 **124개 케이스를 개발환경에서 실제로 실행**한다.
-문서 생성부터 상신·합의·반려·중단·철회까지 **실제 API** 를 그대로 호출하므로,
-권한 검사·분기·동시성 가드가 우회 없이 그대로 검증된다.
+
+- **개발용 사이트의 Django REST API 를 직접 호출**해 케이스마다 의뢰서를 **실제로 상신**하고
+  결재를 끝까지 진행한다. 화면 조작이나 모의 객체 없이
+  `POST /api/documents/` → `submit/` → `peer-approve/` → `assign-step/`·`claim-step/` →
+  `approve-step/`·`reject-step/` → `request-pause/`·`withdraw/` 를 그대로 탄다.
+  그래서 권한 검사·경로 분기·동시성 가드가 우회 없이 검증된다.
+- 상신·결재에 쓰는 계정은 **`@company.com` 개발용 계정**이다(아래 §계정).
 
 ## 준비
 
 1. 개발환경이 떠 있어야 한다(`docker-compose.dev.yml`, 화면 `http://localhost:10011`).
-2. **`AUTH_MODE=dev`** 여야 한다 — 러너는 `POST /api/auth/dev-login/` 으로 역할별 계정에 로그인한다.
-3. 개발 DB 에 아래 역할 계정이 있어야 한다. 부족한 역할이 쓰이는 케이스는 자동으로 `SKIP` 되고
+2. **`AUTH_MODE=dev`** 여야 한다 — 러너는 `POST /api/auth/dev-login/` 으로 역할별 계정에 로그인한다
+   (비밀번호 없이 loginid 만으로 발급되는 개발 전용 로그인).
+3. 개발 DB 에 **`@company.com` 개발용 계정**이 있어야 한다. 없으면 아래로 만든다.
+
+   ```bash
+   docker exec -it request_backend_dev python manage.py create_users
+   ```
+
+   `create_users` 가 만드는 시드 계정(전부 `@company.com`):
+
+   | 역할 | loginid | 메일 |
+   |---|---|---|
+   | `PL` | `pl_user` ~ `pl_user6` (6명) | `pl.user@company.com` |
+   | `TE_R` | `agent_r1~r3` | `agent.r1@company.com` … |
+   | `TE_P` | `agent_p1~p3` | `agent.p1@company.com` … |
+   | `TE_J` | `agent_j1~j3` | `agent.j1@company.com` … |
+   | `TE_O` | `agent_o1~o3` | `agent.o1@company.com` … |
+   | `TE_E` | `agent_e1~e3` | `agent.e1@company.com` … |
+   | `MASTER` | `master` | `master@company.com` |
+
+   러너는 `GET /api/users/?role=<역할>` 결과에서 **메일이 `@company.com` 인 계정만** 골라 쓴다
+   (실사용자 계정 이름으로 의뢰서·결재 이력이 남지 않게 하기 위해서다).
+   도메인이 다르면 `--mail-domain '@other.com'`, 필터를 끄려면 `--allow-any-account`.
+   의뢰자 정보(`requester_email`·`requester_department`)도 그 계정의 실제 값이 그대로 들어간다.
+
+4. 역할별 권장 인원은 아래와 같다. 부족한 역할이 쓰이는 케이스는 자동으로 `SKIP` 되고
    사유("TE_E 2명 필요(현재 1명)")가 출력된다.
 
    | 역할 | 권장 인원 | 쓰임 |
@@ -21,7 +50,7 @@
    | `TE_E` | 3명 | E 담당자 + 검토자(EV) 2명 — **E 는 검토자 필수라 최소 2명** |
    | `MASTER` | 1명 | 관리자 권한 케이스 |
 
-4. 메일은 서버 설정을 그대로 따른다. 개발환경에 **`MAIL_REDIRECT_TO`** 가 설정돼 있으면
+5. 메일은 서버 설정을 그대로 따른다. 개발환경에 **`MAIL_REDIRECT_TO`** 가 설정돼 있으면
    모든 메일이 그 주소로만 가므로 안전하다.
 
 ## 실행
@@ -35,7 +64,8 @@ python3 -m scripts.approval_cases.run_cases --case F-05            # 한 건만
 python3 -m scripts.approval_cases.run_cases --report /tmp/result.md
 ```
 
-옵션: `--base-url`(기본 `http://localhost:10011`), `--stop-on-fail`, `--scan-limit`,
+옵션: `--base-url`(기본 `http://localhost:10011`), `--mail-domain`(기본 `@company.com`),
+`--allow-any-account`, `--stop-on-fail`, `--scan-limit`,
 `--bootstrap <loginid>`(마스터 데이터 조회에 인증이 필요한 환경), `--timeout`.
 
 종료 코드: `0` = FAIL·ERROR 없음 / `1` = 실패 있음 / `2` = 환경 준비 실패.

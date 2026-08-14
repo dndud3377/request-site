@@ -33,7 +33,8 @@ class Ctx:
         key = (role, index)
         if key not in self._actors:
             u = users[index]
-            self._actors[key] = Actor(self.api, u['loginid'], role=role, name=u.get('name', '')).login()
+            self._actors[key] = Actor(self.api, u['loginid'], role=role, name=u.get('name', ''),
+                                      mail=u.get('mail', ''), deptname=u.get('deptname', '')).login()
         return self._actors[key]
 
     def user(self, role, index=0):
@@ -58,9 +59,13 @@ class Ctx:
 # ===== 문서 조작 =====
 
 def create_document(ctx, actor, combo=None, **kw):
-    """draft 문서 생성 → 문서 dict 반환."""
+    """draft 문서 생성 → 문서 dict 반환.
+
+    의뢰자 정보는 **로그인한 개발용 계정의 실제 값**(@company.com 메일·부서)을 그대로 쓴다.
+    """
     combo = combo or ctx.combo(plel=kw.get('plel', False))
-    requester = {'loginid': actor.loginid, 'name': actor.name}
+    requester = {'loginid': actor.loginid, 'name': actor.name,
+                 'mail': actor.mail, 'deptname': actor.deptname}
     body = P.build_document(combo, requester, **kw)
     res = actor.post('/api/documents/', body)
     if not res.ok:

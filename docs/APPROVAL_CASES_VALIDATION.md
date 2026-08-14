@@ -329,12 +329,42 @@
 
 ## 4. 개발환경에서 실행하기 (러너)
 
+### 4-0. 실행 방식 — **개발용 사이트의 Django REST API 직접 호출**
+
+케이스별 의뢰서는 화면 조작이나 모의 객체 없이 **개발용 사이트의 REST API 를 직접 호출해
+실제로 상신**한다. 즉 한 케이스는 아래 엔드포인트를 실제 순서대로 탄다.
+
+```
+POST /api/auth/dev-login/            ← 개발용 계정 로그인(JWT 발급)
+POST /api/documents/                 ← 의뢰서 생성(draft)
+POST /api/documents/{id}/submit/     ← 상신 (지정 PL·SA 포함)
+POST /api/documents/{id}/peer-approve/ · sales-agree/
+POST /api/documents/{id}/assign-step/ · claim-step/
+POST /api/documents/{id}/approve-step/ · reject-step/
+POST /api/documents/{id}/request-pause/ · confirm-pause/ · resume/
+POST /api/documents/{id}/withdraw/ · confirm-withdraw/ …
+GET  /api/documents/{id}/            ← 결과 검증(status·approval_steps)
+```
+
+- **모든 케이스가 실제 문서를 만들고 실제로 상신한다.** 검증은 API 응답과 문서 조회 결과로 한다.
+- 서버측 인가(`_can_act_on_step` 등)와 경로 분기가 **우회 없이** 그대로 적용된다.
+- 생성된 문서는 삭제하지 않으므로 `/approval` 화면에서 그대로 이어서 확인할 수 있다.
+
 ### 4-1. 준비
 1. 개발환경이 떠 있을 것(`docker-compose.dev.yml`, 화면 `http://localhost:10011`).
 2. **`AUTH_MODE=dev`** — 러너는 `POST /api/auth/dev-login/` 으로 역할별 계정에 로그인한다.
-3. 역할 계정 권장 인원: `PL` 3+, `TE_R` 2, `TE_P` 3, `TE_J` 2, `TE_O` 2, **`TE_E` 3**, `MASTER` 1.
+3. **`@company.com` 개발용 계정으로만 상신·결재한다.**
+   - 시드 생성: `docker exec -it request_backend_dev python manage.py create_users`
+     → `pl_user`~`pl_user6`(PL), `agent_r1~3`, `agent_p1~3`, `agent_j1~3`, `agent_o1~3`,
+     `agent_e1~3`, `master` — **전부 `@company.com`**.
+   - 러너는 `GET /api/users/?role=<역할>` 결과에서 **메일이 `@company.com` 으로 끝나는 계정만**
+     골라 쓴다(실사용자 계정으로 의뢰서·결재 이력이 남지 않게 하기 위해서다).
+     의뢰서의 `requester_email`·`requester_department` 도 그 계정의 실제 값이 들어간다.
+   - 도메인이 다르면 `--mail-domain '@other.com'`, 필터를 끄려면 `--allow-any-account`
+     (권장하지 않음 — 실사용자 이름으로 문서가 남는다).
+4. 역할 계정 권장 인원: `PL` 3+, `TE_R` 2, `TE_P` 3, `TE_J` 2, `TE_O` 2, **`TE_E` 3**, `MASTER` 1.
    부족하면 해당 케이스가 사유와 함께 `SKIP` 된다.
-4. 메일은 서버 설정을 그대로 따른다(`MAIL_REDIRECT_TO` 가 설정돼 있으면 전부 그 주소로 간다).
+5. 메일은 서버 설정을 그대로 따른다(`MAIL_REDIRECT_TO` 가 설정돼 있으면 전부 그 주소로 간다).
 
 ### 4-2. 실행
 ```bash
@@ -343,8 +373,10 @@ python3 -m scripts.approval_cases.run_cases                         # 전체
 python3 -m scripts.approval_cases.run_cases --group F --group PE    # 그룹만
 python3 -m scripts.approval_cases.run_cases --case F-05 --case X-09 # 개별
 python3 -m scripts.approval_cases.run_cases --report /tmp/result.md # 결과 표 저장
+python3 -m scripts.approval_cases.run_cases --mail-domain '@other.com'  # 계정 도메인이 다를 때
 ```
 종료 코드 `0`=실패 없음 / `1`=FAIL·ERROR 있음 / `2`=환경 준비 실패.
+실행 머리에 어떤 계정으로 도는지(`[사용자] 개발용 계정만(@company.com)`)와 역할별 인원이 출력된다.
 
 ### 4-3. 상신 값은 전부 실제 DB 값이다
 러너는 화면과 **같은 form-options API 를 같은 순서로** 호출해 조합을 찾는다.
