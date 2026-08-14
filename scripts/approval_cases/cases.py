@@ -962,11 +962,14 @@ def x09(ctx):
     doc_id, author, pls = F.to_parallel(ctx, plel=True)
     F.claim_step(ctx.actor('TE_E', 0), doc_id, 'E')
     F.reject_step(ctx.actor('TE_E', 0), doc_id, 'E', comment='수정 요청합니다')
-    doc = F.fetch(author, doc_id)
+    doc = F.expect_doc_status(author, doc_id, 'under_review',
+                              '(E 반려는 수정 요청이라 상태를 바꾸지 않아야 한다)')
     e_step = F.steps(doc, agent='E')[0]
-    return (f'doc={doc_id} status={doc.get("status")} E.action={e_step.get("action")} '
-            f'comment={(e_step.get("comment") or "")[:40]!r} '
-            '→ APPROVAL.md 서술(일반 반려)과 같은지 대조할 것')
+    if e_step.get('action') != 'pending':
+        raise CaseFailure(f'E step 이 pending 이어야 한다: {e_step.get("action")}')
+    if '[수정 요청' not in (e_step.get('comment') or ''):
+        raise CaseFailure(f'수정 요청 이력이 comment 에 없다: {e_step.get("comment")!r}')
+    return f'doc={doc_id} E.action=pending comment={(e_step.get("comment") or "")[:40]!r}'
 
 
 # ============================================================ M. 중단(PAUSE)
