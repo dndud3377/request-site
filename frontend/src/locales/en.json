@@ -518,7 +518,7 @@
     "withdraw_reason_label": "Withdrawal Reason",
     "withdraw_reason_placeholder": "Enter why this request should be withdrawn. (Shown to the current stage owners)",
     "withdraw_reason_hint": "The withdrawal takes effect only after every current stage confirms it. You can cancel the request until then.",
-    "withdraw_immediate_hint": "No approval is in progress, so this request is deleted immediately without confirmation.",
+    "withdraw_confirm_draft_message": "Are you sure you want to withdraw this request?",
     "withdraw_submit": "Request Withdrawal",
     "withdraw_submit_immediate": "Withdraw & Delete",
     "withdraw_success": "The request has been withdrawn and deleted.",
@@ -638,7 +638,7 @@
       "note_sa": "The Sales/Tech Support agreer stage exists only when assigned at submission and runs in parallel with the PL review. It is required when the exception zone value differs from the default (300 normally, 500 for C-family).",
       "note_e": "The EUV (E) stage runs only when plel (yellow cell) items are present, and verifies whether the $t(request.validation_system) classification is correct.",
       "note_onlymap": "'Only MAP' requests proceed only up to RFG (R); later stages are skipped.",
-      "note_reject": "If rejected at any stage, the whole request becomes 'Rejected' and no further stages proceed; the requester can resubmit it as a new round from the start (PL review) by designating a peer PL, or withdraw it back to a draft."
+      "note_reject": "If rejected at any stage, the whole request becomes 'Rejected' and no further stages proceed; the requester can resubmit it as a new round from the start (PL review) by designating a peer PL."
     }
   },
   "history": {
