@@ -280,6 +280,63 @@ pages/RequestPage/
   4. [흐름도 행을 완전히 비워둔 채(기본 신규 행) "다음" 클릭] → [기대 결과: 흐름도 관련 에러
      없이 진행된다(다른 필수 항목은 별개로 채워야 함) — 이번 변경으로 새로 막히지 않아야 한다.]
 
+### 리팩토링 (2026-08-14 — 잠기는 MAP 칸의 기본값을 `map_type` 이 정하도록 단일화)
+
+- **배경**: 바로 아래 항목(CLONE/EXISTING 지도편차·예외구역 버그)을 "전환 지점마다 값을 강제로
+  되돌리는" 방식으로 고쳤더니 `registered ? '변경 없음' : INITIAL_DETAIL...` 같은 조건문이
+  **5군데에 흩어졌다.** 새 전환 경로가 생기면 또 빠뜨릴 구조라, 기본값 자체가 `map_type` 을 알도록
+  바꿔 그 5군데를 함수 호출 한 줄씩으로 줄였다. **동작은 이전과 동일하다**(재현 테스트가 그대로 통과).
+- **`constants.ts` 에 신설한 단일 출처**:
+
+  | 이름 | 역할 |
+  |---|---|
+  | `MAP_TYPE_CLONE` / `MAP_TYPE_EXISTING` | `'CLONE'`/`'EXISTING'` 매직 스트링 제거(규칙 I) |
+  | `isMapRegisteredType(mapType)` | 이미 등록된 MAP 을 쓰는 유형인가(= 입력칸이 전부 잠기는 유형) |
+  | `MAP_NO_CHANGE` / `MAP_HAS_CHANGE` | 지도 편차 선택값 상수 |
+  | `regionMapChangeDefault(mapType)` | 리전별 지도편차 기본값 — CLONE/EXISTING 이면 `'변경 없음'` |
+  | `eaDefaultValue(onlyProdc, mapType)` | 예외구역 기본값 — CLONE/EXISTING 이면 `''`(인자 1개 추가) |
+
+- **`INITIAL_DETAIL` 도 이 함수들에서 파생**시켰다(`map_change_top: regionMapChangeDefault()`,
+  `ea_value: eaDefaultValue()`). `map_type` 이 비어 있는 초기 상태의 값이라 종전과 동일하다.
+- **정리한 코드**:
+  - `EA_DEFAULT_NORMAL`/`EA_DEFAULT_PRODC` 의 `export` 제거 — `map_type` 조건이 `eaDefaultValue`
+    안에 있어야 하므로 바깥에서 raw 상수를 직접 읽으면 안 된다. 이제 모듈 안에서만 쓴다.
+  - `index.tsx` 의 `isRegistered`/`registered` 지역 변수 5개와 그에 딸린 삼항 조건문 제거.
+  - `map_type === 'CLONE'` 매직 스트링 2곳(`index.tsx` validate, `StepMap.tsx` 원본 위치 블록)을
+    `MAP_TYPE_CLONE` 으로 교체.
+- **화면 변화 1건**: 예외 구역 `변경 없음` 선택지 라벨이 CLONE/EXISTING 에서는 기본값 표기 없이
+  `변경 없음` 으로만 보인다(NEW 는 종전대로 `변경 없음 (300)`). 기본값 자체가 없는 상태를 라벨이
+  그대로 반영하게 한 것이다 — i18n 키는 기존 `map_no_change` 를 재사용해 신규 키 추가는 없다.
+- **의도적으로 바꾸지 않은 것 — `requiresSalesAgreer`(`index.tsx`)**: 계획 단계에서는 여기에도
+  `map_type` 을 넘기려 했으나, 확인해 보니 **백엔드 `RequestDocument.requires_sales_agreer`
+  (`models.py:191`)는 `map_type` 과 무관하게 300/500 으로만 비교**한다. 여기서 CLONE/EXISTING 의
+  빈 기본값(`''`)을 쓰면 오히려 앞뒤 기준이 어긋나므로 인자를 넘기지 않고 그대로 뒀다
+  (CLONE/EXISTING 은 `ea_change` 가 항상 `'변경 없음'` 이라 첫 조건에서 걸러진다). 코드에 주석으로 남겼다.
+- **영향 파일**: `frontend/src/pages/RequestPage/constants.ts` ·
+  `frontend/src/pages/RequestPage/index.tsx` ·
+  `frontend/src/pages/RequestPage/components/StepMap.tsx` ·
+  `frontend/src/pages/RequestPage/cloneMapRegionDefault.test.tsx` (라벨 검증 1건 추가)
+- **검증(2026-08-14 실행)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` | 22개 | **22개** (신규 0, `TS2304/2305/2307/2552/6133` 없음) |
+  | `react-scripts test` | 7 suites / 186건 | **7 suites / 187건 통과** |
+  | `eslint`(수정 파일) | index.tsx 경고 3건 | **동일 3건**(전부 pre-existing, 신규 0) |
+
+  - **리팩토링 검증의 핵심**: 기존 재현 테스트 3건이 **코드를 고치지 않고 그대로 통과**하는 것이
+    동작 불변의 증거다.
+  - 신규 라벨 테스트도 분기를 임시로 되돌려 **실제로 실패하는 것까지 확인**했다
+    (`Expected: "변경 없음" / Received: "변경 없음 (300)"`).
+- **수동 검증 시나리오**:
+  1. [`/request` 새 문서 → Step1 채우고 Step2 진입 → MAP 목적 `NEW` 선택] → [기대 결과: 예외 구역
+     드롭다운이 `변경 없음 (300)`, 값 칸에 `300`. C가문 `Yes` 로 바꾸면 `변경 없음 (500)`/`500`.]
+  2. [같은 화면에서 MAP 목적을 `CLONE` 으로 변경 → 확인 모달 '확인'] → [기대 결과: 예외 구역
+     드롭다운이 `변경 없음`(괄호 없음), 값 칸은 **빈 채로 잠김**. 리전별 지도편차도 `변경 없음` 잠김.]
+  3. [`EXISTING` 으로도 2번 반복] → [기대 결과: `CLONE` 과 동일.]
+  4. [2번 상태에서 임시저장 → 목록에서 다시 편집으로 열기] → [기대 결과: 빈 값/`변경 없음` 이 그대로
+     유지되어야 한다. `300`·`변경 있음` 이 되살아나면 실패.]
+
 ### 버그 수정 (2026-08-13 — CLONE/EXISTING 상신 시 리전별 지도편차·예외구역이 잠긴 채 '변경 있음'/300 으로 저장됨)
 
 - **증상**: MAP 목적이 `CLONE`(차용)·`EXISTING`(기등록)이면 StepMap 에서 리전별 지도편차
