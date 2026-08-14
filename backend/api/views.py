@@ -580,8 +580,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         })
 
     # 확인 절차 없이 즉시 삭제되는 문서 상태 — 결재선이 아직 없거나(draft) 이미 종료돼
-    # (rejected/approved) '확인'을 받을 진행 중 단계가 존재하지 않는다.
-    _WITHDRAW_IMMEDIATE_STATUSES = ('draft', 'rejected', 'approved')
+    # (approved) '확인'을 받을 진행 중 단계가 존재하지 않는다.
+    # ⚠️ rejected 는 제외한다(2026-08) — 반려 문서는 철회(삭제)할 수 없고 수정 후 재상신만 가능하다.
+    _WITHDRAW_IMMEDIATE_STATUSES = ('draft', 'approved')
     # 현재 단계 전원의 확인을 받아야 철회되는 상태
     _WITHDRAW_CONFIRM_STATUSES = ('under_review', 'submitted')
 
@@ -609,10 +610,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         철회는 더 이상 임시저장(draft)으로 되돌리는 동작이 아니다 — 철회가 확정되면
         의뢰서를 **완전히 삭제**한다(2026-08 정책 변경, 복구 불가).
 
-        - draft / rejected : 확인할 진행 중 단계가 없다 → 즉시 삭제
+        - draft            : 확인할 진행 중 단계가 없다 → 즉시 삭제(사유 선택)
         - approved         : 결재 완료본이라 MASTER 만 즉시 삭제(`can_delete` 와 같은 기준)
         - under_review / submitted : 철회 요청 생성 → 현재 단계 전원 확인 시 삭제.
           이 경로만 **사유(reason) 필수**이고, 확인 대기 동안 결재가 동결된다.
+        - rejected         : 철회할 수 없다(400) — 수정 후 재상신해야 한다(2026-08).
         - pause            : 재개한 뒤 철회해야 한다(400).
         """
         document = self.get_object()
@@ -632,6 +634,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 )
             self._delete_withdrawn_document(request, document, reason)
             return Response({'message': '의뢰서가 철회되어 삭제되었습니다.', 'deleted': True})
+
+        if document.status == 'rejected':
+            return Response(
+                {'error': '반려된 의뢰서는 철회할 수 없습니다. 수정 후 재상신해 주세요.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if document.status not in self._WITHDRAW_CONFIRM_STATUSES:
             return Response(
