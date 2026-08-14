@@ -177,6 +177,33 @@ describe('CLONE 신규 작성 — 리전별 지도편차·예외구역은 잠긴
     expect(detail.ea_change).toBe('변경 없음');
   });
 
+  it('CLONE 의 예외 구역 라벨은 기본값 없이 "변경 없음"만 보인다(NEW 는 "변경 없음 (300)")', async () => {
+    const { container } = await renderNewDoc();
+    await advanceToMapStep(container);
+
+    const eaNoChangeLabel = () => {
+      const select = container.querySelector('select[name="ea_change"]') as HTMLSelectElement;
+      return (select.querySelector('option[value="변경 없음"]') as HTMLOptionElement).textContent?.trim();
+    };
+
+    // NEW 는 종전대로 적용되는 기본값(300)을 라벨에 함께 보여준다.
+    await act(async () => { buttonWith(container, 'NEW').click(); });
+    await flushEffects();
+    expect(eaNoChangeLabel()).toBe('변경 없음 (300)');
+
+    // CLONE 으로 바꾸면 확인 모달을 거쳐 적용된다(이미 map_type 이 있으므로).
+    await act(async () => { buttonWith(container, 'CLONE').click(); });
+    await flushEffects();
+    await act(async () => { buttonWith(container, '확인').click(); });
+    await flushEffects();
+
+    // CLONE 은 입력칸이 잠겨 기본값 자체가 없으므로 값 표기가 사라진다.
+    expect(eaNoChangeLabel()).toBe('변경 없음');
+    const eaValueInput = container.querySelector('input[name="ea_value"]') as HTMLInputElement;
+    expect(eaValueInput.value).toBe('');
+    expect(eaValueInput.disabled).toBe(true);
+  });
+
   it('C가문을 Yes → No → Yes로 다시 전환해도 여전히 변경 없음/빈 값이다', async () => {
     const { container } = await renderNewDoc();
     await advanceToMapStep(container);
