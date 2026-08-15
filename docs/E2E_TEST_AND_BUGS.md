@@ -1586,20 +1586,39 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 영향: 결재 도착 알림 누락 → 결재 지연. 사용자는 메일이 안 온 사실 자체를 모른다.
 - 권고: `attempts`에 비례한 지수 backoff(다음 시도 시각 필드 추가) + `failed` 발생 시 관리자 통보.
 
-### 🟡 B-40 재상신 변경이력 diff가 오탐할 수 있다 **분석🔍**
-- 위치: `components/PagedDetailView.tsx:513-518`(`computeDetailDiff`), 호출 `:742` — **2026-08-04 미수정 확인**
+### 🟡 B-40 재상신 변경이력 diff가 오탐할 수 있다 **재확인🔍(2026-08-15)**
+- 위치: `components/PagedDetailView.tsx:903-910`(`computeDetailDiff`), 호출 `:1240` — 현재 코드 기준 재확인.
   ```ts
-  if (JSON.stringify(cur?.[k]) !== JSON.stringify(prev?.[k])) changed.add(k);
+  function computeDetailDiff(cur: any, prev: any): Set<string> {
+    const changed = new Set<string>();
+    const keys = new Set([...Object.keys(cur ?? {}), ...Object.keys(prev ?? {})]);
+    for (const k of keys) {
+      if (JSON.stringify(cur?.[k]) !== JSON.stringify(prev?.[k])) changed.add(k);
+    }
+    return changed;
+  }
   ```
-- 내용: ① `JSON.stringify`는 **객체 키 순서에 민감**하다. `setDetail({ ...parsed.detail, other_purpose, bb_entries, notifiers })`
-  처럼 일부 키를 뒤에 재삽입하면 저장 시 키 순서가 바뀌어 **내용이 같아도 '변경됨'** 으로 잡힌다.
-  ② 편집 로드 시 `bb_entries`에 **id를 백필**한다(`e.id ?? genId()`) → 이전 스냅샷에는 없던 `id`가 생겨
-  `bb_entries`가 **항상 변경으로 표시**된다.
-- 영향: 상세보기에서 실제로 바뀌지 않은 항목이 빨갛게 강조 → 결재자가 변경분을 신뢰하지 못한다(경고 피로).
-- 권고: 키 정렬 후 비교(`rowContentSig`처럼) + 비교 전 `id` 등 비의미 필드 제거.
-- 부가 확인 필요: `buildEnrichedForm`은 **PL '수정 후 상신'(`isPeerReviewMode`)에서도 `shouldAddHistory=true`** 로 호출된다.
-  즉 PL이 수정할 때마다 history가 쌓여 상세에 '변경 이력'으로 표시되는데, `docs/APPROVAL.md §7`은
-  "**반려 후 재상신 시** 직전 스냅샷 대비"라고만 적혀 있다 → **문서와 구현의 범위 불일치**(의도 확인 필요).
+- **① "JSON.stringify가 객체 키 순서에 민감하다" — 재확인 결과 근거 없음(정정)**: `computeDetailDiff`는
+  `detail` 객체 전체를 통짜로 stringify하지 않고 **key별로 `cur?.[k]` vs `prev?.[k]`만 비교**한다.
+  `setDetail({ ...parsed.detail, other_purpose, bb_entries, notifiers })` 처럼 `detail`의 최상위 키
+  삽입 순서가 바뀌어도 개별 key 값 비교에는 영향이 없다. 이 부분은 실제 오탐 원인이 아니다.
+- **② `bb_entries` id 백필 오탐 — 재현 확인, 실제 버그**: 편집 로드 시(`RequestPage/index.tsx:878`)
+  `bb_entries`에 없는 `id`를 백필한다(`e.id ?? genId()`). `history[]`에는 백필 **전** 원본이 그대로
+  들어가므로(`RequestPage/index.tsx:850` `prevParsedRef.current.detail = parsed.detail`), 위치·제품·
+  process_id를 전혀 안 고쳐도 `id` 유무 차이만으로 `bb_entries`가 "변경됨"으로 잡힌다.
+  스크립트로 두 함수(백필 로직 + `computeDetailDiff`)를 그대로 재현해 `changedFields`에 `bb_entries`가
+  포함되는 것을 확인했다(2026-08-15). 단, **영향 범위는 좁다** — `makeBbEntry()`가 신규 항목 생성 시점부터
+  항상 `id`를 부여하므로, `id` 필드 도입 **이전에 저장된 레거시 문서**가 편집·재상신될 때만 발생한다.
+  **아직 수정하지 않았다**(사용자 확인 후 결정 예정).
+- 영향: 레거시 문서의 상세보기에서 뼈찜 항목이 실제로 안 바뀌었는데도 빨갛게 강조된다(경고 피로).
+- 권고: 비교 전 `id` 등 비의미 필드를 양쪽에서 제거하고 비교(표 diff의 `rowContentSig`/`JAYER_DIFF_FIELDS`
+  방식처럼 비교 기준 필드를 명시적으로 한정).
+- ~~부가 확인 필요: PL '수정 후 상신'에서도 history가 쌓이는 것이 문서(`docs/APPROVAL.md §7`, "반려 후
+  재상신 시"라고만 서술)와 범위가 안 맞는다~~ → **재확인 완료, 버그 아님**. 코드(`buildEnrichedForm`
+  `shouldAddHistory`)를 보면 PL 수정 후 상신(Case D)도 항상 이력을 쌓도록 **의도된 동작**이며, 오히려
+  세 번째 경로인 **중단 후 재개(Case M `resume`)**는 이력을 전혀 안 쌓는 실제 누락이었다 → 별도
+  발견으로 분리해 **2026-08-15 수정 완료**(`shouldAddHistory = isRejected || isPause`). `docs/APPROVAL.md
+  §7`은 "반려 후 재상신 시"만 언급하고 있어 대상을 세 경로 전부로 넓혀 갱신했다.
 
 ### 🟡 B-41 `SECRET_KEY` 기본값이 안전하지 않고 production에서도 오버라이드되지 않는다 **분석🔍**
 - 위치: `config/settings/base.py:11` — **2026-08-04 미수정 확인**

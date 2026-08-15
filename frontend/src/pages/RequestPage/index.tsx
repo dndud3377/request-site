@@ -4147,7 +4147,7 @@ export default function RequestPage(): React.ReactElement {
         const currentStatus = docId ? (await documentsAPI.get(docId)).data.status : 'draft';
         const isRejected = currentStatus === 'rejected';
         const isPause = currentStatus === 'pause';
-        const enriched = buildEnrichedForm(submitNote, isRejected); // 재상신일 때만 history 누적
+        const enriched = buildEnrichedForm(submitNote, isRejected || isPause); // 재상신·재개 수정 시 history 누적
         if (!docId) {
           const res = await documentsAPI.create(enriched);
           docId = res.data.id;
