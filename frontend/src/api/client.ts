@@ -22,6 +22,7 @@ import {
   UserInfo,
   UserWithRole,
   MailLinesResponse,
+  VocMailResponse,
   CreateUserInput,
   UserForAssignment,
   UserGroup,
@@ -813,6 +814,19 @@ const updateMailLines = async (
   return { data };
 };
 
+/**
+ * VOC 등록 알림 메일 수신 설정 변경(MASTER 전용, 본인 또는 MASTER 만 가능).
+ */
+const updateVocMail = async (
+  userId: number,
+  receiveVocMail: boolean,
+): Promise<{ data: VocMailResponse }> => {
+  const data = await patch<VocMailResponse>(`/users/${userId}/voc-mail/`, {
+    receive_voc_mail: receiveVocMail,
+  });
+  return { data };
+};
+
 export const usersAPI = {
   list: listUsers,
   create: createUser,
@@ -820,6 +834,7 @@ export const usersAPI = {
   forAssignment: getUsersForAssignment,
   assignRole: assignRole,
   updateMailLines: updateMailLines,
+  updateVocMail: updateVocMail,
 };
 
 // ===== 나만의 그룹 API =====
