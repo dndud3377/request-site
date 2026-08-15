@@ -298,12 +298,27 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   또한 `agent`는 `R·P·J·O·E`만 허용(`agent='PL'`로 지정 PL을 덮어쓰는 우회 차단. `P`는 화이트리스트엔 남아 있으나 `_can_assign_step`이 항상 403 반환).
 
 ### Case K-2 — 검토중 선점 (`claim_step`, 2026-07, **P 2026-07 추가**) — **J·O·E·P 전용**
-- 동작: 현재 회차의 해당 J/O/E/P pending step에 **요청자 본인을 assignee로 고정**(취소·재클릭 불가).
+- 동작: 현재 회차의 해당 J/O/E/P pending step에 **요청자 본인을 assignee로 고정**.
 - ✅ 권한(`_can_claim_step`): MASTER / 같은 팀(역할↔agent 일치) + pending + 미배정일 때만. `agent`는 `J·O·E·P`만 허용.
 - ✅ 동시성: 문서 행 락(`select_for_update`)으로 중복 선점을 막고, 이미 배정된 경우 `409`를 반환한다.
   ⚠️ **(정정) 여기 있던 "'추가' 버튼으로 여러 명을 쌓아 `assignStepMultiJ` 호출" 서술은 삭제한다** —
   J 다중 배정 UI 와 `assignStepMultiJ` API 는 **지금 코드에 없다**(프론트 전체 검색 0건).
   검토중(claim) 방식 전환 전의 잔재이며, 현재 J 는 팀원 1명이 선점하고 같은 팀 누구나 합의한다.
+
+### Case K-2-1 — 검토중 취소 (`unclaim_step`, 2026-08 추가) — **J·O·E·P 전용, 선점자 본인 + MASTER**
+- 동작: 현재 회차의 해당 J/O/E/P pending step에서 **assignee/assignee_name 을 비워** 대기중(미배정)으로 되돌린다.
+  claim_step 과 대칭인 `POST /api/documents/<id>/unclaim-step/`(`agent` 필수).
+- ✅ 권한(`_can_unclaim_step`): MASTER / **선점자 본인**만. 같은 팀이라도 선점자가 아니면 취소할 수 없다
+  (claim 의 "같은 팀 누구나 선점 가능"보다 좁다 — 남의 선점을 임의로 풀 수 없게 하기 위함).
+- 취소 대상이 없으면(미선점) `400`, 권한 없으면 `403`. `claim_step`과 동일하게
+  `_blocked_progress_response`(문서 상태·활성 철회 요청)로 동결된다.
+- ⚠️ **J 검토 항목 검토자는 보존된다** — J 선점 중 지정한 `DocumentReviewItemReviewer` 는
+  취소해도 지우지 않는다(재선점 시 그대로 이어서 편집). assignee 필드만 되돌린다.
+- 취소 후엔 뱃지(대기중/검토중)와 결재 경로 그리드가 assignee 유무로 자동 파생되므로
+  별도 상태 갱신 없이 즉시 대기중으로 표시된다(`approvalTable.ts`).
+- 프론트: `canUserUnclaim`(`ApprovalFlow.tsx`), 버튼은 결재 화면의 '검토중' 버튼 옆에
+  선점자 본인에게만 노출된다.
+- 테스트: `backend/api/tests.py::PEStageReviewerFlowTest` (`test_unclaim_*`).
 
 ### Case K-3 — P/E 검토자 지정 (`approve_step`의 `reviewer_loginids`, 2026-07) — **P·E 전용, 다중 검토자**
 - ⚠️ **별도 지정 API 없음**: R 담당자 지정(`assign_step`이 담당자+검토자를 한 번에 받는 것)과 동일한 UX를
@@ -642,6 +657,7 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 | PL 합의 / 반려 / **수정 후 상신** | PL 검토 단계 + 본인 | `peerApprove` / `peerReject` / `/request`로 이동(peerSubmit) |
 | 담당자 지정 (R) | `canUserAssign`가 참 | `assignStep` |
 | 검토중 (J·O·E·P, 2026-07 P 포함) | `canUserClaim`가 참 | `claimStep` |
+| 검토중 취소 (J·O·E·P, 2026-08) | `canUserUnclaim`가 참(선점자 본인/MASTER) | `unclaimStep` |
 | 검토자 선택 후 합의 (P·E, 2026-07, 다중) | `canUserPickReviewers`가 참(=`canUserAgree`와 동일 조건) — 별도 액션 없이 `approveStep`에 `reviewer_loginids` 동봉 | `approveStep`(agent P/E) |
 | 지정자 변경 | PL/MASTER | `changeDesignee` |
 | 후결자 추가/제거 (2026-07) | 작성자/MASTER + under_review + 병렬 진입 후 | `addPostApprover` / `removePostApprover` |
@@ -681,6 +697,7 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 | 반려 | `reject-step/` | `agent`, `comment` |
 | 담당자 지정 (R) | `assign-step/` | `agent`, `assignee_loginid`, `assignee_name` |
 | 검토중 선점 (J·O·E·P) | `claim-step/` | `agent` |
+| 검토중 취소 (J·O·E·P, 2026-08) | `unclaim-step/` | `agent` |
 | 중단 요청 | `request-pause/` | `reason`(필수) |
 | 중단 확인 | `confirm-pause/` | `agent` |
 | 재개 | `resume/` | - (pause → under_review) |
@@ -806,6 +823,9 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
    앞의 두 화면 버그는 "R 이 병렬 진입 시점에 아직 안 끝나 있는" 상황을 처음 만들어낸 이 경로가
    드러낸 것이지 이 경로만의 문제가 아니다 — 기존 두 경로는 그 시점에 R 이 항상 이미 끝나 있어
    증상이 나타난 적이 없었을 뿐이다.
+10. ✅ **(2026-08 추가) 검토중(claim) 선점 취소 기능** — 위 항목 2·7 에서 "선점(취소 불가)"이라고
+    적었던 부분이 지금은 취소 가능하다. `unclaim-step/`(선점자 본인/MASTER 전용)으로 assignee 를
+    비워 대기중으로 되돌린다. 상세는 Case K-2-1 참조.
 
 ---
 
