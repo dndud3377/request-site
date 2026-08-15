@@ -36,6 +36,16 @@ export const canUserClaim = (user: { role: UserRoleWithNull } | MockUser, step: 
   return !!agent && step.agent === agent;
 };
 
+// 검토중(claim) 취소 가능 여부: 선점자 본인만(MASTER 는 별도 처리 없이 canUserUnclaim 호출부에서 항상 허용)
+// - MASTER: 항상 가능
+// - 그 외: pending + 선점됨 + 본인이 선점자일 때만
+export const canUserUnclaim = (user: { role: UserRoleWithNull; username: string } | MockUser, step: ApprovalStepFrontend): boolean => {
+  if (!CLAIM_AGENTS.includes(step.agent)) return false;
+  if (step.action !== 'pending' || !step.assignee_loginid) return false;
+  if (user.role === 'MASTER') return true;
+  return step.assignee_loginid === user.username;
+};
+
 // 합의/반려 가능 여부
 // - MASTER: 항상 가능
 // - J/O/E/P(검토중): 누군가 검토중으로 선점(assignee 존재)하면 같은 팀(역할↔agent) 누구나 합의/반려

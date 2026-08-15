@@ -1152,6 +1152,95 @@ class PEStageReviewerFlowTest(TestCase):
         self.assertEqual(p_step.action, 'pending')
         self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='PV', round=1).exists())
 
+    # ----- 검토중(claim) 취소 -----
+
+    def test_unclaim_returns_step_to_unassigned(self):
+        """선점자 본인이 취소하면 assignee 가 비워져 다시 대기중(미배정)으로 돌아간다."""
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        p_step = ApprovalStep.objects.get(document=doc, agent='P', round=1)
+        self.assertEqual(p_step.assignee_id, self.p_owner.id)
+
+        r = self.client.post(f'/api/documents/{doc.id}/unclaim-step/', {'agent': 'P'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        p_step.refresh_from_db()
+        self.assertIsNone(p_step.assignee)
+        self.assertEqual(p_step.assignee_name, '')
+        self.assertEqual(p_step.action, 'pending')
+
+    def test_unclaim_allows_reclaim_by_other_team_member(self):
+        """취소 후엔 같은 팀 다른 사람이 다시 검토중을 눌러 선점할 수 있다."""
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        self.client.post(f'/api/documents/{doc.id}/unclaim-step/', {'agent': 'P'}, format='json')
+
+        self.client.force_authenticate(user=self.p_outsider)
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        p_step = ApprovalStep.objects.get(document=doc, agent='P', round=1)
+        self.assertEqual(p_step.assignee_id, self.p_outsider.id)
+
+    def test_unclaim_denied_for_other_team_member(self):
+        """선점자 본인이 아닌 같은 팀 동료는 취소할 수 없다(403)."""
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+
+        self.client.force_authenticate(user=self.p_outsider)
+        r = self.client.post(f'/api/documents/{doc.id}/unclaim-step/', {'agent': 'P'}, format='json')
+        self.assertEqual(r.status_code, 403)
+        p_step = ApprovalStep.objects.get(document=doc, agent='P', round=1)
+        self.assertEqual(p_step.assignee_id, self.p_owner.id, '취소가 거부됐으니 선점 상태가 유지돼야 한다')
+
+    def test_unclaim_denied_when_not_claimed(self):
+        """아직 아무도 선점하지 않은 단계는 취소할 것이 없으므로 400 이다."""
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        r = self.client.post(f'/api/documents/{doc.id}/unclaim-step/', {'agent': 'P'}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_unclaim_blocked_during_active_withdraw_request(self):
+        """철회 요청 확인 대기 중에는 unclaim-step 도 동결된다(claim-step 과 동일 가드, _blocked_progress_response)."""
+        from .models import WithdrawRequest
+
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        p_step = ApprovalStep.objects.get(document=doc, agent='P', round=1)
+
+        WithdrawRequest.objects.create(
+            document=doc, requester=self.requester, requester_name='요청자',
+            reason='확인 필요', round=1, state='requested', target_step_ids=[p_step.id],
+        )
+
+        r = self.client.post(f'/api/documents/{doc.id}/unclaim-step/', {'agent': 'P'}, format='json')
+        self.assertEqual(r.status_code, 400)
+        p_step.refresh_from_db()
+        self.assertEqual(p_step.assignee_id, self.p_owner.id, '동결 중에는 선점 상태가 그대로여야 한다')
+
+    def test_unclaim_leaves_review_item_reviewers_intact(self):
+        """J 선점 중 지정한 검토 항목 검토자는 취소해도 그대로 남는다(합의 여부와 무관하게 보존)."""
+        from .models import DocumentReviewItem, DocumentReviewItemReviewer, ReviewItemMaster
+
+        doc = self._advance_to_parallel()
+        master = ReviewItemMaster.objects.create(title='항목1', is_active=True)
+        item = DocumentReviewItem.objects.create(document=doc, master=master, title='항목1')
+
+        self.client.force_authenticate(user=self.j_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'J'}, format='json')
+        DocumentReviewItemReviewer.objects.create(
+            item=item, user=self.j_user, loginid=self.j_user.loginid, name=self.j_user.loginid, confirmed=False,
+        )
+
+        r = self.client.post(f'/api/documents/{doc.id}/unclaim-step/', {'agent': 'J'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(
+            DocumentReviewItemReviewer.objects.filter(item=item, user=self.j_user).exists(),
+            '취소는 선점(assignee)만 되돌릴 뿐, 이미 지정된 검토자 기록을 지우지 않는다',
+        )
+
     def test_p_reviewer_mail_shows_owner_as_approved_not_reviewing(self):
         """담당자 합의 + 검토자 지정을 한 요청으로 처리할 때, 검토자에게 가는 메일의
         결재 경로 카드에서 담당자(P) 행은 '검토중'이 아니라 '완료'로 표시돼야 한다.

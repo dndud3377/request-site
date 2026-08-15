@@ -212,7 +212,7 @@
 
 | ID | 케이스 | 기대 결과 | 근거 |
 |---|---|---|---|
-| C-01 | J/O/E/P 선점 | 호출자가 assignee 로 고정(취소 불가) | `views.py:1215`, `244` |
+| C-01 | J/O/E/P 선점 | 호출자가 assignee 로 고정(2026-08부터 선점자 본인/MASTER 는 `unclaim-step/`으로 취소 가능 — `views.py:1222`, `_can_unclaim_step`) | `views.py:1215`, `244` |
 | C-02 | 이미 선점된 단계 | **409** | `views.py:1243` |
 | C-03 | 다른 팀 | 403 | `views.py:244` |
 | C-04 | agent=R | 400 | `views.py:1226` |
