@@ -16,7 +16,7 @@ import {
   getDocTableRows, getFinalCompletionDate, getCurrentRound,
   hasActivePendingStep, isMyDocument,
 } from '../utils/approvalTable';
-import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS } from './approvalTourSeed';
+import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS, TOUR_REVIEW_ITEM_CANDIDATES } from './approvalTourSeed';
 
 // 전체 가이드 상세 모달에서 특정 페이지로 이동하기 위한 페이지 인덱스
 // (MASTER 역할 기준 페이지 순서: 0 상세 · 1 MAP · 2 JOB · 3 OVL · 4 BB · 5 결재 경로)
@@ -360,6 +360,22 @@ export default function ApprovalPage(): React.ReactElement {
           break;
         case 'page-jayer':
           setPageIdx(TOUR_PAGE_IDX.jayer);
+          // 검토 항목 서브탭을 보고 있었다면 표로 되돌린다(다음 시연이 표 위 버튼을 쓴다).
+          (async () => {
+            await sleep(260); if (tok.cancelled) return;
+            (document.querySelector('[data-tour="ri-subtab-table"]') as HTMLElement | null)?.click();
+          })();
+          break;
+        // JOB 탭의 '검토 항목' 서브탭을 커서로 눌러 연다(서브탭 상태는 PagedDetailView 안에 있다).
+        case 'page-review-items':
+          setPageIdx(TOUR_PAGE_IDX.jayer);
+          (async () => {
+            await sleep(400); if (tok.cancelled) return;
+            const el = await cursorPress('[data-tour="ri-subtab"]', tok); if (tok.cancelled) return;
+            el?.click();
+            await sleep(300);
+            setTourCursor(null);
+          })();
           break;
         case 'page-route':
           setPageIdx(TOUR_PAGE_IDX.route);
@@ -517,7 +533,26 @@ export default function ApprovalPage(): React.ReactElement {
    * 반환값이 undefined 면 서브탭 자체가 뜨지 않는다(J 권한이 없거나 J 단계가 없는 문서).
    */
   const buildReviewItemsProps = (doc: RequestDocument | null): ReviewItemsPanelProps | undefined => {
-    if (!doc || isTourMode) return undefined;
+    if (!doc) return undefined;
+    // 전체 가이드: 시드 항목을 읽기 전용으로 보여준다(J 단계가 아직 미선점이라 실제 화면과 같은 잠금 안내).
+    if (isTourMode) {
+      const noop = (): void => undefined;
+      return {
+        items: doc.review_items ?? [],
+        canEdit: false,
+        canConfirm: false,
+        currentLoginid: currentUser.username,
+        candidates: TOUR_REVIEW_ITEM_CANDIDATES,
+        notice: 'unclaimed',
+        claimerName: '',
+        onAdd: noop,
+        onRename: noop,
+        onDelete: noop,
+        onAddReviewer: noop,
+        onRemoveReviewer: noop,
+        onConfirm: noop,
+      };
+    }
     const isJ = currentUser.role === 'TE_J' || currentUser.role === 'MASTER';
     if (!isJ) return undefined;
     const items = doc.review_items ?? [];
@@ -1077,7 +1112,12 @@ export default function ApprovalPage(): React.ReactElement {
                           </button>
                         )}
                         {doc.can_withdraw && (doc.status === 'under_review' || doc.status === 'draft') && (
-                          <button className="btn btn-secondary btn-sm" onClick={() => handleWithdrawClick(doc)} disabled={processing}>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-withdraw' : undefined}
+                            onClick={() => handleWithdrawClick(doc)}
+                            disabled={processing}
+                          >
                             {t('approval.withdraw')}
                           </button>
                         )}

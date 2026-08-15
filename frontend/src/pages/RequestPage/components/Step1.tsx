@@ -220,7 +220,7 @@ const Step1: React.FC<Step1Props> = ({
         )}
 
         {/* 2. 요청 목적 */}
-        <div className="form-group full-width">
+        <div className="form-group full-width" data-tour="request-purpose">
           <label className="form-label">
             {t('request.request_purpose')} <span className="required">*</span>
             <GuideBadge fk="step1_request_purpose" tk={t('guide.feat.step1_request_purpose' as never)} />
@@ -279,7 +279,7 @@ const Step1: React.FC<Step1Props> = ({
 
             {/* 참조 요청서 Merge — Layer 추가/삭제·STEPSEQ 변경·Overlay 변경 공용 (여러 개를 골라도 1개만) */}
             {showMergeBlock && (
-              <div>
+              <div data-tour="ref-doc-merge">
                 <div className="form-label" style={{ marginBottom: 6 }}>
                   {t('guide.feat.step1_ref_doc_merge')}
                   <GuideBadge fk="step1_ref_doc_merge" tk={t('guide.feat.step1_ref_doc_merge' as never)} />
@@ -368,7 +368,7 @@ const Step1: React.FC<Step1Props> = ({
 
             {/* ADI CD 변경: 변경전/변경후 스텝 표 */}
             {isAdiCdSelected && (
-              <div>
+              <div data-tour="adi-cd">
                 <div className="form-label" style={{ marginBottom: 6 }}>
                   {t('guide.feat.step1_adi_cd_change')}
                   <GuideBadge fk="step1_adi_cd_change" tk={t('guide.feat.step1_adi_cd_change' as never)} />
@@ -388,7 +388,7 @@ const Step1: React.FC<Step1Props> = ({
             )}
 
             {/* 흐름도 */}
-            <div className="form-group">
+            <div className="form-group" data-tour="flow-chart">
               <label className="form-label">{t('request.flow_chart')}<GuideBadge fk="step1_flow_chart" tk={t('guide.feat.step1_flow_chart' as never)} /></label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {detail.flow_chart.map((row) => (

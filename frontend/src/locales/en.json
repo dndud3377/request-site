@@ -851,14 +851,14 @@
       "steps": {
         "route": {
           "title": "Approval Route",
-          "description": "The final approval route of this system. After Review (PL) and RFG, Route 1 (PHPSI), Route 2 (JOB) and Route 3 (OVL·EUV) proceed in parallel. (E only when plel exists; MAP-only requests stop at R.)"
+          "description": "The final approval route of this system. Once the product owner submits, Review (PL) and the sales/tech-support agreers (when designated) run in parallel; after RFG agrees, Route 1 (PHPSI), Route 2 (JOB), Route 3 (OVL·EUV) and the post-approver all run in parallel and every one of them must agree to complete. (EUV only when plel exists; MAP-only requests stop at RFG; MAP-deletion requests run PHPSI·RFG·JOB·OVL in parallel right after review.)"
         },
         "request": {
           "title": "Create a Request",
-          "description": "Select a type, enter a title and details, then submit to file your request.",
+          "description": "Fill in the five steps — request detail → MAP → J-ayer → O-ayer → Backbone (BB) — and submit. For the 'Only MAP' and 'MAP deletion' purposes you fill in up to MAP information and submit from there.",
           "flow": {
             "step_intro": "Next: the {{step}} step.",
-            "wizard": "A request is completed through a 5-step wizard, in order.",
+            "wizard": "A request is completed through a 5-step wizard, in order. Click a step number at the top to jump straight back to a step you have passed; moving forward requires every required field in between to pass validation.",
             "detail": "Once you fill in line, recipe, product and process, the disabled sections below become editable.",
             "required": "Fields marked with a red * are required — fill them in before moving on.",
             "map": "On the MAP step, press the guide (?) button for anything you're unsure about.",
@@ -873,37 +873,47 @@
             "submit_note_sample": "Requesting review for the new line introduction.",
             "submit_designee_sample": "Gildong Hong (Reviewer PL)",
             "submitted_toast": "Your request has been submitted.",
-            "map_purpose": "First choose the correct MAP purpose (new / clone / registered).",
+            "purpose": "Choose the request purpose first. Picking 'Only MAP' or 'MAP deletion' dims and locks the J-ayer, O-ayer and Backbone steps — you fill in up to MAP information only.",
+            "flow_chart": "In the flow chart, filling in any one of location, product name, recipe or Step makes the remaining cells required as well. Missing cells are outlined in red.",
+            "ref_doc_merge": "Selecting 'Layer add/delete', 'STEPSEQ change' or 'Overlay change' under other purposes opens the reference-request Merge. A request can reference only one document, and confirming 'None' lets you type the before/after values yourself.",
+            "adi_cd": "'ADI CD change' uses a before/after STEP table. Tick 'Unregistered' on a row for a STEP that does not exist on that side — unregistered on the before side means a newly created STEP, on the after side a deleted one.",
+            "validation_system": "Validation System is never selected automatically. When the request contains the decision keyword (plel), the submitter must choose target or non-target before the O-ayer step opens.",
+            "validation_system_select": "Once 'Target' is chosen you can move on. The MASK (EUV) stage verifies this decision later.",
+            "submit_agreer": "A request whose exception-zone value differs from the default requires sales/tech-support agreers. If you designate none, you must state why; agreers approve in parallel with Review (PL).",
+            "submit_notifier": "Notifiers take no part in the approval — they only receive the submission and completion mails. Load them at once from the address book or one of your groups.",
+            "map_purpose": "First choose the correct MAP type (new / clone / registered / deletion). 'Deletion' opens only when the request purpose is 'MAP deletion', and clone/registered lock the fields that follow the source.",
             "map_cfamily": "Fill in each MAP field to match the product. For example, select 'Yes' for a C-family product to enter the additional fields.",
             "map_deviation": "If the map has a deviation, switch to 'Has change' and enter the X/Y correction values and reason.",
             "map_exception": "If there is an exception zone, switch to 'Has change' and enter the exception zone value.",
             "map_xmark_photo": "If the X-mark changes, pick the option and paste an actual photo into the change area.",
             "oayer_info_tbvtlv": "The 'Info' tab holds Partial Shot and TBV/TLV. TBV/TLV only appears when the O-ayer table contains TBV/TLV items.",
-            "submit_combined": "On submit you can add notes and must designate a reviewer (PL) before submitting.",
+            "submit_combined": "On submit you can add notes and must designate a reviewer (PL) before submitting. C-family and lab-product requests also require a post-approver.",
             "bb_autofill_apply": "Click 'Apply' with the cursor to run auto-fill and generate the BB rows at once."
           }
         },
         "approval": {
           "title": "Approval Status",
-          "description": "Check the approval route and progress of submitted requests, and export tables to Excel from the detail view.",
+          "description": "Check the approval route and progress of submitted requests, assign approvers, review checklist items, export tables and withdraw requests.",
           "flow": {
             "intro": "The Approval Status page lets you track the progress of submitted requests stage by stage.",
-            "route": "This is the final approval route a request goes through. After Review (PL) and RFG, Path 1 (PHPSI), Path 2 (JOB) and Path 3 (OVL·EUV) run in parallel.",
+            "route": "This is the final approval route a request goes through. After Review (PL) and RFG, Path 1 (PHPSI), Path 2 (JOB), Path 3 (OVL·EUV) and the post-approver run in parallel.",
             "my_filter": "The 'MY' filter shows only requests you submitted or that need your approval.",
-            "stage_mail": "The 'Current Stage' column shows the active approval step and its assignee, and a mail is sent automatically to the relevant team/assignee.",
-            "assign_btn": "For the Review (PL) and RFG steps, click 'Assign' in the detail to designate an approver from the same team. For the JOB, OVL, and EUV steps, any team member can take the step themselves by clicking 'Review' — no assignment needed.",
-            "assign_result": "Only the person assigned via 'Assign' or who took the step via 'Review' can then agree/reject, and a mail is sent to that assignee.",
+            "stage_mail": "The 'Current Stage' column keeps every parallel step in the same fixed position, so waiting, under review, done and not-applicable are visible at a glance, and a mail is sent automatically to the team/assignee of the active step.",
+            "assign_btn": "For the RFG step, click 'Assign' in the detail to designate an approver from the same team. For the PHPSI, JOB, OVL and EUV steps, any team member can take the step themselves by clicking 'Review' — no assignment needed. Review (PL) is handled by the reviewer designated at submission.",
+            "assign_result": "Only the person assigned via 'Assign' or who took the step via 'Review' can then agree/reject, and a mail is sent to that assignee. On PHPSI and EUV the approver can additionally designate reviewers from the same team, and every designated reviewer must agree before that step completes.",
             "open_detail": "Click the title with the cursor to open the request detail.",
             "detail_tabs": "Click the tabs at the top of the detail (Detail·MAP·JOB·OVL·BB·Approval Route) to review each part of the request you submitted.",
             "export_jayer": "Use the 📊 export button on the JOB tab to download the table data as an Excel file.",
             "route_tab": "The Approval Route tab shows each team’s (Review/RFG/PHPSI/JOB/OVL/EUV) approve/reject history with assignees and dates, by round.",
             "revision_diff": "A request resubmitted after rejection highlights the changed fields/rows, and a 'View History' button appears on changed rows.",
-            "revision_modal": "Click 'View History' to compare the before/after values side by side."
+            "revision_modal": "Click 'View History' to compare the before/after values side by side.",
+            "review_items": "The 'Review Items' sub-tab on the JOB tab manages the items to be checked at the JOB stage and the reviewer of each item. It stays read-only until an approver takes the step with 'Review', and the step can be agreed even if not every item is complete.",
+            "withdraw": "Withdrawing deletes the request for good. A draft is deleted as soon as you confirm; while approval is in progress every assignee of the current step must confirm before it is deleted. A rejected request cannot be withdrawn — fix it and resubmit instead."
           }
         },
         "permission": {
           "title": "Permissions",
-          "description": "Add users to a role tab, then group same-role users together. A group is visible only to its members, and notification mails go only to members."
+          "description": "Add users to a role tab, then group same-role users together. A group tab is visible only to its members, and a group can be loaded into the notifier list in one click at submission or designated as the sharing group of a draft."
         }
       }
     },

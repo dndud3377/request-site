@@ -93,7 +93,7 @@ const Step2: React.FC<Step2Props> = ({
           <GuideBadge fk="step3_jayer_table" tk={t('guide.feat.step3_jayer_table' as never)} />
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }} data-tour="validation-system">
             <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
               {t('request.validation_system')}
             </span>

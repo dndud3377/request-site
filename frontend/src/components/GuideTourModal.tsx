@@ -50,8 +50,12 @@ export function useGuideTourSteps(): GuideTourStep[] {
           { wizardStep: 1, selector: '.wizard-indicator', caption: cap('wizard'), hold: 3000 },
           { wizardStep: 1, selector: '[data-tour="line-fields"]', caption: cap('detail'), hold: 3500 },
           { wizardStep: 1, selector: '.required', caption: cap('required'), hold: 3000 },
-          // Step 2 — MAP 정보
-          { wizardStep: 2, selector: '.wizard-step[data-step="2"]', caption: intro('request.section_map'), hold: 2300 },
+          { wizardStep: 1, selector: '[data-tour="request-purpose"]', caption: cap('purpose'), hold: 4500 },
+          { wizardStep: 1, selector: '[data-tour="flow-chart"]', caption: cap('flow_chart'), hold: 4500 },
+          { wizardStep: 1, cmd: 'merge-demo', selector: '[data-tour="ref-doc-merge"]', caption: cap('ref_doc_merge'), hold: 5000 },
+          { wizardStep: 1, cmd: 'adi-demo', selector: '[data-tour="adi-cd"]', caption: cap('adi_cd'), hold: 5500 },
+          // Step 2 — MAP 정보 (기타 목적 시연 상태는 여기서 시드로 되돌린다)
+          { wizardStep: 2, cmd: 'purpose-reset', selector: '.wizard-step[data-step="2"]', caption: intro('request.section_map'), hold: 2300 },
           { wizardStep: 2, cmd: 'map-reset', selector: '[data-tour="map-purpose"]', caption: cap('map_purpose'), hold: 3200 },
           { wizardStep: 2, selector: '[data-tour="map-cfamily"]', caption: cap('map_cfamily'), hold: 4200 },
           { wizardStep: 2, cmd: 'map-deviation', selector: '[data-tour="map-deviation"]', caption: cap('map_deviation'), hold: 3500 },
@@ -62,6 +66,8 @@ export function useGuideTourSteps(): GuideTourStep[] {
           { wizardStep: 3, selector: '.wizard-step[data-step="3"]', caption: intro('request.job_li'), hold: 2300 },
           { wizardStep: 3, cmd: 'jayer-anim', bottomCaption: true, caption: cap('jayer_auto'), hold: 10000 },
           { wizardStep: 3, selector: '[data-tour="jayer-filter"]', caption: cap('jayer_filter'), hold: 3000 },
+          { wizardStep: 3, selector: '[data-tour="validation-system"]', caption: cap('validation_system'), hold: 5000 },
+          { wizardStep: 3, cmd: 'vs-select', selector: '[data-tour="validation-system"]', caption: cap('validation_system_select'), hold: 4000 },
           // Step 4 — O-ayer
           { wizardStep: 4, selector: '.wizard-step[data-step="4"]', caption: intro('request.ovl_li'), hold: 2300 },
           { wizardStep: 4, cmd: 'oayer-table', selector: '[data-tour="oayer-tabs"]', caption: cap('oayer'), hold: 3000 },
@@ -72,6 +78,8 @@ export function useGuideTourSteps(): GuideTourStep[] {
           { wizardStep: 5, cmd: 'bb-autofill-apply', bottomCaption: true, caption: cap('bb_autofill_apply'), hold: 5500 },
           { wizardStep: 5, cmd: 'bb-mapping', bottomCaption: true, caption: cap('bb_mapping'), hold: 9000 },
           { wizardStep: 5, cmd: 'open-submit', selector: '[data-tour="submit-fields"]', caption: cap('submit_combined'), hold: 4200 },
+          { wizardStep: 5, selector: '[data-tour="submit-agreer"]', caption: cap('submit_agreer'), hold: 5000 },
+          { wizardStep: 5, selector: '[data-tour="submit-notifier"]', caption: cap('submit_notifier'), hold: 4500 },
           { wizardStep: 5, cmd: 'submitted', caption: cap('submitted'), hold: 3200 },
         ],
       },
@@ -94,9 +102,13 @@ export function useGuideTourSteps(): GuideTourStep[] {
           { selector: '[data-tour="detail-tabs"]', caption: acap('detail_tabs'), hold: 5000 },
           { cmd: 'page-route', selector: '[data-tour="approval-route-tab"]', caption: acap('route_tab'), hold: 6500 },
           { cmd: 'page-jayer', selector: '[data-tour="export-jayer"]', caption: acap('export_jayer'), hold: 4500 },
-          // #6 재상신 변경 이력(diff) — 변경 행 강조 → 이력 확인 모달
-          { selector: '[data-tour="jayer-hist-btn"]', caption: acap('revision_diff'), hold: 5500 },
+          // #7 J 단계 검토 항목 — JOB 탭의 '검토 항목' 서브탭
+          { cmd: 'page-review-items', bottomCaption: true, caption: acap('review_items'), hold: 7000 },
+          // #8 재상신 변경 이력(diff) — 표 서브탭으로 되돌린 뒤 변경 행 강조 → 이력 확인 모달
+          { cmd: 'page-jayer', selector: '[data-tour="jayer-hist-btn"]', caption: acap('revision_diff'), hold: 5500 },
           { cmd: 'open-rowdiff', bottomCaption: true, caption: acap('revision_modal'), hold: 6000 },
+          // #9 철회 — 목록으로 돌아가 철회 버튼과 정책을 안내
+          { cmd: 'tour-reset', selector: '[data-tour="approval-withdraw"]', caption: acap('withdraw'), hold: 7000 },
         ],
       },
       {
