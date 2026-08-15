@@ -856,6 +856,34 @@
       "resume": "Play",
       "close": "Close",
       "progress": "{{current}}/{{total}}",
+      "step": {
+        "done": "Close",
+        "groups": {
+          "s1g1": { "title": "Line · Process · Product Name · Recipe", "desc": "Select these four fields first. All must be filled before the request purpose and remaining fields unlock below." },
+          "s1g2": { "title": "Request Purpose", "desc": "Choose the purpose of this request: New, Borrow, New+Borrow, Only MAP, MAP Delete, or Other." },
+          "s1g3": { "title": "Reference Document Merge", "desc": "Selecting Layer Add/Delete, STEPSEQ Change, or Overlay Change under Other Purpose opens this area, where you can compare and merge before/after values from an approved reference document." },
+          "s1g4": { "title": "ADI CD Change", "desc": "Selecting 'ADI CD Change' under Other Purpose opens this table for entering before/after steps row by row." },
+          "s1g5": { "title": "Flow Chart", "desc": "Enter the flow chart row by row, linking line, product, recipe, and progress layer." },
+          "s1g6": { "title": "Backbone (BB) Combination Area", "desc": "Enter the reference line, product, and recipe used for Backbone (BB) combination." },
+          "s1g7": { "title": "Customer / Vendor", "desc": "Enter the customer (vendor) name and requirements." },
+          "s2g1": { "title": "MAP Type", "desc": "Choose New, Borrow, Registered, or MAP Delete. The fields below change depending on your choice." },
+          "s2g2": { "title": "Source Location (Borrow)", "desc": "Choosing 'Borrow' opens fields for specifying which line and product's MAP to copy from." },
+          "s2g3": { "title": "REV Status", "desc": "If revision management is needed, choose YES and register the Layer and GDS version." },
+          "s2g4": { "title": "Only C-family Product", "desc": "Choose Yes/No for whether this MAP is dedicated to a C-family (product group)." },
+          "s2g5": { "title": "C-family Product Location", "desc": "Choosing Yes opens an area for specifying the product's location (Top/Middle/Bottom) and the line, process, and product for that section." },
+          "s2g6": { "title": "Map Deviation · Exception Zone · X-mark · Inter · Map Options", "desc": "The remaining detailed settings. For each item, choose whether there's a change and enter values or photos as needed." },
+          "s3g1": { "title": "Table Auto-fill", "desc": "Drag to copy and paste a product name cell, and STEP and barcode (ID) fill in automatically." },
+          "s3g2": { "title": "Disable / Restore Selection", "desc": "Select rows with the checkbox, then disable them, or restore previously disabled rows." },
+          "s3g3": { "title": "Filter", "desc": "Use '+ Filter' to save frequently used search conditions and apply, edit, or delete them on the table." },
+          "s4g1": { "title": "Table (Tabs · Auto-fill)", "desc": "There are Table and Info tabs. In the table, dragging to copy and paste a product name cell auto-fills STEP." },
+          "s4g2": { "title": "Disable / Restore Selection", "desc": "Select rows with the checkbox, then disable them, or restore previously disabled rows." },
+          "s4g3": { "title": "Partial Shot", "desc": "Choose O/X for whether Partial Shot measurement is needed." },
+          "s4g4": { "title": "TBV / TLV", "desc": "Enter thickness, SD, and notes to add a TBV/TLV entry." },
+          "s5g1": { "title": "Backbone Auto-fill", "desc": "Specify a start~end Layer range and product ID, and matching BB info fills in all at once." },
+          "s5g2": { "title": "BB Mapping", "desc": "Select a source row on the left and click external BB data on the right to map them, then click Apply." },
+          "s5g3": { "title": "BB Info (Applied Result)", "desc": "Results from auto-fill or mapping accumulate in this table." }
+        }
+      },
       "steps": {
         "route": {
           "title": "Approval Route",

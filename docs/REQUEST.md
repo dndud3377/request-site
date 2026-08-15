@@ -572,6 +572,63 @@ pages/RequestPage/
 - **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(작업 전후 동일, 신규 0) ·
   `react-scripts test --watchAll=false` 5 suites / **174건 통과**.
 
+### 추가 변경 이력 (2026-08-15 — 스텝 단위 하이라이트 가이드 투어 (기존 "영상 가이드" 배지 대체))
+
+- **개요**: 필드마다 흩어져 있던 "영상 가이드" 배지(9개 애니메이션 데모)와 "가이드"(글) 배지를
+  **위저드 스텝 제목 옆 배지 1개(총 5개)** 로 통합했다. 클릭하면 슬라이드 패널 대신, **지금 보고
+  있는 실제 화면 위에** 스포트라이트+캡션을 그리고 "이전/다음" 버튼으로 수동으로 넘겨보는 방식이다
+  (자동재생 없음). 홈 화면의 "전체 가이드"(iframe+모달, `GuideTourModal`)와는 별개 기능 — 그대로 유지.
+- **그룹 구성(총 23개, 스텝당 2~7개)** — 이전에 텍스트 배지로 개별 노출되던 필드 설명까지 전부
+  이 투어 그룹으로 흡수했다:
+  - Step1 의뢰 상세(7): 라인·조합법·제품이름·조리법 / 요청 목적 / 참조요청서 Merge / ADI CD 변경 /
+    흐름도 / 뼈찜 조합 영역 / 고객·업체명
+  - Step2 MAP(6): MAP 유형 / 원본 위치(CLONE) / REV 여부 / Only C가문 Yes-No / C가문 하위 영역 /
+    나머지 옵션 통합(지도편차·예외구역·X표시·Inter·MAP옵션)
+  - Step3 J-ayer(3): 표 자동채움 / 체크→비활성화·복원 / +필터 버튼
+  - Step4 O-ayer(4): 표(탭+자동채움) / 체크→비활성화·복원 / Partial Shot / TBV·TLV
+  - Step5 뼈찜(BB)(3): 자동채움 버튼 / 매핑 패널+적용 / bb 정보(적용 결과) 표
+- **조건부로만 나타나는 요소 처리** (`pages/RequestPage/useStepGuideTour.ts`): 참조요청서 Merge·
+  ADI CD 변경·CLONE 원본위치·C가문 하위 영역처럼 실제 업무 데이터(`other_purpose`/`map_type`/
+  `only_prodc`)에 따라서만 렌더되는 요소는, 투어가 **열릴 때 `detail`(+`jayerChecked`/`oayerChecked`/
+  `oayerInfoTab`/`showAutoFillPanel`) 상태를 스냅샷**해두고, 그룹에 진입할 때 필요한 값만 최소한으로
+  임시 반영해 실제로 화면에 나타나게 한다. 그룹을 벗어나거나(이전/다음) 투어를 닫을 때는 항상
+  스냅샷으로 복원한 뒤 다음 그룹의 패치를 적용해, 되감기·연속 조건부 그룹 사이에서도 상태가 누적되지
+  않는다. 사용자가 실제로 작성 중이던 값은 투어가 끝나면 정확히 그대로 남는다.
+- **신규 컴포넌트** `components/StepGuideTour.tsx` — iframe 없는 순수 오버레이 엔진. 그룹의
+  `selectors`(배열)를 모두 찾아 **합집합 사각형**으로 스포트라이트를 그린다(예: MAP의 "나머지 옵션
+  통합" 그룹은 5개 블록을 한 번에 감싼다). 스크롤·리사이즈 시 재측정, Esc·포커스 트랩, 스텝
+  인디케이터(`n / 총계`) 포함. 자동재생 타이머 없음 — "다음"을 눌러야만 진행된다.
+- **신규 훅** `pages/RequestPage/useStepGuideTour.ts` — 스텝별 23개 그룹 정의(선택자·i18n 캡션·
+  조건부 그룹의 `onEnter`)와 스냅샷/복원 상태를 관리.
+- **배지 이동**: `GuideBadge`(필드별 영상·글 배지 렌더 헬퍼)와 그 기반이던 `slidePanel` 상태·
+  `toggleSlidePanel`·`<GuideSlidePanel>` 렌더·`featureGuideKeys`(글 가이드 존재 여부 조회)를
+  `RequestPage/index.tsx`에서 전부 제거했다(요청서 작성 페이지의 모든 필드 배지가 새 투어로
+  흡수되어 완전히 미사용 상태가 됐기 때문). **주의**: `components/GuideSlidePanel.tsx`와
+  `components/guideDemos/*` 자체는 삭제하지 않았다 — `PermissionPage.tsx`가 `GuideSlidePanel`을
+  여전히 쓰고, `guideDemos/*` 9개 컴포넌트는 코드는 남아있으나 더 이상 어디서도 import되지 않는다
+  (삭제 여부는 별도 확인 필요, 이번 범위 아님).
+- **`data-tour` 신규 부여** — 조건부/미표시 영역을 그룹 대상으로 삼기 위해 추가:
+  `bb-entry`·`customer-vendor`(Step1), `map-source-location`·`map-rev`·`map-cfamily-toggle`·
+  `map-cfamily-detail`·`map-inter`·`map-options`(StepMap, `map-deviation`은 C가문 분기에도 추가),
+  `jayer-table`·`jayer-bulk-actions`(Step2/J-ayer), `oayer-table`·`oayer-bulk-actions`·
+  `oayer-partial-shot`(Step3/O-ayer), `bb-autofill-panel`·`bb-mapping-panel`·`bb-table`(Step4/BB).
+- **i18n**: `guide.tour.step.done`("닫기") + `guide.tour.step.groups.s{1~5}g{1~7}.{title|desc}`
+  (23그룹 × 2 = 46키) ko/en 동시 추가. 기존 `guide.tour.next`/`prev`/`guide.video_btn`은 재사용.
+- **영향 파일**: 신규 `components/StepGuideTour.tsx`, `pages/RequestPage/useStepGuideTour.ts` /
+  수정 `pages/RequestPage/index.tsx`, `components/Step1.tsx`·`StepMap.tsx`·`Step2.tsx`·`Step3.tsx`·
+  `Step4.tsx`, `styles/global.css`(`.step-guide-tour-*`), `locales/ko.json`·`en.json` /
+  변경 없음(미사용 방치) `components/GuideSlidePanel.tsx`(PermissionPage 용으로 계속 사용),
+  `components/guideDemos/*`
+- **검증(2026-08-15 실행, 원격 세션·Docker 없이)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` | 22개 | **22개** (신규 0, 전부 기존 항목과 동일) |
+  | `react-scripts test` | 8 suites / 201건 | **8 suites / 201건 통과** |
+
+  ⚠️ 결재 흐름을 건드리지 않아 `scripts/approval_cases` 러너는 대상 아님. 실제 화면 수동 검증은
+  아직 못했다 — 아래 "수동 검증 시나리오" 참고.
+
 ### 추가 변경 이력 (2026-08-13 — 기능 가이드 항목 3개 추가 + 영상·글 가이드 동시 노출)
 
 - **개요**: `/guide` 기능별 가이드 지식베이스(`GUIDE_STEP_FEATURES`)에 아직 배지가 없던 위저드

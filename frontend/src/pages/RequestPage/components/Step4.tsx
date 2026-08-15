@@ -10,7 +10,6 @@ import {
   JayerRow,
   BbTableRow,
   DetailFormState,
-  GuideFeatureKey,
 } from '../../../types';
 
 interface Step4Props {
@@ -49,7 +48,8 @@ interface Step4Props {
   handleSortBbRows: () => void;
   handleBbAddRow: () => void;
   handleBbBulkDelete: () => void;
-  GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
+  /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
+  GuideTourBadge: React.ReactNode;
 }
 
 const Step4: React.FC<Step4Props> = ({
@@ -88,7 +88,7 @@ const Step4: React.FC<Step4Props> = ({
   handleSortBbRows,
   handleBbAddRow,
   handleBbBulkDelete,
-  GuideBadge,
+  GuideTourBadge,
 }) => {
   const { t } = useTranslation();
   const currentTabPhotoSteps = bbExternalData[activeBbTab] ?? [];
@@ -131,7 +131,10 @@ const Step4: React.FC<Step4Props> = ({
 
   return (
     <div className="form-section">
-      <div className="form-section-title"><span style={{ color: '#4CAF50' }}>🔷</span> {t('request.bb_li')}</div>
+      <div className="form-section-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ color: '#4CAF50' }}>🔷</span> {t('request.bb_li')}
+        {GuideTourBadge}
+      </div>
 
       {errors.jayer_mapping && (
         <div className="form-group" style={{ marginBottom: 12 }}>
@@ -155,12 +158,11 @@ const Step4: React.FC<Step4Props> = ({
             {jayerRows.filter(r => !r.disabled && !isNocSpecial(r.new_or_copy) && !mappedJayerRowIds.has(r.id)).length}행 조회됨
           </span>
         )}
-        <GuideBadge fk="step5_bb_autofill" tk={t('guide.feat.step5_bb_autofill' as never)} />
       </div>
 
       {/* 자동 채움 패널 */}
       {showAutoFillPanel && (
-        <div style={{
+        <div data-tour="bb-autofill-panel" style={{
           marginBottom: 16,
           padding: 16,
           background: 'var(--bg-secondary)',
@@ -254,7 +256,7 @@ const Step4: React.FC<Step4Props> = ({
       )}
 
       {/* 분할 패널 */}
-      <div className="bb-split-panel">
+      <div className="bb-split-panel" data-tour="bb-mapping-panel">
         {/* 왼쪽: 원본 행 목록 + 매핑 미리보기 */}
         <div className="bb-split-panel-left">
           <div className="bb-split-panel-title">
@@ -429,7 +431,6 @@ const Step4: React.FC<Step4Props> = ({
             ? `${stagedCount}개 행이 매핑됨 — 적용 버튼을 눌러 bb 정보에 반영하세요.`
             : '왼쪽에서 원본 layer 를 선택하고 오른쪽에서 bb 데이터를 클릭하여 매핑하세요.'}
         </span>
-        <GuideBadge fk="step5_bb_mapping" tk={t('guide.feat.step5_bb_mapping' as never)} />
         <button
           type="button"
           className="btn btn-primary"
@@ -442,11 +443,10 @@ const Step4: React.FC<Step4Props> = ({
       </div>
 
       {/* bb 정보 테이블 (적용 후 채워짐) */}
-      <div className="bb-selected-section">
+      <div className="bb-selected-section" data-tour="bb-table">
         <div className="form-section-title" style={{ fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#4CAF50' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             bb 정보 (적용 결과)
-            <GuideBadge fk="step5_bb_table" tk={t('guide.feat.step5_bb_table' as never)} />
           </span>
           <button
             type="button"

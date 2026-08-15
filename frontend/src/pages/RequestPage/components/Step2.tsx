@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
-import { JayerRow, FilterSet, GuideFeatureKey, ValidationSystemValue } from '../../../types';
+import { JayerRow, FilterSet, ValidationSystemValue } from '../../../types';
 import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, NOC_LAYER_DELETE } from '../constants';
 import { isValidationKeywordRow } from '../helpers';
 import { ValidationSystemBadge, ValidationSystemToggle } from '../../../components/ValidationSystem';
@@ -38,7 +38,8 @@ interface Step2Props {
   handleJayerBulkDisable: () => void;
   handleJayerBulkRestore: () => void;
   cellSel: CellSelectionApi;
-  GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
+  /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
+  GuideTourBadge: React.ReactNode;
   validationSystem: ValidationSystemValue;
   /** 판정 키워드가 하나도 없어 대상/비대상을 고를 수 없는 문서인가('해당없음') */
   vsNotApplicable: boolean;
@@ -74,7 +75,7 @@ const Step2: React.FC<Step2Props> = ({
   handleJayerBulkDisable,
   handleJayerBulkRestore,
   cellSel,
-  GuideBadge,
+  GuideTourBadge,
   validationSystem,
   vsNotApplicable,
   onValidationSystemChange,
@@ -90,7 +91,7 @@ const Step2: React.FC<Step2Props> = ({
       <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           🔷 {t('request.job_li')}
-          <GuideBadge fk="step3_jayer_table" tk={t('guide.feat.step3_jayer_table' as never)} />
+          {GuideTourBadge}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }} data-tour="validation-system">
@@ -148,10 +149,9 @@ const Step2: React.FC<Step2Props> = ({
             </button>
           ))}
           <button type="button" className="th-header-btn" data-tour="jayer-filter" onClick={() => setJayerFilterModalOpen(true)}>+ 필터</button>
-          <GuideBadge fk="step3_jayer_filter" tk={t('guide.feat.step3_jayer_filter' as never)} />
         </div>
       </div>
-      <div className="wizard-table-wrapper" ref={cellSel.containerRef}>
+      <div className="wizard-table-wrapper" data-tour="jayer-table" ref={cellSel.containerRef}>
         <table className="wizard-table" style={{ userSelect: cellSel.isDragging || jayerDragInfo.current ? 'none' : undefined }} onPaste={(e) => cellSel.onCellPaste(e, renderedJayerIds)}>
           <colgroup>
             <col style={{ width: 44 }} />
@@ -280,7 +280,7 @@ const Step2: React.FC<Step2Props> = ({
           </tbody>
         </table>
       </div>
-      <div className="bulk-action-row">
+      <div className="bulk-action-row" data-tour="jayer-bulk-actions">
         <button type="button" className="flow-table-add-btn" onClick={handleJayerAddRow}>+ 행 추가</button>
         {jayerRows.filter(r => !r.disabled && jayerChecked.has(r.id)).length > 0 && (
           <button type="button" className="btn btn-danger btn-sm" onClick={handleJayerBulkDisable}>
