@@ -352,20 +352,23 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - ⚠️ **다중 PL 미대응(보류)**: 현재는 `_get_pending_pl_step`(첫 pending PL step, = 대표)만 1:1 교체한다. 다중 PL 중 특정 담당자 지정 스왑은 후속 작업으로 보류(2026-07).
 - **메일(2026-07 추가)**: 새로 지정된 PL에게 상신 때와 동일한 stage_arrival 메일(제목 `[이름님] [결재 요청] ...`)이 즉시 발송된다. 기존 지정자에게는 별도 알림 없음.
 
-### Case M — 결재 중단(PAUSE) 요청·확인·재개 (2026-07)
+### Case M — 결재 중단(PAUSE) 요청·확인·거부·재개 (2026-07, 거부·동결 강화 2026-08)
 
-진행 중(under_review) 결재를 작성자가 **중단 요청** → 현재 단계 팀이 **확인** → 문서 `pause` 전이 → 작성자가 **수정 후 재개** 하는 흐름. 모델 `PauseRequest`(`models.py`), 마이그레이션 `0006`.
+진행 중(under_review) 결재를 작성자가 **중단 요청** → 현재 단계 팀이 **확인 또는 거부** → (확인 전원 완료 시) 문서 `pause` 전이 → 작성자가 **수정 후 재개** 하는 흐름. 모델 `PauseRequest`(`models.py`), 마이그레이션 `0006`(모델 생성)·`0025`(2026-08, `state` choices 에 `rejected` 추가).
 
 - **중단 요청 (`request_pause`)**: 작성자 본인(또는 MASTER) + `status == 'under_review'` + **활성 중단요청 없음**일 때. **사유(reason) 필수**. 요청 시점의 현재(pending) 결재 단계 id 를 `target_step_ids` 로 기록한다. 상태 뱃지는 **확인 완료 전까지 그대로 유지**(검토중), 목록 현재단계 칸에 '중단 요청중' 칩만 표시.
 - **중단 확인 (`confirm_pause`)**: 현재 단계 담당자(assignee) 본인, 미배정 단계면 같은 팀(역할↔agent 일치), + MASTER (`_can_confirm_pause`). 병렬(P/J ∥ O/E)이면 **target 단계 전원**이 확인해야 최종 `pause` 전이(`confirmed_step_ids` 누적, `set(target) ⊆ set(confirmed)` 시 확정). 그 전엔 under_review 유지.
+- ✅ **중단 거부 (`reject_pause`, 2026-08 추가)**: 인가는 확인과 동일(`_can_confirm_pause` 통과하는 대상 단계가 있으면 거부 가능 — 확인할 수 있는 사람이면 거부도 할 수 있다, `reject_withdraw`와 동일 패턴). **대상 단계 중 하나만 거부해도 요청 전체가 무효화**된다(전원 확인이 더 이상 성립할 수 없으므로) — `state → 'rejected'`, 결재는 그대로 이어진다. 이미 확인을 마친 다른 대상 단계가 있어도 그 확인은 함께 무효화되며(재요청 시 처음부터 다시 확인받아야 함), 문서·단계 자체는 바뀌지 않는다. 메일 발송 없음(중단 기능은 원래 메일 범위 밖).
 - **재개 (`resume`)**: 작성자 본인(또는 MASTER) + `status == 'pause'`. `pause → under_review` 로 되돌리고 **멈춘 시점의 pending 단계를 그대로 유지**해 그 단계부터 이어간다(회차 새로 만들지 않음, 이미 합의된 병렬 경로 유지). 문서 내용은 사전에 `/request` 편집(update)에서 저장되며, 재개 시 지정 PL 재선택 불필요(`RequestPage` 가 pause 문서 편집 시 상신 대신 `resume` 호출).
   - ✅ **마감 기한 연장(2026-07)**: 재개 시 **멈춘 기간(중단 확정 `confirmed_at` ~ 재개일, 달력일)만큼** 현재 회차 pending 단계의 `due_date` 를 뒤로 민다. 중단 동안 남은 기한이 깎이지 않는다.
   - ✅ **목록 표시**: PAUSE 동안 결재현황/홈 목록의 '최종 완료예정' 칸은 날짜 대신 **`중단`**(회색)으로 표시한다(기한이 지난 것처럼 빨갛게 보이지 않도록). `ApprovalPage`·`HomePage` 공통. **(2026-08)** '현재 단계 완료예정' 컬럼 자체가 사라졌고(§3.5), 병렬 단계 중단은 그리드 6칸을 전부 `PAUSE` 뱃지로 덮는다(§3.3.2).
 - **요청 취소 (`cancel_pause`)**: 확인 완료 전(`requested`) 요청을 작성자/MASTER 가 철회(`cancelled`).
 - **자동 취소**: 요청중(requested) 상태에서 결재가 정상 진행(합의 `approve_step`/반려 `reject_step`)되어 단계가 넘어가면 기존 요청을 `cancelled` 처리(`_cancel_active_pause_requests`).
-- **동결**: `status == 'pause'` 동안 `approve_step`/`reject_step`/`assign_step`/`claim_step` 은 400 으로 차단. 작성자의 재개만 가능.
+- ✅ **동결(2026-08 확장)**: `status == 'pause'`(확정 후)뿐 아니라 **활성 중단 요청이 확인 대기 중(`state == 'requested'`)인 동안에도** `approve_step`/`reject_step`/`assign_step`/`claim_step`/`unclaim_step` 이 400 으로 차단된다(`_blocked_progress_response`, 철회 요청 동결과 동일한 이유·패턴). 예전엔 **전원 확인이 끝나 `status` 가 `pause` 로 바뀐 뒤에만** 차단돼, 확인을 기다리는 동안 대상 단계가 검토중·합의까지 진행되며 중단 요청이 무력화되는 문제가 있었다(2026-08 수정 전 버그). 프론트도 동일 시점에 `actableStep`/`claimableStep`/`assignableStep`/`unclaimableStep` 계산에서 대상을 찾지 않아(`progressFrozen`, `ApprovalPage.tsx`) 합의·검토중·지정하기·검토중취소 버튼 자체가 노출되지 않는다(철회 요청 확인 대기 중에도 동일하게 적용 — 예전엔 서버는 막았지만 버튼이 그대로 보여 클릭 후에야 400 에러를 알 수 있었다). 작성자의 요청 취소, 확인 대상자의 확인·거부만 가능.
 - **인가/수정**: `doc_permissions.can_edit` 에 pause=작성자 본인 허용, `can_request_pause`/`can_resume` 헬퍼 추가. 시리얼라이저가 `can_request_pause`/`can_resume`/`pause_request`(state·reason·target/confirmed step ids) 를 내려줘 프론트가 버튼·배너·확인현황을 렌더한다.
-- ⚠️ 메일 알림(중단요청/확인/재개)은 이번 범위에 **미포함**.
+- ⚠️ 메일 알림(중단요청/확인/거부/재개)은 이번 범위에도 **미포함**(기존 방침 유지).
+- ⚠️ `PauseRequest.resolved_at`(거부·취소 시각) 필드는 추가하지 않았다 — 대응하는 `WithdrawRequest.resolved_at` 도 현재 API 응답·화면 어디에도 노출되지 않는 write-only 필드라(직렬화 시 활성 상태만 내려주므로 거부·취소된 요청은 응답에서 아예 빠진다) 대칭을 맞출 실익이 없다고 판단했다(2026-08). 필요해지면 그때 `resolved_at` 추가 + 직렬화 + 화면 표시를 함께 설계한다.
+- 테스트: `backend/api/tests.py::PauseFlowTest`(추가: 거부 동작, `requested` 상태 동결)
 
 ### Case N — R단계 개편: 담당자 → 검토자 → 후결자(병렬) (2026-07)
 
@@ -700,6 +703,7 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 | 검토중 취소 (J·O·E·P, 2026-08) | `unclaim-step/` | `agent` |
 | 중단 요청 | `request-pause/` | `reason`(필수) |
 | 중단 확인 | `confirm-pause/` | `agent` |
+| 중단 거부 (2026-08) | `reject-pause/` | - |
 | 재개 | `resume/` | - (pause → under_review) |
 | 중단 요청 취소 | `cancel-pause/` | - |
 | PL 합의/반려/수정후상신 | `peer-approve/` `peer-reject/` `peer-submit/` | `comment` |
