@@ -30,8 +30,31 @@ const AGENT_TO_ROLE: Record<string, string> = {
   E: 'TE_E',
 };
 
+// 결재 현황 목록 페이지네이션 — 페이지당 표시 건수
+const APPROVAL_LIST_PAGE_SIZE = 10;
+// 숫자 페이지 버튼 표시 시 현재 페이지 앞뒤로 보여줄 개수(그 밖은 '…'로 생략)
+const APPROVAL_PAGE_WINDOW = 2;
+
 // ===== Utils =====
 // 결재 현황 테이블 계산 헬퍼는 utils/approvalTable 로 이동(HomePage 최근 의뢰 현황과 공유).
+
+/** 페이지네이션 숫자 버튼 목록. 1·마지막 페이지는 항상 포함하고, 현재 페이지 앞뒤로
+ * APPROVAL_PAGE_WINDOW 개만 보여준 뒤 나머지 구간은 'ellipsis' 로 접는다. */
+const buildPageNumbers = (current: number, total: number): (number | 'ellipsis')[] => {
+  const pages = new Set<number>([1, total]);
+  for (let p = current - APPROVAL_PAGE_WINDOW; p <= current + APPROVAL_PAGE_WINDOW; p++) {
+    if (p >= 1 && p <= total) pages.add(p);
+  }
+  const sorted = Array.from(pages).sort((a, b) => a - b);
+  const result: (number | 'ellipsis')[] = [];
+  let prev = 0;
+  for (const p of sorted) {
+    if (prev && p - prev > 1) result.push('ellipsis');
+    result.push(p);
+    prev = p;
+  }
+  return result;
+};
 
 // 중단 요청 '확인' 가능 여부(프론트 가드): MASTER / 담당자 본인 / (미배정 시) 같은 팀
 // 철회 요청 확인·거부도 같은 규칙을 쓴다(서버 `_can_confirm_pause` 를 두 액션이 공유).
@@ -81,6 +104,10 @@ export default function ApprovalPage(): React.ReactElement {
   // 양산일 3단 정렬(오름차순→내림차순→원래 상태). 필터 탭 전환 시 자동 해제.
   const [prodDateSort, setProdDateSort] = useState<'asc' | 'desc' | null>(null);
   useEffect(() => { setProdDateSort(null); }, [filter]);
+  // 목록 페이지네이션 — 필터 탭·검색어가 바뀌면 항상 1페이지로 돌아간다(검색 결과가
+  // 몇 페이지 뒤에 있든 즉시 보이도록).
+  const [listPage, setListPage] = useState(1);
+  useEffect(() => { setListPage(1); }, [filter, search]);
   const [selected, setSelected] = useState<RequestDocument | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -450,6 +477,16 @@ export default function ApprovalPage(): React.ReactElement {
     list.sort((a, b) => baseDate(a).localeCompare(baseDate(b)));
     return list;
   }, [docs, prodDateSort, filter]);
+
+  const totalListPages = Math.max(1, Math.ceil(sortedDocs.length / APPROVAL_LIST_PAGE_SIZE));
+  const pagedDocs = useMemo(
+    () => sortedDocs.slice((listPage - 1) * APPROVAL_LIST_PAGE_SIZE, listPage * APPROVAL_LIST_PAGE_SIZE),
+    [sortedDocs, listPage],
+  );
+  // 결재 처리 등으로 목록이 줄어 지금 보던 페이지가 사라지면 마지막 페이지로 보정한다.
+  useEffect(() => {
+    if (listPage > totalListPages) setListPage(totalListPages);
+  }, [listPage, totalListPages]);
 
   const openDetail = async (doc: RequestDocument) => {
     if (isTourMode) {
@@ -1059,7 +1096,7 @@ export default function ApprovalPage(): React.ReactElement {
               </tr>
             </thead>
             <tbody>
-              {sortedDocs.map((doc) => {
+              {pagedDocs.map((doc) => {
                 // 병렬 진입 후에도 문서 1건은 표 1행이다 — 경로별 행 분리·rowSpan 병합은 없어졌고,
                 // 현재 단계 칸 안의 3행 2열 그리드가 6개 경로를 모두 보여준다(docs/APPROVAL.md §3.3).
                 const row = getDocTableRows(doc, t)[0];
@@ -1142,6 +1179,45 @@ export default function ApprovalPage(): React.ReactElement {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!loading && !error && docs.length > 0 && totalListPages > 1 && (
+        <div className="pagination" role="navigation" aria-label={t('approval.pagination_nav')}>
+          <button
+            type="button"
+            className="pagination-btn"
+            onClick={() => setListPage((p) => Math.max(1, p - 1))}
+            disabled={listPage === 1}
+            aria-label={t('common.prev')}
+          >
+            ◀
+          </button>
+          {buildPageNumbers(listPage, totalListPages).map((item, idx) =>
+            item === 'ellipsis' ? (
+              <span key={`ellipsis-${idx}`} className="pagination-ellipsis">…</span>
+            ) : (
+              <button
+                key={item}
+                type="button"
+                className={`pagination-btn ${item === listPage ? 'active' : ''}`}
+                onClick={() => setListPage(item)}
+                aria-current={item === listPage ? 'page' : undefined}
+                aria-label={t('approval.pagination_go_to_page', { page: item })}
+              >
+                {item}
+              </button>
+            )
+          )}
+          <button
+            type="button"
+            className="pagination-btn"
+            onClick={() => setListPage((p) => Math.min(totalListPages, p + 1))}
+            disabled={listPage === totalListPages}
+            aria-label={t('common.next')}
+          >
+            ▶
+          </button>
         </div>
       )}
 
