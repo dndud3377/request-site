@@ -257,6 +257,23 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return True
         return self._ROLE_TO_AGENT.get(role) == step.agent
 
+    def _can_unclaim_step(self, user, step):
+        """검토중(claim) 취소 인가.
+
+        - MASTER: 항상 허용
+        - 선점자 본인: assignee 가 본인일 때만
+        - 그 외: 불가 (다른 팀원이 남의 선점을 취소할 수 없다)
+        """
+        if step.agent not in self._CLAIM_AGENTS:
+            return False
+        if step.action != 'pending' or not step.assignee_id:
+            return False
+        role = getattr(user, 'role', '')
+        if role == 'MASTER':
+            return True
+        caller_loginid = getattr(user, 'loginid', '')
+        return bool(caller_loginid and step.assignee and step.assignee.loginid == caller_loginid)
+
     def _can_confirm_pause(self, user, step):
         """중단 요청 '확인' 인가.
 
@@ -1261,6 +1278,46 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         step.save()
 
         return Response({'message': '검토를 시작했습니다.'})
+
+    @action(detail=True, methods=['post'], url_path='unclaim-step')
+    @transaction.atomic
+    def unclaim_step(self, request, pk=None):
+        """검토중(claim) 취소 — 선점자 본인(또는 MASTER)이 선점을 풀어 단계를 대기중으로 되돌린다.
+
+        assignee 만 비운다. J 단계에서 선점 중 지정된 검토 항목의 검토자 지정은 그대로 남긴다
+        (재선점 시 이어서 편집).
+        """
+        document = self.get_object()
+        agent = request.data.get('agent')
+
+        if agent not in self._CLAIM_AGENTS:
+            return Response({'error': '유효하지 않은 에이전트입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
+
+        max_round = self._max_round(document)
+
+        step = ApprovalStep.objects.select_for_update().filter(
+            document=document, agent=agent, action='pending', round=max_round
+        ).first()
+        if not step:
+            return Response({'error': '해당 단계를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not step.assignee_id:
+            return Response({'error': '검토중인 담당자가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not self._can_unclaim_step(request.user, step):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        step.assignee = None
+        step.assignee_name = ''
+        step.save()
+
+        return Response({'message': '검토중을 취소했습니다.'})
 
     @action(detail=True, methods=['post'], url_path='request-pause')
     @transaction.atomic
