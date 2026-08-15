@@ -75,6 +75,9 @@ import {
   makeTourOayerRows,
   makeTourBbRows,
   makeTourBbExternalData,
+  makeTourAdiCdBefore,
+  makeTourAdiCdAfter,
+  TOUR_MERGE_PURPOSE,
   TOUR_JAYER_PRODUCT,
   TOUR_JAYER_STEPS,
   TOUR_JAYER_ITEMS,
@@ -1199,6 +1202,33 @@ export default function RequestPage(): React.ReactElement {
         case 'restore':
           // 부모가 보낸 스냅샷으로 그 챕터의 정확한 상태를 즉시 복원
           if (d.state) applySnapshot(d.state as TourSnapshot);
+          break;
+        // 참조 요청서 Merge 블록은 Merge 사용 기타 목적을 골라야 열린다.
+        case 'merge-demo':
+          setDetail((dd) => ({ ...dd, other_purpose: [TOUR_MERGE_PURPOSE] }));
+          break;
+        // ADI CD 변경 표(행 단위 '미등록' 포함)를 연다.
+        case 'adi-demo':
+          setDetail((dd) => ({
+            ...dd,
+            other_purpose: [OTHER_PURPOSE_ADI_CD],
+            adi_cd_before: makeTourAdiCdBefore(),
+            adi_cd_after: makeTourAdiCdAfter(),
+          }));
+          break;
+        // 기타 목적 시연을 끝내고 Step1 을 시드 상태로 되돌린다(이후 단계에 영향이 없도록).
+        case 'purpose-reset':
+          setDetail((dd) => ({
+            ...dd,
+            other_purpose: [],
+            adi_cd_before: [],
+            adi_cd_after: [],
+          }));
+          break;
+        // Validation System 은 자동 선택되지 않는다 — 상신자가 직접 '대상'을 고르는 장면.
+        case 'vs-select':
+          setVsManuallySet(true);
+          setDetail((dd) => ({ ...dd, validation_system: VS_TARGET }));
           break;
         case 'map-reset':
           setDetail((dd) => ({
@@ -4832,7 +4862,7 @@ export default function RequestPage(): React.ReactElement {
           {/* 영업/기술지원 합의자: PL 검토와 병렬인 결재 단계. PL 중 지정(다중, 전원 합의).
               예외 구역 값을 기본값과 다르게 바꾼 의뢰서에서만 노출되며, 지정 또는 미지정 사유가 필수다. */}
           {requiresSalesAgreer && (
-          <div className="form-group" style={{ marginTop: 12 }}>
+          <div className="form-group" data-tour="submit-agreer" style={{ marginTop: 12 }}>
             <label className="form-label">
               {t('request.sales_agreer_label')}
               <span style={{ color: 'var(--danger)' }}> *</span>
