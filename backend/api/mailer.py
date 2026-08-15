@@ -1133,13 +1133,15 @@ def _html_to_text(html):
 
 
 def _resolve_voc_master_recipients():
-    """VOC 등록 알림 수신자: role='MASTER' 사용자 전원의 메일 주소.
+    """VOC 등록 알림 수신자: role='MASTER' 사용자 중 VOC 메일을 켜둔 사람의 메일 주소.
 
     MASTER 계정이 늘어나도 설정 변경 없이 자동 반영된다. 라인 수신 설정 필터는
     VOC 에 라인 개념이 없어 타지 않는다(_apply_redirect 에 document 를 넘기지 않음).
+    개별 MASTER 가 권한 관리 '이메일 설정'의 VOC 토글을 끄면(receive_voc_mail=False)
+    제외한다(mail-lines 와 별개 설정).
     """
     emails = list(
-        UserProfile.objects.filter(role='MASTER')
+        UserProfile.objects.filter(role='MASTER', receive_voc_mail=True)
         .exclude(mail='')
         .exclude(mail__isnull=True)
         .values_list('mail', flat=True)
