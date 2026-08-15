@@ -519,6 +519,21 @@ R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전
   '현재 단계' 칸 안의 3행 2열 그리드가 6개 경로를 한 번에 보여준다(§3.3.2).
 - 상태: `loading → error → empty → table` 4분기(2026-06 error 분기 추가). 실패 시 재시도 버튼.
 
+### 3.1.1 페이지네이션 (2026-08)
+- ✅ **클라이언트 측 페이지네이션**(`APPROVAL_LIST_PAGE_SIZE = 10`). 백엔드 `RequestDocumentViewSet`은
+  여전히 `pagination_class = None`(목록 전체 반환)이라 API 변경은 없다 — 필터·정렬까지 끝난
+  `sortedDocs`를 프론트에서 10개 단위로 잘라 보여준다(`pagedDocs`).
+- 표 하단에 이전/다음 버튼 + 숫자 페이지 버튼(`buildPageNumbers`)을 표시한다. 페이지가 많으면
+  1·마지막 페이지는 항상 보이고 현재 페이지 앞뒤 2개만 남기고 나머지는 `…`로 접는다
+  (`APPROVAL_PAGE_WINDOW = 2`). 총 1페이지뿐이면 컨트롤 자체를 숨긴다.
+- **검색·필터 탭 전환 시 항상 1페이지로 리셋**된다(`filter`/`search` 변경 감지 `useEffect`). 검색
+  결과가 원래 몇 페이지 뒤에 있던 문서든, 검색어를 입력하는 즉시 필터링된 결과의 1페이지에서
+  바로 보인다 — 페이지 번호로 찾아다닐 필요가 없다.
+- 결재 처리 후 목록이 줄어(승인 완료 등으로 제외) 지금 보던 페이지가 더 이상 존재하지 않게 되면
+  자동으로 마지막 페이지로 보정한다(`listPage > totalListPages` 감지 `useEffect`).
+- i18n: `approval.pagination_nav`(네비게이션 영역 aria-label), `approval.pagination_go_to_page`
+  (페이지 버튼 aria-label, `{{page}}` 보간). 이전/다음 버튼 라벨은 공용 `common.prev`/`common.next` 재사용.
+
 ### 3.2 필터 탭 (`applyClientFilter`, 클라이언트 측)
 - 전체 / 내 차례(my) / agent별(R·P·J·O·E) / 임시저장(draft) / 반려(rejected).
 - ✅ **(2026-08) '내 차례'·agent별 필터 판정 기준**: 공용 헬퍼 `hasActivePendingStep` 로 통일해
