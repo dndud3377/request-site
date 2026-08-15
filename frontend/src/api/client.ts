@@ -458,6 +458,13 @@ const confirmPause = async (docId: number, agent: AgentType) => {
   return { data };
 };
 
+const rejectPause = async (docId: number) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${docId}/reject-pause/`
+  );
+  return { data };
+};
+
 const resumeDocument = async (docId: number) => {
   const data = await post<{ message: string; status: string; document: RequestDocument }>(
     `/documents/${docId}/resume/`
@@ -556,6 +563,7 @@ export const documentsAPI = {
   confirmReviewItem,
   requestPause,
   confirmPause,
+  rejectPause,
   resume: resumeDocument,
   cancelPause,
   peerApprove,

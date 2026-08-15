@@ -330,7 +330,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | `reject-step` (어느 단계든 반려, PL 제외) | ✅ | rejected: 작성자 + 현재 회차 기합의자 전원 **+ 아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원**(반려자 본인 제외, 2026-07 개편). §3.1 참고 |
 | `assign-step` agent=R (담당자 지정) | ✅ | 지정된 R 담당자에게 발송. **같이 고른 검토자(RV)는 이 시점엔 무메일**(R 담당자가 합의하는 시점에 발송됨) |
 | `claim-step` (검토중 선점, J/O/E/P) | ❌ | 선점(검토중 클릭) 자체는 알림 없음 |
-| `request-pause` / `confirm-pause` / `resume` / `cancel-pause` (결재 중단 전 구간) | ❌ | 전 구간 알림 없음(기존에 알려진 범위 밖 항목) |
+| `request-pause` / `confirm-pause` / `reject-pause`(2026-08) / `resume` / `cancel-pause` (결재 중단 전 구간) | ❌ | 전 구간 알림 없음(기존에 알려진 범위 밖 항목) |
 | `peer-approve` (PL 합의) | 🟡 | 지정 PL **전원**이 합의해야 R 생성 + R에게 발송. 아직 미합의 PL이 있으면 이 합의는 무메일 |
 | `peer-reject` (PL 반려) | ✅ | rejected: 작성자 + 현재 회차 기합의자 전원 **+ 같은 회차의 미합의(pending) 나머지 지정 PL**(2026-07 추가) |
 | `peer-submit` (PL 수정 후 상신) | 🟡 | `peer-approve`와 동일 조건 |

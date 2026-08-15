@@ -11,8 +11,8 @@ from . import mailer
 from . import design_rule_stats
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
-    Line, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup, UserProfile,
-    WithdrawRequest,
+    Line, PauseRequest, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup,
+    UserProfile, WithdrawRequest,
 )
 
 
@@ -3012,6 +3012,169 @@ class WithdrawFlowTest(TestCase):
         self._post(self.author, doc, 'withdraw', {'reason': '사유'})
         noti = MailNotification.objects.get(event_type='withdraw_completed')
         self.assertNotIn(f'/approval?id={doc.id}', noti.contents)
+
+
+class PauseFlowTest(TestCase):
+    """중단(PAUSE) = '요청 → 현재 단계 전원 확인 → pause 전이' (2026-08: 거부·동결 강화).
+
+    - 확인 대기(requested) 동안 결재 동결(승인/반려/지정/검토중/검토중취소 모두 400) —
+      예전엔 status가 실제로 'pause'로 바뀐 뒤에만 막혀서, 확인을 기다리는 사이 대상 단계가
+      검토중·합의까지 진행될 수 있었다(2026-08 수정 전 버그, WithdrawFlowTest 의 동결 테스트와 대칭).
+    - 대상 단계 중 하나만 거부해도 요청 전체가 무효화되고 결재는 그대로 이어진다(reject-pause, 신규).
+    - 전원 확인 시 status → pause 로 전이하고, 그 뒤로도 동결이 유지된다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+
+        self.author = UserProfile.objects.create(
+            loginid='ps_author', mail='ps_a@c.com', role='PL', username='의뢰자'
+        )
+        self.pl = UserProfile.objects.create(loginid='ps_pl', mail='ps_pl@c.com', role='PL', username='지정PL')
+        self.rfg = UserProfile.objects.create(loginid='ps_r', mail='ps_r@c.com', role='TE_R', username='R담당')
+        self.job = UserProfile.objects.create(loginid='ps_j', mail='ps_j@c.com', role='TE_J', username='J팀원')
+        self.outsider = UserProfile.objects.create(loginid='ps_out', mail='ps_o@c.com', role='NONE')
+
+    def _doc(self, status='under_review'):
+        return RequestDocument.objects.create(
+            title=f'ps-{status}',
+            requester=self.author,
+            requester_name='의뢰자', requester_email='ps_a@c.com', requester_department='d',
+            product_name='p', status=status, designated_pl=self.pl,
+        )
+
+    def _step(self, doc, agent, action='pending', assignee=None, round=1):
+        return ApprovalStep.objects.create(
+            document=doc, agent=agent, action=action, round=round,
+            assignee=assignee, assignee_name=(assignee.username if assignee else ''),
+        )
+
+    def _post(self, user, doc, path, payload=None):
+        self.client.force_authenticate(user=user)
+        return self.client.post(f'/api/documents/{doc.id}/{path}/', payload or {}, format='json')
+
+    # ----- 동결: 확인 대기 중엔 결재 진행 액션이 전부 막힌다 -----
+    def test_approval_is_frozen_while_pause_requested(self):
+        doc = self._doc()
+        r_step = self._step(doc, 'R', assignee=self.rfg)
+        self._step(doc, 'J', assignee=self.job)
+        self._post(self.author, doc, 'request-pause', {'reason': '사양 재검토'})
+
+        res = self._post(self.rfg, doc, 'approve-step', {'agent': 'R', 'comment': ''})
+        self.assertEqual(res.status_code, 400, res.content)
+        r_step.refresh_from_db()
+        self.assertEqual(r_step.action, 'pending')
+
+    def test_claim_is_frozen_while_pause_requested(self):
+        """검토중(claim) 선점도 확인 대기 중엔 막힌다 — 안 막으면 그 사이 새로 선점해 합의까지 갈 수 있다."""
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        j_step = self._step(doc, 'J')  # 미배정
+        self._post(self.author, doc, 'request-pause', {'reason': '사양 재검토'})
+
+        res = self._post(self.job, doc, 'claim-step', {'agent': 'J'})
+        self.assertEqual(res.status_code, 400, res.content)
+        j_step.refresh_from_db()
+        self.assertIsNone(j_step.assignee)
+
+    def test_frozen_document_can_still_confirm_pause(self):
+        """동결 중에도 확인(confirm-pause) 자체는 막히면 안 된다 — 확인은 동결 대상 액션이 아니다."""
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        res = self._post(self.rfg, doc, 'confirm-pause', {'agent': 'R'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_partial_confirm_keeps_frozen(self):
+        """병렬 단계 중 하나만 확인해도 아직 pause 확정 전이라 동결이 유지된다."""
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._step(doc, 'J', assignee=self.job)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        self._post(self.rfg, doc, 'confirm-pause', {'agent': 'R'})
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        res = self._post(self.job, doc, 'approve-step', {'agent': 'J', 'comment': ''})
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_all_confirm_transitions_to_pause_and_stays_frozen(self):
+        doc = self._doc()
+        r_step = self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        res = self._post(self.rfg, doc, 'confirm-pause', {'agent': 'R'})
+        self.assertEqual(res.status_code, 200, res.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'pause')
+
+        res = self._post(self.rfg, doc, 'approve-step', {'agent': 'R', 'comment': ''})
+        self.assertEqual(res.status_code, 400, res.content)
+        r_step.refresh_from_db()
+        self.assertEqual(r_step.action, 'pending')
+
+    # ----- 거부(reject-pause, 2026-08 추가) -----
+    def test_target_step_can_reject_pause(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+
+        res = self._post(self.rfg, doc, 'reject-pause')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(PauseRequest.objects.get(document=doc).state, 'rejected')
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+
+    def test_approval_resumes_after_pause_rejected(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        self._post(self.rfg, doc, 'reject-pause')
+
+        res = self._post(self.rfg, doc, 'approve-step', {'agent': 'R', 'comment': ''})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(ApprovalStep.objects.get(document=doc, agent='R').action, 'approved')
+
+    def test_one_of_parallel_targets_rejecting_invalidates_whole_request(self):
+        """병렬 대상 중 R이 이미 확인했어도 J가 거부하면 요청 전체가 무효화된다."""
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._step(doc, 'J', assignee=self.job)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        self._post(self.rfg, doc, 'confirm-pause', {'agent': 'R'})
+
+        res = self._post(self.job, doc, 'reject-pause')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(PauseRequest.objects.get(document=doc).state, 'rejected')
+
+        # 거부로 무효화됐으니 R도 다시 정상적으로 합의를 진행할 수 있어야 한다(이미 했던 확인은 무효).
+        res = self._post(self.rfg, doc, 'approve-step', {'agent': 'R', 'comment': ''})
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_outsider_cannot_reject_pause(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+
+        res = self._post(self.outsider, doc, 'reject-pause')
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(PauseRequest.objects.get(document=doc).state, 'requested')
+
+    def test_reject_pause_without_active_request_is_400(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        res = self._post(self.rfg, doc, 'reject-pause')
+        self.assertEqual(res.status_code, 400)
+
+    def test_pause_button_returns_after_reject(self):
+        """거부되면 작성자가 다시 중단을 요청할 수 있다."""
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'request-pause', {'reason': '1'})
+        self._post(self.rfg, doc, 'reject-pause')
+        res = self._post(self.author, doc, 'request-pause', {'reason': '2'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(PauseRequest.objects.filter(document=doc, state='requested').count(), 1)
 
 
 # ─── 연간 디자인룰 통계 ────────────────────────────────────────────────────────

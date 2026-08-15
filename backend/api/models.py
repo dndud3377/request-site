@@ -324,6 +324,7 @@ class PauseRequest(models.Model):
     STATE_CHOICES = [
         ('requested', '요청됨'),      # 확인 대기 (문서는 아직 under_review)
         ('confirmed', '중단됨'),      # 전원 확인 → 문서 pause
+        ('rejected', '거부됨'),       # 대상 단계가 거부 → 결재 계속
         ('cancelled', '취소됨'),      # 결재 진행/작성자 취소로 무효화
         ('resumed', '재개됨'),        # 작성자가 재개
     ]

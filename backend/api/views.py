@@ -196,6 +196,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 {'error': '철회 요청 확인 대기 중인 의뢰서입니다. 철회가 거부·취소되어야 결재를 진행할 수 있습니다.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # 중단 요청 확인 대기 중(아직 전원 확인되지 않아 status='pause' 로 전이되기 전)에도
+        # 철회와 동일한 이유로 결재를 동결한다 — 그렇지 않으면 확인을 기다리는 동안 대상 단계가
+        # 검토중·합의까지 진행돼 버려 중단 요청 자체가 무의미해진다. 전원 확인이 끝나 status
+        # 가 'pause' 로 바뀌면 위 첫 번째 분기가 이어서 차단한다.
+        pr = self._active_pause_request(document)
+        if pr and pr.state == 'requested':
+            return Response(
+                {'error': '중단 요청 확인 대기 중인 의뢰서입니다. 중단이 확정·거부·취소되어야 결재를 진행할 수 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return None
 
     # 검토중(claim) 방식으로 전환된 단계 — 담당자 지정 대신 담당 역할 누구나 스스로 선점한다.
@@ -1406,6 +1416,37 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return Response({
             'message': msg,
             'status': document.status,
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'], url_path='reject-pause')
+    @transaction.atomic
+    def reject_pause(self, request, pk=None):
+        """중단 거부: 확인 대상 단계가 중단 요청을 거부한다 → 결재가 그대로 이어진다.
+
+        인가는 확인(confirm_pause)과 동일하다 — 확인할 수 있는 사람이 거부도 할 수 있다.
+        단계 하나만 거부해도 요청 전체가 무효가 된다(전원 확인이 성립할 수 없으므로,
+        reject_withdraw 와 동일한 규칙).
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        pr = self._active_pause_request(document)
+        if not pr or pr.state != 'requested':
+            return Response({'error': '진행 중인 중단 요청이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        max_round = self._max_round(document)
+        candidates = ApprovalStep.objects.filter(
+            document=document, action='pending', round=max_round, id__in=pr.target_step_ids,
+        )
+        if not any(self._can_confirm_pause(request.user, s) for s in candidates):
+            return Response({'error': '거부 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        pr.state = 'rejected'
+        pr.save(update_fields=['state'])
+
+        return Response({
+            'message': '중단 요청을 거부했습니다. 결재를 계속 진행할 수 있습니다.',
             'document': RequestDocumentSerializer(document, context={'request': request}).data,
         })
 

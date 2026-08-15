@@ -74,7 +74,7 @@ export interface ApprovalStepFrontend {
 }
 
 // 결재 중단(PAUSE) 요청 상태
-export type PauseState = 'requested' | 'confirmed' | 'cancelled' | 'resumed';
+export type PauseState = 'requested' | 'confirmed' | 'rejected' | 'cancelled' | 'resumed';
 
 // 활성 중단 요청 정보 (서버 pause_request 필드)
 export interface PauseRequestInfo {
