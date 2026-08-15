@@ -1,6 +1,6 @@
 // 전체 가이드(투어) — 결재 현황 페이지 샘플 시드
 // /approval?embed=tour 진입 시, 실제 API 호출 없이 결재 목록·상세를 보여주기 위한 샘플 데이터.
-import { RequestDocument, ApprovalStepFrontend, JayerRow, UserWithRole, HistorySnapshot } from '../types';
+import { RequestDocument, ApprovalStepFrontend, JayerRow, UserWithRole, HistorySnapshot, ReviewItem } from '../types';
 import {
   makeTourDetail,
   makeTourJayerRows,
@@ -81,10 +81,41 @@ const baseDoc = (id: number, title: string, notes: string): Omit<RequestDocument
   submitted_at: '2026-06-17T08:00:00Z',
 });
 
+// J 단계 검토 항목 시연용 — 확인 완료 1건 / 미확인 1건으로 진행 상태 차이를 보여준다.
+export const TOUR_REVIEW_ITEMS: ReviewItem[] = [
+  {
+    id: 1,
+    title: '신규 Layer STEPSEQ 확인',
+    is_done: true,
+    created_at: '2026-06-18T09:10:00Z',
+    reviewers: [
+      { id: 1, loginid: 'tour-j1', name: '정JOB', confirmed: true, confirmed_at: '2026-06-18T11:00:00Z' },
+    ],
+  },
+  {
+    id: 2,
+    title: 'Backbone 매핑 결과 확인',
+    is_done: false,
+    created_at: '2026-06-18T09:12:00Z',
+    reviewers: [
+      { id: 2, loginid: 'tour-j2', name: '오검토', confirmed: false, confirmed_at: null },
+    ],
+  },
+];
+
+// 검토 항목 검토자 지정 후보 (시연 전용 — 실제 지정은 하지 않는다)
+export const TOUR_REVIEW_ITEM_CANDIDATES: UserWithRole[] = [
+  { id: 11, loginid: 'tour-j1', name: '정JOB', deptname: 'JOB팀', role: 'TE_J', mail: 'j1@example.com' },
+  { id: 12, loginid: 'tour-j2', name: '오검토', deptname: 'JOB팀', role: 'TE_J', mail: 'j2@example.com' },
+];
+
 // A: R 합의 완료 → 병렬 진행(경로1 PHPSI / 경로2 JOB·OVL) — 목록에서 2행으로 분기 표시
 // 재상신 이력이 있어 상세에서 변경 필드/행이 강조된다.
+// `can_withdraw`: 철회 정책(진행 중 문서는 현재 단계 확인 후 삭제) 시연을 위해 버튼을 노출한다.
 const docA: RequestDocument = {
   ...baseDoc(9001, '샘플 의뢰서 A (병렬 진행)', NOTES_WITH_HISTORY),
+  can_withdraw: true,
+  review_items: TOUR_REVIEW_ITEMS,
   approval_steps: [
     step(1, 'PL', 'approved', { assignee_name: '김검토', acted_at: '2026-06-17T10:00:00Z' }),
     step(2, 'R', 'approved', { assignee_name: '이RFG', acted_at: '2026-06-18T09:00:00Z' }),
