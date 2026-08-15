@@ -616,6 +616,8 @@ export interface UserWithRole {
   receive_all_mail?: boolean;
   /** 전체 받기를 껐을 때 메일을 수신할 라인 이름 목록(권한 관리 '이메일 설정'). */
   mail_lines?: string[];
+  /** VOC 등록 알림 메일 수신 여부(MASTER 전용, 권한 관리 '이메일 설정'의 VOC 토글). */
+  receive_voc_mail?: boolean;
 }
 
 /** PATCH /users/{id}/mail-lines/ 응답 */
@@ -623,6 +625,12 @@ export interface MailLinesResponse {
   id: number;
   receive_all_mail: boolean;
   mail_lines: string[];
+}
+
+/** PATCH /users/{id}/voc-mail/ 응답 */
+export interface VocMailResponse {
+  id: number;
+  receive_voc_mail: boolean;
 }
 
 export interface CreateUserInput {
