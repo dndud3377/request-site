@@ -2168,6 +2168,7 @@ type Page = { label: string; content: React.ReactNode };
             <div className="ri-subtabs">
               <button
                 type="button"
+                data-tour="ri-subtab-table"
                 className={`ri-subtab${jayerSubtab === 'table' ? ' active' : ''}`}
                 onClick={() => setJayerSubtab('table')}
               >
@@ -2175,6 +2176,7 @@ type Page = { label: string; content: React.ReactNode };
               </button>
               <button
                 type="button"
+                data-tour="ri-subtab"
                 className={`ri-subtab${jayerSubtab === 'items' ? ' active' : ''}`}
                 onClick={() => setJayerSubtab('items')}
               >
