@@ -398,6 +398,10 @@ export const makeTourDetail = (): DetailFormState => ({
 // J-ayer 행의 Layer 값 — BB 자동채움이 실제로 매칭되도록 외부 데이터 layerid와 맞춘다.
 export const TOUR_JAYER_LAYERS = ['10', '20', '30', '40', '50'];
 
+// Validation System 시연용 — 판정 키워드(plel)를 가진 행이 있어야 '해당없음'으로 잠기지 않고
+// 상신자가 대상/비대상을 직접 고르는 화면(2026-08 필수 선택)을 보여줄 수 있다.
+export const TOUR_JAYER_VS_ROW_INDEX = 2;
+
 export const makeTourJayerRows = (): JayerRow[] =>
   TOUR_JAYER_LAYERS.map((layer, i) => ({
     ...makeJayerRow(),
@@ -405,6 +409,7 @@ export const makeTourJayerRows = (): JayerRow[] =>
     process_id: 'PROC_X1',
     sp: `SP0${i + 1}`,
     sd: `SD0${i + 1}`,
+    pp: i === TOUR_JAYER_VS_ROW_INDEX ? `PP0${i + 1}_${VALIDATION_KEYWORD}` : `PP0${i + 1}`,
     layerid: layer,
     st: 'O',
     new_or_copy: '신규',
@@ -440,6 +445,20 @@ export const makeTourBbExternalData = () => [
 ];
 
 // J-ayer 데모에서 채워 넣을 샘플 값
+// ADI CD 변경 시연용 — 변경전 1행을 '미등록'(새로 생기는 STEP)으로 둬 행 단위 미등록 표기를 보여준다.
+export const makeTourAdiCdBefore = (): AdiCdStep[] => [
+  { ...makeAdiCdStep(), step_id: 'STEP_1000', step_desc: 'ADI CD 변경전 STEP' },
+  { ...makeAdiCdStep(), step_id: '', step_desc: '', unregistered: true },
+];
+
+export const makeTourAdiCdAfter = (): AdiCdStep[] => [
+  { ...makeAdiCdStep(), step_id: 'STEP_1000', step_desc: 'ADI CD 변경후 STEP' },
+  { ...makeAdiCdStep(), step_id: 'STEP_2000', step_desc: '신규 추가 STEP' },
+];
+
+// 참조 요청서 Merge 블록을 여는 기타 목적 — 시연에서만 쓰는 대표값.
+export const TOUR_MERGE_PURPOSE = 'Layer 추가/삭제';
+
 export const TOUR_JAYER_PRODUCT = '샘플제품A';
 export const TOUR_JAYER_STEPS = ['10', '20', '30', '40', '50'];
 export const TOUR_JAYER_ITEMS = ['ITEM_1', 'ITEM_2', 'ITEM_3', 'ITEM_4', 'ITEM_5'];
