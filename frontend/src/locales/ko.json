@@ -542,6 +542,8 @@
     "assign_add": "추가",
     "claim": "검토중",
     "claim_success": "검토를 시작했습니다.",
+    "unclaim": "검토중 취소",
+    "unclaim_success": "검토중을 취소했습니다.",
     "no_team_members": "지정 가능한 담당자가 없습니다.",
     "edit_resubmit": "수정·재상신",
     "resubmit_confirm": "수정 완료 후 재상신하시겠습니까?",
