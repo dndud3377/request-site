@@ -361,6 +361,7 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - ✅ **중단 거부 (`reject_pause`, 2026-08 추가)**: 인가는 확인과 동일(`_can_confirm_pause` 통과하는 대상 단계가 있으면 거부 가능 — 확인할 수 있는 사람이면 거부도 할 수 있다, `reject_withdraw`와 동일 패턴). **대상 단계 중 하나만 거부해도 요청 전체가 무효화**된다(전원 확인이 더 이상 성립할 수 없으므로) — `state → 'rejected'`, 결재는 그대로 이어진다. 이미 확인을 마친 다른 대상 단계가 있어도 그 확인은 함께 무효화되며(재요청 시 처음부터 다시 확인받아야 함), 문서·단계 자체는 바뀌지 않는다. 메일 발송 없음(중단 기능은 원래 메일 범위 밖).
 - **재개 (`resume`)**: 작성자 본인(또는 MASTER) + `status == 'pause'`. `pause → under_review` 로 되돌리고 **멈춘 시점의 pending 단계를 그대로 유지**해 그 단계부터 이어간다(회차 새로 만들지 않음, 이미 합의된 병렬 경로 유지). 문서 내용은 사전에 `/request` 편집(update)에서 저장되며, 재개 시 지정 PL 재선택 불필요(`RequestPage` 가 pause 문서 편집 시 상신 대신 `resume` 호출).
   - ✅ **마감 기한 연장(2026-07)**: 재개 시 **멈춘 기간(중단 확정 `confirmed_at` ~ 재개일, 달력일)만큼** 현재 회차 pending 단계의 `due_date` 를 뒤로 민다. 중단 동안 남은 기한이 깎이지 않는다.
+  - ✅ **변경 이력 기록(2026-08)**: 재개 전 `/request` 편집에서 내용을 고쳤다면 **수정 전 스냅샷이 `additional_notes.history[]`에 남는다**(`RequestPage/index.tsx` `buildEnrichedForm`의 `shouldAddHistory`가 `isRejected || isPause`). 종전엔 재상신(`isRejected`)일 때만 이력을 쌓아, 중단 후 재개하며 수정한 내용은 상세보기 '이력 확인'에서 전혀 비교할 수 없었다(회차도 안 올라가므로 다른 방법으로도 알 수 없음).
   - ✅ **목록 표시**: PAUSE 동안 결재현황/홈 목록의 '최종 완료예정' 칸은 날짜 대신 **`중단`**(회색)으로 표시한다(기한이 지난 것처럼 빨갛게 보이지 않도록). `ApprovalPage`·`HomePage` 공통. **(2026-08)** '현재 단계 완료예정' 컬럼 자체가 사라졌고(§3.5), 병렬 단계 중단은 그리드 6칸을 전부 `PAUSE` 뱃지로 덮는다(§3.3.2).
 - **요청 취소 (`cancel_pause`)**: 확인 완료 전(`requested`) 요청을 작성자/MASTER 가 철회(`cancelled`).
 - **자동 취소**: 요청중(requested) 상태에서 결재가 정상 진행(합의 `approve_step`/반려 `reject_step`)되어 단계가 넘어가면 기존 요청을 `cancelled` 처리(`_cancel_active_pause_requests`).
@@ -850,6 +851,8 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 
 ## 7. 상세 보기(PagedDetailView) 변경 이력
 
+- **(2026-08) `history[]` 적재 조건에 재개(resume) 추가**: `additional_notes.history[]`는 세 수정 재상신 경로(Case D `peer_submit`/Case I `resubmit`/Case M `resume`) 중 **재상신(`resubmit`)일 때만** 쌓였다. 중단(pause) 후 `/request` 편집에서 내용을 고치고 재개하면 회차도 안 올라가고 이력도 안 남아, 결재자가 뭐가 바뀌었는지 확인할 방법이 없었다(Case M 참조). `RequestPage/index.tsx`의 `shouldAddHistory` 조건을 `isRejected || isPause`로 넓혀 재개 시에도 수정 전 스냅샷을 적재한다.
+- **(2026-08) 레거시 문서 `bb_entries` 이력 오탐 (미수정)**: `RequestPage/index.tsx`가 편집 로드 시 `bb_entries`에 없는 `id`를 백필(`e.id ?? genId()`)하는데, 이 백필된 값이 `history[]`(백필 전 원본)과 비교돼 **내용을 안 건드려도 뼈찜 항목이 "변경됨"으로 오탐**된다(`computeDetailDiff`, `PagedDetailView.tsx`). `id` 필드 도입 이전에 저장된 레거시 문서가 편집·재상신될 때만 발생(신규 문서는 생성 시점부터 `makeBbEntry()`가 항상 id를 부여). 원인 재현 확인만 했고 아직 수정하지 않았다.
 - **(2026-08) 'MAP 삭제' 이유 카드 + RA 행 '해당없음' 처리**: '결재 경로' 탭 위쪽에
   MAP 정보 섹션(`section_map`)의 STEP1 페이지에 수정/삭제 이유 카드를 추가했다(본문은
   `RichTextEditor` 가 만든 HTML — 공지·가이드·VOC 와 동일하게 `dangerouslySetInnerHTML` 로

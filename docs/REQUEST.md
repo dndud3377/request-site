@@ -249,6 +249,26 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 버그 수정 (2026-08-15 — 중단(PAUSE) 후 재개 시 수정 내용이 변경 이력에 남지 않음)
+
+- **증상**: 결재 중단(pause) 상태에서 `/request` 편집으로 내용을 고친 뒤 재개(`resume`)하면, 결재
+  상세보기('이력 확인')에서 뭐가 바뀌었는지 전혀 확인할 수 없었다. 재개는 회차(round)를 새로 만들지
+  않아 다른 방법으로도 변경분을 알 수 없다.
+- **원인**: `RequestPage/index.tsx`의 저장 핸들러가 `additional_notes.history[]`에 수정 전 스냅샷을
+  쌓을지(`shouldAddHistory`) 결정할 때 반려 후 재상신(`isRejected`) 여부만 봤다. 중단 후 재개
+  (`isPause`)는 이 조건에서 빠져 있어, PL 수정 후 상신(Case D)·재상신(Case I)과 달리 재개(Case M)만
+  이력이 안 쌓였다.
+- **수정**: `const enriched = buildEnrichedForm(submitNote, isRejected)` → `buildEnrichedForm(submitNote,
+  isRejected || isPause)`(`RequestPage/index.tsx:4150`). 결재 진행 중 내용을 고쳐 다시 제출할 수 있는
+  세 경로(PL 수정 후 상신 / 반려 재상신 / 중단 후 재개) 모두 이력을 남기도록 통일했다.
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx` (1개 파일, 조건식 1곳) · `docs/APPROVAL.md`
+  §6(Case M)·§7 동기화.
+- **검증(2026-08-15 실행)**: `npx tsc --noEmit` — 신규 에러 0(기존 tsconfig 옵션 경고 2건 + 기존
+  i18n/`Set` 관련 에러 19건은 이번 변경 이전부터 있던 것으로 확인, 변경한 줄과 무관). `npm test
+  --watchAll=false` — 8 suites / **201건 전부 통과**(신규 실패 없음). `bb_entries` id 백필 오탐 관련
+  건(B-40)은 이번 수정과 무관한 별개 이슈로 `docs/E2E_TEST_AND_BUGS.md`에 재확인 기록만 남기고
+  손대지 않았다.
+
 ### 버그 수정 (2026-08-15 — MAP 삭제 → 다른 요청 목적 전환 시 map_type·삭제 이유가 초기화되지 않음)
 
 - **증상**: 요청 목적을 `MAP 삭제`로 선택(진입 시 `map_type`이 `삭제`로 자동 고정되고 삭제 이유를
