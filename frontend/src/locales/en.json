@@ -862,6 +862,7 @@
           "s1g1": { "title": "Line · Process · Product Name · Recipe", "desc": "Select these four fields first. All must be filled before the request purpose and remaining fields unlock below." },
           "s1g2": { "title": "Request Purpose", "desc": "Choose the purpose of this request: New, Borrow, New+Borrow, Only MAP, MAP Delete, or Other." },
           "s1g3": { "title": "Reference Document Merge", "desc": "Selecting Layer Add/Delete, STEPSEQ Change, or Overlay Change under Other Purpose opens this area, where you can compare and merge before/after values from an approved reference document." },
+          "s1g3b": { "title": "No Reference Document → Manual Entry", "desc": "Confirming 'No reference document' skips automatic mapping — instead you add rows directly to the before/after table and enter values by hand." },
           "s1g4": { "title": "ADI CD Change", "desc": "Selecting 'ADI CD Change' under Other Purpose opens this table for entering before/after steps row by row." },
           "s1g5": { "title": "Flow Chart", "desc": "Enter the flow chart row by row, linking line, product, recipe, and progress layer." },
           "s1g6": { "title": "Backbone (BB) Combination Area", "desc": "Enter the reference line, product, and recipe used for Backbone (BB) combination." },

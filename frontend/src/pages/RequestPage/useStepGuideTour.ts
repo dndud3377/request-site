@@ -109,6 +109,16 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
             onEnter: () => setDetail((prev) => ({ ...prev, other_purpose: [TOUR_MERGE_PURPOSE] })),
           },
           {
+            selectors: ['[data-tour="ref-doc-merge"]'],
+            ...g('s1g3b'),
+            onEnter: () => setDetail((prev) => ({
+              ...prev,
+              other_purpose: [TOUR_MERGE_PURPOSE],
+              merge_ref_mode: 'none',
+              merge_applied: true,
+            })),
+          },
+          {
             selectors: ['[data-tour="adi-cd"]'],
             ...g('s1g4'),
             onEnter: () => setDetail((prev) => ({ ...prev, other_purpose: [OTHER_PURPOSE_ADI_CD] })),
