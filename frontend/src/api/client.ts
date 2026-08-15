@@ -433,6 +433,13 @@ const claimStep = async (docId: number, agent: AgentType) => {
   return { data };
 };
 
+const unclaimStep = async (docId: number, agent: AgentType) => {
+  const data = await post<{ message: string }>(`/documents/${docId}/unclaim-step/`, {
+    agent,
+  });
+  return { data };
+};
+
 // ===== 결재 중단(PAUSE) =====
 
 const requestPause = async (docId: number, reason: string) => {
@@ -540,6 +547,7 @@ export const documentsAPI = {
   addPostApprover,
   removePostApprover,
   claimStep,
+  unclaimStep,
   addReviewItem,
   renameReviewItem,
   deleteReviewItem,
