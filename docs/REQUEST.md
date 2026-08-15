@@ -249,6 +249,31 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 버그 수정 (2026-08-15 — MAP 삭제 → 다른 요청 목적 전환 시 map_type·삭제 이유가 초기화되지 않음)
+
+- **증상**: 요청 목적을 `MAP 삭제`로 선택(진입 시 `map_type`이 `삭제`로 자동 고정되고 삭제 이유를
+  작성)한 뒤, 요청 목적을 `신규` 등 다른 값으로 바꾸면 **모달 없이 즉시 전환**됐고, StepMap
+  화면은 여전히 `삭제`가 선택된 채 작성했던 이유도 그대로 남아있었다(요청 목적은 바뀌었는데
+  MAP 정보 섹션만 `MAP 삭제` 화면 그대로 남는 버그).
+- **원인**: `index.tsx` `handleRequestPurposeSelect`의 "Only MAP 스코프 이탈" 확인 조건이
+  `isLabProduct || postApprovers.length > 0`만 검사했다. `MAP 삭제`에서 나갈 때는 이 두 값이
+  항상 false/0이라 조건에 걸리지 않고 `handleDetailSet('request_purpose', val)`만 실행돼
+  `map_type`·`map_change_reason`이 그대로 남았다(`applyLeaveMapOnlyScope`도 이 두 필드를
+  다루지 않았다).
+- **수정**:
+  - `handleRequestPurposeSelect`: 이탈 확인 조건에 `isMapDeleteEdit`(현재 목적이 `MAP 삭제`)을
+    추가 — `MAP 삭제`에서 나갈 때는 항상 확인 모달(`onlyMapConfirm`)을 띄운다.
+  - `applyLeaveMapOnlyScope`: 이전 목적이 `MAP 삭제`였으면 `map_type`·`map_change_reason`을
+    `INITIAL_DETAIL` 값으로 초기화(빈 값)한다.
+  - 확인 모달 문구를 이탈 대상 목적이 아니라 **이탈 전 목적**(`detail.request_purpose`)으로
+    분기 — `MAP 삭제`에서 나가는 경우 기존 "연구소 제품·후결자 해제" 문구 대신 새 문구
+    (`map_delete_leave_confirm_title`/`_msg`)를 노출한다. `Only MAP`에서 나가는 기존 동작(연구소
+    제품·후결자 해제 안내)은 변경 없음.
+- **i18n**: `request.map_delete_leave_confirm_title`·`map_delete_leave_confirm_msg` 2키 ko/en 동시 추가.
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx`, `frontend/src/locales/{ko,en}.json`.
+- **검증**: `npx tsc --noEmit` 22개(변경 없음, 신규 0) · `react-scripts test --watchAll=false` 8 suites
+  / **201건 통과**.
+
 ### 기능 개선 (2026-08-13 — 흐름도 행: 위치/제품 이름/조리법/Step 중 하나라도 입력하면 나머지 전부 필수)
 
 - **증상/요청**: 흐름도(`flow_chart`)에서 위치(라인)만 선택하고 제품 이름·조리법·Step(`step_from`/
