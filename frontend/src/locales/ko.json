@@ -490,6 +490,8 @@
     "change_designee_title": "지정자 변경",
     "search_placeholder": "제목, 제품명, 의뢰자로 검색",
     "no_data": "해당 조건의 의뢰서가 없습니다.",
+    "pagination_nav": "페이지 이동",
+    "pagination_go_to_page": "{{page}} 페이지로 이동",
     "col_title": "제목",
     "col_product": "제품명",
     "col_requester": "의뢰자",

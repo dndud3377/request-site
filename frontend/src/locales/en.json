@@ -490,6 +490,8 @@
     "change_designee_title": "Change Reviewer",
     "search_placeholder": "Search by title, product, or requester",
     "no_data": "No requests match the criteria.",
+    "pagination_nav": "Page navigation",
+    "pagination_go_to_page": "Go to page {{page}}",
     "col_title": "Title",
     "col_product": "Product",
     "col_requester": "Requester",
