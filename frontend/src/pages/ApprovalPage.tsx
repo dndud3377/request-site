@@ -790,6 +790,20 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
+  const handleRejectPause = async () => {
+    if (!selected) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.rejectPause(selected.id);
+      addToast(t('approval.pause_rejected_toast'), 'success');
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const handleResumeNav = (doc: RequestDocument) => {
     setModalOpen(false);
     navigate('/request', { state: { editDocId: doc.id } });
@@ -1365,17 +1379,23 @@ export default function ApprovalPage(): React.ReactElement {
             if (s.assignee_loginid && s.assignee_loginid === currentUser.username) return true;
             return s.agent === userAgent;
           }) ?? [];
+          // 철회/중단 요청이 확인 대기 중(requested)이면 결재 진행 액션(지정·합의·검토중·검토중취소)을
+          // 전부 숨긴다 — 서버 _blocked_progress_response 의 동결과 대칭이다. 확인 대상 단계뿐 아니라
+          // 문서 전체를 얼리는 이유는, 병렬 단계 중 아직 확인 안 된 쪽이 그 사이 합의까지 끝내버리면
+          // 중단·철회 요청 자체가 무의미해지기 때문이다(대상이 되지 않은 단계도 동일하게 막는다).
+          const progressFrozen = selected?.withdraw_request != null
+            || selected?.pause_request?.state === 'requested';
           // 투어 모드에서는 '지정하기' 시연을 위해 R 단계(아직 미지정)를 지정 가능 단계로 본다.
           // 배정 후에는 assignee_loginid가 채워져 자동으로 사라진다(실제 동작과 동일).
           const assignableStep = isTourMode
             ? selected?.approval_steps?.find((s) => s.agent === 'R' && s.action === 'pending' && !s.assignee_loginid)
-            : pendingSteps.find((s) => canUserAssign(currentUser, s));
+            : (progressFrozen ? undefined : pendingSteps.find((s) => canUserAssign(currentUser, s)));
           // RV/PV/EV(검토자)는 담당자(R/P/E) 합의 후에만 처리 가능 → 그 전엔 actable 에서 제외
           const mainStepApproved = (mainAgent: string) => (selected?.approval_steps ?? []).some(
             (s) => s.agent === mainAgent && s.action === 'approved' && (s.round ?? 1) === currentRound
           );
           const REVIEW_MAIN_AGENT: Record<string, string> = { RV: 'R', PV: 'P', EV: 'E' };
-          const actableStep = pendingSteps.find((s) => {
+          const actableStep = progressFrozen ? undefined : pendingSteps.find((s) => {
             if (!canUserAgree(currentUser, s)) return false;
             const mainAgent = REVIEW_MAIN_AGENT[s.agent];
             return !mainAgent || mainStepApproved(mainAgent);
@@ -1384,9 +1404,9 @@ export default function ApprovalPage(): React.ReactElement {
           // 영업/기술지원 합의자 — PL 검토와 병렬이지만 전용 API(sales-agree/reject)를 쓴다.
           const isSalesAgreerStep = actableStep?.agent === 'SA';
           // 검토중(claim) 가능 단계: J/O/E/P 중 담당 역할이 아직 미배정인 단계를 선점
-          const claimableStep = isTourMode ? undefined : pendingSteps.find((s) => canUserClaim(currentUser, s));
+          const claimableStep = (isTourMode || progressFrozen) ? undefined : pendingSteps.find((s) => canUserClaim(currentUser, s));
           // 검토중 취소 가능 단계: 내가 선점한 J/O/E/P 단계를 다시 대기중으로 되돌린다.
-          const unclaimableStep = isTourMode ? undefined : pendingSteps.find((s) => canUserUnclaim(currentUser, s));
+          const unclaimableStep = (isTourMode || progressFrozen) ? undefined : pendingSteps.find((s) => canUserUnclaim(currentUser, s));
           // 검토자 선택 UI 대상: 지금 '합의'를 누를 수 있는 단계가 P/E일 때 그 단계에 검토자를 함께 지정한다.
           const reviewerPickStep = (!isTourMode && actableStep && REVIEW_AGENT_OF[actableStep.agent]) ? actableStep : undefined;
           const existingReviewerLoginids = reviewerPickStep
@@ -1556,6 +1576,12 @@ export default function ApprovalPage(): React.ReactElement {
               {pauseConfirmAgent && (
                 <button className="btn btn-pause" onClick={() => handleConfirmPause(pauseConfirmAgent as AgentType)} disabled={processing}>
                   {t('approval.pause_confirm')}
+                </button>
+              )}
+              {/* 중단 거부 (확인할 수 있는 사람이면 거부도 가능) */}
+              {pauseConfirmAgent && (
+                <button className="btn btn-secondary" onClick={handleRejectPause} disabled={processing}>
+                  {t('approval.pause_reject')}
                 </button>
               )}
               {/* 중단 요청 취소 (요청됨 상태 + 작성자) */}
