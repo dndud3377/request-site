@@ -1598,7 +1598,8 @@ export default function RequestPage(): React.ReactElement {
       return;
     }
     // Only MAP → 다른 목적: '연구소 제품'과 지정 후결자는 Only MAP 전용이라 함께 해제한다.
-    if (isMapOnlyScope && (isLabProduct || postApprovers.length > 0)) {
+    // MAP 삭제 → 다른 목적: map_type('삭제' 고정값)과 작성한 삭제 이유도 함께 해제한다.
+    if (isMapOnlyScope && (isLabProduct || postApprovers.length > 0 || isMapDeleteEdit)) {
       setOnlyMapConfirm({ targetPurpose: val });
       return;
     }
@@ -1648,12 +1649,16 @@ export default function RequestPage(): React.ReactElement {
     setErrors((prev) => ({ ...prev, request_purpose: '', bb_entries: '' }));
   };
 
-  /** Only MAP/MAP 삭제 에서 벗어날 때 — 전용 값('연구소 제품'·후결자)만 정리한다 */
+  /** Only MAP/MAP 삭제 에서 벗어날 때 — 전용 값('연구소 제품'·후결자, MAP 삭제의 map_type·이유)만 정리한다 */
   const applyLeaveMapOnlyScope = (purpose: string) => {
     setDetail((prev) => ({
       ...prev,
       request_purpose: purpose,
       other_purpose: prev.other_purpose.filter((o) => o !== OTHER_PURPOSE_LAB),
+      // MAP 삭제 진입 시 자동 고정됐던 map_type('삭제')과 작성한 이유는 다른 목적에서 의미가 없으므로 비운다.
+      ...(prev.request_purpose === MAP_DELETE_EDIT_PURPOSE
+        ? { map_type: INITIAL_DETAIL.map_type, map_change_reason: INITIAL_DETAIL.map_change_reason }
+        : {}),
     }));
     setPostApprovers([]);
     setErrors((prev) => ({ ...prev, request_purpose: '' }));
@@ -5263,14 +5268,18 @@ export default function RequestPage(): React.ReactElement {
             ? t('request.map_delete_edit_confirm_title')
             : onlyMapConfirm?.targetPurpose === ONLY_MAP_PURPOSE
               ? t('request.only_map_confirm_title')
-              : t('request.map_only_leave_confirm_title')
+              : detail.request_purpose === MAP_DELETE_EDIT_PURPOSE
+                ? t('request.map_delete_leave_confirm_title')
+                : t('request.map_only_leave_confirm_title')
         }
         message={
           onlyMapConfirm?.targetPurpose === MAP_DELETE_EDIT_PURPOSE
             ? t('request.map_delete_edit_confirm_msg')
             : onlyMapConfirm?.targetPurpose === ONLY_MAP_PURPOSE
               ? t('request.only_map_confirm_msg')
-              : t('request.map_only_leave_confirm_msg')
+              : detail.request_purpose === MAP_DELETE_EDIT_PURPOSE
+                ? t('request.map_delete_leave_confirm_msg')
+                : t('request.map_only_leave_confirm_msg')
         }
         danger
       />

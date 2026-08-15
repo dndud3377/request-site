@@ -264,6 +264,8 @@
     "map_delete_edit_confirm_msg": "Selecting MAP Delete will reset and disable Other Purpose, Flow Chart, Notes, Backbone, and Reference Request. MAP details are limited to the deletion reason. Do you want to continue?",
     "map_only_leave_confirm_title": "Change Request Purpose",
     "map_only_leave_confirm_msg": "Switching to another request purpose will clear the 'Lab Product' selection and the post-approvers you assigned. Do you want to continue?",
+    "map_delete_leave_confirm_title": "Change Request Purpose",
+    "map_delete_leave_confirm_msg": "Switching to another request purpose will reset the MAP info, including the MAP deletion reason. Do you want to continue?",
     "lab_product_only_map_hint": "'Lab Product' can only be selected when the request purpose is Only MAP.",
     "only_map_confirm_msg": "Selecting Only MAP will reset and disable Other Purpose, Flow Chart, Notes, Backbone, and Reference Request. Do you want to continue?",
     "map_x_sign_error": "North/South X values must have the same absolute value with opposite signs.",
