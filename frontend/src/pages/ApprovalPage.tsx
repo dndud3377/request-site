@@ -9,7 +9,7 @@ import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView, { ReviewItemsPanelProps } from '../components/PagedDetailView';
 import { ReviewItemsNotice } from '../components/ReviewItems';
-import { canUserAgree, canUserAssign, canUserClaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
+import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem } from '../types';
 import { formatDate } from '../utils/date';
 import {
@@ -721,6 +721,20 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
+  const handleUnclaim = async (agent: AgentType) => {
+    if (!selected) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.unclaimStep(selected.id, agent);
+      await refreshAndSelect(selected.id);
+      addToast(t('approval.unclaim_success'), 'success');
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   // ===== 결재 중단(PAUSE) =====
   const handleRequestPauseClick = () => {
     setPauseReasonInput('');
@@ -1371,6 +1385,8 @@ export default function ApprovalPage(): React.ReactElement {
           const isSalesAgreerStep = actableStep?.agent === 'SA';
           // 검토중(claim) 가능 단계: J/O/E/P 중 담당 역할이 아직 미배정인 단계를 선점
           const claimableStep = isTourMode ? undefined : pendingSteps.find((s) => canUserClaim(currentUser, s));
+          // 검토중 취소 가능 단계: 내가 선점한 J/O/E/P 단계를 다시 대기중으로 되돌린다.
+          const unclaimableStep = isTourMode ? undefined : pendingSteps.find((s) => canUserUnclaim(currentUser, s));
           // 검토자 선택 UI 대상: 지금 '합의'를 누를 수 있는 단계가 P/E일 때 그 단계에 검토자를 함께 지정한다.
           const reviewerPickStep = (!isTourMode && actableStep && REVIEW_AGENT_OF[actableStep.agent]) ? actableStep : undefined;
           const existingReviewerLoginids = reviewerPickStep
@@ -1726,6 +1742,16 @@ export default function ApprovalPage(): React.ReactElement {
                   onClick={() => handleClaim(claimableStep.agent)}
                 >
                   {t('approval.claim')}
+                </button>
+              )}
+              {/* 검토중(claim) 취소 — 내가 선점한 단계를 다시 대기중으로 되돌린다 */}
+              {unclaimableStep && !assigningOpen && !changingDesigneeOpen && (
+                <button
+                  className="btn btn-secondary"
+                  disabled={processing}
+                  onClick={() => handleUnclaim(unclaimableStep.agent)}
+                >
+                  {t('approval.unclaim')}
                 </button>
               )}
               {/* 단일 담당자 지정 (R·P) */}
