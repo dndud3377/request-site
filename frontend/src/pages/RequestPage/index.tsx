@@ -4242,6 +4242,8 @@ export default function RequestPage(): React.ReactElement {
     setOayerInfoTab,
     showAutoFillPanel,
     setShowAutoFillPanel,
+    bbRows,
+    setBbRows,
   });
 
   // 스텝 제목 옆에 붙는 단일 "영상 가이드" 배지 — 누르면 그 스텝 전체를 훑는 하이라이트 투어가 열린다.
