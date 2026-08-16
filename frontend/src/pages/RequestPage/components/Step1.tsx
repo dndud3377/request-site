@@ -215,7 +215,7 @@ const Step1: React.FC<Step1Props> = ({
         {/* 안내 문구 */}
         {!canSelectPurpose && (
           <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-            라인, 조합법, 제품 이름, 조리법을 모두 선택하면 나머지 항목을 입력할 수 있습니다.
+            {t('request.step1_purpose_gate_hint')}
           </span>
         )}
 
