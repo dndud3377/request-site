@@ -883,7 +883,8 @@
           "s4g4": { "title": "TBV / TLV", "desc": "Enter thickness, SD, and notes to add a TBV/TLV entry." },
           "s5g1": { "title": "Backbone Auto-fill", "desc": "Specify a start~end Layer range and product ID, and matching BB info fills in all at once." },
           "s5g2": { "title": "BB Mapping", "desc": "Select a source row on the left and click external BB data on the right to map them, then click Apply." },
-          "s5g3": { "title": "BB Info (Applied Result)", "desc": "Results from auto-fill or mapping accumulate in this table." }
+          "s5g3": { "title": "BB Info (Applied Result)", "desc": "Results from auto-fill or mapping accumulate in this table." },
+          "s5g3b": { "title": "Click the SP header — sort by SEQ", "desc": "Clicking the SP header sorts the rows in ascending order by SEQ. Right now they're shown in their pre-sort order." }
         }
       },
       "steps": {
