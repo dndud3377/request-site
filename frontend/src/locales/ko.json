@@ -851,7 +851,11 @@
     "delete_title": "공지 삭제",
     "delete_confirm": "\"{{title}}\" 공지를 삭제하시겠습니까?",
     "hide_today": "오늘 하루 보지 않기",
-    "confirm": "확인"
+    "confirm": "확인",
+    "modal_title": "공지사항",
+    "tab_all": "전체",
+    "select_from_list": "목록에서 항목을 선택하세요",
+    "item_placeholder": "내용을 입력하세요"
   },
   "session": {
     "warning_title": "세션 만료 안내",

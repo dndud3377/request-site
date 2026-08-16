@@ -851,7 +851,11 @@
     "delete_title": "Delete Notice",
     "delete_confirm": "Are you sure you want to delete \"{{title}}\"?",
     "hide_today": "Don't show today",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "modal_title": "Notices",
+    "tab_all": "All",
+    "select_from_list": "Select an item from the list",
+    "item_placeholder": "Enter content"
   },
   "session": {
     "warning_title": "Session Expiring Soon",
