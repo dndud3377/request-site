@@ -172,7 +172,7 @@ interface DiffField { key: string; label: string; format?: (v: any) => string; }
 interface DiffFieldDef { key: string; label?: string; labelKey?: string; }
 
 const JAYER_DIFF_FIELDS: DiffFieldDef[] = [
-  { key: 'updated',      label: 'Update 날짜' },
+  { key: 'updated',      labelKey: 'request.col_updated_date' },
   { key: 'process_id',   labelKey: 'request.process_id' },
   { key: 'sp',           labelKey: 'request.col_sp' },
   { key: 'sd',           labelKey: 'request.col_sd' },
@@ -186,7 +186,7 @@ const JAYER_DIFF_FIELDS: DiffFieldDef[] = [
 ];
 
 const OAYER_DIFF_FIELDS: DiffFieldDef[] = [
-  { key: 'updated',      label: 'Update 날짜' },
+  { key: 'updated',      labelKey: 'request.col_updated_date' },
   { key: 'process_id',   labelKey: 'request.process_id' },
   { key: 'sp',           labelKey: 'request.col_sp' },
   { key: 'sd',           labelKey: 'request.col_sd' },
@@ -216,11 +216,13 @@ function toDiffFields(defs: DiffFieldDef[], t: TFunction): DiffField[] {
 }
 
 // 회차 축 — 1차~직전 회차 스냅샷 + 현재값을 한 배열로 묶어 모든 이력 UI 가 공유한다.
-const CURRENT_ROUND_LABEL = '현재 (최신)';
-const roundLabel = (i: number) => `${i + 1}차 제출`;
+const currentRoundLabel = (t: TFunction) => t('request.current_round_label');
+const roundLabel = (t: TFunction, i: number) => t('request.round_submit_label', { n: i + 1 });
 
-/** 이력 표에서 그 회차에 대응하는 행이 없을 때 쓰는 표시값 */
-const NO_ROW_MARK = '(없음)';
+/** 이력 표에서 그 회차에 대응하는 행이 없을 때 쓰는 표시값(화면용) */
+const noRowMark = (t: TFunction) => `(${t('request.value_none')})`;
+/** 위 표시값과 별개로, "행 없음" 상태를 비교하는 내부 판정용 고정 시그니처(번역과 무관해야 한다) */
+const NO_ROW_SIG = '__NO_ROW__';
 
 interface RoundSnapshot {
   label: string;
@@ -244,8 +246,9 @@ function RowDiffModal({
   prevRow: Record<string, any> | null;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const cell = (f: DiffField, row: Record<string, any> | null) => {
-    if (!row) return NO_ROW_MARK;
+    if (!row) return noRowMark(t);
     return (f.format ? f.format(row[f.key]) : String(row[f.key] ?? '')) || '';
   };
   const thS: React.CSSProperties = {
@@ -273,13 +276,13 @@ function RowDiffModal({
           </thead>
           <tbody>
             <tr>
-              <td style={{ ...rowHeadS, color: '#dc3545' }}>변경 전</td>
+              <td style={{ ...rowHeadS, color: '#dc3545' }}>{t('request.before_label')}</td>
               {fields.map((f, i) => (
                 <td key={f.key} style={{ ...tdS, color: changed[i] ? '#dc3545' : 'var(--text-primary)', background: changed[i] ? 'rgba(220,53,69,0.06)' : undefined }}>{cell(f, prevRow) || '-'}</td>
               ))}
             </tr>
             <tr>
-              <td style={{ ...rowHeadS, color: '#155724' }}>변경 후</td>
+              <td style={{ ...rowHeadS, color: '#155724' }}>{t('request.after_label')}</td>
               {fields.map((f, i) => (
                 <td key={f.key} style={{ ...tdS, color: changed[i] ? '#155724' : 'var(--text-primary)', fontWeight: changed[i] ? 700 : 400, background: changed[i] ? 'rgba(21,87,36,0.06)' : undefined }}>{cell(f, curRow) || '-'}</td>
               ))}
@@ -301,8 +304,9 @@ function RowRoundHistoryModal({
   rounds: { label: string; timestamp: string | null; row: Record<string, any> | null }[];
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const cell = (f: DiffField, row: Record<string, any> | null): string => {
-    if (!row) return NO_ROW_MARK;
+    if (!row) return noRowMark(t);
     return (f.format ? f.format(row[f.key]) : String(row[f.key] ?? '')) || '';
   };
   const thS: React.CSSProperties = {
@@ -321,8 +325,8 @@ function RowRoundHistoryModal({
         <table style={{ borderCollapse: 'collapse', minWidth: 420 }}>
           <thead>
             <tr>
-              <th style={thS}>제출 차수</th>
-              <th style={thS}>시각</th>
+              <th style={thS}>{t('request.submit_round_col')}</th>
+              <th style={thS}>{t('request.time_col')}</th>
               {fields.map((f) => <th key={f.key} style={thS}>{f.label}</th>)}
             </tr>
           </thead>
@@ -380,7 +384,7 @@ const DIFF_THUMB_MAX_HEIGHT = 150;
 interface DiffTable { headers: string[]; rows: string[][]; }
 
 interface DiffItem { label: string; value: string; kind?: 'text' | 'image' | 'table'; table?: DiffTable | null; }
-type GroupBuilder = (d: any) => DiffItem[];
+type GroupBuilder = (d: any, t: TFunction) => DiffItem[];
 
 /** kind='image' 는 썸네일, kind='table' 은 미니 표로 그린다. 미지정이면 텍스트다. */
 interface DiffRow {
@@ -395,9 +399,9 @@ const keepItemRow = (kind: DiffItem['kind'], values: string[]): boolean =>
   (kind !== 'image' && kind !== 'table') || values.some((v) => !!v);
 
 /** 블록 빌더로 '변경 전/후' 2열 행을 만든다 — 결재 진행 중 화면용. */
-function toDiffRows(prev: any, cur: any, build: GroupBuilder): DiffRow[] {
-  const prevItems = build(prev);
-  const curItems = build(cur);
+function toDiffRows(prev: any, cur: any, build: GroupBuilder, t: TFunction): DiffRow[] {
+  const prevItems = build(prev, t);
+  const curItems = build(cur, t);
   return prevItems
     .map((item, i) => ({
       label: item.label,
@@ -466,6 +470,7 @@ function FieldGroupHistoryModal({ title, rows, onClose }: {
   rows: DiffRow[];
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const thS: React.CSSProperties = {
     textAlign: 'left', padding: '5px 10px', fontSize: '0.78rem',
     fontWeight: 700, color: 'var(--text-muted)',
@@ -481,7 +486,7 @@ function FieldGroupHistoryModal({ title, rows, onClose }: {
     const value = side === 'before' ? row.before : row.after;
     if (row.kind === 'image' && value) {
       const borderColor = side === 'before' ? '#dc3545' : '#155724';
-      return <img src={`${MEDIA_URL_PREFIX}${value}`} alt={`${row.label} 변경 ${side === 'before' ? '전' : '후'}`} style={thumbStyle(borderColor)} />;
+      return <img src={`${MEDIA_URL_PREFIX}${value}`} alt={`${row.label} ${side === 'before' ? t('request.before_label') : t('request.after_label')}`} style={thumbStyle(borderColor)} />;
     }
     if (row.kind === 'table') {
       const table = side === 'before' ? row.beforeTable : row.afterTable;
@@ -499,9 +504,9 @@ function FieldGroupHistoryModal({ title, rows, onClose }: {
         <table style={{ borderCollapse: 'collapse', minWidth: 420 }}>
           <thead>
             <tr>
-              <th style={thS}>항목</th>
-              <th style={{ ...thS, color: '#dc3545' }}>변경 전</th>
-              <th style={{ ...thS, color: '#155724' }}>변경 후</th>
+              <th style={thS}>{t('request.item_col')}</th>
+              <th style={{ ...thS, color: '#dc3545' }}>{t('request.before_label')}</th>
+              <th style={{ ...thS, color: '#155724' }}>{t('request.after_label')}</th>
             </tr>
           </thead>
           <tbody>
@@ -532,7 +537,8 @@ function FieldGroupRoundHistoryModal({ title, rounds, build, onClose }: {
   build: GroupBuilder;
   onClose: () => void;
 }) {
-  const columns = rounds.map((r) => ({ round: r, items: build(r.detail) }));
+  const { t } = useTranslation();
+  const columns = rounds.map((r) => ({ round: r, items: build(r.detail, t) }));
   const template = columns.length > 0 ? columns[0].items : [];
   const thS: React.CSSProperties = {
     textAlign: 'left', padding: '5px 10px', fontSize: '0.78rem',
@@ -551,7 +557,7 @@ function FieldGroupRoundHistoryModal({ title, rounds, build, onClose }: {
         <table style={{ borderCollapse: 'collapse', minWidth: 420 }}>
           <thead>
             <tr>
-              <th style={thS}>항목</th>
+              <th style={thS}>{t('request.item_col')}</th>
               {columns.map(({ round }, ci) => (
                 <th key={round.label} style={{ ...thS, color: ci === columns.length - 1 ? 'var(--accent)' : 'var(--text-muted)' }}>
                   <div>{round.label}</div>
@@ -649,7 +655,7 @@ const buildRevTable = (entries: any): DiffTable | null => {
  * TBV/TLV — 원본 표(No / X / Y / 사용여부)에 어느 SD 묶음인지를 앞 열로 붙인다.
  * 구버전(자유 입력 note) 저장분은 좌표 행이 없으므로 SD 칸에 note 를 함께 적어 값을 잃지 않는다.
  */
-const buildTbvtlvTable = (entries: any): DiffTable | null => {
+const buildTbvtlvTable = (entries: any, t: TFunction): DiffTable | null => {
   if (!Array.isArray(entries) || entries.length === 0) return null;
   const rows: string[][] = [];
   for (const e of entries) {
@@ -662,7 +668,7 @@ const buildTbvtlvTable = (entries: any): DiffTable | null => {
       rows.push([e?.note ? `${sds} (${e.note})` : sds, '-', '-', '-', '-']);
     }
   }
-  return rows.length > 0 ? { headers: ['SD 선택', 'No', 'X', 'Y', '사용여부'], rows } : null;
+  return rows.length > 0 ? { headers: [t('request.tbvtlv_sd_select'), 'No', 'X', 'Y', t('request.tbvtlv_used')], rows } : null;
 };
 
 /**
@@ -670,30 +676,30 @@ const buildTbvtlvTable = (entries: any): DiffTable | null => {
  * 변경 전/후 표(진행 중)와 회차별 표(이력 조회)가 같은 함수를 공유해야 값 비교가 성립한다.
  */
 const MSHOT_IMAGE_ITEMS: [string, string][] = [
-  ['mshot_image_copy', '첨부 이미지'],
-  ['mshot_image_copy_top', '첨부 이미지(상판)'],
-  ['mshot_image_copy_bottom', '첨부 이미지(하판)'],
+  ['mshot_image_copy', 'request.mshot_attached_image'],
+  ['mshot_image_copy_top', 'request.mshot_attached_image_top'],
+  ['mshot_image_copy_bottom', 'request.mshot_attached_image_bottom'],
 ];
 
-const buildMshotItems: GroupBuilder = (d) => [
-  { label: '엠샷 변경 여부', value: fmtDiffVal(d?.mshot_change) },
-  ...MSHOT_IMAGE_ITEMS.map(([k, label]) => ({
-    label,
+const buildMshotItems: GroupBuilder = (d, t) => [
+  { label: t('request.mshot_change_label'), value: fmtDiffVal(d?.mshot_change) },
+  ...MSHOT_IMAGE_ITEMS.map(([k, labelKey]) => ({
+    label: t(labelKey as never),
     value: fmtDiffVal(d?.[k]),
     kind: 'image' as const,
   })),
 ];
 
-const buildProdcItems: GroupBuilder = (d) => [
-  { label: '생산 정보', value: fmtDiffVal(d?.only_prodc) },
-  { label: '제품 해당 위치', value: fmtDiffVal(d?.prodc_scope) },
-  { label: '상판', value: fmtPlate(d, 'prodc_top') },
-  { label: '중판', value: d?.prodc_middle_use === '미사용' ? '미사용' : fmtPlate(d, 'prodc_middle') },
-  { label: '하판', value: fmtPlate(d, 'prodc_bottom') },
+const buildProdcItems: GroupBuilder = (d, t) => [
+  { label: t('request.prodc_info_label'), value: fmtDiffVal(d?.only_prodc) },
+  { label: t('request.prodc_scope_label'), value: fmtDiffVal(d?.prodc_scope) },
+  { label: t('request.plate_top'), value: fmtPlate(d, 'prodc_top') },
+  { label: t('request.plate_middle'), value: d?.prodc_middle_use === '미사용' ? '미사용' : fmtPlate(d, 'prodc_middle') },
+  { label: t('request.plate_bottom'), value: fmtPlate(d, 'prodc_bottom') },
 ];
 
-const buildRevItems: GroupBuilder = (d) => [
-  { label: 'REV 여부', value: fmtDiffVal(d?.rev_yn) },
+const buildRevItems: GroupBuilder = (d, t) => [
+  { label: t('request.rev_yn_label'), value: fmtDiffVal(d?.rev_yn) },
   { label: 'Layer / GDS', value: fmtRevEntries(d?.rev_entries), kind: 'table', table: buildRevTable(d?.rev_entries) },
 ];
 
@@ -751,7 +757,7 @@ function JayerTable({
           <thead>
             <tr>
               {hasPrev && <th style={{ width: 64 }}></th>}
-              <th>Update 날짜</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th>
+              <th>{t('request.col_updated_date')}</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th>
             </tr>
           </thead>
           <tbody>
@@ -762,7 +768,7 @@ function JayerTable({
                   {hasPrev && (
                     <td style={{ textAlign: 'center' }}>
                       {isChanged && canOpenRowHistory(r.id, { prevRowMap, historyMode, rounds }) && (
-                        <button data-tour="jayer-hist-btn" style={histBtnStyle} onClick={() => setDiffId(r.id)}>이력 확인</button>
+                        <button data-tour="jayer-hist-btn" style={histBtnStyle} onClick={() => setDiffId(r.id)}>{t('request.history_check_btn')}</button>
                       )}
                     </td>
                   )}
@@ -807,7 +813,7 @@ function OayerTable({
           <thead>
             <tr>
               {hasPrev && <th style={{ width: 64 }}></th>}
-              <th>Update 날짜</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_layer')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th>
+              <th>{t('request.col_updated_date')}</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_layer')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th>
             </tr>
           </thead>
           <tbody>
@@ -818,7 +824,7 @@ function OayerTable({
                   {hasPrev && (
                     <td style={{ textAlign: 'center' }}>
                       {isChanged && canOpenRowHistory(r.id, { prevRowMap, historyMode, rounds }) && (
-                        <button style={histBtnStyle} onClick={() => setDiffId(r.id)}>이력 확인</button>
+                        <button style={histBtnStyle} onClick={() => setDiffId(r.id)}>{t('request.history_check_btn')}</button>
                       )}
                     </td>
                   )}
@@ -863,9 +869,9 @@ function BbTable({
   return (
     <>
       {diffRounds
-        ? <RowRoundHistoryModal title="뼈찜 행 변경 이력" fields={fields} rounds={diffRounds} onClose={() => setDiffId(null)} />
+        ? <RowRoundHistoryModal title={t('request.bb_row_history_title')} fields={fields} rounds={diffRounds} onClose={() => setDiffId(null)} />
         : diffCur && (
-          <RowDiffModal title="뼈찜 행 변경 이력" fields={fields} curRow={diffCur as any} prevRow={(diffPrev ?? null) as any} onClose={() => setDiffId(null)} />
+          <RowDiffModal title={t('request.bb_row_history_title')} fields={fields} curRow={diffCur as any} prevRow={(diffPrev ?? null) as any} onClose={() => setDiffId(null)} />
         )}
       <div style={{ overflowX: 'auto' }}>
         <table className="table table-compact" style={{ marginBottom: 8 }}>
@@ -883,7 +889,7 @@ function BbTable({
                   {hasPrev && (
                     <td style={{ textAlign: 'center' }}>
                       {isChanged && canOpenRowHistory(r.id, { prevRowMap, historyMode, rounds }) && (
-                        <button style={histBtnStyle} onClick={() => setDiffId(r.id)}>이력 확인</button>
+                        <button style={histBtnStyle} onClick={() => setDiffId(r.id)}>{t('request.history_check_btn')}</button>
                       )}
                     </td>
                   )}
@@ -1031,7 +1037,7 @@ function computeTableEverChanged<T extends { id: string }>(
     for (let i = 1; i < timeline.length; i++) {
       const a = timeline[i - 1].row;
       const b = timeline[i].row;
-      const sig = (r: T | null) => (r ? rowContentSig(r, fields) : NO_ROW_MARK);
+      const sig = (r: T | null) => (r ? rowContentSig(r, fields) : NO_ROW_SIG);
       if (sig(a) !== sig(b)) { changedIds.add(row.id); break; }
     }
   }
@@ -1106,7 +1112,7 @@ export default function PagedDetailView({
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('JOB');
     ws.columns = [
-      { header: 'Update 날짜',                       key: 'updated',       width: 16 },
+      { header: t('request.col_updated_date'),        key: 'updated',       width: 16 },
       { header: t('request.process_id'),              key: 'process_id',    width: 14 },
       { header: t('request.col_sp'),                  key: 'sp',            width: 10 },
       { header: t('request.col_sd'),                  key: 'sd',            width: 10 },
@@ -1138,7 +1144,7 @@ export default function PagedDetailView({
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('OVL');
     ws.columns = [
-      { header: 'Update 날짜',                       key: 'updated',       width: 16 },
+      { header: t('request.col_updated_date'),        key: 'updated',       width: 16 },
       { header: t('request.process_id'),              key: 'process_id',    width: 14 },
       { header: t('request.col_sp'),                  key: 'sp',            width: 10 },
       { header: t('request.col_sd'),                  key: 'sd',            width: 10 },
@@ -1222,14 +1228,14 @@ export default function PagedDetailView({
   // (결재 경로 섹션의 `rounds`(회차 번호 배열)와 다른 값이라 이름을 구분한다.)
   const roundSnaps: RoundSnapshot[] = [
     ...history.map((snap, i) => ({
-      label: roundLabel(i),
+      label: roundLabel(t, i),
       timestamp: snap.timestamp,
       detail: snap.detail ?? {},
       jayerRows: snap.jayerRows ?? [],
       oayerRows: snap.oayerRows ?? [],
       bbRows: snap.bbRows ?? [],
     })),
-    { label: CURRENT_ROUND_LABEL, timestamp: null, detail, jayerRows: jayer, oayerRows: oayer, bbRows: bb },
+    { label: currentRoundLabel(t), timestamp: null, detail, jayerRows: jayer, oayerRows: oayer, bbRows: bb },
   ];
   /** 이력 UI 를 띄울 회차가 있는지 — 재상신이 한 번도 없으면 비교 대상 자체가 없다. */
   const hasRounds = history.length > 0;
@@ -1360,7 +1366,7 @@ export default function PagedDetailView({
     if (!historyMode) {
       return (
         <FieldGroupHistoryModal
-          title={`${label} 변경 이력`}
+          title={t('request.field_change_history', { label })}
           rows={[{
             label,
             before: prevSnap ? valueOf(prevSnap.detail) : '-',
@@ -1378,13 +1384,13 @@ export default function PagedDetailView({
 
     const rows = [
       ...history.map((snap, i) => ({
-        label: roundLabel(i),
+        label: roundLabel(t, i),
         timestamp: snap.timestamp,
         value: valueOf(snap.detail),
         table: tableOf(snap.detail),
       })),
       {
-        label: CURRENT_ROUND_LABEL,
+        label: currentRoundLabel(t),
         timestamp: null as string | null,
         value: curValue,
         table: tableOf(detail),
@@ -1397,14 +1403,14 @@ export default function PagedDetailView({
     };
     const tdStyle: React.CSSProperties = { padding: '6px 10px', fontSize: '0.85rem' };
     return (
-      <Modal isOpen onClose={onClose} title={`${label} 변경 이력`}>
+      <Modal isOpen onClose={onClose} title={t('request.field_change_history', { label })}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              <th style={thStyle}>제출 차수</th>
-              <th style={thStyle}>시각</th>
-              <th style={thStyle}>값</th>
-              <th style={{ ...thStyle, textAlign: 'center' }}>변경</th>
+              <th style={thStyle}>{t('request.submit_round_col')}</th>
+              <th style={thStyle}>{t('request.time_col')}</th>
+              <th style={thStyle}>{t('request.value_col')}</th>
+              <th style={{ ...thStyle, textAlign: 'center' }}>{t('request.changed_col')}</th>
             </tr>
           </thead>
           <tbody>
@@ -1433,10 +1439,10 @@ export default function PagedDetailView({
                   </td>
                   <td style={{ ...tdStyle, textAlign: 'center' }}>
                     {i === 0
-                      ? <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>최초</span>
+                      ? <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{t('request.initial_label')}</span>
                       : isChangedRow
-                        ? <span style={{ color: '#dc3545', fontWeight: 700, fontSize: '0.78rem' }}>변경됨</span>
-                        : <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>변경 없음</span>}
+                        ? <span style={{ color: '#dc3545', fontWeight: 700, fontSize: '0.78rem' }}>{t('request.changed_label')}</span>
+                        : <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{t('request.no_change_label')}</span>}
                   </td>
                 </tr>
               );
@@ -1479,7 +1485,7 @@ export default function PagedDetailView({
                 padding: 0, lineHeight: 1,
               }}
             >
-              이력 확인
+              {t('request.history_check_btn')}
             </button>
             {histOpen && (
               <FieldHistoryModal
@@ -1503,7 +1509,7 @@ export default function PagedDetailView({
     <div style={{ ...chipBase, ...style }}>
       <div style={fieldLabel}>{label}</div>
       <div style={fieldValue}>
-        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
+        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('request.value_none')}</span>
       </div>
     </div>
   );
@@ -1532,20 +1538,20 @@ export default function PagedDetailView({
         const y = d[`map_value_y_${region}`];
         return `[${label}] X: ${x ? `${x}um` : '-'} / Y: ${y ? `${y}um` : '-'}`;
       };
-      const reasonPart = d.map_reason ? ` / 사유: ${d.map_reason}` : '';
+      const reasonPart = d.map_reason ? t('request.reason_suffix', { reason: d.map_reason }) : '';
       return `${regionLine('top')}\n${regionLine('bottom')}${reasonPart}`;
     }
     if (!d.map_change) return '';
-    return `변경: ${d.map_change}`
+    return t('request.change_prefix', { value: d.map_change })
       + (d.map_value_x ? ` / X: ${d.map_value_x}um` : '')
       + (d.map_value_y ? ` / Y: ${d.map_value_y}um` : '')
-      + (d.map_reason ? ` / 사유: ${d.map_reason}` : '');
+      + (d.map_reason ? t('request.reason_suffix', { reason: d.map_reason }) : '');
   };
 
   /** Exclusive Area — 변경 여부 + 값(mm) */
   const buildEaValue = (d: Partial<DetailFormState>): string => {
     if (!d.ea_change) return '';
-    return `변경: ${d.ea_change}${d.ea_value ? ` / 값: ${d.ea_value}mm` : ''}`;
+    return t('request.change_prefix', { value: d.ea_change }) + (d.ea_value ? t('request.value_suffix_mm', { value: d.ea_value }) : '');
   };
 
   /** 뼈찜(Backbone) — 등록된 항목 목록. 라벨은 의뢰서 작성(Step1)과 동일한 i18n 키를 그대로 쓴다. */
@@ -1593,18 +1599,18 @@ export default function PagedDetailView({
     const scope = prodcScopeLabel();
     if (scope) lines.push(`[${t('request.prodc_apply_region')}] ${scope}`);
     if (detail.prodc_top_line || detail.prodc_top_process || detail.prodc_top_product) {
-      lines.push(`[상판] ${detail.prodc_top_line || '-'} / ${detail.prodc_top_process || '-'} / ${detail.prodc_top_product || '-'}`);
+      lines.push(`[${t('request.plate_top')}] ${detail.prodc_top_line || '-'} / ${detail.prodc_top_process || '-'} / ${detail.prodc_top_product || '-'}`);
     }
     const middleUse = detail.prodc_middle_use;
     if (middleUse) {
       if (middleUse === '미사용') {
-        lines.push('[중판] 미사용');
+        lines.push(`[${t('request.plate_middle')}] 미사용`);
       } else {
-        lines.push(`[중판] ${detail.prodc_middle_line || '-'} / ${detail.prodc_middle_process || '-'} / ${detail.prodc_middle_product || '-'}`);
+        lines.push(`[${t('request.plate_middle')}] ${detail.prodc_middle_line || '-'} / ${detail.prodc_middle_process || '-'} / ${detail.prodc_middle_product || '-'}`);
       }
     }
     if (detail.prodc_bottom_line || detail.prodc_bottom_process || detail.prodc_bottom_product) {
-      lines.push(`[하판] ${detail.prodc_bottom_line || '-'} / ${detail.prodc_bottom_process || '-'} / ${detail.prodc_bottom_product || '-'}`);
+      lines.push(`[${t('request.plate_bottom')}] ${detail.prodc_bottom_line || '-'} / ${detail.prodc_bottom_process || '-'} / ${detail.prodc_bottom_product || '-'}`);
     }
     return lines.join('\n');
   };
@@ -1651,11 +1657,11 @@ export default function PagedDetailView({
     const sections = historyMode
       ? roundSnaps.map((r) => ({ label: r.label, timestamp: r.timestamp, table: buildFlowTable(r.detail), tone: 'neutral' as const }))
       : [
-          { label: '변경 전', timestamp: prevSnap?.timestamp ?? null, table: buildFlowTable(prevSnap?.detail), tone: 'before' as const },
-          { label: '변경 후', timestamp: null, table: buildFlowTable(detail), tone: 'after' as const },
+          { label: t('request.before_label'), timestamp: prevSnap?.timestamp ?? null, table: buildFlowTable(prevSnap?.detail), tone: 'before' as const },
+          { label: t('request.after_label'), timestamp: null, table: buildFlowTable(detail), tone: 'after' as const },
         ];
     return (
-      <Modal isOpen onClose={() => setFlowHistOpen(false)} title={`${t('request.flow_chart')} 변경 이력`}>
+      <Modal isOpen onClose={() => setFlowHistOpen(false)} title={t('request.field_change_history', { label: t('request.flow_chart') })}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {sections.map((s, si) => {
             // 진행 중에는 서로를(전↔후), 이력 조회에서는 직전 회차를 비교 대상으로 삼는다.
@@ -1671,7 +1677,7 @@ export default function PagedDetailView({
                 </div>
                 {s.table
                   ? <DiffMiniTable table={s.table} other={other} tone={s.tone} />
-                  : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>}
+                  : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('request.value_none')}</span>}
               </div>
             );
           })}
@@ -1688,7 +1694,7 @@ export default function PagedDetailView({
     if (!hasRounds) return null;
     return historyMode
       ? <FieldGroupRoundHistoryModal title={title} rounds={roundSnaps} build={build} onClose={onClose} />
-      : <FieldGroupHistoryModal title={title} rows={toDiffRows(prevSnap?.detail, detail, build)} onClose={onClose} />;
+      : <FieldGroupHistoryModal title={title} rows={toDiffRows(prevSnap?.detail, detail, build, t)} onClose={onClose} />;
   };
 
 type Page = { label: string; content: React.ReactNode };
@@ -1756,7 +1762,7 @@ type Page = { label: string; content: React.ReactNode };
                   onClick={() => setFlowHistOpen(true)}
                   style={{ position: 'absolute', top: 10, right: 12, background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1 }}
                 >
-                  이력 확인
+                  {t('request.history_check_btn')}
                 </button>
               )}
               {flowHistOpen && renderFlowHistory()}
@@ -1792,7 +1798,7 @@ type Page = { label: string; content: React.ReactNode };
 
           {doc.reference_materials && (
             <div style={cardStyle}>
-              <div style={sectionTitle}>특이사항</div>
+              <div style={sectionTitle}>{t('request.submit_note_label')}</div>
               <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-primary)', fontSize: '0.9rem', lineHeight: 1.6 }}>
                 {doc.reference_materials}
               </div>
@@ -1897,11 +1903,11 @@ type Page = { label: string; content: React.ReactNode };
                       onClick={() => setMshotHistOpen(true)}
                       style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1 }}
                     >
-                      이력 확인
+                      {t('request.history_check_btn')}
                     </button>
                   )}
                   {mshotHistOpen && (
-                    renderGroupHistory('엠샷 변경 이력', buildMshotItems, () => setMshotHistOpen(false))
+                    renderGroupHistory(t('request.mshot_history_title'), buildMshotItems, () => setMshotHistOpen(false))
                   )}
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
                     <div style={fieldLabel}>{t('request.mshot_change_status')}</div>
@@ -1950,11 +1956,11 @@ type Page = { label: string; content: React.ReactNode };
                       onClick={() => setProdcHistOpen(true)}
                       style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1 }}
                     >
-                      이력 확인
+                      {t('request.history_check_btn')}
                     </button>
                   )}
                   {prodcHistOpen && (
-                    renderGroupHistory('생산 정보 변경 이력', buildProdcItems, () => setProdcHistOpen(false))
+                    renderGroupHistory(t('request.prodc_history_title'), buildProdcItems, () => setProdcHistOpen(false))
                   )}
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
                     <div style={fieldLabel}>{t('request.prodc_status')}</div>
@@ -1966,7 +1972,7 @@ type Page = { label: string; content: React.ReactNode };
                     <div style={{ flex: 1 }}>
                       <div style={fieldLabel}>{t('approval.prodc_detail')}</div>
                       <div style={fieldValue}>
-                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('request.value_none')}</span>
                       </div>
                     </div>
                   )}
@@ -1995,11 +2001,11 @@ type Page = { label: string; content: React.ReactNode };
                       onClick={() => setRevHistOpen(true)}
                       style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1 }}
                     >
-                      이력 확인
+                      {t('request.history_check_btn')}
                     </button>
                   )}
                   {revHistOpen && (
-                    renderGroupHistory('REV 변경 이력', buildRevItems, () => setRevHistOpen(false))
+                    renderGroupHistory(t('request.rev_history_title'), buildRevItems, () => setRevHistOpen(false))
                   )}
                   <div style={{ display: 'flex', alignItems: 'flex-start' }}>
                     <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
@@ -2081,7 +2087,7 @@ type Page = { label: string; content: React.ReactNode };
                           ].filter(Boolean).join(' / ')
                         )
                       ) : (
-                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('request.value_none')}</span>
                       )}
                     </div>
                   </div>
@@ -2098,14 +2104,14 @@ type Page = { label: string; content: React.ReactNode };
                           color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0,
                         }}
                       >
-                        이력 확인
+                        {t('request.history_check_btn')}
                       </button>
                     )}
                     <div style={fieldLabel}>{t('request.map_option_title')}</div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
                       {activeOptions.length > 0
                         ? activeOptions.map(o => <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>)
-                        : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
+                        : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('request.value_none')}</span>
                       }
                     </div>
                     {mapHistOpen && hasRounds && (() => {
@@ -2118,11 +2124,11 @@ type Page = { label: string; content: React.ReactNode };
                             opts: mapOptionDefs.filter(o => (r.detail as any)?.[o.fieldKey] === o.activeValue),
                           }))
                         : [
-                            { label: '이전 (재상신 전)', timestamp: prevSnap?.timestamp ?? null, opts: prevActiveOptions },
-                            { label: CURRENT_ROUND_LABEL, timestamp: null, opts: activeOptions },
+                            { label: t('request.previous_before_resubmit'), timestamp: prevSnap?.timestamp ?? null, opts: prevActiveOptions },
+                            { label: currentRoundLabel(t), timestamp: null, opts: activeOptions },
                           ];
                       return (
-                        <Modal isOpen onClose={() => setMapHistOpen(false)} title={`${t('request.map_option_title')} 변경 이력`}>
+                        <Modal isOpen onClose={() => setMapHistOpen(false)} title={t('request.field_change_history', { label: t('request.map_option_title') })}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                             {sections.map((s) => (
                               <div key={s.label}>
@@ -2133,7 +2139,7 @@ type Page = { label: string; content: React.ReactNode };
                                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                   {s.opts.length > 0
                                     ? s.opts.map(o => <div key={o.fieldKey} style={tagStyle(true)}>{o.label}</div>)
-                                    : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>없음</span>
+                                    : <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{t('request.value_none')}</span>
                                   }
                                 </div>
                               </div>
@@ -2160,7 +2166,7 @@ type Page = { label: string; content: React.ReactNode };
           <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>{t('request.job_li')}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {jayer.length}건</span>
+              <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>{t('request.total_count_items', { count: jayer.length })}</span>
               <button data-tour="export-jayer" onClick={exportJayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
             </div>
           </div>
@@ -2239,7 +2245,7 @@ type Page = { label: string; content: React.ReactNode };
               <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>{t('request.ovl_li')}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {oayer.length}건</span>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>{t('request.total_count_items', { count: oayer.length })}</span>
                   <button onClick={exportOayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
                 </div>
               </div>
@@ -2270,7 +2276,7 @@ type Page = { label: string; content: React.ReactNode };
                   >
                     {tab.label}
                     {tab.key === 'info' && (infoChanged
-                      ? <span title="변경됨" style={{ width: 7, height: 7, borderRadius: '50%', background: '#dc3545', display: 'inline-block' }} />
+                      ? <span title={t('request.changed_label')} style={{ width: 7, height: 7, borderRadius: '50%', background: '#dc3545', display: 'inline-block' }} />
                       : infoHasData
                         ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#4CAF50', display: 'inline-block' }} />
                         : null)}
@@ -2295,7 +2301,7 @@ type Page = { label: string; content: React.ReactNode };
                   {/* Partial Shot */}
                   <div style={psChanged ? infoChangedBox : undefined}>
                     {psChanged && (
-                      <button style={infoHistBtnStyle} onClick={() => setInfoHist({ label: t('request.partial_shot'), fieldKey: 'partial_shot', value: detail.partial_shot || '-' })}>이력 확인</button>
+                      <button style={infoHistBtnStyle} onClick={() => setInfoHist({ label: t('request.partial_shot'), fieldKey: 'partial_shot', value: detail.partial_shot || '-' })}>{t('request.history_check_btn')}</button>
                     )}
                     <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('request.partial_shot')}</div>
                     <div>
@@ -2311,7 +2317,7 @@ type Page = { label: string; content: React.ReactNode };
                     {(detail.tbvtlv_thickness ?? '') !== '' && (
                       <div style={{ marginBottom: 10, ...(thkChanged ? infoChangedBox : {}) }}>
                         {thkChanged && (
-                          <button style={infoHistBtnStyle} onClick={() => setInfoHist({ label: t('request.tbvtlv_thickness'), fieldKey: 'tbvtlv_thickness', value: detail.tbvtlv_thickness || '-' })}>이력 확인</button>
+                          <button style={infoHistBtnStyle} onClick={() => setInfoHist({ label: t('request.tbvtlv_thickness'), fieldKey: 'tbvtlv_thickness', value: detail.tbvtlv_thickness || '-' })}>{t('request.history_check_btn')}</button>
                         )}
                         <span style={{ color: 'var(--text-muted)', marginRight: 8 }}>{t('request.tbvtlv_thickness')}:</span>
                         <span style={{ fontWeight: 600 }}>{detail.tbvtlv_thickness}</span>
@@ -2319,7 +2325,7 @@ type Page = { label: string; content: React.ReactNode };
                     )}
                     <div style={entChanged ? infoChangedBox : undefined}>
                     {entChanged && (
-                      <button style={infoHistBtnStyle} onClick={() => setInfoHist({ label: t('request.tbvtlv'), fieldKey: 'tbvtlv_entries', value: fmtTbvtlvEntries(detail.tbvtlv_entries), format: fmtTbvtlvEntries, buildTable: (d) => buildTbvtlvTable(d?.tbvtlv_entries) })}>이력 확인</button>
+                      <button style={infoHistBtnStyle} onClick={() => setInfoHist({ label: t('request.tbvtlv'), fieldKey: 'tbvtlv_entries', value: fmtTbvtlvEntries(detail.tbvtlv_entries), format: fmtTbvtlvEntries, buildTable: (d) => buildTbvtlvTable(d?.tbvtlv_entries, t) })}>{t('request.history_check_btn')}</button>
                     )}
                     {tbvtlvEntries.length > 0 ? (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
@@ -2378,7 +2384,7 @@ type Page = { label: string; content: React.ReactNode };
           <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>{t('request.bb_li')}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>전체 {bb.length}건</span>
+              <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>{t('request.total_count_items', { count: bb.length })}</span>
               <button onClick={exportBb} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
             </div>
           </div>
@@ -2630,7 +2636,7 @@ type Page = { label: string; content: React.ReactNode };
               const date = formatDateTimeShort(getRoundSubmittedAt(r));
               return (
                 <div key={r} style={historyItemStyle(isCurrent)}>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', minWidth: 40 }}>{r}회차</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', minWidth: 40 }}>{t('request.round_ordinal', { r })}</span>
                   <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{doc.requester_name}</span>
                   {doc.requester_email && <span style={emailStyle}>{doc.requester_email}</span>}
                   {date && date !== '-' && (
@@ -2678,7 +2684,7 @@ type Page = { label: string; content: React.ReactNode };
                   const infos = getStepDisplays(key, r);
                   return (
                     <div key={r} style={historyItemStyle(isCurrent)}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', minWidth: 40 }}>{r}회차</span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', minWidth: 40 }}>{t('request.round_ordinal', { r })}</span>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                         {infos.map((info, i) => (
                           <div key={i} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
