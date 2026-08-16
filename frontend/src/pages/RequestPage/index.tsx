@@ -2154,7 +2154,7 @@ export default function RequestPage(): React.ReactElement {
     // 전파할 값이 특수값(기등록/layer삭제)이 아닐 때만 같은 layer의 참여행으로 전파한다.
     const layerid = changedRow?.layerid?.trim();
     const sourceParticipant = !!changedRow && !changedRow.disabled && !isNocSpecial(changedRow.new_or_copy);
-    const propagate = (field === 'st' || field === 'new_or_copy') && !!layerid && sourceParticipant
+    const propagate = (field === 'st' || field === 'new_or_copy' || field === 'product_name') && !!layerid && sourceParticipant
       && !(field === 'new_or_copy' && isNocSpecial(value));
     setJayerRows((rows) => rows.map((r) => {
       if (r.id === id) {
@@ -2189,6 +2189,11 @@ export default function RequestPage(): React.ReactElement {
       setOayerRows(rows => rows.map(r => {
         if (r.layerid?.trim() !== layerid) return r;
         if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
+        if (field === 'product_name') {
+          const next = { ...r, product_name: value };
+          if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
+          return next;
+        }
         return { ...r, [field]: value };
       }));
     }
@@ -2246,12 +2251,12 @@ export default function RequestPage(): React.ReactElement {
     if (nocSpecialPastedIds.size > 0) {
       setJayerRows(rows => rows.map(r => nocSpecialPastedIds.has(r.id) ? { ...r, st: 'X' } : r));
     }
-    // J→J + J→O 동기화: st / new_or_copy 붙여넣기를 같은 layer의 "참여행"에만 반영
-    type SyncFields = Partial<Record<'st' | 'new_or_copy', string>>;
+    // J→J + J→O 동기화: st / new_or_copy / product_name 붙여넣기를 같은 layer의 "참여행"에만 반영
+    type SyncFields = Partial<Record<'st' | 'new_or_copy' | 'product_name', string>>;
     const layeridSyncMap = new Map<string, SyncFields>();
     const directlyPastedIds = new Set<string>();
     changes.forEach(({ rowId, values }) => {
-      if (!('st' in values) && !('new_or_copy' in values)) return;
+      if (!('st' in values) && !('new_or_copy' in values) && !('product_name' in values)) return;
       const jRow = jayerRows.find(r => r.id === rowId);
       if (!jRow?.layerid?.trim()) return;
       directlyPastedIds.add(rowId);
@@ -2262,6 +2267,7 @@ export default function RequestPage(): React.ReactElement {
       if ('st' in values) entry.st = values.st;
       // 특수값(기등록/layer삭제)은 전파 제외
       if ('new_or_copy' in values && !isNocSpecial(values.new_or_copy)) entry.new_or_copy = values.new_or_copy;
+      if ('product_name' in values) entry.product_name = values.product_name;
       layeridSyncMap.set(layerid, entry);
     });
     if (layeridSyncMap.size > 0) {
@@ -2276,7 +2282,13 @@ export default function RequestPage(): React.ReactElement {
         const layerid = r.layerid?.trim();
         if (!layerid || !layeridSyncMap.has(layerid)) return r;
         if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
-        return { ...r, ...layeridSyncMap.get(layerid)! };
+        const sync = layeridSyncMap.get(layerid)!;
+        if (sync.product_name !== undefined) {
+          const next = { ...r, ...sync };
+          if (sync.product_name && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
+          return next;
+        }
+        return { ...r, ...sync };
       }));
     }
   };
@@ -2299,12 +2311,12 @@ export default function RequestPage(): React.ReactElement {
     if (nocSpecialPastedIds.size > 0) {
       setOayerRows(rows => rows.map(r => nocSpecialPastedIds.has(r.id) ? { ...r, st: 'X' } : r));
     }
-    // O→O + O→J 동기화: st / new_or_copy 붙여넣기를 같은 layer의 "참여행"에만 반영
-    type SyncFields = Partial<Record<'st' | 'new_or_copy', string>>;
+    // O→O + O→J 동기화: st / new_or_copy / product_name 붙여넣기를 같은 layer의 "참여행"에만 반영
+    type SyncFields = Partial<Record<'st' | 'new_or_copy' | 'product_name', string>>;
     const layeridSyncMap = new Map<string, SyncFields>();
     const directlyPastedIds = new Set<string>();
     changes.forEach(({ rowId, values }) => {
-      if (!('st' in values) && !('new_or_copy' in values)) return;
+      if (!('st' in values) && !('new_or_copy' in values) && !('product_name' in values)) return;
       const oRow = oayerRows.find(r => r.id === rowId);
       if (!oRow?.layerid?.trim()) return;
       directlyPastedIds.add(rowId);
@@ -2315,6 +2327,7 @@ export default function RequestPage(): React.ReactElement {
       if ('st' in values) entry.st = values.st;
       // 특수값(기등록/layer삭제)은 전파 제외
       if ('new_or_copy' in values && !isNocSpecial(values.new_or_copy)) entry.new_or_copy = values.new_or_copy;
+      if ('product_name' in values) entry.product_name = values.product_name;
       layeridSyncMap.set(layerid, entry);
     });
     if (layeridSyncMap.size > 0) {
@@ -2329,8 +2342,35 @@ export default function RequestPage(): React.ReactElement {
         const layerid = r.layerid?.trim();
         if (!layerid || !layeridSyncMap.has(layerid)) return r;
         if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
-        return { ...r, ...layeridSyncMap.get(layerid)! };
+        const sync = layeridSyncMap.get(layerid)!;
+        if (sync.product_name !== undefined) {
+          const next = { ...r, ...sync, item_id: '' };
+          if (sync.product_name && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
+          return next;
+        }
+        return { ...r, ...sync };
       }));
+      // 대상 J-ayer 행에 product_name이 동기화됐다면 바코드(ID) 재조회
+      const pnLayerids = new Set(
+        Array.from(layeridSyncMap.entries()).filter(([, v]) => v.product_name !== undefined).map(([k]) => k)
+      );
+      if (pnLayerids.size > 0) {
+        jayerRows.forEach(r => {
+          const layerid = r.layerid?.trim();
+          if (!layerid || !pnLayerids.has(layerid)) return;
+          if (r.disabled || isNocSpecial(r.new_or_copy)) return;
+          const pn = layeridSyncMap.get(layerid)!.product_name;
+          const rid = r.id;
+          const seq = (barcodeReqSeq.current[rid] ?? 0) + 1;
+          barcodeReqSeq.current[rid] = seq;
+          if (barcodeDebounceTimers.current[rid]) clearTimeout(barcodeDebounceTimers.current[rid]);
+          if (pn) {
+            barcodeDebounceTimers.current[rid] = setTimeout(() => runBarcodeFetch(rid, pn, seq), BARCODE_DEBOUNCE_MS);
+          } else {
+            setJayerBarcodeCache((prev) => ({ ...prev, [rid]: [] }));
+          }
+        });
+      }
     }
   };
 
@@ -2434,7 +2474,7 @@ export default function RequestPage(): React.ReactElement {
     const changedRow = oayerRows.find(r => r.id === id);
     const layerid = changedRow?.layerid?.trim();
     const sourceParticipant = !!changedRow && !changedRow.disabled && !isNocSpecial(changedRow.new_or_copy);
-    const propagate = (field === 'st' || field === 'new_or_copy') && !!layerid && sourceParticipant
+    const propagate = (field === 'st' || field === 'new_or_copy' || field === 'product_name') && !!layerid && sourceParticipant
       && !(field === 'new_or_copy' && isNocSpecial(value));
     setOayerRows((rows) => rows.map((r) => {
       if (r.id === id) {
@@ -2464,8 +2504,29 @@ export default function RequestPage(): React.ReactElement {
       setJayerRows(rows => rows.map(r => {
         if (r.layerid?.trim() !== layerid) return r;
         if (r.disabled || isNocSpecial(r.new_or_copy)) return r;
+        if (field === 'product_name') {
+          const next = { ...r, product_name: value, item_id: '' };
+          if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
+          return next;
+        }
         return { ...r, [field]: value };
       }));
+      if (field === 'product_name') {
+        // 대상 J-ayer 행에 반영된 product_name으로 바코드(ID) 재조회
+        jayerRows.forEach(r => {
+          if (r.layerid?.trim() !== layerid) return;
+          if (r.disabled || isNocSpecial(r.new_or_copy)) return;
+          const rid = r.id;
+          const seq = (barcodeReqSeq.current[rid] ?? 0) + 1;
+          barcodeReqSeq.current[rid] = seq;
+          if (barcodeDebounceTimers.current[rid]) clearTimeout(barcodeDebounceTimers.current[rid]);
+          if (value) {
+            barcodeDebounceTimers.current[rid] = setTimeout(() => runBarcodeFetch(rid, value, seq), BARCODE_DEBOUNCE_MS);
+          } else {
+            setJayerBarcodeCache((prev) => ({ ...prev, [rid]: [] }));
+          }
+        });
+      }
     }
   };
 
