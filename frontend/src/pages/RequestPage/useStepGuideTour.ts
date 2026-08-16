@@ -2,8 +2,8 @@ import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StepGuideGroup } from '../../components/StepGuideTour';
 import { CellSelectionApi } from '../../hooks/useCellSelection';
-import { DetailFormState, JayerRow, OayerRow } from '../../types';
-import { MAP_TYPE_CLONE, OTHER_PURPOSE_ADI_CD, TOUR_MERGE_PURPOSE, makeJayerRow } from './constants';
+import { BbTableRow, DetailFormState, JayerRow, OayerRow } from '../../types';
+import { MAP_TYPE_CLONE, OTHER_PURPOSE_ADI_CD, TOUR_MERGE_PURPOSE, makeJayerRow, makeTourBbRows } from './constants';
 
 interface UseStepGuideTourArgs {
   detail: DetailFormState;
@@ -20,6 +20,8 @@ interface UseStepGuideTourArgs {
   setOayerInfoTab: React.Dispatch<React.SetStateAction<'table' | 'info'>>;
   showAutoFillPanel: boolean;
   setShowAutoFillPanel: React.Dispatch<React.SetStateAction<boolean>>;
+  bbRows: BbTableRow[];
+  setBbRows: React.Dispatch<React.SetStateAction<BbTableRow[]>>;
 }
 
 interface BaseSnapshot {
@@ -29,6 +31,7 @@ interface BaseSnapshot {
   oayerChecked: Set<string>;
   oayerInfoTab: 'table' | 'info';
   showAutoFillPanel: boolean;
+  bbRows: BbTableRow[];
 }
 
 /** J-ayer "표 자동채움" 그룹 시연용 — 10행을 만들고 첫 행에 값을 채운 뒤, 나머지 9행의
@@ -46,6 +49,9 @@ const makeJayerCopyPasteDemoRows = (): JayerRow[] =>
     new_or_copy: '신규',
     product_name: i === 0 ? 'PART_1234' : '',
   }));
+
+/** BB "정보(적용 결과)" 그룹 시연용 — SP 정렬 전 상태를 보여주기 위해 makeTourBbRows() 순서를 뒤집는다. */
+const makeBbSortDemoRows = (): BbTableRow[] => [...makeTourBbRows()].reverse();
 
 export interface UseStepGuideTour {
   activeStep: number | null;
@@ -70,6 +76,7 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
     oayerRows, oayerChecked, setOayerChecked,
     oayerInfoTab, setOayerInfoTab,
     showAutoFillPanel, setShowAutoFillPanel,
+    bbRows, setBbRows,
   } = args;
 
   const [activeStep, setActiveStep] = useState<number | null>(null);
@@ -83,9 +90,10 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
       oayerChecked: new Set(oayerChecked),
       oayerInfoTab,
       showAutoFillPanel,
+      bbRows: JSON.parse(JSON.stringify(bbRows)) as BbTableRow[],
     };
     setActiveStep(step);
-  }, [detail, jayerRows, jayerChecked, oayerChecked, oayerInfoTab, showAutoFillPanel]);
+  }, [detail, jayerRows, jayerChecked, oayerChecked, oayerInfoTab, showAutoFillPanel, bbRows]);
 
   const restoreBase = useCallback(() => {
     const base = baseRef.current;
@@ -97,7 +105,8 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
     setOayerChecked(new Set(base.oayerChecked));
     setOayerInfoTab(base.oayerInfoTab);
     setShowAutoFillPanel(base.showAutoFillPanel);
-  }, [setDetail, setJayerRows, jayerCellSel, setJayerChecked, setOayerChecked, setOayerInfoTab, setShowAutoFillPanel]);
+    setBbRows(JSON.parse(JSON.stringify(base.bbRows)) as BbTableRow[]);
+  }, [setDetail, setJayerRows, jayerCellSel, setJayerChecked, setOayerChecked, setOayerInfoTab, setShowAutoFillPanel, setBbRows]);
 
   const close = useCallback(() => {
     setActiveStep(null);
@@ -245,13 +254,22 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
             onEnter: () => setShowAutoFillPanel(true),
           },
           { selectors: ['[data-tour="bb-mapping-panel"]'], ...g('s5g2') },
-          { selectors: ['[data-tour="bb-table"]'], ...g('s5g3') },
+          {
+            selectors: ['[data-tour="bb-table"]'],
+            ...g('s5g3'),
+            onEnter: () => setBbRows(makeBbSortDemoRows()),
+          },
+          {
+            selectors: ['[data-tour="bb-sp-sort"]'],
+            ...g('s5g3b'),
+            onEnter: () => setBbRows(makeBbSortDemoRows()),
+          },
         ];
 
       default:
         return [];
     }
-  }, [t, setDetail, jayerRows, setJayerRows, setJayerChecked, jayerCellSel, oayerRows, setOayerChecked, setOayerInfoTab, setShowAutoFillPanel]);
+  }, [t, setDetail, jayerRows, setJayerRows, setJayerChecked, jayerCellSel, oayerRows, setOayerChecked, setOayerInfoTab, setShowAutoFillPanel, setBbRows]);
 
   return { activeStep, openStep, close, restoreBase, groupsForStep, stepTitle };
 }
