@@ -195,6 +195,11 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
             },
           },
           {
+            selectors: ['[data-tour="jayer-sync-cols"]'],
+            ...g('s3g1b'),
+            onEnter: () => setJayerRows(makeJayerCopyPasteDemoRows()),
+          },
+          {
             selectors: ['[data-tour="jayer-bulk-actions"]'],
             ...g('s3g2'),
             onEnter: () => { if (firstJayerId) setJayerChecked(new Set([firstJayerId])); },

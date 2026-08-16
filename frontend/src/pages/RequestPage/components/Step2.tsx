@@ -185,8 +185,8 @@ const Step2: React.FC<Step2Props> = ({
               <th style={{ width: 'auto' }}>{t('request.col_sd')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_layer')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_pp')}</th>
-              <th style={{ width: 'auto' }}>{t('request.col_st')}</th>
-              <th style={{ width: 'auto' }}>{t('request.col_new_or_copy')}</th>
+              <th style={{ width: 'auto' }} data-tour="jayer-sync-cols">{t('request.col_st')}</th>
+              <th style={{ width: 'auto' }} data-tour="jayer-sync-cols">{t('request.col_new_or_copy')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_product_name')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_step')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_item_id')}</th>
@@ -230,7 +230,7 @@ const Step2: React.FC<Step2Props> = ({
                     <td {...cellProps('sd', isRegistered ? regBg : undefined)}><input value={row.sd} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                     <td {...cellProps('layerid', isRegistered ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                     <td {...cellProps('pp', isRegistered ? regBg : undefined)}><input value={row.pp} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : isValidationKeywordRow(row.pp) ? VALIDATION_CELL_COLOR : undefined }} /></td>
-                    <td {...cellProps('st', isRegistered ? regBg : undefined)} className={stError ? 'field-error-target' : undefined}>
+                    <td {...cellProps('st', isRegistered ? regBg : undefined)} data-tour="jayer-sync-cols" className={stError ? 'field-error-target' : undefined}>
                       <AutocompleteInput
                         value={row.st}
                         onChange={(v) => handleJayerChange(row.id, 'st', v)}
@@ -244,7 +244,7 @@ const Step2: React.FC<Step2Props> = ({
                         dropdownDirection="up"
                       />
                     </td>
-                    <td {...cellProps('new_or_copy')} className={nocError ? 'field-error-target' : undefined}>
+                    <td {...cellProps('new_or_copy')} data-tour="jayer-sync-cols" className={nocError ? 'field-error-target' : undefined}>
                       <AutocompleteInput
                         value={row.new_or_copy}
                         onChange={(v) => handleJayerChange(row.id, 'new_or_copy', v)}

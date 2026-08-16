@@ -33,8 +33,9 @@ const CARD_APPROX_HEIGHT = 160;
 
 const unionRect = (selectors: string[]): Rect | null => {
   const rects = selectors
-    .map((s) => { try { return document.querySelector<HTMLElement>(s); } catch { return null; } })
-    .filter((el): el is HTMLElement => !!el)
+    .flatMap((s) => {
+      try { return Array.from(document.querySelectorAll<HTMLElement>(s)); } catch { return []; }
+    })
     .map((el) => el.getBoundingClientRect())
     .filter((r) => r.width > 0 || r.height > 0);
   if (rects.length === 0) return null;
