@@ -317,6 +317,8 @@
     "mshot_edit": "수정",
     "mshot_delete": "삭제",
     "mshot_change_image_attach_area": "이미지 복사 영역",
+    "mshot_image_attached_hint": "이미지가 첨부되었습니다. Ctrl+V 로 다시 붙여넣으면 변경됩니다.",
+    "mshot_image_paste_hint": "Ctrl+V 로 이미지를 붙여넣으세요",
     "map_opt_photo_backside": "1번",
     "map_opt_eds_backside": "2번",
     "map_opt_inter": "3번",

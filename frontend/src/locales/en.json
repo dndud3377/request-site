@@ -317,6 +317,8 @@
     "mshot_edit": "Edit",
     "mshot_delete": "Delete",
     "mshot_change_image_attach_area": "Image Copy Area",
+    "mshot_image_attached_hint": "Image attached. Paste again with Ctrl+V to replace it.",
+    "mshot_image_paste_hint": "Paste an image with Ctrl+V",
     "map_opt_photo_backside": "1",
     "map_opt_eds_backside": "2",
     "map_opt_inter": "3",
