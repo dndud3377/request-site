@@ -1154,7 +1154,6 @@
         "no_users": "No users added yet.",
         "callout": "💡 Add User assigns users to the currently selected role tab. Create Group bundles users of the same role so they can be managed together.",
         "phase_select_user": "③ Select multiple (chips) · removable with ✕",
-        "same_role_note": "Same role only",
         "phase_group_intro": "⑤ About Create Group (notifiers & draft sharing)",
         "group_intro_title": "What is a group?",
         "group_intro_desc": "Bundle users of the same role for unified management. Once created, it is added as a group tab above and is visible only to its members. A group can be loaded into the notifier list when submitting, or designated as the sharing target of a draft request.",
