@@ -820,7 +820,10 @@
     "role_label_TE_E": "AGENT E팀",
     "role_label_MASTER": "관리자",
     "role_label_NONE": "미지정",
-    "restore": "원복"
+    "restore": "원복",
+    "enter_fullscreen": "전체화면",
+    "exit_fullscreen": "창 복원",
+    "input_or_select": "입력 또는 선택"
   },
   "notice": {
     "label_notice": "Notice",

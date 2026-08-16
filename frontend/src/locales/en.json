@@ -820,7 +820,10 @@
     "role_label_TE_E": "AGENT E Team",
     "role_label_MASTER": "Administrator",
     "role_label_NONE": "Unassigned",
-    "restore": "Restore"
+    "restore": "Restore",
+    "enter_fullscreen": "Fullscreen",
+    "exit_fullscreen": "Exit Fullscreen",
+    "input_or_select": "Type or select"
   },
   "notice": {
     "label_notice": "Notice",
