@@ -6,7 +6,15 @@
     "history": "이력 조회",
     "voc": "VOC",
     "permissions": "권한 관리",
-    "address_book": "주소록 관리"
+    "address_book": "주소록 관리",
+    "notice_tooltip": "공지사항 보기",
+    "dev_user_switch": "테스트 유저 전환",
+    "current": "현재"
+  },
+  "profile": {
+    "name": "이름",
+    "email": "메일",
+    "department": "부서"
   },
   "addressbook": {
     "load_btn": "통보처 불러오기",

@@ -6,7 +6,15 @@
     "history": "History",
     "voc": "VOC",
     "permissions": "Permissions",
-    "address_book": "Address Book"
+    "address_book": "Address Book",
+    "notice_tooltip": "View notices",
+    "dev_user_switch": "Switch test user",
+    "current": "Current"
+  },
+  "profile": {
+    "name": "Name",
+    "email": "Email",
+    "department": "Department"
   },
   "addressbook": {
     "load_btn": "Load notifiers",

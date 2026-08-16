@@ -114,7 +114,7 @@ export default function Navbar(): React.ReactElement {
         <button
           className="notice-bell-btn"
           onClick={handleShowNotice}
-          title="공지사항 보기"
+          title={t('nav.notice_tooltip')}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/>
@@ -152,7 +152,7 @@ export default function Navbar(): React.ReactElement {
               <button
                 className="dev-user-btn"
                 onClick={() => setDevUserDropdownOpen(!devUserDropdownOpen)}
-                title="테스트 유저 전환"
+                title={t('nav.dev_user_switch')}
               >
                 <span className="dev-badge">DEV</span>
                 <span className="dev-user-name">{currentUser.name}</span>
@@ -182,7 +182,7 @@ export default function Navbar(): React.ReactElement {
                             {u.name}
                             <span className="dev-user-dept">{t(u.department as any)}</span>
                             {currentUser.username === u.username && (
-                              <span className="dev-current-badge">현재</span>
+                              <span className="dev-current-badge">{t('nav.current')}</span>
                             )}
                           </button>
                         ))}
@@ -224,15 +224,15 @@ export default function Navbar(): React.ReactElement {
             {dropdownOpen && (
               <div className="user-dropdown">
                 <div className="dropdown-item user-info-item">
-                  <span className="dropdown-label">{t('profile.name') || '이름'}</span>
+                  <span className="dropdown-label">{t('profile.name')}</span>
                   <span className="dropdown-value">{currentUser.name || currentUser.username}</span>
                 </div>
                 <div className="dropdown-item user-info-item">
-                  <span className="dropdown-label">{t('profile.email') || '메일'}</span>
+                  <span className="dropdown-label">{t('profile.email')}</span>
                   <span className="dropdown-value">{currentUser.email || '-'}</span>
                 </div>
                 <div className="dropdown-item user-info-item">
-                  <span className="dropdown-label">{t('profile.department') || '부서'}</span>
+                  <span className="dropdown-label">{t('profile.department')}</span>
                   <span className="dropdown-value">{currentUser.department || '-'}</span>
                 </div>
                 <div className="dropdown-divider" />
