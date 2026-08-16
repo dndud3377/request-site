@@ -485,6 +485,7 @@ const Step4: React.FC<Step4Props> = ({
                 <th>{t('request.col_no')}</th>
                 <th>{t('request.process_id')}</th>
                 <th
+                  data-tour="bb-sp-sort"
                   style={{ cursor: 'pointer', userSelect: 'none' }}
                   onClick={handleSortBbRows}
                   title="클릭하여 SEQ 기준 오름차순 정렬"
