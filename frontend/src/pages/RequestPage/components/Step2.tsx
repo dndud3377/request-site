@@ -105,7 +105,7 @@ const Step2: React.FC<Step2Props> = ({
             {vsNotApplicable && <ValidationSystemBadge value={VS_NA} />}
           </span>
           <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)' }}>
-            활성 {jayerRows.filter(r => !r.disabled).length} / 전체 {jayerRows.length}
+            {t('request.active_total_count', { active: jayerRows.filter(r => !r.disabled).length, total: jayerRows.length })}
           </span>
         </span>
       </div>
@@ -128,7 +128,7 @@ const Step2: React.FC<Step2Props> = ({
             onClick={() => setJayerSortBySp(v => !v)}
             style={jayerSortBySp ? { background: 'var(--accent)', color: 'white' } : undefined}
           >
-            STEP 정렬{jayerSortBySp ? ' ▲' : ''}
+            {t('request.btn_sort_by_step')}{jayerSortBySp ? ' ▲' : ''}
           </button>
         </div>
         <div className="wizard-table-toolbar-group" style={{ marginLeft: 'auto' }}>
@@ -147,7 +147,7 @@ const Step2: React.FC<Step2Props> = ({
               {fs.label}
             </button>
           ))}
-          <button type="button" className="th-header-btn" data-tour="jayer-filter" onClick={() => setJayerFilterModalOpen(true)}>+ 필터</button>
+          <button type="button" className="th-header-btn" data-tour="jayer-filter" onClick={() => setJayerFilterModalOpen(true)}>{t('request.btn_add_filter')}</button>
           <GuideBadge fk="step3_jayer_filter" tk={t('guide.feat.step3_jayer_filter' as never)} />
         </div>
       </div>
@@ -179,7 +179,7 @@ const Step2: React.FC<Step2Props> = ({
                   onChange={handleJayerCheckAll}
                 />
               </th>
-              <th style={{ width: 'auto' }}>Update 날짜</th>
+              <th style={{ width: 'auto' }}>{t('request.col_updated_date')}</th>
               <th style={{ width: 'auto' }}>{t('request.process_id')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_sp')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_sd')}</th>
@@ -281,15 +281,15 @@ const Step2: React.FC<Step2Props> = ({
         </table>
       </div>
       <div className="bulk-action-row">
-        <button type="button" className="flow-table-add-btn" onClick={handleJayerAddRow}>+ 행 추가</button>
+        <button type="button" className="flow-table-add-btn" onClick={handleJayerAddRow}>{t('request.bb_add_row_btn')}</button>
         {jayerRows.filter(r => !r.disabled && jayerChecked.has(r.id)).length > 0 && (
           <button type="button" className="btn btn-danger btn-sm" onClick={handleJayerBulkDisable}>
-            선택 비활성화 ({jayerRows.filter(r => !r.disabled && jayerChecked.has(r.id)).length})
+            {t('request.btn_disable_selected', { count: jayerRows.filter(r => !r.disabled && jayerChecked.has(r.id)).length })}
           </button>
         )}
         {jayerRows.filter(r => r.disabled && jayerChecked.has(r.id)).length > 0 && (
           <button type="button" className="btn btn-secondary btn-sm" onClick={handleJayerBulkRestore}>
-            복원 ({jayerRows.filter(r => r.disabled && jayerChecked.has(r.id)).length})
+            {t('request.btn_restore_count', { count: jayerRows.filter(r => r.disabled && jayerChecked.has(r.id)).length })}
           </button>
         )}
       </div>
