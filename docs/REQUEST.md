@@ -572,6 +572,24 @@ pages/RequestPage/
 - **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(작업 전후 동일, 신규 0) ·
   `react-scripts test --watchAll=false` 5 suites / **174건 통과**.
 
+### 추가 변경 이력 (2026-08-16 — Step5(BB) 가이드 투어에 "bb 정보" 표 + SP 정렬 그룹 추가)
+
+- **개요**: Step5(BB) 하이라이트 가이드 투어의 `s5g3`(`bb 정보 (적용 결과)` 표) 그룹이 그동안 빈 표만 보여줬던 것을, 데모 데이터로 실제 채워진 표를 보여주도록 바꾸고, **SP 헤더 클릭 정렬 기능**을 강조하는 그룹(`s5g3b`)을 새로 추가했다(총 4그룹으로 증가).
+- **적용 경로**:
+  - `pages/RequestPage/useStepGuideTour.ts`: `UseStepGuideTourArgs`/`BaseSnapshot`에 `bbRows`/`setBbRows` 추가(다른 상태와 동일하게 투어 진입 시 스냅샷, 그룹 전환·종료 시 복원). 신규 헬퍼 `makeBbSortDemoRows()`(기존 `constants.ts`의 `makeTourBbRows()`를 뒤집은 순서 — SP02 → SP01)를 `s5g3`·`s5g3b` 양쪽 그룹의 `onEnter`에서 사용해 "정렬 전" 상태를 보여준다.
+  - `pages/RequestPage/components/Step4.tsx`: SP 헤더(`<th>`, 클릭 시 `handleSortBbRows` 호출)에 `data-tour="bb-sp-sort"` 추가.
+  - `pages/RequestPage/index.tsx`: `useStepGuideTour({...})` 호출부에 `bbRows`, `setBbRows` 인자 추가.
+- **i18n**: `guide.tour.step.groups.s5g3b`(title/desc) ko/en 동시 추가.
+- **영향 파일**: `pages/RequestPage/useStepGuideTour.ts`, `pages/RequestPage/components/Step4.tsx`, `pages/RequestPage/index.tsx`, `locales/ko.json`·`en.json`.
+- **검증(2026-08-16 실행, 원격 세션·Docker 없이)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` | 22개 | **22개** (신규 0) |
+  | `react-scripts test` | 8 suites / 201건 | **8 suites / 201건 통과** |
+
+  실제 화면(Playwright)에서 Step5 진입 → 영상 가이드 클릭 → `s5g3`에서 bb 정보 표에 SP02·SP01(정렬 전 순서) 2행이 채워져 보이는 것과, `s5g3b`에서 SP 헤더만 단독으로 강조되는 것을 스크린샷으로 확인. ⚠️ 결재 흐름을 건드리지 않아 `scripts/approval_cases` 러너는 대상 아님.
+
 ### 추가 변경 이력 (2026-08-16 — J↔O `product_name` 동기화 추가 + J-ayer 가이드 투어 갱신)
 
 - **개요**: 기존에 `layerid`(col_layer) 기준으로 동기화되던 `st`·`new_or_copy`에 이어, **`product_name`(제품 이름)도 같은 방식으로 J-layer↔O-layer 양방향 동기화**하도록 확장했다. 동기화 규칙(참여행 판정, `layerid` 일치, 무조건 덮어쓰기)은 `st`·`new_or_copy`와 완전히 동일하게 맞췄다.
