@@ -1,15 +1,18 @@
 import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StepGuideGroup } from '../../components/StepGuideTour';
+import { CellSelectionApi } from '../../hooks/useCellSelection';
 import { DetailFormState, JayerRow, OayerRow } from '../../types';
-import { MAP_TYPE_CLONE, OTHER_PURPOSE_ADI_CD, TOUR_MERGE_PURPOSE } from './constants';
+import { MAP_TYPE_CLONE, OTHER_PURPOSE_ADI_CD, TOUR_MERGE_PURPOSE, makeJayerRow } from './constants';
 
 interface UseStepGuideTourArgs {
   detail: DetailFormState;
   setDetail: React.Dispatch<React.SetStateAction<DetailFormState>>;
   jayerRows: JayerRow[];
+  setJayerRows: React.Dispatch<React.SetStateAction<JayerRow[]>>;
   jayerChecked: Set<string>;
   setJayerChecked: React.Dispatch<React.SetStateAction<Set<string>>>;
+  jayerCellSel: CellSelectionApi;
   oayerRows: OayerRow[];
   oayerChecked: Set<string>;
   setOayerChecked: React.Dispatch<React.SetStateAction<Set<string>>>;
@@ -21,11 +24,28 @@ interface UseStepGuideTourArgs {
 
 interface BaseSnapshot {
   detail: DetailFormState;
+  jayerRows: JayerRow[];
   jayerChecked: Set<string>;
   oayerChecked: Set<string>;
   oayerInfoTab: 'table' | 'info';
   showAutoFillPanel: boolean;
 }
+
+/** J-ayer "표 자동채움" 그룹 시연용 — 10행을 만들고 첫 행에 값을 채운 뒤, 나머지 9행의
+ * 같은 컬럼을 선택 상태로 만들어 "이렇게 드래그 선택 후 붙여넣으면 된다"를 보여준다. */
+const makeJayerCopyPasteDemoRows = (): JayerRow[] =>
+  Array.from({ length: 10 }, (_, i) => ({
+    ...makeJayerRow(),
+    sortOrder: i,
+    process_id: 'PROC_X1',
+    sp: `SP${String(i + 1).padStart(2, '0')}`,
+    sd: `SD${String(i + 1).padStart(2, '0')}`,
+    pp: `PP${String(i + 1).padStart(2, '0')}`,
+    layerid: String((i + 1) * 10),
+    st: 'O',
+    new_or_copy: '신규',
+    product_name: i === 0 ? 'PART_1234' : '',
+  }));
 
 export interface UseStepGuideTour {
   activeStep: number | null;
@@ -46,7 +66,7 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
   const { t } = useTranslation();
   const {
     detail, setDetail,
-    jayerRows, jayerChecked, setJayerChecked,
+    jayerRows, setJayerRows, jayerChecked, setJayerChecked, jayerCellSel,
     oayerRows, oayerChecked, setOayerChecked,
     oayerInfoTab, setOayerInfoTab,
     showAutoFillPanel, setShowAutoFillPanel,
@@ -58,23 +78,26 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
   const openStep = useCallback((step: number) => {
     baseRef.current = {
       detail: JSON.parse(JSON.stringify(detail)) as DetailFormState,
+      jayerRows: JSON.parse(JSON.stringify(jayerRows)) as JayerRow[],
       jayerChecked: new Set(jayerChecked),
       oayerChecked: new Set(oayerChecked),
       oayerInfoTab,
       showAutoFillPanel,
     };
     setActiveStep(step);
-  }, [detail, jayerChecked, oayerChecked, oayerInfoTab, showAutoFillPanel]);
+  }, [detail, jayerRows, jayerChecked, oayerChecked, oayerInfoTab, showAutoFillPanel]);
 
   const restoreBase = useCallback(() => {
     const base = baseRef.current;
     if (!base) return;
     setDetail(JSON.parse(JSON.stringify(base.detail)) as DetailFormState);
+    setJayerRows(JSON.parse(JSON.stringify(base.jayerRows)) as JayerRow[]);
+    jayerCellSel.clearCellSelection();
     setJayerChecked(new Set(base.jayerChecked));
     setOayerChecked(new Set(base.oayerChecked));
     setOayerInfoTab(base.oayerInfoTab);
     setShowAutoFillPanel(base.showAutoFillPanel);
-  }, [setDetail, setJayerChecked, setOayerChecked, setOayerInfoTab, setShowAutoFillPanel]);
+  }, [setDetail, setJayerRows, jayerCellSel, setJayerChecked, setOayerChecked, setOayerInfoTab, setShowAutoFillPanel]);
 
   const close = useCallback(() => {
     setActiveStep(null);
@@ -162,7 +185,15 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
       case 3: {
         const firstJayerId = jayerRows.find((r) => !r.disabled)?.id;
         return [
-          { selectors: ['[data-tour="jayer-table"]'], ...g('s3g1') },
+          {
+            selectors: ['[data-tour="jayer-table"]'],
+            ...g('s3g1'),
+            onEnter: () => {
+              const rows = makeJayerCopyPasteDemoRows();
+              setJayerRows(rows);
+              jayerCellSel.selectCells(rows.map((r) => ({ rowId: r.id, col: 'product_name' })));
+            },
+          },
           {
             selectors: ['[data-tour="jayer-bulk-actions"]'],
             ...g('s3g2'),
@@ -215,7 +246,7 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
       default:
         return [];
     }
-  }, [t, setDetail, jayerRows, setJayerChecked, oayerRows, setOayerChecked, setOayerInfoTab, setShowAutoFillPanel]);
+  }, [t, setDetail, jayerRows, setJayerRows, setJayerChecked, jayerCellSel, oayerRows, setOayerChecked, setOayerInfoTab, setShowAutoFillPanel]);
 
   return { activeStep, openStep, close, restoreBase, groupsForStep, stepTitle };
 }
