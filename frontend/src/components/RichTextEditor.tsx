@@ -9,6 +9,7 @@ import Underline from '@tiptap/extension-underline';
 import Placeholder from '@tiptap/extension-placeholder';
 import { uploadImageAPI, uploadVideoAPI } from '../api/client';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 
 // 동영상 업로드 최대 크기 (50MB)
 const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
@@ -163,7 +164,7 @@ const ColorPalette: React.FC<ColorPaletteProps> = ({ showNone, onSelect }) => {
 };
 
 // label 은 화면 표시용(번역), value 는 실제 CSS font-family 값이므로 번역하지 않는다.
-const FONT_FAMILIES = (t: (key: string) => string) => [
+const FONT_FAMILIES = (t: TFunction) => [
   { label: t('editor.font_default'), value: '' },
   { label: t('editor.font_malgun'), value: '맑은 고딕, Malgun Gothic, sans-serif' },
   { label: t('editor.font_nanum'), value: '나눔고딕, NanumGothic, sans-serif' },
