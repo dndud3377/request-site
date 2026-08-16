@@ -108,7 +108,9 @@ interface ColorPaletteProps {
   onSelect: (color: string | null) => void;
 }
 
-const ColorPalette: React.FC<ColorPaletteProps> = ({ showNone, onSelect }) => (
+const ColorPalette: React.FC<ColorPaletteProps> = ({ showNone, onSelect }) => {
+  const { t } = useTranslation();
+  return (
   <div
     style={{
       position: 'absolute',
@@ -131,10 +133,10 @@ const ColorPalette: React.FC<ColorPaletteProps> = ({ showNone, onSelect }) => (
         style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#555', border: 'none', background: 'none', cursor: 'pointer', marginBottom: 6, padding: '2px 0' }}
       >
         <div style={{ width: 14, height: 14, border: '1px solid #ccc', background: 'repeating-linear-gradient(45deg,#fff,#fff 2px,#f88 2px,#f88 4px)', borderRadius: 2 }} />
-        색 없음
+        {t('editor.color_none')}
       </button>
     )}
-    <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>테마 색상</div>
+    <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>{t('editor.theme_colors')}</div>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 16px)', gap: 2, marginBottom: 8 }}>
       {THEME_COLORS.flat().map((color, i) => (
         <div
@@ -145,7 +147,7 @@ const ColorPalette: React.FC<ColorPaletteProps> = ({ showNone, onSelect }) => (
         />
       ))}
     </div>
-    <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>표준 색상</div>
+    <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>{t('editor.standard_colors')}</div>
     <div style={{ display: 'flex', gap: 2 }}>
       {EXCEL_STANDARD_COLORS.map(color => (
         <div
@@ -157,13 +159,15 @@ const ColorPalette: React.FC<ColorPaletteProps> = ({ showNone, onSelect }) => (
       ))}
     </div>
   </div>
-);
+  );
+};
 
-const FONT_FAMILIES = [
-  { label: '기본', value: '' },
-  { label: '맑은 고딕', value: '맑은 고딕, Malgun Gothic, sans-serif' },
-  { label: '나눔고딕', value: '나눔고딕, NanumGothic, sans-serif' },
-  { label: '굴림', value: '굴림, Gulim, sans-serif' },
+// label 은 화면 표시용(번역), value 는 실제 CSS font-family 값이므로 번역하지 않는다.
+const FONT_FAMILIES = (t: (key: string) => string) => [
+  { label: t('editor.font_default'), value: '' },
+  { label: t('editor.font_malgun'), value: '맑은 고딕, Malgun Gothic, sans-serif' },
+  { label: t('editor.font_nanum'), value: '나눔고딕, NanumGothic, sans-serif' },
+  { label: t('editor.font_gulim'), value: '굴림, Gulim, sans-serif' },
   { label: 'Arial', value: 'Arial, sans-serif' },
   { label: 'Times New Roman', value: 'Times New Roman, serif' },
   { label: 'Courier New', value: 'Courier New, monospace' },
@@ -369,23 +373,23 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
               alignItems: 'center',
             }}
           >
-            <ToolbarBtn active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title="굵게"><b>B</b></ToolbarBtn>
-            <ToolbarBtn active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()} title="기울임"><i>I</i></ToolbarBtn>
-            <ToolbarBtn active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="밑줄"><u>U</u></ToolbarBtn>
+            <ToolbarBtn active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title={t('editor.bold')}><b>B</b></ToolbarBtn>
+            <ToolbarBtn active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()} title={t('editor.italic')}><i>I</i></ToolbarBtn>
+            <ToolbarBtn active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title={t('editor.underline')}><u>U</u></ToolbarBtn>
             <Sep />
             <ToolbarBtn active={editor.isActive('heading', { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>H1</ToolbarBtn>
             <ToolbarBtn active={editor.isActive('heading', { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>H2</ToolbarBtn>
             <ToolbarBtn active={editor.isActive('heading', { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>H3</ToolbarBtn>
             <Sep />
-            <ToolbarBtn active={editor.isActive({ textAlign: 'left' })} onClick={() => editor.chain().focus().setTextAlign('left').run()} title="왼쪽 정렬">≡ 좌</ToolbarBtn>
-            <ToolbarBtn active={editor.isActive({ textAlign: 'center' })} onClick={() => editor.chain().focus().setTextAlign('center').run()} title="가운데 정렬">≡ 중</ToolbarBtn>
+            <ToolbarBtn active={editor.isActive({ textAlign: 'left' })} onClick={() => editor.chain().focus().setTextAlign('left').run()} title={t('editor.align_left_title')}>≡ {t('editor.align_left_label')}</ToolbarBtn>
+            <ToolbarBtn active={editor.isActive({ textAlign: 'center' })} onClick={() => editor.chain().focus().setTextAlign('center').run()} title={t('editor.align_center_title')}>≡ {t('editor.align_center_label')}</ToolbarBtn>
             <Sep />
-            <ToolbarBtn active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()} title="불릿 목록">• 목록</ToolbarBtn>
-            <ToolbarBtn active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()} title="번호 목록">1. 목록</ToolbarBtn>
+            <ToolbarBtn active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()} title={t('editor.bullet_list_title')}>• {t('editor.list_label')}</ToolbarBtn>
+            <ToolbarBtn active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()} title={t('editor.ordered_list_title')}>1. {t('editor.list_label')}</ToolbarBtn>
             <Sep />
-            <ToolbarBtn onClick={() => setShowEmoji((v) => !v)} title="이모티콘">😊 이모티콘</ToolbarBtn>
-            <ToolbarBtn onClick={handleImageUpload} title="이미지 업로드">🖼 이미지</ToolbarBtn>
-            <ToolbarBtn onClick={handleVideoUpload} title="동영상 업로드">🎬 동영상</ToolbarBtn>
+            <ToolbarBtn onClick={() => setShowEmoji((v) => !v)} title={t('editor.emoji')}>😊 {t('editor.emoji')}</ToolbarBtn>
+            <ToolbarBtn onClick={handleImageUpload} title={t('editor.image_upload_title')}>🖼 {t('editor.image_upload_label')}</ToolbarBtn>
+            <ToolbarBtn onClick={handleVideoUpload} title={t('editor.video_upload_title')}>🎬 {t('editor.video_upload_label')}</ToolbarBtn>
           </div>
 
           {/* 툴바 2행: 글꼴 / 크기 / 색상 */}
@@ -402,7 +406,7 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
           >
             {/* 글꼴 */}
             <ToolbarSelect
-              title="글꼴"
+              title={t('editor.font_family_title')}
               value={currentFontFamily}
               onChange={(v) => {
                 if (v) {
@@ -413,14 +417,14 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
               }}
               style={{ width: 120 }}
             >
-              {FONT_FAMILIES.map((f) => (
+              {FONT_FAMILIES(t).map((f) => (
                 <option key={f.value} value={f.value}>{f.label}</option>
               ))}
             </ToolbarSelect>
 
             {/* 글꼴 크기 */}
             <ToolbarSelect
-              title="글꼴 크기"
+              title={t('editor.font_size_title')}
               value={currentFontSize}
               onChange={(v) => {
                 if (v) {
@@ -431,7 +435,7 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
               }}
               style={{ width: 62 }}
             >
-              <option value="">크기</option>
+              <option value="">{t('editor.font_size_placeholder')}</option>
               {FONT_SIZES.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
@@ -443,7 +447,7 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
             <div ref={textColorBtnRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
               <button
                 type="button"
-                title="글꼴 색"
+                title={t('editor.font_color_title')}
                 onMouseDown={(e) => { e.preventDefault(); setActiveColorPicker(v => v === 'text' ? null : 'text'); }}
                 style={{
                   padding: '3px 7px 2px',
@@ -478,7 +482,7 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
             <div ref={bgColorBtnRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
               <button
                 type="button"
-                title="바탕색"
+                title={t('editor.bg_color_title')}
                 onMouseDown={(e) => { e.preventDefault(); setActiveColorPicker(v => v === 'bg' ? null : 'bg'); }}
                 style={{
                   padding: '3px 7px 2px',
@@ -512,13 +516,13 @@ const RichTextEditor: React.FC<Props> = ({ value, onChange, readOnly = false, pl
 
             {/* 색상 초기화 */}
             <ToolbarBtn
-              title="색상 초기화"
+              title={t('editor.reset_color_title')}
               onClick={() => {
                 (editor.chain().focus() as any).unsetColor().unsetBackgroundColor().run();
                 setActiveColorPicker(null);
               }}
             >
-              <span style={{ fontSize: 11 }}>색 초기화</span>
+              <span style={{ fontSize: 11 }}>{t('editor.reset_color_label')}</span>
             </ToolbarBtn>
           </div>
 
