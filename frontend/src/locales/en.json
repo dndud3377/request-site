@@ -887,6 +887,14 @@
           "s5g3b": { "title": "Click the SP header — sort by SEQ", "desc": "Clicking the SP header sorts the rows in ascending order by SEQ. Right now they're shown in their pre-sort order." }
         }
       },
+      "group": {
+        "groups": {
+          "g1": { "title": "Rename", "desc": "Use this button to change the group's name." },
+          "g2": { "title": "Delete group", "desc": "Deletes the group. This cannot be undone, so be careful." },
+          "g3": { "title": "Add member", "desc": "Search by name, login ID, email, or department to add a new member to the group." },
+          "g4": { "title": "Member list", "desc": "The list of members in this group. Use the button on each row to remove a member (or 'Leave' for yourself)." }
+        }
+      },
       "steps": {
         "route": {
           "title": "Approval Route",
