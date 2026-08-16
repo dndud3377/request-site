@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { authAPI } from '../api/client';
 
 const OIDC_STATE_JWT_KEY = 'oidc_state_jwt';
@@ -8,6 +9,7 @@ const OIDC_STATE_JWT_KEY = 'oidc_state_jwt';
  * ADFS에서 form_post로 전송된 id_token을 백엔드로 전달합니다.
  */
 export default function OIDCCallbackPage(): React.ReactElement {
+  const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -24,7 +26,7 @@ export default function OIDCCallbackPage(): React.ReactElement {
     const nonceJwt = localStorage.getItem(OIDC_STATE_JWT_KEY) || undefined;
 
     if (!token) {
-      setError('ID 토큰을 받지 못했습니다. 로그인 페이지로 이동합니다.');
+      setError(t('login.error_no_id_token'));
       setLoading(false);
       return;
     }
@@ -42,7 +44,7 @@ export default function OIDCCallbackPage(): React.ReactElement {
       })
       .catch((err) => {
         console.error('[OIDCCallback] Error:', err);
-        setError(err instanceof Error ? err.message : '인증 처리 중 오류가 발생했습니다.');
+        setError(err instanceof Error ? err.message : t('login.error_processing'));
         setLoading(false);
       });
   }, []);
@@ -50,7 +52,7 @@ export default function OIDCCallbackPage(): React.ReactElement {
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <div>인증 처리 중...</div>
+        <div>{t('login.processing')}</div>
       </div>
     );
   }
@@ -59,7 +61,7 @@ export default function OIDCCallbackPage(): React.ReactElement {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column' }}>
         <div style={{ color: 'red', marginBottom: '16px' }}>{error}</div>
-        <button onClick={() => window.location.href = '/'}>메인으로 돌아가기</button>
+        <button onClick={() => window.location.href = '/'}>{t('login.back_to_main')}</button>
       </div>
     );
   }

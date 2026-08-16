@@ -736,7 +736,11 @@
     "logging_in": "Signing in...",
     "hint": "Authentication is handled via corporate OpenID.",
     "logout": "Log out",
-    "error_sso": "SSO login failed."
+    "error_sso": "SSO login failed.",
+    "error_no_id_token": "Did not receive an ID token. Redirecting to the login page.",
+    "error_processing": "An error occurred during authentication.",
+    "processing": "Processing authentication...",
+    "back_to_main": "Back to Home"
   },
   "permission": {
     "title": "Permission Management",

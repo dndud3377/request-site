@@ -736,7 +736,11 @@
     "logging_in": "로그인 중...",
     "hint": "사내 OpenID 계정을 통해 인증합니다.",
     "logout": "로그아웃",
-    "error_sso": "SSO 로그인에 실패했습니다."
+    "error_sso": "SSO 로그인에 실패했습니다.",
+    "error_no_id_token": "ID 토큰을 받지 못했습니다. 로그인 페이지로 이동합니다.",
+    "error_processing": "인증 처리 중 오류가 발생했습니다.",
+    "processing": "인증 처리 중...",
+    "back_to_main": "메인으로 돌아가기"
   },
   "permission": {
     "title": "권한 관리",
