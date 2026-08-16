@@ -735,7 +735,7 @@ export default function ApprovalPage(): React.ReactElement {
       setChangingDesigneeQuery('');
       setChangingDesigneeDropdownOpen(false);
       setTeamMembers([]);
-      addToast('지정자가 변경되었습니다.', 'success');
+      addToast(t('approval.designee_changed_toast'), 'success');
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');
@@ -1730,7 +1730,7 @@ export default function ApprovalPage(): React.ReactElement {
                       type="text"
                       className="form-control"
                       value={changingDesigneeQuery}
-                      placeholder={loadingMembers ? '로딩 중...' : '이름·ID·이메일·부서 검색'}
+                      placeholder={loadingMembers ? t('common.loading') : t('approval.designee_search_placeholder')}
                       disabled={loadingMembers}
                       autoComplete="off"
                       style={{ fontSize: '0.85rem', padding: '4px 8px', width: 220 }}
@@ -1760,7 +1760,7 @@ export default function ApprovalPage(): React.ReactElement {
                           );
                         }).length === 0 ? (
                           <li style={{ padding: '8px 12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                            검색 결과 없음
+                            {t('approval.no_search_results')}
                           </li>
                         ) : (
                           teamMembers.filter((u) => {
@@ -1800,7 +1800,7 @@ export default function ApprovalPage(): React.ReactElement {
                     disabled={!changingDesigneeUserId || processing || loadingMembers}
                     onClick={handleChangeDesignee}
                   >
-                    변경
+                    {t('approval.change')}
                   </button>
                   <button
                     className="btn btn-secondary btn-sm"
@@ -1812,7 +1812,7 @@ export default function ApprovalPage(): React.ReactElement {
                       setTeamMembers([]);
                     }}
                   >
-                    취소
+                    {t('common.cancel')}
                   </button>
                 </>
               )}
