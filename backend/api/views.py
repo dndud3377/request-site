@@ -613,14 +613,19 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     # 현재 단계 전원의 확인을 받아야 철회되는 상태
     _WITHDRAW_CONFIRM_STATUSES = ('under_review', 'submitted')
 
-    def _delete_withdrawn_document(self, request, document, reason):
+    def _delete_withdrawn_document(self, request, document, reason, send_mail=True):
         """철회 확정 — 완료 메일을 먼저 적재한 뒤 문서를 완전히 삭제한다.
 
         메일 적재가 먼저여야 한다(`enqueue_withdraw_completed` 주석 참고). 삭제는 복구
         불가이고 ApprovalStep/WithdrawRequest 가 CASCADE 로 함께 사라지므로, 누가 왜
         철회했는지를 서버 로그에 남긴다(철회 이력 테이블은 두지 않는다 — 2026-08 결정).
+
+        `send_mail=False`: MASTER 의 제약 없는 즉시삭제 경로(2026-08) — 확인 절차 자체가
+        없는 강제 삭제라 완료 통보 대상(도달한 단계 팀)이라는 개념이 성립하지 않으므로
+        메일은 생략하고 서버 로그만 남긴다.
         """
-        mailer.enqueue_withdraw_completed(document, reason)
+        if send_mail:
+            mailer.enqueue_withdraw_completed(document, reason)
         logging.getLogger(__name__).warning(
             "[WITHDRAW_DOCUMENT] user=%s(role=%s) doc=%s status=%s title=%r reason=%r",
             getattr(request.user, 'loginid', '-') or '-',
@@ -637,6 +642,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         철회는 더 이상 임시저장(draft)으로 되돌리는 동작이 아니다 — 철회가 확정되면
         의뢰서를 **완전히 삭제**한다(2026-08 정책 변경, 복구 불가).
 
+        - MASTER           : 문서 상태와 무관하게 사유·확인 절차 없이 **항상 즉시 삭제**한다
+          (2026-08 확장). 완료 메일은 보내지 않고 서버 로그만 남긴다.
         - draft            : 확인할 진행 중 단계가 없다 → 즉시 삭제(사유 선택)
         - approved         : 결재 완료본이라 MASTER 만 즉시 삭제(`can_delete` 와 같은 기준)
         - under_review / submitted : 철회 요청 생성 → 현재 단계 전원 확인 시 삭제.
@@ -652,9 +659,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         reason = (request.data.get('reason') or '').strip()
 
+        if getattr(request.user, 'role', '') == 'MASTER':
+            # MASTER 는 상태·사유·활성 요청 여부와 무관하게 제약 없이 즉시 삭제한다.
+            self._delete_withdrawn_document(request, document, reason, send_mail=False)
+            return Response({'message': '의뢰서가 철회되어 삭제되었습니다.', 'deleted': True})
+
         if document.status in self._WITHDRAW_IMMEDIATE_STATUSES:
             # 결재 완료본은 이력이므로 임의 삭제를 막는다(delete 액션의 can_delete 와 동일 규칙).
-            if document.status == 'approved' and getattr(request.user, 'role', '') != 'MASTER':
+            if document.status == 'approved':
                 return Response(
                     {'error': '결재가 완료된 의뢰서는 MASTER 만 철회할 수 있습니다.'},
                     status=status.HTTP_403_FORBIDDEN,
