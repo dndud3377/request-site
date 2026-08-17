@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import GuideTourStepPreview, { TourPhase, DEFAULT_HOLD_MS } from './GuideTourStepPreview';
-import PermissionUserGroupDemo from './guideDemos/PermissionUserGroupDemo';
+import PermissionTourDemo from './guideDemos/PermissionTourDemo';
 import ApprovalRouteDiagram from './ApprovalRouteDiagram';
 
 /** "전체 가이드" 한 단계의 메타데이터 */
@@ -107,7 +107,11 @@ export function useGuideTourSteps(): GuideTourStep[] {
           // #8 재상신 변경 이력(diff) — 표 서브탭으로 되돌린 뒤 변경 행 강조 → 이력 확인 모달
           { cmd: 'page-jayer', selector: '[data-tour="jayer-hist-btn"]', caption: acap('revision_diff'), hold: 5500 },
           { cmd: 'open-rowdiff', bottomCaption: true, caption: acap('revision_modal'), hold: 6000 },
-          // #9 철회 — 목록으로 돌아가 철회 버튼과 정책을 안내
+          // #9 중단 요청 — 작성자가 실제 '중단 요청' 버튼으로 사유를 입력·제출
+          { cmd: 'open-pause', topCaption: true, caption: acap('pause_request'), hold: 7500 },
+          // #10 중단 확인 — 담당자 1인이 확인하는 모습(병렬 단계는 전원 확인 전까지 대기 유지)
+          { cmd: 'confirm-pause', topCaption: true, caption: acap('pause_confirm'), hold: 6500 },
+          // #11 철회 — 목록으로 돌아가 철회 버튼과 정책을 안내
           { cmd: 'tour-reset', selector: '[data-tour="approval-withdraw"]', caption: acap('withdraw'), hold: 7000 },
         ],
       },
@@ -117,7 +121,7 @@ export function useGuideTourSteps(): GuideTourStep[] {
         description: t('guide.tour.steps.permission.description'),
         path: '',
         phases: [],
-        component: PermissionUserGroupDemo,
+        component: PermissionTourDemo,
         animated: true,
       },
     ];

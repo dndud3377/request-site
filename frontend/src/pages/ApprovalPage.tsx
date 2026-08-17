@@ -16,7 +16,7 @@ import {
   getDocTableRows, getFinalCompletionDate, getCurrentRound, getLastRejectionInfo,
   hasActivePendingStep, isMyDocument,
 } from '../utils/approvalTable';
-import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS, TOUR_REVIEW_ITEM_CANDIDATES } from './approvalTourSeed';
+import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS, TOUR_REVIEW_ITEM_CANDIDATES, TOUR_PAUSE_REASON } from './approvalTourSeed';
 import StepGuideTour, { StepGuideGroup } from '../components/StepGuideTour';
 
 // "그룹 지정" 하이라이트 가이드 투어 시연용 — 실제 목록(allDocs/docs)은 건드리지 않고
@@ -377,6 +377,53 @@ export default function ApprovalPage(): React.ReactElement {
       btn?.click();
     };
 
+    // 문서 A 상세(다시 열지 않았다면 열고)에서 '중단 요청'을 실제로 눌러 사유를 입력·제출한다.
+    // 되감기(seek)로 이 phase에 바로 진입해도 항상 같은 상태에서 시작하도록 문서 A의
+    // 중단 요청 상태를 매번 초기화한다.
+    const runOpenPause = async (tok: { cancelled: boolean }) => {
+      setTourCursor(null);
+      setTourClicking(false);
+      setPauseReasonModalOpen(false);
+      setPauseReasonInput('');
+      // 이전 phase(이력 비교 모달 등)에서 열려 있던 상세 모달을 완전히 닫았다가 다시 열어,
+      // PagedDetailView 내부 상태(이력 비교 모달 등)까지 항상 깨끗하게 초기화한다.
+      setModalOpen(false);
+      await sleep(300); if (tok.cancelled) return;
+      const resetPause = (d: RequestDocument): RequestDocument =>
+        d.id !== TOUR_APPROVAL_DETAIL_DOC.id ? d : { ...d, can_request_pause: true, pause_request: null, status: 'under_review' };
+      setAllDocs((prev) => prev.map(resetPause));
+      setDocs((prev) => prev.map(resetPause));
+      setSelected(resetPause(TOUR_APPROVAL_DETAIL_DOC));
+      setPageIdx(0);
+      setModalOpen(true);
+      await sleep(500); if (tok.cancelled) return;
+      // ① '중단 요청' 클릭 → 실제 onClick(사유 입력 모달 오픈)
+      const openBtn = await cursorPress('[data-tour="pause-request-btn"]', tok); if (tok.cancelled) return;
+      openBtn?.click();
+      await sleep(500); if (tok.cancelled) return;
+      // ② 사유 타이핑 연출
+      for (let i = 0; i <= TOUR_PAUSE_REASON.length; i += 1) {
+        if (tok.cancelled) return;
+        setPauseReasonInput(TOUR_PAUSE_REASON.slice(0, i));
+        await sleep(45);
+      }
+      await sleep(450); if (tok.cancelled) return;
+      // ③ 제출 → 실제 onClick(submitRequestPause, 투어에서는 로컬 반영)
+      const submitBtn = await cursorPress('[data-tour="pause-request-submit"]', tok); if (tok.cancelled) return;
+      submitBtn?.click();
+      await sleep(300);
+      setTourCursor(null);
+    };
+
+    // 확인 대상 담당자 중 1명이 '중단 확인'을 누르는 모습을 시연한다(병렬 단계는 전원 확인 전까지 대기 유지).
+    const runConfirmPause = async (tok: { cancelled: boolean }) => {
+      await sleep(300); if (tok.cancelled) return;
+      const btn = await cursorPress('[data-tour="pause-confirm-btn"]', tok); if (tok.cancelled) return;
+      btn?.click();
+      await sleep(300);
+      setTourCursor(null);
+    };
+
     const onMsg = (e: MessageEvent) => {
       if (e.origin !== window.location.origin) return;
       const d = e.data;
@@ -407,6 +454,12 @@ export default function ApprovalPage(): React.ReactElement {
           break;
         case 'open-rowdiff':
           runOpenRowDiff(tok);
+          break;
+        case 'open-pause':
+          runOpenPause(tok);
+          break;
+        case 'confirm-pause':
+          runConfirmPause(tok);
           break;
         case 'page-jayer':
           setPageIdx(TOUR_PAGE_IDX.jayer);
@@ -803,6 +856,31 @@ export default function ApprovalPage(): React.ReactElement {
 
   const submitRequestPause = async () => {
     if (!selected || !pauseReasonInput.trim()) return;
+    if (isTourMode) {
+      // 투어: 실제 API 대신 로컬 상태로 중단 요청을 반영(대상은 요청 시점의 pending 단계 전체)
+      const reason = pauseReasonInput.trim();
+      const apply = (d: RequestDocument): RequestDocument =>
+        d.id !== selected.id ? d : {
+          ...d,
+          can_request_pause: false,
+          pause_request: {
+            id: 1,
+            state: 'requested',
+            reason,
+            requester_name: d.requester_name,
+            round: 1,
+            target_step_ids: (d.approval_steps ?? []).filter((s) => s.action === 'pending').map((s) => s.id),
+            confirmed_step_ids: [],
+            created_at: new Date().toISOString(),
+          },
+        };
+      setAllDocs((prev) => prev.map(apply));
+      setDocs((prev) => prev.map(apply));
+      setSelected((prev) => (prev ? apply(prev) : prev));
+      setPauseReasonModalOpen(false);
+      addToast(t('approval.pause_requested_toast'), 'success');
+      return;
+    }
     setProcessing(true);
     try {
       await documentsAPI.requestPause(selected.id, pauseReasonInput.trim());
@@ -818,6 +896,27 @@ export default function ApprovalPage(): React.ReactElement {
 
   const handleConfirmPause = async (agent: AgentType) => {
     if (!selected) return;
+    if (isTourMode) {
+      // 투어: 실제 API 대신 로컬 상태로 해당 단계만 확인 처리(병렬 대상 전원이 확인해야 최종 'pause' 전이됨을 그대로 반영)
+      const apply = (d: RequestDocument): RequestDocument => {
+        if (d.id !== selected.id || !d.pause_request) return d;
+        const target = (d.approval_steps ?? []).find((s) => s.agent === agent && s.action === 'pending');
+        const confirmed = target
+          ? Array.from(new Set([...d.pause_request.confirmed_step_ids, target.id]))
+          : d.pause_request.confirmed_step_ids;
+        const allConfirmed = d.pause_request.target_step_ids.every((id) => confirmed.includes(id));
+        return {
+          ...d,
+          status: allConfirmed ? 'pause' : d.status,
+          pause_request: { ...d.pause_request, confirmed_step_ids: confirmed, state: allConfirmed ? 'confirmed' : d.pause_request.state },
+        };
+      };
+      setAllDocs((prev) => prev.map(apply));
+      setDocs((prev) => prev.map(apply));
+      setSelected((prev) => (prev ? apply(prev) : prev));
+      addToast(t('approval.pause_confirm_progress_toast'), 'success');
+      return;
+    }
     setProcessing(true);
     try {
       const r = await documentsAPI.confirmPause(selected.id, agent);
@@ -1387,6 +1486,7 @@ export default function ApprovalPage(): React.ReactElement {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button
                 className="btn btn-pause"
+                data-tour={isTourMode ? 'pause-request-submit' : undefined}
                 onClick={submitRequestPause}
                 disabled={processing || !pauseReasonInput.trim()}
               >
@@ -1613,13 +1713,14 @@ export default function ApprovalPage(): React.ReactElement {
                 : selected.requester_name === currentUser.name)
             : false;
           // 확인 가능한 대상 단계(요청됨 상태 + target pending + 미확인 + 확인권한)
+          // 투어 모드에서는 시연을 위해 확인 권한(canConfirmPauseStep) 판정을 건너뛴다(지정하기 시연과 동일한 패턴).
           let pauseConfirmAgent: AgentType | undefined;
           if (pr && pr.state === 'requested') {
             const target = (selected?.approval_steps ?? []).find(
               (s) => s.action === 'pending'
                 && pr.target_step_ids.includes(s.id)
                 && !pr.confirmed_step_ids.includes(s.id)
-                && canConfirmPauseStep(currentUser, s)
+                && (isTourMode || canConfirmPauseStep(currentUser, s))
             );
             pauseConfirmAgent = target?.agent;
           }
@@ -1745,13 +1846,23 @@ export default function ApprovalPage(): React.ReactElement {
               )}
               {/* 중단 요청 (작성자·진행 중) */}
               {selected && selected.can_request_pause && (
-                <button className="btn btn-pause" onClick={handleRequestPauseClick} disabled={processing}>
+                <button
+                  className="btn btn-pause"
+                  data-tour={isTourMode ? 'pause-request-btn' : undefined}
+                  onClick={handleRequestPauseClick}
+                  disabled={processing}
+                >
                   {t('approval.pause_request')}
                 </button>
               )}
               {/* 중단 확인 (현재 단계 담당자/팀) */}
               {pauseConfirmAgent && (
-                <button className="btn btn-pause" onClick={() => handleConfirmPause(pauseConfirmAgent as AgentType)} disabled={processing}>
+                <button
+                  className="btn btn-pause"
+                  data-tour={isTourMode ? 'pause-confirm-btn' : undefined}
+                  onClick={() => handleConfirmPause(pauseConfirmAgent as AgentType)}
+                  disabled={processing}
+                >
                   {t('approval.pause_confirm')}
                 </button>
               )}

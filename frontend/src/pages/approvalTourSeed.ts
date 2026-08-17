@@ -112,9 +112,11 @@ export const TOUR_REVIEW_ITEM_CANDIDATES: UserWithRole[] = [
 // A: R 합의 완료 → 병렬 진행(경로1 PHPSI / 경로2 JOB·OVL) — 목록에서 2행으로 분기 표시
 // 재상신 이력이 있어 상세에서 변경 필드/행이 강조된다.
 // `can_withdraw`: 철회 정책(진행 중 문서는 현재 단계 확인 후 삭제) 시연을 위해 버튼을 노출한다.
+// `can_request_pause`: 중단 요청(사유 입력 → 제출 → 담당자 확인) 시연을 위해 버튼을 노출한다.
 const docA: RequestDocument = {
   ...baseDoc(9001, '샘플 의뢰서 A (병렬 진행)', NOTES_WITH_HISTORY),
   can_withdraw: true,
+  can_request_pause: true,
   review_items: TOUR_REVIEW_ITEMS,
   approval_steps: [
     step(1, 'PL', 'approved', { assignee_name: '김검토', acted_at: '2026-06-17T10:00:00Z' }),
@@ -147,6 +149,9 @@ const docC: RequestDocument = {
 };
 
 export const TOUR_APPROVAL_DOCS: RequestDocument[] = [docA, docB, docC];
+
+// 중단 요청 시연에서 타이핑으로 채우는 샘플 사유
+export const TOUR_PAUSE_REASON = '설비 점검으로 1주일간 검토를 중단합니다.';
 
 // "MY"(내 결재) 필터에서 보여줄 문서 id — 데모 일관성을 위해 사용자 역할과 무관하게 고정한다.
 export const TOUR_APPROVAL_MY_IDS = new Set<number>([docA.id, docC.id]);
