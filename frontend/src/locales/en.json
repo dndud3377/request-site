@@ -653,6 +653,7 @@
     "withdraw_rejected_toast": "Withdrawal request rejected. The approval continues.",
     "withdraw_cancelled_toast": "Withdrawal request cancelled.",
     "withdraw_requested_chip": "Withdrawal requested",
+    "rejection_history_chip": "↩ Rejected at {{stage}} (round {{round}})",
     "withdraw_banner_requested": "{{name}} has requested to withdraw this request",
     "withdraw_banner_warning": "Once every stage confirms, this request is permanently deleted. (Cannot be restored)",
     "withdraw_confirm_status": "Confirmation status (deleted once every current stage confirms)",

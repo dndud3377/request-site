@@ -13,7 +13,7 @@ import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem } from '../types';
 import { formatDate } from '../utils/date';
 import {
-  getDocTableRows, getFinalCompletionDate, getCurrentRound,
+  getDocTableRows, getFinalCompletionDate, getCurrentRound, getLastRejectionInfo,
   hasActivePendingStep, isMyDocument,
 } from '../utils/approvalTable';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS, TOUR_REVIEW_ITEM_CANDIDATES } from './approvalTourSeed';
@@ -1207,6 +1207,7 @@ export default function ApprovalPage(): React.ReactElement {
                 // 현재 단계 칸 안의 3행 2열 그리드가 6개 경로를 모두 보여준다(docs/APPROVAL.md §3.3).
                 const row = getDocTableRows(doc, t)[0];
                 const isPaused = doc.status === 'pause';
+                const lastRejection = getLastRejectionInfo(doc, t);
                 return (
                   <tr key={doc.id}>
                     <td>
@@ -1225,6 +1226,13 @@ export default function ApprovalPage(): React.ReactElement {
                         >
                           {doc.title}
                         </button>
+                      )}
+                      {lastRejection && (
+                        <div style={{ marginTop: 4 }}>
+                          <span className="rejection-history-chip">
+                            {t('approval.rejection_history_chip', { round: lastRejection.round, stage: lastRejection.stageLabel })}
+                          </span>
+                        </div>
                       )}
                     </td>
                     <td>{doc.product_name}</td>

@@ -53,6 +53,38 @@ export const getDisplayStatus = (doc: RequestDocument): string => {
 export const getCurrentRound = (doc: RequestDocument): number =>
   (doc.approval_steps ?? []).reduce((m, s) => Math.max(m, s.round ?? 1), 0) || 1;
 
+export interface LastRejectionInfo {
+  round: number;
+  stageLabel: string;
+  rejectedAt?: string;
+}
+
+/**
+ * 재상신된 문서에서 가장 최근에 반려됐던 회차·단계 1건만 반환한다(전체 회차를 나열하지 않는다).
+ * 재상신은 항상 직전 회차의 반려로만 일어나므로(round+1) currentRound-1 회차만 보면 된다.
+ * 문서가 지금 반려 상태(status='rejected')면 '현재 단계' 칸에 이미 반려가 표시되므로 null.
+ */
+export const getLastRejectionInfo = (doc: RequestDocument, t: TFunction): LastRejectionInfo | null => {
+  if (doc.status === 'rejected') return null;
+  const currentRound = getCurrentRound(doc);
+  if (currentRound <= 1) return null;
+  const prevRound = currentRound - 1;
+  const fixedLoginid = fixedPostApproverLoginid(doc);
+  const rejectedSteps = (doc.approval_steps ?? []).filter(
+    (s) => (s.round ?? 1) === prevRound && s.action === 'rejected'
+  );
+  if (rejectedSteps.length === 0) return null;
+  const label = Array.from(new Set(
+    rejectedSteps.map((s) => stageLabel(s.agent, t, isFixedPostApproverStep(s, fixedLoginid)))
+  )).join(' · ');
+  const rejectedAt = rejectedSteps
+    .map((s) => s.acted_at)
+    .filter((v): v is string => !!v)
+    .sort()
+    .slice(-1)[0];
+  return { round: prevRound, stageLabel: label, rejectedAt };
+};
+
 // 최종 완료 예상일: max(path0_end(R), path1_end, path2_end, path3_end(후결자))
 // 단계별 완료예정일은 화면에서 제거했지만(2026-08), 이 '최종 완료예정' 한 칸은 남으므로
 // step.due_date 자체는 계속 사용한다.
