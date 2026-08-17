@@ -155,7 +155,7 @@ const Step3: React.FC<Step3Props> = ({
           <GuideBadge fk="step4_oayer_table" tk={t('guide.feat.step4_oayer_table' as never)} />
         </span>
         <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)' }}>
-          활성 {oayerRows.filter(r => !r.disabled).length} / 전체 {oayerRows.length}
+          {t('request.active_total_count', { active: oayerRows.filter(r => !r.disabled).length, total: oayerRows.length })}
         </span>
       </div>
 
@@ -213,7 +213,7 @@ const Step3: React.FC<Step3Props> = ({
                 onClick={() => setOayerSortBySp(v => !v)}
                 style={oayerSortBySp ? { background: 'var(--accent)', color: 'white' } : undefined}
               >
-                STEP 정렬{oayerSortBySp ? ' ▲' : ''}
+                {t('request.btn_sort_by_step')}{oayerSortBySp ? ' ▲' : ''}
               </button>
             </div>
             <div className="wizard-table-toolbar-group" style={{ marginLeft: 'auto' }}>
@@ -232,7 +232,7 @@ const Step3: React.FC<Step3Props> = ({
                   {fs.label}
                 </button>
               ))}
-              <button type="button" className="th-header-btn" onClick={() => setOayerFilterModalOpen(true)}>+ 필터</button>
+              <button type="button" className="th-header-btn" onClick={() => setOayerFilterModalOpen(true)}>{t('request.btn_add_filter')}</button>
             </div>
           </div>
           <div className="wizard-table-wrapper" ref={cellSel.containerRef}>
@@ -254,7 +254,7 @@ const Step3: React.FC<Step3Props> = ({
                       onChange={handleOayerCheckAll}
                     />
                   </th>
-                  <th style={{ width: 'auto' }}>Update 날짜</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_updated_date')}</th>
                   <th style={{ width: 'auto' }}>{t('request.process_id')}</th>
                   <th style={{ width: 'auto' }}>{t('request.col_sp')}</th>
                   <th style={{ width: 'auto' }}>{t('request.col_sd')}</th>
@@ -341,15 +341,15 @@ const Step3: React.FC<Step3Props> = ({
             </table>
           </div>
           <div className="bulk-action-row">
-            <button type="button" className="flow-table-add-btn" onClick={handleOayerAddRow}>+ 행 추가</button>
+            <button type="button" className="flow-table-add-btn" onClick={handleOayerAddRow}>{t('request.bb_add_row_btn')}</button>
             {oayerRows.filter(r => !r.disabled && oayerChecked.has(r.id)).length > 0 && (
               <button type="button" className="btn btn-danger btn-sm" onClick={handleOayerBulkDisable}>
-                선택 비활성화 ({oayerRows.filter(r => !r.disabled && oayerChecked.has(r.id)).length})
+                {t('request.btn_disable_selected', { count: oayerRows.filter(r => !r.disabled && oayerChecked.has(r.id)).length })}
               </button>
             )}
             {oayerRows.filter(r => r.disabled && oayerChecked.has(r.id)).length > 0 && (
               <button type="button" className="btn btn-secondary btn-sm" onClick={handleOayerBulkRestore}>
-                복원 ({oayerRows.filter(r => r.disabled && oayerChecked.has(r.id)).length})
+                {t('request.btn_restore_count', { count: oayerRows.filter(r => r.disabled && oayerChecked.has(r.id)).length })}
               </button>
             )}
           </div>

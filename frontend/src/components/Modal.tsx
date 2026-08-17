@@ -39,6 +39,7 @@ export default function Modal({
   bodyStyle,
   hideFullscreen = false,
 }: ModalProps): React.ReactElement | null {
+  const { t } = useTranslation();
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   if (!isOpen) return null;
@@ -61,7 +62,7 @@ export default function Modal({
                 onClick={() => setIsFullscreen((v) => !v)}
                 style={{ fontSize: '0.75rem' }}
               >
-                {isFullscreen ? '⊠ 창 복원' : '⛶ 전체화면'}
+                {isFullscreen ? `⊠ ${t('common.exit_fullscreen')}` : `⛶ ${t('common.enter_fullscreen')}`}
               </button>
             )}
             <button className="modal-close" onClick={onClose}>✕</button>
