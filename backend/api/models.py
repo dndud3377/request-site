@@ -827,6 +827,11 @@ class UserGroup(models.Model):
         return f"[{self.creator.loginid}] {self.name}"
 
 
+# 주소록 구성원·통보처 이메일 생성 규칙(2026-08) — 로컬 User 테이블 조회 대신 loginid 로 규칙 생성.
+# AddressBookSerializer(표시용)와 mailer.resolve_notifier_recipients(발송용) 양쪽이 함께 쓴다.
+ADDRESS_BOOK_MAIL_DOMAIN = 'company.com'
+
+
 class AddressBook(models.Model):
     """주소록 — 통보처로 자주 쓰는 사람 묶음을 이름 붙여 저장(본인 전용).
 
