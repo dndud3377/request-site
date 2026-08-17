@@ -448,7 +448,7 @@ describe('getLastRejectionInfo — 재상신 문서는 가장 최근 반려 회�
   });
 
   it('지금 반려 상태(status=rejected)면 null — 현재 단계 칸에 이미 표시되므로 중복 안 함', () => {
-    const doc = {
+    const doc: RequestDocument = {
       ...makeDoc([
         makeStep({ agent: 'J', action: 'rejected', round: 1 }),
         makeStep({ agent: 'O', action: 'rejected', round: 2 }),
