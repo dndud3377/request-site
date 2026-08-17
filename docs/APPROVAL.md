@@ -986,6 +986,35 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 - ⚠️ 마이그레이션 시 기존 draft 는 전부 `shared_group=null` → **작성자 본인·MASTER 에게만** 보이게 된다
   (데이터 손실은 없고 노출 범위만 좁아진다). 계속 공유하려면 작성자가 다시 지정해야 한다.
 
+### 9-4. 하이라이트 가이드 투어 (2026-08-17 추가)
+
+결재 현황(`ApprovalPage.tsx`) 페이지 제목("결재 현황") 옆에 새 "영상 가이드" 배지를 추가했다.
+클릭하면 RequestPage/PermissionPage에서 쓰는 범용 스포트라이트 엔진(`components/StepGuideTour.tsx`)을
+재사용해 2개 그룹을 순서대로 강조한다:
+
+1. **`👥 그룹 지정` 버튼** — 임시저장 상태에서만 보이는 버튼이므로, 실제 목록(`allDocs`/`docs`)은 건드리지
+   않고 상세 모달(`selected`)만 `makeShareGuideDemoDoc()`(가짜 임시저장 문서, id=-1)로 열어서 보여준다.
+2. **그룹 지정 모달** — 위 가짜 문서로 `handleShareClick`을 그대로 호출해 실제 공유 모달을 연다. 목록에
+   뜨는 그룹은 **호출자가 실제로 속한 그룹**(진짜 `userGroupsAPI.list()` 결과)이라 데모지만 내용은 진짜다.
+
+투어를 열 때 `selected`·`modalOpen`·`pageIdx`·`shareModalOpen`·`shareDoc`·`shareGroupId`·`myGroups`를
+스냅샷해 두고, 그룹 전환·종료 시 항상 복원한다(`filter`/`allDocs`/`docs`는 아예 건드리지 않음 — 이 값을
+바꾸면 `fetchDocs`가 재실행돼 실제 목록을 덮어써 버리기 때문에 상세 모달 경로만 이용했다).
+
+⚠️ **부수 발견 및 수정**: `.modal-overlay`(z-index 2000, `topLevel` 3000)가 `.step-guide-tour-overlay`
+(기존 z-index 1000)보다 높아, 모달이 열린 상태에서 투어를 켜면 스포트라이트·캡션이 모달 뒤에 가려져
+보이지도 클릭되지도 않는 문제가 있었다. `step-guide-tour-overlay`의 z-index를 3500으로 올려 항상 모달
+위에 뜨도록 고쳤다(`styles/global.css`) — RequestPage·PermissionPage의 기존 투어는 열려 있는 모달과
+동시에 쓰인 적이 없어 지금까지 드러나지 않았던 문제다.
+
+- i18n: `guide.tour.approvalShare.groups.g1/g2` ko/en 동시 추가.
+- 영향 파일: `pages/ApprovalPage.tsx`, `styles/global.css`, `locales/ko.json`·`en.json`.
+- 검증(2026-08-17, 원격 세션·Docker 없이): `tsc --noEmit` 22개(신규 0) / `react-scripts test` 8 suites
+  201건 통과(단, `draftRoundTrip.test.tsx`의 Only MAP 단계잠금 테스트 1건은 이번 변경과 무관하게 간헐적으로
+  실패하는 기존 플레이키 테스트로 확인 — 격리 실행 시 3회 중 2회 통과, 실패해도 항상 같은 단정문
+  `expect(buttonWith(c, '📤')).toBeDefined()`에서만 걸림). 실제 브라우저(Playwright)로 배지 클릭 →
+  그룹 지정 버튼 강조 → 공유 모달 강조 → 닫기 후 원래 화면(실제 목록·필터)으로 정확히 복원되는 것 확인.
+
 ---
 
 ## 10. J 단계 검토 항목 (2026-08)
