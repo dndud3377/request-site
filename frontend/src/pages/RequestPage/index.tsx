@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
-import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, usersAPI, addressBooksAPI, userGroupsAPI } from '../../api/client';
+import { documentsAPI, linesAPI, formOptionsAPI, uploadImageAPI, guidesAPI, usersAPI, addressBooksAPI, userGroupsAPI } from '../../api/client';
 import { useToast } from '../../components/Toast';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
 import { useCellSelection } from '../../hooks/useCellSelection';
@@ -22,6 +22,7 @@ import {
   PhotoStepOption,
   BbAutoFillRange,
   FilterSet,
+  GuideFeatureKey,
   UserWithRole,
   AddressBook,
   UserGroup,
@@ -36,6 +37,8 @@ import {
 } from '../../types';
 import StepGuideTour from '../../components/StepGuideTour';
 import { useStepGuideTour } from './useStepGuideTour';
+import GuideSlidePanel from '../../components/GuideSlidePanel';
+import { GUIDE_DEMO_KEYS } from '../../components/guideDemos';
 import {
   OPTION_LINE,
   CRegion,
@@ -453,6 +456,10 @@ export default function RequestPage(): React.ReactElement {
     label: string;
   } | null>(null);
   const [filterAllDeleteConfirm, setFilterAllDeleteConfirm] = useState<'jayer' | 'oayer' | null>(null);
+  const [featureGuideKeys, setFeatureGuideKeys] = useState<Set<string>>(new Set());
+  const [slidePanel, setSlidePanel] = useState<{ open: boolean; featureKey: GuideFeatureKey; title: string }>({
+    open: false, featureKey: 'step1_line_process', title: ''
+  });
 
   // 연쇄 선택 옵션 조회 공용 헬퍼.
   // - matchedOrLoading: 값이 부모 옵션에 "정확히" 존재할 때만 조회(편집/투어 로드 중엔 우회).
@@ -510,6 +517,16 @@ export default function RequestPage(): React.ReactElement {
         } catch { /* noop */ }
       }
     }
+
+    // 기능 가이드 키 목록 로드
+    guidesAPI.list({ guide_type: 'feature' })
+      .then((r) => {
+        const data = r.data;
+        const items = Array.isArray(data) ? data : (data as { results: { feature_key: string }[] }).results ?? [];
+        const dbKeys = items.map((g: { feature_key: string | null }) => g.feature_key).filter(Boolean) as string[];
+        setFeatureGuideKeys(new Set([...dbKeys, ...GUIDE_DEMO_KEYS]));
+      })
+      .catch(() => { setFeatureGuideKeys(new Set(GUIDE_DEMO_KEYS)); });
   }, []);
 
   // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
@@ -4266,6 +4283,41 @@ export default function RequestPage(): React.ReactElement {
     );
   };
 
+  // ===== Guide helpers (필드별 글 가이드 배지) =====
+  const toggleSlidePanel = (featureKey: GuideFeatureKey, title: string) => {
+    setSlidePanel((prev) =>
+      prev.open && prev.featureKey === featureKey
+        ? { ...prev, open: false }
+        : { open: true, featureKey, title }
+    );
+  };
+
+  // 가이드 배지는 <label> 안에 위치하는 경우가 많다. <button> 으로 두면 label 의
+  // "연결된 컨트롤"이 되어 label(행) 아무 곳이나 클릭해도 가이드가 열린다.
+  // labelable 이 아닌 <span role="button"> 으로 렌더해 배지를 직접 클릭할 때만 열리게 한다.
+  // 빌트인 데모가 있는 기능은 '영상 가이드' 배지로 구분한다.
+  const GuideBadge = ({ fk, tk }: { fk: GuideFeatureKey; tk: string }) => {
+    if (!featureGuideKeys.has(fk)) return null;
+    const isVideo = GUIDE_DEMO_KEYS.includes(fk);
+    const active = slidePanel.open && slidePanel.featureKey === fk;
+    const open = (e: React.SyntheticEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleSlidePanel(fk, tk);
+    };
+    return (
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={open}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') open(e); }}
+        className={`${isVideo ? 'guide-video-badge' : 'guide-badge'}${active ? ' active' : ''}`}
+      >
+        {t(isVideo ? 'guide.video_btn' : 'guide.guide_btn')}
+      </span>
+    );
+  };
+
   // ===== Main Render =====
   return (
     <div className="container page">
@@ -4356,6 +4408,7 @@ export default function RequestPage(): React.ReactElement {
           handleAdiCdToggleDeleteAll={handleAdiCdToggleDeleteAll}
           handleAdiCdToggleUnregistered={handleAdiCdToggleUnregistered}
           GuideTourBadge={<StepTourBadge step={1} />}
+          GuideBadge={GuideBadge}
         />
       )}
       {step === 2 && (
@@ -4403,6 +4456,7 @@ export default function RequestPage(): React.ReactElement {
           handleMshotChangeChange={handleMshotChangeChange}
           handleImagePaste={handleImagePaste}
           GuideTourBadge={<StepTourBadge step={2} />}
+          GuideBadge={GuideBadge}
         />
       )}
       {step === 3 && (
@@ -4433,6 +4487,7 @@ export default function RequestPage(): React.ReactElement {
           handleJayerBulkRestore={handleJayerBulkRestore}
           cellSel={jayerCellSel}
           GuideTourBadge={<StepTourBadge step={3} />}
+          GuideBadge={GuideBadge}
           validationSystem={detail.validation_system}
           vsNotApplicable={autoValidationSystem(jayerRows) === VS_NA}
           onValidationSystemChange={(v) => {
@@ -4477,6 +4532,7 @@ export default function RequestPage(): React.ReactElement {
           handleOayerBulkRestore={handleOayerBulkRestore}
           cellSel={oayerCellSel}
           GuideTourBadge={<StepTourBadge step={4} />}
+          GuideBadge={GuideBadge}
         />
       )}
       {step === 5 && (
@@ -4517,6 +4573,7 @@ export default function RequestPage(): React.ReactElement {
           handleBbAddRow={handleBbAddRow}
           handleBbBulkDelete={handleBbBulkDelete}
           GuideTourBadge={<StepTourBadge step={5} />}
+          GuideBadge={GuideBadge}
         />
       )}
 
@@ -5429,6 +5486,13 @@ export default function RequestPage(): React.ReactElement {
         groups={stepTour.activeStep !== null ? stepTour.groupsForStep(stepTour.activeStep) : []}
         onRestoreBase={stepTour.restoreBase}
         onClose={stepTour.close}
+      />
+
+      <GuideSlidePanel
+        featureKey={slidePanel.featureKey}
+        featureTitle={slidePanel.title}
+        isOpen={slidePanel.open}
+        onClose={() => setSlidePanel((prev) => ({ ...prev, open: false }))}
       />
 
       {/* 전체 가이드 데모: 실제 표/패널 위에 떠 있는 가짜 커서 + 복사/붙여넣기 칩 (J-ayer step3 · BB step5) */}
