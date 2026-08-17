@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
-import { DetailFormState, FlowChartRow, RequestDocument, MergeRefMode, MergeTable } from '../../../types';
+import { DetailFormState, FlowChartRow, RequestDocument, GuideFeatureKey, MergeRefMode, MergeTable } from '../../../types';
 import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_ADI_CD, OTHER_PURPOSE_LAB, isMergePurposeSelected } from '../constants';
 import BeforeAfterPanel, { BaField, BaSide } from './BeforeAfterPanel';
 import AdiCdPanel, { AdiCdField, AdiCdSide } from './AdiCdPanel';
@@ -70,6 +70,7 @@ interface Step1Props {
   handleAdiCdToggleUnregistered: (side: 'before' | 'after', id: string, next: boolean) => void;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
+  GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
 }
 
 const Step1: React.FC<Step1Props> = ({
@@ -132,6 +133,7 @@ const Step1: React.FC<Step1Props> = ({
   handleAdiCdToggleDeleteAll,
   handleAdiCdToggleUnregistered,
   GuideTourBadge,
+  GuideBadge,
 }) => {
   const { t } = useTranslation();
   const canSelectPurpose =
@@ -169,6 +171,7 @@ const Step1: React.FC<Step1Props> = ({
         {/* 1. 라인 / 조합법 / 제품 이름 / 조리법 */}
         <div className="full-width" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('request.line')} / {t('request.process_selection')}</span>
+          <GuideBadge fk="step1_line_process" tk={t('guide.feat.step1_line_process' as never)} />
         </div>
         <div className="full-width flex-row" data-tour="line-fields">
           <FormSelect
@@ -226,6 +229,7 @@ const Step1: React.FC<Step1Props> = ({
         <div className="form-group full-width" data-tour="request-purpose">
           <label className="form-label">
             {t('request.request_purpose')} <span className="required">*</span>
+            <GuideBadge fk="step1_request_purpose" tk={t('guide.feat.step1_request_purpose' as never)} />
           </label>
           <div style={{ display: 'flex', gap: '8px', marginTop: 4 }}>
             {OPTION_REQUEST_PURPOSE.map((val) => (
@@ -247,7 +251,7 @@ const Step1: React.FC<Step1Props> = ({
         <div className="form-group full-width">
           <div className="conditional-group">
             <div className="flex-col">
-              <label className="form-label">{t('request.other_purpose')}</label>
+              <label className="form-label">{t('request.other_purpose')}<GuideBadge fk="step1_other_purpose" tk={t('guide.feat.step1_other_purpose' as never)} /></label>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: 4 }}>
                 {OPTION_OTHER_PURPOSE.map((val) => {
                   const selected = detail.other_purpose.includes(val);
@@ -284,6 +288,7 @@ const Step1: React.FC<Step1Props> = ({
               <div data-tour="ref-doc-merge">
                 <div className="form-label" style={{ marginBottom: 6 }}>
                   {t('guide.feat.step1_ref_doc_merge')}
+                  <GuideBadge fk="step1_ref_doc_merge" tk={t('guide.feat.step1_ref_doc_merge' as never)} />
                 </div>
                 {/* 참조 요청서 있음/없음 — 바꿀 때는 index.tsx 가 확인 모달을 먼저 띄운다(내용이 모두 초기화된다) */}
                 <div className="merge-mode-row">
@@ -372,6 +377,7 @@ const Step1: React.FC<Step1Props> = ({
               <div data-tour="adi-cd">
                 <div className="form-label" style={{ marginBottom: 6 }}>
                   {t('guide.feat.step1_adi_cd_change')}
+                  <GuideBadge fk="step1_adi_cd_change" tk={t('guide.feat.step1_adi_cd_change' as never)} />
                 </div>
                 <AdiCdPanel
                   before={detail.adi_cd_before}
@@ -389,7 +395,7 @@ const Step1: React.FC<Step1Props> = ({
 
             {/* 흐름도 */}
             <div className="form-group" data-tour="flow-chart">
-              <label className="form-label">{t('request.flow_chart')}</label>
+              <label className="form-label">{t('request.flow_chart')}<GuideBadge fk="step1_flow_chart" tk={t('guide.feat.step1_flow_chart' as never)} /></label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {detail.flow_chart.map((row) => (
                   <div key={row.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -502,6 +508,7 @@ const Step1: React.FC<Step1Props> = ({
             {bbEntriesRequired
               ? <span className="required">*</span>
               : <span className="form-hint">{t('request.bb_entries_optional_hint')}</span>}
+            <GuideBadge fk="step1_bb_entry" tk={t('guide.feat.step1_bb_entry' as never)} />
           </label>
           {errors.bb_entries && <span className="form-error">{errors.bb_entries}</span>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -565,7 +572,7 @@ const Step1: React.FC<Step1Props> = ({
         {/* 4. 고객/업체명 / 요구 사항 */}
         <div className="full-width flex-row" data-tour="customer-vendor">
           <div className="form-group flex-col" style={{ flex: 1 }}>
-            <label className="form-label">{t('request.customer_name')}</label>
+            <label className="form-label">{t('request.customer_name')}<GuideBadge fk="step1_customer_vendor" tk={t('guide.feat.step1_customer_vendor' as never)} /></label>
             <input
               className="form-control"
               name="customer_name"
