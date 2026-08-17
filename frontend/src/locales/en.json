@@ -623,6 +623,7 @@
     "path_label_1": "Path 1",
     "path_label_2": "Path 2",
     "path_label_3": "Path 3",
+    "path_label_4": "Path 4",
     "view_detail": "View",
     "agree": "Agree",
     "reject": "Reject",
@@ -761,7 +762,7 @@
       "product_owner": "Product Owner",
       "done": "Done",
       "note_sa": "The Sales/Tech Support agreer stage exists only when assigned at submission and runs in parallel with the PL review. It is required when the exception zone value differs from the default (300 normally, 500 for C-family).",
-      "note_e": "The EUV (E) stage runs only when plel (yellow cell) items are present, and verifies whether the $t(request.validation_system) classification is correct.",
+      "note_e": "The MASK (E) stage runs only when plel (yellow cell) items are present, and verifies whether the $t(request.validation_system) classification is correct.",
       "note_onlymap": "'Only MAP' requests proceed only up to RFG (R); later stages are skipped.",
       "note_reject": "If rejected at any stage, the whole request becomes 'Rejected' and no further stages proceed; the requester can resubmit it as a new round from the start (PL review) by designating a peer PL."
     }
@@ -990,7 +991,7 @@
       "steps": {
         "route": {
           "title": "Approval Route",
-          "description": "The final approval route of this system. Once the product owner submits, Review (PL) and the sales/tech-support agreers (when designated) run in parallel; after RFG agrees, Route 1 (PHPSI), Route 2 (JOB), Route 3 (OVL·EUV) and the post-approver all run in parallel and every one of them must agree to complete. (EUV only when plel exists; MAP-only requests stop at RFG; MAP-deletion requests run PHPSI·RFG·JOB·OVL in parallel right after review.)"
+          "description": "The final approval route of this system. Once the product owner submits, Review (PL) and the sales/tech-support agreers (when designated) run in parallel; after RFG agrees, Route 1 (PHPSI), Route 2 (JOB), Route 3 (OVL), Route 4 (MASK) and the post-approver all run in parallel and every one of them must agree to complete. (MASK only when plel exists; MAP-only requests stop at RFG; MAP-deletion requests run PHPSI·RFG·JOB·OVL in parallel right after review.)"
         },
         "request": {
           "title": "Create a Request",
@@ -1284,7 +1285,6 @@
         "no_users": "No users added yet.",
         "callout": "💡 Add User assigns users to the currently selected role tab. Create Group bundles users of the same role so they can be managed together.",
         "phase_select_user": "③ Select multiple (chips) · removable with ✕",
-        "same_role_note": "Same role only",
         "phase_group_intro": "⑤ About Create Group (notifiers & draft sharing)",
         "group_intro_title": "What is a group?",
         "group_intro_desc": "Bundle users of the same role for unified management. Once created, it is added as a group tab above and is visible only to its members. A group can be loaded into the notifier list when submitting, or designated as the sharing target of a draft request.",
