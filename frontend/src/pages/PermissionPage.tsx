@@ -65,6 +65,10 @@ interface UserTableProps {
   /** '전체 받기' 버튼 클릭 — 이미 켜져 있으면 아무 일도 하지 않는다 */
   onReceiveAll: (user: UserWithRole) => void;
   savingMailLinesId: number | null;
+  /** VOC 토글 표시 여부 — MASTER 탭에서만 true(VOC 등록 메일은 MASTER 전원 발송 대상이라) */
+  showVocMail: boolean;
+  onToggleVocMail: (user: UserWithRole) => void;
+  savingVocMailId: number | null;
 }
 
 function UserTable({
@@ -80,6 +84,9 @@ function UserTable({
   onToggleMailLine,
   onReceiveAll,
   savingMailLinesId,
+  showVocMail,
+  onToggleVocMail,
+  savingVocMailId,
 }: UserTableProps): React.ReactElement {
   const { t } = useTranslation();
 
@@ -140,6 +147,23 @@ function UserTable({
                       </button>
                     );
                   })}
+                  {showVocMail && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        style={{ width: 1, alignSelf: 'stretch', background: 'var(--color-border, #e2e8f0)', margin: '0 2px' }}
+                      />
+                      <button
+                        type="button"
+                        className={`map-type-btn mail-line-btn${user.receive_voc_mail ? ' active' : ''}`}
+                        onClick={() => onToggleVocMail(user)}
+                        disabled={!canEditMailLines(user) || savingVocMailId === user.id}
+                        aria-pressed={!!user.receive_voc_mail}
+                      >
+                        {t('permission.voc_mail_label')}
+                      </button>
+                    </>
+                  )}
                 </div>
               </td>
             )}
@@ -819,6 +843,9 @@ export default function PermissionPage(): React.ReactElement {
   const [mailLineOffTarget, setMailLineOffTarget] = useState<{ user: UserWithRole; line: string } | null>(null);
   // 전체 받기가 켜진 상태에서 개별 라인을 고를 때의 확인 대상
   const [mailLineAllOffTarget, setMailLineAllOffTarget] = useState<{ user: UserWithRole; line: string } | null>(null);
+  // VOC 메일 수신 설정 — 저장 중인 행, 그리고 해제 확인 모달 대상
+  const [savingVocMailId, setSavingVocMailId] = useState<number | null>(null);
+  const [vocMailOffTarget, setVocMailOffTarget] = useState<UserWithRole | null>(null);
 
   // Group state
   const [groups, setGroups] = useState<UserGroup[]>([]);
@@ -1082,6 +1109,38 @@ export default function PermissionPage(): React.ReactElement {
     applyMailLines(user, true, []);
   }, [applyMailLines]);
 
+  // ===== VOC 메일 수신 설정 =====
+
+  const applyVocMail = useCallback(async (user: UserWithRole, receiveVocMail: boolean) => {
+    setSavingVocMailId(user.id);
+    try {
+      const { data } = await usersAPI.updateVocMail(user.id, receiveVocMail);
+      setUsers((prev) => prev.map((u) => (
+        u.id === user.id ? { ...u, receive_voc_mail: data.receive_voc_mail } : u
+      )));
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : t('permission.voc_mail_error'), 'error');
+    } finally {
+      setSavingVocMailId(null);
+    }
+  }, [addToast, t]);
+
+  // 켤 때는 바로 저장, 끌 때는 확인 모달을 거친다.
+  const handleToggleVocMail = useCallback((user: UserWithRole) => {
+    if (user.receive_voc_mail) {
+      setVocMailOffTarget(user);
+      return;
+    }
+    applyVocMail(user, true);
+  }, [applyVocMail]);
+
+  const handleConfirmVocMailOff = useCallback(async () => {
+    if (!vocMailOffTarget) return;
+    const target = vocMailOffTarget;
+    setVocMailOffTarget(null);
+    await applyVocMail(target, false);
+  }, [vocMailOffTarget, applyVocMail]);
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeletingId(deleteTarget.id);
@@ -1279,6 +1338,9 @@ export default function PermissionPage(): React.ReactElement {
                 onToggleMailLine={handleToggleMailLine}
                 onReceiveAll={handleReceiveAll}
                 savingMailLinesId={savingMailLinesId}
+                showVocMail={activeTab === 'MASTER'}
+                onToggleVocMail={handleToggleVocMail}
+                savingVocMailId={savingVocMailId}
               />
             </div>
           )}
@@ -1318,6 +1380,18 @@ export default function PermissionPage(): React.ReactElement {
         message={t('permission.mail_line_all_off_confirm', { line: mailLineAllOffTarget?.line ?? '' })}
         confirmLabel={t('permission.mail_line_all_off_yes')}
         loading={savingMailLinesId !== null}
+      />
+
+      {/* VOC 메일 수신 해제 확인 */}
+      <ConfirmModal
+        isOpen={vocMailOffTarget !== null}
+        onClose={() => setVocMailOffTarget(null)}
+        onConfirm={handleConfirmVocMailOff}
+        title={t('permission.voc_mail_off_title')}
+        message={t('permission.voc_mail_off_confirm')}
+        confirmLabel={t('permission.voc_mail_off_yes')}
+        danger
+        loading={savingVocMailId !== null}
       />
 
       {/* Add User Modal */}

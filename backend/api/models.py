@@ -49,6 +49,9 @@ class UserProfile(AbstractBaseUser):
     mail_lines = models.ManyToManyField(
         'Line', blank=True, related_name='subscribers', verbose_name='메일 수신 라인'
     )
+    # VOC 등록 알림(role='MASTER' 전원 발송) 수신 여부. MASTER 만 의미가 있으며
+    # 라인 설정(mail_lines)과 별개로 켜고 끈다(권한 관리 '이메일 설정' 컬럼의 VOC 토글).
+    receive_voc_mail = models.BooleanField(default=True, verbose_name='VOC 메일 수신')
     # password, last_login → AbstractBaseUser 자동 포함
 
     USERNAME_FIELD = 'loginid'

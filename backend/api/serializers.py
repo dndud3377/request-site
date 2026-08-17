@@ -121,9 +121,9 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'loginid', 'name', 'mail', 'role', 'deptname', 'role_assigned_at',
-            'receive_all_mail', 'mail_lines',
+            'receive_all_mail', 'mail_lines', 'receive_voc_mail',
         ]
-        read_only_fields = ['role_assigned_at', 'receive_all_mail', 'mail_lines']
+        read_only_fields = ['role_assigned_at', 'receive_all_mail', 'mail_lines', 'receive_voc_mail']
 
     def create(self, validated_data):
         loginid = self.context.get('loginid')
