@@ -895,6 +895,12 @@
           "g4": { "title": "Member list", "desc": "The list of members in this group. Use the button on each row to remove a member (or 'Leave' for yourself)." }
         }
       },
+      "approvalShare": {
+        "groups": {
+          "g1": { "title": "The \"Share with group\" button only appears on drafts", "desc": "This button appears on the detail screen of a draft document. We're opening a sample draft's detail view to show you." },
+          "g2": { "title": "Pick a group to share it with its members", "desc": "Choose one of your \"My Groups\" here and save — its members can then view, edit, and submit this draft too. The groups listed here are the ones you actually belong to." }
+        }
+      },
       "steps": {
         "route": {
           "title": "Approval Route",
