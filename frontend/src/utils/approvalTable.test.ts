@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 import {
-  getDocTableRows, getFinalCompletionDate, isMyDocument, StageCell, StageCellSlot,
+  getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument, StageCell, StageCellSlot,
 } from './approvalTable';
 import { ApprovalStepFrontend, RequestDocument } from '../types';
 
@@ -417,6 +417,54 @@ describe('getFinalCompletionDate — 단계별 기한 표시는 없어졌지만 
   it('병렬 진입 전에는 -', () => {
     const doc = makeDoc([makeStep({ agent: 'R', action: 'pending', due_date: '2026-08-12' })]);
     expect(getFinalCompletionDate(doc)).toBe('-');
+  });
+});
+
+describe('getLastRejectionInfo — 재상신 문서는 가장 최근 반려 회차 1건만', () => {
+  it('재상신된 적 없으면(1회차) null', () => {
+    const doc = makeDoc([makeStep({ agent: 'PL', action: 'pending', round: 1 })]);
+    expect(getLastRejectionInfo(doc, t)).toBeNull();
+  });
+
+  it('1회차 JOB 반려 후 2회차 진행 중이면 1회차 정보를 돌려준다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'J', action: 'rejected', round: 1, acted_at: '2026-08-10T16:42:00Z' }),
+      makeStep({ agent: 'PL', action: 'pending', round: 2 }),
+    ]);
+    expect(getLastRejectionInfo(doc, t)).toEqual({
+      round: 1, stageLabel: 'approval.agent_J', rejectedAt: '2026-08-10T16:42:00Z',
+    });
+  });
+
+  it('두 번 반려됐어도(1회차 OVL, 2회차 JOB) 가장 최근인 2회차만 돌려준다 — 1회차 건 나열 안 함', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'O', action: 'rejected', round: 1 }),
+      makeStep({ agent: 'J', action: 'rejected', round: 2 }),
+      makeStep({ agent: 'PL', action: 'pending', round: 3 }),
+    ]);
+    const info = getLastRejectionInfo(doc, t);
+    expect(info?.round).toBe(2);
+    expect(info?.stageLabel).toBe('approval.agent_J');
+  });
+
+  it('지금 반려 상태(status=rejected)면 null — 현재 단계 칸에 이미 표시되므로 중복 안 함', () => {
+    const doc = {
+      ...makeDoc([
+        makeStep({ agent: 'J', action: 'rejected', round: 1 }),
+        makeStep({ agent: 'O', action: 'rejected', round: 2 }),
+      ]),
+      status: 'rejected',
+    };
+    expect(getLastRejectionInfo(doc, t)).toBeNull();
+  });
+
+  it('같은 회차에서 여럿이 반려됐으면(다중 PL) 라벨을 합쳐서 보여준다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'PL', action: 'rejected', round: 1, assignee_loginid: 'pl1' }),
+      makeStep({ agent: 'PL', action: 'approved', round: 1, assignee_loginid: 'pl2' }),
+      makeStep({ agent: 'PL', action: 'pending', round: 2 }),
+    ]);
+    expect(getLastRejectionInfo(doc, t)?.stageLabel).toBe('approval.agent_PL');
   });
 });
 
