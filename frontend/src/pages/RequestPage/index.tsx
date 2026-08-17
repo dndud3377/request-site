@@ -38,7 +38,6 @@ import {
 import StepGuideTour from '../../components/StepGuideTour';
 import { useStepGuideTour } from './useStepGuideTour';
 import GuideSlidePanel from '../../components/GuideSlidePanel';
-import { GUIDE_DEMO_KEYS } from '../../components/guideDemos';
 import {
   OPTION_LINE,
   CRegion,
@@ -518,15 +517,16 @@ export default function RequestPage(): React.ReactElement {
       }
     }
 
-    // 기능 가이드 키 목록 로드
+    // 기능 가이드 키 목록 로드 — 필드 배지는 글 가이드가 실제로 있는 기능에만 노출한다
+    // (빌트인 데모 영상은 스텝 제목 옆 하이라이트 투어 배지 하나로만 안내한다).
     guidesAPI.list({ guide_type: 'feature' })
       .then((r) => {
         const data = r.data;
         const items = Array.isArray(data) ? data : (data as { results: { feature_key: string }[] }).results ?? [];
         const dbKeys = items.map((g: { feature_key: string | null }) => g.feature_key).filter(Boolean) as string[];
-        setFeatureGuideKeys(new Set([...dbKeys, ...GUIDE_DEMO_KEYS]));
+        setFeatureGuideKeys(new Set(dbKeys));
       })
-      .catch(() => { setFeatureGuideKeys(new Set(GUIDE_DEMO_KEYS)); });
+      .catch(() => { setFeatureGuideKeys(new Set()); });
   }, []);
 
   // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
@@ -4298,7 +4298,6 @@ export default function RequestPage(): React.ReactElement {
   // 빌트인 데모가 있는 기능은 '영상 가이드' 배지로 구분한다.
   const GuideBadge = ({ fk, tk }: { fk: GuideFeatureKey; tk: string }) => {
     if (!featureGuideKeys.has(fk)) return null;
-    const isVideo = GUIDE_DEMO_KEYS.includes(fk);
     const active = slidePanel.open && slidePanel.featureKey === fk;
     const open = (e: React.SyntheticEvent) => {
       e.preventDefault();
@@ -4311,9 +4310,9 @@ export default function RequestPage(): React.ReactElement {
         tabIndex={0}
         onClick={open}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') open(e); }}
-        className={`${isVideo ? 'guide-video-badge' : 'guide-badge'}${active ? ' active' : ''}`}
+        className={`guide-badge${active ? ' active' : ''}`}
       >
-        {t(isVideo ? 'guide.video_btn' : 'guide.guide_btn')}
+        {t('guide.guide_btn')}
       </span>
     );
   };
