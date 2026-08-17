@@ -29,6 +29,7 @@ import {
   AvailableGroupMember,
   UserRole,
   AddressBook,
+  AddressBookAddMembersResult,
   NotifierRef,
   AnnualDesignRuleStats,
   UnclassifiedTargets,
@@ -912,8 +913,16 @@ const deleteAddressBook = async (id: number): Promise<void> => {
   await request(`/address-books/${id}/`, { method: 'DELETE' });
 };
 
+const addAddressBookMembers = async (
+  id: number,
+  loginids: string[]
+): Promise<AddressBookAddMembersResult> => {
+  return post<AddressBookAddMembersResult>(`/address-books/${id}/add-members/`, { loginids });
+};
+
 export const addressBooksAPI = {
   list: listAddressBooks,
+  addMembers: addAddressBookMembers,
   create: createAddressBook,
   update: updateAddressBook,
   delete: deleteAddressBook,
