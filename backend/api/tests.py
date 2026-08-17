@@ -3013,6 +3013,54 @@ class WithdrawFlowTest(TestCase):
         noti = MailNotification.objects.get(event_type='withdraw_completed')
         self.assertNotIn(f'/approval?id={doc.id}', noti.contents)
 
+    # ----- MASTER 는 제약 없이 즉시 삭제(2026-08) -----
+    def test_master_can_withdraw_rejected_immediately(self):
+        """MASTER 는 반려 문서도(다른 사용자는 400) 사유 없이 즉시 삭제한다."""
+        doc = self._doc('rejected')
+        self._step(doc, 'R', action='rejected', assignee=self.rfg)
+        res = self._post(self.master, doc, 'withdraw', {})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(self._exists(doc))
+
+    def test_master_can_withdraw_paused_immediately(self):
+        """MASTER 는 중단 문서도(다른 사용자는 400) 사유 없이 즉시 삭제한다."""
+        doc = self._doc('pause')
+        res = self._post(self.master, doc, 'withdraw', {})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(self._exists(doc))
+
+    def test_master_withdraw_of_in_progress_document_is_immediate_not_a_request(self):
+        """MASTER 는 진행 중(under_review) 문서도 확인 절차 없이 바로 삭제한다(요청 생성 아님)."""
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        res = self._post(self.master, doc, 'withdraw', {})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(self._exists(doc))
+        self.assertFalse(WithdrawRequest.objects.filter(document_id=doc.id).exists())
+
+    def test_master_withdraw_skips_completed_mail(self):
+        """MASTER 의 제약 없는 즉시삭제는 완료 메일을 보내지 않는다(서버 로그만 남는다)."""
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        res = self._post(self.master, doc, 'withdraw', {})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertNotIn('withdraw_completed', self._events())
+
+    def test_master_withdraw_bypasses_existing_pending_request(self):
+        """이미 철회 요청(확인 대기)이 있어도 MASTER 는 곧바로 삭제할 수 있다."""
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertTrue(WithdrawRequest.objects.filter(document=doc, state='requested').exists())
+
+        res = self._post(self.master, doc, 'withdraw', {})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(self._exists(doc))
+
 
 class PauseFlowTest(TestCase):
     """중단(PAUSE) = '요청 → 현재 단계 전원 확인 → pause 전이' (2026-08: 거부·동결 강화).
