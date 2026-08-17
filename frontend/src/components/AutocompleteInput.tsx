@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 
 interface AutocompleteInputProps {
   value: string;
@@ -40,6 +41,7 @@ export default function AutocompleteInput({
   uppercase,
   maxLength,
 }: AutocompleteInputProps): React.ReactElement {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [fixedPos, setFixedPos] = useState<{ bottom: number; left: number; width: number } | null>(null);
@@ -139,7 +141,7 @@ export default function AutocompleteInput({
         type="text"
         className={`form-control${error ? ' error' : ''}`}
         value={value}
-        placeholder={placeholder ?? '입력 또는 선택'}
+        placeholder={placeholder ?? t('common.input_or_select')}
         onChange={(e) => { if (!disabled) { onChange(uppercase ? e.target.value.toUpperCase() : e.target.value); setOpen(true); } }}
         onFocus={() => { if (!disabled) setOpen(true); }}
         onBlur={() => { if (onBlur) setTimeout(onBlur, 120); }}

@@ -151,11 +151,11 @@ const Step4: React.FC<Step4Props> = ({
           onClick={handleOpenAutoFillPanel}
           disabled={bbExternalData.length === 0 || bbExternalData.every(tab => tab.length === 0)}
         >
-          📋 Backbone 자동 채움
+          {t('request.bb_autofill_btn')}
         </button>
         {jayerRows.filter(r => !r.disabled).length > 0 && (
           <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            {jayerRows.filter(r => !r.disabled && !isNocSpecial(r.new_or_copy) && !mappedJayerRowIds.has(r.id)).length}행 조회됨
+            {t('request.bb_rows_found', { count: jayerRows.filter(r => !r.disabled && !isNocSpecial(r.new_or_copy) && !mappedJayerRowIds.has(r.id)).length })}
           </span>
         )}
       </div>
@@ -170,7 +170,7 @@ const Step4: React.FC<Step4Props> = ({
           border: '1px solid var(--border)'
         }}>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
-            🔷 Layer 범위 설정
+            {t('request.bb_autofill_panel_title')}
           </div>
           {bbAutoFillRanges.map((range, idx) => (
             <div
@@ -183,13 +183,13 @@ const Step4: React.FC<Step4Props> = ({
                 flexWrap: 'wrap'
               }}
             >
-              <span style={{ fontSize: 13, minWidth: 50 }}>범위 {idx + 1}:</span>
+              <span style={{ fontSize: 13, minWidth: 50 }}>{t('request.bb_autofill_range_label', { index: idx + 1 })}</span>
               <div style={{ minWidth: 100 }}>
                 <AutocompleteInput
                   value={range.layerFrom}
                   onChange={(v) => handleRangeChange(range.id, 'layerFrom', v)}
                   options={remainingLayerOptions}
-                  placeholder="시작 Layer"
+                  placeholder={t('request.bb_autofill_layer_from_ph')}
                   dropdownFontSize="0.8rem"
                 />
               </div>
@@ -199,7 +199,7 @@ const Step4: React.FC<Step4Props> = ({
                   value={range.layerTo}
                   onChange={(v) => handleRangeChange(range.id, 'layerTo', v)}
                   options={remainingLayerOptions}
-                  placeholder="종료 Layer"
+                  placeholder={t('request.bb_autofill_layer_to_ph')}
                   dropdownFontSize="0.8rem"
                 />
               </div>
@@ -229,7 +229,7 @@ const Step4: React.FC<Step4Props> = ({
               onClick={handleAddRange}
               style={{ fontSize: 13, padding: '6px 12px' }}
             >
-              + 범위 추가
+              {t('request.bb_autofill_add_range')}
             </button>
             <button
               type="button"
@@ -238,7 +238,7 @@ const Step4: React.FC<Step4Props> = ({
               onClick={handleApplyAutoFill}
               style={{ fontSize: 13, padding: '6px 12px' }}
             >
-              ✔ 적용
+              {t('request.bb_autofill_apply')}
             </button>
             <button
               type="button"
@@ -249,7 +249,7 @@ const Step4: React.FC<Step4Props> = ({
               }}
               style={{ fontSize: 13, padding: '6px 12px' }}
             >
-              취소
+              {t('common.cancel')}
             </button>
           </div>
         </div>
@@ -260,20 +260,20 @@ const Step4: React.FC<Step4Props> = ({
         {/* 왼쪽: 원본 행 목록 + 매핑 미리보기 */}
         <div className="bb-split-panel-left">
           <div className="bb-split-panel-title">
-            ① 원본 데이터 목록 — 행을 클릭하면 오른쪽에서 bb 데이터 매핑 가능
+            {t('request.bb_src_panel_title')}
           </div>
           <div className="bb-split-panel-scroll">
             {jayerRows.filter(r => !r.disabled && !isNocSpecial(r.new_or_copy)).length === 0 ? (
-              <div className="bb-split-hint">원본 layer 정보가 없습니다. Step 3를 먼저 입력하세요.</div>
+              <div className="bb-split-hint">{t('request.bb_src_empty')}</div>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr>
-                    <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>공법</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>STEPSEQ</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>STEP 설명</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>Layer</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>Backbone Data</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>{t('request.bb_src_col_method')}</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>{t('request.bb_src_col_stepseq')}</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>{t('request.bb_src_col_stepdesc')}</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>{t('request.bb_src_col_layer')}</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 12, fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>{t('request.bb_src_col_data')}</th>
                     <th style={{ padding: '6px 8px', background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, width: 28 }}></th>
                   </tr>
                 </thead>
@@ -299,7 +299,7 @@ const Step4: React.FC<Step4Props> = ({
                             {staged ? (
                               <span className="bb-staged-badge">{staged.bb_process_id} / {staged.bb_step}</span>
                             ) : (
-                              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>미선택</span>
+                              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{t('request.bb_src_unmapped')}</span>
                             )}
                           </td>
                           <td style={{ padding: '4px 6px', borderBottom: '1px solid var(--border-light)', textAlign: 'center' }}>
@@ -309,7 +309,7 @@ const Step4: React.FC<Step4Props> = ({
                                 className="flow-delete-btn"
                                 style={{ width: 20, height: 20, fontSize: 11 }}
                                 onClick={(e) => { e.stopPropagation(); handleClearStaging(row.id); }}
-                                title="매핑 취소"
+                                title={t('request.bb_src_unmap_title')}
                               >✕</button>
                             )}
                           </td>
@@ -360,7 +360,7 @@ const Step4: React.FC<Step4Props> = ({
             <div style={{ padding: '8px 0 4px', flexShrink: 0 }}>
               <input
                 type="text"
-                placeholder="검색어 입력"
+                placeholder={t('request.bb_ext_search_ph')}
                 value={currentSearchQuery}
                 onChange={(e) => {
                   if (!currentEntry) return;
@@ -371,29 +371,29 @@ const Step4: React.FC<Step4Props> = ({
               />
               {currentSearchQuery && (
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 4 }}>
-                  검색 결과: {filteredTabData.length}건
+                  {t('request.bb_ext_search_result', { count: filteredTabData.length })}
                 </div>
               )}
             </div>
           )}
           <div className="bb-split-panel-scroll">
             {bbExternalLoading ? (
-              <div className="bb-split-loading">데이터 로드 중...</div>
+              <div className="bb-split-loading">{t('request.bb_ext_loading')}</div>
             ) : currentTabData.length === 0 ? (
               <div className="bb-split-hint">
                 {currentEntry?.process_id
-                  ? '해당 bb 에 대한 데이터가 없습니다.'
-                  : 'Step 1에서 뼈찜 조합 조리법을 먼저 선택하세요.'}
+                  ? t('request.bb_ext_no_data')
+                  : t('request.bb_ext_select_step1')}
               </div>
             ) : (
               <table className="bb-external-table">
                 <thead>
                   <tr>
-                    <th>Ref.공법</th>
-                    <th>Ref.PART ID</th>
-                    <th>Ref.SEQ</th>
-                    <th>설명</th>
-                    <th>Layer</th>
+                    <th>{t('request.bb_ext_col_process')}</th>
+                    <th>{t('request.bb_ext_col_partid')}</th>
+                    <th>{t('request.bb_ext_col_seq')}</th>
+                    <th>{t('request.bb_ext_col_desc')}</th>
+                    <th>{t('request.bb_src_col_layer')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -407,7 +407,7 @@ const Step4: React.FC<Step4Props> = ({
                         data-bbtour={`ext-${item.layerid}`}
                         className={`bb-external-row${isStaged ? ' bb-external-staged' : ''}`}
                         onClick={() => handleStageMapping(item)}
-                        title="클릭하면 선택된 원본 layer 에 지정됩니다"
+                        title={t('request.bb_ext_row_title')}
                       >
                         <td>{item.bb_process_id}</td>
                         <td>{item.bb_name}</td>
@@ -428,8 +428,8 @@ const Step4: React.FC<Step4Props> = ({
       <div className="bb-apply-row">
         <span className="bb-apply-hint">
           {stagedCount > 0
-            ? `${stagedCount}개 행이 매핑됨 — 적용 버튼을 눌러 bb 정보에 반영하세요.`
-            : '왼쪽에서 원본 layer 를 선택하고 오른쪽에서 bb 데이터를 클릭하여 매핑하세요.'}
+            ? t('request.bb_apply_hint_staged', { count: stagedCount })
+            : t('request.bb_apply_hint_empty')}
         </span>
         <button
           type="button"
@@ -438,7 +438,7 @@ const Step4: React.FC<Step4Props> = ({
           onClick={handleApplyMappings}
           disabled={stagedCount === 0}
         >
-          ✔ 적용 ({stagedCount}건)
+          {t('request.bb_apply_btn', { count: stagedCount })}
         </button>
       </div>
 
@@ -446,7 +446,7 @@ const Step4: React.FC<Step4Props> = ({
       <div className="bb-selected-section" data-tour="bb-table">
         <div className="form-section-title" style={{ fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#4CAF50' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            bb 정보 (적용 결과)
+            {t('request.bb_result_title')}
           </span>
           <button
             type="button"
@@ -454,7 +454,7 @@ const Step4: React.FC<Step4Props> = ({
             onClick={handleResetBbRows}
             style={{ fontSize: 13, padding: '6px 12px' }}
           >
-            🗑️ 초기화
+            {t('request.bb_reset_btn')}
           </button>
         </div>
         <div className="wizard-table-wrapper">
@@ -488,7 +488,7 @@ const Step4: React.FC<Step4Props> = ({
                   data-tour="bb-sp-sort"
                   style={{ cursor: 'pointer', userSelect: 'none' }}
                   onClick={handleSortBbRows}
-                  title="클릭하여 SEQ 기준 오름차순 정렬"
+                  title={t('request.bb_sort_title')}
                 >
                   {t('request.col_sp')} 🔼
                 </th>
@@ -523,13 +523,13 @@ const Step4: React.FC<Step4Props> = ({
           </table>
         </div>
         <div className="bulk-action-row">
-          <button type="button" className="flow-table-add-btn" onClick={handleBbAddRow}>+ 행 추가</button>
+          <button type="button" className="flow-table-add-btn" onClick={handleBbAddRow}>{t('request.bb_add_row_btn')}</button>
           {bbChecked.size > 0 && (
             <button
               type="button"
               className="btn btn-danger btn-sm"
-              onClick={() => setDeleteConfirm({ message: `${bbChecked.size}개 항목을 원복하시겠습니까?`, onConfirm: handleBbBulkDelete })}
-            >선택 원복 ({bbChecked.size})</button>
+              onClick={() => setDeleteConfirm({ message: t('request.bb_bulk_restore_confirm', { count: bbChecked.size }), onConfirm: handleBbBulkDelete })}
+            >{t('request.bb_bulk_restore_btn', { count: bbChecked.size })}</button>
           )}
         </div>
       </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import Modal from '../../../components/Modal';
 import { useToast } from '../../../components/Toast';
 import { FilterSet } from '../../../types';
@@ -33,6 +34,7 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
   onRequestDelete,
   onEdit,
 }) => {
+  const { t } = useTranslation();
   const addToast = useToast();
   // 수정 중인 필터 id (null이면 새 필터 만들기 모드)
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -69,12 +71,12 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
             style={{ fontSize: '12px' }}
             onClick={onAllDelete}
           >
-            전체 삭제
+            {t('request.filter_delete_all')}
           </button>
           <div style={{ display: 'flex', gap: 8 }}>
             {editingId && (
               <button type="button" className="btn btn-secondary" onClick={cancelEdit}>
-                수정 취소
+                {t('request.filter_edit_cancel')}
               </button>
             )}
             <button
@@ -82,12 +84,12 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
               className="btn btn-primary"
               disabled={newFilter.words.sp.length === 0 && newFilter.words.sd.length === 0 && newFilter.words.pp.length === 0}
               onClick={() => {
-                const label = newFilter.label || '필터';
+                const label = newFilter.label || t('request.filter_default_label');
                 if (editingId) {
                   onEdit(editingId, label, newFilter.words);
                   setNewFilter({ label: '', words: emptyDraftWords() });
                   setEditingId(null);
-                  addToast(`필터 "${label}"이 수정되었습니다.`, 'success');
+                  addToast(t('request.filter_edit_success_toast', { label }), 'success');
                   return;
                 }
                 const newSet: FilterSet = { id: String(Date.now()), label, words: newFilter.words };
@@ -95,11 +97,11 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
                 setFilterSets(updated);
                 localStorage.setItem(storageKey, JSON.stringify(updated));
                 setNewFilter({ label: '', words: emptyDraftWords() });
-                addToast(`필터 "${newSet.label}"이 추가되었습니다.`, 'success');
+                addToast(t('request.filter_add_success_toast', { label: newSet.label }), 'success');
               }}
-            >{editingId ? '수정 적용' : '+ 추가'}</button>
+            >{editingId ? t('request.filter_apply_edit') : t('request.filter_add_btn')}</button>
             <button className="btn btn-secondary" onClick={onClose}>
-              닫기
+              {t('common.close')}
             </button>
           </div>
         </div>
@@ -116,15 +118,15 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
           <div style={{ border: `1.5px solid ${color}22`, borderRadius: 8, padding: '10px 12px', marginBottom: 10 }}>
             <div style={{ fontWeight: 600, fontSize: 12, color, marginBottom: 6 }}>{label}</div>
             <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-              <input type="text" className="form-control" placeholder="키워드 입력 후 Enter"
+              <input type="text" className="form-control" placeholder={t('request.filter_keyword_placeholder')}
                 style={{ fontSize: 13, padding: '5px 8px' }}
                 onKeyDown={(e) => { if (e.key==='Enter') { e.preventDefault(); addKeyword(field, e.currentTarget.value.trim()); e.currentTarget.value=''; } }} />
               <button type="button" className="btn btn-secondary" style={{ fontSize: 12, padding: '5px 10px', whiteSpace: 'nowrap' }}
-                onClick={(e) => { const inp=(e.currentTarget.previousSibling as HTMLInputElement); addKeyword(field, inp.value.trim()); inp.value=''; }}>+ 추가</button>
+                onClick={(e) => { const inp=(e.currentTarget.previousSibling as HTMLInputElement); addKeyword(field, inp.value.trim()); inp.value=''; }}>{t('request.filter_add_btn')}</button>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, minHeight: 22 }}>
               {newFilter.words[field].length === 0
-                ? <span style={{ color: '#bbb', fontSize: 12 }}>없음</span>
+                ? <span style={{ color: '#bbb', fontSize: 12 }}>{t('request.filter_keyword_empty')}</span>
                 : newFilter.words[field].map((k,i) => (
                   <span key={i} style={{ display:'inline-flex', alignItems:'center', background: bg, padding:'2px 8px', borderRadius:12, fontSize:12 }}>
                     {k}<button type="button" onClick={()=>removeKeyword(field,i)} style={{ marginLeft:4, border:'none', background:'none', cursor:'pointer', color:'#888', padding:0, fontSize:11, lineHeight:1 }}>✕</button>
@@ -137,14 +139,14 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
           <div style={{ fontSize: 13 }}>
             {/* 저장된 필터 목록 */}
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>저장된 필터</div>
+              <div style={{ fontWeight: 600, fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>{t('request.filter_saved_label')}</div>
               {filterSets.length === 0
-                ? <div style={{ color: '#bbb', fontSize: 13, padding: '6px 0' }}>저장된 필터가 없습니다.</div>
+                ? <div style={{ color: '#bbb', fontSize: 13, padding: '6px 0' }}>{t('request.filter_saved_empty')}</div>
                 : <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {filterSets.map(fs => (
                       <div key={fs.id} style={{ display:'flex', alignItems:'center', gap:8, background:'var(--bg-secondary)', padding:'8px 12px', borderRadius:8, border:'1px solid var(--border)' }}>
                         <div style={{ flex:1 }}>
-                          <div style={{ fontWeight:600, marginBottom:3 }}>{fs.label||'(이름 없음)'}</div>
+                          <div style={{ fontWeight:600, marginBottom:3 }}>{fs.label||t('request.filter_unnamed')}</div>
                           <div style={{ display:'flex', flexWrap:'wrap', gap:3 }}>
                             {fs.words.sp.map((k,i)=><span key={i} style={{ background:'#e3f2fd', padding:'1px 7px', borderRadius:10, fontSize:11 }}>🔵 {k}</span>)}
                             {fs.words.sd.map((k,i)=><span key={i} style={{ background:'#e8f5e9', padding:'1px 7px', borderRadius:10, fontSize:11 }}>🟢 {k}</span>)}
@@ -152,9 +154,9 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
                           </div>
                         </div>
                         <button type="button" className="btn btn-secondary btn-sm"
-                          onClick={() => startEdit(fs)}>수정</button>
+                          onClick={() => startEdit(fs)}>{t('common.edit')}</button>
                         <button type="button" className="btn btn-danger btn-sm"
-                          onClick={() => onRequestDelete(fs)}>삭제</button>
+                          onClick={() => onRequestDelete(fs)}>{t('common.delete')}</button>
                       </div>
                     ))}
                   </div>
@@ -164,17 +166,17 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
             <hr style={{ margin: '14px 0', borderColor: 'var(--border)' }} />
 
             {/* 새 필터 만들기 */}
-            <div style={{ fontWeight: 600, fontSize: 12, color: editingId ? 'var(--accent)' : '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>{editingId ? '필터 수정' : '새 필터 만들기'}</div>
+            <div style={{ fontWeight: 600, fontSize: 12, color: editingId ? 'var(--accent)' : '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>{editingId ? t('request.filter_edit_title') : t('request.filter_create_title')}</div>
             <input
               type="text"
-              placeholder="필터 이름을 입력하세요..."
+              placeholder={t('request.filter_name_placeholder')}
               value={newFilter.label}
               onChange={e => setNewFilter(p=>({...p, label:e.target.value}))}
               style={{ width:'100%', border:'none', borderBottom:'2px solid var(--accent)', outline:'none', fontSize:17, fontWeight:700, padding:'4px 2px', marginBottom:14, background:'transparent', color:'var(--text-primary)' }}
             />
-            {keywordSection('sp', '🔵 STEPSEQ', '#1976d2', '#e3f2fd')}
-            {keywordSection('sd', '🟢 STEP 설명', '#388e3c', '#e8f5e9')}
-            {keywordSection('pp', '🟠 PPID', '#f57c00', '#fff3e0')}
+            {keywordSection('sp', `🔵 ${t('request.filter_sp_label')}`, '#1976d2', '#e3f2fd')}
+            {keywordSection('sd', `🟢 ${t('request.filter_sd_label')}`, '#388e3c', '#e8f5e9')}
+            {keywordSection('pp', `🟠 ${t('request.filter_pp_label')}`, '#f57c00', '#fff3e0')}
           </div>
         );
       })()}

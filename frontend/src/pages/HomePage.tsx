@@ -181,7 +181,7 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
       <div className="modal notice-modal-lg">
         {/* 헤더 */}
         <div className="modal-header">
-          <h3 className="modal-title">📣 공지사항</h3>
+          <h3 className="modal-title">📣 {t('notice.modal_title')}</h3>
           <button className="modal-close" onClick={() => onClose(false)} title={t('notice.close')}>×</button>
         </div>
 
@@ -197,7 +197,7 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                   className={`notice-tab ${tab === tabKey ? 'active' : ''}`}
                   onClick={() => setTab(tabKey)}
                 >
-                  {tabKey === 'all' ? '전체' : tabKey === 'release_note' ? t('notice.label_release') : t('notice.label_notice')}
+                  {tabKey === 'all' ? t('notice.tab_all') : tabKey === 'release_note' ? t('notice.label_release') : t('notice.label_notice')}
                 </button>
               ))}
             </div>
@@ -239,7 +239,7 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
           <div className="notice-right-panel">
             {rightPanel === 'detail' && !selected && (
               <div className="notice-empty-state">
-                목록에서 항목을 선택하세요
+                {t('notice.select_from_list')}
               </div>
             )}
 
@@ -380,7 +380,7 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                                   className="form-control"
                                   value={val}
                                   onChange={(e) => updateItem(setter, items, idx, e.target.value)}
-                                  placeholder="내용을 입력하세요"
+                                  placeholder={t('notice.item_placeholder')}
                                 />
                                 {items.length > 1 && (
                                   <button

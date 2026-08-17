@@ -3203,7 +3203,7 @@ class UserViewSet(viewsets.ModelViewSet):
     ordering = ['id']
 
     def get_permissions(self):
-        if self.action in ('assign_role', 'destroy', 'mail_lines'):
+        if self.action in ('assign_role', 'destroy', 'mail_lines', 'voc_mail'):
             from rest_framework.permissions import IsAuthenticated
             return [IsAuthenticated()]
         return super().get_permissions()
@@ -3304,6 +3304,38 @@ class UserViewSet(viewsets.ModelViewSet):
             'mail_lines': [line.name for line in lines],
         })
 
+    @action(detail=True, methods=['patch'], url_path='voc-mail')
+    def voc_mail(self, request, pk=None):
+        """VOC 등록 알림 메일 수신 설정 변경 (권한 관리 '이메일 설정' 컬럼의 VOC 토글).
+
+        - 본인 행은 본인이, 그 외에는 MASTER 만 바꿀 수 있다(mail-lines 와 동일 규칙).
+        - 대상 역할은 MASTER 뿐이다 — VOC 등록 메일은 role='MASTER' 전원에게만 발송되므로
+          그 외 역할은 이 설정을 쓰지 않는다.
+        - 요청 본문: {"receive_voc_mail": true/false}
+        """
+        user = self.get_object()
+        caller = request.user
+        is_master = caller.is_authenticated and getattr(caller, 'role', '') == 'MASTER'
+        if not (is_master or (caller.is_authenticated and caller.pk == user.pk)):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if user.role != 'MASTER':
+            return Response(
+                {'error': 'MASTER 역할만 VOC 메일 수신 설정을 사용합니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        receive_voc_mail = request.data.get('receive_voc_mail')
+        if not isinstance(receive_voc_mail, bool):
+            return Response(
+                {'error': 'receive_voc_mail 은 true/false 여야 합니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.receive_voc_mail = receive_voc_mail
+        user.save(update_fields=['receive_voc_mail'])
+        return Response({'id': user.id, 'receive_voc_mail': receive_voc_mail})
+
     @action(detail=True, methods=['post'], url_path='assign-role')
     def assign_role(self, request, pk=None):
         """사용자에게 역할 부여
@@ -3347,6 +3379,7 @@ class UserViewSet(viewsets.ModelViewSet):
             # 역할 변경 응답/브로드캐스트로 행 전체가 교체되므로 메일 수신 설정도 함께 실어 보낸다.
             'receive_all_mail': user.receive_all_mail,
             'mail_lines': list(user.mail_lines.values_list('name', flat=True)),
+            'receive_voc_mail': user.receive_voc_mail,
         }
         broadcaster.broadcast('user_updated', payload)
 

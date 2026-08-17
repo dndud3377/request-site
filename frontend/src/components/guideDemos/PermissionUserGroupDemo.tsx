@@ -37,6 +37,13 @@ const GROUP_NAME = '개발팀';
 const MEMBERS = ['정수진', '한지민'];
 const FINAL_MEMBERS = ['정수진'];
 
+// 그룹 탭 멤버 표(실제 GroupTabContent 컬럼: 로그인ID/이름/이메일/부서)에 쓰는 가짜 상세 정보
+const MEMBER_INFO: Record<string, { loginid: string; mail: string; dept: string }> = {
+  '정수진': { loginid: 'sj_jung', mail: 'sj.jung@company.com', dept: 'PA2' },
+  '한지민': { loginid: 'jm_han', mail: 'jm.han@company.com', dept: 'PA3' },
+};
+const SELF_INFO = { loginid: 'my_pl', mail: 'my.pl@company.com', dept: 'PA1' };
+
 const PermissionUserGroupDemo: React.FC<{ embedded?: boolean; paused?: boolean }> = ({ embedded = false, paused = false }) => {
   const { t } = useTranslation();
   // 그룹 생성 시 생성자(본인)가 자동으로 멤버에 포함된다 (백엔드 members.add(self) 반영)
@@ -260,6 +267,13 @@ const PermissionUserGroupDemo: React.FC<{ embedded?: boolean; paused?: boolean }
           {t(pk(`phase_${phase}`))}
         </div>
 
+        {/* 상단 툴바 — 실제 페이지 헤더와 동일하게 "+ 사용자 추가"만 최상단에 둔다 */}
+        <div className="guide-demo-toolbar" style={{ justifyContent: 'flex-end' }}>
+          <button type="button" className="guide-demo-btn primary sm" ref={setRef('addUserBtn') as React.Ref<HTMLButtonElement>}>
+            + {t('permission.add_user')}
+          </button>
+        </div>
+
         {/* 탭 (역할 + 그룹) */}
         <div className="guide-demo-tabs">
           {ROLE_TABS.map((r) => (
@@ -279,14 +293,20 @@ const PermissionUserGroupDemo: React.FC<{ embedded?: boolean; paused?: boolean }
           )}
         </div>
 
-        {/* 툴바 */}
-        <div className="guide-demo-toolbar" style={{ justifyContent: 'flex-end', position: 'relative' }}>
-          <button type="button" className="guide-demo-btn primary sm" ref={setRef('addUserBtn') as React.Ref<HTMLButtonElement>}>
-            + {t('permission.add_user')}
-          </button>
-          <button type="button" className="guide-demo-btn secondary sm" ref={setRef('createGroupBtn') as React.Ref<HTMLButtonElement>}>
-            + {t('group.create')}
-          </button>
+        {/* 콘텐츠 패널 헤더 — 그룹 탭이면 그룹 관리 버튼, 역할 탭이면 그룹 만들기 버튼(실제 페이지와 동일한 위치) */}
+        <div className="guide-demo-section-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative' }}>
+          <span>{listLabel}</span>
+          {activeGroup ? (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button type="button" className="guide-demo-btn secondary sm">{t('group.rename')}</button>
+              <button type="button" className="guide-demo-btn danger sm">{t('group.delete')}</button>
+              <button type="button" className="guide-demo-btn primary sm">+ {t('group.add_member')}</button>
+            </div>
+          ) : (
+            <button type="button" className="guide-demo-btn secondary sm" ref={setRef('createGroupBtn') as React.Ref<HTMLButtonElement>}>
+              + {t('group.create')}
+            </button>
+          )}
 
           {/* 그룹 기능 설명 (클릭 전) */}
           <AnimatePresence>
@@ -304,12 +324,42 @@ const PermissionUserGroupDemo: React.FC<{ embedded?: boolean; paused?: boolean }
           </AnimatePresence>
         </div>
 
-        {/* 목록 (역할 사용자 또는 그룹 멤버) */}
-        <div className="guide-demo-section-label">{listLabel}</div>
+        {/* 목록 (역할 사용자 또는 그룹 멤버 — 그룹 탭은 실제 GroupTabContent와 동일한 컬럼 구성) */}
         <table className="guide-demo-table sm">
+          {activeGroup && (
+            <thead>
+              <tr>
+                <th>{t('permission.field_loginid')}</th>
+                <th>{t('permission.field_name')}</th>
+                <th>{t('permission.field_email')}</th>
+                <th>{t('permission.field_department')}</th>
+                <th></th>
+              </tr>
+            </thead>
+          )}
           <tbody>
             {listRows.length === 0 ? (
               <tr><td className="muted">{t(pk('no_users'))}</td></tr>
+            ) : activeGroup ? (
+              <AnimatePresence>
+                {listRows.map((u) => {
+                  const isSelf = u === selfLabel;
+                  const info = isSelf ? SELF_INFO : (MEMBER_INFO[u] ?? { loginid: '-', mail: '-', dept: '-' });
+                  return (
+                    <motion.tr key={u} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}>
+                      <td>{info.loginid}</td>
+                      <td>👤 {u}</td>
+                      <td>{info.mail}</td>
+                      <td>{info.dept}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        <button type="button" className="guide-demo-btn danger sm">
+                          {isSelf ? t('group.leave_group') : t('group.remove_member')}
+                        </button>
+                      </td>
+                    </motion.tr>
+                  );
+                })}
+              </AnimatePresence>
             ) : (
               <AnimatePresence>
                 {listRows.map((u) => (
@@ -375,7 +425,7 @@ const PermissionUserGroupDemo: React.FC<{ embedded?: boolean; paused?: boolean }
                 </div>
 
                 <div className="guide-demo-modal-field">
-                  <span className="lbl">{t('group.add_member')} <span className="guide-demo-cond-badge">{t(pk('same_role_note'))}</span></span>
+                  <span className="lbl">{t('group.add_member')}</span>
                   <div className="guide-demo-kwbox single" ref={setRef('memberSearch')}>
                     {memberSearch ? <span className="val">{memberSearch}</span> : <span className="ph">{t('group.add_member_placeholder')}</span>}
                   </div>
