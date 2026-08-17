@@ -254,8 +254,18 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - ✅ 권한(요청 자격): MASTER / 의뢰자 PL 본인 / 지정 PL 본인 / **문서에 지정된 공유 그룹
   (`shared_group`)의 멤버**(`can_withdraw`). 그 외 호출은 403.
   **(2026-08)** 판정 기준을 "의뢰자와 아무 그룹이나 공유" → "문서의 공유 그룹 멤버"로 변경했다(§9 참조).
+- ✅ **MASTER 는 제약 없는 즉시 삭제(2026-08 확장)**: 아래 상태별 분기는 **MASTER 가 아닌
+  호출자**에게만 적용된다. `withdraw` 호출자가 MASTER 면 문서 상태·사유·활성 철회 요청 존재
+  여부와 무관하게 **항상** `_delete_withdrawn_document`를 즉시 호출해 삭제한다(요청 생성이나
+  확인 절차를 거치지 않는다). 이 경로는 **완료 메일(`withdraw_completed`)을 보내지 않는다** —
+  확인 절차 자체가 없어 "확인한 단계 팀에게 완료를 통보한다"는 전제가 성립하지 않기 때문이다.
+  서버 로그 `[WITHDRAW_DOCUMENT] user=…(role=MASTER) doc=… status=… reason=…` 는 다른 경로와
+  동일하게 남는다. 프론트(`ApprovalPage.tsx`)도 MASTER 로그인 시 상태와 무관하게 철회 버튼을
+  노출하고, 철회 모달은 사유 입력 없이 즉시삭제 문구로 뜬다(`needsWithdrawConfirm` 이 MASTER 면
+  항상 `false`). 테스트: `backend/api/tests.py::WithdrawFlowTest`
+  (`test_master_can_withdraw_rejected_immediately` 등 5건).
 
-**문서 상태별 분기 (`withdraw`)**
+**문서 상태별 분기 (`withdraw`, MASTER 가 아닌 호출자 기준)**
 
 | 상태 | 동작 | 사유 |
 |---|---|---|
