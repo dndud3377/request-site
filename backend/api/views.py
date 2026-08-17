@@ -30,7 +30,7 @@ from .models import (
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
     DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot,
 )
-from .utils import LINE_TO_LINEID_MAP
+from .utils import LINE_TO_LINEID_MAP, resolve_employee_by_loginid
 from . import mailer
 from . import doc_permissions
 from . import design_rule_stats
@@ -3639,3 +3639,42 @@ class AddressBookViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         self.get_object().delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], url_path='add-members')
+    def add_members(self, request, pk=None):
+        """loginid 목록을 검증해 통과한 것만 구성원으로 추가한다(기존 구성원은 재검증하지 않음).
+
+        - 이미 등록된 loginid 는 검증 없이 건너뛴다(중복 방지).
+        - 신규 loginid 만 resolve_employee_by_loginid() 로 1건씩 검증한다.
+        - 응답의 added/not_found 로 프론트가 결과 모달을 그린다.
+        """
+        import json
+        book = self.get_object()
+        loginids = request.data.get('loginids')
+        if not isinstance(loginids, list) or not loginids:
+            return Response({'error': 'loginids 는 비어있지 않은 배열이어야 합니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing = book.get_members()
+        existing_ids = {m.get('loginid') for m in existing if isinstance(m, dict) and m.get('loginid')}
+
+        added, not_found, seen = [], [], set()
+        for raw_lid in loginids:
+            lid = raw_lid.strip() if isinstance(raw_lid, str) else ''
+            if not lid or lid in existing_ids or lid in seen:
+                continue
+            seen.add(lid)
+            resolved = resolve_employee_by_loginid(lid)
+            if resolved:
+                added.append({'loginid': lid, 'name': resolved.get('name') or lid})
+            else:
+                not_found.append(lid)
+
+        if added:
+            book.members = json.dumps(existing + added, ensure_ascii=False)
+            book.save(update_fields=['members', 'updated_at'])
+
+        return Response({
+            'book': AddressBookSerializer(book, context={'request': request}).data,
+            'added': added,
+            'not_found': not_found,
+        })
