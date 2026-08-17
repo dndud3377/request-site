@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
-import { JayerRow, FilterSet, ValidationSystemValue } from '../../../types';
+import { JayerRow, FilterSet, GuideFeatureKey, ValidationSystemValue } from '../../../types';
 import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, NOC_LAYER_DELETE } from '../constants';
 import { isValidationKeywordRow } from '../helpers';
 import { ValidationSystemBadge, ValidationSystemToggle } from '../../../components/ValidationSystem';
@@ -40,6 +40,7 @@ interface Step2Props {
   cellSel: CellSelectionApi;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
+  GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
   validationSystem: ValidationSystemValue;
   /** 판정 키워드가 하나도 없어 대상/비대상을 고를 수 없는 문서인가('해당없음') */
   vsNotApplicable: boolean;
@@ -76,6 +77,7 @@ const Step2: React.FC<Step2Props> = ({
   handleJayerBulkRestore,
   cellSel,
   GuideTourBadge,
+  GuideBadge,
   validationSystem,
   vsNotApplicable,
   onValidationSystemChange,
@@ -92,6 +94,7 @@ const Step2: React.FC<Step2Props> = ({
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           🔷 {t('request.job_li')}
           {GuideTourBadge}
+          <GuideBadge fk="step3_jayer_table" tk={t('guide.feat.step3_jayer_table' as never)} />
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }} data-tour="validation-system">
@@ -149,6 +152,7 @@ const Step2: React.FC<Step2Props> = ({
             </button>
           ))}
           <button type="button" className="th-header-btn" data-tour="jayer-filter" onClick={() => setJayerFilterModalOpen(true)}>{t('request.btn_add_filter')}</button>
+          <GuideBadge fk="step3_jayer_filter" tk={t('guide.feat.step3_jayer_filter' as never)} />
         </div>
       </div>
       <div className="wizard-table-wrapper" data-tour="jayer-table" ref={cellSel.containerRef}>
