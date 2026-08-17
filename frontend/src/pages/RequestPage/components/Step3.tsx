@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
-import { OayerRow, FilterSet, DetailFormState, TbvtlvNoteRow } from '../../../types';
+import { OayerRow, FilterSet, DetailFormState, GuideFeatureKey, TbvtlvNoteRow } from '../../../types';
 import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, genId, NOC_LAYER_DELETE } from '../constants';
 import { isValidationKeywordRow } from '../helpers';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
@@ -59,6 +59,7 @@ interface Step3Props {
   cellSel: CellSelectionApi;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
+  GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
 }
 
 const Step3: React.FC<Step3Props> = ({
@@ -96,6 +97,7 @@ const Step3: React.FC<Step3Props> = ({
   handleOayerBulkRestore,
   cellSel,
   GuideTourBadge,
+  GuideBadge,
 }) => {
   const { t } = useTranslation();
   const renderedOayerRows = [
@@ -154,6 +156,7 @@ const Step3: React.FC<Step3Props> = ({
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           🔶 {t('request.ovl_li')}
           {GuideTourBadge}
+          <GuideBadge fk="step4_oayer_table" tk={t('guide.feat.step4_oayer_table' as never)} />
         </span>
         <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)' }}>
           {t('request.active_total_count', { active: oayerRows.filter(r => !r.disabled).length, total: oayerRows.length })}
@@ -365,6 +368,7 @@ const Step3: React.FC<Step3Props> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               <label className="form-label" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}>
                 {t('request.partial_shot')} <span className="required">*</span>
+                <GuideBadge fk="step4_partial_shot" tk={t('guide.feat.step4_partial_shot' as never)} />
               </label>
               <div style={{ display: 'flex', gap: 8 }}>
                 {(['O', 'X'] as const).map(val => (
@@ -390,6 +394,7 @@ const Step3: React.FC<Step3Props> = ({
           <div data-tour="oayer-info-tbvtlv" style={{ borderTop: '1px solid var(--border)', paddingTop: 20 }}>
             <label className="form-label" style={{ marginBottom: 20 }}>
               {t('request.tbvtlv')}
+              <GuideBadge fk="step4_tbvtlv" tk={t('guide.feat.step4_tbvtlv' as never)} />
               {!hasTbvtlv && (
                 <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 400, color: 'var(--text-muted)' }}>
                   ({t('request.tbvtlv_no_data')})

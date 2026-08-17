@@ -10,6 +10,7 @@ import {
   JayerRow,
   BbTableRow,
   DetailFormState,
+  GuideFeatureKey,
 } from '../../../types';
 
 interface Step4Props {
@@ -50,6 +51,7 @@ interface Step4Props {
   handleBbBulkDelete: () => void;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
+  GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
 }
 
 const Step4: React.FC<Step4Props> = ({
@@ -89,6 +91,7 @@ const Step4: React.FC<Step4Props> = ({
   handleBbAddRow,
   handleBbBulkDelete,
   GuideTourBadge,
+  GuideBadge,
 }) => {
   const { t } = useTranslation();
   const currentTabPhotoSteps = bbExternalData[activeBbTab] ?? [];
@@ -158,6 +161,7 @@ const Step4: React.FC<Step4Props> = ({
             {t('request.bb_rows_found', { count: jayerRows.filter(r => !r.disabled && !isNocSpecial(r.new_or_copy) && !mappedJayerRowIds.has(r.id)).length })}
           </span>
         )}
+        <GuideBadge fk="step5_bb_autofill" tk={t('guide.feat.step5_bb_autofill' as never)} />
       </div>
 
       {/* 자동 채움 패널 */}
@@ -431,6 +435,7 @@ const Step4: React.FC<Step4Props> = ({
             ? t('request.bb_apply_hint_staged', { count: stagedCount })
             : t('request.bb_apply_hint_empty')}
         </span>
+        <GuideBadge fk="step5_bb_mapping" tk={t('guide.feat.step5_bb_mapping' as never)} />
         <button
           type="button"
           className="btn btn-primary"
@@ -447,6 +452,7 @@ const Step4: React.FC<Step4Props> = ({
         <div className="form-section-title" style={{ fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#4CAF50' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {t('request.bb_result_title')}
+            <GuideBadge fk="step5_bb_table" tk={t('guide.feat.step5_bb_table' as never)} />
           </span>
           <button
             type="button"
