@@ -3,15 +3,12 @@ from django.contrib.auth import get_user_model
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
-    RejectionSnapshot,
+    RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN,
 )
 from . import doc_permissions
 from . import design_rule_stats
 
 User = get_user_model()
-
-# 주소록 구성원 이메일 표시용 도메인 — 실제 조회 없이 loginid 로 규칙 생성한다.
-ADDRESS_BOOK_MAIL_DOMAIN = 'company.com'
 
 
 class DocPermFieldsMixin(serializers.Serializer):
