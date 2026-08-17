@@ -17,6 +17,29 @@ import {
   hasActivePendingStep, isMyDocument,
 } from '../utils/approvalTable';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS, TOUR_REVIEW_ITEM_CANDIDATES } from './approvalTourSeed';
+import StepGuideTour, { StepGuideGroup } from '../components/StepGuideTour';
+
+// "그룹 지정" 하이라이트 가이드 투어 시연용 — 실제 목록(allDocs/docs)은 건드리지 않고
+// 상세 모달(selected)만 이 가짜 임시저장 문서로 띄워서 공유 버튼을 보여준다.
+const makeShareGuideDemoDoc = (loginid: string): RequestDocument => ({
+  id: -1,
+  title: '(가이드 예시) 임시저장 의뢰서',
+  requester_name: '나',
+  requester_email: '',
+  requester_department: '',
+  product_name: 'PART_1234',
+  reference_materials: '',
+  additional_notes: '',
+  status: 'draft',
+  production_date: null,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  submitted_at: null,
+  requester_loginid: loginid,
+  can_edit: true,
+  shared_group: null,
+  shared_group_name: null,
+});
 
 // 전체 가이드 상세 모달에서 특정 페이지로 이동하기 위한 페이지 인덱스
 // (MASTER 역할 기준 페이지 순서: 0 상세 · 1 MAP · 2 JOB · 3 OVL · 4 BB · 5 결재 경로)
@@ -933,6 +956,61 @@ export default function ApprovalPage(): React.ReactElement {
       .finally(() => setGroupsLoading(false));
   };
 
+  // "나만의 그룹으로 임시저장 공유하기" 하이라이트 가이드 투어 — 실제 목록은 두고
+  // 상세 모달/공유 모달 상태만 열 때 스냅샷해 뒀다가 그룹 전환·종료 시 되돌린다.
+  const [shareTourOpen, setShareTourOpen] = useState(false);
+  const shareTourBaseRef = useRef<{
+    selected: RequestDocument | null;
+    modalOpen: boolean;
+    pageIdx: number;
+    shareModalOpen: boolean;
+    shareDoc: RequestDocument | null;
+    shareGroupId: number | null;
+    myGroups: UserGroup[];
+  } | null>(null);
+
+  const openShareTour = () => {
+    shareTourBaseRef.current = { selected, modalOpen, pageIdx, shareModalOpen, shareDoc, shareGroupId, myGroups };
+    setShareTourOpen(true);
+  };
+
+  const restoreShareTourBase = () => {
+    const base = shareTourBaseRef.current;
+    if (!base) return;
+    setSelected(base.selected);
+    setModalOpen(base.modalOpen);
+    setPageIdx(base.pageIdx);
+    setShareModalOpen(base.shareModalOpen);
+    setShareDoc(base.shareDoc);
+    setShareGroupId(base.shareGroupId);
+    setMyGroups(base.myGroups);
+  };
+
+  const shareTourGroups: StepGuideGroup[] = [
+    {
+      selectors: ['[data-tour="approval-share-btn"]'],
+      title: t('guide.tour.approvalShare.groups.g1.title'),
+      description: t('guide.tour.approvalShare.groups.g1.desc'),
+      onEnter: () => {
+        setSelected(makeShareGuideDemoDoc(currentUser.username));
+        setPageIdx(0);
+        setModalOpen(true);
+      },
+    },
+    {
+      selectors: ['[data-tour="approval-share-modal"]'],
+      title: t('guide.tour.approvalShare.groups.g2.title'),
+      description: t('guide.tour.approvalShare.groups.g2.desc'),
+      onEnter: () => {
+        const demoDoc = makeShareGuideDemoDoc(currentUser.username);
+        setSelected(demoDoc);
+        setPageIdx(0);
+        setModalOpen(true);
+        handleShareClick(demoDoc);
+      },
+    },
+  ];
+
   const handleShareSave = async () => {
     if (!shareDoc) return;
     setProcessing(true);
@@ -1045,7 +1123,21 @@ export default function ApprovalPage(): React.ReactElement {
   return (
     <div className="container page">
       <div className="page-header">
-        <h1>{t('approval.title')}</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {t('approval.title')}
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => { e.stopPropagation(); openShareTour(); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openShareTour(); }
+            }}
+            className={`guide-video-badge${shareTourOpen ? ' active' : ''}`}
+            style={{ fontSize: '0.7rem' }}
+          >
+            {t('guide.video_btn')}
+          </span>
+        </h1>
         <p>{t('approval.subtitle')}</p>
       </div>
 
@@ -1335,7 +1427,7 @@ export default function ApprovalPage(): React.ReactElement {
             </div>
           }
         >
-          <div>
+          <div data-tour="approval-share-modal">
             <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '0 0 12px' }}>
               {t('approval.share_group_help')}
             </p>
@@ -1678,7 +1770,12 @@ export default function ApprovalPage(): React.ReactElement {
                 </button>
               )}
               {selected && canSetSharedGroup(selected) && (
-                <button className="btn btn-secondary" onClick={() => handleShareClick(selected)} disabled={processing}>
+                <button
+                  className="btn btn-secondary"
+                  data-tour="approval-share-btn"
+                  onClick={() => handleShareClick(selected)}
+                  disabled={processing}
+                >
                   👥 {selected.shared_group_name ?? t('approval.share_group_btn')}
                 </button>
               )}
@@ -2194,6 +2291,14 @@ export default function ApprovalPage(): React.ReactElement {
           </div>
         )}
       </Modal>
+
+      <StepGuideTour
+        isOpen={shareTourOpen}
+        title={t('approval.title')}
+        groups={shareTourGroups}
+        onRestoreBase={restoreShareTourBase}
+        onClose={() => setShareTourOpen(false)}
+      />
 
       {/* 전체 가이드 데모: 제목을 실제로 클릭하는 모습을 보여주는 가짜 커서 */}
       {isTourMode && tourCursor && (
