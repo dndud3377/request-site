@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import RichTextEditor from '../../../components/RichTextEditor';
-import { DetailFormState } from '../../../types';
+import { DetailFormState, GuideFeatureKey } from '../../../types';
 import {
   CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ, MAP_TYPE_CLONE,
   EA_NO_CHANGE, EA_HAS_CHANGE, eaDefaultValue,
@@ -67,6 +67,7 @@ interface StepMapProps {
   handleImagePaste: (e: React.ClipboardEvent<HTMLDivElement>, fieldName: 'mshot_image_copy' | 'mshot_image_copy_top' | 'mshot_image_copy_bottom') => void;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
+  GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
 }
 
 const StepMap: React.FC<StepMapProps> = ({
@@ -113,6 +114,7 @@ const StepMap: React.FC<StepMapProps> = ({
   handleMshotChangeChange,
   handleImagePaste,
   GuideTourBadge,
+  GuideBadge,
 }) => {
   const { t } = useTranslation();
 
@@ -152,6 +154,7 @@ const StepMap: React.FC<StepMapProps> = ({
         <div className="full-width" data-tour="map-purpose">
           <label className="form-label">
             {t('request.map_type')} <span className="required">*</span>
+            <GuideBadge fk="step2_map_type" tk={t('guide.feat.step2_map_type' as never)} />
           </label>
           <div style={{ display: 'flex', gap: '8px', marginTop: 4, flexWrap: 'wrap' }}>
             {([
@@ -212,6 +215,7 @@ const StepMap: React.FC<StepMapProps> = ({
                 <div className="form-group flex-col">
                   <label className="form-label">
                     {t('request.source_line')}
+                    <GuideBadge fk="step2_source_location" tk={t('guide.feat.step2_source_location' as never)} />
                   </label>
                   <select
                     className={`form-control${errors.source_line ? ' error' : ''}`}
@@ -242,7 +246,7 @@ const StepMap: React.FC<StepMapProps> = ({
         {/* REV 여부 — C가문(only_prodc)과 무관한 독립 항목. map_type 종류와 상관없이 항상 선택 가능하다.
             (CLONE/EXISTING 에서도 잠그지 않는다 — isMapRegistered 를 걸지 않는 이유) */}
         <div className="full-width" data-tour="map-rev" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <label className="form-label" style={{ marginBottom: 0 }}>{t('request.rev_yn_label')}</label>
+          <label className="form-label" style={{ marginBottom: 0 }}>{t('request.rev_yn_label')}<GuideBadge fk="step2_rev" tk={t('guide.feat.step2_rev' as never)} /></label>
           <div style={{ display: 'flex', gap: '8px' }}>
             {(['YES', 'NO'] as const).map((val) => (
               <button
@@ -375,7 +379,7 @@ const StepMap: React.FC<StepMapProps> = ({
             Yes 일 때 펼쳐지는 하위 입력(적용 위치·북/중/남 라인·조합법·제품)만 잠근다. */}
         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div className="form-group" data-tour="map-cfamily-toggle" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
-            <label className="form-label">{t('request.prodc_status')}</label>
+            <label className="form-label">{t('request.prodc_status')}<GuideBadge fk="step2_cfamily" tk={t('guide.feat.step2_cfamily' as never)} /></label>
             <select
               className="form-control"
               name="only_prodc"
@@ -422,7 +426,7 @@ const StepMap: React.FC<StepMapProps> = ({
         {/* 지도 편차 */}
         {isProdc ? (
           <div className="full-width" data-tour="map-deviation" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <label className="form-label">{t('request.map')}</label>
+            <label className="form-label">{t('request.map')}<GuideBadge fk="step2_map_deviation" tk={t('guide.feat.step2_map_deviation' as never)} /></label>
             {(['top', 'bottom'] as const).map((region) => {
               // 리전 지도편차는 '변경 없음/있음'을 개별 선택한다(고정값이 아니다).
               // X/Y 는 그 리전이 살아있고 '변경 있음'일 때만 입력·필수.
@@ -486,7 +490,7 @@ const StepMap: React.FC<StepMapProps> = ({
         ) : (
           <div className="full-width flex-row" data-tour="map-deviation">
             <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
-              <label className="form-label">{t('request.map')}</label>
+              <label className="form-label">{t('request.map')}<GuideBadge fk="step2_map_deviation" tk={t('guide.feat.step2_map_deviation' as never)} /></label>
               <select className="form-control" name="map_change" value={detail.map_change} onChange={(e) => handleMapChangeChange(e.target.value)} disabled={isMapRegistered}>
                 <option value="변경 없음">{t('request.map_no_change')}</option>
                 <option value="변경 있음">{t('request.map_has_change')}</option>
@@ -513,7 +517,7 @@ const StepMap: React.FC<StepMapProps> = ({
         {/* 예외 구역 */}
         <div className="full-width flex-row" data-tour="map-exception">
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0 }}>
-            <label className="form-label">{t('request.ea_change')}</label>
+            <label className="form-label">{t('request.ea_change')}<GuideBadge fk="step2_exception_zone" tk={t('guide.feat.step2_exception_zone' as never)} /></label>
             {/* '변경 없음'은 C가문 여부에 따라 기본값(300/500)이 정해져 있어 라벨에 그 값을 함께 보여준다.
                 CLONE/EXISTING 은 기본값 자체가 없으므로(입력칸이 잠긴다) 값 없이 '변경 없음'만 띄운다. */}
             <select className="form-control" name="ea_change" value={detail.ea_change} onChange={(e) => handleEaChangeChange(e.target.value)} disabled={isMapRegistered}>
@@ -536,7 +540,7 @@ const StepMap: React.FC<StepMapProps> = ({
 
         {/* X표시 변경 여부 */}
         <div className="form-group full-width" data-tour="map-xmark">
-          <label className="form-label">{t('request.mshot_change_status')}</label>
+          <label className="form-label">{t('request.mshot_change_status')}<GuideBadge fk="step2_xmark" tk={t('guide.feat.step2_xmark' as never)} /></label>
           <div style={{ width: SELECT_W }}>
             <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={(e) => handleMshotChangeChange(e.target.value)} disabled={isMapRegistered}>
               <option value="없음">{t('request.mshot_none')}</option>
@@ -589,7 +593,7 @@ const StepMap: React.FC<StepMapProps> = ({
             NO 로 전환 시 확인 모달 없이 관련 값을 즉시 초기화한다(잘못된 값이 저장되지 않도록). */}
         <div className="full-width" data-tour="map-inter" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
-            <label className="form-label">{t('request.map_opt_inter')}</label>
+            <label className="form-label">{t('request.map_opt_inter')}<GuideBadge fk="step2_inter" tk={t('guide.feat.step2_inter' as never)} /></label>
             <select
               className="form-control"
               value={detail.inter}
@@ -670,6 +674,7 @@ const StepMap: React.FC<StepMapProps> = ({
             <div className="full-width" data-tour="map-options">
               <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: 4 }}>
                 {t('request.map_option_title')}
+                <GuideBadge fk="step2_map_options" tk={t('guide.feat.step2_map_options' as never)} />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, max-content)', gap: '8px' }}>
                 {mapOptions.map((opt) => {
