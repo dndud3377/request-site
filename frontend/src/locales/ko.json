@@ -537,6 +537,7 @@
     "withdraw_rejected_toast": "철회 요청을 거부했습니다. 결재를 계속 진행할 수 있습니다.",
     "withdraw_cancelled_toast": "철회 요청을 취소했습니다.",
     "withdraw_requested_chip": "철회 요청중",
+    "rejection_history_chip": "↩ {{round}}회차 {{stage}} 단계 반려",
     "withdraw_banner_requested": "{{name}} 님의 철회 요청이 있습니다",
     "withdraw_banner_warning": "확인이 모두 끝나면 이 의뢰서는 완전히 삭제됩니다. (복구 불가)",
     "withdraw_confirm_status": "확인 현황 (현재 단계 전원 확인 시 철회 확정·삭제)",
