@@ -12,7 +12,7 @@ import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseI
 import { useAuth } from '../contexts/AuthContext';
 import { shouldShowNotice, markNoticeSeen } from '../utils/noticeStorage';
 import { formatDate } from '../utils/date';
-import { getDocTableRows, getFinalCompletionDate, isMyDocument, submittedSortKey } from '../utils/approvalTable';
+import { getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument, submittedSortKey } from '../utils/approvalTable';
 
 // 홈 '나의 의뢰 현황' 에 보여줄 최대 건수 (그 이상은 '전체 보기' 로 결재현황 MY 탭에서 본다)
 const MY_REQUESTS_LIMIT = 5;
@@ -652,6 +652,7 @@ export default function HomePage(): React.ReactElement {
                     // 병렬 진입 후에도 문서 1건 = 표 1행이며, 칸 안의 3행 2열 그리드가 경로를 모두 보여준다.
                     const row = getDocTableRows(doc, t)[0];
                     const isPaused = doc.status === 'pause';
+                    const lastRejection = getLastRejectionInfo(doc, t);
                     return (
                       <tr key={doc.id}>
                         <td>
@@ -661,6 +662,13 @@ export default function HomePage(): React.ReactElement {
                           >
                             {doc.title}
                           </button>
+                          {lastRejection && (
+                            <div style={{ marginTop: 4 }}>
+                              <span className="rejection-history-chip">
+                                {t('approval.rejection_history_chip', { round: lastRejection.round, stage: lastRejection.stageLabel })}
+                              </span>
+                            </div>
+                          )}
                         </td>
                         <td>{doc.product_name}</td>
                         <td>
