@@ -1095,12 +1095,14 @@
             "revision_diff": "A request resubmitted after rejection highlights the changed fields/rows, and a 'View History' button appears on changed rows.",
             "revision_modal": "Click 'View History' to compare the before/after values side by side.",
             "review_items": "The 'Review Items' sub-tab on the JOB tab manages the items to be checked at the JOB stage and the reviewer of each item. It stays read-only until an approver takes the step with 'Review', and the step can be agreed even if not every item is complete.",
+            "pause_request": "The requester can pause an in-progress approval with 'Pause Request'. A reason is required, and submitting it sends a confirmation request to every assignee of the steps that were in progress at that moment.",
+            "pause_confirm": "Each assignee must click 'Confirm Pause' — for parallel steps, every one of them must confirm before the document actually switches to 'Paused'. Meanwhile all other approval actions freeze; an assignee can choose 'Reject Pause' instead, and the requester can 'Cancel Request'. On resume, the due date is automatically pushed back by however long it was paused.",
             "withdraw": "Withdrawing deletes the request for good. A draft is deleted as soon as you confirm; while approval is in progress every assignee of the current step must confirm before it is deleted. A rejected request cannot be withdrawn — fix it and resubmit instead."
           }
         },
         "permission": {
           "title": "Permissions",
-          "description": "Add users to a role tab, then group same-role users together. A group tab is visible only to its members, and a group can be loaded into the notifier list in one click at submission or designated as the sharing group of a draft."
+          "description": "A new user must log in once before showing up under the 'No Role' tab. From there you add them to a role tab, then group same-role users into 'my group' for notifiers and draft sharing."
         }
       }
     },
@@ -1350,6 +1352,31 @@
         "cmp_notifier_no": "Cannot load as notifiers",
         "cmp_draft_yes": "Drafts shared",
         "cmp_draft_no": "Drafts hidden"
+      },
+      "permission_tour": {
+        "lead": "The flow from a new user first showing up on the Permissions page, through role assignment, to creating a group.",
+        "phase_first_access": "① First login → listed under 'No Role'",
+        "phase_open_user": "② + Add User → open modal (title shows current role)",
+        "phase_search_user": "③ Search → each candidate shows its current role",
+        "phase_select_user": "④ Select multiple (chips) · removable with ✕",
+        "phase_add_user": "⑤ Add → role assigned, removed from the 'No Role' list",
+        "phase_group_intro": "⑥ About Create Group (notifiers & draft sharing)",
+        "phase_open_group": "⑦ + Create Group → open modal",
+        "phase_fill_group": "⑧ Group name (required) + multi-select members (chips/✕)",
+        "phase_create_group": "⑨ Create → a group tab is added to the tab bar",
+        "intro_title": "👋 How Permissions works",
+        "intro_b1": "A new user must log in via SSO once before appearing under the 'No Role' tab — no role can be assigned before that.",
+        "intro_b2": "'Add User' assigns a 'No Role' user to the role tab you choose.",
+        "intro_b3": "Bundling same-role users into 'my group' lets you load the notifier list at once when submitting, or share a draft with the group.",
+        "first_access_info_title": "A first login is required",
+        "first_access_info_desc": "A user who has never logged in via SSO won't be in this list. The first login automatically registers them as a 'No Role' user, and no role can be assigned before that.",
+        "first_access_empty": "No one has logged in yet.",
+        "user_list_title": "Users",
+        "no_users": "No users added yet.",
+        "group_intro_title": "What is a group?",
+        "group_intro_desc": "Bundle users of the same role for unified management. Once created, it is added as a group tab above and is visible only to its members. A group can be loaded into the notifier list when submitting, or designated as the sharing target of a draft request.",
+        "self_member": "Me (owner)",
+        "callout": "💡 A user must log in before appearing under 'No Role', and 'Add User' is how you assign them to a role tab. A group bundles same-role users for notifiers and draft sharing."
       }
     },
     "permission_step": "Permissions"
