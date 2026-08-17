@@ -10,6 +10,9 @@ from . import design_rule_stats
 
 User = get_user_model()
 
+# 주소록 구성원 이메일 표시용 도메인 — 실제 조회 없이 loginid 로 규칙 생성한다.
+ADDRESS_BOOK_MAIL_DOMAIN = 'company.com'
+
 
 class DocPermFieldsMixin(serializers.Serializer):
     """RequestDocument 직렬화에 현재 요청자 기준 권한 플래그를 추가한다.
@@ -402,9 +405,12 @@ class UserGroupSerializer(serializers.ModelSerializer):
 class AddressBookSerializer(serializers.ModelSerializer):
     """주소록 직렬화.
 
-    - 읽기: members 를 현재 UserProfile 과 join 해 최신 name·mail·has_mail 을 함께 내려준다.
-      (실존하지 않는 loginid 는 자동 제외 → 발송 시 유령 대상 방지, has_mail=false 는 프론트 경고용.)
-    - 쓰기: members_input 으로 [{loginid, name}] 을 받아 실존 사용자만 정규화해 저장한다.
+    - 읽기: 저장된 members(loginid, name)를 그대로 신뢰해 내려준다. 로컬 User 테이블과
+      대조하지 않는다 — 실존 여부 판정 기준이 사이트 가입 여부가 아니라 외부 검증(추가
+      시점의 resolve_employee_by_loginid, views.py AddressBookViewSet.add_members)이기
+      때문이다. mail 은 조회하지 않고 loginid 로 규칙 생성한다(ADDRESS_BOOK_MAIL_DOMAIN).
+    - 쓰기: members_input 은 rename/구성원 삭제 흐름에서만 쓰이며 중복 제거만 한다
+      (실존 검증은 하지 않음 — 검증은 add_members 액션에서 "신규" loginid 에만 1회 수행).
     """
     members       = serializers.SerializerMethodField()
     members_input = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
@@ -417,19 +423,19 @@ class AddressBookSerializer(serializers.ModelSerializer):
 
     def _enriched(self, obj):
         raw = obj.get_members()
-        loginids = [m.get('loginid') for m in raw if isinstance(m, dict) and m.get('loginid')]
-        users = {u.loginid: u for u in User.objects.filter(loginid__in=loginids)}
         result, seen = [], set()
-        for lid in loginids:
-            u = users.get(lid)
-            if not u or lid in seen:
+        for m in raw:
+            if not isinstance(m, dict):
+                continue
+            lid = m.get('loginid')
+            if not lid or lid in seen:
                 continue
             seen.add(lid)
             result.append({
-                'loginid': u.loginid,
-                'name': u.username,
-                'mail': u.mail or '',
-                'has_mail': bool(u.mail),
+                'loginid': lid,
+                'name': m.get('name') or lid,
+                'mail': f'{lid}@{ADDRESS_BOOK_MAIL_DOMAIN}',
+                'has_mail': True,
             })
         return result
 
@@ -453,17 +459,15 @@ class AddressBookSerializer(serializers.ModelSerializer):
         return value
 
     def _normalize_members(self, members_input):
-        """실존 사용자만 남기고 중복 제거, name 은 현재 표시이름으로 정규화."""
+        """중복만 제거해 그대로 저장한다. 실존 검증은 하지 않는다(AddressBookViewSet.add_members 전용)."""
         import json
-        loginids = [m.get('loginid') for m in members_input if isinstance(m, dict) and m.get('loginid')]
-        users = {u.loginid: u for u in User.objects.filter(loginid__in=loginids)}
         norm, seen = [], set()
         for m in members_input:
             lid = m.get('loginid') if isinstance(m, dict) else None
-            if not lid or lid in seen or lid not in users:
+            if not lid or lid in seen:
                 continue
             seen.add(lid)
-            norm.append({'loginid': lid, 'name': users[lid].username})
+            norm.append({'loginid': lid, 'name': (m.get('name') or lid)})
         return json.dumps(norm, ensure_ascii=False)
 
     def create(self, validated_data):

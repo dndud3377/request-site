@@ -557,6 +557,13 @@ export interface AddressBook {
   updated_at: string;
 }
 
+// POST /address-books/{id}/add-members/ 응답: 검증 통과분(added)과 실패분(not_found) 구분
+export interface AddressBookAddMembersResult {
+  book: AddressBook;
+  added: NotifierRef[];
+  not_found: string[];
+}
+
 // ===== Change History =====
 
 export interface HistorySnapshot {
