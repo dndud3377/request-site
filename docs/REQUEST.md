@@ -572,6 +572,52 @@ pages/RequestPage/
 - **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(작업 전후 동일, 신규 0) ·
   `react-scripts test --watchAll=false` 5 suites / **174건 통과**.
 
+### 추가 변경 이력 (2026-08-17 — 필드별 글 가이드 배지 부활 (스텝 하이라이트 투어와 공존))
+
+- **개요**: `/guide`에서 `feature_key`를 지정해 작성한 "기능" 가이드가 요청서 작성 화면(Step1~5)
+  어디에도 노출되지 않는다는 사용자 보고에 따라 원인을 조사했다. 2026-08-15 커밋(`d47ee91`,
+  "스텝 단위 하이라이트 가이드 투어" 추가)에서 필드별 `GuideBadge`·`featureGuideKeys`·`slidePanel`·
+  `toggleSlidePanel`·`<GuideSlidePanel>` 렌더가 `RequestPage/index.tsx`에서 전부 제거되고 스텝 단위
+  투어(`StepTourBadge`/`StepGuideTour`)로만 대체된 것이 원인이었다(의도된 리팩토링이었으나, 그 결과
+  `/guide`에 새로 작성하는 글 가이드가 요청서 화면에 반영될 경로가 없어졌다). 사용자 요청에 따라
+  필드별 배지를 **복원**했다 — 2026-08-15에 신설된 스텝 단위 하이라이트 투어는 그대로 유지하고,
+  같은 자리에 필드별 배지를 나란히 추가해 **두 기능이 공존**한다.
+- **복원 범위** (`d47ee91` 이전 구현을 그대로 복원, `data-tour` 속성 등 투어용 마크업은 유지):
+  - `RequestPage/index.tsx`: `guidesAPI`·`GuideFeatureKey` import, `featureGuideKeys` state + 로드
+    `useEffect`(`guidesAPI.list({ guide_type: 'feature' })`), `slidePanel` state, `toggleSlidePanel`,
+    `GuideBadge` 헬퍼(컴포넌트), `GuideSlidePanel` import + 렌더. 각 Step 컴포넌트에 `GuideBadge` prop을
+    `GuideTourBadge`와 함께 전달.
+  - `Step1.tsx`(8곳): 라인/조합법, 요청 목적, 기타 목적, 참조요청서 Merge, ADI CD 변경, 흐름도,
+    뼈찜 조합 영역, 고객/업체명.
+  - `StepMap.tsx`(10곳): MAP 유형, 원본 위치(CLONE), REV 여부, C가문, 지도편차(C가문/비C가문 2곳),
+    예외구역, X표시, Inter, MAP옵션.
+  - `Step2.tsx`(J-ayer, 2곳): 표 제목, +필터 버튼.
+  - `Step3.tsx`(O-ayer, 3곳): 표 제목, Partial Shot, TBV/TLV.
+  - `Step4.tsx`(BB, 3곳): 자동 채움 버튼, 매핑 적용 버튼, bb 정보(적용 결과) 표 제목.
+- **CSS·`GuideSlidePanel`·`guideDemos/*`는 손대지 않았다** — 전부 삭제되지 않고 남아있던 것을
+  그대로 재사용했다(`PermissionPage.tsx`가 계속 써 왔으므로 이미 정상 동작 확인됨).
+- **영향 파일**: `pages/RequestPage/index.tsx`, `.../components/Step1.tsx`·`StepMap.tsx`·`Step2.tsx`·
+  `Step3.tsx`·`Step4.tsx`
+- **검증(2026-08-17 실행, 원격 세션·Docker 없이)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` (`error TS` 수) | 2개(tsconfig 옵션 deprecated 경고, 코드 오류 아님) | **2개 그대로** (신규 0) |
+  | `react-scripts test --watchAll=false` | 8 suites / 206건 | **8 suites / 206건 통과** |
+
+  ⚠️ 결재 흐름을 건드리지 않아 `scripts/approval_cases` 러너는 대상 아님. 실제 화면 수동 검증은
+  아직 못했다 — 아래 "수동 검증 시나리오" 참고.
+- **수동 검증 시나리오**:
+  1. `/guide` → "+가이드 작성" → 유형 "기능" 선택 → 스텝(예: "1. 의뢰 상세") → 기능(예: "라인/조합법")
+     선택 → 본문 입력 후 저장.
+  2. `/request`(신규 의뢰서 작성) → Step1 진입 → "라인/조합법" 라벨 옆에 파란색 "가이드" 배지(또는
+     빌트인 데모가 있는 기능이면 보라색 "영상 가이드" 배지)가 보이는지 확인. 클릭 시 화면 오른쪽에서
+     슬라이드 패널이 열리고 방금 작성한 글 내용이 보이면 성공. 스텝 제목(📋 의뢰 상세) 옆의 기존
+     "영상 가이드" 배지(스텝 전체 하이라이트 투어)는 그대로 남아있어야 하며, 클릭 시 기존과 동일하게
+     동작해야 한다(회귀 없음).
+  3. 가이드를 작성하지 않은 기능(`featureGuideKeys`에 없는 `feature_key`)에서는 배지 자체가 보이지
+     않아야 한다(실패 신호: 빈 배지가 보이거나 클릭해도 아무 반응 없음).
+
 ### 추가 변경 이력 (2026-08-16 — Step5(BB) 가이드 투어에 "bb 정보" 표 + SP 정렬 그룹 추가)
 
 - **개요**: Step5(BB) 하이라이트 가이드 투어의 `s5g3`(`bb 정보 (적용 결과)` 표) 그룹이 그동안 빈 표만 보여줬던 것을, 데모 데이터로 실제 채워진 표를 보여주도록 바꾸고, **SP 헤더 클릭 정렬 기능**을 강조하는 그룹(`s5g3b`)을 새로 추가했다(총 4그룹으로 증가).
