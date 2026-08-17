@@ -12,6 +12,7 @@ import pandas as pd
 import urllib3
 from sqlalchemy import create_engine
 from urllib.parse import quote_plus
+from typing import Optional
 
 # DCQ import
 import datacenterquery as dcq
@@ -145,6 +146,34 @@ def get_data_from_dcq(query, dcq_id):
     except Exception as e:
         logger.error(f"[DCQ] 데이터 조회 실패: {e}", exc_info=True)
         return None
+
+
+def resolve_employee_by_loginid(loginid: str) -> Optional[dict]:
+    """
+    loginid 로 실제 존재하는 사내 인원인지 조회해 이름을 반환한다.
+
+    TODO(사용자 구현 예정): 지금은 항상 None(사용자 없음)을 반환하는 자리표시자다.
+    실제 조회 로직으로 교체할 것 — 아래는 구현 시 참고할 구조 제안.
+
+    - 반환값
+      · 존재하면: {'loginid': loginid, 'name': '<실제 이름>'}
+      · 존재하지 않으면: None
+    - 구현 예시(사내 인사 API/DCQ 등 사용 시)
+      1) 사내 인사 DB/API 를 loginid 로 단건 조회한다.
+         (참고: 이 파일의 get_data_from_dcq() 처럼 DCQ 세션을 통해 조회하거나,
+          별도 REST API 가 있다면 requests 로 호출)
+      2) 조회 결과가 없으면 None 리턴.
+      3) 조회 결과가 있으면 {'loginid': loginid, 'name': 조회된 이름} 리턴.
+    - 호출 시점: AddressBookViewSet.add_members()(views.py)에서, 주소록에 "새로"
+      추가되는 loginid 마다 1회씩만 호출된다. 이미 저장돼 있던 기존 구성원은
+      재검증하지 않으므로, 이 함수가 아직 미구현(항상 None)이어도 기존 구성원이
+      사라지지는 않는다.
+    - 여러 loginid 를 한 번에 조회해야 하면(N+1 방지), 시그니처를
+      resolve_employees_by_loginids(loginids: list) -> dict 형태로 바꿔
+      {loginid: name} 배치 조회로 확장해도 된다 — 그 경우 호출부(add_members)도
+      함께 수정해야 한다.
+    """
+    return None
 
 
 def get_rtdb_credentials():
