@@ -4443,7 +4443,9 @@ select.form-control option {
 .step-guide-tour-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  /* .modal-overlay(2000)·topLevel 모달(3000) 위에서도 강조돼야 한다 —
+     ApprovalPage 그룹공유 투어처럼 실제 모달을 띄운 채 그 안의 요소를 강조하는 경우가 있다. */
+  z-index: 3500;
   cursor: pointer;
 }
 .step-guide-tour-spotlight {
