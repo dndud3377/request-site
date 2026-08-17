@@ -1,25 +1,28 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { addressBooksAPI, usersAPI } from '../api/client';
+import { addressBooksAPI } from '../api/client';
 import { useToast } from '../components/Toast';
-import { ConfirmModal } from '../components/Modal';
-import { AddressBook, AddressBookMember, UserWithRole } from '../types';
+import Modal, { ConfirmModal } from '../components/Modal';
+import { AddressBook, AddressBookAddMembersResult, AddressBookMember } from '../types';
+
+// loginid 입력창에서 타이핑/붙여넣기 즉시 허용하는 문자(영문/숫자/./,/@) — '@'는 이메일 붙여넣기 편의용.
+const LOGINID_INPUT_ALLOWED_CHARS = /[^A-Za-z0-9.,@]/g;
+// Enter 입력 시 콤마로 분리된 각 조각에서 '@' 이후(도메인)를 제외하고 남은 값의 최종 정제 문자.
+const LOGINID_TOKEN_SANITIZE = /[^A-Za-z0-9.]/g;
 
 export default function AddressBookPage(): React.ReactElement {
   const { t } = useTranslation();
   const addToast = useToast();
 
   const [books, setBooks] = useState<AddressBook[]>([]);
-  const [users, setUsers] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const [renameValue, setRenameValue] = useState('');
-  const [memberQuery, setMemberQuery] = useState('');
-  const [memberDropdownOpen, setMemberDropdownOpen] = useState(false);
+  const [loginidInput, setLoginidInput] = useState('');
+  const [addResult, setAddResult] = useState<AddressBookAddMembersResult | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AddressBook | null>(null);
-  const searchRef = useRef<HTMLDivElement>(null);
 
   const selected = useMemo(
     () => books.find((b) => b.id === selectedId) ?? null,
@@ -43,9 +46,7 @@ export default function AddressBookPage(): React.ReactElement {
       setLoading(true);
       setError(false);
       try {
-        const [, uRes] = await Promise.all([fetchBooks(), usersAPI.list()]);
-        if (cancelled) return;
-        setUsers(uRes.data);
+        await fetchBooks();
       } catch {
         if (!cancelled) setError(true);
       } finally {
@@ -58,18 +59,6 @@ export default function AddressBookPage(): React.ReactElement {
   useEffect(() => {
     setRenameValue(selected?.name ?? '');
   }, [selected?.id, selected?.name]);
-
-  // 바깥 클릭 시 멤버 검색 드롭다운 닫기
-  useEffect(() => {
-    if (!memberDropdownOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setMemberDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [memberDropdownOpen]);
 
   const toRefs = (members: AddressBookMember[]) =>
     members.map((m) => ({ loginid: m.loginid, name: m.name }));
@@ -101,16 +90,31 @@ export default function AddressBookPage(): React.ReactElement {
     }
   };
 
-  const handleAddMember = async (u: UserWithRole) => {
-    if (!selected) return;
-    if (selected.members.some((m) => m.loginid === u.loginid)) return;
-    const members = [...toRefs(selected.members), { loginid: u.loginid, name: u.name }];
-    setMemberQuery('');
-    setMemberDropdownOpen(false);
+  const handleLoginidInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setLoginidInput(e.target.value.replace(LOGINID_INPUT_ALLOWED_CHARS, ''));
+  };
+
+  const handleLoginidKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter' || !selected) return;
+    e.preventDefault();
+
+    const existing = new Set(selected.members.map((m) => m.loginid));
+    const candidates = Array.from(new Set(
+      loginidInput
+        .split(',')
+        .map((raw) => raw.trim())
+        .map((raw) => (raw.includes('@') ? raw.slice(0, raw.indexOf('@')) : raw))
+        .map((raw) => raw.replace(LOGINID_TOKEN_SANITIZE, ''))
+        .filter((lid) => lid.length > 0 && !existing.has(lid))
+    ));
+
+    setLoginidInput('');
+    if (candidates.length === 0) return;
+
     try {
-      await addressBooksAPI.update(selected.id, { members });
-      await fetchBooks(selected.id);
-      addToast(t('addressbook.member_added'), 'success');
+      const result = await addressBooksAPI.addMembers(selected.id, candidates);
+      setBooks((prev) => prev.map((b) => (b.id === result.book.id ? result.book : b)));
+      setAddResult(result);
     } catch {
       addToast(t('common.process_error'), 'error');
     }
@@ -139,22 +143,6 @@ export default function AddressBookPage(): React.ReactElement {
       addToast(t('common.process_error'), 'error');
     }
   };
-
-  const memberMatches = useMemo(() => {
-    if (!selected) return [];
-    const q = memberQuery.trim().toLowerCase();
-    const chosen = new Set(selected.members.map((m) => m.loginid));
-    // 구성원 후보는 제품 담당자(PL)만 노출한다.
-    return users
-      .filter((u) => u.role === 'PL' && !chosen.has(u.loginid))
-      .filter((u) =>
-        !q ||
-        u.name.toLowerCase().includes(q) ||
-        u.loginid.toLowerCase().includes(q) ||
-        (u.mail ?? '').toLowerCase().includes(q) ||
-        (u.deptname ?? '').toLowerCase().includes(q)
-      );
-  }, [users, selected, memberQuery]);
 
   return (
     <div className="container page">
@@ -229,38 +217,16 @@ export default function AddressBookPage(): React.ReactElement {
                   </button>
                 </div>
 
-                {/* 멤버 추가 검색 */}
-                <div ref={searchRef} style={{ position: 'relative', marginBottom: 14 }}>
+                {/* loginid 입력으로 구성원 추가 */}
+                <div style={{ marginBottom: 14 }}>
                   <input
                     className="form-control"
                     placeholder={t('addressbook.add_member_placeholder')}
-                    value={memberQuery}
-                    onChange={(e) => { setMemberQuery(e.target.value); setMemberDropdownOpen(true); }}
-                    onFocus={() => setMemberDropdownOpen(true)}
+                    value={loginidInput}
+                    onChange={handleLoginidInputChange}
+                    onKeyDown={handleLoginidKeyDown}
                     autoComplete="off"
                   />
-                  {memberDropdownOpen && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 30, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', marginTop: 2, maxHeight: 360, overflowY: 'auto', boxShadow: 'var(--shadow-md)' }}>
-                      {memberMatches.length === 0 ? (
-                        <div style={{ padding: '8px 12px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                          {t('request.search_no_result')}
-                        </div>
-                      ) : memberMatches.map((u) => (
-                        <div
-                          key={u.loginid}
-                          onMouseDown={(e) => { e.preventDefault(); handleAddMember(u); }}
-                          style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.85rem', borderBottom: '1px solid var(--border)' }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-secondary)')}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = '')}
-                        >
-                          <span style={{ fontWeight: 600 }}>{u.name}</span>
-                          <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: '0.75rem' }}>
-                            {u.loginid}{u.mail ? ` · ${u.mail}` : ''}{u.deptname ? ` · ${u.deptname}` : ''}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
 
                 {/* 멤버 표 */}
@@ -275,7 +241,6 @@ export default function AddressBookPage(): React.ReactElement {
                         <tr>
                           <th>{t('addressbook.col_name')}</th>
                           <th>{t('addressbook.col_id')}</th>
-                          <th>{t('addressbook.col_dept')}</th>
                           <th>{t('addressbook.col_mail')}</th>
                           <th></th>
                         </tr>
@@ -285,7 +250,6 @@ export default function AddressBookPage(): React.ReactElement {
                           <tr key={m.loginid}>
                             <td style={{ fontWeight: 500 }}>{m.name}</td>
                             <td>{m.loginid}</td>
-                            <td>{userDept(users, m.loginid)}</td>
                             <td>
                               {m.has_mail ? m.mail : (
                                 <span className="badge badge-unassigned">{t('addressbook.no_mail_badge')}</span>
@@ -321,11 +285,49 @@ export default function AddressBookPage(): React.ReactElement {
         confirmLabel={t('common.delete')}
         danger
       />
+
+      <Modal
+        isOpen={!!addResult}
+        onClose={() => setAddResult(null)}
+        title={t('addressbook.add_result_title')}
+        size="sm"
+        hideFullscreen
+        style={{ maxWidth: '420px' }}
+        footer={
+          <button className="btn btn-primary" onClick={() => setAddResult(null)}>
+            {t('common.confirm')}
+          </button>
+        }
+      >
+        {addResult && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {addResult.added.length > 0 && (
+              <div>
+                <p style={{ fontWeight: 600, marginBottom: 6 }}>
+                  {t('addressbook.add_result_added', { count: addResult.added.length })}
+                </p>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: '0.85rem' }}>
+                  {addResult.added.map((m) => (
+                    <li key={m.loginid}>{m.loginid} — {m.name}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {addResult.not_found.length > 0 && (
+              <div>
+                <p style={{ fontWeight: 600, marginBottom: 6, color: 'var(--danger)' }}>
+                  {t('addressbook.add_result_not_found', { count: addResult.not_found.length })}
+                </p>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: '0.85rem' }}>
+                  {addResult.not_found.map((lid) => (
+                    <li key={lid}>{lid}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
-}
-
-function userDept(users: UserWithRole[], loginid: string): string {
-  const u = users.find((x) => x.loginid === loginid);
-  return u?.deptname ?? '-';
 }
