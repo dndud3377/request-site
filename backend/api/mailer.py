@@ -48,7 +48,7 @@ from django.db.models import Max, Q
 from django.utils import timezone
 from django.utils.html import escape
 
-from .models import VOC, ApprovalStep, MailNotification, UserProfile
+from .models import VOC, ApprovalStep, MailNotification, UserProfile, ADDRESS_BOOK_MAIL_DOMAIN
 
 logger = logging.getLogger(__name__)
 
@@ -513,25 +513,26 @@ def resolve_approved_recipients(document):
 
 
 def resolve_notifier_recipients(document):
-    """통보처 수신자: detail.notifiers 의 loginid 로 발송 시점의 최신 이메일을 조회한다.
+    """통보처 수신자: detail.notifiers 의 loginid 로 이메일 주소를 만든다.
 
     통보자는 결재 권한이 없고, 상신·결재완료 시점에만 메일 통보를 받는다.
-    이메일 stale 방지를 위해 저장은 loginid+name 만 하고 mail 은 여기서 조회한다.
+    주소록 관리(AddressBook)에 등록된 loginid는 사이트 로그인 이력(로컬 User
+    테이블 존재)과 무관해야 하므로(2026-08), 여기서도 로컬 User 테이블을
+    조회하지 않고 {loginid}@ADDRESS_BOOK_MAIL_DOMAIN 규칙으로 생성한다 —
+    주소록 관리 화면·상신 모달에 표시되는 이메일과 동일한 값이다.
+    라인별 메일 수신 설정 필터(_filter_by_mail_lines, 아래 _apply_redirect 에서 적용)는
+    이 주소가 실제 UserProfile.mail 과 일치하는 경우에만(=로컬 계정이 있는 사람만)
+    걸러진다 — 로컬 계정이 없는 통보처는 라인 설정 대상이 아니므로 그대로 통과한다.
     """
     detail = document.get_detail().get('detail', {})
     notifiers = detail.get('notifiers', []) if isinstance(detail, dict) else []
-    loginids = [
+    loginids = {
         n.get('loginid') for n in notifiers
         if isinstance(n, dict) and n.get('loginid')
-    ]
+    }
     if not loginids:
         return _apply_redirect([], document)
-    emails = list(
-        UserProfile.objects.filter(loginid__in=loginids)
-        .exclude(mail='')
-        .distinct()
-        .values_list('mail', flat=True)
-    )
+    emails = [f'{lid}@{ADDRESS_BOOK_MAIL_DOMAIN}' for lid in sorted(loginids)]
     return _apply_redirect(emails, document)
 
 

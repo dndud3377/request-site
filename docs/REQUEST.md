@@ -1762,7 +1762,7 @@ pages/RequestPage/
   - **API**: `POST /api/address-books/{id}/add-members/` (`{"loginids": [...]}`). 이미 등록된 loginid는 재검증 없이 건너뛰고, 신규 loginid만 `backend/api/utils.py`의 `resolve_employee_by_loginid(loginid)`로 검증한다. 이 함수는 **현재 항상 `None`(없음)을 반환하는 자리표시자**이며, 사내 인사/사원 디렉토리 조회 로직으로 교체하는 건 별도 작업(함수 docstring에 구현 가이드 주석 있음). 통과분은 `{loginid, name}`으로 append 저장, 응답의 `added`/`not_found`로 프론트가 결과 모달을 띄운다.
   - **로컬 `User` 테이블 대조 제거**: 조회(`AddressBookSerializer._enriched`)·저장(`_normalize_members`, rename/구성원삭제 경로) 모두 더 이상 로컬 `User` 테이블과 대조하지 않는다. 실존 여부 판정은 오직 "추가" 시점의 `resolve_employee_by_loginid` 호출 결과에만 의존하고, 이미 저장된 구성원은 이후 편집(이름변경·다른 구성원 삭제)에서 재검증 없이 그대로 유지된다.
   - **이메일 자동 생성**: 조회 결과의 `mail`은 더 이상 로컬 `User.mail`을 조회하지 않고 `{loginid}@company.com`(`serializers.py`의 `ADDRESS_BOOK_MAIL_DOMAIN` 상수) 규칙으로 생성한다. 그 결과 `has_mail`은 항상 `true`이며, 무이메일 경고 배지(`addressbook.no_mail_badge`)는 사실상 뜨지 않는다. 부서(dept) 컬럼은 제거됨.
-  - ⚠️ **주의**: 이 화면에 보이는 이메일은 표시용 규칙 값일 뿐이다. 실제 발송(`backend/api/mailer.py`의 `resolve_notifier_recipients`)은 여전히 로컬 `User.mail`로 수신자를 찾으므로, 로컬 계정이 없는 사람은 화면에 이메일이 보여도 실제로는 통보 메일을 받지 못할 수 있다(발송 로직은 이번 변경 대상이 아님).
+  - **발송 로직도 동일 규칙으로 확장 (2026-08)**: 처음엔 화면 표시(`mail`)만 바꾸고 실제 발송(`backend/api/mailer.py`의 `resolve_notifier_recipients`)은 로컬 `User.mail`을 그대로 썼는데, 그 상태로는 로컬 계정이 없는 통보처는 화면엔 등록된 것처럼 보여도 실제로는 메일을 못 받는 문제가 있었다. 그래서 `resolve_notifier_recipients`도 로컬 `User` 테이블 조회를 없애고 `{loginid}@ADDRESS_BOOK_MAIL_DOMAIN` 규칙으로 발송하도록 함께 바꿨다(도메인 상수는 `backend/api/models.py`, 상세는 `docs/MAIL.md` "통보처(Notifier) 알림" 참고). 라인별 메일 수신 설정 필터는 로컬 계정이 있는 사람에게만 여전히 적용된다.
 
 - **통보처에 '나만의 그룹' 일괄 추가 (2026-08 추가)**: 상신 모달 통보처 블록의 `👥 그룹 불러오기`
   로 **내가 속한 그룹**(권한 관리에서 만든 나만의 그룹)을 골라 멤버 전원을 통보처에 넣는다.
