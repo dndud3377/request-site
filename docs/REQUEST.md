@@ -572,6 +572,102 @@ pages/RequestPage/
 - **검증(2026-08-13 실행)**: `npx tsc --noEmit` 22개(작업 전후 동일, 신규 0) ·
   `react-scripts test --watchAll=false` 5 suites / **174건 통과**.
 
+### 추가 변경 이력 (2026-08-16 — Step5(BB) 가이드 투어에 "bb 정보" 표 + SP 정렬 그룹 추가)
+
+- **개요**: Step5(BB) 하이라이트 가이드 투어의 `s5g3`(`bb 정보 (적용 결과)` 표) 그룹이 그동안 빈 표만 보여줬던 것을, 데모 데이터로 실제 채워진 표를 보여주도록 바꾸고, **SP 헤더 클릭 정렬 기능**을 강조하는 그룹(`s5g3b`)을 새로 추가했다(총 4그룹으로 증가).
+- **적용 경로**:
+  - `pages/RequestPage/useStepGuideTour.ts`: `UseStepGuideTourArgs`/`BaseSnapshot`에 `bbRows`/`setBbRows` 추가(다른 상태와 동일하게 투어 진입 시 스냅샷, 그룹 전환·종료 시 복원). 신규 헬퍼 `makeBbSortDemoRows()`(기존 `constants.ts`의 `makeTourBbRows()`를 뒤집은 순서 — SP02 → SP01)를 `s5g3`·`s5g3b` 양쪽 그룹의 `onEnter`에서 사용해 "정렬 전" 상태를 보여준다.
+  - `pages/RequestPage/components/Step4.tsx`: SP 헤더(`<th>`, 클릭 시 `handleSortBbRows` 호출)에 `data-tour="bb-sp-sort"` 추가.
+  - `pages/RequestPage/index.tsx`: `useStepGuideTour({...})` 호출부에 `bbRows`, `setBbRows` 인자 추가.
+- **i18n**: `guide.tour.step.groups.s5g3b`(title/desc) ko/en 동시 추가.
+- **영향 파일**: `pages/RequestPage/useStepGuideTour.ts`, `pages/RequestPage/components/Step4.tsx`, `pages/RequestPage/index.tsx`, `locales/ko.json`·`en.json`.
+- **검증(2026-08-16 실행, 원격 세션·Docker 없이)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` | 22개 | **22개** (신규 0) |
+  | `react-scripts test` | 8 suites / 201건 | **8 suites / 201건 통과** |
+
+  실제 화면(Playwright)에서 Step5 진입 → 영상 가이드 클릭 → `s5g3`에서 bb 정보 표에 SP02·SP01(정렬 전 순서) 2행이 채워져 보이는 것과, `s5g3b`에서 SP 헤더만 단독으로 강조되는 것을 스크린샷으로 확인. ⚠️ 결재 흐름을 건드리지 않아 `scripts/approval_cases` 러너는 대상 아님.
+
+### 추가 변경 이력 (2026-08-16 — J↔O `product_name` 동기화 추가 + J-ayer 가이드 투어 갱신)
+
+- **개요**: 기존에 `layerid`(col_layer) 기준으로 동기화되던 `st`·`new_or_copy`에 이어, **`product_name`(제품 이름)도 같은 방식으로 J-layer↔O-layer 양방향 동기화**하도록 확장했다. 동기화 규칙(참여행 판정, `layerid` 일치, 무조건 덮어쓰기)은 `st`·`new_or_copy`와 완전히 동일하게 맞췄다.
+- **적용 경로** (`pages/RequestPage/index.tsx`):
+  - `handleJayerChange`/`handleOayerChange`: `propagate` 조건에 `product_name` 추가. J→O 반영 시 대상 O-layer 행의 `step`이 비어있으면 `layerid`로 자동 채움(O-ayer 자체 `product_name` 편집 로직과 동일한 부수효과). O→J 반영 시 대상 J-layer 행은 `item_id`를 초기화하고 `step` 자동 채움 + 바코드(ID) 재조회(`runBarcodeFetch` 재사용)까지 수행 — J-ayer 자체 `product_name` 편집 로직과 동일하게 맞춤.
+  - `handleJayerAfterPaste`/`handleOayerAfterPaste`: 붙여넣기용 `layeridSyncMap`의 `SyncFields` 타입에 `product_name` 추가. 반대쪽 표로 반영할 때도 위와 동일한 `step` 자동 채움·`item_id` 초기화·바코드 재조회 부수효과를 적용한다.
+  - **같은 표 내부 전파(J→J, O→O)는 기존 `st`·`new_or_copy`와 동일하게 부수효과 없이 값만 복사**한다(다른 표로 넘어갈 때만 `step`/`item_id`/바코드 부수효과 적용).
+  - **일괄 버튼(`handleJayer/OayerSetAll`·`handleJayer/OayerResetField`)은 변경하지 않음** — UI에 `product_name` 일괄 버튼이 없으므로 대상 아님.
+- **J-ayer 가이드 투어 갱신** (J-ayer만 — O-ayer 쪽 투어는 대칭 그룹을 추가하지 않았다):
+  - `components/Step2.tsx`: `제품 이름` 열의 헤더(`<th>`)와 각 행의 `<td>`에 `data-tour="jayer-sync-cols"` 추가(기존 `st`·`new_or_copy` 열과 동일한 값 — 투어 엔진이 `querySelectorAll`로 전부 묶어 하나의 스포트라이트로 표시하므로 별도 그룹 구조 변경은 불필요했다).
+  - i18n `guide.tour.step.groups.s3g1b`(ko/en): 제목·설명을 "ST·신규/차용" 2열 → **"ST·신규/차용·제품 이름" 3열**로 갱신하고, 일괄 버튼은 여전히 ST·신규/차용 2열에만 적용된다는 점을 명시.
+- **영향 파일**: `pages/RequestPage/index.tsx`, `pages/RequestPage/components/Step2.tsx`, `locales/ko.json`·`en.json`.
+- **검증(2026-08-16 실행, 원격 세션·Docker 없이)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` | 22개 | **22개** (신규 0) |
+  | `react-scripts test` | 8 suites / 201건 | **8 suites / 201건 통과** |
+
+  ⚠️ 결재 흐름을 건드리지 않아 `scripts/approval_cases` 러너는 대상 아님.
+
+### 추가 변경 이력 (2026-08-15 — 스텝 단위 하이라이트 가이드 투어 (기존 "영상 가이드" 배지 대체))
+
+- **개요**: 필드마다 흩어져 있던 "영상 가이드" 배지(9개 애니메이션 데모)와 "가이드"(글) 배지를
+  **위저드 스텝 제목 옆 배지 1개(총 5개)** 로 통합했다. 클릭하면 슬라이드 패널 대신, **지금 보고
+  있는 실제 화면 위에** 스포트라이트+캡션을 그리고 "이전/다음" 버튼으로 수동으로 넘겨보는 방식이다
+  (자동재생 없음). 홈 화면의 "전체 가이드"(iframe+모달, `GuideTourModal`)와는 별개 기능 — 그대로 유지.
+- **그룹 구성(총 23개, 스텝당 2~7개)** — 이전에 텍스트 배지로 개별 노출되던 필드 설명까지 전부
+  이 투어 그룹으로 흡수했다:
+  - Step1 의뢰 상세(7): 라인·조합법·제품이름·조리법 / 요청 목적 / 참조요청서 Merge / ADI CD 변경 /
+    흐름도 / 뼈찜 조합 영역 / 고객·업체명
+  - Step2 MAP(6): MAP 유형 / 원본 위치(CLONE) / REV 여부 / Only C가문 Yes-No / C가문 하위 영역 /
+    나머지 옵션 통합(지도편차·예외구역·X표시·Inter·MAP옵션)
+  - Step3 J-ayer(3): 표 자동채움 / 체크→비활성화·복원 / +필터 버튼
+  - Step4 O-ayer(4): 표(탭+자동채움) / 체크→비활성화·복원 / Partial Shot / TBV·TLV
+  - Step5 뼈찜(BB)(3): 자동채움 버튼 / 매핑 패널+적용 / bb 정보(적용 결과) 표
+- **조건부로만 나타나는 요소 처리** (`pages/RequestPage/useStepGuideTour.ts`): 참조요청서 Merge·
+  ADI CD 변경·CLONE 원본위치·C가문 하위 영역처럼 실제 업무 데이터(`other_purpose`/`map_type`/
+  `only_prodc`)에 따라서만 렌더되는 요소는, 투어가 **열릴 때 `detail`(+`jayerChecked`/`oayerChecked`/
+  `oayerInfoTab`/`showAutoFillPanel`) 상태를 스냅샷**해두고, 그룹에 진입할 때 필요한 값만 최소한으로
+  임시 반영해 실제로 화면에 나타나게 한다. 그룹을 벗어나거나(이전/다음) 투어를 닫을 때는 항상
+  스냅샷으로 복원한 뒤 다음 그룹의 패치를 적용해, 되감기·연속 조건부 그룹 사이에서도 상태가 누적되지
+  않는다. 사용자가 실제로 작성 중이던 값은 투어가 끝나면 정확히 그대로 남는다.
+- **신규 컴포넌트** `components/StepGuideTour.tsx` — iframe 없는 순수 오버레이 엔진. 그룹의
+  `selectors`(배열)를 모두 찾아 **합집합 사각형**으로 스포트라이트를 그린다(예: MAP의 "나머지 옵션
+  통합" 그룹은 5개 블록을 한 번에 감싼다). 스크롤·리사이즈 시 재측정, Esc·포커스 트랩, 스텝
+  인디케이터(`n / 총계`) 포함. 자동재생 타이머 없음 — "다음"을 눌러야만 진행된다.
+- **신규 훅** `pages/RequestPage/useStepGuideTour.ts` — 스텝별 23개 그룹 정의(선택자·i18n 캡션·
+  조건부 그룹의 `onEnter`)와 스냅샷/복원 상태를 관리.
+- **배지 이동**: `GuideBadge`(필드별 영상·글 배지 렌더 헬퍼)와 그 기반이던 `slidePanel` 상태·
+  `toggleSlidePanel`·`<GuideSlidePanel>` 렌더·`featureGuideKeys`(글 가이드 존재 여부 조회)를
+  `RequestPage/index.tsx`에서 전부 제거했다(요청서 작성 페이지의 모든 필드 배지가 새 투어로
+  흡수되어 완전히 미사용 상태가 됐기 때문). **주의**: `components/GuideSlidePanel.tsx`와
+  `components/guideDemos/*` 자체는 삭제하지 않았다 — `PermissionPage.tsx`가 `GuideSlidePanel`을
+  여전히 쓰고, `guideDemos/*` 9개 컴포넌트는 코드는 남아있으나 더 이상 어디서도 import되지 않는다
+  (삭제 여부는 별도 확인 필요, 이번 범위 아님).
+- **`data-tour` 신규 부여** — 조건부/미표시 영역을 그룹 대상으로 삼기 위해 추가:
+  `bb-entry`·`customer-vendor`(Step1), `map-source-location`·`map-rev`·`map-cfamily-toggle`·
+  `map-cfamily-detail`·`map-inter`·`map-options`(StepMap, `map-deviation`은 C가문 분기에도 추가),
+  `jayer-table`·`jayer-bulk-actions`(Step2/J-ayer), `oayer-table`·`oayer-bulk-actions`·
+  `oayer-partial-shot`(Step3/O-ayer), `bb-autofill-panel`·`bb-mapping-panel`·`bb-table`(Step4/BB).
+- **i18n**: `guide.tour.step.done`("닫기") + `guide.tour.step.groups.s{1~5}g{1~7}.{title|desc}`
+  (23그룹 × 2 = 46키) ko/en 동시 추가. 기존 `guide.tour.next`/`prev`/`guide.video_btn`은 재사용.
+- **영향 파일**: 신규 `components/StepGuideTour.tsx`, `pages/RequestPage/useStepGuideTour.ts` /
+  수정 `pages/RequestPage/index.tsx`, `components/Step1.tsx`·`StepMap.tsx`·`Step2.tsx`·`Step3.tsx`·
+  `Step4.tsx`, `styles/global.css`(`.step-guide-tour-*`), `locales/ko.json`·`en.json` /
+  변경 없음(미사용 방치) `components/GuideSlidePanel.tsx`(PermissionPage 용으로 계속 사용),
+  `components/guideDemos/*`
+- **검증(2026-08-15 실행, 원격 세션·Docker 없이)**:
+
+  | 항목 | 작업 전 | 작업 후 |
+  |---|---|---|
+  | `npx tsc --noEmit` | 22개 | **22개** (신규 0, 전부 기존 항목과 동일) |
+  | `react-scripts test` | 8 suites / 201건 | **8 suites / 201건 통과** |
+
+  ⚠️ 결재 흐름을 건드리지 않아 `scripts/approval_cases` 러너는 대상 아님. 실제 화면 수동 검증은
+  아직 못했다 — 아래 "수동 검증 시나리오" 참고.
+
 ### 추가 변경 이력 (2026-08-13 — 기능 가이드 항목 3개 추가 + 영상·글 가이드 동시 노출)
 
 - **개요**: `/guide` 기능별 가이드 지식베이스(`GUIDE_STEP_FEATURES`)에 아직 배지가 없던 위저드
@@ -1662,7 +1758,7 @@ pages/RequestPage/
 ### 추가 변경 이력 (2026-06-16)
 
 - **Only MAP — O-layer partial_shot 검증 우회**: Only MAP 모드(`isOnlyMap`)일 때 Step 4 진행 시 `partial_shot` 필수 입력 검증을 건너뜀(`validate()` 내 `currentStep === 4 && !isOnlyMap` 조건 추가).
-- **J↔O col_st·col_new_or_copy 양방향 동기화**: `layerid`(col_layer) 값이 동일한 J-layer 행과 O-layer 행 사이에서 `st`·`new_or_copy` 값을 자동 반영. 개별 셀 편집(`handleJayerChange`/`handleOayerChange`)과 일괄 버튼(`handleJayer/OayerSetAll`·`handleJayer/OayerResetField`) 모두 적용. `new_or_copy === '기등록'` 행은 덮어쓰지 않으며, `layerid`가 빈 행은 동기화 제외.
+- **J↔O col_st·col_new_or_copy 양방향 동기화**: `layerid`(col_layer) 값이 동일한 J-layer 행과 O-layer 행 사이에서 `st`·`new_or_copy` 값을 자동 반영. 개별 셀 편집(`handleJayerChange`/`handleOayerChange`)과 일괄 버튼(`handleJayer/OayerSetAll`·`handleJayer/OayerResetField`) 모두 적용. `new_or_copy === '기등록'` 행은 덮어쓰지 않으며, `layerid`가 빈 행은 동기화 제외. ※ 2026-08-16 변경: `product_name`(col_product_name)도 같은 방식으로 동기화되나, 일괄 버튼 대상은 아니다(§ 2026-08-16 항목 참조).
 - **col_st·col_new_or_copy 드롭다운 잘림 방지**: `AutocompleteInput`에서 `dropdownDirection="up"` 시 `createPortal` + `position: fixed`로 렌더해 `.wizard-table-wrapper`의 overflow 클리핑을 우회. 열린 상태에서 scroll 이벤트로 위치를 갱신. `dropdownDirection="down"` 분기(Step1·StepMap 등)는 기존 동작 무변경.
 
 - **Step1 요청 목적 'Only MAP'**: 기존 `'MAP 변경'` 옵션을 `'Only MAP'`로 변경(라벨·DB 저장값 동시 변경 — `OPTION_REQUEST_PURPOSE`). 선택 시 **초기화 확인 모달**(`only_map_confirm_*` i18n) 노출 후 확인하면 *기타 목적·흐름도·특이사항·Backbone(`bb_entries`)·참조 요청서*를 초기화하고 입력을 비활성화한다(Step1 `disableOptional = !canSelectPurpose || isOnlyMap`). ※ 2026-08-11 변경: *특이사항(`change_purpose_note`)* 은 **초기화만 되고 입력은 가능**하다(§4.1 2026-08-11 항목 참조). **유지(편집 가능)**: 라인·조합법·제품 이름·조리법·고객/업체명·요구 사항·실제 생산 진행 날짜. 검증에서는 Only MAP일 때 **Backbone 필수 검증만 우회**한다.

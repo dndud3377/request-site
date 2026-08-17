@@ -988,6 +988,51 @@
       "resume": "Play",
       "close": "Close",
       "progress": "{{current}}/{{total}}",
+      "step": {
+        "done": "Close",
+        "groups": {
+          "s1g1": { "title": "Line · Process · Product Name · Recipe", "desc": "Select these four fields first. All must be filled before the request purpose and remaining fields unlock below." },
+          "s1g2": { "title": "Request Purpose", "desc": "Choose the purpose of this request: New, Borrow, New+Borrow, Only MAP, MAP Delete, or Other." },
+          "s1g3": { "title": "Reference Document Merge", "desc": "Selecting Layer Add/Delete, STEPSEQ Change, or Overlay Change under Other Purpose opens this area, where you can compare and merge before/after values from an approved reference document." },
+          "s1g3b": { "title": "No Reference Document → Manual Entry", "desc": "Confirming 'No reference document' skips automatic mapping — instead you add rows directly to the before/after table and enter values by hand." },
+          "s1g4": { "title": "ADI CD Change", "desc": "Selecting 'ADI CD Change' under Other Purpose opens this table for entering before/after steps row by row." },
+          "s1g5": { "title": "Flow Chart", "desc": "Enter the flow chart row by row, linking line, product, recipe, and progress layer." },
+          "s1g6": { "title": "Backbone (BB) Combination Area", "desc": "Enter the reference line, product, and recipe used for Backbone (BB) combination." },
+          "s1g7": { "title": "Customer / Vendor", "desc": "Enter the customer (vendor) name and requirements." },
+          "s2g1": { "title": "MAP Type", "desc": "Choose New, Borrow, Registered, or MAP Delete. The fields below change depending on your choice." },
+          "s2g2": { "title": "Source Location (Borrow)", "desc": "Choosing 'Borrow' opens fields for specifying which line and product's MAP to copy from." },
+          "s2g3": { "title": "REV Status", "desc": "If revision management is needed, choose YES and register the Layer and GDS version." },
+          "s2g4": { "title": "Only C-family Product", "desc": "Choose Yes/No for whether this MAP is dedicated to a C-family (product group)." },
+          "s2g5": { "title": "C-family Product Location", "desc": "Choosing Yes opens an area for specifying the product's location (Top/Middle/Bottom) and the line, process, and product for that section." },
+          "s2g6": { "title": "Map Deviation · Exception Zone · X-mark · Inter · Map Options", "desc": "The remaining detailed settings. For each item, choose whether there's a change and enter values or photos as needed." },
+          "s3g1": { "title": "Table Auto-fill", "desc": "Even with many rows, enter the product name in the first row, then drag-select the same column across the rest like this and copy/paste (Ctrl+C, Ctrl+V) to fill them all at once. STEP and barcode (ID) fill in automatically after pasting. ST and New/Borrow values also sync automatically to O-ayer rows that share the same Layer." },
+          "s3g1b": { "title": "ST · New/Borrow · Product Name — columns synced with O-ayer", "desc": "These three columns sync automatically with O-ayer rows that share the same Layer. This applies whenever you edit or paste a cell directly; the bulk buttons above (set all O/X, set all New/Borrow) only apply to the ST and New/Borrow columns." },
+          "s3g2": { "title": "Disable / Restore Selection", "desc": "Select rows with the checkbox, then disable them, or restore previously disabled rows." },
+          "s3g3": { "title": "Filter", "desc": "Use '+ Filter' to save frequently used search conditions and apply, edit, or delete them on the table." },
+          "s4g1": { "title": "Table (Tabs · Auto-fill)", "desc": "There are Table and Info tabs. In the table, dragging to copy and paste a product name cell auto-fills STEP. Changing ST or New/Borrow here also syncs automatically to J-ayer rows that share the same Layer." },
+          "s4g2": { "title": "Disable / Restore Selection", "desc": "Select rows with the checkbox, then disable them, or restore previously disabled rows." },
+          "s4g3": { "title": "Partial Shot", "desc": "Choose O/X for whether Partial Shot measurement is needed." },
+          "s4g4": { "title": "TBV / TLV", "desc": "Enter thickness, SD, and notes to add a TBV/TLV entry." },
+          "s5g1": { "title": "Backbone Auto-fill", "desc": "Specify a start~end Layer range and product ID, and matching BB info fills in all at once." },
+          "s5g2": { "title": "BB Mapping", "desc": "Select a source row on the left and click external BB data on the right to map them, then click Apply." },
+          "s5g3": { "title": "BB Info (Applied Result)", "desc": "Results from auto-fill or mapping accumulate in this table." },
+          "s5g3b": { "title": "Click the SP header — sort by SEQ", "desc": "Clicking the SP header sorts the rows in ascending order by SEQ. Right now they're shown in their pre-sort order." }
+        }
+      },
+      "group": {
+        "groups": {
+          "g1": { "title": "Rename", "desc": "Use this button to change the group's name." },
+          "g2": { "title": "Delete group", "desc": "Deletes the group. This cannot be undone, so be careful." },
+          "g3": { "title": "Add member", "desc": "Search by name, login ID, email, or department to add a new member to the group." },
+          "g4": { "title": "Member list", "desc": "The list of members in this group. Use the button on each row to remove a member (or 'Leave' for yourself)." }
+        }
+      },
+      "approvalShare": {
+        "groups": {
+          "g1": { "title": "The \"Share with group\" button only appears on drafts", "desc": "This button appears on the detail screen of a draft document. We're opening a sample draft's detail view to show you." },
+          "g2": { "title": "Pick a group to share it with its members", "desc": "Choose one of your \"My Groups\" here and save — its members can then view, edit, and submit this draft too. The groups listed here are the ones you actually belong to." }
+        }
+      },
       "steps": {
         "route": {
           "title": "Approval Route",

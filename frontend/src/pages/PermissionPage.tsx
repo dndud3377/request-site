@@ -7,6 +7,7 @@ import Modal, { ConfirmModal } from '../components/Modal';
 import { UserRole, UserWithRole, UserForAssignment, UserGroup, UserGroupMember, AvailableGroupMember, GuideFeatureKey } from '../types';
 import GuideSlidePanel from '../components/GuideSlidePanel';
 import { GUIDE_DEMO_KEYS } from '../components/guideDemos';
+import StepGuideTour, { StepGuideGroup } from '../components/StepGuideTour';
 import { OPTION_LINE } from './RequestPage/constants';
 
 const PERMISSION_GUIDE_KEY: GuideFeatureKey = 'permission_user_group';
@@ -612,6 +613,30 @@ function GroupTabContent({ group, currentLoginid, onGroupUpdated, onGroupDeleted
   const [deleting, setDeleting] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<UserGroupMember | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
+
+  const tourGroups: StepGuideGroup[] = [
+    {
+      selectors: ['[data-tour="group-rename"]'],
+      title: t('guide.tour.group.groups.g1.title'),
+      description: t('guide.tour.group.groups.g1.desc'),
+    },
+    {
+      selectors: ['[data-tour="group-delete"]'],
+      title: t('guide.tour.group.groups.g2.title'),
+      description: t('guide.tour.group.groups.g2.desc'),
+    },
+    {
+      selectors: ['[data-tour="group-add-member"]'],
+      title: t('guide.tour.group.groups.g3.title'),
+      description: t('guide.tour.group.groups.g3.desc'),
+    },
+    {
+      selectors: ['[data-tour="group-member-table"]'],
+      title: t('guide.tour.group.groups.g4.title'),
+      description: t('guide.tour.group.groups.g4.desc'),
+    },
+  ];
 
   const handleRename = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -682,10 +707,22 @@ function GroupTabContent({ group, currentLoginid, onGroupUpdated, onGroupDeleted
           <span style={{ color: '#718096', fontSize: 13 }}>
             {t('group.member_count', { count: group.members.length })}
           </span>
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => { e.stopPropagation(); setTourOpen(true); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTourOpen(true); }
+            }}
+            className={`guide-video-badge${tourOpen ? ' active' : ''}`}
+          >
+            {t('guide.video_btn')}
+          </span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             className="btn btn-secondary"
+            data-tour="group-rename"
             style={{ padding: '5px 14px', fontSize: 13 }}
             onClick={() => { setRenameValue(group.name); setRenameError(''); setRenameOpen(true); }}
           >
@@ -693,6 +730,7 @@ function GroupTabContent({ group, currentLoginid, onGroupUpdated, onGroupDeleted
           </button>
           <button
             className="btn btn-danger"
+            data-tour="group-delete"
             style={{ padding: '5px 14px', fontSize: 13 }}
             onClick={() => setDeleteConfirmOpen(true)}
           >
@@ -700,6 +738,7 @@ function GroupTabContent({ group, currentLoginid, onGroupUpdated, onGroupDeleted
           </button>
           <button
             className="btn btn-primary"
+            data-tour="group-add-member"
             style={{ padding: '5px 14px', fontSize: 13 }}
             onClick={() => setAddMemberOpen(true)}
           >
@@ -708,8 +747,16 @@ function GroupTabContent({ group, currentLoginid, onGroupUpdated, onGroupDeleted
         </div>
       </div>
 
+      <StepGuideTour
+        isOpen={tourOpen}
+        title={t('group.section_title')}
+        groups={tourGroups}
+        onRestoreBase={() => {}}
+        onClose={() => setTourOpen(false)}
+      />
+
       {/* Member table */}
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <table data-tour="group-member-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '2px solid var(--color-border, #e2e8f0)' }}>
             <th style={thStyle}>{t('permission.field_loginid')}</th>

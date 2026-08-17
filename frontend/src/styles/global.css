@@ -4437,6 +4437,108 @@ select.form-control option {
   font-size: 13px;
 }
 
+/* ===== 스텝 하이라이트 가이드 투어 (StepGuideTour) =====
+   전체 가이드(위 .guide-tour-*)와 달리 iframe·모달 없이, 지금 보고 있는 실제 페이지
+   위에 바로 스포트라이트+캡션을 그린다. */
+.step-guide-tour-overlay {
+  position: fixed;
+  inset: 0;
+  /* .modal-overlay(2000)·topLevel 모달(3000) 위에서도 강조돼야 한다 —
+     ApprovalPage 그룹공유 투어처럼 실제 모달을 띄운 채 그 안의 요소를 강조하는 경우가 있다. */
+  z-index: 3500;
+  cursor: pointer;
+}
+.step-guide-tour-spotlight {
+  position: fixed;
+  border: 2px solid #4f8ef7;
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(15, 17, 26, 0.5);
+  z-index: 1001;
+  pointer-events: none;
+  opacity: 0;
+  transition: top 0.35s cubic-bezier(0.4, 0, 0.2, 1), left 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.35s cubic-bezier(0.4, 0, 0.2, 1), height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.25s ease;
+}
+.step-guide-tour-spotlight.show { opacity: 1; }
+.step-guide-tour-card {
+  position: fixed;
+  z-index: 1002;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(15, 17, 26, 0.4);
+  padding: 16px 18px 14px;
+  opacity: 0;
+  cursor: default;
+  transition: top 0.35s cubic-bezier(0.4, 0, 0.2, 1), left 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+}
+.step-guide-tour-card.show { opacity: 1; }
+.step-guide-tour-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.step-guide-tour-idx {
+  font-size: 11px;
+  font-weight: 800;
+  color: #4f8ef7;
+  background: rgba(79, 142, 247, 0.12);
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+.step-guide-tour-close {
+  border: none;
+  background: transparent;
+  color: #9aa3b5;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 6px;
+}
+.step-guide-tour-close:hover { background: #f4f6fa; color: #5b647a; }
+.step-guide-tour-card h4 {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #1f2738;
+  margin: 0 0 6px;
+}
+.step-guide-tour-card p {
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #5b647a;
+  margin: 0;
+}
+.step-guide-tour-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #e8ecf2;
+}
+.step-guide-tour-dots {
+  display: flex;
+  gap: 5px;
+}
+.step-guide-tour-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d6dbe6;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.step-guide-tour-dots span.on {
+  background: #4f8ef7;
+  transform: scale(1.25);
+}
+.step-guide-tour-nav {
+  display: flex;
+  gap: 6px;
+}
+
 /* 전체 가이드 J-ayer 실시간 데모: 실제 표 위 가짜 커서 + Ctrl C/V 칩 */
 .tour-jcursor {
   position: fixed;

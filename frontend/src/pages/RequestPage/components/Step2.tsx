@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
-import { JayerRow, FilterSet, GuideFeatureKey, ValidationSystemValue } from '../../../types';
+import { JayerRow, FilterSet, ValidationSystemValue } from '../../../types';
 import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, NOC_LAYER_DELETE } from '../constants';
 import { isValidationKeywordRow } from '../helpers';
 import { ValidationSystemBadge, ValidationSystemToggle } from '../../../components/ValidationSystem';
@@ -38,7 +38,8 @@ interface Step2Props {
   handleJayerBulkDisable: () => void;
   handleJayerBulkRestore: () => void;
   cellSel: CellSelectionApi;
-  GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
+  /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
+  GuideTourBadge: React.ReactNode;
   validationSystem: ValidationSystemValue;
   /** 판정 키워드가 하나도 없어 대상/비대상을 고를 수 없는 문서인가('해당없음') */
   vsNotApplicable: boolean;
@@ -74,7 +75,7 @@ const Step2: React.FC<Step2Props> = ({
   handleJayerBulkDisable,
   handleJayerBulkRestore,
   cellSel,
-  GuideBadge,
+  GuideTourBadge,
   validationSystem,
   vsNotApplicable,
   onValidationSystemChange,
@@ -90,7 +91,7 @@ const Step2: React.FC<Step2Props> = ({
       <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           🔷 {t('request.job_li')}
-          <GuideBadge fk="step3_jayer_table" tk={t('guide.feat.step3_jayer_table' as never)} />
+          {GuideTourBadge}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }} data-tour="validation-system">
@@ -148,10 +149,9 @@ const Step2: React.FC<Step2Props> = ({
             </button>
           ))}
           <button type="button" className="th-header-btn" data-tour="jayer-filter" onClick={() => setJayerFilterModalOpen(true)}>{t('request.btn_add_filter')}</button>
-          <GuideBadge fk="step3_jayer_filter" tk={t('guide.feat.step3_jayer_filter' as never)} />
         </div>
       </div>
-      <div className="wizard-table-wrapper" ref={cellSel.containerRef}>
+      <div className="wizard-table-wrapper" data-tour="jayer-table" ref={cellSel.containerRef}>
         <table className="wizard-table" style={{ userSelect: cellSel.isDragging || jayerDragInfo.current ? 'none' : undefined }} onPaste={(e) => cellSel.onCellPaste(e, renderedJayerIds)}>
           <colgroup>
             <col style={{ width: 44 }} />
@@ -185,9 +185,9 @@ const Step2: React.FC<Step2Props> = ({
               <th style={{ width: 'auto' }}>{t('request.col_sd')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_layer')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_pp')}</th>
-              <th style={{ width: 'auto' }}>{t('request.col_st')}</th>
-              <th style={{ width: 'auto' }}>{t('request.col_new_or_copy')}</th>
-              <th style={{ width: 'auto' }}>{t('request.col_product_name')}</th>
+              <th style={{ width: 'auto' }} data-tour="jayer-sync-cols">{t('request.col_st')}</th>
+              <th style={{ width: 'auto' }} data-tour="jayer-sync-cols">{t('request.col_new_or_copy')}</th>
+              <th style={{ width: 'auto' }} data-tour="jayer-sync-cols">{t('request.col_product_name')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_step')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_item_id')}</th>
             </tr>
@@ -230,7 +230,7 @@ const Step2: React.FC<Step2Props> = ({
                     <td {...cellProps('sd', isRegistered ? regBg : undefined)}><input value={row.sd} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                     <td {...cellProps('layerid', isRegistered ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
                     <td {...cellProps('pp', isRegistered ? regBg : undefined)}><input value={row.pp} readOnly={row.disabled || isRegistered || row.loaded} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : isValidationKeywordRow(row.pp) ? VALIDATION_CELL_COLOR : undefined }} /></td>
-                    <td {...cellProps('st', isRegistered ? regBg : undefined)} className={stError ? 'field-error-target' : undefined}>
+                    <td {...cellProps('st', isRegistered ? regBg : undefined)} data-tour="jayer-sync-cols" className={stError ? 'field-error-target' : undefined}>
                       <AutocompleteInput
                         value={row.st}
                         onChange={(v) => handleJayerChange(row.id, 'st', v)}
@@ -244,7 +244,7 @@ const Step2: React.FC<Step2Props> = ({
                         dropdownDirection="up"
                       />
                     </td>
-                    <td {...cellProps('new_or_copy')} className={nocError ? 'field-error-target' : undefined}>
+                    <td {...cellProps('new_or_copy')} data-tour="jayer-sync-cols" className={nocError ? 'field-error-target' : undefined}>
                       <AutocompleteInput
                         value={row.new_or_copy}
                         onChange={(v) => handleJayerChange(row.id, 'new_or_copy', v)}
@@ -258,7 +258,7 @@ const Step2: React.FC<Step2Props> = ({
                         dropdownDirection="up"
                       />
                     </td>
-                    <td data-jtour={`product_name-${idx}`} {...cellProps('product_name', isRegistered ? regBg : undefined)}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} className={errors[`jayer_noc_${row.id}_product_name`] ? 'field-error-target' : undefined} style={{ backgroundColor: isRegistered ? regBg : undefined, ...(errors[`jayer_noc_${row.id}_product_name`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
+                    <td data-jtour={`product_name-${idx}`} data-tour="jayer-sync-cols" {...cellProps('product_name', isRegistered ? regBg : undefined)}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} className={errors[`jayer_noc_${row.id}_product_name`] ? 'field-error-target' : undefined} style={{ backgroundColor: isRegistered ? regBg : undefined, ...(errors[`jayer_noc_${row.id}_product_name`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
                     <td data-jtour={`step-${idx}`} {...cellProps('step', isRegistered ? regBg : undefined)}><input value={row.step} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} className={errors[`jayer_noc_${row.id}_step`] ? 'field-error-target' : undefined} style={{ backgroundColor: isRegistered ? regBg : undefined, ...(errors[`jayer_noc_${row.id}_step`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
                     <td data-jtour={`item_id-${idx}`} {...cellProps('item_id', isRegistered ? regBg : undefined, { minWidth: 160 })}>
                       <AutocompleteInput
@@ -280,7 +280,7 @@ const Step2: React.FC<Step2Props> = ({
           </tbody>
         </table>
       </div>
-      <div className="bulk-action-row">
+      <div className="bulk-action-row" data-tour="jayer-bulk-actions">
         <button type="button" className="flow-table-add-btn" onClick={handleJayerAddRow}>{t('request.bb_add_row_btn')}</button>
         {jayerRows.filter(r => !r.disabled && jayerChecked.has(r.id)).length > 0 && (
           <button type="button" className="btn btn-danger btn-sm" onClick={handleJayerBulkDisable}>
