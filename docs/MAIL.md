@@ -297,10 +297,10 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 ### 통보처(Notifier) 알림 (2026-07 추가)
 - **통보자**는 결재 권한이 없고, **상신·재상신 시**(`notify_submitted`)와 **결재 완료 시**(`notify_approved`) 메일만 받는다.
 - 최초 상신 시 상신 모달에서 다중 지정하며 `additional_notes` JSON의 `detail.notifiers = [{loginid, name}]`에 저장된다.
-- 수신자 해석(`resolve_notifier_recipients`): 저장된 `loginid`로 **발송 시점에** `UserProfile.mail`을 조회한다(이메일 stale 방지 — 이메일은 저장하지 않음). `.distinct()`로 **중복 제거**(같은 사람 중복 지정 시 1회만), `.exclude(mail='')`로 **이메일 미등록자는 제외**된다.
+- 수신자 해석(`resolve_notifier_recipients`, **2026-08 변경**): 저장된 `loginid`로 `UserProfile.mail`을 조회하지 않고 **`{loginid}@ADDRESS_BOOK_MAIL_DOMAIN`(`models.py`, 현재 `company.com`) 규칙으로 이메일을 생성**한다. 통보처는 사이트 로그인 이력(로컬 계정) 여부와 무관하게 등록 가능해야 하므로, 로컬 `User` 테이블 조회를 없애고 주소록 관리 화면에 표시되는 이메일과 동일한 값을 그대로 발송에 쓴다. `set()`으로 loginid 자체를 먼저 **중복 제거**한다.
 - 발송 연결: `views.submit`/`resubmit` → `enqueue_notify_submitted`, `approve_step` 최종 승인(Only-MAP R·J/O/E 전원) → `enqueue_notify_approved`.
 - 통보처는 결재 경로에 포함되지 않으며, 상세 '결재 경로' 탭에 **별도 '통보처' 행**으로만 표시된다.
-- **주소록(2026-07)**: 상신 모달의 '통보처 불러오기'는 주소록(`AddressBook`) 구성원을 `detail.notifiers`에 채우는 것뿐이라 발송 로직은 동일하다. 이메일 미등록자는 위 `.exclude(mail='')`로 자동 제외되므로, 상신 화면에서 인라인 경고로 미리 안내한다.
+- **주소록(2026-07, 2026-08 확장)**: 상신 모달의 '통보처 불러오기'는 주소록(`AddressBook`) 구성원을 `detail.notifiers`에 채우는 것뿐이라 발송 로직은 동일하다. 주소록 구성원 추가 자체가 loginid 검증(`resolve_employee_by_loginid`) 기반으로 바뀌면서(로컬 계정 불필요), 발송도 동일 규칙(loginid→이메일 생성)을 쓰도록 함께 바꿨다 — 그렇지 않으면 로컬 계정이 없는 통보처는 화면엔 등록된 것처럼 보여도 실제로는 메일을 못 받는 문제가 있었다(2026-08 발견·수정). ⚠️ 라인별 메일 수신 설정(§3.0) 필터는 이 합성 주소가 실제 `UserProfile.mail`과 일치하는 경우(=로컬 계정이 있는 사람)에만 적용된다 — 로컬 계정이 없는 통보처는 라인 설정 대상이 아니므로 그대로 발송된다.
 
 - 단계 → 역할 매핑: `AGENT_ROLE_MAP` (PL→PL, R→TE_R, P→TE_P, J→TE_J, O→TE_O, E→TE_E). 무배정 단계 도착 시 팀 브로드캐스트(`_team_emails`)뿐 아니라, R/RV 반려 시 `TE_R` 팀 전원 포함(2026-07 추가)에도 동일하게 쓰인다.
 - ⚠️ **(2026-08) 고정 주소 폴백 폐지**: J 미지정 시 쓰던 `UNASSIGNED_FALLBACK` = `user_J@company.com` 을 **딕셔너리째 삭제**했다. J 가 R 합의 시점의 독립 병렬 단계가 되어 TE_J 팀원 누구나 선점·합의하므로, R·P 와 동일하게 **미배정이면 팀 전원 / 배정 후엔 그 담당자 1명** 규칙을 쓴다. 이로써 하드코딩 수신 주소(`docs/E2E_TEST_AND_BUGS.md` B-44)도 사라져 코드에 고정 주소가 남지 않는다.
