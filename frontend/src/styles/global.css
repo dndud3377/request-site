@@ -749,6 +749,14 @@ select.form-control option {
 .pause-banner.withdraw-banner .pause-banner-title { color: var(--danger); }
 .pause-banner.withdraw-banner .pause-cf.mine { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
 
+/* 재상신된 문서의 목록 행 — 가장 최근에 반려됐던 회차·단계 1건만 참고용으로 표시(조치 필요 아님 → 점선) */
+.rejection-history-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.66rem; font-weight: 700; color: var(--danger);
+  background: var(--danger-light); border: 1px dashed var(--danger);
+  border-radius: 12px; padding: 1px 7px;
+}
+
 
 /* ===== Search & Filter ===== */
 .toolbar {
