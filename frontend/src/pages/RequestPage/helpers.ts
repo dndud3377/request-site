@@ -109,6 +109,14 @@ export const findNocBorrowViolations = (
     .filter((r) => !r.disabled && r.new_or_copy === '차용' && (!r.product_name?.trim() || !r.step?.trim()))
     .map((r) => r.id);
 
+/** new_or_copy='차용' 활성 행 중 item_id 공란인 행 id 목록 (item_id 는 J-ayer 전용 필드라 O-ayer 는 대상 아님) */
+export const findNocBorrowItemIdViolations = (
+  rows: { id: string; disabled: boolean; new_or_copy: string; item_id: string }[]
+): string[] =>
+  rows
+    .filter((r) => !r.disabled && r.new_or_copy === '차용' && !r.item_id?.trim())
+    .map((r) => r.id);
+
 // ===== Layer 추가/삭제 Merge (참조 요청서 A ↔ 작성 중 요청서 B) =====
 
 /** Merge 비교에 필요한 최소 형태 — JayerRow / OayerRow 양쪽을 받는다. */
