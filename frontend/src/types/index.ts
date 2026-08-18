@@ -404,8 +404,8 @@ export interface DetailFormState {
   labelsideshot: string;
   hpkglabelheight: string;
 
-  rev_yn: string;
-  rev_entries: Array<{ layers: string[]; gds: string }>;
+  final_yn: string;
+  final_entries: string[];
 
   // O-ayer 정보 탭
   partial_shot: string;

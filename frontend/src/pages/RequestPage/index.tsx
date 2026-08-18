@@ -439,8 +439,7 @@ export default function RequestPage(): React.ReactElement {
   const [productionDate, setProductionDate] = useState<string>('');
   // 제품 해당 위치 전환 확인 모달(전환하면 지워질 입력이 있을 때만 값이 들어간다)
   const [prodcScopeConfirm, setProdcScopeConfirm] = useState<ProdcScope | null>(null);
-  const [revLayersSelected, setRevLayersSelected] = useState<string[]>([]);
-  const [revGds, setRevGds] = useState<string>('');
+  const [finalGds, setFinalGds] = useState<string>('');
   const [oayerInfoTab, setOayerInfoTab] = useState<'table' | 'info'>('table');
   const [tbvtlvSdsSelected, setTbvtlvSdsSelected] = useState<string[]>([]);
   const [tbvtlvNoteRows, setTbvtlvNoteRows] = useState<TbvtlvNoteRow[]>([{ id: genId(), x: '', y: '', used: 'O' }]);
@@ -548,11 +547,11 @@ export default function RequestPage(): React.ReactElement {
       setProcessIdOptions([]);
       setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
       setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
-      setRevLayersSelected([]); setRevGds('');
+      setFinalGds('');
       setDetail((prev) => ({
         ...prev,
         process_selection: '', partid_selection: '', process_id: '',
-        // 메인 라인 변경 시 C가문 스코프·리전·지도편차·REV 값도 초기화(옛 라인 기준 잔존 방지 — 감사 R-6)
+        // 메인 라인 변경 시 C가문 스코프·리전·지도편차·Final 값도 초기화(옛 라인 기준 잔존 방지 — 감사 R-6)
         prodc_scope: '',
         prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
         prodc_middle_use: '', prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
@@ -561,7 +560,7 @@ export default function RequestPage(): React.ReactElement {
         map_value_x_top: '', map_value_y_top: '',
         map_change_bottom: regionMapChangeDefault(prev.map_type),
         map_value_x_bottom: '', map_value_y_bottom: '',
-        rev_yn: '', rev_entries: [],
+        final_yn: '', final_entries: [],
       }));
     }
   }, [detail.line]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1278,8 +1277,8 @@ export default function RequestPage(): React.ReactElement {
             ...dd,
             map_type: 'NEW',
             only_prodc: 'No',
-            rev_yn: '',
-            rev_entries: [],
+            final_yn: '',
+            final_entries: [],
             map_change: MAP_NO_CHANGE,
             map_value_x: '',
             map_value_y: '',
@@ -1570,11 +1569,6 @@ export default function RequestPage(): React.ReactElement {
   const anyRegionMapChange = regionHasMapChange('top') || regionHasMapChange('bottom');
   const mshotDeleteMode = detail.mshot_change === '삭제';
   const mshotEditAddMode = detail.mshot_change === '추가' || detail.mshot_change === '수정';
-  const usedRevLayers = new Set((detail.rev_entries ?? []).flatMap((e) => e.layers));
-  const availableRevLayers = Array.from(
-    new Set(jayerRows.filter((r) => !r.disabled && r.layerid).map((r) => r.layerid))
-  ).filter((l) => !usedRevLayers.has(l));
-
   // ===== Step 1 Handlers =====
   const handleDetailChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -1792,11 +1786,10 @@ export default function RequestPage(): React.ReactElement {
       ecc: INITIAL_DETAIL.ecc,
       labelsideshot: INITIAL_DETAIL.labelsideshot,
       hpkglabelheight: INITIAL_DETAIL.hpkglabelheight,
-      rev_yn: INITIAL_DETAIL.rev_yn,
-      rev_entries: INITIAL_DETAIL.rev_entries,
+      final_yn: INITIAL_DETAIL.final_yn,
+      final_entries: INITIAL_DETAIL.final_entries,
     }));
-    setRevLayersSelected([]);
-    setRevGds('');
+    setFinalGds('');
     setErrors({});
     setMapTypeChangeConfirm(null);
   };
@@ -1953,7 +1946,8 @@ export default function RequestPage(): React.ReactElement {
   // (숨김 상태로 state 에 잔존해 backend 에 잘못 저장되는 것을 막기 위함 — 감사 R-2~R-5)
 
   // C가문(only_prodc) — No 로 전환 시 상/중/하판·지도편차(prodc)·X표시 값 전체 초기화.
-  // REV(rev_yn/rev_entries)는 C가문과 독립된 항목이므로 여기서 건드리지 않는다.
+  // Final(final_yn/final_entries) 값 자체는 C가문과 독립된 항목이므로 여기서 건드리지 않는다
+  // (단 C가문이 Yes 일 때 최소 1건 등록은 validate(2) 에서 별도로 강제한다).
   const handleOnlyProdcChange = (value: string) => {
     isLoadingEditRef.current = false;
     if (value !== 'No') {
@@ -3603,6 +3597,12 @@ export default function RequestPage(): React.ReactElement {
           errorMessages.push('원본 Part ID: 필수 입력 항목입니다.');
         }
       }
+      // Final 은 map_type 과 무관한 독립 항목이지만, C가문(only_prodc=YES) 일 때는
+      // 최소 1건 등록을 강제한다(CLONE/EXISTING 잠금과도 무관 — Final 입력칸 자체가 잠기지 않는다).
+      if (detail.only_prodc === 'Yes' && (detail.final_entries ?? []).length === 0) {
+        newErrors['final_entries'] = t('request.final_entries_required');
+        errorMessages.push('Final: C가문 Yes 일 때 1개 이상 등록해야 합니다.');
+      }
       if (!isMapRegistered) {
       if (detail.only_prodc === 'Yes') {
         // 제품 해당 위치(prodc_scope)를 먼저 골라야 나머지 C가문 입력이 열린다.
@@ -4093,15 +4093,14 @@ export default function RequestPage(): React.ReactElement {
       ecc: INITIAL_DETAIL.ecc,
       labelsideshot: INITIAL_DETAIL.labelsideshot,
       hpkglabelheight: INITIAL_DETAIL.hpkglabelheight,
-      rev_yn: INITIAL_DETAIL.rev_yn,
-      rev_entries: INITIAL_DETAIL.rev_entries,
+      final_yn: INITIAL_DETAIL.final_yn,
+      final_entries: INITIAL_DETAIL.final_entries,
       partial_shot: INITIAL_DETAIL.partial_shot,
       tbvtlv_thickness: INITIAL_DETAIL.tbvtlv_thickness,
       tbvtlv_entries: INITIAL_DETAIL.tbvtlv_entries,
     }));
     setErrors({});
-    setRevLayersSelected([]);
-    setRevGds('');
+    setFinalGds('');
   };
 
   const handleSubmitClick = async () => {
@@ -4473,11 +4472,8 @@ export default function RequestPage(): React.ReactElement {
           anyRegionMapChange={anyRegionMapChange}
           handleProdcScopeSelect={handleProdcScopeSelect}
           handleRegionMapChangeChange={handleRegionMapChangeChange}
-          revLayersSelected={revLayersSelected}
-          setRevLayersSelected={setRevLayersSelected}
-          revGds={revGds}
-          setRevGds={setRevGds}
-          availableRevLayers={availableRevLayers}
+          finalGds={finalGds}
+          setFinalGds={setFinalGds}
           isProdc={isProdc}
           isMapRegistered={isMapRegistered}
           hasMapChange={hasMapChange}

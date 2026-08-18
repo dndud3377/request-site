@@ -380,7 +380,7 @@ const DIFF_THUMB_MAX_HEIGHT = 150;
  * 블록 한 회차분의 표시 항목. 회차별 표와 변경 전/후 표가 **같은 빌더**를 쓰므로
  * 항목 순서·개수는 어느 회차에서나 동일해야 한다(열 정렬이 그 전제 위에 선다).
  */
-/** 표로 입력한 항목(REV Layer/GDS·TBV/TLV)은 이력에서도 표 그대로 보여준다. */
+/** 표로 입력한 항목(Final GDS·TBV/TLV)은 이력에서도 표 그대로 보여준다. */
 interface DiffTable { headers: string[]; rows: string[][]; }
 
 interface DiffItem { label: string; value: string; kind?: 'text' | 'image' | 'table'; table?: DiffTable | null; }
@@ -624,9 +624,9 @@ const fmtPlate = (d: any, prefix: string): string => {
   return `${line} / ${process} / ${product}`;
 };
 
-const fmtRevEntries = (entries: any): string => {
+const fmtFinalEntries = (entries: any): string => {
   if (!Array.isArray(entries) || entries.length === 0) return '';
-  return entries.map((e: any) => `${e?.gds || '-'}: ${(e?.layers ?? []).join(',')}`).join(' | ');
+  return entries.join(' | ');
 };
 
 const fmtTbvtlvEntries = (v: any): string => {
@@ -642,12 +642,12 @@ const fmtTbvtlvEntries = (v: any): string => {
 
 // ===== 표로 입력한 항목의 이력용 표 데이터 (원본 입력 표와 같은 열 구성) =====
 
-/** REV — 원본 카드의 GDS / Layer 두 항목을 그대로 열로 쓴다. */
-const buildRevTable = (entries: any): DiffTable | null => {
+/** Final — 등록된 GDS version 값을 한 열로 쓴다. */
+const buildFinalTable = (entries: any): DiffTable | null => {
   if (!Array.isArray(entries) || entries.length === 0) return null;
   return {
-    headers: ['GDS', 'Layer'],
-    rows: entries.map((e: any) => [String(e?.gds ?? ''), (e?.layers ?? []).join(', ')]),
+    headers: ['GDS'],
+    rows: entries.map((gds: any) => [String(gds ?? '')]),
   };
 };
 
@@ -698,9 +698,9 @@ const buildProdcItems: GroupBuilder = (d, t) => [
   { label: t('request.plate_bottom'), value: fmtPlate(d, 'prodc_bottom') },
 ];
 
-const buildRevItems: GroupBuilder = (d, t) => [
-  { label: t('request.rev_yn_label'), value: fmtDiffVal(d?.rev_yn) },
-  { label: 'Layer / GDS', value: fmtRevEntries(d?.rev_entries), kind: 'table', table: buildRevTable(d?.rev_entries) },
+const buildFinalItems: GroupBuilder = (d, t) => [
+  { label: t('request.final_yn_label'), value: fmtDiffVal(d?.final_yn) },
+  { label: t('request.final_gds'), value: fmtFinalEntries(d?.final_entries), kind: 'table', table: buildFinalTable(d?.final_entries) },
 ];
 
 // ===== Table Components =====
@@ -1628,7 +1628,7 @@ export default function PagedDetailView({
   const [mapHistOpen, setMapHistOpen] = useState(false);
   const [mshotHistOpen, setMshotHistOpen] = useState(false);
   const [prodcHistOpen, setProdcHistOpen] = useState(false);
-  const [revHistOpen, setRevHistOpen] = useState(false);
+  const [finalHistOpen, setFinalHistOpen] = useState(false);
   const [flowHistOpen, setFlowHistOpen] = useState(false);
 
   // ===== 흐름도 이력 (블록 단위 — 표 전체를 회차/전후로 대조한다) =====
@@ -1687,7 +1687,7 @@ export default function PagedDetailView({
   };
 
   /**
-   * 블록(엠샷/생산정보/REV) 이력 모달 — 모드에 따라 회차별 표와 변경 전/후 표가 갈린다.
+   * 블록(엠샷/생산정보/Final) 이력 모달 — 모드에 따라 회차별 표와 변경 전/후 표가 갈린다.
    * 두 표 모두 같은 빌더를 쓰므로 항목 라벨·순서는 어느 쪽에서나 동일하다.
    */
   const renderGroupHistory = (title: string, build: GroupBuilder, onClose: () => void): React.ReactNode => {
@@ -1987,48 +1987,37 @@ type Page = { label: string; content: React.ReactNode };
             );
           })()}
 
-          {/* REV — C가문(only_prodc)과 독립된 항목이므로 C가문 Yes/No 와 무관하게 표시한다. */}
+          {/* Final — C가문(only_prodc)과 독립된 항목이므로 C가문 Yes/No 와 무관하게 표시한다. */}
           {(isR || isO || isP) && (() => {
-            const revChanged = changedFields.has('rev_yn') || changedFields.has('rev_entries');
-            const revYn = detail.rev_yn;
-            const revEntries = detail.rev_entries;
-            if (!revYn) return null;
+            const finalChanged = changedFields.has('final_yn') || changedFields.has('final_entries');
+            const finalYn = detail.final_yn;
+            const finalEntries = detail.final_entries;
+            if (!finalYn) return null;
             return (
               <div style={rowStyle}>
-                <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(revChanged ? { border: '2px solid #dc3545' } : {}) }}>
-                  {revChanged && (
+                <div style={{ ...chipBase, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(finalChanged ? { border: '2px solid #dc3545' } : {}) }}>
+                  {finalChanged && (
                     <button
-                      onClick={() => setRevHistOpen(true)}
+                      onClick={() => setFinalHistOpen(true)}
                       style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', fontSize: '0.68rem', fontWeight: 700, padding: 0, zIndex: 1 }}
                     >
                       {t('request.history_check_btn')}
                     </button>
                   )}
-                  {revHistOpen && (
-                    renderGroupHistory(t('request.rev_history_title'), buildRevItems, () => setRevHistOpen(false))
+                  {finalHistOpen && (
+                    renderGroupHistory(t('request.final_history_title'), buildFinalItems, () => setFinalHistOpen(false))
                   )}
                   <div style={{ display: 'flex', alignItems: 'flex-start' }}>
                     <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
-                      <div style={fieldLabel}>{t('request.rev_yn_label')}</div>
-                      <div style={fieldValue}>{revYn}</div>
+                      <div style={fieldLabel}>{t('request.final_yn_label')}</div>
+                      <div style={fieldValue}>{finalYn}</div>
                     </div>
-                    {revYn === 'YES' && Array.isArray(revEntries) && revEntries.length > 0 && (
+                    {finalYn === 'YES' && Array.isArray(finalEntries) && finalEntries.length > 0 && (
                       <div style={{ flex: 1 }}>
-                        <div style={{ ...fieldLabel, marginBottom: 6 }}>{t('request.rev_layer_gds')}</div>
-                        {/* 카드형 + Layer pill (디자인 B) */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          {revEntries.map((entry, idx) => (
-                            <div key={idx} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: 'var(--bg-card)', border: '1px solid var(--border)', borderLeft: '4px solid var(--accent)', borderRadius: 8, padding: '8px 12px' }}>
-                              <div style={{ flex: '0 0 auto', minWidth: 110 }}>
-                                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>{t('request.rev_gds')}</div>
-                                <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--accent)' }}>{entry.gds}</div>
-                              </div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                {(entry.layers ?? []).map((layer, li) => (
-                                  <span key={li} style={{ background: 'var(--accent-light)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 999, padding: '2px 10px', fontSize: '0.78rem', fontWeight: 700 }}>{layer}</span>
-                                ))}
-                              </div>
-                            </div>
+                        <div style={{ ...fieldLabel, marginBottom: 6 }}>{t('request.final_gds')}</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {finalEntries.map((gds, idx) => (
+                            <span key={idx} style={{ background: 'var(--accent-light)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 999, padding: '2px 10px', fontSize: '0.78rem', fontWeight: 700 }}>{gds}</span>
                           ))}
                         </div>
                       </div>
