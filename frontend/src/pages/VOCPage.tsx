@@ -135,15 +135,18 @@ export default function VOCPage(): React.ReactElement {
   };
 
   // ─────────────── comment (chat) ───────────────
+  const isCommentEmpty = (html: string) =>
+    !html.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim();
+
   const handleSendComment = async () => {
-    if (!selected || !commentText.trim()) return;
+    if (!selected || isCommentEmpty(commentText)) return;
     setSending(true);
     try {
       const res = await vocAPI.addComment(selected.id, {
         author_name: currentUser.name,
         author_role: currentUser.role,
         is_submitter: isMyVoc(selected),
-        content: commentText.trim(),
+        content: commentText,
       });
       setSelected(res.data);
       setVocs((prev) => prev.map((v) => (v.id === selected.id ? res.data : v)));
@@ -431,7 +434,10 @@ export default function VOCPage(): React.ReactElement {
                         </span>
                         <span>{formatTime(c.created_at)}</span>
                       </div>
-                      <div style={{ fontSize: '0.9rem', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{c.content}</div>
+                      <div
+                        style={{ fontSize: '0.9rem', lineHeight: 1.6 }}
+                        dangerouslySetInnerHTML={{ __html: c.content }}
+                      />
                     </div>
                   ))
                 )}
@@ -439,22 +445,21 @@ export default function VOCPage(): React.ReactElement {
 
               {/* 댓글 입력 (완료/반려 상태면 숨김) */}
               {selected.status === 'checking' && (
-                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                  <textarea
-                    className="form-control"
+                <div
+                  style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSendComment();
+                  }}
+                >
+                  <RichTextEditor
                     value={commentText}
-                    rows={3}
-                    onChange={(e) => setComment(e.target.value)}
+                    onChange={setComment}
                     placeholder={t('voc.comment_placeholder' as any)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSendComment();
-                    }}
-                    style={{ resize: 'vertical' }}
                   />
                   <button
                     className="btn btn-primary"
                     onClick={handleSendComment}
-                    disabled={sendingComment || !commentText.trim()}
+                    disabled={sendingComment || isCommentEmpty(commentText)}
                     style={{ whiteSpace: 'nowrap', alignSelf: 'flex-end' }}
                   >
                     {t('voc.send_comment')}

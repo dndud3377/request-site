@@ -133,6 +133,10 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - 동작: `status → under_review`, `submitted_at` 기록, 기존 step 전체 삭제 후 PL step N개 생성. 통보처(있으면) 상신 메일 발송.
 - ✅ **영업/기술지원 합의자(SA, 2026-08)**: `detail.sales_agreers` 에 지정된 PL 권한자마다 `agent='SA', is_parallel=True` step 을 **PL 과 같은 회차에 함께** 생성한다(`_create_sales_agreer_steps`). 지정이 없으면 step 자체를 만들지 않는다(화면·메일 모두 '해당없음'). 자세한 규칙은 **Case P** 참조.
 - ⚠️ `_validate_bb_mapping`: "활성 + `process_id` 있는 J-layer 행은 모두 Bb 매핑 필수". **단 `additional_notes` JSON 파싱 실패 시 검증을 건너뛴다(통과 처리)** — 의도 확인 필요.
+  (2026-08-18) 상신 시 비활성 행도 `additional_notes.jayerRows`에 저장되도록 바뀌면서(`docs/REQUEST.md`
+  §4.1 2026-08-18 항목, `docs/E2E_TEST_AND_BUGS.md` B-58), 이 함수 자체가 `not r.get('disabled')` 조건으로
+  비활성 행을 직접 제외하도록 수정했다 — 예전엔 프론트가 상신 전에 비활성 행을 걸러내 저장했기 때문에
+  이 검증이 신경 쓸 필요가 없었다.
 
 ### Case B — PL 검토 합의 (`peer_approve`)
 - 권한: **MASTER 또는 해당 PL 단계의 assignee 본인만**(`_get_caller_pl_step`가 호출자 담당 pending PL step을 찾음).
@@ -156,7 +160,8 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   여기서 발송되며, 수신자도 **미배정 시 TE_J 팀 전원**으로 바뀌었다(예전엔 고정 주소 1곳).
   J 가 팀원 누구나 선점하는 병렬 단계가 됐는데 대표 주소로만 보내면 자기 차례를 알 수 없다.
 - **E(MASK) 생성 조건**: `document.has_ppid_plel()` — 저장된 J-layer 행의 `pp` 에 판정 키워드
-  `plel`(대소문자 무관)이 **하나라도 있으면** E 단계를 생성한다. 하나도 없으면 Validation System
+  `plel`(대소문자 무관)이 **하나라도 있으면** E 단계를 생성한다(2026-08-18부터 `disabled` 행은 이 함수가
+  직접 건너뛴다 — 비활성 행도 이제 저장되기 때문. `docs/E2E_TEST_AND_BUGS.md` B-58 참조). 하나도 없으면 Validation System
   판정이 `NA`(해당없음)라 MASK 가 검증할 대상 자체가 없으므로 E 단계를 만들지 않고, 메일 결재
   경로 카드와 상세보기 결재 경로에서도 E/EV 행을 표시하지 않는다. 대상/비대상 값 자체는
   E 단계가 생성된 문서에서 MASK 담당자가 확정한다(`docs/REQUEST.md` 참조).

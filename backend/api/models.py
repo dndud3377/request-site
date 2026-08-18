@@ -231,11 +231,13 @@ class RequestDocument(models.Model):
         참이면 E(MASK) 단계가 결재 경로에 포함된다 — MASK 팀이 Validation System
         대상/비대상 판정이 맞는지 검증한다. 거짓이면(키워드가 아예 없으면) 판정
         자체가 성립하지 않으므로('해당없음') E 단계를 생성하지 않는다.
-        jayerRows 는 additional_notes JSON 최상위에 저장되며, 상신 시 비활성
-        (disabled) 행은 저장에서 제외되므로 여기서 따로 거르지 않는다.
+        jayerRows 는 additional_notes JSON 최상위에 저장되며, 비활성(disabled)
+        행도 함께 저장되므로(2026-08) 여기서 직접 걸러야 한다.
         """
         jayer_rows = self.get_detail().get('jayerRows', [])
         for row in jayer_rows:
+            if row.get('disabled'):
+                continue
             pp = row.get('pp', '') or ''
             if self.VALIDATION_KEYWORD in pp.lower():
                 return True
