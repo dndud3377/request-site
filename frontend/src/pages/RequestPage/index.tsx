@@ -3878,8 +3878,10 @@ export default function RequestPage(): React.ReactElement {
           ...(isDraft ? {} : { validation_system_submitted: detail.validation_system }),
         },
         // Only MAP 은 StepMap 정보까지만 필요 → J/O/bb 표를 비워 저장한다.
-        jayerRows: isMapOnlyScope ? [] : (isDraft ? jayerRows : jayerRows.filter(r => !r.disabled)).sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-        oayerRows: isMapOnlyScope ? [] : (isDraft ? oayerRows : oayerRows.filter(r => !r.disabled)).sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        // 비활성(필터/수동) 행도 임시저장과 동일하게 항상 포함해서 저장한다 — 반려·중단 후
+        // 재상신 편집 화면에서 상신 전 상태(비활성 행 포함) 그대로 복원할 수 있어야 한다.
+        jayerRows: isMapOnlyScope ? [] : [...jayerRows].sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        oayerRows: isMapOnlyScope ? [] : [...oayerRows].sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
         bbRows: isMapOnlyScope ? [] : bbRows,
         history,
         jayerActiveFilterIds: [...jayerActiveFilterIds],
