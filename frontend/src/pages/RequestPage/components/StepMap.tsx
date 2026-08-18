@@ -112,9 +112,9 @@ const StepMap: React.FC<StepMapProps> = ({
 }) => {
   const { t } = useTranslation();
 
-  // 예외 구역 '변경 없음'일 때 적용되는 기본값(일반 300 / C가문 500).
-  // CLONE/EXISTING 은 입력칸이 잠겨 값을 넣을 수 없으므로 빈 문자열이다.
-  const eaDefault = eaDefaultValue(detail.only_prodc, detail.map_type);
+  // 예외 구역 '변경 없음'일 때 적용되는 기본값(일반 300 / C가문 500) — map_type 과 무관하다.
+  // CLONE/EXISTING 도 입력칸만 잠길 뿐 이 기본값 자체는 그대로 표시된다.
+  const eaDefault = eaDefaultValue(detail.only_prodc);
 
   return (
     <div className="form-section">
