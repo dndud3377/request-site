@@ -1267,9 +1267,13 @@ def _render_voc_email(event_type, headline, voc, body_text, guide_text, link):
 
 
 def _latest_comment_text(voc):
-    """가장 최근 댓글 본문. 없으면 빈 문자열."""
+    """가장 최근 댓글 본문(HTML → 평문). 없으면 빈 문자열.
+
+    댓글 입력이 RichTextEditor 로 HTML 을 만들므로, voc.content 와 동일하게
+    _html_to_text 로 태그를 걷어낸 뒤 메일 본문에 싣는다.
+    """
     comment = voc.comments.order_by('-created_at', '-id').first()
-    return comment.content if comment else ''
+    return _html_to_text(comment.content) if comment else ''
 
 
 def _build_voc_message(event_type, voc, commenter_name=None, for_submitter=False):

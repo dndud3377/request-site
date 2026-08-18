@@ -43,11 +43,8 @@ interface StepMapProps {
   anyRegionMapChange: boolean;
   handleProdcScopeSelect: (scope: ProdcScope) => void;
   handleRegionMapChangeChange: (region: 'top' | 'bottom', value: string) => void;
-  revLayersSelected: string[];
-  setRevLayersSelected: React.Dispatch<React.SetStateAction<string[]>>;
-  revGds: string;
-  setRevGds: React.Dispatch<React.SetStateAction<string>>;
-  availableRevLayers: string[];
+  finalGds: string;
+  setFinalGds: React.Dispatch<React.SetStateAction<string>>;
   isProdc: boolean;
   isMapRegistered: boolean;
   hasMapChange: boolean;
@@ -91,11 +88,8 @@ const StepMap: React.FC<StepMapProps> = ({
   anyRegionMapChange,
   handleProdcScopeSelect,
   handleRegionMapChangeChange,
-  revLayersSelected,
-  setRevLayersSelected,
-  revGds,
-  setRevGds,
-  availableRevLayers,
+  finalGds,
+  setFinalGds,
   isProdc,
   isMapRegistered,
   hasMapChange,
@@ -117,21 +111,6 @@ const StepMap: React.FC<StepMapProps> = ({
   GuideBadge,
 }) => {
   const { t } = useTranslation();
-
-  // REV Layer 드래그 다중 선택: 버튼 위를 눌러 드래그하면 지나가는 layer 를 일괄 선택/해제한다.
-  const revDrag = React.useRef<{ mode: 'add' | 'remove' } | null>(null);
-  const applyRevLayer = (layer: string, mode: 'add' | 'remove') => {
-    setRevLayersSelected((prev) => {
-      const has = prev.includes(layer);
-      if (mode === 'add') return has ? prev : [...prev, layer];
-      return has ? prev.filter((l) => l !== layer) : prev;
-    });
-  };
-  React.useEffect(() => {
-    const end = () => { revDrag.current = null; };
-    window.addEventListener('mouseup', end);
-    return () => window.removeEventListener('mouseup', end);
-  }, []);
 
   // 예외 구역 '변경 없음'일 때 적용되는 기본값(일반 300 / C가문 500).
   // CLONE/EXISTING 은 입력칸이 잠겨 값을 넣을 수 없으므로 빈 문자열이다.
@@ -247,20 +226,23 @@ const StepMap: React.FC<StepMapProps> = ({
         {/* REV 여부 — C가문(only_prodc)과 무관한 독립 항목. map_type 종류와 상관없이 항상 선택 가능하다.
             (CLONE/EXISTING 에서도 잠그지 않는다 — isMapRegistered 를 걸지 않는 이유) */}
         <div className="full-width" data-tour="map-rev" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <label className="form-label" style={{ marginBottom: 0 }}>{t('request.rev_yn_label')}<GuideBadge fk="step2_rev" tk={t('guide.feat.step2_rev' as never)} /></label>
+          <label className="form-label" style={{ marginBottom: 0 }}>
+            {t('request.final_yn_label')}
+            {detail.only_prodc === 'Yes' && <span className="required">*</span>}
+            <GuideBadge fk="step2_rev" tk={t('guide.feat.step2_rev' as never)} />
+          </label>
           <div style={{ display: 'flex', gap: '8px' }}>
             {(['YES', 'NO'] as const).map((val) => (
               <button
                 key={val}
                 type="button"
-                className={`map-type-btn${detail.rev_yn === val ? ' active' : ''}`}
+                className={`map-type-btn${detail.final_yn === val ? ' active' : ''}`}
                 onClick={() => {
                   if (val === 'NO') {
-                    setDetail((prev) => ({ ...prev, rev_yn: val, rev_entries: [] }));
-                    setRevLayersSelected([]);
-                    setRevGds('');
+                    setDetail((prev) => ({ ...prev, final_yn: val, final_entries: [] }));
+                    setFinalGds('');
                   } else {
-                    setDetail((prev) => ({ ...prev, rev_yn: val }));
+                    setDetail((prev) => ({ ...prev, final_yn: val }));
                   }
                 }}
               >
@@ -269,51 +251,18 @@ const StepMap: React.FC<StepMapProps> = ({
             ))}
           </div>
 
-          {detail.rev_yn === 'YES' && (
+          {detail.final_yn === 'YES' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {/* 입력 행: Layer 버튼 + GDS version + 추가 버튼 */}
+              {/* 입력 행: GDS version + 등록 버튼 */}
               <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label className="form-label" style={{ marginBottom: 0 }}>Layer</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxWidth: '480px', userSelect: 'none' }}>
-                    {availableRevLayers.length > 0 ? availableRevLayers.map((layer) => {
-                      const isSelected = revLayersSelected.includes(layer);
-                      return (
-                        <button
-                          key={layer}
-                          type="button"
-                          className={`map-type-btn${isSelected ? ' active' : ''}`}
-                          // 드래그 다중 선택: 첫 버튼에서 add/remove 모드를 정하고 지나가는 버튼에 적용
-                          onMouseDown={() => {
-                            const mode: 'add' | 'remove' = isSelected ? 'remove' : 'add';
-                            revDrag.current = { mode };
-                            applyRevLayer(layer, mode);
-                          }}
-                          onMouseEnter={() => {
-                            if (revDrag.current) applyRevLayer(layer, revDrag.current.mode);
-                          }}
-                        >
-                          {layer}
-                        </button>
-                      );
-                    }) : (
-                      <span style={{ fontSize: '13px', color: '#999' }}>
-                        {(detail.rev_entries ?? []).length > 0
-                          ? t('request.rev_all_added')
-                          : t('request.jayer_no_layer_data')}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label className="form-label" style={{ marginBottom: 0 }}>{t('request.rev_gds')}</label>
+                  <label className="form-label" style={{ marginBottom: 0 }}>{t('request.final_gds')}</label>
                   <input
                     className="form-control"
                     style={{ width: '360px' }}
-                    value={revGds}
-                    onChange={(e) => setRevGds(e.target.value)}
-                    placeholder={t('request.rev_gds_placeholder')}
+                    value={finalGds}
+                    onChange={(e) => setFinalGds(e.target.value)}
+                    placeholder={t('request.final_gds_placeholder')}
                   />
                 </div>
 
@@ -321,37 +270,34 @@ const StepMap: React.FC<StepMapProps> = ({
                   type="button"
                   className="btn btn-primary"
                   style={{ whiteSpace: 'nowrap' }}
-                  disabled={revLayersSelected.length === 0 || !revGds.trim()}
+                  disabled={!finalGds.trim()}
                   onClick={() => {
-                    if (revLayersSelected.length === 0 || !revGds.trim()) return;
+                    if (!finalGds.trim()) return;
                     setDetail((prev) => ({
                       ...prev,
-                      rev_entries: [...(prev.rev_entries ?? []), { layers: revLayersSelected, gds: revGds.trim() }],
+                      final_entries: [...(prev.final_entries ?? []), finalGds.trim()],
                     }));
-                    setRevLayersSelected([]);
-                    setRevGds('');
+                    setFinalGds('');
                   }}
                 >
-                  {t('request.rev_add')}
+                  {t('request.final_add')}
                 </button>
               </div>
 
-              {/* 추가된 항목 목록 */}
-              {(detail.rev_entries ?? []).length > 0 && (
-                <div className="table-wrapper" style={{ maxWidth: '640px', marginTop: '4px' }}>
+              {/* 등록된 항목 목록 */}
+              {(detail.final_entries ?? []).length > 0 && (
+                <div className="table-wrapper" style={{ maxWidth: '400px', marginTop: '4px' }}>
                   <table className="table">
                     <thead>
                       <tr>
-                        <th style={{ width: '55%' }}>{t('request.rev_layer')}</th>
-                        <th style={{ width: '30%' }}>{t('request.rev_gds')}</th>
-                        <th style={{ width: '15%', textAlign: 'center' }}></th>
+                        <th style={{ width: '75%' }}>{t('request.final_gds')}</th>
+                        <th style={{ width: '25%', textAlign: 'center' }}></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(detail.rev_entries ?? []).map((entry, idx) => (
+                      {(detail.final_entries ?? []).map((gds, idx) => (
                         <tr key={idx}>
-                          <td>{entry.layers.join(', ')}</td>
-                          <td>{entry.gds}</td>
+                          <td>{gds}</td>
                           <td style={{ textAlign: 'center' }}>
                             <button
                               type="button"
@@ -359,7 +305,7 @@ const StepMap: React.FC<StepMapProps> = ({
                               onClick={() =>
                                 setDetail((prev) => ({
                                   ...prev,
-                                  rev_entries: (prev.rev_entries ?? []).filter((_, i) => i !== idx),
+                                  final_entries: (prev.final_entries ?? []).filter((_, i) => i !== idx),
                                 }))
                               }
                             >
@@ -374,6 +320,7 @@ const StepMap: React.FC<StepMapProps> = ({
               )}
             </div>
           )}
+          {errors.final_entries && <span className="form-error">{errors.final_entries}</span>}
         </div>
 
         {/* Only C가문 제품 — Yes/No 선택 자체는 CLONE/EXISTING 에서도 열어두고,

@@ -29,7 +29,7 @@ pages/RequestPage/
     ├── AdiCdPanel.tsx              #   139줄  ADI CD 변경전/변경후 스텝 표 (step 1 인라인)
     ├── AdiCdColumnMapModal.tsx     #   128줄  ADI CD 붙여넣기 컬럼 매핑 모달
     ├── Step1.tsx                   #   538줄  step 1 — 기본정보(라인/목적/흐름도/뼈찜entry/고객/생산일)
-    ├── StepMap.tsx                 #   695줄  step 2 — MAP(타입/원본/PRODC/REV/지도편차/예외/M-shot/맵옵션/삭제·수정 이유)
+    ├── StepMap.tsx                 #   654줄  step 2 — MAP(타입/원본/PRODC/Final/지도편차/예외/M-shot/맵옵션/삭제·수정 이유)
     ├── Step2.tsx                   #   298줄  step 3 — J-layer 표
     ├── Step3.tsx                   #   591줄  step 4 — O-layer 표 + TBV/TLV·partial_shot 정보 탭
     └── Step4.tsx                   #   539줄  step 5 — Backbone(bb) 자동채움·매핑·결과 표
@@ -97,7 +97,7 @@ pages/RequestPage/
 - **BEFORE/AFTER 비교**: `baSelBefore`, `baSelAfter`, `baSameCount`
 - **ADI CD 변경**: `adiCdLeaveConfirm`, `adiCdMapModal`, `adiCdPendingApply`
 - **C가문(PRODC)**: `prodcScopeConfirm`
-- **REV**: `revLayersSelected`, `revGds`
+- **Final**: `finalGds` (등록 전 입력 중인 GDS version 값 — 등록된 목록 자체는 `detail.final_entries`)
 - **TBV/TLV**: `tbvtlvSdsSelected`, `tbvtlvNoteRows`, `tbvtlvWarnModal`
 - **Validation System**: `vsManuallySet` (상신자가 토글을 직접 눌렀는지 — 이후 자동 판정 갱신 중단)
 - **지정 PL / 수신참조 / 주소록**: `designees`, `designeeSearchQuery`, `designeeDropdownOpen`, `designeeError`, `plUserOptions`, `postApprovers`, `postApprover*`, `notifierUserOptions`, `notifier*`, `addressBooks`, `abLoadOpen`, `abSaveOpen`, `abSaveMode`, `abSaveNewName`, `abConfirm`, `abLoadQuery`
@@ -298,6 +298,74 @@ pages/RequestPage/
   - 필터로 비활성화된 J행에 Backbone 매핑이 걸려 있었다면, 필터 비활성화 경로가 `unmapJayerRows` 를
     호출하지 않는 기존 문제(B-59)로 인해 그 매핑이 정리되지 않은 채 남을 수 있다 — 이번 수정과는
     별개의 기존 이슈로, 손대지 않았다(`docs/E2E_TEST_AND_BUGS.md` B-59 참조).
+
+### 기능 변경 (2026-08-18 — REV 여부 → Final 리네임 + Layer 선택 제거 + C가문 필수화)
+
+- **요청**: StepMap의 "REV 여부" 섹션을 "Final"로 리네임. 기존에는 J-ayer 표에서 뽑은 Layer 후보를
+  버튼으로 선택(드래그 다중선택 지원)한 뒤 GDS version과 짝지어 등록하는 방식이었는데, Layer 선택을
+  없애고 GDS version만 직접 입력해 등록하도록 단순화. 여러 건 등록은 기존처럼 계속 지원. 아울러
+  Only C가문 제품(`only_prodc`)이 `Yes`일 때는 Final 항목을 1개 이상 등록해야 하는 신규 필수 규칙을
+  추가.
+- **구현**:
+  - **데이터 구조 전면 리네임**: `rev_yn`/`rev_entries: Array<{layers: string[]; gds: string}>` →
+    `final_yn`/`final_entries: string[]`(GDS version 문자열만 담는 배열로 단순화). `types/index.ts`·
+    `constants.ts`(`INITIAL_DETAIL`)부터 `index.tsx`의 모든 리셋 지점(라인 변경 effect·
+    `handleMapTypeChangeConfirm`·`handleReset`)까지 전부 리네임.
+  - `StepMap.tsx`: Layer 드래그 다중선택 UI(`revDrag`/`applyRevLayer`, 관련 `useEffect`)를 완전히
+    제거. state도 `revLayersSelected`+`revGds` 2개에서 `finalGds`(등록 전 입력 중인 GDS version) 1개로
+    축소. 등록 목록 표를 Layer/GDS 2열에서 GDS 1열로 축소.
+  - `index.tsx` `validate(2)`: `only_prodc === 'Yes' && final_entries.length === 0` 이면
+    `errors.final_entries`에 필수 에러를 세팅. 이 검사는 원본 위치/Part ID(R-13) 검사와 마찬가지로
+    `isMapRegistered`(CLONE/EXISTING 잠금) 분기 **밖**에 둔다 — Final 입력칸 자체가 CLONE/EXISTING
+    에서도 잠기지 않는 독립 항목이기 때문(§2.4 게이트 밖 항목 목록과 동일한 이유).
+  - `PagedDetailView.tsx`: 결재상세/이력조회의 REV 블록(`fmtRevEntries`/`buildRevTable`/
+    `buildRevItems`/`revHistOpen`)을 `fmtFinalEntries`/`buildFinalTable`/`buildFinalItems`/
+    `finalHistOpen`으로 리네임하고 Layer pill 표시를 제거, GDS 값만 나열.
+  - `guideDemos/Step2CfamilyDemo.tsx`·`useStepGuideTour.ts`: 가이드 투어의 REV 데모(Layer 클릭
+    단계 포함)를 Final GDS 직접 입력 데모로 교체.
+- **i18n**: `rev_yn_label`→`final_yn_label`("Final") · `rev_history_title`→`final_history_title` ·
+  `rev_gds`→`final_gds`("GDS version" 유지) · `rev_gds_placeholder`→`final_gds_placeholder` ·
+  `rev_add`→`final_add`. `rev_layer`·`rev_layer_gds`·`rev_all_added`는 Layer 선택 UI 제거로 더 이상
+  쓰이지 않아 삭제. 신규 `final_entries_required`(C가문 Yes인데 미등록일 때 에러 메시지) 추가.
+  `guide.feat.step2_rev`·`guide.demo.step2_cfamily.*`의 REV/Layer 관련 문구도 Final 기준으로 갱신
+  (ko/en 동시).
+- **영향 파일**: `frontend/src/types/index.ts`, `frontend/src/pages/RequestPage/constants.ts`,
+  `frontend/src/pages/RequestPage/index.tsx`, `frontend/src/pages/RequestPage/components/StepMap.tsx`,
+  `frontend/src/pages/RequestPage/useStepGuideTour.ts`,
+  `frontend/src/pages/RequestPage/draftRoundTrip.test.tsx`, `frontend/src/components/PagedDetailView.tsx`,
+  `frontend/src/components/guideDemos/Step2CfamilyDemo.tsx`, `frontend/src/locales/{ko,en}.json`.
+  백엔드 변경 없음 — Final 값도 REV 와 동일하게 `detail` JSON blob 안에 저장되므로 마이그레이션 불필요.
+- **검증(2026-08-18 실행)**: `npx tsc --noEmit` — 신규 에러 0(리네임 누락 2건을 tsc로 발견해 즉시
+  수정: 대소문자 차이로 `grep -i` 전 1차 확인에서 빠졌던 `setRevLayersSelected`/`setRevGds` 호출
+  2곳). 남은 에러 7건은 전부 이번 변경과 무관한 기존 이슈(`Set` es5 순회 5건 + `GuidePage.tsx`
+  i18n strict 키 1건 — 모두 이번에 건드리지 않은 줄). `CI=true npx react-scripts test --watchAll=false`
+  — 8 suites / **206건 전부 통과**(신규 실패 없음, `draftRoundTrip.test.tsx` 픽스처의 `rev_*` →
+  `final_*` 갱신 포함).
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [`/request` → 새 문서 → Step1에서 Only C가문 제품을 Yes로 만들 라인/제품 선택 → Step2(MAP
+     정보) 진입] → 2. [Final 섹션에서 YES 선택] → [기대 결과: 기존 "Layer" 버튼 후보 목록이 없고
+     "GDS version" 입력칸 + "+ 추가" 버튼만 보인다.]
+  2. [GDS version 칸에 `v1.2` 입력 → 추가 버튼 클릭 → 같은 방식으로 `v1.3` 한 번 더 등록] →
+     [기대 결과: 표에 v1.2, v1.3 두 행이 쌓이고 각 행에 삭제 버튼이 있다(여러 건 등록 가능 확인).]
+  3. [Only C가문 제품을 Yes로 둔 채 Final 항목을 하나도 등록하지 않고 "다음"/상신 클릭] →
+     [기대 결과: 다음 단계로 넘어가지 않고 Final 섹션 아래에 "C가문 제품은 Final 항목을 1개 이상
+     등록해야 합니다." 에러가 빨간 글씨로 표시된다.]
+  4. [바로 위 상태에서 GDS version 하나를 등록한 뒤 다시 "다음" 클릭] → [기대 결과: 에러가 사라지고
+     정상적으로 다음 단계로 진행된다.]
+  5. [Only C가문 제품을 No로 두고 Final도 등록하지 않은 채 "다음" 클릭] → [기대 결과: Final 관련
+     에러 없이 정상 진행된다(No일 때는 신규 필수 규칙이 적용되지 않음).]
+  6. [케이스 2처럼 Final 항목을 등록한 문서를 상신 완료 → 결재 현황 또는 이력 조회에서 해당 의뢰서
+     상세보기] → [기대 결과: "Final" 칩에 YES와 등록된 GDS version 값들이 보인다(Layer 정보 없이).]
+- **잠재 주의사항**:
+  - **기존에 저장된 REV 데이터와의 호환성을 확인하지 못했다** — 이 변경 전에 `rev_yn`/`rev_entries`
+    로 저장된 기존 문서를 편집 모드로 불러오면, 프론트가 더 이상 `rev_yn`/`rev_entries` 키를 읽지
+    않으므로 Final 섹션이 빈 상태(`final_yn: ''`)로 보인다. 기존 REV 데이터 자체는 DB의 JSON blob
+    안에 그대로 남아있어 유실되지는 않지만, 편집 화면·상세보기 어디서도 더 이상 표시되지 않는다.
+    실제 운영 DB에 REV 데이터가 저장된 문서가 있는지, 있다면 마이그레이션(구버전 `rev_entries`를
+    `final_entries`로 변환)이 필요한지는 **직접 확인하지 못했다** — 사용자 확인 필요.
+  - 신규 필수 규칙(C가문 Yes → Final 1개 이상)은 `validate(2)`에서만 강제된다. 이미 저장된 문서를
+    편집 로드할 때는 별도로 강제하지 않으므로, 이 규칙 도입 전에 C가문 Yes + Final 미등록으로
+    저장된 기존 문서가 있다면 다음 저장/상신 시점에 처음으로 이 에러에 걸릴 수 있다.
 
 ### 기능 추가 (2026-08-18 — Step1 라인·제품으로 기등록 MAP 자동 매칭 + EXISTING 도 원본 위치/제품 노출)
 
