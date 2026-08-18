@@ -629,7 +629,7 @@ export default function RequestPage(): React.ReactElement {
             source_partid: code,
             map_change_top: regionMapChangeDefault(MAP_TYPE_EXISTING),
             map_change_bottom: regionMapChangeDefault(MAP_TYPE_EXISTING),
-            ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(prev.only_prodc, MAP_TYPE_EXISTING) } : {}),
+            ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(prev.only_prodc) } : {}),
           };
         });
       })
@@ -1285,7 +1285,7 @@ export default function RequestPage(): React.ReactElement {
             map_reason: '',
             ea_change: EA_NO_CHANGE,
             // 바로 위에서 map_type='NEW'·only_prodc='No' 로 되돌리므로 300 이다
-            ea_value: eaDefaultValue('No', 'NEW'),
+            ea_value: eaDefaultValue('No'),
             mshot_change: '없음',
           }));
           break;
@@ -1540,9 +1540,6 @@ export default function RequestPage(): React.ReactElement {
   // 상신 시 영업/기술지원 합의자 지정이 필수인가 — 예외 구역을 '변경 있음'으로 두고
   // 값까지 기본값(일반 300 / C가문 500)과 다르게 바꿨을 때.
   // 백엔드 RequestDocument.requires_sales_agreer 와 같은 기준이어야 한다.
-  // ⚠️ eaDefaultValue 에 map_type 을 일부러 넘기지 않는다 — 백엔드는 map_type 과 무관하게 300/500
-  //    으로만 비교하므로, 여기서 CLONE/EXISTING 의 빈 기본값('')을 쓰면 기준이 어긋난다.
-  //    CLONE/EXISTING 은 ea_change 가 항상 '변경 없음'이라 첫 조건에서 이미 걸러진다.
   const requiresSalesAgreer =
     detail.ea_change === EA_HAS_CHANGE
     && !!detail.ea_value?.trim()
@@ -1719,14 +1716,14 @@ export default function RequestPage(): React.ReactElement {
       return;
     }
     // 첫 선택은 초기화할 것이 없으므로 바로 적용.
-    // 잠기는 칸(리전별 지도편차·예외구역)의 기본값은 map_type 이 정한다 — CLONE/EXISTING 이면
-    // '변경 없음'/빈 값이 되고, 그 외에는 종전 기본값 그대로다.
+    // 잠기는 칸 중 리전별 지도편차는 map_type 이 기본값을 정한다 — CLONE/EXISTING 이면 '변경 없음',
+    // 그 외에는 '변경 있음'. 예외구역은 map_type 과 무관하게 only_prodc 기준 300/500 그대로다.
     setDetail((prev) => ({
       ...prev,
       map_type: val,
       map_change_top: regionMapChangeDefault(val),
       map_change_bottom: regionMapChangeDefault(val),
-      ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(prev.only_prodc, val) } : {}),
+      ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(prev.only_prodc) } : {}),
     }));
     if (errors['map_type']) setErrors((prev) => ({ ...prev, map_type: '' }));
   };
@@ -1734,10 +1731,11 @@ export default function RequestPage(): React.ReactElement {
   const handleMapTypeChangeConfirm = () => {
     if (!mapTypeChangeConfirm) return;
     const newType = mapTypeChangeConfirm.targetType;
-    // StepMap(원본·C가문·지도편차·예외구역·X표시·Map Option·REV) 필드만 초기화한다.
+    // StepMap(원본·C가문·지도편차·예외구역·X표시·Map Option·Final) 필드만 초기화한다.
     // Step1/3/4/5 데이터(라인·뼈찜·partial_shot·tbvtlv 등)는 보존한다.
-    // 잠기는 칸의 기본값은 새 map_type 이 정한다(regionMapChangeDefault/eaDefaultValue).
-    // only_prodc 도 함께 초기화되므로 예외 구역 기본값은 그 초기값 기준으로 계산한다.
+    // 리전별 지도편차의 기본값은 새 map_type 이 정한다(regionMapChangeDefault). 예외구역은
+    // map_type 과 무관하게 only_prodc 기준(eaDefaultValue)으로 계산하며, only_prodc 도 함께
+    // 초기화되므로 그 초기값(No) 기준인 300이 들어간다.
     setDetail((prev) => ({
       ...prev,
       map_type: newType,
@@ -1754,7 +1752,7 @@ export default function RequestPage(): React.ReactElement {
       map_value_x_bottom: INITIAL_DETAIL.map_value_x_bottom,
       map_value_y_bottom: INITIAL_DETAIL.map_value_y_bottom,
       ea_change: INITIAL_DETAIL.ea_change,
-      ea_value: eaDefaultValue(INITIAL_DETAIL.only_prodc, newType),
+      ea_value: eaDefaultValue(INITIAL_DETAIL.only_prodc),
       only_prodc: INITIAL_DETAIL.only_prodc,
       prodc_scope: INITIAL_DETAIL.prodc_scope,
       prodc_top_line: INITIAL_DETAIL.prodc_top_line,
@@ -1965,7 +1963,7 @@ export default function RequestPage(): React.ReactElement {
         ...(isMapRegisteredType(prev.map_type) ? {} : { mshot_change: '수정' }),
         map_change_top: regionMapChangeDefault(prev.map_type),
         map_change_bottom: regionMapChangeDefault(prev.map_type),
-        ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(value, prev.map_type) } : {}),
+        ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(value) } : {}),
       }));
       if (errors['only_prodc']) setErrors((prev) => ({ ...prev, only_prodc: '' }));
       return;
@@ -1986,7 +1984,7 @@ export default function RequestPage(): React.ReactElement {
       mshot_change: INITIAL_DETAIL.mshot_change,
       mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '',
       // 예외 구역이 '변경 없음'이면 기본값도 일반 기준(300)으로 되돌린다(Yes 전환의 반대 동작).
-      ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue('No', prev.map_type) } : {}),
+      ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue('No') } : {}),
     }));
     setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
     setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
@@ -2010,12 +2008,11 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // 예외 구역(ea_change) — '변경 없음' 전환 시 C가문 여부에 맞는 기본값(300/500)을 되돌려 넣는다.
-  // (2026-08) 예전에는 값을 비웠다. 이제 '변경 없음'도 기본값을 그대로 저장·표시한다.
-  // CLONE/EXISTING 은 입력칸이 잠기므로 eaDefaultValue 가 빈 값을 돌려준다.
+  // map_type 과 무관하다 — CLONE/EXISTING 도 입력칸만 잠길 뿐 기본값은 300/500 그대로 표시된다.
   const handleEaChangeChange = (value: string) => {
     isLoadingEditRef.current = false;
     setDetail((prev) => value === EA_NO_CHANGE
-      ? { ...prev, ea_change: value, ea_value: eaDefaultValue(prev.only_prodc, prev.map_type) }
+      ? { ...prev, ea_change: value, ea_value: eaDefaultValue(prev.only_prodc) }
       : { ...prev, ea_change: value });
     if (value === EA_NO_CHANGE && errors['ea_value']) setErrors((prev) => ({ ...prev, ea_value: '' }));
   };
