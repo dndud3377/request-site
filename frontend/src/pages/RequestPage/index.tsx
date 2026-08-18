@@ -60,7 +60,7 @@ import {
   EA_HAS_CHANGE,
   eaDefaultValue,
   MAP_NO_CHANGE,
-  MAP_TYPE_CLONE,
+  MAP_TYPE_EXISTING,
   isMapRegisteredType,
   regionMapChangeDefault,
   PRODC_SCOPE_OPTIONS,
@@ -99,6 +99,7 @@ import {
   requiresBbEntries, findBbEntryViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, AdiCdHeaderMatch,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
+  sourceCodeFromPartid,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -418,6 +419,9 @@ export default function RequestPage(): React.ReactElement {
   const originalRequesterRef = useRef<{ name: string; email: string; department: string } | null>(null);
   // 투어 모드에선 시드한 값이 라인/조합법 변경 reset 효과로 지워지지 않도록 로드 가드를 켠 채 시작
   const isLoadingEditRef = useRef(isTourMode);
+  // 자동 MAP 매칭이 source_line 을 세팅한 직후 1틱 — "원본 위치 변경 → 원본 제품 초기화" 효과가
+  // 방금 채운 source_partid 를 지우지 않도록 이번 한 번만 건너뛰게 하는 플래그.
+  const autoMapMatchRef = useRef(false);
 
   const [approvedDocs, setApprovedDocs] = useState<RequestDocument[]>([]);
   const [sourcePartIdOptions, setSourcePartIdOptions] = useState<string[]>([]);
@@ -585,9 +589,12 @@ export default function RequestPage(): React.ReactElement {
     // 편집/투어 로드는 저장된 source_line 을 채우는 것뿐이라 여기서 초기화하면
     // 불러온 source_partid 가 지워져 그대로 다시 저장될 때 영구 유실된다
     // (다른 연쇄 초기화 effect 들과 동일한 로드 가드).
-    if (!isLoadingEditRef.current) {
+    // 자동 MAP 매칭 직후에도 같은 이유로 건너뛴다 — 그 효과가 source_line·source_partid 를
+    // 함께 채우는데, 여기서 지우면 자동 채움이 무의미해진다.
+    if (!isLoadingEditRef.current && !autoMapMatchRef.current) {
       setDetail((prev) => ({ ...prev, source_partid: '' }));
     }
+    autoMapMatchRef.current = false;
     if (!detail.source_line) {
       setSourcePartIdOptions([]);
       return;
@@ -596,6 +603,40 @@ export default function RequestPage(): React.ReactElement {
       .then(setSourcePartIdOptions)
       .catch(() => setSourcePartIdOptions([]));
   }, [detail.source_line]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 라인 + 제품 이름(Step1) → 이미 등록된 MAP 이 있으면 map_type 을 EXISTING 으로 자동 선택.
+  // map_type 이 이미 선택돼 있으면(사용자가 이미 골랐으면) 덮어쓰지 않는다 — 자동 선택은
+  // "아직 아무것도 안 골랐을 때의 기본값"일 뿐, 잠그거나 사용자의 선택을 되돌리지 않는다.
+  useEffect(() => {
+    // MAP 삭제 모드는 map_type 버튼 자체가 다르므로(삭제 전용) 제외한다.
+    // (아래에서 선언되는 isMapDeleteEdit 대신 원본 조건을 그대로 써서 선언 순서 문제를 피한다.)
+    if (detail.request_purpose === MAP_DELETE_EDIT_PURPOSE) return;
+    if (detail.map_type) return;
+    if (!detail.line || !detail.partid_selection) return;
+    const code = sourceCodeFromPartid(detail.partid_selection);
+    if (!code) return;
+    let cancelled = false;
+    formOptionsAPI.getMapNames(detail.line)
+      .then((codes) => {
+        if (cancelled || !codes.includes(code)) return;
+        autoMapMatchRef.current = true;
+        setSourcePartIdOptions(codes);
+        setDetail((prev) => {
+          if (prev.map_type) return prev; // 그 사이 사용자가 이미 선택했으면 덮어쓰지 않는다
+          return {
+            ...prev,
+            map_type: MAP_TYPE_EXISTING,
+            source_line: detail.line,
+            source_partid: code,
+            map_change_top: regionMapChangeDefault(MAP_TYPE_EXISTING),
+            map_change_bottom: regionMapChangeDefault(MAP_TYPE_EXISTING),
+            ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue(prev.only_prodc, MAP_TYPE_EXISTING) } : {}),
+          };
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [detail.line, detail.partid_selection, detail.request_purpose]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
   useEffect(() => {
@@ -3551,8 +3592,8 @@ export default function RequestPage(): React.ReactElement {
         setErrors(newErrors);
         return { valid: Object.keys(newErrors).length === 0, errors: errorMessages };
       }
-      // CLONE(차용)은 원본 위치/Part ID가 필수(R-13). EXISTING/NEW는 해당 없음.
-      if (detail.map_type === MAP_TYPE_CLONE) {
+      // CLONE(차용)·EXISTING(기등록)은 원본 위치/Part ID가 필수(R-13). NEW는 해당 없음.
+      if (isMapRegisteredType(detail.map_type)) {
         if (!detail.source_line?.trim()) {
           newErrors['source_line'] = t('request.required');
           errorMessages.push('원본 위치: 필수 입력 항목입니다.');
