@@ -171,7 +171,7 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
           {
             selectors: ['[data-tour="map-rev"]'],
             ...g('s2g3'),
-            onEnter: () => setDetail((prev) => ({ ...prev, rev_yn: 'YES' })),
+            onEnter: () => setDetail((prev) => ({ ...prev, final_yn: 'YES' })),
           },
           { selectors: ['[data-tour="map-cfamily-toggle"]'], ...g('s2g4') },
           {
