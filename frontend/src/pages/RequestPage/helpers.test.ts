@@ -2,7 +2,7 @@ import {
   autoValidationSystem, isValidationKeywordRow, isValidationTarget, computeLayerMerge, MergeComparableRow,
   computeBeforeAfter, BaComparableRow,
   parseClipboardTable, detectAdiCdHeader, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows,
-  requiresBbEntries, findBbEntryViolations, findEmptyStNocViolations,
+  requiresBbEntries, findBbEntryViolations, findEmptyStNocViolations, findNocBorrowItemIdViolations,
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste,
 } from './helpers';
@@ -100,6 +100,22 @@ describe('findEmptyStNocViolations', () => {
 
   it('비활성 행은 제외한다', () => {
     expect(findEmptyStNocViolations([{ id: 'a', disabled: true, st: '', new_or_copy: '' }])).toEqual([]);
+  });
+});
+
+describe('findNocBorrowItemIdViolations', () => {
+  it("new_or_copy='차용' 활성 행 중 item_id 가 비면 위반", () => {
+    expect(findNocBorrowItemIdViolations([
+      { id: 'a', disabled: false, new_or_copy: '차용', item_id: 'IT-1' },
+      { id: 'b', disabled: false, new_or_copy: '차용', item_id: '' },
+      { id: 'c', disabled: false, new_or_copy: '신규', item_id: '' },
+    ])).toEqual(['b']);
+  });
+
+  it('비활성 행은 제외한다', () => {
+    expect(findNocBorrowItemIdViolations([
+      { id: 'a', disabled: true, new_or_copy: '차용', item_id: '' },
+    ])).toEqual([]);
   });
 });
 
