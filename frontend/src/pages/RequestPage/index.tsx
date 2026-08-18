@@ -95,7 +95,7 @@ import {
   MERGE_MANUAL_FIELDS,
 } from './constants';
 import {
-  formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, findEmptyStNocViolations,
+  formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, findNocBorrowItemIdViolations, findEmptyStNocViolations,
   requiresBbEntries, findBbEntryViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, AdiCdHeaderMatch,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
@@ -3729,9 +3729,14 @@ export default function RequestPage(): React.ReactElement {
         newErrors[`jayer_noc_${id}_product_name`] = t('request.jayer_noc_field_error' as never);
         newErrors[`jayer_noc_${id}_step`] = t('request.jayer_noc_field_error' as never);
       });
-      if (violations.length > 0) {
-        newErrors['jayer_noc_required'] = t('request.jayer_noc_required' as never, { count: violations.length });
-        errorMessages.push(t('request.jayer_noc_required' as never, { count: violations.length }) as string);
+      const itemIdViolations = findNocBorrowItemIdViolations(jayerRows);
+      itemIdViolations.forEach((id) => {
+        newErrors[`jayer_noc_${id}_item_id`] = t('request.jayer_noc_field_error' as never);
+      });
+      const nocRowCount = new Set([...violations, ...itemIdViolations]).size;
+      if (nocRowCount > 0) {
+        newErrors['jayer_noc_required'] = t('request.jayer_noc_required' as never, { count: nocRowCount });
+        errorMessages.push(t('request.jayer_noc_required' as never, { count: nocRowCount }) as string);
       }
       // J-layer 에 st='O 계열' 활성 행이 있으면 Backbone 조합 영역(STEP1)이 필수가 된다.
       // 여기서 처음 판정되므로, 막히면 goToStep 이 STEP1 로 되돌려 보낸다.
@@ -3776,9 +3781,14 @@ export default function RequestPage(): React.ReactElement {
         newErrors[`jayer_noc_${id}_product_name`] = t('request.jayer_noc_field_error' as never);
         newErrors[`jayer_noc_${id}_step`] = t('request.jayer_noc_field_error' as never);
       });
-      if (jViolations.length > 0) {
-        newErrors['jayer_noc_required'] = t('request.jayer_noc_required' as never, { count: jViolations.length });
-        errorMessages.push(t('request.jayer_noc_required' as never, { count: jViolations.length }) as string);
+      const jItemIdViolations = findNocBorrowItemIdViolations(jayerRows);
+      jItemIdViolations.forEach((id) => {
+        newErrors[`jayer_noc_${id}_item_id`] = t('request.jayer_noc_field_error' as never);
+      });
+      const jNocRowCount = new Set([...jViolations, ...jItemIdViolations]).size;
+      if (jNocRowCount > 0) {
+        newErrors['jayer_noc_required'] = t('request.jayer_noc_required' as never, { count: jNocRowCount });
+        errorMessages.push(t('request.jayer_noc_required' as never, { count: jNocRowCount }) as string);
       }
       const oViolations = findNocBorrowViolations(oayerRows);
       oViolations.forEach((id) => {

@@ -204,6 +204,7 @@ const Step2: React.FC<Step2Props> = ({
               const isLayerDeleted = row.new_or_copy === NOC_LAYER_DELETE;
               const stError = errors[`jayer_stnoc_${row.id}_st`];
               const nocError = errors[`jayer_stnoc_${row.id}_new_or_copy`];
+              const itemIdError = errors[`jayer_noc_${row.id}_item_id`];
               const regBg = '#e5e7eb';
               // 편집 셀 공통 props: 셀 선택(드래그/Ctrl) + 선택 하이라이트
               const cellProps = (col: string, bg?: string, extra?: React.CSSProperties) => ({
@@ -264,7 +265,7 @@ const Step2: React.FC<Step2Props> = ({
                     </td>
                     <td data-jtour={`product_name-${idx}`} data-tour="jayer-sync-cols" {...cellProps('product_name', isRegistered ? regBg : undefined)}><input value={row.product_name} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} className={errors[`jayer_noc_${row.id}_product_name`] ? 'field-error-target' : undefined} style={{ backgroundColor: isRegistered ? regBg : undefined, ...(errors[`jayer_noc_${row.id}_product_name`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
                     <td data-jtour={`step-${idx}`} {...cellProps('step', isRegistered ? regBg : undefined)}><input value={row.step} readOnly={row.disabled || isRegistered} disabled={row.disabled || isRegistered} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} className={errors[`jayer_noc_${row.id}_step`] ? 'field-error-target' : undefined} style={{ backgroundColor: isRegistered ? regBg : undefined, ...(errors[`jayer_noc_${row.id}_step`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
-                    <td data-jtour={`item_id-${idx}`} {...cellProps('item_id', isRegistered ? regBg : undefined, { minWidth: 160 })}>
+                    <td data-jtour={`item_id-${idx}`} className={itemIdError ? 'field-error-target' : undefined} {...cellProps('item_id', isRegistered ? regBg : undefined, { minWidth: 160 })}>
                       <AutocompleteInput
                         value={row.item_id}
                         onChange={(v) => handleJayerChange(row.id, 'item_id', v)}
@@ -273,6 +274,7 @@ const Step2: React.FC<Step2Props> = ({
                           .map((o) => o.label)}
                         disabled={row.disabled || isRegistered}
                         style={{ backgroundColor: isRegistered ? regBg : undefined }}
+                        inputStyle={itemIdError ? { border: '1px solid var(--danger)' } : undefined}
                         dropdownDirection="up"
                         dropdownFontSize="0.7rem"
                       />

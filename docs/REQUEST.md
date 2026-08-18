@@ -1957,6 +1957,14 @@ pages/RequestPage/
   - **문제 셀로 자동 스크롤**: 문제 있는 `product_name`/`step` `<input>`에 스크롤 타겟 마커 클래스 `field-error-target`을 부여하고, `scrollToFirstError`가 `.form-error` 외에 이 클래스도 인식하도록 확장했다. 다른 `.form-error` 필드(예: 필수 입력 required)는 기존처럼 `field-error-flash`(노란 깜빡임)까지 재생하지만, 표 셀 타겟(`field-error-target`)은 **깜빡임 없이** `scrollIntoView`(중앙 정렬) + 포커스만 수행한다.
   - **`scrollToFirstError` O-ayer 탭 전환 수정**: O-ayer 표 에러가 있을 때는 Partial Shot이 있는 'info' 탭으로 강제 전환하지 않도록 조건 추가(표는 'table' 탭에 있으므로). `errors` state 는 setErrors 직후 이 함수 안에서는 아직 갱신 전이라(스테일 클로저), `oayerRows`/`detail.partial_shot` 원본 값으로 직접 재계산해 판단한다.
 
+### 추가 변경 이력 (2026-08 — J-ayer 차용 행 item_id(ID) 필수 추가)
+
+- **new_or_copy='차용' 행은 item_id(ID)도 필수**: `item_id`는 J-ayer(`JayerRow`) 전용 필드로 O-ayer(`OayerRow`)에는 존재하지 않아, 이 필수값 규칙은 **J-ayer(Step2/Step3)에만 적용**되고 O-ayer는 대상이 아니다(기존 product_name·step 규칙은 J/O 공통으로 계속 유지).
+  - 순수 헬퍼 `findNocBorrowItemIdViolations`(`helpers.ts`)가 `!disabled && new_or_copy==='차용' && !item_id.trim()`인 J-ayer 행 id를 반환. `product_name`/`step`용 `findNocBorrowViolations`와 별도 헬퍼로 분리했다(O-ayer 타입에는 `item_id` 필드가 없어 시그니처를 공유할 수 없음).
+  - **검증 시점**: 기존 `product_name`·`step` 검증과 동일하게 J-ayer step3→4 전환 시, 그리고 상신 시 최종 안전망에서 함께 검사한다(`index.tsx`).
+  - **에러 표시**: `jayer_noc_${id}_item_id` 키로 ID 셀(`<td>`)에 `field-error-target` 클래스 + `AutocompleteInput`의 `inputStyle`로 빨간 테두리를 표시한다(`st`/`new_or_copy` 드롭다운 셀과 동일 패턴). 토스트 카운트(`jayer_noc_required`)는 product_name/step/item_id 위반을 합쳐 **행 단위 중복 없이** 집계한다.
+  - **문구**: `jayer_noc_required`/`jayer_noc_field_error`(ko/en) 문구에 "ID"를 추가해 제품 이름·STEP·ID 셋 중 무엇이든 비어 있으면 안내하도록 갱신했다. `oayer_noc_*` 문구는 변경하지 않았다(item_id 대상 아님).
+
 ### 추가 변경 이력 (2026-07 — MAP/예외구역 숫자 입력 + TBV/TLV 개편)
 
 - **MAP X/Y·예외구역 값 숫자 전용 입력**: `map_value_x`/`map_value_y`(일반 + C가문 상/하판, 총 6개) · `ea_value`에 `sanitizeSignedDecimal`(`helpers.ts`, 부호 맨 앞 1개·소수점 1개만 허용) 적용. `StepMap.tsx`에서 `handleDetailChange` 대신 `handleDetailSet`으로 교체 호출, `inputMode="decimal"` 힌트 추가.
