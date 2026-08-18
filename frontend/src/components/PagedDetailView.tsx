@@ -2454,9 +2454,6 @@ type Page = { label: string; content: React.ReactNode };
     ).acted_at;
   };
 
-  const formatDateTime = (d: string | null | undefined): string =>
-    d ? new Date(d).toLocaleDateString('ko-KR') : '-';
-
   const formatDateTimeShort = (d: string | null | undefined): string => {
     if (!d) return '-';
     const dt = new Date(d);
@@ -2483,13 +2480,13 @@ type Page = { label: string; content: React.ReactNode };
     if (s.action === 'approved') return {
       status: 'approved', label: t('approval.agree'),
       assignee: s.assignee_name || undefined, email,
-      date: formatDateTime(s.acted_at),
+      date: formatDateTimeShort(s.acted_at),
       comment: s.comment || undefined,
     };
     if (s.action === 'rejected') return {
       status: 'rejected', label: t('approval.reject'),
       assignee: s.assignee_name || undefined, email,
-      date: formatDateTime(s.acted_at),
+      date: formatDateTimeShort(s.acted_at),
       comment: s.comment || undefined,
     };
     // (2026-08 이전 OR 시절 문서에만 남는 이력) 그때는 EV 1명 합의로 단계가 끝나면 남은
@@ -2498,7 +2495,7 @@ type Page = { label: string; content: React.ReactNode };
     if (s.action === 'skip') return {
       status: 'skipped', label: t('approval.step_skip'),
       assignee: s.assignee_name || undefined, email,
-      date: formatDateTime(s.acted_at),
+      date: formatDateTimeShort(s.acted_at),
       comment: s.comment || undefined,
     };
     // pending
@@ -2725,7 +2722,7 @@ type Page = { label: string; content: React.ReactNode };
               {doc.status === 'approved' ? (
                 <>
                   <span style={statusBadgeStyle('approved')}>{t('approval.step_done')}</span>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{formatDateTime(getApprovedAt())}</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{formatDateTimeShort(getApprovedAt())}</span>
                 </>
               ) : doc.status === 'under_review' ? (
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{t('common.status_under_review')}</span>
