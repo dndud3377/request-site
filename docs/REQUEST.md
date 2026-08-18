@@ -249,6 +249,70 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-08-18 — Step1 라인·제품으로 기등록 MAP 자동 매칭 + EXISTING 도 원본 위치/제품 노출)
+
+- **요청**: Step1(의뢰 상세)에서 라인·제품 이름을 고르면, 그 값(제품 이름은 `-` 앞 8자리 코드)으로
+  이미 등록된 MAP(`MapName` 캐시)이 있는지 조회해서 있으면 Step2 MAP 목적을 `기등록`(`EXISTING`)으로
+  자동 선택한다. 자동 선택은 기본값을 미리 채우는 것일 뿐 **잠그지 않으며**, 사용자가 다른 목적으로
+  자유롭게 바꿀 수 있다. 아울러 `기등록`에도 `차용`(`CLONE`)과 동일하게 원본 위치/원본 제품 이름
+  입력칸을 노출하고, 자동 매칭 시 그 값(라인·매칭된 8자리 코드)까지 함께 채운다. 두 목적 모두
+  원본 위치/원본 제품 이름을 필수 항목으로 통일했다.
+- **구현**:
+  - `helpers.ts`: 순수 헬퍼 `sourceCodeFromPartid(partidSelection)` 신설 — `partid_selection`의
+    `-` 앞부분을 대문자화·8자 제한해 `MapName.partid` 코드(`form_options_mapname`, `_` 앞 8자와 동일
+    규칙)와 비교 가능한 형태로 변환한다.
+  - `StepMap.tsx`: 원본 위치/원본 제품 이름 블록 노출 조건을 `map_type === 'CLONE'` →
+    `isMapRegisteredType(map_type)`(CLONE·EXISTING 공용)로 확장. 두 입력칸은 기존과 동일하게
+    `isMapRegistered` 잠금 대상이 아니다(그 MAP 을 식별하는 값 자체이므로).
+  - `index.tsx`: 새 `useEffect`가 `[detail.line, detail.partid_selection, detail.request_purpose]`를
+    감시 — `map_type`이 이미 선택돼 있거나(사용자가 이미 골랐으면 덮어쓰지 않음) `MAP 삭제` 목적이면
+    건너뛴다. 기존 `/form-options/map-names/`(CLONE 원본 제품 옵션 조회에 쓰이던 API)를 `detail.line`
+    으로 재호출해 매칭되는 코드가 있으면 `map_type='EXISTING'`·`source_line`·`source_partid`를
+    `handleMapTypeSelect`의 "첫 선택" 로직과 동일한 기본값 계산(`regionMapChangeDefault`/
+    `eaDefaultValue`)과 함께 한 번에 세팅한다.
+  - 기존 "원본 위치 변경 → 원본 제품 초기화" effect(`useEffect([detail.source_line])`)가 방금 채운
+    `source_partid`를 지우지 않도록, 자동 매칭 직후 1틱만 건너뛰는 `autoMapMatchRef` 플래그를 추가했다
+    (편집/투어 로드 가드인 `isLoadingEditRef`와는 별도 — 그 플래그를 재사용하면 다른 무관한 effect들의
+    로드 가드 동작까지 함께 바뀌므로 새 ref로 범위를 좁혔다).
+  - `validate()`: 원본 위치/Part ID 필수 검증 조건을 `map_type === 'CLONE'` → `isMapRegisteredType
+    (map_type)`로 확장해 `EXISTING`도 필수가 되도록 했다.
+  - `PagedDetailView.tsx`: 상세보기 MAP 정보 칩 노출 조건(원본 위치/원본 제품 이름)을
+    `map_type === 'CLONE'` → 기존에 있던 `isMapRegisteredDetail`(CLONE·EXISTING 판정) 변수로 교체.
+- **백엔드**: 변경 없음. 기존 `/form-options/map-names/?line=` 엔드포인트를 그대로 재사용했다
+  (`MapName` 캐시 조회 — 마이그레이션 불필요).
+- **i18n**: 신규 키 없음(`request.source_line`/`request.source_partid_selection` 기존 라벨 재사용).
+- **영향 파일**: `frontend/src/pages/RequestPage/helpers.ts`,
+  `frontend/src/pages/RequestPage/components/StepMap.tsx`, `frontend/src/pages/RequestPage/index.tsx`,
+  `frontend/src/components/PagedDetailView.tsx`.
+- **검증(2026-08-18 실행)**: `npx tsc --noEmit` — 에러 0(변경 전 베이스라인도 0, 신규 에러 없음).
+  `npx react-scripts test --watchAll=false` — 8 suites / **206건 전부 통과**(신규 실패 없음).
+- **수동 검증 시나리오**:
+  1. [`/request` 새 문서 → Step1 에서 이미 MAP 이 등록된 라인+제품(예: 라인A / 12345678-9001)을
+     선택 → '다음'으로 Step2(MAP 정보) 진입] → [기대 결과: MAP 목적이 `기등록`으로 이미 선택돼
+     있고, 원본 위치=선택한 라인, 원본 제품 이름=선택한 제품의 앞 8자리가 채워져 있다. `기등록`
+     버튼은 눌린 상태지만 `신규`/`차용`/`삭제` 버튼도 여전히 클릭 가능하다(비활성화 아님).]
+  2. [위 상태에서 `차용` 버튼 클릭 → 확인 모달 '확인'] → [기대 결과: 자동으로 잠기지 않았다는
+     증거 — 정상적으로 `차용`으로 전환되고 원본 위치/제품 칸이 빈 값으로 초기화된다(기존 목적
+     전환 동작과 동일).]
+  3. [Step1 에서 MAP 이 등록되지 않은 라인+제품을 선택 → Step2 진입] → [기대 결과: MAP 목적이
+     아무것도 선택되지 않은 상태 그대로(자동 선택 없음). `기등록`을 직접 눌러도 원본 위치/제품은
+     빈 값으로 시작해 직접 입력해야 한다.]
+  4. [`기등록`을 직접 선택하고 원본 위치/원본 제품 이름을 비운 채 상신 시도] → [기대 결과: 두
+     칸 모두 필수 에러가 뜨며 상신이 막힌다(`차용`과 동일한 검증).]
+  5. [케이스 1처럼 자동 매칭된 문서를 상신 완료 → 결재 현황 또는 이력 조회에서 해당 의뢰서
+     상세보기 → 'MAP 정보' 탭] → [기대 결과: MAP 목적 칩 옆에 원본 위치·원본 제품 이름 칩이
+     보인다(기존엔 `차용`일 때만 보였음).]
+- **잠재 주의사항**:
+  - 자동 매칭은 `detail.map_type`이 **비어 있을 때만** 동작한다. 편집(반려 재상신 등)으로 불러온
+    문서는 이미 `map_type`이 채워져 있어 자동 매칭 effect 가 아예 실행되지 않는다(의도된 동작 —
+    기존 선택을 덮어쓰지 않음).
+  - `sourceCodeFromPartid`는 제품 이름 형식이 `8자리코드-나머지`라고 가정한다. `-`가 없는 값이면
+    전체 문자열의 앞 8자를 코드로 쓴다(대부분의 실데이터와 다를 수 있어 매칭이 안 될 뿐, 에러는
+    나지 않는다).
+  - 매칭 API(`/form-options/map-names/`)는 `LINE_TO_LINEID_MAP`에 등록된 라인만 결과를 반환한다
+    (`backend/api/utils.py`). 이 맵에 없는 라인은 항상 자동 매칭이 일어나지 않는다 — 기존 CLONE
+    원본 제품 옵션 조회와 동일한 제약이다.
+
 ### 버그 수정 (2026-08-15 — 중단(PAUSE) 후 재개 시 수정 내용이 변경 이력에 남지 않음)
 
 - **증상**: 결재 중단(pause) 상태에서 `/request` 편집으로 내용을 고친 뒤 재개(`resume`)하면, 결재
