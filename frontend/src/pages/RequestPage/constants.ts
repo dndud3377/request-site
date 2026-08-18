@@ -89,17 +89,15 @@ export const EA_HAS_CHANGE = '변경 있음';
 
 // 예외 구역 기본값 — C가문(only_prodc='Yes')이면 500, 아니면 300 (2026-08).
 // '변경 없음'이면 이 값이 ea_value 에 그대로 채워지고 입력칸은 잠긴다.
-// 바깥에서는 항상 eaDefaultValue() 로만 읽는다(map_type 조건이 함수 안에 있어야 하므로 export 하지 않는다).
-// ⚠️ 백엔드 RequestDocument.EA_DEFAULT_NORMAL / EA_DEFAULT_PRODC 와 같은 값이어야 한다.
+// map_type 과는 무관하다 — 백엔드 RequestDocument.requires_sales_agreer() 가 only_prodc 만 보고
+// 판정하므로(EA_DEFAULT_NORMAL/PRODC), 프론트도 같은 기준이어야 한다. CLONE/EXISTING 은 입력칸이
+// disabled 로 잠기는 것과 별개로, 표시되는 기본값 자체는 300/500 을 그대로 따른다.
 const EA_DEFAULT_NORMAL = '300';
 const EA_DEFAULT_PRODC = '500';
 
-/** only_prodc·map_type 에 맞는 예외 구역 기본값.
- *  CLONE/EXISTING 은 입력칸이 잠겨 값을 넣을 수 없으므로 빈 값이다(300/500 을 채우지 않는다). */
-export const eaDefaultValue = (onlyProdc?: string, mapType?: string): string => {
-  if (isMapRegisteredType(mapType)) return '';
-  return onlyProdc === 'Yes' ? EA_DEFAULT_PRODC : EA_DEFAULT_NORMAL;
-};
+/** only_prodc 값에 맞는 예외 구역 기본값(300/500). */
+export const eaDefaultValue = (onlyProdc?: string): string =>
+  onlyProdc === 'Yes' ? EA_DEFAULT_PRODC : EA_DEFAULT_NORMAL;
 
 // '기타 목적 > ADI CD 변경': 특정 제품 ADI CD 스텝 개수 증감/전체삭제 요청.
 export const OTHER_PURPOSE_ADI_CD = 'ADI CD 변경';
@@ -294,9 +292,10 @@ export const INITIAL_DETAIL: DetailFormState = {
   // MAP 삭제 전용 이유(RichTextEditor 의 HTML). 수정↔삭제 전환 시에도 값은 유지되고 라벨만 바뀐다.
   // ⚠️ C가문 지도편차 사유인 위 map_reason 과는 완전히 다른 필드다.
   map_change_reason: '',
-  // 리전별 지도 편차·예외 구역 기본값은 map_type 에 따라 달라진다(regionMapChangeDefault/eaDefaultValue).
+  // 리전별 지도 편차 기본값은 map_type 에 따라 달라진다(regionMapChangeDefault).
   // 여기 초기값은 map_type 이 아직 비어 있는(=NEW 계열) 상태의 값이다 —
   // CLONE/EXISTING 을 고르는 순간 각 핸들러가 위 함수로 다시 계산해 넣는다.
+  // (예외 구역 기본값은 eaDefaultValue — map_type 과 무관하게 only_prodc 만 본다.)
   map_change_top: regionMapChangeDefault(),
   map_value_x_top: '',
   map_value_y_top: '',
