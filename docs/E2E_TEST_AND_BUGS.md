@@ -967,12 +967,16 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 4. 재상신 → ✅ 새 회차에서 동일 경로
 5. ⚠️ `.env POST_APPROVER_LOGINID` 가 비어 있으면 3번이 아니라 **R 합의 순간 `approved`** — 결재가 통째로 생략된다(B-04)
 
-### X-3 J행 비활성화 × BB 매핑 × 상신 × 재편집
+### X-3 J행 비활성화 × BB 매핑 × 상신 × 재편집 (2026-08-18 수정 반영)
 1. J행 10개 전부 매핑 → 그중 3개를 **비활성화**
 2. ✅ bb 정보에서 3행 제거 + 원본 목록에도 안 뜸 → **매핑 검증 통과**(비활성 행은 대상 제외)
-3. 상신 → ✅ 저장 JSON 의 `jayerRows` 에서 **비활성 3행이 제거됨**
-4. 반려 후 재편집 → ✅ 남은 7행 기준으로 정상 로드. **3행이 되살아나지 않는다**
-5. ⚠️ 임시저장 경로는 비활성 행도 저장하므로 3·4 결과가 다르다 — 의도된 차이임을 인지하고 검증할 것
+3. 상신 → ✅ (2026-08-18부터) 저장 JSON 의 `jayerRows` 에 **비활성 3행도 그대로 남는다** — 임시저장과
+   동일하게 동작한다(§ B-58 수정으로 3·4 결과가 임시저장과 같아졌다. 수정 전에는 이 3행이 저장에서
+   제거됐었다 — 아래 B-58 참조).
+4. 반려 후 재편집 → ✅ 남은 7행 + **비활성 3행도 함께 로드되어 "선택 복원"으로 되살릴 수 있다.**
+5. 결재 상세보기(`/approval`, `/history`)의 J-layer 표는 여전히 **활성 행만** 보여준다
+   (`PagedDetailView.tsx` `JayerTable`/`OayerTable` 렌더 시 `!disabled` 필터 — 승인자 화면·엑셀
+   내보내기·Validation System 판정은 이번 수정으로 바뀌지 않는다).
 
 ### X-4 다중 PL × 반려 × 재상신 (잔여 단계)
 1. PL-B·PL-C 지정 상신 → **PL-B 가 반려**
@@ -1879,35 +1883,25 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
   (`index.tsx:1665-1700`)에서 `setPostApprovers([])` 를 함께 호출해 **초기화 책임을 상태 변경 시점으로 옮긴다.**
   근본적으로는 후결자를 `detail` blob 이 아니라 `ApprovalStep(agent='RA')` 단일 진실원천으로 두는 것이 맞다.
 
-### 🟠 B-58 필터로 비활성화된 J/O 행이 **상신 시 문서에서 사라지고**, 그 판정이 `localStorage` 에 달려 있다 **분석🔍**
-- 위치
-  - 저장 제외: `index.tsx:3359-3360`
-    ```ts
-    jayerRows: isMapOnlyScope ? [] : (isDraft ? jayerRows : jayerRows.filter(r => !r.disabled))...
-    ```
-  - `disabled` 산출: `helpers.ts:31` `calcDisabled = row.manuallyDisabled || filterSets.some(...)`
-  - 필터 정의 저장소: **`localStorage`** — `index.tsx:836`, `:2963`, `:2971`, `:3995`, `:4015` (`jayerFilterSets`/`oayerFilterSets`)
-  - 활성 필터 id 저장소: **`additional_notes`** — `index.tsx:3364-3365` (`jayerActiveFilterIds`/`oayerActiveFilterIds`)
-- 내용: 표 헤더의 필터 버튼(`components/Step2.tsx:148-151`)은 행을 `disabled` 로 만든다. 상신 저장은 `disabled` 행을 제외한다.
-  즉 **"보기 필터"처럼 생긴 UI 가 실제로는 문서에서 행을 영구히 빼는 조작**이다.
-  더 나쁜 것은 저장 위치의 비대칭이다 — **어떤 필터가 켜져 있었는지(id)는 문서에 저장되지만, 그 필터가 무슨 조건인지(정의)는
-  브라우저 `localStorage` 에만 있다.**
-- 영향
-  1. **같은 문서를 다른 PC/브라우저에서 열면 결과가 달라진다.** 편집 로드(`index.tsx:836-843`)가
-     `localStorage` 에서 `fSets` 를 읽는데 그 브라우저엔 정의가 없으므로 `calcDisabled` 는 `manuallyDisabled` 만 반영한다
-     → **필터로 빠졌던 행이 되살아난 채로** 상신된다. 반대로 원 작성자 PC 에서는 계속 빠진다.
-  2. 필터를 켠 채 상신하면 **가려진 행이 문서에서 소실**되는데, 확인 모달도 경고도 없다
-     (수동 비활성화 `handleJayerBulkDisable`(`:2097`)은 사용자가 명시적으로 누른 조작이라 성격이 다르다).
-  3. Validation System 판정(`helpers.ts:324` `isValidationTarget`)도 `!r.disabled` 를 쓰므로,
-     **`plel` 이 필터로 가려진 행에만 있으면 문서가 '해당없음'이 되고 E(MASK) 단계가 생성되지 않는다.**
-     백엔드 `has_ppid_plel`(`models.py:164`)은 저장된 행만 보므로 서버도 같은 결론을 낸다 — 즉 **아무도 이상을 눈치채지 못한다.**
-- 재현 절차: STEP3 J-layer 표에서 `+ 필터` 로 특정 `pp` 를 거르는 필터를 만들어 **켠 상태로** 상신 →
-  상세보기 J-layer 탭에 그 행들이 **없으면** 1·2 확인. 이어서 **다른 브라우저(시크릿 창)** 로 같은 문서를 재상신하면
-  그 행들이 **다시 포함**된다 → 1 확인.
-- 권고: ① 상신 확인 모달에 "활성 필터로 제외되는 행 N건" 을 명시하고 동의를 받는다.
-  ② 필터 정의(`FilterSet`)를 `localStorage` 가 아니라 `additional_notes`(또는 사용자 설정 API)에 저장해
-  `jayerActiveFilterIds` 와 저장 위치를 맞춘다. ③ 최소한 필터 비활성화와 수동 비활성화를 **다른 필드로 분리**해,
-  저장 제외는 `manuallyDisabled` 만 보게 한다.
+### ✅ B-58 (2026-08-18 수정 완료) 필터로 비활성화된 J/O 행이 **상신 시 문서에서 사라지고**, 그 판정이 `localStorage` 에 달려 있었다
+- **증상(수정 전)**: 표 헤더의 필터 버튼(`components/Step2.tsx:148-151`)이 행을 `disabled` 로 만들면, 상신 저장이
+  `jayerRows.filter(r => !r.disabled)` 로 그 행을 문서에서 아예 제외했다. "보기 필터"처럼 보이는 UI 가 실제로는
+  문서에서 행을 영구히 빼는 조작이었고, 반려·중단 후 재상신 화면을 다시 열어도 비활성화했던 행 자체가 사라져
+  복원할 수 없었다(수동 비활성화도 마찬가지로 제외됐다 — 사용자 보고로 확인).
+- **수정**: `RequestPage/index.tsx` `buildEnrichedForm` — `jayerRows`/`oayerRows` 저장 시 `disabled` 필터를
+  제거했다. 임시저장과 동일하게 **비활성(수동+필터) 행도 항상 포함**해서 저장한다. 대신 이 필터 제외에
+  암묵적으로 의존하던 두 백엔드 로직을 직접 `disabled` 를 거르도록 고쳤다:
+  - `backend/api/models.py` `has_ppid_plel()` — 비활성 행의 `pp` 키워드를 E(MASK) 생성 판정에서 제외.
+  - `backend/api/views.py` `_validate_bb_mapping()` — 비활성 행은 Backbone 매핑 필수 대상에서 제외.
+  결재 상세보기(`PagedDetailView.tsx` `JayerTable`/`OayerTable`)는 승인자에게 보이는 최종 내용이 바뀌지
+  않도록 렌더 직전에 `!r.disabled` 필터를 추가했다(엑셀 내보내기·Validation System 판정은 원래도 필터링돼 있었다).
+  → 필터 정의가 `localStorage` 에만 있다는 근본 비대칭(다른 PC/브라우저에서 열면 필터 판정이 달라지는 문제)
+  자체는 **이번 수정 범위 밖**이다 — 계속 남아 있으므로 주의.
+- **검증**: 백엔드 `HasPpidPlelTest`·`BbMappingValidationTest.test_disabled_row_excluded_even_when_unmapped`(신규),
+  프론트 `pauseResumeDisabledRows.test.tsx`(신규, 중단→재개 상신 payload 에 수동/필터 비활성 행이 남는지 확인).
+- 재현 절차(수정 전 증상 재현용, 참고): STEP3 J-layer 표에서 `+ 필터` 로 특정 `pp` 를 거르는 필터를 만들어
+  **켠 상태로** 상신 → 반려/중단 후 편집 화면 재진입 → (수정 전) 그 행이 없었다 / (수정 후) 비활성 상태로 남아
+  "선택 복원"으로 되살릴 수 있다.
 
 ### 🟠 B-59 필터 비활성화 경로만 `unmapJayerRows` 를 부르지 않아 **고아 bb 행이 저장**된다 **분석🔍**
 - 위치
@@ -1917,15 +1911,20 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
     `:3996`·`:4016`(필터 저장/수정) — 전부 `calcDisabled` 로 `disabled` 만 바꾼다
   - 저장: `index.tsx:3361` `bbRows: isMapOnlyScope ? [] : bbRows` (**필터링 없이 전량 저장**)
 - 내용: 매핑된 J행이 **수동으로** 비활성화되면 `unmapJayerRows` 가 해당 bb 행을 지운다(`:2102`, 주석도 그렇게 적혀 있다).
-  그런데 **필터로** 비활성화되는 경로에는 그 호출이 없다. 결과적으로
-  **J행은 저장에서 빠지고(B-58) bb 행만 남는다.**
+  그런데 **필터로** 비활성화되는 경로에는 그 호출이 없다.
+- ⚠️ **B-58 수정(2026-08-18)으로 전제가 바뀌었다**: 예전에는 필터 비활성 J행이 상신 저장에서 빠져
+  bb 행이 **가리키는 대상 자체가 사라지는** 진짜 "고아"였다. 이제는 J행이 (비활성 상태로) 그대로
+  저장되므로 `sourceJayerRowId` 는 여전히 유효한 행을 가리킨다 — 다만 **그 J행이 비활성인데 bb 매핑은
+  살아있는 상태**로 데이터가 어긋나는 문제(아래 1·3)는 그대로 남는다. `unmapIfMapped` 미호출이라는
+  근본 원인 자체는 **이번 수정 범위 밖**이라 손대지 않았다.
 - 영향
-  1. `additional_notes.bbRows` 에 **존재하지 않는 `sourceJayerRowId` 를 가리키는 행**이 남는다.
-  2. 백엔드 검증은 통과한다 — `_validate_bb_mapping`(`views.py:254-281`)은 "저장된 jayerRows 중 미매핑이 있는가"만 보고
-     **반대 방향(원본 없는 bb 행)은 보지 않는다.**
-  3. 그 문서를 다시 편집하면 `mappedJayerRowIds` 가 bb 행 기준으로 복원되므로(`index.tsx:872-876`)
-     **고아 매핑이 계속 따라다닌다.**
-  4. 상세보기 BB 탭에 원본을 특정할 수 없는 행이 표시된다.
+  1. `additional_notes.bbRows` 에 **비활성 J행을 가리키는 매핑**이 그대로 남는다(수동 비활성화라면
+     정상적으로 지워지는 것과 대조적).
+  2. 백엔드 검증은 통과한다 — `_validate_bb_mapping`(`views.py`)은 "저장된 jayerRows 중 미매핑이 있는가"만 보고
+     **반대 방향(비활성 J행을 가리키는 bb 행)은 보지 않는다.**
+  3. 그 문서를 다시 편집하면 `mappedJayerRowIds` 가 bb 행 기준으로 복원되므로(`index.tsx:979-1017` 부근)
+     **비활성 J행이 "매핑됨"으로 표시된 채 남는다.**
+  4. 상세보기 BB 탭에는 여전히 그 매핑이 표시된다(J행 자체는 이제 찾을 수 있지만 비활성 상태).
 - 재현 절차: J-layer 행 몇 개에 bb 매핑을 건 뒤, **그 행들을 거르는 필터를 켜고** 상신 →
   상세보기 **BB 탭의 행 수 > J-layer 탭에서 매핑된 행 수** 면 버그.
 - 권고: `calcDisabled` 로 `disabled` 가 새로 `true` 가 되는 모든 지점에서 `unmapIfMapped` 를 함께 호출한다.

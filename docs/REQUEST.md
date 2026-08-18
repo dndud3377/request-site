@@ -249,6 +249,56 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 버그 수정 (2026-08-18 — 반려·중단 재상신 시 J/O-layer 비활성 행이 사라져 복원 불가 — B-58 수정)
+
+- **증상**: J-layer(Step2)·O-layer(Step3) 표에서 행을 비활성화(수동 "선택 비활성화" 또는 필터로 숨김)한
+  채 상신하면, 상신 시점에 `additional_notes.jayerRows`/`oayerRows` 에서 그 행이 **아예 제거**됐다.
+  반려되거나 중단(pause) 요청으로 편집 화면을 다시 열면 비활성화했던 행 자체가 안 보여서 "선택 복원"으로
+  되살릴 방법이 없었다(임시저장은 비활성 행도 저장하는 것과 비대칭 — `docs/E2E_TEST_AND_BUGS.md` **B-58**).
+- **원인**: `RequestPage/index.tsx` `buildEnrichedForm` 이 `isDraft=false`(상신·재상신·재개·PL 수정후상신)
+  일 때 `jayerRows.filter(r => !r.disabled)` / `oayerRows.filter(r => !r.disabled)` 로 저장 직전에
+  비활성 행을 걸러냈다.
+- **수정**:
+  - `RequestPage/index.tsx`: 위 필터를 제거하고 임시저장과 동일하게 **항상 전체 행(비활성 포함)** 을
+    저장한다. `manuallyDisabled`/`disabled` 값도 그대로 유지되므로, 재상신 편집 화면에서 상신 직전과
+    동일한 화면(비활성 행 포함)을 그대로 보고 "선택 복원"할 수 있다.
+  - 백엔드는 "상신 시 비활성 행은 이미 저장에서 빠진다"는 전제로 짜여 있던 두 곳을 직접 `disabled` 를
+    거르도록 고쳤다(안 그러면 비활성 행이 검증·판정에 잘못 반영된다):
+    - `backend/api/models.py` `has_ppid_plel()` — 비활성 행의 `pp` 키워드는 E(MASK) 단계 생성 판정에서 제외.
+    - `backend/api/views.py` `_validate_bb_mapping()` — 비활성 행은 Backbone 매핑 필수 대상에서 제외
+      (프론트 `validate()` 의 `!row.disabled` 조건과 동일하게 맞춤).
+  - `frontend/src/components/PagedDetailView.tsx`(결재 상세보기·이력 화면) `JayerTable`/`OayerTable` 렌더
+    직전에 `!r.disabled` 필터를 추가 — 승인자가 보는 화면은 이번 변경으로 바뀌지 않는다(엑셀 내보내기·
+    Validation System 판정은 원래도 비활성 행을 제외하고 있었다).
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx`, `backend/api/models.py`, `backend/api/views.py`,
+  `frontend/src/components/PagedDetailView.tsx`, `backend/api/tests.py`(신규 테스트),
+  `frontend/src/pages/RequestPage/pauseResumeDisabledRows.test.tsx`(신규), `docs/E2E_TEST_AND_BUGS.md`.
+- **검증**: 백엔드 `python manage.py test api` — 전체 **328건 통과**(신규 7건 포함: `HasPpidPlelTest` 3건 +
+  `BbMappingValidationTest` 신규 1건). 프론트 `npx tsc --noEmit` — 신규 에러 0(변경 전후 동일하게 7건,
+  전부 기존 `Set` 순회 관련 pre-existing). `npx react-scripts test --watchAll=false` — 9 suites /
+  **207건 전부 통과**(신규 `pauseResumeDisabledRows.test.tsx` 1건 포함, 기존 회귀 없음).
+- **수동 검증 시나리오**:
+  1. [`/request` → 요청 목적 `신규`(또는 `차용`) 문서 작성 → STEP3(J-layer)에서 행 하나를 체크 →
+     "선택 비활성화" 클릭] → [기대 결과: 그 행이 회색으로 표시되고 표 하단으로 정렬된다.]
+  2. [STEP4(O-layer)에서도 동일하게 행 하나를 비활성화 → 상신까지 완료(지정 PL 선택 등 정상 진행)] →
+     [기대 결과: 상신이 정상적으로 완료된다.]
+  3. [상신한 문서를 PL이 반려(사유 입력) → 작성자가 결재현황/홈에서 그 의뢰서 클릭 → "수정 후 재상신"
+     또는 편집 진입] → [기대 결과: STEP3/STEP4 표에 **비활성화했던 행이 그대로 회색으로 남아있고**,
+     체크 후 "선택 복원" 버튼으로 다시 활성화할 수 있다.]
+  4. [같은 문서를 결재 도중 작성자가 "중단 요청" → 결재자가 확인 → `중단` 상태로 전이 → 작성자가
+     편집 화면에서 "수정 후 재개"] → [기대 결과: 3번과 동일하게 비활성 행이 남아있어 복원 가능하다.]
+  5. [3·4에서 비활성 행을 복원하지 않고 그대로 재상신 → 결재자 계정으로 로그인 → 결재현황에서 해당
+     의뢰서 상세보기 → 'J-layer 정보'/'O-layer 정보' 탭] → [기대 결과: 비활성 상태로 둔 행은 **여전히
+     보이지 않는다**(승인자 화면은 활성 행만 표시 — 이번 수정으로 바뀌지 않음). 엑셀 내보내기도 동일.]
+- **잠재 주의사항**:
+  - 필터로 비활성화된 행은 필터 "정의"(`FilterSet`)가 브라우저 `localStorage` 에만 저장돼 있어, 다른
+    PC·브라우저에서 같은 문서를 열면 그 필터가 계속 켜져 있는지 판정 자체가 달라질 수 있다(기존
+    `docs/E2E_TEST_AND_BUGS.md` B-58 권고 ②·③ 항목 — 필터 정의를 서버 저장으로 옮기는 것은 이번
+    수정 범위 밖이라 아직 남아 있다).
+  - 필터로 비활성화된 J행에 Backbone 매핑이 걸려 있었다면, 필터 비활성화 경로가 `unmapJayerRows` 를
+    호출하지 않는 기존 문제(B-59)로 인해 그 매핑이 정리되지 않은 채 남을 수 있다 — 이번 수정과는
+    별개의 기존 이슈로, 손대지 않았다(`docs/E2E_TEST_AND_BUGS.md` B-59 참조).
+
 ### 기능 변경 (2026-08-18 — REV 여부 → Final 리네임 + Layer 선택 제거 + C가문 필수화)
 
 - **요청**: StepMap의 "REV 여부" 섹션을 "Final"로 리네임. 기존에는 J-ayer 표에서 뽑은 Layer 후보를

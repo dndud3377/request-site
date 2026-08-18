@@ -875,6 +875,47 @@ class BbMappingValidationTest(TestCase):
         )
         self.assertIsNone(self._view._validate_bb_mapping(doc))
 
+    def test_disabled_row_excluded_even_when_unmapped(self):
+        """2026-08: 비활성 행도 상신 시 저장에 남으므로, 매핑 없이도 통과해야 한다."""
+        doc = self._make_doc_with_jayer([
+            {'id': 'j1', 'process_id': 'P1', 'new_or_copy': '신규', 'disabled': True},
+        ])
+        self.assertIsNone(self._view._validate_bb_mapping(doc))
+
+
+class HasPpidPlelTest(TestCase):
+    """RequestDocument.has_ppid_plel — E(MASK) 단계 생성 판정 (2026-08부터 비활성 행도 저장되므로
+    여기서 직접 걸러야 한다).
+    """
+
+    def setUp(self):
+        import json
+        self._json = json
+        self.requester = UserProfile.objects.create(
+            loginid='req2', mail='req2@company.com', role='NONE'
+        )
+
+    def _make_doc_with_jayer(self, jayer_rows):
+        doc = _make_document(self.requester)
+        doc.additional_notes = self._json.dumps({'jayerRows': jayer_rows})
+        doc.save()
+        return doc
+
+    def test_active_plel_row_is_target(self):
+        doc = self._make_doc_with_jayer([{'id': 'j1', 'pp': 'PLEL01', 'disabled': False}])
+        self.assertTrue(doc.has_ppid_plel())
+
+    def test_disabled_plel_row_is_not_target(self):
+        doc = self._make_doc_with_jayer([{'id': 'j1', 'pp': 'PLEL01', 'disabled': True}])
+        self.assertFalse(doc.has_ppid_plel())
+
+    def test_disabled_plel_row_with_other_active_non_plel_row(self):
+        doc = self._make_doc_with_jayer([
+            {'id': 'j1', 'pp': 'PLEL01', 'disabled': True},
+            {'id': 'j2', 'pp': 'NORMAL', 'disabled': False},
+        ])
+        self.assertFalse(doc.has_ppid_plel())
+
 
 @override_settings(POST_APPROVER_LOGINID='')
 class PEStageReviewerFlowTest(TestCase):

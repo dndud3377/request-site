@@ -2206,7 +2206,7 @@ type Page = { label: string; content: React.ReactNode };
               </span>
             )}
           </div>
-          <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} />
+          <JayerTable rows={jayer.filter(r => !r.disabled)} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} />
           </>
           )}
         </div>
@@ -2273,7 +2273,7 @@ type Page = { label: string; content: React.ReactNode };
                 ))}
               </div>
               {activeTab === 'table' && (
-                <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} />
+                <OayerTable rows={oayer.filter(r => !r.disabled)} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} />
               )}
               {activeTab === 'info' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20, fontSize: 13 }}>

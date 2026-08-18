@@ -338,6 +338,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         기등록/layer삭제(new_or_copy) 행은 프론트(isNocSpecial, constants.ts)에서도
         매핑 대상·검증에서 제외하므로 여기서도 동일하게 제외해야 한다(R-19).
+        비활성(disabled) 행도 함께 저장되므로(2026-08) 프론트 validate() 와 동일하게
+        여기서도 매핑 대상에서 제외한다.
         """
         import json
         NOC_SPECIAL = ('기등록', 'layer삭제')
@@ -352,7 +354,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             }
             unmapped = [
                 r for r in jayer_rows
-                if r.get('process_id')
+                if not r.get('disabled')
+                and r.get('process_id')
                 and r.get('new_or_copy') not in NOC_SPECIAL
                 and r.get('id') not in mapped_jayer_ids
             ]
