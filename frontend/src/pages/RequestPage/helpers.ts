@@ -39,6 +39,14 @@ export const calcDisabled = (
 /** 필터 키워드 초안 빈 값 */
 export const emptyDraftWords = () => ({ sp: [] as string[], sd: [] as string[], pp: [] as string[] });
 
+/**
+ * {{request.partid_selection}}("-" 로 구분된 전체 제품 이름)에서 MAP 조회에 쓰는 8자리 코드를 뽑는다.
+ * "-" 앞부분을 대문자화·8자 제한한다 — MapName.partid 코드(`_` 앞 8자, form_options_mapname 참조)와
+ * 같은 규칙으로 맞춰야 매칭이 된다.
+ */
+export const sourceCodeFromPartid = (partidSelection: string): string =>
+  (partidSelection.split('-')[0] || '').trim().toUpperCase().slice(0, 8);
+
 /** 숫자 전용 입력 필터: 부호(-, 맨 앞 1개만)·소수점(1개만) 외 문자는 제거 (MAP X/Y, 예외구역 값 등) */
 export const sanitizeSignedDecimal = (raw: string): string => {
   let v = raw.replace(/[^0-9.\-]/g, '');
