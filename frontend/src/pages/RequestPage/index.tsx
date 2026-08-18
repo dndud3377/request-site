@@ -547,11 +547,11 @@ export default function RequestPage(): React.ReactElement {
       setProcessIdOptions([]);
       setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
       setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
-      setRevLayersSelected([]); setRevGds('');
+      setFinalGds('');
       setDetail((prev) => ({
         ...prev,
         process_selection: '', partid_selection: '', process_id: '',
-        // 메인 라인 변경 시 C가문 스코프·리전·지도편차·REV 값도 초기화(옛 라인 기준 잔존 방지 — 감사 R-6)
+        // 메인 라인 변경 시 C가문 스코프·리전·지도편차·Final 값도 초기화(옛 라인 기준 잔존 방지 — 감사 R-6)
         prodc_scope: '',
         prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
         prodc_middle_use: '', prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
@@ -4100,8 +4100,7 @@ export default function RequestPage(): React.ReactElement {
       tbvtlv_entries: INITIAL_DETAIL.tbvtlv_entries,
     }));
     setErrors({});
-    setRevLayersSelected([]);
-    setRevGds('');
+    setFinalGds('');
   };
 
   const handleSubmitClick = async () => {
