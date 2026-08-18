@@ -249,6 +249,53 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 버그 수정 (2026-08-18 — CLONE/EXISTING + C가문 Yes일 때 예외구역 기본값(500)이 반영되지 않음)
+
+- **증상**: MAP 목적이 `CLONE`(차용)·`EXISTING`(기등록)일 때 Only C가문 제품을 Yes로 켜도 예외
+  구역 기본 라벨·`ea_value`가 300→500으로 바뀌지 않고 항상 빈 값(`''`)이었다. NEW는 정상적으로
+  300↔500이 갱신됐다.
+- **원인**: `eaDefaultValue(onlyProdc, mapType)`가 2026-08-14 커밋(`547612c`, "잠기는 MAP 칸의
+  기본값을 map_type이 정하도록 단일 출처 신설")에서 `mapType` 인자를 받아 CLONE/EXISTING이면
+  `onlyProdc`를 아예 보지 않고 무조건 `''`을 반환하도록 바뀌었다. 이 커밋은 리전별 지도편차
+  (`regionMapChangeDefault` — CLONE/EXISTING이면 '변경 없음'으로 잠그는 것이 맞다)와 예외구역을
+  같은 패턴으로 묶어 리팩터링하면서, 예외구역 쪽은 원래 의도(2026-08-12 `b3bbb70`에서 도입된
+  "only_prodc 기준 300/500")를 깨뜨린 회귀였다. 백엔드 `RequestDocument.requires_sales_agreer()`
+  (`backend/api/models.py:194-209`)는 애초부터 `map_type`과 무관하게 `only_prodc`만으로 300/500을
+  판정하므로, 이 회귀는 프론트-백엔드 기준 불일치이기도 했다.
+- **수정**: `constants.ts`의 `eaDefaultValue`에서 `mapType` 인자와 `isMapRegisteredType` 분기를
+  제거하고 `onlyProdc`만으로 300/500을 반환하도록 되돌렸다(2026-08-12 도입 당시 시그니처).
+  `index.tsx`(7곳)·`StepMap.tsx`(1곳)의 호출부에서 이제 불필요해진 두 번째 인자를 제거했다.
+  `regionMapChangeDefault`(지도편차 잠금 기본값)는 이번 수정과 무관해 손대지 않았다 — CLONE/
+  EXISTING에서 리전별 지도편차가 '변경 없음'으로 잠기는 동작은 그대로 유지된다. 예외구역
+  입력칸 자체의 잠금(`disabled={isMapRegistered}`)도 이 함수와 별개 prop이라 영향 없다 — 즉
+  CLONE/EXISTING에서도 값은 정상적으로 300/500이 보이되, 여전히 사용자가 직접 수정할 수는 없다.
+- **영향 파일**: `frontend/src/pages/RequestPage/constants.ts`, `frontend/src/pages/RequestPage/index.tsx`,
+  `frontend/src/pages/RequestPage/components/StepMap.tsx`,
+  `frontend/src/pages/RequestPage/cloneMapRegionDefault.test.tsx`(회귀 당시 동작을 그대로 고정하고
+  있던 재현 테스트를 수정된 동작에 맞게 갱신). 백엔드는 이미 올바른 기준이라 변경 없음.
+- **검증(2026-08-18 실행)**: `npx tsc --noEmit` — 신규 에러 0(기존 7건과 동일, 무관한 `Set` es5
+  순회·`GuidePage.tsx` i18n strict 키). `CI=true npx react-scripts test --watchAll=false` — 8
+  suites / **206건 전부 통과**(`cloneMapRegionDefault.test.tsx`의 갱신된 기대값 포함, 신규 실패
+  없음 — 수정 직후 처음엔 구 동작을 고정하던 이 테스트에서 3건이 실패하는 것으로 회귀 자체를
+  재확인했고, 테스트를 갱신한 뒤 통과했다).
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다):
+  1. [`/request` → 새 문서 → Step1 작성 → Step2에서 MAP 목적 `차용`(CLONE) 선택] → [기대 결과:
+     예외 구역 select의 "변경 없음" 옵션 라벨이 "변경 없음 (300)"으로 보인다(입력칸은 잠김).]
+  2. [같은 화면에서 Only C가문 제품을 `Yes`로 전환] → [기대 결과: 라벨이 "변경 없음 (500)"으로
+     바뀌고, 값 입력칸(비활성)에도 500이 채워져 있다. 여전히 클릭해도 값을 수정할 수 없다.]
+  3. [Only C가문 제품을 다시 `No`로 전환] → [기대 결과: 라벨·값이 300으로 되돌아간다.]
+  4. [MAP 목적을 `기등록`(EXISTING)으로 바꿔 1~3을 동일하게 반복] → [기대 결과: CLONE과 동일하게
+     300/500이 정상 반영된다.]
+  5. [케이스 2 상태로 임시저장 → 개발자 도구 등으로 저장된 `additional_notes.detail.ea_value` 확인]
+     → [기대 결과: `"500"`이 저장돼 있다(빈 값이 아님).]
+- **잠재 주의사항**:
+  - 이 회귀가 살아있던 기간(2026-08-14 ~ 2026-08-18) 동안 CLONE/EXISTING + C가문 Yes로 저장된
+    기존 문서가 있다면 `ea_value`가 빈 값으로 저장돼 있을 수 있다. 백엔드 `requires_sales_agreer()`
+    는 `ea_value`가 빈 값이면 무조건 `False`(합의자 불필요)를 반환하므로, 그 기간 문서들은 실제로
+    "예외구역이 500이 아닌 값으로 변경됐는지" 판정이 항상 스킵됐을 가능성이 있다. 실제 운영 DB에
+    이 기간 CLONE/EXISTING + C가문 Yes 문서가 있는지는 **직접 확인하지 못했다** — 필요하면 확인
+    방법을 알려드리겠다.
+
 ### 버그 수정 (2026-08-18 — 반려·중단 재상신 시 J/O-layer 비활성 행이 사라져 복원 불가 — B-58 수정)
 
 - **증상**: J-layer(Step2)·O-layer(Step3) 표에서 행을 비활성화(수동 "선택 비활성화" 또는 필터로 숨김)한

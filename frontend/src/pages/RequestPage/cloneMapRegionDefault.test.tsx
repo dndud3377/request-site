@@ -4,7 +4,13 @@
  * 배경: MAP 목적이 CLONE/EXISTING이면 StepMap에서 지도편차(map_change_top/bottom)·예외구역
  * (ea_value) 입력칸이 전부 잠기는데도, INITIAL_DETAIL 기본값('변경 있음'/300)이 그대로 상신되던
  * 문제를 고쳤다. 신규 문서에서 CLONE을 처음 고르고 C가문을 Yes로 켜는 실제 흐름을 그대로
- * 구동해, 상신(임시저장) payload 에 '변경 없음'/빈 값이 저장되는지 확인한다.
+ * 구동해, 상신(임시저장) payload 에 지도편차는 '변경 없음', 예외구역은 only_prodc 기준
+ * 기본값(300/500)이 저장되는지 확인한다.
+ *
+ * ⚠️ 예외구역(ea_value)은 map_type 과 무관하게 only_prodc 만으로 300/500 이 정해진다
+ * (eaDefaultValue, 2026-08-18 수정 — 백엔드 RequestDocument.requires_sales_agreer 와 동일 기준).
+ * 리전별 지도편차(map_change_top/bottom)만 CLONE/EXISTING 에서 '변경 없음'으로 잠긴다
+ * (regionMapChangeDefault) — 이 둘을 혼동하지 않는다.
  */
 import React from 'react';
 import { render, act, fireEvent } from '@testing-library/react';
@@ -139,13 +145,13 @@ async function saveDraftAndCaptureDetail(): Promise<Record<string, unknown>> {
   return notes.detail;
 }
 
-describe('CLONE 신규 작성 — 리전별 지도편차·예외구역은 잠긴 채 항상 변경없음/빈 값이어야 한다', () => {
+describe('CLONE 신규 작성 — 리전별 지도편차는 잠긴 채 변경없음, 예외구역은 잠기되 only_prodc 기본값을 따른다', () => {
   beforeEach(() => {
     mockState.captured = null;
     localStorage.clear();
   });
 
-  it('CLONE 선택 후 C가문(Only C가문 제품)을 Yes로 켜도 map_change_top/bottom은 변경 없음, ea_value는 빈 값이다', async () => {
+  it('CLONE 선택 후 C가문(Only C가문 제품)을 Yes로 켜면 map_change_top/bottom은 변경 없음, ea_value는 500(잠긴 채)이다', async () => {
     const { container } = await renderNewDoc();
     await advanceToMapStep(container);
 
@@ -173,11 +179,11 @@ describe('CLONE 신규 작성 — 리전별 지도편차·예외구역은 잠긴
     expect(detail.map_value_y_top).toBe('');
     expect(detail.map_value_x_bottom).toBe('');
     expect(detail.map_value_y_bottom).toBe('');
-    expect(detail.ea_value).toBe('');
+    expect(detail.ea_value).toBe('500');
     expect(detail.ea_change).toBe('변경 없음');
   });
 
-  it('CLONE 의 예외 구역 라벨은 기본값 없이 "변경 없음"만 보인다(NEW 는 "변경 없음 (300)")', async () => {
+  it('CLONE 의 예외 구역 라벨도 NEW 와 동일하게 only_prodc 기본값을 보여준다(입력만 잠김)', async () => {
     const { container } = await renderNewDoc();
     await advanceToMapStep(container);
 
@@ -197,14 +203,14 @@ describe('CLONE 신규 작성 — 리전별 지도편차·예외구역은 잠긴
     await act(async () => { buttonWith(container, '확인').click(); });
     await flushEffects();
 
-    // CLONE 은 입력칸이 잠겨 기본값 자체가 없으므로 값 표기가 사라진다.
-    expect(eaNoChangeLabel()).toBe('변경 없음');
+    // CLONE 은 입력칸만 잠길 뿐(disabled) 기본값 표기는 NEW 와 동일하게 only_prodc(No) 기준 300이다.
+    expect(eaNoChangeLabel()).toBe('변경 없음 (300)');
     const eaValueInput = container.querySelector('input[name="ea_value"]') as HTMLInputElement;
-    expect(eaValueInput.value).toBe('');
+    expect(eaValueInput.value).toBe('300');
     expect(eaValueInput.disabled).toBe(true);
   });
 
-  it('C가문을 Yes → No → Yes로 다시 전환해도 여전히 변경 없음/빈 값이다', async () => {
+  it('C가문을 Yes → No → Yes로 다시 전환해도 지도편차는 변경없음, ea_value는 최종 상태(Yes→500) 기준이다', async () => {
     const { container } = await renderNewDoc();
     await advanceToMapStep(container);
 
@@ -222,6 +228,6 @@ describe('CLONE 신규 작성 — 리전별 지도편차·예외구역은 잠긴
     const detail = await saveDraftAndCaptureDetail();
     expect(detail.map_change_top).toBe('변경 없음');
     expect(detail.map_change_bottom).toBe('변경 없음');
-    expect(detail.ea_value).toBe('');
+    expect(detail.ea_value).toBe('500');
   });
 });
