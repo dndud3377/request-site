@@ -11,9 +11,6 @@ interface RegionRow {
   prod: string;
 }
 
-const REV_LAYERS = ['M1', 'M2', 'V1'];
-const PICK_LAYER = 'M1';
-
 const Step2CfamilyDemo: React.FC = () => {
   const { t } = useTranslation();
 
@@ -31,10 +28,9 @@ const Step2CfamilyDemo: React.FC = () => {
   const [topImg, setTopImg] = useState(false);
   const [botImg, setBotImg] = useState(false);
   const [pasteChip, setPasteChip] = useState(false);
-  const [revYn, setRevYn] = useState<'' | 'YES' | 'NO'>('');
-  const [revLayer, setRevLayer] = useState<string | null>(null);
-  const [revGds, setRevGds] = useState('');
-  const [revEntries, setRevEntries] = useState<{ layer: string; gds: string }[]>([]);
+  const [finalYn, setFinalYn] = useState<'' | 'YES' | 'NO'>('');
+  const [finalGds, setFinalGds] = useState('');
+  const [finalEntries, setFinalEntries] = useState<string[]>([]);
 
   const refs = useRef<Record<string, HTMLElement | null>>({});
   const setRef = (key: string) => (el: HTMLElement | null) => { refs.current[key] = el; };
@@ -71,10 +67,9 @@ const Step2CfamilyDemo: React.FC = () => {
       setXmarkAdd(false);
       setTopImg(false);
       setBotImg(false);
-      setRevYn('');
-      setRevLayer(null);
-      setRevGds('');
-      setRevEntries([]);
+      setFinalYn('');
+      setFinalGds('');
+      setFinalEntries([]);
       await sleep(550);
 
       // ① Only C가문 = Yes
@@ -137,25 +132,20 @@ const Step2CfamilyDemo: React.FC = () => {
       setPasteChip(false);
       await sleep(600);
 
-      // ⑤ REV 관리
+      // ⑤ Final 관리
       setPhase('rev');
-      await moveTo(refs.current.rev_yes);
-      await click(refs.current.rev_yes);
-      setRevYn('YES');
+      await moveTo(refs.current.final_yes);
+      await click(refs.current.final_yes);
+      setFinalYn('YES');
       await sleep(600);
-      await moveTo(refs.current.rev_layer);
-      await click(refs.current.rev_layer);
-      setRevLayer(PICK_LAYER);
-      await sleep(350);
-      await moveTo(refs.current.rev_gds);
-      await click(refs.current.rev_gds);
-      if (!(await typeText(setRevGds, 'v1.2'))) return;
+      await moveTo(refs.current.final_gds);
+      await click(refs.current.final_gds);
+      if (!(await typeText(setFinalGds, 'v1.2'))) return;
       await sleep(250);
-      await moveTo(refs.current.rev_add);
-      await click(refs.current.rev_add);
-      setRevEntries([{ layer: PICK_LAYER, gds: 'v1.2' }]);
-      setRevLayer(null);
-      setRevGds('');
+      await moveTo(refs.current.final_add);
+      await click(refs.current.final_add);
+      setFinalEntries(['v1.2']);
+      setFinalGds('');
       await sleep(1000);
     }
   );
@@ -268,53 +258,36 @@ const Step2CfamilyDemo: React.FC = () => {
               )}
             </div>
 
-            {/* REV 관리 */}
+            {/* Final 관리 */}
             <div className="guide-demo-formgroup tbvtlv">
               <div className="guide-demo-formlabel">
-                {t('guide.demo.step2_cfamily.rev_label')}
-                <span className="guide-demo-cond-badge">{t('guide.demo.step2_cfamily.rev_hint')}</span>
+                {t('guide.demo.step2_cfamily.final_label')}
               </div>
               <div className="guide-demo-choices">
-                <button type="button" ref={setRef('rev_yes') as React.Ref<HTMLButtonElement>} className={`guide-demo-choice auto${revYn === 'YES' ? ' on' : ''}`}>YES</button>
-                <span className={`guide-demo-choice auto${revYn === 'NO' ? ' on' : ''}`}>NO</span>
+                <button type="button" ref={setRef('final_yes') as React.Ref<HTMLButtonElement>} className={`guide-demo-choice auto${finalYn === 'YES' ? ' on' : ''}`}>YES</button>
+                <span className={`guide-demo-choice auto${finalYn === 'NO' ? ' on' : ''}`}>NO</span>
               </div>
-              {revYn === 'YES' && (
+              {finalYn === 'YES' && (
                 <>
                   <div className="guide-demo-tbv-row" style={{ marginTop: 8 }}>
-                    <span className="lbl">{t('guide.demo.common.col_layer')}</span>
-                    <div className="guide-demo-sdbtns">
-                      {REV_LAYERS.map((l) => (
-                        <button
-                          key={l}
-                          type="button"
-                          ref={l === PICK_LAYER ? (setRef('rev_layer') as React.Ref<HTMLButtonElement>) : undefined}
-                          className={`guide-demo-sdbtn${revLayer === l ? ' on' : ''}`}
-                        >
-                          {l}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="guide-demo-tbv-row">
                     <span className="lbl">GDS</span>
-                    <div className="guide-demo-select sm" ref={setRef('rev_gds')} style={{ minWidth: 120 }}>
-                      {revGds ? <span className="val">{revGds}</span> : <span className="ph">{t('guide.demo.step2_cfamily.gds_ph')}</span>}
+                    <div className="guide-demo-select sm" ref={setRef('final_gds')} style={{ minWidth: 120 }}>
+                      {finalGds ? <span className="val">{finalGds}</span> : <span className="ph">{t('guide.demo.step2_cfamily.gds_ph')}</span>}
                     </div>
-                    <button type="button" className="guide-demo-btn primary sm" ref={setRef('rev_add') as React.Ref<HTMLButtonElement>}>
+                    <button type="button" className="guide-demo-btn primary sm" ref={setRef('final_add') as React.Ref<HTMLButtonElement>}>
                       + {t('guide.demo.common.add')}
                     </button>
                   </div>
-                  {revEntries.length > 0 && (
+                  {finalEntries.length > 0 && (
                     <table className="guide-demo-table sm" style={{ marginTop: 6 }}>
                       <thead>
-                        <tr><th>{t('guide.demo.common.col_layer')}</th><th>GDS</th></tr>
+                        <tr><th>GDS</th></tr>
                       </thead>
                       <tbody>
                         <AnimatePresence>
-                          {revEntries.map((e, i) => (
-                            <motion.tr key={`${e.layer}-${i}`} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}>
-                              <td>{e.layer}</td>
-                              <td>{e.gds}</td>
+                          {finalEntries.map((gds, i) => (
+                            <motion.tr key={`${gds}-${i}`} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}>
+                              <td>{gds}</td>
                             </motion.tr>
                           ))}
                         </AnimatePresence>
