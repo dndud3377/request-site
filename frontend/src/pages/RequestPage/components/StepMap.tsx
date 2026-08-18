@@ -4,7 +4,7 @@ import AutocompleteInput from '../../../components/AutocompleteInput';
 import RichTextEditor from '../../../components/RichTextEditor';
 import { DetailFormState, GuideFeatureKey } from '../../../types';
 import {
-  CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ, MAP_TYPE_CLONE,
+  CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ, isMapRegisteredType,
   EA_NO_CHANGE, EA_HAS_CHANGE, eaDefaultValue,
 } from '../constants';
 import { sanitizeSignedDecimal } from '../helpers';
@@ -207,8 +207,9 @@ const StepMap: React.FC<StepMapProps> = ({
                이유 입력칸 하나만 남기는 것이 이 모드의 요구사항이다.
                validate(2) 도 같은 조건으로 이 항목들의 검증을 건너뛴다(짝을 맞춰야 함). ▼▼ */}
         {!isMapReasonMode && (<>
-        {/* 원본 위치/Part ID (CLONE 전용) */}
-        {detail.map_type === MAP_TYPE_CLONE && (
+        {/* 원본 위치/Part ID (CLONE·EXISTING 공용) — EXISTING 은 어느 MAP 을 가리키는지 식별하는 값이라
+            CLONE 과 동일하게 항상 입력 가능하다(isMapRegistered 로 잠그지 않는다). */}
+        {isMapRegisteredType(detail.map_type) && (
           <div className="full-width" data-tour="map-source-location">
             <div className="conditional-group">
               <div className="flex-row">
