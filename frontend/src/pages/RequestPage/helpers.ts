@@ -217,6 +217,7 @@ export interface BaComparableRow {
   sd: string;
   pp: string;
   layerid: string;
+  new_or_copy?: string;
 }
 
 /** 비교·표시 대상 5개 항목 */
@@ -239,8 +240,14 @@ export const toMergeRowInfo = (r: BaComparableRow): MergeRowInfo => ({
 /** 5개 항목이 모두 같은가 (= 변경 없음 → 어느 표에도 싣지 않는다) */
 const baSame = (a: MergeRowInfo, b: MergeRowInfo): boolean => BA_FIELDS.every((f) => a[f] === b[f]);
 
-/** 비활성 행과 layerid 가 빈 행은 비교 대상이 아니다. */
-const baTarget = (r: BaComparableRow): boolean => !r.disabled && baNorm(r.layerid) !== '';
+/**
+ * 비활성 행과 layerid 가 빈 행은 비교 대상이 아니다.
+ * 참조문서(ref)의 `layer삭제` 행도 대상에서 제외한다 — 그 시점에 이미 지워진 layer 이므로
+ * 다음 세대 비교에서 "이번에 새로 삭제됨"으로 재등장하면 안 된다(참조 요청서 체인 A→B→C...).
+ * `computeLayerMerge` 의 `isMergePresent` 와 동일한 기준.
+ */
+const baTarget = (r: BaComparableRow): boolean =>
+  !r.disabled && baNorm(r.layerid) !== '' && r.new_or_copy !== NOC_LAYER_DELETE;
 
 /**
  * 자동 확정 짝의 행 id — 출처 행 id 로 만들어 **같은 입력이면 항상 같은 값**이 되게 한다
