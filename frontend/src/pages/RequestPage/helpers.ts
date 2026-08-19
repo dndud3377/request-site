@@ -415,6 +415,34 @@ export const computeBeforeAfter = (
   return { pairs, unmatchedBefore, unmatchedAfter, sameCount };
 };
 
+/** AFTER 쪽 id 로부터 실제 J/O-layer 행을 찾는 데 필요한 최소 형태. */
+export interface PairAfterLookupRow {
+  id: string;
+  disabled: boolean;
+  new_or_copy: string;
+}
+
+/**
+ * pair 의 AFTER 가 실제 J/O-layer 표의 행과 연결돼 있고, 그 행이 지금 비활성이거나 `기등록` 이면 true.
+ * `afterId` 는 `${table}_${row.id}` 형태(`toUnmatched`/`computeBeforeAfter` 참조) — 접두사 2글자
+ * (`J_`/`O_`)로 표를 가리고 나머지가 원본 행 id 다. 수기로 추가한 행(`afterId=null`)이나, 표에서 행
+ * 자체가 지워진 경우는 연결이 없으므로 false.
+ * 표시 전용 판정이라 값 자체는 건드리지 않는다 — Merge 확정 시점의 `pair.after` 스냅샷은 그대로 두고,
+ * "지금 이 순간 실제 표 상태가 어떤지"만 매 렌더마다 다시 계산한다.
+ */
+export const isPairAfterInactive = (
+  afterId: string | null,
+  jayerRows: PairAfterLookupRow[],
+  oayerRows: PairAfterLookupRow[]
+): boolean => {
+  if (!afterId) return false;
+  const table = afterId.slice(0, 1);
+  const rowId = afterId.slice(2);
+  const rows = table === 'J' ? jayerRows : table === 'O' ? oayerRows : null;
+  const row = rows?.find((r) => r.id === rowId);
+  return !!row && (row.disabled || row.new_or_copy === NOC_REGISTERED);
+};
+
 // ===== 변경전/변경후 표 직접 입력 =====
 
 /** 값이 하나도 없는 쪽 = '미등록'. null 도 미등록으로 본다. */
