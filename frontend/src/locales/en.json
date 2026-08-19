@@ -402,6 +402,7 @@
     "mshot_change_image_attach_area": "Image Copy Area",
     "mshot_image_attached_hint": "Image attached. Paste again with Ctrl+V to replace it.",
     "mshot_image_paste_hint": "Paste an image with Ctrl+V",
+    "mshot_image_zoom_btn": "View enlarged image",
     "step1_purpose_gate_hint": "Select Line, Combination Method, Product Name, and Cooking Method to unlock the remaining fields.",
     "filter_delete_all": "Delete All",
     "filter_edit_cancel": "Cancel Edit",
