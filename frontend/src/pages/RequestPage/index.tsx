@@ -4464,6 +4464,8 @@ export default function RequestPage(): React.ReactElement {
           handleMergeClick={handleMergeClick}
           handleMergeReselect={() => setMergeReselectConfirm(true)}
           hasMergeSnapshot={mergeSnapshot !== null}
+          jayerRows={jayerRows}
+          oayerRows={oayerRows}
           baSameCount={baSameCount}
           baSelBefore={baSelBefore}
           baSelAfter={baSelAfter}

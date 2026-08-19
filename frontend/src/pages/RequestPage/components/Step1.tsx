@@ -4,6 +4,7 @@ import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { DetailFormState, FlowChartRow, RequestDocument, GuideFeatureKey, MergeRefMode, MergeTable } from '../../../types';
 import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_ADI_CD, OTHER_PURPOSE_LAB, isMergePurposeSelected } from '../constants';
+import { PairAfterLookupRow } from '../helpers';
 import BeforeAfterPanel, { BaField, BaSide } from './BeforeAfterPanel';
 import AdiCdPanel, { AdiCdField, AdiCdSide } from './AdiCdPanel';
 
@@ -39,6 +40,9 @@ interface Step1Props {
   handleMergeClick: () => void;
   handleMergeReselect: () => void;
   hasMergeSnapshot: boolean;
+  /** 변경전/변경후 표에서 AFTER 가 실제 행과 연결됐을 때 지금 비활성/기등록인지 보여주는 데 쓴다 */
+  jayerRows: PairAfterLookupRow[];
+  oayerRows: PairAfterLookupRow[];
   baSameCount: number;
   baSelBefore: string | null;
   baSelAfter: string | null;
@@ -103,6 +107,8 @@ const Step1: React.FC<Step1Props> = ({
   handleMergeClick,
   handleMergeReselect,
   hasMergeSnapshot,
+  jayerRows,
+  oayerRows,
   baSameCount,
   baSelBefore,
   baSelAfter,
@@ -354,6 +360,8 @@ const Step1: React.FC<Step1Props> = ({
                 {isMergeDone && (
                   <BeforeAfterPanel
                     detail={detail}
+                    jayerRows={jayerRows}
+                    oayerRows={oayerRows}
                     sameCount={baSameCount}
                     manualOnly={isMergeNone}
                     selBefore={baSelBefore}

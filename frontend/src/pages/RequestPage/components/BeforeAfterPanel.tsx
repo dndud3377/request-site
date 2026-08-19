@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DetailFormState, MergePair, MergeRowInfo, MergeTable, MergeUnmatchedRow } from '../../../types';
 import { MERGE_UNREGISTERED_ID, MERGE_MANUAL_FIELDS } from '../constants';
-import { deriveMergeKind, isMergeSideEmpty } from '../helpers';
+import { deriveMergeKind, isMergeSideEmpty, isPairAfterInactive, PairAfterLookupRow } from '../helpers';
 
 /**
  * 참조 요청서 Merge 의 변경전/변경후 비교 패널.
@@ -21,6 +21,9 @@ export type BaField = typeof MERGE_MANUAL_FIELDS[number];
 
 export interface BeforeAfterPanelProps {
   detail: DetailFormState;
+  /** AFTER 가 실제 J/O-layer 행과 연결돼 있을 때, 그 행이 지금 비활성/기등록인지 판정하는 데 쓴다 */
+  jayerRows: PairAfterLookupRow[];
+  oayerRows: PairAfterLookupRow[];
   /** 5개 항목이 모두 같아 표에서 제외한 건수 — 요약 표시용 */
   sameCount: number;
   /** 참조 요청서 없이 '없음' 으로 확정한 경우 — BEFORE/AFTER 매핑 표를 감춘다 */
@@ -42,6 +45,8 @@ const FIELDS: (keyof MergeRowInfo)[] = ['process_id', 'sp', 'sd', 'pp', 'layerid
 
 const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
   detail,
+  jayerRows,
+  oayerRows,
   sameCount,
   manualOnly,
   selBefore,
@@ -107,6 +112,12 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
     const kind = deriveMergeKind(pair.before, pair.after);
     return <span className={`ba-badge ba-badge-${kind}`}>{t(`request.ba_kind_${kind}`)}</span>;
   };
+
+  /** AFTER 가 실제 J/O-layer 행과 연결돼 있고 그 행이 지금 비활성/기등록이면 배지를 덧붙인다. */
+  const afterInactiveBadge = (pair: MergePair) =>
+    isPairAfterInactive(pair.afterId, jayerRows, oayerRows) && (
+      <span className="ba-badge ba-badge-inactive">{t('request.ba_after_inactive')}</span>
+    );
 
   /** 미매칭 목록 한쪽(BEFORE/AFTER)을 그린다. 첫 행은 항상 '미등록'. */
   const renderPickList = (side: BaSide, rows: MergeUnmatchedRow[], selected: string | null) => (
@@ -290,7 +301,7 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
                   </td>
                   {renderPairCells(pair, 'before')}
                   {renderPairCells(pair, 'after')}
-                  <td>{kindBadge(pair)}</td>
+                  <td>{kindBadge(pair)} {afterInactiveBadge(pair)}</td>
                   <td className="ba-row-actions">
                     <button
                       type="button"
