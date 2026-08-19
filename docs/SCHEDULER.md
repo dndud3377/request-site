@@ -26,11 +26,15 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 
 | 잡 ID | 주기 | 함수 | 설명 |
 |-------|------|------|------|
-| `sync_rtdb_options` | **10분** | `sync_rtdb_options()` | 라인1·3~5·`nv` 의 공정-품목 / 품목-공정ID / 스텝 (RTDB 단독) 동기화 (`nv` 는 스텝 제외). RTDB 실패 시 실패 목록을 모아 알림 메일 1통 발송 |
-| `sync_form_options` | 1시간 | `sync_form_options()` | 바코드-품목 / MAP 이름 + **라인2 공정-품목 / 품목-공정ID** (DCQ 단독) 동기화 |
-| `sync_holidays` | 매일 02:00 | `sync_holidays()` | 공휴일 동기화 (act_date UNIQUE → 날짜 기준 중복 제거 후 저장) |
-| `sync_design_rule` | 매일 02:00 | `sync_design_rule()` | 공정-디자인룰(DCQ `S.M`) 동기화 → `api_designrule` 전체 갱신 |
+| `sync_rtdb_options` | **10분** | `sync_rtdb_options()` | 라인1·3~5·`nv` 의 공정-품목 / 품목-공정ID / 스텝 (RTDB 단독) 동기화 (`nv` 는 스텝 제외). 실패 시 실패 목록을 모아 **RTDB 동기화 실패** 알림 메일 1통 발송 |
+| `sync_form_options` | 1시간 | `sync_form_options()` | 바코드-품목 / MAP 이름 + **라인2 공정-품목 / 품목-공정ID** (DCQ 단독) 동기화. 실패 시 실패 목록을 모아 **DCQ 동기화 실패** 알림 메일 1통 발송 |
+| `sync_holidays` | 매일 02:00 | `sync_holidays()` | 공휴일 동기화 (act_date UNIQUE → 날짜 기준 중복 제거 후 저장). 실패 시 **DCQ 동기화 실패** 알림 메일 발송 |
+| `sync_design_rule` | 매일 02:00 | `sync_design_rule()` | 공정-디자인룰(DCQ `S.M`) 동기화 → `api_designrule` 전체 갱신. 실패 시 **DCQ 동기화 실패** 알림 메일 발송 |
 | `process_mail_queue` | 1분 | `process_mail_queue()` | 결재 알림 메일 큐 발송 |
+
+> `sync_rtdb_options`는 RTDB(REST API) 소스만, `sync_form_options`/`sync_holidays`/`sync_design_rule`는
+> DCQ 소스만 다루므로 실패 알림도 그에 맞춰 각각 `rtdb_sync_failed`(RTDB) / `dcq_sync_failed`(DCQ)로
+> 나뉜다. 두 알림 모두 수신자는 같은 `.env`의 `RTDB_SYNC_ALERT_MAIL`을 공유한다(§"동기화 실패 알림 메일" 참고).
 
 > `scheduler` 서비스(`run_scheduler`) 기동 시 `sync_rtdb_options` / `sync_form_options` / `sync_holidays` / `sync_design_rule` 는 각각 스레드로 1회 즉시 실행된다.
 > (구 `sync_process_product` 잡은 `sync_rtdb_options` 로 통합되었으며, `start()` 에서 잔여 잡을 제거한다.)
@@ -190,40 +194,61 @@ RTDB(REST API)  →  /api/queries
   거의 동시에 도는 극히 드문 경우, 캐시를 각자 갱신할 수 있다(둘 다 정상 로그인 결과이므로 데이터
   정합성엔 영향 없음).
 
-## RTDB 동기화 실패 알림 메일 (2026-08 추가)
+## 동기화 실패 알림 메일 (2026-08 추가, DCQ 대상 확장)
 
-`sync_rtdb_options()` 한 사이클 안에서 RTDB 조회가 실패(예외)했거나 빈 결과였던 (line, 데이터 종류)
-쌍을 전부 모아, 사이클이 끝난 뒤 **실패가 하나라도 있으면 알림 메일 1통**을 큐에 적재한다.
+스케줄러로 외부 데이터를 가져오는 **모든 잡**(`sync_rtdb_options`/`sync_form_options`/`sync_holidays`/
+`sync_design_rule`)은 각자 한 사이클 안에서 조회가 실패(예외)했거나 빈 결과였던 (구분, 데이터 종류)
+쌍을 모아, 그 사이클이 끝난 뒤 **실패가 하나라도 있으면 알림 메일 1통**을 큐에 적재한다. 소스에 따라
+메일이 둘로 나뉜다 — **RTDB 실패는 RTDB 메일, DCQ 실패는 DCQ 메일**로 따로 온다.
 
-- 구현: `scheduler.sync_rtdb_options()` 가 실패 목록을 모아 사이클 종료 시
-  `mailer.enqueue_rtdb_sync_failed(failures)` 를 호출한다. 메일 발송 자체는 결재 알림과 동일한
-  `MailNotification` 큐 + DXHUB 인프라를 그대로 재사용한다(`document=None`, `event_type='rtdb_sync_failed'`,
-  즉시 발송 + 실패 시 `process_mail_queue` 재시도).
-- **수신자**: `.env` 의 `RTDB_SYNC_ALERT_MAIL`(콤마 구분 이메일 목록). **비어 있으면 메일을 적재하지 않는다**
-  (`mailer._resolve_rtdb_alert_recipients()`).
-- **발송 빈도**: 장애 지속 여부를 별도로 추적하지 않는다 — RTDB 장애가 이어지는 동안은 **10분 주기마다
-  매번** 그 시점의 실패 목록으로 새 메일을 보낸다(중복 억제 없음). 장애가 길어지면 메일이 여러 통 쌓일
-  수 있음을 감안한 의도적 설계다.
-- **판정 기준**: RTDB 로그인 자체 실패(그 사이클의 모든 line·데이터 종류가 한꺼번에 실패)와, 로그인은
-  됐지만 개별 조회가 예외이거나 빈 결과(0건)인 경우를 **모두 실패로 취급**한다 — 예전에 DCQ fallback을
-  타던 조건과 동일하다.
-- **본문**: 실패한 (라인, 데이터 종류) 표. 데이터 종류는 이 문서 다른 곳과 동일하게 공정-품목/품목-공정ID/스텝을
-  가리킨다. `MAIL_REDIRECT_TO` 가 설정된 개발 환경에서는 이 알림도 그 주소로 강제 발송된다(`_apply_redirect`).
+| 소스 | 대상 잡 | `event_type` | 적재 함수 | 표 첫 컬럼 |
+|------|---------|--------------|-----------|-----------|
+| RTDB | `sync_rtdb_options` | `rtdb_sync_failed` | `mailer.enqueue_rtdb_sync_failed(failures)` | 라인 |
+| DCQ | `sync_form_options` / `sync_holidays` / `sync_design_rule` | `dcq_sync_failed` | `mailer.enqueue_dcq_sync_failed(failures)` | 구분 |
+
+- 구현: 각 스케줄러 함수가 실패 목록(`failures: [{'context':.., 'target':..}, ...]`)을 모아 함수
+  종료 시(또는 로그인 자체가 실패해 조기 종료할 때) `scheduler._send_sync_failure_alert(mailer_func_name,
+  failures)` 를 호출한다. 이 헬퍼가 RTDB/DCQ 알림을 공통으로 라우팅한다(메일 적재 자체가 실패해도
+  잡을 죽이지 않도록 예외를 잡아 로그만 남긴다). 메일 발송 자체는 결재 알림과 동일한 `MailNotification`
+  큐 + DXHUB 인프라를 그대로 재사용한다(`document=None`, 즉시 발송 + 실패 시 `process_mail_queue` 재시도).
+  RTDB/DCQ 두 메일은 렌더링 템플릿(`mailer._render_sync_failure_email`)과 수신자 조회
+  (`mailer._resolve_sync_alert_recipients`)를 공유하고, 제목·본문 헤드라인·표 컬럼명만 다르다.
+- **수신자**: RTDB·DCQ 알림 **둘 다** `.env` 의 `RTDB_SYNC_ALERT_MAIL`(콤마 구분 이메일 목록)을 그대로
+  쓴다 — DCQ 전용 env var 는 따로 두지 않는다. **비어 있으면 두 알림 모두 메일을 적재하지 않는다.**
+- **발송 빈도**: 장애 지속 여부를 별도로 추적하지 않는다 — 장애가 이어지는 동안은 **그 잡이 도는
+  주기마다 매번**(RTDB/`sync_form_options`는 자주, `sync_holidays`/`sync_design_rule`는 매일 02:00에 1번)
+  그 시점의 실패 목록으로 새 메일을 보낸다(중복 억제 없음).
+- **판정 기준**: 로그인 자체 실패(그 사이클이 다루는 항목 전부가 한꺼번에 실패)와, 로그인은 됐지만
+  개별 조회가 예외이거나 빈 결과(0건)인 경우를 **모두 실패로 취급**한다 — RTDB 는 예전에 DCQ fallback을
+  타던 조건과 동일하고, DCQ 도 같은 기준을 그대로 적용한다.
+- **DCQ 쪽 항목 구성**(`context`/`target`):
+  - `sync_form_options`: (`-`, 바코드-품목) / (`-`, MAP 이름) / (`라인2`, 공정-품목) / (`라인2`, 품목-공정ID) —
+    DCQ 로그인 자체가 실패하면 `scheduler.FORM_OPTIONS_TARGETS` 4개 전부가 실패로 기록된다.
+  - `sync_holidays`: (`-`, 공휴일) 1건
+  - `sync_design_rule`: (`-`, 공정-디자인룰) 1건
+  - 라인 개념이 없는 항목은 `context='-'`로 표시된다(표 "구분" 컬럼).
+- **본문**: 실패한 (구분, 데이터 종류) 표. `MAIL_REDIRECT_TO` 가 설정된 개발 환경에서는 이 알림도 그
+  주소로 강제 발송된다(`_apply_redirect`).
 - **범위**: 스텝을 건너뛴 `nv`(스텝 테이블 없음)처럼 애초에 조회하지 않은 항목은 실패로 집계되지 않는다.
-  DCQ 단독 동기화(`sync_form_options`/`sync_holidays`/`sync_design_rule`, 라인2 포함)는 이 알림 대상이 아니다.
+  라인2 는 `sync_form_options`(DCQ) 소속이라 DCQ 메일 대상이다.
+- ⚠️ `sync_holidays()`는 `dcq_id, _ = get_dcq_credentials()` 에서 `gettext_lazy` 별칭 `_` 를 덮어쓰는
+  기존 버그(아래 "주의사항" 참고)가 있어, 그 줄 이후의 `logger.warning/error(_("..."))` 호출이
+  `TypeError` 로 깨질 수 있다. 이 버그의 영향을 덜 받도록 **알림 메일 적재 호출을 항상 그 아래의
+  `_(...)` 로그 호출보다 먼저 실행**하게 해뒀다 — 로그 자체는 못 남기더라도 메일은 나갈 수 있다.
 
 ## 필요한 환경변수 (`.env`)
 
 RTDB 소스를 사용하려면 아래 변수를 `.env` 에 추가해야 한다. **미설정 시 RTDB 로그인이 실패하며,
 DCQ 로 자동 대체되지 않고 그 데이터는 동기화되지 않는다**(2026-08 변경 — 예전에는 DCQ fallback으로
-동작했다). `RTDB_SYNC_ALERT_MAIL` 까지 설정해 두면 이 경우 알림 메일로 인지할 수 있다.
+동작했다). `RTDB_SYNC_ALERT_MAIL` 까지 설정해 두면 이 경우(및 DCQ 동기화 실패 시에도) 알림 메일로
+인지할 수 있다.
 
 | 변수 | 예시 | 설명 |
 |------|------|------|
 | `RTDB_BASE_URL` | `https://<host>.company.com` | REST API 베이스 URL |
 | `RTDB_ID` | `myaccount` | AD 계정 아이디 |
 | `RTDB_PASSWORD` | `["pw1","pw2","pw3"]` | 비밀번호 목록(JSON pack) 또는 단일 문자열 |
-| `RTDB_SYNC_ALERT_MAIL` | `a@company.com,b@company.com` | RTDB 동기화 실패 알림 메일 수신자(콤마 구분). 비우면 실패해도 메일을 보내지 않는다 |
+| `RTDB_SYNC_ALERT_MAIL` | `a@company.com,b@company.com` | **RTDB·DCQ 동기화 실패 알림 메일 공통 수신자**(콤마 구분). 비우면 두 알림 모두 보내지 않는다 |
 
 ## 주의사항
 
