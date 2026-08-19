@@ -1,6 +1,6 @@
 import { FilterSet, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep } from '../../types';
 import {
-  VALIDATION_KEYWORD, NOC_NEW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, isStO, genId, VS_NA, VS_TARGET,
+  VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, isStO, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL,
   MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE,
 } from './constants';
@@ -116,6 +116,25 @@ export const findNocBorrowItemIdViolations = (
   rows
     .filter((r) => !r.disabled && r.new_or_copy === '차용' && !r.item_id?.trim())
     .map((r) => r.id);
+
+/**
+ * Jayer/Oayer "요청 기준"(new_or_copy) 값을 근거로 이 요청서에 맞는 요청 목적을 계산한다.
+ * 비활성 행은 제외한다. 신규 → '신규' / 차용 → '차용' / 둘 다 → '신규+차용' /
+ * 기등록·layer삭제만 있으면 → '기타'. 판정할 활성 행이 아예 없으면 null(판정 불가).
+ */
+export const computeExpectedRequestPurpose = (
+  jayerRows: { disabled: boolean; new_or_copy: string }[],
+  oayerRows: { disabled: boolean; new_or_copy: string }[]
+): string | null => {
+  const activeNoc = [...jayerRows, ...oayerRows].filter((r) => !r.disabled).map((r) => r.new_or_copy);
+  const hasNew = activeNoc.includes(NOC_NEW);
+  const hasBorrow = activeNoc.includes(NOC_BORROW);
+  if (hasNew && hasBorrow) return '신규+차용';
+  if (hasNew) return NOC_NEW;
+  if (hasBorrow) return NOC_BORROW;
+  if (activeNoc.includes(NOC_REGISTERED) || activeNoc.includes(NOC_LAYER_DELETE)) return '기타';
+  return null;
+};
 
 // ===== Layer 추가/삭제 Merge (참조 요청서 A ↔ 작성 중 요청서 B) =====
 
