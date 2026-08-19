@@ -1346,6 +1346,101 @@ def enqueue_voc_comment(voc, commenter_email, commenter_name=None):
 
 
 # --------------------------------------------------------------------------- #
+# 스케줄러 시스템 알림 (RTDB 동기화 실패, 2026-08 추가)
+# --------------------------------------------------------------------------- #
+def _resolve_rtdb_alert_recipients():
+    """RTDB 동기화 실패 알림 수신자: `.env` 의 `RTDB_SYNC_ALERT_MAIL`(콤마 구분)을 파싱한다."""
+    raw = getattr(settings, 'RTDB_SYNC_ALERT_MAIL', '') or ''
+    emails = [addr.strip() for addr in raw.split(',') if addr.strip()]
+    return _apply_redirect(emails)
+
+
+def _render_rtdb_alert_email(failures):
+    """RTDB 동기화 실패 알림 메일 본문(HTML). failures: [{'line':.., 'target':..}, ...].
+
+    document/voc 가 없는 시스템 알림이라 기존 템플릿을 재사용하지 않고 별도로 렌더링한다.
+    라인·데이터 종류는 이 파일 다른 곳과 동일하게 escape 한다.
+    """
+    theme = EVENT_THEME['rejected']
+    hero_from, hero_to = theme['hero']
+    rows_html = ''.join(
+        '<tr>'
+        f'<td style="padding:8px 12px;border-bottom:1px solid #eef1f6;font-size:13px;color:#0f172a;">{escape(f["line"])}</td>'
+        f'<td style="padding:8px 12px;border-bottom:1px solid #eef1f6;font-size:13px;color:#0f172a;">{escape(f["target"])}</td>'
+        '</tr>'
+        for f in failures
+    )
+    return f'''<!--[if mso]>
+<table role="presentation" align="center" width="600" cellpadding="0" cellspacing="0"><tr><td>
+<![endif]-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="width:100%;max-width:600px;margin:0 auto;background:{theme['outer_bg']};border-radius:14px;overflow:hidden;border:1px solid {theme['outer_border']};">
+  <tr>
+    <td bgcolor="{hero_from}" style="background:linear-gradient(135deg,{hero_from} 0%,{hero_to} 100%);padding:30px 32px 26px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr><td style="font-size:12px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.75);text-transform:uppercase;">제품 소개 지도 의뢰 시스템 · 스케줄러</td></tr>
+        <tr><td style="padding-top:12px;font-size:19px;line-height:1.45;font-weight:700;color:#ffffff;">RTDB 폼 옵션 동기화가 실패했습니다.</td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:28px 32px 30px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid {theme['outer_border']};border-radius:12px;">
+        <tr><td style="padding:16px 18px;">
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:{theme['label_color']};text-transform:uppercase;margin-bottom:10px;">실패 내역 ({len(failures)}건)</div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding:6px 12px;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">라인</td>
+              <td style="padding:6px 12px;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">데이터</td>
+            </tr>
+            {rows_html}
+          </table>
+        </td></tr>
+      </table>
+      <p style="margin:16px 0 0;font-size:12.5px;line-height:1.7;color:#64748b;">RTDB(REST API) 조회가 실패했거나 빈 결과를 반환해 위 데이터는 이번 주기(10분)에 동기화되지 않았습니다. 문제가 계속되면 RTDB 접속 상태를 확인해 주세요.</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 32px 30px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="border-top:1px solid {theme['footer_border']};font-size:0;line-height:0;">&nbsp;</td></tr></table>
+      <p style="margin:16px 0 0;font-size:11.5px;line-height:1.7;color:#94a3b8;">본 메일은 제품 소개 지도 의뢰 시스템 스케줄러에서 자동 발송되었습니다. 이 메일에는 회신하지 마세요.</p>
+    </td>
+  </tr>
+</table>
+<!--[if mso]>
+</td></tr></table>
+<![endif]-->'''
+
+
+def enqueue_rtdb_sync_failed(failures):
+    """RTDB 동기화 실패 알림 적재 (document=None).
+
+    `RTDB_SYNC_ALERT_MAIL` 이 설정되지 않았으면 적재하지 않는다. RTDB 장애가 이어지는
+    동안은 `sync_rtdb_options()` 가 10분 주기마다 호출하므로 실패가 계속되면 매 주기 발송된다.
+    """
+    recipients = _resolve_rtdb_alert_recipients()
+    if not recipients:
+        logger.info(
+            "[mailer] RTDB_SYNC_ALERT_MAIL 미설정 또는 수신자 없음 - "
+            "RTDB 동기화 실패 알림 적재를 건너뜁니다 (failures=%s건)", len(failures)
+        )
+        return None
+    subject = f'[RTDB 동기화 실패] {len(failures)}건'
+    contents = _render_rtdb_alert_email(failures)
+    from .models import MailNotification
+    noti = MailNotification.objects.create(
+        document=None,
+        event_type='rtdb_sync_failed',
+        recipients=recipients,
+        subject=subject,
+        contents=contents,
+    )
+    noti_id = noti.id
+    transaction.on_commit(lambda: _send_now_async(noti_id))
+    return noti
+
+
+# --------------------------------------------------------------------------- #
 # 발송 (APScheduler 잡 / 관리 명령에서 호출)
 # --------------------------------------------------------------------------- #
 def _send_via_dxhub(recipients, subject, contents):

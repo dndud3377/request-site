@@ -26,7 +26,7 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 
 | 잡 ID | 주기 | 함수 | 설명 |
 |-------|------|------|------|
-| `sync_rtdb_options` | **10분** | `sync_rtdb_options()` | 라인1·3~5·`nv` 의 공정-품목 / 품목-공정ID / 스텝 (RTDB MAIN + DCQ fallback) 동기화 (`nv` 는 스텝 제외) |
+| `sync_rtdb_options` | **10분** | `sync_rtdb_options()` | 라인1·3~5·`nv` 의 공정-품목 / 품목-공정ID / 스텝 (RTDB 단독) 동기화 (`nv` 는 스텝 제외). RTDB 실패 시 실패 목록을 모아 알림 메일 1통 발송 |
 | `sync_form_options` | 1시간 | `sync_form_options()` | 바코드-품목 / MAP 이름 + **라인2 공정-품목 / 품목-공정ID** (DCQ 단독) 동기화 |
 | `sync_holidays` | 매일 02:00 | `sync_holidays()` | 공휴일 동기화 (act_date UNIQUE → 날짜 기준 중복 제거 후 저장) |
 | `sync_design_rule` | 매일 02:00 | `sync_design_rule()` | 공정-디자인룰(DCQ `S.M`) 동기화 → `api_designrule` 전체 갱신 |
@@ -35,40 +35,44 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 > `scheduler` 서비스(`run_scheduler`) 기동 시 `sync_rtdb_options` / `sync_form_options` / `sync_holidays` / `sync_design_rule` 는 각각 스레드로 1회 즉시 실행된다.
 > (구 `sync_process_product` 잡은 `sync_rtdb_options` 로 통합되었으며, `start()` 에서 잔여 잡을 제거한다.)
 
-## 데이터 소스 구조 (MAIN / FALLBACK)
+## 데이터 소스 구조 (RTDB 단독 + 실패 알림)
+
+> ⚠️ **2026-08 변경**: 예전에는 RTDB(MAIN)가 실패하면 DCQ로 자동 폴백했다. 지금은 **DCQ 폴백을
+> 쓰지 않는다** — RTDB 조회가 실패하거나 빈 결과면 그 데이터는 이번 주기에 동기화하지 않고,
+> 실패 목록에 기록만 한다. 사이클이 끝나면 실패 목록을 모아 **알림 메일 1통**을 큐에 적재한다
+> (자세한 내용은 아래 "RTDB 동기화 실패 알림 메일" 절 참고).
 
 `api_processproduct`(공정-품목)·`api_productprocessid`(품목-공정ID)·스텝(`api_teps1`/`api_steps3~5`)
-동기화는 두 개의 소스를 **폴백 구조**로 사용하며, 하나의 10분 잡 `sync_rtdb_options()` 에서
-**RTDB 토큰을 1회만 발급**해 세 소스를 함께 처리한다. 각 RTDB 조회는 **table_name·select·filter 가
-각각 다르다**(`{suffix}` 는 라인 접미사로 치환).
+동기화는 하나의 10분 잡 `sync_rtdb_options()` 에서 **RTDB 토큰을 1회만 발급**해 세 소스를 함께
+처리한다. 각 RTDB 조회는 **table_name·select·filter 가 각각 다르다**(`{suffix}` 는 라인 접미사로 치환).
 
-| 대상 테이블 | RTDB(MAIN) table / select / filter | DCQ(FALLBACK) |
-|-------------|-----------------------------------|---------------|
-| `api_processproduct` | `A_{suffix}.B` / `partnumber, descript, pkgtype_2` / `X $eq "Y"` | `query_cp` (`A.B_{suffix}`) |
-| `api_productprocessid` | `X_{suffix}.Y` / `partnumber, processid` / `X $neq " "` | `query_pc` (`A.B_{suffix}_processproduct`) |
-| `api_teps1`/`api_steps3~5` (스텝) | `O_{suffix}.W` / `processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid` / `a $eq "aaaaaa", e/l/p/r/s $neq " "` | `dcq_ps` (`A.B_{suffix}_step`) |
+| 대상 테이블 | RTDB table / select / filter |
+|-------------|-----------------------------------|
+| `api_processproduct` | `A_{suffix}.B` / `partnumber, descript, pkgtype_2` / `X $eq "Y"` |
+| `api_productprocessid` | `X_{suffix}.Y` / `partnumber, processid` / `X $neq " "` |
+| `api_teps1`/`api_steps3~5` (스텝) | `O_{suffix}.W` / `processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid` / `a $eq "aaaaaa", e/l/p/r/s $neq " "` |
 
 ```
-① MAIN     RTDB(REST API)  →  /api/queries
-                └─ 성공 & 데이터 있음 → 결과 사용
-                └─ 예외(None) 또는 0건 ↓
-② FALLBACK DCQ (datacenterquery)  →  대상별 기존 쿼리
-                └─ 결과 사용
+RTDB(REST API)  →  /api/queries
+    └─ 성공 & 데이터 있음 → 결과 사용
+    └─ 예외(None) 또는 0건 → 이번 주기 스킵 + 실패 목록에 (line, target) 기록
 변경 감지: 조회 결과 == 현재 테이블(해당 line) → skip
 쓰기:      다를 때만 DELETE(line) → to_sql(대상 테이블)
+사이클 종료: 실패 목록이 있으면 mailer.enqueue_rtdb_sync_failed() 로 알림 메일 1통 적재
 ```
 
 - **스텝은 `STEP_TABLE_MAP` 에 등록된 라인만** 동기화한다. 등록되지 않은 라인(`nv`)은 **RTDB 조회 자체를 건너뛴다**
-  (조회부터 하면 매 주기 빈 결과 → 불필요한 DCQ fallback 로그인이 발생하므로, `fetch()` 호출 전에 판정한다).
-- MAIN 이 **예외로 실패하거나 빈 결과(0건)** 이면 FALLBACK(DCQ)을 실행한다.
-- MAIN(RTDB) 토큰은 동기화 **주기당 1회** 발급하여 세 소스·라인 반복에서 재사용한다.
-- **DCQ fallback 은 RTDB 가 실패한 경우에만 지연 로그인**하며, 그 로그인 상태는 세 소스가 공유한다(평소에는 DCQ 를 호출하지 않음).
-- 나머지 동기화(바코드, MAP 이름, 공휴일)는 기존 DCQ 단일 소스를 그대로 사용한다.
+  (스텝 테이블이 없는 라인이라 애초에 실패로 볼 대상이 아니므로 실패 목록에도 남기지 않는다).
+- RTDB 가 **예외로 실패하거나 빈 결과(0건)** 이면 그 (line, 데이터 종류) 는 실패로 기록되고, 해당 테이블은
+  이번 주기에 갱신되지 않는다(이전 값 유지).
+- RTDB 토큰은 동기화 **주기당 1회** 발급하여 세 소스·라인 반복에서 재사용한다.
+- 나머지 동기화(바코드, MAP 이름, 공휴일, 공정-디자인룰, 라인2)는 기존 DCQ 단일 소스를 그대로 사용한다 — 이번 변경의 영향을 받지 않는다.
 
 ### 라인2 (DCQ 단독, 폴백 구조 아님)
 
-라인2 는 소스 테이블 구조가 다른 라인들과 달라 **RTDB 를 지원하지 않는다.** 따라서 위 MAIN/FALLBACK
-구조를 타지 않고, 1시간 잡 `sync_form_options()` 안에서 **DCQ 단독**으로 동기화한다.
+라인2 는 소스 테이블 구조가 다른 라인들과 달라 **RTDB 를 지원하지 않는다.** 따라서 위 RTDB 조회
+구조를 타지 않고, 1시간 잡 `sync_form_options()` 안에서 **DCQ 단독**으로 동기화한다(RTDB 실패 알림
+메일 대상도 아니다).
 (스텝 테이블 `api_steps2` 는 존재하지 않으므로 라인2 스텝 동기화는 없다.)
 
 | 대상 테이블 | DCQ 소스 | 조회 컬럼 → 저장 컬럼 |
@@ -105,35 +109,23 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 - 라인2 의 `line` 컬럼 값은 `Line` 마스터·프론트엔드 표기와 동일한 **공백 없는 `'라인2'`** 이다.
   (기존 라인들은 `scheduler.LINES` 에서 `'라인 1'` 처럼 공백이 있는 표기를 쓰고 있어 서로 다르다 — 아래 주의사항 참고.)
 
-### `nv` (RTDB MAIN/FALLBACK 구조, 스텝 없음)
+### `nv` (RTDB 단독 구조, 스텝 없음)
 
-`nv` 는 라인1·3~5 와 **동일한 MAIN/FALLBACK 구조**를 그대로 탄다. `scheduler.LINE_NV` 상수로 정의하고
+`nv` 는 라인1·3~5 와 **동일한 RTDB 조회 구조**를 그대로 탄다. `scheduler.LINE_NV` 상수로 정의하고
 `LINES` 에 포함시키면 `sync_rtdb_options()` 의 기존 반복이 공정-품목·품목-공정ID 를 처리한다.
-다만 **DCQ(FALLBACK) 소스 테이블만 접미사 규칙을 따르지 않아** 라인별 오버라이드로 분기한다.
 
 | 항목 | 값 |
 |------|-----|
 | `line` 컬럼 값 | `'nv'` (`Line` 마스터·프론트엔드 표기와 동일) |
-| RTDB(MAIN) 접미사 | `utils.LINE_SUFFIX_MAP['nv'] = 'lineN'` → `A_lineN.B` / `X_lineN.Y` (다른 라인과 동일 규칙) |
-| DCQ(FALLBACK) 소스 | **접미사 규칙 아님** — 공정-품목 `N.V` / 품목-공정ID `N.V2` (아래 참조) |
+| RTDB 접미사 | `utils.LINE_SUFFIX_MAP['nv'] = 'lineN'` → `A_lineN.B` / `X_lineN.Y` (다른 라인과 동일 규칙) |
 | 외부 DB lineid | `utils.LINE_TO_LINEID_MAP['nv']` (MAP 이름 동기화 `WHERE` 절에 자동 포함) |
 | 스텝 | **없음** — `STEP_TABLE_MAP` 미등록이라 스텝 조회를 skip 한다 |
 | 저장 | 다른 라인과 동일하게 `_write_if_changed()` (변경 감지 후 `DELETE(line='nv') → INSERT`) |
 
-#### DCQ fallback 쿼리 오버라이드
-
-다른 라인의 DCQ fallback 쿼리는 접미사로 `A.B_{suffix}` / `A.B_{suffix}_processproduct` 를 만들지만,
-`nv` 는 소스 테이블이 달라 이 규칙으로 만들 수 없다. `DCQ_PP_QUERY_OVERRIDE` / `DCQ_PC_QUERY_OVERRIDE`
-딕셔너리에 라인별 쿼리를 등록하고, **등록되지 않은 라인은 기존 접미사 기반 기본 쿼리**를 그대로 쓴다.
-
-| 대상 | 상수 | 소스 테이블 |
-|------|------|-------------|
-| `api_processproduct` | `NV_DCQ_PP_QUERY` | `N.V` — `partnumber, descript, pkgtype_2` |
-| `api_productprocessid` | `NV_DCQ_PC_QUERY` | `N.V2` — `partnumber, processid` |
-
-> `nv` 의 공정-품목 fallback 쿼리에는 다른 라인과 달리 **`WHERE` 절이 없다.** DCQ fallback 경로에서는
-> 빈 값 행이 걸러지지 않을 수 있다(RTDB MAIN 정상 동작 시에는 `RTDB_PP_FILTER` 가 적용된다).
-> 조회 컬럼명은 다른 라인과 같으므로 rename·저장 로직은 공용 코드를 그대로 재사용한다.
+> (2026-08 이전) `nv` 는 DCQ fallback 소스 테이블(`N.V`/`N.V2`)만 다른 라인과 규칙이 달라
+> `DCQ_PP_QUERY_OVERRIDE`/`NV_DCQ_PP_QUERY` 등으로 별도 오버라이드했다. DCQ fallback 자체가
+> 폐지되며 이 상수들도 함께 제거됐다 — 지금은 RTDB 실패 시 다른 라인과 동일하게 실패 목록에
+> 기록되고 알림 메일 대상이 될 뿐, `nv` 전용 분기가 없다.
 
 - `Line` 마스터에 행이 있어야 의뢰상세 라인 드롭다운에 노출된다 → 배포 시 `python manage.py seed_lines` 실행.
 - 조회 API(`form-options/processes` / `products` / `process-id`)는 `line` 파라미터를 그대로 필터에 넘기므로
@@ -164,15 +156,40 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 | `rtdb_login_with_retry()` | `POST /api/tokens/login`, 비밀번호 목록 순차 재시도 → `access_token` |
 | `get_data_from_rtdb(payload, token)` | `POST /api/queries` 조회 → DataFrame (실패/에러 시 `None`) |
 
+## RTDB 동기화 실패 알림 메일 (2026-08 추가)
+
+`sync_rtdb_options()` 한 사이클 안에서 RTDB 조회가 실패(예외)했거나 빈 결과였던 (line, 데이터 종류)
+쌍을 전부 모아, 사이클이 끝난 뒤 **실패가 하나라도 있으면 알림 메일 1통**을 큐에 적재한다.
+
+- 구현: `scheduler.sync_rtdb_options()` 가 실패 목록을 모아 사이클 종료 시
+  `mailer.enqueue_rtdb_sync_failed(failures)` 를 호출한다. 메일 발송 자체는 결재 알림과 동일한
+  `MailNotification` 큐 + DXHUB 인프라를 그대로 재사용한다(`document=None`, `event_type='rtdb_sync_failed'`,
+  즉시 발송 + 실패 시 `process_mail_queue` 재시도).
+- **수신자**: `.env` 의 `RTDB_SYNC_ALERT_MAIL`(콤마 구분 이메일 목록). **비어 있으면 메일을 적재하지 않는다**
+  (`mailer._resolve_rtdb_alert_recipients()`).
+- **발송 빈도**: 장애 지속 여부를 별도로 추적하지 않는다 — RTDB 장애가 이어지는 동안은 **10분 주기마다
+  매번** 그 시점의 실패 목록으로 새 메일을 보낸다(중복 억제 없음). 장애가 길어지면 메일이 여러 통 쌓일
+  수 있음을 감안한 의도적 설계다.
+- **판정 기준**: RTDB 로그인 자체 실패(그 사이클의 모든 line·데이터 종류가 한꺼번에 실패)와, 로그인은
+  됐지만 개별 조회가 예외이거나 빈 결과(0건)인 경우를 **모두 실패로 취급**한다 — 예전에 DCQ fallback을
+  타던 조건과 동일하다.
+- **본문**: 실패한 (라인, 데이터 종류) 표. 데이터 종류는 이 문서 다른 곳과 동일하게 공정-품목/품목-공정ID/스텝을
+  가리킨다. `MAIL_REDIRECT_TO` 가 설정된 개발 환경에서는 이 알림도 그 주소로 강제 발송된다(`_apply_redirect`).
+- **범위**: 스텝을 건너뛴 `nv`(스텝 테이블 없음)처럼 애초에 조회하지 않은 항목은 실패로 집계되지 않는다.
+  DCQ 단독 동기화(`sync_form_options`/`sync_holidays`/`sync_design_rule`, 라인2 포함)는 이 알림 대상이 아니다.
+
 ## 필요한 환경변수 (`.env`)
 
-RTDB MAIN 소스를 사용하려면 아래 변수를 `.env` 에 추가해야 한다. **미설정 시 RTDB 로그인이 실패하고 자동으로 DCQ fallback 으로 동작한다.**
+RTDB 소스를 사용하려면 아래 변수를 `.env` 에 추가해야 한다. **미설정 시 RTDB 로그인이 실패하며,
+DCQ 로 자동 대체되지 않고 그 데이터는 동기화되지 않는다**(2026-08 변경 — 예전에는 DCQ fallback으로
+동작했다). `RTDB_SYNC_ALERT_MAIL` 까지 설정해 두면 이 경우 알림 메일로 인지할 수 있다.
 
 | 변수 | 예시 | 설명 |
 |------|------|------|
 | `RTDB_BASE_URL` | `https://<host>.company.com` | REST API 베이스 URL |
 | `RTDB_ID` | `myaccount` | AD 계정 아이디 |
 | `RTDB_PASSWORD` | `["pw1","pw2","pw3"]` | 비밀번호 목록(JSON pack) 또는 단일 문자열 |
+| `RTDB_SYNC_ALERT_MAIL` | `a@company.com,b@company.com` | RTDB 동기화 실패 알림 메일 수신자(콤마 구분). 비우면 실패해도 메일을 보내지 않는다 |
 
 ## 주의사항
 

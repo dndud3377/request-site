@@ -894,6 +894,7 @@ class MailNotification(models.Model):
         ('withdraw_cancelled', '철회 요청 취소'),
         ('voc_created', 'VOC 등록'),
         ('voc_comment', 'VOC 댓글'),
+        ('rtdb_sync_failed', 'RTDB 동기화 실패'),
     ]
 
     STATUS_CHOICES = [
