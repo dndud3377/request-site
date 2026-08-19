@@ -108,10 +108,6 @@ STEP_TABLE_MAP = {
     '라인 5': 'api_steps5',
 }
 STEP_COLUMNS = ['processid', 'stepseq', 'descript', 'recipeid', 'areaname', 'eqptype', 'updated', 'layerid']
-# 스텝 병합(diff-merge)에 쓰는 유니크 키. 스텝 테이블(api_teps1/api_steps3~5)은 Django 모델이
-# 아니라(이 저장소에 스키마 정의가 없음) 실제 DB 제약을 확인할 수 없어, processid(공정ID)+
-# stepseq(스텝 순번) 조합이 한 스텝을 유일하게 식별한다고 가정한다. 다르면 이 상수만 고치면 된다.
-STEP_KEY_COLUMNS = ['processid', 'stepseq']
 
 # RTDB(MAIN) 조회 실패/빈 결과 시 실패 목록에 남길 데이터 종류 라벨.
 # (2026-08부터 DCQ fallback 대신 실패 목록을 모아 알림 메일로 보낸다 - mailer.enqueue_rtdb_sync_failed)
@@ -156,61 +152,6 @@ def _write_if_changed(engine, table, line, df, key_cols, order_cols):
     return len(df)
 
 
-def _write_merge_only(engine, table, line, df, key_cols, order_cols):
-    """
-    df 의 key_cols 중 table(해당 line)에 아직 없는 행만 INSERT 한다 - 기존 행은 절대 지우지 않는다.
-    (2026-08 추가) RTDB 가 간헐적으로 비정상적으로 적은 데이터를 반환해도, 기존 `_write_if_changed`
-    처럼 DELETE(line) 부터 하면 그 순간 정상 데이터까지 함께 사라진다. 대신 "테이블에 없는 키만
-    추가"하는 방식으로 바꿔 이 사고를 막는다. 원본에서 실제로 빠진(단종 등) 행은 여기서 자동으로
-    정리되지 않는다 - RTDB 응답 신뢰도가 낮은 지금은 "삭제"보다 "누락 방지"를 우선한 의도된 트레이드오프.
-    반환값은 새로 추가된 건수(추가할 새 데이터가 없으면 None).
-    """
-    with engine.connect() as conn:
-        rows = conn.execute(
-            text(f"SELECT {', '.join(key_cols)} FROM {table} WHERE line = :line"),
-            {"line": line}
-        ).fetchall()
-    old_keys = set(tuple(r) for r in rows)
-
-    key_tuples = list(df[key_cols].itertuples(index=False, name=None))
-    new_mask = [t not in old_keys for t in key_tuples]
-    df_new = df[new_mask]
-    if df_new.empty:
-        return None
-
-    df_new = df_new.copy()
-    df_new['line'] = line
-    df_new['last_synced'] = pd.Timestamp.now()
-    df_new = df_new[order_cols]
-    with engine.begin() as db_conn:
-        df_new.to_sql(table, db_conn, if_exists='append', index=False)
-    return len(df_new)
-
-
-def _write_step_merge_only(engine, table, df, key_cols):
-    """
-    스텝(라인별 단독 테이블, 공용 line 컬럼 없음) 용 diff 병합. key_cols 기준으로 테이블에
-    아직 없는 행만 INSERT 하고 기존 행은 지우지 않는다 - `_write_merge_only`와 동일한 취지이나
-    line 스코프가 없어 별도 함수로 둔다. df 에는 last_synced 컬럼이 없어도 되며 여기서 채운다.
-    반환값은 새로 추가된 건수(없으면 None).
-    """
-    with engine.connect() as conn:
-        rows = conn.execute(text(f"SELECT {', '.join(key_cols)} FROM {table}")).fetchall()
-    old_keys = set(tuple(r) for r in rows)
-
-    key_tuples = list(df[key_cols].itertuples(index=False, name=None))
-    new_mask = [t not in old_keys for t in key_tuples]
-    df_new = df[new_mask]
-    if df_new.empty:
-        return None
-
-    df_new = df_new.copy()
-    df_new['last_synced'] = pd.Timestamp.now()
-    with engine.begin() as db_conn:
-        df_new.to_sql(table, db_conn, if_exists='append', index=False)
-    return len(df_new)
-
-
 def _send_sync_failure_alert(mailer_func_name, failures):
     """동기화 실패 알림 메일 적재 (RTDB/DCQ 공통 진입점).
 
@@ -238,10 +179,10 @@ def sync_rtdb_options():
       `.env` 의 `RTDB_SYNC_ALERT_MAIL`. RTDB 장애가 이어지는 동안은 10 분 주기마다 매번 발송된다.)
     - 스텝(col_step) 조회 직전에는 `RTDB_STEP_PRE_FETCH_DELAY_SEC`(3초) 대기한다 - RTDB 쪽 데이터
       갱신이 늦게 반영되는 경우를 대비한다(2026-08 추가).
-    - **쓰기는 삭제 후 재적재가 아니라 "없는 것만 추가"(diff 병합)한다**(2026-08 변경 —
-      `_write_merge_only`/`_write_step_merge_only`). RTDB 가 간헐적으로 비정상적으로 적은
-      데이터를 반환해도 기존에 저장된 정상 데이터가 사라지지 않는다. 대신 원본에서 실제로 빠진
-      (단종 등) 행은 자동으로 정리되지 않는다 - 의도된 트레이드오프.
+    - 조회 결과가 기존 테이블과 동일하면 쓰기를 건너뛴다(변경 감지). 다르면 DELETE(line) → INSERT로
+      전체 재적재한다 - 항상 RTDB 응답을 현재 상태의 원본으로 취급해, 원본에서 실제로 빠진(단종 등)
+      데이터가 남아있지 않도록 한다(2026-08: "없는 것만 추가"하는 diff 병합 방식을 시도했다가,
+      실제로 없어진 데이터까지 계속 남아있게 되는 문제가 있어 다시 이 방식으로 되돌렸다).
     - RTDB 토큰은 주기당 1회만 `utils.get_rtdb_token()`으로 받아 소스·라인 반복에서 재사용한다.
       (2026-08부터 매 주기 풀 로그인 대신, 캐시된 refresh_token 이 유효하면 가벼운 refresh API로
       갱신한다. refresh_token 유효기간이 얼마 안 남았거나 refresh 자체가 실패하면 풀 로그인으로
@@ -307,15 +248,15 @@ def sync_rtdb_options():
                 df_cp = fetch(RTDB_PP_SELECT, RTDB_PP_FILTER, RTDB_PP_TABLE, suffix, line, TARGET_LABEL_PP)
                 if df_cp is not None:
                     df_cp = df_cp.rename(columns={'descript': 'process', 'partnumber': 'product_name'})
-                    count = _write_merge_only(
+                    count = _write_if_changed(
                         engine, 'api_processproduct', line, df_cp,
                         ['process', 'product_name'],
                         ['line', 'process', 'product_name', 'last_synced'],
                     )
                     if count is None:
-                        logger.info(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 추가할 새 데이터 없음 - skip").format(line=line))
+                        logger.info(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 변경 없음 - skip").format(line=line))
                     else:
-                        logger.info(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} {count}건 신규 추가 동기화 완료").format(line=line, count=count))
+                        logger.info(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} {count}건 동기화 완료").format(line=line, count=count))
             except Exception as e:
                 logger.error(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
 
@@ -324,15 +265,15 @@ def sync_rtdb_options():
                 df_pc = fetch(RTDB_PC_SELECT, RTDB_PC_FILTER, RTDB_PC_TABLE, suffix, line, TARGET_LABEL_PC)
                 if df_pc is not None:
                     df_pc = df_pc.rename(columns={'partnumber': 'product_name', 'processid': 'process_id'})
-                    count = _write_merge_only(
+                    count = _write_if_changed(
                         engine, 'api_productprocessid', line, df_pc,
                         ['product_name', 'process_id'],
                         ['line', 'product_name', 'process_id', 'last_synced'],
                     )
                     if count is None:
-                        logger.info(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 추가할 새 데이터 없음 - skip").format(line=line))
+                        logger.info(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 변경 없음 - skip").format(line=line))
                     else:
-                        logger.info(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} {count}건 신규 추가 동기화 완료").format(line=line, count=count))
+                        logger.info(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} {count}건 동기화 완료").format(line=line, count=count))
             except Exception as e:
                 logger.error(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
 
@@ -347,12 +288,12 @@ def sync_rtdb_options():
                     time.sleep(RTDB_STEP_PRE_FETCH_DELAY_SEC)
                     df_ps = fetch(RTDB_STEP_SELECT, RTDB_STEP_FILTER, RTDB_STEP_TABLE, suffix, line, TARGET_LABEL_STEP)
                     if df_ps is not None:
-                        df_ps = df_ps[STEP_COLUMNS]
-                        count = _write_step_merge_only(engine, table_name, df_ps, STEP_KEY_COLUMNS)
-                        if count is None:
-                            logger.info(_("[scheduler] {line} {{request.col_step}} 추가할 새 데이터 없음 - skip").format(line=line))
-                        else:
-                            logger.info(_("[scheduler] {line} {{request.col_step}} {count}건 신규 추가 동기화 완료").format(line=line, count=count))
+                        df_ps['last_synced'] = pd.Timestamp.now()
+                        df_ps = df_ps[STEP_COLUMNS + ['last_synced']]
+                        with engine.begin() as db_conn:
+                            db_conn.execute(text(f"DELETE FROM {table_name}"))
+                            df_ps.to_sql(table_name, db_conn, if_exists='append', index=False)
+                        logger.info(_("[scheduler] {line} {{request.col_step}} {count}건 동기화 완료").format(line=line, count=len(df_ps)))
                 except Exception as e:
                     logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
     finally:
