@@ -161,15 +161,19 @@ const isMergePresent = (r: MergeComparableRow): boolean =>
  * |------|------|----|-------------|
  * | ①    | B 에만 있음 | O | 신규 |
  * | ②    | A 에만 있음 → B 에 행 추가 | X | layer삭제 |
- * | ③    | A·B 양쪽 존재 | X | 기등록 |
+ * | ③    | A·B 양쪽 존재, A 의 st 가 X 가 아님(아직 확정 전) | X | 기등록 |
+ * | ③'   | A·B 양쪽 존재, A 의 st 가 이미 X(이미 확정됨) | (건드리지 않음) | (건드리지 않음) |
  *
  * 비활성 행과 이미 layer삭제 인 행은 건드리지 않는다.
+ * ③' 을 둔 이유: st='X' 는 이전 세대에서 이미 '기등록'으로 확정됐다는 뜻이라, 참조 체인
+ * (A→B→C→...)을 탈 때마다 매번 다시 기등록으로 재도장(stamp)할 필요가 없다 — 이미 확정된
+ * 행은 현재 표(cur)의 값을 그대로 둔다.
  */
 export const computeLayerMerge = <T extends MergeComparableRow>(
   curRows: T[],
   refRows: T[]
 ): { merged: T[]; stats: MergeStats } => {
-  const refPresentKeys = new Set(refRows.filter(isMergePresent).map(mergeKey));
+  const refPresentByKey = new Map(refRows.filter(isMergePresent).map((r) => [mergeKey(r), r]));
   const curPresentKeys = new Set(curRows.filter(isMergePresent).map(mergeKey));
   // 비활성이 아닌 모든 행(layer삭제 포함). A 행을 추가할 때 같은 키가 이미 있으면 중복을 만들지 않는다.
   const curActiveKeys = new Set(curRows.filter((r) => !r.disabled).map(mergeKey));
@@ -178,8 +182,10 @@ export const computeLayerMerge = <T extends MergeComparableRow>(
 
   const merged: T[] = curRows.map((r) => {
     if (!isMergePresent(r)) return r; // 비활성 / 이미 layer삭제 → 유지
-    if (refPresentKeys.has(mergeKey(r))) {
+    const refRow = refPresentByKey.get(mergeKey(r));
+    if (refRow) {
       stats.registered += 1;
+      if (refRow.st === ST_X) return r; // 이미 확정(기등록)된 행은 현재 상태를 그대로 둔다
       return { ...r, st: ST_X, new_or_copy: NOC_REGISTERED };
     }
     stats.added += 1;
