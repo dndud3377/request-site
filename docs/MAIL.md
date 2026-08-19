@@ -353,6 +353,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | `DXHUB_API_KEY` | `X-API-Key` 헤더 값 | `(비밀)` |
 | `FRONTEND_URL` | 메일 본문 링크용 웹 주소 (`/approval` 자동 부착) | dev `http://localhost:10011` / 운영 `https://...:10010` |
 | `MAIL_REDIRECT_TO` | 설정 시 모든 메일을 이 주소로 강제 | dev `wooyoung7.oh@company.com` / 운영 공란 |
+| `RTDB_SYNC_ALERT_MAIL` | RTDB 동기화 실패 알림(§9) 수신자, 콤마 구분. 비우면 미발송 | `a@company.com,b@company.com` |
 
 > ⚠️ `DXHUB_API_KEY` 등 비밀값은 **실제 `.env` 파일에만** 넣는다(코드/예시 파일 하드코딩 금지).
 > `.env` 는 `.gitignore` 에 포함되어 커밋되지 않는다.
@@ -402,6 +403,26 @@ docker exec -it <backend_container> python manage.py test api.tests
 
 `api/tests.py` — 수신자 해석(단계별/리다이렉트), 큐 적재, 발송 성공·재시도·중복방지
 (외부 호출 mock).
+
+---
+
+## 9. RTDB 동기화 실패 알림 (`rtdb_sync_failed`, 2026-08 추가)
+
+결재/VOC 메일과 달리 **결재 문서·VOC 어느 쪽과도 무관한 시스템 알림**이다. `scheduler.py` 의
+`sync_rtdb_options()`(10분 주기)가 RTDB(REST API) 조회에 실패하거나 빈 결과였던 (라인, 데이터 종류)
+목록을 모아, 한 사이클에 실패가 하나라도 있으면 알림 메일 1통을 큐에 적재한다.
+
+- 적재/렌더 함수: `mailer.enqueue_rtdb_sync_failed()` / `mailer._render_rtdb_alert_email()`
+  (전용 렌더러 — 문서·VOC 를 필수로 요구하는 `_render_hero_kpi_email`/`_render_voc_email` 을
+  재사용하지 않는다). 큐 적재는 `document=None` 으로, 다른 메일과 동일하게 `MailNotification` +
+  DXHUB 즉시발송/재시도 인프라를 그대로 쓴다.
+- 수신자: `.env` 의 `RTDB_SYNC_ALERT_MAIL`(콤마 구분). **비어 있으면 적재 자체를 하지 않는다.**
+  `MAIL_REDIRECT_TO` 가 설정돼 있으면 이 알림도 그 주소로 강제 발송된다.
+- 발송 빈도: 장애가 이어지는 동안 **10분마다 매번** 그 시점의 실패 목록으로 다시 보낸다(중복 억제 없음).
+- 라인별 메일 수신 설정(§3.0 `mail_lines` 필터)은 **적용되지 않는다** — `document` 가 없어 필터가
+  성립하지 않는 시스템 알림이기 때문이다(수신자는 오직 `RTDB_SYNC_ALERT_MAIL` 로만 정해진다).
+- 상세 동작(어떤 경우가 "실패"인지, MAIN/FALLBACK 구조가 어떻게 바뀌었는지)은 `docs/SCHEDULER.md`
+  "RTDB 동기화 실패 알림 메일" 절 참고.
 
 ---
 
