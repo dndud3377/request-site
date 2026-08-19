@@ -99,7 +99,7 @@ import {
   requiresBbEntries, findBbEntryViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, AdiCdHeaderMatch,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
-  sourceCodeFromPartid,
+  sourceCodeFromPartid, computeExpectedRequestPurpose,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -446,12 +446,17 @@ export default function RequestPage(): React.ReactElement {
   const [tbvtlvWarnModal, setTbvtlvWarnModal] = useState(false);
   const [bbResetConfirm, setBbResetConfirm] = useState(false);
   const [specialCareConfirm, setSpecialCareConfirm] = useState(false);
-  // 관문 모달(특이사항·TBV/TLV)이 뜬 시점의 최종 목적지 단계. 탭으로 여러 단계를 건너뛰는 도중
-  // 모달이 뜨면 '계속 진행' 후 원래 목적지까지 이어서 가야 하므로 보관한다.
+  // STEP4(O-layer)→STEP5(Backbone) 전환 관문 — Jayer/Oayer '요청 기준'으로 계산한 요청 목적이
+  // 현재 값과 다를 때, 계산된 값을 담아 모달을 띄운다. null 이면 닫힘.
+  const [purposeMismatchConfirm, setPurposeMismatchConfirm] = useState<string | null>(null);
+  // 관문 모달(특이사항·TBV/TLV·요청 목적 확인)이 뜬 시점의 최종 목적지 단계. 탭으로 여러 단계를
+  // 건너뛰는 도중 모달이 뜨면 '계속 진행' 후 원래 목적지까지 이어서 가야 하므로 보관한다.
   const [pendingStepTarget, setPendingStepTarget] = useState<number | null>(null);
   // 이번 이동에서 사용자가 이미 확인한 관문. 한 번에 여러 단계를 건너뛰면 step1·step4 관문이
   // 연달아 뜰 수 있는데, 확인 기록이 없으면 두 모달이 서로를 다시 띄워 무한 반복된다.
-  const ackedStepGatesRef = useRef<{ specialCare: boolean; tbvtlv: boolean }>({ specialCare: false, tbvtlv: false });
+  const ackedStepGatesRef = useRef<{ specialCare: boolean; tbvtlv: boolean; purposeMismatch: boolean }>({
+    specialCare: false, tbvtlv: false, purposeMismatch: false,
+  });
   const [filterDeleteConfirm, setFilterDeleteConfirm] = useState<{
     type: 'jayer' | 'oayer';
     filterId: string;
@@ -4027,10 +4032,21 @@ export default function RequestPage(): React.ReactElement {
           }
         }
       }
+      // Jayer/Oayer '요청 기준'(new_or_copy)으로 계산한 요청 목적이 현재 값과 다르면 확인을 받는다.
+      // 판정 불가(활성 행 없음)면 검사를 건너뛴다.
+      if (s === 4 && !ackedStepGatesRef.current.purposeMismatch) {
+        const expectedPurpose = computeExpectedRequestPurpose(jayerRows, oayerRows);
+        if (expectedPurpose && expectedPurpose !== detail.request_purpose) {
+          if (s !== step) setStep(s);
+          setPendingStepTarget(target);
+          setPurposeMismatchConfirm(expectedPurpose);
+          return;
+        }
+      }
     }
 
     setPendingStepTarget(null);
-    ackedStepGatesRef.current = { specialCare: false, tbvtlv: false };
+    ackedStepGatesRef.current = { specialCare: false, tbvtlv: false, purposeMismatch: false };
     setStep(target);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -4039,14 +4055,36 @@ export default function RequestPage(): React.ReactElement {
   // 관문 확인 기록을 여기서만 비운다 — ConfirmModal 이 onConfirm 직후 항상 onClose 를 부르므로
   // onClose 에서 비우면 방금 이어서 뜬 다음 관문의 기록까지 지워진다.
   const startStepMove = (target: number) => {
-    ackedStepGatesRef.current = { specialCare: false, tbvtlv: false };
+    ackedStepGatesRef.current = { specialCare: false, tbvtlv: false, purposeMismatch: false };
     goToStep(target);
   };
 
   // 관문 모달의 '계속 진행' — 그 관문을 확인 처리하고 원래 목적지까지 이어서 이동한다.
-  const resumePendingStep = (gate: 'specialCare' | 'tbvtlv') => {
+  const resumePendingStep = (gate: 'specialCare' | 'tbvtlv' | 'purposeMismatch') => {
     ackedStepGatesRef.current = { ...ackedStepGatesRef.current, [gate]: true };
     goToStep(pendingStepTarget ?? step + 1);
+  };
+
+  // 요청 목적 확인 모달 — '적용'(onConfirm): 계산된 값으로 바꾸고 이어서 진행.
+  // '취소/닫기'(onClose): 값은 그대로 두고 이어서 진행. ConfirmModal 은 onConfirm 클릭 시
+  // onConfirm 직후 onClose 도 항상 부르는데, goToStep 이 성공적으로 끝나면 ackedStepGatesRef 를
+  // 전부 리셋해 버려 그 시점엔 이미 purposeMismatch 플래그가 false 로 돌아가 있다 — 그 플래그로
+  // '적용 직후의 onClose'를 걸러낼 수 없으므로, 이 상호작용 전용의 별도 ref 로 구분한다.
+  const purposeMismatchAppliedRef = useRef(false);
+
+  const handlePurposeMismatchApply = () => {
+    purposeMismatchAppliedRef.current = true;
+    if (purposeMismatchConfirm) handleDetailSet('request_purpose', purposeMismatchConfirm);
+    resumePendingStep('purposeMismatch');
+  };
+
+  const handlePurposeMismatchClose = () => {
+    if (purposeMismatchAppliedRef.current) {
+      purposeMismatchAppliedRef.current = false; // '적용' 직후 ConfirmModal 이 이어서 부른 onClose — 무시
+    } else {
+      resumePendingStep('purposeMismatch'); // 사용자가 직접 취소/닫기 — 값은 그대로 두고 진행
+    }
+    setPurposeMismatchConfirm(null);
   };
 
   const handleNextStep = () => startStepMove(step + 1);
@@ -4757,6 +4795,15 @@ export default function RequestPage(): React.ReactElement {
         title={t('request.tbvtlv_warn_title')}
         message={t('request.tbvtlv_warn_body')}
         confirmLabel={t('request.tbvtlv_warn_proceed')}
+      />
+
+      <ConfirmModal
+        isOpen={!!purposeMismatchConfirm}
+        onClose={handlePurposeMismatchClose}
+        onConfirm={handlePurposeMismatchApply}
+        title={t('request.purpose_mismatch_title')}
+        message={purposeMismatchConfirm ? t('request.purpose_mismatch_body', { purpose: purposeMismatchConfirm }) : ''}
+        confirmLabel={t('request.purpose_mismatch_apply')}
       />
 
       <Modal
