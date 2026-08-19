@@ -39,12 +39,14 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 > `scheduler` 서비스(`run_scheduler`) 기동 시 `sync_rtdb_options` / `sync_form_options` / `sync_holidays` / `sync_design_rule` 는 각각 스레드로 1회 즉시 실행된다.
 > (구 `sync_process_product` 잡은 `sync_rtdb_options` 로 통합되었으며, `start()` 에서 잔여 잡을 제거한다.)
 
-## 데이터 소스 구조 (RTDB 단독 + 실패 알림)
+## 데이터 소스 구조 (RTDB 단독 + 재시도 + 실패 알림)
 
 > ⚠️ **2026-08 변경**: 예전에는 RTDB(MAIN)가 실패하면 DCQ로 자동 폴백했다. 지금은 **DCQ 폴백을
-> 쓰지 않는다** — RTDB 조회가 실패하거나 빈 결과면 그 데이터는 이번 주기에 동기화하지 않고,
-> 실패 목록에 기록만 한다. 사이클이 끝나면 실패 목록을 모아 **알림 메일 1통**을 큐에 적재한다
-> (자세한 내용은 아래 "RTDB 동기화 실패 알림 메일" 절 참고).
+> 쓰지 않는다** — 대신 RTDB 조회가 실패하거나 빈 결과면 **최대 3회까지 재시도**하고(아래 참고),
+> 그래도 안 되면 그 데이터는 이번 주기에 동기화하지 않고 실패 목록에 기록만 한다. 사이클이
+> 끝나면 실패 목록을 모아 **알림 메일 1통**을 큐에 적재한다(자세한 내용은 아래 "동기화 실패
+> 알림 메일" 절 참고). 쓰기 방식도 "삭제 후 재적재"에서 "없는 것만 추가"로 바뀌었다(아래
+> "쓰기 전략" 절 참고) — 불규칙한 RTDB 조회 실패·비정상적으로 적은 응답 대응.
 
 `api_processproduct`(공정-품목)·`api_productprocessid`(품목-공정ID)·스텝(`api_teps1`/`api_steps3~5`)
 동기화는 하나의 10분 잡 `sync_rtdb_options()` 에서 **RTDB 토큰을 1회만 발급**해 세 소스를 함께
@@ -59,17 +61,24 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 ```
 RTDB(REST API)  →  /api/queries
     └─ 성공 & 데이터 있음 → 결과 사용
-    └─ 예외(None) 또는 0건 → 이번 주기 스킵 + 실패 목록에 (line, target) 기록
-변경 감지: 조회 결과 == 현재 테이블(해당 line) → skip
-쓰기:      다를 때만 DELETE(line) → to_sql(대상 테이블)
+    └─ 예외(None) 또는 0건 → 5초 대기 후 재조회, 최대 3회까지 반복
+        └─ 3회 모두 실패 → 이번 주기 스킵 + 실패 목록에 (line, target) 기록
+쓰기(diff 병합):  테이블에 아직 없는 키만 INSERT (기존 행 DELETE 없음) - "쓰기 전략" 절 참고
 사이클 종료: 실패 목록이 있으면 mailer.enqueue_rtdb_sync_failed() 로 알림 메일 1통 적재
 ```
 
+- **재시도**(2026-08 추가): `RTDB_FETCH_MAX_RETRIES`(3회)/`RTDB_FETCH_RETRY_DELAY_SEC`(5초) 상수로
+  관리한다(`scheduler.py`). `get_data_from_rtdb()`는 예외도 내부에서 잡아 `None`으로 통일해 반환하므로,
+  스케줄러 쪽에서는 "결과가 `None`이거나 0건"이라는 단일 조건으로 예외·빈 결과를 함께 재시도 대상으로
+  다룬다. 재시도는 이미 받아온 RTDB 토큰을 그대로 재사용하며 다시 로그인하지 않는다.
+- **스텝 조회 전 대기**(2026-08 추가): 라인별 스텝(col_step) 조회 직전에 `RTDB_STEP_PRE_FETCH_DELAY_SEC`
+  (3초) 대기한다 - RTDB 쪽 데이터 갱신이 조회 시점에 아직 안 끝나 있는 경우를 대비한다. 재시도와
+  달리 **실패 여부와 무관하게 매번** 스텝 조회 전에 한 번 대기한다.
 - **스텝은 `STEP_TABLE_MAP` 에 등록된 라인만** 동기화한다. 등록되지 않은 라인(`nv`)은 **RTDB 조회 자체를 건너뛴다**
-  (스텝 테이블이 없는 라인이라 애초에 실패로 볼 대상이 아니므로 실패 목록에도 남기지 않는다).
-- RTDB 가 **예외로 실패하거나 빈 결과(0건)** 이면 그 (line, 데이터 종류) 는 실패로 기록되고, 해당 테이블은
-  이번 주기에 갱신되지 않는다(이전 값 유지).
-- RTDB 토큰은 동기화 **주기당 1회** 발급하여 세 소스·라인 반복에서 재사용한다.
+  (스텝 테이블이 없는 라인이라 애초에 실패로 볼 대상이 아니므로 실패 목록에도 남기지 않고, 대기도 하지 않는다).
+- RTDB 가 **3회 재시도 후에도 실패이거나 빈 결과(0건)** 이면 그 (line, 데이터 종류) 는 실패로 기록되고,
+  해당 테이블은 이번 주기에 갱신되지 않는다(이전 값 유지).
+- RTDB 토큰은 동기화 **주기당 1회** 발급하여 세 소스·라인 반복에서 재사용한다(재시도 포함).
 - 나머지 동기화(바코드, MAP 이름, 공휴일, 공정-디자인룰, 라인2)는 기존 DCQ 단일 소스를 그대로 사용한다 — 이번 변경의 영향을 받지 않는다.
 
 ### 라인2 (DCQ 단독, 폴백 구조 아님)
@@ -137,20 +146,50 @@ RTDB(REST API)  →  /api/queries
 - 스텝 기반 API(`job-file-layer` / `ovl-layer` / `layer-ids` / `bb-external`)는 `views.py` 의 `model_map` 에
   `nv` 가 없으므로 **항상 빈 목록**을 반환한다(스텝 테이블이 없으므로 의도된 동작).
 
-### 변경 감지(Change Detection) 쓰기 전략
+### 쓰기 전략
 
-10분 주기에서 매번 전체 삭제·재삽입하는 부하를 줄이기 위해, 대상별 키 컬럼 집합을 현재 테이블 값과 비교한다.
-공통 로직은 `_write_if_changed(engine, table, line, df, key_cols, order_cols)` 헬퍼로 처리한다.
+두 가지 방식이 공존한다 — **RTDB 소스는 diff 병합(add-only)**, **DCQ 소스(라인2 포함)는 기존
+변경 감지(delete+insert) 방식** 그대로다.
+
+#### RTDB 소스: diff 병합 (`_write_merge_only`/`_write_step_merge_only`, 2026-08 변경)
+
+> ⚠️ 예전에는(2026-08 이전) RTDB 소스도 아래 "DCQ 소스" 방식과 같은 `_write_if_changed`(변경
+> 있으면 `DELETE(line) → INSERT`)를 썼다. 그런데 RTDB 가 간헐적으로 비정상적으로 적은 데이터를
+> 반환하는 경우, 그 순간의(불완전한) 응답을 "새 정답"으로 믿고 기존 정상 데이터까지 통째로
+> 지워버리는 사고가 있었다. 이를 막기 위해 RTDB 소스 3개 테이블만 diff 병합으로 바꿨다.
+
+| 대상 테이블 | 함수 | 비교 키 |
+|-------------|------|---------|
+| `api_processproduct`(RTDB 조회분) | `_write_merge_only(engine, table, line, df, key_cols, order_cols)` | `(process, product_name)` |
+| `api_productprocessid`(RTDB 조회분) | `_write_merge_only(engine, table, line, df, key_cols, order_cols)` | `(product_name, process_id)` |
+| `api_teps1`/`api_steps3~5`(스텝) | `_write_step_merge_only(engine, table, df, key_cols)` | `(processid, stepseq)` — **가정값**, 아래 참고 |
+
+```
+테이블(해당 line)의 기존 키 집합 조회
+  → 이번에 받아온 데이터 중 "테이블에 아직 없는 키"만 골라 INSERT
+  → 기존 행은 절대 삭제하지 않는다 (DELETE 없음)
+새로 추가할 게 없으면(전부 이미 존재) → 건너뛰고 로그만 남긴다
+```
+
+- **기존 행을 절대 삭제하지 않는다** — RTDB 가 이번 주기에 비정상적으로 적게 응답해도, DB 에
+  이미 있는 데이터는 그대로 유지된다.
+- **트레이드오프**: 원본(RTDB)에서 실제로 빠진 항목(단종 등)은 여기서 자동으로 정리되지 않고
+  DB 에 계속 남는다. RTDB 응답 신뢰도가 낮은 지금은 "삭제"보다 "누락 방지"를 우선한 의도된 선택.
+- **스텝 키 가정에 대한 주의**: `api_teps1`/`api_steps3~5` 는 Django 모델이 아니라(이 저장소에
+  스키마 정의가 없어 실제 DB 유니크 제약을 확인할 수 없다) `processid`+`stepseq` 조합이 한 스텝을
+  유일하게 식별한다고 **가정**하고 `STEP_KEY_COLUMNS` 상수로 뒀다. 실제 스키마와 다르면 중복 삽입이
+  누적될 수 있으니, 실제 테이블 제약을 확인해 다르면 이 상수만 고치면 된다.
+
+#### DCQ 소스(라인2 포함): 기존 변경 감지 (`_write_if_changed`)
+
+`sync_form_options()`의 라인2 공정-품목/품목-공정ID는 이번 변경의 영향을 받지 않고 기존 방식을
+그대로 쓴다 — 대상별 키 컬럼 집합을 현재 테이블 값과 비교해 **동일하면 skip, 다르면 트랜잭션
+내에서 `DELETE(line) → INSERT`** 로 원자적으로 갱신한다(삭제된 행도 자동 반영).
 
 | 대상 테이블 | 비교 키(key_cols) |
 |-------------|-------------------|
-| `api_processproduct` | `(process, product_name)` |
-| `api_productprocessid` | `(product_name, process_id)` |
-
-- **동일** → `DELETE + INSERT` 를 건너뛰고 로그만 남긴다(대부분의 사이클).
-- **다름** → 트랜잭션 내에서 `DELETE(line) → INSERT` 로 원자적 갱신(삭제된 행도 자동 반영).
-- **스텝(`api_teps1`/`api_steps3~5`)은 라인별 단독 테이블(공용 `line` 컬럼 없음)** 이라 `_write_if_changed`
-  대상이 아니며, 매 사이클 해당 테이블 **전체 `DELETE` → `to_sql`** 로 갱신한다.
+| `api_processproduct`(라인2 조회분) | `(process, product_name)` |
+| `api_productprocessid`(라인2 조회분) | `(product_name, process_id)` |
 
 ## RTDB(REST API) 유틸 (`utils.py`)
 
@@ -171,19 +210,19 @@ RTDB(REST API)  →  /api/queries
 ```
 캐시(_rtdb_token_cache: refresh_token, 발급시각)에 refresh_token 이 있는가?
   없음(최초 호출 / 프로세스 재시작 직후) → 풀 로그인 (POST /api/tokens/login)
-  있음 → 경과시간 < (TTL 90일 − 여유 45일) = 45일 이내인가?
+  있음 → 경과시간 < (TTL 90일 − 여유 7일) = 83일 이내인가?
            예 → refresh (GET /api/auth/refresh) 시도
                   성공 → 새 access_token 반환
                   실패 → 풀 로그인으로 폴백
-           아니오(발급 후 45일 이상 경과, 여유 소진) → 풀 로그인
+           아니오(발급 후 83일 이상 경과, 여유 소진) → 풀 로그인
 풀 로그인 성공 시: access_token 반환 + 응답의 refresh_token 을 캐시에 저장(발급시각 갱신)
 ```
 
 | 항목 | 값 | 비고 |
 |------|-----|------|
 | `RTDB_REFRESH_TOKEN_TTL` | `7,776,000`초(90일) | RTDB 쪽 refresh_token 유효기간 정책(고정값, 응답으로 내려오지 않음) |
-| `RTDB_REFRESH_TOKEN_RENEW_MARGIN` | `3,888,000`초(45일) | 유효기간이 끝나기 전에 미리 풀 로그인하기 위한 여유. 즉 **발급 후 45일이 지나면** 만료(90일)를 기다리지 않고 다음 사이클에 풀 로그인으로 갱신 |
-| access_token 유효기간 | `access_token_expires_in`(RTDB 응답, 통상 3600초=1시간) | 우리 쪽에서 만료를 직접 추적하지 않는다 — 10분 주기라 이미 충분히 여유 있고, `get_data_from_rtdb()` 조회가 401 등으로 실패하면 다음 주기 `get_rtdb_token()` 호출 시 새로 받는다 |
+| `RTDB_REFRESH_TOKEN_RENEW_MARGIN` | `604,800`초(7일) | 유효기간이 끝나기 전에 미리 풀 로그인하기 위한 여유. 즉 **발급 후 83일이 지나면** 만료(90일)를 기다리지 않고 다음 사이클에 풀 로그인으로 갱신. (2026-08 축소: 45일 → 7일 — 풀 로그인 빈도를 90일에 1번(예전 45일 마진 기준)에서 83일에 1번으로 더 줄인다) |
+| access_token 유효기간 | `access_token_expires_in`(RTDB 응답, 통상 3600초=1시간) | 우리 쪽에서 만료를 직접 추적하지 않는다 — 10분 주기라 이미 충분히 여유 있고, `get_data_from_rtdb()` 조회가 401 등으로 실패하면 재시도(최대 3회) 과정에서도 계속 실패하고, 다음 주기 `get_rtdb_token()` 호출 시 새로 받는다 |
 
 - **캐시는 프로세스 메모리에만 있다** — DB나 파일에 영속화하지 않는다. `run_scheduler` 프로세스가
   재시작되면(배포 등) 캐시가 비워지고, **재시작 후 첫 호출은 풀 로그인부터 다시 시작한다**(의도된 동작).
@@ -199,7 +238,9 @@ RTDB(REST API)  →  /api/queries
 스케줄러로 외부 데이터를 가져오는 **모든 잡**(`sync_rtdb_options`/`sync_form_options`/`sync_holidays`/
 `sync_design_rule`)은 각자 한 사이클 안에서 조회가 실패(예외)했거나 빈 결과였던 (구분, 데이터 종류)
 쌍을 모아, 그 사이클이 끝난 뒤 **실패가 하나라도 있으면 알림 메일 1통**을 큐에 적재한다. 소스에 따라
-메일이 둘로 나뉜다 — **RTDB 실패는 RTDB 메일, DCQ 실패는 DCQ 메일**로 따로 온다.
+메일이 둘로 나뉜다 — **RTDB 실패는 RTDB 메일, DCQ 실패는 DCQ 메일**로 따로 온다. RTDB 는 실패로
+집계되기 전에 이미 최대 3회 재시도(5초 간격)를 거친 뒤이므로, 이 메일은 "재시도까지 다 해봤지만
+안 됐다"는 뜻이다(§"데이터 소스 구조" 참고). DCQ 잡들은 재시도를 하지 않는다(이번 변경 범위 밖).
 
 | 소스 | 대상 잡 | `event_type` | 적재 함수 | 표 첫 컬럼 |
 |------|---------|--------------|-----------|-----------|
