@@ -99,19 +99,11 @@ STEP_TABLE_MAP = {
 }
 STEP_COLUMNS = ['processid', 'stepseq', 'descript', 'recipeid', 'areaname', 'eqptype', 'updated', 'layerid']
 
-# nv 는 DCQ(FALLBACK) 소스 테이블이 다른 라인들과 달라 라인 접미사로 만들 수 없다.
-# (RTDB(MAIN) 경로는 다른 라인과 동일하게 접미사 치환을 쓴다.)
-NV_DCQ_PP_QUERY = """
-    SELECT DISTINCT partnumber, descript, pkgtype_2
-    FROM N.V
-"""
-NV_DCQ_PC_QUERY = """
-    SELECT DISTINCT partnumber, processid
-    FROM N.V2
-"""
-# 라인별 DCQ fallback 쿼리 오버라이드. 없는 라인은 접미사 기반 기본 쿼리를 쓴다.
-DCQ_PP_QUERY_OVERRIDE = {LINE_NV: NV_DCQ_PP_QUERY}
-DCQ_PC_QUERY_OVERRIDE = {LINE_NV: NV_DCQ_PC_QUERY}
+# RTDB(MAIN) 조회 실패/빈 결과 시 실패 목록에 남길 데이터 종류 라벨.
+# (2026-08부터 DCQ fallback 대신 실패 목록을 모아 알림 메일로 보낸다 - mailer.enqueue_rtdb_sync_failed)
+TARGET_LABEL_PP = "{{request.process_selection}}-{{request.partid_selection}}"
+TARGET_LABEL_PC = "{{request.partid_selection}}-{{request.process_id}}"
+TARGET_LABEL_STEP = "{{request.col_step}}"
 
 
 def _write_if_changed(engine, table, line, df, key_cols, order_cols):
@@ -142,11 +134,14 @@ def _write_if_changed(engine, table, line, df, key_cols, order_cols):
 
 def sync_rtdb_options():
     """
-    RTDB(REST API) 를 MAIN 소스로 {{request.process_selection}}-{{request.partid_selection}} /
+    RTDB(REST API) 로 {{request.process_selection}}-{{request.partid_selection}} /
     {{request.partid_selection}}-{{request.process_id}} 데이터를 10 분 주기로 동기화한다.
-    - 각 소스는 MAIN 이 예외(None)·빈 결과면 DCQ 로 fallback (DCQ 는 필요 시에만 지연 로그인)
+    - RTDB 조회가 예외이거나 빈 결과이면 그 데이터는 이번 주기에 동기화하지 않고 실패로 기록한다.
+      (2026-08부터 DCQ fallback 을 쓰지 않는다 - 실패 목록을 모아 사이클 종료 시
+      `mailer.enqueue_rtdb_sync_failed()` 로 알림 메일 1통을 큐에 적재한다. 수신자는
+      `.env` 의 `RTDB_SYNC_ALERT_MAIL`. RTDB 장애가 이어지는 동안은 10 분 주기마다 매번 발송된다.)
     - 조회 결과가 기존 테이블과 동일하면 쓰기를 건너뛴다(변경 감지)
-    - RTDB 토큰은 주기당 1회만 발급하여 두 소스·라인 반복에서 재사용한다.
+    - RTDB 토큰은 주기당 1회만 발급하여 소스·라인 반복에서 재사용한다.
     """
     engine = None
     try:
@@ -157,28 +152,14 @@ def sync_rtdb_options():
 
     rtdb_token = rtdb_login_with_retry()
     if not rtdb_token:
-        logger.warning(_("[scheduler] RTDB 로그인 실패 - DCQ fallback 으로 진행합니다"))
+        logger.warning(_("[scheduler] RTDB 로그인 실패 - 이번 주기 동기화를 건너뜁니다"))
 
-    # DCQ 는 fallback 이 실제로 필요할 때만 지연 로그인한다. (두 소스가 상태 공유)
-    dcq_state = {'ready': False, 'id': None}
+    # 이번 사이클에서 RTDB 조회가 실패/빈 결과였던 (line, target) 목록.
+    # 사이클 종료 시 하나라도 있으면 알림 메일 1통으로 모아 보낸다.
+    failures = []
 
-    def ensure_dcq():
-        if dcq_state['ready']:
-            return True
-        if dcq_login_with_retry():
-            dcq_id, _pw = get_dcq_credentials()
-            if dcq_id:
-                get_dcq_token_info(dcq_id)
-                dcq_state['ready'] = True
-                dcq_state['id'] = dcq_id
-                return True
-            logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
-        else:
-            logger.error(_("[scheduler] DCQ 로그인 실패 - fallback 불가"))
-        return False
-
-    def fetch(rtdb_select, rtdb_filter, rtdb_table, suffix, dcq_query):
-        """MAIN(RTDB) 우선 조회 → 예외/빈 결과 시 DCQ fallback. DataFrame 또는 None 반환."""
+    def fetch(rtdb_select, rtdb_filter, rtdb_table, suffix, line, target_label):
+        """RTDB 조회. 실패/빈 결과면 None 을 반환하고 실패 목록에 기록한다(DCQ fallback 없음)."""
         df = None
         if rtdb_token:
             payload = {
@@ -191,9 +172,12 @@ def sync_rtdb_options():
             }
             df = get_data_from_rtdb(payload, rtdb_token)
         if df is None or len(df) == 0:
-            logger.warning(_("[scheduler] RTDB 조회 실패/빈 결과 - DCQ fallback 실행 (suffix={suffix})").format(suffix=suffix))
-            if ensure_dcq():
-                df = get_data_from_dcq(dcq_query, dcq_state['id'])
+            logger.warning(
+                _("[scheduler] RTDB 조회 실패/빈 결과 (line={line}, target={target})")
+                .format(line=line, target=target_label)
+            )
+            failures.append({'line': line, 'target': target_label})
+            return None
         return df
 
     try:
@@ -202,17 +186,8 @@ def sync_rtdb_options():
 
             # --- 공정-품목 (api_processproduct) ---
             try:
-                dcq_cp = DCQ_PP_QUERY_OVERRIDE.get(line)
-                if dcq_cp is None:
-                    dcq_cp = f"""
-                        SELECT DISTINCT partnumber, descript, pkgtype_2
-                        FROM A.B_{suffix}
-                        WHERE X IS NOT NULL AND X != ''
-                    """
-                df_cp = fetch(RTDB_PP_SELECT, RTDB_PP_FILTER, RTDB_PP_TABLE, suffix, dcq_cp)
-                if df_cp is None or len(df_cp) == 0:
-                    logger.warning(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 데이터가 없습니다").format(line=line))
-                else:
+                df_cp = fetch(RTDB_PP_SELECT, RTDB_PP_FILTER, RTDB_PP_TABLE, suffix, line, TARGET_LABEL_PP)
+                if df_cp is not None:
                     df_cp = df_cp.rename(columns={'descript': 'process', 'partnumber': 'product_name'})
                     count = _write_if_changed(
                         engine, 'api_processproduct', line, df_cp,
@@ -228,16 +203,8 @@ def sync_rtdb_options():
 
             # --- 품목-공정ID (api_productprocessid) ---
             try:
-                dcq_pc = DCQ_PC_QUERY_OVERRIDE.get(line)
-                if dcq_pc is None:
-                    dcq_pc = f"""
-                        SELECT DISTINCT partnumber, processid
-                        FROM A.B_{suffix}_processproduct
-                    """
-                df_pc = fetch(RTDB_PC_SELECT, RTDB_PC_FILTER, RTDB_PC_TABLE, suffix, dcq_pc)
-                if df_pc is None or len(df_pc) == 0:
-                    logger.warning(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 데이터가 없습니다").format(line=line))
-                else:
+                df_pc = fetch(RTDB_PC_SELECT, RTDB_PC_FILTER, RTDB_PC_TABLE, suffix, line, TARGET_LABEL_PC)
+                if df_pc is not None:
                     df_pc = df_pc.rename(columns={'partnumber': 'product_name', 'processid': 'process_id'})
                     count = _write_if_changed(
                         engine, 'api_productprocessid', line, df_pc,
@@ -252,22 +219,14 @@ def sync_rtdb_options():
                 logger.error(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
 
             # --- 스텝 (api_steps: 라인별 단독 테이블) ---
-            # 스텝 테이블이 없는 라인(nv)은 조회 자체를 건너뛴다.
-            # (조회부터 하면 매 10 분마다 빈 결과 → 불필요한 DCQ fallback 로그인이 발생한다.)
+            # 스텝 테이블이 없는 라인(nv)은 조회 자체를 건너뛴다(실패로 기록하지 않는다).
             table_name = STEP_TABLE_MAP.get(line)
             if not table_name:
                 logger.info(_("[scheduler] {line} {{request.col_step}} 테이블 없음 - skip").format(line=line))
             else:
                 try:
-                    dcq_ps = f"""
-                        SELECT processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid
-                        FROM A.B_{suffix}_step
-                        WHERE X = 'Y'
-                    """
-                    df_ps = fetch(RTDB_STEP_SELECT, RTDB_STEP_FILTER, RTDB_STEP_TABLE, suffix, dcq_ps)
-                    if df_ps is None or len(df_ps) == 0:
-                        logger.warning(_("[scheduler] {line} {{request.col_step}} 데이터가 없습니다").format(line=line))
-                    else:
+                    df_ps = fetch(RTDB_STEP_SELECT, RTDB_STEP_FILTER, RTDB_STEP_TABLE, suffix, line, TARGET_LABEL_STEP)
+                    if df_ps is not None:
                         df_ps['last_synced'] = pd.Timestamp.now()
                         df_ps = df_ps[STEP_COLUMNS + ['last_synced']]
                         with engine.begin() as db_conn:
@@ -279,6 +238,13 @@ def sync_rtdb_options():
     finally:
         if engine:
             engine.dispose()
+
+    if failures:
+        try:
+            from . import mailer
+            mailer.enqueue_rtdb_sync_failed(failures)
+        except Exception as e:
+            logger.error(_("[scheduler] RTDB 동기화 실패 알림 메일 적재 실패: {e}").format(e=e), exc_info=True)
 
 
 def sync_form_options():
