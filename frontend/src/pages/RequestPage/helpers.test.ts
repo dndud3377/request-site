@@ -213,6 +213,23 @@ describe('computeLayerMerge', () => {
     expect(computeLayerMerge([], [])).toEqual({ merged: [], stats: { added: 0, registered: 0, deleted: 0 } });
   });
 
+  it('③\' 참조(A)의 st 가 이미 X(이미 확정된 기등록)이면 cur 행을 건드리지 않는다', () => {
+    const cur = [row('10', { st: 'O', new_or_copy: '차용' })]; // JOB FILE 자동채움 등으로 아직 미확정 상태
+    const ref = [row('10', { st: 'X', new_or_copy: '기등록' })]; // 이전 세대에서 이미 확정됨
+    const { merged, stats } = computeLayerMerge(cur, ref);
+    // 강제로 X/기등록 으로 재도장하지 않고 cur 의 현재 값을 그대로 둔다.
+    expect(find(merged, '10')).toMatchObject({ st: 'O', new_or_copy: '차용' });
+    expect(stats).toEqual({ added: 0, registered: 1, deleted: 0 });
+  });
+
+  it('③ 참조(A)의 st 가 아직 X 가 아니면(처음 확정되는 시점) 기존대로 X/기등록 으로 재도장한다', () => {
+    const cur = [row('10', { st: 'O', new_or_copy: '신규' })];
+    const ref = [row('10', { st: 'O', new_or_copy: '신규' })]; // 아직 확정 전
+    const { merged, stats } = computeLayerMerge(cur, ref);
+    expect(find(merged, '10')).toMatchObject({ st: 'X', new_or_copy: '기등록' });
+    expect(stats).toEqual({ added: 0, registered: 1, deleted: 0 });
+  });
+
   it('시나리오: 기등록 1 / 신규 2 / layer삭제 1', () => {
     const cur = [row('10'), row('30'), row('40')];
     const ref = [row('10'), row('20'), row('30', { st: 'X', new_or_copy: 'layer삭제' })];
