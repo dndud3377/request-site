@@ -249,6 +249,47 @@ pages/RequestPage/
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 개선 (2026-08-19 — 3-way Merge: 이미 확정된(st=X) 기등록 행은 재도장하지 않는다)
+
+- **요청**: 참조 요청서 체인(A→B→C…)에서, 참조문서(ref)의 매칭 행이 **이미 st='X'로 확정된 상태**
+  (= 이전 세대에서 이미 '기등록'으로 판정됐던 행)라면, `computeLayerMerge`가 다음 세대(cur)에서
+  그 행을 다시 `st='X', new_or_copy='기등록'`으로 강제 재도장하지 말고, cur 표에 있는 **현재 값을
+  그대로** 두도록 한다.
+- **배경**: 기존에는 참조와 매칭되는 모든 행을 예외 없이 `st: 'X', new_or_copy: '기등록'`으로
+  덮어썼다. 그런데 st='X'는 "이전 세대에서 이미 기등록으로 확정됨"을 뜻하므로, 참조 체인이 길어질
+  때마다(A→B→C→D...) 이미 확정된 행을 매번 다시 같은 값으로 재도장하는 건 불필요한 데이터 churn이다.
+  이제는 **"아직 미확정(st≠X, 즉 신규/차용 상태) → 기등록으로 처음 확정"** 전이만 자동으로 일어나고,
+  이미 확정된 행은 손대지 않는다.
+- **수정**: `helpers.ts` `computeLayerMerge` — 참조 매칭 판정을 `Set<string>`(`refPresentKeys`)에서
+  `Map<string, T>`(`refPresentByKey`)로 바꿔 매칭된 참조 행 자체를 참조할 수 있게 하고, 매칭 시
+  `refRow.st === ST_X`이면 cur 행을 그대로 반환(`return r`)하도록 분기를 추가했다. `st !== 'X'`인
+  경우(아직 미확정)는 기존과 동일하게 `X`/`기등록`으로 재도장한다. `stats.registered` 카운트는 두
+  경우 모두 동일하게 증가한다(참조와 매칭됐다는 사실 자체는 변하지 않으므로).
+  - `computeBeforeAfter`(변경전/변경후 diff)는 이번 변경과 무관하다 — diff 비교는 5개 필드
+    (`process_id`/`sp`/`sd`/`pp`/`layerid`)만 보고 `st`/`new_or_copy`는 애초에 비교 대상이 아니다.
+- **영향 파일**: `frontend/src/pages/RequestPage/helpers.ts`(`computeLayerMerge`),
+  `frontend/src/pages/RequestPage/helpers.test.ts`(신규 테스트 2건).
+- **검증(2026-08-19 실행)**: `npx tsc --noEmit` — 신규 에러 0(기존 7건과 동일).
+  `CI=true npx react-scripts test --watchAll=false` — 9 suites / **215건 전부 통과**(기존
+  `computeLayerMerge` 테스트 전부 무회귀 + 신규 2건: "참조 st 가 이미 X면 cur 값 유지" /
+  "참조 st 가 아직 X 아니면 기존대로 재도장").
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다):
+  1. [문서 B: `기등록` 라벨의 layer가 있는 상태로 상신 완료(즉 J-layer 표에 `st='X', new_or_copy=
+     '기등록'`인 행 존재)]
+  2. [새 문서 C 작성 → 같은 라인/공정 선택(JOB FILE 자동채움으로 그 layer가 표에 채워짐, 이때 새로
+     채워진 행의 초기 `new_or_copy`/`st`는 JOB FILE 응답 기준값) → 참조 요청서에서 B 선택 → Merge
+     클릭] → [기대 결과: 그 layer 행이 B와 매칭되어 `기등록` 건수에는 잡히지만(모달 건수 정상),
+     Merge 반영 후 표를 보면 그 행의 `new_or_copy`/`st` 값이 **강제로 '기등록'/'X'로 바뀌지 않고
+     Merge 직전 값 그대로** 남아 있다.]
+  3. [반대로, B에 아직 `신규`(`st='O'`)로 남아있던 layer가 있다면(=아직 한 번도 기등록으로 확정된
+     적 없음), C가 그 layer를 참조해 Merge하면 **기존과 동일하게** `기등록`/`X`로 정상 전환된다.]
+- **잠재 주의사항**:
+  - 참조문서의 매칭 행이 `st='X'`이지만 `new_or_copy`가 `'기등록'`이 아닌 다른 값(예: 데이터
+    이상으로 `차용`+`X` 같은 비정상 조합)인 경우도 이번 분기 조건(`refRow.st === ST_X`)에 걸려
+    cur 값이 그대로 유지된다 — `st`만 보고 판단하므로 `new_or_copy`와 무관하게 동작한다(요청하신
+    조건 그대로 구현). 실제 UI에서는 `기등록`/`layer삭제`가 아닌 한 `st`가 항상 잠금 없이 자유
+    입력이라 이런 조합이 실제로 나타나는지는 별도로 확인하지 않았다.
+
 ### 버그 수정 (2026-08-19 — 참조 요청서 체인(A→B→C…)에서 이미 확정된 layer삭제가 다음 세대 비교에서 재등장)
 
 - **증상**: 참조 요청서 Merge(`Layer 추가/삭제`·`STEPSEQ 변경`·`Overlay 변경`)로 A를 참조해 B를 상신하면,
