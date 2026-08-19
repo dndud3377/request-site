@@ -6,7 +6,7 @@ import {
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
 } from './helpers';
-import { VS_NA, VS_TARGET } from './constants';
+import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW } from './constants';
 import { AdiCdStep, MergePair, MergeRowInfo } from '../../types';
 
 describe('isValidationKeywordRow', () => {
@@ -245,6 +245,23 @@ describe('computeLayerMerge', () => {
     expect(computeLayerMerge([], [])).toEqual({ merged: [], stats: { added: 0, registered: 0, deleted: 0 } });
   });
 
+  it('③\' 참조(A)의 st 가 이미 X(이미 확정된 기등록)이면 cur 행을 건드리지 않는다', () => {
+    const cur = [row('10', { st: 'O', new_or_copy: '차용' })]; // JOB FILE 자동채움 등으로 아직 미확정 상태
+    const ref = [row('10', { st: 'X', new_or_copy: '기등록' })]; // 이전 세대에서 이미 확정됨
+    const { merged, stats } = computeLayerMerge(cur, ref);
+    // 강제로 X/기등록 으로 재도장하지 않고 cur 의 현재 값을 그대로 둔다.
+    expect(find(merged, '10')).toMatchObject({ st: 'O', new_or_copy: '차용' });
+    expect(stats).toEqual({ added: 0, registered: 1, deleted: 0 });
+  });
+
+  it('③ 참조(A)의 st 가 아직 X 가 아니면(처음 확정되는 시점) 기존대로 X/기등록 으로 재도장한다', () => {
+    const cur = [row('10', { st: 'O', new_or_copy: '신규' })];
+    const ref = [row('10', { st: 'O', new_or_copy: '신규' })]; // 아직 확정 전
+    const { merged, stats } = computeLayerMerge(cur, ref);
+    expect(find(merged, '10')).toMatchObject({ st: 'X', new_or_copy: '기등록' });
+    expect(stats).toEqual({ added: 0, registered: 1, deleted: 0 });
+  });
+
   it('시나리오: 기등록 1 / 신규 2 / layer삭제 1', () => {
     const cur = [row('10'), row('30'), row('40')];
     const ref = [row('10'), row('20'), row('30', { st: 'X', new_or_copy: 'layer삭제' })];
@@ -430,6 +447,57 @@ describe('computeBeforeAfter', () => {
     expect(computeBeforeAfter([], [], [], [])).toEqual({
       pairs: [], unmatchedBefore: [], unmatchedAfter: [], sameCount: 0,
     });
+  });
+
+  // 참조 요청서 체인(A→B→C...) — B가 A를 참조해 3-way 병합된 결과를 C가 다시 참조할 때,
+  // B 안의 'layer삭제' 행(A→B 때 이미 확정된 삭제)이 C 비교에서 재등장하면 안 된다.
+  it('참조(ref)의 layer삭제 행은 비교 대상에서 제외한다 — 없던 것으로 취급', () => {
+    const res = computeBeforeAfter(
+      [r('a', { new_or_copy: NOC_LAYER_DELETE })],
+      [],
+      [],
+      []
+    );
+    expect(res.pairs).toEqual([]);
+    expect(res.unmatchedBefore).toEqual([]);
+    expect(res.unmatchedAfter).toEqual([]);
+  });
+
+  it('참조의 layer삭제 행과 같은 그룹에 있어도, cur 쪽 다른 행은 정상 비교된다', () => {
+    // ref = [기등록 L1, layer삭제 L1]  (같은 layerid 그룹에 라벨만 다른 두 행)
+    // cur = [L1 신규] → layer삭제 행은 제외되므로, 남은 기등록 L1과만 비교된다.
+    const registered = r('a1', { layerid: 'L1', new_or_copy: NOC_NEW });
+    const deleted = r('a2', { layerid: 'L1', new_or_copy: NOC_LAYER_DELETE });
+    const cur = { ...r('b1', { layerid: 'L1' }), sp: registered.sp, sd: registered.sd, pp: registered.pp };
+    const res = computeBeforeAfter([registered, deleted], [], [cur], []);
+    expect(res.sameCount).toBe(1);
+    expect(res.pairs).toEqual([]);
+    expect(res.unmatchedBefore).toEqual([]);
+    expect(res.unmatchedAfter).toEqual([]);
+  });
+
+  it('참조 시점에 layer삭제였던 layer가 cur 에 다시 나타나면 added(신규) 로 뜬다', () => {
+    const res = computeBeforeAfter(
+      [r('a', { layerid: 'L3', new_or_copy: NOC_LAYER_DELETE })],
+      [],
+      [r('b', { layerid: 'L3' })],
+      []
+    );
+    expect(res.pairs).toHaveLength(1);
+    expect(res.pairs[0]).toMatchObject({ kind: 'added', beforeId: null, afterId: 'J_b' });
+    expect(res.pairs[0].after).toMatchObject({ layerid: 'L3' });
+    expect(res.unmatchedBefore).toEqual([]);
+    expect(res.unmatchedAfter).toEqual([]);
+  });
+
+  it('cur 쪽 layer삭제 라벨은 영향 없다 (ref 쪽만 제외 대상)', () => {
+    // r() 기본값은 new_or_copy 가 없으므로(undefined), cur 에 명시적으로 layer삭제를 줘도
+    // 필터 조건(!disabled && layerid!=='' && new_or_copy!=='layer삭제')에 의해 제외된다 —
+    // 실제 앱에서 cur 쪽에 layer삭제 라벨이 남아있을 일은 없지만(계속 작성 중인 표), 방어적으로 확인.
+    const res = computeBeforeAfter([], [], [r('b', { new_or_copy: NOC_LAYER_DELETE })], []);
+    expect(res.pairs).toEqual([]);
+    expect(res.unmatchedBefore).toEqual([]);
+    expect(res.unmatchedAfter).toEqual([]);
   });
 });
 
