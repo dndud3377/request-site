@@ -2065,7 +2065,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 - 「엠샷 변경 이력」 모달의 첨부 이미지 행이 **파일 경로 문자열**(`mshot_images/mshot_….png`)로 보이던 것을 **썸네일 이미지**로 바꿨다. 대상은 `mshot_image_copy` / `_top` / `_bottom` 3종.
   - `PagedDetailView.tsx`의 `DiffRow` 에 선택적 `kind?: 'text' | 'image'` 추가. `buildMshotRows` 의 이미지 행에만 `kind: 'image'` 를 부여하므로 **생산정보·REV 이력 모달은 종전과 동일한 텍스트 표시**다.
   - `FieldGroupHistoryModal` 은 `kind === 'image'` 이고 값이 있을 때만 `<img src={/media/<경로>}>` 를 그린다. 값이 비면(신규 첨부의 '변경 전', 삭제의 '변경 후') 기존과 같이 `-` 로 둔다 — 빈 `src` 로 깨진 이미지가 뜨는 것을 막는다.
-  - 썸네일 크기 상수: `DIFF_THUMB_MAX_WIDTH=220` / `DIFF_THUMB_MAX_HEIGHT=150` (블록 본체의 300×200 보다 작게 두어 변경 전·후가 한 화면에 들어온다). 경로 prefix 는 `MEDIA_URL_PREFIX='/media/'`.
+  - 썸네일 크기 상수: `DIFF_THUMB_MAX_WIDTH=220` / `DIFF_THUMB_MAX_HEIGHT=150` (블록 본체의 600×420 보다 작게 두어 변경 전·후가 한 화면에 들어온다). 경로 prefix 는 `MEDIA_URL_PREFIX='/media/'`.
   - 테두리 색은 표의 기존 색 규칙을 따른다 — 변경 전 `#dc3545`, 변경 후 `#155724`. 확대(클릭) 동작은 없다.
 
 ### 추가 변경 이력 (2026-08 — 이력 확인 모드 이원화)
@@ -2274,6 +2274,15 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 - **매핑 적용 시 col_bb_layer 채움**: `handleApplyMappings`에서 `bb_step`을 빈 값으로 두던 것을 자동 채움(`buildAutoFillRows`)과 동일하게 외부 데이터의 `layerid`(`ext.layerid`)로 채운다.
 - **J/O 필터 인라인 수정**: `FilterManageModal`에 `onEdit` prop과 수정 모드(저장된 필터 '수정' 버튼 → 폼에 로드 → '수정 적용'/'수정 취소') 추가. index.tsx의 `onEdit` 콜백은 `filterSets` 갱신·localStorage 저장과 함께, 수정된 필터가 활성 상태면 `calcDisabled`로 행 비활성 상태를 즉시 재계산한다(삭제 핸들러와 동일 패턴).
 - **검증 실패 시 첫 오류 필드로 스크롤·강조**: `handleNextStep`/`handleSubmitClick`이 토스트만 띄우고 상단으로 스크롤하던 것을 `scrollToFirstError()`로 교체. DOM의 첫 `.form-error` 필드(`.form-group` 컨테이너)로 `scrollIntoView({block:'center'})` 후 `field-error-flash`(global.css)로 1.5초 강조하고 첫 입력요소에 포커스한다. O-layer(step 4)의 `partial_shot` 오류는 'info' 탭(`setOayerInfoTab('info')`)으로 전환 후 표시한다. Backbone(step 5)의 `jayer_mapping` 오류는 `Step4`에 `errors` prop을 추가해 `.form-error`로 인라인 노출(스크롤 앵커). 검증은 항상 현재 step 기준이라 첫 오류 필드는 현재 화면 안에 있다(탭 전환만 필요).
+
+### 추가 변경 이력 (2026-08-19 — 엠샷 첨부 이미지 크기 확대 + 라이트박스)
+
+- **증상**: 의뢰 상세(`PagedDetailView`)에서 `mshot_image_copy`/`_top`/`_bottom` 첨부 이미지가 300×200px로 작게 표시돼 내용을 알아보기 어려웠다.
+- **변경**: 블록 본체 이미지 `imgStyle`을 300×200px → 600×420px로 확대. 이미지 위에 항상 보이는 확대(🔍) 버튼을 추가해 클릭하면 전체 화면 커스텀 라이트박스(`zoomedImage` state)로 원본 크기(최대 `90vw`×`85vh`)를 볼 수 있다. 이미지 자체 클릭도 동일하게 라이트박스를 연다. 배경 클릭 또는 ✕ 버튼으로 닫는다.
+  - `PagedDetailView.tsx`가 `RequestPage`(의뢰 상세)·`ApprovalPage`(결재)·`HistoryPage`(이력) 3곳에서 공용으로 쓰이므로 이번 변경은 세 화면 모두에 적용된다.
+  - 라이트박스는 `zIndex: 4000`으로 기존 `topLevel` Modal(`zIndex: 3000`)보다 위에 뜬다.
+  - 신규 i18n 키 `request.mshot_image_zoom_btn`(확대 버튼 aria-label/title, ko/en 동시 추가). 라이트박스 닫기 버튼은 기존 `common.close` 재사용.
+  - **범위 밖(의도적으로 유지)**: 「엠샷 변경 이력」 모달(`FieldGroupHistoryModal`)의 220×150px 썸네일은 이번 변경 대상이 아니다 — 여전히 확대(클릭) 동작 없음.
 
 ## 5. 검증 방법
 ```bash
