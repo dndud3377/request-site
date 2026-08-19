@@ -152,6 +152,9 @@ DXHUB_API_KEY = os.environ.get('DXHUB_API_KEY', '')
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:10011')
 # 설정 시 모든 결재 알림 메일을 이 주소로 강제 발송 (개발/검증용). 비우면 실제 수신자에게 발송.
 MAIL_REDIRECT_TO = os.environ.get('MAIL_REDIRECT_TO', '')
+# RTDB(MAIN) 동기화 실패 시 알림 메일 수신자 (콤마 구분, 예: "a@company.com,b@company.com").
+# 비우면 실패해도 메일을 보내지 않는다(scheduler.sync_rtdb_options → mailer.enqueue_rtdb_sync_failed).
+RTDB_SYNC_ALERT_MAIL = os.environ.get('RTDB_SYNC_ALERT_MAIL', '')
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=12),
