@@ -4896,6 +4896,7 @@ select.form-control option {
 .ba-badge-changed { background: var(--warning-light); color: var(--warning); border-color: var(--warning); }
 .ba-badge-added { background: var(--success-light); color: var(--success); border-color: var(--success); }
 .ba-badge-deleted { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
+.ba-badge-inactive { background: var(--bg-secondary); color: var(--text-muted); border-color: var(--border); }
 .ba-group-before { background: var(--danger-light) !important; text-align: center !important; }
 .ba-group-after { background: var(--success-light) !important; text-align: center !important; }
 .ba-cell-changed { color: var(--warning); font-weight: 700; }

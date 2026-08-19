@@ -275,6 +275,56 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-08-19 — 변경전/변경후 표: AFTER 연결 행이 비활성/기등록이면 배지로 표시)
+
+- **요청**: 참조 요청서 Merge로 표가 채워진 뒤, Merge로 새로 추가된(`미등록 → L3` 같은) layer가
+  사실 불필요하거나 이미 등록돼 있던 것으로 드러날 수 있다. 이때 작성자가 J-layer/O-layer 표에서
+  그 행을 **비활성화**하거나 **`기등록`으로 변경**하면, STEP1의 변경전/변경후 표(`BeforeAfterPanel`)
+  에서도 AFTER 쪽에 "비활성화" 표시가 남도록 한다. 나중에 다시 필요해져서 **비활성화를 해제**하거나
+  **`신규`로 되돌리면** 그 표시도 함께 사라져야 한다.
+- **판정 대상**: `kind`(added/changed/deleted)와 무관하게, pair 의 AFTER 가 **실제 J/O-layer 행과
+  연결된 모든 pair**에 적용한다(`afterId`가 그 행을 가리키기만 하면 됨. 수기로 추가한 행은 `afterId`
+  가 없어 대상이 아니다).
+- **구현**: `helpers.ts`에 순수 함수 `isPairAfterInactive(afterId, jayerRows, oayerRows)` 신설 —
+  `afterId`(`${table}_${row.id}` 형식)로 실제 행을 찾아 `disabled || new_or_copy === '기등록'`이면
+  `true`. 저장값(`pair.after` 스냅샷)은 건드리지 않고, **매 렌더마다 지금 실제 표 상태를 다시
+  계산**하는 표시 전용 판정이라 비활성 해제·`신규`로 되돌리는 것도 별도 처리 없이 자동으로
+  반영된다. `BeforeAfterPanel`이 새로 `jayerRows`/`oayerRows` props 를 받아 변경전/변경후 표의
+  '구분' 열에 배지(`ba_after_inactive`)를 추가로 그린다. `Step1.tsx` → `index.tsx` 순으로 두
+  prop 을 그대로 전달만 한다(값 계산 없음, 기존 데이터 흐름 패턴과 동일).
+- **적용 범위**: 이번 변경은 **작성 화면(STEP1 `BeforeAfterPanel`)에만** 적용한다. 상신 후 승인자가
+  보는 결재 상세보기(`PagedDetailView`)는 이번 범위에 포함하지 않았다 — 그 화면은 상신 시점 스냅샷을
+  보여주는 것이 기존 설계이므로, 손대지 않았다.
+- **영향 파일**: `frontend/src/pages/RequestPage/helpers.ts`(`isPairAfterInactive`,
+  `PairAfterLookupRow`), `frontend/src/pages/RequestPage/helpers.test.ts`(신규 테스트 8건),
+  `frontend/src/pages/RequestPage/components/BeforeAfterPanel.tsx`,
+  `frontend/src/pages/RequestPage/components/Step1.tsx`, `frontend/src/pages/RequestPage/index.tsx`,
+  `frontend/src/locales/{ko,en}.json`(`request.ba_after_inactive`), `frontend/src/styles/global.css`
+  (`.ba-badge-inactive`). 백엔드·마이그레이션 변경 없음(표시 전용, 저장 데이터 형식 불변).
+- **검증(2026-08-19 실행)**: `npx tsc --noEmit` — 신규 에러 0(기존 7건과 동일).
+  `CI=true npx react-scripts test --watchAll=false` — 9 suites / **230건 전부 통과**(신규
+  `isPairAfterInactive` 테스트 8건 포함: null/정상/비활성/기등록/복원/O-layer/genId 형식 id/행
+  삭제됨, 기존 회귀 없음).
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [`/request` → 참조 요청서로 A를 선택해 Merge 완료(A에 없던 `L3`가 신규로 추가된 상태) →
+     STEP1 변경전/변경후 표 확인] → [기대 결과: `미등록 → L3` 행이 "추가" 배지만 달고 있다.]
+  2. [STEP3(J-layer) 또는 STEP4(O-layer)로 이동 → `L3` 행 체크 → "선택 비활성화" 클릭 → 다시
+     STEP1로 돌아와 변경전/변경후 표 확인] → [기대 결과: `미등록 → L3` 행의 '구분' 열에 "추가"
+     배지 옆에 "비활성화" 배지가 추가로 붙는다.]
+  3. [STEP3/4에서 `L3` 행의 "요청 기준"을 `기등록`으로 바꿈 → STEP1 확인] → [기대 결과: (비활성화
+     해제 여부와 무관하게) "비활성화" 배지가 그대로/새로 붙는다.]
+  4. [STEP3/4에서 `L3` 행을 다시 활성화("선택 복원")하고 "요청 기준"을 `신규`로 되돌림 → STEP1
+     확인] → [기대 결과: "비활성화" 배지가 사라지고 "추가" 배지만 남는다(1번과 동일한 상태로 복귀).]
+  5. [상신 완료 후 결재 현황에서 해당 의뢰서 상세보기 → 변경전/변경후 표 확인] → [기대 결과: 이
+     화면은 이번 변경 대상이 아니므로 기존과 동일하게 상신 시점 스냅샷만 보인다(배지 없음).]
+- **잠재 주의사항**:
+  - 배지는 `pair.afterId`가 가리키는 행을 `jayerRows`/`oayerRows`에서 **매번 다시 찾아서** 판정하므로,
+    그 행이 표에서 완전히 삭제되면(비활성화가 아니라 실제 삭제) 연결이 끊겨 배지가 조용히 사라진다
+    (에러 없이 `false` 처리) — 의도된 동작이다.
+  - `changed`(값이 바뀐) pair 의 AFTER 쪽이 비활성화/기등록으로 바뀌는 경우도 동일하게 배지가 붙는다
+    (요청하신 "AFTER가 실제 행과 연결된 모든 pair" 기준 그대로 구현) — `added` 외의 케이스가 실제
+    운영에서 자주 나오는지는 별도로 확인하지 않았다.
+
 ### 기능 추가 (2026-08-19 — STEP4→STEP5 전환 시 Jayer/Oayer 기준 요청 목적 확인 모달)
 
 - **요청**: Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청서에 실제로 맞는 요청
