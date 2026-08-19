@@ -1627,6 +1627,7 @@ export default function PagedDetailView({
   const PLBasicSection = null;
   const [mapHistOpen, setMapHistOpen] = useState(false);
   const [mshotHistOpen, setMshotHistOpen] = useState(false);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [prodcHistOpen, setProdcHistOpen] = useState(false);
   const [finalHistOpen, setFinalHistOpen] = useState(false);
   const [flowHistOpen, setFlowHistOpen] = useState(false);
@@ -1894,7 +1895,25 @@ type Page = { label: string; content: React.ReactNode };
 
           {!isMapRegisteredDetail && !isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && detail.mshot_change && (() => {
             const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy') || changedFields.has('mshot_image_copy_top') || changedFields.has('mshot_image_copy_bottom');
-            const imgStyle: React.CSSProperties = { maxWidth: '300px', maxHeight: '200px', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px' };
+            const imgStyle: React.CSSProperties = { maxWidth: '600px', maxHeight: '420px', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px', cursor: 'zoom-in' };
+            const renderMshotImg = (src: string, alt: string) => (
+              <div style={{ position: 'relative', display: 'inline-block' }}>
+                <img src={src} alt={alt} style={imgStyle} onClick={() => setZoomedImage(src)} />
+                <button
+                  type="button"
+                  onClick={() => setZoomedImage(src)}
+                  aria-label={t('request.mshot_image_zoom_btn')}
+                  title={t('request.mshot_image_zoom_btn')}
+                  style={{
+                    position: 'absolute', right: 6, bottom: 14, width: 28, height: 28,
+                    borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff',
+                    cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  🔍
+                </button>
+              </div>
+            );
             return (
               <div style={rowStyle}>
                 <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(mshotChanged ? { border: '2px solid #dc3545' } : {}) }}>
@@ -1922,7 +1941,7 @@ type Page = { label: string; content: React.ReactNode };
                   {mshotHasDetail && !isProdc && detail.mshot_image_copy && (
                     <div style={{ flex: 1 }}>
                       <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')}</div>
-                      <img src={`/media/${detail.mshot_image_copy}`} alt="attached" style={imgStyle} />
+                      {renderMshotImg(`/media/${detail.mshot_image_copy}`, 'attached')}
                     </div>
                   )}
                   {mshotHasDetail && isProdc && (detail.mshot_image_copy_top || detail.mshot_image_copy_bottom) && (
@@ -1930,13 +1949,13 @@ type Page = { label: string; content: React.ReactNode };
                       {detail.mshot_image_copy_top && (
                         <div>
                           <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')} — {t('request.prodc_top')}</div>
-                          <img src={`/media/${detail.mshot_image_copy_top}`} alt="top" style={imgStyle} />
+                          {renderMshotImg(`/media/${detail.mshot_image_copy_top}`, 'top')}
                         </div>
                       )}
                       {detail.mshot_image_copy_bottom && (
                         <div>
                           <div style={fieldLabel}>{t('request.mshot_change_image_attach_area')} — {t('request.prodc_bottom')}</div>
-                          <img src={`/media/${detail.mshot_image_copy_bottom}`} alt="bottom" style={imgStyle} />
+                          {renderMshotImg(`/media/${detail.mshot_image_copy_bottom}`, 'bottom')}
                         </div>
                       )}
                     </div>
@@ -2758,6 +2777,35 @@ type Page = { label: string; content: React.ReactNode };
         </div>
       )}
       {currentPage.content}
+      {zoomedImage && (
+        <div
+          onClick={() => setZoomedImage(null)}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 4000,
+            background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'zoom-out', padding: 24,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setZoomedImage(null)}
+            aria-label={t('common.close')}
+            style={{
+              position: 'absolute', top: 20, right: 24, width: 36, height: 36,
+              borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.15)', color: '#fff',
+              cursor: 'pointer', fontSize: '18px',
+            }}
+          >
+            ✕
+          </button>
+          <img
+            src={zoomedImage}
+            alt="zoomed"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: '4px', cursor: 'default' }}
+          />
+        </div>
+      )}
     </div>
   );
 }
