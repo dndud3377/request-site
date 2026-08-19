@@ -5,6 +5,7 @@ import os
 import io
 import sys
 import json
+import time
 import logging
 import threading
 import requests
@@ -22,6 +23,16 @@ logger = logging.getLogger(__name__)
 
 # RTDB(REST API) 요청 타임아웃(초)
 RTDB_REQUEST_TIMEOUT = 30
+
+# RTDB refresh_token 자체의 유효기간(초) = 90일. RTDB 쪽 정책(access_token 은 별도로 1시간).
+RTDB_REFRESH_TOKEN_TTL = 7_776_000
+# refresh_token 유효기간이 끝나기 전에 미리 재로그인하기 위한 여유(초) = 45일.
+# 즉 refresh_token 발급 후 45일이 지나면(유효기간의 절반), 만료를 기다리지 않고 먼저 재로그인한다.
+RTDB_REFRESH_TOKEN_RENEW_MARGIN = 45 * 86400
+
+# RTDB access_token/refresh_token 인메모리 캐시. run_scheduler 프로세스가 살아있는 동안 유지되며,
+# 프로세스가 재시작되면 비워져 다음 호출은 처음부터 풀 로그인(rtdb_login_with_retry)부터 시작한다.
+_rtdb_token_cache = {'refresh_token': None, 'refresh_token_issued_at': None}
 
 # DCQ 로그인 직렬화 락 - cq_login 이 전역 sys.stdin 을 교체하므로
 # 여러 스케줄러 스레드가 동시에 로그인하면 stdin 이 엉킨다. 로그인 구간을 한 번에 하나씩만 실행한다.
@@ -198,8 +209,10 @@ def get_rtdb_credentials():
 
 def rtdb_login_with_retry():
     """
-    RTDB(REST API) 로그인 시도 (여러 비밀번호로 번갈아 재시도)
+    RTDB(REST API) 풀 로그인 시도 (여러 비밀번호로 번갈아 재시도)
     성공 시 access_token 을 반환하고, 모두 실패하면 None 을 반환한다.
+    응답에 함께 내려오는 refresh_token 은 _rtdb_token_cache 에 저장해 이후
+    get_rtdb_token() 이 풀 로그인 대신 가벼운 rtdb_refresh_token() 을 쓸 수 있게 한다.
     """
     rtdb_id, pwd_pack = get_rtdb_credentials()
     base_url = os.environ.get('RTDB_BASE_URL', '')
@@ -220,8 +233,15 @@ def rtdb_login_with_retry():
                 timeout=RTDB_REQUEST_TIMEOUT,
             )
             if response.status_code == 200:
-                access_token = response.json().get('access_token')
+                body = response.json()
+                access_token = body.get('access_token')
+                refresh_token = body.get('refresh_token')
                 logger.info(f"[RTDB] 로그인 성공: {rtdb_id}")
+                if refresh_token:
+                    _rtdb_token_cache['refresh_token'] = refresh_token
+                    _rtdb_token_cache['refresh_token_issued_at'] = time.time()
+                else:
+                    logger.warning("[RTDB] 로그인 응답에 refresh_token 이 없습니다 - 다음 주기도 풀 로그인으로 진행됩니다")
                 return access_token
             logger.warning(f"[RTDB] 로그인 실패 (HTTP {response.status_code})")
         except Exception as e:
@@ -229,6 +249,63 @@ def rtdb_login_with_retry():
 
     logger.error("[RTDB] 모든 비밀번호 시도가 실패했습니다")
     return None
+
+
+def rtdb_refresh_token(refresh_token):
+    """
+    RTDB refresh API 로 access_token 만 가볍게 갱신한다.
+    GET {RTDB_BASE_URL}/api/auth/refresh, Authorization: Bearer {refresh_token}.
+    성공 시 새 access_token, 실패(예외/4xx/5xx/토큰 없음)면 None 을 반환한다.
+    """
+    base_url = os.environ.get('RTDB_BASE_URL', '')
+    if not base_url or not refresh_token:
+        return None
+
+    headers = {"Authorization": f"Bearer {refresh_token}"}
+    try:
+        response = requests.get(
+            f"{base_url}/api/auth/refresh",
+            headers=headers,
+            verify=False,
+            timeout=RTDB_REQUEST_TIMEOUT,
+        )
+        if response.status_code != 200:
+            logger.warning(f"[RTDB] 토큰 refresh 실패 (HTTP {response.status_code})")
+            return None
+        access_token = response.json().get('access_token')
+        if not access_token:
+            logger.warning("[RTDB] 토큰 refresh 응답에 access_token 이 없습니다")
+            return None
+        logger.info("[RTDB] 토큰 refresh 성공")
+        return access_token
+    except Exception as e:
+        logger.warning(f"[RTDB] 토큰 refresh 요청 실패: {e}", exc_info=True)
+        return None
+
+
+def get_rtdb_token():
+    """
+    유효한 RTDB access_token 을 반환한다 (스케줄러가 호출하는 진입점).
+
+    캐시된 refresh_token 이 있고 발급 후 경과 시간이
+    (RTDB_REFRESH_TOKEN_TTL - RTDB_REFRESH_TOKEN_RENEW_MARGIN) 이내이면
+    rtdb_refresh_token() 으로 access_token 만 가볍게 갱신해서 반환한다.
+    refresh_token 이 없거나(최초 호출/프로세스 재시작 직후), 유효기간 여유가 얼마 안 남았거나,
+    refresh 요청 자체가 실패하면 rtdb_login_with_retry() 로 풀 로그인해
+    access_token·refresh_token 을 모두 새로 받는다.
+    """
+    refresh_token = _rtdb_token_cache.get('refresh_token')
+    issued_at = _rtdb_token_cache.get('refresh_token_issued_at')
+    if refresh_token and issued_at is not None:
+        age = time.time() - issued_at
+        if age < RTDB_REFRESH_TOKEN_TTL - RTDB_REFRESH_TOKEN_RENEW_MARGIN:
+            access_token = rtdb_refresh_token(refresh_token)
+            if access_token:
+                return access_token
+            logger.warning("[RTDB] 토큰 refresh 실패 - 풀 로그인으로 진행합니다")
+        else:
+            logger.info("[RTDB] refresh_token 유효기간 여유 소진 - 풀 로그인으로 갱신합니다")
+    return rtdb_login_with_retry()
 
 
 def get_data_from_rtdb(query_payload, access_token):
