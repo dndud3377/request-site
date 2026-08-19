@@ -514,6 +514,7 @@
     "ba_kind_added": "추가",
     "ba_kind_deleted": "삭제",
     "ba_kind_empty": "미작성",
+    "ba_after_inactive": "비활성화",
     "ba_add_row": "행 추가",
     "ba_reset_row": "미등록으로 되돌리기",
     "ba_cell_edit_hint": "클릭하면 값을 직접 입력할 수 있습니다.",

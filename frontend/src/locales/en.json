@@ -514,6 +514,7 @@
     "ba_kind_added": "Added",
     "ba_kind_deleted": "Deleted",
     "ba_kind_empty": "Not filled",
+    "ba_after_inactive": "Inactive",
     "ba_add_row": "Add row",
     "ba_reset_row": "Reset to unregistered",
     "ba_cell_edit_hint": "Click to enter values directly.",
