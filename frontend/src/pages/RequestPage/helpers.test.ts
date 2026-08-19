@@ -5,8 +5,9 @@ import {
   requiresBbEntries, findBbEntryViolations, findEmptyStNocViolations, findNocBorrowItemIdViolations,
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
+  isPairAfterInactive,
 } from './helpers';
-import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW } from './constants';
+import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED } from './constants';
 import { AdiCdStep, MergePair, MergeRowInfo } from '../../types';
 
 describe('isValidationKeywordRow', () => {
@@ -498,6 +499,50 @@ describe('computeBeforeAfter', () => {
     expect(res.pairs).toEqual([]);
     expect(res.unmatchedBefore).toEqual([]);
     expect(res.unmatchedAfter).toEqual([]);
+  });
+});
+
+describe('isPairAfterInactive', () => {
+  const jayer = [{ id: 'j1', disabled: false, new_or_copy: '신규' }];
+  const oayer = [{ id: 'o1', disabled: false, new_or_copy: '신규' }];
+
+  it('afterId 가 null 이면 false (수기로 추가한 행)', () => {
+    expect(isPairAfterInactive(null, jayer, oayer)).toBe(false);
+  });
+
+  it('연결된 행이 활성 + 기등록이 아니면 false', () => {
+    expect(isPairAfterInactive('J_j1', jayer, oayer)).toBe(false);
+  });
+
+  it('연결된 행이 비활성이면 true', () => {
+    const rows = [{ id: 'j1', disabled: true, new_or_copy: '신규' }];
+    expect(isPairAfterInactive('J_j1', rows, oayer)).toBe(true);
+  });
+
+  it('연결된 행이 기등록으로 바뀌면 true', () => {
+    const rows = [{ id: 'j1', disabled: false, new_or_copy: NOC_REGISTERED }];
+    expect(isPairAfterInactive('J_j1', rows, oayer)).toBe(true);
+  });
+
+  it('비활성을 해제하고 신규로 되돌리면 다시 false', () => {
+    const inactive = [{ id: 'j1', disabled: true, new_or_copy: NOC_REGISTERED }];
+    expect(isPairAfterInactive('J_j1', inactive, oayer)).toBe(true);
+    const restored = [{ id: 'j1', disabled: false, new_or_copy: '신규' }];
+    expect(isPairAfterInactive('J_j1', restored, oayer)).toBe(false);
+  });
+
+  it('O-layer 행도 동일하게 판정한다', () => {
+    const rows = [{ id: 'o1', disabled: true, new_or_copy: '신규' }];
+    expect(isPairAfterInactive('O_o1', jayer, rows)).toBe(true);
+  });
+
+  it('id 에 밑줄이 포함돼도(genId 형식) 올바르게 찾는다', () => {
+    const rows = [{ id: '1699999999999_ab12cd', disabled: true, new_or_copy: '신규' }];
+    expect(isPairAfterInactive('J_1699999999999_ab12cd', rows, oayer)).toBe(true);
+  });
+
+  it('연결된 행이 표에서 아예 지워졌으면 false', () => {
+    expect(isPairAfterInactive('J_gone', jayer, oayer)).toBe(false);
   });
 });
 
