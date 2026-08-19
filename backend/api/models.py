@@ -895,6 +895,7 @@ class MailNotification(models.Model):
         ('voc_created', 'VOC 등록'),
         ('voc_comment', 'VOC 댓글'),
         ('rtdb_sync_failed', 'RTDB 동기화 실패'),
+        ('dcq_sync_failed', 'DCQ 동기화 실패'),
     ]
 
     STATUS_CHOICES = [
