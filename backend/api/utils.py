@@ -26,9 +26,11 @@ RTDB_REQUEST_TIMEOUT = 30
 
 # RTDB refresh_token 자체의 유효기간(초) = 90일. RTDB 쪽 정책(access_token 은 별도로 1시간).
 RTDB_REFRESH_TOKEN_TTL = 7_776_000
-# refresh_token 유효기간이 끝나기 전에 미리 재로그인하기 위한 여유(초) = 45일.
-# 즉 refresh_token 발급 후 45일이 지나면(유효기간의 절반), 만료를 기다리지 않고 먼저 재로그인한다.
-RTDB_REFRESH_TOKEN_RENEW_MARGIN = 45 * 86400
+# refresh_token 유효기간이 끝나기 전에 미리 재로그인하기 위한 여유(초) = 7일.
+# 즉 refresh_token 발급 후 83일(=90-7)이 지나면 만료를 기다리지 않고 먼저 재로그인한다.
+# (2026-08 축소: 45일 → 7일. 풀 로그인 대신 refresh 를 최대한 오래 쓰도록 해 풀 로그인
+# 빈도 자체를 더 줄인다 - 90일 중 83일을 refresh 로 버틴다.)
+RTDB_REFRESH_TOKEN_RENEW_MARGIN = 7 * 86400
 
 # RTDB access_token/refresh_token 인메모리 캐시. run_scheduler 프로세스가 살아있는 동안 유지되며,
 # 프로세스가 재시작되면 비워져 다음 호출은 처음부터 풀 로그인(rtdb_login_with_retry)부터 시작한다.
