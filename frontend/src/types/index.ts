@@ -602,6 +602,7 @@ export interface AdminNotice {
   title: string;
   content: string;       // Notice 타입 전용
   items: ReleaseItem[];  // Release Note 타입 전용
+  is_pinned: boolean;
   created_at: string;
   updated_at: string;
 }
