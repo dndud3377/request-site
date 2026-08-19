@@ -580,6 +580,9 @@
     "bb_overwrite_confirm": "Existing Backbone data found. Do you want to overwrite it?",
     "bb_reset_confirm": "Are you sure you want to clear all Backbone data?",
     "special_care_confirm": "Special Care (including Shot map) requests must be filled in. Do you want to proceed anyway?",
+    "purpose_mismatch_title": "Confirm Request Purpose",
+    "purpose_mismatch_body": "Based on the Jayer/Oayer table's request basis, this document's purpose should be '{{purpose}}'. Apply it now? (If you don't apply, the current value stays and you'll move to the next step anyway.)",
+    "purpose_mismatch_apply": "Apply",
     "filter_delete_confirm": "Are you sure you want to delete the \"{{label}}\" filter?",
     "filter_all_delete_confirm": "Are you sure you want to delete all saved filters?"
   },
