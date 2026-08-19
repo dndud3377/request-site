@@ -73,7 +73,7 @@ pages/RequestPage/
 
 | 분류 | export |
 |---|---|
-| 표 행 유틸 | `formatUpdatedDate`, `shouldDisableRow`, `calcDisabled`, `emptyDraftWords`, `sanitizeSignedDecimal`, `findNocBorrowViolations` |
+| 표 행 유틸 | `formatUpdatedDate`, `shouldDisableRow`, `calcDisabled`, `emptyDraftWords`, `sanitizeSignedDecimal`, `findNocBorrowViolations`, `computeExpectedRequestPurpose` |
 | 3-way Merge | `MergeComparableRow`(타입), `MergeStats`(타입), `computeLayerMerge` |
 | BEFORE/AFTER 비교 | `BaComparableRow`(타입), `toMergeRowInfo`, `BeforeAfterResult`(타입), `computeBeforeAfter` |
 | 변경전/변경후 직접 입력 | `isMergeSideEmpty`, `normalizeMergeSide`, `deriveMergeKind`, `emptyMergeRowInfo`, `emptyMergePair`, `parseMergePasteRows`, `validateMergePairs` |
@@ -157,9 +157,10 @@ pages/RequestPage/
   있으므로, 지나온 단계를 깨뜨리려면 반드시 그 단계로 되돌아가야 한다. 되돌아가면 `step` 이 낮아져
   다음 전진 때 그 단계부터 재검증된다.
 
-#### 관문 모달 2개 (검증 통과 후 사용자 확인)
+#### 관문 모달 3개 (검증 통과 후 사용자 확인)
 
-`step 1` 특이사항 미기재(`specialCareConfirm`) · `step 4` TBV/TLV 미입력(`tbvtlvWarnModal`).
+`step 1` 특이사항 미기재(`specialCareConfirm`) · `step 4` TBV/TLV 미입력(`tbvtlvWarnModal`) ·
+`step 4→5` 요청 목적 확인(`purposeMismatchConfirm`, 2026-08 신설 — 아래 참조).
 탭으로 여러 단계를 건너뛸 때도 **그대로 통과해야 한다**(탭으로 우회 불가).
 
 - `pendingStepTarget` (state): 모달이 뜬 시점의 **최종 목적지**. `'계속 진행'` 시 `step+1` 이 아니라
@@ -170,8 +171,33 @@ pages/RequestPage/
   `onClick={() => { onConfirm(); onClose(); }}`(`components/Modal.tsx`)로 **onConfirm 직후 항상
   onClose 를 부르므로**, `onClose` 에서 비우면 방금 이어서 뜬 다음 관문의 기록까지 지워진다.
 - `startStepMove` = 사용자가 새로 시작하는 이동(버튼·탭) / `resumePendingStep(gate)` = 모달 '계속 진행'.
-- step 4 관문은 **관문이 있는 단계로 먼저 이동한 뒤** 모달을 띄운다 → 취소하면 그 단계(4)에 머물러
-  바로 값을 채울 수 있다.
+- step 4 관문(tbvtlv·요청 목적 확인)은 **관문이 있는 단계로 먼저 이동한 뒤** 모달을 띄운다 → 취소해도
+  이동은 계속되지만(요청 목적 확인 관문은 취소해도 STEP5로 진행— 아래 참조), 값을 고치려면 STEP4로
+  다시 돌아와야 한다.
+
+##### `step 4→5` 요청 목적 확인 관문 (2026-08 신설)
+
+Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청서에 맞는 요청 목적을 역산해,
+현재 `detail.request_purpose` 와 다르면 STEP5 로 넘어가기 전에 확인 모달을 띄운다.
+
+- 판정 함수: `helpers.ts` `computeExpectedRequestPurpose(jayerRows, oayerRows)` (순수 함수, 비활성
+  행 제외). 규칙:
+  - 신규(`NOC_NEW`)만 존재 → `'신규'`
+  - 차용(`NOC_BORROW`)만 존재 → `'차용'`
+  - 신규 + 차용 둘 다 존재 → `'신규+차용'`
+  - 기등록(`NOC_REGISTERED`)·layer삭제(`NOC_LAYER_DELETE`)만 존재(신규/차용 없음) → `'기타'`
+  - 활성 행이 아예 없음 → `null`(판정 불가 — 검사 자체를 생략, 모달 안 뜸)
+  - 신규/차용에 기등록·layer삭제가 섞여 있어도 기등록·layer삭제는 무시하고 신규/차용 기준으로만 판정한다.
+- 계산된 값과 현재 값이 같으면 모달 없이 그대로 STEP5 로 진행.
+- 다르면 `purposeMismatchConfirm`(계산된 목표 값을 담는 state, `null`=닫힘)에 값을 채워 모달을 띄운다.
+  - **'적용'(`handlePurposeMismatchApply`)**: `detail.request_purpose` 를 계산된 값으로 바꾸고 STEP5로 진행.
+  - **'취소'/닫기(`handlePurposeMismatchClose`)**: 값은 바꾸지 않고 **그대로 STEP5로 진행한다** — 다른
+    두 관문과 달리 취소해도 이동이 막히지 않는다(단순 확인용 안내이지 필수 정정이 아님).
+  - ⚠️ `ackedStepGatesRef.current.purposeMismatch` 로는 '적용' 직후 `ConfirmModal` 이 자동으로 부르는
+    `onClose` 호출을 걸러낼 수 없다 — `goToStep` 이 이동을 성공적으로 마치면 그 순간 이 플래그를
+    포함해 관문 기록 전체를 리셋하므로, `onClose` 가 실행되는 시점엔 이미 `false` 로 돌아가 있다.
+    그래서 이 상호작용 전용의 별도 ref(`purposeMismatchAppliedRef`)로 '방금 적용 처리됨'을 표시해
+    `handlePurposeMismatchClose` 의 중복 호출을 걸러낸다.
 
 #### 인디케이터(`WizardIndicator`)
 
@@ -248,6 +274,60 @@ pages/RequestPage/
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 기능 추가 (2026-08-19 — STEP4→STEP5 전환 시 Jayer/Oayer 기준 요청 목적 확인 모달)
+
+- **요청**: Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청서에 실제로 맞는 요청
+  목적(신규/차용/신규+차용/기타)을 계산해, STEP4(O-layer)→STEP5(Backbone) 이동 시 현재
+  `request_purpose` 값과 다르면 확인 모달로 사용자가 승인한 뒤에만 값을 바꾸도록 함.
+- **판정 규칙**(활성 행만 대상, 비활성 행 제외): 신규만 있으면 `신규` / 차용만 있으면 `차용` /
+  신규+차용 둘 다 있으면 `신규+차용` / 기등록·layer삭제만 있으면(신규·차용 없음) `기타` / 활성 행이
+  아예 없으면 판정 불가로 보고 검사 생략. 신규·차용이 기등록·layer삭제와 섞여 있어도 기등록·
+  layer삭제는 무시한다(우선순위: 신규+차용 > 신규/차용 단독 > 기타).
+- **구현**:
+  - `helpers.ts`: 순수 함수 `computeExpectedRequestPurpose(jayerRows, oayerRows)` 신설(위 규칙,
+    반환값은 `OPTION_REQUEST_PURPOSE` 값 문자열 또는 `null`). `helpers.test.ts`에 케이스별 단위테스트
+    7건 추가.
+  - `index.tsx`: `purposeMismatchConfirm`(계산된 목표 값을 담는 state, `null`=닫힘) 신설.
+    `ackedStepGatesRef`에 `purposeMismatch` 키 추가(`startStepMove`/`goToStep` 성공 종료 시 리셋).
+    `goToStep`의 `s===4` 관문(기존 `tbvtlv` 관문 다음)에서 계산된 목적이 있고 현재 값과 다르면
+    모달을 띄우고 이동을 멈춘다. **'적용' 클릭**(`handlePurposeMismatchApply`) 시에만
+    `detail.request_purpose`를 계산값으로 바꾸고, **'취소'/닫기 클릭**(`handlePurposeMismatchClose`)
+    시에는 값을 바꾸지 않는다 — 다만 두 경우 모두 STEP5로는 그대로 진행한다(다른 관문과 달리 취소가
+    이동을 막지 않음, 사용자 확정 요청 사항). `ConfirmModal`이 onConfirm 직후 항상 onClose 도
+    호출하는 특성 때문에, `handlePurposeMismatchClose`는 `ackedStepGatesRef.current.purposeMismatch`
+    로 '적용' 처리 뒤의 중복 호출을 걸러낸다.
+  - `locales/ko.json`·`en.json`: `request.purpose_mismatch_title` / `purpose_mismatch_body`
+    (`{{purpose}}` 보간) / `purpose_mismatch_apply` 동시 추가.
+- **영향 파일**: `frontend/src/pages/RequestPage/helpers.ts`, `frontend/src/pages/RequestPage/helpers.test.ts`,
+  `frontend/src/pages/RequestPage/index.tsx`, `frontend/src/locales/{ko,en}.json`. 백엔드 변경 없음
+  (요청 목적도 기존과 동일하게 `additional_notes` 안에 저장되는 값이라 마이그레이션 불필요).
+- **검증(2026-08-19 실행)**: `npx tsc --noEmit` — 신규 에러 0(기존과 동일하게 7건, 전부 무관한
+  `Set` es5 순회·`GuidePage.tsx` i18n strict 키). `CI=true npx react-scripts test --watchAll=false`
+  — 9 suites / **216건 전부 통과**(신규 `computeExpectedRequestPurpose` 테스트 7건 포함, 기존 회귀 없음).
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [`/request` → 새 문서 → 요청 목적을 `차용`으로 선택하고 STEP1~STEP3까지 작성 → STEP3(J-layer)에서
+     행을 추가하고 "요청 기준"을 `신규`로 지정 → STEP4(O-layer)까지 정상 작성 → "다음" 클릭] →
+     [기대 결과: STEP5로 넘어가지 않고 "요청 목적을 '신규'로 적용할까요?" 같은 확인 모달이 뜬다.]
+  2. [모달에서 "적용" 클릭] → [기대 결과: 모달이 닫히고 STEP5(Backbone)로 이동한다. STEP1로 돌아가
+     확인하면 요청 목적이 `신규`로 바뀌어 있다.]
+  3. [1번 상태를 재현한 뒤 이번에는 모달에서 "취소"(X) 클릭] → [기대 결과: 모달이 닫히고 **역시
+     STEP5로 이동한다**(막히지 않음). STEP1로 돌아가 확인하면 요청 목적은 원래 값(`차용`) 그대로다.]
+  4. [J-layer·O-layer에 신규 행과 차용 행을 하나씩 활성 상태로 두고 요청 목적을 `기타`로 선택한 채
+     STEP4→STEP5 이동] → [기대 결과: "신규+차용으로 적용할까요?" 모달이 뜬다.]
+  5. [J-layer·O-layer 모든 행을 "요청 기준" `기등록`으로만 두고 요청 목적을 `신규`로 선택한 채 이동] →
+     [기대 결과: "기타로 적용할까요?" 모달이 뜬다.]
+  6. [J-layer·O-layer에 활성 행을 하나도 만들지 않고(모두 비활성 처리 또는 행 없음) 아무 요청 목적으로
+     STEP4→STEP5 이동] → [기대 결과: 모달이 뜨지 않고 바로 STEP5로 진행된다(판정 불가 → 검사 생략).]
+  7. [요청 목적을 `Only MAP` 또는 `MAP 삭제`로 선택해 STEP2(MAP 정보)까지만 작성 → "다음"/상신 클릭] →
+     [기대 결과: 이 관문 자체가 뜨지 않는다(해당 목적은 STEP4까지 오지 않음, 기존 동작과 동일).]
+- **잠재 주의사항**:
+  - '취소' 시 값이 안 바뀐 채 STEP5로 진행되므로, 사용자가 반복해서 "다음"을 눌러도 데이터를 고치지
+    않는 한 이 모달이 STEP4→STEP5 이동마다 매번 다시 뜬다(관문 캐시를 두지 않는 §2.4 원칙과 동일).
+    의도된 동작이나, 반복 노출이 불편하다면 별도로 조정이 필요할 수 있다.
+  - 신규+기등록처럼 "기등록/layer삭제가 신규·차용과 섞인" 조합은 기등록·layer삭제를 무시하고
+    신규/차용 기준으로만 판정한다 — 사용자 요청 문구에 직접 명시되진 않았고 우선순위를 그대로
+    확장 적용한 해석이다.
 
 ### 기능 개선 (2026-08-19 — 3-way Merge: 이미 확정된(st=X) 기등록 행은 재도장하지 않는다)
 

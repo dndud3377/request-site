@@ -4,7 +4,7 @@ import {
   parseClipboardTable, detectAdiCdHeader, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows,
   requiresBbEntries, findBbEntryViolations, findEmptyStNocViolations, findNocBorrowItemIdViolations,
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
-  parseMergePasteRows, validateMergePairs, applyMergePaste,
+  parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
 } from './helpers';
 import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW } from './constants';
 import { AdiCdStep, MergePair, MergeRowInfo } from '../../types';
@@ -116,6 +116,38 @@ describe('findNocBorrowItemIdViolations', () => {
     expect(findNocBorrowItemIdViolations([
       { id: 'a', disabled: true, new_or_copy: '차용', item_id: '' },
     ])).toEqual([]);
+  });
+});
+
+describe('computeExpectedRequestPurpose', () => {
+  const row = (new_or_copy: string, disabled = false) => ({ disabled, new_or_copy });
+
+  it('신규만 있으면 신규', () => {
+    expect(computeExpectedRequestPurpose([row('신규')], [])).toBe('신규');
+  });
+
+  it('차용만 있으면 차용', () => {
+    expect(computeExpectedRequestPurpose([], [row('차용')])).toBe('차용');
+  });
+
+  it('신규와 차용이 jayer/oayer 에 나뉘어 있어도 신규+차용', () => {
+    expect(computeExpectedRequestPurpose([row('신규')], [row('차용')])).toBe('신규+차용');
+  });
+
+  it('기등록·layer삭제만 있으면 기타', () => {
+    expect(computeExpectedRequestPurpose([row('기등록')], [row('layer삭제')])).toBe('기타');
+  });
+
+  it('신규 + 기등록이면 기등록은 무시하고 신규', () => {
+    expect(computeExpectedRequestPurpose([row('신규'), row('기등록')], [])).toBe('신규');
+  });
+
+  it('비활성 행은 판정에서 제외한다', () => {
+    expect(computeExpectedRequestPurpose([row('신규', true)], [])).toBeNull();
+  });
+
+  it('활성 행이 없으면 null(판정 불가)', () => {
+    expect(computeExpectedRequestPurpose([], [])).toBeNull();
   });
 });
 
