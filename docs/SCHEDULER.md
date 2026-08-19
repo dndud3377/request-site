@@ -153,8 +153,42 @@ RTDB(REST API)  →  /api/queries
 | 함수 | 설명 |
 |------|------|
 | `get_rtdb_credentials()` | `.env` 의 `RTDB_ID` / `RTDB_PASSWORD`(JSON pack) 읽기 |
-| `rtdb_login_with_retry()` | `POST /api/tokens/login`, 비밀번호 목록 순차 재시도 → `access_token` |
+| `get_rtdb_token()` | **스케줄러가 실제로 호출하는 진입점.** 아래 토큰 캐시/refresh 규칙에 따라 풀 로그인 또는 refresh 중 하나를 선택해 유효한 `access_token`을 반환 |
+| `rtdb_login_with_retry()` | `POST /api/tokens/login`, 비밀번호 목록 순차 재시도 → `access_token`(+ 응답의 `refresh_token`을 캐시에 저장) |
+| `rtdb_refresh_token(refresh_token)` | `GET /api/auth/refresh`(`Authorization: Bearer {refresh_token}`) → 갱신된 `access_token`(실패 시 `None`) |
 | `get_data_from_rtdb(payload, token)` | `POST /api/queries` 조회 → DataFrame (실패/에러 시 `None`) |
+
+### RTDB 토큰 캐시 / refresh 정책 (2026-08 추가)
+
+`sync_rtdb_options()`는 사이클마다 `rtdb_login_with_retry()`를 직접 부르지 않고 `get_rtdb_token()`을
+1회 호출해 그 사이클의 모든 조회에 재사용한다. `get_rtdb_token()`은 매번 무거운 풀 로그인을 하지
+않고, 아래 규칙으로 풀 로그인과 가벼운 refresh 중 하나를 고른다.
+
+```
+캐시(_rtdb_token_cache: refresh_token, 발급시각)에 refresh_token 이 있는가?
+  없음(최초 호출 / 프로세스 재시작 직후) → 풀 로그인 (POST /api/tokens/login)
+  있음 → 경과시간 < (TTL 90일 − 여유 45일) = 45일 이내인가?
+           예 → refresh (GET /api/auth/refresh) 시도
+                  성공 → 새 access_token 반환
+                  실패 → 풀 로그인으로 폴백
+           아니오(발급 후 45일 이상 경과, 여유 소진) → 풀 로그인
+풀 로그인 성공 시: access_token 반환 + 응답의 refresh_token 을 캐시에 저장(발급시각 갱신)
+```
+
+| 항목 | 값 | 비고 |
+|------|-----|------|
+| `RTDB_REFRESH_TOKEN_TTL` | `7,776,000`초(90일) | RTDB 쪽 refresh_token 유효기간 정책(고정값, 응답으로 내려오지 않음) |
+| `RTDB_REFRESH_TOKEN_RENEW_MARGIN` | `3,888,000`초(45일) | 유효기간이 끝나기 전에 미리 풀 로그인하기 위한 여유. 즉 **발급 후 45일이 지나면** 만료(90일)를 기다리지 않고 다음 사이클에 풀 로그인으로 갱신 |
+| access_token 유효기간 | `access_token_expires_in`(RTDB 응답, 통상 3600초=1시간) | 우리 쪽에서 만료를 직접 추적하지 않는다 — 10분 주기라 이미 충분히 여유 있고, `get_data_from_rtdb()` 조회가 401 등으로 실패하면 다음 주기 `get_rtdb_token()` 호출 시 새로 받는다 |
+
+- **캐시는 프로세스 메모리에만 있다** — DB나 파일에 영속화하지 않는다. `run_scheduler` 프로세스가
+  재시작되면(배포 등) 캐시가 비워지고, **재시작 후 첫 호출은 풀 로그인부터 다시 시작한다**(의도된 동작).
+- refresh 요청 자체가 실패(네트워크 오류, refresh_token 무효화 등)해도 그 사이클이 통째로 실패 처리되지
+  않는다 — 그 즉시 풀 로그인으로 폴백해 새 토큰을 받는다.
+- 동시성: `sync_rtdb_options` 잡은 `max_instances=1`이라 사이클끼리 겹쳐 돌지 않으므로 캐시에 별도
+  락을 걸지 않는다. 다만 `start()`가 기동 시 스레드로 1회 즉시 실행하는 것과 스케줄 잡이 이론상
+  거의 동시에 도는 극히 드문 경우, 캐시를 각자 갱신할 수 있다(둘 다 정상 로그인 결과이므로 데이터
+  정합성엔 영향 없음).
 
 ## RTDB 동기화 실패 알림 메일 (2026-08 추가)
 
