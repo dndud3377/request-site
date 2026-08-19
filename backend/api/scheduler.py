@@ -71,6 +71,15 @@ LINE2_PC_QUERY = """
       AND process_id IS NOT NULL AND process_id != ''
 """
 
+# sync_form_options() 가 다루는 데이터 종류. DCQ 로그인 자체가 실패하면 이 4개 전부를
+# 실패로 기록한다(mailer.enqueue_dcq_sync_failed 대상). context 는 라인 개념이 없으면 '-'.
+FORM_OPTIONS_TARGETS = [
+    {'context': '-', 'target': '바코드-품목'},
+    {'context': '-', 'target': 'MAP 이름'},
+    {'context': LINE2, 'target': '공정-품목'},
+    {'context': LINE2, 'target': '품목-공정ID'},
+]
+
 # RTDB(MAIN) 조회 파라미터 - table_name 은 소스별로 다르며 {suffix} 는 라인 접미사로 치환된다.
 RTDB_TARGET = "realtimedb"
 RTDB_PP_SELECT = ["partnumber, descript, pkgtype_2"]   # 공정-품목
@@ -132,6 +141,21 @@ def _write_if_changed(engine, table, line, df, key_cols, order_cols):
     return len(df)
 
 
+def _send_sync_failure_alert(mailer_func_name, failures):
+    """동기화 실패 알림 메일 적재 (RTDB/DCQ 공통 진입점).
+
+    failures 가 비어 있으면 아무 것도 하지 않는다. 메일 적재 자체가 실패해도
+    그 때문에 동기화 잡이 죽지 않도록 예외를 여기서 잡아 로그만 남긴다.
+    """
+    if not failures:
+        return
+    try:
+        from . import mailer
+        getattr(mailer, mailer_func_name)(failures)
+    except Exception as e:
+        logger.error(_("[scheduler] 동기화 실패 알림 메일 적재 실패: {e}").format(e=e), exc_info=True)
+
+
 def sync_rtdb_options():
     """
     RTDB(REST API) 로 {{request.process_selection}}-{{request.partid_selection}} /
@@ -157,7 +181,7 @@ def sync_rtdb_options():
     if not rtdb_token:
         logger.warning(_("[scheduler] RTDB 로그인/토큰 갱신 실패 - 이번 주기 동기화를 건너뜁니다"))
 
-    # 이번 사이클에서 RTDB 조회가 실패/빈 결과였던 (line, target) 목록.
+    # 이번 사이클에서 RTDB 조회가 실패/빈 결과였던 (context=line, target) 목록.
     # 사이클 종료 시 하나라도 있으면 알림 메일 1통으로 모아 보낸다.
     failures = []
 
@@ -179,7 +203,7 @@ def sync_rtdb_options():
                 _("[scheduler] RTDB 조회 실패/빈 결과 (line={line}, target={target})")
                 .format(line=line, target=target_label)
             )
-            failures.append({'line': line, 'target': target_label})
+            failures.append({'context': line, 'target': target_label})
             return None
         return df
 
@@ -242,12 +266,7 @@ def sync_rtdb_options():
         if engine:
             engine.dispose()
 
-    if failures:
-        try:
-            from . import mailer
-            mailer.enqueue_rtdb_sync_failed(failures)
-        except Exception as e:
-            logger.error(_("[scheduler] RTDB 동기화 실패 알림 메일 적재 실패: {e}").format(e=e), exc_info=True)
+    _send_sync_failure_alert('enqueue_rtdb_sync_failed', failures)
 
 
 def sync_form_options():
@@ -256,9 +275,13 @@ def sync_form_options():
     라인2 의 공정-품목 / 품목-공정ID 데이터를 DataFrame 으로 가져와 Django DB 에 저장한다.
     (라인1·3~5 의 공정-품목·품목-공정ID·스텝은 RTDB MAIN + DCQ fallback 구조로 sync_rtdb_options 로 분리.
      라인2 는 소스 테이블이 달라 RTDB 를 지원하지 않으므로 DCQ 단독으로 여기서 처리한다.)
+    - 4개 데이터(바코드-품목/MAP 이름/라인2 공정-품목/라인2 품목-공정ID) 중 예외이거나 빈 결과인
+      항목은 실패로 기록하고, 함수 종료 시 하나라도 있으면 `mailer.enqueue_dcq_sync_failed()`
+      로 알림 메일 1통을 큐에 적재한다(수신자는 RTDB 와 동일하게 `.env` 의 `RTDB_SYNC_ALERT_MAIL`).
+      DCQ 로그인 자체가 실패하면 `FORM_OPTIONS_TARGETS` 4개 전부를 실패로 기록한다.
     """
     engine = None
-    
+
     try:
         engine = get_django_engine()
     except Exception as e:
@@ -266,16 +289,20 @@ def sync_form_options():
         return
 
     if not dcq_login_with_retry():
+        _send_sync_failure_alert('enqueue_dcq_sync_failed', FORM_OPTIONS_TARGETS)
         logger.error(_("[scheduler] DCQ 로그인 실패로 인해 작업을 중단합니다"))
         return
-    
+
     # NOTE: gettext 별칭 `_` 를 덮어쓰지 않도록 비밀번호는 `_pw` 로 받는다.
     dcq_id, _pw = get_dcq_credentials()
     if dcq_id:
         get_dcq_token_info(dcq_id)
     else:
+        _send_sync_failure_alert('enqueue_dcq_sync_failed', FORM_OPTIONS_TARGETS)
         logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
         return
+
+    failures = []
 
     try:
         try:
@@ -289,6 +316,7 @@ def sync_form_options():
 
             if df_pb is None or len(df_pb) == 0:
                 logger.warning(_("[scheduler] 바코드-품목 데이터가 없습니다"))
+                failures.append({'context': '-', 'target': '바코드-품목'})
             else:
                 df_pb['last_synced'] = pd.Timestamp.now()
                 # 값이 없을 수 있는 컬럼은 None으로 통일
@@ -303,6 +331,7 @@ def sync_form_options():
                 logger.info(_("[scheduler] 바코드-품목 {count}건 동기화 완료").format(count=len(df_pb)))
         except Exception as e:
             logger.error(_("[scheduler] 바코드-품목 동기화 실패: {e}").format(e=e), exc_info=True)
+            failures.append({'context': '-', 'target': '바코드-품목'})
 
         try:
             lineid_list = list(LINE_TO_LINEID_MAP.values())
@@ -317,6 +346,7 @@ def sync_form_options():
 
             if df_mn is None or len(df_mn) == 0:
                 logger.warning(_("[scheduler] MAP 이름 데이터가 없습니다"))
+                failures.append({'context': '-', 'target': 'MAP 이름'})
             else:
                 df_mn['last_synced'] = pd.Timestamp.now()
                 df_mn = df_mn[['lineid', 'partid', 'last_synced']]
@@ -328,6 +358,7 @@ def sync_form_options():
                 logger.info(_("[scheduler] MAP 이름 {count}건 동기화 완료").format(count=len(df_mn)))
         except Exception as e:
             logger.error(_("[scheduler] MAP 이름 동기화 실패: {e}").format(e=e), exc_info=True)
+            failures.append({'context': '-', 'target': 'MAP 이름'})
 
         # --- 라인2 공정-품목 (api_processproduct) ---
         try:
@@ -335,6 +366,7 @@ def sync_form_options():
 
             if df_l2_cp is None or len(df_l2_cp) == 0:
                 logger.warning(_("[scheduler] {line} 공정-품목 데이터가 없습니다").format(line=LINE2))
+                failures.append({'context': LINE2, 'target': '공정-품목'})
             else:
                 df_l2_cp = df_l2_cp.rename(
                     columns={'product_design_rule': 'process', 'product_id': 'product_name'}
@@ -350,6 +382,7 @@ def sync_form_options():
                     logger.info(_("[scheduler] {line} 공정-품목 {count}건 동기화 완료").format(line=LINE2, count=count))
         except Exception as e:
             logger.error(_("[scheduler] {line} 공정-품목 동기화 실패: {e}").format(line=LINE2, e=e), exc_info=True)
+            failures.append({'context': LINE2, 'target': '공정-품목'})
 
         # --- 라인2 품목-공정ID (api_productprocessid) ---
         try:
@@ -357,6 +390,7 @@ def sync_form_options():
 
             if df_l2_pc is None or len(df_l2_pc) == 0:
                 logger.warning(_("[scheduler] {line} 품목-공정ID 데이터가 없습니다").format(line=LINE2))
+                failures.append({'context': LINE2, 'target': '품목-공정ID'})
             else:
                 df_l2_pc = df_l2_pc.rename(columns={'product_id': 'product_name'})
                 count = _write_if_changed(
@@ -370,15 +404,21 @@ def sync_form_options():
                     logger.info(_("[scheduler] {line} 품목-공정ID {count}건 동기화 완료").format(line=LINE2, count=count))
         except Exception as e:
             logger.error(_("[scheduler] {line} 품목-공정ID 동기화 실패: {e}").format(line=LINE2, e=e), exc_info=True)
+            failures.append({'context': LINE2, 'target': '품목-공정ID'})
 
     finally:
         if engine:
             engine.dispose()
 
+    _send_sync_failure_alert('enqueue_dcq_sync_failed', failures)
+
 
 def sync_holidays():
     """
     DCQ 에서 대한민국 공휴일 데이터를 가져와 api_holiday 테이블에 저장
+    - 로그인 실패/계정 조회 실패/조회 예외/빈 결과 모두 실패로 기록하고
+      `mailer.enqueue_dcq_sync_failed()` 로 알림 메일을 큐에 적재한다.
+      (알림 적재는 항상 그 아래의 `_(...)` 로그 호출보다 먼저 실행한다.)
     """
     engine = None
     try:
@@ -388,11 +428,13 @@ def sync_holidays():
         return
 
     if not dcq_login_with_retry():
+        _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공휴일'}])
         logger.error(_("[scheduler] DCQ 로그인 실패로 인해 공휴일 동기화를 중단합니다"))
         return
 
     dcq_id, _ = get_dcq_credentials()
     if not dcq_id:
+        _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공휴일'}])
         logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
         return
 
@@ -404,6 +446,7 @@ def sync_holidays():
         df = get_data_from_dcq(query, dcq_id)
 
         if df is None or len(df) == 0:
+            _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공휴일'}])
             logger.warning(_("[scheduler] 공휴일 데이터가 없습니다"))
             return
 
@@ -422,6 +465,7 @@ def sync_holidays():
 
         logger.info(_("[scheduler] 공휴일 {count}건 동기화 완료").format(count=len(df)))
     except Exception as e:
+        _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공휴일'}])
         logger.error(_("[scheduler] 공휴일 동기화 실패: {e}").format(e=e), exc_info=True)
     finally:
         if engine:
@@ -431,6 +475,8 @@ def sync_holidays():
 def sync_design_rule():
     """
     DCQ 에서 공정-디자인룰 매핑 데이터를 매일 1회 가져와 api_designrule 테이블에 저장
+    - 로그인 실패/계정 조회 실패/조회 예외/빈 결과 모두 실패로 기록하고
+      `mailer.enqueue_dcq_sync_failed()` 로 알림 메일을 큐에 적재한다.
     """
     engine = None
     try:
@@ -440,12 +486,14 @@ def sync_design_rule():
         return
 
     if not dcq_login_with_retry():
+        _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공정-디자인룰'}])
         logger.error(_("[scheduler] DCQ 로그인 실패로 인해 공정-디자인룰 동기화를 중단합니다"))
         return
 
     # NOTE: gettext 별칭 `_` 를 덮어쓰지 않도록 비밀번호는 `_pw` 로 받는다.
     dcq_id, _pw = get_dcq_credentials()
     if not dcq_id:
+        _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공정-디자인룰'}])
         logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
         return
 
@@ -460,6 +508,7 @@ def sync_design_rule():
         df = get_data_from_dcq(query, dcq_id)
 
         if df is None or len(df) == 0:
+            _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공정-디자인룰'}])
             logger.warning(_("[scheduler] 공정-디자인룰 데이터가 없습니다"))
             return
 
@@ -473,6 +522,7 @@ def sync_design_rule():
 
         logger.info(_("[scheduler] 공정-디자인룰 {count}건 동기화 완료").format(count=len(df)))
     except Exception as e:
+        _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공정-디자인룰'}])
         logger.error(_("[scheduler] 공정-디자인룰 동기화 실패: {e}").format(e=e), exc_info=True)
     finally:
         if engine:
