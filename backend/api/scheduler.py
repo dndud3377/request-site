@@ -20,7 +20,7 @@ from .utils import (
     get_dcq_token_info,
     get_django_engine,
     get_data_from_dcq,
-    rtdb_login_with_retry,
+    get_rtdb_token,
     get_data_from_rtdb,
     LINE_SUFFIX_MAP,
     LINE_TO_LINEID_MAP,
@@ -141,7 +141,10 @@ def sync_rtdb_options():
       `mailer.enqueue_rtdb_sync_failed()` 로 알림 메일 1통을 큐에 적재한다. 수신자는
       `.env` 의 `RTDB_SYNC_ALERT_MAIL`. RTDB 장애가 이어지는 동안은 10 분 주기마다 매번 발송된다.)
     - 조회 결과가 기존 테이블과 동일하면 쓰기를 건너뛴다(변경 감지)
-    - RTDB 토큰은 주기당 1회만 발급하여 소스·라인 반복에서 재사용한다.
+    - RTDB 토큰은 주기당 1회만 `utils.get_rtdb_token()`으로 받아 소스·라인 반복에서 재사용한다.
+      (2026-08부터 매 주기 풀 로그인 대신, 캐시된 refresh_token 이 유효하면 가벼운 refresh API로
+      갱신한다. refresh_token 유효기간이 얼마 안 남았거나 refresh 자체가 실패하면 풀 로그인으로
+      폴백해 access_token·refresh_token 을 모두 새로 받는다. 상세는 `utils.get_rtdb_token()` 참고.)
     """
     engine = None
     try:
@@ -150,9 +153,9 @@ def sync_rtdb_options():
         logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e), exc_info=True)
         return
 
-    rtdb_token = rtdb_login_with_retry()
+    rtdb_token = get_rtdb_token()
     if not rtdb_token:
-        logger.warning(_("[scheduler] RTDB 로그인 실패 - 이번 주기 동기화를 건너뜁니다"))
+        logger.warning(_("[scheduler] RTDB 로그인/토큰 갱신 실패 - 이번 주기 동기화를 건너뜁니다"))
 
     # 이번 사이클에서 RTDB 조회가 실패/빈 결과였던 (line, target) 목록.
     # 사이클 종료 시 하나라도 있으면 알림 메일 1통으로 모아 보낸다.
