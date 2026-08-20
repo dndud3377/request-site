@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0026_userprofile_receive_voc_mail"),
+        ("api", "0028_alter_mailnotification_event_type"),
     ]
 
     operations = [

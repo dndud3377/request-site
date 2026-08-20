@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0028_alter_mailnotification_event_type'),
+        ('api', '0026_userprofile_receive_voc_mail'),
     ]
 
     operations = [
@@ -25,7 +25,6 @@ class Migration(migrations.Migration):
                     ('voc_created', 'VOC 등록'),
                     ('voc_comment', 'VOC 댓글'),
                     ('rtdb_sync_failed', 'RTDB 동기화 실패'),
-                    ('dcq_sync_failed', 'DCQ 동기화 실패'),
                 ],
                 max_length=20,
                 verbose_name='이벤트 유형',
