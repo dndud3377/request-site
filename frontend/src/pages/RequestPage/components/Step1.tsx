@@ -67,7 +67,7 @@ interface Step1Props {
   handleAdiCdCellChange: (side: AdiCdSide, id: string, field: AdiCdField, value: string) => void;
   handleAdiCdAddRow: (side: AdiCdSide) => void;
   handleAdiCdRemoveRow: (side: AdiCdSide, id: string) => void;
-  handleAdiCdPasteRaw: (side: AdiCdSide, raw: string) => void;
+  handleAdiCdPasteRaw: (side: AdiCdSide, raw: string, startRowId: string | null) => void;
   handleAdiCdToggleDeleteAll: (next: boolean) => void;
   handleAdiCdToggleUnregistered: (side: 'before' | 'after', id: string, next: boolean) => void;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
