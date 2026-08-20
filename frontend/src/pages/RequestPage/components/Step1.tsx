@@ -65,10 +65,9 @@ interface Step1Props {
   handleBbEntryAdd: () => void;
   isAdiCdSelected: boolean;
   handleAdiCdCellChange: (side: AdiCdSide, id: string, field: AdiCdField, value: string) => void;
-  handleAdiCdAddRow: (side: AdiCdSide) => void;
+  handleAdiCdAddRow: () => void;
   handleAdiCdRemoveRow: (side: AdiCdSide, id: string) => void;
   handleAdiCdPasteRaw: (side: AdiCdSide, raw: string, startRowId: string | null) => void;
-  handleAdiCdToggleDeleteAll: (next: boolean) => void;
   handleAdiCdToggleUnregistered: (side: 'before' | 'after', id: string, next: boolean) => void;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
@@ -132,7 +131,6 @@ const Step1: React.FC<Step1Props> = ({
   handleAdiCdAddRow,
   handleAdiCdRemoveRow,
   handleAdiCdPasteRaw,
-  handleAdiCdToggleDeleteAll,
   handleAdiCdToggleUnregistered,
   GuideTourBadge,
   GuideBadge,
@@ -382,12 +380,10 @@ const Step1: React.FC<Step1Props> = ({
                 <AdiCdPanel
                   before={detail.adi_cd_before}
                   after={detail.adi_cd_after}
-                  deleteAll={detail.adi_cd_delete_all}
                   onCellChange={handleAdiCdCellChange}
                   onAddRow={handleAdiCdAddRow}
                   onRemoveRow={handleAdiCdRemoveRow}
                   onPasteRaw={handleAdiCdPasteRaw}
-                  onToggleDeleteAll={handleAdiCdToggleDeleteAll}
                   onToggleUnregistered={handleAdiCdToggleUnregistered}
                 />
               </div>
