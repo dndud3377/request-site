@@ -5,8 +5,6 @@ import { ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from '../constants';
 
 type ColRole = 'STEP_ID' | 'STEP_DESC' | 'NONE';
 
-const PREVIEW_ROWS = 3;
-
 export interface AdiCdColumnMapModalProps {
   isOpen: boolean;
   /** 붙여넣은 표 전체(파싱된 원본) */
@@ -84,7 +82,7 @@ const AdiCdColumnMapModal: React.FC<AdiCdColumnMapModalProps> = ({
       <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: 10 }}>
         {t('request.adi_cd_column_map_desc')}
       </p>
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '50vh' }}>
         <table className="adi-cd-map-table">
           <thead>
             <tr>
@@ -103,7 +101,7 @@ const AdiCdColumnMapModal: React.FC<AdiCdColumnMapModalProps> = ({
             </tr>
           </thead>
           <tbody>
-            {grid.slice(0, PREVIEW_ROWS).map((row, rowIdx) => (
+            {grid.map((row, rowIdx) => (
               <tr key={rowIdx}>
                 {Array.from({ length: columnCount }, (_, colIdx) => (
                   <td key={colIdx}>{row[colIdx] ?? ''}</td>
