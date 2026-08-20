@@ -88,10 +88,11 @@ import {
   VS_UNSELECTED,
   isMergePurposeSelected,
   MERGE_UNREGISTERED_ID,
-  OTHER_PURPOSE_ADI_CD,
+  ADI_CD_CHANGE_PURPOSE,
   ADI_CD_TEMPLATE_ROWS,
   ADI_CD_MAX_ROWS,
   makeAdiCdStep,
+  mapInfoDefaults,
   MERGE_MANUAL_FIELDS,
 } from './constants';
 import {
@@ -324,7 +325,6 @@ export default function RequestPage(): React.ReactElement {
   // Only MAP / MAP 삭제 진입·이탈 확인 모달 — 전환 대상 목적을 함께 들고 있는다.
   const [onlyMapConfirm, setOnlyMapConfirm] = useState<{ targetPurpose: string } | null>(null);
   // ADI CD 변경(기타 목적) — 변경전/변경후 스텝 표
-  const [adiCdLeaveConfirm, setAdiCdLeaveConfirm] = useState(false); // 해제 시 표에 값이 있으면 초기화 확인
   const [adiCdMapModal, setAdiCdMapModal] = useState<{ side: 'before' | 'after'; grid: string[][]; header: AdiCdHeaderMatch | null } | null>(null);
   const [adiCdPendingApply, setAdiCdPendingApply] = useState<{ side: 'before' | 'after'; rows: AdiCdStep[] } | null>(null); // 표에 값이 있을 때 붙여넣기 전체 교체 확인
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
@@ -613,8 +613,9 @@ export default function RequestPage(): React.ReactElement {
   // "아직 아무것도 안 골랐을 때의 기본값"일 뿐, 잠그거나 사용자의 선택을 되돌리지 않는다.
   useEffect(() => {
     // MAP 삭제 모드는 map_type 버튼 자체가 다르므로(삭제 전용) 제외한다.
-    // (아래에서 선언되는 isMapDeleteEdit 대신 원본 조건을 그대로 써서 선언 순서 문제를 피한다.)
-    if (detail.request_purpose === MAP_DELETE_EDIT_PURPOSE) return;
+    // ADI CD 변경은 MAP 정보 자체를 작성하지 않으므로(StepMap 비노출) 제외한다.
+    // (아래에서 선언되는 isMapDeleteEdit/isAdiCdChange 대신 원본 조건을 그대로 써서 선언 순서 문제를 피한다.)
+    if (detail.request_purpose === MAP_DELETE_EDIT_PURPOSE || detail.request_purpose === ADI_CD_CHANGE_PURPOSE) return;
     if (detail.map_type) return;
     if (!detail.line || !detail.partid_selection) return;
     const code = sourceCodeFromPartid(detail.partid_selection);
@@ -703,9 +704,10 @@ export default function RequestPage(): React.ReactElement {
     setRefOayerRows([]);
     // 조리법이 바뀌면 J/O 가 통째로 재조회되므로 옛 스냅샷으로 롤백되면 안 된다 → 비교 상태 전부 정리.
     clearMergeComparison();
-    // Only MAP·MAP 삭제는 StepMap 정보까지만 필요 → J/O 자동 재조회 없이 빈 상태로 유지한다.
-    // (isMapOnlyScope 는 이 effect 아래에서 선언되므로 detail 로 직접 판정)
-    if (detail.request_purpose === ONLY_MAP_PURPOSE || detail.request_purpose === MAP_DELETE_EDIT_PURPOSE) {
+    // Only MAP·MAP 삭제·ADI CD 변경은 J/O 를 작성하지 않는다 → 자동 재조회 없이 빈 상태로 유지한다.
+    // (isStep1OnlyScope 는 이 effect 아래에서 선언되므로 detail 로 직접 판정)
+    if (detail.request_purpose === ONLY_MAP_PURPOSE || detail.request_purpose === MAP_DELETE_EDIT_PURPOSE
+      || detail.request_purpose === ADI_CD_CHANGE_PURPOSE) {
       setJayerRows([]);
       setOayerRows([]);
       return;
@@ -1254,19 +1256,21 @@ export default function RequestPage(): React.ReactElement {
         case 'merge-demo':
           setDetail((dd) => ({ ...dd, other_purpose: [TOUR_MERGE_PURPOSE] }));
           break;
-        // ADI CD 변경 표(행 단위 '미등록' 포함)를 연다.
+        // ADI CD 변경 표(행 단위 '미등록' 포함)를 연다. ADI CD 변경은 요청 목적이라 이 값이 켜져 있는
+        // 동안은 request_purpose 도 함께 바뀐다 — 다음 'purpose-reset' 에서 시드 값으로 되돌린다.
         case 'adi-demo':
           setDetail((dd) => ({
             ...dd,
-            other_purpose: [OTHER_PURPOSE_ADI_CD],
+            request_purpose: ADI_CD_CHANGE_PURPOSE,
             adi_cd_before: makeTourAdiCdBefore(),
             adi_cd_after: makeTourAdiCdAfter(),
           }));
           break;
-        // 기타 목적 시연을 끝내고 Step1 을 시드 상태로 되돌린다(이후 단계에 영향이 없도록).
+        // 기타 목적/ADI CD 변경 시연을 끝내고 Step1 을 시드 상태로 되돌린다(이후 단계에 영향이 없도록).
         case 'purpose-reset':
           setDetail((dd) => ({
             ...dd,
+            request_purpose: makeTourDetail().request_purpose,
             other_purpose: [],
             adi_cd_before: [],
             adi_cd_after: [],
@@ -1523,16 +1527,20 @@ export default function RequestPage(): React.ReactElement {
   const isMapDeleteEdit = detail.request_purpose === MAP_DELETE_EDIT_PURPOSE;
   // Step1 부가 입력(기타 목적·흐름도·Backbone·참조 요청서) 잠금 + STEP3~5 비움 대상 목적.
   const isMapOnlyScope = isOnlyMap || isMapDeleteEdit;
+  // '요청 목적 > ADI CD 변경' — MAP 정보까지 포함해 STEP1 의 ADI CD 표 외에는 아무것도 작성하지
+  // 않는다(기타 목적도 선택할 수 없다). 다른 요청 목적과 동시 선택은 불가능하다(요청 목적은 단일값).
+  const isAdiCdChange = detail.request_purpose === ADI_CD_CHANGE_PURPOSE;
+  // Step1 부가 입력을 잠그는 대상 전체(MAP 전용 두 목적 + ADI CD 변경).
+  const isStep1OnlyScope = isMapOnlyScope || isAdiCdChange;
   // (2026-08) 이 목적들은 J-ayer·O-ayer·Backbone 을 아예 작성하지 않는다. 예전에는 그 단계들에
   // 들어가 입력까지 할 수 있었지만 저장 시 전부 버려져(빈 배열) 혼란을 줬다 — 이제 단계 자체를
-  // 막고 MAP 정보(2단계)에서 바로 상신한다.
-  const lastStep = isMapOnlyScope ? STEP_MAP_INFO : STEP_LAST;
+  // 막고 마지막으로 작성하는 단계에서 바로 상신한다.
+  // ADI CD 변경은 MAP 정보(2단계)도 작성하지 않으므로 STEP1 에서 바로 상신한다.
+  const lastStep = isAdiCdChange ? 1 : (isMapOnlyScope ? STEP_MAP_INFO : STEP_LAST);
   /** 이 의뢰서에서 들어갈 수 없는 단계(인디케이터에 흐리게 표시) */
   const disabledSteps = useMemo(
-    () => (isMapOnlyScope
-      ? Array.from({ length: STEP_LAST - STEP_MAP_INFO }, (_, i) => STEP_MAP_INFO + 1 + i)
-      : []),
-    [isMapOnlyScope],
+    () => Array.from({ length: STEP_LAST - lastStep }, (_, i) => lastStep + 1 + i),
+    [lastStep],
   );
   // StepMap 에서 '수정'/'삭제' 를 고른 상태 — 이유 입력칸만 남기고 나머지 MAP 블록은 숨긴다.
   const isMapReasonMode = isMapDeleteEditType(detail.map_type);
@@ -1549,8 +1557,8 @@ export default function RequestPage(): React.ReactElement {
     detail.ea_change === EA_HAS_CHANGE
     && !!detail.ea_value?.trim()
     && detail.ea_value.trim() !== eaDefaultValue(detail.only_prodc);
-  // ADI CD 변경: 다른 기타 목적과 함께 선택할 수 있다(단독 전용이 아니다).
-  const isAdiCdSelected = detail.other_purpose.includes(OTHER_PURPOSE_ADI_CD);
+  // ADI CD 변경 표(STEP1 인라인)를 보여줄지 — 이제 요청 목적 자체이므로 isAdiCdChange 와 같다.
+  const isAdiCdSelected = isAdiCdChange;
   const hasMapChange = detail.map_change === '변경 있음';
   const hasEaChange = detail.ea_change === EA_HAS_CHANGE;
   const isProdc = detail.only_prodc === 'Yes';
@@ -1615,7 +1623,7 @@ export default function RequestPage(): React.ReactElement {
     if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
   };
 
-  /** 'Only MAP'/'MAP 삭제' 전환 시 지워질 값이 하나라도 있는가 (확인 모달 노출 판정) */
+  /** 'Only MAP'/'MAP 삭제'/'ADI CD 변경' 전환 시 지워질 값이 하나라도 있는가 (확인 모달 노출 판정) */
   const mapOnlyScopeHasData = (): boolean =>
     detail.other_purpose.length > 0 ||
     !!detail.change_purpose_note?.trim() ||
@@ -1624,12 +1632,24 @@ export default function RequestPage(): React.ReactElement {
     refDocId !== null ||
     postApprovers.length > 0;
 
+  /** 'ADI CD 변경' 진입 시에만 추가로 검사 — MAP 정보(StepMap 소유 필드)가 기본값과 다르면 지워진다. */
+  const mapInfoHasData = (): boolean => {
+    const defaults = mapInfoDefaults();
+    return (Object.keys(defaults) as (keyof DetailFormState)[]).some((k) => {
+      const cur = detail[k];
+      const def = defaults[k];
+      if (Array.isArray(cur) || Array.isArray(def)) return (cur as unknown[])?.length > 0;
+      return String(cur ?? '') !== String(def ?? '');
+    });
+  };
+
   const handleRequestPurposeSelect = (val: string) => {
     if (val === detail.request_purpose) return;
-    // Only MAP / MAP 삭제 로 바꾸면 Step1 부가항목과 J/O/Bb 가 초기화되므로 확인을 받는다.
+    // Only MAP / MAP 삭제 / ADI CD 변경 으로 바꾸면 Step1 부가항목과 J/O/Bb 가 초기화되므로 확인을 받는다.
     // (지울 값이 아예 없으면 모달 없이 바로 적용 — 기존 Only MAP 동작과 동일한 판단)
-    if (val === ONLY_MAP_PURPOSE || val === MAP_DELETE_EDIT_PURPOSE) {
-      if (detail.request_purpose && mapOnlyScopeHasData()) {
+    if (val === ONLY_MAP_PURPOSE || val === MAP_DELETE_EDIT_PURPOSE || val === ADI_CD_CHANGE_PURPOSE) {
+      const hasData = mapOnlyScopeHasData() || (val === ADI_CD_CHANGE_PURPOSE && mapInfoHasData());
+      if (detail.request_purpose && hasData) {
         setOnlyMapConfirm({ targetPurpose: val });
         return;
       }
@@ -1642,12 +1662,17 @@ export default function RequestPage(): React.ReactElement {
       setOnlyMapConfirm({ targetPurpose: val });
       return;
     }
+    // ADI CD 변경 → 다른 목적: 표에 입력한 값이 있으면 확인을 받는다(기존 '해제' 동작과 동일한 판단).
+    if (isAdiCdChange && adiCdHasData()) {
+      setOnlyMapConfirm({ targetPurpose: val });
+      return;
+    }
     handleDetailSet('request_purpose', val);
   };
 
   /**
-   * 'Only MAP'/'MAP 삭제' 적용 → 라인/조합법/제품/조리법/고객/요구사항/생산일을 제외한 Step1 항목 초기화.
-   * 두 목적 모두 StepMap 정보까지만 작성하므로 초기화 범위가 같다.
+   * 'Only MAP'/'MAP 삭제'/'ADI CD 변경' 적용 → 라인/조합법/제품/조리법/고객/요구사항/생산일을 제외한 Step1 항목 초기화.
+   * 세 목적 모두 최소한 StepMap 정보까지만(또는 그보다 더 적게) 작성하므로 초기화 범위가 겹친다.
    */
   const applyMapOnlyScope = (purpose: string) => {
     setDetail((prev) => ({
@@ -1665,6 +1690,16 @@ export default function RequestPage(): React.ReactElement {
       // 이유는 새로 입력해야 하므로 비운다. Only MAP 은 기존대로 손대지 않는다.
       ...(purpose === MAP_DELETE_EDIT_PURPOSE
         ? { map_type: MAP_TYPE_DELETE_REQ, map_change_reason: INITIAL_DETAIL.map_change_reason }
+        : {}),
+      // ADI CD 변경은 MAP 정보 자체가 필요 없다 — StepMap 이 아예 렌더되지 않으므로 진입 시
+      // 한 번만 초기화하면 이후 사용자가 값을 바꿀 방법이 없다. 변경전/변경후 표는 빈 템플릿으로 시작.
+      ...(purpose === ADI_CD_CHANGE_PURPOSE
+        ? {
+            ...mapInfoDefaults(),
+            adi_cd_before: Array.from({ length: ADI_CD_TEMPLATE_ROWS }, () => makeAdiCdStep()),
+            adi_cd_after: Array.from({ length: ADI_CD_TEMPLATE_ROWS }, () => makeAdiCdStep()),
+            adi_cd_delete_all: false,
+          }
         : {}),
     }));
     setRefDocId(null);
@@ -1688,7 +1723,8 @@ export default function RequestPage(): React.ReactElement {
     setErrors((prev) => ({ ...prev, request_purpose: '', bb_entries: '' }));
   };
 
-  /** Only MAP/MAP 삭제 에서 벗어날 때 — 전용 값('연구소 제품'·후결자, MAP 삭제의 map_type·이유)만 정리한다 */
+  /** Only MAP/MAP 삭제/ADI CD 변경 에서 벗어날 때 — 전용 값만 정리한다
+   *  ('연구소 제품'·후결자, MAP 삭제의 map_type·이유, ADI CD 변경전/변경후 표). */
   const applyLeaveMapOnlyScope = (purpose: string) => {
     setDetail((prev) => ({
       ...prev,
@@ -1698,6 +1734,13 @@ export default function RequestPage(): React.ReactElement {
       ...(prev.request_purpose === MAP_DELETE_EDIT_PURPOSE
         ? { map_type: INITIAL_DETAIL.map_type, map_change_reason: INITIAL_DETAIL.map_change_reason }
         : {}),
+      ...(prev.request_purpose === ADI_CD_CHANGE_PURPOSE
+        ? {
+            adi_cd_before: INITIAL_DETAIL.adi_cd_before,
+            adi_cd_after: INITIAL_DETAIL.adi_cd_after,
+            adi_cd_delete_all: INITIAL_DETAIL.adi_cd_delete_all,
+          }
+        : {}),
     }));
     setPostApprovers([]);
     setErrors((prev) => ({ ...prev, request_purpose: '' }));
@@ -1706,8 +1749,8 @@ export default function RequestPage(): React.ReactElement {
   const handleOnlyMapConfirm = () => {
     if (!onlyMapConfirm) return;
     const target = onlyMapConfirm.targetPurpose;
-    // 진입(Only MAP·MAP 삭제)이면 전체 초기화, 이탈이면 전용 값만 정리한다.
-    if (target === ONLY_MAP_PURPOSE || target === MAP_DELETE_EDIT_PURPOSE) applyMapOnlyScope(target);
+    // 진입(Only MAP·MAP 삭제·ADI CD 변경)이면 전체 초기화, 이탈이면 전용 값만 정리한다.
+    if (target === ONLY_MAP_PURPOSE || target === MAP_DELETE_EDIT_PURPOSE || target === ADI_CD_CHANGE_PURPOSE) applyMapOnlyScope(target);
     else applyLeaveMapOnlyScope(target);
     setOnlyMapConfirm(null);
   };
@@ -2944,7 +2987,7 @@ export default function RequestPage(): React.ReactElement {
     setMergeModeConfirm(null);
   };
 
-  // ===== ADI CD 변경 (기타 목적 — 단독 전용이 아니라 다른 목적과 함께 선택할 수 있다) =====
+  // ===== ADI CD 변경 (요청 목적 — 진입/해제는 handleRequestPurposeSelect 가 담당) =====
   const adiCdSideKey = (side: 'before' | 'after'): 'adi_cd_before' | 'adi_cd_after' =>
     side === 'before' ? 'adi_cd_before' : 'adi_cd_after';
 
@@ -2953,35 +2996,6 @@ export default function RequestPage(): React.ReactElement {
 
   const adiCdHasData = () =>
     adiCdSideHasData('before') || adiCdSideHasData('after') || detail.adi_cd_delete_all;
-
-  // 기타 목적에서 'ADI CD 변경' 클릭(진입): 빈 템플릿을 깐다. map_type 은 건드리지 않는다 —
-  // 실제 map_type(NEW/CLONE/EXISTING/MAP 삭제)은 사용자가 StepMap 에서 직접 고른다.
-  const handleSelectAdiCdPurpose = () => {
-    setDetail((prev) => ({
-      ...prev,
-      other_purpose: [...prev.other_purpose, OTHER_PURPOSE_ADI_CD],
-      adi_cd_before: Array.from({ length: ADI_CD_TEMPLATE_ROWS }, () => makeAdiCdStep()),
-      adi_cd_after: Array.from({ length: ADI_CD_TEMPLATE_ROWS }, () => makeAdiCdStep()),
-      adi_cd_delete_all: false,
-    }));
-  };
-
-  // 재클릭(해제): 표에 값이 있으면 확인 모달, 없으면 바로 해제.
-  const handleLeaveAdiCd = () => {
-    if (adiCdHasData()) setAdiCdLeaveConfirm(true);
-    else exitAdiCd();
-  };
-
-  const exitAdiCd = () => {
-    setDetail((prev) => ({
-      ...prev,
-      other_purpose: prev.other_purpose.filter((o) => o !== OTHER_PURPOSE_ADI_CD),
-      adi_cd_before: [],
-      adi_cd_after: [],
-      adi_cd_delete_all: false,
-    }));
-    setAdiCdLeaveConfirm(false);
-  };
 
   const handleAdiCdCellChange = (side: 'before' | 'after', id: string, field: 'step_id' | 'step_desc', value: string) => {
     const key = adiCdSideKey(side);
@@ -3845,7 +3859,10 @@ export default function RequestPage(): React.ReactElement {
     const purposePart = detail.other_purpose.length
       ? `${detail.request_purpose}-${detail.other_purpose.map((o) => `[${o}]`).join('')}`
       : detail.request_purpose;
-    const title = `${detail.line}(${purposePart})_MAP(${detail.map_type})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서_${dateStr}`;
+    // ADI CD 변경은 MAP 정보 자체가 없으므로(map_type 미사용) 제목에서 그 구간을 뺀다.
+    const title = isAdiCdChange
+      ? `${detail.line}(${purposePart})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서_${dateStr}`
+      : `${detail.line}(${purposePart})_MAP(${detail.map_type})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서_${dateStr}`;
 
     // 반려된 문서 재상신 시 이전 스냅샷을 history 에 누적
     let history: HistorySnapshot[] = [];
@@ -3889,12 +3906,12 @@ export default function RequestPage(): React.ReactElement {
           // 이후 MASK(E)가 detail.validation_system 을 바꿔도 이 값은 유지된다.
           ...(isDraft ? {} : { validation_system_submitted: detail.validation_system }),
         },
-        // Only MAP 은 StepMap 정보까지만 필요 → J/O/bb 표를 비워 저장한다.
+        // Only MAP·MAP 삭제·ADI CD 변경은 StepMap 정보까지만(또는 그보다 적게) 필요 → J/O/bb 표를 비워 저장한다.
         // 비활성(필터/수동) 행도 임시저장과 동일하게 항상 포함해서 저장한다 — 반려·중단 후
         // 재상신 편집 화면에서 상신 전 상태(비활성 행 포함) 그대로 복원할 수 있어야 한다.
-        jayerRows: isMapOnlyScope ? [] : [...jayerRows].sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-        oayerRows: isMapOnlyScope ? [] : [...oayerRows].sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
-        bbRows: isMapOnlyScope ? [] : bbRows,
+        jayerRows: isStep1OnlyScope ? [] : [...jayerRows].sort((a, b) => jayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        oayerRows: isStep1OnlyScope ? [] : [...oayerRows].sort((a, b) => oayerSortBySp ? a.sp.localeCompare(b.sp) : a.sortOrder - b.sortOrder),
+        bbRows: isStep1OnlyScope ? [] : bbRows,
         history,
         jayerActiveFilterIds: [...jayerActiveFilterIds],
         oayerActiveFilterIds: [...oayerActiveFilterIds],
@@ -4437,7 +4454,7 @@ export default function RequestPage(): React.ReactElement {
         <Step1
           detail={detail}
           errors={errors}
-          isOnlyMap={isMapOnlyScope}
+          isOnlyMap={isStep1OnlyScope}
           bbEntriesRequired={requiresBbEntries(jayerRows)}
           isLabProductAllowed={isOnlyMap}
           lineOptions={lineOptions}
@@ -4487,8 +4504,6 @@ export default function RequestPage(): React.ReactElement {
           handleBbEntryDelete={handleBbEntryDelete}
           handleBbEntryAdd={handleBbEntryAdd}
           isAdiCdSelected={isAdiCdSelected}
-          handleSelectAdiCdPurpose={handleSelectAdiCdPurpose}
-          handleLeaveAdiCd={handleLeaveAdiCd}
           handleAdiCdCellChange={handleAdiCdCellChange}
           handleAdiCdAddRow={handleAdiCdAddRow}
           handleAdiCdRemoveRow={handleAdiCdRemoveRow}
@@ -5470,18 +5485,26 @@ export default function RequestPage(): React.ReactElement {
             ? t('request.map_delete_edit_confirm_title')
             : onlyMapConfirm?.targetPurpose === ONLY_MAP_PURPOSE
               ? t('request.only_map_confirm_title')
-              : detail.request_purpose === MAP_DELETE_EDIT_PURPOSE
-                ? t('request.map_delete_leave_confirm_title')
-                : t('request.map_only_leave_confirm_title')
+              : onlyMapConfirm?.targetPurpose === ADI_CD_CHANGE_PURPOSE
+                ? t('request.adi_cd_request_purpose_confirm_title')
+                : detail.request_purpose === MAP_DELETE_EDIT_PURPOSE
+                  ? t('request.map_delete_leave_confirm_title')
+                  : detail.request_purpose === ADI_CD_CHANGE_PURPOSE
+                    ? t('request.adi_cd_leave_title')
+                    : t('request.map_only_leave_confirm_title')
         }
         message={
           onlyMapConfirm?.targetPurpose === MAP_DELETE_EDIT_PURPOSE
             ? t('request.map_delete_edit_confirm_msg')
             : onlyMapConfirm?.targetPurpose === ONLY_MAP_PURPOSE
               ? t('request.only_map_confirm_msg')
-              : detail.request_purpose === MAP_DELETE_EDIT_PURPOSE
-                ? t('request.map_delete_leave_confirm_msg')
-                : t('request.map_only_leave_confirm_msg')
+              : onlyMapConfirm?.targetPurpose === ADI_CD_CHANGE_PURPOSE
+                ? t('request.adi_cd_request_purpose_confirm_msg')
+                : detail.request_purpose === MAP_DELETE_EDIT_PURPOSE
+                  ? t('request.map_delete_leave_confirm_msg')
+                  : detail.request_purpose === ADI_CD_CHANGE_PURPOSE
+                    ? t('request.adi_cd_leave_msg')
+                    : t('request.map_only_leave_confirm_msg')
         }
         danger
       />
@@ -5504,15 +5527,6 @@ export default function RequestPage(): React.ReactElement {
         onConfirm={handleMergeModeConfirm}
         title={t('request.merge_mode_change_title')}
         message={t('request.merge_mode_change_confirm')}
-        danger
-      />
-
-      <ConfirmModal
-        isOpen={adiCdLeaveConfirm}
-        onClose={() => setAdiCdLeaveConfirm(false)}
-        onConfirm={exitAdiCd}
-        title={t('request.adi_cd_leave_title')}
-        message={t('request.adi_cd_leave_msg')}
         danger
       />
 
