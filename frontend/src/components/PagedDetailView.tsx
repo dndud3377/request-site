@@ -1620,6 +1620,9 @@ export default function PagedDetailView({
    *  지도편차·예외구역·X표시·C가문 세부정보는 값이 있어도 회색 "없음"으로 표시한다.
    *  (MAP 목적·원본 위치·원본 제품·C가문 Yes/No 는 잠기지 않으므로 실값 유지) */
   const isMapRegisteredDetail = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
+  // 요청 목적 'ADI CD 변경' — StepMap 을 아예 작성하지 않으므로 MAP 정보 탭 자체를 감춘다
+  // (map_change 등은 기본값이 빈 문자열이 아니라 실제로 채운 것처럼 보일 수 있다).
+  const isAdiCdChange = detail.request_purpose === 'ADI CD 변경';
   const mshotChange = detail.mshot_change || '없음';
   const mshotHasDetail = mshotChange === '추가' || mshotChange === '수정';
   const mshotIsDelete = mshotChange === '삭제';
@@ -1810,7 +1813,9 @@ type Page = { label: string; content: React.ReactNode };
     },
   ];
 
-  const showMap = isR || isO || isP;
+  // ADI CD 변경은 StepMap 자체를 작성하지 않는다 — map_change/ea_change 등은 기본값(빈 값이
+  // 아닌 '변경 없음' 류)이 그대로 남아 있어 실제로 채운 것처럼 보이므로, 탭 자체를 감춘다.
+  const showMap = (isR || isO || isP) && !isAdiCdChange;
   if (showMap) {
     pages.push({
       label: t('request.section_map'),
@@ -2425,6 +2430,10 @@ type Page = { label: string; content: React.ReactNode };
     } catch { return false; }
   })();
 
+  // ADI CD 변경: PL 검토 후 R·O 없이 P·J 만 병렬로 진행한다(E·RA 도 만들지 않는다 —
+  // Jayer 가 비어 있어 판정 키워드가 없고, other_purpose 가 비어 있어 후결자 조건도 성립하지 않는다).
+  // (isAdiCdChange 는 위에서 detail.request_purpose 로 이미 선언했다 — 재선언하지 않는다)
+
   // 기타 목적이 'Overlay 변경' 하나뿐이면 결재 경로에서 J 를 뺀다(백엔드 skip_j_stage 와 동일 기준).
   // 'MAP 삭제' 은 J 가 병렬 묶음의 구성원이라 제외 대상이 아니다.
   const skipJStage = (() => {
@@ -2522,6 +2531,11 @@ type Page = { label: string; content: React.ReactNode };
     // MAP 삭제은 RA(후결자)를 아예 만들지 않는다 — 없이도 fallback 을 타면
     // '대기'로 보여 영원히 끝나지 않는 단계처럼 오해를 준다(E 처럼 명시적 na 분기 필요).
     if (isMapDeleteEdit && agent === 'RA') {
+      return [{ status: 'na', label: t('approval.step_na') }];
+    }
+    // ADI CD 변경은 R·O·RA 를 아예 만들지 않는다 — 없이도 fallback 을 타면 '대기'로 보여
+    // 영원히 끝나지 않는 단계처럼 오해를 준다(위 두 분기와 같은 이유의 명시적 na 분기).
+    if (isAdiCdChange && ['R', 'O', 'RA'].includes(agent)) {
       return [{ status: 'na', label: t('approval.step_na') }];
     }
     // 'Overlay 변경' 단독 문서는 J step 이 아예 없다 — 명시하지 않으면 아래 fallback 이
@@ -2679,7 +2693,7 @@ type Page = { label: string; content: React.ReactNode };
           <div key={key} style={teamRowStyle}>
             <div style={teamLabelStyle}>{label}</div>
             <div style={historyListStyle}>
-              {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) || (isMapDeleteEdit && key === 'RA') || (skipJStage && key === 'J') ? (
+              {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) || (isMapDeleteEdit && key === 'RA') || (skipJStage && key === 'J') || (isAdiCdChange && ['R', 'O', 'RA'].includes(key)) ? (
                 <div style={historyItemStyle(false)}>
                   <span style={{ ...statusBadgeStyle('na') }}>{t('approval.step_na')}</span>
                 </div>
