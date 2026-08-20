@@ -10,9 +10,9 @@ import {
 } from '../../types';
 
 // ===== Option Constants =====
-export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'Only MAP', 'MAP 삭제', '기타'] as const;
+export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'Only MAP', 'MAP 삭제', 'ADI CD 변경', '기타'] as const;
 export const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5', 'nv'] as const;
-export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay 변경', 'ADI CD 변경', 'FirstA 변경', '연구소 제품'] as const;
+export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay 변경', 'FirstA 변경', '연구소 제품'] as const;
 
 // 참조 요청서 Merge(+ BEFORE/AFTER 비교)를 쓸 수 있는 기타 목적.
 // 여러 개를 함께 골라도 참조 요청서는 의뢰서당 1건이므로 블록은 하나만 노출한다.
@@ -99,8 +99,10 @@ const EA_DEFAULT_PRODC = '500';
 export const eaDefaultValue = (onlyProdc?: string): string =>
   onlyProdc === 'Yes' ? EA_DEFAULT_PRODC : EA_DEFAULT_NORMAL;
 
-// '기타 목적 > ADI CD 변경': 특정 제품 ADI CD 스텝 개수 증감/전체삭제 요청.
-export const OTHER_PURPOSE_ADI_CD = 'ADI CD 변경';
+// 요청 목적 'ADI CD 변경': 특정 제품 ADI CD 스텝 개수 증감/전체삭제 요청.
+// (2026-08) 기타 목적이었다가 단독 요청 목적으로 승격됐다 — 다른 요청 목적처럼 단독 선택이며,
+// MAP 정보·J-layer·O-layer·Backbone 을 전부 작성하지 않고 이 표만 필수로 채워 바로 상신한다.
+export const ADI_CD_CHANGE_PURPOSE = 'ADI CD 변경';
 // 초기 빈 템플릿 행 수
 export const ADI_CD_TEMPLATE_ROWS = 5;
 // 붙여넣기 허용 최대 행 수(초과 시 거부)
@@ -355,6 +357,63 @@ export const INITIAL_DETAIL: DetailFormState = {
   adi_cd_after: [],
   adi_cd_delete_all: false,
 };
+
+/**
+ * StepMap(2단계)이 소유한 모든 DetailFormState 필드를 초기값으로 되돌린 객체.
+ * '요청 목적 > ADI CD 변경'처럼 MAP 정보 자체가 필요 없는 목적에서 재사용한다
+ * (StepMap 은 렌더되지 않으므로 사용자가 값을 채울 방법이 없다 — 진입 시 한 번만 초기화하면 된다).
+ */
+export const mapInfoDefaults = (): Partial<DetailFormState> => ({
+  source_line: INITIAL_DETAIL.source_line,
+  source_partid: INITIAL_DETAIL.source_partid,
+  map_type: INITIAL_DETAIL.map_type,
+  map_change: INITIAL_DETAIL.map_change,
+  map_value_x: INITIAL_DETAIL.map_value_x,
+  map_value_y: INITIAL_DETAIL.map_value_y,
+  map_reason: INITIAL_DETAIL.map_reason,
+  map_change_reason: INITIAL_DETAIL.map_change_reason,
+  map_change_top: INITIAL_DETAIL.map_change_top,
+  map_value_x_top: INITIAL_DETAIL.map_value_x_top,
+  map_value_y_top: INITIAL_DETAIL.map_value_y_top,
+  map_change_bottom: INITIAL_DETAIL.map_change_bottom,
+  map_value_x_bottom: INITIAL_DETAIL.map_value_x_bottom,
+  map_value_y_bottom: INITIAL_DETAIL.map_value_y_bottom,
+  ea_change: INITIAL_DETAIL.ea_change,
+  ea_value: INITIAL_DETAIL.ea_value,
+  only_prodc: INITIAL_DETAIL.only_prodc,
+  prodc_scope: INITIAL_DETAIL.prodc_scope,
+  prodc_top_line: INITIAL_DETAIL.prodc_top_line,
+  prodc_top_process: INITIAL_DETAIL.prodc_top_process,
+  prodc_top_product: INITIAL_DETAIL.prodc_top_product,
+  prodc_middle_use: INITIAL_DETAIL.prodc_middle_use,
+  prodc_middle_line: INITIAL_DETAIL.prodc_middle_line,
+  prodc_middle_process: INITIAL_DETAIL.prodc_middle_process,
+  prodc_middle_product: INITIAL_DETAIL.prodc_middle_product,
+  prodc_bottom_line: INITIAL_DETAIL.prodc_bottom_line,
+  prodc_bottom_process: INITIAL_DETAIL.prodc_bottom_process,
+  prodc_bottom_product: INITIAL_DETAIL.prodc_bottom_product,
+  mshot_change: INITIAL_DETAIL.mshot_change,
+  mshot_image_copy: INITIAL_DETAIL.mshot_image_copy,
+  mshot_image_copy_top: INITIAL_DETAIL.mshot_image_copy_top,
+  mshot_image_copy_bottom: INITIAL_DETAIL.mshot_image_copy_bottom,
+  photo_backside: INITIAL_DETAIL.photo_backside,
+  eds_backside: INITIAL_DETAIL.eds_backside,
+  inter: INITIAL_DETAIL.inter,
+  inter_xs: INITIAL_DETAIL.inter_xs,
+  inter_ys: INITIAL_DETAIL.inter_ys,
+  in_apply: INITIAL_DETAIL.in_apply,
+  inter_select: INITIAL_DETAIL.inter_select,
+  tsv: INITIAL_DETAIL.tsv,
+  rf: INITIAL_DETAIL.rf,
+  fullchip: INITIAL_DETAIL.fullchip,
+  split: INITIAL_DETAIL.split,
+  st: INITIAL_DETAIL.st,
+  ecc: INITIAL_DETAIL.ecc,
+  labelsideshot: INITIAL_DETAIL.labelsideshot,
+  hpkglabelheight: INITIAL_DETAIL.hpkglabelheight,
+  final_yn: INITIAL_DETAIL.final_yn,
+  final_entries: INITIAL_DETAIL.final_entries,
+});
 
 export const INITIAL_FORM: CreateDocumentInput = {
   title: '',

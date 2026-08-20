@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { StepGuideGroup } from '../../components/StepGuideTour';
 import { CellSelectionApi } from '../../hooks/useCellSelection';
 import { BbTableRow, DetailFormState, JayerRow, OayerRow } from '../../types';
-import { MAP_TYPE_CLONE, OTHER_PURPOSE_ADI_CD, TOUR_MERGE_PURPOSE, makeJayerRow, makeTourBbRows } from './constants';
+import { MAP_TYPE_CLONE, ADI_CD_CHANGE_PURPOSE, TOUR_MERGE_PURPOSE, makeJayerRow, makeTourBbRows } from './constants';
 
 interface UseStepGuideTourArgs {
   detail: DetailFormState;
@@ -153,7 +153,9 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
           {
             selectors: ['[data-tour="adi-cd"]'],
             ...g('s1g4'),
-            onEnter: () => setDetail((prev) => ({ ...prev, other_purpose: [OTHER_PURPOSE_ADI_CD] })),
+            // ADI CD 변경은 요청 목적이다 — restoreBase 가 그룹을 나갈 때 detail 전체를 스냅샷으로
+            // 되돌리므로 여기서 request_purpose 를 바꿔도 다른 그룹에 영향이 없다.
+            onEnter: () => setDetail((prev) => ({ ...prev, request_purpose: ADI_CD_CHANGE_PURPOSE })),
           },
           { selectors: ['[data-tour="flow-chart"]'], ...g('s1g5') },
           { selectors: ['[data-tour="bb-entry"]'], ...g('s1g6') },

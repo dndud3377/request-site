@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import FormSelect from '../../../components/FormSelect';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { DetailFormState, FlowChartRow, RequestDocument, GuideFeatureKey, MergeRefMode, MergeTable } from '../../../types';
-import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_ADI_CD, OTHER_PURPOSE_LAB, isMergePurposeSelected } from '../constants';
+import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_LAB, isMergePurposeSelected } from '../constants';
 import { PairAfterLookupRow } from '../helpers';
 import BeforeAfterPanel, { BaField, BaSide } from './BeforeAfterPanel';
 import AdiCdPanel, { AdiCdField, AdiCdSide } from './AdiCdPanel';
@@ -64,8 +64,6 @@ interface Step1Props {
   handleBbEntryDelete: (idx: number) => void;
   handleBbEntryAdd: () => void;
   isAdiCdSelected: boolean;
-  handleSelectAdiCdPurpose: () => void;
-  handleLeaveAdiCd: () => void;
   handleAdiCdCellChange: (side: AdiCdSide, id: string, field: AdiCdField, value: string) => void;
   handleAdiCdAddRow: (side: AdiCdSide) => void;
   handleAdiCdRemoveRow: (side: AdiCdSide, id: string) => void;
@@ -130,8 +128,6 @@ const Step1: React.FC<Step1Props> = ({
   handleBbEntryDelete,
   handleBbEntryAdd,
   isAdiCdSelected,
-  handleSelectAdiCdPurpose,
-  handleLeaveAdiCd,
   handleAdiCdCellChange,
   handleAdiCdAddRow,
   handleAdiCdRemoveRow,
@@ -147,8 +143,9 @@ const Step1: React.FC<Step1Props> = ({
     detail.process_selection !== '' &&
     detail.partid_selection !== '' &&
     detail.process_id !== '';
-  // Only MAP / MAP 삭제 모드: 기타목적·흐름도·Backbone·참조요청서는 초기화 후 작성 불가
+  // Only MAP / MAP 삭제 / ADI CD 변경 모드: 기타목적·흐름도·Backbone·참조요청서는 초기화 후 작성 불가
   // (특이사항·변경 요청 목적은 초기화되지만 작성은 가능 — change_purpose_note 는 disableOptional 대상 아님)
+  // ⚠️ prop 이름은 isOnlyMap 이지만 실제로는 위 세 목적을 모두 아우르는 값이 들어온다(index.tsx 참조).
   const disableOptional = !canSelectPurpose || isOnlyMap;
   /**
    * 기타 목적 버튼의 개별 잠금.
@@ -268,11 +265,6 @@ const Step1: React.FC<Step1Props> = ({
                       className={`map-type-btn${selected ? ' active' : ''}`}
                       onClick={() => {
                         if (otherPurposeDisabled(val)) return;
-                        // ADI CD 변경: 단독 전용이 아니라 다른 목적과 함께 켤 수 있다.
-                        if (val === OTHER_PURPOSE_ADI_CD) {
-                          if (isAdiCdSelected) handleLeaveAdiCd(); else handleSelectAdiCdPurpose();
-                          return;
-                        }
                         handleDetailSet(
                           'other_purpose',
                           selected

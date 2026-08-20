@@ -523,6 +523,36 @@ R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전
 - 상세 '결재 경로' 탭: PL 바로 다음 줄에 표시. 그 회차에 SA step 이 없으면 '해당없음'.
 - 메일 결재 경로 카드: `ROUTE_DISPLAY_ORDER` 에서 PL 다음. step 이 없으면 '예정'이 아니라 '해당없음'.
 
+### Case Q — 요청 목적 'ADI CD 변경': PL → P·J 병렬 경로 (2026-08)
+
+기타 목적이었다가 단독 요청 목적으로 승격됐다(`docs/REQUEST.md`). MAP 정보·J-layer·O-layer·
+Backbone 을 아예 작성하지 않고 STEP1 의 ADI CD 변경전/변경후 표만 채워 바로 상신하는 문서
+전용 경로다. 판정: `RequestDocument.is_adi_cd_change()`
+(`request_purpose == RequestDocument.ADI_CD_CHANGE_PURPOSE`, 값 `'ADI CD 변경'` — 프론트
+`RequestPage/constants.ts` 의 `ADI_CD_CHANGE_PURPOSE` 와 같은 값이어야 한다).
+
+- **상신까지는 동일**: `submit`(지정 PL) → `peer_approve`(PL 전원 합의)까지 다른 경로와 완전히 같다.
+- **PL 전원 합의 직후 R 없이 P·J 만 병렬 생성**(`_open_stage_after_pl` → `_create_adi_cd_parallel`):
+  R(MAP 담당자)·O 는 검토할 MAP/O-layer 정보 자체가 없으므로 만들지 않는다. **E(MASK)와
+  후결자(RA)도 만들지 않는다** — Jayer 가 비어 있어 판정 키워드(plel)가 없고(`has_ppid_plel()`
+  자연히 False), other_purpose 가 비어 있어 후결자 조건(`requires_post_approver()`)도 자연히
+  성립하지 않는다. 별도 예외 처리 없이 기존 판정 함수가 그대로 맞는 값을 낸다.
+- **검토자(PV)는 그대로**: P 담당자 합의 시 지정된 검토자까지 전원 합의해야 그 단계가 끝난다
+  (`_stage_reviewers_complete`, 기존 로직 재사용). J 는 기존과 동일하게 검토중(claim) 방식이며
+  검토자 개념이 없다(일반 경로와 동일).
+- **최종 승인 판정**(`approve_step`, `_adi_cd_all_approved`): P·J **두 단계 모두** 완료(P 는
+  담당자+검토자, J 는 담당자)일 때만 `approved`. 일반 경로의 최종 판정은 `O` 합의 존재를
+  전제하므로(`o_approved`), **이 경로 전용으로 판정 분기를 따로 추가**했다 — 없으면 P·J 가
+  다 끝나도 O 를 기다리며 `under_review` 에 멈춘다.
+- **결재 경로 카드**: `mailer.ROUTE_AGENTS_ADI_CD = ('SA', 'P', 'PV', 'J')` (Case O 의
+  `ROUTE_AGENTS_MAP_DELETE_EDIT` 와 같은 패턴 — `mailer.route_agents_for(document)` 판정에
+  분기 추가). 없으면 일반 경로 기본값으로 떨어져 R·O·E·RA 가 "예정"으로 잘못 표시된다.
+- **기타 목적과는 무관**: 요청 목적이 'ADI CD 변경'이면 기타 목적 선택 자체가 잠긴다
+  (`docs/REQUEST.md`) — '연구소 제품'·'Overlay 변경' 등과 동시에 선택될 수 없다.
+- **검증**: `backend/api/tests.py` 를 오염시키지 않는 임시 재현 테스트로 실제 API 흐름(제출 →
+  PL 합의 → P·J 병렬 생성 확인 → P·J 각각 합의 → 최종 `approved` 및 R/O/E/RA 미생성 확인)을
+  구동해 통과를 확인했다(§1.1~1.2 절차, 2026-08-20 실행).
+
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)
 - start_date(당일 포함) 기준 n번째 영업일. 주말 + `Holiday(isholiday='Y')` 제외.
 

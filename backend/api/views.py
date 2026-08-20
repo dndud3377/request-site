@@ -1030,6 +1030,10 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if document.is_only_map():
                 # Only MAP: 후결자(RA)만 종단 경로 — RA 전원 합의 시 최종 승인
                 all_approved = len(ra_steps) > 0 and ra_ok
+            elif document.is_adi_cd_change():
+                # ADI CD 변경: R·O 없이 P·J 만 종단 경로 — 둘 다 합의 시 최종 승인.
+                # (E·RA 는 애초에 생성되지 않으므로 e_exists/ra_steps 는 항상 비어 있어 무시해도 된다)
+                all_approved = self._adi_cd_all_approved(document, current_round)
             else:
                 # J 를 뺀 경로('Overlay 변경' 단독)는 J step 이 아예 없다. 아래 기본 판정은
                 # len(j_steps) > 0 을 요구하므로, 이 분기가 없으면 나머지 단계가 모두 합의돼도
@@ -1746,6 +1750,47 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 return False
         return True
 
+    def _create_adi_cd_parallel(self, document, round_no):
+        """'ADI CD 변경': PL 합의 직후 R·O 없이 P·J 만 병렬로 생성한다.
+
+        MAP 정보·O-layer 를 아예 작성하지 않으므로 R(MAP 담당자)·O 가 검토할 대상이 없다.
+        E(MASK)·후결자(RA)도 만들지 않는다(Jayer 가 비어 있어 판정 키워드가 없고,
+        other_purpose 가 비어 있어 후결자 조건도 성립하지 않는다 — has_ppid_plel/
+        requires_post_approver 가 자연히 False 를 반환하므로 별도 예외 처리는 필요 없다).
+        """
+        from .utils import calculate_business_due_date
+        import datetime
+        if ApprovalStep.objects.filter(
+            document=document, agent__in=('P', 'J'), round=round_no
+        ).exists():
+            return  # 동시 합의 중복 생성 방지
+        due = calculate_business_due_date(datetime.date.today(), 6)
+        for agent in ('P', 'J'):
+            created = ApprovalStep.objects.create(
+                document=document, agent=agent, action='pending',
+                is_parallel=True, round=round_no, due_date=due,
+            )
+            mailer.enqueue_stage_arrival(document, agent, created)
+        # 이 경로는 J 가 처음부터 존재한다 — 일반 경로와 같은 시점에 검토 항목을 채운다.
+        review_items_sync.fill_from_master(document)
+
+    def _adi_cd_all_approved(self, document, round_no):
+        """'ADI CD 변경' 최종 승인 판정 — P·J 두 단계가 모두 완료됐는가.
+
+        P 는 담당자 + 지정된 검토자(PV) 전원 합의로 완료된다(검토자가 없으면 담당자
+        합의만으로 완료 — _stage_reviewers_complete 와 동일 규칙). J 는 담당자 합의만 본다
+        (일반 경로에서도 J 에는 검토자 개념이 없다).
+        """
+        for agent in ('P', 'J'):
+            main = ApprovalStep.objects.select_for_update().filter(
+                document=document, agent=agent, round=round_no,
+            ).first()
+            if not main or main.action != 'approved':
+                return False
+            if agent == 'P' and not self._stage_reviewers_complete(document, agent, round_no):
+                return False
+        return True
+
     def _advance_to_parallel(self, document, step, round_no):
         """R단계(담당자[→검토자]) 완료 후 병렬 단계 생성 → 반환할 새 status.
 
@@ -1837,10 +1882,15 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return pl_users, None
 
     def _open_stage_after_pl(self, document, round_no):
-        """PL 검토 단계 완료 후 다음 단계를 연다 — 일반 경로는 R, 'MAP 삭제' 는 P·R·J·O 병렬."""
+        """PL 검토 단계 완료 후 다음 단계를 연다 — 일반 경로는 R, 'MAP 삭제' 는 P·R·J·O 병렬,
+        'ADI CD 변경' 은 R·O 없이 P·J 만 병렬."""
         # 'MAP 삭제' 은 R 이 관문이 아니라 병렬 구성원이므로 여기서 4단계를 한 번에 만든다.
         if document.is_map_delete_edit():
             self._create_map_delete_edit_parallel(document, round_no)
+            return
+        # 'ADI CD 변경' 은 MAP 정보·O-layer 를 작성하지 않으므로 R·O 없이 P·J 만 연다.
+        if document.is_adi_cd_change():
+            self._create_adi_cd_parallel(document, round_no)
             return
         # R 생성(중복 방지: 이미 있으면 재생성하지 않음)
         if not ApprovalStep.objects.filter(document=document, agent='R', round=round_no).exists():

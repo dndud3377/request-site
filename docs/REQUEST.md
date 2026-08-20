@@ -53,7 +53,7 @@ pages/RequestPage/
 |---|---|
 | 목적 옵션 | `OPTION_REQUEST_PURPOSE`, `OPTION_LINE`, `OPTION_OTHER_PURPOSE`, `ONLY_MAP_PURPOSE`, `MAP_DELETE_EDIT_PURPOSE`, `OTHER_PURPOSE_LAB` |
 | Merge | `MERGE_ENABLED_PURPOSES`, `isMergePurposeSelected`, `MERGE_UNREGISTERED_ID`, `MERGE_MANUAL_FIELDS`, `MERGE_DEFAULT_TABLE` |
-| ADI CD | `OTHER_PURPOSE_ADI_CD`, `ADI_CD_TEMPLATE_ROWS`, `ADI_CD_MAX_ROWS`, `ADI_CD_HEADER_SCAN_ROWS`, `ADI_CD_STEP_ID_LABEL`, `ADI_CD_STEP_DESC_LABEL` |
+| ADI CD | `ADI_CD_CHANGE_PURPOSE`(2026-08-20 요청 목적으로 승격 — 이전 이름 `OTHER_PURPOSE_ADI_CD`), `ADI_CD_TEMPLATE_ROWS`, `ADI_CD_MAX_ROWS`, `ADI_CD_HEADER_SCAN_ROWS`, `ADI_CD_STEP_ID_LABEL`, `ADI_CD_STEP_DESC_LABEL`, `mapInfoDefaults`(StepMap 소유 필드 전체를 초기값으로) |
 | MAP 삭제/수정 | `MAP_TYPE_EDIT_REQ`, `MAP_TYPE_DELETE_REQ`, `isMapDeleteEditType` |
 | Validation System | `VALIDATION_KEYWORD`, `VS_TARGET`, `VS_NONTARGET`, `VS_NA`, `VALIDATION_CELL_COLOR` |
 | 표 컬럼 | `JAYER_EDITABLE_COLS`, `OAYER_EDITABLE_COLS`, `LOADED_LOCK_COLS` |
@@ -95,7 +95,7 @@ pages/RequestPage/
 - **뼈찜(Bb)**: `bbRows`, `bbExternalData`, `bbExternalLoading`, `activeBbTab`, `bbChecked`, `bbAutoFillRanges`, `showAutoFillPanel`, `bbSearchQueries`, `stagedMappings`, `mappedJayerRowIds`, `selectedJayerRowId`, `bbExtCache`(ref), `bbExtPrevPid`(ref)
 - **참조문서 병합**: `refDocId`, `refDocLabel`, `refJayerRows`, `refOayerRows`, `mergeConfirmOpen`, `mergePreview`, `mergeSnapshot`, `mergeReselectConfirm`, `mergeModeConfirm`
 - **BEFORE/AFTER 비교**: `baSelBefore`, `baSelAfter`, `baSameCount`
-- **ADI CD 변경**: `adiCdLeaveConfirm`, `adiCdMapModal`, `adiCdPendingApply`
+- **ADI CD 변경**: `adiCdMapModal`, `adiCdPendingApply` (2026-08-20: `adiCdLeaveConfirm` 제거 — 진입/해제 확인은 `onlyMapConfirm` 으로 통합됨)
 - **C가문(PRODC)**: `prodcScopeConfirm`
 - **Final**: `finalGds` (등록 전 입력 중인 GDS version 값 — 등록된 목록 자체는 `detail.final_entries`)
 - **TBV/TLV**: `tbvtlvSdsSelected`, `tbvtlvNoteRows`, `tbvtlvWarnModal`
@@ -115,7 +115,7 @@ pages/RequestPage/
 | `handleFlow*` | 4 | Flow chart 행 |
 | `handleMap*` / `handleMerge*` / `handleProdc*` / `handleBa*` | 각 3 | `handleBa*` = BEFORE/AFTER 선택·적용·해제 |
 | `handleFilter*` / `handleDetail*` / `handleApply*` | 각 2 | |
-| 기타 단일 핸들러 | 각 1 | `handleSubmitClick`, `handleSubmit`, `handleSaveDraft`, `handleIdleAutoSave`, `handleReset`, `handleNextStep`, `handlePrevStep`, `handleRequestPurposeSelect`, `handleSelectAdiCdPurpose`, `handleLeaveAdiCd`, `handleOnlyMapConfirm`, `handleOnlyProdcChange`, `handleRegionMapChangeChange`, `handleEaChangeChange`, `handleMshotChangeChange`, `handleRadioChange`, `handleImagePaste`, `handleRefDocSelect`, `handleStageMapping`, `handleClearStaging`, `handleSortBbRows`, `handleResetBbRows`, `handleOpenAutoFillPanel`, `handleAddRange`, `handleRemoveRange`, `handleRangeChange`, `handlePartidSelectionBlur`, `handleDragEnd` 등 |
+| 기타 단일 핸들러 | 각 1 | `handleSubmitClick`, `handleSubmit`, `handleSaveDraft`, `handleIdleAutoSave`, `handleReset`, `handleNextStep`, `handlePrevStep`, `handleRequestPurposeSelect`, `handleOnlyMapConfirm`, `handleOnlyProdcChange`, `handleRegionMapChangeChange`, `handleEaChangeChange`, `handleMshotChangeChange`, `handleRadioChange`, `handleImagePaste`, `handleRefDocSelect`, `handleStageMapping`, `handleClearStaging`, `handleSortBbRows`, `handleResetBbRows`, `handleOpenAutoFillPanel`, `handleAddRange`, `handleRemoveRange`, `handleRangeChange`, `handlePartidSelectionBlur`, `handleDragEnd` 등 (2026-08-20: `handleSelectAdiCdPurpose`/`handleLeaveAdiCd` 제거 — ADI CD 변경 진입/해제가 `handleRequestPurposeSelect` 로 통합됨) |
 
 ### 2.3 렌더 함수 → Step 컴포넌트 (✅ 분리 완료)
 메인 `return` 은 `step` 값에 따라 §1의 Step 컴포넌트를 렌더한다. 기존 `renderStepN()` 인라인 렌더 함수는 모두 제거되고 `components/StepN.tsx` 로 분리됨.
@@ -274,6 +274,119 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 기능 변경 (2026-08-20 — '기타 목적 > ADI CD 변경'을 '요청 목적 > ADI CD 변경'으로 승격 + MAP 정보까지 생략)
+
+- **요청**: ADI CD 변경을 기타 목적에서 요청 목적으로 승격(`MAP 삭제`와 `기타` 사이). ADI CD 변경을
+  선택하면 기타 목적 자체를 선택할 수 없게 하고, Only MAP과 동일하게 Jayer/Oayer 정보를 없앨 수
+  있도록 하며, 추가로 MAP 정보도 필요 없으므로 모두 없앨 수 있게 한다. 결과적으로 STEP1의 ADI CD
+  변경전/변경후 표만 필수로 채운 뒤 바로 상신한다. 결재 경로는 기존 일반 경로에서 R·O 단계만 뺀다
+  (PL 상신 → PL 검토 → P·J만 병렬 진행).
+- **요청 목적 승격**(`constants.ts`): `OPTION_REQUEST_PURPOSE`에 `'ADI CD 변경'`을 `'MAP 삭제'`와
+  `'기타'` 사이에 추가. `OPTION_OTHER_PURPOSE`에서 제거. 상수명도 `OTHER_PURPOSE_ADI_CD` →
+  `ADI_CD_CHANGE_PURPOSE`로 변경(값은 그대로 `'ADI CD 변경'` — 과거 문서의 `other_purpose` 배열에
+  남아 있는 값과 문자열은 같으므로 기존 데이터는 손대지 않는다. 마이그레이션 없음).
+- **MAP 정보까지 초기화**(`constants.ts` 신규 `mapInfoDefaults()`, `index.tsx`): StepMap(2단계)이
+  소유한 모든 필드(`map_type`부터 `final_entries`까지 — `map_change`/`ea_change`/`only_prodc`/
+  `prodc_*`/`mshot_*`/`inter*`/Map Option류 등)를 `INITIAL_DETAIL` 값으로 되돌리는 순수 함수를
+  신설했다. 기존 `applyMapOnlyScope`(Only MAP·MAP 삭제 진입 시 Step1 부가항목·J/O/Bb를 비우던
+  함수)를 확장해, `'ADI CD 변경'` 진입 시 이 함수 결과를 함께 병합하고 ADI CD 표에 빈 5행 템플릿을
+  깐다. StepMap 자체가 렌더되지 않으므로(아래) 진입 시 한 번만 초기화하면 이후 사용자가 그 값을
+  바꿀 방법이 없다.
+- **STEP1에서 바로 상신**(`index.tsx`): `isAdiCdChange` 파생값 신설. `lastStep`을
+  `isAdiCdChange ? 1 : (isMapOnlyScope ? STEP_MAP_INFO : STEP_LAST)`로 확장해 STEP2~5(MAP 정보
+  포함)를 전부 인디케이터 잠금 대상으로 돌렸다. `disabledSteps` 계산도 `lastStep` 하나로 일반화
+  (기존엔 Only MAP 전용 2단계 하한이 하드코딩돼 있었다). `validate(lastStep)`이 자동으로 STEP1
+  블록만 돌게 되므로, 거기 이미 있던 `addAdiCdGateError`(유효 행 1개↑·불완전 행 0개·STEP_ID
+  중복 0개, BEFORE/AFTER 독립 검사, 2026-08-04 기능 참조)만 검사 대상이 된다 — 판정 기준 자체는
+  가져오지 않은 채(다른 기타 목적과 함께 선택할 수 있었던 시절과 동일) 게이트 호출부만 그대로 둔다.
+- **기타 목적 전체 잠금**: Step1 prop `isOnlyMap`(부가 입력 잠금 플래그, 이름은 그대로지만
+  실제로는 Only MAP·MAP 삭제·ADI CD 변경 세 목적을 모두 아우른다)에 `isMapOnlyScope || isAdiCdChange`
+  값을 넘기도록 확장했다. Step1.tsx 자체는 무변경 — 기존 `otherPurposeDisabled`/`disableOptional`
+  로직이 이미 이 플래그 하나로 기타 목적 버튼 전체를 잠그므로(연구소 제품 예외도 `isLabProductAllowed`가
+  별도 raw `isOnlyMap`을 쓰기 때문에 ADI CD에서는 그 예외도 함께 잠긴다) 추가 분기 없이 그대로
+  재사용된다. 다만 기타 목적 버튼 배열에서 ADI CD 항목이 빠졌으므로 `Step1.tsx`의 버튼 onClick
+  특수분기(`val === OTHER_PURPOSE_ADI_CD`)와 관련 props(`isAdiCdSelected` 진입/해제용
+  `handleSelectAdiCdPurpose`/`handleLeaveAdiCd`)는 제거했다 — 진입/해제는 이제
+  `handleRequestPurposeSelect`(요청 목적 버튼 클릭)가 전담한다.
+- **진입/해제 확인 모달 통합**(`index.tsx`): 기존 `adiCdLeaveConfirm`(기타 목적 해제 전용 모달)을
+  제거하고, Only MAP·MAP 삭제가 쓰던 `onlyMapConfirm` 모달을 재사용한다. 진입 시
+  `mapOnlyScopeHasData() || mapInfoHasData()`(신규 — MAP 정보 필드가 기본값과 다르면 참)가 지울
+  값이 있는지 판정하고, 해제 시에는 기존 `adiCdHasData()`(변경전/변경후 표에 값이 있는지)를 그대로
+  재사용한다. i18n `request.adi_cd_request_purpose_confirm_title`/`_msg` 신설, 해제 문구는 기존
+  `request.adi_cd_leave_title`/`_msg`를 그대로 재사용(문구가 "진입"이 아니라 "해제" 상황에도
+  자연스럽게 맞아 신규 키를 만들지 않았다).
+- **문서 제목**: 기존 `${line}(${purpose})_MAP(${map_type})_...` 조립에서, ADI CD 변경은
+  `map_type` 자체가 없으므로(항상 빈 문자열) `_MAP(${map_type})` 구간을 통째로 뺀
+  `${line}(${purpose})_${process_selection}_${partid_selection}_${process_id}_요청서_${dateStr}`
+  형식을 쓴다.
+- **결재 경로**(`backend/api/models.py`, `views.py`, `mailer.py`): `RequestDocument.ADI_CD_CHANGE_PURPOSE`
+  상수 + `is_adi_cd_change()` 메서드 신설. `_open_stage_after_pl`에 분기를 추가해 PL 전원 합의
+  직후 R 을 만들지 않고 신규 헬퍼 `_create_adi_cd_parallel`이 P·J 만 병렬 생성한다(`MAP 삭제`의
+  `_create_map_delete_edit_parallel`과 같은 패턴, R·O 만 빠짐). 최종 승인 판정
+  (`approve_step` → 신규 `_adi_cd_all_approved`)은 P·J 두 단계 모두 완료일 때만 승인 — 일반
+  경로의 판정이 `O` 존재를 전제해 그대로 두면 P·J가 다 끝나도 `under_review`에 멈춘다. E(MASK)·
+  후결자(RA)는 별도 예외 처리 없이도 만들어지지 않는다(Jayer가 비어 있어 `has_ppid_plel()`이
+  자연히 False, `other_purpose`가 비어 있어 `requires_post_approver()`도 자연히 False). 메일
+  '결재 경로' 카드용 `mailer.ROUTE_AGENTS_ADI_CD = ('SA','P','PV','J')`도 추가했다 — 없으면
+  `route_agents_for()`가 일반 경로 기본값으로 떨어져 R·O·E·RA가 "예정"으로 잘못 표시된다.
+  상세: `docs/APPROVAL.md` Case Q.
+- **상세보기**(`PagedDetailView.tsx`): `isAdiCdChange`(`detail.request_purpose` 기준) 파생값
+  신설. MAP 정보 탭(`showMap`)을 ADI CD 변경 문서에서는 아예 감춘다 — `map_change`/`ea_change`
+  등은 기본값이 빈 문자열이 아닌 `'변경 없음'` 류라, 탭을 그대로 두면 StepMap을 방문한 적 없는데도
+  실제로 채운 것처럼 보인다(map_type만 빈 문자열이라 개별 필드 가드로는 못 막는다). 결재 단계
+  그리드에서 R·O·RA를 `해당없음`으로 표시(Only MAP의 P/J/O/E, MAP 삭제의 RA와 같은 패턴).
+- **가이드 투어**: `?embed=tour` 워크스루의 `'adi-demo'` 커맨드가 `other_purpose`가 아니라
+  `request_purpose`를 `'ADI CD 변경'`으로 바꾸도록 변경했고, `'purpose-reset'`이
+  `makeTourDetail().request_purpose`(`'신규'`)로 되돌리도록 확장했다(다음 커맨드 흐름과의 정합).
+  하이라이트 투어(`useStepGuideTour.ts`, STEP1 `s1g4` 그룹)도 같은 방식으로 바꿨는데, 이쪽은
+  그룹 진입마다 `onRestoreBase()`가 스냅샷을 먼저 되돌리므로(`StepGuideTour.tsx`) 다른 그룹에
+  영향이 없다 — 별도 리셋 로직이 필요 없다.
+- **영향 파일**: `frontend/src/pages/RequestPage/constants.ts`, `index.tsx`,
+  `components/Step1.tsx`, `useStepGuideTour.ts`, `frontend/src/components/PagedDetailView.tsx`,
+  `frontend/src/locales/{ko,en}.json`, `backend/api/models.py`, `backend/api/views.py`,
+  `backend/api/mailer.py`, `docs/REQUEST.md`, `docs/APPROVAL.md`. 마이그레이션 없음(둘 다
+  `additional_notes` JSON 하위에 저장되는 값이라 스키마 변경이 필요 없다).
+- **검증(2026-08-20 실행)**:
+  - `npx tsc --noEmit` — 작업 전/후 모두 7개(신규 0). 전부 pre-existing `Set` es5 순회(6) +
+    `GuidePage.tsx` i18n strict 키(1). `git stash`로 실제 베이스라인과 대조해 확인.
+  - `CI=true npx react-scripts test --watchAll=false` — 9 suites / **230건 전부 통과**(기존
+    `adiCdUnregisteredAndVs.test.tsx`의 ADI CD 진입 흐름 포함, 회귀 없음).
+  - 백엔드(§1.1 절차, sqlite): `manage.py test api` — **328건 전부 통과**(회귀 없음).
+  - **재현 테스트**(§1.2 절차, `$SP/stubs/verify_adi_cd.py`, `backend/api/tests.py` 오염 없음):
+    실제 API로 상신 → PL 합의 → PL 합의 직후 그 회차에 `P`/`J`만 생성되고 `R`/`O`가 없음을 확인 →
+    P·J 각각 담당자 합의 → 최종 상태가 `approved`로 바뀌고 `R`/`O`/`E`/`RA` 모두 미생성임을 확인.
+    3건 전부 통과.
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [`/request` → 새 문서 → 라인·조합법·제품·조리법 입력 → 요청 목적 버튼 확인] → [기대 결과:
+     `Only MAP`/`MAP 삭제` 다음, `기타` 앞에 `ADI CD 변경` 버튼이 있다.]
+  2. [`ADI CD 변경` 클릭] → [기대 결과: 확인 모달(값이 있었다면) 후 기타 목적 버튼 전부(연구소
+     제품 포함)가 흐리게 비활성화된다. 화면 하단에 ADI CD 변경전/변경후 표(빈 5행)가 뜨고, 상단
+     단계 인디케이터에서 2~5단계(MAP 정보~Backbone)가 모두 흐리게 잠긴다.]
+  3. [변경전 표에 STEP_ID/STEP_DESC 1행 이상, 변경후도 1행 이상 채운 뒤 하단 버튼 확인] →
+     [기대 결과: '다음 →' 없이 바로 '📤 상신' 버튼이 보인다. 클릭 시 STEP1 basic 필드 + ADI CD
+     게이트만 검증하고 바로 상신 모달로 진행한다(지정 PL은 기존과 동일하게 필요).]
+  4. [상신 완료 후 결재 현황에서 그 문서 상세 → '결재 경로' 탭] → [기대 결과: PL 다음 줄에 바로
+     담당자(P)·JOB(J) 행이 오고, RFG(R)·OVL(O)는 `해당없음`으로 표시된다. MAP 정보 탭 자체가
+     탭 목록에 없다.]
+  5. [PL 역할 계정으로 로그인 → 지정 PL 합의] → [기대 결과: 그 즉시 P·J 담당자에게 결재 요청
+     메일이 가고(RFG 메일 없음), 결재 경로 카드에도 RFG/OVL이 뜨지 않는다.]
+  6. [P 담당자 계정으로 P 단계 검토중 선점 → 합의, J 담당자 계정으로 J 단계 검토중 선점 → 합의] →
+     [기대 결과: 두 단계가 모두 끝나면 문서 상태가 바로 `승인됨`으로 바뀐다(RFG·OVL·MASK·후결자
+     대기 없이).]
+  7. [`ADI CD 변경` 선택 후 다시 다른 요청 목적(예: `신규`)으로 전환] → [기대 결과: 표에 값이
+     있었다면 확인 모달(`ADI CD 변경 해제`)이 뜨고, 확인하면 표가 초기화되며 다른 요청 목적의
+     일반 화면(MAP 정보~Backbone 단계 포함)으로 돌아간다.]
+- **잠재 주의사항**:
+  - 과거(2026-08-04~2026-08-19 사이)에 '기타 목적 > ADI CD 변경'으로 저장된 문서는 `other_purpose`
+    배열에 값이 그대로 남아 있다 — 마이그레이션하지 않기로 결정했으므로(사용자 확인), 그 문서들은
+    상세보기에서 여전히 기타 목적 칩으로만 표시되고 결재 경로도 예전 그대로(생성 당시의 일반/기타
+    목적 조합 경로)다. 이 변경은 **새로 작성하는 문서부터만** 적용된다.
+  - `docs/APPROVAL_CASES_VALIDATION.md`의 결재 경우의 수 목록·`scripts/approval_cases/` 케이스
+    러너는 이번 변경으로 갱신하지 않았다 — 원격 세션이라 개발환경(AUTH_MODE=dev)이 없어 실제로
+    상신·결재까지 진행하는 케이스 러너(§1.4)를 돌릴 수 없었다. 실행하지 못했다는 사실을 그대로
+    적는다 — 다음에 개발환경이 있는 세션에서 그룹을 추가하고 `--group`로 이 경로만 돌려 확인이
+    필요하다.
 
 ### 기능 추가 (2026-08-19 — 변경전/변경후 표: AFTER 연결 행이 비활성/기등록이면 배지로 표시)
 
