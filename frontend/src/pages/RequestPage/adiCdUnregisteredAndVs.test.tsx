@@ -233,6 +233,50 @@ describe('ADI CD 변경 — 행 단위 미등록 선택', () => {
     const after = Array.from(container.querySelectorAll('.adi-cd-cell')) as HTMLInputElement[];
     expect(after[0].value).toBe('');
   });
+
+  it('2열 붙여넣기는 모달 없이 즉시 적용되고, 포커스된 행부터 그 뒤 값만 덮어쓴다', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanel(container);
+
+    // 0행(변경전 표)에 값을 채워 "건드리면 안 되는 행"으로 만든다.
+    const cells = Array.from(container.querySelectorAll('.adi-cd-cell')) as HTMLInputElement[];
+    await act(async () => { fireEvent.change(cells[0], { target: { value: '9999' } }); });
+    await flushEffects();
+
+    // 1행(cells[2])에 포커스가 있는 상태로 2행짜리 표를 붙여넣는다 — 헤더 없는 2열 그대로.
+    const rowsBefore = Array.from(container.querySelectorAll('.adi-cd-cell')) as HTMLInputElement[];
+    await act(async () => {
+      fireEvent.paste(rowsBefore[2], { clipboardData: { getData: () => '2000\tX\n3000\tY' } } as never);
+    });
+    await flushEffects();
+
+    // 컬럼 매핑 모달이 뜨지 않고 바로 반영됐어야 한다.
+    expect(container.querySelector('.adi-cd-map-table')).toBeNull();
+
+    const rowsAfter = Array.from(container.querySelectorAll('.adi-cd-cell')) as HTMLInputElement[];
+    expect(rowsAfter[0].value).toBe('9999'); // 0행은 그대로
+    expect(rowsAfter[2].value).toBe('2000'); // 1행부터 덮어써짐
+    expect(rowsAfter[3].value).toBe('X');
+    expect(rowsAfter[4].value).toBe('3000'); // 2행
+    expect(rowsAfter[5].value).toBe('Y');
+  });
+
+  it('두 칸 다 빈 행을 붙여넣으면 그 행이 자동으로 미등록 처리된다(드롭되지 않는다)', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanel(container);
+
+    const cells = Array.from(container.querySelectorAll('.adi-cd-cell')) as HTMLInputElement[];
+    await act(async () => {
+      fireEvent.paste(cells[0], { clipboardData: { getData: () => 'A\tX\n\t\nC\tZ' } } as never);
+    });
+    await flushEffects();
+
+    const detail = await saveDraftAndCaptureDetail();
+    const rows = (detail.adi_cd_before as AdiCdStep[]).slice(0, 3);
+    expect(rows[0]).toMatchObject({ step_id: 'A', step_desc: 'X', unregistered: false });
+    expect(rows[1]).toMatchObject({ step_id: '', step_desc: '', unregistered: true });
+    expect(rows[2]).toMatchObject({ step_id: 'C', step_desc: 'Z', unregistered: false });
+  });
 });
 
 // ===================== (2) Validation System =====================
