@@ -325,8 +325,8 @@ export default function RequestPage(): React.ReactElement {
   // Only MAP / MAP 삭제 진입·이탈 확인 모달 — 전환 대상 목적을 함께 들고 있는다.
   const [onlyMapConfirm, setOnlyMapConfirm] = useState<{ targetPurpose: string } | null>(null);
   // ADI CD 변경(기타 목적) — 변경전/변경후 스텝 표
-  const [adiCdMapModal, setAdiCdMapModal] = useState<{ side: 'before' | 'after'; grid: string[][]; header: AdiCdHeaderMatch | null } | null>(null);
-  const [adiCdPendingApply, setAdiCdPendingApply] = useState<{ side: 'before' | 'after'; rows: AdiCdStep[] } | null>(null); // 표에 값이 있을 때 붙여넣기 전체 교체 확인
+  const [adiCdMapModal, setAdiCdMapModal] = useState<{ side: 'before' | 'after'; grid: string[][]; header: AdiCdHeaderMatch | null; startIndex: number } | null>(null);
+  const [adiCdPendingApply, setAdiCdPendingApply] = useState<{ side: 'before' | 'after'; rows: AdiCdStep[]; startIndex: number } | null>(null); // 붙여넣기 범위에 값이 있을 때 겹쳐쓰기 확인
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -3033,37 +3033,61 @@ export default function RequestPage(): React.ReactElement {
     }));
   };
 
-  const commitAdiCdRows = (side: 'before' | 'after', rows: AdiCdStep[]) => {
-    setDetail((prev) => ({ ...prev, [adiCdSideKey(side)]: rows }));
+  // startIndex 부터 rows.length 개만 덮어쓴다(엑셀 붙여넣기와 동일) — 그 앞뒤 기존 행은 그대로 둔다.
+  const commitAdiCdRows = (side: 'before' | 'after', rows: AdiCdStep[], startIndex: number) => {
+    const key = adiCdSideKey(side);
+    setDetail((prev) => ({
+      ...prev,
+      [key]: [
+        ...prev[key].slice(0, startIndex),
+        ...rows,
+        ...prev[key].slice(startIndex + rows.length),
+      ],
+    }));
   };
 
-  // 파싱된 행을 실제로 적용 — 500행 초과·0행 거부, 표에 이미 값이 있으면 확인 모달 후 전체 교체.
-  const requestAdiCdApply = (side: 'before' | 'after', rows: AdiCdStep[]) => {
+  // 파싱된 행을 실제로 적용 — 500행 초과·0행 거부, 붙여넣는 범위에 이미 값이 있으면 확인 모달 후 그 범위만 덮어쓴다.
+  const requestAdiCdApply = (side: 'before' | 'after', rows: AdiCdStep[], startIndex: number) => {
     if (rows.length === 0) { addToast(t('request.adi_cd_paste_empty'), 'error'); return; }
     if (rows.length > ADI_CD_MAX_ROWS) { addToast(t('request.adi_cd_paste_too_many', { max: ADI_CD_MAX_ROWS }), 'error'); return; }
-    if (adiCdSideHasData(side)) setAdiCdPendingApply({ side, rows });
-    else commitAdiCdRows(side, rows);
+    const overwritten = detail[adiCdSideKey(side)].slice(startIndex, startIndex + rows.length);
+    const overwritesData = overwritten.some((r) => r.step_id.trim() || r.step_desc.trim());
+    if (overwritesData) setAdiCdPendingApply({ side, rows, startIndex });
+    else commitAdiCdRows(side, rows, startIndex);
+  };
+
+  // 붙여넣기 시작 행(포커스돼 있던 셀의 행) id → 현재 표에서의 인덱스. 못 찾으면(표가 비었거나
+  // 포커스 없이 붙여넣은 경우) 0부터(표 처음부터) 채운다.
+  const adiCdStartIndex = (side: 'before' | 'after', startRowId: string | null): number => {
+    if (!startRowId) return 0;
+    const idx = detail[adiCdSideKey(side)].findIndex((r) => r.id === startRowId);
+    return idx === -1 ? 0 : idx;
   };
 
   // 붙여넣기 원문 → 파싱 → 모달 필요 여부 판정(§5). 실제 적용은 requestAdiCdApply 로 위임.
-  const handleAdiCdPasteRaw = (side: 'before' | 'after', raw: string) => {
+  const handleAdiCdPasteRaw = (side: 'before' | 'after', raw: string, startRowId: string | null) => {
     const grid = parseClipboardTable(raw);
     if (grid.length === 0) { addToast(t('request.adi_cd_paste_empty'), 'error'); return; }
     const decision = decideAdiCdPaste(grid);
-    if (!decision.needsModal && decision.header) {
-      const rows = buildAdiCdRows(grid, decision.header, decision.header.headerRow + 1);
-      requestAdiCdApply(side, rows);
+    const startIndex = adiCdStartIndex(side, startRowId);
+    if (!decision.needsModal) {
+      // 2열이면 헤더 인식 여부와 무관하게 즉시 적용한다 — 헤더가 있으면 그 행만 건너뛰고,
+      // 없으면 1열=STEPSEQ·2열=STEP 설명으로 전체를 데이터로 본다.
+      const mapping = decision.header ?? { stepIdCol: 0, stepDescCol: 1 };
+      const dataStartRow = decision.header ? decision.header.headerRow + 1 : 0;
+      const rows = buildAdiCdRows(grid, mapping, dataStartRow);
+      requestAdiCdApply(side, rows, startIndex);
       return;
     }
-    setAdiCdMapModal({ side, grid, header: decision.header });
+    setAdiCdMapModal({ side, grid, header: decision.header, startIndex });
   };
 
   const handleAdiCdMapConfirm = (mapping: { stepIdCol: number; stepDescCol: number; skipFirstRow: boolean }) => {
     if (!adiCdMapModal) return;
     const rows = buildAdiCdRows(adiCdMapModal.grid, mapping, mapping.skipFirstRow ? 1 : 0);
-    const side = adiCdMapModal.side;
+    const { side, startIndex } = adiCdMapModal;
     setAdiCdMapModal(null);
-    requestAdiCdApply(side, rows);
+    requestAdiCdApply(side, rows, startIndex);
   };
 
   // ===== Bb Entry Handlers (Step 1 - 뼈찜 조합 영역 다중 행) =====
@@ -5533,7 +5557,7 @@ export default function RequestPage(): React.ReactElement {
       <ConfirmModal
         isOpen={adiCdPendingApply !== null}
         onClose={() => setAdiCdPendingApply(null)}
-        onConfirm={() => { if (adiCdPendingApply) commitAdiCdRows(adiCdPendingApply.side, adiCdPendingApply.rows); }}
+        onConfirm={() => { if (adiCdPendingApply) commitAdiCdRows(adiCdPendingApply.side, adiCdPendingApply.rows, adiCdPendingApply.startIndex); }}
         title={t('request.adi_cd_replace_title')}
         message={t('request.adi_cd_replace_msg')}
         danger
