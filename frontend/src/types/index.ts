@@ -452,10 +452,10 @@ export interface DetailFormState {
   merge_unmatched_before: MergeUnmatchedRow[];
   merge_unmatched_after: MergeUnmatchedRow[];
 
-  // '기타 목적 > ADI CD 변경' — 변경전/변경후 스텝 표. AFTER는 전체 삭제 요청 시 delete_all=true, 표는 비운다.
+  // 요청 목적 'ADI CD 변경' — 변경전/변경후 스텝 표. 같은 인덱스끼리 짝을 이루므로 두 표의
+  // 행 개수는 항상 같다(balanceAdiCdRows) — 존재하지 않는 STEP은 '미등록' 행으로 표시한다.
   adi_cd_before: AdiCdStep[];
   adi_cd_after: AdiCdStep[];
-  adi_cd_delete_all: boolean;
 }
 
 /** ADI CD 변경 스텝 표 1행 — STEPSEQ/STEP 설명 2컬럼 고정. */

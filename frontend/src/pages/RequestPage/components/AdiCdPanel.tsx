@@ -10,37 +10,35 @@ export type AdiCdField = 'step_id' | 'step_desc';
 export interface AdiCdPanelProps {
   before: AdiCdStep[];
   after: AdiCdStep[];
-  deleteAll: boolean;
   onCellChange: (side: AdiCdSide, id: string, field: AdiCdField, value: string) => void;
-  onAddRow: (side: AdiCdSide) => void;
+  /** 변경전/변경후는 같은 인덱스끼리 짝을 이루므로 행 추가는 항상 양쪽에 동시에 일어난다. */
+  onAddRow: () => void;
   onRemoveRow: (side: AdiCdSide, id: string) => void;
   /** startRowId: 붙여넣기 시점에 포커스돼 있던 행의 id(어느 셀에서 Ctrl+V 했는지). 못 찾으면 null(표 처음부터). */
   onPasteRaw: (side: AdiCdSide, raw: string, startRowId: string | null) => void;
-  onToggleDeleteAll: (next: boolean) => void;
   /** 행 단위 '미등록' 토글 — 켜면 그 행의 STEP_ID/STEP_DESC 를 비우고 잠근다. */
   onToggleUnregistered: (side: AdiCdSide, id: string, next: boolean) => void;
 }
 
 /**
  * ADI CD 변경 — 좌 변경전 / 우 변경후 스텝 표.
+ * 두 표는 같은 인덱스끼리 짝을 이루므로(같은 STEP 위치) 행 개수가 항상 같다 — 행 추가/삭제는
+ * index.tsx 가 양쪽에 함께 반영한다(balanceAdiCdRows). 이 컴포넌트는 그 결과를 그대로 그린다.
  * 붙여넣기(파싱·모달 판정)는 부모(index.tsx)가 소유한다 — 이 컴포넌트는 원문 텍스트를 그대로 올려보내기만 한다.
  * 오류 판정(불완전/중복)은 순수 함수 validateAdiCdRows 를 그대로 재사용해, 게이트가 보는 것과 항상 같은 값을 그린다.
  */
 const AdiCdPanel: React.FC<AdiCdPanelProps> = ({
   before,
   after,
-  deleteAll,
   onCellChange,
   onAddRow,
   onRemoveRow,
   onPasteRaw,
-  onToggleDeleteAll,
   onToggleUnregistered,
 }) => {
   const { t } = useTranslation();
   const beforeValidation = validateAdiCdRows(before);
-  const afterValidation = deleteAll ? null : validateAdiCdRows(after);
-  const beforeEmpty = beforeValidation.validCount === 0;
+  const afterValidation = validateAdiCdRows(after);
 
   const handlePaste = (side: AdiCdSide) => (e: React.ClipboardEvent<HTMLTableElement>) => {
     e.preventDefault();
@@ -127,35 +125,16 @@ const AdiCdPanel: React.FC<AdiCdPanelProps> = ({
         <div className="adi-cd-pane">
           <div className="adi-cd-pane-title">{t('request.adi_cd_before')}</div>
           <div className="adi-cd-pane-scroll">{renderTable('before', before, beforeValidation)}</div>
-          <button type="button" className="btn btn-secondary adi-cd-add-row" onClick={() => onAddRow('before')}>
-            + {t('request.adi_cd_add_row')}
-          </button>
         </div>
         <div className="adi-cd-pane">
-          <div className="adi-cd-pane-title">
-            <span>{t('request.adi_cd_after')}</span>
-            <label className="adi-cd-delete-all-toggle">
-              <input
-                type="checkbox"
-                checked={deleteAll}
-                disabled={!deleteAll && beforeEmpty}
-                onChange={(e) => onToggleDeleteAll(e.target.checked)}
-              />
-              {t('request.adi_cd_delete_all')}
-            </label>
-          </div>
-          {deleteAll ? (
-            <div className="adi-cd-delete-all-note">{t('request.adi_cd_delete_all_note')}</div>
-          ) : (
-            <>
-              <div className="adi-cd-pane-scroll">{renderTable('after', after, afterValidation)}</div>
-              <button type="button" className="btn btn-secondary adi-cd-add-row" onClick={() => onAddRow('after')}>
-                + {t('request.adi_cd_add_row')}
-              </button>
-            </>
-          )}
+          <div className="adi-cd-pane-title">{t('request.adi_cd_after')}</div>
+          <div className="adi-cd-pane-scroll">{renderTable('after', after, afterValidation)}</div>
         </div>
       </div>
+      {/* 변경전/변경후는 같은 인덱스끼리 짝을 이루므로 행 추가 버튼은 하나로 양쪽에 동시에 적용된다. */}
+      <button type="button" className="btn btn-secondary adi-cd-add-row" onClick={onAddRow}>
+        + {t('request.adi_cd_add_row')}
+      </button>
       <div className="adi-cd-note">{t('request.adi_cd_paste_hint')}</div>
     </div>
   );

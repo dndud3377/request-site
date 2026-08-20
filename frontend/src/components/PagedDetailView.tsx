@@ -7,7 +7,7 @@ import Modal from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
 import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from '../pages/RequestPage/constants';
-import { isValidationKeywordRow, isValidationTarget, deriveMergeKind } from '../pages/RequestPage/helpers';
+import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
 
@@ -102,13 +102,23 @@ function MergePairsTable({ pairs }: { pairs: MergePair[] }) {
   );
 }
 
-/** ADI CD 변경 — 변경전/변경후 스텝 표 (읽기 전용). 작성 화면(AdiCdPanel)과 같은 좌/우 구성. */
-function AdiCdStepsTable({ before, after, deleteAll }: { before: AdiCdStep[]; after: AdiCdStep[]; deleteAll: boolean }) {
+/**
+ * ADI CD 변경 — 변경전/변경후 스텝 표 (읽기 전용). 작성 화면(AdiCdPanel)과 같은 좌/우 구성.
+ * 두 표는 같은 인덱스끼리 짝을 이루므로(§행 수 동일 규칙) 어느 한쪽만 걸러내면 짝이 어긋난다 —
+ * 양쪽 다 비어 있는(미등록도 아닌, 완전히 안 쓴) 행만 함께 제거한다. 이 규칙 도입 전 문서는
+ * 개수가 다를 수 있어 짧은 쪽을 화면 표시용으로만 채워 맞춘다(balanceAdiCdRows, 저장값은 안 건드림).
+ */
+function AdiCdStepsTable({ before, after }: { before: AdiCdStep[]; after: AdiCdStep[] }) {
   const { t } = useTranslation();
-  // '미등록' 행은 두 값이 비어 있는 것이 정상이므로 빈 행 필터에서 걸러지지 않게 함께 통과시킨다.
-  const filled = (rows: AdiCdStep[]) => rows.filter((r) => r.unregistered || r.step_id.trim() || r.step_desc.trim());
-  const beforeRows = filled(before);
-  const afterRows = filled(after);
+  const balanced = balanceAdiCdRows(before, after);
+  const isRowUsed = (b: AdiCdStep, a: AdiCdStep) =>
+    b.unregistered || a.unregistered
+    || !!b.step_id.trim() || !!b.step_desc.trim() || !!a.step_id.trim() || !!a.step_desc.trim();
+  const usedIndices = balanced.before
+    .map((_, i) => i)
+    .filter((i) => isRowUsed(balanced.before[i], balanced.after[i]));
+  const beforeRows = usedIndices.map((i) => balanced.before[i]);
+  const afterRows = usedIndices.map((i) => balanced.after[i]);
 
   const renderTable = (rows: AdiCdStep[]) => (
     <table className="table" style={{ fontSize: '0.8rem' }}>
@@ -138,9 +148,7 @@ function AdiCdStepsTable({ before, after, deleteAll }: { before: AdiCdStep[]; af
       </div>
       <div>
         <div style={{ fontWeight: 700, fontSize: '0.82rem', marginBottom: 4 }}>{t('request.adi_cd_after')}</div>
-        {deleteAll
-          ? <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{t('request.adi_cd_delete_all_note')}</div>
-          : renderTable(afterRows)}
+        {renderTable(afterRows)}
       </div>
     </div>
   );
@@ -1787,15 +1795,13 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {((detail.adi_cd_before ?? []).some((r) => r.step_id.trim() || r.step_desc.trim())
-            || (detail.adi_cd_after ?? []).some((r) => r.step_id.trim() || r.step_desc.trim())
-            || detail.adi_cd_delete_all) && (
+          {((detail.adi_cd_before ?? []).some((r) => r.unregistered || r.step_id.trim() || r.step_desc.trim())
+            || (detail.adi_cd_after ?? []).some((r) => r.unregistered || r.step_id.trim() || r.step_desc.trim())) && (
             <div style={cardStyle}>
               <div style={sectionTitle}>{t('request.adi_cd_section_title')}</div>
               <AdiCdStepsTable
                 before={detail.adi_cd_before ?? []}
                 after={detail.adi_cd_after ?? []}
-                deleteAll={!!detail.adi_cd_delete_all}
               />
             </div>
           )}

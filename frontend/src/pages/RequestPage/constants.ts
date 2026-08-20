@@ -356,7 +356,6 @@ export const INITIAL_DETAIL: DetailFormState = {
   merge_unmatched_after: [],
   adi_cd_before: [],
   adi_cd_after: [],
-  adi_cd_delete_all: false,
 };
 
 /**

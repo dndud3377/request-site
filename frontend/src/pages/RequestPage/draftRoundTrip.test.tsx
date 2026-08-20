@@ -161,7 +161,6 @@ const fixtureDetail = {
   merge_unmatched_after: [{ id: 'J_a2', table: 'jayer', process_id: PROCESS_ID, sp: 'SP04', sd: 'SD04', pp: 'PP04', layerid: 'L04' }],
   adi_cd_before: [{ id: 'adi1', step_id: 'S1', step_desc: 'D1' }],
   adi_cd_after: [{ id: 'adi2', step_id: 'S2', step_desc: 'D2' }],
-  adi_cd_delete_all: false,
 };
 
 const fixtureJayerRows = [
