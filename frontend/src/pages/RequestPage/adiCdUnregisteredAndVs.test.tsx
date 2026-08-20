@@ -283,7 +283,7 @@ describe('ADI CD 변경 — 행 단위 미등록 선택', () => {
     await openAdiCdPanel(container);
 
     // 기본 템플릿 5행씩(before+after = 10개 delete 버튼) → ADI CD 전용 추가 버튼도 하나만 있어야 한다.
-    const addButtons = Array.from(container.querySelectorAll('button.adi-cd-add-row'));
+    const addButtons = Array.from(container.querySelectorAll('button.adi-cd-add-row')) as HTMLButtonElement[];
     expect(addButtons).toHaveLength(1);
     const removeButtonsBefore = container.querySelectorAll('.adi-cd-row-remove');
     expect(removeButtonsBefore).toHaveLength(10); // 5 + 5
