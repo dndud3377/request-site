@@ -1,7 +1,7 @@
 import { FilterSet, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep } from '../../types';
 import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, isStO, genId, VS_NA, VS_TARGET,
-  ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL,
+  ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
   MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE,
 } from './constants';
 
@@ -724,4 +724,21 @@ export const validateAdiCdRows = (rows: AdiCdStep[]): AdiCdValidationResult => {
   });
 
   return { incompleteIds, duplicateIds, validCount };
+};
+
+/**
+ * 변경전/변경후 표는 같은 인덱스끼리 짝을 이루므로(같은 STEP 위치를 가리킨다) 행 개수가
+ * 항상 같아야 한다. 짧은 쪽 끝에 빈 행을 채워 길이를 맞춘다(값을 지우지 않는 쪽으로만 조정).
+ * 이미 같은 길이면 원본 배열을 그대로(참조 동일하게) 돌려준다.
+ */
+export const balanceAdiCdRows = (
+  before: AdiCdStep[],
+  after: AdiCdStep[]
+): { before: AdiCdStep[]; after: AdiCdStep[] } => {
+  const diff = before.length - after.length;
+  if (diff === 0) return { before, after };
+  if (diff > 0) {
+    return { before, after: [...after, ...Array.from({ length: diff }, () => makeAdiCdStep())] };
+  }
+  return { before: [...before, ...Array.from({ length: -diff }, () => makeAdiCdStep())], after };
 };
