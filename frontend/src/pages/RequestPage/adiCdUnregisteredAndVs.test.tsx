@@ -277,6 +277,60 @@ describe('ADI CD 변경 — 행 단위 미등록 선택', () => {
     expect(rows[1]).toMatchObject({ step_id: '', step_desc: '', unregistered: true });
     expect(rows[2]).toMatchObject({ step_id: 'C', step_desc: 'Z', unregistered: false });
   });
+
+  it('행 추가 버튼 하나로 변경전/변경후 양쪽에 동시에 행이 늘어난다', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanel(container);
+
+    // 기본 템플릿 5행씩(before+after = 10개 delete 버튼) → ADI CD 전용 추가 버튼도 하나만 있어야 한다.
+    const addButtons = Array.from(container.querySelectorAll('button.adi-cd-add-row'));
+    expect(addButtons).toHaveLength(1);
+    const removeButtonsBefore = container.querySelectorAll('.adi-cd-row-remove');
+    expect(removeButtonsBefore).toHaveLength(10); // 5 + 5
+
+    await act(async () => { addButtons[0].click(); });
+    await flushEffects();
+
+    const removeButtonsAfter = container.querySelectorAll('.adi-cd-row-remove');
+    expect(removeButtonsAfter).toHaveLength(12); // 6 + 6, 양쪽 다 늘어남
+  });
+
+  it('반대쪽 같은 행이 비어 있으면 확인 없이 양쪽에서 바로 삭제된다', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanel(container);
+
+    const before = container.querySelectorAll('.adi-cd-row-remove').length;
+    const removeButtons = Array.from(container.querySelectorAll('.adi-cd-row-remove')) as HTMLButtonElement[];
+    await act(async () => { removeButtons[0].click(); }); // 변경전 0행 삭제 — 변경후 0행도 비어 있음
+    await flushEffects();
+
+    expect(container.querySelector('.modal-overlay, [role="dialog"]')).toBeNull();
+    expect(container.querySelectorAll('.adi-cd-row-remove')).toHaveLength(before - 2); // 양쪽에서 1행씩
+  });
+
+  it('반대쪽 같은 행에 값이 있으면 확인 모달을 띄우고, 확인해야 양쪽에서 지워진다', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanel(container);
+
+    // 변경후(뒤 5행) 0행에 값을 채운다 — .adi-cd-cell 순서는 변경전 5행(0~9) 다음 변경후 5행(10~19).
+    const cells = Array.from(container.querySelectorAll('.adi-cd-cell')) as HTMLInputElement[];
+    await act(async () => { fireEvent.change(cells[10], { target: { value: 'KEEP' } }); });
+    await flushEffects();
+
+    const before = container.querySelectorAll('.adi-cd-row-remove').length;
+    const removeButtons = Array.from(container.querySelectorAll('.adi-cd-row-remove')) as HTMLButtonElement[];
+    await act(async () => { removeButtons[0].click(); }); // 변경전 0행 삭제 시도 — 변경후 0행에 값이 있음
+    await flushEffects();
+
+    // 아직 지워지지 않았어야 한다(확인 대기 중).
+    expect(container.querySelectorAll('.adi-cd-row-remove')).toHaveLength(before);
+
+    const confirmBtn = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('확인')) as HTMLButtonElement;
+    await act(async () => { confirmBtn.click(); });
+    await flushEffects();
+
+    expect(container.querySelectorAll('.adi-cd-row-remove')).toHaveLength(before - 2);
+  });
 });
 
 // ===================== (2) Validation System =====================
@@ -307,7 +361,7 @@ const vsFixtureDoc = (detailOver: Record<string, unknown> = {}) => ({
       other_purpose: [], map_type: 'NEW',
       bb_zone: '존재', bb_entries: [],
       flow_chart: [], notifiers: [],
-      adi_cd_before: [], adi_cd_after: [], adi_cd_delete_all: false,
+      adi_cd_before: [], adi_cd_after: [],
       merge_unmatched_before: [], merge_unmatched_after: [],
       ...detailOver,
     },

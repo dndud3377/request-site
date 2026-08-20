@@ -1,7 +1,7 @@
 import {
   autoValidationSystem, isValidationKeywordRow, isValidationTarget, computeLayerMerge, MergeComparableRow,
   computeBeforeAfter, BaComparableRow,
-  parseClipboardTable, detectAdiCdHeader, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows,
+  parseClipboardTable, detectAdiCdHeader, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, balanceAdiCdRows,
   requiresBbEntries, findBbEntryViolations, findEmptyStNocViolations, findNocBorrowItemIdViolations,
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
@@ -689,6 +689,44 @@ describe('validateAdiCdRows', () => {
 
   it('빈 배열이면 전부 0', () => {
     expect(validateAdiCdRows([])).toEqual({ incompleteIds: [], duplicateIds: [], validCount: 0 });
+  });
+});
+
+describe('balanceAdiCdRows', () => {
+  const step = (over: Partial<AdiCdStep> = {}): AdiCdStep => ({ id: `id_${Math.random()}`, step_id: '', step_desc: '', ...over });
+
+  it('길이가 같으면 원본을 그대로(참조 동일) 돌려준다', () => {
+    const before = [step(), step()];
+    const after = [step(), step()];
+    const result = balanceAdiCdRows(before, after);
+    expect(result.before).toBe(before);
+    expect(result.after).toBe(after);
+  });
+
+  it('변경전이 더 길면 변경후 끝에 빈 행을 채운다', () => {
+    const before = [step({ step_id: 'A' }), step({ step_id: 'B' }), step({ step_id: 'C' })];
+    const after = [step({ step_id: 'X' })];
+    const result = balanceAdiCdRows(before, after);
+    expect(result.before).toBe(before); // 짧은 쪽만 조정, 긴 쪽은 원본 그대로
+    expect(result.after).toHaveLength(3);
+    expect(result.after[0].step_id).toBe('X');
+    expect(result.after[1]).toMatchObject({ step_id: '', step_desc: '', unregistered: false });
+    expect(result.after[2]).toMatchObject({ step_id: '', step_desc: '', unregistered: false });
+  });
+
+  it('변경후가 더 길면 변경전 끝에 빈 행을 채운다', () => {
+    const before = [step({ step_id: 'A' })];
+    const after = [step({ step_id: 'X' }), step({ step_id: 'Y' })];
+    const result = balanceAdiCdRows(before, after);
+    expect(result.after).toBe(after);
+    expect(result.before).toHaveLength(2);
+    expect(result.before[1]).toMatchObject({ step_id: '', step_desc: '' });
+  });
+
+  it('채워 넣은 빈 행마다 서로 다른 id 를 부여한다', () => {
+    const result = balanceAdiCdRows([], [step(), step(), step()]);
+    const ids = new Set(result.before.map((r) => r.id));
+    expect(ids.size).toBe(3);
   });
 });
 
