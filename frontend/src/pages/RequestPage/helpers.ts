@@ -651,7 +651,7 @@ export const detectAdiCdHeader = (grid: string[][]): AdiCdHeaderMatch | null => 
 export interface AdiCdPasteDecision {
   header: AdiCdHeaderMatch | null;
   columnCount: number;
-  /** 2열 + 헤더 인식 성공만 즉시 적용, 그 외(3열 이상 또는 헤더 인식 실패)는 컬럼 매핑 모달이 필요하다. */
+  /** 2열이면 헤더 인식 여부와 무관하게 즉시 적용, 3열 이상만 컬럼 매핑 모달이 필요하다. */
   needsModal: boolean;
 }
 
@@ -659,12 +659,14 @@ export interface AdiCdPasteDecision {
 export const decideAdiCdPaste = (grid: string[][]): AdiCdPasteDecision => {
   const columnCount = grid.reduce((max, row) => Math.max(max, row.length), 0);
   const header = detectAdiCdHeader(grid);
-  return { header, columnCount, needsModal: columnCount > 2 || !header };
+  return { header, columnCount, needsModal: columnCount > 2 };
 };
 
 /**
- * 헤더 행 아래(또는 지정한 시작 행부터) STEP_ID/STEP_DESC 두 열만 취해 `.trim()` 하고,
- * 두 값이 모두 빈 행은 드롭한다. 나머지 열은 전부 버린다.
+ * 헤더 행 아래(또는 지정한 시작 행부터) STEPSEQ/STEP 설명 두 열만 취해 `.trim()` 한다. 나머지 열은 전부 버린다.
+ * 두 값이 모두 빈 행은 '미등록' 행(수동 체크박스와 같은 상태)으로 만든다(2026-08-20) —
+ * 앞뒤 완전 빈 행은 parseClipboardTable 이 이미 걷어내므로, 여기 남는 빈 행은 표 중간에 있던
+ * 의도적인 빈 자리다. 한쪽만 빈 행은 미등록으로 바꾸지 않고 값 그대로 채운다(불완전 행 검증은 그대로).
  */
 export const buildAdiCdRows = (
   grid: string[][],
@@ -676,7 +678,10 @@ export const buildAdiCdRows = (
     const row = grid[i];
     const step_id = (row[mapping.stepIdCol] ?? '').trim();
     const step_desc = (row[mapping.stepDescCol] ?? '').trim();
-    if (!step_id && !step_desc) continue;
+    if (!step_id && !step_desc) {
+      rows.push({ id: genId(), step_id: '', step_desc: '', unregistered: true });
+      continue;
+    }
     rows.push({ id: genId(), step_id, step_desc, unregistered: false });
   }
   return rows;
