@@ -122,7 +122,8 @@ RTDB(REST API)  →  /api/queries
   **`product_design_rule` 과 `product_desc` 가 모두 사용 불가일 때만** 행을 제외한다.
 - 저장은 다른 라인과 동일하게 `_write_if_changed()` 를 사용하므로 **변경 감지 후 `DELETE(line='라인2') → INSERT`** 로 라인2 행만 갱신한다.
 - 라인2 의 `line` 컬럼 값은 `Line` 마스터·프론트엔드 표기와 동일한 **공백 없는 `'라인2'`** 이다.
-  (기존 라인들은 `scheduler.LINES` 에서 `'라인 1'` 처럼 공백이 있는 표기를 쓰고 있어 서로 다르다 — 아래 주의사항 참고.)
+  (2026-08 이전에는 `scheduler.LINES` 가 `'라인 1'` 처럼 공백이 있는 표기를 써서 서로 달랐으나,
+  지금은 나머지 라인들도 전부 공백 없는 표기로 통일됐다 — 아래 주의사항 참고.)
 
 ### `nv` (RTDB 단독 구조, 스텝 없음)
 
@@ -287,7 +288,13 @@ DCQ 로 자동 대체되지 않고 그 데이터는 동기화되지 않는다**(
   `gettext_lazy` 를 `_` 로 import 하므로, `dcq_id, _ = get_dcq_credentials()` 로 쓰면 `_` 가 비밀번호
   문자열로 덮여 이후 모든 `_("...")` 호출이 `TypeError: 'str' object is not callable` 로 실패한다.
   반드시 `dcq_id, _pw = get_dcq_credentials()` 형태로 받는다.
-- **라인명 표기가 두 가지로 섞여 있다.** `scheduler.LINES` 는 `'라인 1'`(공백 포함)을 쓰지만
-  `Line` 마스터·프론트엔드·라인2 동기화는 `'라인1'`(공백 없음)을 쓴다. `api_processproduct` /
-  `api_productprocessid` 의 `line` 컬럼에 두 표기가 함께 저장되므로, 조회 시 표기 불일치로
-  빈 결과가 나올 수 있다.
+- ✅ **(2026-08 수정 완료) 라인명 표기 불일치.** 예전에는 `scheduler.LINES`가 `'라인 1'`(공백
+  포함)을, `utils.LINE_SUFFIX_MAP`이 `'LINE1'`(영문)을 각각 다르게 써서, `LINE_SUFFIX_MAP[line]`
+  조회가 `nv`를 제외한 모든 라인에서 `KeyError`로 죽었다(스케줄러가 사실상 라인1·3·4·5를 전혀
+  동기화하지 못하던 상태). `Line` 마스터 시드(`seed_lines.py`)·프론트엔드 `OPTION_LINE`과 동일한
+  공백 없는 `'라인1'`~`'라인5'` 표기로 `LINES`/`STEP_TABLE_MAP`(scheduler.py)과 `LINE_SUFFIX_MAP`
+  (utils.py)을 통일했다. 아무도 호출하지 않던 `utils.get_line_suffix()`(이 불일치를 우회하려던
+  죽은 코드)도 함께 제거했다.
+- ✅ **(2026-08 수정 완료) `bq_login` import 오류.** `scheduler.py`가 `utils.py`에 존재하지 않는
+  `bq_login`을 import하고 있어(어디에도 쓰이지 않는 죽은 import) `scheduler.py` 자체가 로드조차
+  안 됐다 — `run_scheduler`가 기동 즉시 죽는 상태였다. 쓰이지 않는 import를 제거해 해결했다.
