@@ -1346,26 +1346,30 @@ def enqueue_voc_comment(voc, commenter_email, commenter_name=None):
 
 
 # --------------------------------------------------------------------------- #
-# 스케줄러 시스템 알림 (RTDB 동기화 실패, 2026-08 추가)
+# 스케줄러 시스템 알림 (RTDB/DCQ 동기화 실패, 2026-08 추가)
 # --------------------------------------------------------------------------- #
-def _resolve_rtdb_alert_recipients():
-    """RTDB 동기화 실패 알림 수신자: `.env` 의 `RTDB_SYNC_ALERT_MAIL`(콤마 구분)을 파싱한다."""
+def _resolve_sync_alert_recipients():
+    """동기화 실패 알림(RTDB/DCQ 공통) 수신자: `.env` 의 `RTDB_SYNC_ALERT_MAIL`(콤마 구분)을 파싱한다.
+
+    RTDB/DCQ 알림은 종류(제목·본문)만 다르고 같은 수신자를 쓴다 - 별도 env var 를 두지 않는다.
+    """
     raw = getattr(settings, 'RTDB_SYNC_ALERT_MAIL', '') or ''
     emails = [addr.strip() for addr in raw.split(',') if addr.strip()]
     return _apply_redirect(emails)
 
 
-def _render_rtdb_alert_email(failures):
-    """RTDB 동기화 실패 알림 메일 본문(HTML). failures: [{'line':.., 'target':..}, ...].
+def _render_sync_failure_email(source_label, headline, col1_label, failures):
+    """동기화 실패 알림 메일 본문(HTML) 공통 렌더러. RTDB/DCQ 알림이 공유한다.
 
+    failures: [{'context':.., 'target':..}, ...] - col1_label 이 'context' 컬럼의 표시명.
     document/voc 가 없는 시스템 알림이라 기존 템플릿을 재사용하지 않고 별도로 렌더링한다.
-    라인·데이터 종류는 이 파일 다른 곳과 동일하게 escape 한다.
+    context·데이터 종류는 이 파일 다른 곳과 동일하게 escape 한다.
     """
     theme = EVENT_THEME['rejected']
     hero_from, hero_to = theme['hero']
     rows_html = ''.join(
         '<tr>'
-        f'<td style="padding:8px 12px;border-bottom:1px solid #eef1f6;font-size:13px;color:#0f172a;">{escape(f["line"])}</td>'
+        f'<td style="padding:8px 12px;border-bottom:1px solid #eef1f6;font-size:13px;color:#0f172a;">{escape(f["context"])}</td>'
         f'<td style="padding:8px 12px;border-bottom:1px solid #eef1f6;font-size:13px;color:#0f172a;">{escape(f["target"])}</td>'
         '</tr>'
         for f in failures
@@ -1379,7 +1383,7 @@ def _render_rtdb_alert_email(failures):
     <td bgcolor="{hero_from}" style="background:linear-gradient(135deg,{hero_from} 0%,{hero_to} 100%);padding:30px 32px 26px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         <tr><td style="font-size:12px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.75);text-transform:uppercase;">제품 소개 지도 의뢰 시스템 · 스케줄러</td></tr>
-        <tr><td style="padding-top:12px;font-size:19px;line-height:1.45;font-weight:700;color:#ffffff;">RTDB 폼 옵션 동기화가 실패했습니다.</td></tr>
+        <tr><td style="padding-top:12px;font-size:19px;line-height:1.45;font-weight:700;color:#ffffff;">{escape(headline)}</td></tr>
       </table>
     </td>
   </tr>
@@ -1390,14 +1394,14 @@ def _render_rtdb_alert_email(failures):
           <div style="font-size:10.5px;font-weight:700;letter-spacing:.04em;color:{theme['label_color']};text-transform:uppercase;margin-bottom:10px;">실패 내역 ({len(failures)}건)</div>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
             <tr>
-              <td style="padding:6px 12px;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">라인</td>
+              <td style="padding:6px 12px;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">{escape(col1_label)}</td>
               <td style="padding:6px 12px;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">데이터</td>
             </tr>
             {rows_html}
           </table>
         </td></tr>
       </table>
-      <p style="margin:16px 0 0;font-size:12.5px;line-height:1.7;color:#64748b;">RTDB(REST API) 조회가 실패했거나 빈 결과를 반환해 위 데이터는 이번 주기(10분)에 동기화되지 않았습니다. 문제가 계속되면 RTDB 접속 상태를 확인해 주세요.</p>
+      <p style="margin:16px 0 0;font-size:12.5px;line-height:1.7;color:#64748b;">{escape(source_label)} 조회가 실패했거나 빈 결과를 반환해 위 데이터는 이번 주기에 동기화되지 않았습니다. 문제가 계속되면 {escape(source_label)} 접속 상태를 확인해 주세요.</p>
     </td>
   </tr>
   <tr>
@@ -1412,25 +1416,23 @@ def _render_rtdb_alert_email(failures):
 <![endif]-->'''
 
 
-def enqueue_rtdb_sync_failed(failures):
-    """RTDB 동기화 실패 알림 적재 (document=None).
+def _enqueue_sync_failure(event_type, subject_prefix, contents, failures):
+    """동기화 실패 알림 적재 공통 로직 (document=None). RTDB/DCQ 가 공유한다.
 
-    `RTDB_SYNC_ALERT_MAIL` 이 설정되지 않았으면 적재하지 않는다. RTDB 장애가 이어지는
-    동안은 `sync_rtdb_options()` 가 10분 주기마다 호출하므로 실패가 계속되면 매 주기 발송된다.
+    `RTDB_SYNC_ALERT_MAIL` 이 설정되지 않았으면 적재하지 않는다.
     """
-    recipients = _resolve_rtdb_alert_recipients()
+    recipients = _resolve_sync_alert_recipients()
     if not recipients:
         logger.info(
             "[mailer] RTDB_SYNC_ALERT_MAIL 미설정 또는 수신자 없음 - "
-            "RTDB 동기화 실패 알림 적재를 건너뜁니다 (failures=%s건)", len(failures)
+            "%s 알림 적재를 건너뜁니다 (failures=%s건)", subject_prefix, len(failures)
         )
         return None
-    subject = f'[RTDB 동기화 실패] {len(failures)}건'
-    contents = _render_rtdb_alert_email(failures)
+    subject = f'[{subject_prefix}] {len(failures)}건'
     from .models import MailNotification
     noti = MailNotification.objects.create(
         document=None,
-        event_type='rtdb_sync_failed',
+        event_type=event_type,
         recipients=recipients,
         subject=subject,
         contents=contents,
@@ -1438,6 +1440,30 @@ def enqueue_rtdb_sync_failed(failures):
     noti_id = noti.id
     transaction.on_commit(lambda: _send_now_async(noti_id))
     return noti
+
+
+def enqueue_rtdb_sync_failed(failures):
+    """RTDB 동기화 실패 알림 적재. failures: [{'context': 라인, 'target': 데이터종류}, ...].
+
+    RTDB 장애가 이어지는 동안은 `sync_rtdb_options()` 가 10분 주기마다 호출하므로
+    실패가 계속되면 매 주기 발송된다.
+    """
+    contents = _render_sync_failure_email(
+        'RTDB', 'RTDB 폼 옵션 동기화가 실패했습니다.', '라인', failures,
+    )
+    return _enqueue_sync_failure('rtdb_sync_failed', 'RTDB 동기화 실패', contents, failures)
+
+
+def enqueue_dcq_sync_failed(failures):
+    """DCQ 동기화 실패 알림 적재. failures: [{'context': 구분(라인 등, 없으면 '-'), 'target': 데이터종류}, ...].
+
+    sync_form_options()/sync_holidays()/sync_design_rule() 가 공통으로 호출한다(각자 자기
+    주기마다). RTDB 와 마찬가지로 실패가 계속되면 그 잡이 도는 주기마다 매번 발송된다.
+    """
+    contents = _render_sync_failure_email(
+        'DCQ', 'DCQ 동기화가 실패했습니다.', '구분', failures,
+    )
+    return _enqueue_sync_failure('dcq_sync_failed', 'DCQ 동기화 실패', contents, failures)
 
 
 # --------------------------------------------------------------------------- #

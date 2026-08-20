@@ -26,9 +26,11 @@ RTDB_REQUEST_TIMEOUT = 30
 
 # RTDB refresh_token 자체의 유효기간(초) = 90일. RTDB 쪽 정책(access_token 은 별도로 1시간).
 RTDB_REFRESH_TOKEN_TTL = 7_776_000
-# refresh_token 유효기간이 끝나기 전에 미리 재로그인하기 위한 여유(초) = 45일.
-# 즉 refresh_token 발급 후 45일이 지나면(유효기간의 절반), 만료를 기다리지 않고 먼저 재로그인한다.
-RTDB_REFRESH_TOKEN_RENEW_MARGIN = 45 * 86400
+# refresh_token 유효기간이 끝나기 전에 미리 재로그인하기 위한 여유(초) = 7일.
+# 즉 refresh_token 발급 후 83일(=90-7)이 지나면 만료를 기다리지 않고 먼저 재로그인한다.
+# (2026-08 축소: 45일 → 7일. 풀 로그인 대신 refresh 를 최대한 오래 쓰도록 해 풀 로그인
+# 빈도 자체를 더 줄인다 - 90일 중 83일을 refresh 로 버틴다.)
+RTDB_REFRESH_TOKEN_RENEW_MARGIN = 7 * 86400
 
 # RTDB access_token/refresh_token 인메모리 캐시. run_scheduler 프로세스가 살아있는 동안 유지되며,
 # 프로세스가 재시작되면 비워져 다음 호출은 처음부터 풀 로그인(rtdb_login_with_retry)부터 시작한다.
@@ -41,13 +43,13 @@ _DCQ_LOGIN_LOCK = threading.Lock()
 # verify=False 사용에 따른 InsecureRequestWarning 억제 (사내 인증서 정책)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# 라인명 → DB 테이블 접미사 매핑
+# 라인명(Line 마스터·프론트엔드 OPTION_LINE 과 동일 표기, 공백 없음) → DB 테이블 접미사 매핑
 LINE_SUFFIX_MAP = {
-    'LINE1': 'line1',
-    'LINE2': 'line2',
-    'LINE3': 'line3',
-    'LINE4': 'line4',
-    'LINE5': 'line5',
+    '라인1': 'line1',
+    '라인2': 'line2',
+    '라인3': 'line3',
+    '라인4': 'line4',
+    '라인5': 'line5',
     'nv': 'lineN',
 }
 
@@ -348,31 +350,6 @@ def get_data_from_rtdb(query_payload, access_token):
     except Exception as e:
         logger.error(f"[RTDB] 데이터 조회 실패: {e}", exc_info=True)
         return None
-
-
-def get_line_suffix(line):
-    """
-    라인명을 DB 테이블 접미사로 변환
-    
-    Args:
-        line: 라인명 (예: 'LINE1', '라인 1')
-    
-    Returns:
-        접미사 (예: 'line1') 또는 None
-    """
-    # 영문 라인명 직접 매핑
-    if line in LINE_SUFFIX_MAP:
-        return LINE_SUFFIX_MAP[line]
-    
-    # 한글 라인명 변환 (예: '라인 1' → 'line1')
-    korean_map = {
-        '라인 1': 'line1',
-        '라인 2': 'line2',
-        '라인 3': 'line3',
-        '라인 4': 'line4',
-        '라인 5': 'line5',
-    }
-    return korean_map.get(line)
 
 
 def calculate_business_due_date(start_date, n_days):
