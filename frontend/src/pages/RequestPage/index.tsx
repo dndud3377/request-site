@@ -98,7 +98,7 @@ import {
 import {
   formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, findNocBorrowItemIdViolations, findEmptyStNocViolations,
   requiresBbEntries, findBbEntryViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
-  parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, AdiCdHeaderMatch,
+  parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, balanceAdiCdRows, AdiCdHeaderMatch,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
   sourceCodeFromPartid, computeExpectedRequestPurpose,
 } from './helpers';
@@ -327,6 +327,7 @@ export default function RequestPage(): React.ReactElement {
   // ADI CD 변경(기타 목적) — 변경전/변경후 스텝 표
   const [adiCdMapModal, setAdiCdMapModal] = useState<{ side: 'before' | 'after'; grid: string[][]; header: AdiCdHeaderMatch | null; startIndex: number } | null>(null);
   const [adiCdPendingApply, setAdiCdPendingApply] = useState<{ side: 'before' | 'after'; rows: AdiCdStep[]; startIndex: number } | null>(null); // 붙여넣기 범위에 값이 있을 때 겹쳐쓰기 확인
+  const [adiCdRemoveConfirm, setAdiCdRemoveConfirm] = useState<{ index: number } | null>(null); // 행 삭제 시 반대쪽에 값이 있을 때 확인
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -926,6 +927,12 @@ export default function RequestPage(): React.ReactElement {
           Array.isArray(parsed.detail?.bb_entries)
             ? parsed.detail.bb_entries.map((e: { id?: string; location: string; product: string; process_id: string }) => ({ ...e, id: e.id ?? genId() }))
             : [];
+        // 변경전/변경후 표는 같은 인덱스끼리 짝을 이루어야 한다 — 이 규칙 도입 전 문서는 개수가
+        // 다를 수 있어 로드 시점에 짧은 쪽을 채워 맞춘다.
+        const loadedAdiCd = balanceAdiCdRows(
+          parsed.detail?.adi_cd_before ?? [],
+          parsed.detail?.adi_cd_after ?? []
+        );
         if (parsed.detail) {
           // 구버전 문서는 other_purpose 가 문자열이므로 배열로 정규화(런타임 오류 방지)
           const normalizedOtherPurpose = Array.isArray(parsed.detail.other_purpose)
@@ -957,9 +964,10 @@ export default function RequestPage(): React.ReactElement {
             merge_unmatched_before: parsed.detail.merge_unmatched_before ?? [],
             merge_unmatched_after: parsed.detail.merge_unmatched_after ?? [],
             // ADI CD 변경 도입 전 문서는 값이 없다 → 같은 이유로 빈 값 백필.
-            adi_cd_before: parsed.detail.adi_cd_before ?? [],
-            adi_cd_after: parsed.detail.adi_cd_after ?? [],
-            adi_cd_delete_all: parsed.detail.adi_cd_delete_all ?? false,
+            // (2026-08) 두 표는 같은 인덱스끼리 짝을 이루어야 하므로, 이 규칙 도입 전에 저장돼
+            // 개수가 다를 수 있는 문서는 로드 시점에 짧은 쪽을 채워 맞춘다(값 삭제 없음).
+            adi_cd_before: loadedAdiCd.before,
+            adi_cd_after: loadedAdiCd.after,
             // prodc_scope 도입 전 문서는 값이 없다 → 저장된 리전 값으로 역추론해 백필한다.
             // (백필하지 않으면 '미선택' 게이트에 걸려 기존 C가문 문서의 입력이 잠겨 보인다)
             prodc_scope: parsed.detail.prodc_scope || inferProdcScope(parsed.detail),
@@ -1698,7 +1706,6 @@ export default function RequestPage(): React.ReactElement {
             ...mapInfoDefaults(),
             adi_cd_before: Array.from({ length: ADI_CD_TEMPLATE_ROWS }, () => makeAdiCdStep()),
             adi_cd_after: Array.from({ length: ADI_CD_TEMPLATE_ROWS }, () => makeAdiCdStep()),
-            adi_cd_delete_all: false,
           }
         : {}),
     }));
@@ -1738,7 +1745,6 @@ export default function RequestPage(): React.ReactElement {
         ? {
             adi_cd_before: INITIAL_DETAIL.adi_cd_before,
             adi_cd_after: INITIAL_DETAIL.adi_cd_after,
-            adi_cd_delete_all: INITIAL_DETAIL.adi_cd_delete_all,
           }
         : {}),
     }));
@@ -2995,21 +3001,53 @@ export default function RequestPage(): React.ReactElement {
     detail[adiCdSideKey(side)].some((r) => r.step_id.trim() || r.step_desc.trim());
 
   const adiCdHasData = () =>
-    adiCdSideHasData('before') || adiCdSideHasData('after') || detail.adi_cd_delete_all;
+    adiCdSideHasData('before') || adiCdSideHasData('after');
+
+  /** '미등록' 체크든 실제 값이든, 지우면 잃어버릴 게 있는 행인가(행 삭제 확인 판정용). */
+  const adiCdRowIsMeaningful = (row: AdiCdStep) =>
+    row.unregistered || !!row.step_id.trim() || !!row.step_desc.trim();
 
   const handleAdiCdCellChange = (side: 'before' | 'after', id: string, field: 'step_id' | 'step_desc', value: string) => {
     const key = adiCdSideKey(side);
     setDetail((prev) => ({ ...prev, [key]: prev[key].map((r) => (r.id === id ? { ...r, [field]: value } : r)) }));
   };
 
-  const handleAdiCdAddRow = (side: 'before' | 'after') => {
-    const key = adiCdSideKey(side);
-    setDetail((prev) => ({ ...prev, [key]: [...prev[key], makeAdiCdStep()] }));
+  // 변경전/변경후는 같은 인덱스끼리 짝을 이루어야 하므로(§행 수 동일 규칙) 행 추가는
+  // 항상 양쪽에 동시에 일어난다 — 버튼도 하나로 통합했다.
+  const handleAdiCdAddRow = () => {
+    setDetail((prev) => ({
+      ...prev,
+      adi_cd_before: [...prev.adi_cd_before, makeAdiCdStep()],
+      adi_cd_after: [...prev.adi_cd_after, makeAdiCdStep()],
+    }));
   };
 
+  /** 실제로 행을 지운다 — index 는 두 표에서 공통이다(짝을 이루므로). */
+  const removeAdiCdRowAt = (index: number) => {
+    setDetail((prev) => ({
+      ...prev,
+      adi_cd_before: prev.adi_cd_before.filter((_, i) => i !== index),
+      adi_cd_after: prev.adi_cd_after.filter((_, i) => i !== index),
+    }));
+  };
+
+  // 삭제 요청: 반대쪽 같은 인덱스 행에 잃어버릴 값이 있으면 확인 모달, 없으면 바로 양쪽에서 지운다.
   const handleAdiCdRemoveRow = (side: 'before' | 'after', id: string) => {
-    const key = adiCdSideKey(side);
-    setDetail((prev) => ({ ...prev, [key]: prev[key].filter((r) => r.id !== id) }));
+    const index = detail[adiCdSideKey(side)].findIndex((r) => r.id === id);
+    if (index === -1) return;
+    const otherSide = side === 'before' ? 'after' : 'before';
+    const otherRow = detail[adiCdSideKey(otherSide)][index];
+    if (otherRow && adiCdRowIsMeaningful(otherRow)) {
+      setAdiCdRemoveConfirm({ index });
+      return;
+    }
+    removeAdiCdRowAt(index);
+  };
+
+  const handleAdiCdRemoveConfirm = () => {
+    if (!adiCdRemoveConfirm) return;
+    removeAdiCdRowAt(adiCdRemoveConfirm.index);
+    setAdiCdRemoveConfirm(null);
   };
 
   // 행 단위 '미등록' 토글. 켜면 그 행의 STEP_ID/STEP_DESC 를 비운다 — 미등록은 값이 없는 것이
@@ -3024,26 +3062,22 @@ export default function RequestPage(): React.ReactElement {
     }));
   };
 
-  // 전체 삭제 토글: 켜면 AFTER 를 비우고, 끄면 빈 템플릿으로 되돌린다(변경전이 비어 있으면 Panel 이 토글을 막는다).
-  const handleAdiCdToggleDeleteAll = (next: boolean) => {
-    setDetail((prev) => ({
-      ...prev,
-      adi_cd_delete_all: next,
-      adi_cd_after: next ? [] : Array.from({ length: ADI_CD_TEMPLATE_ROWS }, () => makeAdiCdStep()),
-    }));
-  };
-
   // startIndex 부터 rows.length 개만 덮어쓴다(엑셀 붙여넣기와 동일) — 그 앞뒤 기존 행은 그대로 둔다.
+  // 이 붙여넣기로 이 쪽 표가 반대쪽보다 길어지면, 반대쪽 끝에 빈 행을 채워 개수를 다시 맞춘다.
   const commitAdiCdRows = (side: 'before' | 'after', rows: AdiCdStep[], startIndex: number) => {
     const key = adiCdSideKey(side);
-    setDetail((prev) => ({
-      ...prev,
-      [key]: [
+    setDetail((prev) => {
+      const merged = [
         ...prev[key].slice(0, startIndex),
         ...rows,
         ...prev[key].slice(startIndex + rows.length),
-      ],
-    }));
+      ];
+      const balanced = balanceAdiCdRows(
+        side === 'before' ? merged : prev.adi_cd_before,
+        side === 'after' ? merged : prev.adi_cd_after
+      );
+      return { ...prev, adi_cd_before: balanced.before, adi_cd_after: balanced.after };
+    });
   };
 
   // 파싱된 행을 실제로 적용 — 500행 초과·0행 거부, 붙여넣는 범위에 이미 값이 있으면 확인 모달 후 그 범위만 덮어쓴다.
@@ -3514,7 +3548,9 @@ export default function RequestPage(): React.ReactElement {
 
   /**
    * ADI CD 변경 게이트 — 켜져 있으면 항상 적용된다(다른 목적과 함께 선택해도).
-   * BEFORE/AFTER 각각 독립 검사(AFTER 는 전체 삭제 시 검사 제외): 유효 행 1개 이상 / 불완전 행 0개 / STEP_ID 중복 0개.
+   * BEFORE/AFTER 각각 독립 검사: 유효 행 1개 이상 / 불완전 행 0개 / STEP_ID 중복 0개.
+   * 행 개수 동일 검사는 안전망이다 — 행 추가/삭제/붙여넣기가 항상 양쪽을 함께 맞추므로
+   * (§helpers.ts balanceAdiCdRows) 정상 흐름에서는 걸릴 일이 없다.
    */
   const addAdiCdGateError = (
     newErrors: Partial<Record<string, string>>,
@@ -3537,7 +3573,12 @@ export default function RequestPage(): React.ReactElement {
       }
     };
     checkSide('before', detail.adi_cd_before);
-    if (!detail.adi_cd_delete_all) checkSide('after', detail.adi_cd_after);
+    checkSide('after', detail.adi_cd_after);
+    if (detail.adi_cd_before.length !== detail.adi_cd_after.length) {
+      const msg = t('request.adi_cd_gate_length_mismatch') as string;
+      newErrors['adi_cd_after'] = msg;
+      errorMessages.push(msg);
+    }
   };
 
   // redirectStep: 오류를 고칠 수 있는 단계가 currentStep 이 아닐 때만 채워진다(현재는 Backbone 조합 영역 → STEP1).
@@ -4532,7 +4573,6 @@ export default function RequestPage(): React.ReactElement {
           handleAdiCdAddRow={handleAdiCdAddRow}
           handleAdiCdRemoveRow={handleAdiCdRemoveRow}
           handleAdiCdPasteRaw={handleAdiCdPasteRaw}
-          handleAdiCdToggleDeleteAll={handleAdiCdToggleDeleteAll}
           handleAdiCdToggleUnregistered={handleAdiCdToggleUnregistered}
           GuideTourBadge={<StepTourBadge step={1} />}
           GuideBadge={GuideBadge}
@@ -5560,6 +5600,15 @@ export default function RequestPage(): React.ReactElement {
         onConfirm={() => { if (adiCdPendingApply) commitAdiCdRows(adiCdPendingApply.side, adiCdPendingApply.rows, adiCdPendingApply.startIndex); }}
         title={t('request.adi_cd_replace_title')}
         message={t('request.adi_cd_replace_msg')}
+        danger
+      />
+
+      <ConfirmModal
+        isOpen={adiCdRemoveConfirm !== null}
+        onClose={() => setAdiCdRemoveConfirm(null)}
+        onConfirm={handleAdiCdRemoveConfirm}
+        title={t('request.adi_cd_remove_row_title')}
+        message={t('request.adi_cd_remove_row_msg')}
         danger
       />
 
