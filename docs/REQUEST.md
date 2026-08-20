@@ -95,7 +95,7 @@ pages/RequestPage/
 - **뼈찜(Bb)**: `bbRows`, `bbExternalData`, `bbExternalLoading`, `activeBbTab`, `bbChecked`, `bbAutoFillRanges`, `showAutoFillPanel`, `bbSearchQueries`, `stagedMappings`, `mappedJayerRowIds`, `selectedJayerRowId`, `bbExtCache`(ref), `bbExtPrevPid`(ref)
 - **참조문서 병합**: `refDocId`, `refDocLabel`, `refJayerRows`, `refOayerRows`, `mergeConfirmOpen`, `mergePreview`, `mergeSnapshot`, `mergeReselectConfirm`, `mergeModeConfirm`
 - **BEFORE/AFTER 비교**: `baSelBefore`, `baSelAfter`, `baSameCount`
-- **ADI CD 변경**: `adiCdMapModal`, `adiCdPendingApply` (2026-08-20: `adiCdLeaveConfirm` 제거 — 진입/해제 확인은 `onlyMapConfirm` 으로 통합됨)
+- **ADI CD 변경**: `adiCdMapModal`, `adiCdPendingApply`, `adiCdRemoveConfirm`(2026-08-20 신설 — 행 삭제 시 반대쪽에 값이 있을 때 확인) (2026-08-20: `adiCdLeaveConfirm` 제거 — 진입/해제 확인은 `onlyMapConfirm` 으로 통합됨)
 - **C가문(PRODC)**: `prodcScopeConfirm`
 - **Final**: `finalGds` (등록 전 입력 중인 GDS version 값 — 등록된 목록 자체는 `detail.final_entries`)
 - **TBV/TLV**: `tbvtlvSdsSelected`, `tbvtlvNoteRows`, `tbvtlvWarnModal`
@@ -111,7 +111,7 @@ pages/RequestPage/
 | `handleJayer*` | 11 | J-layer 행 편집/붙여넣기/체크/드래그/일괄처리 |
 | `handleOayer*` | 11 | O-layer (J-layer와 대칭 구조) |
 | `handleBb*` | 8 | 뼈찜 표 + entry + 외부 데이터 매핑 |
-| `handleAdiCd*` | 6 | ADI CD 셀 편집·행 추가/삭제·전체삭제 토글·붙여넣기·컬럼 매핑 |
+| `handleAdiCd*` | 7 | ADI CD 셀 편집·행 추가(양쪽 동시)/삭제(양쪽 동시+삭제확인)·미등록 토글·붙여넣기·컬럼 매핑 (2026-08-20: 전체삭제 토글 제거, 삭제확인 핸들러 추가) |
 | `handleFlow*` | 4 | Flow chart 행 |
 | `handleMap*` / `handleMerge*` / `handleProdc*` / `handleBa*` | 각 3 | `handleBa*` = BEFORE/AFTER 선택·적용·해제 |
 | `handleFilter*` / `handleDetail*` / `handleApply*` | 각 2 | |
@@ -274,6 +274,74 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 기능 개선 (2026-08-20 — ADI CD 변경 표: 변경전/변경후 행 수 항상 동일)
+
+- **요청**: ADI CD 표는 변경전/변경후 행 수가 항상 같아야 한다(같은 인덱스끼리 짝을 이뤄야 전/후가
+  무조건 비교되기 때문). 동기화 방식은 **동시 조작**(추가/삭제 조작 자체가 항상 양쪽에 함께 일어남 —
+  상신 시점 검증만으로는 부족)으로, 기존 "전체 삭제"(변경후 전체를 지우는) 기능은 **완전히 제거**하고
+  필요하면 행 단위 삭제로 대신한다.
+- **짝 맞춤 헬퍼**(`helpers.ts` 신규 `balanceAdiCdRows(before, after)`): 두 배열 길이가 다르면 짧은
+  쪽 끝에 `makeAdiCdStep()` 빈 행을 채워 길이를 맞추는 순수 함수. 이미 같은 길이면 인자를 그대로
+  반환한다(참조 동일성 보존 — `React` 재계산·테스트 `toBe` 양쪽에 필요).
+- **행 추가 통합**(`index.tsx` `handleAdiCdAddRow`, `AdiCdPanel.tsx`): 표마다 따로 있던 "+ 행 추가"
+  버튼 2개를 1개로 합쳐 `adi_cd_before`/`adi_cd_after` 양쪽에 동시에 빈 행을 추가한다.
+- **행 삭제 동기화 + 확인 모달**(`index.tsx` `handleAdiCdRemoveRow`/`removeAdiCdRowAt`/
+  `adiCdRowIsMeaningful`/신규 state `adiCdRemoveConfirm`): 삭제는 항상 같은 인덱스의 두 행을 함께
+  지운다. 반대쪽 같은 행에 잃어버릴 값(`unregistered` 이거나 `step_id`/`step_desc` 중 하나라도 채움)이
+  있으면 확인 모달(`request.adi_cd_remove_row_title`/`_msg`)을 띄운 뒤 확인해야 지우고, 없으면 바로
+  양쪽에서 지운다.
+- **붙여넣기도 짝을 맞춘다**(`index.tsx` `commitAdiCdRows`): 붙여넣은 쪽 표를 갱신한 뒤
+  `balanceAdiCdRows`를 호출해 반대쪽 끝에 빈 행을 채워 길이를 다시 맞춘다.
+- **전체 삭제 기능 제거**(`constants.ts`, `types/index.ts`, `index.tsx`, `AdiCdPanel.tsx`): 저장
+  필드 `adi_cd_delete_all`·`INITIAL_DETAIL.adi_cd_delete_all`·`handleAdiCdToggleDeleteAll`·"전체
+  삭제" 체크박스와 안내문(`adi_cd_delete_all`/`adi_cd_delete_all_note` i18n 키 포함)을 모두 제거했다.
+  `addAdiCdGateError`의 AFTER 검사도 더 이상 `!detail.adi_cd_delete_all` 조건 없이 항상 돈다.
+  안전망으로 게이트에 행 개수 불일치 검사(`request.adi_cd_gate_length_mismatch`)를 추가했다 — 정상
+  흐름(추가/삭제/붙여넣기가 항상 양쪽을 맞춤)에서는 걸릴 일이 없지만, 아래 잠재 주의사항의 레거시
+  문서 로드 경로를 대비한 이중 방어다.
+- **레거시 문서 로드 시 짝 맞춤**(`index.tsx` 문서 로드부): 이 규칙 도입 전 저장된 문서는 두 표 길이가
+  다를 수 있어, 불러올 때 `balanceAdiCdRows`로 짧은 쪽을 채워 화면에 짝을 맞춰 보여준다.
+- **읽기 전용 상세보기**(`PagedDetailView.tsx` `AdiCdStepsTable`): 기존엔 각 표를 독립적으로 필터링해
+  빈 행을 걸러냈는데(짝이 어긋날 수 있었다), 이제 `balanceAdiCdRows`로 짝을 맞춘 뒤
+  `isRowUsed(before[i], after[i])`를 **인덱스 쌍으로 함께 평가**해 두 표에 같은 인덱스 집합을
+  적용한다(화면 표시용 필터일 뿐 저장값은 건드리지 않음). 섹션 노출 조건에도 `unregistered` 여부를
+  추가했다 — 전체 삭제가 없어져 모든 행이 미등록으로만 표시되는 문서도 이 카드가 뜨게 하기 위함.
+- **영향 파일**: `frontend/src/pages/RequestPage/helpers.ts`, `helpers.test.ts`, `constants.ts`,
+  `index.tsx`, `components/AdiCdPanel.tsx`, `components/Step1.tsx`, `draftRoundTrip.test.tsx`,
+  `adiCdUnregisteredAndVs.test.tsx`, `frontend/src/components/PagedDetailView.tsx`,
+  `frontend/src/types/index.ts`, `frontend/src/locales/{ko,en}.json`. 백엔드·마이그레이션 변경 없음
+  (저장 형식은 그대로 `AdiCdStep[]` 두 배열 — `adi_cd_delete_all` 필드만 앞으로 저장하지 않는다).
+- **검증(2026-08-20 실행)**: `npx tsc --noEmit` — 작업 전/후 모두 7개(신규 0, `git stash` 대조 확인).
+  `npx eslint`(핵심 소스 파일, 테스트 파일 제외) — 작업 전/후 모두 19건(14 error/5 warning, 신규 0).
+  `adiCdUnregisteredAndVs.test.tsx` 포함 시 베이스라인 86건 → 작업 후 122건, 늘어난 36건은 신규 테스트
+  3건이 이 파일의 기존 스타일(`container.querySelectorAll`+`act` 래핑)을 그대로 따른 것이라 신규
+  위반이 아니다(앞선 STEPSEQ 작업 때와 같은 판단). `CI=true npx react-scripts test --watchAll=false` —
+  9 suites 전부 통과(신규 3건: 행 추가 버튼 통합 확인, 반대쪽이 빈 행일 때 확인 없이 즉시 삭제, 반대쪽에
+  값이 있을 때 확인 모달 후 삭제). `helpers.test.ts`에 `balanceAdiCdRows` 단위 테스트 4건 추가(길이
+  같으면 참조 동일 반환 `toBe`, before/after 각각 더 길 때 패딩 값·`genId()` 고유성 확인).
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [`/request` → 요청 목적 'ADI CD 변경' 선택] → [기대 결과: 변경전/변경후 표 아래에 "+ 행 추가"
+     버튼이 하나만 보인다(표마다 따로 있던 버튼 없음). "전체 삭제" 체크박스는 더 이상 없다.]
+  2. ["+ 행 추가" 클릭] → [기대 결과: 변경전/변경후 표 양쪽에 동시에 빈 행이 하나씩 늘어난다.]
+  3. [변경후 표 임의 행에만 값을 채운 뒤, 변경전 표의 같은 행 삭제(휴지통) 버튼 클릭] → [기대 결과:
+     확인 모달("행 삭제 — 반대쪽 표의 같은 행에 입력한 값이 함께 삭제됩니다")이 뜬다. 확인을 누르면
+     그 인덱스의 행이 변경전/변경후 양쪽에서 함께 사라진다.]
+  4. [양쪽 다 비어 있는 행의 삭제 버튼 클릭] → [기대 결과: 확인 모달 없이 바로 그 행이 양쪽에서
+     사라진다.]
+  5. [변경전 표에 엑셀에서 여러 행을 붙여넣어 변경후보다 행 수가 늘어나게 함] → [기대 결과: 붙여넣기
+     직후 변경후 표 끝에 빈 행이 자동으로 채워져 두 표의 행 수가 다시 같아진다.]
+  6. [행 수가 다르게 저장된 과거 문서(2026-08-04~19 사이 작성분)를 불러오기] → [기대 결과: 짧은 쪽
+     끝에 빈 행이 채워져 화면에서는 두 표 행 수가 같게 보인다. 결재 현황/이력 상세보기에서도 동일하게
+     짝이 맞춰 표시된다.]
+- **잠재 주의사항**:
+  - 행 수 불일치 상신 게이트(`request.adi_cd_gate_length_mismatch`)는 정상 UI 조작으로는 도달할 수
+    없는 안전망이다 — 만약 이 오류가 실제로 뜬다면 UI 동기화 로직에 새 우회 경로가 생겼다는 신호이므로
+    원인을 봐야 한다.
+  - 과거(2026-08-04~19)에 저장된 행 수 불일치 문서는 **저장값 자체를 마이그레이션하지 않는다** —
+    화면(작성/상세보기)에서만 짧은 쪽을 채워 보여준다. 그 문서를 열어 아무 것도 바꾸지 않고 다시
+    임시저장/상신하면, 그 시점부터 저장값도 짝이 맞은 상태로 갱신된다(`setDetail` 이 화면 표시용 값을
+    그대로 상태로 갖고 있으므로).
 
 ### 기능 개선 (2026-08-20 — ADI CD 변경 표: 컬럼명·붙여넣기 동작 개선)
 
@@ -2071,7 +2139,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   이 목적은 **단독 전용이 아니다** — 다른 기타 목적과 함께 선택할 수 있다. **백엔드·마이그레이션 변경 없음**
   (`detail`은 `additional_notes` JSON 문자열로 저장되고, 결재 라우팅은 `request_purpose`만 사용한다).
 
-- **저장 필드**(`DetailFormState`): `adi_cd_before`/`adi_cd_after`(`AdiCdStep[]`, `{ id, step_id, step_desc }`) · `adi_cd_delete_all`(boolean).
+- **저장 필드**(`DetailFormState`): `adi_cd_before`/`adi_cd_after`(`AdiCdStep[]`, `{ id, step_id, step_desc }`). (2026-08-20: `adi_cd_delete_all`(boolean) 필드 제거 — §4.1 "변경전/변경후 행 수 항상 동일" 참조. 두 배열은 항상 같은 길이를 유지한다.)
   구버전 문서는 로드 시 `[]`/`false`로 백필한다.
 
 - **진입/해제**(`index.tsx`): 기타 목적 버튼에서 `ADI CD 변경`을 켜면 `handleSelectAdiCdPurpose`가 양쪽 표에 빈 5행
