@@ -110,8 +110,9 @@ export const ADI_CD_MAX_ROWS = 500;
 // 헤더 탐색 시 위에서부터 볼 최대 행 수(제목 행·빈 행이 섞여 있을 수 있어 첫 행만 보지 않는다)
 export const ADI_CD_HEADER_SCAN_ROWS = 5;
 // 헤더 라벨 — 의뢰자가 엑셀 원본과 대조해야 하므로 번역하지 않는다.
-export const ADI_CD_STEP_ID_LABEL = 'STEP_ID';
-export const ADI_CD_STEP_DESC_LABEL = 'STEP_DESC';
+// (2026-08-20) J-layer 필터 UI(FilterManageModal)가 이미 쓰는 용어로 통일했다 — 이전 값은 STEP_ID/STEP_DESC.
+export const ADI_CD_STEP_ID_LABEL = 'STEPSEQ';
+export const ADI_CD_STEP_DESC_LABEL = 'STEP 설명';
 
 export { ST_CELL_COLOR } from '../../utils/stCellColor';
 
