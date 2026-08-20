@@ -48,9 +48,9 @@ class LineAdmin(admin.ModelAdmin):
 
 @admin.register(AdminNotice)
 class AdminNoticeAdmin(admin.ModelAdmin):
-    list_display = ['title', 'template', 'date', 'created_at']
-    list_filter = ['template', 'date']
-    ordering = ['-date', '-created_at']
+    list_display = ['title', 'template', 'date', 'is_pinned', 'created_at']
+    list_filter = ['template', 'date', 'is_pinned']
+    ordering = ['-is_pinned', '-date', '-created_at']
 
 
 @admin.register(MailNotification)

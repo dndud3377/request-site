@@ -344,7 +344,7 @@ class LineSerializer(serializers.ModelSerializer):
 class AdminNoticeSerializer(serializers.ModelSerializer):
     class Meta:
         model = AdminNotice
-        fields = ['id', 'template', 'date', 'title', 'content', 'items',
+        fields = ['id', 'template', 'date', 'title', 'content', 'items', 'is_pinned',
                   'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 

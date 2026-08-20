@@ -104,6 +104,16 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
     setRightPanel('form');
   };
 
+  const handleTogglePin = async (notice: AdminNotice) => {
+    try {
+      const r = await noticesAPI.update(notice.id, { is_pinned: !notice.is_pinned });
+      onRefresh();
+      if (r.data) setSelected(r.data);
+    } catch (err) {
+      console.error('Failed to toggle notice pin:', err);
+    }
+  };
+
   const handleDelete = async () => {
     if (!deleteNoticeTarget) return;
     try {
@@ -135,6 +145,7 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
       title: formTitle.trim(),
       content: formTemplate === 'notice' ? formContent : '',
       items,
+      is_pinned: formMode === 'edit' && selected ? selected.is_pinned : false,
     };
 
     try {
@@ -216,7 +227,10 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                     onClick={() => { setSelected(n); setRightPanel('detail'); }}
                   >
                     <span className="notice-list-date">{n.date}</span>
-                    <span className="notice-list-title">{n.title}</span>
+                    <span className="notice-list-title">
+                      {n.is_pinned && <span title={t('notice.pinned')}>📌 </span>}
+                      {n.title}
+                    </span>
                     <span className="notice-list-type">
                       {n.template === 'release_note' ? t('notice.label_release') : t('notice.label_notice')}
                     </span>
@@ -251,6 +265,7 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                       [{selected.template === 'release_note' ? t('notice.label_release') : t('notice.label_notice')}]
                     </span>
                     {' · '}{selected.date}
+                    {selected.is_pinned && <span> · 📌 {t('notice.pinned')}</span>}
                   </div>
                   <div className="notice-detail-title">{selected.title}</div>
 
@@ -285,6 +300,12 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                       onClick={() => setDeleteNoticeTarget(selected)}
                     >
                       {t('common.delete')}
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleTogglePin(selected)}
+                    >
+                      {selected.is_pinned ? t('notice.unpin') : t('notice.pin')}
                     </button>
                     <button
                       className="btn btn-secondary btn-sm"

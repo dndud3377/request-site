@@ -20,8 +20,12 @@
 | `title` | CharField | 제목 |
 | `content` | TextField | 본문 (notice 유형 전용, Rich Text HTML) |
 | `items` | JSONField | 항목 목록 (release_note 유형 전용) |
+| `is_pinned` | BooleanField | 상단 고정 여부 (기본 `False`) |
 | `created_at` | DateTimeField | 작성 시각 |
 | `updated_at` | DateTimeField | 최종 수정 시각 |
+
+정렬(`ordering` / 목록 API): `-is_pinned, -date, -created_at` — 고정된 공지가 항상 먼저, 그 안에서는 날짜·작성 시각 최신순.
+`is_pinned` 은 정렬 순서에만 영향을 주며, Navbar 배지·자동 오픈 판정(`updated_at` 기준)에는 영향을 주지 않는다.
 
 `items` 배열 요소: `{ category: 'new' | 'updated' | 'bugfix', content: string }`
 
@@ -31,7 +35,7 @@
 
 | 메서드 | URL | 설명 | 권한 |
 |--------|-----|------|------|
-| GET | `/api/notices/` | 목록 (최신 날짜 순) | 전체 |
+| GET | `/api/notices/` | 목록 (고정 우선, 그 다음 최신 날짜 순) | 전체 |
 | POST | `/api/notices/` | 생성 | MASTER |
 | GET | `/api/notices/{id}/` | 상세 | 전체 |
 | PATCH | `/api/notices/{id}/` | 수정 | MASTER |
@@ -76,12 +80,12 @@ contentChanged = maxUpdatedAt > notice_last_seen_updated_at
 ┌──────────────────────────────────────────────────────────────┐
 │ 📣 공지사항                                            [×]  │
 ├────────────────────┬─────────────────────────────────────────┤
-│ [전체][릴리즈][공지]│ [Notice] · 2026-06-23                  │
+│ [전체][릴리즈][공지]│ [Notice] · 2026-06-23 · 📌 고정됨      │
 │                    │ 제목                                    │
 │ 2026-06-23         │ ───────────────────────────────────    │
-│ 제목        Notice │ 본문 내용...                            │
+│ 📌 제목     Notice │ 본문 내용...                            │
 │                    │                                         │
-│ [+ 공지 작성]      │                          [삭제] [편집] │
+│ [+ 공지 작성]      │              [삭제] [고정] [편집]      │
 ├────────────────────┴─────────────────────────────────────────┤
 │ ☐ 오늘 하루 보지 않기                               [확인] │
 └──────────────────────────────────────────────────────────────┘
@@ -90,7 +94,8 @@ contentChanged = maxUpdatedAt > notice_last_seen_updated_at
 - `[확인]` 또는 `[×]` 클릭 시 모달 닫힘.
 - `[×]` 와 overlay 클릭은 체크박스 무관하게 "미체크"로 처리.
 - 체크박스 체크 + `[확인]` → 내일 자정까지 자동 오픈 억제.
-- MASTER 역할만 작성/편집/삭제 버튼 노출.
+- MASTER 역할만 작성/편집/삭제/고정 버튼 노출.
+- `[고정]` / `[고정 해제]` 클릭 시 즉시 `PATCH /api/notices/{id}/`로 `is_pinned` 토글 (별도 폼 진입 불필요). 고정된 공지는 목록에서 📌 아이콘으로 표시되며, 여러 건을 동시에 고정할 수 있다 — 고정된 것들끼리는 날짜 최신순.
 
 ---
 

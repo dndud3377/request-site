@@ -2756,7 +2756,7 @@ class LineViewSet(viewsets.ReadOnlyModelViewSet):
 
 class AdminNoticeViewSet(viewsets.ModelViewSet):
     """공지사항 (읽기: 모두, 쓰기: MASTER 전용)"""
-    queryset = AdminNotice.objects.order_by('-date', '-created_at')
+    queryset = AdminNotice.objects.order_by('-is_pinned', '-date', '-created_at')
     serializer_class = AdminNoticeSerializer
     permission_classes = [IsMasterOrReadOnly]
     pagination_class = None
