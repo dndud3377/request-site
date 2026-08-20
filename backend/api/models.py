@@ -93,6 +93,11 @@ class RequestDocument(models.Model):
     # (2026-08) '수정'이 빠지면서 저장값이 예전 'MAP 삭제/수정' 에서 'MAP 삭제' 로 바뀌었다.
     MAP_DELETE_EDIT_PURPOSE = 'MAP 삭제'
 
+    # 요청 목적 'ADI CD 변경' 값 (PL 검토 후 R·O 없이 P·J 만 병렬로 진행).
+    # 프론트엔드 `RequestPage/constants.ts` 의 ADI_CD_CHANGE_PURPOSE 와 같은 값이어야 한다.
+    # (2026-08) 기타 목적이었다가 단독 요청 목적으로 승격됐다.
+    ADI_CD_CHANGE_PURPOSE = 'ADI CD 변경'
+
     # 기타 목적 '연구소 제품' — C가문과 마찬가지로 상신 시 후결자 지정이 필수다.
     OTHER_PURPOSE_LAB = '연구소 제품'
 
@@ -176,6 +181,17 @@ class RequestDocument(models.Model):
         """
         inner_detail = self.get_detail().get('detail', {})
         return inner_detail.get('request_purpose') == self.MAP_DELETE_EDIT_PURPOSE
+
+    def is_adi_cd_change(self):
+        """요청 목적이 'ADI CD 변경' 인지 여부.
+
+        이 의뢰서는 ADI CD 변경전/변경후 표만 채우고 MAP 정보·J-layer·O-layer·Backbone 을
+        작성하지 않으므로 결재 경로가 다르다 — PL 합의 후 R·O 없이 P·J 만 병렬로 진행하고,
+        둘 다 합의하면 승인한다. E(MASK)와 후결자(RA)는 생성하지 않는다
+        (Jayer 가 비어 있어 판정 키워드가 없고, other_purpose 가 비어 있어 후결자 조건도 없다).
+        """
+        inner_detail = self.get_detail().get('detail', {})
+        return inner_detail.get('request_purpose') == self.ADI_CD_CHANGE_PURPOSE
 
     def requires_post_approver(self):
         """상신 시 후결자 지정이 필수인가 — C가문(only_prodc=YES) 또는 기타 목적 '연구소 제품'.
