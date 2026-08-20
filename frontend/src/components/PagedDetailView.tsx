@@ -6,7 +6,7 @@ import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, Flow
 import Modal from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
-import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY } from '../pages/RequestPage/constants';
+import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget, deriveMergeKind } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
@@ -112,7 +112,7 @@ function AdiCdStepsTable({ before, after, deleteAll }: { before: AdiCdStep[]; af
 
   const renderTable = (rows: AdiCdStep[]) => (
     <table className="table" style={{ fontSize: '0.8rem' }}>
-      <thead><tr><th>STEP_ID</th><th>STEP_DESC</th></tr></thead>
+      <thead><tr><th>{ADI_CD_STEP_ID_LABEL}</th><th>{ADI_CD_STEP_DESC_LABEL}</th></tr></thead>
       <tbody>
         {rows.map((r) => (
           <tr key={r.id}>
