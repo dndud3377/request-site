@@ -357,6 +357,8 @@
     "map_only_leave_confirm_msg": "Switching to another request purpose will clear the 'Lab Product' selection and the post-approvers you assigned. Do you want to continue?",
     "map_delete_leave_confirm_title": "Change Request Purpose",
     "map_delete_leave_confirm_msg": "Switching to another request purpose will reset the MAP info, including the MAP deletion reason. Do you want to continue?",
+    "adi_cd_request_purpose_confirm_title": "ADI CD Change",
+    "adi_cd_request_purpose_confirm_msg": "Selecting ADI CD Change will reset and disable Other Purpose, MAP info, J-layer, O-layer, and Backbone info. Only the before/after table will be required, and you'll submit right after filling it in. Do you want to continue?",
     "lab_product_only_map_hint": "'Lab Product' can only be selected when the request purpose is Only MAP.",
     "only_map_confirm_msg": "Selecting Only MAP will reset and disable Other Purpose, Flow Chart, Notes, Backbone, and Reference Request. Do you want to continue?",
     "map_x_sign_error": "North/South X values must have the same absolute value with opposite signs.",
