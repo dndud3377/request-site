@@ -43,13 +43,13 @@ _DCQ_LOGIN_LOCK = threading.Lock()
 # verify=False 사용에 따른 InsecureRequestWarning 억제 (사내 인증서 정책)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# 라인명 → DB 테이블 접미사 매핑
+# 라인명(Line 마스터·프론트엔드 OPTION_LINE 과 동일 표기, 공백 없음) → DB 테이블 접미사 매핑
 LINE_SUFFIX_MAP = {
-    'LINE1': 'line1',
-    'LINE2': 'line2',
-    'LINE3': 'line3',
-    'LINE4': 'line4',
-    'LINE5': 'line5',
+    '라인1': 'line1',
+    '라인2': 'line2',
+    '라인3': 'line3',
+    '라인4': 'line4',
+    '라인5': 'line5',
     'nv': 'lineN',
 }
 
@@ -350,31 +350,6 @@ def get_data_from_rtdb(query_payload, access_token):
     except Exception as e:
         logger.error(f"[RTDB] 데이터 조회 실패: {e}", exc_info=True)
         return None
-
-
-def get_line_suffix(line):
-    """
-    라인명을 DB 테이블 접미사로 변환
-    
-    Args:
-        line: 라인명 (예: 'LINE1', '라인 1')
-    
-    Returns:
-        접미사 (예: 'line1') 또는 None
-    """
-    # 영문 라인명 직접 매핑
-    if line in LINE_SUFFIX_MAP:
-        return LINE_SUFFIX_MAP[line]
-    
-    # 한글 라인명 변환 (예: '라인 1' → 'line1')
-    korean_map = {
-        '라인 1': 'line1',
-        '라인 2': 'line2',
-        '라인 3': 'line3',
-        '라인 4': 'line4',
-        '라인 5': 'line5',
-    }
-    return korean_map.get(line)
 
 
 def calculate_business_due_date(start_date, n_days):
