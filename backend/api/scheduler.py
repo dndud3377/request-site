@@ -15,7 +15,6 @@ from dotenv import load_dotenv
 from django.utils.translation import gettext_lazy as _
 
 from .utils import (
-    bq_login,
     get_dcq_credentials,
     dcq_login_with_retry,
     get_dcq_token_info,
@@ -34,7 +33,7 @@ load_dotenv()
 # (Line 마스터·프론트엔드 표기와 일치하도록 공백 없는 'nv' 로 저장한다.)
 LINE_NV = 'nv'
 
-LINES = ['라인 1', '라인 3', '라인 4', '라인 5', LINE_NV]
+LINES = ['라인1', '라인3', '라인4', '라인5', LINE_NV]
 
 # 라인2 는 소스 테이블 구조가 달라 RTDB 를 쓰지 않고 DCQ 단독으로 동기화한다.
 # (Line 마스터·프론트엔드 표기와 일치하도록 공백 없는 '라인2' 로 저장한다.)
@@ -102,10 +101,10 @@ RTDB_STEP_TABLE = "O_{suffix}.W"
 
 # 스텝(라인별 단독 테이블) 매핑 - 라인별로 서로 다른 테이블에 저장한다.
 STEP_TABLE_MAP = {
-    '라인 1': 'api_teps1',
-    '라인 3': 'api_steps3',
-    '라인 4': 'api_steps4',
-    '라인 5': 'api_steps5',
+    '라인1': 'api_teps1',
+    '라인3': 'api_steps3',
+    '라인4': 'api_steps4',
+    '라인5': 'api_steps5',
 }
 STEP_COLUMNS = ['processid', 'stepseq', 'descript', 'recipeid', 'areaname', 'eqptype', 'updated', 'layerid']
 
