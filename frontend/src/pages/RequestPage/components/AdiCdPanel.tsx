@@ -14,7 +14,8 @@ export interface AdiCdPanelProps {
   onCellChange: (side: AdiCdSide, id: string, field: AdiCdField, value: string) => void;
   onAddRow: (side: AdiCdSide) => void;
   onRemoveRow: (side: AdiCdSide, id: string) => void;
-  onPasteRaw: (side: AdiCdSide, raw: string) => void;
+  /** startRowId: 붙여넣기 시점에 포커스돼 있던 행의 id(어느 셀에서 Ctrl+V 했는지). 못 찾으면 null(표 처음부터). */
+  onPasteRaw: (side: AdiCdSide, raw: string, startRowId: string | null) => void;
   onToggleDeleteAll: (next: boolean) => void;
   /** 행 단위 '미등록' 토글 — 켜면 그 행의 STEP_ID/STEP_DESC 를 비우고 잠근다. */
   onToggleUnregistered: (side: AdiCdSide, id: string, next: boolean) => void;
@@ -44,7 +45,11 @@ const AdiCdPanel: React.FC<AdiCdPanelProps> = ({
   const handlePaste = (side: AdiCdSide) => (e: React.ClipboardEvent<HTMLTableElement>) => {
     e.preventDefault();
     const raw = e.clipboardData.getData('text/plain');
-    if (raw) onPasteRaw(side, raw);
+    if (!raw) return;
+    // 붙여넣기 시점에 포커스가 있던 셀이 속한 행을 찾는다 — 그 행부터 값을 채운다.
+    const targetEl = e.target as HTMLElement;
+    const startRowId = targetEl.closest('tr')?.getAttribute('data-row-id') ?? null;
+    onPasteRaw(side, raw, startRowId);
   };
 
   const cellClass = (validation: ReturnType<typeof validateAdiCdRows> | null, id: string): string => {
@@ -66,7 +71,7 @@ const AdiCdPanel: React.FC<AdiCdPanelProps> = ({
       </thead>
       <tbody>
         {rows.map((row) => (
-          <tr key={row.id}>
+          <tr key={row.id} data-row-id={row.id}>
             {/* 미등록 행은 두 칸을 하나로 합쳐 '미등록'만 보여준다 — 값이 없는 것이 정상 상태라
                 빈 입력칸 2개를 남겨두면 "덜 채운 행"으로 오해된다. */}
             {row.unregistered ? (

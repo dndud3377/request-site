@@ -458,7 +458,7 @@ export interface DetailFormState {
   adi_cd_delete_all: boolean;
 }
 
-/** ADI CD 변경 스텝 표 1행 — STEP_ID/STEP_DESC 2컬럼 고정. */
+/** ADI CD 변경 스텝 표 1행 — STEPSEQ/STEP 설명 2컬럼 고정. */
 export interface AdiCdStep {
   id: string;
   step_id: string;

@@ -7,7 +7,7 @@ import {
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
   isPairAfterInactive,
 } from './helpers';
-import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED } from './constants';
+import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
 import { AdiCdStep, MergePair, MergeRowInfo } from '../../types';
 
 describe('isValidationKeywordRow', () => {
@@ -566,27 +566,27 @@ describe('parseClipboardTable', () => {
 
 describe('detectAdiCdHeader', () => {
   it('첫 행에서 헤더를 찾는다', () => {
-    expect(detectAdiCdHeader([['STEP_ID', 'STEP_DESC'], ['S1', 'D1']]))
+    expect(detectAdiCdHeader([[ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL], ['S1', 'D1']]))
       .toEqual({ headerRow: 0, stepIdCol: 0, stepDescCol: 1 });
   });
 
   it('공백·언더스코어·대소문자를 정규화해 매칭한다', () => {
-    expect(detectAdiCdHeader([['step id', 'Step-Desc']]))
+    expect(detectAdiCdHeader([['stepseq', 'step 설명']]))
       .toEqual({ headerRow: 0, stepIdCol: 0, stepDescCol: 1 });
   });
 
   it('열 순서가 뒤바뀌어도 인덱스로 정확히 잡는다', () => {
-    expect(detectAdiCdHeader([['STEP_DESC', 'STEP_ID']]))
+    expect(detectAdiCdHeader([[ADI_CD_STEP_DESC_LABEL, ADI_CD_STEP_ID_LABEL]]))
       .toEqual({ headerRow: 0, stepIdCol: 1, stepDescCol: 0 });
   });
 
   it('제목 행·빈 행이 섞여 있어도 최대 5행 안에서 찾는다', () => {
-    expect(detectAdiCdHeader([['제목'], [''], ['번호', 'STEP_ID', 'STEP_DESC', '비고'], ['1', 'S1', 'D1', '']]))
+    expect(detectAdiCdHeader([['제목'], [''], ['번호', ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, '비고'], ['1', 'S1', 'D1', '']]))
       .toEqual({ headerRow: 2, stepIdCol: 1, stepDescCol: 2 });
   });
 
   it('5행을 넘어가면 찾지 못한다', () => {
-    const grid = [['1'], ['2'], ['3'], ['4'], ['5'], ['STEP_ID', 'STEP_DESC']];
+    const grid = [['1'], ['2'], ['3'], ['4'], ['5'], [ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL]];
     expect(detectAdiCdHeader(grid)).toBeNull();
   });
 
@@ -597,17 +597,19 @@ describe('detectAdiCdHeader', () => {
 
 describe('decideAdiCdPaste', () => {
   it('2열 + 헤더 인식 성공 → 모달 불필요', () => {
-    const d = decideAdiCdPaste([['STEP_ID', 'STEP_DESC'], ['S1', 'D1']]);
+    const d = decideAdiCdPaste([[ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL], ['S1', 'D1']]);
     expect(d.needsModal).toBe(false);
     expect(d.columnCount).toBe(2);
   });
 
-  it('2열 + 헤더 없음 → 모달 필요', () => {
-    expect(decideAdiCdPaste([['S1', 'D1']]).needsModal).toBe(true);
+  it('2열 + 헤더 없음 → 모달 불필요(2열이면 헤더 유무와 무관하게 즉시 적용)', () => {
+    const d = decideAdiCdPaste([['S1', 'D1']]);
+    expect(d.needsModal).toBe(false);
+    expect(d.header).toBeNull();
   });
 
   it('3열 이상 + 헤더 인식 성공 → 모달 필요(단, 인식된 열 정보는 함께 돌려준다)', () => {
-    const d = decideAdiCdPaste([['번호', 'STEP_ID', 'STEP_DESC'], ['1', 'S1', 'D1']]);
+    const d = decideAdiCdPaste([['번호', ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL], ['1', 'S1', 'D1']]);
     expect(d.needsModal).toBe(true);
     expect(d.header).toEqual({ headerRow: 0, stepIdCol: 1, stepDescCol: 2 });
   });
@@ -622,7 +624,7 @@ describe('decideAdiCdPaste', () => {
 describe('buildAdiCdRows', () => {
   it('지정한 시작 행부터 두 열만 취해 trim 한다', () => {
     const rows = buildAdiCdRows(
-      [['STEP_ID', 'STEP_DESC'], [' S1 ', ' D1 '], ['S2', 'D2']],
+      [[ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL], [' S1 ', ' D1 '], ['S2', 'D2']],
       { stepIdCol: 0, stepDescCol: 1 },
       1
     );
@@ -632,9 +634,18 @@ describe('buildAdiCdRows', () => {
     ]);
   });
 
-  it('두 값이 모두 빈 행은 드롭한다', () => {
+  it('두 값이 모두 빈 행은 미등록 행으로 만든다(드롭하지 않는다)', () => {
     const rows = buildAdiCdRows([['', ''], ['S1', 'D1'], [' ', ' ']], { stepIdCol: 0, stepDescCol: 1 }, 0);
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({ step_id: '', step_desc: '', unregistered: true });
+    expect(rows[1]).toMatchObject({ step_id: 'S1', step_desc: 'D1', unregistered: false });
+    expect(rows[2]).toMatchObject({ step_id: '', step_desc: '', unregistered: true });
+  });
+
+  it('한쪽만 빈 행은 미등록으로 만들지 않고 값 그대로 채운다', () => {
+    const rows = buildAdiCdRows([['', 'B'], ['A', '']], { stepIdCol: 0, stepDescCol: 1 }, 0);
+    expect(rows[0]).toMatchObject({ step_id: '', step_desc: 'B', unregistered: false });
+    expect(rows[1]).toMatchObject({ step_id: 'A', step_desc: '', unregistered: false });
   });
 
   it('매핑된 두 열 외 나머지 열은 버린다', () => {

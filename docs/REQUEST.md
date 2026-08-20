@@ -275,6 +275,71 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 개선 (2026-08-20 — ADI CD 변경 표: 컬럼명·붙여넣기 동작 개선)
+
+- **요청**: ① 컬럼명을 STEP_ID/STEP_DESC → STEPSEQ/STEP 설명으로(J-layer 필터 UI와 용어 통일).
+  ② 2열 붙여넣기는 헤더 인식 여부와 무관하게 컬럼 매핑 모달 없이 즉시 적용. ③ 컬럼 매핑 모달의
+  미리보기가 3행까지만 보이던 것을 전체(스크롤)로. ④ 붙여넣은 행 중 두 칸이 모두 빈 행은 드롭하지
+  않고 '미등록' 행으로 자동 등록(한쪽만 빈 행은 미등록 처리하지 않고 값 그대로 채운다). ⑤ 붙여넣기가
+  항상 표 전체를 교체하던 것을, 포커스된 행부터 붙여넣은 행 개수만큼만 덮어쓰도록(엑셀과 동일한 방식).
+- **컬럼명**(`constants.ts`): `ADI_CD_STEP_ID_LABEL`/`ADI_CD_STEP_DESC_LABEL` 값을 `'STEPSEQ'`/
+  `'STEP 설명'`으로 변경. 헤더 자동인식(`detectAdiCdHeader`)·컬럼매핑 모달 드롭다운·표 헤더는 이
+  상수를 그대로 쓰므로 자동 반영. 하드코딩돼 있던 곳(`PagedDetailView.tsx`의 상세보기 표, `ko/en.json`의
+  안내문구 3곳)도 함께 바꿨다 — 안 바꾸면 결재자 화면과 붙여넣기 안내가 옛 이름을 계속 보여준다.
+- **2열 붙여넣기 즉시 적용**(`helpers.ts` `decideAdiCdPaste`): `needsModal` 판정에서 `!header` 조건을
+  뺐다(`columnCount > 2`만 남음). 헤더가 인식되면 그 행만 건너뛰고, 인식되지 않으면 1열=STEPSEQ·
+  2열=STEP 설명으로 전체를 데이터로 본다(`index.tsx` `handleAdiCdPasteRaw`가 이 매핑 fallback을 만든다).
+- **미리보기 전체 표시**(`AdiCdColumnMapModal.tsx`): `PREVIEW_ROWS = 3` 제한 제거, 컨테이너에
+  `max-height: 50vh` + 세로 스크롤 추가(500행까지 붙여넣을 수 있어 무제한 표시는 모달을 무한정
+  늘려버린다).
+- **두 칸 다 빈 행 → 미등록 자동 등록**(`helpers.ts` `buildAdiCdRows`): 기존엔 두 값이 모두 빈 행을
+  드롭했는데, 이제 `{ step_id: '', step_desc: '', unregistered: true }` 행으로 만든다(기존 수동
+  '미등록' 체크박스와 완전히 같은 상태 — 렌더링·검증 로직은 이미 `unregistered` 를 그대로 지원하므로
+  추가 변경이 필요 없었다). 앞뒤 완전 빈 행은 `parseClipboardTable` 이 이미 걷어내므로, 여기 남는
+  빈 행은 표 중간에 있던 의도적인 빈 자리만 해당한다. **한쪽만 빈 행은 미등록으로 바꾸지 않는다** —
+  처음엔 한쪽만 빈 행도 미등록으로 자동 표시(값은 살려둔 채)하는 방향으로 설계했으나, 사용자가
+  "그건 아니고 빈칸을 그대로 채워 넣기만 하면 된다"고 정정해 최종적으로는 두 칸 다 빈 경우만
+  해당한다(불완전 행 검증은 종전과 동일하게 유지).
+- **행 단위 붙여넣기**(`AdiCdPanel.tsx`, `index.tsx`): 각 `<tr>`에 `data-row-id`를 부여하고,
+  `onPaste` 핸들러가 `e.target.closest('tr')`로 포커스돼 있던 행의 id를 찾아 `onPasteRaw(side, raw,
+  startRowId)`로 전달한다. `handleAdiCdPasteRaw`가 이 id를 현재 표의 인덱스로 환산해(`adiCdStartIndex`)
+  `adiCdMapModal`/`adiCdPendingApply` 상태에 `startIndex`로 함께 보관한다. `commitAdiCdRows`는
+  전체 교체 대신 `[...존재.slice(0, startIndex), ...붙여넣은행, ...존재.slice(startIndex + 붙여넣은행.length)]`
+  로 딱 그 범위만 덮어쓴다 — 그 앞뒤 기존 행은 그대로 남는다. `requestAdiCdApply`의 "겹쳐쓰기 확인"
+  모달도 표 전체가 아니라 **붙여넣는 범위 안에 값이 있을 때만** 뜨도록 판정을 좁혔다(i18n
+  `request.adi_cd_replace_title`/`_msg` 문구도 "전체 교체"에서 "값 겹쳐쓰기"로 수정).
+- **영향 파일**: `frontend/src/pages/RequestPage/constants.ts`, `helpers.ts`, `helpers.test.ts`,
+  `index.tsx`, `components/AdiCdPanel.tsx`, `components/AdiCdColumnMapModal.tsx`,
+  `adiCdUnregisteredAndVs.test.tsx`, `frontend/src/components/PagedDetailView.tsx`,
+  `frontend/src/types/index.ts`(주석), `frontend/src/locales/{ko,en}.json`. 백엔드·마이그레이션
+  변경 없음(표시·파싱 로직만 바뀌고 저장 형식은 그대로 `AdiCdStep[]`).
+- **검증(2026-08-20 실행)**: `npx tsc --noEmit` — 작업 전/후 모두 7개(신규 0, `git stash` 대조 확인).
+  `npx eslint`(수정한 소스 파일) — 작업 전/후 모두 경고 5건(신규 0). 테스트 파일의
+  `testing-library/*` 규칙 위반은 이 파일에 이미 50건 있던 기존 스타일(기존 테스트 전부가
+  `container.querySelectorAll` + `act` 래핑을 쓴다)을 신규 테스트 3건도 그대로 따른 것이라 신규
+  위반이 아니다(베이스라인 50건 → 작업 후 67건, 늘어난 17건은 전부 신규 테스트 3건 몫).
+  `CI=true npx react-scripts test --watchAll=false` — 9 suites / **233건 전부 통과**(신규 3건:
+  2열 즉시적용+행단위 덮어쓰기, 두 칸 다 빈 행→미등록 자동등록). `helpers.test.ts`에도
+  `buildAdiCdRows`/`decideAdiCdPaste` 신규·수정 케이스 반영.
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [`/request` → 요청 목적 'ADI CD 변경' → 변경전 표 헤더 확인] → [기대 결과: `STEPSEQ`/`STEP 설명`
+     으로 보인다(예전 `STEP_ID`/`STEP_DESC` 아님).]
+  2. [엑셀에서 2열(헤더 없이 값만) 복사 → 표에 Ctrl+V] → [기대 결과: 컬럼 매핑 모달 없이 바로
+     반영된다.]
+  3. [엑셀에서 3열 이상 복사 → 붙여넣기] → [기대 결과: 컬럼 매핑 모달이 뜨고, 미리보기에 붙여넣은
+     행이 전부(3행 넘게) 보이며 스크롤된다.]
+  4. [엑셀에서 `A/X`, `(빈칸)/(빈칸)`, `C/Z` 3행을 복사해 붙여넣기] → [기대 결과: 1·3행은 정상,
+     2행만 회색 '미등록'으로 표시되고 체크박스가 켜져 있다.]
+  5. [표 2행 칸을 클릭한 뒤 엑셀에서 2행짜리 값을 붙여넣기] → [기대 결과: 1행은 그대로, 2행부터
+     붙여넣은 값으로 바뀌고, 필요하면 표가 자동으로 늘어난다. 그 범위에 이미 값이 있었으면
+     "값 겹쳐쓰기" 확인 모달이 뜬다.]
+- **잠재 주의사항**:
+  - 과거 문서(2026-08-04~19)에 저장된 ADI CD 표는 컬럼명이 화면에 표시될 때만 새 이름으로
+    보이고, 저장된 값(`step_id`/`step_desc` 필드명) 자체는 바뀌지 않는다 — 마이그레이션 불필요.
+  - 두 칸 다 빈 행 자동 미등록 규칙은 `parseClipboardTable`이 앞뒤 완전 빈 행을 이미 제거한
+    뒤에 적용되므로, 붙여넣기 범위의 맨 위/맨 아래에 있던 빈 줄은 애초에 반영되지 않는다(중간에
+    있는 빈 줄만 대상).
+
 ### 기능 변경 (2026-08-20 — '기타 목적 > ADI CD 변경'을 '요청 목적 > ADI CD 변경'으로 승격 + MAP 정보까지 생략)
 
 - **요청**: ADI CD 변경을 기타 목적에서 요청 목적으로 승격(`MAP 삭제`와 `기타` 사이). ADI CD 변경을
