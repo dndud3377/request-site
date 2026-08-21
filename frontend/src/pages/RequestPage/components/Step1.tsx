@@ -70,10 +70,11 @@ interface Step1Props {
   handleAdiCdRemoveRow: (side: AdiCdSide, id: string) => void;
   handleAdiCdPasteRaw: (side: AdiCdSide, raw: string, startRowId: string | null) => void;
   handleAdiCdToggleUnregistered: (side: 'before' | 'after', id: string, next: boolean) => void;
-  /** '동일 변경 적용 대상' 표 — 행마다 독립적으로 fetch된 조리법 옵션(행 id로 키). */
-  adiCdTargetProcessIdOptions: Record<string, string[]>;
+  /** '동일 변경 적용 대상' 표 — 표 안 행은 읽기 전용이고, 이 draft(입력 중인 값)만 편집한다. */
+  adiCdTargetDraft: { partid_selection: string; process_id: string };
+  adiCdTargetDraftProcessIdOptions: string[];
+  handleAdiCdTargetDraftChange: (field: 'partid_selection' | 'process_id', value: string) => void;
   handleAdiCdTargetAdd: () => void;
-  handleAdiCdTargetChange: (id: string, field: 'partid_selection' | 'process_id', value: string) => void;
   handleAdiCdTargetDelete: (id: string) => void;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
@@ -138,9 +139,10 @@ const Step1: React.FC<Step1Props> = ({
   handleAdiCdRemoveRow,
   handleAdiCdPasteRaw,
   handleAdiCdToggleUnregistered,
-  adiCdTargetProcessIdOptions,
+  adiCdTargetDraft,
+  adiCdTargetDraftProcessIdOptions,
+  handleAdiCdTargetDraftChange,
   handleAdiCdTargetAdd,
-  handleAdiCdTargetChange,
   handleAdiCdTargetDelete,
   GuideTourBadge,
   GuideBadge,
@@ -387,12 +389,13 @@ const Step1: React.FC<Step1Props> = ({
                   firstPartidSelection={detail.partid_selection}
                   firstProcessId={detail.process_id}
                   targets={detail.adi_cd_extra_targets}
+                  draftPartidSelection={adiCdTargetDraft.partid_selection}
+                  draftProcessId={adiCdTargetDraft.process_id}
                   productOptions={productOptions}
-                  processIdOptions={adiCdTargetProcessIdOptions}
+                  draftProcessIdOptions={adiCdTargetDraftProcessIdOptions}
+                  onDraftChange={handleAdiCdTargetDraftChange}
                   onAdd={handleAdiCdTargetAdd}
-                  onChange={handleAdiCdTargetChange}
                   onDelete={handleAdiCdTargetDelete}
-                  error={errors.adi_cd_extra_targets}
                 />
               </div>
             )}
