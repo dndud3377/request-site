@@ -333,6 +333,92 @@ describe('ADI CD 변경 — 행 단위 미등록 선택', () => {
   });
 });
 
+describe('ADI CD 변경 — 동일 변경 적용 대상', () => {
+  beforeEach(() => { mockState.captured = null; mockState.doc = null; mockState.jobFile = []; localStorage.clear(); });
+
+  async function openAdiCdPanel(container: HTMLElement) {
+    await fillStep1Basics(container);
+    await act(async () => { buttonWith(container, '기타').click(); });
+    await flushEffects();
+    await act(async () => { buttonWith(container, 'ADI CD 변경').click(); });
+    await flushEffects();
+  }
+
+  const targetRows = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.adi-cd-targets-table tbody tr'));
+
+  it('1행은 위쪽에서 이미 고른 제품 이름/조리법을 읽기 전용으로 보여준다', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanel(container);
+
+    const rows = targetRows(container);
+    expect(rows).toHaveLength(1); // 처음엔 1행(기존값)뿐
+    const fixedCells = rows[0].querySelectorAll('.adi-cd-targets-fixed');
+    expect(fixedCells[0].textContent).toBe(PRODUCT);
+    expect(fixedCells[1].textContent).toBe(PROCESS_ID);
+  });
+
+  it('+ 추가로 2행을 만들어 제품 이름/조리법을 입력하면 저장된다', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanel(container);
+
+    await act(async () => { (container.querySelector('.adi-cd-targets-add') as HTMLButtonElement).click(); });
+    await flushEffects();
+
+    const rows = targetRows(container);
+    expect(rows).toHaveLength(2);
+    const inputs = rows[1].querySelectorAll('input');
+    await act(async () => { fireEvent.change(inputs[0], { target: { value: '제품B' } }); });
+    await flushEffects();
+    await act(async () => { fireEvent.change(inputs[1], { target: { value: 'PROC_B1' } }); });
+    await flushEffects();
+
+    const detail = await saveDraftAndCaptureDetail();
+    const extras = detail.adi_cd_extra_targets as { partid_selection: string; process_id: string }[];
+    expect(extras).toHaveLength(1);
+    expect(extras[0]).toMatchObject({ partid_selection: '제품B', process_id: 'PROC_B1' });
+  });
+
+  it('추가 행의 제품 이름을 바꾸면 그 행의 조리법 입력값이 비워진다', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanel(container);
+
+    await act(async () => { (container.querySelector('.adi-cd-targets-add') as HTMLButtonElement).click(); });
+    await flushEffects();
+
+    let inputs = targetRows(container)[1].querySelectorAll('input') as NodeListOf<HTMLInputElement>;
+    await act(async () => { fireEvent.change(inputs[0], { target: { value: '제품B' } }); });
+    await flushEffects();
+    await act(async () => { fireEvent.change(inputs[1], { target: { value: 'PROC_B1' } }); });
+    await flushEffects();
+
+    inputs = targetRows(container)[1].querySelectorAll('input') as NodeListOf<HTMLInputElement>;
+    expect(inputs[1].value).toBe('PROC_B1');
+
+    await act(async () => { fireEvent.change(inputs[0], { target: { value: '제품C' } }); });
+    await flushEffects();
+
+    inputs = targetRows(container)[1].querySelectorAll('input') as NodeListOf<HTMLInputElement>;
+    expect(inputs[0].value).toBe('제품C');
+    expect(inputs[1].value).toBe('');
+  });
+
+  it('삭제 버튼으로 추가한 행을 지울 수 있다', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanel(container);
+
+    await act(async () => { (container.querySelector('.adi-cd-targets-add') as HTMLButtonElement).click(); });
+    await flushEffects();
+    expect(targetRows(container)).toHaveLength(2);
+
+    const removeBtn = targetRows(container)[1].querySelector('.adi-cd-targets-remove') as HTMLButtonElement;
+    await act(async () => { removeBtn.click(); });
+    await flushEffects();
+
+    expect(targetRows(container)).toHaveLength(1); // 1행(기존값)만 남는다
+  });
+});
+
 // ===================== (2) Validation System =====================
 
 const PLEL_JAYER_ROW = {

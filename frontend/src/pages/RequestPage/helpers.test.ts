@@ -2,13 +2,14 @@ import {
   autoValidationSystem, isValidationKeywordRow, isValidationTarget, computeLayerMerge, MergeComparableRow,
   computeBeforeAfter, BaComparableRow,
   parseClipboardTable, detectAdiCdHeader, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, balanceAdiCdRows,
+  validateAdiCdTargets,
   requiresBbEntries, findBbEntryViolations, findEmptyStNocViolations, findNocBorrowItemIdViolations,
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
   isPairAfterInactive,
 } from './helpers';
 import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
-import { AdiCdStep, MergePair, MergeRowInfo } from '../../types';
+import { AdiCdStep, AdiCdTarget, MergePair, MergeRowInfo } from '../../types';
 
 describe('isValidationKeywordRow', () => {
   it('pp 가 판정 키워드를 포함하면 true', () => {
@@ -727,6 +728,51 @@ describe('balanceAdiCdRows', () => {
     const result = balanceAdiCdRows([], [step(), step(), step()]);
     const ids = new Set(result.before.map((r) => r.id));
     expect(ids.size).toBe(3);
+  });
+});
+
+describe('validateAdiCdTargets', () => {
+  const target = (over: Partial<AdiCdTarget> = {}): AdiCdTarget => ({ id: `id_${Math.random()}`, partid_selection: '', process_id: '', ...over });
+  const first = { partid_selection: 'PART_1', process_id: 'PROC_1' };
+
+  it('추가 행이 없으면 둘 다 false', () => {
+    expect(validateAdiCdTargets(first, [])).toEqual({ hasIncomplete: false, hasDuplicate: false });
+  });
+
+  it('추가 행이 모두 완전하고 중복 없으면 둘 다 false', () => {
+    const extras = [target({ partid_selection: 'PART_2', process_id: 'PROC_2' })];
+    expect(validateAdiCdTargets(first, extras)).toEqual({ hasIncomplete: false, hasDuplicate: false });
+  });
+
+  it('제품 이름·조리법 중 하나만 채운 행이 있으면 hasIncomplete', () => {
+    const extras = [target({ partid_selection: 'PART_2', process_id: '' })];
+    expect(validateAdiCdTargets(first, extras).hasIncomplete).toBe(true);
+  });
+
+  it('완전히 빈 행은 미완성으로 치지 않는다', () => {
+    const extras = [target()];
+    expect(validateAdiCdTargets(first, extras).hasIncomplete).toBe(false);
+  });
+
+  it('추가 행이 1행(first)과 같은 조합이면 hasDuplicate', () => {
+    const extras = [target({ partid_selection: first.partid_selection, process_id: first.process_id })];
+    expect(validateAdiCdTargets(first, extras).hasDuplicate).toBe(true);
+  });
+
+  it('추가 행끼리 같은 조합이면 hasDuplicate', () => {
+    const extras = [
+      target({ partid_selection: 'PART_2', process_id: 'PROC_2' }),
+      target({ partid_selection: 'PART_2', process_id: 'PROC_2' }),
+    ];
+    expect(validateAdiCdTargets(first, extras).hasDuplicate).toBe(true);
+  });
+
+  it('미완성 행은 중복 판정에서 제외된다', () => {
+    const extras = [
+      target({ partid_selection: 'PART_2', process_id: '' }),
+      target({ partid_selection: 'PART_2', process_id: '' }),
+    ];
+    expect(validateAdiCdTargets(first, extras).hasDuplicate).toBe(false);
   });
 });
 

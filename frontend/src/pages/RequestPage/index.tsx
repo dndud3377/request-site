@@ -92,6 +92,7 @@ import {
   ADI_CD_TEMPLATE_ROWS,
   ADI_CD_MAX_ROWS,
   makeAdiCdStep,
+  makeAdiCdTarget,
   mapInfoDefaults,
   MERGE_MANUAL_FIELDS,
 } from './constants';
@@ -99,6 +100,7 @@ import {
   formatUpdatedDate, calcDisabled, emptyDraftWords, findNocBorrowViolations, findNocBorrowItemIdViolations, findEmptyStNocViolations,
   requiresBbEntries, findBbEntryViolations, autoValidationSystem, computeLayerMerge, MergeStats, computeBeforeAfter,
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, balanceAdiCdRows, AdiCdHeaderMatch,
+  validateAdiCdTargets,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
   sourceCodeFromPartid, computeExpectedRequestPurpose,
 } from './helpers';
@@ -207,6 +209,10 @@ export default function RequestPage(): React.ReactElement {
   const [FlowProductOptions, setFlowProductOptions] = useState<Record<string, string[]>>({});
   const [FlowProcessIdOptions, setFlowProcessIdOptions] = useState<Record<string, string[]>>({});
   const [FlowLayerIdOptions, setFlowLayerIdOptions] = useState<Record<string, string[]>>({});
+
+  // ADI CD 변경 '동일 변경 적용 대상' 옵션 캐시 — 행 id로 키한다. 제품 이름은 위쪽 productOptions를
+  // 그대로 재사용하므로(라인+조합법 고정) 조리법만 행별로 독립 fetch한다.
+  const [adiCdTargetProcessIdOptions, setAdiCdTargetProcessIdOptions] = useState<Record<string, string[]>>({});
 
   const [step, setStep] = useState(isTourMode ? initialTourStep : 1);
   const [form] = useState<CreateDocumentInput>(INITIAL_FORM);
@@ -557,6 +563,8 @@ export default function RequestPage(): React.ReactElement {
       setDetail((prev) => ({
         ...prev,
         process_selection: '', partid_selection: '', process_id: '',
+        // 제품 이름 옵션 자체가 바뀌므로(라인 기준) '동일 변경 적용 대상' 추가 행도 함께 비운다.
+        adi_cd_extra_targets: [],
         // 메인 라인 변경 시 C가문 스코프·리전·지도편차·Final 값도 초기화(옛 라인 기준 잔존 방지 — 감사 R-6)
         prodc_scope: '',
         prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
@@ -653,7 +661,12 @@ export default function RequestPage(): React.ReactElement {
     // 하위 선택값은 부모 변경 시 즉시 초기화(이전 값과 부모 불일치 방지)
     if (!isLoadingEditRef.current) {
       setProcessIdOptions([]);
-      setDetail((prev) => (prev.partid_selection || prev.process_id ? { ...prev, partid_selection: '', process_id: '' } : prev));
+      // 제품 이름 옵션 자체가 바뀌므로(조합법 기준) '동일 변경 적용 대상' 추가 행도 함께 비운다.
+      setDetail((prev) => (
+        prev.partid_selection || prev.process_id || prev.adi_cd_extra_targets.length > 0
+          ? { ...prev, partid_selection: '', process_id: '', adi_cd_extra_targets: [] }
+          : prev
+      ));
     }
     // 제품 조회는 조합법이 옵션에 정확히 존재할 때만(시퀀스 토큰으로 stale 응답 무시)
     if (matchedOrLoading(processOptions, detail.process_selection)) {
@@ -800,6 +813,22 @@ export default function RequestPage(): React.ReactElement {
       }
     });
   }, [detail.bb_entries.map(e => `${e.id}|${e.product}`).join(','), BbProductOptions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ADI CD 변경 '동일 변경 적용 대상' — 행마다 자신의 제품 이름(partid_selection) 기준으로 조리법을
+  // 독립 조회한다. 제품 이름 옵션은 라인+조합법 고정이라 위쪽 productOptions 를 그대로 쓴다(재조회 없음).
+  useEffect(() => {
+    detail.adi_cd_extra_targets.forEach((row) => {
+      if (row.partid_selection && matchedOrLoading(productOptions, row.partid_selection)) {
+        fetchOptions(
+          `adi-cd-target-pid-${row.id}`,
+          () => formOptionsAPI.getProcessId(detail.line, row.partid_selection),
+          (opts) => setAdiCdTargetProcessIdOptions((prev) => ({ ...prev, [row.id]: opts })),
+        );
+      } else {
+        setAdiCdTargetProcessIdOptions((prev) => ({ ...prev, [row.id]: [] }));
+      }
+    });
+  }, [detail.adi_cd_extra_targets.map(r => `${r.id}|${r.partid_selection}`).join(','), productOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // bb_entries 외부 데이터 로드: 항목별로 제품·조리법이 옵션에 정확히 일치할 때만 조회한다.
   // (항목,값) 조합 캐시로 변경 없는 항목 재조회를 막고, 시퀀스 토큰으로 stale 응답을 버린다.
@@ -968,6 +997,8 @@ export default function RequestPage(): React.ReactElement {
             // 개수가 다를 수 있는 문서는 로드 시점에 짧은 쪽을 채워 맞춘다(값 삭제 없음).
             adi_cd_before: loadedAdiCd.before,
             adi_cd_after: loadedAdiCd.after,
+            // '동일 변경 적용 대상' 도입 전 문서는 값이 없다 → 빈 배열 백필.
+            adi_cd_extra_targets: parsed.detail.adi_cd_extra_targets ?? [],
             // prodc_scope 도입 전 문서는 값이 없다 → 저장된 리전 값으로 역추론해 백필한다.
             // (백필하지 않으면 '미선택' 게이트에 걸려 기존 C가문 문서의 입력이 잠겨 보인다)
             prodc_scope: parsed.detail.prodc_scope || inferProdcScope(parsed.detail),
@@ -1706,6 +1737,7 @@ export default function RequestPage(): React.ReactElement {
             ...mapInfoDefaults(),
             adi_cd_before: Array.from({ length: ADI_CD_TEMPLATE_ROWS }, () => makeAdiCdStep()),
             adi_cd_after: Array.from({ length: ADI_CD_TEMPLATE_ROWS }, () => makeAdiCdStep()),
+            adi_cd_extra_targets: [],
           }
         : {}),
     }));
@@ -1745,6 +1777,7 @@ export default function RequestPage(): React.ReactElement {
         ? {
             adi_cd_before: INITIAL_DETAIL.adi_cd_before,
             adi_cd_after: INITIAL_DETAIL.adi_cd_after,
+            adi_cd_extra_targets: INITIAL_DETAIL.adi_cd_extra_targets,
           }
         : {}),
     }));
@@ -3000,8 +3033,32 @@ export default function RequestPage(): React.ReactElement {
   const adiCdSideHasData = (side: 'before' | 'after') =>
     detail[adiCdSideKey(side)].some((r) => r.step_id.trim() || r.step_desc.trim());
 
+  const adiCdTargetsHaveData = () =>
+    detail.adi_cd_extra_targets.some((r) => r.partid_selection.trim() || r.process_id.trim());
+
   const adiCdHasData = () =>
-    adiCdSideHasData('before') || adiCdSideHasData('after');
+    adiCdSideHasData('before') || adiCdSideHasData('after') || adiCdTargetsHaveData();
+
+  // '동일 변경 적용 대상' — 행 추가는 빈 행 하나를 덧붙인다.
+  const handleAdiCdTargetAdd = () => {
+    setDetail((prev) => ({ ...prev, adi_cd_extra_targets: [...prev.adi_cd_extra_targets, makeAdiCdTarget()] }));
+  };
+
+  // 제품 이름을 바꾸면 그 행의 조리법은 비운다 — 이전 제품 기준 조리법이 새 제품에는 맞지 않을 수 있다.
+  const handleAdiCdTargetChange = (id: string, field: 'partid_selection' | 'process_id', value: string) => {
+    setDetail((prev) => ({
+      ...prev,
+      adi_cd_extra_targets: prev.adi_cd_extra_targets.map((r) => {
+        if (r.id !== id) return r;
+        if (field === 'partid_selection') return { ...r, partid_selection: value, process_id: '' };
+        return { ...r, process_id: value };
+      }),
+    }));
+  };
+
+  const handleAdiCdTargetDelete = (id: string) => {
+    setDetail((prev) => ({ ...prev, adi_cd_extra_targets: prev.adi_cd_extra_targets.filter((r) => r.id !== id) }));
+  };
 
   /** '미등록' 체크든 실제 값이든, 지우면 잃어버릴 게 있는 행인가(행 삭제 확인 판정용). */
   const adiCdRowIsMeaningful = (row: AdiCdStep) =>
@@ -3579,6 +3636,17 @@ export default function RequestPage(): React.ReactElement {
       newErrors['adi_cd_after'] = msg;
       errorMessages.push(msg);
     }
+    const targetsValidation = validateAdiCdTargets(
+      { partid_selection: detail.partid_selection, process_id: detail.process_id },
+      detail.adi_cd_extra_targets
+    );
+    if (targetsValidation.hasIncomplete || targetsValidation.hasDuplicate) {
+      const msg = t(
+        (targetsValidation.hasDuplicate ? 'request.adi_cd_targets_duplicate' : 'request.adi_cd_targets_incomplete') as never
+      ) as string;
+      newErrors['adi_cd_extra_targets'] = msg;
+      errorMessages.push(msg);
+    }
   };
 
   // redirectStep: 오류를 고칠 수 있는 단계가 currentStep 이 아닐 때만 채워진다(현재는 Backbone 조합 영역 → STEP1).
@@ -3925,8 +3993,10 @@ export default function RequestPage(): React.ReactElement {
       ? `${detail.request_purpose}-${detail.other_purpose.map((o) => `[${o}]`).join('')}`
       : detail.request_purpose;
     // ADI CD 변경은 MAP 정보 자체가 없으므로(map_type 미사용) 제목에서 그 구간을 뺀다.
+    // '동일 변경 적용 대상' 추가 행이 있으면 제품 이름/조리법 뒤에 (+N) 배지만 붙인다(전체 나열은 안 함).
+    const adiCdTargetsBadge = detail.adi_cd_extra_targets.length > 0 ? `(+${detail.adi_cd_extra_targets.length})` : '';
     const title = isAdiCdChange
-      ? `${detail.line}(${purposePart})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서_${dateStr}`
+      ? `${detail.line}(${purposePart})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}${adiCdTargetsBadge}_요청서_${dateStr}`
       : `${detail.line}(${purposePart})_MAP(${detail.map_type})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서_${dateStr}`;
 
     // 반려된 문서 재상신 시 이전 스냅샷을 history 에 누적
@@ -4574,6 +4644,10 @@ export default function RequestPage(): React.ReactElement {
           handleAdiCdRemoveRow={handleAdiCdRemoveRow}
           handleAdiCdPasteRaw={handleAdiCdPasteRaw}
           handleAdiCdToggleUnregistered={handleAdiCdToggleUnregistered}
+          adiCdTargetProcessIdOptions={adiCdTargetProcessIdOptions}
+          handleAdiCdTargetAdd={handleAdiCdTargetAdd}
+          handleAdiCdTargetChange={handleAdiCdTargetChange}
+          handleAdiCdTargetDelete={handleAdiCdTargetDelete}
           GuideTourBadge={<StepTourBadge step={1} />}
           GuideBadge={GuideBadge}
         />
