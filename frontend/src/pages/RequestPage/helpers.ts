@@ -1,4 +1,4 @@
-import { FilterSet, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, AdiCdTarget } from '../../types';
+import { FilterSet, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep } from '../../types';
 import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, isStO, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
@@ -756,7 +756,7 @@ export interface AdiCdTargetsValidation {
  */
 export const validateAdiCdTargets = (
   first: { partid_selection: string; process_id: string },
-  extras: AdiCdTarget[]
+  extras: Array<{ partid_selection: string; process_id: string }>
 ): AdiCdTargetsValidation => {
   const hasIncomplete = extras.some(
     (r) => !!r.partid_selection.trim() !== !!r.process_id.trim()
