@@ -1,4 +1,4 @@
-import { FilterSet, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep } from '../../types';
+import { FilterSet, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, AdiCdTarget } from '../../types';
 import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, isStO, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
@@ -741,4 +741,35 @@ export const balanceAdiCdRows = (
     return { before, after: [...after, ...Array.from({ length: diff }, () => makeAdiCdStep())] };
   }
   return { before: [...before, ...Array.from({ length: -diff }, () => makeAdiCdStep())], after };
+};
+
+export interface AdiCdTargetsValidation {
+  hasIncomplete: boolean;
+  hasDuplicate: boolean;
+}
+
+/**
+ * '동일 변경 적용 대상' 표 검증. 1행(first)은 Step1 필수 검증이 이미 채움을 보장하므로 그대로
+ * 신뢰하고, 추가 행(extras)만 완전성을 검사한다 — 제품 이름/조리법 중 하나만 채운 행이 있으면
+ * hasIncomplete. 1행을 포함해 전체 조합(제품 이름+조리법) 중 완전히 같은 게 둘 이상이면
+ * hasDuplicate(미완성 행은 중복 판정에서 제외 — 불완전 오류가 이미 따로 뜬다).
+ */
+export const validateAdiCdTargets = (
+  first: { partid_selection: string; process_id: string },
+  extras: AdiCdTarget[]
+): AdiCdTargetsValidation => {
+  const hasIncomplete = extras.some(
+    (r) => !!r.partid_selection.trim() !== !!r.process_id.trim()
+  );
+  const seen = new Set<string>();
+  let hasDuplicate = false;
+  [first, ...extras].forEach((r) => {
+    const partid = r.partid_selection.trim();
+    const processId = r.process_id.trim();
+    if (!partid || !processId) return;
+    const key = `${partid}|${processId}`;
+    if (seen.has(key)) hasDuplicate = true;
+    else seen.add(key);
+  });
+  return { hasIncomplete, hasDuplicate };
 };
