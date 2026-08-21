@@ -7,6 +7,7 @@ import { OPTION_REQUEST_PURPOSE, OPTION_OTHER_PURPOSE, OTHER_PURPOSE_LAB, isMerg
 import { PairAfterLookupRow } from '../helpers';
 import BeforeAfterPanel, { BaField, BaSide } from './BeforeAfterPanel';
 import AdiCdPanel, { AdiCdField, AdiCdSide } from './AdiCdPanel';
+import AdiCdTargetsPanel from './AdiCdTargetsPanel';
 
 interface Step1Props {
   detail: DetailFormState;
@@ -69,6 +70,11 @@ interface Step1Props {
   handleAdiCdRemoveRow: (side: AdiCdSide, id: string) => void;
   handleAdiCdPasteRaw: (side: AdiCdSide, raw: string, startRowId: string | null) => void;
   handleAdiCdToggleUnregistered: (side: 'before' | 'after', id: string, next: boolean) => void;
+  /** '동일 변경 적용 대상' 표 — 행마다 독립적으로 fetch된 조리법 옵션(행 id로 키). */
+  adiCdTargetProcessIdOptions: Record<string, string[]>;
+  handleAdiCdTargetAdd: () => void;
+  handleAdiCdTargetChange: (id: string, field: 'partid_selection' | 'process_id', value: string) => void;
+  handleAdiCdTargetDelete: (id: string) => void;
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
@@ -132,6 +138,10 @@ const Step1: React.FC<Step1Props> = ({
   handleAdiCdRemoveRow,
   handleAdiCdPasteRaw,
   handleAdiCdToggleUnregistered,
+  adiCdTargetProcessIdOptions,
+  handleAdiCdTargetAdd,
+  handleAdiCdTargetChange,
+  handleAdiCdTargetDelete,
   GuideTourBadge,
   GuideBadge,
 }) => {
@@ -367,6 +377,23 @@ const Step1: React.FC<Step1Props> = ({
                     onResetRow={handleBaResetRow}
                   />
                 )}
+              </div>
+            )}
+
+            {/* ADI CD 변경: 동일 변경 적용 대상(제품 이름/조리법 추가 선택) */}
+            {isAdiCdSelected && (
+              <div data-tour="adi-cd-targets">
+                <AdiCdTargetsPanel
+                  firstPartidSelection={detail.partid_selection}
+                  firstProcessId={detail.process_id}
+                  targets={detail.adi_cd_extra_targets}
+                  productOptions={productOptions}
+                  processIdOptions={adiCdTargetProcessIdOptions}
+                  onAdd={handleAdiCdTargetAdd}
+                  onChange={handleAdiCdTargetChange}
+                  onDelete={handleAdiCdTargetDelete}
+                  error={errors.adi_cd_extra_targets}
+                />
               </div>
             )}
 
