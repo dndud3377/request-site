@@ -6,6 +6,7 @@ import {
   OayerRow,
   BbTableRow,
   AdiCdStep,
+  AdiCdTarget,
   MergeTable,
 } from '../../types';
 
@@ -273,6 +274,12 @@ export const makeAdiCdStep = (): AdiCdStep => ({
   unregistered: false,
 });
 
+export const makeAdiCdTarget = (): AdiCdTarget => ({
+  id: genId(),
+  partid_selection: '',
+  process_id: '',
+});
+
 // ===== Initial States =====
 export const INITIAL_DETAIL: DetailFormState = {
   request_purpose: '',
@@ -356,6 +363,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   merge_unmatched_after: [],
   adi_cd_before: [],
   adi_cd_after: [],
+  adi_cd_extra_targets: [],
 };
 
 /**
