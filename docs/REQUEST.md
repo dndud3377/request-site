@@ -28,7 +28,7 @@ pages/RequestPage/
     ├── BeforeAfterPanel.tsx        #   참조 요청서 BEFORE/AFTER 매핑 + 변경전/변경후 직접 입력 패널 (step 1 인라인)
     ├── AdiCdPanel.tsx              #   139줄  ADI CD 변경전/변경후 스텝 표 (step 1 인라인)
     ├── AdiCdColumnMapModal.tsx     #   128줄  ADI CD 붙여넣기 컬럼 매핑 모달
-    ├── AdiCdTargetsPanel.tsx       #    99줄  ADI CD '동일 변경 적용 대상' 표(2026-08-21 신설, step 1 인라인)
+    ├── AdiCdTargetsPanel.tsx       #   105줄  ADI CD '동일 변경 적용 대상' 표(2026-08-21 신설, step 1 인라인)
     ├── Step1.tsx                   #   538줄  step 1 — 기본정보(라인/목적/흐름도/뼈찜entry/고객/생산일)
     ├── StepMap.tsx                 #   654줄  step 2 — MAP(타입/원본/PRODC/Final/지도편차/예외/M-shot/맵옵션/삭제·수정 이유)
     ├── Step2.tsx                   #   298줄  step 3 — J-layer 표
@@ -97,7 +97,7 @@ pages/RequestPage/
 - **뼈찜(Bb)**: `bbRows`, `bbExternalData`, `bbExternalLoading`, `activeBbTab`, `bbChecked`, `bbAutoFillRanges`, `showAutoFillPanel`, `bbSearchQueries`, `stagedMappings`, `mappedJayerRowIds`, `selectedJayerRowId`, `bbExtCache`(ref), `bbExtPrevPid`(ref)
 - **참조문서 병합**: `refDocId`, `refDocLabel`, `refJayerRows`, `refOayerRows`, `mergeConfirmOpen`, `mergePreview`, `mergeSnapshot`, `mergeReselectConfirm`, `mergeModeConfirm`
 - **BEFORE/AFTER 비교**: `baSelBefore`, `baSelAfter`, `baSameCount`
-- **ADI CD 변경**: `adiCdMapModal`, `adiCdPendingApply`, `adiCdRemoveConfirm`(2026-08-20 신설 — 행 삭제 시 반대쪽에 값이 있을 때 확인), `adiCdTargetProcessIdOptions`(2026-08-21 신설 — '동일 변경 적용 대상' 표 행별 조리법 옵션 캐시, 행 id로 키) (2026-08-20: `adiCdLeaveConfirm` 제거 — 진입/해제 확인은 `onlyMapConfirm` 으로 통합됨)
+- **ADI CD 변경**: `adiCdMapModal`, `adiCdPendingApply`, `adiCdRemoveConfirm`(2026-08-20 신설 — 행 삭제 시 반대쪽에 값이 있을 때 확인), `adiCdTargetDraft`/`adiCdTargetDraftProcessIdOptions`(2026-08-21 신설 — '동일 변경 적용 대상' 표의 상시 입력칸 값과 그 조리법 옵션) (2026-08-20: `adiCdLeaveConfirm` 제거 — 진입/해제 확인은 `onlyMapConfirm` 으로 통합됨)
 - **C가문(PRODC)**: `prodcScopeConfirm`
 - **Final**: `finalGds` (등록 전 입력 중인 GDS version 값 — 등록된 목록 자체는 `detail.final_entries`)
 - **TBV/TLV**: `tbvtlvSdsSelected`, `tbvtlvNoteRows`, `tbvtlvWarnModal`
@@ -113,7 +113,7 @@ pages/RequestPage/
 | `handleJayer*` | 11 | J-layer 행 편집/붙여넣기/체크/드래그/일괄처리 |
 | `handleOayer*` | 11 | O-layer (J-layer와 대칭 구조) |
 | `handleBb*` | 8 | 뼈찜 표 + entry + 외부 데이터 매핑 |
-| `handleAdiCd*` | 10 | ADI CD 셀 편집·행 추가(양쪽 동시)/삭제(양쪽 동시+삭제확인)·미등록 토글·붙여넣기·컬럼 매핑 + '동일 변경 적용 대상' 행 추가/변경/삭제 3개(2026-08-21 신설) |
+| `handleAdiCd*` | 10 | ADI CD 셀 편집·행 추가(양쪽 동시)/삭제(양쪽 동시+삭제확인)·미등록 토글·붙여넣기·컬럼 매핑 + '동일 변경 적용 대상' 입력칸 편집/추가(완전성·중복 검사)/삭제 3개(2026-08-21 신설) |
 | `handleFlow*` | 4 | Flow chart 행 |
 | `handleMap*` / `handleMerge*` / `handleProdc*` / `handleBa*` | 각 3 | `handleBa*` = BEFORE/AFTER 선택·적용·해제 |
 | `handleFilter*` / `handleDetail*` / `handleApply*` | 각 2 | |
@@ -276,6 +276,74 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 기능 개선 (2026-08-21 — ADI CD '동일 변경 적용 대상' 표: 크기 축소 + 입력 방식 변경)
+
+- **요청**: 바로 앞 항목("ADI CD 변경: '동일 변경 적용 대상' 표")으로 만든 UI가 사용해 보니 별로였다는
+  피드백. ① 작성 화면·상세보기 표 모두 폭을 지금의 약 1/3로 줄인다. ② 지금은 "추가" 버튼이 빈 행을
+  만들고 그 행 안에서 편집하는 방식인데, 제품 이름/조리법을 **상시 노출되는 입력칸**에 채운 뒤
+  "추가"를 눌러야 표에 반영되는 방식으로 바꾼다. ③ 이미 구현돼 있던 중복 조합 검사를 상신 게이트가
+  아니라 **"추가" 버튼을 눌렀을 때**로 옮겨, 그 자리에서 막는다.
+- **크기 축소**(`global.css`, 너비만 축소하기로 결정): 작성 화면 `.adi-cd-targets-panel`에
+  `max-width: 33%` 추가, 표 폰트·padding도 함께 줄임(0.82rem→0.78rem, padding 4~6px→3~5px) —
+  폭만 줄이면 안이 헐렁해 보이기 때문. 상세보기(`PagedDetailView.tsx`)도 같은 방식으로 래퍼 div에
+  `max-width: 33%` + 전용 클래스 `.adi-cd-targets-detail-table`로 공용 `.table`(12~16px padding)의
+  padding·폰트만 좁혀 덮어썼다(다른 곳에서 쓰는 `.table` 자체는 건드리지 않음).
+- **입력 방식 변경**(`AdiCdTargetsPanel.tsx` 전면 재작성): 표 안 행의 `AutocompleteInput` 편집을
+  없애고 읽기 전용 텍스트 + 삭제 버튼만 남겼다. 표 아래에 상시 노출 입력칸 2개(제품 이름/조리법) +
+  "추가" 버튼(`onAdd`)을 새로 뒀다 — 두 칸이 모두 채워져야 버튼이 활성화된다(`canAdd`). 제품 이름을
+  바꾸면 조리법 입력칸은 여전히 비운다(기존 규칙 유지, 대상만 "행"에서 "입력칸(draft)"로 옮김).
+- **상태 재구성**(`index.tsx`): 행 id로 키하던 `adiCdTargetProcessIdOptions: Record<string, string[]>`를
+  단일 draft 상태(`adiCdTargetDraft: { partid_selection, process_id }`)와 그 조리법 옵션 배열
+  하나(`adiCdTargetDraftProcessIdOptions: string[]`)로 교체했다 — 입력칸이 하나뿐이라 행별 캐시가
+  필요 없어졌다. `handleAdiCdTargetChange`(행 편집)는 제거하고 `handleAdiCdTargetDraftChange`(입력칸
+  편집)로 대체했다.
+- **추가 시점 검증**(`handleAdiCdTargetAdd` 재작성): 클릭 시 ① 두 칸이 안 채워졌으면
+  `adi_cd_targets_incomplete` 토스트로 막고(버튼이 비활성화라 정상 흐름에선 거의 안 뜨지만, 방어
+  차원) ② `validateAdiCdTargets(1행, [...기존 추가 행, draft])`로 중복을 검사해 겹치면
+  `adi_cd_targets_duplicate` 토스트로 막는다(표에 반영 안 됨, 입력칸 값은 그대로 남아 고쳐서 재시도
+  가능). 통과하면 `adi_cd_extra_targets`에 새 행을 추가하고 입력칸을 비운다. 이 두 검사는 **이미
+  §바로 앞 항목에서 구현돼 있던 것**(`validateAdiCdTargets`)을 상신 게이트 대신 이 시점에서 먼저
+  호출하도록 옮긴 것이다.
+- **상신 게이트는 안전망으로 격하**(`addAdiCdGateError`): "추가" 시점에 이미 완전성·중복을 막으므로
+  정상 흐름에서는 걸릴 일이 없다 — 다른 이유로 상태가 어긋난 경우를 대비한 이중 방어로만 남긴다
+  (변경전/변경후 행 수 동일 검사와 같은 성격).
+- **draft 초기화 지점 추가**: 라인/조합법 변경, ADI CD 변경 진입/해제 시 `adi_cd_extra_targets`를
+  비우던 기존 지점 4곳에 `adiCdTargetDraft`도 함께 비우는 코드를 추가했다(입력칸이 컴포넌트 state가
+  아니라 `detail`과 분리된 별도 state라 자동으로 같이 비워지지 않기 때문).
+- **영향 파일**: `frontend/src/pages/RequestPage/components/AdiCdTargetsPanel.tsx`,
+  `frontend/src/pages/RequestPage/index.tsx`, `frontend/src/pages/RequestPage/helpers.ts`
+  (`validateAdiCdTargets`의 `extras` 매개변수 타입을 `AdiCdTarget[]`에서
+  `Array<{partid_selection,process_id}>`로 완화 — draft 값에는 `id`가 없어서), `PagedDetailView.tsx`,
+  `frontend/src/styles/global.css`, `adiCdUnregisteredAndVs.test.tsx`. i18n 문구는 새로 만들지
+  않고 기존 `adi_cd_targets_incomplete`/`adi_cd_targets_duplicate` 키를 그대로 재사용했다(토스트로
+  쓰기에도 문구가 자연스러워 신규 키를 만들지 않음). 백엔드·마이그레이션 변경 없음.
+- **검증(2026-08-21 실행)**: `npx tsc --noEmit` — 작업 전/후 모두 7개(신규 0). `npx eslint`(핵심
+  소스 파일) — 작업 전/후 모두 5건(경고만, 신규 0). `adiCdUnregisteredAndVs.test.tsx` 단독 —
+  125건(직전 127건보다 오히려 줄었다 — 행 편집용 `querySelectorAll` 호출 일부가 재사용 가능한 헬퍼
+  함수로 정리됨). `CI=true npx react-scripts test --watchAll=false` — 9 suites / **254건 전부
+  통과**(기존 4건을 새 흐름에 맞게 고치고, 신규 3건: 추가 버튼 비활성화 조건, 1행과 겹칠 때 추가
+  차단, 이미 추가한 행과 겹칠 때 추가 차단).
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [`/request` → ADI CD 변경 선택] → [기대 결과: "동일 변경 적용 대상" 표 폭이 이전보다 눈에 띄게
+     좁아져 있다(대략 1/3). 표 아래 제품 이름/조리법 입력칸 2개와 "추가" 버튼이 항상 보인다. 아직
+     아무것도 안 채웠으면 "추가" 버튼이 비활성화(흐리게)돼 있다.]
+  2. [제품 이름 입력 → 조리법 입력 → "추가" 클릭] → [기대 결과: 표 2행에 방금 입력한 값이 읽기
+     전용으로 추가되고, 입력칸 2개는 다시 비워진다.]
+  3. [제품 이름만 다시 입력한 뒤(조리법은 비운 채) 제품 이름을 또 바꿔봄] → [기대 결과: 조리법
+     입력칸이 자동으로 비워진다. "추가"는 여전히 비활성 상태.]
+  4. [1행(위쪽 필드)과 완전히 같은 제품 이름/조리법을 입력칸에 채운 뒤 "추가" 클릭] → [기대 결과:
+     "동일한 제품 이름·조리법 조합이 있습니다" 토스트가 뜨고, 표에는 반영되지 않는다(입력값은 그대로
+     남는다).]
+  5. [이미 표에 추가된 행과 같은 값을 다시 입력해 "추가" 클릭] → [기대 결과: 4번과 동일하게 토스트로
+     막힌다.]
+  6. [추가된 행의 삭제(✕) 버튼 클릭] → [기대 결과: 그 행만 표에서 사라진다(1행은 그대로).]
+  7. [결재 현황/이력에서 저장한 문서 상세 → "동일 변경 적용 대상" 카드] → [기대 결과: 표 폭이
+     이전보다 좁게(약 1/3) 보인다.]
+- **잠재 주의사항**:
+  - 입력칸에 값을 채운 상태에서(아직 "추가"를 누르지 않은 채) 다른 요청 목적으로 전환하거나 라인·
+    조합법을 바꾸면, 그 입력값은 확인 모달 없이 조용히 사라진다(아직 `detail`에 반영되지 않은
+    화면 전용 상태라서다). 이미 "추가"로 표에 반영된 행은 기존과 동일하게 확인 모달 대상이다.
 
 ### 기능 추가 (2026-08-21 — ADI CD 변경: '동일 변경 적용 대상' 표)
 
