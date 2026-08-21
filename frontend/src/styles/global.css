@@ -4958,10 +4958,6 @@ select.form-control option {
   display: flex; justify-content: space-between; align-items: center; gap: 8px;
   font-size: 0.85rem; font-weight: 700; margin-bottom: 6px;
 }
-.adi-cd-delete-all-toggle {
-  display: flex; align-items: center; gap: 4px; font-size: 0.78rem;
-  font-weight: 500; color: var(--text-secondary); cursor: pointer;
-}
 .adi-cd-pane-scroll { max-height: 320px; overflow: auto; }
 .adi-cd-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
 .adi-cd-table th, .adi-cd-table td {
@@ -4988,9 +4984,6 @@ select.form-control option {
 }
 .adi-cd-add-row { margin-top: 6px; font-size: 0.78rem; padding: 4px 10px; }
 .adi-cd-empty-hint { color: var(--text-muted); font-size: 0.78rem; padding: 10px 8px; }
-.adi-cd-delete-all-note {
-  color: var(--text-muted); font-size: 0.82rem; padding: 16px 8px; text-align: center;
-}
 .adi-cd-note { margin-top: 6px; font-size: 0.76rem; color: var(--text-muted); line-height: 1.5; }
 
 /* ── ADI CD 변경 — 동일 변경 적용 대상 표 ── */
