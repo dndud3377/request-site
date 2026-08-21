@@ -546,7 +546,7 @@
     "adi_cd_replace_msg": "붙여넣을 범위에 이미 입력된 값이 있습니다. 붙여넣은 내용으로 덮어쓰시겠습니까?",
     "adi_cd_gate_before_empty": "변경전 표에 최소 1개 이상의 유효한 행이 필요합니다.",
     "adi_cd_gate_before_invalid": "변경전 표에 불완전하거나 중복된 STEPSEQ가 있습니다.",
-    "adi_cd_gate_after_empty": "변경후 표에 최소 1개 이상의 유효한 행이 필요합니다(또는 전체 삭제를 선택하세요).",
+    "adi_cd_gate_after_empty": "변경후 표에 최소 1개 이상의 유효한 행이 필요합니다.",
     "adi_cd_gate_after_invalid": "변경후 표에 불완전하거나 중복된 STEPSEQ가 있습니다.",
     "adi_cd_targets_title": "동일 변경 적용 대상",
     "adi_cd_targets_add": "추가",
