@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import ExcelJS from 'exceljs';
-import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, AdiCdTarget } from '../types';
 import Modal from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
@@ -99,6 +99,25 @@ function MergePairsTable({ pairs }: { pairs: MergePair[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * ADI CD 변경 — '동일 변경 적용 대상' 표(읽기 전용). 1행은 위쪽 partid_selection/process_id 필드
+ * 값(작성 화면의 읽기 전용 1행과 동일한 값), 2행부터는 detail.adi_cd_extra_targets 저장값이다.
+ */
+function AdiCdTargetsTable({ first, extras }: { first: { partid_selection: string; process_id: string }; extras: AdiCdTarget[] }) {
+  const { t } = useTranslation();
+  return (
+    <table className="table" style={{ fontSize: '0.8rem' }}>
+      <thead><tr><th>{t('request.partid_selection')}</th><th>{t('request.process_id')}</th></tr></thead>
+      <tbody>
+        <tr><td>{first.partid_selection}</td><td>{first.process_id}</td></tr>
+        {extras.map((r) => (
+          <tr key={r.id}><td>{r.partid_selection}</td><td>{r.process_id}</td></tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -1792,6 +1811,16 @@ type Page = { label: string; content: React.ReactNode };
                 </span>
               </div>
               <MergePairsTable pairs={detail.merge_pairs ?? []} />
+            </div>
+          )}
+
+          {(detail.adi_cd_extra_targets ?? []).length > 0 && (
+            <div style={cardStyle}>
+              <div style={sectionTitle}>{t('request.adi_cd_targets_title')}</div>
+              <AdiCdTargetsTable
+                first={{ partid_selection: detail.partid_selection ?? '', process_id: detail.process_id ?? '' }}
+                extras={detail.adi_cd_extra_targets ?? []}
+              />
             </div>
           )}
 
