@@ -28,6 +28,7 @@ pages/RequestPage/
     ├── BeforeAfterPanel.tsx        #   참조 요청서 BEFORE/AFTER 매핑 + 변경전/변경후 직접 입력 패널 (step 1 인라인)
     ├── AdiCdPanel.tsx              #   139줄  ADI CD 변경전/변경후 스텝 표 (step 1 인라인)
     ├── AdiCdColumnMapModal.tsx     #   128줄  ADI CD 붙여넣기 컬럼 매핑 모달
+    ├── AdiCdTargetsPanel.tsx       #    99줄  ADI CD '동일 변경 적용 대상' 표(2026-08-21 신설, step 1 인라인)
     ├── Step1.tsx                   #   538줄  step 1 — 기본정보(라인/목적/흐름도/뼈찜entry/고객/생산일)
     ├── StepMap.tsx                 #   654줄  step 2 — MAP(타입/원본/PRODC/Final/지도편차/예외/M-shot/맵옵션/삭제·수정 이유)
     ├── Step2.tsx                   #   298줄  step 3 — J-layer 표
@@ -61,7 +62,7 @@ pages/RequestPage/
 | C가문 스코프 | `PRODC_SCOPE_OPTIONS`, `inferProdcScope` |
 | 색상(재수출) | `ST_CELL_COLOR` |
 | 공용 타입 | `CRegion` (`'top' \| 'middle' \| 'bottom'`), `ProdcScope` |
-| 팩토리 | `genId`, `makeRow`, `makeBbEntry`, `makeJayerRow`, `makeOayerRow`, `makeBbRow`, `makeAdiCdStep` |
+| 팩토리 | `genId`, `makeRow`, `makeBbEntry`, `makeJayerRow`, `makeOayerRow`, `makeBbRow`, `makeAdiCdStep`, `makeAdiCdTarget` |
 | 초기 상태 | `INITIAL_DETAIL`, `INITIAL_FORM`, `DETAIL_REQUIRED` |
 | 가이드 투어 시드 | `makeTourDetail`, `makeTourJayerRows`, `makeTourOayerRows`, `makeTourBbRows`, `makeTourBbExternalData`, `TOUR_JAYER_LAYERS`, `TOUR_JAYER_PRODUCT`, `TOUR_JAYER_STEPS`, `TOUR_JAYER_ITEMS` |
 
@@ -79,6 +80,7 @@ pages/RequestPage/
 | 변경전/변경후 직접 입력 | `isMergeSideEmpty`, `normalizeMergeSide`, `deriveMergeKind`, `emptyMergeRowInfo`, `emptyMergePair`, `parseMergePasteRows`, `validateMergePairs` |
 | Validation System | `isValidationKeywordRow`, `isValidationTarget`, `autoValidationSystem` |
 | ADI CD 붙여넣기 | `parseClipboardTable`, `AdiCdHeaderMatch`(타입), `detectAdiCdHeader`, `AdiCdPasteDecision`(타입), `decideAdiCdPaste`, `buildAdiCdRows`, `AdiCdValidationResult`(타입), `validateAdiCdRows` |
+| ADI CD 행 수 동일·적용 대상 | `balanceAdiCdRows`, `AdiCdTargetsValidation`(타입), `validateAdiCdTargets`(2026-08-21 신설 — '동일 변경 적용 대상' 표 검증) |
 
 ---
 
@@ -95,7 +97,7 @@ pages/RequestPage/
 - **뼈찜(Bb)**: `bbRows`, `bbExternalData`, `bbExternalLoading`, `activeBbTab`, `bbChecked`, `bbAutoFillRanges`, `showAutoFillPanel`, `bbSearchQueries`, `stagedMappings`, `mappedJayerRowIds`, `selectedJayerRowId`, `bbExtCache`(ref), `bbExtPrevPid`(ref)
 - **참조문서 병합**: `refDocId`, `refDocLabel`, `refJayerRows`, `refOayerRows`, `mergeConfirmOpen`, `mergePreview`, `mergeSnapshot`, `mergeReselectConfirm`, `mergeModeConfirm`
 - **BEFORE/AFTER 비교**: `baSelBefore`, `baSelAfter`, `baSameCount`
-- **ADI CD 변경**: `adiCdMapModal`, `adiCdPendingApply`, `adiCdRemoveConfirm`(2026-08-20 신설 — 행 삭제 시 반대쪽에 값이 있을 때 확인) (2026-08-20: `adiCdLeaveConfirm` 제거 — 진입/해제 확인은 `onlyMapConfirm` 으로 통합됨)
+- **ADI CD 변경**: `adiCdMapModal`, `adiCdPendingApply`, `adiCdRemoveConfirm`(2026-08-20 신설 — 행 삭제 시 반대쪽에 값이 있을 때 확인), `adiCdTargetProcessIdOptions`(2026-08-21 신설 — '동일 변경 적용 대상' 표 행별 조리법 옵션 캐시, 행 id로 키) (2026-08-20: `adiCdLeaveConfirm` 제거 — 진입/해제 확인은 `onlyMapConfirm` 으로 통합됨)
 - **C가문(PRODC)**: `prodcScopeConfirm`
 - **Final**: `finalGds` (등록 전 입력 중인 GDS version 값 — 등록된 목록 자체는 `detail.final_entries`)
 - **TBV/TLV**: `tbvtlvSdsSelected`, `tbvtlvNoteRows`, `tbvtlvWarnModal`
@@ -111,7 +113,7 @@ pages/RequestPage/
 | `handleJayer*` | 11 | J-layer 행 편집/붙여넣기/체크/드래그/일괄처리 |
 | `handleOayer*` | 11 | O-layer (J-layer와 대칭 구조) |
 | `handleBb*` | 8 | 뼈찜 표 + entry + 외부 데이터 매핑 |
-| `handleAdiCd*` | 7 | ADI CD 셀 편집·행 추가(양쪽 동시)/삭제(양쪽 동시+삭제확인)·미등록 토글·붙여넣기·컬럼 매핑 (2026-08-20: 전체삭제 토글 제거, 삭제확인 핸들러 추가) |
+| `handleAdiCd*` | 10 | ADI CD 셀 편집·행 추가(양쪽 동시)/삭제(양쪽 동시+삭제확인)·미등록 토글·붙여넣기·컬럼 매핑 + '동일 변경 적용 대상' 행 추가/변경/삭제 3개(2026-08-21 신설) |
 | `handleFlow*` | 4 | Flow chart 행 |
 | `handleMap*` / `handleMerge*` / `handleProdc*` / `handleBa*` | 각 3 | `handleBa*` = BEFORE/AFTER 선택·적용·해제 |
 | `handleFilter*` / `handleDetail*` / `handleApply*` | 각 2 | |
@@ -274,6 +276,80 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 ---
 
 ## 4.1 기능 변경 이력 (2026-06)
+
+### 기능 추가 (2026-08-21 — ADI CD 변경: '동일 변경 적용 대상' 표)
+
+- **요청**: 'ADI CD 변경'을 눌렀을 때 이미 선택한 라인/조합법은 그대로 두고, 제품 이름·조리법
+  조합을 여러 개 추가로 고를 수 있게 한다(같은 STEP 변경을 여러 제품에 함께 적용). 1행은 위쪽
+  필드에서 이미 고른 제품 이름/조리법이 그대로 들어가고, 2행부터 추가 선택한 값이 들어간다. 표
+  제목은 "동일 변경 적용 대상". 표는 ADI CD 변경 선택 시 항상(1행부터) 보이고, 행 추가/삭제는
+  하나씩(전체 삭제 없음), 제품 이름+조리법 조합이 겹치면 상신 시 오류. 문서 제목은 대상이
+  여러 개면 `(+N)` 배지만 붙이고(전체 나열 안 함), 결재 로직에는 영향 없음.
+- **타입/저장**(`types/index.ts`, `constants.ts`): `AdiCdTarget { id, partid_selection, process_id }`
+  신설. `DetailFormState.adi_cd_extra_targets: AdiCdTarget[]`는 **2행부터의 값만** 저장한다(1행은
+  기존 `partid_selection`/`process_id` 필드를 그대로 읽으므로 중복 저장하지 않는다). 팩토리
+  `makeAdiCdTarget()`, `INITIAL_DETAIL.adi_cd_extra_targets = []`.
+- **검증**(`helpers.ts` 신규 `validateAdiCdTargets(first, extras)`, 순수 함수): 추가 행 중 제품
+  이름·조리법 한쪽만 채운 행이 있으면 `hasIncomplete`. 1행을 포함해 전체 조합이 완전히 같은 게
+  둘 이상이면 `hasDuplicate`(미완성 행은 중복 판정에서 제외 — 불완전 오류가 이미 따로 뜬다).
+  `index.tsx`의 `addAdiCdGateError`가 이 함수 결과로 `errors.adi_cd_extra_targets`를 채운다(상신
+  시에만 걸린다 — 임시저장은 종전처럼 그대로 저장).
+- **화면**(`components/AdiCdTargetsPanel.tsx` 신설, `Step1.tsx`): ADI CD 변경전/변경후 표 바로 위에
+  배치. 1행(`firstPartidSelection`/`firstProcessId`)은 읽기 전용 셀, 2행부터는
+  `AutocompleteInput` 두 칸(제품 이름/조리법) + 삭제 버튼, 표 아래 "+ 추가" 버튼 하나.
+- **옵션 연계**(`index.tsx`): 제품 이름 옵션은 이미 라인+조합법 기준으로 로드된 위쪽 `productOptions`를
+  그대로 재사용한다(재조회 없음). 조리법 옵션은 `bb_entries`와 동일한 패턴으로 행마다
+  독립적으로 fetch한다(신규 state `adiCdTargetProcessIdOptions: Record<string, string[]>`, 신규
+  effect가 `formOptionsAPI.getProcessId(detail.line, row.partid_selection)`를 행 id로 키해 호출).
+  **제품 이름을 바꾸면 그 행의 조리법은 자동으로 비운다**(`handleAdiCdTargetChange`) — `bb_entries`는
+  비우지 않는 관례지만, 이번엔 사용자가 명시적으로 "비우는 쪽"을 선택했다.
+- **하위 값 초기화**: 라인 또는 조합법이 바뀌면(제품 이름 옵션 자체가 바뀌므로) `adi_cd_extra_targets`도
+  함께 비운다(기존 `partid_selection`/`process_id` 초기화 지점 2곳에 동일하게 추가). ADI CD 변경
+  진입 시 빈 배열로 시작(`applyMapOnlyScope`), 해제 시 초기화(`applyLeaveMapOnlyScope`). 해제
+  확인 모달 판정(`adiCdHasData`)에도 추가 대상 입력 여부를 포함시켜, 값이 있는데 다른 목적으로
+  전환하면 확인 모달이 뜨도록 했다.
+- **문서 제목**(`index.tsx` 제목 조립부): `adi_cd_extra_targets.length > 0`이면 제품 이름/조리법
+  뒤에 `(+N)` 배지만 붙인다(N = 추가 대상 개수, 전체 조합 나열은 안 함 — 제목이 무한정 길어지는
+  것을 피했다). 추가 대상이 없으면 기존 제목과 완전히 동일.
+- **상세보기**(`PagedDetailView.tsx` 신규 `AdiCdTargetsTable`): 1행(위쪽 필드값) + 2행부터
+  `adi_cd_extra_targets`를 읽기 전용 표로 보여준다. `adi_cd_extra_targets`가 비어 있으면(과거
+  문서 포함) 카드 자체를 숨긴다 — 저장 형식에 새 필드만 추가된 것이라 마이그레이션은 필요 없다.
+- **영향 파일**: `frontend/src/types/index.ts`, `frontend/src/pages/RequestPage/constants.ts`,
+  `helpers.ts`, `helpers.test.ts`, `index.tsx`, `components/Step1.tsx`,
+  `components/AdiCdTargetsPanel.tsx`(신규), `adiCdUnregisteredAndVs.test.tsx`,
+  `frontend/src/components/PagedDetailView.tsx`, `frontend/src/locales/{ko,en}.json`,
+  `frontend/src/styles/global.css`. 백엔드·마이그레이션 변경 없음(`additional_notes` JSON 하위에
+  저장되는 값이라 스키마 변경이 필요 없다. 결재 로직도 무변경).
+- **검증(2026-08-21 실행)**: `npx tsc --noEmit` — 작업 전/후 모두 7개(신규 0, `git stash` 대조 확인).
+  `npx eslint`(핵심 소스 파일, 테스트 파일 제외) — 작업 전/후 모두 5건(경고만, 신규 0).
+  `adiCdUnregisteredAndVs.test.tsx` 포함 시 베이스라인 103건 → 작업 후 127건, 늘어난 24건은 신규
+  테스트 4건이 이 파일의 기존 스타일(`container.querySelectorAll` 등 직접 DOM 접근)을 그대로 따른
+  것이라 신규 위반이 아니다(앞선 STEPSEQ·행 수 동일 작업 때와 같은 판단). `CI=true npx react-scripts
+  test --watchAll=false` — 9 suites / **251건 전부 통과**(신규 11건: `validateAdiCdTargets` 단위
+  테스트 7건 + 화면 동작 4건 — 1행 읽기전용 표시, 행 추가+저장, 제품 이름 변경 시 조리법 비움,
+  행 삭제).
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [`/request` → 라인·조합법·제품 이름·조리법 입력 → 요청 목적 'ADI CD 변경' 선택] → [기대 결과:
+     ADI CD 변경전/변경후 표 위에 "동일 변경 적용 대상" 표가 뜬다. 1행에 방금 입력한 제품
+     이름/조리법이 읽기 전용으로 보인다.]
+  2. ["+ 추가" 클릭 → 2행 제품 이름에 다른 값 입력 → 조리법에 값 입력] → [기대 결과: 2행이 편집
+     가능한 입력칸으로 추가되고, 값을 채울 수 있다.]
+  3. [2행 제품 이름을 다시 다른 값으로 변경] → [기대 결과: 2행의 조리법 입력칸이 자동으로
+     비워진다.]
+  4. [2행 제품 이름만 채우고 조리법은 비운 채 '📤 상신' 클릭] → [기대 결과: 오류 토스트와 함께
+     표 아래 오류 문구가 뜨고 상신이 진행되지 않는다.]
+  5. [2행을 1행과 완전히 같은 제품 이름·조리법으로 채운 뒤 상신] → [기대 결과: "동일한 제품
+     이름·조리법 조합이 있습니다" 오류가 뜬다.]
+  6. [2행을 올바르게 채운 뒤 상신 완료] → [기대 결과: 문서 제목 끝(조리법 뒤)에 `(+1)` 배지가
+     붙는다. 결재 현황에서 그 문서 상세 → "동일 변경 적용 대상" 카드에 1·2행이 모두 보인다.]
+  7. [행 삭제 버튼으로 2행 삭제] → [기대 결과: 표에 1행(읽기 전용)만 남는다.]
+  8. [라인 또는 조합법을 다시 변경] → [기대 결과: 추가해 둔 행들이 모두 사라지고 표가 1행으로
+     돌아간다(제품 이름 옵션 자체가 바뀌므로).]
+- **잠재 주의사항**:
+  - 이 기능 도입 전 저장된 문서는 `adi_cd_extra_targets` 필드 자체가 없다 — 상세보기에서 카드가
+    자동으로 숨겨지고(빈 배열로 백필), 저장값 마이그레이션은 하지 않는다.
+  - 문서 제목의 `(+N)`은 추가 대상의 **개수**만 나타낸다. 실제로 어떤 제품/조리법 조합인지는
+    상세보기의 "동일 변경 적용 대상" 카드에서만 확인할 수 있다.
 
 ### 기능 개선 (2026-08-20 — ADI CD 변경 표: 변경전/변경후 행 수 항상 동일)
 
