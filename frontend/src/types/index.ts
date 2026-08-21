@@ -456,6 +456,11 @@ export interface DetailFormState {
   // 행 개수는 항상 같다(balanceAdiCdRows) — 존재하지 않는 STEP은 '미등록' 행으로 표시한다.
   adi_cd_before: AdiCdStep[];
   adi_cd_after: AdiCdStep[];
+  /**
+   * 'ADI CD 변경' — 이 변경을 함께 적용할 추가 제품 이름/조리법 조합('동일 변경 적용 대상' 표
+   * 2행부터의 값만 저장한다. 1행은 위쪽 필드 partid_selection/process_id를 그대로 쓰므로 여기 없다).
+   */
+  adi_cd_extra_targets: AdiCdTarget[];
 }
 
 /** ADI CD 변경 스텝 표 1행 — STEPSEQ/STEP 설명 2컬럼 고정. */
@@ -467,6 +472,13 @@ export interface AdiCdStep {
    *  변경후 미등록 = 삭제되는 STEP). 체크하면 step_id/step_desc 는 비우고 잠근다.
    *  optional 인 이유: 이 필드 도입 전에 저장된 문서에는 키 자체가 없다(없으면 false). */
   unregistered?: boolean;
+}
+
+/** ADI CD 변경 — '동일 변경 적용 대상' 표의 추가 행(2행부터) 1개. */
+export interface AdiCdTarget {
+  id: string;
+  partid_selection: string;
+  process_id: string;
 }
 
 // ===== 참조 요청서 Merge — BEFORE/AFTER 비교 =====
