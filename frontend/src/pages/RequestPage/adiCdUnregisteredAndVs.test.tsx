@@ -347,6 +347,24 @@ describe('ADI CD 변경 — 동일 변경 적용 대상', () => {
   const targetRows = (container: HTMLElement) =>
     Array.from(container.querySelectorAll('.adi-cd-targets-table tbody tr'));
 
+  /** 상시 입력칸 2개(제품 이름/조리법) — draft 컴포저, 표 안 행이 아니다. */
+  const draftInputs = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.adi-cd-targets-draft input')) as HTMLInputElement[];
+
+  const addButton = (container: HTMLElement) =>
+    container.querySelector('.adi-cd-targets-add') as HTMLButtonElement;
+
+  async function fillDraftAndAdd(container: HTMLElement, partid: string, processId: string) {
+    const inputs = draftInputs(container);
+    await act(async () => { fireEvent.change(inputs[0], { target: { value: partid } }); });
+    await flushEffects();
+    const inputsAfterPartid = draftInputs(container); // 제품 이름 변경 시 조리법 입력칸이 재마운트되지 않으므로 재조회 불필요하지만 안전하게 다시 조회
+    await act(async () => { fireEvent.change(inputsAfterPartid[1], { target: { value: processId } }); });
+    await flushEffects();
+    await act(async () => { addButton(container).click(); });
+    await flushEffects();
+  }
+
   it('1행은 위쪽에서 이미 고른 제품 이름/조리법을 읽기 전용으로 보여준다', async () => {
     const { container } = await renderNewDoc();
     await openAdiCdPanel(container);
@@ -358,20 +376,27 @@ describe('ADI CD 변경 — 동일 변경 적용 대상', () => {
     expect(fixedCells[1].textContent).toBe(PROCESS_ID);
   });
 
-  it('+ 추가로 2행을 만들어 제품 이름/조리법을 입력하면 저장된다', async () => {
+  it('두 칸이 비어 있으면 추가 버튼이 비활성화돼 있다', async () => {
     const { container } = await renderNewDoc();
     await openAdiCdPanel(container);
 
-    await act(async () => { (container.querySelector('.adi-cd-targets-add') as HTMLButtonElement).click(); });
-    await flushEffects();
+    expect(addButton(container).disabled).toBe(true);
+  });
+
+  it('입력칸에 값을 채운 뒤 추가를 누르면 표에 반영되고 저장된다', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanel(container);
+
+    await fillDraftAndAdd(container, '제품B', 'PROC_B1');
 
     const rows = targetRows(container);
     expect(rows).toHaveLength(2);
-    const inputs = rows[1].querySelectorAll('input');
-    await act(async () => { fireEvent.change(inputs[0], { target: { value: '제품B' } }); });
-    await flushEffects();
-    await act(async () => { fireEvent.change(inputs[1], { target: { value: 'PROC_B1' } }); });
-    await flushEffects();
+    expect(rows[1].textContent).toContain('제품B');
+    expect(rows[1].textContent).toContain('PROC_B1');
+    // 반영 후 입력칸은 다시 비워진다.
+    const inputsAfter = draftInputs(container);
+    expect(inputsAfter[0].value).toBe('');
+    expect(inputsAfter[1].value).toBe('');
 
     const detail = await saveDraftAndCaptureDetail();
     const extras = detail.adi_cd_extra_targets as { partid_selection: string; process_id: string }[];
@@ -379,36 +404,34 @@ describe('ADI CD 변경 — 동일 변경 적용 대상', () => {
     expect(extras[0]).toMatchObject({ partid_selection: '제품B', process_id: 'PROC_B1' });
   });
 
-  it('추가 행의 제품 이름을 바꾸면 그 행의 조리법 입력값이 비워진다', async () => {
+  it('제품 이름을 바꾸면 조리법 입력칸이 비워진다(추가 전)', async () => {
     const { container } = await renderNewDoc();
     await openAdiCdPanel(container);
 
-    await act(async () => { (container.querySelector('.adi-cd-targets-add') as HTMLButtonElement).click(); });
-    await flushEffects();
-
-    let inputs = targetRows(container)[1].querySelectorAll('input') as NodeListOf<HTMLInputElement>;
+    let inputs = draftInputs(container);
     await act(async () => { fireEvent.change(inputs[0], { target: { value: '제품B' } }); });
     await flushEffects();
+    inputs = draftInputs(container);
     await act(async () => { fireEvent.change(inputs[1], { target: { value: 'PROC_B1' } }); });
     await flushEffects();
 
-    inputs = targetRows(container)[1].querySelectorAll('input') as NodeListOf<HTMLInputElement>;
+    inputs = draftInputs(container);
     expect(inputs[1].value).toBe('PROC_B1');
 
     await act(async () => { fireEvent.change(inputs[0], { target: { value: '제품C' } }); });
     await flushEffects();
 
-    inputs = targetRows(container)[1].querySelectorAll('input') as NodeListOf<HTMLInputElement>;
+    inputs = draftInputs(container);
     expect(inputs[0].value).toBe('제품C');
     expect(inputs[1].value).toBe('');
+    expect(targetRows(container)).toHaveLength(1); // 추가 버튼을 누르지 않았으므로 표는 그대로
   });
 
   it('삭제 버튼으로 추가한 행을 지울 수 있다', async () => {
     const { container } = await renderNewDoc();
     await openAdiCdPanel(container);
 
-    await act(async () => { (container.querySelector('.adi-cd-targets-add') as HTMLButtonElement).click(); });
-    await flushEffects();
+    await fillDraftAndAdd(container, '제품B', 'PROC_B1');
     expect(targetRows(container)).toHaveLength(2);
 
     const removeBtn = targetRows(container)[1].querySelector('.adi-cd-targets-remove') as HTMLButtonElement;
@@ -416,6 +439,30 @@ describe('ADI CD 변경 — 동일 변경 적용 대상', () => {
     await flushEffects();
 
     expect(targetRows(container)).toHaveLength(1); // 1행(기존값)만 남는다
+  });
+
+  it('1행과 겹치는 조합을 추가하려 하면 토스트로 막히고 표에는 반영되지 않는다', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanel(container);
+
+    // 1행(기존값)과 완전히 같은 제품 이름/조리법을 입력한다.
+    await fillDraftAndAdd(container, PRODUCT, PROCESS_ID);
+
+    expect(targetRows(container)).toHaveLength(1); // 추가되지 않았다
+    expect(container.querySelector('.toast-error')?.textContent).toContain('동일한');
+  });
+
+  it('이미 추가한 행과 겹치는 조합을 추가하려 하면 토스트로 막힌다', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanel(container);
+
+    await fillDraftAndAdd(container, '제품B', 'PROC_B1');
+    expect(targetRows(container)).toHaveLength(2);
+
+    await fillDraftAndAdd(container, '제품B', 'PROC_B1');
+
+    expect(targetRows(container)).toHaveLength(2); // 그대로 — 중복 추가 안 됨
+    expect(container.querySelector('.toast-error')?.textContent).toContain('동일한');
   });
 });
 
