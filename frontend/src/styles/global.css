@@ -4993,6 +4993,20 @@ select.form-control option {
 }
 .adi-cd-note { margin-top: 6px; font-size: 0.76rem; color: var(--text-muted); line-height: 1.5; }
 
+/* ── ADI CD 변경 — 동일 변경 적용 대상 표 ── */
+.adi-cd-targets-panel { margin: 4px 0 12px; }
+.adi-cd-targets-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-bottom: 6px; }
+.adi-cd-targets-table th, .adi-cd-targets-table td {
+  padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--border-light);
+}
+.adi-cd-targets-table th { font-size: 0.76rem; font-weight: 600; color: var(--text-secondary); }
+.adi-cd-targets-fixed { color: var(--text-secondary); }
+.adi-cd-targets-remove {
+  border: none; background: none; color: var(--danger);
+  cursor: pointer; font-size: 0.85rem; padding: 0 4px; line-height: 1;
+}
+.adi-cd-targets-add { font-size: 0.78rem; padding: 4px 10px; }
+
 /* ── ADI CD 컬럼 매핑 모달 ── */
 .adi-cd-map-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
 .adi-cd-map-table th, .adi-cd-map-table td {
