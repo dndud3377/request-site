@@ -4986,19 +4986,24 @@ select.form-control option {
 .adi-cd-empty-hint { color: var(--text-muted); font-size: 0.78rem; padding: 10px 8px; }
 .adi-cd-note { margin-top: 6px; font-size: 0.76rem; color: var(--text-muted); line-height: 1.5; }
 
-/* ── ADI CD 변경 — 동일 변경 적용 대상 표 ── */
-.adi-cd-targets-panel { margin: 4px 0 12px; }
-.adi-cd-targets-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-bottom: 6px; }
+/* ── ADI CD 변경 — 동일 변경 적용 대상 표 (2026-08-21: 폭만 지금의 약 1/3로 축소) ── */
+.adi-cd-targets-panel { margin: 4px 0 12px; max-width: 33%; }
+.adi-cd-targets-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; margin-bottom: 6px; }
 .adi-cd-targets-table th, .adi-cd-targets-table td {
-  padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--border-light);
+  padding: 3px 5px; text-align: left; border-bottom: 1px solid var(--border-light);
 }
-.adi-cd-targets-table th { font-size: 0.76rem; font-weight: 600; color: var(--text-secondary); }
+.adi-cd-targets-table th { font-size: 0.72rem; font-weight: 600; color: var(--text-secondary); }
 .adi-cd-targets-fixed { color: var(--text-secondary); }
 .adi-cd-targets-remove {
   border: none; background: none; color: var(--danger);
   cursor: pointer; font-size: 0.85rem; padding: 0 4px; line-height: 1;
 }
-.adi-cd-targets-add { font-size: 0.78rem; padding: 4px 10px; }
+.adi-cd-targets-draft { display: flex; gap: 6px; align-items: center; }
+.adi-cd-targets-add { font-size: 0.78rem; padding: 4px 10px; white-space: nowrap; }
+
+/* 상세보기(읽기 전용) 표 — 공용 .table 은 12-16px padding·0.78rem 라 폭만 줄이면 안이 헐렁해 보인다. */
+.adi-cd-targets-detail-table th,
+.adi-cd-targets-detail-table td { padding: 4px 6px; font-size: 0.72rem; }
 
 /* ── ADI CD 컬럼 매핑 모달 ── */
 .adi-cd-map-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }

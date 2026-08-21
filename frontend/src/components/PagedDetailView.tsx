@@ -109,15 +109,17 @@ function MergePairsTable({ pairs }: { pairs: MergePair[] }) {
 function AdiCdTargetsTable({ first, extras }: { first: { partid_selection: string; process_id: string }; extras: AdiCdTarget[] }) {
   const { t } = useTranslation();
   return (
-    <table className="table" style={{ fontSize: '0.8rem' }}>
-      <thead><tr><th>{t('request.partid_selection')}</th><th>{t('request.process_id')}</th></tr></thead>
-      <tbody>
-        <tr><td>{first.partid_selection}</td><td>{first.process_id}</td></tr>
-        {extras.map((r) => (
-          <tr key={r.id}><td>{r.partid_selection}</td><td>{r.process_id}</td></tr>
-        ))}
-      </tbody>
-    </table>
+    <div style={{ maxWidth: '33%' }}>
+      <table className="table adi-cd-targets-detail-table">
+        <thead><tr><th>{t('request.partid_selection')}</th><th>{t('request.process_id')}</th></tr></thead>
+        <tbody>
+          <tr><td>{first.partid_selection}</td><td>{first.process_id}</td></tr>
+          {extras.map((r) => (
+            <tr key={r.id}><td>{r.partid_selection}</td><td>{r.process_id}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
