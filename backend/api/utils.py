@@ -11,6 +11,7 @@ import threading
 import requests
 import pandas as pd
 import urllib3
+from contextlib import contextmanager
 from sqlalchemy import create_engine
 from urllib.parse import quote_plus
 from typing import Optional
@@ -36,9 +37,23 @@ RTDB_REFRESH_TOKEN_RENEW_MARGIN = 7 * 86400
 # 프로세스가 재시작되면 비워져 다음 호출은 처음부터 풀 로그인(rtdb_login_with_retry)부터 시작한다.
 _rtdb_token_cache = {'refresh_token': None, 'refresh_token_issued_at': None}
 
-# DCQ 로그인 직렬화 락 - cq_login 이 전역 sys.stdin 을 교체하므로
-# 여러 스케줄러 스레드가 동시에 로그인하면 stdin 이 엉킨다. 로그인 구간을 한 번에 하나씩만 실행한다.
-_DCQ_LOGIN_LOCK = threading.Lock()
+# DCQ 세션 직렬화 락 - DCQ SDK(v2.5.0, C 확장)가 전역 토큰 상태를 쓰기 때문에 스레드 비안전이다.
+# cq_login() 이 전역 sys.stdin 을 교체하는 로그인 구간뿐 아니라, 로그인 이후 getTokenTime()/getData()
+# 까지 포함한 "DCQ 세션 전체"를 한 번에 하나씩만 실행해야 토큰 상태가 스레드 간에 섞이지 않는다.
+# cq_login() 내부에서 dcq_session_lock() 안에 다시 들어오는 중첩 호출이 있으므로 RLock 을 쓴다.
+_DCQ_LOCK = threading.RLock()
+
+
+@contextmanager
+def dcq_session_lock():
+    """
+    DCQ 로그인부터 데이터 조회까지, 하나의 스케줄러 잡이 DCQ SDK 를 사용하는 전체 구간을 감싸는
+    컨텍스트 매니저. 여러 스케줄러 잡(sync_form_options/sync_holidays/sync_design_rule)이
+    동시에 실행되더라도 이 구간이 서로 겹치지 않도록 호출부(scheduler.py)에서 사용한다.
+    """
+    with _DCQ_LOCK:
+        yield
+
 
 # verify=False 사용에 따른 InsecureRequestWarning 억제 (사내 인증서 정책)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -70,7 +85,7 @@ def cq_login(dcq_id, dcq_password):
     sample.py 와 동일한 방식 - stdin 우회 로그인
     """
     account_info = io.StringIO(f'{dcq_id}\n{dcq_password}')
-    with _DCQ_LOGIN_LOCK:
+    with _DCQ_LOCK:
         sys.stdin = account_info
         try:
             login()
