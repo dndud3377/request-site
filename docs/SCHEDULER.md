@@ -340,3 +340,18 @@ DCQ 로 자동 대체되지 않고 그 데이터는 동기화되지 않는다**(
   - **검증 방법**: `backend/api/tests.py`의 `DcqTokenSettleRetryTest` (mock 으로 `time.sleep`을
     대체해 대기/재시도 횟수만 검증, 실제 대기는 하지 않음). 실제 운영 효과는 다음 실패/성공
     사이클의 알림 메일로 확인해야 한다.
+  - **진단 로깅(2026-08 추가) - 다음 재발 시 원인을 사실로 확정하기 위한 것.** DCQ 관련 로그
+    (`cq_login`/`dcq_login_with_retry`/`get_dcq_token_info`/`get_data_from_dcq`, `utils.py`)
+    전부에 `[DCQ][{hostname}:{PID}]` 형태의 프로세스 식별자(`utils._DCQ_PROC_TAG`, 모듈 로드
+    시 1회 계산)를 남긴다. `run_scheduler.py` 기동 시에도 `스케줄러 프로세스 시작: {hostname}:
+    {PID}` 를 한 줄 남긴다.
+    - `docker-compose.yml` 의 `scheduler` 서비스는 `hostname` 오버라이드가 없어, 컨테이너
+      인스턴스마다 hostname 이 자동으로 고유하게 부여된다(재배포로 컨테이너가 바뀌면 다름).
+      따라서 실패 시각 전후 로그의 태그를 비교하면:
+      - **hostname 이 다른 태그가 동시에 보임** → 컨테이너(프로세스)가 2개 이상 떠 있었다는 뜻
+      - **hostname 은 같은데 PID 가 다른 태그가 동시에 보임** → 같은 컨테이너 안에서
+        `run_scheduler` 가 중복 실행됐다는 뜻(예: 수동 디버그 실행이 남아있었던 경우)
+      - **태그가 항상 하나뿐** → 프로세스 중복이 아니라 SDK 내부 캐시 반영 지연 쪽에 무게가
+        실린다
+    - 다음에 DCQ 동기화 실패 알림 메일이 오면, 그 시각 전후 로그를 이 태그 기준으로 먼저
+      확인해서 원인을 확정하고, 그에 맞는 근본 조치(프로세스 중복 제거 vs SDK 문의)로 넘어간다.
