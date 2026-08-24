@@ -12,7 +12,10 @@ import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseI
 import { useAuth } from '../contexts/AuthContext';
 import { shouldShowNotice, markNoticeSeen } from '../utils/noticeStorage';
 import { formatDate } from '../utils/date';
-import { getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument, submittedSortKey } from '../utils/approvalTable';
+import {
+  getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument, submittedSortKey,
+  getDocDetailFields, getDocSubmittedDate,
+} from '../utils/approvalTable';
 
 // 홈 '나의 의뢰 현황' 에 보여줄 최대 건수 (그 이상은 '전체 보기' 로 결재현황 MY 탭에서 본다)
 const MY_REQUESTS_LIMIT = 5;
@@ -659,8 +662,11 @@ export default function HomePage(): React.ReactElement {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>{t('approval.col_title')}</th>
-                    <th>{t('approval.col_product')}</th>
+                    <th>{t('approval.col_line')}</th>
+                    <th>{t('approval.col_purpose')}</th>
+                    <th>{t('approval.col_map_purpose')}</th>
+                    <th>{t('approval.col_product_combo')}</th>
+                    <th>{t('approval.col_submitted')}</th>
                     <th>{t('approval.col_requester')}</th>
                     <th>{t('approval.col_current_stage')}</th>
                     <th>{t('approval.col_final_completion')}</th>
@@ -674,15 +680,33 @@ export default function HomePage(): React.ReactElement {
                     const row = getDocTableRows(doc, t)[0];
                     const isPaused = doc.status === 'pause';
                     const lastRejection = getLastRejectionInfo(doc, t);
+                    const detail = getDocDetailFields(doc);
+                    const comboText = [detail.processSelection, detail.partidSelection, detail.processId]
+                      .filter(Boolean).join(' · ') || '-';
                     return (
                       <tr key={doc.id}>
+                        <td><b>{detail.line || '-'}</b></td>
+                        <td>
+                          <div className="purpose-cell">
+                            <span className="purpose-cell-main">{detail.purpose || '-'}</span>
+                            {detail.otherPurpose.map((o) => (
+                              <span key={o} className="purpose-cell-sub">{o}</span>
+                            ))}
+                          </div>
+                        </td>
+                        <td>
+                          {detail.isAdiCd ? (
+                            <span className="map-purpose-na">{t('approval.step_na')}</span>
+                          ) : (detail.mapType || '-')}
+                        </td>
                         <td>
                           <button
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 600, fontSize: '0.9rem', textAlign: 'left', padding: 0 }}
+                            className="product-combo-link"
                             onClick={() => goOrAlert('/approval')}
                           >
-                            {doc.title}
+                            {comboText}
                           </button>
+                          {detail.adiExtraCount > 0 && <span className="adi-extra-badge">+{detail.adiExtraCount}</span>}
                           {lastRejection && (
                             <div style={{ marginTop: 4 }}>
                               <span className="rejection-history-chip">
@@ -691,7 +715,7 @@ export default function HomePage(): React.ReactElement {
                             </div>
                           )}
                         </td>
-                        <td>{doc.product_name}</td>
+                        <td>{formatDate(getDocSubmittedDate(doc))}</td>
                         <td>
                           <div>{doc.requester_name}</div>
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{doc.requester_department}</div>
