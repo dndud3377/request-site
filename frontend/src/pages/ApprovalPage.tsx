@@ -12,6 +12,7 @@ import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem } from '../types';
 import { formatDate } from '../utils/date';
+import { exportAll as exportAllXlsx } from '../utils/detailExport';
 import {
   getDocTableRows, getFinalCompletionDate, getCurrentRound, getLastRejectionInfo,
   hasActivePendingStep, isMyDocument,
@@ -1924,6 +1925,15 @@ export default function ApprovalPage(): React.ReactElement {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         title={selected?.title ?? ''}
+        titleExtra={selected && (
+          <button
+            onClick={() => exportAllXlsx(selected, t)}
+            className="btn btn-secondary btn-sm"
+            style={{ fontSize: '0.75rem', padding: '2px 10px' }}
+          >
+            📊 {t('request.export_all_btn')}
+          </button>
+        )}
         size="xl"
         footer={(() => {
           if (!selected) return null;
