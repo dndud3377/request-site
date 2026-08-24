@@ -209,7 +209,7 @@ const BeforeAfterPanel: React.FC<BeforeAfterPanelProps> = ({
             </td>
           );
         })}
-        <td className="ba-cell-readonly">{info?.layerid || '—'}</td>
+        <td className={`ba-cell-readonly${manualOnly ? ' ba-cell-readonly-locked' : ''}`}>{info?.layerid || '—'}</td>
       </>
     );
   };
