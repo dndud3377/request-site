@@ -1764,6 +1764,30 @@ type Page = { label: string; content: React.ReactNode };
             )}
           </div>
 
+          {/* ADI CD 변경 전용 카드 — '기본 정보' 바로 아래(2026-08-21). 요청 목적이 'ADI CD 변경'일 때만
+              보인다 — 과거 '기타 목적 > ADI CD 변경'으로 저장된 레거시 문서는 adi_cd_before/after 값이
+              남아 있어도 더 이상 여기 나타나지 않는다(저장값 자체는 그대로, 표시 조건만 좁힌 것). */}
+          {isAdiCdChange && (detail.adi_cd_extra_targets ?? []).length > 0 && (
+            <div style={cardStyle}>
+              <div style={sectionTitle}>{t('request.adi_cd_targets_title')}</div>
+              <AdiCdTargetsTable
+                first={{ partid_selection: detail.partid_selection ?? '', process_id: detail.process_id ?? '' }}
+                extras={detail.adi_cd_extra_targets ?? []}
+              />
+            </div>
+          )}
+
+          {isAdiCdChange && ((detail.adi_cd_before ?? []).some((r) => r.unregistered || r.step_id.trim() || r.step_desc.trim())
+            || (detail.adi_cd_after ?? []).some((r) => r.unregistered || r.step_id.trim() || r.step_desc.trim())) && (
+            <div style={cardStyle}>
+              <div style={sectionTitle}>{t('request.adi_cd_section_title')}</div>
+              <AdiCdStepsTable
+                before={detail.adi_cd_before ?? []}
+                after={detail.adi_cd_after ?? []}
+              />
+            </div>
+          )}
+
           <div style={cardStyle}>
             <div style={sectionTitle}>{t('approval.section_detail')}</div>
 
@@ -1816,26 +1840,6 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {(detail.adi_cd_extra_targets ?? []).length > 0 && (
-            <div style={cardStyle}>
-              <div style={sectionTitle}>{t('request.adi_cd_targets_title')}</div>
-              <AdiCdTargetsTable
-                first={{ partid_selection: detail.partid_selection ?? '', process_id: detail.process_id ?? '' }}
-                extras={detail.adi_cd_extra_targets ?? []}
-              />
-            </div>
-          )}
-
-          {((detail.adi_cd_before ?? []).some((r) => r.unregistered || r.step_id.trim() || r.step_desc.trim())
-            || (detail.adi_cd_after ?? []).some((r) => r.unregistered || r.step_id.trim() || r.step_desc.trim())) && (
-            <div style={cardStyle}>
-              <div style={sectionTitle}>{t('request.adi_cd_section_title')}</div>
-              <AdiCdStepsTable
-                before={detail.adi_cd_before ?? []}
-                after={detail.adi_cd_after ?? []}
-              />
-            </div>
-          )}
 
           {doc.reference_materials && (
             <div style={cardStyle}>
