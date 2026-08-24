@@ -562,16 +562,39 @@ Backbone 을 아예 작성하지 않고 STEP1 의 ADI CD 변경전/변경후 표
 
 ### 3.1 목록
 - `documentsAPI.list()` 조회 후 **`approved` 제외**(`:320`)하고 표시(승인 완료건은 이력 페이지로).
-- 컬럼: 제목 / 제품명 / 의뢰자 / **현재 단계** / 최종 완료예정 / 양산일.
+- ✅ **(2026-08) 컬럼 분리** — 예전에는 `_`로 이어붙인 제목 문자열 하나(`라인(목적)_MAP(맵목적)_조합법_제품_조리법_요청서_날짜`)와
+  제품명을 그대로 보여줬다. 지금은 그 문자열을 만드는 원본 값들을 각자 컬럼으로 나눈다:
+  **라인 / 목적 / MAP 목적 / 제품(조합법-제품-조리법) / 요청일** / 의뢰자 / **현재 단계** / 최종 완료예정 / 양산일.
+  제목·제품명 컬럼은 없앴다(`doc.title`/`doc.product_name` 필드 자체는 그대로 저장되고, 검색창(`search_placeholder`)은
+  여전히 이 두 필드를 대상으로 서버 검색한다 — 화면 표시만 바뀐 것).
+  값의 출처는 `additional_notes` JSON의 `detail`(라인/목적/기타 목적/MAP 목적/조합법/제품/조리법, 백엔드 변경 없음 —
+  목록 응답에 이미 포함돼 있다, `serializers.py` `RequestDocumentListSerializer`)이며, 파싱은 `approvalTable.getDocDetailFields`
+  가 담당한다(JSON 파싱 실패 시 빈 값으로 방어). ADI CD 변경 문서는 `map_type` 자체가 없어 MAP 목적 칸에 `해당없음`을 보여준다.
+  목적 칸은 기타 목적이 있으면 대분류(예: `기타`)와 세부 항목(예: `Overlay 변경`)을 **두 줄**로 나눠 보여준다. 상세보기를
+  열던 클릭 동작은 제목 버튼에서 **제품(조합법-제품-조리법)** 칸으로 옮겼다(`data-tour="approval-doc-title"` 앵커는
+  그대로 유지 — 전체 가이드 투어가 참조하는 셀렉터만 옮겨 달았다).
+  **요청일**은 제목 문자열의 날짜를 파싱하지 않고 `doc.submitted_at`(없으면 `created_at`)을 그대로 쓴다
+  (`approvalTable.getDocSubmittedDate`, 기존 기본 정렬 키와 같은 원칙).
+- ✅ **(2026-08) 필터 바** — 표 위에 라인/목적/MAP 목적(체크박스 다중 선택) + 요청일(기간 + 최근7일·30일·전체
+  프리셋) 필터를 추가했다. 모두 **클라이언트 측**(이미 받아온 `docs`에서 추가로 걸러냄, API 파라미터 없음)이고
+  필터 탭(`filter`) 전환 시 정렬과 함께 자동 초기화된다. 활성 필터는 강조색 버튼 + 값 요약 + 개수로 표시하고
+  '초기화' 버튼과 "전체 N건 중 M건 표시" 카운트를 함께 보여준다.
+  ✅ **(2026-08) 컬럼 헤더 정렬** — 라인/목적/MAP 목적/요청일 헤더를 클릭하면 3단(오름차순→내림차순→해제)
+  정렬된다(양산일 헤더의 기존 ▲▼⇅ 방식과 동일, §3.2.1).
   ✅ **(2026-08) '현재 단계 완료예정' 컬럼 삭제** — 단계별 기한을 없애고 최종 완료예정 하나만 둔다(§3.5).
 - **문서 1건 = 표 1행**. ✅ **(2026-08)** 병렬 단계에서 경로별로 행을 쪼개던 rowSpan 표시가 없어지고,
   '현재 단계' 칸 안의 3행 2열 그리드가 6개 경로를 한 번에 보여준다(§3.3.2).
 - 상태: `loading → error → empty → table` 4분기(2026-06 error 분기 추가). 실패 시 재시도 버튼.
-- ✅ **(2026-08) 재상신 이력 칩** — 재상신된 문서(회차 2 이상, 지금 반려 상태는 제외)는 제목 아래에
-  `↩ N회차 {단계} 단계 반려` 칩을 붙인다(`getLastRejectionInfo`, `approvalTable.ts`). 여러 번 반려됐어도
+  ✅ **(2026-08)** 필터 바로 걸러 결과가 0건이 돼도(예: 없는 라인 조합) 빈 상태 안내(`approval.no_data`)와
+  필터 바(초기화 버튼 포함)는 계속 보인다 — 검색·탭과 달리 컬럼 필터는 빈 결과에서도 조작 가능해야 하므로
+  빈 상태 분기 기준을 `docs.length`가 아니라 필터·정렬까지 끝난 `sortedDocs.length`로 바꿨다.
+- ✅ **(2026-08) 재상신 이력 칩** — 재상신된 문서(회차 2 이상, 지금 반려 상태는 제외)는 제품(조합법-제품-조리법)
+  칸 아래에 `↩ N회차 {단계} 단계 반려` 칩을 붙인다(`getLastRejectionInfo`, `approvalTable.ts`). 여러 번 반려됐어도
   **가장 최근 회차 1건만** 보여주고 이전 회차들을 나열하지 않는다 — 재상신은 항상 직전 회차의 반려로만
   일어나므로 `currentRound - 1` 회차의 `rejected` step만 보면 된다. 백엔드·마이그레이션 변경 없음(이미
-  응답에 실리는 `approval_steps`만 사용). 홈 '나의 의뢰 현황'(`HomePage.tsx`)도 같은 헬퍼로 동일하게 표시한다.
+  응답에 실리는 `approval_steps`만 사용). 홈 '나의 의뢰 현황'(`HomePage.tsx`)은 이 컬럼 분리를 적용하지
+  않아 여전히 제목 아래에 칩을 붙인다(§3.1 범위는 결재현황(ApprovalPage)만 — HomePage/HistoryPage는
+  `doc.title`/`doc.product_name`을 그대로 보여주는 예전 방식 그대로다).
   i18n: `approval.rejection_history_chip`.
 
 ### 3.1.1 페이지네이션 (2026-08)
@@ -613,12 +636,19 @@ Backbone 을 아예 작성하지 않고 STEP1 의 ADI CD 변경전/변경후 표
   (홈 '나의 의뢰 현황'의 '전체 보기'가 이 경로로 온다). 새로고침·링크 공유에도 탭이 유지된다.
 
 ### 3.2.1 목록 정렬 (2026-07, `sortedDocs`)
-우선순위: **양산일 정렬(켜짐) > 단계별 필터(진입 순서) > 기본(상신 오래된 순)**.
+우선순위: **컬럼 헤더 정렬(켜짐) > 양산일 정렬(켜짐) > 단계별 필터(진입 순서) > 기본(상신 오래된 순)**.
 - **기본**: `submitted_at` 오름차순(오래된 상신 먼저). `submitted_at` 없는 draft는 `created_at` 대체.
 - **단계별 필터(agent_R/P/J/O/E) 활성 시**: 기본을 대체 — 현재 회차의 해당 agent `pending` `ApprovalStep.created_at` 오름차순(그 단계로 먼저 넘어온 문서가 위).
 - **양산일(`col_production_date`) 헤더 클릭 3단 토글**: 오름차순→내림차순→원래 상태. 미입력(`production_date` 없음) 행은 방향 무관 **항상 맨 아래**. 켜져 있으면 **필터 탭과 무관하게** 양산일 기준이 우선(단계별 필터의 진입 순서보다 앞섬).
-- 필터 탭(`filter`)을 바꾸면 양산일 정렬은 자동으로 원래 상태로 리셋(`useEffect([filter])`).
-- 모두 클라이언트 측 정렬(`docs` → `sortedDocs`), 백엔드/정렬 파라미터 변경 없음 — 필요한 필드(`submitted_at`/`created_at`/`production_date`/`approval_steps[].created_at`)는 이미 목록 응답에 포함.
+- ✅ **(2026-08) 컬럼 헤더 정렬(`colSort`)** — 라인/목적/MAP 목적/요청일 헤더 클릭 3단 토글(오름차순→내림차순→해제).
+  값은 `approvalTable.getDocDetailFields`/`getMapPurposeKey`/`getDocSubmittedDate`로 뽑아 한글 로캘(`localeCompare(..., 'ko')`)로
+  비교한다. **양산일 정렬과는 배타적**이다 — 어느 한쪽을 클릭하면 다른 쪽은 꺼진다(`toggleColSort`/`toggleProdDateSort`가
+  서로 상대 상태를 초기화). 켜져 있으면 양산일 정렬보다 우선.
+- ✅ **(2026-08) 필터 바(라인/목적/MAP 목적/요청일)** — 정렬보다 앞서 `docs`에 적용된다(`filteredDocs`,
+  §3.1). 정렬은 이 필터링된 결과 위에서 동작한다.
+- 필터 탭(`filter`)을 바꾸면 양산일 정렬·컬럼 정렬·컬럼 필터가 모두 자동으로 초기화된다(`useEffect([filter])`).
+- 모두 클라이언트 측 정렬·필터(`docs` → `filteredDocs` → `sortedDocs`), 백엔드/정렬 파라미터 변경 없음 — 필요한 필드
+  (`submitted_at`/`created_at`/`production_date`/`additional_notes`/`approval_steps[].created_at`)는 이미 목록 응답에 포함.
 
 ### 3.3 현재 단계 표시 (`getDocTableRows`)
 
@@ -983,9 +1013,14 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
   - 문서 A 병렬 상태: 경로1은 **P 검토중 / J 대기**(P→J 순차라 J 단계는 아직 미생성), 경로2는 **O 검토중**(담당자 지정). P·J 동시 검토중으로 보이지 않게 한다.
 - **결재 경로 다이어그램**: `frontend/src/components/ApprovalRouteDiagram.tsx`. **전체 가이드의 첫 단계(독립 컴포넌트)로 분리**되어, 결재현황 페이지(iframe)에는 더 이상 렌더하지 않는다. 최종 경로 `제품담당자→검토→RFG→[경로1 PHPSI]∥[경로2 JOB]∥[경로3 OVL(+EUV)]∥[후결자]→완료`(2026-08 J 분리 반영)와 조건(EUV(E) 단계는 plel 존재 시에만 진행되며 Validation System 대상/비대상 판정을 확인·Only MAP은 R까지·반려 시 처음 PL 검토부터 새 회차로 재상신)을 안내한다(2026-08 반려 상태 철회 제거로 문구 수정). 박스는 약어(code) 없이 **이름(label)만** 표시하며, 완료 박스만 현재처럼 `✓ + 완료`를 유지한다.
 - **지정하기 시연(실제 기능과 동일)**: 운영 지정 UI를 **커스텀 드롭다운(버튼→후보 목록→항목 클릭)+확인/취소**로 통일했고, 투어도 동일 UI를 쓴다. `open-assign`이 커서로 각 요소를 **실제 클릭**(지정하기→드롭다운 펼침→첫 후보 선택→확인). '확인' onClick은 `handleAssign`을 호출하며, 투어 모드에서는 `handleAssign`/`handleLoadTeamMembers`가 API 대신 **로컬 상태로 담당자를 배정**(샘플 `TOUR_ASSIGN_MEMBERS`)하고 토스트(`approval.assign_success`)를 띄운다. 배정 후 `assignee_loginid`가 채워져 지정 UI가 사라진다(실제 동작과 동일). 캡션은 **상단(topCaption)**으로 띄워 하단 footer 지정 UI를 가리지 않는다.
-- **명령 수신**(부모 모달 → iframe `postMessage`): `tour-reset` · `my-filter`/`all-filter` · `open-detail`(대표 문서 A 제목 클릭→상세) · `open-assign`(문서 C 상세→지정하기→드롭다운→후보→확인까지 실제 배정) · `open-rowdiff`(문서 A J-ayer '이력 확인'→변경 전/후 모달) · `page-jayer`/`page-route`(상세 탭 이동, MASTER 기준 인덱스 2/5) · `pause`/`resume`.
-- **`data-tour` 앵커**(투어 전용): `approval-stage`(현재 단계 컬럼·문서 A 행) · `assign-btn`(지정하기 버튼) · `assign-select`(드롭다운 버튼) · `assign-option`(첫 후보 항목) · `assign-confirm`(확인 버튼) · `jayer-hist-btn`(이력 확인 버튼).
-- **시연 순서**: 소개 → MY 필터 → 현재 단계·메일 발송 안내(목록 컬럼) → 지정하기(문서 C, 실제 드롭다운→후보→확인 배정까지) → 제목 클릭(커서)으로 상세(문서 A) 열기 → 결재 경로 탭(팀별·회차별 이력) → J-ayer export 안내 → 재상신 변경 행 강조 → 이력 확인 모달. (큰 결재 경로 다이어그램은 별도 첫 단계로 분리.) export 설명은 J-ayer만 한다.
+- **명령 수신**(부모 모달 → iframe `postMessage`): `tour-reset` · `my-filter`/`all-filter` · `open-detail`(대표 문서 A
+  제품(조합법-제품-조리법) 칸 클릭→상세, 2026-08 전엔 제목 클릭) · `open-assign`(문서 C 상세→지정하기→드롭다운→후보→확인까지 실제 배정) · `open-rowdiff`(문서 A J-ayer '이력 확인'→변경 전/후 모달) · `page-jayer`/`page-route`(상세 탭 이동, MASTER 기준 인덱스 2/5) · `pause`/`resume`.
+- **`data-tour` 앵커**(투어 전용): `approval-stage`(현재 단계 컬럼·문서 A 행) · `approval-doc-title`(제품(조합법-제품-조리법)
+  칸 — 2026-08 컬럼 분리 전엔 제목 칸에 달았다, 이름은 하위 호환으로 유지) · `assign-btn`(지정하기 버튼) ·
+  `assign-select`(드롭다운 버튼) · `assign-option`(첫 후보 항목) · `assign-confirm`(확인 버튼) · `jayer-hist-btn`(이력 확인 버튼).
+- **시연 순서**: 소개 → MY 필터 → 현재 단계·메일 발송 안내(목록 컬럼) → 지정하기(문서 C, 실제 드롭다운→후보→확인 배정까지) →
+  제품(조합법-제품-조리법) 칸 클릭(커서)으로 상세(문서 A) 열기 → 결재 경로 탭(팀별·회차별 이력) → J-ayer export 안내 →
+  재상신 변경 행 강조 → 이력 확인 모달. (큰 결재 경로 다이어그램은 별도 첫 단계로 분리.) export 설명은 J-ayer만 한다.
 - 상세 모달은 투어에서 `PagedDetailView`에 `role="MASTER"`를 넘겨 모든 페이지가 보이도록 한다.
 - **권한관리 단계**는 iframe이 아니라 컴포넌트형 데모(`PermissionUserGroupDemo`)로 전체 가이드에 포함된다 — 자세한 내용은 `docs/전체가이드.md`의 "컴포넌트형 단계 공통 / 권한관리" 참고.
 
@@ -1144,7 +1179,10 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
   두 화면이 같은 헬퍼를 쓰므로 홈과 결재현황 MY 탭의 목록이 어긋나지 않는다.
 - **표시 규칙**: 완료(`approved`)건 제외 → **상신 오래된 순**(`submittedSortKey`, 결재현황 기본 정렬과 동일)
   → **최대 5건**(`MY_REQUESTS_LIMIT`).
-- **표**: 결재현황과 동일한 컬럼·그리드(§3.3). 현재 단계 칸도 같은 `getDocTableRows`/`StageGrid` 를 쓴다.
+- **표**: '현재 단계' 칸은 결재현황과 동일한 그리드(§3.3, 같은 `getDocTableRows`/`StageGrid`)를 쓴다.
+  ⚠️ **(2026-08)** 그 외 컬럼은 결재현황과 갈렸다 — 결재현황(ApprovalPage)은 라인/목적/MAP 목적/
+  제품(조합법-제품-조리법)/요청일로 컬럼을 분리했지만(§3.1), 홈은 이번 변경 범위 밖이라 예전 방식대로
+  제목·제품명 컬럼을 그대로 보여준다.
 - **'전체 보기 →'**: `/approval?filter=my` 로 이동해 **MY 탭이 열린 상태**로 결재현황을 연다.
 - **빈 상태**: 0건이면 섹션을 숨기지 않고 `home.my_requests_empty` 안내를 보여준다.
 - **역할 없는 사용자(`NONE`)**: 섹션 전체를 노출하지 않는다(연간 차트와 동일).

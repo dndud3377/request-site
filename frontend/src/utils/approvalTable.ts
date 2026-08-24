@@ -2,7 +2,7 @@
 import type { TFunction } from 'i18next';
 import { RequestDocument, ApprovalStepFrontend } from '../types';
 import { formatDate } from './date';
-import { MAP_DELETE_EDIT_PURPOSE } from '../pages/RequestPage/constants';
+import { MAP_DELETE_EDIT_PURPOSE, ADI_CD_CHANGE_PURPOSE } from '../pages/RequestPage/constants';
 
 /** 요청 목적이 'MAP 삭제' 인가 — PagedDetailView 의 isOnlyMap/isMapDeleteEdit 과 동일한 판정 방식 */
 const isMapDeleteEditDoc = (doc: RequestDocument): boolean => {
@@ -11,6 +11,67 @@ const isMapDeleteEditDoc = (doc: RequestDocument): boolean => {
     return parsed?.detail?.request_purpose === MAP_DELETE_EDIT_PURPOSE;
   } catch { return false; }
 };
+
+/* ===================== 결재 현황 목록 컬럼 분리(2026-08) =====================
+ * '제목' 한 칸에 몰아 쓰던 라인·목적·MAP 목적·조합법/제품/조리법을 각자 컬럼으로 보여주기 위해
+ * additional_notes(JSON)의 detail 을 파싱한다. 제목 문자열 조립 규칙(RequestPage/index.tsx
+ * buildEnrichedForm)과 같은 출처를 그대로 읽을 뿐 별도로 저장하지 않는다.
+ * -------------------------------------------------------------------------- */
+
+/** MAP 목적 필터·정렬에서 'ADI CD 변경'처럼 map_type 자체가 없는 문서를 가리키는 값 */
+export const MAP_PURPOSE_NA = '__NA__';
+
+export interface DocDetailFields {
+  line: string;
+  /** 요청 목적 대분류(신규/차용/기타 등) */
+  purpose: string;
+  /** 기타 목적 세부 항목(Overlay 변경 등) — purpose 가 '기타'일 때만 값이 있다 */
+  otherPurpose: string[];
+  /** ADI CD 변경 문서는 map_type 자체가 없어 항상 빈 문자열이다 */
+  mapType: string;
+  isAdiCd: boolean;
+  processSelection: string;
+  partidSelection: string;
+  processId: string;
+  /** ADI CD 변경의 '동일 변경 적용 대상' 추가 건수(제목의 (+N) 배지와 동일) */
+  adiExtraCount: number;
+}
+
+const EMPTY_DETAIL_FIELDS: DocDetailFields = {
+  line: '', purpose: '', otherPurpose: [], mapType: '', isAdiCd: false,
+  processSelection: '', partidSelection: '', processId: '', adiExtraCount: 0,
+};
+
+/** 결재 현황 목록의 라인/목적/MAP 목적/제품(조합법-제품-조리법) 컬럼용 값 — JSON 파싱 실패 시 빈 값 */
+export const getDocDetailFields = (doc: RequestDocument): DocDetailFields => {
+  try {
+    const parsed = JSON.parse(doc.additional_notes ?? '{}');
+    const d = parsed?.detail ?? {};
+    const purpose: string = d.request_purpose ?? '';
+    return {
+      line: d.line ?? '',
+      purpose,
+      otherPurpose: Array.isArray(d.other_purpose) ? d.other_purpose : [],
+      mapType: d.map_type ?? '',
+      isAdiCd: purpose === ADI_CD_CHANGE_PURPOSE,
+      processSelection: d.process_selection ?? '',
+      partidSelection: d.partid_selection ?? '',
+      processId: d.process_id ?? '',
+      adiExtraCount: Array.isArray(d.adi_cd_extra_targets) ? d.adi_cd_extra_targets.length : 0,
+    };
+  } catch {
+    return EMPTY_DETAIL_FIELDS;
+  }
+};
+
+/** MAP 목적 필터·정렬 키 — ADI CD 변경 문서는 MAP_PURPOSE_NA 로 통일한다 */
+export const getMapPurposeKey = (detail: DocDetailFields): string =>
+  detail.isAdiCd ? MAP_PURPOSE_NA : detail.mapType;
+
+/** 결재 현황 목록의 '요청일' 컬럼·정렬·필터 값 — 제목 문자열의 날짜를 파싱하지 않고
+ * submittedSortKey 와 동일하게 실제 상신 시각(없으면 작성 시각)을 그대로 쓴다. */
+export const getDocSubmittedDate = (doc: RequestDocument): string =>
+  doc.submitted_at ?? doc.created_at ?? '';
 
 /**
  * 단계 라벨. 검토자·후결자도 '검토자'/'후결자' 가 아니라 **그 단계의 이름**으로 표기한다(2026-08).

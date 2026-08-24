@@ -829,6 +829,189 @@ select.form-control option {
   color: white;
 }
 
+/* ===== 결재 현황 컬럼 필터 바(라인/목적/MAP 목적/요청일, docs/APPROVAL.md 목록 컬럼 분리) ===== */
+.column-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.column-filter-bar-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: 2px;
+}
+
+.column-filter-anchor { position: relative; }
+
+.column-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 7px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.column-filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.column-filter-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.column-filter-btn .caret { font-size: 0.65rem; color: var(--text-disabled); }
+.column-filter-btn.active .caret { color: rgba(255, 255, 255, 0.75); }
+
+.column-filter-btn .count {
+  background: rgba(255, 255, 255, 0.25);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.column-filter-reset {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 4px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.column-filter-reset:hover { color: var(--danger); }
+
+.column-filter-count {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.column-filter-count b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+.column-filter-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 10px;
+  min-width: 190px;
+}
+
+.column-filter-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.column-filter-popover-item:hover { background: var(--bg-card-hover); }
+.column-filter-popover-item input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+.column-filter-popover-divider { height: 1px; background: var(--border-light); margin: 6px 0; }
+
+.column-filter-popover-all {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.column-filter-date-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+
+.column-filter-date-row input[type="date"] {
+  font-family: inherit;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 6px;
+  width: 130px;
+}
+
+.column-filter-date-presets { display: flex; gap: 5px; flex-wrap: wrap; }
+
+.column-filter-date-preset-btn {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 4px 9px;
+  cursor: pointer;
+}
+
+.column-filter-date-preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.table th.sortable-col { cursor: pointer; user-select: none; }
+.table th.sortable-col:hover { color: var(--text-primary); }
+
+.purpose-cell { display: flex; flex-direction: column; gap: 2px; }
+.purpose-cell-main { font-weight: 600; color: var(--text-primary); }
+.purpose-cell-sub { font-size: 0.74rem; color: var(--accent); }
+
+.product-combo-link {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-align: left;
+  padding: 0;
+  font-family: var(--font-mono, monospace);
+}
+.product-combo-link:hover { text-decoration: underline; }
+.combo-dot { color: var(--text-disabled); margin: 0 3px; font-family: var(--font-sans); }
+
+.adi-extra-badge {
+  font-family: var(--font-sans);
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--warning);
+  background: var(--warning-light);
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.map-purpose-na { color: var(--text-disabled); }
+
 /* ===== Pagination ===== */
 .pagination {
   display: flex;

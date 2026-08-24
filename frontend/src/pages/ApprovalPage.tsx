@@ -15,7 +15,9 @@ import { formatDate } from '../utils/date';
 import {
   getDocTableRows, getFinalCompletionDate, getCurrentRound, getLastRejectionInfo,
   hasActivePendingStep, isMyDocument,
+  getDocDetailFields, getMapPurposeKey, getDocSubmittedDate, MAP_PURPOSE_NA,
 } from '../utils/approvalTable';
+import { OPTION_LINE, OPTION_REQUEST_PURPOSE, MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_DELETE_REQ } from './RequestPage/constants';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS, TOUR_REVIEW_ITEM_CANDIDATES, TOUR_PAUSE_REASON } from './approvalTourSeed';
 import StepGuideTour, { StepGuideGroup } from '../components/StepGuideTour';
 
@@ -52,6 +54,13 @@ const AGENT_TO_ROLE: Record<string, string> = {
   O: 'TE_O',
   E: 'TE_E',
 };
+
+// MAP 목적 필터 드롭다운 옵션 — StepMap 버튼 값(NEW/CLONE/EXISTING) + MAP 삭제 전용 값(삭제) +
+// ADI CD 변경처럼 map_type 자체가 없는 문서를 가리키는 MAP_PURPOSE_NA.
+const MAP_PURPOSE_OPTIONS = ['NEW', MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_DELETE_REQ, MAP_PURPOSE_NA];
+
+type ColSortKey = 'line' | 'purpose' | 'mapType' | 'submitted';
+type FilterDropdownKey = 'line' | 'purpose' | 'map' | 'date';
 
 // 결재 현황 목록 페이지네이션 — 페이지당 표시 건수
 const APPROVAL_LIST_PAGE_SIZE = 10;
@@ -126,11 +135,38 @@ export default function ApprovalPage(): React.ReactElement {
   const [search, setSearch] = useState('');
   // 양산일 3단 정렬(오름차순→내림차순→원래 상태). 필터 탭 전환 시 자동 해제.
   const [prodDateSort, setProdDateSort] = useState<'asc' | 'desc' | null>(null);
-  useEffect(() => { setProdDateSort(null); }, [filter]);
-  // 목록 페이지네이션 — 필터 탭·검색어가 바뀌면 항상 1페이지로 돌아간다(검색 결과가
+  // 라인/목적/MAP 목적/요청일 컬럼 헤더 클릭 정렬. 양산일 정렬과는 배타적으로 동작한다(하나만 활성).
+  const [colSort, setColSort] = useState<{ key: ColSortKey; dir: 'asc' | 'desc' } | null>(null);
+  // 필터 바(라인/목적/MAP 목적 체크박스, 요청일 기간). 필터 탭 전환 시 정렬과 함께 자동 해제.
+  const [lineFilter, setLineFilter] = useState<Set<string>>(new Set());
+  const [purposeFilter, setPurposeFilter] = useState<Set<string>>(new Set());
+  const [mapFilter, setMapFilter] = useState<Set<string>>(new Set());
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [openFilterDropdown, setOpenFilterDropdown] = useState<FilterDropdownKey | null>(null);
+  const filterBarRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    setProdDateSort(null);
+    setColSort(null);
+    setLineFilter(new Set());
+    setPurposeFilter(new Set());
+    setMapFilter(new Set());
+    setDateFrom('');
+    setDateTo('');
+  }, [filter]);
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (filterBarRef.current && !filterBarRef.current.contains(e.target as Node)) {
+        setOpenFilterDropdown(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+  // 목록 페이지네이션 — 필터 탭·검색어·컬럼 필터가 바뀌면 항상 1페이지로 돌아간다(검색 결과가
   // 몇 페이지 뒤에 있든 즉시 보이도록).
   const [listPage, setListPage] = useState(1);
-  useEffect(() => { setListPage(1); }, [filter, search]);
+  useEffect(() => { setListPage(1); }, [filter, search, lineFilter, purposeFilter, mapFilter, dateFrom, dateTo]);
   const [selected, setSelected] = useState<RequestDocument | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -522,12 +558,60 @@ export default function ApprovalPage(): React.ReactElement {
   });
 
   const toggleProdDateSort = () => {
+    setColSort(null);
     setProdDateSort((prev) => (prev === null ? 'asc' : prev === 'asc' ? 'desc' : null));
   };
 
-  // 목록 정렬: 양산일 정렬 켜짐 > 단계별 필터(진입 순서) > 기본(상신일 오래된 순)
+  // 라인/목적/MAP 목적/요청일 헤더 클릭 정렬. 양산일 정렬을 끄고 3단으로 순환한다(오름차순→내림차순→해제).
+  const toggleColSort = (key: ColSortKey) => {
+    setProdDateSort(null);
+    setColSort((prev) => {
+      if (!prev || prev.key !== key) return { key, dir: 'asc' };
+      if (prev.dir === 'asc') return { key, dir: 'desc' };
+      return null;
+    });
+  };
+
+  const colSortIndicator = (key: ColSortKey) => {
+    if (colSort?.key !== key) return <span style={{ color: 'var(--text-muted)' }}> ⇅</span>;
+    return colSort.dir === 'asc' ? ' ▲' : ' ▼';
+  };
+
+  // 필터 바: 라인/목적/MAP 목적 체크박스 + 요청일 기간. docs(검색·탭 필터 적용 후)에 추가로 적용한다.
+  const filteredDocs = useMemo(() => {
+    if (lineFilter.size === 0 && purposeFilter.size === 0 && mapFilter.size === 0 && !dateFrom && !dateTo) {
+      return docs;
+    }
+    return docs.filter((d) => {
+      const detail = getDocDetailFields(d);
+      if (lineFilter.size > 0 && !lineFilter.has(detail.line)) return false;
+      if (purposeFilter.size > 0 && !purposeFilter.has(detail.purpose)) return false;
+      if (mapFilter.size > 0 && !mapFilter.has(getMapPurposeKey(detail))) return false;
+      const submitted = getDocSubmittedDate(d).slice(0, 10);
+      if (dateFrom && (!submitted || submitted < dateFrom)) return false;
+      if (dateTo && (!submitted || submitted > dateTo)) return false;
+      return true;
+    });
+  }, [docs, lineFilter, purposeFilter, mapFilter, dateFrom, dateTo]);
+
+  // 목록 정렬: 컬럼 헤더 정렬 켜짐 > 양산일 정렬 켜짐 > 단계별 필터(진입 순서) > 기본(상신일 오래된 순)
   const sortedDocs = useMemo(() => {
-    const list = [...docs];
+    const list = [...filteredDocs];
+    if (colSort) {
+      const { key, dir } = colSort;
+      const sortValue = (d: RequestDocument): string => {
+        if (key === 'submitted') return getDocSubmittedDate(d);
+        const detail = getDocDetailFields(d);
+        if (key === 'line') return detail.line;
+        if (key === 'purpose') return detail.purpose;
+        return getMapPurposeKey(detail);
+      };
+      list.sort((a, b) => {
+        const cmp = sortValue(a).localeCompare(sortValue(b), 'ko');
+        return dir === 'asc' ? cmp : -cmp;
+      });
+      return list;
+    }
     if (prodDateSort) {
       const withDate = list.filter((d) => !!d.production_date);
       const withoutDate = list.filter((d) => !d.production_date);
@@ -552,7 +636,7 @@ export default function ApprovalPage(): React.ReactElement {
     const baseDate = (d: RequestDocument): string => d.submitted_at ?? d.created_at ?? '';
     list.sort((a, b) => baseDate(a).localeCompare(baseDate(b)));
     return list;
-  }, [docs, prodDateSort, filter]);
+  }, [filteredDocs, colSort, prodDateSort, filter]);
 
   const totalListPages = Math.max(1, Math.ceil(sortedDocs.length / APPROVAL_LIST_PAGE_SIZE));
   const pagedDocs = useMemo(
@@ -1220,6 +1304,69 @@ export default function ApprovalPage(): React.ReactElement {
   const isMaster = currentUser.role === 'MASTER';
   const isNone = currentUser.role === 'NONE';
 
+  // ===== 필터 바(라인/목적/MAP 목적/요청일) =====
+  const mapPurposeLabel = (v: string): string => (v === MAP_PURPOSE_NA ? t('approval.step_na') : v);
+
+  const toggleFilterValue = (setFn: React.Dispatch<React.SetStateAction<Set<string>>>, value: string) => {
+    setFn((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value); else next.add(value);
+      return next;
+    });
+  };
+
+  const resetColumnFilters = () => {
+    setLineFilter(new Set());
+    setPurposeFilter(new Set());
+    setMapFilter(new Set());
+    setDateFrom('');
+    setDateTo('');
+  };
+
+  const applyDatePreset = (days: number) => {
+    const to = new Date();
+    const from = new Date(to);
+    from.setDate(from.getDate() - days);
+    setDateTo(to.toISOString().slice(0, 10));
+    setDateFrom(from.toISOString().slice(0, 10));
+  };
+
+  const renderFilterSummary = (
+    label: string, selected: Set<string>, labelFn: (v: string) => string = (v) => v,
+  ): React.ReactNode => {
+    if (selected.size === 0) return <>{label} <span className="caret">▾</span></>;
+    const arr = Array.from(selected);
+    const summary = arr.length === 1
+      ? labelFn(arr[0])
+      : t('approval.filter_summary_more', { first: labelFn(arr[0]), count: arr.length - 1 });
+    return <>{label}: {summary} <span className="count">{selected.size}</span> <span className="caret">▾</span></>;
+  };
+
+  const renderCheckboxPopover = (
+    options: readonly string[],
+    selected: Set<string>,
+    setFn: React.Dispatch<React.SetStateAction<Set<string>>>,
+    labelFn: (v: string) => string = (v) => v,
+  ): React.ReactNode => (
+    <div className="column-filter-popover">
+      <button type="button" className="column-filter-popover-all" onClick={() => setFn(new Set(options))}>
+        {t('approval.filter_select_all')}
+      </button>
+      <button type="button" className="column-filter-popover-all" onClick={() => setFn(new Set())}>
+        {t('approval.filter_select_none')}
+      </button>
+      <div className="column-filter-popover-divider" />
+      {options.map((opt) => (
+        <label key={opt} className="column-filter-popover-item">
+          <input type="checkbox" checked={selected.has(opt)} onChange={() => toggleFilterValue(setFn, opt)} />
+          {labelFn(opt)}
+        </label>
+      ))}
+    </div>
+  );
+
+  const hasColumnFilter = lineFilter.size > 0 || purposeFilter.size > 0 || mapFilter.size > 0 || !!dateFrom || !!dateTo;
+
   return (
     <div className="container page">
       <div className="page-header">
@@ -1265,6 +1412,99 @@ export default function ApprovalPage(): React.ReactElement {
         </div>
       </div>
 
+      <div className="column-filter-bar" ref={filterBarRef}>
+        <span className="column-filter-bar-label">{t('approval.filter_bar_label')}</span>
+
+        <div className="column-filter-anchor">
+          <button
+            type="button"
+            className={`column-filter-btn${lineFilter.size ? ' active' : ''}`}
+            onClick={() => setOpenFilterDropdown((k) => (k === 'line' ? null : 'line'))}
+          >
+            {renderFilterSummary(t('approval.col_line'), lineFilter)}
+          </button>
+          {openFilterDropdown === 'line' && renderCheckboxPopover(OPTION_LINE, lineFilter, setLineFilter)}
+        </div>
+
+        <div className="column-filter-anchor">
+          <button
+            type="button"
+            className={`column-filter-btn${purposeFilter.size ? ' active' : ''}`}
+            onClick={() => setOpenFilterDropdown((k) => (k === 'purpose' ? null : 'purpose'))}
+          >
+            {renderFilterSummary(t('approval.col_purpose'), purposeFilter)}
+          </button>
+          {openFilterDropdown === 'purpose' && renderCheckboxPopover(OPTION_REQUEST_PURPOSE, purposeFilter, setPurposeFilter)}
+        </div>
+
+        <div className="column-filter-anchor">
+          <button
+            type="button"
+            className={`column-filter-btn${mapFilter.size ? ' active' : ''}`}
+            onClick={() => setOpenFilterDropdown((k) => (k === 'map' ? null : 'map'))}
+          >
+            {renderFilterSummary(t('approval.col_map_purpose'), mapFilter, mapPurposeLabel)}
+          </button>
+          {openFilterDropdown === 'map' && renderCheckboxPopover(MAP_PURPOSE_OPTIONS, mapFilter, setMapFilter, mapPurposeLabel)}
+        </div>
+
+        <div className="column-filter-anchor">
+          <button
+            type="button"
+            className={`column-filter-btn${dateFrom || dateTo ? ' active' : ''}`}
+            onClick={() => setOpenFilterDropdown((k) => (k === 'date' ? null : 'date'))}
+          >
+            {dateFrom || dateTo
+              ? `${dateFrom || '…'} ~ ${dateTo || '…'}`
+              : t('approval.col_submitted')} <span className="caret">▾</span>
+          </button>
+          {openFilterDropdown === 'date' && (
+            <div className="column-filter-popover">
+              <div className="column-filter-date-row">
+                <input
+                  type="date"
+                  aria-label={t('approval.filter_date_from')}
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+                <span style={{ color: 'var(--text-disabled)', fontSize: '0.78rem' }}>~</span>
+                <input
+                  type="date"
+                  aria-label={t('approval.filter_date_to')}
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+              </div>
+              <div className="column-filter-date-presets">
+                <button type="button" className="column-filter-date-preset-btn" onClick={() => applyDatePreset(7)}>
+                  {t('approval.filter_preset_7')}
+                </button>
+                <button type="button" className="column-filter-date-preset-btn" onClick={() => applyDatePreset(30)}>
+                  {t('approval.filter_preset_30')}
+                </button>
+                <button
+                  type="button"
+                  className="column-filter-date-preset-btn"
+                  onClick={() => { setDateFrom(''); setDateTo(''); }}
+                >
+                  {t('approval.filter_all')}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {hasColumnFilter && (
+          <button type="button" className="column-filter-reset" onClick={resetColumnFilters}>
+            {t('common.reset')}
+          </button>
+        )}
+
+        <span className="column-filter-count">
+          {t('approval.filter_count', { total: docs.length, count: sortedDocs.length })}
+        </span>
+      </div>
+
       {loading ? (
         <div className="empty-state"><p>{t('common.loading')}</p></div>
       ) : error ? (
@@ -1273,7 +1513,7 @@ export default function ApprovalPage(): React.ReactElement {
           <p>{t('common.load_error')}</p>
           <button className="btn" onClick={fetchDocs}>{t('common.retry')}</button>
         </div>
-      ) : docs.length === 0 ? (
+      ) : sortedDocs.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">📋</div>
           <p>{t('approval.no_data')}</p>
@@ -1283,8 +1523,35 @@ export default function ApprovalPage(): React.ReactElement {
           <table className="table">
             <thead>
               <tr>
-                <th>{t('approval.col_title')}</th>
-                <th>{t('approval.col_product')}</th>
+                <th
+                  className="sortable-col"
+                  onClick={() => toggleColSort('line')}
+                  title={t('approval.col_production_date_sort_hint' as never)}
+                >
+                  {t('approval.col_line')}{colSortIndicator('line')}
+                </th>
+                <th
+                  className="sortable-col"
+                  onClick={() => toggleColSort('purpose')}
+                  title={t('approval.col_production_date_sort_hint' as never)}
+                >
+                  {t('approval.col_purpose')}{colSortIndicator('purpose')}
+                </th>
+                <th
+                  className="sortable-col"
+                  onClick={() => toggleColSort('mapType')}
+                  title={t('approval.col_production_date_sort_hint' as never)}
+                >
+                  {t('approval.col_map_purpose')}{colSortIndicator('mapType')}
+                </th>
+                <th>{t('approval.col_product_combo')}</th>
+                <th
+                  className="sortable-col"
+                  onClick={() => toggleColSort('submitted')}
+                  title={t('approval.col_production_date_sort_hint' as never)}
+                >
+                  {t('approval.col_submitted')}{colSortIndicator('submitted')}
+                </th>
                 <th>{t('approval.col_requester')}</th>
                 <th>{t('approval.col_current_stage')}</th>
                 <th>{t('approval.col_final_completion')}</th>
@@ -1308,25 +1575,44 @@ export default function ApprovalPage(): React.ReactElement {
                 const row = getDocTableRows(doc, t)[0];
                 const isPaused = doc.status === 'pause';
                 const lastRejection = getLastRejectionInfo(doc, t);
+                const detail = getDocDetailFields(doc);
+                const comboText = [detail.processSelection, detail.partidSelection, detail.processId]
+                  .filter(Boolean).join(' · ') || '-';
+                const isTourTitleCell = isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id;
                 return (
                   <tr key={doc.id}>
+                    <td><b>{detail.line || '-'}</b></td>
+                    <td>
+                      <div className="purpose-cell">
+                        <span className="purpose-cell-main">{detail.purpose || '-'}</span>
+                        {detail.otherPurpose.map((o) => (
+                          <span key={o} className="purpose-cell-sub">{o}</span>
+                        ))}
+                      </div>
+                    </td>
+                    <td>
+                      {detail.isAdiCd ? (
+                        <span className="map-purpose-na">{t('approval.step_na')}</span>
+                      ) : (detail.mapType || '-')}
+                    </td>
                     <td>
                       {isNone ? (
                         <span
-                          data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-doc-title' : undefined}
-                          style={{ fontWeight: 600, fontSize: '0.9rem' }}
+                          data-tour={isTourTitleCell ? 'approval-doc-title' : undefined}
+                          style={{ fontWeight: 600, fontSize: '0.85rem' }}
                         >
-                          {doc.title}
+                          {comboText}
                         </span>
                       ) : (
                         <button
-                          data-tour={isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id ? 'approval-doc-title' : undefined}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 600, fontSize: '0.9rem', textAlign: 'left', padding: 0 }}
+                          data-tour={isTourTitleCell ? 'approval-doc-title' : undefined}
+                          className="product-combo-link"
                           onClick={() => openDetail(doc)}
                         >
-                          {doc.title}
+                          {comboText}
                         </button>
                       )}
+                      {detail.adiExtraCount > 0 && <span className="adi-extra-badge">+{detail.adiExtraCount}</span>}
                       {lastRejection && (
                         <div style={{ marginTop: 4 }}>
                           <span className="rejection-history-chip">
@@ -1335,7 +1621,7 @@ export default function ApprovalPage(): React.ReactElement {
                         </div>
                       )}
                     </td>
-                    <td>{doc.product_name}</td>
+                    <td>{formatDate(getDocSubmittedDate(doc))}</td>
                     <td>
                       <div>{doc.requester_name}</div>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{doc.requester_department}</div>
@@ -1396,7 +1682,7 @@ export default function ApprovalPage(): React.ReactElement {
         </div>
       )}
 
-      {!loading && !error && docs.length > 0 && totalListPages > 1 && (
+      {!loading && !error && sortedDocs.length > 0 && totalListPages > 1 && (
         <div className="pagination" role="navigation" aria-label={t('approval.pagination_nav')}>
           <button
             type="button"
