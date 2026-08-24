@@ -10,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { OPTION_LINE } from './RequestPage/constants';
 import { RejectionSnapshot, RequestDocument } from '../types';
 import { formatDate } from '../utils/date';
+import { exportAll as exportAllXlsx } from '../utils/detailExport';
 
 // ===== 필터 탭 키 =====
 // 전체/MY/라인N 은 결재 완료 문서(docs)를, 반려는 반려 이력(snapshots)을 대상으로 한다.
@@ -424,6 +425,15 @@ export default function HistoryPage(): React.ReactElement {
           isOpen={modalOpen}
           onClose={() => setModalOpen(false)}
           title={selected.title}
+          titleExtra={(
+            <button
+              onClick={() => exportAllXlsx(selected, t)}
+              className="btn btn-secondary btn-sm"
+              style={{ fontSize: '0.75rem', padding: '2px 10px' }}
+            >
+              📊 {t('request.export_all_btn')}
+            </button>
+          )}
           size="lg"
           footer={
             <button className="btn btn-secondary" onClick={() => setModalOpen(false)}>
