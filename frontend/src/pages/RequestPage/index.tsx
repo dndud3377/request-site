@@ -3453,13 +3453,13 @@ export default function RequestPage(): React.ReactElement {
     });
     setShowAutoFillPanel(false);
     setBbAutoFillRanges([]);
-    addToast(`Backbone 데이터가 ${rowsToAdd.length}행 자동 채워졌습니다.`, 'success');
+    addToast(t('request.toast_bb_autofill_apply', { count: rowsToAdd.length }), 'success');
   };
 
   const handleApplyAutoFill = () => {
     const allNewRows = buildAutoFillRows();
     if (allNewRows.length === 0) {
-      if (!isTourMode) addToast('자동채움할 남은 원본 행이 없습니다.', 'info');
+      if (!isTourMode) addToast(t('request.toast_bb_autofill_apply_empty'), 'info');
       return;
     }
     applyBbRowChanges(allNewRows);
@@ -3472,7 +3472,7 @@ export default function RequestPage(): React.ReactElement {
   const proceedResetBbRows = () => {
     setBbRows([]);
     setMappedJayerRowIds(new Set());
-    addToast('Backbone 데이터가 초기화되었습니다.', 'info');
+    addToast(t('request.toast_bb_reset'), 'info');
   };
 
   // 가이드 BB 데모가 매 렌더의 최신 핸들러/상태를 참조하도록 갱신 (stale closure 방지)
