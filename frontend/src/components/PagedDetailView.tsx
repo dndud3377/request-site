@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import ExcelJS from 'exceljs';
 import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, AdiCdTarget } from '../types';
 import Modal from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
@@ -10,6 +9,13 @@ import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditT
 import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
+import {
+  exportJayer as exportJayerXlsx,
+  exportOayer as exportOayerXlsx,
+  exportBb as exportBbXlsx,
+  exportDetailInfo as exportDetailInfoXlsx,
+  exportMapInfo as exportMapInfoXlsx,
+} from '../utils/detailExport';
 
 /** J-ayer 검토 항목 패널에 그대로 넘겨주는 props (호출부가 상태·핸들러를 소유한다) */
 export type ReviewItemsPanelProps = ReviewItemsProps;
@@ -1115,125 +1121,13 @@ export default function PagedDetailView({
     history = parsed?.history ?? [];
   } catch { /* noop */ }
 
-  const getNowString = () => {
-    const d = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-  };
-
-  const applyFill = (cell: ExcelJS.Cell, hex: string | undefined) => {
-    if (!hex) return;
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${hex.replace('#', '')}` } };
-  };
-
-  const downloadBuffer = async (wb: ExcelJS.Workbook, filename: string) => {
-    const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const exportJayer = async () => {
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('JOB');
-    ws.columns = [
-      { header: t('request.col_updated_date'),        key: 'updated',       width: 16 },
-      { header: t('request.process_id'),              key: 'process_id',    width: 14 },
-      { header: t('request.col_sp'),                  key: 'sp',            width: 10 },
-      { header: t('request.col_sd'),                  key: 'sd',            width: 10 },
-      { header: t('request.col_pp'),                  key: 'pp',            width: 14 },
-      { header: t('request.col_st'),                  key: 'st',            width: 8  },
-      { header: t('request.col_new_or_copy'),         key: 'new_or_copy',   width: 10 },
-      { header: t('request.col_product_name'),        key: 'product_name',  width: 16 },
-      { header: t('request.col_step'),                key: 'step',          width: 10 },
-      { header: t('request.col_item_id'),             key: 'item_id',       width: 12 },
-    ];
-    jayer.filter(r => !r.disabled).forEach(r => {
-      const row = ws.addRow({
-        updated: r.updated ?? '', process_id: r.process_id, sp: r.sp, sd: r.sd,
-        pp: r.pp, st: r.st, new_or_copy: r.new_or_copy, product_name: r.product_name,
-        step: r.step, item_id: r.item_id,
-      });
-      const reg = r.new_or_copy === '기등록';
-      row.eachCell((cell, col) => {
-        if (reg) { applyFill(cell, '#e5e7eb'); return; }
-        if (col === 5) applyFill(cell, isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined);
-        else if (col === 6) applyFill(cell, ST_CELL_COLOR[r.st]);
-        else if (col === 7) applyFill(cell, r.new_or_copy === '차용' ? '#eff6ff' : undefined);
-      });
-    });
-    await downloadBuffer(wb, `${doc.title}_JOB_${getNowString()}.xlsx`);
-  };
-
-  const exportOayer = async () => {
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('OVL');
-    ws.columns = [
-      { header: t('request.col_updated_date'),        key: 'updated',       width: 16 },
-      { header: t('request.process_id'),              key: 'process_id',    width: 14 },
-      { header: t('request.col_sp'),                  key: 'sp',            width: 10 },
-      { header: t('request.col_sd'),                  key: 'sd',            width: 10 },
-      { header: t('request.col_layer'),               key: 'layerid',       width: 10 },
-      { header: t('request.col_pp'),                  key: 'pp',            width: 14 },
-      { header: t('request.col_st'),                  key: 'st',            width: 8  },
-      { header: t('request.col_new_or_copy'),         key: 'new_or_copy',   width: 10 },
-      { header: t('request.col_product_name'),        key: 'product_name',  width: 16 },
-      { header: t('request.col_step'),                key: 'step',          width: 10 },
-    ];
-    oayer.filter(r => !r.disabled).forEach(r => {
-      const row = ws.addRow({
-        updated: r.updated ?? '', process_id: r.process_id, sp: r.sp, sd: r.sd,
-        layerid: r.layerid, pp: r.pp, st: r.st, new_or_copy: r.new_or_copy,
-        product_name: r.product_name, step: r.step,
-      });
-      const reg = r.new_or_copy === '기등록';
-      row.eachCell((cell, col) => {
-        if (reg) { applyFill(cell, '#e5e7eb'); return; }
-        if (col === 6) applyFill(cell, isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined);
-        else if (col === 7) applyFill(cell, ST_CELL_COLOR[r.st]);
-        else if (col === 8) applyFill(cell, r.new_or_copy === '차용' ? '#eff6ff' : undefined);
-      });
-    });
-    await downloadBuffer(wb, `${doc.title}_OVL_${getNowString()}.xlsx`);
-  };
-
-  const exportBb = async () => {
-    const bbEntryIds: string[] = Array.isArray(detail?.bb_entries)
-      ? (detail.bb_entries as { id?: string }[]).map((e) => e.id ?? '')
-      : [];
-    const bbTabCount = bbEntryIds.length;
-    const multiTab = bbTabCount >= 2;
-    // 색 인덱스: 안정 id(entryId) 현재 위치 우선, 레거시 행은 entryIdx 폴백.
-    const colorIndexOf = (r: BbTableRow): number =>
-      r.entryId != null ? bbEntryIds.indexOf(r.entryId) : (r.entryIdx ?? -1);
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('BB');
-    ws.columns = [
-      { header: t('request.process_id'),              key: 'process_id',    width: 14 },
-      { header: t('request.col_sp'),                  key: 'ss',            width: 10 },
-      { header: t('request.col_sd'),                  key: 'sd',            width: 10 },
-      { header: t('request.col_bb_process_id'),       key: 'bb_process_id', width: 14 },
-      { header: t('request.col_bb_partid'),           key: 'bb_name',       width: 16 },
-      { header: t('request.col_bb_layer'),            key: 'bb_layer',      width: 10 },
-      { header: t('request.col_bb_stepseq'),          key: 'bb_ss',         width: 10 },
-      { header: t('request.col_bb_step'),             key: 'bb_step',       width: 10 },
-      { header: t('request.col_remark'),              key: 'remark',        width: 16 },
-    ];
-    bb.forEach(r => {
-      const row = ws.addRow({
-        process_id: r.process_id, ss: r.ss, sd: r.sd, bb_process_id: r.bb_process_id,
-        bb_name: r.bb_name, bb_layer: r.bb_layer, bb_ss: r.bb_ss, bb_step: r.bb_step, remark: r.remark,
-      });
-      if (multiTab && colorIndexOf(r) >= 0) {
-        applyFill(row.getCell(5), bbTabColor(colorIndexOf(r)));
-      }
-    });
-    await downloadBuffer(wb, `${doc.title}_BB_${getNowString()}.xlsx`);
-  };
+  // 엑셀 export — 시트 생성 로직은 상세 정보/MAP 정보 export, 전체 export(부모 컴포넌트)와
+  // 공유하므로 utils/detailExport 에 모아 두고 여기서는 그대로 호출만 한다.
+  const exportJayer = () => exportJayerXlsx(doc, t);
+  const exportOayer = () => exportOayerXlsx(doc, t);
+  const exportBb = () => exportBbXlsx(doc, t);
+  const exportDetail = () => exportDetailInfoXlsx(doc, t);
+  const exportMap = () => exportMapInfoXlsx(doc, t);
 
   // 판정 키워드(plel) 유무 — E(MASK) 단계가 결재 경로에 포함되는지의 기준(백엔드 has_ppid_plel 과 동일).
   const hasPlel = isValidationTarget(jayer);
@@ -1739,7 +1633,10 @@ type Page = { label: string; content: React.ReactNode };
           {PLBasicSection}
 
           <div style={cardStyle}>
-            <div style={sectionTitle}>{t('approval.section_basic')}</div>
+            <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{t('approval.section_basic')}</span>
+              <button onClick={exportDetail} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+            </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {basicRow.map((item) => (
                 <Chip key={item.label} label={item.label} value={item.value} changed={item.changed} fieldKey={item.fieldKey} buildValue={item.buildValue} />
@@ -1862,7 +1759,10 @@ type Page = { label: string; content: React.ReactNode };
       label: t('request.section_map'),
       content: (
         <div style={cardStyle}>
-          <div style={sectionTitle}>🗺️ {t('request.section_map')}</div>
+          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>🗺️ {t('request.section_map')}</span>
+            <button onClick={exportMap} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+          </div>
 
           {detail.map_type && (
             <div style={rowStyle}>
