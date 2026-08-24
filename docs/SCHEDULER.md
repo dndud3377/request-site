@@ -316,3 +316,27 @@ DCQ 로 자동 대체되지 않고 그 데이터는 동기화되지 않는다**(
 - ✅ **(2026-08 수정 완료) `bq_login` import 오류.** `scheduler.py`가 `utils.py`에 존재하지 않는
   `bq_login`을 import하고 있어(어디에도 쓰이지 않는 죽은 import) `scheduler.py` 자체가 로드조차
   안 됐다 — `run_scheduler`가 기동 즉시 죽는 상태였다. 쓰이지 않는 import를 제거해 해결했다.
+- ⚠️ **(2026-08 완화책 추가, 원인 미확정) 로그인 직후 "이전 토큰" 오류로 DCQ 동기화 실패.**
+  `sync_form_options` 실행 로그에서 `login()` 성공 직후(수 ms~수십 초 뒤) `getTokenTime()`/
+  `getData()`가 다음과 같은 오류로 실패하는 사례가 관측됐다(운영 알림 메일 기준 4회 중 2~3회):
+  ```
+  Token user 'wh' has is A********, but latest token server has is B********.
+  ```
+  서버가 "네가 보낸 토큰(A)은 낡았고 최신은 B"라고 응답하는 형태라, 우리 로그인 직후 아주 짧은
+  시간 안에 같은 계정으로 또 다른 로그인이 있었다는 뜻으로 읽힌다. `datacenterquery` 는 사내
+  전용 비공개 모듈이라 이 레포에 소스가 없고, 우리 쪽 코드(`utils.py`)는 `login()`/
+  `getTokenTime()`/`getData()` 어디에도 토큰을 명시적으로 주고받지 않아(전부 SDK 내부 전역
+  상태에 위임) **원인이 "SDK 내부 캐시 반영 지연"인지 "동시 로그인 충돌(예: 스케줄러 프로세스
+  중복 실행)"인지는 코드만으로 확정하지 못했다.** `_DCQ_LOCK`(같은 프로세스 내 직렬화, 위 항목
+  참고)은 프로세스 로컬이라 프로세스가 2개면 애초에 보호되지 않는다는 점도 함께 감안해야 한다.
+  - **적용한 완화책** (원인 제거가 아니라 실패율을 낮추는 안전장치임에 유의):
+    - `dcq_login_with_retry()`: 로그인 성공 직후 `utils.DCQ_LOGIN_SETTLE_DELAY_SEC`(2초) 대기
+      후 반환한다.
+    - `get_dcq_token_info()`(`getTokenTime`): 실패 시 `utils.DCQ_TOKEN_INFO_RETRY_DELAY_SEC`
+      (1초) 간격으로 `utils.DCQ_TOKEN_INFO_MAX_RETRIES`(3회)까지 재시도한다.
+  - **커버 범위**: 로그인 직후 곧바로 발생하는 실패만 완화한다. 첫 쿼리는 성공했지만 이후 오래
+    걸리는 DB 쓰기 도중 세션 중간에 토큰이 무효화되는 경우(관측 사례 있음)는 이 완화책으로 막지
+    못한다 — 쿼리 단위 재시도는 아직 미적용.
+  - **검증 방법**: `backend/api/tests.py`의 `DcqTokenSettleRetryTest` (mock 으로 `time.sleep`을
+    대체해 대기/재시도 횟수만 검증, 실제 대기는 하지 않음). 실제 운영 효과는 다음 실패/성공
+    사이클의 알림 메일로 확인해야 한다.
