@@ -5,6 +5,8 @@ interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
+  /** 제목 오른쪽, 닫기/전체화면 버튼 왼쪽에 끼워 넣는 커스텀 영역(예: 전체 export 버튼). */
+  titleExtra?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
@@ -31,6 +33,7 @@ export default function Modal({
   isOpen,
   onClose,
   title,
+  titleExtra,
   children,
   footer,
   size = 'md',
@@ -55,7 +58,8 @@ export default function Modal({
       <div className={modalClass} style={isFullscreen ? undefined : style}>
         <div className="modal-header">
           <h3>{title}</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {titleExtra}
             {!hideFullscreen && (
               <button
                 className="modal-close"
