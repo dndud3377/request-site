@@ -698,7 +698,8 @@ export interface AdiCdValidationResult {
 
 /** 게이트 통과 조건 3가지(유효 행 1개 이상 / 불완전 행 0개 / STEP_ID 중복 0개)를 판정한다.
  *  '미등록' 행은 값 자체가 없는 것이 정상이므로 유효 1건으로 세고
- *  불완전·중복 검사에서는 제외한다. */
+ *  불완전·중복 검사에서는 제외한다. 미등록이 아니면서 완전히 빈 행도 불완전으로 본다 —
+ *  값을 채우지 않고 그냥 둔 행이 상신을 통과하면 안 되므로, 미등록 체크로 명시해야 통과된다. */
 export const validateAdiCdRows = (rows: AdiCdStep[]): AdiCdValidationResult => {
   const incompleteIds: string[] = [];
   const duplicateIds: string[] = [];
@@ -709,7 +710,6 @@ export const validateAdiCdRows = (rows: AdiCdStep[]): AdiCdValidationResult => {
     if (r.unregistered) { validCount += 1; return; }
     const id = r.step_id.trim();
     const desc = r.step_desc.trim();
-    if (!id && !desc) return; // 완전히 빈 행은 세지 않는다
     if (id && desc) validCount += 1;
     else incompleteIds.push(r.id);
     if (id) {
