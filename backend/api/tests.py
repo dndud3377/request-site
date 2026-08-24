@@ -5036,3 +5036,17 @@ class DcqTokenSettleRetryTest(TestCase):
         self.assertIsNone(result)
         self.assertEqual(mock_get.call_count, self.utils.DCQ_TOKEN_INFO_MAX_RETRIES + 1)
         self.assertEqual(self.mock_sleep.call_count, self.utils.DCQ_TOKEN_INFO_MAX_RETRIES)
+
+    def test_dcq_logs_carry_process_tag(self):
+        """다음 실패 재발 시 프로세스 중복 여부를 로그로 확인할 수 있도록,
+        로그인/토큰 조회 로그에 hostname:PID 태그가 실제로 찍히는지 확인한다."""
+        tag = self.utils._DCQ_PROC_TAG
+        with self.assertLogs('api.utils', level='INFO') as cm:
+            with patch.object(self.utils, 'cq_login', return_value=True):
+                self.utils.dcq_login_with_retry()
+            with patch.object(self.utils.dcq, 'getTokenTime', create=True, return_value={'ok': True}):
+                self.utils.get_dcq_token_info('dcqid')
+        self.assertTrue(
+            any(f"[DCQ][{tag}]" in message for message in cm.output),
+            f"DCQ 로그에 프로세스 태그[{tag}]가 없음: {cm.output}",
+        )
