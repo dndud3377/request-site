@@ -4930,6 +4930,8 @@ select.form-control option {
 .ba-cell-input:focus { border-color: var(--accent); outline: none; background: var(--bg-card); }
 .ba-cell-input-error { border-color: var(--danger); background: var(--danger-light); }
 .ba-cell-readonly { color: var(--text-muted); text-align: center; }
+/* 참조 요청서 '없음' 모드는 layer 컬럼이 항상 비어 있는 읽기전용이라 배경까지 눈에 띄게 잠근다('있음' 모드는 기존 스타일 유지). */
+.ba-cell-readonly-locked { background: var(--bg-secondary); color: var(--text-disabled); cursor: not-allowed; }
 .ba-cell-unreg-click { cursor: pointer; }
 .ba-cell-unreg-click:hover { background: var(--bg-card-hover); }
 .ba-table-select {
