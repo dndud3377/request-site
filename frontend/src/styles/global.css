@@ -993,7 +993,6 @@ select.form-control option {
   font-size: 0.85rem;
   text-align: left;
   padding: 0;
-  font-family: var(--font-mono, monospace);
 }
 .product-combo-link:hover { text-decoration: underline; }
 .combo-dot { color: var(--text-disabled); margin: 0 3px; font-family: var(--font-sans); }
