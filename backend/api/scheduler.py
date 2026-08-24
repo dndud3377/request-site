@@ -22,6 +22,7 @@ from .utils import (
     get_data_from_dcq,
     get_rtdb_token,
     get_data_from_rtdb,
+    dcq_session_lock,
     LINE_SUFFIX_MAP,
     LINE_TO_LINEID_MAP,
 )
@@ -321,129 +322,130 @@ def sync_form_options():
         logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e), exc_info=True)
         return
 
-    if not dcq_login_with_retry():
-        _send_sync_failure_alert('enqueue_dcq_sync_failed', FORM_OPTIONS_TARGETS)
-        logger.error(_("[scheduler] DCQ 로그인 실패로 인해 작업을 중단합니다"))
-        return
+    with dcq_session_lock():
+        if not dcq_login_with_retry():
+            _send_sync_failure_alert('enqueue_dcq_sync_failed', FORM_OPTIONS_TARGETS)
+            logger.error(_("[scheduler] DCQ 로그인 실패로 인해 작업을 중단합니다"))
+            return
 
-    # NOTE: gettext 별칭 `_` 를 덮어쓰지 않도록 비밀번호는 `_pw` 로 받는다.
-    dcq_id, _pw = get_dcq_credentials()
-    if dcq_id:
-        get_dcq_token_info(dcq_id)
-    else:
-        _send_sync_failure_alert('enqueue_dcq_sync_failed', FORM_OPTIONS_TARGETS)
-        logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
-        return
+        # NOTE: gettext 별칭 `_` 를 덮어쓰지 않도록 비밀번호는 `_pw` 로 받는다.
+        dcq_id, _pw = get_dcq_credentials()
+        if dcq_id:
+            get_dcq_token_info(dcq_id)
+        else:
+            _send_sync_failure_alert('enqueue_dcq_sync_failed', FORM_OPTIONS_TARGETS)
+            logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
+            return
 
-    failures = []
+        failures = []
 
-    try:
         try:
-            query_pb = """
-                SELECT DISTINCT n7mto_date, n7cancel_date, n7cancel_ok, n7c_layer_num, n7prod_code, n7barcode, n7material_spec
-                FROM A.B
-                WHERE n7barcode IS NOT NULL AND n7barcode != ''
-                  AND n7c_layer_num IS NOT NULL AND n7c_layer_num != ''
-            """
-            df_pb = get_data_from_dcq(query_pb, dcq_id)
+            try:
+                query_pb = """
+                    SELECT DISTINCT n7mto_date, n7cancel_date, n7cancel_ok, n7c_layer_num, n7prod_code, n7barcode, n7material_spec
+                    FROM A.B
+                    WHERE n7barcode IS NOT NULL AND n7barcode != ''
+                      AND n7c_layer_num IS NOT NULL AND n7c_layer_num != ''
+                """
+                df_pb = get_data_from_dcq(query_pb, dcq_id)
 
-            if df_pb is None or len(df_pb) == 0:
-                logger.warning(_("[scheduler] 바코드-품목 데이터가 없습니다"))
+                if df_pb is None or len(df_pb) == 0:
+                    logger.warning(_("[scheduler] 바코드-품목 데이터가 없습니다"))
+                    failures.append({'context': '-', 'target': '바코드-품목'})
+                else:
+                    df_pb['last_synced'] = pd.Timestamp.now()
+                    # 값이 없을 수 있는 컬럼은 None으로 통일
+                    for col in ['n7mto_date', 'n7cancel_date', 'n7cancel_ok', 'n7material_spec']:
+                        df_pb[col] = df_pb[col].where(df_pb[col].notna() & (df_pb[col] != ''), other=None)
+                    df_pb = df_pb[['n7mto_date', 'n7cancel_date', 'n7cancel_ok', 'n7c_layer_num', 'n7prod_code', 'n7barcode', 'n7material_spec', 'last_synced']]
+
+                    with engine.begin() as db_conn:
+                        db_conn.execute(text("DELETE FROM api_productbarcode"))
+                        df_pb.to_sql('api_productbarcode', db_conn, if_exists='append', index=False)
+
+                    logger.info(_("[scheduler] 바코드-품목 {count}건 동기화 완료").format(count=len(df_pb)))
+            except Exception as e:
+                logger.error(_("[scheduler] 바코드-품목 동기화 실패: {e}").format(e=e), exc_info=True)
                 failures.append({'context': '-', 'target': '바코드-품목'})
-            else:
-                df_pb['last_synced'] = pd.Timestamp.now()
-                # 값이 없을 수 있는 컬럼은 None으로 통일
-                for col in ['n7mto_date', 'n7cancel_date', 'n7cancel_ok', 'n7material_spec']:
-                    df_pb[col] = df_pb[col].where(df_pb[col].notna() & (df_pb[col] != ''), other=None)
-                df_pb = df_pb[['n7mto_date', 'n7cancel_date', 'n7cancel_ok', 'n7c_layer_num', 'n7prod_code', 'n7barcode', 'n7material_spec', 'last_synced']]
 
-                with engine.begin() as db_conn:
-                    db_conn.execute(text("DELETE FROM api_productbarcode"))
-                    df_pb.to_sql('api_productbarcode', db_conn, if_exists='append', index=False)
+            try:
+                lineid_list = list(LINE_TO_LINEID_MAP.values())
+                placeholders = ' OR '.join([f"lineid = '{lid}'" for lid in lineid_list])
+                query_mn = f"""
+                    SELECT DISTINCT lineid, partid
+                    FROM X.Y
+                    WHERE ({placeholders})
+                      AND partid IS NOT NULL AND partid != ''
+                """
+                df_mn = get_data_from_dcq(query_mn, dcq_id)
 
-                logger.info(_("[scheduler] 바코드-품목 {count}건 동기화 완료").format(count=len(df_pb)))
-        except Exception as e:
-            logger.error(_("[scheduler] 바코드-품목 동기화 실패: {e}").format(e=e), exc_info=True)
-            failures.append({'context': '-', 'target': '바코드-품목'})
+                if df_mn is None or len(df_mn) == 0:
+                    logger.warning(_("[scheduler] MAP 이름 데이터가 없습니다"))
+                    failures.append({'context': '-', 'target': 'MAP 이름'})
+                else:
+                    df_mn['last_synced'] = pd.Timestamp.now()
+                    df_mn = df_mn[['lineid', 'partid', 'last_synced']]
 
-        try:
-            lineid_list = list(LINE_TO_LINEID_MAP.values())
-            placeholders = ' OR '.join([f"lineid = '{lid}'" for lid in lineid_list])
-            query_mn = f"""
-                SELECT DISTINCT lineid, partid
-                FROM X.Y
-                WHERE ({placeholders})
-                  AND partid IS NOT NULL AND partid != ''
-            """
-            df_mn = get_data_from_dcq(query_mn, dcq_id)
+                    with engine.begin() as db_conn:
+                        db_conn.execute(text("DELETE FROM api_mapname"))
+                        df_mn.to_sql('api_mapname', db_conn, if_exists='append', index=False)
 
-            if df_mn is None or len(df_mn) == 0:
-                logger.warning(_("[scheduler] MAP 이름 데이터가 없습니다"))
+                    logger.info(_("[scheduler] MAP 이름 {count}건 동기화 완료").format(count=len(df_mn)))
+            except Exception as e:
+                logger.error(_("[scheduler] MAP 이름 동기화 실패: {e}").format(e=e), exc_info=True)
                 failures.append({'context': '-', 'target': 'MAP 이름'})
-            else:
-                df_mn['last_synced'] = pd.Timestamp.now()
-                df_mn = df_mn[['lineid', 'partid', 'last_synced']]
 
-                with engine.begin() as db_conn:
-                    db_conn.execute(text("DELETE FROM api_mapname"))
-                    df_mn.to_sql('api_mapname', db_conn, if_exists='append', index=False)
+            # --- 라인2 공정-품목 (api_processproduct) ---
+            try:
+                df_l2_cp = get_data_from_dcq(LINE2_PP_QUERY, dcq_id)
 
-                logger.info(_("[scheduler] MAP 이름 {count}건 동기화 완료").format(count=len(df_mn)))
-        except Exception as e:
-            logger.error(_("[scheduler] MAP 이름 동기화 실패: {e}").format(e=e), exc_info=True)
-            failures.append({'context': '-', 'target': 'MAP 이름'})
-
-        # --- 라인2 공정-품목 (api_processproduct) ---
-        try:
-            df_l2_cp = get_data_from_dcq(LINE2_PP_QUERY, dcq_id)
-
-            if df_l2_cp is None or len(df_l2_cp) == 0:
-                logger.warning(_("[scheduler] {line} 공정-품목 데이터가 없습니다").format(line=LINE2))
+                if df_l2_cp is None or len(df_l2_cp) == 0:
+                    logger.warning(_("[scheduler] {line} 공정-품목 데이터가 없습니다").format(line=LINE2))
+                    failures.append({'context': LINE2, 'target': '공정-품목'})
+                else:
+                    df_l2_cp = df_l2_cp.rename(
+                        columns={'product_design_rule': 'process', 'product_id': 'product_name'}
+                    )
+                    count = _write_if_changed(
+                        engine, 'api_processproduct', LINE2, df_l2_cp,
+                        ['process', 'product_name'],
+                        ['line', 'process', 'product_name', 'last_synced'],
+                    )
+                    if count is None:
+                        logger.info(_("[scheduler] {line} 공정-품목 변경 없음 - skip").format(line=LINE2))
+                    else:
+                        logger.info(_("[scheduler] {line} 공정-품목 {count}건 동기화 완료").format(line=LINE2, count=count))
+            except Exception as e:
+                logger.error(_("[scheduler] {line} 공정-품목 동기화 실패: {e}").format(line=LINE2, e=e), exc_info=True)
                 failures.append({'context': LINE2, 'target': '공정-품목'})
-            else:
-                df_l2_cp = df_l2_cp.rename(
-                    columns={'product_design_rule': 'process', 'product_id': 'product_name'}
-                )
-                count = _write_if_changed(
-                    engine, 'api_processproduct', LINE2, df_l2_cp,
-                    ['process', 'product_name'],
-                    ['line', 'process', 'product_name', 'last_synced'],
-                )
-                if count is None:
-                    logger.info(_("[scheduler] {line} 공정-품목 변경 없음 - skip").format(line=LINE2))
+
+            # --- 라인2 품목-공정ID (api_productprocessid) ---
+            try:
+                df_l2_pc = get_data_from_dcq(LINE2_PC_QUERY, dcq_id)
+
+                if df_l2_pc is None or len(df_l2_pc) == 0:
+                    logger.warning(_("[scheduler] {line} 품목-공정ID 데이터가 없습니다").format(line=LINE2))
+                    failures.append({'context': LINE2, 'target': '품목-공정ID'})
                 else:
-                    logger.info(_("[scheduler] {line} 공정-품목 {count}건 동기화 완료").format(line=LINE2, count=count))
-        except Exception as e:
-            logger.error(_("[scheduler] {line} 공정-품목 동기화 실패: {e}").format(line=LINE2, e=e), exc_info=True)
-            failures.append({'context': LINE2, 'target': '공정-품목'})
-
-        # --- 라인2 품목-공정ID (api_productprocessid) ---
-        try:
-            df_l2_pc = get_data_from_dcq(LINE2_PC_QUERY, dcq_id)
-
-            if df_l2_pc is None or len(df_l2_pc) == 0:
-                logger.warning(_("[scheduler] {line} 품목-공정ID 데이터가 없습니다").format(line=LINE2))
+                    df_l2_pc = df_l2_pc.rename(columns={'product_id': 'product_name'})
+                    count = _write_if_changed(
+                        engine, 'api_productprocessid', LINE2, df_l2_pc,
+                        ['product_name', 'process_id'],
+                        ['line', 'product_name', 'process_id', 'last_synced'],
+                    )
+                    if count is None:
+                        logger.info(_("[scheduler] {line} 품목-공정ID 변경 없음 - skip").format(line=LINE2))
+                    else:
+                        logger.info(_("[scheduler] {line} 품목-공정ID {count}건 동기화 완료").format(line=LINE2, count=count))
+            except Exception as e:
+                logger.error(_("[scheduler] {line} 품목-공정ID 동기화 실패: {e}").format(line=LINE2, e=e), exc_info=True)
                 failures.append({'context': LINE2, 'target': '품목-공정ID'})
-            else:
-                df_l2_pc = df_l2_pc.rename(columns={'product_id': 'product_name'})
-                count = _write_if_changed(
-                    engine, 'api_productprocessid', LINE2, df_l2_pc,
-                    ['product_name', 'process_id'],
-                    ['line', 'product_name', 'process_id', 'last_synced'],
-                )
-                if count is None:
-                    logger.info(_("[scheduler] {line} 품목-공정ID 변경 없음 - skip").format(line=LINE2))
-                else:
-                    logger.info(_("[scheduler] {line} 품목-공정ID {count}건 동기화 완료").format(line=LINE2, count=count))
-        except Exception as e:
-            logger.error(_("[scheduler] {line} 품목-공정ID 동기화 실패: {e}").format(line=LINE2, e=e), exc_info=True)
-            failures.append({'context': LINE2, 'target': '품목-공정ID'})
 
-    finally:
-        if engine:
-            engine.dispose()
+        finally:
+            if engine:
+                engine.dispose()
 
-    _send_sync_failure_alert('enqueue_dcq_sync_failed', failures)
+        _send_sync_failure_alert('enqueue_dcq_sync_failed', failures)
 
 
 def sync_holidays():
@@ -460,49 +462,50 @@ def sync_holidays():
         logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e), exc_info=True)
         return
 
-    if not dcq_login_with_retry():
-        _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공휴일'}])
-        logger.error(_("[scheduler] DCQ 로그인 실패로 인해 공휴일 동기화를 중단합니다"))
-        return
-
-    dcq_id, _ = get_dcq_credentials()
-    if not dcq_id:
-        _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공휴일'}])
-        logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
-        return
-
-    try:
-        query = """
-            SELECT DISTINCT date_name, isholiday, act_date
-            FROM A.B
-        """
-        df = get_data_from_dcq(query, dcq_id)
-
-        if df is None or len(df) == 0:
+    with dcq_session_lock():
+        if not dcq_login_with_retry():
             _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공휴일'}])
-            logger.warning(_("[scheduler] 공휴일 데이터가 없습니다"))
+            logger.error(_("[scheduler] DCQ 로그인 실패로 인해 공휴일 동기화를 중단합니다"))
             return
 
-        df = df[df['isholiday'] == 'Y'].copy()
-        df['act_date'] = pd.to_datetime(df['act_date'], errors='coerce').dt.date
-        # act_date 는 UNIQUE 제약이므로 같은 날짜 중복 행(예: 성탄절/기독탄신일)은 한 건만 남긴다.
-        # 변환 실패(NaT)로 생긴 결측 날짜 행도 제거한다.
-        df = df[df['act_date'].notna()]
-        df = df.drop_duplicates(subset=['act_date'], keep='first')
+        dcq_id, _ = get_dcq_credentials()
+        if not dcq_id:
+            _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공휴일'}])
+            logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
+            return
 
-        with engine.begin() as db_conn:
-            db_conn.execute(text("DELETE FROM api_holiday"))
-            df[['date_name', 'isholiday', 'act_date']].to_sql(
-                'api_holiday', db_conn, if_exists='append', index=False
-            )
+        try:
+            query = """
+                SELECT DISTINCT date_name, isholiday, act_date
+                FROM A.B
+            """
+            df = get_data_from_dcq(query, dcq_id)
 
-        logger.info(_("[scheduler] 공휴일 {count}건 동기화 완료").format(count=len(df)))
-    except Exception as e:
-        _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공휴일'}])
-        logger.error(_("[scheduler] 공휴일 동기화 실패: {e}").format(e=e), exc_info=True)
-    finally:
-        if engine:
-            engine.dispose()
+            if df is None or len(df) == 0:
+                _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공휴일'}])
+                logger.warning(_("[scheduler] 공휴일 데이터가 없습니다"))
+                return
+
+            df = df[df['isholiday'] == 'Y'].copy()
+            df['act_date'] = pd.to_datetime(df['act_date'], errors='coerce').dt.date
+            # act_date 는 UNIQUE 제약이므로 같은 날짜 중복 행(예: 성탄절/기독탄신일)은 한 건만 남긴다.
+            # 변환 실패(NaT)로 생긴 결측 날짜 행도 제거한다.
+            df = df[df['act_date'].notna()]
+            df = df.drop_duplicates(subset=['act_date'], keep='first')
+
+            with engine.begin() as db_conn:
+                db_conn.execute(text("DELETE FROM api_holiday"))
+                df[['date_name', 'isholiday', 'act_date']].to_sql(
+                    'api_holiday', db_conn, if_exists='append', index=False
+                )
+
+            logger.info(_("[scheduler] 공휴일 {count}건 동기화 완료").format(count=len(df)))
+        except Exception as e:
+            _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공휴일'}])
+            logger.error(_("[scheduler] 공휴일 동기화 실패: {e}").format(e=e), exc_info=True)
+        finally:
+            if engine:
+                engine.dispose()
 
 
 def sync_design_rule():
@@ -518,48 +521,49 @@ def sync_design_rule():
         logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e), exc_info=True)
         return
 
-    if not dcq_login_with_retry():
-        _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공정-디자인룰'}])
-        logger.error(_("[scheduler] DCQ 로그인 실패로 인해 공정-디자인룰 동기화를 중단합니다"))
-        return
-
-    # NOTE: gettext 별칭 `_` 를 덮어쓰지 않도록 비밀번호는 `_pw` 로 받는다.
-    dcq_id, _pw = get_dcq_credentials()
-    if not dcq_id:
-        _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공정-디자인룰'}])
-        logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
-        return
-
-    try:
-        query = """
-            SELECT DISTINCT n7process, n7design_rule
-            FROM S.M
-            WHERE n7use_yn = 'Y'
-              AND n7process IS NOT NULL AND n7process != ''
-              AND n7design_rule IS NOT NULL AND n7design_rule != ''
-        """
-        df = get_data_from_dcq(query, dcq_id)
-
-        if df is None or len(df) == 0:
+    with dcq_session_lock():
+        if not dcq_login_with_retry():
             _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공정-디자인룰'}])
-            logger.warning(_("[scheduler] 공정-디자인룰 데이터가 없습니다"))
+            logger.error(_("[scheduler] DCQ 로그인 실패로 인해 공정-디자인룰 동기화를 중단합니다"))
             return
 
-        df = df.rename(columns={'n7process': 'process', 'n7design_rule': 'design_rule'})
-        df['last_synced'] = pd.Timestamp.now()
-        df = df[['process', 'design_rule', 'last_synced']]
+        # NOTE: gettext 별칭 `_` 를 덮어쓰지 않도록 비밀번호는 `_pw` 로 받는다.
+        dcq_id, _pw = get_dcq_credentials()
+        if not dcq_id:
+            _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공정-디자인룰'}])
+            logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
+            return
 
-        with engine.begin() as db_conn:
-            db_conn.execute(text("DELETE FROM api_designrule"))
-            df.to_sql('api_designrule', db_conn, if_exists='append', index=False)
+        try:
+            query = """
+                SELECT DISTINCT n7process, n7design_rule
+                FROM S.M
+                WHERE n7use_yn = 'Y'
+                  AND n7process IS NOT NULL AND n7process != ''
+                  AND n7design_rule IS NOT NULL AND n7design_rule != ''
+            """
+            df = get_data_from_dcq(query, dcq_id)
 
-        logger.info(_("[scheduler] 공정-디자인룰 {count}건 동기화 완료").format(count=len(df)))
-    except Exception as e:
-        _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공정-디자인룰'}])
-        logger.error(_("[scheduler] 공정-디자인룰 동기화 실패: {e}").format(e=e), exc_info=True)
-    finally:
-        if engine:
-            engine.dispose()
+            if df is None or len(df) == 0:
+                _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공정-디자인룰'}])
+                logger.warning(_("[scheduler] 공정-디자인룰 데이터가 없습니다"))
+                return
+
+            df = df.rename(columns={'n7process': 'process', 'n7design_rule': 'design_rule'})
+            df['last_synced'] = pd.Timestamp.now()
+            df = df[['process', 'design_rule', 'last_synced']]
+
+            with engine.begin() as db_conn:
+                db_conn.execute(text("DELETE FROM api_designrule"))
+                df.to_sql('api_designrule', db_conn, if_exists='append', index=False)
+
+            logger.info(_("[scheduler] 공정-디자인룰 {count}건 동기화 완료").format(count=len(df)))
+        except Exception as e:
+            _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공정-디자인룰'}])
+            logger.error(_("[scheduler] 공정-디자인룰 동기화 실패: {e}").format(e=e), exc_info=True)
+        finally:
+            if engine:
+                engine.dispose()
 
 
 def start():
@@ -579,6 +583,7 @@ def start():
             id='sync_form_options',
             name='DCQ 폼 옵션 동기화',
             replace_existing=True,
+            max_instances=1,
         )
 
         scheduler.add_job(
@@ -597,6 +602,7 @@ def start():
             id='sync_holidays',
             name='공휴일 동기화',
             replace_existing=True,
+            max_instances=1,
         )
 
         scheduler.add_job(
@@ -605,6 +611,7 @@ def start():
             id='sync_design_rule',
             name='공정-디자인룰 동기화',
             replace_existing=True,
+            max_instances=1,
         )
 
         from .mailer import process_mail_queue
@@ -626,10 +633,16 @@ def start():
         scheduler.start()
         logger.info(_("[scheduler] APScheduler 시작 - 1 시간 주기 DCQ 동기화 / 10 분 주기 RTDB 폼 옵션 / 매일 02:00 공휴일·공정-디자인룰 동기화 등록"))
 
-        threading.Thread(target=sync_form_options, daemon=True).start()
+        def _run_dcq_jobs_sequentially():
+            # sync_form_options/sync_holidays/sync_design_rule 는 모두 DCQ 를 사용한다.
+            # dcq_session_lock() 이 SDK 세션 겹침을 막아주지만, 4 개 daemon 스레드가 기동 시
+            # 동시에 시작되는 것 자체를 없애기 위해 하나의 스레드에서 순차 실행한다.
+            sync_form_options()
+            sync_holidays()
+            sync_design_rule()
+
+        threading.Thread(target=_run_dcq_jobs_sequentially, daemon=True).start()
         threading.Thread(target=sync_rtdb_options, daemon=True).start()
-        threading.Thread(target=sync_holidays, daemon=True).start()
-        threading.Thread(target=sync_design_rule, daemon=True).start()
     except ProgrammingError as e:
         logger.warning(_("[scheduler] 테이블이 아직 생성되지 않았습니다. 마이그레이션 후 재시작됩니다: {e}").format(e=e), exc_info=True)
 

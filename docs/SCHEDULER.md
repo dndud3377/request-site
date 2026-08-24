@@ -278,9 +278,27 @@ DCQ 로 자동 대체되지 않고 그 데이터는 동기화되지 않는다**(
 
 - REST 호출은 사내 인증서 정책에 따라 `verify=False`(SSL 검증 비활성화)로 동작한다. `utils.py` 에서 `InsecureRequestWarning` 을 억제한다.
 - 요청 타임아웃은 `utils.RTDB_REQUEST_TIMEOUT`(기본 30초) 상수로 관리한다.
-- `cq_login()`(DCQ 로그인)은 전역 `sys.stdin` 을 교체하는 방식이라, 기동 시 동시에 뜨는 3개 동기화 스레드가
-  경쟁하면 stdin 이 엉켜 `>> Enter AD Password:` 프롬프트 추락·빈 로그인 실패가 발생한다. 이를 막기 위해
-  로그인 구간을 `utils._DCQ_LOGIN_LOCK`(모듈 레벨 `threading.Lock`)으로 직렬화한다.
+- ✅ **(2026-08 수정 완료) DCQ SDK 스레드 비안전성으로 인한 간헐적 동기화 실패.** DCQ Python SDK(v2.5.0,
+  C 확장)는 전역 토큰 상태를 쓰기 때문에 스레드 비안전이다. 기존에는 `cq_login()`(DCQ 로그인)이 전역
+  `sys.stdin` 을 교체하는 **로그인 구간만** `_DCQ_LOGIN_LOCK` 으로 잠갔고, 로그인 이후의
+  `getTokenTime()`/`getData()` 구간은 잠금 밖에 있었다. `start()` 가 `sync_form_options`/
+  `sync_holidays`/`sync_design_rule`(모두 DCQ 사용) 을 daemon 스레드로 동시에 기동하다 보니, 한
+  스레드가 로그인 후 `getData` 를 도는 동안 다른 스레드가 동시에 재로그인하며 SDK 전역 토큰 상태를
+  덮어써 `getTokenTime()` 등에서 간헐적으로 오류가 났다. 이를 막기 위해:
+  - `utils._DCQ_LOCK`(모듈 레벨 `threading.RLock`, 구 `_DCQ_LOGIN_LOCK`)을 로그인 구간뿐 아니라
+    `utils.dcq_session_lock()` 컨텍스트 매니저를 통해 **DCQ 로그인부터 그 잡의 마지막 데이터 조회까지
+    전체 구간**을 감싸도록 확장했다. `cq_login()` 내부에서 다시 이 락에 들어오는 중첩 호출이 있어 `RLock`
+    을 쓴다.
+  - `scheduler.py` 의 `sync_form_options()`/`sync_holidays()`/`sync_design_rule()` 각 함수 본문(DCQ
+    로그인 ~ 마지막 `get_data_from_dcq()` 호출)을 `with dcq_session_lock():` 으로 감싸, 세 잡이 겹쳐
+    실행되더라도 DCQ SDK 사용 구간이 한 번에 하나씩만 실행되도록 직렬화했다.
+  - `start()` 에서 이 3개 잡의 `scheduler.add_job(...)` 에도 `max_instances=1` 을 추가해(기존
+    `sync_rtdb_options`/`process_mail_queue` 와 동일), 락과 별개로 APScheduler 레벨에서도 사이클
+    겹침을 이중으로 방지한다.
+  - `start()` 기동 시 4개 daemon 스레드를 동시에 띄우던 방식도 바꿨다 — DCQ 를 쓰는 3개 잡
+    (`sync_form_options`/`sync_holidays`/`sync_design_rule`) 은 **하나의 daemon 스레드에서 순차
+    실행**하고, DCQ 를 쓰지 않는 `sync_rtdb_options` 만 별도 daemon 스레드로 유지한다. 락만으로도
+    겹침 실행은 막히지만, 기동 시점에 동시 시작 자체를 없애 이중으로 방어한다.
 - 동기화/조회/로그인 실패 로그는 `exc_info=True` 로 남긴다. 따라서 `... 동기화 실패` / `[DCQ] 데이터 조회 실패`
   / `[RTDB] 데이터 조회 실패` 등의 로그에는 **예외 종류·메시지와 함께 전체 traceback(파일·라인·호출 스택)** 이
   같이 출력되어, 어느 파일 몇 번째 줄에서 무슨 에러가 났는지 바로 확인할 수 있다. (`scheduler.py`·`utils.py`)
