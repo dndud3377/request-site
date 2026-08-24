@@ -6,6 +6,7 @@ import io
 import sys
 import json
 import time
+import socket
 import logging
 import threading
 import requests
@@ -42,6 +43,25 @@ _rtdb_token_cache = {'refresh_token': None, 'refresh_token_issued_at': None}
 # 까지 포함한 "DCQ 세션 전체"를 한 번에 하나씩만 실행해야 토큰 상태가 스레드 간에 섞이지 않는다.
 # cq_login() 내부에서 dcq_session_lock() 안에 다시 들어오는 중첩 호출이 있으므로 RLock 을 쓴다.
 _DCQ_LOCK = threading.RLock()
+
+# 진단용 프로세스 식별자(모듈 로드 시 1회 계산, 이 프로세스가 사는 동안 고정) - hostname 은
+# docker-compose 에 별도 hostname 오버라이드가 없어 컨테이너 인스턴스마다 자동으로 고유하게
+# 부여되므로(재배포로 컨테이너가 바뀌어도 다름), hostname+PID 조합으로 "컨테이너가 2개 떠서
+# 동시에 로그인했는지" vs "같은 컨테이너 안에서 프로세스가 중복 실행됐는지"까지 구별할 수 있다.
+# DCQ 토큰 불일치 실패(위 DCQ_LOGIN_SETTLE_DELAY_SEC 주석 참고) 재발 시, 이 태그가 실패
+# 전후로 2개 이상 다르게 찍히는지 확인하면 프로세스 중복 여부를 로그만으로 확정할 수 있다.
+_DCQ_PROC_TAG = f"{socket.gethostname()}:{os.getpid()}"
+
+# login() 성공 직후 곧바로 getTokenTime()/getData() 를 호출하면 "이전 토큰을 쓰고 있다"는
+# 오류(Token user has is A, but latest token server has is B)로 실패하는 사례가 있었다
+# (2026-08, 스케줄러 DCQ 동기화 실패 - 정확한 원인은 SDK 내부 토큰 캐시 반영 지연 또는 동시
+# 로그인 충돌로 추정되나 SDK 가 사내 전용 비공개 모듈이라 확정하지 못했다). 완화책으로 로그인
+# 성공 직후 이 시간만큼 대기한 뒤 다음 호출로 넘어간다.
+DCQ_LOGIN_SETTLE_DELAY_SEC = 2
+
+# getTokenTime() 호출이 위와 같은 원인으로 실패했을 때 재시도하는 횟수/간격(초).
+DCQ_TOKEN_INFO_MAX_RETRIES = 3
+DCQ_TOKEN_INFO_RETRY_DELAY_SEC = 1
 
 
 @contextmanager
@@ -89,10 +109,10 @@ def cq_login(dcq_id, dcq_password):
         sys.stdin = account_info
         try:
             login()
-            logger.info(f"[DCQ] 로그인 성공: {dcq_id}")
+            logger.info(f"[DCQ][{_DCQ_PROC_TAG}] 로그인 성공: {dcq_id}")
             return True
         except Exception as e:
-            logger.error(f"[DCQ] 로그인 실패: {e}", exc_info=True)
+            logger.error(f"[DCQ][{_DCQ_PROC_TAG}] 로그인 실패: {e}", exc_info=True)
             return False
         finally:
             account_info.close()
@@ -132,23 +152,39 @@ def dcq_login_with_retry():
     for pw in pwd_pack:
         try:
             if cq_login(dcq_id, pw):
+                logger.info(
+                    f"[DCQ][{_DCQ_PROC_TAG}] 로그인 후 토큰 캐시 안정화 대기 {DCQ_LOGIN_SETTLE_DELAY_SEC}초"
+                )
+                time.sleep(DCQ_LOGIN_SETTLE_DELAY_SEC)
                 return True
         except Exception as e:
-            logger.warning(f"[DCQ] 비밀번호 시도 실패: {e}", exc_info=True)
-    
-    logger.error("[DCQ] 모든 비밀번호 시도가 실패했습니다")
+            logger.warning(f"[DCQ][{_DCQ_PROC_TAG}] 비밀번호 시도 실패: {e}", exc_info=True)
+
+    logger.error(f"[DCQ][{_DCQ_PROC_TAG}] 모든 비밀번호 시도가 실패했습니다")
     return False
 
 
 def get_dcq_token_info(dcq_id):
-    """DCQ 토큰 정보 확인"""
-    try:
-        token_info = dcq.getTokenTime(dcq_id)
-        logger.info(f"[DCQ] 토큰 정보: {token_info}")
-        return token_info
-    except Exception as e:
-        logger.error(f"[DCQ] 토큰 정보 조회 실패: {e}", exc_info=True)
-        return None
+    """
+    DCQ 토큰 정보 확인.
+    로그인 직후에도 "이전 토큰을 쓰고 있다"는 오류로 실패하는 사례가 있어(모듈 상단 주석 참고),
+    실패 시 DCQ_TOKEN_INFO_RETRY_DELAY_SEC 초 대기 후 DCQ_TOKEN_INFO_MAX_RETRIES 회까지 재시도한다.
+    """
+    for attempt in range(DCQ_TOKEN_INFO_MAX_RETRIES + 1):
+        try:
+            token_info = dcq.getTokenTime(dcq_id)
+            logger.info(f"[DCQ][{_DCQ_PROC_TAG}] 토큰 정보: {token_info}")
+            return token_info
+        except Exception as e:
+            if attempt < DCQ_TOKEN_INFO_MAX_RETRIES:
+                logger.warning(
+                    f"[DCQ][{_DCQ_PROC_TAG}] 토큰 정보 조회 실패 - {DCQ_TOKEN_INFO_RETRY_DELAY_SEC}초 후 재시도 "
+                    f"({attempt + 1}/{DCQ_TOKEN_INFO_MAX_RETRIES}회): {e}"
+                )
+                time.sleep(DCQ_TOKEN_INFO_RETRY_DELAY_SEC)
+            else:
+                logger.error(f"[DCQ][{_DCQ_PROC_TAG}] 토큰 정보 조회 실패: {e}", exc_info=True)
+                return None
 
 
 def get_django_engine():
@@ -169,10 +205,10 @@ def get_data_from_dcq(query, dcq_id):
     """
     try:
         df = dcq.getData(param=query, convert_type=True, user_name=dcq_id)
-        logger.info(f"[DCQ] 데이터 조회 성공: {len(df)} 건")
+        logger.info(f"[DCQ][{_DCQ_PROC_TAG}] 데이터 조회 성공: {len(df)} 건")
         return df
     except Exception as e:
-        logger.error(f"[DCQ] 데이터 조회 실패: {e}", exc_info=True)
+        logger.error(f"[DCQ][{_DCQ_PROC_TAG}] 데이터 조회 실패: {e}", exc_info=True)
         return None
 
 

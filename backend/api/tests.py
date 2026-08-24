@@ -4985,3 +4985,68 @@ class DirectHistoryRegisterTest(TestCase):
         })
         self.client.force_authenticate(user=self.master)
         self.assertEqual(self._post(doc).status_code, 400)
+
+
+class DcqTokenSettleRetryTest(TestCase):
+    """DCQ 로그인 직후 "이전 토큰" 오류 완화책(2026-08 추가) 검증.
+
+    - dcq_login_with_retry(): 로그인 성공 직후 DCQ_LOGIN_SETTLE_DELAY_SEC 만큼 대기한다.
+    - get_dcq_token_info(): getTokenTime() 실패 시 DCQ_TOKEN_INFO_RETRY_DELAY_SEC 간격으로
+      DCQ_TOKEN_INFO_MAX_RETRIES 회까지 재시도한다.
+    실제로 sleep 하면 테스트가 느려지므로 utils.time.sleep 은 항상 mock 으로 대체한다.
+    """
+
+    def setUp(self):
+        from . import utils
+        self.utils = utils
+        patcher = patch.object(utils, 'get_dcq_credentials', return_value=('dcqid', ['pw']))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        sleep_patcher = patch.object(utils.time, 'sleep')
+        self.mock_sleep = sleep_patcher.start()
+        self.addCleanup(sleep_patcher.stop)
+
+    def test_login_success_waits_settle_delay_once(self):
+        with patch.object(self.utils, 'cq_login', return_value=True):
+            self.assertTrue(self.utils.dcq_login_with_retry())
+        self.mock_sleep.assert_called_once_with(self.utils.DCQ_LOGIN_SETTLE_DELAY_SEC)
+
+    def test_login_failure_does_not_wait(self):
+        with patch.object(self.utils, 'cq_login', return_value=False):
+            self.assertFalse(self.utils.dcq_login_with_retry())
+        self.mock_sleep.assert_not_called()
+
+    def test_token_info_retries_then_succeeds(self):
+        with patch.object(
+            self.utils.dcq, 'getTokenTime', create=True,
+            side_effect=[Exception('token mismatch'), Exception('token mismatch'), {'expires': '21:00'}],
+        ) as mock_get:
+            result = self.utils.get_dcq_token_info('dcqid')
+        self.assertEqual(result, {'expires': '21:00'})
+        self.assertEqual(mock_get.call_count, 3)
+        self.assertEqual(self.mock_sleep.call_count, 2)
+        self.mock_sleep.assert_called_with(self.utils.DCQ_TOKEN_INFO_RETRY_DELAY_SEC)
+
+    def test_token_info_gives_up_after_max_retries(self):
+        with patch.object(
+            self.utils.dcq, 'getTokenTime', create=True,
+            side_effect=Exception('token mismatch'),
+        ) as mock_get:
+            result = self.utils.get_dcq_token_info('dcqid')
+        self.assertIsNone(result)
+        self.assertEqual(mock_get.call_count, self.utils.DCQ_TOKEN_INFO_MAX_RETRIES + 1)
+        self.assertEqual(self.mock_sleep.call_count, self.utils.DCQ_TOKEN_INFO_MAX_RETRIES)
+
+    def test_dcq_logs_carry_process_tag(self):
+        """다음 실패 재발 시 프로세스 중복 여부를 로그로 확인할 수 있도록,
+        로그인/토큰 조회 로그에 hostname:PID 태그가 실제로 찍히는지 확인한다."""
+        tag = self.utils._DCQ_PROC_TAG
+        with self.assertLogs('api.utils', level='INFO') as cm:
+            with patch.object(self.utils, 'cq_login', return_value=True):
+                self.utils.dcq_login_with_retry()
+            with patch.object(self.utils.dcq, 'getTokenTime', create=True, return_value={'ok': True}):
+                self.utils.get_dcq_token_info('dcqid')
+        self.assertTrue(
+            any(f"[DCQ][{tag}]" in message for message in cm.output),
+            f"DCQ 로그에 프로세스 태그[{tag}]가 없음: {cm.output}",
+        )

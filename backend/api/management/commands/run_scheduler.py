@@ -13,6 +13,7 @@ Usage:
 """
 import os
 import signal
+import socket
 import threading
 
 from django.core.management.base import BaseCommand
@@ -24,6 +25,10 @@ class Command(BaseCommand):
     help = '스케줄러를 단일 프로세스로 상시 실행합니다.'
 
     def handle(self, *args, **options):
+        # 진단용 - 재배포/재기동 시점에 프로세스가 중복으로 뜨지는 않았는지 로그로 바로
+        # 확인할 수 있도록, 기동 시각과 프로세스 식별자(hostname:PID)를 한 줄 남긴다.
+        self.stdout.write(f'스케줄러 프로세스 시작: {socket.gethostname()}:{os.getpid()}')
+
         stop_event = threading.Event()
 
         def _graceful(signum, frame):
