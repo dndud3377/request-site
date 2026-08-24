@@ -164,7 +164,7 @@ type InfoBlock =
   | { kind: 'kv'; label: string; value: string }
   | { kind: 'table'; label: string; headers: string[]; rows: string[][] };
 
-function addInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, blocks: InfoBlock[]): void {
+function addInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, blocks: InfoBlock[]): ExcelJS.Worksheet {
   const ws = wb.addWorksheet(sheetName);
   ws.getColumn(1).width = 26;
   for (let c = 2; c <= 8; c += 1) ws.getColumn(c).width = 20;
@@ -182,13 +182,69 @@ function addInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, blo
       row.getCell(2).alignment = { vertical: 'top', wrapText: true };
       return;
     }
-    const labelRow = ws.addRow([b.label]);
-    labelRow.getCell(1).font = { bold: true };
-    labelRow.getCell(1).alignment = { vertical: 'top', wrapText: true };
-    const headRow = ws.addRow(['', ...b.headers]);
+    // 라벨을 표 헤더와 같은 행(칼럼 A)에 두어, 다른 항목처럼 라벨 바로 옆(같은 행)에
+    // 내용이 바로 보이도록 한다 — 라벨만 있는 행을 따로 두면 값이 한 줄 아래로 밀려 보인다.
+    const headRow = ws.addRow([b.label, ...b.headers]);
+    headRow.getCell(1).font = { bold: true };
+    headRow.getCell(1).alignment = { vertical: 'top', wrapText: true };
     headRow.eachCell((cell, col) => { if (col > 1) { cell.font = { bold: true }; applyFill(cell, '#f3f4f6'); } });
     b.rows.forEach((r) => ws.addRow(['', ...r]));
   });
+  return ws;
+}
+
+// ===== 첨부 이미지(X표시 변경 등) 임베딩 =====
+
+type ExcelImageExt = 'png' | 'jpeg' | 'gif';
+
+function guessImageExt(path: string): ExcelImageExt {
+  const ext = (path.split('.').pop() || '').toLowerCase();
+  if (ext === 'jpg' || ext === 'jpeg') return 'jpeg';
+  if (ext === 'gif') return 'gif';
+  return 'png';
+}
+
+/** 서버에 업로드된 첨부 이미지를 fetch 해 엑셀에 그대로 박아 넣을 수 있는 바이트로 바꾼다.
+ *  네트워크 오류 등으로 못 가져오면 null — 호출부가 안내 문구로 대체한다. */
+async function fetchImageForExcel(path: string): Promise<{ buffer: ArrayBuffer; extension: ExcelImageExt; width: number; height: number } | null> {
+  try {
+    const res = await fetch(`/media/${path}`);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    const buffer = await blob.arrayBuffer();
+    const dims = await new Promise<{ width: number; height: number }>((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.naturalWidth || 400, height: img.naturalHeight || 300 });
+      img.onerror = () => resolve({ width: 400, height: 300 });
+      img.src = URL.createObjectURL(blob);
+    });
+    return { buffer, extension: guessImageExt(path), ...dims };
+  } catch {
+    return null;
+  }
+}
+
+// 엑셀 기본 행 높이(포인트 환산 근사치) — 이미지가 몇 행을 차지할지 추정할 때 쓴다.
+const EXCEL_DEFAULT_ROW_HEIGHT_PX = 20;
+// 시트 폭 안에 들어가도록 첨부 이미지의 최대 너비를 제한한다(원본 비율은 유지).
+const EXCEL_IMAGE_MAX_WIDTH_PX = 480;
+
+/** 라벨 한 줄 + 이미지를 시트 맨 아래에 순서대로 이어 붙인다(칼럼 B부터, 다음 항목과 안 겹치게 행을 확보). */
+async function appendImageBlock(wb: ExcelJS.Workbook, ws: ExcelJS.Worksheet, t: TFunction, label: string, path: string): Promise<void> {
+  const labelRow = ws.addRow([label]);
+  labelRow.getCell(1).font = { bold: true };
+  const img = await fetchImageForExcel(path);
+  if (!img) {
+    ws.addRow(['', t('request.export_image_load_failed')]);
+    return;
+  }
+  const scale = img.width > EXCEL_IMAGE_MAX_WIDTH_PX ? EXCEL_IMAGE_MAX_WIDTH_PX / img.width : 1;
+  const width = Math.round(img.width * scale);
+  const height = Math.round(img.height * scale);
+  const imageId = wb.addImage({ buffer: img.buffer as never, extension: img.extension });
+  ws.addImage(imageId, { tl: { col: 1, row: ws.rowCount }, ext: { width, height } });
+  const rowsNeeded = Math.max(1, Math.ceil(height / EXCEL_DEFAULT_ROW_HEIGHT_PX));
+  for (let i = 0; i < rowsNeeded; i += 1) ws.addRow([]);
 }
 
 /** 의뢰 목적 — other_purpose 는 배열(신규)이며, 구버전 문서는 문자열일 수 있어 양쪽 모두 처리한다. */
@@ -365,7 +421,7 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, doc: RequestDocu
 
 // ===== MAP 정보 시트 =====
 
-function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Partial<DetailFormState>): void {
+async function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Partial<DetailFormState>): Promise<void> {
   const blocks: InfoBlock[] = [];
   const isMapRegisteredDetail = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
   const isDeleteType = isMapDeleteEditType(detail.map_type);
@@ -449,7 +505,22 @@ function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Partial<Det
     blocks.push({ kind: 'kv', label: t('request.map_option_title'), value: active.length > 0 ? active.map((o) => o.label).join(', ') : t('request.value_none') });
   }
 
-  addInfoSheet(wb, t, t('request.section_map'), blocks);
+  const ws = addInfoSheet(wb, t, t('request.section_map'), blocks);
+
+  // X표시 변경 첨부 이미지 — 화면(PagedDetailView)과 같은 조건일 때만 실제 이미지를 시트에 박아 넣는다.
+  const mshotChange = detail.mshot_change || '없음';
+  const mshotHasDetail = mshotChange === '추가' || mshotChange === '수정';
+  if (!isMapRegisteredDetail && !isDeleteType && mshotHasDetail) {
+    if (!isProdc && detail.mshot_image_copy) {
+      await appendImageBlock(wb, ws, t, t('request.mshot_change_image_attach_area'), detail.mshot_image_copy);
+    }
+    if (isProdc && detail.mshot_image_copy_top) {
+      await appendImageBlock(wb, ws, t, `${t('request.mshot_change_image_attach_area')} — ${t('request.prodc_top')}`, detail.mshot_image_copy_top);
+    }
+    if (isProdc && detail.mshot_image_copy_bottom) {
+      await appendImageBlock(wb, ws, t, `${t('request.mshot_change_image_attach_area')} — ${t('request.prodc_bottom')}`, detail.mshot_image_copy_bottom);
+    }
+  }
 }
 
 // ===== O-ayer 정보 시트 (Partial Shot / TBV·TLV) =====
@@ -511,7 +582,7 @@ export async function exportDetailInfo(doc: RequestDocument, t: TFunction): Prom
 export async function exportMapInfo(doc: RequestDocument, t: TFunction): Promise<void> {
   const { detail } = parseDoc(doc);
   const wb = new ExcelJS.Workbook();
-  addMapInfoSheet(wb, t, detail);
+  await addMapInfoSheet(wb, t, detail);
   await downloadWorkbook(wb, `${doc.title}_${t('request.section_map')}_${getNowString()}.xlsx`);
 }
 
@@ -521,7 +592,7 @@ export async function exportAll(doc: RequestDocument, t: TFunction): Promise<voi
   const isAdiCdChange = detail.request_purpose === 'ADI CD 변경';
   const wb = new ExcelJS.Workbook();
   addDetailInfoSheet(wb, t, doc, detail);
-  if (!isAdiCdChange) addMapInfoSheet(wb, t, detail);
+  if (!isAdiCdChange) await addMapInfoSheet(wb, t, detail);
   addJobSheet(wb, t, jayer);
   addOvlSheet(wb, t, oayer);
   addOvlInfoSheet(wb, t, detail);
