@@ -2515,11 +2515,14 @@ export default function RequestPage(): React.ReactElement {
 
   // 엑셀식 셀 선택 + 붙여넣기 (J/O 표 공용 훅). 붙여넣기 후 자동채움/바코드 조회 연동.
   // 셀 단위 잠금: 비활성(st==='X')/기등록 행은 전체 잠금, 불러온(loaded) 행은 LOADED_LOCK_COLS만 잠금.
-  // st·new_or_copy 두 컬럼은 "비활성에서 되돌리는 유일한 수단"이라 비활성이어도 항상 직접 편집 가능하게 둔다
-  // (new_or_copy 는 기등록/layer삭제를 고르고 되돌리는 통로이기도 하다).
+  // st 컬럼은 "비활성에서 되돌리는 유일한 수단"이라 항상 직접 편집 가능하다. new_or_copy 는
+  // 기등록/layer삭제 때문에 st==='X' 가 된 행에서만 예외로 열어둔다(그 값을 고르고 되돌리는 통로) —
+  // st 를 직접 X로 바꾼 행은 new_or_copy 도 다른 컬럼과 동일하게 잠긴다.
   // layer삭제 행의 st 는 항상 'X' 로 고정이므로 붙여넣기로도 덮어쓸 수 없다.
   const isLayerCellLocked = (row: { st?: string; new_or_copy?: string; loaded?: boolean }, col: string): boolean => {
-    if (col === 'new_or_copy') return false;
+    // new_or_copy 는 기등록/layer삭제 때문에 st==='X' 가 된 행에서만 예외로 열어둔다
+    // (되돌리는 유일한 통로). st 를 직접 X로 바꾼 행은 다른 컬럼과 동일하게 잠긴다.
+    if (col === 'new_or_copy') return isRowInactive(row.st) && !isNocSpecial(row.new_or_copy);
     if (col === 'st') return row.new_or_copy === '기등록' || row.new_or_copy === NOC_LAYER_DELETE;
     return isRowInactive(row.st) || row.new_or_copy === '기등록'
       || (!!row.loaded && (LOADED_LOCK_COLS as readonly string[]).includes(col));
