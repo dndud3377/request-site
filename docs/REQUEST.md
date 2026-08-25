@@ -3083,6 +3083,28 @@ J-layer(STEP3)와 O-layer(STEP4) 표의 `st` 컬럼이 지금까지 `request.col
   4. [엑셀 내보내기(📊 export)] → [기대 결과: JOB/OVL 시트에서 st='X' 행 전체가 회색 채움으로
      보인다.]
 
+### 추가 변경 이력 (2026-08-25 — 결재 상세페이지 J/O-layer 공유 필터 + FilterManageModal 재사용)
+
+의뢰서 작성 화면의 필터(개인별, localStorage)와 별개로 **결재 상세페이지 전용 팀 공유 필터**를
+추가했다. 상세 사양·인가·API·화면은 **`docs/APPROVAL.md` §12** 참조(그 문서가 원본이다) — 여기서는
+`RequestPage` 쪽 코드에 미친 영향만 기록한다.
+
+- **`FilterManageModal.tsx` 리팩터**: "새 필터 추가"가 컴포넌트 내부에서 `localStorage.setItem`을
+  직접 호출하던 것을 `onAdd(label, words)` 콜백으로 외부화했다(이미 외부화돼 있던 `onEdit`과
+  동일한 패턴). `storageKey`/`setFilterSets` prop은 더 이상 필요 없어 제거했다. 기존
+  `RequestPage/index.tsx`의 두 호출부(J/O 필터 관리 모달)는 `onAdd`에 기존 localStorage 로직을
+  그대로 옮겨 **동작 불변** — `ApprovalPage.tsx`가 이 컴포넌트를 재사용해 서버 API(`layerFilterSetsAPI`)로
+  저장하도록 만든 것이 이번 변경의 목적이다.
+- **`types/index.ts`**: `LayerFilterSet` 타입 추가(`id, table, label, words, created_at, updated_at`) —
+  기존 `FilterSet`(개인별, `id: string`)과 별개.
+- **`api/client.ts`**: `layerFilterSetsAPI`(list/create/update/delete) + `documentsAPI.applyLayerFilter`
+  추가.
+- **영향 파일**: `RequestPage/components/FilterManageModal.tsx`, `RequestPage/index.tsx`(호출부 2곳만),
+  `types/index.ts`, `api/client.ts`. `RequestPage`의 다른 동작(작성 화면 필터 자체)은 변경 없음.
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일). `react-scripts test --watchAll=false`
+  — 9 suites / 266건 전부 통과(회귀 없음 — 기존 필터 관리 테스트가 있다면 그대로 통과함을 확인).
+  백엔드 `manage.py test api` — 349건 전부 통과(신규 `LayerFilterSetTest` 16건 포함).
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)

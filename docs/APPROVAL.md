@@ -1218,3 +1218,59 @@ rowSpan 병합은 사라졌다(`getDocTableRows` 는 언제나 길이 1 배열�
 - **빈 상태**: 0건이면 섹션을 숨기지 않고 `home.my_requests_empty` 안내를 보여준다.
 - **역할 없는 사용자(`NONE`)**: 섹션 전체를 노출하지 않는다(연간 차트와 동일).
 - i18n: `home.my_requests_title` / `home.my_requests_empty` (`home.recent_title` 은 제거).
+
+---
+
+## 12. 결재 상세페이지 J/O-layer 공유 필터 (2026-08-25)
+
+의뢰서 작성 화면(STEP3/STEP4)의 필터는 **개인별**(localStorage)이지만, 결재 상세페이지의 필터는
+**팀 전체가 공유**하는 별도 목록이다 — J-layer 필터는 TE_J/MASTER 전원이, O-layer 필터는
+TE_O/MASTER 전원이 같은 하나의 목록을 보고 관리한다. 적용하면 이미 상신된 문서의 J/O 행을
+실제로 바꾼다(매칭된 행의 `st`를 `'X'`로, 나머지 관련 필드를 초기화) — 결재 상세페이지에서
+유일하게 문서 데이터를 직접 편집하는 지점이다.
+
+### 12-1. 데이터 모델
+
+`LayerFilterSet`(`backend/api/models.py`) — `table`('J'/'O'), `label`, `words`(JSONField
+`{sp, sd, pp}`). 마이그레이션: `0030_layerfilterset.py`. 의뢰서별 데이터가 아니라 독립 테이블 —
+문서가 삭제돼도 필터 정의는 남는다.
+
+### 12-2. 인가
+
+| 동작 | 조건 |
+|------|------|
+| J-layer 필터 조회·추가·수정·삭제 | 역할이 `TE_J` 또는 `MASTER` (`CanManageLayerFilter`) |
+| O-layer 필터 조회·추가·수정·삭제 | 역할이 `TE_O` 또는 `MASTER` |
+| 필터 **적용**(`apply-layer-filter`) | 위 역할 조건 **+** 문서가 `under_review`/`pause` **+** 해당 단계(J 또는 O)가
+  이번 회차에 아직 `approved` 가 아님 — `update_validation_system` 의 MASK 게이트와 동일한 발상(단,
+  J/O 는 PV/EV 같은 별도 검토자가 없어 담당 단계 하나만 확인하면 된다) |
+
+적용 사실은 별도로 기록하지 않는다(사용자 확정 — `validation_system`처럼 결재 단계 코멘트에
+note를 남기는 방식조차 쓰지 않는다).
+
+### 12-3. API
+
+- `GET/POST /api/layer-filter-sets/?table=J|O`, `PATCH/DELETE /api/layer-filter-sets/{id}/` — 필터
+  정의 CRUD. `list`/`create`는 `table` 쿼리 파라미터·바디가 필수(어느 권한으로 판정할지 알 수 없으면
+  403).
+- `POST /api/documents/{id}/apply-layer-filter/` — `{table, filter_id}` → 매칭된 행의 `st`를
+  `'X'`로 설정하고 `new_or_copy`/`product_name`/`step`(J면 `item_id`도) 초기화, `additional_notes`
+  저장. 이미 `st==='X'`인 행은 다시 매칭하지 않는다(재적용해도 중복 집계 없음).
+
+### 12-4. 화면
+
+- `frontend/src/components/PagedDetailView.tsx`의 'J-ayer 정보'/'O-ayer 정보' 탭 표 위에 공유 필터
+  버튼 + "필터 관리" 버튼을 노출한다(사용 가능 여부는 호출부인 `ApprovalPage.tsx`가 판정해
+  `canUseJayerFilter`/`canUseOayerFilter` prop으로 넘긴다 — 이 컴포넌트는 API를 직접 호출하지 않는
+  순수 표시 컴포넌트라는 기존 원칙을 그대로 따른다).
+- 필터 관리 모달은 의뢰서 작성 화면과 같은 `FilterManageModal` 컴포넌트를 재사용한다(추가 저장
+  방식만 `onAdd` 콜백으로 외부화해 개인별 localStorage 대신 서버 API를 타도록 함).
+- 이력 조회(`HistoryPage.tsx`)에는 이 props 를 넘기지 않아 버튼 자체가 뜨지 않는다(완료된 문서를
+  편집하는 것은 의미가 없으므로).
+
+### 12-5. 테스트
+
+`backend/api/tests.py::LayerFilterSetTest`(16건) — CRUD 권한(테이블별 조회·생성·수정·삭제 허용/거부,
+파라미터 누락 시 거부), 적용 권한(TE_J/TE_O/MASTER, 그 외 역할 거부), 문서 상태·단계 게이트, 필드
+초기화, 이미 비활성인 행 재매칭 안 함, 다른 테이블 필터로 적용 시도 거부, O-layer 행에 `item_id`
+키가 생기지 않음.
