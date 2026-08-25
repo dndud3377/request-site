@@ -875,10 +875,10 @@ class BbMappingValidationTest(TestCase):
         )
         self.assertIsNone(self._view._validate_bb_mapping(doc))
 
-    def test_disabled_row_excluded_even_when_unmapped(self):
-        """2026-08: 비활성 행도 상신 시 저장에 남으므로, 매핑 없이도 통과해야 한다."""
+    def test_inactive_row_excluded_even_when_unmapped(self):
+        """비활성(st=='X') 행도 상신 시 저장에 남으므로, 매핑 없이도 통과해야 한다."""
         doc = self._make_doc_with_jayer([
-            {'id': 'j1', 'process_id': 'P1', 'new_or_copy': '신규', 'disabled': True},
+            {'id': 'j1', 'process_id': 'P1', 'new_or_copy': '신규', 'st': 'X'},
         ])
         self.assertIsNone(self._view._validate_bb_mapping(doc))
 
@@ -902,17 +902,17 @@ class HasPpidPlelTest(TestCase):
         return doc
 
     def test_active_plel_row_is_target(self):
-        doc = self._make_doc_with_jayer([{'id': 'j1', 'pp': 'PLEL01', 'disabled': False}])
+        doc = self._make_doc_with_jayer([{'id': 'j1', 'pp': 'PLEL01', 'st': 'O'}])
         self.assertTrue(doc.has_ppid_plel())
 
-    def test_disabled_plel_row_is_not_target(self):
-        doc = self._make_doc_with_jayer([{'id': 'j1', 'pp': 'PLEL01', 'disabled': True}])
+    def test_inactive_plel_row_is_not_target(self):
+        doc = self._make_doc_with_jayer([{'id': 'j1', 'pp': 'PLEL01', 'st': 'X'}])
         self.assertFalse(doc.has_ppid_plel())
 
-    def test_disabled_plel_row_with_other_active_non_plel_row(self):
+    def test_inactive_plel_row_with_other_active_non_plel_row(self):
         doc = self._make_doc_with_jayer([
-            {'id': 'j1', 'pp': 'PLEL01', 'disabled': True},
-            {'id': 'j2', 'pp': 'NORMAL', 'disabled': False},
+            {'id': 'j1', 'pp': 'PLEL01', 'st': 'X'},
+            {'id': 'j2', 'pp': 'NORMAL', 'st': 'O'},
         ])
         self.assertFalse(doc.has_ppid_plel())
 

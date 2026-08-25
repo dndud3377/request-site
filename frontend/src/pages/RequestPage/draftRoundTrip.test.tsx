@@ -164,10 +164,10 @@ const fixtureDetail = {
 };
 
 const fixtureJayerRows = [
-  { id: 'j1', updated: '20260801', sortOrder: 1, disabled: false, manuallyDisabled: false, loaded: true, process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: 'PLEL01', layerid: 'L01', st: 'O', new_or_copy: '신규', product_name: '제품A', step: '10', item_id: 'ITEM_1' },
+  { id: 'j1', updated: '20260801', sortOrder: 1, loaded: true, process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: 'PLEL01', layerid: 'L01', st: 'O', new_or_copy: '신규', product_name: '제품A', step: '10', item_id: 'ITEM_1' },
 ];
 const fixtureOayerRows = [
-  { id: 'o1', updated: '20260801', sortOrder: 1, disabled: false, manuallyDisabled: false, loaded: true, process_id: PROCESS_ID, sp: 'SP01', sd: 'TBV_SD', pp: 'PP01', layerid: 'L01', st: 'O', new_or_copy: '신규', product_name: '제품A', step: '10' },
+  { id: 'o1', updated: '20260801', sortOrder: 1, loaded: true, process_id: PROCESS_ID, sp: 'SP01', sd: 'TBV_SD', pp: 'PP01', layerid: 'L01', st: 'O', new_or_copy: '신규', product_name: '제품A', step: '10' },
 ];
 const fixtureBbRows = [
   { id: 'b1', sortOrder: 1, disabled: false, entryId: 'bbe1', sourceJayerRowId: 'j1', process_id: PROCESS_ID, ss: 'SP01', sd: 'SD01', bb_process_id: BB_PROCESS_ID, bb_name: `[${BB_LOCATION}] ${BB_PRODUCT}`, bb_layer: 'L01', bb_ss: '110', bb_step: 'STEP', remark: '비고' },
@@ -179,8 +179,6 @@ const fixtureNotes = {
   oayerRows: fixtureOayerRows,
   bbRows: fixtureBbRows,
   history: [],
-  jayerActiveFilterIds: [],
-  oayerActiveFilterIds: [],
   mergeSnapshot: { jayerRows: fixtureJayerRows, oayerRows: fixtureOayerRows },
 };
 
@@ -313,27 +311,27 @@ describe('임시저장 왕복 — 불러온 값이 그대로 다시 저장되는
     expect(JSON.stringify(second.detail)).toBe(JSON.stringify(first.detail));
   });
 
-  it('저장된 필터가 켜져 있어 TBV/TLV 행이 비활성화되면 TBV/TLV 항목이 사라진다(현재 동작 기록)', async () => {
-    // 사용자의 브라우저(localStorage)에 'TBV' 키워드 필터가 저장·활성화된 상태를 재현한다.
-    localStorage.setItem('oayerFilterSets', JSON.stringify([
-      { id: 'f1', label: 'TBV 숨김', words: { sp: [], sd: ['TBV'], pp: [] } },
-    ]));
+  it('저장된 행의 st가 X면 TBV/TLV 항목이 사라진다(현재 동작 기록)', async () => {
+    // st='X'(비활성)로 이미 저장된 O-ayer 행을 그대로 불러온다 — 구 버전의 필터
+    // "활성" 상태 재계산은 더 이상 없다. st 값 자체가 저장된 그대로 유지된다.
     mockState.doc = {
       ...fixtureDoc,
-      additional_notes: JSON.stringify({ ...fixtureNotes, oayerActiveFilterIds: ['f1'] }),
+      additional_notes: JSON.stringify({
+        ...fixtureNotes,
+        oayerRows: [{ ...fixtureOayerRows[0], st: 'X' }],
+      }),
     };
     await renderLoadedPage();
     const saved = await saveDraftAndCapture();
 
-    // 문서에는 TBV/TLV 항목이 1건 있었지만 로드 직후 정리 effect 가 지운다.
+    // 문서에는 TBV/TLV 항목이 1건 있었지만, 그 SD를 가진 행이 비활성(st==='X')이라
+    // 로드 직후 정리 effect 가 지운다.
     expect((fixtureDetail.tbvtlv_entries as unknown[]).length).toBe(1);
     expect(saved.detail.tbvtlv_entries).toEqual([]);
 
-    // 원인: 저장 당시 활성이던 O-ayer 행이 '다시 열기만 해도' 비활성으로 재계산된다.
-    // (임시저장은 비활성 행도 저장하지만, 상신 payload 는 비활성 행을 제외한다)
-    const savedO = saved.oayerRows as { id: string; disabled: boolean }[];
-    expect(fixtureOayerRows[0].disabled).toBe(false);
-    expect(savedO[0].disabled).toBe(true);
+    // st 값은 로드 전후로 그대로 유지된다(재계산 없음).
+    const savedO = saved.oayerRows as { id: string; st: string }[];
+    expect(savedO[0].st).toBe('X');
   });
 });
 
