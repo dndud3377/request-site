@@ -324,19 +324,39 @@ const StepMap: React.FC<StepMapProps> = ({
         </div>
 
         {/* Only C가문 제품 — Yes/No 선택 자체는 CLONE/EXISTING 에서도 열어두고,
-            Yes 일 때 펼쳐지는 하위 입력(적용 위치·북/중/남 라인·조합법·제품)만 잠근다. */}
+            Yes 일 때 펼쳐지는 하위 입력(적용 위치·북/중/남 라인·조합법·제품)만 잠근다.
+            PY 적용 여부는 그 하위 입력과 달리 CLONE/EXISTING 에서도 잠기지 않는 예외 항목이라
+            Only C가문 제품 셀렉트와 같은 행에 나란히 둔다(둘 다 항상 조작 가능). */}
         <div className="full-width" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div className="form-group" data-tour="map-cfamily-toggle" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
-            <label className="form-label">{t('request.prodc_status')}<GuideBadge fk="step2_cfamily" tk={t('guide.feat.step2_cfamily' as never)} /></label>
-            <select
-              className="form-control"
-              name="only_prodc"
-              value={detail.only_prodc}
-              onChange={(e) => handleOnlyProdcChange(e.target.value)}
-            >
-              <option value="No">No</option>
-              <option value="Yes">Yes</option>
-            </select>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            <div className="form-group" data-tour="map-cfamily-toggle" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
+              <label className="form-label">{t('request.prodc_status')}<GuideBadge fk="step2_cfamily" tk={t('guide.feat.step2_cfamily' as never)} /></label>
+              <select
+                className="form-control"
+                name="only_prodc"
+                value={detail.only_prodc}
+                onChange={(e) => handleOnlyProdcChange(e.target.value)}
+              >
+                <option value="No">No</option>
+                <option value="Yes">Yes</option>
+              </select>
+            </div>
+            {isProdc && (
+              <div className="form-group" data-tour="map-py-apply" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
+                <label className="form-label">{t('request.py_apply')} <span className="required">*</span></label>
+                <select
+                  className="form-control"
+                  name="py_apply"
+                  value={detail.py_apply}
+                  onChange={(e) => handleDetailSet('py_apply', e.target.value)}
+                >
+                  <option value="">{t('request.select_placeholder')}</option>
+                  <option value="O">O</option>
+                  <option value="X">X</option>
+                </select>
+                {errors.py_apply && <span className="form-error">{errors.py_apply}</span>}
+              </div>
+            )}
           </div>
           {isProdc && (
             <div data-tour="map-cfamily-detail" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
