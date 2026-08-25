@@ -2982,6 +2982,48 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
      product_name은 여전히 무조건 전파된다 — O-layer의 같은 layerid를 가진 참여행 전부의
      product_name이 바뀐다(1번~3번의 합의/단일 대상 규칙과 무관).]
 
+### 추가 변경 이력 (2026-08-25 — J/O-layer col_st 라벨 분리: `col_st` → `col_st_j`/`col_st_o`)
+
+J-layer(STEP3)와 O-layer(STEP4) 표의 `st` 컬럼이 지금까지 `request.col_st`("ST") 하나를
+공유해 표시했다. 사용자 요청에 따라 두 표가 서로 다른 라벨을 쓰도록 분리했다 — J는
+"ST_J", O는 "ST_O". 데이터 필드명(`JayerRow.st`/`OayerRow.st`)과 저장값(`'O'`/`'O (D)'`/`'X'`)은
+그대로다 — **표시 라벨만** 바뀌었다(백엔드·DB 무영향).
+
+- **i18n**: `ko.json`/`en.json`의 `col_st` 키를 삭제하고 `col_st_j`("ST_J")/`col_st_o`("ST_O")를
+  동시에 추가했다.
+- **호출부 10곳**을 문맥에 맞게 교체:
+  - J(`col_st_j`): `components/Step2.tsx`(툴바 라벨·표 헤더), `utils/detailExport.ts`의
+    `addJobSheet`(엑셀 JOB 시트), `components/PagedDetailView.tsx`의 `JAYER_DIFF_FIELDS`(이력
+    비교 라벨)·`JayerTable`(상세보기 표 헤더).
+  - O(`col_st_o`): `components/Step3.tsx`(툴바 라벨·표 헤더), `utils/detailExport.ts`의
+    `addOvlSheet`(엑셀 OVL 시트), `components/PagedDetailView.tsx`의 `OAYER_DIFF_FIELDS`·
+    `OayerTable`.
+- **가이드 투어 문구**(`ko.json`/`en.json`의 `s3g1`/`s3g1b` — J 관련, `s4g1` — O 관련) 본문 중
+  이 컬럼을 가리키는 "ST"를 각각 "ST_J"/"ST_O"로 함께 바꿨다(라벨 자체가 바뀌었으므로).
+- `constants.ts:151`의 주석("col_new_or_copy · col_st 저장값...")은 표시 라벨이 아니라 DB
+  저장값에 대한 설명이라 그대로 뒀다.
+- **영향 파일**: `frontend/src/locales/{ko,en}.json`, `RequestPage/components/{Step2,Step3}.tsx`,
+  `frontend/src/utils/detailExport.ts`, `frontend/src/components/PagedDetailView.tsx`.
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일). `react-scripts test --watchAll=false`
+  — 9 suites / 262건 전부 통과(회귀 없음 — `col_st`/"ST" 문자열을 직접 검사하는 테스트가
+  기존에 없었음을 확인했고, 라벨 텍스트 자체에 대한 신규 테스트는 추가하지 않았다).
+- **알려진 잔여 사항(이번 작업 범위 밖, 기록만)**: `s3g1`/`s3g1b`/`s4g1` 가이드 문구는 2026-08-25
+  "J/O-layer 내부(J→J·O→O) 동기화 삭제 + 교차 동기화를 합의+단일대상 기준으로 축소" 변경 이후에도
+  여전히 "같은 Layer면 무조건 반영됩니다"라는 옛 규칙을 서술한다 — 이번 작업에서는 "ST" 단어만
+  "ST_J"/"ST_O"로 바꿨을 뿐, 동기화 규칙 서술 자체는 고치지 않았다(사용자가 별도 작업으로
+  미룸).
+- **수동 검증 시나리오**:
+  1. [`/request`에서 STEP3(J-layer)로 이동] → [기대 결과: 표 헤더와 상단 툴바("...:" 앞) 라벨이
+     모두 "ST_J"로 보인다.]
+  2. [STEP4(O-layer)로 이동] → [기대 결과: 표 헤더와 상단 툴바 라벨이 모두 "ST_O"로 보인다.]
+  3. [의뢰서 작성 완료 후 상세보기(결재 현황 → 해당 의뢰서 → 'J-layer 정보'/'O-layer 정보' 탭)] →
+     [기대 결과: J 표는 "ST_J", O 표는 "ST_O" 헤더로 보인다. 변경 이력(있는 경우) 비교 모달에도
+     동일하게 적용된다.]
+  4. [상세보기 화면에서 엑셀 내보내기(📊 export) 클릭] → [기대 결과: 다운로드된 엑셀의 JOB 시트
+     헤더는 "ST_J", OVL 시트 헤더는 "ST_O"로 보인다.]
+  5. [STEP3 가이드 배지(❓) 확인] → [기대 결과: "표 자동 채움"/"ST_J · 신규/차용 · 제품 이름..." 등
+     문구에 "ST_J"로 표시된다. STEP4 가이드 배지는 "ST_O"로 표시된다.]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
