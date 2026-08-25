@@ -3024,6 +3024,35 @@ J-layer(STEP3)와 O-layer(STEP4) 표의 `st` 컬럼이 지금까지 `request.col
   5. [STEP3 가이드 배지(❓) 확인] → [기대 결과: "표 자동 채움"/"ST_J · 신규/차용 · 제품 이름..." 등
      문구에 "ST_J"로 표시된다. STEP4 가이드 배지는 "ST_O"로 표시된다.]
 
+### 추가 변경 이력 (2026-08-25 — 전파로 st가 'X'가 될 때도 관련 필드 초기화)
+
+같은 layerid의 J↔O 교차 동기화(합의+단일대상)나 일괄 적용(SetAll)으로 대상 행의 `st`가 `'X'`가
+될 때, 지금까지는 그 대상 행의 `new_or_copy`/`product_name`/`step`(J측이면 `item_id`)이 초기화되지
+않고 예전 값 그대로 남아 있었다 — 직접 편집으로 자기 행의 st를 X로 바꿀 때만 이 초기화가 적용되고
+있었다. 두 경우가 다르게 동작하는 게 사용자가 원한 그림과 달라, 전파로 인한 전환도 동일하게
+초기화하도록 맞췄다.
+
+- 새 순수 함수 `stClearExtra(field, value, hasItemId)`(`helpers.ts`) — `field==='st' && value===ST_X`
+  일 때만 `{new_or_copy:'', product_name:'', step:'' (, item_id:'')}`를 반환하고, 그 외에는 빈 객체.
+- `index.tsx`의 전파 대상 행 6곳에 적용: `handleJayerChange`(J→O 단일 편집),
+  `handleJayerAfterPaste`(J→O 붙여넣기), `handleJayerSetAll`(J→O 일괄 적용),
+  `handleOayerChange`(O→J 단일 편집), `handleOayerAfterPaste`(O→J 붙여넣기),
+  `handleOayerSetAll`(O→J 일괄 적용). `ResetField`류는 값이 항상 `''`라 이 전환 자체가
+  일어나지 않아 손대지 않았다(대상에 해당 안 됨을 확인).
+- 이미 정상 동작하던 4곳(직접 편집한 자기 행, 필터 일괄 적용 2곳)은 그대로 뒀다.
+- **영향 파일**: `RequestPage/helpers.ts`, `RequestPage/index.tsx`, `RequestPage/helpers.test.ts`.
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일). `react-scripts test --watchAll=false`
+  — 9 suites / 266건 전부 통과(신규 4건 포함).
+- **수동 검증 시나리오**:
+  1. [`/request`에서 J-layer 행 A, O-layer에 같은 layerid를 가진 참여행이 정확히 1개(B)인 상태를
+     만듦 → A의 `new_or_copy`를 '차용'으로, `product_name`을 채워둠 → A의 `st`를 'X'로 바꿈] →
+     [기대 결과: A는 물론 B의 `new_or_copy`/`product_name`/`step`도 함께 빈 값이 된다(예전에는 B의
+     값이 남아 있었음).]
+  2. [반대로 O-layer 행에서 시작해 J-layer 참여행이 1개일 때 st를 X로 바꿈] → [기대 결과: 대상
+     J행의 `new_or_copy`/`product_name`/`step`/`item_id`가 모두 초기화된다.]
+  3. [STEP3 상단 "전체 X" 버튼 클릭(같은 layerid의 O 참여행이 1개인 경우 포함)] → [기대 결과: O측
+     대상 행도 st=X와 함께 나머지 필드가 초기화된다.]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
