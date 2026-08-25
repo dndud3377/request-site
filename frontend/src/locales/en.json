@@ -579,6 +579,8 @@
     "final_add": "+ Add",
     "final_entries_required": "C-family products must have at least one Final entry registered.",
     "ext_data_assign_to_jayer": "② Select external data — assigned to the selected J-ayer row",
+    "layer_filter_apply_label": "Shared Filter",
+    "layer_filter_manage_btn": "Manage Filters",
     "jayer_filter_manage": "J-ayer Filter Management",
     "oayer_filter_manage": "O-ayer Filter Management",
     "ovl_tab_table": "OVL Layer List",

@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import html2canvas from 'html2canvas';
-import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, AdiCdTarget } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, AdiCdTarget, LayerFilterSet } from '../types';
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
@@ -1101,6 +1101,19 @@ export interface PagedDetailViewProps {
    *  - true(이력 조회): **한 번이라도 바뀌었으면** 강조·버튼, 모달은 회차별 전체.
    */
   historyMode?: boolean;
+  /**
+   * 결재 상세페이지 J/O-layer 공유 필터. 넘기지 않으면(HistoryPage 등) 툴바 자체가 뜨지 않는다.
+   * 사용 가능 여부(canUse*)·목록·적용/관리 핸들러 모두 호출부(ApprovalPage)가 소유한다 —
+   * 이 컴포넌트는 API를 직접 호출하지 않는 순수 표시 컴포넌트라는 기존 원칙을 그대로 따른다.
+   */
+  canUseJayerFilter?: boolean;
+  canUseOayerFilter?: boolean;
+  jayerLayerFilterSets?: LayerFilterSet[];
+  oayerLayerFilterSets?: LayerFilterSet[];
+  onApplyJayerLayerFilter?: (filterId: number) => void;
+  onApplyOayerLayerFilter?: (filterId: number) => void;
+  onOpenJayerFilterManage?: () => void;
+  onOpenOayerFilterManage?: () => void;
 }
 
 /** 전체 export(제목 옆 버튼)가 상세 정보/MAP 정보 탭을 화면 그대로 캡처할 때 쓰는 핸들. */
@@ -1115,6 +1128,10 @@ export interface PagedDetailViewHandle {
 const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(function PagedDetailView({
   doc, role, pageIdx, setPageIdx, canEditValidationSystem = false, onValidationSystemChange,
   reviewItems, historyMode = false,
+  canUseJayerFilter = false, canUseOayerFilter = false,
+  jayerLayerFilterSets, oayerLayerFilterSets,
+  onApplyJayerLayerFilter, onApplyOayerLayerFilter,
+  onOpenJayerFilterManage, onOpenOayerFilterManage,
 }, ref) {
   const { t } = useTranslation();
   const { isFullscreen, setIsFullscreen } = useModalFullscreen();
@@ -2246,6 +2263,19 @@ type Page = { label: string; content: React.ReactNode };
               </span>
             )}
           </div>
+          {canUseJayerFilter && (
+            <div className="wizard-table-toolbar" style={{ marginBottom: 8 }}>
+              <span className="wizard-table-toolbar-label">{t('request.layer_filter_apply_label')}:</span>
+              {(jayerLayerFilterSets ?? []).map((fs) => (
+                <button key={fs.id} type="button" className="th-header-btn" onClick={() => onApplyJayerLayerFilter?.(fs.id)}>
+                  {fs.label}
+                </button>
+              ))}
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenJayerFilterManage}>
+                {t('request.layer_filter_manage_btn')}
+              </button>
+            </div>
+          )}
           <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} />
           </>
           )}
@@ -2313,7 +2343,22 @@ type Page = { label: string; content: React.ReactNode };
                 ))}
               </div>
               {activeTab === 'table' && (
-                <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} />
+                <>
+                  {canUseOayerFilter && (
+                    <div className="wizard-table-toolbar" style={{ marginBottom: 8 }}>
+                      <span className="wizard-table-toolbar-label">{t('request.layer_filter_apply_label')}:</span>
+                      {(oayerLayerFilterSets ?? []).map((fs) => (
+                        <button key={fs.id} type="button" className="th-header-btn" onClick={() => onApplyOayerLayerFilter?.(fs.id)}>
+                          {fs.label}
+                        </button>
+                      ))}
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenOayerFilterManage}>
+                        {t('request.layer_filter_manage_btn')}
+                      </button>
+                    </div>
+                  )}
+                  <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} />
+                </>
               )}
               {activeTab === 'info' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20, fontSize: 13 }}>

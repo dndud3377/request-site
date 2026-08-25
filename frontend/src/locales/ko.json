@@ -579,6 +579,8 @@
     "final_add": "+ 추가",
     "final_entries_required": "C가문 제품은 Final 항목을 1개 이상 등록해야 합니다.",
     "ext_data_assign_to_jayer": "② 외부 데이터 선택 — 선택된 J-ayer 행에 지정됨",
+    "layer_filter_apply_label": "공유 필터",
+    "layer_filter_manage_btn": "필터 관리",
     "jayer_filter_manage": "J-ayer 필터 관리",
     "oayer_filter_manage": "O-ayer 필터 관리",
     "ovl_tab_table": "OVL Layer 목록",
