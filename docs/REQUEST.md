@@ -277,6 +277,31 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 개선 (2026-08-25 — ADI CD 변경전/변경후 표: 스크롤 동기화)
+
+- **요청**: 참조 요청서 Merge 표(`BeforeAfterPanel.tsx`)는 변경전·변경후를 한 행 안에 나란히 그려
+  1:1 매칭이 항상 보이는데, ADI CD 변경전/변경후 표(`AdiCdPanel.tsx`)는 독립된 표 2개
+  (`.adi-cd-pane-scroll`, 각각 `max-height: 320px; overflow: auto`)라 한쪽만 스크롤되면 반대쪽과
+  행이 어긋나 보였다.
+- **검토한 대안**: ① Merge 표처럼 표 1개로 합치기(행 안에 변경전/변경후 칸을 나란히 배치) vs
+  ② 표 2개를 유지하고 스크롤만 동기화. 사용자와 상의해 **②**로 결정 — 좌우 표 각각의 붙여넣기·
+  컬럼 매핑 등 셀 단위 동작을 그대로 유지하기 위함.
+- **구현**(`AdiCdPanel.tsx`): 두 `.adi-cd-pane-scroll` div에 `useRef`를 달고 `onScroll` 핸들러로
+  한쪽의 `scrollTop`을 반대쪽에 그대로 반영한다. `isSyncingRef` 플래그로 스크롤 이벤트가 서로를
+  재귀 호출하는 것을 막았다. 행 높이는 두 표 모두 `<input>` 셀이라(줄바꿈 없이 넘치는 텍스트는
+  스크롤 처리) 내용 길이로 행 높이가 달라질 일이 없어 별도 CSS 조정은 필요 없었다.
+- **영향 파일**: `frontend/src/pages/RequestPage/components/AdiCdPanel.tsx`,
+  `frontend/src/pages/RequestPage/adiCdUnregisteredAndVs.test.tsx`.
+- **테스트**: `npx react-scripts test --watchAll=false` — 9 suites / **257건 전부 통과**
+  (신규 1건: 한쪽 pane에 `scrollTop`을 설정하고 `scroll` 이벤트를 발생시키면 반대쪽 `scrollTop`도
+  같아지는지 확인). `npx tsc --noEmit` 은 변경 전과 동일하게 7건(전부 무관한 기존 에러, 신규 0).
+- **수동 검증 시나리오**:
+  1. [`/request` → 라인·조합법·제품·조리법 입력 → 요청 목적 'ADI CD 변경' 선택 → '행 추가' 버튼을
+     여러 번 눌러 표에 스크롤이 생길 만큼 행을 늘림] → [변경전 표(왼쪽)를 마우스 휠로 스크롤] →
+     [기대 결과: 변경후 표(오른쪽)도 같은 위치로 함께 스크롤되어, 같은 인덱스의 행이 항상 나란히
+     보인다.]
+  2. [반대로 변경후 표를 스크롤] → [기대 결과: 변경전 표도 같이 움직인다(양방향 동기화).]
+
 ### 버그 수정 (2026-08-24 — ADI CD 변경전/변경후 표: 완전히 빈 행이 상신을 막지 않던 문제)
 
 - **버그**: `validateAdiCdRows`(`helpers.ts`)가 STEP_ID/STEP_DESC 가 **둘 다 빈 행**이면서
