@@ -21,6 +21,7 @@ import {
   ExternalBbDataItem,
   PhotoStepOption,
   BbAutoFillRange,
+  BbAutoFillAmbiguousRow,
   FilterSet,
   GuideFeatureKey,
   UserWithRole,
@@ -278,6 +279,11 @@ export default function RequestPage(): React.ReactElement {
   const [mappedJayerRowIds, setMappedJayerRowIds] = useState<Set<string>>(new Set());
   const [bbAutoFillRanges, setBbAutoFillRanges] = useState<BbAutoFillRange[]>([]);
   const [showAutoFillPanel, setShowAutoFillPanel] = useState(false);
+  // 자동채움 매칭 후보가 2개 이상인 행들 — 확인 모달에서 사용자가 선택할 때까지 보류
+  const [bbAutoFillAmbiguous, setBbAutoFillAmbiguous] = useState<BbAutoFillAmbiguousRow[]>([]);
+  const [bbAutoFillAmbiguousChoices, setBbAutoFillAmbiguousChoices] = useState<Record<string, number | 'skip'>>({});
+  // 애매하지 않아 바로 확정된 행 — 확인 모달에서 "적용" 시 선택 결과와 합쳐 함께 반영
+  const [bbAutoFillPendingResolved, setBbAutoFillPendingResolved] = useState<BbTableRow[]>([]);
   const [bbSearchQueries, setBbSearchQueries] = useState<Record<string, string>>({});  // 탭(bb_entry id)별 검색어
   const [jayerChecked, setJayerChecked] = useState<Set<string>>(new Set());
   const [oayerChecked, setOayerChecked] = useState<Set<string>>(new Set());
@@ -3329,7 +3335,7 @@ export default function RequestPage(): React.ReactElement {
         newRow.bb_process_id = ext.bb_process_id;
         newRow.bb_name = formatBbName(ext.location ?? '', ext.bb_name);
         newRow.entryId = ext.entryId;
-        // 자동 채움(buildAutoFillRows)과 동일하게 layer 컬럼을 외부 데이터의 layerid로 채운다.
+        // 자동 채움(makeBbRowFromMatch)과 동일하게 layer 컬럼을 외부 데이터의 layerid로 채운다.
         newRow.bb_layer = ext.layerid ?? '';
         newRow.bb_ss = ext.bb_ss;
         newRow.bb_step = ext.bb_step;
@@ -3393,8 +3399,35 @@ export default function RequestPage(): React.ReactElement {
     ));
   };
 
-  const buildAutoFillRows = (): BbTableRow[] => {
-    const newBbRows: BbTableRow[] = [];
+  // 매칭된 외부데이터 1건 + J-ayer 행 + bb_entry 로 bb 결과 행 하나를 만든다(자동채움/확인모달 선택 공용).
+  const makeBbRowFromMatch = (
+    jayerRow: JayerRow,
+    entry: { id: string; location: string; product: string },
+    matchedStep: PhotoStepOption,
+  ): BbTableRow => ({
+    id: genId(),
+    sourceJayerRowId: jayerRow.id,
+    sortOrder: jayerRow.sortOrder,
+    disabled: jayerRow.disabled,
+    process_id: jayerRow.process_id,
+    ss: jayerRow.sp,
+    sd: jayerRow.sd,
+    bb_process_id: matchedStep.processid,
+    bb_name: formatBbName(entry.location, entry.product),
+    bb_layer: matchedStep.layerid,
+    bb_ss: matchedStep.stepseq,
+    bb_step: matchedStep.descript,
+    remark: '',
+    entryId: entry.id,
+  });
+
+  /**
+   * 자동채움 매칭 규칙: layerid 일치 ∪ (sp===stepseq, 둘 다 값이 있을 때만) 일치를 후보로 모은다.
+   * 후보가 0개면 스킵(매칭 없음), 1개면 바로 확정, 2개 이상이면 확인모달 대상(ambiguous)으로 분류한다.
+   */
+  const buildAutoFillPlan = (): { resolved: BbTableRow[]; ambiguous: BbAutoFillAmbiguousRow[] } => {
+    const resolved: BbTableRow[] = [];
+    const ambiguous: BbAutoFillAmbiguousRow[] = [];
     bbAutoFillRanges.forEach(range => {
       if (!range.layerFrom || !range.layerTo || !range.entryId) return;
       const from = parseFloat(range.layerFrom);
@@ -3417,27 +3450,29 @@ export default function RequestPage(): React.ReactElement {
       // 외부데이터(bbExternalData)는 위치 배열이므로 현재 위치로 인덱싱한다(매번 effect가 재구성).
       const photoSteps = bbExternalData[entryPos] ?? [];
       jayerRowsInRange.forEach(jayerRow => {
-        const matchedStep = photoSteps.find(step => step.layerid === jayerRow.layerid);
-        if (!matchedStep) return;
-        newBbRows.push({
-          id: genId(),
-          sourceJayerRowId: jayerRow.id,
-          sortOrder: jayerRow.sortOrder,
-          disabled: jayerRow.disabled,
+        const layerMatches = photoSteps.filter(step => step.layerid === jayerRow.layerid);
+        const seqMatches = jayerRow.sp
+          ? photoSteps.filter(step => !!step.stepseq && step.stepseq === jayerRow.sp)
+          : [];
+        const candidates = Array.from(new Set([...layerMatches, ...seqMatches]));
+
+        if (candidates.length === 0) return; // 매칭 없음 — 조용히 스킵
+        if (candidates.length === 1) {
+          resolved.push(makeBbRowFromMatch(jayerRow, entry, candidates[0]));
+          return;
+        }
+        ambiguous.push({
+          jayerRowId: jayerRow.id,
           process_id: jayerRow.process_id,
-          ss: jayerRow.sp,
+          sp: jayerRow.sp,
           sd: jayerRow.sd,
-          bb_process_id: matchedStep.processid,
-          bb_name: formatBbName(entry.location, entry.product),
-          bb_layer: matchedStep.layerid,
-          bb_ss: matchedStep.stepseq,
-          bb_step: matchedStep.descript,
-          remark: '',
+          layerid: jayerRow.layerid,
           entryId: entry.id,
+          candidates,
         });
       });
     });
-    return newBbRows;
+    return { resolved, ambiguous };
   };
 
   // 자동채움은 "원본 목록에 남은(미매핑) 행"만 대상으로 하므로 기존 bb 행과 겹칠 수 없다.
@@ -3457,12 +3492,51 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleApplyAutoFill = () => {
-    const allNewRows = buildAutoFillRows();
-    if (allNewRows.length === 0) {
+    const { resolved, ambiguous } = buildAutoFillPlan();
+    if (resolved.length === 0 && ambiguous.length === 0) {
       if (!isTourMode) addToast(t('request.toast_bb_autofill_apply_empty'), 'info');
       return;
     }
-    applyBbRowChanges(allNewRows);
+    if (ambiguous.length === 0) {
+      applyBbRowChanges(resolved);
+      return;
+    }
+    // 후보가 여러 개인 행이 있으면 바로 적용하지 않고 확인 모달에서 선택받는다.
+    setBbAutoFillPendingResolved(resolved);
+    setBbAutoFillAmbiguous(ambiguous);
+    setBbAutoFillAmbiguousChoices({});
+  };
+
+  const handleBbAmbiguousChoice = (jayerRowId: string, choice: number | 'skip') => {
+    setBbAutoFillAmbiguousChoices(prev => ({ ...prev, [jayerRowId]: choice }));
+  };
+
+  const handleCancelBbAmbiguous = () => {
+    setBbAutoFillAmbiguous([]);
+    setBbAutoFillPendingResolved([]);
+    setBbAutoFillAmbiguousChoices({});
+  };
+
+  const handleResolveBbAmbiguous = () => {
+    const extraRows: BbTableRow[] = [];
+    bbAutoFillAmbiguous.forEach(item => {
+      const choice = bbAutoFillAmbiguousChoices[item.jayerRowId];
+      if (choice === undefined || choice === 'skip') return;
+      const candidate = item.candidates[choice];
+      const entry = detail.bb_entries.find(e => e.id === item.entryId);
+      const jayerRow = jayerRows.find(r => r.id === item.jayerRowId);
+      if (!candidate || !entry || !jayerRow) return;
+      extraRows.push(makeBbRowFromMatch(jayerRow, entry, candidate));
+    });
+    const allRows = [...bbAutoFillPendingResolved, ...extraRows];
+    setBbAutoFillAmbiguous([]);
+    setBbAutoFillPendingResolved([]);
+    setBbAutoFillAmbiguousChoices({});
+    if (allRows.length === 0) {
+      if (!isTourMode) addToast(t('request.toast_bb_autofill_apply_empty'), 'info');
+      return;
+    }
+    applyBbRowChanges(allRows);
   };
 
   const handleResetBbRows = () => {
@@ -5729,6 +5803,56 @@ export default function RequestPage(): React.ReactElement {
         message={t('request.bb_reset_confirm')}
         danger
       />
+
+      {bbAutoFillAmbiguous.length > 0 && (
+        <Modal
+          isOpen
+          onClose={handleCancelBbAmbiguous}
+          title={t('request.bb_ambiguous_modal_title')}
+          size="lg"
+          footer={
+            <>
+              <button type="button" className="btn btn-secondary" onClick={handleCancelBbAmbiguous}>
+                {t('common.cancel')}
+              </button>
+              <button type="button" className="btn btn-primary" onClick={handleResolveBbAmbiguous}>
+                {t('request.bb_ambiguous_apply_btn')}
+              </button>
+            </>
+          }
+        >
+          <p style={{ color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.6 }}>
+            {t('request.bb_ambiguous_modal_desc')}
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {bbAutoFillAmbiguous.map((item) => (
+              <div key={item.jayerRowId} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                  {t('request.bb_ambiguous_src_label', {
+                    process: item.process_id || '—',
+                    sp: item.sp || '—',
+                    layer: item.layerid || '—',
+                  })}
+                </div>
+                <select
+                  value={bbAutoFillAmbiguousChoices[item.jayerRowId] ?? 'skip'}
+                  onChange={(e) =>
+                    handleBbAmbiguousChoice(item.jayerRowId, e.target.value === 'skip' ? 'skip' : Number(e.target.value))
+                  }
+                  style={{ width: '100%', padding: '6px 8px', fontSize: 13 }}
+                >
+                  <option value="skip">{t('request.bb_ambiguous_skip_option')}</option>
+                  {item.candidates.map((c, idx) => (
+                    <option key={idx} value={idx}>
+                      {`${c.processid} / ${c.stepseq} / ${c.descript} / Layer ${c.layerid}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
 
       <ConfirmModal
         isOpen={specialCareConfirm}
