@@ -2757,6 +2757,20 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   - 신규 i18n 키 `request.mshot_image_zoom_btn`(확대 버튼 aria-label/title, ko/en 동시 추가). 라이트박스 닫기 버튼은 기존 `common.close` 재사용.
   - **범위 밖(의도적으로 유지)**: 「엠샷 변경 이력」 모달(`FieldGroupHistoryModal`)의 220×150px 썸네일은 이번 변경 대상이 아니다 — 여전히 확대(클릭) 동작 없음.
 
+### 추가 변경 이력 (2026-08-25 — BB 자동채움 하드코딩 i18n화 + SEQ 매칭/후보 선택 모달 + SEQ 불일치 표시)
+
+- **1) 하드코딩 토스트 → i18n**: `applyBbRowChanges`/`handleApplyAutoFill`/`proceedResetBbRows`(`RequestPage/index.tsx`)에서 한글 리터럴로 하드코딩돼 있던 토스트 3건을 `t('request.toast_bb_autofill_apply' | 'toast_bb_autofill_apply_empty' | 'toast_bb_reset')`로 교체(ko/en 동시 추가).
+- **2) 자동채움 매칭 기준에 SEQ 추가**: 기존엔 `layerid` 완전 일치 하나만 매칭 기준이었다. 여기에 `jayerRow.sp`(원본 목록 "STEPSEQ" 컬럼) === 외부데이터 `stepseq`(Ref.SEQ 컬럼) 일치도 매칭 후보로 추가(둘 다 값이 있을 때만 비교 — 빈 문자열끼리는 매칭하지 않음).
+  - `buildAutoFillRows`를 `buildAutoFillPlan()`으로 재작성 — J-ayer 행별로 layer 일치 ∪ seq 일치 후보를 합쳐(중복 제거) 0개(스킵)/1개(즉시 확정)/2개 이상(확인 필요)으로 분류.
+  - 행 생성 로직은 `makeBbRowFromMatch(jayerRow, entry, matchedStep)` 헬퍼로 공통화(자동채움 확정 행·확인모달 선택 결과 양쪽에서 재사용).
+- **3) 매칭 후보 2개 이상 → 확인 모달**: 같은 J-ayer 행에 대해 layer 기준과 seq 기준이 서로 다른 외부데이터를 가리키거나, 어느 한 기준으로도 외부데이터가 2건 이상 걸리면 자동 적용하지 않는다. "적용" 클릭 시 애매하지 않은 행은 바로 확정(`bbAutoFillPendingResolved`)하고, 애매한 행은 전부 모아(`bbAutoFillAmbiguous`) 신규 모달 1개에 한 번에 나열한다. 행마다 후보(공법/PART ID/SEQ/설명/Layer) 드롭다운 + "선택 안 함(매핑하지 않음)" 옵션을 제공하며, "선택 적용" 클릭 시 확정 행과 합쳐 한 번에 `applyBbRowChanges`로 반영한다. "취소"는 전체 무산(아무 것도 반영 안 함).
+  - 신규 타입 `BbAutoFillAmbiguousRow`(`types/index.ts`), 신규 상태 `bbAutoFillAmbiguous`/`bbAutoFillAmbiguousChoices`/`bbAutoFillPendingResolved`, 신규 핸들러 `handleBbAmbiguousChoice`/`handleResolveBbAmbiguous`/`handleCancelBbAmbiguous`(`RequestPage/index.tsx`).
+  - 신규 i18n 키 `bb_ambiguous_modal_title`/`_desc`/`_src_label`/`_skip_option`/`_apply_btn`(ko/en).
+  - 가이드 투어(Step5 BB 데모, `makeTourBbExternalData`)는 layer/stepseq가 탭별로 전부 유일해 이 확인 모달 경로를 타지 않는다(회귀 없음, 데모 코드 미변경).
+- **4) bb 결과표 SEQ 불일치 색상 표시**: `Step4.tsx` bb 정보 표에서 각 행의 `ss`(원본 SP 사본) 와 `bb_ss`(매칭된 외부데이터 SEQ) 값이 다르면 두 셀에 `.bb-ss-mismatch` 클래스(경고색 배경 + 굵은 글씨, `global.css`)를 적용하고 `title` 툴팁(`bb_ss_mismatch_title`)을 붙인다. 자동채움/수동 매핑(좌우 분할 패널) 출처와 무관하게 화면에 보이는 모든 bb 행에 동일 적용(둘 다 같은 `ss`/`bb_ss` 필드 구조를 쓰므로 렌더링 시점 비교 하나로 커버됨).
+- **영향 파일**: `RequestPage/index.tsx`, `RequestPage/components/Step4.tsx`, `RequestPage/constants.ts`(주석 갱신), `styles/global.css`, `locales/ko.json`·`en.json`, `types/index.ts`.
+- **검증**: `tsc --noEmit` 신규 에러 0(기존 `target=ES5`+`Set` 스프레드 관련 TS2802 경고는 이번 변경과 무관한 기존 이슈 — §4 참고, 재실측 시 카운트 갱신 필요). `npm test -- --watchAll=false` 9 suites/254 tests 전체 통과(회귀 없음).
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
