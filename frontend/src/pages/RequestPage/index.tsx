@@ -2537,8 +2537,8 @@ export default function RequestPage(): React.ReactElement {
     return isRowInactive(row.st) || row.new_or_copy === '기등록'
       || (!!row.loaded && (LOADED_LOCK_COLS as readonly string[]).includes(col));
   };
-  const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, handleJayerAfterPaste, isLayerCellLocked, unmapIfBbValueChanged);
-  const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, handleOayerAfterPaste, isLayerCellLocked);
+  const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, isLayerCellLocked, handleJayerAfterPaste, unmapIfBbValueChanged);
+  const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, isLayerCellLocked, handleOayerAfterPaste);
 
   // 참여행(활성 && 기등록/layer삭제 아님) 전체에 같은 값을 일괄 적용한다. 일괄 적용은 J 참여행 전체를
   // 동일 값으로 맞추므로 layerid별 합의는 항상 성립하며, O 참여행이 정확히 1개인 layerid에만 전파한다.
