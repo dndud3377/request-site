@@ -141,6 +141,7 @@
     "export_all_btn": "Export all",
     "export_col_item": "Item",
     "export_col_value": "Value",
+    "export_image_load_failed": "(Could not load the image)",
     "job_li": "J-ayer Info",
     "ri_subtab_items": "Review Items",
     "ri_notice_edit": "{{name}} is reviewing this stage. Any $t(request.jayer) member can add items and assign reviewers per item. Agreement is possible even if items are unfinished, and completing every item does not agree automatically.",
