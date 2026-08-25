@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StepGuideGroup } from '../../components/StepGuideTour';
 import { CellSelectionApi } from '../../hooks/useCellSelection';
-import { BbTableRow, DetailFormState, JayerRow, OayerRow } from '../../types';
+import { BbTableRow, DetailFormState, JayerRow } from '../../types';
 import { MAP_TYPE_CLONE, ADI_CD_CHANGE_PURPOSE, TOUR_MERGE_PURPOSE, makeJayerRow, makeTourBbRows } from './constants';
 
 interface UseStepGuideTourArgs {
@@ -10,12 +10,7 @@ interface UseStepGuideTourArgs {
   setDetail: React.Dispatch<React.SetStateAction<DetailFormState>>;
   jayerRows: JayerRow[];
   setJayerRows: React.Dispatch<React.SetStateAction<JayerRow[]>>;
-  jayerChecked: Set<string>;
-  setJayerChecked: React.Dispatch<React.SetStateAction<Set<string>>>;
   jayerCellSel: CellSelectionApi;
-  oayerRows: OayerRow[];
-  oayerChecked: Set<string>;
-  setOayerChecked: React.Dispatch<React.SetStateAction<Set<string>>>;
   oayerInfoTab: 'table' | 'info';
   setOayerInfoTab: React.Dispatch<React.SetStateAction<'table' | 'info'>>;
   showAutoFillPanel: boolean;
@@ -27,8 +22,6 @@ interface UseStepGuideTourArgs {
 interface BaseSnapshot {
   detail: DetailFormState;
   jayerRows: JayerRow[];
-  jayerChecked: Set<string>;
-  oayerChecked: Set<string>;
   oayerInfoTab: 'table' | 'info';
   showAutoFillPanel: boolean;
   bbRows: BbTableRow[];
@@ -72,8 +65,7 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
   const { t } = useTranslation();
   const {
     detail, setDetail,
-    jayerRows, setJayerRows, jayerChecked, setJayerChecked, jayerCellSel,
-    oayerRows, oayerChecked, setOayerChecked,
+    jayerRows, setJayerRows, jayerCellSel,
     oayerInfoTab, setOayerInfoTab,
     showAutoFillPanel, setShowAutoFillPanel,
     bbRows, setBbRows,
@@ -86,14 +78,12 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
     baseRef.current = {
       detail: JSON.parse(JSON.stringify(detail)) as DetailFormState,
       jayerRows: JSON.parse(JSON.stringify(jayerRows)) as JayerRow[],
-      jayerChecked: new Set(jayerChecked),
-      oayerChecked: new Set(oayerChecked),
       oayerInfoTab,
       showAutoFillPanel,
       bbRows: JSON.parse(JSON.stringify(bbRows)) as BbTableRow[],
     };
     setActiveStep(step);
-  }, [detail, jayerRows, jayerChecked, oayerChecked, oayerInfoTab, showAutoFillPanel, bbRows]);
+  }, [detail, jayerRows, oayerInfoTab, showAutoFillPanel, bbRows]);
 
   const restoreBase = useCallback(() => {
     const base = baseRef.current;
@@ -101,12 +91,10 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
     setDetail(JSON.parse(JSON.stringify(base.detail)) as DetailFormState);
     setJayerRows(JSON.parse(JSON.stringify(base.jayerRows)) as JayerRow[]);
     jayerCellSel.clearCellSelection();
-    setJayerChecked(new Set(base.jayerChecked));
-    setOayerChecked(new Set(base.oayerChecked));
     setOayerInfoTab(base.oayerInfoTab);
     setShowAutoFillPanel(base.showAutoFillPanel);
     setBbRows(JSON.parse(JSON.stringify(base.bbRows)) as BbTableRow[]);
-  }, [setDetail, setJayerRows, jayerCellSel, setJayerChecked, setOayerChecked, setOayerInfoTab, setShowAutoFillPanel, setBbRows]);
+  }, [setDetail, setJayerRows, jayerCellSel, setOayerInfoTab, setShowAutoFillPanel, setBbRows]);
 
   const close = useCallback(() => {
     setActiveStep(null);
@@ -194,7 +182,6 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
         ];
 
       case 3: {
-        const firstJayerId = jayerRows.find((r) => !r.disabled)?.id;
         return [
           {
             selectors: ['[data-tour="jayer-table"]'],
@@ -210,30 +197,16 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
             ...g('s3g1b'),
             onEnter: () => setJayerRows(makeJayerCopyPasteDemoRows()),
           },
-          {
-            selectors: ['[data-tour="jayer-bulk-actions"]'],
-            ...g('s3g2'),
-            onEnter: () => { if (firstJayerId) setJayerChecked(new Set([firstJayerId])); },
-          },
           { selectors: ['[data-tour="jayer-filter"]'], ...g('s3g3') },
         ];
       }
 
       case 4: {
-        const firstOayerId = oayerRows.find((r) => !r.disabled)?.id;
         return [
           {
             selectors: ['[data-tour="oayer-tabs"]', '[data-tour="oayer-table"]'],
             ...g('s4g1'),
             onEnter: () => setOayerInfoTab('table'),
-          },
-          {
-            selectors: ['[data-tour="oayer-bulk-actions"]'],
-            ...g('s4g2'),
-            onEnter: () => {
-              setOayerInfoTab('table');
-              if (firstOayerId) setOayerChecked(new Set([firstOayerId]));
-            },
           },
           {
             selectors: ['[data-tour="oayer-partial-shot"]'],
@@ -271,7 +244,7 @@ export function useStepGuideTour(args: UseStepGuideTourArgs): UseStepGuideTour {
       default:
         return [];
     }
-  }, [t, setDetail, jayerRows, setJayerRows, setJayerChecked, jayerCellSel, oayerRows, setOayerChecked, setOayerInfoTab, setShowAutoFillPanel, setBbRows]);
+  }, [t, setDetail, jayerRows, setJayerRows, jayerCellSel, setOayerInfoTab, setShowAutoFillPanel, setBbRows]);
 
   return { activeStep, openStep, close, restoreBase, groupsForStep, stepTitle };
 }
