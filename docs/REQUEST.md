@@ -277,6 +277,78 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-08-25 — MAP 정보: C가문 Yes 옆에 'PY 적용 여부' O/X 드롭다운 추가)
+
+- **요청**: Only C가문 제품(`only_prodc`)이 `Yes`일 때 나오는 항목 중 하나로 **PY 적용 여부**
+  (O/X 드롭다운)를 신설. `Only C가문 제품` 셀렉트 **바로 오른쪽**에 배치하고, C가문 Yes면
+  **MAP 목적이 CLONE/EXISTING(잠금 상태)이어도** 항상 필수 선택이어야 한다.
+- **신규 필드**: `py_apply: '' | 'O' | 'X'` (`DetailFormState`). `in_apply`(IN 적용 여부)와
+  동일한 네이밍 관례. `RequestDocument.additional_notes` 는 `detail` 객체를 JSON 문자열로
+  그대로 저장하는 구조라(`backend/api/models.py`) **백엔드 변경(마이그레이션 포함)은 없다.**
+- **구현**:
+  - `StepMap.tsx`: `Only C가문 제품` 셀렉트를 감싸던 컨테이너를 flex-row 로 바꾸고, `isProdc`
+    (Yes)일 때만 같은 행 오른쪽에 `py_apply` 드롭다운 노출. 옵션 텍스트는 C가문 Yes/No 와
+    동일하게 번역 없이 `O`/`X` 리터럴, 미선택 기본 옵션은 기존 `request.select_placeholder`
+    재사용. **다른 C가문 하위 입력(`prodcLocked`)과 달리 `disabled` 를 걸지 않아** CLONE/
+    EXISTING 에서도 계속 선택 가능.
+  - `index.tsx` `validate()` step2: `only_prodc==='Yes' && !py_apply` 면 필수 에러 — Final
+    필수 규칙과 같은 자리(`!isMapRegistered` 블록 **밖**)에 둬서 CLONE/EXISTING 에서도 검증된다.
+  - `only_prodc` 를 초기값으로 되돌리는 5곳(`handleOnlyProdcChange` No 분기,
+    `handleMapTypeChangeConfirm`, `handleReset`, 투어 `map-reset` 케이스, `mapInfoDefaults()`)
+    모두에 `py_apply` 초기화를 함께 추가 — No 로 되돌리거나 MAP 목적을 바꾸면 값이 사라지고
+    다음 Yes 전환 때 다시 선택해야 한다.
+  - `PagedDetailView.tsx`(결재상세/이력조회 공용): `prodc_status` 값 박스 옆에 `py_apply` 값
+    박스 추가(C가문 Yes일 때만, CLONE/EXISTING 이라도 실값 표시 — 잠기지 않는 항목이므로 다른
+    세부 정보처럼 "없음" 처리하지 않음). `buildProdcItems`(변경 이력 diff 그룹)·
+    `prodcChanged` 변경 감지 목록에도 포함해, 값이 바뀌면 이력 확인 배지·회차별 비교 팝업에
+    자동으로 뜬다. 이력조회 페이지도 같은 컴포넌트를 공유하므로 별도 수정 없이 반영된다.
+  - `detailExport.ts`(엑셀 다운로드 "MAP 정보" 시트): `only_prodc` 행 바로 아래에 `py_apply`
+    행 추가, CLONE/EXISTING 이라도 실값 그대로 내보낸다.
+  - `constants.ts`: `INITIAL_DETAIL.py_apply=''`, `mapInfoDefaults()`에 포함.
+  - `locales/{ko,en}.json`: `request.py_apply` 키 동시 추가("PY 적용 여부" / "PY Apply Status").
+- **영향 파일**: `frontend/src/types/index.ts`, `frontend/src/pages/RequestPage/constants.ts`,
+  `frontend/src/pages/RequestPage/components/StepMap.tsx`, `frontend/src/pages/RequestPage/index.tsx`,
+  `frontend/src/components/PagedDetailView.tsx`, `frontend/src/utils/detailExport.ts`,
+  `frontend/src/locales/ko.json`, `frontend/src/locales/en.json`.
+- **검증**: `npx tsc --noEmit` — 신규 에러 0(기존 7건과 동일, 전부 무관한 `Set` es5 순회·
+  `GuidePage.tsx` i18n strict 키). `CI=true npx react-scripts test --watchAll=false` —
+  **9 suites / 256건 전부 통과**(신규 테스트는 추가하지 않음 — 기존 회귀 테스트가 이번 변경으로
+  깨지지 않는지만 확인). 백엔드는 변경 사항이 없지만 CLAUDE.md §1-1 절차로 `manage.py test api`
+  실행 — **333건 전부 통과**.
+- **수동 검증 시나리오**:
+  1. [`/request` → 새 문서 → 라인·조합법·제품 이름·조리법 입력 → STEP2(MAP 정보) 진입 → MAP
+     목적 `NEW` 선택 → `Only C가문 제품` 을 `Yes` 로 전환] → [기대 결과: `Only C가문 제품`
+     셀렉트 바로 오른쪽에 `PY 적용 여부` 드롭다운이 나타나고 "선택하세요" 미선택 상태다.]
+  2. [`PY 적용 여부` 를 선택하지 않은 채 "다음" 클릭] → [기대 결과: 다음 단계로 못 넘어가고
+     `PY 적용 여부` 아래 "필수 선택 항목입니다" 오류가 뜬다.]
+  3. [`PY 적용 여부` 를 `O` 로 선택 후 "다음" 클릭] → [기대 결과: 오류 없이 다음 단계로 진행.]
+  4. [새 문서에서 MAP 목적 `CLONE`(또는 `EXISTING`) 선택 → 원본 정보 입력 → `Only C가문 제품`
+     을 `Yes` 로 전환] → [기대 결과: 제품 해당 위치·상/중/하판 라인 등 다른 C가문 하위 입력은
+     회색으로 잠기지만(`disabled`), `PY 적용 여부` 는 계속 선택 가능하고 여전히 필수다 — 미선택
+     상태로 상신 시도하면 2번과 동일하게 막힌다.]
+  5. [2·4에서 `Only C가문 제품` 을 다시 `No` 로 되돌리기] → [기대 결과: `PY 적용 여부` 드롭다운이
+     사라지고 값도 초기화된다. 다시 `Yes` 로 켜면 미선택 상태로 돌아와 재선택해야 한다.]
+  6. [3·4에서 상신까지 완료 → 결재 현황에서 해당 문서 상세보기 열람] → [기대 결과: MAP 정보
+     블록에 `Only C가문 제품` 값 박스 옆에 `PY 적용 여부` 값 박스가 나란히 보인다(NEW/CLONE/
+     EXISTING 모두 실값 그대로).]
+  7. [6의 문서가 반려된 뒤, 재상신 편집에서 `PY 적용 여부` 를 다른 값으로 바꿔 재상신 → 결재
+     현황에서 다시 상세보기 열람] → [기대 결과: C가문 정보 박스에 빨간 테두리 + "이력 확인"
+     배지가 뜨고, 클릭 시 팝업 표에 `PY 적용 여부` 행이 회차별 값과 함께 표시된다. 이력조회
+     페이지에서도 회차 탭을 넘기면 그 시점의 `PY 적용 여부` 값이 보인다.]
+  8. [6의 상세보기에서 엑셀 다운로드 실행 → 받은 파일의 "MAP 정보" 시트 확인] → [기대 결과:
+     `Only C가문 제품` 행 바로 아래(또는 옆)에 `PY 적용 여부` 행이 실값과 함께 들어있다.]
+- **잠재 주의사항**:
+  - 전체 가이드 투어(`useStepGuideTour.ts`, `Step2CfamilyDemo.tsx`)와 신규 `GuideBadge` 물음표
+    가이드는 이번 범위에서 의도적으로 건드리지 않았다 — 투어 데모 애니메이션에는 `PY 적용 여부`
+    선택 장면이 없다.
+  - `scripts/approval_cases/` 케이스 러너가 상신하는 payload 에는 `py_apply` 를 채우지 않는다.
+    백엔드가 이 필드를 강제하지 않아(프론트 `validate()` 만의 검증) 러너는 그대로 동작하지만,
+    "C가문 Yes" 케이스로 만들어지는 문서 데이터가 새 필드 기준으로는 비어 있다.
+  - 이번 변경 이전에 이미 저장된 C가문 Yes 문서는 `py_apply` 값이 없다(`undefined`). 상세뷰·
+    이력조회는 빈 값을 그대로 보여줄 뿐 에러를 내지 않으며, 그 문서를 반려 후 재상신 편집으로
+    열면 새 필수 규칙에 걸려 `PY 적용 여부`를 새로 선택해야 다음 단계로 진행된다(기존 Final
+    필수 규칙 도입 때와 동일한 성격의 소급 동작).
+
 ### 버그 수정 (2026-08-24 — ADI CD 변경전/변경후 표: 완전히 빈 행이 상신을 막지 않던 문제)
 
 - **버그**: `validateAdiCdRows`(`helpers.ts`)가 STEP_ID/STEP_DESC 가 **둘 다 빈 행**이면서
