@@ -404,6 +404,9 @@ function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, 
   if (!isDeleteType && detail.only_prodc) {
     blocks.push({ kind: 'kv', label: t('request.prodc_status'), value: detail.only_prodc });
     if (isProdc) {
+      // PY 적용 여부는 CLONE/EXISTING(isMapRegisteredDetail)에서도 잠기지 않는 항목이라
+      // 항상 실값을 그대로 내보낸다(다른 C가문 세부 정보처럼 "없음"으로 대체하지 않음).
+      blocks.push({ kind: 'kv', label: t('request.py_apply'), value: detail.py_apply || '-' });
       if (isMapRegisteredDetail) {
         blocks.push({ kind: 'kv', label: t('approval.prodc_detail'), value: t('request.value_none') });
       } else {
