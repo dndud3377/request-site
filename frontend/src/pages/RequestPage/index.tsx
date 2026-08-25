@@ -106,6 +106,7 @@ import {
   validateAdiCdTargets,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
   sourceCodeFromPartid, computeExpectedRequestPurpose,
+  layeridFieldConsensus, soleParticipantByLayerid,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -2282,8 +2283,9 @@ export default function RequestPage(): React.ReactElement {
     if (mappedJayerRowIds.has(id) && isBbMirroredCol(field) && changedRow?.[field] !== value) {
       unmapJayerRows([id]);
     }
-    // 동기화 전파 여부: 소스 행이 참여행(활성 && 기등록/layer삭제 아님)이고,
-    // 전파할 값이 특수값(기등록/layer삭제)이 아닐 때만 같은 layer의 참여행으로 전파한다.
+    // 교차 동기화(J→O) 여부: 소스 행이 참여행(활성 && 기등록/layer삭제 아님)이고,
+    // 전파할 값이 특수값(기등록/layer삭제)이 아닐 때만 O-layer로 전파를 검토한다.
+    // (같은 J-layer 안에서는 layerid가 같아도 서로 다른 값을 가질 수 있어 더 이상 전파하지 않는다.)
     const layerid = changedRow?.layerid?.trim();
     const sourceParticipant = !!changedRow && !isRowInactive(changedRow.st) && !isNocSpecial(changedRow.new_or_copy);
     const propagate = (field === 'st' || field === 'new_or_copy' || field === 'product_name') && !!layerid && sourceParticipant
@@ -2292,49 +2294,52 @@ export default function RequestPage(): React.ReactElement {
     if (field === 'st' && value === ST_X && changedRow && !isRowInactive(changedRow.st)) {
       unmapIfMapped([id]);
     }
-    setJayerRows((rows) => rows.map((r) => {
-      if (r.id === id) {
-        if (field === 'st' && value === ST_X) {
-          return { ...r, st: ST_X, new_or_copy: '', product_name: '', step: '', item_id: '' };
-        }
-        if (field === 'product_name') {
-          const next = { ...r, product_name: value, item_id: '' };
-          // product_name을 채우면 step이 비어있을 때 layer 값으로 자동 채움(layer 없으면 무동작)
-          if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
-          return next;
-        }
-        if (field === 'step') {
-          // step 변경 시 캐시된 후보로 item_id 자동매칭 재실행
-          const candidates = jayerBarcodeCache[id] ?? [];
-          return { ...r, step: value, item_id: autoMatchItemId({ ...r, step: value }, candidates) };
-        }
-        if (field === 'new_or_copy') {
-          const next = { ...r, new_or_copy: value };
-          // 기등록/layer삭제 선택 시 st를 자동으로 'X'로 설정
-          if (isNocSpecial(value)) next.st = 'X';
-          return next;
-        }
-        return { ...r, [field]: value };
+    const nextJayerRows = jayerRows.map((r) => {
+      if (r.id !== id) return r;
+      if (field === 'st' && value === ST_X) {
+        return { ...r, st: ST_X, new_or_copy: '', product_name: '', step: '', item_id: '' };
       }
-      // J→J 동기화: 같은 layer의 "참여행"에만 반영(비활성·기등록·layer삭제 제외)
-      if (propagate && r.layerid?.trim() === layerid) {
-        if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return r;
-        return { ...r, [field]: value };
+      if (field === 'product_name') {
+        const next = { ...r, product_name: value, item_id: '' };
+        // product_name을 채우면 step이 비어있을 때 layer 값으로 자동 채움(layer 없으면 무동작)
+        if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
+        return next;
       }
-      return r;
-    }));
-    // J→O 동기화: 같은 layer의 O-layer 참여행에만 반영
+      if (field === 'step') {
+        // step 변경 시 캐시된 후보로 item_id 자동매칭 재실행
+        const candidates = jayerBarcodeCache[id] ?? [];
+        return { ...r, step: value, item_id: autoMatchItemId({ ...r, step: value }, candidates) };
+      }
+      if (field === 'new_or_copy') {
+        const next = { ...r, new_or_copy: value };
+        // 기등록/layer삭제 선택 시 st를 자동으로 'X'로 설정
+        if (isNocSpecial(value)) next.st = 'X';
+        return next;
+      }
+      return { ...r, [field]: value };
+    });
+    setJayerRows(nextJayerRows);
+    // J→O 동기화: product_name은 참여 대상 전체에 무조건 전파(기존 방식 유지).
+    // st/new_or_copy는 같은 layerid의 J 참여행 전원이 합의해야 하고, O 참여행이 정확히 1개일
+    // 때만 그 행에 전파한다 — J쪽 값이 서로 다르거나 O쪽 대상이 모호하면 전파하지 않는다.
     if (propagate) {
-      setOayerRows(rows => rows.map(r => {
-        if (r.layerid?.trim() !== layerid) return r;
-        if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return r;
-        if (field === 'product_name') {
+      if (field === 'product_name') {
+        setOayerRows(rows => rows.map(r => {
+          if (r.layerid?.trim() !== layerid) return r;
+          if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return r;
           const next = { ...r, product_name: value };
           if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
           return next;
+        }));
+      } else {
+        const consensusValue = layeridFieldConsensus(jayerRows, nextJayerRows, layerid!, field as 'st' | 'new_or_copy');
+        if (consensusValue !== undefined) {
+          const target = soleParticipantByLayerid(oayerRows, layerid!);
+          if (target) {
+            setOayerRows(rows => rows.map(r => (r.id === target.id ? { ...r, [field]: consensusValue } : r)));
+          }
         }
-        return { ...r, [field]: value };
-      }));
+      }
     }
     if (field === 'product_name') {
       // 진행 중 요청 무효화(seq +1) + 대기 중 디바운스 타이머 취소
@@ -2390,46 +2395,51 @@ export default function RequestPage(): React.ReactElement {
     if (nocSpecialPastedIds.size > 0) {
       setJayerRows(rows => rows.map(r => nocSpecialPastedIds.has(r.id) ? { ...r, st: 'X' } : r));
     }
-    // J→J + J→O 동기화: st / new_or_copy / product_name 붙여넣기를 같은 layer의 "참여행"에만 반영
-    type SyncFields = Partial<Record<'st' | 'new_or_copy' | 'product_name', string>>;
-    const layeridSyncMap = new Map<string, SyncFields>();
-    const directlyPastedIds = new Set<string>();
-    changes.forEach(({ rowId, values }) => {
-      if (!('st' in values) && !('new_or_copy' in values) && !('product_name' in values)) return;
-      const jRow = jayerRows.find(r => r.id === rowId);
-      if (!jRow?.layerid?.trim()) return;
-      directlyPastedIds.add(rowId);
-      // 소스가 참여행이 아니면 전파하지 않음(비활성·기등록·layer삭제)
-      if (isRowInactive(jRow.st) || isNocSpecial(jRow.new_or_copy)) return;
-      const layerid = jRow.layerid.trim();
-      const entry = layeridSyncMap.get(layerid) ?? {};
-      if ('st' in values) entry.st = values.st;
-      // 특수값(기등록/layer삭제)은 전파 제외
-      if ('new_or_copy' in values && !isNocSpecial(values.new_or_copy)) entry.new_or_copy = values.new_or_copy;
-      if ('product_name' in values) entry.product_name = values.product_name;
-      layeridSyncMap.set(layerid, entry);
+    // J-layer 내부 전파는 하지 않는다(같은 layerid라도 서로 다른 값을 가질 수 있음).
+    // J→O 교차 동기화 판정에 쓸 붙여넣기 후 상태만 로컬로 재구성한다.
+    const nextJayerRows = jayerRows.map(r => {
+      const change = changes.find(c => c.rowId === r.id);
+      if (!change) return r;
+      const merged = { ...r, ...change.values };
+      if (nocSpecialPastedIds.has(r.id)) merged.st = 'X';
+      return merged;
     });
-    if (layeridSyncMap.size > 0) {
-      setJayerRows(rows => rows.map(r => {
-        if (directlyPastedIds.has(r.id)) return r;
-        const layerid = r.layerid?.trim();
-        if (!layerid || !layeridSyncMap.has(layerid)) return r;
-        if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return r;
-        return { ...r, ...layeridSyncMap.get(layerid)! };
-      }));
+    // J→O 동기화: product_name은 참여 소스 행이 있으면 대상 참여행 전체에 무조건 전파(기존 방식 유지).
+    const productNamePastedLayerids = new Map<string, string>();
+    changes.forEach(({ rowId, values }) => {
+      if (!('product_name' in values)) return;
+      const jRow = jayerRows.find(r => r.id === rowId);
+      if (!jRow?.layerid?.trim() || isRowInactive(jRow.st) || isNocSpecial(jRow.new_or_copy)) return;
+      productNamePastedLayerids.set(jRow.layerid.trim(), values.product_name);
+    });
+    if (productNamePastedLayerids.size > 0) {
       setOayerRows(rows => rows.map(r => {
         const layerid = r.layerid?.trim();
-        if (!layerid || !layeridSyncMap.has(layerid)) return r;
+        if (!layerid || !productNamePastedLayerids.has(layerid)) return r;
         if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return r;
-        const sync = layeridSyncMap.get(layerid)!;
-        if (sync.product_name !== undefined) {
-          const next = { ...r, ...sync };
-          if (sync.product_name && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
-          return next;
-        }
-        return { ...r, ...sync };
+        const pn = productNamePastedLayerids.get(layerid)!;
+        const next = { ...r, product_name: pn };
+        if (pn && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
+        return next;
       }));
     }
+    // st/new_or_copy: 같은 layerid의 J 참여행 전원이 합의해야 하고, O 참여행이 정확히 1개일 때만 전파.
+    const touchedLayerids = new Set<string>();
+    changes.forEach(({ rowId, values }) => {
+      if (!('st' in values) && !('new_or_copy' in values)) return;
+      const jRow = jayerRows.find(r => r.id === rowId);
+      if (jRow?.layerid?.trim()) touchedLayerids.add(jRow.layerid.trim());
+    });
+    (['st', 'new_or_copy'] as const).forEach(field => {
+      touchedLayerids.forEach(layerid => {
+        const consensusValue = layeridFieldConsensus(jayerRows, nextJayerRows, layerid, field);
+        if (consensusValue === undefined) return;
+        if (field === 'new_or_copy' && isNocSpecial(consensusValue)) return; // 특수값 자체는 전파 제외
+        const target = soleParticipantByLayerid(oayerRows, layerid);
+        if (!target) return;
+        setOayerRows(rows => rows.map(r => (r.id === target.id ? { ...r, [field]: consensusValue } : r)));
+      });
+    });
   };
 
   // 붙여넣기 후 O-layer 자동채움(바코드 없음 — step=layer 자동만)
@@ -2450,76 +2460,79 @@ export default function RequestPage(): React.ReactElement {
     if (nocSpecialPastedIds.size > 0) {
       setOayerRows(rows => rows.map(r => nocSpecialPastedIds.has(r.id) ? { ...r, st: 'X' } : r));
     }
-    // O→O + O→J 동기화: st / new_or_copy / product_name 붙여넣기를 같은 layer의 "참여행"에만 반영
-    type SyncFields = Partial<Record<'st' | 'new_or_copy' | 'product_name', string>>;
-    const layeridSyncMap = new Map<string, SyncFields>();
-    const directlyPastedIds = new Set<string>();
-    changes.forEach(({ rowId, values }) => {
-      if (!('st' in values) && !('new_or_copy' in values) && !('product_name' in values)) return;
-      const oRow = oayerRows.find(r => r.id === rowId);
-      if (!oRow?.layerid?.trim()) return;
-      directlyPastedIds.add(rowId);
-      // 소스가 참여행이 아니면 전파하지 않음(비활성·기등록·layer삭제)
-      if (isRowInactive(oRow.st) || isNocSpecial(oRow.new_or_copy)) return;
-      const layerid = oRow.layerid.trim();
-      const entry = layeridSyncMap.get(layerid) ?? {};
-      if ('st' in values) entry.st = values.st;
-      // 특수값(기등록/layer삭제)은 전파 제외
-      if ('new_or_copy' in values && !isNocSpecial(values.new_or_copy)) entry.new_or_copy = values.new_or_copy;
-      if ('product_name' in values) entry.product_name = values.product_name;
-      layeridSyncMap.set(layerid, entry);
+    // O-layer 내부 전파는 하지 않는다(같은 layerid라도 서로 다른 값을 가질 수 있음).
+    // O→J 교차 동기화 판정에 쓸 붙여넣기 후 상태만 로컬로 재구성한다.
+    const nextOayerRows = oayerRows.map(r => {
+      const change = changes.find(c => c.rowId === r.id);
+      if (!change) return r;
+      const merged = { ...r, ...change.values };
+      if (nocSpecialPastedIds.has(r.id)) merged.st = 'X';
+      return merged;
     });
-    if (layeridSyncMap.size > 0) {
-      setOayerRows(rows => rows.map(r => {
-        if (directlyPastedIds.has(r.id)) return r;
-        const layerid = r.layerid?.trim();
-        if (!layerid || !layeridSyncMap.has(layerid)) return r;
-        if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return r;
-        return { ...r, ...layeridSyncMap.get(layerid)! };
-      }));
+    // O→J 동기화: product_name은 참여 소스 행이 있으면 대상 참여행 전체에 무조건 전파(기존 방식 유지).
+    const productNamePastedLayerids = new Map<string, string>();
+    changes.forEach(({ rowId, values }) => {
+      if (!('product_name' in values)) return;
+      const oRow = oayerRows.find(r => r.id === rowId);
+      if (!oRow?.layerid?.trim() || isRowInactive(oRow.st) || isNocSpecial(oRow.new_or_copy)) return;
+      productNamePastedLayerids.set(oRow.layerid.trim(), values.product_name);
+    });
+    if (productNamePastedLayerids.size > 0) {
       setJayerRows(rows => rows.map(r => {
         const layerid = r.layerid?.trim();
-        if (!layerid || !layeridSyncMap.has(layerid)) return r;
+        if (!layerid || !productNamePastedLayerids.has(layerid)) return r;
         if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return r;
-        const sync = layeridSyncMap.get(layerid)!;
-        if (sync.product_name !== undefined) {
-          const next = { ...r, ...sync, item_id: '' };
-          if (sync.product_name && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
-          return next;
-        }
-        return { ...r, ...sync };
+        const pn = productNamePastedLayerids.get(layerid)!;
+        const next = { ...r, product_name: pn, item_id: '' };
+        if (pn && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
+        return next;
       }));
       // 대상 J-ayer 행에 product_name이 동기화됐다면 바코드(ID) 재조회
-      const pnLayerids = new Set(
-        Array.from(layeridSyncMap.entries()).filter(([, v]) => v.product_name !== undefined).map(([k]) => k)
-      );
-      if (pnLayerids.size > 0) {
-        jayerRows.forEach(r => {
-          const layerid = r.layerid?.trim();
-          if (!layerid || !pnLayerids.has(layerid)) return;
-          if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return;
-          const pn = layeridSyncMap.get(layerid)!.product_name;
-          const rid = r.id;
-          const seq = (barcodeReqSeq.current[rid] ?? 0) + 1;
-          barcodeReqSeq.current[rid] = seq;
-          if (barcodeDebounceTimers.current[rid]) clearTimeout(barcodeDebounceTimers.current[rid]);
-          if (pn) {
-            barcodeDebounceTimers.current[rid] = setTimeout(() => runBarcodeFetch(rid, pn, seq), BARCODE_DEBOUNCE_MS);
-          } else {
-            setJayerBarcodeCache((prev) => ({ ...prev, [rid]: [] }));
-          }
-        });
-      }
+      jayerRows.forEach(r => {
+        const layerid = r.layerid?.trim();
+        if (!layerid || !productNamePastedLayerids.has(layerid)) return;
+        if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return;
+        const pn = productNamePastedLayerids.get(layerid)!;
+        const rid = r.id;
+        const seq = (barcodeReqSeq.current[rid] ?? 0) + 1;
+        barcodeReqSeq.current[rid] = seq;
+        if (barcodeDebounceTimers.current[rid]) clearTimeout(barcodeDebounceTimers.current[rid]);
+        if (pn) {
+          barcodeDebounceTimers.current[rid] = setTimeout(() => runBarcodeFetch(rid, pn, seq), BARCODE_DEBOUNCE_MS);
+        } else {
+          setJayerBarcodeCache((prev) => ({ ...prev, [rid]: [] }));
+        }
+      });
     }
+    // st/new_or_copy: 같은 layerid의 O 참여행 전원이 합의해야 하고, J 참여행이 정확히 1개일 때만 전파.
+    const touchedLayerids = new Set<string>();
+    changes.forEach(({ rowId, values }) => {
+      if (!('st' in values) && !('new_or_copy' in values)) return;
+      const oRow = oayerRows.find(r => r.id === rowId);
+      if (oRow?.layerid?.trim()) touchedLayerids.add(oRow.layerid.trim());
+    });
+    (['st', 'new_or_copy'] as const).forEach(field => {
+      touchedLayerids.forEach(layerid => {
+        const consensusValue = layeridFieldConsensus(oayerRows, nextOayerRows, layerid, field);
+        if (consensusValue === undefined) return;
+        if (field === 'new_or_copy' && isNocSpecial(consensusValue)) return; // 특수값 자체는 전파 제외
+        const target = soleParticipantByLayerid(jayerRows, layerid);
+        if (!target) return;
+        setJayerRows(rows => rows.map(r => (r.id === target.id ? { ...r, [field]: consensusValue } : r)));
+      });
+    });
   };
 
   // 엑셀식 셀 선택 + 붙여넣기 (J/O 표 공용 훅). 붙여넣기 후 자동채움/바코드 조회 연동.
   // 셀 단위 잠금: 비활성(st==='X')/기등록 행은 전체 잠금, 불러온(loaded) 행은 LOADED_LOCK_COLS만 잠금.
-  // st·new_or_copy 두 컬럼은 "비활성에서 되돌리는 유일한 수단"이라 비활성이어도 항상 직접 편집 가능하게 둔다
-  // (new_or_copy 는 기등록/layer삭제를 고르고 되돌리는 통로이기도 하다).
+  // st 컬럼은 "비활성에서 되돌리는 유일한 수단"이라 항상 직접 편집 가능하다. new_or_copy 는
+  // 기등록/layer삭제 때문에 st==='X' 가 된 행에서만 예외로 열어둔다(그 값을 고르고 되돌리는 통로) —
+  // st 를 직접 X로 바꾼 행은 new_or_copy 도 다른 컬럼과 동일하게 잠긴다.
   // layer삭제 행의 st 는 항상 'X' 로 고정이므로 붙여넣기로도 덮어쓸 수 없다.
   const isLayerCellLocked = (row: { st?: string; new_or_copy?: string; loaded?: boolean }, col: string): boolean => {
-    if (col === 'new_or_copy') return false;
+    // new_or_copy 는 기등록/layer삭제 때문에 st==='X' 가 된 행에서만 예외로 열어둔다
+    // (되돌리는 유일한 통로). st 를 직접 X로 바꾼 행은 다른 컬럼과 동일하게 잠긴다.
+    if (col === 'new_or_copy') return isRowInactive(row.st) && !isNocSpecial(row.new_or_copy);
     if (col === 'st') return row.new_or_copy === '기등록' || row.new_or_copy === NOC_LAYER_DELETE;
     return isRowInactive(row.st) || row.new_or_copy === '기등록'
       || (!!row.loaded && (LOADED_LOCK_COLS as readonly string[]).includes(col));
@@ -2527,25 +2540,20 @@ export default function RequestPage(): React.ReactElement {
   const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, handleJayerAfterPaste, isLayerCellLocked, unmapIfBbValueChanged);
   const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, handleOayerAfterPaste, isLayerCellLocked);
 
-  // 참여행(활성 && 기등록/layer삭제 아님)에만 일괄 적용 + 같은 layer의 O 참여행 동기화
+  // 참여행(활성 && 기등록/layer삭제 아님) 전체에 같은 값을 일괄 적용한다. 일괄 적용은 J 참여행 전체를
+  // 동일 값으로 맞추므로 layerid별 합의는 항상 성립하며, O 참여행이 정확히 1개인 layerid에만 전파한다.
   const handleJayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
     setJayerRows((rows) => rows.map((r) => (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) ? r : { ...r, [field]: value }));
     const layerids = new Set(jayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
-    setOayerRows(rows => rows.map(r => {
-      if (!r.layerid?.trim() || !layerids.has(r.layerid.trim())) return r;
-      if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return r;
-      return { ...r, [field]: value };
-    }));
+    const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(oayerRows, l)?.id).filter((id): id is string => !!id));
+    if (targetIds.size > 0) setOayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value } : r));
   };
 
   const handleJayerResetField = (field: 'st' | 'new_or_copy') => {
     setJayerRows((rows) => rows.map((r) => (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) ? r : { ...r, [field]: '' }));
     const layerids = new Set(jayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
-    setOayerRows(rows => rows.map(r => {
-      if (!r.layerid?.trim() || !layerids.has(r.layerid.trim())) return r;
-      if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return r;
-      return { ...r, [field]: '' };
-    }));
+    const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(oayerRows, l)?.id).filter((id): id is string => !!id));
+    if (targetIds.size > 0) setOayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: '' } : r));
   };
 
   const handleJayerAddRow = () => {
@@ -2570,50 +2578,44 @@ export default function RequestPage(): React.ReactElement {
   // ===== Oayer Handlers =====
   const handleOayerChange = (id: string, field: keyof Omit<OayerRow, 'id'>, value: string) => {
     const changedRow = oayerRows.find(r => r.id === id);
+    // 교차 동기화(O→J) 여부: 소스 행이 참여행이고, 전파할 값이 특수값(기등록/layer삭제)이 아닐 때만
+    // J-layer로 전파를 검토한다(같은 O-layer 안에서는 더 이상 전파하지 않는다).
     const layerid = changedRow?.layerid?.trim();
     const sourceParticipant = !!changedRow && !isRowInactive(changedRow.st) && !isNocSpecial(changedRow.new_or_copy);
     const propagate = (field === 'st' || field === 'new_or_copy' || field === 'product_name') && !!layerid && sourceParticipant
       && !(field === 'new_or_copy' && isNocSpecial(value));
     // st를 'X'로 바꾸면(기존 활성 행) new_or_copy/product_name/step을 초기화한다(O-ayer는 item_id 없음).
-    setOayerRows((rows) => rows.map((r) => {
-      if (r.id === id) {
-        if (field === 'st' && value === ST_X) {
-          return { ...r, st: ST_X, new_or_copy: '', product_name: '', step: '' };
-        }
-        if (field === 'product_name') {
-          const next = { ...r, product_name: value };
-          // product_name을 채우면 step이 비어있을 때 layer 값으로 자동 채움(layer 없으면 무동작)
-          if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
-          return next;
-        }
-        if (field === 'new_or_copy') {
-          const next = { ...r, new_or_copy: value };
-          // 기등록/layer삭제 선택 시 st를 자동으로 'X'로 설정
-          if (isNocSpecial(value)) next.st = 'X';
-          return next;
-        }
-        return { ...r, [field]: value };
+    const nextOayerRows = oayerRows.map((r) => {
+      if (r.id !== id) return r;
+      if (field === 'st' && value === ST_X) {
+        return { ...r, st: ST_X, new_or_copy: '', product_name: '', step: '' };
       }
-      // O→O 동기화: 같은 layer의 "참여행"에만 반영(비활성·기등록·layer삭제 제외)
-      if (propagate && r.layerid?.trim() === layerid) {
-        if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return r;
-        return { ...r, [field]: value };
+      if (field === 'product_name') {
+        const next = { ...r, product_name: value };
+        // product_name을 채우면 step이 비어있을 때 layer 값으로 자동 채움(layer 없으면 무동작)
+        if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
+        return next;
       }
-      return r;
-    }));
-    // O→J 동기화: 같은 layer의 J-layer 참여행에만 반영
+      if (field === 'new_or_copy') {
+        const next = { ...r, new_or_copy: value };
+        // 기등록/layer삭제 선택 시 st를 자동으로 'X'로 설정
+        if (isNocSpecial(value)) next.st = 'X';
+        return next;
+      }
+      return { ...r, [field]: value };
+    });
+    setOayerRows(nextOayerRows);
+    // O→J 동기화: product_name은 참여 대상 전체(정확히는 1개일 필요 없음)에 무조건 전파(기존 방식 유지).
+    // st/new_or_copy는 같은 layerid의 O 참여행 전원이 합의해야 하고, J 참여행이 정확히 1개일 때만 전파.
     if (propagate) {
-      setJayerRows(rows => rows.map(r => {
-        if (r.layerid?.trim() !== layerid) return r;
-        if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return r;
-        if (field === 'product_name') {
+      if (field === 'product_name') {
+        setJayerRows(rows => rows.map(r => {
+          if (r.layerid?.trim() !== layerid) return r;
+          if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return r;
           const next = { ...r, product_name: value, item_id: '' };
           if (value && !r.step?.trim() && r.layerid?.trim()) next.step = r.layerid;
           return next;
-        }
-        return { ...r, [field]: value };
-      }));
-      if (field === 'product_name') {
+        }));
         // 대상 J-ayer 행에 반영된 product_name으로 바코드(ID) 재조회
         jayerRows.forEach(r => {
           if (r.layerid?.trim() !== layerid) return;
@@ -2628,28 +2630,32 @@ export default function RequestPage(): React.ReactElement {
             setJayerBarcodeCache((prev) => ({ ...prev, [rid]: [] }));
           }
         });
+      } else {
+        const consensusValue = layeridFieldConsensus(oayerRows, nextOayerRows, layerid!, field as 'st' | 'new_or_copy');
+        if (consensusValue !== undefined) {
+          const target = soleParticipantByLayerid(jayerRows, layerid!);
+          if (target) {
+            setJayerRows(rows => rows.map(r => (r.id === target.id ? { ...r, [field]: consensusValue } : r)));
+          }
+        }
       }
     }
   };
 
+  // 참여행(활성 && 기등록/layer삭제 아님) 전체에 같은 값을 일괄 적용한다. 일괄 적용은 O 참여행 전체를
+  // 동일 값으로 맞추므로 layerid별 합의는 항상 성립하며, J 참여행이 정확히 1개인 layerid에만 전파한다.
   const handleOayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
     setOayerRows((rows) => rows.map((r) => (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) ? r : { ...r, [field]: value }));
     const layerids = new Set(oayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
-    setJayerRows(rows => rows.map(r => {
-      if (!r.layerid?.trim() || !layerids.has(r.layerid.trim())) return r;
-      if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return r;
-      return { ...r, [field]: value };
-    }));
+    const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(jayerRows, l)?.id).filter((id): id is string => !!id));
+    if (targetIds.size > 0) setJayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value } : r));
   };
 
   const handleOayerResetField = (field: 'st' | 'new_or_copy') => {
     setOayerRows((rows) => rows.map((r) => (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) ? r : { ...r, [field]: '' }));
     const layerids = new Set(oayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
-    setJayerRows(rows => rows.map(r => {
-      if (!r.layerid?.trim() || !layerids.has(r.layerid.trim())) return r;
-      if (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) return r;
-      return { ...r, [field]: '' };
-    }));
+    const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(jayerRows, l)?.id).filter((id): id is string => !!id));
+    if (targetIds.size > 0) setJayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: '' } : r));
   };
 
   const handleOayerAddRow = () => {

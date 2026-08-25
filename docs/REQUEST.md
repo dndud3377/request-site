@@ -81,6 +81,7 @@ pages/RequestPage/
 | Validation System | `isValidationKeywordRow`, `isValidationTarget`, `autoValidationSystem` |
 | ADI CD 붙여넣기 | `parseClipboardTable`, `AdiCdHeaderMatch`(타입), `detectAdiCdHeader`, `AdiCdPasteDecision`(타입), `decideAdiCdPaste`, `buildAdiCdRows`, `AdiCdValidationResult`(타입), `validateAdiCdRows` |
 | ADI CD 행 수 동일·적용 대상 | `balanceAdiCdRows`, `AdiCdTargetsValidation`(타입), `validateAdiCdTargets`(2026-08-21 신설 — '동일 변경 적용 대상' 표 검증) |
+| J↔O layerid 동기화 | `LayerSyncRow`(타입), `layeridFieldConsensus`, `soleParticipantByLayerid`(2026-08-25 신설 — 아래 "J/O-layer 내부(J→J·O→O) 동기화 삭제..." 참조. 이 표는 2026-08-06 실측 이후 다른 export 추가분을 전부 반영하지 않은 부분 목록이다) |
 
 ---
 
@@ -2873,11 +2874,113 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
      눌러도 되돌아가지 않는다.]
   4. [3번 상태에서 필터 관리 모달을 열어 그 필터를 삭제] → [기대 결과: 필터 목록에서만 사라지고,
      이미 `st='X'`로 바뀐 행은 그대로 남는다.]
-  5. [STEP3/4에서 행 하나의 `st`를 'X'로 만든 뒤 상신까지 완료 → 결재자 계정으로 로그인 →
+  5. ~~[STEP3/4에서 행 하나의 `st`를 'X'로 만든 뒤 상신까지 완료 → 결재자 계정으로 로그인 →
      결재현황에서 해당 의뢰서 상세보기 → 'J-layer 정보'/'O-layer 정보' 탭] → [기대 결과: 그 행은
-     여전히 보이지 않는다(승인자 화면은 활성 행만 표시 — 이번 변경으로도 유지).]
+     여전히 보이지 않는다(승인자 화면은 활성 행만 표시 — 이번 변경으로도 유지).]~~
+     **(2026-08-25 후속 변경으로 뒤집힘 — 아래 "PagedDetailView·엑셀도 st='X' 행을 계속 보여준다"
+     항목 참조. 이제 그 행도 보인다.)**
   6. [작성 중인 문서에서 홈 화면 "전체 가이드" 투어를 STEP3/STEP4까지 열어봄] → [기대 결과: "체크→
      비활성화·복원" 관련 투어 그룹이 더 이상 나오지 않는다.]
+
+### 추가 변경 이력 (2026-08-25 — 비활성(st==='X') 행 표시·잠금 후속 보정)
+
+바로 위 "J/O-layer '비활성화' 기능 제거" 작업 직후, 실사용 확인 중 발견된 두 가지를 마저 고쳤다.
+
+- **1) PagedDetailView·엑셀도 st='X' 행을 계속 보여준다**: 위 작업에서 "기존 승인자 화면 동작은
+  바꾸지 않는다"는 전제로 `PagedDetailView.tsx`(결재 상세보기·이력 — `RequestPage`/`ApprovalPage`/
+  `HistoryPage` 공용)와 `utils/detailExport.ts`(엑셀 내보내기)에 `!isRowInactive(r.st)` 필터를
+  그대로 남겨뒀었다. 이는 "비활성 행은 숨긴다"는 구 기능의 효과를 그대로 이어받은 것인데, 이번에
+  **그 전제 자체를 뒤집었다** — st='X' 여도 의뢰서를 나중에 볼 때(작성 화면·상세보기·결재·이력·엑셀)
+  항상 보여야 하며, "삭제된 것처럼 안 보이는" 경우가 없어야 한다. `JayerTable`/`OayerTable` 렌더 직전의
+  필터를 제거해 `jayer`/`oayer` 배열을 그대로 넘기고, 엑셀 시트 생성 루프의 동일 필터도 제거했다.
+  - **예외**: Step4(뼈찜)의 "원본 데이터 목록"(bb 매핑 후보) 등 bb 관련 목록은 이 변경 대상이
+    아니다 — st='X' 행은 계속 그 목록에 뜨지 않는다(기존 `!isRowInactive(r.st)` 필터 그대로 유지,
+    bb 매핑이 필요 없는 행이므로).
+- **2) col_new_or_copy 도 st='X' 면 잠근다(기등록/layer삭제 제외)**: `isLayerCellLocked`가
+  `new_or_copy` 컬럼만 예외적으로 항상 열어뒀던 것을 좁혔다. **사용자가 st를 직접 X로 바꾼 행**은
+  이제 `new_or_copy`도 다른 컬럼과 동일하게 잠긴다. 단, **기등록/layer삭제 때문에 st가 X가 된 행**은
+  여전히 `new_or_copy`를 열어둔다 — 그 값을 고르고 되돌리는 유일한 통로이기 때문이다(이 두 값은
+  st 컬럼 자체가 이미 잠겨 있어 `new_or_copy`마저 잠그면 영구히 되돌릴 수 없게 된다는 점을 발견해
+  사용자에게 보고하고, "기등록/layer삭제는 예외로 계속 열어둔다"로 확정했다). 판정식:
+  `isRowInactive(row.st) && !isNocSpecial(row.new_or_copy)`.
+- **영향 파일**: `components/PagedDetailView.tsx`, `utils/detailExport.ts`,
+  `RequestPage/index.tsx`(`isLayerCellLocked`), `RequestPage/components/{Step2,Step3}.tsx`
+  (`new_or_copy` `AutocompleteInput`에 `disabled` prop 추가).
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일, 무관함 확인). `react-scripts test
+  --watchAll=false` — 9 suites / 253건 전부 통과(회귀 없음, 이 변경으로 새로 추가/수정한 테스트는
+  없음 — 기존 스위트가 이 경로를 직접 검증하지 않음, 아래 수동 시나리오가 검증의 핵심).
+- **수동 검증 시나리오**:
+  1. [`/request`에서 STEP3(J-layer)의 한 행을 `st='X'`로 직접 바꿈] → [기대 결과: `new_or_copy`
+     셀도 다른 컬럼처럼(회색·클릭 불가) 잠긴다.]
+  2. [1번 행에서 `new_or_copy` 드롭다운을 '기등록'으로 바꿈(잠기지 않은 다른 행에서 시작)] →
+     [기대 결과: `st`가 자동으로 X가 되고, 이때는 `new_or_copy` 셀이 계속 열려 있어 다시 다른
+     값으로 바꿀 수 있다 — `st` 셀만 잠긴다.]
+  3. [1번처럼 `st='X'`로 만든 행이 있는 문서를 상신까지 완료 → 결재자 계정으로 로그인 → 결재현황에서
+     해당 의뢰서 상세보기 → 'J-layer 정보'/'O-layer 정보' 탭] → [기대 결과: 그 행이 **이제는 보인다**
+     (`st` 컬럼에 X로 표시됨). 엑셀 내보내기(📊 export)에도 포함된다.]
+  4. [STEP5(뼈찜)에서 "원본 데이터 목록"(좌측 패널) 확인] → [기대 결과: `st='X'`인 행은 여전히
+     이 목록에 뜨지 않는다 — bb 매핑 후보에서는 계속 제외.]
+
+### 추가 변경 이력 (2026-08-25 — J/O-layer 내부(J→J·O→O) 동기화 삭제 + J↔O 교차 동기화를 "합의(consensus) + 단일 대상"으로 축소)
+
+같은 layerid를 가진 행이 여러 개 있을 때, 그 행들이 서로 다른 값을 가질 수 있다는 것을 전제하지 않고
+"같은 layerid면 무조건 같은 값"으로 강제 동기화하던 것을 바로잡았다.
+
+- **배경**: 기존 동기화 규칙(2026-06-16 도입, 2026-08-16 product_name 확장)은 "같은 layerid를 가진
+  참여행 전부"에 값을 무조건 반영했다. 그런데 실제로는 J-layer 안에 같은 layerid를 가진 행이 2개
+  이상 있을 수 있고, 그 행들이 서로 다른 st/new_or_copy 값을 가지는 것이 정상적인 경우가 있다 —
+  이런 상황에서 한 행만 바꿔도 나머지가 강제로 같은 값이 되거나(J→J/O→O), 반대쪽 테이블로 그 값이
+  퍼져나가는(J↔O) 것은 데이터를 왜곡시킨다.
+- **1) 같은 테이블 내부 전파(J→J, O→O) 완전 삭제**: `st`/`new_or_copy`/`product_name` 세 필드
+  모두, 같은 layerid를 가진 다른 J(또는 O) 행으로의 전파를 없앴다. 한 행을 편집·붙여넣기해도
+  같은 테이블의 다른 행은 더 이상 영향받지 않는다 — 일괄 적용(전체 O/전체 X/전체 신규/전체 차용/초기화)
+  버튼은 "참여행 전체에 같은 값을 적용"하는 원래 목적 그대로 유지된다(이건 애초에 사용자가 명시적으로
+  전체 적용을 요청한 동작이라 "전파"가 아니다).
+- **2) J↔O 교차 동기화(`st`/`new_or_copy`)를 "합의 + 단일 대상"으로 축소**: 소스 테이블에서 같은
+  layerid를 가진 참여행 **전원이 이번 조작 후 같은 값**을 가질 때만("합의"), 그리고 대상 테이블에
+  그 layerid를 가진 참여행이 **정확히 1개**일 때만 그 값을 전파한다. 소스 쪽 값이 서로 다르거나
+  대상이 0개/2개 이상이면 조용히 전파하지 않는다(에러 아님). 예:
+  - J에 layerid=100 인 행이 2개 있고 둘 다 st='O'→'X'로 똑같이 바뀌면(합의) → O에 layerid=100
+    참여행이 정확히 1개일 때만 그 행도 st='X'가 된다.
+  - J의 두 행이 서로 다른 값을 갖게 되면(불일치) → O로 전파하지 않는다.
+  - O에 layerid=100 인 참여행이 2개 이상이면(대상 모호) → J 쪽에서 아무리 값이 같아도 O로
+    전파하지 않는다. 방향은 대칭이다(O→J도 동일 규칙).
+  - 새 순수 함수 `layeridFieldConsensus(preOpRows, postOpRows, layerid, field)` /
+    `soleParticipantByLayerid(rows, layerid)` (`helpers.ts`)로 판정한다.
+- **3) `product_name`의 J↔O 교차 동기화는 기존 방식(무조건 전파) 그대로 유지**: 사용자 확정에 따라
+  product_name은 합의/단일 대상 규칙을 적용하지 않는다 — 소스 행이 참여행이면 대상 테이블의 같은
+  layerid 참여행 **전체**(0개~여러 개)에 지금처럼 전파하고, `step` 자동채움·`item_id` 리셋·바코드
+  재조회 부수효과도 그대로다. 다만 이 필드도 **같은 테이블 내부(J→J/O→O) 전파는 1번 규칙에 따라
+  삭제**했다.
+- **적용 범위**: 셀 직접 편집(`handleJayerChange`/`handleOayerChange`), 붙여넣기
+  (`handleJayerAfterPaste`/`handleOayerAfterPaste`), 일괄 적용
+  (`handleJayerSetAll`/`ResetField`, `handleOayerSetAll`/`ResetField`) 4가지 경로 전부에 동일 규칙을
+  적용했다. 필터 일괄 적용(`handleJayerApplyFilter`/`handleOayerApplyFilter`)과 참조 요청서
+  Merge(`handleMergeConfirm`)는 원래부터 전파를 하지 않았고 이번에도 손대지 않았다(요청 범위 밖).
+- **영향 파일**: `RequestPage/helpers.ts`(`layeridFieldConsensus`, `soleParticipantByLayerid` 추가),
+  `RequestPage/index.tsx`(8개 핸들러 재작성), `RequestPage/helpers.test.ts`(신규 함수 단위테스트
+  9건 추가).
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일, 무관함 확인). `react-scripts test
+  --watchAll=false` — 9 suites / 262건 전부 통과(신규 9건 포함, 회귀 없음). 백엔드
+  `manage.py test api` — 333건 전부 통과(이번 변경은 프론트엔드 전용이라 무영향 확인 목적).
+  기존 sync 관련 테스트 4개 파일(`pauseResumeDisabledRows`, `adiCdUnregisteredAndVs`,
+  `draftRoundTrip`, `jayerOayerDefault`)을 확인한 결과 모두 layerid가 행마다 유일한 픽스처만 써서
+  이번 변경으로 갈리는 지점(같은 layerid 2행 이상)을 직접 검증하지 않는다 — 이 지점은 신규 단위
+  테스트와 아래 수동 시나리오가 검증의 핵심이다.
+- **수동 검증 시나리오**:
+  1. [`/request`에서 STEP3(J-layer)에 같은 layerid를 가진 행 2개를 만듦(예: 붙여넣기로 layerid만
+     동일하게 복제) → 한 행만 `st`를 'X'로 바꿈] → [기대 결과: 같은 layerid의 다른 J행은 값이
+     바뀌지 않는다(더 이상 전파 안 됨). O-layer에도 아무 변화가 없다(J쪽 합의가 깨졌으므로).]
+  2. [1번 상태에서 나머지 J행도 같은 값('X')으로 맞춤(합의 성립) → O-layer에 같은 layerid를 가진
+     참여행이 정확히 1개인 상태] → [기대 결과: 그 O행의 `st`가 자동으로 'X'로 바뀐다.]
+  3. [2번과 같은 J 합의 상태에서, O-layer에 같은 layerid를 가진 참여행을 2개로 만들어 둠] → [기대
+     결과: J 쪽이 합의돼 있어도 O로는 전파되지 않는다(대상 모호).]
+  4. [J-layer STEP3 상단의 "전체 O"/"전체 X"/"전체 신규"/"전체 차용"/"초기화" 버튼을 클릭] → [기대
+     결과: J 참여행 전체가 같은 값이 되고, O-layer에서 그 layerid의 참여행이 정확히 1개인 경우에만
+     그 O행에도 반영된다(참여행이 2개 이상인 layerid는 반영 안 됨).]
+  5. [J-layer 한 행의 `product_name`을 바꿈(같은 layerid의 O행이 여러 개인 상태여도)] → [기대 결과:
+     product_name은 여전히 무조건 전파된다 — O-layer의 같은 layerid를 가진 참여행 전부의
+     product_name이 바뀐다(1번~3번의 합의/단일 대상 규칙과 무관).]
 
 ## 5. 검증 방법
 ```bash

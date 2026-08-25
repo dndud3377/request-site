@@ -7,7 +7,7 @@ import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, Flow
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
-import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
+import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
@@ -2246,7 +2246,7 @@ type Page = { label: string; content: React.ReactNode };
               </span>
             )}
           </div>
-          <JayerTable rows={jayer.filter(r => !isRowInactive(r.st))} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} />
+          <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} />
           </>
           )}
         </div>
@@ -2313,7 +2313,7 @@ type Page = { label: string; content: React.ReactNode };
                 ))}
               </div>
               {activeTab === 'table' && (
-                <OayerTable rows={oayer.filter(r => !isRowInactive(r.st))} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} />
+                <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} />
               )}
               {activeTab === 'info' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20, fontSize: 13 }}>

@@ -205,6 +205,7 @@ const Step2: React.FC<Step2Props> = ({
                       value={row.new_or_copy}
                       onChange={(v) => handleJayerChange(row.id, 'new_or_copy', v)}
                       options={NEW_OR_COPY_OPTIONS}
+                      disabled={rowInactive && !isRegistered && !isLayerDeleted}
                       inputStyle={{
                         backgroundColor: row.new_or_copy === '차용' ? '#93c5fd' : row.new_or_copy === 'layer삭제' ? '#fef08a' : undefined,
                         ...(nocError ? { border: '1px solid var(--danger)' } : {}),
