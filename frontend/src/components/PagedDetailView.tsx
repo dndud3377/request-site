@@ -217,7 +217,7 @@ const JAYER_DIFF_FIELDS: DiffFieldDef[] = [
   { key: 'sd',           labelKey: 'request.col_sd' },
   { key: 'pp',           labelKey: 'request.col_pp' },
   { key: 'layerid',      label: 'Layer' },
-  { key: 'st',           labelKey: 'request.col_st' },
+  { key: 'st',           labelKey: 'request.col_st_j' },
   { key: 'new_or_copy',  labelKey: 'request.col_new_or_copy' },
   { key: 'product_name', labelKey: 'request.col_product_name' },
   { key: 'step',         labelKey: 'request.col_step' },
@@ -231,7 +231,7 @@ const OAYER_DIFF_FIELDS: DiffFieldDef[] = [
   { key: 'sd',           labelKey: 'request.col_sd' },
   { key: 'layerid',      labelKey: 'request.col_layer' },
   { key: 'pp',           labelKey: 'request.col_pp' },
-  { key: 'st',           labelKey: 'request.col_st' },
+  { key: 'st',           labelKey: 'request.col_st_o' },
   { key: 'new_or_copy',  labelKey: 'request.col_new_or_copy' },
   { key: 'product_name', labelKey: 'request.col_product_name' },
   { key: 'step',         labelKey: 'request.col_step' },
@@ -796,7 +796,7 @@ function JayerTable({
           <thead>
             <tr>
               {hasPrev && <th style={{ width: 64 }}></th>}
-              <th>{t('request.col_updated_date')}</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th>
+              <th>{t('request.col_updated_date')}</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st_j')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th>
             </tr>
           </thead>
           <tbody>
@@ -852,7 +852,7 @@ function OayerTable({
           <thead>
             <tr>
               {hasPrev && <th style={{ width: 64 }}></th>}
-              <th>{t('request.col_updated_date')}</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_layer')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th>
+              <th>{t('request.col_updated_date')}</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_layer')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st_o')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th>
             </tr>
           </thead>
           <tbody>

@@ -87,7 +87,7 @@ const Step2: React.FC<Step2Props> = ({
       {/* 일괄 설정 툴바 */}
       <div className="wizard-table-toolbar">
         <div className="wizard-table-toolbar-group">
-          <span className="wizard-table-toolbar-label">{t('request.col_st')}:</span>
+          <span className="wizard-table-toolbar-label">{t('request.col_st_j')}:</span>
           <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'O')}>{t('request.btn_all_o')}</button>
           <button type="button" className="th-header-btn" onClick={() => handleJayerSetAll('st', 'X')}>{t('request.btn_all_x')}</button>
           <button type="button" className="th-header-btn" onClick={() => handleJayerResetField('st')}>{t('request.btn_reset')}</button>
@@ -147,7 +147,7 @@ const Step2: React.FC<Step2Props> = ({
               <th style={{ width: 'auto' }}>{t('request.col_sd')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_layer')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_pp')}</th>
-              <th style={{ width: 'auto' }} data-tour="jayer-sync-cols">{t('request.col_st')}</th>
+              <th style={{ width: 'auto' }} data-tour="jayer-sync-cols">{t('request.col_st_j')}</th>
               <th style={{ width: 'auto' }} data-tour="jayer-sync-cols">{t('request.col_new_or_copy')}</th>
               <th style={{ width: 'auto' }} data-tour="jayer-sync-cols">{t('request.col_product_name')}</th>
               <th style={{ width: 'auto' }}>{t('request.col_step')}</th>
