@@ -155,11 +155,21 @@ describe('validateAdiCdRows — 미등록 행 판정 규칙', () => {
       row({ id: 'a', step_id: '1000', step_desc: 'ADI' }),   // 유효
       row({ id: 'b', step_id: '1000', step_desc: 'DUP' }),   // 중복
       row({ id: 'c', step_id: '2000' }),                      // 불완전
-      row({ id: 'd' }),                                       // 빈 행 → 무시
+      row({ id: 'd' }),                                       // 완전히 빈 행 → 불완전(미등록 체크 없이는 상신 불가)
     ]);
     expect(r.validCount).toBe(2);
     expect(r.duplicateIds.sort()).toEqual(['a', 'b']);
-    expect(r.incompleteIds).toEqual(['c']);
+    expect(r.incompleteIds.sort()).toEqual(['c', 'd']);
+  });
+
+  it('완전히 빈 행(미등록 아님)은 상신을 막는다 — 미등록 체크를 하면 통과된다', () => {
+    const blank = validateAdiCdRows([row({ id: 'e' })]);
+    expect(blank.incompleteIds).toEqual(['e']);
+    expect(blank.validCount).toBe(0);
+
+    const unregistered = validateAdiCdRows([row({ id: 'e', unregistered: true })]);
+    expect(unregistered.incompleteIds).toEqual([]);
+    expect(unregistered.validCount).toBe(1);
   });
 });
 

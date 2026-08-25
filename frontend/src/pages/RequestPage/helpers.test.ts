@@ -664,9 +664,17 @@ describe('buildAdiCdRows', () => {
 describe('validateAdiCdRows', () => {
   const step = (over: Partial<AdiCdStep>): AdiCdStep => ({ id: `id_${Math.random()}`, step_id: '', step_desc: '', ...over });
 
-  it('완전히 빈 행은 세지 않는다', () => {
-    expect(validateAdiCdRows([step({}), step({ step_id: 'S1', step_desc: 'D1' })])).toEqual({
-      incompleteIds: [], duplicateIds: [], validCount: 1,
+  it('완전히 빈 행(미등록 아님)은 불완전으로 잡는다', () => {
+    const blank = step({ id: 'r0' });
+    const result = validateAdiCdRows([blank, step({ step_id: 'S1', step_desc: 'D1' })]);
+    expect(result.incompleteIds).toEqual(['r0']);
+    expect(result.duplicateIds).toEqual([]);
+    expect(result.validCount).toBe(1);
+  });
+
+  it('완전히 빈 행이라도 미등록이면 유효로 잡는다', () => {
+    expect(validateAdiCdRows([step({ unregistered: true }), step({ step_id: 'S1', step_desc: 'D1' })])).toEqual({
+      incompleteIds: [], duplicateIds: [], validCount: 2,
     });
   });
 
