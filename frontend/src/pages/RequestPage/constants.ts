@@ -141,7 +141,7 @@ export const OAYER_EDITABLE_COLS = ['process_id', 'sp', 'sd', 'layerid', 'pp', '
 // 자동채움/병합으로 "불러온" 행에서 읽기전용으로 잠그는 컬럼(수동 추가 행은 편집 허용)
 export const LOADED_LOCK_COLS = ['process_id', 'sp', 'sd', 'layerid', 'pp'] as const;
 /**
- * bb 행이 J-ayer 행에서 복사해 가는 컬럼(`handleApplyMappings`/`buildAutoFillRows` 기준).
+ * bb 행이 J-ayer 행에서 복사해 가는 컬럼(`handleApplyMappings`/`makeBbRowFromMatch` 기준).
  * bb 표의 나머지 값은 외부 데이터에서 오므로, 이 컬럼들이 바뀔 때만 매핑을 다시 잡을 이유가 있다.
  * 불러온 행에서는 셋 다 `LOADED_LOCK_COLS` 로 잠겨 있어 사실상 수동 추가 행에서만 바뀐다.
  */
