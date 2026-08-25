@@ -258,8 +258,6 @@ export interface JayerRow {
   id: string;
   updated: string;      // 'YYYYMMDD HH:MM' 형식
   sortOrder: number;
-  disabled: boolean;
-  manuallyDisabled: boolean;
   process_id: string;
   sp: string;
   sd: string;
@@ -277,8 +275,6 @@ export interface OayerRow {
   id: string;
   updated: string;      // 'YYYYMMDD HH:MM' 형식
   sortOrder: number;
-  disabled: boolean;
-  manuallyDisabled: boolean;
   process_id: string;
   sp: string;
   sd: string;
