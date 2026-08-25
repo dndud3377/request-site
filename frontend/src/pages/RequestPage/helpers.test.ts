@@ -6,7 +6,7 @@ import {
   requiresBbEntries, findBbEntryViolations, findEmptyStNocViolations, findNocBorrowItemIdViolations,
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
-  isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow,
+  isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
 } from './helpers';
 import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
 import { AdiCdStep, AdiCdTarget, MergePair, MergeRowInfo } from '../../types';
@@ -201,6 +201,24 @@ describe('soleParticipantByLayerid', () => {
   it('비활성·기등록·layer삭제 행은 후보에서 제외된다', () => {
     const rows = [row('a', '100', 'O', '신규'), row('b', '100', 'X', NOC_REGISTERED)];
     expect(soleParticipantByLayerid(rows, '100')?.id).toBe('a');
+  });
+});
+
+describe('stClearExtra', () => {
+  it("field가 'st'이고 value가 'X'면 new_or_copy/product_name/step을 초기화한다", () => {
+    expect(stClearExtra('st', 'X', false)).toEqual({ new_or_copy: '', product_name: '', step: '' });
+  });
+
+  it("hasItemId=true면 item_id도 함께 초기화한다(J측)", () => {
+    expect(stClearExtra('st', 'X', true)).toEqual({ new_or_copy: '', product_name: '', step: '', item_id: '' });
+  });
+
+  it("field가 'st'가 아니면 빈 객체", () => {
+    expect(stClearExtra('new_or_copy', 'X', true)).toEqual({});
+  });
+
+  it("value가 'X'가 아니면 빈 객체", () => {
+    expect(stClearExtra('st', 'O', true)).toEqual({});
   });
 });
 

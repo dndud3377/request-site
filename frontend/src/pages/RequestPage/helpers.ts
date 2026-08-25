@@ -176,6 +176,18 @@ export const soleParticipantByLayerid = <T extends LayerSyncRow>(
   return candidates.length === 1 ? candidates[0] : undefined;
 };
 
+/**
+ * 전파(교차 동기화·일괄 적용)로 대상 행의 st가 'X'가 될 때, 직접 편집한 행과 동일하게
+ * new_or_copy/product_name/step(J측이면 item_id도)을 함께 초기화하는 패치를 반환한다.
+ * field가 'st'가 아니거나 값이 'X'가 아니면 빈 객체(추가 변경 없음).
+ */
+export const stClearExtra = (field: string, value: string, hasItemId: boolean): Record<string, string> => {
+  if (field !== 'st' || value !== ST_X) return {};
+  const extra: Record<string, string> = { new_or_copy: '', product_name: '', step: '' };
+  if (hasItemId) extra.item_id = '';
+  return extra;
+};
+
 // ===== Layer 추가/삭제 Merge (참조 요청서 A ↔ 작성 중 요청서 B) =====
 
 /** Merge 비교에 필요한 최소 형태 — JayerRow / OayerRow 양쪽을 받는다. */

@@ -172,7 +172,7 @@ const Step3: React.FC<Step3Props> = ({
         <>
           <div className="wizard-table-toolbar">
             <div className="wizard-table-toolbar-group">
-              <span className="wizard-table-toolbar-label">{t('request.col_st')}:</span>
+              <span className="wizard-table-toolbar-label">{t('request.col_st_o')}:</span>
               <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('st', 'O')}>{t('request.btn_all_o')}</button>
               <button type="button" className="th-header-btn" onClick={() => handleOayerSetAll('st', 'X')}>{t('request.btn_all_x')}</button>
               <button type="button" className="th-header-btn" onClick={() => handleOayerResetField('st')}>{t('request.btn_reset')}</button>
@@ -223,7 +223,7 @@ const Step3: React.FC<Step3Props> = ({
                   <th style={{ width: 'auto' }}>{t('request.col_sd')}</th>
                   <th style={{ width: 'auto' }}>{t('request.col_layer')}</th>
                   <th style={{ width: 'auto' }}>{t('request.col_pp')}</th>
-                  <th style={{ width: 'auto' }}>{t('request.col_st')}</th>
+                  <th style={{ width: 'auto' }}>{t('request.col_st_o')}</th>
                   <th style={{ width: 'auto' }}>{t('request.col_new_or_copy')}</th>
                   <th style={{ width: 'auto' }}>{t('request.col_product_name')}</th>
                   <th style={{ width: 'auto' }}>{t('request.col_step')}</th>
@@ -233,6 +233,8 @@ const Step3: React.FC<Step3Props> = ({
                 {renderedOayerRows.map((row, idx) => {
                   const rowInactive = isRowInactive(row.st);
                   const isRegistered = row.new_or_copy === '기등록';
+                  // 회색 처리는 기등록과 동일하게 st==='X' 행에도 적용한다(편집 가능 여부와는 무관 — 그건 각자 다른 조건으로 유지).
+                  const greyBg = isRegistered || rowInactive;
                   // layer삭제 행의 st 는 항상 'X' 로 고정 — 값 편집을 막는다.
                   const isLayerDeleted = row.new_or_copy === NOC_LAYER_DELETE;
                   const stError = errors[`oayer_stnoc_${row.id}_st`];
@@ -250,20 +252,20 @@ const Step3: React.FC<Step3Props> = ({
                   return (
                     <tr key={row.id}>
                       <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>{idx + 1}</td>
-                      <td style={{ backgroundColor: isRegistered ? regBg : undefined }}><input value={row.updated ?? ''} readOnly style={{ background: isRegistered ? regBg : undefined, color: '#666' }} /></td>
-                      <td {...cellProps('process_id', isRegistered ? regBg : undefined)}><input value={row.process_id} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                      <td {...cellProps('sp', isRegistered ? regBg : undefined)}><input value={row.sp} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'sp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                      <td {...cellProps('sd', isRegistered ? regBg : undefined)}><input value={row.sd} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                      <td {...cellProps('layerid', isRegistered ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : undefined }} /></td>
-                      <td {...cellProps('pp', isRegistered ? regBg : undefined)}><input value={row.pp} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: isRegistered ? regBg : isValidationKeywordRow(row.pp) ? VALIDATION_CELL_COLOR : undefined }} /></td>
-                      <td {...cellProps('st', isRegistered ? regBg : undefined)} className={stError ? 'field-error-target' : undefined}>
+                      <td style={{ backgroundColor: greyBg ? regBg : undefined }}><input value={row.updated ?? ''} readOnly style={{ background: greyBg ? regBg : undefined, color: '#666' }} /></td>
+                      <td {...cellProps('process_id', greyBg ? regBg : undefined)}><input value={row.process_id} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'process_id', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
+                      <td {...cellProps('sp', greyBg ? regBg : undefined)}><input value={row.sp} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'sp', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
+                      <td {...cellProps('sd', greyBg ? regBg : undefined)}><input value={row.sd} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
+                      <td {...cellProps('layerid', greyBg ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
+                      <td {...cellProps('pp', greyBg ? regBg : undefined)}><input value={row.pp} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: greyBg ? regBg : isValidationKeywordRow(row.pp) ? VALIDATION_CELL_COLOR : undefined }} /></td>
+                      <td {...cellProps('st', greyBg ? regBg : undefined)} className={stError ? 'field-error-target' : undefined}>
                         <AutocompleteInput
                           value={row.st}
                           onChange={(v) => handleOayerChange(row.id, 'st', v)}
                           options={ST_OPTIONS}
                           disabled={isRegistered || isLayerDeleted}
                           inputStyle={{
-                            backgroundColor: isRegistered ? regBg : ST_CELL_COLOR[row.st],
+                            backgroundColor: greyBg ? regBg : ST_CELL_COLOR[row.st],
                             ...(stError ? { border: '1px solid var(--danger)' } : {}),
                           }}
                           dropdownFontSize="0.7rem"
@@ -284,8 +286,8 @@ const Step3: React.FC<Step3Props> = ({
                           dropdownDirection="up"
                         />
                       </td>
-                      <td {...cellProps('product_name', isRegistered ? regBg : undefined)}><input value={row.product_name} readOnly={rowInactive || isRegistered} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} className={errors[`oayer_noc_${row.id}_product_name`] ? 'field-error-target' : undefined} style={{ backgroundColor: isRegistered ? regBg : undefined, ...(errors[`oayer_noc_${row.id}_product_name`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
-                      <td {...cellProps('step', isRegistered ? regBg : undefined)}><input value={row.step} readOnly={rowInactive || isRegistered} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} className={errors[`oayer_noc_${row.id}_step`] ? 'field-error-target' : undefined} style={{ backgroundColor: isRegistered ? regBg : undefined, ...(errors[`oayer_noc_${row.id}_step`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
+                      <td {...cellProps('product_name', greyBg ? regBg : undefined)}><input value={row.product_name} readOnly={rowInactive || isRegistered} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} className={errors[`oayer_noc_${row.id}_product_name`] ? 'field-error-target' : undefined} style={{ backgroundColor: greyBg ? regBg : undefined, ...(errors[`oayer_noc_${row.id}_product_name`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
+                      <td {...cellProps('step', greyBg ? regBg : undefined)}><input value={row.step} readOnly={rowInactive || isRegistered} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'step', e.target.value)} className={errors[`oayer_noc_${row.id}_step`] ? 'field-error-target' : undefined} style={{ backgroundColor: greyBg ? regBg : undefined, ...(errors[`oayer_noc_${row.id}_step`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
                     </tr>
                   );
                 })}

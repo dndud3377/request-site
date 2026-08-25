@@ -36,6 +36,7 @@ import {
   ProcessDesignRuleOverride,
   DocumentDesignRuleOverride,
   ValidationSystemValue,
+  LayerFilterSet,
 } from '../types';
 
 // ===== JWT 토큰 관리 =====
@@ -345,6 +346,15 @@ const updateValidationSystem = async (docId: number, value: ValidationSystemValu
   return { data };
 };
 
+/** 결재 상세페이지에서 J/O-layer 공유 필터를 적용 — 매칭된 행의 st를 'X'로 바꾼다. */
+const applyLayerFilter = async (docId: number, table: 'J' | 'O', filterId: number) => {
+  const data = await post<{ message: string; matched_count: number; document: RequestDocument }>(
+    `/documents/${docId}/apply-layer-filter/`,
+    { table, filter_id: filterId }
+  );
+  return { data };
+};
+
 const assignStep = async (
   docId: number,
   agent: AgentType,
@@ -552,6 +562,7 @@ export const documentsAPI = {
   approveStep,
   rejectStep,
   updateValidationSystem,
+  applyLayerFilter,
   assignStep,
   addPostApprover,
   removePostApprover,
@@ -685,6 +696,19 @@ export const vocAPI = {
 
 export const linesAPI = {
   list: (): Promise<Line[]> => get<Line[]>('/lines/'),
+};
+
+// ===== 결재 상세페이지 J/O-layer 공유 필터 API =====
+
+export const layerFilterSetsAPI = {
+  list: (table: 'J' | 'O'): Promise<LayerFilterSet[]> =>
+    get<LayerFilterSet[] | { results: LayerFilterSet[] }>(`/layer-filter-sets/?table=${table}`)
+      .then((data) => (Array.isArray(data) ? data : data.results ?? [])),
+  create: (table: 'J' | 'O', label: string, words: LayerFilterSet['words']): Promise<LayerFilterSet> =>
+    post<LayerFilterSet>('/layer-filter-sets/', { table, label, words }),
+  update: (id: number, label: string, words: LayerFilterSet['words']): Promise<LayerFilterSet> =>
+    patch<LayerFilterSet>(`/layer-filter-sets/${id}/`, { label, words }),
+  delete: (id: number): Promise<void> => request(`/layer-filter-sets/${id}/`, { method: 'DELETE' }),
 };
 
 // ===== 공지사항 API =====

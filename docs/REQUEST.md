@@ -3007,6 +3007,129 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
      product_name은 여전히 무조건 전파된다 — O-layer의 같은 layerid를 가진 참여행 전부의
      product_name이 바뀐다(1번~3번의 합의/단일 대상 규칙과 무관).]
 
+### 추가 변경 이력 (2026-08-25 — J/O-layer col_st 라벨 분리: `col_st` → `col_st_j`/`col_st_o`)
+
+J-layer(STEP3)와 O-layer(STEP4) 표의 `st` 컬럼이 지금까지 `request.col_st`("ST") 하나를
+공유해 표시했다. 사용자 요청에 따라 두 표가 서로 다른 라벨을 쓰도록 분리했다 — J는
+"ST_J", O는 "ST_O". 데이터 필드명(`JayerRow.st`/`OayerRow.st`)과 저장값(`'O'`/`'O (D)'`/`'X'`)은
+그대로다 — **표시 라벨만** 바뀌었다(백엔드·DB 무영향).
+
+- **i18n**: `ko.json`/`en.json`의 `col_st` 키를 삭제하고 `col_st_j`("ST_J")/`col_st_o`("ST_O")를
+  동시에 추가했다.
+- **호출부 10곳**을 문맥에 맞게 교체:
+  - J(`col_st_j`): `components/Step2.tsx`(툴바 라벨·표 헤더), `utils/detailExport.ts`의
+    `addJobSheet`(엑셀 JOB 시트), `components/PagedDetailView.tsx`의 `JAYER_DIFF_FIELDS`(이력
+    비교 라벨)·`JayerTable`(상세보기 표 헤더).
+  - O(`col_st_o`): `components/Step3.tsx`(툴바 라벨·표 헤더), `utils/detailExport.ts`의
+    `addOvlSheet`(엑셀 OVL 시트), `components/PagedDetailView.tsx`의 `OAYER_DIFF_FIELDS`·
+    `OayerTable`.
+- **가이드 투어 문구**(`ko.json`/`en.json`의 `s3g1`/`s3g1b` — J 관련, `s4g1` — O 관련) 본문 중
+  이 컬럼을 가리키는 "ST"를 각각 "ST_J"/"ST_O"로 함께 바꿨다(라벨 자체가 바뀌었으므로).
+- `constants.ts:151`의 주석("col_new_or_copy · col_st 저장값...")은 표시 라벨이 아니라 DB
+  저장값에 대한 설명이라 그대로 뒀다.
+- **영향 파일**: `frontend/src/locales/{ko,en}.json`, `RequestPage/components/{Step2,Step3}.tsx`,
+  `frontend/src/utils/detailExport.ts`, `frontend/src/components/PagedDetailView.tsx`.
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일). `react-scripts test --watchAll=false`
+  — 9 suites / 262건 전부 통과(회귀 없음 — `col_st`/"ST" 문자열을 직접 검사하는 테스트가
+  기존에 없었음을 확인했고, 라벨 텍스트 자체에 대한 신규 테스트는 추가하지 않았다).
+- **알려진 잔여 사항(이번 작업 범위 밖, 기록만)**: `s3g1`/`s3g1b`/`s4g1` 가이드 문구는 2026-08-25
+  "J/O-layer 내부(J→J·O→O) 동기화 삭제 + 교차 동기화를 합의+단일대상 기준으로 축소" 변경 이후에도
+  여전히 "같은 Layer면 무조건 반영됩니다"라는 옛 규칙을 서술한다 — 이번 작업에서는 "ST" 단어만
+  "ST_J"/"ST_O"로 바꿨을 뿐, 동기화 규칙 서술 자체는 고치지 않았다(사용자가 별도 작업으로
+  미룸).
+- **수동 검증 시나리오**:
+  1. [`/request`에서 STEP3(J-layer)로 이동] → [기대 결과: 표 헤더와 상단 툴바("...:" 앞) 라벨이
+     모두 "ST_J"로 보인다.]
+  2. [STEP4(O-layer)로 이동] → [기대 결과: 표 헤더와 상단 툴바 라벨이 모두 "ST_O"로 보인다.]
+  3. [의뢰서 작성 완료 후 상세보기(결재 현황 → 해당 의뢰서 → 'J-layer 정보'/'O-layer 정보' 탭)] →
+     [기대 결과: J 표는 "ST_J", O 표는 "ST_O" 헤더로 보인다. 변경 이력(있는 경우) 비교 모달에도
+     동일하게 적용된다.]
+  4. [상세보기 화면에서 엑셀 내보내기(📊 export) 클릭] → [기대 결과: 다운로드된 엑셀의 JOB 시트
+     헤더는 "ST_J", OVL 시트 헤더는 "ST_O"로 보인다.]
+  5. [STEP3 가이드 배지(❓) 확인] → [기대 결과: "표 자동 채움"/"ST_J · 신규/차용 · 제품 이름..." 등
+     문구에 "ST_J"로 표시된다. STEP4 가이드 배지는 "ST_O"로 표시된다.]
+
+### 추가 변경 이력 (2026-08-25 — 전파로 st가 'X'가 될 때도 관련 필드 초기화)
+
+같은 layerid의 J↔O 교차 동기화(합의+단일대상)나 일괄 적용(SetAll)으로 대상 행의 `st`가 `'X'`가
+될 때, 지금까지는 그 대상 행의 `new_or_copy`/`product_name`/`step`(J측이면 `item_id`)이 초기화되지
+않고 예전 값 그대로 남아 있었다 — 직접 편집으로 자기 행의 st를 X로 바꿀 때만 이 초기화가 적용되고
+있었다. 두 경우가 다르게 동작하는 게 사용자가 원한 그림과 달라, 전파로 인한 전환도 동일하게
+초기화하도록 맞췄다.
+
+- 새 순수 함수 `stClearExtra(field, value, hasItemId)`(`helpers.ts`) — `field==='st' && value===ST_X`
+  일 때만 `{new_or_copy:'', product_name:'', step:'' (, item_id:'')}`를 반환하고, 그 외에는 빈 객체.
+- `index.tsx`의 전파 대상 행 6곳에 적용: `handleJayerChange`(J→O 단일 편집),
+  `handleJayerAfterPaste`(J→O 붙여넣기), `handleJayerSetAll`(J→O 일괄 적용),
+  `handleOayerChange`(O→J 단일 편집), `handleOayerAfterPaste`(O→J 붙여넣기),
+  `handleOayerSetAll`(O→J 일괄 적용). `ResetField`류는 값이 항상 `''`라 이 전환 자체가
+  일어나지 않아 손대지 않았다(대상에 해당 안 됨을 확인).
+- 이미 정상 동작하던 4곳(직접 편집한 자기 행, 필터 일괄 적용 2곳)은 그대로 뒀다.
+- **영향 파일**: `RequestPage/helpers.ts`, `RequestPage/index.tsx`, `RequestPage/helpers.test.ts`.
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일). `react-scripts test --watchAll=false`
+  — 9 suites / 266건 전부 통과(신규 4건 포함).
+- **수동 검증 시나리오**:
+  1. [`/request`에서 J-layer 행 A, O-layer에 같은 layerid를 가진 참여행이 정확히 1개(B)인 상태를
+     만듦 → A의 `new_or_copy`를 '차용'으로, `product_name`을 채워둠 → A의 `st`를 'X'로 바꿈] →
+     [기대 결과: A는 물론 B의 `new_or_copy`/`product_name`/`step`도 함께 빈 값이 된다(예전에는 B의
+     값이 남아 있었음).]
+  2. [반대로 O-layer 행에서 시작해 J-layer 참여행이 1개일 때 st를 X로 바꿈] → [기대 결과: 대상
+     J행의 `new_or_copy`/`product_name`/`step`/`item_id`가 모두 초기화된다.]
+  3. [STEP3 상단 "전체 X" 버튼 클릭(같은 layerid의 O 참여행이 1개인 경우 포함)] → [기대 결과: O측
+     대상 행도 st=X와 함께 나머지 필드가 초기화된다.]
+
+### 추가 변경 이력 (2026-08-25 — st==='X' 행을 기등록과 동일하게 회색 처리)
+
+작성 화면(`Step2.tsx`/`Step3.tsx`)·엑셀 내보내기(`detailExport.ts`)·상세보기(`PagedDetailView.tsx`)
+전부에서 `기등록`(new_or_copy==='기등록') 행만 회색(`#e5e7eb`)으로 표시하던 것을, `st==='X'`인 행도
+동일하게 회색 처리하도록 확장했다.
+
+- `Step2.tsx`/`Step3.tsx`: 행 렌더 시 `const greyBg = isRegistered || rowInactive;`를 추가하고,
+  색상 판정에 쓰던 `isRegistered ? regBg : ...` 20+곳을 전부 `greyBg ? regBg : ...`로 바꿨다.
+  **`disabled`/`readOnly` 등 편집 가능 여부 로직은 전혀 건드리지 않았다** — st 셀이 항상 되돌릴 수
+  있어야 한다는 기존 규칙, new_or_copy가 기등록/layer삭제일 때만 열리는 규칙 등은 색상과 별개로
+  그대로 유지된다.
+- `detailExport.ts`: `addJobSheet`/`addOvlSheet`의 `const reg = r.new_or_copy === '기등록'`을
+  `|| isRowInactive(r.st)`로 확장(`isRowInactive`를 `constants.ts`에서 새로 import).
+- `PagedDetailView.tsx`: `JayerTable`/`OayerTable`의 동일한 `const reg = ...` 두 곳을 같은 방식으로
+  확장. 이전에 "비활성 행 숨김" 필터를 없애면서 제거했던 `isRowInactive` import를 다시 추가했다.
+- **영향 파일**: `RequestPage/components/{Step2,Step3}.tsx`, `utils/detailExport.ts`,
+  `components/PagedDetailView.tsx`.
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일). `react-scripts test --watchAll=false`
+  — 9 suites / 266건 전부 통과(회귀 없음 — 회색 배경 자체를 스냅샷/텍스트로 검사하는 기존 테스트가
+  없어 신규 테스트는 추가하지 않았다. 아래 수동 시나리오가 검증의 핵심).
+- **수동 검증 시나리오**:
+  1. [`/request`에서 J-layer 한 행의 `st`를 'X'로 바꿈] → [기대 결과: 그 행 전체가 기등록 행과
+     동일한 회색으로 표시된다. `st`/`new_or_copy` 셀은 여전히 클릭 가능해야 한다(색상만 바뀜,
+     잠금 여부 불변).]
+  2. [O-layer도 동일하게 확인]
+  3. [해당 문서를 상신 후 결재현황 상세보기(J-layer/O-layer 정보 탭)] → [기대 결과: st='X' 행이
+     기등록 행과 같은 회색으로 보인다.]
+  4. [엑셀 내보내기(📊 export)] → [기대 결과: JOB/OVL 시트에서 st='X' 행 전체가 회색 채움으로
+     보인다.]
+
+### 추가 변경 이력 (2026-08-25 — 결재 상세페이지 J/O-layer 공유 필터 + FilterManageModal 재사용)
+
+의뢰서 작성 화면의 필터(개인별, localStorage)와 별개로 **결재 상세페이지 전용 팀 공유 필터**를
+추가했다. 상세 사양·인가·API·화면은 **`docs/APPROVAL.md` §12** 참조(그 문서가 원본이다) — 여기서는
+`RequestPage` 쪽 코드에 미친 영향만 기록한다.
+
+- **`FilterManageModal.tsx` 리팩터**: "새 필터 추가"가 컴포넌트 내부에서 `localStorage.setItem`을
+  직접 호출하던 것을 `onAdd(label, words)` 콜백으로 외부화했다(이미 외부화돼 있던 `onEdit`과
+  동일한 패턴). `storageKey`/`setFilterSets` prop은 더 이상 필요 없어 제거했다. 기존
+  `RequestPage/index.tsx`의 두 호출부(J/O 필터 관리 모달)는 `onAdd`에 기존 localStorage 로직을
+  그대로 옮겨 **동작 불변** — `ApprovalPage.tsx`가 이 컴포넌트를 재사용해 서버 API(`layerFilterSetsAPI`)로
+  저장하도록 만든 것이 이번 변경의 목적이다.
+- **`types/index.ts`**: `LayerFilterSet` 타입 추가(`id, table, label, words, created_at, updated_at`) —
+  기존 `FilterSet`(개인별, `id: string`)과 별개.
+- **`api/client.ts`**: `layerFilterSetsAPI`(list/create/update/delete) + `documentsAPI.applyLayerFilter`
+  추가.
+- **영향 파일**: `RequestPage/components/FilterManageModal.tsx`, `RequestPage/index.tsx`(호출부 2곳만),
+  `types/index.ts`, `api/client.ts`. `RequestPage`의 다른 동작(작성 화면 필터 자체)은 변경 없음.
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일). `react-scripts test --watchAll=false`
+  — 9 suites / 266건 전부 통과(회귀 없음 — 기존 필터 관리 테스트가 있다면 그대로 통과함을 확인).
+  백엔드 `manage.py test api` — 349건 전부 통과(신규 `LayerFilterSetTest` 16건 포함).
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
