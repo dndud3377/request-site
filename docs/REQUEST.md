@@ -3053,6 +3053,36 @@ J-layer(STEP3)와 O-layer(STEP4) 표의 `st` 컬럼이 지금까지 `request.col
   3. [STEP3 상단 "전체 X" 버튼 클릭(같은 layerid의 O 참여행이 1개인 경우 포함)] → [기대 결과: O측
      대상 행도 st=X와 함께 나머지 필드가 초기화된다.]
 
+### 추가 변경 이력 (2026-08-25 — st==='X' 행을 기등록과 동일하게 회색 처리)
+
+작성 화면(`Step2.tsx`/`Step3.tsx`)·엑셀 내보내기(`detailExport.ts`)·상세보기(`PagedDetailView.tsx`)
+전부에서 `기등록`(new_or_copy==='기등록') 행만 회색(`#e5e7eb`)으로 표시하던 것을, `st==='X'`인 행도
+동일하게 회색 처리하도록 확장했다.
+
+- `Step2.tsx`/`Step3.tsx`: 행 렌더 시 `const greyBg = isRegistered || rowInactive;`를 추가하고,
+  색상 판정에 쓰던 `isRegistered ? regBg : ...` 20+곳을 전부 `greyBg ? regBg : ...`로 바꿨다.
+  **`disabled`/`readOnly` 등 편집 가능 여부 로직은 전혀 건드리지 않았다** — st 셀이 항상 되돌릴 수
+  있어야 한다는 기존 규칙, new_or_copy가 기등록/layer삭제일 때만 열리는 규칙 등은 색상과 별개로
+  그대로 유지된다.
+- `detailExport.ts`: `addJobSheet`/`addOvlSheet`의 `const reg = r.new_or_copy === '기등록'`을
+  `|| isRowInactive(r.st)`로 확장(`isRowInactive`를 `constants.ts`에서 새로 import).
+- `PagedDetailView.tsx`: `JayerTable`/`OayerTable`의 동일한 `const reg = ...` 두 곳을 같은 방식으로
+  확장. 이전에 "비활성 행 숨김" 필터를 없애면서 제거했던 `isRowInactive` import를 다시 추가했다.
+- **영향 파일**: `RequestPage/components/{Step2,Step3}.tsx`, `utils/detailExport.ts`,
+  `components/PagedDetailView.tsx`.
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일). `react-scripts test --watchAll=false`
+  — 9 suites / 266건 전부 통과(회귀 없음 — 회색 배경 자체를 스냅샷/텍스트로 검사하는 기존 테스트가
+  없어 신규 테스트는 추가하지 않았다. 아래 수동 시나리오가 검증의 핵심).
+- **수동 검증 시나리오**:
+  1. [`/request`에서 J-layer 한 행의 `st`를 'X'로 바꿈] → [기대 결과: 그 행 전체가 기등록 행과
+     동일한 회색으로 표시된다. `st`/`new_or_copy` 셀은 여전히 클릭 가능해야 한다(색상만 바뀜,
+     잠금 여부 불변).]
+  2. [O-layer도 동일하게 확인]
+  3. [해당 문서를 상신 후 결재현황 상세보기(J-layer/O-layer 정보 탭)] → [기대 결과: st='X' 행이
+     기등록 행과 같은 회색으로 보인다.]
+  4. [엑셀 내보내기(📊 export)] → [기대 결과: JOB/OVL 시트에서 st='X' 행 전체가 회색 채움으로
+     보인다.]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
