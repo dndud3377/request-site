@@ -106,7 +106,7 @@ import {
   validateAdiCdTargets,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
   sourceCodeFromPartid, computeExpectedRequestPurpose,
-  layeridFieldConsensus, soleParticipantByLayerid,
+  layeridFieldConsensus, soleParticipantByLayerid, stClearExtra,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
 import FilterManageModal from './components/FilterManageModal';
@@ -2336,7 +2336,9 @@ export default function RequestPage(): React.ReactElement {
         if (consensusValue !== undefined) {
           const target = soleParticipantByLayerid(oayerRows, layerid!);
           if (target) {
-            setOayerRows(rows => rows.map(r => (r.id === target.id ? { ...r, [field]: consensusValue } : r)));
+            setOayerRows(rows => rows.map(r => (r.id === target.id
+              ? { ...r, [field]: consensusValue, ...stClearExtra(field, consensusValue, false) }
+              : r)));
           }
         }
       }
@@ -2437,7 +2439,9 @@ export default function RequestPage(): React.ReactElement {
         if (field === 'new_or_copy' && isNocSpecial(consensusValue)) return; // 특수값 자체는 전파 제외
         const target = soleParticipantByLayerid(oayerRows, layerid);
         if (!target) return;
-        setOayerRows(rows => rows.map(r => (r.id === target.id ? { ...r, [field]: consensusValue } : r)));
+        setOayerRows(rows => rows.map(r => (r.id === target.id
+          ? { ...r, [field]: consensusValue, ...stClearExtra(field, consensusValue, false) }
+          : r)));
       });
     });
   };
@@ -2518,7 +2522,9 @@ export default function RequestPage(): React.ReactElement {
         if (field === 'new_or_copy' && isNocSpecial(consensusValue)) return; // 특수값 자체는 전파 제외
         const target = soleParticipantByLayerid(jayerRows, layerid);
         if (!target) return;
-        setJayerRows(rows => rows.map(r => (r.id === target.id ? { ...r, [field]: consensusValue } : r)));
+        setJayerRows(rows => rows.map(r => (r.id === target.id
+          ? { ...r, [field]: consensusValue, ...stClearExtra(field, consensusValue, true) }
+          : r)));
       });
     });
   };
@@ -2546,7 +2552,9 @@ export default function RequestPage(): React.ReactElement {
     setJayerRows((rows) => rows.map((r) => (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) ? r : { ...r, [field]: value }));
     const layerids = new Set(jayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
     const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(oayerRows, l)?.id).filter((id): id is string => !!id));
-    if (targetIds.size > 0) setOayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value } : r));
+    if (targetIds.size > 0) {
+      setOayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value, ...stClearExtra(field, value, false) } : r));
+    }
   };
 
   const handleJayerResetField = (field: 'st' | 'new_or_copy') => {
@@ -2635,7 +2643,9 @@ export default function RequestPage(): React.ReactElement {
         if (consensusValue !== undefined) {
           const target = soleParticipantByLayerid(jayerRows, layerid!);
           if (target) {
-            setJayerRows(rows => rows.map(r => (r.id === target.id ? { ...r, [field]: consensusValue } : r)));
+            setJayerRows(rows => rows.map(r => (r.id === target.id
+              ? { ...r, [field]: consensusValue, ...stClearExtra(field, consensusValue, true) }
+              : r)));
           }
         }
       }
@@ -2648,7 +2658,9 @@ export default function RequestPage(): React.ReactElement {
     setOayerRows((rows) => rows.map((r) => (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) ? r : { ...r, [field]: value }));
     const layerids = new Set(oayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
     const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(jayerRows, l)?.id).filter((id): id is string => !!id));
-    if (targetIds.size > 0) setJayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value } : r));
+    if (targetIds.size > 0) {
+      setJayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value, ...stClearExtra(field, value, true) } : r));
+    }
   };
 
   const handleOayerResetField = (field: 'st' | 'new_or_copy') => {
