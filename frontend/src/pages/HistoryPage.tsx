@@ -4,7 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { documentsAPI, linesAPI, rejectionSnapshotsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal, { ConfirmModal } from '../components/Modal';
-import PagedDetailView, { ReviewItemsPanelProps } from '../components/PagedDetailView';
+import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '../components/PagedDetailView';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { OPTION_LINE } from './RequestPage/constants';
@@ -97,6 +97,8 @@ export default function HistoryPage(): React.ReactElement {
   const [selected, setSelected] = useState<RequestDocument | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pageIdx, setPageIdx] = useState(0);
+  // 전체 export(제목 옆 버튼) — 상세 정보/MAP 정보 탭을 화면 그대로 캡처하는 핸들.
+  const pagedDetailViewRef = useRef<PagedDetailViewHandle>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   const isRejectedTab = filter === FILTER_REJECTED;
@@ -427,7 +429,11 @@ export default function HistoryPage(): React.ReactElement {
           title={selected.title}
           titleExtra={(
             <button
-              onClick={() => exportAllXlsx(selected, t)}
+              onClick={async () => {
+                const screenshots = await pagedDetailViewRef.current?.captureAllScreenshots()
+                  ?? { detail: null, map: null };
+                await exportAllXlsx(selected, t, screenshots);
+              }}
               className="btn btn-secondary btn-sm"
               style={{ fontSize: '0.75rem', padding: '2px 10px' }}
             >
@@ -442,6 +448,7 @@ export default function HistoryPage(): React.ReactElement {
           }
         >
           <PagedDetailView
+            ref={pagedDetailViewRef}
             doc={selected}
             role="MASTER"
             pageIdx={pageIdx}
