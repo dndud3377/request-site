@@ -164,10 +164,20 @@ type InfoBlock =
   | { kind: 'kv'; label: string; value: string }
   | { kind: 'table'; label: string; headers: string[]; rows: string[][] };
 
-function addInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, blocks: InfoBlock[]): ExcelJS.Worksheet {
+interface InfoSheetColumnWidths {
+  /** 항목(A열) 기본 너비 */
+  itemColWidth?: number;
+  /** 값(B열 이하) 기본 너비 */
+  valueColWidth?: number;
+}
+
+/** 상세 정보/MAP 정보 시트는 항목·값이 긴 문장인 경우가 많아 기본 너비를 더 넓게 잡는다. */
+const WIDE_INFO_COL_WIDTHS: InfoSheetColumnWidths = { itemColWidth: 34, valueColWidth: 30 };
+
+function addInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, blocks: InfoBlock[], widths?: InfoSheetColumnWidths): ExcelJS.Worksheet {
   const ws = wb.addWorksheet(sheetName);
-  ws.getColumn(1).width = 26;
-  for (let c = 2; c <= 8; c += 1) ws.getColumn(c).width = 20;
+  ws.getColumn(1).width = widths?.itemColWidth ?? 26;
+  for (let c = 2; c <= 8; c += 1) ws.getColumn(c).width = widths?.valueColWidth ?? 20;
 
   const itemLabel = t('request.export_col_item');
   const valueLabel = t('request.export_col_value');
@@ -228,23 +238,44 @@ async function fetchImageForExcel(path: string): Promise<{ buffer: ArrayBuffer; 
 const EXCEL_DEFAULT_ROW_HEIGHT_PX = 20;
 // 시트 폭 안에 들어가도록 첨부 이미지의 최대 너비를 제한한다(원본 비율은 유지).
 const EXCEL_IMAGE_MAX_WIDTH_PX = 480;
+// 첨부 이미지가 시작할 칼럼(1-based, B열)과, 여러 장일 때 다음 이미지 제목까지 띄울 칸 수
+// (최대 너비 480px 이미지끼리 안 겹치도록 충분히 벌린다).
+const IMAGE_COL_START_1BASED = 2;
+const IMAGE_COL_GAP = 6;
 
-/** 라벨 한 줄 + 이미지를 시트 맨 아래에 순서대로 이어 붙인다(칼럼 B부터, 다음 항목과 안 겹치게 행을 확보). */
-async function appendImageBlock(wb: ExcelJS.Workbook, ws: ExcelJS.Worksheet, t: TFunction, label: string, path: string): Promise<void> {
-  const labelRow = ws.addRow([label]);
-  labelRow.getCell(1).font = { bold: true };
-  const img = await fetchImageForExcel(path);
-  if (!img) {
-    ws.addRow(['', t('request.export_image_load_failed')]);
-    return;
+/**
+ * 첨부 이미지 1~2장(예: X표시 변경 — 북쪽/남쪽)을 같은 행에 제목을 나란히 놓고,
+ * 각 이미지는 자기 제목과 같은 칸의 바로 아래 행부터 삽입한다 — 북쪽/남쪽이 각각
+ * 독립된 열을 차지해 옆으로 나열되고, 이미지는 제목 바로 밑에 붙는다.
+ */
+async function appendImageRow(wb: ExcelJS.Workbook, ws: ExcelJS.Worksheet, t: TFunction, entries: { label: string; path: string }[]): Promise<void> {
+  if (entries.length === 0) return;
+  const labelRowNum = ws.rowCount + 1;
+  const labelRow = ws.getRow(labelRowNum);
+  entries.forEach((e, i) => {
+    const cell = labelRow.getCell(IMAGE_COL_START_1BASED + i * IMAGE_COL_GAP);
+    cell.value = e.label;
+    cell.font = { bold: true };
+  });
+
+  let extraRows = 1;
+  for (let i = 0; i < entries.length; i += 1) {
+    const col1Based = IMAGE_COL_START_1BASED + i * IMAGE_COL_GAP;
+    const img = await fetchImageForExcel(entries[i].path);
+    if (!img) {
+      ws.getRow(labelRowNum + 1).getCell(col1Based).value = t('request.export_image_load_failed');
+      continue;
+    }
+    const scale = img.width > EXCEL_IMAGE_MAX_WIDTH_PX ? EXCEL_IMAGE_MAX_WIDTH_PX / img.width : 1;
+    const width = Math.round(img.width * scale);
+    const height = Math.round(img.height * scale);
+    const imageId = wb.addImage({ buffer: img.buffer as never, extension: img.extension });
+    // tl 은 0-based — 제목과 같은 칼럼(col1Based-1), 제목 바로 다음 행(labelRowNum, 0-based로는
+    // 1-based 다음 행 번호에서 1을 뺀 값과 같다)부터 이미지가 시작한다.
+    ws.addImage(imageId, { tl: { col: col1Based - 1, row: labelRowNum }, ext: { width, height } });
+    extraRows = Math.max(extraRows, Math.ceil(height / EXCEL_DEFAULT_ROW_HEIGHT_PX));
   }
-  const scale = img.width > EXCEL_IMAGE_MAX_WIDTH_PX ? EXCEL_IMAGE_MAX_WIDTH_PX / img.width : 1;
-  const width = Math.round(img.width * scale);
-  const height = Math.round(img.height * scale);
-  const imageId = wb.addImage({ buffer: img.buffer as never, extension: img.extension });
-  ws.addImage(imageId, { tl: { col: 1, row: ws.rowCount }, ext: { width, height } });
-  const rowsNeeded = Math.max(1, Math.ceil(height / EXCEL_DEFAULT_ROW_HEIGHT_PX));
-  for (let i = 0; i < rowsNeeded; i += 1) ws.addRow([]);
+  for (let i = 0; i < extraRows; i += 1) ws.addRow([]);
 }
 
 /** 의뢰 목적 — other_purpose 는 배열(신규)이며, 구버전 문서는 문자열일 수 있어 양쪽 모두 처리한다. */
@@ -416,7 +447,7 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, doc: RequestDocu
     blocks.push({ kind: 'kv', label: t('request.submit_note_label'), value: doc.reference_materials });
   }
 
-  addInfoSheet(wb, t, t('request.section_detail'), blocks);
+  addInfoSheet(wb, t, t('request.section_detail'), blocks, WIDE_INFO_COL_WIDTHS);
 }
 
 // ===== MAP 정보 시트 =====
@@ -505,21 +536,24 @@ async function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Parti
     blocks.push({ kind: 'kv', label: t('request.map_option_title'), value: active.length > 0 ? active.map((o) => o.label).join(', ') : t('request.value_none') });
   }
 
-  const ws = addInfoSheet(wb, t, t('request.section_map'), blocks);
+  const ws = addInfoSheet(wb, t, t('request.section_map'), blocks, WIDE_INFO_COL_WIDTHS);
 
   // X표시 변경 첨부 이미지 — 화면(PagedDetailView)과 같은 조건일 때만 실제 이미지를 시트에 박아 넣는다.
+  // 북쪽/남쪽(C가문)은 같은 행에 제목을 나란히 놓아 서로 다른 열로 나뉘고, 이미지는 각 제목 바로 아래에 붙는다.
   const mshotChange = detail.mshot_change || '없음';
   const mshotHasDetail = mshotChange === '추가' || mshotChange === '수정';
   if (!isMapRegisteredDetail && !isDeleteType && mshotHasDetail) {
+    const imageEntries: { label: string; path: string }[] = [];
     if (!isProdc && detail.mshot_image_copy) {
-      await appendImageBlock(wb, ws, t, t('request.mshot_change_image_attach_area'), detail.mshot_image_copy);
+      imageEntries.push({ label: t('request.mshot_change_image_attach_area'), path: detail.mshot_image_copy });
     }
     if (isProdc && detail.mshot_image_copy_top) {
-      await appendImageBlock(wb, ws, t, `${t('request.mshot_change_image_attach_area')} — ${t('request.prodc_top')}`, detail.mshot_image_copy_top);
+      imageEntries.push({ label: `${t('request.mshot_change_image_attach_area')} — ${t('request.prodc_top')}`, path: detail.mshot_image_copy_top });
     }
     if (isProdc && detail.mshot_image_copy_bottom) {
-      await appendImageBlock(wb, ws, t, `${t('request.mshot_change_image_attach_area')} — ${t('request.prodc_bottom')}`, detail.mshot_image_copy_bottom);
+      imageEntries.push({ label: `${t('request.mshot_change_image_attach_area')} — ${t('request.prodc_bottom')}`, path: detail.mshot_image_copy_bottom });
     }
+    await appendImageRow(wb, ws, t, imageEntries);
   }
 }
 
