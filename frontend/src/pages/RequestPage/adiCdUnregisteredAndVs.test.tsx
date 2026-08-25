@@ -305,6 +305,23 @@ describe('ADI CD 변경 — 행 단위 미등록 선택', () => {
     expect(removeButtonsAfter).toHaveLength(12); // 6 + 6, 양쪽 다 늘어남
   });
 
+  it('한쪽 표를 스크롤하면 반대쪽 표도 같은 위치로 동기화된다', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanel(container);
+
+    const panes = Array.from(container.querySelectorAll('.adi-cd-pane-scroll')) as HTMLDivElement[];
+    expect(panes).toHaveLength(2);
+    const [beforePane, afterPane] = panes;
+
+    beforePane.scrollTop = 42;
+    await act(async () => { fireEvent.scroll(beforePane); });
+    expect(afterPane.scrollTop).toBe(42);
+
+    afterPane.scrollTop = 7;
+    await act(async () => { fireEvent.scroll(afterPane); });
+    expect(beforePane.scrollTop).toBe(7);
+  });
+
   it('반대쪽 같은 행이 비어 있으면 확인 없이 양쪽에서 바로 삭제된다', async () => {
     const { container } = await renderNewDoc();
     await openAdiCdPanel(container);
