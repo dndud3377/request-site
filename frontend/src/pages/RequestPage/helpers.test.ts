@@ -6,7 +6,7 @@ import {
   requiresBbEntries, findBbEntryViolations, findEmptyStNocViolations, findNocBorrowItemIdViolations,
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
-  isPairAfterInactive,
+  isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow,
 } from './helpers';
 import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
 import { AdiCdStep, AdiCdTarget, MergePair, MergeRowInfo } from '../../types';
@@ -142,6 +142,65 @@ describe('computeExpectedRequestPurpose', () => {
 
   it('활성 행이 없으면 null(판정 불가)', () => {
     expect(computeExpectedRequestPurpose([], [])).toBeNull();
+  });
+});
+
+describe('layeridFieldConsensus', () => {
+  const row = (id: string, layerid: string, st: string, new_or_copy: string): LayerSyncRow => ({ id, layerid, st, new_or_copy });
+
+  it('같은 layerid 참여행이 1개뿐이면(합의가 자명) 그 값을 반환한다', () => {
+    const pre = [row('a', '100', 'O', '신규')];
+    const post = [row('a', '100', 'X', '신규')];
+    expect(layeridFieldConsensus(pre, post, '100', 'st')).toBe('X');
+  });
+
+  it('같은 layerid 참여행 전원이 같은 값이면 그 값을 반환한다', () => {
+    const pre = [row('a', '100', 'O', '신규'), row('b', '100', 'O', '신규')];
+    const post = [row('a', '100', 'X', '신규'), row('b', '100', 'X', '신규')];
+    expect(layeridFieldConsensus(pre, post, '100', 'st')).toBe('X');
+  });
+
+  it('같은 layerid 참여행이 서로 다른 값이면 undefined(합의 없음)', () => {
+    const pre = [row('a', '100', 'O', '신규'), row('b', '100', 'O', '신규')];
+    const post = [row('a', '100', 'X', '신규'), row('b', '100', 'O', '신규')]; // a만 바뀜
+    expect(layeridFieldConsensus(pre, post, '100', 'st')).toBeUndefined();
+  });
+
+  it('조작 전 이미 비활성/기등록/layer삭제였던 행은 합의 판정에서 제외된다', () => {
+    const pre = [row('a', '100', 'O', '신규'), row('b', '100', 'X', '')];
+    const post = [row('a', '100', 'X', '신규'), row('b', '100', 'X', '')];
+    // b 는 조작 전부터 비활성이라 eligible 하지 않다 — a 단독으로 합의 성립
+    expect(layeridFieldConsensus(pre, post, '100', 'st')).toBe('X');
+  });
+
+  it('해당 layerid에 참여행이 하나도 없으면 undefined', () => {
+    const pre = [row('a', '100', 'X', '')];
+    const post = [row('a', '100', 'X', '')];
+    expect(layeridFieldConsensus(pre, post, '100', 'st')).toBeUndefined();
+  });
+});
+
+describe('soleParticipantByLayerid', () => {
+  const row = (id: string, layerid: string, st: string, new_or_copy: string): LayerSyncRow => ({ id, layerid, st, new_or_copy });
+
+  it('참여행이 정확히 1개면 그 행을 반환한다', () => {
+    const rows = [row('a', '100', 'O', '신규'), row('b', '200', 'O', '신규')];
+    expect(soleParticipantByLayerid(rows, '100')?.id).toBe('a');
+  });
+
+  it('참여행이 0개면 undefined', () => {
+    const rows = [row('a', '100', 'X', ''), row('b', '200', 'O', '신규')];
+    expect(soleParticipantByLayerid(rows, '100')).toBeUndefined();
+  });
+
+  it('참여행이 2개 이상이면 undefined(대상이 모호함)', () => {
+    const rows = [row('a', '100', 'O', '신규'), row('b', '100', 'O', '차용')];
+    expect(soleParticipantByLayerid(rows, '100')).toBeUndefined();
+  });
+
+  it('비활성·기등록·layer삭제 행은 후보에서 제외된다', () => {
+    const rows = [row('a', '100', 'O', '신규'), row('b', '100', 'X', NOC_REGISTERED)];
+    expect(soleParticipantByLayerid(rows, '100')?.id).toBe('a');
   });
 });
 

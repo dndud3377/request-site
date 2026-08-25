@@ -1,6 +1,6 @@
 import { ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep } from '../../types';
 import {
-  VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, isStO, isRowInactive, genId, VS_NA, VS_TARGET,
+  VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
   MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE,
 } from './constants';
@@ -128,6 +128,52 @@ export const computeExpectedRequestPurpose = (
   if (hasBorrow) return NOC_BORROW;
   if (activeNoc.includes(NOC_REGISTERED) || activeNoc.includes(NOC_LAYER_DELETE)) return '기타';
   return null;
+};
+
+// ===== J↔O layerid 교차 동기화 (st/new_or_copy) =====
+
+/** 동기화 판정용 최소 행 형태 */
+export interface LayerSyncRow {
+  id: string;
+  layerid: string;
+  st: string;
+  new_or_copy: string;
+}
+
+/** 동기화 "참여행" — 비활성(st==='X')도 기등록/layer삭제도 아닌 행. */
+const isSyncParticipant = (r: LayerSyncRow): boolean => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy);
+
+/**
+ * 같은 layerid를 가진 J(또는 O) 참여행 전원이 이번 조작 후 `field` 값에 합의하는지 판정한다.
+ * 한 layerid에 참여행이 여러 개 있을 수 있고, 서로 다른 값을 가질 수 있다 — 이 경우 합의가 없으므로
+ * 교차 테이블로 전파하지 않는다(undefined 반환).
+ *
+ * - `preOpRows`: 이번 조작 **전** 상태 — "참여행이었는가"의 판정 기준(조작으로 st==='X'가 된 행도
+ *   조작 전에는 참여행이었다면 포함시켜야 그 전환 자체가 전파될 수 있다).
+ * - `postOpRows`: 이번 조작 **후** 상태 — 실제 비교할 값.
+ */
+export const layeridFieldConsensus = (
+  preOpRows: LayerSyncRow[],
+  postOpRows: LayerSyncRow[],
+  layerid: string,
+  field: 'st' | 'new_or_copy',
+): string | undefined => {
+  const eligibleIds = new Set(
+    preOpRows.filter((r) => r.layerid?.trim() === layerid && isSyncParticipant(r)).map((r) => r.id)
+  );
+  if (eligibleIds.size === 0) return undefined;
+  const group = postOpRows.filter((r) => eligibleIds.has(r.id));
+  const value = group[0]?.[field];
+  return group.every((r) => r[field] === value) ? value : undefined;
+};
+
+/** 대상 테이블에서 해당 layerid를 가진 참여행이 정확히 1개일 때만 그 행을 반환한다(0개/2개 이상이면 undefined). */
+export const soleParticipantByLayerid = <T extends LayerSyncRow>(
+  rows: T[],
+  layerid: string,
+): T | undefined => {
+  const candidates = rows.filter((r) => r.layerid?.trim() === layerid && isSyncParticipant(r));
+  return candidates.length === 1 ? candidates[0] : undefined;
 };
 
 // ===== Layer 추가/삭제 Merge (참조 요청서 A ↔ 작성 중 요청서 B) =====
