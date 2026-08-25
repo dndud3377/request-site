@@ -1,5 +1,20 @@
-import React, { ReactNode, useState } from 'react';
+import React, { ReactNode, createContext, useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+/**
+ * 모달의 전체화면 상태를 자식 컴포넌트에서도 읽고 바꿀 수 있게 하는 Context.
+ * 화면을 이미지로 캡처하기 전에(예: export) 잠깐 전체화면으로 강제 전환했다가
+ * 캡처 후 원래 상태로 되돌리는 용도로 쓴다. Modal 바깥에서 쓰면 no-op 기본값이 반환된다.
+ */
+interface ModalFullscreenState {
+  isFullscreen: boolean;
+  setIsFullscreen: (value: boolean) => void;
+}
+const ModalFullscreenContext = createContext<ModalFullscreenState>({
+  isFullscreen: false,
+  setIsFullscreen: () => {},
+});
+export const useModalFullscreen = (): ModalFullscreenState => useContext(ModalFullscreenContext);
 
 interface ModalProps {
   isOpen: boolean;
@@ -73,7 +88,11 @@ export default function Modal({
           </div>
         </div>
         {/* 전체화면일 때는 본문이 화면을 꽉 채워야 하므로 개별 높이 지정을 무시한다. */}
-        <div className="modal-body" style={isFullscreen ? undefined : bodyStyle}>{children}</div>
+        <div className="modal-body" style={isFullscreen ? undefined : bodyStyle}>
+          <ModalFullscreenContext.Provider value={{ isFullscreen, setIsFullscreen }}>
+            {children}
+          </ModalFullscreenContext.Provider>
+        </div>
         {footer && <div className="modal-footer">{footer}</div>}
       </div>
     </div>

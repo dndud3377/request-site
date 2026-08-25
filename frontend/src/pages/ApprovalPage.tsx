@@ -7,7 +7,7 @@ import StageGrid from '../components/StageGrid';
 import Modal from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
-import PagedDetailView, { ReviewItemsPanelProps } from '../components/PagedDetailView';
+import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '../components/PagedDetailView';
 import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem } from '../types';
@@ -146,6 +146,8 @@ export default function ApprovalPage(): React.ReactElement {
   const [dateTo, setDateTo] = useState('');
   const [openFilterDropdown, setOpenFilterDropdown] = useState<FilterDropdownKey | null>(null);
   const filterBarRef = useRef<HTMLDivElement>(null);
+  // 전체 export(제목 옆 버튼) — 상세 정보/MAP 정보 탭을 화면 그대로 캡처하는 핸들.
+  const pagedDetailViewRef = useRef<PagedDetailViewHandle>(null);
   useEffect(() => {
     setProdDateSort(null);
     setColSort(null);
@@ -1927,7 +1929,11 @@ export default function ApprovalPage(): React.ReactElement {
         title={selected?.title ?? ''}
         titleExtra={selected && (
           <button
-            onClick={() => exportAllXlsx(selected, t)}
+            onClick={async () => {
+              const screenshots = await pagedDetailViewRef.current?.captureAllScreenshots()
+                ?? { detail: null, map: null };
+              await exportAllXlsx(selected, t, screenshots);
+            }}
             className="btn btn-secondary btn-sm"
             style={{ fontSize: '0.75rem', padding: '2px 10px' }}
           >
@@ -2696,6 +2702,7 @@ export default function ApprovalPage(): React.ReactElement {
 
             {/* 페이지 네비게이션 + 의뢰 상세 */}
             <PagedDetailView
+              ref={pagedDetailViewRef}
               doc={selected}
               role={isTourMode ? 'MASTER' : (currentUser.role as UserRole)}
               pageIdx={pageIdx}

@@ -1,19 +1,19 @@
 import ExcelJS from 'exceljs';
 import type { TFunction } from 'i18next';
-import { RequestDocument, DetailFormState, JayerRow, OayerRow, BbTableRow, MergeRowInfo } from '../types';
+import { RequestDocument, DetailFormState, JayerRow, OayerRow, BbTableRow } from '../types';
 import { ST_CELL_COLOR } from './stCellColor';
 import { bbTabColor } from './bbTabColors';
-import { VALIDATION_CELL_COLOR, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from '../pages/RequestPage/constants';
-import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows } from '../pages/RequestPage/helpers';
+import { VALIDATION_CELL_COLOR } from '../pages/RequestPage/constants';
+import { isValidationKeywordRow } from '../pages/RequestPage/helpers';
 
 /**
  * 의뢰 상세보기(PagedDetailView)의 엑셀 export 로직 모음.
  * 시트 하나씩 만드는 add*Sheet 함수는 export* 단일 버튼과 exportAll(전체 export) 양쪽에서 함께 쓴다.
+ *
+ * 상세 정보/MAP 정보 시트는 데이터를 다시 조합하지 않고, 화면(전체화면 모드)을 그대로 이미지로
+ * 캡처해 시트에 박아 넣는다 — 캡처 자체는 DOM 접근이 필요해 PagedDetailView 쪽에서 하고,
+ * 이 파일은 캡처된 이미지(ScreenshotCapture)를 받아 시트에 넣는 부분만 담당한다.
  */
-
-// 지도 편차/C가문 판정에 쓰는 저장값 — PagedDetailView 와 동일한 원본 문자열.
-const MAP_NO_CHANGE = '변경 없음';
-const PRODC_YES = 'Yes';
 
 interface ParsedDoc {
   detail: Partial<DetailFormState>;
@@ -56,14 +56,6 @@ async function downloadWorkbook(wb: ExcelJS.Workbook, filename: string): Promise
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-}
-
-/** RichTextEditor 가 만든 HTML(map_change_reason 등)을 엑셀 셀에 넣을 수 있는 일반 텍스트로 바꾼다. */
-function htmlToPlainText(html: string | undefined | null): string {
-  if (!html) return '';
-  const div = document.createElement('div');
-  div.innerHTML = html;
-  return (div.textContent || div.innerText || '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // ===== 표 데이터 시트(JOB/OVL/BB) =====
@@ -158,26 +150,16 @@ function addBbSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Partial<DetailFo
   });
 }
 
-// ===== 정보(key-value) 시트 공용 빌더 — 상세 정보 / MAP 정보 / O-ayer 정보 =====
+// ===== 정보(key-value) 시트 공용 빌더 — O-ayer 정보 =====
 
 type InfoBlock =
   | { kind: 'kv'; label: string; value: string }
   | { kind: 'table'; label: string; headers: string[]; rows: string[][] };
 
-interface InfoSheetColumnWidths {
-  /** 항목(A열) 기본 너비 */
-  itemColWidth?: number;
-  /** 값(B열 이하) 기본 너비 */
-  valueColWidth?: number;
-}
-
-/** 상세 정보/MAP 정보 시트는 항목·값이 긴 문장인 경우가 많아 기본 너비를 더 넓게 잡는다. */
-const WIDE_INFO_COL_WIDTHS: InfoSheetColumnWidths = { itemColWidth: 34, valueColWidth: 30 };
-
-function addInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, blocks: InfoBlock[], widths?: InfoSheetColumnWidths): ExcelJS.Worksheet {
+function addInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, blocks: InfoBlock[]): ExcelJS.Worksheet {
   const ws = wb.addWorksheet(sheetName);
-  ws.getColumn(1).width = widths?.itemColWidth ?? 26;
-  for (let c = 2; c <= 8; c += 1) ws.getColumn(c).width = widths?.valueColWidth ?? 20;
+  ws.getColumn(1).width = 26;
+  for (let c = 2; c <= 8; c += 1) ws.getColumn(c).width = 20;
 
   const itemLabel = t('request.export_col_item');
   const valueLabel = t('request.export_col_value');
@@ -203,362 +185,6 @@ function addInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, blo
   return ws;
 }
 
-// ===== 첨부 이미지(X표시 변경 등) 임베딩 =====
-
-type ExcelImageExt = 'png' | 'jpeg' | 'gif';
-
-function guessImageExt(path: string): ExcelImageExt {
-  const ext = (path.split('.').pop() || '').toLowerCase();
-  if (ext === 'jpg' || ext === 'jpeg') return 'jpeg';
-  if (ext === 'gif') return 'gif';
-  return 'png';
-}
-
-/** 서버에 업로드된 첨부 이미지를 fetch 해 엑셀에 그대로 박아 넣을 수 있는 바이트로 바꾼다.
- *  네트워크 오류 등으로 못 가져오면 null — 호출부가 안내 문구로 대체한다. */
-async function fetchImageForExcel(path: string): Promise<{ buffer: ArrayBuffer; extension: ExcelImageExt; width: number; height: number } | null> {
-  try {
-    const res = await fetch(`/media/${path}`);
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    const buffer = await blob.arrayBuffer();
-    const dims = await new Promise<{ width: number; height: number }>((resolve) => {
-      const img = new Image();
-      img.onload = () => resolve({ width: img.naturalWidth || 400, height: img.naturalHeight || 300 });
-      img.onerror = () => resolve({ width: 400, height: 300 });
-      img.src = URL.createObjectURL(blob);
-    });
-    return { buffer, extension: guessImageExt(path), ...dims };
-  } catch {
-    return null;
-  }
-}
-
-// 엑셀 기본 행 높이(포인트 환산 근사치) — 이미지가 몇 행을 차지할지 추정할 때 쓴다.
-const EXCEL_DEFAULT_ROW_HEIGHT_PX = 20;
-// 시트 폭 안에 들어가도록 첨부 이미지의 최대 너비를 제한한다(원본 비율은 유지).
-const EXCEL_IMAGE_MAX_WIDTH_PX = 480;
-// 첨부 이미지가 시작할 칼럼(1-based, B열)과, 여러 장일 때 다음 이미지 제목까지 띄울 칸 수
-// (최대 너비 480px 이미지끼리 안 겹치도록 충분히 벌린다).
-const IMAGE_COL_START_1BASED = 2;
-const IMAGE_COL_GAP = 6;
-
-/**
- * 첨부 이미지 1~2장(예: X표시 변경 — 북쪽/남쪽)을 같은 행에 제목을 나란히 놓고,
- * 각 이미지는 자기 제목과 같은 칸의 바로 아래 행부터 삽입한다 — 북쪽/남쪽이 각각
- * 독립된 열을 차지해 옆으로 나열되고, 이미지는 제목 바로 밑에 붙는다.
- */
-async function appendImageRow(wb: ExcelJS.Workbook, ws: ExcelJS.Worksheet, t: TFunction, entries: { label: string; path: string }[]): Promise<void> {
-  if (entries.length === 0) return;
-  const labelRowNum = ws.rowCount + 1;
-  const labelRow = ws.getRow(labelRowNum);
-  entries.forEach((e, i) => {
-    const cell = labelRow.getCell(IMAGE_COL_START_1BASED + i * IMAGE_COL_GAP);
-    cell.value = e.label;
-    cell.font = { bold: true };
-  });
-
-  let extraRows = 1;
-  for (let i = 0; i < entries.length; i += 1) {
-    const col1Based = IMAGE_COL_START_1BASED + i * IMAGE_COL_GAP;
-    const img = await fetchImageForExcel(entries[i].path);
-    if (!img) {
-      ws.getRow(labelRowNum + 1).getCell(col1Based).value = t('request.export_image_load_failed');
-      continue;
-    }
-    const scale = img.width > EXCEL_IMAGE_MAX_WIDTH_PX ? EXCEL_IMAGE_MAX_WIDTH_PX / img.width : 1;
-    const width = Math.round(img.width * scale);
-    const height = Math.round(img.height * scale);
-    const imageId = wb.addImage({ buffer: img.buffer as never, extension: img.extension });
-    // tl 은 0-based — 제목과 같은 칼럼(col1Based-1), 제목 바로 다음 행(labelRowNum, 0-based로는
-    // 1-based 다음 행 번호에서 1을 뺀 값과 같다)부터 이미지가 시작한다.
-    ws.addImage(imageId, { tl: { col: col1Based - 1, row: labelRowNum }, ext: { width, height } });
-    extraRows = Math.max(extraRows, Math.ceil(height / EXCEL_DEFAULT_ROW_HEIGHT_PX));
-  }
-  for (let i = 0; i < extraRows; i += 1) ws.addRow([]);
-}
-
-/** 의뢰 목적 — other_purpose 는 배열(신규)이며, 구버전 문서는 문자열일 수 있어 양쪽 모두 처리한다. */
-function buildPurposeValue(d: Partial<DetailFormState>): string {
-  const opRaw = d.other_purpose as unknown as string[] | string | undefined;
-  const otherPurposeText = Array.isArray(opRaw) ? opRaw.map((o) => `[${o}]`).join('') : (opRaw || '');
-  if (!d.request_purpose) return '-';
-  return otherPurposeText ? `${d.request_purpose}(${otherPurposeText})` : d.request_purpose;
-}
-
-/** 지도 편차 — C가문(상/하판 리전별)인지 여부를 스냅샷 자체의 only_prodc 로 판별한다. */
-function buildMapValue(d: Partial<DetailFormState>, t: TFunction): string {
-  if (d.only_prodc === PRODC_YES) {
-    const regionLine = (region: 'top' | 'bottom'): string => {
-      const label = t(region === 'top' ? 'request.prodc_top' : 'request.prodc_bottom');
-      if (d[`map_change_${region}`] === MAP_NO_CHANGE) return `[${label}] ${t('request.map_no_change')}`;
-      const x = d[`map_value_x_${region}`];
-      const y = d[`map_value_y_${region}`];
-      return `[${label}] X: ${x ? `${x}um` : '-'} / Y: ${y ? `${y}um` : '-'}`;
-    };
-    const reasonPart = d.map_reason ? t('request.reason_suffix', { reason: d.map_reason }) : '';
-    return `${regionLine('top')}\n${regionLine('bottom')}${reasonPart}`;
-  }
-  if (!d.map_change) return '';
-  return t('request.change_prefix', { value: d.map_change })
-    + (d.map_value_x ? ` / X: ${d.map_value_x}um` : '')
-    + (d.map_value_y ? ` / Y: ${d.map_value_y}um` : '')
-    + (d.map_reason ? t('request.reason_suffix', { reason: d.map_reason }) : '');
-}
-
-function buildEaValue(d: Partial<DetailFormState>, t: TFunction): string {
-  if (!d.ea_change) return '';
-  return t('request.change_prefix', { value: d.ea_change }) + (d.ea_value ? t('request.value_suffix_mm', { value: d.ea_value }) : '');
-}
-
-function buildBbValue(d: Partial<DetailFormState>, t: TFunction): string {
-  const entries = d.bb_entries;
-  if (!Array.isArray(entries) || entries.length === 0) return '-';
-  return entries
-    .map((e, i) => (
-      `[${i + 1}] ${t('request.bb_ref_line')}: ${e.location || '-'}`
-      + ` / ${t('request.bb_ref_part_id')}: ${e.product || '-'}`
-      + ` / ${t('request.bb_ref_process_id')}: ${e.process_id || '-'}`
-    ))
-    .join('\n');
-}
-
-function prodcScopeLabel(d: Partial<DetailFormState>, t: TFunction): string {
-  switch (d.prodc_scope) {
-    case 'top': return t('request.prodc_top');
-    case 'middle': return t('request.prodc_middle');
-    case 'bottom': return t('request.prodc_bottom');
-    case 'only_top': return t('request.prodc_only_top');
-    case 'only_bottom': return t('request.prodc_only_bottom');
-    default: return '';
-  }
-}
-
-function buildProdcInfo(d: Partial<DetailFormState>, t: TFunction): string {
-  const lines: string[] = [];
-  const scope = prodcScopeLabel(d, t);
-  if (scope) lines.push(`[${t('request.prodc_apply_region')}] ${scope}`);
-  if (d.prodc_top_line || d.prodc_top_process || d.prodc_top_product) {
-    lines.push(`[${t('request.plate_top')}] ${d.prodc_top_line || '-'} / ${d.prodc_top_process || '-'} / ${d.prodc_top_product || '-'}`);
-  }
-  const middleUse = d.prodc_middle_use;
-  if (middleUse) {
-    if (middleUse === '미사용') {
-      lines.push(`[${t('request.plate_middle')}] 미사용`);
-    } else {
-      lines.push(`[${t('request.plate_middle')}] ${d.prodc_middle_line || '-'} / ${d.prodc_middle_process || '-'} / ${d.prodc_middle_product || '-'}`);
-    }
-  }
-  if (d.prodc_bottom_line || d.prodc_bottom_process || d.prodc_bottom_product) {
-    lines.push(`[${t('request.plate_bottom')}] ${d.prodc_bottom_line || '-'} / ${d.prodc_bottom_process || '-'} / ${d.prodc_bottom_product || '-'}`);
-  }
-  return lines.join('\n');
-}
-
-// ===== 상세 정보 시트 =====
-
-function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, doc: RequestDocument, detail: Partial<DetailFormState>): void {
-  const blocks: InfoBlock[] = [];
-  const isAdiCdChange = detail.request_purpose === 'ADI CD 변경';
-
-  blocks.push({ kind: 'kv', label: t('request.request_purpose'), value: buildPurposeValue(detail) });
-  blocks.push({ kind: 'kv', label: t('request.line'), value: detail.line || '-' });
-  blocks.push({ kind: 'kv', label: t('request.process_selection'), value: detail.process_selection || '-' });
-  blocks.push({ kind: 'kv', label: t('request.partid_selection'), value: detail.partid_selection || '-' });
-  blocks.push({ kind: 'kv', label: t('request.process_id'), value: detail.process_id || '-' });
-  if (detail.customer_name) blocks.push({ kind: 'kv', label: t('request.customer_name'), value: detail.customer_name });
-  if (detail.customer_requirement) blocks.push({ kind: 'kv', label: t('request.customer_requirement'), value: detail.customer_requirement });
-
-  if (isAdiCdChange && (detail.adi_cd_extra_targets?.length ?? 0) > 0) {
-    const rows = [
-      [detail.partid_selection || '-', detail.process_id || '-'],
-      ...(detail.adi_cd_extra_targets ?? []).map((r) => [r.partid_selection || '-', r.process_id || '-']),
-    ];
-    blocks.push({ kind: 'table', label: t('request.adi_cd_targets_title'), headers: [t('request.partid_selection'), t('request.process_id')], rows });
-  }
-
-  if (isAdiCdChange) {
-    const before = detail.adi_cd_before ?? [];
-    const after = detail.adi_cd_after ?? [];
-    const hasSteps = before.some((r) => r.unregistered || r.step_id.trim() || r.step_desc.trim())
-      || after.some((r) => r.unregistered || r.step_id.trim() || r.step_desc.trim());
-    if (hasSteps) {
-      const balanced = balanceAdiCdRows(before, after);
-      const isRowUsed = (b: typeof balanced.before[number], a: typeof balanced.after[number]) =>
-        b.unregistered || a.unregistered || !!b.step_id.trim() || !!b.step_desc.trim() || !!a.step_id.trim() || !!a.step_desc.trim();
-      const rows = balanced.before
-        .map((b, i) => [b, balanced.after[i]] as const)
-        .filter(([b, a]) => isRowUsed(b, a))
-        .map(([b, a]) => [
-          b.unregistered ? t('request.adi_cd_unregistered') : b.step_id,
-          b.unregistered ? '' : b.step_desc,
-          a.unregistered ? t('request.adi_cd_unregistered') : a.step_id,
-          a.unregistered ? '' : a.step_desc,
-        ]);
-      blocks.push({
-        kind: 'table',
-        label: t('request.adi_cd_section_title'),
-        headers: [`${ADI_CD_STEP_ID_LABEL}(${t('request.ba_before_col')})`, `${ADI_CD_STEP_DESC_LABEL}(${t('request.ba_before_col')})`, `${ADI_CD_STEP_ID_LABEL}(${t('request.ba_after_col')})`, `${ADI_CD_STEP_DESC_LABEL}(${t('request.ba_after_col')})`],
-        rows,
-      });
-    }
-  }
-
-  if (detail.bb_zone) {
-    blocks.push({ kind: 'kv', label: t('request.bb_status'), value: buildBbValue(detail, t) });
-  }
-
-  if (detail.change_purpose_note) {
-    blocks.push({ kind: 'kv', label: t('request.change_purpose_note'), value: detail.change_purpose_note });
-  }
-
-  if ((detail.flow_chart?.length ?? 0) > 0) {
-    const rows = (detail.flow_chart ?? []).map((r) => [
-      r.location, r.product_name, r.process_id,
-      r.step_from && r.step_to ? `${r.step_from} ~ ${r.step_to}` : (r.step_from || r.step_to || ''),
-    ]);
-    blocks.push({ kind: 'table', label: t('request.flow_chart'), headers: [t('request.flow_line'), t('request.flow_partid'), t('request.flow_process_id'), 'Step'], rows });
-  }
-
-  if ((detail.merge_pairs?.length ?? 0) > 0) {
-    const fields: (keyof MergeRowInfo)[] = ['process_id', 'sp', 'sd', 'pp', 'layerid'];
-    const fieldLabel = (f: keyof MergeRowInfo) => t(f === 'process_id' ? 'request.process_id' : f === 'layerid' ? 'request.col_layer' : `request.col_${f}`);
-    const cells = (info: MergeRowInfo | null) => info ? fields.map((f) => info[f] || '-') : fields.map(() => t('request.ba_unregistered'));
-    const rows = (detail.merge_pairs ?? []).map((pair) => [
-      t(pair.table === 'J' ? 'request.jayer' : 'request.oayer'),
-      ...cells(pair.before),
-      ...cells(pair.after),
-      t(`request.ba_kind_${deriveMergeKind(pair.before, pair.after)}`),
-    ]);
-    blocks.push({
-      kind: 'table',
-      label: t('request.ba_result_title'),
-      headers: [
-        t('request.ba_table_division'),
-        ...fields.map((f) => `${fieldLabel(f)}(${t('request.ba_before_col')})`),
-        ...fields.map((f) => `${fieldLabel(f)}(${t('request.ba_after_col')})`),
-        t('request.ba_kind'),
-      ],
-      rows,
-    });
-  }
-
-  if (doc.reference_materials) {
-    blocks.push({ kind: 'kv', label: t('request.submit_note_label'), value: doc.reference_materials });
-  }
-
-  addInfoSheet(wb, t, t('request.section_detail'), blocks, WIDE_INFO_COL_WIDTHS);
-}
-
-// ===== MAP 정보 시트 =====
-
-async function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Partial<DetailFormState>): Promise<void> {
-  const blocks: InfoBlock[] = [];
-  const isMapRegisteredDetail = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
-  const isDeleteType = isMapDeleteEditType(detail.map_type);
-  const isProdc = detail.only_prodc === PRODC_YES;
-
-  blocks.push({ kind: 'kv', label: t('request.map_type'), value: detail.map_type || '-' });
-  if (isMapRegisteredDetail && detail.source_line) blocks.push({ kind: 'kv', label: t('request.source_line'), value: detail.source_line });
-  if (isMapRegisteredDetail && detail.source_partid) blocks.push({ kind: 'kv', label: t('request.source_partid_selection'), value: detail.source_partid });
-
-  if (isDeleteType) {
-    blocks.push({ kind: 'kv', label: t('request.map_change_reason_delete'), value: htmlToPlainText(detail.map_change_reason) || '-' });
-  }
-
-  if (isMapRegisteredDetail) {
-    blocks.push({ kind: 'kv', label: t('request.map'), value: t('request.value_none') });
-    blocks.push({ kind: 'kv', label: t('request.ea_change'), value: t('request.value_none') });
-  } else if (!isDeleteType) {
-    const isProdcMap = isProdc && !!(detail.map_change_top || detail.map_change_bottom || detail.map_value_x_top || detail.map_value_x_bottom);
-    const isPlainMap = !isProdc && !!detail.map_change;
-    if (isProdcMap || isPlainMap) blocks.push({ kind: 'kv', label: t('request.map'), value: buildMapValue(detail, t) });
-    if (detail.ea_change) blocks.push({ kind: 'kv', label: t('request.ea_change'), value: buildEaValue(detail, t) });
-  }
-
-  if (isMapRegisteredDetail) {
-    blocks.push({ kind: 'kv', label: t('request.mshot_change_status'), value: t('request.value_none') });
-  } else if (!isDeleteType && detail.mshot_change) {
-    blocks.push({ kind: 'kv', label: t('request.mshot_change_status'), value: detail.mshot_change });
-  }
-
-  if (!isDeleteType && detail.only_prodc) {
-    blocks.push({ kind: 'kv', label: t('request.prodc_status'), value: detail.only_prodc });
-    if (isProdc) {
-      if (isMapRegisteredDetail) {
-        blocks.push({ kind: 'kv', label: t('approval.prodc_detail'), value: t('request.value_none') });
-      } else {
-        const info = buildProdcInfo(detail, t);
-        if (info) blocks.push({ kind: 'kv', label: t('approval.prodc_detail'), value: info });
-      }
-    }
-  }
-
-  if (detail.final_yn) {
-    const gds = detail.final_yn === 'YES' && Array.isArray(detail.final_entries) && detail.final_entries.length > 0
-      ? ` — ${t('request.final_gds')}: ${detail.final_entries.join(', ')}`
-      : '';
-    blocks.push({ kind: 'kv', label: t('request.final_yn_label'), value: `${detail.final_yn}${gds}` });
-  }
-
-  if (!isDeleteType) {
-    let interVal: string;
-    if (detail.inter === 'YES') {
-      interVal = detail.in_apply
-        ? [
-            t('approval.inter_applied'),
-            detail.in_apply === 'O' ? t('request.in_apply_o') : t('request.in_apply_x'),
-            detail.inter_select ? t(`request.map_opt_inter_${detail.inter_select}` as never) : null,
-          ].filter(Boolean).join(' / ')
-        : [
-            t('approval.inter_applied'),
-            detail.inter_xs === '적용' ? t('approval.inter_xs_applied') : null,
-            detail.inter_ys === '적용' ? t('approval.inter_ys_applied') : null,
-          ].filter(Boolean).join(' / ');
-    } else {
-      interVal = t('request.value_none');
-    }
-    blocks.push({ kind: 'kv', label: t('request.map_opt_inter'), value: interVal });
-
-    const mapOptionDefs: { label: string; fieldKey: keyof DetailFormState }[] = [
-      { label: t('request.map_opt_photo_backside'), fieldKey: 'photo_backside' },
-      { label: t('request.map_opt_eds_backside'), fieldKey: 'eds_backside' },
-      { label: t('request.map_opt_tsv'), fieldKey: 'tsv' },
-      { label: t('request.map_opt_rf'), fieldKey: 'rf' },
-      { label: t('request.map_opt_fullchip'), fieldKey: 'fullchip' },
-      { label: t('request.map_opt_split'), fieldKey: 'split' },
-      { label: t('request.map_opt_st'), fieldKey: 'st' },
-      { label: t('request.map_opt_ecc'), fieldKey: 'ecc' },
-      { label: t('request.map_opt_labelsideshot'), fieldKey: 'labelsideshot' },
-      { label: t('request.map_opt_hpkglabelheight'), fieldKey: 'hpkglabelheight' },
-    ];
-    const active = mapOptionDefs.filter((o) => detail[o.fieldKey] === '적용');
-    blocks.push({ kind: 'kv', label: t('request.map_option_title'), value: active.length > 0 ? active.map((o) => o.label).join(', ') : t('request.value_none') });
-  }
-
-  const ws = addInfoSheet(wb, t, t('request.section_map'), blocks, WIDE_INFO_COL_WIDTHS);
-
-  // X표시 변경 첨부 이미지 — 화면(PagedDetailView)과 같은 조건일 때만 실제 이미지를 시트에 박아 넣는다.
-  // 북쪽/남쪽(C가문)은 같은 행에 제목을 나란히 놓아 서로 다른 열로 나뉘고, 이미지는 각 제목 바로 아래에 붙는다.
-  const mshotChange = detail.mshot_change || '없음';
-  const mshotHasDetail = mshotChange === '추가' || mshotChange === '수정';
-  if (!isMapRegisteredDetail && !isDeleteType && mshotHasDetail) {
-    const imageEntries: { label: string; path: string }[] = [];
-    if (!isProdc && detail.mshot_image_copy) {
-      imageEntries.push({ label: t('request.mshot_change_image_attach_area'), path: detail.mshot_image_copy });
-    }
-    if (isProdc && detail.mshot_image_copy_top) {
-      imageEntries.push({ label: `${t('request.mshot_change_image_attach_area')} — ${t('request.prodc_top')}`, path: detail.mshot_image_copy_top });
-    }
-    if (isProdc && detail.mshot_image_copy_bottom) {
-      imageEntries.push({ label: `${t('request.mshot_change_image_attach_area')} — ${t('request.prodc_bottom')}`, path: detail.mshot_image_copy_bottom });
-    }
-    await appendImageRow(wb, ws, t, imageEntries);
-  }
-}
-
-// ===== O-ayer 정보 시트 (Partial Shot / TBV·TLV) =====
-
 function addOvlInfoSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Partial<DetailFormState>): void {
   const blocks: InfoBlock[] = [];
   blocks.push({ kind: 'kv', label: t('request.partial_shot'), value: detail.partial_shot || '-' });
@@ -580,6 +206,34 @@ function addOvlInfoSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Partial<Det
     blocks.push({ kind: 'kv', label: t('request.tbvtlv'), value: '-' });
   }
   addInfoSheet(wb, t, t('request.ovl_tab_info'), blocks);
+}
+
+// ===== 화면 캡처 이미지 시트 — 상세 정보 / MAP 정보 =====
+// 캡처(html2canvas) 자체는 DOM 이 필요해 PagedDetailView 에서 하고, 여기서는 캡처된
+// PNG 바이트를 받아 시트 하나에 그대로 박아 넣기만 한다.
+
+export interface ScreenshotCapture {
+  /** PNG 바이트(캔버스 toBlob 결과) */
+  buffer: ArrayBuffer;
+  /** 캡처 시점의 원본 픽셀 크기 — 엑셀에 넣을 때 비율 유지 스케일 계산에 쓴다. */
+  width: number;
+  height: number;
+}
+
+// 시트 안에서 보기 편하도록 캡처 이미지의 최대 폭을 제한한다(원본 비율 유지, 확대는 하지 않음).
+const SCREENSHOT_MAX_WIDTH_PX = 1600;
+
+function addScreenshotSheet(wb: ExcelJS.Workbook, sheetName: string, screenshot: ScreenshotCapture | null, failedMessage: string): void {
+  const ws = wb.addWorksheet(sheetName);
+  if (!screenshot) {
+    ws.addRow([failedMessage]);
+    return;
+  }
+  const scale = screenshot.width > SCREENSHOT_MAX_WIDTH_PX ? SCREENSHOT_MAX_WIDTH_PX / screenshot.width : 1;
+  const width = Math.round(screenshot.width * scale);
+  const height = Math.round(screenshot.height * scale);
+  const imageId = wb.addImage({ buffer: screenshot.buffer as never, extension: 'png' });
+  ws.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width, height } });
 }
 
 // ===== 단일 버튼 export =====
@@ -606,27 +260,33 @@ export async function exportBb(doc: RequestDocument, t: TFunction): Promise<void
   await downloadWorkbook(wb, `${doc.title}_BB_${getNowString()}.xlsx`);
 }
 
-export async function exportDetailInfo(doc: RequestDocument, t: TFunction): Promise<void> {
-  const { detail } = parseDoc(doc);
+export async function exportDetailInfoImage(doc: RequestDocument, t: TFunction, screenshot: ScreenshotCapture | null): Promise<void> {
   const wb = new ExcelJS.Workbook();
-  addDetailInfoSheet(wb, t, doc, detail);
+  addScreenshotSheet(wb, t('request.section_detail'), screenshot, t('request.export_capture_failed'));
   await downloadWorkbook(wb, `${doc.title}_${t('request.section_detail')}_${getNowString()}.xlsx`);
 }
 
-export async function exportMapInfo(doc: RequestDocument, t: TFunction): Promise<void> {
-  const { detail } = parseDoc(doc);
+export async function exportMapInfoImage(doc: RequestDocument, t: TFunction, screenshot: ScreenshotCapture | null): Promise<void> {
   const wb = new ExcelJS.Workbook();
-  await addMapInfoSheet(wb, t, detail);
+  addScreenshotSheet(wb, t('request.section_map'), screenshot, t('request.export_capture_failed'));
   await downloadWorkbook(wb, `${doc.title}_${t('request.section_map')}_${getNowString()}.xlsx`);
 }
 
-/** 결재 경로를 제외한 모든 sector(상세 정보/MAP 정보/JOB/OVL/정보/BB)를 시트별로 나눠 한 파일에 담는다. */
-export async function exportAll(doc: RequestDocument, t: TFunction): Promise<void> {
+export interface ExportAllScreenshots {
+  detail: ScreenshotCapture | null;
+  map: ScreenshotCapture | null;
+}
+
+/**
+ * 결재 경로를 제외한 모든 sector(상세 정보/MAP 정보/JOB/OVL/정보/BB)를 시트별로 나눠 한 파일에 담는다.
+ * 상세 정보/MAP 정보는 호출부(PagedDetailView)가 미리 캡처해 넘긴 화면 이미지를 그대로 시트에 넣는다.
+ */
+export async function exportAll(doc: RequestDocument, t: TFunction, screenshots: ExportAllScreenshots): Promise<void> {
   const { detail, jayer, oayer, bb } = parseDoc(doc);
   const isAdiCdChange = detail.request_purpose === 'ADI CD 변경';
   const wb = new ExcelJS.Workbook();
-  addDetailInfoSheet(wb, t, doc, detail);
-  if (!isAdiCdChange) await addMapInfoSheet(wb, t, detail);
+  addScreenshotSheet(wb, t('request.section_detail'), screenshots.detail, t('request.export_capture_failed'));
+  if (!isAdiCdChange) addScreenshotSheet(wb, t('request.section_map'), screenshots.map, t('request.export_capture_failed'));
   addJobSheet(wb, t, jayer);
   addOvlSheet(wb, t, oayer);
   addOvlInfoSheet(wb, t, detail);

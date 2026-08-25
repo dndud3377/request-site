@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, forwardRef, useImperativeHandle } from 'react';
+import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
+import html2canvas from 'html2canvas';
 import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, AdiCdTarget } from '../types';
-import Modal from './Modal';
+import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
 import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from '../pages/RequestPage/constants';
@@ -13,8 +15,10 @@ import {
   exportJayer as exportJayerXlsx,
   exportOayer as exportOayerXlsx,
   exportBb as exportBbXlsx,
-  exportDetailInfo as exportDetailInfoXlsx,
-  exportMapInfo as exportMapInfoXlsx,
+  exportDetailInfoImage as exportDetailInfoImageXlsx,
+  exportMapInfoImage as exportMapInfoImageXlsx,
+  ScreenshotCapture,
+  ExportAllScreenshots,
 } from '../utils/detailExport';
 
 /** J-ayer 검토 항목 패널에 그대로 넘겨주는 props (호출부가 상태·핸들러를 소유한다) */
@@ -1099,11 +1103,50 @@ export interface PagedDetailViewProps {
   historyMode?: boolean;
 }
 
-export default function PagedDetailView({
+/** 전체 export(제목 옆 버튼)가 상세 정보/MAP 정보 탭을 화면 그대로 캡처할 때 쓰는 핸들. */
+export interface PagedDetailViewHandle {
+  /**
+   * 상세 정보 탭과(있다면) MAP 정보 탭을 각각 전체화면으로 전환해 캡처한다.
+   * 호출 전의 탭·전체화면 상태로 복원한 뒤 캡처된 이미지를 반환한다.
+   */
+  captureAllScreenshots: () => Promise<ExportAllScreenshots>;
+}
+
+const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(function PagedDetailView({
   doc, role, pageIdx, setPageIdx, canEditValidationSystem = false, onValidationSystemChange,
   reviewItems, historyMode = false,
-}: PagedDetailViewProps): React.ReactElement {
+}, ref) {
   const { t } = useTranslation();
+  const { isFullscreen, setIsFullscreen } = useModalFullscreen();
+  const detailTabRef = useRef<HTMLDivElement>(null);
+  const mapTabRef = useRef<HTMLDivElement>(null);
+
+  /** DOM 노드 하나를 화면 그대로 PNG 로 캡처한다(html2canvas). 실패하면 null. */
+  const captureNode = async (el: HTMLElement | null): Promise<ScreenshotCapture | null> => {
+    if (!el) return null;
+    try {
+      const canvas = await html2canvas(el, {
+        backgroundColor: getComputedStyle(document.body).backgroundColor || '#ffffff',
+        scale: Math.min(window.devicePixelRatio || 1, 2),
+        useCORS: true,
+      });
+      const blob: Blob | null = await new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'));
+      if (!blob) return null;
+      const buffer = await blob.arrayBuffer();
+      return { buffer, width: canvas.width, height: canvas.height };
+    } catch {
+      return null;
+    }
+  };
+
+  /** 전체화면이 아니면 캡처 직전에만 강제로 전환했다가, 캡처 후 원래 상태로 되돌린다. */
+  const captureNodeFullscreen = async (el: HTMLElement | null): Promise<ScreenshotCapture | null> => {
+    const wasFullscreen = isFullscreen;
+    if (!wasFullscreen) flushSync(() => setIsFullscreen(true));
+    const result = await captureNode(el);
+    if (!wasFullscreen) flushSync(() => setIsFullscreen(false));
+    return result;
+  };
   // J-ayer 정보 안의 서브탭. 검토 항목은 J 권한자에게만 열리므로 기본은 기존 표다.
   const [jayerSubtab, setJayerSubtab] = useState<'table' | 'items'>('table');
   let detail: Partial<DetailFormState> = {};
@@ -1126,8 +1169,14 @@ export default function PagedDetailView({
   const exportJayer = () => exportJayerXlsx(doc, t);
   const exportOayer = () => exportOayerXlsx(doc, t);
   const exportBb = () => exportBbXlsx(doc, t);
-  const exportDetail = () => exportDetailInfoXlsx(doc, t);
-  const exportMap = () => exportMapInfoXlsx(doc, t);
+  const exportDetail = async () => {
+    const screenshot = await captureNodeFullscreen(detailTabRef.current);
+    await exportDetailInfoImageXlsx(doc, t, screenshot);
+  };
+  const exportMap = async () => {
+    const screenshot = await captureNodeFullscreen(mapTabRef.current);
+    await exportMapInfoImageXlsx(doc, t, screenshot);
+  };
 
   // 판정 키워드(plel) 유무 — E(MASK) 단계가 결재 경로에 포함되는지의 기준(백엔드 has_ppid_plel 과 동일).
   const hasPlel = isValidationTarget(jayer);
@@ -1629,7 +1678,7 @@ type Page = { label: string; content: React.ReactNode };
     {
       label: t('request.section_detail'),
       content: (
-        <div>
+        <div ref={detailTabRef}>
           {PLBasicSection}
 
           <div style={cardStyle}>
@@ -1754,11 +1803,37 @@ type Page = { label: string; content: React.ReactNode };
   // ADI CD 변경은 StepMap 자체를 작성하지 않는다 — map_change/ea_change 등은 기본값(빈 값이
   // 아닌 '변경 없음' 류)이 그대로 남아 있어 실제로 채운 것처럼 보이므로, 탭 자체를 감춘다.
   const showMap = (isR || isO || isP) && !isAdiCdChange;
+
+  // 전체 export(부모 컴포넌트의 제목 옆 버튼)가 쓰는 캡처 핸들 — 상세 정보 탭(0번)과
+  // MAP 정보 탭(showMap 이면 1번)을 차례로 전체화면 전환→캡처하고, 호출 전 탭·전체화면
+  // 상태로 되돌린다.
+  useImperativeHandle(ref, () => ({
+    captureAllScreenshots: async (): Promise<ExportAllScreenshots> => {
+      const originalPageIdx = pageIdx;
+      const wasFullscreen = isFullscreen;
+      if (!wasFullscreen) flushSync(() => setIsFullscreen(true));
+
+      flushSync(() => setPageIdx(0));
+      const detailShot = await captureNode(detailTabRef.current);
+
+      let mapShot: ScreenshotCapture | null = null;
+      if (showMap) {
+        flushSync(() => setPageIdx(1));
+        mapShot = await captureNode(mapTabRef.current);
+      }
+
+      flushSync(() => setPageIdx(originalPageIdx));
+      if (!wasFullscreen) flushSync(() => setIsFullscreen(false));
+
+      return { detail: detailShot, map: mapShot };
+    },
+  }));
+
   if (showMap) {
     pages.push({
       label: t('request.section_map'),
       content: (
-        <div style={cardStyle}>
+        <div style={cardStyle} ref={mapTabRef}>
           <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>🗺️ {t('request.section_map')}</span>
             <button onClick={exportMap} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
@@ -2763,4 +2838,6 @@ type Page = { label: string; content: React.ReactNode };
       )}
     </div>
   );
-}
+});
+
+export default PagedDetailView;
