@@ -212,7 +212,9 @@ type DetailSheetBlock =
   /** 화면에서 같은 줄에 나란히 있던 칩들 — 라벨/값 칸이 칩 개수만큼 옆으로 이어진다. */
   | { kind: 'row'; pairs: ChipPair[] }
   /** 흐름도·Merge 결과·ADI CD 표처럼 원래도 표 형태인 항목 */
-  | { kind: 'table'; label: string; headers: string[]; rows: string[][] };
+  | { kind: 'table'; label: string; headers: string[]; rows: string[][] }
+  /** 첨부 이미지(X표시 변경 등) — 화면에서 그 자리에 있던 위치 그대로 끼워 넣는다. */
+  | { kind: 'images'; entries: { label: string; path: string }[] };
 
 interface ChipSheetColumnWidths {
   /** 라벨 칸 기본 너비 */
@@ -226,7 +228,7 @@ interface ChipSheetColumnWidths {
 /** 상세 정보/MAP 정보 시트는 항목·값이 긴 문장인 경우가 많아 기본 너비를 넉넉히 잡는다. */
 const WIDE_CHIP_COL_WIDTHS: ChipSheetColumnWidths = { labelColWidth: 22, valueColWidth: 32, pairColumns: 7 };
 
-function addChipSheet(wb: ExcelJS.Workbook, sheetName: string, blocks: DetailSheetBlock[], widths?: ChipSheetColumnWidths): ExcelJS.Worksheet {
+async function addChipSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, blocks: DetailSheetBlock[], widths?: ChipSheetColumnWidths): Promise<ExcelJS.Worksheet> {
   const ws = wb.addWorksheet(sheetName);
   const labelW = widths?.labelColWidth ?? 22;
   const valueW = widths?.valueColWidth ?? 32;
@@ -236,12 +238,15 @@ function addChipSheet(wb: ExcelJS.Workbook, sheetName: string, blocks: DetailShe
     ws.getColumn(i * 2 + 2).width = valueW;
   }
 
-  blocks.forEach((b) => {
+  // 화면에서 그 블록이 있던 순서 그대로 써야 하므로(예: 첨부 이미지는 X표시 변경 여부 바로
+  // 다음, C가문/Final 보다 앞) for...of 로 순서를 지키며 처리한다 — forEach 는 비동기 이미지
+  // 삽입을 기다려주지 않아 순서가 흐트러진다.
+  for (const b of blocks) {
     if (b.kind === 'section') {
       const row = ws.addRow([b.title]);
       row.getCell(1).font = { bold: true, size: 12 };
       applyFill(row.getCell(1), '#dbeafe');
-      return;
+      continue;
     }
     if (b.kind === 'row') {
       const cells: string[] = [];
@@ -254,7 +259,11 @@ function addChipSheet(wb: ExcelJS.Workbook, sheetName: string, blocks: DetailShe
         labelCell.alignment = { vertical: 'top', wrapText: true };
         valueCell.alignment = { vertical: 'top', wrapText: true };
       });
-      return;
+      continue;
+    }
+    if (b.kind === 'images') {
+      await appendImageRow(wb, ws, t, b.entries);
+      continue;
     }
     // 표 블록 — 라벨을 표 헤더와 같은 행(칼럼 A)에 두어 라벨 바로 옆에 내용이 보이게 한다.
     const headRow = ws.addRow([b.label, ...b.headers]);
@@ -262,7 +271,7 @@ function addChipSheet(wb: ExcelJS.Workbook, sheetName: string, blocks: DetailShe
     headRow.getCell(1).alignment = { vertical: 'top', wrapText: true };
     headRow.eachCell((cell, col) => { if (col > 1) { cell.font = { bold: true }; applyFill(cell, '#f3f4f6'); } });
     b.rows.forEach((r) => ws.addRow(['', ...r]));
-  });
+  }
   return ws;
 }
 
@@ -420,7 +429,7 @@ function buildProdcInfo(d: Partial<DetailFormState>, t: TFunction): string {
 
 // ===== 상세 정보 시트 =====
 
-function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, doc: RequestDocument, detail: Partial<DetailFormState>): void {
+async function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, doc: RequestDocument, detail: Partial<DetailFormState>): Promise<void> {
   const blocks: DetailSheetBlock[] = [];
   const isAdiCdChange = detail.request_purpose === 'ADI CD 변경';
 
@@ -522,7 +531,7 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, doc: RequestDocu
     blocks.push({ kind: 'row', pairs: [{ label: t('request.submit_note_label'), value: doc.reference_materials }] });
   }
 
-  addChipSheet(wb, t('request.section_detail'), blocks, WIDE_CHIP_COL_WIDTHS);
+  await addChipSheet(wb, t, t('request.section_detail'), blocks, WIDE_CHIP_COL_WIDTHS);
 }
 
 // ===== MAP 정보 시트 =====
@@ -566,6 +575,22 @@ async function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Parti
     blocks.push({ kind: 'row', pairs: [{ label: t('request.mshot_change_status'), value: t('request.value_none') }] });
   } else if (!isDeleteType && detail.mshot_change) {
     blocks.push({ kind: 'row', pairs: [{ label: t('request.mshot_change_status'), value: detail.mshot_change }] });
+    // 화면에서 X표시 변경 여부 바로 옆(같은 박스)에 첨부 이미지가 있으므로, 시트에서도 이
+    // 행 바로 다음에 이미지를 끼워 넣는다(C가문 세부 정보·Final 등보다 앞).
+    const mshotHasDetail = detail.mshot_change === '추가' || detail.mshot_change === '수정';
+    if (mshotHasDetail) {
+      const imageEntries: { label: string; path: string }[] = [];
+      if (!isProdc && detail.mshot_image_copy) {
+        imageEntries.push({ label: t('request.mshot_change_image_attach_area'), path: detail.mshot_image_copy });
+      }
+      if (isProdc && detail.mshot_image_copy_top) {
+        imageEntries.push({ label: `${t('request.mshot_change_image_attach_area')} — ${t('request.prodc_top')}`, path: detail.mshot_image_copy_top });
+      }
+      if (isProdc && detail.mshot_image_copy_bottom) {
+        imageEntries.push({ label: `${t('request.mshot_change_image_attach_area')} — ${t('request.prodc_bottom')}`, path: detail.mshot_image_copy_bottom });
+      }
+      if (imageEntries.length > 0) blocks.push({ kind: 'images', entries: imageEntries });
+    }
   }
 
   if (!isDeleteType && detail.only_prodc) {
@@ -623,25 +648,7 @@ async function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Parti
     blocks.push({ kind: 'row', pairs: [{ label: t('request.map_option_title'), value: active.length > 0 ? active.map((o) => o.label).join(', ') : t('request.value_none') }] });
   }
 
-  const ws = addChipSheet(wb, t('request.section_map'), blocks, WIDE_CHIP_COL_WIDTHS);
-
-  // X표시 변경 첨부 이미지 — 화면(PagedDetailView)과 같은 조건일 때만 실제 이미지를 시트에 박아 넣는다.
-  // 북쪽/남쪽(C가문)은 같은 행에 제목을 나란히 놓아 서로 다른 열로 나뉘고, 이미지는 각 제목 바로 아래에 붙는다.
-  const mshotChange = detail.mshot_change || '없음';
-  const mshotHasDetail = mshotChange === '추가' || mshotChange === '수정';
-  if (!isMapRegisteredDetail && !isDeleteType && mshotHasDetail) {
-    const imageEntries: { label: string; path: string }[] = [];
-    if (!isProdc && detail.mshot_image_copy) {
-      imageEntries.push({ label: t('request.mshot_change_image_attach_area'), path: detail.mshot_image_copy });
-    }
-    if (isProdc && detail.mshot_image_copy_top) {
-      imageEntries.push({ label: `${t('request.mshot_change_image_attach_area')} — ${t('request.prodc_top')}`, path: detail.mshot_image_copy_top });
-    }
-    if (isProdc && detail.mshot_image_copy_bottom) {
-      imageEntries.push({ label: `${t('request.mshot_change_image_attach_area')} — ${t('request.prodc_bottom')}`, path: detail.mshot_image_copy_bottom });
-    }
-    await appendImageRow(wb, ws, t, imageEntries);
-  }
+  await addChipSheet(wb, t, t('request.section_map'), blocks, WIDE_CHIP_COL_WIDTHS);
 }
 
 // ===== O-ayer 정보 시트 (Partial Shot / TBV·TLV) =====
@@ -696,7 +703,7 @@ export async function exportBb(doc: RequestDocument, t: TFunction): Promise<void
 export async function exportDetailInfo(doc: RequestDocument, t: TFunction): Promise<void> {
   const { detail } = parseDoc(doc);
   const wb = new ExcelJS.Workbook();
-  addDetailInfoSheet(wb, t, doc, detail);
+  await addDetailInfoSheet(wb, t, doc, detail);
   await downloadWorkbook(wb, `${doc.title}_${t('request.section_detail')}_${getNowString()}.xlsx`);
 }
 
@@ -712,7 +719,7 @@ export async function exportAll(doc: RequestDocument, t: TFunction): Promise<voi
   const { detail, jayer, oayer, bb } = parseDoc(doc);
   const isAdiCdChange = detail.request_purpose === 'ADI CD 변경';
   const wb = new ExcelJS.Workbook();
-  addDetailInfoSheet(wb, t, doc, detail);
+  await addDetailInfoSheet(wb, t, doc, detail);
   if (!isAdiCdChange) await addMapInfoSheet(wb, t, detail);
   addJobSheet(wb, t, jayer);
   addOvlSheet(wb, t, oayer);
