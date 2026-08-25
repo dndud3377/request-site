@@ -7,7 +7,7 @@ import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, Flow
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
-import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from '../pages/RequestPage/constants';
+import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
@@ -811,7 +811,7 @@ function JayerTable({
                       )}
                     </td>
                   )}
-                  {(() => { const reg = r.new_or_copy === '기등록'; const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: reg ? rb : isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.item_id}</td></>); })()}
+                  {(() => { const reg = r.new_or_copy === '기등록' || isRowInactive(r.st); const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: reg ? rb : isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.item_id}</td></>); })()}
                 </tr>
               );
             })}
@@ -867,7 +867,7 @@ function OayerTable({
                       )}
                     </td>
                   )}
-                  {(() => { const reg = r.new_or_copy === '기등록'; const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: rb }}>{r.layerid}</td><td style={{ backgroundColor: reg ? rb : isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td></>); })()}
+                  {(() => { const reg = r.new_or_copy === '기등록' || isRowInactive(r.st); const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: rb }}>{r.layerid}</td><td style={{ backgroundColor: reg ? rb : isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td></>); })()}
                 </tr>
               );
             })}

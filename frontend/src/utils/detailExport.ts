@@ -3,7 +3,7 @@ import type { TFunction } from 'i18next';
 import { RequestDocument, DetailFormState, JayerRow, OayerRow, BbTableRow, MergeRowInfo } from '../types';
 import { ST_CELL_COLOR } from './stCellColor';
 import { bbTabColor } from './bbTabColors';
-import { VALIDATION_CELL_COLOR, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from '../pages/RequestPage/constants';
+import { VALIDATION_CELL_COLOR, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows } from '../pages/RequestPage/helpers';
 
 /**
@@ -92,7 +92,7 @@ function addJobSheet(wb: ExcelJS.Workbook, t: TFunction, jayer: JayerRow[]): voi
       pp: r.pp, st: r.st, new_or_copy: r.new_or_copy, product_name: r.product_name,
       step: r.step, item_id: r.item_id,
     });
-    const reg = r.new_or_copy === '기등록';
+    const reg = r.new_or_copy === '기등록' || isRowInactive(r.st);
     row.eachCell((cell, col) => {
       if (reg) { applyFill(cell, '#e5e7eb'); return; }
       if (col === 5) applyFill(cell, isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined);
@@ -122,7 +122,7 @@ function addOvlSheet(wb: ExcelJS.Workbook, t: TFunction, oayer: OayerRow[]): voi
       layerid: r.layerid, pp: r.pp, st: r.st, new_or_copy: r.new_or_copy,
       product_name: r.product_name, step: r.step,
     });
-    const reg = r.new_or_copy === '기등록';
+    const reg = r.new_or_copy === '기등록' || isRowInactive(r.st);
     row.eachCell((cell, col) => {
       if (reg) { applyFill(cell, '#e5e7eb'); return; }
       if (col === 6) applyFill(cell, isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined);
