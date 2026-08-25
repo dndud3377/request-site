@@ -7,7 +7,7 @@ import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, Flow
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
-import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from '../pages/RequestPage/constants';
+import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
@@ -205,7 +205,7 @@ interface DiffField { key: string; label: string; format?: (v: any) => string; }
 /**
  * 표 3종의 이력 컬럼 정의(모듈 상수).
  * **이 목록이 곧 변경 판정 기준이다** — 이력 모달에 보이는 값이 같으면 변경이 아니다.
- * 내부 필드(loaded·manuallyDisabled·entryId 등)를 비교에서 자동으로 제외하므로,
+ * 내부 필드(loaded·entryId 등)를 비교에서 자동으로 제외하므로,
  * 나중에 행 타입에 필드가 추가돼도 이력 오탐이 생기지 않는다.
  */
 interface DiffFieldDef { key: string; label?: string; labelKey?: string; }
@@ -956,7 +956,7 @@ function computeDetailDiff(cur: any, prev: any): Set<string> {
 
 /**
  * 행 비교용 서명 — **이력 모달에 표시되는 컬럼만** 본다.
- * id·sortOrder·disabled 같은 내부 필드는 물론, loaded·manuallyDisabled·entryId 처럼
+ * id·sortOrder 같은 내부 필드는 물론, loaded·entryId 처럼
  * 화면에 없는 값도 비교에서 빠진다(이 값들은 재상신 편집 로드 때 시스템이 재계산하므로,
  * 함께 비교하면 사용자가 아무것도 고치지 않아도 '변경됨'으로 잡혔다).
  */
@@ -2246,7 +2246,7 @@ type Page = { label: string; content: React.ReactNode };
               </span>
             )}
           </div>
-          <JayerTable rows={jayer.filter(r => !r.disabled)} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} />
+          <JayerTable rows={jayer.filter(r => !isRowInactive(r.st))} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} />
           </>
           )}
         </div>
@@ -2313,7 +2313,7 @@ type Page = { label: string; content: React.ReactNode };
                 ))}
               </div>
               {activeTab === 'table' && (
-                <OayerTable rows={oayer.filter(r => !r.disabled)} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} />
+                <OayerTable rows={oayer.filter(r => !isRowInactive(r.st))} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} />
               )}
               {activeTab === 'info' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20, fontSize: 13 }}>

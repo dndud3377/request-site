@@ -3,7 +3,7 @@ import type { TFunction } from 'i18next';
 import { RequestDocument, DetailFormState, JayerRow, OayerRow, BbTableRow, MergeRowInfo } from '../types';
 import { ST_CELL_COLOR } from './stCellColor';
 import { bbTabColor } from './bbTabColors';
-import { VALIDATION_CELL_COLOR, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from '../pages/RequestPage/constants';
+import { VALIDATION_CELL_COLOR, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows } from '../pages/RequestPage/helpers';
 
 /**
@@ -86,7 +86,7 @@ function addJobSheet(wb: ExcelJS.Workbook, t: TFunction, jayer: JayerRow[]): voi
     { header: t('request.col_step'), key: 'step', width: 10 },
     { header: t('request.col_item_id'), key: 'item_id', width: 12 },
   ];
-  jayer.filter((r) => !r.disabled).forEach((r) => {
+  jayer.filter((r) => !isRowInactive(r.st)).forEach((r) => {
     const row = ws.addRow({
       updated: r.updated ?? '', process_id: r.process_id, sp: r.sp, sd: r.sd,
       pp: r.pp, st: r.st, new_or_copy: r.new_or_copy, product_name: r.product_name,
@@ -116,7 +116,7 @@ function addOvlSheet(wb: ExcelJS.Workbook, t: TFunction, oayer: OayerRow[]): voi
     { header: t('request.col_product_name'), key: 'product_name', width: 16 },
     { header: t('request.col_step'), key: 'step', width: 10 },
   ];
-  oayer.filter((r) => !r.disabled).forEach((r) => {
+  oayer.filter((r) => !isRowInactive(r.st)).forEach((r) => {
     const row = ws.addRow({
       updated: r.updated ?? '', process_id: r.process_id, sp: r.sp, sd: r.sd,
       layerid: r.layerid, pp: r.pp, st: r.st, new_or_copy: r.new_or_copy,
