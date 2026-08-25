@@ -23,7 +23,7 @@ const ROWS: DemoRow[] = [
   { no: 4, sd: 'PLEL', layer: 'V2', step: '40', id: null, options: ['BC-D40', 'BC-D41'] },
 ];
 
-type Phase = 'copy' | 'paste' | 'step' | 'barcode' | 'dropdown' | 'disable' | 'restore';
+type Phase = 'copy' | 'paste' | 'step' | 'barcode' | 'dropdown';
 
 const fillVariants = {
   initial: { opacity: 0, y: -4 },
@@ -44,20 +44,13 @@ const Step3JayerTableDemo: React.FC = () => {
   const [candTag, setCandTag] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropHi, setDropHi] = useState<string | null>(null);
-  const [checked, setChecked] = useState<Set<number>>(new Set());
-  const [disabled, setDisabled] = useState<Set<number>>(new Set());
 
   const nameCellRefs = useRef<(HTMLTableCellElement | null)[]>([]);
   const idCellRefs = useRef<(HTMLTableCellElement | null)[]>([]);
-  const checkRefs = useRef<(HTMLInputElement | null)[]>([]);
   const dropOptRef = useRef<HTMLDivElement>(null);
-  const disableBtnRef = useRef<HTMLButtonElement>(null);
-  const restoreBtnRef = useRef<HTMLButtonElement>(null);
 
   const candOptions = ROWS[3].options ?? [];
   const pickedBarcode = candOptions[0];
-  const activeChecked = Array.from(checked).filter((n) => !disabled.has(n));
-  const disabledChecked = Array.from(checked).filter((n) => disabled.has(n));
 
   const { stageRef, cursorLayer, done, replay } = useDemoTimeline(
     async ({ moveTo, click, sleep, cancelled }) => {
@@ -73,8 +66,6 @@ const Step3JayerTableDemo: React.FC = () => {
       setCandTag(false);
       setDropdownOpen(false);
       setDropHi(null);
-      setChecked(new Set());
-      setDisabled(new Set());
       await sleep(550);
 
       // ① 제품명 셀 복사
@@ -151,31 +142,6 @@ const Step3JayerTableDemo: React.FC = () => {
       setDropHi(null);
       setCandTag(false);
       await sleep(650);
-
-      // ⑥ 체크 후 선택 비활성화
-      setPhase('disable');
-      await sleep(250);
-      await moveTo(checkRefs.current[2]);
-      await click(checkRefs.current[2]);
-      setChecked(new Set([3]));
-      await sleep(220);
-      await moveTo(checkRefs.current[3]);
-      await click(checkRefs.current[3]);
-      setChecked(new Set([3, 4]));
-      await sleep(340);
-      if (cancelled()) return;
-      await moveTo(disableBtnRef.current);
-      await click(disableBtnRef.current);
-      setDisabled(new Set([3, 4]));
-      await sleep(800);
-
-      // ⑦ 복원
-      setPhase('restore');
-      await moveTo(restoreBtnRef.current);
-      await click(restoreBtnRef.current);
-      setDisabled(new Set());
-      setChecked(new Set());
-      await sleep(750);
     }
   );
 
@@ -193,7 +159,6 @@ const Step3JayerTableDemo: React.FC = () => {
           <table className="guide-demo-table">
             <thead>
               <tr>
-                <th className="cb" />
                 <th>{t('request.col_sd')}</th>
                 <th>{t('guide.demo.common.col_layer')}</th>
                 <th>{t('request.col_product_name')}</th>
@@ -203,8 +168,6 @@ const Step3JayerTableDemo: React.FC = () => {
             </thead>
             <tbody>
               {ROWS.map((row, idx) => {
-                const isDisabled = disabled.has(row.no);
-                const isChecked = checked.has(row.no);
                 const nameVal = names[row.no];
                 const stepVal = steps[row.no];
                 const idVal = ids[row.no];
@@ -216,20 +179,7 @@ const Step3JayerTableDemo: React.FC = () => {
                   .filter(Boolean)
                   .join(' ');
                 return (
-                  <tr
-                    key={row.no}
-                    className={[isDisabled ? 'disabled' : '', isChecked ? 'checked' : '']
-                      .filter(Boolean)
-                      .join(' ')}
-                  >
-                    <td className="cb">
-                      <input
-                        type="checkbox"
-                        readOnly
-                        checked={isChecked}
-                        ref={(el) => { checkRefs.current[idx] = el; }}
-                      />
-                    </td>
+                  <tr key={row.no}>
                     <td>{row.sd}</td>
                     <td>{row.layer}</td>
                     <td
@@ -316,16 +266,6 @@ const Step3JayerTableDemo: React.FC = () => {
 
         <div className="guide-demo-btnbar">
           <span className="guide-demo-btn ghost">+ {t('guide.demo.common.add_row')}</span>
-          {activeChecked.length > 0 && (
-            <button type="button" className="guide-demo-btn danger" ref={disableBtnRef}>
-              {t('guide.demo.common.disable')} ({activeChecked.length})
-            </button>
-          )}
-          {disabledChecked.length > 0 && (
-            <button type="button" className="guide-demo-btn secondary" ref={restoreBtnRef}>
-              {t('guide.demo.common.restore')} ({disabledChecked.length})
-            </button>
-          )}
         </div>
 
         {cursorLayer}

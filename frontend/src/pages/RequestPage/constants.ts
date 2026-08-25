@@ -167,6 +167,13 @@ export const isStO = (st?: string): boolean => {
 // new_or_copy가 이 값이면 J↔O 동기화(송신·수신)에서 제외하고 bb 원본 데이터 목록에서도 숨긴다.
 export const isNocSpecial = (noc?: string): boolean => noc === NOC_REGISTERED || noc === NOC_LAYER_DELETE;
 
+/**
+ * 이 행이 "비활성"(구 disabled/manuallyDisabled 대체)인가 — st가 'X'인가로만 판정한다.
+ * 셀 잠금·bb 매핑 해제·J↔O 동기화 제외·검증 제외·has_ppid_plel 제외 등에 공통으로 쓴다.
+ * (구 기능과 달리 회색 표시·표 하단 정렬에는 쓰지 않는다 — Step2/Step3 는 이 값을 참조하지 않는다.)
+ */
+export const isRowInactive = (st?: string): boolean => (st ?? '').trim() === ST_X;
+
 // ===== Shared Types =====
 export type CRegion = 'top' | 'middle' | 'bottom';
 /** C가문 '제품 해당 위치'. '' = 미선택(게이트), 'only_*' = 그 리전 하나만 사용. */
@@ -221,8 +228,6 @@ export const makeJayerRow = (): JayerRow => ({
   id: genId(),
   updated: '',
   sortOrder: Date.now(),
-  disabled: false,
-  manuallyDisabled: false,
   process_id: '',
   sp: '',
   sd: '',
@@ -239,8 +244,6 @@ export const makeOayerRow = (): OayerRow => ({
   id: genId(),
   updated: '',
   sortOrder: Date.now(),
-  disabled: false,
-  manuallyDisabled: false,
   process_id: '',
   sp: '',
   sd: '',

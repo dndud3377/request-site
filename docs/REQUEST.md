@@ -58,7 +58,7 @@ pages/RequestPage/
 | MAP 삭제/수정 | `MAP_TYPE_EDIT_REQ`, `MAP_TYPE_DELETE_REQ`, `isMapDeleteEditType` |
 | Validation System | `VALIDATION_KEYWORD`, `VS_TARGET`, `VS_NONTARGET`, `VS_NA`, `VALIDATION_CELL_COLOR` |
 | 표 컬럼 | `JAYER_EDITABLE_COLS`, `OAYER_EDITABLE_COLS`, `LOADED_LOCK_COLS` |
-| NOC/ST 값 | `NOC_NEW`, `NOC_BORROW`, `NOC_REGISTERED`, `NOC_LAYER_DELETE`, `ST_O`, `ST_X`, `isNocSpecial` |
+| NOC/ST 값 | `NOC_NEW`, `NOC_BORROW`, `NOC_REGISTERED`, `NOC_LAYER_DELETE`, `ST_O`, `ST_X`, `isNocSpecial`, `isRowInactive`(2026-08-25 신설 — 비활성 판정, `st === 'X'`) |
 | C가문 스코프 | `PRODC_SCOPE_OPTIONS`, `inferProdcScope` |
 | 색상(재수출) | `ST_CELL_COLOR` |
 | 공용 타입 | `CRegion` (`'top' \| 'middle' \| 'bottom'`), `ProdcScope` |
@@ -74,7 +74,7 @@ pages/RequestPage/
 
 | 분류 | export |
 |---|---|
-| 표 행 유틸 | `formatUpdatedDate`, `shouldDisableRow`, `calcDisabled`, `emptyDraftWords`, `sanitizeSignedDecimal`, `findNocBorrowViolations`, `computeExpectedRequestPurpose` |
+| 표 행 유틸 | `formatUpdatedDate`, `shouldDisableRow`, `emptyDraftWords`, `sanitizeSignedDecimal`, `findNocBorrowViolations`, `computeExpectedRequestPurpose` |
 | 3-way Merge | `MergeComparableRow`(타입), `MergeStats`(타입), `computeLayerMerge` |
 | BEFORE/AFTER 비교 | `BaComparableRow`(타입), `toMergeRowInfo`, `BeforeAfterResult`(타입), `computeBeforeAfter` |
 | 변경전/변경후 직접 입력 | `isMergeSideEmpty`, `normalizeMergeSide`, `deriveMergeKind`, `emptyMergeRowInfo`, `emptyMergePair`, `parseMergePasteRows`, `validateMergePairs` |
@@ -92,8 +92,9 @@ pages/RequestPage/
 
 - **옵션 캐시**: `lineOptions`, `processOptions`, `productOptions`, `processIdOptions`, `top/middle/bottomProductOptions`, `top/middle/bottomProcessOptions`, `Bb*Options`, `Flow*Options`, `sourcePartIdOptions`
 - **위저드**: `step`, `form`, `detail`, `errors`
-- **J-layer**: `jayerRows`, `jayerChecked`, `jayerDragInfo`(ref), `jayerFilterSets`, `jayerActiveFilterIds`, `jayerFilterModalOpen`, `jayerNewFilter`, `jayerBarcodeCache`, `jayerSortBySp`
-- **O-layer**: `oayerRows`, `oayerChecked`, `oayerDragInfo`(ref), `oayerFilterSets`, `oayerActiveFilterIds`, `oayerFilterModalOpen`, `oayerNewFilter`, `oayerSortBySp`, `oayerInfoTab`
+- **J-layer**: `jayerRows`, `jayerFilterSets`, `jayerFilterModalOpen`, `jayerNewFilter`, `jayerBarcodeCache`, `jayerSortBySp`
+- **O-layer**: `oayerRows`, `oayerFilterSets`, `oayerFilterModalOpen`, `oayerNewFilter`, `oayerSortBySp`, `oayerInfoTab`
+  (2026-08-25: `jayerChecked`/`jayerDragInfo`/`jayerActiveFilterIds` 와 O-layer 대응 상태 폐지 — "비활성화" 기능 제거 참조)
 - **뼈찜(Bb)**: `bbRows`, `bbExternalData`, `bbExternalLoading`, `activeBbTab`, `bbChecked`, `bbAutoFillRanges`, `showAutoFillPanel`, `bbSearchQueries`, `stagedMappings`, `mappedJayerRowIds`, `selectedJayerRowId`, `bbExtCache`(ref), `bbExtPrevPid`(ref)
 - **참조문서 병합**: `refDocId`, `refDocLabel`, `refJayerRows`, `refOayerRows`, `mergeConfirmOpen`, `mergePreview`, `mergeSnapshot`, `mergeReselectConfirm`, `mergeModeConfirm`
 - **BEFORE/AFTER 비교**: `baSelBefore`, `baSelAfter`, `baSameCount`
@@ -110,8 +111,8 @@ pages/RequestPage/
 ### 2.2 핸들러 그룹 (접두사별 — 2026-08-06 실측, 총 89개)
 | 접두사 | 개수 | 비고 |
 |--------|------|------|
-| `handleJayer*` | 11 | J-layer 행 편집/붙여넣기/체크/드래그/일괄처리 |
-| `handleOayer*` | 11 | O-layer (J-layer와 대칭 구조) |
+| `handleJayer*` | 6 | J-layer 행 편집/붙여넣기/일괄설정/필터적용 (2026-08-25: 체크/드래그/일괄비활성·복원 6개 폐지, `handleJayerApplyFilter` 신설) |
+| `handleOayer*` | 6 | O-layer (J-layer와 대칭 구조) |
 | `handleBb*` | 8 | 뼈찜 표 + entry + 외부 데이터 매핑 |
 | `handleAdiCd*` | 10 | ADI CD 셀 편집·행 추가(양쪽 동시)/삭제(양쪽 동시+삭제확인)·미등록 토글·붙여넣기·컬럼 매핑 + '동일 변경 적용 대상' 입력칸 편집/추가(완전성·중복 검사)/삭제 3개(2026-08-21 신설) |
 | `handleFlow*` | 4 | Flow chart 행 |
@@ -2797,6 +2798,86 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 - **4) bb 결과표 SEQ 불일치 색상 표시**: `Step4.tsx` bb 정보 표에서 각 행의 `ss`(원본 SP 사본) 와 `bb_ss`(매칭된 외부데이터 SEQ) 값이 다르면 두 셀에 `.bb-ss-mismatch` 클래스(경고색 배경 + 굵은 글씨, `global.css`)를 적용하고 `title` 툴팁(`bb_ss_mismatch_title`)을 붙인다. 자동채움/수동 매핑(좌우 분할 패널) 출처와 무관하게 화면에 보이는 모든 bb 행에 동일 적용(둘 다 같은 `ss`/`bb_ss` 필드 구조를 쓰므로 렌더링 시점 비교 하나로 커버됨).
 - **영향 파일**: `RequestPage/index.tsx`, `RequestPage/components/Step4.tsx`, `RequestPage/constants.ts`(주석 갱신), `styles/global.css`, `locales/ko.json`·`en.json`, `types/index.ts`.
 - **검증**: `tsc --noEmit` 신규 에러 0(기존 `target=ES5`+`Set` 스프레드 관련 TS2802 경고는 이번 변경과 무관한 기존 이슈 — §4 참고, 재실측 시 카운트 갱신 필요). `npm test -- --watchAll=false` 9 suites/254 tests 전체 통과(회귀 없음).
+
+### 추가 변경 이력 (2026-08-25 — J/O-layer "비활성화" 기능 제거, st==='X' 기준으로 통합)
+
+- **요청**: Jayer/Oayer 표의 "비활성화" 기능(체크 → "선택 비활성화"/"선택 복원" 버튼, 필터의 활성/비활성
+  토글) 자체를 없애고, 그 자리를 이미 있던 `st`('O'/'X') 값으로 대체한다.
+- **발견 및 방침 재조정**: `st`는 이미 독립적인 업무값(레이어 존재 유/무, `requiresBbEntries`·Merge
+  기능이 `st==='X'`를 "이미 존재/삭제됨"으로 사용)이라, `st==='X'`를 그대로 비활성 판정 기준으로 쓰면
+  정상 활성 행이 오판정될 수 있다는 문제를 발견해 사용자에게 보고했다. 논의 끝에 **"비활성화" 개념
+  자체를 없애고, st가 X면 검증 제외·매핑 해제 등 부수효과를 그대로 적용**하기로 확정했다(회색 표시·
+  표 하단 정렬만 제외). 추가로 **st를 'X'로 바꾸면(수동 편집·필터 적용 공통) `new_or_copy`/
+  `product_name`/`step`/`item_id`를 초기화**하는 신규 규칙도 함께 확정했다.
+- **프론트 — 필드·타입**: `JayerRow`/`OayerRow`에서 `disabled`/`manuallyDisabled` 필드 제거.
+  `constants.ts`에 `isRowInactive(st) = st === ST_X'` 신설 — 이후 모든 "이 행이 비활성인가" 판정은
+  이 함수 하나로 통일한다.
+- **프론트 — 수동 비활성화 UI 제거**: Step2/Step3의 체크박스 컬럼, "선택 비활성화"/"선택 복원" 버튼,
+  드래그 범위 체크(`jayerDragInfo`/`oayerDragInfo`), 회색 표시(`row-disabled`)·표 하단 정렬을 전부
+  제거했다. `st`/`new_or_copy` 두 컬럼은 "비활성에서 되돌리는 유일한 수단"이라 행이 비활성이어도 항상
+  직접 편집 가능하게 남겨뒀고(`isLayerCellLocked`), 나머지 컬럼은 `st==='X'`면 잠긴다.
+- **프론트 — st→X 초기화 규칙**: `handleJayerChange`/`handleOayerChange`에서 `field==='st' && value==='X'`
+  전환 시 `new_or_copy`/`product_name`/`step`(J-ayer는 `item_id`도)를 비우고 bb 매핑을 해제한다
+  (`unmapIfMapped`). 필터 "적용"(`handleJayerApplyFilter`/`handleOayerApplyFilter`, 신규)도 동일하게
+  일괄 적용한다. 붙여넣기(paste)·일괄 설정(SetAll) 경로는 이번 규칙을 적용하지 않는다(범위 밖).
+- **프론트 — 필터 동작 변경**: `jayerActiveFilterIds`/`oayerActiveFilterIds`(필터 "활성" 토글 상태,
+  문서 저장 payload의 동명 필드 포함)를 완전히 폐지했다. 필터 "적용" 버튼은 이제 **일회성 동작**이다
+  — 조건에 맞는(아직 활성인) 행의 `st`를 그 자리에서 `'X'`로 실제로 기록하고, 필터를 다시 눌러도
+  되돌리지 않는다. 필터 "정의"(`FilterSet`, `localStorage`)의 삭제·수정은 더 이상 행 상태를 재계산하지
+  않는다(이미 `st='X'`로 기록된 행은 그대로 남는다). 문서 편집 로드 시 있던 "필터 정의 + activeIds로
+  disabled 재계산" 로직도 제거 — 이제 `st` 저장값 자체가 곧 상태라 재계산할 것이 없다(구버전 문서의
+  `disabled`/`manuallyDisabled` 값은 로드 시 `st`가 비어있으면 `st='X'`로 1회 백필한다).
+  - **주의**: `add_filter` 안내 문구(신규 i18n `request.filter_apply_hint`)로 "되돌릴 수 없다"는
+    점을 강조했지만, UI 자체에 확인 모달은 없다 — 사용자가 다른 필터를 누르면 즉시 반영된다.
+- **프론트 — 판정 기준 st 통일**: `handleJayerSetAll`/`ResetField`, J↔O 동기화 참여 조건, bb 매핑
+  후보/필수 검증(`_validate_bb_mapping` 프론트 대응), `findEmptyStNocViolations` 등 J/O-layer 표
+  전반의 `!row.disabled` 조건을 전부 `!isRowInactive(row.st)`로 치환했다. `BeforeAfterPanel`의
+  "비활성화" 배지(`isPairAfterInactive`)도 동일 기준으로 바뀐다(효과는 이전과 동일하게 유지).
+  `computeExpectedRequestPurpose`/Merge 계열(`computeLayerMerge`/`computeBeforeAfter`)처럼 disabled가
+  "그 순간의 화면 숨김"이 아니라 별도 의미로 쓰이던 곳은 필터링 자체를 없앴다(모든 행이 그대로
+  참여) — 예: `computeExpectedRequestPurpose`는 이제 기등록/layer삭제 행도 항상 "기타" 판정에 반영된다.
+- **프론트 — 상세보기/이력/엑셀 내보내기**: `PagedDetailView.tsx`(결재 상세보기·이력)와
+  `utils/detailExport.ts`(엑셀)는 기존과 동일하게 비활성 행을 화면·파일에서 제외한다 — 판정 기준만
+  `!r.disabled` → `!isRowInactive(r.st)`로 바꿨다(동작 변화 없음).
+- **백엔드**: `models.py` `has_ppid_plel()`, `views.py` `_validate_bb_mapping()`의
+  `row.get('disabled')` 조건을 `row.get('st') == 'X'`로 교체.
+- **가이드 투어**: `useStepGuideTour.ts`의 Step3/Step4 "체크→비활성화·복원" 그룹(`s3g2`/`s4g2`,
+  `jayer-bulk-actions`/`oayer-bulk-actions` 대상)과 관련 스냅샷 상태(`jayerChecked`/`oayerChecked`)를
+  제거했다. `guideDemos/Step3JayerTableDemo.tsx`의 체크·비활성화·복원 애니메이션(⑥⑦ 단계)도 제거하고,
+  `guideDemos/Step3JayerFilterDemo.tsx`의 "적용" 애니메이션을 토글이 아닌 일회성 마킹으로 재구성했다.
+- **i18n**: `request.btn_disable_selected`/`btn_restore_count`, `guide.demo.common.disable`/`restore`,
+  `guide.tour.step.groups.s3g2`/`s4g2` 키 제거. `request.filter_apply_hint`/`toast_filter_applied`
+  신설. 관련 `lead`/`callout`/`phase_*` 문구 갱신(ko/en 동시).
+- **영향 파일**: `types/index.ts`, `RequestPage/{index.tsx, helpers.ts, constants.ts,
+  useStepGuideTour.ts}`, `RequestPage/components/{Step2, Step3, Step4}.tsx`,
+  `components/PagedDetailView.tsx`, `utils/detailExport.ts`,
+  `components/guideDemos/{Step3JayerTableDemo, Step3JayerFilterDemo}.tsx`, `styles/global.css`
+  (`row-disabled`/`row-divider` 규칙 삭제), `locales/{ko,en}.json`, `backend/api/{models.py,views.py}`,
+  `backend/api/tests.py`, `RequestPage/{helpers.test.ts, pauseResumeDisabledRows.test.tsx,
+  draftRoundTrip.test.tsx, adiCdUnregisteredAndVs.test.tsx}`, `scripts/approval_cases/payload.py`.
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 `Set` 스프레드/i18n 타입 관련 4건은 이번 변경과 무관한
+  pre-existing 이슈). `CI=true npx react-scripts test --watchAll=false` — **9 suites / 253건 전부
+  통과**(직전 254건 대비 -1: 더 이상 성립하지 않는 시나리오 2건 제거 + disabled 폐지를 확인하는 신규
+  1건 추가). 백엔드 `python manage.py test api` — **333건 전부 통과**(§1.4.1 절차).
+  `scripts/approval_cases` 러너는 실행하지 않았다 — 결재 경로 판정 로직(`has_ppid_plel`/
+  `_validate_bb_mapping`) 자체가 아니라 그 안의 `disabled`→`st` 판정 기준만 바꿨고, 위 백엔드
+  단위테스트(`HasPpidPlelTest`/`ValidateBbMappingTest` 등)로 이미 커버된다.
+- **수동 검증 시나리오**:
+  1. [`/request` 신규 작성 → STEP3(J-layer)에서 아무 행의 `st` 드롭다운을 'X'로 선택] →
+     [기대 결과: `new_or_copy`/제품 이름/STEP/ID 셀이 즉시 비워지고 잠기며(회색 배경 없음, 행 위치도
+     그대로), `st`/`new_or_copy` 셀만 계속 편집 가능하다.]
+  2. [같은 행의 `st`를 다시 'O'로 바꿈] → [기대 결과: 잠금만 풀리고, 비워졌던 값은 복원되지
+     않는다(직접 재입력해야 함) — "선택 복원" 버튼은 화면에 없다.]
+  3. [STEP3 툴바에서 "+필터"로 SP/SD/PP 키워드 필터를 만들고 저장 → 툴바의 필터 칩 클릭] →
+     [기대 결과: 조건에 맞는 행들의 `st`가 즉시 'X'로 바뀌고(값도 함께 초기화), 다시 필터 칩을
+     눌러도 되돌아가지 않는다.]
+  4. [3번 상태에서 필터 관리 모달을 열어 그 필터를 삭제] → [기대 결과: 필터 목록에서만 사라지고,
+     이미 `st='X'`로 바뀐 행은 그대로 남는다.]
+  5. [STEP3/4에서 행 하나의 `st`를 'X'로 만든 뒤 상신까지 완료 → 결재자 계정으로 로그인 →
+     결재현황에서 해당 의뢰서 상세보기 → 'J-layer 정보'/'O-layer 정보' 탭] → [기대 결과: 그 행은
+     여전히 보이지 않는다(승인자 화면은 활성 행만 표시 — 이번 변경으로도 유지).]
+  6. [작성 중인 문서에서 홈 화면 "전체 가이드" 투어를 STEP3/STEP4까지 열어봄] → [기대 결과: "체크→
+     비활성화·복원" 관련 투어 그룹이 더 이상 나오지 않는다.]
 
 ## 5. 검증 방법
 ```bash

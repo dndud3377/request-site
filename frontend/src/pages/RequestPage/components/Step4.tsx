@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { bbTabColor } from '../../../utils/bbTabColors';
-import { isNocSpecial } from '../constants';
+import { isNocSpecial, isRowInactive } from '../constants';
 import {
   PhotoStepOption,
   ExternalBbDataItem,
@@ -129,7 +129,7 @@ const Step4: React.FC<Step4Props> = ({
 
   // 자동채움 범위 후보 layer: 원본 목록에 남은(미매핑) 행 기준
   const remainingLayerOptions = [...new Set(
-    jayerRows.filter(r => !r.disabled && !isNocSpecial(r.new_or_copy) && !mappedJayerRowIds.has(r.id)).map(r => r.layerid).filter(Boolean)
+    jayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && !mappedJayerRowIds.has(r.id)).map(r => r.layerid).filter(Boolean)
   )].sort((a, b) => parseFloat(a) - parseFloat(b));
 
   return (
@@ -156,9 +156,9 @@ const Step4: React.FC<Step4Props> = ({
         >
           {t('request.bb_autofill_btn')}
         </button>
-        {jayerRows.filter(r => !r.disabled).length > 0 && (
+        {jayerRows.filter(r => !isRowInactive(r.st)).length > 0 && (
           <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            {t('request.bb_rows_found', { count: jayerRows.filter(r => !r.disabled && !isNocSpecial(r.new_or_copy) && !mappedJayerRowIds.has(r.id)).length })}
+            {t('request.bb_rows_found', { count: jayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && !mappedJayerRowIds.has(r.id)).length })}
           </span>
         )}
         <GuideBadge fk="step5_bb_autofill" tk={t('guide.feat.step5_bb_autofill' as never)} />
@@ -267,7 +267,7 @@ const Step4: React.FC<Step4Props> = ({
             {t('request.bb_src_panel_title')}
           </div>
           <div className="bb-split-panel-scroll">
-            {jayerRows.filter(r => !r.disabled && !isNocSpecial(r.new_or_copy)).length === 0 ? (
+            {jayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy)).length === 0 ? (
               <div className="bb-split-hint">{t('request.bb_src_empty')}</div>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -284,7 +284,7 @@ const Step4: React.FC<Step4Props> = ({
                 <tbody>
                   {jayerRows
                     .filter((row) => !mappedJayerRowIds.has(row.id))
-                    .filter(r => !r.disabled && !isNocSpecial(r.new_or_copy)).sort((a, b) => a.sortOrder - b.sortOrder).map((row) => {
+                    .filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy)).sort((a, b) => a.sortOrder - b.sortOrder).map((row) => {
                       const staged = stagedMappings[row.id];
                       const isSelected = selectedJayerRowId === row.id;
                       return (

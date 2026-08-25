@@ -1805,24 +1805,6 @@ select.form-control option {
   font-weight: 700;
 }
 
-.row-disabled td {
-  opacity: 0.45;
-  background: var(--bg-secondary) !important;
-  color: var(--text-muted);
-}
-
-.row-disabled input,
-.row-disabled select {
-  cursor: not-allowed;
-  background: transparent;
-}
-
-.row-divider td {
-  padding: 0 !important;
-  height: 2px;
-  background: var(--border);
-}
-
 .delete-confirm-modal {
   max-width: 360px;
   width: 100%;
