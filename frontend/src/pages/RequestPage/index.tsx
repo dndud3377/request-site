@@ -4859,13 +4859,16 @@ export default function RequestPage(): React.ReactElement {
         isOpen={jayerFilterModalOpen}
         onClose={() => { setJayerFilterModalOpen(false); setJayerNewFilter({ label: '', words: emptyDraftWords() }); }}
         title={t('request.jayer_filter_manage')}
-        storageKey="jayerFilterSets"
         filterSets={jayerFilterSets}
-        setFilterSets={setJayerFilterSets}
         newFilter={jayerNewFilter}
         setNewFilter={setJayerNewFilter}
         onAllDelete={() => setFilterAllDeleteConfirm('jayer')}
         onRequestDelete={(fs) => setFilterDeleteConfirm({ type: 'jayer', filterId: fs.id, label: fs.label })}
+        onAdd={(label, words) => {
+          const updated = [...jayerFilterSets, { id: String(Date.now()), label, words }];
+          setJayerFilterSets(updated);
+          localStorage.setItem('jayerFilterSets', JSON.stringify(updated));
+        }}
         onEdit={(filterId, label, words) => {
           const updated = jayerFilterSets.map(f => f.id === filterId ? { ...f, label, words } : f);
           setJayerFilterSets(updated);
@@ -4878,13 +4881,16 @@ export default function RequestPage(): React.ReactElement {
         isOpen={oayerFilterModalOpen}
         onClose={() => { setOayerFilterModalOpen(false); setOayerNewFilter({ label: '', words: emptyDraftWords() }); }}
         title={t('request.oayer_filter_manage')}
-        storageKey="oayerFilterSets"
         filterSets={oayerFilterSets}
-        setFilterSets={setOayerFilterSets}
         newFilter={oayerNewFilter}
         setNewFilter={setOayerNewFilter}
         onAllDelete={() => setFilterAllDeleteConfirm('oayer')}
         onRequestDelete={(fs) => setFilterDeleteConfirm({ type: 'oayer', filterId: fs.id, label: fs.label })}
+        onAdd={(label, words) => {
+          const updated = [...oayerFilterSets, { id: String(Date.now()), label, words }];
+          setOayerFilterSets(updated);
+          localStorage.setItem('oayerFilterSets', JSON.stringify(updated));
+        }}
         onEdit={(filterId, label, words) => {
           const updated = oayerFilterSets.map(f => f.id === filterId ? { ...f, label, words } : f);
           setOayerFilterSets(updated);
