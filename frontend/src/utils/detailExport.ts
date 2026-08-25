@@ -171,9 +171,6 @@ interface InfoSheetColumnWidths {
   valueColWidth?: number;
 }
 
-/** 상세 정보/MAP 정보 시트는 항목·값이 긴 문장인 경우가 많아 기본 너비를 더 넓게 잡는다. */
-const WIDE_INFO_COL_WIDTHS: InfoSheetColumnWidths = { itemColWidth: 34, valueColWidth: 30 };
-
 function addInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, blocks: InfoBlock[], widths?: InfoSheetColumnWidths): ExcelJS.Worksheet {
   const ws = wb.addWorksheet(sheetName);
   ws.getColumn(1).width = widths?.itemColWidth ?? 26;
@@ -194,6 +191,72 @@ function addInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, blo
     }
     // 라벨을 표 헤더와 같은 행(칼럼 A)에 두어, 다른 항목처럼 라벨 바로 옆(같은 행)에
     // 내용이 바로 보이도록 한다 — 라벨만 있는 행을 따로 두면 값이 한 줄 아래로 밀려 보인다.
+    const headRow = ws.addRow([b.label, ...b.headers]);
+    headRow.getCell(1).font = { bold: true };
+    headRow.getCell(1).alignment = { vertical: 'top', wrapText: true };
+    headRow.eachCell((cell, col) => { if (col > 1) { cell.font = { bold: true }; applyFill(cell, '#f3f4f6'); } });
+    b.rows.forEach((r) => ws.addRow(['', ...r]));
+  });
+  return ws;
+}
+
+// ===== 화면(칩) 그대로 시트 빌더 — 상세 정보 / MAP 정보 =====
+// 화면에서 여러 칩(라벨+값)이 한 줄에 나란히 표시되는 것과 같은 모양이 되도록,
+// 항목 하나당 한 행이 아니라 "화면의 한 줄 = 시트의 한 행" 단위로 라벨·값 칸을 반복해서 늘어놓는다.
+
+type ChipPair = { label: string; value: string };
+
+type DetailSheetBlock =
+  /** 카드 제목(예: '기본 정보', '상세 정보') — 화면의 카드 경계를 그대로 표시한다. */
+  | { kind: 'section'; title: string }
+  /** 화면에서 같은 줄에 나란히 있던 칩들 — 라벨/값 칸이 칩 개수만큼 옆으로 이어진다. */
+  | { kind: 'row'; pairs: ChipPair[] }
+  /** 흐름도·Merge 결과·ADI CD 표처럼 원래도 표 형태인 항목 */
+  | { kind: 'table'; label: string; headers: string[]; rows: string[][] };
+
+interface ChipSheetColumnWidths {
+  /** 라벨 칸 기본 너비 */
+  labelColWidth?: number;
+  /** 값 칸 기본 너비 */
+  valueColWidth?: number;
+  /** 미리 너비를 잡아둘 라벨/값 쌍의 개수(가장 칩이 많은 줄 기준) */
+  pairColumns?: number;
+}
+
+/** 상세 정보/MAP 정보 시트는 항목·값이 긴 문장인 경우가 많아 기본 너비를 넉넉히 잡는다. */
+const WIDE_CHIP_COL_WIDTHS: ChipSheetColumnWidths = { labelColWidth: 22, valueColWidth: 32, pairColumns: 7 };
+
+function addChipSheet(wb: ExcelJS.Workbook, sheetName: string, blocks: DetailSheetBlock[], widths?: ChipSheetColumnWidths): ExcelJS.Worksheet {
+  const ws = wb.addWorksheet(sheetName);
+  const labelW = widths?.labelColWidth ?? 22;
+  const valueW = widths?.valueColWidth ?? 32;
+  const pairCols = widths?.pairColumns ?? 6;
+  for (let i = 0; i < pairCols; i += 1) {
+    ws.getColumn(i * 2 + 1).width = labelW;
+    ws.getColumn(i * 2 + 2).width = valueW;
+  }
+
+  blocks.forEach((b) => {
+    if (b.kind === 'section') {
+      const row = ws.addRow([b.title]);
+      row.getCell(1).font = { bold: true, size: 12 };
+      applyFill(row.getCell(1), '#dbeafe');
+      return;
+    }
+    if (b.kind === 'row') {
+      const cells: string[] = [];
+      b.pairs.forEach((p) => cells.push(p.label, p.value));
+      const row = ws.addRow(cells);
+      b.pairs.forEach((_, i) => {
+        const labelCell = row.getCell(i * 2 + 1);
+        const valueCell = row.getCell(i * 2 + 2);
+        labelCell.font = { bold: true };
+        labelCell.alignment = { vertical: 'top', wrapText: true };
+        valueCell.alignment = { vertical: 'top', wrapText: true };
+      });
+      return;
+    }
+    // 표 블록 — 라벨을 표 헤더와 같은 행(칼럼 A)에 두어 라벨 바로 옆에 내용이 보이게 한다.
     const headRow = ws.addRow([b.label, ...b.headers]);
     headRow.getCell(1).font = { bold: true };
     headRow.getCell(1).alignment = { vertical: 'top', wrapText: true };
@@ -358,16 +421,27 @@ function buildProdcInfo(d: Partial<DetailFormState>, t: TFunction): string {
 // ===== 상세 정보 시트 =====
 
 function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, doc: RequestDocument, detail: Partial<DetailFormState>): void {
-  const blocks: InfoBlock[] = [];
+  const blocks: DetailSheetBlock[] = [];
   const isAdiCdChange = detail.request_purpose === 'ADI CD 변경';
 
-  blocks.push({ kind: 'kv', label: t('request.request_purpose'), value: buildPurposeValue(detail) });
-  blocks.push({ kind: 'kv', label: t('request.line'), value: detail.line || '-' });
-  blocks.push({ kind: 'kv', label: t('request.process_selection'), value: detail.process_selection || '-' });
-  blocks.push({ kind: 'kv', label: t('request.partid_selection'), value: detail.partid_selection || '-' });
-  blocks.push({ kind: 'kv', label: t('request.process_id'), value: detail.process_id || '-' });
-  if (detail.customer_name) blocks.push({ kind: 'kv', label: t('request.customer_name'), value: detail.customer_name });
-  if (detail.customer_requirement) blocks.push({ kind: 'kv', label: t('request.customer_requirement'), value: detail.customer_requirement });
+  // 기본 정보 카드 — 화면에서 한 줄에 나란히 있는 칩 5개를 그대로 한 행에 담는다.
+  blocks.push({ kind: 'section', title: t('approval.section_basic') });
+  blocks.push({
+    kind: 'row',
+    pairs: [
+      { label: t('request.request_purpose'), value: buildPurposeValue(detail) },
+      { label: t('request.line'), value: detail.line || '-' },
+      { label: t('request.process_selection'), value: detail.process_selection || '-' },
+      { label: t('request.partid_selection'), value: detail.partid_selection || '-' },
+      { label: t('request.process_id'), value: detail.process_id || '-' },
+    ],
+  });
+  if (detail.customer_name || detail.customer_requirement) {
+    const pairs: ChipPair[] = [];
+    if (detail.customer_name) pairs.push({ label: t('request.customer_name'), value: detail.customer_name });
+    if (detail.customer_requirement) pairs.push({ label: t('request.customer_requirement'), value: detail.customer_requirement });
+    blocks.push({ kind: 'row', pairs });
+  }
 
   if (isAdiCdChange && (detail.adi_cd_extra_targets?.length ?? 0) > 0) {
     const rows = [
@@ -404,12 +478,13 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, doc: RequestDocu
     }
   }
 
+  // 상세 정보 카드
+  blocks.push({ kind: 'section', title: t('approval.section_detail') });
   if (detail.bb_zone) {
-    blocks.push({ kind: 'kv', label: t('request.bb_status'), value: buildBbValue(detail, t) });
+    blocks.push({ kind: 'row', pairs: [{ label: t('request.bb_status'), value: buildBbValue(detail, t) }] });
   }
-
   if (detail.change_purpose_note) {
-    blocks.push({ kind: 'kv', label: t('request.change_purpose_note'), value: detail.change_purpose_note });
+    blocks.push({ kind: 'row', pairs: [{ label: t('request.change_purpose_note'), value: detail.change_purpose_note }] });
   }
 
   if ((detail.flow_chart?.length ?? 0) > 0) {
@@ -444,61 +519,73 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, doc: RequestDocu
   }
 
   if (doc.reference_materials) {
-    blocks.push({ kind: 'kv', label: t('request.submit_note_label'), value: doc.reference_materials });
+    blocks.push({ kind: 'row', pairs: [{ label: t('request.submit_note_label'), value: doc.reference_materials }] });
   }
 
-  addInfoSheet(wb, t, t('request.section_detail'), blocks, WIDE_INFO_COL_WIDTHS);
+  addChipSheet(wb, t('request.section_detail'), blocks, WIDE_CHIP_COL_WIDTHS);
 }
 
 // ===== MAP 정보 시트 =====
 
 async function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Partial<DetailFormState>): Promise<void> {
-  const blocks: InfoBlock[] = [];
+  const blocks: DetailSheetBlock[] = [];
   const isMapRegisteredDetail = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
   const isDeleteType = isMapDeleteEditType(detail.map_type);
   const isProdc = detail.only_prodc === PRODC_YES;
 
-  blocks.push({ kind: 'kv', label: t('request.map_type'), value: detail.map_type || '-' });
-  if (isMapRegisteredDetail && detail.source_line) blocks.push({ kind: 'kv', label: t('request.source_line'), value: detail.source_line });
-  if (isMapRegisteredDetail && detail.source_partid) blocks.push({ kind: 'kv', label: t('request.source_partid_selection'), value: detail.source_partid });
+  // MAP 목적(+CLONE/EXISTING 이면 원본 라인·원본 제품 이름) — 화면에서 같은 줄에 나란히 있다.
+  if (detail.map_type) {
+    const pairs: ChipPair[] = [{ label: t('request.map_type'), value: detail.map_type }];
+    if (isMapRegisteredDetail && detail.source_line) pairs.push({ label: t('request.source_line'), value: detail.source_line });
+    if (isMapRegisteredDetail && detail.source_partid) pairs.push({ label: t('request.source_partid_selection'), value: detail.source_partid });
+    blocks.push({ kind: 'row', pairs });
+  }
 
   if (isDeleteType) {
-    blocks.push({ kind: 'kv', label: t('request.map_change_reason_delete'), value: htmlToPlainText(detail.map_change_reason) || '-' });
+    blocks.push({ kind: 'row', pairs: [{ label: t('request.map_change_reason_delete'), value: htmlToPlainText(detail.map_change_reason) || '-' }] });
   }
 
   if (isMapRegisteredDetail) {
-    blocks.push({ kind: 'kv', label: t('request.map'), value: t('request.value_none') });
-    blocks.push({ kind: 'kv', label: t('request.ea_change'), value: t('request.value_none') });
+    blocks.push({
+      kind: 'row',
+      pairs: [
+        { label: t('request.map'), value: t('request.value_none') },
+        { label: t('request.ea_change'), value: t('request.value_none') },
+      ],
+    });
   } else if (!isDeleteType) {
     const isProdcMap = isProdc && !!(detail.map_change_top || detail.map_change_bottom || detail.map_value_x_top || detail.map_value_x_bottom);
     const isPlainMap = !isProdc && !!detail.map_change;
-    if (isProdcMap || isPlainMap) blocks.push({ kind: 'kv', label: t('request.map'), value: buildMapValue(detail, t) });
-    if (detail.ea_change) blocks.push({ kind: 'kv', label: t('request.ea_change'), value: buildEaValue(detail, t) });
+    const pairs: ChipPair[] = [];
+    if (isProdcMap || isPlainMap) pairs.push({ label: t('request.map'), value: buildMapValue(detail, t) });
+    if (detail.ea_change) pairs.push({ label: t('request.ea_change'), value: buildEaValue(detail, t) });
+    if (pairs.length > 0) blocks.push({ kind: 'row', pairs });
   }
 
   if (isMapRegisteredDetail) {
-    blocks.push({ kind: 'kv', label: t('request.mshot_change_status'), value: t('request.value_none') });
+    blocks.push({ kind: 'row', pairs: [{ label: t('request.mshot_change_status'), value: t('request.value_none') }] });
   } else if (!isDeleteType && detail.mshot_change) {
-    blocks.push({ kind: 'kv', label: t('request.mshot_change_status'), value: detail.mshot_change });
+    blocks.push({ kind: 'row', pairs: [{ label: t('request.mshot_change_status'), value: detail.mshot_change }] });
   }
 
   if (!isDeleteType && detail.only_prodc) {
-    blocks.push({ kind: 'kv', label: t('request.prodc_status'), value: detail.only_prodc });
+    const pairs: ChipPair[] = [{ label: t('request.prodc_status'), value: detail.only_prodc }];
     if (isProdc) {
       if (isMapRegisteredDetail) {
-        blocks.push({ kind: 'kv', label: t('approval.prodc_detail'), value: t('request.value_none') });
+        pairs.push({ label: t('approval.prodc_detail'), value: t('request.value_none') });
       } else {
         const info = buildProdcInfo(detail, t);
-        if (info) blocks.push({ kind: 'kv', label: t('approval.prodc_detail'), value: info });
+        if (info) pairs.push({ label: t('approval.prodc_detail'), value: info });
       }
     }
+    blocks.push({ kind: 'row', pairs });
   }
 
   if (detail.final_yn) {
     const gds = detail.final_yn === 'YES' && Array.isArray(detail.final_entries) && detail.final_entries.length > 0
       ? ` — ${t('request.final_gds')}: ${detail.final_entries.join(', ')}`
       : '';
-    blocks.push({ kind: 'kv', label: t('request.final_yn_label'), value: `${detail.final_yn}${gds}` });
+    blocks.push({ kind: 'row', pairs: [{ label: t('request.final_yn_label'), value: `${detail.final_yn}${gds}` }] });
   }
 
   if (!isDeleteType) {
@@ -518,7 +605,7 @@ async function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Parti
     } else {
       interVal = t('request.value_none');
     }
-    blocks.push({ kind: 'kv', label: t('request.map_opt_inter'), value: interVal });
+    blocks.push({ kind: 'row', pairs: [{ label: t('request.map_opt_inter'), value: interVal }] });
 
     const mapOptionDefs: { label: string; fieldKey: keyof DetailFormState }[] = [
       { label: t('request.map_opt_photo_backside'), fieldKey: 'photo_backside' },
@@ -533,10 +620,10 @@ async function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Parti
       { label: t('request.map_opt_hpkglabelheight'), fieldKey: 'hpkglabelheight' },
     ];
     const active = mapOptionDefs.filter((o) => detail[o.fieldKey] === '적용');
-    blocks.push({ kind: 'kv', label: t('request.map_option_title'), value: active.length > 0 ? active.map((o) => o.label).join(', ') : t('request.value_none') });
+    blocks.push({ kind: 'row', pairs: [{ label: t('request.map_option_title'), value: active.length > 0 ? active.map((o) => o.label).join(', ') : t('request.value_none') }] });
   }
 
-  const ws = addInfoSheet(wb, t, t('request.section_map'), blocks, WIDE_INFO_COL_WIDTHS);
+  const ws = addChipSheet(wb, t('request.section_map'), blocks, WIDE_CHIP_COL_WIDTHS);
 
   // X표시 변경 첨부 이미지 — 화면(PagedDetailView)과 같은 조건일 때만 실제 이미지를 시트에 박아 넣는다.
   // 북쪽/남쪽(C가문)은 같은 행에 제목을 나란히 놓아 서로 다른 열로 나뉘고, 이미지는 각 제목 바로 아래에 붙는다.
