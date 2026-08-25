@@ -508,23 +508,26 @@ const Step4: React.FC<Step4Props> = ({
               </tr>
             </thead>
             <tbody>
-              {bbRows.map((row, idx) => (
+              {bbRows.map((row, idx) => {
+                const ssMismatch = row.ss !== row.bb_ss;
+                return (
                 <tr key={row.id} className={bbChecked.has(row.id) ? 'row-checked' : ''}>
                   <td style={{ textAlign: 'center' }}>
                     <input type="checkbox" checked={bbChecked.has(row.id)} onChange={() => handleBbCheckToggle(row.id)} />
                   </td>
                   <td className="wizard-table-no">{idx + 1}</td>
                   <td><input value={row.process_id} onChange={(e) => handleBbChange(row.id, 'process_id', e.target.value)} /></td>
-                  <td><input value={row.ss} onChange={(e) => handleBbChange(row.id, 'ss', e.target.value)} /></td>
+                  <td className={ssMismatch ? 'bb-ss-mismatch' : undefined} title={ssMismatch ? t('request.bb_ss_mismatch_title') : undefined}><input value={row.ss} onChange={(e) => handleBbChange(row.id, 'ss', e.target.value)} /></td>
                   <td><input value={row.sd} onChange={(e) => handleBbChange(row.id, 'sd', e.target.value)} /></td>
                   <td><input value={row.bb_process_id} onChange={(e) => handleBbChange(row.id, 'bb_process_id', e.target.value)} /></td>
                   <td style={multiTab && rowColorIndex(row) >= 0 ? { backgroundColor: bbTabColor(rowColorIndex(row)) } : undefined}><input value={row.bb_name} onChange={(e) => handleBbChange(row.id, 'bb_name', e.target.value)} /></td>
                   <td><input value={row.bb_layer} onChange={(e) => handleBbChange(row.id, 'bb_layer', e.target.value)} /></td>
-                  <td><input value={row.bb_ss} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} /></td>
+                  <td className={ssMismatch ? 'bb-ss-mismatch' : undefined} title={ssMismatch ? t('request.bb_ss_mismatch_title') : undefined}><input value={row.bb_ss} onChange={(e) => handleBbChange(row.id, 'bb_ss', e.target.value)} /></td>
                   <td><input value={row.bb_step} onChange={(e) => handleBbChange(row.id, 'bb_step', e.target.value)} /></td>
                   <td><input value={row.remark} onChange={(e) => handleBbChange(row.id, 'remark', e.target.value)} /></td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
