@@ -1336,6 +1336,7 @@ export default function RequestPage(): React.ReactElement {
             ...dd,
             map_type: 'NEW',
             only_prodc: 'No',
+            py_apply: '',
             final_yn: '',
             final_entries: [],
             map_change: MAP_NO_CHANGE,
@@ -1854,6 +1855,7 @@ export default function RequestPage(): React.ReactElement {
       ea_change: INITIAL_DETAIL.ea_change,
       ea_value: eaDefaultValue(INITIAL_DETAIL.only_prodc),
       only_prodc: INITIAL_DETAIL.only_prodc,
+      py_apply: INITIAL_DETAIL.py_apply,
       prodc_scope: INITIAL_DETAIL.prodc_scope,
       prodc_top_line: INITIAL_DETAIL.prodc_top_line,
       prodc_top_process: INITIAL_DETAIL.prodc_top_process,
@@ -2071,6 +2073,7 @@ export default function RequestPage(): React.ReactElement {
     setDetail((prev) => ({
       ...prev,
       only_prodc: 'No',
+      py_apply: '',
       prodc_scope: '',
       prodc_top_line: '', prodc_top_process: '', prodc_top_product: '',
       prodc_middle_use: '', prodc_middle_line: '', prodc_middle_process: '', prodc_middle_product: '',
@@ -2090,7 +2093,7 @@ export default function RequestPage(): React.ReactElement {
     setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
     setErrors((prev) => ({
       ...prev,
-      only_prodc: '', prodc_scope: '', prodc_top_line: '', prodc_top_process: '', prodc_bottom_line: '', prodc_bottom_process: '',
+      only_prodc: '', py_apply: '', prodc_scope: '', prodc_top_line: '', prodc_top_process: '', prodc_bottom_line: '', prodc_bottom_process: '',
       map_value_x_top: '', map_value_y_top: '', map_value_x_bottom: '', map_value_y_bottom: '', map_reason: '',
       mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '',
     }));
@@ -3851,6 +3854,11 @@ export default function RequestPage(): React.ReactElement {
         newErrors['final_entries'] = t('request.final_entries_required');
         errorMessages.push('Final: C가문 Yes 일 때 1개 이상 등록해야 합니다.');
       }
+      // PY 적용 여부도 Final 과 동일하게 CLONE/EXISTING 잠금과 무관한 독립 필수 항목이다.
+      if (detail.only_prodc === 'Yes' && !detail.py_apply) {
+        newErrors['py_apply'] = t('request.required');
+        errorMessages.push('PY 적용 여부: 필수 선택 항목입니다.');
+      }
       if (!isMapRegistered) {
       if (detail.only_prodc === 'Yes') {
         // 제품 해당 위치(prodc_scope)를 먼저 골라야 나머지 C가문 입력이 열린다.
@@ -4361,6 +4369,7 @@ export default function RequestPage(): React.ReactElement {
       ea_change: INITIAL_DETAIL.ea_change,
       ea_value: INITIAL_DETAIL.ea_value,
       only_prodc: INITIAL_DETAIL.only_prodc,
+      py_apply: INITIAL_DETAIL.py_apply,
       prodc_scope: INITIAL_DETAIL.prodc_scope,
       prodc_top_line: INITIAL_DETAIL.prodc_top_line,
       prodc_top_process: INITIAL_DETAIL.prodc_top_process,
