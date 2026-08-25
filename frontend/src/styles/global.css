@@ -1796,6 +1796,15 @@ select.form-control option {
   background: var(--accent-light) !important;
 }
 
+/* BB 정보 테이블: SP(ss) 와 BB SEQ(bb_ss) 값이 다를 때 두 셀을 강조 */
+.bb-ss-mismatch {
+  background: var(--warning-light) !important;
+}
+.bb-ss-mismatch input {
+  color: var(--warning) !important;
+  font-weight: 700;
+}
+
 .row-disabled td {
   opacity: 0.45;
   background: var(--bg-secondary) !important;
