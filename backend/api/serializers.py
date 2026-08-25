@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
-    RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN,
+    RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet,
 )
 from . import doc_permissions
 from . import design_rule_stats
@@ -339,6 +339,26 @@ class LineSerializer(serializers.ModelSerializer):
     class Meta:
         model = Line
         fields = ['id', 'name', 'order']
+
+
+class LayerFilterSetSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LayerFilterSet
+        fields = ['id', 'table', 'label', 'words', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_table(self, value):
+        if value not in ('J', 'O'):
+            raise serializers.ValidationError("table 은 'J' 또는 'O' 여야 합니다.")
+        return value
+
+    def validate_words(self, value):
+        if not isinstance(value, dict) or not all(k in ('sp', 'sd', 'pp') for k in value.keys()):
+            raise serializers.ValidationError("words 는 {sp, sd, pp} 형태여야 합니다.")
+        for k in ('sp', 'sd', 'pp'):
+            if k in value and not isinstance(value[k], list):
+                raise serializers.ValidationError(f"words.{k} 는 배열이어야 합니다.")
+        return value
 
 
 class AdminNoticeSerializer(serializers.ModelSerializer):
