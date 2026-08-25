@@ -817,6 +817,20 @@ export interface BbAutoFillRange {
   entryId: string;        // 선택된 bb_entry의 안정 id — 라인+제품을 유일하게 식별
 }
 
+/**
+ * 자동채움 매칭 후보가 2개 이상이라 사용자가 골라야 하는 J-ayer 행 1건.
+ * `candidates`는 layerid 일치 ∪ sp===stepseq 일치 후보를 합친 목록(중복 제거).
+ */
+export interface BbAutoFillAmbiguousRow {
+  jayerRowId: string;
+  process_id: string;
+  sp: string;
+  sd: string;
+  layerid: string;
+  entryId: string;        // 어느 bb_entry(탭) 범위에서 나온 행인지
+  candidates: PhotoStepOption[];
+}
+
 
 // ===== 연간 디자인룰 통계 (홈 화면 그래프) =====
 
