@@ -396,6 +396,7 @@
     "bb_entries_required": "The J-ayer table has a row with st = O, so the Bone Stew Zone is required. Fill in every entry in STEP1 or delete the ones you don't need.",
     "bb_entries_partial": "Bone Stew Zone: fill in location, product and cooking method for an entry, or leave it empty.",
     "prodc_status": "Only C-Family Product",
+    "py_apply": "PY Apply Status",
     "prodc_apply_region": "Product Region",
     "prodc_top": "North",
     "prodc_middle": "Middle",

@@ -366,6 +366,11 @@ export interface DetailFormState {
 
   only_prodc: string;
   /**
+   * PY 적용 여부 — C가문(only_prodc='Yes') 일 때만 노출되는 필수 선택 항목.
+   * CLONE/EXISTING(MAP 등록)으로 다른 C가문 하위 입력이 잠겨도 이 항목은 잠기지 않는다.
+   */
+  py_apply: '' | 'O' | 'X';
+  /**
    * C가문(only_prodc='Yes') 의 '제품 해당 위치'.
    * '' 는 미선택(게이트 — 하위 입력 전체 잠금)이고, 'only_top'/'only_bottom' 은
    * 그 리전 하나만 사용하는 스코프라 나머지 리전을 초기화·잠금·필수해제한다.

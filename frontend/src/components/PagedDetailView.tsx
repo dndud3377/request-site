@@ -731,6 +731,7 @@ const buildMshotItems: GroupBuilder = (d, t) => [
 
 const buildProdcItems: GroupBuilder = (d, t) => [
   { label: t('request.prodc_info_label'), value: fmtDiffVal(d?.only_prodc) },
+  { label: t('request.py_apply'), value: fmtDiffVal(d?.py_apply) },
   { label: t('request.prodc_scope_label'), value: fmtDiffVal(d?.prodc_scope) },
   { label: t('request.plate_top'), value: fmtPlate(d, 'prodc_top') },
   { label: t('request.plate_middle'), value: d?.prodc_middle_use === '미사용' ? '미사용' : fmtPlate(d, 'prodc_middle') },
@@ -2004,7 +2005,7 @@ type Page = { label: string; content: React.ReactNode };
           })()}
 
           {!isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && detail.only_prodc && (() => {
-            const prodcChanged = ['only_prodc','prodc_scope','prodc_top_line','prodc_top_process','prodc_top_product','prodc_middle_use','prodc_middle_line','prodc_middle_process','prodc_middle_product','prodc_bottom_line','prodc_bottom_process','prodc_bottom_product'].some((k) => changedFields.has(k));
+            const prodcChanged = ['only_prodc','py_apply','prodc_scope','prodc_top_line','prodc_top_process','prodc_top_product','prodc_middle_use','prodc_middle_line','prodc_middle_process','prodc_middle_product','prodc_bottom_line','prodc_bottom_process','prodc_bottom_product'].some((k) => changedFields.has(k));
             return (
               <div style={rowStyle}>
                 <div style={{ ...chipBase, display: 'flex', gap: 0, textAlign: 'left', flex: '1 1 auto', minWidth: 200, position: 'relative', ...(prodcChanged ? { border: '2px solid #dc3545' } : {}) }}>
@@ -2023,6 +2024,13 @@ type Page = { label: string; content: React.ReactNode };
                     <div style={fieldLabel}>{t('request.prodc_status')}</div>
                     <div style={fieldValue}>{detail.only_prodc}</div>
                   </div>
+                  {/* PY 적용 여부 — CLONE/EXISTING 에서도 잠기지 않는 항목이라 항상 실값을 그대로 보여준다. */}
+                  {isProdc && (
+                    <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
+                      <div style={fieldLabel}>{t('request.py_apply')}</div>
+                      <div style={fieldValue}>{detail.py_apply}</div>
+                    </div>
+                  )}
                   {/* CLONE/EXISTING — C가문 Yes/No 자체는 실값을 유지하되, 잠긴 세부 정보(제품
                       해당 위치·상/중/하판)는 회색 "없음"으로 대체한다. */}
                   {isProdc && isMapRegisteredDetail && (
