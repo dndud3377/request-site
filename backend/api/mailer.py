@@ -32,6 +32,9 @@
   (receive_all_mail, 기본값)가 켜져 있으면 라인과 무관하게 전부 받는다. 대상 역할은
   TE_R/P/J/O/E·MASTER 이고 PL·NONE 은 적용받지 않는다. 담당자로 지정된 단계의 결재 요청
   메일도 예외 없이 필터를 탄다. VOC 메일은 라인 개념이 없어 필터 대상이 아니다.
+- 상신 받기(receive_submit_mail, 2026-08 신설): TE_P 사용자가 권한 관리 '이메일 설정'에서
+  켜면, 상신·재상신 시 통보처와 같은 메일(notify_submitted)을 추가로 받는다. 라인 수신 설정
+  (mail_lines)과 무관하게 독립적으로 관리된다(VOC 토글과 동일한 성격).
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
 """
 import logging
@@ -541,6 +544,21 @@ def resolve_notifier_recipients(document):
     return _apply_redirect(emails, document)
 
 
+def resolve_submit_subscriber_recipients():
+    """'상신 받기'를 켠 TE_P 사용자 전원의 이메일(2026-08 신설).
+
+    상신·재상신 시 통보처(notify_submitted)와 같은 메일을 추가로 받고 싶은 TE_P 사용자가
+    권한 관리 '이메일 설정'의 '상신 받기' 토글로 켠다. VOC 토글과 마찬가지로 라인 수신
+    설정(mail_lines)과는 무관하므로 document 를 넘기지 않아 라인 필터를 타지 않는다.
+    """
+    emails = list(
+        UserProfile.objects.filter(role='TE_P', receive_submit_mail=True)
+        .exclude(mail='')
+        .values_list('mail', flat=True)
+    )
+    return _apply_redirect(emails)
+
+
 def resolve_withdraw_target_recipients(document, step_ids):
     """철회 요청 확인 대상 단계의 수신자.
 
@@ -1045,8 +1063,16 @@ def enqueue_approved(document):
 
 
 def enqueue_notify_submitted(document):
-    """상신 시 통보처 알림 적재(결재 권한 없는 통보 수신자 대상)."""
+    """상신 시 통보처 알림 적재(결재 권한 없는 통보 수신자 대상).
+
+    + '상신 받기'를 켠 TE_P 사용자(resolve_submit_subscriber_recipients, 2026-08 신설)도
+    같은 메일을 받는다. 통보처가 하나도 없어도 상신 받기 구독자만으로 발송된다.
+    """
     recipients = resolve_notifier_recipients(document)
+    subscriber_recipients = resolve_submit_subscriber_recipients()
+    for mail in subscriber_recipients:
+        if mail not in recipients:
+            recipients.append(mail)
     return _enqueue(document, 'notify_submitted', recipients)
 
 
