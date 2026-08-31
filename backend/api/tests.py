@@ -5052,6 +5052,119 @@ class DcqTokenSettleRetryTest(TestCase):
         )
 
 
+class EnsureDcqSessionTest(TestCase):
+    """ensure_dcq_session() (2026-08 추가) 검증 - 세션 재사용 / 재검증 실패 시 재로그인 전환.
+
+    dcq_login_with_retry() / get_dcq_token_info() 자체의 재시도 동작은 DcqTokenSettleRetryTest
+    에서 이미 검증하므로, 여기서는 그 둘을 높은 수준으로 mock 해서 ensure_dcq_session() 자신의
+    분기 로직(재사용 여부, 재로그인 전환, 최대 2회 제한)만 검증한다.
+    """
+
+    def setUp(self):
+        from . import utils
+        self.utils = utils
+        original_cache = dict(utils._dcq_session_cache)
+        utils._dcq_session_cache['dcq_id'] = None
+        self.addCleanup(lambda: utils._dcq_session_cache.update(original_cache))
+        patcher = patch.object(utils, 'get_dcq_credentials', return_value=('dcqid', ['pw']))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_no_credentials_returns_none_without_login_attempt(self):
+        with patch.object(self.utils, 'get_dcq_credentials', return_value=(None, None)):
+            with patch.object(self.utils, 'dcq_login_with_retry') as mock_login:
+                result = self.utils.ensure_dcq_session()
+        self.assertIsNone(result)
+        mock_login.assert_not_called()
+
+    def test_first_call_logs_in_and_caches_session(self):
+        with patch.object(self.utils, 'dcq_login_with_retry', return_value=True) as mock_login, \
+             patch.object(self.utils, 'get_dcq_token_info', return_value={'ok': True}) as mock_token:
+            result = self.utils.ensure_dcq_session()
+        self.assertEqual(result, 'dcqid')
+        mock_login.assert_called_once()
+        mock_token.assert_called_once_with('dcqid')
+        self.assertEqual(self.utils._dcq_session_cache['dcq_id'], 'dcqid')
+
+    def test_reuses_existing_session_without_relogin(self):
+        self.utils._dcq_session_cache['dcq_id'] = 'dcqid'
+        with patch.object(self.utils, 'dcq_login_with_retry') as mock_login, \
+             patch.object(self.utils, 'get_dcq_token_info', return_value={'ok': True}) as mock_token:
+            result = self.utils.ensure_dcq_session()
+        self.assertEqual(result, 'dcqid')
+        mock_login.assert_not_called()
+        mock_token.assert_called_once_with('dcqid')
+
+    def test_reused_session_invalid_triggers_relogin(self):
+        self.utils._dcq_session_cache['dcq_id'] = 'dcqid'
+        with patch.object(self.utils, 'dcq_login_with_retry', return_value=True) as mock_login, \
+             patch.object(self.utils, 'get_dcq_token_info', side_effect=[None, {'ok': True}]) as mock_token:
+            result = self.utils.ensure_dcq_session()
+        self.assertEqual(result, 'dcqid')
+        mock_login.assert_called_once()
+        self.assertEqual(mock_token.call_count, 2)
+
+    def test_login_retries_once_more_if_post_login_token_check_fails(self):
+        with patch.object(self.utils, 'dcq_login_with_retry', return_value=True) as mock_login, \
+             patch.object(self.utils, 'get_dcq_token_info', side_effect=[None, {'ok': True}]) as mock_token:
+            result = self.utils.ensure_dcq_session()
+        self.assertEqual(result, 'dcqid')
+        self.assertEqual(mock_login.call_count, 2)
+        self.assertEqual(mock_token.call_count, 2)
+
+    def test_gives_up_after_two_login_attempts(self):
+        with patch.object(self.utils, 'dcq_login_with_retry', return_value=True) as mock_login, \
+             patch.object(self.utils, 'get_dcq_token_info', return_value=None) as mock_token:
+            result = self.utils.ensure_dcq_session()
+        self.assertIsNone(result)
+        self.assertEqual(mock_login.call_count, 2)
+        self.assertEqual(mock_token.call_count, 2)
+        self.assertIsNone(self.utils._dcq_session_cache['dcq_id'])
+
+    def test_login_failure_returns_none(self):
+        with patch.object(self.utils, 'dcq_login_with_retry', return_value=False) as mock_login, \
+             patch.object(self.utils, 'get_dcq_token_info') as mock_token:
+            result = self.utils.ensure_dcq_session()
+        self.assertIsNone(result)
+        mock_login.assert_called_once()
+        mock_token.assert_not_called()
+
+
+class ExternalSyncLockTest(TestCase):
+    """external_sync_lock() (2026-08, DCQ 전용 락에서 DCQ/RTDB 공용으로 확장) 검증."""
+
+    def test_scheduler_uses_same_lock_as_utils(self):
+        from . import scheduler, utils
+        self.assertIs(scheduler.external_sync_lock, utils.external_sync_lock)
+
+    def test_two_holders_do_not_overlap(self):
+        from . import utils
+        import threading
+        import time as time_module
+
+        overlap = []
+        active = {'count': 0}
+        guard = threading.Lock()
+
+        def worker():
+            with utils.external_sync_lock():
+                with guard:
+                    active['count'] += 1
+                    if active['count'] > 1:
+                        overlap.append(True)
+                time_module.sleep(0.05)
+                with guard:
+                    active['count'] -= 1
+
+        threads = [threading.Thread(target=worker) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(overlap, [])
+
+
 class LayerFilterSetTest(TestCase):
     """J/O-layer 공유 필터 CRUD 권한 + apply-layer-filter 적용 검증."""
 
