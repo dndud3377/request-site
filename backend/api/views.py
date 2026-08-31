@@ -28,7 +28,7 @@ from .models import (
     ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
-    DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot,
+    DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot, LayerFilterSet,
 )
 from .utils import LINE_TO_LINEID_MAP, resolve_employee_by_loginid
 from . import mailer
@@ -43,7 +43,7 @@ from .serializers import (
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
     UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer, AddressBookSerializer,
     ProcessDesignRuleOverrideSerializer, DocumentDesignRuleOverrideSerializer,
-    RejectionSnapshotSerializer,
+    RejectionSnapshotSerializer, LayerFilterSetSerializer,
 )
 import uuid
 import logging
@@ -72,6 +72,32 @@ class IsMasterOrReadOnly(BasePermission):
         if request.method in SAFE_METHODS:
             return _is_dev() or bool(request.user and request.user.is_authenticated)
         return bool(request.user and request.user.is_authenticated and request.user.role == 'MASTER')
+
+
+class CanManageLayerFilter(BasePermission):
+    """J-layer 공유 필터는 TE_J/MASTER만, O-layer 공유 필터는 TE_O/MASTER만 조회·관리할 수 있다.
+
+    개인별 필터(의뢰서 작성 화면, localStorage)와 달리 팀 전체가 공유하는 목록이라
+    _is_dev() 우회 없이 항상 인증 + 역할을 확인한다.
+    """
+    TABLE_ROLE = {'J': 'TE_J', 'O': 'TE_O'}
+
+    def _allowed(self, user, table):
+        role = getattr(user, 'role', '')
+        return role == 'MASTER' or role == self.TABLE_ROLE.get(table)
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        if request.method == 'POST':
+            return self._allowed(request.user, request.data.get('table'))
+        if view.action == 'list':
+            table = request.query_params.get('table')
+            return bool(table) and self._allowed(request.user, table)
+        return True  # retrieve/update/destroy 는 has_object_permission 에서 판정
+
+    def has_object_permission(self, request, view, obj):
+        return self._allowed(request.user, obj.table)
 
 
 class IsAuthenticatedInProd(BasePermission):
@@ -338,7 +364,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         기등록/layer삭제(new_or_copy) 행은 프론트(isNocSpecial, constants.ts)에서도
         매핑 대상·검증에서 제외하므로 여기서도 동일하게 제외해야 한다(R-19).
-        비활성(disabled) 행도 함께 저장되므로(2026-08) 프론트 validate() 와 동일하게
+        비활성(st=='X') 행도 함께 저장되므로 프론트 validate() 와 동일하게
         여기서도 매핑 대상에서 제외한다.
         """
         import json
@@ -354,7 +380,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             }
             unmapped = [
                 r for r in jayer_rows
-                if not r.get('disabled')
+                if r.get('st') != 'X'
                 and r.get('process_id')
                 and r.get('new_or_copy') not in NOC_SPECIAL
                 and r.get('id') not in mapped_jayer_ids
@@ -1597,6 +1623,95 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         return Response({'message': '변경했습니다.'})
 
+    @action(detail=True, methods=['post'], url_path='apply-layer-filter')
+    @transaction.atomic
+    def apply_layer_filter(self, request, pk=None):
+        """결재 상세페이지에서 J/O-layer 공유 필터(LayerFilterSet)를 적용해, 매칭된 행의
+        st를 'X'로 바꾼다(+ 의뢰서 작성 화면의 필터 적용과 동일하게 new_or_copy/product_name/
+        step(J면 item_id도) 초기화).
+
+        의뢰서 작성 화면의 필터는 개인별(localStorage)이지만 이건 팀 전체가 공유하는
+        LayerFilterSet 하나를 그대로 적용하는 것이라 별도 상태를 이 문서에 저장하지 않는다.
+        권한: table='J' 는 TE_J/MASTER, table='O' 는 TE_O/MASTER. 문서 상태는 under_review/
+        pause 만, 그리고 해당 단계(J 또는 O)가 이번 회차에 아직 합의되지 않았을 때만 허용한다
+        (합의된 뒤 데이터를 바꾸면 그 합의가 무의미해지는 것을 막는다). 변경 사실은 별도로
+        기록하지 않는다(사용자 확정 — validation_system 과 달리 note를 남기지 않는다).
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        table = request.data.get('table')
+        if table not in ('J', 'O'):
+            return Response({'error': "table 은 'J' 또는 'O' 여야 합니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        role = getattr(request.user, 'role', '')
+        allowed_role = 'TE_J' if table == 'J' else 'TE_O'
+        if role != 'MASTER' and role != allowed_role:
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if document.status not in ('under_review', 'pause'):
+            return Response(
+                {'error': '진행 중인 의뢰서만 적용할 수 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        max_round = self._max_round(document)
+        stage_step = ApprovalStep.objects.filter(document=document, agent=table, round=max_round).first()
+        if stage_step and stage_step.action == 'approved':
+            return Response(
+                {'error': f'{table} 단계 검토가 끝난 의뢰서는 적용할 수 없습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            filter_set = LayerFilterSet.objects.get(pk=request.data.get('filter_id'), table=table)
+        except (LayerFilterSet.DoesNotExist, ValueError, TypeError):
+            return Response({'error': '필터를 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
+
+        import json
+        try:
+            data = json.loads(document.additional_notes or '{}')
+        except (json.JSONDecodeError, TypeError):
+            return Response(
+                {'error': '의뢰서 데이터가 손상되어 적용할 수 없습니다.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        rows_key = 'jayerRows' if table == 'J' else 'oayerRows'
+        rows = data.get(rows_key, [])
+        words = filter_set.words or {}
+
+        def matches(row):
+            for field in ('sp', 'sd', 'pp'):
+                row_val = (row.get(field) or '').lower()
+                for kw in (words.get(field) or []):
+                    if kw and kw.lower() in row_val:
+                        return True
+            return False
+
+        matched_count = 0
+        for row in rows:
+            if row.get('st') == 'X' or not matches(row):
+                continue
+            matched_count += 1
+            row['st'] = 'X'
+            row['new_or_copy'] = ''
+            row['product_name'] = ''
+            row['step'] = ''
+            if table == 'J':
+                row['item_id'] = ''
+
+        if matched_count > 0:
+            data[rows_key] = rows
+            document.additional_notes = json.dumps(data, ensure_ascii=False)
+            document.save(update_fields=['additional_notes'])
+
+        return Response({
+            'message': f'{matched_count}건 적용했습니다.' if matched_count > 0 else '적용할 행이 없습니다.',
+            'matched_count': matched_count,
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
     def _get_pending_pl_step(self, document):
         """현재 회차의 pending PL 단계 반환(첫 번째). 없으면 None."""
         max_round = self._max_round(document)
@@ -2802,6 +2917,20 @@ class LineViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = LineSerializer
     permission_classes = [IsAuthenticatedInProd]
     pagination_class = None
+
+
+class LayerFilterSetViewSet(viewsets.ModelViewSet):
+    """결재 상세페이지 J/O-layer 공유 필터 CRUD. 목록 조회는 ?table=J|O 쿼리 파라미터 필수."""
+    queryset = LayerFilterSet.objects.all()
+    serializer_class = LayerFilterSetSerializer
+    permission_classes = [CanManageLayerFilter]
+    pagination_class = None
+    filter_backends = []
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        table = self.request.query_params.get('table')
+        return qs.filter(table=table) if table else qs
 
 
 class AdminNoticeViewSet(viewsets.ModelViewSet):

@@ -305,6 +305,23 @@ describe('ADI CD 변경 — 행 단위 미등록 선택', () => {
     expect(removeButtonsAfter).toHaveLength(12); // 6 + 6, 양쪽 다 늘어남
   });
 
+  it('한쪽 표를 스크롤하면 반대쪽 표도 같은 위치로 동기화된다', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanel(container);
+
+    const panes = Array.from(container.querySelectorAll('.adi-cd-pane-scroll')) as HTMLDivElement[];
+    expect(panes).toHaveLength(2);
+    const [beforePane, afterPane] = panes;
+
+    beforePane.scrollTop = 42;
+    await act(async () => { fireEvent.scroll(beforePane); });
+    expect(afterPane.scrollTop).toBe(42);
+
+    afterPane.scrollTop = 7;
+    await act(async () => { fireEvent.scroll(afterPane); });
+    expect(beforePane.scrollTop).toBe(7);
+  });
+
   it('반대쪽 같은 행이 비어 있으면 확인 없이 양쪽에서 바로 삭제된다', async () => {
     const { container } = await renderNewDoc();
     await openAdiCdPanel(container);
@@ -479,9 +496,11 @@ describe('ADI CD 변경 — 동일 변경 적용 대상', () => {
 // ===================== (2) Validation System =====================
 
 const PLEL_JAYER_ROW = {
-  id: 'j1', updated: '20260801', sortOrder: 1, disabled: false, manuallyDisabled: false, loaded: true,
+  id: 'j1', updated: '20260801', sortOrder: 1, loaded: true,
   process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: 'PLEL_001', layerid: 'L01',
-  st: 'X', new_or_copy: '신규', product_name: PRODUCT, step: '10', item_id: 'ITEM_1',
+  // st 는 활성('O')이어야 pp 의 판정 키워드가 Validation System 자동 감지에 반영된다
+  // (st==='X' 인 행은 비활성으로 취급돼 판정에서 제외된다).
+  st: 'O', new_or_copy: '신규', product_name: PRODUCT, step: '10', item_id: 'ITEM_1',
 };
 
 /** 판정 키워드(plel)가 있는 J-layer 를 가진 편집 문서. validation_system 은 저장돼 있지 않다(레거시). */

@@ -6,7 +6,7 @@ import {
   requiresBbEntries, findBbEntryViolations, findEmptyStNocViolations, findNocBorrowItemIdViolations,
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
-  isPairAfterInactive,
+  isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
 } from './helpers';
 import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
 import { AdiCdStep, AdiCdTarget, MergePair, MergeRowInfo } from '../../types';
@@ -33,12 +33,12 @@ describe('isValidationTarget', () => {
     expect(isValidationTarget([{ pp: 'ABC' }, { pp: 'PLEL' }])).toBe(true);
   });
 
-  it('비활성 행은 판정에서 제외한다', () => {
-    expect(isValidationTarget([{ pp: 'PLEL', disabled: true }])).toBe(false);
+  it('비활성(st===X) 행은 판정에서 제외한다', () => {
+    expect(isValidationTarget([{ pp: 'PLEL', st: 'X' }])).toBe(false);
   });
 
   it('활성 행에 키워드가 없으면 비대상', () => {
-    expect(isValidationTarget([{ pp: 'ABC' }, { pp: 'DEF', disabled: true }])).toBe(false);
+    expect(isValidationTarget([{ pp: 'ABC' }, { pp: 'DEF', st: 'X' }])).toBe(false);
   });
 
   it('빈 배열이면 비대상', () => {
@@ -51,20 +51,16 @@ describe('isValidationTarget', () => {
 });
 
 describe('requiresBbEntries', () => {
-  it("활성 행에 st='O' 가 있으면 필수", () => {
-    expect(requiresBbEntries([{ disabled: false, st: 'X' }, { disabled: false, st: 'O' }])).toBe(true);
+  it("행에 st='O' 가 있으면 필수", () => {
+    expect(requiresBbEntries([{ st: 'X' }, { st: 'O' }])).toBe(true);
   });
 
   it("'O (D)' 도 O 계열로 본다", () => {
-    expect(requiresBbEntries([{ disabled: false, st: 'O (D)' }])).toBe(true);
-  });
-
-  it('비활성 행은 판정에서 제외한다', () => {
-    expect(requiresBbEntries([{ disabled: true, st: 'O' }])).toBe(false);
+    expect(requiresBbEntries([{ st: 'O (D)' }])).toBe(true);
   });
 
   it('O 계열 행이 없거나 표가 비면 필수가 아니다', () => {
-    expect(requiresBbEntries([{ disabled: false, st: 'X' }])).toBe(false);
+    expect(requiresBbEntries([{ st: 'X' }])).toBe(false);
     expect(requiresBbEntries([])).toBe(false);
   });
 });
@@ -94,35 +90,35 @@ describe('findBbEntryViolations', () => {
 describe('findEmptyStNocViolations', () => {
   it('활성 행의 st 또는 new_or_copy 가 비면 위반', () => {
     expect(findEmptyStNocViolations([
-      { id: 'a', disabled: false, st: 'O', new_or_copy: '신규' },
-      { id: 'b', disabled: false, st: '', new_or_copy: '신규' },
-      { id: 'c', disabled: false, st: 'X', new_or_copy: '' },
+      { id: 'a', st: 'O', new_or_copy: '신규' },
+      { id: 'b', st: '', new_or_copy: '신규' },
+      { id: 'c', st: 'O', new_or_copy: '' },
     ])).toEqual(['b', 'c']);
   });
 
-  it('비활성 행은 제외한다', () => {
-    expect(findEmptyStNocViolations([{ id: 'a', disabled: true, st: '', new_or_copy: '' }])).toEqual([]);
+  it('비활성(st===X) 행은 제외한다', () => {
+    expect(findEmptyStNocViolations([{ id: 'a', st: 'X', new_or_copy: '' }])).toEqual([]);
   });
 });
 
 describe('findNocBorrowItemIdViolations', () => {
   it("new_or_copy='차용' 활성 행 중 item_id 가 비면 위반", () => {
     expect(findNocBorrowItemIdViolations([
-      { id: 'a', disabled: false, new_or_copy: '차용', item_id: 'IT-1' },
-      { id: 'b', disabled: false, new_or_copy: '차용', item_id: '' },
-      { id: 'c', disabled: false, new_or_copy: '신규', item_id: '' },
+      { id: 'a', st: 'O', new_or_copy: '차용', item_id: 'IT-1' },
+      { id: 'b', st: 'O', new_or_copy: '차용', item_id: '' },
+      { id: 'c', st: 'O', new_or_copy: '신규', item_id: '' },
     ])).toEqual(['b']);
   });
 
-  it('비활성 행은 제외한다', () => {
+  it('비활성(st===X) 행은 제외한다', () => {
     expect(findNocBorrowItemIdViolations([
-      { id: 'a', disabled: true, new_or_copy: '차용', item_id: '' },
+      { id: 'a', st: 'X', new_or_copy: '차용', item_id: '' },
     ])).toEqual([]);
   });
 });
 
 describe('computeExpectedRequestPurpose', () => {
-  const row = (new_or_copy: string, disabled = false) => ({ disabled, new_or_copy });
+  const row = (new_or_copy: string) => ({ new_or_copy });
 
   it('신규만 있으면 신규', () => {
     expect(computeExpectedRequestPurpose([row('신규')], [])).toBe('신규');
@@ -144,12 +140,85 @@ describe('computeExpectedRequestPurpose', () => {
     expect(computeExpectedRequestPurpose([row('신규'), row('기등록')], [])).toBe('신규');
   });
 
-  it('비활성 행은 판정에서 제외한다', () => {
-    expect(computeExpectedRequestPurpose([row('신규', true)], [])).toBeNull();
-  });
-
   it('활성 행이 없으면 null(판정 불가)', () => {
     expect(computeExpectedRequestPurpose([], [])).toBeNull();
+  });
+});
+
+describe('layeridFieldConsensus', () => {
+  const row = (id: string, layerid: string, st: string, new_or_copy: string): LayerSyncRow => ({ id, layerid, st, new_or_copy });
+
+  it('같은 layerid 참여행이 1개뿐이면(합의가 자명) 그 값을 반환한다', () => {
+    const pre = [row('a', '100', 'O', '신규')];
+    const post = [row('a', '100', 'X', '신규')];
+    expect(layeridFieldConsensus(pre, post, '100', 'st')).toBe('X');
+  });
+
+  it('같은 layerid 참여행 전원이 같은 값이면 그 값을 반환한다', () => {
+    const pre = [row('a', '100', 'O', '신규'), row('b', '100', 'O', '신규')];
+    const post = [row('a', '100', 'X', '신규'), row('b', '100', 'X', '신규')];
+    expect(layeridFieldConsensus(pre, post, '100', 'st')).toBe('X');
+  });
+
+  it('같은 layerid 참여행이 서로 다른 값이면 undefined(합의 없음)', () => {
+    const pre = [row('a', '100', 'O', '신규'), row('b', '100', 'O', '신규')];
+    const post = [row('a', '100', 'X', '신규'), row('b', '100', 'O', '신규')]; // a만 바뀜
+    expect(layeridFieldConsensus(pre, post, '100', 'st')).toBeUndefined();
+  });
+
+  it('조작 전 이미 비활성/기등록/layer삭제였던 행은 합의 판정에서 제외된다', () => {
+    const pre = [row('a', '100', 'O', '신규'), row('b', '100', 'X', '')];
+    const post = [row('a', '100', 'X', '신규'), row('b', '100', 'X', '')];
+    // b 는 조작 전부터 비활성이라 eligible 하지 않다 — a 단독으로 합의 성립
+    expect(layeridFieldConsensus(pre, post, '100', 'st')).toBe('X');
+  });
+
+  it('해당 layerid에 참여행이 하나도 없으면 undefined', () => {
+    const pre = [row('a', '100', 'X', '')];
+    const post = [row('a', '100', 'X', '')];
+    expect(layeridFieldConsensus(pre, post, '100', 'st')).toBeUndefined();
+  });
+});
+
+describe('soleParticipantByLayerid', () => {
+  const row = (id: string, layerid: string, st: string, new_or_copy: string): LayerSyncRow => ({ id, layerid, st, new_or_copy });
+
+  it('참여행이 정확히 1개면 그 행을 반환한다', () => {
+    const rows = [row('a', '100', 'O', '신규'), row('b', '200', 'O', '신규')];
+    expect(soleParticipantByLayerid(rows, '100')?.id).toBe('a');
+  });
+
+  it('참여행이 0개면 undefined', () => {
+    const rows = [row('a', '100', 'X', ''), row('b', '200', 'O', '신규')];
+    expect(soleParticipantByLayerid(rows, '100')).toBeUndefined();
+  });
+
+  it('참여행이 2개 이상이면 undefined(대상이 모호함)', () => {
+    const rows = [row('a', '100', 'O', '신규'), row('b', '100', 'O', '차용')];
+    expect(soleParticipantByLayerid(rows, '100')).toBeUndefined();
+  });
+
+  it('비활성·기등록·layer삭제 행은 후보에서 제외된다', () => {
+    const rows = [row('a', '100', 'O', '신규'), row('b', '100', 'X', NOC_REGISTERED)];
+    expect(soleParticipantByLayerid(rows, '100')?.id).toBe('a');
+  });
+});
+
+describe('stClearExtra', () => {
+  it("field가 'st'이고 value가 'X'면 new_or_copy/product_name/step을 초기화한다", () => {
+    expect(stClearExtra('st', 'X', false)).toEqual({ new_or_copy: '', product_name: '', step: '' });
+  });
+
+  it("hasItemId=true면 item_id도 함께 초기화한다(J측)", () => {
+    expect(stClearExtra('st', 'X', true)).toEqual({ new_or_copy: '', product_name: '', step: '', item_id: '' });
+  });
+
+  it("field가 'st'가 아니면 빈 객체", () => {
+    expect(stClearExtra('new_or_copy', 'X', true)).toEqual({});
+  });
+
+  it("value가 'X'가 아니면 빈 객체", () => {
+    expect(stClearExtra('st', 'O', true)).toEqual({});
   });
 });
 
@@ -158,8 +227,6 @@ describe('computeLayerMerge', () => {
   const row = (sp: string, over: Partial<MergeComparableRow> = {}): MergeComparableRow => ({
     id: `id_${sp}`,
     sortOrder: Number(sp),
-    disabled: false,
-    manuallyDisabled: false,
     process_id: 'P1',
     sp,
     sd: `SD${sp}`,
@@ -192,7 +259,7 @@ describe('computeLayerMerge', () => {
     const { merged, stats } = computeLayerMerge([], [row('20', { new_or_copy: '차용' })]);
     expect(merged).toHaveLength(1);
     // A 의 원본 st/new_or_copy('O'/'차용')를 그대로 복사하지 않는다
-    expect(merged[0]).toMatchObject({ st: 'X', new_or_copy: 'layer삭제', loaded: true, disabled: false });
+    expect(merged[0]).toMatchObject({ st: 'X', new_or_copy: 'layer삭제', loaded: true });
     expect(stats).toEqual({ added: 0, registered: 0, deleted: 1 });
   });
 
@@ -217,10 +284,10 @@ describe('computeLayerMerge', () => {
     expect(stats).toEqual({ added: 0, registered: 0, deleted: 0 });
   });
 
-  it('비활성 행은 판정에서 제외하고 값도 유지한다', () => {
-    const { merged, stats } = computeLayerMerge([row('10', { disabled: true, st: 'O', new_or_copy: '차용' })], []);
-    expect(merged[0]).toMatchObject({ disabled: true, st: 'O', new_or_copy: '차용' });
-    expect(stats).toEqual({ added: 0, registered: 0, deleted: 0 });
+  it('disabled 개념이 폐지돼 st=X 행도 layer삭제가 아니면 정상적으로 병합 판정에 참여한다', () => {
+    const { merged, stats } = computeLayerMerge([row('10', { st: 'X', new_or_copy: '' })], []);
+    expect(merged[0]).toMatchObject({ st: 'O', new_or_copy: '신규' });
+    expect(stats).toEqual({ added: 1, registered: 0, deleted: 0 });
   });
 
   it('앞뒤 공백은 무시하고 같은 행으로 본다', () => {
@@ -285,8 +352,8 @@ describe('autoValidationSystem', () => {
     expect(autoValidationSystem([{ pp: 'ABC' }])).toBe(VS_NA);
   });
 
-  it('비활성 행에만 키워드가 있으면 해당없음', () => {
-    expect(autoValidationSystem([{ pp: 'PLEL', disabled: true }])).toBe(VS_NA);
+  it('비활성(st===X) 행에만 키워드가 있으면 해당없음', () => {
+    expect(autoValidationSystem([{ pp: 'PLEL', st: 'X' }])).toBe(VS_NA);
   });
 
   it('빈 배열이면 해당없음', () => {
@@ -298,7 +365,6 @@ describe('computeBeforeAfter', () => {
   // 비교 키는 process_id + layerid — 같은 layerid 를 여러 행에 주면 '모호한 그룹'이 된다.
   const r = (id: string, over: Partial<BaComparableRow> = {}): BaComparableRow => ({
     id,
-    disabled: false,
     process_id: 'P1',
     sp: `SP_${id}`,
     sd: `SD_${id}`,
@@ -414,11 +480,6 @@ describe('computeBeforeAfter', () => {
     expect(res.unmatchedAfter).toEqual([]);
   });
 
-  it('비활성 행은 비교에서 제외한다', () => {
-    const res = computeBeforeAfter([r('a', { disabled: true })], [], [r('b', { disabled: true })], []);
-    expect(res.pairs).toEqual([]);
-  });
-
   it('J-ayer 와 O-ayer 는 독립 비교한다 (같은 키여도 섞이지 않는다)', () => {
     const jRef = [r('j1', { layerid: 'L1' })];
     const oCur = [r('o1', { layerid: 'L1' })];
@@ -494,7 +555,7 @@ describe('computeBeforeAfter', () => {
 
   it('cur 쪽 layer삭제 라벨은 영향 없다 (ref 쪽만 제외 대상)', () => {
     // r() 기본값은 new_or_copy 가 없으므로(undefined), cur 에 명시적으로 layer삭제를 줘도
-    // 필터 조건(!disabled && layerid!=='' && new_or_copy!=='layer삭제')에 의해 제외된다 —
+    // 필터 조건(layerid!=='' && new_or_copy!=='layer삭제')에 의해 제외된다 —
     // 실제 앱에서 cur 쪽에 layer삭제 라벨이 남아있을 일은 없지만(계속 작성 중인 표), 방어적으로 확인.
     const res = computeBeforeAfter([], [], [r('b', { new_or_copy: NOC_LAYER_DELETE })], []);
     expect(res.pairs).toEqual([]);
@@ -504,8 +565,8 @@ describe('computeBeforeAfter', () => {
 });
 
 describe('isPairAfterInactive', () => {
-  const jayer = [{ id: 'j1', disabled: false, new_or_copy: '신규' }];
-  const oayer = [{ id: 'o1', disabled: false, new_or_copy: '신규' }];
+  const jayer = [{ id: 'j1', st: 'O', new_or_copy: '신규' }];
+  const oayer = [{ id: 'o1', st: 'O', new_or_copy: '신규' }];
 
   it('afterId 가 null 이면 false (수기로 추가한 행)', () => {
     expect(isPairAfterInactive(null, jayer, oayer)).toBe(false);
@@ -515,30 +576,30 @@ describe('isPairAfterInactive', () => {
     expect(isPairAfterInactive('J_j1', jayer, oayer)).toBe(false);
   });
 
-  it('연결된 행이 비활성이면 true', () => {
-    const rows = [{ id: 'j1', disabled: true, new_or_copy: '신규' }];
+  it('연결된 행이 비활성(st===X)이면 true', () => {
+    const rows = [{ id: 'j1', st: 'X', new_or_copy: '신규' }];
     expect(isPairAfterInactive('J_j1', rows, oayer)).toBe(true);
   });
 
   it('연결된 행이 기등록으로 바뀌면 true', () => {
-    const rows = [{ id: 'j1', disabled: false, new_or_copy: NOC_REGISTERED }];
+    const rows = [{ id: 'j1', st: 'O', new_or_copy: NOC_REGISTERED }];
     expect(isPairAfterInactive('J_j1', rows, oayer)).toBe(true);
   });
 
   it('비활성을 해제하고 신규로 되돌리면 다시 false', () => {
-    const inactive = [{ id: 'j1', disabled: true, new_or_copy: NOC_REGISTERED }];
+    const inactive = [{ id: 'j1', st: 'X', new_or_copy: NOC_REGISTERED }];
     expect(isPairAfterInactive('J_j1', inactive, oayer)).toBe(true);
-    const restored = [{ id: 'j1', disabled: false, new_or_copy: '신규' }];
+    const restored = [{ id: 'j1', st: 'O', new_or_copy: '신규' }];
     expect(isPairAfterInactive('J_j1', restored, oayer)).toBe(false);
   });
 
   it('O-layer 행도 동일하게 판정한다', () => {
-    const rows = [{ id: 'o1', disabled: true, new_or_copy: '신규' }];
+    const rows = [{ id: 'o1', st: 'X', new_or_copy: '신규' }];
     expect(isPairAfterInactive('O_o1', jayer, rows)).toBe(true);
   });
 
   it('id 에 밑줄이 포함돼도(genId 형식) 올바르게 찾는다', () => {
-    const rows = [{ id: '1699999999999_ab12cd', disabled: true, new_or_copy: '신규' }];
+    const rows = [{ id: '1699999999999_ab12cd', st: 'X', new_or_copy: '신규' }];
     expect(isPairAfterInactive('J_1699999999999_ab12cd', rows, oayer)).toBe(true);
   });
 

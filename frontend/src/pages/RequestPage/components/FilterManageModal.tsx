@@ -11,28 +11,27 @@ interface FilterManageModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
-  storageKey: string;
   filterSets: FilterSet[];
-  setFilterSets: React.Dispatch<React.SetStateAction<FilterSet[]>>;
   newFilter: FilterDraft;
   setNewFilter: React.Dispatch<React.SetStateAction<FilterDraft>>;
   onAllDelete: () => void;
   onRequestDelete: (fs: FilterSet) => void;
   onEdit: (filterId: string, label: string, words: FilterDraft['words']) => void;
+  /** 새 필터 추가 — 저장 방식(localStorage/서버 API 등)은 호출부가 결정한다. */
+  onAdd: (label: string, words: FilterDraft['words']) => void;
 }
 
 const FilterManageModal: React.FC<FilterManageModalProps> = ({
   isOpen,
   onClose,
   title,
-  storageKey,
   filterSets,
-  setFilterSets,
   newFilter,
   setNewFilter,
   onAllDelete,
   onRequestDelete,
   onEdit,
+  onAdd,
 }) => {
   const { t } = useTranslation();
   const addToast = useToast();
@@ -92,12 +91,9 @@ const FilterManageModal: React.FC<FilterManageModalProps> = ({
                   addToast(t('request.filter_edit_success_toast', { label }), 'success');
                   return;
                 }
-                const newSet: FilterSet = { id: String(Date.now()), label, words: newFilter.words };
-                const updated = [...filterSets, newSet];
-                setFilterSets(updated);
-                localStorage.setItem(storageKey, JSON.stringify(updated));
+                onAdd(label, newFilter.words);
                 setNewFilter({ label: '', words: emptyDraftWords() });
-                addToast(t('request.filter_add_success_toast', { label: newSet.label }), 'success');
+                addToast(t('request.filter_add_success_toast', { label }), 'success');
               }}
             >{editingId ? t('request.filter_apply_edit') : t('request.filter_add_btn')}</button>
             <button className="btn btn-secondary" onClick={onClose}>

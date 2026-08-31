@@ -1,6 +1,6 @@
-import { FilterSet, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep } from '../../types';
+import { ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep } from '../../types';
 import {
-  VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, isStO, genId, VS_NA, VS_TARGET,
+  VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
   MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE,
 } from './constants';
@@ -27,14 +27,6 @@ export const shouldDisableRow = (
   if (pp.some(keyword => keyword && row.pp.toLowerCase().includes(keyword.toLowerCase()))) return true;
   return false;
 };
-
-/** 수동 비활성화 또는 활성 필터셋 매칭 시 disabled */
-export const calcDisabled = (
-  row: { manuallyDisabled: boolean; sp: string; sd: string; pp: string },
-  filterSets: FilterSet[],
-  activeIds: Set<string>
-): boolean =>
-  row.manuallyDisabled || filterSets.some(fs => activeIds.has(fs.id) && shouldDisableRow(fs.words, row));
 
 /** 필터 키워드 초안 빈 값 */
 export const emptyDraftWords = () => ({ sp: [] as string[], sd: [] as string[], pp: [] as string[] });
@@ -65,8 +57,8 @@ export const sanitizeSignedDecimal = (raw: string): string => {
  * (O-layer 는 판정 근거가 아니다 — J-layer 표 하나만 본다.)
  */
 export const requiresBbEntries = (
-  jayerRows: { disabled: boolean; st: string }[]
-): boolean => jayerRows.some((r) => !r.disabled && isStO(r.st));
+  jayerRows: { st: string }[]
+): boolean => jayerRows.some((r) => isStO(r.st));
 
 /** Backbone 조합 영역 한 항목의 입력 상태 — 세 칸(위치·제품·조리법) 기준. */
 const bbEntryFillState = (
@@ -95,26 +87,26 @@ export const findBbEntryViolations = (
 
 /** 활성 행 중 st 또는 new_or_copy 가 공란인 행 id 목록 (J/O-ayer 공용) */
 export const findEmptyStNocViolations = (
-  rows: { id: string; disabled: boolean; st: string; new_or_copy: string }[]
+  rows: { id: string; st: string; new_or_copy: string }[]
 ): string[] =>
   rows
-    .filter((r) => !r.disabled && (!r.st?.trim() || !r.new_or_copy?.trim()))
+    .filter((r) => !isRowInactive(r.st) && (!r.st?.trim() || !r.new_or_copy?.trim()))
     .map((r) => r.id);
 
 /** new_or_copy='차용' 활성 행 중 product_name·step 공란인 행 id 목록 (J/O-ayer 공용) */
 export const findNocBorrowViolations = (
-  rows: { id: string; disabled: boolean; new_or_copy: string; product_name: string; step: string }[]
+  rows: { id: string; st: string; new_or_copy: string; product_name: string; step: string }[]
 ): string[] =>
   rows
-    .filter((r) => !r.disabled && r.new_or_copy === '차용' && (!r.product_name?.trim() || !r.step?.trim()))
+    .filter((r) => !isRowInactive(r.st) && r.new_or_copy === '차용' && (!r.product_name?.trim() || !r.step?.trim()))
     .map((r) => r.id);
 
 /** new_or_copy='차용' 활성 행 중 item_id 공란인 행 id 목록 (item_id 는 J-ayer 전용 필드라 O-ayer 는 대상 아님) */
 export const findNocBorrowItemIdViolations = (
-  rows: { id: string; disabled: boolean; new_or_copy: string; item_id: string }[]
+  rows: { id: string; st: string; new_or_copy: string; item_id: string }[]
 ): string[] =>
   rows
-    .filter((r) => !r.disabled && r.new_or_copy === '차용' && !r.item_id?.trim())
+    .filter((r) => !isRowInactive(r.st) && r.new_or_copy === '차용' && !r.item_id?.trim())
     .map((r) => r.id);
 
 /**
@@ -123,10 +115,12 @@ export const findNocBorrowItemIdViolations = (
  * 기등록·layer삭제만 있으면 → '기타'. 판정할 활성 행이 아예 없으면 null(판정 불가).
  */
 export const computeExpectedRequestPurpose = (
-  jayerRows: { disabled: boolean; new_or_copy: string }[],
-  oayerRows: { disabled: boolean; new_or_copy: string }[]
+  jayerRows: { new_or_copy: string }[],
+  oayerRows: { new_or_copy: string }[]
 ): string | null => {
-  const activeNoc = [...jayerRows, ...oayerRows].filter((r) => !r.disabled).map((r) => r.new_or_copy);
+  // 구 disabled(수동/필터 비활성) 개념은 폐지됐다 — st==='X' 행(기등록/layer삭제 포함)도
+  // new_or_copy 로 '기타' 판정에 그대로 기여해야 하므로 여기서는 아무것도 걸러내지 않는다.
+  const activeNoc = [...jayerRows, ...oayerRows].map((r) => r.new_or_copy);
   const hasNew = activeNoc.includes(NOC_NEW);
   const hasBorrow = activeNoc.includes(NOC_BORROW);
   if (hasNew && hasBorrow) return '신규+차용';
@@ -136,14 +130,70 @@ export const computeExpectedRequestPurpose = (
   return null;
 };
 
+// ===== J↔O layerid 교차 동기화 (st/new_or_copy) =====
+
+/** 동기화 판정용 최소 행 형태 */
+export interface LayerSyncRow {
+  id: string;
+  layerid: string;
+  st: string;
+  new_or_copy: string;
+}
+
+/** 동기화 "참여행" — 비활성(st==='X')도 기등록/layer삭제도 아닌 행. */
+const isSyncParticipant = (r: LayerSyncRow): boolean => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy);
+
+/**
+ * 같은 layerid를 가진 J(또는 O) 참여행 전원이 이번 조작 후 `field` 값에 합의하는지 판정한다.
+ * 한 layerid에 참여행이 여러 개 있을 수 있고, 서로 다른 값을 가질 수 있다 — 이 경우 합의가 없으므로
+ * 교차 테이블로 전파하지 않는다(undefined 반환).
+ *
+ * - `preOpRows`: 이번 조작 **전** 상태 — "참여행이었는가"의 판정 기준(조작으로 st==='X'가 된 행도
+ *   조작 전에는 참여행이었다면 포함시켜야 그 전환 자체가 전파될 수 있다).
+ * - `postOpRows`: 이번 조작 **후** 상태 — 실제 비교할 값.
+ */
+export const layeridFieldConsensus = (
+  preOpRows: LayerSyncRow[],
+  postOpRows: LayerSyncRow[],
+  layerid: string,
+  field: 'st' | 'new_or_copy',
+): string | undefined => {
+  const eligibleIds = new Set(
+    preOpRows.filter((r) => r.layerid?.trim() === layerid && isSyncParticipant(r)).map((r) => r.id)
+  );
+  if (eligibleIds.size === 0) return undefined;
+  const group = postOpRows.filter((r) => eligibleIds.has(r.id));
+  const value = group[0]?.[field];
+  return group.every((r) => r[field] === value) ? value : undefined;
+};
+
+/** 대상 테이블에서 해당 layerid를 가진 참여행이 정확히 1개일 때만 그 행을 반환한다(0개/2개 이상이면 undefined). */
+export const soleParticipantByLayerid = <T extends LayerSyncRow>(
+  rows: T[],
+  layerid: string,
+): T | undefined => {
+  const candidates = rows.filter((r) => r.layerid?.trim() === layerid && isSyncParticipant(r));
+  return candidates.length === 1 ? candidates[0] : undefined;
+};
+
+/**
+ * 전파(교차 동기화·일괄 적용)로 대상 행의 st가 'X'가 될 때, 직접 편집한 행과 동일하게
+ * new_or_copy/product_name/step(J측이면 item_id도)을 함께 초기화하는 패치를 반환한다.
+ * field가 'st'가 아니거나 값이 'X'가 아니면 빈 객체(추가 변경 없음).
+ */
+export const stClearExtra = (field: string, value: string, hasItemId: boolean): Record<string, string> => {
+  if (field !== 'st' || value !== ST_X) return {};
+  const extra: Record<string, string> = { new_or_copy: '', product_name: '', step: '' };
+  if (hasItemId) extra.item_id = '';
+  return extra;
+};
+
 // ===== Layer 추가/삭제 Merge (참조 요청서 A ↔ 작성 중 요청서 B) =====
 
 /** Merge 비교에 필요한 최소 형태 — JayerRow / OayerRow 양쪽을 받는다. */
 export interface MergeComparableRow {
   id: string;
   sortOrder: number;
-  disabled: boolean;
-  manuallyDisabled: boolean;
   process_id: string;
   sp: string;
   sd: string;
@@ -170,7 +220,7 @@ const mergeKey = (r: { process_id: string; sp: string; sd: string; pp: string })
  * 따라서 A 에서 삭제된 layer 가 B 에 있으면 "A 엔 없던 것이 B 에 생김" → 신규가 된다.
  */
 const isMergePresent = (r: MergeComparableRow): boolean =>
-  !r.disabled && r.new_or_copy !== NOC_LAYER_DELETE;
+  r.new_or_copy !== NOC_LAYER_DELETE;
 
 /**
  * 참조 요청서(A)를 기준으로 작성 중인 요청서(B)의 layer 표를 3-way 로 재판정한다.
@@ -194,8 +244,8 @@ export const computeLayerMerge = <T extends MergeComparableRow>(
 ): { merged: T[]; stats: MergeStats } => {
   const refPresentByKey = new Map(refRows.filter(isMergePresent).map((r) => [mergeKey(r), r]));
   const curPresentKeys = new Set(curRows.filter(isMergePresent).map(mergeKey));
-  // 비활성이 아닌 모든 행(layer삭제 포함). A 행을 추가할 때 같은 키가 이미 있으면 중복을 만들지 않는다.
-  const curActiveKeys = new Set(curRows.filter((r) => !r.disabled).map(mergeKey));
+  // 표의 모든 행(layer삭제 포함). A 행을 추가할 때 같은 키가 이미 있으면 중복을 만들지 않는다.
+  const curActiveKeys = new Set(curRows.map(mergeKey));
 
   const stats: MergeStats = { added: 0, registered: 0, deleted: 0 };
 
@@ -221,8 +271,6 @@ export const computeLayerMerge = <T extends MergeComparableRow>(
       id: genId(),
       sortOrder: base + i,
       loaded: true,          // 원본 컬럼(LOADED_LOCK_COLS) 읽기전용
-      disabled: false,       // 필터에 걸려 숨겨지면 삭제 정보가 상신 시 누락되므로 항상 활성
-      manuallyDisabled: false,
       st: ST_X,
       new_or_copy: NOC_LAYER_DELETE,
     });
@@ -236,7 +284,6 @@ export const computeLayerMerge = <T extends MergeComparableRow>(
 /** 비교에 필요한 최소 형태 — JayerRow / OayerRow 양쪽을 받는다. */
 export interface BaComparableRow {
   id: string;
-  disabled: boolean;
   process_id: string;
   sp: string;
   sd: string;
@@ -272,7 +319,7 @@ const baSame = (a: MergeRowInfo, b: MergeRowInfo): boolean => BA_FIELDS.every((f
  * `computeLayerMerge` 의 `isMergePresent` 와 동일한 기준.
  */
 const baTarget = (r: BaComparableRow): boolean =>
-  !r.disabled && baNorm(r.layerid) !== '' && r.new_or_copy !== NOC_LAYER_DELETE;
+  baNorm(r.layerid) !== '' && r.new_or_copy !== NOC_LAYER_DELETE;
 
 /**
  * 자동 확정 짝의 행 id — 출처 행 id 로 만들어 **같은 입력이면 항상 같은 값**이 되게 한다
@@ -418,7 +465,7 @@ export const computeBeforeAfter = (
 /** AFTER 쪽 id 로부터 실제 J/O-layer 행을 찾는 데 필요한 최소 형태. */
 export interface PairAfterLookupRow {
   id: string;
-  disabled: boolean;
+  st: string;
   new_or_copy: string;
 }
 
@@ -440,7 +487,7 @@ export const isPairAfterInactive = (
   const rowId = afterId.slice(2);
   const rows = table === 'J' ? jayerRows : table === 'O' ? oayerRows : null;
   const row = rows?.find((r) => r.id === rowId);
-  return !!row && (row.disabled || row.new_or_copy === NOC_REGISTERED);
+  return !!row && (isRowInactive(row.st) || row.new_or_copy === NOC_REGISTERED);
 };
 
 // ===== 변경전/변경후 표 직접 입력 =====
@@ -561,11 +608,11 @@ export const isValidationKeywordRow = (pp: string | undefined): boolean =>
 
 /**
  * 문서 단위: 활성 J-layer 행 중 하나라도 판정 키워드를 포함하면 Validation System 대상.
- * 비활성(disabled) 행은 상신 시 저장에서 제외되므로 판정에서도 제외한다.
+ * 비활성(st==='X') 행은 판정에서 제외한다.
  */
 export const isValidationTarget = (
-  rows: { disabled?: boolean; pp?: string }[]
-): boolean => rows.some((r) => !r.disabled && isValidationKeywordRow(r.pp));
+  rows: { st?: string; pp?: string }[]
+): boolean => rows.some((r) => !isRowInactive(r.st) && isValidationKeywordRow(r.pp));
 
 /**
  * 문서 단위 자동 판정값. 판정 키워드가 하나라도 있으면 '대상'(VS_TARGET),
@@ -574,7 +621,7 @@ export const isValidationTarget = (
  * 상신자가 직접 토글했을 때만 나오며, 그 판단이 맞는지는 MASK(E)가 검증한다.
  */
 export const autoValidationSystem = (
-  rows: { disabled?: boolean; pp?: string }[]
+  rows: { st?: string; pp?: string }[]
 ): ValidationSystemValue => (isValidationTarget(rows) ? VS_TARGET : VS_NA);
 
 // ===== ADI CD 변경 — 변경전/변경후 스텝 표 붙여넣기 =====

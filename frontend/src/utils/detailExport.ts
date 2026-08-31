@@ -3,7 +3,7 @@ import type { TFunction } from 'i18next';
 import { RequestDocument, DetailFormState, JayerRow, OayerRow, BbTableRow, MergeRowInfo } from '../types';
 import { ST_CELL_COLOR } from './stCellColor';
 import { bbTabColor } from './bbTabColors';
-import { VALIDATION_CELL_COLOR, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from '../pages/RequestPage/constants';
+import { VALIDATION_CELL_COLOR, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows } from '../pages/RequestPage/helpers';
 
 /**
@@ -80,19 +80,19 @@ function addJobSheet(wb: ExcelJS.Workbook, t: TFunction, jayer: JayerRow[]): voi
     { header: t('request.col_sp'), key: 'sp', width: 10 },
     { header: t('request.col_sd'), key: 'sd', width: 10 },
     { header: t('request.col_pp'), key: 'pp', width: 14 },
-    { header: t('request.col_st'), key: 'st', width: 8 },
+    { header: t('request.col_st_j'), key: 'st', width: 8 },
     { header: t('request.col_new_or_copy'), key: 'new_or_copy', width: 10 },
     { header: t('request.col_product_name'), key: 'product_name', width: 16 },
     { header: t('request.col_step'), key: 'step', width: 10 },
     { header: t('request.col_item_id'), key: 'item_id', width: 12 },
   ];
-  jayer.filter((r) => !r.disabled).forEach((r) => {
+  jayer.forEach((r) => {
     const row = ws.addRow({
       updated: r.updated ?? '', process_id: r.process_id, sp: r.sp, sd: r.sd,
       pp: r.pp, st: r.st, new_or_copy: r.new_or_copy, product_name: r.product_name,
       step: r.step, item_id: r.item_id,
     });
-    const reg = r.new_or_copy === '기등록';
+    const reg = r.new_or_copy === '기등록' || isRowInactive(r.st);
     row.eachCell((cell, col) => {
       if (reg) { applyFill(cell, '#e5e7eb'); return; }
       if (col === 5) applyFill(cell, isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined);
@@ -111,18 +111,18 @@ function addOvlSheet(wb: ExcelJS.Workbook, t: TFunction, oayer: OayerRow[]): voi
     { header: t('request.col_sd'), key: 'sd', width: 10 },
     { header: t('request.col_layer'), key: 'layerid', width: 10 },
     { header: t('request.col_pp'), key: 'pp', width: 14 },
-    { header: t('request.col_st'), key: 'st', width: 8 },
+    { header: t('request.col_st_o'), key: 'st', width: 8 },
     { header: t('request.col_new_or_copy'), key: 'new_or_copy', width: 10 },
     { header: t('request.col_product_name'), key: 'product_name', width: 16 },
     { header: t('request.col_step'), key: 'step', width: 10 },
   ];
-  oayer.filter((r) => !r.disabled).forEach((r) => {
+  oayer.forEach((r) => {
     const row = ws.addRow({
       updated: r.updated ?? '', process_id: r.process_id, sp: r.sp, sd: r.sd,
       layerid: r.layerid, pp: r.pp, st: r.st, new_or_copy: r.new_or_copy,
       product_name: r.product_name, step: r.step,
     });
-    const reg = r.new_or_copy === '기등록';
+    const reg = r.new_or_copy === '기등록' || isRowInactive(r.st);
     row.eachCell((cell, col) => {
       if (reg) { applyFill(cell, '#e5e7eb'); return; }
       if (col === 6) applyFill(cell, isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined);

@@ -12,7 +12,7 @@ from . import design_rule_stats
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
     Line, PauseRequest, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup,
-    UserProfile, WithdrawRequest,
+    UserProfile, WithdrawRequest, LayerFilterSet,
 )
 
 
@@ -875,10 +875,10 @@ class BbMappingValidationTest(TestCase):
         )
         self.assertIsNone(self._view._validate_bb_mapping(doc))
 
-    def test_disabled_row_excluded_even_when_unmapped(self):
-        """2026-08: 비활성 행도 상신 시 저장에 남으므로, 매핑 없이도 통과해야 한다."""
+    def test_inactive_row_excluded_even_when_unmapped(self):
+        """비활성(st=='X') 행도 상신 시 저장에 남으므로, 매핑 없이도 통과해야 한다."""
         doc = self._make_doc_with_jayer([
-            {'id': 'j1', 'process_id': 'P1', 'new_or_copy': '신규', 'disabled': True},
+            {'id': 'j1', 'process_id': 'P1', 'new_or_copy': '신규', 'st': 'X'},
         ])
         self.assertIsNone(self._view._validate_bb_mapping(doc))
 
@@ -902,17 +902,17 @@ class HasPpidPlelTest(TestCase):
         return doc
 
     def test_active_plel_row_is_target(self):
-        doc = self._make_doc_with_jayer([{'id': 'j1', 'pp': 'PLEL01', 'disabled': False}])
+        doc = self._make_doc_with_jayer([{'id': 'j1', 'pp': 'PLEL01', 'st': 'O'}])
         self.assertTrue(doc.has_ppid_plel())
 
-    def test_disabled_plel_row_is_not_target(self):
-        doc = self._make_doc_with_jayer([{'id': 'j1', 'pp': 'PLEL01', 'disabled': True}])
+    def test_inactive_plel_row_is_not_target(self):
+        doc = self._make_doc_with_jayer([{'id': 'j1', 'pp': 'PLEL01', 'st': 'X'}])
         self.assertFalse(doc.has_ppid_plel())
 
-    def test_disabled_plel_row_with_other_active_non_plel_row(self):
+    def test_inactive_plel_row_with_other_active_non_plel_row(self):
         doc = self._make_doc_with_jayer([
-            {'id': 'j1', 'pp': 'PLEL01', 'disabled': True},
-            {'id': 'j2', 'pp': 'NORMAL', 'disabled': False},
+            {'id': 'j1', 'pp': 'PLEL01', 'st': 'X'},
+            {'id': 'j2', 'pp': 'NORMAL', 'st': 'O'},
         ])
         self.assertFalse(doc.has_ppid_plel())
 
@@ -5050,3 +5050,219 @@ class DcqTokenSettleRetryTest(TestCase):
             any(f"[DCQ][{tag}]" in message for message in cm.output),
             f"DCQ 로그에 프로세스 태그[{tag}]가 없음: {cm.output}",
         )
+
+
+class LayerFilterSetTest(TestCase):
+    """J/O-layer 공유 필터 CRUD 권한 + apply-layer-filter 적용 검증."""
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+
+        self.requester = UserProfile.objects.create(loginid='lf_req', mail='lf_req@c.com', role='NONE')
+        self.j_user = UserProfile.objects.create(loginid='lf_j', mail='lf_j@c.com', role='TE_J')
+        self.o_user = UserProfile.objects.create(loginid='lf_o', mail='lf_o@c.com', role='TE_O')
+        self.master = UserProfile.objects.create(loginid='lf_master', mail='lf_master@c.com', role='MASTER')
+        self.outsider = UserProfile.objects.create(loginid='lf_pl', mail='lf_pl@c.com', role='PL')
+
+    def _make_doc(self, jayer_rows=None, oayer_rows=None, status='under_review'):
+        doc = RequestDocument.objects.create(
+            title='lf-doc', requester=self.requester, requester_name='요청자',
+            requester_email='lf_req@c.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps({
+                'jayerRows': jayer_rows or [], 'oayerRows': oayer_rows or [],
+            }),
+        )
+        return doc
+
+    def _row(self, **kwargs):
+        base = {
+            'id': 'r1', 'process_id': 'P1', 'sp': 'SP01', 'sd': 'SD01', 'pp': 'PP01',
+            'layerid': 'L1', 'st': 'O', 'new_or_copy': '신규', 'product_name': '제품A',
+            'step': '10', 'item_id': 'ITEM1',
+        }
+        base.update(kwargs)
+        return base
+
+    # ----- LayerFilterSet CRUD 권한 -----
+
+    def test_te_j_can_list_and_create_j_filter(self):
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.get('/api/layer-filter-sets/', {'table': 'J'})
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post('/api/layer-filter-sets/', {
+            'table': 'J', 'label': 'f1', 'words': {'sp': ['SP01'], 'sd': [], 'pp': []},
+        }, format='json')
+        self.assertEqual(r.status_code, 201, r.content)
+
+    def test_te_j_cannot_list_or_create_o_filter(self):
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.get('/api/layer-filter-sets/', {'table': 'O'})
+        self.assertEqual(r.status_code, 403, r.content)
+        r = self.client.post('/api/layer-filter-sets/', {
+            'table': 'O', 'label': 'f1', 'words': {'sp': [], 'sd': [], 'pp': []},
+        }, format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+
+    def test_te_o_can_list_and_create_o_filter_only(self):
+        self.client.force_authenticate(user=self.o_user)
+        r = self.client.get('/api/layer-filter-sets/', {'table': 'O'})
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.get('/api/layer-filter-sets/', {'table': 'J'})
+        self.assertEqual(r.status_code, 403, r.content)
+
+    def test_master_can_manage_both_tables(self):
+        self.client.force_authenticate(user=self.master)
+        for table in ('J', 'O'):
+            r = self.client.get('/api/layer-filter-sets/', {'table': table})
+            self.assertEqual(r.status_code, 200, r.content)
+            r = self.client.post('/api/layer-filter-sets/', {
+                'table': table, 'label': f'f-{table}', 'words': {'sp': [], 'sd': [], 'pp': []},
+            }, format='json')
+            self.assertEqual(r.status_code, 201, r.content)
+
+    def test_unauthenticated_rejected(self):
+        r = self.client.get('/api/layer-filter-sets/', {'table': 'J'})
+        self.assertIn(r.status_code, (401, 403), r.content)
+
+    def test_te_j_cannot_update_or_delete_o_filter(self):
+        fs = LayerFilterSet.objects.create(table='O', label='o-filter', words={'sp': [], 'sd': [], 'pp': []})
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.patch(f'/api/layer-filter-sets/{fs.id}/', {'label': 'renamed'}, format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+        r = self.client.delete(f'/api/layer-filter-sets/{fs.id}/')
+        self.assertEqual(r.status_code, 403, r.content)
+
+    def test_list_requires_table_param(self):
+        """table 파라미터 없이 목록 조회하면 어느 테이블 권한인지 판정할 수 없어 거부한다."""
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.get('/api/layer-filter-sets/')
+        self.assertEqual(r.status_code, 403, r.content)
+
+    # ----- apply-layer-filter -----
+
+    def test_te_j_applies_j_filter_clears_fields_and_sets_st_x(self):
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01'), self._row(id='r2', sp='SP99')])
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data['matched_count'], 1)
+
+        doc.refresh_from_db()
+        rows = self._json.loads(doc.additional_notes)['jayerRows']
+        matched = next(row for row in rows if row['id'] == 'r1')
+        unmatched = next(row for row in rows if row['id'] == 'r2')
+        self.assertEqual(matched['st'], 'X')
+        self.assertEqual(matched['new_or_copy'], '')
+        self.assertEqual(matched['product_name'], '')
+        self.assertEqual(matched['step'], '')
+        self.assertEqual(matched['item_id'], '')
+        self.assertEqual(unmatched['st'], 'O', '매칭되지 않은 행은 그대로여야 한다')
+
+    def test_already_x_row_not_rematched(self):
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01', st='X', new_or_copy='', product_name='', step='', item_id='')])
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data['matched_count'], 0)
+
+    def test_te_o_cannot_apply_j_filter(self):
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.o_user)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+
+    def test_master_can_apply_either_table(self):
+        fs = LayerFilterSet.objects.create(table='O', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        doc = self._make_doc(oayer_rows=[self._row(sp='SP01')])
+        ApprovalStep.objects.create(document=doc, agent='O', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.master)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'O', 'filter_id': fs.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data['matched_count'], 1)
+
+    def test_rejected_when_document_not_in_progress(self):
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')], status='approved')
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='approved')
+
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_rejected_when_j_stage_already_approved(self):
+        """문서는 under_review 여도(다른 단계가 남아 있어도) J 단계 자체가 끝났으면 J 필터는 막는다."""
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')], status='under_review')
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='approved')
+
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_filter_from_wrong_table_rejected(self):
+        fs = LayerFilterSet.objects.create(table='O', label='o-filter', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 404, r.content)
+
+    def test_pl_role_cannot_apply_any_filter(self):
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.outsider)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+
+    def test_o_filter_apply_does_not_add_item_id_key(self):
+        """O-layer 행에는 원래 item_id 필드가 없다 — 적용해도 새로 생기면 안 된다."""
+        fs = LayerFilterSet.objects.create(table='O', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        o_row = {
+            'id': 'r1', 'process_id': 'P1', 'sp': 'SP01', 'sd': 'SD01', 'pp': 'PP01',
+            'layerid': 'L1', 'st': 'O', 'new_or_copy': '신규', 'product_name': '제품A', 'step': '10',
+        }
+        doc = self._make_doc(oayer_rows=[o_row])
+        ApprovalStep.objects.create(document=doc, agent='O', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.o_user)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'O', 'filter_id': fs.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        row = self._json.loads(doc.additional_notes)['oayerRows'][0]
+        self.assertEqual(row['st'], 'X')
+        self.assertNotIn('item_id', row)

@@ -254,12 +254,20 @@ export interface FilterSet {
   words: { sp: string[]; sd: string[]; pp: string[] };
 }
 
+/** 결재 상세페이지의 J/O-layer 공유 필터 — 개인별(FilterSet)과 달리 팀 전체가 공유하는 서버 저장 목록. */
+export interface LayerFilterSet {
+  id: number;
+  table: 'J' | 'O';
+  label: string;
+  words: { sp: string[]; sd: string[]; pp: string[] };
+  created_at: string;
+  updated_at: string;
+}
+
 export interface JayerRow {
   id: string;
   updated: string;      // 'YYYYMMDD HH:MM' 형식
   sortOrder: number;
-  disabled: boolean;
-  manuallyDisabled: boolean;
   process_id: string;
   sp: string;
   sd: string;
@@ -277,8 +285,6 @@ export interface OayerRow {
   id: string;
   updated: string;      // 'YYYYMMDD HH:MM' 형식
   sortOrder: number;
-  disabled: boolean;
-  manuallyDisabled: boolean;
   process_id: string;
   sp: string;
   sd: string;

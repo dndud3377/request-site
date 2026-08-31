@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AdiCdStep } from '../../../types';
 import { ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from '../constants';
@@ -39,6 +39,21 @@ const AdiCdPanel: React.FC<AdiCdPanelProps> = ({
   const { t } = useTranslation();
   const beforeValidation = validateAdiCdRows(before);
   const afterValidation = validateAdiCdRows(after);
+
+  // 변경전/변경후는 같은 인덱스끼리 짝을 이루는 두 개의 독립된 표라, 한쪽만 스크롤하면
+  // 반대쪽 행과 시각적으로 어긋난다 — 스크롤 위치를 서로 맞춰 항상 같은 행이 나란히 보이게 한다.
+  // isSyncingRef 로 스크롤 이벤트가 서로를 재귀 호출하는 것을 막는다.
+  const beforeScrollRef = useRef<HTMLDivElement>(null);
+  const afterScrollRef = useRef<HTMLDivElement>(null);
+  const isSyncingRef = useRef(false);
+  const syncScroll = (source: AdiCdSide) => (e: React.UIEvent<HTMLDivElement>) => {
+    if (isSyncingRef.current) return;
+    const target = source === 'before' ? afterScrollRef.current : beforeScrollRef.current;
+    if (!target) return;
+    isSyncingRef.current = true;
+    target.scrollTop = e.currentTarget.scrollTop;
+    isSyncingRef.current = false;
+  };
 
   const handlePaste = (side: AdiCdSide) => (e: React.ClipboardEvent<HTMLTableElement>) => {
     e.preventDefault();
@@ -124,11 +139,15 @@ const AdiCdPanel: React.FC<AdiCdPanelProps> = ({
       <div className="adi-cd-split">
         <div className="adi-cd-pane">
           <div className="adi-cd-pane-title">{t('request.adi_cd_before')}</div>
-          <div className="adi-cd-pane-scroll">{renderTable('before', before, beforeValidation)}</div>
+          <div className="adi-cd-pane-scroll" ref={beforeScrollRef} onScroll={syncScroll('before')}>
+            {renderTable('before', before, beforeValidation)}
+          </div>
         </div>
         <div className="adi-cd-pane">
           <div className="adi-cd-pane-title">{t('request.adi_cd_after')}</div>
-          <div className="adi-cd-pane-scroll">{renderTable('after', after, afterValidation)}</div>
+          <div className="adi-cd-pane-scroll" ref={afterScrollRef} onScroll={syncScroll('after')}>
+            {renderTable('after', after, afterValidation)}
+          </div>
         </div>
       </div>
       {/* 변경전/변경후는 같은 인덱스끼리 짝을 이루므로 행 추가 버튼은 하나로 양쪽에 동시에 적용된다. */}

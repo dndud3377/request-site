@@ -1,10 +1,12 @@
 /**
- * 중단(PAUSE) 후 재개(resume) 시 J/O-layer 비활성 행이 재상신 payload 에 그대로 남는지 검증.
+ * 중단(PAUSE) 후 재개(resume) 시 J/O-layer 비활성(st==='X') 행이 재상신 payload 에 그대로 남는지 검증.
  *
  * 회귀 배경: 예전에는 상신 시점에 `jayerRows.filter(r => !r.disabled)` 로 비활성 행을
  * 저장에서 아예 제외했다. 그래서 중단·반려 후 편집 화면을 다시 열면 비활성으로 눌러뒀던
  * 행이 통째로 사라져 복원할 수 없었다. 이제는 임시저장과 동일하게 비활성 행도 포함해서
- * 저장해야 한다(수동 비활성화·필터 비활성화 모두).
+ * 저장해야 한다. (2026-08 이후) 비활성화 버튼·필터의 "활성" 토글은 폐지됐고, 비활성 여부는
+ * st==='X' 값 하나로만 판정한다 — st='X'는 st 셀 직접 편집이든 필터 "적용"(일회성 기록)이든
+ * 저장된 값 자체가 곧 상태라 로드 시 재계산할 것이 없다.
  */
 import React from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
@@ -90,15 +92,15 @@ const fixtureDetail = {
   notifiers: [],
 };
 
-// 활성 1행 + 비활성(수동/필터) 2행 — 비활성 행이 재개 상신 payload 에 남아야 한다.
+// 활성 1행 + 비활성(st==='X') 2행 — 비활성 행이 재개 상신 payload 에 남아야 한다.
 const fixtureJayerRows = [
-  { id: 'j1', updated: '20260801', sortOrder: 1, disabled: false, manuallyDisabled: false, loaded: true, process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01', st: 'O', new_or_copy: '신규', product_name: '제품A', step: '10', item_id: 'ITEM_1' },
-  { id: 'j2', updated: '20260801', sortOrder: 2, disabled: true, manuallyDisabled: true, loaded: true, process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'X', new_or_copy: '신규', product_name: '', step: '', item_id: '' },
-  { id: 'j3', updated: '20260801', sortOrder: 3, disabled: true, manuallyDisabled: false, loaded: true, process_id: PROCESS_ID, sp: 'SP03', sd: 'SD03', pp: 'PP03', layerid: 'L03', st: 'X', new_or_copy: '신규', product_name: '', step: '', item_id: '' },
+  { id: 'j1', updated: '20260801', sortOrder: 1, loaded: true, process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01', st: 'O', new_or_copy: '신규', product_name: '제품A', step: '10', item_id: 'ITEM_1' },
+  { id: 'j2', updated: '20260801', sortOrder: 2, loaded: true, process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'X', new_or_copy: '', product_name: '', step: '', item_id: '' },
+  { id: 'j3', updated: '20260801', sortOrder: 3, loaded: true, process_id: PROCESS_ID, sp: 'SP03', sd: 'SD03', pp: 'PP03', layerid: 'L03', st: 'X', new_or_copy: '', product_name: '', step: '', item_id: '' },
 ];
 const fixtureOayerRows = [
-  { id: 'o1', updated: '20260801', sortOrder: 1, disabled: false, manuallyDisabled: false, loaded: true, process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01', st: 'O', new_or_copy: '신규', product_name: '제품A', step: '10' },
-  { id: 'o2', updated: '20260801', sortOrder: 2, disabled: true, manuallyDisabled: true, loaded: true, process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'X', new_or_copy: '신규', product_name: '', step: '' },
+  { id: 'o1', updated: '20260801', sortOrder: 1, loaded: true, process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01', st: 'O', new_or_copy: '신규', product_name: '제품A', step: '10' },
+  { id: 'o2', updated: '20260801', sortOrder: 2, loaded: true, process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'X', new_or_copy: '', product_name: '', step: '' },
 ];
 const fixtureBbRows = [
   { id: 'b1', sortOrder: 1, disabled: false, entryId: 'bbe1', sourceJayerRowId: 'j1', process_id: PROCESS_ID, ss: 'SP01', sd: 'SD01', bb_process_id: BB_PROCESS_ID, bb_name: '[라인1] BB제품1', bb_layer: 'L01', bb_ss: '110', bb_step: 'STEP', remark: '' },
@@ -110,11 +112,6 @@ const fixtureNotes = {
   oayerRows: fixtureOayerRows,
   bbRows: fixtureBbRows,
   history: [],
-  // j3 는 필터로 비활성화된 행 — 필터 id 는 문서에 저장되지만 필터 '정의'는 localStorage 에 있다(B-58).
-  // 편집 로드 시 이 정의 + activeIds 로 disabled 를 다시 계산하므로, 아래 beforeEach 에서
-  // 같은 필터 정의를 localStorage 에 채워 넣어야 j3 가 필터-비활성 상태로 복원된다.
-  jayerActiveFilterIds: ['f1'],
-  oayerActiveFilterIds: [],
 };
 
 const fixtureDoc = {
@@ -169,20 +166,16 @@ async function clickThroughToLastStep() {
   throw new Error('마지막 단계(📤 버튼)에 도달하지 못했다');
 }
 
-describe('중단 후 재개(resume) — 비활성 J/O-layer 행이 재상신 payload 에 남는가', () => {
+describe('중단 후 재개(resume) — 비활성(st===X) J/O-layer 행이 재상신 payload 에 남는가', () => {
   beforeEach(() => {
     mockState.doc = fixtureDoc;
     mockState.optionsFor = optionsFor;
     mockState.captured = null;
     mockState.resumeCalled = false;
     localStorage.clear();
-    // j3(pp='PP03')를 걸러 비활성화하는 필터 정의 — jayerActiveFilterIds:['f1'] 와 짝을 맞춘다.
-    localStorage.setItem('jayerFilterSets', JSON.stringify([
-      { id: 'f1', label: 'PP03 숨김', words: { sp: [], sd: [], pp: ['PP03'] } },
-    ]));
   });
 
-  it('재개(resume) 상신 시 비활성(수동/필터) 행이 저장 payload 에 그대로 남는다', async () => {
+  it('재개(resume) 상신 시 비활성(st===X) 행이 저장 payload 에 그대로 남는다', async () => {
     await renderLoadedPage();
     await clickThroughToLastStep();
 
@@ -211,18 +204,18 @@ describe('중단 후 재개(resume) — 비활성 J/O-layer 행이 재상신 pay
     await waitFor(() => expect(mockState.resumeCalled).toBe(true));
 
     const saved = JSON.parse((mockState.captured as { additional_notes: string }).additional_notes);
-    const savedJayerIds = (saved.jayerRows as { id: string; disabled: boolean }[]).map((r) => r.id);
-    const savedOayerIds = (saved.oayerRows as { id: string; disabled: boolean }[]).map((r) => r.id);
+    const savedJayerIds = (saved.jayerRows as { id: string; st: string }[]).map((r) => r.id);
+    const savedOayerIds = (saved.oayerRows as { id: string; st: string }[]).map((r) => r.id);
 
-    // 활성 행뿐 아니라 비활성(수동 j2/필터성 j3, 수동 o2) 행도 전부 저장돼야 한다.
+    // 활성 행뿐 아니라 비활성(j2/j3, o2) 행도 전부 저장돼야 한다.
     expect(savedJayerIds.sort()).toEqual(['j1', 'j2', 'j3']);
     expect(savedOayerIds.sort()).toEqual(['o1', 'o2']);
 
-    const j2 = (saved.jayerRows as { id: string; disabled: boolean; manuallyDisabled: boolean }[]).find((r) => r.id === 'j2');
-    const j3 = (saved.jayerRows as { id: string; disabled: boolean; manuallyDisabled: boolean }[]).find((r) => r.id === 'j3');
-    const o2 = (saved.oayerRows as { id: string; disabled: boolean }[]).find((r) => r.id === 'o2');
-    expect(j2?.disabled).toBe(true);
-    expect(j3?.disabled).toBe(true);
-    expect(o2?.disabled).toBe(true);
+    const j2 = (saved.jayerRows as { id: string; st: string }[]).find((r) => r.id === 'j2');
+    const j3 = (saved.jayerRows as { id: string; st: string }[]).find((r) => r.id === 'j3');
+    const o2 = (saved.oayerRows as { id: string; st: string }[]).find((r) => r.id === 'o2');
+    expect(j2?.st).toBe('X');
+    expect(j3?.st).toBe('X');
+    expect(o2?.st).toBe('X');
   });
 });

@@ -42,7 +42,8 @@ const Step3JayerFilterDemo: React.FC = () => {
   const [form, setForm] = useState<SavedFilter>(emptyForm());
   const [spInput, setSpInput] = useState('');
   const [sdInput, setSdInput] = useState('');
-  const [activeId, setActiveId] = useState<string | null>(null);
+  // 필터 "적용"으로 st='X' 가 실제로 기록된 행 — 토글이 아니라 일회성이라 다시 켜고 끌 수 없다.
+  const [markedRows, setMarkedRows] = useState<Set<number>>(new Set());
 
   const addFilterBtnRef = useRef<HTMLButtonElement>(null);
   const nameInputRef = useRef<HTMLDivElement>(null);
@@ -57,9 +58,6 @@ const Step3JayerFilterDemo: React.FC = () => {
   const deleteBtnRef = useRef<HTMLButtonElement>(null);
 
   const sampleName = t('guide.demo.step3_jayer_filter.sample_name');
-  const activeFilter = saved.find((f) => f.id === activeId) ?? null;
-  const isRowDisabled = (row: DemoRow): boolean =>
-    !!activeFilter && activeFilter.sd.some((kw) => row.sd.includes(kw));
 
   const { stageRef, cursorLayer, done, replay } = useDemoTimeline(
     async ({ moveTo, click, sleep, cancelled }) => {
@@ -84,7 +82,7 @@ const Step3JayerFilterDemo: React.FC = () => {
       setForm(emptyForm());
       setSpInput('');
       setSdInput('');
-      setActiveId(null);
+      setMarkedRows(new Set());
       await sleep(550);
 
       // ① 필터 생성
@@ -112,7 +110,7 @@ const Step3JayerFilterDemo: React.FC = () => {
       setForm(emptyForm());
       await sleep(800);
 
-      // ② 적용 (행 비활성화)
+      // ② 적용 — 조건에 맞는 행의 st 를 그 자리에서 'X'로 기록(일회성)
       setPhase('apply');
       await moveTo(closeBtnRef.current);
       await click(closeBtnRef.current);
@@ -120,7 +118,7 @@ const Step3JayerFilterDemo: React.FC = () => {
       await sleep(500);
       await moveTo(filterBtnRef.current);
       await click(filterBtnRef.current);
-      setActiveId(FILTER_ID);
+      setMarkedRows(new Set(ROWS.filter((r) => r.sd.includes(SD_KEYWORD)).map((r) => r.no)));
       await sleep(850);
 
       // ③ 수정
@@ -151,12 +149,11 @@ const Step3JayerFilterDemo: React.FC = () => {
       setForm(emptyForm());
       await sleep(750);
 
-      // ④ 삭제
+      // ④ 삭제 — 필터 "정의"만 지워질 뿐, 이미 st='X'로 기록된 행은 그대로 남는다.
       setPhase('delete');
       await moveTo(deleteBtnRef.current);
       await click(deleteBtnRef.current);
       setSaved([]);
-      setActiveId(null);
       await sleep(700);
       await moveTo(closeBtnRef.current);
       await click(closeBtnRef.current);
@@ -188,7 +185,7 @@ const Step3JayerFilterDemo: React.FC = () => {
               key={f.id}
               type="button"
               ref={filterBtnRef}
-              className={`guide-demo-toolbtn${activeId === f.id ? ' on' : ''}`}
+              className="guide-demo-toolbtn"
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
             >
@@ -211,7 +208,7 @@ const Step3JayerFilterDemo: React.FC = () => {
             </thead>
             <tbody>
               {ROWS.map((row) => (
-                <tr key={row.no} className={isRowDisabled(row) ? 'disabled' : ''}>
+                <tr key={row.no} className={markedRows.has(row.no) ? 'disabled' : ''}>
                   <td>{row.proc}</td>
                   <td>{row.sd}</td>
                 </tr>

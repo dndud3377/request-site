@@ -1,18 +1,20 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { documentsAPI, usersAPI, userGroupsAPI } from '../api/client';
+import { documentsAPI, usersAPI, userGroupsAPI, layerFilterSetsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import StageGrid from '../components/StageGrid';
-import Modal from '../components/Modal';
+import Modal, { ConfirmModal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '../components/PagedDetailView';
 import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
-import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem } from '../types';
+import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem, LayerFilterSet } from '../types';
 import { formatDate } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
+import FilterManageModal from './RequestPage/components/FilterManageModal';
+import { emptyDraftWords } from './RequestPage/helpers';
 import {
   getDocTableRows, getFinalCompletionDate, getCurrentRound, getLastRejectionInfo,
   hasActivePendingStep, isMyDocument,
@@ -174,6 +176,27 @@ export default function ApprovalPage(): React.ReactElement {
   const [modalOpen, setModalOpen] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [pageIdx, setPageIdx] = useState(0);
+
+  // 결재 상세페이지 J/O-layer 공유 필터(팀 전체가 관리하는 목록 — 의뢰서 작성 화면의
+  // 개인별 필터와는 별개). TE_J/TE_O/MASTER 로그인 시에만 조회해 두면 된다.
+  const [jayerLayerFilterSets, setJayerLayerFilterSets] = useState<LayerFilterSet[]>([]);
+  const [oayerLayerFilterSets, setOayerLayerFilterSets] = useState<LayerFilterSet[]>([]);
+  const [jayerFilterManageOpen, setJayerFilterManageOpen] = useState(false);
+  const [oayerFilterManageOpen, setOayerFilterManageOpen] = useState(false);
+  const [jayerFilterNewDraft, setJayerFilterNewDraft] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
+  const [oayerFilterNewDraft, setOayerFilterNewDraft] = useState<{ label: string; words: { sp: string[]; sd: string[]; pp: string[] } }>({ label: '', words: emptyDraftWords() });
+  // 팀 전체가 공유하는 필터라 삭제는(개별/전체 모두) 확인 후 진행한다.
+  const [layerFilterDeleteConfirm, setLayerFilterDeleteConfirm] = useState<{ table: 'J' | 'O'; id: number; label: string } | null>(null);
+  const [layerFilterAllDeleteConfirm, setLayerFilterAllDeleteConfirm] = useState<'J' | 'O' | null>(null);
+
+  useEffect(() => {
+    if (currentUser.role === 'TE_J' || currentUser.role === 'MASTER') {
+      layerFilterSetsAPI.list('J').then(setJayerLayerFilterSets).catch(() => {});
+    }
+    if (currentUser.role === 'TE_O' || currentUser.role === 'MASTER') {
+      layerFilterSetsAPI.list('O').then(setOayerLayerFilterSets).catch(() => {});
+    }
+  }, [currentUser.role]);
 
   // 합의/반려 comment 모달
   const [commentModalOpen, setCommentModalOpen] = useState(false);
@@ -707,6 +730,32 @@ export default function ApprovalPage(): React.ReactElement {
     // EV 가 하나도 없으면 백엔드는 '담당자 합의만으로 완료'(하위호환)로 보므로 창도 닫혀야 한다.
     if (evSteps.length === 0) return false;
     return evSteps.every((st) => st.action !== 'approved');
+  };
+
+  /**
+   * 결재 상세페이지 J/O-layer 공유 필터 사용 가능 여부.
+   * table='J' 는 TE_J/MASTER, table='O' 는 TE_O/MASTER. 문서가 under_review/pause 이고
+   * 해당 단계(J 또는 O)가 이번 회차에 아직 합의되지 않았을 때만 — 백엔드 apply_layer_filter 와 같은 규칙.
+   */
+  const canUseLayerFilter = (doc: RequestDocument | null, table: 'J' | 'O'): boolean => {
+    if (!doc || isTourMode) return false;
+    const allowedRole = table === 'J' ? 'TE_J' : 'TE_O';
+    if (currentUser.role !== 'MASTER' && currentUser.role !== allowedRole) return false;
+    if (doc.status !== 'under_review' && doc.status !== 'pause') return false;
+    const round = getCurrentRound(doc);
+    const step = (doc.approval_steps ?? []).find((s) => s.agent === table && (s.round ?? 1) === round);
+    return !step || step.action !== 'approved';
+  };
+
+  const handleApplyLayerFilter = async (table: 'J' | 'O', filterId: number) => {
+    if (!selected) return;
+    try {
+      const { data } = await documentsAPI.applyLayerFilter(selected.id, table, filterId);
+      addToast(data.message, data.matched_count > 0 ? 'success' : 'info');
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    }
   };
 
   const handleValidationSystemChange = async (value: ValidationSystemValue) => {
@@ -2710,10 +2759,93 @@ export default function ApprovalPage(): React.ReactElement {
               canEditValidationSystem={canEditValidationSystem(selected)}
               onValidationSystemChange={handleValidationSystemChange}
               reviewItems={buildReviewItemsProps(selected)}
+              canUseJayerFilter={canUseLayerFilter(selected, 'J')}
+              canUseOayerFilter={canUseLayerFilter(selected, 'O')}
+              jayerLayerFilterSets={jayerLayerFilterSets}
+              oayerLayerFilterSets={oayerLayerFilterSets}
+              onApplyJayerLayerFilter={(filterId) => handleApplyLayerFilter('J', filterId)}
+              onApplyOayerLayerFilter={(filterId) => handleApplyLayerFilter('O', filterId)}
+              onOpenJayerFilterManage={() => setJayerFilterManageOpen(true)}
+              onOpenOayerFilterManage={() => setOayerFilterManageOpen(true)}
             />
           </div>
         )}
       </Modal>
+
+      {/* J-layer 공유 필터 관리 — TE_J/MASTER 전원이 같은 목록을 본다 */}
+      <FilterManageModal
+        isOpen={jayerFilterManageOpen}
+        onClose={() => { setJayerFilterManageOpen(false); setJayerFilterNewDraft({ label: '', words: emptyDraftWords() }); }}
+        title={t('request.jayer_filter_manage')}
+        filterSets={jayerLayerFilterSets.map((fs) => ({ id: String(fs.id), label: fs.label, words: fs.words }))}
+        newFilter={jayerFilterNewDraft}
+        setNewFilter={setJayerFilterNewDraft}
+        onAllDelete={() => setLayerFilterAllDeleteConfirm('J')}
+        onRequestDelete={(fs) => setLayerFilterDeleteConfirm({ table: 'J', id: Number(fs.id), label: fs.label })}
+        onAdd={async (label, words) => {
+          const created = await layerFilterSetsAPI.create('J', label, words);
+          setJayerLayerFilterSets((prev) => [...prev, created]);
+        }}
+        onEdit={async (filterId, label, words) => {
+          const updated = await layerFilterSetsAPI.update(Number(filterId), label, words);
+          setJayerLayerFilterSets((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
+        }}
+      />
+
+      {/* O-layer 공유 필터 관리 — TE_O/MASTER 전원이 같은 목록을 본다 */}
+      <FilterManageModal
+        isOpen={oayerFilterManageOpen}
+        onClose={() => { setOayerFilterManageOpen(false); setOayerFilterNewDraft({ label: '', words: emptyDraftWords() }); }}
+        title={t('request.oayer_filter_manage')}
+        filterSets={oayerLayerFilterSets.map((fs) => ({ id: String(fs.id), label: fs.label, words: fs.words }))}
+        newFilter={oayerFilterNewDraft}
+        setNewFilter={setOayerFilterNewDraft}
+        onAllDelete={() => setLayerFilterAllDeleteConfirm('O')}
+        onRequestDelete={(fs) => setLayerFilterDeleteConfirm({ table: 'O', id: Number(fs.id), label: fs.label })}
+        onAdd={async (label, words) => {
+          const created = await layerFilterSetsAPI.create('O', label, words);
+          setOayerLayerFilterSets((prev) => [...prev, created]);
+        }}
+        onEdit={async (filterId, label, words) => {
+          const updated = await layerFilterSetsAPI.update(Number(filterId), label, words);
+          setOayerLayerFilterSets((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
+        }}
+      />
+
+      <ConfirmModal
+        isOpen={!!layerFilterDeleteConfirm}
+        onClose={() => setLayerFilterDeleteConfirm(null)}
+        onConfirm={async () => {
+          if (!layerFilterDeleteConfirm) return;
+          const { table, id } = layerFilterDeleteConfirm;
+          await layerFilterSetsAPI.delete(id);
+          (table === 'J' ? setJayerLayerFilterSets : setOayerLayerFilterSets)((prev) => prev.filter((f) => f.id !== id));
+          setLayerFilterDeleteConfirm(null);
+        }}
+        title={t('common.confirm')}
+        message={t('request.filter_delete_confirm', { label: layerFilterDeleteConfirm?.label ?? '' })}
+        confirmLabel={t('common.delete')}
+        danger
+        topLevel
+      />
+
+      <ConfirmModal
+        isOpen={!!layerFilterAllDeleteConfirm}
+        onClose={() => setLayerFilterAllDeleteConfirm(null)}
+        onConfirm={async () => {
+          const table = layerFilterAllDeleteConfirm;
+          if (!table) return;
+          const sets = table === 'J' ? jayerLayerFilterSets : oayerLayerFilterSets;
+          await Promise.all(sets.map((fs) => layerFilterSetsAPI.delete(fs.id)));
+          (table === 'J' ? setJayerLayerFilterSets : setOayerLayerFilterSets)([]);
+          setLayerFilterAllDeleteConfirm(null);
+        }}
+        title={t('common.confirm')}
+        message={t('request.filter_all_delete_confirm')}
+        confirmLabel={t('common.delete')}
+        danger
+        topLevel
+      />
 
       <StepGuideTour
         isOpen={shareTourOpen}

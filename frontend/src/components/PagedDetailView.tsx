@@ -3,11 +3,11 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import html2canvas from 'html2canvas';
-import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, AdiCdTarget } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, AdiCdTarget, LayerFilterSet } from '../types';
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
-import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from '../pages/RequestPage/constants';
+import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
@@ -205,7 +205,7 @@ interface DiffField { key: string; label: string; format?: (v: any) => string; }
 /**
  * 표 3종의 이력 컬럼 정의(모듈 상수).
  * **이 목록이 곧 변경 판정 기준이다** — 이력 모달에 보이는 값이 같으면 변경이 아니다.
- * 내부 필드(loaded·manuallyDisabled·entryId 등)를 비교에서 자동으로 제외하므로,
+ * 내부 필드(loaded·entryId 등)를 비교에서 자동으로 제외하므로,
  * 나중에 행 타입에 필드가 추가돼도 이력 오탐이 생기지 않는다.
  */
 interface DiffFieldDef { key: string; label?: string; labelKey?: string; }
@@ -217,7 +217,7 @@ const JAYER_DIFF_FIELDS: DiffFieldDef[] = [
   { key: 'sd',           labelKey: 'request.col_sd' },
   { key: 'pp',           labelKey: 'request.col_pp' },
   { key: 'layerid',      label: 'Layer' },
-  { key: 'st',           labelKey: 'request.col_st' },
+  { key: 'st',           labelKey: 'request.col_st_j' },
   { key: 'new_or_copy',  labelKey: 'request.col_new_or_copy' },
   { key: 'product_name', labelKey: 'request.col_product_name' },
   { key: 'step',         labelKey: 'request.col_step' },
@@ -231,7 +231,7 @@ const OAYER_DIFF_FIELDS: DiffFieldDef[] = [
   { key: 'sd',           labelKey: 'request.col_sd' },
   { key: 'layerid',      labelKey: 'request.col_layer' },
   { key: 'pp',           labelKey: 'request.col_pp' },
-  { key: 'st',           labelKey: 'request.col_st' },
+  { key: 'st',           labelKey: 'request.col_st_o' },
   { key: 'new_or_copy',  labelKey: 'request.col_new_or_copy' },
   { key: 'product_name', labelKey: 'request.col_product_name' },
   { key: 'step',         labelKey: 'request.col_step' },
@@ -797,7 +797,7 @@ function JayerTable({
           <thead>
             <tr>
               {hasPrev && <th style={{ width: 64 }}></th>}
-              <th>{t('request.col_updated_date')}</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th>
+              <th>{t('request.col_updated_date')}</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st_j')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th>
             </tr>
           </thead>
           <tbody>
@@ -812,7 +812,7 @@ function JayerTable({
                       )}
                     </td>
                   )}
-                  {(() => { const reg = r.new_or_copy === '기등록'; const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: reg ? rb : isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.item_id}</td></>); })()}
+                  {(() => { const reg = r.new_or_copy === '기등록' || isRowInactive(r.st); const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: reg ? rb : isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.item_id}</td></>); })()}
                 </tr>
               );
             })}
@@ -853,7 +853,7 @@ function OayerTable({
           <thead>
             <tr>
               {hasPrev && <th style={{ width: 64 }}></th>}
-              <th>{t('request.col_updated_date')}</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_layer')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th>
+              <th>{t('request.col_updated_date')}</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_layer')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st_o')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th>
             </tr>
           </thead>
           <tbody>
@@ -868,7 +868,7 @@ function OayerTable({
                       )}
                     </td>
                   )}
-                  {(() => { const reg = r.new_or_copy === '기등록'; const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: rb }}>{r.layerid}</td><td style={{ backgroundColor: reg ? rb : isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td></>); })()}
+                  {(() => { const reg = r.new_or_copy === '기등록' || isRowInactive(r.st); const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: rb }}>{r.layerid}</td><td style={{ backgroundColor: reg ? rb : isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td></>); })()}
                 </tr>
               );
             })}
@@ -957,7 +957,7 @@ function computeDetailDiff(cur: any, prev: any): Set<string> {
 
 /**
  * 행 비교용 서명 — **이력 모달에 표시되는 컬럼만** 본다.
- * id·sortOrder·disabled 같은 내부 필드는 물론, loaded·manuallyDisabled·entryId 처럼
+ * id·sortOrder 같은 내부 필드는 물론, loaded·entryId 처럼
  * 화면에 없는 값도 비교에서 빠진다(이 값들은 재상신 편집 로드 때 시스템이 재계산하므로,
  * 함께 비교하면 사용자가 아무것도 고치지 않아도 '변경됨'으로 잡혔다).
  */
@@ -1102,6 +1102,19 @@ export interface PagedDetailViewProps {
    *  - true(이력 조회): **한 번이라도 바뀌었으면** 강조·버튼, 모달은 회차별 전체.
    */
   historyMode?: boolean;
+  /**
+   * 결재 상세페이지 J/O-layer 공유 필터. 넘기지 않으면(HistoryPage 등) 툴바 자체가 뜨지 않는다.
+   * 사용 가능 여부(canUse*)·목록·적용/관리 핸들러 모두 호출부(ApprovalPage)가 소유한다 —
+   * 이 컴포넌트는 API를 직접 호출하지 않는 순수 표시 컴포넌트라는 기존 원칙을 그대로 따른다.
+   */
+  canUseJayerFilter?: boolean;
+  canUseOayerFilter?: boolean;
+  jayerLayerFilterSets?: LayerFilterSet[];
+  oayerLayerFilterSets?: LayerFilterSet[];
+  onApplyJayerLayerFilter?: (filterId: number) => void;
+  onApplyOayerLayerFilter?: (filterId: number) => void;
+  onOpenJayerFilterManage?: () => void;
+  onOpenOayerFilterManage?: () => void;
 }
 
 /** 전체 export(제목 옆 버튼)가 상세 정보/MAP 정보 탭을 화면 그대로 캡처할 때 쓰는 핸들. */
@@ -1116,6 +1129,10 @@ export interface PagedDetailViewHandle {
 const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(function PagedDetailView({
   doc, role, pageIdx, setPageIdx, canEditValidationSystem = false, onValidationSystemChange,
   reviewItems, historyMode = false,
+  canUseJayerFilter = false, canUseOayerFilter = false,
+  jayerLayerFilterSets, oayerLayerFilterSets,
+  onApplyJayerLayerFilter, onApplyOayerLayerFilter,
+  onOpenJayerFilterManage, onOpenOayerFilterManage,
 }, ref) {
   const { t } = useTranslation();
   const { isFullscreen, setIsFullscreen } = useModalFullscreen();
@@ -2254,7 +2271,20 @@ type Page = { label: string; content: React.ReactNode };
               </span>
             )}
           </div>
-          <JayerTable rows={jayer.filter(r => !r.disabled)} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} />
+          {canUseJayerFilter && (
+            <div className="wizard-table-toolbar" style={{ marginBottom: 8 }}>
+              <span className="wizard-table-toolbar-label">{t('request.layer_filter_apply_label')}:</span>
+              {(jayerLayerFilterSets ?? []).map((fs) => (
+                <button key={fs.id} type="button" className="th-header-btn" onClick={() => onApplyJayerLayerFilter?.(fs.id)}>
+                  {fs.label}
+                </button>
+              ))}
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenJayerFilterManage}>
+                {t('request.layer_filter_manage_btn')}
+              </button>
+            </div>
+          )}
+          <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} />
           </>
           )}
         </div>
@@ -2321,7 +2351,22 @@ type Page = { label: string; content: React.ReactNode };
                 ))}
               </div>
               {activeTab === 'table' && (
-                <OayerTable rows={oayer.filter(r => !r.disabled)} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} />
+                <>
+                  {canUseOayerFilter && (
+                    <div className="wizard-table-toolbar" style={{ marginBottom: 8 }}>
+                      <span className="wizard-table-toolbar-label">{t('request.layer_filter_apply_label')}:</span>
+                      {(oayerLayerFilterSets ?? []).map((fs) => (
+                        <button key={fs.id} type="button" className="th-header-btn" onClick={() => onApplyOayerLayerFilter?.(fs.id)}>
+                          {fs.label}
+                        </button>
+                      ))}
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenOayerFilterManage}>
+                        {t('request.layer_filter_manage_btn')}
+                      </button>
+                    </div>
+                  )}
+                  <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} />
+                </>
               )}
               {activeTab === 'info' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 20, fontSize: 13 }}>

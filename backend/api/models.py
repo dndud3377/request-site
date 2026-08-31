@@ -247,17 +247,44 @@ class RequestDocument(models.Model):
         참이면 E(MASK) 단계가 결재 경로에 포함된다 — MASK 팀이 Validation System
         대상/비대상 판정이 맞는지 검증한다. 거짓이면(키워드가 아예 없으면) 판정
         자체가 성립하지 않으므로('해당없음') E 단계를 생성하지 않는다.
-        jayerRows 는 additional_notes JSON 최상위에 저장되며, 비활성(disabled)
-        행도 함께 저장되므로(2026-08) 여기서 직접 걸러야 한다.
+        jayerRows 는 additional_notes JSON 최상위에 저장되며, 비활성(st=='X')
+        행도 함께 저장되므로 여기서 직접 걸러야 한다.
         """
         jayer_rows = self.get_detail().get('jayerRows', [])
         for row in jayer_rows:
-            if row.get('disabled'):
+            if row.get('st') == 'X':
                 continue
             pp = row.get('pp', '') or ''
             if self.VALIDATION_KEYWORD in pp.lower():
                 return True
         return False
+
+
+class LayerFilterSet(models.Model):
+    """결재 상세페이지의 J/O-layer 공유 필터.
+
+    의뢰서 작성 화면의 필터(개인별, localStorage)와 달리 이건 팀 전체가 공유하는
+    단일 목록이다 — table='J'인 필터는 TE_J/MASTER 전원이, table='O'인 필터는
+    TE_O/MASTER 전원이 같은 목록을 보고 관리한다. 실제 적용(문서의 st를 'X'로
+    바꾸는 것)은 `RequestDocumentViewSet.apply_layer_filter` 가 담당하고, 이 모델은
+    필터 정의(라벨 + 키워드)만 저장한다.
+    """
+    TABLE_CHOICES = [('J', 'J'), ('O', 'O')]
+
+    table = models.CharField(max_length=1, choices=TABLE_CHOICES, verbose_name='대상 표')
+    label = models.CharField(max_length=100, verbose_name='필터 이름')
+    # {sp: [...], sd: [...], pp: [...]} — 프론트 FilterSet.words 와 동일한 형태
+    words = models.JSONField(default=dict, verbose_name='키워드')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일')
+
+    class Meta:
+        ordering = ['table', 'created_at']
+        verbose_name = 'J/O-layer 공유 필터'
+        verbose_name_plural = 'J/O-layer 공유 필터'
+
+    def __str__(self):
+        return f'[{self.table}] {self.label}'
 
 
 class Holiday(models.Model):
