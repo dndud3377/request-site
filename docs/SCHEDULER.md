@@ -214,7 +214,9 @@ RTDB 소스(라인1·3~5·nv)와 DCQ 소스(라인2)가 같은 방식을 쓴다.
 - 동시성: `sync_rtdb_options` 잡은 `max_instances=1`이라 사이클끼리 겹쳐 돌지 않으므로 캐시에 별도
   락을 걸지 않는다. 다만 `start()`가 기동 시 스레드로 1회 즉시 실행하는 것과 스케줄 잡이 이론상
   거의 동시에 도는 극히 드문 경우, 캐시를 각자 갱신할 수 있다(둘 다 정상 로그인 결과이므로 데이터
-  정합성엔 영향 없음).
+  정합성엔 영향 없음). (2026-08 추가) `sync_rtdb_options()` 본문 전체가 이제
+  `utils.external_sync_lock()` 으로도 감싸여 있어, RTDB 동기화와 DCQ 동기화(`sync_form_options`
+  등)가 서로 겹쳐 도는 것도 막힌다 — 아래 "주의사항"의 "RTDB·DCQ 동기화 상호 배제" 항목 참고.
 
 ## 동기화 실패 알림 메일 (2026-08 추가, DCQ 대상 확장)
 
@@ -278,20 +280,20 @@ DCQ 로 자동 대체되지 않고 그 데이터는 동기화되지 않는다**(
 
 - REST 호출은 사내 인증서 정책에 따라 `verify=False`(SSL 검증 비활성화)로 동작한다. `utils.py` 에서 `InsecureRequestWarning` 을 억제한다.
 - 요청 타임아웃은 `utils.RTDB_REQUEST_TIMEOUT`(기본 30초) 상수로 관리한다.
-- ✅ **(2026-08 수정 완료) DCQ SDK 스레드 비안전성으로 인한 간헐적 동기화 실패.** DCQ Python SDK(v2.5.0,
-  C 확장)는 전역 토큰 상태를 쓰기 때문에 스레드 비안전이다. 기존에는 `cq_login()`(DCQ 로그인)이 전역
-  `sys.stdin` 을 교체하는 **로그인 구간만** `_DCQ_LOGIN_LOCK` 으로 잠갔고, 로그인 이후의
-  `getTokenTime()`/`getData()` 구간은 잠금 밖에 있었다. `start()` 가 `sync_form_options`/
-  `sync_holidays`/`sync_design_rule`(모두 DCQ 사용) 을 daemon 스레드로 동시에 기동하다 보니, 한
-  스레드가 로그인 후 `getData` 를 도는 동안 다른 스레드가 동시에 재로그인하며 SDK 전역 토큰 상태를
-  덮어써 `getTokenTime()` 등에서 간헐적으로 오류가 났다. 이를 막기 위해:
-  - `utils._DCQ_LOCK`(모듈 레벨 `threading.RLock`, 구 `_DCQ_LOGIN_LOCK`)을 로그인 구간뿐 아니라
-    `utils.dcq_session_lock()` 컨텍스트 매니저를 통해 **DCQ 로그인부터 그 잡의 마지막 데이터 조회까지
-    전체 구간**을 감싸도록 확장했다. `cq_login()` 내부에서 다시 이 락에 들어오는 중첩 호출이 있어 `RLock`
-    을 쓴다.
+- ✅ **(2026-08 수정 완료, 이후 RTDB까지 확장) DCQ SDK 스레드 비안전성으로 인한 간헐적 동기화 실패.**
+  DCQ Python SDK(v2.5.0, C 확장)는 전역 토큰 상태를 쓰기 때문에 스레드 비안전이다. 기존에는
+  `cq_login()`(DCQ 로그인)이 전역 `sys.stdin` 을 교체하는 **로그인 구간만** `_DCQ_LOGIN_LOCK` 으로
+  잠갔고, 로그인 이후의 `getTokenTime()`/`getData()` 구간은 잠금 밖에 있었다. `start()` 가
+  `sync_form_options`/`sync_holidays`/`sync_design_rule`(모두 DCQ 사용) 을 daemon 스레드로 동시에
+  기동하다 보니, 한 스레드가 로그인 후 `getData` 를 도는 동안 다른 스레드가 동시에 재로그인하며 SDK
+  전역 토큰 상태를 덮어써 `getTokenTime()` 등에서 간헐적으로 오류가 났다. 이를 막기 위해:
+  - `utils._EXTERNAL_SYNC_LOCK`(모듈 레벨 `threading.RLock`, 구 `_DCQ_LOGIN_LOCK` → `_DCQ_LOCK`)을
+    로그인 구간뿐 아니라 `utils.external_sync_lock()` 컨텍스트 매니저를 통해 **DCQ 로그인부터 그
+    잡의 마지막 데이터 조회까지 전체 구간**을 감싸도록 확장했다. `cq_login()` 내부에서 다시 이 락에
+    들어오는 중첩 호출이 있어 `RLock` 을 쓴다.
   - `scheduler.py` 의 `sync_form_options()`/`sync_holidays()`/`sync_design_rule()` 각 함수 본문(DCQ
-    로그인 ~ 마지막 `get_data_from_dcq()` 호출)을 `with dcq_session_lock():` 으로 감싸, 세 잡이 겹쳐
-    실행되더라도 DCQ SDK 사용 구간이 한 번에 하나씩만 실행되도록 직렬화했다.
+    로그인 ~ 마지막 `get_data_from_dcq()` 호출)을 `with external_sync_lock():` 으로 감싸, 세 잡이
+    겹쳐 실행되더라도 DCQ SDK 사용 구간이 한 번에 하나씩만 실행되도록 직렬화했다.
   - `start()` 에서 이 3개 잡의 `scheduler.add_job(...)` 에도 `max_instances=1` 을 추가해(기존
     `sync_rtdb_options`/`process_mail_queue` 와 동일), 락과 별개로 APScheduler 레벨에서도 사이클
     겹침을 이중으로 방지한다.
@@ -299,13 +301,22 @@ DCQ 로 자동 대체되지 않고 그 데이터는 동기화되지 않는다**(
     (`sync_form_options`/`sync_holidays`/`sync_design_rule`) 은 **하나의 daemon 스레드에서 순차
     실행**하고, DCQ 를 쓰지 않는 `sync_rtdb_options` 만 별도 daemon 스레드로 유지한다. 락만으로도
     겹침 실행은 막히지만, 기동 시점에 동시 시작 자체를 없애 이중으로 방어한다.
+  - **(2026-08 추가) RTDB 동기화까지 같은 락으로 확장.** 락 이름을 `_DCQ_LOCK` → `_EXTERNAL_SYNC_LOCK`,
+    `dcq_session_lock()` → `external_sync_lock()` 으로 바꾸고, `sync_rtdb_options()` 본문(RTDB 토큰
+    발급 ~ 라인별 조회·저장 전체)도 동일한 락으로 감쌌다. 이제 DCQ 동기화와 RTDB 동기화는 서로도
+    겹쳐 돌지 않는다 — 별도 daemon 스레드(DCQ 순차 스레드 / RTDB 스레드)로 기동되는 건 그대로지만,
+    실제 외부 호출 구간은 이 공용 락으로 완전히 직렬화된다.
 - 동기화/조회/로그인 실패 로그는 `exc_info=True` 로 남긴다. 따라서 `... 동기화 실패` / `[DCQ] 데이터 조회 실패`
   / `[RTDB] 데이터 조회 실패` 등의 로그에는 **예외 종류·메시지와 함께 전체 traceback(파일·라인·호출 스택)** 이
   같이 출력되어, 어느 파일 몇 번째 줄에서 무슨 에러가 났는지 바로 확인할 수 있다. (`scheduler.py`·`utils.py`)
-- `get_dcq_credentials()` 의 반환값을 받을 때 **비밀번호를 `_` 로 받지 않는다.** `scheduler.py` 는
-  `gettext_lazy` 를 `_` 로 import 하므로, `dcq_id, _ = get_dcq_credentials()` 로 쓰면 `_` 가 비밀번호
-  문자열로 덮여 이후 모든 `_("...")` 호출이 `TypeError: 'str' object is not callable` 로 실패한다.
-  반드시 `dcq_id, _pw = get_dcq_credentials()` 형태로 받는다.
+- ✅ **(2026-08 수정 완료, ensure_dcq_session() 도입으로 해소) `get_dcq_credentials()` 반환값을
+  `_` 로 받으면 안 되는 문제.** `scheduler.py` 는 `gettext_lazy` 를 `_` 로 import 하므로,
+  `dcq_id, _ = get_dcq_credentials()` 로 쓰면 `_` 가 비밀번호 문자열로 덮여 이후 모든 `_("...")`
+  호출이 `TypeError: 'str' object is not callable` 로 실패한다(`sync_holidays()`에 실제로 있던
+  버그). `scheduler.py` 세 함수 모두 `utils.ensure_dcq_session()` 하나만 호출하도록 바뀌면서
+  `get_dcq_credentials()` 를 scheduler.py 에서 직접 호출하는 코드 자체가 없어져 이 문제가
+  구조적으로 사라졌다. `utils.py` 는 `gettext_lazy` 를 쓰지 않으므로 내부에서 `get_dcq_credentials()`
+  를 호출해도 이 충돌이 없다.
 - ✅ **(2026-08 수정 완료) 라인명 표기 불일치.** 예전에는 `scheduler.LINES`가 `'라인 1'`(공백
   포함)을, `utils.LINE_SUFFIX_MAP`이 `'LINE1'`(영문)을 각각 다르게 써서, `LINE_SUFFIX_MAP[line]`
   조회가 `nv`를 제외한 모든 라인에서 `KeyError`로 죽었다(스케줄러가 사실상 라인1·3·4·5를 전혀
@@ -355,3 +366,36 @@ DCQ 로 자동 대체되지 않고 그 데이터는 동기화되지 않는다**(
         실린다
     - 다음에 DCQ 동기화 실패 알림 메일이 오면, 그 시각 전후 로그를 이 태그 기준으로 먼저
       확인해서 원인을 확정하고, 그에 맞는 근본 조치(프로세스 중복 제거 vs SDK 문의)로 넘어간다.
+  - **(2026-08 재조사) 실패 로그 재분석 결과, 애초에 두 개의 다른 문제가 섞여 있었다.**
+    - `login()` 자체가 거부되는 실패(다수, 계정 자격 증명 자체가 원인)는 **DCQ 계정 비밀번호
+      교체 시기가 지났는데 교체가 늦어져 발생**한 것으로 확인됐다(운영자 확인, 코드로는 검증
+      불가). 비밀번호 교체 후 이 유형의 실패는 재발하지 않았다 — DCQ SDK 나 이 코드의 문제가
+      아니었다.
+    - 로그인 성공 후 `getTokenTime()`/`getData()` 가 실패하는 유형(위 "이전 토큰" 오류)은 위
+      완화책(안정화 대기 + 재시도) 적용 후에도 남아 있고, 시간대별로 반복되는 패턴이 관측됐다
+      (운영자 확인 - 같은 DCQ 계정을 쓰는 외부 프로세스는 없다고 함). 근본 원인은 여전히
+      **미확정**이지만, 아래 `ensure_dcq_session()` 를 추가 완화책으로 도입했다.
+- ⚠️ **(2026-08 추가 완화책, 원인 미확정) DCQ 세션 재사용 + 실패 시 재로그인.** 기존에는
+  `sync_form_options`/`sync_holidays`/`sync_design_rule` 각 사이클마다 매번 `dcq_login_with_retry()`
+  로 완전히 새로 로그인했다. 재로그인이 잦을수록 서버 쪽 "최신 토큰" 포인터가 자주 갱신되므로,
+  로그인 빈도 자체를 줄이면 "이전 토큰" 불일치가 줄어들 것이라는 가설로 `utils.ensure_dcq_session()`
+  을 도입했다:
+  - 같은 프로세스 안에서 이전에 확보해둔 세션이 있으면(`utils._dcq_session_cache`) **재로그인을
+    생략**하고, `get_dcq_token_info()` 로 세션이 아직 살아있는지만 확인해서 재사용한다.
+  - 이 확인이 실패하면(세션이 끊어졌다고 판단) 그 자리에서 즉시 재로그인한다. 새로 로그인한
+    경우에도 반환 전 `get_dcq_token_info()` 로 한 번 더 확인하고, 그마저 실패하면 재로그인을
+    한 번 더 시도한다(최대 2회 로그인).
+  - RTDB(`utils.get_rtdb_token()`)와 달리 DCQ SDK 는 만료 시각을 명시적으로 반환하지 않아(비공개
+    SDK, `getTokenTime()` 반환 스키마 미확정) **TTL 기반 선제 갱신은 적용하지 못했다** — 대신
+    "확인 실패 시에만 재로그인"하는 반응형 방식을 쓴다. `getTokenTime()` 반환값의 만료 필드가
+    확인되면, RTDB 처럼 TTL 기반 선제 갱신으로 개선할 여지가 있다.
+  - `scheduler.py` 의 세 함수는 이제 `dcq_login_with_retry()`/`get_dcq_credentials()`/
+    `get_dcq_token_info()` 를 직접 호출하지 않고 `ensure_dcq_session()` 하나만 호출한다.
+  - **검증 방법**: `backend/api/tests.py` 의 `EnsureDcqSessionTest` (세션 재사용/재검증 실패 시
+    재로그인 전환/최대 2회 제한을 mock 으로 검증). 실제 운영 효과(토큰 불일치 발생률 변화)는
+    다음 실패/성공 사이클의 알림 메일로 확인해야 한다.
+- ⚠️ **(2026-08 추가) RTDB·DCQ 동기화 상호 배제.** 기존에는 `sync_rtdb_options()` 가 DCQ 3개 잡과
+  완전히 독립된 daemon 스레드/스케줄로 돌아, RTDB 동기화와 DCQ 동기화가 동시에 실행될 수 있었다.
+  `utils.external_sync_lock()`(구 `dcq_session_lock()`)을 `sync_rtdb_options()` 본문에도 적용해
+  RTDB 동기화와 DCQ 동기화가 서로 겹쳐 돌지 않도록 직렬화했다(위 "DCQ SDK 스레드 비안전성" 항목
+  참고). 검증: `backend/api/tests.py` 의 `ExternalSyncLockTest`.
