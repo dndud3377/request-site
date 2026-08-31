@@ -27,6 +27,12 @@
 2. **`stage_arrival` 제목 접미사 삭제** — 모든 단계의 메일 제목에서 `- {단계라벨}` 접미사를 제거. 단계 구분은 본문 KPI 카드로만 표시.
 3. **P 단계 완료 통보 신설** — P 단계(담당자+검토자) 합의가 모두 끝나면 `notify_p_completed`로 **TE_O + TE_J 팀 전원**에게 참고용 통보 메일을 발송(§3 표, §4 표). ⚠️ **(2026-08) `notify_p_arrival`(P 도착 → TE_J) 은 폐지**됐다 — J 가 R 합의 시점의 독립 병렬 단계가 되면서 TE_J 가 `stage_arrival`(J) 결재 요청 메일을 직접 받게 돼 중복이 됐고, 대신 TE_J 를 이 완료 통보 수신자에 합류시켰다.
 
+### '상신 받기' — TE_P 구독형 상신 알림 (2026-08 신설)
+권한 관리 'TE_P' 탭에 **라인 필터·전체 받기와 무관한 독립 토글**(`receive_submit_mail`, 기본
+False)을 신설했다. 켠 TE_P 사용자는 `submit`/`resubmit` 시점에 통보처와 같은
+`notify_submitted` 메일을 함께 받는다. VOC 토글과 같은 성격(특정 역할 탭에만 노출, 라인
+필터 미적용, 끌 때 확인 모달)이다. 상세는 §3.3 참고.
+
 ---
 
 ## 1. 아키텍처 (하이브리드: 즉시 발송 + 영속 큐 재시도)
@@ -121,7 +127,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | revision_requested | MASK(E/EV) 담당자가 '수정 요청'을 누를 때 | **요청서 작성자 본인만**. 대상/비대상을 바꿀 수 있는 유일한 주체이기 때문. 결재 상태는 되돌아가지 않는다 |
 | rejected | (반려) | 요청서 작성자 **+ 현재(최종) 회차에서 이미 합의했던 전원**(중복 제거) **+ 아래 반려 단계별 추가분**. 상세는 §3.1 참고 |
 | approved | (완료) | **현재(최종) 회차 결재 경로에 참여했던 전원**(assignee 배정된 모든 단계, 중복 제거) — 2026-07부터 "작성자 그룹 멤버" 방식에서 변경. ⚠️ **'나만의 그룹'은 더 이상 어떤 메일의 수신자 기준도 아니다**(2026-08 문서 정정 — 코드에는 이미 없었는데 모델 docstring·가이드 문구에만 남아 있었다) |
-| notify_submitted | (상신·재상신) | **통보처 전원**(`detail.notifiers`). 통보처는 개별 검색·주소록 불러오기 외에 **'나만의 그룹' 일괄 추가**(2026-08)로도 채울 수 있으나, 저장 포맷이 같아 발송 로직은 동일하다 |
+| notify_submitted | (상신·재상신) | **통보처 전원**(`detail.notifiers`). 통보처는 개별 검색·주소록 불러오기 외에 **'나만의 그룹' 일괄 추가**(2026-08)로도 채울 수 있으나, 저장 포맷이 같아 발송 로직은 동일하다. **+ '상신 받기'를 켠 TE_P 사용자 전원**(2026-08 신설, §3.3) |
 | notify_approved | (완료) | **통보처 전원**(`detail.notifiers`) |
 | notify_p_completed | (P 단계 완료, 2026-08 추가) | **TE_O + TE_J 팀 전원** — 결재 권한과 무관한 참고 통보. P 담당자+검토자(PV) 전원 합의로 P 단계가 완료되는 시점(`_notify_after_p_review`)에 발송. 수신자 중복은 `_apply_redirect` 가 제거한다 |
 
@@ -222,6 +228,22 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 
 ⚠️ 네 이벤트 모두 본문 '특이사항' 칸에 **철회 사유**를 싣는다(`note_override`).
 
+### 3.3 '상신 받기' — TE_P 구독형 상신 알림 (2026-08 신설)
+
+권한 관리 '이메일 설정' 컬럼에 **TE_P 탭에서만** 보이는 별도 토글이다. 지정 담당자가 아니어도
+"의뢰서가 상신되는 순간" 바로 알고 싶은 TE_P 사용자가 본인 의사로 켠다.
+
+| 항목 | 규칙 |
+|---|---|
+| 저장 | `UserProfile.receive_submit_mail`(Boolean, **기본 False** — opt-in) |
+| 대상 역할 | **TE_P 만**. 그 외 역할은 이 필드를 쓰지 않는다(값이 있어도 무시) |
+| 발송 시점 | `submit`/`resubmit` — 기존 `notify_submitted`(통보처) 메일과 **완전히 같은 메일 1통**에 수신자로 합류한다(별도 이벤트·별도 메일이 아니다) |
+| 라인 필터(§3.0) | **적용되지 않는다.** VOC 토글과 동일하게 `_apply_redirect()`를 문서 없이 호출해 라인 수신 설정과 무관하게 발송된다 |
+| '전체 받기'와의 관계 | **완전히 독립.** `receive_all_mail`/`mail_lines`를 어떻게 바꿔도 이 토글 상태는 변하지 않는다 |
+| 변경 API | `PATCH /api/users/{id}/submit-mail/` — `{"receive_submit_mail": true/false}`. 본인 행은 본인이, 그 외에는 MASTER만 변경 가능. 대상이 TE_P가 아니면 400 |
+| 화면 동작 | TE_P 탭의 라인 버튼들 뒤에 구분선 + `상신 받기` 버튼 1개. 켤 때는 즉시 저장, **끌 때는 확인 모달**을 거친다(`permission.submit_mail_off_*`) |
+| 구현 | `mailer.resolve_submit_subscriber_recipients()` → `mailer.enqueue_notify_submitted()`가 통보처 수신자와 합쳐 중복 제거 후 발송 |
+
 ### 제목·본문 규칙 (2026-08 개편)
 - **모든 메일 제목에 요청서 제목이 포함**된다(`_build_message`).
 - **`stage_arrival` 제목은 모든 단계 공통으로 `{name_prefix}[결재 요청] {제목}` 형식**(2026-08부터 단계 접미사 `- {단계라벨}` 삭제). 단계 구분은 본문 KPI 카드의 "결재 단계" 타일로만 표시한다.
@@ -316,7 +338,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 
 | 액션(엔드포인트) | 발송 | 내용 |
 |---|:---:|---|
-| `submit` / `resubmit` (상신·재상신) | ✅ | 지정 PL **전원**에게 stage_arrival(제목에 `[이름님]`, 2026-07 추가) + 통보처 전원에게 notify_submitted |
+| `submit` / `resubmit` (상신·재상신) | ✅ | 지정 PL **전원**에게 stage_arrival(제목에 `[이름님]`, 2026-07 추가) + 통보처 전원 **+ '상신 받기'를 켠 TE_P 전원**(2026-08 신설, §3.3)에게 notify_submitted |
 | `withdraw` (철회 요청·즉시삭제) | ✅ | 진행 중 문서는 확인 대상 단계에 `withdraw_requested`. 임시저장·반려·(MASTER)완료 문서는 즉시 삭제되며 `withdraw_completed`. §3.2 참고 |
 | `confirm-withdraw` (철회 확인) | 🟡 | 대상 단계 **전원 확인이 끝나 삭제될 때만** `withdraw_completed`. 아직 남은 단계가 있으면 무메일 |
 | `reject-withdraw` (철회 거부) | ✅ | 철회 요청자 + 작성자에게 `withdraw_rejected` |
