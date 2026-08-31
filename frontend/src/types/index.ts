@@ -649,6 +649,8 @@ export interface UserWithRole {
   mail_lines?: string[];
   /** VOC 등록 알림 메일 수신 여부(MASTER 전용, 권한 관리 '이메일 설정'의 VOC 토글). */
   receive_voc_mail?: boolean;
+  /** 상신 알림 메일(notify_submitted) 수신 여부(TE_P 전용, 권한 관리 '이메일 설정'의 '상신 받기' 토글). */
+  receive_submit_mail?: boolean;
 }
 
 /** PATCH /users/{id}/mail-lines/ 응답 */
@@ -662,6 +664,12 @@ export interface MailLinesResponse {
 export interface VocMailResponse {
   id: number;
   receive_voc_mail: boolean;
+}
+
+/** PATCH /users/{id}/submit-mail/ 응답 */
+export interface SubmitMailResponse {
+  id: number;
+  receive_submit_mail: boolean;
 }
 
 export interface CreateUserInput {
