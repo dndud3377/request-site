@@ -15,14 +15,12 @@ from dotenv import load_dotenv
 from django.utils.translation import gettext_lazy as _
 
 from .utils import (
-    get_dcq_credentials,
-    dcq_login_with_retry,
-    get_dcq_token_info,
+    ensure_dcq_session,
     get_django_engine,
     get_data_from_dcq,
     get_rtdb_token,
     get_data_from_rtdb,
-    dcq_session_lock,
+    external_sync_lock,
     LINE_SUFFIX_MAP,
     LINE_TO_LINEID_MAP,
 )
@@ -187,6 +185,8 @@ def sync_rtdb_options():
       (2026-08부터 매 주기 풀 로그인 대신, 캐시된 refresh_token 이 유효하면 가벼운 refresh API로
       갱신한다. refresh_token 유효기간이 얼마 안 남았거나 refresh 자체가 실패하면 풀 로그인으로
       폴백해 access_token·refresh_token 을 모두 새로 받는다. 상세는 `utils.get_rtdb_token()` 참고.)
+    - DCQ 동기화(sync_form_options/sync_holidays/sync_design_rule)와 겹쳐 돌지 않도록
+      `utils.external_sync_lock()` 으로 감싼다(2026-08 추가).
     """
     engine = None
     try:
@@ -195,112 +195,113 @@ def sync_rtdb_options():
         logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e), exc_info=True)
         return
 
-    rtdb_token = get_rtdb_token()
-    if not rtdb_token:
-        logger.warning(_("[scheduler] RTDB 로그인/토큰 갱신 실패 - 이번 주기 동기화를 건너뜁니다"))
+    with external_sync_lock():
+        rtdb_token = get_rtdb_token()
+        if not rtdb_token:
+            logger.warning(_("[scheduler] RTDB 로그인/토큰 갱신 실패 - 이번 주기 동기화를 건너뜁니다"))
 
-    # 이번 사이클에서 RTDB 조회가 (재시도 후에도) 실패/빈 결과였던 (context=line, target) 목록.
-    # 사이클 종료 시 하나라도 있으면 알림 메일 1통으로 모아 보낸다.
-    failures = []
+        # 이번 사이클에서 RTDB 조회가 (재시도 후에도) 실패/빈 결과였던 (context=line, target) 목록.
+        # 사이클 종료 시 하나라도 있으면 알림 메일 1통으로 모아 보낸다.
+        failures = []
 
-    def fetch(rtdb_select, rtdb_filter, rtdb_table, suffix, line, target_label):
-        """RTDB 조회. 0건/실패면 최대 RTDB_FETCH_MAX_RETRIES 회까지 RTDB_FETCH_RETRY_DELAY_SEC
-        초 간격으로 재시도한다. 그래도 실패하면 None 을 반환하고 실패 목록에 기록한다
-        (DCQ fallback 없음). get_data_from_rtdb() 는 예외도 내부에서 잡아 None 으로 통일해
-        반환하므로, 여기서는 "None 이거나 0건"이라는 단일 조건으로 재시도를 판단한다.
-        """
-        for attempt in range(1, RTDB_FETCH_MAX_RETRIES + 1):
-            df = None
-            if rtdb_token:
-                payload = {
-                    "query": {
-                        "select": rtdb_select,
-                        "table_name": rtdb_table.format(suffix=suffix),
-                        "filter": rtdb_filter,
-                    },
-                    "target": RTDB_TARGET,
-                }
-                df = get_data_from_rtdb(payload, rtdb_token)
-            if df is not None and len(df) > 0:
-                return df
-            if attempt < RTDB_FETCH_MAX_RETRIES:
-                logger.warning(
-                    _("[scheduler] RTDB 조회 실패/빈 결과 - {delay}초 후 재시도 "
-                      "({attempt}/{max_retries}회, line={line}, target={target})")
-                    .format(delay=RTDB_FETCH_RETRY_DELAY_SEC, attempt=attempt,
-                            max_retries=RTDB_FETCH_MAX_RETRIES, line=line, target=target_label)
-                )
-                time.sleep(RTDB_FETCH_RETRY_DELAY_SEC)
-        logger.warning(
-            _("[scheduler] RTDB 조회 실패/빈 결과 - {max_retries}회 재시도 후에도 실패 "
-              "(line={line}, target={target})")
-            .format(max_retries=RTDB_FETCH_MAX_RETRIES, line=line, target=target_label)
-        )
-        failures.append({'context': line, 'target': target_label})
-        return None
-
-    try:
-        for line in LINES:
-            suffix = LINE_SUFFIX_MAP[line]
-
-            # --- 공정-품목 (api_processproduct) ---
-            try:
-                df_cp = fetch(RTDB_PP_SELECT, RTDB_PP_FILTER, RTDB_PP_TABLE, suffix, line, TARGET_LABEL_PP)
-                if df_cp is not None:
-                    df_cp = df_cp.rename(columns={'descript': 'process', 'partnumber': 'product_name'})
-                    count = _write_if_changed(
-                        engine, 'api_processproduct', line, df_cp,
-                        ['process', 'product_name'],
-                        ['line', 'process', 'product_name', 'last_synced'],
+        def fetch(rtdb_select, rtdb_filter, rtdb_table, suffix, line, target_label):
+            """RTDB 조회. 0건/실패면 최대 RTDB_FETCH_MAX_RETRIES 회까지 RTDB_FETCH_RETRY_DELAY_SEC
+            초 간격으로 재시도한다. 그래도 실패하면 None 을 반환하고 실패 목록에 기록한다
+            (DCQ fallback 없음). get_data_from_rtdb() 는 예외도 내부에서 잡아 None 으로 통일해
+            반환하므로, 여기서는 "None 이거나 0건"이라는 단일 조건으로 재시도를 판단한다.
+            """
+            for attempt in range(1, RTDB_FETCH_MAX_RETRIES + 1):
+                df = None
+                if rtdb_token:
+                    payload = {
+                        "query": {
+                            "select": rtdb_select,
+                            "table_name": rtdb_table.format(suffix=suffix),
+                            "filter": rtdb_filter,
+                        },
+                        "target": RTDB_TARGET,
+                    }
+                    df = get_data_from_rtdb(payload, rtdb_token)
+                if df is not None and len(df) > 0:
+                    return df
+                if attempt < RTDB_FETCH_MAX_RETRIES:
+                    logger.warning(
+                        _("[scheduler] RTDB 조회 실패/빈 결과 - {delay}초 후 재시도 "
+                          "({attempt}/{max_retries}회, line={line}, target={target})")
+                        .format(delay=RTDB_FETCH_RETRY_DELAY_SEC, attempt=attempt,
+                                max_retries=RTDB_FETCH_MAX_RETRIES, line=line, target=target_label)
                     )
-                    if count is None:
-                        logger.info(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 변경 없음 - skip").format(line=line))
-                    else:
-                        logger.info(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} {count}건 동기화 완료").format(line=line, count=count))
-            except Exception as e:
-                logger.error(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
+                    time.sleep(RTDB_FETCH_RETRY_DELAY_SEC)
+            logger.warning(
+                _("[scheduler] RTDB 조회 실패/빈 결과 - {max_retries}회 재시도 후에도 실패 "
+                  "(line={line}, target={target})")
+                .format(max_retries=RTDB_FETCH_MAX_RETRIES, line=line, target=target_label)
+            )
+            failures.append({'context': line, 'target': target_label})
+            return None
 
-            # --- 품목-공정ID (api_productprocessid) ---
-            try:
-                df_pc = fetch(RTDB_PC_SELECT, RTDB_PC_FILTER, RTDB_PC_TABLE, suffix, line, TARGET_LABEL_PC)
-                if df_pc is not None:
-                    df_pc = df_pc.rename(columns={'partnumber': 'product_name', 'processid': 'process_id'})
-                    count = _write_if_changed(
-                        engine, 'api_productprocessid', line, df_pc,
-                        ['product_name', 'process_id'],
-                        ['line', 'product_name', 'process_id', 'last_synced'],
-                    )
-                    if count is None:
-                        logger.info(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 변경 없음 - skip").format(line=line))
-                    else:
-                        logger.info(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} {count}건 동기화 완료").format(line=line, count=count))
-            except Exception as e:
-                logger.error(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
+        try:
+            for line in LINES:
+                suffix = LINE_SUFFIX_MAP[line]
 
-            # --- 스텝 (api_steps: 라인별 단독 테이블) ---
-            # 스텝 테이블이 없는 라인(nv)은 조회 자체를 건너뛴다(실패로 기록하지 않는다).
-            table_name = STEP_TABLE_MAP.get(line)
-            if not table_name:
-                logger.info(_("[scheduler] {line} {{request.col_step}} 테이블 없음 - skip").format(line=line))
-            else:
+                # --- 공정-품목 (api_processproduct) ---
                 try:
-                    # RTDB 쪽 스텝 데이터 갱신이 늦게 반영되는 경우를 대비해 조회 전 잠깐 대기한다.
-                    time.sleep(RTDB_STEP_PRE_FETCH_DELAY_SEC)
-                    df_ps = fetch(RTDB_STEP_SELECT, RTDB_STEP_FILTER, RTDB_STEP_TABLE, suffix, line, TARGET_LABEL_STEP)
-                    if df_ps is not None:
-                        df_ps['last_synced'] = pd.Timestamp.now()
-                        df_ps = df_ps[STEP_COLUMNS + ['last_synced']]
-                        with engine.begin() as db_conn:
-                            db_conn.execute(text(f"DELETE FROM {table_name}"))
-                            df_ps.to_sql(table_name, db_conn, if_exists='append', index=False)
-                        logger.info(_("[scheduler] {line} {{request.col_step}} {count}건 동기화 완료").format(line=line, count=len(df_ps)))
+                    df_cp = fetch(RTDB_PP_SELECT, RTDB_PP_FILTER, RTDB_PP_TABLE, suffix, line, TARGET_LABEL_PP)
+                    if df_cp is not None:
+                        df_cp = df_cp.rename(columns={'descript': 'process', 'partnumber': 'product_name'})
+                        count = _write_if_changed(
+                            engine, 'api_processproduct', line, df_cp,
+                            ['process', 'product_name'],
+                            ['line', 'process', 'product_name', 'last_synced'],
+                        )
+                        if count is None:
+                            logger.info(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 변경 없음 - skip").format(line=line))
+                        else:
+                            logger.info(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} {count}건 동기화 완료").format(line=line, count=count))
                 except Exception as e:
-                    logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
-    finally:
-        if engine:
-            engine.dispose()
+                    logger.error(_("[scheduler] {line} {{request.process_selection}}-{{request.partid_selection}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
 
-    _send_sync_failure_alert('enqueue_rtdb_sync_failed', failures)
+                # --- 품목-공정ID (api_productprocessid) ---
+                try:
+                    df_pc = fetch(RTDB_PC_SELECT, RTDB_PC_FILTER, RTDB_PC_TABLE, suffix, line, TARGET_LABEL_PC)
+                    if df_pc is not None:
+                        df_pc = df_pc.rename(columns={'partnumber': 'product_name', 'processid': 'process_id'})
+                        count = _write_if_changed(
+                            engine, 'api_productprocessid', line, df_pc,
+                            ['product_name', 'process_id'],
+                            ['line', 'product_name', 'process_id', 'last_synced'],
+                        )
+                        if count is None:
+                            logger.info(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 변경 없음 - skip").format(line=line))
+                        else:
+                            logger.info(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} {count}건 동기화 완료").format(line=line, count=count))
+                except Exception as e:
+                    logger.error(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
+
+                # --- 스텝 (api_steps: 라인별 단독 테이블) ---
+                # 스텝 테이블이 없는 라인(nv)은 조회 자체를 건너뛴다(실패로 기록하지 않는다).
+                table_name = STEP_TABLE_MAP.get(line)
+                if not table_name:
+                    logger.info(_("[scheduler] {line} {{request.col_step}} 테이블 없음 - skip").format(line=line))
+                else:
+                    try:
+                        # RTDB 쪽 스텝 데이터 갱신이 늦게 반영되는 경우를 대비해 조회 전 잠깐 대기한다.
+                        time.sleep(RTDB_STEP_PRE_FETCH_DELAY_SEC)
+                        df_ps = fetch(RTDB_STEP_SELECT, RTDB_STEP_FILTER, RTDB_STEP_TABLE, suffix, line, TARGET_LABEL_STEP)
+                        if df_ps is not None:
+                            df_ps['last_synced'] = pd.Timestamp.now()
+                            df_ps = df_ps[STEP_COLUMNS + ['last_synced']]
+                            with engine.begin() as db_conn:
+                                db_conn.execute(text(f"DELETE FROM {table_name}"))
+                                df_ps.to_sql(table_name, db_conn, if_exists='append', index=False)
+                            logger.info(_("[scheduler] {line} {{request.col_step}} {count}건 동기화 완료").format(line=line, count=len(df_ps)))
+                    except Exception as e:
+                        logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
+        finally:
+            if engine:
+                engine.dispose()
+
+        _send_sync_failure_alert('enqueue_rtdb_sync_failed', failures)
 
 
 def sync_form_options():
@@ -322,19 +323,11 @@ def sync_form_options():
         logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e), exc_info=True)
         return
 
-    with dcq_session_lock():
-        if not dcq_login_with_retry():
+    with external_sync_lock():
+        dcq_id = ensure_dcq_session()
+        if not dcq_id:
             _send_sync_failure_alert('enqueue_dcq_sync_failed', FORM_OPTIONS_TARGETS)
-            logger.error(_("[scheduler] DCQ 로그인 실패로 인해 작업을 중단합니다"))
-            return
-
-        # NOTE: gettext 별칭 `_` 를 덮어쓰지 않도록 비밀번호는 `_pw` 로 받는다.
-        dcq_id, _pw = get_dcq_credentials()
-        if dcq_id:
-            get_dcq_token_info(dcq_id)
-        else:
-            _send_sync_failure_alert('enqueue_dcq_sync_failed', FORM_OPTIONS_TARGETS)
-            logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
+            logger.error(_("[scheduler] DCQ 세션 확보 실패로 인해 작업을 중단합니다"))
             return
 
         failures = []
@@ -462,16 +455,11 @@ def sync_holidays():
         logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e), exc_info=True)
         return
 
-    with dcq_session_lock():
-        if not dcq_login_with_retry():
-            _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공휴일'}])
-            logger.error(_("[scheduler] DCQ 로그인 실패로 인해 공휴일 동기화를 중단합니다"))
-            return
-
-        dcq_id, _ = get_dcq_credentials()
+    with external_sync_lock():
+        dcq_id = ensure_dcq_session()
         if not dcq_id:
             _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공휴일'}])
-            logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
+            logger.error(_("[scheduler] DCQ 세션 확보 실패로 인해 공휴일 동기화를 중단합니다"))
             return
 
         try:
@@ -521,17 +509,11 @@ def sync_design_rule():
         logger.error(_("[scheduler] Django DB 엔진 생성 실패: {e}").format(e=e), exc_info=True)
         return
 
-    with dcq_session_lock():
-        if not dcq_login_with_retry():
-            _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공정-디자인룰'}])
-            logger.error(_("[scheduler] DCQ 로그인 실패로 인해 공정-디자인룰 동기화를 중단합니다"))
-            return
-
-        # NOTE: gettext 별칭 `_` 를 덮어쓰지 않도록 비밀번호는 `_pw` 로 받는다.
-        dcq_id, _pw = get_dcq_credentials()
+    with external_sync_lock():
+        dcq_id = ensure_dcq_session()
         if not dcq_id:
             _send_sync_failure_alert('enqueue_dcq_sync_failed', [{'context': '-', 'target': '공정-디자인룰'}])
-            logger.error(_("[scheduler] DCQ 계정 정보를 찾을 수 없습니다"))
+            logger.error(_("[scheduler] DCQ 세션 확보 실패로 인해 공정-디자인룰 동기화를 중단합니다"))
             return
 
         try:
@@ -635,8 +617,8 @@ def start():
 
         def _run_dcq_jobs_sequentially():
             # sync_form_options/sync_holidays/sync_design_rule 는 모두 DCQ 를 사용한다.
-            # dcq_session_lock() 이 SDK 세션 겹침을 막아주지만, 4 개 daemon 스레드가 기동 시
-            # 동시에 시작되는 것 자체를 없애기 위해 하나의 스레드에서 순차 실행한다.
+            # external_sync_lock() 이 DCQ-DCQ, DCQ-RTDB 세션 겹침을 막아주지만, 4 개 daemon
+            # 스레드가 기동 시 동시에 시작되는 것 자체를 없애기 위해 하나의 스레드에서 순차 실행한다.
             sync_form_options()
             sync_holidays()
             sync_design_rule()

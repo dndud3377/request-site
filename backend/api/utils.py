@@ -38,11 +38,20 @@ RTDB_REFRESH_TOKEN_RENEW_MARGIN = 7 * 86400
 # 프로세스가 재시작되면 비워져 다음 호출은 처음부터 풀 로그인(rtdb_login_with_retry)부터 시작한다.
 _rtdb_token_cache = {'refresh_token': None, 'refresh_token_issued_at': None}
 
-# DCQ 세션 직렬화 락 - DCQ SDK(v2.5.0, C 확장)가 전역 토큰 상태를 쓰기 때문에 스레드 비안전이다.
-# cq_login() 이 전역 sys.stdin 을 교체하는 로그인 구간뿐 아니라, 로그인 이후 getTokenTime()/getData()
-# 까지 포함한 "DCQ 세션 전체"를 한 번에 하나씩만 실행해야 토큰 상태가 스레드 간에 섞이지 않는다.
-# cq_login() 내부에서 dcq_session_lock() 안에 다시 들어오는 중첩 호출이 있으므로 RLock 을 쓴다.
-_DCQ_LOCK = threading.RLock()
+# 외부 동기화(DCQ/RTDB) 직렬화 락 - 원래는 DCQ SDK(v2.5.0, C 확장)가 전역 토큰 상태를 쓰기
+# 때문에 스레드 비안전이라 DCQ 세션(로그인~getTokenTime()/getData())만 감싸던 락이었다. 이후
+# RTDB 동기화와 DCQ 동기화가 서로 겹쳐 돌지 않도록 범위를 넓혀, 외부 데이터 동기화(DCQ 세션
+# 전체 + RTDB 동기화 전체)를 한 번에 하나씩만 실행하도록 공용으로 쓴다.
+# cq_login() 내부에서 external_sync_lock() 안에 다시 들어오는 중첩 호출이 있으므로 RLock 을 쓴다.
+_EXTERNAL_SYNC_LOCK = threading.RLock()
+
+# DCQ 세션 재사용 캐시 - 같은 프로세스 안에서 매 사이클 재로그인하지 않고 기존 세션을 재사용하기
+# 위한 캐시. 재사용 전 항상 get_dcq_token_info() 로 세션이 아직 살아있는지 확인하고, 확인이
+# 실패하면 즉시 재로그인한다(ensure_dcq_session() 참고). RTDB 캐시와 달리 만료 시각을 알 수
+# 없어(SDK 가 비공개라 getTokenTime() 반환값의 만료 필드 여부를 확정하지 못함) TTL 기반 선제
+# 갱신 대신 "확인 실패 시에만 재로그인"하는 반응형 방식을 쓴다. 프로세스 메모리에만 있어
+# run_scheduler 재시작 시 비워진다.
+_dcq_session_cache = {'dcq_id': None}
 
 # 진단용 프로세스 식별자(모듈 로드 시 1회 계산, 이 프로세스가 사는 동안 고정) - hostname 은
 # docker-compose 에 별도 hostname 오버라이드가 없어 컨테이너 인스턴스마다 자동으로 고유하게
@@ -65,13 +74,14 @@ DCQ_TOKEN_INFO_RETRY_DELAY_SEC = 1
 
 
 @contextmanager
-def dcq_session_lock():
+def external_sync_lock():
     """
-    DCQ 로그인부터 데이터 조회까지, 하나의 스케줄러 잡이 DCQ SDK 를 사용하는 전체 구간을 감싸는
-    컨텍스트 매니저. 여러 스케줄러 잡(sync_form_options/sync_holidays/sync_design_rule)이
-    동시에 실행되더라도 이 구간이 서로 겹치지 않도록 호출부(scheduler.py)에서 사용한다.
+    외부 데이터 동기화(DCQ 세션 전체 또는 RTDB 동기화 전체)를 감싸는 컨텍스트 매니저. 여러
+    스케줄러 잡(sync_form_options/sync_holidays/sync_design_rule/sync_rtdb_options)이 동시에
+    실행되더라도 이 구간이 서로 겹치지 않도록(DCQ 끼리는 물론 DCQ 와 RTDB 사이에도) 호출부
+    (scheduler.py)에서 사용한다.
     """
-    with _DCQ_LOCK:
+    with _EXTERNAL_SYNC_LOCK:
         yield
 
 
@@ -105,7 +115,7 @@ def cq_login(dcq_id, dcq_password):
     sample.py 와 동일한 방식 - stdin 우회 로그인
     """
     account_info = io.StringIO(f'{dcq_id}\n{dcq_password}')
-    with _DCQ_LOCK:
+    with _EXTERNAL_SYNC_LOCK:
         sys.stdin = account_info
         try:
             login()
@@ -185,6 +195,40 @@ def get_dcq_token_info(dcq_id):
             else:
                 logger.error(f"[DCQ][{_DCQ_PROC_TAG}] 토큰 정보 조회 실패: {e}", exc_info=True)
                 return None
+
+
+def ensure_dcq_session() -> Optional[str]:
+    """
+    DCQ 세션을 확보하고, 이후 조회에 쓸 dcq_id 를 반환한다(계정 정보가 없거나 로그인에
+    최종 실패하면 None).
+
+    같은 프로세스 안에서 이전에 확보해둔 세션이 남아있으면(_dcq_session_cache) 재로그인을
+    생략하고 get_dcq_token_info() 로 세션이 아직 살아있는지만 확인해서 재사용한다. 이 확인이
+    실패하면 세션이 끊어진 것으로 보고 그 자리에서 재로그인한다. 새로 로그인한 경우에도
+    반환 전 get_dcq_token_info() 로 토큰 정보 갱신을 확인하고, 그마저 실패하면 재로그인을
+    한 번 더 시도한다(최대 2회 로그인 시도).
+    """
+    dcq_id, pwd_pack = get_dcq_credentials()
+    if not dcq_id or not pwd_pack:
+        return None
+
+    if _dcq_session_cache.get('dcq_id') == dcq_id and get_dcq_token_info(dcq_id) is not None:
+        logger.info(f"[DCQ][{_DCQ_PROC_TAG}] 기존 세션 재사용 (재로그인 생략)")
+        return dcq_id
+
+    _dcq_session_cache['dcq_id'] = None
+    for attempt in (1, 2):
+        if not dcq_login_with_retry():
+            return None
+        if get_dcq_token_info(dcq_id) is not None:
+            _dcq_session_cache['dcq_id'] = dcq_id
+            return dcq_id
+        logger.warning(
+            f"[DCQ][{_DCQ_PROC_TAG}] 로그인 직후 토큰 확인 실패 ({attempt}/2) - 재로그인 재시도"
+        )
+
+    logger.error(f"[DCQ][{_DCQ_PROC_TAG}] 재로그인 후에도 토큰 확인 실패")
+    return None
 
 
 def get_django_engine():
