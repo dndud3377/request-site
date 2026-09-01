@@ -9,7 +9,7 @@
  *    사라지는 문제. 편집 모드에서는 비우지 않도록 고쳤다(index.tsx).
  */
 import React from 'react';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import RequestPage from './index';
 import { ToastProvider } from '../../components/Toast';
@@ -146,6 +146,14 @@ describe('의뢰자 재상신 — 수정 전 스냅샷이 history 에 기록되�
       await act(async () => { await Promise.resolve(); });
     }
 
+    // 실제로 값을 하나 고친다 — "이력확인"에 before/after가 뜨려면 현재값(cur)과
+    // history[0](prev)이 실제로 달라야 한다. 아무것도 안 고치면 cur===prev라
+    // computeDetailDiff(PagedDetailView.tsx)가 '변경 없음'으로 판정하는 게 정상이다.
+    const customerReqInput = document.querySelector('input[name="customer_requirement"]') as HTMLInputElement;
+    if (!customerReqInput) throw new Error('customer_requirement 입력창을 찾지 못했다');
+    const EDITED_REQUIREMENT = '요구사항 텍스트(수정됨)';
+    await act(async () => { fireEvent.change(customerReqInput, { target: { value: EDITED_REQUIREMENT } }); });
+
     // MAP 삭제: STEP1 → STEP2(MAP 정보)가 마지막 단계이므로 '다음' 한 번으로 상신 버튼이 나온다.
     const nextBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('다음'));
     if (!nextBtn) throw new Error('다음 버튼을 찾지 못했다');
@@ -168,8 +176,17 @@ describe('의뢰자 재상신 — 수정 전 스냅샷이 history 에 기록되�
     expect(mockState.captured).not.toBeNull();
     const payload = mockState.captured as { additional_notes: string };
     const saved = JSON.parse(payload.additional_notes);
+
+    // "이력확인"이 참조하는 두 값: 현재(cur) = 방금 수정한 새 값, history[0](prev) = 수정 전 값.
+    // PagedDetailView.computeDetailDiff 는 cur.customer_requirement !== prev.customer_requirement
+    // 이면 이 필드를 changedFields 에 넣어 before/after 를 표시한다 — 그 입력이 되는 두 값이
+    // 실제로 다르게 저장됐는지 여기서 직접 확인한다(고친 필드가 실제로 이력확인에 나타남).
+    expect(saved.detail.customer_requirement).toBe(EDITED_REQUIREMENT);
     expect(saved.history).toHaveLength(1);
-    expect(saved.history[0].detail.customer_name).toBe('고객사A');
+    expect(saved.history[0].detail.customer_requirement).toBe('요구사항 텍스트');
+    expect(saved.history[0].detail.customer_requirement).not.toBe(saved.detail.customer_requirement);
+    // 손대지 않은 필드는 반대로 history와 동일해 '변경 없음'으로 판정돼야 한다(오탐 없음).
+    expect(saved.history[0].detail.customer_name).toBe(saved.detail.customer_name);
   });
 
   it('반려 문서(rejected) 재상신 화면도 프리필된 지정 PL이 모달에서 사라지지 않는다(Case I 검토자 프리필)', async () => {
