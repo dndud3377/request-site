@@ -111,7 +111,7 @@ class RecipientResolutionTest(TestCase):
     def test_reject_recipient_is_requester_only_when_no_approvals_yet(self):
         self.assertEqual(
             mailer.resolve_reject_recipients(self.doc),
-            ['req@company.com'],
+            (['req@company.com'], {}),
         )
 
     def test_reject_recipients_include_current_round_approvers(self):
@@ -125,10 +125,12 @@ class RecipientResolutionTest(TestCase):
         )
         # 아직 대기 중(반려당한 단계)인 것은 포함되지 않는다
         ApprovalStep.objects.create(document=self.doc, agent='P', round=1, action='pending')
+        individual_emails, team_groups = mailer.resolve_reject_recipients(self.doc)
         self.assertEqual(
-            sorted(mailer.resolve_reject_recipients(self.doc)),
+            sorted(individual_emails),
             ['pl3@company.com', 'r3@company.com', 'req@company.com'],
         )
+        self.assertEqual(team_groups, {}, '반려된 단계가 없으면 잔여 팀 발송도 없다')
 
     def test_reject_recipients_include_pending_pl_when_pl_rejects(self):
         # 다중 PL 지정: PL A 합의, PL B 반려, PL C 아직 미합의(pending)
@@ -143,10 +145,12 @@ class RecipientResolutionTest(TestCase):
         ApprovalStep.objects.create(
             document=self.doc, agent='PL', round=1, action='pending', assignee=pl_c,
         )
+        individual_emails, team_groups = mailer.resolve_reject_recipients(self.doc)
         self.assertEqual(
-            sorted(mailer.resolve_reject_recipients(self.doc)),
+            sorted(individual_emails),
             ['pla@company.com', 'plc@company.com', 'req@company.com'],
         )
+        self.assertEqual(team_groups, {}, 'PL 은 팀 브로드캐스트 대상이 아니다')
 
     def test_reject_recipients_pl_pending_excluded_when_non_pl_step_rejects(self):
         # PL이 아닌 단계(R)가 반려된 경우, 다른 미합의 PL은 포함되지 않는다(기존 동작 유지)
@@ -155,11 +159,11 @@ class RecipientResolutionTest(TestCase):
         ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='rejected')
         self.assertEqual(
             mailer.resolve_reject_recipients(self.doc),
-            ['req@company.com'],
+            (['req@company.com'], {}),
         )
 
     def test_reject_recipients_r_reject_covers_whole_remaining_line(self):
-        # R 담당자 반려 → 아직 합의 전인 결재선(R·P·O·J) 팀 전원. 반려자 본인은 제외.
+        # R 담당자 반려 → 아직 합의 전인 결재선(R·P·O·J) 팀별로 각각 별도 메일. 반려자 본인은 제외.
         pl_a = UserProfile.objects.create(loginid='pla2', mail='pla2@company.com', role='PL')
         r_owner = UserProfile.objects.create(loginid='rown', mail='rown@company.com', role='TE_R')
         UserProfile.objects.create(loginid='rteam2', mail='rteam2@company.com', role='TE_R')
@@ -168,17 +172,19 @@ class RecipientResolutionTest(TestCase):
         UserProfile.objects.create(loginid='j1', mail='j1@company.com', role='TE_J')
         ApprovalStep.objects.create(document=self.doc, agent='PL', round=1, action='approved', assignee=pl_a)
         ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='rejected', assignee=r_owner)
-        self.assertEqual(
-            sorted(mailer.resolve_reject_recipients(self.doc)),
-            [
-                'j1@company.com', 'o1@company.com', 'p1@company.com',
-                'pla2@company.com', 'req@company.com', 'rteam2@company.com',
-            ],
-        )
+        individual_emails, team_groups = mailer.resolve_reject_recipients(self.doc)
+        self.assertEqual(sorted(individual_emails), ['pla2@company.com', 'req@company.com'])
+        self.assertEqual(team_groups, {
+            'R': ['rteam2@company.com'],
+            'P': ['p1@company.com'],
+            'O': ['o1@company.com'],
+            'J': ['j1@company.com'],
+        }, '서로 다른 팀은 각각 별도 그룹(=별도 메일)이어야 한다')
 
     def test_reject_recipients_rv_reject_dedups_team_member_who_already_approved(self):
         # RV(검토자) 반려 → RV 도 TE_R 소속이라 팀 조회로 함께 잡힌다.
-        # 이미 합의한 R 담당자는 중복 없이 1회만, 반려한 RV 본인은 제외.
+        # 이미 합의한 R 담당자는 개인 수신자 쪽에만 1회, 팀 메일에서는 제외(중복 방지).
+        # 반려한 RV 본인도 팀 메일에서 제외.
         r_owner = UserProfile.objects.create(loginid='rown2', mail='rown2@company.com', role='TE_R')
         rv_user = UserProfile.objects.create(loginid='rv1', mail='rv1@company.com', role='TE_R')
         UserProfile.objects.create(loginid='rteam3', mail='rteam3@company.com', role='TE_R')
@@ -186,17 +192,19 @@ class RecipientResolutionTest(TestCase):
         UserProfile.objects.create(loginid='j2', mail='j2@company.com', role='TE_J')
         ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='approved', assignee=r_owner)
         ApprovalStep.objects.create(document=self.doc, agent='RV', round=1, action='rejected', assignee=rv_user)
-        recipients = mailer.resolve_reject_recipients(self.doc)
-        self.assertEqual(len(recipients), len(set(recipients)), '중복 수신자가 없어야 한다')
-        self.assertEqual(
-            sorted(recipients),
-            ['j2@company.com', 'p2@company.com', 'req@company.com',
-             'rown2@company.com', 'rteam3@company.com'],
-        )
+        individual_emails, team_groups = mailer.resolve_reject_recipients(self.doc)
+        all_mails = individual_emails + [m for mails in team_groups.values() for m in mails]
+        self.assertEqual(len(all_mails), len(set(all_mails)), '개인/팀 통틀어 중복 수신자가 없어야 한다')
+        self.assertEqual(sorted(individual_emails), ['req@company.com', 'rown2@company.com'])
+        self.assertEqual(team_groups, {
+            'R': ['rteam3@company.com'],
+            'P': ['p2@company.com'],
+            'J': ['j2@company.com'],
+        })
 
     def test_reject_recipients_skip_team_broadcast_for_already_approved_stage(self):
         # P 반려 시 이미 합의를 마친 단계(R·O)는 팀 전체 발송 대상이 아니다.
-        # 그 단계 합의자 본인만 기합의자 규칙으로 포함된다.
+        # 그 단계 합의자 본인만 개인 수신자 메일에 기합의자 규칙으로 포함된다.
         r_owner = UserProfile.objects.create(loginid='rown3', mail='rown3@company.com', role='TE_R')
         p_owner = UserProfile.objects.create(loginid='powner', mail='powner@company.com', role='TE_P')
         UserProfile.objects.create(loginid='pteam2', mail='pteam2@company.com', role='TE_P')
@@ -206,16 +214,17 @@ class RecipientResolutionTest(TestCase):
         ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='approved', assignee=r_owner)
         ApprovalStep.objects.create(document=self.doc, agent='O', round=1, action='approved', assignee=o_approver)
         ApprovalStep.objects.create(document=self.doc, agent='P', round=1, action='rejected', assignee=p_owner)
-        recipients = sorted(mailer.resolve_reject_recipients(self.doc))
-        self.assertEqual(
-            recipients,
-            ['j3@company.com', 'oapp@company.com', 'pteam2@company.com',
-             'req@company.com', 'rown3@company.com'],
-        )
-        self.assertNotIn('oteam2@company.com', recipients, '합의를 마친 O 팀은 팀 전체 발송 대상이 아니다')
+        individual_emails, team_groups = mailer.resolve_reject_recipients(self.doc)
+        self.assertEqual(sorted(individual_emails), ['oapp@company.com', 'req@company.com', 'rown3@company.com'])
+        self.assertEqual(team_groups, {
+            'P': ['pteam2@company.com'],
+            'J': ['j3@company.com'],
+        }, '이미 합의를 마친 R·O 팀은 팀 전체 발송 대상이 아니다')
+        self.assertNotIn('R', team_groups)
+        self.assertNotIn('O', team_groups)
 
     def test_reject_recipients_j_reject_includes_pending_parallel_team(self):
-        # J 반려 시점에 병렬 단계 O 가 아직 pending 이면 TE_O 팀 전원도 포함된다
+        # J 반려 시점에 병렬 단계 O 가 아직 pending 이면 TE_O 팀도 별도 메일로 포함된다
         # (정적 단계 순서가 아니라 '아직 합의 안 끝난 단계' 기준이라 누락되지 않는다).
         r_owner = UserProfile.objects.create(loginid='rown4', mail='rown4@company.com', role='TE_R')
         p_owner = UserProfile.objects.create(loginid='powner2', mail='powner2@company.com', role='TE_P')
@@ -227,11 +236,10 @@ class RecipientResolutionTest(TestCase):
         ApprovalStep.objects.create(document=self.doc, agent='P', round=1, action='approved', assignee=p_owner)
         ApprovalStep.objects.create(document=self.doc, agent='O', round=1, action='pending')
         ApprovalStep.objects.create(document=self.doc, agent='J', round=1, action='rejected', assignee=j_owner)
-        self.assertEqual(
-            sorted(mailer.resolve_reject_recipients(self.doc)),
-            ['jteam2@company.com', 'o4a@company.com', 'o4b@company.com',
-             'powner2@company.com', 'req@company.com', 'rown4@company.com'],
-        )
+        individual_emails, team_groups = mailer.resolve_reject_recipients(self.doc)
+        self.assertEqual(sorted(individual_emails), ['powner2@company.com', 'req@company.com', 'rown4@company.com'])
+        self.assertEqual(sorted(team_groups.get('O', [])), ['o4a@company.com', 'o4b@company.com'])
+        self.assertEqual(team_groups.get('J', []), ['jteam2@company.com'])
 
     def test_reject_recipients_only_map_excludes_stages_not_on_route(self):
         # Only MAP 의뢰서는 P/O/E/J 를 거치지 않으므로 그 팀들은 대상이 아니다.
@@ -247,10 +255,9 @@ class RecipientResolutionTest(TestCase):
         UserProfile.objects.create(loginid='p5', mail='p5@company.com', role='TE_P')
         UserProfile.objects.create(loginid='j5', mail='j5@company.com', role='TE_J')
         ApprovalStep.objects.create(document=doc, agent='R', round=1, action='rejected', assignee=r_owner)
-        self.assertEqual(
-            sorted(mailer.resolve_reject_recipients(doc)),
-            ['r5b@company.com', 'req@company.com'],
-        )
+        individual_emails, team_groups = mailer.resolve_reject_recipients(doc)
+        self.assertEqual(individual_emails, ['req@company.com'])
+        self.assertEqual(team_groups, {'R': ['r5b@company.com']})
 
     def test_approved_recipients_are_current_round_participants(self):
         # 이전 회차(반려됐던 회차) 참여자는 포함되지 않는다
@@ -475,8 +482,8 @@ class EnqueueTest(TestCase):
     def test_enqueue_skips_when_no_recipient(self):
         self.doc.requester_email = ''
         self.doc.save()
-        noti = mailer.enqueue_rejected(self.doc)
-        self.assertIsNone(noti)
+        notis = mailer.enqueue_rejected(self.doc)
+        self.assertEqual(notis, [])
         self.assertEqual(MailNotification.objects.count(), 0)
 
 
@@ -1101,12 +1108,16 @@ class PEStageReviewerFlowTest(TestCase):
         self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
-        noti = MailNotification.objects.filter(document=doc, event_type='notify_p_completed').first()
-        self.assertIsNotNone(noti)
-        self.assertIn(self.o_user.mail, noti.recipients)
+        # (2026-09) TE_O·TE_J 는 서로 다른 팀이라 한 통이 아니라 각각 별도 메일로 나간다.
+        notis = list(MailNotification.objects.filter(document=doc, event_type='notify_p_completed'))
+        self.assertEqual(len(notis), 2, 'TE_O·TE_J 각각 별도 메일이어야 한다')
+        all_recipients = [mail for n in notis for mail in n.recipients]
+        self.assertIn(self.o_user.mail, all_recipients)
         # (2026-08) 폐지된 notify_p_arrival 대신 TE_J 도 이 완료 통보를 받는다.
-        self.assertIn(self.j_user.mail, noti.recipients)
-        self.assertEqual(noti.subject, f'[P 완료 통보] {doc.title}')
+        self.assertIn(self.j_user.mail, all_recipients)
+        for n in notis:
+            self.assertEqual(n.subject, f'[P 완료 통보] {doc.title}')
+            self.assertEqual(len(n.recipients), 1, '팀별로 분리 발송되어 한 통에 다른 팀이 섞이지 않아야 한다')
 
     def test_p_reviewer_loginids_denied_before_claim(self):
         doc = self._advance_to_parallel()
@@ -3021,31 +3032,38 @@ class WithdrawFlowTest(TestCase):
 
     # ----- 철회 완료 메일 수신자 -----
     def test_completed_mail_covers_only_reached_teams(self):
-        """R 단계까지만 진행된 문서는 TE_R 에게만 통보된다(TE_J 등 미도달 팀 제외)."""
+        """R 단계까지만 진행된 문서는 TE_R 팀 메일에만 통보된다(TE_J 등 미도달 팀 제외)."""
         doc = self._doc()
         self._step(doc, 'PL', action='approved', assignee=self.pl)
         self._step(doc, 'R', assignee=self.rfg)
         self._post(self.author, doc, 'withdraw', {'reason': '사유'})
         self._post(self.rfg, doc, 'confirm-withdraw', {'agent': 'R'})
 
-        noti = MailNotification.objects.get(event_type='withdraw_completed')
-        self.assertIn('wd_r@c.com', noti.recipients)    # 도달한 팀
-        self.assertIn('wd_r2@c.com', noti.recipients)   # 도달한 팀 전원
-        self.assertIn('wd_pl@c.com', noti.recipients)   # 지정 PL
-        self.assertIn('wd_a@c.com', noti.recipients)    # 작성자
-        self.assertNotIn('wd_j@c.com', noti.recipients)  # 아직 열리지 않은 J 팀
+        # (2026-09) 개인 수신자(지정PL+작성자) 메일 1통 + 도달한 팀(R) 메일 1통으로 분리된다.
+        notis = list(MailNotification.objects.filter(event_type='withdraw_completed'))
+        self.assertEqual(len(notis), 2, '개인 수신자 메일 1통 + R 팀 메일 1통이어야 한다')
+        all_recipients = [mail for n in notis for mail in n.recipients]
+        self.assertIn('wd_r@c.com', all_recipients)    # 도달한 팀
+        self.assertIn('wd_r2@c.com', all_recipients)   # 도달한 팀 전원
+        self.assertIn('wd_pl@c.com', all_recipients)   # 지정 PL
+        self.assertIn('wd_a@c.com', all_recipients)    # 작성자
+        self.assertNotIn('wd_j@c.com', all_recipients)  # 아직 열리지 않은 J 팀
 
     def test_completed_mail_includes_reached_parallel_teams(self):
-        """J 단계가 열린 뒤라면 TE_J 도 통보 대상이다."""
+        """J 단계가 열린 뒤라면 TE_J 팀 메일도 별도로 발송된다."""
         doc = self._doc()
         self._step(doc, 'R', action='approved', assignee=self.rfg)
         self._step(doc, 'J', assignee=self.job)
         self._post(self.author, doc, 'withdraw', {'reason': '사유'})
         self._post(self.job, doc, 'confirm-withdraw', {'agent': 'J'})
 
-        noti = MailNotification.objects.get(event_type='withdraw_completed')
-        self.assertIn('wd_j@c.com', noti.recipients)
-        self.assertIn('wd_r@c.com', noti.recipients)
+        notis = list(MailNotification.objects.filter(event_type='withdraw_completed'))
+        all_recipients = [mail for n in notis for mail in n.recipients]
+        self.assertIn('wd_j@c.com', all_recipients)
+        self.assertIn('wd_r@c.com', all_recipients)
+        # R·J 는 서로 다른 팀이라 한 통에 묶이지 않아야 한다
+        for n in notis:
+            self.assertFalse({'wd_r@c.com', 'wd_j@c.com'} <= set(n.recipients))
 
     def test_completed_mail_has_no_dead_deeplink(self):
         """문서가 삭제되므로 상세 딥링크 버튼을 싣지 않는다."""
@@ -4492,13 +4510,13 @@ class MailLineFilterTest(TestCase):
         self.assertNotIn('mlf_noti_off@company.com', recipients)
 
     def test_reject_recipients_are_filtered(self):
-        """반려 메일(잔여 결재선 팀 브로드캐스트)도 필터를 탄다."""
+        """반려 메일(잔여 결재선 팀별 분리 발송)도 필터를 탄다."""
         self._make_j('mlf_rej_on', [self.line1])
         self._make_j('mlf_rej_off', [self.line3])
         ApprovalStep.objects.create(document=self.doc, agent='R', round=1, action='rejected')
-        recipients = mailer.resolve_reject_recipients(self.doc)
-        self.assertIn('mlf_rej_on@company.com', recipients)
-        self.assertNotIn('mlf_rej_off@company.com', recipients)
+        individual_emails, team_groups = mailer.resolve_reject_recipients(self.doc)
+        self.assertIn('mlf_rej_on@company.com', team_groups.get('J', []))
+        self.assertNotIn('mlf_rej_off@company.com', team_groups.get('J', []))
 
     def test_voc_mail_is_not_filtered(self):
         """VOC 등록 메일은 MASTER 전원에게 가며, 라인 개념이 없어 필터를 타지 않는다."""

@@ -21,12 +21,24 @@
 - P: 담당자 지정 시 그 1명, 미지정 시 TE_P 권한 보유 전원
 - J: 담당자(claim) 지정 시 그 1명, 미지정(도착 시점)이면 고정 주소
 - O/E: 해당 역할(TE_O/TE_E) 팀 전원
-- 반려: 요청서 작성자 + 현재 회차에서 이미 합의했던 전원(중복 제거)
-  · PL 단계에서 반려된 경우, 아직 합의/반려하지 않은 나머지 지정 PL(pending)도 포함
-  · 그 외 단계에서 반려된 경우, 아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원도
-    포함(반려한 본인 제외). 이미 합의를 마친 팀은 팀 전체 발송 대상이 아니다.
+- 반려: "개인 수신자" 메일 1통(요청서 작성자 + 현재 회차에서 이미 합의했던 전원 + RA/SA
+  개인 수신자, 중복 제거) + 아직 합의를 마치지 않은 결재선 단계의 담당 팀별로 각각 별도
+  메일 1통씩(반려한 본인 제외). 서로 다른 팀(TE_R/TE_P/TE_J/TE_O/TE_E)은 한 통에 묶지
+  않는다(2026-09 개편). 이미 합의를 마친 팀은 발송 대상이 아니다.
+  · PL 단계에서 반려된 경우, 아직 합의/반려하지 않은 나머지 지정 PL(pending)은 개인
+    수신자 메일에 포함
 - 승인 완료: 현재 회차 결재 경로에 참여했던 전원(중복 제거)
-- P 단계 완료 통보(notify_p_completed): TE_O + TE_J 팀 전원(참고용, 결재 권한과 무관)
+- P 단계 완료 통보(notify_p_completed): TE_O·TE_J 각각 별도 메일(참고용, 결재 권한과 무관,
+  2026-09부터 팀별 분리 발송)
+- 철회 완료(withdraw_completed): "개인 수신자" 메일 1통(지정 PL 전원 + 통보처 전원 +
+  RA/SA 개인 담당자 + 작성자) + 실제로 결재가 진행된 팀별로 각각 별도 메일 1통씩
+  (2026-09 개편)
+- 철회 요청/취소(withdraw_requested/withdraw_cancelled): 확인 대상 단계 중 담당자가
+  배정된 개인들을 묶은 메일 1통 + 미배정 팀별로 각각 별도 메일 1통씩(2026-09 개편)
+- 팀별 분리 발송으로 한 결재 액션에서 여러 통이 나올 때는 동시에 겹쳐 보내지 않는다 —
+  트랜잭션 커밋 후 스레드 1개가 순서대로(순서 자체는 무관) 즉시 발송을 시도한다
+  (`_dispatch_batch`/`_send_now_async_sequential`). 재시도 안전망(`process_mail_queue`)은
+  원래부터 한 건씩 순차 처리라 별도 변경이 필요 없다.
 - 라인 수신 설정(mail_lines) 필터: 위에서 산출된 수신자 중, 의뢰서의 라인(detail.line)을
   권한 관리 '이메일 설정'에서 끈 사람을 제외한다(`_filter_by_mail_lines`). '전체 받기'
   (receive_all_mail, 기본값)가 켜져 있으면 라인과 무관하게 전부 받는다. 대상 역할은
@@ -305,6 +317,20 @@ def _apply_redirect(recipients, document=None):
     return cleaned
 
 
+def _redirect_team_groups(team_groups, document):
+    """{팀키: 이메일 리스트} 그룹 전체에 `_apply_redirect` 를 적용하고 빈 그룹은 제거한다.
+
+    반려/철회완료/철회요청·취소처럼 팀별로 분리 발송하는 이벤트들이 공통으로 쓴다
+    (라인 수신 설정 필터·MAIL_REDIRECT_TO 강제는 그룹마다 동일하게 적용된다).
+    """
+    result = {}
+    for team_key, mails in team_groups.items():
+        redirected = _apply_redirect(mails, document)
+        if redirected:
+            result[team_key] = redirected
+    return result
+
+
 def _team_emails(agent):
     """해당 단계 역할 권한을 가진 사용자 전원의 이메일 목록."""
     role = AGENT_ROLE_MAP.get(agent)
@@ -417,22 +443,30 @@ def _current_round_step_emails(document, action=None):
     )
 
 
-def _remaining_stage_emails(document, max_round):
-    """반려 시점에 아직 합의를 마치지 않은 결재선 단계들의 담당 팀 이메일 전원.
+def _remaining_stage_team_groups(document, max_round):
+    """반려 시점에 아직 합의를 마치지 않은 결재선 단계들의 담당 팀 이메일을, 팀별로 묶어 돌려준다.
 
     '이후 단계'를 정적인 순서표로 정의하지 않고 문서의 실제 상태로 판정한다.
     결재선(라우팅) 전체에서 이미 approved 된 단계를 빼면, 남는 것이
     (pending / 반려된 본인 / 아직 생성되지 않은) 미완료 단계다. 이렇게 하면
     병렬 단계(P·O·E·RA)가 서로 다른 속도로 진행돼도 누락 없이 잡히고,
     이미 일을 마친 팀에는 불필요한 팀 전체 메일이 나가지 않는다.
+
+    RA(후결자)·SA(합의자)는 팀이 아니라 지정된 개인이라 여기 포함하지 않는다
+    (`_remaining_stage_individual_emails` 가 따로 다룬다). 반환값은
+    {팀 대표 agent('R'/'P'/'J'/'O'/'E'): [이메일, ...]} — 검토자(RV/PV/EV)는 담당자 팀으로
+    환산돼 같은 그룹에 합쳐진다. 서로 다른 팀을 한 메일에 묶지 않기 위해, 호출부가 이
+    그룹별로 각각 별도 메일을 보낸다.
     """
     route = route_agents_for(document)
     steps = ApprovalStep.objects.filter(document=document, round=max_round)
     approved_agents = set(steps.filter(action='approved').values_list('agent', flat=True))
     existing_agents = set(steps.values_list('agent', flat=True))
 
-    emails = []
+    groups = {}
     for agent in route:
+        if agent in ('RA', 'SA'):
+            continue
         if agent in approved_agents:
             # 이미 끝난 단계는 팀 전체 발송 대상이 아니다(합의자 본인은 기합의자 규칙으로 포함).
             continue
@@ -442,19 +476,35 @@ def _remaining_stage_emails(document, max_round):
         if agent == 'E' and not document.has_ppid_plel():
             # E 는 plel 인 의뢰서에만 생성된다.
             continue
-        if agent == 'RA':
-            emails.extend(u.mail for u in post_approver_users(document) if u.mail)
-            continue
-        if agent == 'SA':
-            # 합의자는 팀이 아니라 지정된 개인이라, 실제 생성된 단계의 담당자만 대상이다
-            # (지정하지 않았으면 단계가 없어 아무에게도 보내지 않는다).
-            emails.extend(
-                m for m in steps.filter(agent='SA')
-                .exclude(assignee__isnull=True).exclude(assignee__mail='')
-                .values_list('assignee__mail', flat=True) if m
-            )
-            continue
-        emails.extend(_stage_team_emails(agent))
+        team_key = REVIEWER_TO_MAIN_AGENT.get(agent, agent)
+        group = groups.setdefault(team_key, [])
+        for mail in _stage_team_emails(agent):
+            if mail not in group:
+                group.append(mail)
+    return {k: v for k, v in groups.items() if v}
+
+
+def _remaining_stage_individual_emails(document, max_round):
+    """반려 시점에 아직 합의를 마치지 않은 결재선 단계 중 RA(후결자)·SA(합의자) 개인 수신자.
+
+    이들은 팀이 아니라 지정된 개인이라 `_remaining_stage_team_groups` 의 팀별 분리 대상이
+    아니고, "개인 수신자" 메일(작성자·기합의자 등)에 함께 포함된다.
+    """
+    route = route_agents_for(document)
+    steps = ApprovalStep.objects.filter(document=document, round=max_round)
+    approved_agents = set(steps.filter(action='approved').values_list('agent', flat=True))
+
+    emails = []
+    if 'RA' in route and 'RA' not in approved_agents:
+        emails.extend(u.mail for u in post_approver_users(document) if u.mail)
+    if 'SA' in route and 'SA' not in approved_agents:
+        # 합의자는 팀이 아니라 지정된 개인이라, 실제 생성된 단계의 담당자만 대상이다
+        # (지정하지 않았으면 단계가 없어 아무에게도 보내지 않는다).
+        emails.extend(
+            m for m in steps.filter(agent='SA')
+            .exclude(assignee__isnull=True).exclude(assignee__mail='')
+            .values_list('assignee__mail', flat=True) if m
+        )
     return emails
 
 
@@ -474,23 +524,29 @@ def resolve_revision_request_recipients(document):
 
 
 def resolve_reject_recipients(document):
-    """반려 시 수신자: 요청서 작성자 + 현재 회차에서 이미 합의했던 전원(중복 제거).
+    """반려 시 수신자를 (개인 수신자, {팀키: 팀 수신자}) 로 나눠 반환한다.
 
-    여기에 더해 반려된 단계에 따라 아래를 추가한다.
+    개인 수신자 = 요청서 작성자 + 현재 회차에서 이미 합의했던 전원(중복 제거) + 아래 추가분.
     - PL 단계 반려: 아직 합의/반려하지 않은 나머지 지정 PL(pending). PL 은 결재선
       팀 브로드캐스트 대상이 아니라 지정된 당사자들만 챙긴다.
-    - 그 외 단계 반려: 아직 합의를 마치지 않은 결재선 단계의 담당 팀 전원
-      (`_remaining_stage_emails`). 반려한 본인은 이 팀 브로드캐스트에서 제외한다
-      (작성자·기합의자로 이미 포함된 주소는 그대로 유지).
+    - 그 외 단계 반려: 아직 합의를 마치지 않은 결재선의 RA(후결자)·SA(합의자) 개인 수신자
+      (`_remaining_stage_individual_emails`).
+
+    팀 수신자 = 그 외 단계 반려 시, 아직 합의를 마치지 않은 결재선 단계의 담당 팀들
+    (`_remaining_stage_team_groups`) — 서로 다른 팀(TE_R/TE_P/TE_J/TE_O/TE_E)을 한 메일에
+    묶지 않기 위해 팀별로 그룹을 나눠 돌려주고, 호출부(`enqueue_rejected`)가 그룹마다
+    별도 메일을 보낸다. 반려한 본인은 두 쪽 모두에서 제외한다(작성자·기합의자로 이미
+    포함된 주소는 그대로 유지).
     """
     max_round = _current_round(document)
-    emails = []
+    individual_emails = []
     if document.requester_email:
-        emails.append(document.requester_email)
+        individual_emails.append(document.requester_email)
     for mail in _current_round_step_emails(document, action='approved'):
-        if mail not in emails:
-            emails.append(mail)
+        if mail not in individual_emails:
+            individual_emails.append(mail)
 
+    team_groups = {}
     if max_round is not None:
         rejected_steps = list(
             ApprovalStep.objects.filter(document=document, round=max_round, action='rejected')
@@ -503,16 +559,23 @@ def resolve_reject_recipients(document):
                 document=document, round=max_round, agent='PL', action='pending',
             ).exclude(assignee__isnull=True).exclude(assignee__mail='')
             for mail in pending_pl_qs.values_list('assignee__mail', flat=True).distinct():
-                if mail not in emails:
-                    emails.append(mail)
+                if mail not in individual_emails:
+                    individual_emails.append(mail)
         elif rejected_agents:
             rejecter_mails = {
                 s.assignee.mail for s in rejected_steps if s.assignee and s.assignee.mail
             }
-            for mail in _remaining_stage_emails(document, max_round):
-                if mail and mail not in rejecter_mails and mail not in emails:
-                    emails.append(mail)
-    return _apply_redirect(emails, document)
+            for mail in _remaining_stage_individual_emails(document, max_round):
+                if mail and mail not in rejecter_mails and mail not in individual_emails:
+                    individual_emails.append(mail)
+            for team_key, mails in _remaining_stage_team_groups(document, max_round).items():
+                # 반려자 본인과, 이미 개인 수신자 메일에 포함된 사람(기합의자 등)은
+                # 팀 메일에서 제외한다 — 같은 사람이 두 통을 받지 않도록 한다.
+                filtered = [m for m in mails if m not in rejecter_mails and m not in individual_emails]
+                if filtered:
+                    team_groups[team_key] = filtered
+
+    return _apply_redirect(individual_emails, document), _redirect_team_groups(team_groups, document)
 
 
 def resolve_approved_recipients(document):
@@ -560,26 +623,35 @@ def resolve_submit_subscriber_recipients():
 
 
 def resolve_withdraw_target_recipients(document, step_ids):
-    """철회 요청 확인 대상 단계의 수신자.
+    """철회 요청/취소 확인 대상 단계의 수신자를 (개인 수신자, {팀키: 팀 수신자}) 로 나눠 반환한다.
 
-    단계마다 "담당자가 배정돼 있으면 그 1명, 미배정이면 그 단계 담당 팀 전원"이다 —
-    확인 인가(`views._can_confirm_pause`, 중단 확인과 동일 규칙)와 같은 기준이라,
-    실제로 '철회 확인'을 누를 수 있는 사람에게만 메일이 간다.
+    단계마다 "담당자가 배정돼 있으면 그 1명(개인 수신자), 미배정이면 그 단계 담당 팀 전원
+    (팀 수신자)"이다 — 확인 인가(`views._can_confirm_pause`, 중단 확인과 동일 규칙)와 같은
+    기준이라, 실제로 '철회 확인'을 누를 수 있는 사람에게만 메일이 간다. 확인 대상 단계가
+    여럿이고 서로 다른 팀에 걸쳐 있으면(예: 병렬 J·O 단계 동시 확인 대상) 한 메일에 묶지
+    않고 팀별로 그룹을 나눠 돌려준다.
 
     ⚠️ 통보처는 여기에 포함하지 않는다(2026-08 결정) — 통보처는 확인 주체가 아니므로
     철회 '완료' 시점에만 통보받는다.
     """
-    emails = []
+    individual_emails = []
+    team_groups = {}
     steps = (
         ApprovalStep.objects.filter(document=document, id__in=list(step_ids or []))
         .select_related('assignee')
     )
     for step in steps:
         if step.assignee and step.assignee.mail:
-            emails.append(step.assignee.mail)
+            if step.assignee.mail not in individual_emails:
+                individual_emails.append(step.assignee.mail)
         else:
-            emails.extend(_stage_team_emails(step.agent))
-    return _apply_redirect(emails, document)
+            team_key = REVIEWER_TO_MAIN_AGENT.get(step.agent, step.agent)
+            group = team_groups.setdefault(team_key, [])
+            for mail in _stage_team_emails(step.agent):
+                if mail not in group:
+                    group.append(mail)
+
+    return _apply_redirect(individual_emails, document), _redirect_team_groups(team_groups, document)
 
 
 def _designated_pl_emails(document):
@@ -601,47 +673,65 @@ def _designated_pl_emails(document):
     return []
 
 
-def _reached_stage_emails(document):
-    """**실제로 결재가 진행된** 단계의 담당 팀 전원 이메일.
+def _reached_stage_team_groups(document):
+    """**실제로 결재가 진행된** 단계의 담당 팀 이메일을, 팀별로 묶어 돌려준다.
 
     "진행됐다"의 기준은 단계(ApprovalStep)가 생성됐는지다 — R 단계까지만 열린 문서라면
     TE_R 만 대상이 되고, 아직 열리지 않은 P·J·O·E 팀에는 철회 완료 메일이 가지 않는다.
     회차는 구분하지 않는다(반려 후 재상신된 문서에서 이전 회차에 결재했던 팀도 대상).
 
-    - 검토자(RV/PV/EV)는 담당자와 같은 팀이므로 `_stage_team_emails` 가 환산한다.
-    - 후결자(RA)는 역할(팀)이 아니라 지정된 개인이므로 그 담당자 본인만 넣는다.
-    - PL 은 팀 브로드캐스트 대상이 아니다(지정 PL 은 `_designated_pl_emails` 로 따로 포함).
+    검토자(RV/PV/EV)는 담당자와 같은 팀이므로 `_stage_team_emails` 가 환산해 같은 그룹에
+    합친다. PL·RA(후결자)·SA(합의자)는 팀 브로드캐스트 대상이 아니라 여기 포함하지 않는다
+    (`_reached_stage_individual_emails`/`_designated_pl_emails` 가 따로 다룬다). 서로 다른
+    팀을 한 메일에 묶지 않기 위해, 호출부가 이 그룹별로 각각 별도 메일을 보낸다.
+    """
+    groups = {}
+    steps = ApprovalStep.objects.filter(document=document).select_related('assignee')
+    for step in steps:
+        if step.agent in ('PL', 'RA', 'SA'):
+            continue
+        team_key = REVIEWER_TO_MAIN_AGENT.get(step.agent, step.agent)
+        group = groups.setdefault(team_key, [])
+        for mail in _stage_team_emails(step.agent):
+            if mail not in group:
+                group.append(mail)
+    return {k: v for k, v in groups.items() if v}
+
+
+def _reached_stage_individual_emails(document):
+    """**실제로 결재가 진행된** 단계 중 RA(후결자)·SA(합의자) 개인 담당자 이메일.
+
+    이들은 역할(팀)이 아니라 지정된 개인이므로 그 담당자 본인만 "개인 수신자" 묶음에 넣는다.
     """
     emails = []
     steps = ApprovalStep.objects.filter(document=document).select_related('assignee')
     for step in steps:
-        if step.agent == 'PL':
-            continue
-        if step.agent in ('RA', 'SA'):
-            # 후결자(RA)·합의자(SA)는 역할(팀)이 아니라 지정된 개인이다.
-            if step.assignee and step.assignee.mail:
-                emails.append(step.assignee.mail)
-            continue
-        emails.extend(_stage_team_emails(step.agent))
+        if step.agent in ('RA', 'SA') and step.assignee and step.assignee.mail:
+            emails.append(step.assignee.mail)
     return emails
 
 
 def resolve_withdraw_completed_recipients(document):
-    """철회 완료(문서 삭제) 통보 수신자.
+    """철회 완료(문서 삭제) 통보 수신자를 (개인 수신자, {팀키: 팀 수신자}) 로 나눠 반환한다.
 
-    ① 상신 시 지정된 PL 전원  ② 통보처 전원  ③ 실제로 결재가 진행된 단계의 담당 팀 전원
-    ④ 의뢰서 작성자 본인. 중복·빈 주소는 `_apply_redirect` 가 정리한다.
+    개인 수신자 = ① 상신 시 지정된 PL 전원  ② 통보처 전원  ③ RA/SA 개인 담당자
+    ④ 의뢰서 작성자 본인. 팀 수신자 = 실제로 결재가 진행된 단계의 담당 팀들
+    (`_reached_stage_team_groups`) — 서로 다른 팀을 한 메일에 묶지 않기 위해 팀별로 그룹을
+    나눠 돌려주고, 호출부(`enqueue_withdraw_completed`)가 그룹마다 별도 메일을 보낸다.
+    중복·빈 주소는 `_apply_redirect` 가 정리한다.
 
-    ⚠️ ③ 은 "TE_R·TE_P·TE_J·TE_O·TE_E 5개 팀 전원"이 아니다(2026-08 결정) —
-    R 단계까지만 진행된 의뢰서는 TE_R 에게만 통보된다(`_reached_stage_emails`).
+    ⚠️ 팀 수신자는 "TE_R·TE_P·TE_J·TE_O·TE_E 5개 팀 전원"이 아니다(2026-08 결정) —
+    R 단계까지만 진행된 의뢰서는 TE_R 팀에게만 통보된다(`_reached_stage_team_groups`).
     """
-    emails = []
-    emails.extend(_designated_pl_emails(document))
-    emails.extend(resolve_notifier_recipients(document))
-    emails.extend(_reached_stage_emails(document))
+    individual_emails = []
+    individual_emails.extend(_designated_pl_emails(document))
+    individual_emails.extend(resolve_notifier_recipients(document))
+    individual_emails.extend(_reached_stage_individual_emails(document))
     if document.requester_email:
-        emails.append(document.requester_email)
-    return _apply_redirect(emails, document)
+        individual_emails.append(document.requester_email)
+
+    team_groups = _reached_stage_team_groups(document)
+    return _apply_redirect(individual_emails, document), _redirect_team_groups(team_groups, document)
 
 
 def resolve_withdraw_rejected_recipients(document, withdraw_request):
@@ -1000,8 +1090,15 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
 # 큐 적재 (enqueue) — 결재 트랜잭션 안에서 호출
 # --------------------------------------------------------------------------- #
 def _enqueue(document, event_type, recipients, agent=None, recipient_name=None, is_fixed_post_approver=False,
-             note_override=None):
-    """수신자가 있을 때만 MailNotification 행을 적재한다."""
+             note_override=None, dispatch=True):
+    """수신자가 있을 때만 MailNotification 행을 적재한다.
+
+    dispatch=True(기본)면 커밋 직후 즉시 1회 발송까지 예약한다(기존 동작, 알림마다 자기
+    스레드).  dispatch=False면 적재만 하고 즉시발송 예약은 호출부가 모아서 처리한다 — 한
+    결재 액션에서 팀별로 여러 통(반려/철회완료/철회요청·취소/P단계완료통보)이 나올 때,
+    알림마다 따로 스레드를 띄워 동시에 외부 API 를 호출하지 않고 하나씩 순서대로(겹치지
+    않게) 보내기 위해서다(`_dispatch_batch`/`_send_now_async_sequential`).
+    """
     if not recipients:
         logger.info(
             "[mailer] 수신자가 없어 메일 적재를 건너뜁니다 "
@@ -1018,11 +1115,23 @@ def _enqueue(document, event_type, recipients, agent=None, recipient_name=None, 
         subject=subject,
         contents=contents,
     )
-    # 하이브리드: 커밋 직후 즉시 1회 발송 시도(거의 실시간). 실패하면 pending 으로
-    # 남아 큐 잡(1분 주기)이 최대 max_attempts 회까지 재시도한다.
-    noti_id = noti.id
-    transaction.on_commit(lambda: _send_now_async(noti_id))
+    if dispatch:
+        # 하이브리드: 커밋 직후 즉시 1회 발송 시도(거의 실시간). 실패하면 pending 으로
+        # 남아 큐 잡(1분 주기)이 최대 max_attempts 회까지 재시도한다.
+        noti_id = noti.id
+        transaction.on_commit(lambda: _send_now_async(noti_id))
     return noti
+
+
+def _dispatch_batch(notis):
+    """한 결재 액션에서 나온 여러 MailNotification 을, 트랜잭션 커밋 후 스레드 1개에서
+    순서대로(겹치지 않게) 즉시 발송 예약한다. 순서 자체는 무관하다(`_send_now_async_sequential`).
+
+    `dispatch=False`로 적재한 알림들을 모아 이 함수로 넘긴다. 빈 리스트면 아무것도 하지 않는다.
+    """
+    ids = [n.id for n in notis if n is not None]
+    if ids:
+        transaction.on_commit(lambda: _send_now_async_sequential(ids))
 
 
 def enqueue_stage_arrival(document, agent, step=None, recipient_name=None):
@@ -1042,9 +1151,13 @@ def enqueue_stage_arrival(document, agent, step=None, recipient_name=None):
 
 
 def enqueue_rejected(document):
-    """반려 알림 적재."""
-    recipients = resolve_reject_recipients(document)
-    return _enqueue(document, 'rejected', recipients)
+    """반려 알림 적재 — 개인 수신자 1통 + 잔여 결재선 팀별로 각 1통, 순서대로(겹치지 않게) 발송."""
+    individual_emails, team_groups = resolve_reject_recipients(document)
+    notis = [_enqueue(document, 'rejected', individual_emails, dispatch=False)]
+    for team_key, emails in team_groups.items():
+        notis.append(_enqueue(document, 'rejected', emails, agent=team_key, dispatch=False))
+    _dispatch_batch(notis)
+    return [n for n in notis if n is not None]
 
 
 def enqueue_revision_requested(document):
@@ -1083,34 +1196,61 @@ def enqueue_notify_approved(document):
 
 
 def enqueue_notify_p_completed(document):
-    """P 단계 완료 통보 적재(TE_O + TE_J 팀 전원 대상, 결재 권한과 무관한 참고 통보).
+    """P 단계 완료 통보 적재(TE_O·TE_J 각각 별도 메일, 결재 권한과 무관한 참고 통보).
 
     TE_J 는 예전에 P 단계 '도착' 시점에 notify_p_arrival 로 참고 통보를 받았다. J 가 R 합의
     시점부터 독립 병렬 단계가 되면서 TE_J 는 stage_arrival(J) 결재 요청 메일을 직접 받게 돼
     도착 통보가 중복이 됐고, 대신 P 진행 상황을 알 수 있도록 이 완료 통보에 합류시켰다.
+    TE_O·TE_J 는 서로 다른 팀이라 한 통에 묶지 않고 각각 별도 메일로, 순서대로(겹치지
+    않게) 보낸다.
     """
-    # _apply_redirect 가 빈 주소 제거 + 중복 제거(순서 보존)까지 하므로 두 팀을 그대로 이어 붙인다.
-    recipients = _apply_redirect(_team_emails('O') + _team_emails('J'), document)
-    return _enqueue(document, 'notify_p_completed', recipients)
+    notis = []
+    for team_key in ('O', 'J'):
+        recipients = _apply_redirect(_team_emails(team_key), document)
+        notis.append(_enqueue(document, 'notify_p_completed', recipients, agent=team_key, dispatch=False))
+    _dispatch_batch(notis)
+    return [n for n in notis if n is not None]
 
 
 def enqueue_withdraw_requested(document, withdraw_request):
-    """철회 요청 접수 알림 적재 — 확인 대상 단계의 담당자/팀 대상(통보처 제외)."""
-    recipients = resolve_withdraw_target_recipients(document, withdraw_request.target_step_ids)
-    return _enqueue(
-        document, 'withdraw_requested', recipients, note_override=withdraw_request.reason,
+    """철회 요청 접수 알림 적재 — 확인 대상 단계의 담당자/팀 대상(통보처 제외).
+
+    배정된 개인들을 묶은 메일 1통 + 미배정 팀별로 각 1통, 순서대로(겹치지 않게) 발송한다.
+    """
+    individual_emails, team_groups = resolve_withdraw_target_recipients(
+        document, withdraw_request.target_step_ids,
     )
+    notis = [_enqueue(
+        document, 'withdraw_requested', individual_emails,
+        note_override=withdraw_request.reason, dispatch=False,
+    )]
+    for team_key, emails in team_groups.items():
+        notis.append(_enqueue(
+            document, 'withdraw_requested', emails, agent=team_key,
+            note_override=withdraw_request.reason, dispatch=False,
+        ))
+    _dispatch_batch(notis)
+    return [n for n in notis if n is not None]
 
 
 def enqueue_withdraw_completed(document, reason=''):
-    """철회 완료(문서 삭제) 통보 적재.
+    """철회 완료(문서 삭제) 통보 적재 — 개인 수신자 1통 + 진행된 팀별로 각 1통, 순서대로 발송.
 
     ⚠️ **반드시 `document.delete()` 앞에서 호출**해야 한다 — 본문(결재 경로 카드·수신자)이
     문서와 결재 단계를 읽어 만들어지기 때문이다. 적재된 본문은 HTML 로 굳으므로 문서가
     지워져도 내용은 그대로 남고, `MailNotification.document` FK 만 SET_NULL 로 비워진다.
     """
-    recipients = resolve_withdraw_completed_recipients(document)
-    return _enqueue(document, 'withdraw_completed', recipients, note_override=reason)
+    individual_emails, team_groups = resolve_withdraw_completed_recipients(document)
+    notis = [_enqueue(
+        document, 'withdraw_completed', individual_emails, note_override=reason, dispatch=False,
+    )]
+    for team_key, emails in team_groups.items():
+        notis.append(_enqueue(
+            document, 'withdraw_completed', emails, agent=team_key,
+            note_override=reason, dispatch=False,
+        ))
+    _dispatch_batch(notis)
+    return [n for n in notis if n is not None]
 
 
 def enqueue_withdraw_rejected(document, withdraw_request):
@@ -1122,11 +1262,24 @@ def enqueue_withdraw_rejected(document, withdraw_request):
 
 
 def enqueue_withdraw_cancelled(document, withdraw_request):
-    """철회 요청 취소 알림 적재 — 요청 메일을 받았던 확인 대상 단계 담당자/팀 대상."""
-    recipients = resolve_withdraw_target_recipients(document, withdraw_request.target_step_ids)
-    return _enqueue(
-        document, 'withdraw_cancelled', recipients, note_override=withdraw_request.reason,
+    """철회 요청 취소 알림 적재 — 요청 메일을 받았던 확인 대상 단계 담당자/팀 대상.
+
+    배정된 개인들을 묶은 메일 1통 + 미배정 팀별로 각 1통, 순서대로(겹치지 않게) 발송한다.
+    """
+    individual_emails, team_groups = resolve_withdraw_target_recipients(
+        document, withdraw_request.target_step_ids,
     )
+    notis = [_enqueue(
+        document, 'withdraw_cancelled', individual_emails,
+        note_override=withdraw_request.reason, dispatch=False,
+    )]
+    for team_key, emails in team_groups.items():
+        notis.append(_enqueue(
+            document, 'withdraw_cancelled', emails, agent=team_key,
+            note_override=withdraw_request.reason, dispatch=False,
+        ))
+    _dispatch_batch(notis)
+    return [n for n in notis if n is not None]
 
 
 # --------------------------------------------------------------------------- #
@@ -1591,3 +1744,35 @@ def _send_now_async(noti_id):
         threading.Thread(target=_run_immediate, args=(noti_id,), daemon=True).start()
     except Exception as e:  # noqa: BLE001 — 스레드 생성 실패해도 큐 잡이 재시도한다
         logger.error("[mailer] 즉시 발송 스레드 생성 실패 (id=%s): %s", noti_id, e)
+
+
+def _dispatch_sequentially(noti_ids):
+    """여러 알림을 하나의 스레드 안에서 순서대로(겹치지 않게) 발송 시도한다.
+
+    한 결재 액션에서 팀별로 나뉜 여러 통이 만들어질 때, 알림마다 별도 스레드를 띄워
+    동시에 외부 API 를 호출하지 않도록 이 함수 하나가 순차적으로 처리한다. 순서는
+    무관하며(넘겨받은 id 리스트 순서 그대로), 한 통의 발송 시도(성공이든 실패든)가
+    끝난 뒤에만 다음 통을 시도한다.
+    """
+    try:
+        for noti_id in noti_ids:
+            try:
+                _process_one(noti_id)
+            except Exception as e:  # noqa: BLE001 — 한 건 실패가 나머지 순차 발송을 막지 않도록
+                logger.error("[mailer] 순차 즉시 발송 처리 실패 (id=%s): %s", noti_id, e)
+    finally:
+        # 스레드 전용 DB 커넥션 누수 방지
+        connection.close()
+
+
+def _send_now_async_sequential(noti_ids):
+    """커밋 직후 호출되어 여러 알림을 하나의 데몬 스레드에서 순서대로(겹치지 않게)
+    발송하도록 위임한다.
+
+    on_commit 콜백에서 실행되므로 **절대 예외를 전파하지 않는다**
+    (이미 커밋된 결재 응답을 깨뜨리지 않기 위함).
+    """
+    try:
+        threading.Thread(target=_dispatch_sequentially, args=(list(noti_ids),), daemon=True).start()
+    except Exception as e:  # noqa: BLE001 — 스레드 생성 실패해도 큐 잡이 재시도한다
+        logger.error("[mailer] 순차 즉시 발송 스레드 생성 실패: %s", e)
