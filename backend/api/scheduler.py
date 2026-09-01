@@ -548,6 +548,14 @@ def sync_design_rule():
                 engine.dispose()
 
 
+# start_mail_only()(SKIP_SCHEDULER=true, 예: 개발)에서는 add_job 하지 않는 무거운 외부 동기화
+# 잡 ID. DjangoJobStore 는 DB(django_apscheduler_djangojob 테이블)에 저장된 잡을 연결 시 그대로
+# 복원하므로, 이 잡들이 (예: db-sync 로 운영 잡 상태가 dev DB 에 유입되는 등) DB 에 남아있으면
+# add_job 을 호출하지 않아도 그대로 실행될 수 있다. start_mail_only() 는 스케줄러를 시작하기 전에
+# 이 ID 들을 `DjangoJob` ORM 으로 직접 지워 이를 막는다(이유는 start_mail_only() 자체 docstring 참고).
+HEAVY_SYNC_JOB_IDS = ['sync_form_options', 'sync_rtdb_options', 'sync_holidays', 'sync_design_rule']
+
+
 def start():
     from apscheduler.schedulers.background import BackgroundScheduler
     from apscheduler.triggers.interval import IntervalTrigger
@@ -631,16 +639,41 @@ def start():
 
 def start_mail_only():
     """무거운 DCQ 동기화를 건너뛰는 환경(SKIP_SCHEDULER=true, 예: 개발)에서도
-    외부 DB 가 필요 없는 결재 알림 메일 큐 발송 잡만 단독으로 실행한다."""
+    외부 DB 가 필요 없는 결재 알림 메일 큐 발송 잡만 단독으로 실행한다.
+
+    DjangoJobStore 는 DB 에 저장된 잡을 연결 시 그대로 복원한다 - add_job 을 호출하지 않은
+    HEAVY_SYNC_JOB_IDS 잡도 DB 에 남아있으면(예: db-sync 로 운영 잡 상태가 dev DB 로 유입된
+    경우) 그대로 실행될 수 있다. 이를 막기 위해 스케줄러를 만들기 전에 해당 잡 행을
+    `DjangoJob` ORM 으로 직접 지운다.
+
+    ⚠️ `scheduler.remove_job()`(APScheduler API)이 아니라 ORM 삭제를 쓰는 이유: `remove_job()`
+    은 스케줄러 `state`가 STOPPED(= `scheduler.start()` 호출 전)이면 이 잡스토어의 잡을 실제로
+    지우지 않고 이 스케줄러 인스턴스의 `_pending_jobs`(이번 호출에서 `add_job`한 잡)만 뒤진다
+    (`apscheduler/schedulers/base.py`의 `remove_job()`). DB 에서 상속된 잡은 `_pending_jobs`에
+    없으므로 `JobLookupError`만 나고 조용히 무시되어 **아무 것도 지워지지 않는다** - 실제로
+    이 방식으로 먼저 구현했다가 재현 테스트로 잡히지 않는 것을 확인하고 ORM 삭제로 바꿨다.
+    """
     from apscheduler.schedulers.background import BackgroundScheduler
     from apscheduler.triggers.interval import IntervalTrigger
     from django_apscheduler.jobstores import DjangoJobStore
+    from django_apscheduler.models import DjangoJob
     from django.db.utils import ProgrammingError
 
     scheduler = BackgroundScheduler(timezone='Asia/Seoul')
-    scheduler.add_jobstore(DjangoJobStore(), 'default')
 
     try:
+        stale_jobs = DjangoJob.objects.filter(id__in=HEAVY_SYNC_JOB_IDS)
+        stale_ids = list(stale_jobs.values_list('id', flat=True))
+        if stale_ids:
+            stale_jobs.delete()
+            logger.warning(
+                _("[scheduler] SKIP_SCHEDULER=true 인데 잡스토어에 남아있던 무거운 동기화 잡을 "
+                  "제거했습니다: {job_ids} (db-sync 등으로 외부 잡 상태가 유입되었을 수 있습니다)")
+                .format(job_ids=', '.join(stale_ids))
+            )
+
+        scheduler.add_jobstore(DjangoJobStore(), 'default')
+
         from .mailer import process_mail_queue
         scheduler.add_job(
             process_mail_queue,
