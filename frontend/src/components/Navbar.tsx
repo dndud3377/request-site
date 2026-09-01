@@ -76,13 +76,16 @@ export default function Navbar(): React.ReactElement {
   const isActive = (to: string): boolean =>
     to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
 
-  // 미확인 공지 여부 확인 (앱 마운트 시 1회)
+  const hasNoRole = currentUser.role === 'NONE';
+
+  // 미확인 공지 여부 확인 (앱 마운트 시 1회) — 권한 없는 사용자는 공지사항 접근 권한이 없다.
   useEffect(() => {
+    if (hasNoRole) return;
     noticesAPI.latest().then((r) => {
       if (!r.data) return;
       setHasUnread(shouldShowNotice(r.data.updated_at));
     }).catch(() => {});
-  }, []);
+  }, [hasNoRole]);
 
   // 공지 모달 닫힌 후 배지 갱신
   useEffect(() => {
@@ -110,19 +113,21 @@ export default function Navbar(): React.ReactElement {
   return (
     <nav className="navbar">
       <div className="navbar-inner">
-        {/* 확성기 아이콘 — 로고 왼쪽 */}
-        <button
-          className="notice-bell-btn"
-          onClick={handleShowNotice}
-          title={t('nav.notice_tooltip')}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/>
-            <path d="M9 18h6"/>
-            <path d="M10 22h4"/>
-          </svg>
-          {hasUnread && <span className="notice-badge" />}
-        </button>
+        {/* 확성기 아이콘 — 로고 왼쪽 (권한 없는 사용자에게는 노출하지 않는다) */}
+        {!hasNoRole && (
+          <button
+            className="notice-bell-btn"
+            onClick={handleShowNotice}
+            title={t('nav.notice_tooltip')}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/>
+              <path d="M9 18h6"/>
+              <path d="M10 22h4"/>
+            </svg>
+            {hasUnread && <span className="notice-badge" />}
+          </button>
+        )}
 
         <Link to="/" className="navbar-logo">
           <div className="navbar-logo-icon">🗺️</div>
