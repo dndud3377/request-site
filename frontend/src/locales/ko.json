@@ -330,6 +330,7 @@
     "btn_all_new": "전체 신규",
     "btn_all_copy": "전체 차용",
     "col_product_name": "제품 이름",
+    "product_name_example_placeholder": "ohwooyoung",
     "col_step": "STEP",
     "col_item_id": "ID",
     "col_layer": "Layer",
