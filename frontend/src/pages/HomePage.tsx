@@ -11,7 +11,7 @@ import AnnualDesignRuleChart from '../components/AnnualDesignRuleChart';
 import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseItem } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { shouldShowNotice, markNoticeSeen } from '../utils/noticeStorage';
-import { formatDate } from '../utils/date';
+import { formatDate, formatDateTime } from '../utils/date';
 import {
   getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument, submittedSortKey,
   getDocDetailFields, getDocSubmittedDate,
@@ -715,7 +715,7 @@ export default function HomePage(): React.ReactElement {
                             </div>
                           )}
                         </td>
-                        <td>{formatDate(getDocSubmittedDate(doc))}</td>
+                        <td>{formatDateTime(getDocSubmittedDate(doc))}</td>
                         <td>
                           <div>{doc.requester_name}</div>
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{doc.requester_department}</div>
