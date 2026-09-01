@@ -4369,7 +4369,9 @@ export default function RequestPage(): React.ReactElement {
         setUserGroups([]);
       }
     }
-    setDesignees([]);
+    // 신규 작성(비편집)만 비운다 — 편집 모드(반려·의뢰자 재상신)는 이미 프리필된
+    // 지정 PL(designees)을 모달 오픈 시점에 지워버리지 않는다(검토자 프리필 유지).
+    if (!isEditMode) setDesignees([]);
     setDesigneeSearchQuery('');
     setDesigneeError('');
     setNotifierSearchQuery('');
