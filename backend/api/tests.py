@@ -5339,6 +5339,59 @@ class ExternalSyncLockTest(TestCase):
         self.assertEqual(overlap, [])
 
 
+class StartMailOnlyRemovesHeavyJobsTest(TestCase):
+    """SKIP_SCHEDULER=true(개발)인데도 DjangoJobStore 에 남아있던 무거운 동기화 잡이 그대로
+    복원·실행되어 운영 DCQ 동기화와 충돌한 사고(2026-09) 재발 방지 검증.
+
+    db-sync 등으로 DjangoJob 테이블에 이미 잡 행이 남아있는 상황을 직접 재현하기 위해
+    DjangoJob 을 ORM 으로 바로 생성한다(job_state 는 remove_job() 이 역직렬화하지 않으므로
+    더미 값으로 충분 - HEAVY_SYNC_JOB_IDS 는 start_mail_only() 가 start() 호출 전에
+    remove_job() 하므로 역직렬화 시도 전에 제거된다). start_mail_only() 가 만드는
+    BackgroundScheduler 는 지역 변수라 밖에서 참조할 수 없으므로, 생성 시점을 가로채
+    테스트 종료 시 확실히 shutdown 해 백그라운드 스레드가 남지 않게 한다.
+    """
+
+    def _capture_background_schedulers(self):
+        from apscheduler.schedulers.background import BackgroundScheduler
+        created = []
+        original_init = BackgroundScheduler.__init__
+
+        def capturing_init(self_, *args, **kwargs):
+            created.append(self_)
+            return original_init(self_, *args, **kwargs)
+
+        patcher = patch.object(BackgroundScheduler, '__init__', capturing_init)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(lambda: [s.shutdown(wait=False) for s in created if s.running])
+        return created
+
+    def test_stale_heavy_jobs_removed_and_mail_job_registered(self):
+        from django_apscheduler.models import DjangoJob
+        from . import scheduler
+
+        for job_id in scheduler.HEAVY_SYNC_JOB_IDS:
+            DjangoJob.objects.create(id=job_id, next_run_time=timezone.now(), job_state=b'stale')
+
+        self._capture_background_schedulers()
+        scheduler.start_mail_only()
+
+        remaining_ids = set(DjangoJob.objects.values_list('id', flat=True))
+        for job_id in scheduler.HEAVY_SYNC_JOB_IDS:
+            self.assertNotIn(job_id, remaining_ids)
+        self.assertIn('process_mail_queue', remaining_ids)
+
+    def test_start_mail_only_without_stale_jobs_still_registers_mail_job(self):
+        from django_apscheduler.models import DjangoJob
+        from . import scheduler
+
+        self._capture_background_schedulers()
+        scheduler.start_mail_only()
+
+        remaining_ids = set(DjangoJob.objects.values_list('id', flat=True))
+        self.assertIn('process_mail_queue', remaining_ids)
+
+
 class LayerFilterSetTest(TestCase):
     """J/O-layer 공유 필터 CRUD 권한 + apply-layer-filter 적용 검증."""
 
