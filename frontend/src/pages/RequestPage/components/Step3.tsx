@@ -270,6 +270,7 @@ const Step3: React.FC<Step3Props> = ({
                           }}
                           dropdownFontSize="0.7rem"
                           dropdownDirection="up"
+                          disableFilter
                         />
                       </td>
                       <td {...cellProps('new_or_copy')} className={nocError ? 'field-error-target' : undefined}>
@@ -284,6 +285,7 @@ const Step3: React.FC<Step3Props> = ({
                           }}
                           dropdownFontSize="0.7rem"
                           dropdownDirection="up"
+                          disableFilter
                         />
                       </td>
                       <td {...cellProps('product_name', greyBg ? regBg : undefined)}><input value={row.product_name} readOnly={rowInactive || isRegistered} disabled={rowInactive || isRegistered} onChange={(e) => handleOayerChange(row.id, 'product_name', e.target.value)} className={errors[`oayer_noc_${row.id}_product_name`] ? 'field-error-target' : undefined} style={{ backgroundColor: greyBg ? regBg : undefined, ...(errors[`oayer_noc_${row.id}_product_name`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
