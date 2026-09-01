@@ -20,12 +20,23 @@ interface AutocompleteInputProps {
   dropdownDirection?: 'up' | 'down';
   uppercase?: boolean;
   maxLength?: number;
+  /**
+   * true면 현재 값으로 후보를 좁히지 않고 열릴 때마다 옵션 전체를 그대로 보여준다.
+   * st/new_or_copy처럼 선택지가 몇 개 안 되는 고정 목록 필드용 — 이미 값이 선택돼 있어도
+   * 다시 열면(재클릭) 전체 옵션이 보여야 할 때 켠다.
+   */
+  disableFilter?: boolean;
   /** true면 콤마로 구분된 값을 체크박스 토글로 여러 개 선택할 수 있다(자유 입력은 그대로 유지). */
   multiSelect?: boolean;
   /** 값/옵션의 "동일 항목" 판정 기준을 바꾼다(예: 라벨 끝의 부가정보 제외). 기본은 문자열 그대로 비교. multiSelect 에서만 쓰인다. */
   multiSelectIdentity?: (label: string) => string;
-  /** 다중 선택된 라벨 목록(원래 옵션 문자열)을 저장용 문자열로 합치는 방법. 기본은 ", " 로 이어붙임. multiSelect 에서만 쓰인다. */
-  formatMultiValue?: (labels: string[]) => string;
+  /**
+   * 다중 선택된 라벨 목록을 저장용 문자열로 합치는 방법. 기본은 ", " 로 이어붙임.
+   * 두 번째 인자는 각 라벨이 옵션에서 고른 것인지(true) 직접 타이핑한 것인지(false)를 같은
+   * 순서로 알려준다 — 직접 입력한 텍스트는 그대로 두고 옵션에서 고른 것만 가공하고 싶을 때 사용.
+   * multiSelect 에서만 쓰인다.
+   */
+  formatMultiValue?: (labels: string[], isFromOptions: boolean[]) => string;
 }
 
 export default function AutocompleteInput({
@@ -46,6 +57,7 @@ export default function AutocompleteInput({
   dropdownDirection = 'down',
   uppercase,
   maxLength,
+  disableFilter,
   multiSelect,
   multiSelectIdentity,
   formatMultiValue,
@@ -62,9 +74,11 @@ export default function AutocompleteInput({
   // multiSelect 에서는 마지막 콤마 뒤 입력 중인 부분만으로 후보를 좁힌다(전체 값으로 필터링하면
   // 이미 선택된 항목들이 이어붙은 문자열이라 옵션과 매치되지 않는다).
   const filterQuery = multiSelect ? (value.split(',').pop() ?? '').trim() : value;
-  const filtered = filterQuery
-    ? options.filter((o) => o.toLowerCase().includes(filterQuery.toLowerCase()))
-    : options;
+  const filtered = disableFilter
+    ? options
+    : filterQuery
+      ? options.filter((o) => o.toLowerCase().includes(filterQuery.toLowerCase()))
+      : options;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -115,12 +129,17 @@ export default function AutocompleteInput({
             // "바깥 클릭"으로 오인될 수 있다. stopPropagation 으로 그 상위 감지 자체를 막고,
             // 다중 선택이 끝날 때까지 드롭다운을 열어둔 채 체크만 토글한다.
             e.stopPropagation();
-            const identities = [...selectedIdentities];
-            const targetId = identityOf(opt);
-            const i = identities.indexOf(targetId);
-            if (i === -1) identities.push(targetId); else identities.splice(i, 1);
-            const fullLabels = identities.map((id) => options.find((o) => identityOf(o) === id) ?? id);
-            const next = joinMultiValue(fullLabels);
+            const targetIdentity = identityOf(opt);
+            const existingIdx = currentTags.findIndex((tag) => identityOf(tag) === targetIdentity);
+            const nextTags = existingIdx === -1
+              ? [...currentTags, opt]
+              : currentTags.filter((_, i) => i !== existingIdx);
+            // 옵션에서 고른 항목은 항상 옵션의 원본 라벨로 맞추고(과거에 날짜가 제거된 채
+            // 저장돼 있었어도 복원), 옵션에 없는 자유 입력 텍스트는 사용자가 타이핑한 그대로
+            // 둔다 — 그래야 자유 입력에 날짜 형식 텍스트가 있어도 유실되지 않는다.
+            const resolvedTags = nextTags.map((tag) => options.find((o) => identityOf(o) === identityOf(tag)) ?? tag);
+            const isFromOptions = nextTags.map((tag) => options.some((o) => identityOf(o) === identityOf(tag)));
+            const next = joinMultiValue(resolvedTags, isFromOptions);
             onChange(next);
             onSelect?.(next);
             return;

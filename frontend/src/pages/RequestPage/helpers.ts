@@ -114,11 +114,14 @@ export const stripDateBracket = (label: string): string => label.replace(/\s*\[[
 
 /**
  * item_id 다중 선택 결과를 저장용 문자열로 합친다.
- * 1개만 선택됐으면 원래 라벨(날짜 포함) 그대로, 2개 이상이면 각 라벨의 "[날짜]"를 지워
- * 값이 선택 개수만큼 길어지지 않게 한다.
+ * 1개만 선택됐으면 원래 라벨(날짜 포함) 그대로, 2개 이상이면 "옵션(바코드 후보)에서 고른 라벨"의
+ * "[날짜]"만 지워 값이 선택 개수만큼 길어지지 않게 한다. 직접 타이핑한 텍스트(isFromOptions=false)는
+ * 후보 목록에 없어 날짜 유무를 판단할 근거가 없고 자유 입력의 자유도를 지켜야 하므로 건드리지 않는다.
  */
-export const formatMultiItemId = (labels: string[]): string =>
-  labels.length <= 1 ? labels.join(', ') : labels.map(stripDateBracket).join(', ');
+export const formatMultiItemId = (labels: string[], isFromOptions: boolean[] = []): string =>
+  labels.length <= 1
+    ? labels.join(', ')
+    : labels.map((label, i) => (isFromOptions[i] ? stripDateBracket(label) : label)).join(', ');
 
 /**
  * Jayer/Oayer "요청 기준"(new_or_copy) 값을 근거로 이 요청서에 맞는 요청 목적을 계산한다.
