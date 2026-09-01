@@ -70,6 +70,10 @@ interface UserTableProps {
   showVocMail: boolean;
   onToggleVocMail: (user: UserWithRole) => void;
   savingVocMailId: number | null;
+  /** '상신 받기' 토글 표시 여부 — TE_P 탭에서만 true */
+  showSubmitMail: boolean;
+  onToggleSubmitMail: (user: UserWithRole) => void;
+  savingSubmitMailId: number | null;
 }
 
 function UserTable({
@@ -88,6 +92,9 @@ function UserTable({
   showVocMail,
   onToggleVocMail,
   savingVocMailId,
+  showSubmitMail,
+  onToggleSubmitMail,
+  savingSubmitMailId,
 }: UserTableProps): React.ReactElement {
   const { t } = useTranslation();
 
@@ -162,6 +169,23 @@ function UserTable({
                         aria-pressed={!!user.receive_voc_mail}
                       >
                         {t('permission.voc_mail_label')}
+                      </button>
+                    </>
+                  )}
+                  {showSubmitMail && (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        style={{ width: 1, alignSelf: 'stretch', background: 'var(--color-border, #e2e8f0)', margin: '0 2px' }}
+                      />
+                      <button
+                        type="button"
+                        className={`map-type-btn mail-line-btn${user.receive_submit_mail ? ' active' : ''}`}
+                        onClick={() => onToggleSubmitMail(user)}
+                        disabled={!canEditMailLines(user) || savingSubmitMailId === user.id}
+                        aria-pressed={!!user.receive_submit_mail}
+                      >
+                        {t('permission.submit_mail_label')}
                       </button>
                     </>
                   )}
@@ -893,6 +917,9 @@ export default function PermissionPage(): React.ReactElement {
   // VOC 메일 수신 설정 — 저장 중인 행, 그리고 해제 확인 모달 대상
   const [savingVocMailId, setSavingVocMailId] = useState<number | null>(null);
   const [vocMailOffTarget, setVocMailOffTarget] = useState<UserWithRole | null>(null);
+  // '상신 받기' 메일 수신 설정 — 저장 중인 행, 그리고 해제 확인 모달 대상
+  const [savingSubmitMailId, setSavingSubmitMailId] = useState<number | null>(null);
+  const [submitMailOffTarget, setSubmitMailOffTarget] = useState<UserWithRole | null>(null);
 
   // Group state
   const [groups, setGroups] = useState<UserGroup[]>([]);
@@ -1188,6 +1215,38 @@ export default function PermissionPage(): React.ReactElement {
     await applyVocMail(target, false);
   }, [vocMailOffTarget, applyVocMail]);
 
+  // ===== '상신 받기' 메일 수신 설정 =====
+
+  const applySubmitMail = useCallback(async (user: UserWithRole, receiveSubmitMail: boolean) => {
+    setSavingSubmitMailId(user.id);
+    try {
+      const { data } = await usersAPI.updateSubmitMail(user.id, receiveSubmitMail);
+      setUsers((prev) => prev.map((u) => (
+        u.id === user.id ? { ...u, receive_submit_mail: data.receive_submit_mail } : u
+      )));
+    } catch (err: unknown) {
+      addToast(err instanceof Error ? err.message : t('permission.submit_mail_error'), 'error');
+    } finally {
+      setSavingSubmitMailId(null);
+    }
+  }, [addToast, t]);
+
+  // 켤 때는 바로 저장, 끌 때는 확인 모달을 거친다.
+  const handleToggleSubmitMail = useCallback((user: UserWithRole) => {
+    if (user.receive_submit_mail) {
+      setSubmitMailOffTarget(user);
+      return;
+    }
+    applySubmitMail(user, true);
+  }, [applySubmitMail]);
+
+  const handleConfirmSubmitMailOff = useCallback(async () => {
+    if (!submitMailOffTarget) return;
+    const target = submitMailOffTarget;
+    setSubmitMailOffTarget(null);
+    await applySubmitMail(target, false);
+  }, [submitMailOffTarget, applySubmitMail]);
+
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeletingId(deleteTarget.id);
@@ -1388,6 +1447,9 @@ export default function PermissionPage(): React.ReactElement {
                 showVocMail={activeTab === 'MASTER'}
                 onToggleVocMail={handleToggleVocMail}
                 savingVocMailId={savingVocMailId}
+                showSubmitMail={activeTab === 'TE_P'}
+                onToggleSubmitMail={handleToggleSubmitMail}
+                savingSubmitMailId={savingSubmitMailId}
               />
             </div>
           )}
@@ -1439,6 +1501,18 @@ export default function PermissionPage(): React.ReactElement {
         confirmLabel={t('permission.voc_mail_off_yes')}
         danger
         loading={savingVocMailId !== null}
+      />
+
+      {/* '상신 받기' 메일 수신 해제 확인 */}
+      <ConfirmModal
+        isOpen={submitMailOffTarget !== null}
+        onClose={() => setSubmitMailOffTarget(null)}
+        onConfirm={handleConfirmSubmitMailOff}
+        title={t('permission.submit_mail_off_title')}
+        message={t('permission.submit_mail_off_confirm')}
+        confirmLabel={t('permission.submit_mail_off_yes')}
+        danger
+        loading={savingSubmitMailId !== null}
       />
 
       {/* Add User Modal */}

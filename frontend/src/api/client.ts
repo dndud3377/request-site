@@ -23,6 +23,7 @@ import {
   UserWithRole,
   MailLinesResponse,
   VocMailResponse,
+  SubmitMailResponse,
   CreateUserInput,
   UserForAssignment,
   UserGroup,
@@ -852,6 +853,19 @@ const updateVocMail = async (
   return { data };
 };
 
+/**
+ * 상신 알림 메일 수신 설정 변경(TE_P 전용, 본인 또는 MASTER 만 가능).
+ */
+const updateSubmitMail = async (
+  userId: number,
+  receiveSubmitMail: boolean,
+): Promise<{ data: SubmitMailResponse }> => {
+  const data = await patch<SubmitMailResponse>(`/users/${userId}/submit-mail/`, {
+    receive_submit_mail: receiveSubmitMail,
+  });
+  return { data };
+};
+
 export const usersAPI = {
   list: listUsers,
   create: createUser,
@@ -860,6 +874,7 @@ export const usersAPI = {
   assignRole: assignRole,
   updateMailLines: updateMailLines,
   updateVocMail: updateVocMail,
+  updateSubmitMail: updateSubmitMail,
 };
 
 // ===== 나만의 그룹 API =====

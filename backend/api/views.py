@@ -3530,6 +3530,38 @@ class UserViewSet(viewsets.ModelViewSet):
         user.save(update_fields=['receive_voc_mail'])
         return Response({'id': user.id, 'receive_voc_mail': receive_voc_mail})
 
+    @action(detail=True, methods=['patch'], url_path='submit-mail')
+    def submit_mail(self, request, pk=None):
+        """상신 알림 메일 수신 설정 변경 (권한 관리 '이메일 설정' 컬럼의 '상신 받기' 토글).
+
+        - 본인 행은 본인이, 그 외에는 MASTER 만 바꿀 수 있다(mail-lines/voc-mail 과 동일 규칙).
+        - 대상 역할은 TE_P 뿐이다 — 상신·재상신 시 통보처와 동일한 메일(notify_submitted)을
+          받을지 여부이며, 전체 받기/라인 설정(mail_lines)과는 별개로 관리된다(VOC 토글과 동일).
+        - 요청 본문: {"receive_submit_mail": true/false}
+        """
+        user = self.get_object()
+        caller = request.user
+        is_master = caller.is_authenticated and getattr(caller, 'role', '') == 'MASTER'
+        if not (is_master or (caller.is_authenticated and caller.pk == user.pk)):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if user.role != 'TE_P':
+            return Response(
+                {'error': 'TE_P 역할만 상신 메일 수신 설정을 사용합니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        receive_submit_mail = request.data.get('receive_submit_mail')
+        if not isinstance(receive_submit_mail, bool):
+            return Response(
+                {'error': 'receive_submit_mail 은 true/false 여야 합니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.receive_submit_mail = receive_submit_mail
+        user.save(update_fields=['receive_submit_mail'])
+        return Response({'id': user.id, 'receive_submit_mail': receive_submit_mail})
+
     @action(detail=True, methods=['post'], url_path='assign-role')
     def assign_role(self, request, pk=None):
         """사용자에게 역할 부여
@@ -3574,6 +3606,7 @@ class UserViewSet(viewsets.ModelViewSet):
             'receive_all_mail': user.receive_all_mail,
             'mail_lines': list(user.mail_lines.values_list('name', flat=True)),
             'receive_voc_mail': user.receive_voc_mail,
+            'receive_submit_mail': user.receive_submit_mail,
         }
         broadcaster.broadcast('user_updated', payload)
 
