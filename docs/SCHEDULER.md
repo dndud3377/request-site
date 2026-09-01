@@ -19,6 +19,14 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 - `docker-compose.dev.yml`: 개발 `scheduler` 서비스(`SKIP_SCHEDULER=true`, 메일 큐만).
 - 마이그레이션/시드/정적파일 수집은 **웹 `backend` 서비스**가 담당하고, `scheduler` 서비스는 `wait_for_db` 후 스케줄러만 실행한다.
 
+> ℹ️ **개발 환경은 왜 DCQ/RTDB 동기화가 필요 없는가.** dev 는 `db-sync` 서비스가 재빌드마다
+> `mysqldump` 로 **운영 DB 전체를 통째로** dev DB 로 복사해온다(`docker-compose.dev.yml`). 즉
+> dev 의 폼 옵션·바코드·공휴일·디자인룰 데이터는 이미 최신 운영 데이터로 채워져 있으므로,
+> dev 에서 스케줄러가 DCQ/RTDB 를 계속 조회해 최신화할 필요가 없다 - `SKIP_SCHEDULER=true`
+> 로 무거운 동기화 잡을 꺼두는 이유다. dev 의 `scheduler` 서비스가 그럼에도 계속 떠 있는
+> 이유는 **결재 알림 메일 큐(`process_mail_queue`) 재시도 안전망**을 위해서다(아래
+> "동기화 실패 알림 메일" 절과 무관 - 이건 결재 알림 메일).
+
 > ⚠️ 로컬에서 compose 없이 `runserver` 만 띄우면 스케줄러/메일이 자동 실행되지 않는다.
 > 필요하면 별도 터미널에서 `python manage.py run_scheduler` 를 실행한다.
 
@@ -399,3 +407,40 @@ DCQ 로 자동 대체되지 않고 그 데이터는 동기화되지 않는다**(
   `utils.external_sync_lock()`(구 `dcq_session_lock()`)을 `sync_rtdb_options()` 본문에도 적용해
   RTDB 동기화와 DCQ 동기화가 서로 겹쳐 돌지 않도록 직렬화했다(위 "DCQ SDK 스레드 비안전성" 항목
   참고). 검증: `backend/api/tests.py` 의 `ExternalSyncLockTest`.
+- ✅ **(2026-09 수정 완료) `SKIP_SCHEDULER=true`(개발)인데도 DCQ/RTDB 동기화 잡이 실행되어 운영과
+  충돌한 사고.** `start_mail_only()`는 `process_mail_queue`만 `add_job`하지만, `DjangoJobStore`는
+  잡스토어에 연결되는 순간 **DB(`django_apscheduler_djangojob` 테이블)에 저장된 잡을 전부 그대로
+  복원**한다. 이 테이블은 `db-sync`가 재빌드마다 운영 DB를 통째로 mysqldump 해오는 대상에도
+  포함되어 있었으므로, 운영 스케줄러가 실시간으로 갱신 중인 잡 상태(가까운 `next_run_time`
+  포함)가 그대로 dev DB로 복사됐다. 그 결과 dev의 `start_mail_only()`가 `sync_form_options`/
+  `sync_rtdb_options`/`sync_holidays`/`sync_design_rule`까지 복원해 실행했고, dev가 운영과 같은
+  DCQ 계정으로 거의 동시에 로그인하면서 운영의 DCQ 토큰을 무효화해 **운영 DCQ 동기화 실패**로
+  이어졌다(운영·개발 재시작 시각이 우연히 겹친 사례로 재현·확정).
+  - **수정 1 (근본 방어)**: `start_mail_only()`가 `BackgroundScheduler`를 만들기 **전에** 무거운
+    동기화 잡 ID(`scheduler.HEAVY_SYNC_JOB_IDS` = `sync_form_options`/`sync_rtdb_options`/
+    `sync_holidays`/`sync_design_rule`)에 해당하는 `django_apscheduler.models.DjangoJob` 행을
+    ORM `.delete()`로 직접 지운다. `SKIP_SCHEDULER=true` 환경에서는 DB에 이 잡들이 어떤
+    경로로 남아있든(과거 `start()` 실행 이력, db-sync 유입 등) 실행되지 않음을 보장한다.
+    제거가 실제로 발생하면 경고 로그를 남겨 유입 흔적을 알 수 있게 했다.
+    - ⚠️ **처음엔 `scheduler.remove_job(job_id)`(APScheduler API)로 구현했다가 재현 테스트로
+      "아무 것도 지워지지 않는다"는 것을 확인하고 ORM 삭제로 바꿨다.** `remove_job()`은
+      스케줄러 `state`가 `STOPPED`(= `scheduler.start()` 호출 전)이면 잡스토어(DB)를 건드리지
+      않고 그 스케줄러 인스턴스가 이번 호출에서 `add_job`한 `_pending_jobs`만 뒤진다
+      (`apscheduler/schedulers/base.py`). `scheduler.start()`를 부르기 **전에** 지워야 이후
+      스케줄러 스레드가 그 잡을 집어 실행하는 걸 막을 수 있는데, DB에서 상속된 잡은
+      `_pending_jobs`에 없으므로 `remove_job()`은 `JobLookupError`만 내고 조용히 무시되어
+      아무 것도 지워지지 않는 상태였다(같은 패턴을 쓰는 `start()`의 기존
+      `remove_job('sync_process_product')` 잔여 잡 제거 코드도 이론상 동일한 문제가 있을
+      수 있으나, 그 잡은 대상 함수 자체가 더는 없어 `_get_jobs()`의 역직렬화 실패 시
+      자동 제거 경로(`_reconstitute_job` 실패 → "Removing it..." 로그 후 삭제, 위 "쓰기
+      전략" 관련 `jobstores.py` 코드 참고)로 결과적으로 정리되어 왔을 뿐이라 별도 이슈로
+      남겨뒀다).
+  - **수정 2 (유입 경로 차단)**: `docker-compose.dev.yml`의 `db-sync` `mysqldump` 명령에
+    `--ignore-table=django_apscheduler_djangojob` / `--ignore-table=django_apscheduler_djangojobexecution`
+    을 추가해, 애초에 운영 스케줄러의 잡 상태가 dev DB로 복사되지 않도록 했다.
+  - **검증 방법(실제 실행 확인 완료)**: `backend/api/tests.py`의
+    `StartMailOnlyRemovesHeavyJobsTest`. DB에 `HEAVY_SYNC_JOB_IDS` 4개 잡 행을 직접 심어두고
+    `start_mail_only()` 실행 후 (1) 그 4개가 `DjangoJob` 테이블에서 사라졌는지, (2)
+    `process_mail_queue`는 정상 등록됐는지, (3) 심어둔 잡이 없어도 `process_mail_queue`는
+    정상 등록되는지 확인한다. CLAUDE.md §규칙 C-1-1 sqlite 절차로 실제 실행해 2건 모두
+    통과 확인(`api` 앱 전체 369건도 회귀 없이 통과).
