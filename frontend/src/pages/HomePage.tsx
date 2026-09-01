@@ -515,7 +515,9 @@ export default function HomePage(): React.ReactElement {
   }, []);
 
   // 초기 로드 및 자동 오픈 (매 접속 시, hide_until 억제 or 내용 변경 시 오픈)
+  // 권한 없는(NONE) 사용자는 공지사항 접근 권한이 없으므로 자동 오픈하지 않는다.
   useEffect(() => {
+    if (hasNoRole) return;
     loadNotices().then((list) => {
       if (list.length === 0) return;
       const maxUpdatedAt = list.reduce((max, n) => (n.updated_at > max ? n.updated_at : max), '');
@@ -523,7 +525,7 @@ export default function HomePage(): React.ReactElement {
         setShowNoticeModal(true);
       }
     });
-  }, []);
+  }, [hasNoRole, loadNotices]);
 
   // Navbar 확성기 클릭 이벤트 수신
   useEffect(() => {
