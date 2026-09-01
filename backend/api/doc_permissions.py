@@ -133,12 +133,42 @@ def can_delete(user, document, my_group_ids=None):
     return bool(document.designated_pl and document.designated_pl.loginid == loginid)
 
 
+def _pl_stage_open(document):
+    """현재 회차가 아직 PL 검토(+SA 합의) 단계인가 — R 등 다음 단계가 생성되지 않았는가.
+
+    일반/'MAP 삭제'/'ADI CD 변경' 등 경로마다 PL 다음에 열리는 첫 단계의 agent 가
+    다르므로(R / P·R·J·O / P·J), "이번 회차에 PL·SA 를 제외한 step 이 하나도 없다"로
+    경로 무관하게 판정한다.
+    """
+    from .models import ApprovalStep
+    max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+    return not ApprovalStep.objects.filter(
+        document=document, round=max_round
+    ).exclude(agent__in=('PL', 'SA')).exists()
+
+
+def can_requester_resubmit(user, document):
+    """의뢰자 본인이 중단요청 없이 즉시 수정·재상신할 수 있는가.
+
+    조건: 진행 중(under_review) + 아직 PL 검토(+SA 합의) 단계(R 등 다음 단계 미생성) +
+    의뢰자 본인 또는 MASTER. 다음 단계가 이미 생성된 뒤에는 request_pause 를 이용해야 한다.
+    """
+    if document.status != 'under_review':
+        return False
+    if not _pl_stage_open(document):
+        return False
+    if getattr(user, 'role', '') == 'MASTER':
+        return True
+    return is_requester(user, document)
+
+
 def can_edit(user, document, my_group_ids=None):
     """수정(update) 인가 — 문서 상태별 허용 대상.
 
     - draft     : 작성자(의뢰자) / 문서 공유 그룹의 멤버 / MASTER
     - rejected  : 철회 가능 범위와 동일(의뢰자/지정PL/공유 그룹 멤버/MASTER)
-    - under_review/submitted : PL 검토 단계 pending 시 그 지정 PL 또는 MASTER
+    - under_review/submitted : PL 검토 단계 pending 시 그 지정 PL 또는 MASTER,
+      혹은 아직 PL 검토(+SA 합의) 단계라면 의뢰자 본인(중단요청 없는 재상신용, can_requester_resubmit 참고)
     - approved  : MASTER 만
     """
     if getattr(user, 'role', '') == 'MASTER':
@@ -163,6 +193,8 @@ def can_edit(user, document, my_group_ids=None):
         if is_pending_pl:
             return True
         if document.designated_pl and document.designated_pl.loginid == loginid:
+            return True
+        if is_requester(user, document) and _pl_stage_open(document):
             return True
         return False
     if st == 'pause':
