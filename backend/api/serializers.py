@@ -18,6 +18,7 @@ class DocPermFieldsMixin(serializers.Serializer):
     can_withdraw = serializers.SerializerMethodField()
     can_request_pause = serializers.SerializerMethodField()
     can_resume = serializers.SerializerMethodField()
+    can_requester_resubmit = serializers.SerializerMethodField()
     pause_request = serializers.SerializerMethodField()
     withdraw_request = serializers.SerializerMethodField()
     post_approver_fixed_loginid = serializers.SerializerMethodField()
@@ -55,6 +56,10 @@ class DocPermFieldsMixin(serializers.Serializer):
     def get_can_resume(self, obj):
         user = self._perm_user()
         return bool(user and doc_permissions.can_resume(user, obj))
+
+    def get_can_requester_resubmit(self, obj):
+        user = self._perm_user()
+        return bool(user and doc_permissions.can_requester_resubmit(user, obj))
 
     def get_post_approver_fixed_loginid(self, obj):
         """고정 후결자(.env) loginid — 프론트가 '🔒 고정' 표시·변경 잠금에 사용."""
@@ -199,7 +204,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'status', 'production_date', 'created_at', 'updated_at', 'submitted_at',
             'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw', 'notifier_mails',
-            'can_request_pause', 'can_resume', 'pause_request', 'withdraw_request',
+            'can_request_pause', 'can_resume', 'can_requester_resubmit', 'pause_request', 'withdraw_request',
             'post_approver_fixed_loginid',
             'shared_group', 'shared_group_name', 'review_items',
         ]
@@ -245,7 +250,7 @@ class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSeriali
             'product_name', 'status', 'production_date', 'created_at', 'submitted_at',
             'additional_notes', 'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw',
-            'can_request_pause', 'can_resume', 'pause_request', 'withdraw_request',
+            'can_request_pause', 'can_resume', 'can_requester_resubmit', 'pause_request', 'withdraw_request',
             'post_approver_fixed_loginid',
             'shared_group', 'shared_group_name', 'my_pending_review_items',
         ]
