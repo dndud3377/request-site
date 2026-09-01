@@ -200,6 +200,7 @@ const Step2: React.FC<Step2Props> = ({
                       }}
                       dropdownFontSize="0.7rem"
                       dropdownDirection="up"
+                      disableFilter
                     />
                   </td>
                   <td {...cellProps('new_or_copy')} data-tour="jayer-sync-cols" className={nocError ? 'field-error-target' : undefined}>
@@ -214,6 +215,7 @@ const Step2: React.FC<Step2Props> = ({
                       }}
                       dropdownFontSize="0.7rem"
                       dropdownDirection="up"
+                      disableFilter
                     />
                   </td>
                   <td data-jtour={`product_name-${idx}`} data-tour="jayer-sync-cols" {...cellProps('product_name', greyBg ? regBg : undefined)}><input value={row.product_name} readOnly={rowInactive || isRegistered} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} placeholder={idx === 0 ? (t('request.product_name_example_placeholder' as never) as string) : undefined} className={errors[`jayer_noc_${row.id}_product_name`] ? 'field-error-target' : undefined} style={{ backgroundColor: greyBg ? regBg : undefined, ...(errors[`jayer_noc_${row.id}_product_name`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
@@ -230,6 +232,7 @@ const Step2: React.FC<Step2Props> = ({
                       inputStyle={itemIdError ? { border: '1px solid var(--danger)' } : undefined}
                       dropdownDirection="up"
                       dropdownFontSize="0.7rem"
+                      disableFilter
                       multiSelect
                       multiSelectIdentity={stripDateBracket}
                       formatMultiValue={formatMultiItemId}
