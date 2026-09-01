@@ -11,7 +11,7 @@ import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '.
 import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem, LayerFilterSet } from '../types';
-import { formatDate } from '../utils/date';
+import { formatDate, formatTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
 import FilterManageModal from './RequestPage/components/FilterManageModal';
 import { emptyDraftWords } from './RequestPage/helpers';
@@ -1673,7 +1673,10 @@ export default function ApprovalPage(): React.ReactElement {
                         </div>
                       )}
                     </td>
-                    <td>{formatDate(getDocSubmittedDate(doc))}</td>
+                    <td>
+                      <div>{formatDate(getDocSubmittedDate(doc))}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{formatTime(getDocSubmittedDate(doc))}</div>
+                    </td>
                     <td>
                       <div>{doc.requester_name}</div>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{doc.requester_department}</div>
