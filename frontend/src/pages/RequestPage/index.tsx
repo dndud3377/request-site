@@ -4473,6 +4473,7 @@ export default function RequestPage(): React.ReactElement {
         const currentStatus = docId ? (await documentsAPI.get(docId)).data.status : 'draft';
         const isRejected = currentStatus === 'rejected';
         const isPause = currentStatus === 'pause';
+        const isUnderReview = currentStatus === 'under_review';
         const enriched = buildEnrichedForm(submitNote, isRejected || isPause); // 재상신·재개 수정 시 history 누적
         if (!docId) {
           const res = await documentsAPI.create(enriched);
@@ -4489,6 +4490,10 @@ export default function RequestPage(): React.ReactElement {
           // R-09: 위에서 enriched(history 포함)로 이미 1회 update했으므로 중복 update 없이 재상신
           await documentsAPI.resubmit(docId!, designees.map(d => d.loginid));
           addToast('재상신되었습니다.', 'success');
+        } else if (isUnderReview) {
+          // 의뢰자 재상신(중단요청 없이): PL 검토(+SA 합의) 단계에서만 진입 가능(can_requester_resubmit).
+          await documentsAPI.requesterResubmit(docId!, designees.map(d => d.loginid));
+          addToast(t('request.requester_resubmit_success'), 'success');
         } else {
           const submitRes = await documentsAPI.submit(docId!, designees.map(d => d.loginid));
           addToast(t('request.submit_success'), 'success');
