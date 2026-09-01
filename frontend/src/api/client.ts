@@ -202,6 +202,15 @@ const resubmitDocument = async (id: number, designatedPlLoginids: string[]) => {
   return { data };
 };
 
+/** 의뢰자 재상신(중단요청 없이) — PL 검토(+SA 합의) 단계에서만 가능. can_requester_resubmit 참고. */
+const requesterResubmitDocument = async (id: number, designatedPlLoginids: string[]) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${id}/requester-resubmit/`,
+    { designated_pl_loginids: designatedPlLoginids }
+  );
+  return { data };
+};
+
 /** 이력 바로 등록 (MASTER 전용) — 결재 경로를 타지 않고 draft → approved.
  *  날짜는 모두 'YYYY-MM-DD' 형식이다. */
 const directApproveDocument = async (id: number, submittedAt: string, approvedAt: string) => {
@@ -553,6 +562,7 @@ export const documentsAPI = {
   update: updateDocument,
   submit: submitDocument,
   resubmit: resubmitDocument,
+  requesterResubmit: requesterResubmitDocument,
   directApprove: directApproveDocument,
   withdraw: withdrawDocument,
   confirmWithdraw,
