@@ -109,6 +109,17 @@ export const findNocBorrowItemIdViolations = (
     .filter((r) => !isRowInactive(r.st) && r.new_or_copy === '차용' && !r.item_id?.trim())
     .map((r) => r.id);
 
+/** item_id 바코드 후보 라벨 끝의 " [날짜]"를 제거한다 (form_options_barcode 가 붙이는 형식과 짝을 맞춤). */
+export const stripDateBracket = (label: string): string => label.replace(/\s*\[[^\]]*\]\s*$/, '');
+
+/**
+ * item_id 다중 선택 결과를 저장용 문자열로 합친다.
+ * 1개만 선택됐으면 원래 라벨(날짜 포함) 그대로, 2개 이상이면 각 라벨의 "[날짜]"를 지워
+ * 값이 선택 개수만큼 길어지지 않게 한다.
+ */
+export const formatMultiItemId = (labels: string[]): string =>
+  labels.length <= 1 ? labels.join(', ') : labels.map(stripDateBracket).join(', ');
+
 /**
  * Jayer/Oayer "요청 기준"(new_or_copy) 값을 근거로 이 요청서에 맞는 요청 목적을 계산한다.
  * 비활성 행은 제외한다. 신규 → '신규' / 차용 → '차용' / 둘 다 → '신규+차용' /
