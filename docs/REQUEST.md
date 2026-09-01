@@ -317,36 +317,56 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
     `item_id` 값의 타입은 그대로 문자열(여러 개면 콤마로 구분된 문자열)이라 `handleJayerChange`,
     필수값 검증(`findNocBorrowItemIdViolations`), 초기화(`stClearExtra` 등), 엑셀 내보내기
     (`detailExport.ts`), 상세보기(`PagedDetailView.tsx`)는 별도 수정 없이 그대로 동작한다.
-- **후속 버그 수정 (같은 날, 실제 배포 코드 리뷰 중 발견)**:
-  1. **[치명] 1개 선택 시 나머지 후보가 전부 사라져 2개째를 고를 수 없던 문제**: 드롭다운
-     필터링용 "마지막 콤마 뒤 입력 중인 조각"을 뽑을 때, 아직 콤마가 없는 상태(=방금 고른 값
-     1개뿐)에서는 그 값 전체를 "입력 중인 텍스트"로 오인해 필터링에 써버렸다. 그러면 후보
-     목록이 방금 고른 항목 하나로만 좁혀져 나머지가 다 사라진다. 마지막 조각의 identity가 이미
-     알려진 옵션과 정확히 일치하면(=입력 중이 아니라 방금 완료된 선택이면) 필터로 쓰지 않도록
-     `AutocompleteInput.tsx`의 `filterQuery` 계산을 수정. HTML 목업에서는 체크 시 목록을 다시
-     그리지 않아 이 버그가 우연히 가려져 있었다.
+- **후속 버그 수정 1차 (같은 날, 실제 배포 코드 리뷰 중 발견)**:
+  1. **[치명, 이후 방식 자체를 교체함] 1개 선택 시 나머지 후보가 전부 사라져 2개째를 고를 수
+     없던 문제**: 드롭다운 필터링용 "마지막 콤마 뒤 입력 중인 조각"을 뽑을 때, 아직 콤마가 없는
+     상태(=방금 고른 값 1개뿐)에서는 그 값 전체를 "입력 중인 텍스트"로 오인해 필터링에
+     써버렸다. 그러면 후보 목록이 방금 고른 항목 하나로만 좁혀져 나머지가 다 사라진다. 1차
+     수정에서는 마지막 조각의 identity가 이미 알려진 옵션과 정확히 일치하면 필터로 쓰지 않는
+     임시방편(`lastFragmentIsCompletedOption`)을 넣었는데, 이후 2차 수정에서 더 단순한
+     `disableFilter`로 교체하며 이 임시방편은 삭제했다(아래 2차 참고). HTML 목업에서는 체크 시
+     목록을 다시 그리지 않아 이 버그가 우연히 가려져 있었다.
   2. **직접 입력한 `[날짜]` 형식 텍스트가 다른 옵션을 고르는 순간 함께 스트립되던 문제**:
      `formatMultiValue`가 "옵션에서 고른 값"과 "직접 타이핑한 값"을 구분하지 않고 2개 이상이면
      전부 날짜를 지웠다. `AutocompleteInput.tsx`의 토글 핸들러가 각 태그를 옵션과 대조해
      `isFromOptions` 배열을 함께 넘기도록 바꾸고, `formatMultiItemId(labels, isFromOptions)`가
      옵션에서 고른 라벨만 `stripDateBracket`하도록 수정 — 직접 입력 값은 몇 개를 더 골라도
-     원본 그대로 남는다.
+     원본 그대로 남는다. (2차 수정 이후에도 그대로 유지)
   3. **(수정 보류, 알려진 제약으로 문서화)** 직접 입력한 텍스트가 우연히 옵션 라벨과 identity가
      같으면 체크박스가 "선택됨"으로 표시될 수 있다 — 콤마 문자열 하나로 값을 관리하는 한 "이
-     조각이 체크로 고른 것인지 직접 입력한 것인지"를 영구적으로 구분할 방법이 없고(구분하려면
-     별도 메타데이터가 필요해 자유 입력의 자유도를 지킨다는 원칙과 충돌), 실사용에서 직접 입력
-     텍스트가 옵션 라벨과 완전히 같을 가능성 자체가 낮아 고치지 않기로 함(사용자 확인 완료).
-  - 회귀 테스트: `frontend/src/components/AutocompleteInput.test.tsx` 신설 — 후보 3개를 순서대로
-    체크해 누적되는지, 직접 입력한 날짜 텍스트가 옵션을 더 고른 뒤에도 유지되는지, 2개 중 1개를
-    해제하면 남은 값의 날짜가 복원되는지 3케이스 검증.
+     조각이 체크로 고른 것인지 직접 입력한 것인지"를 영구적으로 구분할 방법이 없다. 별도
+     메타데이터로 구분하면(방법 A) 문서를 다시 열었을 때 이미 저장된 선택이 체크 해제로
+     보이는 새 문제가 생겨(재진입 시 이 메타데이터가 없음) 트레이드오프가 있다. 사용자에게
+     실사용 재현 사실 확인 후 대응 방법을 다시 문의 중 — **미해결**.
+- **후속 버그 수정 2차 (같은 날 — st/new_or_copy 셀에서 같은 종류의 필터링 버그 발견 → 통합)**:
+  - **증상**: J/O-ayer의 `col_st_j`/`col_st_o`(`ST_OPTIONS`)·`col_new_or_copy`(`NEW_OR_COPY_OPTIONS`)
+    셀도 값을 이미 고른 채 다시 클릭하면, 그 값 문자열로 옵션을 필터링해 일치하지 않는 나머지
+    옵션이 사라지는 동일 계열 버그가 있었다(예: `st`가 `'O'`인 채로 다시 열면 `'O'`/`'O (D)'`만
+    보이고 `'X'`는 안 보임 — 둘 다 `'o'`를 문자열로 포함하지만 `'X'`는 아니라서).
+  - **수정**: `AutocompleteInput.tsx`에 `disableFilter?: boolean` prop 신설. 켜지면 현재 값과
+    무관하게 열릴 때마다 `options` 전체를 그대로 보여준다(선택지가 몇 개 안 되는 고정 목록
+    필드용 — "타이핑해서 검색"이 필요 없는 필드). `Step2.tsx`(J-ayer)·`Step3.tsx`(O-ayer)의
+    `st`, `new_or_copy` 셀 4곳에 적용.
+  - **item_id도 같이 통합**: 사용자 요청에 따라 item_id도 `disableFilter`를 켜서 같은 방식으로
+    통일하고, 1차 수정에서 넣었던 item_id 전용 임시방편(`lastFragment`/
+    `lastFragmentIsCompletedOption`)은 삭제했다 — `disableFilter`가 이미 필터링 자체를 꺼버려서
+    더 이상 필요 없다. `multiSelect`가 켜져 있고 `disableFilter`가 없는 경우를 위해 단순한
+    "마지막 콤마 뒤 조각으로 좁힌다" 필터링 코드는 남겨뒀다(현재는 쓰는 곳이 없지만, 이후 옵션이
+    많은 필드에 multiSelect를 쓸 가능성에 대비).
+    체크박스 토글(여러 개 누적)과 `multiSelectIdentity`/`formatMultiValue`(날짜 제거 로직)는
+    필터링과 무관한 별개 기능이라 **그대로 유지** — 없애면 다중 선택 기능 자체가 사라진다.
+  - 회귀 테스트: `frontend/src/components/AutocompleteInput.test.tsx` — 단일 선택(`disableFilter`)
+    1케이스 추가(값이 이미 있어도 재오픈 시 전체 옵션 노출 확인) + 기존 multiSelect 3케이스를
+    `disableFilter` 적용 상태로 갱신(실제 item_id 사용 방식과 동일하게 맞춤). 총 4케이스.
 - **영향 파일**: `frontend/src/pages/RequestPage/components/Step2.tsx`,
+  `frontend/src/pages/RequestPage/components/Step3.tsx`,
   `frontend/src/components/AutocompleteInput.tsx`,
   `frontend/src/components/AutocompleteInput.test.tsx`(신규),
   `frontend/src/pages/RequestPage/helpers.ts`,
   `frontend/src/locales/ko.json`, `frontend/src/locales/en.json`.
 - **검증**: `npx tsc --noEmit` — 신규 에러 0(기존 4건은 전부 무관한 `Set` es5 순회 3건 +
   `GuidePage.tsx` i18n strict 키 1건, 이번 변경 파일과 무관). `CI=true npx react-scripts test
-  --watchAll=false` — **10 suites / 270건 전부 통과**(신규 3건 = 위 회귀 테스트, 나머지 267건은
+  --watchAll=false` — **10 suites / 271건 전부 통과**(신규 4건 = 위 회귀 테스트, 나머지 267건은
   기존 회귀 테스트가 이번 변경으로 깨지지 않는지만 확인). 백엔드 코드는 변경하지 않아 백엔드
   테스트는 실행하지 않았다.
 
