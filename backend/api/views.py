@@ -3397,7 +3397,7 @@ class UserViewSet(viewsets.ModelViewSet):
     ordering = ['id']
 
     def get_permissions(self):
-        if self.action in ('assign_role', 'destroy', 'mail_lines', 'voc_mail'):
+        if self.action in ('assign_role', 'destroy', 'mail_lines', 'voc_mail', 'submit_mail'):
             from rest_framework.permissions import IsAuthenticated
             return [IsAuthenticated()]
         return super().get_permissions()
