@@ -1,10 +1,12 @@
 /**
- * 의뢰자 재상신(requester-resubmit) 시 이력(history)이 누락되는 회귀 재현 테스트.
+ * 의뢰자 재상신(requester-resubmit) 관련 회귀 재현 테스트 2건.
  *
- * 버그: 제출 핸들러가 `isUnderReview` 를 판별해놓고도 `buildEnrichedForm`의
- * shouldAddHistory 인자에 반영하지 않아, PL 검토 단계에서 의뢰자가 "수정 후
- * 재상신"을 해도 additional_notes.history[] 에 수정 전 스냅샷이 쌓이지 않았다
- * (RequestPage/index.tsx). 이 테스트는 그 수정 전 스냅샷이 실제로 저장되는지 검증한다.
+ * 1) 버그: 제출 핸들러가 `isUnderReview` 를 판별해놓고도 `buildEnrichedForm`의
+ *    shouldAddHistory 인자에 반영하지 않아, PL 검토 단계에서 의뢰자가 "수정 후
+ *    재상신"을 해도 additional_notes.history[] 에 수정 전 스냅샷이 쌓이지 않았다.
+ * 2) 버그: handleSubmitClick 이 모달을 열기 직전 designees 를 무조건 비워
+ *    편집 진입 시 프리필된 지정 PL(검토자 프리필, Case I)이 상신 확인 모달에서
+ *    사라지는 문제. 편집 모드에서는 비우지 않도록 고쳤다(index.tsx).
  */
 import React from 'react';
 import { render, screen, waitFor, act } from '@testing-library/react';
@@ -18,7 +20,8 @@ const mockState: {
   doc: unknown;
   optionsFor: (line: string) => string[];
   resubmitCalled: boolean;
-} = { captured: null, doc: null, optionsFor: () => [], resubmitCalled: false };
+  resubmitLoginids: string[] | null;
+} = { captured: null, doc: null, optionsFor: () => [], resubmitCalled: false, resubmitLoginids: null };
 
 jest.mock('../../components/RichTextEditor', () => ({
   __esModule: true,
@@ -37,7 +40,16 @@ jest.mock('../../api/client', () => ({
     get: () => Promise.resolve({ data: mockState.doc }),
     update: (_id: number, payload: unknown) => { mockState.captured = payload; return Promise.resolve({ data: { id: 1 } }); },
     create: (payload: unknown) => { mockState.captured = payload; return Promise.resolve({ data: { id: 1 } }); },
-    requesterResubmit: () => { mockState.resubmitCalled = true; return Promise.resolve({ data: { message: 'ok', document: mockState.doc } }); },
+    requesterResubmit: (_id: number, loginids: string[]) => {
+      mockState.resubmitCalled = true;
+      mockState.resubmitLoginids = loginids;
+      return Promise.resolve({ data: { message: 'ok', document: mockState.doc } });
+    },
+    resubmit: (_id: number, loginids: string[]) => {
+      mockState.resubmitCalled = true;
+      mockState.resubmitLoginids = loginids;
+      return Promise.resolve({ data: { message: 'ok', document: mockState.doc } });
+    },
     getApproved: () => Promise.resolve({ data: [] }),
   },
   linesAPI: { list: () => Promise.resolve([{ name: '라인1' }]) },
@@ -116,6 +128,7 @@ describe('의뢰자 재상신 — 수정 전 스냅샷이 history 에 기록되�
     mockState.optionsFor = optionsFor;
     mockState.captured = null;
     mockState.resubmitCalled = false;
+    mockState.resubmitLoginids = null;
     localStorage.clear();
   });
 
@@ -142,28 +155,53 @@ describe('의뢰자 재상신 — 수정 전 스냅샷이 history 에 기록되�
     if (!submitBtn) throw new Error('상신 버튼을 찾지 못했다');
     await act(async () => { submitBtn.click(); });
 
-    // 모달의 '동료 PL 지정' 검색창에서 옵션을 하나 선택한다(handleSubmitClick 이
-    // designees 를 매번 비우므로, 프리필과 무관하게 이 테스트는 직접 지정한다 — 별도 이슈로 보고함).
-    await waitFor(() => expect(screen.getAllByPlaceholderText('Search by name or ID').length).toBeGreaterThan(0));
-    const designeeInput = screen.getAllByPlaceholderText('Search by name or ID')[0];
-    await act(async () => { designeeInput.focus(); });
+    // 편집 진입 시 프리필된 지정 PL이 모달에도 그대로 남아 있어야 한다(재선택 불필요) —
+    // handleSubmitClick 이 편집 모드에서는 designees 를 비우지 않도록 고친 부분의 검증.
     await waitFor(() => expect(screen.getByText('PL담당자')).toBeDefined());
-    await act(async () => { screen.getByText('PL담당자').closest('div')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); });
-
-    // 상신 확인 모달의 primary 버튼(같은 📤 아이콘)을 눌러 실제 제출을 트리거한다.
-    await waitFor(() => {
-      const btns = Array.from(document.querySelectorAll('button')).filter((b) => b.textContent?.includes('📤'));
-      expect(btns.length).toBeGreaterThan(0);
-    });
     const confirmBtn = Array.from(document.querySelectorAll('button')).filter((b) => b.textContent?.includes('📤')).pop();
     if (!confirmBtn) throw new Error('상신 확인 버튼을 찾지 못했다');
+    expect(confirmBtn.disabled).toBe(false);
     await act(async () => { confirmBtn.click(); });
 
     await waitFor(() => expect(mockState.resubmitCalled).toBe(true));
+    expect(mockState.resubmitLoginids).toEqual(['pl1']);
     expect(mockState.captured).not.toBeNull();
     const payload = mockState.captured as { additional_notes: string };
     const saved = JSON.parse(payload.additional_notes);
     expect(saved.history).toHaveLength(1);
     expect(saved.history[0].detail.customer_name).toBe('고객사A');
+  });
+
+  it('반려 문서(rejected) 재상신 화면도 프리필된 지정 PL이 모달에서 사라지지 않는다(Case I 검토자 프리필)', async () => {
+    mockState.doc = { ...fixtureDoc, status: 'rejected' };
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/request', state: { editDocId: 1 } }]}>
+        <ToastProvider>
+          <RequestPage />
+        </ToastProvider>
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(screen.getByDisplayValue('고객사A')).toBeDefined());
+    for (let i = 0; i < 20; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await act(async () => { await Promise.resolve(); });
+    }
+
+    const nextBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('다음'));
+    if (!nextBtn) throw new Error('다음 버튼을 찾지 못했다');
+    await act(async () => { nextBtn.click(); });
+
+    const submitBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('📤'));
+    if (!submitBtn) throw new Error('상신 버튼을 찾지 못했다');
+    await act(async () => { submitBtn.click(); });
+
+    await waitFor(() => expect(screen.getByText('PL담당자')).toBeDefined());
+    const confirmBtn = Array.from(document.querySelectorAll('button')).filter((b) => b.textContent?.includes('📤')).pop();
+    if (!confirmBtn) throw new Error('상신 확인 버튼을 찾지 못했다');
+    expect(confirmBtn.disabled).toBe(false);
+    await act(async () => { confirmBtn.click(); });
+
+    await waitFor(() => expect(mockState.resubmitCalled).toBe(true));
+    expect(mockState.resubmitLoginids).toEqual(['pl1']);
   });
 });
