@@ -34,7 +34,10 @@ services:
         echo '[DB Sync] Copying prod → dev...';
         set -eo pipefail;
         mysqldump -h $$PROD_MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD
-          --single-transaction --skip-lock-tables $$PROD_MYSQL_DB |
+          --single-transaction --skip-lock-tables
+          --ignore-table=$$PROD_MYSQL_DB.django_apscheduler_djangojob
+          --ignore-table=$$PROD_MYSQL_DB.django_apscheduler_djangojobexecution
+          $$PROD_MYSQL_DB |
           mysql -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD $$MYSQL_DB;
         echo '[DB Sync] Done.';
       "
