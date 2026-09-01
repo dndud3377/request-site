@@ -24,8 +24,13 @@ interface AutocompleteInputProps {
   multiSelect?: boolean;
   /** 값/옵션의 "동일 항목" 판정 기준을 바꾼다(예: 라벨 끝의 부가정보 제외). 기본은 문자열 그대로 비교. multiSelect 에서만 쓰인다. */
   multiSelectIdentity?: (label: string) => string;
-  /** 다중 선택된 라벨 목록(원래 옵션 문자열)을 저장용 문자열로 합치는 방법. 기본은 ", " 로 이어붙임. multiSelect 에서만 쓰인다. */
-  formatMultiValue?: (labels: string[]) => string;
+  /**
+   * 다중 선택된 라벨 목록을 저장용 문자열로 합치는 방법. 기본은 ", " 로 이어붙임.
+   * 두 번째 인자는 각 라벨이 옵션에서 고른 것인지(true) 직접 타이핑한 것인지(false)를 같은
+   * 순서로 알려준다 — 직접 입력한 텍스트는 그대로 두고 옵션에서 고른 것만 가공하고 싶을 때 사용.
+   * multiSelect 에서만 쓰인다.
+   */
+  formatMultiValue?: (labels: string[], isFromOptions: boolean[]) => string;
 }
 
 export default function AutocompleteInput({
@@ -60,8 +65,13 @@ export default function AutocompleteInput({
   const currentTags = multiSelect ? value.split(',').map((s) => s.trim()).filter(Boolean) : [];
   const selectedIdentities = currentTags.map(identityOf);
   // multiSelect 에서는 마지막 콤마 뒤 입력 중인 부분만으로 후보를 좁힌다(전체 값으로 필터링하면
-  // 이미 선택된 항목들이 이어붙은 문자열이라 옵션과 매치되지 않는다).
-  const filterQuery = multiSelect ? (value.split(',').pop() ?? '').trim() : value;
+  // 이미 선택된 항목들이 이어붙은 문자열이라 옵션과 매치되지 않는다). 단, 그 마지막 조각이 이미
+  // 완결된(체크로 선택된) 옵션과 정확히 일치하면 — 즉 "입력 중"이 아니라 "방금 고른 값"이면 —
+  // 필터로 쓰지 않는다. 그렇지 않으면 1개를 고른 순간 그 값 전체가 필터가 되어 나머지 후보가
+  // 전부 가려지고 두 번째를 고를 수 없게 된다.
+  const lastFragment = multiSelect ? (value.split(',').pop() ?? '').trim() : value;
+  const lastFragmentIsCompletedOption = multiSelect && options.some((o) => identityOf(o) === identityOf(lastFragment));
+  const filterQuery = lastFragmentIsCompletedOption ? '' : lastFragment;
   const filtered = filterQuery
     ? options.filter((o) => o.toLowerCase().includes(filterQuery.toLowerCase()))
     : options;
@@ -115,12 +125,17 @@ export default function AutocompleteInput({
             // "바깥 클릭"으로 오인될 수 있다. stopPropagation 으로 그 상위 감지 자체를 막고,
             // 다중 선택이 끝날 때까지 드롭다운을 열어둔 채 체크만 토글한다.
             e.stopPropagation();
-            const identities = [...selectedIdentities];
-            const targetId = identityOf(opt);
-            const i = identities.indexOf(targetId);
-            if (i === -1) identities.push(targetId); else identities.splice(i, 1);
-            const fullLabels = identities.map((id) => options.find((o) => identityOf(o) === id) ?? id);
-            const next = joinMultiValue(fullLabels);
+            const targetIdentity = identityOf(opt);
+            const existingIdx = currentTags.findIndex((tag) => identityOf(tag) === targetIdentity);
+            const nextTags = existingIdx === -1
+              ? [...currentTags, opt]
+              : currentTags.filter((_, i) => i !== existingIdx);
+            // 옵션에서 고른 항목은 항상 옵션의 원본 라벨로 맞추고(과거에 날짜가 제거된 채
+            // 저장돼 있었어도 복원), 옵션에 없는 자유 입력 텍스트는 사용자가 타이핑한 그대로
+            // 둔다 — 그래야 자유 입력에 날짜 형식 텍스트가 있어도 유실되지 않는다.
+            const resolvedTags = nextTags.map((tag) => options.find((o) => identityOf(o) === identityOf(tag)) ?? tag);
+            const isFromOptions = nextTags.map((tag) => options.some((o) => identityOf(o) === identityOf(tag)));
+            const next = joinMultiValue(resolvedTags, isFromOptions);
             onChange(next);
             onSelect?.(next);
             return;
