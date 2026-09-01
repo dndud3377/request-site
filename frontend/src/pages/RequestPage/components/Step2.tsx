@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { JayerRow, FilterSet, GuideFeatureKey, ValidationSystemValue } from '../../../types';
 import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, NOC_LAYER_DELETE, isRowInactive } from '../constants';
-import { isValidationKeywordRow } from '../helpers';
+import { isValidationKeywordRow, stripDateBracket, formatMultiItemId } from '../helpers';
 import { ValidationSystemBadge, ValidationSystemToggle } from '../../../components/ValidationSystem';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
 import { numberBoundaryMatch } from '../../../utils/specMatch';
@@ -216,7 +216,7 @@ const Step2: React.FC<Step2Props> = ({
                       dropdownDirection="up"
                     />
                   </td>
-                  <td data-jtour={`product_name-${idx}`} data-tour="jayer-sync-cols" {...cellProps('product_name', greyBg ? regBg : undefined)}><input value={row.product_name} readOnly={rowInactive || isRegistered} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} className={errors[`jayer_noc_${row.id}_product_name`] ? 'field-error-target' : undefined} style={{ backgroundColor: greyBg ? regBg : undefined, ...(errors[`jayer_noc_${row.id}_product_name`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
+                  <td data-jtour={`product_name-${idx}`} data-tour="jayer-sync-cols" {...cellProps('product_name', greyBg ? regBg : undefined)}><input value={row.product_name} readOnly={rowInactive || isRegistered} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'product_name', e.target.value)} placeholder={idx === 0 ? (t('request.product_name_example_placeholder' as never) as string) : undefined} className={errors[`jayer_noc_${row.id}_product_name`] ? 'field-error-target' : undefined} style={{ backgroundColor: greyBg ? regBg : undefined, ...(errors[`jayer_noc_${row.id}_product_name`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
                   <td data-jtour={`step-${idx}`} {...cellProps('step', greyBg ? regBg : undefined)}><input value={row.step} readOnly={rowInactive || isRegistered} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'step', e.target.value)} className={errors[`jayer_noc_${row.id}_step`] ? 'field-error-target' : undefined} style={{ backgroundColor: greyBg ? regBg : undefined, ...(errors[`jayer_noc_${row.id}_step`] ? { border: '1px solid var(--danger)' } : {}) }} /></td>
                   <td data-jtour={`item_id-${idx}`} className={itemIdError ? 'field-error-target' : undefined} {...cellProps('item_id', greyBg ? regBg : undefined, { minWidth: 160 })}>
                     <AutocompleteInput
@@ -230,6 +230,9 @@ const Step2: React.FC<Step2Props> = ({
                       inputStyle={itemIdError ? { border: '1px solid var(--danger)' } : undefined}
                       dropdownDirection="up"
                       dropdownFontSize="0.7rem"
+                      multiSelect
+                      multiSelectIdentity={stripDateBracket}
+                      formatMultiValue={formatMultiItemId}
                     />
                   </td>
                 </tr>
