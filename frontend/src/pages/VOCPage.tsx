@@ -11,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 interface CategoryOption { value: VocCategory; labelKey: string; }
 interface PageOption      { value: VocPage;    labelKey: string; }
+interface StatusOption   { value: VocStatus;   labelKey: string; }
 
 const CATEGORIES: CategoryOption[] = [
   { value: 'inquiry',         labelKey: 'voc.category_inquiry' },
@@ -25,6 +26,34 @@ const PAGES: PageOption[] = [
   { value: 'history',  labelKey: 'voc.page_history' },
   { value: 'other',    labelKey: 'voc.page_other' },
 ];
+
+// 필터 탭 '확인중' / '답변완료' — 유형 탭과 마찬가지로 서버의 status 파라미터로 위임한다.
+const STATUSES: StatusOption[] = [
+  { value: 'checking',  labelKey: 'voc.status_checking' },
+  { value: 'completed', labelKey: 'voc.status_completed' },
+];
+
+// 목록 페이지네이션 — 결재 현황(ApprovalPage)과 동일하게 페이지당 10건.
+const VOC_LIST_PAGE_SIZE = 10;
+const VOC_PAGE_WINDOW = 2;
+
+/** 페이지네이션 숫자 버튼 목록. 1·마지막 페이지는 항상 포함하고, 현재 페이지 앞뒤로
+ * VOC_PAGE_WINDOW 개만 보여준 뒤 나머지 구간은 'ellipsis' 로 접는다. (ApprovalPage.buildPageNumbers 와 동일 로직) */
+const buildPageNumbers = (current: number, total: number): (number | 'ellipsis')[] => {
+  const pages = new Set<number>([1, total]);
+  for (let p = current - VOC_PAGE_WINDOW; p <= current + VOC_PAGE_WINDOW; p++) {
+    if (p >= 1 && p <= total) pages.add(p);
+  }
+  const sorted = Array.from(pages).sort((a, b) => a - b);
+  const result: (number | 'ellipsis')[] = [];
+  let prev = 0;
+  for (const p of sorted) {
+    if (prev && p - prev > 1) result.push('ellipsis');
+    result.push(p);
+    prev = p;
+  }
+  return result;
+};
 
 const formatDate  = (d: string) => new Date(d).toLocaleDateString('ko-KR');
 const formatTime  = (d: string) =>
@@ -43,6 +72,9 @@ export default function VOCPage(): React.ReactElement {
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState('');
   const [searchQuery, setSearch]  = useState('');
+  // 목록 페이지네이션 — 필터 탭·검색어가 바뀌면 항상 1페이지로 돌아간다.
+  const [listPage, setListPage]   = useState(1);
+  useEffect(() => { setListPage(1); }, [filter, searchQuery]);
 
   // ── register form ──
   const [formOpen, setFormOpen]   = useState(false);
@@ -64,8 +96,9 @@ export default function VOCPage(): React.ReactElement {
     const params: Record<string, string> = {};
     // '내 VOC' 는 사용자 id 를 보내지 않고 서버가 로그인 사용자로 판단한다
     // (개발 모드의 목 사용자 id 는 DB 의 실제 user.id 와 어긋날 수 있다).
-    if (filter === 'my')       params.mine = 'true';
-    else if (filter)           params.category = filter;
+    if (filter === 'my')                                        params.mine = 'true';
+    else if (filter === 'checking' || filter === 'completed')    params.status = filter;
+    else if (filter)                                             params.category = filter;
     if (searchQuery)           params.search = searchQuery;
 
     vocAPI.list(params)
@@ -199,7 +232,15 @@ export default function VOCPage(): React.ReactElement {
     { key: '',    label: t('approval.filter_all') },
     { key: 'my',  label: t('voc.my_voc') },
     ...CATEGORIES.map((c) => ({ key: c.value, label: t(c.labelKey as any) })),
+    ...STATUSES.map((s) => ({ key: s.value, label: t(s.labelKey as any) })),
   ];
+
+  // ── 목록 페이지네이션 ──
+  const totalListPages = Math.max(1, Math.ceil(vocs.length / VOC_LIST_PAGE_SIZE));
+  const pagedVocs = vocs.slice((listPage - 1) * VOC_LIST_PAGE_SIZE, listPage * VOC_LIST_PAGE_SIZE);
+  useEffect(() => {
+    if (listPage > totalListPages) setListPage(totalListPages);
+  }, [listPage, totalListPages]);
 
   // 본인 판정은 id 가 아니라 loginid(= currentUser.username) 로 한다 — 개발 모드의
   // 목 사용자 id 는 DB 의 실제 user.id 와 어긋날 수 있지만 loginid 는 어긋나지 않는다.
@@ -265,7 +306,7 @@ export default function VOCPage(): React.ReactElement {
               </tr>
             </thead>
             <tbody>
-              {vocs.map((v) => (
+              {pagedVocs.map((v) => (
                 <tr key={v.id}>
                   <td style={{ color: 'var(--text-muted)' }}>#{v.id}</td>
                   <td>
@@ -295,6 +336,45 @@ export default function VOCPage(): React.ReactElement {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!loading && vocs.length > 0 && totalListPages > 1 && (
+        <div className="pagination" role="navigation" aria-label={t('approval.pagination_nav')}>
+          <button
+            type="button"
+            className="pagination-btn"
+            onClick={() => setListPage((p) => Math.max(1, p - 1))}
+            disabled={listPage === 1}
+            aria-label={t('common.prev')}
+          >
+            ◀
+          </button>
+          {buildPageNumbers(listPage, totalListPages).map((item, idx) =>
+            item === 'ellipsis' ? (
+              <span key={`ellipsis-${idx}`} className="pagination-ellipsis">…</span>
+            ) : (
+              <button
+                key={item}
+                type="button"
+                className={`pagination-btn ${item === listPage ? 'active' : ''}`}
+                onClick={() => setListPage(item)}
+                aria-current={item === listPage ? 'page' : undefined}
+                aria-label={t('approval.pagination_go_to_page', { page: item })}
+              >
+                {item}
+              </button>
+            )
+          )}
+          <button
+            type="button"
+            className="pagination-btn"
+            onClick={() => setListPage((p) => Math.min(totalListPages, p + 1))}
+            disabled={listPage === totalListPages}
+            aria-label={t('common.next')}
+          >
+            ▶
+          </button>
         </div>
       )}
 
