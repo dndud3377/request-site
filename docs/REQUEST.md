@@ -279,6 +279,53 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-09-01 — J-ayer 제품 이름 예시 placeholder + item_id(ID) 다중 선택)
+
+- **요청**: 두 가지.
+  1. `col_product_name`(제품 이름) 칸에 작성 형식을 알 수 있는 예시를 회색으로 보여줘서, 모든 행이
+     아니라 **첫 번째 행에서만** 보이도록 한다.
+  2. `col_item_id`(ID) 후보가 여러 개일 때, 그중 원하는 값을 여러 개 골라 한 번에 넣을 수 있게 한다.
+- **구현 1) 제품 이름 예시**: `Step2.tsx`의 `product_name` `<input>`에 `idx===0`(정렬 후 첫 번째
+  렌더 행)일 때만 네이티브 `placeholder`(`request.product_name_example_placeholder`, 값
+  `"ohwooyoung"`)를 적용. 네이티브 placeholder라 셀 값이 비어있을 때만 옅게 보이고 타이핑을
+  시작하면 자동으로 사라지며, 실제 저장/검증 값에는 전혀 영향이 없다.
+- **구현 2) item_id 다중 선택**: `AutocompleteInput.tsx`에 `multiSelect` / `multiSelectIdentity`
+  / `formatMultiValue` prop 3개를 신설(다른 호출부는 옵션을 안 주면 기존과 동일하게 동작).
+  - `multiSelect`가 켜지면 값을 콤마로 구분된 여러 항목으로 다루고, 드롭다운 옵션을 클릭하면
+    체크박스가 토글(있으면 제거, 없으면 추가)되며 선택할 때마다 드롭다운이 닫히지 않는다.
+    직접 타이핑(자유 입력)은 그대로 가능하고, 후보 필터링은 마지막 콤마 뒤 입력 중인 부분만
+    기준으로 좁힌다.
+  - `multiSelectIdentity(label)`로 "같은 항목" 판정 기준(기본은 문자열 그대로 비교)을,
+    `formatMultiValue(labels)`로 선택된 라벨들을 최종 문자열로 합치는 방식(기본은 `, `로
+    이어붙임)을 호출부가 바꿀 수 있다.
+  - 신규 버그 주의: 체크 토글 시 드롭다운 목록 전체를 지웠다가 다시 그리면, 클릭 이벤트가
+    문서(document)까지 버블링되기 전에 방금 클릭한 노드가 DOM에서 사라져 "바깥 클릭"으로
+    오인되어 드롭다운이 즉시 닫혀버린다(HTML 목업 검증 중 실제로 재현). 그래서 React 구현에서는
+    클릭한 옵션의 체크 상태만 값 변경(리렌더)으로 반영하고 목록 자체를 지우지 않으며,
+    `multiSelect` 클릭 핸들러에서 `e.stopPropagation()`으로 바깥 클릭 감지 리스너 자체가 이
+    클릭을 보지 못하게 막는다(`dropdownDirection="up"`일 때 목록이 `createPortal`로
+    `document.body`에 그려져 컨테이너 ref 밖에 있는 점도 고려).
+  - `helpers.ts`에 `stripDateBracket`(라벨 끝의 `" [날짜]"` 제거)와 `formatMultiItemId`(1개
+    선택이면 원래 라벨 그대로, 2개 이상이면 각 라벨의 `[날짜]`를 지워 이어붙임) 신규 헬퍼 추가.
+    `backend/api/views.py`의 `form_options_barcode`가 바코드 옵션 라벨을
+    `"{바코드}[_스펙] [{날짜}]"` 형식으로 만들기 때문에(`views.py:3345-3357`), 여러 개를 고르면
+    그만큼 `[날짜]`가 반복돼 값이 길어지는 것을 막기 위함. **직접 타이핑으로 만든 값에는 이 규칙을
+    적용하지 않는다** — 후보 목록에 없는 텍스트라 날짜 유무를 판단할 근거가 없고, 자유 입력의
+    자유도를 지키기 위한 의도적 결정(사용자 확인 완료).
+  - `Step2.tsx`의 item_id 셀 `AutocompleteInput`에 `multiSelect` +
+    `multiSelectIdentity={stripDateBracket}` + `formatMultiValue={formatMultiItemId}` 적용.
+    `item_id` 값의 타입은 그대로 문자열(여러 개면 콤마로 구분된 문자열)이라 `handleJayerChange`,
+    필수값 검증(`findNocBorrowItemIdViolations`), 초기화(`stClearExtra` 등), 엑셀 내보내기
+    (`detailExport.ts`), 상세보기(`PagedDetailView.tsx`)는 별도 수정 없이 그대로 동작한다.
+- **영향 파일**: `frontend/src/pages/RequestPage/components/Step2.tsx`,
+  `frontend/src/components/AutocompleteInput.tsx`, `frontend/src/pages/RequestPage/helpers.ts`,
+  `frontend/src/locales/ko.json`, `frontend/src/locales/en.json`.
+- **검증**: `npx tsc --noEmit` — 신규 에러 0(기존 4건은 전부 무관한 `Set` es5 순회 3건 +
+  `GuidePage.tsx` i18n strict 키 1건, 이번 변경 파일과 무관). `CI=true npx react-scripts test
+  --watchAll=false` — **9 suites / 267건 전부 통과**(신규 테스트는 추가하지 않음 — 기존 회귀
+  테스트가 이번 변경으로 깨지지 않는지만 확인). 백엔드 코드는 변경하지 않아 백엔드 테스트는
+  실행하지 않았다.
+
 ### 기능 추가 (2026-08-25 — MAP 정보: C가문 Yes 옆에 'PY 적용 여부' O/X 드롭다운 추가)
 
 - **요청**: Only C가문 제품(`only_prodc`)이 `Yes`일 때 나오는 항목 중 하나로 **PY 적용 여부**
