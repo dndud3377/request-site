@@ -1709,6 +1709,11 @@ export default function ApprovalPage(): React.ReactElement {
                             {t('approval.edit_resubmit')}
                           </button>
                         )}
+                        {doc.can_requester_resubmit && (
+                          <button className="btn btn-primary btn-sm" onClick={() => handleEditResubmit(doc)}>
+                            {t('approval.requester_resubmit')}
+                          </button>
+                        )}
                         {canSetSharedGroup(doc) && (
                           <button className="btn btn-secondary btn-sm" onClick={() => handleShareClick(doc)} disabled={processing}>
                             👥 {doc.shared_group_name ?? t('approval.share_group_btn')}
@@ -2238,6 +2243,12 @@ export default function ApprovalPage(): React.ReactElement {
               {selected && selected.can_edit && (selected.status === 'rejected' || selected.status === 'draft') && (
                 <button className="btn btn-primary" onClick={() => handleEditResubmit(selected)}>
                   {t('approval.edit_resubmit')}
+                </button>
+              )}
+              {/* 의뢰자 재상신(중단요청 없이): PL 검토(+SA 합의) 단계에서만 노출 */}
+              {selected && selected.can_requester_resubmit && (
+                <button className="btn btn-primary" onClick={() => handleEditResubmit(selected)}>
+                  {t('approval.requester_resubmit')}
                 </button>
               )}
               {selected && canSetSharedGroup(selected) && (

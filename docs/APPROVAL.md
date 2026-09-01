@@ -553,6 +553,42 @@ Backbone 을 아예 작성하지 않고 STEP1 의 ADI CD 변경전/변경후 표
   PL 합의 → P·J 병렬 생성 확인 → P·J 각각 합의 → 최종 `approved` 및 R/O/E/RA 미생성 확인)을
   구동해 통과를 확인했다(§1.1~1.2 절차, 2026-08-20 실행).
 
+### Case R — 의뢰자 재상신: 중단요청 없이 PL 검토 단계에서 즉시 수정·재상신 (`requester_resubmit`, 2026-09)
+
+PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에는 **중단 요청(Case M) → 현재 단계
+팀 전원 확인 → `pause` → 재개**의 4단계 왕복이 필요했다. 이 경로는 그 왕복 없이, 의뢰자 본인이
+`/request` 편집에서 내용을 고치고 **바로 재상신**할 수 있게 한다 — 대신 **진행 중이던 PL·SA
+합의는 전부 무효화**되고 새 회차(round+1)로 지정 PL·SA 전원이 처음부터 다시 합의한다.
+
+- **적용 구간**: `status == 'under_review'` **이고 PL 검토(+SA 합의) 단계를 벗어나지 않았을 때만**
+  — 즉 현재 회차에 `agent in ('PL', 'SA')`가 아닌 step(R, 또는 'MAP 삭제'/'ADI CD 변경' 경로의
+  P/J/O 등)이 하나도 생성되지 않은 상태(`doc_permissions._pl_stage_open`). 일반/'MAP 삭제'/
+  'ADI CD 변경' 등 **경로에 상관없이 동일하게** 적용된다 — PL 다음에 열리는 첫 단계의 agent 가
+  경로마다 달라(R / P·R·J·O / P·J) "R 이 없다"로만 판정하면 뒤의 두 경로에서 이미 P/J/O 가
+  생성된 뒤에도 계속 허용되는 구멍이 생기므로, "PL·SA 를 제외한 step 이 없다"로 경로 무관하게
+  판정한다.
+- **SA 유무는 조건이 아니다**: 합의자(SA)가 지정돼 있어도 위 구간 안이면 동일하게 허용한다
+  (`_all_sales_agreers_approved` 진행 여부와 무관 — 어차피 새 회차에서 SA 도 다시 만든다).
+- **권한**: 의뢰자 본인 또는 MASTER만(`doc_permissions.can_requester_resubmit`) — 지정 PL·공유
+  그룹 멤버는 대상이 아니다(그쪽은 기존 `peer_submit`, Case D를 그대로 쓴다).
+- **동작**: `resubmit`(Case I)과 거의 동일하다 — 문서 내용은 사전에 `/request` 편집에서
+  update됨. 지정 PL 파싱·검증(`_resolve_designated_pls`) → `_validate_bb_mapping` →
+  `_validate_post_approvers` → `_resolve_sales_agreers`/`_validate_sales_agreers` 통과 후,
+  `_max_round + 1`로 새 회차에 지정 PL 전원 + SA 전원의 pending step을 생성한다. **이전 회차
+  step은 이력으로 남고, 새 회차가 조회 대상이 되면서 자동으로 무효화**된다(round 승격 자체가
+  "초기화" 효과). `review_items_sync.reset_confirmations`로 검토 항목 확인 상태도 초기화한다.
+  새로 지정된 PL·SA에게 상신 메일(`enqueue_stage_arrival`)이 발송된다.
+- **차단**: R 등 다음 단계가 이미 생성된 뒤에는 403(`can_requester_resubmit` 이 False) — 그
+  이후엔 기존처럼 `request_pause`(Case M)를 이용해야 한다. `_blocked_progress_response`도
+  동일하게 적용되어, 활성 중단·철회 요청이 확인 대기 중이면 이 액션도 400으로 막힌다.
+- **`can_edit` 확장**: 위 구간에서는 의뢰자 본인도 `doc_permissions.can_edit`이 참이 되어
+  `/request` 편집(PATCH) 자체가 열린다(기존엔 pending PL 담당자·대표 지정 PL만 가능했다).
+- **화면**: `ApprovalPage`에 `can_requester_resubmit` 플래그로 "수정 후 재상신" 버튼 노출
+  (목록 행·상세 패널 양쪽, `handleEditResubmit`과 동일한 방식으로 `/request`에 `editDocId`로
+  진입). `RequestPage`는 편집 대상 문서 상태가 `under_review`이면(`peer_submit`/`resume`이
+  아닌 이 경로) `requesterResubmit` API를 호출한다.
+- 테스트: `backend/api/tests.py::RequesterResubmitTest`
+
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)
 - start_date(당일 포함) 기준 n번째 영업일. 주말 + `Holiday(isholiday='Y')` 제외.
 

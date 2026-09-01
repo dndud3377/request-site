@@ -4899,6 +4899,162 @@ class SalesAgreerStageTests(TestCase):
         )
 
 
+class RequesterResubmitTest(TestCase):
+    """의뢰자 재상신(중단요청 없이, `requester_resubmit`) — PL 검토(+SA 합의) 단계 전용.
+
+    - R 등 다음 단계가 아직 없으면(PL·SA 단계 도중이면) 의뢰자 본인이 즉시 재상신할 수 있다.
+    - 이미 합의한 PL이 있어도 새 회차로 넘어가며 전원 다시 합의해야 한다.
+    - SA 가 있어도(합의 전이면) 동일하게 허용된다.
+    - R(또는 'MAP 삭제' 등 경로의 P/R/J/O)이 생성된 뒤에는 403.
+    - 의뢰자·MASTER 가 아니면 403.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+        self.requester = UserProfile.objects.create(loginid='rreq', mail='rreq@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='rpl', mail='rpl@c.com', role='PL')
+        self.pl_user2 = UserProfile.objects.create(loginid='rpl2', mail='rpl2@c.com', role='PL')
+        self.sa_user = UserProfile.objects.create(loginid='rsa', mail='rsa@c.com', role='PL')
+        self.master = UserProfile.objects.create(loginid='rmaster', mail='rmaster@c.com', role='MASTER')
+        self.stranger = UserProfile.objects.create(loginid='rstr', mail='rstr@c.com', role='NONE')
+
+    def _make_doc(self, detail_extra=None, purpose=None):
+        detail = {'request_purpose': purpose or '신규'}
+        detail.update(detail_extra or {})
+        return RequestDocument.objects.create(
+            title='rr-doc', requester=self.requester, requester_name='요청자',
+            requester_email='rreq@c.com', requester_department='dept',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps({'detail': detail, 'jayerRows': []}),
+        )
+
+    def _submit(self, doc, pl_loginids=None):
+        self.client.force_authenticate(user=self.requester)
+        return self.client.post(f'/api/documents/{doc.id}/submit/',
+                                {'designated_pl_loginids': pl_loginids or [self.pl_user.loginid]}, format='json')
+
+    def _requester_resubmit(self, doc, pl_loginids=None):
+        self.client.force_authenticate(user=self.requester)
+        return self.client.post(f'/api/documents/{doc.id}/requester-resubmit/',
+                                {'designated_pl_loginids': pl_loginids or [self.pl_user.loginid]}, format='json')
+
+    def test_requester_can_resubmit_while_pl_pending(self):
+        """PL 이 아직 아무도 합의하지 않은 상태에서도 의뢰자가 바로 재상신할 수 있다."""
+        doc = self._make_doc()
+        self.assertEqual(self._submit(doc).status_code, 200)
+        res = self._requester_resubmit(doc)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='PL', round=2, action='pending').exists()
+        )
+        self.assertEqual(
+            ApprovalStep.objects.get(document=doc, agent='PL', round=1).action, 'pending'
+        )
+
+    def test_existing_pl_approval_is_voided_by_new_round(self):
+        """일부 PL이 이미 합의했어도 재상신하면 새 회차가 열리고, 새 회차에선 전원 다시 합의해야 한다."""
+        doc = self._make_doc()
+        self.assertEqual(self._submit(doc, [self.pl_user.loginid, self.pl_user2.loginid]).status_code, 200)
+        self.client.force_authenticate(user=self.pl_user)
+        self.assertEqual(
+            self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json').status_code, 200
+        )
+        # 아직 pl_user2 가 남아 R 은 생성되지 않은 상태
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R').exists())
+
+        res = self._requester_resubmit(doc, [self.pl_user.loginid, self.pl_user2.loginid])
+        self.assertEqual(res.status_code, 200, res.content)
+        new_steps = ApprovalStep.objects.filter(document=doc, agent='PL', round=2)
+        self.assertEqual(new_steps.count(), 2)
+        self.assertTrue(all(s.action == 'pending' for s in new_steps),
+                        '새 회차는 이미 합의했던 PL도 처음부터 다시 합의해야 한다')
+        # round=1 의 기존 합의(approved)는 이력으로 남지만 더 이상 진행에는 영향을 주지 않는다
+        self.assertEqual(
+            ApprovalStep.objects.get(document=doc, agent='PL', round=1, assignee=self.pl_user).action,
+            'approved'
+        )
+
+    def test_works_even_when_sa_present_and_pending(self):
+        """합의자(SA)가 지정돼 있어도, 아직 합의 전이면 동일하게 허용된다."""
+        doc = self._make_doc({'sales_agreers': [{'loginid': self.sa_user.loginid, 'name': 'sa'}]})
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='SA', round=1).exists())
+
+        res = self._requester_resubmit(doc)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='SA', round=2, action='pending').exists()
+        )
+
+    def test_blocked_once_r_step_exists(self):
+        """PL(+SA) 전원 합의로 R 이 생성된 뒤에는 이 방식을 쓸 수 없다."""
+        doc = self._make_doc()
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.pl_user)
+        self.assertEqual(
+            self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json').status_code, 200
+        )
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R').exists())
+
+        res = self._requester_resubmit(doc)
+        self.assertEqual(res.status_code, 403, res.content)
+
+    def test_blocked_once_map_delete_edit_parallel_steps_exist(self):
+        """'MAP 삭제' 등 경로는 R 이 아니라 P·R·J·O 를 한꺼번에 만든다 — 그 뒤에도 차단돼야 한다
+        (agent='R' 존재 여부만으로 판정하면 이 경로에서 구멍이 생긴다)."""
+        doc = self._make_doc(purpose=RequestDocument.MAP_DELETE_EDIT_PURPOSE)
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.pl_user)
+        self.assertEqual(
+            self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json').status_code, 200
+        )
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='P').exists())
+
+        res = self._requester_resubmit(doc)
+        self.assertEqual(res.status_code, 403, res.content)
+
+    def test_non_requester_forbidden(self):
+        """의뢰자 본인·MASTER 가 아니면 사용할 수 없다."""
+        doc = self._make_doc()
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.stranger)
+        res = self.client.post(f'/api/documents/{doc.id}/requester-resubmit/',
+                               {'designated_pl_loginids': [self.pl_user.loginid]}, format='json')
+        self.assertEqual(res.status_code, 403)
+
+    def test_master_can_resubmit(self):
+        """MASTER 는 의뢰자가 아니어도 사용할 수 있다."""
+        doc = self._make_doc()
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.master)
+        res = self.client.post(f'/api/documents/{doc.id}/requester-resubmit/',
+                               {'designated_pl_loginids': [self.pl_user.loginid]}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_can_edit_allows_requester_during_pl_stage(self):
+        """의뢰자 본인은 이 구간에서 문서 내용을 직접 PATCH(update)할 수 있어야 한다."""
+        doc = self._make_doc()
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.requester)
+        res = self.client.patch(f'/api/documents/{doc.id}/', {'title': '수정된 제목'}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_can_edit_blocks_requester_once_r_step_exists(self):
+        """R 단계가 생성된 뒤에는 의뢰자 본인도 직접 PATCH 할 수 없다(중단요청을 이용해야 한다)."""
+        doc = self._make_doc()
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self.client.force_authenticate(user=self.pl_user)
+        self.assertEqual(
+            self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json').status_code, 200
+        )
+        self.client.force_authenticate(user=self.requester)
+        res = self.client.patch(f'/api/documents/{doc.id}/', {'title': '수정된 제목'}, format='json')
+        self.assertEqual(res.status_code, 403, res.content)
+
+
 class DirectHistoryRegisterTest(TestCase):
     """MASTER 의 '이력 바로 등록'(POST /documents/{id}/direct-approve/) 검증.
 

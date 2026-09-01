@@ -155,6 +155,7 @@ export interface RequestDocument {
   can_withdraw?: boolean;
   can_request_pause?: boolean; // 중단 요청 가능(작성자 본인·진행 중·기존 요청 없음)
   can_resume?: boolean;        // 재개 가능(작성자 본인·pause 상태)
+  can_requester_resubmit?: boolean; // 중단요청 없이 즉시 재상신 가능(작성자 본인·PL 검토 단계·R 등 다음 단계 미생성)
   pause_request?: PauseRequestInfo | null; // 활성 중단 요청 (없으면 null)
   withdraw_request?: WithdrawRequestInfo | null; // 확인 대기 중인 철회 요청 (없으면 null)
   post_approver_fixed_loginid?: string | null; // 고정 후결자(.env) loginid — '🔒 고정' 표시/변경 잠금용

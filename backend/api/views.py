@@ -572,6 +572,70 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             'document': RequestDocumentSerializer(document).data,
         })
 
+    @action(detail=True, methods=['post'], url_path='requester-resubmit')
+    @transaction.atomic
+    def requester_resubmit(self, request, pk=None):
+        """의뢰자 재상신(중단요청 없이): PL 검토(+SA 합의) 단계에서만 가능.
+
+        R 등 다음 단계가 이미 생성된 뒤에는 사용할 수 없다(그 이후엔 request_pause 를 이용해야
+        한다). 문서 내용은 사전에 /request 화면에서 update 됨. 성공 시 round+1 로 새 회차를 열어
+        지정 PL·SA 전원이 새 내용을 처음부터 다시 합의한다(이전 회차 합의는 이력으로 남고 무효화).
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
+        if not doc_permissions.can_requester_resubmit(request.user, document):
+            return Response(
+                {'error': '재상신 권한이 없거나, 이미 다음 결재 단계로 진행되어 이 방식으로는 수정할 수 없습니다.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        pl_users, err = self._resolve_designated_pls(request)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        err = self._validate_bb_mapping(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        err = self._validate_post_approvers(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        sa_users, err = self._resolve_sales_agreers(document)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+        err = self._validate_sales_agreers(document, sa_users)
+        if err:
+            return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        rep = pl_users[0]
+        document.designated_pl = rep
+        document.designated_pl_name = rep.username or rep.loginid
+        document.save()
+
+        # 검토 항목·검토자 지정은 그대로 두고 확인 상태만 초기화한다(resubmit과 동일).
+        review_items_sync.reset_confirmations(document)
+
+        # 새 회차에 지정 PL·SA 전원의 pending 단계를 생성 — 이전 회차 합의는 이력으로 남아 무효화된다.
+        new_round = self._max_round(document, default=0) + 1
+        for u in pl_users:
+            pl_step = ApprovalStep.objects.create(
+                document=document, agent='PL', action='pending', round=new_round,
+                assignee=u, assignee_name=(u.username or u.loginid),
+            )
+            mailer.enqueue_stage_arrival(document, 'PL', pl_step, recipient_name=pl_step.assignee_name)
+        self._create_sales_agreer_steps(document, sa_users, new_round)
+        mailer.enqueue_notify_submitted(document)
+
+        return Response({
+            'message': '재상신되었습니다.',
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
     # '이력 바로 등록'이 남기는 완료 기록 1행의 agent 코드.
     # 결재를 시작시키는 대기 단계가 아니라, 등록 시 입력받은 결재 완료일을 담아 두는 자리다
     # (완료일을 저장할 수 있는 곳이 ApprovalStep.acted_at 뿐이다).
