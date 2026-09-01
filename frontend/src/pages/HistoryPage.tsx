@@ -9,7 +9,7 @@ import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { OPTION_LINE } from './RequestPage/constants';
 import { RejectionSnapshot, RequestDocument } from '../types';
-import { formatDate } from '../utils/date';
+import { formatDate, formatDateTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
 
 // ===== 필터 탭 키 =====
@@ -374,7 +374,7 @@ export default function HistoryPage(): React.ReactElement {
                     <td>
                       <StatusBadge status="rejected" />
                     </td>
-                    <td>{formatDate(snap.submitted_at)}</td>
+                    <td>{formatDateTime(snap.submitted_at)}</td>
                     <td>{formatDate(snap.rejected_at)}</td>
                     {isMaster && (
                       <td>
@@ -402,7 +402,7 @@ export default function HistoryPage(): React.ReactElement {
                     <td>
                       <StatusBadge status={doc.status} />
                     </td>
-                    <td>{formatDate(doc.submitted_at)}</td>
+                    <td>{formatDateTime(doc.submitted_at)}</td>
                     <td>{getApprovalCompletedDate(doc)}</td>
                     {isMaster && (
                       <td>
