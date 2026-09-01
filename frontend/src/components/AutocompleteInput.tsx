@@ -20,6 +20,12 @@ interface AutocompleteInputProps {
   dropdownDirection?: 'up' | 'down';
   uppercase?: boolean;
   maxLength?: number;
+  /**
+   * true면 현재 값으로 후보를 좁히지 않고 열릴 때마다 옵션 전체를 그대로 보여준다.
+   * st/new_or_copy처럼 선택지가 몇 개 안 되는 고정 목록 필드용 — 이미 값이 선택돼 있어도
+   * 다시 열면(재클릭) 전체 옵션이 보여야 할 때 켠다.
+   */
+  disableFilter?: boolean;
   /** true면 콤마로 구분된 값을 체크박스 토글로 여러 개 선택할 수 있다(자유 입력은 그대로 유지). */
   multiSelect?: boolean;
   /** 값/옵션의 "동일 항목" 판정 기준을 바꾼다(예: 라벨 끝의 부가정보 제외). 기본은 문자열 그대로 비교. multiSelect 에서만 쓰인다. */
@@ -51,6 +57,7 @@ export default function AutocompleteInput({
   dropdownDirection = 'down',
   uppercase,
   maxLength,
+  disableFilter,
   multiSelect,
   multiSelectIdentity,
   formatMultiValue,
@@ -65,16 +72,13 @@ export default function AutocompleteInput({
   const currentTags = multiSelect ? value.split(',').map((s) => s.trim()).filter(Boolean) : [];
   const selectedIdentities = currentTags.map(identityOf);
   // multiSelect 에서는 마지막 콤마 뒤 입력 중인 부분만으로 후보를 좁힌다(전체 값으로 필터링하면
-  // 이미 선택된 항목들이 이어붙은 문자열이라 옵션과 매치되지 않는다). 단, 그 마지막 조각이 이미
-  // 완결된(체크로 선택된) 옵션과 정확히 일치하면 — 즉 "입력 중"이 아니라 "방금 고른 값"이면 —
-  // 필터로 쓰지 않는다. 그렇지 않으면 1개를 고른 순간 그 값 전체가 필터가 되어 나머지 후보가
-  // 전부 가려지고 두 번째를 고를 수 없게 된다.
-  const lastFragment = multiSelect ? (value.split(',').pop() ?? '').trim() : value;
-  const lastFragmentIsCompletedOption = multiSelect && options.some((o) => identityOf(o) === identityOf(lastFragment));
-  const filterQuery = lastFragmentIsCompletedOption ? '' : lastFragment;
-  const filtered = filterQuery
-    ? options.filter((o) => o.toLowerCase().includes(filterQuery.toLowerCase()))
-    : options;
+  // 이미 선택된 항목들이 이어붙은 문자열이라 옵션과 매치되지 않는다).
+  const filterQuery = multiSelect ? (value.split(',').pop() ?? '').trim() : value;
+  const filtered = disableFilter
+    ? options
+    : filterQuery
+      ? options.filter((o) => o.toLowerCase().includes(filterQuery.toLowerCase()))
+      : options;
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
