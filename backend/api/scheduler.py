@@ -365,7 +365,7 @@ def sync_form_options():
                 lineid_list = list(LINE_TO_LINEID_MAP.values())
                 placeholders = ' OR '.join([f"lineid = '{lid}'" for lid in lineid_list])
                 query_mn = f"""
-                    SELECT DISTINCT lineid, partid
+                    SELECT DISTINCT lineid, partid, AAA1, AAA2, AAA3
                     FROM X.Y
                     WHERE ({placeholders})
                       AND partid IS NOT NULL AND partid != ''
@@ -377,7 +377,7 @@ def sync_form_options():
                     failures.append({'context': '-', 'target': 'MAP 이름'})
                 else:
                     df_mn['last_synced'] = pd.Timestamp.now()
-                    df_mn = df_mn[['lineid', 'partid', 'last_synced']]
+                    df_mn = df_mn[['lineid', 'partid', 'AAA1', 'AAA2', 'AAA3', 'last_synced']]
 
                     with engine.begin() as db_conn:
                         db_conn.execute(text("DELETE FROM api_mapname"))
