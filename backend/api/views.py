@@ -918,6 +918,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=True, methods=['post'], url_path='delete')
+    @transaction.atomic
     def delete(self, request, pk=None):
         """의뢰서 삭제.
 
@@ -936,6 +937,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             getattr(request.user, 'role', '-') or '-',
             document.pk, document.status, document.title,
         )
+        mailer.enqueue_document_deleted(document)
         document.delete()
         return Response({'message': '삭제되었습니다.'})
 
@@ -1463,7 +1465,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not pending:
             return Response({'error': '진행 중인 결재 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        PauseRequest.objects.create(
+        pr = PauseRequest.objects.create(
             document=document,
             requester=request.user if getattr(request.user, 'loginid', '') else None,
             requester_name=getattr(request.user, 'username', '') or getattr(request.user, 'loginid', ''),
@@ -1472,6 +1474,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             target_step_ids=[s.id for s in pending],
             confirmed_step_ids=[],
         )
+        mailer.enqueue_pause_requested(document, pr)
 
         return Response({
             'message': '중단 요청이 접수되었습니다. 현재 단계 팀의 확인을 기다립니다.',
@@ -1517,6 +1520,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             pr.save()
             document.status = 'pause'
             document.save()
+            mailer.enqueue_pause_confirmed(document)
             msg = '중단이 확정되었습니다.'
         else:
             pr.save()
@@ -1553,6 +1557,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         pr.state = 'rejected'
         pr.save(update_fields=['state'])
+        mailer.enqueue_pause_rejected(document, pr)
 
         return Response({
             'message': '중단 요청을 거부했습니다. 결재를 계속 진행할 수 있습니다.',
@@ -1598,6 +1603,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         PauseRequest.objects.filter(
             document=document, state='confirmed'
         ).update(state='resumed')
+
+        resumed_step_ids = list(ApprovalStep.objects.filter(
+            document=document, action='pending', round=self._max_round(document)
+        ).values_list('id', flat=True))
+        mailer.enqueue_pause_resumed(document, resumed_step_ids)
 
         return Response({
             'message': '결재를 재개했습니다. 멈춘 단계부터 이어집니다.',
@@ -1684,6 +1694,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         self._note_validation_system_change(document, max_round, previous, value, actor)
+        mailer.enqueue_validation_system_changed(document)
 
         return Response({'message': '변경했습니다.'})
 
@@ -2450,8 +2461,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if remaining_additional == 0:
                 return Response({'error': 'C가문 제품·연구소 제품은 (고정 후결자 외) 후결자를 최소 1명 유지해야 합니다. 변경을 원하시면 1명 추가 후 삭제하시기 바랍니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        removed_mail = ra_step.assignee.mail if ra_step.assignee else ''
+        removed_name = ra_step.assignee_name
+
         ra_step.delete()
         self._sync_post_approvers_detail(document, remove_loginid=target_loginid)
+        mailer.enqueue_post_approver_removed(document, removed_mail, removed_name)
 
         return Response({'message': '후결자가 제거되었습니다.',
                          'document': RequestDocumentSerializer(document, context={'request': request}).data})
