@@ -1646,6 +1646,15 @@ export default function ApprovalPage(): React.ReactElement {
                       {detail.isAdiCd ? (
                         <span className="map-purpose-na">{t('approval.step_na')}</span>
                       ) : (detail.mapType || '-')}
+                      {doc.mail_completion_matched && (
+                        <span
+                          className="badge badge-mail-complete"
+                          style={{ marginLeft: 6 }}
+                          title={t('approval.map_mail_complete_badge_tooltip')}
+                        >
+                          {t('approval.map_mail_complete_badge')}
+                        </span>
+                      )}
                     </td>
                     <td>
                       {isNone ? (
