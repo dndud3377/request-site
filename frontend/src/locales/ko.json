@@ -649,6 +649,8 @@
     "col_line": "라인",
     "col_purpose": "목적",
     "col_map_purpose": "MAP 목적",
+    "map_mail_complete_badge": "완료",
+    "map_mail_complete_badge_tooltip": "완료 알림 메일에서 이 제품명을 확인했습니다",
     "col_product_combo": "제품(조합법-제품-조리법)",
     "col_requester": "의뢰자",
     "col_status": "상태",
