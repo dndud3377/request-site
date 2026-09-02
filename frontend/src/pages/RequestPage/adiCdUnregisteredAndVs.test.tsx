@@ -51,6 +51,7 @@ jest.mock('../../api/client', () => ({
     getProcessId: () => Promise.resolve([PROCESS_ID]),
     getLayerIds: () => Promise.resolve([]),
     getMapNames: () => Promise.resolve([]),
+    getMapInfo: () => Promise.resolve({ AAA1: null, AAA2: null, AAA3: null }),
     getJobFileLayer: () => Promise.resolve(mockState.jobFile),
     getOvlLayer: () => Promise.resolve([]),
     getBbExternalData: () => Promise.resolve([]),

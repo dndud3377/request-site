@@ -77,6 +77,7 @@ jest.mock('../../api/client', () => ({
     getProcessId: () => Promise.resolve([PROC_WITH_DATA, PROC_MORE_DATA, PROC_EMPTY, PROC_ERROR]),
     getLayerIds: () => Promise.resolve([]),
     getMapNames: () => Promise.resolve([]),
+    getMapInfo: () => Promise.resolve({ AAA1: null, AAA2: null, AAA3: null }),
     getJobFileLayer: (_line: string, process: string) => {
       mockState.jobFileCalls.push(process);
       if (process === PROC_ERROR) return Promise.reject(new Error('network down'));
