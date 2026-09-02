@@ -91,6 +91,18 @@ RTDB(REST API)  →  /api/queries
 - RTDB 토큰은 동기화 **주기당 1회** 발급하여 세 소스·라인 반복에서 재사용한다(재시도 포함).
 - 나머지 동기화(바코드, MAP 이름, 공휴일, 공정-디자인룰, 라인2)는 기존 DCQ 단일 소스를 그대로 사용한다 — 이번 변경의 영향을 받지 않는다.
 
+### MAP 이름 (`api_mapname`, DCQ 단독)
+
+`sync_form_options()` 안에서 `X.Y` 테이블을 조회해 `api_mapname` 을 갱신한다(변경 감지 없이 매 사이클
+전체 `DELETE → INSERT`). 라인 필터는 `utils.LINE_TO_LINEID_MAP` 의 `lineid` 값들로 구성한다.
+
+| 대상 테이블 | DCQ 소스 | 조회 컬럼 |
+|-------------|----------|-----------|
+| `api_mapname` | `X.Y` | `lineid`, `partid`, `AAA1`, `AAA2`, `AAA3` (2026-09 추가 — `AAA1`~`AAA3` 는 실제 배포 전 이름이 확정되면 쿼리·모델 필드명을 함께 변경할 예정인 임시 컬럼명) |
+
+`AAA1`/`AAA2`/`AAA3` 는 값이 항상 있다는 보장이 없어 `MapName` 모델에서 `null=True, blank=True` 로
+저장한다(`backend/api/models.py`).
+
 ### 라인2 (DCQ 단독, 폴백 구조 아님)
 
 라인2 는 소스 테이블 구조가 다른 라인들과 달라 **RTDB 를 지원하지 않는다.** 따라서 위 RTDB 조회
