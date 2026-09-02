@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import RichTextEditor from '../../../components/RichTextEditor';
-import { DetailFormState, GuideFeatureKey } from '../../../types';
+import { DetailFormState, GuideFeatureKey, MapInfo } from '../../../types';
 import {
   CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ, isMapRegisteredType,
   EA_NO_CHANGE, EA_HAS_CHANGE, eaDefaultValue,
@@ -25,6 +25,9 @@ interface StepMapProps {
   isMapReasonMode: boolean;
   lineOptions: string[];
   sourcePartIdOptions: string[];
+  /** 원본 위치+원본 제품 참고 정보(AAA1~3) — CLONE/EXISTING 작성 화면 참고용, 조회 실패/미매칭 시 null */
+  mapInfo: MapInfo | null;
+  mapInfoLoading: boolean;
   topProductOptions: string[];
   middleProductOptions: string[];
   bottomProductOptions: string[];
@@ -74,6 +77,8 @@ const StepMap: React.FC<StepMapProps> = ({
   isMapReasonMode,
   lineOptions,
   sourcePartIdOptions,
+  mapInfo,
+  mapInfoLoading,
   topProductOptions,
   middleProductOptions,
   bottomProductOptions,
@@ -219,6 +224,23 @@ const StepMap: React.FC<StepMapProps> = ({
                   maxLength={8}
                 />
               </div>
+
+              {/* AAA1/AAA2/AAA3 참고 정보 — 읽기 전용, 상신 데이터에는 포함되지 않는다 */}
+              {detail.source_line && detail.source_partid && (
+                <div className="flex-row" style={{ marginTop: 10 }}>
+                  {(['ox', 'oy', 'sr'] as const).map((key, i) => {
+                    const field = (['AAA1', 'AAA2', 'AAA3'] as const)[i];
+                    return (
+                      <div key={field} className="form-group flex-col">
+                        <label className="form-label">{t(`request.${key}`)}</label>
+                        <div className="form-control" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)' }}>
+                          {mapInfoLoading ? '...' : (mapInfo?.[field] ?? '-')}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}

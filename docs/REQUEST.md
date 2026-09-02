@@ -370,6 +370,39 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   기존 회귀 테스트가 이번 변경으로 깨지지 않는지만 확인). 백엔드 코드는 변경하지 않아 백엔드
   테스트는 실행하지 않았다.
 
+### 기능 추가 (2026-09-02 — MAP 정보: 원본 위치·원본 제품 참고 정보(AAA1~3) 읽기 전용 표시)
+
+- **요청**: MAP 목적이 `CLONE`(차용)·`EXISTING`(기등록)이고 원본 위치·원본 제품(`source_line`/
+  `source_partid`)이 모두 선택됐을 때, 그 조합에 해당하는 `MapName`(`api_mapname`, DCQ 동기화
+  캐시) 캐시의 참고 정보(`AAA1`/`AAA2`/`AAA3` — 실제 명칭 미확정, 임시 이름) 3개를 원본 위치/
+  원본 제품 블록 바로 아래에 **읽기 전용**으로 보여준다. **작성 화면 참고용일 뿐**이라 상신
+  데이터(`RequestDocument`)에는 포함하지 않고, 결재상세·이력조회(`PagedDetailView`)에도
+  노출하지 않는다.
+- **백엔드**: `backend/api/views.py` `form_options_map_info(line, partid)` 신규 GET 뷰 —
+  `LINE_TO_LINEID_MAP`으로 `lineid` 변환 후 `MapName`에서 `partid`가 선택된 8자리 코드와
+  정확히 같거나 그 코드로 시작(`코드_`)하는 첫 번째 행을 찾아 `AAA1`/`AAA2`/`AAA3`를 반환한다
+  (매칭 없으면 전부 `null`). 같은 코드에 여러 행이 매칭되면 `id` 기준 첫 번째 행만 사용한다 —
+  실제 데이터로 이 가정이 맞는지는 확인하지 못했다. `backend/api/urls.py`에
+  `form-options/map-info/` 경로 추가.
+- **프론트엔드**:
+  - `types/index.ts`: `MapInfo` 타입(`AAA1`/`AAA2`/`AAA3`: `string | null`) 신규.
+  - `api/client.ts`: `formOptionsAPI.getMapInfo(line, partid)` 추가.
+  - `index.tsx`: `[detail.map_type, detail.source_line, detail.source_partid]` 변경 시
+    `getMapInfo` 호출하는 신규 useEffect(`mapInfo`/`mapInfoLoading` 상태, 기존 옵션 조회들과
+    동일한 `optionReqSeq` 시퀀스 가드로 stale 응답 방지). CLONE/EXISTING이 아니거나 원본
+    위치/제품 중 하나라도 비어 있으면 `mapInfo`를 `null`로 되돌린다. `detail`(폼 상태)에는
+    저장하지 않는다 — 상신 데이터와 무관한 조회 전용 값이기 때문.
+  - `StepMap.tsx`: 원본 위치/원본 제품 블록 바로 아래, 원본 위치·원본 제품이 모두 선택됐을
+    때만 3칸 읽기 전용 카드 노출. 값이 없으면 `-`, 조회 중이면 `...` 표시.
+- **i18n**: `request.ox`="AAA1", `request.oy`="AAA2", `request.sr`="AAA3" (ko/en 동시 추가).
+  키 이름(`ox`/`oy`/`sr`)과 화면 표시 문구("AAA1"/"AAA2"/"AAA3")는 각각 AAA1→ox, AAA2→oy,
+  AAA3→sr 순서로 대응하며, 백엔드 필드명(`AAA1`~`AAA3`)이 실제 명칭으로 확정되면 이 표시
+  문구만 갱신하면 된다(키 이름은 그대로 유지).
+- **영향 파일**: `backend/api/views.py`, `backend/api/urls.py`, `frontend/src/types/index.ts`,
+  `frontend/src/api/client.ts`, `frontend/src/pages/RequestPage/index.tsx`,
+  `frontend/src/pages/RequestPage/components/StepMap.tsx`, `frontend/src/locales/ko.json`,
+  `frontend/src/locales/en.json`.
+
 ### 기능 추가 (2026-08-25 — MAP 정보: C가문 Yes 옆에 'PY 적용 여부' O/X 드롭다운 추가)
 
 - **요청**: Only C가문 제품(`only_prodc`)이 `Yes`일 때 나오는 항목 중 하나로 **PY 적용 여부**

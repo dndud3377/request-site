@@ -3442,6 +3442,29 @@ def form_options_mapname(request):
     return JsonResponse({'options': options})
 
 
+@require_GET
+def form_options_map_info(request):
+    """원본 위치(라인명) + 원본 제품 코드(8자리) → AAA1/AAA2/AAA3 참고 정보 반환.
+    (2026-09 추가 — CLONE/EXISTING 작성 화면 참고용, 상신 데이터에는 포함되지 않는다)"""
+    line = request.GET.get('line', '')
+    partid = request.GET.get('partid', '')
+    lineid = LINE_TO_LINEID_MAP.get(line)
+    empty = {'AAA1': None, 'AAA2': None, 'AAA3': None}
+    if not lineid or not partid:
+        return JsonResponse(empty)
+
+    entry = (
+        MapName.objects.filter(lineid=lineid)
+        .filter(Q(partid=partid) | Q(partid__startswith=f'{partid}_'))
+        .order_by('id')
+        .first()
+    )
+    if not entry:
+        return JsonResponse(empty)
+
+    return JsonResponse({'AAA1': entry.AAA1, 'AAA2': entry.AAA2, 'AAA3': entry.AAA3})
+
+
 class UserViewSet(viewsets.ModelViewSet):
     """
     사용자 관리 ViewSet
