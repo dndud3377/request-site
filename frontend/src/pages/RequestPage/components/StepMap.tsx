@@ -16,6 +16,20 @@ const SELECT_W = '300px';
 /** 이유 입력칸 고정 높이 — 내용이 길어지면 이 안에서만 스크롤한다 */
 const REASON_EDITOR_HEIGHT = 640;
 
+/** AAA3 화면 표시 배율 — 원본값을 이 값으로 나눠서 보여준다(저장값·API 응답은 원본 그대로) */
+const AAA3_DISPLAY_DIVISOR = 1000;
+
+/** AAA1/AAA2/AAA3 참고 카드에 보여줄 값 포맷. AAA3 는 숫자면 AAA3_DISPLAY_DIVISOR 로 나눈 값(반올림 없음)을,
+ * 숫자로 변환되지 않으면 원본 값을 그대로 보여준다. */
+const formatMapInfoValue = (field: 'AAA1' | 'AAA2' | 'AAA3', value: string | null | undefined): string => {
+  if (value == null) return '-';
+  if (field === 'AAA3') {
+    const num = Number(value);
+    if (!Number.isNaN(num)) return String(num / AAA3_DISPLAY_DIVISOR);
+  }
+  return value;
+};
+
 interface StepMapProps {
   detail: DetailFormState;
   errors: Partial<Record<string, string>>;
@@ -234,7 +248,7 @@ const StepMap: React.FC<StepMapProps> = ({
                       <div key={field} className="form-group flex-col">
                         <label className="form-label">{t(`request.${key}`)}</label>
                         <div className="form-control" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)' }}>
-                          {mapInfoLoading ? '...' : (mapInfo?.[field] ?? '-')}
+                          {mapInfoLoading ? '...' : formatMapInfoValue(field, mapInfo?.[field])}
                         </div>
                       </div>
                     );
