@@ -35,6 +35,7 @@ import {
   MergeSnapshot,
   MergeTable,
   AdiCdStep,
+  MapInfo,
 } from '../../types';
 import StepGuideTour from '../../components/StepGuideTour';
 import { useStepGuideTour } from './useStepGuideTour';
@@ -442,6 +443,9 @@ export default function RequestPage(): React.ReactElement {
 
   const [approvedDocs, setApprovedDocs] = useState<RequestDocument[]>([]);
   const [sourcePartIdOptions, setSourcePartIdOptions] = useState<string[]>([]);
+  // 원본 위치+원본 제품 참고 정보(AAA1~3, CLONE/EXISTING 작성 화면 참고용 — 상신 데이터에는 포함 안 함)
+  const [mapInfo, setMapInfo] = useState<MapInfo | null>(null);
+  const [mapInfoLoading, setMapInfoLoading] = useState(false);
 
   const [jayerFilterSets, setJayerFilterSets] = useState<FilterSet[]>([]);
   const [oayerFilterSets, setOayerFilterSets] = useState<FilterSet[]>([]);
@@ -625,6 +629,22 @@ export default function RequestPage(): React.ReactElement {
       .then(setSourcePartIdOptions)
       .catch(() => setSourcePartIdOptions([]));
   }, [detail.source_line]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 원본 위치+원본 제품 참고 정보(AAA1~3) 조회 — CLONE/EXISTING 이고 둘 다 선택됐을 때만.
+  // 참고용일 뿐 상신 데이터에 포함되지 않으므로 detail 에는 저장하지 않는다.
+  useEffect(() => {
+    if (!isMapRegisteredType(detail.map_type) || !detail.source_line || !detail.source_partid) {
+      setMapInfo(null);
+      return;
+    }
+    const seq = (optionReqSeq.current['map-info'] ?? 0) + 1;
+    optionReqSeq.current['map-info'] = seq;
+    setMapInfoLoading(true);
+    formOptionsAPI.getMapInfo(detail.source_line, detail.source_partid)
+      .then((info) => { if (optionReqSeq.current['map-info'] === seq) setMapInfo(info); })
+      .catch(() => { if (optionReqSeq.current['map-info'] === seq) setMapInfo(null); })
+      .finally(() => { if (optionReqSeq.current['map-info'] === seq) setMapInfoLoading(false); });
+  }, [detail.map_type, detail.source_line, detail.source_partid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 라인 + 제품 이름(Step1) → 이미 등록된 MAP 이 있으면 map_type 을 EXISTING 으로 자동 선택.
   // map_type 이 이미 선택돼 있으면(사용자가 이미 골랐으면) 덮어쓰지 않는다 — 자동 선택은
@@ -4688,6 +4708,8 @@ export default function RequestPage(): React.ReactElement {
           isMapReasonMode={isMapReasonMode}
           lineOptions={lineOptions}
           sourcePartIdOptions={sourcePartIdOptions}
+          mapInfo={mapInfo}
+          mapInfoLoading={mapInfoLoading}
           topProductOptions={topProductOptions}
           middleProductOptions={middleProductOptions}
           bottomProductOptions={bottomProductOptions}
