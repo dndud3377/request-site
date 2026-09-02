@@ -47,6 +47,17 @@
 - 상신 받기(receive_submit_mail, 2026-08 신설): TE_P 사용자가 권한 관리 '이메일 설정'에서
   켜면, 상신·재상신 시 통보처와 같은 메일(notify_submitted)을 추가로 받는다. 라인 수신 설정
   (mail_lines)과 무관하게 독립적으로 관리된다(VOC 토글과 동일한 성격).
+- 중단(PAUSE, 2026-09 신설): 요청/재개(pause_requested/pause_resumed)는 확인 대상·재개
+  대상 단계에 담당자가 있으면 그 1명, 없으면 담당 팀별로 각각 별도 메일(withdraw_requested와
+  동일 규칙 재사용). 확정(pause_confirmed)은 대상 단계 전원 확인이 끝난 시점에만 작성자 +
+  지금까지 진행된 팀별로 각각 별도 메일 1통씩(부분 확인 시점엔 무메일). 거부(pause_rejected)는
+  요청자 + 작성자 1통. cancel-pause(요청 취소)는 resume과 목적이 겹쳐 이번 범위에서 제외했다.
+- 삭제(document_deleted, 2026-09 신설): withdraw_completed와 동일한 수신자 규칙
+  (resolve_withdraw_completed_recipients 재사용) — 개인 수신자 1통 + 진행된 팀별로 각각
+  별도 메일. 반드시 document.delete() 앞에서 호출해야 한다.
+- 후결자 제거(post_approver_removed, 2026-09 신설): 제거된 후결자 본인에게만 개인화 메일 1통.
+- Validation System 변경(validation_system_changed, 2026-09 신설): 작성자 + 지정된 EV
+  전원(개인 수신자) + 현재 E 단계(담당자 있으면 개인, 없으면 TE_E 팀 1통).
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
 """
 import logging
@@ -192,6 +203,13 @@ EVENT_STATUS_LABEL = {
     'withdraw_completed': '철회 완료',
     'withdraw_rejected': '철회 거부',
     'withdraw_cancelled': '철회 요청 취소',
+    'pause_requested': '중단 요청',
+    'pause_confirmed': '중단 확정',
+    'pause_rejected': '중단 거부',
+    'pause_resumed': '결재 재개',
+    'document_deleted': '삭제',
+    'post_approver_removed': '후결자 제외',
+    'validation_system_changed': 'Validation System 변경',
 }
 
 # 이벤트 타입별 히어로+KPI 카드 이메일 색상 테마
@@ -240,6 +258,18 @@ EVENT_THEME['withdraw_completed'] = EVENT_THEME['rejected']
 # 철회 거부/취소: 결재가 그대로 이어진다는 정보성 통보라 통보 계열(퍼플) 테마
 EVENT_THEME['withdraw_rejected'] = EVENT_THEME['notify_submitted']
 EVENT_THEME['withdraw_cancelled'] = EVENT_THEME['notify_submitted']
+# 중단 요청/확정: 결재가 멈춘다는 경고라 반려와 같은 레드 테마
+EVENT_THEME['pause_requested'] = EVENT_THEME['rejected']
+EVENT_THEME['pause_confirmed'] = EVENT_THEME['rejected']
+# 중단 거부: 결재가 그대로 이어진다는 정보성 통보라 통보 계열(퍼플) 테마
+EVENT_THEME['pause_rejected'] = EVENT_THEME['notify_submitted']
+# 재개: 결재가 정상적으로 다시 시작된다는 점에서 단계 도착과 같은 블루 테마
+EVENT_THEME['pause_resumed'] = EVENT_THEME['stage_arrival']
+# 의뢰서 삭제: 문서가 사라지는 알림이라 철회 완료와 같은 레드 테마
+EVENT_THEME['document_deleted'] = EVENT_THEME['rejected']
+# 후결자 제외/Validation System 변경: 정보성 통보라 통보 계열(퍼플) 테마
+EVENT_THEME['post_approver_removed'] = EVENT_THEME['notify_submitted']
+EVENT_THEME['validation_system_changed'] = EVENT_THEME['notify_submitted']
 # VOC 등록: 새 요청이 도착했다는 알림이라 결재 도착과 같은 블루 테마
 EVENT_THEME['voc_created'] = EVENT_THEME['stage_arrival']
 # VOC 답글: 논의가 진행됐다는 정보성 알림이라 통보 계열(퍼플) 테마
@@ -747,6 +777,68 @@ def resolve_withdraw_rejected_recipients(document, withdraw_request):
     return _apply_redirect(emails, document)
 
 
+def resolve_pause_rejected_recipients(document, pause_request):
+    """중단 거부 수신자: 중단을 요청한 사람(+ 의뢰서 작성자). withdraw_rejected 와 동일 패턴."""
+    emails = []
+    if pause_request.requester_id and pause_request.requester.mail:
+        emails.append(pause_request.requester.mail)
+    if document.requester_email:
+        emails.append(document.requester_email)
+    return _apply_redirect(emails, document)
+
+
+def resolve_pause_confirmed_recipients(document):
+    """중단 확정(전원 확인 완료) 수신자를 (개인 수신자, {팀키: 팀 수신자}) 로 나눠 반환한다.
+
+    개인 수신자 = 작성자 + 지금까지 결재가 진행된 단계 중 RA(후결자)·SA(합의자) 개인 담당자.
+    팀 수신자 = 실제로 결재가 진행된 단계의 담당 팀들(`_reached_stage_team_groups`) — 철회
+    완료(withdraw_completed)와 같은 "실제로 진행된 단계" 판정 기준을 그대로 재사용한다.
+    """
+    individual_emails = []
+    if document.requester_email:
+        individual_emails.append(document.requester_email)
+    individual_emails.extend(_reached_stage_individual_emails(document))
+
+    team_groups = _reached_stage_team_groups(document)
+    return _apply_redirect(individual_emails, document), _redirect_team_groups(team_groups, document)
+
+
+def resolve_validation_system_change_recipients(document):
+    """Validation System 변경 수신자를 (개인 수신자, {팀키: 팀 수신자}) 로 나눠 반환한다.
+
+    개인 수신자 = 작성자 + 지정된 EV(검토자) 전원. 팀 수신자 = 현재 회차 E 단계 —
+    담당자가 지정돼 있으면 개인 수신자에 포함하고, 미지정이면 TE_E 팀 전원(팀 수신자)에 넣는다
+    (담당자 유/무에 따라 개인·팀을 자동 판정하는 기존 원칙과 동일).
+    """
+    individual_emails = []
+    if document.requester_email:
+        individual_emails.append(document.requester_email)
+
+    team_groups = {}
+    max_round = _current_round(document)
+    if max_round is not None:
+        e_step = ApprovalStep.objects.filter(
+            document=document, agent='E', round=max_round,
+        ).select_related('assignee').first()
+        if e_step:
+            if e_step.assignee and e_step.assignee.mail:
+                if e_step.assignee.mail not in individual_emails:
+                    individual_emails.append(e_step.assignee.mail)
+            else:
+                emails = _stage_team_emails('E')
+                if emails:
+                    team_groups['E'] = emails
+        ev_qs = (
+            ApprovalStep.objects.filter(document=document, agent='EV', round=max_round)
+            .exclude(assignee__isnull=True).exclude(assignee__mail='')
+        )
+        for mail in ev_qs.values_list('assignee__mail', flat=True).distinct():
+            if mail not in individual_emails:
+                individual_emails.append(mail)
+
+    return _apply_redirect(individual_emails, document), _redirect_team_groups(team_groups, document)
+
+
 # --------------------------------------------------------------------------- #
 # 메일 본문 생성
 # --------------------------------------------------------------------------- #
@@ -771,7 +863,7 @@ def _voc_link(voc_id):
 _HISTORY_LINK_EVENTS = ('approved', 'notify_approved')
 
 # 딥링크 버튼을 싣지 않는 이벤트 — 발송 시점에 의뢰서가 이미 삭제돼 링크가 죽는다.
-_NO_LINK_EVENTS = ('withdraw_completed',)
+_NO_LINK_EVENTS = ('withdraw_completed', 'document_deleted')
 
 
 def _kpi_grid(tiles, tile_bg, tile_border):
@@ -1066,6 +1158,37 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
         subject = f'[철회 요청 취소] {document.title}'
         headline = '의뢰서 철회 요청이 취소되었습니다. 결재를 그대로 진행해 주세요.'
         stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'pause_requested':
+        subject = f'[중단 요청] {document.title}'
+        headline = (
+            '의뢰서 결재 중단 요청이 접수되었습니다. 결재 현황에서 내용을 확인한 뒤 '
+            "'중단 확인' 또는 '중단 거부'를 선택해 주세요."
+        )
+        stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'pause_confirmed':
+        subject = f'[중단 확정] {document.title}'
+        headline = '의뢰서 결재가 중단으로 확정되었습니다. 재개 전까지 결재가 진행되지 않습니다.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'pause_rejected':
+        subject = f'[중단 거부] {document.title}'
+        headline = '요청하신 결재 중단이 거부되었습니다. 결재는 그대로 진행됩니다.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'pause_resumed':
+        subject = f'[결재 재개] {document.title}'
+        headline = '중단됐던 의뢰서 결재가 재개되었습니다. 결재 현황에서 확인해 주세요.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'document_deleted':
+        subject = f'[의뢰서 삭제] {document.title}'
+        headline = '아래 의뢰서가 삭제되었습니다. 더 이상 조회할 수 없습니다.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'post_approver_removed':
+        subject = f'{name_prefix}[후결자 제외] {document.title}'
+        headline = '후결자 지정에서 제외되었습니다. 더 이상 이 의뢰서의 결재 대상이 아닙니다.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'validation_system_changed':
+        subject = f'[Validation System 변경] {document.title}'
+        headline = 'Validation System 대상/비대상 값이 변경되었습니다. 결재 현황에서 확인해 주세요.'
+        stage_value = EVENT_STATUS_LABEL[event_type]
     else:
         subject = f'[알림] {document.title}'
         headline = '새로운 알림이 있습니다.'
@@ -1277,6 +1400,102 @@ def enqueue_withdraw_cancelled(document, withdraw_request):
         notis.append(_enqueue(
             document, 'withdraw_cancelled', emails, agent=team_key,
             note_override=withdraw_request.reason, dispatch=False,
+        ))
+    _dispatch_batch(notis)
+    return [n for n in notis if n is not None]
+
+
+def enqueue_pause_requested(document, pause_request):
+    """중단 요청 접수 알림 적재 — 확인 대상 단계의 담당자/팀 대상.
+
+    withdraw_requested 와 동일한 수신자 규칙(`resolve_withdraw_target_recipients`)을 그대로
+    재사용한다 — "확인 대상 단계에 담당자가 있으면 개인 1명, 없으면 그 담당 팀 전원"이라는
+    로직이 이벤트 종류와 무관하게 같기 때문이다. 배정된 개인들을 묶은 메일 1통 + 미배정
+    팀별로 각 1통, 순서대로(겹치지 않게) 발송한다.
+    """
+    individual_emails, team_groups = resolve_withdraw_target_recipients(
+        document, pause_request.target_step_ids,
+    )
+    notis = [_enqueue(
+        document, 'pause_requested', individual_emails,
+        note_override=pause_request.reason, dispatch=False,
+    )]
+    for team_key, emails in team_groups.items():
+        notis.append(_enqueue(
+            document, 'pause_requested', emails, agent=team_key,
+            note_override=pause_request.reason, dispatch=False,
+        ))
+    _dispatch_batch(notis)
+    return [n for n in notis if n is not None]
+
+
+def enqueue_pause_confirmed(document):
+    """중단 확정(전원 확인 완료) 알림 적재 — 개인 수신자 1통 + 진행된 팀별로 각 1통."""
+    individual_emails, team_groups = resolve_pause_confirmed_recipients(document)
+    notis = [_enqueue(document, 'pause_confirmed', individual_emails, dispatch=False)]
+    for team_key, emails in team_groups.items():
+        notis.append(_enqueue(document, 'pause_confirmed', emails, agent=team_key, dispatch=False))
+    _dispatch_batch(notis)
+    return [n for n in notis if n is not None]
+
+
+def enqueue_pause_rejected(document, pause_request):
+    """중단 거부 알림 적재 — 중단을 요청한 사람과 의뢰서 작성자 대상."""
+    recipients = resolve_pause_rejected_recipients(document, pause_request)
+    return _enqueue(document, 'pause_rejected', recipients)
+
+
+def enqueue_pause_resumed(document, step_ids):
+    """결재 재개 알림 적재 — 재개 시점에 되살아난 pending 단계의 담당자/팀 대상.
+
+    withdraw_requested 와 동일한 수신자 규칙(`resolve_withdraw_target_recipients`)을 재사용한다.
+    배정된 개인들을 묶은 메일 1통 + 미배정 팀별로 각 1통, 순서대로(겹치지 않게) 발송한다.
+    """
+    individual_emails, team_groups = resolve_withdraw_target_recipients(document, step_ids)
+    notis = [_enqueue(document, 'pause_resumed', individual_emails, dispatch=False)]
+    for team_key, emails in team_groups.items():
+        notis.append(_enqueue(document, 'pause_resumed', emails, agent=team_key, dispatch=False))
+    _dispatch_batch(notis)
+    return [n for n in notis if n is not None]
+
+
+def enqueue_document_deleted(document, reason=''):
+    """의뢰서 삭제 알림 적재 — 개인 수신자 1통 + 진행된 팀별로 각 1통, 순서대로 발송.
+
+    withdraw_completed 와 동일한 수신자 규칙(`resolve_withdraw_completed_recipients`)을
+    재사용한다. ⚠️ **반드시 `document.delete()` 앞에서 호출**해야 한다 — 본문(결재 경로
+    카드·수신자)이 문서와 결재 단계를 읽어 만들어지기 때문이다.
+    """
+    individual_emails, team_groups = resolve_withdraw_completed_recipients(document)
+    notis = [_enqueue(
+        document, 'document_deleted', individual_emails, note_override=reason, dispatch=False,
+    )]
+    for team_key, emails in team_groups.items():
+        notis.append(_enqueue(
+            document, 'document_deleted', emails, agent=team_key,
+            note_override=reason, dispatch=False,
+        ))
+    _dispatch_batch(notis)
+    return [n for n in notis if n is not None]
+
+
+def enqueue_post_approver_removed(document, removed_mail, removed_name=None):
+    """후결자 제거 알림 적재 — 제거된 후결자 본인에게만 개인화된 메일 1통.
+
+    호출부(`views.remove_post_approver`)가 step 삭제 "전"에 assignee 정보를 미리
+    읽어 넘겨야 한다 — 삭제 후에는 담당자 정보를 다시 조회할 수 없다.
+    """
+    recipients = _apply_redirect([removed_mail] if removed_mail else [], document)
+    return _enqueue(document, 'post_approver_removed', recipients, recipient_name=removed_name)
+
+
+def enqueue_validation_system_changed(document):
+    """Validation System 변경 알림 적재 — 개인 수신자 1통 + (미지정 시) E 팀 1통."""
+    individual_emails, team_groups = resolve_validation_system_change_recipients(document)
+    notis = [_enqueue(document, 'validation_system_changed', individual_emails, dispatch=False)]
+    for team_key, emails in team_groups.items():
+        notis.append(_enqueue(
+            document, 'validation_system_changed', emails, agent=team_key, dispatch=False,
         ))
     _dispatch_batch(notis)
     return [n for n in notis if n is not None]
