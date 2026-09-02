@@ -8,6 +8,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from . import mailer
+from . import pop3_mail
 from . import design_rule_stats
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
@@ -5855,3 +5856,67 @@ class LayerFilterSetTest(TestCase):
         row = self._json.loads(doc.additional_notes)['oayerRows'][0]
         self.assertEqual(row['st'], 'X')
         self.assertNotIn('item_id', row)
+
+
+class MapCompletionMailMatchTest(TestCase):
+    """pop3_mail.match_map_completion_mail() 단위 테스트 (POP3 접속 없이 순수 DB 로직만 검증)."""
+
+    def setUp(self):
+        import json
+        self._json = json
+
+    def _make_map_new_doc(self, product_name, status='under_review', matched=False):
+        return RequestDocument.objects.create(
+            title='MAP 신규 문서',
+            requester_name='요청자', requester_email='req@company.com',
+            requester_department='개발팀',
+            product_name=product_name,
+            status=status,
+            mail_completion_matched=matched,
+            additional_notes=self._json.dumps({'detail': {'map_type': 'NEW'}}),
+        )
+
+    def test_matches_and_flags_when_subject_contains_product_name(self):
+        doc = self._make_map_new_doc('PROD-1')
+        matched = pop3_mail.match_map_completion_mail(['[Smart] PROD-1 완료 알림'])
+        self.assertEqual(matched, 1)
+        doc.refresh_from_db()
+        self.assertTrue(doc.mail_completion_matched)
+
+    def test_no_match_when_subject_does_not_contain_product_name(self):
+        doc = self._make_map_new_doc('PROD-1')
+        matched = pop3_mail.match_map_completion_mail(['[Smart] PROD-9 완료 알림'])
+        self.assertEqual(matched, 0)
+        doc.refresh_from_db()
+        self.assertFalse(doc.mail_completion_matched)
+
+    def test_already_matched_document_is_not_rechecked(self):
+        doc = self._make_map_new_doc('PROD-1', matched=True)
+        matched = pop3_mail.match_map_completion_mail(['[Smart] PROD-1 완료 알림'])
+        self.assertEqual(matched, 0, 'mail_completion_matched=True 인 문서는 다시 체크하면 안 된다')
+
+    def test_map_type_not_new_is_excluded(self):
+        doc = RequestDocument.objects.create(
+            title='MAP 삭제 문서', requester_name='요청자', requester_email='req@company.com',
+            requester_department='개발팀', product_name='PROD-1', status='under_review',
+            additional_notes=self._json.dumps({'detail': {'map_type': 'CLONE'}}),
+        )
+        matched = pop3_mail.match_map_completion_mail(['[Smart] PROD-1 완료 알림'])
+        self.assertEqual(matched, 0)
+        doc.refresh_from_db()
+        self.assertFalse(doc.mail_completion_matched)
+
+    def test_draft_and_rejected_status_excluded(self):
+        draft = self._make_map_new_doc('PROD-1', status='draft')
+        rejected = self._make_map_new_doc('PROD-1', status='rejected')
+        matched = pop3_mail.match_map_completion_mail(['[Smart] PROD-1 완료 알림'])
+        self.assertEqual(matched, 0)
+        draft.refresh_from_db()
+        rejected.refresh_from_db()
+        self.assertFalse(draft.mail_completion_matched)
+        self.assertFalse(rejected.mail_completion_matched)
+
+    def test_empty_subjects_short_circuits(self):
+        self._make_map_new_doc('PROD-1')
+        matched = pop3_mail.match_map_completion_mail([])
+        self.assertEqual(matched, 0)

@@ -136,6 +136,10 @@ class RequestDocument(models.Model):
         max_length=20, choices=STATUS_CHOICES, default='draft', verbose_name='상태'
     )
     production_date = models.DateField(null=True, blank=True, verbose_name='실제 생산 진행 날짜')
+    # POP3 로 수신하는 '[Smart] ... 완료 알림' 메일 제목에 이 문서의 product_name 이 포함된 적이
+    # 있으면 True. 한 번 True 가 되면 scheduler.check_map_completion_mail() 은 이 문서를 다시
+    # 확인하지 않는다(docs/MAP_COMPLETION_MAIL.md 참고).
+    mail_completion_matched = models.BooleanField(default=False, verbose_name='완료 메일 매칭 여부')
     designated_pl = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='designated_reviews', verbose_name='지정 PL'
@@ -196,6 +200,15 @@ class RequestDocument(models.Model):
         """
         inner_detail = self.get_detail().get('detail', {})
         return inner_detail.get('request_purpose') == self.ADI_CD_CHANGE_PURPOSE
+
+    def is_map_type_new(self):
+        """MAP 목적(detail.map_type)이 'NEW' 인지 여부.
+
+        프론트엔드 결재현황 목록의 MAP 목적 컬럼(`approvalTable.ts` getDocDetailFields().mapType)과
+        같은 값을 읽는다. 완료 메일 매칭(`scheduler.check_map_completion_mail`) 대상 판정에 쓰인다.
+        """
+        inner_detail = self.get_detail().get('detail', {})
+        return inner_detail.get('map_type') == 'NEW'
 
     def requires_post_approver(self):
         """상신 시 후결자 지정이 필수인가 — C가문(only_prodc=YES) 또는 기타 목적 '연구소 제품'.

@@ -553,7 +553,10 @@ def sync_design_rule():
 # 복원하므로, 이 잡들이 (예: db-sync 로 운영 잡 상태가 dev DB 에 유입되는 등) DB 에 남아있으면
 # add_job 을 호출하지 않아도 그대로 실행될 수 있다. start_mail_only() 는 스케줄러를 시작하기 전에
 # 이 ID 들을 `DjangoJob` ORM 으로 직접 지워 이를 막는다(이유는 start_mail_only() 자체 docstring 참고).
-HEAVY_SYNC_JOB_IDS = ['sync_form_options', 'sync_rtdb_options', 'sync_holidays', 'sync_design_rule']
+HEAVY_SYNC_JOB_IDS = [
+    'sync_form_options', 'sync_rtdb_options', 'sync_holidays', 'sync_design_rule',
+    'check_map_completion_mail',
+]
 
 
 def start():
@@ -614,6 +617,16 @@ def start():
             max_instances=1,
         )
 
+        from .pop3_mail import check_map_completion_mail
+        scheduler.add_job(
+            check_map_completion_mail,
+            trigger=IntervalTrigger(minutes=10),
+            id='check_map_completion_mail',
+            name='POP3 완료 알림 메일 → MAP 목적 NEW 매칭',
+            replace_existing=True,
+            max_instances=1,
+        )
+
         # 구(舊) 단독 잡(process_product 전용)이 통합 잡으로 대체되어 남아있으면 제거한다.
         try:
             scheduler.remove_job('sync_process_product')
@@ -621,7 +634,7 @@ def start():
             pass
 
         scheduler.start()
-        logger.info(_("[scheduler] APScheduler 시작 - 1 시간 주기 DCQ 동기화 / 10 분 주기 RTDB 폼 옵션 / 매일 02:00 공휴일·공정-디자인룰 동기화 등록"))
+        logger.info(_("[scheduler] APScheduler 시작 - 1 시간 주기 DCQ 동기화 / 10 분 주기 RTDB 폼 옵션 / 10 분 주기 POP3 완료 메일 매칭 / 매일 02:00 공휴일·공정-디자인룰 동기화 등록"))
 
         def _run_dcq_jobs_sequentially():
             # sync_form_options/sync_holidays/sync_design_rule 는 모두 DCQ 를 사용한다.

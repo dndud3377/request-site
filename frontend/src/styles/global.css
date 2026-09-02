@@ -650,6 +650,9 @@ select.form-control option {
 
 .badge-na { background: rgba(107, 138, 176, 0.1); color: var(--text-disabled); }
 
+/* MAP 목적 컬럼 전용 — POP3 완료 알림 메일과 product_name 매칭 뱃지(docs/MAP_COMPLETION_MAIL.md) */
+.badge-mail-complete { background: rgba(124, 58, 237, 0.1); color: #7c3aed; }
+
 /* ===== 병렬 합의 단계 '현재 단계' 3행 2열 그리드(docs/APPROVAL.md §3.3) =====
    6칸이 항상 같은 자리에 있어 이 문서의 경로에 없는 단계도 '해당없음'으로 드러난다. */
 .stage-grid {
