@@ -816,6 +816,9 @@ class MapName(models.Model):
     """외부 DB 에서 1시간마다 동기화되는 라인별 partid 캐시"""
     lineid = models.CharField(max_length=50, verbose_name='라인 ID')
     partid = models.CharField(max_length=200, verbose_name='Part ID')
+    AAA1 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA1')
+    AAA2 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA2')
+    AAA3 = models.CharField(max_length=200, null=True, blank=True, verbose_name='AAA3')
     last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
 
     class Meta:
