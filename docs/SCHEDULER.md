@@ -414,6 +414,29 @@ DCQ 로 자동 대체되지 않고 그 데이터는 동기화되지 않는다**(
   - **검증 방법**: `backend/api/tests.py` 의 `EnsureDcqSessionTest` (세션 재사용/재검증 실패 시
     재로그인 전환/최대 2회 제한을 mock 으로 검증). 실제 운영 효과(토큰 불일치 발생률 변화)는
     다음 실패/성공 사이클의 알림 메일로 확인해야 한다.
+  - 🐛 **(2026-09 수정 완료) 세션 재사용 판정이 "만료된 토큰"을 "정상"으로 오판해 재로그인을
+    계속 건너뛴 버그.** 위 재사용 로직은 `get_dcq_token_info(dcq_id) is not None` 만 확인했는데,
+    DCQ SDK 의 `getTokenTime()` 은 토큰이 만료돼도 예외를 던지지 않고
+    `{'expiration_date': ..., 'remaining_days': 0, 'remaining_hours': 0, 'remaining_minutes': 0}`
+    형태의 dict 를 그대로 반환한다. 그 결과 토큰이 만료된 뒤에도 `ensure_dcq_session()` 이 매번
+    "기존 세션 재사용 (재로그인 생략)" 으로 판정해 재로그인을 하지 않았고, 이후 모든
+    `dcq.getData()` 호출이 `ConnectionError: There is a problem with authentication` 로 실패했다
+    (실제 사고: 토큰 만료(01:31:15) 이후 `sync_form_options`/`sync_holidays`/`sync_design_rule`
+    26건이 매 사이클 연속 실패, 재로그인은 프로세스 재시작 전까지 발생하지 않음).
+    - **수정**: `utils._dcq_token_alive(token_info)` 헬퍼를 추가해, `token_info` 가 `None` 이거나
+      `remaining_days`/`remaining_hours`/`remaining_minutes` 가 모두 존재하며 그 합이 0 이하이면
+      "만료"로 판정한다. `ensure_dcq_session()` 의 재사용 체크(세션 캐시가 있을 때)와 로그인 직후
+      체크(새로 로그인한 뒤) 양쪽 모두 `get_dcq_token_info(dcq_id) is not None` 대신 이 헬퍼를
+      쓰도록 바꿨다. `remaining_*` 필드가 없는 예상 밖 응답 형식(SDK 가 비공개라 스키마 미확정)은
+      보수적으로 "살아있음"으로 간주하고 경고 로그만 남긴다 — 판정 불가를 임의로 만료 처리해
+      정상 세션까지 매번 재로그인시키는 부작용을 피하기 위함이다.
+    - **검증 방법(실제 실행 확인 완료)**: `backend/api/tests.py` 의 `DcqTokenAliveTest`
+      (`_dcq_token_alive()` 자체의 만료 판정 - None/전부 0/일부 남음/필드 없음 4가지 케이스) 와
+      `EnsureDcqSessionTest.test_reused_session_expired_token_triggers_relogin`(이번 사고를 그대로
+      재현 - 캐시된 세션의 `get_dcq_token_info()` 가 `remaining_*` 전부 0 인 dict 를 반환하면
+      재로그인으로 전환되는지 확인). CLAUDE.md §규칙 C-1-1 sqlite 절차로 실제 실행해 신규 4건
+      포함 `api` 앱 전체 385건 모두 통과 확인. 실제 운영 효과(만료 후 다음 사이클에 정상
+      재로그인해 성공으로 복귀하는지)는 다음 만료 시점의 성공/실패 사이클로 확인해야 한다.
 - ⚠️ **(2026-08 추가) RTDB·DCQ 동기화 상호 배제.** 기존에는 `sync_rtdb_options()` 가 DCQ 3개 잡과
   완전히 독립된 daemon 스레드/스케줄로 돌아, RTDB 동기화와 DCQ 동기화가 동시에 실행될 수 있었다.
   `utils.external_sync_lock()`(구 `dcq_session_lock()`)을 `sync_rtdb_options()` 본문에도 적용해
