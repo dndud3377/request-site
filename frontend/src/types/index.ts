@@ -727,8 +727,15 @@ export interface StepInfo {
   stepseq: string;
   descript: string;
   recipeid: string;
-  layerid: string;  
+  layerid: string;
   updated: string;  // 'YYYYMMDDHHMMSS' 형식
+}
+
+/** 원본 위치(source_line) + 원본 제품(source_partid) 참고 정보 (MAP 목적 CLONE/EXISTING 전용, 작성 화면 참고용) */
+export interface MapInfo {
+  AAA1: string | null;
+  AAA2: string | null;
+  AAA3: string | null;
 }
 
 // ===== Guide =====
