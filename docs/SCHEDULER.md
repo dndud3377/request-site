@@ -39,6 +39,7 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 | `sync_holidays` | 매일 02:00 | `sync_holidays()` | 공휴일 동기화 (act_date UNIQUE → 날짜 기준 중복 제거 후 저장). 실패 시 **DCQ 동기화 실패** 알림 메일 발송 |
 | `sync_design_rule` | 매일 02:00 | `sync_design_rule()` | 공정-디자인룰(DCQ `S.M`) 동기화 → `api_designrule` 전체 갱신. 실패 시 **DCQ 동기화 실패** 알림 메일 발송 |
 | `process_mail_queue` | 1분 | `process_mail_queue()` | 결재 알림 메일 큐 발송 |
+| `check_map_completion_mail` | **10분** | `pop3_mail.check_map_completion_mail()` | POP3 메일함의 '완료 알림' 메일 제목 ↔ MAP 목적 'NEW' 상신 문서 product_name 매칭. `HEAVY_SYNC_JOB_IDS`에 포함되어 개발 환경(`SKIP_SCHEDULER=true`)에서는 실행되지 않는다. 상세는 `docs/MAP_COMPLETION_MAIL.md` 참고 |
 
 > `sync_rtdb_options`는 RTDB(REST API) 소스만, `sync_form_options`/`sync_holidays`/`sync_design_rule`는
 > DCQ 소스만 다루므로 실패 알림도 그에 맞춰 각각 `rtdb_sync_failed`(RTDB) / `dcq_sync_failed`(DCQ)로
