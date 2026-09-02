@@ -38,6 +38,7 @@ import {
   DocumentDesignRuleOverride,
   ValidationSystemValue,
   LayerFilterSet,
+  MapInfo,
 } from '../types';
 
 // ===== JWT 토큰 관리 =====
@@ -1011,6 +1012,9 @@ export const formOptionsAPI = {
 
   getMapNames: (line: string): Promise<string[]> =>
     getOptions(`/form-options/map-names/?line=${encodeURIComponent(line)}`),
+
+  getMapInfo: (line: string, partid: string): Promise<MapInfo> =>
+    get<MapInfo>(`/form-options/map-info/?line=${encodeURIComponent(line)}&partid=${encodeURIComponent(partid)}`),
 
   getBarcodeOptions: (product_name: string): Promise<{ label: string; spec: string }[]> =>
     get<{ options: { label: string; spec: string }[] }>(
