@@ -3284,6 +3284,190 @@ class PauseFlowTest(TestCase):
         self.assertEqual(PauseRequest.objects.filter(document=doc, state='requested').count(), 1)
 
 
+class PauseAndOtherActionMailTest(TestCase):
+    """중단(PAUSE) 전 구간 + 삭제·후결자 제거·Validation System 변경 메일 (2026-09 신설).
+
+    기존엔 이 액션들 전부 메일이 전혀 나가지 않았다(docs/MAIL.md §4 감사에서 발견).
+    수신자 산출은 기존 withdraw_target/withdraw_completed 의 "담당자 있으면 개인,
+    없으면 팀별로 각각 분리 발송" 규칙을 그대로 재사용한다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+
+        self.author = UserProfile.objects.create(
+            loginid='pm_author', mail='pm_a@c.com', role='PL', username='의뢰자'
+        )
+        self.master = UserProfile.objects.create(loginid='pm_master', mail='pm_m@c.com', role='MASTER')
+        self.rfg = UserProfile.objects.create(loginid='pm_r', mail='pm_r@c.com', role='TE_R', username='R담당')
+        self.rfg2 = UserProfile.objects.create(loginid='pm_r2', mail='pm_r2@c.com', role='TE_R', username='R2')
+        self.job = UserProfile.objects.create(loginid='pm_j', mail='pm_j@c.com', role='TE_J', username='J담당')
+        self.job2 = UserProfile.objects.create(loginid='pm_j2', mail='pm_j2@c.com', role='TE_J', username='J2')
+        self.pa = UserProfile.objects.create(loginid='pm_pa', mail='pm_pa@c.com', role='PL', username='추가후결자')
+
+    def _doc(self, status='under_review'):
+        return RequestDocument.objects.create(
+            title=f'pm-{status}',
+            requester=self.author,
+            requester_name='의뢰자', requester_email='pm_a@c.com', requester_department='d',
+            product_name='p', status=status,
+        )
+
+    def _step(self, doc, agent, action='pending', assignee=None, round=1):
+        return ApprovalStep.objects.create(
+            document=doc, agent=agent, action=action, round=round,
+            assignee=assignee, assignee_name=(assignee.username if assignee else ''),
+        )
+
+    def _post(self, user, doc, path, payload=None):
+        self.client.force_authenticate(user=user)
+        return self.client.post(f'/api/documents/{doc.id}/{path}/', payload or {}, format='json')
+
+    def _events(self):
+        return list(MailNotification.objects.values_list('event_type', flat=True))
+
+    # ----- request-pause -----
+    def test_request_pause_notifies_assigned_target(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        res = self._post(self.author, doc, 'request-pause', {'reason': '사양 재검토'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        noti = MailNotification.objects.get(event_type='pause_requested')
+        self.assertEqual(noti.recipients, ['pm_r@c.com'])
+        self.assertIn('사양 재검토', noti.contents)
+
+    def test_request_pause_splits_unassigned_targets_by_team(self):
+        """확인 대상 단계가 미배정 R·J 둘 다면, 한 통이 아니라 팀별로 각 1통씩 나간다."""
+        doc = self._doc()
+        self._step(doc, 'R')  # 미배정
+        self._step(doc, 'J')  # 미배정
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+
+        notis = list(MailNotification.objects.filter(event_type='pause_requested'))
+        self.assertEqual(len(notis), 2, 'R 팀 1통 + J 팀 1통이어야 한다')
+        for n in notis:
+            self.assertFalse({'pm_r@c.com', 'pm_j@c.com'} <= set(n.recipients), '서로 다른 팀을 한 통에 묶으면 안 된다')
+        all_recipients = [mail for n in notis for mail in n.recipients]
+        self.assertIn('pm_r@c.com', all_recipients)
+        self.assertIn('pm_r2@c.com', all_recipients)
+        self.assertIn('pm_j@c.com', all_recipients)
+        self.assertIn('pm_j2@c.com', all_recipients)
+
+    # ----- confirm-pause -----
+    def test_partial_confirm_sends_no_mail(self):
+        """전원 확인이 끝나기 전(부분 확인)에는 pause_confirmed 메일이 나가지 않는다."""
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._step(doc, 'J', assignee=self.job)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        self._post(self.rfg, doc, 'confirm-pause', {'agent': 'R'})
+
+        self.assertNotIn('pause_confirmed', self._events())
+
+    def test_final_confirm_notifies_reached_teams_and_author(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        res = self._post(self.rfg, doc, 'confirm-pause', {'agent': 'R'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        notis = list(MailNotification.objects.filter(event_type='pause_confirmed'))
+        self.assertEqual(len(notis), 2, '개인 수신자(작성자) 1통 + R 팀 1통이어야 한다')
+        all_recipients = [mail for n in notis for mail in n.recipients]
+        self.assertIn('pm_a@c.com', all_recipients)  # 작성자
+        self.assertIn('pm_r@c.com', all_recipients)  # 진행된 R 팀 전원
+        self.assertIn('pm_r2@c.com', all_recipients)
+
+    # ----- reject-pause -----
+    def test_reject_pause_notifies_requester_and_author(self):
+        """요청자(MASTER)와 작성자가 다른 경우 둘 다 받는다."""
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.master, doc, 'request-pause', {'reason': '사유'})
+        res = self._post(self.rfg, doc, 'reject-pause')
+        self.assertEqual(res.status_code, 200, res.content)
+
+        noti = MailNotification.objects.get(event_type='pause_rejected')
+        self.assertEqual(sorted(noti.recipients), sorted(['pm_m@c.com', 'pm_a@c.com']))
+
+    # ----- resume -----
+    def test_resume_notifies_pending_step_owners(self):
+        doc = self._doc(status='pause')
+        self._step(doc, 'R', assignee=self.rfg)
+        PauseRequest.objects.create(
+            document=doc, requester=self.author, requester_name='의뢰자', reason='사유',
+            round=1, target_step_ids=[], confirmed_step_ids=[], state='confirmed',
+            confirmed_at=timezone.now(),
+        )
+        res = self._post(self.author, doc, 'resume', {})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        noti = MailNotification.objects.get(event_type='pause_resumed')
+        self.assertEqual(noti.recipients, ['pm_r@c.com'])
+
+    # ----- delete -----
+    def test_delete_notifies_before_document_is_gone(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        res = self._post(self.author, doc, 'delete', {})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        self.assertFalse(RequestDocument.objects.filter(id=doc.id).exists())
+        notis = list(MailNotification.objects.filter(event_type='document_deleted'))
+        self.assertTrue(notis, 'document_deleted 메일이 적재돼야 한다')
+        all_recipients = [mail for n in notis for mail in n.recipients]
+        self.assertIn('pm_a@c.com', all_recipients)   # 작성자
+        self.assertIn('pm_r@c.com', all_recipients)   # 진행된 R 팀
+        # 문서가 이미 삭제되므로 딥링크 버튼을 싣지 않는다(withdraw_completed 와 동일 원칙)
+        for n in notis:
+            self.assertNotIn(f'/approval?id={doc.id}', n.contents)
+
+    # ----- remove-post-approver -----
+    def test_remove_post_approver_notifies_removed_user(self):
+        doc = self._doc()
+        self._step(doc, 'RA', assignee=self.pa)
+        res = self._post(self.author, doc, 'remove-post-approver', {'loginid': 'pm_pa'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        noti = MailNotification.objects.get(event_type='post_approver_removed')
+        self.assertEqual(noti.recipients, ['pm_pa@c.com'])
+        self.assertIn('추가후결자', noti.subject)
+
+    # ----- validation-system -----
+    def test_validation_system_change_notifies_author_and_assigned_e(self):
+        doc = self._doc()
+        te_e = UserProfile.objects.create(loginid='pm_e', mail='pm_e@c.com', role='TE_E', username='E담당')
+        self._step(doc, 'E', assignee=te_e)
+        res = self._post(self.author, doc, 'validation-system', {'value': 'NO'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        noti = MailNotification.objects.get(event_type='validation_system_changed')
+        self.assertEqual(sorted(noti.recipients), sorted(['pm_a@c.com', 'pm_e@c.com']))
+
+    def test_validation_system_change_broadcasts_team_when_e_unassigned(self):
+        doc = self._doc()
+        te_e = UserProfile.objects.create(loginid='pm_e2', mail='pm_e2@c.com', role='TE_E', username='E담당')
+        self._step(doc, 'E')  # 미배정
+        res = self._post(self.author, doc, 'validation-system', {'value': 'NO'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        notis = list(MailNotification.objects.filter(event_type='validation_system_changed'))
+        all_recipients = [mail for n in notis for mail in n.recipients]
+        self.assertIn('pm_a@c.com', all_recipients)
+        self.assertIn('pm_e2@c.com', all_recipients)
+
+    # ----- cancel-pause 는 이번 범위에서 제외했다(resume 과 알리는 목적이 겹친다는 판단) -----
+    def test_cancel_pause_still_sends_no_mail(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        res = self._post(self.author, doc, 'cancel-pause', {})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertNotIn('pause_cancelled', self._events())
+
+
 # ─── 연간 디자인룰 통계 ────────────────────────────────────────────────────────
 
 class AnnualDesignRuleStatsTest(TestCase):
