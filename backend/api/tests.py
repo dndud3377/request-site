@@ -5410,13 +5410,63 @@ class DcqTokenSettleRetryTest(TestCase):
         )
 
 
+class DcqTokenAliveTest(TestCase):
+    """_dcq_token_alive() (2026-09 추가) 검증 - DCQ 26건 연속 실패의 근본 원인이었던
+    "만료된 토큰도 getTokenTime() 이 예외 없이 dict 를 반환한다" 케이스를 직접 고정한다.
+    """
+
+    def setUp(self):
+        from . import utils
+        self.utils = utils
+
+    def test_none_is_not_alive(self):
+        self.assertFalse(self.utils._dcq_token_alive(None))
+
+    def test_all_remaining_zero_is_expired(self):
+        token_info = {
+            'expiration_date': '2026-09-03 01:31:15',
+            'remaining_days': 0,
+            'remaining_hours': 0,
+            'remaining_minutes': 0,
+        }
+        self.assertFalse(self.utils._dcq_token_alive(token_info))
+
+    def test_remaining_time_left_is_alive(self):
+        token_info = {
+            'expiration_date': '2026-09-10 01:31:15',
+            'remaining_days': 6,
+            'remaining_hours': 23,
+            'remaining_minutes': 59,
+        }
+        self.assertTrue(self.utils._dcq_token_alive(token_info))
+
+    def test_missing_remaining_fields_defaults_to_alive(self):
+        with self.assertLogs('api.utils', level='WARNING'):
+            self.assertTrue(self.utils._dcq_token_alive({'ok': True}))
+
+
 class EnsureDcqSessionTest(TestCase):
-    """ensure_dcq_session() (2026-08 추가) 검증 - 세션 재사용 / 재검증 실패 시 재로그인 전환.
+    """ensure_dcq_session() (2026-08 추가, 2026-09 만료 판정 수정) 검증 - 세션 재사용 /
+    재검증 실패 시 재로그인 전환.
 
     dcq_login_with_retry() / get_dcq_token_info() 자체의 재시도 동작은 DcqTokenSettleRetryTest
-    에서 이미 검증하므로, 여기서는 그 둘을 높은 수준으로 mock 해서 ensure_dcq_session() 자신의
-    분기 로직(재사용 여부, 재로그인 전환, 최대 2회 제한)만 검증한다.
+    에서, _dcq_token_alive() 자체의 만료 판정은 DcqTokenAliveTest 에서 이미 검증하므로,
+    여기서는 그것들을 높은 수준으로 mock 해서 ensure_dcq_session() 자신의 분기 로직(재사용
+    여부, 재로그인 전환, 최대 2회 제한)만 검증한다.
     """
+
+    ALIVE_TOKEN = {
+        'expiration_date': '2026-09-10 01:31:15',
+        'remaining_days': 6,
+        'remaining_hours': 23,
+        'remaining_minutes': 59,
+    }
+    EXPIRED_TOKEN = {
+        'expiration_date': '2026-09-03 01:31:15',
+        'remaining_days': 0,
+        'remaining_hours': 0,
+        'remaining_minutes': 0,
+    }
 
     def setUp(self):
         from . import utils
@@ -5437,7 +5487,7 @@ class EnsureDcqSessionTest(TestCase):
 
     def test_first_call_logs_in_and_caches_session(self):
         with patch.object(self.utils, 'dcq_login_with_retry', return_value=True) as mock_login, \
-             patch.object(self.utils, 'get_dcq_token_info', return_value={'ok': True}) as mock_token:
+             patch.object(self.utils, 'get_dcq_token_info', return_value=self.ALIVE_TOKEN) as mock_token:
             result = self.utils.ensure_dcq_session()
         self.assertEqual(result, 'dcqid')
         mock_login.assert_called_once()
@@ -5447,7 +5497,7 @@ class EnsureDcqSessionTest(TestCase):
     def test_reuses_existing_session_without_relogin(self):
         self.utils._dcq_session_cache['dcq_id'] = 'dcqid'
         with patch.object(self.utils, 'dcq_login_with_retry') as mock_login, \
-             patch.object(self.utils, 'get_dcq_token_info', return_value={'ok': True}) as mock_token:
+             patch.object(self.utils, 'get_dcq_token_info', return_value=self.ALIVE_TOKEN) as mock_token:
             result = self.utils.ensure_dcq_session()
         self.assertEqual(result, 'dcqid')
         mock_login.assert_not_called()
@@ -5456,7 +5506,22 @@ class EnsureDcqSessionTest(TestCase):
     def test_reused_session_invalid_triggers_relogin(self):
         self.utils._dcq_session_cache['dcq_id'] = 'dcqid'
         with patch.object(self.utils, 'dcq_login_with_retry', return_value=True) as mock_login, \
-             patch.object(self.utils, 'get_dcq_token_info', side_effect=[None, {'ok': True}]) as mock_token:
+             patch.object(self.utils, 'get_dcq_token_info', side_effect=[None, self.ALIVE_TOKEN]) as mock_token:
+            result = self.utils.ensure_dcq_session()
+        self.assertEqual(result, 'dcqid')
+        mock_login.assert_called_once()
+        self.assertEqual(mock_token.call_count, 2)
+
+    def test_reused_session_expired_token_triggers_relogin(self):
+        """회귀 테스트(2026-09) - getTokenTime() 이 예외 없이 remaining_* 전부 0 인 dict 를
+        반환해도(= None 이 아니어도) 만료로 판정해 재로그인해야 한다. 이 판정이 빠져
+        DCQ 동기화가 26건 연속 실패했던 근본 원인."""
+        self.utils._dcq_session_cache['dcq_id'] = 'dcqid'
+        with patch.object(self.utils, 'dcq_login_with_retry', return_value=True) as mock_login, \
+             patch.object(
+                 self.utils, 'get_dcq_token_info',
+                 side_effect=[self.EXPIRED_TOKEN, self.ALIVE_TOKEN],
+             ) as mock_token:
             result = self.utils.ensure_dcq_session()
         self.assertEqual(result, 'dcqid')
         mock_login.assert_called_once()
@@ -5464,7 +5529,7 @@ class EnsureDcqSessionTest(TestCase):
 
     def test_login_retries_once_more_if_post_login_token_check_fails(self):
         with patch.object(self.utils, 'dcq_login_with_retry', return_value=True) as mock_login, \
-             patch.object(self.utils, 'get_dcq_token_info', side_effect=[None, {'ok': True}]) as mock_token:
+             patch.object(self.utils, 'get_dcq_token_info', side_effect=[None, self.ALIVE_TOKEN]) as mock_token:
             result = self.utils.ensure_dcq_session()
         self.assertEqual(result, 'dcqid')
         self.assertEqual(mock_login.call_count, 2)
