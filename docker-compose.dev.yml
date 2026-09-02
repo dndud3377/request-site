@@ -24,20 +24,14 @@ services:
     command: >
       bash -c "
         echo '[DB Sync] Creating dev DB if not exists...';
-        mysql -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD
-          -e 'CREATE DATABASE IF NOT EXISTS \`'$$MYSQL_DB'\`
-              CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;';
+        mysql -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD -e 'CREATE DATABASE IF NOT EXISTS \`'$$MYSQL_DB'\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;';
         if [ \"$$SKIP_DB_SYNC\" = 'true' ]; then
           echo '[DB Sync] Data sync skipped (SKIP_DB_SYNC=true)';
           exit 0;
         fi;
         echo '[DB Sync] Copying prod → dev...';
         set -eo pipefail;
-        mysqldump -h $$PROD_MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD
-          --single-transaction --skip-lock-tables
-          --ignore-table=$$PROD_MYSQL_DB.django_apscheduler_djangojob
-          --ignore-table=$$PROD_MYSQL_DB.django_apscheduler_djangojobexecution
-          $$PROD_MYSQL_DB |
+        mysqldump -h $$PROD_MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD --single-transaction --skip-lock-tables --ignore-table=$$PROD_MYSQL_DB.django_apscheduler_djangojob --ignore-table=$$PROD_MYSQL_DB.django_apscheduler_djangojobexecution $$PROD_MYSQL_DB |
           mysql -h $$MYSQL_HOST -u $$MYSQL_USER -p$$MYSQL_PASSWORD $$MYSQL_DB;
         echo '[DB Sync] Done.';
       "
