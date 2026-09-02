@@ -197,22 +197,52 @@ def get_dcq_token_info(dcq_id):
                 return None
 
 
+def _dcq_token_alive(token_info) -> bool:
+    """
+    get_dcq_token_info() 반환값으로 DCQ 세션이 아직 살아있는지 판정한다.
+
+    DCQ SDK 의 getTokenTime() 은 토큰이 만료돼도 예외를 던지지 않고
+    {'expiration_date': ..., 'remaining_days': 0, 'remaining_hours': 0, 'remaining_minutes': 0}
+    형태의 dict 를 그대로 반환한다(2026-09 관측 - DCQ 동기화 26건 연속 실패의 근본 원인).
+    단순히 None 여부만 보면 만료된 토큰도 "살아있음"으로 오판하므로, remaining_* 필드가
+    모두 존재하면 그 합이 0보다 큰지까지 확인한다. SDK 반환 스키마가 비공개라 remaining_*
+    필드가 없는 예상 밖 형식이 오면 보수적으로 "살아있음"으로 취급하고 경고 로그를 남긴다.
+    """
+    if token_info is None:
+        return False
+
+    remaining_keys = ('remaining_days', 'remaining_hours', 'remaining_minutes')
+    if not all(key in token_info for key in remaining_keys):
+        logger.warning(
+            f"[DCQ][{_DCQ_PROC_TAG}] 토큰 정보에 remaining_* 필드가 없어 만료 여부를 "
+            f"판정할 수 없습니다 - 살아있는 것으로 간주합니다: {token_info}"
+        )
+        return True
+
+    remaining_total = sum(token_info[key] for key in remaining_keys)
+    if remaining_total <= 0:
+        logger.warning(f"[DCQ][{_DCQ_PROC_TAG}] 토큰이 만료되었습니다: {token_info}")
+        return False
+    return True
+
+
 def ensure_dcq_session() -> Optional[str]:
     """
     DCQ 세션을 확보하고, 이후 조회에 쓸 dcq_id 를 반환한다(계정 정보가 없거나 로그인에
     최종 실패하면 None).
 
     같은 프로세스 안에서 이전에 확보해둔 세션이 남아있으면(_dcq_session_cache) 재로그인을
-    생략하고 get_dcq_token_info() 로 세션이 아직 살아있는지만 확인해서 재사용한다. 이 확인이
-    실패하면 세션이 끊어진 것으로 보고 그 자리에서 재로그인한다. 새로 로그인한 경우에도
-    반환 전 get_dcq_token_info() 로 토큰 정보 갱신을 확인하고, 그마저 실패하면 재로그인을
-    한 번 더 시도한다(최대 2회 로그인 시도).
+    생략하고 get_dcq_token_info() + _dcq_token_alive() 로 세션이 아직 살아있는지(호출 자체가
+    성공했고, remaining_* 가 0보다 큰지)를 확인해서 재사용한다. 이 확인이 실패하면(호출
+    자체가 실패했거나 토큰이 만료됐으면) 세션이 끊어진 것으로 보고 그 자리에서 재로그인한다.
+    새로 로그인한 경우에도 반환 전 같은 방식으로 토큰 정보를 확인하고, 그마저 실패하면
+    재로그인을 한 번 더 시도한다(최대 2회 로그인 시도).
     """
     dcq_id, pwd_pack = get_dcq_credentials()
     if not dcq_id or not pwd_pack:
         return None
 
-    if _dcq_session_cache.get('dcq_id') == dcq_id and get_dcq_token_info(dcq_id) is not None:
+    if _dcq_session_cache.get('dcq_id') == dcq_id and _dcq_token_alive(get_dcq_token_info(dcq_id)):
         logger.info(f"[DCQ][{_DCQ_PROC_TAG}] 기존 세션 재사용 (재로그인 생략)")
         return dcq_id
 
@@ -220,7 +250,7 @@ def ensure_dcq_session() -> Optional[str]:
     for attempt in (1, 2):
         if not dcq_login_with_retry():
             return None
-        if get_dcq_token_info(dcq_id) is not None:
+        if _dcq_token_alive(get_dcq_token_info(dcq_id)):
             _dcq_session_cache['dcq_id'] = dcq_id
             return dcq_id
         logger.warning(
