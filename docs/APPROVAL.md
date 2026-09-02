@@ -606,6 +606,9 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   값의 출처는 `additional_notes` JSON의 `detail`(라인/목적/기타 목적/MAP 목적/조합법/제품/조리법, 백엔드 변경 없음 —
   목록 응답에 이미 포함돼 있다, `serializers.py` `RequestDocumentListSerializer`)이며, 파싱은 `approvalTable.getDocDetailFields`
   가 담당한다(JSON 파싱 실패 시 빈 값으로 방어). ADI CD 변경 문서는 `map_type` 자체가 없어 MAP 목적 칸에 `해당없음`을 보여준다.
+  ✅ **(2026-09 추가)** MAP 목적이 `NEW`인 문서는 `doc.mail_completion_matched`가 True면 이 칸에 전용 완료 뱃지(보라색)가
+  추가로 붙는다 — POP3로 받는 완료 알림 메일 제목과 product_name을 스케줄러가 10분마다 매칭한 결과다. 결재 상태와는
+  무관한 참고 표시이며, 상세는 `docs/MAP_COMPLETION_MAIL.md` 참고.
   목적 칸은 기타 목적이 있으면 대분류(예: `기타`)와 세부 항목(예: `Overlay 변경`)을 **두 줄**로 나눠 보여준다. 상세보기를
   열던 클릭 동작은 제목 버튼에서 **제품(조합법-제품-조리법)** 칸으로 옮겼다(`data-tour="approval-doc-title"` 앵커는
   그대로 유지 — 전체 가이드 투어가 참조하는 셀렉터만 옮겨 달았다).
