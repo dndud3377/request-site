@@ -438,6 +438,37 @@ DCQ 로 자동 대체되지 않고 그 데이터는 동기화되지 않는다**(
   - **수정 2 (유입 경로 차단)**: `docker-compose.dev.yml`의 `db-sync` `mysqldump` 명령에
     `--ignore-table=django_apscheduler_djangojob` / `--ignore-table=django_apscheduler_djangojobexecution`
     을 추가해, 애초에 운영 스케줄러의 잡 상태가 dev DB로 복사되지 않도록 했다.
+    - ⚠️ **이 수정 과정에서 `db-sync`의 `command: >` 블록 자체가 (제 변경과 무관하게) 원래부터
+      깨져 있던 것을 추가로 발견해 함께 고쳤다.** `command: >` (YAML 폴딩 스칼라)는 기준
+      들여쓰기(`bash -c "` 줄)보다 더 깊이 들여쓴 줄들을 절대 한 줄로 접지 않고 개행을 그대로
+      유지한다 — `mysqldump -h ... -p$$MYSQL_PASSWORD`와 그 아래 `--single-transaction ...`
+      줄, `mysql -h ... -p$$MYSQL_PASSWORD`와 그 아래 `-e 'CREATE DATABASE...'` 줄이 전부 이
+      경우였다. 그 결과 컨테이너 안에서는 `mysqldump`가 `-h`/`-u`/`-p`만 받고 이어지는 줄들은
+      "명령을 찾을 수 없음"으로 각각 별도 실행되어, `mysqldump`가 DB 이름도 없이 실행되며
+      "Usage" 메시지를 내고 실패했다(`set -eo pipefail`로 그 즉시 스크립트 전체 종료 →
+      `depends_on: db-sync: condition: service_completed_successfully`에 걸려 `backend`/
+      `scheduler`도 못 뜸). `mysql -h ... -e 'CREATE DATABASE...'` 줄도 동일한 이유로
+      `-e: command not found`로 깨져 있었다(다만 이쪽은 `set -e` 적용 전이라 스크립트를
+      죽이진 않고 조용히 넘어갔다).
+      - **왜 지금까지 문제없어 보였나**: `docker compose up`은 서비스 설정(`command:` 등)이
+        이전 실행과 동일하면 이미 `exit 0`로 끝난 기존 컨테이너를 재사용하고 재실행하지
+        않는다. 이 파일은 최초 도입(2026-08-17) 이후 이번 수정 전까지 `command:`가 한 번도
+        바뀐 적이 없어, 최초 1회 이후로는 실제로 재검증되지 않았을 가능성이 높다 - 이번에
+        `--ignore-table` 옵션을 추가하며 `command:`가 바뀌자 docker compose 가 db-sync 를
+        다시 실행했고, 그 때 원래부터 있던 이 버그가 처음으로 겉으로 드러났다.
+      - **왜 `\`(백슬래시) 줄바꿈으로는 못 고치나**: 처음엔 각 줄 끝에 `\`를 붙여 bash의
+        줄 연결 문법을 쓰려 했으나, docker compose 의 `command:` 문자열 파서 자체가
+        `\<개행>`을 "개행 문자에 대한 이스케이프"로 소비해 백슬래시를 지워버린다(직접
+        `docker compose config --format json` 으로 확인) - 그러면 bash 입장에선 그냥
+        평범한 개행만 남아 줄 연결이 되지 않는다. 그래서 **깨져 있던 두 명령 각각을 물리적으로
+        한 줄로 합치는 방식**으로 고쳤다(파이프 뒤 `mysql -h ... $$MYSQL_DB;` 줄은 `|`로
+        끝나는 줄 뒤에 오는 정상적인 bash 파이프 연속이라 원래도 문제없어 그대로 두었다).
+      - **검증(실제 실행 확인)**: `docker compose config --format json`으로 렌더링된
+        실제 `bash -c` 스크립트를 mysqldump/mysql을 흉내 낸 mock 커맨드로 직접 실행해,
+        수정 전엔 `mysqldump`가 `-h`/`-u`/`-p`만 받고 실패, 수정 후엔 `--single-transaction`
+        /`--skip-lock-tables`/두 `--ignore-table`/DB 이름까지 전부 받아 exit 0로 끝나는 것을
+        확인했다(Docker 데몬이 없는 세션이라 실제 MySQL 컨테이너로 끝까지 확인하지는
+        못했다 - 위 "실제 웹/수동 검증 시나리오" 참고).
   - **검증 방법(실제 실행 확인 완료)**: `backend/api/tests.py`의
     `StartMailOnlyRemovesHeavyJobsTest`. DB에 `HEAVY_SYNC_JOB_IDS` 4개 잡 행을 직접 심어두고
     `start_mail_only()` 실행 후 (1) 그 4개가 `DjangoJob` 테이블에서 사라졌는지, (2)
