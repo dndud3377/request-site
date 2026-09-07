@@ -6141,6 +6141,108 @@ class LayerFilterSetTest(TestCase):
         self.assertEqual(row['st'], 'X')
         self.assertNotIn('item_id', row)
 
+    # ----- reset-layer-filter -----
+
+    def test_apply_creates_baseline_and_reset_restores_original_after_multiple_filters(self):
+        """필터를 여러 번 적용해도 baseline 은 최초 상신 시점 값 그대로 남고, 초기화하면 그 값으로 완전히 복원된다."""
+        fs_a = LayerFilterSet.objects.create(table='J', label='fa', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        fs_b = LayerFilterSet.objects.create(table='J', label='fb', words={'sp': ['SP02'], 'sd': [], 'pp': []})
+        original_rows = [
+            self._row(id='r1', sp='SP01'),
+            self._row(id='r2', sp='SP02'),
+            self._row(id='r3', sp='SP99'),
+        ]
+        doc = self._make_doc(jayer_rows=[dict(r) for r in original_rows])
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs_a.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs_b.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        rows_after_apply = self._json.loads(doc.additional_notes)['jayerRows']
+        self.assertEqual({row['id']: row['st'] for row in rows_after_apply}, {'r1': 'X', 'r2': 'X', 'r3': 'O'})
+
+        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.refresh_from_db()
+        restored = self._json.loads(doc.additional_notes)['jayerRows']
+        self.assertEqual(restored, original_rows)
+
+    def test_reset_without_prior_apply_rejected(self):
+        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_reset_is_repeatable_without_corrupting_baseline(self):
+        """적용→초기화를 반복해도 baseline(상신 시점 값)은 절대 바뀌지 않는다."""
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        original_row = self._row(id='r1', sp='SP01')
+        doc = self._make_doc(jayer_rows=[dict(original_row)])
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.j_user)
+        for _ in range(3):
+            r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+                'table': 'J', 'filter_id': fs.id,
+            }, format='json')
+            self.assertEqual(r.status_code, 200, r.content)
+            r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
+            self.assertEqual(r.status_code, 200, r.content)
+            doc.refresh_from_db()
+            self.assertEqual(self._json.loads(doc.additional_notes)['jayerRows'], [original_row])
+
+    def test_reset_invalid_after_round_change(self):
+        """반려 후 재상신으로 회차가 바뀌면 이전 회차 baseline 으로는 초기화할 수 없다."""
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01')])
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        # 반려 후 재상신을 흉내낸다: 2회차 J 단계 추가 + 행을 새 상신값으로 갈아끼움
+        ApprovalStep.objects.create(document=doc, agent='J', round=2, action='pending')
+        doc.refresh_from_db()
+        data = self._json.loads(doc.additional_notes)
+        data['jayerRows'] = [self._row(id='r1', sp='SP01', st='O')]
+        doc.additional_notes = self._json.dumps(data)
+        doc.save(update_fields=['additional_notes'])
+
+        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_reset_role_gate_matches_apply(self):
+        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+        self.client.force_authenticate(user=self.o_user)
+        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+
+    def test_reset_rejected_when_document_not_in_progress(self):
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+        self.client.force_authenticate(user=self.j_user)
+        self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {'table': 'J', 'filter_id': fs.id}, format='json')
+        doc.status = 'approved'
+        doc.save(update_fields=['status'])
+        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+
 
 class MapCompletionMailMatchTest(TestCase):
     """pop3_mail.match_map_completion_mail() 단위 테스트 (POP3 접속 없이 순수 DB 로직만 검증)."""

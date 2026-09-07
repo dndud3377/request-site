@@ -1729,24 +1729,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         return Response({'message': '변경했습니다.'})
 
-    @action(detail=True, methods=['post'], url_path='apply-layer-filter')
-    @transaction.atomic
-    def apply_layer_filter(self, request, pk=None):
-        """결재 상세페이지에서 J/O-layer 공유 필터(LayerFilterSet)를 적용해, 매칭된 행의
-        st를 'X'로 바꾼다(+ 의뢰서 작성 화면의 필터 적용과 동일하게 new_or_copy/product_name/
-        step(J면 item_id도) 초기화).
+    def _layer_filter_gate(self, request, document, table):
+        """apply/reset-layer-filter 공통 게이트.
 
-        의뢰서 작성 화면의 필터는 개인별(localStorage)이지만 이건 팀 전체가 공유하는
-        LayerFilterSet 하나를 그대로 적용하는 것이라 별도 상태를 이 문서에 저장하지 않는다.
-        권한: table='J' 는 TE_J/MASTER, table='O' 는 TE_O/MASTER. 문서 상태는 under_review/
-        pause 만, 그리고 해당 단계(J 또는 O)가 이번 회차에 아직 합의되지 않았을 때만 허용한다
-        (합의된 뒤 데이터를 바꾸면 그 합의가 무의미해지는 것을 막는다). 변경 사실은 별도로
-        기록하지 않는다(사용자 확정 — validation_system 과 달리 note를 남기지 않는다).
+        table='J' 는 TE_J/MASTER, table='O' 는 TE_O/MASTER 만 허용한다. 문서 상태는
+        under_review/pause 만, 그리고 해당 단계(J 또는 O)가 이번 회차에 아직 합의되지
+        않았을 때만 허용한다(합의된 뒤 데이터를 바꾸면 그 합의가 무의미해지는 것을 막는다).
+        문제 없으면 None, 문제 있으면 에러 Response를 반환한다.
         """
-        document = self.get_object()
-        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
-
-        table = request.data.get('table')
         if table not in ('J', 'O'):
             return Response({'error': "table 은 'J' 또는 'O' 여야 합니다."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1768,6 +1758,33 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 {'error': f'{table} 단계 검토가 끝난 의뢰서는 적용할 수 없습니다.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        return None
+
+    @action(detail=True, methods=['post'], url_path='apply-layer-filter')
+    @transaction.atomic
+    def apply_layer_filter(self, request, pk=None):
+        """결재 상세페이지에서 J/O-layer 공유 필터(LayerFilterSet)를 적용해, 매칭된 행의
+        st를 'X'로 바꾼다(+ 의뢰서 작성 화면의 필터 적용과 동일하게 new_or_copy/product_name/
+        step(J면 item_id도) 초기화).
+
+        의뢰서 작성 화면의 필터는 개인별(localStorage)이지만 이건 팀 전체가 공유하는
+        LayerFilterSet 하나를 그대로 적용하는 것이라 별도 상태를 이 문서에 저장하지 않는다.
+        권한·상태·단계 조건은 `_layer_filter_gate` 참조.
+
+        이번 회차 **첫** 적용 시점에 한해 현재 행 전체를 `jayerFilterBaseline`/
+        `oayerFilterBaseline`(`{round, rows}`)으로 그대로 저장해 둔다 — 상신 이후 이
+        표를 건드리는 곳은 이 액션뿐이므로, 이 시점 값이 곧 상신 시점 값이다. 이후 몇 번을
+        다시 적용하더라도 baseline 은 절대 재작성하지 않는다(`reset_layer_filter` 가 항상
+        같은 원본으로 복원할 수 있어야 하기 때문). 회차가 바뀌면(반려 후 재상신) 이전
+        baseline 은 무효 처리하고 새 회차 첫 적용 시점에 다시 저장한다.
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        table = request.data.get('table')
+        gate_error = self._layer_filter_gate(request, document, table)
+        if gate_error:
+            return gate_error
 
         try:
             filter_set = LayerFilterSet.objects.get(pk=request.data.get('filter_id'), table=table)
@@ -1784,8 +1801,18 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             )
 
         rows_key = 'jayerRows' if table == 'J' else 'oayerRows'
+        baseline_key = 'jayerFilterBaseline' if table == 'J' else 'oayerFilterBaseline'
         rows = data.get(rows_key, [])
         words = filter_set.words or {}
+
+        max_round = self._max_round(document)
+        baseline = data.get(baseline_key)
+        baseline_created = not baseline or baseline.get('round') != max_round
+        if baseline_created:
+            data[baseline_key] = {
+                'round': max_round,
+                'rows': json.loads(json.dumps(rows, ensure_ascii=False)),
+            }
 
         def matches(row):
             for field in ('sp', 'sd', 'pp'):
@@ -1807,7 +1834,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if table == 'J':
                 row['item_id'] = ''
 
-        if matched_count > 0:
+        if matched_count > 0 or baseline_created:
             data[rows_key] = rows
             document.additional_notes = json.dumps(data, ensure_ascii=False)
             document.save(update_fields=['additional_notes'])
@@ -1815,6 +1842,51 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return Response({
             'message': f'{matched_count}건 적용했습니다.' if matched_count > 0 else '적용할 행이 없습니다.',
             'matched_count': matched_count,
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'], url_path='reset-layer-filter')
+    @transaction.atomic
+    def reset_layer_filter(self, request, pk=None):
+        """apply_layer_filter 로 바뀐 J/O-layer 행을 이번 회차 상신 시점 값(baseline)으로
+        통째로 되돌린다. baseline 은 이번 회차 첫 apply_layer_filter 호출 시 한 번만 저장되고
+        이후 절대 재작성되지 않으므로, 적용→초기화를 몇 번 반복해도 항상 같은 원본으로
+        복원된다(초기화 자체도 baseline 을 건드리지 않는다 — 재사용 가능).
+        권한·상태·단계 조건은 `_layer_filter_gate` 참조(apply_layer_filter 와 동일).
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        table = request.data.get('table')
+        gate_error = self._layer_filter_gate(request, document, table)
+        if gate_error:
+            return gate_error
+
+        import json
+        try:
+            data = json.loads(document.additional_notes or '{}')
+        except (json.JSONDecodeError, TypeError):
+            return Response(
+                {'error': '의뢰서 데이터가 손상되어 초기화할 수 없습니다.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        rows_key = 'jayerRows' if table == 'J' else 'oayerRows'
+        baseline_key = 'jayerFilterBaseline' if table == 'J' else 'oayerFilterBaseline'
+        baseline = data.get(baseline_key)
+        max_round = self._max_round(document)
+        if not baseline or baseline.get('round') != max_round:
+            return Response(
+                {'error': '초기화할 변경 내역이 없습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        data[rows_key] = json.loads(json.dumps(baseline.get('rows', []), ensure_ascii=False))
+        document.additional_notes = json.dumps(data, ensure_ascii=False)
+        document.save(update_fields=['additional_notes'])
+
+        return Response({
+            'message': '상신 시점 값으로 초기화했습니다.',
             'document': RequestDocumentSerializer(document, context={'request': request}).data,
         })
 

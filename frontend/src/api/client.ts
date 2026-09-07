@@ -373,6 +373,15 @@ const applyLayerFilter = async (docId: number, table: 'J' | 'O', filterId: numbe
   return { data };
 };
 
+/** 결재 상세페이지에서 이번 회차에 적용한 J/O-layer 필터를 상신 시점 값으로 전부 초기화한다. */
+const resetLayerFilter = async (docId: number, table: 'J' | 'O') => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${docId}/reset-layer-filter/`,
+    { table }
+  );
+  return { data };
+};
+
 const assignStep = async (
   docId: number,
   agent: AgentType,
@@ -582,6 +591,7 @@ export const documentsAPI = {
   rejectStep,
   updateValidationSystem,
   applyLayerFilter,
+  resetLayerFilter,
   assignStep,
   addPostApprover,
   removePostApprover,
