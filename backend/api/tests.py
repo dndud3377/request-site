@@ -5642,6 +5642,209 @@ class StartMailOnlyRemovesHeavyJobsTest(TestCase):
         self.assertIn('process_mail_queue', remaining_ids)
 
 
+class WriteStepIfChangedTest(TestCase):
+    """_write_step_if_changed() (2026-09 추가 - 스텝도 변경 감지 후 쓰기) 검증.
+
+    스텝 테이블은 공용 line 컬럼이 없는 라인별 전용 테이블이라, 임시 sqlite 엔진에
+    STEP_COLUMNS + last_synced 컬럼만 가진 테이블을 직접 만들어 검증한다.
+    """
+
+    def _make_engine(self):
+        from sqlalchemy import create_engine, text
+        from sqlalchemy.pool import StaticPool
+        engine = create_engine('sqlite://', poolclass=StaticPool, connect_args={'check_same_thread': False})
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE TABLE step_test ("
+                "processid TEXT, stepseq TEXT, descript TEXT, recipeid TEXT, "
+                "areaname TEXT, eqptype TEXT, updated TEXT, layerid TEXT, last_synced TEXT)"
+            ))
+        return engine
+
+    def _row(self, **overrides):
+        row = {
+            'processid': 'P1', 'stepseq': '10', 'descript': 'D', 'recipeid': 'R1',
+            'areaname': 'A1', 'eqptype': 'E1', 'updated': 'U1', 'layerid': 'L1',
+        }
+        row.update(overrides)
+        return row
+
+    def test_first_write_inserts_all_rows(self):
+        import pandas as pd
+        from sqlalchemy import text
+        from . import scheduler
+
+        engine = self._make_engine()
+        df = pd.DataFrame([self._row(), self._row(processid='P2')])
+
+        count = scheduler._write_step_if_changed(engine, 'step_test', df, scheduler.STEP_COLUMNS)
+
+        self.assertEqual(count, 2)
+        with engine.connect() as conn:
+            total = conn.execute(text("SELECT COUNT(*) FROM step_test")).scalar()
+        self.assertEqual(total, 2)
+
+    def test_identical_data_skips_rewrite(self):
+        import pandas as pd
+        from sqlalchemy import text
+        from . import scheduler
+
+        engine = self._make_engine()
+        df = pd.DataFrame([self._row()])
+        scheduler._write_step_if_changed(engine, 'step_test', df, scheduler.STEP_COLUMNS)
+        with engine.connect() as conn:
+            first_synced = conn.execute(text("SELECT last_synced FROM step_test")).scalar()
+
+        result = scheduler._write_step_if_changed(engine, 'step_test', df.copy(), scheduler.STEP_COLUMNS)
+
+        self.assertIsNone(result)
+        with engine.connect() as conn:
+            second_synced = conn.execute(text("SELECT last_synced FROM step_test")).scalar()
+        self.assertEqual(first_synced, second_synced)
+
+    def test_changed_data_overwrites(self):
+        import pandas as pd
+        from sqlalchemy import text
+        from . import scheduler
+
+        engine = self._make_engine()
+        df1 = pd.DataFrame([self._row(stepseq='10')])
+        scheduler._write_step_if_changed(engine, 'step_test', df1, scheduler.STEP_COLUMNS)
+
+        df2 = pd.DataFrame([self._row(stepseq='20')])
+        count = scheduler._write_step_if_changed(engine, 'step_test', df2, scheduler.STEP_COLUMNS)
+
+        self.assertEqual(count, 1)
+        with engine.connect() as conn:
+            stepseqs = [r[0] for r in conn.execute(text("SELECT stepseq FROM step_test")).fetchall()]
+        self.assertEqual(stepseqs, ['20'])
+
+
+class SyncRtdbStepCountDropTest(TestCase):
+    """RTDB_STEP_COUNT_DROP_RATIO(2026-09 추가) - 스텝 조회 건수가 기존 테이블 대비 급감하면
+    재시도하고, 재시도 후에도 급감이면 쓰지 않고 기존 데이터를 보존하는지 검증한다.
+
+    sync_rtdb_options() 전체를 실행하되 LINES 를 라인1 하나로 줄이고, get_django_engine 을
+    임시 sqlite 엔진으로, get_data_from_rtdb 를 호출된 table_name 패턴(A_/X_/O_)으로 분기하는
+    페이크로 대체해 공정-품목/품목-공정ID 는 항상 정상 성공시키고 스텝 응답만 통제한다.
+    """
+
+    def _make_engine(self):
+        import os
+        import tempfile
+        from sqlalchemy import create_engine, text
+        fd, path = tempfile.mkstemp(suffix='.sqlite3')
+        os.close(fd)
+        self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
+        engine = create_engine(f'sqlite:///{path}')
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE TABLE api_processproduct (line TEXT, process TEXT, product_name TEXT, last_synced TEXT)"
+            ))
+            conn.execute(text(
+                "CREATE TABLE api_productprocessid (line TEXT, product_name TEXT, process_id TEXT, last_synced TEXT)"
+            ))
+            conn.execute(text(
+                "CREATE TABLE api_teps1 ("
+                "processid TEXT, stepseq TEXT, descript TEXT, recipeid TEXT, "
+                "areaname TEXT, eqptype TEXT, updated TEXT, layerid TEXT, last_synced TEXT)"
+            ))
+        return engine
+
+    def _seed_existing_steps(self, engine, count):
+        import pandas as pd
+        rows = [{
+            'processid': f'P{i}', 'stepseq': '10', 'descript': 'D', 'recipeid': 'R',
+            'areaname': 'A', 'eqptype': 'E', 'updated': 'U', 'layerid': 'L',
+            'last_synced': '2026-01-01',
+        } for i in range(count)]
+        pd.DataFrame(rows).to_sql('api_teps1', engine, if_exists='append', index=False)
+
+    def _pp_df(self):
+        import pandas as pd
+        return pd.DataFrame([{'partnumber': 'PN1', 'descript': 'PROC', 'pkgtype_2': 'X'}])
+
+    def _pc_df(self):
+        import pandas as pd
+        return pd.DataFrame([{'partnumber': 'PN1', 'processid': 'PID1'}])
+
+    def _step_df(self, count):
+        import pandas as pd
+        return pd.DataFrame([{
+            'processid': f'NEW{i}', 'stepseq': '99', 'descript': 'D2', 'recipeid': 'R2',
+            'areaname': 'A2', 'eqptype': 'E2', 'updated': 'U2', 'layerid': 'L2',
+        } for i in range(count)])
+
+    def setUp(self):
+        from . import scheduler
+        self.scheduler = scheduler
+        self.engine = self._make_engine()
+
+        patchers = [
+            patch.object(scheduler, 'get_django_engine', return_value=self.engine),
+            patch.object(scheduler, 'LINES', ['라인1']),
+            patch.object(scheduler, 'get_rtdb_token', return_value='dummy-token'),
+            patch.object(scheduler.time, 'sleep', return_value=None),
+        ]
+        for p in patchers:
+            p.start()
+            self.addCleanup(p.stop)
+
+        mail_patcher = patch('api.mailer.enqueue_rtdb_sync_failed')
+        self.mock_mail = mail_patcher.start()
+        self.addCleanup(mail_patcher.stop)
+
+    def _run_with_step_responses(self, step_responses):
+        """step_responses: get_data_from_rtdb 가 스텝 조회 호출마다 순서대로 반환할 DataFrame 목록."""
+        step_calls = {'n': 0}
+
+        def fake_get_data_from_rtdb(payload, token):
+            table_name = payload['query']['table_name']
+            if table_name.startswith('A_'):
+                return self._pp_df()
+            if table_name.startswith('X_'):
+                return self._pc_df()
+            idx = step_calls['n']
+            step_calls['n'] += 1
+            return step_responses[idx]
+
+        with patch.object(self.scheduler, 'get_data_from_rtdb', side_effect=fake_get_data_from_rtdb):
+            self.scheduler.sync_rtdb_options()
+        return step_calls['n']
+
+    def test_retry_then_success_writes_full_data(self):
+        from sqlalchemy import create_engine, text
+
+        self._seed_existing_steps(self.engine, 100)  # 임계값 = 100 * 0.1 = 10건
+        responses = [self._step_df(5), self._step_df(50)]  # 1차 5건(급감) → 재시도 → 2차 50건(정상)
+
+        step_call_count = self._run_with_step_responses(responses)
+
+        self.assertEqual(step_call_count, 2)
+        verify_engine = create_engine(str(self.engine.url))
+        with verify_engine.connect() as conn:
+            total = conn.execute(text("SELECT COUNT(*) FROM api_teps1")).scalar()
+        self.assertEqual(total, 50)
+        self.mock_mail.assert_not_called()
+
+    def test_exhausted_retries_preserve_existing_data(self):
+        from sqlalchemy import create_engine, text
+
+        self._seed_existing_steps(self.engine, 100)
+        responses = [self._step_df(5), self._step_df(3), self._step_df(1)]  # 3회 모두 급감(임계값 10건 미만)
+
+        step_call_count = self._run_with_step_responses(responses)
+
+        self.assertEqual(step_call_count, 3)
+        verify_engine = create_engine(str(self.engine.url))
+        with verify_engine.connect() as conn:
+            total = conn.execute(text("SELECT COUNT(*) FROM api_teps1")).scalar()
+        self.assertEqual(total, 100)  # 기존 데이터 그대로 보존
+        self.mock_mail.assert_called_once()
+        failures_arg = self.mock_mail.call_args[0][0]
+        self.assertIn({'context': '라인1', 'target': self.scheduler.TARGET_LABEL_STEP}, failures_arg)
+
+
 class LayerFilterSetTest(TestCase):
     """J/O-layer 공유 필터 CRUD 권한 + apply-layer-filter 적용 검증."""
 
