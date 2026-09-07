@@ -1206,3 +1206,59 @@ class RejectionSnapshot(models.Model):
             return json.loads(self.additional_notes or '{}')
         except (json.JSONDecodeError, TypeError):
             return {}
+
+
+class PersonalMarkCategory(models.Model):
+    """결재 현황에서 개인이 의뢰서에 마킹할 때 쓰는 범주.
+
+    이름·색 모두 사용자가 직접 정한다. user 외래키로 소유자가 갈리므로, 같은 이름의
+    범주를 여러 사람이 만들어도 서로 다른 레코드다 — 다른 사용자와 공유되지 않는다.
+    """
+
+    # 임의의 색이 아니라 앱 테마(Bright Blue Theme)에 이미 있는 의미색 중에서만 고른다.
+    COLOR_CHOICES = [
+        ('danger', 'danger'), ('warning', 'warning'), ('success', 'success'),
+        ('accent', 'accent'), ('pause', 'pause'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='mark_categories', verbose_name='소유자')
+    name = models.CharField(max_length=30, verbose_name='범주 이름')
+    color = models.CharField(max_length=10, choices=COLOR_CHOICES, verbose_name='범주 색(테마 색상 중 택1)')
+    order = models.PositiveSmallIntegerField(default=0, verbose_name='표시 순서')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일')
+
+    class Meta:
+        verbose_name = '개인 마킹 범주'
+        verbose_name_plural = '개인 마킹 범주 목록'
+        ordering = ['order', 'id']
+
+    def __str__(self):
+        return f"{self.user.loginid} · {self.name}"
+
+
+class PersonalDocumentMark(models.Model):
+    """의뢰서 한 건에 대한 개인별 범주 마킹.
+
+    (user, document) 조합마다 별개 레코드라, 같은 문서를 여러 사람이 봐도 서로의 마킹은
+    존재 자체를 알 수 없다(개인 전용, 임시저장 공유(shared_group)와는 무관한 별개 데이터).
+    범주가 삭제되면 SET_NULL 로 자동으로 '표시 없음' 상태가 된다.
+    """
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='document_marks', verbose_name='소유자')
+    document = models.ForeignKey(
+        RequestDocument, on_delete=models.CASCADE, related_name='personal_marks', verbose_name='의뢰서'
+    )
+    category = models.ForeignKey(
+        PersonalMarkCategory, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='marks', verbose_name='범주'
+    )
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일')
+
+    class Meta:
+        verbose_name = '개인 의뢰서 마킹'
+        verbose_name_plural = '개인 의뢰서 마킹 목록'
+        unique_together = ('user', 'document')
+
+    def __str__(self):
+        category_name = self.category.name if self.category_id else '표시 없음'
+        return f"{self.user.loginid} → doc#{self.document_id} = {category_name}"

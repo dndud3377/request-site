@@ -4,7 +4,7 @@ from .views import (
     RequestDocumentViewSet, ExternalRequestDocumentViewSet, RejectionSnapshotViewSet,
     VOCViewSet, LineViewSet, LayerFilterSetViewSet, AdminNoticeViewSet, VocHistoryViewSet,
     UserViewSet, GuideViewSet, UserGroupViewSet, AddressBookViewSet,
-    ProcessDesignRuleOverrideViewSet, DocumentDesignRuleOverrideViewSet,
+    ProcessDesignRuleOverrideViewSet, DocumentDesignRuleOverrideViewSet, PersonalMarkCategoryViewSet,
     health_check, upload_image, upload_video, user_events,
     form_options_process, form_options_products, form_options_process_id,
     form_options_job_file_layer, form_options_ovl_layer, form_options_bb_external,
@@ -27,6 +27,7 @@ router.register(r'user-groups', UserGroupViewSet, basename='user-group')
 router.register(r'address-books', AddressBookViewSet, basename='address-book')
 router.register(r'design-rule-processes', ProcessDesignRuleOverrideViewSet, basename='design-rule-process')
 router.register(r'design-rule-documents', DocumentDesignRuleOverrideViewSet, basename='design-rule-document')
+router.register(r'mark-categories', PersonalMarkCategoryViewSet, basename='mark-category')
 
 # 외부 API Key 전용 read-only 라우트 — 내부 documents 라우트와 완전히 분리된 네임스페이스
 external_router = DefaultRouter()

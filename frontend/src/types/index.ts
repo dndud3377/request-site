@@ -161,8 +161,17 @@ export interface RequestDocument {
   post_approver_fixed_loginid?: string | null; // 고정 후결자(.env) loginid — '🔒 고정' 표시/변경 잠금용
   review_items?: ReviewItem[];                 // J-ayer 검토 항목 (상세 응답)
   my_pending_review_items?: number;            // 내가 검토자인 미확인 항목 수 (목록 응답, MY 탭 조건)
+  my_mark_category?: number | null;            // 내 개인 마킹 범주 id (목록 응답, 표시 없으면 null). 다른 사용자에게는 노출되지 않는다.
   // POP3 완료 알림 메일 제목에 product_name 이 포함된 적이 있는지 (읽기 전용, 서버 스케줄러만 갱신)
   mail_completion_matched?: boolean;
+}
+
+/** 결재 현황에서 개인이 의뢰서에 마킹할 때 쓰는 범주. 다른 사용자와 공유되지 않는다. */
+export interface PersonalMarkCategory {
+  id: number;
+  name: string;
+  color: 'danger' | 'warning' | 'success' | 'accent' | 'pause';
+  order: number;
 }
 
 /**

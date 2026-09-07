@@ -980,6 +980,43 @@ select.form-control option {
 
 .column-filter-date-preset-btn:hover { border-color: var(--accent); color: var(--accent); }
 
+/* ===== 개인 마킹(결재 현황) — 도형은 점(●) 하나, 색으로만 구분한다 =====
+   전용 컬럼이 아니라 제품 조합 셀 앞에 인라인으로 붙는다(frontend/src/components/DocumentMark.tsx). */
+.mark-dot-btn {
+  background: none; border: none; cursor: pointer; padding: 3px;
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+}
+.mark-dot {
+  width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--border);
+  background: transparent; display: block; transition: transform 0.12s ease;
+}
+.mark-dot-btn:hover .mark-dot { transform: scale(1.25); }
+
+/* 마킹 점 클릭 시 뜨는 범주 선택 팝오버 — column-filter-popover 와 같은 모양을 쓰되
+   표(overflow:hidden)에 잘리지 않도록 항상 position:fixed 로 띄운다(인라인 스타일). */
+.mark-dot-popover { min-width: 160px; }
+.mark-dot-popover-item { width: 100%; text-align: left; background: none; border: none; font-family: inherit; }
+
+.legend-swatch { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+.legend-swatch-none { background: transparent; border: 2px solid var(--border); }
+
+/* 범주 설정 화면(MarkCategorySettingsModal)의 이름 행 + 색상 선택 */
+.cat-row { display: flex; align-items: center; gap: 10px; }
+.cat-color-swatch {
+  width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border);
+  padding: 0; cursor: pointer; flex: none; transition: transform 0.12s ease;
+}
+.cat-color-swatch:hover { transform: scale(1.12); }
+
+.color-picker-pop {
+  z-index: 25; background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: 10px;
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;
+}
+.color-picker-swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; padding: 0; cursor: pointer; }
+.color-picker-swatch:hover { transform: scale(1.1); }
+.color-picker-swatch.selected { border-color: var(--text-primary); }
+
 .table th.sortable-col { cursor: pointer; user-select: none; }
 .table th.sortable-col:hover { color: var(--text-primary); }
 

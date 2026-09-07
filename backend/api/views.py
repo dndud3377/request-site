@@ -22,13 +22,14 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db import connection, transaction
 from django.contrib.auth import get_user_model
 User = get_user_model()
-from django.db.models import Q, Max, Min, Exists, OuterRef
+from django.db.models import Q, Max, Min, Exists, OuterRef, Prefetch
 from .models import (
     RequestDocument, ApprovalStep, PauseRequest, WithdrawRequest, VOC, VocComment, Line, ProcessProduct,
     ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
     DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot, LayerFilterSet,
+    PersonalMarkCategory, PersonalDocumentMark,
 )
 from .utils import LINE_TO_LINEID_MAP, resolve_employee_by_loginid
 from . import mailer
@@ -43,7 +44,7 @@ from .serializers import (
     VOCSerializer, VocCommentSerializer, LineSerializer, AdminNoticeSerializer, VocHistorySerializer,
     UserSerializer, GuideSerializer, UserGroupSerializer, UserGroupMemberSerializer, AddressBookSerializer,
     ProcessDesignRuleOverrideSerializer, DocumentDesignRuleOverrideSerializer,
-    RejectionSnapshotSerializer, LayerFilterSetSerializer,
+    RejectionSnapshotSerializer, LayerFilterSetSerializer, PersonalMarkCategorySerializer,
 )
 import uuid
 import logging
@@ -176,6 +177,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """
         qs = super().get_queryset()
         user = self.request.user
+        if getattr(user, 'is_authenticated', False):
+            # 목록 직렬화의 my_mark_category 가 문서마다 다시 조회하지 않도록, 호출자 본인의
+            # 마킹만 미리 걸러 prefetch 해 둔다 — 다른 사용자의 마킹은 애초에 여기 담기지 않는다.
+            qs = qs.prefetch_related(Prefetch(
+                'personal_marks',
+                queryset=PersonalDocumentMark.objects.filter(user=user),
+                to_attr='my_marks',
+            ))
         # 비인증(개발 모드 등) 또는 MASTER 는 전체 조회
         if not getattr(user, 'is_authenticated', False) or getattr(user, 'role', None) == 'MASTER':
             return qs
@@ -188,6 +197,24 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             return RequestDocumentListSerializer
         return RequestDocumentSerializer
+
+    @action(detail=True, methods=['post'], url_path='mark')
+    def mark(self, request, pk=None):
+        """이 의뢰서에 대한 내 개인 마킹(범주)을 설정하거나 해제한다.
+
+        `category` 를 안 보내거나 null 로 보내면 표시를 해제한다. 항상 request.user
+        기준으로만 반영되며, 다른 사용자의 마킹에는 어떤 영향도 주지 않는다.
+        """
+        from django.shortcuts import get_object_or_404
+        document = self.get_object()
+        category_id = request.data.get('category')
+        category = None
+        if category_id is not None:
+            category = get_object_or_404(PersonalMarkCategory, id=category_id, user=request.user)
+        mark, _ = PersonalDocumentMark.objects.update_or_create(
+            user=request.user, document=document, defaults={'category': category}
+        )
+        return Response({'category': mark.category_id})
 
     # ===== 결재 액션 서버측 인가 (프론트 ApprovalFlow 와 동일 규칙) =====
     # 프론트의 canUserAgree / canUserAssign 은 UI 가드일 뿐이라 API 직접 호출 시
@@ -2819,6 +2846,20 @@ class DocumentDesignRuleOverrideViewSet(viewsets.ModelViewSet):
     serializer_class = DocumentDesignRuleOverrideSerializer
     permission_classes = [IsMasterOrReadOnly]
     pagination_class = None
+
+
+class PersonalMarkCategoryViewSet(viewsets.ModelViewSet):
+    """개인 마킹 범주 CRUD. 항상 요청한 사용자 것만 조회·수정·삭제한다 — 다른 사용자와 공유되지 않는다."""
+    serializer_class = PersonalMarkCategorySerializer
+    permission_classes = [IsAuthenticatedInProd]
+    pagination_class = None
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
+
+    def get_queryset(self):
+        user = self.request.user
+        if not getattr(user, 'is_authenticated', False):
+            return PersonalMarkCategory.objects.none()
+        return PersonalMarkCategory.objects.filter(user=user)
 
 
 class RejectionSnapshotViewSet(mixins.DestroyModelMixin, viewsets.ReadOnlyModelViewSet):
