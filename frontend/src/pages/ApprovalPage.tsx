@@ -843,6 +843,34 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
+  /**
+   * 결재 상세페이지 J/O-layer 필터 "초기화" 버튼 노출 여부.
+   * canUseLayerFilter 와 동일한 권한/상태/단계 조건 + 이번 회차에 저장된 baseline(상신 시점
+   * 값 스냅샷)이 있을 때만 — 백엔드 reset_layer_filter 와 같은 규칙.
+   */
+  const canResetLayerFilter = (doc: RequestDocument | null, table: 'J' | 'O'): boolean => {
+    if (!doc || !canUseLayerFilter(doc, table)) return false;
+    try {
+      const parsed = JSON.parse(doc.additional_notes || '{}');
+      const baseline = parsed?.[table === 'J' ? 'jayerFilterBaseline' : 'oayerFilterBaseline'];
+      return !!baseline && baseline.round === getCurrentRound(doc);
+    } catch {
+      return false;
+    }
+  };
+
+  const handleResetLayerFilter = async (table: 'J' | 'O') => {
+    if (!selected) return;
+    if (!window.confirm(t('approval.layer_filter_reset_confirm'))) return;
+    try {
+      const { data } = await documentsAPI.resetLayerFilter(selected.id, table);
+      addToast(data.message, 'success');
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    }
+  };
+
   const handleValidationSystemChange = async (value: ValidationSystemValue) => {
     if (!selected) return;
     try {
@@ -2943,6 +2971,10 @@ export default function ApprovalPage(): React.ReactElement {
               onApplyOayerLayerFilter={(filterId) => handleApplyLayerFilter('O', filterId)}
               onOpenJayerFilterManage={() => setJayerFilterManageOpen(true)}
               onOpenOayerFilterManage={() => setOayerFilterManageOpen(true)}
+              canResetJayerFilter={canResetLayerFilter(selected, 'J')}
+              canResetOayerFilter={canResetLayerFilter(selected, 'O')}
+              onResetJayerLayerFilter={() => handleResetLayerFilter('J')}
+              onResetOayerLayerFilter={() => handleResetLayerFilter('O')}
             />
           </div>
         )}
