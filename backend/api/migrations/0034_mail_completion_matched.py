@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0032_mapname_aaa1_aaa2_aaa3"),
+        ("api", "0033_alter_mailnotification_event_type"),
     ]
 
     operations = [
