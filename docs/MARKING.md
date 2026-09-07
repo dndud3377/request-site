@@ -45,6 +45,10 @@
 | `document` | 마킹 대상 의뢰서(`RequestDocument`) |
 | `category` | 범주. `on_delete=SET_NULL` — 범주가 삭제되면 이 마킹은 자동으로 "표시 없음"(`None`)이 된다 |
 
+> "표시 없음"으로 되돌리는 것(§3의 `POST .../mark/` with `category: null`)은 이 행의 `category`를
+> `None`으로 갱신하는 게 아니라 **행 자체를 삭제**한다 — 이 문서·사용자 조합의 마킹 이력을
+> 아예 남기지 않는다.
+
 `unique_together = ('user', 'document')` — 한 사용자가 한 문서에 가질 수 있는 마킹은 하나뿐이다
 (도형이 하나이므로 다중 선택이 아니다).
 
@@ -75,6 +79,11 @@
    항상 `request.user` 기준으로만 걸러 응답한다.
 5. **예외**: Django 관리자(서버 DB 접근 권한이 있는 관리자)는 시스템 전체에 대해 원래 모든 테이블을
    볼 수 있다 — 이는 이 기능만의 특례가 아니라 시스템 전반에 적용되는 별개 사항이다.
+6. `POST /documents/{id}/mark/`와 `POST /mark-categories/` 는 비인증(`AnonymousUser`) 요청이면
+   `NotAuthenticated`(401)로 명시적으로 막는다 — 개발 모드의 `IsAuthenticatedInProd`는 인증 여부와
+   무관하게 통과시키므로, 이 가드가 없으면 로그인 없는 요청이 그대로 저장 로직까지 도달해
+   `PersonalDocumentMark.user`/`PersonalMarkCategory.user`(FK)에 `AnonymousUser`를 대입하려다
+   서버 에러가 났다.
 
 ## 5. 결재 현황 화면 동작
 
@@ -87,7 +96,8 @@
   토스트로 알린다.
 - **범주 설정**: 컬럼 필터 바의 "⚙ 범주 설정" 버튼 → `MarkCategorySettingsModal`. 이름은
   `onBlur` 시점에 저장하고(매 키 입력마다 API를 부르지 않는다), 색은 클릭 즉시 저장한다.
-  삭제는 확인 대화상자 없이 즉시 처리된다.
+  삭제는 확인 대화상자 없이 즉시 처리된다. **이름·색·삭제 모두 저장이 실패하면 화면을 이전
+  상태로 되돌리고** 토스트로 알린다(마킹 점과 동일한 낙관적 업데이트 + 롤백 패턴).
 - **새 범주의 기본 색**: 테마 색상 5개를 `[danger, warning, success, accent, pause]` 순서로
   범주 개수만큼 순환 배정한다 — 6번째 범주부터는 색이 겹치기 시작한다(알려진 제한, §6).
 

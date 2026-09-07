@@ -119,8 +119,9 @@ interface MarkCategorySettingsModalProps {
   onCreate: (name: string, color: PersonalMarkCategory['color']) => void;
   /** 입력할 때마다 — 화면에 즉시 반영만 한다(서버 저장은 onRenameCommit). */
   onRename: (id: number, name: string) => void;
-  /** 입력을 마쳤을 때(blur) — 이 시점에 서버에 저장한다. */
-  onRenameCommit: (id: number, name: string) => void;
+  /** 입력을 마쳤을 때(blur) — 이 시점에 서버에 저장한다. 실패 시 되돌릴 수 있도록
+   *  편집을 시작하기 전 이름(previousName)도 함께 넘긴다. */
+  onRenameCommit: (id: number, name: string, previousName: string) => void;
   onRecolor: (id: number, color: PersonalMarkCategory['color']) => void;
   onDelete: (id: number) => void;
 }
@@ -136,6 +137,8 @@ export function MarkCategorySettingsModal({
   const [colorPickerId, setColorPickerId] = useState<number | null>(null);
   const [colorPickerPos, setColorPickerPos] = useState<FixedPos | null>(null);
   const colorPopRef = useRef<HTMLDivElement>(null);
+  // 편집 시작(focus) 시점의 이름 — blur 시 저장 실패하면 이 값으로 되돌린다.
+  const originalNameRef = useRef<Record<number, string>>({});
 
   useClosePopoverOnOutsideClick(colorPickerId !== null, colorPopRef, () => setColorPickerId(null));
 
@@ -179,8 +182,9 @@ export function MarkCategorySettingsModal({
               className="form-control"
               value={cat.name}
               maxLength={30}
+              onFocus={() => { originalNameRef.current[cat.id] = cat.name; }}
               onChange={(e) => onRename(cat.id, e.target.value)}
-              onBlur={(e) => onRenameCommit(cat.id, e.target.value)}
+              onBlur={(e) => onRenameCommit(cat.id, e.target.value, originalNameRef.current[cat.id] ?? cat.name)}
             />
             <button
               type="button"
