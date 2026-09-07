@@ -649,6 +649,8 @@
     "col_line": "Line",
     "col_purpose": "Purpose",
     "col_map_purpose": "MAP Purpose",
+    "map_mail_complete_badge": "Complete",
+    "map_mail_complete_badge_tooltip": "Confirmed this product name in a completion notification email",
     "col_product_combo": "Product (Process-Product-Recipe)",
     "col_requester": "Requester",
     "col_status": "Status",

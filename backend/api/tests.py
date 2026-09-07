@@ -8,6 +8,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from . import mailer
+from . import pop3_mail
 from . import design_rule_stats
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
@@ -3284,6 +3285,190 @@ class PauseFlowTest(TestCase):
         self.assertEqual(PauseRequest.objects.filter(document=doc, state='requested').count(), 1)
 
 
+class PauseAndOtherActionMailTest(TestCase):
+    """중단(PAUSE) 전 구간 + 삭제·후결자 제거·Validation System 변경 메일 (2026-09 신설).
+
+    기존엔 이 액션들 전부 메일이 전혀 나가지 않았다(docs/MAIL.md §4 감사에서 발견).
+    수신자 산출은 기존 withdraw_target/withdraw_completed 의 "담당자 있으면 개인,
+    없으면 팀별로 각각 분리 발송" 규칙을 그대로 재사용한다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+
+        self.author = UserProfile.objects.create(
+            loginid='pm_author', mail='pm_a@c.com', role='PL', username='의뢰자'
+        )
+        self.master = UserProfile.objects.create(loginid='pm_master', mail='pm_m@c.com', role='MASTER')
+        self.rfg = UserProfile.objects.create(loginid='pm_r', mail='pm_r@c.com', role='TE_R', username='R담당')
+        self.rfg2 = UserProfile.objects.create(loginid='pm_r2', mail='pm_r2@c.com', role='TE_R', username='R2')
+        self.job = UserProfile.objects.create(loginid='pm_j', mail='pm_j@c.com', role='TE_J', username='J담당')
+        self.job2 = UserProfile.objects.create(loginid='pm_j2', mail='pm_j2@c.com', role='TE_J', username='J2')
+        self.pa = UserProfile.objects.create(loginid='pm_pa', mail='pm_pa@c.com', role='PL', username='추가후결자')
+
+    def _doc(self, status='under_review'):
+        return RequestDocument.objects.create(
+            title=f'pm-{status}',
+            requester=self.author,
+            requester_name='의뢰자', requester_email='pm_a@c.com', requester_department='d',
+            product_name='p', status=status,
+        )
+
+    def _step(self, doc, agent, action='pending', assignee=None, round=1):
+        return ApprovalStep.objects.create(
+            document=doc, agent=agent, action=action, round=round,
+            assignee=assignee, assignee_name=(assignee.username if assignee else ''),
+        )
+
+    def _post(self, user, doc, path, payload=None):
+        self.client.force_authenticate(user=user)
+        return self.client.post(f'/api/documents/{doc.id}/{path}/', payload or {}, format='json')
+
+    def _events(self):
+        return list(MailNotification.objects.values_list('event_type', flat=True))
+
+    # ----- request-pause -----
+    def test_request_pause_notifies_assigned_target(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        res = self._post(self.author, doc, 'request-pause', {'reason': '사양 재검토'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        noti = MailNotification.objects.get(event_type='pause_requested')
+        self.assertEqual(noti.recipients, ['pm_r@c.com'])
+        self.assertIn('사양 재검토', noti.contents)
+
+    def test_request_pause_splits_unassigned_targets_by_team(self):
+        """확인 대상 단계가 미배정 R·J 둘 다면, 한 통이 아니라 팀별로 각 1통씩 나간다."""
+        doc = self._doc()
+        self._step(doc, 'R')  # 미배정
+        self._step(doc, 'J')  # 미배정
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+
+        notis = list(MailNotification.objects.filter(event_type='pause_requested'))
+        self.assertEqual(len(notis), 2, 'R 팀 1통 + J 팀 1통이어야 한다')
+        for n in notis:
+            self.assertFalse({'pm_r@c.com', 'pm_j@c.com'} <= set(n.recipients), '서로 다른 팀을 한 통에 묶으면 안 된다')
+        all_recipients = [mail for n in notis for mail in n.recipients]
+        self.assertIn('pm_r@c.com', all_recipients)
+        self.assertIn('pm_r2@c.com', all_recipients)
+        self.assertIn('pm_j@c.com', all_recipients)
+        self.assertIn('pm_j2@c.com', all_recipients)
+
+    # ----- confirm-pause -----
+    def test_partial_confirm_sends_no_mail(self):
+        """전원 확인이 끝나기 전(부분 확인)에는 pause_confirmed 메일이 나가지 않는다."""
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._step(doc, 'J', assignee=self.job)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        self._post(self.rfg, doc, 'confirm-pause', {'agent': 'R'})
+
+        self.assertNotIn('pause_confirmed', self._events())
+
+    def test_final_confirm_notifies_reached_teams_and_author(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        res = self._post(self.rfg, doc, 'confirm-pause', {'agent': 'R'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        notis = list(MailNotification.objects.filter(event_type='pause_confirmed'))
+        self.assertEqual(len(notis), 2, '개인 수신자(작성자) 1통 + R 팀 1통이어야 한다')
+        all_recipients = [mail for n in notis for mail in n.recipients]
+        self.assertIn('pm_a@c.com', all_recipients)  # 작성자
+        self.assertIn('pm_r@c.com', all_recipients)  # 진행된 R 팀 전원
+        self.assertIn('pm_r2@c.com', all_recipients)
+
+    # ----- reject-pause -----
+    def test_reject_pause_notifies_requester_and_author(self):
+        """요청자(MASTER)와 작성자가 다른 경우 둘 다 받는다."""
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.master, doc, 'request-pause', {'reason': '사유'})
+        res = self._post(self.rfg, doc, 'reject-pause')
+        self.assertEqual(res.status_code, 200, res.content)
+
+        noti = MailNotification.objects.get(event_type='pause_rejected')
+        self.assertEqual(sorted(noti.recipients), sorted(['pm_m@c.com', 'pm_a@c.com']))
+
+    # ----- resume -----
+    def test_resume_notifies_pending_step_owners(self):
+        doc = self._doc(status='pause')
+        self._step(doc, 'R', assignee=self.rfg)
+        PauseRequest.objects.create(
+            document=doc, requester=self.author, requester_name='의뢰자', reason='사유',
+            round=1, target_step_ids=[], confirmed_step_ids=[], state='confirmed',
+            confirmed_at=timezone.now(),
+        )
+        res = self._post(self.author, doc, 'resume', {})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        noti = MailNotification.objects.get(event_type='pause_resumed')
+        self.assertEqual(noti.recipients, ['pm_r@c.com'])
+
+    # ----- delete -----
+    def test_delete_notifies_before_document_is_gone(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        res = self._post(self.author, doc, 'delete', {})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        self.assertFalse(RequestDocument.objects.filter(id=doc.id).exists())
+        notis = list(MailNotification.objects.filter(event_type='document_deleted'))
+        self.assertTrue(notis, 'document_deleted 메일이 적재돼야 한다')
+        all_recipients = [mail for n in notis for mail in n.recipients]
+        self.assertIn('pm_a@c.com', all_recipients)   # 작성자
+        self.assertIn('pm_r@c.com', all_recipients)   # 진행된 R 팀
+        # 문서가 이미 삭제되므로 딥링크 버튼을 싣지 않는다(withdraw_completed 와 동일 원칙)
+        for n in notis:
+            self.assertNotIn(f'/approval?id={doc.id}', n.contents)
+
+    # ----- remove-post-approver -----
+    def test_remove_post_approver_notifies_removed_user(self):
+        doc = self._doc()
+        self._step(doc, 'RA', assignee=self.pa)
+        res = self._post(self.author, doc, 'remove-post-approver', {'loginid': 'pm_pa'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        noti = MailNotification.objects.get(event_type='post_approver_removed')
+        self.assertEqual(noti.recipients, ['pm_pa@c.com'])
+        self.assertIn('추가후결자', noti.subject)
+
+    # ----- validation-system -----
+    def test_validation_system_change_notifies_author_and_assigned_e(self):
+        doc = self._doc()
+        te_e = UserProfile.objects.create(loginid='pm_e', mail='pm_e@c.com', role='TE_E', username='E담당')
+        self._step(doc, 'E', assignee=te_e)
+        res = self._post(self.author, doc, 'validation-system', {'value': 'NO'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        noti = MailNotification.objects.get(event_type='validation_system_changed')
+        self.assertEqual(sorted(noti.recipients), sorted(['pm_a@c.com', 'pm_e@c.com']))
+
+    def test_validation_system_change_broadcasts_team_when_e_unassigned(self):
+        doc = self._doc()
+        te_e = UserProfile.objects.create(loginid='pm_e2', mail='pm_e2@c.com', role='TE_E', username='E담당')
+        self._step(doc, 'E')  # 미배정
+        res = self._post(self.author, doc, 'validation-system', {'value': 'NO'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        notis = list(MailNotification.objects.filter(event_type='validation_system_changed'))
+        all_recipients = [mail for n in notis for mail in n.recipients]
+        self.assertIn('pm_a@c.com', all_recipients)
+        self.assertIn('pm_e2@c.com', all_recipients)
+
+    # ----- cancel-pause 는 이번 범위에서 제외했다(resume 과 알리는 목적이 겹친다는 판단) -----
+    def test_cancel_pause_still_sends_no_mail(self):
+        doc = self._doc()
+        self._step(doc, 'R', assignee=self.rfg)
+        self._post(self.author, doc, 'request-pause', {'reason': '사유'})
+        res = self._post(self.author, doc, 'cancel-pause', {})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertNotIn('pause_cancelled', self._events())
+
+
 # ─── 연간 디자인룰 통계 ────────────────────────────────────────────────────────
 
 class AnnualDesignRuleStatsTest(TestCase):
@@ -5226,13 +5411,63 @@ class DcqTokenSettleRetryTest(TestCase):
         )
 
 
+class DcqTokenAliveTest(TestCase):
+    """_dcq_token_alive() (2026-09 추가) 검증 - DCQ 26건 연속 실패의 근본 원인이었던
+    "만료된 토큰도 getTokenTime() 이 예외 없이 dict 를 반환한다" 케이스를 직접 고정한다.
+    """
+
+    def setUp(self):
+        from . import utils
+        self.utils = utils
+
+    def test_none_is_not_alive(self):
+        self.assertFalse(self.utils._dcq_token_alive(None))
+
+    def test_all_remaining_zero_is_expired(self):
+        token_info = {
+            'expiration_date': '2026-09-03 01:31:15',
+            'remaining_days': 0,
+            'remaining_hours': 0,
+            'remaining_minutes': 0,
+        }
+        self.assertFalse(self.utils._dcq_token_alive(token_info))
+
+    def test_remaining_time_left_is_alive(self):
+        token_info = {
+            'expiration_date': '2026-09-10 01:31:15',
+            'remaining_days': 6,
+            'remaining_hours': 23,
+            'remaining_minutes': 59,
+        }
+        self.assertTrue(self.utils._dcq_token_alive(token_info))
+
+    def test_missing_remaining_fields_defaults_to_alive(self):
+        with self.assertLogs('api.utils', level='WARNING'):
+            self.assertTrue(self.utils._dcq_token_alive({'ok': True}))
+
+
 class EnsureDcqSessionTest(TestCase):
-    """ensure_dcq_session() (2026-08 추가) 검증 - 세션 재사용 / 재검증 실패 시 재로그인 전환.
+    """ensure_dcq_session() (2026-08 추가, 2026-09 만료 판정 수정) 검증 - 세션 재사용 /
+    재검증 실패 시 재로그인 전환.
 
     dcq_login_with_retry() / get_dcq_token_info() 자체의 재시도 동작은 DcqTokenSettleRetryTest
-    에서 이미 검증하므로, 여기서는 그 둘을 높은 수준으로 mock 해서 ensure_dcq_session() 자신의
-    분기 로직(재사용 여부, 재로그인 전환, 최대 2회 제한)만 검증한다.
+    에서, _dcq_token_alive() 자체의 만료 판정은 DcqTokenAliveTest 에서 이미 검증하므로,
+    여기서는 그것들을 높은 수준으로 mock 해서 ensure_dcq_session() 자신의 분기 로직(재사용
+    여부, 재로그인 전환, 최대 2회 제한)만 검증한다.
     """
+
+    ALIVE_TOKEN = {
+        'expiration_date': '2026-09-10 01:31:15',
+        'remaining_days': 6,
+        'remaining_hours': 23,
+        'remaining_minutes': 59,
+    }
+    EXPIRED_TOKEN = {
+        'expiration_date': '2026-09-03 01:31:15',
+        'remaining_days': 0,
+        'remaining_hours': 0,
+        'remaining_minutes': 0,
+    }
 
     def setUp(self):
         from . import utils
@@ -5253,7 +5488,7 @@ class EnsureDcqSessionTest(TestCase):
 
     def test_first_call_logs_in_and_caches_session(self):
         with patch.object(self.utils, 'dcq_login_with_retry', return_value=True) as mock_login, \
-             patch.object(self.utils, 'get_dcq_token_info', return_value={'ok': True}) as mock_token:
+             patch.object(self.utils, 'get_dcq_token_info', return_value=self.ALIVE_TOKEN) as mock_token:
             result = self.utils.ensure_dcq_session()
         self.assertEqual(result, 'dcqid')
         mock_login.assert_called_once()
@@ -5263,7 +5498,7 @@ class EnsureDcqSessionTest(TestCase):
     def test_reuses_existing_session_without_relogin(self):
         self.utils._dcq_session_cache['dcq_id'] = 'dcqid'
         with patch.object(self.utils, 'dcq_login_with_retry') as mock_login, \
-             patch.object(self.utils, 'get_dcq_token_info', return_value={'ok': True}) as mock_token:
+             patch.object(self.utils, 'get_dcq_token_info', return_value=self.ALIVE_TOKEN) as mock_token:
             result = self.utils.ensure_dcq_session()
         self.assertEqual(result, 'dcqid')
         mock_login.assert_not_called()
@@ -5272,7 +5507,22 @@ class EnsureDcqSessionTest(TestCase):
     def test_reused_session_invalid_triggers_relogin(self):
         self.utils._dcq_session_cache['dcq_id'] = 'dcqid'
         with patch.object(self.utils, 'dcq_login_with_retry', return_value=True) as mock_login, \
-             patch.object(self.utils, 'get_dcq_token_info', side_effect=[None, {'ok': True}]) as mock_token:
+             patch.object(self.utils, 'get_dcq_token_info', side_effect=[None, self.ALIVE_TOKEN]) as mock_token:
+            result = self.utils.ensure_dcq_session()
+        self.assertEqual(result, 'dcqid')
+        mock_login.assert_called_once()
+        self.assertEqual(mock_token.call_count, 2)
+
+    def test_reused_session_expired_token_triggers_relogin(self):
+        """회귀 테스트(2026-09) - getTokenTime() 이 예외 없이 remaining_* 전부 0 인 dict 를
+        반환해도(= None 이 아니어도) 만료로 판정해 재로그인해야 한다. 이 판정이 빠져
+        DCQ 동기화가 26건 연속 실패했던 근본 원인."""
+        self.utils._dcq_session_cache['dcq_id'] = 'dcqid'
+        with patch.object(self.utils, 'dcq_login_with_retry', return_value=True) as mock_login, \
+             patch.object(
+                 self.utils, 'get_dcq_token_info',
+                 side_effect=[self.EXPIRED_TOKEN, self.ALIVE_TOKEN],
+             ) as mock_token:
             result = self.utils.ensure_dcq_session()
         self.assertEqual(result, 'dcqid')
         mock_login.assert_called_once()
@@ -5280,7 +5530,7 @@ class EnsureDcqSessionTest(TestCase):
 
     def test_login_retries_once_more_if_post_login_token_check_fails(self):
         with patch.object(self.utils, 'dcq_login_with_retry', return_value=True) as mock_login, \
-             patch.object(self.utils, 'get_dcq_token_info', side_effect=[None, {'ok': True}]) as mock_token:
+             patch.object(self.utils, 'get_dcq_token_info', side_effect=[None, self.ALIVE_TOKEN]) as mock_token:
             result = self.utils.ensure_dcq_session()
         self.assertEqual(result, 'dcqid')
         self.assertEqual(mock_login.call_count, 2)
@@ -5390,6 +5640,209 @@ class StartMailOnlyRemovesHeavyJobsTest(TestCase):
 
         remaining_ids = set(DjangoJob.objects.values_list('id', flat=True))
         self.assertIn('process_mail_queue', remaining_ids)
+
+
+class WriteStepIfChangedTest(TestCase):
+    """_write_step_if_changed() (2026-09 추가 - 스텝도 변경 감지 후 쓰기) 검증.
+
+    스텝 테이블은 공용 line 컬럼이 없는 라인별 전용 테이블이라, 임시 sqlite 엔진에
+    STEP_COLUMNS + last_synced 컬럼만 가진 테이블을 직접 만들어 검증한다.
+    """
+
+    def _make_engine(self):
+        from sqlalchemy import create_engine, text
+        from sqlalchemy.pool import StaticPool
+        engine = create_engine('sqlite://', poolclass=StaticPool, connect_args={'check_same_thread': False})
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE TABLE step_test ("
+                "processid TEXT, stepseq TEXT, descript TEXT, recipeid TEXT, "
+                "areaname TEXT, eqptype TEXT, updated TEXT, layerid TEXT, last_synced TEXT)"
+            ))
+        return engine
+
+    def _row(self, **overrides):
+        row = {
+            'processid': 'P1', 'stepseq': '10', 'descript': 'D', 'recipeid': 'R1',
+            'areaname': 'A1', 'eqptype': 'E1', 'updated': 'U1', 'layerid': 'L1',
+        }
+        row.update(overrides)
+        return row
+
+    def test_first_write_inserts_all_rows(self):
+        import pandas as pd
+        from sqlalchemy import text
+        from . import scheduler
+
+        engine = self._make_engine()
+        df = pd.DataFrame([self._row(), self._row(processid='P2')])
+
+        count = scheduler._write_step_if_changed(engine, 'step_test', df, scheduler.STEP_COLUMNS)
+
+        self.assertEqual(count, 2)
+        with engine.connect() as conn:
+            total = conn.execute(text("SELECT COUNT(*) FROM step_test")).scalar()
+        self.assertEqual(total, 2)
+
+    def test_identical_data_skips_rewrite(self):
+        import pandas as pd
+        from sqlalchemy import text
+        from . import scheduler
+
+        engine = self._make_engine()
+        df = pd.DataFrame([self._row()])
+        scheduler._write_step_if_changed(engine, 'step_test', df, scheduler.STEP_COLUMNS)
+        with engine.connect() as conn:
+            first_synced = conn.execute(text("SELECT last_synced FROM step_test")).scalar()
+
+        result = scheduler._write_step_if_changed(engine, 'step_test', df.copy(), scheduler.STEP_COLUMNS)
+
+        self.assertIsNone(result)
+        with engine.connect() as conn:
+            second_synced = conn.execute(text("SELECT last_synced FROM step_test")).scalar()
+        self.assertEqual(first_synced, second_synced)
+
+    def test_changed_data_overwrites(self):
+        import pandas as pd
+        from sqlalchemy import text
+        from . import scheduler
+
+        engine = self._make_engine()
+        df1 = pd.DataFrame([self._row(stepseq='10')])
+        scheduler._write_step_if_changed(engine, 'step_test', df1, scheduler.STEP_COLUMNS)
+
+        df2 = pd.DataFrame([self._row(stepseq='20')])
+        count = scheduler._write_step_if_changed(engine, 'step_test', df2, scheduler.STEP_COLUMNS)
+
+        self.assertEqual(count, 1)
+        with engine.connect() as conn:
+            stepseqs = [r[0] for r in conn.execute(text("SELECT stepseq FROM step_test")).fetchall()]
+        self.assertEqual(stepseqs, ['20'])
+
+
+class SyncRtdbStepCountDropTest(TestCase):
+    """RTDB_STEP_COUNT_DROP_RATIO(2026-09 추가) - 스텝 조회 건수가 기존 테이블 대비 급감하면
+    재시도하고, 재시도 후에도 급감이면 쓰지 않고 기존 데이터를 보존하는지 검증한다.
+
+    sync_rtdb_options() 전체를 실행하되 LINES 를 라인1 하나로 줄이고, get_django_engine 을
+    임시 sqlite 엔진으로, get_data_from_rtdb 를 호출된 table_name 패턴(A_/X_/O_)으로 분기하는
+    페이크로 대체해 공정-품목/품목-공정ID 는 항상 정상 성공시키고 스텝 응답만 통제한다.
+    """
+
+    def _make_engine(self):
+        import os
+        import tempfile
+        from sqlalchemy import create_engine, text
+        fd, path = tempfile.mkstemp(suffix='.sqlite3')
+        os.close(fd)
+        self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
+        engine = create_engine(f'sqlite:///{path}')
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE TABLE api_processproduct (line TEXT, process TEXT, product_name TEXT, last_synced TEXT)"
+            ))
+            conn.execute(text(
+                "CREATE TABLE api_productprocessid (line TEXT, product_name TEXT, process_id TEXT, last_synced TEXT)"
+            ))
+            conn.execute(text(
+                "CREATE TABLE api_teps1 ("
+                "processid TEXT, stepseq TEXT, descript TEXT, recipeid TEXT, "
+                "areaname TEXT, eqptype TEXT, updated TEXT, layerid TEXT, last_synced TEXT)"
+            ))
+        return engine
+
+    def _seed_existing_steps(self, engine, count):
+        import pandas as pd
+        rows = [{
+            'processid': f'P{i}', 'stepseq': '10', 'descript': 'D', 'recipeid': 'R',
+            'areaname': 'A', 'eqptype': 'E', 'updated': 'U', 'layerid': 'L',
+            'last_synced': '2026-01-01',
+        } for i in range(count)]
+        pd.DataFrame(rows).to_sql('api_teps1', engine, if_exists='append', index=False)
+
+    def _pp_df(self):
+        import pandas as pd
+        return pd.DataFrame([{'partnumber': 'PN1', 'descript': 'PROC', 'pkgtype_2': 'X'}])
+
+    def _pc_df(self):
+        import pandas as pd
+        return pd.DataFrame([{'partnumber': 'PN1', 'processid': 'PID1'}])
+
+    def _step_df(self, count):
+        import pandas as pd
+        return pd.DataFrame([{
+            'processid': f'NEW{i}', 'stepseq': '99', 'descript': 'D2', 'recipeid': 'R2',
+            'areaname': 'A2', 'eqptype': 'E2', 'updated': 'U2', 'layerid': 'L2',
+        } for i in range(count)])
+
+    def setUp(self):
+        from . import scheduler
+        self.scheduler = scheduler
+        self.engine = self._make_engine()
+
+        patchers = [
+            patch.object(scheduler, 'get_django_engine', return_value=self.engine),
+            patch.object(scheduler, 'LINES', ['라인1']),
+            patch.object(scheduler, 'get_rtdb_token', return_value='dummy-token'),
+            patch.object(scheduler.time, 'sleep', return_value=None),
+        ]
+        for p in patchers:
+            p.start()
+            self.addCleanup(p.stop)
+
+        mail_patcher = patch('api.mailer.enqueue_rtdb_sync_failed')
+        self.mock_mail = mail_patcher.start()
+        self.addCleanup(mail_patcher.stop)
+
+    def _run_with_step_responses(self, step_responses):
+        """step_responses: get_data_from_rtdb 가 스텝 조회 호출마다 순서대로 반환할 DataFrame 목록."""
+        step_calls = {'n': 0}
+
+        def fake_get_data_from_rtdb(payload, token):
+            table_name = payload['query']['table_name']
+            if table_name.startswith('A_'):
+                return self._pp_df()
+            if table_name.startswith('X_'):
+                return self._pc_df()
+            idx = step_calls['n']
+            step_calls['n'] += 1
+            return step_responses[idx]
+
+        with patch.object(self.scheduler, 'get_data_from_rtdb', side_effect=fake_get_data_from_rtdb):
+            self.scheduler.sync_rtdb_options()
+        return step_calls['n']
+
+    def test_retry_then_success_writes_full_data(self):
+        from sqlalchemy import create_engine, text
+
+        self._seed_existing_steps(self.engine, 100)  # 임계값 = 100 * 0.1 = 10건
+        responses = [self._step_df(5), self._step_df(50)]  # 1차 5건(급감) → 재시도 → 2차 50건(정상)
+
+        step_call_count = self._run_with_step_responses(responses)
+
+        self.assertEqual(step_call_count, 2)
+        verify_engine = create_engine(str(self.engine.url))
+        with verify_engine.connect() as conn:
+            total = conn.execute(text("SELECT COUNT(*) FROM api_teps1")).scalar()
+        self.assertEqual(total, 50)
+        self.mock_mail.assert_not_called()
+
+    def test_exhausted_retries_preserve_existing_data(self):
+        from sqlalchemy import create_engine, text
+
+        self._seed_existing_steps(self.engine, 100)
+        responses = [self._step_df(5), self._step_df(3), self._step_df(1)]  # 3회 모두 급감(임계값 10건 미만)
+
+        step_call_count = self._run_with_step_responses(responses)
+
+        self.assertEqual(step_call_count, 3)
+        verify_engine = create_engine(str(self.engine.url))
+        with verify_engine.connect() as conn:
+            total = conn.execute(text("SELECT COUNT(*) FROM api_teps1")).scalar()
+        self.assertEqual(total, 100)  # 기존 데이터 그대로 보존
+        self.mock_mail.assert_called_once()
+        failures_arg = self.mock_mail.call_args[0][0]
+        self.assertIn({'context': '라인1', 'target': self.scheduler.TARGET_LABEL_STEP}, failures_arg)
 
 
 class LayerFilterSetTest(TestCase):
@@ -5606,3 +6059,67 @@ class LayerFilterSetTest(TestCase):
         row = self._json.loads(doc.additional_notes)['oayerRows'][0]
         self.assertEqual(row['st'], 'X')
         self.assertNotIn('item_id', row)
+
+
+class MapCompletionMailMatchTest(TestCase):
+    """pop3_mail.match_map_completion_mail() 단위 테스트 (POP3 접속 없이 순수 DB 로직만 검증)."""
+
+    def setUp(self):
+        import json
+        self._json = json
+
+    def _make_map_new_doc(self, product_name, status='under_review', matched=False):
+        return RequestDocument.objects.create(
+            title='MAP 신규 문서',
+            requester_name='요청자', requester_email='req@company.com',
+            requester_department='개발팀',
+            product_name=product_name,
+            status=status,
+            mail_completion_matched=matched,
+            additional_notes=self._json.dumps({'detail': {'map_type': 'NEW'}}),
+        )
+
+    def test_matches_and_flags_when_subject_contains_product_name(self):
+        doc = self._make_map_new_doc('PROD-1')
+        matched = pop3_mail.match_map_completion_mail(['[Smart] PROD-1 완료 알림'])
+        self.assertEqual(matched, 1)
+        doc.refresh_from_db()
+        self.assertTrue(doc.mail_completion_matched)
+
+    def test_no_match_when_subject_does_not_contain_product_name(self):
+        doc = self._make_map_new_doc('PROD-1')
+        matched = pop3_mail.match_map_completion_mail(['[Smart] PROD-9 완료 알림'])
+        self.assertEqual(matched, 0)
+        doc.refresh_from_db()
+        self.assertFalse(doc.mail_completion_matched)
+
+    def test_already_matched_document_is_not_rechecked(self):
+        doc = self._make_map_new_doc('PROD-1', matched=True)
+        matched = pop3_mail.match_map_completion_mail(['[Smart] PROD-1 완료 알림'])
+        self.assertEqual(matched, 0, 'mail_completion_matched=True 인 문서는 다시 체크하면 안 된다')
+
+    def test_map_type_not_new_is_excluded(self):
+        doc = RequestDocument.objects.create(
+            title='MAP 삭제 문서', requester_name='요청자', requester_email='req@company.com',
+            requester_department='개발팀', product_name='PROD-1', status='under_review',
+            additional_notes=self._json.dumps({'detail': {'map_type': 'CLONE'}}),
+        )
+        matched = pop3_mail.match_map_completion_mail(['[Smart] PROD-1 완료 알림'])
+        self.assertEqual(matched, 0)
+        doc.refresh_from_db()
+        self.assertFalse(doc.mail_completion_matched)
+
+    def test_draft_and_rejected_status_excluded(self):
+        draft = self._make_map_new_doc('PROD-1', status='draft')
+        rejected = self._make_map_new_doc('PROD-1', status='rejected')
+        matched = pop3_mail.match_map_completion_mail(['[Smart] PROD-1 완료 알림'])
+        self.assertEqual(matched, 0)
+        draft.refresh_from_db()
+        rejected.refresh_from_db()
+        self.assertFalse(draft.mail_completion_matched)
+        self.assertFalse(rejected.mail_completion_matched)
+
+    def test_empty_subjects_short_circuits(self):
+        self._make_map_new_doc('PROD-1')
+        matched = pop3_mail.match_map_completion_mail([])
+        self.assertEqual(matched, 0)

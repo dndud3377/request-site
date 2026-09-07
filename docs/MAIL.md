@@ -27,6 +27,16 @@
 2. **`stage_arrival` 제목 접미사 삭제** — 모든 단계의 메일 제목에서 `- {단계라벨}` 접미사를 제거. 단계 구분은 본문 KPI 카드로만 표시.
 3. **P 단계 완료 통보 신설** — P 단계(담당자+검토자) 합의가 모두 끝나면 `notify_p_completed`로 **TE_O + TE_J 팀 전원**에게 참고용 통보 메일을 발송(§3 표, §4 표). ⚠️ **(2026-08) `notify_p_arrival`(P 도착 → TE_J) 은 폐지**됐다 — J 가 R 합의 시점의 독립 병렬 단계가 되면서 TE_J 가 `stage_arrival`(J) 결재 요청 메일을 직접 받게 돼 중복이 됐고, 대신 TE_J 를 이 완료 통보 수신자에 합류시켰다.
 
+### 중단(PAUSE) 전 구간 + 삭제·후결자 제거·Validation System 변경 메일 신설 (2026-09)
+전 이벤트 감사(§4) 결과 메일이 전혀 나가지 않던 액션 중 결재 흐름에 직접 영향을 주는 7개에
+메일을 추가했다: `request-pause`/`confirm-pause`/`reject-pause`/`resume`(중단 전 구간),
+`delete`(삭제), `remove-post-approver`(후결자 제거), `validation-system`(Validation System 변경).
+새 이벤트 7종 + 기존에 이미 발송 중이었으나 `MailNotification.EVENT_CHOICES` 라벨이 누락돼
+있던 `notify_p_completed`/`revision_requested` 2종을 함께 보완했다(`event_type` 필드
+`max_length` 도 20→32로 확장). `claim-step`/`unclaim-step`(잦은 클릭 액션)과 `direct-approve`
+(과거 기록 등록, 의도적 무메일)는 이번 범위에서 제외했고, `cancel-pause`는 `resume`과 수신자에게
+전달하는 메시지 성격이 겹친다고 판단해 뺐다. 상세는 §3.4·§4 참고.
+
 ### '상신 받기' — TE_P 구독형 상신 알림 (2026-08 신설)
 권한 관리 'TE_P' 탭에 **라인 필터·전체 받기와 무관한 독립 토글**(`receive_submit_mail`, 기본
 False)을 신설했다. 켠 TE_P 사용자는 `submit`/`resubmit` 시점에 통보처와 같은
@@ -293,6 +303,28 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | 화면 동작 | TE_P 탭의 라인 버튼들 뒤에 구분선 + `상신 받기` 버튼 1개. 켤 때는 즉시 저장, **끌 때는 확인 모달**을 거친다(`permission.submit_mail_off_*`) |
 | 구현 | `mailer.resolve_submit_subscriber_recipients()` → `mailer.enqueue_notify_submitted()`가 통보처 수신자와 합쳐 중복 제거 후 발송 |
 
+### 3.4 중단(PAUSE)·삭제·후결자 제거·Validation System 변경 수신자 상세 (2026-09 신설)
+
+| 이벤트 | 시점 | 수신자 |
+|---|---|---|
+| `pause_requested` | 중단 요청 접수 | **확인 대상 단계**(요청 시점 pending 단계)의 담당자 1명이면 개인 수신자 메일에, 미배정 단계면 그 **담당 팀별로 각각 별도 메일**. `resolve_withdraw_target_recipients()`를 그대로 재사용한다(withdraw_requested 와 동일 규칙) |
+| `pause_confirmed` | 중단 확정(대상 단계 **전원 확인 완료**로 문서가 pause 로 전이되는 시점) | 개인 수신자 메일 1통(**작성자** + 진행된 단계의 RA/SA 개인 담당자) + **실제로 결재가 진행된 단계의 담당 팀별로 각각 별도 메일**(`_reached_stage_team_groups` 재사용, withdraw_completed 와 동일 판정 기준). ⚠️ 부분 확인 시점에는 발송하지 않는다 — 대상 단계가 병렬이면 마지막 확인자가 확정시킬 때 1회만 나간다 |
+| `pause_rejected` | 대상 단계가 중단 거부 | 중단을 **요청한 사람** + 의뢰서 **작성자**(withdraw_rejected 와 동일 패턴, 분리 대상 아님) |
+| `pause_resumed` | 재개(작성자가 pause 문서를 under_review 로 되돌릴 때) | 재개 시점 **pending 단계**의 담당자 1명이면 개인 수신자 메일에, 미배정 단계면 그 **담당 팀별로 각각 별도 메일**. `resolve_withdraw_target_recipients()`를 그대로 재사용한다 |
+| `document_deleted` | `delete` 액션으로 의뢰서가 완전히 삭제되는 시점(삭제 **전**에 적재) | withdraw_completed 와 동일한 수신자 규칙(`resolve_withdraw_completed_recipients()` 재사용) — 개인 수신자 메일 1통(지정 PL 전원 + 통보처 전원 + RA/SA 개인 담당자 + 작성자) + 실제로 진행된 팀별로 각각 별도 메일. `_NO_LINK_EVENTS` 대상이라 딥링크 버튼을 싣지 않는다 |
+| `post_approver_removed` | `remove-post-approver` 로 (아직 합의하지 않은) 후결자가 제거되는 시점 | 제거된 후결자 **본인에게만** 개인화 메일 1통(제목에 `[이름님]`). step 삭제 **전에** `assignee`/`assignee_name` 을 미리 읽어 넘겨야 한다 — 삭제 후에는 조회할 수 없다 |
+| `validation_system_changed` | `validation-system` 으로 상신자가 Validation System 대상/비대상 값을 바꾸는 시점 | 작성자 + 지정된 **EV(검토자) 전원**(개인 수신자 메일) + 현재 회차 **E 단계**(담당자 있으면 개인 수신자 메일에 포함, 미배정이면 **TE_E 팀 1통**으로 분리) |
+
+⚠️ **`pause_requested`/`pause_resumed`/`document_deleted`는 팀이 둘 이상 걸치면 반드시 팀별로
+각각 분리 발송한다**(§ 위 "팀별 분리 발송" 원칙과 동일) — 예를 들어 확인 대상 단계가 미배정
+R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이지 않는다.
+
+⚠️ `cancel-pause`(중단 요청 취소)는 이번 범위에서 **제외**했다 — `resume`과 "결재가 계속
+진행된다/이어진다"는 메시지 성격이 겹친다고 판단했다. `claim-step`/`unclaim-step`(검토중
+선점/취소)도 버튼 클릭 한 번으로 바로 일어나는 잦은 액션이라 팀 전체 브로드캐스트 시 메일량이
+크게 늘 수 있어 제외했다. `direct-approve`(MASTER 전용 이력 바로 등록)는 실제 결재를 진행하지
+않고 과거 완료 기록만 남기는 기능이라는 원래 설계를 그대로 유지해 무메일이다.
+
 ### 제목·본문 규칙 (2026-08 개편)
 - **모든 메일 제목에 요청서 제목이 포함**된다(`_build_message`).
 - **`stage_arrival` 제목은 모든 단계 공통으로 `{name_prefix}[결재 요청] {제목}` 형식**(2026-08부터 단계 접미사 `- {단계라벨}` 삭제). 단계 구분은 본문 KPI 카드의 "결재 단계" 타일로만 표시한다.
@@ -302,7 +334,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 - **본문 링크는 해당 문서 상세로 딥링크**된다(`_detail_link`): 진행 중 이벤트(`stage_arrival`/`rejected`/`revision_requested`/`notify_submitted`)는 `{FRONTEND_URL}/approval?id={문서ID}`, 완료 관련 이벤트(`approved`/`notify_approved`)는 `{FRONTEND_URL}/history?id={문서ID}`(완료 문서는 결재현황 목록에서 빠지므로). 프론트(`ApprovalPage.tsx`/`HistoryPage.tsx`)가 `?id=` 쿼리를 감지해 목록과 무관하게 그 문서를 직접 조회 후 상세 모달을 자동으로 연다.
 
 ### 본문 디자인 — 히어로 헤더 + KPI 카드 (2026-07 개편)
-- 본문 HTML은 `_render_hero_kpi_email()`(공통 템플릿) + `_kpi_grid()`(2x2 타일)로 렌더링되며, 모든 이벤트 타입(`stage_arrival`/`rejected`/`revision_requested`/`approved`/`notify_submitted`/`notify_approved`/`notify_p_completed`)이 이 템플릿을 공유한다.
+- 본문 HTML은 `_render_hero_kpi_email()`(공통 템플릿) + `_kpi_grid()`(2x2 타일)로 렌더링되며, 모든 이벤트 타입(`stage_arrival`/`rejected`/`revision_requested`/`approved`/`notify_submitted`/`notify_approved`/`notify_p_completed`/`withdraw_*`/`pause_*`/`document_deleted`/`post_approver_removed`/`validation_system_changed`)이 이 템플릿을 공유한다.
 - 구성: 솔리드 컬러 히어로(시스템명 + 이벤트 안내 문구) → 흰 카드(의뢰서 제목 + KPI 타일 4개: 결재 단계/의뢰자/상신일/생산 진행일) → **결재 경로 카드**(2026-07 추가, 아래 참고) → 특이사항(`reference_materials`) 카드 → CTA 버튼 → 푸터. 카드 바깥은 연한 색조 배경.
 - **이벤트별 색상 테마**(`EVENT_THEME`): 히어로/버튼/카드 테두리/KPI 타일 배경을 이벤트 타입에 따라 통일된 팔레트로 분기한다.
   - `stage_arrival`: 블루 `#2563eb → #3b82f6`
@@ -311,6 +343,9 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
   - `notify_submitted`/`notify_approved`/`notify_p_completed`: 퍼플 `#7c3aed → #8b5cf6`
   - `withdraw_requested`/`withdraw_completed`: 레드(반려와 동일) — 결재가 멈추거나 문서가 사라지는 알림
   - `withdraw_rejected`/`withdraw_cancelled`: 퍼플(통보와 동일) — 결재가 그대로 이어진다는 정보성 통보
+  - `pause_requested`/`pause_confirmed`/`document_deleted`: 레드(반려와 동일) — 결재가 멈추거나 문서가 사라지는 알림
+  - `pause_rejected`/`post_approver_removed`/`validation_system_changed`: 퍼플(통보와 동일) — 정보성 통보
+  - `pause_resumed`: 블루(단계 도착과 동일) — 결재가 정상적으로 다시 시작된다는 알림
   - `EVENT_THEME`에 없는 이벤트 타입은 `stage_arrival`(블루) 테마로 대체된다.
 - **결재 단계** 타일: `stage_arrival`은 `AGENT_LABEL`, 그 외 이벤트는 `EVENT_STATUS_LABEL`(반려/승인 완료/상신 통보/결재 완료 통보/P 단계 도착 통보/P 단계 완료 통보)을 표시한다.
 - **생산 진행일**(`document.production_date`)과 **특이사항**(`document.reference_materials`, 상신 화면의 "특이사항" 입력값)은 값이 없으면 `-`로 표시한다.
@@ -392,7 +427,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | `confirm-withdraw` (철회 확인) | 🟡 | 대상 단계 **전원 확인이 끝나 삭제될 때만** `withdraw_completed`(개인 1통 + 팀별 각 1통). 아직 남은 단계가 있으면 무메일 |
 | `reject-withdraw` (철회 거부) | ✅ | 철회 요청자 + 작성자에게 `withdraw_rejected`(1통, 분리 대상 아님) |
 | `cancel-withdraw` (철회 요청 취소) | ✅ | 확인 대상 단계 담당자(개인 1통)/팀(팀별 각 1통)에게 `withdraw_cancelled` |
-| `delete` (삭제) | ❌ | 알림 없음 |
+| `delete` (삭제) | ✅ | `document_deleted`: withdraw_completed 와 동일한 수신자 규칙(`resolve_withdraw_completed_recipients`) 재사용(개인 1통 + 진행된 팀별 각 1통). 삭제 전 적재 + `@transaction.atomic` 추가(2026-09) |
 | `approve-step` agent=R (담당자 합의) | ✅ | 검토자(RV)가 지정돼 있으면 RV에게, 없으면 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(Only MAP 이고 후결자도 없으면 그 자리에서 즉시 approved 메일). **(2026-08) J 도착 메일이 여기로 앞당겨졌고**, 미배정 J 의 수신자도 고정 주소 1곳 → **TE_J 팀 전원**으로 바뀌었다 |
 | `approve-step` agent=RV (검토자 합의) | ✅ | 병렬 전환되며 P·**J**·O·E·[RA 각각]에게 동시 발송(위와 동일) |
 | `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나면 **TE_O·TE_J 에게 notify_p_completed 발송**(2026-09부터 TE_O·TE_J 각각 별도 메일 2통, 순서대로 발송). 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨). **(2026-08) 이 시점의 J 생성·J 도착 메일은 R 합의 시점으로 이동**했다 |
@@ -400,19 +435,28 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | `approve-step` agent=J/O/E/EV/RA (병렬 경로 합의) | 🟡 | 이 합의로 **문서 전체가 approved 로 전이될 때만** approved(결재 경로 참여 전원) + notify_approved(통보처) 발송. 다른 경로가 아직 안 끝났으면 이 개별 합의는 **무메일**(침묵 — 예: J는 합의됐는데 O가 아직이면 알림 없음) |
 | `reject-step` (어느 단계든 반려, PL 제외) | ✅ | rejected: 개인 수신자 메일 1통(작성자 + 현재 회차 기합의자 전원 등) + **아직 합의를 마치지 않은 결재선 단계의 담당 팀별로 각각 별도 메일**(반려자 본인·기합의자 제외, 2026-07 개편 / 2026-09 팀별 분리). §3.1 참고 |
 | `assign-step` agent=R (담당자 지정) | ✅ | 지정된 R 담당자에게 발송. **같이 고른 검토자(RV)는 이 시점엔 무메일**(R 담당자가 합의하는 시점에 발송됨) |
-| `claim-step` (검토중 선점, J/O/E/P) | ❌ | 선점(검토중 클릭) 자체는 알림 없음 |
-| `request-pause` / `confirm-pause` / `reject-pause`(2026-08) / `resume` / `cancel-pause` (결재 중단 전 구간) | ❌ | 전 구간 알림 없음(기존에 알려진 범위 밖 항목) |
+| `claim-step` / `unclaim-step` (검토중 선점/취소, J/O/E/P) | ❌ | 선점·선점취소(클릭) 자체는 알림 없음(2026-09: 잦은 클릭 액션이라 범위에서 제외하기로 결정) |
+| `request-pause` (중단 요청) | ✅ | `pause_requested`: 확인 대상 단계(개인 1통 + 미배정 팀별 각 1통), withdraw_requested 와 동일한 수신자 규칙(`resolve_withdraw_target_recipients`) 재사용(2026-09) |
+| `confirm-pause` (중단 확인) | 🟡 | 대상 단계 **전원 확인이 끝나 pause 로 확정될 때만** `pause_confirmed`(작성자 개인 1통 + 지금까지 진행된 팀별 각 1통). 부분 확인은 무메일(2026-09) |
+| `reject-pause` (중단 거부, 2026-08) | ✅ | `pause_rejected`: 중단 요청자 + 작성자(1통, withdraw_rejected 와 동일 패턴, 2026-09) |
+| `resume` (재개) | ✅ | `pause_resumed`: 재개 시점 pending 단계 담당자/팀(개인 1통 + 미배정 팀별 각 1통, 2026-09) |
+| `cancel-pause` (중단 요청 취소) | ❌ | resume 과 수신자에게 전달할 메시지 성격이 겹친다고 판단해 2026-09 범위에서 제외 |
 | `peer-approve` (PL 합의) | 🟡 | 지정 PL **전원**이 합의해야 R 생성 + R에게 발송. 아직 미합의 PL이 있으면 이 합의는 무메일 |
 | `peer-reject` (PL 반려) | ✅ | rejected: 작성자 + 현재 회차 기합의자 전원 **+ 같은 회차의 미합의(pending) 나머지 지정 PL**(2026-07 추가) |
 | `peer-submit` (PL 수정 후 상신) | 🟡 | `peer-approve`와 동일 조건 |
 | `change-designee` (지정 PL 변경) | ✅ | 새로 지정된 PL에게 상신 시와 동일한 stage_arrival 발송(제목에 `[이름님]`, 2026-07 추가). 기존 지정자에게는 알림 없음 |
 | `add-post-approver` (후결자 추가, 2026-07) | ✅ | 추가된 후결자에게 즉시 stage_arrival 발송(생성 시점과 동일). 고정 후결자와 중복 지정이 API에서 차단되므로 **이 경로는 항상 추가 후결자 형식**(`[이름님] [결재 요청] {제목}`, 2026-08 변경) |
-| `remove-post-approver` (후결자 제거, 2026-07) | ❌ | 제거되는 후결자에게 별도 알림 없음(요청 범위 밖) |
+| `remove-post-approver` (후결자 제거) | ✅ | `post_approver_removed`: 제거된 후결자 본인에게만 개인화 메일 1통(제목에 `[이름님]`). step 삭제 **전에** assignee 정보를 먼저 읽어 넘긴다(2026-09) |
+| `validation-system` (Validation System 변경) | ✅ | `validation_system_changed`: 작성자 + 지정된 EV 전원(개인 1통) + 현재 E 단계(담당자 있으면 개인, 없으면 TE_E 팀 1통, 2026-09) |
 | VOC 등록 / 댓글 | ✅ | §2 참고 |
+| `direct-approve` (MASTER 이력 바로 등록) | ❌ | 실제 결재를 진행하지 않고 과거 완료 기록만 남기는 기능이라 2026-09 에도 범위에서 제외(코드 주석에 의도적 설계로 명시) |
 
-⚠️ **잠재 확인 포인트**(현재 구현상 의도적인지 재확인 필요): `claim-step`·`remove-post-approver`·PAUSE 전 구간은
-담당자/검토자가 바뀌거나 빠지는데도 메일이 전혀 나가지 않는다
-(`change-designee`는 2026-07부터 새 지정자에게 발송되도록 해결됨, 후결자 추가도 동일하게 해결됨).
+⚠️ **잠재 확인 포인트**(현재 구현상 의도적인지 재확인 필요): `claim-step`/`unclaim-step`(잦은 클릭 액션이라
+2026-09 검토 시 범위에서 제외하기로 결정)은 담당자가 바뀌거나 빠지는데도 메일이 전혀 나가지 않는다.
+`direct-approve`도 과거 기록만 남기는 기능이라 의도적으로 무메일이다
+(`change-designee`는 2026-07부터 새 지정자에게 발송되도록 해결됨, 후결자 추가도 동일하게 해결됨,
+PAUSE 전 구간·삭제·후결자 제거·Validation System 변경은 2026-09부터 해결됨 — `cancel-pause`만
+resume 과 목적이 겹친다는 판단으로 계속 무메일).
 
 ---
 
