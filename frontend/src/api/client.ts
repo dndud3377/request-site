@@ -39,6 +39,7 @@ import {
   ValidationSystemValue,
   LayerFilterSet,
   MapInfo,
+  PersonalMarkCategory,
 } from '../types';
 
 // ===== JWT 토큰 관리 =====
@@ -311,6 +312,12 @@ const setSharedGroup = async (id: number, groupId: number | null) => {
     `/documents/${id}/set-shared-group/`,
     { group_id: groupId }
   );
+  return { data };
+};
+
+/** 내 개인 마킹(범주)을 설정/해제한다. categoryId 가 null 이면 표시를 없앤다. */
+const setDocumentMark = async (id: number, categoryId: number | null) => {
+  const data = await post<{ category: number | null }>(`/documents/${id}/mark/`, { category: categoryId });
   return { data };
 };
 
@@ -600,6 +607,20 @@ export const documentsAPI = {
   stats: documentStats,
   getApproved: getApprovedDocuments,
   annualDesignRuleStats,
+  setMark: setDocumentMark,
+};
+
+// ===== 개인 마킹 범주 API (결재 현황, 다른 사용자와 공유되지 않는 개인 데이터) =====
+
+export const markCategoriesAPI = {
+  list: (): Promise<PersonalMarkCategory[]> => get<PersonalMarkCategory[]>('/mark-categories/'),
+  create: (name: string, color: PersonalMarkCategory['color']): Promise<PersonalMarkCategory> =>
+    post<PersonalMarkCategory>('/mark-categories/', { name, color }),
+  update: (
+    id: number,
+    input: Partial<Pick<PersonalMarkCategory, 'name' | 'color'>>
+  ): Promise<PersonalMarkCategory> => patch<PersonalMarkCategory>(`/mark-categories/${id}/`, input),
+  delete: (id: number): Promise<void> => request(`/mark-categories/${id}/`, { method: 'DELETE' }),
 };
 
 // ===== 디자인룰 수동 매핑 API (쓰기는 MASTER 전용) =====
