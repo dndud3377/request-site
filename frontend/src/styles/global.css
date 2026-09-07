@@ -627,6 +627,25 @@ select.form-control option {
   font-size: 0.7rem;
 }
 
+/* 컬럼이 내용 최대 길이에만 맞춰지는 표(현재는 흐름도 표시 표 전용). 제거 가능. */
+.table.table-auto {
+  width: auto;
+  table-layout: auto;
+}
+
+/* 흐름도 조합 강조 색상(제거 가능) — components/PagedDetailView.tsx의 FlowChartTable 참조.
+   fc-match: 이 문서의 라인/제품 이름/조리법과 일치하는 행. fc-diff: 그 외(조합별 보조색,
+   --fcc 인라인 변수로 전달됨). */
+.table tr.fc-match td {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.table tr.fc-diff td {
+  color: var(--fcc, var(--text-muted));
+  font-weight: 500;
+}
+
 /* ===== Status Badge ===== */
 .badge {
   display: inline-flex;
