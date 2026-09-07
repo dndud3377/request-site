@@ -439,6 +439,13 @@ def get_data_from_rtdb(query_payload, access_token):
     """
     RTDB(REST API) 의 /api/queries 엔드포인트로 데이터 조회
     성공 시 DataFrame, 예외·에러 응답 시 None 을 반환한다.
+
+    응답 최상위에는 sql/schema/data 외에 status(`{'state':..., 'errors':[...]}`) 도 함께 온다.
+    Impala 배치 스트리밍이 부하로 중간에 끊겨도 status.state 는 'DONE' 으로 표시되는 경우가
+    있어(예: CallTimeoutException), state 만으로는 완결성을 신뢰할 수 없다. 대신 status.errors
+    가 비어있지 않으면 data 에 일부 행이 섞여 와도(짤린 데이터) 전부 폐기하고 실패로 처리한다
+    (2026-09 추가) - 호출부(scheduler.py 의 fetch())가 이미 None 을 재시도 대상으로 다루므로
+    자동으로 재시도된다.
     """
     base_url = os.environ.get('RTDB_BASE_URL', '')
     if not base_url or not access_token:
@@ -464,6 +471,21 @@ def get_data_from_rtdb(query_payload, access_token):
         # API 에러 응답 체크
         if 'detail' in data:
             logger.error(f"[RTDB] API 에러: {data['detail']}")
+            return None
+
+        # 배치 스트리밍 도중 에러가 있었으면 status.state 가 'DONE'이어도 신뢰하지 않는다.
+        # data 에 일부 행(짤린 데이터)이 섞여 와도 전부 폐기한다 - 나중에 로그로 분석할 수 있도록
+        # [RTDB][BATCH_ERROR] 태그로 table_name/reason/message/폐기 건수를 남긴다.
+        errors = (data.get('status') or {}).get('errors') or []
+        if errors:
+            table_name = (query_payload.get('query') or {}).get('table_name')
+            discarded_rows = len(data.get('data') or [])
+            for err in errors:
+                logger.error(
+                    f"[RTDB][BATCH_ERROR] table={table_name} "
+                    f"reason={err.get('reason')} message={err.get('message')} "
+                    f"discarded_rows={discarded_rows}"
+                )
             return None
 
         df = pd.DataFrame(
