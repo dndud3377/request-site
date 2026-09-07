@@ -1,4 +1,4 @@
-import React, { useState, useRef, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -26,21 +26,67 @@ export type ReviewItemsPanelProps = ReviewItemsProps;
 
 // ===== Table Components =====
 
-function FlowChartTable({ rows }: { rows: FlowChartRow[] }) {
+// ── 흐름도 "조합 강조 색상" 기능 (제거 가능) ──────────────────────────────
+// 목적: 흐름도 각 행의 위치/제품 이름/조리법이 이 문서 자체의 라인/제품 이름/조리법
+// (Step1에서 고른 line/partid_selection/process_id)과 같으면 굵은 검정, 다르면
+// 조합별로 고유한 보조색으로 구분한다. 강조가 아니라 "구분"이 목적이라 채도를
+// 낮춘 톤만 쓴다. 같은 조합은 항상 같은 색, 다른 조합은 항상 다른 색(팔레트를
+// 순환 배정 — 서로 다른 조합이 6개를 넘으면 색이 재사용된다).
+// 되돌리려면: 아래 FLOW_COMBO_PALETTE 상수, buildFlowComboColors 함수,
+// FlowChartTable의 currentLine/currentPartidSelection/currentProcessId props와
+// comboColors 사용 부분, 호출부(FlowChartTable 사용 지점)의 세 prop 전달,
+// global.css의 "흐름도 조합 강조 색상" 규칙을 지우면 된다.
+const FLOW_COMBO_PALETTE = ['#6b85ae', '#a9825f', '#7c9a6b', '#9b738f', '#5f9d94', '#8478a8'] as const;
+
+const flowComboKey = (location: string, productName: string, processId: string): string =>
+  `${location}|${productName}|${processId}`;
+
+/** 흐름도 행들을 훑어 REF와 다른 조합마다 팔레트 색을 하나씩(등장 순서대로) 배정한다. */
+function buildFlowComboColors(rows: FlowChartRow[], refKey: string): Map<string, string> {
+  const colors = new Map<string, string>();
+  let next = 0;
+  rows.forEach((r) => {
+    const key = flowComboKey(r.location, r.product_name, r.process_id);
+    if (key === refKey || colors.has(key)) return;
+    colors.set(key, FLOW_COMBO_PALETTE[next % FLOW_COMBO_PALETTE.length]);
+    next += 1;
+  });
+  return colors;
+}
+// ── 흐름도 "조합 강조 색상" 기능 끝 ──────────────────────────────────────
+
+function FlowChartTable({
+  rows,
+  currentLine,
+  currentPartidSelection,
+  currentProcessId,
+}: {
+  rows: FlowChartRow[];
+  currentLine: string;
+  currentPartidSelection: string;
+  currentProcessId: string;
+}) {
   const { t } = useTranslation();
+  const refKey = flowComboKey(currentLine, currentPartidSelection, currentProcessId);
+  const comboColors = useMemo(() => buildFlowComboColors(rows, refKey), [rows, refKey]);
   if (!rows || rows.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{t('common.no_data')}</div>;
   return (
-    <table className="table" style={{ fontSize: '0.8rem', marginBottom: 8 }}>
+    <table className="table table-auto" style={{ fontSize: '0.8rem', marginBottom: 8 }}>
       <thead><tr><th>{t('request.flow_line')}</th><th>{t('request.flow_partid')}</th><th>{t('request.flow_process_id')}</th><th>Step</th></tr></thead>
       <tbody>
-        {rows.map((r) => (
-          <tr key={r.id}>
-            <td>{r.location}</td>
-            <td>{r.product_name}</td>
-            <td>{r.process_id}</td>
-            <td>{r.step_from && r.step_to ? `${r.step_from} ~ ${r.step_to}` : (r.step_from || r.step_to || '')}</td>
-          </tr>
-        ))}
+        {rows.map((r) => {
+          const key = flowComboKey(r.location, r.product_name, r.process_id);
+          const isMatch = key === refKey;
+          const style = isMatch ? undefined : ({ '--fcc': comboColors.get(key) } as React.CSSProperties);
+          return (
+            <tr key={r.id} className={isMatch ? 'fc-match' : 'fc-diff'} style={style}>
+              <td>{r.location}</td>
+              <td>{r.product_name}</td>
+              <td>{r.process_id}</td>
+              <td>{r.step_from && r.step_to ? `${r.step_from} ~ ${r.step_to}` : (r.step_from || r.step_to || '')}</td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
@@ -1788,7 +1834,12 @@ type Page = { label: string; content: React.ReactNode };
               )}
               {flowHistOpen && renderFlowHistory()}
               <div style={sectionTitle}>{t('request.flow_chart')}</div>
-              <FlowChartTable rows={detail.flow_chart ?? []} />
+              <FlowChartTable
+                rows={detail.flow_chart ?? []}
+                currentLine={detail.line ?? ''}
+                currentPartidSelection={detail.partid_selection ?? ''}
+                currentProcessId={detail.process_id ?? ''}
+              />
             </div>
           )}
 

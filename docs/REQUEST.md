@@ -3326,6 +3326,49 @@ J-layer(STEP3)와 O-layer(STEP4) 표의 `st` 컬럼이 지금까지 `request.col
   — 9 suites / 266건 전부 통과(회귀 없음 — 기존 필터 관리 테스트가 있다면 그대로 통과함을 확인).
   백엔드 `manage.py test api` — 349건 전부 통과(신규 `LayerFilterSetTest` 16건 포함).
 
+### 기능 추가 (2026-09-07 — 흐름도 표시 표: 컬럼 자동 너비 + 조합 강조 색상, 제거 가능 기능)
+
+**요청**: 결재 현황 상세보기의 흐름도 표(`FlowChartTable`)가 행이 많아지면 읽기 어렵다는
+피드백에서, (1) 열 너비를 내용 최대 길이에 맞춰 좁히고 (2) 각 행의 위치·제품 이름·조리법이
+이 문서 자체의 라인/제품 이름/조리법(`detail.line`/`partid_selection`/`process_id`)과 같으면
+굵은 검정, 다르면 조합별로 구분되는 보조색으로 표시해 달라는 요청. 사용자가 "이 기능은
+언제든 삭제할 수 있게 기록해두자"고 명시해, 구현을 한 곳에 모으고 되돌리는 방법을 아래에
+그대로 적어둔다.
+
+- **`components/PagedDetailView.tsx`**: `FlowChartTable` 바로 위에 `FLOW_COMBO_PALETTE`(채도
+  낮춘 6색 상수), `flowComboKey`, `buildFlowComboColors` — 흐름도 행들을 훑어 REF(현재 문서의
+  line/partid_selection/process_id)와 다른 조합마다 등장 순서대로 팔레트 색을 하나씩 배정한다
+  (같은 조합은 항상 같은 색, 팔레트 6개를 넘는 서로 다른 조합이 있으면 색이 재사용된다).
+  `FlowChartTable`은 `currentLine`/`currentPartidSelection`/`currentProcessId` props를 새로
+  받아 `useMemo`로 조합→색 매핑을 계산하고, 각 `<tr>`에 `fc-match`(일치)/`fc-diff`(불일치,
+  `--fcc` 인라인 변수로 색 전달) 클래스와 `table table-auto` 클래스를 붙인다. 호출부(1곳,
+  "상세 정보" 카드 아래)에서 `detail.line ?? ''` 등 3개 prop을 새로 전달한다
+  (`detail: Partial<DetailFormState>`라 `undefined`일 수 있어 빈 문자열로 기본값 처리).
+- **`styles/global.css`**: 기존 `.table-compact`(밀도) 바로 아래에 `.table-auto`(자동 너비:
+  `width:auto; table-layout:auto`)와 `.table tr.fc-match td`/`.table tr.fc-diff td` 규칙을
+  추가. 전부 클래스로 한정돼 있어 다른 화면의 `.table`(J/O-layer 표 등)에는 영향 없다.
+- **되돌리는 방법**: 위 세 파일에서 이 기능과 관련된 부분만 지우면 된다 — `PagedDetailView.tsx`의
+  `FLOW_COMBO_PALETTE`~`buildFlowComboColors` 블록(주석으로 시작/끝 표시돼 있음)과
+  `FlowChartTable`의 새 props·로직·`table-auto`/`fc-match`/`fc-diff` 클래스, 호출부의 3개 prop
+  전달, `global.css`의 `.table-auto`/`.fc-match`/`.fc-diff` 규칙. 새로 추가된 i18n 키는 없다
+  (열 너비·색상만 바뀌고 화면에 노출되는 문구는 없음).
+- **영향 파일**: `frontend/src/components/PagedDetailView.tsx`, `frontend/src/styles/global.css`.
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일 — 작업 중 한 번 3건 늘었던 것은
+  `detail.line` 등이 `string | undefined`인데 prop을 `string`으로 받아서였고, 호출부에서
+  `?? ''`로 고쳐 해결). `CI=true npx react-scripts test --watchAll=false` — 11 suites / 273건
+  전부 통과(`adiCdUnregisteredAndVs.test.tsx`가 변경 전 코드에서도 간헐적으로 실패하는 걸
+  재실행으로 확인 — 이 변경과 무관한 기존 flaky 테스트). 결재 흐름(상신·합의·반려 등)을 건드리지
+  않아 `scripts/approval_cases/run_cases`는 대상이 아니다.
+- **수동 검증 시나리오**:
+  1. [`/request`에서 라인·조합법·제품 이름·조리법(예: 라인1/PROC01/PROD01/RECIPE01)을 채우고
+     요청 목적을 고른 뒤, 흐름도에 여러 행을 추가 — 하나는 위 값과 완전히 같게, 나머지는 서로
+     다른 조합으로(그 중 2행은 같은 조합) 입력 후 임시저장] → [결재 현황 → 방금 만든 의뢰서 클릭
+     → '의뢰 상세' 탭 흐름도 표] → [기대 결과: 위 값과 같은 조합의 행만 굵은 검정, 나머지는
+     조합마다 다른 옅은 색이며 같은 조합 두 행은 색이 같다. 표의 열 너비가 카드 폭을 꽉 채우지
+     않고 내용 길이에 맞춰 좁게 보인다.]
+  2. [같은 화면에서 흐름도 행이 1개뿐인 다른 의뢰서를 열어봄] → [기대 결과: 기존과 동일하게
+     정상 표시되고 에러 없음(행이 적을 때도 회귀 없음 확인).]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
