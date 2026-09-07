@@ -2,7 +2,7 @@
 
 외부 DXHUB API 호출은 모두 mock 처리한다.
 """
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -5640,6 +5640,87 @@ class StartMailOnlyRemovesHeavyJobsTest(TestCase):
 
         remaining_ids = set(DjangoJob.objects.values_list('id', flat=True))
         self.assertIn('process_mail_queue', remaining_ids)
+
+
+class GetDataFromRtdbBatchErrorTest(TestCase):
+    """get_data_from_rtdb() 의 status.errors 감지(2026-09 추가) 검증.
+
+    Impala 배치 스트리밍이 부하로 중간에 끊겨도 status.state 는 'DONE'으로 표시되고
+    data 에는 짤린 데이터가 일부 섞여 오는 사례(CallTimeoutException)가 실제로 관측되어,
+    state 대신 status.errors 유무로 완결성을 판단하도록 바꿨다. errors 가 있으면 data 에
+    행이 있어도 전부 폐기하고 None 을 반환해야 한다(호출부의 재시도 로직이 이 None 을
+    재시도 대상으로 처리한다).
+    """
+
+    def setUp(self):
+        env_patcher = patch.dict('os.environ', {'RTDB_BASE_URL': 'https://rtdb.example.com'})
+        env_patcher.start()
+        self.addCleanup(env_patcher.stop)
+
+    def _mock_response(self, payload):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = payload
+        return mock_resp
+
+    def test_errors_present_discards_data_and_returns_none(self):
+        from . import utils
+
+        payload = {
+            'sql': 'SELECT ...',
+            'schema': {'columns': {'names': ['a', 'b']}},
+            'data': [[1, 2]] * 150000,
+            'status': {
+                'state': 'DONE',
+                'errors': [{
+                    'reason': 'CallTimeoutException',
+                    'message': 'A single database round-trip exceeded the allowed call timeout',
+                }],
+            },
+        }
+        with patch.object(utils.requests, 'post', return_value=self._mock_response(payload)), \
+             self.assertLogs('api.utils', level='ERROR') as logs:
+            result = utils.get_data_from_rtdb(
+                {'query': {'table_name': 'O_line1.W'}}, 'dummy-token'
+            )
+
+        self.assertIsNone(result)
+        self.assertTrue(any('[RTDB][BATCH_ERROR]' in msg for msg in logs.output))
+        self.assertTrue(any('CallTimeoutException' in msg for msg in logs.output))
+        self.assertTrue(any('discarded_rows=150000' in msg for msg in logs.output))
+
+    def test_no_errors_returns_dataframe_as_before(self):
+        from . import utils
+
+        payload = {
+            'sql': 'SELECT ...',
+            'schema': {'columns': {'names': ['a', 'b']}},
+            'data': [[1, 2], [3, 4]],
+            'status': {'state': 'DONE', 'errors': []},
+        }
+        with patch.object(utils.requests, 'post', return_value=self._mock_response(payload)):
+            result = utils.get_data_from_rtdb(
+                {'query': {'table_name': 'O_line1.W'}}, 'dummy-token'
+            )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result), 2)
+
+    def test_missing_status_key_returns_dataframe_as_before(self):
+        """status 키 자체가 없는 (구형/다른) 응답도 회귀 없이 그대로 동작해야 한다."""
+        from . import utils
+
+        payload = {
+            'sql': 'SELECT ...',
+            'schema': {'columns': {'names': ['a', 'b']}},
+            'data': [[1, 2]],
+        }
+        with patch.object(utils.requests, 'post', return_value=self._mock_response(payload)):
+            result = utils.get_data_from_rtdb(
+                {'query': {'table_name': 'O_line1.W'}}, 'dummy-token'
+            )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result), 1)
 
 
 class WriteStepIfChangedTest(TestCase):
