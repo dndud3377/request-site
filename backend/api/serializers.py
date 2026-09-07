@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
-    RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet,
+    RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet, PersonalMarkCategory,
 )
 from . import doc_permissions
 from . import design_rule_stats
@@ -242,6 +242,7 @@ class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSeriali
     approval_steps = ApprovalStepSerializer(many=True, read_only=True)
     designated_pl_loginid = serializers.SerializerMethodField()
     my_pending_review_items = serializers.SerializerMethodField()
+    my_mark_category = serializers.SerializerMethodField()
 
     class Meta:
         model = RequestDocument
@@ -252,12 +253,24 @@ class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSeriali
             'requester_loginid', 'can_edit', 'can_withdraw',
             'can_request_pause', 'can_resume', 'can_requester_resubmit', 'pause_request', 'withdraw_request',
             'post_approver_fixed_loginid',
-            'shared_group', 'shared_group_name', 'my_pending_review_items',
+            'shared_group', 'shared_group_name', 'my_pending_review_items', 'my_mark_category',
         ]
         read_only_fields = ['shared_group']
 
     def get_designated_pl_loginid(self, obj):
         return obj.designated_pl.loginid if obj.designated_pl else None
+
+    def get_my_mark_category(self, obj):
+        """호출자 개인의 범주 마킹 id. 없으면 None.
+
+        RequestDocumentViewSet.get_queryset 이 personal_marks 를 request.user 기준으로
+        미리 걸러 `my_marks` 에 prefetch 해 둔다 — 다른 사용자의 마킹은 애초에 여기 오지 않는다.
+        """
+        user = self._perm_user()
+        if not user or not getattr(user, 'is_authenticated', False):
+            return None
+        marks = getattr(obj, 'my_marks', [])
+        return marks[0].category_id if marks else None
 
     def get_my_pending_review_items(self, obj):
         """호출자가 검토자로 지정됐지만 아직 확인하지 않은 검토 항목 수.
@@ -596,6 +609,18 @@ class DocumentDesignRuleOverrideSerializer(serializers.ModelSerializer):
             },
         )
         return obj
+
+
+class PersonalMarkCategorySerializer(serializers.ModelSerializer):
+    """개인 마킹 범주. 소유자(user)는 요청한 사용자로 서버에서 고정한다 — 클라이언트가 못 바꾼다."""
+
+    class Meta:
+        model = PersonalMarkCategory
+        fields = ['id', 'name', 'color', 'order']
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
 
 
 class RejectionSnapshotSerializer(serializers.ModelSerializer):
