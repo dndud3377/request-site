@@ -82,6 +82,35 @@ RTDB(REST API)  →  /api/queries
   관리한다(`scheduler.py`). `get_data_from_rtdb()`는 예외도 내부에서 잡아 `None`으로 통일해 반환하므로,
   스케줄러 쪽에서는 "결과가 `None`이거나 0건"이라는 단일 조건으로 예외·빈 결과를 함께 재시도 대상으로
   다룬다. 재시도는 이미 받아온 RTDB 토큰을 그대로 재사용하며 다시 로그인하지 않는다.
+
+#### 배치 스트리밍 에러 감지 (`status.errors`, 2026-09 추가)
+
+RTDB 응답 최상위에는 `sql`/`schema`/`data` 외에 `status`(`{'state': ..., 'errors': [...]}`) 도 함께
+온다. **Impala 배치 스트리밍이 부하로 배치 경계에서 중단돼도 `status.state`는 `'DONE'`으로 정상
+표시되는 사례가 실제로 관측됐다**(예: `reason: CallTimeoutException`, `data`에 150,000건이 섞여
+온 채로 `state: DONE`). 즉 `state`만으로는 응답의 완결성을 신뢰할 수 없다.
+
+이를 막기 위해 `get_data_from_rtdb()`(`utils.py`)가 `status.errors`가 비어있지 않으면 `data`에
+행이 섞여 있어도 **전부 폐기하고 `None`을 반환**한다:
+
+```
+response.json() → data
+  data['status']['errors'] 가 비어있지 않은가?
+    예 → data['data']에 행이 있어도 전부 폐기, [RTDB][BATCH_ERROR] 로그 남기고 None 반환
+    아니오 → 기존과 동일하게 DataFrame 반환
+```
+
+- **로그**: `[RTDB][BATCH_ERROR] table={table_name} reason={reason} message={message} discarded_rows={건수}`
+  형태로 남긴다(`utils.py`) — 이후 로그를 모아 얼마나 자주/어느 라인·데이터 종류에서 발생하는지
+  분석할 수 있도록 태그를 고정해뒀다.
+- **재시도**: 이 함수가 반환하는 `None`은 호출부(`scheduler.py`의 `fetch()`)가 이미 "0건/예외"와
+  동일하게 재시도 대상으로 다루므로, `scheduler.py` 쪽은 수정 없이 기존 3회 재시도·실패 기록·
+  RTDB 동기화 실패 알림 메일에 자동으로 편입된다. PP(공정-품목)/PC(품목-공정ID)/스텝 세 조회
+  전부 `get_data_from_rtdb()`를 공유하므로 동일하게 적용된다.
+- **적용 범위 판단 기준**: `reason`(에러 종류)으로 필터링하지 않는다 — `status.errors`가 하나라도
+  있으면 무조건 폐기한다.
+- **검증**: `backend/api/tests.py`의 `GetDataFromRtdbBatchErrorTest`
+  (`status.errors` 있음 → 폐기+로그, 없음/`status` 키 자체 없음 → 기존과 동일하게 정상 동작).
 - **스텝 조회 전 대기**(2026-08 추가): 라인별 스텝(col_step) 조회 직전에 `RTDB_STEP_PRE_FETCH_DELAY_SEC`
   (3초) 대기한다 - RTDB 쪽 데이터 갱신이 조회 시점에 아직 안 끝나 있는 경우를 대비한다. 재시도와
   달리 **실패 여부와 무관하게 매번** 스텝 조회 전에 한 번 대기한다.
