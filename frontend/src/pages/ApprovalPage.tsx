@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { documentsAPI, usersAPI, userGroupsAPI, layerFilterSetsAPI } from '../api/client';
+import { documentsAPI, usersAPI, userGroupsAPI, layerFilterSetsAPI, markCategoriesAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import StageGrid from '../components/StageGrid';
 import Modal, { ConfirmModal } from '../components/Modal';
@@ -10,7 +10,8 @@ import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '../components/PagedDetailView';
 import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
-import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem, LayerFilterSet } from '../types';
+import { MarkDot, MarkCategorySettingsModal, MARK_COLOR_VAR } from '../components/DocumentMark';
+import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory } from '../types';
 import { formatDate, formatTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
 import FilterManageModal from './RequestPage/components/FilterManageModal';
@@ -63,7 +64,10 @@ const AGENT_TO_ROLE: Record<string, string> = {
 const MAP_PURPOSE_OPTIONS = ['NEW', MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_DELETE_REQ, MAP_PURPOSE_NA];
 
 type ColSortKey = 'line' | 'purpose' | 'mapType' | 'submitted';
-type FilterDropdownKey = 'line' | 'purpose' | 'map' | 'date';
+type FilterDropdownKey = 'line' | 'purpose' | 'map' | 'date' | 'category';
+
+/** 범주 필터 값 — 문서의 my_mark_category(숫자) 또는 표시 없음('none'). */
+type MarkCategoryFilterValue = number | 'none';
 
 // 결재 현황 목록 페이지네이션 — 페이지당 표시 건수
 const APPROVAL_LIST_PAGE_SIZE = 10;
@@ -146,8 +150,64 @@ export default function ApprovalPage(): React.ReactElement {
   const [mapFilter, setMapFilter] = useState<Set<string>>(new Set());
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [markCategoryFilter, setMarkCategoryFilter] = useState<Set<MarkCategoryFilterValue>>(new Set());
   const [openFilterDropdown, setOpenFilterDropdown] = useState<FilterDropdownKey | null>(null);
   const filterBarRef = useRef<HTMLDivElement>(null);
+
+  // 개인 마킹 범주 — 다른 사용자와 공유되지 않는 내 전용 데이터. 결재 현황 진입 시 한 번만 받는다.
+  const [markCategories, setMarkCategories] = useState<PersonalMarkCategory[]>([]);
+  const [markSettingsOpen, setMarkSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    markCategoriesAPI.list().then(setMarkCategories).catch(() => { /* 실패해도 마킹 없이 화면은 그대로 쓸 수 있다 */ });
+  }, []);
+
+  const handleMarkChange = useCallback((doc: RequestDocument, categoryId: number | null) => {
+    const prev = doc.my_mark_category ?? null;
+    const applyLocally = (val: number | null) => {
+      setAllDocs((list) => list.map((d) => (d.id === doc.id ? { ...d, my_mark_category: val } : d)));
+      setDocs((list) => list.map((d) => (d.id === doc.id ? { ...d, my_mark_category: val } : d)));
+    };
+    applyLocally(categoryId);
+    documentsAPI.setMark(doc.id, categoryId).catch(() => {
+      applyLocally(prev);
+      addToast(t('common.process_error'), 'error');
+    });
+  }, [addToast, t]);
+
+  const handleCreateCategory = useCallback((name: string, color: PersonalMarkCategory['color']) => {
+    markCategoriesAPI.create(name, color)
+      .then((cat) => setMarkCategories((list) => [...list, cat]))
+      .catch(() => addToast(t('common.process_error'), 'error'));
+  }, [addToast, t]);
+
+  // 입력 중에는 화면만 즉시 갱신 — 서버 저장은 onBlur(handleRenameCategoryCommit)에서 한다.
+  const handleRenameCategoryLocal = useCallback((id: number, name: string) => {
+    setMarkCategories((list) => list.map((c) => (c.id === id ? { ...c, name } : c)));
+  }, []);
+
+  const handleRenameCategoryCommit = useCallback((id: number, name: string) => {
+    markCategoriesAPI.update(id, { name }).catch(() => addToast(t('common.process_error'), 'error'));
+  }, [addToast, t]);
+
+  const handleRecolorCategory = useCallback((id: number, color: PersonalMarkCategory['color']) => {
+    setMarkCategories((list) => list.map((c) => (c.id === id ? { ...c, color } : c)));
+    markCategoriesAPI.update(id, { color }).catch(() => addToast(t('common.process_error'), 'error'));
+  }, [addToast, t]);
+
+  const handleDeleteCategory = useCallback((id: number) => {
+    setMarkCategories((list) => list.filter((c) => c.id !== id));
+    setMarkCategoryFilter((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    // 이 범주로 마크돼 있던 문서는 서버가 SET_NULL 로 자동으로 표시 없음 처리한다 — 화면도 맞춰 지운다.
+    setAllDocs((list) => list.map((d) => (d.my_mark_category === id ? { ...d, my_mark_category: null } : d)));
+    setDocs((list) => list.map((d) => (d.my_mark_category === id ? { ...d, my_mark_category: null } : d)));
+    markCategoriesAPI.delete(id).catch(() => addToast(t('common.process_error'), 'error'));
+  }, [addToast, t]);
   // 전체 export(제목 옆 버튼) — 상세 정보/MAP 정보 탭을 화면 그대로 캡처하는 핸들.
   const pagedDetailViewRef = useRef<PagedDetailViewHandle>(null);
   useEffect(() => {
@@ -605,7 +665,10 @@ export default function ApprovalPage(): React.ReactElement {
 
   // 필터 바: 라인/목적/MAP 목적 체크박스 + 요청일 기간. docs(검색·탭 필터 적용 후)에 추가로 적용한다.
   const filteredDocs = useMemo(() => {
-    if (lineFilter.size === 0 && purposeFilter.size === 0 && mapFilter.size === 0 && !dateFrom && !dateTo) {
+    if (
+      lineFilter.size === 0 && purposeFilter.size === 0 && mapFilter.size === 0
+      && !dateFrom && !dateTo && markCategoryFilter.size === 0
+    ) {
       return docs;
     }
     return docs.filter((d) => {
@@ -616,9 +679,10 @@ export default function ApprovalPage(): React.ReactElement {
       const submitted = getDocSubmittedDate(d).slice(0, 10);
       if (dateFrom && (!submitted || submitted < dateFrom)) return false;
       if (dateTo && (!submitted || submitted > dateTo)) return false;
+      if (markCategoryFilter.size > 0 && !markCategoryFilter.has(d.my_mark_category ?? 'none')) return false;
       return true;
     });
-  }, [docs, lineFilter, purposeFilter, mapFilter, dateFrom, dateTo]);
+  }, [docs, lineFilter, purposeFilter, mapFilter, dateFrom, dateTo, markCategoryFilter]);
 
   // 목록 정렬: 컬럼 헤더 정렬 켜짐 > 양산일 정렬 켜짐 > 단계별 필터(진입 순서) > 기본(상신일 오래된 순)
   const sortedDocs = useMemo(() => {
@@ -1373,6 +1437,15 @@ export default function ApprovalPage(): React.ReactElement {
     setMapFilter(new Set());
     setDateFrom('');
     setDateTo('');
+    setMarkCategoryFilter(new Set());
+  };
+
+  const toggleMarkCategoryFilter = (value: MarkCategoryFilterValue) => {
+    setMarkCategoryFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value); else next.add(value);
+      return next;
+    });
   };
 
   const applyDatePreset = (days: number) => {
@@ -1417,7 +1490,8 @@ export default function ApprovalPage(): React.ReactElement {
     </div>
   );
 
-  const hasColumnFilter = lineFilter.size > 0 || purposeFilter.size > 0 || mapFilter.size > 0 || !!dateFrom || !!dateTo;
+  const hasColumnFilter = lineFilter.size > 0 || purposeFilter.size > 0 || mapFilter.size > 0
+    || !!dateFrom || !!dateTo || markCategoryFilter.size > 0;
 
   return (
     <div className="container page">
@@ -1546,6 +1620,56 @@ export default function ApprovalPage(): React.ReactElement {
           )}
         </div>
 
+        <div className="column-filter-anchor">
+          <button
+            type="button"
+            className={`column-filter-btn${markCategoryFilter.size ? ' active' : ''}`}
+            onClick={() => setOpenFilterDropdown((k) => (k === 'category' ? null : 'category'))}
+          >
+            {t('approval.col_category')} <span className="caret">▾</span>
+          </button>
+          {openFilterDropdown === 'category' && (
+            <div className="column-filter-popover">
+              <button
+                type="button"
+                className="column-filter-popover-all"
+                onClick={() => setMarkCategoryFilter(new Set<MarkCategoryFilterValue>([...markCategories.map((c) => c.id), 'none']))}
+              >
+                {t('approval.filter_select_all')}
+              </button>
+              <button type="button" className="column-filter-popover-all" onClick={() => setMarkCategoryFilter(new Set())}>
+                {t('approval.filter_select_none')}
+              </button>
+              <div className="column-filter-popover-divider" />
+              {markCategories.map((cat) => (
+                <label key={cat.id} className="column-filter-popover-item">
+                  <input
+                    type="checkbox"
+                    checked={markCategoryFilter.has(cat.id)}
+                    onChange={() => toggleMarkCategoryFilter(cat.id)}
+                  />
+                  <span className="legend-swatch" style={{ background: MARK_COLOR_VAR[cat.color] }} />
+                  {cat.name}
+                </label>
+              ))}
+              <div className="column-filter-popover-divider" />
+              <label className="column-filter-popover-item">
+                <input
+                  type="checkbox"
+                  checked={markCategoryFilter.has('none')}
+                  onChange={() => toggleMarkCategoryFilter('none')}
+                />
+                <span className="legend-swatch legend-swatch-none" />
+                {t('approval.category_none')}
+              </label>
+            </div>
+          )}
+        </div>
+
+        <button type="button" className="column-filter-btn" onClick={() => setMarkSettingsOpen(true)}>
+          ⚙ {t('approval.category_settings_btn')}
+        </button>
+
         {hasColumnFilter && (
           <button type="button" className="column-filter-reset" onClick={resetColumnFilters}>
             {t('common.reset')}
@@ -1648,22 +1772,30 @@ export default function ApprovalPage(): React.ReactElement {
                       ) : (detail.mapType || '-')}
                     </td>
                     <td>
-                      {isNone ? (
-                        <span
-                          data-tour={isTourTitleCell ? 'approval-doc-title' : undefined}
-                          style={{ fontWeight: 600, fontSize: '0.85rem' }}
-                        >
-                          {comboText}
-                        </span>
-                      ) : (
-                        <button
-                          data-tour={isTourTitleCell ? 'approval-doc-title' : undefined}
-                          className="product-combo-link"
-                          onClick={() => openDetail(doc)}
-                        >
-                          {comboText}
-                        </button>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <MarkDot
+                          categories={markCategories}
+                          value={doc.my_mark_category ?? null}
+                          onChange={(categoryId) => handleMarkChange(doc, categoryId)}
+                          onManage={() => setMarkSettingsOpen(true)}
+                        />
+                        {isNone ? (
+                          <span
+                            data-tour={isTourTitleCell ? 'approval-doc-title' : undefined}
+                            style={{ fontWeight: 600, fontSize: '0.85rem' }}
+                          >
+                            {comboText}
+                          </span>
+                        ) : (
+                          <button
+                            data-tour={isTourTitleCell ? 'approval-doc-title' : undefined}
+                            className="product-combo-link"
+                            onClick={() => openDetail(doc)}
+                          >
+                            {comboText}
+                          </button>
+                        )}
+                      </div>
                       {detail.adiExtraCount > 0 && <span className="adi-extra-badge">+{detail.adiExtraCount}</span>}
                       {lastRejection && (
                         <div style={{ marginTop: 4 }}>
@@ -2859,6 +2991,17 @@ export default function ApprovalPage(): React.ReactElement {
         confirmLabel={t('common.delete')}
         danger
         topLevel
+      />
+
+      <MarkCategorySettingsModal
+        isOpen={markSettingsOpen}
+        onClose={() => setMarkSettingsOpen(false)}
+        categories={markCategories}
+        onCreate={handleCreateCategory}
+        onRename={handleRenameCategoryLocal}
+        onRenameCommit={handleRenameCategoryCommit}
+        onRecolor={handleRecolorCategory}
+        onDelete={handleDeleteCategory}
       />
 
       <StepGuideTour
