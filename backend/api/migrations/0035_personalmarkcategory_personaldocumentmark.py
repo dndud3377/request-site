@@ -8,7 +8,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0032_mapname_aaa1_aaa2_aaa3"),
+        ("api", "0034_mail_completion_matched"),
     ]
 
     operations = [
