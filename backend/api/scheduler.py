@@ -123,6 +123,12 @@ RTDB_FETCH_RETRY_DELAY_SEC = 5
 # 조회 전 잠깐 대기한다. (2026-08 추가)
 RTDB_STEP_PRE_FETCH_DELAY_SEC = 3
 
+# 스텝 조회 결과가 기존 테이블 건수 대비 이 비율 미만이면 "누락 의심"(RTDB 응답이 일부만 채워진
+# 채 내려온 경우)으로 보고 재시도 대상에 포함시킨다 - 0건은 아니지만 비정상적으로 적은 응답을
+# 그대로 전체 재적재(DELETE+INSERT)해 스텝 데이터가 유실되는 것을 막기 위함이다(2026-09 추가).
+# 기존 건수가 0건(최초 동기화)이면 비교 대상이 없으므로 이 검사를 적용하지 않는다.
+RTDB_STEP_COUNT_DROP_RATIO = 0.1
+
 
 def _write_if_changed(engine, table, line, df, key_cols, order_cols):
     """
@@ -146,6 +152,30 @@ def _write_if_changed(engine, table, line, df, key_cols, order_cols):
     df = df[order_cols]
     with engine.begin() as db_conn:
         db_conn.execute(text(f"DELETE FROM {table} WHERE line = :line"), {"line": line})
+        df.to_sql(table, db_conn, if_exists='append', index=False)
+    return len(df)
+
+
+def _write_step_if_changed(engine, table, df, key_cols):
+    """
+    df 의 key_cols 집합이 table(스텝 - 라인별 단독 테이블) 전체와 동일하면 쓰기를 건너뛰고
+    None 을 반환한다. 다르면 트랜잭션 내에서 DELETE(전체) → INSERT 후 저장 건수를 반환한다.
+    스텝 테이블은 공용 line 컬럼이 없는 라인별 전용 테이블이라 `_write_if_changed()`와 달리
+    라인 필터 없이 테이블 전체를 대상으로 비교·갱신한다(2026-09 추가).
+    (table/컬럼명은 코드 내부 상수만 전달되므로 SQL 인젝션 대상이 아니다.)
+    """
+    with engine.connect() as conn:
+        rows = conn.execute(text(f"SELECT {', '.join(key_cols)} FROM {table}")).fetchall()
+    old_keys = set(tuple(r) for r in rows)
+    new_keys = set(df[key_cols].itertuples(index=False, name=None))
+    if new_keys == old_keys:
+        return None
+
+    df = df.copy()
+    df['last_synced'] = pd.Timestamp.now()
+    df = df[key_cols + ['last_synced']]
+    with engine.begin() as db_conn:
+        db_conn.execute(text(f"DELETE FROM {table}"))
         df.to_sql(table, db_conn, if_exists='append', index=False)
     return len(df)
 
@@ -181,6 +211,15 @@ def sync_rtdb_options():
       전체 재적재한다 - 항상 RTDB 응답을 현재 상태의 원본으로 취급해, 원본에서 실제로 빠진(단종 등)
       데이터가 남아있지 않도록 한다(2026-08: "없는 것만 추가"하는 diff 병합 방식을 시도했다가,
       실제로 없어진 데이터까지 계속 남아있게 되는 문제가 있어 다시 이 방식으로 되돌렸다).
+      스텝(`api_teps1`/`api_steps3~5`)도 2026-09부터 동일하게 변경 감지 후 쓰기를 적용한다
+      (`_write_step_if_changed()` - 공용 `line` 컬럼이 없는 라인별 전용 테이블이라 테이블 전체를
+      대상으로 비교한다는 점만 `_write_if_changed()`와 다르다).
+    - 스텝 조회는 0건/실패뿐 아니라 **기존 테이블 대비 결과 건수가 `RTDB_STEP_COUNT_DROP_RATIO`
+      (10%) 미만으로 급감한 경우도 "누락 의심"으로 보고 동일하게 재시도**한다(2026-09 추가).
+      RTDB 가 0건은 아니지만 일부만 채워진 채 응답하는 경우, 그 불완전한 데이터로 스텝 테이블
+      전체를 덮어써 유실되는 것을 막기 위함이다. 재시도 후에도 기준 미달이면 이번 주기에 쓰지
+      않고(기존 데이터 보존) 실패 목록에 기록한다(→ RTDB 동기화 실패 알림 메일 대상에 포함).
+      기존 건수가 0건(최초 동기화)이면 이 검사를 적용하지 않는다.
     - RTDB 토큰은 주기당 1회만 `utils.get_rtdb_token()`으로 받아 소스·라인 반복에서 재사용한다.
       (2026-08부터 매 주기 풀 로그인 대신, 캐시된 refresh_token 이 유효하면 가벼운 refresh API로
       갱신한다. refresh_token 유효기간이 얼마 안 남았거나 refresh 자체가 실패하면 풀 로그인으로
@@ -204,11 +243,15 @@ def sync_rtdb_options():
         # 사이클 종료 시 하나라도 있으면 알림 메일 1통으로 모아 보낸다.
         failures = []
 
-        def fetch(rtdb_select, rtdb_filter, rtdb_table, suffix, line, target_label):
+        def fetch(rtdb_select, rtdb_filter, rtdb_table, suffix, line, target_label, min_count=None):
             """RTDB 조회. 0건/실패면 최대 RTDB_FETCH_MAX_RETRIES 회까지 RTDB_FETCH_RETRY_DELAY_SEC
             초 간격으로 재시도한다. 그래도 실패하면 None 을 반환하고 실패 목록에 기록한다
             (DCQ fallback 없음). get_data_from_rtdb() 는 예외도 내부에서 잡아 None 으로 통일해
             반환하므로, 여기서는 "None 이거나 0건"이라는 단일 조건으로 재시도를 판단한다.
+
+            min_count 가 주어지면(스텝 전용 - RTDB_STEP_COUNT_DROP_RATIO 참고), 0건은 아니지만
+            결과 건수가 min_count 미만인 경우도 "누락 의심"으로 보고 동일하게 재시도 대상에
+            포함시킨다. 재시도 후에도 여전히 min_count 미만이면 실패로 처리한다(2026-09 추가).
             """
             for attempt in range(1, RTDB_FETCH_MAX_RETRIES + 1):
                 df = None
@@ -222,21 +265,39 @@ def sync_rtdb_options():
                         "target": RTDB_TARGET,
                     }
                     df = get_data_from_rtdb(payload, rtdb_token)
-                if df is not None and len(df) > 0:
+                suspect_incomplete = (
+                    min_count is not None and df is not None and len(df) > 0 and len(df) < min_count
+                )
+                if df is not None and len(df) > 0 and not suspect_incomplete:
                     return df
                 if attempt < RTDB_FETCH_MAX_RETRIES:
-                    logger.warning(
-                        _("[scheduler] RTDB 조회 실패/빈 결과 - {delay}초 후 재시도 "
-                          "({attempt}/{max_retries}회, line={line}, target={target})")
-                        .format(delay=RTDB_FETCH_RETRY_DELAY_SEC, attempt=attempt,
-                                max_retries=RTDB_FETCH_MAX_RETRIES, line=line, target=target_label)
-                    )
+                    if suspect_incomplete:
+                        logger.warning(
+                            _("[scheduler] RTDB 조회 건수 급감(누락 의심, {count}건 < 기준 {min_count}건) - "
+                              "{delay}초 후 재시도 ({attempt}/{max_retries}회, line={line}, target={target})")
+                            .format(count=len(df), min_count=min_count, delay=RTDB_FETCH_RETRY_DELAY_SEC,
+                                    attempt=attempt, max_retries=RTDB_FETCH_MAX_RETRIES, line=line, target=target_label)
+                        )
+                    else:
+                        logger.warning(
+                            _("[scheduler] RTDB 조회 실패/빈 결과 - {delay}초 후 재시도 "
+                              "({attempt}/{max_retries}회, line={line}, target={target})")
+                            .format(delay=RTDB_FETCH_RETRY_DELAY_SEC, attempt=attempt,
+                                    max_retries=RTDB_FETCH_MAX_RETRIES, line=line, target=target_label)
+                        )
                     time.sleep(RTDB_FETCH_RETRY_DELAY_SEC)
-            logger.warning(
-                _("[scheduler] RTDB 조회 실패/빈 결과 - {max_retries}회 재시도 후에도 실패 "
-                  "(line={line}, target={target})")
-                .format(max_retries=RTDB_FETCH_MAX_RETRIES, line=line, target=target_label)
-            )
+            if suspect_incomplete:
+                logger.warning(
+                    _("[scheduler] RTDB 조회 건수 급감(누락 의심) - {max_retries}회 재시도 후에도 "
+                      "기준({min_count}건) 미달로 실패 처리 (line={line}, target={target})")
+                    .format(max_retries=RTDB_FETCH_MAX_RETRIES, min_count=min_count, line=line, target=target_label)
+                )
+            else:
+                logger.warning(
+                    _("[scheduler] RTDB 조회 실패/빈 결과 - {max_retries}회 재시도 후에도 실패 "
+                      "(line={line}, target={target})")
+                    .format(max_retries=RTDB_FETCH_MAX_RETRIES, line=line, target=target_label)
+                )
             failures.append({'context': line, 'target': target_label})
             return None
 
@@ -287,14 +348,19 @@ def sync_rtdb_options():
                     try:
                         # RTDB 쪽 스텝 데이터 갱신이 늦게 반영되는 경우를 대비해 조회 전 잠깐 대기한다.
                         time.sleep(RTDB_STEP_PRE_FETCH_DELAY_SEC)
-                        df_ps = fetch(RTDB_STEP_SELECT, RTDB_STEP_FILTER, RTDB_STEP_TABLE, suffix, line, TARGET_LABEL_STEP)
+                        with engine.connect() as conn:
+                            prev_count = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
+                        min_count = int(prev_count * RTDB_STEP_COUNT_DROP_RATIO) if prev_count else None
+                        df_ps = fetch(
+                            RTDB_STEP_SELECT, RTDB_STEP_FILTER, RTDB_STEP_TABLE, suffix, line, TARGET_LABEL_STEP,
+                            min_count=min_count,
+                        )
                         if df_ps is not None:
-                            df_ps['last_synced'] = pd.Timestamp.now()
-                            df_ps = df_ps[STEP_COLUMNS + ['last_synced']]
-                            with engine.begin() as db_conn:
-                                db_conn.execute(text(f"DELETE FROM {table_name}"))
-                                df_ps.to_sql(table_name, db_conn, if_exists='append', index=False)
-                            logger.info(_("[scheduler] {line} {{request.col_step}} {count}건 동기화 완료").format(line=line, count=len(df_ps)))
+                            count = _write_step_if_changed(engine, table_name, df_ps, STEP_COLUMNS)
+                            if count is None:
+                                logger.info(_("[scheduler] {line} {{request.col_step}} 변경 없음 - skip").format(line=line))
+                            else:
+                                logger.info(_("[scheduler] {line} {{request.col_step}} {count}건 동기화 완료").format(line=line, count=count))
                     except Exception as e:
                         logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
         finally:

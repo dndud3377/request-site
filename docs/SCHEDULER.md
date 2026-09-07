@@ -92,6 +92,31 @@ RTDB(REST API)  →  /api/queries
 - RTDB 토큰은 동기화 **주기당 1회** 발급하여 세 소스·라인 반복에서 재사용한다(재시도 포함).
 - 나머지 동기화(바코드, MAP 이름, 공휴일, 공정-디자인룰, 라인2)는 기존 DCQ 단일 소스를 그대로 사용한다 — 이번 변경의 영향을 받지 않는다.
 
+#### 스텝 조회 건수 급감 감지 (`RTDB_STEP_COUNT_DROP_RATIO`, 2026-09 추가)
+
+스텝(`api_teps1`/`api_steps3~5`)은 0건/예외가 아니어도, RTDB 가 **일부만 채워진 채(비정상적으로
+적은 건수) 응답**하는 경우가 있다. 기존에는 이런 응답도 "성공"으로 보고 그대로 테이블 전체를
+`DELETE → INSERT`해, 불완전한 데이터로 기존 스텝이 유실되는 문제가 있었다. 이를 막기 위해:
+
+```
+① 조회 전 현재 테이블(해당 line) 건수(prev_count) 를 먼저 구한다.
+② RTDB 조회 결과 건수가 prev_count × RTDB_STEP_COUNT_DROP_RATIO(10%) 미만이면
+   "누락 의심"으로 보고, 0건/예외와 동일하게 재시도 대상에 포함한다
+   (재시도 간격·횟수는 기존과 동일하게 RTDB_FETCH_RETRY_DELAY_SEC/RTDB_FETCH_MAX_RETRIES 재사용).
+③ 재시도 후에도 기준 미달이면 이번 주기에는 쓰지 않고(기존 데이터 보존) 실패 목록에 기록한다
+   → 다른 실패와 동일하게 RTDB 동기화 실패 알림 메일 대상에 자동 포함된다.
+④ prev_count 가 0(최초 동기화)이면 비교 대상이 없으므로 이 검사를 적용하지 않는다.
+```
+
+- 판정 비율은 `RTDB_STEP_COUNT_DROP_RATIO`(`scheduler.py`, 기본 0.1 = 10%) 상수로 관리한다.
+- `fetch()` 헬퍼(`scheduler.py`)에 `min_count` 파라미터로 구현되어 있으며, 이 파라미터는 스텝
+  조회에만 전달된다 — 공정-품목/품목-공정ID(`api_processproduct`/`api_productprocessid`) 조회는
+  `min_count`를 넘기지 않으므로 기존 "0건/예외만 재시도" 동작 그대로 영향받지 않는다.
+- 쓰기 방식도 함께 바뀌었다: 스텝도 이제 `_write_step_if_changed()`로 **변경 감지**(조회 결과가
+  기존 테이블 전체와 동일하면 skip)를 거친 뒤에만 `DELETE → INSERT`한다. 공용 `line` 컬럼이 없는
+  라인별 전용 테이블이라, `api_processproduct`/`api_productprocessid`가 쓰는 `_write_if_changed()`
+  (라인 필터 있음)와 달리 테이블 전체를 비교 대상으로 삼는다는 점만 다르다.
+
 ### MAP 이름 (`api_mapname`, DCQ 단독)
 
 `sync_form_options()` 안에서 `X.Y` 테이블을 조회해 `api_mapname` 을 갱신한다(변경 감지 없이 매 사이클
@@ -170,7 +195,7 @@ RTDB(REST API)  →  /api/queries
 - 스텝 기반 API(`job-file-layer` / `ovl-layer` / `layer-ids` / `bb-external`)는 `views.py` 의 `model_map` 에
   `nv` 가 없으므로 **항상 빈 목록**을 반환한다(스텝 테이블이 없으므로 의도된 동작).
 
-### 쓰기 전략 (변경 감지, `_write_if_changed`)
+### 쓰기 전략 (변경 감지, `_write_if_changed` / `_write_step_if_changed`)
 
 RTDB 소스(라인1·3~5·nv)와 DCQ 소스(라인2)가 같은 방식을 쓴다. 대상별 키 컬럼 집합을 현재
 테이블 값과 비교해 **동일하면 skip, 다르면 트랜잭션 내에서 `DELETE(line) → INSERT`** 로
@@ -184,8 +209,11 @@ RTDB 소스(라인1·3~5·nv)와 DCQ 소스(라인2)가 같은 방식을 쓴다.
 
 - **동일** → `DELETE + INSERT` 를 건너뛰고 로그만 남긴다(대부분의 사이클).
 - **다름** → 트랜잭션 내에서 `DELETE(line) → INSERT` 로 원자적 갱신(삭제된 행도 자동 반영).
-- **스텝(`api_teps1`/`api_steps3~5`)은 라인별 단독 테이블(공용 `line` 컬럼 없음)** 이라
-  `_write_if_changed` 대상이 아니며, 매 사이클 해당 테이블 **전체 `DELETE` → `to_sql`** 로 갱신한다.
+- **스텝(`api_teps1`/`api_steps3~5`)은 라인별 단독 테이블(공용 `line` 컬럼 없음)** 이라 `line`
+  필터 없이 테이블 전체를 비교 대상으로 삼는 `_write_step_if_changed()`(`STEP_COLUMNS` 전체
+  조합을 키로 사용)를 쓴다 — 동일하면 skip, 다르면 해당 테이블 **전체 `DELETE` → `to_sql`**.
+  (2026-08까지는 변경 감지 없이 매 사이클 무조건 전체 갱신했으나, 2026-09부터 위 "스텝 조회
+  건수 급감 감지" 절의 건수 검증과 함께 변경 감지도 함께 적용한다.)
 
 > ⚠️ **2026-08 한때 변경했다가 되돌림**: RTDB 가 간헐적으로 비정상적으로 적은 데이터를 반환하는
 > 문제 대응으로, RTDB 소스 3개 테이블만 "테이블에 없는 키만 INSERT하고 기존 행은 절대 삭제하지
