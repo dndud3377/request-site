@@ -186,16 +186,29 @@ export default function ApprovalPage(): React.ReactElement {
     setMarkCategories((list) => list.map((c) => (c.id === id ? { ...c, name } : c)));
   }, []);
 
-  const handleRenameCategoryCommit = useCallback((id: number, name: string) => {
-    markCategoriesAPI.update(id, { name }).catch(() => addToast(t('common.process_error'), 'error'));
+  const handleRenameCategoryCommit = useCallback((id: number, name: string, previousName: string) => {
+    markCategoriesAPI.update(id, { name }).catch(() => {
+      setMarkCategories((list) => list.map((c) => (c.id === id ? { ...c, name: previousName } : c)));
+      addToast(t('common.process_error'), 'error');
+    });
   }, [addToast, t]);
 
   const handleRecolorCategory = useCallback((id: number, color: PersonalMarkCategory['color']) => {
+    const prevColor = markCategories.find((c) => c.id === id)?.color;
     setMarkCategories((list) => list.map((c) => (c.id === id ? { ...c, color } : c)));
-    markCategoriesAPI.update(id, { color }).catch(() => addToast(t('common.process_error'), 'error'));
-  }, [addToast, t]);
+    markCategoriesAPI.update(id, { color }).catch(() => {
+      if (prevColor) setMarkCategories((list) => list.map((c) => (c.id === id ? { ...c, color: prevColor } : c)));
+      addToast(t('common.process_error'), 'error');
+    });
+  }, [markCategories, addToast, t]);
 
   const handleDeleteCategory = useCallback((id: number) => {
+    const deletedCategory = markCategories.find((c) => c.id === id);
+    const affectedDocIds = new Set(
+      [...allDocs, ...docs].filter((d) => d.my_mark_category === id).map((d) => d.id)
+    );
+    const hadFilter = markCategoryFilter.has(id);
+
     setMarkCategories((list) => list.filter((c) => c.id !== id));
     setMarkCategoryFilter((prev) => {
       if (!prev.has(id)) return prev;
@@ -206,8 +219,16 @@ export default function ApprovalPage(): React.ReactElement {
     // 이 범주로 마크돼 있던 문서는 서버가 SET_NULL 로 자동으로 표시 없음 처리한다 — 화면도 맞춰 지운다.
     setAllDocs((list) => list.map((d) => (d.my_mark_category === id ? { ...d, my_mark_category: null } : d)));
     setDocs((list) => list.map((d) => (d.my_mark_category === id ? { ...d, my_mark_category: null } : d)));
-    markCategoriesAPI.delete(id).catch(() => addToast(t('common.process_error'), 'error'));
-  }, [addToast, t]);
+
+    markCategoriesAPI.delete(id).catch(() => {
+      // 서버 삭제가 실패했는데 화면만 지워진 채로 남지 않도록 범주·필터·문서 마킹을 모두 되돌린다.
+      if (deletedCategory) setMarkCategories((list) => [...list, deletedCategory]);
+      if (hadFilter) setMarkCategoryFilter((prev) => new Set(prev).add(id));
+      setAllDocs((list) => list.map((d) => (affectedDocIds.has(d.id) ? { ...d, my_mark_category: id } : d)));
+      setDocs((list) => list.map((d) => (affectedDocIds.has(d.id) ? { ...d, my_mark_category: id } : d)));
+      addToast(t('common.process_error'), 'error');
+    });
+  }, [markCategories, allDocs, docs, markCategoryFilter, addToast, t]);
   // 전체 export(제목 옆 버튼) — 상세 정보/MAP 정보 탭을 화면 그대로 캡처하는 핸들.
   const pagedDetailViewRef = useRef<PagedDetailViewHandle>(null);
   useEffect(() => {

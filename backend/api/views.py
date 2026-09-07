@@ -16,7 +16,7 @@ from rest_framework import viewsets, status, filters, mixins
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, NotAuthenticated
 from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import connection, transaction
@@ -202,15 +202,19 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def mark(self, request, pk=None):
         """이 의뢰서에 대한 내 개인 마킹(범주)을 설정하거나 해제한다.
 
-        `category` 를 안 보내거나 null 로 보내면 표시를 해제한다. 항상 request.user
-        기준으로만 반영되며, 다른 사용자의 마킹에는 어떤 영향도 주지 않는다.
+        `category` 를 안 보내거나 null 로 보내면 마킹 행 자체를 지워 표시를 해제한다
+        (남겨두지 않는다). 항상 request.user 기준으로만 반영되며, 다른 사용자의
+        마킹에는 어떤 영향도 주지 않는다.
         """
+        if not getattr(request.user, 'is_authenticated', False):
+            raise NotAuthenticated()
         from django.shortcuts import get_object_or_404
         document = self.get_object()
         category_id = request.data.get('category')
-        category = None
-        if category_id is not None:
-            category = get_object_or_404(PersonalMarkCategory, id=category_id, user=request.user)
+        if category_id is None:
+            PersonalDocumentMark.objects.filter(user=request.user, document=document).delete()
+            return Response({'category': None})
+        category = get_object_or_404(PersonalMarkCategory, id=category_id, user=request.user)
         mark, _ = PersonalDocumentMark.objects.update_or_create(
             user=request.user, document=document, defaults={'category': category}
         )
@@ -2860,6 +2864,13 @@ class PersonalMarkCategoryViewSet(viewsets.ModelViewSet):
         if not getattr(user, 'is_authenticated', False):
             return PersonalMarkCategory.objects.none()
         return PersonalMarkCategory.objects.filter(user=user)
+
+    def perform_create(self, serializer):
+        # 개발 모드는 IsAuthenticatedInProd 가 비인증 요청도 통과시키므로, 여기서 막지 않으면
+        # serializer.create() 가 AnonymousUser 를 category.user(FK)에 대입하려다 에러가 난다.
+        if not getattr(self.request.user, 'is_authenticated', False):
+            raise NotAuthenticated()
+        serializer.save()
 
 
 class RejectionSnapshotViewSet(mixins.DestroyModelMixin, viewsets.ReadOnlyModelViewSet):
