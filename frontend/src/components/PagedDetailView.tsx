@@ -1115,6 +1115,11 @@ export interface PagedDetailViewProps {
   onApplyOayerLayerFilter?: (filterId: number) => void;
   onOpenJayerFilterManage?: () => void;
   onOpenOayerFilterManage?: () => void;
+  /** 이번 회차에 필터를 적용한 적이 있어 "초기화"(상신 시점 값으로 복원) 버튼을 보여줄지 여부. */
+  canResetJayerFilter?: boolean;
+  canResetOayerFilter?: boolean;
+  onResetJayerLayerFilter?: () => void;
+  onResetOayerLayerFilter?: () => void;
 }
 
 /** 전체 export(제목 옆 버튼)가 상세 정보/MAP 정보 탭을 화면 그대로 캡처할 때 쓰는 핸들. */
@@ -1133,6 +1138,8 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   jayerLayerFilterSets, oayerLayerFilterSets,
   onApplyJayerLayerFilter, onApplyOayerLayerFilter,
   onOpenJayerFilterManage, onOpenOayerFilterManage,
+  canResetJayerFilter = false, canResetOayerFilter = false,
+  onResetJayerLayerFilter, onResetOayerLayerFilter,
 }, ref) {
   const { t } = useTranslation();
   const { isFullscreen, setIsFullscreen } = useModalFullscreen();
@@ -2282,6 +2289,11 @@ type Page = { label: string; content: React.ReactNode };
               <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenJayerFilterManage}>
                 {t('request.layer_filter_manage_btn')}
               </button>
+              {canResetJayerFilter && (
+                <button type="button" className="btn btn-secondary btn-sm" onClick={onResetJayerLayerFilter}>
+                  {t('approval.layer_filter_reset_btn')}
+                </button>
+              )}
             </div>
           )}
           <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} />
@@ -2363,6 +2375,11 @@ type Page = { label: string; content: React.ReactNode };
                       <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenOayerFilterManage}>
                         {t('request.layer_filter_manage_btn')}
                       </button>
+                      {canResetOayerFilter && (
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={onResetOayerLayerFilter}>
+                          {t('approval.layer_filter_reset_btn')}
+                        </button>
+                      )}
                     </div>
                   )}
                   <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} />
