@@ -1732,11 +1732,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def _layer_filter_gate(self, request, document, table, action_label='적용'):
         """apply/reset-layer-filter 공통 게이트.
 
-        table='J' 는 TE_J/MASTER, table='O' 는 TE_O/MASTER 만 허용한다. 문서가
-        `under_review`일 때만 실제 동작을 허용한다. `pause`(결재 중단 요청 중)는 툴바
-        자체는 계속 노출되지만(프론트 `canUseLayerFilter`) 실제 적용/초기화는 막아야
-        하므로 전용 메시지로 구분해서 거부한다. 그 외 상태(approved/rejected/draft 등)는
-        원래 버튼이 노출되지 않는 상태라 기존 문구로 방어한다(직접 API 호출 대비).
+        table='J' 는 TE_J/MASTER, table='O' 는 TE_O/MASTER 만 허용한다. 문서 진행 상태
+        판정은 결재 액션(approve_step 등)과 완전히 동일한 `_blocked_progress_response`를
+        그대로 재사용한다 — `document.status`만 보면 안 된다: 상신자가 중단/철회를
+        요청해도 대상 단계 팀 **전원이 확인하기 전까지는 `status`가 여전히
+        `under_review`**로 남아 있어(`PauseRequest`/`WithdrawRequest`의 `state='requested'`
+        구간), 상태값만 보는 게이트는 이 확인 대기 구간의 필터 적용/초기화를 못 막는다.
+        `_blocked_progress_response`는 이 확인 대기 구간 + `status=='pause'`(중단 확정) +
+        그 외 종료 상태까지 한 번에 판정해 준다.
         해당 단계(J 또는 O)가 이번 회차에 아직 합의되지 않았을 때만 허용한다(합의된 뒤
         데이터를 바꾸면 그 합의가 무의미해지는 것을 막는다).
         문제 없으면 None, 문제 있으면 에러 Response를 반환한다.
@@ -1749,13 +1752,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if role != 'MASTER' and role != allowed_role:
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
-        if document.status == 'pause':
-            return Response({'error': '중단 요청 중입니다.'}, status=status.HTTP_400_BAD_REQUEST)
-        if document.status != 'under_review':
-            return Response(
-                {'error': f'진행 중인 의뢰서만 {action_label}할 수 있습니다.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        blocked = self._blocked_progress_response(document)
+        if blocked:
+            return blocked
 
         max_round = self._max_round(document)
         stage_step = ApprovalStep.objects.filter(document=document, agent=table, round=max_round).first()
@@ -1858,8 +1857,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         통째로 되돌린다. baseline 은 이번 회차 첫 유효 apply_layer_filter 호출 시 한 번만
         저장되고 이후 절대 재작성되지 않으므로, 적용→초기화를 몇 번 반복해도 항상 같은
         원본으로 복원된다(초기화 자체도 baseline 을 건드리지 않는다 — 재사용 가능).
-        권한·상태·단계 조건은 `_layer_filter_gate` 참조(apply_layer_filter 와 동일 — pause
-        면 "중단 요청 중입니다"로 거부).
+        권한·상태·단계 조건은 `_layer_filter_gate` 참조(apply_layer_filter 와 동일 —
+        `_blocked_progress_response`로 중단/철회 확인 대기·확정·종료 상태를 모두 거부).
 
         baseline 이 없거나(이번 회차에 실제로 바뀐 적이 없음) 회차가 달라졌으면(반려 후
         재상신) 에러가 아니라 200 + `reset: false` 로 "초기화할 내용이 없습니다"를

@@ -269,6 +269,10 @@ export default function ApprovalPage(): React.ReactElement {
   // 팀 전체가 공유하는 필터라 삭제는(개별/전체 모두) 확인 후 진행한다.
   const [layerFilterDeleteConfirm, setLayerFilterDeleteConfirm] = useState<{ table: 'J' | 'O'; id: number; label: string } | null>(null);
   const [layerFilterAllDeleteConfirm, setLayerFilterAllDeleteConfirm] = useState<'J' | 'O' | null>(null);
+  // 필터 초기화 확인(네이티브 confirm 대신 공통 ConfirmModal 사용)
+  const [layerFilterResetConfirm, setLayerFilterResetConfirm] = useState<'J' | 'O' | null>(null);
+  // 필터 적용/초기화가 서버에서 거부됐을 때 사유를 그대로 보여주는 공통 안내 모달
+  const [layerFilterErrorNotice, setLayerFilterErrorNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentUser.role === 'TE_J' || currentUser.role === 'MASTER') {
@@ -834,39 +838,38 @@ export default function ApprovalPage(): React.ReactElement {
 
   const handleApplyLayerFilter = async (table: 'J' | 'O', filterId: number) => {
     if (!selected) return;
-    if (selected.status === 'pause') {
-      addToast(t('approval.layer_filter_pause_blocked'), 'info');
-      return;
-    }
     try {
       const { data } = await documentsAPI.applyLayerFilter(selected.id, table, filterId);
       addToast(data.message, data.matched_count > 0 ? 'success' : 'info');
       await refreshAndSelect(selected.id);
-    } catch {
-      addToast(t('common.process_error'), 'error');
+    } catch (err) {
+      // 상태값만으로는 "중단/철회 확인 대기 중"까지 못 걸러내므로 항상 서버에 물어보고,
+      // 거부되면 서버가 준 실제 사유(err.message)를 그대로 공통 안내 모달에 띄운다.
+      setLayerFilterErrorNotice(err instanceof Error ? err.message : t('common.process_error'));
     }
   };
 
   /**
    * 결재 상세페이지 J/O-layer 필터 "초기화" 버튼 노출 여부 — 필터 적용과 동일한 조건
-   * (canUseLayerFilter)이다. under_review/pause 둘 다 버튼은 노출하되, 실제 동작은
-   * under_review에서만 되도록 하는 건 handleResetLayerFilter/백엔드 게이트가 맡는다.
+   * (canUseLayerFilter)이다. 실제 동작 가능 여부(중단/철회 확인 대기 중 등)는 노출 조건이
+   * 아니라 백엔드 게이트가 최종 판정하고, 거부 사유는 layerFilterErrorNotice 모달로 보여준다.
    */
   const canResetLayerFilter = canUseLayerFilter;
 
-  const handleResetLayerFilter = async (table: 'J' | 'O') => {
+  const handleResetLayerFilter = (table: 'J' | 'O') => {
     if (!selected) return;
-    if (selected.status === 'pause') {
-      addToast(t('approval.layer_filter_pause_blocked'), 'info');
-      return;
-    }
-    if (!window.confirm(t('approval.layer_filter_reset_confirm'))) return;
+    setLayerFilterResetConfirm(table);
+  };
+
+  const confirmResetLayerFilter = async () => {
+    const table = layerFilterResetConfirm;
+    if (!selected || !table) return;
     try {
       const { data } = await documentsAPI.resetLayerFilter(selected.id, table);
       addToast(data.message, data.reset ? 'success' : 'info');
       await refreshAndSelect(selected.id);
-    } catch {
-      addToast(t('common.process_error'), 'error');
+    } catch (err) {
+      setLayerFilterErrorNotice(err instanceof Error ? err.message : t('common.process_error'));
     }
   };
 
@@ -3053,6 +3056,34 @@ export default function ApprovalPage(): React.ReactElement {
         danger
         topLevel
       />
+
+      <ConfirmModal
+        isOpen={!!layerFilterResetConfirm}
+        onClose={() => setLayerFilterResetConfirm(null)}
+        onConfirm={confirmResetLayerFilter}
+        title={t('common.confirm')}
+        message={t('approval.layer_filter_reset_confirm')}
+        confirmLabel={t('approval.layer_filter_reset_btn')}
+        topLevel
+      />
+
+      {layerFilterErrorNotice && (
+        <Modal
+          isOpen
+          onClose={() => setLayerFilterErrorNotice(null)}
+          title={t('common.confirm')}
+          size="sm"
+          hideFullscreen
+          topLevel
+          footer={
+            <button className="btn btn-secondary btn-sm" onClick={() => setLayerFilterErrorNotice(null)}>
+              {t('common.close')}
+            </button>
+          }
+        >
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>{layerFilterErrorNotice}</p>
+        </Modal>
+      )}
 
       <MarkCategorySettingsModal
         isOpen={markSettingsOpen}

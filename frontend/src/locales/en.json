@@ -790,7 +790,6 @@
     "validation_system_updated": "$t(request.validation_system) updated.",
     "layer_filter_reset_btn": "Reset",
     "layer_filter_reset_confirm": "Reset all filters applied this round and restore the values as of submission?",
-    "layer_filter_pause_blocked": "A suspension request is pending.",
     "request_revision": "Request revision",
     "request_revision_success": "Revision requested.",
     "agent_PL": "Review",
