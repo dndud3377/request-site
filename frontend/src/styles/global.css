@@ -688,14 +688,20 @@ select.form-control option {
   white-space: nowrap;
 }
 
-/* 단계명이 뱃지 왼쪽에 온다. 뱃지 폭은 고정해 두지만 단계명 길이가 제각각이라
-   (담당자명 유무 등) 뱃지 열까지 완전히 세로 정렬되지는 않는다. */
+/* 단계명이 뱃지 왼쪽에 온다. 뱃지는 폭 고정만으론 정렬이 안 되므로(이제 앞에 오는
+   단계명 쪽 폭이 제각각이라) 단계명 쪽에 min-width 를 줘서 뱃지 시작 위치를 맞춘다. */
 .stage-cell-badge {
   min-width: 62px;
   justify-content: center;
 }
 
-.stage-cell-name { font-size: 0.82rem; font-weight: 500; color: var(--text-primary); }
+.stage-cell-name {
+  display: inline-block;
+  min-width: 130px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
 .stage-cell-name.muted { color: var(--text-disabled); }
 
 /* ===== Validation System 대상/비대상 =====
