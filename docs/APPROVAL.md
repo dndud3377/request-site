@@ -1301,10 +1301,18 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
   없어 담당 단계 하나만 확인하면 된다). 두 액션은 `_layer_filter_gate` 헬퍼를 공유한다. |
 
 문서가 `pause`(중단 요청 중)이면 적용·초기화 **버튼은 계속 노출**하지만(아래 12-4), 실제 동작은
-막는다 — `_layer_filter_gate`가 상태를 세 갈래로 본다: `under_review`면 통과, `pause`면 전용
-메시지 `"중단 요청 중입니다."`로 거부, 그 외(approved/rejected/draft 등, 원래 버튼 자체가 안
-보이는 상태)는 기존 문구 `"진행 중인 의뢰서만 {적용|초기화}할 수 있습니다."`로 거부한다(직접 API
-호출 방어용). `action_label`(`'적용'`/`'초기화'`) 인자로 메시지만 갈린다.
+막는다. 이 상태 판정은 `_layer_filter_gate`가 자체적으로 하지 않고, 결재 액션(`approve_step` 등)이
+쓰는 것과 완전히 동일한 `_blocked_progress_response(document)`를 그대로 재사용한다 — 반드시
+그래야 하는 이유가 있다: 상신자가 중단/철회를 요청해도 대상 단계 팀 **전원이 확인하기 전까지는
+`document.status`가 여전히 `under_review`**로 남아 있다(`PauseRequest`/`WithdrawRequest`의
+`state='requested'` 구간). `status`만 보는 게이트로는 이 확인 대기 구간을 못 잡아서, 실제로
+"중단 요청을 걸어 놨는데도 필터로 데이터가 바뀌는" 버그가 있었다(2026-09 발견·수정).
+`_blocked_progress_response`는 다음을 전부 한 번에 판정한다: `under_review`면 통과, 철회 요청
+확인 대기 중(`WithdrawRequest.state='requested'`)이면 거부, 중단 요청 확인 대기 중
+(`PauseRequest.state='requested'`, 아직 `status`가 안 바뀐 상태)이면 거부, `status=='pause'`(중단
+확정)면 거부, 그 외 종료 상태(approved/rejected/draft 등, 원래 버튼 자체가 안 보이는 상태)면
+거부(직접 API 호출 방어용) — 각각 결재 액션과 동일한 문구로 응답한다. `action_label`
+(`'적용'`/`'초기화'`) 인자는 이 상태 체크가 아니라 아래 단계-합의-완료 체크에서만 쓰인다.
 
 적용·초기화 사실 자체는 별도로 기록하지 않는다(사용자 확정 — `validation_system`처럼 결재 단계
 코멘트에 note를 남기는 방식조차 쓰지 않는다). baseline 은 이 게이트 판정을 위한 상태일 뿐,
@@ -1341,14 +1349,17 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
   `canResetJayerFilter`/`canResetOayerFilter`) — `under_review`/`pause` 둘 다에서 노출한다.
   실제 동작 가능 여부(=`under_review`에서만)는 노출 조건이 아니라 클릭 핸들러가 판정한다 — 이
   컴포넌트는 API를 직접 호출하지 않는 순수 표시 컴포넌트라는 기존 원칙을 그대로 따른다.
-- `ApprovalPage.tsx`의 `handleApplyLayerFilter`/`handleResetLayerFilter`는 클릭 시 먼저
-  `selected.status === 'pause'`인지 확인해, 맞으면 API 호출 없이 즉시
-  `approval.layer_filter_pause_blocked`("중단 요청 중입니다.") 토스트만 띄우고 끝낸다(빠른 UX).
-  문서가 그 사이 `pause`로 바뀌는 레이스 컨디션 등을 대비해 백엔드 `_layer_filter_gate`도 동일하게
-  막는다(12-2).
-- 초기화 버튼 클릭 시(pause 가 아니면) `window.confirm`으로 한 번 확인한 뒤
-  `documentsAPI.resetLayerFilter`를 호출하고, 응답의 `reset` 플래그로 토스트 톤을 정한다
-  (`true`→success, `false`→info).
+- `ApprovalPage.tsx`의 `handleApplyLayerFilter`/`handleResetLayerFilter`는 클라이언트에서 상태를
+  미리 판단해 API 호출을 건너뛰지 않는다 — 위에서 보듯 막아야 할 조건(중단/철회 확인 대기 중)이
+  `document.status` 하나로는 판정이 안 되므로, 항상 서버에 물어보고 거부되면 서버가 준 실제 사유
+  문구(`err.message` — API client `request()`가 백엔드 `{error: "..."}`를 그대로 담아 던진다)를
+  공통 `Modal`(단일 "확인" 버튼, `layerFilterErrorNotice` 상태)에 그대로 띄운다. 어떤 사유로
+  막히든(중단/철회 확인 대기, 이미 종료, 권한 없음, 단계 합의 완료 등) 항상 정확한 이유가 보인다.
+- 초기화 버튼 클릭은 이제 브라우저 네이티브 `window.confirm` 대신, 이 페이지의 다른 확인 절차
+  (`layerFilterDeleteConfirm` 등)와 같은 공통 `ConfirmModal`(`layerFilterResetConfirm` 상태)을 띄운다.
+  확인을 누르면 `documentsAPI.resetLayerFilter`를 호출하고, 응답의 `reset` 플래그로 토스트 톤을
+  정한다(`true`→success, `false`→info). 실패하면 위와 같이 `layerFilterErrorNotice` 모달로 사유를
+  보여준다.
 - 필터 관리 모달은 의뢰서 작성 화면과 같은 `FilterManageModal` 컴포넌트를 재사용한다(추가 저장
   방식만 `onAdd` 콜백으로 외부화해 개인별 localStorage 대신 서버 API를 타도록 함).
 - 이력 조회(`HistoryPage.tsx`)에는 이 props 를 넘기지 않아 버튼 자체가 뜨지 않는다(완료된 문서를
@@ -1356,10 +1367,12 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 
 ### 12-5. 테스트
 
-`backend/api/tests.py::LayerFilterSetTest`(25건) — CRUD 권한(테이블별 조회·생성·수정·삭제 허용/거부,
+`backend/api/tests.py::LayerFilterSetTest`(27건) — CRUD 권한(테이블별 조회·생성·수정·삭제 허용/거부,
 파라미터 누락 시 거부), 적용 권한(TE_J/TE_O/MASTER, 그 외 역할 거부), 문서 상태·단계 게이트, 필드
 초기화, 이미 비활성인 행 재매칭 안 함, 다른 테이블 필터로 적용 시도 거부, O-layer 행에 `item_id`
 키가 생기지 않음. 초기화: 필터 여러 번 적용 후에도 baseline 은 최초 상신 시점 값 그대로 남아
 초기화 시 완전히 복원됨, baseline 없을 때/회차 변경 후 200+`reset:false`(에러 아님), 적용→초기화
-반복 시 baseline 불변, 매칭 0건이면 baseline 자체가 안 생김, `pause` 상태에서는 적용·초기화 모두
-전용 메시지로 거부, 권한 게이트가 apply/reset 동일함.
+반복 시 baseline 불변, 매칭 0건이면 baseline 자체가 안 생김, `status=='pause'`(중단 확정) 상태에서는
+적용·초기화 모두 거부, **`PauseRequest`/`WithdrawRequest`가 `state='requested'`(확인 대기 중,
+`status`는 아직 `under_review`)일 때도 적용·초기화가 거부됨**(2026-09 버그 수정 회귀 테스트),
+권한 게이트가 apply/reset 동일함.
