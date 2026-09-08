@@ -181,17 +181,34 @@
     font-family: inherit;
   }
 
-  .kw-box { border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; border: 1.5px solid; }
-  .kw-box .kw-title { font-weight: 600; font-size: 0.72rem; margin-bottom: 6px; }
+  .kw-box { border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; border: 1.5px solid var(--border); }
+  .kw-box .kw-title { font-weight: 700; font-size: 0.74rem; margin-bottom: 6px; color: var(--text-secondary); }
   .kw-box .kw-input-row { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
   .kw-box input[type=text].kw-input { font-size: 0.78rem; padding: 5px 8px; flex: 1; border: 1px solid var(--border); border-radius: 6px; min-width: 0; }
-  .kw-box input[type=color].kw-color { width: 32px; height: 28px; border: 1px solid var(--border); border-radius: 6px; padding: 2px; cursor: pointer; background: var(--bg-card); flex-shrink: 0; }
   .kw-box .kw-rows { display: flex; flex-direction: column; gap: 4px; }
   .kw-box .kw-row-item { display: flex; align-items: center; gap: 8px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 6px; padding: 4px 8px; font-size: 0.76rem; }
-  .kw-box .kw-row-item .sw { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1px solid rgba(0,0,0,.15); }
   .kw-box .kw-row-item .word { flex: 1; }
-  .kw-box .kw-row-item button { border: none; background: none; cursor: pointer; color: #888; font-size: 0.72rem; padding: 0; }
+  .kw-box .kw-row-item button.kw-del { border: none; background: none; cursor: pointer; color: #888; font-size: 0.72rem; padding: 0; }
   .kw-box .kw-empty { color: #bbb; font-size: 0.74rem; padding: 2px 0; }
+
+  /* 키워드의 색상 버튼 — 클릭하면 아래 팔레트 팝오버가 뜬다(RichTextEditor.tsx 글자색/바탕색 버튼과 동일 패턴) */
+  .color-swatch-btn {
+    width: 22px; height: 22px; border-radius: 5px; flex-shrink: 0; cursor: pointer;
+    border: 1px solid rgba(0,0,0,.2); padding: 0;
+  }
+  .color-swatch-btn:hover { outline: 2px solid var(--accent-glow); }
+
+  /* 색상 팔레트 팝오버 — frontend/src/components/RichTextEditor.tsx 의 ColorPalette 컴포넌트와 동일 구성 */
+  #palette-popover {
+    position: fixed; z-index: 3000; display: none;
+    background: #fff; border: 1px solid #dde1ea; border-radius: 6px;
+    padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,.15); user-select: none; min-width: 192px;
+  }
+  #palette-popover.open { display: block; }
+  #palette-popover .pal-label { font-size: 10px; color: #888; margin-bottom: 4px; }
+  #palette-popover .pal-theme { display: grid; grid-template-columns: repeat(10, 16px); gap: 2px; margin-bottom: 8px; }
+  #palette-popover .pal-standard { display: flex; gap: 2px; }
+  #palette-popover .pal-swatch { width: 16px; height: 16px; border: 1px solid rgba(0,0,0,.15); cursor: pointer; border-radius: 1px; padding: 0; }
 
   .flow-note { font-size: 0.78rem; color: var(--text-muted); margin-top: 6px; }
   .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.76rem; color: var(--text-muted); margin-top: 8px; }
@@ -206,6 +223,9 @@
   <p class="sub">현재 코드(ApprovalPage.tsx · PagedDetailView.tsx · FilterManageModal.tsx)의 실제 CSS 변수·클래스를 그대로 사용해 만든 화면 검토용 목업입니다.</p>
 
   <div class="notice v2">
+    <b>v3 수정 사항</b> — ① 키워드 추가 흐름 변경: 이제 키워드를 먼저 추가하면, 그 키워드 줄에 뜨는 <b>색상 버튼을 눌러야</b> 색을 고를 수 있습니다(공지 작성 화면의 글자색·바탕색과 동일한 "테마 색상 / 표준 색상" 팔레트 재사용). ② STEPSEQ/STEP 설명/PPID 구분에 쓰던 파란색·초록색·주황색 색칠을 없애고 <b>이름 그대로 텍스트</b>로 표시(실제 적용 색상과 겹쳐 헷갈리는 것을 방지).
+  </div>
+  <div class="notice v2" style="margin-top:8px;">
     <b>v2 수정 사항</b> — ① 필터 하나에 색이 하나가 아니라, <b>키워드마다 각자 다른 색을 지정</b>할 수 있도록 변경. ② "색상 관리" 버튼 옆에 <b>전용 "초기화" 버튼</b>을 추가해 적용해 둔 색상 토글을 한 번에 끌 수 있게 함(기존 "공유 필터"의 초기화 버튼과 같은 자리 배치·같은 UI 톤을 그대로 재사용).
   </div>
   <div class="notice">
@@ -258,7 +278,7 @@
   </div>
 
   <h2><span class="step-no">2</span>"🎨 색상 관리" 클릭 → 관리 모달 (키워드별 색상 지정)</h2>
-  <p class="desc">필터 하나("장비특이" 등) 안에 STEPSEQ/STEP설명/PPID별로 여러 키워드를 넣을 수 있고, <b>키워드 하나하나마다 색을 따로 고를 수 있습니다</b>. 키워드 입력 칸 옆의 색상 선택기로 원하는 색을 고른 뒤 "+ 추가"를 누르면 그 색이 그 키워드에 고정됩니다.</p>
+  <p class="desc">필터 하나("장비특이" 등) 안에 STEPSEQ/STEP설명/PPID별로 여러 키워드를 넣을 수 있고, <b>키워드 하나하나마다 색을 따로 고를 수 있습니다</b>. 흐름: 먼저 키워드를 입력해 "+ 추가"로 목록에 넣고 → 목록에 추가된 그 키워드 줄의 <b>색상 버튼을 클릭</b>해 팔레트에서 원하는 색을 고릅니다(공지 작성 화면의 글자색·바탕색 선택과 동일한 "테마 색상 / 표준 색상" 팔레트).</p>
   <div class="card">
     <button class="btn btn-primary" onclick="openColorModal('J')">🎨 J-layer 색상 관리 모달 열기</button>
     <button class="btn btn-secondary" onclick="openColorModal('O')" style="margin-left:8px;">🎨 O-layer 색상 관리 모달 열기</button>
@@ -316,34 +336,31 @@
       <div class="section-label" id="form-title" style="color:var(--text-muted);">새 색상 필터 만들기</div>
       <input type="text" class="form-control" id="new-label" placeholder="필터 이름을 입력하세요... (예: 장비특이)" />
 
-      <div class="kw-box" style="border-color:#1976d222; background:transparent;">
-        <div class="kw-title" style="color:#1976d2;">🔵 STEPSEQ</div>
+      <div class="kw-box">
+        <div class="kw-title">STEPSEQ</div>
         <div class="kw-input-row">
-          <input type="text" class="kw-input" id="kw-sp-input" placeholder="키워드 입력" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('sp')}" />
-          <input type="color" class="kw-color" id="kw-sp-color" value="#42a5f5" />
+          <input type="text" class="kw-input" id="kw-sp-input" placeholder="키워드 입력 후 Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('sp')}" />
           <button class="btn btn-secondary btn-sm" onclick="addKw('sp')">+ 추가</button>
         </div>
         <div class="kw-rows" id="kw-sp-rows"></div>
       </div>
-      <div class="kw-box" style="border-color:#388e3c22; background:transparent;">
-        <div class="kw-title" style="color:#388e3c;">🟢 STEP 설명</div>
+      <div class="kw-box">
+        <div class="kw-title">STEP 설명</div>
         <div class="kw-input-row">
-          <input type="text" class="kw-input" id="kw-sd-input" placeholder="키워드 입력" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('sd')}" />
-          <input type="color" class="kw-color" id="kw-sd-color" value="#66bb6a" />
+          <input type="text" class="kw-input" id="kw-sd-input" placeholder="키워드 입력 후 Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('sd')}" />
           <button class="btn btn-secondary btn-sm" onclick="addKw('sd')">+ 추가</button>
         </div>
         <div class="kw-rows" id="kw-sd-rows"></div>
       </div>
-      <div class="kw-box" style="border-color:#f57c0022; background:transparent;">
-        <div class="kw-title" style="color:#f57c00;">🟠 PPID</div>
+      <div class="kw-box">
+        <div class="kw-title">PPID</div>
         <div class="kw-input-row">
-          <input type="text" class="kw-input" id="kw-pp-input" placeholder="키워드 입력" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('pp')}" />
-          <input type="color" class="kw-color" id="kw-pp-color" value="#ffeb3b" />
+          <input type="text" class="kw-input" id="kw-pp-input" placeholder="키워드 입력 후 Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('pp')}" />
           <button class="btn btn-secondary btn-sm" onclick="addKw('pp')">+ 추가</button>
         </div>
         <div class="kw-rows" id="kw-pp-rows"></div>
       </div>
-      <div class="flow-note">※ 매칭 규칙은 기존 공유 필터와 동일 — 대소문자 무시, 부분 일치. sp/sd/pp 중 매칭된 <b>셀만</b> 그 키워드에 지정한 색으로 바뀝니다(행 전체 아님). 키워드마다 색을 다르게 고를 수 있습니다.</div>
+      <div class="flow-note">※ 매칭 규칙은 기존 공유 필터와 동일 — 대소문자 무시, 부분 일치. STEPSEQ/STEP 설명/PPID 중 매칭된 <b>셀만</b> 그 키워드에 지정한 색으로 바뀝니다(행 전체 아님). 키워드를 추가한 뒤 색상 버튼을 눌러 색을 고르세요(기본값은 임시 색이며, 반드시 눌러서 원하는 색으로 바꿔주세요).</div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary btn-sm" onclick="deleteAllColors()">전체 삭제</button>
@@ -355,6 +372,9 @@
     </div>
   </div>
 </div>
+
+<!-- 색상 팔레트 팝오버 (테마 색상 / 표준 색상) — RichTextEditor.tsx ColorPalette 와 동일 구성, 클릭한 색상 버튼 옆에 뜬다 -->
+<div id="palette-popover"></div>
 
 <footer class="credit">검토용 정적 목업 — docs/color_filter_mockup.html · 서버/API 미연동</footer>
 
@@ -414,6 +434,63 @@ const state = {
 let currentTable = 'J';
 let editingId = null;
 let draft = { label: '', words: { sp: [], sd: [], pp: [] } };
+
+// ===== 색상 팔레트 (frontend/src/components/RichTextEditor.tsx 의 ColorPalette 와 동일 팔레트 데이터) =====
+const EXCEL_THEME_BASES = ['#FFFFFF', '#000000', '#EEECE1', '#1F497D', '#4F81BD', '#C0504D', '#9BBB59', '#8064A2', '#4BACC6', '#F79646'];
+const EXCEL_STANDARD_COLORS = ['#C00000', '#FF0000', '#FFC000', '#FFFF00', '#92D050', '#00B050', '#00B0F0', '#0070C0', '#002060', '#7030A0'];
+const TINTS = [0, 0.8, 0.6, 0.4, -0.25, -0.5];
+function applyTint(hex, tint) {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const r = (num >> 16) & 0xFF, g = (num >> 8) & 0xFF, b = num & 0xFF;
+  const calc = (c) => Math.max(0, Math.min(255, tint >= 0 ? Math.round(c + (255 - c) * tint) : Math.round(c * (1 + tint))));
+  return '#' + [calc(r), calc(g), calc(b)].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+const THEME_COLORS = TINTS.map(t => EXCEL_THEME_BASES.map(c => applyTint(c, t))).flat();
+const DEFAULT_KW_COLOR = '#FFFF00'; // 새로 추가한 키워드의 임시 기본색 — 색상 버튼으로 반드시 바꿔주도록 안내
+
+let paletteTarget = null; // { field, idx } — 지금 팝오버가 어떤 키워드의 색을 바꾸는 중인지
+
+function renderPalettePopover() {
+  const el = document.getElementById('palette-popover');
+  const themeHtml = THEME_COLORS.map(c => `<button type="button" class="pal-swatch" style="background:${c}" title="${c}" onclick="pickPaletteColor('${c}')"></button>`).join('');
+  const stdHtml = EXCEL_STANDARD_COLORS.map(c => `<button type="button" class="pal-swatch" style="background:${c}" title="${c}" onclick="pickPaletteColor('${c}')"></button>`).join('');
+  el.innerHTML = `
+    <div class="pal-label">테마 색상</div>
+    <div class="pal-theme">${themeHtml}</div>
+    <div class="pal-label">표준 색상</div>
+    <div class="pal-standard">${stdHtml}</div>
+  `;
+}
+function openPalette(field, idx, btn) {
+  const el = document.getElementById('palette-popover');
+  if (paletteTarget && paletteTarget.field === field && paletteTarget.idx === idx && el.classList.contains('open')) {
+    closePalette();
+    return;
+  }
+  paletteTarget = { field, idx };
+  const rect = btn.getBoundingClientRect();
+  el.style.top = (rect.bottom + 4) + 'px';
+  el.style.left = rect.left + 'px';
+  el.classList.add('open');
+}
+function closePalette() {
+  document.getElementById('palette-popover').classList.remove('open');
+  paletteTarget = null;
+}
+function pickPaletteColor(color) {
+  if (!paletteTarget) return;
+  const { field, idx } = paletteTarget;
+  draft.words[field][idx].color = color;
+  closePalette();
+  renderDraftRows();
+}
+document.addEventListener('click', (e) => {
+  const pop = document.getElementById('palette-popover');
+  if (!pop.classList.contains('open')) return;
+  if (pop.contains(e.target) || e.target.closest('.color-swatch-btn')) return;
+  closePalette();
+});
+renderPalettePopover();
 
 function isValidationKeyword(pp) { return !!pp && pp.toLowerCase().includes('plel'); }
 
@@ -508,8 +585,9 @@ function openColorModal(table) {
 }
 function closeColorModal() {
   document.getElementById('color-modal-overlay').classList.remove('open');
+  closePalette();
 }
-const FIELD_LABEL = { sp: '🔵', sd: '🟢', pp: '🟠' };
+const FIELD_LABEL = { sp: 'STEPSEQ', sd: 'STEP 설명', pp: 'PPID' };
 function renderSavedList() {
   const s = state[currentTable];
   const el = document.getElementById('saved-list');
@@ -520,7 +598,7 @@ function renderSavedList() {
   el.innerHTML = s.sets.map(fs => {
     const groups = ['sp', 'sd', 'pp'].filter(f => fs.words[f].length > 0).map(f => `
       <div class="kw-group">
-        <span class="field-tag">${FIELD_LABEL[f]}</span>
+        <span class="field-tag">${FIELD_LABEL[f]}:</span>
         ${fs.words[f].map(e => `<span class="word-badge"><span class="sw" style="background:${e.color}"></span>${e.word}</span>`).join('')}
       </div>
     `).join('');
@@ -537,15 +615,16 @@ function renderSavedList() {
 }
 function addKw(field) {
   const input = document.getElementById('kw-' + field + '-input');
-  const colorInput = document.getElementById('kw-' + field + '-color');
   const word = input.value.trim();
   if (!word) return;
-  draft.words[field].push({ word, color: colorInput.value });
+  // 색은 일단 임시 기본색으로 추가되고, 목록에 뜬 색상 버튼을 눌러 원하는 색으로 바꾼다.
+  draft.words[field].push({ word, color: DEFAULT_KW_COLOR });
   input.value = '';
   renderDraftRows();
 }
 function removeKw(field, idx) {
   draft.words[field].splice(idx, 1);
+  closePalette();
   renderDraftRows();
 }
 function renderDraftRows() {
@@ -557,9 +636,9 @@ function renderDraftRows() {
     }
     el.innerHTML = draft.words[f].map((e, i) => `
       <div class="kw-row-item">
-        <span class="sw" style="background:${e.color}"></span>
+        <button type="button" class="color-swatch-btn" style="background:${e.color}" title="색상 변경" onclick="openPalette('${f}',${i},this)"></button>
         <span class="word">${e.word}</span>
-        <button onclick="removeKw('${f}',${i})">✕ 삭제</button>
+        <button class="kw-del" onclick="removeKw('${f}',${i})">✕ 삭제</button>
       </div>
     `).join('');
   });
@@ -588,6 +667,7 @@ function cancelEdit() {
   draft = { label: '', words: { sp: [], sd: [], pp: [] } };
   document.getElementById('new-label').value = '';
   ['sp','sd','pp'].forEach(f => document.getElementById('kw-' + f + '-input').value = '');
+  closePalette();
   renderDraftRows();
   document.getElementById('form-title').textContent = '새 색상 필터 만들기';
   document.getElementById('form-title').style.color = 'var(--text-muted)';
