@@ -1725,7 +1725,56 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         self._note_validation_system_change(document, max_round, previous, value, actor)
-        mailer.enqueue_validation_system_changed(document)
+
+        return Response({'message': '변경했습니다.'})
+
+    @action(detail=True, methods=['post'], url_path='partial-shot')
+    @transaction.atomic
+    def update_partial_shot(self, request, pk=None):
+        """진행 중 문서의 Partial Shot 계측 필요 여부를 상신자 본인이 변경한다.
+
+        `update_validation_system`과 동일한 구조다 — 수정 창은 상신 직후부터
+        **O 단계가 완료되기 전까지** 열려 있다. O 는 P/E 와 달리 지정 검토자가 없어
+        (`_REVIEW_AGENT_OF`에 'O' 없음) `_stage_reviewers_complete(document, 'O', round)`는
+        곧 "O 담당자 본인이 합의했는가"와 같다. 메일은 보내지 않는다(2026-09 정책).
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+
+        value = request.data.get('value')
+        if value not in self.PARTIAL_SHOT_VALUES:
+            return Response(
+                {'error': '유효하지 않은 Partial Shot 값입니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        role = getattr(request.user, 'role', '')
+        if role != 'MASTER' and not doc_permissions.is_requester(request.user, document):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if document.status not in ('under_review', 'pause'):
+            return Response(
+                {'error': '진행 중인 의뢰서만 변경할 수 있습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        max_round = self._max_round(document)
+        if self._stage_reviewers_complete(document, 'O', max_round):
+            return Response(
+                {'error': 'O 단계 검토가 끝난 의뢰서는 변경할 수 없습니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        previous = self._get_partial_shot(document)
+        if previous == value:
+            return Response({'message': '변경 사항이 없습니다.'})
+
+        actor = getattr(request.user, 'username', '') or getattr(request.user, 'loginid', '')
+        if not self._set_partial_shot(document, value, changed_by=actor):
+            return Response(
+                {'error': '의뢰서 데이터가 손상되어 값을 저장할 수 없습니다.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         return Response({'message': '변경했습니다.'})
 
@@ -2409,6 +2458,39 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if changed_by is not None:
             detail['validation_system_changed_by'] = changed_by
             detail['validation_system_changed_at'] = timezone.now().isoformat()
+        data['detail'] = detail
+        document.additional_notes = json.dumps(data, ensure_ascii=False)
+        document.save(update_fields=['additional_notes'])
+        return True
+
+    # Partial Shot 계측 필요 값 (프론트 Step3.tsx 의 'O'/'X' 토글과 동일)
+    PARTIAL_SHOT_VALUES = ('O', 'X')
+
+    def _get_partial_shot(self, document):
+        """detail.partial_shot 현재값. 키가 없거나 파싱 실패면 None."""
+        import json
+        try:
+            data = json.loads(document.additional_notes or '{}')
+            return (data.get('detail') or {}).get('partial_shot')
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+    def _set_partial_shot(self, document, value, changed_by=None):
+        """detail.partial_shot 을 덮어쓴다. 저장했으면 True, 못 했으면 False.
+
+        `_set_validation_system`과 동일한 이유로 성공 여부를 반드시 돌려준다 —
+        파싱 실패를 조용히 삼키면 호출부가 저장된 줄 착각한다.
+        """
+        import json
+        try:
+            data = json.loads(document.additional_notes or '{}')
+            detail = data.get('detail', {}) or {}
+        except (json.JSONDecodeError, TypeError):
+            return False
+        detail['partial_shot'] = value
+        if changed_by is not None:
+            detail['partial_shot_changed_by'] = changed_by
+            detail['partial_shot_changed_at'] = timezone.now().isoformat()
         data['detail'] = detail
         document.additional_notes = json.dumps(data, ensure_ascii=False)
         document.save(update_fields=['additional_notes'])
