@@ -6169,7 +6169,7 @@ class LayerFilterSetTest(TestCase):
         self.assertFalse(r.data['reset'])
 
     def test_apply_rejected_when_document_paused(self):
-        """중단(pause) 요청 중에는 필터 적용도 막고, 전용 메시지로 사유를 알린다."""
+        """중단(pause) 확정된 문서에는 필터 적용도 막는다(결재 액션과 동일 메시지)."""
         fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
         doc = self._make_doc(jayer_rows=[self._row(sp='SP01')], status='pause')
         ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
@@ -6179,10 +6179,10 @@ class LayerFilterSetTest(TestCase):
             'table': 'J', 'filter_id': fs.id,
         }, format='json')
         self.assertEqual(r.status_code, 400, r.content)
-        self.assertEqual(r.data['error'], '중단 요청 중입니다.')
+        self.assertEqual(r.data['error'], '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.')
 
     def test_reset_rejected_when_document_paused(self):
-        """중단(pause) 요청 중에는 초기화도 막고, 전용 메시지로 사유를 알린다(baseline이 있어도)."""
+        """중단(pause) 확정된 문서에는 초기화도 막는다(baseline이 있어도)."""
         fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
         doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
         ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
@@ -6197,7 +6197,44 @@ class LayerFilterSetTest(TestCase):
         doc.save(update_fields=['status'])
         r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
         self.assertEqual(r.status_code, 400, r.content)
-        self.assertEqual(r.data['error'], '중단 요청 중입니다.')
+        self.assertEqual(r.data['error'], '중단된 문서입니다. 작성자가 재개해야 결재를 진행할 수 있습니다.')
+
+    def test_apply_rejected_while_pause_request_awaiting_confirmation(self):
+        """상신자가 중단을 요청했지만 대상 단계 전원이 아직 확인 전이면(status는 여전히
+        under_review) 그 구간에도 필터 적용을 막아야 한다 — 이게 원래 버그였던 지점."""
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')], status='under_review')
+        j_step = ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+        PauseRequest.objects.create(
+            document=doc, requester_name='요청자', reason='검토 필요',
+            round=1, state='requested', target_step_ids=[j_step.id],
+        )
+
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(doc.status, 'under_review', '재현 전제: 확인 대기 중엔 status가 아직 안 바뀐다')
+
+    def test_reset_rejected_while_withdraw_request_awaiting_confirmation(self):
+        """철회 요청 확인 대기 중(status는 여전히 under_review)에도 초기화를 막아야 한다."""
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')], status='under_review')
+        j_step = ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        WithdrawRequest.objects.create(
+            document=doc, requester_name='요청자', reason='철회 사유',
+            round=1, state='requested', target_step_ids=[j_step.id],
+        )
+        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
 
     def test_reset_role_gate_matches_apply(self):
         doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
