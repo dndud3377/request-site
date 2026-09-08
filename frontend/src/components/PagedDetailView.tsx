@@ -3,7 +3,8 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import html2canvas from 'html2canvas';
-import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, AdiCdTarget, LayerFilterSet } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, AdiCdTarget, LayerFilterSet, PersonalColorRule } from '../types';
+import { CellColorMap } from '../utils/layerColorRules';
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
@@ -819,8 +820,10 @@ function JayerTable({
   prevRowMap,
   historyMode = false,
   rounds = [],
+  colorApplied,
 }: {
   rows: JayerRow[];
+  colorApplied?: CellColorMap;
 } & TableHistoryProps<JayerRow>) {
   const { t } = useTranslation();
   const [diffId, setDiffId] = useState<string | null>(null);
@@ -858,7 +861,7 @@ function JayerTable({
                       )}
                     </td>
                   )}
-                  {(() => { const reg = r.new_or_copy === '기등록' || isRowInactive(r.st); const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: reg ? rb : isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.item_id}</td></>); })()}
+                  {(() => { const reg = r.new_or_copy === '기등록' || isRowInactive(r.st); const rb = reg ? '#e5e7eb' : undefined; const cc = colorApplied?.[r.id]; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: reg ? rb : cc?.sp ?? undefined }}>{r.sp}</td><td style={{ backgroundColor: reg ? rb : cc?.sd ?? undefined }}>{r.sd}</td><td style={{ backgroundColor: reg ? rb : cc?.pp ?? (isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined) }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.item_id}</td></>); })()}
                 </tr>
               );
             })}
@@ -875,8 +878,10 @@ function OayerTable({
   prevRowMap,
   historyMode = false,
   rounds = [],
+  colorApplied,
 }: {
   rows: OayerRow[];
+  colorApplied?: CellColorMap;
 } & TableHistoryProps<OayerRow>) {
   const { t } = useTranslation();
   const [diffId, setDiffId] = useState<string | null>(null);
@@ -914,7 +919,7 @@ function OayerTable({
                       )}
                     </td>
                   )}
-                  {(() => { const reg = r.new_or_copy === '기등록' || isRowInactive(r.st); const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: rb }}>{r.layerid}</td><td style={{ backgroundColor: reg ? rb : isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td></>); })()}
+                  {(() => { const reg = r.new_or_copy === '기등록' || isRowInactive(r.st); const rb = reg ? '#e5e7eb' : undefined; const cc = colorApplied?.[r.id]; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: reg ? rb : cc?.sp ?? undefined }}>{r.sp}</td><td style={{ backgroundColor: reg ? rb : cc?.sd ?? undefined }}>{r.sd}</td><td style={{ backgroundColor: rb }}>{r.layerid}</td><td style={{ backgroundColor: reg ? rb : cc?.pp ?? (isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined) }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td></>); })()}
                 </tr>
               );
             })}
@@ -1166,6 +1171,21 @@ export interface PagedDetailViewProps {
   canResetOayerFilter?: boolean;
   onResetJayerLayerFilter?: () => void;
   onResetOayerLayerFilter?: () => void;
+  /**
+   * 결재 상세페이지 J/O-layer "색상적용" — 공유 필터와 달리 개인용(localStorage, 서버 저장 없음).
+   * 노출 조건(canUse*)은 공유 필터와 동일하게 호출부(ApprovalPage)가 판정해 넘긴다. 초기화는
+   * 별도 버튼을 두지 않고 위 필터 초기화 버튼이 색상적용 결과도 함께 되돌린다.
+   */
+  canUseJayerColor?: boolean;
+  canUseOayerColor?: boolean;
+  jayerColorRules?: PersonalColorRule[];
+  oayerColorRules?: PersonalColorRule[];
+  jayerColorApplied?: CellColorMap;
+  oayerColorApplied?: CellColorMap;
+  onApplyJayerLayerColor?: (ruleId: string) => void;
+  onApplyOayerLayerColor?: (ruleId: string) => void;
+  onOpenJayerColorManage?: () => void;
+  onOpenOayerColorManage?: () => void;
 }
 
 /** 전체 export(제목 옆 버튼)가 상세 정보/MAP 정보 탭을 화면 그대로 캡처할 때 쓰는 핸들. */
@@ -1186,6 +1206,11 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   onOpenJayerFilterManage, onOpenOayerFilterManage,
   canResetJayerFilter = false, canResetOayerFilter = false,
   onResetJayerLayerFilter, onResetOayerLayerFilter,
+  canUseJayerColor = false, canUseOayerColor = false,
+  jayerColorRules, oayerColorRules,
+  jayerColorApplied, oayerColorApplied,
+  onApplyJayerLayerColor, onApplyOayerLayerColor,
+  onOpenJayerColorManage, onOpenOayerColorManage,
 }, ref) {
   const { t } = useTranslation();
   const { isFullscreen, setIsFullscreen } = useModalFullscreen();
@@ -2347,7 +2372,20 @@ type Page = { label: string; content: React.ReactNode };
               )}
             </div>
           )}
-          <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} />
+          {canUseJayerColor && (
+            <div className="wizard-table-toolbar" style={{ marginBottom: 8 }}>
+              <span className="wizard-table-toolbar-label">{t('request.layer_color_apply_label')}:</span>
+              {(jayerColorRules ?? []).map((cs) => (
+                <button key={cs.id} type="button" className="th-header-btn" style={{ backgroundColor: cs.color, borderColor: cs.color }} onClick={() => onApplyJayerLayerColor?.(cs.id)}>
+                  {cs.label}
+                </button>
+              ))}
+              <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenJayerColorManage}>
+                {t('request.layer_color_manage_btn')}
+              </button>
+            </div>
+          )}
+          <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} colorApplied={jayerColorApplied} />
           </>
           )}
         </div>
@@ -2433,7 +2471,20 @@ type Page = { label: string; content: React.ReactNode };
                       )}
                     </div>
                   )}
-                  <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} />
+                  {canUseOayerColor && (
+                    <div className="wizard-table-toolbar" style={{ marginBottom: 8 }}>
+                      <span className="wizard-table-toolbar-label">{t('request.layer_color_apply_label')}:</span>
+                      {(oayerColorRules ?? []).map((cs) => (
+                        <button key={cs.id} type="button" className="th-header-btn" style={{ backgroundColor: cs.color, borderColor: cs.color }} onClick={() => onApplyOayerLayerColor?.(cs.id)}>
+                          {cs.label}
+                        </button>
+                      ))}
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenOayerColorManage}>
+                        {t('request.layer_color_manage_btn')}
+                      </button>
+                    </div>
+                  )}
+                  <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} colorApplied={oayerColorApplied} />
                 </>
               )}
               {activeTab === 'info' && (
