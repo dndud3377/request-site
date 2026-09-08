@@ -6095,13 +6095,36 @@ class LayerFilterSetTest(TestCase):
         restored = self._json.loads(doc.additional_notes)['jayerRows']
         self.assertEqual(restored, original_rows)
 
-    def test_reset_without_prior_apply_rejected(self):
+    def test_reset_without_prior_apply_is_graceful_not_an_error(self):
+        """되돌릴 baseline이 없으면 에러가 아니라 200 + reset:false로 안내만 한다."""
         doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
         ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
 
         self.client.force_authenticate(user=self.j_user)
         r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
-        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(r.data['reset'])
+
+    def test_apply_with_zero_matches_does_not_create_baseline(self):
+        """매칭 0건이면 아무것도 안 바뀌었으므로 baseline도 만들지 않는다(초기화가 곧바로 가능 상태가 되면 안 됨)."""
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['NO_MATCH'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01')])
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data['matched_count'], 0)
+
+        doc.refresh_from_db()
+        data = self._json.loads(doc.additional_notes)
+        self.assertNotIn('jayerFilterBaseline', data)
+
+        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(r.data['reset'], '실제로 바뀐 적이 없으므로 초기화도 할 게 없어야 한다')
 
     def test_reset_is_repeatable_without_corrupting_baseline(self):
         """적용→초기화를 반복해도 baseline(상신 시점 값)은 절대 바뀌지 않는다."""
@@ -6122,7 +6145,7 @@ class LayerFilterSetTest(TestCase):
             self.assertEqual(self._json.loads(doc.additional_notes)['jayerRows'], [original_row])
 
     def test_reset_invalid_after_round_change(self):
-        """반려 후 재상신으로 회차가 바뀌면 이전 회차 baseline 으로는 초기화할 수 없다."""
+        """반려 후 재상신으로 회차가 바뀌면 이전 회차 baseline 으로는 초기화할 수 없다(에러 아닌 안내)."""
         fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
         doc = self._make_doc(jayer_rows=[self._row(id='r1', sp='SP01')])
         ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
@@ -6142,7 +6165,39 @@ class LayerFilterSetTest(TestCase):
         doc.save(update_fields=['additional_notes'])
 
         r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(r.data['reset'])
+
+    def test_apply_rejected_when_document_paused(self):
+        """중단(pause) 요청 중에는 필터 적용도 막고, 전용 메시지로 사유를 알린다."""
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')], status='pause')
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs.id,
+        }, format='json')
         self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.data['error'], '중단 요청 중입니다.')
+
+    def test_reset_rejected_when_document_paused(self):
+        """중단(pause) 요청 중에는 초기화도 막고, 전용 메시지로 사유를 알린다(baseline이 있어도)."""
+        fs = LayerFilterSet.objects.create(table='J', label='f1', words={'sp': ['SP01'], 'sd': [], 'pp': []})
+        doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
+        ApprovalStep.objects.create(document=doc, agent='J', round=1, action='pending')
+
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/apply-layer-filter/', {
+            'table': 'J', 'filter_id': fs.id,
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        doc.status = 'pause'
+        doc.save(update_fields=['status'])
+        r = self.client.post(f'/api/documents/{doc.id}/reset-layer-filter/', {'table': 'J'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.data['error'], '중단 요청 중입니다.')
 
     def test_reset_role_gate_matches_apply(self):
         doc = self._make_doc(jayer_rows=[self._row(sp='SP01')])
