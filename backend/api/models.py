@@ -963,14 +963,13 @@ class MailNotification(models.Model):
         # 기존에 이미 발송 중이었으나 누락됐던 라벨 보완 (2026-09)
         ('notify_p_completed', 'P 단계 완료 통보'),
         ('revision_requested', '수정 요청'),
-        # 중단(PAUSE) 전 구간 + 삭제·후결자 제거·Validation System 변경 (2026-09 추가)
+        # 중단(PAUSE) 전 구간 + 삭제·후결자 제거 (2026-09 추가)
         ('pause_requested', '중단 요청'),
         ('pause_confirmed', '중단 확정'),
         ('pause_rejected', '중단 거부'),
         ('pause_resumed', '결재 재개'),
         ('document_deleted', '의뢰서 삭제'),
         ('post_approver_removed', '후결자 제외'),
-        ('validation_system_changed', 'Validation System 변경'),
     ]
 
     STATUS_CHOICES = [
