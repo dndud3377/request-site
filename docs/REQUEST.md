@@ -3387,6 +3387,40 @@ J-layer(STEP3)와 O-layer(STEP4) 표의 `st` 컬럼이 지금까지 `request.col
   2. [같은 화면에서 흐름도 행이 1개뿐인 다른 의뢰서를 열어봄] → [기대 결과: 기존과 동일하게
      정상 표시되고 에러 없음(행이 적을 때도 회귀 없음 확인).]
 
+### 버그 수정 (2026-09-08 — 흐름도 Step: 마스터 DB에 정보가 없으면 입력 자체가 막히던 문제)
+
+- **증상**: 흐름도 행에서 위치(라인)·제품 이름(Ref.PART ID)·조리법(process_id)을 정했는데, 그
+  조합에 대해 마스터 DB(`formOptionsAPI.getLayerIds`)가 Layer ID 목록을 하나도 내려주지 않으면
+  `step_from`/`step_to` 입력칸이 **`disabled` 처리**돼(`FlowLayerIdOptions[row.id].length === 0`)
+  아예 타이핑할 수 없었다. 그런데 위치·제품 이름·조리법 중 하나라도 채워지면 Step까지 전부
+  필수(2026-08-13 규칙)이므로, 정보가 없는 조합에서는 **입력이 막힌 채 필수 검증에 걸려 영원히
+  다음 단계로 넘어갈 수 없는** 상태가 됐다(사용자가 값을 입력할 방법이 없다).
+- **수정**: 마스터 DB에 정보가 없는 경우(옵션 목록이 빈 배열)에는 목록 검증을 건너뛰고
+  **직접 입력을 허용**해 필수 조건을 채울 수 있게 했다. 목록에 값이 **있는** 경우의 기존 동작
+  (목록 밖 값 입력 시 차단)은 그대로 유지한다.
+  - `Step1.tsx`: `step_from`/`step_to` `AutocompleteInput`의 `disabled`에서
+    `(FlowLayerIdOptions[row.id] || []).length === 0` 조건 제거(제품 이름·조리법 입력과 동일하게
+    항상 입력 가능, `disableOptional`만 남음).
+  - `index.tsx` `handleFlowStepBlur`(입력칸 blur 시 "목록에 없는 값" 에러 표시): 옵션 목록이
+    비어 있으면(`opts.length === 0`) 검사를 건너뛴다.
+  - `index.tsx` `validate(1)`의 `flowStepInvalid` 검사: 위와 동일하게 옵션 목록이 비어 있는
+    행은 "목록 밖 값" 검사를 건너뛴다(값이 채워져 있으면 통과).
+- **영향 파일**: `frontend/src/pages/RequestPage/components/Step1.tsx`,
+  `frontend/src/pages/RequestPage/index.tsx`.
+- **검증**: `npx tsc --noEmit` — 신규 에러 0(기존 tsconfig 옵션 경고 2건만, 무관).
+  `CI=true npx react-scripts test --watchAll=false` — 11 suites / **273건 통과**(전부 기존 테스트,
+  회귀 없음). 백엔드·결재 흐름과 무관해 `scripts/approval_cases/run_cases`는 대상이 아니다.
+- **수동 검증 시나리오**:
+  1. [`/request` → 새 의뢰서 작성 → STEP1 → 흐름도에서 위치·제품 이름·조리법을 마스터 DB에
+     Layer ID 정보가 없는 조합으로 선택/입력] → [기대 결과: 이전에는 Step 칸이 회색으로
+     비활성화돼 클릭해도 아무 반응이 없었으나, 이제는 다른 칸과 동일하게 텍스트를 직접 입력할
+     수 있다.]
+  2. [위 상태에서 Step 시작/끝 칸에 임의의 값을 입력한 뒤 "다음" 클릭] → [기대 결과: "목록에
+     있는 값만 선택할 수 있습니다" 에러 없이 정상적으로 다음 단계로 진행된다.]
+  3. [Layer ID 정보가 **있는** 조합(옵션 드롭다운이 뜨는 경우)에서 목록에 없는 임의의 값을
+     입력 후 blur/다음 클릭] → [기대 결과: 기존과 동일하게 "Step은 목록에 있는 값만 선택할 수
+     있습니다" 에러가 뜨고 진행이 막힌다(정보가 있을 때의 검증은 회귀 없이 유지됨).]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
