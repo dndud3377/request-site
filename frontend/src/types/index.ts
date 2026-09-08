@@ -337,6 +337,9 @@ export interface BbTableRow {
  */
 export type ValidationSystemValue = 'YES' | 'NO' | 'NA' | '';
 
+/** Partial Shot 계측 필요 값(Step3.tsx 의 'O'/'X' 토글과 동일). */
+export type PartialShotValue = 'O' | 'X';
+
 export interface DetailFormState {
   // 항상 표시
   request_purpose: string;
@@ -432,6 +435,9 @@ export interface DetailFormState {
 
   // O-ayer 정보 탭
   partial_shot: string;
+  // 마지막으로 값을 바꾼 사람과 시각(상신 후 O 단계가 끝나기 전까지 상신자가 직접 수정 가능).
+  partial_shot_changed_by?: string;
+  partial_shot_changed_at?: string;
   tbvtlv_thickness: string;
   // note: 과거(문자열 자유 입력) 저장분과의 하위 호환 표시용 — 신규 작성은 noteRows(X/Y 좌표 표)만 채운다.
   tbvtlv_entries: Array<{ sds: string[]; note?: string; noteRows?: TbvtlvNoteRow[] }>;

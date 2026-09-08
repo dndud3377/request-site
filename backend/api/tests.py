@@ -1572,6 +1572,14 @@ class PEStageReviewerFlowTest(TestCase):
             body['reviewer_loginids'] = reviewers
         return self.client.post(f'/api/documents/{doc.id}/approve-step/', body, format='json')
 
+    def _approve_o(self, doc):
+        """O 담당자가 선점 후 합의한다. O 는 검토자(OV)가 없어 이 한 번으로 단계가 끝난다."""
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        return self.client.post(
+            f'/api/documents/{doc.id}/approve-step/', {'agent': 'O', 'comment': '확인함'}, format='json',
+        )
+
     def test_requester_updates_validation_system(self):
         """상신자는 진행 중 문서의 대상/비대상을 바꿀 수 있고, 변경 주체·시각이 기록된다."""
         doc = self._advance_to_parallel(plel=True)
@@ -1739,6 +1747,64 @@ class PEStageReviewerFlowTest(TestCase):
                 ).exists(),
                 '지정한 검토자의 EV step 이 조용히 버려져서는 안 된다',
             )
+
+    # ----- Partial Shot: O 단계가 끝나기 전까지 상신자 본인이 직접 수정 -----
+
+    def test_requester_updates_partial_shot(self):
+        """상신자는 진행 중 문서의 Partial Shot 값을 바꿀 수 있고, 변경 주체·시각이 기록된다."""
+        doc = self._advance_to_parallel()
+        self._set_detail(doc, {'partial_shot': 'X'})
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/partial-shot/', {'value': 'O'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(
+            ApprovalStep.objects.get(document=doc, agent='O', round=1).action, 'pending',
+            'O 합의 전이므로 O 단계는 대기 그대로다',
+        )
+
+        detail = self._get_detail(doc)
+        self.assertEqual(detail['partial_shot'], 'O')
+        self.assertTrue(detail.get('partial_shot_changed_by'))
+        self.assertTrue(detail.get('partial_shot_changed_at'))
+
+    def test_non_requester_cannot_update_partial_shot(self):
+        """상신자(또는 MASTER)가 아니면 값을 바꿀 수 없다 — O 담당자도 마찬가지다."""
+        doc = self._advance_to_parallel()
+        self._set_detail(doc, {'partial_shot': 'X'})
+
+        self.client.force_authenticate(user=self.o_user)
+        r = self.client.post(f'/api/documents/{doc.id}/partial-shot/', {'value': 'O'}, format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+        self.assertEqual(self._get_detail(doc)['partial_shot'], 'X')
+
+    def test_invalid_partial_shot_value_rejected(self):
+        """허용되지 않는 값은 400 이다."""
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/partial-shot/', {'value': 'MAYBE'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_partial_shot_window_closes_after_o_approves(self):
+        """O 담당자 합의가 끝나면 더 이상 수정할 수 없다 — O 는 검토자가 없어 합의 즉시 창이 닫힌다."""
+        doc = self._advance_to_parallel()
+        self._set_detail(doc, {'partial_shot': 'X'})
+        self.assertEqual(self._approve_o(doc).status_code, 200)
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/partial-shot/', {'value': 'O'}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(self._get_detail(doc)['partial_shot'], 'X', '거절됐으면 값도 그대로다')
+
+    def test_same_partial_shot_value_is_not_a_change(self):
+        """같은 값으로 다시 저장하면 변경이 아니다."""
+        doc = self._advance_to_parallel()
+        self._set_detail(doc, {'partial_shot': 'X'})
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/partial-shot/', {'value': 'X'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data['message'], '변경 사항이 없습니다.')
 
     # ----- E 합의 시 2차 검토자 필수 -----
 
@@ -3286,11 +3352,14 @@ class PauseFlowTest(TestCase):
 
 
 class PauseAndOtherActionMailTest(TestCase):
-    """중단(PAUSE) 전 구간 + 삭제·후결자 제거·Validation System 변경 메일 (2026-09 신설).
+    """중단(PAUSE) 전 구간 + 삭제·후결자 제거 메일 (2026-09 신설).
 
     기존엔 이 액션들 전부 메일이 전혀 나가지 않았다(docs/MAIL.md §4 감사에서 발견).
     수신자 산출은 기존 withdraw_target/withdraw_completed 의 "담당자 있으면 개인,
     없으면 팀별로 각각 분리 발송" 규칙을 그대로 재사용한다.
+
+    Validation System 변경 / Partial Shot 변경은 상신 후 값을 직접 고치는 기능이지만
+    둘 다 메일을 보내지 않는다(2026-09 정책) — 무메일 단언만 아래에 남긴다.
     """
 
     def setUp(self):
@@ -3436,28 +3505,22 @@ class PauseAndOtherActionMailTest(TestCase):
         self.assertEqual(noti.recipients, ['pm_pa@c.com'])
         self.assertIn('추가후결자', noti.subject)
 
-    # ----- validation-system -----
-    def test_validation_system_change_notifies_author_and_assigned_e(self):
+    # ----- validation-system / partial-shot: 둘 다 메일을 보내지 않는다(2026-09) -----
+    def test_validation_system_change_sends_no_mail(self):
         doc = self._doc()
         te_e = UserProfile.objects.create(loginid='pm_e', mail='pm_e@c.com', role='TE_E', username='E담당')
         self._step(doc, 'E', assignee=te_e)
         res = self._post(self.author, doc, 'validation-system', {'value': 'NO'})
         self.assertEqual(res.status_code, 200, res.content)
+        self.assertNotIn('validation_system_changed', self._events())
 
-        noti = MailNotification.objects.get(event_type='validation_system_changed')
-        self.assertEqual(sorted(noti.recipients), sorted(['pm_a@c.com', 'pm_e@c.com']))
-
-    def test_validation_system_change_broadcasts_team_when_e_unassigned(self):
+    def test_partial_shot_change_sends_no_mail(self):
         doc = self._doc()
-        te_e = UserProfile.objects.create(loginid='pm_e2', mail='pm_e2@c.com', role='TE_E', username='E담당')
-        self._step(doc, 'E')  # 미배정
-        res = self._post(self.author, doc, 'validation-system', {'value': 'NO'})
+        te_o = UserProfile.objects.create(loginid='pm_o', mail='pm_o@c.com', role='TE_O', username='O담당')
+        self._step(doc, 'O', assignee=te_o)
+        res = self._post(self.author, doc, 'partial-shot', {'value': 'X'})
         self.assertEqual(res.status_code, 200, res.content)
-
-        notis = list(MailNotification.objects.filter(event_type='validation_system_changed'))
-        all_recipients = [mail for n in notis for mail in n.recipients]
-        self.assertIn('pm_a@c.com', all_recipients)
-        self.assertIn('pm_e2@c.com', all_recipients)
+        self.assertNotIn('partial_shot_changed', self._events())
 
     # ----- cancel-pause 는 이번 범위에서 제외했다(resume 과 알리는 목적이 겹친다는 판단) -----
     def test_cancel_pause_still_sends_no_mail(self):

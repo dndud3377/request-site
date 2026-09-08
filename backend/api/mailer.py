@@ -56,8 +56,8 @@
   (resolve_withdraw_completed_recipients 재사용) — 개인 수신자 1통 + 진행된 팀별로 각각
   별도 메일. 반드시 document.delete() 앞에서 호출해야 한다.
 - 후결자 제거(post_approver_removed, 2026-09 신설): 제거된 후결자 본인에게만 개인화 메일 1통.
-- Validation System 변경(validation_system_changed, 2026-09 신설): 작성자 + 지정된 EV
-  전원(개인 수신자) + 현재 E 단계(담당자 있으면 개인, 없으면 TE_E 팀 1통).
+- Validation System 변경 / Partial Shot 변경: 상신자가 상신 후 값을 직접 고치는 기능이지만,
+  둘 다 **메일을 보내지 않는다**(2026-09 정책) — 화면(결재 현황/상세보기)에서만 확인한다.
 - MAIL_REDIRECT_TO 설정 시 위 결과를 무시하고 전원 그 주소로 강제(개발/검증용)
 """
 import logging
@@ -209,7 +209,6 @@ EVENT_STATUS_LABEL = {
     'pause_resumed': '결재 재개',
     'document_deleted': '삭제',
     'post_approver_removed': '후결자 제외',
-    'validation_system_changed': 'Validation System 변경',
 }
 
 # 이벤트 타입별 히어로+KPI 카드 이메일 색상 테마
@@ -267,9 +266,8 @@ EVENT_THEME['pause_rejected'] = EVENT_THEME['notify_submitted']
 EVENT_THEME['pause_resumed'] = EVENT_THEME['stage_arrival']
 # 의뢰서 삭제: 문서가 사라지는 알림이라 철회 완료와 같은 레드 테마
 EVENT_THEME['document_deleted'] = EVENT_THEME['rejected']
-# 후결자 제외/Validation System 변경: 정보성 통보라 통보 계열(퍼플) 테마
+# 후결자 제외: 정보성 통보라 통보 계열(퍼플) 테마
 EVENT_THEME['post_approver_removed'] = EVENT_THEME['notify_submitted']
-EVENT_THEME['validation_system_changed'] = EVENT_THEME['notify_submitted']
 # VOC 등록: 새 요청이 도착했다는 알림이라 결재 도착과 같은 블루 테마
 EVENT_THEME['voc_created'] = EVENT_THEME['stage_arrival']
 # VOC 답글: 논의가 진행됐다는 정보성 알림이라 통보 계열(퍼플) 테마
@@ -803,42 +801,6 @@ def resolve_pause_confirmed_recipients(document):
     return _apply_redirect(individual_emails, document), _redirect_team_groups(team_groups, document)
 
 
-def resolve_validation_system_change_recipients(document):
-    """Validation System 변경 수신자를 (개인 수신자, {팀키: 팀 수신자}) 로 나눠 반환한다.
-
-    개인 수신자 = 작성자 + 지정된 EV(검토자) 전원. 팀 수신자 = 현재 회차 E 단계 —
-    담당자가 지정돼 있으면 개인 수신자에 포함하고, 미지정이면 TE_E 팀 전원(팀 수신자)에 넣는다
-    (담당자 유/무에 따라 개인·팀을 자동 판정하는 기존 원칙과 동일).
-    """
-    individual_emails = []
-    if document.requester_email:
-        individual_emails.append(document.requester_email)
-
-    team_groups = {}
-    max_round = _current_round(document)
-    if max_round is not None:
-        e_step = ApprovalStep.objects.filter(
-            document=document, agent='E', round=max_round,
-        ).select_related('assignee').first()
-        if e_step:
-            if e_step.assignee and e_step.assignee.mail:
-                if e_step.assignee.mail not in individual_emails:
-                    individual_emails.append(e_step.assignee.mail)
-            else:
-                emails = _stage_team_emails('E')
-                if emails:
-                    team_groups['E'] = emails
-        ev_qs = (
-            ApprovalStep.objects.filter(document=document, agent='EV', round=max_round)
-            .exclude(assignee__isnull=True).exclude(assignee__mail='')
-        )
-        for mail in ev_qs.values_list('assignee__mail', flat=True).distinct():
-            if mail not in individual_emails:
-                individual_emails.append(mail)
-
-    return _apply_redirect(individual_emails, document), _redirect_team_groups(team_groups, document)
-
-
 # --------------------------------------------------------------------------- #
 # 메일 본문 생성
 # --------------------------------------------------------------------------- #
@@ -1185,10 +1147,6 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
         subject = f'{name_prefix}[후결자 제외] {document.title}'
         headline = '후결자 지정에서 제외되었습니다. 더 이상 이 의뢰서의 결재 대상이 아닙니다.'
         stage_value = EVENT_STATUS_LABEL[event_type]
-    elif event_type == 'validation_system_changed':
-        subject = f'[Validation System 변경] {document.title}'
-        headline = 'Validation System 대상/비대상 값이 변경되었습니다. 결재 현황에서 확인해 주세요.'
-        stage_value = EVENT_STATUS_LABEL[event_type]
     else:
         subject = f'[알림] {document.title}'
         headline = '새로운 알림이 있습니다.'
@@ -1487,18 +1445,6 @@ def enqueue_post_approver_removed(document, removed_mail, removed_name=None):
     """
     recipients = _apply_redirect([removed_mail] if removed_mail else [], document)
     return _enqueue(document, 'post_approver_removed', recipients, recipient_name=removed_name)
-
-
-def enqueue_validation_system_changed(document):
-    """Validation System 변경 알림 적재 — 개인 수신자 1통 + (미지정 시) E 팀 1통."""
-    individual_emails, team_groups = resolve_validation_system_change_recipients(document)
-    notis = [_enqueue(document, 'validation_system_changed', individual_emails, dispatch=False)]
-    for team_key, emails in team_groups.items():
-        notis.append(_enqueue(
-            document, 'validation_system_changed', emails, agent=team_key, dispatch=False,
-        ))
-    _dispatch_batch(notis)
-    return [n for n in notis if n is not None]
 
 
 # --------------------------------------------------------------------------- #

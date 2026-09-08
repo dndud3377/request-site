@@ -855,7 +855,8 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 지정자 변경 | `change-designee/` | (의뢰자/MASTER) |
 | 후결자 추가 (2026-07) | `add-post-approver/` | `loginid` |
 | 후결자 제거 (2026-07) | `remove-post-approver/` | `loginid` |
-| Validation System 변경 (2026-08) | `validation-system/` | `value`(`'YES'`/`'NO'`) — 상신자 본인 또는 MASTER, `under_review`/`pause` 에서만, E 단계 완료 전까지 |
+| Validation System 변경 (2026-08) | `validation-system/` | `value`(`'YES'`/`'NO'`) — 상신자 본인 또는 MASTER, `under_review`/`pause` 에서만, E 단계 완료 전까지. 메일 없음(2026-09) |
+| Partial Shot 변경 (2026-09) | `partial-shot/` | `value`(`'O'`/`'X'`) — 상신자 본인 또는 MASTER, `under_review`/`pause` 에서만, O 단계 완료 전까지(O 는 검토자가 없어 담당자 합의 즉시 닫힘). 메일 없음 |
 | 이력 바로 등록 (MASTER 전용) | `direct-approve/` | `submitted_at`, `approved_at` — 결재선을 만들지 않고 `draft → approved` |
 | 검토 항목 추가 (2026-08) | `review-item-add/` | `title` |
 | 검토 항목 제목 수정 (2026-08) | `review-item-rename/` | `item_id`, `title` |
@@ -1025,6 +1026,8 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
   합의해야 하는데 아무도 재검토 신호를 못 받는 최악의 조합이 된다.
 - **(2026-08) MASK(E/EV) 반려 → '수정 요청'**: E/EV 단계의 `reject-step` 은 `document.status` 와 `round` 를 건드리지 않고 사유를 step `comment` 에 덧붙인 뒤 상신자에게 `revision_requested` 메일만 보낸다. E 가 결재선 마지막 병렬 블록에 있어 반려 시 PL 부터 전 단계를 재결재해야 하는 비용이 과했기 때문이다. **E/EV 가 아닌 단계의 반려는 기존 동작 그대로다.**
 - **(2026-08) 대상/비대상 UI 가 흰 배경에 사라지던 버그 수정**: 정의된 적 없는 `var(--primary)` 를 배경으로 쓰고 있어(미정의 커스텀 속성 → `background` 가 초기값 `transparent` 로 계산) **선택된 항목이 흰 배경에 흰 글씨**로 찍혔다. 사용처 3곳을 모두 제거하고 문서 상태 badge(`.badge-*`)와 같은 관용구의 `.vs-badge` / `.vs-toggle` 로 재작성했다(대상=warning, 비대상=info, 해당없음=회색). 공용 컴포넌트는 `frontend/src/components/ValidationSystem.tsx`.
+- **(2026-09) Partial Shot 도 상신 후 O 단계 완료 전까지 상신자 본인이 직접 수정 가능**: Validation System 과 같은 구조로 O-layer 에 확장했다(`POST /documents/<id>/partial-shot/`, `PagedDetailView` O-layer "정보" 탭 토글). O 는 별도 검토자(OV)가 없어 게이트는 "O 담당자 본인 합의 여부" 하나뿐이라 EV AND 게이트 같은 복잡함이 없고, 되감기·합의-후-변경 note 로직도 필요 없다(그 중간 상태 자체가 없다). 상세는 `docs/REQUEST.md` 2026-09 항목 참조.
+- **(2026-09) Validation System / Partial Shot 변경 메일 완전 제거**: `validation_system_changed` 메일 이벤트(함수·이벤트 타입 등록·본문 분기)를 전부 삭제했다(정책 변경 — 두 값 다 결재 화면에서만 확인). `docs/MAIL.md` §4 갱신.
 
 - **(2026-07) INTER 표시 = 글자 코멘트**: INTER 섹션은 `inter === 'YES'` **일 때만** 노출하며, YES/NO 값 태그·버튼식 태그 없이 **글자**로 표시한다 — `INTER 적용`, Xs 적용 시 `Xs 적용`, Ys 적용 시 `Ys 적용`(` / ` 연결). Xs/Ys 는 선택 안 할 수 있으므로 적용된 것만 붙는다. (i18n: `approval.inter_applied`/`inter_xs_applied`/`inter_ys_applied`)
 - **(2026-07) REV 여부 표 = 카드형(B)**: 상세보기 REV 표를 accent 좌측 rail 카드 + **Layer pill** 형태로 교체해 눈에 띄게 했다. 하드코딩 문자열(`REV 여부`·`GDS version`·`Layer / GDS version` 등)은 `request.rev_*` i18n 키로 이관.

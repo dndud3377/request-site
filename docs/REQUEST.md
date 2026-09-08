@@ -2760,7 +2760,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 - **3상태의 의미**: 판정 키워드(`plel`)가 J-layer 에 **하나도 없으면** 판정 자체가 성립하지 않으므로 `'NA'`(해당없음)이고, 이때는 **E(MASK) 단계도 결재 경로에 생성되지 않는다**(`docs/APPROVAL.md` Case E). 키워드가 있으면 자동 판정은 `'YES'`(대상)이며, 상신자가 토글로 `'NO'`(비대상)를 고를 수 있다 — 그 판단이 맞는지 검증하는 것이 MASK(E) 단계의 역할이다. 즉 `'NO'` 는 자동 판정으로는 나오지 않는다.
 - **자동 판정**: `autoValidationSystem()`(`RequestPage/helpers.ts`) — 활성(비-disabled) J-layer 행의 `pp` 에 키워드가 하나라도 있으면 `'YES'`, 아니면 `'NA'`. 판정 단일 소스는 이 프론트 함수이며, 백엔드는 저장된 값을 그대로 신뢰한다. 다만 **E 단계 생성 여부만은** 백엔드 `RequestDocument.has_ppid_plel()` 이 저장된 `jayerRows` 를 직접 스캔해 결정한다(상신 시 disabled 행은 저장에서 제외되므로 두 판정 기준은 일치한다).
 - **상신 UI**: 위저드 3단계(J-layer) 표 상단 토글. J-layer 가 바뀌면 자동 판정으로 값이 갱신되지만, 상신자가 토글을 직접 누르면 이후에는 J-layer 를 고쳐도 자동 갱신하지 않는다. **단 키워드가 전부 사라지면** 수동 설정 이력과 무관하게 `'NA'` 로 되돌아가고 토글이 비활성(희미 + '해당없음' 표기)된다 — 그러지 않으면 저장값은 `'NO'` 인데 E 단계는 생기지 않는 불일치가 남는다.
-- **상신자 변경 (결재 진행 중)**: `POST /api/documents/<id>/validation-system/` — body `{"value": "YES"|"NO"}`. 인가는 **상신자 본인 또는 MASTER**. 수정 창은 `status ∈ {under_review, pause}` 이면서 **E(MASK) 단계가 통과되기 전**까지 열린다(백엔드 `_stage_reviewers_complete(doc,'E',round)` 가 판정 — E 담당자 합의 + **EV 중 1명** 합의(OR)로 닫힌다). 값 변경 시 `validation_system_changed_by/at` 이 함께 기록되고, `validation_system_submitted` 는 바뀌지 않는다.
+- **상신자 변경 (결재 진행 중)**: `POST /api/documents/<id>/validation-system/` — body `{"value": "YES"|"NO"}`. 인가는 **상신자 본인 또는 MASTER**. 수정 창은 `status ∈ {under_review, pause}` 이면서 **E(MASK) 단계가 통과되기 전**까지 열린다(백엔드 `_stage_reviewers_complete(doc,'E',round)` 가 판정 — E 담당자 합의 + **지정된 EV 전원** 합의(AND)로 닫힌다). 값 변경 시 `validation_system_changed_by/at` 이 함께 기록되고, `validation_system_submitted` 는 바뀌지 않는다.
   - **되감지 않는다 (2026-08-06)**: E 담당자가 이미 합의한 뒤 값이 실제로 달라져도 `E`/`EV` step 의 `action` 은 그대로다. 변경 사실만 E step `comment` 에 `[값 변경 …]` note 로 덧붙는다(`backend/api/views.py` `_note_validation_system_change`). `EV` step 도 삭제되지 않으므로, 아직 아무도 합의하지 않았다면 이후 합의하는 검토자가 **바뀐 값을 보고** 판단한다. 응답에 `rewound` 필드는 없다. ⚠️ E 담당자 본인의 재확인은 강제되지 않는다 — 되감기가 만들던 잠금·이력 소실보다 낫다고 판단해 의도적으로 택한 트레이드오프이며, 그래서 `comment` note 가 유일한 감사 추적이다(`docs/APPROVAL.md` 2026-08 항목 참고).
 - **MASK 는 값을 바꾸지 않는다**: `approve-step` 의 `validation_system` 수용은 제거됐다. MASK 가 이견이면 `reject-step` 이 **수정 요청**으로 동작한다(§`docs/APPROVAL.md`).
 - **레거시 문서**: 두 키가 없는 문서는 저장된 `jayerRows` 로 그때그때 폴백 판정해 보여준다(위저드 J-layer 단계·MASK 담당자 합의 모달·상세보기 J-layer 탭 공통).
@@ -2769,6 +2769,24 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   - **변수·상수·키 이름(`validation_system`, `VS_TARGET`, `autoValidationSystem` 등)은 가명 그대로 둔다.** 사용자에게 보이지 않는다.
   - **`plel` 은 가명이 아니라 실제 사내 값**이라 교체 대상이 아니다(`VALIDATION_KEYWORD`, `RequestDocument.VALIDATION_KEYWORD`).
   - 백엔드 `views.py` 의 400 에러 메시지 `'유효하지 않은 Validation System 값입니다.'` 는 i18n 밖이라 자동 반영되지 않는다. UI 가 `YES`/`NO` 만 보내므로 요청을 직접 위조할 때만 노출되는 방어 메시지다.
+
+### 추가 변경 이력 (2026-09 — Partial Shot 상신 후 수정 + 두 기능 모두 무메일)
+
+- **Partial Shot 도 상신 후 O 단계가 끝나기 전까지 상신자 본인이 직접 수정 가능**: Validation System 과 동일한 구조를 O-layer 에 그대로 적용했다.
+
+| 키 | 값 | 설명 |
+|---|---|---|
+| `partial_shot` | `'O'` / `'X'` | 현재 유효값. 상신 시 정하고, 결재 중에도 **상신자 본인(또는 MASTER)만** 바꿀 수 있다 |
+| `partial_shot_changed_by` | 문자열 | 마지막으로 값을 바꾼 사람(이름 또는 loginid) |
+| `partial_shot_changed_at` | ISO 8601 문자열 | 마지막 변경 시각 |
+
+  - **엔드포인트**: `POST /api/documents/<id>/partial-shot/` — body `{"value": "O"|"X"}`. 인가·상태 조건은 `validation-system` 과 동일(`status ∈ {under_review, pause}`, 상신자 본인/MASTER).
+  - **닫히는 시점**: O 단계가 **담당자 검토자(OV) 없이** 담당자 본인 합의만으로 끝나므로(`_stage_reviewers_complete(doc,'O',round)` — `_REVIEW_AGENT_OF` 에 `'O'` 매핑이 없어 검토자 0명 = 즉시 완료 취급), Validation System 의 "이미 합의된 뒤에도 EV 가 남아있으면 값이 바뀔 수 있다"는 중간 상태가 O 에는 존재하지 않는다. 그래서 O 합의 후에는 요청 자체가 **400 으로 거절**되고, `_note_validation_system_change` 같은 "합의 후 변경 note" 로직은 두지 않았다(호출될 일이 없다).
+  - **상세보기 표시/수정**: O-layer "정보" 탭. `PagedDetailView`가 `canEditPartialShot`(호출부가 판정, `ApprovalPage.tsx`) + `onPartialShotChange` 를 받으면 읽기전용 배지 대신 `Step3.tsx` 위저드와 같은 `O`/`X` 토글(`map-type-btn`)을 보여준다.
+  - **`validation_system_submitted` 같은 "상신 시 값" 병기는 두지 않는다** — Validation System 은 상신자(자동판정)와 MASK(검증)라는 서로 다른 주체가 값을 놓고 다를 수 있어 병기가 의미 있었지만, Partial Shot 은 편집 주체가 상신자 한 명뿐이라 대조할 다른 값이 없다.
+
+- **Validation System / Partial Shot 모두 값이 바뀌어도 메일을 보내지 않는다 (2026-09 정책 변경)**: 기존에 있던 `validation_system_changed` 메일 이벤트(`mailer.enqueue_validation_system_changed`, `MailNotification.EVENT_CHOICES` 의 `'validation_system_changed'`)를 **완전히 제거**했다 — 함수·이벤트 타입 등록(모델 choices + 신규 migration)·본문 분기·docstring까지 전부. Partial Shot 은 애초에 메일 이벤트를 만들지 않았다. 두 값 모두 결재 현황/상세보기 화면에서만 확인한다.
+  - 관련: `docs/MAIL.md` §4(엔드포인트별 메일 발송 표)에서도 `validation-system` 행이 "무메일"로 바뀌었다.
 
 ### 추가 변경 이력 (2026-07 — O-layer 정보 탭 입력 잠금)
 
