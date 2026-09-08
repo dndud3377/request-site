@@ -1280,11 +1280,13 @@ TE_O/MASTER 전원이 같은 하나의 목록을 보고 관리한다. 적용하�
 문서가 삭제돼도 필터 정의는 남는다.
 
 이와 별개로, 문서의 `additional_notes` JSON 안에 `jayerFilterBaseline`/`oayerFilterBaseline`
-(`{round, rows}`)을 둔다 — 이번 회차 **첫** `apply-layer-filter` 호출 시점의 `jayerRows`/`oayerRows`
-전체를 그대로 복사해 둔 것으로, 상신 이후 이 표를 건드리는 곳이 `apply_layer_filter`/
-`reset_layer_filter` 뿐이므로 이 시점 값이 곧 상신 시점 값이다. 이후 몇 번을 다시 적용해도
-이 baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본으로 복원할 수 있어야 하므로).
-회차가 바뀌면(반려 후 재상신) `round` 불일치로 이전 baseline 은 무효 처리되고, 새 회차 첫 적용
+(`{round, rows}`)을 둔다 — 이번 회차 첫 **유효한**(1건 이상 매칭돼 실제로 바뀐)
+`apply-layer-filter` 호출 시점의, 바뀌기 직전 `jayerRows`/`oayerRows` 전체를 그대로 복사해 둔
+것이다. 상신 이후 이 표를 건드리는 곳이 `apply_layer_filter`/`reset_layer_filter` 뿐이므로 이
+시점 값이 곧 상신 시점 값이다. 매칭 0건인 호출은 baseline 을 만들지 않는다(아무것도 안
+바뀌었는데 "초기화할 것이 있다"는 상태가 되는 것을 막기 위해). 이후 몇 번을 다시 적용해도 이
+baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본으로 복원할 수 있어야 하므로). 회차가
+바뀌면(반려 후 재상신) `round` 불일치로 이전 baseline 은 무효 처리되고, 새 회차 첫 유효 적용
 시점에 새로 저장된다.
 
 ### 12-2. 인가
@@ -1294,9 +1296,15 @@ TE_O/MASTER 전원이 같은 하나의 목록을 보고 관리한다. 적용하�
 | J-layer 필터 조회·추가·수정·삭제 | 역할이 `TE_J` 또는 `MASTER` (`CanManageLayerFilter`) |
 | O-layer 필터 조회·추가·수정·삭제 | 역할이 `TE_O` 또는 `MASTER` |
 | 필터 **적용**(`apply-layer-filter`)·**초기화**(`reset-layer-filter`) | 위 역할 조건 **+** 문서가
-  `under_review`/`pause` **+** 해당 단계(J 또는 O)가 이번 회차에 아직 `approved` 가 아님 —
+  `under_review` **+** 해당 단계(J 또는 O)가 이번 회차에 아직 `approved` 가 아님 —
   `update_validation_system` 의 MASK 게이트와 동일한 발상(단, J/O 는 PV/EV 같은 별도 검토자가
   없어 담당 단계 하나만 확인하면 된다). 두 액션은 `_layer_filter_gate` 헬퍼를 공유한다. |
+
+문서가 `pause`(중단 요청 중)이면 적용·초기화 **버튼은 계속 노출**하지만(아래 12-4), 실제 동작은
+막는다 — `_layer_filter_gate`가 상태를 세 갈래로 본다: `under_review`면 통과, `pause`면 전용
+메시지 `"중단 요청 중입니다."`로 거부, 그 외(approved/rejected/draft 등, 원래 버튼 자체가 안
+보이는 상태)는 기존 문구 `"진행 중인 의뢰서만 {적용|초기화}할 수 있습니다."`로 거부한다(직접 API
+호출 방어용). `action_label`(`'적용'`/`'초기화'`) 인자로 메시지만 갈린다.
 
 적용·초기화 사실 자체는 별도로 기록하지 않는다(사용자 확정 — `validation_system`처럼 결재 단계
 코멘트에 note를 남기는 방식조차 쓰지 않는다). baseline 은 이 게이트 판정을 위한 상태일 뿐,
@@ -1309,30 +1317,38 @@ TE_O/MASTER 전원이 같은 하나의 목록을 보고 관리한다. 적용하�
   403).
 - `POST /api/documents/{id}/apply-layer-filter/` — `{table, filter_id}` → 매칭된 행의 `st`를
   `'X'`로 설정하고 `new_or_copy`/`product_name`/`step`(J면 `item_id`도) 초기화, `additional_notes`
-  저장. 이미 `st==='X'`인 행은 다시 매칭하지 않는다(재적용해도 중복 집계 없음). 이번 회차 첫 호출이면
-  매칭 여부와 무관하게 baseline 도 함께 저장한다.
+  저장. 이미 `st==='X'`인 행은 다시 매칭하지 않는다(재적용해도 중복 집계 없음). **매칭 1건
+  이상일 때만** baseline 도 함께 저장한다(매칭 0건이면 `additional_notes` 자체를 건드리지 않음).
 
 #### 12-3-1. 초기화 (`reset-layer-filter`, 2026-09)
 
 - `POST /api/documents/{id}/reset-layer-filter/` — `{table}` → 이번 회차 baseline(`round` 일치)이
   있으면 `jayerRows`/`oayerRows` **전체**를 baseline 값으로 통째로 교체한다(부분 복원이 아니라
   전체 치환 — 매칭 로직이 필요 없어 단순하고, 여러 필터를 몇 번을 적용했든 한 번에 원상복구된다).
-- baseline 이 없거나(한 번도 적용한 적 없음) `round` 가 현재 회차와 다르면(반려 후 재상신) 400
-  `초기화할 변경 내역이 없습니다.`
+- baseline 이 없거나(이번 회차에 실제로 바뀐 적이 없음) `round` 가 현재 회차와 다르면(반려 후
+  재상신) **에러가 아니라** 200 + `{"reset": false, "message": "초기화할 내용이 없습니다."}` 를
+  돌려준다 — `apply_layer_filter` 가 매칭 0건일 때 에러 대신 안내만 하는 것과 동일한 방식. 실제로
+  복원했을 때는 `{"reset": true, "message": "상신 시점 값으로 초기화했습니다."}`.
 - 초기화해도 baseline 자체는 삭제하지 않는다 — 적용→초기화를 몇 번 반복해도 항상 같은 상신 시점
-  값으로 복원됨을 보장한다(baseline 은 "이번 회차 첫 적용" 시점에만 쓰이고 그 외에는 읽기 전용).
+  값으로 복원됨을 보장한다(baseline 은 "이번 회차 첫 유효 적용" 시점에만 쓰이고 그 외에는 읽기
+  전용).
 
 ### 12-4. 화면
 
 - `frontend/src/components/PagedDetailView.tsx`의 'J-ayer 정보'/'O-ayer 정보' 탭 표 위에 공유 필터
-  버튼 + "필터 관리" 버튼 + (조건부) "초기화" 버튼을 노출한다. 사용 가능 여부는 호출부인
-  `ApprovalPage.tsx`가 판정해 `canUseJayerFilter`/`canUseOayerFilter`(적용·관리)와
-  `canResetJayerFilter`/`canResetOayerFilter`(초기화) prop으로 넘긴다 — 이 컴포넌트는 API를 직접
-  호출하지 않는 순수 표시 컴포넌트라는 기존 원칙을 그대로 따른다.
-- `canResetLayerFilter`(`ApprovalPage.tsx`)는 `canUseLayerFilter`와 같은 조건 위에, `doc.additional_notes`를
-  직접 파싱해 해당 baseline 이 존재하고 `round`가 현재 회차와 같을 때만 `true`를 반환한다(백엔드
-  `reset_layer_filter`와 동일 판정을 프론트에서도 재확인 — 버튼 노출용).
-- 초기화 버튼 클릭 시 `window.confirm`으로 한 번 확인한 뒤 `documentsAPI.resetLayerFilter`를 호출한다.
+  버튼 + "필터 관리" 버튼 + "초기화" 버튼을 노출한다. 노출 조건은 셋 다 동일하게
+  `canUseJayerFilter`/`canUseOayerFilter`(및 이와 완전히 같은 값인
+  `canResetJayerFilter`/`canResetOayerFilter`) — `under_review`/`pause` 둘 다에서 노출한다.
+  실제 동작 가능 여부(=`under_review`에서만)는 노출 조건이 아니라 클릭 핸들러가 판정한다 — 이
+  컴포넌트는 API를 직접 호출하지 않는 순수 표시 컴포넌트라는 기존 원칙을 그대로 따른다.
+- `ApprovalPage.tsx`의 `handleApplyLayerFilter`/`handleResetLayerFilter`는 클릭 시 먼저
+  `selected.status === 'pause'`인지 확인해, 맞으면 API 호출 없이 즉시
+  `approval.layer_filter_pause_blocked`("중단 요청 중입니다.") 토스트만 띄우고 끝낸다(빠른 UX).
+  문서가 그 사이 `pause`로 바뀌는 레이스 컨디션 등을 대비해 백엔드 `_layer_filter_gate`도 동일하게
+  막는다(12-2).
+- 초기화 버튼 클릭 시(pause 가 아니면) `window.confirm`으로 한 번 확인한 뒤
+  `documentsAPI.resetLayerFilter`를 호출하고, 응답의 `reset` 플래그로 토스트 톤을 정한다
+  (`true`→success, `false`→info).
 - 필터 관리 모달은 의뢰서 작성 화면과 같은 `FilterManageModal` 컴포넌트를 재사용한다(추가 저장
   방식만 `onAdd` 콜백으로 외부화해 개인별 localStorage 대신 서버 API를 타도록 함).
 - 이력 조회(`HistoryPage.tsx`)에는 이 props 를 넘기지 않아 버튼 자체가 뜨지 않는다(완료된 문서를
@@ -1340,9 +1356,10 @@ TE_O/MASTER 전원이 같은 하나의 목록을 보고 관리한다. 적용하�
 
 ### 12-5. 테스트
 
-`backend/api/tests.py::LayerFilterSetTest`(22건) — CRUD 권한(테이블별 조회·생성·수정·삭제 허용/거부,
+`backend/api/tests.py::LayerFilterSetTest`(25건) — CRUD 권한(테이블별 조회·생성·수정·삭제 허용/거부,
 파라미터 누락 시 거부), 적용 권한(TE_J/TE_O/MASTER, 그 외 역할 거부), 문서 상태·단계 게이트, 필드
 초기화, 이미 비활성인 행 재매칭 안 함, 다른 테이블 필터로 적용 시도 거부, O-layer 행에 `item_id`
 키가 생기지 않음. 초기화: 필터 여러 번 적용 후에도 baseline 은 최초 상신 시점 값 그대로 남아
-초기화 시 완전히 복원됨, baseline 없을 때 거부, 적용→초기화 반복 시 baseline 불변, 회차 변경 후
-이전 baseline 무효화, 권한·상태 게이트가 apply 와 동일함.
+초기화 시 완전히 복원됨, baseline 없을 때/회차 변경 후 200+`reset:false`(에러 아님), 적용→초기화
+반복 시 baseline 불변, 매칭 0건이면 baseline 자체가 안 생김, `pause` 상태에서는 적용·초기화 모두
+전용 메시지로 거부, 권한 게이트가 apply/reset 동일함.
