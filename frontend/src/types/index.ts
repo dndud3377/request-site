@@ -166,11 +166,14 @@ export interface RequestDocument {
   mail_completion_matched?: boolean;
 }
 
-/** 결재 현황에서 개인이 의뢰서에 마킹할 때 쓰는 범주. 다른 사용자와 공유되지 않는다. */
+/**
+ * 결재 현황에서 개인이 의뢰서에 마킹할 때 쓰는 범주. 다른 사용자와 공유되지 않는다.
+ * color 는 공지 작성 에디터(RichTextEditor)의 테마 색상/표준 색상 팔레트에서 고른 hex 값(#RRGGBB)이다.
+ */
 export interface PersonalMarkCategory {
   id: number;
   name: string;
-  color: 'danger' | 'warning' | 'success' | 'accent' | 'pause';
+  color: string;
   order: number;
 }
 
