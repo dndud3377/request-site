@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>J/O-layer 색상 적용 기능 — 화면 목업 (검토용)</title>
+<title>J/O-layer 색상 적용 기능 — 화면 목업 (검토용, v2)</title>
 <style>
   /* ===== 실제 앱 CSS 변수(frontend/src/styles/global.css)에서 그대로 가져옴 — Bright Blue Theme ===== */
   :root {
@@ -70,6 +70,8 @@
     font-size: 0.84rem; color: var(--text-secondary);
   }
   .notice b { color: var(--warning); }
+  .notice.v2 { background: var(--success-light); border-left-color: var(--success); }
+  .notice.v2 b { color: var(--success); }
 
   h2 {
     font-size: 1.05rem; margin: 34px 0 12px; padding-bottom: 8px;
@@ -118,7 +120,7 @@
   }
   .th-header-btn:hover { background: var(--accent); color: #fff; }
 
-  /* ===== 신규: 색상 토글 칩 ===== */
+  /* ===== 색상 토글 칩 — 이제 필터 하나에 색이 여러 개 있을 수 있어 점 여러 개로 미리보기 ===== */
   .color-chip {
     display: inline-flex; align-items: center; gap: 6px;
     font-size: 0.72rem; font-weight: 700; padding: 3px 10px 3px 6px;
@@ -126,11 +128,13 @@
     color: var(--text-secondary); cursor: pointer; font-family: inherit;
     transition: var(--transition);
   }
-  .color-chip .dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.15); }
-  .color-chip.off .dot { opacity: 0.35; }
-  .color-chip.on { border-color: var(--chip-color, var(--accent)); background: color-mix(in srgb, var(--chip-color, var(--accent)) 16%, white); color: var(--text-primary); box-shadow: 0 0 0 1px var(--chip-color, var(--accent)) inset; }
-  .color-chip:hover { border-color: var(--chip-color, var(--accent)); }
-  .color-chip .empty-hint { color: var(--text-muted); font-weight: 400; font-size: 0.72rem; }
+  .color-chip .dots { display: inline-flex; }
+  .color-chip .dots .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.15); margin-left: -4px; }
+  .color-chip .dots .dot:first-child { margin-left: 0; }
+  .color-chip.off .dots .dot { opacity: 0.35; }
+  .color-chip.on { border-color: var(--accent); background: var(--accent-light); color: var(--text-primary); }
+  .color-chip:hover { border-color: var(--accent); }
+  .empty-hint { color: var(--text-muted); font-weight: 400; font-size: 0.72rem; }
 
   /* ===== 표 (실제 .table.table-compact 그대로) ===== */
   .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 0 0 var(--radius-md) var(--radius-md); }
@@ -143,7 +147,6 @@
   table.data td { padding: 6px 8px; font-size: 0.72rem; color: var(--text-secondary); border-bottom: 1px solid var(--border); white-space: nowrap; }
   table.data tr:last-child td { border-bottom: none; }
   table.data tr:hover td { background: var(--bg-card-hover); }
-  .cell-tag { font-size: 0.62rem; font-weight: 700; padding: 1px 6px; border-radius: 8px; margin-left: 4px; vertical-align: middle; }
 
   /* ===== 모달 (실제 .modal 그대로) ===== */
   .modal-overlay {
@@ -151,7 +154,7 @@
     display: none; align-items: center; justify-content: center; padding: 20px;
   }
   .modal-overlay.open { display: flex; }
-  .modal { background: var(--bg-modal); border: 1px solid var(--border-light); border-radius: var(--radius-xl); width: 100%; max-width: 620px; box-shadow: var(--shadow-lg); max-height: 88vh; display: flex; flex-direction: column; }
+  .modal { background: var(--bg-modal); border: 1px solid var(--border-light); border-radius: var(--radius-xl); width: 100%; max-width: 660px; box-shadow: var(--shadow-lg); max-height: 88vh; display: flex; flex-direction: column; }
   .modal-header { padding: 20px 24px 0; display: flex; align-items: center; justify-content: space-between; }
   .modal-header h3 { font-size: 1.05rem; font-weight: 700; margin: 0; }
   .modal-close { background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; padding: 4px; border-radius: 4px; }
@@ -162,32 +165,33 @@
   .section-label { font-weight: 700; font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
   .saved-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
   .saved-item { display: flex; align-items: center; gap: 10px; background: var(--bg-secondary); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); }
-  .saved-item .swatch { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; border: 1px solid rgba(0,0,0,.15); }
   .saved-item .info { flex: 1; min-width: 0; }
-  .saved-item .info .name { font-weight: 600; margin-bottom: 3px; }
-  .saved-item .info .kw { display: flex; flex-wrap: wrap; gap: 3px; }
-  .saved-item .info .kw span { background: #eef2f7; padding: 1px 7px; border-radius: 10px; font-size: 0.68rem; }
+  .saved-item .info .name { font-weight: 600; margin-bottom: 4px; }
+  .saved-item .info .kw-group { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 3px; }
+  .saved-item .info .kw-group .field-tag { font-size: 0.64rem; font-weight: 700; color: var(--text-muted); margin-right: 2px; }
+  .word-badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 4px; border-radius: 10px; font-size: 0.68rem; font-weight: 600; color: var(--text-primary); border: 1px solid rgba(0,0,0,.08); }
+  .word-badge .sw { width: 9px; height: 9px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.15); }
   .empty-note { color: #bbb; font-size: 0.82rem; padding: 6px 0; }
 
   hr.sep { margin: 16px 0; border: none; border-top: 1px solid var(--border); }
 
   input[type=text].form-control {
     width: 100%; border: none; border-bottom: 2px solid var(--accent); outline: none;
-    font-size: 1rem; font-weight: 700; padding: 4px 2px; margin-bottom: 12px; background: transparent; color: var(--text-primary);
+    font-size: 1rem; font-weight: 700; padding: 4px 2px; margin-bottom: 14px; background: transparent; color: var(--text-primary);
     font-family: inherit;
   }
-  .color-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-  .color-row label { font-size: 0.76rem; font-weight: 700; color: var(--text-muted); }
-  input[type=color] { width: 40px; height: 30px; border: 1px solid var(--border); border-radius: 6px; padding: 2px; cursor: pointer; background: var(--bg-card); }
-  .color-hex { font-size: 0.78rem; color: var(--text-muted); font-family: ui-monospace, monospace; }
 
   .kw-box { border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; border: 1.5px solid; }
   .kw-box .kw-title { font-weight: 600; font-size: 0.72rem; margin-bottom: 6px; }
-  .kw-box .kw-input-row { display: flex; gap: 6px; margin-bottom: 6px; }
-  .kw-box input[type=text].kw-input { font-size: 0.78rem; padding: 5px 8px; flex: 1; border: 1px solid var(--border); border-radius: 6px; }
-  .kw-box .kw-tags { display: flex; flex-wrap: wrap; gap: 4px; min-height: 20px; }
-  .kw-box .kw-tags span { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 12px; font-size: 0.72rem; }
-  .kw-box .kw-tags button { margin-left: 4px; border: none; background: none; cursor: pointer; color: #888; padding: 0; font-size: 0.68rem; }
+  .kw-box .kw-input-row { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
+  .kw-box input[type=text].kw-input { font-size: 0.78rem; padding: 5px 8px; flex: 1; border: 1px solid var(--border); border-radius: 6px; min-width: 0; }
+  .kw-box input[type=color].kw-color { width: 32px; height: 28px; border: 1px solid var(--border); border-radius: 6px; padding: 2px; cursor: pointer; background: var(--bg-card); flex-shrink: 0; }
+  .kw-box .kw-rows { display: flex; flex-direction: column; gap: 4px; }
+  .kw-box .kw-row-item { display: flex; align-items: center; gap: 8px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 6px; padding: 4px 8px; font-size: 0.76rem; }
+  .kw-box .kw-row-item .sw { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1px solid rgba(0,0,0,.15); }
+  .kw-box .kw-row-item .word { flex: 1; }
+  .kw-box .kw-row-item button { border: none; background: none; cursor: pointer; color: #888; font-size: 0.72rem; padding: 0; }
+  .kw-box .kw-empty { color: #bbb; font-size: 0.74rem; padding: 2px 0; }
 
   .flow-note { font-size: 0.78rem; color: var(--text-muted); margin-top: 6px; }
   .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.76rem; color: var(--text-muted); margin-top: 8px; }
@@ -198,15 +202,18 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>결재 상세페이지 — J/O-layer 색상 적용 기능 목업</h1>
-  <p class="sub">현재 코드(ApprovalPage.tsx · PagedDetailView.tsx · FilterManageModal.tsx)의 실제 CSS 변수·클래스를 그대로 사용해 만든 화면 검토용 목업입니다. 실제 구현 전, 동작 흐름을 미리 클릭해볼 수 있습니다.</p>
+  <h1>결재 상세페이지 — J/O-layer 색상 적용 기능 목업 (v2)</h1>
+  <p class="sub">현재 코드(ApprovalPage.tsx · PagedDetailView.tsx · FilterManageModal.tsx)의 실제 CSS 변수·클래스를 그대로 사용해 만든 화면 검토용 목업입니다.</p>
 
+  <div class="notice v2">
+    <b>v2 수정 사항</b> — ① 필터 하나에 색이 하나가 아니라, <b>키워드마다 각자 다른 색을 지정</b>할 수 있도록 변경. ② "색상 관리" 버튼 옆에 <b>전용 "초기화" 버튼</b>을 추가해 적용해 둔 색상 토글을 한 번에 끌 수 있게 함(기존 "공유 필터"의 초기화 버튼과 같은 자리 배치·같은 UI 톤을 그대로 재사용).
+  </div>
   <div class="notice">
-    <b>검토용 목업입니다.</b> 실제 데이터/서버 연동은 없으며, 버튼 클릭 시 브라우저 안에서만 즉시 반영됩니다(새로고침하면 초기 상태로 돌아갑니다). 기존 "공유 필터" 줄은 실제 화면 그대로 두고, 그 아래 <b>"색상 적용"</b> 줄이 이번에 새로 추가되는 부분입니다.
+    <b>검토용 목업입니다.</b> 실제 데이터/서버 연동은 없으며, 버튼 클릭 시 브라우저 안에서만 즉시 반영됩니다(새로고침하면 초기 상태로 돌아갑니다).
   </div>
 
   <h2><span class="step-no">1</span>J-ayer 정보 탭 — 표 위 툴바</h2>
-  <p class="desc">기존 공유 필터 줄은 그대로 유지, 그 아래 색상 적용 줄이 신규 추가됩니다. 색상 칩을 눌러보세요(여러 개 동시 ON 가능) — 아래 표의 매칭된 셀 색이 즉시 바뀝니다.</p>
+  <p class="desc">기존 공유 필터 줄은 그대로 유지, 그 아래 색상 적용 줄이 신규 추가됩니다. 색상 칩을 눌러보세요(여러 개 동시 ON 가능) — 아래 표의 매칭된 셀 색이 즉시 바뀝니다. 칩의 점 여러 개는 그 필터 안에 서로 다른 색의 키워드가 몇 개 들어있는지 보여줍니다.</p>
 
   <div class="card" style="padding:0; overflow:hidden;">
     <div style="padding:14px 20px 0;">
@@ -230,6 +237,7 @@
       <span class="wizard-table-toolbar-label">색상 적용 :</span>
       <div id="j-chips" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
       <button class="btn btn-secondary btn-sm" onclick="openColorModal('J')">🎨 색상 관리</button>
+      <button class="btn btn-secondary btn-sm" onclick="confirmResetColors('J')">초기화</button>
     </div>
 
     <div class="table-wrap" style="border:none; border-radius:0;">
@@ -249,15 +257,15 @@
     <span><span class="sw" style="background:var(--reg-row);"></span>기등록/비활성 행 — 항상 회색, 색상 필터 적용 안 됨</span>
   </div>
 
-  <h2><span class="step-no">2</span>"🎨 색상 관리" 클릭 → 관리 모달</h2>
-  <p class="desc">기존 "필터 관리" 모달과 레이아웃은 동일하고, 이름 입력 옆에 <b>색상 선택</b>이 추가된 것이 유일한 차이입니다. 아래 버튼으로 실제 모달을 열어볼 수 있습니다.</p>
+  <h2><span class="step-no">2</span>"🎨 색상 관리" 클릭 → 관리 모달 (키워드별 색상 지정)</h2>
+  <p class="desc">필터 하나("장비특이" 등) 안에 STEPSEQ/STEP설명/PPID별로 여러 키워드를 넣을 수 있고, <b>키워드 하나하나마다 색을 따로 고를 수 있습니다</b>. 키워드 입력 칸 옆의 색상 선택기로 원하는 색을 고른 뒤 "+ 추가"를 누르면 그 색이 그 키워드에 고정됩니다.</p>
   <div class="card">
     <button class="btn btn-primary" onclick="openColorModal('J')">🎨 J-layer 색상 관리 모달 열기</button>
     <button class="btn btn-secondary" onclick="openColorModal('O')" style="margin-left:8px;">🎨 O-layer 색상 관리 모달 열기</button>
   </div>
 
   <h2><span class="step-no">3</span>O-ayer 정보 탭도 동일하게 적용</h2>
-  <p class="desc">O-layer 표에도 같은 방식으로 색상 적용 줄이 추가됩니다(권한: TE_O/MASTER). sd/pp뿐 아니라 sp 매칭도 동일 로직입니다.</p>
+  <p class="desc">O-layer 표에도 같은 방식으로 색상 적용 줄 + 색상 관리 + 초기화 버튼이 추가됩니다(권한: TE_O/MASTER).</p>
   <div class="card" style="padding:0; overflow:hidden;">
     <div style="padding:14px 20px 0;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
@@ -275,6 +283,7 @@
       <span class="wizard-table-toolbar-label">색상 적용 :</span>
       <div id="o-chips" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
       <button class="btn btn-secondary btn-sm" onclick="openColorModal('O')">🎨 색상 관리</button>
+      <button class="btn btn-secondary btn-sm" onclick="confirmResetColors('O')">초기화</button>
     </div>
     <div class="table-wrap" style="border:none; border-radius:0;">
       <table class="data" id="o-table">
@@ -286,12 +295,8 @@
     </div>
   </div>
 
-  <h2><span class="step-no">4</span>"초기화" 클릭 시 동작</h2>
-  <p class="desc">기존 초기화 버튼을 누르면(데이터를 상신 시점으로 되돌리는 기존 동작은 그대로) — <b>켜져 있던 색상 칩도 함께 전부 OFF</b>로 바뀝니다. 아래에서 확인해보세요.</p>
-  <div class="card">
-    <button class="btn btn-secondary" onclick="resetColors('J')">J-layer 초기화 버튼 클릭 시뮬레이션</button>
-    <button class="btn btn-secondary" onclick="resetColors('O')" style="margin-left:8px;">O-layer 초기화 버튼 클릭 시뮬레이션</button>
-  </div>
+  <h2><span class="step-no">4</span>"초기화" 버튼 동작</h2>
+  <p class="desc">"색상 관리" 옆 <b>전용 초기화 버튼</b>을 누르면(위 1·3번 툴바에 이미 있습니다) 확인창 후 켜져 있던 색상 칩이 전부 OFF로 바뀝니다. 저장된 필터·키워드·색상 지정 자체는 지워지지 않고, <b>현재 켜둔 표시만</b> 초기화됩니다 — 기존 "공유 필터"의 초기화 버튼과 같은 위치·같은 버튼 스타일을 그대로 따릅니다(동작 대상만 다름: 그쪽은 데이터, 이쪽은 화면 표시).</p>
 
 </div>
 
@@ -309,38 +314,36 @@
       <hr class="sep" />
 
       <div class="section-label" id="form-title" style="color:var(--text-muted);">새 색상 필터 만들기</div>
-      <input type="text" class="form-control" id="new-label" placeholder="색상 필터 이름을 입력하세요..." />
-      <div class="color-row">
-        <label>색상 선택 :</label>
-        <input type="color" id="new-color" value="#ffeb3b" oninput="syncHex()" />
-        <span class="color-hex" id="color-hex">#FFEB3B</span>
-      </div>
+      <input type="text" class="form-control" id="new-label" placeholder="필터 이름을 입력하세요... (예: 장비특이)" />
 
       <div class="kw-box" style="border-color:#1976d222; background:transparent;">
         <div class="kw-title" style="color:#1976d2;">🔵 STEPSEQ</div>
         <div class="kw-input-row">
-          <input type="text" class="kw-input" id="kw-sp-input" placeholder="키워드 입력 후 Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('sp')}" />
+          <input type="text" class="kw-input" id="kw-sp-input" placeholder="키워드 입력" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('sp')}" />
+          <input type="color" class="kw-color" id="kw-sp-color" value="#42a5f5" />
           <button class="btn btn-secondary btn-sm" onclick="addKw('sp')">+ 추가</button>
         </div>
-        <div class="kw-tags" id="kw-sp-tags"></div>
+        <div class="kw-rows" id="kw-sp-rows"></div>
       </div>
       <div class="kw-box" style="border-color:#388e3c22; background:transparent;">
         <div class="kw-title" style="color:#388e3c;">🟢 STEP 설명</div>
         <div class="kw-input-row">
-          <input type="text" class="kw-input" id="kw-sd-input" placeholder="키워드 입력 후 Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('sd')}" />
+          <input type="text" class="kw-input" id="kw-sd-input" placeholder="키워드 입력" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('sd')}" />
+          <input type="color" class="kw-color" id="kw-sd-color" value="#66bb6a" />
           <button class="btn btn-secondary btn-sm" onclick="addKw('sd')">+ 추가</button>
         </div>
-        <div class="kw-tags" id="kw-sd-tags"></div>
+        <div class="kw-rows" id="kw-sd-rows"></div>
       </div>
       <div class="kw-box" style="border-color:#f57c0022; background:transparent;">
         <div class="kw-title" style="color:#f57c00;">🟠 PPID</div>
         <div class="kw-input-row">
-          <input type="text" class="kw-input" id="kw-pp-input" placeholder="키워드 입력 후 Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('pp')}" />
+          <input type="text" class="kw-input" id="kw-pp-input" placeholder="키워드 입력" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('pp')}" />
+          <input type="color" class="kw-color" id="kw-pp-color" value="#ffeb3b" />
           <button class="btn btn-secondary btn-sm" onclick="addKw('pp')">+ 추가</button>
         </div>
-        <div class="kw-tags" id="kw-pp-tags"></div>
+        <div class="kw-rows" id="kw-pp-rows"></div>
       </div>
-      <div class="flow-note">※ 매칭 규칙은 기존 공유 필터와 동일 — 대소문자 무시, 부분 일치. sp/sd/pp 중 매칭된 <b>셀만</b> 이 색으로 바뀝니다(행 전체 아님).</div>
+      <div class="flow-note">※ 매칭 규칙은 기존 공유 필터와 동일 — 대소문자 무시, 부분 일치. sp/sd/pp 중 매칭된 <b>셀만</b> 그 키워드에 지정한 색으로 바뀝니다(행 전체 아님). 키워드마다 색을 다르게 고를 수 있습니다.</div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary btn-sm" onclick="deleteAllColors()">전체 삭제</button>
@@ -357,12 +360,26 @@
 
 <script>
 // ===== 목업 데이터 (실제 J/O-ayer 행 구조를 단순화) =====
+// words.{sp,sd,pp} 는 이제 문자열 배열이 아니라 {word, color} 객체 배열 — 키워드마다 색이 다를 수 있다.
 const state = {
   J: {
     sets: [
-      { id: '1', label: 'plel', words: { sp: [], sd: [], pp: ['plel'] }, color: '#ffeb3b' },
-      { id: '2', label: '차용특이', words: { sp: [], sd: ['차용'], pp: [] }, color: '#42a5f5' },
-      { id: '3', label: '긴급',   words: { sp: ['S003'], sd: [], pp: [] }, color: '#66bb6a' },
+      {
+        id: '1', label: '판정/차용 특이',
+        words: {
+          sp: [],
+          sd: [{ word: '차용', color: '#42a5f5' }],
+          pp: [{ word: 'plel', color: '#ffeb3b' }],
+        },
+      },
+      {
+        id: '2', label: '긴급 라인',
+        words: {
+          sp: [{ word: 'S003', color: '#66bb6a' }, { word: 'S004', color: '#ab47bc' }],
+          sd: [],
+          pp: [],
+        },
+      },
     ],
     active: new Set(),
     rows: [
@@ -375,8 +392,14 @@ const state = {
   },
   O: {
     sets: [
-      { id: '1', label: '플라즈마', words: { sp: [], sd: ['플라즈마'], pp: [] }, color: '#ab47bc' },
-      { id: '2', label: 'plel',    words: { sp: [], sd: [], pp: ['plel'] }, color: '#ffeb3b' },
+      {
+        id: '1', label: '공정 특이',
+        words: {
+          sp: [],
+          sd: [{ word: '플라즈마', color: '#ab47bc' }],
+          pp: [{ word: 'plel', color: '#ffeb3b' }],
+        },
+      },
     ],
     active: new Set(),
     rows: [
@@ -390,19 +413,26 @@ const state = {
 
 let currentTable = 'J';
 let editingId = null;
-let draft = { label: '', color: '#ffeb3b', words: { sp: [], sd: [], pp: [] } };
+let draft = { label: '', words: { sp: [], sd: [], pp: [] } };
 
 function isValidationKeyword(pp) { return !!pp && pp.toLowerCase().includes('plel'); }
 
-// 활성 색상 필터 중, 이 셀 값에 매칭되는 첫 번째 색을 찾는다(목록 순서상 먼저가 우선)
+// 활성 색상 필터들을 순서대로 훑어, 이 셀 값에 매칭되는 첫 번째 키워드의 색을 찾는다
+// (필터 목록 순서 → 필터 안 키워드 등록 순서, 둘 다 먼저 나온 쪽이 우선)
 function matchColor(table, field, value) {
   const s = state[table];
   for (const fs of s.sets) {
     if (!s.active.has(fs.id)) continue;
-    const words = fs.words[field] || [];
-    if (words.some(w => w && value.toLowerCase().includes(w.toLowerCase()))) return fs.color;
+    for (const entry of (fs.words[field] || [])) {
+      if (entry.word && value.toLowerCase().includes(entry.word.toLowerCase())) return entry.color;
+    }
   }
   return null;
+}
+
+function filterColors(fs) {
+  const all = [...fs.words.sp, ...fs.words.sd, ...fs.words.pp].map(e => e.color);
+  return [...new Set(all)];
 }
 
 function renderChips(table) {
@@ -414,8 +444,12 @@ function renderChips(table) {
   }
   wrap.innerHTML = s.sets.map(fs => {
     const on = s.active.has(fs.id);
-    return `<button type="button" class="color-chip ${on ? 'on' : 'off'}" style="--chip-color:${fs.color}" onclick="toggleChip('${table}','${fs.id}')">
-      <span class="dot" style="background:${fs.color}"></span>${fs.label}
+    const colors = filterColors(fs).slice(0, 4);
+    const dots = colors.length
+      ? colors.map(c => `<span class="dot" style="background:${c}"></span>`).join('')
+      : '<span class="dot" style="background:#ccc"></span>';
+    return `<button type="button" class="color-chip ${on ? 'on' : 'off'}" onclick="toggleChip('${table}','${fs.id}')">
+      <span class="dots">${dots}</span>${fs.label}
     </button>`;
   }).join('');
 }
@@ -427,7 +461,8 @@ function toggleChip(table, id) {
   renderTable(table);
 }
 
-function resetColors(table) {
+function confirmResetColors(table) {
+  if (!confirm('적용해 둔 색상 표시를 초기화하시겠습니까?\n(저장된 색상 필터·키워드 자체는 지워지지 않습니다)')) return;
   state[table].active.clear();
   renderChips(table);
   renderTable(table);
@@ -474,6 +509,7 @@ function openColorModal(table) {
 function closeColorModal() {
   document.getElementById('color-modal-overlay').classList.remove('open');
 }
+const FIELD_LABEL = { sp: '🔵', sd: '🟢', pp: '🟠' };
 function renderSavedList() {
   const s = state[currentTable];
   const el = document.getElementById('saved-list');
@@ -481,55 +517,67 @@ function renderSavedList() {
     el.innerHTML = '<div class="empty-note">저장된 색상 필터가 없습니다.</div>';
     return;
   }
-  el.innerHTML = s.sets.map(fs => `
+  el.innerHTML = s.sets.map(fs => {
+    const groups = ['sp', 'sd', 'pp'].filter(f => fs.words[f].length > 0).map(f => `
+      <div class="kw-group">
+        <span class="field-tag">${FIELD_LABEL[f]}</span>
+        ${fs.words[f].map(e => `<span class="word-badge"><span class="sw" style="background:${e.color}"></span>${e.word}</span>`).join('')}
+      </div>
+    `).join('');
+    return `
     <div class="saved-item">
-      <span class="swatch" style="background:${fs.color}"></span>
       <div class="info">
         <div class="name">${fs.label || '(이름 없음)'}</div>
-        <div class="kw">
-          ${fs.words.sp.map(k => `<span style="background:#e3f2fd;">🔵 ${k}</span>`).join('')}
-          ${fs.words.sd.map(k => `<span style="background:#e8f5e9;">🟢 ${k}</span>`).join('')}
-          ${fs.words.pp.map(k => `<span style="background:#fff3e0;">🟠 ${k}</span>`).join('')}
-        </div>
+        ${groups || '<div class="empty-note" style="padding:0;">키워드 없음</div>'}
       </div>
       <button class="btn btn-secondary btn-sm" onclick="startEdit('${fs.id}')">수정</button>
       <button class="btn btn-danger btn-sm" onclick="deleteOne('${fs.id}')">삭제</button>
-    </div>
-  `).join('');
-}
-function syncHex() {
-  document.getElementById('color-hex').textContent = document.getElementById('new-color').value.toUpperCase();
+    </div>`;
+  }).join('');
 }
 function addKw(field) {
   const input = document.getElementById('kw-' + field + '-input');
-  const val = input.value.trim();
-  if (!val) return;
-  if (!draft.words[field].includes(val)) draft.words[field].push(val);
+  const colorInput = document.getElementById('kw-' + field + '-color');
+  const word = input.value.trim();
+  if (!word) return;
+  draft.words[field].push({ word, color: colorInput.value });
   input.value = '';
-  renderDraftTags();
+  renderDraftRows();
 }
 function removeKw(field, idx) {
   draft.words[field].splice(idx, 1);
-  renderDraftTags();
+  renderDraftRows();
 }
-function renderDraftTags() {
-  const bg = { sp: '#e3f2fd', sd: '#e8f5e9', pp: '#fff3e0' };
-  ['sp','sd','pp'].forEach(f => {
-    const el = document.getElementById('kw-' + f + '-tags');
-    el.innerHTML = draft.words[f].map((k, i) =>
-      `<span style="background:${bg[f]}">${k}<button onclick="removeKw('${f}',${i})">✕</button></span>`
-    ).join('') || '<span style="color:#bbb;font-size:12px;">없음</span>';
+function renderDraftRows() {
+  ['sp', 'sd', 'pp'].forEach(f => {
+    const el = document.getElementById('kw-' + f + '-rows');
+    if (draft.words[f].length === 0) {
+      el.innerHTML = '<div class="kw-empty">추가된 키워드 없음</div>';
+      return;
+    }
+    el.innerHTML = draft.words[f].map((e, i) => `
+      <div class="kw-row-item">
+        <span class="sw" style="background:${e.color}"></span>
+        <span class="word">${e.word}</span>
+        <button onclick="removeKw('${f}',${i})">✕ 삭제</button>
+      </div>
+    `).join('');
   });
 }
 function startEdit(id) {
   const fs = state[currentTable].sets.find(f => f.id === id);
   if (!fs) return;
   editingId = id;
-  draft = { label: fs.label, color: fs.color, words: { sp: [...fs.words.sp], sd: [...fs.words.sd], pp: [...fs.words.pp] } };
+  draft = {
+    label: fs.label,
+    words: {
+      sp: fs.words.sp.map(e => ({ ...e })),
+      sd: fs.words.sd.map(e => ({ ...e })),
+      pp: fs.words.pp.map(e => ({ ...e })),
+    },
+  };
   document.getElementById('new-label').value = draft.label;
-  document.getElementById('new-color').value = fs.color;
-  syncHex();
-  renderDraftTags();
+  renderDraftRows();
   document.getElementById('form-title').textContent = '색상 필터 수정';
   document.getElementById('form-title').style.color = 'var(--accent)';
   document.getElementById('save-btn').textContent = '수정 적용';
@@ -537,11 +585,10 @@ function startEdit(id) {
 }
 function cancelEdit() {
   editingId = null;
-  draft = { label: '', color: '#ffeb3b', words: { sp: [], sd: [], pp: [] } };
+  draft = { label: '', words: { sp: [], sd: [], pp: [] } };
   document.getElementById('new-label').value = '';
-  document.getElementById('new-color').value = '#ffeb3b';
-  syncHex();
-  renderDraftTags();
+  ['sp','sd','pp'].forEach(f => document.getElementById('kw-' + f + '-input').value = '');
+  renderDraftRows();
   document.getElementById('form-title').textContent = '새 색상 필터 만들기';
   document.getElementById('form-title').style.color = 'var(--text-muted)';
   document.getElementById('save-btn').textContent = '+ 추가';
@@ -549,18 +596,20 @@ function cancelEdit() {
 }
 function saveColorFilter() {
   const label = document.getElementById('new-label').value.trim() || '색상 필터';
-  const color = document.getElementById('new-color').value;
   const words = draft.words;
   if (words.sp.length === 0 && words.sd.length === 0 && words.pp.length === 0) {
-    alert('키워드를 최소 1개 이상 입력하세요.');
+    alert('키워드를 최소 1개 이상 추가하세요.');
     return;
   }
   const s = state[currentTable];
   if (editingId) {
     const fs = s.sets.find(f => f.id === editingId);
-    fs.label = label; fs.color = color; fs.words = words;
+    fs.label = label; fs.words = words;
   } else {
-    s.sets.push({ id: String(Date.now()), label, color, words: { sp: [...words.sp], sd: [...words.sd], pp: [...words.pp] } });
+    s.sets.push({
+      id: String(Date.now()), label,
+      words: { sp: words.sp.map(e=>({...e})), sd: words.sd.map(e=>({...e})), pp: words.pp.map(e=>({...e})) },
+    });
   }
   cancelEdit();
   renderSavedList();
