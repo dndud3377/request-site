@@ -29,7 +29,7 @@ const STATE_BADGE_CLASS: Record<StageCellState, string> = {
 /**
  * 병렬 합의 단계의 '현재 단계' 칸 — 3행 2열 고정 그리드(docs/APPROVAL.md §3.3).
  * 6칸이 항상 같은 자리에 있어서 이 문서의 결재 경로에 없는 단계도 '해당없음'으로 드러난다.
- * 뱃지가 단계명 왼쪽에 온다("대기중 PHPSI").
+ * 단계명이 왼쪽, 뱃지가 오른쪽에 온다("PHPSI 대기중").
  */
 export default function StageGrid({ cells, columns = 2 }: StageGridProps): React.ReactElement {
   const { t } = useTranslation();
@@ -38,11 +38,11 @@ export default function StageGrid({ cells, columns = 2 }: StageGridProps): React
     <div className="stage-grid" style={columns === 1 ? { gridTemplateColumns: 'max-content' } : undefined}>
       {cells.map((c) => (
         <span className="stage-cell" key={c.slot}>
-          <span className={`badge ${STATE_BADGE_CLASS[c.state]} stage-cell-badge`}>
-            {t(STATE_I18N_KEY[c.state] as any)}
-          </span>
           <span className={`stage-cell-name${c.state === 'na' || c.state === 'done' ? ' muted' : ''}`}>
             {c.label}{c.name ? `(${c.name})` : ''}
+          </span>
+          <span className={`badge ${STATE_BADGE_CLASS[c.state]} stage-cell-badge`}>
+            {t(STATE_I18N_KEY[c.state] as any)}
           </span>
           {c.pauseRequested && (
             <span className="pause-req-chip">⏸ {t('approval.pause_requested_chip')}</span>

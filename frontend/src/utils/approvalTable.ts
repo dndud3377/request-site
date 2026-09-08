@@ -207,7 +207,7 @@ export type StageCellState = 'na' | 'wait' | 'review' | 'done' | 'pause';
 /** 그리드 칸 슬롯. GRID_SLOT_ORDER 의 순서가 곧 화면 배치(행 우선, 2열)다. */
 export type StageCellSlot = 'P' | 'RA_FIXED' | 'J' | 'E' | 'O' | 'RA_EXTRA' | 'PL' | 'SA';
 
-const GRID_SLOT_ORDER: StageCellSlot[] = ['P', 'RA_FIXED', 'J', 'E', 'O', 'RA_EXTRA'];
+const GRID_SLOT_ORDER: StageCellSlot[] = ['RA_FIXED', 'P', 'J', 'O', 'E', 'RA_EXTRA'];
 
 export interface StageCell {
   slot: StageCellSlot;

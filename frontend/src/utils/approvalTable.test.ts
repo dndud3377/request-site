@@ -127,9 +127,9 @@ describe('getDocTableRows — 병렬 그리드: 6칸 고정 배치', () => {
     post_approver_fixed_loginid: 'fixed',
   });
 
-  it('칸 순서는 항상 P → 고정후결자 → J → MASK → OVL → 추가후결자 (3행 2열)', () => {
+  it('칸 순서는 항상 고정후결자 → P → J → OVL → MASK → 추가후결자 (3행 2열)', () => {
     expect(gridOf(fullDoc()).map((c) => c.slot))
-      .toEqual(['P', 'RA_FIXED', 'J', 'E', 'O', 'RA_EXTRA']);
+      .toEqual(['RA_FIXED', 'P', 'J', 'O', 'E', 'RA_EXTRA']);
   });
 
   it('고정 후결자와 추가 후결자를 post_approver_fixed_loginid 로 분리한다', () => {
@@ -163,7 +163,7 @@ describe('getDocTableRows — 병렬 그리드: 6칸 고정 배치', () => {
       post_approver_fixed_loginid: 'fixed',
     };
     expect(gridOf(doc).map((c) => c.state))
-      .toEqual(['na', 'review', 'na', 'na', 'na', 'na']);
+      .toEqual(['review', 'na', 'na', 'na', 'na', 'na']);
   });
 });
 
@@ -275,7 +275,7 @@ describe('getDocTableRows — MAP 삭제: 고정 후결자 자리에 RFG', () =>
     ...steps,
   ]);
 
-  it('2열 1행이 후결자가 아니라 RFG 다', () => {
+  it('1열 1행이 후결자가 아니라 RFG 다', () => {
     const doc = mde([makeStep({ agent: 'R', action: 'pending', assignee_loginid: 'r1', assignee_name: '김철수' })]);
     expect(cellAt(doc, 'RA_FIXED')).toEqual({
       slot: 'RA_FIXED', label: 'approval.agent_R', state: 'review', name: '김철수',
@@ -298,7 +298,7 @@ describe('getDocTableRows — MAP 삭제: 고정 후결자 자리에 RFG', () =>
     expect(cell.name).toBe('김철수');
   });
 
-  it('일반 문서의 2열 1행은 계속 고정 후결자를 가리킨다(회귀 방지)', () => {
+  it('일반 문서의 1열 1행은 계속 고정 후결자를 가리킨다(회귀 방지)', () => {
     // 고정 후결자도 라벨이 RFG 라 라벨만으로는 MDE 의 R 담당자와 구분되지 않는다.
     // 이 칸이 실제로 어느 step 을 집는지(담당자 이름)로 확인한다.
     const doc = {
