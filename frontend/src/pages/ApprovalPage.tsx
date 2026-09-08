@@ -10,7 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '../components/PagedDetailView';
 import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
-import { MarkDot, MarkCategorySettingsModal, MARK_COLOR_VAR } from '../components/DocumentMark';
+import { MarkDot, MarkCategorySettingsModal } from '../components/DocumentMark';
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet } from '../types';
 import { formatDate, formatTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
@@ -1825,7 +1825,7 @@ export default function ApprovalPage(): React.ReactElement {
                     checked={markCategoryFilter.has(cat.id)}
                     onChange={() => toggleMarkCategoryFilter(cat.id)}
                   />
-                  <span className="legend-swatch" style={{ background: MARK_COLOR_VAR[cat.color] }} />
+                  <span className="legend-swatch" style={{ background: cat.color }} />
                   {cat.name}
                 </label>
               ))}

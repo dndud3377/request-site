@@ -7,6 +7,7 @@
 """
 import json
 from django.db import models
+from django.core.validators import RegexValidator
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 
@@ -1214,15 +1215,16 @@ class PersonalMarkCategory(models.Model):
     범주를 여러 사람이 만들어도 서로 다른 레코드다 — 다른 사용자와 공유되지 않는다.
     """
 
-    # 임의의 색이 아니라 앱 테마(Bright Blue Theme)에 이미 있는 의미색 중에서만 고른다.
-    COLOR_CHOICES = [
-        ('danger', 'danger'), ('warning', 'warning'), ('success', 'success'),
-        ('accent', 'accent'), ('pause', 'pause'),
-    ]
+    # 공지 작성 에디터(RichTextEditor)의 "테마 색상"/"표준 색상" 팔레트와 같은 hex 값을 그대로 저장한다.
+    COLOR_HEX_RE = r'^#[0-9A-Fa-f]{6}$'
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='mark_categories', verbose_name='소유자')
     name = models.CharField(max_length=30, verbose_name='범주 이름')
-    color = models.CharField(max_length=10, choices=COLOR_CHOICES, verbose_name='범주 색(테마 색상 중 택1)')
+    color = models.CharField(
+        max_length=7,
+        validators=[RegexValidator(COLOR_HEX_RE, message='색상은 #RRGGBB 형식의 hex 값이어야 합니다.')],
+        verbose_name='범주 색(테마 색상/표준 색상 팔레트 중 택1, hex)',
+    )
     order = models.PositiveSmallIntegerField(default=0, verbose_name='표시 순서')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일')
 

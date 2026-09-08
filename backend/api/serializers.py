@@ -1,3 +1,4 @@
+import re
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import (
@@ -619,6 +620,11 @@ class PersonalMarkCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = PersonalMarkCategory
         fields = ['id', 'name', 'color', 'order']
+
+    def validate_color(self, value):
+        if not re.match(PersonalMarkCategory.COLOR_HEX_RE, value):
+            raise serializers.ValidationError('색상은 #RRGGBB 형식의 hex 값이어야 합니다.')
+        return value
 
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
