@@ -7,9 +7,10 @@ import {
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
   isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
+  matchLayerColor,
 } from './helpers';
 import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
-import { AdiCdStep, AdiCdTarget, MergePair, MergeRowInfo } from '../../types';
+import { AdiCdStep, AdiCdTarget, MergePair, MergeRowInfo, ColorFilterSet } from '../../types';
 
 describe('isValidationKeywordRow', () => {
   it('pp 가 판정 키워드를 포함하면 true', () => {
@@ -25,6 +26,50 @@ describe('isValidationKeywordRow', () => {
     expect(isValidationKeywordRow('ABC')).toBe(false);
     expect(isValidationKeywordRow('')).toBe(false);
     expect(isValidationKeywordRow(undefined)).toBe(false);
+  });
+});
+
+describe('matchLayerColor', () => {
+  const sets: ColorFilterSet[] = [
+    { id: '1', label: '판정/차용', words: { sp: [], sd: [{ word: '차용', color: '#42a5f5' }], pp: [{ word: 'plel', color: '#ffeb3b' }] } },
+    { id: '2', label: '긴급', words: { sp: [{ word: 'S003', color: '#66bb6a' }], sd: [], pp: [] } },
+  ];
+
+  it('켜져 있는 필터의 키워드가 매칭되면 그 색을 돌려준다', () => {
+    expect(matchLayerColor(sets, new Set(['1']), 'pp', 'PP01_plel')).toBe('#ffeb3b');
+    expect(matchLayerColor(sets, new Set(['1']), 'sd', '차용특이')).toBe('#42a5f5');
+  });
+
+  it('대소문자를 구분하지 않고 부분 일치한다', () => {
+    expect(matchLayerColor(sets, new Set(['1']), 'pp', 'PP02_PLEL')).toBe('#ffeb3b');
+  });
+
+  it('꺼져 있는 필터는 매칭에서 제외된다', () => {
+    expect(matchLayerColor(sets, new Set(['2']), 'pp', 'PP01_plel')).toBeUndefined();
+  });
+
+  it('매칭되는 키워드가 없으면 undefined', () => {
+    expect(matchLayerColor(sets, new Set(['1', '2']), 'sp', 'S001')).toBeUndefined();
+  });
+
+  it('값이 비어 있으면 undefined', () => {
+    expect(matchLayerColor(sets, new Set(['1']), 'pp', undefined)).toBeUndefined();
+    expect(matchLayerColor(sets, new Set(['1']), 'pp', '')).toBeUndefined();
+  });
+
+  it('여러 필터가 같은 셀에 매칭되면 목록 순서상 먼저 나온 필터가 우선한다', () => {
+    const overlapping: ColorFilterSet[] = [
+      { id: 'a', label: '첫번째', words: { sp: [{ word: 'S00', color: '#111111' }], sd: [], pp: [] } },
+      { id: 'b', label: '두번째', words: { sp: [{ word: 'S003', color: '#222222' }], sd: [], pp: [] } },
+    ];
+    expect(matchLayerColor(overlapping, new Set(['a', 'b']), 'sp', 'S003')).toBe('#111111');
+  });
+
+  it('한 필터 안에서는 먼저 추가된 키워드가 우선한다', () => {
+    const inOrder: ColorFilterSet[] = [
+      { id: 'a', label: '필터', words: { sp: [{ word: 'S00', color: '#111111' }, { word: 'S003', color: '#222222' }], sd: [], pp: [] } },
+    ];
+    expect(matchLayerColor(inOrder, new Set(['a']), 'sp', 'S003')).toBe('#111111');
   });
 });
 
