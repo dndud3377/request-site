@@ -475,7 +475,7 @@ const Step1: React.FC<Step1Props> = ({
                           style={{ minWidth: '80px' }}
                           error={errors[`flow_step_${row.id}_step_from`]}
                           hideErrorMessage
-                          disabled={disableOptional || (FlowLayerIdOptions[row.id] || []).length === 0}
+                          disabled={disableOptional}
                         />
                         <span style={{ whiteSpace: 'nowrap' }}>~</span>
                         <AutocompleteInput
@@ -487,7 +487,7 @@ const Step1: React.FC<Step1Props> = ({
                           style={{ minWidth: '80px' }}
                           error={errors[`flow_step_${row.id}_step_to`]}
                           hideErrorMessage
-                          disabled={disableOptional || (FlowLayerIdOptions[row.id] || []).length === 0}
+                          disabled={disableOptional}
                         />
                       </div>
                     </div>

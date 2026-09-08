@@ -2158,7 +2158,8 @@ export default function RequestPage(): React.ReactElement {
     const value = (row?.[field] || '').trim();
     const opts = FlowLayerIdOptions[rowId] || [];
     const key = `flow_step_${rowId}_${field}`;
-    if (value && !opts.includes(value)) {
+    // 마스터 DB에 해당 조합의 Layer ID 정보가 없으면(목록이 비어 있으면) 목록 검증 없이 직접 입력값을 그대로 인정한다.
+    if (value && opts.length > 0 && !opts.includes(value)) {
       setErrors((prev) => ({ ...prev, [key]: t('request.flow_step_not_in_list') }));
       addToast(t('request.flow_step_not_in_list'), 'error');
     } else if (errors[key]) {
@@ -3713,13 +3714,14 @@ export default function RequestPage(): React.ReactElement {
       // 여기서는 '일부만 채운 항목'만 막는다 — 세 칸 중 일부만 채워진 항목은 어떤 경우에도 잘못된 값이다.
       // (Only MAP·ADI CD 단독 모드용 우회 분기는 필요 없다. 그 문서들은 J-layer 에 O 행이 생기지 않는다.)
       addBbEntryError(newErrors, errorMessages, requiresBbEntries(jayerRows));
-      // 흐름도 Step(step_from/step_to)은 목록에 있는 값만 허용 (목록 밖 값이면 해당 필드를 표시하고 진행 차단)
+      // 흐름도 Step(step_from/step_to)은 목록이 있으면 목록에 있는 값만 허용한다 (목록 밖 값이면 해당 필드를 표시하고 진행 차단).
+      // 마스터 DB에 해당 조합의 정보 자체가 없어 목록이 비어 있는 경우는 직접 입력값을 그대로 인정한다.
       let flowStepInvalid = false;
       detail.flow_chart.forEach((row) => {
         const opts = FlowLayerIdOptions[row.id] || [];
         (['step_from', 'step_to'] as const).forEach((f) => {
           const v = (row[f] || '').trim();
-          if (v && !opts.includes(v)) {
+          if (v && opts.length > 0 && !opts.includes(v)) {
             newErrors[`flow_step_${row.id}_${f}`] = t('request.flow_step_not_in_list');
             flowStepInvalid = true;
           }
