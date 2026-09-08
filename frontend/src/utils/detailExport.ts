@@ -1,10 +1,12 @@
 import ExcelJS from 'exceljs';
 import type { TFunction } from 'i18next';
-import { RequestDocument, DetailFormState, JayerRow, OayerRow, BbTableRow, MergeRowInfo } from '../types';
+import { RequestDocument, DetailFormState, JayerRow, OayerRow, BbTableRow, MergeRowInfo, ColorFilterSet } from '../types';
 import { ST_CELL_COLOR } from './stCellColor';
 import { bbTabColor } from './bbTabColors';
 import { VALIDATION_CELL_COLOR, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
-import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows } from '../pages/RequestPage/helpers';
+import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows, matchLayerColor } from '../pages/RequestPage/helpers';
+
+const NO_ACTIVE_COLOR_FILTERS = new Set<string>();
 
 /**
  * 의뢰 상세보기(PagedDetailView)의 엑셀 export 로직 모음.
@@ -72,7 +74,17 @@ function htmlToPlainText(html: string | undefined | null): string {
 
 // ===== 표 데이터 시트(JOB/OVL/BB) =====
 
-function addJobSheet(wb: ExcelJS.Workbook, t: TFunction, jayer: JayerRow[]): void {
+/**
+ * J/O-layer 표의 sp/sd/pp 열 배경색 — 화면(PagedDetailView 의 JayerTable/OayerTable)과 완전히
+ * 같은 우선순위를 그대로 쓴다: plel(판정 키워드)이 있으면 VALIDATION_CELL_COLOR 가 항상 이기고,
+ * 그 외에는 켜져 있는 색상 필터(colorFilterSets/activeColorFilterIds) 매칭 결과를 쓴다. 화면에
+ * "색상 적용"을 켜 두지 않고 내보내면(activeColorFilterIds 비어있음) matchLayerColor 가 항상
+ * undefined 를 돌려주므로 기존 동작과 똑같다.
+ */
+function addJobSheet(
+  wb: ExcelJS.Workbook, t: TFunction, jayer: JayerRow[],
+  colorFilterSets: ColorFilterSet[] = [], activeColorFilterIds: Set<string> = NO_ACTIVE_COLOR_FILTERS,
+): void {
   const ws = wb.addWorksheet('JOB');
   ws.columns = [
     { header: t('request.col_updated_date'), key: 'updated', width: 16 },
@@ -95,14 +107,19 @@ function addJobSheet(wb: ExcelJS.Workbook, t: TFunction, jayer: JayerRow[]): voi
     const reg = r.new_or_copy === '기등록' || isRowInactive(r.st);
     row.eachCell((cell, col) => {
       if (reg) { applyFill(cell, '#e5e7eb'); return; }
-      if (col === 5) applyFill(cell, isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined);
+      if (col === 3) applyFill(cell, matchLayerColor(colorFilterSets, activeColorFilterIds, 'sp', r.sp));
+      else if (col === 4) applyFill(cell, matchLayerColor(colorFilterSets, activeColorFilterIds, 'sd', r.sd));
+      else if (col === 5) applyFill(cell, isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : matchLayerColor(colorFilterSets, activeColorFilterIds, 'pp', r.pp));
       else if (col === 6) applyFill(cell, ST_CELL_COLOR[r.st]);
       else if (col === 7) applyFill(cell, r.new_or_copy === '차용' ? '#eff6ff' : undefined);
     });
   });
 }
 
-function addOvlSheet(wb: ExcelJS.Workbook, t: TFunction, oayer: OayerRow[]): void {
+function addOvlSheet(
+  wb: ExcelJS.Workbook, t: TFunction, oayer: OayerRow[],
+  colorFilterSets: ColorFilterSet[] = [], activeColorFilterIds: Set<string> = NO_ACTIVE_COLOR_FILTERS,
+): void {
   const ws = wb.addWorksheet('OVL');
   ws.columns = [
     { header: t('request.col_updated_date'), key: 'updated', width: 16 },
@@ -125,7 +142,9 @@ function addOvlSheet(wb: ExcelJS.Workbook, t: TFunction, oayer: OayerRow[]): voi
     const reg = r.new_or_copy === '기등록' || isRowInactive(r.st);
     row.eachCell((cell, col) => {
       if (reg) { applyFill(cell, '#e5e7eb'); return; }
-      if (col === 6) applyFill(cell, isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined);
+      if (col === 3) applyFill(cell, matchLayerColor(colorFilterSets, activeColorFilterIds, 'sp', r.sp));
+      else if (col === 4) applyFill(cell, matchLayerColor(colorFilterSets, activeColorFilterIds, 'sd', r.sd));
+      else if (col === 6) applyFill(cell, isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : matchLayerColor(colorFilterSets, activeColorFilterIds, 'pp', r.pp));
       else if (col === 7) applyFill(cell, ST_CELL_COLOR[r.st]);
       else if (col === 8) applyFill(cell, r.new_or_copy === '차용' ? '#eff6ff' : undefined);
     });
@@ -519,17 +538,23 @@ function textSheetName(baseName: string, t: TFunction): string {
 
 // ===== 단일 버튼 export =====
 
-export async function exportJayer(doc: RequestDocument, t: TFunction): Promise<void> {
+export async function exportJayer(
+  doc: RequestDocument, t: TFunction,
+  colorFilterSets: ColorFilterSet[] = [], activeColorFilterIds: Set<string> = NO_ACTIVE_COLOR_FILTERS,
+): Promise<void> {
   const { jayer } = parseDoc(doc);
   const wb = new ExcelJS.Workbook();
-  addJobSheet(wb, t, jayer);
+  addJobSheet(wb, t, jayer, colorFilterSets, activeColorFilterIds);
   await downloadWorkbook(wb, `${doc.title}_JOB_${getNowString()}.xlsx`);
 }
 
-export async function exportOayer(doc: RequestDocument, t: TFunction): Promise<void> {
+export async function exportOayer(
+  doc: RequestDocument, t: TFunction,
+  colorFilterSets: ColorFilterSet[] = [], activeColorFilterIds: Set<string> = NO_ACTIVE_COLOR_FILTERS,
+): Promise<void> {
   const { detail, oayer } = parseDoc(doc);
   const wb = new ExcelJS.Workbook();
-  addOvlSheet(wb, t, oayer);
+  addOvlSheet(wb, t, oayer, colorFilterSets, activeColorFilterIds);
   addOvlInfoSheet(wb, t, detail);
   await downloadWorkbook(wb, `${doc.title}_OVL_${getNowString()}.xlsx`);
 }
@@ -569,7 +594,17 @@ export interface ExportAllScreenshots {
  * 상세 정보/MAP 정보는 호출부(PagedDetailView)가 미리 캡처해 넘긴 화면 이미지 시트 + 텍스트 시트
  * 두 장씩을 담는다.
  */
-export async function exportAll(doc: RequestDocument, t: TFunction, screenshots: ExportAllScreenshots): Promise<void> {
+export interface ExportAllColorFilters {
+  jayerColorFilterSets?: ColorFilterSet[];
+  activeJayerColorFilterIds?: Set<string>;
+  oayerColorFilterSets?: ColorFilterSet[];
+  activeOayerColorFilterIds?: Set<string>;
+}
+
+export async function exportAll(
+  doc: RequestDocument, t: TFunction, screenshots: ExportAllScreenshots,
+  colorFilters: ExportAllColorFilters = {},
+): Promise<void> {
   const { detail, jayer, oayer, bb } = parseDoc(doc);
   const isAdiCdChange = detail.request_purpose === 'ADI CD 변경';
   const wb = new ExcelJS.Workbook();
@@ -581,8 +616,8 @@ export async function exportAll(doc: RequestDocument, t: TFunction, screenshots:
     addScreenshotSheet(wb, mapSheetName, screenshots.map, t('request.export_capture_failed'));
     addMapInfoSheet(wb, t, textSheetName(mapSheetName, t), detail);
   }
-  addJobSheet(wb, t, jayer);
-  addOvlSheet(wb, t, oayer);
+  addJobSheet(wb, t, jayer, colorFilters.jayerColorFilterSets, colorFilters.activeJayerColorFilterIds);
+  addOvlSheet(wb, t, oayer, colorFilters.oayerColorFilterSets, colorFilters.activeOayerColorFilterIds);
   addOvlInfoSheet(wb, t, detail);
   addBbSheet(wb, t, detail, bb);
   await downloadWorkbook(wb, `${doc.title}_전체_${getNowString()}.xlsx`);
