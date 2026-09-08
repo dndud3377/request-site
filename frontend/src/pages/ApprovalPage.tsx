@@ -19,7 +19,7 @@ import ColorFilterManageModal, { emptyColorDraftWords } from './RequestPage/comp
 import { emptyDraftWords } from './RequestPage/helpers';
 import {
   getDocTableRows, getFinalCompletionDate, getCurrentRound, getLastRejectionInfo,
-  hasActivePendingStep, isMyDocument,
+  hasActiveStageStep, getStagePendingEnteredAt, isMyDocument,
   getDocDetailFields, getMapPurposeKey, getDocSubmittedDate, MAP_PURPOSE_NA,
 } from '../utils/approvalTable';
 import { OPTION_LINE, OPTION_REQUEST_PURPOSE, MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_DELETE_REQ } from './RequestPage/constants';
@@ -380,8 +380,8 @@ export default function ApprovalPage(): React.ReactElement {
     // MY 판정은 홈 '나의 의뢰 현황'과 공유한다(utils/approvalTable.isMyDocument).
     if (filter === 'my') return all.filter((d) => isMyDocument(d, currentUser));
     if (filter.startsWith('agent_')) {
-      const agent = filter.replace('agent_', '') as AgentType;
-      return all.filter((d) => hasActivePendingStep(d, (s) => s.agent === agent));
+      const agent = filter.replace('agent_', '');
+      return all.filter((d) => hasActiveStageStep(d, agent));
     }
     return all;
   }, [filter, currentUser, isTourMode]);
@@ -398,8 +398,8 @@ export default function ApprovalPage(): React.ReactElement {
     if (key === 'pause') return base.filter(d => d.status === 'pause').length;
     if (key === 'my') return base.filter(d => isMyDocument(d, currentUser)).length;
     if (key.startsWith('agent_')) {
-      const agent = key.replace('agent_', '') as AgentType;
-      return base.filter(d => hasActivePendingStep(d, s => s.agent === agent)).length;
+      const agent = key.replace('agent_', '');
+      return base.filter(d => hasActiveStageStep(d, agent)).length;
     }
     return 0;
   }, [currentUser, isTourMode]);
@@ -774,14 +774,7 @@ export default function ApprovalPage(): React.ReactElement {
     }
     if (filter.startsWith('agent_')) {
       const agent = filter.replace('agent_', '');
-      const stepEnteredAt = (d: RequestDocument): string => {
-        const round = getCurrentRound(d);
-        const step = (d.approval_steps ?? []).find(
-          (s) => s.agent === agent && s.action === 'pending' && (s.round ?? 1) === round
-        );
-        return step?.created_at ?? '';
-      };
-      list.sort((a, b) => stepEnteredAt(a).localeCompare(stepEnteredAt(b)));
+      list.sort((a, b) => getStagePendingEnteredAt(a, agent).localeCompare(getStagePendingEnteredAt(b, agent)));
       return list;
     }
     const baseDate = (d: RequestDocument): string => d.submitted_at ?? d.created_at ?? '';
