@@ -688,8 +688,8 @@ select.form-control option {
   white-space: nowrap;
 }
 
-/* 뱃지가 단계명 왼쪽에 오므로 폭을 고정해야 뒤따르는 단계명이 세로로 정렬된다
-   (라벨 길이가 '완료' 2자 ~ '해당없음' 4자로 제각각이다). */
+/* 단계명이 뱃지 왼쪽에 온다. 뱃지 폭은 고정해 두지만 단계명 길이가 제각각이라
+   (담당자명 유무 등) 뱃지 열까지 완전히 세로 정렬되지는 않는다. */
 .stage-cell-badge {
   min-width: 62px;
   justify-content: center;
