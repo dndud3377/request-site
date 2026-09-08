@@ -1,21 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Modal from './Modal';
+import { ColorPalette, EXCEL_STANDARD_COLORS } from './RichTextEditor';
 import { PersonalMarkCategory } from '../types';
-
-/**
- * 범주 색은 임의의 색이 아니라 앱 테마(Bright Blue Theme)에 이미 있는 의미색 중에서만 고른다
- * (백엔드 PersonalMarkCategory.COLOR_CHOICES 와 같은 키 집합이어야 한다).
- */
-export const MARK_COLOR_VAR: Record<PersonalMarkCategory['color'], string> = {
-  danger: 'var(--danger)',
-  warning: 'var(--warning)',
-  success: 'var(--success)',
-  accent: 'var(--accent)',
-  pause: 'var(--pause)',
-};
-
-export const MARK_COLOR_KEYS = Object.keys(MARK_COLOR_VAR) as PersonalMarkCategory['color'][];
 
 interface FixedPos {
   top: number;
@@ -64,7 +51,7 @@ export function MarkDot({ categories, value, onChange, onManage }: MarkDotProps)
   };
 
   const current = categories.find((c) => c.id === value) ?? null;
-  const dotColor = current ? MARK_COLOR_VAR[current.color] : undefined;
+  const dotColor = current?.color;
 
   return (
     <>
@@ -90,7 +77,7 @@ export function MarkDot({ categories, value, onChange, onManage }: MarkDotProps)
               className="column-filter-popover-item mark-dot-popover-item"
               onClick={() => { onChange(cat.id); setPos(null); }}
             >
-              <span className="legend-swatch" style={{ background: MARK_COLOR_VAR[cat.color] }} />
+              <span className="legend-swatch" style={{ background: cat.color }} />
               {cat.name}
             </button>
           ))}
@@ -116,13 +103,13 @@ interface MarkCategorySettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   categories: PersonalMarkCategory[];
-  onCreate: (name: string, color: PersonalMarkCategory['color']) => void;
+  onCreate: (name: string, color: string) => void;
   /** 입력할 때마다 — 화면에 즉시 반영만 한다(서버 저장은 onRenameCommit). */
   onRename: (id: number, name: string) => void;
   /** 입력을 마쳤을 때(blur) — 이 시점에 서버에 저장한다. 실패 시 되돌릴 수 있도록
    *  편집을 시작하기 전 이름(previousName)도 함께 넘긴다. */
   onRenameCommit: (id: number, name: string, previousName: string) => void;
-  onRecolor: (id: number, color: PersonalMarkCategory['color']) => void;
+  onRecolor: (id: number, color: string) => void;
   onDelete: (id: number) => void;
 }
 
@@ -135,26 +122,16 @@ export function MarkCategorySettingsModal({
 }: MarkCategorySettingsModalProps): React.ReactElement {
   const { t } = useTranslation();
   const [colorPickerId, setColorPickerId] = useState<number | null>(null);
-  const [colorPickerPos, setColorPickerPos] = useState<FixedPos | null>(null);
   const colorPopRef = useRef<HTMLDivElement>(null);
   // 편집 시작(focus) 시점의 이름 — blur 시 저장 실패하면 이 값으로 되돌린다.
   const originalNameRef = useRef<Record<number, string>>({});
 
   useClosePopoverOnOutsideClick(colorPickerId !== null, colorPopRef, () => setColorPickerId(null));
 
-  const openColorPicker = (id: number, e: React.MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation();
-    const rect = e.currentTarget.getBoundingClientRect();
-    setColorPickerId(id);
-    setColorPickerPos({ top: rect.bottom + 6, left: rect.left });
-  };
-
   const handleAdd = () => {
-    const color = MARK_COLOR_KEYS[categories.length % MARK_COLOR_KEYS.length];
+    const color = EXCEL_STANDARD_COLORS[categories.length % EXCEL_STANDARD_COLORS.length];
     onCreate(t('approval.category_new_default_name'), color);
   };
-
-  const editingCategory = categories.find((c) => c.id === colorPickerId) ?? null;
 
   return (
     <Modal
@@ -170,13 +147,21 @@ export function MarkCategorySettingsModal({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {categories.map((cat) => (
           <div key={cat.id} className="cat-row">
-            <button
-              type="button"
-              className="cat-color-swatch"
-              style={{ background: MARK_COLOR_VAR[cat.color] }}
-              title={t('approval.category_pick_color')}
-              onClick={(e) => openColorPicker(cat.id, e)}
-            />
+            <div
+              ref={colorPickerId === cat.id ? colorPopRef : undefined}
+              style={{ position: 'relative', display: 'inline-flex' }}
+            >
+              <button
+                type="button"
+                className="cat-color-swatch"
+                style={{ background: cat.color }}
+                title={t('approval.category_pick_color')}
+                onClick={(e) => { e.stopPropagation(); setColorPickerId((id) => (id === cat.id ? null : cat.id)); }}
+              />
+              {colorPickerId === cat.id && (
+                <ColorPalette onSelect={(color) => { if (color) onRecolor(cat.id, color); setColorPickerId(null); }} />
+              )}
+            </div>
             <input
               type="text"
               className="form-control"
@@ -200,24 +185,6 @@ export function MarkCategorySettingsModal({
       <button type="button" className="flow-table-add-btn" onClick={handleAdd}>
         + {t('approval.category_add')}
       </button>
-
-      {colorPickerId !== null && colorPickerPos && (
-        <div
-          ref={colorPopRef}
-          className="color-picker-pop"
-          style={{ position: 'fixed', top: colorPickerPos.top, left: colorPickerPos.left }}
-        >
-          {MARK_COLOR_KEYS.map((key) => (
-            <button
-              key={key}
-              type="button"
-              className={`color-picker-swatch${editingCategory?.color === key ? ' selected' : ''}`}
-              style={{ background: MARK_COLOR_VAR[key] }}
-              onClick={() => { onRecolor(colorPickerId, key); setColorPickerId(null); }}
-            />
-          ))}
-        </div>
-      )}
     </Modal>
   );
 }
