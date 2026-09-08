@@ -834,6 +834,10 @@ export default function ApprovalPage(): React.ReactElement {
 
   const handleApplyLayerFilter = async (table: 'J' | 'O', filterId: number) => {
     if (!selected) return;
+    if (selected.status === 'pause') {
+      addToast(t('approval.layer_filter_pause_blocked'), 'info');
+      return;
+    }
     try {
       const { data } = await documentsAPI.applyLayerFilter(selected.id, table, filterId);
       addToast(data.message, data.matched_count > 0 ? 'success' : 'info');
@@ -844,27 +848,22 @@ export default function ApprovalPage(): React.ReactElement {
   };
 
   /**
-   * 결재 상세페이지 J/O-layer 필터 "초기화" 버튼 노출 여부.
-   * canUseLayerFilter 와 동일한 권한/상태/단계 조건 + 이번 회차에 저장된 baseline(상신 시점
-   * 값 스냅샷)이 있을 때만 — 백엔드 reset_layer_filter 와 같은 규칙.
+   * 결재 상세페이지 J/O-layer 필터 "초기화" 버튼 노출 여부 — 필터 적용과 동일한 조건
+   * (canUseLayerFilter)이다. under_review/pause 둘 다 버튼은 노출하되, 실제 동작은
+   * under_review에서만 되도록 하는 건 handleResetLayerFilter/백엔드 게이트가 맡는다.
    */
-  const canResetLayerFilter = (doc: RequestDocument | null, table: 'J' | 'O'): boolean => {
-    if (!doc || !canUseLayerFilter(doc, table)) return false;
-    try {
-      const parsed = JSON.parse(doc.additional_notes || '{}');
-      const baseline = parsed?.[table === 'J' ? 'jayerFilterBaseline' : 'oayerFilterBaseline'];
-      return !!baseline && baseline.round === getCurrentRound(doc);
-    } catch {
-      return false;
-    }
-  };
+  const canResetLayerFilter = canUseLayerFilter;
 
   const handleResetLayerFilter = async (table: 'J' | 'O') => {
     if (!selected) return;
+    if (selected.status === 'pause') {
+      addToast(t('approval.layer_filter_pause_blocked'), 'info');
+      return;
+    }
     if (!window.confirm(t('approval.layer_filter_reset_confirm'))) return;
     try {
       const { data } = await documentsAPI.resetLayerFilter(selected.id, table);
-      addToast(data.message, 'success');
+      addToast(data.message, data.reset ? 'success' : 'info');
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');

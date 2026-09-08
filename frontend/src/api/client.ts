@@ -373,9 +373,10 @@ const applyLayerFilter = async (docId: number, table: 'J' | 'O', filterId: numbe
   return { data };
 };
 
-/** 결재 상세페이지에서 이번 회차에 적용한 J/O-layer 필터를 상신 시점 값으로 전부 초기화한다. */
+/** 결재 상세페이지에서 이번 회차에 적용한 J/O-layer 필터를 상신 시점 값으로 전부 초기화한다.
+ * 되돌릴 내용이 없으면 reset:false로 응답한다(에러 아님 — 안내 토스트만 다르게 띄우기 위함). */
 const resetLayerFilter = async (docId: number, table: 'J' | 'O') => {
-  const data = await post<{ message: string; document: RequestDocument }>(
+  const data = await post<{ message: string; reset: boolean; document: RequestDocument }>(
     `/documents/${docId}/reset-layer-filter/`,
     { table }
   );
