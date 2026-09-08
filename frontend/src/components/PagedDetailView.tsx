@@ -3,12 +3,12 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import html2canvas from 'html2canvas';
-import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, AdiCdTarget, LayerFilterSet } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, AdiCdTarget, LayerFilterSet, ColorFilterSet } from '../types';
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
 import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
-import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows } from '../pages/RequestPage/helpers';
+import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows, matchLayerColor } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
 import ReviewItems, { ReviewItemsProps } from './ReviewItems';
 import {
@@ -243,6 +243,10 @@ const histBtnStyle: React.CSSProperties = {
   color: '#dc3545', cursor: 'pointer', fontWeight: 700,
   whiteSpace: 'nowrap',
 };
+
+// activeColorFilterIds 를 안 넘기는 호출부(HistoryPage 등)를 위한 고정 빈 Set — 매 렌더마다
+// 새 Set 을 만들지 않기 위해 모듈 스코프에 하나만 둔다.
+const EMPTY_COLOR_FILTER_IDS = new Set<string>();
 
 // ===== Row Diff Modal (가로형: 원본 표 형식 유지) =====
 
@@ -819,8 +823,12 @@ function JayerTable({
   prevRowMap,
   historyMode = false,
   rounds = [],
+  colorFilterSets,
+  activeColorFilterIds,
 }: {
   rows: JayerRow[];
+  colorFilterSets?: ColorFilterSet[];
+  activeColorFilterIds?: Set<string>;
 } & TableHistoryProps<JayerRow>) {
   const { t } = useTranslation();
   const [diffId, setDiffId] = useState<string | null>(null);
@@ -858,7 +866,15 @@ function JayerTable({
                       )}
                     </td>
                   )}
-                  {(() => { const reg = r.new_or_copy === '기등록' || isRowInactive(r.st); const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: reg ? rb : isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.item_id}</td></>); })()}
+                  {(() => {
+                    const reg = r.new_or_copy === '기등록' || isRowInactive(r.st);
+                    const rb = reg ? '#e5e7eb' : undefined;
+                    const activeColors = activeColorFilterIds ?? EMPTY_COLOR_FILTER_IDS;
+                    const spColor = colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'sp', r.sp) : undefined;
+                    const sdColor = colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'sd', r.sd) : undefined;
+                    const ppColor = isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : (colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'pp', r.pp) : undefined);
+                    return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: reg ? rb : spColor }}>{r.sp}</td><td style={{ backgroundColor: reg ? rb : sdColor }}>{r.sd}</td><td style={{ backgroundColor: reg ? rb : ppColor }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.item_id}</td></>);
+                  })()}
                 </tr>
               );
             })}
@@ -875,8 +891,12 @@ function OayerTable({
   prevRowMap,
   historyMode = false,
   rounds = [],
+  colorFilterSets,
+  activeColorFilterIds,
 }: {
   rows: OayerRow[];
+  colorFilterSets?: ColorFilterSet[];
+  activeColorFilterIds?: Set<string>;
 } & TableHistoryProps<OayerRow>) {
   const { t } = useTranslation();
   const [diffId, setDiffId] = useState<string | null>(null);
@@ -914,7 +934,15 @@ function OayerTable({
                       )}
                     </td>
                   )}
-                  {(() => { const reg = r.new_or_copy === '기등록' || isRowInactive(r.st); const rb = reg ? '#e5e7eb' : undefined; return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: rb }}>{r.sp}</td><td style={{ backgroundColor: rb }}>{r.sd}</td><td style={{ backgroundColor: rb }}>{r.layerid}</td><td style={{ backgroundColor: reg ? rb : isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : undefined }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td></>); })()}
+                  {(() => {
+                    const reg = r.new_or_copy === '기등록' || isRowInactive(r.st);
+                    const rb = reg ? '#e5e7eb' : undefined;
+                    const activeColors = activeColorFilterIds ?? EMPTY_COLOR_FILTER_IDS;
+                    const spColor = colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'sp', r.sp) : undefined;
+                    const sdColor = colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'sd', r.sd) : undefined;
+                    const ppColor = isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : (colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'pp', r.pp) : undefined);
+                    return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: reg ? rb : spColor }}>{r.sp}</td><td style={{ backgroundColor: reg ? rb : sdColor }}>{r.sd}</td><td style={{ backgroundColor: rb }}>{r.layerid}</td><td style={{ backgroundColor: reg ? rb : ppColor }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td></>);
+                  })()}
                 </tr>
               );
             })}
@@ -922,6 +950,55 @@ function OayerTable({
         </table>
       </div>
     </>
+  );
+}
+
+/**
+ * J/O-layer "색상 적용" 툴바 — 위 공유 필터 툴바와 같은 자리에, 같은 스타일로 한 줄 더 보여준다.
+ * 칩(색상 필터)은 여러 개 동시에 켤 수 있는 토글이고, 켜진 칩의 점들이 그 필터 안에 서로
+ * 다른 색의 키워드가 몇 가지인지 미리보기로 보여준다. 데이터를 바꾸지 않는 순수 표시
+ * 기능이라 API 실패를 다룰 필요가 없어, 공유 필터 툴바보다 훨씬 단순하다.
+ */
+function ColorFilterToolbar({
+  sets, activeIds, onToggle, onOpenManage, onReset,
+}: {
+  sets: ColorFilterSet[];
+  activeIds: Set<string>;
+  onToggle?: (id: string) => void;
+  onOpenManage?: () => void;
+  onReset?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="wizard-table-toolbar" style={{ marginBottom: 8 }}>
+      <span className="wizard-table-toolbar-label">{t('request.color_filter_apply_label')}:</span>
+      {sets.length === 0
+        ? <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{t('request.color_filter_saved_empty')}</span>
+        : sets.map((fs) => {
+          const on = activeIds.has(fs.id);
+          const colors = Array.from(new Set([...fs.words.sp, ...fs.words.sd, ...fs.words.pp].map((e) => e.color))).slice(0, 4);
+          return (
+            <button
+              key={fs.id}
+              type="button"
+              className="th-header-btn"
+              style={on ? { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' } : undefined}
+              onClick={() => onToggle?.(fs.id)}
+            >
+              {colors.map((c, i) => (
+                <span key={i} style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: c, marginRight: 2, border: '1px solid rgba(0,0,0,0.2)', opacity: on ? 1 : 0.5 }} />
+              ))}
+              {fs.label}
+            </button>
+          );
+        })}
+      <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenManage}>
+        {t('request.color_filter_manage_btn')}
+      </button>
+      <button type="button" className="btn btn-secondary btn-sm" onClick={onReset}>
+        {t('approval.layer_filter_reset_btn')}
+      </button>
+    </div>
   );
 }
 
@@ -1166,6 +1243,25 @@ export interface PagedDetailViewProps {
   canResetOayerFilter?: boolean;
   onResetJayerLayerFilter?: () => void;
   onResetOayerLayerFilter?: () => void;
+
+  /**
+   * 결재 상세페이지 J/O-layer "색상 적용" — 위 공유 필터(데이터를 실제로 바꿈)와 달리 매칭된
+   * 셀의 배경색만 바꾸는 개인별(localStorage) 기능. 노출 조건은 공유 필터와 동일하게
+   * canUseJayerFilter/canUseOayerFilter 를 그대로 쓴다. 목록·켜짐 상태·관리 핸들러 모두
+   * 호출부(ApprovalPage)가 소유한다(이 컴포넌트는 순수 표시 컴포넌트).
+   */
+  canUseJayerColorFilter?: boolean;
+  canUseOayerColorFilter?: boolean;
+  jayerColorFilterSets?: ColorFilterSet[];
+  oayerColorFilterSets?: ColorFilterSet[];
+  activeJayerColorFilterIds?: Set<string>;
+  activeOayerColorFilterIds?: Set<string>;
+  onToggleJayerColorFilter?: (filterId: string) => void;
+  onToggleOayerColorFilter?: (filterId: string) => void;
+  onOpenJayerColorFilterManage?: () => void;
+  onOpenOayerColorFilterManage?: () => void;
+  onResetJayerColorFilter?: () => void;
+  onResetOayerColorFilter?: () => void;
 }
 
 /** 전체 export(제목 옆 버튼)가 상세 정보/MAP 정보 탭을 화면 그대로 캡처할 때 쓰는 핸들. */
@@ -1186,6 +1282,12 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   onOpenJayerFilterManage, onOpenOayerFilterManage,
   canResetJayerFilter = false, canResetOayerFilter = false,
   onResetJayerLayerFilter, onResetOayerLayerFilter,
+  canUseJayerColorFilter = false, canUseOayerColorFilter = false,
+  jayerColorFilterSets, oayerColorFilterSets,
+  activeJayerColorFilterIds, activeOayerColorFilterIds,
+  onToggleJayerColorFilter, onToggleOayerColorFilter,
+  onOpenJayerColorFilterManage, onOpenOayerColorFilterManage,
+  onResetJayerColorFilter, onResetOayerColorFilter,
 }, ref) {
   const { t } = useTranslation();
   const { isFullscreen, setIsFullscreen } = useModalFullscreen();
@@ -1237,8 +1339,8 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
 
   // 엑셀 export — 시트 생성 로직은 상세 정보/MAP 정보 export, 전체 export(부모 컴포넌트)와
   // 공유하므로 utils/detailExport 에 모아 두고 여기서는 그대로 호출만 한다.
-  const exportJayer = () => exportJayerXlsx(doc, t);
-  const exportOayer = () => exportOayerXlsx(doc, t);
+  const exportJayer = () => exportJayerXlsx(doc, t, jayerColorFilterSets, activeJayerColorFilterIds);
+  const exportOayer = () => exportOayerXlsx(doc, t, oayerColorFilterSets, activeOayerColorFilterIds);
   const exportBb = () => exportBbXlsx(doc, t);
   const exportDetail = async () => {
     const screenshot = await captureNodeFullscreen(detailTabRef.current);
@@ -2347,7 +2449,16 @@ type Page = { label: string; content: React.ReactNode };
               )}
             </div>
           )}
-          <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} />
+          {canUseJayerColorFilter && (
+            <ColorFilterToolbar
+              sets={jayerColorFilterSets ?? []}
+              activeIds={activeJayerColorFilterIds ?? EMPTY_COLOR_FILTER_IDS}
+              onToggle={onToggleJayerColorFilter}
+              onOpenManage={onOpenJayerColorFilterManage}
+              onReset={onResetJayerColorFilter}
+            />
+          )}
+          <JayerTable rows={jayer} changedRowIds={changedJayerIds} prevRowMap={prevJayerMap} historyMode={historyMode} rounds={roundSnaps} colorFilterSets={jayerColorFilterSets} activeColorFilterIds={activeJayerColorFilterIds} />
           </>
           )}
         </div>
@@ -2433,7 +2544,16 @@ type Page = { label: string; content: React.ReactNode };
                       )}
                     </div>
                   )}
-                  <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} />
+                  {canUseOayerColorFilter && (
+                    <ColorFilterToolbar
+                      sets={oayerColorFilterSets ?? []}
+                      activeIds={activeOayerColorFilterIds ?? EMPTY_COLOR_FILTER_IDS}
+                      onToggle={onToggleOayerColorFilter}
+                      onOpenManage={onOpenOayerColorFilterManage}
+                      onReset={onResetOayerColorFilter}
+                    />
+                  )}
+                  <OayerTable rows={oayer} changedRowIds={changedOayerIds} prevRowMap={prevOayerMap} historyMode={historyMode} rounds={roundSnaps} colorFilterSets={oayerColorFilterSets} activeColorFilterIds={activeOayerColorFilterIds} />
                 </>
               )}
               {activeTab === 'info' && (
