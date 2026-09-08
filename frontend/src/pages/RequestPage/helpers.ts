@@ -1,4 +1,4 @@
-import { ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep } from '../../types';
+import { ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet } from '../../types';
 import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
@@ -637,6 +637,31 @@ export const isValidationTarget = (
 export const autoValidationSystem = (
   rows: { st?: string; pp?: string }[]
 ): ValidationSystemValue => (isValidationTarget(rows) ? VS_TARGET : VS_NA);
+
+// ===== 결재 상세페이지 J/O-layer "색상 적용" — 매칭 색상 판정 =====
+
+/**
+ * 켜져 있는(activeIds) 색상 필터들을 목록 순서대로 훑어, 이 셀 값(sp/sd/pp 중 하나)에
+ * 매칭되는 첫 번째 키워드의 색을 찾는다. 필터 목록 순서 → 필터 안 키워드 등록 순서, 둘 다
+ * 먼저 나온 쪽이 우선(같은 셀에 서로 다른 색이 동시에 매칭될 때의 결정 규칙).
+ * 매칭 규칙은 기존 공유 필터(LayerFilterSet)와 동일 — 대소문자 무시, 부분 일치.
+ */
+export const matchLayerColor = (
+  sets: ColorFilterSet[],
+  activeIds: Set<string>,
+  field: 'sp' | 'sd' | 'pp',
+  value: string | undefined,
+): string | undefined => {
+  if (!value) return undefined;
+  const lower = value.toLowerCase();
+  for (const fs of sets) {
+    if (!activeIds.has(fs.id)) continue;
+    for (const entry of fs.words[field]) {
+      if (entry.word && lower.includes(entry.word.toLowerCase())) return entry.color;
+    }
+  }
+  return undefined;
+};
 
 // ===== ADI CD 변경 — 변경전/변경후 스텝 표 붙여넣기 =====
 

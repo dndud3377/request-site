@@ -276,6 +276,23 @@ export interface LayerFilterSet {
   updated_at: string;
 }
 
+/** 키워드 하나 + 그 키워드에 지정된 색상. */
+export interface ColorFilterKeyword {
+  word: string;
+  color: string;
+}
+
+/**
+ * 결재 상세페이지 J/O-layer "색상 적용" — LayerFilterSet(데이터를 실제로 바꾸는 공유 필터)과
+ * 달리, 매칭된 셀의 배경색만 바꾸는 개인별(localStorage) 목록. 키워드마다 색을 따로 지정할 수
+ * 있어 words 값이 문자열이 아니라 {word, color} 배열이다.
+ */
+export interface ColorFilterSet {
+  id: string;
+  label: string;
+  words: { sp: ColorFilterKeyword[]; sd: ColorFilterKeyword[]; pp: ColorFilterKeyword[] };
+}
+
 export interface JayerRow {
   id: string;
   updated: string;      // 'YYYYMMDD HH:MM' 형식

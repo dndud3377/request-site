@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>J/O-layer 색상 적용 기능 — 화면 목업 (검토용, v2)</title>
+<style>
+  /* ===== 실제 앱 CSS 변수(frontend/src/styles/global.css)에서 그대로 가져옴 — Bright Blue Theme ===== */
+  :root {
+    --bg-primary: #f0f5ff;
+    --bg-secondary: #e4edff;
+    --bg-card: #ffffff;
+    --bg-card-hover: #f5f8ff;
+    --bg-input: #ffffff;
+    --bg-modal: #ffffff;
+
+    --blue-500: #3b82f6;
+    --blue-600: #2563eb;
+    --blue-700: #1d4ed8;
+
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --accent-light: rgba(37, 99, 235, 0.1);
+    --accent-glow: rgba(37, 99, 235, 0.25);
+
+    --text-primary: #0f172a;
+    --text-secondary: #334f7a;
+    --text-muted: #6b85ae;
+
+    --border: #c9d9f0;
+    --border-light: #dce8fb;
+
+    --success: #059669;
+    --success-light: rgba(5, 150, 105, 0.1);
+    --warning: #d97706;
+    --warning-light: rgba(217, 119, 6, 0.1);
+    --danger: #dc2626;
+    --danger-light: rgba(220, 38, 38, 0.1);
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 18px;
+    --shadow-md: 0 4px 16px rgba(37, 99, 235, 0.08);
+    --shadow-lg: 0 12px 40px rgba(15, 23, 42, 0.18);
+    --transition: all 0.15s ease;
+
+    /* 기존 셀 강조색(실제 코드 값 그대로) */
+    --validation-cell: #fff9c4;   /* plel(판정 키워드) 노란색 — RequestPage/constants.ts VALIDATION_CELL_COLOR */
+    --st-o-cell: #D4F5E2;         /* ST='O (D)' 초록 — utils/stCellColor.ts */
+    --st-x-cell: #f3f4f6;         /* ST='X' 회색 */
+    --reg-row: #e5e7eb;           /* 기등록/비활성 행 회색 */
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 100px;
+    background: var(--bg-primary); color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    font-size: 15px; line-height: 1.6;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+
+  h1 { font-size: 1.5rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .sub { color: var(--text-muted); font-size: 0.86rem; margin: 0 0 18px; }
+
+  .notice {
+    background: var(--warning-light); border-left: 3px solid var(--warning);
+    padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 0 0 24px;
+    font-size: 0.84rem; color: var(--text-secondary);
+  }
+  .notice b { color: var(--warning); }
+  .notice.v2 { background: var(--success-light); border-left-color: var(--success); }
+  .notice.v2 b { color: var(--success); }
+
+  h2 {
+    font-size: 1.05rem; margin: 34px 0 12px; padding-bottom: 8px;
+    border-bottom: 2px solid var(--border); letter-spacing: -0.01em; color: var(--text-primary);
+  }
+  h2 .step-no {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff;
+    font-size: 0.72rem; font-weight: 700; margin-right: 8px;
+  }
+  .desc { font-size: 0.82rem; color: var(--text-muted); margin: -4px 0 14px; }
+
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 18px 20px; margin: 12px 0;
+    box-shadow: var(--shadow-md);
+  }
+
+  /* ===== 버튼 (실제 앱 .btn 계열 그대로) ===== */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 7px 16px; border-radius: var(--radius-sm); font-size: 0.8rem; font-weight: 600;
+    transition: var(--transition); border: none; cursor: pointer; font-family: inherit;
+  }
+  .btn-secondary { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--text-primary); }
+  .btn-primary { background: linear-gradient(135deg, var(--blue-500), var(--blue-700)); color: #fff; box-shadow: 0 2px 8px rgba(26,108,242,.35); }
+  .btn-primary:hover { background: linear-gradient(135deg, #60a5fa, var(--blue-600)); }
+  .btn-danger { background: var(--danger-light); color: var(--danger); border: 1px solid var(--danger); }
+  .btn-danger:hover { background: var(--danger); color: #fff; }
+  .btn-sm { padding: 5px 12px; font-size: 0.75rem; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ===== 표 위 툴바 (실제 .wizard-table-toolbar 그대로) ===== */
+  .wizard-table-toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 8px 12px; background: var(--bg-secondary); border: 1px solid var(--border);
+    border-bottom: none; font-size: 0.74rem;
+  }
+  .wizard-table-toolbar:first-of-type { border-radius: var(--radius-md) var(--radius-md) 0 0; }
+  .wizard-table-toolbar-label { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); white-space: nowrap; margin-right: 2px; }
+  .th-header-btn {
+    font-size: 0.72rem; padding: 3px 9px; border-radius: 4px;
+    background: var(--accent-light); color: var(--accent); border: 1px solid rgba(37,99,235,.3);
+    cursor: pointer; font-weight: 600; white-space: nowrap; font-family: inherit;
+  }
+  .th-header-btn:hover { background: var(--accent); color: #fff; }
+
+  /* ===== 색상 토글 칩 — 이제 필터 하나에 색이 여러 개 있을 수 있어 점 여러 개로 미리보기 ===== */
+  .color-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.72rem; font-weight: 700; padding: 3px 10px 3px 6px;
+    border-radius: 20px; border: 1.5px solid var(--border); background: var(--bg-card);
+    color: var(--text-secondary); cursor: pointer; font-family: inherit;
+    transition: var(--transition);
+  }
+  .color-chip .dots { display: inline-flex; }
+  .color-chip .dots .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.15); margin-left: -4px; }
+  .color-chip .dots .dot:first-child { margin-left: 0; }
+  .color-chip.off .dots .dot { opacity: 0.35; }
+  .color-chip.on { border-color: var(--accent); background: var(--accent-light); color: var(--text-primary); }
+  .color-chip:hover { border-color: var(--accent); }
+  .empty-hint { color: var(--text-muted); font-weight: 400; font-size: 0.72rem; }
+
+  /* ===== 표 (실제 .table.table-compact 그대로) ===== */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 0 0 var(--radius-md) var(--radius-md); }
+  table.data { width: 100%; border-collapse: collapse; }
+  table.data th {
+    background: var(--bg-secondary); padding: 6px 8px; text-align: left;
+    font-size: 0.66rem; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  table.data td { padding: 6px 8px; font-size: 0.72rem; color: var(--text-secondary); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.data tr:last-child td { border-bottom: none; }
+  table.data tr:hover td { background: var(--bg-card-hover); }
+
+  /* ===== 모달 (실제 .modal 그대로) ===== */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 2000;
+    display: none; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--bg-modal); border: 1px solid var(--border-light); border-radius: var(--radius-xl); width: 100%; max-width: 660px; box-shadow: var(--shadow-lg); max-height: 88vh; display: flex; flex-direction: column; }
+  .modal-header { padding: 20px 24px 0; display: flex; align-items: center; justify-content: space-between; }
+  .modal-header h3 { font-size: 1.05rem; font-weight: 700; margin: 0; }
+  .modal-close { background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; padding: 4px; border-radius: 4px; }
+  .modal-close:hover { color: var(--text-primary); }
+  .modal-body { padding: 16px 24px; overflow-y: auto; font-size: 0.86rem; }
+  .modal-footer { padding: 14px 24px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+
+  .section-label { font-weight: 700; font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .saved-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .saved-item { display: flex; align-items: center; gap: 10px; background: var(--bg-secondary); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); }
+  .saved-item .info { flex: 1; min-width: 0; }
+  .saved-item .info .name { font-weight: 600; margin-bottom: 4px; }
+  .saved-item .info .kw-group { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 3px; }
+  .saved-item .info .kw-group .field-tag { font-size: 0.64rem; font-weight: 700; color: var(--text-muted); margin-right: 2px; }
+  .word-badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 4px; border-radius: 10px; font-size: 0.68rem; font-weight: 600; color: var(--text-primary); border: 1px solid rgba(0,0,0,.08); }
+  .word-badge .sw { width: 9px; height: 9px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.15); }
+  .empty-note { color: #bbb; font-size: 0.82rem; padding: 6px 0; }
+
+  hr.sep { margin: 16px 0; border: none; border-top: 1px solid var(--border); }
+
+  input[type=text].form-control {
+    width: 100%; border: none; border-bottom: 2px solid var(--accent); outline: none;
+    font-size: 1rem; font-weight: 700; padding: 4px 2px; margin-bottom: 14px; background: transparent; color: var(--text-primary);
+    font-family: inherit;
+  }
+
+  .kw-box { border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; border: 1.5px solid var(--border); }
+  .kw-box .kw-title { font-weight: 700; font-size: 0.74rem; margin-bottom: 6px; color: var(--text-secondary); }
+  .kw-box .kw-input-row { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
+  .kw-box input[type=text].kw-input { font-size: 0.78rem; padding: 5px 8px; flex: 1; border: 1px solid var(--border); border-radius: 6px; min-width: 0; }
+  .kw-box .kw-rows { display: flex; flex-direction: column; gap: 4px; }
+  .kw-box .kw-row-item { display: flex; align-items: center; gap: 8px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 6px; padding: 4px 8px; font-size: 0.76rem; }
+  .kw-box .kw-row-item .word { flex: 1; }
+  .kw-box .kw-row-item button.kw-del { border: none; background: none; cursor: pointer; color: #888; font-size: 0.72rem; padding: 0; }
+  .kw-box .kw-empty { color: #bbb; font-size: 0.74rem; padding: 2px 0; }
+
+  /* 키워드의 색상 버튼 — 클릭하면 아래 팔레트 팝오버가 뜬다(RichTextEditor.tsx 글자색/바탕색 버튼과 동일 패턴) */
+  .color-swatch-btn {
+    width: 22px; height: 22px; border-radius: 5px; flex-shrink: 0; cursor: pointer;
+    border: 1px solid rgba(0,0,0,.2); padding: 0;
+  }
+  .color-swatch-btn:hover { outline: 2px solid var(--accent-glow); }
+
+  /* 색상 팔레트 팝오버 — frontend/src/components/RichTextEditor.tsx 의 ColorPalette 컴포넌트와 동일 구성 */
+  #palette-popover {
+    position: fixed; z-index: 3000; display: none;
+    background: #fff; border: 1px solid #dde1ea; border-radius: 6px;
+    padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,.15); user-select: none; min-width: 192px;
+  }
+  #palette-popover.open { display: block; }
+  #palette-popover .pal-label { font-size: 10px; color: #888; margin-bottom: 4px; }
+  #palette-popover .pal-theme { display: grid; grid-template-columns: repeat(10, 16px); gap: 2px; margin-bottom: 8px; }
+  #palette-popover .pal-standard { display: flex; gap: 2px; }
+  #palette-popover .pal-swatch { width: 16px; height: 16px; border: 1px solid rgba(0,0,0,.15); cursor: pointer; border-radius: 1px; padding: 0; }
+
+  .flow-note { font-size: 0.78rem; color: var(--text-muted); margin-top: 6px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.76rem; color: var(--text-muted); margin-top: 8px; }
+  .legend .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; vertical-align: -2px; margin-right: 4px; border: 1px solid rgba(0,0,0,.12); }
+
+  footer.credit { text-align: center; color: var(--text-muted); font-size: 0.72rem; margin-top: 50px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>결재 상세페이지 — J/O-layer 색상 적용 기능 목업 (v2)</h1>
+  <p class="sub">현재 코드(ApprovalPage.tsx · PagedDetailView.tsx · FilterManageModal.tsx)의 실제 CSS 변수·클래스를 그대로 사용해 만든 화면 검토용 목업입니다.</p>
+
+  <div class="notice v2">
+    <b>v4 수정 사항</b> — 색상 적용 상태가 엑셀 내보내기(📊 export)에도 그대로 반영되도록 함. 아래 1·3번 표 카드의 "📊 export" 버튼이 실제로 동작하며, 지금 켜둔 색상 칩 그대로 반영된 파일이 다운로드됩니다(자세한 내용은 5번 참조).
+  </div>
+  <div class="notice v2" style="margin-top:8px;">
+    <b>v3 수정 사항</b> — ① 키워드 추가 흐름 변경: 이제 키워드를 먼저 추가하면, 그 키워드 줄에 뜨는 <b>색상 버튼을 눌러야</b> 색을 고를 수 있습니다(공지 작성 화면의 글자색·바탕색과 동일한 "테마 색상 / 표준 색상" 팔레트 재사용). ② STEPSEQ/STEP 설명/PPID 구분에 쓰던 파란색·초록색·주황색 색칠을 없애고 <b>이름 그대로 텍스트</b>로 표시(실제 적용 색상과 겹쳐 헷갈리는 것을 방지).
+  </div>
+  <div class="notice v2" style="margin-top:8px;">
+    <b>v2 수정 사항</b> — ① 필터 하나에 색이 하나가 아니라, <b>키워드마다 각자 다른 색을 지정</b>할 수 있도록 변경. ② "색상 관리" 버튼 옆에 <b>전용 "초기화" 버튼</b>을 추가해 적용해 둔 색상 토글을 한 번에 끌 수 있게 함(기존 "공유 필터"의 초기화 버튼과 같은 자리 배치·같은 UI 톤을 그대로 재사용).
+  </div>
+  <div class="notice">
+    <b>검토용 목업입니다.</b> 실제 데이터/서버 연동은 없으며, 버튼 클릭 시 브라우저 안에서만 즉시 반영됩니다(새로고침하면 초기 상태로 돌아갑니다).
+  </div>
+
+  <h2><span class="step-no">1</span>J-ayer 정보 탭 — 표 위 툴바</h2>
+  <p class="desc">기존 공유 필터 줄은 그대로 유지, 그 아래 색상 적용 줄이 신규 추가됩니다. 색상 칩을 눌러보세요(여러 개 동시 ON 가능) — 아래 표의 매칭된 셀 색이 즉시 바뀝니다. 칩의 점 여러 개는 그 필터 안에 서로 다른 색의 키워드가 몇 개 들어있는지 보여줍니다.</p>
+
+  <div class="card" style="padding:0; overflow:hidden;">
+    <div style="padding:14px 20px 0;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <div style="font-weight:700; font-size:0.95rem;">J-ayer 정보</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:0.78rem; color:var(--text-muted);">총 5건</span>
+          <button onclick="exportWithColor('J')" class="btn btn-secondary btn-sm" style="font-size:0.75rem; padding:2px 10px;">📊 export</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 기존 공유 필터 툴바 (그대로) -->
+    <div class="wizard-table-toolbar">
+      <span class="wizard-table-toolbar-label">공유 필터 :</span>
+      <button class="th-header-btn" title="클릭 시 매칭 행의 st가 실제로 'X'로 바뀝니다(데이터 변경 — 기존 기능)">초도품 제외</button>
+      <button class="th-header-btn" title="클릭 시 매칭 행의 st가 실제로 'X'로 바뀝니다(데이터 변경 — 기존 기능)">특수공정</button>
+      <button class="btn btn-secondary btn-sm">필터 관리</button>
+      <button class="btn btn-secondary btn-sm">초기화</button>
+    </div>
+
+    <!-- 신규: 색상 적용 툴바 -->
+    <div class="wizard-table-toolbar" id="j-color-toolbar" style="border-bottom:1px solid var(--border);">
+      <span class="wizard-table-toolbar-label">색상 적용 :</span>
+      <div id="j-chips" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+      <button class="btn btn-secondary btn-sm" onclick="openColorModal('J')">🎨 색상 관리</button>
+      <button class="btn btn-secondary btn-sm" onclick="confirmResetColors('J')">초기화</button>
+    </div>
+
+    <div class="table-wrap" style="border:none; border-radius:0;">
+      <table class="data" id="j-table">
+        <thead>
+          <tr>
+            <th>갱신일</th><th>PROCESS ID</th><th>STEPSEQ</th><th>STEP 설명</th><th>PPID</th><th>ST</th><th>신규/차용</th><th>제품명</th><th>STEP</th><th>ITEM ID</th>
+          </tr>
+        </thead>
+        <tbody id="j-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><span class="sw" style="background:var(--validation-cell);"></span>plel(판정 키워드) — 기존 하드코딩 노란색, 색상 필터보다 항상 우선</span>
+    <span><span class="sw" style="background:var(--reg-row);"></span>기등록/비활성 행 — 항상 회색, 색상 필터 적용 안 됨</span>
+  </div>
+
+  <h2><span class="step-no">2</span>"🎨 색상 관리" 클릭 → 관리 모달 (키워드별 색상 지정)</h2>
+  <p class="desc">필터 하나("장비특이" 등) 안에 STEPSEQ/STEP설명/PPID별로 여러 키워드를 넣을 수 있고, <b>키워드 하나하나마다 색을 따로 고를 수 있습니다</b>. 흐름: 먼저 키워드를 입력해 "+ 추가"로 목록에 넣고 → 목록에 추가된 그 키워드 줄의 <b>색상 버튼을 클릭</b>해 팔레트에서 원하는 색을 고릅니다(공지 작성 화면의 글자색·바탕색 선택과 동일한 "테마 색상 / 표준 색상" 팔레트).</p>
+  <div class="card">
+    <button class="btn btn-primary" onclick="openColorModal('J')">🎨 J-layer 색상 관리 모달 열기</button>
+    <button class="btn btn-secondary" onclick="openColorModal('O')" style="margin-left:8px;">🎨 O-layer 색상 관리 모달 열기</button>
+  </div>
+
+  <h2><span class="step-no">3</span>O-ayer 정보 탭도 동일하게 적용</h2>
+  <p class="desc">O-layer 표에도 같은 방식으로 색상 적용 줄 + 색상 관리 + 초기화 버튼이 추가됩니다(권한: TE_O/MASTER).</p>
+  <div class="card" style="padding:0; overflow:hidden;">
+    <div style="padding:14px 20px 0;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <div style="font-weight:700; font-size:0.95rem;">O-ayer 정보</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:0.78rem; color:var(--text-muted);">총 4건</span>
+          <button onclick="exportWithColor('O')" class="btn btn-secondary btn-sm" style="font-size:0.75rem; padding:2px 10px;">📊 export</button>
+        </div>
+      </div>
+    </div>
+    <div class="wizard-table-toolbar">
+      <span class="wizard-table-toolbar-label">공유 필터 :</span>
+      <button class="th-header-btn">차용 라인 제외</button>
+      <button class="btn btn-secondary btn-sm">필터 관리</button>
+      <button class="btn btn-secondary btn-sm">초기화</button>
+    </div>
+    <div class="wizard-table-toolbar" id="o-color-toolbar" style="border-bottom:1px solid var(--border);">
+      <span class="wizard-table-toolbar-label">색상 적용 :</span>
+      <div id="o-chips" style="display:flex; gap:8px; flex-wrap:wrap;"></div>
+      <button class="btn btn-secondary btn-sm" onclick="openColorModal('O')">🎨 색상 관리</button>
+      <button class="btn btn-secondary btn-sm" onclick="confirmResetColors('O')">초기화</button>
+    </div>
+    <div class="table-wrap" style="border:none; border-radius:0;">
+      <table class="data" id="o-table">
+        <thead>
+          <tr><th>갱신일</th><th>PROCESS ID</th><th>STEPSEQ</th><th>STEP 설명</th><th>LAYER ID</th><th>PPID</th><th>ST</th><th>신규/차용</th><th>제품명</th><th>STEP</th></tr>
+        </thead>
+        <tbody id="o-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <h2><span class="step-no">4</span>"초기화" 버튼 동작</h2>
+  <p class="desc">"색상 관리" 옆 <b>전용 초기화 버튼</b>을 누르면(위 1·3번 툴바에 이미 있습니다) 확인창 후 켜져 있던 색상 칩이 전부 OFF로 바뀝니다. 저장된 필터·키워드·색상 지정 자체는 지워지지 않고, <b>현재 켜둔 표시만</b> 초기화됩니다 — 기존 "공유 필터"의 초기화 버튼과 같은 위치·같은 버튼 스타일을 그대로 따릅니다(동작 대상만 다름: 그쪽은 데이터, 이쪽은 화면 표시).</p>
+
+  <h2><span class="step-no">5</span>"📊 export" 클릭 → 엑셀에도 색상 그대로</h2>
+  <p class="desc">위 1·3번 표 카드 제목 옆에 <b>실제로 다운로드되는</b> "📊 export" 버튼을 추가했습니다. 색상 칩을 몇 개 켜둔 상태로 눌러보세요 — 화면에 보이는 셀 색이 그대로 반영된 <code>.xls</code> 파일이 다운로드되고, 엑셀(또는 한셀 등)에서 열면 배경색이 그대로 보입니다.</p>
+  <div class="card">
+    <div class="flow-note" style="margin-top:0;">
+      <b>실제 구현 방식</b>: 지금 J/O-ayer 엑셀 내보내기는 이미 <code>frontend/src/utils/detailExport.ts</code>의
+      <code>addJobSheet</code>/<code>addOvlSheet</code>가 exceljs로 시트를 만들며 plel(판정 키워드) 칸을
+      <code>applyFill(cell, VALIDATION_CELL_COLOR)</code>로 노란색 채우고 있습니다. 색상 필터도 <b>같은 자리에
+      같은 방식으로</b> — 매칭된 셀에 대해 <code>applyFill(cell, matchColor(...))</code>를 한 줄 더 끼워 넣으면
+      됩니다(우선순위도 화면과 동일: plel 노란색 → 색상 필터 → 없음). 화면(PagedDetailView)이 이미 계산해 둔
+      "이 셀이 어떤 색인지" 정보를 export 호출 시 함께 넘겨주기만 하면 되므로, 화면에 보이는 것과 다운로드되는
+      파일의 색이 항상 일치합니다. 이 목업은 exceljs 없이도 브라우저에서 진짜 다운로드를 보여주기 위해
+      Excel이 인식하는 HTML-테이블(.xls) 방식을 썼지만, 실제 코드는 그대로 exceljs를 씁니다.
+    </div>
+  </div>
+
+</div>
+
+<!-- 색상 관리 모달 -->
+<div class="modal-overlay" id="color-modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="color-modal-title">J-layer 색상 관리</h3>
+      <button class="modal-close" onclick="closeColorModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="section-label">저장된 색상 필터</div>
+      <div class="saved-list" id="saved-list"></div>
+
+      <hr class="sep" />
+
+      <div class="section-label" id="form-title" style="color:var(--text-muted);">새 색상 필터 만들기</div>
+      <input type="text" class="form-control" id="new-label" placeholder="필터 이름을 입력하세요... (예: 장비특이)" />
+
+      <div class="kw-box">
+        <div class="kw-title">STEPSEQ</div>
+        <div class="kw-input-row">
+          <input type="text" class="kw-input" id="kw-sp-input" placeholder="키워드 입력 후 Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('sp')}" />
+          <button class="btn btn-secondary btn-sm" onclick="addKw('sp')">+ 추가</button>
+        </div>
+        <div class="kw-rows" id="kw-sp-rows"></div>
+      </div>
+      <div class="kw-box">
+        <div class="kw-title">STEP 설명</div>
+        <div class="kw-input-row">
+          <input type="text" class="kw-input" id="kw-sd-input" placeholder="키워드 입력 후 Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('sd')}" />
+          <button class="btn btn-secondary btn-sm" onclick="addKw('sd')">+ 추가</button>
+        </div>
+        <div class="kw-rows" id="kw-sd-rows"></div>
+      </div>
+      <div class="kw-box">
+        <div class="kw-title">PPID</div>
+        <div class="kw-input-row">
+          <input type="text" class="kw-input" id="kw-pp-input" placeholder="키워드 입력 후 Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addKw('pp')}" />
+          <button class="btn btn-secondary btn-sm" onclick="addKw('pp')">+ 추가</button>
+        </div>
+        <div class="kw-rows" id="kw-pp-rows"></div>
+      </div>
+      <div class="flow-note">※ 매칭 규칙은 기존 공유 필터와 동일 — 대소문자 무시, 부분 일치. STEPSEQ/STEP 설명/PPID 중 매칭된 <b>셀만</b> 그 키워드에 지정한 색으로 바뀝니다(행 전체 아님). 키워드를 추가한 뒤 색상 버튼을 눌러 색을 고르세요(기본값은 임시 색이며, 반드시 눌러서 원하는 색으로 바꿔주세요).</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="deleteAllColors()">전체 삭제</button>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-secondary" id="cancel-edit-btn" style="display:none;" onclick="cancelEdit()">수정 취소</button>
+        <button class="btn btn-primary" onclick="saveColorFilter()" id="save-btn">+ 추가</button>
+        <button class="btn btn-secondary" onclick="closeColorModal()">닫기</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 색상 팔레트 팝오버 (테마 색상 / 표준 색상) — RichTextEditor.tsx ColorPalette 와 동일 구성, 클릭한 색상 버튼 옆에 뜬다 -->
+<div id="palette-popover"></div>
+
+<footer class="credit">검토용 정적 목업 — docs/color_filter_mockup.html · 서버/API 미연동</footer>
+
+<script>
+// ===== 목업 데이터 (실제 J/O-ayer 행 구조를 단순화) =====
+// words.{sp,sd,pp} 는 이제 문자열 배열이 아니라 {word, color} 객체 배열 — 키워드마다 색이 다를 수 있다.
+const state = {
+  J: {
+    sets: [
+      {
+        id: '1', label: '판정/차용 특이',
+        words: {
+          sp: [],
+          sd: [{ word: '차용', color: '#42a5f5' }],
+          pp: [{ word: 'plel', color: '#ffeb3b' }],
+        },
+      },
+      {
+        id: '2', label: '긴급 라인',
+        words: {
+          sp: [{ word: 'S003', color: '#66bb6a' }, { word: 'S004', color: '#ab47bc' }],
+          sd: [],
+          pp: [],
+        },
+      },
+    ],
+    active: new Set(),
+    rows: [
+      { updated:'2026-09-01', pid:'P-1001', sp:'S001', sd:'통상공정',  pp:'PP01_plel', st:'O (D)', noc:'신규', pname:'ABC-1', step:'ST1', item:'IT01', reg:false },
+      { updated:'2026-09-01', pid:'P-1002', sp:'S002', sd:'차용특이',  pp:'PP02',      st:'O (D)', noc:'차용', pname:'ABC-2', step:'ST2', item:'IT02', reg:false },
+      { updated:'2026-08-30', pid:'P-1003', sp:'S003', sd:'긴급공정',  pp:'PP03',      st:'O (D)', noc:'신규', pname:'ABC-3', step:'ST3', item:'IT03', reg:false },
+      { updated:'2026-08-30', pid:'P-1004', sp:'S004', sd:'일반',      pp:'PP04',      st:'O (D)', noc:'신규', pname:'ABC-4', step:'ST4', item:'IT04', reg:false },
+      { updated:'2026-08-28', pid:'P-1005', sp:'S005', sd:'기등록건',  pp:'PP05',      st:'X',     noc:'기등록', pname:'ABC-5', step:'ST5', item:'IT05', reg:true },
+    ],
+  },
+  O: {
+    sets: [
+      {
+        id: '1', label: '공정 특이',
+        words: {
+          sp: [],
+          sd: [{ word: '플라즈마', color: '#ab47bc' }],
+          pp: [{ word: 'plel', color: '#ffeb3b' }],
+        },
+      },
+    ],
+    active: new Set(),
+    rows: [
+      { updated:'2026-09-02', pid:'P-2001', sp:'S101', sd:'플라즈마 식각', layer:'L1', pp:'PP21',      st:'O (D)', noc:'신규', pname:'XYZ-1', step:'OT1' },
+      { updated:'2026-09-02', pid:'P-2002', sp:'S102', sd:'통상',        layer:'L2', pp:'PP22_plel', st:'O (D)', noc:'신규', pname:'XYZ-2', step:'OT2' },
+      { updated:'2026-08-31', pid:'P-2003', sp:'S103', sd:'일반',        layer:'L3', pp:'PP23',      st:'O (D)', noc:'차용', pname:'XYZ-3', step:'OT3' },
+      { updated:'2026-08-31', pid:'P-2004', sp:'S104', sd:'통상',        layer:'L4', pp:'PP24',      st:'O (D)', noc:'신규', pname:'XYZ-4', step:'OT4' },
+    ],
+  },
+};
+
+let currentTable = 'J';
+let editingId = null;
+let draft = { label: '', words: { sp: [], sd: [], pp: [] } };
+
+// ===== 색상 팔레트 (frontend/src/components/RichTextEditor.tsx 의 ColorPalette 와 동일 팔레트 데이터) =====
+const EXCEL_THEME_BASES = ['#FFFFFF', '#000000', '#EEECE1', '#1F497D', '#4F81BD', '#C0504D', '#9BBB59', '#8064A2', '#4BACC6', '#F79646'];
+const EXCEL_STANDARD_COLORS = ['#C00000', '#FF0000', '#FFC000', '#FFFF00', '#92D050', '#00B050', '#00B0F0', '#0070C0', '#002060', '#7030A0'];
+const TINTS = [0, 0.8, 0.6, 0.4, -0.25, -0.5];
+function applyTint(hex, tint) {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const r = (num >> 16) & 0xFF, g = (num >> 8) & 0xFF, b = num & 0xFF;
+  const calc = (c) => Math.max(0, Math.min(255, tint >= 0 ? Math.round(c + (255 - c) * tint) : Math.round(c * (1 + tint))));
+  return '#' + [calc(r), calc(g), calc(b)].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+const THEME_COLORS = TINTS.map(t => EXCEL_THEME_BASES.map(c => applyTint(c, t))).flat();
+const DEFAULT_KW_COLOR = '#FFFF00'; // 새로 추가한 키워드의 임시 기본색 — 색상 버튼으로 반드시 바꿔주도록 안내
+
+let paletteTarget = null; // { field, idx } — 지금 팝오버가 어떤 키워드의 색을 바꾸는 중인지
+
+function renderPalettePopover() {
+  const el = document.getElementById('palette-popover');
+  const themeHtml = THEME_COLORS.map(c => `<button type="button" class="pal-swatch" style="background:${c}" title="${c}" onclick="pickPaletteColor('${c}')"></button>`).join('');
+  const stdHtml = EXCEL_STANDARD_COLORS.map(c => `<button type="button" class="pal-swatch" style="background:${c}" title="${c}" onclick="pickPaletteColor('${c}')"></button>`).join('');
+  el.innerHTML = `
+    <div class="pal-label">테마 색상</div>
+    <div class="pal-theme">${themeHtml}</div>
+    <div class="pal-label">표준 색상</div>
+    <div class="pal-standard">${stdHtml}</div>
+  `;
+}
+function openPalette(field, idx, btn) {
+  const el = document.getElementById('palette-popover');
+  if (paletteTarget && paletteTarget.field === field && paletteTarget.idx === idx && el.classList.contains('open')) {
+    closePalette();
+    return;
+  }
+  paletteTarget = { field, idx };
+  const rect = btn.getBoundingClientRect();
+  el.style.top = (rect.bottom + 4) + 'px';
+  el.style.left = rect.left + 'px';
+  el.classList.add('open');
+}
+function closePalette() {
+  document.getElementById('palette-popover').classList.remove('open');
+  paletteTarget = null;
+}
+function pickPaletteColor(color) {
+  if (!paletteTarget) return;
+  const { field, idx } = paletteTarget;
+  draft.words[field][idx].color = color;
+  closePalette();
+  renderDraftRows();
+}
+document.addEventListener('click', (e) => {
+  const pop = document.getElementById('palette-popover');
+  if (!pop.classList.contains('open')) return;
+  if (pop.contains(e.target) || e.target.closest('.color-swatch-btn')) return;
+  closePalette();
+});
+renderPalettePopover();
+
+function isValidationKeyword(pp) { return !!pp && pp.toLowerCase().includes('plel'); }
+
+// 활성 색상 필터들을 순서대로 훑어, 이 셀 값에 매칭되는 첫 번째 키워드의 색을 찾는다
+// (필터 목록 순서 → 필터 안 키워드 등록 순서, 둘 다 먼저 나온 쪽이 우선)
+function matchColor(table, field, value) {
+  const s = state[table];
+  for (const fs of s.sets) {
+    if (!s.active.has(fs.id)) continue;
+    for (const entry of (fs.words[field] || [])) {
+      if (entry.word && value.toLowerCase().includes(entry.word.toLowerCase())) return entry.color;
+    }
+  }
+  return null;
+}
+
+function filterColors(fs) {
+  const all = [...fs.words.sp, ...fs.words.sd, ...fs.words.pp].map(e => e.color);
+  return [...new Set(all)];
+}
+
+function renderChips(table) {
+  const wrap = document.getElementById(table === 'J' ? 'j-chips' : 'o-chips');
+  const s = state[table];
+  if (s.sets.length === 0) {
+    wrap.innerHTML = '<span class="empty-hint">저장된 색상 필터 없음</span>';
+    return;
+  }
+  wrap.innerHTML = s.sets.map(fs => {
+    const on = s.active.has(fs.id);
+    const colors = filterColors(fs).slice(0, 4);
+    const dots = colors.length
+      ? colors.map(c => `<span class="dot" style="background:${c}"></span>`).join('')
+      : '<span class="dot" style="background:#ccc"></span>';
+    return `<button type="button" class="color-chip ${on ? 'on' : 'off'}" onclick="toggleChip('${table}','${fs.id}')">
+      <span class="dots">${dots}</span>${fs.label}
+    </button>`;
+  }).join('');
+}
+
+function toggleChip(table, id) {
+  const s = state[table];
+  if (s.active.has(id)) s.active.delete(id); else s.active.add(id);
+  renderChips(table);
+  renderTable(table);
+}
+
+function confirmResetColors(table) {
+  if (!confirm('적용해 둔 색상 표시를 초기화하시겠습니까?\n(저장된 색상 필터·키워드 자체는 지워지지 않습니다)')) return;
+  state[table].active.clear();
+  renderChips(table);
+  renderTable(table);
+}
+
+function renderTable(table) {
+  const s = state[table];
+  const tbody = document.getElementById(table === 'J' ? 'j-tbody' : 'o-tbody');
+  tbody.innerHTML = s.rows.map(r => {
+    const reg = table === 'J' && r.reg;
+    const regBg = reg ? 'var(--reg-row)' : '';
+    const spColor = !reg && matchColor(table, 'sp', r.sp);
+    const sdColor = !reg && matchColor(table, 'sd', r.sd);
+    let ppColor = null;
+    if (!reg) {
+      if (isValidationKeyword(r.pp)) ppColor = 'var(--validation-cell)';
+      else ppColor = matchColor(table, 'pp', r.pp);
+    }
+    const stColor = reg ? regBg : (r.st === 'O (D)' ? 'var(--st-o-cell)' : 'var(--st-x-cell)');
+    const nocColor = reg ? regBg : (r.noc === '차용' ? '#eff6ff' : '');
+    const td = (val, bg) => `<td style="background:${bg||regBg||''}">${val}</td>`;
+
+    if (table === 'J') {
+      return `<tr>
+        ${td(r.updated)}${td(r.pid)}${td(r.sp, spColor)}${td(r.sd, sdColor)}${td(r.pp, ppColor)}
+        ${td(r.st, stColor)}${td(r.noc, nocColor)}${td(r.pname)}${td(r.step)}${td(r.item)}
+      </tr>`;
+    }
+    return `<tr>
+      ${td(r.updated)}${td(r.pid)}${td(r.sp, spColor)}${td(r.sd, sdColor)}${td(r.layer)}${td(r.pp, ppColor)}
+      ${td(r.st, r.st === 'O (D)' ? 'var(--st-o-cell)' : 'var(--st-x-cell)')}${td(r.noc, r.noc === '차용' ? '#eff6ff' : '')}${td(r.pname)}${td(r.step)}
+    </tr>`;
+  }).join('');
+}
+
+// ===== 엑셀 내보내기 — 현재 화면에 적용된 색상 그대로 반영 =====
+// 실제 구현에서는 frontend/src/utils/detailExport.ts 의 exceljs 기반 addJobSheet/addOvlSheet 가
+// 이미 plel(판정 키워드)을 VALIDATION_CELL_COLOR 로 applyFill 하고 있으므로, 그 자리에 색상 필터
+// 매칭 결과(matchColor)도 같은 우선순위로 끼워 넣기만 하면 된다. 이 목업에서는 exceljs 없이도
+// 브라우저에서 바로 진짜 다운로드가 되도록, Excel이 인식하는 HTML-테이블 방식(.xls)으로 만든다.
+const XLS_HEX = { validation: '#fff9c4', stO: '#D4F5E2', stX: '#f3f4f6', reg: '#e5e7eb', borrow: '#eff6ff' };
+function exportWithColor(table) {
+  const s = state[table];
+  const cols = table === 'J'
+    ? ['갱신일', 'PROCESS ID', 'STEPSEQ', 'STEP 설명', 'PPID', 'ST', '신규/차용', '제품명', 'STEP', 'ITEM ID']
+    : ['갱신일', 'PROCESS ID', 'STEPSEQ', 'STEP 설명', 'LAYER ID', 'PPID', 'ST', '신규/차용', '제품명', 'STEP'];
+  const cellStyle = 'border:1px solid #c9d9f0; padding:4px 8px; font-size:12px; mso-number-format:"\\@";';
+  const td = (val, bg) => `<td style="background:${bg || '#ffffff'}; ${cellStyle}">${val ?? ''}</td>`;
+
+  const rowsHtml = s.rows.map(r => {
+    const reg = table === 'J' && r.reg;
+    const regBg = reg ? XLS_HEX.reg : '';
+    const spColor = !reg && matchColor(table, 'sp', r.sp);
+    const sdColor = !reg && matchColor(table, 'sd', r.sd);
+    let ppColor = null;
+    if (!reg) ppColor = isValidationKeyword(r.pp) ? XLS_HEX.validation : matchColor(table, 'pp', r.pp);
+    const stColor = reg ? regBg : (r.st === 'O (D)' ? XLS_HEX.stO : XLS_HEX.stX);
+    const nocColor = reg ? regBg : (r.noc === '차용' ? XLS_HEX.borrow : '');
+
+    if (table === 'J') {
+      return `<tr>${td(r.updated, regBg)}${td(r.pid, regBg)}${td(r.sp, spColor || regBg)}${td(r.sd, sdColor || regBg)}${td(r.pp, ppColor || regBg)}${td(r.st, stColor)}${td(r.noc, nocColor)}${td(r.pname, regBg)}${td(r.step, regBg)}${td(r.item, regBg)}</tr>`;
+    }
+    return `<tr>${td(r.updated)}${td(r.pid)}${td(r.sp, spColor)}${td(r.sd, sdColor)}${td(r.layer)}${td(r.pp, ppColor)}${td(r.st, r.st === 'O (D)' ? XLS_HEX.stO : XLS_HEX.stX)}${td(r.noc, r.noc === '차용' ? XLS_HEX.borrow : '')}${td(r.pname)}${td(r.step)}</tr>`;
+  }).join('');
+
+  const headHtml = cols.map(c => `<th style="background:#e4edff; border:1px solid #c9d9f0; padding:4px 8px; font-size:11px;">${c}</th>`).join('');
+  const activeCount = s.active.size;
+  const html = `<html><head><meta charset="utf-8"></head><body>
+    <p style="font-size:11px;color:#6b85ae;">색상 적용 ${activeCount}건 반영됨 · 내보낸 시각 ${new Date().toLocaleString('ko-KR')}</p>
+    <table border="1" style="border-collapse:collapse; font-family:맑은 고딕,Malgun Gothic,sans-serif;">
+      <thead><tr>${headHtml}</tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  </body></html>`;
+
+  const blob = new Blob(['﻿' + html], { type: 'application/vnd.ms-excel' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${table === 'J' ? 'J-ayer' : 'O-ayer'}_색상적용_${Date.now()}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ===== 색상 관리 모달 =====
+function openColorModal(table) {
+  currentTable = table;
+  document.getElementById('color-modal-title').textContent = (table === 'J' ? 'J-layer' : 'O-layer') + ' 색상 관리';
+  cancelEdit();
+  renderSavedList();
+  document.getElementById('color-modal-overlay').classList.add('open');
+}
+function closeColorModal() {
+  document.getElementById('color-modal-overlay').classList.remove('open');
+  closePalette();
+}
+const FIELD_LABEL = { sp: 'STEPSEQ', sd: 'STEP 설명', pp: 'PPID' };
+function renderSavedList() {
+  const s = state[currentTable];
+  const el = document.getElementById('saved-list');
+  if (s.sets.length === 0) {
+    el.innerHTML = '<div class="empty-note">저장된 색상 필터가 없습니다.</div>';
+    return;
+  }
+  el.innerHTML = s.sets.map(fs => {
+    const groups = ['sp', 'sd', 'pp'].filter(f => fs.words[f].length > 0).map(f => `
+      <div class="kw-group">
+        <span class="field-tag">${FIELD_LABEL[f]}:</span>
+        ${fs.words[f].map(e => `<span class="word-badge"><span class="sw" style="background:${e.color}"></span>${e.word}</span>`).join('')}
+      </div>
+    `).join('');
+    return `
+    <div class="saved-item">
+      <div class="info">
+        <div class="name">${fs.label || '(이름 없음)'}</div>
+        ${groups || '<div class="empty-note" style="padding:0;">키워드 없음</div>'}
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="startEdit('${fs.id}')">수정</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteOne('${fs.id}')">삭제</button>
+    </div>`;
+  }).join('');
+}
+function addKw(field) {
+  const input = document.getElementById('kw-' + field + '-input');
+  const word = input.value.trim();
+  if (!word) return;
+  // 색은 일단 임시 기본색으로 추가되고, 목록에 뜬 색상 버튼을 눌러 원하는 색으로 바꾼다.
+  draft.words[field].push({ word, color: DEFAULT_KW_COLOR });
+  input.value = '';
+  renderDraftRows();
+}
+function removeKw(field, idx) {
+  draft.words[field].splice(idx, 1);
+  closePalette();
+  renderDraftRows();
+}
+function renderDraftRows() {
+  ['sp', 'sd', 'pp'].forEach(f => {
+    const el = document.getElementById('kw-' + f + '-rows');
+    if (draft.words[f].length === 0) {
+      el.innerHTML = '<div class="kw-empty">추가된 키워드 없음</div>';
+      return;
+    }
+    el.innerHTML = draft.words[f].map((e, i) => `
+      <div class="kw-row-item">
+        <button type="button" class="color-swatch-btn" style="background:${e.color}" title="색상 변경" onclick="openPalette('${f}',${i},this)"></button>
+        <span class="word">${e.word}</span>
+        <button class="kw-del" onclick="removeKw('${f}',${i})">✕ 삭제</button>
+      </div>
+    `).join('');
+  });
+}
+function startEdit(id) {
+  const fs = state[currentTable].sets.find(f => f.id === id);
+  if (!fs) return;
+  editingId = id;
+  draft = {
+    label: fs.label,
+    words: {
+      sp: fs.words.sp.map(e => ({ ...e })),
+      sd: fs.words.sd.map(e => ({ ...e })),
+      pp: fs.words.pp.map(e => ({ ...e })),
+    },
+  };
+  document.getElementById('new-label').value = draft.label;
+  renderDraftRows();
+  document.getElementById('form-title').textContent = '색상 필터 수정';
+  document.getElementById('form-title').style.color = 'var(--accent)';
+  document.getElementById('save-btn').textContent = '수정 적용';
+  document.getElementById('cancel-edit-btn').style.display = 'inline-flex';
+}
+function cancelEdit() {
+  editingId = null;
+  draft = { label: '', words: { sp: [], sd: [], pp: [] } };
+  document.getElementById('new-label').value = '';
+  ['sp','sd','pp'].forEach(f => document.getElementById('kw-' + f + '-input').value = '');
+  closePalette();
+  renderDraftRows();
+  document.getElementById('form-title').textContent = '새 색상 필터 만들기';
+  document.getElementById('form-title').style.color = 'var(--text-muted)';
+  document.getElementById('save-btn').textContent = '+ 추가';
+  document.getElementById('cancel-edit-btn').style.display = 'none';
+}
+function saveColorFilter() {
+  const label = document.getElementById('new-label').value.trim() || '색상 필터';
+  const words = draft.words;
+  if (words.sp.length === 0 && words.sd.length === 0 && words.pp.length === 0) {
+    alert('키워드를 최소 1개 이상 추가하세요.');
+    return;
+  }
+  const s = state[currentTable];
+  if (editingId) {
+    const fs = s.sets.find(f => f.id === editingId);
+    fs.label = label; fs.words = words;
+  } else {
+    s.sets.push({
+      id: String(Date.now()), label,
+      words: { sp: words.sp.map(e=>({...e})), sd: words.sd.map(e=>({...e})), pp: words.pp.map(e=>({...e})) },
+    });
+  }
+  cancelEdit();
+  renderSavedList();
+  renderChips(currentTable);
+  renderTable(currentTable);
+}
+function deleteOne(id) {
+  if (!confirm('이 색상 필터를 삭제하시겠습니까?')) return;
+  const s = state[currentTable];
+  s.sets = s.sets.filter(f => f.id !== id);
+  s.active.delete(id);
+  renderSavedList();
+  renderChips(currentTable);
+  renderTable(currentTable);
+}
+function deleteAllColors() {
+  if (!confirm('저장된 모든 색상 필터를 삭제하시겠습니까?')) return;
+  const s = state[currentTable];
+  s.sets = [];
+  s.active.clear();
+  renderSavedList();
+  renderChips(currentTable);
+  renderTable(currentTable);
+}
+
+// 초기 렌더
+renderChips('J'); renderTable('J');
+renderChips('O'); renderTable('O');
+</script>
+</body>
+</html>

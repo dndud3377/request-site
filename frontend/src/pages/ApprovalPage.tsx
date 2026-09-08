@@ -11,10 +11,11 @@ import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '.
 import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { MarkDot, MarkCategorySettingsModal, MARK_COLOR_VAR } from '../components/DocumentMark';
-import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory } from '../types';
+import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet } from '../types';
 import { formatDate, formatTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
 import FilterManageModal from './RequestPage/components/FilterManageModal';
+import ColorFilterManageModal, { emptyColorDraftWords } from './RequestPage/components/ColorFilterManageModal';
 import { emptyDraftWords } from './RequestPage/helpers';
 import {
   getDocTableRows, getFinalCompletionDate, getCurrentRound, getLastRejectionInfo,
@@ -282,6 +283,41 @@ export default function ApprovalPage(): React.ReactElement {
       layerFilterSetsAPI.list('O').then(setOayerLayerFilterSets).catch(() => {});
     }
   }, [currentUser.role]);
+
+  // ===== 결재 상세페이지 J/O-layer "색상 적용" — 위 공유 필터(LayerFilterSet, 데이터를 실제로
+  // 바꿈)와 달리 매칭된 셀의 배경색만 바꾸는 개인별(localStorage) 기능. 의뢰서 작성 화면의
+  // 개인별 필터(jayerFilterSets 등)와 같은 저장 방식이라 서버 조회는 필요 없다. =====
+  const [jayerColorFilterSets, setJayerColorFilterSets] = useState<ColorFilterSet[]>([]);
+  const [oayerColorFilterSets, setOayerColorFilterSets] = useState<ColorFilterSet[]>([]);
+  // 지금 화면에 켜져 있는(체크된) 색상 필터 id — 문서를 바꿔 열면 초기화된다.
+  const [activeJayerColorFilterIds, setActiveJayerColorFilterIds] = useState<Set<string>>(new Set());
+  const [activeOayerColorFilterIds, setActiveOayerColorFilterIds] = useState<Set<string>>(new Set());
+  const [jayerColorFilterManageOpen, setJayerColorFilterManageOpen] = useState(false);
+  const [oayerColorFilterManageOpen, setOayerColorFilterManageOpen] = useState(false);
+  const [jayerColorFilterNewDraft, setJayerColorFilterNewDraft] = useState<{ label: string; words: ColorFilterSet['words'] }>({ label: '', words: emptyColorDraftWords() });
+  const [oayerColorFilterNewDraft, setOayerColorFilterNewDraft] = useState<{ label: string; words: ColorFilterSet['words'] }>({ label: '', words: emptyColorDraftWords() });
+  const [colorFilterDeleteConfirm, setColorFilterDeleteConfirm] = useState<{ table: 'J' | 'O'; id: string; label: string } | null>(null);
+  const [colorFilterAllDeleteConfirm, setColorFilterAllDeleteConfirm] = useState<'J' | 'O' | null>(null);
+  // 색상 표시 초기화 확인 — 데이터를 바꾸지 않으므로 저장된 필터·키워드는 그대로 두고
+  // 켜져 있는 표시(activeXayerColorFilterIds)만 비운다.
+  const [colorFilterResetConfirm, setColorFilterResetConfirm] = useState<'J' | 'O' | null>(null);
+
+  useEffect(() => {
+    const loadColorSets = (key: string, setter: (v: ColorFilterSet[]) => void) => {
+      const saved = localStorage.getItem(key);
+      if (!saved) return;
+      try { setter(JSON.parse(saved)); } catch { /* 파싱 실패 시 기본값 유지 */ }
+    };
+    loadColorSets('jayerColorFilterSets', setJayerColorFilterSets);
+    loadColorSets('oayerColorFilterSets', setOayerColorFilterSets);
+  }, []);
+
+  // 열려 있는 문서를 바꾸면 이전 문서에서 켜둔 색상 표시는 끈다(문서별 상태가 아니라
+  // "지금 보고 있는 화면"의 표시 상태이므로).
+  useEffect(() => {
+    setActiveJayerColorFilterIds(new Set());
+    setActiveOayerColorFilterIds(new Set());
+  }, [selected?.id]);
 
   // 합의/반려 comment 모달
   const [commentModalOpen, setCommentModalOpen] = useState(false);
@@ -888,6 +924,68 @@ export default function ApprovalPage(): React.ReactElement {
     } catch (err) {
       setLayerFilterErrorNotice(err instanceof Error ? err.message : t('common.process_error'));
     }
+  };
+
+  // ===== 결재 상세페이지 J/O-layer "색상 적용" =====
+  // 노출 조건은 위 공유 필터와 완전히 동일(canUseLayerFilter 그대로 재사용) — 데이터를 바꾸지
+  // 않는 순수 표시 기능이지만, 같은 툴바에 나란히 있으므로 같은 조건에서만 보이게 한다.
+
+  const toggleColorFilter = (table: 'J' | 'O', id: string) => {
+    const setter = table === 'J' ? setActiveJayerColorFilterIds : setActiveOayerColorFilterIds;
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleResetColorFilter = (table: 'J' | 'O') => setColorFilterResetConfirm(table);
+
+  const confirmResetColorFilter = () => {
+    const table = colorFilterResetConfirm;
+    if (!table) return;
+    (table === 'J' ? setActiveJayerColorFilterIds : setActiveOayerColorFilterIds)(new Set());
+    setColorFilterResetConfirm(null);
+    addToast(t('request.color_filter_reset_toast'), 'info');
+  };
+
+  const persistColorFilterSets = (table: 'J' | 'O', sets: ColorFilterSet[]) => {
+    (table === 'J' ? setJayerColorFilterSets : setOayerColorFilterSets)(sets);
+    localStorage.setItem(table === 'J' ? 'jayerColorFilterSets' : 'oayerColorFilterSets', JSON.stringify(sets));
+  };
+
+  const addColorFilter = (table: 'J' | 'O', label: string, words: ColorFilterSet['words']) => {
+    const sets = table === 'J' ? jayerColorFilterSets : oayerColorFilterSets;
+    persistColorFilterSets(table, [...sets, { id: String(Date.now()), label, words }]);
+  };
+
+  const editColorFilter = (table: 'J' | 'O', filterId: string, label: string, words: ColorFilterSet['words']) => {
+    const sets = table === 'J' ? jayerColorFilterSets : oayerColorFilterSets;
+    persistColorFilterSets(table, sets.map((f) => (f.id === filterId ? { ...f, label, words } : f)));
+  };
+
+  const confirmColorFilterDelete = () => {
+    if (!colorFilterDeleteConfirm) return;
+    const { table, id, label } = colorFilterDeleteConfirm;
+    const sets = table === 'J' ? jayerColorFilterSets : oayerColorFilterSets;
+    persistColorFilterSets(table, sets.filter((f) => f.id !== id));
+    (table === 'J' ? setActiveJayerColorFilterIds : setActiveOayerColorFilterIds)((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    setColorFilterDeleteConfirm(null);
+    addToast(t('request.color_filter_delete_toast', { label }), 'info');
+  };
+
+  const confirmColorFilterAllDelete = () => {
+    if (!colorFilterAllDeleteConfirm) return;
+    const table = colorFilterAllDeleteConfirm;
+    persistColorFilterSets(table, []);
+    (table === 'J' ? setActiveJayerColorFilterIds : setActiveOayerColorFilterIds)(new Set());
+    setColorFilterAllDeleteConfirm(null);
+    addToast(t('request.color_filter_all_delete_toast'), 'info');
   };
 
   const handleValidationSystemChange = async (value: ValidationSystemValue) => {
@@ -2209,7 +2307,10 @@ export default function ApprovalPage(): React.ReactElement {
             onClick={async () => {
               const screenshots = await pagedDetailViewRef.current?.captureAllScreenshots()
                 ?? { detail: null, map: null };
-              await exportAllXlsx(selected, t, screenshots);
+              await exportAllXlsx(selected, t, screenshots, {
+                jayerColorFilterSets, activeJayerColorFilterIds,
+                oayerColorFilterSets, activeOayerColorFilterIds,
+              });
             }}
             className="btn btn-secondary btn-sm"
             style={{ fontSize: '0.75rem', padding: '2px 10px' }}
@@ -3007,6 +3108,18 @@ export default function ApprovalPage(): React.ReactElement {
               canResetOayerFilter={canResetLayerFilter(selected, 'O')}
               onResetJayerLayerFilter={() => handleResetLayerFilter('J')}
               onResetOayerLayerFilter={() => handleResetLayerFilter('O')}
+              canUseJayerColorFilter={canUseLayerFilter(selected, 'J')}
+              canUseOayerColorFilter={canUseLayerFilter(selected, 'O')}
+              jayerColorFilterSets={jayerColorFilterSets}
+              oayerColorFilterSets={oayerColorFilterSets}
+              activeJayerColorFilterIds={activeJayerColorFilterIds}
+              activeOayerColorFilterIds={activeOayerColorFilterIds}
+              onToggleJayerColorFilter={(id) => toggleColorFilter('J', id)}
+              onToggleOayerColorFilter={(id) => toggleColorFilter('O', id)}
+              onOpenJayerColorFilterManage={() => setJayerColorFilterManageOpen(true)}
+              onOpenOayerColorFilterManage={() => setOayerColorFilterManageOpen(true)}
+              onResetJayerColorFilter={() => handleResetColorFilter('J')}
+              onResetOayerColorFilter={() => handleResetColorFilter('O')}
             />
           </div>
         )}
@@ -3093,6 +3206,66 @@ export default function ApprovalPage(): React.ReactElement {
         onConfirm={confirmResetLayerFilter}
         title={t('common.confirm')}
         message={t('approval.layer_filter_reset_confirm')}
+        confirmLabel={t('approval.layer_filter_reset_btn')}
+        topLevel
+      />
+
+      {/* J-layer 색상 적용 관리 — 개인별(localStorage), 데이터는 바꾸지 않고 표시 색만 관리 */}
+      <ColorFilterManageModal
+        isOpen={jayerColorFilterManageOpen}
+        onClose={() => { setJayerColorFilterManageOpen(false); setJayerColorFilterNewDraft({ label: '', words: emptyColorDraftWords() }); }}
+        title={t('request.jayer_color_filter_manage')}
+        filterSets={jayerColorFilterSets}
+        newFilter={jayerColorFilterNewDraft}
+        setNewFilter={setJayerColorFilterNewDraft}
+        onAllDelete={() => setColorFilterAllDeleteConfirm('J')}
+        onRequestDelete={(fs) => setColorFilterDeleteConfirm({ table: 'J', id: fs.id, label: fs.label })}
+        onAdd={(label, words) => addColorFilter('J', label, words)}
+        onEdit={(filterId, label, words) => editColorFilter('J', filterId, label, words)}
+      />
+
+      {/* O-layer 색상 적용 관리 */}
+      <ColorFilterManageModal
+        isOpen={oayerColorFilterManageOpen}
+        onClose={() => { setOayerColorFilterManageOpen(false); setOayerColorFilterNewDraft({ label: '', words: emptyColorDraftWords() }); }}
+        title={t('request.oayer_color_filter_manage')}
+        filterSets={oayerColorFilterSets}
+        newFilter={oayerColorFilterNewDraft}
+        setNewFilter={setOayerColorFilterNewDraft}
+        onAllDelete={() => setColorFilterAllDeleteConfirm('O')}
+        onRequestDelete={(fs) => setColorFilterDeleteConfirm({ table: 'O', id: fs.id, label: fs.label })}
+        onAdd={(label, words) => addColorFilter('O', label, words)}
+        onEdit={(filterId, label, words) => editColorFilter('O', filterId, label, words)}
+      />
+
+      <ConfirmModal
+        isOpen={!!colorFilterDeleteConfirm}
+        onClose={() => setColorFilterDeleteConfirm(null)}
+        onConfirm={confirmColorFilterDelete}
+        title={t('common.confirm')}
+        message={t('request.filter_delete_confirm', { label: colorFilterDeleteConfirm?.label ?? '' })}
+        confirmLabel={t('common.delete')}
+        danger
+        topLevel
+      />
+
+      <ConfirmModal
+        isOpen={!!colorFilterAllDeleteConfirm}
+        onClose={() => setColorFilterAllDeleteConfirm(null)}
+        onConfirm={confirmColorFilterAllDelete}
+        title={t('common.confirm')}
+        message={t('request.filter_all_delete_confirm')}
+        confirmLabel={t('common.delete')}
+        danger
+        topLevel
+      />
+
+      <ConfirmModal
+        isOpen={!!colorFilterResetConfirm}
+        onClose={() => setColorFilterResetConfirm(null)}
+        onConfirm={confirmResetColorFilter}
+        title={t('common.confirm')}
+        message={t('request.color_filter_reset_confirm')}
         confirmLabel={t('approval.layer_filter_reset_btn')}
         topLevel
       />

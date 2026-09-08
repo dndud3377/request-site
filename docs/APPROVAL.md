@@ -1382,3 +1382,87 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 적용·초기화 모두 거부, **`PauseRequest`/`WithdrawRequest`가 `state='requested'`(확인 대기 중,
 `status`는 아직 `under_review`)일 때도 적용·초기화가 거부됨**(2026-09 버그 수정 회귀 테스트),
 권한 게이트가 apply/reset 동일함.
+
+## 13. 결재 상세페이지 J/O-layer 색상 적용 (2026-09)
+
+§12 의 공유 필터(LayerFilterSet)는 매칭된 행의 `st`를 `'X'`로 바꾸는 **데이터 변경**형 기능이다.
+"색상 적용"은 겉보기엔 같은 자리(같은 탭, 같은 툴바)에 있지만 완전히 다른 성격의 기능이다 —
+문서 데이터는 전혀 건드리지 않고, 매칭된 셀의 **배경색만** 화면에 표시한다. 그래서 §12 와 달리
+서버에 아무것도 저장하지 않는다(개인별 localStorage) — 백엔드/API/마이그레이션 변경이 없다.
+
+### 13-1. 데이터 모델과 저장 위치
+
+- `ColorFilterSet`(`frontend/src/types/index.ts`) — `{ id, label, words: { sp, sd, pp } }`. §12 의
+  `LayerFilterSet.words`(문자열 배열)와 달리, 여기서는 `words.sp/sd/pp` 각각이
+  `{ word, color }[]` — **키워드마다 색을 따로 지정**할 수 있다(한 필터 = 한 색이 아니다).
+- 저장 위치는 STEP3/4 의뢰서 작성 화면의 개인별 필터(`FilterSet`, localStorage 키
+  `jayerFilterSets`/`oayerFilterSets`)와 같은 방식 — `localStorage` 키
+  `jayerColorFilterSets`/`oayerColorFilterSets`에 배열 그대로 저장한다. 브라우저(사용자)별로
+  독립이며, 같은 문서를 다른 팀원이 열어도 서로의 색상 필터 목록·적용 상태는 보이지 않는다.
+- **"켜짐"(활성) 상태**는 저장하지 않는다 — `ApprovalPage.tsx` 의
+  `activeJayerColorFilterIds`/`activeOayerColorFilterIds`(`Set<string>`)는 순수 화면 상태로,
+  상세 모달에서 다른 문서를 선택하면(`selected?.id` 변경) 자동으로 비워진다.
+
+### 13-2. 매칭 규칙과 우선순위
+
+`matchLayerColor(sets, activeIds, field, value)`(`frontend/src/pages/RequestPage/helpers.ts`) —
+켜져 있는 필터를 목록 순서대로, 그 안의 키워드를 등록 순서대로 훑어 **처음 매칭되는 키워드의
+색**을 돌려준다(대소문자 무시, 부분 일치 — §12 의 필터 매칭 규칙과 동일). 즉 같은 셀에 서로 다른
+색이 동시에 매칭될 수 있는 경우, "필터 목록에서 더 위에 있는 필터"가, 그 안에서는 "더 먼저 추가한
+키워드"가 이긴다.
+
+셀 배경색 우선순위(화면·엑셀 export 공통, 항상 이 순서):
+1. 기등록/비활성 행(`new_or_copy==='기등록'` 또는 `isRowInactive(st)`) → 회색(`#e5e7eb`), 색상
+   필터는 아예 확인하지 않는다.
+2. PPID 칸만: `isValidationKeywordRow(pp)`(plel 판정 키워드) → 기존 `VALIDATION_CELL_COLOR`(노란색)가
+   항상 이긴다 — 색상 필터가 pp 를 매칭해도 무시된다.
+3. 그 외 sp/sd/pp 각 칸: `matchLayerColor` 매칭 색상(없으면 무색).
+
+행 전체가 아니라 **매칭된 셀만** 색이 바뀐다(sp/sd/pp 세 칸 중 매칭된 칸만).
+
+### 13-3. 화면
+
+- `PagedDetailView.tsx` 의 `ColorFilterToolbar` — 'J-ayer 정보'/'O-ayer 정보' 탭 표 위, 기존
+  공유 필터 툴바 바로 아래에 한 줄 더 보여준다. 노출 조건은 공유 필터와 **완전히 동일**하게
+  `canUseJayerColorFilter`/`canUseOayerColorFilter`(=`canUseLayerFilter(selected, 'J'|'O')` 그대로
+  재사용, `ApprovalPage.tsx`)를 쓴다. 저장된 색상 필터 각각이 토글 칩 하나이고(여러 개 동시
+  ON 가능), 칩 안의 점들은 그 필터에 섞여 있는 서로 다른 색을 미리보기로 보여준다. "🎨 색상 관리"
+  버튼과, 그 옆에 전용 "초기화" 버튼(§13-4)이 있다.
+- `ColorFilterManageModal.tsx`(`frontend/src/pages/RequestPage/components/`) — 공용 `Modal` 컴포넌트를
+  그대로 쓴다(§12 의 `FilterManageModal`과 같은 레이아웃 패턴: 저장된 목록 + 새로 만들기 폼,
+  `newFilter`/`setNewFilter` 드래프트 상태는 호출부가 소유). STEPSEQ/STEP 설명/PPID 구분은 실제
+  적용 색상과 헷갈리지 않도록 **색칠 없이 이름 텍스트만**(§12 필터 관리 모달의 파란/초록/주황
+  구분과 다른 점 — 사용자 피드백으로 뺐다). 키워드는 먼저 텍스트만 입력해 추가하고, 추가된
+  키워드 줄의 **색상 버튼을 눌러야** 색을 고를 수 있다(기본값은 임시색 `#FFFF00`). 색상 선택기는
+  공지 작성 등에 쓰는 `RichTextEditor.tsx` 의 `ColorPalette`(테마 색상 6×10 틴트 + 표준 색상)를
+  그대로 export 해 재사용한다 — 새 팔레트를 만들지 않았다.
+
+### 13-4. "초기화" 버튼 (색상 표시 전용)
+
+§12 의 "초기화"(baseline 으로 데이터 복원)와는 **별개의 버튼**이다 — "색상 관리" 옆에 전용 버튼을
+하나 더 둔다. 데이터를 전혀 건드리지 않으므로 서버 호출이 없고, 확인 모달(`ConfirmModal`,
+`colorFilterResetConfirm` 상태) 확인 시 `activeJayerColorFilterIds`/`activeOayerColorFilterIds` 를
+빈 `Set` 으로 비우기만 한다. 저장된 색상 필터·키워드·색 지정 자체는 지워지지 않는다(다시 칩을
+누르면 그대로 켤 수 있다) — "전체 삭제"(색상 관리 모달 안)와는 다른 동작이다.
+
+### 13-5. 엑셀 내보내기에도 반영
+
+`frontend/src/utils/detailExport.ts` 의 `addJobSheet`/`addOvlSheet` 가 §13-2 와 **완전히 같은
+우선순위**로 sp/sd/pp 열에 `applyFill`(exceljs) 한다 — 화면에 보이는 색과 다운로드되는 파일의
+색이 항상 일치한다. `exportJayer`/`exportOayer`/`exportAll`(전체 export) 세 함수 모두
+`colorFilterSets`/`activeColorFilterIds`(전체 export 는 J/O 양쪽 다) 를 선택 인자로 받고,
+호출부(`PagedDetailView.tsx`/`ApprovalPage.tsx`)가 지금 화면에 켜져 있는 값을 그대로 넘긴다.
+색상 적용을 하나도 켜지 않은 상태로 내보내면(`activeColorFilterIds` 비어있음) `matchLayerColor`
+가 항상 `undefined` 를 돌려주므로 이 기능 도입 이전과 동일하게 동작한다(회귀 없음).
+
+### 13-6. 이력 조회(HistoryPage)
+
+§12 와 마찬가지로 `HistoryPage.tsx`는 이 props 를 넘기지 않아 툴바 자체가 뜨지 않는다(완료된
+문서를 편집하는 것이 아니라 색상 표시일 뿐이지만, 이력 조회 화면의 기존 원칙을 그대로 따른다).
+
+### 13-7. 테스트
+
+`frontend/src/pages/RequestPage/helpers.test.ts::matchLayerColor` — 매칭 성공/대소문자 무시,
+꺼진 필터 제외, 매칭 없음 시 `undefined`, 값이 비어 있을 때 `undefined`, 필터 목록 순서 우선,
+같은 필터 안 키워드 등록 순서 우선을 검증한다. 백엔드 변경이 없어 `backend/api/tests.py` 추가는
+없다.

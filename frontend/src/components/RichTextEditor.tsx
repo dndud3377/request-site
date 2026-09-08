@@ -109,7 +109,9 @@ interface ColorPaletteProps {
   onSelect: (color: string | null) => void;
 }
 
-const ColorPalette: React.FC<ColorPaletteProps> = ({ showNone, onSelect }) => {
+/** 테마 색상/표준 색상 팔레트 — 공지 작성 등 이 에디터의 글자색·바탕색 선택 UI. J/O-layer
+ * 색상 적용 기능(ApprovalPage)의 키워드별 색상 선택에도 그대로 재사용한다. */
+export const ColorPalette: React.FC<ColorPaletteProps> = ({ showNone, onSelect }) => {
   const { t } = useTranslation();
   return (
   <div
