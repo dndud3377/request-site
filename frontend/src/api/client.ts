@@ -37,6 +37,7 @@ import {
   ProcessDesignRuleOverride,
   DocumentDesignRuleOverride,
   ValidationSystemValue,
+  PartialShotValue,
   LayerFilterSet,
   MapInfo,
   PersonalMarkCategory,
@@ -364,6 +365,18 @@ const updateValidationSystem = async (docId: number, value: ValidationSystemValu
   return { data };
 };
 
+/**
+ * 진행 중 문서의 Partial Shot 계측 필요 값을 상신자 본인이 변경한다.
+ * O 담당자 합의가 끝나기 전까지만 가능 — `updateValidationSystem`과 동일 구조.
+ */
+const updatePartialShot = async (docId: number, value: PartialShotValue) => {
+  const data = await post<{ message: string }>(
+    `/documents/${docId}/partial-shot/`,
+    { value }
+  );
+  return { data };
+};
+
 /** 결재 상세페이지에서 J/O-layer 공유 필터를 적용 — 매칭된 행의 st를 'X'로 바꾼다. */
 const applyLayerFilter = async (docId: number, table: 'J' | 'O', filterId: number) => {
   const data = await post<{ message: string; matched_count: number; document: RequestDocument }>(
@@ -591,6 +604,7 @@ export const documentsAPI = {
   approveStep,
   rejectStep,
   updateValidationSystem,
+  updatePartialShot,
   applyLayerFilter,
   resetLayerFilter,
   assignStep,
