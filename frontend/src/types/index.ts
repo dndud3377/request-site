@@ -276,6 +276,17 @@ export interface LayerFilterSet {
   updated_at: string;
 }
 
+/**
+ * 결재 상세페이지의 J/O-layer "색상적용" 규칙 — 공유 필터(LayerFilterSet)와 달리 개인용이며
+ * localStorage에만 저장된다(서버 저장 없음, 다른 사용자에게 보이지 않음).
+ */
+export interface PersonalColorRule {
+  id: string;
+  label: string;
+  words: { sp: string[]; sd: string[]; pp: string[] };
+  color: string;
+}
+
 export interface JayerRow {
   id: string;
   updated: string;      // 'YYYYMMDD HH:MM' 형식
