@@ -2770,6 +2770,24 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   - **`plel` 은 가명이 아니라 실제 사내 값**이라 교체 대상이 아니다(`VALIDATION_KEYWORD`, `RequestDocument.VALIDATION_KEYWORD`).
   - 백엔드 `views.py` 의 400 에러 메시지 `'유효하지 않은 Validation System 값입니다.'` 는 i18n 밖이라 자동 반영되지 않는다. UI 가 `YES`/`NO` 만 보내므로 요청을 직접 위조할 때만 노출되는 방어 메시지다.
 
+### 추가 변경 이력 (2026-09 — Partial Shot 상신 후 수정 + 두 기능 모두 무메일)
+
+- **Partial Shot 도 상신 후 O 단계가 끝나기 전까지 상신자 본인이 직접 수정 가능**: Validation System 과 동일한 구조를 O-layer 에 그대로 적용했다.
+
+| 키 | 값 | 설명 |
+|---|---|---|
+| `partial_shot` | `'O'` / `'X'` | 현재 유효값. 상신 시 정하고, 결재 중에도 **상신자 본인(또는 MASTER)만** 바꿀 수 있다 |
+| `partial_shot_changed_by` | 문자열 | 마지막으로 값을 바꾼 사람(이름 또는 loginid) |
+| `partial_shot_changed_at` | ISO 8601 문자열 | 마지막 변경 시각 |
+
+  - **엔드포인트**: `POST /api/documents/<id>/partial-shot/` — body `{"value": "O"|"X"}`. 인가·상태 조건은 `validation-system` 과 동일(`status ∈ {under_review, pause}`, 상신자 본인/MASTER).
+  - **닫히는 시점**: O 단계가 **담당자 검토자(OV) 없이** 담당자 본인 합의만으로 끝나므로(`_stage_reviewers_complete(doc,'O',round)` — `_REVIEW_AGENT_OF` 에 `'O'` 매핑이 없어 검토자 0명 = 즉시 완료 취급), Validation System 의 "이미 합의된 뒤에도 EV 가 남아있으면 값이 바뀔 수 있다"는 중간 상태가 O 에는 존재하지 않는다. 그래서 O 합의 후에는 요청 자체가 **400 으로 거절**되고, `_note_validation_system_change` 같은 "합의 후 변경 note" 로직은 두지 않았다(호출될 일이 없다).
+  - **상세보기 표시/수정**: O-layer "정보" 탭. `PagedDetailView`가 `canEditPartialShot`(호출부가 판정, `ApprovalPage.tsx`) + `onPartialShotChange` 를 받으면 읽기전용 배지 대신 `Step3.tsx` 위저드와 같은 `O`/`X` 토글(`map-type-btn`)을 보여준다.
+  - **`validation_system_submitted` 같은 "상신 시 값" 병기는 두지 않는다** — Validation System 은 상신자(자동판정)와 MASK(검증)라는 서로 다른 주체가 값을 놓고 다를 수 있어 병기가 의미 있었지만, Partial Shot 은 편집 주체가 상신자 한 명뿐이라 대조할 다른 값이 없다.
+
+- **Validation System / Partial Shot 모두 값이 바뀌어도 메일을 보내지 않는다 (2026-09 정책 변경)**: 기존에 있던 `validation_system_changed` 메일 이벤트(`mailer.enqueue_validation_system_changed`, `MailNotification.EVENT_CHOICES` 의 `'validation_system_changed'`)를 **완전히 제거**했다 — 함수·이벤트 타입 등록(모델 choices + 신규 migration)·본문 분기·docstring까지 전부. Partial Shot 은 애초에 메일 이벤트를 만들지 않았다. 두 값 모두 결재 현황/상세보기 화면에서만 확인한다.
+  - 관련: `docs/MAIL.md` §4(엔드포인트별 메일 발송 표)에서도 `validation-system` 행이 "무메일"로 바뀌었다.
+
 ### 추가 변경 이력 (2026-07 — O-layer 정보 탭 입력 잠금)
 
 - **O-layer 정보 탭(Partial Shot·TBV/TLV) 잠금**: `Step3.tsx`에 `oayerInfoLocked` prop 추가(`index.tsx`에서 `isOnlyMap`으로 계산). Partial Shot O/X 토글, TBV/TLV 두께 토글, SD 선택 버튼, 비고 X/Y/사용여부 입력·행 추가/삭제, TBV/TLV 항목 추가/삭제 버튼 전체에 `disabled` 적용.
