@@ -11,17 +11,21 @@ import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '.
 import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { MarkDot, MarkCategorySettingsModal, MARK_COLOR_VAR } from '../components/DocumentMark';
-import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory } from '../types';
+import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, PersonalColorRule } from '../types';
 import { formatDate, formatTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
 import FilterManageModal from './RequestPage/components/FilterManageModal';
+import ColorManageModal, { emptyColorDraft } from './RequestPage/components/ColorManageModal';
 import { emptyDraftWords } from './RequestPage/helpers';
+import {
+  CellColorMap, loadColorRules, saveColorRules, loadAppliedColors, saveAppliedColors, clearAppliedColors, matchColorFields,
+} from '../utils/layerColorRules';
 import {
   getDocTableRows, getFinalCompletionDate, getCurrentRound, getLastRejectionInfo,
   hasActivePendingStep, isMyDocument,
   getDocDetailFields, getMapPurposeKey, getDocSubmittedDate, MAP_PURPOSE_NA,
 } from '../utils/approvalTable';
-import { OPTION_LINE, OPTION_REQUEST_PURPOSE, MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_DELETE_REQ } from './RequestPage/constants';
+import { OPTION_LINE, OPTION_REQUEST_PURPOSE, MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_DELETE_REQ, isRowInactive } from './RequestPage/constants';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS, TOUR_REVIEW_ITEM_CANDIDATES, TOUR_PAUSE_REASON } from './approvalTourSeed';
 import StepGuideTour, { StepGuideGroup } from '../components/StepGuideTour';
 
@@ -278,6 +282,34 @@ export default function ApprovalPage(): React.ReactElement {
       layerFilterSetsAPI.list('O').then(setOayerLayerFilterSets).catch(() => {});
     }
   }, [currentUser.role]);
+
+  /**
+   * 결재 상세페이지 J/O-layer "색상적용" — 공유 필터와 달리 개인용이라 서버 저장 없이
+   * 이 브라우저의 localStorage에만 저장한다(규칙 정의·적용 결과 모두). 노출 조건은 공유
+   * 필터와 동일(canUseLayerFilter 재사용)하게 맞췄다.
+   */
+  const [jayerColorRules, setJayerColorRules] = useState<PersonalColorRule[]>([]);
+  const [oayerColorRules, setOayerColorRules] = useState<PersonalColorRule[]>([]);
+  const [jayerColorApplied, setJayerColorApplied] = useState<CellColorMap>({});
+  const [oayerColorApplied, setOayerColorApplied] = useState<CellColorMap>({});
+  const [jayerColorManageOpen, setJayerColorManageOpen] = useState(false);
+  const [oayerColorManageOpen, setOayerColorManageOpen] = useState(false);
+  const [jayerColorNewDraft, setJayerColorNewDraft] = useState(emptyColorDraft());
+  const [oayerColorNewDraft, setOayerColorNewDraft] = useState(emptyColorDraft());
+  // 개인용이라도 실수로 지우는 걸 막기 위해 삭제는 확인 후 진행한다.
+  const [colorRuleDeleteConfirm, setColorRuleDeleteConfirm] = useState<{ table: 'J' | 'O'; id: string; label: string } | null>(null);
+  const [colorRuleAllDeleteConfirm, setColorRuleAllDeleteConfirm] = useState<'J' | 'O' | null>(null);
+
+  useEffect(() => {
+    setJayerColorRules(loadColorRules('J'));
+    setOayerColorRules(loadColorRules('O'));
+  }, []);
+
+  useEffect(() => {
+    if (!selected) return;
+    setJayerColorApplied(loadAppliedColors('J', selected.id));
+    setOayerColorApplied(loadAppliedColors('O', selected.id));
+  }, [selected?.id]);
 
   // 합의/반려 comment 모달
   const [commentModalOpen, setCommentModalOpen] = useState(false);
@@ -850,6 +882,9 @@ export default function ApprovalPage(): React.ReactElement {
    */
   const canResetLayerFilter = (doc: RequestDocument | null, table: 'J' | 'O'): boolean => {
     if (!doc || !canUseLayerFilter(doc, table)) return false;
+    // 개인 색상적용(로컬 저장)을 적용한 적이 있으면 서버 baseline 이 없어도 초기화 버튼을 보여준다.
+    const localApplied = table === 'J' ? jayerColorApplied : oayerColorApplied;
+    if (localApplied && Object.keys(localApplied).length > 0) return true;
     try {
       const parsed = JSON.parse(doc.additional_notes || '{}');
       const baseline = parsed?.[table === 'J' ? 'jayerFilterBaseline' : 'oayerFilterBaseline'];
@@ -862,6 +897,19 @@ export default function ApprovalPage(): React.ReactElement {
   const handleResetLayerFilter = async (table: 'J' | 'O') => {
     if (!selected) return;
     if (!window.confirm(t('approval.layer_filter_reset_confirm'))) return;
+    // 개인 색상적용은 서버에 저장되지 않는 로컬 상태이므로 항상 먼저 지운다.
+    clearAppliedColors(table, selected.id);
+    (table === 'J' ? setJayerColorApplied : setOayerColorApplied)({});
+    let hasServerBaseline = false;
+    try {
+      const parsed = JSON.parse(selected.additional_notes || '{}');
+      const baseline = parsed?.[table === 'J' ? 'jayerFilterBaseline' : 'oayerFilterBaseline'];
+      hasServerBaseline = !!baseline && baseline.round === getCurrentRound(selected);
+    } catch { /* noop */ }
+    if (!hasServerBaseline) {
+      addToast(t('approval.layer_color_reset_success'), 'success');
+      return;
+    }
     try {
       const { data } = await documentsAPI.resetLayerFilter(selected.id, table);
       addToast(data.message, 'success');
@@ -869,6 +917,42 @@ export default function ApprovalPage(): React.ReactElement {
     } catch {
       addToast(t('common.process_error'), 'error');
     }
+  };
+
+  /**
+   * 결재 상세페이지 J/O-layer "색상적용" — 개인 규칙(localStorage)을 현재 문서의 sp/sd/pp에
+   * 매칭해 매칭된 필드만 색을 칠한다. 서버 데이터는 건드리지 않는 순수 클라이언트 동작이다.
+   */
+  const handleApplyLayerColor = (table: 'J' | 'O', ruleId: string) => {
+    if (!selected) return;
+    const rules = table === 'J' ? jayerColorRules : oayerColorRules;
+    const rule = rules.find((r) => r.id === ruleId);
+    if (!rule) return;
+    let rows: Array<{ id: string; sp?: string; sd?: string; pp?: string; st?: string }> = [];
+    try {
+      const parsed = JSON.parse(selected.additional_notes || '{}');
+      rows = (table === 'J' ? parsed.jayerRows : parsed.oayerRows) ?? [];
+    } catch {
+      rows = [];
+    }
+    const current = table === 'J' ? jayerColorApplied : oayerColorApplied;
+    const next: CellColorMap = { ...current };
+    let matchedCount = 0;
+    rows.forEach((row) => {
+      if (isRowInactive(row.st)) return;
+      const fields = matchColorFields(row, rule.words);
+      if (fields.length === 0) return;
+      matchedCount += 1;
+      const entry = { ...next[row.id] };
+      fields.forEach((f) => { entry[f] = rule.color; });
+      next[row.id] = entry;
+    });
+    (table === 'J' ? setJayerColorApplied : setOayerColorApplied)(next);
+    saveAppliedColors(table, selected.id, next);
+    addToast(
+      matchedCount > 0 ? t('approval.layer_color_apply_success', { count: matchedCount }) : t('approval.layer_color_apply_none'),
+      matchedCount > 0 ? 'success' : 'info'
+    );
   };
 
   const handleValidationSystemChange = async (value: ValidationSystemValue) => {
@@ -2975,6 +3059,16 @@ export default function ApprovalPage(): React.ReactElement {
               canResetOayerFilter={canResetLayerFilter(selected, 'O')}
               onResetJayerLayerFilter={() => handleResetLayerFilter('J')}
               onResetOayerLayerFilter={() => handleResetLayerFilter('O')}
+              canUseJayerColor={canUseLayerFilter(selected, 'J')}
+              canUseOayerColor={canUseLayerFilter(selected, 'O')}
+              jayerColorRules={jayerColorRules}
+              oayerColorRules={oayerColorRules}
+              jayerColorApplied={jayerColorApplied}
+              oayerColorApplied={oayerColorApplied}
+              onApplyJayerLayerColor={(ruleId) => handleApplyLayerColor('J', ruleId)}
+              onApplyOayerLayerColor={(ruleId) => handleApplyLayerColor('O', ruleId)}
+              onOpenJayerColorManage={() => setJayerColorManageOpen(true)}
+              onOpenOayerColorManage={() => setOayerColorManageOpen(true)}
             />
           </div>
         )}
@@ -3050,6 +3144,85 @@ export default function ApprovalPage(): React.ReactElement {
         }}
         title={t('common.confirm')}
         message={t('request.filter_all_delete_confirm')}
+        confirmLabel={t('common.delete')}
+        danger
+        topLevel
+      />
+
+      {/* J-layer 색상적용 규칙 관리 — 개인용(localStorage), 서버 저장 없음 */}
+      <ColorManageModal
+        isOpen={jayerColorManageOpen}
+        onClose={() => { setJayerColorManageOpen(false); setJayerColorNewDraft(emptyColorDraft()); }}
+        title={t('request.jayer_color_manage')}
+        colorRules={jayerColorRules}
+        newRule={jayerColorNewDraft}
+        setNewRule={setJayerColorNewDraft}
+        onAllDelete={() => setColorRuleAllDeleteConfirm('J')}
+        onRequestDelete={(rule) => setColorRuleDeleteConfirm({ table: 'J', id: rule.id, label: rule.label })}
+        onAdd={(label, words, color) => {
+          const updated = [...jayerColorRules, { id: String(Date.now()), label, words, color }];
+          setJayerColorRules(updated);
+          saveColorRules('J', updated);
+        }}
+        onEdit={(ruleId, label, words, color) => {
+          const updated = jayerColorRules.map((r) => (r.id === ruleId ? { ...r, label, words, color } : r));
+          setJayerColorRules(updated);
+          saveColorRules('J', updated);
+        }}
+      />
+
+      {/* O-layer 색상적용 규칙 관리 — 개인용(localStorage), 서버 저장 없음 */}
+      <ColorManageModal
+        isOpen={oayerColorManageOpen}
+        onClose={() => { setOayerColorManageOpen(false); setOayerColorNewDraft(emptyColorDraft()); }}
+        title={t('request.oayer_color_manage')}
+        colorRules={oayerColorRules}
+        newRule={oayerColorNewDraft}
+        setNewRule={setOayerColorNewDraft}
+        onAllDelete={() => setColorRuleAllDeleteConfirm('O')}
+        onRequestDelete={(rule) => setColorRuleDeleteConfirm({ table: 'O', id: rule.id, label: rule.label })}
+        onAdd={(label, words, color) => {
+          const updated = [...oayerColorRules, { id: String(Date.now()), label, words, color }];
+          setOayerColorRules(updated);
+          saveColorRules('O', updated);
+        }}
+        onEdit={(ruleId, label, words, color) => {
+          const updated = oayerColorRules.map((r) => (r.id === ruleId ? { ...r, label, words, color } : r));
+          setOayerColorRules(updated);
+          saveColorRules('O', updated);
+        }}
+      />
+
+      <ConfirmModal
+        isOpen={!!colorRuleDeleteConfirm}
+        onClose={() => setColorRuleDeleteConfirm(null)}
+        onConfirm={() => {
+          if (!colorRuleDeleteConfirm) return;
+          const { table, id } = colorRuleDeleteConfirm;
+          const updated = (table === 'J' ? jayerColorRules : oayerColorRules).filter((r) => r.id !== id);
+          (table === 'J' ? setJayerColorRules : setOayerColorRules)(updated);
+          saveColorRules(table, updated);
+          setColorRuleDeleteConfirm(null);
+        }}
+        title={t('common.confirm')}
+        message={t('request.color_delete_confirm', { label: colorRuleDeleteConfirm?.label ?? '' })}
+        confirmLabel={t('common.delete')}
+        danger
+        topLevel
+      />
+
+      <ConfirmModal
+        isOpen={!!colorRuleAllDeleteConfirm}
+        onClose={() => setColorRuleAllDeleteConfirm(null)}
+        onConfirm={() => {
+          const table = colorRuleAllDeleteConfirm;
+          if (!table) return;
+          (table === 'J' ? setJayerColorRules : setOayerColorRules)([]);
+          saveColorRules(table, []);
+          setColorRuleAllDeleteConfirm(null);
+        }}
+        title={t('common.confirm')}
+        message={t('request.color_all_delete_confirm')}
         confirmLabel={t('common.delete')}
         danger
         topLevel
