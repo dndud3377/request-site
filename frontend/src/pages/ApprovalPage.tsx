@@ -11,7 +11,7 @@ import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '.
 import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { MarkDot, MarkCategorySettingsModal, MARK_COLOR_VAR } from '../components/DocumentMark';
-import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet } from '../types';
+import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet } from '../types';
 import { formatDate, formatTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
 import FilterManageModal from './RequestPage/components/FilterManageModal';
@@ -858,6 +858,23 @@ export default function ApprovalPage(): React.ReactElement {
   };
 
   /**
+   * Partial Shot 수정 창.
+   * 상신자 본인(또는 MASTER)이고, 진행 중이며, O 단계 검토가 끝나기 전까지 열려 있다.
+   * O 는 검토자(OV)가 없어(백엔드 `_REVIEW_AGENT_OF`에 'O' 없음) O 담당자 본인 합의 시점에
+   * 곧바로 닫힌다 — `canEditValidationSystem`의 EV 루프가 여기엔 없다.
+   */
+  const canEditPartialShot = (doc: RequestDocument | null): boolean => {
+    if (!doc || isTourMode) return false;
+    if (doc.status !== 'under_review' && doc.status !== 'pause') return false;
+    const isOwner = currentUser.role === 'MASTER' || doc.requester_loginid === currentUser.username;
+    if (!isOwner) return false;
+    const steps = doc.approval_steps ?? [];
+    const maxRound = steps.reduce((m, st) => Math.max(m, st.round), 1);
+    const oStep = steps.find((st) => st.agent === 'O' && st.round === maxRound);
+    return !oStep || oStep.action !== 'approved';
+  };
+
+  /**
    * 결재 상세페이지 J/O-layer 공유 필터 사용 가능 여부.
    * table='J' 는 TE_J/MASTER, table='O' 는 TE_O/MASTER. 문서가 under_review/pause 이고
    * 해당 단계(J 또는 O)가 이번 회차에 아직 합의되지 않았을 때만 — 백엔드 apply_layer_filter 와 같은 규칙.
@@ -976,6 +993,17 @@ export default function ApprovalPage(): React.ReactElement {
     try {
       await documentsAPI.updateValidationSystem(selected.id, value);
       addToast(t('approval.validation_system_updated'), 'success');
+      await refreshAndSelect(selected.id);
+    } catch {
+      addToast(t('common.process_error'), 'error');
+    }
+  };
+
+  const handlePartialShotChange = async (value: PartialShotValue) => {
+    if (!selected) return;
+    try {
+      await documentsAPI.updatePartialShot(selected.id, value);
+      addToast(t('approval.partial_shot_updated'), 'success');
       await refreshAndSelect(selected.id);
     } catch {
       addToast(t('common.process_error'), 'error');
@@ -3065,6 +3093,8 @@ export default function ApprovalPage(): React.ReactElement {
               setPageIdx={setPageIdx}
               canEditValidationSystem={canEditValidationSystem(selected)}
               onValidationSystemChange={handleValidationSystemChange}
+              canEditPartialShot={canEditPartialShot(selected)}
+              onPartialShotChange={handlePartialShotChange}
               reviewItems={buildReviewItemsProps(selected)}
               canUseJayerFilter={canUseLayerFilter(selected, 'J')}
               canUseOayerFilter={canUseLayerFilter(selected, 'O')}

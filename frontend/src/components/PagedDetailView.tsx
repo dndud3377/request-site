@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import html2canvas from 'html2canvas';
-import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, AdiCdTarget, LayerFilterSet, ColorFilterSet } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, PartialShotValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, AdiCdTarget, LayerFilterSet, ColorFilterSet } from '../types';
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
@@ -1217,6 +1217,9 @@ export interface PagedDetailViewProps {
   /** 상신자 본인이 Validation System 값을 바꿀 수 있는 상태인지(호출부가 판정) */
   canEditValidationSystem?: boolean;
   onValidationSystemChange?: (value: ValidationSystemValue) => void;
+  /** 상신자 본인이 Partial Shot 값을 바꿀 수 있는 상태인지(호출부가 판정) — O 단계 완료 전까지 */
+  canEditPartialShot?: boolean;
+  onPartialShotChange?: (value: PartialShotValue) => void;
   /** J-ayer 검토 항목 — 넘기지 않으면 서브탭 자체가 뜨지 않는다(이력 조회 등 읽기 전용 화면) */
   reviewItems?: ReviewItemsPanelProps;
   /**
@@ -1275,6 +1278,7 @@ export interface PagedDetailViewHandle {
 
 const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(function PagedDetailView({
   doc, role, pageIdx, setPageIdx, canEditValidationSystem = false, onValidationSystemChange,
+  canEditPartialShot = false, onPartialShotChange,
   reviewItems, historyMode = false,
   canUseJayerFilter = false, canUseOayerFilter = false,
   jayerLayerFilterSets, oayerLayerFilterSets,
@@ -1366,6 +1370,10 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   const vsEditable = canEditValidationSystem && !!onValidationSystemChange && hasPlel;
   const vsChangedBy = detail.validation_system_changed_by;
   const vsChangedAt = (detail.validation_system_changed_at ?? '').slice(0, 16).replace('T', ' ');
+
+  const psEditable = canEditPartialShot && !!onPartialShotChange;
+  const psChangedBy = detail.partial_shot_changed_by;
+  const psChangedAt = (detail.partial_shot_changed_at ?? '').slice(0, 16).replace('T', ' ');
 
   const prevSnap = history.length > 0 ? history[history.length - 1] : null;
 
@@ -2574,11 +2582,30 @@ type Page = { label: string; content: React.ReactNode };
                       <button style={infoHistBtnStyle} onClick={() => setInfoHist({ label: t('request.partial_shot'), fieldKey: 'partial_shot', value: detail.partial_shot || '-' })}>{t('request.history_check_btn')}</button>
                     )}
                     <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('request.partial_shot')}</div>
-                    <div>
-                      {detail.partial_shot
-                        ? <span style={{ padding: '4px 14px', borderRadius: 4, background: 'var(--accent)', color: '#fff', fontWeight: 700 }}>{detail.partial_shot}</span>
-                        : <span style={{ color: 'var(--text-muted)' }}>—</span>
-                      }
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {psEditable ? (
+                        <span style={{ display: 'flex', gap: 8 }}>
+                          {(['O', 'X'] as const).map((val) => (
+                            <button
+                              key={val}
+                              type="button"
+                              className={`map-type-btn${detail.partial_shot === val ? ' active' : ''}`}
+                              onClick={() => onPartialShotChange?.(val)}
+                            >
+                              {val}
+                            </button>
+                          ))}
+                        </span>
+                      ) : (
+                        detail.partial_shot
+                          ? <span style={{ padding: '4px 14px', borderRadius: 4, background: 'var(--accent)', color: '#fff', fontWeight: 700 }}>{detail.partial_shot}</span>
+                          : <span style={{ color: 'var(--text-muted)' }}>—</span>
+                      )}
+                      {psChangedBy && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {t('request.partial_shot_changed_by', { name: psChangedBy, at: psChangedAt })}
+                        </span>
+                      )}
                     </div>
                   </div>
                   {/* TBV/TLV */}
