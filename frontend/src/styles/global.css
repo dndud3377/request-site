@@ -1027,15 +1027,6 @@ select.form-control option {
 }
 .cat-color-swatch:hover { transform: scale(1.12); }
 
-.color-picker-pop {
-  z-index: 25; background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: 10px;
-  display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;
-}
-.color-picker-swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; padding: 0; cursor: pointer; }
-.color-picker-swatch:hover { transform: scale(1.1); }
-.color-picker-swatch.selected { border-color: var(--text-primary); }
-
 .table th.sortable-col { cursor: pointer; user-select: none; }
 .table th.sortable-col:hover { color: var(--text-primary); }
 
