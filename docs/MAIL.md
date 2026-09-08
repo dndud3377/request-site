@@ -303,7 +303,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | 화면 동작 | TE_P 탭의 라인 버튼들 뒤에 구분선 + `상신 받기` 버튼 1개. 켤 때는 즉시 저장, **끌 때는 확인 모달**을 거친다(`permission.submit_mail_off_*`) |
 | 구현 | `mailer.resolve_submit_subscriber_recipients()` → `mailer.enqueue_notify_submitted()`가 통보처 수신자와 합쳐 중복 제거 후 발송 |
 
-### 3.4 중단(PAUSE)·삭제·후결자 제거·Validation System 변경 수신자 상세 (2026-09 신설)
+### 3.4 중단(PAUSE)·삭제·후결자 제거 수신자 상세 (2026-09 신설)
 
 | 이벤트 | 시점 | 수신자 |
 |---|---|---|
@@ -313,7 +313,11 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | `pause_resumed` | 재개(작성자가 pause 문서를 under_review 로 되돌릴 때) | 재개 시점 **pending 단계**의 담당자 1명이면 개인 수신자 메일에, 미배정 단계면 그 **담당 팀별로 각각 별도 메일**. `resolve_withdraw_target_recipients()`를 그대로 재사용한다 |
 | `document_deleted` | `delete` 액션으로 의뢰서가 완전히 삭제되는 시점(삭제 **전**에 적재) | withdraw_completed 와 동일한 수신자 규칙(`resolve_withdraw_completed_recipients()` 재사용) — 개인 수신자 메일 1통(지정 PL 전원 + 통보처 전원 + RA/SA 개인 담당자 + 작성자) + 실제로 진행된 팀별로 각각 별도 메일. `_NO_LINK_EVENTS` 대상이라 딥링크 버튼을 싣지 않는다 |
 | `post_approver_removed` | `remove-post-approver` 로 (아직 합의하지 않은) 후결자가 제거되는 시점 | 제거된 후결자 **본인에게만** 개인화 메일 1통(제목에 `[이름님]`). step 삭제 **전에** `assignee`/`assignee_name` 을 미리 읽어 넘겨야 한다 — 삭제 후에는 조회할 수 없다 |
-| `validation_system_changed` | `validation-system` 으로 상신자가 Validation System 대상/비대상 값을 바꾸는 시점 | 작성자 + 지정된 **EV(검토자) 전원**(개인 수신자 메일) + 현재 회차 **E 단계**(담당자 있으면 개인 수신자 메일에 포함, 미배정이면 **TE_E 팀 1통**으로 분리) |
+
+⚠️ **Validation System(`validation-system/`) / Partial Shot(`partial-shot/`) 값 변경은 메일을 보내지 않는다(2026-09 정책)**.
+Validation System 은 한때 `validation_system_changed` 이벤트로 작성자 + 지정 EV 전원 + 현재 E 단계에 메일을
+보냈으나, 이 이벤트(함수·이벤트 타입 등록·본문 분기)를 전부 제거했다 — 두 값 다 결재 화면(결재 현황/상세보기)
+에서만 확인한다.
 
 ⚠️ **`pause_requested`/`pause_resumed`/`document_deleted`는 팀이 둘 이상 걸치면 반드시 팀별로
 각각 분리 발송한다**(§ 위 "팀별 분리 발송" 원칙과 동일) — 예를 들어 확인 대상 단계가 미배정
@@ -334,7 +338,7 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
 - **본문 링크는 해당 문서 상세로 딥링크**된다(`_detail_link`): 진행 중 이벤트(`stage_arrival`/`rejected`/`revision_requested`/`notify_submitted`)는 `{FRONTEND_URL}/approval?id={문서ID}`, 완료 관련 이벤트(`approved`/`notify_approved`)는 `{FRONTEND_URL}/history?id={문서ID}`(완료 문서는 결재현황 목록에서 빠지므로). 프론트(`ApprovalPage.tsx`/`HistoryPage.tsx`)가 `?id=` 쿼리를 감지해 목록과 무관하게 그 문서를 직접 조회 후 상세 모달을 자동으로 연다.
 
 ### 본문 디자인 — 히어로 헤더 + KPI 카드 (2026-07 개편)
-- 본문 HTML은 `_render_hero_kpi_email()`(공통 템플릿) + `_kpi_grid()`(2x2 타일)로 렌더링되며, 모든 이벤트 타입(`stage_arrival`/`rejected`/`revision_requested`/`approved`/`notify_submitted`/`notify_approved`/`notify_p_completed`/`withdraw_*`/`pause_*`/`document_deleted`/`post_approver_removed`/`validation_system_changed`)이 이 템플릿을 공유한다.
+- 본문 HTML은 `_render_hero_kpi_email()`(공통 템플릿) + `_kpi_grid()`(2x2 타일)로 렌더링되며, 모든 이벤트 타입(`stage_arrival`/`rejected`/`revision_requested`/`approved`/`notify_submitted`/`notify_approved`/`notify_p_completed`/`withdraw_*`/`pause_*`/`document_deleted`/`post_approver_removed`)이 이 템플릿을 공유한다.
 - 구성: 솔리드 컬러 히어로(시스템명 + 이벤트 안내 문구) → 흰 카드(의뢰서 제목 + KPI 타일 4개: 결재 단계/의뢰자/상신일/생산 진행일) → **결재 경로 카드**(2026-07 추가, 아래 참고) → 특이사항(`reference_materials`) 카드 → CTA 버튼 → 푸터. 카드 바깥은 연한 색조 배경.
 - **이벤트별 색상 테마**(`EVENT_THEME`): 히어로/버튼/카드 테두리/KPI 타일 배경을 이벤트 타입에 따라 통일된 팔레트로 분기한다.
   - `stage_arrival`: 블루 `#2563eb → #3b82f6`
@@ -344,7 +348,7 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
   - `withdraw_requested`/`withdraw_completed`: 레드(반려와 동일) — 결재가 멈추거나 문서가 사라지는 알림
   - `withdraw_rejected`/`withdraw_cancelled`: 퍼플(통보와 동일) — 결재가 그대로 이어진다는 정보성 통보
   - `pause_requested`/`pause_confirmed`/`document_deleted`: 레드(반려와 동일) — 결재가 멈추거나 문서가 사라지는 알림
-  - `pause_rejected`/`post_approver_removed`/`validation_system_changed`: 퍼플(통보와 동일) — 정보성 통보
+  - `pause_rejected`/`post_approver_removed`: 퍼플(통보와 동일) — 정보성 통보
   - `pause_resumed`: 블루(단계 도착과 동일) — 결재가 정상적으로 다시 시작된다는 알림
   - `EVENT_THEME`에 없는 이벤트 타입은 `stage_arrival`(블루) 테마로 대체된다.
 - **결재 단계** 타일: `stage_arrival`은 `AGENT_LABEL`, 그 외 이벤트는 `EVENT_STATUS_LABEL`(반려/승인 완료/상신 통보/결재 완료 통보/P 단계 도착 통보/P 단계 완료 통보)을 표시한다.
@@ -447,7 +451,8 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
 | `change-designee` (지정 PL 변경) | ✅ | 새로 지정된 PL에게 상신 시와 동일한 stage_arrival 발송(제목에 `[이름님]`, 2026-07 추가). 기존 지정자에게는 알림 없음 |
 | `add-post-approver` (후결자 추가, 2026-07) | ✅ | 추가된 후결자에게 즉시 stage_arrival 발송(생성 시점과 동일). 고정 후결자와 중복 지정이 API에서 차단되므로 **이 경로는 항상 추가 후결자 형식**(`[이름님] [결재 요청] {제목}`, 2026-08 변경) |
 | `remove-post-approver` (후결자 제거) | ✅ | `post_approver_removed`: 제거된 후결자 본인에게만 개인화 메일 1통(제목에 `[이름님]`). step 삭제 **전에** assignee 정보를 먼저 읽어 넘긴다(2026-09) |
-| `validation-system` (Validation System 변경) | ✅ | `validation_system_changed`: 작성자 + 지정된 EV 전원(개인 1통) + 현재 E 단계(담당자 있으면 개인, 없으면 TE_E 팀 1통, 2026-09) |
+| `validation-system` (Validation System 변경) | ❌ | 메일 없음 — `validation_system_changed` 이벤트를 완전히 제거했다(2026-09 정책 변경) |
+| `partial-shot` (Partial Shot 변경, 2026-09) | ❌ | 메일 없음 — validation-system 과 같은 정책 |
 | VOC 등록 / 댓글 | ✅ | §2 참고 |
 | `direct-approve` (MASTER 이력 바로 등록) | ❌ | 실제 결재를 진행하지 않고 과거 완료 기록만 남기는 기능이라 2026-09 에도 범위에서 제외(코드 주석에 의도적 설계로 명시) |
 
