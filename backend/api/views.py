@@ -2925,10 +2925,29 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return self._review_items_response(document, request)
 
     def update(self, request, *args, **kwargs):
-        """수정(PUT/PATCH) 인가: 상태별 권한이 없으면 403."""
+        """수정(PUT/PATCH) 인가: 상태별 권한이 없으면 403.
+
+        R(+RV) 합의 완료 후 중단(pause)된 문서는 MAP 정보가 잠긴다(`doc_permissions.
+        map_info_locked`) — R이 이미 검토를 마친 MAP 정보를 되돌아가 바꾸지 못하게 한다
+        (2026-09, `docs/APPROVAL.md` Case M 참고). 프론트가 이미 read-only 로 막아도
+        직접 API 호출로 우회할 수 있으므로 백엔드에서도 거부한다.
+        """
         document = self.get_object()
         if not self._can_edit(request.user, document):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+        if doc_permissions.map_info_locked(document):
+            raw_notes = request.data.get('additional_notes')
+            if raw_notes is not None:
+                import json
+                try:
+                    new_detail = json.loads(raw_notes).get('detail', {})
+                except (TypeError, ValueError, AttributeError):
+                    new_detail = None
+                if new_detail is not None and document.changed_map_info_fields(new_detail):
+                    return Response(
+                        {'error': 'MAP 정보 검토(RFG)가 완료된 뒤에는 MAP 정보를 수정할 수 없습니다.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
         return super().update(request, *args, **kwargs)
 
     def perform_update(self, serializer):
