@@ -577,6 +577,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             document.status = 'under_review'
+            document.submitted_at = timezone.now()
             rep = pl_users[0]
             document.designated_pl = rep
             document.designated_pl_name = rep.username or rep.loginid
@@ -646,6 +647,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         rep = pl_users[0]
         document.designated_pl = rep
         document.designated_pl_name = rep.username or rep.loginid
+        document.submitted_at = timezone.now()
         document.save()
 
         # 검토 항목·검토자 지정은 그대로 두고 확인 상태만 초기화한다(resubmit과 동일).
