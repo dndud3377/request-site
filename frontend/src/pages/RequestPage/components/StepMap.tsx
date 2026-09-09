@@ -82,6 +82,8 @@ interface StepMapProps {
   /** 이 스텝 전체를 훑는 하이라이트 가이드 투어 배지 (섹션 제목 옆) */
   GuideTourBadge: React.ReactNode;
   GuideBadge: React.FC<{ fk: GuideFeatureKey; tk: string }>;
+  /** R(+RV) 합의 완료 후 중단(pause)된 문서 — true면 MAP 정보 전체를 read-only로 막는다(2026-09) */
+  mapInfoLocked: boolean;
 }
 
 const StepMap: React.FC<StepMapProps> = ({
@@ -128,6 +130,7 @@ const StepMap: React.FC<StepMapProps> = ({
   handleImagePaste,
   GuideTourBadge,
   GuideBadge,
+  mapInfoLocked,
 }) => {
   const { t } = useTranslation();
 
@@ -142,11 +145,16 @@ const StepMap: React.FC<StepMapProps> = ({
           🗺️ {t('request.section_map')}
           {GuideTourBadge}
         </span>
-        <button className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '4px 10px' }} onClick={handleReset}>
+        <button className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '4px 10px' }} onClick={handleReset} disabled={mapInfoLocked}>
           🔄 {t('common.reset')}
         </button>
       </div>
-      <div className="form-grid">
+      {mapInfoLocked && (
+        <p className="form-hint" style={{ color: 'var(--text-muted)', margin: '0 0 12px' }}>
+          🔒 {t('request.map_info_locked_notice')}
+        </p>
+      )}
+      <div className="form-grid" style={mapInfoLocked ? { pointerEvents: 'none', opacity: 0.6 } : undefined}>
 
         {/* 요청 목적 (신규/차용/기등록) */}
         <div className="full-width" data-tour="map-purpose">
