@@ -663,6 +663,17 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   **진행 중(`under_review`) 문서의 현재 회차 pending 단계만** 대상으로 본다. 예전엔 상태·회차를
   보지 않아 ① 반려 문서의 잔여 pending 단계 ② 재상신으로 회차가 올라간 뒤 남은 **이전 회차**
   pending 단계 때문에 이미 끝난 문서가 계속 '내 차례'·단계 탭에 잡혔다(탭 카운트도 동일 적용).
+- 🐛→✅ **(2026-09 수정) agent별 필터(agent_R/P/E)가 검토자 단계를 놓치던 버그** — `agent_R`/`agent_P`/`agent_E`
+  탭은 `s.agent === 'R'`처럼 정확히 그 이름의 pending step만 찾았는데, R/P/E는 담당자 합의 후
+  검토자(RV/PV/EV)만 남는 순차 구간이 있다(§2 Case N/F/G). 담당자 step이 `approved`로 바뀌고
+  검토자 step만 `pending`이면 `agent === 'R'` 매칭이 실패해 화면엔 분명 "RFG(R단계)"로 보이는
+  문서가 `agent_R` 탭·탭 카운트에서 빠졌다(`agent_E`는 2026-08부터 검토자 지정이 필수라 사실상
+  상시 발생). J/O는 대응하는 검토자 agent가 없어 원래부터 문제없음. `utils/approvalTable.ts`에
+  `STAGE_AGENT_GROUPS`(`R:[R,RV]`/`P:[P,PV]`/`J:[J]`/`O:[O]`/`E:[E,EV]`)와 이를 쓰는
+  `hasActiveStageStep`/`getStagePendingEnteredAt`를 추가해, 필터·탭 카운트·단계별 필터 활성 시
+  정렬(§3.2.1)이 모두 담당자·검토자를 같은 단계로 인식하도록 통일했다(`ApprovalPage.tsx`의
+  `applyClientFilter`/`getTabCount`/`sortedDocs`). 테스트: `approvalTable.test.ts`
+  `hasActiveStageStep`/`getStagePendingEnteredAt` describe 블록.
 - ✅ **(2026-08) '내 차례'에 검토 항목 조건 OR 추가**: `hasMyPendingReviewItem` — 진행 중 + 현재 회차
   J 단계가 pending + **내가 검토자인 미확인 검토 항목이 1건 이상**이면 담당자가 아니어도 MY 에 뜬다.
   판정값은 목록 응답의 `my_pending_review_items`(개수)다. §10 참조.
@@ -683,7 +694,7 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
 ### 3.2.1 목록 정렬 (2026-07, `sortedDocs`)
 우선순위: **컬럼 헤더 정렬(켜짐) > 양산일 정렬(켜짐) > 단계별 필터(진입 순서) > 기본(상신 오래된 순)**.
 - **기본**: `submitted_at` 오름차순(오래된 상신 먼저). `submitted_at` 없는 draft는 `created_at` 대체.
-- **단계별 필터(agent_R/P/J/O/E) 활성 시**: 기본을 대체 — 현재 회차의 해당 agent `pending` `ApprovalStep.created_at` 오름차순(그 단계로 먼저 넘어온 문서가 위).
+- **단계별 필터(agent_R/P/J/O/E) 활성 시**: 기본을 대체 — 현재 회차의 해당 단계(담당자 또는 검토자, `getStagePendingEnteredAt` §3.2 참조) `pending` `ApprovalStep.created_at` 오름차순(그 단계로 먼저 넘어온 문서가 위).
 - **양산일(`col_production_date`) 헤더 클릭 3단 토글**: 오름차순→내림차순→원래 상태. 미입력(`production_date` 없음) 행은 방향 무관 **항상 맨 아래**. 켜져 있으면 **필터 탭과 무관하게** 양산일 기준이 우선(단계별 필터의 진입 순서보다 앞섬).
 - ✅ **(2026-08) 컬럼 헤더 정렬(`colSort`)** — 라인/목적/MAP 목적/요청일 헤더 클릭 3단 토글(오름차순→내림차순→해제).
   값은 `approvalTable.getDocDetailFields`/`getMapPurposeKey`/`getDocSubmittedDate`로 뽑아 한글 로캘(`localeCompare(..., 'ko')`)로

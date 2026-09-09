@@ -1,6 +1,7 @@
 import type { TFunction } from 'i18next';
 import {
-  getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument, StageCell, StageCellSlot,
+  getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument,
+  hasActiveStageStep, getStagePendingEnteredAt, StageCell, StageCellSlot,
 } from './approvalTable';
 import { ApprovalStepFrontend, RequestDocument } from '../types';
 
@@ -513,6 +514,92 @@ describe('stageLabel — 검토자·고정 후결자도 단계명으로 표기(2
     });
     expect(getDocTableRows(base('fixed'), t)[0].stageText).toBe('approval.agent_R(반려자)');
     expect(getDocTableRows(base('extra'), t)[0].stageText).toBe('approval.stage_post_extra(반려자)');
+  });
+});
+
+describe('hasActiveStageStep — 단계별 필터(agent_R/P/J/O/E)는 검토자 단계도 같은 단계로 본다', () => {
+  it('R: 담당자(R) pending 이면 잡힌다', () => {
+    const doc = makeDoc([makeStep({ agent: 'R', action: 'pending' })]);
+    expect(hasActiveStageStep(doc, 'R')).toBe(true);
+  });
+
+  it('R: 담당자 합의 후 검토자(RV) 만 pending 이어도 R 단계로 잡힌다(회귀 방지 — 원래 버그)', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'RV', action: 'pending', assignee_loginid: 'rv1' }),
+    ]);
+    expect(hasActiveStageStep(doc, 'R')).toBe(true);
+  });
+
+  it('R: 담당자+검토자 모두 합의를 마치면 더 이상 잡히지 않는다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'RV', action: 'approved' }),
+      makeStep({ agent: 'P', action: 'pending' }),
+    ]);
+    expect(hasActiveStageStep(doc, 'R')).toBe(false);
+  });
+
+  it('P: 담당자 합의 후 검토자(PV) 만 pending 이어도 P 단계로 잡힌다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'P', action: 'approved' }),
+      makeStep({ agent: 'PV', action: 'pending', assignee_loginid: 'pv1' }),
+    ]);
+    expect(hasActiveStageStep(doc, 'P')).toBe(true);
+  });
+
+  it('E: 담당자 합의 후 검토자(EV) 만 pending 이어도 E 단계로 잡힌다(2026-08부터 검토자 필수라 상시 발생)', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'E', action: 'approved' }),
+      makeStep({ agent: 'EV', action: 'pending', assignee_loginid: 'ev1' }),
+    ]);
+    expect(hasActiveStageStep(doc, 'E')).toBe(true);
+  });
+
+  it('J/O: 검토자 단계 자체가 없어 담당자 pending 만 판정 대상이다', () => {
+    const jDoc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'pending', assignee_loginid: 'j1' }),
+    ]);
+    expect(hasActiveStageStep(jDoc, 'J')).toBe(true);
+
+    const jDone = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'J', action: 'approved' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+    ]);
+    expect(hasActiveStageStep(jDone, 'J')).toBe(false);
+  });
+
+  it('반려 문서의 잔여 pending 단계로는 잡히지 않는다(status 가드 유지)', () => {
+    const doc: RequestDocument = {
+      ...makeDoc([
+        makeStep({ agent: 'R', action: 'approved' }),
+        makeStep({ agent: 'RV', action: 'pending' }),
+      ]),
+      status: 'rejected',
+    };
+    expect(hasActiveStageStep(doc, 'R')).toBe(false);
+  });
+});
+
+describe('getStagePendingEnteredAt — 단계별 필터 정렬 키도 검토자 단계를 인식한다', () => {
+  it('검토자(RV) 만 pending 이어도 그 시각을 진입 시각으로 쓴다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved', created_at: '2026-08-01T00:00:00Z' }),
+      makeStep({ agent: 'RV', action: 'pending', created_at: '2026-08-05T00:00:00Z' }),
+    ]);
+    expect(getStagePendingEnteredAt(doc, 'R')).toBe('2026-08-05T00:00:00Z');
+  });
+
+  it('해당 단계에 pending 이 없으면 빈 문자열', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'R', action: 'approved' }),
+      makeStep({ agent: 'RV', action: 'approved' }),
+    ]);
+    expect(getStagePendingEnteredAt(doc, 'R')).toBe('');
   });
 });
 

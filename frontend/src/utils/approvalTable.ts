@@ -1,6 +1,6 @@
 // 결재 현황 테이블 계산 헬퍼 — ApprovalPage 와 HomePage(최근 의뢰 현황)가 동일한 표를 그리도록 공유한다.
 import type { TFunction } from 'i18next';
-import { RequestDocument, ApprovalStepFrontend } from '../types';
+import { RequestDocument, ApprovalStepFrontend, AgentType } from '../types';
 import { formatDate } from './date';
 import { MAP_DELETE_EDIT_PURPOSE, ADI_CD_CHANGE_PURPOSE } from '../pages/RequestPage/constants';
 
@@ -519,6 +519,40 @@ export const hasActivePendingStep = (
   return (doc.approval_steps ?? []).some(
     (s) => s.action === 'pending' && (s.round ?? 1) === round && match(s)
   );
+};
+
+/**
+ * 결재현황 단계별 필터 탭(agent_R/P/J/O/E)이 하나의 "단계"로 봐야 하는 agent 묶음.
+ * R/P/E 는 담당자 합의 후 검토자(RV/PV/EV)만 남아도 화면상 같은 단계로 표시되므로
+ * (stageLabel 참고 — RV 도 라벨은 그대로 'RFG') 필터도 담당자 pending 뿐 아니라
+ * 검토자 pending 도 같은 단계로 인식해야 한다. J/O 는 검토자 agent 자체가 없다.
+ */
+export const STAGE_AGENT_GROUPS: Partial<Record<string, AgentType[]>> = {
+  R: ['R', 'RV'],
+  P: ['P', 'PV'],
+  J: ['J'],
+  O: ['O'],
+  E: ['E', 'EV'],
+};
+
+/** 단계별 필터(agent_*)용 — 담당자 또는 그 단계의 검토자 단계가 pending 이면 해당 단계로 본다. */
+export const hasActiveStageStep = (doc: RequestDocument, stageAgent: string): boolean => {
+  const group = STAGE_AGENT_GROUPS[stageAgent] ?? [stageAgent as AgentType];
+  return hasActivePendingStep(doc, (s) => group.includes(s.agent));
+};
+
+/**
+ * 단계별 필터 정렬 키 — 그 단계(담당자+검토자 그룹)의 pending 단계 중 가장 이른 진입 시각.
+ * hasActiveStageStep 이 참인 문서에서만 값이 있다(필터를 통과하지 못한 문서는 빈 문자열).
+ */
+export const getStagePendingEnteredAt = (doc: RequestDocument, stageAgent: string): string => {
+  const group = STAGE_AGENT_GROUPS[stageAgent] ?? [stageAgent as AgentType];
+  const round = getCurrentRound(doc);
+  const times = (doc.approval_steps ?? [])
+    .filter((s) => s.action === 'pending' && (s.round ?? 1) === round && group.includes(s.agent))
+    .map((s) => s.created_at)
+    .filter((v): v is string => !!v);
+  return times.length > 0 ? times.reduce((min, t) => (t < min ? t : min)) : '';
 };
 
 /**
