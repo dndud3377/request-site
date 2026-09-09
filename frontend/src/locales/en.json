@@ -366,6 +366,7 @@
     "map_change_reason_delete": "Reason for MAP deletion",
     "map_change_reason_help": "You can paste text and images together. Long content scrolls inside the box.",
     "map_change_reason_placeholder": "Describe why the edit or deletion is needed. (You can paste images with Ctrl+V)",
+    "map_info_locked_notice": "MAP info can no longer be edited because RFG (R) review is already complete.",
     "map_type_change_confirm_title": "Change Request Type",
     "map_type_change_confirm_msg": "Changing the request type will reset all entered values. Do you want to continue?",
     "only_map_confirm_title": "Switch to Only MAP",
