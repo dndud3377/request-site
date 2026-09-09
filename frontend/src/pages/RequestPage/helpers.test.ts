@@ -141,8 +141,12 @@ describe('findEmptyStNocViolations', () => {
     ])).toEqual(['b', 'c']);
   });
 
-  it('비활성(st===X) 행은 제외한다', () => {
-    expect(findEmptyStNocViolations([{ id: 'a', st: 'X', new_or_copy: '' }])).toEqual([]);
+  it('st===X 행도 new_or_copy 가 공란이면 위반이다', () => {
+    expect(findEmptyStNocViolations([{ id: 'a', st: 'X', new_or_copy: '' }])).toEqual(['a']);
+  });
+
+  it('st===X 행이라도 new_or_copy 가 채워져 있으면 위반이 아니다', () => {
+    expect(findEmptyStNocViolations([{ id: 'a', st: 'X', new_or_copy: '기등록' }])).toEqual([]);
   });
 });
 
