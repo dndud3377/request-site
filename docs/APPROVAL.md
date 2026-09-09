@@ -404,7 +404,6 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 - **자동 취소**: 요청중(requested) 상태에서 결재가 정상 진행(합의 `approve_step`/반려 `reject_step`)되어 단계가 넘어가면 기존 요청을 `cancelled` 처리(`_cancel_active_pause_requests`).
 - ✅ **동결(2026-08 확장)**: `status == 'pause'`(확정 후)뿐 아니라 **활성 중단 요청이 확인 대기 중(`state == 'requested'`)인 동안에도** `approve_step`/`reject_step`/`assign_step`/`claim_step`/`unclaim_step` 이 400 으로 차단된다(`_blocked_progress_response`, 철회 요청 동결과 동일한 이유·패턴). 예전엔 **전원 확인이 끝나 `status` 가 `pause` 로 바뀐 뒤에만** 차단돼, 확인을 기다리는 동안 대상 단계가 검토중·합의까지 진행되며 중단 요청이 무력화되는 문제가 있었다(2026-08 수정 전 버그). 프론트도 동일 시점에 `actableStep`/`claimableStep`/`assignableStep`/`unclaimableStep` 계산에서 대상을 찾지 않아(`progressFrozen`, `ApprovalPage.tsx`) 합의·검토중·지정하기·검토중취소 버튼 자체가 노출되지 않는다(철회 요청 확인 대기 중에도 동일하게 적용 — 예전엔 서버는 막았지만 버튼이 그대로 보여 클릭 후에야 400 에러를 알 수 있었다). 작성자의 요청 취소, 확인 대상자의 확인·거부만 가능.
 - **인가/수정**: `doc_permissions.can_edit` 에 pause=작성자 본인 허용, `can_request_pause`/`can_resume` 헬퍼 추가. 시리얼라이저가 `can_request_pause`/`can_resume`/`pause_request`(state·reason·target/confirmed step ids) 를 내려줘 프론트가 버튼·배너·확인현황을 렌더한다.
-- ⚠️ 메일 알림(중단요청/확인/거부/재개)은 이번 범위에도 **미포함**(기존 방침 유지).
 - ⚠️ `PauseRequest.resolved_at`(거부·취소 시각) 필드는 추가하지 않았다 — 대응하는 `WithdrawRequest.resolved_at` 도 현재 API 응답·화면 어디에도 노출되지 않는 write-only 필드라(직렬화 시 활성 상태만 내려주므로 거부·취소된 요청은 응답에서 아예 빠진다) 대칭을 맞출 실익이 없다고 판단했다(2026-08). 필요해지면 그때 `resolved_at` 추가 + 직렬화 + 화면 표시를 함께 설계한다.
 - 테스트: `backend/api/tests.py::PauseFlowTest`(추가: 거부 동작, `requested` 상태 동결)
 
