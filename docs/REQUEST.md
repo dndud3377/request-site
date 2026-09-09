@@ -279,6 +279,40 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 변경 (2026-09-09 — J/O-ayer col_new_or_copy: st='X' 행도 필수화)
+
+- **요청**: `col_st_j`/`col_st_o`가 `'X'`인 행에서 `col_new_or_copy`가 공란이어도 다음 단계 진행·상신이
+  막히지 않던 동작을 사용자가 발견 → `st==='X'` 행도 `new_or_copy`를 반드시 채우도록 필수화해 달라는 요청.
+- **기존 동작(원인)**: `helpers.ts`의 `findEmptyStNocViolations`가 `!isRowInactive(r.st)` 조건으로
+  `st==='X'` 행을 공란 검증에서 제외했다. 또한 `index.tsx`의 `isLayerCellLocked`와 `Step2.tsx`/`Step3.tsx`의
+  `new_or_copy` `AutocompleteInput` `disabled` prop이 **사용자가 직접 `st`를 `X`로 바꾼 행**의
+  `new_or_copy` 셀을 잠가서, 설령 필수화하더라도 입력 자체가 불가능했다(2026-08-16 도입 규칙 —
+  §추가 변경 이력(2026-08-16) 참조).
+- **구현**:
+  - `helpers.ts` `findEmptyStNocViolations`: `st==='X'` 예외를 제거 — 모든 행이 `st`·`new_or_copy`
+    공란 금지 검증 대상이 된다.
+  - `index.tsx` `isLayerCellLocked`: `new_or_copy` 컬럼은 `st` 값과 무관하게 항상 잠그지 않는다.
+    (`기등록`/`layer삭제`로 자동 `X`가 된 행은 원래도 열려 있어 실질 변경 없음.)
+  - `Step2.tsx`(J-ayer)·`Step3.tsx`(O-ayer): `new_or_copy` 셀의
+    `disabled={rowInactive && !isRegistered && !isLayerDeleted}`를 제거 — `isLayerCellLocked`는
+    셀 선택/붙여넣기용 잠금이고, 실제 클릭 입력 가능 여부는 이 `disabled` prop이 별도로 결정하고
+    있어 함께 고치지 않으면 UI에서는 여전히 잠긴 것처럼 보였다.
+- **범위 제한(요청 확인 완료)**: `차용` 관련 보조 검증(`findNocBorrowViolations`/
+  `findNocBorrowItemIdViolations`)은 그대로 `st==='X'` 행을 제외한다 — `product_name`/`step`/`item_id`는
+  이번 변경 대상이 아니다.
+- **영향**: 이미 `st='X'` + `new_or_copy` 공란으로 저장된 기존 문서를 반려/재상신 편집으로 다시 열면,
+  새 규칙에 걸려 해당 행의 `new_or_copy`를 채워야 다음 단계로 진행할 수 있다(기존 `py_apply`/`Final`
+  필수 규칙 도입 때와 동일한 성격의 소급 동작).
+- **영향 파일**: `frontend/src/pages/RequestPage/helpers.ts`, `frontend/src/pages/RequestPage/index.tsx`,
+  `frontend/src/pages/RequestPage/components/Step2.tsx`,
+  `frontend/src/pages/RequestPage/components/Step3.tsx`,
+  `frontend/src/pages/RequestPage/helpers.test.ts`,
+  `frontend/src/pages/RequestPage/pauseResumeDisabledRows.test.tsx`.
+- **검증**: `npx tsc --noEmit` — 신규 에러 0(기존 4건은 무관한 `Set` es5 순회 3건 + `GuidePage.tsx`
+  i18n strict 키 1건, 베이스라인과 동일함을 `git stash` 로 재확인). `CI=true npx react-scripts test
+  --watchAll=false --testPathPattern=RequestPage` — **8 suites / 225건 전부 통과**(신규 2건 포함).
+  백엔드는 변경하지 않아 백엔드 테스트는 실행하지 않았다.
+
 ### 기능 추가 (2026-09-01 — J-ayer 제품 이름 예시 placeholder + item_id(ID) 다중 선택)
 
 - **요청**: 두 가지.
