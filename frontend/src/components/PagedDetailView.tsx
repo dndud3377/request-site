@@ -2739,9 +2739,13 @@ type Page = { label: string; content: React.ReactNode };
     } catch { return []; }
   })();
 
-  // 각 회차 상신 날짜: round=1은 doc.submitted_at, 이후 회차는 해당 R 단계의 created_at
+  // 각 회차 상신 날짜: round=1은 1회차 PL 단계의 created_at, 이후 회차는 해당 R 단계의 created_at.
+  // doc.submitted_at은 재상신마다 최신 회차 값으로 갱신되므로 회차별 이력에는 쓰지 않는다.
   const getRoundSubmittedAt = (round: number): string | null => {
-    if (round === 1) return doc.submitted_at ?? null;
+    if (round === 1) {
+      const plStep = allSteps.find((s) => s.agent === 'PL' && (s.round ?? 1) === 1);
+      return plStep?.created_at ?? null;
+    }
     const rStep = allSteps.find((s) => s.agent === 'R' && (s.round ?? 1) === round);
     return rStep?.created_at ?? null;
   };
