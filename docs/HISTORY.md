@@ -75,8 +75,7 @@ PL 이 아닌 사용자도 자기가 참여했던 의뢰서를 볼 수 있다.
 
 ### 적재 규칙
 - 적재 위치: `backend/api/rejection_snapshots.py` 의 `create_from_reject()`
-- 호출 지점: `POST /api/documents/{id}/reject-step/`, `POST /api/documents/{id}/peer-reject/` (지정 PL 반려)
-- **E/EV(MASK)의 '수정 요청'은 적재하지 않는다** — 문서 `status` 를 바꾸지 않는 별개 동작이다.
+- 호출 지점: `POST /api/documents/{id}/reject-step/`(E/EV 포함 — 2026-09 부터 예외 없음), `POST /api/documents/{id}/peer-reject/` (지정 PL 반려)
 - 회차마다 1행씩 누적된다(3번 반려 = 3행). 첫 반려로 문서가 `rejected` 가 되면 이후 결재 액션은
   `_blocked_progress_response` 가 막으므로 같은 회차가 두 번 쌓이지 않는다.
 - 원본 문서가 삭제돼도 이력은 남는다(`document` 는 `SET_NULL`, `source_document_id` 로 추적).
