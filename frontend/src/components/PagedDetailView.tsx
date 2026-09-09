@@ -2739,6 +2739,16 @@ type Page = { label: string; content: React.ReactNode };
     } catch { return []; }
   })();
 
+  // 상신 시 지정한 추가 후결자(only_prodc=YES 등). RA 단계는 R 합의 후에야 생성되므로,
+  // 그 전에도 이미 정해진 사람을 결재 경로 탭에 미리 보여주기 위해 이름만 읽는다.
+  const extraPostApprovers: { loginid: string; name: string }[] = (() => {
+    try {
+      const parsed = JSON.parse(doc.additional_notes ?? '{}');
+      const arr = parsed?.detail?.post_approvers;
+      return Array.isArray(arr) ? arr : [];
+    } catch { return []; }
+  })();
+
   // 각 회차 상신 날짜: round=1은 1회차 PL 단계의 created_at, 이후 회차는 해당 R 단계의 created_at.
   // doc.submitted_at은 재상신마다 최신 회차 값으로 갱신되므로 회차별 이력에는 쓰지 않는다.
   const getRoundSubmittedAt = (round: number): string | null => {
@@ -2866,6 +2876,23 @@ type Page = { label: string; content: React.ReactNode };
       const reviewSteps = allSteps.filter((s) => s.agent === reviewAgent && (s.round ?? 1) === round);
       reviewSteps.forEach((s) => out.push({ ...stepToInfo(s), roleLabel: t('approval.stage_reviewer' as any) }));
       return out;
+    }
+    // 후결자(RA): R 합의 후에야 실제 step 이 생기지만, 그 전에도 이미 정해진 사람
+    // (고정 후결자·상신 시 지정한 추가 후결자)이 있으면 '대기중'만 보이지 않도록 이름을 미리 보여준다.
+    if (agent === 'RA') {
+      const raSteps = allSteps.filter((s) => s.agent === 'RA' && (s.round ?? 1) === round);
+      if (raSteps.length > 0) return raSteps.map(stepToInfo);
+      if (round === maxRound && doc.status === 'under_review') {
+        const preview: StepDisplayInfo[] = [];
+        if (doc.post_approver_fixed_name) {
+          preview.push({ status: 'waiting', label: t('approval.step_pending'), assignee: doc.post_approver_fixed_name });
+        }
+        extraPostApprovers.forEach((pa) => {
+          if (pa?.name) preview.push({ status: 'waiting', label: t('approval.step_pending'), assignee: pa.name });
+        });
+        if (preview.length > 0) return preview;
+      }
+      return [{ status: 'waiting', label: t('approval.step_pending') }];
     }
     const steps = allSteps.filter((s) => s.agent === agent && (s.round ?? 1) === round);
     if (steps.length === 0) return [{ status: 'waiting', label: t('approval.step_pending') }];

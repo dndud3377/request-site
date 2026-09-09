@@ -23,6 +23,7 @@ class DocPermFieldsMixin(serializers.Serializer):
     pause_request = serializers.SerializerMethodField()
     withdraw_request = serializers.SerializerMethodField()
     post_approver_fixed_loginid = serializers.SerializerMethodField()
+    post_approver_fixed_name = serializers.SerializerMethodField()
     requester_loginid = serializers.SerializerMethodField()
     shared_group_name = serializers.CharField(source='shared_group.name', read_only=True, default=None)
 
@@ -66,6 +67,18 @@ class DocPermFieldsMixin(serializers.Serializer):
         """고정 후결자(.env) loginid — 프론트가 '🔒 고정' 표시·변경 잠금에 사용."""
         from django.conf import settings
         return (getattr(settings, 'POST_APPROVER_LOGINID', '') or '').strip() or None
+
+    def get_post_approver_fixed_name(self, obj):
+        """고정 후결자(.env)의 표시 이름 — RA 단계 생성 전에도 결재 경로 탭에 이름을 보여주기 위해 사용.
+        RA step 생성 시(views.py)와 같은 규칙으로 username 이 비어 있으면 loginid 로 대체한다."""
+        from django.conf import settings
+        loginid = (getattr(settings, 'POST_APPROVER_LOGINID', '') or '').strip()
+        if not loginid:
+            return None
+        user = User.objects.filter(loginid=loginid).first()
+        if not user:
+            return None
+        return user.username or user.loginid
 
     def get_pause_request(self, obj):
         """활성(요청/확정) 중단 요청 정보. 없으면 None.
@@ -206,7 +219,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw', 'notifier_mails',
             'can_request_pause', 'can_resume', 'can_requester_resubmit', 'pause_request', 'withdraw_request',
-            'post_approver_fixed_loginid', 'mail_completion_matched',
+            'post_approver_fixed_loginid', 'post_approver_fixed_name', 'mail_completion_matched',
             'shared_group', 'shared_group_name', 'review_items',
         ]
         # shared_group 은 전체 저장(PUT/PATCH)에 값이 빠져 초기화되는 일이 없도록 read-only 로 두고,
