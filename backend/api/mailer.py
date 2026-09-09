@@ -1136,7 +1136,9 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
         stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'pause_resumed':
         subject = f'[결재 재개] {document.title}'
-        headline = '중단됐던 의뢰서 결재가 재개되었습니다. 결재 현황에서 확인해 주세요.'
+        # (2026-09) 재개 시 해당 구역이 처음부터 다시 합의를 진행하도록 초기화되므로
+        # (views.py resume() 참조), "확인만 하면 된다"가 아니라 재합의가 필요함을 명시한다.
+        headline = '재개되었습니다. 확인 후 재합의 부탁드립니다.'
         stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'document_deleted':
         subject = f'[의뢰서 삭제] {document.title}'
