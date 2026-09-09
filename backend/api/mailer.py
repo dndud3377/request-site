@@ -664,6 +664,30 @@ def resolve_withdraw_target_recipients(document, step_ids):
     return _apply_redirect(individual_emails, document), _redirect_team_groups(team_groups, document)
 
 
+def _pause_zone_step_ids(document, step_ids):
+    """중단 요청/재개 메일 수신 범위 = step_ids(보통 pending 확인 대상)가 속한 **구역 전체**의
+    현재 회차 step id(합의 완료 포함).
+
+    확인 대상(누가 중단을 승인/거부하는가, `PauseRequest.target_step_ids`)은 그대로 pending만
+    쓰고, 메일 수신자만 같은 구역의 이미 합의한 사람까지 넓힌다(`RequestDocument.pause_zones`,
+    `docs/APPROVAL.md` Case M — 합의를 마쳤어도 중단 사실은 알아야 한다). 그 뒤
+    `resolve_withdraw_target_recipients`에 넘기면 "지정자 있으면 그 사람만, 없으면 팀 전체"
+    규칙이 넓어진 대상에도 그대로 적용된다.
+    """
+    steps = list(ApprovalStep.objects.filter(id__in=list(step_ids or [])))
+    if not steps:
+        return list(step_ids or [])
+    round_ = steps[0].round
+    zone_agents = set()
+    for step in steps:
+        zone = document.pause_zone_for_agent(step.agent)
+        zone_agents.update(zone if zone else (step.agent,))
+    return list(
+        ApprovalStep.objects.filter(document=document, round=round_, agent__in=zone_agents)
+        .values_list('id', flat=True)
+    )
+
+
 def _designated_pl_emails(document):
     """상신 시 지정된 PL 전원의 이메일 = 최종 회차 PL 단계 담당자들.
 
@@ -1112,7 +1136,9 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
         stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'pause_resumed':
         subject = f'[결재 재개] {document.title}'
-        headline = '중단됐던 의뢰서 결재가 재개되었습니다. 결재 현황에서 확인해 주세요.'
+        # (2026-09) 재개 시 해당 구역이 처음부터 다시 합의를 진행하도록 초기화되므로
+        # (views.py resume() 참조), "확인만 하면 된다"가 아니라 재합의가 필요함을 명시한다.
+        headline = '재개되었습니다. 확인 후 재합의 부탁드립니다.'
         stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'document_deleted':
         subject = f'[의뢰서 삭제] {document.title}'
@@ -1330,15 +1356,18 @@ def enqueue_withdraw_cancelled(document, withdraw_request):
 
 
 def enqueue_pause_requested(document, pause_request):
-    """중단 요청 접수 알림 적재 — 확인 대상 단계의 담당자/팀 대상.
+    """중단 요청 접수 알림 적재 — **요청 시점 구역 전체**(합의 완료자 포함)의 담당자/팀 대상.
 
-    withdraw_requested 와 동일한 수신자 규칙(`resolve_withdraw_target_recipients`)을 그대로
-    재사용한다 — "확인 대상 단계에 담당자가 있으면 개인 1명, 없으면 그 담당 팀 전원"이라는
-    로직이 이벤트 종류와 무관하게 같기 때문이다. 배정된 개인들을 묶은 메일 1통 + 미배정
-    팀별로 각 1통, 순서대로(겹치지 않게) 발송한다.
+    확인 대상(`pause_request.target_step_ids`, pending 단계)이 속한 구역을
+    `_pause_zone_step_ids`로 넓힌 뒤, withdraw_requested 와 동일한 수신자 규칙
+    (`resolve_withdraw_target_recipients` — "담당자 있으면 개인 1명, 없으면 담당 팀 전원")을
+    그대로 적용한다. 이미 합의를 마친 같은 구역 구성원도 중단 사실은 알아야 하므로 포함한다
+    (`docs/APPROVAL.md` Case M). 배정된 개인들을 묶은 메일 1통 + 미배정 팀별로 각 1통,
+    순서대로(겹치지 않게) 발송한다.
     """
+    zone_step_ids = _pause_zone_step_ids(document, pause_request.target_step_ids)
     individual_emails, team_groups = resolve_withdraw_target_recipients(
-        document, pause_request.target_step_ids,
+        document, zone_step_ids,
     )
     notis = [_enqueue(
         document, 'pause_requested', individual_emails,
@@ -1370,12 +1399,16 @@ def enqueue_pause_rejected(document, pause_request):
 
 
 def enqueue_pause_resumed(document, step_ids):
-    """결재 재개 알림 적재 — 재개 시점에 되살아난 pending 단계의 담당자/팀 대상.
+    """결재 재개 알림 적재 — 재개 시점 pending 단계가 속한 **구역 전체** 대상.
 
-    withdraw_requested 와 동일한 수신자 규칙(`resolve_withdraw_target_recipients`)을 재사용한다.
-    배정된 개인들을 묶은 메일 1통 + 미배정 팀별로 각 1통, 순서대로(겹치지 않게) 발송한다.
+    중단 중에는 결재 액션이 막혀 있어 구역 구성이 바뀌지 않으므로, `enqueue_pause_requested`
+    와 같은 `_pause_zone_step_ids`를 적용하면 "중단 요청 메일을 받았던 사람 전원이 재개 알림도
+    받는다"가 자동으로 성립한다. withdraw_requested 와 동일한 수신자 규칙
+    (`resolve_withdraw_target_recipients`)을 재사용한다. 배정된 개인들을 묶은 메일 1통 +
+    미배정 팀별로 각 1통, 순서대로(겹치지 않게) 발송한다.
     """
-    individual_emails, team_groups = resolve_withdraw_target_recipients(document, step_ids)
+    zone_step_ids = _pause_zone_step_ids(document, step_ids)
+    individual_emails, team_groups = resolve_withdraw_target_recipients(document, zone_step_ids)
     notis = [_enqueue(document, 'pause_resumed', individual_emails, dispatch=False)]
     for team_key, emails in team_groups.items():
         notis.append(_enqueue(document, 'pause_resumed', emails, agent=team_key, dispatch=False))

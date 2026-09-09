@@ -358,6 +358,8 @@ export default function RequestPage(): React.ReactElement {
   // 편집 대상 문서의 상태 — 'pause' 이면 상신 대신 '재개'(resume) 로 동작한다.
   const [editDocStatus, setEditDocStatus] = useState<string | null>(null);
   const isResumeMode = editDocStatus === 'pause';
+  // R(+RV) 합의 완료 후 중단된 문서 — StepMap(MAP 정보)을 read-only로 막는다(서버가 계산해 내려줌, 2026-09).
+  const [mapInfoLocked, setMapInfoLocked] = useState(false);
 
   // 이력 바로 등록 (MASTER 전용) — 결재 경로를 타지 않고 상신일·결재 완료일을 직접 지정한다.
   const [directHistoryOpen, setDirectHistoryOpen] = useState(false);
@@ -942,6 +944,7 @@ export default function RequestPage(): React.ReactElement {
     documentsAPI.get(targetDocId).then((res) => {
       const doc = res.data;
       setEditDocStatus(doc.status);
+      setMapInfoLocked(Boolean(doc.map_info_locked));
       try {
         const parsed = JSON.parse(doc.additional_notes ?? '{}');
         prevParsedRef.current = {
@@ -4706,6 +4709,7 @@ export default function RequestPage(): React.ReactElement {
           errors={errors}
           isMapDeleteEdit={isMapDeleteEdit}
           isMapReasonMode={isMapReasonMode}
+          mapInfoLocked={mapInfoLocked}
           lineOptions={lineOptions}
           sourcePartIdOptions={sourcePartIdOptions}
           mapInfo={mapInfo}

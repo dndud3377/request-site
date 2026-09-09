@@ -3493,7 +3493,9 @@ class PauseAndOtherActionMailTest(TestCase):
         self.assertEqual(sorted(noti.recipients), sorted(['pm_m@c.com', 'pm_a@c.com']))
 
     # ----- resume -----
-    def test_resume_notifies_pending_step_owners(self):
+    def test_resume_notifies_zone_team_when_agent_is_reset_to_unassigned(self):
+        """(2026-09) resume()이 검토중/지정 방식 담당자(R 등)를 완전히 초기화(담당자 비움)
+        하므로, 재개 알림은 이전 담당자 개인이 아니라 그 팀 전체로 간다."""
         doc = self._doc(status='pause')
         self._step(doc, 'R', assignee=self.rfg)
         PauseRequest.objects.create(
@@ -3505,7 +3507,11 @@ class PauseAndOtherActionMailTest(TestCase):
         self.assertEqual(res.status_code, 200, res.content)
 
         noti = MailNotification.objects.get(event_type='pause_resumed')
-        self.assertEqual(noti.recipients, ['pm_r@c.com'])
+        self.assertEqual(sorted(noti.recipients), sorted(['pm_r@c.com', 'pm_r2@c.com']))
+
+        r_step = ApprovalStep.objects.get(document=doc, agent='R')
+        self.assertIsNone(r_step.assignee)
+        self.assertEqual(r_step.action, 'pending')
 
     # ----- delete -----
     def test_delete_notifies_before_document_is_gone(self):
