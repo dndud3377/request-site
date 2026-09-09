@@ -1608,9 +1608,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def resume(self, request, pk=None):
         """재개: 작성자가 중단(pause) 문서를 재개한다 → under_review.
 
-        멈춘 시점의 pending 단계를 그대로 되살려 그 단계부터 결재가 이어진다
-        (처음 PL 검토로 돌아가거나 회차를 새로 만들지 않는다). 문서 내용 수정은
-        사전에 /request 화면에서 update 된다.
+        중단 시점 진행 중이던 구역(zone)부터 결재가 이어진다(처음 PL 검토로 돌아가거나
+        회차를 새로 만들지 않는다). ✅ (2026-09) 단, 그 구역 안에서 이미 합의됐던 단계도
+        포함해 **구역 전체를 처음부터 다시 합의**하도록 초기화한다(아래 참조) — 문서 내용을
+        고쳐 재개하는 경우가 많아, 이미 끝난 합의를 그대로 두면 바뀐 내용을 못 보고 지나칠
+        수 있기 때문이다. 문서 내용 수정은 사전에 /request 화면에서 update 된다.
         """
         document = self.get_object()
         # select_for_update 는 트랜잭션 안에서만 사용 가능하므로 메서드 전체를 atomic 으로 감싼다.
@@ -1620,6 +1622,34 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '재개 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
         if document.status != 'pause':
             return Response({'error': '중단된 문서만 재개할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ✅ (2026-09) 재개 시 중단 시점 구역(zone) 전체를 처음부터 다시 합의하도록 초기화한다.
+        # - 검토중/지정 담당자(R/P/J/O/E)는 담당자를 완전히 비우고 대기중으로 되돌린다
+        #   (comment는 유지 — 과거 '되감기' 사고(EV step 삭제로 이력 소실)가 재발하지 않게
+        #   행 자체는 지우지 않는다).
+        # - 그 담당자가 지정하는 검토자(RV/PV/EV)는 담당자가 다시 정해질 때 이전 지정과
+        #   무관하게 새로 고를 수 있어야 하므로 행 자체를 지운다.
+        # - 작성자가 상신 시 직접 지정한 단계(PL/SA/RA)는 "미배정" 상태 자체가 없는
+        #   개인 지정 방식이라 담당자는 유지하고 대기중으로만 되돌린다.
+        _CLAIM_MAIN_AGENTS = {'R', 'P', 'J', 'O', 'E'}
+        _REVIEWER_AGENTS = {'RV', 'PV', 'EV'}
+        reset_round = self._max_round(document)
+        zone_agents = set()
+        for step in ApprovalStep.objects.filter(document=document, action='pending', round=reset_round):
+            zone = document.pause_zone_for_agent(step.agent)
+            zone_agents.update(zone if zone else (step.agent,))
+        if zone_agents:
+            ApprovalStep.objects.filter(
+                document=document, round=reset_round, agent__in=(zone_agents & _CLAIM_MAIN_AGENTS),
+            ).update(assignee=None, assignee_name='', action='pending', acted_at=None)
+            ApprovalStep.objects.filter(
+                document=document, round=reset_round, agent__in=(zone_agents & _REVIEWER_AGENTS),
+            ).delete()
+            individually_designated = zone_agents - _CLAIM_MAIN_AGENTS - _REVIEWER_AGENTS
+            if individually_designated:
+                ApprovalStep.objects.filter(
+                    document=document, round=reset_round, agent__in=individually_designated,
+                ).update(action='pending', acted_at=None)
 
         # 멈춘 기간(중단 확정~재개)만큼 현재 pending 단계의 마감 기한을 미뤄, 중단 동안
         # 남은 기한이 깎이지 않게 한다(감사 #1). 달력일 기준으로 밀어 남은 여유를 보존한다.
