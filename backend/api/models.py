@@ -277,6 +277,48 @@ class RequestDocument(models.Model):
                 return True
         return False
 
+    # 중단 요청 메일 수신 범위·MAP 정보 잠금 판정에 쓰는 "구역(zone)" — CLAUDE.md "용어 정리" 표와
+    # 같다. 구역은 순서대로 진행되며(2구역이 없는 경로는 건너뛴다), 같은 구역 안은 병렬이다.
+    PAUSE_ZONE_1_AGENTS = ('PL', 'SA')
+    PAUSE_ZONE_2_AGENTS = ('R', 'RV')
+
+    def pause_zones(self):
+        """이 문서의 결재 경로에서 구역별 agent 집합을 순서대로 반환한다.
+
+        'MAP 삭제'는 2구역이 없고 R이 3구역 소속(P·R·J·O 병렬)이며, 'ADI CD 변경'은
+        R 자체가 없어 2구역이 없다(P·J만 병렬). 나머지(일반·Only MAP)는 R이 2구역이다.
+        """
+        if self.is_map_delete_edit():
+            return [self.PAUSE_ZONE_1_AGENTS, ('P', 'PV', 'R', 'RV', 'J', 'O')]
+        if self.is_adi_cd_change():
+            return [self.PAUSE_ZONE_1_AGENTS, ('P', 'PV', 'J')]
+        if self.is_only_map():
+            return [self.PAUSE_ZONE_1_AGENTS, self.PAUSE_ZONE_2_AGENTS, ('RA',)]
+        return [
+            self.PAUSE_ZONE_1_AGENTS, self.PAUSE_ZONE_2_AGENTS,
+            ('P', 'PV', 'J', 'O', 'E', 'EV', 'RA'),
+        ]
+
+    def pause_zone_for_agent(self, agent):
+        """agent 가 속한 구역의 agent 집합을 반환한다(속한 구역이 없으면 None)."""
+        for zone in self.pause_zones():
+            if agent in zone:
+                return zone
+        return None
+
+    def is_r_stage_completed(self, round=None):
+        """지정(또는 현재) 회차의 R(+RV) 단계가 전원 approved 인지 여부.
+
+        R 단계 자체가 없는 문서(예: ADI CD 변경)는 False를 반환한다 — MAP 정보 잠금
+        판정(`doc_permissions.map_info_locked`)에 쓰이며, R이 없으면 잠글 근거가 없다.
+        """
+        if round is None:
+            round = self.approval_steps.aggregate(models.Max('round'))['round__max'] or 1
+        r_steps = self.approval_steps.filter(round=round, agent__in=('R', 'RV'))
+        if not r_steps.exists():
+            return False
+        return not r_steps.exclude(action='approved').exists()
+
 
 class LayerFilterSet(models.Model):
     """결재 상세페이지의 J/O-layer 공유 필터.
