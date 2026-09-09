@@ -2934,6 +2934,20 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 - **중단(PAUSE) 문서 재개**: `status == 'pause'` 문서를 `/request` 로 편집(editDocId) 시, 편집 로드에서 `editDocStatus` 를 기록하고 `isResumeMode` 로 분기한다. 상신 모달·STEP5 버튼 라벨이 '재개'(`approval.resume`)로 바뀌고, 지정 PL 선택 UI·필수 검증을 건너뛴다(재개는 멈춘 단계부터 이어지므로 지정 PL 불필요). `handleSubmit` 은 문서 상태가 pause 면 update 후 `documentsAPI.resume` 를 호출한다(상신/재상신 대신). 상세는 `docs/APPROVAL.md` Case M 참조.
 
+### 추가 변경 이력 (2026-09 — 중단(PAUSE) 재개 편집 시 MAP 정보 잠금)
+
+- **R(+RV) 합의 완료 후 중단된 문서는 MAP 정보를 수정할 수 없다**: `doc_permissions.map_info_locked(document)` 가
+  `status == 'pause'` 이고 현재 회차 R(+RV) 가 전원 approved 일 때 참을 반환한다(경로 무관 —
+  `RequestDocument.is_r_stage_completed`). 서버는 `RequestDocumentSerializer` 응답에
+  `map_info_locked` 를 내려주고, `RequestPage`(`isResumeMode` 편집 로드)가 이를 상태로 저장해
+  `StepMap`(2단계)에 전달한다. `StepMap` 은 잠금 상태면 MAP 정보 섹션 전체(초기화 버튼 포함)를
+  `pointer-events: none` + 흐림 처리로 막고 안내 문구(`request.map_info_locked_notice`, ko/en)를
+  보여준다. 프론트 잠금은 UX 용이고, 실제 강제는 백엔드다 — `RequestDocumentViewSet.update` 가
+  `RequestDocument.MAP_INFO_FIELDS`(StepMap 소유 필드 전체, `mapInfoDefaults()` 와 같은 키
+  목록) 중 하나라도 저장값과 달라진 PATCH 를 400 으로 거부한다(`changed_map_info_fields`).
+  R 단계 자체가 없는 'ADI CD 변경'은 대상이 아니다. 결재 흐름은 바꾸지 않는 편집 권한 제약이라
+  결재 경로·메일에는 영향이 없다. 상세는 `docs/APPROVAL.md` Case M(2026-09 항목) 참조.
+
 ### 추가 변경 이력 (2026-07-01)
 
 - **상신 모달에 통보처(Notifier) 다중 지정 추가**: 지정 PL 아래에 "통보처" 필드를 추가해 **결재 권한 없이 메일 통보만 받을 인원을 여러 명** 지정할 수 있다(선택).
