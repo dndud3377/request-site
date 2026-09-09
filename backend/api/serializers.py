@@ -24,6 +24,7 @@ class DocPermFieldsMixin(serializers.Serializer):
     withdraw_request = serializers.SerializerMethodField()
     post_approver_fixed_loginid = serializers.SerializerMethodField()
     post_approver_fixed_name = serializers.SerializerMethodField()
+    map_info_locked = serializers.SerializerMethodField()
     requester_loginid = serializers.SerializerMethodField()
     shared_group_name = serializers.CharField(source='shared_group.name', read_only=True, default=None)
 
@@ -62,6 +63,13 @@ class DocPermFieldsMixin(serializers.Serializer):
     def get_can_requester_resubmit(self, obj):
         user = self._perm_user()
         return bool(user and doc_permissions.can_requester_resubmit(user, obj))
+
+    def get_map_info_locked(self, obj):
+        """R(+RV) 합의 완료 후 중단(pause)된 문서면 True — 편집 화면이 MAP 정보를 read-only로 막는다.
+
+        사용자와 무관한 문서 상태 판정이라 로그인 여부와 상관없이 계산한다.
+        """
+        return doc_permissions.map_info_locked(obj)
 
     def get_post_approver_fixed_loginid(self, obj):
         """고정 후결자(.env) loginid — 프론트가 '🔒 고정' 표시·변경 잠금에 사용."""
@@ -219,7 +227,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw', 'notifier_mails',
             'can_request_pause', 'can_resume', 'can_requester_resubmit', 'pause_request', 'withdraw_request',
-            'post_approver_fixed_loginid', 'post_approver_fixed_name', 'mail_completion_matched',
+            'post_approver_fixed_loginid', 'post_approver_fixed_name', 'map_info_locked', 'mail_completion_matched',
             'shared_group', 'shared_group_name', 'review_items',
         ]
         # shared_group 은 전체 저장(PUT/PATCH)에 값이 빠져 초기화되는 일이 없도록 read-only 로 두고,
