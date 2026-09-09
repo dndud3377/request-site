@@ -224,3 +224,16 @@ def can_resume(user, document):
     if getattr(user, 'role', '') == 'MASTER':
         return True
     return is_requester(user, document)
+
+
+def map_info_locked(document):
+    """중단(pause) 중 편집 화면에서 MAP 정보 필드를 잠가야 하는가.
+
+    R(+RV) 단계가 이미 합의(approved)를 마친 뒤에 중단됐다면, R이 검토를 마친 MAP 정보를
+    되돌아가 바꾸는 셈이라 잠근다(경로 무관 — `RequestDocument.is_r_stage_completed` 참고).
+    R 단계 자체가 없는 문서(ADI CD 변경 등)는 항상 False다. `status != 'pause'`면 애초에
+    이 판정이 의미가 없다(수정 자체가 다른 규칙으로 막히거나 열린다).
+    """
+    if document.status != 'pause':
+        return False
+    return document.is_r_stage_completed()
