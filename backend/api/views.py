@@ -341,6 +341,22 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         caller_loginid = getattr(user, 'loginid', '')
         return bool(caller_loginid and step.assignee and step.assignee.loginid == caller_loginid)
 
+    def _reassign_claim_actor(self, step, user):
+        """검토중(claim) 단계의 실제 합의/반려 행위자를 assignee 에 반영한다.
+
+        J/O/E/P는 선점자(A)가 아니라 같은 팀 누구나(또는 MASTER) 합의/반려할 수 있다
+        (`_can_act_on_step`). 실제로 버튼을 누른 사람(B)이 선점자와 다르면, 화면·메일·이력이
+        모두 이 assignee/assignee_name 을 그대로 표시하므로 여기서 최종 행위자로 덮어써야
+        "누가 실제로 처리했는지"가 정확히 남는다(선점만 하고 처리는 안 한 A가 계속 표시되는
+        문제 방지). 선점자 본인이 처리한 경우(가장 흔한 경로)는 값이 같아 아무 변화가 없다.
+        """
+        if step.agent not in self._CLAIM_AGENTS:
+            return
+        if step.assignee_id == getattr(user, 'id', None):
+            return
+        step.assignee = user
+        step.assignee_name = getattr(user, 'username', '') or getattr(user, 'loginid', '')
+
     def _can_confirm_pause(self, user, step):
         """중단 요청 '확인' 인가.
 
@@ -1083,6 +1099,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 step.comment = f'{step.comment}\n[합의 {stamp}] {comment}'
         else:
             step.comment = comment
+        self._reassign_claim_actor(step, request.user)
         if not step.assignee_name:
             step.assignee_name = request.data.get('approver_name', '')
         step.save()
@@ -1243,6 +1260,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             mailer.enqueue_revision_requested(document)
             return Response({'message': '수정 요청을 보냈습니다.', 'status': document.status})
 
+        self._reassign_claim_actor(step, request.user)
         step.action = 'rejected'
         step.acted_at = timezone.now()
         step.comment = comment
