@@ -138,6 +138,8 @@ export function MarkCategorySettingsModal({
       isOpen={isOpen}
       onClose={onClose}
       title={t('approval.category_settings_title')}
+      size="sm"
+      bodyStyle={{ minHeight: 600 }}
       footer={<button className="btn btn-secondary btn-sm" onClick={onClose}>{t('common.close')}</button>}
     >
       <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 14 }}>
