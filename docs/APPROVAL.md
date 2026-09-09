@@ -475,6 +475,29 @@ R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전
   다뤄본 적이 없었다. `isMapDeleteEdit` 판정을 추가해, `E`가 `!hasPlel` 일 때 쓰는 것과 같은
   `해당없음`(na) 분기를 RA 에도 걸었다.
 
+#### 결재 경로 탭 — RA 단계 생성 전 미리 지정된 후결자 이름 표시 (2026-09)
+
+RA(후결자) step 은 R 합의 후에야 생성된다(Case E/N). 그 전까지 결재 상세 '결재 경로' 탭의
+후결자 행은 공용 fallback(`getStepDisplays`)을 타 이름 없이 `대기중`만 보여줬는데, 실제로는
+① **고정 후결자**(`.env POST_APPROVER_LOGINID`, 모든 문서 공통 1명)와 ② **상신 시 지정한
+추가 후결자**(`additional_notes.detail.post_approvers`, only_prodc=YES 등)가 이미 정해져
+있는 경우가 있다. 둘 다 사람이 이미 정해져 있는데 화면엔 드러나지 않아 혼란을 줬다.
+
+- **백엔드**: `RequestDocumentSerializer`(`DocPermFieldsMixin`)에 `post_approver_fixed_name`
+  필드 추가. 기존 `post_approver_fixed_loginid` 와 같은 방식으로 `.env` 고정 후결자의
+  표시 이름을 조회해 내려준다(RA step 생성 시(`views.py`)와 동일하게 `username` 이 비어
+  있으면 `loginid` 로 대체). 목록 응답(`RequestDocumentListSerializer`)에는 추가하지 않았다
+  (이 필드는 상세 화면 '결재 경로' 탭 전용).
+- **프론트**: `PagedDetailView.tsx`의 `getStepDisplays('RA', round)`가, **현재 회차
+  (`round === maxRound`)이고 문서가 `under_review`이며 그 회차에 RA step 이 아직 없을 때만**
+  `post_approver_fixed_name` + `additional_notes.detail.post_approvers`(이름 포함)를 모아
+  `대기중` 뱃지 + 이름으로 미리 보여준다. 지나간(반려·재상신으로 끝난) 회차나 RA 자체가 없는
+  문서(MAP 삭제·ADI CD 변경 등 기존 na 분기)는 그대로 손대지 않았다.
+- ⚠️ 위 §3.3 "후결자(RA)는 `대기중`을 거치지 않는다"는 **결재현황 목록 그리드**
+  (`approvalTable.ts`, RA step 이 실제로 생성된 이후만 다룸) 얘기이고, 이번 변경은
+  **결재 상세 '결재 경로' 탭**에서 step 생성 **이전** 미리보기에만 적용되므로 서로 다른
+  화면·시점이라 모순이 아니다.
+
 #### 후결자 최소인원 가드 누락 수정 (2026-08)
 
 `remove-post-approver`(Case N)의 최소인원 가드가 `detail.get('only_prodc')=='Yes'` 를 직접
