@@ -85,12 +85,12 @@ export const findBbEntryViolations = (
     })
     .map((e) => e.id);
 
-/** 활성 행 중 st 또는 new_or_copy 가 공란인 행 id 목록 (J/O-ayer 공용) */
+/** st 또는 new_or_copy 가 공란인 행 id 목록 (J/O-ayer 공용). st==='X' 행도 new_or_copy 는 필수다. */
 export const findEmptyStNocViolations = (
   rows: { id: string; st: string; new_or_copy: string }[]
 ): string[] =>
   rows
-    .filter((r) => !isRowInactive(r.st) && (!r.st?.trim() || !r.new_or_copy?.trim()))
+    .filter((r) => !r.st?.trim() || !r.new_or_copy?.trim())
     .map((r) => r.id);
 
 /** new_or_copy='차용' 활성 행 중 product_name·step 공란인 행 id 목록 (J/O-ayer 공용) */

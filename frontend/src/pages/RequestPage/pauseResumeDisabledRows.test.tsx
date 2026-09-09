@@ -96,12 +96,12 @@ const fixtureDetail = {
 // 활성 1행 + 비활성(st==='X') 2행 — 비활성 행이 재개 상신 payload 에 남아야 한다.
 const fixtureJayerRows = [
   { id: 'j1', updated: '20260801', sortOrder: 1, loaded: true, process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01', st: 'O', new_or_copy: '신규', product_name: '제품A', step: '10', item_id: 'ITEM_1' },
-  { id: 'j2', updated: '20260801', sortOrder: 2, loaded: true, process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'X', new_or_copy: '', product_name: '', step: '', item_id: '' },
-  { id: 'j3', updated: '20260801', sortOrder: 3, loaded: true, process_id: PROCESS_ID, sp: 'SP03', sd: 'SD03', pp: 'PP03', layerid: 'L03', st: 'X', new_or_copy: '', product_name: '', step: '', item_id: '' },
+  { id: 'j2', updated: '20260801', sortOrder: 2, loaded: true, process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'X', new_or_copy: '기등록', product_name: '', step: '', item_id: '' },
+  { id: 'j3', updated: '20260801', sortOrder: 3, loaded: true, process_id: PROCESS_ID, sp: 'SP03', sd: 'SD03', pp: 'PP03', layerid: 'L03', st: 'X', new_or_copy: '기등록', product_name: '', step: '', item_id: '' },
 ];
 const fixtureOayerRows = [
   { id: 'o1', updated: '20260801', sortOrder: 1, loaded: true, process_id: PROCESS_ID, sp: 'SP01', sd: 'SD01', pp: 'PP01', layerid: 'L01', st: 'O', new_or_copy: '신규', product_name: '제품A', step: '10' },
-  { id: 'o2', updated: '20260801', sortOrder: 2, loaded: true, process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'X', new_or_copy: '', product_name: '', step: '' },
+  { id: 'o2', updated: '20260801', sortOrder: 2, loaded: true, process_id: PROCESS_ID, sp: 'SP02', sd: 'SD02', pp: 'PP02', layerid: 'L02', st: 'X', new_or_copy: '기등록', product_name: '', step: '' },
 ];
 const fixtureBbRows = [
   { id: 'b1', sortOrder: 1, disabled: false, entryId: 'bbe1', sourceJayerRowId: 'j1', process_id: PROCESS_ID, ss: 'SP01', sd: 'SD01', bb_process_id: BB_PROCESS_ID, bb_name: '[라인1] BB제품1', bb_layer: 'L01', bb_ss: '110', bb_step: 'STEP', remark: '' },
