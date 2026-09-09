@@ -222,6 +222,22 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   `assignee__loginid` 필터")은 팀 공동 합의 도입 이전의 동작이다.
   최종 판정은 `all(s.action == 'approved' for s in j_steps)`로, 검토중 방식에서는 J step이 1개이므로 그 1명의 합의로 완료된다.
   (과거 다중 배정된 J 문서는 하위호환으로 전원 합의 로직이 그대로 적용된다.)
+- ✅ **(2026-09) 검토중(A) ↔ 실제 합의자(B)가 다르면 B가 최종 담당자로 갱신된다**
+  (`_reassign_claim_actor`, `approve_step`/`reject_step` 저장 직전 호출). J·O·E·P 는 선점자(A)가
+  아니라 같은 팀 누구나(또는 MASTER) 합의/반려할 수 있는데, 예전엔 실제로 버튼을 누른 사람(B)이
+  아니라 **선점만 하고 처리는 안 한 A가 계속 `assignee`/`assignee_name`으로 남아**, 결재 경로
+  탭·결재현황 목록·메일이 모두 A가 처리한 것으로 표시됐다. 이제 합의/반려 저장 직전에
+  `step.assignee`를 실제 요청자(request.user)로 덮어써, 화면·메일·이력 모두 자동으로 B를
+  최종 행위자로 표시한다. MASTER가 대신 처리해도 동일하게 MASTER가 최종 담당자가 된다.
+  선점자 본인이 그대로 처리하면(가장 흔한 경로) 값이 같아 아무 변화가 없다.
+  ⚠️ **적용 범위**: 실제로 `action`이 바뀌는 처리에만 적용된다 — E/EV의 반려는 '수정 요청'이라
+  `action`도 `assignee`도 바뀌지 않는다(아래 Case H 참조, 의도된 예외). 이 변경 **이전**에 이미
+  처리된 기존 문서의 `assignee`는 소급 반영되지 않는다(그 시점엔 A가 실제로 처리했을 수도 있어
+  구분할 방법이 없다).
+  테스트: `PEStageReviewerFlowTest.test_approve_by_different_team_member_becomes_final_approver`,
+  `test_reject_by_different_team_member_becomes_final_rejecter`,
+  `test_master_override_approve_becomes_final_approver`,
+  `test_claimer_self_approve_assignee_unchanged`(회귀 방지).
 - ✅ 동시성: 두 결재자가 거의 동시에 마지막 합의를 눌러도 문서 행 락(`select_for_update`)으로
   직렬화되어 approved 전이가 누락되지 않는다(2026-06 수정).
 
