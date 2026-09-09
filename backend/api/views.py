@@ -1091,8 +1091,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         step.action = 'approved'
         step.acted_at = timezone.now()
-        # E/EV 의 comment 는 '수정 요청'(reject_step)과 'Validation System 값 변경'
-        # (_note_validation_system_change) 이력이
+        # E/EV 의 comment 는 'Validation System 값 변경'(_note_validation_system_change) 이력이
         # 쌓이는 유일한 저장소다 — ApprovalStep 에 이력 전용 필드가 없다. 덮어쓰면
         # 설계 결정(이력 보존)이 최종 합의 시점에 통째로 무효화되므로 덧붙인다.
         if step.agent in ('E', 'EV') and step.comment:
@@ -1250,17 +1249,6 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         if not self._can_act_on_step(request.user, step):
             return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
-
-        # MASK(E/EV)는 반려로 결재를 되돌리지 않는다 — 대상/비대상 판정 주체가 상신자 하나이므로,
-        # 이견은 '수정 요청'으로 상신자에게 사유만 전달하고 결재 상태(status/round)는 그대로 둔다.
-        # 되돌릴 게 없으니 PL 부터 전 단계를 재결재하는 반려의 비용이 발생하지 않는다.
-        if agent in ('E', 'EV'):
-            stamp = timezone.now().strftime('%Y-%m-%d %H:%M')
-            entry = f'[수정 요청 {stamp}] {comment}'.strip()
-            step.comment = f'{step.comment}\n{entry}'.strip() if step.comment else entry
-            step.save(update_fields=['comment'])
-            mailer.enqueue_revision_requested(document)
-            return Response({'message': '수정 요청을 보냈습니다.', 'status': document.status})
 
         self._reassign_claim_actor(step, request.user)
         step.action = 'rejected'
