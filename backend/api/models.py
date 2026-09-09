@@ -319,6 +319,34 @@ class RequestDocument(models.Model):
             return False
         return not r_steps.exclude(action='approved').exists()
 
+    # StepMap(2단계)이 소유한 모든 DetailFormState 필드 — 프론트 `RequestPage/constants.ts` 의
+    # mapInfoDefaults() 와 반드시 같은 키 목록이어야 한다(2026-09, MAP 정보 잠금 판정에 재사용).
+    MAP_INFO_FIELDS = (
+        'source_line', 'source_partid', 'map_type', 'map_change',
+        'map_value_x', 'map_value_y', 'map_reason', 'map_change_reason',
+        'map_change_top', 'map_value_x_top', 'map_value_y_top',
+        'map_change_bottom', 'map_value_x_bottom', 'map_value_y_bottom',
+        'ea_change', 'ea_value', 'only_prodc', 'py_apply',
+        'prodc_scope', 'prodc_top_line', 'prodc_top_process', 'prodc_top_product',
+        'prodc_middle_use', 'prodc_middle_line', 'prodc_middle_process', 'prodc_middle_product',
+        'prodc_bottom_line', 'prodc_bottom_process', 'prodc_bottom_product',
+        'mshot_change', 'mshot_image_copy', 'mshot_image_copy_top', 'mshot_image_copy_bottom',
+        'photo_backside', 'eds_backside',
+        'inter', 'inter_xs', 'inter_ys', 'in_apply', 'inter_select',
+        'tsv', 'rf', 'fullchip', 'split', 'st', 'ecc',
+        'labelsideshot', 'hpkglabelheight', 'final_yn', 'final_entries',
+    )
+
+    def changed_map_info_fields(self, new_detail):
+        """저장된 detail 과 비교해 값이 달라진 MAP 정보 필드 이름 목록을 반환한다.
+
+        `map_info_locked()` 가 참인 상태에서 편집 요청(PATCH)을 검증할 때 쓴다
+        (`views.py` `RequestDocumentViewSet.update`).
+        """
+        old_detail = self.get_detail().get('detail', {}) or {}
+        new_detail = new_detail or {}
+        return [f for f in self.MAP_INFO_FIELDS if old_detail.get(f) != new_detail.get(f)]
+
 
 class LayerFilterSet(models.Model):
     """결재 상세페이지의 J/O-layer 공유 필터.
