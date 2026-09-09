@@ -963,7 +963,6 @@ class MailNotification(models.Model):
         ('dcq_sync_failed', 'DCQ 동기화 실패'),
         # 기존에 이미 발송 중이었으나 누락됐던 라벨 보완 (2026-09)
         ('notify_p_completed', 'P 단계 완료 통보'),
-        ('revision_requested', '수정 요청'),
         # 중단(PAUSE) 전 구간 + 삭제·후결자 제거 (2026-09 추가)
         ('pause_requested', '중단 요청'),
         ('pause_confirmed', '중단 확정'),
@@ -1155,7 +1154,6 @@ class RejectionSnapshot(models.Model):
 
     - 회차마다 1행씩 쌓인다(3번 반려 = 3행).
     - 원본 문서가 삭제돼도 이력은 남긴다(document 는 SET_NULL, source_document_id 로 추적).
-    - {{agent_E}}(MASK)의 '수정 요청'은 문서 status 를 바꾸지 않는 별개 동작이라 여기에 쌓이지 않는다.
     """
 
     document = models.ForeignKey(
