@@ -19,13 +19,16 @@
 | 항목 | 값 |
 |------|-----|
 | 대상 상태 | `status='approved'` (결재 완료)만 |
-| 연도 기준 | `submitted_at` (최초 상신일)의 **Asia/Seoul 로컬 연도** |
+| 연도 기준 | `submitted_at` (최신 회차 상신일)의 **Asia/Seoul 로컬 연도** |
 | X축 | 디자인룰 (`DesignRule.design_rule`) — 화면에는 **"N나노"** 로 표시(§2 참조) |
 | Y축 | 의뢰서 건수 |
 | 드릴다운 | 요청 목적(`detail.request_purpose`)별 건수 |
 
-`submitted_at` 은 `views.py` 의 submit 처리에서 `document.submitted_at or timezone.now()` 로
-**최초 상신 시각이 확정 저장**되므로, 반려 후 재상신해도 연도가 흔들리지 않는다.
+⚠️ **(2026-09)** `submitted_at` 은 최초 상신 시각이 아니라 **가장 최근 회차의 상신 시각**이다.
+최초 상신은 `views.py` 의 `submit` 이 `document.submitted_at or timezone.now()` 로 채우지만,
+반려 후 재상신(`resubmit`)·의뢰자 재상신(`requester_resubmit`)이 그때마다 `timezone.now()`로
+**덮어쓴다**(`docs/APPROVAL.md` Case I 참조). 그래서 **연말에 반려되어 해가 바뀐 뒤 재상신되면
+그 문서는 최초 상신 연도가 아니라 재상신한 연도의 통계로 집계된다** — 의도된 동작이다(2026-09 결정).
 `submitted_at` 이 비어 있는 문서는 연도를 정할 수 없으므로 집계에서 제외한다.
 
 ---

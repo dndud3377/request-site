@@ -535,6 +535,28 @@ class PlSubmitMailTest(TestCase):
         noti = MailNotification.objects.filter(document=doc, event_type='stage_arrival').latest('id')
         self.assertTrue(noti.subject.startswith('[pla님] '), noti.subject)
 
+    def test_resubmit_updates_submitted_at_to_new_round(self):
+        """재상신하면 submitted_at 이 새 회차 시각으로 갱신된다(예전엔 1회차 날짜에 고정됐다)."""
+        from datetime import timedelta
+        doc = self._make_draft('draft')
+        self.client.force_authenticate(user=self.requester)
+        self.client.post(f'/api/documents/{doc.id}/submit/', {
+            'designated_pl_loginids': [self.pl_a.loginid],
+        }, format='json')
+        doc.refresh_from_db()
+        self.assertIsNotNone(doc.submitted_at)
+
+        # 1회차 상신 시각을 인위적으로 과거로 되돌려, 재상신 후 값이 실제로 갱신되는지 구분한다.
+        old_stamp = doc.submitted_at - timedelta(days=1)
+        RequestDocument.objects.filter(pk=doc.pk).update(submitted_at=old_stamp, status='rejected')
+
+        r = self.client.post(f'/api/documents/{doc.id}/resubmit/', {
+            'designated_pl_loginids': [self.pl_a.loginid],
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        self.assertGreater(doc.submitted_at, old_stamp)
+
     def test_change_designee_sends_mail_to_new_pl_only(self):
         doc = self._make_draft('draft')
         self.client.force_authenticate(user=self.requester)
@@ -4574,6 +4596,30 @@ class RejectionSnapshotTest(TestCase):
             [1, 2, 3],
         )
 
+    def test_each_round_snapshot_captures_its_own_submitted_at(self):
+        """회차마다 반려 스냅샷의 submitted_at 이 그 회차의 재상신 시각과 일치해야 한다.
+
+        (재상신이 submitted_at 을 갱신하지 않던 예전엔 2회차 이후 스냅샷도 전부 1회차
+        상신일을 담아, 이력조회 '반려' 탭에 실제와 다른 날짜가 표시됐다.)
+        """
+        doc = self._make_doc()
+        self._submit(doc)
+        self._advance_to_r(doc)
+        self._reject_at_r(doc)
+        round1_snap = RejectionSnapshot.objects.get(round=1)
+
+        self._resubmit(doc)
+        doc.refresh_from_db()
+        round2_submitted_at = doc.submitted_at
+        self.assertGreater(round2_submitted_at, round1_snap.submitted_at,
+                            '재상신 시각은 1회차 반려 스냅샷의 상신일보다 나중이어야 한다')
+
+        self._advance_to_r(doc)
+        self._reject_at_r(doc)
+        round2_snap = RejectionSnapshot.objects.get(round=2)
+        self.assertEqual(round2_snap.submitted_at, round2_submitted_at,
+                          '2회차 스냅샷은 2회차 재상신 시각을 담아야 한다(1회차 상신일이 아니다)')
+
     def test_snapshot_is_frozen_after_document_changes(self):
         """재상신하며 내용을 바꿔도 이미 적재된 스냅샷은 반려 당시 그대로여야 한다."""
         doc = self._make_doc(detail={'line': '라인1', 'process_id': 'BEFORE'})
@@ -5281,6 +5327,20 @@ class RequesterResubmitTest(TestCase):
         res = self.client.post(f'/api/documents/{doc.id}/requester-resubmit/',
                                {'designated_pl_loginids': [self.pl_user.loginid]}, format='json')
         self.assertEqual(res.status_code, 200, res.content)
+
+    def test_requester_resubmit_updates_submitted_at_to_new_round(self):
+        """의뢰자 재상신도 submitted_at 을 새 회차 시각으로 갱신한다(resubmit 과 동일)."""
+        from datetime import timedelta
+        doc = self._make_doc()
+        self.assertEqual(self._submit(doc).status_code, 200)
+        doc.refresh_from_db()
+        old_stamp = doc.submitted_at - timedelta(days=1)
+        RequestDocument.objects.filter(pk=doc.pk).update(submitted_at=old_stamp)
+
+        res = self._requester_resubmit(doc)
+        self.assertEqual(res.status_code, 200, res.content)
+        doc.refresh_from_db()
+        self.assertGreater(doc.submitted_at, old_stamp)
 
     def test_can_edit_allows_requester_during_pl_stage(self):
         """의뢰자 본인은 이 구간에서 문서 내용을 직접 PATCH(update)할 수 있어야 한다."""
