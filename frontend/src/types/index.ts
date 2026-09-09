@@ -159,6 +159,7 @@ export interface RequestDocument {
   pause_request?: PauseRequestInfo | null; // 활성 중단 요청 (없으면 null)
   withdraw_request?: WithdrawRequestInfo | null; // 확인 대기 중인 철회 요청 (없으면 null)
   post_approver_fixed_loginid?: string | null; // 고정 후결자(.env) loginid — '🔒 고정' 표시/변경 잠금용
+  post_approver_fixed_name?: string | null;    // 고정 후결자(.env) 표시 이름 — RA 단계 생성 전 결재 경로 탭 미리보기용
   review_items?: ReviewItem[];                 // J-ayer 검토 항목 (상세 응답)
   my_pending_review_items?: number;            // 내가 검토자인 미확인 항목 수 (목록 응답, MY 탭 조건)
   my_mark_category?: number | null;            // 내 개인 마킹 범주 id (목록 응답, 표시 없으면 null). 다른 사용자에게는 노출되지 않는다.
