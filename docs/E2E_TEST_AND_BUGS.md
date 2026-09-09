@@ -1802,8 +1802,8 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 | # | 위치 | 증상 |
 |---|---|---|
 | ~~VS-06~~ | ~~`_rewind_e_stage`~~ | ✅ **(2026-08-06 해결)** 되감기 자체를 제거해 자연 소멸. 값 변경은 E step `comment` 의 `[값 변경 …]` note 로만 남는다(`_note_validation_system_change`). 근거: `docs/superpowers/plans/2026-08-06-mask-ev-or-consensus-and-remove-rewind/` |
-| VS-07 | `frontend/src/pages/ApprovalPage.tsx:943` 인근 (반려 모달) | '수정 요청' 버튼을 눌러도 모달 제목이 `approval.modal_reject_title`("… 반려"), 라벨이 "반려 이유 (선택)", 확인 버튼이 빨간 `btn-danger` 다. 성공 토스트만 분기돼 있다 |
-| VS-08 | `backend/api/views.py:709-715`(`reject_step` 의 E/EV 분기), `backend/api/mailer.py:785`(`enqueue_revision_requested`) | `enqueue_revision_requested(document)` 가 comment 를 받지 않아 **수정 사유가 메일 본문에 실리지 않는다.** 상신자는 결재 경로 탭을 직접 뒤져야 한다 |
+| ~~VS-07~~ | ~~`frontend/src/pages/ApprovalPage.tsx` (반려 모달)~~ | ✅ **(2026-09 해결)** MASK(E/EV)의 '수정 요청' 특례 자체가 삭제되어 자연 소멸 — E/EV 반려도 다른 단계와 동일한 반려 모달/버튼/토스트를 그대로 쓴다(`docs/APPROVAL.md` 2026-09 항목) |
+| ~~VS-08~~ | ~~`backend/api/views.py`(`reject_step` 의 E/EV 분기), `backend/api/mailer.py`(`enqueue_revision_requested`)~~ | ✅ **(2026-09 해결)** `enqueue_revision_requested`/`revision_requested` 이벤트 자체가 삭제되어 자연 소멸 — E/EV 반려도 다른 단계와 동일하게 `enqueue_rejected`(comment 포함)를 쓴다 |
 | VS-09 | `frontend/src/pages/ApprovalPage.tsx` `handleValidationSystemChange`(`:497~`) | 모든 실패를 `common.process_error` 로 뭉갠다. 백엔드는 "MASK 검토가 끝난 의뢰서는 변경할 수 없습니다" 같은 구체적 사유를 준다 |
 | VS-10 | `frontend/src/pages/ApprovalPage.tsx:488`(`canEditValidationSystem` 의 `isOwner`) | `isOwner` 에 `requester_name` 폴백이 없다. 형제 검사(`:1125-1129` `isPauseRequester`)와 `backend/api/doc_permissions.py:26-29` 에는 있다. fail-closed 라 손상은 없고 기능만 안 보인다 |
 | VS-11 | `frontend/src/pages/ApprovalPage.tsx` `handleValidationSystemChange` | `processing` in-flight 가드가 없다(규칙 J). 연타하면 동시 POST 가 나가고 토스트 순서가 뒤집힌다. `select_for_update` 가 직렬화하므로 데이터 손상은 없다 |
@@ -1815,7 +1815,7 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 |---|---|---|
 | VS-13 | `backend/api/views.py:1391` `_get_validation_system` | `(JSONDecodeError, TypeError)` 만 잡는다. `json.loads('[]')` 처럼 비-dict 가 나오면 `data.get` 에서 `AttributeError` → 500. 기존 `_set_validation_system`(`:1400`)에도 있던 구멍이라 회귀는 아니다 → **범위를 넓혀 B-63 으로 승격** |
 | VS-14 | `docs/REQUEST.md:319, 322` | 레거시 문서 항목이 아직 "MASK 담당자 합의 모달"을 언급한다(그 모달은 삭제됐다). 용어 교체 항목의 "뒤의 두 문구"도 실제로는 한 개만 나열한다 |
-| VS-15 | `backend/api/views.py:677`(`reject_step` pause 가드) ↔ `:1082`(`update_validation_system` 는 `('under_review','pause')` 허용) | 문서가 `pause` 상태면 MASK 가 수정 요청을 보낼 수 없는데, 상신자는 `pause` 중에도 값을 바꿀 수 있다. 사소한 비대칭 |
+| ~~VS-15~~ | ~~`backend/api/views.py`(`reject_step` pause 가드) ↔ `update_validation_system`~~ | ✅ **(2026-09 해결)** MASK(E/EV)의 '수정 요청' 특례 자체가 삭제되어 자연 소멸 — E/EV 반려는 이제 `pause` 중에도 다른 단계와 동일하게 즉시 반려된다(비대칭 없음) |
 
 ---
 
