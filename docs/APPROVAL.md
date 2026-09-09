@@ -28,7 +28,7 @@
 | `status` | `draft`(임시저장) / `submitted`(미사용) / `under_review`(검토중) / `pause`(중단) / `approved`(승인) / `rejected`(반려). 기본값 `draft` |
 | `additional_notes` | **상세 폼 전체를 JSON 문자열로 저장**(TextField). J-layer/O-layer/Bb/detail 모두 여기에 들어감 |
 | `designated_pl` / `designated_pl_name` | 상신 시 지정한 검토 PL |
-| `submitted_at` | 최초 상신 시각 |
+| `submitted_at` | **최신 회차 상신 시각**(2026-09부터 재상신 시마다 갱신, 아래 Case I 참조) |
 | `requester_*` | 의뢰자 이름/이메일/부서 |
 
 > ⚠️ `submitted` status는 STATUS_CHOICES에 있으나 실제로 생성되지 않는 **데드 값**(상신 시 바로 `under_review`로 감).
@@ -247,6 +247,13 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 ### Case I — 재상신 (`resubmit`)
 - 조건: `status == 'rejected'`, 지정 PL 필수(본인 불가), bb 매핑 통과.
 - 동작: `status → under_review`, **max(round)+1**로 새 PL pending 생성. 이전 round step은 이력으로 보존.
+- ✅ **(2026-09) `submitted_at` 을 새 회차 시각으로 갱신**: 재상신 시 `document.submitted_at = timezone.now()`
+  로 덮어쓴다. 예전엔 최초 상신 시각이 그대로 유지돼(1회차 고정), 여러 번 반려·재상신된 문서도
+  상신일이 항상 1회차 날짜로 보였다. 영향: 결재현황 목록 기본 정렬(`d.submitted_at ?? d.created_at`)과
+  이력조회 완료 문서 목록의 "상신일" 칼럼이 최신 회차 기준으로 바뀐다. 문서 상세보기 "회차별 이력"의
+  1회차 행은 `submitted_at` 대신 **1회차 PL step 의 `created_at`** 을 쓰도록 분리해 영향받지 않는다
+  (`PagedDetailView.tsx` `getRoundSubmittedAt`). 홈 화면 연간 통계(`docs/HOME_STATS.md` §1)의 귀속
+  연도도 함께 바뀐다 — 의도된 동작(2026-09 결정).
 - ✅ **다중 지정 PL(2026-07)**: Case A와 동일하게 `designated_pl_loginids` 배열을 받아 새 회차에 PL step **전원**을 생성한다(전원 합의).
 - ✅ **검토자 프리필(2026-07)**: 수정·재상신 화면 진입 시 이전 회차에 지정했던 PL 담당자를 상신 모달의 검토자(designees)에 **미리 채운다**(통보처처럼). `doc.approval_steps` 중 최신 회차 `agent='PL'` step의 assignee로 복원하며, **수정(추가/삭제) 가능**하다. 구현: `RequestPage` 편집 로드 `useEffect`.
 
@@ -578,6 +585,8 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   step은 이력으로 남고, 새 회차가 조회 대상이 되면서 자동으로 무효화**된다(round 승격 자체가
   "초기화" 효과). `review_items_sync.reset_confirmations`로 검토 항목 확인 상태도 초기화한다.
   새로 지정된 PL·SA에게 상신 메일(`enqueue_stage_arrival`)이 발송된다.
+- ✅ **(2026-09) `submitted_at` 갱신**: `resubmit`(Case I)과 동일하게 `document.submitted_at =
+  timezone.now()`로 새 회차 시각을 덮어쓴다. 영향 범위는 Case I 항목 참조.
 - **차단**: R 등 다음 단계가 이미 생성된 뒤에는 403(`can_requester_resubmit` 이 False) — 그
   이후엔 기존처럼 `request_pause`(Case M)를 이용해야 한다. `_blocked_progress_response`도
   동일하게 적용되어, 활성 중단·철회 요청이 확인 대기 중이면 이 액션도 400으로 막힌다.
