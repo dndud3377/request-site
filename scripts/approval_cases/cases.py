@@ -956,20 +956,18 @@ def x08(ctx):
                    '— approvalTable.test.ts 와 화면으로 확인한다.')
 
 
-@case('X-09', 'X', 'E 단계 반려는 수정 요청으로 동작(다른 단계와 다름)')
+@case('X-09', 'X', 'E 단계 반려도 다른 단계와 동일하게 즉시 반려로 동작')
 def x09(ctx):
     ctx.need(PL=2, TE_R=1, TE_E=1)
     doc_id, author, pls = F.to_parallel(ctx, plel=True)
     F.claim_step(ctx.actor('TE_E', 0), doc_id, 'E')
-    F.reject_step(ctx.actor('TE_E', 0), doc_id, 'E', comment='수정 요청합니다')
-    doc = F.expect_doc_status(author, doc_id, 'under_review',
-                              '(E 반려는 수정 요청이라 상태를 바꾸지 않아야 한다)')
+    F.reject_step(ctx.actor('TE_E', 0), doc_id, 'E', comment='대상으로 보이지 않습니다')
+    doc = F.expect_doc_status(author, doc_id, 'rejected',
+                              '(E 반려도 다른 단계와 동일하게 문서를 즉시 반려해야 한다)')
     e_step = F.steps(doc, agent='E')[0]
-    if e_step.get('action') != 'pending':
-        raise CaseFailure(f'E step 이 pending 이어야 한다: {e_step.get("action")}')
-    if '[수정 요청' not in (e_step.get('comment') or ''):
-        raise CaseFailure(f'수정 요청 이력이 comment 에 없다: {e_step.get("comment")!r}')
-    return f'doc={doc_id} E.action=pending comment={(e_step.get("comment") or "")[:40]!r}'
+    if e_step.get('action') != 'rejected':
+        raise CaseFailure(f'E step 이 rejected 여야 한다: {e_step.get("action")}')
+    return f'doc={doc_id} E.action=rejected comment={(e_step.get("comment") or "")[:40]!r}'
 
 
 # ============================================================ M. 중단(PAUSE)

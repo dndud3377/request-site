@@ -230,10 +230,10 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   `step.assignee`를 실제 요청자(request.user)로 덮어써, 화면·메일·이력 모두 자동으로 B를
   최종 행위자로 표시한다. MASTER가 대신 처리해도 동일하게 MASTER가 최종 담당자가 된다.
   선점자 본인이 그대로 처리하면(가장 흔한 경로) 값이 같아 아무 변화가 없다.
-  ⚠️ **적용 범위**: 실제로 `action`이 바뀌는 처리에만 적용된다 — E/EV의 반려는 '수정 요청'이라
-  `action`도 `assignee`도 바뀌지 않는다(아래 Case H 참조, 의도된 예외). 이 변경 **이전**에 이미
-  처리된 기존 문서의 `assignee`는 소급 반영되지 않는다(그 시점엔 A가 실제로 처리했을 수도 있어
-  구분할 방법이 없다).
+  ⚠️ **적용 범위**: 실제로 `action`이 바뀌는 처리에만 적용된다(2026-09 MASK 반려 특례 제거 이후로는
+  E/EV 도 다른 단계와 동일하게 반려 시 `action`/`assignee` 가 갱신된다 — 아래 Case H 참조). 이 변경
+  **이전**에 이미 처리된 기존 문서의 `assignee`는 소급 반영되지 않는다(그 시점엔 A가 실제로 처리했을
+  수도 있어 구분할 방법이 없다).
   테스트: `PEStageReviewerFlowTest.test_approve_by_different_team_member_becomes_final_approver`,
   `test_reject_by_different_team_member_becomes_final_rejecter`,
   `test_master_override_approve_becomes_final_approver`,
@@ -247,13 +247,9 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 > **기능과 함께 2026-08-05 삭제**됐다(상세는 `docs/REQUEST.md` 삭제 이력 참조).
 
 ### Case H — 단계 반려 (`reject_step`, `views.py:312`)
-- 동작: 어느 단계든 해당 step `rejected`, `status → rejected`(즉시).
-- ⚠️ **예외 — E/EV(MASK)의 반려는 '수정 요청'이다**(2026-08, §7 참조). `agent in ('E','EV')` 이면
-  step `action` 도 `document.status`/`round` 도 **바꾸지 않고**, 사유를 step `comment` 에
-  `[수정 요청 YYYY-MM-DD HH:MM] …` 로 덧붙인 뒤 상신자에게 `revision_requested` 메일만 보내고
-  응답 `status` 는 **현재 상태 그대로** 돌려준다. 즉 이 표현의 "어느 단계든"은 **E/EV 를 제외한**
-  단계에만 해당한다(테스트: `test_e_reject_becomes_revision_request`,
-  `test_non_mask_reject_still_rejects_document`).
+- 동작: 어느 단계든 해당 step `rejected`, `status → rejected`(즉시). **E/EV(MASK) 도 예외 없이 동일하게
+  동작한다**(2026-09, §7 참조 — 반려 시 결재를 되돌리지 않던 '수정 요청' 특례는 완전히 제거됐다).
+  테스트: `test_e_reject_rejects_document_like_other_agents`, `test_non_mask_reject_still_rejects_document`.
 - ✅ **(2026-08) 반려 후 잔여 pending 단계 처리 차단**: 반려는 문서 `status`만 바꾸고 **잔여
   `pending` step 은 이력으로 그대로 남긴다**(설계상 의도). 예전엔 결재 액션들이 문서 상태를
   확인하지 않아 그 잔여 단계를 계속 처리할 수 있었다. 이제 `_blocked_progress_response`
@@ -1087,6 +1083,21 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 - **(2026-08) 대상/비대상 UI 가 흰 배경에 사라지던 버그 수정**: 정의된 적 없는 `var(--primary)` 를 배경으로 쓰고 있어(미정의 커스텀 속성 → `background` 가 초기값 `transparent` 로 계산) **선택된 항목이 흰 배경에 흰 글씨**로 찍혔다. 사용처 3곳을 모두 제거하고 문서 상태 badge(`.badge-*`)와 같은 관용구의 `.vs-badge` / `.vs-toggle` 로 재작성했다(대상=warning, 비대상=info, 해당없음=회색). 공용 컴포넌트는 `frontend/src/components/ValidationSystem.tsx`.
 - **(2026-09) Partial Shot 도 상신 후 O 단계 완료 전까지 상신자 본인이 직접 수정 가능**: Validation System 과 같은 구조로 O-layer 에 확장했다(`POST /documents/<id>/partial-shot/`, `PagedDetailView` O-layer "정보" 탭 토글). O 는 별도 검토자(OV)가 없어 게이트는 "O 담당자 본인 합의 여부" 하나뿐이라 EV AND 게이트 같은 복잡함이 없고, 되감기·합의-후-변경 note 로직도 필요 없다(그 중간 상태 자체가 없다). 상세는 `docs/REQUEST.md` 2026-09 항목 참조.
 - **(2026-09) Validation System / Partial Shot 변경 메일 완전 제거**: `validation_system_changed` 메일 이벤트(함수·이벤트 타입 등록·본문 분기)를 전부 삭제했다(정책 변경 — 두 값 다 결재 화면에서만 확인). `docs/MAIL.md` §4 갱신.
+- **(2026-09) MASK(E/EV) '수정 요청' 특례 완전 삭제 — 바로 위 2026-08 항목을 뒤집음**: `reject-step` 의
+  `agent in ('E','EV')` 분기를 제거해, E/EV 도 R/P/J/O 와 완전히 동일하게 **즉시 반려**(`document.status →
+  rejected`, `RejectionSnapshot` 생성, `rejected` 메일 발송, PL 부터 재상신 필요) 처리된다. 함께 제거한 것:
+  `mailer.enqueue_revision_requested`/`resolve_revision_request_recipients`, `revision_requested` 메일
+  이벤트(`EVENT_STATUS_LABEL`/`EVENT_THEME`/제목·본문 분기/`MailNotification.EVENT_CHOICES`, 마이그레이션
+  `0038_alter_mailnotification_event_type`), 프론트 `approval.request_revision`/`request_revision_success`
+  i18n 키와 버튼·토스트 분기(`ApprovalPage.tsx`). ⚠️ **부수 효과**: EV가 반려로 이견만 표시하고 상신자가
+  조용히 값을 고치던 흐름(위 2026-08 "판정 주체를 상신자로 단일화" 항목의 수정 창)은 이제 EV 반려 시점에
+  **문서가 즉시 rejected 되어 수정 창 자체가 닫힌다** — 값을 고치려면 PL 검토부터 재상신해야 한다.
+  E 담당자 본인이 재확인을 강제당하지 않는다는 트레이드오프(바로 위 되감기 제거 항목)는 "EV가 합의만 하고
+  반려하지 않는" 경로에는 여전히 그대로 적용된다. 테스트: `test_e_reject_rejects_document_like_other_agents`
+  (구 `test_e_reject_becomes_revision_request` 대체). 이 변경으로 전제가 사라져 삭제한 테스트:
+  `test_mask_revision_request_does_not_create_snapshot`, `test_e_approval_appends_comment_to_existing_history`,
+  `test_validation_system_change_preserves_ev_comment`(가드하던 회귀는 `test_validation_system_change_does_not_rewind_e`,
+  `test_validation_system_change_keeps_ev_steps` 가 reject 경로 없이 이미 커버).
 
 - **(2026-07) INTER 표시 = 글자 코멘트**: INTER 섹션은 `inter === 'YES'` **일 때만** 노출하며, YES/NO 값 태그·버튼식 태그 없이 **글자**로 표시한다 — `INTER 적용`, Xs 적용 시 `Xs 적용`, Ys 적용 시 `Ys 적용`(` / ` 연결). Xs/Ys 는 선택 안 할 수 있으므로 적용된 것만 붙는다. (i18n: `approval.inter_applied`/`inter_xs_applied`/`inter_ys_applied`)
 - **(2026-07) REV 여부 표 = 카드형(B)**: 상세보기 REV 표를 accent 좌측 rail 카드 + **Layer pill** 형태로 교체해 눈에 띄게 했다. 하드코딩 문자열(`REV 여부`·`GDS version`·`Layer / GDS version` 등)은 `request.rev_*` i18n 키로 이관.

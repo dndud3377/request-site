@@ -1149,11 +1149,7 @@ export default function ApprovalPage(): React.ReactElement {
         fetchDocs();
       } else {
         await documentsAPI.rejectStep(selected.id, pendingAction.agent, commentInput || undefined);
-        const isMaskStage = pendingAction.agent === 'E' || pendingAction.agent === 'EV';
-        addToast(
-          isMaskStage ? t('approval.request_revision_success') : t('approval.reject_success'),
-          isMaskStage ? 'success' : 'error'
-        );
+        addToast(t('approval.reject_success'), 'error');
         await refreshAndSelect(selected.id);
       }
     } catch {
@@ -2985,9 +2981,7 @@ export default function ApprovalPage(): React.ReactElement {
                     disabled={processing}
                     onClick={() => triggerReject(actableStep.agent)}
                   >
-                    {actableStep.agent === 'E' || actableStep.agent === 'EV'
-                      ? t('approval.request_revision')
-                      : t('approval.reject')}
+                    {t('approval.reject')}
                   </button>
                 </>
               )}

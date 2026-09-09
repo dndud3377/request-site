@@ -46,7 +46,7 @@
 | A10 | 추가 후결자 필수 | C가문(`only_prodc=Yes`) 또는 `연구소 제품` | `models.py:177` `requires_post_approver()` | 상신 시 1명 이상 필수 |
 | A11 | 진행 중 이벤트 | 없음 / 중단(pause) / 철회 요청 | Case M / Case J | 결재 **동결** 또는 문서 삭제 |
 | A12 | 종단 트리거 | 마지막 합의 단계가 무엇인가 | `views.py:961~1001`, `933~944` | 트리거 누락 시 문서 **영구 정지** |
-| A13 | 반려 주체 | PL / SA / R·RV / P·PV / J / O / **E·EV(예외)** / RA | `reject_step`, `peer_reject`, `sales_reject` | E·EV 만 '수정 요청'이라 상태를 바꾸지 않는다 |
+| A13 | 반려 주체 | PL / SA / R·RV / P·PV / J / O / E·EV / RA | `reject_step`, `peer_reject`, `sales_reject` | 모두 동일하게 즉시 `rejected`(2026-09부터 E·EV 예외 없음) |
 
 ---
 
@@ -112,7 +112,7 @@
 | J | 〃 | 즉시 `rejected` | X-01 계열 |
 | O | 〃 | 즉시 `rejected` | X-01 |
 | RA | 〃 | 즉시 `rejected` | — |
-| **E / EV** | 〃 | ⚠️ **반려가 아니라 '수정 요청'** — step `action`·`document.status`·`round` 모두 그대로, 사유만 comment 에 덧붙이고 `revision_requested` 메일 발송 (`views.py:1057~1066`) | X-09 |
+| E / EV | 〃 | 즉시 `rejected`(2026-09부터 다른 단계와 동일 — 구 '수정 요청' 특례는 삭제됨) | X-09 |
 
 반려 후: 잔여 pending step 은 **이력으로 남고**(`_blocked_progress_response` 가 진행을 막는다),
 재상신하면 `max(round)+1` 로 새 회차가 생긴다.
@@ -270,7 +270,7 @@
 | X-06 | 재상신 | SA step 도 새 회차 재생성 | `views.py:458` |
 | X-07 | 재상신 전 목적 변경 | **새 회차부터** 새 경로 규칙 적용 | Case G 주석 |
 | X-08 | 이전 회차 잔여 pending | '내 차례'에 안 잡힘 | `utils/approvalTable.ts` |
-| X-09 | **E/EV 반려** | ⚠️ 반려가 아니라 **수정 요청** — 상태·회차 불변, comment 에 `[수정 요청 …]` 추가, `revision_requested` 메일 | `views.py:1057~1066` |
+| X-09 | E/EV 반려 | 즉시 `rejected`(다른 단계와 동일, 2026-09부터) | `views.py:1210` |
 
 ### 3.8 그룹 M — 중단(PAUSE) 9건 / 3.9 그룹 W — 철회 15건
 
@@ -450,9 +450,9 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
 4. **E 검토자 필수(PE-08)** — TE_E 로그인 → MASK '검토중' → 검토자 비운 채 '합의'
    → **기대**: `2차 검토자를 1명 이상 지정해야 합니다.` 오류. 새로고침해도 MASK 는 여전히 검토중.
    (실패 신호: 오류가 떴는데 MASK 가 '완료'로 바뀌어 있으면 부분 커밋 버그다.)
-5. **E 반려는 수정 요청(X-09)** — TE_E 로 MASK 단계에서 '반려'
-   → **기대**: 문서 상태 뱃지가 **`반려`로 바뀌지 않고** 검토중 그대로이며, 상신자에게 수정 요청
-   메일이 간다. 상세 '결재 경로' 탭 MASK 행 의견에 `[수정 요청 …]` 이 쌓인다.
+5. **E 반려는 다른 단계와 동일하게 즉시 반려(X-09)** — TE_E 로 MASK 단계에서 '반려'
+   → **기대**: 문서 상태 뱃지가 즉시 `반려`로 바뀐다(다른 단계 반려와 동일). 재상신하려면 PL 검토부터
+   새 회차로 다시 진행해야 한다.
 6. **반려 후 잔여 단계 차단(X-02)** — TE_O 가 반려 → TE_J 로 로그인해 같은 문서 합의 시도
    → **기대**: 400 안내, 상태 뱃지는 `반려` 유지.
 7. **중단 → 재개(M-04~M-06)** — 작성자 '중단 요청'(사유) → 현재 단계 담당자 전원 '중단 확인'
@@ -469,12 +469,11 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
    판정된다. `R`·`RV` 는 병렬 전환만 하고, `MAP 삭제` 는 **별도 분기**(`views.py:933`)로 판정한다.
 3. **"없으면 통과" 규칙** — SA 없음 / E 없음 / RA 없음 / 검토자 없음 / J 없음(skip)은 전부 통과.
    단 **`Only MAP` 의 RA 만은 `len(ra_steps) > 0` 을 요구**한다(`views.py:982`). 이 비대칭을 뭉뚱그리지 말 것.
-4. **E/EV 반려는 반려가 아니다** — '수정 요청'이라 상태가 그대로다. §2.4·X-09.
-5. **반려는 pending step 을 지우지 않는다** — 잔여 pending 은 이력이고, 진행은 상태 가드로 막는다.
-6. **철회는 되돌릴 수 없다** — 확인 완료 = 문서 삭제. 실 데이터로 시도하지 말 것.
-7. **E 의 400 은 쓰기 이전에** 나야 한다(`@transaction.atomic` 은 예외에만 롤백). 응답 코드뿐 아니라
+4. **반려는 pending step 을 지우지 않는다** — 잔여 pending 은 이력이고, 진행은 상태 가드로 막는다.
+5. **철회는 되돌릴 수 없다** — 확인 완료 = 문서 삭제. 실 데이터로 시도하지 말 것.
+6. **E 의 400 은 쓰기 이전에** 나야 한다(`@transaction.atomic` 은 예외에만 롤백). 응답 코드뿐 아니라
    **DB 상태까지** 확인한다.
-8. **라인 번호는 흔들린다** — 이 문서의 `views.py:NNN` 은 작성 시점 기준. 어긋나면 함수명으로 찾는다.
+7. **라인 번호는 흔들린다** — 이 문서의 `views.py:NNN` 은 작성 시점 기준. 어긋나면 함수명으로 찾는다.
 
 ---
 
@@ -487,7 +486,7 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
 | 1 | `MAP 삭제` 목적 문자열 | 코드 `models.py:91` = `'MAP 삭제'`, 프론트 `constants.ts:42` = `'MAP 삭제'` — **문서만 `'MAP 삭제/수정'`으로 낡아 있었다** | `docs/APPROVAL.md` 정정 완료 |
 | 2 | J 합의/반려의 assignee 필터 | 코드는 `RA`/`PV`/`EV` 만 필터, `J`·`O`·`E`·`P` 는 필터 없이 조회 후 인가(`views.py:827~847`) — 문서 Case G 서술이 낡아 있었다 | `docs/APPROVAL.md` 정정 완료 |
 | 3 | `assignStepMultiJ` API | 프론트 전체 검색 **0건** — 존재하지 않는 API 를 문서가 설명하고 있었다 | `docs/APPROVAL.md` 서술 삭제 |
-| 4 | E/EV 반려 | `views.py:1057~1066` — 상태·회차를 바꾸지 않는 '수정 요청'. Case H 는 "어느 단계든 rejected" 라고만 적혀 있었다 | Case H 에 예외 명시 |
+| 4 | E/EV 반려 | (2026-08-14 당시) 상태·회차를 바꾸지 않는 '수정 요청'. Case H 는 "어느 단계든 rejected" 라고만 적혀 있었다. **⚠️ 2026-09 에 이 '수정 요청' 특례 자체가 삭제되어, Case H 서술("어느 단계든 rejected")이 다시 맞다** | Case H 에 예외 명시 → 2026-09 예외 삭제로 원복 |
 | 5 | 상신 payload | `designated_pl_loginids`(배열) 우선 + 단일 호환 — API 표는 단일만 적고 있었다 | API 표 정정 |
 | 6 | 상신 인가 | `_can_edit`(작성자/공유 그룹/MASTER) 로 403 — 문서에 없었다 | Case A 보충 |
 

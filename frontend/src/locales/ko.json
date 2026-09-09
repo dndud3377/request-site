@@ -810,8 +810,6 @@
     "partial_shot_updated": "$t(request.partial_shot) 값을 변경했습니다.",
     "layer_filter_reset_btn": "초기화",
     "layer_filter_reset_confirm": "이번 회차에 적용한 필터를 모두 초기화하고 상신 시점 값으로 되돌리시겠습니까?",
-    "request_revision": "수정 요청",
-    "request_revision_success": "수정 요청을 보냈습니다.",
     "current_role": "현재 역할:",
     "agent_PL": "검토",
     "agent_SA": "영업/기술지원 합의자",

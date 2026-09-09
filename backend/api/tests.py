@@ -1976,54 +1976,6 @@ class PEStageReviewerFlowTest(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'approved', '검토자 없이 approved 된 기존 E 단계도 최종 승인을 막지 않아야 한다')
 
-    def test_e_approval_preserves_revision_request_history(self):
-        """E 가 빈 코멘트로 최종 합의해도 수정 요청 이력이 지워지지 않는다.
-
-        ApprovalStep 에 이력 전용 필드가 없어 comment 가 유일한 저장소다.
-        여기를 덮어쓰면 설계 결정 Q3/Q6(이력 보존)이 실행 시점에 무효화된다.
-        """
-        doc = self._advance_to_parallel(plel=True)
-        self.client.force_authenticate(user=self.e_owner)
-        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
-        r = self.client.post(
-            f'/api/documents/{doc.id}/reject-step/',
-            {'agent': 'E', 'comment': '대상으로 보입니다'}, format='json',
-        )
-        self.assertEqual(r.status_code, 200, r.content)
-
-        # 같은 담당자가 빈 코멘트로 합의한다(step 은 이미 선점 상태다).
-        r = self.client.post(
-            f'/api/documents/{doc.id}/approve-step/',
-            {'agent': 'E', 'comment': '', 'reviewer_loginids': [self.e_reviewer.loginid]}, format='json',
-        )
-        self.assertEqual(r.status_code, 200, r.content)
-
-        e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
-        self.assertEqual(e_step.action, 'approved')
-        self.assertIn('수정 요청', e_step.comment, '합의가 수정 요청 이력을 지워서는 안 된다')
-        self.assertIn('대상으로 보입니다', e_step.comment)
-
-    def test_e_approval_appends_comment_to_existing_history(self):
-        """E 가 코멘트를 달고 합의하면 기존 이력 아래에 마커와 함께 덧붙는다."""
-        doc = self._advance_to_parallel(plel=True)
-        self.client.force_authenticate(user=self.e_owner)
-        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
-        self.client.post(
-            f'/api/documents/{doc.id}/reject-step/',
-            {'agent': 'E', 'comment': '대상으로 보입니다'}, format='json',
-        )
-        r = self.client.post(
-            f'/api/documents/{doc.id}/approve-step/',
-            {'agent': 'E', 'comment': '수정 확인했습니다',
-             'reviewer_loginids': [self.e_reviewer.loginid]}, format='json',
-        )
-        self.assertEqual(r.status_code, 200, r.content)
-
-        e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
-        self.assertIn('수정 요청', e_step.comment)
-        self.assertIn('[합의 ', e_step.comment)
-        self.assertIn('수정 확인했습니다', e_step.comment)
-
     def test_non_mask_approval_still_overwrites_comment(self):
         """E/EV 가 아닌 단계의 합의는 기존대로 comment 를 덮어쓴다(회귀 방지)."""
         doc = self._advance_to_parallel(plel=True)
@@ -2202,29 +2154,6 @@ class PEStageReviewerFlowTest(TestCase):
         self.assertEqual(r.status_code, 400, r.content)
         self.assertEqual(r.data['error'], 'MASK 검토가 끝난 의뢰서는 변경할 수 없습니다.')
 
-    def test_validation_system_change_preserves_ev_comment(self):
-        """값 변경이 EV 의 수정 요청 이력을 지우지 않는다(구 되감기 F1 회귀).
-
-        되감기는 EV step 을 통째로 지워, 그 검토자가 남긴 수정 요청이 사라졌다.
-        """
-        doc = self._advance_to_parallel(plel=True)
-        self._set_detail(doc, {'validation_system': 'NO'})
-        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
-
-        self.client.force_authenticate(user=self.e_reviewer)
-        r = self.client.post(
-            f'/api/documents/{doc.id}/reject-step/',
-            {'agent': 'EV', 'comment': '레이어 확인 필요'}, format='json',
-        )
-        self.assertEqual(r.status_code, 200, r.content)
-
-        self.client.force_authenticate(user=self.requester)
-        r = self.client.post(f'/api/documents/{doc.id}/validation-system/', {'value': 'YES'}, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-
-        ev_step = ApprovalStep.objects.get(document=doc, agent='EV', round=1)
-        self.assertIn('레이어 확인 필요', ev_step.comment, '검토자의 수정 요청 이력이 사라져서는 안 된다')
-
     def test_pause_target_ev_survives_validation_system_change(self):
         """pause 대상 EV step 이 값 변경 후에도 남아 있다(구 되감기 F2 회귀).
 
@@ -2251,10 +2180,10 @@ class PEStageReviewerFlowTest(TestCase):
             '중단 확인 대상 step 이 사라지면 문서가 고착된다',
         )
 
-    # ----- MASK 는 반려하지 않고 '수정 요청'만 한다 -----
+    # ----- MASK(E/EV) 도 다른 단계와 동일하게 반려된다 -----
 
-    def test_e_reject_becomes_revision_request(self):
-        """E 반려는 결재를 되돌리지 않고 상신자에게 수정 요청 메일만 보낸다."""
+    def test_e_reject_rejects_document_like_other_agents(self):
+        """E 반려도 R/P/J/O 와 동일하게 문서를 즉시 반려 처리한다."""
         doc = self._advance_to_parallel(plel=True)
         self.client.force_authenticate(user=self.e_owner)
         self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
@@ -2265,21 +2194,24 @@ class PEStageReviewerFlowTest(TestCase):
         self.assertEqual(r.status_code, 200, r.content)
 
         doc.refresh_from_db()
-        self.assertEqual(doc.status, 'under_review', '수정 요청은 문서를 반려 상태로 만들지 않는다')
+        self.assertEqual(doc.status, 'rejected')
         e_step = ApprovalStep.objects.get(document=doc, agent='E', round=1)
-        self.assertEqual(e_step.action, 'pending', '단계도 대기 그대로다')
-        self.assertIn('수정 요청', e_step.comment)
-        self.assertFalse(
-            ApprovalStep.objects.filter(document=doc, round=2).exists(),
-            '새 회차를 만들지 않는다',
+        self.assertEqual(e_step.action, 'rejected')
+        self.assertEqual(e_step.comment, '대상으로 보입니다')
+        self.assertTrue(
+            RejectionSnapshot.objects.filter(document=doc).exists(),
+            '다른 단계 반려와 마찬가지로 반려 이력 스냅샷이 남아야 한다',
         )
         self.assertTrue(
+            MailNotification.objects.filter(document=doc, event_type='rejected').exists(),
+            '다른 단계 반려와 마찬가지로 반려 메일이 적재되어야 한다',
+        )
+        self.assertFalse(
             MailNotification.objects.filter(document=doc, event_type='revision_requested').exists(),
-            '상신자에게 수정 요청 메일이 적재되어야 한다',
         )
 
     def test_non_mask_reject_still_rejects_document(self):
-        """E/EV 가 아닌 단계의 반려는 기존대로 문서를 반려 처리한다(회귀 방지)."""
+        """E/EV 가 아닌 단계의 반려도 기존대로 문서를 반려 처리한다(회귀 방지)."""
         doc = self._advance_to_parallel(plel=True)
         self.client.force_authenticate(user=self.o_user)
         self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
@@ -4714,27 +4646,6 @@ class RejectionSnapshotTest(TestCase):
         self.assertEqual(snap.title, '라인1(신규)_MAP(NEW)_요청서')
         self.assertEqual(snap.get_detail()['detail']['process_id'], 'BEFORE')
         self.assertEqual(snap.get_detail()['detail']['line'], '라인1')
-
-    def test_mask_revision_request_does_not_create_snapshot(self):
-        """E(MASK)의 '수정 요청'은 반려가 아니다 — 문서 status 도 스냅샷도 바뀌지 않는다."""
-        doc = self._make_doc(jayer_rows=[{'pp': 'PLEL'}])
-        self._submit(doc)
-        self._advance_to_r(doc)
-        self.client.force_authenticate(user=self.r_user)
-        r = self.client.post(f'/api/documents/{doc.id}/approve-step/',
-                             {'agent': 'R', 'comment': ''}, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-
-        self.client.force_authenticate(user=self.e_user)
-        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-        r = self.client.post(f'/api/documents/{doc.id}/reject-step/',
-                             {'agent': 'E', 'comment': '수정해주세요'}, format='json')
-        self.assertEqual(r.status_code, 200, r.content)
-
-        doc.refresh_from_db()
-        self.assertEqual(doc.status, 'under_review')
-        self.assertEqual(RejectionSnapshot.objects.count(), 0)
 
     def test_snapshot_survives_document_deletion(self):
         """원본 문서를 지워도 이력은 남는다(document 만 끊기고 source_document_id 는 유지)."""
