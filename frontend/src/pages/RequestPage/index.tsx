@@ -3584,7 +3584,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   /**
-   * J/O-layer 표의 st·new_or_copy 공란 검증 — 활성 행은 두 값을 반드시 채워야 한다.
+   * J/O-layer 표의 st·new_or_copy 공란 검증 — st==='X' 인 행도 포함해 모든 행이 두 값을 반드시 채워야 한다.
    * 오류 셀은 차용 행 검증(jayer_noc_*)과 같은 방식으로 표 안에서 강조한다.
    */
   const addStNocError = (
