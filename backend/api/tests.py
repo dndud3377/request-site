@@ -950,6 +950,7 @@ class PEStageReviewerFlowTest(TestCase):
         self.e_owner = UserProfile.objects.create(loginid='e1', mail='e1@c.com', role='TE_E')
         self.e_reviewer = UserProfile.objects.create(loginid='e2', mail='e2@c.com', role='TE_E')
         self.e_reviewer2 = UserProfile.objects.create(loginid='e3', mail='e3@c.com', role='TE_E')
+        self.master_user = UserProfile.objects.create(loginid='m1', mail='m1@c.com', role='MASTER')
 
     def _advance_to_parallel(self, plel=False, other_purpose=None):
         """draft → 제출 → PL 합의 → R 지정·합의 를 실제 API로 거쳐 P/O[/E] pending 상태로 만든다."""
@@ -2266,6 +2267,81 @@ class PEStageReviewerFlowTest(TestCase):
         self.assertEqual(r.status_code, 200, r.content)
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'rejected')
+
+    # ----- 검토중(A) ↔ 실제 합의/반려자(B) 가 다를 때 최종 행위자 반영 -----
+
+    def test_approve_by_different_team_member_becomes_final_approver(self):
+        """A(p_owner)가 검토중 → B(p_outsider, 같은 팀)가 합의하면 B가 최종 담당자로 남는다."""
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+
+        self.client.force_authenticate(user=self.p_outsider)
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+        p_step = ApprovalStep.objects.get(document=doc, agent='P', round=1)
+        self.assertEqual(p_step.action, 'approved')
+        self.assertEqual(p_step.assignee_id, self.p_outsider.id, 'B가 최종 합의자로 assignee에 남아야 한다')
+        self.assertEqual(p_step.assignee_name, self.p_outsider.username or self.p_outsider.loginid)
+
+    def test_claimer_self_approve_assignee_unchanged(self):
+        """선점자 본인이 그대로 합의하면(가장 흔한 경로) assignee가 그대로 유지된다(회귀 방지)."""
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/', {'agent': 'P', 'comment': ''}, format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+        p_step = ApprovalStep.objects.get(document=doc, agent='P', round=1)
+        self.assertEqual(p_step.assignee_id, self.p_owner.id)
+
+    def test_reject_by_different_team_member_becomes_final_rejecter(self):
+        """A(o_user)가 검토중 → B(o_outsider, 같은 팀)가 반려하면 B가 최종 반려자로 남고,
+        RejectionSnapshot의 실제 반려자 기록과도 일치한다."""
+        # o_outsider는 이 테스트에서만 쓰는 두 번째 TE_O — 클래스 공용 setUp에 추가하면
+        # 'TE_O 팀 전원' 수신자 수를 세는 다른 테스트(test_p_completion_notifies_te_o_and_te_j 등)가
+        # 깨지므로 로컬로만 생성한다.
+        o_outsider = UserProfile.objects.create(loginid='o2', mail='o2@c.com', role='TE_O')
+
+        doc = self._advance_to_parallel(plel=True)
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+
+        self.client.force_authenticate(user=o_outsider)
+        r = self.client.post(
+            f'/api/documents/{doc.id}/reject-step/', {'agent': 'O', 'comment': 'B가 반려'}, format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+        o_step = ApprovalStep.objects.get(document=doc, agent='O', round=1)
+        self.assertEqual(o_step.action, 'rejected')
+        self.assertEqual(o_step.assignee_id, o_outsider.id, 'B가 최종 반려자로 assignee에 남아야 한다')
+
+        snap = RejectionSnapshot.objects.get(document=doc, round=1)
+        self.assertEqual(snap.rejected_by_loginid, o_outsider.loginid)
+        self.assertEqual(snap.rejected_by_loginid, o_step.assignee.loginid,
+                          'ApprovalStep.assignee와 RejectionSnapshot의 실제 반려자가 일치해야 한다')
+
+    def test_master_override_approve_becomes_final_approver(self):
+        """A(j_user)가 검토중인 상태에서 MASTER가 대신 합의하면 MASTER가 최종 합의자가 된다."""
+        doc = self._advance_to_parallel()
+        self.client.force_authenticate(user=self.j_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'J'}, format='json')
+
+        self.client.force_authenticate(user=self.master_user)
+        r = self.client.post(
+            f'/api/documents/{doc.id}/approve-step/', {'agent': 'J', 'comment': ''}, format='json',
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+        j_step = ApprovalStep.objects.get(document=doc, agent='J', round=1)
+        self.assertEqual(j_step.assignee_id, self.master_user.id)
+        self.assertEqual(j_step.assignee_name, self.master_user.username or self.master_user.loginid)
 
 
 @override_settings(POST_APPROVER_LOGINID='fixedpa')
