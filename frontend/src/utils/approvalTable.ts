@@ -76,7 +76,8 @@ export const getDocSubmittedDate = (doc: RequestDocument): string =>
 /**
  * 단계 라벨. 검토자·후결자도 '검토자'/'후결자' 가 아니라 **그 단계의 이름**으로 표기한다(2026-08).
  * - `RV`(R단계 검토자) → `RFG` — 담당자든 검토자든 같은 R 단계다.
- * - `RA` 중 고정 후결자(.env POST_APPROVER_LOGINID)는 RFG 팀 1명이므로 → `RFG`
+ * - `RA` 중 고정 후결자(.env POST_APPROVER_LOGINID)는 RFG 팀 1명이므로 → `RFG 후결`(2026-09,
+ *   예전엔 실제 RFG(R) 단계와 같은 `RFG` 를 그대로 썼다)
  * - `RA` 중 PL 이 지정한 추가 후결자 → `추가후결자`
  * PV/EV 는 병렬 그리드에서만 나타나고 거기서 이미 담당 단계명을 유지하므로 여기 오지 않는다.
  */
@@ -84,7 +85,7 @@ const stageLabel = (agent: string, t: TFunction, isFixedPostApprover = false): s
   if (agent === 'PV' || agent === 'EV') return t('approval.stage_reviewer' as any);
   if (agent === 'RV') return t('approval.agent_R' as any);
   if (agent === 'RA') {
-    return isFixedPostApprover ? t('approval.agent_R' as any) : t('approval.stage_post_extra' as any);
+    return isFixedPostApprover ? t('approval.stage_post_fixed' as any) : t('approval.stage_post_extra' as any);
   }
   return t(`approval.agent_${agent}` as any);
 };
@@ -354,9 +355,9 @@ const buildParallelGrid = (
           main: of('R'), reviewers: of('RV'), showName: true, nameSource: 'main',
         }
       : {
-          // 고정 후결자는 .env 로 지정하는 RFG 팀 1명이라 단계명도 RFG 로 쓴다(2026-08).
-          // 일반 경로 그리드에는 RFG 담당자 칸이 따로 없어 이름이 겹치지 않는다.
-          slot: 'RA_FIXED', label: t('approval.agent_R' as any),
+          // 고정 후결자는 .env 로 지정하는 RFG 팀 1명이라 단계명에 RFG 를 담아 `RFG 후결`로 쓴다
+          // (2026-08 도입, 2026-09 부터 실제 RFG(R) 단계 라벨과 구분하기 위해 `RFG 후결`로 변경).
+          slot: 'RA_FIXED', label: t('approval.stage_post_fixed' as any),
           main: fixedRaSteps, showName: true,
         },
     // J·O 는 검토중(claim) 방식이라 진행 중 담당자 이름을 노출하지 않는다(기존 규칙 유지).
