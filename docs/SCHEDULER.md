@@ -58,7 +58,7 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 > 추가"하는 diff 병합을 한때 시도했으나, 실제로 없어진(단종 등) 데이터까지 계속 남게 되는
 > 문제가 있어 되돌렸다(아래 "쓰기 전략" 절 참고).
 
-`api_processproduct`(공정-품목)·`api_productprocessid`(품목-공정ID)·스텝(`api_teps1`/`api_steps3~5`)
+`api_processproduct`(공정-품목)·`api_productprocessid`(품목-공정ID)·스텝(`api_photosteps1`/`api_photosteps3~5`)
 동기화는 하나의 10분 잡 `sync_rtdb_options()` 에서 **RTDB 토큰을 1회만 발급**해 세 소스를 함께
 처리한다. 각 RTDB 조회는 **table_name·select·filter 가 각각 다르다**(`{suffix}` 는 라인 접미사로 치환).
 
@@ -66,7 +66,7 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 |-------------|-----------------------------------|
 | `api_processproduct` | `A_{suffix}.B` / `partnumber, descript, pkgtype_2` / `X $eq "Y"` |
 | `api_productprocessid` | `X_{suffix}.Y` / `partnumber, processid` / `X $neq " "` |
-| `api_teps1`/`api_steps3~5` (스텝) | `O_{suffix}.W` / `processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid` / `a $eq "aaaaaa", e/l/p/r/s $neq " "` |
+| `api_photosteps1`/`api_photosteps3~5` (스텝) | `O_{suffix}.W` / `processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid` / `a $eq "aaaaaa", e/l/p/r/s $neq " "` |
 
 ```
 RTDB(REST API)  →  /api/queries
@@ -123,7 +123,7 @@ response.json() → data
 
 #### 스텝 조회 건수 급감 감지 (`RTDB_STEP_COUNT_DROP_RATIO`, 2026-09 추가)
 
-스텝(`api_teps1`/`api_steps3~5`)은 0건/예외가 아니어도, RTDB 가 **일부만 채워진 채(비정상적으로
+스텝(`api_photosteps1`/`api_photosteps3~5`)은 0건/예외가 아니어도, RTDB 가 **일부만 채워진 채(비정상적으로
 적은 건수) 응답**하는 경우가 있다. 기존에는 이런 응답도 "성공"으로 보고 그대로 테이블 전체를
 `DELETE → INSERT`해, 불완전한 데이터로 기존 스텝이 유실되는 문제가 있었다. 이를 막기 위해:
 
@@ -238,7 +238,7 @@ RTDB 소스(라인1·3~5·nv)와 DCQ 소스(라인2)가 같은 방식을 쓴다.
 
 - **동일** → `DELETE + INSERT` 를 건너뛰고 로그만 남긴다(대부분의 사이클).
 - **다름** → 트랜잭션 내에서 `DELETE(line) → INSERT` 로 원자적 갱신(삭제된 행도 자동 반영).
-- **스텝(`api_teps1`/`api_steps3~5`)은 라인별 단독 테이블(공용 `line` 컬럼 없음)** 이라 `line`
+- **스텝(`api_photosteps1`/`api_photosteps3~5`)은 라인별 단독 테이블(공용 `line` 컬럼 없음)** 이라 `line`
   필터 없이 테이블 전체를 비교 대상으로 삼는 `_write_step_if_changed()`(`STEP_COLUMNS` 전체
   조합을 키로 사용)를 쓴다 — 동일하면 skip, 다르면 해당 테이블 **전체 `DELETE` → `to_sql`**.
   (2026-08까지는 변경 감지 없이 매 사이클 무조건 전체 갱신했으나, 2026-09부터 위 "스텝 조회
@@ -251,6 +251,32 @@ RTDB 소스(라인1·3~5·nv)와 DCQ 소스(라인2)가 같은 방식을 쓴다.
 > 써야 하고 실제로 없어진 데이터는 쓰면 안 된다"는 요구사항과 맞지 않아 다시 원래의 변경 감지
 > (delete+insert) 방식으로 되돌렸다. 대신 위 "재시도"(최대 3회)로 일시적인 빈 응답 자체를 줄여서
 > 같은 문제를 완화한다.
+
+### 스텝 eqptype 기준 서브 테이블 분리 (2026-09 추가)
+
+라인1·3~5의 스텝 전체 테이블(`STEP_TABLE_MAP` → `api_photosteps{N}`)은 위 "쓰기 전략" 그대로
+**eqptype 값 전체를 섞어서** 저장한다(변경 없음). 이와 별개로, 같은 사이클에서 이미 받아온
+스텝 조회 결과(`df_ps`)를 eqptype 값 기준으로 걸러 라인별 전용 서브 테이블에도 **추가로**
+저장한다. 서브 테이블을 위해 RTDB 를 다시 조회하지 않는다.
+
+| 구분 | eqptype 값 | 라인별 테이블명 매핑 상수 | 테이블명 예(라인1) | ORM 모델 |
+|------|-----------|--------------------------|---------------------|----------|
+| POVLAY 전용 | `'POVLAY'`(`STEP_OVL_EQPTYPE`) | `STEP_OVL_TABLE_MAP` | `api_photosteps1_ov` | `PhotoStepS{N}Ov` |
+| (임시) | `STEP_EXTRA_EQPTYPE`(현재 `'XXXXXX'` 임시값) | `STEP_EXTRA_TABLE_MAP` | `api_photosteps1_cd` | `PhotoStepS{N}Cd` |
+
+- 두 서브 테이블 모두 `_write_step_if_changed()`를 그대로 재사용한다(테이블 전체 비교 후
+  변경 시에만 `DELETE → INSERT`) — 전체 테이블과 동일한 변경 감지 방식.
+- 각 모델은 `Meta.db_table`을 위 표의 테이블명과 **명시적으로 일치**시켰다 — 이전에
+  `STEP_TABLE_MAP`이 실제 ORM 테이블명과 어긋났던 사고(위 "주의사항" §2026-09 항목 참고)가
+  재발하지 않도록, 이번엔 문자열을 코드 두 곳(scheduler.py 의 맵 / models.py 의 db_table)에
+  각각 손으로 맞춰 넣었다 — 둘 중 하나만 바꾸면 다시 어긋나므로 **두 값을 함께 바꿔야 한다.**
+- `STEP_EXTRA_EQPTYPE`은 아직 실제 eqptype 값이 정해지지 않아 `'XXXXXX'`를 임시값으로 쓴다.
+  실제 값이 정해지면 `scheduler.py`의 이 상수 하나만 바꾸면 된다(테이블명/모델명은 변경 불필요).
+- 서브 테이블 쓰기 중 예외가 나면 전체 스텝 블록과 동일한 `except`에서 잡혀 `TARGET_LABEL_STEP`으로
+  실패 목록에 기록되고 RTDB 동기화 실패 알림 메일 대상이 된다(라인 단위로 뭉뚱그려 기록되며,
+  전체/POVLAY/XXXXXX 중 어느 쪽에서 실패했는지는 로그로 구분해야 한다).
+- **조회 결과 활용**: 아직 `views.py`에서 POVLAY 전용 테이블(`form_options_ovl_layer`)만 조회에
+  쓰인다. XXXXXX 전용 테이블은 이번엔 저장만 하고 조회 기능은 만들지 않았다.
 
 ## RTDB(REST API) 유틸 (`utils.py`)
 
@@ -405,6 +431,25 @@ DCQ 로 자동 대체되지 않고 그 데이터는 동기화되지 않는다**(
 - ✅ **(2026-08 수정 완료) `bq_login` import 오류.** `scheduler.py`가 `utils.py`에 존재하지 않는
   `bq_login`을 import하고 있어(어디에도 쓰이지 않는 죽은 import) `scheduler.py` 자체가 로드조차
   안 됐다 — `run_scheduler`가 기동 즉시 죽는 상태였다. 쓰이지 않는 import를 제거해 해결했다.
+- ✅ **(2026-09 수정 완료) `STEP_TABLE_MAP` 테이블명이 실제 ORM 테이블명과 불일치.**
+  `PhotoStepS1`/`PhotoStepS3`/`PhotoStepS4`/`PhotoStepS5` 모델은 `Meta.db_table`을 지정하지 않아
+  Django 기본 규칙대로 실제 테이블명이 `api_photosteps1`/`api_photosteps3`/`api_photosteps4`/
+  `api_photosteps5`이다(Django shell로 `model._meta.db_table` 직접 확인). 그런데
+  `scheduler.STEP_TABLE_MAP`은 `api_teps1`/`api_steps3`/`api_steps4`/`api_steps5`라는 다른
+  문자열을 가리키고 있었다. `_write_step_if_changed()`는 이 맵의 문자열 테이블명에 SQLAlchemy
+  raw SQL로 직접 DELETE→INSERT하고, `views.py`의 4개 조회 함수(`form_options_job_file_layer`/
+  `form_options_ovl_layer`/`form_options_layer_ids`/`bb_external_process_layer`)는 위 Django
+  ORM 모델로 조회하므로, 스케줄러가 쓰는 테이블과 화면이 읽는 테이블이 서로 달랐다.
+  `STEP_TABLE_MAP`을 ORM 실제 테이블명(`api_photosteps1`~`5`)으로 맞춰 해결했다.
+  검증: `backend/api/tests.py`의 `SyncRtdbStepCountDropTest`(하드코딩된 테스트용 테이블명도
+  함께 `api_photosteps1`로 맞춤) 포함 `api` 앱 전체 418건 CLAUDE.md §규칙 C-1-1 sqlite 절차로
+  재실행해 통과 확인.
+- ✅ **(2026-09 수정 완료) 스텝 쓰기 단계 예외가 실패 목록에 누락.** 공정-품목/품목-공정ID는
+  `fetch()` 내부 재시도가 모두 실패하면 `failures`에 기록되지만, 스텝은 `fetch()` 재시도까지는
+  성공해도 그 다음 `_write_step_if_changed()` 쓰기 단계에서 예외(위 테이블명 불일치 같은 SQL
+  에러 등)가 나면 로그만 남기고 `failures`에는 추가되지 않아, RTDB 동기화 실패 알림 메일 대상에서
+  조용히 빠졌다. 스텝 쓰기 단계 `except` 블록에도 `failures.append({'context': line, 'target':
+  TARGET_LABEL_STEP})`을 추가해 다른 블록과 동일하게 알림 메일 대상에 포함되도록 했다.
 - ⚠️ **(2026-08 완화책 추가, 원인 미확정) 로그인 직후 "이전 토큰" 오류로 DCQ 동기화 실패.**
   `sync_form_options` 실행 로그에서 `login()` 성공 직후(수 ms~수십 초 뒤) `getTokenTime()`/
   `getData()`가 다음과 같은 오류로 실패하는 사례가 관측됐다(운영 알림 메일 기준 4회 중 2~3회):
