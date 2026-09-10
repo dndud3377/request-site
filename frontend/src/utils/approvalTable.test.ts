@@ -489,7 +489,7 @@ describe('stageLabel — 검토자·고정 후결자도 단계명으로 표기(2
     expect(getDocTableRows(doc, t)[0].stageText).toBe('approval.agent_R(이검토)');
   });
 
-  it('그리드의 고정 후결자 칸 라벨은 RFG 다', () => {
+  it('그리드의 고정 후결자 칸 라벨은 RFG 후결이다', () => {
     const doc = {
       ...makeDoc([
         makeStep({ agent: 'R', action: 'approved' }),
@@ -499,11 +499,11 @@ describe('stageLabel — 검토자·고정 후결자도 단계명으로 표기(2
       ]),
       post_approver_fixed_loginid: 'fixed',
     };
-    expect(cellAt(doc, 'RA_FIXED').label).toBe('approval.agent_R');
+    expect(cellAt(doc, 'RA_FIXED').label).toBe('approval.stage_post_fixed');
     expect(cellAt(doc, 'RA_EXTRA').label).toBe('approval.stage_post_extra');
   });
 
-  it('고정 후결자가 반려한 문서도 RFG(이름), 추가 후결자는 추가후결자(이름)', () => {
+  it('고정 후결자가 반려한 문서도 RFG 후결(이름), 추가 후결자는 추가후결자(이름)', () => {
     const base = (rejectedLoginid: string) => ({
       ...makeDoc([
         makeStep({ agent: 'R', action: 'approved' }),
@@ -512,7 +512,7 @@ describe('stageLabel — 검토자·고정 후결자도 단계명으로 표기(2
       status: 'rejected' as const,
       post_approver_fixed_loginid: 'fixed',
     });
-    expect(getDocTableRows(base('fixed'), t)[0].stageText).toBe('approval.agent_R(반려자)');
+    expect(getDocTableRows(base('fixed'), t)[0].stageText).toBe('approval.stage_post_fixed(반려자)');
     expect(getDocTableRows(base('extra'), t)[0].stageText).toBe('approval.stage_post_extra(반려자)');
   });
 });
