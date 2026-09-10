@@ -31,6 +31,38 @@ export interface Line {
   order: number;
 }
 
+// ===== 변경 현황 (api_photosteps* 동기화 변경 이력) =====
+
+export type PhotoStepChangeTableType = 'ALL' | 'OV' | 'CD';
+
+export interface PhotoStepChangeRow {
+  stepseq: string;
+  descript: string;
+  recipeid: string;
+  areaname: string;
+  eqptype: string;
+  layerid: string;
+  updated: string;
+}
+
+export interface PhotoStepChangeGroup {
+  sync_run_id: string;
+  line: string;
+  table_type: PhotoStepChangeTableType;
+  processid: string;
+  detected_at: string;
+  added: PhotoStepChangeRow[];
+  removed: PhotoStepChangeRow[];
+}
+
+export interface PhotoStepChangeListResponse {
+  count: number;
+  page: number;
+  page_size: number;
+  truncated: boolean;
+  results: PhotoStepChangeGroup[];
+}
+
 
 export type Status =
   | 'draft'
