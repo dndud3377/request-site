@@ -252,6 +252,32 @@ RTDB 소스(라인1·3~5·nv)와 DCQ 소스(라인2)가 같은 방식을 쓴다.
 > (delete+insert) 방식으로 되돌렸다. 대신 위 "재시도"(최대 3회)로 일시적인 빈 응답 자체를 줄여서
 > 같은 문제를 완화한다.
 
+### 스텝 eqptype 기준 서브 테이블 분리 (2026-09 추가)
+
+라인1·3~5의 스텝 전체 테이블(`STEP_TABLE_MAP` → `api_photosteps{N}`)은 위 "쓰기 전략" 그대로
+**eqptype 값 전체를 섞어서** 저장한다(변경 없음). 이와 별개로, 같은 사이클에서 이미 받아온
+스텝 조회 결과(`df_ps`)를 eqptype 값 기준으로 걸러 라인별 전용 서브 테이블에도 **추가로**
+저장한다. 서브 테이블을 위해 RTDB 를 다시 조회하지 않는다.
+
+| 구분 | eqptype 값 | 라인별 테이블명 매핑 상수 | 테이블명 예(라인1) | ORM 모델 |
+|------|-----------|--------------------------|---------------------|----------|
+| POVLAY 전용 | `'POVLAY'`(`STEP_OVL_EQPTYPE`) | `STEP_OVL_TABLE_MAP` | `api_photosteps1_ov` | `PhotoStepS{N}Ov` |
+| (임시) | `STEP_EXTRA_EQPTYPE`(현재 `'XXXXXX'` 임시값) | `STEP_EXTRA_TABLE_MAP` | `api_photosteps1_cd` | `PhotoStepS{N}Cd` |
+
+- 두 서브 테이블 모두 `_write_step_if_changed()`를 그대로 재사용한다(테이블 전체 비교 후
+  변경 시에만 `DELETE → INSERT`) — 전체 테이블과 동일한 변경 감지 방식.
+- 각 모델은 `Meta.db_table`을 위 표의 테이블명과 **명시적으로 일치**시켰다 — 이전에
+  `STEP_TABLE_MAP`이 실제 ORM 테이블명과 어긋났던 사고(위 "주의사항" §2026-09 항목 참고)가
+  재발하지 않도록, 이번엔 문자열을 코드 두 곳(scheduler.py 의 맵 / models.py 의 db_table)에
+  각각 손으로 맞춰 넣었다 — 둘 중 하나만 바꾸면 다시 어긋나므로 **두 값을 함께 바꿔야 한다.**
+- `STEP_EXTRA_EQPTYPE`은 아직 실제 eqptype 값이 정해지지 않아 `'XXXXXX'`를 임시값으로 쓴다.
+  실제 값이 정해지면 `scheduler.py`의 이 상수 하나만 바꾸면 된다(테이블명/모델명은 변경 불필요).
+- 서브 테이블 쓰기 중 예외가 나면 전체 스텝 블록과 동일한 `except`에서 잡혀 `TARGET_LABEL_STEP`으로
+  실패 목록에 기록되고 RTDB 동기화 실패 알림 메일 대상이 된다(라인 단위로 뭉뚱그려 기록되며,
+  전체/POVLAY/XXXXXX 중 어느 쪽에서 실패했는지는 로그로 구분해야 한다).
+- **조회 결과 활용**: 아직 `views.py`에서 POVLAY 전용 테이블(`form_options_ovl_layer`)만 조회에
+  쓰인다. XXXXXX 전용 테이블은 이번엔 저장만 하고 조회 기능은 만들지 않았다.
+
 ## RTDB(REST API) 유틸 (`utils.py`)
 
 | 함수 | 설명 |
