@@ -1094,6 +1094,56 @@ class PhotoStepS5Cd(models.Model):
         return f"line5_cd / {self.processid} / {self.stepseq} / {self.descript}"
 
 
+class PhotoStepChangeLog(models.Model):
+    """스텝 테이블(api_photosteps1/3~5 및 _ov/_cd 하위 테이블) 동기화 시 감지된 변경 이력.
+
+    `_write_step_if_changed()`(scheduler.py) 가 기존/신규 키 집합을 비교해 다를 때만
+    이 로그를 남긴다 - 매 동기화 사이클마다 생기는 것이 아니라 "실제로 변경됐을 때"만 생성된다.
+    같은 diff 호출(=같은 테이블의 같은 변경 감지 시점)에서 나온 행들은 sync_run_id 로 묶인다.
+    """
+    TABLE_TYPE_ALL = 'ALL'
+    TABLE_TYPE_OV = 'OV'
+    TABLE_TYPE_CD = 'CD'
+    TABLE_TYPE_CHOICES = [
+        (TABLE_TYPE_ALL, '전체'),
+        (TABLE_TYPE_OV, 'POVLAY'),
+        (TABLE_TYPE_CD, 'XXXXXX'),
+    ]
+    CHANGE_ADDED = 'added'
+    CHANGE_REMOVED = 'removed'
+    CHANGE_TYPE_CHOICES = [
+        (CHANGE_ADDED, '추가'),
+        (CHANGE_REMOVED, '삭제'),
+    ]
+
+    sync_run_id = models.UUIDField(verbose_name='동기화 실행 ID')
+    line = models.CharField(max_length=50, verbose_name='{{request.line}}')
+    table_type = models.CharField(max_length=10, choices=TABLE_TYPE_CHOICES, verbose_name='테이블 구분')
+    processid = models.CharField(max_length=200, verbose_name='{{request.process_id}} ID')
+    change_type = models.CharField(max_length=10, choices=CHANGE_TYPE_CHOICES, verbose_name='변경 종류')
+    stepseq = models.CharField(max_length=200, verbose_name='{{request.col_step}}SEQ')
+    descript = models.CharField(max_length=200, verbose_name='{{request.process_selection}}명')
+    recipeid = models.CharField(max_length=200, verbose_name='Recipe ID')
+    areaname = models.CharField(max_length=50, verbose_name='영역명')
+    eqptype = models.CharField(max_length=50, verbose_name='장비 타입')
+    layerid = models.CharField(max_length=200, blank=True, verbose_name='레이어 ID')
+    updated = models.CharField(max_length=50, blank=True, verbose_name='업데이트')
+    # auto_now_add 대신 _record_step_changes() 가 한 배치(같은 sync_run_id) 전체에
+    # 동일한 timezone.now() 값을 명시적으로 채운다 - bulk_create 시 행마다 시각이
+    # 미세하게 달라질 여지를 없애 같은 배치는 항상 같은 detected_at 을 갖도록 보장한다.
+    detected_at = models.DateTimeField(verbose_name='감지 시각')
+
+    class Meta:
+        verbose_name = '{{request.col_step}} 변경 이력'
+        verbose_name_plural = '{{request.col_step}} 변경 이력 목록'
+        ordering = ['-detected_at', 'id']
+        indexes = [
+            models.Index(fields=['-detected_at'], name='api_pstep_chg_detected_idx'),
+            models.Index(fields=['sync_run_id', 'processid'], name='api_pstep_chg_run_pid_idx'),
+        ]
+
+    def __str__(self):
+        return f"{self.line}/{self.table_type} / {self.processid} / {self.change_type}"
 
 
 class MapName(models.Model):
