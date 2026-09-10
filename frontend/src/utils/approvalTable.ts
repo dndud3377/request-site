@@ -192,10 +192,10 @@ export const getFinalCompletionDate = (doc: RequestDocument): string => {
  * 병렬 진입 후에는 경로별로 행을 쪼개지 않고 문서 1건을 표 1행으로 두고,
  * '현재 단계' 칸 안에 3행 2열 고정 그리드를 그린다.
  *
- *   1열            2열
- *   PHPSI(P)       후결자(고정 RA)   ← MAP 삭제 은 이 자리에 RFG(R)
- *   JOB(J)         MASK(E)
- *   OVL(O)         추가후결자(RA)
+ *   1열                     2열
+ *   후결자(고정 RA)         PHPSI(P)   ← MAP 삭제 은 1열이 RFG(R)
+ *   JOB(J)                  OVL(O)
+ *   MASK(E)                 추가후결자(RA)
  *
  * 6칸은 항상 같은 자리에 있고, 이 문서의 결재 경로에 없는 단계는 '해당없음'으로 남는다.
  * (예전에는 존재하는 경로만 행으로 만들어서, 비대상 단계와 이미 끝난 단계가 화면에서 사라졌다.)
