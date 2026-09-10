@@ -110,6 +110,28 @@ STEP_TABLE_MAP = {
 }
 STEP_COLUMNS = ['processid', 'stepseq', 'descript', 'recipeid', 'areaname', 'eqptype', 'updated', 'layerid']
 
+# 2026-09 추가: STEP_TABLE_MAP(위) 테이블은 eqptype 전체가 섞여서 그대로 저장된다(변경 없음).
+# 그중 eqptype='POVLAY' 행만 별도로 라인별 전용 테이블에도 추가로 저장한다 - 모델은
+# PhotoStepS{N}Ov(models.py), db_table 을 STEP_OVL_TABLE_MAP 값과 동일하게 명시적으로 맞춰뒀다
+# (STEP_TABLE_MAP 이전 불일치 재발 방지).
+STEP_OVL_EQPTYPE = 'POVLAY'
+STEP_OVL_TABLE_MAP = {
+    '라인1': 'api_photosteps1_ov',
+    '라인3': 'api_photosteps3_ov',
+    '라인4': 'api_photosteps4_ov',
+    '라인5': 'api_photosteps5_ov',
+}
+
+# 2026-09 추가: eqptype 기준 3번째 분리 - 실제 eqptype 값이 아직 확정되지 않아 'XXXXXX' 를
+# 임시값으로 쓴다. 값이 정해지면 이 상수만 실제 값으로 교체하면 된다(모델/테이블명은 변경 불필요).
+STEP_EXTRA_EQPTYPE = 'XXXXXX'  # TODO: 실제 eqptype 값으로 교체 필요
+STEP_EXTRA_TABLE_MAP = {
+    '라인1': 'api_photosteps1_cd',
+    '라인3': 'api_photosteps3_cd',
+    '라인4': 'api_photosteps4_cd',
+    '라인5': 'api_photosteps5_cd',
+}
+
 # RTDB(MAIN) 조회 실패/빈 결과 시 실패 목록에 남길 데이터 종류 라벨.
 # (2026-08부터 DCQ fallback 대신 실패 목록을 모아 알림 메일로 보낸다 - mailer.enqueue_rtdb_sync_failed)
 TARGET_LABEL_PP = "{{request.process_selection}}-{{request.partid_selection}}"
@@ -214,9 +236,15 @@ def sync_rtdb_options():
       전체 재적재한다 - 항상 RTDB 응답을 현재 상태의 원본으로 취급해, 원본에서 실제로 빠진(단종 등)
       데이터가 남아있지 않도록 한다(2026-08: "없는 것만 추가"하는 diff 병합 방식을 시도했다가,
       실제로 없어진 데이터까지 계속 남아있게 되는 문제가 있어 다시 이 방식으로 되돌렸다).
-      스텝(`api_teps1`/`api_steps3~5`)도 2026-09부터 동일하게 변경 감지 후 쓰기를 적용한다
-      (`_write_step_if_changed()` - 공용 `line` 컬럼이 없는 라인별 전용 테이블이라 테이블 전체를
-      대상으로 비교한다는 점만 `_write_if_changed()`와 다르다).
+      스텝(`api_photosteps1`/`api_photosteps3~5`)도 2026-09부터 동일하게 변경 감지 후 쓰기를
+      적용한다(`_write_step_if_changed()` - 공용 `line` 컬럼이 없는 라인별 전용 테이블이라
+      테이블 전체를 대상으로 비교한다는 점만 `_write_if_changed()`와 다르다).
+    - (2026-09 추가) 위 스텝 전체 쓰기와 별개로, 같은 조회 결과(`df_ps`)에서 eqptype='POVLAY'인
+      행만 걸러 라인별 전용 테이블(`STEP_OVL_TABLE_MAP`)에, eqptype=`STEP_EXTRA_EQPTYPE`(현재
+      임시값 'XXXXXX')인 행만 걸러 또 다른 라인별 전용 테이블(`STEP_EXTRA_TABLE_MAP`)에 추가로
+      저장한다. 추가 RTDB 조회는 없다 - 이미 받아온 `df_ps`를 나눠 쓰기만 한다. 위 스텝 전체
+      테이블(`STEP_TABLE_MAP`)의 동작은 이 추가로 인해 변경되지 않는다(여전히 모든 eqptype 값을
+      그대로 저장).
     - 스텝 조회는 0건/실패뿐 아니라 **기존 테이블 대비 결과 건수가 `RTDB_STEP_COUNT_DROP_RATIO`
       (10%) 미만으로 급감한 경우도 "누락 의심"으로 보고 동일하게 재시도**한다(2026-09 추가).
       RTDB 가 0건은 아니지만 일부만 채워진 채 응답하는 경우, 그 불완전한 데이터로 스텝 테이블
@@ -364,6 +392,23 @@ def sync_rtdb_options():
                                 logger.info(_("[scheduler] {line} {{request.col_step}} 변경 없음 - skip").format(line=line))
                             else:
                                 logger.info(_("[scheduler] {line} {{request.col_step}} {count}건 동기화 완료").format(line=line, count=count))
+
+                            # eqptype 기준 하위 분리 테이블 - 위에서 받은 df_ps 를 그대로 나눠 쓰기만
+                            # 한다(추가 RTDB 조회 없음). 위 STEP_TABLE_MAP 쓰기는 eqptype 전체를
+                            # 유지한 채 변경하지 않는다.
+                            def _write_eqptype_subset(eqptype_value, sub_table_map, label):
+                                sub_table = sub_table_map.get(line)
+                                if not sub_table:
+                                    return
+                                df_sub = df_ps[df_ps['eqptype'] == eqptype_value]
+                                sub_count = _write_step_if_changed(engine, sub_table, df_sub, STEP_COLUMNS)
+                                if sub_count is None:
+                                    logger.info(_("[scheduler] {line} {{request.col_step}}({label}) 변경 없음 - skip").format(line=line, label=label))
+                                else:
+                                    logger.info(_("[scheduler] {line} {{request.col_step}}({label}) {count}건 동기화 완료").format(line=line, label=label, count=sub_count))
+
+                            _write_eqptype_subset(STEP_OVL_EQPTYPE, STEP_OVL_TABLE_MAP, STEP_OVL_EQPTYPE)
+                            _write_eqptype_subset(STEP_EXTRA_EQPTYPE, STEP_EXTRA_TABLE_MAP, STEP_EXTRA_EQPTYPE)
                     except Exception as e:
                         logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
                         failures.append({'context': line, 'target': TARGET_LABEL_STEP})
