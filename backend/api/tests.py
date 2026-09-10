@@ -5942,7 +5942,7 @@ class SyncRtdbStepCountDropTest(TestCase):
                 "CREATE TABLE api_productprocessid (line TEXT, product_name TEXT, process_id TEXT, last_synced TEXT)"
             ))
             conn.execute(text(
-                "CREATE TABLE api_teps1 ("
+                "CREATE TABLE api_photosteps1 ("
                 "processid TEXT, stepseq TEXT, descript TEXT, recipeid TEXT, "
                 "areaname TEXT, eqptype TEXT, updated TEXT, layerid TEXT, last_synced TEXT)"
             ))
@@ -5955,7 +5955,7 @@ class SyncRtdbStepCountDropTest(TestCase):
             'areaname': 'A', 'eqptype': 'E', 'updated': 'U', 'layerid': 'L',
             'last_synced': '2026-01-01',
         } for i in range(count)]
-        pd.DataFrame(rows).to_sql('api_teps1', engine, if_exists='append', index=False)
+        pd.DataFrame(rows).to_sql('api_photosteps1', engine, if_exists='append', index=False)
 
     def _pp_df(self):
         import pandas as pd
@@ -6020,7 +6020,7 @@ class SyncRtdbStepCountDropTest(TestCase):
         self.assertEqual(step_call_count, 2)
         verify_engine = create_engine(str(self.engine.url))
         with verify_engine.connect() as conn:
-            total = conn.execute(text("SELECT COUNT(*) FROM api_teps1")).scalar()
+            total = conn.execute(text("SELECT COUNT(*) FROM api_photosteps1")).scalar()
         self.assertEqual(total, 50)
         self.mock_mail.assert_not_called()
 
@@ -6035,7 +6035,7 @@ class SyncRtdbStepCountDropTest(TestCase):
         self.assertEqual(step_call_count, 3)
         verify_engine = create_engine(str(self.engine.url))
         with verify_engine.connect() as conn:
-            total = conn.execute(text("SELECT COUNT(*) FROM api_teps1")).scalar()
+            total = conn.execute(text("SELECT COUNT(*) FROM api_photosteps1")).scalar()
         self.assertEqual(total, 100)  # 기존 데이터 그대로 보존
         self.mock_mail.assert_called_once()
         failures_arg = self.mock_mail.call_args[0][0]
