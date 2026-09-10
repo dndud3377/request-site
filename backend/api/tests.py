@@ -5946,6 +5946,12 @@ class SyncRtdbStepCountDropTest(TestCase):
                 "processid TEXT, stepseq TEXT, descript TEXT, recipeid TEXT, "
                 "areaname TEXT, eqptype TEXT, updated TEXT, layerid TEXT, last_synced TEXT)"
             ))
+            for sub_table in ('api_photosteps1_ov', 'api_photosteps1_cd'):
+                conn.execute(text(
+                    f"CREATE TABLE {sub_table} ("
+                    "processid TEXT, stepseq TEXT, descript TEXT, recipeid TEXT, "
+                    "areaname TEXT, eqptype TEXT, updated TEXT, layerid TEXT, last_synced TEXT)"
+                ))
         return engine
 
     def _seed_existing_steps(self, engine, count):
@@ -6040,6 +6046,106 @@ class SyncRtdbStepCountDropTest(TestCase):
         self.mock_mail.assert_called_once()
         failures_arg = self.mock_mail.call_args[0][0]
         self.assertIn({'context': '라인1', 'target': self.scheduler.TARGET_LABEL_STEP}, failures_arg)
+
+
+class SyncRtdbStepEqptypeSplitTest(TestCase):
+    """(2026-09 추가) 스텝 조회 결과 중 eqptype='POVLAY'/STEP_EXTRA_EQPTYPE('XXXXXX' 임시값) 행이
+    전체 테이블(STEP_TABLE_MAP)은 그대로 두고(eqptype 전체 유지) 각각의 전용 서브 테이블
+    (STEP_OVL_TABLE_MAP/STEP_EXTRA_TABLE_MAP)에도 추가로 저장되는지 검증한다.
+    """
+
+    def _make_engine(self):
+        import os
+        import tempfile
+        from sqlalchemy import create_engine, text
+        fd, path = tempfile.mkstemp(suffix='.sqlite3')
+        os.close(fd)
+        self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
+        engine = create_engine(f'sqlite:///{path}')
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE TABLE api_processproduct (line TEXT, process TEXT, product_name TEXT, last_synced TEXT)"
+            ))
+            conn.execute(text(
+                "CREATE TABLE api_productprocessid (line TEXT, product_name TEXT, process_id TEXT, last_synced TEXT)"
+            ))
+            for table in (
+                'api_photosteps1', 'api_photosteps1_ov', 'api_photosteps1_cd',
+            ):
+                conn.execute(text(
+                    f"CREATE TABLE {table} ("
+                    "processid TEXT, stepseq TEXT, descript TEXT, recipeid TEXT, "
+                    "areaname TEXT, eqptype TEXT, updated TEXT, layerid TEXT, last_synced TEXT)"
+                ))
+        return engine
+
+    def _pp_df(self):
+        import pandas as pd
+        return pd.DataFrame([{'partnumber': 'PN1', 'descript': 'PROC', 'pkgtype_2': 'X'}])
+
+    def _pc_df(self):
+        import pandas as pd
+        return pd.DataFrame([{'partnumber': 'PN1', 'processid': 'PID1'}])
+
+    def _mixed_step_df(self):
+        import pandas as pd
+        return pd.DataFrame([
+            {'processid': 'P1', 'stepseq': '10', 'descript': 'D1', 'recipeid': 'R1',
+             'areaname': 'A1', 'eqptype': 'PMAINF', 'updated': 'U1', 'layerid': 'L1'},
+            {'processid': 'P2', 'stepseq': '20', 'descript': 'D2', 'recipeid': 'R2',
+             'areaname': 'A2', 'eqptype': 'POVLAY', 'updated': 'U2', 'layerid': 'L2'},
+            {'processid': 'P3', 'stepseq': '30', 'descript': 'D3', 'recipeid': 'R3',
+             'areaname': 'A3', 'eqptype': 'XXXXXX', 'updated': 'U3', 'layerid': 'L3'},
+            {'processid': 'P4', 'stepseq': '40', 'descript': 'D4', 'recipeid': 'R4',
+             'areaname': 'A4', 'eqptype': 'ETC', 'updated': 'U4', 'layerid': 'L4'},
+        ])
+
+    def setUp(self):
+        from . import scheduler
+        self.scheduler = scheduler
+        self.engine = self._make_engine()
+
+        patchers = [
+            patch.object(scheduler, 'get_django_engine', return_value=self.engine),
+            patch.object(scheduler, 'LINES', ['라인1']),
+            patch.object(scheduler, 'get_rtdb_token', return_value='dummy-token'),
+            patch.object(scheduler.time, 'sleep', return_value=None),
+        ]
+        for p in patchers:
+            p.start()
+            self.addCleanup(p.stop)
+
+        mail_patcher = patch('api.mailer.enqueue_rtdb_sync_failed')
+        self.mock_mail = mail_patcher.start()
+        self.addCleanup(mail_patcher.stop)
+
+    def test_povlay_and_extra_rows_written_to_dedicated_tables(self):
+        from sqlalchemy import create_engine, text
+
+        def fake_get_data_from_rtdb(payload, token):
+            table_name = payload['query']['table_name']
+            if table_name.startswith('A_'):
+                return self._pp_df()
+            if table_name.startswith('X_'):
+                return self._pc_df()
+            return self._mixed_step_df()
+
+        with patch.object(self.scheduler, 'get_data_from_rtdb', side_effect=fake_get_data_from_rtdb):
+            self.scheduler.sync_rtdb_options()
+
+        verify_engine = create_engine(str(self.engine.url))
+        with verify_engine.connect() as conn:
+            main_ids = sorted(r[0] for r in conn.execute(text("SELECT processid FROM api_photosteps1")).fetchall())
+            ov_ids = sorted(r[0] for r in conn.execute(text("SELECT processid FROM api_photosteps1_ov")).fetchall())
+            cd_ids = sorted(r[0] for r in conn.execute(text("SELECT processid FROM api_photosteps1_cd")).fetchall())
+
+        # 전체 테이블은 eqptype 전체(4건)가 그대로 유지된다 - 변경 없음.
+        self.assertEqual(main_ids, ['P1', 'P2', 'P3', 'P4'])
+        # POVLAY 전용 테이블에는 P2 한 건만.
+        self.assertEqual(ov_ids, ['P2'])
+        # XXXXXX(임시값) 전용 테이블에는 P3 한 건만.
+        self.assertEqual(cd_ids, ['P3'])
+        self.mock_mail.assert_not_called()
 
 
 class LayerFilterSetTest(TestCase):
