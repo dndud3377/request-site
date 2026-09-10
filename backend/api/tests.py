@@ -5917,6 +5917,185 @@ class WriteStepIfChangedTest(TestCase):
         self.assertEqual(stepseqs, ['20'])
 
 
+class WriteStepChangeLogTest(TestCase):
+    """_write_step_if_changed() 가 line/table_type 을 받으면 diff 를 PhotoStepChangeLog 에
+    processid 별로 묶어 기록하는지 검증한다(변경 현황 화면용, 2026-09 추가)."""
+
+    def _make_engine(self):
+        from sqlalchemy import create_engine, text
+        from sqlalchemy.pool import StaticPool
+        engine = create_engine('sqlite://', poolclass=StaticPool, connect_args={'check_same_thread': False})
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE TABLE step_test ("
+                "processid TEXT, stepseq TEXT, descript TEXT, recipeid TEXT, "
+                "areaname TEXT, eqptype TEXT, updated TEXT, layerid TEXT, last_synced TEXT)"
+            ))
+        return engine
+
+    def _row(self, **overrides):
+        row = {
+            'processid': 'X', 'stepseq': '10', 'descript': 'D', 'recipeid': 'R1',
+            'areaname': 'A1', 'eqptype': 'E1', 'updated': 'U1', 'layerid': 'L1',
+        }
+        row.update(overrides)
+        return row
+
+    def test_no_line_or_table_type_records_nothing(self):
+        """기존 호출부(line/table_type 미지정)는 동작이 그대로여야 한다 - 회귀 방지."""
+        import pandas as pd
+        from . import scheduler
+        from .models import PhotoStepChangeLog
+
+        engine = self._make_engine()
+        df = pd.DataFrame([self._row()])
+        scheduler._write_step_if_changed(engine, 'step_test', df, scheduler.STEP_COLUMNS)
+
+        self.assertEqual(PhotoStepChangeLog.objects.count(), 0)
+
+    def test_added_and_removed_rows_grouped_by_processid(self):
+        """예시 시나리오: A,B,C 에서 A,B,D,E,F 로 바뀌면 C 는 삭제, D/E/F 는 추가로 기록되고
+        processid 가 같은 것끼리(X: C,D / Y: E,F) 묶인다."""
+        import pandas as pd
+        from . import scheduler
+        from .models import PhotoStepChangeLog
+
+        engine = self._make_engine()
+        df1 = pd.DataFrame([
+            self._row(processid='common', stepseq='A'),
+            self._row(processid='common', stepseq='B'),
+            self._row(processid='X', stepseq='C'),
+        ])
+        scheduler._write_step_if_changed(
+            engine, 'step_test', df1, scheduler.STEP_COLUMNS,
+            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_ALL,
+        )
+        # 최초 적재(old_keys 가 빈 테이블)도 "빈 상태 → 데이터 있음"으로의 변경이므로 전부 added 로 기록된다.
+        self.assertEqual(PhotoStepChangeLog.objects.count(), 3)
+        PhotoStepChangeLog.objects.all().delete()
+
+        df2 = pd.DataFrame([
+            self._row(processid='common', stepseq='A'),
+            self._row(processid='common', stepseq='B'),
+            self._row(processid='X', stepseq='D'),
+            self._row(processid='Y', stepseq='E'),
+            self._row(processid='Y', stepseq='F'),
+        ])
+        count = scheduler._write_step_if_changed(
+            engine, 'step_test', df2, scheduler.STEP_COLUMNS,
+            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_ALL,
+        )
+        self.assertEqual(count, 5)
+
+        logs = PhotoStepChangeLog.objects.all()
+        self.assertEqual(logs.count(), 4)  # 삭제 C(1) + 추가 D,E,F(3)
+
+        removed = logs.filter(change_type=PhotoStepChangeLog.CHANGE_REMOVED)
+        self.assertEqual(list(removed.values_list('processid', 'stepseq')), [('X', 'C')])
+
+        added_x = logs.filter(change_type=PhotoStepChangeLog.CHANGE_ADDED, processid='X')
+        self.assertEqual(list(added_x.values_list('stepseq', flat=True)), ['D'])
+
+        added_y = logs.filter(change_type=PhotoStepChangeLog.CHANGE_ADDED, processid='Y')
+        self.assertEqual(sorted(added_y.values_list('stepseq', flat=True)), ['E', 'F'])
+
+        # 같은 diff(sync_run_id) 안에서 나온 행들은 line/table_type/detected_at 이 동일해야 한다.
+        run_ids = set(logs.values_list('sync_run_id', flat=True))
+        self.assertEqual(len(run_ids), 1)
+        self.assertTrue(all(log.line == '라인1' for log in logs))
+        self.assertTrue(all(log.table_type == PhotoStepChangeLog.TABLE_TYPE_ALL for log in logs))
+
+    def test_identical_data_records_nothing(self):
+        import pandas as pd
+        from . import scheduler
+        from .models import PhotoStepChangeLog
+
+        engine = self._make_engine()
+        df = pd.DataFrame([self._row()])
+        scheduler._write_step_if_changed(
+            engine, 'step_test', df, scheduler.STEP_COLUMNS,
+            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_ALL,
+        )
+        count_after_first_write = PhotoStepChangeLog.objects.count()
+
+        result = scheduler._write_step_if_changed(
+            engine, 'step_test', df.copy(), scheduler.STEP_COLUMNS,
+            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_ALL,
+        )
+
+        self.assertIsNone(result)
+        # 변경이 없으면(=skip) 두 번째 호출에서는 새 이력이 전혀 추가되지 않아야 한다.
+        self.assertEqual(PhotoStepChangeLog.objects.count(), count_after_first_write)
+
+
+class PhotoStepChangesApiTest(TestCase):
+    """GET /api/photostep-changes/ 가 sync_run_id+processid 로 그룹핑해 반환하는지 검증한다."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        from .models import UserProfile
+        self.client = APIClient()
+        self.user = UserProfile.objects.create(loginid='tester', mail='tester@company.com', role='MASTER')
+        self.client.force_authenticate(user=self.user)
+
+    def _create_log(self, **overrides):
+        from .models import PhotoStepChangeLog
+        row = {
+            'sync_run_id': overrides.pop('sync_run_id'),
+            'line': '라인1',
+            'table_type': PhotoStepChangeLog.TABLE_TYPE_ALL,
+            'processid': 'X',
+            'change_type': PhotoStepChangeLog.CHANGE_ADDED,
+            'stepseq': '10', 'descript': 'D', 'recipeid': 'R1',
+            'areaname': 'A1', 'eqptype': 'E1', 'updated': 'U1', 'layerid': 'L1',
+        }
+        row.update(overrides)
+        from django.utils import timezone
+        row.setdefault('detected_at', timezone.now())
+        return PhotoStepChangeLog.objects.create(**row)
+
+    def test_groups_by_sync_run_and_processid(self):
+        import uuid
+        from .models import PhotoStepChangeLog
+
+        run1 = uuid.uuid4()
+        self._create_log(sync_run_id=run1, processid='X', change_type=PhotoStepChangeLog.CHANGE_REMOVED, stepseq='C')
+        self._create_log(sync_run_id=run1, processid='X', change_type=PhotoStepChangeLog.CHANGE_ADDED, stepseq='D')
+        self._create_log(sync_run_id=run1, processid='Y', change_type=PhotoStepChangeLog.CHANGE_ADDED, stepseq='E')
+        self._create_log(sync_run_id=run1, processid='Y', change_type=PhotoStepChangeLog.CHANGE_ADDED, stepseq='F')
+
+        resp = self.client.get('/api/photostep-changes/')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['count'], 2)
+        groups_by_pid = {g['processid']: g for g in data['results']}
+        self.assertEqual([r['stepseq'] for r in groups_by_pid['X']['removed']], ['C'])
+        self.assertEqual([r['stepseq'] for r in groups_by_pid['X']['added']], ['D'])
+        self.assertEqual(sorted(r['stepseq'] for r in groups_by_pid['Y']['added']), ['E', 'F'])
+        self.assertEqual(groups_by_pid['Y']['removed'], [])
+
+    def test_line_filter(self):
+        import uuid
+        from .models import PhotoStepChangeLog
+
+        self._create_log(sync_run_id=uuid.uuid4(), line='라인1', processid='X')
+        self._create_log(sync_run_id=uuid.uuid4(), line='라인3', processid='Y')
+
+        resp = self.client.get('/api/photostep-changes/', {'line': '라인3'})
+        data = resp.json()
+        self.assertEqual(data['count'], 1)
+        self.assertEqual(data['results'][0]['line'], '라인3')
+
+    def test_unauthenticated_request_rejected_in_sso_mode(self):
+        from rest_framework.test import APIClient
+        from django.test import override_settings
+
+        anon_client = APIClient()
+        with override_settings(AUTH_MODE='sso'):
+            resp = anon_client.get('/api/photostep-changes/')
+        self.assertEqual(resp.status_code, 403)
+
+
 class SyncRtdbStepCountDropTest(TestCase):
     """RTDB_STEP_COUNT_DROP_RATIO(2026-09 추가) - 스텝 조회 건수가 기존 테이블 대비 급감하면
     재시도하고, 재시도 후에도 급감이면 쓰지 않고 기존 데이터를 보존하는지 검증한다.

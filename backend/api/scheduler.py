@@ -8,12 +8,15 @@
 """
 import os
 import time
+import uuid
 import logging
 import pandas as pd
 from sqlalchemy import text
 from dotenv import load_dotenv
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from .models import PhotoStepChangeLog
 from .utils import (
     ensure_dcq_session,
     get_django_engine,
@@ -181,13 +184,52 @@ def _write_if_changed(engine, table, line, df, key_cols, order_cols):
     return len(df)
 
 
-def _write_step_if_changed(engine, table, df, key_cols):
+def _record_step_changes(line, table_type, key_cols, added, removed):
+    """
+    스텝 테이블 diff(added/removed 키 튜플 집합)를 `PhotoStepChangeLog` 에 기록한다.
+    같은 diff 호출에서 나온 행들은 하나의 sync_run_id 로 묶여, 변경 현황 화면에서
+    라인·테이블 구분·processid 단위로 그룹핑해 보여줄 수 있다.
+    """
+    if not added and not removed:
+        return
+    sync_run_id = uuid.uuid4()
+    detected_at = timezone.now()
+    rows = []
+    for change_type, keys in (
+        (PhotoStepChangeLog.CHANGE_ADDED, added),
+        (PhotoStepChangeLog.CHANGE_REMOVED, removed),
+    ):
+        for key in keys:
+            values = dict(zip(key_cols, key))
+            rows.append(PhotoStepChangeLog(
+                sync_run_id=sync_run_id,
+                line=line,
+                table_type=table_type,
+                change_type=change_type,
+                processid=values.get('processid', ''),
+                stepseq=values.get('stepseq', ''),
+                descript=values.get('descript', ''),
+                recipeid=values.get('recipeid', ''),
+                areaname=values.get('areaname', ''),
+                eqptype=values.get('eqptype', ''),
+                layerid=values.get('layerid', ''),
+                updated=values.get('updated', ''),
+                detected_at=detected_at,
+            ))
+    PhotoStepChangeLog.objects.bulk_create(rows)
+
+
+def _write_step_if_changed(engine, table, df, key_cols, line=None, table_type=None):
     """
     df 의 key_cols 집합이 table(스텝 - 라인별 단독 테이블) 전체와 동일하면 쓰기를 건너뛰고
     None 을 반환한다. 다르면 트랜잭션 내에서 DELETE(전체) → INSERT 후 저장 건수를 반환한다.
     스텝 테이블은 공용 line 컬럼이 없는 라인별 전용 테이블이라 `_write_if_changed()`와 달리
     라인 필터 없이 테이블 전체를 대상으로 비교·갱신한다(2026-09 추가).
     (table/컬럼명은 코드 내부 상수만 전달되므로 SQL 인젝션 대상이 아니다.)
+
+    line/table_type 이 함께 전달되면, 변경 감지 시 added/removed diff 를
+    `PhotoStepChangeLog`(변경 현황 화면용)에 기록한다. 이 기록이 실패해도 본 동기화
+    쓰기(DELETE→INSERT)는 계속 진행한다 - 변경 이력은 부가 기능이라 동기화 자체를 막지 않는다.
     """
     with engine.connect() as conn:
         rows = conn.execute(text(f"SELECT {', '.join(key_cols)} FROM {table}")).fetchall()
@@ -195,6 +237,12 @@ def _write_step_if_changed(engine, table, df, key_cols):
     new_keys = set(df[key_cols].itertuples(index=False, name=None))
     if new_keys == old_keys:
         return None
+
+    if line and table_type:
+        try:
+            _record_step_changes(line, table_type, key_cols, new_keys - old_keys, old_keys - new_keys)
+        except Exception as e:
+            logger.error(_("[scheduler] {{request.col_step}} 변경 이력 기록 실패: {e}").format(e=e), exc_info=True)
 
     df = df.copy()
     df['last_synced'] = pd.Timestamp.now()
@@ -387,7 +435,10 @@ def sync_rtdb_options():
                             min_count=min_count,
                         )
                         if df_ps is not None:
-                            count = _write_step_if_changed(engine, table_name, df_ps, STEP_COLUMNS)
+                            count = _write_step_if_changed(
+                                engine, table_name, df_ps, STEP_COLUMNS,
+                                line=line, table_type=PhotoStepChangeLog.TABLE_TYPE_ALL,
+                            )
                             if count is None:
                                 logger.info(_("[scheduler] {line} {{request.col_step}} 변경 없음 - skip").format(line=line))
                             else:
@@ -396,19 +447,22 @@ def sync_rtdb_options():
                             # eqptype 기준 하위 분리 테이블 - 위에서 받은 df_ps 를 그대로 나눠 쓰기만
                             # 한다(추가 RTDB 조회 없음). 위 STEP_TABLE_MAP 쓰기는 eqptype 전체를
                             # 유지한 채 변경하지 않는다.
-                            def _write_eqptype_subset(eqptype_value, sub_table_map, label):
+                            def _write_eqptype_subset(eqptype_value, sub_table_map, label, table_type):
                                 sub_table = sub_table_map.get(line)
                                 if not sub_table:
                                     return
                                 df_sub = df_ps[df_ps['eqptype'] == eqptype_value]
-                                sub_count = _write_step_if_changed(engine, sub_table, df_sub, STEP_COLUMNS)
+                                sub_count = _write_step_if_changed(
+                                    engine, sub_table, df_sub, STEP_COLUMNS,
+                                    line=line, table_type=table_type,
+                                )
                                 if sub_count is None:
                                     logger.info(_("[scheduler] {line} {{request.col_step}}({label}) 변경 없음 - skip").format(line=line, label=label))
                                 else:
                                     logger.info(_("[scheduler] {line} {{request.col_step}}({label}) {count}건 동기화 완료").format(line=line, label=label, count=sub_count))
 
-                            _write_eqptype_subset(STEP_OVL_EQPTYPE, STEP_OVL_TABLE_MAP, STEP_OVL_EQPTYPE)
-                            _write_eqptype_subset(STEP_EXTRA_EQPTYPE, STEP_EXTRA_TABLE_MAP, STEP_EXTRA_EQPTYPE)
+                            _write_eqptype_subset(STEP_OVL_EQPTYPE, STEP_OVL_TABLE_MAP, STEP_OVL_EQPTYPE, PhotoStepChangeLog.TABLE_TYPE_OV)
+                            _write_eqptype_subset(STEP_EXTRA_EQPTYPE, STEP_EXTRA_TABLE_MAP, STEP_EXTRA_EQPTYPE, PhotoStepChangeLog.TABLE_TYPE_CD)
                     except Exception as e:
                         logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
                         failures.append({'context': line, 'target': TARGET_LABEL_STEP})

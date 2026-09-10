@@ -11,6 +11,7 @@ import OIDCCallbackPage from './pages/OIDCCallbackPage';
 import HomePage from './pages/HomePage';
 import RequestPage from './pages/RequestPage';
 import ApprovalPage from './pages/ApprovalPage';
+import ChangeStatusPage from './pages/ChangeStatusPage';
 import HistoryPage from './pages/HistoryPage';
 import VOCPage from './pages/VOCPage';
 import PermissionPage from './pages/PermissionPage';
@@ -57,6 +58,7 @@ function AppContent(): React.ReactElement {
       <Route path="/" element={<HomePage />} />
       <Route path="/request"     element={<ProtectedRoute><RequestPage /></ProtectedRoute>} />
       <Route path="/approval"    element={<ProtectedRoute><ApprovalPage /></ProtectedRoute>} />
+      <Route path="/change-status" element={<ProtectedRoute><ChangeStatusPage /></ProtectedRoute>} />
       <Route path="/history"     element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
       <Route path="/voc"         element={<ProtectedRoute><VOCPage /></ProtectedRoute>} />
       <Route path="/permissions" element={<ProtectedRoute><PermissionPage /></ProtectedRoute>} />

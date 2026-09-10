@@ -13,7 +13,7 @@ from django.db import connections
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from rest_framework import viewsets, status, filters, mixins
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, BasePermission, SAFE_METHODS
 from rest_framework.exceptions import ValidationError, NotAuthenticated
@@ -28,6 +28,7 @@ from .models import (
     ProductProcessId, AdminNotice,
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5,
     PhotoStepS1Ov, PhotoStepS3Ov, PhotoStepS4Ov, PhotoStepS5Ov,
+    PhotoStepChangeLog,
     VocHistory, ProductBarcode, Guide, UserGroup,
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
     DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot, LayerFilterSet,
@@ -3756,6 +3757,79 @@ def form_options_map_info(request):
         return JsonResponse(empty)
 
     return JsonResponse({'AAA1': entry.AAA1, 'AAA2': entry.AAA2, 'AAA3': entry.AAA3})
+
+
+# 변경 현황 화면이 한 번에 그룹핑 대상으로 읽어올 최대 변경 이력 행 수. 이 이상 쌓여 있으면
+# 오래된 쪽은 이번 조회에서 제외되고 응답의 truncated 로 알린다(비정상적으로 큰 조회를 막는 안전판).
+PHOTOSTEP_CHANGE_LOG_MAX_ROWS = 5000
+PHOTOSTEP_CHANGE_LOG_ROW_FIELDS = ['stepseq', 'descript', 'recipeid', 'areaname', 'eqptype', 'layerid', 'updated']
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
+def photostep_changes(request):
+    """{{request.col_step}} 테이블(api_photosteps1/3~5 및 POVLAY/XXXXXX 하위 테이블) 변경 이력을
+    sync_run_id + processid 단위로 묶어 반환한다 (변경 현황 화면 전용).
+
+    쿼리 파라미터:
+    - line: {{request.line}} 값으로 필터 (예: 라인1)
+    - table_type: PhotoStepChangeLog.TABLE_TYPE_CHOICES 값으로 필터 (ALL/OV/CD)
+    - page, page_size: 그룹 단위 페이지네이션 (기본 1 / 20, page_size 최대 100)
+    """
+    qs = PhotoStepChangeLog.objects.all()
+    line = request.GET.get('line')
+    if line:
+        qs = qs.filter(line=line)
+    table_type = request.GET.get('table_type')
+    if table_type:
+        qs = qs.filter(table_type=table_type)
+
+    rows = list(qs.order_by('-detected_at', 'id')[:PHOTOSTEP_CHANGE_LOG_MAX_ROWS + 1])
+    truncated = len(rows) > PHOTOSTEP_CHANGE_LOG_MAX_ROWS
+    rows = rows[:PHOTOSTEP_CHANGE_LOG_MAX_ROWS]
+
+    groups = {}
+    order = []
+    for row in rows:
+        group_key = (row.sync_run_id, row.processid)
+        if group_key not in groups:
+            groups[group_key] = {
+                'sync_run_id': str(row.sync_run_id),
+                'line': row.line,
+                'table_type': row.table_type,
+                'processid': row.processid,
+                'detected_at': row.detected_at,
+                'added': [],
+                'removed': [],
+            }
+            order.append(group_key)
+        bucket = 'added' if row.change_type == PhotoStepChangeLog.CHANGE_ADDED else 'removed'
+        groups[group_key][bucket].append({field: getattr(row, field) for field in PHOTOSTEP_CHANGE_LOG_ROW_FIELDS})
+
+    all_groups = [groups[key] for key in order]
+    for group in all_groups:
+        group['added'].sort(key=lambda r: _natural_key(r['stepseq']))
+        group['removed'].sort(key=lambda r: _natural_key(r['stepseq']))
+
+    try:
+        page = max(1, int(request.GET.get('page', 1)))
+    except ValueError:
+        page = 1
+    try:
+        page_size = min(100, max(1, int(request.GET.get('page_size', 20))))
+    except ValueError:
+        page_size = 20
+
+    start = (page - 1) * page_size
+    page_groups = all_groups[start:start + page_size]
+
+    return JsonResponse({
+        'count': len(all_groups),
+        'page': page,
+        'page_size': page_size,
+        'truncated': truncated,
+        'results': page_groups,
+    })
 
 
 class UserViewSet(viewsets.ModelViewSet):

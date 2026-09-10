@@ -41,6 +41,8 @@ import {
   LayerFilterSet,
   MapInfo,
   PersonalMarkCategory,
+  PhotoStepChangeListResponse,
+  PhotoStepChangeTableType,
 } from '../types';
 
 // ===== JWT 토큰 관리 =====
@@ -754,6 +756,27 @@ export const vocAPI = {
 
 export const linesAPI = {
   list: (): Promise<Line[]> => get<Line[]>('/lines/'),
+};
+
+// ===== 변경 현황 API =====
+
+export interface PhotoStepChangesQuery {
+  line?: string;
+  tableType?: PhotoStepChangeTableType;
+  page?: number;
+  pageSize?: number;
+}
+
+export const changeStatusAPI = {
+  list: (query: PhotoStepChangesQuery = {}): Promise<PhotoStepChangeListResponse> => {
+    const params = new URLSearchParams();
+    if (query.line) params.set('line', query.line);
+    if (query.tableType) params.set('table_type', query.tableType);
+    if (query.page) params.set('page', String(query.page));
+    if (query.pageSize) params.set('page_size', String(query.pageSize));
+    const qs = params.toString();
+    return get<PhotoStepChangeListResponse>(`/photostep-changes/${qs ? `?${qs}` : ''}`);
+  },
 };
 
 // ===== 결재 상세페이지 J/O-layer 공유 필터 API =====
