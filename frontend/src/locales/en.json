@@ -826,6 +826,7 @@
     "stage_handler": "Handler",
     "stage_reviewer": "Reviewer",
     "stage_post": "Post-approver",
+    "stage_post_fixed": "RFG Post-approval",
     "stage_post_extra": "Extra Post-approver",
     "role_agreer": "Agreer",
     "assign_handler_label": "Handler",
