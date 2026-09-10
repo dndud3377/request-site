@@ -99,11 +99,14 @@ RTDB_STEP_FILTER = {
 RTDB_STEP_TABLE = "O_{suffix}.W"
 
 # 스텝(라인별 단독 테이블) 매핑 - 라인별로 서로 다른 테이블에 저장한다.
+# (2026-09 수정: PhotoStepS1~S5 모델은 db_table 을 지정하지 않아 Django 기본 규칙대로
+#  api_photosteps{N} 이 실제 테이블명이다. 이전에는 이 맵이 api_teps1/api_steps3~5 라는
+#  다른 문자열을 가리켜, 스케줄러가 쓰는 테이블과 views.py 의 ORM 조회 테이블이 서로 달랐다.)
 STEP_TABLE_MAP = {
-    '라인1': 'api_teps1',
-    '라인3': 'api_steps3',
-    '라인4': 'api_steps4',
-    '라인5': 'api_steps5',
+    '라인1': 'api_photosteps1',
+    '라인3': 'api_photosteps3',
+    '라인4': 'api_photosteps4',
+    '라인5': 'api_photosteps5',
 }
 STEP_COLUMNS = ['processid', 'stepseq', 'descript', 'recipeid', 'areaname', 'eqptype', 'updated', 'layerid']
 
@@ -363,6 +366,7 @@ def sync_rtdb_options():
                                 logger.info(_("[scheduler] {line} {{request.col_step}} {count}건 동기화 완료").format(line=line, count=count))
                     except Exception as e:
                         logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
+                        failures.append({'context': line, 'target': TARGET_LABEL_STEP})
         finally:
             if engine:
                 engine.dispose()
