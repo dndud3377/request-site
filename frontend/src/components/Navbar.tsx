@@ -15,19 +15,20 @@ interface NavLink {
 // 역할별 접근 가능한 페이지
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   NONE: ['/'],
-  PL: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions', '/address-book'],
-  TE_R: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions', '/address-book'],
-  TE_P: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions', '/address-book'],
-  TE_J: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions', '/address-book'],
-  TE_O: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions', '/address-book'],
-  TE_E: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions', '/address-book'],
-  MASTER: ['/', '/request', '/approval', '/history', '/voc', '/guide', '/permissions', '/address-book'],
+  PL: ['/', '/request', '/approval', '/change-status', '/history', '/voc', '/guide', '/permissions', '/address-book'],
+  TE_R: ['/', '/request', '/approval', '/change-status', '/history', '/voc', '/guide', '/permissions', '/address-book'],
+  TE_P: ['/', '/request', '/approval', '/change-status', '/history', '/voc', '/guide', '/permissions', '/address-book'],
+  TE_J: ['/', '/request', '/approval', '/change-status', '/history', '/voc', '/guide', '/permissions', '/address-book'],
+  TE_O: ['/', '/request', '/approval', '/change-status', '/history', '/voc', '/guide', '/permissions', '/address-book'],
+  TE_E: ['/', '/request', '/approval', '/change-status', '/history', '/voc', '/guide', '/permissions', '/address-book'],
+  MASTER: ['/', '/request', '/approval', '/change-status', '/history', '/voc', '/guide', '/permissions', '/address-book'],
 };
 
 const NAV_LINKS: NavLink[] = [
   { to: '/', key: 'nav.home' },
   { to: '/request', key: 'nav.request' },
   { to: '/approval', key: 'nav.approval' },
+  { to: '/change-status', key: 'nav.change_status' },
   { to: '/history', key: 'nav.history' },
   { to: '/voc', key: 'nav.voc' },
   { to: '/guide', key: 'nav.guide' },
