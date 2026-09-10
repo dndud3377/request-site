@@ -278,6 +278,29 @@ RTDB 소스(라인1·3~5·nv)와 DCQ 소스(라인2)가 같은 방식을 쓴다.
 - **조회 결과 활용**: 아직 `views.py`에서 POVLAY 전용 테이블(`form_options_ovl_layer`)만 조회에
   쓰인다. XXXXXX 전용 테이블은 이번엔 저장만 하고 조회 기능은 만들지 않았다.
 
+### 스텝 변경 이력 기록 (`PhotoStepChangeLog`, 2026-09 추가 — 변경 현황 화면용)
+
+`_write_step_if_changed()`는 diff 를 이미 `old_keys`/`new_keys` 두 집합으로 계산하므로, 이 시점에
+`added = new_keys - old_keys`, `removed = old_keys - new_keys` 를 구해 `PhotoStepChangeLog` 모델에
+기록한다 - 변경 현황 화면(`GET /api/photostep-changes/`, 프론트 `/change-status`)이 이 테이블만 읽는다.
+상세는 `docs/CHANGE_STATUS.md` 참고.
+
+- **대상**: `STEP_TABLE_MAP`/`STEP_OVL_TABLE_MAP`/`STEP_EXTRA_TABLE_MAP` 12개 테이블 전부
+  (`_write_step_if_changed()` 호출부 3곳이 각각 `line`/`table_type`(`ALL`/`OV`/`CD`)을 함께 넘긴다).
+- **그룹핑**: 같은 diff 호출(=같은 테이블의 같은 감지 시점)에서 나온 행은 `sync_run_id`(UUID)로
+  묶이고, `processid`별로 추가/삭제가 나뉜다 - 조회 API 가 `(sync_run_id, processid)` 단위로
+  다시 묶어 그룹으로 반환한다.
+- **호출부에 line/table_type 을 안 넘기면**(과거 호출 방식) 이력을 기록하지 않는다 - 회귀 없이
+  기존 동작 그대로다.
+- **실패 격리**: 이력 기록이 예외를 내도 본 동기화 쓰기(`DELETE → INSERT`)는 계속 진행한다
+  (로그만 남기고 삼킨다) - 변경 이력은 부가 기능이라 동기화 자체를 막지 않는다.
+- **detected_at**: `auto_now_add` 대신 `_record_step_changes()`가 같은 배치 전체에 동일한
+  `timezone.now()` 값을 명시적으로 채운다 - `bulk_create`로 여러 행을 한 번에 넣을 때 행마다
+  시각이 미세하게 갈라져 그룹핑이 어긋나는 것을 막기 위함이다.
+- **보관 정책 없음**: 오래된 이력을 자동으로 지우는 로직은 없다 - 필요해지면 별도로 추가해야 한다.
+- **검증**: `backend/api/tests.py`의 `WriteStepChangeLogTest`(diff → 이력 기록 단위 테스트),
+  `PhotoStepChangesApiTest`(조회 API 그룹핑/필터 검증).
+
 ## RTDB(REST API) 유틸 (`utils.py`)
 
 | 함수 | 설명 |
