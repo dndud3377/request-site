@@ -894,6 +894,206 @@ class PhotoStepS5(models.Model):
         return f"line5 / {self.processid} / {self.stepseq} / {self.descript} / {self.eqptype}"
 
 
+class PhotoStepS1Ov(models.Model):
+    """line1 라인 {{request.col_step}} 정보 중 eqptype='POVLAY' 전용 (스케줄러 동기화)"""
+    processid = models.CharField(max_length=200, verbose_name='{{request.process_id}} ID')
+    stepseq = models.CharField(max_length=200, verbose_name='{{request.col_step}}SEQ')
+    descript = models.CharField(max_length=200, verbose_name='{{request.process_selection}}명')
+    recipeid = models.CharField(max_length=200, verbose_name='Recipe ID')
+    areaname = models.CharField(max_length=50, verbose_name='영역명')
+    eqptype = models.CharField(max_length=50, verbose_name='장비 타입')
+    layerid = models.CharField(max_length=200, blank=True, verbose_name='레이어 ID')
+    updated = models.CharField(max_length=50, blank=True, verbose_name='업데이트')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        db_table = 'api_photosteps1_ov'
+        verbose_name = 'line1 {{request.col_step}} 정보(POVLAY)'
+        verbose_name_plural = 'line1 {{request.col_step}} 정보(POVLAY) 목록'
+        indexes = [
+            models.Index(fields=['processid'], name='api_pstep_line1_ov_prcid_idx'),
+        ]
+
+    def __str__(self):
+        return f"line1_ov / {self.processid} / {self.stepseq} / {self.descript}"
+
+
+class PhotoStepS3Ov(models.Model):
+    """line3 라인 {{request.col_step}} 정보 중 eqptype='POVLAY' 전용 (스케줄러 동기화)"""
+    processid = models.CharField(max_length=200, verbose_name='{{request.process_id}} ID')
+    stepseq = models.CharField(max_length=200, verbose_name='{{request.col_step}}SEQ')
+    descript = models.CharField(max_length=200, verbose_name='{{request.process_selection}}명')
+    recipeid = models.CharField(max_length=200, verbose_name='Recipe ID')
+    areaname = models.CharField(max_length=50, verbose_name='영역명')
+    eqptype = models.CharField(max_length=50, verbose_name='장비 타입')
+    layerid = models.CharField(max_length=200, blank=True, verbose_name='레이어 ID')
+    updated = models.CharField(max_length=50, blank=True, verbose_name='업데이트')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        db_table = 'api_photosteps3_ov'
+        verbose_name = 'line3 {{request.col_step}} 정보(POVLAY)'
+        verbose_name_plural = 'line3 {{request.col_step}} 정보(POVLAY) 목록'
+        indexes = [
+            models.Index(fields=['processid'], name='api_pstep_line3_ov_prcid_idx'),
+        ]
+
+    def __str__(self):
+        return f"line3_ov / {self.processid} / {self.stepseq} / {self.descript}"
+
+
+class PhotoStepS4Ov(models.Model):
+    """line4 라인 {{request.col_step}} 정보 중 eqptype='POVLAY' 전용 (스케줄러 동기화)"""
+    processid = models.CharField(max_length=200, verbose_name='{{request.process_id}} ID')
+    stepseq = models.CharField(max_length=200, verbose_name='{{request.col_step}}SEQ')
+    descript = models.CharField(max_length=200, verbose_name='{{request.process_selection}}명')
+    recipeid = models.CharField(max_length=200, verbose_name='Recipe ID')
+    areaname = models.CharField(max_length=50, verbose_name='영역명')
+    eqptype = models.CharField(max_length=50, verbose_name='장비 타입')
+    layerid = models.CharField(max_length=200, blank=True, verbose_name='레이어 ID')
+    updated = models.CharField(max_length=50, blank=True, verbose_name='업데이트')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        db_table = 'api_photosteps4_ov'
+        verbose_name = 'line4 {{request.col_step}} 정보(POVLAY)'
+        verbose_name_plural = 'line4 {{request.col_step}} 정보(POVLAY) 목록'
+        indexes = [
+            models.Index(fields=['processid'], name='api_pstep_line4_ov_prcid_idx'),
+        ]
+
+    def __str__(self):
+        return f"line4_ov / {self.processid} / {self.stepseq} / {self.descript}"
+
+
+class PhotoStepS5Ov(models.Model):
+    """line5 라인 {{request.col_step}} 정보 중 eqptype='POVLAY' 전용 (스케줄러 동기화)"""
+    processid = models.CharField(max_length=200, verbose_name='{{request.process_id}} ID')
+    stepseq = models.CharField(max_length=200, verbose_name='{{request.col_step}}SEQ')
+    descript = models.CharField(max_length=200, verbose_name='{{request.process_selection}}명')
+    recipeid = models.CharField(max_length=200, verbose_name='Recipe ID')
+    areaname = models.CharField(max_length=50, verbose_name='영역명')
+    eqptype = models.CharField(max_length=50, verbose_name='장비 타입')
+    layerid = models.CharField(max_length=200, blank=True, verbose_name='레이어 ID')
+    updated = models.CharField(max_length=50, blank=True, verbose_name='업데이트')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        db_table = 'api_photosteps5_ov'
+        verbose_name = 'line5 {{request.col_step}} 정보(POVLAY)'
+        verbose_name_plural = 'line5 {{request.col_step}} 정보(POVLAY) 목록'
+        indexes = [
+            models.Index(fields=['processid'], name='api_pstep_line5_ov_prcid_idx'),
+        ]
+
+    def __str__(self):
+        return f"line5_ov / {self.processid} / {self.stepseq} / {self.descript}"
+
+
+class PhotoStepS1Cd(models.Model):
+    """line1 라인 {{request.col_step}} 정보 중 eqptype='XXXXXX'(임시값, 추후 실제 값으로 교체 필요) 전용
+    (스케줄러 동기화)
+    """
+    processid = models.CharField(max_length=200, verbose_name='{{request.process_id}} ID')
+    stepseq = models.CharField(max_length=200, verbose_name='{{request.col_step}}SEQ')
+    descript = models.CharField(max_length=200, verbose_name='{{request.process_selection}}명')
+    recipeid = models.CharField(max_length=200, verbose_name='Recipe ID')
+    areaname = models.CharField(max_length=50, verbose_name='영역명')
+    eqptype = models.CharField(max_length=50, verbose_name='장비 타입')
+    layerid = models.CharField(max_length=200, blank=True, verbose_name='레이어 ID')
+    updated = models.CharField(max_length=50, blank=True, verbose_name='업데이트')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        db_table = 'api_photosteps1_cd'
+        verbose_name = 'line1 {{request.col_step}} 정보(XXXXXX)'
+        verbose_name_plural = 'line1 {{request.col_step}} 정보(XXXXXX) 목록'
+        indexes = [
+            models.Index(fields=['processid'], name='api_pstep_line1_cd_prcid_idx'),
+        ]
+
+    def __str__(self):
+        return f"line1_cd / {self.processid} / {self.stepseq} / {self.descript}"
+
+
+class PhotoStepS3Cd(models.Model):
+    """line3 라인 {{request.col_step}} 정보 중 eqptype='XXXXXX'(임시값, 추후 실제 값으로 교체 필요) 전용
+    (스케줄러 동기화)
+    """
+    processid = models.CharField(max_length=200, verbose_name='{{request.process_id}} ID')
+    stepseq = models.CharField(max_length=200, verbose_name='{{request.col_step}}SEQ')
+    descript = models.CharField(max_length=200, verbose_name='{{request.process_selection}}명')
+    recipeid = models.CharField(max_length=200, verbose_name='Recipe ID')
+    areaname = models.CharField(max_length=50, verbose_name='영역명')
+    eqptype = models.CharField(max_length=50, verbose_name='장비 타입')
+    layerid = models.CharField(max_length=200, blank=True, verbose_name='레이어 ID')
+    updated = models.CharField(max_length=50, blank=True, verbose_name='업데이트')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        db_table = 'api_photosteps3_cd'
+        verbose_name = 'line3 {{request.col_step}} 정보(XXXXXX)'
+        verbose_name_plural = 'line3 {{request.col_step}} 정보(XXXXXX) 목록'
+        indexes = [
+            models.Index(fields=['processid'], name='api_pstep_line3_cd_prcid_idx'),
+        ]
+
+    def __str__(self):
+        return f"line3_cd / {self.processid} / {self.stepseq} / {self.descript}"
+
+
+class PhotoStepS4Cd(models.Model):
+    """line4 라인 {{request.col_step}} 정보 중 eqptype='XXXXXX'(임시값, 추후 실제 값으로 교체 필요) 전용
+    (스케줄러 동기화)
+    """
+    processid = models.CharField(max_length=200, verbose_name='{{request.process_id}} ID')
+    stepseq = models.CharField(max_length=200, verbose_name='{{request.col_step}}SEQ')
+    descript = models.CharField(max_length=200, verbose_name='{{request.process_selection}}명')
+    recipeid = models.CharField(max_length=200, verbose_name='Recipe ID')
+    areaname = models.CharField(max_length=50, verbose_name='영역명')
+    eqptype = models.CharField(max_length=50, verbose_name='장비 타입')
+    layerid = models.CharField(max_length=200, blank=True, verbose_name='레이어 ID')
+    updated = models.CharField(max_length=50, blank=True, verbose_name='업데이트')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        db_table = 'api_photosteps4_cd'
+        verbose_name = 'line4 {{request.col_step}} 정보(XXXXXX)'
+        verbose_name_plural = 'line4 {{request.col_step}} 정보(XXXXXX) 목록'
+        indexes = [
+            models.Index(fields=['processid'], name='api_pstep_line4_cd_prcid_idx'),
+        ]
+
+    def __str__(self):
+        return f"line4_cd / {self.processid} / {self.stepseq} / {self.descript}"
+
+
+class PhotoStepS5Cd(models.Model):
+    """line5 라인 {{request.col_step}} 정보 중 eqptype='XXXXXX'(임시값, 추후 실제 값으로 교체 필요) 전용
+    (스케줄러 동기화)
+    """
+    processid = models.CharField(max_length=200, verbose_name='{{request.process_id}} ID')
+    stepseq = models.CharField(max_length=200, verbose_name='{{request.col_step}}SEQ')
+    descript = models.CharField(max_length=200, verbose_name='{{request.process_selection}}명')
+    recipeid = models.CharField(max_length=200, verbose_name='Recipe ID')
+    areaname = models.CharField(max_length=50, verbose_name='영역명')
+    eqptype = models.CharField(max_length=50, verbose_name='장비 타입')
+    layerid = models.CharField(max_length=200, blank=True, verbose_name='레이어 ID')
+    updated = models.CharField(max_length=50, blank=True, verbose_name='업데이트')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        db_table = 'api_photosteps5_cd'
+        verbose_name = 'line5 {{request.col_step}} 정보(XXXXXX)'
+        verbose_name_plural = 'line5 {{request.col_step}} 정보(XXXXXX) 목록'
+        indexes = [
+            models.Index(fields=['processid'], name='api_pstep_line5_cd_prcid_idx'),
+        ]
+
+    def __str__(self):
+        return f"line5_cd / {self.processid} / {self.stepseq} / {self.descript}"
+
+
 
 
 class MapName(models.Model):
