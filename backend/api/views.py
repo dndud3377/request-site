@@ -26,7 +26,9 @@ from django.db.models import Q, Max, Min, Exists, OuterRef, Prefetch
 from .models import (
     RequestDocument, ApprovalStep, PauseRequest, WithdrawRequest, VOC, VocComment, Line, ProcessProduct,
     ProductProcessId, AdminNotice,
-    PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5, VocHistory, ProductBarcode, Guide, UserGroup,
+    PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5,
+    PhotoStepS1Ov, PhotoStepS3Ov, PhotoStepS4Ov, PhotoStepS5Ov,
+    VocHistory, ProductBarcode, Guide, UserGroup,
     MapName, AddressBook, ProcessDesignRuleOverride, DocumentDesignRuleOverride,
     DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot, LayerFilterSet,
     PersonalMarkCategory, PersonalDocumentMark,
@@ -3436,14 +3438,14 @@ def form_options_ovl_layer(request):
     if not line or not process:
         return JsonResponse({'options': []})
     
-    # {{request.line}} 별 모델 매핑
+    # {{request.line}} 별 모델 매핑 (2026-09: eqptype='POVLAY' 전용 테이블로 분리)
     model_map = {
-        'line1': PhotoStepS1,
-        'line3': PhotoStepS3,
-        'line4': PhotoStepS4,
-        'line5': PhotoStepS5,
+        'line1': PhotoStepS1Ov,
+        'line3': PhotoStepS3Ov,
+        'line4': PhotoStepS4Ov,
+        'line5': PhotoStepS5Ov,
     }
-    
+
     model = model_map.get(line)
     if not model:
         logger.warning(f"[OVL_LAYER] 알 수 없는 {{request.line}}: {line}")
