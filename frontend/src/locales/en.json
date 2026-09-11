@@ -870,12 +870,6 @@
     "added_label": "Added",
     "removed_label": "Removed",
     "detected_at_label": "Changed at",
-    "col_line": "Line",
-    "col_processid": "PROCESSID",
-    "col_removed": "Removed",
-    "col_added": "Added",
-    "col_changed_at": "Changed at",
-    "more_count": "+{{count}} more",
     "no_data": "No changes to show.",
     "truncated_notice": "Too many changes - only the most recent ones are shown.",
     "page_info": "Page {{page}} / {{totalPages}}"
