@@ -134,7 +134,7 @@ export default function ChangeStatusPage(): React.ReactElement {
           {t('change_status.count_unit', { count: rows.length })}
         </div>
         <div className="table-wrapper">
-          <table className="table table-compact">
+          <table className="table table-compact change-status-detail-table">
             <thead>
               <tr>
                 <th>{t('change_status.modal_col_step')}</th>
@@ -147,11 +147,11 @@ export default function ChangeStatusPage(): React.ReactElement {
             <tbody>
               {rows.map((row, idx) => (
                 <tr key={idx}>
-                  <td>{row.stepseq}</td>
-                  <td>{row.descript}</td>
-                  <td>{row.recipeid}</td>
-                  <td>{row.areaname}</td>
-                  <td>{row.layerid || '-'}</td>
+                  <td><span className="cell-clamp-2">{row.stepseq}</span></td>
+                  <td><span className="cell-clamp-2">{row.descript}</span></td>
+                  <td><span className="cell-clamp-2">{row.recipeid}</span></td>
+                  <td><span className="cell-clamp-2">{row.areaname}</span></td>
+                  <td><span className="cell-clamp-2">{row.layerid || '-'}</span></td>
                 </tr>
               ))}
             </tbody>
