@@ -43,15 +43,16 @@
 |---|---|---|
 | `line` | `라인1`/`라인3`/`라인4`/`라인5` | 생략 시 전체 라인 |
 | `table_type` | `ALL`/`OV`/`CD` | 생략 시 전체 구분 |
+| `search` | 문자열 | `processid` 부분일치(대소문자 무시) 검색 |
 | `page` | 정수(기본 1) | 그룹 단위 페이지 번호 |
-| `page_size` | 정수(기본 20, 최대 100) | 페이지당 그룹 수 |
+| `page_size` | 정수(기본 20, 최대 100) | 페이지당 그룹 수 — 화면은 15로 호출한다 |
 
 응답:
 ```json
 {
   "count": 2,
   "page": 1,
-  "page_size": 20,
+  "page_size": 15,
   "truncated": false,
   "results": [
     {
@@ -79,15 +80,28 @@
 
 ## 3. 화면 (`ChangeStatusPage.tsx`)
 
-- 상단 필터: 라인 선택(전체/라인1/라인3/라인4/라인5), 테이블 구분 선택(전체/전체(ALL)/POVLAY 전용/XXXXXX 전용).
-  필터를 바꾸면 1페이지로 리셋 후 다시 조회한다.
-- 목록은 그룹 카드 단위 — 제목은 `{라인}-{processid} 변경`(테이블 구분이 ALL 이 아니면
-  `{라인}({구분})-{processid} 변경`), 감지 시각(`formatDateTime`), 삭제/추가 항목(각 항목은
-  `stepseq (descript)` 형태로 콤마 나열)을 보여준다.
+결재 현황(`ApprovalPage.tsx`)과 같은 컴포넌트(`toolbar`/`search-box`/`filter-tabs`/`table`/
+`pagination`/`Modal`)를 그대로 재사용한다 — 새 CSS 클래스를 추가하지 않았다.
+
+- **검색+필터 툴바**: `search-box`(processid 부분일치, 입력 후 `SEARCH_DEBOUNCE_MS`(300ms) 뒤
+  서버에 `search` 파라미터로 조회 — 과도한 요청 방지) + `filter-tabs` 두 줄(라인: 전체/라인1/
+  라인3/라인4/라인5, 테이블 구분: 전체/일반(ALL)/POVLAY 전용/XXXXXX(임시) 전용). 검색어·필터를
+  바꾸면 1페이지로 리셋 후 다시 조회한다.
+- **목록은 표**(`table-wrapper > table`) — 컬럼: 라인 / PROCESSID / 삭제 / 추가 / 변경시각 /
+  (상세보기 버튼). **테이블 구분 컬럼은 없다**(필터로만 거른다 — 상세 모달에는 표시).
+  컬럼 헤더 문구는 전부 `change_status.col_*` i18n 키를 통해 나오므로 `ko.json`/`en.json`만
+  고치면 화면 문구가 바뀐다(코드 수정 불필요).
+- **삭제·추가 칸은 첫 항목만** `stepseq (descript)` 형태로 보여주고, 2건 이상이면
+  `change_status.more_count`("외 {{count}}건")를 붙인다. 0건이면 `-`.
+- **상세보기**: 행의 "상세보기" 버튼(`approval.view_detail` 키 재사용) 클릭 시 공용 `Modal`
+  컴포넌트가 뜬다. 제목은 목록과 같은 그룹 제목 규칙(`change_status.group_title[_with_type]`),
+  본문은 라인/테이블구분/변경시각 메타 정보 + 삭제·추가 **전체** 목록을 각각 표(STEP/내용/
+  Recipe ID/영역/레이어, `change_status.modal_col_*` 키)로 보여준다.
 - `loading`/`error`/빈 목록 3가지 상태를 모두 처리한다 — 로딩 중엔 로딩 문구, 조회 실패 시
   재시도 버튼, 변경 이력이 없으면 빈 상태 안내를 보여준다(공통 i18n 키 `common.loading`/
   `common.load_error`/`common.retry` 재사용).
-- 페이지네이션: 이전/다음 버튼 + `page / totalPages` 표시(그룹 20개 단위).
+- **페이지네이션**: 결재 현황과 동일한 숫자 버튼(현재 페이지 앞뒤 2개 + 1·마지막 페이지, 나머지는
+  `…`로 생략). 한 페이지당 **15건**(`PAGE_SIZE`) — 변경이 잦을 수 있어 결재 현황(10건)보다 좁게 잡았다.
 - 접근 권한: `/approval`과 동일하게 NONE 을 제외한 모든 역할(PL/TE_R/TE_P/TE_J/TE_O/TE_E/MASTER).
 
 ---
@@ -100,7 +114,8 @@
 
 1. 개발 서버(`http://localhost:10011`) 접속 → 아무 역할로 로그인 → 상단 메뉴에서 **"결재 현황"
    바로 옆의 "변경 현황"** 클릭.
-   - 성공 판정: `/change-status` 로 이동하고 상단에 "변경 현황" 제목, 라인/테이블 구분 필터가 보인다.
+   - 성공 판정: `/change-status` 로 이동하고 상단에 "변경 현황" 제목, 검색창, 라인 필터탭,
+     테이블 구분 필터탭이 결재 현황과 같은 모양으로 보인다.
 2. 이력이 아직 없는 초기 상태라면 **"표시할 변경 이력이 없습니다."** 빈 상태 문구가 보이는지 확인.
 3. 백엔드 컨테이너에서 아래처럼 테스트용 이력을 하나 만든 뒤 새로고침:
    ```bash
@@ -109,15 +124,21 @@
    from django.utils import timezone
    from api.models import PhotoStepChangeLog as L
    run = uuid.uuid4(); now = timezone.now()
-   L.objects.create(sync_run_id=run, line='라인1', table_type='ALL', processid='X', change_type='removed', stepseq='C', descript='', recipeid='', areaname='', eqptype='', layerid='', updated='', detected_at=now)
-   L.objects.create(sync_run_id=run, line='라인1', table_type='ALL', processid='X', change_type='added', stepseq='D', descript='', recipeid='', areaname='', eqptype='', layerid='', updated='', detected_at=now)
+   L.objects.create(sync_run_id=run, line='라인1', table_type='ALL', processid='X', change_type='removed', stepseq='C', descript='설명C', recipeid='R1', areaname='A1', eqptype='E1', layerid='L1', updated='', detected_at=now)
+   L.objects.create(sync_run_id=run, line='라인1', table_type='ALL', processid='X', change_type='added', stepseq='D', descript='설명D', recipeid='R2', areaname='A1', eqptype='E1', layerid='L1', updated='', detected_at=now)
    "
    ```
-   - 성공 판정: 화면에 "라인1-X 변경" 카드가 나타나고, 삭제 C / 추가 D 가 각각 표시된다.
-4. 상단 라인 필터를 "라인1" 외의 값으로 바꾸면 방금 만든 카드가 사라지는지(필터가 실제로 서버에
-   적용되는지) 확인 → 다시 "전체 라인"으로 돌리면 재노출.
-5. (선택, 실제 동기화 확인용) 개발환경에 `run_scheduler`가 떠 있다면, RTDB 쪽 스텝 데이터가 실제로
-   바뀌는 시점(최대 10분 주기)에 이 화면이 새 카드를 자동으로 보여주는지 확인한다 — 이 경우는
+   - 성공 판정: 표에 "라인1 / X" 행이 나타나고, 삭제 칸에 "삭제 C (설명C)", 추가 칸에
+     "추가 D (설명D)"가 보인다.
+4. 그 행의 **"상세보기"** 버튼 클릭 → 모달이 뜨고 제목이 "라인1-X 변경", 본문에 라인/테이블구분/
+   변경시각 메타와 삭제·추가 표(STEP/내용/Recipe ID/영역/레이어)가 각각 보이는지 확인 → 닫기(✕)로
+   닫힘 확인.
+5. 검색창에 "X"를 입력하면(300ms 뒤) 그 행이 유지되고, "없는값"처럼 일치하지 않는 문자열을
+   입력하면 빈 상태로 바뀌는지 확인 → 검색어를 지우면 다시 노출.
+6. 상단 라인 필터탭을 "라인1" 외의 값으로 바꾸면 방금 만든 행이 사라지는지(필터가 실제로 서버에
+   적용되는지) 확인 → 다시 "전체 라인"으로 돌리면 재노출. 테이블 구분 필터탭도 동일하게 확인.
+7. (선택, 실제 동기화 확인용) 개발환경에 `run_scheduler`가 떠 있다면, RTDB 쪽 스텝 데이터가 실제로
+   바뀌는 시점(최대 10분 주기)에 이 화면이 새 행을 자동으로 보여주는지 확인한다 — 이 경우는
    외부 데이터 변경에 의존하므로 재현 시점을 특정할 수 없다.
 
 ---
@@ -129,4 +150,5 @@
   기록되는지, line/table_type 없이 호출하면(기존 호출부) 이력이 생기지 않는지, 변경이 없으면
   이력도 생기지 않는지 검증.
 - `PhotoStepChangesApiTest` — `GET /api/photostep-changes/`가 `(sync_run_id, processid)` 로
-  정확히 그룹핑해 반환하는지, `line` 필터가 동작하는지, 미인증 요청이 SSO 모드에서 거부되는지 검증.
+  정확히 그룹핑해 반환하는지, `line`/`search` 필터가 동작하는지, 미인증 요청이 SSO 모드에서
+  거부되는지 검증.

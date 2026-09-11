@@ -6086,6 +6086,18 @@ class PhotoStepChangesApiTest(TestCase):
         self.assertEqual(data['count'], 1)
         self.assertEqual(data['results'][0]['line'], '라인3')
 
+    def test_search_filters_by_processid_substring(self):
+        import uuid
+        from .models import PhotoStepChangeLog
+
+        self._create_log(sync_run_id=uuid.uuid4(), processid='PJ2401A')
+        self._create_log(sync_run_id=uuid.uuid4(), processid='PJ2403C')
+
+        resp = self.client.get('/api/photostep-changes/', {'search': '2401'})
+        data = resp.json()
+        self.assertEqual(data['count'], 1)
+        self.assertEqual(data['results'][0]['processid'], 'PJ2401A')
+
     def test_unauthenticated_request_rejected_in_sso_mode(self):
         from rest_framework.test import APIClient
         from django.test import override_settings

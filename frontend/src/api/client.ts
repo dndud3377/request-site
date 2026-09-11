@@ -763,6 +763,7 @@ export const linesAPI = {
 export interface PhotoStepChangesQuery {
   line?: string;
   tableType?: PhotoStepChangeTableType;
+  search?: string;
   page?: number;
   pageSize?: number;
 }
@@ -772,6 +773,7 @@ export const changeStatusAPI = {
     const params = new URLSearchParams();
     if (query.line) params.set('line', query.line);
     if (query.tableType) params.set('table_type', query.tableType);
+    if (query.search) params.set('search', query.search);
     if (query.page) params.set('page', String(query.page));
     if (query.pageSize) params.set('page_size', String(query.pageSize));
     const qs = params.toString();

@@ -3774,6 +3774,7 @@ def photostep_changes(request):
     쿼리 파라미터:
     - line: {{request.line}} 값으로 필터 (예: 라인1)
     - table_type: PhotoStepChangeLog.TABLE_TYPE_CHOICES 값으로 필터 (ALL/OV/CD)
+    - search: {{request.process_id}} ID(processid) 부분일치 검색
     - page, page_size: 그룹 단위 페이지네이션 (기본 1 / 20, page_size 최대 100)
     """
     qs = PhotoStepChangeLog.objects.all()
@@ -3783,6 +3784,9 @@ def photostep_changes(request):
     table_type = request.GET.get('table_type')
     if table_type:
         qs = qs.filter(table_type=table_type)
+    search = request.GET.get('search', '').strip()
+    if search:
+        qs = qs.filter(processid__icontains=search)
 
     rows = list(qs.order_by('-detected_at', 'id')[:PHOTOSTEP_CHANGE_LOG_MAX_ROWS + 1])
     truncated = len(rows) > PHOTOSTEP_CHANGE_LOG_MAX_ROWS
