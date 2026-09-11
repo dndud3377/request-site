@@ -110,17 +110,24 @@ const canConfirmPauseStep = (
 };
 
 // '이전 회차 도달 구역' 철회 확인 가능 여부 — 그 회차의 담당자 개인이 아니라 '지금 그 팀'이면
-// 된다(서버 `_can_confirm_extra_zone` 과 동일 규칙). MASTER 항상 / 같은 팀 누구나 /
-// 팀 개념이 없는 agent(RA 등)는 그 회차에 배정됐던 담당자 본인만.
+// 된다(서버 `_can_confirm_extra_zone` 과 동일 규칙). MASTER 항상 / 같은 팀 누구나. RA(후결자)는
+// 역할로 묶이는 팀이 없으므로, 이 문서에서 RA 담당자로 등장한 적 있는 사람 누구나로 근사한다
+// (서버의 `post_approver_users` 기준과 정확히 같지는 않다 — 프론트는 하이라이트 힌트일 뿐이고
+// 실제 인가는 서버가 최종 판단한다).
 const canConfirmExtraZoneStep = (
   user: { role?: UserRole | string | null; username?: string },
   step: ApprovalStepFrontend,
+  allSteps: ApprovalStepFrontend[],
 ): boolean => {
   if (user.role === 'MASTER') return true;
   const agent = user.role ? ROLE_TO_AGENT[user.role as UserRole] : undefined;
   if (agent === step.agent) return true;
   const loginid = user.username;
-  return !!step.assignee_loginid && !!loginid && step.assignee_loginid === loginid;
+  if (!loginid) return false;
+  if (step.agent === 'RA') {
+    return allSteps.some((s) => s.agent === 'RA' && s.assignee_loginid === loginid);
+  }
+  return !!step.assignee_loginid && step.assignee_loginid === loginid;
 };
 
 interface WithdrawNeedItem {
@@ -146,7 +153,7 @@ const getWithdrawNeedItems = (
     .map((s) => {
       const isCurrentZone = s.round === maxRound && s.action === 'pending';
       const done = wr.confirmed_step_ids.includes(s.id);
-      const mine = !done && (isCurrentZone ? canConfirmPauseStep(user, s) : canConfirmExtraZoneStep(user, s));
+      const mine = !done && (isCurrentZone ? canConfirmPauseStep(user, s) : canConfirmExtraZoneStep(user, s, steps));
       return { step: s, isCurrentZone, done, mine };
     });
 };
