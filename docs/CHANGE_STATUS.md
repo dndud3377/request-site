@@ -21,11 +21,15 @@
 `added`(새로 생긴 키)/`removed`(없어진 키)를 그대로 `PhotoStepChangeLog`에 기록한다 — 별도로
 데이터를 다시 스캔하거나 스냅샷을 비교하는 추가 로직이 없다.
 
-- **12개 테이블 전부 대상**: 라인별 전체 테이블(`api_photosteps{N}`, `table_type=ALL`),
+- **12개 테이블 전부 대상**: PMAINF 전용 테이블(`api_photosteps{N}`, `table_type=MF`),
   POVLAY 전용 하위 테이블(`api_photosteps{N}_ov`, `table_type=OV`), XXXXXX(임시값) 전용 하위
-  테이블(`api_photosteps{N}_cd`, `table_type=CD`) 각각 독립적으로 diff 를 남긴다. 같은 processid
-  변경이 전체 테이블과 POVLAY 하위 테이블 양쪽에 동시에 걸리면(그 행의 eqptype 이 POVLAY 인 경우)
-  두 건의 별개 변경으로 각각 표시된다.
+  테이블(`api_photosteps{N}_cd`, `table_type=CD`) 각각 독립적으로 diff 를 남긴다.
+  세 테이블은 eqptype 으로 **서로 겹치지 않게** 나뉘므로, 한 행의 변경은 항상 한 구분에만 잡힌다.
+
+> ⚠️ **2026-09 변경**: `api_photosteps{N}` 이 eqptype 전체 혼재에서 **PMAINF 전용**으로 바뀌면서
+> 그 구분의 코드값도 `ALL`(전체) → `MF`(PMAINF) 로 바뀌었다. 이미 쌓여 있던 이력 행의
+> `table_type` 은 마이그레이션 `0041_photostep_pmainf_only` 가 `ALL` → `MF` 로 함께 치환한다
+> (치환하지 않으면 화면 필터가 새 코드값만 보내므로 기존 이력이 조회되지 않는다).
 - **변경이 없으면 기록도 없다**: 동기화 자체는 10분마다 돌지만, 키 집합이 이전과 동일하면
   `_write_step_if_changed()`가 쓰기 자체를 skip 하므로 이력도 생기지 않는다.
 - **processid 로 그룹핑**: 한 번의 diff(같은 테이블·같은 감지 시점)에서 나온 행들은 `sync_run_id`
@@ -42,7 +46,7 @@
 | 쿼리 파라미터 | 값 | 설명 |
 |---|---|---|
 | `line` | `라인1`/`라인3`/`라인4`/`라인5` | 생략 시 전체 라인 |
-| `table_type` | `ALL`/`OV`/`CD` | 생략 시 전체 구분 |
+| `table_type` | `MF`/`OV`/`CD` | 생략 시 전체 구분 |
 | `search` | 문자열 | `processid` 부분일치(대소문자 무시) 검색 |
 | `page` | 정수(기본 1) | 그룹 단위 페이지 번호 |
 | `page_size` | 정수(기본 20, 최대 100) | 페이지당 그룹 수 — 화면은 15로 호출한다 |
@@ -58,7 +62,7 @@
     {
       "sync_run_id": "...",
       "line": "라인1",
-      "table_type": "ALL",
+      "table_type": "MF",
       "processid": "X",
       "detected_at": "2026-09-10T04:20:00Z",
       "added": [{"stepseq": "D", "descript": "...", "recipeid": "...", "areaname": "...", "eqptype": "...", "layerid": "...", "updated": "..."}],
@@ -85,7 +89,7 @@
 
 - **검색+필터 툴바**: `search-box`(processid 부분일치, 입력 후 `SEARCH_DEBOUNCE_MS`(300ms) 뒤
   서버에 `search` 파라미터로 조회 — 과도한 요청 방지) + `filter-tabs` 두 줄(라인: 전체/라인1/
-  라인3/라인4/라인5, 테이블 구분: 전체/일반(ALL)/POVLAY 전용/XXXXXX(임시) 전용). 검색어·필터를
+  라인3/라인4/라인5, 테이블 구분: 전체/PMAINF 전용(MF)/POVLAY 전용/XXXXXX(임시) 전용). 검색어·필터를
   바꾸면 1페이지로 리셋 후 다시 조회한다.
 - **목록은 표**(`table-wrapper > table`) — 컬럼: 라인 / PROCESSID / 삭제 / 추가 / 변경시각 /
   (상세보기 버튼). **테이블 구분 컬럼은 없다**(필터로만 거른다 — 상세 모달에는 표시).
@@ -127,8 +131,8 @@
    from django.utils import timezone
    from api.models import PhotoStepChangeLog as L
    run = uuid.uuid4(); now = timezone.now()
-   L.objects.create(sync_run_id=run, line='라인1', table_type='ALL', processid='X', change_type='removed', stepseq='C', descript='설명C', recipeid='R1', areaname='A1', eqptype='E1', layerid='L1', updated='', detected_at=now)
-   L.objects.create(sync_run_id=run, line='라인1', table_type='ALL', processid='X', change_type='added', stepseq='D', descript='설명D', recipeid='R2', areaname='A1', eqptype='E1', layerid='L1', updated='', detected_at=now)
+   L.objects.create(sync_run_id=run, line='라인1', table_type='MF', processid='X', change_type='removed', stepseq='C', descript='설명C', recipeid='R1', areaname='A1', eqptype='E1', layerid='L1', updated='', detected_at=now)
+   L.objects.create(sync_run_id=run, line='라인1', table_type='MF', processid='X', change_type='added', stepseq='D', descript='설명D', recipeid='R2', areaname='A1', eqptype='E1', layerid='L1', updated='', detected_at=now)
    "
    ```
    - 성공 판정: 표에 "라인1 / X" 행이 나타나고, 삭제 칸에 "삭제 C (설명C)", 추가 칸에
