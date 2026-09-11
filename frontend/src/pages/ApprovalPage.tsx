@@ -109,6 +109,48 @@ const canConfirmPauseStep = (
   return agent === step.agent;
 };
 
+// '이전 회차 도달 구역' 철회 확인 가능 여부 — 그 회차의 담당자 개인이 아니라 '지금 그 팀'이면
+// 된다(서버 `_can_confirm_extra_zone` 과 동일 규칙). MASTER 항상 / 같은 팀 누구나 /
+// 팀 개념이 없는 agent(RA 등)는 그 회차에 배정됐던 담당자 본인만.
+const canConfirmExtraZoneStep = (
+  user: { role?: UserRole | string | null; username?: string },
+  step: ApprovalStepFrontend,
+): boolean => {
+  if (user.role === 'MASTER') return true;
+  const agent = user.role ? ROLE_TO_AGENT[user.role as UserRole] : undefined;
+  if (agent === step.agent) return true;
+  const loginid = user.username;
+  return !!step.assignee_loginid && !!loginid && step.assignee_loginid === loginid;
+};
+
+interface WithdrawNeedItem {
+  step: ApprovalStepFrontend;
+  isCurrentZone: boolean;
+  done: boolean;
+  mine: boolean;
+}
+
+// 철회 확인이 필요한 팀 전체(현재 구역 + 이전 회차 도달 구역) — 목록 칩과 상세 배너가
+// 공유한다. 현재 구역 = 최신 회차의 pending 단계, 그 외(더 과거 회차·이미 종료된 단계)는
+// '이전 회차 도달 구역'(서버 `confirm_withdraw`/`withdraw` 판정 기준과 동일).
+const getWithdrawNeedItems = (
+  doc: RequestDocument,
+  user: { role?: UserRole | string | null; username?: string },
+): WithdrawNeedItem[] => {
+  const wr = doc.withdraw_request;
+  if (!wr) return [];
+  const steps = doc.approval_steps ?? [];
+  const maxRound = steps.reduce((m, s) => Math.max(m, s.round), 0);
+  return steps
+    .filter((s) => wr.target_step_ids.includes(s.id))
+    .map((s) => {
+      const isCurrentZone = s.round === maxRound && s.action === 'pending';
+      const done = wr.confirmed_step_ids.includes(s.id);
+      const mine = !done && (isCurrentZone ? canConfirmPauseStep(user, s) : canConfirmExtraZoneStep(user, s));
+      return { step: s, isCurrentZone, done, mine };
+    });
+};
+
 // ===== (ApprovalFlow, PagedDetailView are imported from components/) =====
 
 // ===== Main Page =====
@@ -2007,6 +2049,17 @@ export default function ApprovalPage(): React.ReactElement {
                       {doc.withdraw_request && (
                         <div style={{ marginTop: 4 }}>
                           <span className="withdraw-req-chip">🗑️ {t('approval.withdraw_requested_chip')}</span>
+                          <div className="wr-need-label">{t('approval.withdraw_need_teams_label')}</div>
+                          <div className="wr-need-list">
+                            {getWithdrawNeedItems(doc, currentUser).map((item) => (
+                              <span
+                                key={item.step.id}
+                                className={`wr-need-chip ${item.done ? 'done' : item.mine ? 'mine' : ''}`}
+                              >
+                                {t(`approval.agent_${item.step.agent}` as any)}
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </td>
@@ -3049,24 +3102,46 @@ export default function ApprovalPage(): React.ReactElement {
                   <div style={{ fontSize: '0.78rem', fontWeight: 700, marginBottom: 6 }}>
                     ⚠️ {t('approval.withdraw_banner_warning')}
                   </div>
-                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>
-                    {t('approval.withdraw_confirm_status')}
-                  </div>
-                  <div className="pause-confirm-track">
-                    {(selected.approval_steps ?? [])
-                      .filter((s) => selected.withdraw_request!.target_step_ids.includes(s.id))
-                      .map((s) => {
-                        const done = selected.withdraw_request!.confirmed_step_ids.includes(s.id);
-                        const mine = !done && s.action === 'pending' && canConfirmPauseStep(currentUser, s);
-                        const label = t(`approval.agent_${s.agent}` as any);
-                        return (
-                          <span key={s.id} className={`pause-cf ${done ? 'done' : mine ? 'mine' : ''}`}>
-                            <span className="pause-cf-dot" aria-hidden="true" />
-                            {label} · {done ? t('approval.pause_cf_done') : mine ? t('approval.pause_cf_mine') : t('approval.pause_cf_wait')}
-                          </span>
-                        );
-                      })}
-                  </div>
+                  {(() => {
+                    const needItems = getWithdrawNeedItems(selected, currentUser);
+                    const currentZoneItems = needItems.filter((item) => item.isCurrentZone);
+                    const extraItems = needItems.filter((item) => !item.isCurrentZone);
+                    const extraByZone = extraItems.reduce<Record<number, WithdrawNeedItem[]>>((acc, item) => {
+                      const zi = item.step.zone_index ?? -1;
+                      acc[zi] = acc[zi] ?? [];
+                      acc[zi].push(item);
+                      return acc;
+                    }, {});
+                    const zoneIndexes = Object.keys(extraByZone).map(Number).sort((a, b) => a - b);
+
+                    const renderChip = (item: WithdrawNeedItem) => (
+                      <span key={item.step.id} className={`pause-cf ${item.done ? 'done' : item.mine ? 'mine' : ''}`}>
+                        <span className="pause-cf-dot" aria-hidden="true" />
+                        {t(`approval.agent_${item.step.agent}` as any)} ·{' '}
+                        {item.done ? t('approval.pause_cf_done') : item.mine ? t('approval.pause_cf_mine') : t('approval.pause_cf_wait')}
+                      </span>
+                    );
+
+                    return (
+                      <>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>
+                          {t('approval.withdraw_confirm_status')}
+                        </div>
+                        <div className="pause-confirm-track">{currentZoneItems.map(renderChip)}</div>
+                        {zoneIndexes.length > 0 && (
+                          <div className="zone-extra">
+                            <div className="zone-extra-label">{t('approval.withdraw_extra_zone_label')}</div>
+                            {zoneIndexes.map((zi) => (
+                              <div className="zone-group" key={zi}>
+                                <span className="zone-group-name">{t('approval.zone_label', { zone: zi + 1 })}</span>
+                                <div className="pause-confirm-track">{extraByZone[zi].map(renderChip)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             )}
