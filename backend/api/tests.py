@@ -2901,6 +2901,8 @@ class WithdrawFlowTest(TestCase):
         self.rfg = UserProfile.objects.create(loginid='wd_r', mail='wd_r@c.com', role='TE_R', username='R담당')
         self.rfg2 = UserProfile.objects.create(loginid='wd_r2', mail='wd_r2@c.com', role='TE_R', username='R팀원')
         self.job = UserProfile.objects.create(loginid='wd_j', mail='wd_j@c.com', role='TE_J', username='J팀원')
+        self.p_user = UserProfile.objects.create(loginid='wd_p', mail='wd_p@c.com', role='TE_P', username='P담당')
+        self.e_user = UserProfile.objects.create(loginid='wd_e', mail='wd_e@c.com', role='TE_E', username='E담당')
         self.outsider = UserProfile.objects.create(loginid='wd_out', mail='wd_o@c.com', role='NONE')
         self.master = UserProfile.objects.create(loginid='wd_master', mail='wd_m@c.com', role='MASTER')
 
@@ -3216,6 +3218,83 @@ class WithdrawFlowTest(TestCase):
         self.assertEqual(res.status_code, 200, res.content)
         self.assertTrue(res.data['deleted'])
         self.assertFalse(self._exists(doc))
+
+    # ----- 이전 회차 도달 구역 확인 (2026-09) -----
+    def test_withdraw_includes_deeper_zone_reached_in_earlier_round(self):
+        """1회차에 2구역(R)까지 갔다가 반려되고 2회차 1구역(PL)에서 철회하면,
+        2구역도 함께 확인 대상에 포함된다(현재 구역만 잡던 예전 버그의 수정)."""
+        doc = self._doc()
+        self._step(doc, 'R', action='rejected', assignee=self.rfg, round=1)
+        pl_step = self._step(doc, 'PL', assignee=self.pl, round=2)
+
+        res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        wr = WithdrawRequest.objects.get(document=doc)
+        r_step = ApprovalStep.objects.get(document=doc, agent='R', round=1)
+        self.assertCountEqual(wr.target_step_ids, [pl_step.id, r_step.id])
+
+    def test_extra_zone_confirm_allowed_by_any_current_team_member(self):
+        """이전 회차 도달 구역 확인은 '그때 그 담당자'가 아니라 지금 같은 팀 누구나 할 수 있다."""
+        doc = self._doc()
+        self._step(doc, 'R', action='rejected', assignee=self.rfg, round=1)
+        self._step(doc, 'PL', assignee=self.pl, round=2)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        wr = WithdrawRequest.objects.get(document=doc)
+        r_step = ApprovalStep.objects.get(document=doc, agent='R', round=1)
+
+        # 1회차 R 담당자(self.rfg)가 아니라 같은 팀 다른 사람(self.rfg2)이 확인한다.
+        res = self._post(self.rfg2, doc, 'confirm-withdraw', {'agent': 'R'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(res.data['deleted'])
+        wr.refresh_from_db()
+        self.assertIn(r_step.id, wr.confirmed_step_ids)
+        self.assertTrue(self._exists(doc))
+
+        # 남은 현재 구역(PL)까지 확인하면 전원 확인 완료로 삭제된다.
+        res = self._post(self.pl, doc, 'confirm-withdraw', {'agent': 'PL'})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data['deleted'])
+        self.assertFalse(self._exists(doc))
+
+    def test_extra_zone_excludes_team_that_was_unclaimed(self):
+        """3구역 병렬 팀 중 반려 당시 대기중(미선점)이었던 팀은 확인 대상에서 제외된다.
+
+        2회차 3구역 상태: P=검토중(선점), O=대기중(미선점), E=합의완료, J=반려.
+        → 3회차 철회 시 P·E·J·(2구역 R)는 대상이지만 O는 대상이 아니다.
+        """
+        doc = self._doc()
+        self._step(doc, 'R', action='rejected', assignee=self.rfg, round=1)
+        self._step(doc, 'R', action='approved', assignee=self.rfg, round=2)
+        p_step = self._step(doc, 'P', action='pending', assignee=self.p_user, round=2)
+        o_step = self._step(doc, 'O', action='pending', assignee=None, round=2)
+        e_step = self._step(doc, 'E', action='approved', assignee=self.e_user, round=2)
+        j_step = self._step(doc, 'J', action='rejected', assignee=self.job, round=2)
+        pl_step = self._step(doc, 'PL', assignee=self.pl, round=3)
+
+        res = self._post(self.author, doc, 'withdraw', {'reason': '재검토'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+        wr = WithdrawRequest.objects.get(document=doc)
+        r_step_round2 = ApprovalStep.objects.get(document=doc, agent='R', round=2)
+        self.assertCountEqual(
+            wr.target_step_ids,
+            [pl_step.id, r_step_round2.id, p_step.id, e_step.id, j_step.id],
+        )
+        self.assertNotIn(o_step.id, wr.target_step_ids)
+
+    def test_reject_withdraw_by_extra_zone_team_member(self):
+        """이전 회차 도달 구역 팀도 철회 요청을 거부할 수 있다 — 요청 전체가 무효화된다."""
+        doc = self._doc()
+        self._step(doc, 'R', action='rejected', assignee=self.rfg, round=1)
+        self._step(doc, 'PL', assignee=self.pl, round=2)
+        self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+
+        res = self._post(self.rfg2, doc, 'reject-withdraw')
+        self.assertEqual(res.status_code, 200, res.content)
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertEqual(wr.state, 'rejected')
+        self.assertTrue(self._exists(doc))
 
 
 class PauseFlowTest(TestCase):

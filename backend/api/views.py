@@ -229,6 +229,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     # 역할 → 담당 agent 매핑 (프론트 ROLE_TO_AGENT 와 동일)
     _ROLE_TO_AGENT = {'TE_R': 'R', 'TE_P': 'P', 'TE_J': 'J', 'TE_O': 'O', 'TE_E': 'E'}
+    # 구역별 '팀'을 대표하는 agent(reviewer 변형 RV/PV/EV는 같은 팀이라 대표에서 제외).
+    # 철회 시 "이전 회차 도달 구역" 확인 대상을 이 agent 단위로 묶는다(Case J 2026-09).
+    _ZONE_MAIN_AGENTS = ('R', 'P', 'J', 'O', 'E', 'RA')
 
     def _blocked_progress_response(self, document):
         """결재를 진행할 수 없는 문서 상태면 400 Response, 진행 가능하면 None 을 반환한다.
@@ -758,6 +761,50 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     # 현재 단계 전원의 확인을 받아야 철회되는 상태
     _WITHDRAW_CONFIRM_STATUSES = ('under_review', 'submitted')
 
+    def _zone_index(self, document, agent):
+        for i, zone in enumerate(document.pause_zones()):
+            if agent in zone:
+                return i
+        return None
+
+    def _extra_zone_target_steps(self, document, current_zone_idx):
+        """반려 후 재상신으로 회차가 바뀐 뒤 철회할 때, 과거 회차에서 현재 구역보다 더
+        깊이 도달했던 구역의 팀들을 대표하는 ApprovalStep 목록을 반환한다(2026-09).
+
+        팀(agent)당 그 구역에 가장 최근에 있었던 회차의 단계 하나만 대표로 삼는다 — 몇 회차
+        전 반려자였는지는 따지지 않고, "지금 그 팀"의 합의만 받으면 되기 때문이다. 그 회차에
+        **대기중(미선점, action='pending'이고 담당자 없음)** 이었던 팀은 실제로 관여한 적이
+        없으므로 대상에서 제외한다(검토중·합의완료·반려는 관여로 본다).
+        """
+        latest_by_agent = {}
+        for step in ApprovalStep.objects.filter(document=document, agent__in=self._ZONE_MAIN_AGENTS):
+            zone_idx = self._zone_index(document, step.agent)
+            if zone_idx is None or zone_idx <= current_zone_idx:
+                continue
+            prev = latest_by_agent.get(step.agent)
+            if prev is None or step.round > prev.round:
+                latest_by_agent[step.agent] = step
+
+        return [
+            step for step in latest_by_agent.values()
+            if not (step.action == 'pending' and not step.assignee_id)
+        ]
+
+    def _can_confirm_extra_zone(self, user, step):
+        """'이전 회차 도달 구역' 철회 확인 인가 — 그 회차의 담당자 개인이 아니라 '지금 그 팀'.
+
+        MASTER는 항상. 팀 역할(_ROLE_TO_AGENT)이 있는 agent(R/P/J/O/E)는 같은 팀 누구나
+        확인할 수 있다(이전에 그 단계를 처리했던 사람일 필요 없음). 팀 역할이 없는 agent(RA
+        등 개인 지정형)는 그 회차에 배정됐던 담당자 본인만 확인할 수 있다.
+        """
+        role = getattr(user, 'role', '')
+        if role == 'MASTER':
+            return True
+        if self._ROLE_TO_AGENT.get(role) == step.agent:
+            return True
+        caller_loginid = getattr(user, 'loginid', '')
+        return bool(step.assignee_id and caller_loginid and step.assignee.loginid == caller_loginid)
+
     def _delete_withdrawn_document(self, request, document, reason, send_mail=True):
         """철회 확정 — 완료 메일을 먼저 적재한 뒤 문서를 완전히 삭제한다.
 
@@ -849,13 +896,24 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # 반려 후 재상신으로 회차가 바뀐 경우, 과거 회차에서 현재 구역보다 더 깊이
+        # 도달했던 구역의 팀들도 함께 확인 대상에 넣는다(2026-09, Case J 참고).
+        current_zone_idx = max(
+            (self._zone_index(document, s.agent) for s in pending if self._zone_index(document, s.agent) is not None),
+            default=None,
+        )
+        extra_steps = (
+            self._extra_zone_target_steps(document, current_zone_idx)
+            if current_zone_idx is not None else []
+        )
+
         wr = WithdrawRequest.objects.create(
             document=document,
             requester=request.user if getattr(request.user, 'loginid', '') else None,
             requester_name=getattr(request.user, 'username', '') or getattr(request.user, 'loginid', ''),
             reason=reason,
             round=max_round,
-            target_step_ids=[s.id for s in pending],
+            target_step_ids=[s.id for s in pending] + [s.id for s in extra_steps],
             confirmed_step_ids=[],
         )
         mailer.enqueue_withdraw_requested(document, wr)
@@ -869,11 +927,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='confirm-withdraw')
     @transaction.atomic
     def confirm_withdraw(self, request, pk=None):
-        """철회 확인: 현재 단계 담당자/팀이 철회 요청을 확인한다.
+        """철회 확인: 현재 단계 담당자/팀 + '이전 회차 도달 구역' 팀이 철회 요청을 확인한다.
 
-        요청 시점의 pending 단계 '전원'이 확인하면 그 순간 의뢰서가 **완전히 삭제**된다
-        (병렬 단계 대응). 확인 인가는 중단 확인과 같은 규칙(`_can_confirm_pause`)이다 —
-        담당자가 있는 단계는 그 담당자 본인, 미배정 단계는 같은 팀 누구나, MASTER 는 항상.
+        요청 시점의 pending 단계와 이전 회차 도달 구역 대표 단계 '전원'이 확인하면 그 순간
+        의뢰서가 **완전히 삭제**된다(병렬 단계 대응). 현재 회차의 pending 단계는 중단 확인과
+        같은 규칙(`_can_confirm_pause`) — 담당자가 있으면 그 담당자 본인, 미배정이면 같은 팀
+        누구나, MASTER는 항상. 이전 회차 도달 구역 단계는 `_can_confirm_extra_zone` — 그
+        회차의 담당자 개인이 아니라 '지금 그 팀' 누구나 확인할 수 있다(2026-09).
         """
         document = self.get_object()
         document = RequestDocument.objects.select_for_update().get(pk=document.pk)
@@ -886,10 +946,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         max_round = self._max_round(document)
 
         candidates = ApprovalStep.objects.select_for_update().filter(
-            document=document, agent=agent, action='pending',
-            round=max_round, id__in=wr.target_step_ids,
+            document=document, agent=agent, id__in=wr.target_step_ids,
         )
-        step = next((s for s in candidates if self._can_confirm_pause(request.user, s)), None)
+        step = next(
+            (s for s in candidates if (
+                self._can_confirm_pause(request.user, s)
+                if (s.round == max_round and s.action == 'pending')
+                else self._can_confirm_extra_zone(request.user, s)
+            )),
+            None,
+        )
         if not step:
             return Response({'error': '확인 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
@@ -916,6 +982,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """철회 거부: 확인 대상 단계가 철회 요청을 거부한다 → 결재가 그대로 이어진다.
 
         인가는 확인(confirm_withdraw)과 동일하다 — 확인할 수 있는 사람이 거부도 할 수 있다.
+        현재 회차 pending 단계와 이전 회차 도달 구역 단계 양쪽 모두에서 확인 권한자를 찾는다.
         단계 하나만 거부해도 요청 전체가 무효가 된다(전원 확인이 성립할 수 없으므로).
         """
         document = self.get_object()
@@ -926,10 +993,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '진행 중인 철회 요청이 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
         max_round = self._max_round(document)
-        candidates = ApprovalStep.objects.filter(
-            document=document, action='pending', round=max_round, id__in=wr.target_step_ids,
+        candidates = ApprovalStep.objects.filter(document=document, id__in=wr.target_step_ids)
+        authorized = any(
+            (
+                self._can_confirm_pause(request.user, s)
+                if (s.round == max_round and s.action == 'pending')
+                else self._can_confirm_extra_zone(request.user, s)
+            )
+            for s in candidates
         )
-        if not any(self._can_confirm_pause(request.user, s) for s in candidates):
+        if not authorized:
             return Response({'error': '거부 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
         wr.state = 'rejected'

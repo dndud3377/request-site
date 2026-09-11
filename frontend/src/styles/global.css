@@ -797,6 +797,27 @@ select.form-control option {
 .pause-banner.withdraw-banner .pause-banner-title { color: var(--danger); }
 .pause-banner.withdraw-banner .pause-cf.mine { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
 
+/* 철회 — '이전 회차 도달 구역' 확인 UI(2026-09, docs/APPROVAL.md Case J).
+   반려 후 재상신으로 회차가 바뀐 문서를 철회할 때, 과거 회차에서 현재 구역보다 더 깊이
+   도달했던 구역의 팀들도 함께 확인이 필요함을 보여준다. */
+.zone-extra { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--danger); }
+.zone-extra-label { font-size: 0.74rem; color: var(--text-muted); font-weight: 700; margin-bottom: 6px; }
+.zone-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.zone-group-name {
+  font-size: 0.72rem; font-weight: 700; background: var(--accent-light); color: var(--accent);
+  padding: 2px 8px; border-radius: 10px; min-width: 44px; text-align: center;
+}
+
+/* 목록(결재현황) "현재 단계" 칸 — 철회 확인이 필요한 팀 전체를 작은 칩으로 나열(2026-09) */
+.wr-need-label { font-size: 0.62rem; color: var(--text-muted); font-weight: 700; margin-top: 5px; }
+.wr-need-list { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
+.wr-need-chip {
+  font-size: 0.62rem; font-weight: 700; padding: 1px 7px; border-radius: 8px;
+  border: 1px solid var(--border); color: var(--text-muted); background: var(--bg-card);
+}
+.wr-need-chip.done { background: var(--success-light); color: var(--success); border-color: var(--success); }
+.wr-need-chip.mine { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
+
 /* 재상신된 문서의 목록 행 — 가장 최근에 반려됐던 회차·단계 1건만 참고용으로 표시(조치 필요 아님 → 점선) */
 .rejection-history-chip {
   display: inline-flex; align-items: center; gap: 4px;

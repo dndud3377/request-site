@@ -183,16 +183,26 @@ class UserSerializer(serializers.ModelSerializer):
 class ApprovalStepSerializer(serializers.ModelSerializer):
     assignee_loginid = serializers.SerializerMethodField()
     assignee_mail = serializers.SerializerMethodField()
+    zone_index = serializers.SerializerMethodField()
 
     class Meta:
         model = ApprovalStep
-        fields = ['id', 'agent', 'action', 'acted_at', 'comment', 'is_parallel', 'assignee_loginid', 'assignee_name', 'assignee_mail', 'round', 'created_at', 'due_date']
+        fields = ['id', 'agent', 'action', 'acted_at', 'comment', 'is_parallel', 'assignee_loginid', 'assignee_name', 'assignee_mail', 'round', 'created_at', 'due_date', 'zone_index']
 
     def get_assignee_loginid(self, obj):
         return obj.assignee.loginid if obj.assignee else None
 
     def get_assignee_mail(self, obj):
         return obj.assignee.mail if obj.assignee else None
+
+    def get_zone_index(self, obj):
+        """이 단계가 속한 구역의 0-based 인덱스(1구역=0, 2구역=1, ...). 어디에도 속하지
+        않으면 None. 철회 '이전 회차 도달 구역' 확인 UI(docs/APPROVAL.md Case J)가
+        현재 구역과 그보다 깊은 구역을 구분하는 데 쓴다."""
+        for i, zone in enumerate(obj.document.pause_zones()):
+            if obj.agent in zone:
+                return i
+        return None
 
 
 class DocumentReviewItemReviewerSerializer(serializers.ModelSerializer):

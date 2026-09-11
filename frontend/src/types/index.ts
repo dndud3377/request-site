@@ -103,6 +103,7 @@ export interface ApprovalStepFrontend {
   round: number;             // 상신 회차
   created_at?: string | null; // 단계 생성일시 (R 단계의 경우 해당 회차 상신 시각)
   due_date?: string | null;   // 완료 기한 (YYYY-MM-DD)
+  zone_index?: number | null; // 이 단계가 속한 구역의 0-based 인덱스(1구역=0, 2구역=1, ...). 철회 '이전 회차 도달 구역' 확인 UI에 쓴다.
 }
 
 // 결재 중단(PAUSE) 요청 상태
