@@ -3375,7 +3375,11 @@ def form_options_process_id(request):
 
 @require_GET
 def form_options_job_file_layer(request):
-    """{{request.line}} + {{request.process_id}} → JOB FILE layer 정보 (eqptype='PMAINF')"""
+    """{{request.line}} + {{request.process_id}} → JOB FILE layer 정보 (eqptype='PMAINF')
+
+    2026-09부터 `PhotoStepS{N}` 테이블 자체가 PMAINF 전용으로 적재되지만, 아래 eqptype 필터는
+    그대로 둔다 - 적재 조건이 바뀌어도 조회 의미가 코드에 남아 있도록 하기 위함이다.
+    """
     import logging
     logger = logging.getLogger(__name__)
     
@@ -3773,7 +3777,7 @@ def photostep_changes(request):
 
     쿼리 파라미터:
     - line: {{request.line}} 값으로 필터 (예: 라인1)
-    - table_type: PhotoStepChangeLog.TABLE_TYPE_CHOICES 값으로 필터 (ALL/OV/CD)
+    - table_type: PhotoStepChangeLog.TABLE_TYPE_CHOICES 값으로 필터 (MF/OV/CD)
     - search: {{request.process_id}} ID(processid) 부분일치 검색
     - page, page_size: 그룹 단위 페이지네이션 (기본 1 / 20, page_size 최대 100)
     """
