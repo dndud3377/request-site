@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { changeStatusAPI } from '../api/client';
+import Modal from '../components/Modal';
 import { PhotoStepChangeGroup, PhotoStepChangeRow, PhotoStepChangeTableType } from '../types';
 import { formatDateTime } from '../utils/date';
 
@@ -8,7 +9,28 @@ const LINE_OPTIONS = ['라인1', '라인3', '라인4', '라인5'] as const;
 const LINE_I18N_SUFFIX: Record<string, string> = { 라인1: '1', 라인3: '3', 라인4: '4', 라인5: '5' };
 const TABLE_TYPE_OPTIONS: PhotoStepChangeTableType[] = ['ALL', 'OV', 'CD'];
 
-const PAGE_SIZE = 20;
+// 변경이 잦을 수 있어 결재 현황보다 좁은 페이지 크기를 쓴다.
+const PAGE_SIZE = 15;
+// 숫자 페이지 버튼 표시 시 현재 페이지 앞뒤로 보여줄 개수(그 밖은 '…'로 생략) — 결재 현황과 동일한 방식.
+const PAGE_WINDOW = 2;
+// 검색어 입력 후 조회 API를 호출하기까지의 대기 시간(과도한 요청 방지).
+const SEARCH_DEBOUNCE_MS = 300;
+
+const buildPageNumbers = (current: number, total: number): (number | 'ellipsis')[] => {
+  const pages = new Set<number>([1, total]);
+  for (let p = current - PAGE_WINDOW; p <= current + PAGE_WINDOW; p++) {
+    if (p >= 1 && p <= total) pages.add(p);
+  }
+  const sorted = Array.from(pages).sort((a, b) => a - b);
+  const result: (number | 'ellipsis')[] = [];
+  let prev = 0;
+  for (const p of sorted) {
+    if (prev && p - prev > 1) result.push('ellipsis');
+    result.push(p);
+    prev = p;
+  }
+  return result;
+};
 
 export default function ChangeStatusPage(): React.ReactElement {
   const { t } = useTranslation();
@@ -18,8 +40,16 @@ export default function ChangeStatusPage(): React.ReactElement {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
   const [lineFilter, setLineFilter] = useState('');
   const [tableTypeFilter, setTableTypeFilter] = useState<PhotoStepChangeTableType | ''>('');
+  const [detailGroup, setDetailGroup] = useState<PhotoStepChangeGroup | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const lineLabel = useCallback((line: string): string => {
     const suffix = LINE_I18N_SUFFIX[line];
@@ -37,6 +67,7 @@ export default function ChangeStatusPage(): React.ReactElement {
       const res = await changeStatusAPI.list({
         line: lineFilter || undefined,
         tableType: tableTypeFilter || undefined,
+        search: search || undefined,
         page,
         pageSize: PAGE_SIZE,
       });
@@ -48,7 +79,7 @@ export default function ChangeStatusPage(): React.ReactElement {
     } finally {
       setLoading(false);
     }
-  }, [lineFilter, tableTypeFilter, page]);
+  }, [lineFilter, tableTypeFilter, search, page]);
 
   useEffect(() => {
     fetchChanges();
@@ -56,7 +87,7 @@ export default function ChangeStatusPage(): React.ReactElement {
 
   useEffect(() => {
     setPage(1);
-  }, [lineFilter, tableTypeFilter]);
+  }, [lineFilter, tableTypeFilter, search]);
 
   const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
 
@@ -72,6 +103,64 @@ export default function ChangeStatusPage(): React.ReactElement {
   const rowSummary = (row: PhotoStepChangeRow): string =>
     row.descript ? `${row.stepseq} (${row.descript})` : row.stepseq;
 
+  const diffCell = (rows: PhotoStepChangeRow[], kind: 'added' | 'removed'): React.ReactElement => {
+    if (rows.length === 0) return <span style={{ color: 'var(--text-disabled)' }}>-</span>;
+    const [first, ...rest] = rows;
+    return (
+      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+        <span className={`badge ${kind === 'added' ? 'badge-approved' : 'badge-rejected'}`}>
+          {t(kind === 'added' ? 'change_status.added_label' : 'change_status.removed_label')}
+        </span>
+        <span>
+          {rowSummary(first)}
+          {rest.length > 0 && (
+            <span style={{ color: 'var(--text-muted)', marginLeft: 4 }}>
+              {t('change_status.more_count', { count: rest.length })}
+            </span>
+          )}
+        </span>
+      </div>
+    );
+  };
+
+  const detailTable = (rows: PhotoStepChangeRow[], kind: 'added' | 'removed'): React.ReactElement | null => {
+    if (rows.length === 0) return null;
+    return (
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, marginBottom: 10 }}>
+          <span className={`badge ${kind === 'added' ? 'badge-approved' : 'badge-rejected'}`}>
+            {t(kind === 'added' ? 'change_status.added_label' : 'change_status.removed_label')}
+          </span>
+          {t('change_status.count_unit', { count: rows.length })}
+        </div>
+        <div className="table-wrapper">
+          <table className="table table-compact">
+            <thead>
+              <tr>
+                <th>{t('change_status.modal_col_step')}</th>
+                <th>{t('change_status.modal_col_descript')}</th>
+                <th>{t('change_status.modal_col_recipe')}</th>
+                <th>{t('change_status.modal_col_area')}</th>
+                <th>{t('change_status.modal_col_layer')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, idx) => (
+                <tr key={idx}>
+                  <td>{row.stepseq}</td>
+                  <td>{row.descript}</td>
+                  <td>{row.recipeid}</td>
+                  <td>{row.areaname}</td>
+                  <td>{row.layerid || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="container page">
       <div className="page-header">
@@ -80,21 +169,55 @@ export default function ChangeStatusPage(): React.ReactElement {
       </div>
 
       <div className="toolbar">
-        <select value={lineFilter} onChange={(e) => setLineFilter(e.target.value)}>
-          <option value="">{t('change_status.filter_line_all')}</option>
+        <div className="search-box">
+          <span className="search-icon">🔍</span>
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder={t('change_status.search_placeholder')}
+          />
+        </div>
+        <div className="filter-tabs">
+          <button
+            type="button"
+            className={`filter-tab ${lineFilter === '' ? 'active' : ''}`}
+            onClick={() => setLineFilter('')}
+          >
+            {t('change_status.filter_line_all')}
+          </button>
           {LINE_OPTIONS.map((line) => (
-            <option key={line} value={line}>{lineLabel(line)}</option>
+            <button
+              key={line}
+              type="button"
+              className={`filter-tab ${lineFilter === line ? 'active' : ''}`}
+              onClick={() => setLineFilter(line)}
+            >
+              {lineLabel(line)}
+            </button>
           ))}
-        </select>
-        <select
-          value={tableTypeFilter}
-          onChange={(e) => setTableTypeFilter(e.target.value as PhotoStepChangeTableType | '')}
-        >
-          <option value="">{t('change_status.filter_table_type_all')}</option>
+        </div>
+      </div>
+
+      <div className="toolbar">
+        <div className="filter-tabs">
+          <button
+            type="button"
+            className={`filter-tab ${tableTypeFilter === '' ? 'active' : ''}`}
+            onClick={() => setTableTypeFilter('')}
+          >
+            {t('change_status.filter_table_type_all')}
+          </button>
           {TABLE_TYPE_OPTIONS.map((type) => (
-            <option key={type} value={type}>{tableTypeLabel(type)}</option>
+            <button
+              key={type}
+              type="button"
+              className={`filter-tab ${tableTypeFilter === type ? 'active' : ''}`}
+              onClick={() => setTableTypeFilter(type)}
+            >
+              {tableTypeLabel(type)}
+            </button>
           ))}
-        </select>
+        </div>
       </div>
 
       {truncated && (
@@ -120,29 +243,41 @@ export default function ChangeStatusPage(): React.ReactElement {
         </div>
       ) : (
         <>
-          <div className="change-status-list">
-            {groups.map((group) => (
-              <div key={`${group.sync_run_id}-${group.processid}`} className="card" style={{ marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-                  <h3 style={{ margin: 0 }}>{groupTitle(group)}</h3>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    {t('change_status.detected_at_label')}: {formatDateTime(group.detected_at)}
-                  </span>
-                </div>
-                {group.removed.length > 0 && (
-                  <div style={{ marginBottom: group.added.length > 0 ? 8 : 0 }}>
-                    <span className="badge badge-rejected">{t('change_status.removed_label')}</span>{' '}
-                    {group.removed.map(rowSummary).join(', ')}
-                  </div>
-                )}
-                {group.added.length > 0 && (
-                  <div>
-                    <span className="badge badge-approved">{t('change_status.added_label')}</span>{' '}
-                    {group.added.map(rowSummary).join(', ')}
-                  </div>
-                )}
-              </div>
-            ))}
+          <div className="table-wrapper">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t('change_status.col_line')}</th>
+                  <th>{t('change_status.col_processid')}</th>
+                  <th>{t('change_status.col_removed')}</th>
+                  <th>{t('change_status.col_added')}</th>
+                  <th>{t('change_status.col_changed_at')}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map((group) => (
+                  <tr key={`${group.sync_run_id}-${group.processid}`}>
+                    <td>{lineLabel(group.line)}</td>
+                    <td style={{ fontWeight: 700 }}>{group.processid}</td>
+                    <td>{diffCell(group.removed, 'removed')}</td>
+                    <td>{diffCell(group.added, 'added')}</td>
+                    <td style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                      {formatDateTime(group.detected_at)}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setDetailGroup(group)}
+                      >
+                        {t('approval.view_detail')}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
           {totalPages > 1 && (
@@ -156,7 +291,21 @@ export default function ChangeStatusPage(): React.ReactElement {
               >
                 ◀
               </button>
-              <span style={{ padding: '0 12px' }}>{t('change_status.page_info', { page, totalPages })}</span>
+              {buildPageNumbers(page, totalPages).map((item, idx) =>
+                item === 'ellipsis' ? (
+                  <span key={`ellipsis-${idx}`} className="pagination-ellipsis">…</span>
+                ) : (
+                  <button
+                    key={item}
+                    type="button"
+                    className={`pagination-btn ${item === page ? 'active' : ''}`}
+                    onClick={() => setPage(item)}
+                    aria-current={item === page ? 'page' : undefined}
+                  >
+                    {item}
+                  </button>
+                )
+              )}
               <button
                 type="button"
                 className="pagination-btn"
@@ -169,6 +318,26 @@ export default function ChangeStatusPage(): React.ReactElement {
             </div>
           )}
         </>
+      )}
+
+      {detailGroup && (
+        <Modal
+          isOpen
+          onClose={() => setDetailGroup(null)}
+          title={groupTitle(detailGroup)}
+        >
+          <div style={{
+            display: 'flex', flexWrap: 'wrap', gap: '8px 18px', fontSize: '0.85rem',
+            color: 'var(--text-muted)', paddingBottom: 16, marginBottom: 18,
+            borderBottom: '1px solid var(--border-light)',
+          }}>
+            <span>{t('change_status.col_line')} <b style={{ color: 'var(--text-primary)' }}>{lineLabel(detailGroup.line)}</b></span>
+            <span>{t('change_status.table_type_label')} <b style={{ color: 'var(--text-primary)' }}>{tableTypeLabel(detailGroup.table_type)}</b></span>
+            <span>{t('change_status.col_changed_at')} <b style={{ color: 'var(--text-primary)' }}>{formatDateTime(detailGroup.detected_at)}</b></span>
+          </div>
+          {detailTable(detailGroup.removed, 'removed')}
+          {detailTable(detailGroup.added, 'added')}
+        </Modal>
       )}
     </div>
   );
