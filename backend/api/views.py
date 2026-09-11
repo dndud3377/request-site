@@ -793,8 +793,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """'이전 회차 도달 구역' 철회 확인 인가 — 그 회차의 담당자 개인이 아니라 '지금 그 팀'.
 
         MASTER는 항상. 팀 역할(_ROLE_TO_AGENT)이 있는 agent(R/P/J/O/E)는 같은 팀 누구나
-        확인할 수 있다(이전에 그 단계를 처리했던 사람일 필요 없음). 팀 역할이 없는 agent(RA
-        등 개인 지정형)는 그 회차에 배정됐던 담당자 본인만 확인할 수 있다.
+        확인할 수 있다(이전에 그 단계를 처리했던 사람일 필요 없음). RA(후결자)는 역할로
+        묶이는 팀이 없으므로, 그 대신 이 문서의 '팀'에 해당하는 현재 후결자 전원
+        (`mailer.post_approver_users` — 고정 후결자 + C가문 추가 후결자, RA 반려 수신자
+        산출과 같은 기준) 누구나 확인할 수 있다(2026-09, 그 회차에 배정됐던 개인으로 제한하지
+        않는다).
         """
         role = getattr(user, 'role', '')
         if role == 'MASTER':
@@ -802,7 +805,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if self._ROLE_TO_AGENT.get(role) == step.agent:
             return True
         caller_loginid = getattr(user, 'loginid', '')
-        return bool(step.assignee_id and caller_loginid and step.assignee.loginid == caller_loginid)
+        if not caller_loginid:
+            return False
+        if step.agent == 'RA':
+            return any(u.loginid == caller_loginid for u in mailer.post_approver_users(step.document))
+        return bool(step.assignee_id and step.assignee.loginid == caller_loginid)
 
     def _delete_withdrawn_document(self, request, document, reason, send_mail=True):
         """철회 확정 — 완료 메일을 먼저 적재한 뒤 문서를 완전히 삭제한다.
