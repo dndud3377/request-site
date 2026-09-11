@@ -96,7 +96,10 @@
 - **상세보기**: 행의 "상세보기" 버튼(`approval.view_detail` 키 재사용) 클릭 시 공용 `Modal`
   컴포넌트가 뜬다. 제목은 목록과 같은 그룹 제목 규칙(`change_status.group_title[_with_type]`),
   본문은 라인/테이블구분/변경시각 메타 정보 + 삭제·추가 **전체** 목록을 각각 표(STEP/내용/
-  Recipe ID/영역/레이어, `change_status.modal_col_*` 키)로 보여준다.
+  Recipe ID/영역/레이어, `change_status.modal_col_*` 키)로 보여준다. 이 표는 전용 클래스
+  `change-status-detail-table`로 컬럼 폭을 내용 길이와 무관하게 고정(%)하고, 셀 내용이 길면
+  2줄까지만 보여준 뒤 말줄임 처리한다(`global.css` `.change-status-detail-table`,
+  `.cell-clamp-2`) — 공용 `.table`/`.table-compact`는 그대로 두고 이 표에만 적용된다.
 - `loading`/`error`/빈 목록 3가지 상태를 모두 처리한다 — 로딩 중엔 로딩 문구, 조회 실패 시
   재시도 버튼, 변경 이력이 없으면 빈 상태 안내를 보여준다(공통 i18n 키 `common.loading`/
   `common.load_error`/`common.retry` 재사용).
