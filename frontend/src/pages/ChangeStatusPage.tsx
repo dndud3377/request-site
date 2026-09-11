@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { changeStatusAPI } from '../api/client';
 import Modal from '../components/Modal';
@@ -45,6 +45,7 @@ export default function ChangeStatusPage(): React.ReactElement {
   const [lineFilter, setLineFilter] = useState('');
   const [tableTypeFilter, setTableTypeFilter] = useState<PhotoStepChangeTableType | ''>('');
   const [detailGroup, setDetailGroup] = useState<PhotoStepChangeGroup | null>(null);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     const timer = setTimeout(() => setSearch(searchInput.trim()), SEARCH_DEBOUNCE_MS);
@@ -61,6 +62,9 @@ export default function ChangeStatusPage(): React.ReactElement {
   [t]);
 
   const fetchChanges = useCallback(async () => {
+    // 검색/필터 변경 시 동시에 여러 요청이 뜰 수 있으므로, 가장 나중에 시작된 요청의
+    // 응답만 반영한다 — 늦게 도착한 이전 페이지 응답이 최신 결과를 덮어쓰는 것을 막는다.
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     setError(false);
     try {
@@ -71,13 +75,15 @@ export default function ChangeStatusPage(): React.ReactElement {
         page,
         pageSize: PAGE_SIZE,
       });
+      if (requestId !== requestIdRef.current) return;
       setGroups(res.results);
       setCount(res.count);
       setTruncated(res.truncated);
     } catch {
+      if (requestId !== requestIdRef.current) return;
       setError(true);
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
   }, [lineFilter, tableTypeFilter, search, page]);
 
@@ -90,6 +96,10 @@ export default function ChangeStatusPage(): React.ReactElement {
   }, [lineFilter, tableTypeFilter, search]);
 
   const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const groupTitle = (group: PhotoStepChangeGroup): string =>
     group.table_type === 'ALL'
