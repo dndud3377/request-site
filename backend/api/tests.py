@@ -5968,7 +5968,7 @@ class WriteStepChangeLogTest(TestCase):
         ])
         scheduler._write_step_if_changed(
             engine, 'step_test', df1, scheduler.STEP_COLUMNS,
-            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_ALL,
+            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_MF,
         )
         # 최초 적재(old_keys 가 빈 테이블)도 "빈 상태 → 데이터 있음"으로의 변경이므로 전부 added 로 기록된다.
         self.assertEqual(PhotoStepChangeLog.objects.count(), 3)
@@ -5983,7 +5983,7 @@ class WriteStepChangeLogTest(TestCase):
         ])
         count = scheduler._write_step_if_changed(
             engine, 'step_test', df2, scheduler.STEP_COLUMNS,
-            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_ALL,
+            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_MF,
         )
         self.assertEqual(count, 5)
 
@@ -6003,7 +6003,7 @@ class WriteStepChangeLogTest(TestCase):
         run_ids = set(logs.values_list('sync_run_id', flat=True))
         self.assertEqual(len(run_ids), 1)
         self.assertTrue(all(log.line == '라인1' for log in logs))
-        self.assertTrue(all(log.table_type == PhotoStepChangeLog.TABLE_TYPE_ALL for log in logs))
+        self.assertTrue(all(log.table_type == PhotoStepChangeLog.TABLE_TYPE_MF for log in logs))
 
     def test_identical_data_records_nothing(self):
         import pandas as pd
@@ -6014,13 +6014,13 @@ class WriteStepChangeLogTest(TestCase):
         df = pd.DataFrame([self._row()])
         scheduler._write_step_if_changed(
             engine, 'step_test', df, scheduler.STEP_COLUMNS,
-            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_ALL,
+            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_MF,
         )
         count_after_first_write = PhotoStepChangeLog.objects.count()
 
         result = scheduler._write_step_if_changed(
             engine, 'step_test', df.copy(), scheduler.STEP_COLUMNS,
-            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_ALL,
+            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_MF,
         )
 
         self.assertIsNone(result)
@@ -6043,7 +6043,7 @@ class PhotoStepChangesApiTest(TestCase):
         row = {
             'sync_run_id': overrides.pop('sync_run_id'),
             'line': '라인1',
-            'table_type': PhotoStepChangeLog.TABLE_TYPE_ALL,
+            'table_type': PhotoStepChangeLog.TABLE_TYPE_MF,
             'processid': 'X',
             'change_type': PhotoStepChangeLog.CHANGE_ADDED,
             'stepseq': '10', 'descript': 'D', 'recipeid': 'R1',
@@ -6147,9 +6147,10 @@ class SyncRtdbStepCountDropTest(TestCase):
 
     def _seed_existing_steps(self, engine, count):
         import pandas as pd
+        # api_photosteps1 은 PMAINF 전용 테이블이므로 기존 데이터도 PMAINF 로 채운다.
         rows = [{
             'processid': f'P{i}', 'stepseq': '10', 'descript': 'D', 'recipeid': 'R',
-            'areaname': 'A', 'eqptype': 'E', 'updated': 'U', 'layerid': 'L',
+            'areaname': 'A', 'eqptype': 'PMAINF', 'updated': 'U', 'layerid': 'L',
             'last_synced': '2026-01-01',
         } for i in range(count)]
         pd.DataFrame(rows).to_sql('api_photosteps1', engine, if_exists='append', index=False)
@@ -6164,9 +6165,11 @@ class SyncRtdbStepCountDropTest(TestCase):
 
     def _step_df(self, count):
         import pandas as pd
+        # 전부 PMAINF 로 만들어, 응답 건수와 전체 테이블에 실제로 쓰이는 건수를 일치시킨다
+        # (급감 감지 임계값 계산이 이 테스트의 검증 대상이므로 eqptype 분리와 섞이지 않게 한다).
         return pd.DataFrame([{
             'processid': f'NEW{i}', 'stepseq': '99', 'descript': 'D2', 'recipeid': 'R2',
-            'areaname': 'A2', 'eqptype': 'E2', 'updated': 'U2', 'layerid': 'L2',
+            'areaname': 'A2', 'eqptype': 'PMAINF', 'updated': 'U2', 'layerid': 'L2',
         } for i in range(count)])
 
     def setUp(self):
@@ -6240,9 +6243,9 @@ class SyncRtdbStepCountDropTest(TestCase):
 
 
 class SyncRtdbStepEqptypeSplitTest(TestCase):
-    """(2026-09 추가) 스텝 조회 결과 중 eqptype='POVLAY'/STEP_EXTRA_EQPTYPE('XXXXXX' 임시값) 행이
-    전체 테이블(STEP_TABLE_MAP)은 그대로 두고(eqptype 전체 유지) 각각의 전용 서브 테이블
-    (STEP_OVL_TABLE_MAP/STEP_EXTRA_TABLE_MAP)에도 추가로 저장되는지 검증한다.
+    """(2026-09 추가) 한 번의 스텝 조회 결과가 eqptype 기준으로 세 테이블에 나뉘어 저장되는지
+    검증한다 - PMAINF 는 STEP_TABLE_MAP, POVLAY 는 STEP_OVL_TABLE_MAP, STEP_EXTRA_EQPTYPE
+    ('XXXXXX' 임시값)는 STEP_EXTRA_TABLE_MAP. 어디에도 해당하지 않는 eqptype 행은 저장되지 않는다.
     """
 
     def _make_engine(self):
@@ -6330,13 +6333,33 @@ class SyncRtdbStepEqptypeSplitTest(TestCase):
             ov_ids = sorted(r[0] for r in conn.execute(text("SELECT processid FROM api_photosteps1_ov")).fetchall())
             cd_ids = sorted(r[0] for r in conn.execute(text("SELECT processid FROM api_photosteps1_cd")).fetchall())
 
-        # 전체 테이블은 eqptype 전체(4건)가 그대로 유지된다 - 변경 없음.
-        self.assertEqual(main_ids, ['P1', 'P2', 'P3', 'P4'])
+        # 전체 테이블에는 PMAINF 인 P1 한 건만 - POVLAY(P2)/XXXXXX(P3)/기타(P4)는 들어가지 않는다.
+        self.assertEqual(main_ids, ['P1'])
         # POVLAY 전용 테이블에는 P2 한 건만.
         self.assertEqual(ov_ids, ['P2'])
         # XXXXXX(임시값) 전용 테이블에는 P3 한 건만.
         self.assertEqual(cd_ids, ['P3'])
         self.mock_mail.assert_not_called()
+
+    def test_main_table_records_change_log_as_mf_type(self):
+        """전체 테이블 diff 는 table_type='MF'(PMAINF) 로 기록된다 - 'ALL' 이 아니다."""
+        from .models import PhotoStepChangeLog
+
+        def fake_get_data_from_rtdb(payload, token):
+            table_name = payload['query']['table_name']
+            if table_name.startswith('A_'):
+                return self._pp_df()
+            if table_name.startswith('X_'):
+                return self._pc_df()
+            return self._mixed_step_df()
+
+        with patch.object(self.scheduler, 'get_data_from_rtdb', side_effect=fake_get_data_from_rtdb):
+            self.scheduler.sync_rtdb_options()
+
+        main_logs = PhotoStepChangeLog.objects.filter(table_type=PhotoStepChangeLog.TABLE_TYPE_MF)
+        self.assertEqual([log.processid for log in main_logs], ['P1'])
+        self.assertTrue(all(log.eqptype == 'PMAINF' for log in main_logs))
+        self.assertFalse(PhotoStepChangeLog.objects.filter(table_type='ALL').exists())
 
 
 class LayerFilterSetTest(TestCase):
