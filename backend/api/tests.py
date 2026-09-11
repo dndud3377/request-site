@@ -3296,6 +3296,27 @@ class WithdrawFlowTest(TestCase):
         self.assertEqual(wr.state, 'rejected')
         self.assertTrue(self._exists(doc))
 
+    @override_settings(POST_APPROVER_LOGINID='wd_ra_fixed')
+    def test_extra_zone_ra_confirm_by_current_post_approver_not_original_assignee(self):
+        """RA(후결자)는 역할로 묶이는 팀이 없어, 그 회차의 담당자 개인이 아니라
+        '지금의 후결자 전원'(고정 후결자 포함)이 확인 대상이다."""
+        fixed_ra = UserProfile.objects.create(loginid='wd_ra_fixed', mail='wd_ra_fixed@c.com', role='NONE')
+        old_ra = UserProfile.objects.create(loginid='wd_ra_old', mail='wd_ra_old@c.com', role='NONE')
+        doc = self._doc()
+        ra_step = self._step(doc, 'RA', action='rejected', assignee=old_ra, round=1)
+        self._step(doc, 'PL', assignee=self.pl, round=2)
+
+        res = self._post(self.author, doc, 'withdraw', {'reason': '사유'})
+        self.assertEqual(res.status_code, 200, res.content)
+        wr = WithdrawRequest.objects.get(document=doc)
+        self.assertIn(ra_step.id, wr.target_step_ids)
+
+        # 그 회차에 배정됐던 old_ra 가 아니라, 지금의 고정 후결자(fixed_ra)가 확인한다.
+        res = self._post(fixed_ra, doc, 'confirm-withdraw', {'agent': 'RA'})
+        self.assertEqual(res.status_code, 200, res.content)
+        wr.refresh_from_db()
+        self.assertIn(ra_step.id, wr.confirmed_step_ids)
+
 
 class PauseFlowTest(TestCase):
     """중단(PAUSE) = '요청 → 현재 단계 전원 확인 → pause 전이' (2026-08: 거부·동결 강화).
