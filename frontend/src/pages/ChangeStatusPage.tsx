@@ -7,7 +7,7 @@ import { formatDateTime } from '../utils/date';
 
 const LINE_OPTIONS = ['라인1', '라인3', '라인4', '라인5'] as const;
 const LINE_I18N_SUFFIX: Record<string, string> = { 라인1: '1', 라인3: '3', 라인4: '4', 라인5: '5' };
-const TABLE_TYPE_OPTIONS: PhotoStepChangeTableType[] = ['ALL', 'OV', 'CD'];
+const TABLE_TYPE_OPTIONS: PhotoStepChangeTableType[] = ['MF', 'OV', 'CD'];
 
 // 변경이 잦을 수 있어 결재 현황보다 좁은 페이지 크기를 쓴다.
 const PAGE_SIZE = 15;
@@ -58,7 +58,7 @@ export default function ChangeStatusPage(): React.ReactElement {
   }, [t]);
 
   const tableTypeLabel = useCallback((tableType: PhotoStepChangeTableType): string =>
-    t(`change_status.table_type_${tableType}` as 'change_status.table_type_ALL'),
+    t(`change_status.table_type_${tableType}` as 'change_status.table_type_MF'),
   [t]);
 
   const fetchChanges = useCallback(async () => {
@@ -102,7 +102,7 @@ export default function ChangeStatusPage(): React.ReactElement {
   }, [page, totalPages]);
 
   const groupTitle = (group: PhotoStepChangeGroup): string =>
-    group.table_type === 'ALL'
+    group.table_type === 'MF'
       ? t('change_status.group_title', { line: lineLabel(group.line), processid: group.processid })
       : t('change_status.group_title_with_type', {
         line: lineLabel(group.line),

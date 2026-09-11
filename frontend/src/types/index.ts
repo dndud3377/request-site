@@ -33,7 +33,7 @@ export interface Line {
 
 // ===== 변경 현황 (api_photosteps* 동기화 변경 이력) =====
 
-export type PhotoStepChangeTableType = 'ALL' | 'OV' | 'CD';
+export type PhotoStepChangeTableType = 'MF' | 'OV' | 'CD';
 
 export interface PhotoStepChangeRow {
   stepseq: string;
