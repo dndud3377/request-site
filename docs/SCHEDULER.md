@@ -299,9 +299,37 @@ RTDB 소스(라인1·3~5·nv)와 DCQ 소스(라인2)가 같은 방식을 쓴다.
 ### 스텝 변경 이력 기록 (`PhotoStepChangeLog`, 2026-09 추가 — 변경 현황 화면용)
 
 `_write_step_if_changed()`는 diff 를 이미 `old_keys`/`new_keys` 두 집합으로 계산하므로, 이 시점에
-`added = new_keys - old_keys`, `removed = old_keys - new_keys` 를 구해 `PhotoStepChangeLog` 모델에
-기록한다 - 변경 현황 화면(`GET /api/photostep-changes/`, 프론트 `/change-status`)이 이 테이블만 읽는다.
+`added`/`removed` 를 구해 `PhotoStepChangeLog` 모델에 기록한다 - 변경 현황 화면
+(`GET /api/photostep-changes/`, 프론트 `/change-status`)이 이 테이블만 읽는다.
 상세는 `docs/CHANGE_STATUS.md` 참고.
+
+#### ⚠️ 재적재 판정과 이력 diff 는 기준이 다르다 (2026-09 수정)
+
+| 구분 | 기준 컬럼 | 목적 |
+|---|---|---|
+| 재적재(skip) 판정 | `STEP_COLUMNS` **8개 전부** | 테이블 값을 항상 최신으로 유지 |
+| 변경 이력 diff | `STEP_DIFF_COLUMNS` **6개** (`eqptype`·`updated` 제외) | 의미 있는 변경만 기록 |
+
+`STEP_DIFF_IGNORED_COLUMNS = ('eqptype', 'updated')` 를 diff 에서 뺀 이유:
+
+- **`updated`**: 원본이 내용은 그대로 둔 채 **갱신시각만 올리는 일이 잦다.** 이 값까지 비교하면
+  화면 상세표가 보여주는 5개 컬럼(STEP/내용/Recipe ID/영역/레이어)이 전부 동일한
+  "삭제 1건 + 추가 1건" 이 매 사이클 쌓여, 사용자에게는 **똑같은 내용이 삭제·추가된 것처럼
+  보였다.** 보관 정책이 없어 이 잡음이 계속 쌓이고 조회 상한 5,000건을 잠식해 실제 변경 이력을
+  화면 밖으로 밀어내는 문제도 있었다.
+- **`eqptype`**: 세 테이블이 eqptype 별로 분리되어 한 테이블 안에서는 값이 항상 같다.
+  비교에 넣어도 diff 가 생길 수 없다.
+
+두 컬럼은 **"비교"에서만 빠진다.** 테이블 저장(`STEP_COLUMNS`)과 이력에 기록되는 값
+(`PhotoStepChangeLog.eqptype`/`updated`)에는 원본값이 그대로 남는다. 재적재는 8개 기준으로
+판정하므로 저장된 `updated` 는 항상 최신이며, 의뢰서 작성 J-ayer/O-ayer 표의 **'Update 날짜'
+컬럼**(`form-options/job-file-layer` → `RequestPage` `formatUpdatedDate`)이 이 값을 그대로 쓴다.
+
+> ⛔ `_write_step_if_changed()` 의 `key_cols` 는 **비교·기록·저장 3가지에 동시에 쓰인다.**
+> `df = df[key_cols + ['last_synced']]`(저장 컬럼 목록) 때문에 `key_cols` 를 6개로 줄이면
+> 테이블의 `eqptype`/`updated` 컬럼이 통째로 비게 된다. diff 만 좁히려면 `_by_diff_key()` 로
+> **기록 직전에 투영**해야 한다 — 상수를 바꾸는 것으로 해결하려 하면 안 된다.
+> (회귀 방지 테스트: `WriteStepChangeLogTest.test_updated_only_change_still_refreshes_stored_value`)
 
 - **대상**: `STEP_TABLE_MAP`/`STEP_OVL_TABLE_MAP`/`STEP_EXTRA_TABLE_MAP` 12개 테이블 전부
   (`_write_step_if_changed()` 호출부 3곳이 각각 `line`/`table_type`(`MF`/`OV`/`CD`)을 함께 넘긴다).
@@ -318,8 +346,9 @@ RTDB 소스(라인1·3~5·nv)와 DCQ 소스(라인2)가 같은 방식을 쓴다.
   `timezone.now()` 값을 명시적으로 채운다 - `bulk_create`로 여러 행을 한 번에 넣을 때 행마다
   시각이 미세하게 갈라져 그룹핑이 어긋나는 것을 막기 위함이다.
 - **보관 정책 없음**: 오래된 이력을 자동으로 지우는 로직은 없다 - 필요해지면 별도로 추가해야 한다.
-- **검증**: `backend/api/tests.py`의 `WriteStepChangeLogTest`(diff → 이력 기록 단위 테스트),
-  `PhotoStepChangesApiTest`(조회 API 그룹핑/필터 검증).
+- **검증**: `backend/api/tests.py`의 `WriteStepChangeLogTest`(diff → 이력 기록 단위 테스트 —
+  `updated`/`eqptype` 만 바뀌면 이력 0건인지, 그래도 저장값은 갱신되는지, `descript` 변경은
+  정상 기록되는지 포함), `PhotoStepChangesApiTest`(조회 API 그룹핑/필터 검증).
 
 ## RTDB(REST API) 유틸 (`utils.py`)
 
