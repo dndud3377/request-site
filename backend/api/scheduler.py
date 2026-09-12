@@ -113,10 +113,15 @@ STEP_TABLE_MAP = {
 }
 STEP_COLUMNS = ['processid', 'stepseq', 'descript', 'recipeid', 'areaname', 'eqptype', 'updated', 'layerid']
 
-# 2026-09 추가: STEP_TABLE_MAP(위) 테이블은 eqptype 전체가 섞여서 그대로 저장된다(변경 없음).
-# 그중 eqptype='POVLAY' 행만 별도로 라인별 전용 테이블에도 추가로 저장한다 - 모델은
-# PhotoStepS{N}Ov(models.py), db_table 을 STEP_OVL_TABLE_MAP 값과 동일하게 명시적으로 맞춰뒀다
-# (STEP_TABLE_MAP 이전 불일치 재발 방지).
+# 2026-09 추가: STEP_TABLE_MAP(위) 테이블에 저장할 eqptype. 이전에는 조회 결과의 eqptype 을
+# 전부 섞어서 저장했으나, 이 테이블을 읽는 조회 API(views.py 의 job-file-layer / bb-external /
+# layer-ids)가 모두 eqptype='PMAINF' 로만 필터해 읽어가므로 나머지 eqptype 행은 아무도 쓰지
+# 않는 데이터였다. 저장 시점에 걸러 PMAINF 전용 테이블로 만든다.
+STEP_MAIN_EQPTYPE = 'PMAINF'
+
+# 2026-09 추가: 위 STEP_TABLE_MAP 테이블과 별개로, eqptype='POVLAY' 행만 별도로 라인별 전용
+# 테이블에도 저장한다 - 모델은 PhotoStepS{N}Ov(models.py), db_table 을 STEP_OVL_TABLE_MAP 값과
+# 동일하게 명시적으로 맞춰뒀다 (STEP_TABLE_MAP 이전 불일치 재발 방지).
 STEP_OVL_EQPTYPE = 'POVLAY'
 STEP_OVL_TABLE_MAP = {
     '라인1': 'api_photosteps1_ov',
@@ -155,6 +160,11 @@ RTDB_STEP_PRE_FETCH_DELAY_SEC = 3
 # 채 내려온 경우)으로 보고 재시도 대상에 포함시킨다 - 0건은 아니지만 비정상적으로 적은 응답을
 # 그대로 전체 재적재(DELETE+INSERT)해 스텝 데이터가 유실되는 것을 막기 위함이다(2026-09 추가).
 # 기존 건수가 0건(최초 동기화)이면 비교 대상이 없으므로 이 검사를 적용하지 않는다.
+#
+# 주의(2026-09): `api_photosteps{N}` 이 PMAINF 전용으로 바뀌면서 비교의 두 항이 서로 다른
+# 모집단이 됐다 - 기준값(prev_count)은 PMAINF 만 담긴 테이블 건수인데, 비교 대상은 eqptype 이
+# 섞인 RTDB 응답 전체 건수다. 그만큼 임계값이 느슨해져 급감 감지가 약해진다(안전한 쪽으로
+# 틀리지는 않는다 - 놓칠 뿐 오탐은 늘지 않는다). 의도적으로 현행 유지한 것이다.
 RTDB_STEP_COUNT_DROP_RATIO = 0.1
 
 
@@ -287,12 +297,15 @@ def sync_rtdb_options():
       스텝(`api_photosteps1`/`api_photosteps3~5`)도 2026-09부터 동일하게 변경 감지 후 쓰기를
       적용한다(`_write_step_if_changed()` - 공용 `line` 컬럼이 없는 라인별 전용 테이블이라
       테이블 전체를 대상으로 비교한다는 점만 `_write_if_changed()`와 다르다).
-    - (2026-09 추가) 위 스텝 전체 쓰기와 별개로, 같은 조회 결과(`df_ps`)에서 eqptype='POVLAY'인
-      행만 걸러 라인별 전용 테이블(`STEP_OVL_TABLE_MAP`)에, eqptype=`STEP_EXTRA_EQPTYPE`(현재
-      임시값 'XXXXXX')인 행만 걸러 또 다른 라인별 전용 테이블(`STEP_EXTRA_TABLE_MAP`)에 추가로
-      저장한다. 추가 RTDB 조회는 없다 - 이미 받아온 `df_ps`를 나눠 쓰기만 한다. 위 스텝 전체
-      테이블(`STEP_TABLE_MAP`)의 동작은 이 추가로 인해 변경되지 않는다(여전히 모든 eqptype 값을
-      그대로 저장).
+    - (2026-09 추가) 한 번 받아온 조회 결과(`df_ps`)를 eqptype 값으로 나눠 세 종류의 라인별
+      전용 테이블에 각각 저장한다. 추가 RTDB 조회는 없다.
+        - `STEP_MAIN_EQPTYPE`('PMAINF') → `STEP_TABLE_MAP`(`api_photosteps{N}`)
+        - `STEP_OVL_EQPTYPE`('POVLAY') → `STEP_OVL_TABLE_MAP`(`api_photosteps{N}_ov`)
+        - `STEP_EXTRA_EQPTYPE`(현재 임시값 'XXXXXX') → `STEP_EXTRA_TABLE_MAP`(`api_photosteps{N}_cd`)
+      `STEP_TABLE_MAP` 테이블은 2026-09 이전에는 eqptype 전체를 섞어 저장했으나, 이 테이블을
+      읽는 조회 API 3곳(job-file-layer / bb-external / layer-ids)이 모두 eqptype='PMAINF' 로만
+      필터해 읽어가 나머지 eqptype 행은 아무도 쓰지 않았다. 지금은 저장 시점에 걸러 PMAINF
+      전용 테이블로 만든다.
     - 스텝 조회는 0건/실패뿐 아니라 **기존 테이블 대비 결과 건수가 `RTDB_STEP_COUNT_DROP_RATIO`
       (10%) 미만으로 급감한 경우도 "누락 의심"으로 보고 동일하게 재시도**한다(2026-09 추가).
       RTDB 가 0건은 아니지만 일부만 채워진 채 응답하는 경우, 그 불완전한 데이터로 스텝 테이블
@@ -435,9 +448,13 @@ def sync_rtdb_options():
                             min_count=min_count,
                         )
                         if df_ps is not None:
+                            # 전체 테이블은 eqptype='PMAINF' 행만 저장한다. 아래 서브 테이블
+                            # (_ov/_cd)은 원본 df_ps 를 그대로 걸러 써야 하므로, 여기서 거른
+                            # df_main 을 넘기면 POVLAY/XXXXXX 가 0건이 되어버린다.
+                            df_main = df_ps[df_ps['eqptype'] == STEP_MAIN_EQPTYPE]
                             count = _write_step_if_changed(
-                                engine, table_name, df_ps, STEP_COLUMNS,
-                                line=line, table_type=PhotoStepChangeLog.TABLE_TYPE_ALL,
+                                engine, table_name, df_main, STEP_COLUMNS,
+                                line=line, table_type=PhotoStepChangeLog.TABLE_TYPE_MF,
                             )
                             if count is None:
                                 logger.info(_("[scheduler] {line} {{request.col_step}} 변경 없음 - skip").format(line=line))
@@ -445,8 +462,8 @@ def sync_rtdb_options():
                                 logger.info(_("[scheduler] {line} {{request.col_step}} {count}건 동기화 완료").format(line=line, count=count))
 
                             # eqptype 기준 하위 분리 테이블 - 위에서 받은 df_ps 를 그대로 나눠 쓰기만
-                            # 한다(추가 RTDB 조회 없음). 위 STEP_TABLE_MAP 쓰기는 eqptype 전체를
-                            # 유지한 채 변경하지 않는다.
+                            # 한다(추가 RTDB 조회 없음). 위 df_main(PMAINF) 이 아니라 원본 df_ps 를
+                            # 걸러야 POVLAY/XXXXXX 행이 남는다.
                             def _write_eqptype_subset(eqptype_value, sub_table_map, label, table_type):
                                 sub_table = sub_table_map.get(line)
                                 if not sub_table:

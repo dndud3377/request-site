@@ -799,7 +799,7 @@ class Guide(models.Model):
 
 
 class PhotoStepS1(models.Model):
-    """line1 라인 {{request.col_step}} 정보 (스케줄러 동기화)"""
+    """line1 라인 {{request.col_step}} 정보 중 eqptype='PMAINF' 전용 (스케줄러 동기화)"""
     processid = models.CharField(max_length=200, verbose_name='{{request.process_id}} ID')
     stepseq = models.CharField(max_length=200, verbose_name='{{request.col_step}}SEQ')
     descript = models.CharField(max_length=200, verbose_name='{{request.process_selection}}명')
@@ -811,8 +811,8 @@ class PhotoStepS1(models.Model):
     last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
 
     class Meta:
-        verbose_name = 'line1 {{request.col_step}} 정보'
-        verbose_name_plural = 'line1 {{request.col_step}} 정보 목록'
+        verbose_name = 'line1 {{request.col_step}} 정보(PMAINF)'
+        verbose_name_plural = 'line1 {{request.col_step}} 정보(PMAINF) 목록'
         indexes = [
             models.Index(fields=['processid'], name='api_pstep_line1_processid_idx'),
             models.Index(fields=['processid', 'eqptype'], name='api_pstep_line1_prcid_eqp_idx'),
@@ -823,7 +823,7 @@ class PhotoStepS1(models.Model):
 
 
 class PhotoStepS3(models.Model):
-    """line3 라인 {{request.col_step}} 정보 (스케줄러 동기화)"""
+    """line3 라인 {{request.col_step}} 정보 중 eqptype='PMAINF' 전용 (스케줄러 동기화)"""
     processid = models.CharField(max_length=200, verbose_name='{{request.process_id}} ID')
     stepseq = models.CharField(max_length=200, verbose_name='{{request.col_step}}SEQ')
     descript = models.CharField(max_length=200, verbose_name='{{request.process_selection}}명')
@@ -835,8 +835,8 @@ class PhotoStepS3(models.Model):
     last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
 
     class Meta:
-        verbose_name = 'line3 {{request.col_step}} 정보'
-        verbose_name_plural = 'line3 {{request.col_step}} 정보 목록'
+        verbose_name = 'line3 {{request.col_step}} 정보(PMAINF)'
+        verbose_name_plural = 'line3 {{request.col_step}} 정보(PMAINF) 목록'
         indexes = [
             models.Index(fields=['processid'], name='api_pstep_line3_processid_idx'),
             models.Index(fields=['processid', 'eqptype'], name='api_pstep_line3_prcid_eqp_idx'),
@@ -847,7 +847,7 @@ class PhotoStepS3(models.Model):
 
 
 class PhotoStepS4(models.Model):
-    """line4 라인 {{request.col_step}} 정보 (스케줄러 동기화)"""
+    """line4 라인 {{request.col_step}} 정보 중 eqptype='PMAINF' 전용 (스케줄러 동기화)"""
     processid = models.CharField(max_length=200, verbose_name='{{request.process_id}} ID')
     stepseq = models.CharField(max_length=200, verbose_name='{{request.col_step}}SEQ')
     descript = models.CharField(max_length=200, verbose_name='{{request.process_selection}}명')
@@ -859,8 +859,8 @@ class PhotoStepS4(models.Model):
     last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
 
     class Meta:
-        verbose_name = 'line4 {{request.col_step}} 정보'
-        verbose_name_plural = 'line4 {{request.col_step}} 정보 목록'
+        verbose_name = 'line4 {{request.col_step}} 정보(PMAINF)'
+        verbose_name_plural = 'line4 {{request.col_step}} 정보(PMAINF) 목록'
         indexes = [
             models.Index(fields=['processid'], name='api_pstep_line4_processid_idx'),
             models.Index(fields=['processid', 'eqptype'], name='api_pstep_line4_prcid_eqp_idx'),
@@ -871,7 +871,7 @@ class PhotoStepS4(models.Model):
 
 
 class PhotoStepS5(models.Model):
-    """line5 라인 {{request.col_step}} 정보 (스케줄러 동기화)"""
+    """line5 라인 {{request.col_step}} 정보 중 eqptype='PMAINF' 전용 (스케줄러 동기화)"""
     processid = models.CharField(max_length=200, verbose_name='{{request.process_id}} ID')
     stepseq = models.CharField(max_length=200, verbose_name='{{request.col_step}}SEQ')
     descript = models.CharField(max_length=200, verbose_name='{{request.process_selection}}명')
@@ -883,8 +883,8 @@ class PhotoStepS5(models.Model):
     last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
 
     class Meta:
-        verbose_name = 'line5 {{request.col_step}} 정보'
-        verbose_name_plural = 'line5 {{request.col_step}} 정보 목록'
+        verbose_name = 'line5 {{request.col_step}} 정보(PMAINF)'
+        verbose_name_plural = 'line5 {{request.col_step}} 정보(PMAINF) 목록'
         indexes = [
             models.Index(fields=['processid'], name='api_pstep_line5_processid_idx'),
             models.Index(fields=['processid', 'eqptype'], name='api_pstep_line5_prcid_eqp_idx'),
@@ -1101,11 +1101,11 @@ class PhotoStepChangeLog(models.Model):
     이 로그를 남긴다 - 매 동기화 사이클마다 생기는 것이 아니라 "실제로 변경됐을 때"만 생성된다.
     같은 diff 호출(=같은 테이블의 같은 변경 감지 시점)에서 나온 행들은 sync_run_id 로 묶인다.
     """
-    TABLE_TYPE_ALL = 'ALL'
+    TABLE_TYPE_MF = 'MF'
     TABLE_TYPE_OV = 'OV'
     TABLE_TYPE_CD = 'CD'
     TABLE_TYPE_CHOICES = [
-        (TABLE_TYPE_ALL, '전체'),
+        (TABLE_TYPE_MF, 'PMAINF'),
         (TABLE_TYPE_OV, 'POVLAY'),
         (TABLE_TYPE_CD, 'XXXXXX'),
     ]

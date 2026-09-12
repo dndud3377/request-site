@@ -66,7 +66,7 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 |-------------|-----------------------------------|
 | `api_processproduct` | `A_{suffix}.B` / `partnumber, descript, pkgtype_2` / `X $eq "Y"` |
 | `api_productprocessid` | `X_{suffix}.Y` / `partnumber, processid` / `X $neq " "` |
-| `api_photosteps1`/`api_photosteps3~5` (스텝) | `O_{suffix}.W` / `processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid` / `a $eq "aaaaaa", e/l/p/r/s $neq " "` |
+| `api_photosteps1`/`api_photosteps3~5` (스텝) + `_ov`/`_cd` 하위 테이블 | `O_{suffix}.W` / `processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid` / `a $eq "aaaaaa", e/l/p/r/s $neq " "` |
 
 ```
 RTDB(REST API)  →  /api/queries
@@ -138,6 +138,11 @@ response.json() → data
 ```
 
 - 판정 비율은 `RTDB_STEP_COUNT_DROP_RATIO`(`scheduler.py`, 기본 0.1 = 10%) 상수로 관리한다.
+- ⚠️ **2026-09 이후 이 검사는 약해졌다(의도적 현행 유지).** `api_photosteps{N}` 이 PMAINF 전용으로
+  바뀌면서 비교의 두 항이 서로 다른 모집단이 됐다 — 기준값 `prev_count` 는 **PMAINF 만 담긴**
+  테이블 건수인데, 비교 대상은 **eqptype 이 섞인 RTDB 응답 전체 건수**다. 그만큼 임계값이 느슨해져
+  급감을 놓칠 수 있다(반대로 오탐이 늘지는 않는다). 더 정확히 맞추려면 `fetch()` 의 건수 판정을
+  PMAINF 행만 세도록 바꿔야 한다 — 현재는 그렇게 하지 않았다.
 - `fetch()` 헬퍼(`scheduler.py`)에 `min_count` 파라미터로 구현되어 있으며, 이 파라미터는 스텝
   조회에만 전달된다 — 공정-품목/품목-공정ID(`api_processproduct`/`api_productprocessid`) 조회는
   `min_count`를 넘기지 않으므로 기존 "0건/예외만 재시도" 동작 그대로 영향받지 않는다.
@@ -145,6 +150,7 @@ response.json() → data
   기존 테이블 전체와 동일하면 skip)를 거친 뒤에만 `DELETE → INSERT`한다. 공용 `line` 컬럼이 없는
   라인별 전용 테이블이라, `api_processproduct`/`api_productprocessid`가 쓰는 `_write_if_changed()`
   (라인 필터 있음)와 달리 테이블 전체를 비교 대상으로 삼는다는 점만 다르다.
+- `prev_count` 는 `STEP_TABLE_MAP` 테이블(= PMAINF 전용) 건수다 — 위 ⚠️ 항목 참고.
 
 ### MAP 이름 (`api_mapname`, DCQ 단독)
 
@@ -243,6 +249,7 @@ RTDB 소스(라인1·3~5·nv)와 DCQ 소스(라인2)가 같은 방식을 쓴다.
   조합을 키로 사용)를 쓴다 — 동일하면 skip, 다르면 해당 테이블 **전체 `DELETE` → `to_sql`**.
   (2026-08까지는 변경 감지 없이 매 사이클 무조건 전체 갱신했으나, 2026-09부터 위 "스텝 조회
   건수 급감 감지" 절의 건수 검증과 함께 변경 감지도 함께 적용한다.)
+  쓰기 대상 DataFrame 은 eqptype 으로 걸러진 것이다 — 아래 "스텝 eqptype 기준 테이블 분리" 절 참고.
 
 > ⚠️ **2026-08 한때 변경했다가 되돌림**: RTDB 가 간헐적으로 비정상적으로 적은 데이터를 반환하는
 > 문제 대응으로, RTDB 소스 3개 테이블만 "테이블에 없는 키만 INSERT하고 기존 행은 절대 삭제하지
@@ -252,31 +259,42 @@ RTDB 소스(라인1·3~5·nv)와 DCQ 소스(라인2)가 같은 방식을 쓴다.
 > (delete+insert) 방식으로 되돌렸다. 대신 위 "재시도"(최대 3회)로 일시적인 빈 응답 자체를 줄여서
 > 같은 문제를 완화한다.
 
-### 스텝 eqptype 기준 서브 테이블 분리 (2026-09 추가)
+### 스텝 eqptype 기준 테이블 분리 (2026-09 추가)
 
-라인1·3~5의 스텝 전체 테이블(`STEP_TABLE_MAP` → `api_photosteps{N}`)은 위 "쓰기 전략" 그대로
-**eqptype 값 전체를 섞어서** 저장한다(변경 없음). 이와 별개로, 같은 사이클에서 이미 받아온
-스텝 조회 결과(`df_ps`)를 eqptype 값 기준으로 걸러 라인별 전용 서브 테이블에도 **추가로**
-저장한다. 서브 테이블을 위해 RTDB 를 다시 조회하지 않는다.
+라인1·3~5의 스텝은 **RTDB 를 한 번만 조회**해(`df_ps`) 그 결과를 eqptype 값 기준으로 세 갈래로
+나눠 각각의 라인별 전용 테이블에 저장한다. 서브 테이블을 위해 RTDB 를 다시 조회하지 않는다.
 
 | 구분 | eqptype 값 | 라인별 테이블명 매핑 상수 | 테이블명 예(라인1) | ORM 모델 |
 |------|-----------|--------------------------|---------------------|----------|
+| PMAINF 전용 | `'PMAINF'`(`STEP_MAIN_EQPTYPE`) | `STEP_TABLE_MAP` | `api_photosteps1` | `PhotoStepS{N}` |
 | POVLAY 전용 | `'POVLAY'`(`STEP_OVL_EQPTYPE`) | `STEP_OVL_TABLE_MAP` | `api_photosteps1_ov` | `PhotoStepS{N}Ov` |
 | (임시) | `STEP_EXTRA_EQPTYPE`(현재 `'XXXXXX'` 임시값) | `STEP_EXTRA_TABLE_MAP` | `api_photosteps1_cd` | `PhotoStepS{N}Cd` |
 
-- 두 서브 테이블 모두 `_write_step_if_changed()`를 그대로 재사용한다(테이블 전체 비교 후
-  변경 시에만 `DELETE → INSERT`) — 전체 테이블과 동일한 변경 감지 방식.
+> ⚠️ **2026-09 변경 — `api_photosteps{N}` 은 더 이상 eqptype 전체를 담지 않는다.**
+> 예전에는 이 테이블만 eqptype 을 섞어서 전부 저장했다. 그런데 이 테이블을 읽는 조회 API 3곳
+> (`job-file-layer`/`bb-external`/`layer-ids`)이 **모두 `eqptype='PMAINF'` 로만 필터해** 읽어가서,
+> 나머지 eqptype 행은 아무도 쓰지 않는 데이터였다. 지금은 저장 시점에 걸러 PMAINF 전용으로
+> 만든다. 세 구분 중 **어디에도 속하지 않는 eqptype 행은 어느 테이블에도 저장되지 않는다.**
+> 조회 API 쪽 `eqptype='PMAINF'` 필터는 **그대로 남겨뒀다** — 적재 조건이 바뀌어도 조회 의미가
+> 코드에 남아 있도록 하기 위함이며, 동작상으로는 이제 중복 조건이다.
+
+- 세 테이블 모두 `_write_step_if_changed()`를 그대로 재사용한다(테이블 전체 비교 후
+  변경 시에만 `DELETE → INSERT`) — 동일한 변경 감지 방식.
+- ⚠️ **서브 테이블(`_ov`/`_cd`)은 반드시 원본 `df_ps` 에서 걸러야 한다.** PMAINF 로 먼저 거른
+  DataFrame 을 넘기면 POVLAY/XXXXXX 가 0건이 되어 서브 테이블이 비워진다(`scheduler.py` 의
+  `df_main` 주석 참고).
 - 각 모델은 `Meta.db_table`을 위 표의 테이블명과 **명시적으로 일치**시켰다 — 이전에
   `STEP_TABLE_MAP`이 실제 ORM 테이블명과 어긋났던 사고(위 "주의사항" §2026-09 항목 참고)가
   재발하지 않도록, 이번엔 문자열을 코드 두 곳(scheduler.py 의 맵 / models.py 의 db_table)에
   각각 손으로 맞춰 넣었다 — 둘 중 하나만 바꾸면 다시 어긋나므로 **두 값을 함께 바꿔야 한다.**
 - `STEP_EXTRA_EQPTYPE`은 아직 실제 eqptype 값이 정해지지 않아 `'XXXXXX'`를 임시값으로 쓴다.
   실제 값이 정해지면 `scheduler.py`의 이 상수 하나만 바꾸면 된다(테이블명/모델명은 변경 불필요).
-- 서브 테이블 쓰기 중 예외가 나면 전체 스텝 블록과 동일한 `except`에서 잡혀 `TARGET_LABEL_STEP`으로
+- 테이블 쓰기 중 예외가 나면 전체 스텝 블록과 동일한 `except`에서 잡혀 `TARGET_LABEL_STEP`으로
   실패 목록에 기록되고 RTDB 동기화 실패 알림 메일 대상이 된다(라인 단위로 뭉뚱그려 기록되며,
-  전체/POVLAY/XXXXXX 중 어느 쪽에서 실패했는지는 로그로 구분해야 한다).
-- **조회 결과 활용**: 아직 `views.py`에서 POVLAY 전용 테이블(`form_options_ovl_layer`)만 조회에
-  쓰인다. XXXXXX 전용 테이블은 이번엔 저장만 하고 조회 기능은 만들지 않았다.
+  PMAINF/POVLAY/XXXXXX 중 어느 쪽에서 실패했는지는 로그로 구분해야 한다).
+- **조회 결과 활용**: PMAINF 전용 테이블은 `form_options_job_file_layer`/`form_options_bb_external`/
+  `form_options_layer_ids` 가, POVLAY 전용 테이블은 `form_options_ovl_layer` 가 읽는다.
+  XXXXXX 전용 테이블은 저장만 하고 조회 기능은 아직 없다.
 
 ### 스텝 변경 이력 기록 (`PhotoStepChangeLog`, 2026-09 추가 — 변경 현황 화면용)
 
@@ -286,7 +304,9 @@ RTDB 소스(라인1·3~5·nv)와 DCQ 소스(라인2)가 같은 방식을 쓴다.
 상세는 `docs/CHANGE_STATUS.md` 참고.
 
 - **대상**: `STEP_TABLE_MAP`/`STEP_OVL_TABLE_MAP`/`STEP_EXTRA_TABLE_MAP` 12개 테이블 전부
-  (`_write_step_if_changed()` 호출부 3곳이 각각 `line`/`table_type`(`ALL`/`OV`/`CD`)을 함께 넘긴다).
+  (`_write_step_if_changed()` 호출부 3곳이 각각 `line`/`table_type`(`MF`/`OV`/`CD`)을 함께 넘긴다).
+  (2026-09: `api_photosteps{N}` 이 PMAINF 전용이 되면서 그 구분의 코드값이 `ALL`(전체) → `MF`(PMAINF)
+  로 바뀌었다. 기존 이력 행은 마이그레이션 `0041_photostep_pmainf_only` 가 함께 치환한다.)
 - **그룹핑**: 같은 diff 호출(=같은 테이블의 같은 감지 시점)에서 나온 행은 `sync_run_id`(UUID)로
   묶이고, `processid`별로 추가/삭제가 나뉜다 - 조회 API 가 `(sync_run_id, processid)` 단위로
   다시 묶어 그룹으로 반환한다.

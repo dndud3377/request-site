@@ -866,7 +866,7 @@
     "line_4": "Line 4",
     "line_5": "Line 5",
     "filter_table_type_all": "All table types",
-    "table_type_ALL": "General",
+    "table_type_MF": "PMAINF only",
     "table_type_OV": "POVLAY only",
     "table_type_CD": "XXXXXX (temp) only",
     "group_title": "{{line}} - {{processid}} changed",
