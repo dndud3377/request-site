@@ -113,6 +113,18 @@ STEP_TABLE_MAP = {
 }
 STEP_COLUMNS = ['processid', 'stepseq', 'descript', 'recipeid', 'areaname', 'eqptype', 'updated', 'layerid']
 
+# 변경 이력(PhotoStepChangeLog) diff 에서 제외할 컬럼 (2026-09 추가).
+#  - updated: 원본이 내용은 그대로 둔 채 갱신시각만 올리는 일이 잦다. 이 값까지 비교하면
+#    화면의 상세표가 보여주는 5개 컬럼이 전부 같은 "삭제 1건 + 추가 1건" 이 매번 쌓여,
+#    사용자에게는 똑같은 내용이 삭제·추가된 것처럼 보인다(의미 없는 잡음).
+#  - eqptype: 2026-09 부터 세 테이블이 eqptype 별로 분리되어 한 테이블 안에서는 값이
+#    항상 같다. 비교에 넣어도 diff 가 생길 수 없어 의미가 없다.
+# ⚠️ 이 두 컬럼은 "비교"에서만 빠진다 - 테이블 저장(STEP_COLUMNS)과 이력에 기록되는
+#    값에는 그대로 남는다. 재적재 여부(skip 판정)도 STEP_COLUMNS 전체로 판정하므로
+#    저장된 updated 값은 항상 최신이다(의뢰서 J-ayer/O-ayer 의 'Update 날짜' 컬럼이 이 값을 쓴다).
+STEP_DIFF_IGNORED_COLUMNS = ('eqptype', 'updated')
+STEP_DIFF_COLUMNS = [c for c in STEP_COLUMNS if c not in STEP_DIFF_IGNORED_COLUMNS]
+
 # 2026-09 추가: STEP_TABLE_MAP(위) 테이블에 저장할 eqptype. 이전에는 조회 결과의 eqptype 을
 # 전부 섞어서 저장했으나, 이 테이블을 읽는 조회 API(views.py 의 job-file-layer / bb-external /
 # layer-ids)가 모두 eqptype='PMAINF' 로만 필터해 읽어가므로 나머지 eqptype 행은 아무도 쓰지
@@ -194,23 +206,38 @@ def _write_if_changed(engine, table, line, df, key_cols, order_cols):
     return len(df)
 
 
-def _record_step_changes(line, table_type, key_cols, added, removed):
+def _by_diff_key(keys, key_cols):
+    """`key_cols` 순서의 행 튜플 집합을 {STEP_DIFF_COLUMNS 튜플: 행 dict} 로 바꾼다.
+
+    diff 는 좁은 키(STEP_DIFF_COLUMNS)로 판정하되 기록에는 전체 컬럼값을 쓰기 위한 변환이다.
+    좁은 키가 겹치는 행(= updated 만 다른 같은 행)은 하나로 합쳐진다 - 합쳐지는 것이 의도다.
     """
-    스텝 테이블 diff(added/removed 키 튜플 집합)를 `PhotoStepChangeLog` 에 기록한다.
+    idx = [key_cols.index(c) for c in STEP_DIFF_COLUMNS]
+    return {
+        tuple(key[i] for i in idx): dict(zip(key_cols, key))
+        for key in keys
+    }
+
+
+def _record_step_changes(line, table_type, added, removed):
+    """
+    스텝 테이블 diff(added/removed 행 dict 목록)를 `PhotoStepChangeLog` 에 기록한다.
     같은 diff 호출에서 나온 행들은 하나의 sync_run_id 로 묶여, 변경 현황 화면에서
     라인·테이블 구분·processid 단위로 그룹핑해 보여줄 수 있다.
+
+    added/removed 는 `STEP_COLUMNS` 전체를 담은 행 dict 목록이다 - diff 판정은
+    `STEP_DIFF_COLUMNS`(6개)로 하되, 기록에는 eqptype/updated 원본값까지 남긴다.
     """
     if not added and not removed:
         return
     sync_run_id = uuid.uuid4()
     detected_at = timezone.now()
     rows = []
-    for change_type, keys in (
+    for change_type, entries in (
         (PhotoStepChangeLog.CHANGE_ADDED, added),
         (PhotoStepChangeLog.CHANGE_REMOVED, removed),
     ):
-        for key in keys:
-            values = dict(zip(key_cols, key))
+        for values in entries:
             rows.append(PhotoStepChangeLog(
                 sync_run_id=sync_run_id,
                 line=line,
@@ -240,6 +267,12 @@ def _write_step_if_changed(engine, table, df, key_cols, line=None, table_type=No
     line/table_type 이 함께 전달되면, 변경 감지 시 added/removed diff 를
     `PhotoStepChangeLog`(변경 현황 화면용)에 기록한다. 이 기록이 실패해도 본 동기화
     쓰기(DELETE→INSERT)는 계속 진행한다 - 변경 이력은 부가 기능이라 동기화 자체를 막지 않는다.
+
+    ⚠️ 재적재 여부(skip 판정)와 이력 diff 는 기준이 다르다.
+      - skip 판정: key_cols(=STEP_COLUMNS) 전체. updated 만 바뀌어도 재적재하므로
+        테이블의 updated 값은 항상 최신이다.
+      - 이력 diff : STEP_DIFF_COLUMNS(updated/eqptype 제외). 갱신시각만 바뀐 행은
+        이력을 남기지 않는다 - 화면에서 삭제·추가가 똑같아 보이는 잡음을 막기 위함이다.
     """
     with engine.connect() as conn:
         rows = conn.execute(text(f"SELECT {', '.join(key_cols)} FROM {table}")).fetchall()
@@ -250,7 +283,13 @@ def _write_step_if_changed(engine, table, df, key_cols, line=None, table_type=No
 
     if line and table_type:
         try:
-            _record_step_changes(line, table_type, key_cols, new_keys - old_keys, old_keys - new_keys)
+            old_diff = _by_diff_key(old_keys, key_cols)
+            new_diff = _by_diff_key(new_keys, key_cols)
+            _record_step_changes(
+                line, table_type,
+                [new_diff[k] for k in new_diff.keys() - old_diff.keys()],
+                [old_diff[k] for k in old_diff.keys() - new_diff.keys()],
+            )
         except Exception as e:
             logger.error(_("[scheduler] {{request.col_step}} 변경 이력 기록 실패: {e}").format(e=e), exc_info=True)
 
