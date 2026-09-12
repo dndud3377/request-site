@@ -6127,6 +6127,81 @@ class WriteStepChangeLogTest(TestCase):
         # 변경이 없으면(=skip) 두 번째 호출에서는 새 이력이 전혀 추가되지 않아야 한다.
         self.assertEqual(PhotoStepChangeLog.objects.count(), count_after_first_write)
 
+    def _write_then_rewrite(self, first_row, second_row):
+        """first_row 로 적재한 뒤 이력을 비우고, second_row 로 다시 적재한다.
+
+        반환값은 (두 번째 호출의 반환 건수, 두 번째 호출로 새로 생긴 이력 QuerySet).
+        """
+        import pandas as pd
+        from . import scheduler
+        from .models import PhotoStepChangeLog
+
+        engine = self._make_engine()
+        scheduler._write_step_if_changed(
+            engine, 'step_test', pd.DataFrame([first_row]), scheduler.STEP_COLUMNS,
+            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_MF,
+        )
+        PhotoStepChangeLog.objects.all().delete()
+
+        count = scheduler._write_step_if_changed(
+            engine, 'step_test', pd.DataFrame([second_row]), scheduler.STEP_COLUMNS,
+            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_MF,
+        )
+        return engine, count, PhotoStepChangeLog.objects.all()
+
+    def test_updated_only_change_records_no_history(self):
+        """갱신시각(updated)만 바뀌면 이력을 남기지 않는다 - 화면에서 삭제·추가가
+        똑같아 보이던 잡음의 원인(2026-09 수정)."""
+        engine, count, logs = self._write_then_rewrite(
+            self._row(updated='202601010900'),
+            self._row(updated='202602021530'),
+        )
+
+        self.assertEqual(logs.count(), 0)      # 이력은 남지 않는다
+        self.assertEqual(count, 1)             # 재적재는 그대로 수행된다
+
+    def test_updated_only_change_still_refreshes_stored_value(self):
+        """이력은 안 남겨도 테이블의 updated 값은 최신으로 갱신돼야 한다.
+        (의뢰서 J-ayer/O-ayer 의 'Update 날짜' 컬럼이 이 값을 읽어간다)"""
+        from sqlalchemy import text
+
+        engine, _count, _logs = self._write_then_rewrite(
+            self._row(updated='202601010900'),
+            self._row(updated='202602021530'),
+        )
+
+        with engine.connect() as conn:
+            stored = conn.execute(text("SELECT updated, eqptype FROM step_test")).fetchall()
+        self.assertEqual([tuple(r) for r in stored], [('202602021530', 'E1')])
+
+    def test_eqptype_only_change_records_no_history(self):
+        """eqptype 만 바뀌어도 이력을 남기지 않는다(테이블이 eqptype 별로 분리돼 의미가 없다)."""
+        engine, count, logs = self._write_then_rewrite(
+            self._row(eqptype='PMAINF'),
+            self._row(eqptype='POVLAY'),
+        )
+
+        self.assertEqual(logs.count(), 0)
+        self.assertEqual(count, 1)
+
+    def test_content_change_still_records_history(self):
+        """대조군 - 화면에 보이는 컬럼(descript)이 바뀌면 삭제·추가가 정상 기록된다."""
+        from .models import PhotoStepChangeLog
+
+        engine, _count, logs = self._write_then_rewrite(
+            self._row(descript='D'),
+            self._row(descript='D-변경'),
+        )
+
+        self.assertEqual(logs.count(), 2)
+        removed = logs.get(change_type=PhotoStepChangeLog.CHANGE_REMOVED)
+        added = logs.get(change_type=PhotoStepChangeLog.CHANGE_ADDED)
+        self.assertEqual(removed.descript, 'D')
+        self.assertEqual(added.descript, 'D-변경')
+        # diff 에서 제외된 컬럼도 이력에는 원본값이 그대로 남아야 한다.
+        self.assertEqual(added.updated, 'U1')
+        self.assertEqual(added.eqptype, 'E1')
+
 
 class PhotoStepChangesApiTest(TestCase):
     """GET /api/photostep-changes/ 가 sync_run_id+processid 로 그룹핑해 반환하는지 검증한다."""
