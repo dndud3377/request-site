@@ -1143,6 +1143,106 @@ class PEStageReviewerFlowTest(TestCase):
             self.assertEqual(n.subject, f'[P 완료 통보] {doc.title}')
             self.assertEqual(len(n.recipients), 1, '팀별로 분리 발송되어 한 통에 다른 팀이 섞이지 않아야 한다')
 
+    def test_notify_rjo_completed_sent_when_r_j_o_all_done(self):
+        """(2026-09) 2구역 R + 3구역 J·O 가 모두 완료되면 TE_P 팀 전원에게 참고 통보가 간다."""
+        doc = self._advance_to_parallel()  # R 은 이미 완료된 상태로 진입
+
+        self.client.force_authenticate(user=self.j_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'J'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'J', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(
+            MailNotification.objects.filter(document=doc, event_type='notify_rjo_completed').exists(),
+            'J만 끝나고 O가 아직이면 통보가 나가면 안 된다',
+        )
+
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        notis = list(MailNotification.objects.filter(document=doc, event_type='notify_rjo_completed'))
+        self.assertEqual(len(notis), 1, 'R+J+O 완료 시점에 정확히 1통만 발송돼야 한다')
+        noti = notis[0]
+        self.assertEqual(noti.subject, f'[R/J/O 완료 통보] {doc.title}')
+        for mail in (self.p_owner.mail, self.p_reviewer.mail, self.p_outsider.mail):
+            self.assertIn(mail, noti.recipients, 'TE_P 팀 전원에게 가야 한다')
+
+    def test_notify_rjo_completed_scoped_to_current_round(self):
+        """반려 후 재상신으로 새 회차가 열리면, 이전 회차 J·O 합의 이력이 새 회차의
+        R 합의 시점 판정에 섞여 잘못 통보가 나가면 안 된다(회차 기준 판정)."""
+        doc = self._advance_to_parallel()
+
+        # 1회차: J, O 모두 완료 → 통보 1통
+        self.client.force_authenticate(user=self.j_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'J'}, format='json')
+        self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'J', 'comment': ''}, format='json')
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O', 'comment': ''}, format='json')
+        self.assertEqual(
+            MailNotification.objects.filter(document=doc, event_type='notify_rjo_completed').count(), 1
+        )
+
+        # P 담당자가 1회차를 반려 → 문서 반려, 재상신으로 2회차가 열린다
+        self.client.force_authenticate(user=self.p_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/reject-step/', {'agent': 'P', 'comment': '반려'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/resubmit/',
+                             {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        # 2회차 R 지정·합의만 진행 — J/O 는 2회차에 막 생성됐을 뿐 아직 미합의
+        self.client.force_authenticate(user=self.r_user)
+        self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+        }, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        # 1회차 이력(J✅/O✅)이 2회차 판정에 섞여 통보가 또 나가면 안 된다
+        self.assertEqual(
+            MailNotification.objects.filter(document=doc, event_type='notify_rjo_completed').count(), 1,
+            '2회차 R 합의 시점엔 2회차 J·O 가 아직 없으므로 추가 통보가 나가면 안 된다',
+        )
+
+        # 2회차 J, O 도 마저 완료하면 그제서야 2번째 통보가 나간다
+        self.client.force_authenticate(user=self.j_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'J'}, format='json')
+        self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'J', 'comment': ''}, format='json')
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O', 'comment': ''}, format='json')
+
+        self.assertEqual(
+            MailNotification.objects.filter(document=doc, event_type='notify_rjo_completed').count(), 2,
+            '2회차 R+J+O 완료 시점에 2번째 통보가 나가야 한다',
+        )
+
+    def test_notify_rjo_completed_sent_with_r_o_only_when_j_skipped(self):
+        """'기타 목적이 Overlay 변경뿐인 문서'는 J 단계 자체가 없다 — R+O 완료만으로 통보한다."""
+        doc = self._advance_to_parallel(other_purpose=['Overlay 변경'])
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='J', round=1).exists())
+
+        self.client.force_authenticate(user=self.o_user)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.assertTrue(
+            MailNotification.objects.filter(document=doc, event_type='notify_rjo_completed').exists(),
+            'J가 없는 문서는 R+O 완료만으로 통보가 나가야 한다',
+        )
+
     def test_p_reviewer_loginids_denied_before_claim(self):
         doc = self._advance_to_parallel()
         # 아직 검토중 선점 전(assignee 없음) — 합의 자체가 assignee 본인만 가능하므로 403
@@ -4904,6 +5004,35 @@ class MailLineFilterTest(TestCase):
         individual_emails, team_groups = mailer.resolve_reject_recipients(self.doc)
         self.assertIn('mlf_rej_on@company.com', team_groups.get('J', []))
         self.assertNotIn('mlf_rej_off@company.com', team_groups.get('J', []))
+
+    def test_submit_subscriber_recipients_are_filtered(self):
+        """(2026-09) '상신 받기' 구독자도 라인 필터를 탄다 — 이전엔 무조건 발송됐다."""
+        UserProfile.objects.create(
+            loginid='mlf_sub_on', mail='mlf_sub_on@company.com', role='TE_P',
+            receive_all_mail=False, receive_submit_mail=True,
+        ).mail_lines.set([self.line1])
+        UserProfile.objects.create(
+            loginid='mlf_sub_off', mail='mlf_sub_off@company.com', role='TE_P',
+            receive_all_mail=False, receive_submit_mail=True,
+        ).mail_lines.set([self.line3])
+        recipients = mailer.resolve_submit_subscriber_recipients(self.doc)
+        self.assertIn('mlf_sub_on@company.com', recipients)
+        self.assertNotIn(
+            'mlf_sub_off@company.com', recipients,
+            '상신 받기를 켰어도 라인 필터에 걸리면 받지 않아야 한다',
+        )
+
+    def test_notify_rjo_completed_recipients_are_filtered(self):
+        """(2026-09 신설) R/J/O 완료 통보(TE_P 팀 전원)도 라인 필터를 탄다."""
+        UserProfile.objects.create(
+            loginid='mlf_p_on', mail='mlf_p_on@company.com', role='TE_P', receive_all_mail=False,
+        ).mail_lines.set([self.line1])
+        UserProfile.objects.create(
+            loginid='mlf_p_off', mail='mlf_p_off@company.com', role='TE_P', receive_all_mail=False,
+        ).mail_lines.set([self.line3])
+        noti = mailer.enqueue_notify_rjo_completed(self.doc)
+        self.assertIn('mlf_p_on@company.com', noti.recipients)
+        self.assertNotIn('mlf_p_off@company.com', noti.recipients)
 
     def test_voc_mail_is_not_filtered(self):
         """VOC 등록 메일은 MASTER 전원에게 가며, 라인 개념이 없어 필터를 타지 않는다."""
