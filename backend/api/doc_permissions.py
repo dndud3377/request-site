@@ -139,12 +139,16 @@ def _pl_stage_open(document):
     일반/'MAP 삭제'/'ADI CD 변경' 등 경로마다 PL 다음에 열리는 첫 단계의 agent 가
     다르므로(R / P·R·J·O / P·J), "이번 회차에 PL·SA 를 제외한 step 이 하나도 없다"로
     경로 무관하게 판정한다.
+
+    새 쿼리 대신 `document.approval_steps.all()`(prefetch 되어 있으면 캐시, 아니면 평소대로
+    쿼리 1건)을 파이썬에서 계산한다 — 목록 직렬화에서 문서마다 이 함수가 여러 번 불려도
+    (can_edit, can_requester_resubmit) DB 를 추가로 때리지 않기 위함(2026-09, 성능 개선).
     """
-    from .models import ApprovalStep
-    max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
-    return not ApprovalStep.objects.filter(
-        document=document, round=max_round
-    ).exclude(agent__in=('PL', 'SA')).exists()
+    steps = list(document.approval_steps.all())
+    if not steps:
+        return True
+    max_round = max(s.round for s in steps)
+    return not any(s.round == max_round and s.agent not in ('PL', 'SA') for s in steps)
 
 
 def can_requester_resubmit(user, document):
@@ -183,13 +187,16 @@ def can_edit(user, document, my_group_ids=None):
     if st == 'rejected':
         return can_withdraw(user, document, my_group_ids)
     if st in ('under_review', 'submitted'):
-        from .models import ApprovalStep
-        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max'] or 1
+        # document.approval_steps.all() 사용 이유는 _pl_stage_open 과 동일(prefetch 캐시 재사용,
+        # 목록 직렬화에서 문서마다 새 쿼리를 만들지 않기 위함 — 2026-09 성능 개선).
+        steps = list(document.approval_steps.all())
+        max_round = max((s.round for s in steps), default=1)
         # 다중 PL: 현재 회차의 pending PL 단계 담당자 누구나 수정(수정 후 상신) 가능
-        is_pending_pl = ApprovalStep.objects.filter(
-            document=document, agent='PL', action='pending', round=max_round,
-            assignee__loginid=loginid,
-        ).exists()
+        is_pending_pl = any(
+            s.agent == 'PL' and s.action == 'pending' and s.round == max_round
+            and s.assignee_id and s.assignee.loginid == loginid
+            for s in steps
+        )
         if is_pending_pl:
             return True
         if document.designated_pl and document.designated_pl.loginid == loginid:
