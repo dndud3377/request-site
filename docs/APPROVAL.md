@@ -698,6 +698,59 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   아닌 이 경로) `requesterResubmit` API를 호출한다.
 - 테스트: `backend/api/tests.py::RequesterResubmitTest`
 
+### Case S — O(OVL) 단계: Oayer 표가 비어 있으면 결재 경로에서 제외 (2026-09)
+
+E(MASK)가 `has_ppid_plel()`(J-layer의 plel 키워드)로 생성 여부를 판정하는 것과 동일한 패턴을
+O(OVL)에도 적용했다. 판정: `RequestDocument.has_oayer_rows()` — 활성(`st != 'X'`) O-layer 행이
+**하나라도** 있으면 참. 오예이어 표 자체가 비어 있으면(신규 문서 기본값이 빈 배열) OVL 팀이
+검토할 대상이 없으므로 O 단계를 만들지 않는다.
+
+- **생성 시점**: `_advance_to_parallel`(R 합의 시점, 일반 경로) — `has_oayer_rows()`가 거짓이면
+  O step 자체를 생성하지 않는다. Only MAP·ADI CD 변경은 원래부터 O가 없고, 'MAP 삭제'
+  (`_create_map_delete_edit_parallel`)는 O가 병렬 묶음의 필수 구성원이라 이 판정을 적용하지
+  않는다(O-layer 작성이 전제된 경로이므로 대상이 아니다).
+- **최종 승인 판정**: `o_approved`는 `has_oayer_rows()`가 거짓이면 무조건 True로 둔다
+  (`skip_j_stage()`의 `j_approved`와 같은 패턴) — 그렇지 않으면 O를 기다리며 `under_review`에
+  영구 정지한다.
+- **표시**: 메일 결재 경로 카드(`mailer._route_rows`)와 결재 상세보기 '결재 경로' 탭
+  (`PagedDetailView.tsx`의 `hasOayerRows`)에서 O 행을 '해당없음'으로 표시한다(E·plel과 동일한
+  na 분기). 결재현황 목록의 병렬 단계 그리드는 step 부재만으로 자동으로 '해당없음'이 되므로
+  별도 처리가 필요 없다(J와 동일).
+- ⚠️ 판정은 **단계 생성 시점**(R 합의)에 이뤄진다 — 이미 O step이 생성된 기존 문서·회차는
+  영향 없다.
+- 테스트: `backend/api/tests.py::HasOayerRowsTest`
+
+### Case T — 반려 후 재상신 시 2구역(R) 생략 (`resubmit`, 2026-09)
+
+3구역(P/J/O/E) 또는 3구역 **비고정** 후결자(RA)가 반려한 뒤, MAP 정보·Jayer 정보·의뢰 상세
+(line~process_id)에 아무 변경 없이 재상신하면 — R이 이미 그 내용을 승인한 뒤이므로 — 새 회차에
+**2구역(R)을 다시 만들지 않고** PL 전원 합의 직후 곧바로 3구역(P/J/O/E/RA)을 생성한다.
+**일반 경로에만** 적용된다(Only MAP·MAP 삭제·ADI CD 변경은 R이 없거나 구조가 달라 대상이 아니다).
+
+- **항상 R을 다시 거치는 경우(생략 대상 아님)**:
+  - R 본인이 반려한 경우 — R이 이 내용을 승인한 적이 없다.
+  - 3구역 **고정** 후결자(`settings.POST_APPROVER_LOGINID`)가 반려한 경우 — 최종 관문의 반려는
+    변경 여부와 무관하게 전체를 다시 확인시킨다.
+  - PL/SA가 반려한 경우 — 애초에 R을 만들기 전이라 생략 대상이 아니다(항상 정상 생성).
+- **판정(`RequestDocumentViewSet._should_skip_r_stage`, `resubmit` 호출 시점)**: 가장 최근
+  `RejectionSnapshot`(반려 시점 스냅샷)과 지금 재상신하려는(수정 반영 완료된) 문서 내용을
+  비교한다 — `jayerRows` 전체와, `RequestDocument.MAP_INFO_FIELDS`(MAP 정보) +
+  `DETAIL_LINE_TO_PROCESS_ID_FIELDS`(의뢰 상세 line~process_id 구간) 필드가 하나라도 다르면
+  R을 정상 생성한다.
+- **동작**: 조건이 성립하면 새 회차 번호를 `document.r_skip_round`에 1회용으로 기록해 두고,
+  PL 전원 합의 시점(`_open_stage_after_pl`)에 그 회차와 일치하면 R을 만들지 않고 바로
+  `_advance_to_parallel`을 호출한다(플래그는 즉시 소진). 3구역 단계들의 기한(due_date)
+  기준일은 **PL 전원 합의 시각**(마지막으로 합의된 PL/SA step의 `acted_at`)이다.
+- **표시**: R step이 없는데 3구역(P/J/O/E/RA) step은 있는 회차는 `RequestDocument.is_r_skipped()`로
+  판정해, 메일 결재 경로 카드와 결재 상세보기 '결재 경로' 탭에서 R을 '대기'가 아니라
+  '해당없음'으로 표시한다.
+- ⚠️ **알려진 제약**: 비교는 재상신(`resubmit` 호출) 시점의 저장값 기준이다. 재상신 이후 PL이
+  다시 내용을 고쳐 합의하는 경우(Case D `peer_submit`)는 이 판정에 반영되지 않는다.
+- ⚠️ **알려진 부수효과**: R이 생략된 회차는 `_is_r_zone_complete`가 항상 거짓이 되어, "R+J+O
+  완료 시 P팀 참고 통보"(`notify_rjo_completed`) 메일이 그 회차엔 발송되지 않는다(R 자체가
+  없으므로 자연스러운 결과).
+- 테스트: `backend/api/tests.py::ShouldSkipRStageTest`, `RSkipStageIntegrationTest`
+
 ### 영업일 계산 (`utils.py:158` `calculate_business_due_date`)
 - start_date(당일 포함) 기준 n번째 영업일. 주말 + `Holiday(isholiday='Y')` 제외.
 

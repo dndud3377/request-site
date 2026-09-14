@@ -156,6 +156,10 @@ class RequestDocument(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일')
     submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='상신일')
+    # 재상신 시 2구역(R)을 생략해야 할 회차 번호(1회용 플래그). `resubmit()`이 조건 성립 시
+    # 새 회차 번호를 기록하고, PL 전원 합의 시점(`_open_stage_after_pl`)에 그 회차와 일치하면
+    # R을 만들지 않고 바로 3구역을 생성한 뒤 소진(None)한다. 평소엔 항상 null.
+    r_skip_round = models.PositiveIntegerField(null=True, blank=True, verbose_name='R 생략 회차')
 
     class Meta:
         verbose_name = '의뢰서'
@@ -276,6 +280,41 @@ class RequestDocument(models.Model):
             if self.VALIDATION_KEYWORD in pp.lower():
                 return True
         return False
+
+    def has_oayer_rows(self):
+        """활성(st!='X') O-layer 행이 하나라도 있는지 여부.
+
+        참이어야 O(OVL) 단계가 결재 경로에 포함된다 — 검증할 O-layer 데이터 자체가
+        없으면(빈 표) OVL 팀이 검토할 대상이 없으므로 O 단계를 생성하지 않는다
+        (has_ppid_plel 과 같은 패턴, E 단계의 plel 키워드 대신 "행 존재 여부"로 판정).
+        oayerRows 는 additional_notes JSON 최상위에 저장되며, 비활성 행도 함께
+        저장되므로 여기서 직접 걸러야 한다.
+        """
+        oayer_rows = self.get_detail().get('oayerRows', [])
+        return any(row.get('st') != 'X' for row in oayer_rows)
+
+    # "의뢰 상세" 폼에서 line ~ process_id 구간 필드(프론트 DetailFormState 필드 순서와 동일).
+    # 반려 후 재상신 시 2구역(R) 생략 여부 판정에 쓰인다(아래 RequestDocumentViewSet
+    # ._should_skip_r_stage 참고) — MAP 정보(MAP_INFO_FIELDS)와는 별개 구간이다.
+    DETAIL_LINE_TO_PROCESS_ID_FIELDS = (
+        'line', 'process_selection', 'partid_selection', 'customer_name',
+        'customer_requirement', 'other_purpose', 'source_line', 'source_partid',
+        'change_purpose_note', 'flow_chart', 'process_id',
+    )
+
+    def is_r_skipped(self, round=None):
+        """지정(또는 현재) 회차에서 2구역(R)이 생략된 채 3구역으로 바로 진행됐는지 여부.
+
+        R(+RV) step이 없는데 3구역(P/J/O/E/RA) step은 있으면 생략된 것으로 본다
+        (`RequestDocumentViewSet._should_skip_r_stage` 조건 성립 시의 결과 — 결재
+        경로 탭·메일 카드에서 R을 '대기'가 아니라 '해당없음'으로 표시하기 위한 판정).
+        """
+        if round is None:
+            round = self.approval_steps.aggregate(models.Max('round'))['round__max'] or 1
+        steps = self.approval_steps.filter(round=round)
+        has_r = steps.filter(agent__in=('R', 'RV')).exists()
+        has_zone3 = steps.filter(agent__in=('P', 'J', 'O', 'E', 'RA')).exists()
+        return (not has_r) and has_zone3
 
     # 중단 요청 메일 수신 범위·MAP 정보 잠금 판정에 쓰는 "구역(zone)" — CLAUDE.md "용어 정리" 표와
     # 같다. 구역은 순서대로 진행되며(2구역이 없는 경로는 건너뛴다), 같은 구역 안은 병렬이다.
