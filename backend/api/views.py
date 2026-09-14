@@ -160,8 +160,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'post', 'put', 'patch', 'head', 'options']
     # review_items__reviewers 프리페치: 목록 직렬화의 my_pending_review_items 가 문서마다
     # 항목·검토자를 다시 조회하지 않도록 한다.
+    # approval_steps(+assignee)/pause_requests(+requester)/withdraw_requests(+requester) 도
+    # 직렬화(ApprovalStepSerializer, get_pause_request, get_withdraw_request)와
+    # doc_permissions(can_edit 등)이 문서마다 다시 조회하던 것을 없앤다(2026-09, 결재 현황 로딩 속도 개선).
     queryset = RequestDocument.objects.select_related('requester', 'designated_pl').prefetch_related(
-        'review_items__reviewers'
+        'review_items__reviewers',
+        Prefetch('approval_steps', queryset=ApprovalStep.objects.select_related('assignee')),
+        Prefetch('pause_requests', queryset=PauseRequest.objects.select_related('requester')),
+        Prefetch('withdraw_requests', queryset=WithdrawRequest.objects.select_related('requester')),
     ).all()
     permission_classes = [IsAuthenticatedInProd]
     pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
