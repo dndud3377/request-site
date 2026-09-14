@@ -55,6 +55,20 @@ function buildFlowComboColors(rows: FlowChartRow[], refKey: string): Map<string,
 }
 // ── 흐름도 "조합 강조 색상" 기능 끝 ──────────────────────────────────────
 
+/** 지도 편차·예외 구역 칩 — 값 문자열 안의 숫자(um/mm) 토큰만 진하게 강조할 때 쓰는 패턴과 스타일. */
+const NUMERIC_VALUE_PATTERN = /\d+(?:\.\d+)?(?:um|mm)/g;
+const numberHighlightStyle: React.CSSProperties = { color: 'var(--accent-hover)', fontWeight: 800 };
+
+function renderWithHighlightedNumbers(value: string): React.ReactNode {
+  const parts = value.split(NUMERIC_VALUE_PATTERN);
+  const matches = value.match(NUMERIC_VALUE_PATTERN) ?? [];
+  return parts.reduce<React.ReactNode[]>((acc, part, i) => {
+    acc.push(part);
+    if (matches[i]) acc.push(<span key={i} style={numberHighlightStyle}>{matches[i]}</span>);
+    return acc;
+  }, []);
+}
+
 function FlowChartTable({
   rows,
   currentLine,
@@ -1608,7 +1622,7 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
 
   // ===== Chip =====
   const Chip = ({
-    label, value, style, changed, fieldKey, buildValue,
+    label, value, style, changed, fieldKey, buildValue, highlightNumbers,
   }: {
     label: string;
     value: string | undefined | null;
@@ -1617,6 +1631,8 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
     fieldKey?: string;
     /** 합성 값 칩(지도 편차·EA·뼈찜 등)의 회차별 값 생성기 — 칩 표시와 동일한 함수를 넘긴다. */
     buildValue?: (d: Partial<DetailFormState>) => string;
+    /** 값 문자열 안의 숫자(um/mm) 토큰만 진하게 강조한다 — 지도 편차·예외 구역 칩 전용. */
+    highlightNumbers?: boolean;
   }) => {
     const [histOpen, setHistOpen] = useState(false);
     if (!value) return null;
@@ -1652,7 +1668,9 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
           </>
         )}
         <div style={{ ...fieldLabel, textAlign: merged.textAlign as any }}>{label}</div>
-        <div style={{ ...fieldValue, textAlign: merged.textAlign as any }}>{value}</div>
+        <div style={{ ...fieldValue, textAlign: merged.textAlign as any }}>
+          {highlightNumbers ? renderWithHighlightedNumbers(value) : value}
+        </div>
       </div>
     );
   };
@@ -2082,12 +2100,12 @@ type Page = { label: string; content: React.ReactNode };
                   ? ['map_change_top','map_value_x_top','map_value_y_top','map_change_bottom','map_value_x_bottom','map_value_y_bottom','map_reason']
                   : ['map_change','map_value_x','map_value_y','map_reason']
                 ).some(k => changedFields.has(k));
-                return <Chip label={t('request.map')} value={buildMapValue(detail)} style={chipWide} changed={mapChanged} buildValue={buildMapValue} />;
+                return <Chip label={t('request.map')} value={buildMapValue(detail)} style={chipWide} changed={mapChanged} buildValue={buildMapValue} highlightNumbers />;
               })()}
               {(isR || isO || isP) && detail.ea_change && (() => {
                 const eaChanged = changedFields.has('ea_change') || changedFields.has('ea_value');
                 return (
-                  <Chip label={t('request.ea_change')} value={buildEaValue(detail)} style={chipWide} changed={eaChanged} buildValue={buildEaValue} />
+                  <Chip label={t('request.ea_change')} value={buildEaValue(detail)} style={chipWide} changed={eaChanged} buildValue={buildEaValue} highlightNumbers />
                 );
               })()}
             </div>
