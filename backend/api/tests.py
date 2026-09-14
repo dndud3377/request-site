@@ -6367,7 +6367,11 @@ class SyncRtdbStepCountDropTest(TestCase):
         self.addCleanup(mail_patcher.stop)
 
     def _run_with_step_responses(self, step_responses):
-        """step_responses: get_data_from_rtdb 가 스텝 조회 호출마다 순서대로 반환할 DataFrame 목록."""
+        """step_responses: PMAINF eqptype 호출에 대해서만 get_data_from_rtdb 가 순서대로 반환할
+        DataFrame 목록. (2026-09: 스텝 조회가 eqptype별 독립 호출로 분리되면서, 이 테스트가 검증하는
+        PMAINF 급감/재시도 시나리오와 섞이지 않도록 POVLAY/XXXXXX 호출에는 즉시 1건짜리 정상 응답을
+        준다.)"""
+        import pandas as pd
         step_calls = {'n': 0}
 
         def fake_get_data_from_rtdb(payload, token):
@@ -6376,6 +6380,12 @@ class SyncRtdbStepCountDropTest(TestCase):
                 return self._pp_df()
             if table_name.startswith('X_'):
                 return self._pc_df()
+            eqptype = payload['query']['filter']['eqptype']['$eq']
+            if eqptype != self.scheduler.STEP_MAIN_EQPTYPE:
+                return pd.DataFrame([{
+                    'processid': f'{eqptype}1', 'stepseq': '1', 'descript': 'D', 'recipeid': 'R',
+                    'areaname': 'A', 'eqptype': eqptype, 'updated': 'U', 'layerid': 'L',
+                }])
             idx = step_calls['n']
             step_calls['n'] += 1
             return step_responses[idx]
@@ -6414,13 +6424,15 @@ class SyncRtdbStepCountDropTest(TestCase):
         self.assertEqual(total, 100)  # 기존 데이터 그대로 보존
         self.mock_mail.assert_called_once()
         failures_arg = self.mock_mail.call_args[0][0]
-        self.assertIn({'context': '라인1', 'target': self.scheduler.TARGET_LABEL_STEP}, failures_arg)
+        # PMAINF 전용 실패 라벨로 개별 기록된다(2026-09 대칭 라벨링 - 예전엔 TARGET_LABEL_STEP 그대로였다).
+        self.assertIn({'context': '라인1', 'target': self.scheduler.TARGET_LABEL_STEP_MF}, failures_arg)
 
 
 class SyncRtdbStepEqptypeSplitTest(TestCase):
-    """(2026-09 추가) 한 번의 스텝 조회 결과가 eqptype 기준으로 세 테이블에 나뉘어 저장되는지
-    검증한다 - PMAINF 는 STEP_TABLE_MAP, POVLAY 는 STEP_OVL_TABLE_MAP, STEP_EXTRA_EQPTYPE
-    ('XXXXXX' 임시값)는 STEP_EXTRA_TABLE_MAP. 어디에도 해당하지 않는 eqptype 행은 저장되지 않는다.
+    """(2026-09 도입, 2026-09 재변경) eqptype(PMAINF/POVLAY/XXXXXX)별로 독립 조회한 결과가 각자의
+    전용 테이블에 저장되는지 검증한다 - PMAINF 는 STEP_TABLE_MAP, POVLAY 는 STEP_OVL_TABLE_MAP,
+    STEP_EXTRA_EQPTYPE('XXXXXX' 임시값)는 STEP_EXTRA_TABLE_MAP. `STEP_EQPTYPE_TARGETS`에 없는
+    eqptype 은 애초에 조회 대상이 아니다(어느 테이블에도 저장되지 않는다).
     """
 
     def _make_engine(self):
@@ -6535,6 +6547,44 @@ class SyncRtdbStepEqptypeSplitTest(TestCase):
         self.assertEqual([log.processid for log in main_logs], ['P1'])
         self.assertTrue(all(log.eqptype == 'PMAINF' for log in main_logs))
         self.assertFalse(PhotoStepChangeLog.objects.filter(table_type='ALL').exists())
+
+    def test_one_eqptype_failure_does_not_block_others(self):
+        """(2026-09 재변경) POVLAY 조회가 3회 재시도 후에도 실패해도 PMAINF/XXXXXX 저장은 계속
+        진행되고, 실패는 라인 단위로 뭉뚱그려지지 않고 POVLAY 전용 라벨로만 개별 기록된다."""
+        from sqlalchemy import create_engine, text
+
+        def fake_get_data_from_rtdb(payload, token):
+            import pandas as pd
+            table_name = payload['query']['table_name']
+            if table_name.startswith('A_'):
+                return self._pp_df()
+            if table_name.startswith('X_'):
+                return self._pc_df()
+            eqptype = payload['query']['filter']['eqptype']['$eq']
+            if eqptype == self.scheduler.STEP_OVL_EQPTYPE:
+                return None  # 매 시도 실패 - 3회 재시도 모두 소진되어 fetch() 가 None 반환
+            return pd.DataFrame([{
+                'processid': f'{eqptype}_P1', 'stepseq': '10', 'descript': 'D', 'recipeid': 'R',
+                'areaname': 'A', 'eqptype': eqptype, 'updated': 'U', 'layerid': 'L',
+            }])
+
+        with patch.object(self.scheduler, 'get_data_from_rtdb', side_effect=fake_get_data_from_rtdb):
+            self.scheduler.sync_rtdb_options()
+
+        verify_engine = create_engine(str(self.engine.url))
+        with verify_engine.connect() as conn:
+            main_ids = [r[0] for r in conn.execute(text("SELECT processid FROM api_photosteps1")).fetchall()]
+            ov_ids = [r[0] for r in conn.execute(text("SELECT processid FROM api_photosteps1_ov")).fetchall()]
+            cd_ids = [r[0] for r in conn.execute(text("SELECT processid FROM api_photosteps1_cd")).fetchall()]
+
+        self.assertEqual(main_ids, ['PMAINF_P1'])  # POVLAY 실패와 무관하게 정상 저장
+        self.assertEqual(ov_ids, [])  # POVLAY 는 실패해 저장되지 않음(신규라 기존 데이터도 없음)
+        self.assertEqual(cd_ids, ['XXXXXX_P1'])  # XXXXXX 도 POVLAY 실패 영향 없이 정상 저장
+
+        self.mock_mail.assert_called_once()
+        failures_arg = self.mock_mail.call_args[0][0]
+        # POVLAY 전용 라벨로 정확히 1건만 기록된다 - outer/inner 이중 기록이 없는지도 함께 검증.
+        self.assertEqual(failures_arg, [{'context': '라인1', 'target': self.scheduler.TARGET_LABEL_STEP_OV}])
 
 
 class LayerFilterSetTest(TestCase):

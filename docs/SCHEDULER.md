@@ -66,7 +66,7 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 |-------------|-----------------------------------|
 | `api_processproduct` | `A_{suffix}.B` / `partnumber, descript, pkgtype_2` / `X $eq "Y"` |
 | `api_productprocessid` | `X_{suffix}.Y` / `partnumber, processid` / `X $neq " "` |
-| `api_photosteps1`/`api_photosteps3~5` (스텝) + `_ov`/`_cd` 하위 테이블 | `O_{suffix}.W` / `processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid` / `a $eq "aaaaaa", e/l/p/r/s $neq " "` |
+| `api_photosteps1`/`api_photosteps3~5` (스텝) + `_ov`/`_cd` 하위 테이블 | `O_{suffix}.W` / `processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid` / `a $eq "aaaaaa", e/l/p/r/s $neq " "` **+ eqptype 조건(아래 참고, 라인당 최대 3회 독립 호출)** |
 
 ```
 RTDB(REST API)  →  /api/queries
@@ -77,6 +77,11 @@ RTDB(REST API)  →  /api/queries
 쓰기:      다를 때만 DELETE(line) → to_sql(대상 테이블) - "쓰기 전략" 절 참고
 사이클 종료: 실패 목록이 있으면 mailer.enqueue_rtdb_sync_failed() 로 알림 메일 1통 적재
 ```
+
+> 공정-품목/품목-공정ID는 라인당 조회 1번이지만, **스텝은 2026-09부터 eqptype(PMAINF/POVLAY/
+> XXXXXX)별로 필터를 걸어 라인당 최대 3번 독립 조회**한다 — 상세는 아래 "스텝 eqptype 기준
+> 테이블 분리" 절 참고. 위 다이어그램의 재시도·실패기록·쓰기·메일 적재 흐름 자체는 각 eqptype
+> 호출에도 동일하게(각자 독립적으로) 적용된다.
 
 - **재시도**(2026-08 추가): `RTDB_FETCH_MAX_RETRIES`(3회)/`RTDB_FETCH_RETRY_DELAY_SEC`(5초) 상수로
   관리한다(`scheduler.py`). `get_data_from_rtdb()`는 예외도 내부에서 잡아 `None`으로 통일해 반환하므로,
@@ -111,9 +116,12 @@ response.json() → data
   있으면 무조건 폐기한다.
 - **검증**: `backend/api/tests.py`의 `GetDataFromRtdbBatchErrorTest`
   (`status.errors` 있음 → 폐기+로그, 없음/`status` 키 자체 없음 → 기존과 동일하게 정상 동작).
-- **스텝 조회 전 대기**(2026-08 추가): 라인별 스텝(col_step) 조회 직전에 `RTDB_STEP_PRE_FETCH_DELAY_SEC`
-  (3초) 대기한다 - RTDB 쪽 데이터 갱신이 조회 시점에 아직 안 끝나 있는 경우를 대비한다. 재시도와
-  달리 **실패 여부와 무관하게 매번** 스텝 조회 전에 한 번 대기한다.
+- **스텝 조회 전 대기**(2026-08 추가, 2026-09 eqptype별 분리 후 호출마다 적용): 라인별 스텝(col_step)
+  조회 직전에 `RTDB_STEP_PRE_FETCH_DELAY_SEC`(3초) 대기한다 - RTDB 쪽 데이터 갱신이 조회 시점에
+  아직 안 끝나 있는 경우를 대비한다. 재시도와 달리 **실패 여부와 무관하게 매번** 조회 전에 한 번
+  대기하며, 2026-09부터 스텝 조회가 eqptype별 독립 호출로 나뉘면서 이 대기도 **라인당 최대 3회**
+  (PMAINF/POVLAY/XXXXXX 호출 각각의 앞에서) 반복된다 - 총 대기시간은 늘지만, 한 번에 큰 응답을
+  받다 생기는 과부하를 줄이는 것이 우선이라 감수한다.
 - **스텝은 `STEP_TABLE_MAP` 에 등록된 라인만** 동기화한다. 등록되지 않은 라인(`nv`)은 **RTDB 조회 자체를 건너뛴다**
   (스텝 테이블이 없는 라인이라 애초에 실패로 볼 대상이 아니므로 실패 목록에도 남기지 않고, 대기도 하지 않는다).
 - RTDB 가 **3회 재시도 후에도 실패이거나 빈 결과(0건)** 이면 그 (line, 데이터 종류) 는 실패로 기록되고,
@@ -138,11 +146,12 @@ response.json() → data
 ```
 
 - 판정 비율은 `RTDB_STEP_COUNT_DROP_RATIO`(`scheduler.py`, 기본 0.1 = 10%) 상수로 관리한다.
-- ⚠️ **2026-09 이후 이 검사는 약해졌다(의도적 현행 유지).** `api_photosteps{N}` 이 PMAINF 전용으로
-  바뀌면서 비교의 두 항이 서로 다른 모집단이 됐다 — 기준값 `prev_count` 는 **PMAINF 만 담긴**
-  테이블 건수인데, 비교 대상은 **eqptype 이 섞인 RTDB 응답 전체 건수**다. 그만큼 임계값이 느슨해져
-  급감을 놓칠 수 있다(반대로 오탐이 늘지는 않는다). 더 정확히 맞추려면 `fetch()` 의 건수 판정을
-  PMAINF 행만 세도록 바꿔야 한다 — 현재는 그렇게 하지 않았다.
+- ✅ **(2026-09 재변경으로 해소됨) 예전에 있던 모집단 불일치 문제.** 한때 `api_photosteps{N}`가
+  PMAINF 전용으로 바뀌면서, 기준값 `prev_count`(PMAINF 전용 테이블 건수)와 비교 대상
+  (eqptype 이 섞인 RTDB 응답 전체 건수)의 모집단이 달라 임계값이 느슨해지는 문제가 있었다.
+  스텝 조회가 eqptype별 독립 호출로 바뀌면서 각 호출의 응답이 이미 해당 eqptype 하나로 필터링돼
+  오므로, `prev_count`와 응답 건수가 **같은 eqptype 모집단**을 가리키게 되어 이 문제는 자연히
+  해소됐다 — 세 테이블(main/`_ov`/`_cd`) 모두 자신의 `prev_count` 로 정확하게 급감을 판정한다.
 - `fetch()` 헬퍼(`scheduler.py`)에 `min_count` 파라미터로 구현되어 있으며, 이 파라미터는 스텝
   조회에만 전달된다 — 공정-품목/품목-공정ID(`api_processproduct`/`api_productprocessid`) 조회는
   `min_count`를 넘기지 않으므로 기존 "0건/예외만 재시도" 동작 그대로 영향받지 않는다.
@@ -150,7 +159,8 @@ response.json() → data
   기존 테이블 전체와 동일하면 skip)를 거친 뒤에만 `DELETE → INSERT`한다. 공용 `line` 컬럼이 없는
   라인별 전용 테이블이라, `api_processproduct`/`api_productprocessid`가 쓰는 `_write_if_changed()`
   (라인 필터 있음)와 달리 테이블 전체를 비교 대상으로 삼는다는 점만 다르다.
-- `prev_count` 는 `STEP_TABLE_MAP` 테이블(= PMAINF 전용) 건수다 — 위 ⚠️ 항목 참고.
+- `prev_count` 는 이제 **호출 대상 테이블 자신**(PMAINF 호출이면 `STEP_TABLE_MAP`, POVLAY 호출이면
+  `STEP_OVL_TABLE_MAP`, XXXXXX 호출이면 `STEP_EXTRA_TABLE_MAP`)의 건수다 — 위 급감 감지 항목 참고.
 
 ### MAP 이름 (`api_mapname`, DCQ 단독)
 
@@ -259,42 +269,69 @@ RTDB 소스(라인1·3~5·nv)와 DCQ 소스(라인2)가 같은 방식을 쓴다.
 > (delete+insert) 방식으로 되돌렸다. 대신 위 "재시도"(최대 3회)로 일시적인 빈 응답 자체를 줄여서
 > 같은 문제를 완화한다.
 
-### 스텝 eqptype 기준 테이블 분리 (2026-09 추가)
+### 스텝 eqptype 기준 테이블 분리 (2026-09 도입, 2026-09 재변경 — 조회 자체를 eqptype별로 분리)
 
-라인1·3~5의 스텝은 **RTDB 를 한 번만 조회**해(`df_ps`) 그 결과를 eqptype 값 기준으로 세 갈래로
-나눠 각각의 라인별 전용 테이블에 저장한다. 서브 테이블을 위해 RTDB 를 다시 조회하지 않는다.
+라인1·3~5의 스텝은 `STEP_EQPTYPE_TARGETS`(`scheduler.py`)에 정의된 (eqptype 값, 테이블맵,
+`PhotoStepChangeLog.table_type`, 실패/로그 라벨) 3묶음을 순회하며, **eqptype마다 RTDB 를 독립
+조회**해 각각의 라인별 전용 테이블에 저장한다.
 
-| 구분 | eqptype 값 | 라인별 테이블명 매핑 상수 | 테이블명 예(라인1) | ORM 모델 |
-|------|-----------|--------------------------|---------------------|----------|
-| PMAINF 전용 | `'PMAINF'`(`STEP_MAIN_EQPTYPE`) | `STEP_TABLE_MAP` | `api_photosteps1` | `PhotoStepS{N}` |
-| POVLAY 전용 | `'POVLAY'`(`STEP_OVL_EQPTYPE`) | `STEP_OVL_TABLE_MAP` | `api_photosteps1_ov` | `PhotoStepS{N}Ov` |
-| (임시) | `STEP_EXTRA_EQPTYPE`(현재 `'XXXXXX'` 임시값) | `STEP_EXTRA_TABLE_MAP` | `api_photosteps1_cd` | `PhotoStepS{N}Cd` |
+| 구분 | eqptype 값 | 라인별 테이블명 매핑 상수 | 테이블명 예(라인1) | ORM 모델 | 실패/로그 라벨 상수 |
+|------|-----------|--------------------------|---------------------|----------|----------------------|
+| PMAINF 전용 | `'PMAINF'`(`STEP_MAIN_EQPTYPE`) | `STEP_TABLE_MAP` | `api_photosteps1` | `PhotoStepS{N}` | `TARGET_LABEL_STEP_MF` |
+| POVLAY 전용 | `'POVLAY'`(`STEP_OVL_EQPTYPE`) | `STEP_OVL_TABLE_MAP` | `api_photosteps1_ov` | `PhotoStepS{N}Ov` | `TARGET_LABEL_STEP_OV` |
+| (임시) | `STEP_EXTRA_EQPTYPE`(현재 `'XXXXXX'` 임시값) | `STEP_EXTRA_TABLE_MAP` | `api_photosteps1_cd` | `PhotoStepS{N}Cd` | `TARGET_LABEL_STEP_CD` |
 
-> ⚠️ **2026-09 변경 — `api_photosteps{N}` 은 더 이상 eqptype 전체를 담지 않는다.**
-> 예전에는 이 테이블만 eqptype 을 섞어서 전부 저장했다. 그런데 이 테이블을 읽는 조회 API 3곳
+> ⚠️ **`api_photosteps{N}` 은 eqptype 전체를 담지 않는다.**
+> 한때 이 테이블만 eqptype 을 섞어서 전부 저장했다. 그런데 이 테이블을 읽는 조회 API 3곳
 > (`job-file-layer`/`bb-external`/`layer-ids`)이 **모두 `eqptype='PMAINF'` 로만 필터해** 읽어가서,
-> 나머지 eqptype 행은 아무도 쓰지 않는 데이터였다. 지금은 저장 시점에 걸러 PMAINF 전용으로
-> 만든다. 세 구분 중 **어디에도 속하지 않는 eqptype 행은 어느 테이블에도 저장되지 않는다.**
-> 조회 API 쪽 `eqptype='PMAINF'` 필터는 **그대로 남겨뒀다** — 적재 조건이 바뀌어도 조회 의미가
-> 코드에 남아 있도록 하기 위함이며, 동작상으로는 이제 중복 조건이다.
+> 나머지 eqptype 행은 아무도 쓰지 않는 데이터였다. 지금은 PMAINF 호출로 받은 응답만 이 테이블에
+> 쓴다. 세 구분 중 **어디에도 속하지 않는 eqptype 값은 애초에 `STEP_EQPTYPE_TARGETS`에 없어
+> 조회조차 하지 않는다.** 조회 API 쪽 `eqptype='PMAINF'` 필터는 **그대로 남겨뒀다** — 적재
+> 조건이 바뀌어도 조회 의미가 코드에 남아 있도록 하기 위함이며, 동작상으로는 이제 중복 조건이다.
 
+#### 조회 자체를 eqptype별로 쪼갠 이유 (2026-09 재변경)
+
+이전에는 라인당 **RTDB 조회 1번**으로 PMAINF/POVLAY/XXXXXX 를 한꺼번에 받아온 뒤 파이썬에서
+`df[df['eqptype'] == ...]`로 나눠 세 테이블에 썼다. 그런데 라인 전체 데이터를 한 번에 받다 보니
+응답이 커져, RTDB 쪽 배치 스트리밍이 부하로 배치 경계에서 끊기는 등(§"배치 스트리밍 에러 감지"
+참고) 과부하로 응답이 불완전해지는 문제가 있었다. 이를 줄이기 위해 조회 자체를 eqptype별로
+쪼개 **라인당 최대 3번**(PMAINF/POVLAY/XXXXXX 각 1번) 독립 조회하도록 바꿨다:
+
+```
+for eqptype_value, table, table_type, target_label in STEP_EQPTYPE_TARGETS:
+    3초 대기(RTDB_STEP_PRE_FETCH_DELAY_SEC) - 호출마다 매번
+    prev_count = 그 테이블 자신의 기존 건수
+    filter = RTDB_STEP_FILTER_BASE + {"eqptype": {"$eq": eqptype_value}}
+    df = fetch(..., min_count=prev_count 기준 임계값)   # 최대 3회 재시도, 실패 시 target_label 로 개별 실패 기록
+    성공 시: df 를 eqptype 으로 한 번 더 안전 필터링 후 _write_step_if_changed() 로 저장
+```
+
+- **조회 파라미터**: `table_name`/`select`는 세 호출이 동일(`RTDB_STEP_TABLE`/`RTDB_STEP_SELECT`)하고,
+  `filter`만 `RTDB_STEP_FILTER_BASE`에 eqptype 조건을 더해 서로 다르다.
+- **재시도·급감검사 독립**: 각 호출은 자신의 `min_count`(그 테이블 자신의 `prev_count` 기준)로
+  급감을 판정하고, 최대 3회까지 독립적으로 재시도한다 — 위 "스텝 조회 건수 급감 감지" 절 참고.
+- **실패 격리(2026-09 재변경)**: 각 eqptype 블록은 **개별 `try/except`** 로 감싸여 있어, 하나(예:
+  POVLAY)가 3회 재시도 후에도 실패하거나 쓰기(`_write_step_if_changed()`) 중 예외가 나도 **로그만
+  남기고 그 eqptype 만 `failures`에 개별 라벨(`TARGET_LABEL_STEP_MF`/`_OV`/`_CD`)로 기록**되며,
+  나머지 eqptype 저장은 영향받지 않고 계속 진행된다. (예전에는 라인 전체 스텝 블록이 하나의
+  `except`로 묶여 있어 실패가 `TARGET_LABEL_STEP` 하나로만 뭉뚱그려 기록됐고, 어느 eqptype에서
+  실패했는지는 로그를 봐야 알 수 있었다.) `fetch()` 내부의 재시도 소진 실패도 같은 `target_label`로
+  기록되므로, 라인 전체를 감싸는 별도의 outer `except`는 **의도적으로 두지 않는다** — 두면 같은
+  실패가 outer/inner 양쪽에서 중복 기록될 수 있다.
 - 세 테이블 모두 `_write_step_if_changed()`를 그대로 재사용한다(테이블 전체 비교 후
   변경 시에만 `DELETE → INSERT`) — 동일한 변경 감지 방식.
-- ⚠️ **서브 테이블(`_ov`/`_cd`)은 반드시 원본 `df_ps` 에서 걸러야 한다.** PMAINF 로 먼저 거른
-  DataFrame 을 넘기면 POVLAY/XXXXXX 가 0건이 되어 서브 테이블이 비워진다(`scheduler.py` 의
-  `df_main` 주석 참고).
 - 각 모델은 `Meta.db_table`을 위 표의 테이블명과 **명시적으로 일치**시켰다 — 이전에
   `STEP_TABLE_MAP`이 실제 ORM 테이블명과 어긋났던 사고(위 "주의사항" §2026-09 항목 참고)가
   재발하지 않도록, 이번엔 문자열을 코드 두 곳(scheduler.py 의 맵 / models.py 의 db_table)에
   각각 손으로 맞춰 넣었다 — 둘 중 하나만 바꾸면 다시 어긋나므로 **두 값을 함께 바꿔야 한다.**
 - `STEP_EXTRA_EQPTYPE`은 아직 실제 eqptype 값이 정해지지 않아 `'XXXXXX'`를 임시값으로 쓴다.
   실제 값이 정해지면 `scheduler.py`의 이 상수 하나만 바꾸면 된다(테이블명/모델명은 변경 불필요).
-- 테이블 쓰기 중 예외가 나면 전체 스텝 블록과 동일한 `except`에서 잡혀 `TARGET_LABEL_STEP`으로
-  실패 목록에 기록되고 RTDB 동기화 실패 알림 메일 대상이 된다(라인 단위로 뭉뚱그려 기록되며,
-  PMAINF/POVLAY/XXXXXX 중 어느 쪽에서 실패했는지는 로그로 구분해야 한다).
 - **조회 결과 활용**: PMAINF 전용 테이블은 `form_options_job_file_layer`/`form_options_bb_external`/
   `form_options_layer_ids` 가, POVLAY 전용 테이블은 `form_options_ovl_layer` 가 읽는다.
   XXXXXX 전용 테이블은 저장만 하고 조회 기능은 아직 없다.
+- **RTDB 호출 횟수 증가**: 이 변경으로 라인당 스텝 조회 호출이 1회 → 최대 3회로 늘어난다
+  (라인1·3·4·5 기준 스텝만 4회 → 최대 12회/사이클). 과부하로 인한 불완전 응답을 줄이는 것이
+  목적이지만, 호출 빈도 자체는 늘어나므로 운영 중 RTDB 부하 추이를 지켜봐야 한다.
 
 ### 스텝 변경 이력 기록 (`PhotoStepChangeLog`, 2026-09 추가 — 변경 현황 화면용)
 
