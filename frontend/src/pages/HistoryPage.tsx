@@ -19,6 +19,29 @@ const FILTER_MY = 'my';
 const FILTER_REJECTED = 'rejected';
 const LINE_FILTER_PREFIX = 'line_';
 
+// 이력 조회 목록 페이지네이션 — 결재 현황(ApprovalPage)과 동일한 구성(페이지당 표시 건수)
+const HISTORY_LIST_PAGE_SIZE = 10;
+// 숫자 페이지 버튼 표시 시 현재 페이지 앞뒤로 보여줄 개수(그 밖은 '…'로 생략)
+const HISTORY_PAGE_WINDOW = 2;
+
+/** 페이지네이션 숫자 버튼 목록. 1·마지막 페이지는 항상 포함하고, 현재 페이지 앞뒤로
+ * HISTORY_PAGE_WINDOW 개만 보여준 뒤 나머지 구간은 'ellipsis' 로 접는다(ApprovalPage.buildPageNumbers 와 동일 로직). */
+const buildPageNumbers = (current: number, total: number): (number | 'ellipsis')[] => {
+  const pages = new Set<number>([1, total]);
+  for (let p = current - HISTORY_PAGE_WINDOW; p <= current + HISTORY_PAGE_WINDOW; p++) {
+    if (p >= 1 && p <= total) pages.add(p);
+  }
+  const sorted = Array.from(pages).sort((a, b) => a - b);
+  const result: (number | 'ellipsis')[] = [];
+  let prev = 0;
+  for (const p of sorted) {
+    if (prev && p - prev > 1) result.push('ellipsis');
+    result.push(p);
+    prev = p;
+  }
+  return result;
+};
+
 /**
  * 라인 선택값 → i18n 키 접미사.
  * 라인 목록은 마스터 데이터(`GET /api/lines/`)라 여기 없는 이름이 얼마든지 올 수 있다.
@@ -97,6 +120,10 @@ export default function HistoryPage(): React.ReactElement {
   const [selected, setSelected] = useState<RequestDocument | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pageIdx, setPageIdx] = useState(0);
+  // 목록 페이지네이션 — 필터 탭·검색어가 바뀌면 항상 1페이지로 돌아간다(검색 결과가
+  // 몇 페이지 뒤에 있든 즉시 보이도록, ApprovalPage 와 동일 패턴).
+  const [listPage, setListPage] = useState(1);
+  useEffect(() => { setListPage(1); }, [filter, search]);
   // 전체 export(제목 옆 버튼) — 상세 정보/MAP 정보 탭을 화면 그대로 캡처하는 핸들.
   const pagedDetailViewRef = useRef<PagedDetailViewHandle>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
@@ -199,6 +226,22 @@ export default function HistoryPage(): React.ReactElement {
     [isRejectedTab, filterDocs, docs, filter]
   );
   const isEmpty = isRejectedTab ? snapshots.length === 0 : visibleDocs.length === 0;
+
+  // 현재 탭의 대상 건수만큼 10건 단위로 잘라 보여준다(ApprovalPage 와 동일한 클라이언트 측 페이지네이션).
+  const totalRows = isRejectedTab ? snapshots.length : visibleDocs.length;
+  const totalListPages = Math.max(1, Math.ceil(totalRows / HISTORY_LIST_PAGE_SIZE));
+  const pagedSnapshots = useMemo(
+    () => snapshots.slice((listPage - 1) * HISTORY_LIST_PAGE_SIZE, listPage * HISTORY_LIST_PAGE_SIZE),
+    [snapshots, listPage]
+  );
+  const pagedDocs = useMemo(
+    () => visibleDocs.slice((listPage - 1) * HISTORY_LIST_PAGE_SIZE, listPage * HISTORY_LIST_PAGE_SIZE),
+    [visibleDocs, listPage]
+  );
+  // 삭제 등으로 목록이 줄어 지금 보던 페이지가 사라지면 마지막 페이지로 보정한다.
+  useEffect(() => {
+    if (listPage > totalListPages) setListPage(totalListPages);
+  }, [listPage, totalListPages]);
 
   /**
    * 이력 조회의 검토 항목은 **읽기 전용**이다 — 결재가 끝난 문서라 편집·확인이 모두 닫혀 있다.
@@ -360,9 +403,9 @@ export default function HistoryPage(): React.ReactElement {
             </thead>
             <tbody>
               {isRejectedTab
-                ? snapshots.map((snap, index) => (
+                ? pagedSnapshots.map((snap, index) => (
                   <tr key={snap.id}>
-                    <td style={{ color: 'var(--text-muted)' }}>{index + 1}</td>
+                    <td style={{ color: 'var(--text-muted)' }}>{(listPage - 1) * HISTORY_LIST_PAGE_SIZE + index + 1}</td>
                     <td>{titleCell(snap.title, () => openSnapshotDetail(snap))}</td>
                     <td>{snap.product_name}</td>
                     <td>
@@ -388,9 +431,9 @@ export default function HistoryPage(): React.ReactElement {
                     )}
                   </tr>
                 ))
-                : visibleDocs.map((doc, index) => (
+                : pagedDocs.map((doc, index) => (
                   <tr key={doc.id}>
-                    <td style={{ color: 'var(--text-muted)' }}>{index + 1}</td>
+                    <td style={{ color: 'var(--text-muted)' }}>{(listPage - 1) * HISTORY_LIST_PAGE_SIZE + index + 1}</td>
                     <td>{titleCell(doc.title, () => openDetail(doc))}</td>
                     <td>{doc.product_name}</td>
                     <td>
@@ -418,6 +461,45 @@ export default function HistoryPage(): React.ReactElement {
                 ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!loading && !error && totalRows > 0 && totalListPages > 1 && (
+        <div className="pagination" role="navigation" aria-label={t('history.pagination_nav')}>
+          <button
+            type="button"
+            className="pagination-btn"
+            onClick={() => setListPage((p) => Math.max(1, p - 1))}
+            disabled={listPage === 1}
+            aria-label={t('common.prev')}
+          >
+            ◀
+          </button>
+          {buildPageNumbers(listPage, totalListPages).map((item, idx) =>
+            item === 'ellipsis' ? (
+              <span key={`ellipsis-${idx}`} className="pagination-ellipsis">…</span>
+            ) : (
+              <button
+                key={item}
+                type="button"
+                className={`pagination-btn ${item === listPage ? 'active' : ''}`}
+                onClick={() => setListPage(item)}
+                aria-current={item === listPage ? 'page' : undefined}
+                aria-label={t('history.pagination_go_to_page', { page: item })}
+              >
+                {item}
+              </button>
+            )
+          )}
+          <button
+            type="button"
+            className="pagination-btn"
+            onClick={() => setListPage((p) => Math.min(totalListPages, p + 1))}
+            disabled={listPage === totalListPages}
+            aria-label={t('common.next')}
+          >
+            ▶
+          </button>
         </div>
       )}
 
