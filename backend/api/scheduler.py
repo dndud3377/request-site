@@ -91,7 +91,11 @@ RTDB_PC_SELECT = ["partnumber, processid"]             # 품목-공정ID
 RTDB_PC_FILTER = {"X": {"$neq": " "}}
 RTDB_PC_TABLE = "X_{suffix}.Y"
 RTDB_STEP_SELECT = ["processid, stepseq, descript, recipeid, areaname, eqptype, updated, layerid"]  # 스텝
-RTDB_STEP_FILTER = {
+# 2026-09 변경: eqptype(PMAINF/POVLAY/XXXXXX)별로 독립 조회하도록 바뀌면서, 아래는 세 조회가 공유하는
+# 베이스 조건만 담는다. 실제 호출 시 eqptype 조건("eqptype": {"$eq": <값>})을 추가로 합쳐 쓴다
+# (STEP_EQPTYPE_TARGETS 참고) - 라인 전체 eqptype 을 한 번에 받다 응답이 커져 과부하로 불완전하게
+# 오는 문제(§"배치 스트리밍 에러 감지")를 줄이려고 조회 자체를 쪼갰다.
+RTDB_STEP_FILTER_BASE = {
     "a": {"$eq": "aaaaaa"},
     "e": {"$neq": " "},
     "l": {"$neq": " "},
@@ -157,6 +161,22 @@ STEP_EXTRA_TABLE_MAP = {
 TARGET_LABEL_PP = "{{request.process_selection}}-{{request.partid_selection}}"
 TARGET_LABEL_PC = "{{request.partid_selection}}-{{request.process_id}}"
 TARGET_LABEL_STEP = "{{request.col_step}}"
+
+# eqptype별 개별 라벨 (2026-09 변경). 실패 목록/로그에서 어느 eqptype 조회가 실패했는지 바로
+# 구분할 수 있도록 PMAINF/POVLAY/XXXXXX 세 구분 모두 대칭적으로 라벨링한다 - 예전에는 PMAINF만
+# 라벨 없이 TARGET_LABEL_STEP 그대로 쓰고 POVLAY/XXXXXX만 "(POVLAY)"/"(XXXXXX)"를 붙여, 실패해도
+# 어느 eqptype인지 로그로만 구분 가능했고 라인 단위로 뭉뚱그려 기록됐다.
+TARGET_LABEL_STEP_MF = f"{TARGET_LABEL_STEP}({STEP_MAIN_EQPTYPE})"
+TARGET_LABEL_STEP_OV = f"{TARGET_LABEL_STEP}({STEP_OVL_EQPTYPE})"
+TARGET_LABEL_STEP_CD = f"{TARGET_LABEL_STEP}({STEP_EXTRA_EQPTYPE})"
+
+# 라인당 스텝 조회를 eqptype별로 나눠 독립적으로 수행하기 위한 매핑.
+# (eqptype 값, 저장 대상 테이블맵, PhotoStepChangeLog.table_type 코드, 실패/로그 라벨) 튜플 목록.
+STEP_EQPTYPE_TARGETS = [
+    (STEP_MAIN_EQPTYPE, STEP_TABLE_MAP, PhotoStepChangeLog.TABLE_TYPE_MF, TARGET_LABEL_STEP_MF),
+    (STEP_OVL_EQPTYPE, STEP_OVL_TABLE_MAP, PhotoStepChangeLog.TABLE_TYPE_OV, TARGET_LABEL_STEP_OV),
+    (STEP_EXTRA_EQPTYPE, STEP_EXTRA_TABLE_MAP, PhotoStepChangeLog.TABLE_TYPE_CD, TARGET_LABEL_STEP_CD),
+]
 
 # RTDB 조회가 0건/실패일 때 재시도 횟수와 재시도 간격(초). (2026-08 추가 - 불규칙한 RTDB 조회
 # 실패 대응) get_data_from_rtdb() 는 예외도 내부에서 잡아 None 으로 통일해 반환하므로, 여기서는
@@ -328,7 +348,9 @@ def sync_rtdb_options():
       `mailer.enqueue_rtdb_sync_failed()` 로 알림 메일 1통을 큐에 적재한다. 수신자는
       `.env` 의 `RTDB_SYNC_ALERT_MAIL`. RTDB 장애가 이어지는 동안은 10 분 주기마다 매번 발송된다.)
     - 스텝(col_step) 조회 직전에는 `RTDB_STEP_PRE_FETCH_DELAY_SEC`(3초) 대기한다 - RTDB 쪽 데이터
-      갱신이 늦게 반영되는 경우를 대비한다(2026-08 추가).
+      갱신이 늦게 반영되는 경우를 대비한다(2026-08 추가). 2026-09부터 스텝 조회가 eqptype별
+      독립 호출로 나뉘면서, 이 대기도 호출마다(라인당 최대 3회) 적용된다 - 총 대기시간은 늘지만
+      안정적으로 데이터를 받아오는 것을 우선한다.
     - 조회 결과가 기존 테이블과 동일하면 쓰기를 건너뛴다(변경 감지). 다르면 DELETE(line) → INSERT로
       전체 재적재한다 - 항상 RTDB 응답을 현재 상태의 원본으로 취급해, 원본에서 실제로 빠진(단종 등)
       데이터가 남아있지 않도록 한다(2026-08: "없는 것만 추가"하는 diff 병합 방식을 시도했다가,
@@ -336,21 +358,32 @@ def sync_rtdb_options():
       스텝(`api_photosteps1`/`api_photosteps3~5`)도 2026-09부터 동일하게 변경 감지 후 쓰기를
       적용한다(`_write_step_if_changed()` - 공용 `line` 컬럼이 없는 라인별 전용 테이블이라
       테이블 전체를 대상으로 비교한다는 점만 `_write_if_changed()`와 다르다).
-    - (2026-09 추가) 한 번 받아온 조회 결과(`df_ps`)를 eqptype 값으로 나눠 세 종류의 라인별
-      전용 테이블에 각각 저장한다. 추가 RTDB 조회는 없다.
+    - (2026-09 도입, 2026-09 재변경) 스텝은 eqptype(`STEP_EQPTYPE_TARGETS`: PMAINF/POVLAY/XXXXXX)별로
+      **독립적인 RTDB 조회**를 거쳐 각각의 라인별 전용 테이블에 저장한다.
         - `STEP_MAIN_EQPTYPE`('PMAINF') → `STEP_TABLE_MAP`(`api_photosteps{N}`)
         - `STEP_OVL_EQPTYPE`('POVLAY') → `STEP_OVL_TABLE_MAP`(`api_photosteps{N}_ov`)
         - `STEP_EXTRA_EQPTYPE`(현재 임시값 'XXXXXX') → `STEP_EXTRA_TABLE_MAP`(`api_photosteps{N}_cd`)
-      `STEP_TABLE_MAP` 테이블은 2026-09 이전에는 eqptype 전체를 섞어 저장했으나, 이 테이블을
-      읽는 조회 API 3곳(job-file-layer / bb-external / layer-ids)이 모두 eqptype='PMAINF' 로만
-      필터해 읽어가 나머지 eqptype 행은 아무도 쓰지 않았다. 지금은 저장 시점에 걸러 PMAINF
-      전용 테이블로 만든다.
+      `STEP_TABLE_MAP` 테이블은 한때 eqptype 전체를 섞어 저장했으나, 이 테이블을 읽는 조회 API
+      3곳(job-file-layer / bb-external / layer-ids)이 모두 eqptype='PMAINF' 로만 필터해 읽어가
+      나머지 eqptype 행은 아무도 쓰지 않았다 - 저장 시점에 걸러 PMAINF 전용 테이블로 만든 이유다.
+      (2026-09 재변경 이전에는 라인당 RTDB 조회 1번으로 세 eqptype을 한꺼번에 받아온 뒤 파이썬에서
+      나눠 썼으나, 라인 전체 데이터를 한 번에 받다 응답이 커져 과부하로 불완전하게 오는 문제
+      (§"배치 스트리밍 에러 감지")가 있어, eqptype마다 필터(`"eqptype": {"$eq": ...}`)를 걸어
+      **라인당 최대 3번**(각 eqptype 1번씩) 독립 조회하도록 바꿨다. 응답은 안전장치로 한 번 더
+      eqptype으로 걸러 쓴다. 조회·재시도·쓰기 예외는 eqptype별로 완전히 격리된다 - 하나(예: POVLAY)가
+      3회 재시도 후에도 실패하거나 쓰기 중 예외가 나도, 나머지 eqptype 저장에는 영향이 없고
+      `failures`에도 `TARGET_LABEL_STEP_MF`/`_OV`/`_CD`로 개별 기록된다(예전에는 라인 단위로
+      뭉뚱그려 `TARGET_LABEL_STEP` 하나로만 기록되어 로그를 봐야 어느 eqptype이 실패했는지 알 수
+      있었다).
     - 스텝 조회는 0건/실패뿐 아니라 **기존 테이블 대비 결과 건수가 `RTDB_STEP_COUNT_DROP_RATIO`
       (10%) 미만으로 급감한 경우도 "누락 의심"으로 보고 동일하게 재시도**한다(2026-09 추가).
       RTDB 가 0건은 아니지만 일부만 채워진 채 응답하는 경우, 그 불완전한 데이터로 스텝 테이블
       전체를 덮어써 유실되는 것을 막기 위함이다. 재시도 후에도 기준 미달이면 이번 주기에 쓰지
       않고(기존 데이터 보존) 실패 목록에 기록한다(→ RTDB 동기화 실패 알림 메일 대상에 포함).
-      기존 건수가 0건(최초 동기화)이면 이 검사를 적용하지 않는다.
+      기존 건수가 0건(최초 동기화)이면 이 검사를 적용하지 않는다. eqptype별 독립 조회로 바뀌면서
+      `prev_count`/응답 건수 비교의 두 항이 이제 **같은 eqptype 모집단**이라 급감 감지 정확도도
+      함께 개선됐다(예전에는 PMAINF 전용 테이블 건수와 eqptype 혼재 응답 전체 건수를 비교해
+      기준이 느슨했다).
     - RTDB 토큰은 주기당 1회만 `utils.get_rtdb_token()`으로 받아 소스·라인 반복에서 재사용한다.
       (2026-08부터 매 주기 풀 로그인 대신, 캐시된 refresh_token 이 유효하면 가벼운 refresh API로
       갱신한다. refresh_token 유효기간이 얼마 안 남았거나 refresh 자체가 실패하면 풀 로그인으로
@@ -470,58 +503,49 @@ def sync_rtdb_options():
                 except Exception as e:
                     logger.error(_("[scheduler] {line} {{request.partid_selection}}-{{request.process_id}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
 
-                # --- 스텝 (api_steps: 라인별 단독 테이블) ---
+                # --- 스텝 (api_photosteps: 라인별 단독 테이블, eqptype별 독립 조회) ---
                 # 스텝 테이블이 없는 라인(nv)은 조회 자체를 건너뛴다(실패로 기록하지 않는다).
-                table_name = STEP_TABLE_MAP.get(line)
-                if not table_name:
+                if line not in STEP_TABLE_MAP:
                     logger.info(_("[scheduler] {line} {{request.col_step}} 테이블 없음 - skip").format(line=line))
                 else:
-                    try:
-                        # RTDB 쪽 스텝 데이터 갱신이 늦게 반영되는 경우를 대비해 조회 전 잠깐 대기한다.
-                        time.sleep(RTDB_STEP_PRE_FETCH_DELAY_SEC)
-                        with engine.connect() as conn:
-                            prev_count = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
-                        min_count = int(prev_count * RTDB_STEP_COUNT_DROP_RATIO) if prev_count else None
-                        df_ps = fetch(
-                            RTDB_STEP_SELECT, RTDB_STEP_FILTER, RTDB_STEP_TABLE, suffix, line, TARGET_LABEL_STEP,
-                            min_count=min_count,
-                        )
-                        if df_ps is not None:
-                            # 전체 테이블은 eqptype='PMAINF' 행만 저장한다. 아래 서브 테이블
-                            # (_ov/_cd)은 원본 df_ps 를 그대로 걸러 써야 하므로, 여기서 거른
-                            # df_main 을 넘기면 POVLAY/XXXXXX 가 0건이 되어버린다.
-                            df_main = df_ps[df_ps['eqptype'] == STEP_MAIN_EQPTYPE]
-                            count = _write_step_if_changed(
-                                engine, table_name, df_main, STEP_COLUMNS,
-                                line=line, table_type=PhotoStepChangeLog.TABLE_TYPE_MF,
+                    # (2026-09 변경) PMAINF/POVLAY/XXXXXX 를 한 번에 조회해 나누던 방식에서, eqptype별
+                    # 독립 조회로 바꿨다 - 라인 전체 eqptype 을 한 번에 받다 응답이 커져 과부하로
+                    # 불완전하게 오는 문제를 줄이는 것이 목적이다(대기시간이 3배로 늘어나는 것은
+                    # 감수한다 - 안정적으로 받아오는 것이 우선). 각 eqptype 은 조회(재시도 포함)·쓰기
+                    # 예외를 독립된 try/except 로 처리해 서로 영향을 주지 않는다 - outer 에 별도
+                    # try/except 를 두지 않는 이유이기도 하다(두면 여기서 잡은 예외가 다시 한 번
+                    # failures 에 중복 기록될 수 있다).
+                    for eqptype_value, table_map, table_type, target_label in STEP_EQPTYPE_TARGETS:
+                        table_name = table_map.get(line)
+                        if not table_name:
+                            continue
+                        try:
+                            # RTDB 쪽 스텝 데이터 갱신이 늦게 반영되는 경우를 대비해 조회 전 잠깐
+                            # 대기한다 - eqptype별 호출마다 매번 대기한다.
+                            time.sleep(RTDB_STEP_PRE_FETCH_DELAY_SEC)
+                            with engine.connect() as conn:
+                                prev_count = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}")).scalar()
+                            min_count = int(prev_count * RTDB_STEP_COUNT_DROP_RATIO) if prev_count else None
+                            rtdb_filter = {**RTDB_STEP_FILTER_BASE, "eqptype": {"$eq": eqptype_value}}
+                            df_sub = fetch(
+                                RTDB_STEP_SELECT, rtdb_filter, RTDB_STEP_TABLE, suffix, line, target_label,
+                                min_count=min_count,
                             )
-                            if count is None:
-                                logger.info(_("[scheduler] {line} {{request.col_step}} 변경 없음 - skip").format(line=line))
-                            else:
-                                logger.info(_("[scheduler] {line} {{request.col_step}} {count}건 동기화 완료").format(line=line, count=count))
-
-                            # eqptype 기준 하위 분리 테이블 - 위에서 받은 df_ps 를 그대로 나눠 쓰기만
-                            # 한다(추가 RTDB 조회 없음). 위 df_main(PMAINF) 이 아니라 원본 df_ps 를
-                            # 걸러야 POVLAY/XXXXXX 행이 남는다.
-                            def _write_eqptype_subset(eqptype_value, sub_table_map, label, table_type):
-                                sub_table = sub_table_map.get(line)
-                                if not sub_table:
-                                    return
-                                df_sub = df_ps[df_ps['eqptype'] == eqptype_value]
-                                sub_count = _write_step_if_changed(
-                                    engine, sub_table, df_sub, STEP_COLUMNS,
+                            if df_sub is not None:
+                                # RTDB eqptype 필터를 신뢰하되, 혹시 섞여올 수 있는 다른 eqptype 행에
+                                # 대한 안전장치로 한 번 더 걸러서 쓴다.
+                                df_sub = df_sub[df_sub['eqptype'] == eqptype_value]
+                                count = _write_step_if_changed(
+                                    engine, table_name, df_sub, STEP_COLUMNS,
                                     line=line, table_type=table_type,
                                 )
-                                if sub_count is None:
-                                    logger.info(_("[scheduler] {line} {{request.col_step}}({label}) 변경 없음 - skip").format(line=line, label=label))
+                                if count is None:
+                                    logger.info(_("[scheduler] {line} {target} 변경 없음 - skip").format(line=line, target=target_label))
                                 else:
-                                    logger.info(_("[scheduler] {line} {{request.col_step}}({label}) {count}건 동기화 완료").format(line=line, label=label, count=sub_count))
-
-                            _write_eqptype_subset(STEP_OVL_EQPTYPE, STEP_OVL_TABLE_MAP, STEP_OVL_EQPTYPE, PhotoStepChangeLog.TABLE_TYPE_OV)
-                            _write_eqptype_subset(STEP_EXTRA_EQPTYPE, STEP_EXTRA_TABLE_MAP, STEP_EXTRA_EQPTYPE, PhotoStepChangeLog.TABLE_TYPE_CD)
-                    except Exception as e:
-                        logger.error(_("[scheduler] {line} {{request.col_step}} 동기화 실패: {e}").format(line=line, e=e), exc_info=True)
-                        failures.append({'context': line, 'target': TARGET_LABEL_STEP})
+                                    logger.info(_("[scheduler] {line} {target} {count}건 동기화 완료").format(line=line, target=target_label, count=count))
+                        except Exception as e:
+                            logger.error(_("[scheduler] {line} {target} 동기화 실패: {e}").format(line=line, target=target_label, e=e), exc_info=True)
+                            failures.append({'context': line, 'target': target_label})
         finally:
             if engine:
                 engine.dispose()
