@@ -649,6 +649,10 @@ class RouteCardTest(TestCase):
         return [(label, status) for label, _name, status, _c in rows]
 
     def test_rows_cover_status_variants_and_pending_future_stage(self):
+        import json
+        # O 단계가 경로에 포함되려면 활성 Oayer 행이 있어야 한다(has_oayer_rows).
+        self.doc.additional_notes = json.dumps({'oayerRows': [{'id': 'o1', 'st': 'O'}]})
+        self.doc.save(update_fields=['additional_notes'])
         pl = UserProfile.objects.create(loginid='pl9', mail='pl9@c.com', role='PL')
         r = UserProfile.objects.create(loginid='r9', mail='r9@c.com', role='TE_R')
         o = UserProfile.objects.create(loginid='o9', mail='o9@c.com', role='TE_O')
@@ -977,7 +981,12 @@ class PEStageReviewerFlowTest(TestCase):
     def _advance_to_parallel(self, plel=False, other_purpose=None):
         """draft → 제출 → PL 합의 → R 지정·합의 를 실제 API로 거쳐 P/O[/E] pending 상태로 만든다."""
         inner = {} if other_purpose is None else {'other_purpose': other_purpose}
-        detail = {'detail': inner, 'jayerRows': ([{'pp': 'PLEL'}] if plel else [])}
+        # O 단계가 만들어지려면 활성 Oayer 행이 있어야 한다(has_oayer_rows) — 이 헬퍼는
+        # 이름 그대로 O 를 pending 상태로 만드는 것이 목적이므로 기본 행을 채워 둔다.
+        detail = {
+            'detail': inner, 'jayerRows': ([{'pp': 'PLEL'}] if plel else []),
+            'oayerRows': [{'id': 'o-default', 'st': 'O'}],
+        }
         doc = RequestDocument.objects.create(
             title='doc', requester=self.requester, requester_name='요청자',
             requester_email='req@c.com', requester_department='dept',
@@ -1191,6 +1200,14 @@ class PEStageReviewerFlowTest(TestCase):
         self.assertEqual(r.status_code, 200, r.content)
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'rejected')
+
+        # 이 테스트는 2회차에도 R 이 정상적으로 다시 생성되는 경로를 검증하는 것이 목적이므로,
+        # (2026-09) 'P 반려 + 무변경 재상신 시 2구역(R) 생략' 조건에 걸리지 않도록 의뢰 상세를
+        # 일부러 바꿔 재상신한다(그렇지 않으면 R 이 생략돼 아래 R 지정·합의 자체가 불가능해진다).
+        payload = self._json.loads(doc.additional_notes)
+        payload.setdefault('detail', {})['line'] = '변경된라인'
+        doc.additional_notes = self._json.dumps(payload)
+        doc.save()
 
         self.client.force_authenticate(user=self.requester)
         r = self.client.post(f'/api/documents/{doc.id}/resubmit/',
@@ -7292,3 +7309,266 @@ class MapCompletionMailMatchTest(TestCase):
         self._make_map_new_doc('PROD-1')
         matched = pop3_mail.match_map_completion_mail([])
         self.assertEqual(matched, 0)
+
+
+class HasOayerRowsTest(TestCase):
+    """RequestDocument.has_oayer_rows — O(OVL) 단계 생성 판정.
+
+    has_ppid_plel 과 같은 패턴이나 판정 키워드가 없다 — 활성(st!='X') 행이 하나라도
+    있으면 참(비어있지 않음)이다.
+    """
+
+    def setUp(self):
+        import json
+        self._json = json
+        self.requester = UserProfile.objects.create(
+            loginid='oayer_req', mail='oayer_req@company.com', role='NONE'
+        )
+
+    def _make_doc_with_oayer(self, oayer_rows):
+        doc = _make_document(self.requester)
+        doc.additional_notes = self._json.dumps({'oayerRows': oayer_rows})
+        doc.save()
+        return doc
+
+    def test_empty_oayer_rows_has_no_rows(self):
+        doc = self._make_doc_with_oayer([])
+        self.assertFalse(doc.has_oayer_rows())
+
+    def test_active_oayer_row_has_rows(self):
+        doc = self._make_doc_with_oayer([{'id': 'o1', 'st': 'O'}])
+        self.assertTrue(doc.has_oayer_rows())
+
+    def test_only_inactive_oayer_rows_has_no_rows(self):
+        doc = self._make_doc_with_oayer([{'id': 'o1', 'st': 'X'}, {'id': 'o2', 'st': 'X'}])
+        self.assertFalse(doc.has_oayer_rows())
+
+
+@override_settings(POST_APPROVER_LOGINID='fixed_ra')
+class ShouldSkipRStageTest(TestCase):
+    """RequestDocumentViewSet._should_skip_r_stage — 반려 후 재상신 시 2구역(R) 생략 판정.
+
+    R 본인 반려·고정후결자(RA) 반려는 항상 R을 다시 거치고(생략 대상 아님), 그 외
+    (P/J/O/E, 비고정 RA) 반려는 MAP 정보·Jayer 정보·의뢰 상세(line~process_id)가 반려
+    시점과 재상신 내용 사이에 완전히 같을 때만 R을 생략한다.
+    """
+
+    def setUp(self):
+        import json
+        from .views import RequestDocumentViewSet
+        self._json = json
+        self.viewset = RequestDocumentViewSet()
+        self.requester = UserProfile.objects.create(
+            loginid='skipr_req', mail='skipr_req@company.com', role='NONE'
+        )
+        self.fixed_ra = UserProfile.objects.create(
+            loginid='fixed_ra', mail='fixed_ra@company.com', role='NONE'
+        )
+        self.extra_ra = UserProfile.objects.create(
+            loginid='extra_ra', mail='extra_ra@company.com', role='NONE'
+        )
+
+    def _make_doc(self, detail=None, jayer_rows=None):
+        payload = {'detail': detail or {}, 'jayerRows': jayer_rows or []}
+        return RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='req@company.com', requester_department='개발팀',
+            product_name='PROD-1', status='rejected',
+            additional_notes=self._json.dumps(payload, ensure_ascii=False),
+        )
+
+    def _make_rejection(self, doc, agent, detail=None, jayer_rows=None,
+                        rejected_by_loginid=''):
+        payload = {'detail': detail or {}, 'jayerRows': jayer_rows or []}
+        return RejectionSnapshot.objects.create(
+            document=doc, source_document_id=doc.id, title=doc.title,
+            product_name=doc.product_name, requester_name=doc.requester_name,
+            requester_department=doc.requester_department, round=1,
+            rejected_at=timezone.now(), rejected_agent=agent,
+            rejected_by_loginid=rejected_by_loginid,
+            additional_notes=self._json.dumps(payload, ensure_ascii=False),
+        )
+
+    def test_r_reject_never_skips_even_if_unchanged(self):
+        doc = self._make_doc(detail={'line': 'L1'})
+        self._make_rejection(doc, 'R', detail={'line': 'L1'})
+        self.assertFalse(self.viewset._should_skip_r_stage(doc))
+
+    def test_fixed_post_approver_reject_never_skips_even_if_unchanged(self):
+        doc = self._make_doc(detail={'line': 'L1'})
+        self._make_rejection(doc, 'RA', detail={'line': 'L1'}, rejected_by_loginid='fixed_ra')
+        self.assertFalse(self.viewset._should_skip_r_stage(doc))
+
+    def test_pl_reject_never_skips(self):
+        doc = self._make_doc(detail={'line': 'L1'})
+        self._make_rejection(doc, 'PL', detail={'line': 'L1'})
+        self.assertFalse(self.viewset._should_skip_r_stage(doc))
+
+    def test_zone3_agent_reject_unchanged_skips(self):
+        for agent in ('P', 'J', 'O', 'E'):
+            doc = self._make_doc(detail={'line': 'L1'}, jayer_rows=[{'id': 'j1'}])
+            self._make_rejection(doc, agent, detail={'line': 'L1'}, jayer_rows=[{'id': 'j1'}])
+            self.assertTrue(self.viewset._should_skip_r_stage(doc), f'agent={agent}')
+
+    def test_extra_post_approver_reject_unchanged_skips(self):
+        doc = self._make_doc(detail={'line': 'L1'})
+        self._make_rejection(doc, 'RA', detail={'line': 'L1'}, rejected_by_loginid='extra_ra')
+        self.assertTrue(self.viewset._should_skip_r_stage(doc))
+
+    def test_zone3_agent_reject_map_info_changed_does_not_skip(self):
+        doc = self._make_doc(detail={'line': 'L1', 'map_type': 'NEW'})
+        self._make_rejection(doc, 'O', detail={'line': 'L1', 'map_type': 'CLONE'})
+        self.assertFalse(self.viewset._should_skip_r_stage(doc))
+
+    def test_zone3_agent_reject_line_to_process_id_changed_does_not_skip(self):
+        doc = self._make_doc(detail={'line': 'L1', 'process_id': 'PID-1'})
+        self._make_rejection(doc, 'J', detail={'line': 'L1', 'process_id': 'PID-2'})
+        self.assertFalse(self.viewset._should_skip_r_stage(doc))
+
+    def test_zone3_agent_reject_jayer_changed_does_not_skip(self):
+        doc = self._make_doc(detail={'line': 'L1'}, jayer_rows=[{'id': 'j1', 'pp': 'A'}])
+        self._make_rejection(doc, 'P', detail={'line': 'L1'}, jayer_rows=[{'id': 'j1', 'pp': 'B'}])
+        self.assertFalse(self.viewset._should_skip_r_stage(doc))
+
+    def test_only_map_route_never_skips(self):
+        doc = self._make_doc(detail={'line': 'L1', 'request_purpose': RequestDocument.ONLY_MAP_PURPOSE})
+        self._make_rejection(doc, 'O', detail={'line': 'L1', 'request_purpose': RequestDocument.ONLY_MAP_PURPOSE})
+        self.assertFalse(self.viewset._should_skip_r_stage(doc))
+
+    def test_no_rejection_snapshot_does_not_skip(self):
+        doc = self._make_doc(detail={'line': 'L1'})
+        self.assertFalse(self.viewset._should_skip_r_stage(doc))
+
+
+@override_settings(POST_APPROVER_LOGINID='')
+class RSkipStageIntegrationTest(TestCase):
+    """반려 후 재상신 시 2구역(R) 생략 — 실제 API 흐름(제출→PL 합의→R→3구역→반려→재상신→PL 합의)으로 검증.
+
+    고정후결자는 이 테스트 흐름과 무관하므로(POST_APPROVER_LOGINID='') 비워 둔다 —
+    RA 관련 분기는 ShouldSkipRStageTest 에서 단위로 검증한다.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+
+        self.requester = UserProfile.objects.create(loginid='reqx', mail='reqx@c.com', role='NONE')
+        self.pl_user = UserProfile.objects.create(loginid='plx1', mail='plx1@c.com', role='PL')
+        self.r_user = UserProfile.objects.create(loginid='rx1', mail='rx1@c.com', role='TE_R')
+        self.j_user = UserProfile.objects.create(loginid='jx1', mail='jx1@c.com', role='TE_J')
+        self.o_user = UserProfile.objects.create(loginid='ox1', mail='ox1@c.com', role='TE_O')
+
+    def _make_doc(self, detail, jayer_rows, oayer_rows):
+        payload = {'detail': detail, 'jayerRows': jayer_rows, 'oayerRows': oayer_rows}
+        return RequestDocument.objects.create(
+            title='doc', requester=self.requester, requester_name='요청자',
+            requester_email='reqx@c.com', requester_department='개발팀',
+            product_name='PROD-1', status='draft',
+            additional_notes=self._json.dumps(payload, ensure_ascii=False),
+        )
+
+    def _submit_and_reach_zone3(self, doc):
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/submit/',
+                              {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.r_user)
+        r = self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': 'rx1',
+        }, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'R'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def _claim_and_reject(self, agent, user, doc, comment='반려'):
+        self.client.force_authenticate(user=user)
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': agent}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/reject-step/',
+                              {'agent': agent, 'comment': comment}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def _resubmit(self, doc):
+        self.client.force_authenticate(user=self.requester)
+        r = self.client.post(f'/api/documents/{doc.id}/resubmit/',
+                              {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_o_reject_unchanged_skips_r_on_resubmit(self):
+        detail = {'line': 'L1', 'process_id': 'PID-1'}
+        jayer_rows = [{'id': 'j1', 'pp': 'NORMAL'}]
+        oayer_rows = [{'id': 'o1', 'st': 'O'}]
+        doc = self._make_doc(detail, jayer_rows, oayer_rows)
+        self._submit_and_reach_zone3(doc)
+        self._claim_and_reject('O', self.o_user, doc)
+
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+        self._resubmit(doc)
+        doc.refresh_from_db()
+        self.assertEqual(doc.r_skip_round, 2, '동일 내용 재상신은 2회차 R 생략으로 표시돼야 한다')
+
+        # PL 전원 합의 → R 없이 곧바로 3구역 생성
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        r_steps = ApprovalStep.objects.filter(document=doc, agent='R', round=2)
+        self.assertEqual(r_steps.count(), 0, '변경 없이 재상신하면 2회차 R 은 생성되지 않아야 한다')
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='J', round=2, action='pending').exists()
+        )
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='O', round=2, action='pending').exists()
+        )
+        doc.refresh_from_db()
+        self.assertIsNone(doc.r_skip_round, '소진된 플래그는 다시 null 이어야 한다')
+
+        # 나머지 3구역도 합의를 마치면 정상적으로 최종 승인된다(R 없이도 승인 가능해야 함).
+        self.client.force_authenticate(user=self.j_user)
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'J'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'J'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.o_user)
+        r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'O'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'O'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_o_reject_changed_map_info_keeps_r_on_resubmit(self):
+        detail = {'line': 'L1', 'process_id': 'PID-1', 'map_type': 'NEW'}
+        jayer_rows = [{'id': 'j1', 'pp': 'NORMAL'}]
+        oayer_rows = [{'id': 'o1', 'st': 'O'}]
+        doc = self._make_doc(detail, jayer_rows, oayer_rows)
+        self._submit_and_reach_zone3(doc)
+        self._claim_and_reject('O', self.o_user, doc)
+        doc.refresh_from_db()
+
+        # 반려 후 MAP 정보를 바꾼 뒤 재상신
+        payload = self._json.loads(doc.additional_notes)
+        payload['detail']['map_type'] = 'CLONE'
+        doc.additional_notes = self._json.dumps(payload, ensure_ascii=False)
+        doc.save()
+
+        self._resubmit(doc)
+        doc.refresh_from_db()
+        self.assertIsNone(doc.r_skip_round, '내용이 바뀌었으면 R 을 생략하면 안 된다')
+
+        self.client.force_authenticate(user=self.pl_user)
+        r = self.client.post(f'/api/documents/{doc.id}/peer-approve/', {}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.assertTrue(
+            ApprovalStep.objects.filter(document=doc, agent='R', round=2, action='pending').exists(),
+            '내용이 바뀌었으면 2회차 R 이 정상적으로 다시 생성돼야 한다'
+        )
