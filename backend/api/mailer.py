@@ -39,14 +39,22 @@
   트랜잭션 커밋 후 스레드 1개가 순서대로(순서 자체는 무관) 즉시 발송을 시도한다
   (`_dispatch_batch`/`_send_now_async_sequential`). 재시도 안전망(`process_mail_queue`)은
   원래부터 한 건씩 순차 처리라 별도 변경이 필요 없다.
+- R/J/O 완료 통보(notify_rjo_completed, 2026-09 신설): 2구역 R(+RV, 있으면)과 3구역 J·O 가
+  모두 합의를 마친 시점에 TE_P 팀 전원에게 참고용 통보(결재 권한과 무관, 단일 팀이라
+  분리 발송 없이 즉시 발송). 현재(최신) 회차 기준으로만 판정하므로, 반려로 새 회차가
+  열리면 이전 회차의 J/O 합의 이력은 새 회차 판정에 영향을 주지 않는다
+  (`views.py _is_r_zone_complete`/`approve_step`).
 - 라인 수신 설정(mail_lines) 필터: 위에서 산출된 수신자 중, 의뢰서의 라인(detail.line)을
   권한 관리 '이메일 설정'에서 끈 사람을 제외한다(`_filter_by_mail_lines`). '전체 받기'
   (receive_all_mail, 기본값)가 켜져 있으면 라인과 무관하게 전부 받는다. 대상 역할은
   TE_R/P/J/O/E·MASTER 이고 PL·NONE 은 적용받지 않는다. 담당자로 지정된 단계의 결재 요청
-  메일도 예외 없이 필터를 탄다. VOC 메일은 라인 개념이 없어 필터 대상이 아니다.
+  메일도 예외 없이 필터를 탄다. **의뢰서 관련 메일은 예외 없이 전부 이 필터를 탄다**
+  (2026-09부터 '상신 받기' 구독자와 R/J/O 완료 통보도 포함). VOC 메일만 라인 개념이
+  없어 필터 대상이 아니다.
 - 상신 받기(receive_submit_mail, 2026-08 신설): TE_P 사용자가 권한 관리 '이메일 설정'에서
-  켜면, 상신·재상신 시 통보처와 같은 메일(notify_submitted)을 추가로 받는다. 라인 수신 설정
-  (mail_lines)과 무관하게 독립적으로 관리된다(VOC 토글과 동일한 성격).
+  켜면, 상신·재상신 시 통보처와 같은 메일(notify_submitted)을 추가로 받는다. '전체 받기'
+  토글과는 독립적으로 관리되지만(하나를 꺼도 다른 하나는 그대로), 라인 수신 설정
+  (mail_lines) 필터 자체는 2026-09부터 이 메일에도 적용된다.
 - 중단(PAUSE, 2026-09 신설): 요청/재개(pause_requested/pause_resumed)는 확인 대상·재개
   대상 단계에 담당자가 있으면 그 1명, 없으면 담당 팀별로 각각 별도 메일(withdraw_requested와
   동일 규칙 재사용). 확정(pause_confirmed)은 대상 단계 전원 확인이 끝난 시점에만 작성자 +
@@ -207,6 +215,7 @@ EVENT_STATUS_LABEL = {
     'pause_resumed': '결재 재개',
     'document_deleted': '삭제',
     'post_approver_removed': '후결자 제외',
+    'notify_rjo_completed': 'R/J/O 완료 통보',
 }
 
 # 이벤트 타입별 히어로+KPI 카드 이메일 색상 테마
@@ -247,6 +256,8 @@ EVENT_THEME = {
 EVENT_THEME['notify_approved'] = EVENT_THEME['notify_submitted']
 # P 단계 완료 통보(TE_O/TE_J)도 다른 통보 이벤트와 같은 보라 테마를 쓴다.
 EVENT_THEME['notify_p_completed'] = EVENT_THEME['notify_submitted']
+# R/J/O 완료 통보(TE_P)도 결재 권한과 무관한 참고 통보라 같은 보라 테마를 쓴다.
+EVENT_THEME['notify_rjo_completed'] = EVENT_THEME['notify_submitted']
 # 철회 요청/완료: 결재가 멈추거나 문서가 사라지는 알림이라 반려와 같은 주의(레드) 테마
 EVENT_THEME['withdraw_requested'] = EVENT_THEME['rejected']
 EVENT_THEME['withdraw_completed'] = EVENT_THEME['rejected']
@@ -616,19 +627,21 @@ def resolve_notifier_recipients(document):
     return _apply_redirect(emails, document)
 
 
-def resolve_submit_subscriber_recipients():
+def resolve_submit_subscriber_recipients(document):
     """'상신 받기'를 켠 TE_P 사용자 전원의 이메일(2026-08 신설).
 
     상신·재상신 시 통보처(notify_submitted)와 같은 메일을 추가로 받고 싶은 TE_P 사용자가
-    권한 관리 '이메일 설정'의 '상신 받기' 토글로 켠다. VOC 토글과 마찬가지로 라인 수신
-    설정(mail_lines)과는 무관하므로 document 를 넘기지 않아 라인 필터를 타지 않는다.
+    권한 관리 '이메일 설정'의 '상신 받기' 토글로 켠다. '전체 받기'/'상신 받기' 두 설정은
+    서로 독립적으로 관리되지만(하나를 꺼도 다른 하나는 그대로), 라인 수신 설정(mail_lines)
+    필터 자체는 모든 의뢰서 메일에 예외 없이 적용되어야 하므로(2026-09 결정) 다른 결재
+    알림과 동일하게 document 를 넘겨 `_apply_redirect`가 라인 필터를 걸도록 한다.
     """
     emails = list(
         UserProfile.objects.filter(role='TE_P', receive_submit_mail=True)
         .exclude(mail='')
         .values_list('mail', flat=True)
     )
-    return _apply_redirect(emails)
+    return _apply_redirect(emails, document)
 
 
 def resolve_withdraw_target_recipients(document, step_ids):
@@ -1099,6 +1112,10 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
         subject = f'[P 완료 통보] {document.title}'
         headline = 'P 단계 결재가 완료되어 통보드립니다. (TE_O·TE_J 수신)'
         stage_value = EVENT_STATUS_LABEL[event_type]
+    elif event_type == 'notify_rjo_completed':
+        subject = f'[R/J/O 완료 통보] {document.title}'
+        headline = 'R/J/O 단계 결재가 모두 완료되어 통보드립니다. (TE_P 수신)'
+        stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'withdraw_requested':
         subject = f'[철회 요청] {document.title}'
         headline = (
@@ -1254,7 +1271,7 @@ def enqueue_notify_submitted(document):
     같은 메일을 받는다. 통보처가 하나도 없어도 상신 받기 구독자만으로 발송된다.
     """
     recipients = resolve_notifier_recipients(document)
-    subscriber_recipients = resolve_submit_subscriber_recipients()
+    subscriber_recipients = resolve_submit_subscriber_recipients(document)
     for mail in subscriber_recipients:
         if mail not in recipients:
             recipients.append(mail)
@@ -1282,6 +1299,18 @@ def enqueue_notify_p_completed(document):
         notis.append(_enqueue(document, 'notify_p_completed', recipients, agent=team_key, dispatch=False))
     _dispatch_batch(notis)
     return [n for n in notis if n is not None]
+
+
+def enqueue_notify_rjo_completed(document):
+    """R/J/O 완료 통보 적재(TE_P 팀 전원, 결재 권한과 무관한 참고 통보, 2026-09 신설).
+
+    2구역 R(+RV) 과 3구역 J·O 가 모두 합의를 마친 시점에 P 팀에게 보낸다. 단일 팀
+    대상이라 notify_p_completed 와 달리 팀별로 나눌 필요가 없어 즉시 발송(dispatch=True,
+    기본값)한다. 라인 수신 설정(mail_lines) 필터는 `_apply_redirect(recipients, document)`
+    로 다른 결재 알림과 동일하게 적용된다.
+    """
+    recipients = _apply_redirect(_team_emails('P'), document)
+    return _enqueue(document, 'notify_rjo_completed', recipients, agent='P')
 
 
 def enqueue_withdraw_requested(document, withdraw_request):

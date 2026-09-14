@@ -1274,6 +1274,17 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 # E: 담당자 합의 + 지정된 검토자(EV) 전원 합의까지 끝나야 완료
                 e_ok = (not e_exists) or self._stage_reviewers_complete(document, 'E', current_round)
                 all_approved = p_ok and j_approved and o_approved and e_ok and ra_ok
+
+                # (2026-09) 2구역 R(+RV) + 3구역 J·O 가 모두 합의를 마치면 P 팀에게
+                # 참고용 완료 통보를 보낸다(결재 권한과 무관, all_approved 판정과는 별개).
+                # J·O 는 R 합의 시점에 이미 병렬로 생성돼 있어 R 이 이 셋 중 가장 먼저
+                # 끝나므로, J 또는 O 가 마지막으로 합의되는 시점에만 확인하면 정확히 1회
+                # 발송된다. j_approved/o_approved 는 이미 round=current_round 로 스코프돼
+                # 있어, 반려 후 재상신으로 새 회차가 열려도 이전 회차의 J/O 합의 이력이
+                # 새 회차 판정에 섞이지 않는다.
+                if (agent in ('J', 'O') and j_approved and o_approved
+                        and self._is_r_zone_complete(document, current_round)):
+                    mailer.enqueue_notify_rjo_completed(document)
             if all_approved:
                 new_status = 'approved'
 
@@ -2170,6 +2181,19 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not reviewer_steps:
             return True
         return all(s.action == 'approved' for s in reviewer_steps)
+
+    def _is_r_zone_complete(self, document, round_no):
+        """2구역(R 단계)이 해당 회차에서 완료됐는지 여부 — R 담당자 합의 + RV(지정됐으면) 합의.
+
+        R 은 `_REVIEW_AGENT_OF`에 없어(RV는 R과 별도 agent) `_stage_reviewers_complete`를
+        그대로 쓸 수 없다 — 그 함수는 review_agent 가 없으면 검토자 확인 없이 바로 True를
+        돌려주므로, RV 가 지정된 경우까지 정확히 판정하려면 이 전용 헬퍼가 필요하다.
+        """
+        r_step = ApprovalStep.objects.filter(document=document, agent='R', round=round_no).first()
+        if not r_step or r_step.action != 'approved':
+            return False
+        rv_step = ApprovalStep.objects.filter(document=document, agent='RV', round=round_no).first()
+        return (not rv_step) or rv_step.action == 'approved'
 
     def _notify_after_p_review(self, document, round_no):
         """P 단계가 담당자+검토자(PV) 전원 합의로 완료된 시점에 완료 통보를 보낸다.

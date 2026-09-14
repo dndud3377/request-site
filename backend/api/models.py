@@ -1290,6 +1290,8 @@ class MailNotification(models.Model):
         ('pause_resumed', '결재 재개'),
         ('document_deleted', '의뢰서 삭제'),
         ('post_approver_removed', '후결자 제외'),
+        # R/J/O 완료 → P 팀 통보 (2026-09 추가)
+        ('notify_rjo_completed', 'R/J/O 완료 통보'),
     ]
 
     STATUS_CHOICES = [

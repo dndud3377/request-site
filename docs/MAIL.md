@@ -37,11 +37,25 @@
 (과거 기록 등록, 의도적 무메일)는 이번 범위에서 제외했고, `cancel-pause`는 `resume`과 수신자에게
 전달하는 메시지 성격이 겹친다고 판단해 뺐다. 상세는 §3.4·§4 참고.
 
-### '상신 받기' — TE_P 구독형 상신 알림 (2026-08 신설)
-권한 관리 'TE_P' 탭에 **라인 필터·전체 받기와 무관한 독립 토글**(`receive_submit_mail`, 기본
+### '상신 받기' — TE_P 구독형 상신 알림 (2026-08 신설, 2026-09 라인 필터 적용)
+권한 관리 'TE_P' 탭에 **'전체 받기'와는 별개로 켜고 끄는 토글**(`receive_submit_mail`, 기본
 False)을 신설했다. 켠 TE_P 사용자는 `submit`/`resubmit` 시점에 통보처와 같은
-`notify_submitted` 메일을 함께 받는다. VOC 토글과 같은 성격(특정 역할 탭에만 노출, 라인
-필터 미적용, 끌 때 확인 모달)이다. 상세는 §3.3 참고.
+`notify_submitted` 메일을 함께 받는다. 특정 역할 탭에만 노출되고 끌 때 확인 모달을 거치는
+것은 VOC 토글과 같은 성격이지만, ⚠️ **라인 수신 설정(mail_lines) 필터는 2026-09부터 적용된다**
+(도입 당시엔 VOC 처럼 필터를 타지 않았으나, "이메일 설정은 의뢰서 관련 메일 전부에 적용돼야
+한다"는 결정에 따라 변경됨). 상세는 §3.3 참고.
+
+### R/J/O 완료 → P 팀 통보 신설 + 라인 필터 전면 적용 (2026-09)
+1. **R/J/O 완료 통보 신설** — 2구역 R(+RV)과 3구역 J·O 가 현재 회차 기준으로 모두 합의를
+   마치면 `notify_rjo_completed`로 **TE_P 팀 전원**에게 참고용 통보 메일을 발송한다(§3 표,
+   §3.5, §4 표). 'Overlay 변경' 단독 목적이라 J 가 없는 문서는 R+O 완료만으로 충족하고,
+   Only MAP·MAP 삭제·ADI CD 변경처럼 이 R/J/O 조합 자체가 성립하지 않는 문서 유형은 대상이
+   아니다. 반려 후 재상신으로 새 회차가 열려도 이전 회차의 J/O 합의 이력이 새 회차 판정에
+   섞이지 않는다(회차 스코프 판정).
+2. **라인 수신 설정(mail_lines) 필터의 예외 폐지** — "이메일 설정은 의뢰서 관련 메일 전부에
+   예외 없이 적용돼야 한다"는 결정에 따라, 그동안 필터를 타지 않던 '상신 받기'(TE_P 구독,
+   §3.3)에도 라인 필터를 적용했다. 위 신설 R/J/O 완료 통보도 처음부터 라인 필터를 탄다.
+   VOC 메일만 라인 개념이 없어 여전히 대상이 아니다(§3.0).
 
 ### 팀별 분리 발송 — 서로 다른 팀을 한 통에 묶지 않는다 (2026-09 개편)
 반려(`rejected`)·철회완료(`withdraw_completed`)·철회요청/취소(`withdraw_requested`/
@@ -181,6 +195,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | notify_submitted | (상신·재상신) | **통보처 전원**(`detail.notifiers`). 통보처는 개별 검색·주소록 불러오기 외에 **'나만의 그룹' 일괄 추가**(2026-08)로도 채울 수 있으나, 저장 포맷이 같아 발송 로직은 동일하다. **+ '상신 받기'를 켠 TE_P 사용자 전원**(2026-08 신설, §3.3) |
 | notify_approved | (완료) | **통보처 전원**(`detail.notifiers`) |
 | notify_p_completed | (P 단계 완료, 2026-08 추가) | **TE_O 팀 전원 + TE_J 팀 전원** — 결재 권한과 무관한 참고 통보. P 담당자+검토자(PV) 전원 합의로 P 단계가 완료되는 시점(`_notify_after_p_review`)에 발송. TE_O·TE_J 는 서로 다른 팀이라 **한 통이 아니라 각각 별도 메일**로, 순서대로(겹치지 않게) 발송한다(2026-09 개편). 수신자 중복은 `_apply_redirect` 가 팀별로 각각 제거한다 |
+| notify_rjo_completed | (R/J/O 완료, 2026-09 신설) | **TE_P 팀 전원** — 결재 권한과 무관한 참고 통보. 2구역 R(+RV, 지정됐으면) 과 3구역 J·O 가 **현재(최신) 회차 기준으로** 모두 합의를 마친 시점(`views.py _is_r_zone_complete` + 기존 `j_approved`/`o_approved` 판정, `agent in ('J','O')` 액션 시점에만 확인)에 발송. 단일 팀 대상이라 팀별 분리 없이 즉시 발송한다(`mailer.enqueue_notify_rjo_completed`). 'Overlay 변경' 단독 목적이라 J 단계가 아예 없는 문서(`skip_j_stage()`)는 R+O 완료만으로 충족한다. Only MAP·MAP 삭제·ADI CD 변경 문서는 이 R/J/O 조합 자체가 성립하지 않는 경로라 대상이 아니다 |
 
 ### 3.0 라인별 메일 수신 설정 (mail_lines) — 모든 의뢰서 메일에 적용 (2026-08 신설)
 
@@ -193,7 +208,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | 저장 | `UserProfile.receive_all_mail`(Boolean, **기본 True**) + `UserProfile.mail_lines`(M2M → `Line` 마스터, 라인 '이름'으로 대조) |
 | **전체 받기** | `receive_all_mail=True` 면 **라인 구분 없이 전부 수신** — 필터를 아예 타지 않는다. 신규 사용자·기존 사용자의 기본 상태라 **별도 데이터 마이그레이션이 필요 없다** |
 | 대상 역할 | `UserProfile.MAIL_LINE_FILTER_ROLES` = **TE_R·TE_P·TE_J·TE_O·TE_E·MASTER**. **PL·NONE 은 적용받지 않고** 기존대로 전부 받는다 |
-| 적용 범위 | **의뢰서 관련 모든 메일** — `stage_arrival`·`rejected`·`approved`·`notify_submitted`·`notify_approved`·`notify_p_completed`·`withdraw_*` 전부 |
+| 적용 범위 | **의뢰서 관련 모든 메일, 예외 없음** — `stage_arrival`·`rejected`·`approved`·`notify_submitted`(통보처 + '상신 받기' 구독자 모두, 2026-09부터)·`notify_approved`·`notify_p_completed`·`notify_rjo_completed`(2026-09 신설)·`withdraw_*` 전부 |
 | 제외 | **VOC 메일**(`voc_created`/`voc_comment`)은 라인 개념이 없어 필터를 타지 않는다 |
 | 빈 집합 | 전체 받기가 **꺼진 상태**의 빈 `mail_lines` 는 **'본인이 전부 껐다 = 메일 0통'** 을 뜻한다 |
 | 라인 없는 의뢰서 | `detail.line` 이 비면 필터가 성립하지 않아 **그대로 전원 수신** |
@@ -296,7 +311,7 @@ VOC 메일 본문에는 `FRONTEND_URL/voc?id={voc_id}` 형태의 직접 링크�
 | 저장 | `UserProfile.receive_submit_mail`(Boolean, **기본 False** — opt-in) |
 | 대상 역할 | **TE_P 만**. 그 외 역할은 이 필드를 쓰지 않는다(값이 있어도 무시) |
 | 발송 시점 | `submit`/`resubmit` — 기존 `notify_submitted`(통보처) 메일과 **완전히 같은 메일 1통**에 수신자로 합류한다(별도 이벤트·별도 메일이 아니다) |
-| 라인 필터(§3.0) | **적용되지 않는다.** VOC 토글과 동일하게 `_apply_redirect()`를 문서 없이 호출해 라인 수신 설정과 무관하게 발송된다 |
+| 라인 필터(§3.0) | ✅ **적용된다**(2026-09 변경). 도입 당시(2026-08)에는 VOC 토글처럼 `_apply_redirect()`를 문서 없이 호출해 라인 수신 설정과 무관하게 발송됐으나, "이메일 설정은 의뢰서 관련 메일 전부에 예외 없이 적용돼야 한다"는 결정에 따라 다른 결재 알림과 동일하게 `resolve_submit_subscriber_recipients(document)`로 라인 필터를 타도록 바꿨다. 라인을 꺼둔 TE_P 사용자는 '상신 받기'를 켜도 그 라인의 상신 메일은 받지 않는다 |
 | '전체 받기'와의 관계 | **완전히 독립.** `receive_all_mail`/`mail_lines`를 어떻게 바꿔도 이 토글 상태는 변하지 않는다 |
 | 변경 API | `PATCH /api/users/{id}/submit-mail/` — `{"receive_submit_mail": true/false}`. 본인 행은 본인이, 그 외에는 MASTER만 변경 가능. 대상이 TE_P가 아니면 400 |
 | 화면 동작 | TE_P 탭의 라인 버튼들 뒤에 구분선 + `상신 받기` 버튼 1개. 켤 때는 즉시 저장, **끌 때는 확인 모달**을 거친다(`permission.submit_mail_off_*`) |
@@ -328,6 +343,22 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
 크게 늘 수 있어 제외했다. `direct-approve`(MASTER 전용 이력 바로 등록)는 실제 결재를 진행하지
 않고 과거 완료 기록만 남기는 기능이라는 원래 설계를 그대로 유지해 무메일이다.
 
+### 3.5 R/J/O 완료 통보 (notify_rjo_completed, 2026-09 신설)
+
+2구역(R)과 3구역(J·O)이 모두 끝났다는 사실을 P 팀이 결재 화면을 직접 열어보지 않아도
+알 수 있도록 참고용 통보를 신설했다. 결재 상태·경로 판정에는 관여하지 않는다.
+
+| 항목 | 규칙 |
+|---|---|
+| 판정 시점 | `approve-step` 에서 `agent`가 `J` 또는 `O`일 때만 확인한다(`views.py approve_step`, 일반 경로 `else` 분기). R 은 J·O 보다 먼저 병렬 진입의 관문 역할을 하므로(J·O 는 R 합의 시점에 이미 병렬로 생성됨) 이 조합에서 R 이 가장 나중에 끝나는 경우는 없다 |
+| 완료 판정 | R 완료 = R 담당자 합의 + (RV 지정됐으면 RV 도 합의, `views._is_r_zone_complete`). J·O 완료 = 기존 `all_approved` 판정에 이미 쓰이던 `j_approved`/`o_approved`(회차 스코프) 그대로 재사용 |
+| 회차 기준 | **반드시 현재(최신) 회차만** 본다 — `j_approved`/`o_approved`/`_is_r_zone_complete` 모두 `round=current_round` 로 조회한다. 반려로 새 회차가 열리면 이전 회차의 J·O 합의 이력은 새 회차 판정에 전혀 섞이지 않는다(재상신 시 J·O 단계 자체가 새 회차에 다시 생성되므로 구조적으로도 섞일 수 없다) |
+| J 가 없는 문서 | '기타 목적이 Overlay 변경뿐'인 문서(`skip_j_stage()`)는 J 단계 자체가 없다 — 이 경우 **R+O 완료만으로 충족**한다(기존 `all_approved`의 `j_approved` 판정과 동일 취급) |
+| 대상 외 문서 유형 | Only MAP(P·J·O 없음)·MAP 삭제(R 이 3구역으로 이동, 별도 판정 분기)·ADI CD 변경(R·O 없음)은 이 R/J/O 조합이 성립하지 않는 경로라 통보 자체가 발생하지 않는다(별도 가드 불필요 — 해당 분기에 도달하지 않음) |
+| 수신자 | **TE_P 팀 전원**(`_team_emails('P')`). 단일 팀이라 팀별 분리 없이 즉시 발송(`mailer.enqueue_notify_rjo_completed`) |
+| 라인 필터(§3.0) | 다른 결재 알림과 동일하게 적용됨(`_apply_redirect(recipients, document)`) |
+| 중복 방지 | J·O 중 나중에 끝나는 시점에만 조건이 충족되므로 정확히 1회만 발송된다(같은 회차에서 J/O 각 단계는 pending→approved 전이가 1번뿐) |
+
 ### 제목·본문 규칙 (2026-08 개편)
 - **모든 메일 제목에 요청서 제목이 포함**된다(`_build_message`).
 - **`stage_arrival` 제목은 모든 단계 공통으로 `{name_prefix}[결재 요청] {제목}` 형식**(2026-08부터 단계 접미사 `- {단계라벨}` 삭제). 단계 구분은 본문 KPI 카드의 "결재 단계" 타일로만 표시한다.
@@ -337,20 +368,20 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
 - **본문 링크는 해당 문서 상세로 딥링크**된다(`_detail_link`): 진행 중 이벤트(`stage_arrival`/`rejected`/`notify_submitted`)는 `{FRONTEND_URL}/approval?id={문서ID}`, 완료 관련 이벤트(`approved`/`notify_approved`)는 `{FRONTEND_URL}/history?id={문서ID}`(완료 문서는 결재현황 목록에서 빠지므로). 프론트(`ApprovalPage.tsx`/`HistoryPage.tsx`)가 `?id=` 쿼리를 감지해 목록과 무관하게 그 문서를 직접 조회 후 상세 모달을 자동으로 연다.
 
 ### 본문 디자인 — 히어로 헤더 + KPI 카드 (2026-07 개편)
-- 본문 HTML은 `_render_hero_kpi_email()`(공통 템플릿) + `_kpi_grid()`(2x2 타일)로 렌더링되며, 모든 이벤트 타입(`stage_arrival`/`rejected`/`approved`/`notify_submitted`/`notify_approved`/`notify_p_completed`/`withdraw_*`/`pause_*`/`document_deleted`/`post_approver_removed`)이 이 템플릿을 공유한다.
+- 본문 HTML은 `_render_hero_kpi_email()`(공통 템플릿) + `_kpi_grid()`(2x2 타일)로 렌더링되며, 모든 이벤트 타입(`stage_arrival`/`rejected`/`approved`/`notify_submitted`/`notify_approved`/`notify_p_completed`/`notify_rjo_completed`/`withdraw_*`/`pause_*`/`document_deleted`/`post_approver_removed`)이 이 템플릿을 공유한다.
 - 구성: 솔리드 컬러 히어로(시스템명 + 이벤트 안내 문구) → 흰 카드(의뢰서 제목 + KPI 타일 4개: 결재 단계/의뢰자/상신일/생산 진행일) → **결재 경로 카드**(2026-07 추가, 아래 참고) → 특이사항(`reference_materials`) 카드 → CTA 버튼 → 푸터. 카드 바깥은 연한 색조 배경.
 - **이벤트별 색상 테마**(`EVENT_THEME`): 히어로/버튼/카드 테두리/KPI 타일 배경을 이벤트 타입에 따라 통일된 팔레트로 분기한다.
   - `stage_arrival`: 블루 `#2563eb → #3b82f6`
   - `rejected`: 레드 `#dc2626 → #ef4444`
   - `approved`: 그린 `#16a34a → #22c55e`
-  - `notify_submitted`/`notify_approved`/`notify_p_completed`: 퍼플 `#7c3aed → #8b5cf6`
+  - `notify_submitted`/`notify_approved`/`notify_p_completed`/`notify_rjo_completed`: 퍼플 `#7c3aed → #8b5cf6`
   - `withdraw_requested`/`withdraw_completed`: 레드(반려와 동일) — 결재가 멈추거나 문서가 사라지는 알림
   - `withdraw_rejected`/`withdraw_cancelled`: 퍼플(통보와 동일) — 결재가 그대로 이어진다는 정보성 통보
   - `pause_requested`/`pause_confirmed`/`document_deleted`: 레드(반려와 동일) — 결재가 멈추거나 문서가 사라지는 알림
   - `pause_rejected`/`post_approver_removed`: 퍼플(통보와 동일) — 정보성 통보
   - `pause_resumed`: 블루(단계 도착과 동일) — 결재가 정상적으로 다시 시작된다는 알림
   - `EVENT_THEME`에 없는 이벤트 타입은 `stage_arrival`(블루) 테마로 대체된다.
-- **결재 단계** 타일: `stage_arrival`은 `AGENT_LABEL`, 그 외 이벤트는 `EVENT_STATUS_LABEL`(반려/승인 완료/상신 통보/결재 완료 통보/P 단계 도착 통보/P 단계 완료 통보)을 표시한다.
+- **결재 단계** 타일: `stage_arrival`은 `AGENT_LABEL`, 그 외 이벤트는 `EVENT_STATUS_LABEL`(반려/승인 완료/상신 통보/결재 완료 통보/P 단계 도착 통보/P 단계 완료 통보/R·J·O 완료 통보)을 표시한다.
 - **생산 진행일**(`document.production_date`)과 **특이사항**(`document.reference_materials`, 상신 화면의 "특이사항" 입력값)은 값이 없으면 `-`로 표시한다.
 - 사용자 입력이 들어가는 값(제목·의뢰자·특이사항)은 전부 `django.utils.html.escape()`로 이스케이프한다.
 - Outlook 호환을 위해 `<table role="presentation">` 기반 레이아웃 + `bgcolor` 폴백 + `<!--[if mso]>` 조건부 주석을 사용한다(플렉스박스/그리드 미사용).
@@ -438,6 +469,7 @@ R·J 둘 다면 R 팀 1통 + J 팀 1통, 총 2통이 나가고 한 통에 섞이
 | `approve-step` agent=P/PV (PHPSI 담당자·검토자 합의) | 🟡 | 지정된 검토자(PV) **전원**까지 합의가 끝나면 **TE_O·TE_J 에게 notify_p_completed 발송**(2026-09부터 TE_O·TE_J 각각 별도 메일 2통, 순서대로 발송). 검토자가 아직 남아 있으면 이 합의 자체는 무메일(대신 아래 행처럼 검토자 지정 시 즉시 발송됨). **(2026-08) 이 시점의 J 생성·J 도착 메일은 R 합의 시점으로 이동**했다 |
 | `approve-step` P/E 합의 + `reviewer_loginids`(검토자 지정) | ✅ | 지정된 검토자(PV/EV) **각각**에게 즉시(담당자 합의와 **같은 요청**으로 처리되므로 같은 순간 발송) |
 | `approve-step` agent=J/O/E/EV/RA (병렬 경로 합의) | 🟡 | 이 합의로 **문서 전체가 approved 로 전이될 때만** approved(결재 경로 참여 전원) + notify_approved(통보처) 발송. 다른 경로가 아직 안 끝났으면 이 개별 합의는 **무메일**(침묵 — 예: J는 합의됐는데 O가 아직이면 알림 없음) |
+| `approve-step` agent=J/O (R+J+O 모두 완료, 2026-09 신설) | 🟡 | 2구역 R(+RV)과 3구역 J·O 가 **현재 회차 기준으로 모두** 합의를 마친 시점에만 `notify_rjo_completed`(TE_P 팀 전원) 발송. J 또는 O 둘 중 나머지가 아직이면 무메일. §3.5 참고 |
 | `reject-step` (어느 단계든 반려, PL 제외) | ✅ | rejected: 개인 수신자 메일 1통(작성자 + 현재 회차 기합의자 전원 등) + **아직 합의를 마치지 않은 결재선 단계의 담당 팀별로 각각 별도 메일**(반려자 본인·기합의자 제외, 2026-07 개편 / 2026-09 팀별 분리). §3.1 참고 |
 | `assign-step` agent=R (담당자 지정) | ✅ | 지정된 R 담당자에게 발송. **같이 고른 검토자(RV)는 이 시점엔 무메일**(R 담당자가 합의하는 시점에 발송됨) |
 | `claim-step` / `unclaim-step` (검토중 선점/취소, J/O/E/P) | ❌ | 선점·선점취소(클릭) 자체는 알림 없음(2026-09: 잦은 클릭 액션이라 범위에서 제외하기로 결정) |
