@@ -569,6 +569,48 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             'document': RequestDocumentSerializer(document).data,
         })
 
+    def _should_skip_r_stage(self, document):
+        """반려 후 재상신 시 2구역(R)을 생략해도 되는가.
+
+        (2026-09) 일반 경로 전용. 가장 최근 반려(`RejectionSnapshot`)의 반려 단계에 따라
+        판정이 갈린다:
+        - `R` 본인이 반려했거나, `RA` 이면서 **고정** 후결자(settings.POST_APPROVER_LOGINID)가
+          반려한 경우는 **항상 R을 다시 거친다**(생략 대상 아님) — R 이 아직 이 내용을 승인한
+          적이 없거나(R 반려), 최종 관문인 고정후결자가 반려했으므로 전체를 다시 확인해야 한다.
+        - `PL`/`SA` 반려는 애초에 R을 만들기 전이라 생략 대상이 아니다(항상 정상 생성됨).
+        - `P`/`J`/`O`/`E`, 또는 `RA`(고정이 아닌 추가 후결자) 반려는 R 이 이미 그 내용을
+          승인한 뒤라 — MAP 정보(`MAP_INFO_FIELDS`)·Jayer 정보(`jayerRows`)·의뢰 상세
+          line~process_id 구간(`DETAIL_LINE_TO_PROCESS_ID_FIELDS`)이 반려 시점과 지금
+          재상신하려는 내용 사이에 **하나도 바뀌지 않았을 때만** R을 생략한다.
+        """
+        if document.is_only_map() or document.is_map_delete_edit() or document.is_adi_cd_change():
+            return False
+
+        rejection = RejectionSnapshot.objects.filter(document=document).order_by('-round', '-id').first()
+        if not rejection:
+            return False
+
+        agent = rejection.rejected_agent
+        if agent == 'R':
+            return False
+        if agent == 'RA':
+            fixed_lid = (getattr(settings, 'POST_APPROVER_LOGINID', '') or '').strip()
+            if fixed_lid and rejection.rejected_by_loginid == fixed_lid:
+                return False
+        elif agent not in ('P', 'J', 'O', 'E'):
+            # PL/SA 등 R 이전 단계 반려는 생략 대상이 아니다.
+            return False
+
+        prev = rejection.get_detail()
+        curr = document.get_detail()
+        if (prev.get('jayerRows') or []) != (curr.get('jayerRows') or []):
+            return False
+
+        prev_detail = prev.get('detail') or {}
+        curr_detail = curr.get('detail') or {}
+        compare_fields = RequestDocument.MAP_INFO_FIELDS + RequestDocument.DETAIL_LINE_TO_PROCESS_ID_FIELDS
+        return all(prev_detail.get(f) == curr_detail.get(f) for f in compare_fields)
+
     @action(detail=True, methods=['post'])
     def resubmit(self, request, pk=None):
         """재상신: rejected → under_review, PL 검토 단계 생성 (지정 PL 필수)
@@ -603,12 +645,18 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        # 2구역(R) 생략 여부는 지금(수정 반영 완료 후) 판정해 새 회차 번호로 기록해 둔다 —
+        # 실제 생략은 PL 전원 합의 시점(_open_stage_after_pl)에 일어난다.
+        skip_r = self._should_skip_r_stage(document)
+
         with transaction.atomic():
             document.status = 'under_review'
             document.submitted_at = timezone.now()
             rep = pl_users[0]
             document.designated_pl = rep
             document.designated_pl_name = rep.username or rep.loginid
+            new_round = self._max_round(document, default=0) + 1
+            document.r_skip_round = new_round if skip_r else None
             document.save()
 
             # 검토 항목·검토자 지정은 그대로 두고 확인 상태만 초기화한다.
@@ -616,7 +664,6 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             review_items_sync.reset_confirmations(document)
 
             # 새 회차에 지정 PL 전원의 pending 단계를 생성(이전 회차는 이력 보존)
-            new_round = self._max_round(document, default=0) + 1
             for u in pl_users:
                 pl_step = ApprovalStep.objects.create(
                     document=document, agent='PL', action='pending', round=new_round,
@@ -1272,7 +1319,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     True if document.skip_j_stage()
                     else (len(j_steps) > 0 and all(s.action == 'approved' for s in j_steps))
                 )
-                o_approved = o_step and o_step.action == 'approved'
+                # Oayer 표가 비어 있어 O 단계 자체를 만들지 않은 문서는 기다릴 대상이 없다
+                # (has_oayer_rows(), skip_j_stage()의 j_approved 와 동일한 패턴).
+                o_approved = (
+                    True if not document.has_oayer_rows()
+                    else bool(o_step and o_step.action == 'approved')
+                )
                 # P: 담당자 합의 + 지정된 검토자(PV) 전원 합의까지 끝나야 완료.
                 # J 분리 전에는 "J 가 존재한다 = P 가 끝났다" 였기에 판정에서 생략했지만,
                 # 이제 J 는 P 와 무관하게 R 합의 시점부터 존재하므로 명시적으로 확인해야 한다.
@@ -2428,11 +2480,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             p_step = ApprovalStep.objects.create(
                 document=document, agent='P', action='pending', round=round_no, due_date=p_due,
             )
-            o_step = ApprovalStep.objects.create(
-                document=document, agent='O', action='pending', is_parallel=True, round=round_no, due_date=o_due,
-            )
             mailer.enqueue_stage_arrival(document, 'P', p_step)
-            mailer.enqueue_stage_arrival(document, 'O', o_step)
+            # O(OVL)는 Oayer 표에 활성 행이 있는 의뢰서에만 생성한다 — 표가 비어 있으면
+            # OVL 팀이 검토할 대상 자체가 없다(E의 plel 판정과 동일한 패턴).
+            if document.has_oayer_rows():
+                o_step = ApprovalStep.objects.create(
+                    document=document, agent='O', action='pending', is_parallel=True, round=round_no, due_date=o_due,
+                )
+                mailer.enqueue_stage_arrival(document, 'O', o_step)
             # 기타 목적이 'Overlay 변경' 하나뿐이면 J 단계 자체를 만들지 않는다(경로에서 제외).
             if not document.skip_j_stage():
                 j_step = ApprovalStep.objects.create(
@@ -2492,9 +2547,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             pl_users.append(u)
         return pl_users, None
 
-    def _open_stage_after_pl(self, document, round_no):
+    def _open_stage_after_pl(self, document, round_no, step=None):
         """PL 검토 단계 완료 후 다음 단계를 연다 — 일반 경로는 R, 'MAP 삭제' 는 P·R·J·O 병렬,
-        'ADI CD 변경' 은 R·O 없이 P·J 만 병렬."""
+        'ADI CD 변경' 은 R·O 없이 P·J 만 병렬.
+
+        `step`은 방금 마지막으로 합의된 PL/SA step — 2구역(R)을 생략하는 회차(아래
+        `r_skip_round` 참고)에서 3구역 병렬 단계의 기한 기준일(= PL 전원 합의 시각)로 쓴다.
+        """
         # 'MAP 삭제' 은 R 이 관문이 아니라 병렬 구성원이므로 여기서 4단계를 한 번에 만든다.
         if document.is_map_delete_edit():
             self._create_map_delete_edit_parallel(document, round_no)
@@ -2502,6 +2561,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 'ADI CD 변경' 은 MAP 정보·O-layer 를 작성하지 않으므로 R·O 없이 P·J 만 연다.
         if document.is_adi_cd_change():
             self._create_adi_cd_parallel(document, round_no)
+            return
+        # (2026-09) resubmit() 이 조건 성립 시 표시해 둔 회차라면 R을 만들지 않고
+        # 곧바로 3구역을 연다 — _should_skip_r_stage 참고. 1회용 플래그라 바로 소진한다.
+        if document.r_skip_round == round_no:
+            document.r_skip_round = None
+            document.save(update_fields=['r_skip_round'])
+            self._advance_to_parallel(document, step, round_no)
             return
         # R 생성(중복 방지: 이미 있으면 재생성하지 않음)
         if not ApprovalStep.objects.filter(document=document, agent='R', round=round_no).exists():
@@ -2525,7 +2591,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             step.save()
 
             if self._pl_stage_complete(document, step.round):
-                self._open_stage_after_pl(document, step.round)
+                self._open_stage_after_pl(document, step.round, step)
                 return True
 
             # 아직 미합의 PL·합의자가 남았으면 문서 상태는 그대로 둔다. (호출부가 under_review 인
