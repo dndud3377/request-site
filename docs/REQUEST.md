@@ -3515,6 +3515,53 @@ J-layer(STEP3)와 O-layer(STEP4) 표의 `st` 컬럼이 지금까지 `request.col
      입력 후 blur/다음 클릭] → [기대 결과: 기존과 동일하게 "Step은 목록에 있는 값만 선택할 수
      있습니다" 에러가 뜨고 진행이 막힌다(정보가 있을 때의 검증은 회귀 없이 유지됨).]
 
+### 버그 수정 (2026-09-14 — col_st 일괄 버튼이 "전체 X" 이후 조용히 무동작하는 문제)
+
+**증상**: J-ayer/O-ayer 표에서 "전체 X"로 st를 일괄 X 처리한 뒤 "전체 O"나 "초기화"를 눌러도
+아무 반응이 없었다(에러·토스트도 없음).
+
+**원인**: `handleJayer/OayerSetAll`·`handleJayer/OayerResetField`(§4.1 2026-08-25 "비활성·기등록·
+layer삭제 완전 격리" 항목에서 도입)가 대상 행을 고를 때 `new_or_copy` 필드든 `st` 필드든 구분 없이
+동일하게 `!isRowInactive(r.st) && !isNocSpecial(r.new_or_copy)`(참여행) 조건을 썼다. `new_or_copy`
+필드(전체 신규/차용/초기화)에는 맞는 조건이지만, **`st` 필드 자체를 바꾸는 버튼**(전체 O/전체 X/
+초기화)에마저 같은 조건을 쓰면 "전체 X" 적용 직후 모든 행이 `isRowInactive`가 되어, 뒤이은 "전체
+O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 생겼다.
+
+**결정(사용자 확인 완료)**: `st` 필드를 바꾸는 일괄 버튼은 §4.1 2026-08-25 항목의 "비활성 행은
+일괄 버튼에서 완전히 제외" 원칙에서 **의도적으로 예외로 둔다** — `st` 버튼 자체가 `st` 값을
+되돌리는 수단이어야 하므로, `isNocSpecial`(기등록/layer삭제)만 제외하고 `isRowInactive` 여부는
+더 이상 대상 선정에 쓰지 않는다. `new_or_copy` 필드 버튼은 기존 원칙 그대로 비활성 행을 제외한다.
+
+- **`index.tsx`**: `isBulkStOrNocTarget(r, field)` 헬퍼 추가 — `new_or_copy` 필드일 때만
+  `isRowInactive` 조건을 적용하고, `st` 필드일 때는 `isNocSpecial`만 검사한다.
+  `handleJayerSetAll`/`handleJayerResetField`/`handleOayerSetAll`/`handleOayerResetField` 4곳
+  모두 이 헬퍼로 교체했다.
+- **부수 발견 + 동시 수정**: 로컬 표만 고치자 "전체 X → 전체 O"로 J-ayer는 되돌아오는데, 같은
+  layerid의 O-ayer 참여행(반대편 표)에는 전파되지 않는 문제가 새로 드러났다(브라우저 재현
+  테스트로 확인). 원인은 반대편 표로 전파할 layerid를 계산할 때 **이 클릭이 반영되기 전(stale)
+  상태**를 기준으로 참여행을 판정했기 때문 — st 버튼 자체가 참여 여부를 뒤집는 클릭이라 같은
+  자기모순이 전파 로직에도 있었다. 4개 함수 모두 로컬 갱신 결과(`updatedRows`)를 먼저 계산해
+  `setJayerRows`/`setOayerRows`에 반영하고, **그 갱신된 배열을 기준으로** layerid를 계산하도록
+  고쳤다(기존에는 `jayerRows`/`oayerRows` 클로저 변수를 그대로 썼다).
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx` (`handleJayerSetAll`,
+  `handleJayerResetField`, `handleOayerSetAll`, `handleOayerResetField`만 — 다른 핸들러·
+  `new_or_copy` 필드 동작은 변경 없음).
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 tsconfig 옵션 경고 2건 + pre-existing 4건과 동일).
+  `CI=true npx react-scripts test --watchAll=false` — 8 suites / 225건 전부 통과(회귀 없음). 추가로
+  임시 재현 테스트(커밋 대상 아님, 검증 후 삭제)를 돌려 "전체 X → 전체 O" 클릭 시 O-ayer 참여행의
+  st 값이 `O`로 정상 전파됨을 콘솔 출력으로 직접 확인했다. 결재 흐름(승인 경로 판정) 자체를
+  건드리지 않아 `scripts/approval_cases/run_cases`는 대상이 아니다.
+- **수동 검증 시나리오**:
+  1. [`/request`에서 신규 작성 → STEP3(J-ayer)로 이동, 행이 1개 이상 있는 상태] → [표 위 "전체
+     X" 클릭 → 기대 결과: 참여행(기등록/layer삭제 제외) 전체의 st가 X로 바뀐다.] → [이어서 "전체
+     O" 클릭 → 기대 결과: 방금 X였던 행들도 포함해 전체 st가 O로 돌아온다(이전에는 아무 반응이
+     없었음).] → [같은 방식으로 "초기화" 클릭 → 기대 결과: st 칸이 전부 빈 값으로 바뀐다.]
+  2. [같은 layerid를 가진 O-ayer 참여행이 정확히 1개 존재하는 상태에서 STEP3의 "전체 X" → "전체
+     O" 순서로 클릭] → [STEP4(O-ayer)로 이동해 확인] → [기대 결과: 같은 layerid의 O-ayer 행도
+     st가 O로 함께 돌아와 있다(J-ayer만 바뀌고 O-ayer는 X로 남아있으면 회귀).]
+  3. [STEP4(O-ayer)에서도 동일하게 "전체 X" → "전체 O"/"초기화" 를 눌러 표 자신과 J-ayer 짝
+     행 양쪽이 함께 정상 반영되는지 확인.]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
