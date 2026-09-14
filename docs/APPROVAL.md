@@ -397,7 +397,7 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   드롭다운에서 이름을 클릭하면 **바로 선택 칩으로 추가**되고(별도 '추가'/'확인' 버튼 없음), 드롭다운을 다시 열어
   계속 추가할 수 있다. 이 상태에서 **'합의' 버튼을 누르면** 선택된 검토자 지정 + 담당자 합의가 함께 처리되며,
   '반려'를 누르면 선택 내용은 버려지고 그냥 반려된다.
-  ⚠️ 지정 취소/변경 기능은 이번 범위에 없다(후속 작업으로 보류) — 한 번 지정된 검토자는 이후 요청으로 제거할 수 없다.
+  ✅ **(2026-09) EV(MASK 검토자)에 한해 지정 취소/추가 기능이 생겼다** — Case K-4 참고. PV/RV는 여전히 범위 밖.
 - 완료 조건: **E/EV·P/PV 모두 담당자 + 지정된 검토자 전원 합의(AND)** 다(Case F/G 참고, `_stage_reviewers_complete`).
   (2026-08 이전엔 E/EV만 1명 합의로 끝나는 OR 이었고 남은 EV 는 `skip` 으로 닫혔다 — §7 "EV 를 OR → AND 로 재전환" 항목 참고)
   검토자가 하나도 없으면 담당자 합의만으로 즉시 완료 — **P는 지금도
@@ -406,6 +406,36 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   E 합의를 마친 기존 문서를 영구 정지시키지 않기 위해서다.
 - ⚠️ **운영 요건(E)**: `TE_E` 역할 사용자가 **2명 이상**이어야 한 명이 담당자로 선점한 뒤 다른 한
   명을 2차 검토자로 지정할 수 있다(담당자 본인은 검토자로 지정 불가). 1명뿐이면 E 단계가 막힌다.
+
+### Case K-4 — MASK 검토자(EV) 추가/제거 (`add-ev-reviewer` / `remove-ev-reviewer`, 2026-09) — **EV 전용**
+
+검토자를 잘못 지정했을 때(오탈자·인원 착오 등) 바로잡기 위한 기능. **결재 경로 탭이 아니라 문서
+상세보기 하단 버튼 영역**(후결자 관리와 같은 자리·같은 형태)에 노출된다 — 처음엔 결재 경로 탭 안에
+버튼을 넣는 안이었으나, 이미 있는 두 선례와 위치·형태를 맞추는 쪽으로 방향을 바꿨다:
+**후결자 관리**(`add-post-approver`/`remove-post-approver`, 칩 + × 제거 + '+ 추가' 드롭다운, 하단 버튼
+영역)와 **JOB팀 검토 항목**(`review-item-reviewer-add`/`review-item-reviewer-remove`, 이미 합의(확인)한
+검토자는 해제 불가 가드).
+
+- **위치·형태**: 상세보기 모달 하단(탭과 무관하게 항상 노출)에 "MASK 검토자" 칩 목록 + 대기중인 칩마다
+  `×` 제거 + `+ 검토자 추가` 버튼(검색 드롭다운). 이미 합의(approved)한 검토자는 🔒 잠금 칩으로만
+  표시되고 제거 버튼 자체가 없다.
+- **권한(`_can_manage_ev_reviewers`)**: **TE_E 팀원 전원** 또는 **MASTER** — 담당자 한 명이 아니라 같은
+  팀 누구나 처리할 수 있다(후결자 관리의 "작성자 본인만"과 다른 기준 — EV는 원래 담당자가 아닌 사람도
+  검토자로 지정되므로, 잘못을 발견한 그 팀원이 직접 고칠 수 있어야 한다).
+- **추가(`add-ev-reviewer/`, body: `loginid`)**: `status == 'under_review'` + 현재 회차 **E 담당자가
+  이미 합의(approved)** 한 뒤에만 가능(아직 합의 전이면 EV 개념 자체가 없다). 검증 규칙은 K-3의
+  `_validate_reviewers`와 동일 — 대상은 **TE_E 역할**이어야 하고, **E 담당자 본인**·**이미 지정된
+  다른 EV**는 후보에서 제외. 성공 시 즉시 신규 EV에게 `stage_arrival` 메일 발송(기존 EV에게는
+  알림 없음).
+- **제거(`remove-ev-reviewer/`, body: `loginid`)**: 대상 EV가 현재 회차에서 **`pending`**(아직 합의
+  전)일 때만 가능 — **이미 합의(approved)한 EV는 이력 보존을 위해 제거 대상에서 제외**한다(JOB팀
+  검토 항목의 "확인한 검토자는 해제 불가"와 동일 가드).
+- ✅ **최소 1명 유지(후결자와 다른 조건)**: 후결자(RA) 제거는 `Only MAP`·`requires_post_approver()`
+  대상(C가문·연구소 제품) 문서에**만** 조건부로 마지막 1명을 막지만, MASK는 **2026-08부터 검토자
+  지정이 모든 문서에서 항상 필수**이므로 EV는 문서 유형과 무관하게 **항상** 남은 EV가 0명이 되는
+  제거를 막는다. 메시지도 후결자와 같은 어투로 통일: `"MASK 검토자는 최소 1명을 유지해야 합니다.
+  변경을 원하시면 1명 추가 후 삭제하시기 바랍니다."`
+- 테스트: `backend/api/tests.py::EvReviewerManagementTest`(`PEStageReviewerFlowTest`의 fixture 재사용).
 
 ### Case L — 지정 PL 변경 (`change_designee`)
 - 권한: **의뢰자 본인 또는 MASTER만**. 현재 회차 PL step의 assignee 교체.
@@ -950,6 +980,8 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 지정자 변경 | `change-designee/` | (의뢰자/MASTER) |
 | 후결자 추가 (2026-07) | `add-post-approver/` | `loginid` |
 | 후결자 제거 (2026-07) | `remove-post-approver/` | `loginid` |
+| MASK 검토자(EV) 추가 (2026-09) | `add-ev-reviewer/` | `loginid` — TE_E 팀원/MASTER, E 담당자 합의 후 |
+| MASK 검토자(EV) 제거 (2026-09) | `remove-ev-reviewer/` | `loginid` — TE_E 팀원/MASTER, pending인 EV만, 최소 1명 유지 |
 | Validation System 변경 (2026-08) | `validation-system/` | `value`(`'YES'`/`'NO'`) — 상신자 본인 또는 MASTER, `under_review`/`pause` 에서만, E 단계 완료 전까지. 메일 없음(2026-09) |
 | Partial Shot 변경 (2026-09) | `partial-shot/` | `value`(`'O'`/`'X'`) — 상신자 본인 또는 MASTER, `under_review`/`pause` 에서만, O 단계 완료 전까지(O 는 검토자가 없어 담당자 합의 즉시 닫힘). 메일 없음 |
 | 이력 바로 등록 (MASTER 전용) | `direct-approve/` | `submitted_at`, `approved_at` — 결재선을 만들지 않고 `draft → approved` |

@@ -388,6 +388,12 @@ export default function ApprovalPage(): React.ReactElement {
   const [paAddOpen, setPaAddOpen] = useState(false);
   const [paSearchQuery, setPaSearchQuery] = useState('');
   const [paCandidates, setPaCandidates] = useState<UserWithRole[]>([]);
+
+  // MASK 검토자(EV) 관리 UI (TE_E 팀원/MASTER — 칩 목록 + 검색 추가, 후결자 관리와 동일한 패턴)
+  const [evAddOpen, setEvAddOpen] = useState(false);
+  const [evSearchQuery, setEvSearchQuery] = useState('');
+  const [evCandidates, setEvCandidates] = useState<UserWithRole[]>([]);
+
   const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
   const [assignReviewerDropdownOpen, setAssignReviewerDropdownOpen] = useState(false); // R단계 검토자 드롭다운
   const [teamMembers, setTeamMembers] = useState<UserWithRole[]>([]);
@@ -1441,6 +1447,35 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
+  const handleAddEvReviewer = async (loginid: string) => {
+    if (!selected) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.addEvReviewer(selected.id, loginid);
+      addToast(t('approval.ev_reviewer_add_success'), 'success');
+      setEvSearchQuery('');
+      await refreshAndSelect(selected.id);
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleRemoveEvReviewer = async (loginid: string) => {
+    if (!selected) return;
+    setProcessing(true);
+    try {
+      await documentsAPI.removeEvReviewer(selected.id, loginid);
+      addToast(t('approval.ev_reviewer_remove_success'), 'success');
+      await refreshAndSelect(selected.id);
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : t('common.process_error'), 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   // 철회 모달 상태 (사유 입력 → 철회 요청 또는 즉시 삭제)
   const [withdrawModalOpen, setWithdrawModalOpen] = useState(false);
   const [withdrawDoc, setWithdrawDoc] = useState<RequestDocument | null>(null);
@@ -2483,6 +2518,15 @@ export default function ApprovalPage(): React.ReactElement {
           );
           const canManagePa = !!selected && (isMaster || isPauseRequester) && selected.status === 'under_review' && parallelReached;
 
+          // MASK 검토자(EV) 관리: TE_E 팀원 전원 또는 MASTER + under_review + E 담당자 합의 후 항상 노출.
+          // 후결자 관리와 같은 자리·같은 형태(칩 + × 제거 + '+ 검토자 추가')이되, 결재 경로 탭이 아니라
+          // 여기(하단 버튼 영역)에서만 편집할 수 있다 — 잘못 지정된 검토자를 바로잡기 위한 기능.
+          const evSteps = (selected?.approval_steps ?? []).filter(
+            (s) => s.agent === 'EV' && (s.round ?? 1) === currentRound
+          );
+          const canManageEv = !!selected && (isMaster || userAgent === 'E')
+            && selected.status === 'under_review' && mainStepApproved('E');
+
           return (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' }}>
               {/* 후결자 관리: 고정 후결자는 잠금 칩(제거 불가), 추가 후결자는 ×로 제거, '+ 후결자 추가'로 검색해 추가 */}
@@ -2558,6 +2602,98 @@ export default function ApprovalPage(): React.ReactElement {
                               <li
                                 key={u.loginid}
                                 onMouseDown={(e) => { e.preventDefault(); handleAddPostApprover(u.loginid); setPaAddOpen(false); }}
+                                style={{ padding: '6px 8px', cursor: 'pointer', borderRadius: 4 }}
+                                onMouseEnter={(ev) => { (ev.currentTarget as HTMLElement).style.background = 'var(--bg-secondary)'; }}
+                                onMouseLeave={(ev) => { (ev.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                              >
+                                <div style={{ fontWeight: 600, fontSize: '0.82rem' }}>{u.name}</div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{u.loginid}{u.mail ? ` · ${u.mail}` : ''}</div>
+                              </li>
+                            ));
+                          })()}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {/* MASK 검토자(EV) 관리: 합의완료된 검토자는 잠금 칩(제거 불가), 대기중인 검토자는 ×로 제거,
+                  '+ 검토자 추가'로 검색해 추가 — 후결자 관리와 동일한 패턴 */}
+              {canManageEv && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                    {t('approval.ev_reviewer_label')}
+                  </span>
+                  {evSteps.map((s) => (
+                    <span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bg-secondary)', border: s.action === 'approved' ? '1px dashed var(--border)' : '1px solid var(--border)', borderRadius: 20, padding: '3px 8px 3px 10px', fontSize: '0.8rem', color: s.action === 'approved' ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                      {s.assignee_name || s.assignee_loginid}
+                      {s.action === 'approved' ? (
+                        <span title={t('approval.ev_reviewer_locked_hint') as string}>🔒</span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={processing}
+                          onClick={() => handleRemoveEvReviewer(s.assignee_loginid || '')}
+                          style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: 1, padding: 0 }}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      disabled={processing}
+                      onClick={async () => {
+                        if (!evAddOpen && evCandidates.length === 0) {
+                          setLoadingMembers(true);
+                          const members = await handleLoadTeamMembers('E');
+                          setEvCandidates(members);
+                          setLoadingMembers(false);
+                        }
+                        setEvAddOpen((o) => !o);
+                      }}
+                    >
+                      + {t('approval.ev_reviewer_add_btn')}
+                    </button>
+                    {evAddOpen && (
+                      <div style={{ position: 'absolute', bottom: 'calc(100% + 4px)', left: 0, width: 240, background: 'var(--bg-modal)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', boxShadow: 'var(--shadow-lg)', zIndex: 9999, padding: 6 }}>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder={t('approval.ev_reviewer_search_placeholder')}
+                          value={evSearchQuery}
+                          onChange={(e) => setEvSearchQuery(e.target.value)}
+                          autoFocus
+                          autoComplete="off"
+                          style={{ fontSize: '0.82rem', padding: '4px 8px', marginBottom: 4 }}
+                        />
+                        <ul style={{ listStyle: 'none', margin: 0, padding: 0, maxHeight: 200, overflowY: 'auto' }}>
+                          {(() => {
+                            if (loadingMembers) {
+                              return <li style={{ padding: '8px 4px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('common.loading')}</li>;
+                            }
+                            const eStep = (selected?.approval_steps ?? []).find(
+                              (s) => s.agent === 'E' && (s.round ?? 1) === currentRound
+                            );
+                            const excluded = new Set([
+                              eStep?.assignee_loginid ?? '',
+                              ...evSteps.map((s) => s.assignee_loginid ?? ''),
+                            ]);
+                            const q = evSearchQuery.toLowerCase();
+                            const options = evCandidates.filter((u) =>
+                              !excluded.has(u.loginid) &&
+                              (!q || u.name.toLowerCase().includes(q) || u.loginid.toLowerCase().includes(q) || (u.mail ?? '').toLowerCase().includes(q))
+                            );
+                            if (options.length === 0) {
+                              return <li style={{ padding: '8px 4px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{t('approval.no_team_members')}</li>;
+                            }
+                            return options.map((u) => (
+                              <li
+                                key={u.loginid}
+                                onMouseDown={(e) => { e.preventDefault(); handleAddEvReviewer(u.loginid); setEvAddOpen(false); }}
                                 style={{ padding: '6px 8px', cursor: 'pointer', borderRadius: 4 }}
                                 onMouseEnter={(ev) => { (ev.currentTarget as HTMLElement).style.background = 'var(--bg-secondary)'; }}
                                 onMouseLeave={(ev) => { (ev.currentTarget as HTMLElement).style.background = 'transparent'; }}

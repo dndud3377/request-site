@@ -1479,6 +1479,111 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             )
             mailer.enqueue_stage_arrival(document, review_agent, rv_step, recipient_name=rv_step.assignee_name)
 
+    def _can_manage_ev_reviewers(self, user):
+        """MASK 검토자(EV) 추가/제거 인가 — TE_E 팀원 전원 또는 MASTER.
+
+        담당자 1인이 아니라 같은 팀 누구나 잘못 지정된 검토자를 바로잡을 수 있게 한다
+        (검토중 방식 합의 인가와 동일한 팀 단위 기준).
+        """
+        role = getattr(user, 'role', '')
+        return role == 'MASTER' or role == 'TE_E'
+
+    @action(detail=True, methods=['post'], url_path='add-ev-reviewer')
+    @transaction.atomic
+    def add_ev_reviewer(self, request, pk=None):
+        """MASK(E) 검토자(EV) 추가 — TE_E 팀원 누구나 또는 MASTER가 결재 진행 중 언제든 추가한다.
+
+        검토자를 잘못 지정했을 때(오탈자·인원 착오 등) 바로잡기 위한 기능이다. 후결자 관리
+        (add-post-approver)와 같은 자리(문서 상세보기 하단)·같은 형태로 노출된다. 검증 규칙은
+        담당자 합의 시 함께 지정하는 기존 경로(_validate_reviewers)와 동일하다.
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+        if document.status != 'under_review':
+            return Response({'error': '진행 중인 의뢰서만 검토자를 추가할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not self._can_manage_ev_reviewers(request.user):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        max_round = self._max_round(document)
+        e_step = ApprovalStep.objects.filter(document=document, agent='E', round=max_round).first()
+        if not e_step or e_step.action != 'approved':
+            return Response({'error': 'MASK 담당자 합의 이후에만 검토자를 추가할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        new_loginid = str(request.data.get('loginid', '') or '').strip()
+        if not new_loginid:
+            return Response({'error': '추가할 검토자의 loginid를 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if e_step.assignee and new_loginid == e_step.assignee.loginid:
+            return Response({'error': '담당자 본인은 검토자로 지정할 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing_loginids = set(
+            ApprovalStep.objects.filter(document=document, agent='EV', round=max_round)
+            .exclude(assignee__isnull=True).values_list('assignee__loginid', flat=True)
+        )
+        if new_loginid in existing_loginids:
+            return Response({'error': '이미 지정된 검토자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            reviewer_user = User.objects.get(loginid=new_loginid, role='TE_E')
+        except User.DoesNotExist:
+            return Response({'error': f'유효하지 않은 검토자입니다: {new_loginid}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        ev_step = ApprovalStep.objects.create(
+            document=document, agent='EV', action='pending', round=max_round,
+            assignee=reviewer_user, assignee_name=(reviewer_user.username or reviewer_user.loginid),
+        )
+        mailer.enqueue_stage_arrival(document, 'EV', ev_step, recipient_name=ev_step.assignee_name)
+
+        return Response({
+            'message': '검토자를 지정했습니다.',
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
+    @action(detail=True, methods=['post'], url_path='remove-ev-reviewer')
+    @transaction.atomic
+    def remove_ev_reviewer(self, request, pk=None):
+        """MASK(E) 검토자(EV) 제거 — 아직 합의하지 않은(pending) 검토자만 뺄 수 있다.
+
+        이미 합의를 마친 EV는 이력 보존을 위해 제거 대상에서 제외한다(JOB팀 검토 항목의
+        '확인한 검토자는 해제 불가' 가드와 동일). MASK는 2026-08부터 검토자 지정이 문서
+        유형과 무관하게 항상 필수이므로, 후결자(RA) 제거와 달리 조건 없이 마지막 1명은
+        항상 남겨야 한다 — 그렇지 않으면 0명이 되어 영영 합의할 수 없는 상태가 된다.
+        """
+        document = self.get_object()
+        document = RequestDocument.objects.select_for_update().get(pk=document.pk)
+        if document.status != 'under_review':
+            return Response({'error': '진행 중인 의뢰서만 검토자를 제거할 수 있습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not self._can_manage_ev_reviewers(request.user):
+            return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
+
+        target_loginid = str(request.data.get('loginid', '') or '').strip()
+        if not target_loginid:
+            return Response({'error': '제거할 검토자의 loginid를 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        max_round = self._max_round(document)
+        ev_step = ApprovalStep.objects.filter(
+            document=document, agent='EV', action='pending', round=max_round,
+            assignee__loginid=target_loginid,
+        ).first()
+        if not ev_step:
+            return Response({'error': '제거 가능한(미합의) 검토자를 찾을 수 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        remaining = ApprovalStep.objects.filter(
+            document=document, agent='EV', round=max_round
+        ).exclude(pk=ev_step.pk).count()
+        if remaining == 0:
+            return Response(
+                {'error': 'MASK 검토자는 최소 1명을 유지해야 합니다. 변경을 원하시면 1명 추가 후 삭제하시기 바랍니다.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ev_step.delete()
+
+        return Response({
+            'message': '검토자 지정을 해제했습니다.',
+            'document': RequestDocumentSerializer(document, context={'request': request}).data,
+        })
+
     @action(detail=True, methods=['post'], url_path='claim-step')
     @transaction.atomic
     def claim_step(self, request, pk=None):
