@@ -926,7 +926,9 @@
     "delete_success": "The document has been deleted.",
     "delete_snapshot_title": "Delete Rejection History",
     "delete_snapshot_confirm": "Delete the rejection history of \"{{title}}\" (round {{round}})? This action cannot be undone.",
-    "delete_snapshot_success": "The rejection history has been deleted."
+    "delete_snapshot_success": "The rejection history has been deleted.",
+    "pagination_nav": "Pagination",
+    "pagination_go_to_page": "Go to page {{page}}"
   },
   "voc": {
     "title": "VOC",
