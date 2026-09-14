@@ -57,7 +57,7 @@ function buildFlowComboColors(rows: FlowChartRow[], refKey: string): Map<string,
 
 /** 지도 편차·예외 구역 칩 — 값 문자열 안의 숫자(um/mm) 토큰만 진하게 강조할 때 쓰는 패턴과 스타일. */
 const NUMERIC_VALUE_PATTERN = /\d+(?:\.\d+)?(?:um|mm)/g;
-const numberHighlightStyle: React.CSSProperties = { color: 'var(--accent-hover)', fontWeight: 800 };
+const numberHighlightStyle: React.CSSProperties = { color: '#dc3545', fontWeight: 800 };
 
 function renderWithHighlightedNumbers(value: string): React.ReactNode {
   const parts = value.split(NUMERIC_VALUE_PATTERN);
@@ -2100,12 +2100,19 @@ type Page = { label: string; content: React.ReactNode };
                   ? ['map_change_top','map_value_x_top','map_value_y_top','map_change_bottom','map_value_x_bottom','map_value_y_bottom','map_reason']
                   : ['map_change','map_value_x','map_value_y','map_reason']
                 ).some(k => changedFields.has(k));
-                return <Chip label={t('request.map')} value={buildMapValue(detail)} style={chipWide} changed={mapChanged} buildValue={buildMapValue} highlightNumbers />;
+                // 숫자 강조는 회차 간 변경 여부(mapChanged)가 아니라, 리전별 값이거나
+                // '변경 있음'을 직접 선택한 경우에만 켠다 — '변경 없음'인데 잔여 값이
+                // 남아 있는 경우까지 강조되는 것을 막기 위함이다.
+                const mapHighlight = isProdcMap || detail.map_change !== MAP_NO_CHANGE;
+                return <Chip label={t('request.map')} value={buildMapValue(detail)} style={chipWide} changed={mapChanged} buildValue={buildMapValue} highlightNumbers={mapHighlight} />;
               })()}
               {(isR || isO || isP) && detail.ea_change && (() => {
                 const eaChanged = changedFields.has('ea_change') || changedFields.has('ea_value');
+                // '변경 있음'을 선택한 경우에만 강조 — '변경 없음'에 잔여 ea_value가 남아 있어도
+                // 강조하지 않는다(위 지도 편차와 동일한 이유).
+                const eaHighlight = detail.ea_change !== MAP_NO_CHANGE;
                 return (
-                  <Chip label={t('request.ea_change')} value={buildEaValue(detail)} style={chipWide} changed={eaChanged} buildValue={buildEaValue} highlightNumbers />
+                  <Chip label={t('request.ea_change')} value={buildEaValue(detail)} style={chipWide} changed={eaChanged} buildValue={buildEaValue} highlightNumbers={eaHighlight} />
                 );
               })()}
             </div>
