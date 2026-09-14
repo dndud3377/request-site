@@ -54,6 +54,27 @@ PL 이 아닌 사용자도 자기가 참여했던 의뢰서를 볼 수 있다.
 
 ---
 
+## 2.5 페이지네이션 (2026-09)
+
+결재 현황(`docs/APPROVAL.md` §3.1.1)과 동일한 **클라이언트 측 페이지네이션**을 쓴다.
+
+- 페이지당 10건(`HISTORY_LIST_PAGE_SIZE`). 백엔드 API(`GET /api/documents/`, `GET /api/rejection-snapshots/`)는
+  여전히 전체 목록을 반환한다 — 필터 탭 적용까지 끝난 목록(전체/MY/라인 탭은 `visibleDocs`, 반려 탭은
+  `snapshots`)을 프론트에서 10개 단위로 잘라 보여준다. 탭에 따라 페이지 대상이 바뀌지만 페이지 번호
+  상태(`listPage`)는 공유한다.
+- 표 하단에 이전/다음 버튼 + 숫자 페이지 버튼(`buildPageNumbers`)을 표시한다. 1·마지막 페이지는 항상
+  보이고 현재 페이지 앞뒤 2개만 남기고 나머지는 `…`로 접는다. 총 1페이지뿐이면 컨트롤을 숨긴다.
+- **검색어·필터 탭 전환 시 항상 1페이지로 리셋**된다. 검색은 서버 호출(`documentsAPI.list({ search })` /
+  `rejectionSnapshotsAPI.list({ search })`)로 전체 결과를 다시 받아오므로, 원래 몇 페이지 뒤에 있던
+  문서든 검색어를 입력하면 필터링된 결과의 1페이지에서 바로 보인다.
+- 문서·반려 이력 삭제 등으로 목록이 줄어 지금 보던 페이지가 더 이상 존재하지 않게 되면 자동으로
+  마지막 페이지로 보정한다.
+- '번호' 열은 페이지 내 순번이 아니라 전체 목록 기준 순번이다(`(listPage - 1) * 10 + index + 1`).
+- i18n: `history.pagination_nav`(네비게이션 영역 aria-label), `history.pagination_go_to_page`
+  (페이지 버튼 aria-label, `{{page}}` 보간). 이전/다음 버튼 라벨은 공용 `common.prev`/`common.next` 재사용.
+
+---
+
 ## 3. 상세 모달
 
 - **결재 완료 문서**: 행 클릭 시 `GET /api/documents/{id}/` 로 상세를 한 번 더 받아 연다
@@ -161,7 +182,8 @@ MASTER 는 의뢰서 작성 화면에서 결재를 전혀 거치지 않고 문�
 `filter_rejected`, `search_placeholder`, `no_data`, `no_data_rejected`, `col_id`, `col_title`,
 `col_product`, `col_type`, `col_requester`, `col_status`, `col_submitted`, `col_approved`,
 `col_rejected`, `delete`, `delete_title`, `delete_confirm`, `delete_success`,
-`delete_snapshot_title`, `delete_snapshot_confirm`, `delete_snapshot_success`
+`delete_snapshot_title`, `delete_snapshot_confirm`, `delete_snapshot_success`,
+`pagination_nav`, `pagination_go_to_page`(§2.5)
 
 이력 바로 등록(§4.5)의 문구는 작성 화면 소속이라 `request.*` 에 있다 —
 `direct_history`, `direct_history_register`, `direct_history_submitted_at`,
