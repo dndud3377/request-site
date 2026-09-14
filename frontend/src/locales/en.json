@@ -845,6 +845,12 @@
     "post_approver_search_placeholder": "Search by name or ID",
     "post_approver_add_success": "Post-approver added.",
     "post_approver_remove_success": "Post-approver removed.",
+    "ev_reviewer_label": "MASK Reviewer",
+    "ev_reviewer_add_btn": "Add reviewer",
+    "ev_reviewer_search_placeholder": "Search by name or ID",
+    "ev_reviewer_add_success": "Reviewer added.",
+    "ev_reviewer_remove_success": "Reviewer removed.",
+    "ev_reviewer_locked_hint": "A reviewer who has already agreed cannot be removed.",
     "route_diagram": {
       "title": "Final Approval Route",
       "desc": "The approval stages a request goes through from intake to completion.",

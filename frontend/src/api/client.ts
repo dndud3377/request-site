@@ -431,6 +431,25 @@ const removePostApprover = async (docId: number, loginid: string) => {
   return { data };
 };
 
+// ===== MASK(E) 검토자(EV) 관리 =====
+// 잘못 지정된 검토자를 바로잡기 위한 기능. 후결자 관리와 동일하게 결재 경로 탭이 아니라
+// 문서 상세보기 하단 버튼 영역에 노출된다.
+const addEvReviewer = async (docId: number, loginid: string) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${docId}/add-ev-reviewer/`,
+    { loginid }
+  );
+  return { data };
+};
+
+const removeEvReviewer = async (docId: number, loginid: string) => {
+  const data = await post<{ message: string; document: RequestDocument }>(
+    `/documents/${docId}/remove-ev-reviewer/`,
+    { loginid }
+  );
+  return { data };
+};
+
 // ===== J-ayer 검토 항목 =====
 // 추가·제목수정·삭제는 마스터와 '결재 중 + 현재 회차 J 단계 대기' 문서에 함께 반영된다.
 // 모든 응답은 이 문서의 최신 항목 목록을 돌려주므로 호출부는 그대로 갈아끼우면 된다.
@@ -612,6 +631,8 @@ export const documentsAPI = {
   assignStep,
   addPostApprover,
   removePostApprover,
+  addEvReviewer,
+  removeEvReviewer,
   claimStep,
   unclaimStep,
   addReviewItem,

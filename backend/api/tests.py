@@ -2398,6 +2398,160 @@ class PEStageReviewerFlowTest(TestCase):
         self.assertEqual(j_step.assignee_name, self.master_user.username or self.master_user.loginid)
 
 
+class EvReviewerManagementTest(PEStageReviewerFlowTest):
+    """MASK 검토자(EV) 추가(add-ev-reviewer)/제거(remove-ev-reviewer) 권한·보호 규칙 검증.
+
+    결재 경로 탭이 아니라 문서 상세보기 하단 버튼 영역(후결자 관리와 같은 자리)에서 잘못
+    지정된 검토자를 바로잡기 위한 기능이다. `PEStageReviewerFlowTest`의 fixture·헬퍼
+    (`_advance_to_parallel`, `_approve_e`)를 그대로 재사용한다.
+    """
+
+    # ----- 추가 -----
+
+    def test_add_ev_reviewer_success_sends_mail(self):
+        doc = self._advance_to_parallel(plel=True)
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+        MailNotification.objects.all().delete()
+
+        self.client.force_authenticate(user=self.e_reviewer)  # 담당자가 아니라 같은 팀원이 처리
+        r = self.client.post(f'/api/documents/{doc.id}/add-ev-reviewer/', {'loginid': self.e_reviewer2.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(
+            ApprovalStep.objects.filter(
+                document=doc, agent='EV', round=1, assignee__loginid=self.e_reviewer2.loginid
+            ).exists()
+        )
+        noti = MailNotification.objects.filter(document=doc, event_type='stage_arrival').first()
+        self.assertIsNotNone(noti)
+        self.assertIn(self.e_reviewer2.mail, noti.recipients)
+
+    def test_add_ev_reviewer_allowed_for_master(self):
+        doc = self._advance_to_parallel(plel=True)
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+        self.client.force_authenticate(user=self.master_user)
+        r = self.client.post(f'/api/documents/{doc.id}/add-ev-reviewer/', {'loginid': self.e_reviewer2.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_add_ev_reviewer_denied_for_outsider(self):
+        doc = self._advance_to_parallel(plel=True)
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+        self.client.force_authenticate(user=self.p_owner)  # 다른 팀(TE_P)
+        r = self.client.post(f'/api/documents/{doc.id}/add-ev-reviewer/', {'loginid': self.e_reviewer2.loginid}, format='json')
+        self.assertEqual(r.status_code, 403)
+
+    def test_add_ev_reviewer_denied_before_e_approved(self):
+        doc = self._advance_to_parallel(plel=True)
+        self.client.force_authenticate(user=self.e_owner)
+        self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'E'}, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/add-ev-reviewer/', {'loginid': self.e_reviewer.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_add_ev_reviewer_rejects_owner_self(self):
+        doc = self._advance_to_parallel(plel=True)
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+        self.client.force_authenticate(user=self.e_reviewer)
+        r = self.client.post(f'/api/documents/{doc.id}/add-ev-reviewer/', {'loginid': self.e_owner.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_add_ev_reviewer_rejects_duplicate(self):
+        doc = self._advance_to_parallel(plel=True)
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+        self.client.force_authenticate(user=self.e_reviewer)
+        r = self.client.post(f'/api/documents/{doc.id}/add-ev-reviewer/', {'loginid': self.e_reviewer.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_add_ev_reviewer_rejects_non_te_e_role(self):
+        doc = self._advance_to_parallel(plel=True)
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+        self.client.force_authenticate(user=self.e_reviewer)
+        r = self.client.post(f'/api/documents/{doc.id}/add-ev-reviewer/', {'loginid': self.p_owner.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    # ----- 제거 -----
+
+    def test_remove_ev_reviewer_success_when_two_remain(self):
+        doc = self._advance_to_parallel(plel=True)
+        self.assertEqual(
+            self._approve_e(doc, reviewers=[self.e_reviewer.loginid, self.e_reviewer2.loginid]).status_code, 200
+        )
+        self.client.force_authenticate(user=self.e_reviewer)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-ev-reviewer/', {'loginid': self.e_reviewer2.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(
+            ApprovalStep.objects.filter(
+                document=doc, agent='EV', round=1, assignee__loginid=self.e_reviewer2.loginid
+            ).exists()
+        )
+
+    def test_remove_ev_reviewer_allowed_for_master(self):
+        doc = self._advance_to_parallel(plel=True)
+        self.assertEqual(
+            self._approve_e(doc, reviewers=[self.e_reviewer.loginid, self.e_reviewer2.loginid]).status_code, 200
+        )
+        self.client.force_authenticate(user=self.master_user)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-ev-reviewer/', {'loginid': self.e_reviewer2.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_remove_ev_reviewer_denied_for_outsider(self):
+        doc = self._advance_to_parallel(plel=True)
+        self.assertEqual(
+            self._approve_e(doc, reviewers=[self.e_reviewer.loginid, self.e_reviewer2.loginid]).status_code, 200
+        )
+        self.client.force_authenticate(user=self.p_owner)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-ev-reviewer/', {'loginid': self.e_reviewer2.loginid}, format='json')
+        self.assertEqual(r.status_code, 403)
+
+    def test_remove_ev_reviewer_denied_after_approved(self):
+        """이미 합의를 마친 검토자는 이력 보존을 위해 제거 대상에서 제외한다(JOB팀과 동일)."""
+        doc = self._advance_to_parallel(plel=True)
+        self.assertEqual(
+            self._approve_e(doc, reviewers=[self.e_reviewer.loginid, self.e_reviewer2.loginid]).status_code, 200
+        )
+        self.client.force_authenticate(user=self.e_reviewer)
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/', {'agent': 'EV', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        self.client.force_authenticate(user=self.e_reviewer2)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-ev-reviewer/', {'loginid': self.e_reviewer.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+
+    def test_remove_ev_reviewer_blocks_last_remaining(self):
+        """MASK는 검토자 지정이 항상 필수라, 후결자와 달리 문서 유형과 무관하게 마지막 1명은
+        항상 남겨야 한다 — 그렇지 않으면 0명이 되어 영영 합의할 수 없다."""
+        doc = self._advance_to_parallel(plel=True)
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+        self.client.force_authenticate(user=self.e_reviewer)
+        r = self.client.post(f'/api/documents/{doc.id}/remove-ev-reviewer/', {'loginid': self.e_reviewer.loginid}, format='json')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('최소 1명', r.json()['error'])
+        self.assertTrue(
+            ApprovalStep.objects.filter(
+                document=doc, agent='EV', round=1, assignee__loginid=self.e_reviewer.loginid
+            ).exists()
+        )
+
+    def test_remove_ev_reviewer_allowed_after_adding_one(self):
+        """마지막 1명은 못 지우지만, 1명 추가 후에는 원래 있던 검토자를 지울 수 있다."""
+        doc = self._advance_to_parallel(plel=True)
+        self.assertEqual(self._approve_e(doc, reviewers=[self.e_reviewer.loginid]).status_code, 200)
+        self.client.force_authenticate(user=self.e_reviewer)
+        r = self.client.post(f'/api/documents/{doc.id}/add-ev-reviewer/', {'loginid': self.e_reviewer2.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+
+        r = self.client.post(f'/api/documents/{doc.id}/remove-ev-reviewer/', {'loginid': self.e_reviewer.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(
+            ApprovalStep.objects.filter(
+                document=doc, agent='EV', round=1, assignee__loginid=self.e_reviewer.loginid
+            ).exists()
+        )
+        self.assertTrue(
+            ApprovalStep.objects.filter(
+                document=doc, agent='EV', round=1, assignee__loginid=self.e_reviewer2.loginid
+            ).exists()
+        )
+
+
 @override_settings(POST_APPROVER_LOGINID='fixedpa')
 class MapDeleteEditRouteTest(TestCase):
     """'MAP 삭제' 전용 결재 경로 — PL 합의 후 P·R·J·O 병렬, E·RA 미생성.

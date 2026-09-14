@@ -845,6 +845,12 @@
     "post_approver_search_placeholder": "이름·ID로 검색",
     "post_approver_add_success": "후결자가 추가되었습니다.",
     "post_approver_remove_success": "후결자가 제거되었습니다.",
+    "ev_reviewer_label": "MASK 검토자",
+    "ev_reviewer_add_btn": "검토자 추가",
+    "ev_reviewer_search_placeholder": "이름·ID로 검색",
+    "ev_reviewer_add_success": "검토자가 추가되었습니다.",
+    "ev_reviewer_remove_success": "검토자가 제거되었습니다.",
+    "ev_reviewer_locked_hint": "이미 합의한 검토자는 지정을 해제할 수 없습니다.",
     "route_diagram": {
       "title": "최종 결재 경로",
       "desc": "의뢰가 접수된 뒤 완료까지 거치는 결재 단계입니다.",
