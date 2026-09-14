@@ -926,7 +926,9 @@
     "delete_success": "문서가 삭제되었습니다.",
     "delete_snapshot_title": "반려 이력 삭제",
     "delete_snapshot_confirm": "\"{{title}}\" 의 반려 이력({{round}}회차)을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
-    "delete_snapshot_success": "반려 이력이 삭제되었습니다."
+    "delete_snapshot_success": "반려 이력이 삭제되었습니다.",
+    "pagination_nav": "페이지 이동",
+    "pagination_go_to_page": "{{page}} 페이지로 이동"
   },
   "voc": {
     "title": "VOC",
