@@ -2571,11 +2571,21 @@ export default function RequestPage(): React.ReactElement {
   const jayerCellSel = useCellSelection<JayerRow>(jayerRows, setJayerRows, JAYER_EDITABLE_COLS, isLayerCellLocked, handleJayerAfterPaste, unmapIfBbValueChanged);
   const oayerCellSel = useCellSelection<OayerRow>(oayerRows, setOayerRows, OAYER_EDITABLE_COLS, isLayerCellLocked, handleOayerAfterPaste);
 
+  // 일괄 버튼이 값을 적용할 대상 행인가. new_or_copy 필드는 기존과 동일하게 활성(참여)행만 대상으로 하지만,
+  // st 필드 자체를 바꾸는 버튼은 st==='X'(비활성) 행도 대상이어야 한다 — 그렇지 않으면 '모두 X' 적용 직후
+  // 모든 행이 비활성이 되어 '모두 O'/'초기화'가 걸러낼 행이 없어 조용히 무동작하는 버그가 난다.
+  const isBulkStOrNocTarget = (r: { st: string; new_or_copy: string }, field: 'st' | 'new_or_copy'): boolean =>
+    !isNocSpecial(r.new_or_copy) && (field !== 'new_or_copy' || !isRowInactive(r.st));
+
   // 참여행(활성 && 기등록/layer삭제 아님) 전체에 같은 값을 일괄 적용한다. 일괄 적용은 J 참여행 전체를
   // 동일 값으로 맞추므로 layerid별 합의는 항상 성립하며, O 참여행이 정확히 1개인 layerid에만 전파한다.
   const handleJayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
-    setJayerRows((rows) => rows.map((r) => (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) ? r : { ...r, [field]: value }));
-    const layerids = new Set(jayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
+    // layerids는 "이 클릭이 반영된 뒤"의 참여 상태 기준으로 계산한다 — 클릭 이전 상태로 계산하면
+    // st 필드 버튼 자체가 참여 여부를 뒤집는 클릭인 경우(예: 전체 X 다음 전체 O) 자기모순으로 빈 집합이
+    // 되어 반대편 표로 전파되지 않는다.
+    const updatedRows = jayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: value } : r);
+    setJayerRows(updatedRows);
+    const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
     const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(oayerRows, l)?.id).filter((id): id is string => !!id));
     if (targetIds.size > 0) {
       setOayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value, ...stClearExtra(field, value, false) } : r));
@@ -2583,8 +2593,9 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleJayerResetField = (field: 'st' | 'new_or_copy') => {
-    setJayerRows((rows) => rows.map((r) => (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) ? r : { ...r, [field]: '' }));
-    const layerids = new Set(jayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
+    const updatedRows = jayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: '' } : r);
+    setJayerRows(updatedRows);
+    const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
     const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(oayerRows, l)?.id).filter((id): id is string => !!id));
     if (targetIds.size > 0) setOayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: '' } : r));
   };
@@ -2680,8 +2691,9 @@ export default function RequestPage(): React.ReactElement {
   // 참여행(활성 && 기등록/layer삭제 아님) 전체에 같은 값을 일괄 적용한다. 일괄 적용은 O 참여행 전체를
   // 동일 값으로 맞추므로 layerid별 합의는 항상 성립하며, J 참여행이 정확히 1개인 layerid에만 전파한다.
   const handleOayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
-    setOayerRows((rows) => rows.map((r) => (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) ? r : { ...r, [field]: value }));
-    const layerids = new Set(oayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
+    const updatedRows = oayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: value } : r);
+    setOayerRows(updatedRows);
+    const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
     const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(jayerRows, l)?.id).filter((id): id is string => !!id));
     if (targetIds.size > 0) {
       setJayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: value, ...stClearExtra(field, value, true) } : r));
@@ -2689,8 +2701,9 @@ export default function RequestPage(): React.ReactElement {
   };
 
   const handleOayerResetField = (field: 'st' | 'new_or_copy') => {
-    setOayerRows((rows) => rows.map((r) => (isRowInactive(r.st) || isNocSpecial(r.new_or_copy)) ? r : { ...r, [field]: '' }));
-    const layerids = new Set(oayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
+    const updatedRows = oayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: '' } : r);
+    setOayerRows(updatedRows);
+    const layerids = new Set(updatedRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && r.layerid?.trim()).map(r => r.layerid.trim()));
     const targetIds = new Set(Array.from(layerids).map(l => soleParticipantByLayerid(jayerRows, l)?.id).filter((id): id is string => !!id));
     if (targetIds.size > 0) setJayerRows(rows => rows.map(r => targetIds.has(r.id) ? { ...r, [field]: '' } : r));
   };
