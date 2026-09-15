@@ -161,6 +161,23 @@ export interface ReviewItem {
   created_at: string;
 }
 
+/**
+ * 결재 현황·홈 목록이 쓰는 detail 값만 담은 요약 — 목록 응답 전용 필드.
+ * 목록에는 additional_notes(위저드 상세 JSON 전체)가 실리지 않는다(2026-09, 로딩 속도).
+ * 백엔드 `RequestDocumentListSerializer.get_detail_summary` 와 1:1 로 대응한다.
+ */
+export interface DocDetailSummary {
+  line: string;
+  request_purpose: string;
+  other_purpose: string[];
+  map_type: string;
+  process_selection: string;
+  partid_selection: string;
+  process_id: string;
+  /** ADI CD 변경의 '동일 변경 적용 대상' 추가 건수(원본 adi_cd_extra_targets 의 길이) */
+  adi_cd_extra_count: number;
+}
+
 export interface RequestDocument {
   id: number;
   title: string;
@@ -169,7 +186,10 @@ export interface RequestDocument {
   requester_department: string;
   product_name: string;
   reference_materials: string;
-  additional_notes: string;
+  /** 위저드 상세 JSON 전체. **목록 응답에는 실리지 않는다** — 상세 조회·반려 스냅샷·투어 시드에만 있다. */
+  additional_notes?: string;
+  /** 목록 응답 전용 detail 요약. 상세 조회 응답에는 없다(그쪽은 additional_notes 를 그대로 판다). */
+  detail_summary?: DocDetailSummary;
   status: Status;
   production_date: string | null;
   created_at: string;
