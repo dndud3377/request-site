@@ -163,7 +163,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     # approval_steps(+assignee)/pause_requests(+requester)/withdraw_requests(+requester) 도
     # 직렬화(ApprovalStepSerializer, get_pause_request, get_withdraw_request)와
     # doc_permissions(can_edit 등)이 문서마다 다시 조회하던 것을 없앤다(2026-09, 결재 현황 로딩 속도 개선).
-    queryset = RequestDocument.objects.select_related('requester', 'designated_pl').prefetch_related(
+    # shared_group: 목록 직렬화의 shared_group_name(= shared_group.name)이 공유 그룹이 지정된
+    # 문서마다 UserGroup 을 다시 조회하던 것을 없앤다(2026-09, 결재 현황 로딩 속도 개선).
+    queryset = RequestDocument.objects.select_related(
+        'requester', 'designated_pl', 'shared_group',
+    ).prefetch_related(
         'review_items__reviewers',
         Prefetch('approval_steps', queryset=ApprovalStep.objects.select_related('assignee')),
         Prefetch('pause_requests', queryset=PauseRequest.objects.select_related('requester')),

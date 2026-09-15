@@ -198,11 +198,43 @@ class ApprovalStepSerializer(serializers.ModelSerializer):
     def get_zone_index(self, obj):
         """이 단계가 속한 구역의 0-based 인덱스(1구역=0, 2구역=1, ...). 어디에도 속하지
         않으면 None. 철회 '이전 회차 도달 구역' 확인 UI(docs/APPROVAL.md Case J)가
-        현재 구역과 그보다 깊은 구역을 구분하는 데 쓴다."""
+        현재 구역과 그보다 깊은 구역을 구분하는 데 쓴다.
+
+        문서 직렬화기(ZoneMapMixin)가 `_zone_map` 을 넘겨줬으면 그것만 본다 — 구역 판정은
+        step 이 아니라 **문서** 속성이라 문서당 1회면 충분하다(2026-09, 결재 현황 로딩 속도 개선).
+        `_zone_map` 이 없는 단독 사용(rejection_snapshots.create_from_reject,
+        ExternalRequestDocumentSerializer)에서는 종전대로 문서에서 직접 계산한다.
+        """
+        zone_map = getattr(self, '_zone_map', None)
+        if zone_map is not None:
+            return zone_map.get(obj.agent)
         for i, zone in enumerate(obj.document.pause_zones()):
             if obj.agent in zone:
                 return i
         return None
+
+
+class ZoneMapMixin:
+    """하위 `approval_steps` 직렬화기에 이 문서의 {agent: 구역 인덱스} 를 넘겨준다.
+
+    `ApprovalStepSerializer.get_zone_index` 가 step 마다 `document.pause_zones()` 를 부르면
+    요청 목적 판정 3종(MAP 삭제/ADI CD 변경/Only MAP)이 그때마다 additional_notes JSON 을
+    다시 파싱해, step 수 × 3회의 재파싱이 일어난다. 구역 구성은 문서마다 하나뿐이므로
+    문서당 1회만 계산해 넘긴다(2026-09, 결재 현황 로딩 속도 개선).
+
+    직렬화기 인스턴스에만 담고 모델에는 캐시하지 않는다 — 결재 액션이 같은 요청 안에서
+    additional_notes 를 수정하는 경로가 있어 모델 캐시는 stale 이 될 수 있다.
+    """
+
+    def to_representation(self, instance):
+        steps_field = self.fields.get('approval_steps')
+        if steps_field is not None:
+            steps_field.child._zone_map = {
+                agent: index
+                for index, zone in enumerate(instance.pause_zones())
+                for agent in zone
+            }
+        return super().to_representation(instance)
 
 
 class DocumentReviewItemReviewerSerializer(serializers.ModelSerializer):
@@ -272,18 +304,19 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
         return super().update(instance, validated_data)
 
 
-class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSerializer):
+class RequestDocumentListSerializer(ZoneMapMixin, DocPermFieldsMixin, serializers.ModelSerializer):
     approval_steps = ApprovalStepSerializer(many=True, read_only=True)
     designated_pl_loginid = serializers.SerializerMethodField()
     my_pending_review_items = serializers.SerializerMethodField()
     my_mark_category = serializers.SerializerMethodField()
+    detail_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = RequestDocument
         fields = [
             'id', 'title', 'requester_name', 'requester_department',
             'product_name', 'status', 'production_date', 'created_at', 'submitted_at',
-            'additional_notes', 'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
+            'detail_summary', 'designated_pl_loginid', 'designated_pl_name', 'approval_steps',
             'requester_loginid', 'can_edit', 'can_withdraw',
             'can_request_pause', 'can_resume', 'can_requester_resubmit', 'pause_request', 'withdraw_request',
             'post_approver_fixed_loginid', 'mail_completion_matched',
@@ -293,6 +326,32 @@ class RequestDocumentListSerializer(DocPermFieldsMixin, serializers.ModelSeriali
 
     def get_designated_pl_loginid(self, obj):
         return obj.designated_pl.loginid if obj.designated_pl else None
+
+    def get_detail_summary(self, obj):
+        """목록 화면이 실제로 쓰는 detail 값만 추린 요약(2026-09, 결재 현황 로딩 속도 개선).
+
+        목록 응답에는 additional_notes(위저드 상세 JSON 전체)를 싣지 않는다 — J/O-layer 표까지
+        담긴 대용량 blob 이라 응답의 대부분을 차지하는데, 목록은 라인/목적/MAP 목적/제품 컬럼과
+        필터·정렬에 쓰는 아래 값들만 본다. 상세 조회(RequestDocumentSerializer)와 외부 API
+        (ExternalRequestDocumentSerializer)는 종전대로 전체 JSON 을 그대로 내려보낸다.
+
+        프론트 `utils/approvalTable.ts` 의 getDocDetailFields 와 1:1 로 대응해야 한다 —
+        other_purpose 를 배열일 때만 싣는 것도 그쪽 판정(Array.isArray)과 같은 규칙이다
+        (구버전 문서는 문자열일 수 있고, 그때 목록은 예나 지금이나 빈 목록으로 본다).
+        """
+        detail = obj.get_detail().get('detail', {}) or {}
+        other_purpose = detail.get('other_purpose')
+        extra_targets = detail.get('adi_cd_extra_targets')
+        return {
+            'line': detail.get('line') or '',
+            'request_purpose': detail.get('request_purpose') or '',
+            'other_purpose': list(other_purpose) if isinstance(other_purpose, list) else [],
+            'map_type': detail.get('map_type') or '',
+            'process_selection': detail.get('process_selection') or '',
+            'partid_selection': detail.get('partid_selection') or '',
+            'process_id': detail.get('process_id') or '',
+            'adi_cd_extra_count': len(extra_targets) if isinstance(extra_targets, list) else 0,
+        }
 
     def get_my_mark_category(self, obj):
         """호출자 개인의 범주 마킹 id. 없으면 None.
