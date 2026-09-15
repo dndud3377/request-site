@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next';
 import {
   getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument,
-  hasActiveStageStep, getStagePendingEnteredAt, StageCell, StageCellSlot,
+  hasActiveStageStep, getStagePendingEnteredAt, getDocDetailFields, StageCell, StageCellSlot,
 } from './approvalTable';
 import { ApprovalStepFrontend, RequestDocument } from '../types';
 
@@ -673,5 +673,71 @@ describe('isMyDocument — 결재현황 MY 탭 / 홈 나의 의뢰 현황 공용
       makeStep({ agent: 'PL', action: 'pending', assignee_loginid: 'other', round: 2 }),
     ]);
     expect(isMyDocument(doc, me)).toBe(false);
+  });
+});
+
+// (2026-09) 목록 응답은 additional_notes(JSON 전체) 대신 서버가 추려 보낸 detail_summary 를 싣는다.
+// 상세 조회·반려 스냅샷·투어 시드는 그대로 additional_notes 를 쓰므로 두 경로가 모두 살아 있어야 한다.
+describe('getDocDetailFields — detail_summary(목록) / additional_notes(상세·스냅샷) 두 경로', () => {
+  it('detail_summary 가 있으면 그 값을 쓴다', () => {
+    const doc: RequestDocument = {
+      ...makeDoc([]),
+      additional_notes: undefined,
+      detail_summary: {
+        line: 'M1', request_purpose: 'ADI CD 변경', other_purpose: ['Overlay 변경'],
+        map_type: '', process_selection: 'PS', partid_selection: 'PA', process_id: 'PID',
+        adi_cd_extra_count: 2,
+      },
+    };
+    expect(getDocDetailFields(doc)).toEqual({
+      line: 'M1', purpose: 'ADI CD 변경', otherPurpose: ['Overlay 변경'], mapType: '',
+      isAdiCd: true, processSelection: 'PS', partidSelection: 'PA', processId: 'PID',
+      adiExtraCount: 2,
+    });
+  });
+
+  it('detail_summary 가 없으면 additional_notes 를 판다(상세 조회·반려 스냅샷 경로)', () => {
+    const doc: RequestDocument = {
+      ...makeDoc([]),
+      additional_notes: JSON.stringify({
+        detail: {
+          line: 'M2', request_purpose: '신규', other_purpose: [], map_type: 'NEW',
+          process_selection: 'PS2', partid_selection: 'PA2', process_id: 'PID2',
+          adi_cd_extra_targets: [{ partid_selection: 'x' }],
+        },
+        jayerRows: [{ st: 'O', pp: 'plel' }],
+      }),
+    };
+    expect(getDocDetailFields(doc)).toEqual({
+      line: 'M2', purpose: '신규', otherPurpose: [], mapType: 'NEW', isAdiCd: false,
+      processSelection: 'PS2', partidSelection: 'PA2', processId: 'PID2', adiExtraCount: 1,
+    });
+  });
+
+  it('둘 다 없으면 빈 값(투어 시드·파싱 실패 문서)', () => {
+    const doc: RequestDocument = { ...makeDoc([]), additional_notes: undefined };
+    expect(getDocDetailFields(doc)).toEqual({
+      line: '', purpose: '', otherPurpose: [], mapType: '', isAdiCd: false,
+      processSelection: '', partidSelection: '', processId: '', adiExtraCount: 0,
+    });
+  });
+
+  it('MAP 삭제 판정(그리드 분기)도 detail_summary 로 동작한다', () => {
+    const doc: RequestDocument = {
+      ...makeDoc([
+        makeStep({ agent: 'PL', action: 'approved' }),
+        makeStep({ agent: 'P', action: 'pending' }),
+      ]),
+      additional_notes: undefined,
+      detail_summary: {
+        line: '', request_purpose: 'MAP 삭제', other_purpose: [], map_type: '',
+        process_selection: '', partid_selection: '', process_id: '', adi_cd_extra_count: 0,
+      },
+    };
+    const rows = getDocTableRows(doc, t);
+    // MAP 삭제 경로는 P·R·J·O 병렬이라 항상 1행 그리드로 그린다(additional_notes 로 심었을 때와 동일).
+    expect(rows).toHaveLength(1);
+    expect(rows[0].pathKey).toBe('grid');
+    expect(rows[0].cells!.some((c) => c.slot === 'O')).toBe(true);
   });
 });
