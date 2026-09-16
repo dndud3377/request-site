@@ -56,12 +56,12 @@
 ```bash
 # 1) 개발 스택 기동
 cd request-site
-docker compose -f docker-compose.dev.yml up -d
+docker compose --env-file .env.dev -f docker-compose.dev.yml up -d
 
 # 2) 컨테이너 이름 확인 (아래 예시의 <backend>/<db> 자리에 넣는다)
-docker compose -f docker-compose.dev.yml ps
-BACKEND=$(docker compose -f docker-compose.dev.yml ps -q backend)
-DB=$(docker compose -f docker-compose.dev.yml ps -q db)
+docker compose --env-file .env.dev -f docker-compose.dev.yml ps
+BACKEND=$(docker compose --env-file .env.dev -f docker-compose.dev.yml ps -q backend)
+DB=$(docker compose --env-file .env.dev -f docker-compose.dev.yml ps -q db)
 
 # 3) 프론트: 브라우저에서 http://localhost:10011 → /request
 
