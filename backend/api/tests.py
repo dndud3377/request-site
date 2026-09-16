@@ -649,10 +649,6 @@ class RouteCardTest(TestCase):
         return [(label, status) for label, _name, status, _c in rows]
 
     def test_rows_cover_status_variants_and_pending_future_stage(self):
-        import json
-        # O 단계가 경로에 포함되려면 활성 Oayer 행이 있어야 한다(has_oayer_rows).
-        self.doc.additional_notes = json.dumps({'oayerRows': [{'id': 'o1', 'st': 'O'}]})
-        self.doc.save(update_fields=['additional_notes'])
         pl = UserProfile.objects.create(loginid='pl9', mail='pl9@c.com', role='PL')
         r = UserProfile.objects.create(loginid='r9', mail='r9@c.com', role='TE_R')
         o = UserProfile.objects.create(loginid='o9', mail='o9@c.com', role='TE_O')
@@ -981,12 +977,7 @@ class PEStageReviewerFlowTest(TestCase):
     def _advance_to_parallel(self, plel=False, other_purpose=None):
         """draft → 제출 → PL 합의 → R 지정·합의 를 실제 API로 거쳐 P/O[/E] pending 상태로 만든다."""
         inner = {} if other_purpose is None else {'other_purpose': other_purpose}
-        # O 단계가 만들어지려면 활성 Oayer 행이 있어야 한다(has_oayer_rows) — 이 헬퍼는
-        # 이름 그대로 O 를 pending 상태로 만드는 것이 목적이므로 기본 행을 채워 둔다.
-        detail = {
-            'detail': inner, 'jayerRows': ([{'pp': 'PLEL'}] if plel else []),
-            'oayerRows': [{'id': 'o-default', 'st': 'O'}],
-        }
+        detail = {'detail': inner, 'jayerRows': ([{'pp': 'PLEL'}] if plel else [])}
         doc = RequestDocument.objects.create(
             title='doc', requester=self.requester, requester_name='요청자',
             requester_email='req@c.com', requester_department='dept',
@@ -7359,39 +7350,6 @@ class MapCompletionMailMatchTest(TestCase):
         self._make_map_new_doc('PROD-1')
         matched = pop3_mail.match_map_completion_mail([])
         self.assertEqual(matched, 0)
-
-
-class HasOayerRowsTest(TestCase):
-    """RequestDocument.has_oayer_rows — O(OVL) 단계 생성 판정.
-
-    has_ppid_plel 과 같은 패턴이나 판정 키워드가 없다 — 활성(st!='X') 행이 하나라도
-    있으면 참(비어있지 않음)이다.
-    """
-
-    def setUp(self):
-        import json
-        self._json = json
-        self.requester = UserProfile.objects.create(
-            loginid='oayer_req', mail='oayer_req@company.com', role='NONE'
-        )
-
-    def _make_doc_with_oayer(self, oayer_rows):
-        doc = _make_document(self.requester)
-        doc.additional_notes = self._json.dumps({'oayerRows': oayer_rows})
-        doc.save()
-        return doc
-
-    def test_empty_oayer_rows_has_no_rows(self):
-        doc = self._make_doc_with_oayer([])
-        self.assertFalse(doc.has_oayer_rows())
-
-    def test_active_oayer_row_has_rows(self):
-        doc = self._make_doc_with_oayer([{'id': 'o1', 'st': 'O'}])
-        self.assertTrue(doc.has_oayer_rows())
-
-    def test_only_inactive_oayer_rows_has_no_rows(self):
-        doc = self._make_doc_with_oayer([{'id': 'o1', 'st': 'X'}, {'id': 'o2', 'st': 'X'}])
-        self.assertFalse(doc.has_oayer_rows())
 
 
 @override_settings(POST_APPROVER_LOGINID='fixed_ra')
