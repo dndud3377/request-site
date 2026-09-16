@@ -2671,7 +2671,7 @@ export default function ApprovalPage(): React.ReactElement {
                       onClick={async () => {
                         if (!paAddOpen && paCandidates.length === 0) {
                           setLoadingMembers(true);
-                          // 후보는 로그인한 사람이 아니라 **문서의 구역**으로 고른다 —
+                          // 후보는 로그인한 사람이 아니라 **문서의 지역**으로 고른다 —
                           // 해외 의뢰서에는 해외 제품 담당자만 후결자로 올린다.
                           try { const r = await usersAPI.list(plRoleFor(selected?.is_overseas)); setPaCandidates(r.data); } catch { setPaCandidates([]); }
                           setLoadingMembers(false);
@@ -2913,7 +2913,7 @@ export default function ApprovalPage(): React.ReactElement {
                     setChangingDesigneeUserId('');
                     setLoadingMembers(true);
                     // 서버도 같은 규칙으로 검증한다(views._resolve_designated_pls) —
-                    // 구역이 다른 담당자를 지정하면 400 이 된다.
+                    // 지역이 다른 담당자를 지정하면 400 이 된다.
                     const members = await usersAPI.list(plRoleFor(selected?.is_overseas));
                     setTeamMembers(members.data.filter(u => u.loginid !== currentUser.username));
                     setLoadingMembers(false);

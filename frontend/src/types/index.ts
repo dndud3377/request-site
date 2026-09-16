@@ -13,7 +13,7 @@ export const PL_ROLES: UserRole[] = ['PL', 'PL_GL'];
 export const isPlRole = (role: string | null | undefined): boolean =>
   role === 'PL' || role === 'PL_GL';
 
-/** 해당 구역 의뢰서의 결재선 후보가 될 수 있는 역할 (백엔드 UserProfile.pl_role_for 와 동일 규칙) */
+/** 해당 지역 의뢰서의 결재선 후보가 될 수 있는 역할 (백엔드 UserProfile.pl_role_for 와 동일 규칙) */
 export const plRoleFor = (isOverseas: boolean | undefined): UserRole =>
   isOverseas ? 'PL_GL' : 'PL';
 

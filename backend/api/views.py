@@ -189,7 +189,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         공유 대상은 작성자가 문서마다 고른 **그룹 1개**(shared_group)다. 지정하지 않은
         draft 는 작성자 본인과 MASTER 외에는 보이지 않는다.
 
-        해외 제품 담당자(UserProfile.OVERSEAS_PL_ROLE)만 **구역 필터**를 한 겹 더 받는다 —
+        해외 제품 담당자(UserProfile.OVERSEAS_PL_ROLE)만 **지역 필터**를 한 겹 더 받는다 —
         해외 의뢰서(is_overseas)와 본인이 올린 문서만 보이고 국내 의뢰서는 보이지 않는다.
         국내 PL·TE_*·MASTER 의 조회 범위는 종전 그대로라 격리는 **단방향**이다
         (국내 → 해외 문서 조회 가능, 해외 → 국내 불가). 결재 현황·홈·이력 세 화면이 모두
@@ -484,7 +484,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         영업/기술지원 합의자는 PL 권한자만 지정할 수 있고, PL 검토 단계와 **병렬**로 진행한다.
         지정이 없으면 빈 리스트를 돌려준다(그 경우 SA 단계를 만들지 않고 화면에 '해당없음'으로 남는다).
-        지정 PL 과 같은 이유로 **문서와 같은 구역의 제품 담당자**만 지정할 수 있다
+        지정 PL 과 같은 이유로 **문서와 같은 지역의 제품 담당자**만 지정할 수 있다
         (`document.pl_role()` — _resolve_designated_pls 주석 참고).
         """
         detail = document.get_detail().get('detail', {}) or {}
@@ -543,7 +543,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not self._can_edit(request.user, document):
             return Response({'error': '상신 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
-        # 문서의 구역(국내/해외)을 여기서 **확정**한다 — 상신하는 사람이 아니라 **의뢰자**의
+        # 문서의 지역(국내/해외)을 여기서 **확정**한다 — 상신하는 사람이 아니라 **의뢰자**의
         # 역할로 판정한다(공유 그룹 멤버가 남의 임시저장을 대신 상신할 수 있기 때문).
         # 지정 PL 후보 검증이 이 값을 쓰므로 반드시 검증보다 먼저 확정해야 한다.
         document.is_overseas = RequestDocument.overseas_by_role(document.requester)
@@ -2561,11 +2561,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         다중 지정(`designated_pl_loginids` 배열)을 우선하고, 없으면 단일
         (`designated_pl_loginid`) 을 1개 배열로 호환 처리한다. 각 대상은
-        **문서와 같은 구역의 제품 담당자 역할**(`document.pl_role()` — 국내 의뢰서는 'PL',
+        **문서와 같은 지역의 제품 담당자 역할**(`document.pl_role()` — 국내 의뢰서는 'PL',
         해외 의뢰서는 'PL_GL')이어야 하고 본인은 지정할 수 없다.
         error 가 None 이 아니면 실패.
 
-        구역을 섞지 않는 이유: 해외 의뢰서의 지정 PL 이 국내 담당자면 그 사람은 문서를
+        지역을 섞지 않는 이유: 해외 의뢰서의 지정 PL 이 국내 담당자면 그 사람은 문서를
         볼 수 있어도(단방향 격리) 반대로 국내 의뢰서의 지정 PL 이 해외 담당자면 **자기가
         결재해야 하는 문서를 조회조차 못 하는** 상태가 된다.
         """
@@ -2773,7 +2773,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '새 지정 PL의 loginid를 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # 지정 PL 과 같은 규칙 — 문서와 같은 구역의 제품 담당자만 새 지정자가 될 수 있다.
+            # 지정 PL 과 같은 규칙 — 문서와 같은 지역의 제품 담당자만 새 지정자가 될 수 있다.
             new_pl_user = User.objects.get(loginid=new_loginid, role=document.pl_role())
         except User.DoesNotExist:
             return Response({'error': '유효하지 않은 PL 사용자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -3074,7 +3074,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         base_title = serializer.validated_data.get('title', '')
         user = self.request.user
         requester = user if getattr(user, 'is_authenticated', False) else None
-        # 구역은 작성 시 작성자 역할로 **잠정** 기록하고 최초 상신(submit)에서 확정한다.
+        # 지역은 작성 시 작성자 역할로 **잠정** 기록하고 최초 상신(submit)에서 확정한다.
         # 임시저장 단계에서도 값이 있어야 해외 담당자가 자기 draft 를 목록에서 볼 수 있다.
         serializer.save(
             title=self._unique_title(base_title),

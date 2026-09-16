@@ -277,7 +277,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
         # 변경은 전용 액션 POST documents/{id}/set-shared-group/ 으로만 한다.
         # mail_completion_matched 는 POP3 스케줄러(pop3_mail.py)만 갱신하는 값이라 read-only.
         # layer_drift_detected 는 layer_drift.py(스케줄러/재상신 액션)만 갱신하는 값이라 read-only.
-        # is_overseas(국내/해외 구역)는 작성 시 작성자 역할로 잠정 기록하고 최초 상신에서
+        # is_overseas(국내/해외 지역)는 작성 시 작성자 역할로 잠정 기록하고 최초 상신에서
         # 서버가 확정하는 값이라, 프론트가 보낸 값으로 덮이지 않게 read-only 로 둔다.
         read_only_fields = ['status', 'created_at', 'updated_at', 'submitted_at',
                             'designated_pl_loginid', 'designated_pl_name', 'shared_group',

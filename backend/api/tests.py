@@ -7607,7 +7607,7 @@ class OverseasScopeTest(TestCase):
 
     - 해외 담당자는 해외 의뢰서와 **본인이 올린 문서**만 본다(국내 의뢰서는 목록·상세 모두 불가).
     - 국내 PL·TE_*·MASTER 의 조회 범위는 종전 그대로다(해외 의뢰서도 보인다).
-    - 문서의 구역은 **의뢰자의 역할**로 최초 상신 시 확정한다.
+    - 문서의 지역은 **의뢰자의 역할**로 최초 상신 시 확정한다.
     """
 
     def setUp(self):
@@ -7646,7 +7646,7 @@ class OverseasScopeTest(TestCase):
         return {d['id'] for d in r.data}
 
     def test_region_fixed_by_requester_role_on_submit(self):
-        """구역은 의뢰자의 역할로 확정된다 — 해외 담당자의 의뢰서만 is_overseas=True."""
+        """지역은 의뢰자의 역할로 확정된다 — 해외 담당자의 의뢰서만 is_overseas=True."""
         kr = self._create_and_submit(self.kr_requester, self.kr_pl, 'kr-doc')
         gl = self._create_and_submit(self.gl_requester, self.gl_pl, 'gl-doc')
         self.assertFalse(kr.is_overseas)
@@ -7683,7 +7683,7 @@ class OverseasScopeTest(TestCase):
         mover.role = 'PL_GL'
         mover.save(update_fields=['role'])
         self.assertIn(doc.id, self._list_ids(mover),
-                      '본인이 올린 문서는 구역과 무관하게 보여야 한다')
+                      '본인이 올린 문서는 지역과 무관하게 보여야 한다')
 
     def test_overseas_document_rejects_domestic_designated_pl(self):
         """해외 의뢰서의 지정 PL 후보는 해외 담당자뿐이다(국내 PL 지정 시 400)."""
@@ -7717,7 +7717,7 @@ class OverseasScopeTest(TestCase):
         self.assertEqual(r.status_code, 400, r.content)
 
     def test_rejection_snapshot_scope_follows_document_region(self):
-        """이력 조회 '반려' 탭도 같은 구역 기준으로 걸린다."""
+        """이력 조회 '반려' 탭도 같은 지역 기준으로 걸린다."""
         from . import rejection_snapshots
         kr = self._create_and_submit(self.kr_requester, self.kr_pl, 'kr-rej')
         gl = self._create_and_submit(self.gl_requester, self.gl_pl, 'gl-rej')
