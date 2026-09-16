@@ -11,7 +11,7 @@ import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '.
 import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { MarkDot, MarkCategorySettingsModal } from '../components/DocumentMark';
-import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet } from '../types';
+import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet, LayerDriftResponse } from '../types';
 import { formatDate, formatTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
 import FilterManageModal from './RequestPage/components/FilterManageModal';
@@ -1481,6 +1481,72 @@ export default function ApprovalPage(): React.ReactElement {
   const [withdrawDoc, setWithdrawDoc] = useState<RequestDocument | null>(null);
   const [withdrawReasonInput, setWithdrawReasonInput] = useState('');
 
+  // '변경 감지' 배지 클릭 시 diff 모달 — layer-drift API 는 캐시된 값을 반환하므로 클릭할 때마다 조회한다.
+  const [layerDriftDoc, setLayerDriftDoc] = useState<RequestDocument | null>(null);
+  const [layerDriftData, setLayerDriftData] = useState<LayerDriftResponse | null>(null);
+  const [layerDriftLoading, setLayerDriftLoading] = useState(false);
+
+  // 백엔드 layer_drift.IN_PROGRESS_STATUSES 와 같아야 한다 — 완료(approved)/반려(rejected) 문서는
+  // 재계산 대상에서 빠지므로, 그 상태로 넘어가기 직전에 감지된 값이 남아 있어도 뱃지를 띄우지 않는다.
+  const isLayerDriftVisible = (doc: RequestDocument): boolean =>
+    !!doc.layer_drift_detected && ['submitted', 'under_review', 'pause'].includes(doc.status);
+
+  const openLayerDrift = async (doc: RequestDocument) => {
+    setLayerDriftDoc(doc);
+    setLayerDriftData(null);
+    setLayerDriftLoading(true);
+    try {
+      const data = await documentsAPI.getLayerDrift(doc.id);
+      setLayerDriftData(data);
+    } catch {
+      addToast(t('common.load_error'), 'error');
+      setLayerDriftDoc(null);
+    } finally {
+      setLayerDriftLoading(false);
+    }
+  };
+
+  const layerDriftTypeLabel = (type: LayerDriftResponse['jayer_diffs'][number]['type']): string => (
+    type === 'changed' ? t('approval.layer_drift_type_changed')
+      : type === 'removed' ? t('approval.layer_drift_type_removed')
+        : t('approval.layer_drift_type_added')
+  );
+
+  const layerDriftValueLabel = (row: { sd: string; pp: string; layerid: string } | null): string => (
+    row ? `${row.sd} / ${row.pp} / ${row.layerid || '-'}` : '-'
+  );
+
+  const layerDriftTable = (rows: LayerDriftResponse['jayer_diffs'], title: string): React.ReactElement | null => {
+    if (rows.length === 0) return null;
+    return (
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontWeight: 800, marginBottom: 10 }}>{title}</div>
+        <div className="table-wrapper">
+          <table className="table table-compact change-status-detail-table">
+            <thead>
+              <tr>
+                <th>{t('approval.layer_drift_col_step')}</th>
+                <th>{t('approval.layer_drift_col_type')}</th>
+                <th>{t('approval.layer_drift_col_saved')}</th>
+                <th>{t('approval.layer_drift_col_current')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, idx) => (
+                <tr key={idx}>
+                  <td>{row.stepseq}</td>
+                  <td>{layerDriftTypeLabel(row.type)}</td>
+                  <td><span className="cell-clamp-2">{layerDriftValueLabel(row.saved)}</span></td>
+                  <td><span className="cell-clamp-2">{layerDriftValueLabel(row.current)}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
   // 임시저장 공유 그룹 지정 모달 — 내가 속한 그룹 중 하나를 골라 draft 를 공유한다.
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareDoc, setShareDoc] = useState<RequestDocument | null>(null);
@@ -2056,6 +2122,17 @@ export default function ApprovalPage(): React.ReactElement {
                         )}
                       </div>
                       {detail.adiExtraCount > 0 && <span className="adi-extra-badge">+{detail.adiExtraCount}</span>}
+                      {isLayerDriftVisible(doc) && (
+                        <button
+                          type="button"
+                          className="badge badge-layer-drift"
+                          style={{ marginLeft: 6, cursor: 'pointer' }}
+                          title={t('approval.layer_drift_badge_tooltip')}
+                          onClick={() => openLayerDrift(doc)}
+                        >
+                          {t('approval.layer_drift_badge')}
+                        </button>
+                      )}
                       {lastRejection && (
                         <div style={{ marginTop: 4 }}>
                           <span className="rejection-history-chip">
@@ -2378,6 +2455,36 @@ export default function ApprovalPage(): React.ReactElement {
               </>
             )}
           </div>
+        </Modal>
+      )}
+
+      {layerDriftDoc && (
+        <Modal
+          isOpen
+          onClose={() => { setLayerDriftDoc(null); setLayerDriftData(null); }}
+          title={t('approval.layer_drift_modal_title')}
+          size="md"
+          topLevel
+        >
+          {layerDriftLoading || !layerDriftData ? (
+            <p>{t('common.loading')}</p>
+          ) : (
+            <>
+              {layerDriftData.checked_at && (
+                <p style={{ margin: '0 0 16px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  {t('approval.layer_drift_checked_at', {
+                    date: formatDate(layerDriftData.checked_at),
+                    time: formatTime(layerDriftData.checked_at),
+                  })}
+                </p>
+              )}
+              {layerDriftTable(layerDriftData.jayer_diffs, t('approval.layer_drift_jayer_title'))}
+              {layerDriftTable(layerDriftData.oayer_diffs, t('approval.layer_drift_oayer_title'))}
+              {layerDriftData.jayer_diffs.length === 0 && layerDriftData.oayer_diffs.length === 0 && (
+                <p>{t('approval.layer_drift_empty')}</p>
+              )}
+            </>
+          )}
         </Modal>
       )}
 
@@ -3325,6 +3432,7 @@ export default function ApprovalPage(): React.ReactElement {
               onOpenOayerColorFilterManage={() => setOayerColorFilterManageOpen(true)}
               onResetJayerColorFilter={() => handleResetColorFilter('J')}
               onResetOayerColorFilter={() => handleResetColorFilter('O')}
+              onOpenLayerDrift={isLayerDriftVisible(selected) ? () => openLayerDrift(selected) : undefined}
             />
           </div>
         )}
