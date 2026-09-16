@@ -716,8 +716,12 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
 - **판정(`RequestDocumentViewSet._should_skip_r_stage`, `resubmit` 호출 시점)**: 가장 최근
   `RejectionSnapshot`(반려 시점 스냅샷)과 지금 재상신하려는(수정 반영 완료된) 문서 내용을
   비교한다 — `jayerRows` 전체와, `RequestDocument.MAP_INFO_FIELDS`(MAP 정보) +
-  `DETAIL_LINE_TO_PROCESS_ID_FIELDS`(의뢰 상세 line~process_id 구간) 필드가 하나라도 다르면
-  R을 정상 생성한다.
+  `DETAIL_LINE_TO_PROCESS_ID_FIELDS`(의뢰 상세의 `line`/`process_selection`/`partid_selection`/
+  `process_id` 4개 필드만, 2026-09) 필드가 하나라도 다르면 R을 정상 생성한다. 의뢰 상세 폼의
+  그 외 필드(`customer_name`/`customer_requirement`/`other_purpose`/`source_line`/
+  `source_partid`/`change_purpose_note`/`flow_chart` 등)와 O-layer(`oayerRows`)·Backbone
+  (`bb_zone`/`bb_entries`)은 R의 관심사가 아니므로 비교 대상이 아니다 — 바뀌어도 위 4개 필드와
+  MAP정보·jayerRows가 그대로면 R은 생략된다.
 - **동작**: 조건이 성립하면 새 회차 번호를 `document.r_skip_round`에 1회용으로 기록해 두고,
   PL 전원 합의 시점(`_open_stage_after_pl`)에 그 회차와 일치하면 R을 만들지 않고 바로
   `_advance_to_parallel`을 호출한다(플래그는 즉시 소진). 3구역 단계들의 기한(due_date)

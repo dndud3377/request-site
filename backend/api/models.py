@@ -281,13 +281,11 @@ class RequestDocument(models.Model):
                 return True
         return False
 
-    # "의뢰 상세" 폼에서 line ~ process_id 구간 필드(프론트 DetailFormState 필드 순서와 동일).
+    # "의뢰 상세" 폼에서 R(RFG) 판정에 실제로 영향을 주는 4개 필드.
     # 반려 후 재상신 시 2구역(R) 생략 여부 판정에 쓰인다(아래 RequestDocumentViewSet
     # ._should_skip_r_stage 참고) — MAP 정보(MAP_INFO_FIELDS)와는 별개 구간이다.
     DETAIL_LINE_TO_PROCESS_ID_FIELDS = (
-        'line', 'process_selection', 'partid_selection', 'customer_name',
-        'customer_requirement', 'other_purpose', 'source_line', 'source_partid',
-        'change_purpose_note', 'flow_chart', 'process_id',
+        'line', 'process_selection', 'partid_selection', 'process_id',
     )
 
     def is_r_skipped(self, round=None):

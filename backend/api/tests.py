@@ -7423,6 +7423,26 @@ class ShouldSkipRStageTest(TestCase):
         self._make_rejection(doc, 'RA', detail={'line': 'L1'}, rejected_by_loginid='extra_ra')
         self.assertTrue(self.viewset._should_skip_r_stage(doc))
 
+    def test_line_to_process_id_change_blocks_skip(self):
+        for field in ('line', 'process_selection', 'partid_selection', 'process_id'):
+            doc = self._make_doc(detail={field: 'BEFORE'})
+            self._make_rejection(doc, 'P', detail={field: 'AFTER'})
+            self.assertFalse(self.viewset._should_skip_r_stage(doc), f'field={field}')
+
+    def test_fields_outside_line_to_process_id_change_still_skips(self):
+        """customer_name 등은 DETAIL_LINE_TO_PROCESS_ID_FIELDS 비교 대상이 아니므로,
+        line~process_id 4개 필드가 그대로면 이 필드들이 바뀌어도 R은 생략돼야 한다.
+        (source_line/source_partid는 MAP_INFO_FIELDS에도 같은 키로 포함돼 있어 제외 —
+        MAP정보 비교로 걸리므로 이 테스트의 대상이 아니다.)"""
+        outside_fields = (
+            'customer_name', 'customer_requirement', 'other_purpose',
+            'change_purpose_note', 'flow_chart',
+        )
+        for field in outside_fields:
+            doc = self._make_doc(detail={'line': 'L1', field: 'BEFORE'})
+            self._make_rejection(doc, 'P', detail={'line': 'L1', field: 'AFTER'})
+            self.assertTrue(self.viewset._should_skip_r_stage(doc), f'field={field}')
+
     def test_zone3_agent_reject_map_info_changed_does_not_skip(self):
         doc = self._make_doc(detail={'line': 'L1', 'map_type': 'NEW'})
         self._make_rejection(doc, 'O', detail={'line': 'L1', 'map_type': 'CLONE'})
