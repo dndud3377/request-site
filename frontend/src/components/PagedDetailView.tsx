@@ -1371,8 +1371,6 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
 
   // 판정 키워드(plel) 유무 — E(MASK) 단계가 결재 경로에 포함되는지의 기준(백엔드 has_ppid_plel 과 동일).
   const hasPlel = isValidationTarget(jayer);
-  // 활성 O-layer 행 존재 여부 — O(OVL) 단계가 결재 경로에 포함되는지의 기준(백엔드 has_oayer_rows 와 동일).
-  const hasOayerRows = oayer.some((r) => !isRowInactive(r.st));
   // Validation System 표시값. detail 키가 없는 레거시 문서는 저장된 J-layer 로 폴백 판정한다.
   // 키워드가 아예 없으면 판정이 성립하지 않으므로 저장값과 무관하게 '해당없음'이다.
   const vsCurrent: ValidationSystemValue = !hasPlel
@@ -2850,10 +2848,6 @@ type Page = { label: string; content: React.ReactNode };
     if (agent === 'E' && !hasPlel) {
       return [{ status: 'na', label: t('approval.step_na') }];
     }
-    // Oayer 표가 비어 있으면 O(OVL) 단계 자체가 없다(E·plel 과 동일한 na 분기, 백엔드 has_oayer_rows).
-    if (agent === 'O' && !hasOayerRows) {
-      return [{ status: 'na', label: t('approval.step_na') }];
-    }
     if (isOnlyMap && ['P', 'J', 'O', 'E'].includes(agent)) {
       return [{ status: 'na', label: t('approval.step_na') }];
     }
@@ -3048,7 +3042,7 @@ type Page = { label: string; content: React.ReactNode };
           <div key={key} style={teamRowStyle}>
             <div style={teamLabelStyle}>{label}</div>
             <div style={historyListStyle}>
-              {(key === 'E' && !hasPlel) || (key === 'O' && !hasOayerRows) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) || (isMapDeleteEdit && key === 'RA') || (skipJStage && key === 'J') || (isAdiCdChange && ['R', 'O', 'RA'].includes(key)) ? (
+              {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) || (isMapDeleteEdit && key === 'RA') || (skipJStage && key === 'J') || (isAdiCdChange && ['R', 'O', 'RA'].includes(key)) ? (
                 <div style={historyItemStyle(false)}>
                   <span style={{ ...statusBadgeStyle('na') }}>{t('approval.step_na')}</span>
                 </div>
