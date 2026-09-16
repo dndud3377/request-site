@@ -3562,6 +3562,83 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   3. [STEP4(O-ayer)에서도 동일하게 "전체 X" → "전체 O"/"초기화" 를 눌러 표 자신과 J-ayer 짝
      행 양쪽이 함께 정상 반영되는지 확인.]
 
+### 기능 추가 (2026-09-16 — J/O-layer '변경 감지' 뱃지: 상신 이후 마스터 DB 값이 달라지면 경고)
+
+- **요청**: Step1에서 라인+조리법(`process_id`)을 고르면 J-layer/O-layer 표가 마스터 DB
+  (`PhotoStepS{1,3,4,5}`/`_Ov`, `job-file-layer`/`ovl-layer` API)에서 값을 자동으로 채운다.
+  상신 이후 그 마스터 DB 값이 바뀌면 문서에 저장된 값과 어긋날 수 있는데, 이를 결재 현황
+  목록·상세보기에 "변경 감지" 뱃지로 경고하고, 클릭 시 변경 전/후 내용을 보여준다.
+- **비교 대상**: 결재 진행중(`submitted`/`under_review`/`pause`) 문서만. 완료(`approved`)/
+  반려(`rejected`)/임시저장(`draft`)은 대상에서 뺀다 — 뱃지가 프리즈된 채 남지 않도록 프론트에서도
+  `status` 를 다시 확인한다(`ApprovalPage.tsx` `isLayerDriftVisible`).
+- **비교 기준**: J/O-layer 행 중 자동 채움으로 들어온 행(`loaded===true`)만 대상. `sp`(STEPSEQ) 키로
+  마스터 DB 행과 매칭해 ① 값 변경(`sd`/`pp`/`layerid`) ② 행 삭제(저장엔 있는데 DB에 없음) ③ 신규
+  행 추가(DB에는 있는데 저장에 없음) 세 가지를 모두 "변경"으로 잡는다. 사용자가 직접 입력하는
+  `st`/`new_or_copy`/`product_name`/`step`/`item_id`는 비교하지 않는다.
+- **계산 주기**: 실시간이 아니라 스케줄러(`sync_rtdb_options`, 10분 주기) 직후 결재 진행중 문서
+  **전체**를 다시 계산해 캐시를 덮어쓴다 — 뱃지가 떠 있는 동안에도 내용이 최신으로 갱신된다
+  (`docs/CHANGE_STATUS.md`와 같은 "몇 분 지연 허용" 철학).
+- **재상신 시 초기화**: `submit`/`resubmit`/`requester-resubmit`/`peer-submit` 액션은 성공 시
+  `layer_drift.reset_document_drift()`로 뱃지를 무조건 초기화한다(재계산이 아니라 리셋). 다음
+  스케줄러 주기부터 다시 감지 대상에 포함된다.
+- **백엔드**:
+  - `backend/api/layer_drift.py`(신규) — `get_job_file_layer_rows`/`get_ovl_layer_rows`(마스터 DB
+    조회, `views.py` `form_options_job_file_layer`/`form_options_ovl_layer`가 재사용하도록 공용화),
+    `compute_document_layer_drift`/`recompute_document`/`recompute_all_in_progress`/
+    `reset_document_drift`.
+  - `RequestDocument` 모델에 `layer_drift_detected`(bool)/`layer_drift_detail`(JSON 텍스트)/
+    `layer_drift_checked_at`(datetime) 필드 추가(`migrations/0044_requestdocument_layer_drift.py`).
+  - `scheduler.py` `sync_rtdb_options()` 끝에서 `layer_drift.recompute_all_in_progress()` 호출
+    (실패해도 RTDB 동기화 자체엔 영향 없도록 별도 try/except).
+  - `RequestDocumentViewSet`에 `GET /api/documents/{id}/layer-drift/`(`layer_drift_detail` 액션)
+    신설 — 캐시된 `layer_drift_detail`을 그대로 반환한다(클릭할 때마다 재계산하지 않음).
+  - `RequestDocumentSerializer`/`RequestDocumentListSerializer`에 `layer_drift_detected`
+    read-only 필드 추가(목록 응답에도 실려서 배지 표시에 추가 조회가 필요 없다).
+- **프론트**:
+  - `types/index.ts`: `RequestDocument.layer_drift_detected`, `LayerDriftRow`/`LayerDriftResponse`
+    타입 추가.
+  - `api/client.ts`: `documentsAPI.getLayerDrift(id)` 추가.
+  - `ApprovalPage.tsx`: 목록 행(제품/조합 셀)에 `badge-layer-drift` 뱃지 추가, 클릭 시
+    `layer-drift` API를 호출해 모달(J-layer/O-layer 별 STEP/구분/저장된 값/현재 값 표)로 diff를
+    보여준다. `isLayerDriftVisible(doc)`가 `layer_drift_detected && status가 진행중`을 함께 검사.
+  - `PagedDetailView.tsx`: 상세보기 J-layer 영역(Validation System 표시줄 옆)에 동일 뱃지 —
+    `doc.layer_drift_detected`는 이미 갖고 있던 `doc` prop에서 바로 읽고, 클릭 동작은
+    `onOpenLayerDrift` 콜백(호출부 소유, 이 컴포넌트는 API를 직접 호출하지 않는 원칙 유지)으로
+    위임한다. `ApprovalPage`가 `isLayerDriftVisible`이 아닐 때 `undefined`를 넘겨 뱃지 자체를
+    감춘다. HistoryPage 등 이 콜백을 넘기지 않는 호출부는 자연히 뱃지가 뜨지 않는다.
+  - `styles/global.css`: `.badge-layer-drift` 추가.
+- **i18n**: `approval.layer_drift_*`(뱃지 문구/모달 제목/컬럼 헤더/구분 라벨 등) ko/en 동시 추가.
+- **영향 파일**: `backend/api/models.py`, `backend/api/migrations/0044_requestdocument_layer_drift.py`,
+  `backend/api/layer_drift.py`(신규), `backend/api/views.py`, `backend/api/scheduler.py`,
+  `backend/api/serializers.py`, `frontend/src/types/index.ts`, `frontend/src/api/client.ts`,
+  `frontend/src/pages/ApprovalPage.tsx`, `frontend/src/components/PagedDetailView.tsx`,
+  `frontend/src/styles/global.css`, `frontend/src/locales/ko.json`, `frontend/src/locales/en.json`.
+- **검증**: CLAUDE.md §1-1 절차(sqlite, 원격 세션)로 `manage.py test api` — **540건 전부 통과**
+  (회귀 없음). 신규 diff 로직은 프로젝트 밖 재현 테스트(`$SP/stubs/verify_layer_drift.py`, 값 변경/
+  행 삭제/행 추가/미로드 행 제외/리셋/진행중 아닌 문서 스킵 7케이스)로 실행 출력까지 확인 —
+  전부 통과. 프론트: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일, 전부 이 변경과 무관한
+  `Set` es5 순회·`GuidePage.tsx` i18n strict 키). `CI=true npx react-scripts test --watchAll=false`
+  — 11 suites / **294건 전부 통과**(신규 프론트 테스트는 추가하지 않음 — 기존 회귀만 확인).
+  결재 상신/재상신 액션에 `reset_document_drift()` 호출을 추가했지만 결재 경로 판정 로직 자체는
+  건드리지 않아 `scripts/approval_cases/run_cases`는 대상이 아니다(백엔드 540건에 submit/resubmit/
+  requester-resubmit/peer-submit 관련 기존 테스트가 다수 포함되어 회귀 여부를 함께 확인했다).
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [결재 진행중인 문서 하나를 골라 Django shell 등으로 그 문서가 참조하는
+     `PhotoStepS{N}`(또는 `_Ov`) 행의 `descript`/`recipeid`/`layerid` 값을 바꿔둔다] → [스케줄러가
+     돌거나 `layer_drift.recompute_all_in_progress()`를 수동 호출] → [결재 현황 목록에서 그
+     문서 행의 제품/조합 셀에 "변경 감지" 뱃지가 보이는지 확인 → 클릭 → 모달에 STEP/구분("값
+     변경")/저장된 값/현재 값이 표로 뜨는지 확인.]
+  2. [같은 문서의 상세보기(결재상세) → J-layer 영역 Validation System 줄 옆에도 동일 뱃지가 보이고,
+     클릭 시 같은 모달이 뜨는지 확인.]
+  3. [그 문서를 반려 후 재상신(또는 수정 후 재상신) → 기대 결과: 뱃지가 즉시 사라진다(재계산이 아닌
+     리셋이므로 마스터 DB 값이 여전히 달라도 즉시 사라져야 한다).] → [다음 스케줄러 주기(또는 수동
+     `recompute_all_in_progress()`) 이후 다시 뱃지가 뜨는지 확인 — 여전히 값이 다르면 다시 감지돼야
+     한다.]
+  4. [승인 완료된 문서(또는 반려된 문서)는 마스터 DB 값이 달라도 목록·상세보기 어디에도 뱃지가
+     뜨지 않는지 확인(비교 대상은 결재 진행중 문서만).]
+  5. [이력조회(완료 문서) 화면에서는 애초에 뱃지 콜백을 넘기지 않으므로, `layer_drift_detected`가
+     남아 있는 문서를 열어도 뱃지가 뜨지 않는지 확인.]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)

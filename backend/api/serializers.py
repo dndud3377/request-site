@@ -270,14 +270,15 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'requester_loginid', 'can_edit', 'can_withdraw', 'notifier_mails',
             'can_request_pause', 'can_resume', 'can_requester_resubmit', 'pause_request', 'withdraw_request',
             'post_approver_fixed_loginid', 'post_approver_fixed_name', 'map_info_locked', 'mail_completion_matched',
-            'shared_group', 'shared_group_name', 'review_items',
+            'shared_group', 'shared_group_name', 'review_items', 'layer_drift_detected',
         ]
         # shared_group 은 전체 저장(PUT/PATCH)에 값이 빠져 초기화되는 일이 없도록 read-only 로 두고,
         # 변경은 전용 액션 POST documents/{id}/set-shared-group/ 으로만 한다.
         # mail_completion_matched 는 POP3 스케줄러(pop3_mail.py)만 갱신하는 값이라 read-only.
+        # layer_drift_detected 는 layer_drift.py(스케줄러/재상신 액션)만 갱신하는 값이라 read-only.
         read_only_fields = ['status', 'created_at', 'updated_at', 'submitted_at',
                             'designated_pl_loginid', 'designated_pl_name', 'shared_group',
-                            'mail_completion_matched']
+                            'mail_completion_matched', 'layer_drift_detected']
 
     def get_designated_pl_loginid(self, obj):
         return obj.designated_pl.loginid if obj.designated_pl else None
@@ -321,8 +322,9 @@ class RequestDocumentListSerializer(ZoneMapMixin, DocPermFieldsMixin, serializer
             'can_request_pause', 'can_resume', 'can_requester_resubmit', 'pause_request', 'withdraw_request',
             'post_approver_fixed_loginid', 'mail_completion_matched',
             'shared_group', 'shared_group_name', 'my_pending_review_items', 'my_mark_category',
+            'layer_drift_detected',
         ]
-        read_only_fields = ['shared_group', 'mail_completion_matched']
+        read_only_fields = ['shared_group', 'mail_completion_matched', 'layer_drift_detected']
 
     def get_designated_pl_loginid(self, obj):
         return obj.designated_pl.loginid if obj.designated_pl else None

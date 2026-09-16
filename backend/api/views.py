@@ -40,6 +40,7 @@ from . import doc_permissions
 from . import design_rule_stats
 from . import review_items as review_items_sync
 from . import rejection_snapshots
+from . import layer_drift
 from .authentication import ExternalApiKeyAuthentication
 from .serializers import (
     RequestDocumentSerializer, RequestDocumentListSerializer, ExternalRequestDocumentSerializer,
@@ -554,6 +555,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             document.designated_pl = rep
             document.designated_pl_name = rep.username or rep.loginid
             document.save()
+            layer_drift.reset_document_drift(document)
 
             # 지정 PL 전원에 대해 pending PL 단계를 생성(전원 합의 필요)
             ApprovalStep.objects.filter(document=document).delete()
@@ -662,6 +664,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             new_round = self._max_round(document, default=0) + 1
             document.r_skip_round = new_round if skip_r else None
             document.save()
+            layer_drift.reset_document_drift(document)
 
             # 검토 항목·검토자 지정은 그대로 두고 확인 상태만 초기화한다.
             # (새 회차 J 단계가 열릴 때 fill_from_master 로 마스터 최신본과 다시 맞춘다)
@@ -681,6 +684,26 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return Response({
             'message': '재상신되었습니다.',
             'document': RequestDocumentSerializer(document).data,
+        })
+
+    @action(detail=True, methods=['get'], url_path='layer-drift')
+    def layer_drift_detail(self, request, pk=None):
+        """J-layer/O-layer '변경 감지' 상세 diff.
+
+        `layer_drift.recompute_all_in_progress()`(스케줄러, 10분 주기)가 캐시해 둔
+        `layer_drift_detail`을 그대로 반환한다 — 클릭할 때마다 마스터 DB를 다시 조회하지 않는다.
+        """
+        import json
+        document = self.get_object()
+        try:
+            detail = json.loads(document.layer_drift_detail) if document.layer_drift_detail else {}
+        except (json.JSONDecodeError, TypeError):
+            detail = {}
+        return Response({
+            'detected': document.layer_drift_detected,
+            'checked_at': document.layer_drift_checked_at,
+            'jayer_diffs': detail.get('jayer', []),
+            'oayer_diffs': detail.get('oayer', []),
         })
 
     @action(detail=True, methods=['post'], url_path='requester-resubmit')
@@ -728,6 +751,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         document.designated_pl_name = rep.username or rep.loginid
         document.submitted_at = timezone.now()
         document.save()
+        layer_drift.reset_document_drift(document)
 
         # 검토 항목·검토자 지정은 그대로 두고 확인 상태만 초기화한다(resubmit과 동일).
         review_items_sync.reset_confirmations(document)
@@ -2691,6 +2715,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not step:
             return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        layer_drift.reset_document_drift(document)
         comment = request.data.get('comment', '')
         tagged = f'[수정 후 상신] {comment}'.strip()
         all_done = self._advance_after_pl(document, step, tagged)
@@ -3662,47 +3687,19 @@ def form_options_job_file_layer(request):
     
     line = request.GET.get('line', '')
     process = request.GET.get('process', '')
-    
+
     if not line or not process:
         return JsonResponse({'options': []})
-    
-    # {{request.line}} 별 모델 매핑
-    model_map = {
-        'line1': PhotoStepS1,
-        'line3': PhotoStepS3,
-        'line4': PhotoStepS4,
-        'line5': PhotoStepS5,
-    }
 
-    model = model_map.get(line)
-    if not model:
+    if line not in layer_drift.JOB_FILE_MODEL_MAP:
         logger.warning(f"[JOB_FILE_LAYER] 알 수 없는 {{request.line}}: {line}")
         return JsonResponse({'options': []})
-    
+
     try:
-        # eqptype='PMAINF' AND processid='{process}' 조건으로 조회
-        # stepseq 오름차순 정렬
-        queryset = model.objects.filter(
-            eqptype='PMAINF',
-            processid=process
-        ).order_by('stepseq')
-        
-        options = []
-        for item in queryset:
-            options.append({
-                'line': line,
-                'process': process,
-                'processid': item.processid,
-                'stepseq': item.stepseq,
-                'descript': item.descript,
-                'recipeid': item.recipeid,
-                'layerid': item.layerid or '',
-                'updated': item.updated or '',
-            })
-        
+        options = layer_drift.get_job_file_layer_rows(line, process)
         logger.info(f"[JOB_FILE_LAYER] {len(options)}건 조회 성공: {line}, {process}")
         return JsonResponse({'options': options})
-        
+
     except Exception as e:
         logger.error(f"[JOB_FILE_LAYER] 조회 실패: {e}")
         return JsonResponse({'options': [], 'error': str(e)})
@@ -3716,47 +3713,19 @@ def form_options_ovl_layer(request):
     
     line = request.GET.get('line', '')
     process = request.GET.get('process', '')
-    
+
     if not line or not process:
         return JsonResponse({'options': []})
-    
-    # {{request.line}} 별 모델 매핑 (2026-09: eqptype='POVLAY' 전용 테이블로 분리)
-    model_map = {
-        'line1': PhotoStepS1Ov,
-        'line3': PhotoStepS3Ov,
-        'line4': PhotoStepS4Ov,
-        'line5': PhotoStepS5Ov,
-    }
 
-    model = model_map.get(line)
-    if not model:
+    if line not in layer_drift.OVL_MODEL_MAP:
         logger.warning(f"[OVL_LAYER] 알 수 없는 {{request.line}}: {line}")
         return JsonResponse({'options': []})
-    
+
     try:
-        # eqptype='POVLAY' AND processid='{process}' 조건으로 조회
-        # stepseq 오름차순 정렬
-        queryset = model.objects.filter(
-            eqptype='POVLAY',
-            processid=process
-        ).order_by('stepseq')
-        
-        options = []
-        for item in queryset:
-            options.append({
-                'line': line,
-                'process': process,
-                'processid': item.processid,
-                'stepseq': item.stepseq,
-                'descript': item.descript,
-                'recipeid': item.recipeid,
-                'layerid': item.layerid or '',
-                'updated': item.updated or '',
-            })
-        
+        options = layer_drift.get_ovl_layer_rows(line, process)
         logger.info(f"[OVL_LAYER] {len(options)}건 조회 성공: {line}, {process}")
         return JsonResponse({'options': options})
-        
+
     except Exception as e:
         logger.error(f"[OVL_LAYER] 조회 실패: {e}")
         return JsonResponse({'options': [], 'error': str(e)})

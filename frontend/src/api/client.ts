@@ -43,6 +43,7 @@ import {
   PersonalMarkCategory,
   PhotoStepChangeListResponse,
   PhotoStepChangeTableType,
+  LayerDriftResponse,
 } from '../types';
 
 // ===== JWT 토큰 관리 =====
@@ -180,6 +181,10 @@ const getDocument = async (id: number) => {
   const data = await get<RequestDocument>(`/documents/${id}/`);
   return { data };
 };
+
+/** '변경 감지' 배지 클릭 시 상세 diff 조회 — 캐시된 값(스케줄러 10분 주기 갱신)을 그대로 받는다. */
+const getLayerDrift = async (id: number): Promise<LayerDriftResponse> =>
+  get<LayerDriftResponse>(`/documents/${id}/layer-drift/`);
 
 const createDocument = async (input: CreateDocumentInput) => {
   const data = await post<RequestDocument>('/documents/', input);
@@ -610,6 +615,7 @@ const annualDesignRuleStats = async (params: {
 export const documentsAPI = {
   list: listDocuments,
   get: getDocument,
+  getLayerDrift,
   create: createDocument,
   update: updateDocument,
   submit: submitDocument,

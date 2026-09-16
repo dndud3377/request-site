@@ -698,6 +698,9 @@ select.form-control option {
 /* MAP 목적 컬럼 전용 — POP3 완료 알림 메일과 product_name 매칭 뱃지(docs/MAP_COMPLETION_MAIL.md) */
 .badge-mail-complete { background: rgba(124, 58, 237, 0.1); color: #7c3aed; }
 
+/* J/O-layer '변경 감지' 뱃지(결재 현황 목록·상세보기 공용) — 버튼이라 브라우저 기본 테두리를 지운다 */
+.badge-layer-drift { background: rgba(220, 53, 69, 0.1); color: #dc3545; border: none; font-family: inherit; }
+
 /* ===== 병렬 합의 단계 '현재 단계' 3행 2열 그리드(docs/APPROVAL.md §3.3) =====
    6칸이 항상 같은 자리에 있어 이 문서의 경로에 없는 단계도 '해당없음'으로 드러난다. */
 .stage-grid {

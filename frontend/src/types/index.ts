@@ -219,6 +219,23 @@ export interface RequestDocument {
   my_mark_category?: number | null;            // 내 개인 마킹 범주 id (목록 응답, 표시 없으면 null). 다른 사용자에게는 노출되지 않는다.
   // POP3 완료 알림 메일 제목에 product_name 이 포함된 적이 있는지 (읽기 전용, 서버 스케줄러만 갱신)
   mail_completion_matched?: boolean;
+  // J/O-layer 자동 채움 값이 마스터 DB와 달라졌는지 (읽기 전용, 스케줄러 10분 주기 갱신 — docs/REQUEST.md 참고)
+  layer_drift_detected?: boolean;
+}
+
+/** GET /api/documents/{id}/layer-drift/ 응답. 캐시된 diff를 그대로 반환한다(실시간 재계산 아님). */
+export interface LayerDriftRow {
+  type: 'changed' | 'removed' | 'added';
+  stepseq: string;
+  saved: { sp: string; sd: string; pp: string; layerid: string } | null;
+  current: { sp: string; sd: string; pp: string; layerid: string } | null;
+}
+
+export interface LayerDriftResponse {
+  detected: boolean;
+  checked_at: string | null;
+  jayer_diffs: LayerDriftRow[];
+  oayer_diffs: LayerDriftRow[];
 }
 
 /**
