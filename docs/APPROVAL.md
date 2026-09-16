@@ -701,28 +701,6 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   아닌 이 경로) `requesterResubmit` API를 호출한다.
 - 테스트: `backend/api/tests.py::RequesterResubmitTest`
 
-### Case S — O(OVL) 단계: Oayer 표가 비어 있으면 결재 경로에서 제외 (2026-09)
-
-E(MASK)가 `has_ppid_plel()`(J-layer의 plel 키워드)로 생성 여부를 판정하는 것과 동일한 패턴을
-O(OVL)에도 적용했다. 판정: `RequestDocument.has_oayer_rows()` — 활성(`st != 'X'`) O-layer 행이
-**하나라도** 있으면 참. 오예이어 표 자체가 비어 있으면(신규 문서 기본값이 빈 배열) OVL 팀이
-검토할 대상이 없으므로 O 단계를 만들지 않는다.
-
-- **생성 시점**: `_advance_to_parallel`(R 합의 시점, 일반 경로) — `has_oayer_rows()`가 거짓이면
-  O step 자체를 생성하지 않는다. Only MAP·ADI CD 변경은 원래부터 O가 없고, 'MAP 삭제'
-  (`_create_map_delete_edit_parallel`)는 O가 병렬 묶음의 필수 구성원이라 이 판정을 적용하지
-  않는다(O-layer 작성이 전제된 경로이므로 대상이 아니다).
-- **최종 승인 판정**: `o_approved`는 `has_oayer_rows()`가 거짓이면 무조건 True로 둔다
-  (`skip_j_stage()`의 `j_approved`와 같은 패턴) — 그렇지 않으면 O를 기다리며 `under_review`에
-  영구 정지한다.
-- **표시**: 메일 결재 경로 카드(`mailer._route_rows`)와 결재 상세보기 '결재 경로' 탭
-  (`PagedDetailView.tsx`의 `hasOayerRows`)에서 O 행을 '해당없음'으로 표시한다(E·plel과 동일한
-  na 분기). 결재현황 목록의 병렬 단계 그리드는 step 부재만으로 자동으로 '해당없음'이 되므로
-  별도 처리가 필요 없다(J와 동일).
-- ⚠️ 판정은 **단계 생성 시점**(R 합의)에 이뤄진다 — 이미 O step이 생성된 기존 문서·회차는
-  영향 없다.
-- 테스트: `backend/api/tests.py::HasOayerRowsTest`
-
 ### Case T — 반려 후 재상신 시 2구역(R) 생략 (`resubmit`, 2026-09)
 
 3구역(P/J/O/E) 또는 3구역 **비고정** 후결자(RA)가 반려한 뒤, MAP 정보·Jayer 정보·의뢰 상세
