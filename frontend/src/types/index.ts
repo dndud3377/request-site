@@ -1,7 +1,21 @@
 // ===== Auth / Role Types =====
 
 // 역할 타입 (null 제외 - 기본)
-export type UserRole = 'PL' | 'TE_R' | 'TE_P' | 'TE_J' | 'TE_O' | 'TE_E' | 'MASTER' | 'NONE';
+// PL_GL = 해외 제품 담당자. 권한은 PL 과 동일하고 **조회 범위만** 다르다 —
+// 해외 의뢰서(RequestDocument.is_overseas)와 본인이 올린 문서만 본다.
+// 국내 PL 의 조회 범위는 그대로라 격리는 단방향이다(국내 → 해외 O, 해외 → 국내 X).
+export type UserRole = 'PL' | 'PL_GL' | 'TE_R' | 'TE_P' | 'TE_J' | 'TE_O' | 'TE_E' | 'MASTER' | 'NONE';
+
+// 제품 담당자 계열 역할 — 지정 PL·영업합의자·후결자 후보가 되는 역할이다.
+export const PL_ROLES: UserRole[] = ['PL', 'PL_GL'];
+
+/** 이 역할이 제품 담당자(국내·해외 공통)인가 — PL 전용 기능의 판정에 쓴다. */
+export const isPlRole = (role: string | null | undefined): boolean =>
+  role === 'PL' || role === 'PL_GL';
+
+/** 해당 구역 의뢰서의 결재선 후보가 될 수 있는 역할 (백엔드 UserProfile.pl_role_for 와 동일 규칙) */
+export const plRoleFor = (isOverseas: boolean | undefined): UserRole =>
+  isOverseas ? 'PL_GL' : 'PL';
 
 // null 을 포함한 역할 타입
 export type UserRoleWithNull = UserRole | null | 'NONE';
@@ -221,6 +235,9 @@ export interface RequestDocument {
   mail_completion_matched?: boolean;
   // J/O-layer 자동 채움 값이 마스터 DB와 달라졌는지 (읽기 전용, 스케줄러 10분 주기 갱신 — docs/REQUEST.md 참고)
   layer_drift_detected?: boolean;
+  // 해외 의뢰서 여부 (읽기 전용). 의뢰자 역할로 최초 상신 시 서버가 확정한다.
+  // 결재선 후보(지정 PL·영업합의자·후결자) 목록을 어느 역할로 부를지 이 값으로 고른다 — plRoleFor.
+  is_overseas?: boolean;
 }
 
 /** GET /api/documents/{id}/layer-drift/ 응답. 캐시된 diff를 그대로 반환한다(실시간 재계산 아님). */
