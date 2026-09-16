@@ -15,7 +15,7 @@
 
 ```bash
 cd /home/user/request-site
-docker compose -f docker-compose.dev.yml up -d
+docker compose --env-file .env.dev -f docker-compose.dev.yml up -d
 docker ps --format "{{.Names}}"     # <backend>/<frontend> 컨테이너명 확인
 ```
 - 접속: http://localhost:10011
