@@ -3483,7 +3483,7 @@ class ExternalRequestDocumentViewSet(viewsets.ReadOnlyModelViewSet):
         queryset = self.filter_queryset(self.get_queryset())
 
         # 서버 로그 전용 — 호출자에게 보내는 HTTP 응답에는 포함하지 않는다.
-        print(
+        logging.getLogger(__name__).info(
             f"[ExternalAPI] product_name={request.query_params.get('product_name', '(전체)')!r} "
             f"p_approved={request.query_params.get('p_approved', '(미적용)')!r} "
             f"fields={request.query_params.get('fields', '(전체 필드)')!r} "
@@ -3713,8 +3713,10 @@ def form_options_job_file_layer(request):
         return JsonResponse({'options': options})
 
     except Exception as e:
+        # 예외 원문에는 외부 DB 호스트·쿼리·드라이버 정보가 실려 나간다. 응답에는 싣지 않고
+        # 로그로만 남긴다(docs/SECURITY.md M-13). 화면은 '조회 실패'만 알면 된다.
         logger.error(f"[JOB_FILE_LAYER] 조회 실패: {e}")
-        return JsonResponse({'options': [], 'error': str(e)})
+        return JsonResponse({'options': [], 'error': '조회에 실패했습니다'})
 
 
 @api_view(['GET'])
@@ -3740,8 +3742,10 @@ def form_options_ovl_layer(request):
         return JsonResponse({'options': options})
 
     except Exception as e:
+        # 예외 원문에는 외부 DB 호스트·쿼리·드라이버 정보가 실려 나간다. 응답에는 싣지 않고
+        # 로그로만 남긴다(docs/SECURITY.md M-13). 화면은 '조회 실패'만 알면 된다.
         logger.error(f"[OVL_LAYER] 조회 실패: {e}")
-        return JsonResponse({'options': [], 'error': str(e)})
+        return JsonResponse({'options': [], 'error': '조회에 실패했습니다'})
 
 
 # ===== 파일 업로드 =====
@@ -3948,8 +3952,10 @@ def form_options_bb_external(request):
         return JsonResponse({'options': options})
 
     except Exception as e:
+        # 예외 원문에는 외부 DB 호스트·쿼리·드라이버 정보가 실려 나간다. 응답에는 싣지 않고
+        # 로그로만 남긴다(docs/SECURITY.md M-13). 화면은 '조회 실패'만 알면 된다.
         logger.error(f"[BB_EXTERNAL] 조회 실패: {e}")
-        return JsonResponse({'options': [], 'error': str(e)})
+        return JsonResponse({'options': [], 'error': '조회에 실패했습니다'})
 
 
 def _natural_key(s: str) -> list:
@@ -4418,8 +4424,10 @@ class UserViewSet(viewsets.ModelViewSet):
             broadcaster.broadcast('user_deleted', {'id': user_id})
             return Response(status=status.HTTP_204_NO_CONTENT)
         except Exception as e:
+            # DB 제약 위반 메시지에는 테이블·컬럼 구조가 드러난다(docs/SECURITY.md M-13).
+            logger.error(f"[USER_DELETE] 삭제 실패: {e}")
             return Response(
-                {'error': str(e)},
+                {'error': '사용자를 삭제할 수 없습니다.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
