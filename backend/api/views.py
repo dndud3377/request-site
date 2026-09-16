@@ -3731,38 +3731,84 @@ def form_options_ovl_layer(request):
         return JsonResponse({'options': [], 'error': str(e)})
 
 
-@csrf_exempt
-@require_POST
+# ===== 파일 업로드 =====
+#
+# ⚠️ 업로드 엔드포인트에서 인증을 떼거나 확장자 화이트리스트를 넓히지 말 것.
+#    예전에는 @csrf_exempt + @require_POST 만 붙어 **비로그인 상태로 누구나** 파일을 올릴 수
+#    있었고, 저장 확장자를 업로더가 보낸 파일명에서 그대로 떼어 썼다. 그래서 Content-Type 을
+#    image/png 라고 주장하면서 payload.html 을 올리면 /media/ 에 .html 로 저장돼
+#    같은 오리진에서 스크립트가 실행됐다(저장형 XSS + 임의 파일 호스팅).
+#    상세: docs/SECURITY.md C-4.
+#
+# 검증 3단계 - 셋 다 필요하다.
+#   1) 인증        : 비로그인 업로드 차단 (개발 모드는 IsAuthenticatedInProd 가 기존대로 통과)
+#   2) 확장자      : 아래 화이트리스트에 있는 것만. 저장 파일명은 **서버가** 만든다.
+#   3) 내용        : 이미지는 실제로 이미지로 파싱되는지 확인한다.
+#      (Content-Type 헤더는 업로더가 주장하는 값이라 판단 근거가 되지 못한다.)
+
+# 이미지 업로드 최대 크기 (2MB)
+MAX_IMAGE_UPLOAD_SIZE = 2 * 1024 * 1024
+# 동영상 업로드 최대 크기 (50MB)
+MAX_VIDEO_UPLOAD_SIZE = 50 * 1024 * 1024
+
+# 저장을 허용하는 확장자(소문자, 점 제외). 여기 없는 확장자는 저장하지 않는다.
+ALLOWED_IMAGE_EXTENSIONS = frozenset({'png', 'jpg', 'jpeg', 'gif', 'webp'})
+ALLOWED_VIDEO_EXTENSIONS = frozenset({'mp4', 'webm'})
+
+UPLOAD_IMAGE_DIR = 'mshot_images'
+UPLOAD_VIDEO_DIR = 'guide_videos'
+
+
+def _safe_upload_extension(filename, allowed):
+    """업로드 파일명에서 확장자를 뽑아 화이트리스트로 거른다.
+
+    허용 목록에 없으면 None 을 반환한다 - 호출부는 이를 400 으로 돌려준다.
+    업로더가 보낸 파일명은 이 판정에만 쓰고, 저장 경로에는 절대 쓰지 않는다
+    (경로 조작·이중 확장자 방지).
+    """
+    if not filename or '.' not in filename:
+        return None
+    ext = filename.rsplit('.', 1)[-1].lower()
+    return ext if ext in allowed else None
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticatedInProd])
 def upload_image(request):
     """이미지 파일 업로드 API - mshot 이미지용"""
     logger = logging.getLogger(__name__)
-    
+
     if 'image' not in request.FILES:
         return JsonResponse({'error': '이미지 파일이 없습니다'}, status=400)
-    
+
     image = request.FILES['image']
-    
-    # 이미지 파일 검증
-    if not image.content_type.startswith('image/'):
-        return JsonResponse({'error': '이미지 파일만 업로드할 수 있습니다'}, status=400)
-    
+
     # 파일 크기 제한 (2MB)
-    max_size = 2 * 1024 * 1024  # 2MB
-    if image.size > max_size:
+    if image.size > MAX_IMAGE_UPLOAD_SIZE:
         return JsonResponse({'error': '이미지 크기는 2MB 를 초과할 수 없습니다'}, status=400)
-    
-    # 파일명 생성 (UUID 사용)
-    ext = image.name.split('.')[-1] if '.' in image.name else 'png'
-    filename = f"mshot_{uuid.uuid4().hex}.{ext}"
-    path = f"mshot_images/{filename}"
-    
+
+    # 확장자 화이트리스트 - Content-Type 헤더가 아니라 이것으로 판정한다.
+    ext = _safe_upload_extension(image.name, ALLOWED_IMAGE_EXTENSIONS)
+    if ext is None:
+        return JsonResponse({'error': '이미지 파일만 업로드할 수 있습니다'}, status=400)
+
+    # 실제 내용이 이미지인지 확인 - 확장자만 바꾼 스크립트 파일을 걸러낸다.
     try:
-        # 파일 저장
+        from PIL import Image
+        Image.open(image).verify()
+    except Exception:
+        return JsonResponse({'error': '이미지 파일만 업로드할 수 있습니다'}, status=400)
+    image.seek(0)  # verify() 가 읽은 위치를 되돌린다
+
+    # 파일명은 서버가 만든다(업로더가 보낸 이름은 쓰지 않는다)
+    path = f"{UPLOAD_IMAGE_DIR}/mshot_{uuid.uuid4().hex}.{ext}"
+
+    try:
         saved_path = default_storage.save(path, ContentFile(image.read()))
         file_url = default_storage.url(saved_path)
-        
+
         logger.info(f"[UPLOAD_IMAGE] 이미지 업로드 성공: {saved_path}")
-        
+
         return JsonResponse({
             'path': saved_path,
             'url': file_url,
@@ -3770,16 +3816,13 @@ def upload_image(request):
             'size': image.size
         })
     except Exception as e:
+        # 예외 원문은 내부 경로·드라이버 정보를 노출하므로 로그에만 남긴다(docs/SECURITY.md M-13).
         logger.error(f"[UPLOAD_IMAGE] 이미지 업로드 실패: {e}")
-        return JsonResponse({'error': f'업로드 실패: {str(e)}'}, status=500)
+        return JsonResponse({'error': '업로드에 실패했습니다'}, status=500)
 
 
-# 동영상 업로드 최대 크기 (50MB)
-MAX_VIDEO_UPLOAD_SIZE = 50 * 1024 * 1024
-
-
-@csrf_exempt
-@require_POST
+@api_view(['POST'])
+@permission_classes([IsAuthenticatedInProd])
 def upload_video(request):
     """동영상 파일 업로드 API - 가이드 동영상용"""
     logger = logging.getLogger(__name__)
@@ -3789,21 +3832,20 @@ def upload_video(request):
 
     video = request.FILES['video']
 
-    # 동영상 파일 검증
-    if not video.content_type.startswith('video/'):
-        return JsonResponse({'error': '동영상 파일만 업로드할 수 있습니다'}, status=400)
-
     # 파일 크기 제한 (50MB)
     if video.size > MAX_VIDEO_UPLOAD_SIZE:
         return JsonResponse({'error': '동영상 크기는 50MB 를 초과할 수 없습니다'}, status=400)
 
-    # 파일명 생성 (UUID 사용)
-    ext = video.name.split('.')[-1] if '.' in video.name else 'mp4'
-    filename = f"guide_{uuid.uuid4().hex}.{ext}"
-    path = f"guide_videos/{filename}"
+    # 확장자 화이트리스트 - 이미지와 동일한 이유로 Content-Type 을 믿지 않는다.
+    # 동영상은 이미지처럼 가벼운 파싱 검증 수단이 없어 확장자 화이트리스트 + 저장명 서버 생성으로
+    # 막는다(.svg/.html 로 저장되지 않으므로 브라우저에서 스크립트로 실행되지 않는다).
+    ext = _safe_upload_extension(video.name, ALLOWED_VIDEO_EXTENSIONS)
+    if ext is None:
+        return JsonResponse({'error': '동영상 파일만 업로드할 수 있습니다'}, status=400)
+
+    path = f"{UPLOAD_VIDEO_DIR}/guide_{uuid.uuid4().hex}.{ext}"
 
     try:
-        # 파일 저장
         saved_path = default_storage.save(path, ContentFile(video.read()))
         file_url = default_storage.url(saved_path)
 
@@ -3817,7 +3859,7 @@ def upload_video(request):
         })
     except Exception as e:
         logger.error(f"[UPLOAD_VIDEO] 동영상 업로드 실패: {e}")
-        return JsonResponse({'error': f'업로드 실패: {str(e)}'}, status=500)
+        return JsonResponse({'error': '업로드에 실패했습니다'}, status=500)
 
 
 
