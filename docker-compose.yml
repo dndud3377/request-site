@@ -62,9 +62,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # ⚠️ create_users 를 여기에 되돌리지 말 것 - 그 커맨드는 MASTER 권한 'master' 계정을 포함한
+    #    시드 계정 22개를 하드코딩 비밀번호(pass1234)로 만들고, 재시작할 때마다 비밀번호를
+    #    그 값으로 되돌린다. 개발 전용이며 docker-compose.dev.yml 에만 남겨 둔다.
+    #    상세: docs/SECURITY.md C-5.
     command: >
       sh -c "python manage.py migrate --noinput &&
-             python manage.py create_users &&
              python manage.py seed_lines &&
              python manage.py collectstatic --noinput &&
              gunicorn config.wsgi:application --bind 0.0.0.0:8000 --worker-class gthread --workers 2 --threads 10 --timeout 120"
