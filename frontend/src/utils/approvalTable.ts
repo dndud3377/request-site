@@ -1,6 +1,6 @@
 // 결재 현황 테이블 계산 헬퍼 — ApprovalPage 와 HomePage(최근 의뢰 현황)가 동일한 표를 그리도록 공유한다.
 import type { TFunction } from 'i18next';
-import { RequestDocument, ApprovalStepFrontend, AgentType } from '../types';
+import { RequestDocument, ApprovalStepFrontend, AgentType, isPlRole } from '../types';
 import { formatDate } from './date';
 import { MAP_DELETE_EDIT_PURPOSE, ADI_CD_CHANGE_PURPOSE } from '../pages/RequestPage/constants';
 
@@ -591,7 +591,7 @@ export interface MyFilterUser {
  *
  * - MASTER: 전체
  * - NONE/역할 없음: 없음
- * - PL: **내가 작성한 문서**(상태 무관) OR **내가 담당인 현재 회차 pending 단계가 있는 문서**
+ * - PL(국내 PL·해외 PL_GL 공통): **내가 작성한 문서**(상태 무관) OR **내가 담당인 현재 회차 pending 단계가 있는 문서**
  *   ✅ (2026-08) 예전에는 `designated_pl_loginid` 와 PL step 존재만 봐서 ① PL 이 **추가
  *   후결자(RA)로 지정된 문서**가 안 잡히고 ② **이미 합의를 마친 문서도 계속 남아** 있었다.
  *   pending 단계 기준으로 바꿔 둘 다 해결한다(그 대신 반려·임시저장 문서에서 '내가 지정 PL'
@@ -602,7 +602,7 @@ export const isMyDocument = (doc: RequestDocument, user: MyFilterUser): boolean 
   const role = user.role;
   if (role === 'MASTER') return true;
   if (role === 'NONE' || !role) return false;
-  if (role === 'PL') {
+  if (isPlRole(role)) {
     return doc.requester_name === user.name
       || hasActivePendingStep(doc, (s) => s.assignee_loginid === user.username);
   }
