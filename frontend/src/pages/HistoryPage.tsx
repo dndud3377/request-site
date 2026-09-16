@@ -8,6 +8,7 @@ import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '.
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { OPTION_LINE } from './RequestPage/constants';
+import { getDocDetailFields } from '../utils/approvalTable';
 import { RejectionSnapshot, RequestDocument } from '../types';
 import { formatDate, formatDateTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
@@ -65,15 +66,9 @@ const getApprovalCompletedDate = (doc: RequestDocument): string => {
   return formatDate(latest.acted_at);
 };
 
-/** 의뢰서에 선택된 라인. 제목이 아니라 원본값(additional_notes.detail.line)을 본다. */
-const getDocLine = (doc: RequestDocument): string => {
-  try {
-    const parsed = JSON.parse(doc.additional_notes ?? '{}');
-    return parsed?.detail?.line ?? '';
-  } catch {
-    return '';
-  }
-};
+/** 의뢰서에 선택된 라인. 제목이 아니라 원본 detail 값을 본다.
+ * 목록 응답(detail_summary)과 반려 스냅샷(additional_notes)을 함께 다루므로 공용 헬퍼를 쓴다. */
+const getDocLine = (doc: RequestDocument): string => getDocDetailFields(doc).line;
 
 /**
  * 반려 이력을 상세 모달(PagedDetailView)이 받는 문서 모양으로 변환한다.

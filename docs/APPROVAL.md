@@ -330,6 +330,9 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
   - 상세보기 배너에서 현재 구역 확인 트랙 아래 "이전 회차에서 도달했던 구역도 함께 확인이
     필요합니다" 섹션으로 구역별(`N구역`)로 묶어 보여준다(`ApprovalPage.tsx`,
     `getWithdrawNeedItems`). `ApprovalStepSerializer.zone_index` 로 프론트가 구역을 구분한다.
+    (2026-09) 이 값은 문서 직렬화기(`ZoneMapMixin`)가 문서당 1회 계산해 넘긴 `{agent: 구역 인덱스}`
+    에서 읽는다. 문서 직렬화기 없이 단독으로 쓰는 경로(`rejection_snapshots.create_from_reject`,
+    `ExternalRequestDocumentSerializer`)는 종전대로 `document.pause_zones()` 로 직접 계산한다.
 - **철회 확인 (`confirm_withdraw`)**: 현재 회차 pending 단계는 **중단 확인과 같은 규칙**
   (`_can_confirm_pause`)이다 — 담당자(assignee)가 있는 단계는 그 담당자 본인, 미배정 단계는
   같은 팀(역할↔agent 일치) 누구나 1명, MASTER 는 항상. 이전 회차 도달 구역 단계는 위
@@ -698,28 +701,6 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   아닌 이 경로) `requesterResubmit` API를 호출한다.
 - 테스트: `backend/api/tests.py::RequesterResubmitTest`
 
-### Case S — O(OVL) 단계: Oayer 표가 비어 있으면 결재 경로에서 제외 (2026-09)
-
-E(MASK)가 `has_ppid_plel()`(J-layer의 plel 키워드)로 생성 여부를 판정하는 것과 동일한 패턴을
-O(OVL)에도 적용했다. 판정: `RequestDocument.has_oayer_rows()` — 활성(`st != 'X'`) O-layer 행이
-**하나라도** 있으면 참. 오예이어 표 자체가 비어 있으면(신규 문서 기본값이 빈 배열) OVL 팀이
-검토할 대상이 없으므로 O 단계를 만들지 않는다.
-
-- **생성 시점**: `_advance_to_parallel`(R 합의 시점, 일반 경로) — `has_oayer_rows()`가 거짓이면
-  O step 자체를 생성하지 않는다. Only MAP·ADI CD 변경은 원래부터 O가 없고, 'MAP 삭제'
-  (`_create_map_delete_edit_parallel`)는 O가 병렬 묶음의 필수 구성원이라 이 판정을 적용하지
-  않는다(O-layer 작성이 전제된 경로이므로 대상이 아니다).
-- **최종 승인 판정**: `o_approved`는 `has_oayer_rows()`가 거짓이면 무조건 True로 둔다
-  (`skip_j_stage()`의 `j_approved`와 같은 패턴) — 그렇지 않으면 O를 기다리며 `under_review`에
-  영구 정지한다.
-- **표시**: 메일 결재 경로 카드(`mailer._route_rows`)와 결재 상세보기 '결재 경로' 탭
-  (`PagedDetailView.tsx`의 `hasOayerRows`)에서 O 행을 '해당없음'으로 표시한다(E·plel과 동일한
-  na 분기). 결재현황 목록의 병렬 단계 그리드는 step 부재만으로 자동으로 '해당없음'이 되므로
-  별도 처리가 필요 없다(J와 동일).
-- ⚠️ 판정은 **단계 생성 시점**(R 합의)에 이뤄진다 — 이미 O step이 생성된 기존 문서·회차는
-  영향 없다.
-- 테스트: `backend/api/tests.py::HasOayerRowsTest`
-
 ### Case T — 반려 후 재상신 시 2구역(R) 생략 (`resubmit`, 2026-09)
 
 3구역(P/J/O/E) 또는 3구역 **비고정** 후결자(RA)가 반려한 뒤, MAP 정보·Jayer 정보·의뢰 상세
@@ -769,9 +750,10 @@ O(OVL)에도 적용했다. 판정: `RequestDocument.has_oayer_rows()` — 활성
   **라인 / 목적 / MAP 목적 / 제품(조합법-제품-조리법) / 요청일** / 의뢰자 / **현재 단계** / 최종 완료예정 / 양산일.
   제목·제품명 컬럼은 없앴다(`doc.title`/`doc.product_name` 필드 자체는 그대로 저장되고, 검색창(`search_placeholder`)은
   여전히 이 두 필드를 대상으로 서버 검색한다 — 화면 표시만 바뀐 것).
-  값의 출처는 `additional_notes` JSON의 `detail`(라인/목적/기타 목적/MAP 목적/조합법/제품/조리법, 백엔드 변경 없음 —
-  목록 응답에 이미 포함돼 있다, `serializers.py` `RequestDocumentListSerializer`)이며, 파싱은 `approvalTable.getDocDetailFields`
-  가 담당한다(JSON 파싱 실패 시 빈 값으로 방어). ADI CD 변경 문서는 `map_type` 자체가 없어 MAP 목적 칸에 `해당없음`을 보여준다.
+  값의 출처는 `detail`(라인/목적/기타 목적/MAP 목적/조합법/제품/조리법)이며, 읽기는
+  `approvalTable.getDocDetailFields`가 담당한다(값이 없거나 JSON 파싱 실패 시 빈 값으로 방어).
+  ⚠️ **(2026-09 변경)** 목록 응답은 `additional_notes`(상세 폼 전체 JSON)를 **더 이상 싣지 않고**
+  이 값들만 추린 `detail_summary`를 싣는다 — §3.1.2 참조. ADI CD 변경 문서는 `map_type` 자체가 없어 MAP 목적 칸에 `해당없음`을 보여준다.
   ✅ **(2026-09 추가)** MAP 목적이 `NEW`인 문서는 `doc.mail_completion_matched`가 True면 이 칸에 전용 완료 뱃지(보라색)가
   추가로 붙는다 — POP3로 받는 완료 알림 메일 제목과 product_name을 스케줄러가 10분마다 매칭한 결과다. 결재 상태와는
   무관한 참고 표시이며, 상세는 `docs/MAP_COMPLETION_MAIL.md` 참고.
@@ -823,6 +805,52 @@ O(OVL)에도 적용했다. 판정: `RequestDocument.has_oayer_rows()` — 활성
 - i18n: `approval.pagination_nav`(네비게이션 영역 aria-label), `approval.pagination_go_to_page`
   (페이지 버튼 aria-label, `{{page}}` 보간). 이전/다음 버튼 라벨은 공용 `common.prev`/`common.next` 재사용.
 
+### 3.1.2 목록 응답 최적화 (2026-09)
+
+목록 로딩이 느린 원인 중 **서버 응답 생성** 쪽 세 가지를 없앴다. 화면 동작·결재 로직은 그대로다.
+
+1. **`shared_group` N+1 제거** — 목록 직렬화의 `shared_group_name`(`source='shared_group.name'`)이
+   공유 그룹이 지정된 문서마다 `UserGroup` 을 1건씩 다시 조회했다. `RequestDocumentViewSet.queryset`
+   의 `select_related` 에 `shared_group` 을 추가했다.
+2. **`zone_index` 의 JSON 재파싱 제거** — `get_zone_index` 가 step 마다 `document.pause_zones()` 를
+   부르고, 그 안의 요청 목적 판정 3종(MAP 삭제/ADI CD 변경/Only MAP)이 그때마다 `additional_notes`
+   JSON 을 다시 파싱해 **step 수 × 3회** 재파싱이 일어났다. 구역 구성은 문서 속성이므로
+   `ZoneMapMixin` 이 문서당 1회 `{agent: 구역 인덱스}` 를 만들어 하위 step 직렬화기에 넘긴다.
+   모델(`RequestDocument.get_detail`)에는 캐시하지 않는다 — 결재 액션이 같은 요청 안에서
+   `additional_notes` 를 수정하는 경로가 있어 stale 이 될 수 있다.
+3. **목록 응답에서 `additional_notes` 제외 → `detail_summary` 신설** — 목록 응답 크기의 대부분이
+   J/O-layer 표까지 담긴 `additional_notes` blob 이었다. 목록이 실제로 쓰는 값만 담은
+   `detail_summary` 로 대체한다. **상세 조회(`RequestDocumentSerializer`)와 외부 API
+   (`ExternalRequestDocumentSerializer`)는 종전대로 전체 JSON 을 그대로 내려보낸다.**
+
+`detail_summary` 필드(백엔드 `RequestDocumentListSerializer.get_detail_summary` ↔ 프론트
+`approvalTable.getDocDetailFields` 가 1:1 대응):
+
+| 필드 | 원본(`additional_notes.detail`) | 비고 |
+|---|---|---|
+| `line` | `line` | 라인 컬럼·필터·정렬, 이력 조회 라인 필터 |
+| `request_purpose` | `request_purpose` | 목적 컬럼, MAP 삭제/ADI CD 변경 경로 판정 |
+| `other_purpose` | `other_purpose` | **배열일 때만** 싣는다(구버전 문자열 값은 빈 목록 — 종전 프론트 판정과 동일) |
+| `map_type` | `map_type` | MAP 목적 컬럼·필터 |
+| `process_selection` / `partid_selection` / `process_id` | 같은 이름 | 제품(조합법-제품-조리법) 컬럼 |
+| `adi_cd_extra_count` | `adi_cd_extra_targets` 의 길이 | 제목 `(+N)` 배지 |
+
+`additional_notes` 를 쓰는 **다른 경로는 그대로다** — 상세 모달(`PagedDetailView`), 엑셀 내보내기,
+반려 스냅샷(`RejectionSnapshot.additional_notes`), 투어 시드. 그래서 `getDocDetailFields` 는
+`detail_summary` 가 있으면 그것을, 없으면 종전대로 `additional_notes` 를 판다(양쪽 경로 모두 유지).
+프론트 타입은 `additional_notes?` / `detail_summary?` 둘 다 옵셔널이다(`types/index.ts`).
+
+실측(개발용 sqlite, 문서 300건 × step 10개, `/api/documents/` 목록 1회):
+
+| | 쿼리 수 | 응답 크기 | 직렬화 소요 |
+|---|---|---|---|
+| 수정 전 | 307 | 11.19 MB | 1.531 s |
+| 수정 후 | **7** | **1.00 MB** | **0.419 s** |
+
+⚠️ **서버사이드 페이지네이션은 이번에도 도입하지 않았다**(§3.1.1 그대로 `pagination_class = None`).
+탭 카운트(`getTabCount`)·MY/단계별 필터·컬럼 정렬이 모두 전체 목록을 전제로 클라이언트에서
+계산되므로, 서버 페이지네이션은 그 전부를 서버로 옮기는 별도 개편이 필요하다.
+
 ### 3.2 필터 탭 (`applyClientFilter`, 클라이언트 측)
 - 전체 / 내 차례(my) / agent별(R·P·J·O·E) / 임시저장(draft) / 반려(rejected).
 - ✅ **(2026-08) '내 차례'·agent별 필터 판정 기준**: 공용 헬퍼 `hasActivePendingStep` 로 통일해
@@ -870,7 +898,8 @@ O(OVL)에도 적용했다. 판정: `RequestDocument.has_oayer_rows()` — 활성
   §3.1). 정렬은 이 필터링된 결과 위에서 동작한다.
 - 필터 탭(`filter`)을 바꾸면 양산일 정렬·컬럼 정렬·컬럼 필터가 모두 자동으로 초기화된다(`useEffect([filter])`).
 - 모두 클라이언트 측 정렬·필터(`docs` → `filteredDocs` → `sortedDocs`), 백엔드/정렬 파라미터 변경 없음 — 필요한 필드
-  (`submitted_at`/`created_at`/`production_date`/`additional_notes`/`approval_steps[].created_at`)는 이미 목록 응답에 포함.
+  (`submitted_at`/`created_at`/`production_date`/`detail_summary`/`approval_steps[].created_at`)는 이미 목록 응답에 포함
+  (2026-09부터 `additional_notes` 자리를 `detail_summary`가 대신한다, §3.1.2).
 
 ### 3.3 현재 단계 표시 (`getDocTableRows`)
 

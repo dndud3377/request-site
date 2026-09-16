@@ -281,18 +281,6 @@ class RequestDocument(models.Model):
                 return True
         return False
 
-    def has_oayer_rows(self):
-        """활성(st!='X') O-layer 행이 하나라도 있는지 여부.
-
-        참이어야 O(OVL) 단계가 결재 경로에 포함된다 — 검증할 O-layer 데이터 자체가
-        없으면(빈 표) OVL 팀이 검토할 대상이 없으므로 O 단계를 생성하지 않는다
-        (has_ppid_plel 과 같은 패턴, E 단계의 plel 키워드 대신 "행 존재 여부"로 판정).
-        oayerRows 는 additional_notes JSON 최상위에 저장되며, 비활성 행도 함께
-        저장되므로 여기서 직접 걸러야 한다.
-        """
-        oayer_rows = self.get_detail().get('oayerRows', [])
-        return any(row.get('st') != 'X' for row in oayer_rows)
-
     # "의뢰 상세" 폼에서 R(RFG) 판정에 실제로 영향을 주는 4개 필드.
     # 반려 후 재상신 시 2구역(R) 생략 여부 판정에 쓰인다(아래 RequestDocumentViewSet
     # ._should_skip_r_stage 참고) — MAP 정보(MAP_INFO_FIELDS)와는 별개 구간이다.

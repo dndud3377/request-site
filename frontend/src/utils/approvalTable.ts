@@ -4,18 +4,12 @@ import { RequestDocument, ApprovalStepFrontend, AgentType } from '../types';
 import { formatDate } from './date';
 import { MAP_DELETE_EDIT_PURPOSE, ADI_CD_CHANGE_PURPOSE } from '../pages/RequestPage/constants';
 
-/** 요청 목적이 'MAP 삭제' 인가 — PagedDetailView 의 isOnlyMap/isMapDeleteEdit 과 동일한 판정 방식 */
-const isMapDeleteEditDoc = (doc: RequestDocument): boolean => {
-  try {
-    const parsed = JSON.parse(doc.additional_notes ?? '{}');
-    return parsed?.detail?.request_purpose === MAP_DELETE_EDIT_PURPOSE;
-  } catch { return false; }
-};
-
 /* ===================== 결재 현황 목록 컬럼 분리(2026-08) =====================
  * '제목' 한 칸에 몰아 쓰던 라인·목적·MAP 목적·조합법/제품/조리법을 각자 컬럼으로 보여주기 위해
- * additional_notes(JSON)의 detail 을 파싱한다. 제목 문자열 조립 규칙(RequestPage/index.tsx
- * buildEnrichedForm)과 같은 출처를 그대로 읽을 뿐 별도로 저장하지 않는다.
+ * detail 값을 읽는다. 제목 문자열 조립 규칙(RequestPage/index.tsx buildEnrichedForm)과 같은
+ * 출처를 그대로 읽을 뿐 별도로 저장하지 않는다.
+ * 목록 응답은 서버가 추려 보낸 detail_summary 를, 그 밖(상세 조회·반려 스냅샷·투어 시드)은
+ * additional_notes(JSON 전체)를 판다(2026-09, 목록 응답에서 대용량 JSON 제거).
  * -------------------------------------------------------------------------- */
 
 /** MAP 목적 필터·정렬에서 'ADI CD 변경'처럼 map_type 자체가 없는 문서를 가리키는 값 */
@@ -44,6 +38,22 @@ const EMPTY_DETAIL_FIELDS: DocDetailFields = {
 
 /** 결재 현황 목록의 라인/목적/MAP 목적/제품(조합법-제품-조리법) 컬럼용 값 — JSON 파싱 실패 시 빈 값 */
 export const getDocDetailFields = (doc: RequestDocument): DocDetailFields => {
+  // 목록 응답(결재 현황·홈)은 additional_notes 대신 서버가 추려 보낸 detail_summary 를 싣는다.
+  const summary = doc.detail_summary;
+  if (summary) {
+    return {
+      line: summary.line,
+      purpose: summary.request_purpose,
+      otherPurpose: summary.other_purpose,
+      mapType: summary.map_type,
+      isAdiCd: summary.request_purpose === ADI_CD_CHANGE_PURPOSE,
+      processSelection: summary.process_selection,
+      partidSelection: summary.partid_selection,
+      processId: summary.process_id,
+      adiExtraCount: summary.adi_cd_extra_count,
+    };
+  }
+  // 상세 조회 응답·반려 스냅샷·투어 시드는 종전대로 additional_notes(JSON 전체)를 판다.
   try {
     const parsed = JSON.parse(doc.additional_notes ?? '{}');
     const d = parsed?.detail ?? {};
@@ -63,6 +73,10 @@ export const getDocDetailFields = (doc: RequestDocument): DocDetailFields => {
     return EMPTY_DETAIL_FIELDS;
   }
 };
+
+/** 요청 목적이 'MAP 삭제' 인가 — PagedDetailView 의 isOnlyMap/isMapDeleteEdit 과 동일한 판정 방식 */
+const isMapDeleteEditDoc = (doc: RequestDocument): boolean =>
+  getDocDetailFields(doc).purpose === MAP_DELETE_EDIT_PURPOSE;
 
 /** MAP 목적 필터·정렬 키 — ADI CD 변경 문서는 MAP_PURPOSE_NA 로 통일한다 */
 export const getMapPurposeKey = (detail: DocDetailFields): string =>

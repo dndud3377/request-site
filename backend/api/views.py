@@ -163,7 +163,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     # approval_steps(+assignee)/pause_requests(+requester)/withdraw_requests(+requester) 도
     # 직렬화(ApprovalStepSerializer, get_pause_request, get_withdraw_request)와
     # doc_permissions(can_edit 등)이 문서마다 다시 조회하던 것을 없앤다(2026-09, 결재 현황 로딩 속도 개선).
-    queryset = RequestDocument.objects.select_related('requester', 'designated_pl').prefetch_related(
+    # shared_group: 목록 직렬화의 shared_group_name(= shared_group.name)이 공유 그룹이 지정된
+    # 문서마다 UserGroup 을 다시 조회하던 것을 없앤다(2026-09, 결재 현황 로딩 속도 개선).
+    queryset = RequestDocument.objects.select_related(
+        'requester', 'designated_pl', 'shared_group',
+    ).prefetch_related(
         'review_items__reviewers',
         Prefetch('approval_steps', queryset=ApprovalStep.objects.select_related('assignee')),
         Prefetch('pause_requests', queryset=PauseRequest.objects.select_related('requester')),
@@ -1319,12 +1323,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                     True if document.skip_j_stage()
                     else (len(j_steps) > 0 and all(s.action == 'approved' for s in j_steps))
                 )
-                # Oayer 표가 비어 있어 O 단계 자체를 만들지 않은 문서는 기다릴 대상이 없다
-                # (has_oayer_rows(), skip_j_stage()의 j_approved 와 동일한 패턴).
-                o_approved = (
-                    True if not document.has_oayer_rows()
-                    else bool(o_step and o_step.action == 'approved')
-                )
+                o_approved = o_step and o_step.action == 'approved'
                 # P: 담당자 합의 + 지정된 검토자(PV) 전원 합의까지 끝나야 완료.
                 # J 분리 전에는 "J 가 존재한다 = P 가 끝났다" 였기에 판정에서 생략했지만,
                 # 이제 J 는 P 와 무관하게 R 합의 시점부터 존재하므로 명시적으로 확인해야 한다.
@@ -2480,14 +2479,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             p_step = ApprovalStep.objects.create(
                 document=document, agent='P', action='pending', round=round_no, due_date=p_due,
             )
+            o_step = ApprovalStep.objects.create(
+                document=document, agent='O', action='pending', is_parallel=True, round=round_no, due_date=o_due,
+            )
             mailer.enqueue_stage_arrival(document, 'P', p_step)
-            # O(OVL)는 Oayer 표에 활성 행이 있는 의뢰서에만 생성한다 — 표가 비어 있으면
-            # OVL 팀이 검토할 대상 자체가 없다(E의 plel 판정과 동일한 패턴).
-            if document.has_oayer_rows():
-                o_step = ApprovalStep.objects.create(
-                    document=document, agent='O', action='pending', is_parallel=True, round=round_no, due_date=o_due,
-                )
-                mailer.enqueue_stage_arrival(document, 'O', o_step)
+            mailer.enqueue_stage_arrival(document, 'O', o_step)
             # 기타 목적이 'Overlay 변경' 하나뿐이면 J 단계 자체를 만들지 않는다(경로에서 제외).
             if not document.skip_j_stage():
                 j_step = ApprovalStep.objects.create(
