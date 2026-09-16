@@ -1,5 +1,6 @@
 from django.contrib.auth import login, logout, get_user_model
 from django.conf import settings
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.http import HttpResponseRedirect, HttpResponse
@@ -29,6 +30,7 @@ OIDC_CLOCK_SKEW_LEEWAY_SEC = 60
 # oidc_login_init 이 만드는 nonce JWT 의 유효시간(분). 로그인 시작~콜백 사이에만 쓰인다.
 OIDC_NONCE_JWT_LIFETIME_MIN = 10
 
+from .authentication import token_issued_after_logout
 from .sse import broadcaster as _user_broadcaster
 
 
@@ -173,7 +175,15 @@ def refresh_token_view(request):
                 {'error': '사용자를 찾을 수 없습니다.'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
-        
+
+        # 로그아웃 이후에 발급된 refresh_token 인지 확인한다. 이 검사가 없으면 로그아웃해도
+        # 탈취된 refresh_token 으로 새 access_token 을 계속 찍어낼 수 있다(docs/SECURITY.md M-12).
+        if not token_issued_after_logout(payload, user):
+            return Response(
+                {'error': '로그아웃된 토큰입니다. 다시 로그인해 주세요.'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
         # 새로운 access_token 생성
         token_payload = {
             'sub': payload.get('sub', ''),
@@ -269,7 +279,8 @@ def oidc_login_init(request):
     
     auth_url_with_params = f"{idp_url}{auth_param}"
     
-    logger.info(f"[OIDC] Login init - redirect_uri: {redirect_uri}, nonce: {nonce_val}, nonce_jwt created")
+    # nonce 값 자체는 남기지 않는다 - 로그를 읽을 수 있으면 nonce 검증을 통과시킬 수 있다.
+    logger.info(f"[OIDC] Login init - redirect_uri: {redirect_uri}, nonce_jwt created")
     
     return Response({
         'redirect_url': auth_url_with_params,
@@ -446,24 +457,29 @@ def oidc_callback(request):
             ('GivenName', '이름 (대문자)'),
         ]
 
-    logger.info("[OIDC] ===== Token Claims Detail =====")
-    for key, desc in CLAIM_FIELDS:
-        value = decoded.get(key)
-        if value is not None:
-            # 리스트나 복잡한 객체는 문자열로 변환
-            if isinstance(value, (list, dict)):
-                value_str = json.dumps(value, ensure_ascii=False)
+    # ⚠️ 클레임에는 메일·부서·사번 같은 개인정보가 들어 있다. 운영 로그(INFO)에 매 로그인마다
+    #    전량을 남기지 않는다 - 로그 열람 권한이 인사정보 열람 권한이 되어 버린다.
+    #    ADFS 클레임 매핑을 확인해야 할 때만 로그 레벨을 DEBUG 로 낮춰 본다.
+    #    상세: docs/SECURITY.md M-14.
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug("[OIDC] ===== Token Claims Detail =====")
+        for key, desc in CLAIM_FIELDS:
+            value = decoded.get(key)
+            if value is not None:
+                # 리스트나 복잡한 객체는 문자열로 변환
+                if isinstance(value, (list, dict)):
+                    value_str = json.dumps(value, ensure_ascii=False)
+                else:
+                    value_str = str(value)
+                logger.debug(f"[OIDC] {desc} ({key}): {value_str}")
             else:
-                value_str = str(value)
-            logger.info(f"[OIDC] {desc} ({key}): {value_str}")
-        else:
-            logger.info(f"[OIDC] {desc} ({key}): (없음)")
+                logger.debug(f"[OIDC] {desc} ({key}): (없음)")
 
-    # 알 수 없는 클레임이 있으면 추가 출력
-    known_keys = [f[0] for f in CLAIM_FIELDS]
-    unknown_keys = set(decoded.keys()) - set(known_keys)
-    if unknown_keys:
-        logger.info(f"[OIDC] Unknown claims keys: {list(unknown_keys)}")
+        # 알 수 없는 클레임이 있으면 추가 출력
+        known_keys = [f[0] for f in CLAIM_FIELDS]
+        unknown_keys = set(decoded.keys()) - set(known_keys)
+        if unknown_keys:
+            logger.debug(f"[OIDC] Unknown claims keys: {list(unknown_keys)}")
     
     # 사용자 생성/업데이트
     user = create_or_update_user_from_oidc(decoded)
@@ -497,16 +513,11 @@ def oidc_callback(request):
     # loginid (소문자), LoginId (대문자), preferred_username, sub 순서로 확인
     username = decoded.get('loginid') or decoded.get('LoginId') or decoded.get('preferred_username') or decoded.get('sub', '')
     
-    # base64 디코딩이 필요한 경우 (sub가 base64인 경우)
-    import base64
-    try:
-        if username and '=' in username:
-            # base64로 인코딩된 경우 디코딩 시도
-            decoded_username = base64.b64decode(username).decode('utf-8')
-            if decoded_username:
-                username = decoded_username
-    except Exception:
-        pass  # 디코딩 실패 시 원본 사용
+    # ⚠️ 예전에는 username 에 '=' 이 들어 있으면 무조건 base64 디코딩을 시도해, 우연히
+    #    디코딩에 성공하면 **계정 식별자가 다른 값으로 바뀌었다**. 로그인 주체를 좌우하는
+    #    자리에서 추측으로 값을 바꾸면 안 된다. loginid 클레임을 그대로 쓴다.
+    #    (ADFS 가 실제로 base64 sub 를 내려주는 것이 확인되면, sub 클레임에 한정해
+    #     명시적으로 처리할 것 - docs/SECURITY.md M-16)
     
     token_payload = {
         'sub': decoded.get('sub', ''),
@@ -588,8 +599,21 @@ def oidc_callback(request):
 def oidc_logout(request):
     """
     POST /api/auth/oidc/logout/
-    ADFS 로그아웃 및 Django 세션 종료, Cookie 삭제
+    ADFS 로그아웃 및 Django 세션 종료, Cookie 삭제, 발급된 서비스 토큰 무효화
     """
+    # 발급된 토큰을 실제로 죽인다.
+    #
+    # ⚠️ 쿠키 삭제만으로는 로그아웃이 되지 않는다. 쿠키는 브라우저에서 지워질 뿐,
+    #    이미 새어 나간 토큰은 access 12시간 / refresh 7일 동안 그대로 통한다.
+    #    tokens_valid_from 을 현재 시각으로 올리면 그 이전에 발급된 토큰은 인증
+    #    (authentication.token_issued_after_logout)과 갱신(refresh_token_view)에서 거부된다.
+    #    상세: docs/SECURITY.md M-12.
+    user = request.user
+    if getattr(user, 'is_authenticated', False):
+        user.tokens_valid_from = timezone.now()
+        user.save(update_fields=['tokens_valid_from'])
+        logger.info(f"[Auth] Logout - 토큰 무효화: {user.loginid}")
+
     # Django 세션 로그아웃
     logout(request)
     
