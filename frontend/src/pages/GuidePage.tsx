@@ -12,6 +12,7 @@ import {
   GUIDE_STEP_FEATURES,
 } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import SafeHtml, { htmlToText } from '../components/SafeHtml';
 
 // ===== Helpers =====
 
@@ -263,12 +264,11 @@ export default function GuidePage(): React.ReactElement {
                     {t(guide.guide_type === 'feature' ? 'guide.type_feature' : 'guide.type_info')}
                   </span>
                   <div className="guide-card-title">{guide.title}</div>
-                  <div
-                    className="guide-card-preview"
-                    dangerouslySetInnerHTML={{
-                      __html: guide.content.replace(/<[^>]+>/g, ' ').slice(0, 80),
-                    }}
-                  />
+                  {/* 미리보기는 텍스트만 보여 준다. 정규식으로 태그를 지우는 방식은
+                      `<img src="x>" onerror=...>` 같은 입력에서 새므로 쓰지 않는다. */}
+                  <div className="guide-card-preview">
+                    {htmlToText(guide.content).slice(0, 80)}
+                  </div>
                   <div className="guide-card-meta">
                     <span>{guide.author_name}</span>
                     <span>·</span>
@@ -322,10 +322,10 @@ export default function GuidePage(): React.ReactElement {
                 </span>
               )}
             </div>
-            <div
+            <SafeHtml
               className="guide-content-render"
               style={{ fontSize: 14, lineHeight: 1.85, color: '#333' }}
-              dangerouslySetInnerHTML={{ __html: selected.content }}
+              html={selected.content}
             />
           </div>
         )}

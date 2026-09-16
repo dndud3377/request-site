@@ -16,6 +16,7 @@ import {
   getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument, submittedSortKey,
   getDocDetailFields, getDocSubmittedDate,
 } from '../utils/approvalTable';
+import SafeHtml from '../components/SafeHtml';
 
 // 홈 '나의 의뢰 현황' 에 보여줄 최대 건수 (그 이상은 '전체 보기' 로 결재현황 MY 탭에서 본다)
 const MY_REQUESTS_LIMIT = 5;
@@ -273,10 +274,10 @@ function NoticeManagerModal({ notices, isMaster, onClose, onRefresh }: NoticeMan
                   <div className="notice-detail-title">{selected.title}</div>
 
                   {selected.template === 'notice' && selected.content && (
-                    <div
+                    <SafeHtml
                       className="notice-detail-content"
                       style={{ whiteSpace: 'pre-wrap' }}
-                      dangerouslySetInnerHTML={{ __html: selected.content }}
+                      html={selected.content}
                     />
                   )}
 

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { guidesAPI } from '../api/client';
 import { Guide, GuideFeatureKey } from '../types';
 import { GUIDE_DEMOS } from './guideDemos';
+import SafeHtml from './SafeHtml';
 
 interface Props {
   featureKey: GuideFeatureKey;
@@ -125,7 +126,7 @@ const GuideSlidePanel: React.FC<Props> = ({ featureKey, featureTitle, isOpen, on
                 {t('common.loading')}
               </div>
             ) : guide ? (
-              <div
+              <SafeHtml
                 className="guide-content-render"
                 style={{
                   fontSize: 14,
@@ -133,7 +134,7 @@ const GuideSlidePanel: React.FC<Props> = ({ featureKey, featureTitle, isOpen, on
                   color: '#333',
                   ...(DemoComponent ? { marginTop: 20, paddingTop: 20, borderTop: '1px solid #e8ecf2' } : {}),
                 }}
-                dangerouslySetInnerHTML={{ __html: guide.content }}
+                html={guide.content}
               />
             ) : !DemoComponent ? (
               <div style={{ textAlign: 'center', padding: '40px 0', color: '#bbb' }}>

@@ -20,6 +20,7 @@ import {
   ScreenshotCapture,
   ExportAllScreenshots,
 } from '../utils/detailExport';
+import SafeHtml from './SafeHtml';
 
 /** J-ayer 검토 항목 패널에 그대로 넘겨주는 props (호출부가 상태·핸들러를 소유한다) */
 export type ReviewItemsPanelProps = ReviewItemsProps;
@@ -2067,13 +2068,13 @@ type Page = { label: string; content: React.ReactNode };
                 {t('request.map_change_reason_delete')}
               </div>
               {detail.map_change_reason ? (
-                <div
+                <SafeHtml
                   style={{
                     border: changedFields.has('map_change_reason') ? '2px solid var(--danger)' : '1px solid var(--border)',
                     borderRadius: 6, padding: '10px 12px', maxHeight: 840, overflowY: 'auto',
                     background: 'var(--bg-secondary)', fontSize: '0.86rem', lineHeight: 1.6,
                   }}
-                  dangerouslySetInnerHTML={{ __html: detail.map_change_reason }}
+                  html={detail.map_change_reason}
                 />
               ) : (
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>-</span>

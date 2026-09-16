@@ -8,6 +8,7 @@ import { useToast } from '../components/Toast';
 import Modal, { ConfirmModal } from '../components/Modal';
 import { VOC, VocCategory, VocStatus, VocPage, CreateVocInput } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import SafeHtml from '../components/SafeHtml';
 
 interface CategoryOption { value: VocCategory; labelKey: string; }
 interface PageOption      { value: VocPage;    labelKey: string; }
@@ -477,7 +478,7 @@ export default function VOCPage(): React.ReactElement {
             {/* 원본 내용 */}
             <div className="form-group">
               <label className="form-label">{t('voc.content')}</label>
-              <div
+              <SafeHtml
                 style={{
                   background: 'var(--bg-secondary)',
                   border: '1px solid var(--border-color)',
@@ -486,7 +487,7 @@ export default function VOCPage(): React.ReactElement {
                   fontSize: '0.95rem',
                   lineHeight: 1.7,
                 }}
-                dangerouslySetInnerHTML={{ __html: selected.content }}
+                html={selected.content}
               />
             </div>
 
@@ -514,9 +515,9 @@ export default function VOCPage(): React.ReactElement {
                         </span>
                         <span>{formatTime(c.created_at)}</span>
                       </div>
-                      <div
+                      <SafeHtml
                         style={{ fontSize: '0.9rem', lineHeight: 1.6 }}
-                        dangerouslySetInnerHTML={{ __html: c.content }}
+                        html={c.content}
                       />
                     </div>
                   ))

@@ -5,6 +5,7 @@ import { ST_CELL_COLOR } from './stCellColor';
 import { bbTabColor } from './bbTabColors';
 import { VALIDATION_CELL_COLOR, isMapDeleteEditType, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, deriveMergeKind, balanceAdiCdRows, matchLayerColor } from '../pages/RequestPage/helpers';
+import { sanitizeHtml } from '../components/SafeHtml';
 
 const NO_ACTIVE_COLOR_FILTERS = new Set<string>();
 
@@ -64,11 +65,15 @@ async function downloadWorkbook(wb: ExcelJS.Workbook, filename: string): Promise
   URL.revokeObjectURL(url);
 }
 
-/** RichTextEditor 가 만든 HTML(map_change_reason 등)을 엑셀 셀에 넣을 수 있는 일반 텍스트로 바꾼다. */
+/** RichTextEditor 가 만든 HTML(map_change_reason 등)을 엑셀 셀에 넣을 수 있는 일반 텍스트로 바꾼다.
+ *
+ * 정제하지 않은 HTML 을 innerHTML 에 그대로 넣던 것을 htmlToText(DOMPurify) 로 바꿨다 —
+ * 분리된 div 라도 `<img onerror>` 같은 입력을 브라우저에 넘길 이유가 없다(docs/SECURITY.md H-9).
+ */
 function htmlToPlainText(html: string | undefined | null): string {
   if (!html) return '';
   const div = document.createElement('div');
-  div.innerHTML = html;
+  div.innerHTML = sanitizeHtml(html);
   return (div.textContent || div.innerText || '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
