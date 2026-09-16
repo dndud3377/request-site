@@ -107,8 +107,13 @@ REST_FRAMEWORK = {
         'api.authentication.CookieJWTAuthentication',
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
+    # 기본값은 "막힌 쪽"이어야 한다. 예전 값(IsAuthenticatedOrReadOnly)은 permission_classes 를
+    # 지정하지 않은 뷰를 **비인증 읽기 전체 공개**로 만든다 - 새 ViewSet 에서 한 줄만 빠뜨려도
+    # 데이터가 그대로 새는 fail-open 기본값이었다(docs/SECURITY.md H-7).
+    # 비인증 접근이 필요한 뷰는 여기 기대지 말고 각자 permission_classes 를 명시한다
+    # (예: 외부 API Key 전용 라우트의 HasExternalApiKey).
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticatedOrReadOnly',
+        'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
@@ -117,6 +122,18 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    # 무제한 호출(자격증명 대입, 대량 수집, 업로드 반복)을 막는 상한선.
+    # 화면 한 장이 API 를 여러 번 부르는 SPA 라 실사용을 막지 않을 만큼 넉넉히 잡았다 -
+    # 정상 사용 중 429 가 보이면 이 값을 조정한다(docs/SECURITY.md M-17).
+    # 기본 캐시(LocMemCache)는 프로세스별로 집계되므로, 워커 수만큼 상한이 곱해진다.
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '60/min',
+        'user': '1200/min',
+    },
 }
 
 CORS_ALLOWED_ORIGINS = os.environ.get(
@@ -176,6 +193,9 @@ OIDC_OP_JWKS_ENDPOINT = os.environ.get('OIDC_OP_JWKS_ENDPOINT', '')
 OIDC_OP_LOGOUT_ENDPOINT = os.environ.get('OIDC_OP_LOGOUT_ENDPOINT', '')
 
 OIDC_RP_SIGN_ALGORITHM = os.environ.get('OIDC_RP_SIGN_ALGORITHM', 'RS256')
+# id_token 의 iss(발급자) 검증에 쓸 값. ADFS 가 실제로 내려주는 issuer 문자열을 그대로 넣는다.
+# 비워두면 iss 검증을 건너뛰고 콜백마다 경고 로그를 남긴다(api/auth_views.py oidc_callback).
+OIDC_OP_ISSUER = os.environ.get('OIDC_OP_ISSUER', '')
 OIDC_CALLBACK_BASE_URL = os.environ.get('OIDC_CALLBACK_BASE_URL', 'http://localhost:8000')
 
 OIDC_CERT_FILE_PATH = os.environ.get('OIDC_CERT_FILE_PATH', str(BASE_DIR / 'api' / 'certs'))
