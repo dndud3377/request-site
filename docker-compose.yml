@@ -8,8 +8,12 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-    ports:
-      - "3306:3306"
+    # ⚠️ 호스트로 3306 을 열지 않는다. backend/scheduler 는 같은 compose 네트워크에서
+    #    db:3306 으로 접속하므로 포트 공개가 필요 없다. 공개하면 호스트에 닿는 누구나
+    #    DB 에 직접 붙을 수 있다(docs/SECURITY.md H-10).
+    #    점검용으로 필요하면 루프백에만 묶는다: - "127.0.0.1:3306:3306"
+    expose:
+      - "3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./mysql/my.cnf:/etc/mysql/conf.d/my.cnf:ro
@@ -34,8 +38,13 @@ services:
     image: request-site-backend:latest
     container_name: request_backend
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    # ⚠️ 호스트로 8000 을 열지 않는다. 열어두면 nginx(TLS·보안 헤더)를 건너뛰고 평문 HTTP 로
+    #    API 전체를 호출할 수 있고, SECURE_PROXY_SSL_HEADER 를 무조건 신뢰하므로
+    #    X-Forwarded-Proto: https 를 위조해 붙이면 HTTPS 리다이렉트까지 우회된다
+    #    (docs/SECURITY.md H-10). 외부 접근은 nginx(10010) 한 곳으로만 들어온다.
+    #    점검용으로 필요하면 루프백에만 묶는다: - "127.0.0.1:8000:8000"
+    expose:
+      - "8000"
     env_file:
       - .env
     environment:
