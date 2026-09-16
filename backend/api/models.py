@@ -27,9 +27,25 @@ class UserProfileManager(BaseUserManager):
 
 class UserProfile(AbstractBaseUser):
     ROLE_CHOICES = [
-        ('NONE', 'NONE'), ('PL', 'PL'), ('TE_R', 'TE_R'), ('TE_P', 'TE_P'),
+        ('NONE', 'NONE'), ('PL', 'PL'), ('PL_GL', 'PL_GL'), ('TE_R', 'TE_R'), ('TE_P', 'TE_P'),
         ('TE_J', 'TE_J'), ('TE_O', 'TE_O'), ('TE_E', 'TE_E'), ('MASTER', 'MASTER'),
     ]
+
+    # ===== 국내/해외 제품 담당자 =====
+    # 'PL_GL'(해외 제품 담당자)은 PL 과 **권한은 동일**하고 조회 범위만 다르다 —
+    # 해외 의뢰서(RequestDocument.is_overseas)와 본인이 올린 문서만 본다
+    # (RequestDocumentViewSet.get_queryset). 국내 PL·TE_*·MASTER 의 조회 범위는
+    # 종전 그대로라 **격리는 단방향**이다(국내 → 해외 문서 조회 가능, 해외 → 국내 불가).
+    # 문서가 어느 구역인지는 의뢰자의 역할로 판정하며, 최초 상신 시점에 문서에 고정한다.
+    DOMESTIC_PL_ROLE = 'PL'
+    OVERSEAS_PL_ROLE = 'PL_GL'
+    # 제품 담당자 계열 역할 전체 — 지정 PL·영업합의자(SA)·후결자(RA) 후보가 되는 역할이다.
+    PL_ROLES = (DOMESTIC_PL_ROLE, OVERSEAS_PL_ROLE)
+
+    @classmethod
+    def pl_role_for(cls, is_overseas):
+        """해당 구역의 의뢰서에서 결재선 후보가 될 수 있는 제품 담당자 역할."""
+        return cls.OVERSEAS_PL_ROLE if is_overseas else cls.DOMESTIC_PL_ROLE
 
     # 라인별 메일 수신 설정(mail_lines)을 적용받는 역할. PL·NONE 은 설정 대상이 아니며
     # 라인과 무관하게 기존대로 메일을 받는다(권한 관리 화면에서도 칸을 그리지 않는다).
@@ -153,6 +169,12 @@ class RequestDocument(models.Model):
         'UserGroup', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='shared_documents', verbose_name='임시저장 공유 그룹'
     )
+    # 해외 의뢰서 여부 — 의뢰자가 해외 제품 담당자(UserProfile.OVERSEAS_PL_ROLE)인가.
+    # 작성 시 작성자 역할로 잠정 기록하고 **최초 상신(submit) 시점에 의뢰자 역할로 확정**한다.
+    # 확정 후에는 재상신·역할 변경으로도 바뀌지 않는다(문서의 소속 구역이 도중에 넘어가면
+    # 결재선에 이미 배정된 담당자가 문서를 못 보게 되기 때문). 해외 제품 담당자는 이 값이
+    # True 인 문서와 본인이 올린 문서만 조회할 수 있다 — RequestDocumentViewSet.get_queryset.
+    is_overseas = models.BooleanField(default=False, verbose_name='해외 의뢰서 여부')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성일')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='수정일')
     submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='상신일')
@@ -175,6 +197,18 @@ class RequestDocument(models.Model):
 
     def __str__(self):
         return f"[{self.status}] {self.title}"
+
+    @staticmethod
+    def overseas_by_role(user):
+        """이 사용자가 올리는 의뢰서가 해외 의뢰서인가 — 역할 하나로만 판정한다.
+
+        사용자가 없으면(비인증 개발 모드 등) 국내로 본다.
+        """
+        return getattr(user, 'role', '') == UserProfile.OVERSEAS_PL_ROLE
+
+    def pl_role(self):
+        """이 의뢰서의 결재선(지정 PL·SA·RA) 후보가 될 수 있는 제품 담당자 역할."""
+        return UserProfile.pl_role_for(self.is_overseas)
 
     def get_detail(self):
         """additional_notes JSON 파싱"""
@@ -1524,6 +1558,10 @@ class RejectionSnapshot(models.Model):
     requester_department = models.CharField(max_length=100, blank=True, verbose_name='부서')
     requester_loginid = models.CharField(max_length=150, blank=True, verbose_name='의뢰자 로그인 ID')
     submitted_at = models.DateTimeField(null=True, blank=True, verbose_name='상신일')
+    # 반려 당시 문서의 구역(RequestDocument.is_overseas 복사본). 이력 조회 '반려' 탭도
+    # 결재 현황과 같은 기준으로 걸러야 하는데, document 는 원본 삭제 시 null 이 되므로
+    # `document__is_overseas` 로 타고 들어갈 수 없어 값을 복사해 둔다.
+    is_overseas = models.BooleanField(default=False, verbose_name='해외 의뢰서 여부')
 
     # ===== 상세 재현용 스냅샷 =====
     # 반려 시점 상세 폼·표 전체 JSON (RequestDocument.additional_notes 원문 복사)
