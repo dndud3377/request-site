@@ -885,8 +885,6 @@ def _route_rows(document):
     route.add('PL')  # PL 은 수신자 규칙에서만 예외이고 경로 표시에는 항상 포함된다
     if not document.has_ppid_plel():
         route -= {'E', 'EV'}
-    if not document.has_oayer_rows():
-        route -= {'O'}
     if document.is_r_skipped(max_round):
         route -= {'R', 'RV'}
 
