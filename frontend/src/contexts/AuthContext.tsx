@@ -12,6 +12,7 @@ const IS_DEV_MODE = process.env.REACT_APP_AUTH_MODE === 'dev';
 
 export const ROLE_LABEL: Record<UserRole, string> = {
   PL:     'common.role_label_PL',
+  PL_GL:  'common.role_label_PL_GL',
   TE_R:   'common.role_label_TE_R',
   TE_P:   'common.role_label_TE_P',
   TE_J:   'common.role_label_TE_J',
@@ -40,6 +41,8 @@ export const MOCK_USERS: MockUser[] = [
   { id: 5,  username: 'agent_e1', name: '정이이', role: 'TE_E',   department: ROLE_LABEL['TE_E'],     email: 'agent.e1@company.com' },
   { id: 13, username: 'agent_e2', name: '김E',   role: 'TE_E',   department: ROLE_LABEL['TE_E'],     email: 'agent.e2@company.com' },
   { id: 14, username: 'agent_e3', name: '이E',   role: 'TE_E',   department: ROLE_LABEL['TE_E'],     email: 'agent.e3@company.com' },
+  { id: 18, username: 'pl_gl1',   name: '해외RM', role: 'PL_GL',  department: 'GLOBAL PA1',           email: 'pl.gl1@company.com' },
+  { id: 19, username: 'pl_gl2',   name: '해외진', role: 'PL_GL',  department: 'GLOBAL PA2',           email: 'pl.gl2@company.com' },
   { id: 6,  username: 'master',   name: '관리자', role: 'MASTER', department: '관리팀',               email: 'master@company.com' },
 ];
 
