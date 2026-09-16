@@ -1,3 +1,14 @@
+# ── 개발 환경 (개인 PC에서 build·실행) ────────────────────────────────────────
+# 실행: docker compose --env-file .env.dev -f docker-compose.dev.yml up --build
+#
+#   ${...} 치환값(IMAGE_PATH, CONTAINER_IMAGE, NPM_REGISTRY_URL, PIP_INDEX_URL 등)은
+#   env_file 이 아니라 --env-file 로만 공급된다. env_file 은 컨테이너 안 환경변수 전용이다.
+#   --env-file 을 빼면 같은 폴더의 운영용 .env 를 읽거나(운영 서버), .env 가 없으면
+#   "service db has neither an image nor a build context" 로 실패한다(개인 PC).
+#
+# 상세 절차는 README.md 의 "개발 환경 (개인 PC)" 참조.
+name: request-site-dev
+
 services:
   db:
     image: ${CONTAINER_IMAGE}
@@ -18,6 +29,10 @@ services:
     image: ${CONTAINER_IMAGE}
     env_file:
       - .env.dev
+    # 개인 PC 개발환경은 운영 DB에 접속하지 않는 것이 기본값(SKIP_DB_SYNC=true)이다.
+    # 운영 DB를 복사하려면 .env.dev 에 SKIP_DB_SYNC=false 와 PROD_MYSQL_HOST=<운영 VM IP> 를 지정한다.
+    environment:
+      SKIP_DB_SYNC: ${SKIP_DB_SYNC:-true}
     depends_on:
       db:
         condition: service_healthy
