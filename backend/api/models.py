@@ -57,6 +57,11 @@ class UserProfile(AbstractBaseUser):
     # 의미가 있으며, 전체 받기/라인 설정(mail_lines)과 별개로 켜고 끈다(권한 관리 '이메일
     # 설정' 컬럼의 '상신 받기' 토글, 2026-08 신설). 신규 opt-in 기능이라 기본값은 False.
     receive_submit_mail = models.BooleanField(default=False, verbose_name='상신 메일 수신')
+    # 이 시각 **이전에 발급된** 서비스 JWT 를 무효로 본다(로그아웃 시 갱신).
+    # 쿠키만 지우던 예전 로그아웃은 토큰 자체를 죽이지 못해, 탈취된 토큰이 access 12시간 /
+    # refresh 7일 동안 그대로 통했다. 인증(api/authentication.py)과 갱신(auth_views.
+    # refresh_token_view)이 토큰의 iat 를 이 값과 비교해 거부한다. docs/SECURITY.md M-12.
+    tokens_valid_from = models.DateTimeField(null=True, blank=True, verbose_name='토큰 유효 시작 시각')
     # password, last_login → AbstractBaseUser 자동 포함
 
     USERNAME_FIELD = 'loginid'
