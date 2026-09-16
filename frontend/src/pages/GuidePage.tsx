@@ -10,6 +10,7 @@ import {
   GuideFeatureKey,
   CreateGuideInput,
   GUIDE_STEP_FEATURES,
+  isPlRole,
 } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -66,7 +67,7 @@ export default function GuidePage(): React.ReactElement {
   // ─────────────── helpers ───────────────
 
   const canDelete = currentUser.role === 'MASTER';
-  const canWrite = currentUser.role !== 'PL'; // PL은 가이드 작성/수정 불가(조회는 제한 없음)
+  const canWrite = !isPlRole(currentUser.role); // PL(국내·해외)은 가이드 작성/수정 불가(조회는 제한 없음)
 
   const featureLabel = useCallback(
     (key: GuideFeatureKey): string => t(`guide.feat.${key}` as never),
