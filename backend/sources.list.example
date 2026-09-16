@@ -1,0 +1,22 @@
+# backend/Dockerfile 이 COPY 하는 필수 파일의 "예시" 다.
+#
+# 실제 파일(backend/sources.list)은 사내 저장소 주소를 담고 있어 .gitignore 로 커밋하지 않는다.
+# 따라서 git clone 직후에는 이 파일이 없고, 그대로 빌드하면
+# backend/Dockerfile 의 `COPY ./sources.list` 단계에서 빌드가 실패한다.
+#
+# 새 PC / 새 서버에서 최초 1회 복사한 뒤 주소를 채운다:
+#   Linux/macOS : cp backend/sources.list.example backend/sources.list
+#   Windows     : copy backend\sources.list.example backend\sources.list
+#
+# 주의: 배포판 코드명(bullseye/bookworm)은 backend/Dockerfile 의 베이스 이미지
+# (python:3.11.0-slim)를 따른다. 확실하지 않으면 아래로 확인한다.
+#   docker run --rm <IMAGE_PATH>python:3.11.0-slim cat /etc/os-release
+
+deb http://<your-debian-mirror>/debian bullseye main contrib non-free
+deb http://<your-debian-mirror>/debian bullseye-updates main contrib non-free
+deb http://<your-debian-mirror>/debian-security bullseye-security main contrib non-free
+
+# 사내 미러 없이 외부 인터넷을 직접 쓰는 환경이라면 공식 미러를 사용한다.
+# deb http://deb.debian.org/debian bullseye main contrib non-free
+# deb http://deb.debian.org/debian bullseye-updates main contrib non-free
+# deb http://security.debian.org/debian-security bullseye-security main contrib non-free
