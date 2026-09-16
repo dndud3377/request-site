@@ -1,6 +1,7 @@
 """
 사용자 시드 데이터 생성 커맨드
-프론트엔드 AuthContext.tsx 의 MOCK_USERS 와 동일한 19 명 생성
+프론트엔드 AuthContext.tsx 의 MOCK_USERS 와 동일한 사용자 생성
+(해외 제품 담당자 PL_GL 2명 포함 — 국내/해외 분리 동작 확인용)
 
 Usage:
     python manage.py create_users
@@ -15,6 +16,8 @@ USERS = [
   {'loginid': 'pl_user4',  'name': '제이홉','role': 'PL',     'deptname': 'PA4',      'mail': 'pl.user@company.com'},
   {'loginid': 'pl_user5',  'name': '지민',  'role': 'PL',     'deptname': 'YE',       'mail': 'pl.user@company.com'},
   {'loginid': 'pl_user6',  'name': '뷔',    'role': 'PL',     'deptname': 'sensorPA', 'mail': 'pl.user@company.com'},
+  {'loginid': 'pl_gl1',    'name': '해외RM','role': 'PL_GL',  'deptname': 'GLOBAL PA1','mail': 'pl.gl1@company.com'},
+  {'loginid': 'pl_gl2',    'name': '해외진','role': 'PL_GL',  'deptname': 'GLOBAL PA2','mail': 'pl.gl2@company.com'},
   {'loginid': 'agent_r1',  'name': '정국',  'role': 'TE_R',   'deptname': 'RFG',      'mail': 'agent.r1@company.com'},
   {'loginid': 'agent_r2',  'name': '손흥민','role': 'TE_R',   'deptname': 'RFG',      'mail': 'agent.r2@company.com'},
   {'loginid': 'agent_r3',  'name': '박지성','role': 'TE_R',   'deptname': 'RFG',      'mail': 'agent.r3@company.com'},
@@ -37,7 +40,7 @@ PASSWORD = 'pass1234'
 
 
 class Command(BaseCommand):
-    help = '프론트엔드 MOCK_USERS와 동일한 사용자 19명을 생성합니다.'
+    help = '프론트엔드 MOCK_USERS와 동일한 사용자를 생성합니다.'
 
     def handle(self, *args, **options):
         User = get_user_model()
