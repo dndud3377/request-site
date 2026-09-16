@@ -5,8 +5,7 @@ import datetime
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.http import JsonResponse, StreamingHttpResponse
-from django.views.decorators.http import require_GET, require_POST
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET
 import queue as _queue_module
 from .sse import broadcaster
 from django.db import connections
@@ -3617,10 +3616,20 @@ def health_check(request):
         conn.cursor()
         return JsonResponse({'status': 'healthy', 'db': 'connected'})
     except Exception as e:
-        return JsonResponse({'status': 'unhealthy', 'db': 'disconnected', 'error': str(e)}, status=503)
+        # 예외 원문에는 DB 호스트·드라이버 정보가 실려 나가므로 응답에 넣지 않는다
+        # (docs/SECURITY.md M-13). 상세는 로그로만 남긴다.
+        logging.getLogger(__name__).error(f"[HEALTH] DB 연결 실패: {e}")
+        return JsonResponse({'status': 'unhealthy', 'db': 'disconnected'}, status=503)
 
 
-@require_GET
+# ===== 의뢰서 작성 폼 옵션 조회 =====
+#
+# ⚠️ 이 블록의 인증을 떼지 말 것. 예전에는 @require_GET 만 붙어 있어 **비로그인 상태로**
+#    공정·제품·PROCESS ID·layer·barcode·MAP 이름 같은 사내 마스터 데이터를 그대로 조회할 수
+#    있었다(실행 확인: 비인증 GET -> 200). 상세: docs/SECURITY.md H-6.
+#    개발 모드(_is_dev)는 IsAuthenticatedInProd 가 기존대로 통과시키므로 개발 흐름은 그대로다.
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_process(request):
     """{{request.line}} → {{request.process_selection}} 목록"""
     from .models import ProcessProduct as CP
@@ -3637,7 +3646,8 @@ def form_options_process(request):
     return JsonResponse({'options': options})
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_products(request):
     """{{request.line}} + {{request.process_selection}} → {{request.partid_selection}} 목록 (process 은 선택 사항)"""
     line = request.GET.get('line', '')
@@ -3658,7 +3668,8 @@ def form_options_products(request):
     )
     return JsonResponse({'options': options})
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_process_id(request):
     """{{request.line}} + {{request.partid_selection}} → {{request.process_id}} 목록"""
     line = request.GET.get('line', '')
@@ -3675,7 +3686,8 @@ def form_options_process_id(request):
     return JsonResponse({'options': options})
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_job_file_layer(request):
     """{{request.line}} + {{request.process_id}} → JOB FILE layer 정보 (eqptype='PMAINF')
 
@@ -3705,7 +3717,8 @@ def form_options_job_file_layer(request):
         return JsonResponse({'options': [], 'error': str(e)})
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_ovl_layer(request):
     """{{request.line}} + {{request.process_id}} → OVL layer 정보 (eqptype='POVLAY')"""
     import logging
@@ -3886,7 +3899,8 @@ class VocHistoryViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_bb_external(request):
     """bb 외부 데이터 - {{request.line}} + {{request.process_id}} → api_steps (eqptype='PMAINF')"""
     import logging
@@ -3943,7 +3957,8 @@ def _natural_key(s: str) -> list:
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', s or '')]
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_layer_ids(request):
     """line + process → unique layerid list sorted by min stepseq (natural order)"""
     line = request.GET.get('line', '')
@@ -3976,7 +3991,8 @@ def form_options_layer_ids(request):
         return JsonResponse({'options': []})
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_barcode(request):
     """product_name → 유효한 바코드 옵션 목록 반환 (n7cancel_date, n7cancel_ok 없는 행만)"""
     product_name = request.GET.get('product_name', '')
@@ -4010,7 +4026,8 @@ def form_options_barcode(request):
         return JsonResponse({'options': []})
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_mapname(request):
     """원본 위치(라인명) → partid 목록 반환("_" 앞 8자리 코드만, 중복 제거·정렬)"""
     line = request.GET.get('line', '')
@@ -4028,7 +4045,8 @@ def form_options_mapname(request):
     return JsonResponse({'options': options})
 
 
-@require_GET
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def form_options_map_info(request):
     """원본 위치(라인명) + 원본 제품 코드(8자리) → AAA1/AAA2/AAA3 참고 정보 반환.
     (2026-09 추가 — CLONE/EXISTING 작성 화면 참고용, 상신 데이터에는 포함되지 않는다)"""
@@ -4406,9 +4424,19 @@ class UserViewSet(viewsets.ModelViewSet):
             )
 
 
-@csrf_exempt
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedInProd])
 def user_events(request):
-    """SSE endpoint: 사용자 권한 변경 실시간 스트림"""
+    """SSE endpoint: 사용자 권한 변경 실시간 스트림
+
+    ⚠️ 인증을 떼지 말 것. 이 스트림은 사용자 추가·권한 변경 이벤트에 loginid·이름·부서·메일을
+       담아 보낸다(auth_views.create_or_update_user_from_oidc). 예전에는 @csrf_exempt 만 붙어
+       있어 **익명 클라이언트가 사내 인원 명부와 권한 변경 내역을 실시간으로 수집**할 수 있었다
+       (실행 확인: 비인증 GET -> 200 text/event-stream). 상세: docs/SECURITY.md H-6.
+
+       화면(PermissionPage)은 same-origin EventSource 로 붙으므로 SSO 모드에서는 쿠키가 실려
+       인증이 통과하고, 개발 모드는 IsAuthenticatedInProd 가 기존대로 통과시킨다.
+    """
     def event_stream():
         q = broadcaster.subscribe()
         try:
