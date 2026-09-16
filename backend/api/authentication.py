@@ -2,6 +2,8 @@
 Cookie 기반 JWT 인증 클래스
 """
 import hmac
+from datetime import datetime, timezone as dt_timezone
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
@@ -14,6 +16,23 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def token_issued_after_logout(payload, user) -> bool:
+    """토큰이 이 사용자의 마지막 로그아웃 **이후에** 발급됐는가.
+
+    `UserProfile.tokens_valid_from` 이 비어 있으면(= 로그아웃한 적 없음) 항상 True.
+    iat 가 없는 토큰은 판정할 수 없으므로 거부하지 않는다 - 이 검사는 로그아웃 무효화를
+    위한 것이고, 서명·만료 검증은 호출부에서 이미 끝났다.
+    """
+    valid_from = getattr(user, 'tokens_valid_from', None)
+    if not valid_from:
+        return True
+    iat = payload.get('iat')
+    if iat is None:
+        return True
+    issued_at = datetime.fromtimestamp(int(iat), tz=dt_timezone.utc)
+    return issued_at >= valid_from
+
+
 class CookieJWTAuthentication(BaseAuthentication):
     """
     HttpOnly Cookie에 저장된 JWT를 사용하여 인증하는 클래스
@@ -23,9 +42,11 @@ class CookieJWTAuthentication(BaseAuthentication):
     def authenticate(self, request):
         # Cookie 에서 토큰 가져오기
         token = request.COOKIES.get('access_token')
-        
-        logger.info(f"[Auth] Cookie token exists: {bool(token)}")
-        
+
+        # 요청마다 찍히던 INFO 로그는 DEBUG 로 낮춘다 - 운영 로그를 채우기만 하고
+        # 남는 정보는 "쿠키가 있었는지" 뿐이다.
+        logger.debug(f"[Auth] Cookie token exists: {bool(token)}")
+
         if not token:
             return None  # 인증 안 함
         
@@ -51,15 +72,15 @@ class CookieJWTAuthentication(BaseAuthentication):
             # 사용자 조회
             User = get_user_model()
             username = payload.get('username')
-            
-            logger.info(f"[Auth] Token payload username: {username}")
-            
+
+            logger.debug(f"[Auth] Token payload username: {username}")
+
             if not username:
                 raise AuthenticationFailed('Invalid token payload')
             
             try:
                 user = User.objects.get(loginid=username)
-                logger.info(f"[Auth] User found: {user.loginid}, id: {user.id}")
+                logger.debug(f"[Auth] User found: {user.loginid}, id: {user.id}")
             except User.DoesNotExist:
                 logger.error(f"[Auth] User not found: {username}")
                 # 사용자가 없으면 Cookie를 삭제하고 None 반환 (SSO 로그인 시도)
@@ -69,16 +90,27 @@ class CookieJWTAuthentication(BaseAuthentication):
                 response.delete_cookie('refresh_token')
                 # 인증 실패를 나타내는 special return
                 return None
-            
+
+            # 로그아웃 이후에 발급된 토큰인지 확인한다.
+            # 로그아웃은 쿠키만 지우므로, 이미 새어 나간 토큰은 이 검사가 없으면
+            # access 12시간 / refresh 7일 동안 그대로 통한다(docs/SECURITY.md M-12).
+            if not token_issued_after_logout(payload, user):
+                raise AuthenticationFailed('로그아웃된 토큰입니다. 다시 로그인해 주세요.')
+
             return (user, token)
-            
+
         except ExpiredSignatureError:
             raise AuthenticationFailed('토큰이 만료되었습니다.')
         except InvalidTokenError as e:
-            raise AuthenticationFailed(f'유효하지 않은 토큰입니다: {str(e)}')
+            # 예외 원문(어느 검증에서 걸렸는지)은 공격자에게 힌트가 되므로 응답에 싣지 않는다
+            # (docs/SECURITY.md M-13). 상세는 로그로만 남긴다.
+            logger.warning(f"[Auth] Invalid token: {e}")
+            raise AuthenticationFailed('유효하지 않은 토큰입니다.')
+        except AuthenticationFailed:
+            raise
         except Exception as e:
             logger.error(f"[Auth] Token authentication error: {e}")
-            raise AuthenticationFailed(f'인증 오류가 발생했습니다: {str(e)}')
+            raise AuthenticationFailed('인증 오류가 발생했습니다.')
 
 
 class ExternalApiKeyAuthentication(BaseAuthentication):
