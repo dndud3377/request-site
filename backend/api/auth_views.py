@@ -8,6 +8,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from datetime import datetime, timedelta
+import hmac
 import logging
 import os
 import jwt
@@ -20,6 +21,13 @@ from cryptography.hazmat.backends import default_backend
 User = get_user_model()
 
 logger = logging.getLogger(__name__)
+
+# ADFS 서버와 이 서버의 시계 오차 허용치(초). id_token 의 exp/iat 검증에 적용한다.
+# 만료 검증을 끄는 대신 이 값으로 오차를 흡수한다 - docs/SECURITY.md C-1 참고.
+OIDC_CLOCK_SKEW_LEEWAY_SEC = 60
+
+# oidc_login_init 이 만드는 nonce JWT 의 유효시간(분). 로그인 시작~콜백 사이에만 쓰인다.
+OIDC_NONCE_JWT_LIFETIME_MIN = 10
 
 from .sse import broadcaster as _user_broadcaster
 
@@ -237,7 +245,7 @@ def oidc_login_init(request):
     # 이 JWT는 콜백에서 id_token里面的 nonce와 비교하여 검증
     nonce_payload = {
         'nonce': nonce_val,
-        'exp': datetime.utcnow() + timedelta(minutes=10),
+        'exp': datetime.utcnow() + timedelta(minutes=OIDC_NONCE_JWT_LIFETIME_MIN),
     }
     nonce_jwt = jwt.encode(nonce_payload, settings.SECRET_KEY, algorithm='HS256')
     
@@ -306,20 +314,53 @@ def oidc_callback(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     
-    # ID 토큰 디코딩 및 서명 검증
+    # ID 토큰 디코딩 및 검증
+    #
+    # ⚠️ 이 블록의 검증 옵션을 다시 끄지 말 것. 예전에는 verify_exp/verify_aud 가 모두 False 라
+    #    (1) 10년 전에 만료된 id_token 도 그대로 통과했고(재생 공격 - 유출된 토큰이 영구 유효),
+    #    (2) 같은 ADFS 가 **다른 서비스용**으로 발급한 토큰으로도 로그인이 됐다(토큰 혼동).
+    #    "만료 검증은 ADFS가 처리한다"던 예전 주석은 사실이 아니다 - ADFS 는 발급 시점에만
+    #    관여하고, 이미 발급된 토큰의 재사용은 이 서버가 막아야 한다.
+    #    시계 오차가 걱정되면 검증을 끄지 말고 OIDC_CLOCK_SKEW_LEEWAY_SEC 를 키운다.
+    #    상세: docs/SECURITY.md C-1 / C-2.
     b_token = id_token_val.encode()
-    
+
+    client_id = getattr(settings, 'OIDC_RP_CLIENT_ID', '')
+    if not client_id:
+        # aud 검증에 쓸 값이 없으면 "검증을 건너뛴다"가 아니라 로그인을 거부한다(fail-closed).
+        logger.error("[OIDC] OIDC_RP_CLIENT_ID is not configured - aud 검증 불가")
+        return Response(
+            {'error': 'SSO 설정이 올바르지 않습니다. 관리자에게 문의하세요.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+    decode_kwargs = {
+        'audience': client_id,
+        'leeway': OIDC_CLOCK_SKEW_LEEWAY_SEC,
+    }
+    expected_issuer = getattr(settings, 'OIDC_OP_ISSUER', '')
+    if expected_issuer:
+        decode_kwargs['issuer'] = expected_issuer
+    else:
+        # iss 는 서명·aud 검증을 통과한 뒤의 추가 방어선이라 미설정이어도 로그인은 진행한다.
+        # 다만 방어가 한 겹 빠진 상태이므로 매 콜백마다 경고를 남겨 설정 누락을 드러낸다.
+        logger.warning(
+            "[OIDC] OIDC_OP_ISSUER 미설정 - iss(발급자) 검증을 건너뜁니다. "
+            ".env 에 ADFS 의 실제 issuer 값을 채우세요."
+        )
+
     try:
         decoded_id_token = jwt.decode(
             jwt=b_token,
             key=public_key,
-            verify=True,
             algorithms=['RS256'],
             options={
                 'verify_signature': True,
-                'verify_exp': False,  # 만료 검증은 ADFS가 처리하므로 생략
-                'verify_aud': False,
-            }
+                'verify_exp': True,
+                'verify_aud': True,
+                'require': ['exp', 'aud'],
+            },
+            **decode_kwargs,
         )
     except InvalidTokenError as e:
         logger.error(f"[OIDC] Invalid ID token: {e}")
@@ -330,30 +371,48 @@ def oidc_callback(request):
     
     # id_token에서 nonce 추출
     id_token_nonce = decoded_id_token.get('nonce')
-    logger.info(f"[OIDC] ID token nonce: {id_token_nonce}")
-    
-    # nonce 검증은 선택적으로 수행 (ADFS가 nonce를 포함하지 않을 수 있음)
-    # 현재는 id_token 서명 검증만으로 충분함 (CSRF 방어는 나중에 별도 처리)
-    if nonce_jwt and id_token_nonce:
-        try:
-            decoded_nonce = jwt.decode(
-                nonce_jwt,
-                settings.SECRET_KEY,
-                algorithms=['HS256']
-            )
-            saved_nonce = decoded_nonce.get('nonce')
-            
-            # nonce 검증
-            if id_token_nonce != saved_nonce:
-                logger.error(f"[OIDC] Invalid nonce: {id_token_nonce} != {saved_nonce}")
-                return Response(
-                    {'error': '잘못된 nonce 값입니다. CSRF 공격 가능성이 있습니다.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            logger.info("[OIDC] nonce validation passed")
-        except Exception as e:
-            logger.warning(f"[OIDC] nonce_jwt validation failed: {e}")
-            # nonce_jwt 검증 실패해도 id_token이 유효하면 진행 (호환성)
+
+    # nonce 검증 - 재생(replay)·로그인 CSRF 방어.
+    #
+    # ⚠️ 이 검증을 다시 조건부로 만들지 말 것. 예전에는 `if nonce_jwt and id_token_nonce:` 로
+    #    감싸고 실패는 except 로 삼켰다. nonce_jwt 는 **요청자가 폼에 실어 보내는 값**이라
+    #    빼고 보내면 검증 자체가 사라졌고, 검증에 실패해도 "호환성"으로 통과했다.
+    #    프론트(OIDCCallbackPage.tsx)는 항상 nonce_jwt 를 보내므로 정상 로그인은 영향받지 않는다.
+    #    상세: docs/SECURITY.md C-3.
+    if not id_token_nonce:
+        logger.error("[OIDC] id_token 에 nonce 클레임이 없습니다")
+        return Response(
+            {'error': '인증 토큰에 nonce 가 없습니다. 다시 로그인해 주세요.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if not nonce_jwt:
+        logger.error("[OIDC] nonce_jwt 가 전달되지 않았습니다")
+        return Response(
+            {'error': '로그인 요청 정보가 없습니다. 다시 로그인해 주세요.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    try:
+        decoded_nonce = jwt.decode(
+            nonce_jwt,
+            settings.SECRET_KEY,
+            algorithms=['HS256'],
+            options={'require': ['exp']},
+        )
+    except InvalidTokenError as e:
+        logger.error(f"[OIDC] nonce_jwt 검증 실패: {e}")
+        return Response(
+            {'error': '로그인 요청이 만료되었습니다. 다시 로그인해 주세요.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    saved_nonce = decoded_nonce.get('nonce')
+    if not saved_nonce or not hmac.compare_digest(str(id_token_nonce), str(saved_nonce)):
+        logger.error("[OIDC] nonce 불일치 - 재생 또는 로그인 CSRF 가능성")
+        return Response(
+            {'error': '잘못된 nonce 값입니다. 다시 로그인해 주세요.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    logger.info("[OIDC] nonce validation passed")
+
     
     # id_token의 decoded 내용을 사용 (이미 위에서 검증됨)
     decoded = decoded_id_token
