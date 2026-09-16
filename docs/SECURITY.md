@@ -2,8 +2,10 @@
 
 > 작성일: 2026-09-16
 > 범위: `backend/`(Django/DRF 전체), `frontend/src/`, `nginx/`, `docker-compose*.yml`, `backend/config/settings/`
-> 상태: **발견·검증만 완료. 코드 수정은 하지 않았다**(사용자 지시 — 2026-09-16).
-> 이 문서는 "무엇이 뚫리는가"와 "어떻게 막을 것인가"를 기록한다. 실제 수정은 사용자의 지시가 있을 때 착수한다.
+> 상태: **19건 전부 수정 완료 (2026-09-16).**
+> 이 문서는 "무엇이 뚫렸는가", "어떻게 막았는가", "무엇을 확인하지 못했는가"를 기록한다.
+> 각 항목의 **[수정 완료]** 줄에 실제로 무엇을 바꿨는지 적었다. 재발 방지를 위해 코드에도
+> "왜 이 옵션을 되돌리면 안 되는지" 주석을 남겼으므로, 관련 코드를 고칠 때 함께 읽는다.
 
 ---
 
@@ -15,8 +17,18 @@
 | 🟠 높음 | 5 | 비인증 정보 노출 API, DRF 기본 권한 fail-open, SECRET_KEY 기본값, 저장형 XSS, nginx 우회 포트 |
 | 🟡 중간 | 9 | 토큰 폐기 부재, 예외 원문 노출, PII 로깅, 보안 헤더, rate limit 등 |
 
-치명 5건 중 **C-1·C-3·C-4 는 실제 실행 출력으로 재현을 확인**했다(§2). 나머지는 코드 근거로 판정했으며,
-확인하지 못한 항목은 §6 에 "확인하지 못함"으로 분리해 적었다.
+치명 5건 중 **C-1·C-3·C-4 는 실제 실행 출력으로 재현을 확인**했고, 수정 후 **같은 공격이 막히는 것도
+실행으로 확인**했다. 나머지는 코드 근거로 판정했으며, 확인하지 못한 항목은 §6 에 그대로 적었다.
+
+### 검증 결과 (2026-09-16 최종)
+
+| 검증 | 결과 |
+|---|---|
+| 백엔드 기존 테스트 `manage.py test api` | **542건 통과** (수정 전 기준선과 동일) |
+| 프론트 테스트 `react-scripts test` | **294건 통과** (11 suites) |
+| 타입 체크 `tsc --noEmit` | error **4건 — 수정 전과 동일**(§8, 이번 변경과 무관한 기존 문제) |
+| 보안 재현 테스트(프로젝트 밖) | **19건 통과** — 공격은 막히고 정상 동작은 유지 |
+| 결재 케이스 러너 | **실행하지 못함** — 개발환경(AUTH_MODE=dev)이 필요하다(§6-5) |
 
 ---
 
@@ -75,12 +87,24 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
   leeway=60,                          # ADFS 와 서버 간 시계 오차 허용
   ```
   시계 오차로 로그인이 실패하는 것이 걱정된다면 `verify_exp` 를 끄는 대신 `leeway` 를 늘린다.
+- **[수정 완료]** `backend/api/auth_views.py` — `verify_exp`/`verify_aud` 를 켜고 `exp`·`aud` 를
+  필수 클레임(`require`)으로 요구한다. 시계 오차는 `OIDC_CLOCK_SKEW_LEEWAY_SEC`(60초)로 흡수한다.
+  `OIDC_RP_CLIENT_ID` 가 비어 있으면 aud 검증을 건너뛰지 않고 **로그인을 거부**한다(fail-closed).
+  사실과 다르던 예전 주석은 "왜 되돌리면 안 되는지"로 바꿔 놓았다.
+  검증: 10년 전 만료 토큰 → `ExpiredSignatureError`, `exp` 없는 토큰 → `MissingRequiredClaimError`,
+  정상 토큰 → 통과.
 
 ### C-2. aud(대상 서비스) · iss(발급자) 를 검증하지 않는다
 
 - **위치**: `backend/api/auth_views.py:318-324` — `verify_aud: False`, `iss` 비교 코드 없음
 - **영향**: 같은 사내 ADFS 가 **다른 시스템용으로 발급한 id_token** 을 이 사이트에 그대로 제출해도 통과한다(토큰 혼동, token confusion). 다른 사내 시스템의 로그를 볼 수 있거나 그 시스템의 클라이언트를 가진 사람이 이 사이트의 임의 계정으로 로그인할 수 있다.
 - **권장 조치**: C-1 과 동일 — `audience=OIDC_RP_CLIENT_ID`, `issuer` 고정 검증.
+- **[수정 완료]** `audience=OIDC_RP_CLIENT_ID` 로 aud 를 검증한다.
+  iss 는 새 설정값 `OIDC_OP_ISSUER`(`settings/base.py`, `.env.example`)가 채워져 있으면 검증하고,
+  비어 있으면 콜백마다 **경고 로그**를 남겨 설정 누락을 드러낸다.
+  ⚠️ 운영 `.env` 에 `OIDC_OP_ISSUER` 를 채워야 이 방어가 켜진다 — ADFS 가 실제로 내려주는
+  issuer 문자열은 확인하지 못했다(§6-3).
+  검증: `aud=SOME-OTHER-APP` 토큰 → `InvalidAudienceError` 로 거부.
 
 ### C-3. nonce(재생 방지) 검증이 사실상 공격자 선택 사항이다
 
@@ -105,6 +129,13 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
 - **권장 조치**
   1. `nonce_jwt` 를 **필수**로 하고, 없거나 검증 실패면 401 로 거부한다(예외를 삼키지 않는다).
   2. nonce 를 **서버 세션(HttpOnly 쿠키 기반)** 에 저장하고 1회 사용 후 폐기한다. `state` 도 같은 방식으로 실제 검증한다(현재 `state` 는 생성만 하고 검증하지 않는다 — `auth_views.py:268`).
+- **[수정 완료 — 1번만]** `nonce_jwt` 든 `id_token` 의 nonce 든 **없으면 400 으로 거부**하고,
+  `nonce_jwt` 검증 실패도 더 이상 삼키지 않는다. 비교는 `hmac.compare_digest` 로 한다.
+  프론트(`OIDCCallbackPage.tsx`)는 항상 `nonce_jwt` 를 보내므로 정상 로그인은 영향받지 않는다.
+- **[미수정 — 남은 과제]** 2번(nonce 를 서버 세션에 저장, `state` 실제 검증)은 하지 않았다.
+  로그인 시작~콜백 흐름을 다시 설계해야 해서 이번 범위를 넘는다. 지금도 nonce 는
+  클라이언트(localStorage `oidc_state_jwt`)에 있고, 이 JWT 는 `SECRET_KEY` 로 서명돼 있어
+  위조는 불가능하지만 **브라우저 세션과 묶이지는 않는다.**
 
 ### C-4. 파일 업로드가 비인증이고 확장자를 검증하지 않는다
 
@@ -134,6 +165,15 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
   2. 확장자 **화이트리스트**(`png/jpg/jpeg/gif/webp`, `mp4/webm`)로 저장 파일명을 서버가 결정한다. 업로더가 보낸 `name`·`content_type` 은 저장 경로 결정에 쓰지 않는다.
   3. 실제 내용 검증 — 이미지는 `PIL.Image.open(f).verify()` 로 파싱에 성공해야만 저장한다(Pillow 는 이미 의존성에 있다).
   4. nginx `/media/` 에 `add_header Content-Disposition "attachment";` 와 `add_header X-Content-Type-Options "nosniff";` 를 붙여, 뚫려도 브라우저에서 실행되지 않게 한다(2차 방어).
+- **[수정 완료]** 네 가지를 모두 적용했다.
+  `backend/api/views.py` — `@api_view` + `IsAuthenticatedInProd` 로 인증을 걸고,
+  `ALLOWED_IMAGE_EXTENSIONS`/`ALLOWED_VIDEO_EXTENSIONS` 화이트리스트로 확장자를 거르며,
+  **저장 파일명은 서버가 만든다**(업로더가 보낸 이름·Content-Type 은 저장 경로에 쓰지 않는다).
+  이미지는 `PIL.Image.verify()` 로 실제 파싱되는지 확인한다. 실패 응답의 예외 원문도 없앴다.
+  `nginx/nginx.conf` — `/media/` 에 `Content-Disposition: attachment`, `nosniff`,
+  `default-src 'none'; sandbox` CSP 를 붙였다.
+  검증: 비인증 업로드 → 403 / 인증 후 `.html` → 400 / 이름만 `.png` 인 스크립트 → 400 /
+  정상 PNG·MP4 → 200.
 
 ### C-5. 운영 배포가 하드코딩 비밀번호 계정을 매번 심는다
 
@@ -149,6 +189,13 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
   1. `docker-compose.yml` 의 backend·scheduler 커맨드에서 `python manage.py create_users &&` 를 제거한다.
   2. (권장 추가) `create_users.py` 에 `if settings.AUTH_MODE != 'dev': raise CommandError(...)` 가드를 넣어 운영에서 수동 실행도 막는다.
   3. 이미 운영 DB 에 생긴 시드 계정은 **사용자가 직접 확인 후 삭제/비활성화**해야 한다(`CLAUDE.md` 규칙 J — DB 삭제는 사용자 확인 필수. AI 가 임의로 지우지 않는다).
+- **[수정 완료 — 1번만]** `docker-compose.yml` 의 backend 커맨드에서 `create_users` 를 제거했다.
+  개발용 `docker-compose.dev.yml` 은 그대로라 결재 케이스 러너가 쓰는 시드 계정은 유지된다.
+  되돌리지 않도록 이유를 주석으로 남겼다.
+- **[미수정 — 사용자 결정]** 2번(커맨드 자체 가드)은 사용자가 "운영에서만 제거"를 선택해 넣지 않았다.
+  운영에서 `manage.py create_users` 를 **수동으로** 실행하면 여전히 시드 계정이 생긴다.
+- **⚠️ 남은 조치(사용자 몫)**: 이미 운영 DB 에 있는 시드 계정 22개(특히 `master`)의
+  삭제·비활성화는 하지 않았다. DB 데이터 삭제는 사용자 확인이 필요하다(규칙 J).
 
 ---
 
@@ -174,6 +221,11 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
   - `/api/health/` 는 예외 발생 시 `str(e)` 를 담은 DB 에러 원문을 반환한다(`views.py:3620`).
 - **사용자 결정(2026-09-16)**: **전부 인증 필수로 전환**한다.
 - **권장 조치**: 각 함수 뷰를 `@api_view(['GET'])` + `@permission_classes([IsAuthenticatedInProd])` 로 바꾼다. 개발 모드(`_is_dev()`)는 기존대로 통과하므로 개발 흐름은 그대로다. `/api/health/` 는 컨테이너 헬스체크용이라 비인증을 유지하되 **에러 원문은 응답에서 제거**한다(M-13 과 함께).
+- **[수정 완료]** `form_options_*` 10개와 `user_events`(SSE)에 인증을 걸었다.
+  `/api/health/` 는 프로브 용도라 공개를 유지하고 **DB 예외 원문만 제거**했다
+  (compose·nginx·프론트 어디서도 참조하지 않는다 — 외부 모니터링 가능성만 남는다, §6-7).
+  이 변경으로 쓰이지 않게 된 `require_POST`·`csrf_exempt` import 도 정리했다.
+  검증: 비인증 → 전부 403 / 개발 모드 → 200 (기존 동작 유지).
 
 ### H-7. DRF 전역 기본 권한이 fail-open 이다
 
@@ -181,6 +233,9 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
 - **근거(실행 출력)**: `[SETTINGS] DEFAULT_PERMISSION_CLASSES = ['rest_framework.permissions.IsAuthenticatedOrReadOnly']`
 - **영향**: 현재 모든 ViewSet 이 `permission_classes` 를 명시하고 있어 당장 새는 곳은 없다(전수 확인함). 그러나 **앞으로 추가될 ViewSet 에서 한 줄만 빠뜨리면 그 순간 전체 읽기 공개**가 된다. 기본값은 "막힌 쪽"이어야 한다.
 - **권장 조치**: `IsAuthenticated` 로 바꾸고, 비인증 접근이 필요한 소수(`health_check`, 외부 API Key 라우트)만 명시적으로 연다.
+- **[수정 완료]** `DEFAULT_PERMISSION_CLASSES` 를 `IsAuthenticated` 로 바꿨다.
+  바꾸기 전에 모든 ViewSet(15개)과 `@api_view`(9개)가 권한을 명시하고 있는지 전수 확인했으므로
+  **지금 동작은 달라지지 않는다.** 앞으로 한 줄을 빠뜨렸을 때 데이터가 새지 않게 하는 변경이다.
 
 ### H-8. `SECRET_KEY` 에 안전하지 않은 기본값이 있다
 
@@ -198,6 +253,11 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
       raise ImproperlyConfigured('운영 환경에서는 DJANGO_SECRET_KEY 가 반드시 필요합니다.')
   ```
   같은 방식으로 `SERVICE_JWT_SECRET_KEY` 도 운영에서 필수화한다(현재는 비어 있으면 요청 시점에 401 로 실패 — fail-closed 이긴 하나 기동 시점에 잡는 편이 낫다).
+- **[수정 완료]** `settings/production.py` 에서 `DJANGO_SECRET_KEY`·`SERVICE_JWT_SECRET_KEY` 가
+  비어 있으면 `ImproperlyConfigured` 로 **기동을 중단**한다. 운영에서 `DEBUG=True` 여도 중단한다.
+  `SECURE_CONTENT_TYPE_NOSNIFF`/`SECURE_REFERRER_POLICY`/`X_FRAME_OPTIONS` 도 함께 켰다.
+  ⚠️ **배포 전 확인**: 운영 `.env` 에 두 값이 실제로 들어 있어야 한다. 비어 있으면 이 변경 이후
+  컨테이너가 기동하지 않는다 — 그게 의도다(조용히 취약하게 뜨는 것보다 낫다).
 
 ### H-9. 저장형 XSS — 사용자 HTML 을 정제 없이 렌더링한다
 
@@ -217,6 +277,17 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
   1. `dompurify` 를 추가하고, 위 6곳을 공용 래퍼(예: `frontend/src/components/SafeHtml.tsx`)로 통일한다.
      허용 태그는 에디터가 실제로 만드는 것만(`p, br, strong, em, u, s, ul, ol, li, a, span` 등), `a` 는 `href` 스킴을 http/https 로 제한한다.
   2. 백엔드에서도 저장 시 정제한다(방어 심층화). 프론트만 고치면 다른 소비자(메일 본문 등)가 남는다 — `mailer.py` 가 같은 필드를 메일 HTML 에 넣는지 확인 필요(§6).
+- **[수정 완료 — 1번]** `dompurify` 3.4.15 를 추가하고 `frontend/src/components/SafeHtml.tsx` 를
+  만들어 6곳을 모두 교체했다. 가이드 목록 미리보기는 정규식 태그 제거(`<img src="x>" ...>` 에서
+  샌다) 대신 `htmlToText` 로 텍스트만 보여 준다. `detailExport.ts` 도 `innerHTML` 전에 정제한다.
+  구현 도중 **직접 만든 결함 2건을 테스트로 잡아 고쳤다**:
+  (a) `USE_PROFILES` 를 넣으면 `ALLOWED_TAGS`/`ALLOWED_ATTR` 를 **덮어써** 허용목록이 무시된다,
+  (b) DOMPurify 는 `style` 속성 **값**까지 파싱하지 않아 `style="background:url(javascript:...)"`
+  가 그대로 통과한다 → CSS 속성 화이트리스트 훅을 추가했다.
+  검증: script/onerror/onload/javascript:/iframe/svg-script/style-url 우회 8종 전부 제거,
+  정상 서식(정렬·굵게·목록·링크·이미지) 보존, `target` 링크에 `rel="noopener noreferrer"` 부착.
+- **[미수정 — 남은 과제]** 2번(백엔드 저장 시 정제)은 하지 않았다. `mailer.py`(1972줄)가 같은
+  필드를 메일 HTML 에 넣는지 전수 확인하지 못했다(§6-4).
 
 ### H-10. 운영 compose 가 nginx 를 우회하는 포트를 호스트에 노출한다
 
@@ -228,24 +299,26 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
 - **권장 조치**
   1. `ports:` 를 지우고 컨테이너 네트워크 내부 통신(`expose`)만 남긴다. 디버깅이 필요하면 `127.0.0.1:8000:8000` 처럼 루프백에 바인딩한다.
   2. nginx 가 클라이언트가 보낸 `X-Forwarded-Proto` 를 덮어쓰도록 확실히 한다(현재 `proxy_set_header X-Forwarded-Proto https;` 로 고정돼 있어 nginx 경유는 안전 — 문제는 nginx 를 건너뛰는 경로다).
+- **[수정 완료]** `docker-compose.yml` 에서 db(3306)·backend(8000)의 `ports` 를 `expose` 로 바꿨다.
+  외부 진입점은 nginx(10010) 하나다. 점검용 루프백 바인딩 예시를 주석으로 남겼다.
+  ⚠️ **배포 전 확인**: 호스트에서 `mysql -h 127.0.0.1 -P 3306` 이나 `:8000` 직접 호출에
+  의존하는 운영 스크립트·모니터링이 있다면 함께 조정해야 한다.
 
 ---
 
 ## 4. 🟡 중간
 
-| # | 내용 | 위치 | 권장 조치 |
-|---|---|---|---|
-| M-11 | 서비스 JWT 에 **회전·폐기 없음**. `SIMPLE_JWT` 의 `ROTATE_REFRESH_TOKENS`/`BLACKLIST_AFTER_ROTATION` 은 simplejwt 토큰용이라, 직접 만든 이 토큰 경로에는 적용되지 않는다 | `auth_views.py:150-200`, `base.py` SIMPLE_JWT | refresh 사용 시 jti 기록 + 1회용화, 또는 서버측 토큰 저장소 도입 |
-| M-12 | **로그아웃이 토큰을 무효화하지 않는다** — 쿠키만 지운다. 탈취된 토큰은 access 12시간 / refresh 7일간 계속 유효 | `auth_views.py:530-568` | jti 블랙리스트. 최소한 access 수명을 12시간→1시간으로 단축하고 refresh 로 갱신 |
-| M-13 | **예외 원문(`str(e)`)을 응답에 노출** — 내부 경로·드라이버·쿼리 정보가 샌다 | `views.py` upload/form-options/health, `authentication.py:71,78` | 응답은 일반 메시지, 상세는 로그로만 |
-| M-14 | **PII 로깅** — OIDC 클레임 전체(메일·부서·사번·이름)를 INFO 로 남긴다 | `auth_views.py:410-425` | DEBUG 레벨로 낮추거나 loginid 만 남긴다 |
-| M-15 | **보안 헤더 부재** — CSP / X-Content-Type-Options / Referrer-Policy / Permissions-Policy 없음. `/media/` 에 `Content-Disposition` 없음 | `nginx/nginx.conf` | `add_header` 로 일괄 추가. H-9·C-4 의 2차 방어가 된다 |
-| M-16 | `'=' in username` 이면 **무조건 base64 디코딩을 시도**한다. 디코딩이 우연히 성공하면 계정 식별자가 바뀐다 | `auth_views.py:449-456` | 제거하거나, ADFS 가 실제로 base64 sub 를 주는 경우에만 `sub` 클레임에 한정해 적용 |
-| M-17 | **rate limit 전무** — DRF throttling 미설정. 로그인·업로드·조회 모두 무제한 | `base.py` REST_FRAMEWORK | `DEFAULT_THROTTLE_CLASSES`(anon/user) 설정 |
-| M-18 | `DATA_UPLOAD_MAX_MEMORY_SIZE = 55MB` 가 **비인증 업로드(C-4)** 와 결합해 디스크 고갈 DoS 가 된다 | `base.py` + `views.py:3734` | C-4 수정으로 대부분 해소. 추가로 업로드 전용 throttle |
-| M-19 | 디버그 `print()` 잔존 (`CLAUDE.md` 규칙 I 위반) | `views.py:3487` | logger 로 교체하거나 삭제 |
-
----
+| # | 내용 | 수정 내역 |
+|---|---|---|
+| M-11 | 서비스 JWT 에 회전·폐기 없음 | **[부분]** 회전은 넣지 않았다. 대신 M-12 의 `tokens_valid_from` 으로 **폐기 경로를 만들었다** — 로그아웃하면 그 이전 토큰이 access·refresh 모두 무효가 된다. jti 단위 회전은 남은 과제다. |
+| M-12 | 로그아웃이 토큰을 무효화하지 않음 | **[완료]** `UserProfile.tokens_valid_from`(마이그레이션 `0045`) 추가. `oidc_logout` 이 이 값을 현재 시각으로 올리고, `CookieJWTAuthentication` 과 `refresh_token_view` 가 토큰 `iat` 와 비교해 거부한다. 검증: 로그아웃 후 같은 토큰 재사용·refresh 모두 거부, 재로그인 토큰은 정상. |
+| M-13 | 예외 원문(`str(e)`)을 응답에 노출 | **[완료]** 업로드 2곳, 외부 조회 3곳, 사용자 삭제 1곳, `health_check`, `authentication.py` 까지 전부 일반 메시지로 바꾸고 상세는 로그로만 남긴다. 응답에 `str(e)` 를 싣는 곳은 남아 있지 않다(grep 확인). |
+| M-14 | OIDC 클레임 전량 INFO 로깅(개인정보) | **[완료]** 클레임 상세 로그를 DEBUG 로 낮추고 `logger.isEnabledFor(DEBUG)` 로 감쌌다. 로그인 초기화 로그에서 nonce 값도 뺐다. 인증 경로의 요청별 INFO 로그 3건도 DEBUG 로 낮췄다. |
+| M-15 | 보안 헤더 부재 | **[완료]** `nginx/nginx.conf` 에 CSP·nosniff·X-Frame-Options·Referrer-Policy·Permissions-Policy·HSTS 를 `always` 로 추가하고 `server_tokens off`. `/media/` 는 별도로 `Content-Disposition: attachment` + sandbox CSP. Django 측에도 동일 헤더를 켰다(`production.py`). |
+| M-16 | `'=' in username` 이면 무조건 base64 디코딩 | **[완료]** 해당 로직을 제거했다. 로그인 주체를 가리키는 식별자를 추측으로 바꾸지 않고 `loginid` 클레임을 그대로 쓴다. |
+| M-17 | rate limit 전무 | **[완료]** DRF throttling 을 켰다(anon 60/min, user 1200/min). 61번째 요청부터 429 가 나오는 것을 확인했다. ⚠️ DRF 는 **권한 검사 뒤에** throttle 을 보므로, 인증이 필요한 엔드포인트의 비인증 호출은 403 에서 먼저 끝난다(그 자체는 값싼 응답이라 문제는 아니다). 기본 캐시가 LocMemCache 라 상한이 워커 수만큼 곱해진다. |
+| M-18 | 55MB 업로드 + 비인증 조합 DoS | **[완료]** C-4 로 비인증 업로드가 막히고, M-17 의 throttle 이 반복 호출을 제한한다. `DATA_UPLOAD_MAX_MEMORY_SIZE` 자체는 가이드 동영상 때문에 그대로 뒀다. |
+| M-19 | 디버그 `print()` 잔존 | **[완료]** `ExternalRequestDocumentViewSet.list` 의 `print` 를 logger 로 교체했다. |
 
 ## 5. 안전하다고 확인한 영역
 
@@ -267,28 +340,46 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
 ## 6. 확인하지 못한 것 (추측으로 적지 않는다)
 
 `CLAUDE.md` 규칙 C 1-3 에 따라, 실행으로 확인하지 못한 항목을 그대로 적는다.
+**수정을 마친 지금도 아래는 여전히 확인되지 않은 상태다.**
 
-1. **운영 DB 의 실제 상태** — 시드 계정(`master` 등 22건)이 현재 운영 DB 에 남아 있는지, 실제 직원 loginid 와 충돌한 적이 있는지 확인하지 못했다. 운영 DB 접근 권한이 없다.
-2. **운영 `.env` 의 실제 값** — `DJANGO_SECRET_KEY`·`SERVICE_JWT_SECRET_KEY` 가 운영에서 실제로 채워져 있는지 확인하지 못했다(규칙 D — `.env` 는 읽기만 하며, 이 세션에는 운영 `.env` 가 없다). 채워져 있다면 H-8 의 즉시 위험은 없고 "기본값이 존재한다"는 구조적 문제만 남는다.
-3. **ADFS 가 실제로 반환하는 클레임** — `aud`/`iss` 값의 실제 형태를 확인하지 못했다. C-1/C-2 수정 시 운영 ADFS 의 실제 토큰으로 값을 맞춰야 한다.
-4. **메일 본문의 HTML 경로** — `mailer.py`(1972줄)에서 `map_change_reason` 같은 사용자 HTML 을 메일 본문에 넣는지 전수 확인하지 못했다. H-9 수정 시 함께 점검해야 한다.
-5. **결재 케이스 러너(`scripts/approval_cases/run_cases`)** — 개발환경(`AUTH_MODE=dev`)이 떠 있어야 하는데 이 세션에는 없어 실행하지 못했다. 이번 점검은 결재 로직을 **수정하지 않았으므로** 러너 대상이 아니다. 다만 §3 H-6(비인증 엔드포인트 인증 부착) 등을 실제로 수정할 때는 러너를 돌려야 한다.
-6. **운영 nginx 앞단의 방화벽/WAF** — H-10 의 `:8000`·`:3306` 이 사내망 밖에서도 실제로 닿는지 확인하지 못했다. 방화벽으로 막혀 있다면 위험도가 낮아진다.
+1. **운영 DB 의 실제 상태** — 시드 계정(`master` 등 22건)이 현재 운영 DB 에 남아 있는지, 실제
+   직원 loginid 와 충돌한 적이 있는지 확인하지 못했다. 운영 DB 접근 권한이 없다.
+   이번 수정은 **앞으로 다시 생기지 않게** 막은 것이고, 이미 있는 계정은 지우지 않았다.
+2. **운영 `.env` 의 실제 값** — `DJANGO_SECRET_KEY`·`SERVICE_JWT_SECRET_KEY` 가 채워져 있는지
+   확인하지 못했다(규칙 D — `.env` 는 읽기만 하며, 이 세션에는 운영 `.env` 가 없다).
+   ⚠️ H-8 수정으로 **비어 있으면 운영 컨테이너가 기동하지 않는다.** 배포 전에 반드시 확인한다.
+3. **ADFS 가 실제로 반환하는 클레임** — `aud`/`iss` 의 실제 값 형태를 확인하지 못했다.
+   `aud` 는 `OIDC_RP_CLIENT_ID` 와 같다는 표준 전제로 검증을 켰다. 실제 값이 다르면 로그인이
+   실패하므로 **§7-1 시나리오를 운영 배포 전에 반드시 수행**한다.
+   `iss` 는 `OIDC_OP_ISSUER` 가 비어 있는 동안 검증되지 않는다.
+4. **메일 본문의 HTML 경로** — `mailer.py`(1972줄)가 `map_change_reason` 같은 사용자 HTML 을
+   메일 본문에 넣는지 전수 확인하지 못했다. H-9 는 **화면 렌더링만** 막았다.
+5. **결재 케이스 러너(`scripts/approval_cases/run_cases`)** — 개발환경(`AUTH_MODE=dev`)이 떠 있어야
+   하는데 이 세션에는 없어 **실행하지 못했다.** 이번 변경은 결재 판정 로직을 건드리지 않았고
+   기존 테스트 542건이 통과하지만, 개발환경이 있을 때 한 번 돌려 보는 편이 확실하다.
+6. **nginx 설정 문법(`nginx -t`)** — nginx 바이너리도 도커 데몬도 없어 **검증하지 못했다.**
+   `docker compose config` 도 `.env` 가 없어 실행하지 못했다(YAML 파싱과 구조는 확인했다).
+   배포 전에 `nginx -t` 를 한 번 돌리는 것이 안전하다.
+7. **`/api/health/` 를 쓰는 외부 모니터링** — compose·nginx·프론트 어디서도 참조하지 않는 것은
+   확인했지만, 사내 모니터링이 호출하는지는 확인하지 못해 공개를 유지했다.
+8. **운영 nginx 앞단의 방화벽/WAF** — H-10 의 `:8000`·`:3306` 이 사내망 밖에서도 실제로
+   닿았는지 확인하지 못했다. 방화벽으로 막혀 있었다면 그만큼 위험도가 낮았던 것이다.
 
 ---
 
-## 7. 수정 시 검증 시나리오 (수동)
+## 7. 배포 전 수동 검증 시나리오
 
-실제로 고칠 때 이 순서로 확인한다. 자동 테스트만으로는 부족한 부분이다.
+자동 테스트로는 덮을 수 없는 부분이다. **운영에 올리기 전에 개발환경에서 이 순서대로 확인한다.**
+7-1 이 가장 중요하다 — 로그인이 막히면 아무도 들어오지 못한다.
 
-### 7-1. OIDC 로그인 (C-1 ~ C-3 수정 후) — **회귀 위험이 가장 큰 구간**
+### 7-1. OIDC 로그인 (C-1 ~ C-3) — **회귀 위험이 가장 큰 구간. 반드시 먼저 한다**
 1. 시크릿 창에서 `https://<운영주소>:10010/` 접속 → ADFS 로그인 화면으로 이동하는지
 2. 사번/비밀번호 입력 → **정상 로그인되어 홈 화면(결재 현황)이 뜨는지**
 3. 성공 판정: 우상단에 본인 이름·부서가 표시되고, `결재 현황` 목록이 로딩된다
 4. 실패 신호: 로그인 후 다시 ADFS 로 튕긴다(= exp/aud/iss 검증이 실제 클레임과 안 맞음) / "잘못된 nonce" 400 이 뜬다(= nonce 를 세션에 못 싣고 있음)
 5. 시계 오차 의심 시: 백엔드 로그에서 `[OIDC] Invalid ID token: Signature has expired` 를 확인하고 `leeway` 를 조정
 
-### 7-2. 파일 업로드 (C-4 수정 후)
+### 7-2. 파일 업로드 (C-4)
 1. **비로그인 상태**에서 터미널로 직접 호출:
    `curl -k -X POST https://<주소>:10010/api/upload-image/ -F "image=@x.html;type=image/png"`
    → 성공 판정: **401 또는 403**. 지금은 200 + 저장 경로가 돌아온다.
@@ -296,31 +387,97 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
 3. 로그인 후 확장자만 바꾼 파일(`x.html` 을 `image/png` 로) 업로드 → 성공 판정: 400 "이미지 파일만 업로드할 수 있습니다"
 4. `가이드` 메뉴(MASTER 로그인) → 동영상 첨부 → 정상 재생
 
-### 7-3. 비인증 엔드포인트 (H-6 수정 후)
+### 7-3. 비인증 엔드포인트 (H-6)
 1. **비로그인**으로 `https://<주소>:10010/api/form-options/processes/` 직접 접속 → 성공 판정: 401/403
 2. **비로그인**으로 `/api/users/events/` 접속 → 성공 판정: 401/403 (지금은 `text/event-stream` 으로 연결이 유지된다)
 3. 로그인 후 `의뢰서 작성` 화면 진입 → **공정·제품·PROCESS ID 드롭다운에 값이 채워지는지** (여기가 깨지면 H-6 수정이 의뢰서 작성을 막은 것)
 4. MASTER 로그인 → `권한 관리` 화면을 열어둔 채 다른 창에서 사용자 역할 변경 → **목록이 새로고침 없이 갱신되는지**(SSE 정상 동작 확인)
 
-### 7-4. XSS (H-9 수정 후)
+### 7-4. XSS (H-9)
 1. 로그인 후 `VOC` → 새 글 작성 → 본문에 굵게/밑줄/줄바꿈 사용 → 저장 → 상세 열기 → **서식이 그대로 보이는지**(정제가 과해서 서식이 날아가면 안 된다)
 2. API 로 직접 `<img src=x onerror=alert(1)>` 를 넣어 VOC 를 생성 → 상세 화면에서 **알림창이 뜨지 않고 텍스트도 렌더되지 않는지**
 3. `가이드`·`공지`·의뢰서 `MAP 변경 사유` 각각 동일 확인
 
-### 7-5. 회귀 확인 (공통)
+### 7-5. 로그아웃 토큰 무효화 (M-12)
+1. 로그인 → 개발자도구 Application → Cookies 에서 `access_token` 값을 복사해 둔다
+2. 화면 우상단 **로그아웃**
+3. 같은 브라우저에서 복사한 값을 `access_token` 쿠키로 다시 심고 아무 화면이나 새로고침
+4. 성공 판정: 응답 본문에 `로그아웃된 토큰입니다` 가 보이고 화면이 뜨지 않는다
+5. 다시 정상 로그인 → **평소처럼 모든 화면이 동작해야 한다**(이게 안 되면 회귀)
+
+### 7-6. 호출 상한 (M-17)
+1. 평소처럼 결재 현황·의뢰서 작성·이력 조회를 **빠르게 오가며** 사용해 본다
+2. 성공 판정: 429(요청이 너무 많습니다)가 **보이지 않는다**
+3. 실패 신호: 정상 사용 중 429 가 뜬다 → `settings/base.py` 의 `DEFAULT_THROTTLE_RATES` 를 올린다
+
+### 7-7. 회귀 확인 (공통)
 - `manage.py test api` → **542건 전부 통과**(기준선과 동일해야 한다)
-- `cd frontend && npm test -- --watchAll=false --passWithNoTests`
-- `cd frontend && npx tsc --noEmit 2>&1 | grep -c "error TS"` → 0
+- `cd frontend && npm test -- --watchAll=false --passWithNoTests` → **294건 통과**
+- `cd frontend && npx tsc --noEmit 2>&1 | grep -c "error TS"` → **4**
+  (0 이 아니다. §8-2 의 기존 문제 4건이며 이번 변경과 무관하다. 5 이상이면 회귀다.)
 - 결재 로직을 건드렸다면 `python3 -m scripts.approval_cases.run_cases`(개발환경)
+- `nginx -t` 로 nginx 설정 문법 확인(이 세션에서는 실행하지 못했다 — §6-6)
 
 ---
 
-## 8. 사용자 결정 기록
+## 8. 작업 중 발견했지만 **고치지 않은** 것 (규칙 K)
+
+이번 작업 범위 밖에서 발견한 것들이다. **사용자 판단 없이 손대지 않았다.**
+
+### 8-1. 인증 실패가 401 이 아니라 403 으로 나간다 → SSO 자동 재로그인이 동작하지 않는다
+- 위치: `backend/api/authentication.py` `CookieJWTAuthentication` (`authenticate_header` 미구현)
+  / `frontend/src/api/client.ts:113-122`
+- 근거(실행): 로그아웃된 토큰으로 호출 시
+  `403 {"detail":"로그아웃된 토큰입니다. 다시 로그인해 주세요."}`. 비인증 호출도 전부 403 이다.
+  DRF 는 `authenticate_header()` 가 없는 인증 클래스에서는 401 을 **403 으로 낮춘다**
+  (`rest_framework.views.exception_handler`). 같은 저장소의 `ExternalApiKeyAuthentication` 은
+  이 사실을 알고 `authenticate_header` 를 구현해 401 을 낸다.
+- 영향: 프론트의 SSO 자동 재로그인은 `res.status === 401` 일 때만 동작한다(`redirectToSSO`).
+  403 이므로 **토큰이 만료되거나 로그아웃된 뒤에는 자동으로 ADFS 로 넘어가지 않고** 에러만 뜬다.
+  이번 수정 이전부터 있던 동작이며, M-12(로그아웃 무효화)로 마주칠 일이 늘어난다.
+- 고치는 법: `CookieJWTAuthentication` 에 `authenticate_header()` 를 추가하면 401 이 된다.
+  다만 **비인증 요청 전체가 403 → 401 로 바뀌므로** 프론트 동작이 함께 달라진다(자동 리다이렉트가
+  켜진다). 동작 변화가 커서 이번 범위에 넣지 않았다.
+
+### 8-2. 타입 에러 4건이 이전부터 존재한다
+- 위치: `PagedDetailView.tsx`, `Step4.tsx`, `RequestPage/index.tsx`(TS2802 `Set` 반복),
+  `GuidePage.tsx:217`(TS2345 `guide.search_placeholder` 키 없음)
+- 근거: 이번 변경을 `git stash` 로 되돌린 뒤 `tsc --noEmit` 을 돌려도 **동일하게 4건**이 나온다.
+- 영향: `CLAUDE.md` 규칙 C 의 "error 0" 기준과 어긋난다. `Set` 3건은 `tsconfig` 의
+  `target`/`downlevelIteration` 설정 문제이고, i18n 키 1건은 `guide.search_placeholder` 가
+  `ko.json`/`en.json` 에 없다는 뜻이라 **화면에 키 문자열이 그대로 보일 수 있다**(규칙 G 위반).
+- 이번 변경과 무관하므로 손대지 않았다.
+
+### 8-3. `refresh_token_view` 가 유효한 access_token 을 요구한다
+- 위치: `backend/api/auth_views.py` `@permission_classes([IsAuthenticated])`
+- 근거: 갱신 엔드포인트인데 인증(=살아 있는 access_token)을 요구한다. access_token 이 만료된
+  뒤에는 refresh_token 이 살아 있어도 이 API 를 호출할 수 없다.
+- 영향: 슬라이딩 윈도우 갱신이 의도대로 동작하지 않을 수 있다(access 12시간이라 평소에는
+  드러나지 않는다). 토큰 수명을 줄이려면 이것부터 고쳐야 한다 — 그래서 이번에 **수명은
+  건드리지 않았다.**
+
+---
+
+## 9. 사용자 결정 기록
 
 | 항목 | 결정 | 일자 |
 |---|---|---|
-| 이번 작업 범위 | **보고서만 작성, 코드는 수정하지 않는다** | 2026-09-16 |
-| C-5 시드 계정 | 운영 compose 에서만 `create_users` 제거. 개발(`docker-compose.dev.yml`)은 유지 | 2026-09-16 |
+| 작업 범위(최초) | 보고서만 작성 | 2026-09-16 |
+| 작업 범위(변경) | **"코드 수정까지 진행하자" → 19건 전부 수정** | 2026-09-16 |
+| C-5 시드 계정 | 운영 compose 에서만 `create_users` 제거. 개발(`docker-compose.dev.yml`)은 유지. 커맨드 자체 가드는 넣지 않음 | 2026-09-16 |
 | H-6 비인증 API | form-options · SSE 등 **전부 인증 필수로 전환** | 2026-09-16 |
 
-> 아래 두 결정은 방향만 확정된 상태이며 **아직 코드에 반영되지 않았다.** 착수 지시가 있을 때 이 문서의 권장 조치대로 진행한다.
+---
+
+## 10. 다음에 할 일 (남은 과제)
+
+수정하지 않았거나 부분만 한 것들이다. 우선순위 순.
+
+1. **운영 `.env` 확인** — `DJANGO_SECRET_KEY`·`SERVICE_JWT_SECRET_KEY` 가 비어 있으면 이제
+   컨테이너가 기동하지 않는다. `OIDC_OP_ISSUER` 도 채우면 iss 검증이 켜진다.
+2. **운영 DB 시드 계정 정리** — `master` 등 22개 계정의 삭제·비활성화(규칙 J: 사용자 확인 필요).
+3. **§8-1 (401/403)** — 프론트 자동 재로그인과 직결된다. 방향을 정해 주면 바로 반영한다.
+4. **메일 본문 HTML 정제(H-9 2번)** — `mailer.py` 에서 사용자 HTML 사용처 전수 확인.
+5. **nonce 를 서버 세션으로, `state` 실제 검증(C-3 2번)** — 로그인 흐름 재설계가 필요하다.
+6. **JWT jti 회전·블랙리스트(M-11)** — 지금은 로그아웃 시각 기준 일괄 무효화까지만 되어 있다.
+7. **§8-2 타입 에러 4건** — 특히 `guide.search_placeholder` i18n 키 누락(규칙 G).
