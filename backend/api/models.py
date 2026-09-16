@@ -161,6 +161,13 @@ class RequestDocument(models.Model):
     # R을 만들지 않고 바로 3구역을 생성한 뒤 소진(None)한다. 평소엔 항상 null.
     r_skip_round = models.PositiveIntegerField(null=True, blank=True, verbose_name='R 생략 회차')
 
+    # J-layer/O-layer 자동 채움 값이 마스터 DB(PhotoStepS*)와 달라졌는지 여부 — `layer_drift.py`가
+    # 스케줄러 동기화(sync_rtdb_options, 10분 주기) 직후 결재 진행중 문서 전체를 다시 계산해 갱신한다.
+    # 재상신 시(submit/resubmit/requester_resubmit/peer_submit)에는 무조건 초기화된다(docs/REQUEST.md 참고).
+    layer_drift_detected = models.BooleanField(default=False, verbose_name='레이어 정보 변경 감지 여부')
+    layer_drift_detail = models.TextField(blank=True, verbose_name='레이어 정보 변경 상세(JSON)')
+    layer_drift_checked_at = models.DateTimeField(null=True, blank=True, verbose_name='레이어 정보 변경 감지 확인 시각')
+
     class Meta:
         verbose_name = '의뢰서'
         verbose_name_plural = '의뢰서 목록'
