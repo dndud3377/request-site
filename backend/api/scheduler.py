@@ -17,6 +17,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from .models import PhotoStepChangeLog
+from . import layer_drift
 from .utils import (
     ensure_dcq_session,
     get_django_engine,
@@ -551,6 +552,14 @@ def sync_rtdb_options():
                 engine.dispose()
 
         _send_sync_failure_alert('enqueue_rtdb_sync_failed', failures)
+
+    # 스텝(job-file-layer/ovl-layer) 동기화가 끝난 직후, 결재 진행중 문서의 J/O-layer '변경 감지'
+    # 배지를 다시 계산한다(docs/REQUEST.md "레이어 정보 변경 감지" 참고). 이 재계산이 실패해도
+    # 위 RTDB 동기화 자체는 이미 끝난 뒤이므로 별도로 감싸 로그만 남긴다.
+    try:
+        layer_drift.recompute_all_in_progress()
+    except Exception as e:
+        logger.error(_("[scheduler] 레이어 정보 변경 감지 재계산 실패: {e}").format(e=e), exc_info=True)
 
 
 def sync_form_options():
