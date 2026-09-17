@@ -2716,10 +2716,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not step:
             return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        layer_drift.reset_document_drift(document)
         comment = request.data.get('comment', '')
         tagged = f'[수정 후 상신] {comment}'.strip()
         all_done = self._advance_after_pl(document, step, tagged)
+        # _advance_after_pl 성공 후에만 배지를 초기화한다 — 내부 atomic 블록에서 예외가 나면
+        # 여기까지 오지 않으므로 "배지만 초기화되고 결재는 실패"하는 상태가 생기지 않는다.
+        layer_drift.reset_document_drift(document)
         msg = ('수정 후 상신되었습니다. 전원 합의되어 R 단계로 진행합니다.' if all_done
                else '수정 후 상신되었습니다. 다른 지정 PL의 합의를 기다립니다.')
         return Response({'message': msg, 'status': 'under_review'})
