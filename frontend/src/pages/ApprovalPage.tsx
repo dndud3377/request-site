@@ -11,7 +11,7 @@ import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '.
 import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { MarkDot, MarkCategorySettingsModal } from '../components/DocumentMark';
-import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet, LayerDriftResponse } from '../types';
+import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet, LayerDriftResponse, LayerDriftGroup, LayerDriftStepRow } from '../types';
 import { formatDate, formatTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
 import FilterManageModal from './RequestPage/components/FilterManageModal';
@@ -21,6 +21,7 @@ import {
   getDocTableRows, getFinalCompletionDate, getCurrentRound, getLastRejectionInfo,
   hasActiveStageStep, getStagePendingEnteredAt, isMyDocument,
   getDocDetailFields, getMapPurposeKey, getDocSubmittedDate, MAP_PURPOSE_NA,
+  LAYER_DRIFT_FILTER_OPTION, isLayerDriftVisible,
 } from '../utils/approvalTable';
 import { OPTION_LINE, OPTION_REQUEST_PURPOSE, MAP_TYPE_CLONE, MAP_TYPE_EXISTING, MAP_TYPE_DELETE_REQ } from './RequestPage/constants';
 import { TOUR_APPROVAL_DOCS, TOUR_APPROVAL_MY_IDS, TOUR_APPROVAL_DETAIL_DOC, TOUR_APPROVAL_ASSIGN_DOC, TOUR_ASSIGN_MEMBERS, TOUR_REVIEW_ITEM_CANDIDATES, TOUR_PAUSE_REASON } from './approvalTourSeed';
@@ -790,7 +791,11 @@ export default function ApprovalPage(): React.ReactElement {
     return docs.filter((d) => {
       const detail = getDocDetailFields(d);
       if (lineFilter.size > 0 && !lineFilter.has(detail.line)) return false;
-      if (purposeFilter.size > 0 && !purposeFilter.has(detail.purpose)) return false;
+      if (purposeFilter.size > 0) {
+        const matchesPurpose = purposeFilter.has(detail.purpose);
+        const matchesDrift = purposeFilter.has(LAYER_DRIFT_FILTER_OPTION) && isLayerDriftVisible(d);
+        if (!matchesPurpose && !matchesDrift) return false;
+      }
       if (mapFilter.size > 0 && !mapFilter.has(getMapPurposeKey(detail))) return false;
       const submitted = getDocSubmittedDate(d).slice(0, 10);
       if (dateFrom && (!submitted || submitted < dateFrom)) return false;
@@ -1486,11 +1491,6 @@ export default function ApprovalPage(): React.ReactElement {
   const [layerDriftData, setLayerDriftData] = useState<LayerDriftResponse | null>(null);
   const [layerDriftLoading, setLayerDriftLoading] = useState(false);
 
-  // 백엔드 layer_drift.IN_PROGRESS_STATUSES 와 같아야 한다 — 완료(approved)/반려(rejected) 문서는
-  // 재계산 대상에서 빠지므로, 그 상태로 넘어가기 직전에 감지된 값이 남아 있어도 뱃지를 띄우지 않는다.
-  const isLayerDriftVisible = (doc: RequestDocument): boolean =>
-    !!doc.layer_drift_detected && ['submitted', 'under_review', 'pause'].includes(doc.status);
-
   const openLayerDrift = async (doc: RequestDocument) => {
     setLayerDriftDoc(doc);
     setLayerDriftData(null);
@@ -1506,43 +1506,55 @@ export default function ApprovalPage(): React.ReactElement {
     }
   };
 
-  const layerDriftTypeLabel = (type: LayerDriftResponse['jayer_diffs'][number]['type']): string => (
-    type === 'changed' ? t('approval.layer_drift_type_changed')
-      : type === 'removed' ? t('approval.layer_drift_type_removed')
-        : t('approval.layer_drift_type_added')
-  );
-
-  const layerDriftValueLabel = (row: { sd: string; pp: string; layerid: string } | null): string => (
-    row ? `${row.sd} / ${row.pp} / ${row.layerid || '-'}` : '-'
-  );
-
-  const layerDriftTable = (rows: LayerDriftResponse['jayer_diffs'], title: string): React.ReactElement | null => {
+  // 변경 현황(ChangeStatusPage) 상세보기와 동일한 구성 — 삭제/추가 각각 배지+표(STEP/내용/Recipe ID/영역/레이어).
+  const driftDetailTable = (rows: LayerDriftStepRow[], kind: 'added' | 'removed'): React.ReactElement | null => {
     if (rows.length === 0) return null;
     return (
       <div style={{ marginBottom: 20 }}>
-        <div style={{ fontWeight: 800, marginBottom: 10 }}>{title}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, marginBottom: 10 }}>
+          <span className={`badge ${kind === 'added' ? 'badge-approved' : 'badge-rejected'}`}>
+            {t(kind === 'added' ? 'change_status.added_label' : 'change_status.removed_label')}
+          </span>
+          {t('change_status.count_unit', { count: rows.length })}
+        </div>
         <div className="table-wrapper">
           <table className="table table-compact change-status-detail-table">
             <thead>
               <tr>
-                <th>{t('approval.layer_drift_col_step')}</th>
-                <th>{t('approval.layer_drift_col_type')}</th>
-                <th>{t('approval.layer_drift_col_saved')}</th>
-                <th>{t('approval.layer_drift_col_current')}</th>
+                <th>{t('change_status.modal_col_step')}</th>
+                <th>{t('change_status.modal_col_descript')}</th>
+                <th>{t('change_status.modal_col_recipe')}</th>
+                <th>{t('change_status.modal_col_area')}</th>
+                <th>{t('change_status.modal_col_layer')}</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row, idx) => (
                 <tr key={idx}>
-                  <td>{row.stepseq}</td>
-                  <td>{layerDriftTypeLabel(row.type)}</td>
-                  <td><span className="cell-clamp-2">{layerDriftValueLabel(row.saved)}</span></td>
-                  <td><span className="cell-clamp-2">{layerDriftValueLabel(row.current)}</span></td>
+                  <td><span className="cell-clamp-2">{row.stepseq}</span></td>
+                  <td><span className="cell-clamp-2">{row.descript}</span></td>
+                  <td><span className="cell-clamp-2">{row.recipeid}</span></td>
+                  <td><span className="cell-clamp-2">{row.areaname || '-'}</span></td>
+                  <td><span className="cell-clamp-2">{row.layerid || '-'}</span></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      </div>
+    );
+  };
+
+  const isDriftGroupEmpty = (group: LayerDriftGroup | undefined): boolean =>
+    !group || (group.removed.length === 0 && group.added.length === 0);
+
+  const driftLayerSection = (title: string, group: LayerDriftGroup | undefined): React.ReactElement | null => {
+    if (isDriftGroupEmpty(group)) return null;
+    return (
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontWeight: 800, fontSize: '0.95rem', marginBottom: 12 }}>{title}</div>
+        {driftDetailTable(group!.removed, 'removed')}
+        {driftDetailTable(group!.added, 'added')}
       </div>
     );
   };
@@ -1876,7 +1888,7 @@ export default function ApprovalPage(): React.ReactElement {
           >
             {renderFilterSummary(t('approval.col_purpose'), purposeFilter)}
           </button>
-          {openFilterDropdown === 'purpose' && renderCheckboxPopover(OPTION_REQUEST_PURPOSE, purposeFilter, setPurposeFilter)}
+          {openFilterDropdown === 'purpose' && renderCheckboxPopover([...OPTION_REQUEST_PURPOSE, LAYER_DRIFT_FILTER_OPTION], purposeFilter, setPurposeFilter)}
         </div>
 
         <div className="column-filter-anchor">
@@ -2080,6 +2092,17 @@ export default function ApprovalPage(): React.ReactElement {
                         {detail.otherPurpose.map((o) => (
                           <span key={o} className="purpose-cell-sub">{o}</span>
                         ))}
+                        {isLayerDriftVisible(doc) && (
+                          <button
+                            type="button"
+                            className="badge badge-layer-drift"
+                            style={{ cursor: 'pointer', alignSelf: 'flex-start' }}
+                            title={t('approval.layer_drift_badge_tooltip')}
+                            onClick={() => openLayerDrift(doc)}
+                          >
+                            {t('approval.layer_drift_badge')}
+                          </button>
+                        )}
                       </div>
                     </td>
                     <td>
@@ -2122,17 +2145,6 @@ export default function ApprovalPage(): React.ReactElement {
                         )}
                       </div>
                       {detail.adiExtraCount > 0 && <span className="adi-extra-badge">+{detail.adiExtraCount}</span>}
-                      {isLayerDriftVisible(doc) && (
-                        <button
-                          type="button"
-                          className="badge badge-layer-drift"
-                          style={{ marginLeft: 6, cursor: 'pointer' }}
-                          title={t('approval.layer_drift_badge_tooltip')}
-                          onClick={() => openLayerDrift(doc)}
-                        >
-                          {t('approval.layer_drift_badge')}
-                        </button>
-                      )}
                       {lastRejection && (
                         <div style={{ marginTop: 4 }}>
                           <span className="rejection-history-chip">
@@ -2478,10 +2490,10 @@ export default function ApprovalPage(): React.ReactElement {
                   })}
                 </p>
               )}
-              {layerDriftTable(layerDriftData.jayer_diffs, t('approval.layer_drift_jayer_title'))}
-              {layerDriftTable(layerDriftData.oayer_diffs, t('approval.layer_drift_oayer_title'))}
-              {layerDriftData.jayer_diffs.length === 0 && layerDriftData.oayer_diffs.length === 0 && (
-                <p>{t('approval.layer_drift_empty')}</p>
+              {driftLayerSection(t('approval.layer_drift_jayer_title'), layerDriftData.jayer)}
+              {driftLayerSection(t('approval.layer_drift_oayer_title'), layerDriftData.oayer)}
+              {isDriftGroupEmpty(layerDriftData.jayer) && isDriftGroupEmpty(layerDriftData.oayer) && (
+                <p>{t('change_status.no_data')}</p>
               )}
             </>
           )}
