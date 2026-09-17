@@ -8,7 +8,8 @@ import Modal, { ConfirmModal } from '../components/Modal';
 import RichTextEditor from '../components/RichTextEditor';
 import GuideTourModal from '../components/GuideTourModal';
 import AnnualDesignRuleChart from '../components/AnnualDesignRuleChart';
-import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseItem } from '../types';
+import PagedDetailView from '../components/PagedDetailView';
+import { RequestDocument, AdminNotice, NoticeTemplate, ReleaseCategory, ReleaseItem, UserRole } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { shouldShowNotice, markNoticeSeen } from '../utils/noticeStorage';
 import { formatDate, formatDateTime } from '../utils/date';
@@ -499,6 +500,22 @@ export default function HomePage(): React.ReactElement {
   const [showTour, setShowTour] = useState(false);
   const [showPermissionAlert, setShowPermissionAlert] = useState(false);
 
+  // 의뢰 상세 모달(읽기 전용) — HistoryPage 와 같은 방식: 결재 액션 없이 상세 내용만 보여준다.
+  const [selectedDoc, setSelectedDoc] = useState<RequestDocument | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [detailPageIdx, setDetailPageIdx] = useState(0);
+
+  const openDetail = useCallback(async (doc: RequestDocument) => {
+    try {
+      const detail = await documentsAPI.get(doc.id);
+      setSelectedDoc(detail.data);
+    } catch {
+      setSelectedDoc(doc);
+    }
+    setDetailPageIdx(0);
+    setDetailModalOpen(true);
+  }, []);
+
   const goOrAlert = useCallback((path: string) => {
     if (hasNoRole) {
       setShowPermissionAlert(true);
@@ -565,6 +582,13 @@ export default function HomePage(): React.ReactElement {
     return filtered.slice(0, MY_REQUESTS_LIMIT);
   }, [myDocs, homeFilter, currentUser]);
 
+  // 필터 탭 옆에 보여줄 건수 — 결재현황 필터 탭과 같은 표기 방식(0건이면 숫자를 붙이지 않는다).
+  const homeFilterCounts: Record<HomeRequestsFilter, number> = useMemo(() => ({
+    all: myDocs.length,
+    submitted: myDocs.filter((d) => isSubmittedByMe(d, currentUser)).length,
+    approval: myDocs.filter((d) => isApprovalTargetForMe(d, currentUser)).length,
+  }), [myDocs, currentUser]);
+
   const handleCloseModal = useCallback((hideToday: boolean) => {
     const maxUpdatedAt = allNotices.reduce((max, n) => (n.updated_at > max ? n.updated_at : max), '');
     markNoticeSeen(maxUpdatedAt, hideToday);
@@ -608,6 +632,28 @@ export default function HomePage(): React.ReactElement {
           onClose={handleCloseModal}
           onRefresh={handleRefresh}
         />
+      )}
+
+      {/* 나의 의뢰 현황 상세 모달(읽기 전용) — HistoryPage 와 같은 방식, 결재 액션 없이 상세 내용만 */}
+      {selectedDoc && (
+        <Modal
+          isOpen={detailModalOpen}
+          onClose={() => setDetailModalOpen(false)}
+          title={selectedDoc.title}
+          size="lg"
+          footer={
+            <button className="btn btn-secondary" onClick={() => setDetailModalOpen(false)}>
+              {t('common.close')}
+            </button>
+          }
+        >
+          <PagedDetailView
+            doc={selectedDoc}
+            role={currentUser.role as UserRole}
+            pageIdx={detailPageIdx}
+            setPageIdx={setDetailPageIdx}
+          />
+        </Modal>
       )}
 
       {/* Hero */}
@@ -670,7 +716,9 @@ export default function HomePage(): React.ReactElement {
                       className={`filter-tab ${homeFilter === key ? 'active' : ''}`}
                       onClick={() => setHomeFilter(key)}
                     >
-                      {t(`home.filter_${key}`)}
+                      {homeFilterCounts[key] > 0
+                        ? `${t(`home.filter_${key}`)}(${homeFilterCounts[key]})`
+                        : t(`home.filter_${key}`)}
                     </button>
                   ))}
                 </div>
@@ -742,7 +790,7 @@ export default function HomePage(): React.ReactElement {
                         <td>
                           <button
                             className="product-combo-link"
-                            onClick={() => goOrAlert(`/approval?id=${doc.id}`)}
+                            onClick={() => openDetail(doc)}
                           >
                             {comboText}
                           </button>
