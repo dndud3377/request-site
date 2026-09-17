@@ -113,8 +113,13 @@ def _diff_rows(saved_rows, live_rows):
     return {'removed': removed, 'added': added}
 
 
-def compute_document_layer_drift(document):
-    """문서 하나의 J-layer/O-layer diff 를 계산한다. line/process_id 가 없으면 빈 결과."""
+def compute_document_layer_drift(document, job_file_rows=None, ovl_rows=None):
+    """문서 하나의 J-layer/O-layer diff 를 계산한다. line/process_id 가 없으면 빈 결과.
+
+    job_file_rows/ovl_rows 를 넘기면(배치 조회 결과) DB 를 다시 조회하지 않고 그대로 쓴다
+    — recompute_all_in_progress 의 라인당 배치 조회 결과를 문서별로 재사용하기 위함.
+    None 이면(단일 문서 호출부는 그대로) 기존처럼 문서 하나 기준으로 직접 조회한다.
+    """
     data = document.get_detail()
     detail = data.get('detail', {}) or {}
     line = detail.get('line') or ''
@@ -126,15 +131,26 @@ def compute_document_layer_drift(document):
     jayer_saved = [row for row in (data.get('jayerRows') or []) if row.get('loaded')]
     oayer_saved = [row for row in (data.get('oayerRows') or []) if row.get('loaded')]
 
+    if job_file_rows is None:
+        job_file_rows = get_job_file_layer_rows(line, process)
+    if ovl_rows is None:
+        ovl_rows = get_ovl_layer_rows(line, process)
+
     return {
-        'jayer': _diff_rows(jayer_saved, get_job_file_layer_rows(line, process)),
-        'oayer': _diff_rows(oayer_saved, get_ovl_layer_rows(line, process)),
+        'jayer': _diff_rows(jayer_saved, job_file_rows),
+        'oayer': _diff_rows(oayer_saved, ovl_rows),
     }
 
 
-def recompute_document(document):
-    """문서 하나의 drift 를 다시 계산해 캐시 필드에 저장한다. 감지 여부(bool)를 반환."""
-    diff = compute_document_layer_drift(document)
+def recompute_document(document, job_file_rows=None, ovl_rows=None):
+    """문서 하나의 drift 를 다시 계산해 캐시 필드를 채운다(저장은 호출부 책임). 감지 여부(bool) 반환.
+
+    job_file_rows/ovl_rows 는 compute_document_layer_drift 와 동일 — 배치 조회 결과 재사용용.
+    단일 문서 호출부(예: 온디맨드 API)는 그대로 두 인자 없이 호출하면 되고, 이 함수가 바로
+    save 까지 한다(하위 호환). recompute_all_in_progress 는 저장을 bulk_update 로 묶으므로
+    이 함수를 직접 쓰지 않고 compute_document_layer_drift 를 쓴다.
+    """
+    diff = compute_document_layer_drift(document, job_file_rows=job_file_rows, ovl_rows=ovl_rows)
     detected = any(diff[layer][kind] for layer in ('jayer', 'oayer') for kind in ('removed', 'added'))
     document.layer_drift_detected = detected
     document.layer_drift_detail = json.dumps(diff, ensure_ascii=False) if detected else ''
@@ -143,18 +159,78 @@ def recompute_document(document):
     return detected
 
 
+def _batch_fetch_layer_rows(lines_and_processes):
+    """(line, process) 조합 집합을 받아 라인당 1쿼리(processid__in)로 job_file/ovl 행을 미리 조회한다.
+
+    반환: (job_file_cache, ovl_cache) — 각각 {(line, process): [row, ...]} 딕셔너리.
+    문서 수(N)에 비례하지 않고 실제 등장하는 라인 수(최대 4개)에만 비례한 쿼리를 낸다.
+    """
+    lines = {line for line, _process in lines_and_processes}
+
+    def _build_cache(model_map, eqptype):
+        cache = {}
+        for line in lines:
+            model = model_map.get(line)
+            if not model:
+                continue
+            processes = {process for l, process in lines_and_processes if l == line}
+            if not processes:
+                continue
+            queryset = model.objects.filter(
+                eqptype=eqptype, processid__in=processes,
+            ).order_by('processid', 'stepseq')
+            for item in queryset:
+                cache.setdefault((line, item.processid), []).append(_row_dict(item, line, item.processid))
+        return cache
+
+    job_file_cache = _build_cache(JOB_FILE_MODEL_MAP, 'PMAINF')
+    ovl_cache = _build_cache(OVL_MODEL_MAP, 'POVLAY')
+    return job_file_cache, ovl_cache
+
+
 def recompute_all_in_progress():
     """결재 진행중 문서 전체를 다시 계산한다 — 스케줄러(sync_rtdb_options) 주기마다 호출.
 
     이미 감지된 문서도 스킵하지 않고 매번 다시 계산해, 배지가 떠 있는 동안에도 최신 diff 로
-    갱신되도록 한다. 문서 하나가 실패해도 나머지 문서 계산에 영향 주지 않는다.
+    갱신되도록 한다. 문서 하나가 실패해도 나머지 문서 계산·저장에 영향 주지 않는다(실패한
+    문서만 bulk_update 대상에서 빠진다).
+
+    N개 문서 개별 조회(2N 쿼리) + 개별 save(N 쿼리) 대신, 라인당 배치 조회(최대 8쿼리) +
+    bulk_update(청크당 1쿼리)로 묶어 문서 수에 비례하던 쿼리 수를 줄인다.
     """
-    documents = RequestDocument.objects.filter(status__in=IN_PROGRESS_STATUSES)
+    documents = list(RequestDocument.objects.filter(status__in=IN_PROGRESS_STATUSES))
+
+    doc_lines_processes = []
+    for document in documents:
+        detail = (document.get_detail().get('detail') or {})
+        line = detail.get('line') or ''
+        process = detail.get('process_id') or ''
+        if line and process:
+            doc_lines_processes.append((line, process))
+
+    job_file_cache, ovl_cache = _batch_fetch_layer_rows(doc_lines_processes)
+
+    to_update = []
     for document in documents:
         try:
-            recompute_document(document)
+            detail = (document.get_detail().get('detail') or {})
+            line = detail.get('line') or ''
+            process = detail.get('process_id') or ''
+            job_rows = job_file_cache.get((line, process), [])
+            ovl_rows = ovl_cache.get((line, process), [])
+            diff = compute_document_layer_drift(document, job_file_rows=job_rows, ovl_rows=ovl_rows)
+            detected = any(diff[layer][kind] for layer in ('jayer', 'oayer') for kind in ('removed', 'added'))
+            document.layer_drift_detected = detected
+            document.layer_drift_detail = json.dumps(diff, ensure_ascii=False) if detected else ''
+            document.layer_drift_checked_at = timezone.now()
+            to_update.append(document)
         except Exception as e:
             logger.error(f"[layer_drift] 문서 {document.id} 변경 감지 계산 실패: {e}", exc_info=True)
+
+    if to_update:
+        RequestDocument.objects.bulk_update(
+            to_update, ['layer_drift_detected', 'layer_drift_detail', 'layer_drift_checked_at'],
+        )
 
 
 def reset_document_drift(document):

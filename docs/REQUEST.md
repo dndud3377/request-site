@@ -3639,6 +3639,48 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   5. [이력조회(완료 문서) 화면에서는 애초에 뱃지 콜백을 넘기지 않으므로, `layer_drift_detected`가
      남아 있는 문서를 열어도 뱃지가 뜨지 않는지 확인.]
 
+### 버그 수정·성능 개선 (2026-09-17 — peer-submit 배지 초기화 순서 + recompute_all_in_progress 배치 쿼리)
+
+- **버그 수정 — peer-submit 배지 초기화가 결재 진행 실패와 분리되지 않던 문제**:
+  - **증상(가능성)**: `peer-submit`(지정 PL 수정 후 상신)은 `layer_drift.reset_document_drift()`를
+    `_advance_after_pl()` 호출 **앞에서** 실행했다. `submit`/`resubmit`/`requester-resubmit`은 이
+    reset 호출이 각 액션의 `transaction.atomic` 블록 **안에** 있어 상태 변경과 한 트랜잭션으로 묶이는
+    반면, `peer-submit`엔 메서드 전체를 감싸는 atomic이 없다. 따라서 `_advance_after_pl()` 내부
+    atomic 블록(PL 단계 승인·다음 단계 생성)에서 예외가 나면 그 블록은 롤백되지만, 이미 커밋된
+    reset만 남아 "배지는 초기화됐는데 결재 진행은 실패한" 상태가 될 수 있었다.
+  - **수정**: `backend/api/views.py` `peer_submit` — `reset_document_drift()` 호출을
+    `_advance_after_pl()` **성공 이후**로 옮겼다(`_advance_after_pl`이 예외를 던지면 reset 자체가
+    실행되지 않는다). 다른 3개 액션과 마찬가지로 "상태 변경이 실제로 성공했을 때만 배지를
+    초기화"하는 것으로 통일.
+  - **영향 파일**: `backend/api/views.py`(1곳, 호출 순서 이동).
+- **성능 개선 — recompute_all_in_progress 쿼리 배치화**:
+  - **이전**: 결재 진행중 문서 N건에 대해 문서마다 `get_job_file_layer_rows`/`get_ovl_layer_rows`를
+    개별 호출(2N 쿼리) + 문서마다 개별 `save()`(N 쿼리) — 총 `3N+1` 쿼리.
+  - **수정**(`backend/api/layer_drift.py`):
+    - `_batch_fetch_layer_rows()` 신규 — 대상 문서 전체의 `(line, process_id)` 조합을 먼저 모아
+      **라인당 1쿼리**(`processid__in=[...]`)로 배치 조회하고, Python에서 `processid`별로 그룹핑한다.
+      쿼리 수가 문서 수가 아니라 실제 등장하는 라인 수(최대 4개 × job_file/ovl 2종)에만 비례한다.
+    - `compute_document_layer_drift`/`recompute_document`에 선택적 인자
+      `job_file_rows`/`ovl_rows` 추가 — 배치 조회 결과를 넘기면 재조회하지 않는다. 인자를 생략하면
+      기존과 동일하게 개별 조회하므로 다른 호출부(온디맨드 단일 문서 계산 등)는 시그니처만
+      호환되고 동작은 바뀌지 않는다.
+    - `recompute_all_in_progress()`는 문서별 계산을 메모리에서 끝낸 뒤 `RequestDocument.bulk_update()`
+      한 번으로 저장한다. 문서 하나의 계산이 예외를 던져도 그 문서만 `bulk_update` 대상에서
+      빠지고(기존과 동일하게 로그만 남기고 스킵) 나머지 문서 계산·저장에는 영향이 없다 — 격리
+      동작은 그대로 유지.
+  - **영향 파일**: `backend/api/layer_drift.py`(주 변경).
+- **검증**: CLAUDE.md §1-1 절차(sqlite, 원격 세션)로 `manage.py test api` — **542건 전부 통과**
+  (회귀 없음). 배치 최적화는 프로젝트 밖 재현 테스트(`$SP/stubs/verify_layer_drift_batch.py`)로
+  ① 같은 `(line, process)`를 공유하는 문서 2건 + 다른 조합 문서 1건 + line/process 없는 문서 1건이
+  기존 개별 조회 방식과 동일한 diff 결과를 내는지, ② 진행중 아닌 문서는 갱신되지 않는지,
+  ③ 계산 도중 예외가 나는 문서가 있어도 나머지 문서는 정상 갱신되는지, ④ 쿼리 수가 문서 수에
+  비례해 늘지 않는지(진행중 문서 5건 처리에 **6쿼리** — 기존 방식이면 최소 16쿼리)를 실행 출력으로
+  확인 — 전부 통과. 결재 경로 판정 로직은 건드리지 않아 `scripts/approval_cases/run_cases`는
+  대상이 아니다.
+- **잠재 주의사항**: `recompute_all_in_progress`가 이제 `bulk_update`를 쓰므로, `layer_drift_*` 세
+  필드 외에 이 함수가 다른 필드까지 갱신하도록 확장할 경우 `update_fields`/`bulk_update` 필드 목록에
+  빠뜨리지 않도록 주의해야 한다(현재는 세 필드만 다뤄 해당 없음).
+
 ### 기능 개선 (2026-09-17 — '변경 감지' 뱃지 위치를 목적 칸으로 + 목적 필터 옵션화 + 모달을 변경 현황과 동일하게)
 
 - **요청**: ① "변경 감지" 뱃지를 제품/조합 칸이 아니라 **목적(요청 목적) 칸**에 보이도록 이동하고,
