@@ -695,6 +695,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         """
         import json
         document = self.get_object()
+        empty_group = {'removed': [], 'added': []}
         try:
             detail = json.loads(document.layer_drift_detail) if document.layer_drift_detail else {}
         except (json.JSONDecodeError, TypeError):
@@ -702,8 +703,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return Response({
             'detected': document.layer_drift_detected,
             'checked_at': document.layer_drift_checked_at,
-            'jayer_diffs': detail.get('jayer', []),
-            'oayer_diffs': detail.get('oayer', []),
+            'jayer': detail.get('jayer') or empty_group,
+            'oayer': detail.get('oayer') or empty_group,
         })
 
     @action(detail=True, methods=['post'], url_path='requester-resubmit')
