@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { documentsAPI, noticesAPI } from '../api/client';
@@ -14,11 +14,14 @@ import { shouldShowNotice, markNoticeSeen } from '../utils/noticeStorage';
 import { formatDate, formatDateTime } from '../utils/date';
 import {
   getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument, submittedSortKey,
-  getDocDetailFields, getDocSubmittedDate,
+  getDocDetailFields, getDocSubmittedDate, isSubmittedByMe, isApprovalTargetForMe,
 } from '../utils/approvalTable';
 
 // 홈 '나의 의뢰 현황' 에 보여줄 최대 건수 (그 이상은 '전체 보기' 로 결재현황 MY 탭에서 본다)
 const MY_REQUESTS_LIMIT = 5;
+
+// 나의 의뢰 현황 필터 — 전체 / 상신함(내가 작성) / 결재함(내가 의뢰자 아닌 담당자로 들어간 문서)
+type HomeRequestsFilter = 'all' | 'submitted' | 'approval';
 
 const CATEGORY_ICON: Record<ReleaseCategory, string> = {
   new: '🆕',
@@ -489,7 +492,8 @@ export default function HomePage(): React.ReactElement {
   const isMaster = currentUser.role === 'MASTER';
   const hasNoRole = currentUser.role === 'NONE';
 
-  const [recent, setRecent] = useState<RequestDocument[]>([]);
+  const [myDocs, setMyDocs] = useState<RequestDocument[]>([]);
+  const [homeFilter, setHomeFilter] = useState<HomeRequestsFilter>('all');
   const [allNotices, setAllNotices] = useState<AdminNotice[]>([]);
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const [showTour, setShowTour] = useState(false);
@@ -535,20 +539,31 @@ export default function HomePage(): React.ReactElement {
   }, []);
 
   // 나의 의뢰 현황 로드 — 결재현황 MY 탭과 같은 판정(isMyDocument)을 쓴다.
-  // 완료(approved)건은 빼고, 결재현황 기본 정렬과 같은 '상신 오래된 순'으로 최대 5건.
+  // 완료(approved)건은 빼고, 결재현황 기본 정렬과 같은 '상신 오래된 순'으로 정렬한 전체 목록을 담아 두고,
+  // 화면에 보여줄 최대 5건은 선택된 필터(전체/상신함/결재함)에 맞춰 아래 recent 에서 자른다.
   useEffect(() => {
-    if (hasNoRole) { setRecent([]); return; }
+    if (hasNoRole) { setMyDocs([]); return; }
     documentsAPI.list({}).then((r) => {
       const data = r.data;
       const all: RequestDocument[] = Array.isArray(data) ? data : (data as any).results ?? [];
-      setRecent(
+      setMyDocs(
         all
           .filter((d) => d.status !== 'approved' && isMyDocument(d, currentUser))
           .sort((a, b) => submittedSortKey(a).localeCompare(submittedSortKey(b)))
-          .slice(0, MY_REQUESTS_LIMIT)
       );
     }).catch(() => {});
   }, [hasNoRole, currentUser]);
+
+  // 선택된 필터로 myDocs 를 좁혀 최대 5건만 보여준다.
+  // MASTER 는 '전체'에서 시스템 전체 문서를 그대로 유지하고, 상신함/결재함만 본인 기준으로 좁힌다.
+  const recent = useMemo(() => {
+    const filtered = homeFilter === 'all'
+      ? myDocs
+      : homeFilter === 'submitted'
+        ? myDocs.filter((d) => isSubmittedByMe(d, currentUser))
+        : myDocs.filter((d) => isApprovalTargetForMe(d, currentUser));
+    return filtered.slice(0, MY_REQUESTS_LIMIT);
+  }, [myDocs, homeFilter, currentUser]);
 
   const handleCloseModal = useCallback((hideToday: boolean) => {
     const maxUpdatedAt = allNotices.reduce((max, n) => (n.updated_at > max ? n.updated_at : max), '');
@@ -646,13 +661,27 @@ export default function HomePage(): React.ReactElement {
               }}
             >
               <h2 className="section-title">{t('home.my_requests_title')}</h2>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => goOrAlert('/approval?filter=my')}
-              >
-                {t('home.view_all')} →
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div className="filter-tabs">
+                  {(['all', 'submitted', 'approval'] as HomeRequestsFilter[]).map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`filter-tab ${homeFilter === key ? 'active' : ''}`}
+                      onClick={() => setHomeFilter(key)}
+                    >
+                      {t(`home.filter_${key}`)}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => goOrAlert('/approval?filter=my')}
+                >
+                  {t('home.view_all')} →
+                </button>
+              </div>
             </div>
             {recent.length === 0 ? (
               <div className="empty-state">
@@ -713,7 +742,7 @@ export default function HomePage(): React.ReactElement {
                         <td>
                           <button
                             className="product-combo-link"
-                            onClick={() => goOrAlert('/approval')}
+                            onClick={() => goOrAlert(`/approval?id=${doc.id}`)}
                           >
                             {comboText}
                           </button>

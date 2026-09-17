@@ -623,3 +623,22 @@ export const isMyDocument = (doc: RequestDocument, user: MyFilterUser): boolean 
 /** 상신 오래된 순 정렬 키 — submitted_at 없는 draft 는 created_at 으로 대체(결재현황 기본 정렬과 동일) */
 export const submittedSortKey = (doc: RequestDocument): string =>
   doc.submitted_at ?? doc.created_at ?? '';
+
+/* ===================== 홈 '나의 의뢰 현황' 상신함/결재함 필터 (2026-09) =====================
+ * isMyDocument(MY 판정)의 하위 구분으로, 결재현황 MY 탭에는 영향을 주지 않는 홈 전용 필터다.
+ * -------------------------------------------------------------------------- */
+
+/** 내가 상신한(작성자 본인) 문서인가 — 서버가 계산해 내려주는 loginid 로 비교(역할 무관) */
+export const isSubmittedByMe = (doc: RequestDocument, user: MyFilterUser): boolean =>
+  !!doc.requester_loginid && doc.requester_loginid === user.username;
+
+/**
+ * 내가 의뢰자가 아니라 합의해야 하는 사람(담당자·검토항목 검토자)으로 결재 경로에 들어간 문서인가.
+ * 내가 작성자이기도 한 문서(예: PL 이 본인 의뢰서에 후결자로도 지정된 경우)는 상신함으로만 분류하고
+ * 여기서는 제외한다.
+ */
+export const isApprovalTargetForMe = (doc: RequestDocument, user: MyFilterUser): boolean => {
+  if (isSubmittedByMe(doc, user)) return false;
+  return hasActivePendingStep(doc, (s) => s.assignee_loginid === user.username)
+    || hasMyPendingReviewItem(doc);
+};
