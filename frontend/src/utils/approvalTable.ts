@@ -15,6 +15,16 @@ import { MAP_DELETE_EDIT_PURPOSE, ADI_CD_CHANGE_PURPOSE } from '../pages/Request
 /** MAP 목적 필터·정렬에서 'ADI CD 변경'처럼 map_type 자체가 없는 문서를 가리키는 값 */
 export const MAP_PURPOSE_NA = '__NA__';
 
+/** 요청 목적 필터 체크박스에 추가하는 가상 옵션 — 체크하면 layer_drift_detected 인 문서만 남긴다 */
+export const LAYER_DRIFT_FILTER_OPTION = '변경 감지';
+
+/** 결재 진행중 상태 — backend layer_drift.IN_PROGRESS_STATUSES 와 같아야 한다 */
+const LAYER_DRIFT_IN_PROGRESS_STATUSES = ['submitted', 'under_review', 'pause'];
+
+/** '변경 감지' 뱃지를 보여줄지 — 완료(approved)/반려(rejected)로 넘어간 문서는 감지값이 남아 있어도 숨긴다 */
+export const isLayerDriftVisible = (doc: RequestDocument): boolean =>
+  !!doc.layer_drift_detected && LAYER_DRIFT_IN_PROGRESS_STATUSES.includes(doc.status);
+
 export interface DocDetailFields {
   line: string;
   /** 요청 목적 대분류(신규/차용/기타 등) */
