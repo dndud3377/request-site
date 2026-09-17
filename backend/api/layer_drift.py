@@ -113,6 +113,17 @@ def _diff_rows(saved_rows, live_rows):
     return {'removed': removed, 'added': added}
 
 
+def _is_loaded(row):
+    """이 행이 DB 자동채움 출처인지 — `loaded` 필드만으로는 부족하다.
+
+    프론트(`RequestPage/index.tsx` 문서 로드부, `const loaded = r.loaded ?? !!r.updated?.trim()`)와
+    동일한 보정을 백엔드에서도 적용한다: `loaded` 필드 자체가 없던 옛 문서도 `updated`(자동채움
+    함수 2곳에서만 채워지고 수동 행은 항상 빈 문자열)가 있으면 자동채움 행으로 본다. 이 보정이
+    없으면 `loaded`가 누락된 옛 문서의 정상 행이 전부 '신규 행 추가'로 오탐된다(2026-09 발견).
+    """
+    return bool(row.get('loaded')) or bool((row.get('updated') or '').strip())
+
+
 def compute_document_layer_drift(document, job_file_rows=None, ovl_rows=None):
     """문서 하나의 J-layer/O-layer diff 를 계산한다. line/process_id 가 없으면 빈 결과.
 
@@ -128,8 +139,8 @@ def compute_document_layer_drift(document, job_file_rows=None, ovl_rows=None):
     if not line or not process:
         return {'jayer': dict(empty_group), 'oayer': dict(empty_group)}
 
-    jayer_saved = [row for row in (data.get('jayerRows') or []) if row.get('loaded')]
-    oayer_saved = [row for row in (data.get('oayerRows') or []) if row.get('loaded')]
+    jayer_saved = [row for row in (data.get('jayerRows') or []) if _is_loaded(row)]
+    oayer_saved = [row for row in (data.get('oayerRows') or []) if _is_loaded(row)]
 
     if job_file_rows is None:
         job_file_rows = get_job_file_layer_rows(line, process)
