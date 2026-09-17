@@ -3639,6 +3639,60 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   5. [이력조회(완료 문서) 화면에서는 애초에 뱃지 콜백을 넘기지 않으므로, `layer_drift_detected`가
      남아 있는 문서를 열어도 뱃지가 뜨지 않는지 확인.]
 
+### 기능 개선 (2026-09-17 — '변경 감지' 뱃지 위치를 목적 칸으로 + 목적 필터 옵션화 + 모달을 변경 현황과 동일하게)
+
+- **요청**: ① "변경 감지" 뱃지를 제품/조합 칸이 아니라 **목적(요청 목적) 칸**에 보이도록 이동하고,
+  **요청 목적 필터에 "변경 감지" 옵션을 추가**해 감지된 문서만 걸러 볼 수 있게 한다. ② 뱃지를
+  눌렀을 때 뜨는 화면을 **변경 현황(`/change-status`)의 상세보기와 동일한 구성**으로 바꾼다.
+- **뱃지 위치**(`ApprovalPage.tsx`): 목적 칸(`purpose-cell` — `purpose-cell-main`/`purpose-cell-sub`
+  다음)으로 이동. 기존 위치(제품/조합 칸의 `adi-extra-badge`·`rejection-history-chip` 옆)에서는 제거.
+- **목적 필터 옵션화**(`utils/approvalTable.ts` 신규 `LAYER_DRIFT_FILTER_OPTION`='변경 감지',
+  `isLayerDriftVisible` 이전— 원래 `ApprovalPage.tsx` 로컬 함수였는데, 필터링(`filteredDocs`)이
+  뱃지 렌더보다 먼저 정의돼 있어 로컬로 두면 TDZ 참조 오류가 나서 공용 유틸로 옮겼다): 목적
+  필터 체크박스 목록에 실제 `request_purpose` 값들(`OPTION_REQUEST_PURPOSE`) 외에 가상 옵션
+  `'변경 감지'`를 하나 더 추가(`[...OPTION_REQUEST_PURPOSE, LAYER_DRIFT_FILTER_OPTION]`, 이
+  드롭다운 호출부에만 적용 — `OPTION_REQUEST_PURPOSE` 자체는 바꾸지 않아 요청서 작성 화면 등
+  다른 곳에 영향 없음). 필터링 로직은 기존 "OR" 방식 그대로: 목적 값과 일치하거나, `'변경
+  감지'`가 체크돼 있고 그 문서가 `isLayerDriftVisible`(감지됨 + 결재 진행중)이면 통과.
+- **모달을 변경 현황과 동일하게**: 기존에 새로 만들었던 "STEP/구분(값 변경·행 삭제·신규 행
+  추가)/저장된 값/현재 값" 4컬럼 표를 버리고, `ChangeStatusPage.tsx`의 상세보기와 **완전히 같은
+  구성**으로 교체했다 — 삭제/추가 각각 배지(`badge-rejected`/`badge-approved`) + 건수 +
+  `change-status-detail-table`(STEP/내용/Recipe ID/영역/레이어 5컬럼, `cell-clamp-2`) 표.
+  값 변경도 변경 현황과 같은 관례로 표현한다: **옛 값 1건을 '삭제'에, 새 값 1건을 '추가'에** 넣는다
+  (PhotoStepChangeLog가 값이 바뀐 행을 남기는 방식과 동일). i18n 은 새 키를 만들지 않고
+  `change_status.added_label`/`removed_label`/`count_unit`/`modal_col_step`/`_descript`/`_recipe`/
+  `_area`/`_layer`/`no_data`를 그대로 재사용(같은 `ko.json`/`en.json` 안이라 다른 화면 파일에서도
+  `t('change_status.xxx')` 호출 가능). 새로 추가한 i18n 키는 `layer_drift_badge`/`_badge_tooltip`/
+  `_modal_title`/`_checked_at`/`_jayer_title`/`_oayer_title` 뿐이고, 이전에 만들었다가 이번에
+  안 쓰게 된 `layer_drift_type_*`/`_col_*`/`_empty` 키는 삭제했다.
+- **백엔드 diff 응답 모양 변경**(`backend/api/layer_drift.py`, `views.py` `layer_drift_detail`
+  액션): 문서별 `{jayer: [...], oayer: [...]}`(항목마다 `type`+`saved`+`current`) 구조를
+  `{jayer: {removed: [...], added: [...]}, oayer: {...}}`(변경 현황과 같은 모양, 각 항목은
+  `stepseq`/`descript`/`recipeid`/`areaname`/`layerid`)로 바꿨다. `get_job_file_layer_rows`/
+  `get_ovl_layer_rows`(`_row_dict`)에 `areaname` 필드를 추가했다(모델에 이미 있던 컬럼 — 기존
+  `job-file-layer`/`ovl-layer` API 응답에도 필드가 하나 늘었지만, 프론트 자동채움 코드는 쓰는
+  필드만 읽으므로 회귀 없음). 저장된 J/O-layer 행에는 애초에 `areaname` 컬럼이 없어(작성 화면
+  표에 그 칸이 없다), '삭제'(저장에만 있던 행) 항목의 `areaname`은 항상 빈 문자열이다.
+- **영향 파일**: `backend/api/layer_drift.py`, `backend/api/views.py`,
+  `frontend/src/types/index.ts`(`LayerDriftRow`→`LayerDriftStepRow`+`LayerDriftGroup`로 교체),
+  `frontend/src/utils/approvalTable.ts`, `frontend/src/pages/ApprovalPage.tsx`,
+  `frontend/src/locales/ko.json`, `frontend/src/locales/en.json`.
+- **검증**: CLAUDE.md §1-1 절차로 `manage.py test api verify_layer_drift`(재현 테스트 7건 포함,
+  값 변경이 removed+added 쌍으로 정확히 나오는지 새로 검증) — **547건 전부 통과**. 프론트
+  `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일). `CI=true npx react-scripts test --watchAll=false`
+  — 11 suites / **294건 전부 통과**(회귀 없음).
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [마스터 DB 값을 바꿔 변경 감지된 문서가 있는 상태에서 결재 현황 목록 확인] → [기대 결과:
+     "변경 감지" 뱃지가 **목적 칸**(제품/조합 칸이 아니라)에 보인다.]
+  2. [상단 필터 바 "목적" 드롭다운 클릭] → [기대 결과: 기존 목적 값들 목록 맨 끝에 "변경 감지"
+     체크박스가 추가로 보인다.] → ["변경 감지"만 체크] → [기대 결과: 목록에 변경 감지된 문서만
+     남는다.] → [다른 목적과 함께 체크] → [기대 결과: 그 목적이거나 변경 감지된 문서가 함께 보인다
+     (OR 조건).]
+  3. [뱃지 클릭] → [기대 결과: 모달 구성이 `/change-status`(변경 현황) 페이지 "상세보기"와 같은
+     톤 — 삭제(빨간 배지)/추가(초록 배지) 구획, 표 컬럼이 STEP/내용/Recipe ID/영역/레이어 5개다.]
+  4. [값이 바뀐 STEP 하나 확인] → [기대 결과: 그 STEP 이 삭제 표에 옛 값으로, 추가 표에 새 값으로
+     각각 한 줄씩 나온다(따로 "값 변경" 표시는 없고 삭제+추가 쌍으로 표현됨).]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)

@@ -223,19 +223,30 @@ export interface RequestDocument {
   layer_drift_detected?: boolean;
 }
 
-/** GET /api/documents/{id}/layer-drift/ 응답. 캐시된 diff를 그대로 반환한다(실시간 재계산 아님). */
-export interface LayerDriftRow {
-  type: 'changed' | 'removed' | 'added';
+/**
+ * GET /api/documents/{id}/layer-drift/ 응답. 캐시된 diff를 그대로 반환한다(실시간 재계산 아님).
+ * 값 변경은 옛 값 removed + 새 값 added 한 쌍으로 표현한다(변경 현황 `PhotoStepChangeRow`와 같은 관례,
+ * 화면도 그 상세보기와 동일한 구성을 쓴다 — `ApprovalPage.tsx` 참고). J/O-layer 표에는 areaname 컬럼이
+ * 없어 removed 쪽 areaname은 항상 빈 문자열이다.
+ */
+export interface LayerDriftStepRow {
   stepseq: string;
-  saved: { sp: string; sd: string; pp: string; layerid: string } | null;
-  current: { sp: string; sd: string; pp: string; layerid: string } | null;
+  descript: string;
+  recipeid: string;
+  areaname: string;
+  layerid: string;
+}
+
+export interface LayerDriftGroup {
+  removed: LayerDriftStepRow[];
+  added: LayerDriftStepRow[];
 }
 
 export interface LayerDriftResponse {
   detected: boolean;
   checked_at: string | null;
-  jayer_diffs: LayerDriftRow[];
-  oayer_diffs: LayerDriftRow[];
+  jayer: LayerDriftGroup;
+  oayer: LayerDriftGroup;
 }
 
 /**

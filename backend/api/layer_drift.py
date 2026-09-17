@@ -43,6 +43,7 @@ def _row_dict(item, line, process):
         'stepseq': item.stepseq,
         'descript': item.descript,
         'recipeid': item.recipeid,
+        'areaname': item.areaname or '',
         'layerid': item.layerid or '',
         'updated': item.updated or '',
     }
@@ -66,35 +67,50 @@ def get_ovl_layer_rows(line, process):
     return [_row_dict(item, line, process) for item in queryset]
 
 
-def _diff_rows(saved_rows, live_rows):
-    """저장된 행(loaded=true 만)과 현재 마스터 DB 행을 stepseq(sp) 기준으로 비교.
+def _saved_entry(stepseq, saved):
+    """저장된 J/O-layer 행(sp/sd/pp/layerid)을 변경 현황(PhotoStepChangeRow)과 같은 모양으로 변환.
 
-    값 변경(sd/pp/layerid) + 행 삭제(저장에는 있는데 DB에 없음) + 신규 행 추가(DB에는 있는데
-    저장에 없음) 를 모두 diff 로 반환한다.
+    저장된 행에는 areaname 이 없어(J/O-layer 표에 그 컬럼이 없다) 빈 값으로 채운다.
+    """
+    return {'stepseq': stepseq, 'descript': saved.get('sd', ''), 'recipeid': saved.get('pp', ''),
+            'areaname': '', 'layerid': saved.get('layerid', '')}
+
+
+def _live_entry(live):
+    return {'stepseq': live['stepseq'], 'descript': live['descript'], 'recipeid': live['recipeid'],
+            'areaname': live.get('areaname', ''), 'layerid': live['layerid']}
+
+
+def _diff_rows(saved_rows, live_rows):
+    """저장된 행(loaded=true 만)과 현재 마스터 DB 행을 stepseq(sp) 기준으로 비교해
+    `docs/CHANGE_STATUS.md`(변경 현황) 화면과 같은 {removed, added} 모양으로 반환한다.
+
+    행 삭제(저장에는 있는데 DB에 없음)·신규 행 추가(DB에는 있는데 저장에 없음)는 각각 그대로
+    removed/added 한 건씩이고, 값 변경(sd/pp/layerid)은 변경 현황과 동일하게 옛 값 removed +
+    새 값 added 한 쌍으로 표현한다 — PhotoStepChangeLog 도 값이 바뀐 행을 이렇게 남긴다.
     """
     saved_by_seq = {row.get('sp'): row for row in saved_rows if row.get('sp')}
     live_by_seq = {row['stepseq']: row for row in live_rows if row.get('stepseq')}
 
-    diffs = []
+    removed = []
+    added = []
     for stepseq, saved in saved_by_seq.items():
         live = live_by_seq.get(stepseq)
-        saved_value = {'sp': saved.get('sp', ''), 'sd': saved.get('sd', ''),
-                        'pp': saved.get('pp', ''), 'layerid': saved.get('layerid', '')}
+        saved_entry = _saved_entry(stepseq, saved)
         if live is None:
-            diffs.append({'type': 'removed', 'stepseq': stepseq, 'saved': saved_value, 'current': None})
+            removed.append(saved_entry)
             continue
-        live_value = {'sp': live['stepseq'], 'sd': live['descript'],
-                       'pp': live['recipeid'], 'layerid': live['layerid']}
-        if saved_value != live_value:
-            diffs.append({'type': 'changed', 'stepseq': stepseq, 'saved': saved_value, 'current': live_value})
+        live_entry = _live_entry(live)
+        if (saved_entry['descript'], saved_entry['recipeid'], saved_entry['layerid']) \
+                != (live_entry['descript'], live_entry['recipeid'], live_entry['layerid']):
+            removed.append(saved_entry)
+            added.append(live_entry)
 
     for stepseq, live in live_by_seq.items():
         if stepseq not in saved_by_seq:
-            live_value = {'sp': live['stepseq'], 'sd': live['descript'],
-                           'pp': live['recipeid'], 'layerid': live['layerid']}
-            diffs.append({'type': 'added', 'stepseq': stepseq, 'saved': None, 'current': live_value})
+            added.append(_live_entry(live))
 
-    return diffs
+    return {'removed': removed, 'added': added}
 
 
 def compute_document_layer_drift(document):
@@ -103,8 +119,9 @@ def compute_document_layer_drift(document):
     detail = data.get('detail', {}) or {}
     line = detail.get('line') or ''
     process = detail.get('process_id') or ''
+    empty_group = {'removed': [], 'added': []}
     if not line or not process:
-        return {'jayer': [], 'oayer': []}
+        return {'jayer': dict(empty_group), 'oayer': dict(empty_group)}
 
     jayer_saved = [row for row in (data.get('jayerRows') or []) if row.get('loaded')]
     oayer_saved = [row for row in (data.get('oayerRows') or []) if row.get('loaded')]
@@ -118,7 +135,7 @@ def compute_document_layer_drift(document):
 def recompute_document(document):
     """문서 하나의 drift 를 다시 계산해 캐시 필드에 저장한다. 감지 여부(bool)를 반환."""
     diff = compute_document_layer_drift(document)
-    detected = bool(diff['jayer'] or diff['oayer'])
+    detected = any(diff[layer][kind] for layer in ('jayer', 'oayer') for kind in ('removed', 'added'))
     document.layer_drift_detected = detected
     document.layer_drift_detail = json.dumps(diff, ensure_ascii=False) if detected else ''
     document.layer_drift_checked_at = timezone.now()
