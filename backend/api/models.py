@@ -167,6 +167,10 @@ class RequestDocument(models.Model):
     layer_drift_detected = models.BooleanField(default=False, verbose_name='레이어 정보 변경 감지 여부')
     layer_drift_detail = models.TextField(blank=True, verbose_name='레이어 정보 변경 상세(JSON)')
     layer_drift_checked_at = models.DateTimeField(null=True, blank=True, verbose_name='레이어 정보 변경 감지 확인 시각')
+    # XXXXXX(CD, eqptype 임시값) 전용 — 요청서에 사용자가 편집하는 표가 없어 "저장값"이 없으므로,
+    # 상신 계열 액션 시점의 마스터 DB 값을 여기 스냅샷으로 캡처해 저장값 대용으로 쓴다
+    # (`layer_drift.capture_extra_layer_snapshot`/`reset_document_drift` 참고).
+    extra_layer_snapshot = models.TextField(blank=True, verbose_name='XXXXXX 레이어 상신 시점 스냅샷(JSON)')
 
     class Meta:
         verbose_name = '의뢰서'

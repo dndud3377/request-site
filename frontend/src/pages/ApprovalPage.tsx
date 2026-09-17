@@ -2492,7 +2492,9 @@ export default function ApprovalPage(): React.ReactElement {
               )}
               {driftLayerSection(t('approval.layer_drift_jayer_title'), layerDriftData.jayer)}
               {driftLayerSection(t('approval.layer_drift_oayer_title'), layerDriftData.oayer)}
-              {isDriftGroupEmpty(layerDriftData.jayer) && isDriftGroupEmpty(layerDriftData.oayer) && (
+              {driftLayerSection(t('approval.layer_drift_extra_title'), layerDriftData.extra)}
+              {isDriftGroupEmpty(layerDriftData.jayer) && isDriftGroupEmpty(layerDriftData.oayer)
+                && isDriftGroupEmpty(layerDriftData.extra) && (
                 <p>{t('change_status.no_data')}</p>
               )}
             </>
