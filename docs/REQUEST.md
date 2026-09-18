@@ -3908,6 +3908,50 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
      값을 바꿔둔다] → [스케줄러 주기 후 배지가 다시 정상적으로(이번엔 진짜 변경이므로) 뜨는지
      확인 — 수정이 "XXXXXX 비교를 영구히 끈 것"이 아니라 "캡처 전까지만 건너뛴 것"임을 확인.]
 
+### 기능 개선 (2026-09-18 — '변경 감지'에서 Only MAP·MAP 삭제 요청서 제외)
+
+- **요청**: `layer_drift`(변경 감지) 기능이 요청 목적 `Only MAP`·`MAP 삭제` 문서는 검토하지
+  않도록 한다.
+- **배경**: 이 두 목적은 프론트가 J-layer/O-layer 표를 강제로 비우지만(작성 화면에 그 표 자체가
+  없다 — `applyMapOnlyScope`) `line`/`process_id`는 그대로 유지된다. 그런데 XXXXXX(CD) 비교는
+  저장된 표가 아니라 `line`/`process_id`만으로 마스터 DB를 조회하므로, 이 두 목적 문서에서도
+  XXXXXX 구분만으로 '변경 감지' 배지가 뜰 수 있었다 — 애초에 P/J/O/E 검토 단계 자체가 없는
+  문서에 검토용 배지가 뜨는 것은 의미가 없다.
+- **수정**(`backend/api/layer_drift.py` `compute_document_layer_drift()`): 함수 맨 앞에
+  `document.is_only_map()` / `document.is_map_delete_edit()` 가드를 추가해, 두 목적이면
+  line/process 조회·비교 자체를 하지 않고 곧바로 빈 diff(jayer/oayer/extra 모두 없음)를
+  반환한다. `recompute_all_in_progress()`/`recompute_document()` 양쪽 호출부가 모두 이 함수를
+  거치므로 한 곳만 고치면 된다.
+- **기존에 이미 잘못 캐시된 배지는 별도 조치 불필요**: `recompute_all_in_progress()`(스케줄러
+  10분 주기)가 매번 다시 계산해 `bulk_update`로 캐시를 덮어쓰므로, 배포 후 다음 주기에 이 두
+  목적 문서의 `layer_drift_detected`가 자동으로 `False`로 정정된다(이전 XXXXXX 오탐 수정 때와
+  동일한 자연 치유 방식 — 별도 데이터 마이그레이션 없음).
+- **영향 파일**: `backend/api/layer_drift.py`, `backend/api/tests.py`.
+- **검증**: CLAUDE.md §1-1 절차(sqlite, 원격 세션)로 `manage.py test api` — **546건 전부 통과**
+  (회귀 없음). `backend/api/tests.py`에 `LayerDriftPurposeExclusionTest`(4건, 프로젝트 테스트에
+  영구 포함) 신규 추가 — ① `Only MAP` 문서는 XXXXXX 마스터 DB가 스냅샷과 달라도 감지 안 됨
+  ② `MAP 삭제`도 동일 ③ 대조군(일반 목적 문서)은 그대로 감지됨(이번 변경이 전체를 막은 게
+  아님을 확인) ④ `recompute_all_in_progress()` 재계산 시 `Only MAP` 문서의 기존 스테일 배지가
+  자동으로 꺼지는지 — 실행 출력까지 확인, 전부 통과.
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [요청 목적 `Only MAP`(또는 `MAP 삭제`)으로 상신된 결재 진행중 문서 하나를 골라, Django
+     shell 등으로 그 문서가 참조하는 `PhotoStepS{N}Cd`(또는 `_Ov`/PMAINF) 값을 실제로 바꿔둔다]
+     → [스케줄러가 돌거나 `layer_drift.recompute_all_in_progress()`를 수동 호출] → [결재 현황
+     목록에서 그 문서 행에 "변경 감지" 배지가 뜨지 않는지 확인 — 마스터 DB 값이 달라졌음에도
+     계속 배지가 없어야 정상.]
+  2. [같은 문서의 상세보기(결재상세)에서도 배지가 뜨지 않는지 확인.]
+  3. [일반 목적 문서 하나를 골라 동일하게 마스터 DB 값을 바꾼 뒤] → [스케줄러 재계산 후 배지가
+     정상적으로 뜨는지 확인 — 이번 변경이 Only MAP·MAP 삭제 두 목적에만 한정됨을 함께 확인.]
+- **발견했지만 이번 작업 범위 밖으로 남긴 사항**: 회귀 테스트 작성 중, `layer_drift.py`의
+  `JOB_FILE_MODEL_MAP`/`OVL_MODEL_MAP`/`EXTRA_MODEL_MAP`(및 `views.py`의
+  `form_options_bb_external`/`form_options_layer_ids` 로컬 `model_map`)이 라인 키를
+  `'line1'`/`'line3'`/`'line4'`/`'line5'`(영문)로 정의하는 반면, 프론트(`OPTION_LINE`)·`Line`
+  마스터(`seed_lines.py`)·나머지 라인 조회(`api_processproduct` 등)는 전부 한글(`'라인1'` 등)을
+  쓴다는 점을 확인했다 — 실제 운영 데이터로는 이 다섯 API(J-layer/O-layer/XXXXXX 자동채움,
+  Backbone 외부데이터, Layer ID 목록, 그리고 '변경 감지' 자체)가 라인1/3/4/5에서 항상 빈 결과만
+  낼 가능성이 있다. 이번 작업과 무관한 별도 버그 가능성이라 손대지 않았다(사용자 확인 대기 —
+  본 채팅 로그의 발견 보고 참고).
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
