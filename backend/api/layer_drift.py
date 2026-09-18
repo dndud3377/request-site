@@ -208,15 +208,25 @@ def compute_document_layer_drift(document, job_file_rows=None, ovl_rows=None, ex
     if extra_rows is None:
         extra_rows = get_extra_layer_rows(line, process)
 
-    try:
-        extra_saved = json.loads(document.extra_layer_snapshot) if document.extra_layer_snapshot else []
-    except (json.JSONDecodeError, TypeError):
-        extra_saved = []
+    if document.extra_layer_snapshot:
+        try:
+            extra_saved = json.loads(document.extra_layer_snapshot)
+        except (json.JSONDecodeError, TypeError):
+            extra_saved = []
+        extra_diff = _diff_snapshot_rows(extra_saved, extra_rows)
+    else:
+        # 스냅샷을 한 번도 캡처한 적 없는 문서(이 기능이 생기기 전에 이미 상신된 문서) — 빈
+        # 문자열은 "캡처했는데 0건이었다"(그 경우엔 capture_extra_layer_snapshot이 `'[]'`를
+        # 저장하므로 non-empty 문자열이 된다)와 구분되는, "비교 기준 자체가 없다"는 뜻이다.
+        # 비교 기준이 없는 상태에서 그냥 빈 리스트로 취급해 비교하면 현재 마스터 DB에 있는
+        # XXXXXX 행이 전부 '신규 추가'로 오탐된다 — 대신 비교 자체를 하지 않는다. 다음
+        # 상신 계열 액션(reset_document_drift)이 스냅샷을 캡처하면 그때부터 정상 비교된다.
+        extra_diff = dict(empty_group)
 
     return {
         'jayer': _diff_rows(jayer_saved, job_file_rows),
         'oayer': _diff_rows(oayer_saved, ovl_rows),
-        'extra': _diff_snapshot_rows(extra_saved, extra_rows),
+        'extra': extra_diff,
     }
 
 
