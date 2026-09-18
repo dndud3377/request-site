@@ -7288,6 +7288,98 @@ class LayerFilterSetTest(TestCase):
         self.assertEqual(r.status_code, 400, r.content)
 
 
+class LayerDriftPurposeExclusionTest(TestCase):
+    """Only MAP·MAP 삭제 요청서는 layer_drift('변경 감지') 대상에서 제외되는지 검증(2026-09).
+
+    두 목적은 프론트가 J-layer/O-layer 표를 강제로 비우지만 line/process_id 는 그대로
+    남아 있어, XXXXXX(CD) 구분만으로도 배지가 잘못 뜰 수 있었다 — compute_document_layer_drift()
+    의 is_only_map()/is_map_delete_edit() 가드를 검증한다.
+    """
+
+    def setUp(self):
+        import json
+        self._json = json
+        self.requester = UserProfile.objects.create(loginid='ld_req', mail='ld_req@company.com', role='NONE')
+
+    def _make_doc(self, request_purpose=None, status='under_review'):
+        # layer_drift.EXTRA_MODEL_MAP 등은 'line1' 형식 키를 쓴다(자세한 배경은 아래 발견 보고 참고).
+        detail = {'line': 'line1', 'process_id': 'P1'}
+        if request_purpose:
+            detail['request_purpose'] = request_purpose
+        return RequestDocument.objects.create(
+            title='ld-doc', requester=self.requester, requester_name='요청자',
+            requester_email='ld_req@company.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps({'detail': detail, 'jayerRows': [], 'oayerRows': []}),
+        )
+
+    def _seed_extra_master(self):
+        """XXXXXX(CD) 마스터 DB 에 1건을 심어, 캡처된 스냅샷(빈 배열)과 어긋나게 만든다 —
+        일반 목적 문서라면 이 상태에서 '신규 추가'로 감지돼야 정상이다."""
+        from .models import PhotoStepS1Cd
+        from .scheduler import STEP_EXTRA_EQPTYPE
+        PhotoStepS1Cd.objects.create(
+            processid='P1', stepseq='10', descript='D1', recipeid='R1',
+            areaname='A1', eqptype=STEP_EXTRA_EQPTYPE, layerid='L1', updated='U1',
+        )
+
+    def _set_empty_snapshot(self, doc):
+        doc.extra_layer_snapshot = '[]'
+        doc.save(update_fields=['extra_layer_snapshot'])
+
+    def test_only_map_document_is_never_flagged(self):
+        from . import layer_drift
+        self._seed_extra_master()
+        doc = self._make_doc(RequestDocument.ONLY_MAP_PURPOSE)
+        self._set_empty_snapshot(doc)
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+        self.assertEqual(diff, {
+            'jayer': {'removed': [], 'added': []},
+            'oayer': {'removed': [], 'added': []},
+            'extra': {'removed': [], 'added': []},
+        })
+
+    def test_map_delete_edit_document_is_never_flagged(self):
+        from . import layer_drift
+        self._seed_extra_master()
+        doc = self._make_doc(RequestDocument.MAP_DELETE_EDIT_PURPOSE)
+        self._set_empty_snapshot(doc)
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+        self.assertEqual(diff, {
+            'jayer': {'removed': [], 'added': []},
+            'oayer': {'removed': [], 'added': []},
+            'extra': {'removed': [], 'added': []},
+        })
+
+    def test_general_purpose_document_is_still_flagged_as_control(self):
+        """대조군: 일반 목적 문서는 그대로 감지돼야 한다(이번 변경이 전체를 막은 게 아님을 확인)."""
+        from . import layer_drift
+        self._seed_extra_master()
+        doc = self._make_doc(request_purpose=None)
+        self._set_empty_snapshot(doc)
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+        self.assertEqual([row['stepseq'] for row in diff['extra']['added']], ['10'])
+
+    def test_recompute_all_in_progress_clears_stale_badge_for_only_map(self):
+        """스케줄러 재계산 시 이전에 잘못 켜져 있던 배지도 자동으로 꺼지는지 확인."""
+        from . import layer_drift
+        self._seed_extra_master()
+        doc = self._make_doc(RequestDocument.ONLY_MAP_PURPOSE)
+        doc.extra_layer_snapshot = '[]'
+        doc.layer_drift_detected = True
+        doc.layer_drift_detail = '{"stale": true}'
+        doc.save(update_fields=['extra_layer_snapshot', 'layer_drift_detected', 'layer_drift_detail'])
+
+        layer_drift.recompute_all_in_progress()
+
+        doc.refresh_from_db()
+        self.assertFalse(doc.layer_drift_detected)
+        self.assertEqual(doc.layer_drift_detail, '')
+
+
 class MapCompletionMailMatchTest(TestCase):
     """pop3_mail.match_map_completion_mail() 단위 테스트 (POP3 접속 없이 순수 DB 로직만 검증)."""
 
