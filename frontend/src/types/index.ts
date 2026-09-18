@@ -199,6 +199,9 @@ export interface RequestDocument {
   designated_pl_name?: string;
   approval_steps?: ApprovalStepFrontend[];
   notifier_mails?: Record<string, string>; // 통보처 loginid → 이메일 (결재 경로 탭 표시용)
+  // MAP 정보 탭 'X표시 변경 여부' 칸 — CLONE/EXISTING 원본 위치·제품 기준 api_maptable 자동 매칭 결과.
+  // 원본 위치/제품이 없으면 null(해당없음). 서버가 조회 시점마다 다시 계산해 내려준다(스냅샷 아님).
+  map_table_cc_exists?: boolean | null;
   // 임시저장 공유 그룹 — 작성자가 지정한 그룹 1개. 변경은 set-shared-group 액션으로만 한다(읽기 전용).
   shared_group?: number | null;
   shared_group_name?: string | null;
