@@ -3908,6 +3908,124 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
      값을 바꿔둔다] → [스케줄러 주기 후 배지가 다시 정상적으로(이번엔 진짜 변경이므로) 뜨는지
      확인 — 수정이 "XXXXXX 비교를 영구히 끈 것"이 아니라 "캡처 전까지만 건너뛴 것"임을 확인.]
 
+### 기능 개선 (2026-09-18 — '변경 감지'에서 Only MAP·MAP 삭제 요청서 제외)
+
+- **요청**: `layer_drift`(변경 감지) 기능이 요청 목적 `Only MAP`·`MAP 삭제` 문서는 검토하지
+  않도록 한다.
+- **배경**: 이 두 목적은 프론트가 J-layer/O-layer 표를 강제로 비우지만(작성 화면에 그 표 자체가
+  없다 — `applyMapOnlyScope`) `line`/`process_id`는 그대로 유지된다. 그런데 XXXXXX(CD) 비교는
+  저장된 표가 아니라 `line`/`process_id`만으로 마스터 DB를 조회하므로, 이 두 목적 문서에서도
+  XXXXXX 구분만으로 '변경 감지' 배지가 뜰 수 있었다 — 애초에 P/J/O/E 검토 단계 자체가 없는
+  문서에 검토용 배지가 뜨는 것은 의미가 없다.
+- **수정**(`backend/api/layer_drift.py` `compute_document_layer_drift()`): 함수 맨 앞에
+  `document.is_only_map()` / `document.is_map_delete_edit()` 가드를 추가해, 두 목적이면
+  line/process 조회·비교 자체를 하지 않고 곧바로 빈 diff(jayer/oayer/extra 모두 없음)를
+  반환한다. `recompute_all_in_progress()`/`recompute_document()` 양쪽 호출부가 모두 이 함수를
+  거치므로 한 곳만 고치면 된다.
+- **기존에 이미 잘못 캐시된 배지는 별도 조치 불필요**: `recompute_all_in_progress()`(스케줄러
+  10분 주기)가 매번 다시 계산해 `bulk_update`로 캐시를 덮어쓰므로, 배포 후 다음 주기에 이 두
+  목적 문서의 `layer_drift_detected`가 자동으로 `False`로 정정된다(이전 XXXXXX 오탐 수정 때와
+  동일한 자연 치유 방식 — 별도 데이터 마이그레이션 없음).
+- **영향 파일**: `backend/api/layer_drift.py`, `backend/api/tests.py`.
+- **검증**: CLAUDE.md §1-1 절차(sqlite, 원격 세션)로 `manage.py test api` — **546건 전부 통과**
+  (회귀 없음). `backend/api/tests.py`에 `LayerDriftPurposeExclusionTest`(4건, 프로젝트 테스트에
+  영구 포함) 신규 추가 — ① `Only MAP` 문서는 XXXXXX 마스터 DB가 스냅샷과 달라도 감지 안 됨
+  ② `MAP 삭제`도 동일 ③ 대조군(일반 목적 문서)은 그대로 감지됨(이번 변경이 전체를 막은 게
+  아님을 확인) ④ `recompute_all_in_progress()` 재계산 시 `Only MAP` 문서의 기존 스테일 배지가
+  자동으로 꺼지는지 — 실행 출력까지 확인, 전부 통과.
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [요청 목적 `Only MAP`(또는 `MAP 삭제`)으로 상신된 결재 진행중 문서 하나를 골라, Django
+     shell 등으로 그 문서가 참조하는 `PhotoStepS{N}Cd`(또는 `_Ov`/PMAINF) 값을 실제로 바꿔둔다]
+     → [스케줄러가 돌거나 `layer_drift.recompute_all_in_progress()`를 수동 호출] → [결재 현황
+     목록에서 그 문서 행에 "변경 감지" 배지가 뜨지 않는지 확인 — 마스터 DB 값이 달라졌음에도
+     계속 배지가 없어야 정상.]
+  2. [같은 문서의 상세보기(결재상세)에서도 배지가 뜨지 않는지 확인.]
+  3. [일반 목적 문서 하나를 골라 동일하게 마스터 DB 값을 바꾼 뒤] → [스케줄러 재계산 후 배지가
+     정상적으로 뜨는지 확인 — 이번 변경이 Only MAP·MAP 삭제 두 목적에만 한정됨을 함께 확인.]
+- **발견했지만 이번 작업 범위 밖으로 남긴 사항**: 회귀 테스트 작성 중, `layer_drift.py`의
+  `JOB_FILE_MODEL_MAP`/`OVL_MODEL_MAP`/`EXTRA_MODEL_MAP`(및 `views.py`의
+  `form_options_bb_external`/`form_options_layer_ids` 로컬 `model_map`)이 라인 키를
+  `'line1'`/`'line3'`/`'line4'`/`'line5'`(영문)로 정의하는 반면, 프론트(`OPTION_LINE`)·`Line`
+  마스터(`seed_lines.py`)·나머지 라인 조회(`api_processproduct` 등)는 전부 한글(`'라인1'` 등)을
+  쓴다는 점을 확인했다 — 실제 운영 데이터로는 이 다섯 API(J-layer/O-layer/XXXXXX 자동채움,
+  Backbone 외부데이터, Layer ID 목록, 그리고 '변경 감지' 자체)가 라인1/3/4/5에서 항상 빈 결과만
+  낼 가능성이 있다. 이번 작업과 무관한 별도 버그 가능성이라 손대지 않았다(사용자 확인 대기 —
+  본 채팅 로그의 발견 보고 참고).
+
+### 기능 개선 (2026-09-18 — '변경 감지'에 수동 입력(loaded=false) 행도 비교 대상 포함)
+
+- **요청**: 변경 감지 비교에서 사용자가 수동으로 입력한 J-layer/O-layer 행(`loaded=false`)은
+  비교하지 않던 것을, 이것도 비교 대상에 넣어달라는 요청.
+- **배경**: `compute_document_layer_drift()`가 저장된 행을 `saved_by_seq`에 넣기 전에
+  `_is_loaded(row)`(`bool(row.get('loaded')) or bool((row.get('updated') or '').strip())`)로
+  걸러, 자동채움 행만 비교 대상으로 삼고 수동 입력 행은 애초에 비교 자체가 되지 않았다.
+- **수정**(`backend/api/layer_drift.py`): `jayer_saved`/`oayer_saved`를 만들 때 걸던
+  `_is_loaded()` 필터를 제거해 저장된 행 전체(자동채움 + 수동입력)를 비교 대상으로 삼는다.
+  더 이상 쓰이지 않는 `_is_loaded()` 헬퍼는 삭제하고, `_diff_rows()`의 "저장된 행(loaded=true
+  만)" docstring 문구도 "저장된 행 전체(자동채움 + 수동입력)"로 고쳤다.
+- **동작 변화(사용자에게 미리 안내하고 진행)**: 수동 입력 행의 stepseq(`sp`)가 현재 마스터
+  DB에 아예 없는 값이면(자동채움 없이 임의로 STEP을 적어넣은 경우), 그 행은 마스터 DB와 절대
+  매칭되지 않으므로 사용자가 값을 고치거나 행을 지우기 전까지 매 스케줄러 주기마다 계속
+  '삭제'로 표시된다 — 이번 요청의 자연스러운 결과로 판단해 별도 예외 처리는 하지 않았다.
+- **영향 파일**: `backend/api/layer_drift.py`, `backend/api/tests.py`.
+- **검증**: CLAUDE.md §1-1 절차(sqlite, 원격 세션)로 `manage.py test api` — **550건 전부 통과**
+  (회귀 없음). `backend/api/tests.py`에 `LayerDriftManualRowInclusionTest`(4건, 프로젝트
+  테스트에 영구 포함) 신규 추가 — ① 마스터 DB에 없는 stepseq를 수동 입력하면 '삭제'로 잡히는지
+  ② 마스터 DB에 있는 stepseq인데 내용이 다르면 값 변경(삭제+추가 쌍)으로 잡히는지 ③ 내용까지
+  완전히 같으면 변경 없음으로 처리되는지 ④ 같은 문서에 자동채움 행이 섞여 있어도 기존처럼
+  계속 감지되는지(회귀 확인) — 실행 출력까지 확인, 전부 통과.
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [요청서 작성 화면에서 J-layer 또는 O-layer 표에 자동채움 버튼을 쓰지 않고 STEP/내용/
+     Recipe ID/Layer 값을 직접 입력해 행을 하나 추가한 뒤 상신] → [스케줄러 재계산 후(또는
+     `layer_drift.recompute_all_in_progress()` 수동 호출) 결재 현황 목록에서 그 문서에 "변경
+     감지" 배지가 뜨는지 확인 — 이전에는 수동 입력 행이라 배지가 뜨지 않았지만, 이제는 마스터
+     DB에 같은 STEP이 없으므로 '삭제'로 잡혀 배지가 떠야 정상.]
+  2. [배지 클릭 → 모달에서 그 수동 입력 행이 "삭제" 항목으로 표시되는지 확인.]
+  3. [자동채움으로 채운 행이 있는 문서는 이번 변경 이후에도 기존과 동일하게 마스터 DB 값이
+     바뀌면 정상적으로 감지되는지(회귀 없음) 함께 확인.]
+
+### 기능 개선 (2026-09-18 — '변경 감지'에서 ADI CD 변경은 XXXXXX만 비교)
+
+- **요청**: ADI CD 변경 요청서도 Only MAP·MAP 삭제처럼 J-layer/O-layer 표를 채우지 않는다.
+  이 경우 XXXXXX(CD)만 비교해서 배지·모달에 보여지도록 해달라는 요청. 추가로 J/O를 채우지
+  않는 다른 요청 목적이 더 있는지도 함께 조사해달라는 요청.
+- **조사 결과**: 프론트가 J-layer/O-layer 표를 강제로 비우는 요청 목적은
+  `RequestPage/index.tsx`의 `applyMapOnlyScope` 호출 조건(`target === ONLY_MAP_PURPOSE ||
+  MAP_DELETE_EDIT_PURPOSE || ADI_CD_CHANGE_PURPOSE`) 기준 정확히 3가지뿐임을 확인했다 —
+  `Only MAP`, `MAP 삭제`, `ADI CD 변경`. 이 중 `Only MAP`·`MAP 삭제`는 이전 작업에서 이미
+  전체 제외(XXXXXX 포함 검토 자체를 하지 않음) 처리돼 있어, 이번에 새로 다룰 대상은
+  `ADI CD 변경` 하나였다 — 사용자에게 확인해 두 목적은 기존(전체 제외) 그대로 유지하고
+  `ADI CD 변경`만 "XXXXXX만 비교"로 새로 적용하기로 결정.
+- **수정**(`backend/api/layer_drift.py` `compute_document_layer_drift()`): `document.is_adi_cd_change()`
+  가 참이면 `get_job_file_layer_rows()`/`get_ovl_layer_rows()` 조회와 jayer/oayer 비교를
+  건너뛰고 빈 diff를 채우되, extra(XXXXXX)는 line/process_id 기준으로 기존과 동일하게
+  계산·비교한다. `Only MAP`·`MAP 삭제` 분기(함수 맨 앞, 전체 제외)는 그대로 두었다 — 이 두
+  분기가 먼저 걸리므로 `is_adi_cd_change()` 분기와 서로 겹치지 않는다.
+- **프론트엔드 변경 없음**: 배지 노출(`isLayerDriftVisible`, `frontend/src/utils/approvalTable.ts`)과
+  diff 모달의 탭별 표시가 이미 `layer_drift_detected`·그룹별 데이터 유무만으로 동작하고
+  요청 목적을 따로 분기하지 않는다 — 빈 그룹인 탭은 이미 "변경 없음" 문구만 보여주므로,
+  백엔드만 고쳐도 ADI CD 변경 문서에 XXXXXX 탭만 자연스럽게 채워진다(코드 확인 완료, 별도
+  수정 불필요).
+- **영향 파일**: `backend/api/layer_drift.py`, `backend/api/tests.py`.
+- **검증**: CLAUDE.md §1-1 절차(sqlite, 원격 세션)로 `manage.py test api` — **553건 전부 통과**
+  (회귀 없음). `backend/api/tests.py`에 `LayerDriftAdiCdChangeScopeTest`(3건, 프로젝트 테스트에
+  영구 포함) 신규 추가 — ① ADI CD 변경 문서는 jayer 표에 자동채움 행이 남아 있어도 jayer/oayer는
+  항상 빈 diff이고 XXXXXX만 감지되는지 ② (회귀 확인) `Only MAP`·`MAP 삭제`는 이번 변경과
+  무관하게 XXXXXX 포함 전부 빈 diff로 남는지 ③ (회귀 확인) 일반 목적 문서는 jayer 비교가
+  정상 동작하는지 — 실행 출력까지 확인, 전부 통과.
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [요청 목적 `ADI CD 변경`으로 상신된 결재 진행중 문서 하나를 골라, Django shell 등으로 그
+     문서가 참조하는 `PhotoStepS{N}Cd` 값을 바꿔둔다] → [스케줄러 재계산 후(또는
+     `layer_drift.recompute_all_in_progress()` 수동 호출) 결재 현황 목록에서 그 문서에 "변경
+     감지" 배지가 뜨는지 확인.]
+  2. [배지 클릭 → 모달에서 "XXXXXX" 탭에만 변경 내용이 보이고, "J-layer"/"O-layer" 탭은 "변경
+     없음"으로 보이는지 확인 — J-layer/O-layer는 애초에 표 자체가 비어 있어 비교되지 않는다.]
+  3. [같은 문서가 참조하는 `PhotoStepS{N}`(PMAINF, J-layer 원본)을 바꿔도 배지·모달의
+     J-layer 탭에는 아무 변화가 없는지 확인 — ADI CD 변경은 J-layer를 아예 비교하지 않음을
+     재확인.]
+  4. [대조군으로 `Only MAP`·`MAP 삭제` 문서에 동일하게 마스터 DB 값을 바꿔도 배지 자체가 뜨지
+     않는지 확인 — 이번 변경이 두 목적의 기존(전체 제외) 동작에 영향을 주지 않았음을 확인.]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)

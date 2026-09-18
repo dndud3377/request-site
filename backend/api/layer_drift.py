@@ -110,7 +110,7 @@ def _live_entry(live):
 
 
 def _diff_rows(saved_rows, live_rows):
-    """저장된 행(loaded=true 만)과 현재 마스터 DB 행을 stepseq(sp) 기준으로 비교해
+    """저장된 행 전체(자동채움 + 수동입력)와 현재 마스터 DB 행을 stepseq(sp) 기준으로 비교해
     `docs/CHANGE_STATUS.md`(변경 현황) 화면과 같은 {removed, added} 모양으로 반환한다.
 
     행 삭제(저장에는 있는데 DB에 없음)·신규 행 추가(DB에는 있는데 저장에 없음)는 각각 그대로
@@ -172,39 +172,48 @@ def _diff_snapshot_rows(saved_rows, live_rows):
     return {'removed': removed, 'added': added}
 
 
-def _is_loaded(row):
-    """이 행이 DB 자동채움 출처인지 — `loaded` 필드만으로는 부족하다.
-
-    프론트(`RequestPage/index.tsx` 문서 로드부, `const loaded = r.loaded ?? !!r.updated?.trim()`)와
-    동일한 보정을 백엔드에서도 적용한다: `loaded` 필드 자체가 없던 옛 문서도 `updated`(자동채움
-    함수 2곳에서만 채워지고 수동 행은 항상 빈 문자열)가 있으면 자동채움 행으로 본다. 이 보정이
-    없으면 `loaded`가 누락된 옛 문서의 정상 행이 전부 '신규 행 추가'로 오탐된다(2026-09 발견).
-    """
-    return bool(row.get('loaded')) or bool((row.get('updated') or '').strip())
-
-
 def compute_document_layer_drift(document, job_file_rows=None, ovl_rows=None, extra_rows=None):
     """문서 하나의 J-layer/O-layer/XXXXXX diff 를 계산한다. line/process_id 가 없으면 빈 결과.
 
     job_file_rows/ovl_rows/extra_rows 를 넘기면(배치 조회 결과) DB 를 다시 조회하지 않고 그대로
     쓴다 — recompute_all_in_progress 의 라인당 배치 조회 결과를 문서별로 재사용하기 위함.
     None 이면(단일 문서 호출부는 그대로) 기존처럼 문서 하나 기준으로 직접 조회한다.
+
+    Only MAP·MAP 삭제 요청서는 검토 대상에서 제외한다 — 프론트가 이 두 목적에서는 J-layer/
+    O-layer 표를 강제로 비우지만(작성 화면에 그 표 자체가 없다) line/process_id 는 그대로
+    남아 있어, XXXXXX(CD) 구분만으로도 이 문서들에 '변경 감지' 배지가 뜰 수 있었다(2026-09).
+
+    ADI CD 변경 요청서도 J-layer/O-layer 표가 없어(작성 화면에 렌더되지 않는다) 그 두 구분은
+    비교하지 않고 XXXXXX(CD)만 비교한다(2026-09) — Only MAP·MAP 삭제(검토 자체를 제외)와 달리
+    이 목적은 P·J 결재 단계가 실제로 존재하므로 XXXXXX 변경 감지는 계속 의미가 있다.
     """
+    empty_group = {'removed': [], 'added': []}
+    if document.is_only_map() or document.is_map_delete_edit():
+        return {'jayer': dict(empty_group), 'oayer': dict(empty_group), 'extra': dict(empty_group)}
+
     data = document.get_detail()
     detail = data.get('detail', {}) or {}
     line = detail.get('line') or ''
     process = detail.get('process_id') or ''
-    empty_group = {'removed': [], 'added': []}
     if not line or not process:
         return {'jayer': dict(empty_group), 'oayer': dict(empty_group), 'extra': dict(empty_group)}
 
-    jayer_saved = [row for row in (data.get('jayerRows') or []) if _is_loaded(row)]
-    oayer_saved = [row for row in (data.get('oayerRows') or []) if _is_loaded(row)]
+    skip_jayer_oayer = document.is_adi_cd_change()
 
-    if job_file_rows is None:
-        job_file_rows = get_job_file_layer_rows(line, process)
-    if ovl_rows is None:
-        ovl_rows = get_ovl_layer_rows(line, process)
+    if skip_jayer_oayer:
+        jayer_diff = dict(empty_group)
+        oayer_diff = dict(empty_group)
+    else:
+        # 자동채움(loaded=true) 행뿐 아니라 수동 입력 행(loaded=false)도 비교 대상에 포함한다(2026-09).
+        jayer_saved = data.get('jayerRows') or []
+        oayer_saved = data.get('oayerRows') or []
+        if job_file_rows is None:
+            job_file_rows = get_job_file_layer_rows(line, process)
+        if ovl_rows is None:
+            ovl_rows = get_ovl_layer_rows(line, process)
+        jayer_diff = _diff_rows(jayer_saved, job_file_rows)
+        oayer_diff = _diff_rows(oayer_saved, ovl_rows)
+
     if extra_rows is None:
         extra_rows = get_extra_layer_rows(line, process)
 
@@ -223,11 +232,7 @@ def compute_document_layer_drift(document, job_file_rows=None, ovl_rows=None, ex
         # 상신 계열 액션(reset_document_drift)이 스냅샷을 캡처하면 그때부터 정상 비교된다.
         extra_diff = dict(empty_group)
 
-    return {
-        'jayer': _diff_rows(jayer_saved, job_file_rows),
-        'oayer': _diff_rows(oayer_saved, ovl_rows),
-        'extra': extra_diff,
-    }
+    return {'jayer': jayer_diff, 'oayer': oayer_diff, 'extra': extra_diff}
 
 
 def recompute_document(document, job_file_rows=None, ovl_rows=None, extra_rows=None):
