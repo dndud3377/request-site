@@ -35,7 +35,7 @@ APScheduler 기반 백그라운드 동기화 작업 문서. 관련 코드: `back
 | 잡 ID | 주기 | 함수 | 설명 |
 |-------|------|------|------|
 | `sync_rtdb_options` | **10분** | `sync_rtdb_options()` | 라인1·3~5·`nv` 의 공정-품목 / 품목-공정ID / 스텝 (RTDB 단독) 동기화 (`nv` 는 스텝 제외). 실패 시 실패 목록을 모아 **RTDB 동기화 실패** 알림 메일 1통 발송 |
-| `sync_form_options` | 1시간 | `sync_form_options()` | 바코드-품목 / MAP 이름 + **라인2 공정-품목 / 품목-공정ID** (DCQ 단독) 동기화. 실패 시 실패 목록을 모아 **DCQ 동기화 실패** 알림 메일 1통 발송 |
+| `sync_form_options` | 1시간 | `sync_form_options()` | 바코드-품목 / MAP 이름 / MAP 테이블 + **라인2 공정-품목 / 품목-공정ID** (DCQ 단독) 동기화. 실패 시 실패 목록을 모아 **DCQ 동기화 실패** 알림 메일 1통 발송 |
 | `sync_holidays` | 매일 02:00 | `sync_holidays()` | 공휴일 동기화 (act_date UNIQUE → 날짜 기준 중복 제거 후 저장). 실패 시 **DCQ 동기화 실패** 알림 메일 발송 |
 | `sync_design_rule` | 매일 02:00 | `sync_design_rule()` | 공정-디자인룰(DCQ `S.M`) 동기화 → `api_designrule` 전체 갱신. 실패 시 **DCQ 동기화 실패** 알림 메일 발송 |
 | `process_mail_queue` | 1분 | `process_mail_queue()` | 결재 알림 메일 큐 발송 |
@@ -173,6 +173,16 @@ response.json() → data
 
 `AAA1`/`AAA2`/`AAA3` 는 값이 항상 있다는 보장이 없어 `MapName` 모델에서 `null=True, blank=True` 로
 저장한다(`backend/api/models.py`).
+
+### MAP 테이블 (`api_maptable`, DCQ 단독)
+
+`sync_form_options()` 안에서 `S.D` 테이블을 조회해 `api_maptable` 을 갱신한다(변경 감지 없이 매 사이클
+전체 `DELETE → INSERT`, MAP 이름과 동일 패턴). 원본 쿼리에 `WHERE` 필터가 없어 4개 컬럼 모두 값이
+없을 수 있다고 보고 `MapTable` 모델에서 전부 `null=True, blank=True` 로 저장한다.
+
+| 대상 테이블 | DCQ 소스 | 조회 컬럼 |
+|-------------|----------|-----------|
+| `api_maptable` | `S.D` | `lineid`, `partid`, `m`, `s` (`m`/`s` 는 실제 배포 전 이름이 확정되면 쿼리·모델 필드명을 함께 변경할 예정인 임시 컬럼명) |
 
 ### 라인2 (DCQ 단독, 폴백 구조 아님)
 
@@ -461,8 +471,9 @@ for eqptype_value, table, table_type, target_label in STEP_EQPTYPE_TARGETS:
   개별 조회가 예외이거나 빈 결과(0건)인 경우를 **모두 실패로 취급**한다 — RTDB 는 예전에 DCQ fallback을
   타던 조건과 동일하고, DCQ 도 같은 기준을 그대로 적용한다.
 - **DCQ 쪽 항목 구성**(`context`/`target`):
-  - `sync_form_options`: (`-`, 바코드-품목) / (`-`, MAP 이름) / (`라인2`, 공정-품목) / (`라인2`, 품목-공정ID) —
-    DCQ 로그인 자체가 실패하면 `scheduler.FORM_OPTIONS_TARGETS` 4개 전부가 실패로 기록된다.
+  - `sync_form_options`: (`-`, 바코드-품목) / (`-`, MAP 이름) / (`-`, MAP 테이블) / (`라인2`, 공정-품목) /
+    (`라인2`, 품목-공정ID) — DCQ 로그인 자체가 실패하면 `scheduler.FORM_OPTIONS_TARGETS` 5개 전부가
+    실패로 기록된다.
   - `sync_holidays`: (`-`, 공휴일) 1건
   - `sync_design_rule`: (`-`, 공정-디자인룰) 1건
   - 라인 개념이 없는 항목은 `context='-'`로 표시된다(표 "구분" 컬럼).
