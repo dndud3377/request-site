@@ -1200,6 +1200,9 @@ class MapName(models.Model):
 
 class MapTable(models.Model):
     """외부 DB 에서 1시간마다 동기화되는 MAP 테이블 캐시"""
+    # m 값이 이 값과 같으면 "CC 존재"로 판정한다(의뢰 상세 MAP 정보 탭, 2026-09 추가).
+    CC_MARK = '777'
+
     lineid = models.CharField(max_length=50, null=True, blank=True, verbose_name='라인 ID')
     partid = models.CharField(max_length=200, null=True, blank=True, verbose_name='Part ID')
     m = models.CharField(max_length=200, null=True, blank=True, verbose_name='M')
