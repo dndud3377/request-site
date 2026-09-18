@@ -182,6 +182,10 @@ def compute_document_layer_drift(document, job_file_rows=None, ovl_rows=None, ex
     Only MAP·MAP 삭제 요청서는 검토 대상에서 제외한다 — 프론트가 이 두 목적에서는 J-layer/
     O-layer 표를 강제로 비우지만(작성 화면에 그 표 자체가 없다) line/process_id 는 그대로
     남아 있어, XXXXXX(CD) 구분만으로도 이 문서들에 '변경 감지' 배지가 뜰 수 있었다(2026-09).
+
+    ADI CD 변경 요청서도 J-layer/O-layer 표가 없어(작성 화면에 렌더되지 않는다) 그 두 구분은
+    비교하지 않고 XXXXXX(CD)만 비교한다(2026-09) — Only MAP·MAP 삭제(검토 자체를 제외)와 달리
+    이 목적은 P·J 결재 단계가 실제로 존재하므로 XXXXXX 변경 감지는 계속 의미가 있다.
     """
     empty_group = {'removed': [], 'added': []}
     if document.is_only_map() or document.is_map_delete_edit():
@@ -194,14 +198,22 @@ def compute_document_layer_drift(document, job_file_rows=None, ovl_rows=None, ex
     if not line or not process:
         return {'jayer': dict(empty_group), 'oayer': dict(empty_group), 'extra': dict(empty_group)}
 
-    # 자동채움(loaded=true) 행뿐 아니라 수동 입력 행(loaded=false)도 비교 대상에 포함한다(2026-09).
-    jayer_saved = data.get('jayerRows') or []
-    oayer_saved = data.get('oayerRows') or []
+    skip_jayer_oayer = document.is_adi_cd_change()
 
-    if job_file_rows is None:
-        job_file_rows = get_job_file_layer_rows(line, process)
-    if ovl_rows is None:
-        ovl_rows = get_ovl_layer_rows(line, process)
+    if skip_jayer_oayer:
+        jayer_diff = dict(empty_group)
+        oayer_diff = dict(empty_group)
+    else:
+        # 자동채움(loaded=true) 행뿐 아니라 수동 입력 행(loaded=false)도 비교 대상에 포함한다(2026-09).
+        jayer_saved = data.get('jayerRows') or []
+        oayer_saved = data.get('oayerRows') or []
+        if job_file_rows is None:
+            job_file_rows = get_job_file_layer_rows(line, process)
+        if ovl_rows is None:
+            ovl_rows = get_ovl_layer_rows(line, process)
+        jayer_diff = _diff_rows(jayer_saved, job_file_rows)
+        oayer_diff = _diff_rows(oayer_saved, ovl_rows)
+
     if extra_rows is None:
         extra_rows = get_extra_layer_rows(line, process)
 
@@ -220,11 +232,7 @@ def compute_document_layer_drift(document, job_file_rows=None, ovl_rows=None, ex
         # 상신 계열 액션(reset_document_drift)이 스냅샷을 캡처하면 그때부터 정상 비교된다.
         extra_diff = dict(empty_group)
 
-    return {
-        'jayer': _diff_rows(jayer_saved, job_file_rows),
-        'oayer': _diff_rows(oayer_saved, ovl_rows),
-        'extra': extra_diff,
-    }
+    return {'jayer': jayer_diff, 'oayer': oayer_diff, 'extra': extra_diff}
 
 
 def recompute_document(document, job_file_rows=None, ovl_rows=None, extra_rows=None):
