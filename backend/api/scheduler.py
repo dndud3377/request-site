@@ -79,6 +79,7 @@ LINE2_PC_QUERY = """
 FORM_OPTIONS_TARGETS = [
     {'context': '-', 'target': '바코드-품목'},
     {'context': '-', 'target': 'MAP 이름'},
+    {'context': '-', 'target': 'MAP 테이블'},
     {'context': LINE2, 'target': '공정-품목'},
     {'context': LINE2, 'target': '품목-공정ID'},
 ]
@@ -564,14 +565,14 @@ def sync_rtdb_options():
 
 def sync_form_options():
     """
-    DCQ 를 사용하여 외부 DB 에서 바코드-품목 / MAP 이름 데이터와
+    DCQ 를 사용하여 외부 DB 에서 바코드-품목 / MAP 이름 / MAP 테이블 데이터와
     라인2 의 공정-품목 / 품목-공정ID 데이터를 DataFrame 으로 가져와 Django DB 에 저장한다.
     (라인1·3~5 의 공정-품목·품목-공정ID·스텝은 RTDB MAIN + DCQ fallback 구조로 sync_rtdb_options 로 분리.
      라인2 는 소스 테이블이 달라 RTDB 를 지원하지 않으므로 DCQ 단독으로 여기서 처리한다.)
-    - 4개 데이터(바코드-품목/MAP 이름/라인2 공정-품목/라인2 품목-공정ID) 중 예외이거나 빈 결과인
-      항목은 실패로 기록하고, 함수 종료 시 하나라도 있으면 `mailer.enqueue_dcq_sync_failed()`
+    - 5개 데이터(바코드-품목/MAP 이름/MAP 테이블/라인2 공정-품목/라인2 품목-공정ID) 중 예외이거나
+      빈 결과인 항목은 실패로 기록하고, 함수 종료 시 하나라도 있으면 `mailer.enqueue_dcq_sync_failed()`
       로 알림 메일 1통을 큐에 적재한다(수신자는 RTDB 와 동일하게 `.env` 의 `RTDB_SYNC_ALERT_MAIL`).
-      DCQ 로그인 자체가 실패하면 `FORM_OPTIONS_TARGETS` 4개 전부를 실패로 기록한다.
+      DCQ 로그인 자체가 실패하면 `FORM_OPTIONS_TARGETS` 5개 전부를 실패로 기록한다.
     """
     engine = None
 
@@ -645,6 +646,29 @@ def sync_form_options():
             except Exception as e:
                 logger.error(_("[scheduler] MAP 이름 동기화 실패: {e}").format(e=e), exc_info=True)
                 failures.append({'context': '-', 'target': 'MAP 이름'})
+
+            try:
+                query_mt = """
+                    SELECT DISTINCT lineid, partid, m, s
+                    FROM S.D
+                """
+                df_mt = get_data_from_dcq(query_mt, dcq_id)
+
+                if df_mt is None or len(df_mt) == 0:
+                    logger.warning(_("[scheduler] MAP 테이블 데이터가 없습니다"))
+                    failures.append({'context': '-', 'target': 'MAP 테이블'})
+                else:
+                    df_mt['last_synced'] = pd.Timestamp.now()
+                    df_mt = df_mt[['lineid', 'partid', 'm', 's', 'last_synced']]
+
+                    with engine.begin() as db_conn:
+                        db_conn.execute(text("DELETE FROM api_maptable"))
+                        df_mt.to_sql('api_maptable', db_conn, if_exists='append', index=False)
+
+                    logger.info(_("[scheduler] MAP 테이블 {count}건 동기화 완료").format(count=len(df_mt)))
+            except Exception as e:
+                logger.error(_("[scheduler] MAP 테이블 동기화 실패: {e}").format(e=e), exc_info=True)
+                failures.append({'context': '-', 'target': 'MAP 테이블'})
 
             # --- 라인2 공정-품목 (api_processproduct) ---
             try:
