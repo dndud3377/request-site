@@ -1,4 +1,4 @@
-import React, { ReactNode, createContext, useContext, useState } from 'react';
+import React, { ReactNode, createContext, useContext, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 /**
@@ -30,6 +30,8 @@ interface ModalProps {
   /** 본문(.modal-body)에만 덧입히는 스타일. 공용 CSS 를 건드리지 않고 이 모달의 높이만 조절할 때 쓴다. */
   bodyStyle?: React.CSSProperties;
   hideFullscreen?: boolean;
+  /** true면 헤더를 마우스로 눌러 끌어 모달을 자유롭게 옮길 수 있다(기본 false, 다른 모달은 영향 없음). */
+  draggable?: boolean;
 }
 
 interface ConfirmModalProps {
@@ -56,9 +58,31 @@ export default function Modal({
   style,
   bodyStyle,
   hideFullscreen = false,
+  draggable = false,
 }: ModalProps): React.ReactElement | null {
   const { t } = useTranslation();
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [dragPos, setDragPos] = useState({ x: 0, y: 0 });
+  const dragStartRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    if (!draggable || isFullscreen) return;
+    // 헤더 안 버튼(전체화면/닫기) 클릭은 드래그로 다루지 않는다.
+    if ((e.target as HTMLElement).closest('button')) return;
+    dragStartRef.current = { startX: e.clientX, startY: e.clientY, origX: dragPos.x, origY: dragPos.y };
+    const handleMove = (ev: MouseEvent) => {
+      const start = dragStartRef.current;
+      if (!start) return;
+      setDragPos({ x: start.origX + (ev.clientX - start.startX), y: start.origY + (ev.clientY - start.startY) });
+    };
+    const handleUp = () => {
+      dragStartRef.current = null;
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+  };
 
   if (!isOpen) return null;
 
@@ -68,10 +92,18 @@ export default function Modal({
     isFullscreen ? 'modal-fullscreen' : '',
   ].filter(Boolean).join(' ');
 
+  const draggedStyle = draggable && !isFullscreen && (dragPos.x !== 0 || dragPos.y !== 0)
+    ? { transform: `translate(${dragPos.x}px, ${dragPos.y}px)` }
+    : undefined;
+
   return (
     <div className="modal-overlay" style={topLevel ? { zIndex: 3000 } : undefined}>
-      <div className={modalClass} style={isFullscreen ? undefined : style}>
-        <div className="modal-header">
+      <div className={modalClass} style={isFullscreen ? undefined : { ...style, ...draggedStyle }}>
+        <div
+          className="modal-header"
+          onMouseDown={handleDragStart}
+          style={draggable && !isFullscreen ? { cursor: 'move' } : undefined}
+        >
           <h3>{title}</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {titleExtra}
