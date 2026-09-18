@@ -7380,6 +7380,89 @@ class LayerDriftPurposeExclusionTest(TestCase):
         self.assertEqual(doc.layer_drift_detail, '')
 
 
+class LayerDriftManualRowInclusionTest(TestCase):
+    """수동 입력(loaded=False) J-layer/O-layer 행도 '변경 감지' 비교 대상에 포함되는지 검증(2026-09).
+
+    이전에는 `_is_loaded()` 필터가 자동채움 행만 비교 대상으로 삼고 수동 입력 행은 아예
+    saved_by_seq 에서 빠졌다 — 이번 변경으로 그 필터를 제거했다.
+    """
+
+    def setUp(self):
+        import json
+        self._json = json
+        self.requester = UserProfile.objects.create(loginid='ldm_req', mail='ldm_req@company.com', role='NONE')
+
+    def _make_doc(self, jayer_rows, status='under_review'):
+        detail = {'line': 'line1', 'process_id': 'P1'}
+        return RequestDocument.objects.create(
+            title='ldm-doc', requester=self.requester, requester_name='요청자',
+            requester_email='ldm_req@company.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps({'detail': detail, 'jayerRows': jayer_rows, 'oayerRows': []}),
+        )
+
+    def _manual_row(self, **overrides):
+        row = {'sp': 'M1', 'sd': '수동설명', 'pp': 'RM1', 'layerid': 'LM1', 'loaded': False, 'updated': ''}
+        row.update(overrides)
+        return row
+
+    def test_manual_row_without_matching_master_is_flagged_removed(self):
+        """마스터 DB에 없는 stepseq를 수동으로 적어 넣으면 '삭제'로 잡힌다(이전엔 애초에 비교 대상이 아니었음)."""
+        from . import layer_drift
+        doc = self._make_doc([self._manual_row()])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual([row['stepseq'] for row in diff['jayer']['removed']], ['M1'])
+        self.assertEqual(diff['jayer']['added'], [])
+
+    def test_manual_row_matching_master_with_different_content_is_flagged_changed(self):
+        """수동 입력 행의 stepseq가 마스터 DB에 실제로 존재하지만 내용이 다르면 값 변경으로 잡힌다."""
+        from . import layer_drift
+        from .models import PhotoStepS1
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='M2', descript='새설명', recipeid='RNEW',
+            areaname='A1', eqptype='PMAINF', layerid='LNEW', updated='U1',
+        )
+        doc = self._make_doc([self._manual_row(sp='M2', sd='옛설명', pp='ROLD', layerid='LOLD')])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual([row['descript'] for row in diff['jayer']['removed']], ['옛설명'])
+        self.assertEqual([row['descript'] for row in diff['jayer']['added']], ['새설명'])
+
+    def test_manual_row_matching_master_with_same_content_is_not_flagged(self):
+        """내용이 마스터 DB와 완전히 같으면(우연히 일치) 변경 없음으로 처리된다."""
+        from . import layer_drift
+        from .models import PhotoStepS1
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='M3', descript='설명', recipeid='R1',
+            areaname='A1', eqptype='PMAINF', layerid='L1', updated='U1',
+        )
+        doc = self._make_doc([self._manual_row(sp='M3', sd='설명', pp='R1', layerid='L1')])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual(diff['jayer'], {'removed': [], 'added': []})
+
+    def test_auto_filled_row_still_compared_alongside_manual_row(self):
+        """자동채움 행(loaded=True)은 기존과 동일하게 계속 비교되는지 회귀 확인."""
+        from . import layer_drift
+        from .models import PhotoStepS1
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='A1', descript='자동설명변경', recipeid='RA',
+            areaname='A1', eqptype='PMAINF', layerid='LA', updated='U1',
+        )
+        auto_row = {'sp': 'A1', 'sd': '자동설명', 'pp': 'RA_OLD', 'layerid': 'LA', 'loaded': True, 'updated': 'U0'}
+        doc = self._make_doc([auto_row, self._manual_row()])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        removed_stepseqs = {row['stepseq'] for row in diff['jayer']['removed']}
+        self.assertIn('A1', removed_stepseqs)  # 자동채움 행도 여전히 감지(회귀 없음)
+        self.assertIn('M1', removed_stepseqs)  # 수동 입력 행도 감지(이번 변경의 핵심)
+
+
 class MapCompletionMailMatchTest(TestCase):
     """pop3_mail.match_map_completion_mail() 단위 테스트 (POP3 접속 없이 순수 DB 로직만 검증)."""
 
