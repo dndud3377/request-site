@@ -1198,6 +1198,22 @@ class MapName(models.Model):
         return f"{self.lineid} / {self.partid}"
 
 
+class MapTable(models.Model):
+    """외부 DB 에서 1시간마다 동기화되는 MAP 테이블 캐시"""
+    lineid = models.CharField(max_length=50, null=True, blank=True, verbose_name='라인 ID')
+    partid = models.CharField(max_length=200, null=True, blank=True, verbose_name='Part ID')
+    m = models.CharField(max_length=200, null=True, blank=True, verbose_name='M')
+    s = models.CharField(max_length=200, null=True, blank=True, verbose_name='S')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        verbose_name = 'MAP 테이블 캐시'
+        verbose_name_plural = 'MAP 테이블 캐시 목록'
+
+    def __str__(self):
+        return f"{self.lineid} / {self.partid}"
+
+
 class ProductBarcode(models.Model):
     """외부 DB 에서 1시간마다 동기화되는 바코드-품목 캐시"""
     n7mto_date = models.CharField(max_length=200, null=True, blank=True, verbose_name='MTO Date')
