@@ -189,12 +189,19 @@ def compute_document_layer_drift(document, job_file_rows=None, ovl_rows=None, ex
     job_file_rows/ovl_rows/extra_rows 를 넘기면(배치 조회 결과) DB 를 다시 조회하지 않고 그대로
     쓴다 — recompute_all_in_progress 의 라인당 배치 조회 결과를 문서별로 재사용하기 위함.
     None 이면(단일 문서 호출부는 그대로) 기존처럼 문서 하나 기준으로 직접 조회한다.
+
+    Only MAP·MAP 삭제 요청서는 검토 대상에서 제외한다 — 프론트가 이 두 목적에서는 J-layer/
+    O-layer 표를 강제로 비우지만(작성 화면에 그 표 자체가 없다) line/process_id 는 그대로
+    남아 있어, XXXXXX(CD) 구분만으로도 이 문서들에 '변경 감지' 배지가 뜰 수 있었다(2026-09).
     """
+    empty_group = {'removed': [], 'added': []}
+    if document.is_only_map() or document.is_map_delete_edit():
+        return {'jayer': dict(empty_group), 'oayer': dict(empty_group), 'extra': dict(empty_group)}
+
     data = document.get_detail()
     detail = data.get('detail', {}) or {}
     line = detail.get('line') or ''
     process = detail.get('process_id') or ''
-    empty_group = {'removed': [], 'added': []}
     if not line or not process:
         return {'jayer': dict(empty_group), 'oayer': dict(empty_group), 'extra': dict(empty_group)}
 
