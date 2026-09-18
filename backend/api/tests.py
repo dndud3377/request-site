@@ -7463,6 +7463,92 @@ class LayerDriftManualRowInclusionTest(TestCase):
         self.assertIn('M1', removed_stepseqs)  # 수동 입력 행도 감지(이번 변경의 핵심)
 
 
+class LayerDriftAdiCdChangeScopeTest(TestCase):
+    """ADI CD 변경 요청서는 J-layer/O-layer는 비교하지 않고 XXXXXX(CD)만 비교되는지 검증(2026-09).
+
+    Only MAP·MAP 삭제(검토 자체를 전체 제외)와 달리, ADI CD 변경은 XXXXXX만 선택적으로 비교한다.
+    """
+
+    def setUp(self):
+        import json
+        self._json = json
+        self.requester = UserProfile.objects.create(loginid='adi_req', mail='adi_req@company.com', role='NONE')
+
+    def _make_doc(self, request_purpose, jayer_rows=None, status='under_review'):
+        detail = {'line': 'line1', 'process_id': 'P1'}
+        if request_purpose:
+            detail['request_purpose'] = request_purpose
+        return RequestDocument.objects.create(
+            title='adi-doc', requester=self.requester, requester_name='요청자',
+            requester_email='adi_req@company.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps({
+                'detail': detail, 'jayerRows': jayer_rows or [], 'oayerRows': [],
+            }),
+        )
+
+    def _seed_extra_master(self):
+        from .models import PhotoStepS1Cd
+        from .scheduler import STEP_EXTRA_EQPTYPE
+        PhotoStepS1Cd.objects.create(
+            processid='P1', stepseq='10', descript='D1', recipeid='R1',
+            areaname='A1', eqptype=STEP_EXTRA_EQPTYPE, layerid='L1', updated='U1',
+        )
+
+    def test_adi_cd_change_skips_jayer_oayer_but_still_detects_extra(self):
+        from . import layer_drift
+        from .models import PhotoStepS1
+        # jayer 표에 (다른 목적에서 전환되며 남은) 자동채움 행이 있어도 비교 대상에서 제외돼야 한다.
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='J1', descript='다른내용', recipeid='RX',
+            areaname='A1', eqptype='PMAINF', layerid='LX', updated='U1',
+        )
+        jayer_rows = [{'sp': 'J1', 'sd': '옛설명', 'pp': 'ROLD', 'layerid': 'LOLD', 'loaded': True, 'updated': 'U0'}]
+        self._seed_extra_master()
+        doc = self._make_doc(RequestDocument.ADI_CD_CHANGE_PURPOSE, jayer_rows=jayer_rows)
+        doc.extra_layer_snapshot = '[]'
+        doc.save(update_fields=['extra_layer_snapshot'])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual(diff['jayer'], {'removed': [], 'added': []})
+        self.assertEqual(diff['oayer'], {'removed': [], 'added': []})
+        self.assertEqual([row['stepseq'] for row in diff['extra']['added']], ['10'])
+
+    def test_only_map_and_map_delete_remain_fully_excluded(self):
+        """회귀 확인: Only MAP·MAP 삭제는 이번 변경과 무관하게 XXXXXX 포함 전부 제외된 채로 남는다."""
+        from . import layer_drift
+        self._seed_extra_master()
+        for purpose in (RequestDocument.ONLY_MAP_PURPOSE, RequestDocument.MAP_DELETE_EDIT_PURPOSE):
+            doc = self._make_doc(purpose)
+            doc.extra_layer_snapshot = '[]'
+            doc.save(update_fields=['extra_layer_snapshot'])
+
+            diff = layer_drift.compute_document_layer_drift(doc)
+
+            self.assertEqual(diff, {
+                'jayer': {'removed': [], 'added': []},
+                'oayer': {'removed': [], 'added': []},
+                'extra': {'removed': [], 'added': []},
+            }, msg=f'purpose={purpose}')
+
+    def test_general_purpose_document_still_compares_jayer_normally(self):
+        """회귀 확인: 일반 목적 문서는 이번 분기 추가와 무관하게 jayer 비교가 정상 동작한다."""
+        from . import layer_drift
+        from .models import PhotoStepS1
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='J1', descript='새설명', recipeid='RNEW',
+            areaname='A1', eqptype='PMAINF', layerid='LNEW', updated='U1',
+        )
+        jayer_rows = [{'sp': 'J1', 'sd': '옛설명', 'pp': 'ROLD', 'layerid': 'LOLD', 'loaded': True, 'updated': 'U0'}]
+        doc = self._make_doc(request_purpose=None, jayer_rows=jayer_rows)
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual([row['descript'] for row in diff['jayer']['removed']], ['옛설명'])
+        self.assertEqual([row['descript'] for row in diff['jayer']['added']], ['새설명'])
+
+
 class MapCompletionMailMatchTest(TestCase):
     """pop3_mail.match_map_completion_mail() 단위 테스트 (POP3 접속 없이 순수 DB 로직만 검증)."""
 
