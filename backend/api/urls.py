@@ -7,7 +7,7 @@ from .views import (
     ProcessDesignRuleOverrideViewSet, DocumentDesignRuleOverrideViewSet, PersonalMarkCategoryViewSet,
     health_check, upload_image, upload_video, user_events,
     form_options_process, form_options_products, form_options_process_id,
-    form_options_job_file_layer, form_options_ovl_layer, form_options_bb_external,
+    form_options_job_file_layer, form_options_ovl_layer, form_options_extra_layer, form_options_bb_external,
     form_options_layer_ids, form_options_barcode, form_options_mapname, form_options_map_info,
     photostep_changes,
 )
@@ -53,6 +53,7 @@ urlpatterns = [
     path('form-options/process-id/', form_options_process_id),
     path('form-options/job-file-layer/', form_options_job_file_layer),
     path('form-options/ovl-layer/', form_options_ovl_layer),
+    path('form-options/extra-layer/', form_options_extra_layer),
     path('form-options/bb-external/', form_options_bb_external),
     path('form-options/layer-ids/', form_options_layer_ids),
     path('form-options/barcode/', form_options_barcode),

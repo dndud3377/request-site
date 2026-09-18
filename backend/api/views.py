@@ -688,7 +688,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='layer-drift')
     def layer_drift_detail(self, request, pk=None):
-        """J-layer/O-layer '변경 감지' 상세 diff.
+        """J-layer/O-layer/XXXXXX '변경 감지' 상세 diff.
 
         `layer_drift.recompute_all_in_progress()`(스케줄러, 10분 주기)가 캐시해 둔
         `layer_drift_detail`을 그대로 반환한다 — 클릭할 때마다 마스터 DB를 다시 조회하지 않는다.
@@ -705,6 +705,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             'checked_at': document.layer_drift_checked_at,
             'jayer': detail.get('jayer') or empty_group,
             'oayer': detail.get('oayer') or empty_group,
+            'extra': detail.get('extra') or empty_group,
         })
 
     @action(detail=True, methods=['post'], url_path='requester-resubmit')
@@ -3713,7 +3714,7 @@ def form_options_ovl_layer(request):
     """{{request.line}} + {{request.process_id}} → OVL layer 정보 (eqptype='POVLAY')"""
     import logging
     logger = logging.getLogger(__name__)
-    
+
     line = request.GET.get('line', '')
     process = request.GET.get('process', '')
 
@@ -3731,6 +3732,37 @@ def form_options_ovl_layer(request):
 
     except Exception as e:
         logger.error(f"[OVL_LAYER] 조회 실패: {e}")
+        return JsonResponse({'options': [], 'error': str(e)})
+
+
+@require_GET
+def form_options_extra_layer(request):
+    """{{request.line}} + {{request.process_id}} → XXXXXX layer 정보 (eqptype 임시값).
+
+    Job-file/OVL layer 조회 API와 대칭적으로 신설 — 현재 요청서 작성 화면에서 호출하는 곳은
+    없고, layer_drift.capture_extra_layer_snapshot()이 상신 시점 스냅샷 캡처에 내부적으로 쓰는
+    layer_drift.get_extra_layer_rows()와 동일한 조회를 API로도 노출해둔다(통일성 목적).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    line = request.GET.get('line', '')
+    process = request.GET.get('process', '')
+
+    if not line or not process:
+        return JsonResponse({'options': []})
+
+    if line not in layer_drift.EXTRA_MODEL_MAP:
+        logger.warning(f"[EXTRA_LAYER] 알 수 없는 {{request.line}}: {line}")
+        return JsonResponse({'options': []})
+
+    try:
+        options = layer_drift.get_extra_layer_rows(line, process)
+        logger.info(f"[EXTRA_LAYER] {len(options)}건 조회 성공: {line}, {process}")
+        return JsonResponse({'options': options})
+
+    except Exception as e:
+        logger.error(f"[EXTRA_LAYER] 조회 실패: {e}")
         return JsonResponse({'options': [], 'error': str(e)})
 
 

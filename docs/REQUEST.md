@@ -3760,6 +3760,113 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   재계산이 다음 주기에 캐시를 다시 계산하므로 별도 데이터 마이그레이션은 불필요 — 이미 잘못
   캐시된 `layer_drift_detail`도 다음 10분 주기에 자동으로 정정된다).
 
+### 기능 추가 (2026-09-17 — '변경 감지'에 XXXXXX(CD, eqptype 임시값) 구분 추가)
+
+- **요청**: 기존 '변경 감지'는 J-layer/O-layer(PMAINF/POVLAY) 두 구분만 비교했다. XXXXXX(CD,
+  `PhotoStepS{1,3,4,5}Cd`) 구분도 같은 방식으로 비교되길 원하는 요청 — 단 XXXXXX는 요청서
+  작성 화면에 사용자가 편집하는 표가 없어(Jayer/Oayer와 달리) "저장값"이라는 비교 기준점이
+  아예 없다는 제약이 있었다.
+- **선택한 방식(가장 보수적 + 통일성 우선, 화면은 신설하지 않음)**: 사용자 입력 화면을 만드는
+  대신, 상신 계열 액션(`submit`/`resubmit`/`requester-resubmit`/`peer-submit`) 시점에 서버가
+  XXXXXX 마스터 DB 값을 자동으로 스냅샷 캡처해 저장값 대용으로 삼는다. 이후 그 스냅샷과 현재
+  마스터 DB 값을 Jayer/Oayer와 동일한 기준(`descript`/`recipeid`/`layerid`, stepseq 매칭)으로
+  비교한다. 새 화면(작성/조회 UI)은 만들지 않되, 기존 배지(`layer_drift_detected`)에는 반영하고
+  기존 diff 모달에는 섹션 한 줄만 추가했다(배지만 뜨고 모달엔 안 보이는 불일치를 피하기 위함).
+- **백엔드**:
+  - `backend/api/layer_drift.py`:
+    - `EXTRA_MODEL_MAP`(`PhotoStepS1Cd`/`S3Cd`/`S4Cd`/`S5Cd`) 추가.
+    - `get_extra_layer_rows(line, process)` 신설 — `get_job_file_layer_rows`/`get_ovl_layer_rows`와
+      동일 패턴(eqptype 필터, stepseq 오름차순). eqptype 값은 `scheduler.STEP_EXTRA_EQPTYPE`
+      (TODO: 실제 값 미확정 임시값 `'XXXXXX'`)을 함수 내부에서 지연 import해 재사용한다 —
+      `scheduler.py`가 모듈 최상단에서 `from . import layer_drift`를 하므로 최상단 import는
+      순환 import가 된다.
+    - `capture_extra_layer_snapshot(document)` 신설 — 문서의 line/process 기준으로 XXXXXX
+      마스터 DB 값을 조회해 인스턴스 필드에만 채운다(저장은 호출부 책임).
+    - `reset_document_drift()`가 이제 `capture_extra_layer_snapshot()`을 먼저 호출한 뒤
+      `extra_layer_snapshot` 필드까지 포함해 한 번에 save한다 — 호출부(위 4개 액션)를 개별
+      수정하지 않고 기존 호출 지점 그대로 스냅샷 캡처가 함께 이뤄진다.
+    - `_diff_snapshot_rows(saved_rows, live_rows)` 신설 — XXXXXX 전용 비교 함수. Jayer/Oayer의
+      `_diff_rows()`는 저장값이 사용자 입력 포맷(`sp`/`sd`/`pp`)이라 별도 변환(`_saved_entry`)이
+      필요하지만, XXXXXX 스냅샷은 이미 `_row_dict()`와 같은 포맷이라 `_live_entry()`만으로 양쪽을
+      바로 비교한다.
+    - `compute_document_layer_drift`/`recompute_document`/`recompute_all_in_progress`가 `extra`
+      그룹을 포함하도록 확장(`detected` 판정은 jayer/oayer/extra 세 그룹 중 하나라도 있으면 true).
+    - `_batch_fetch_layer_rows()`가 `extra_cache`도 함께 반환하도록 확장 — 문서 수가 아니라
+      실제 등장하는 라인 수에만 비례하는 배치 조회 원칙을 XXXXXX에도 동일하게 적용(기존
+      `recompute_all_in_progress`의 쿼리 수 최적화가 깨지지 않도록).
+  - `backend/api/models.py`: `RequestDocument.extra_layer_snapshot`(TextField, blank=True) 추가
+    (`migrations/0045_requestdocument_extra_layer_snapshot.py`).
+  - `backend/api/views.py`:
+    - `layer_drift_detail` 액션 응답에 `extra` 키 추가.
+    - `form_options_extra_layer` 뷰 신설 — `form_options_job_file_layer`/`form_options_ovl_layer`와
+      대칭적인 조회 API(통일성 목적). **현재 프론트에서 호출하는 곳은 없다** — XXXXXX 조회는
+      `layer_drift.get_extra_layer_rows()`를 통해 스냅샷 캡처 시 내부적으로만 쓰인다.
+  - `backend/api/urls.py`: `GET /api/form-options/extra-layer/` 라우트 추가.
+- **프론트(최소 반영만, 새 화면 없음)**:
+  - `types/index.ts`: `LayerDriftResponse`에 `extra: LayerDriftGroup` 필드 추가.
+  - `ApprovalPage.tsx`: diff 모달에 `driftLayerSection(t('approval.layer_drift_extra_title'),
+    layerDriftData.extra)` 한 줄 추가, 빈 상태 판정에도 `extra` 그룹 포함.
+  - `locales/ko.json`/`en.json`: `approval.layer_drift_extra_title`("XXXXXX") 키 동시 추가,
+    `layer_drift_badge_tooltip` 문구에 XXXXXX 언급 추가(배지가 XXXXXX 변경만으로도 뜰 수 있으므로
+    기존 "J-layer/O-layer만 언급"하던 문구가 부정확해지는 것을 막기 위함).
+  - 배지 자체(`badge-layer-drift`)는 `layer_drift_detected` 하나로 이미 동작하므로 배지 렌더링
+    코드 자체는 변경 없음.
+- **XXXXXX가 아직 임시값인 점에 대한 영향**: `STEP_EXTRA_EQPTYPE`이 실제 값으로 교체돼도 이
+  기능은 상수 참조만 쓰므로 코드 변경이 필요 없다(`scheduler.py`의 상수 하나만 바뀌면 자동 반영).
+- **검증**: CLAUDE.md §1-1 절차(sqlite, 원격 세션)로 `manage.py test api` — **551건 전부 통과**
+  (기존 542건 + 신규 재현 테스트 9건, 회귀 없음). 신규 재현 테스트는 프로젝트 밖
+  (`$SP/stubs/verify_layer_drift_extra.py`)에 두고 eqptype/process 필터링, 스냅샷 직후 무변화,
+  값 변경/행 삭제/행 추가 각각의 diff, `layer_drift_detected`가 XXXXXX 단독으로도 true가 되는지,
+  `recompute_all_in_progress`의 배치 캐시가 같은 line/process를 공유하는 문서 여러 건에 모두
+  적용되는지, 진행중이 아닌 문서는 스킵되는지 — 실행 출력까지 확인, 전부 통과. 프론트:
+  `npx tsc --noEmit` 신규 에러 0(기존 4건 — `Set` es5 순회 3건 + `GuidePage.tsx` i18n strict 키
+  1건 — 과 동일, 이번 변경 파일과 무관). `CI=true npx react-scripts test --watchAll=false` —
+  11 suites / **294건 전부 통과**(1회차에 `adiCdUnregisteredAndVs.test.tsx`에서 `window.scrollTo`
+  관련 플레이키 실패가 1건 있었으나 재실행 시 통과 — 이번 변경과 무관한 파일이라 원인 아님).
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [결재 진행중인 문서 하나를 상신한 뒤, Django shell 등으로 그 문서가 참조하는
+     `PhotoStepS{N}Cd` 행을 새로 추가하거나 기존 행의 `descript`/`recipeid`/`layerid` 값을
+     바꿔둔다] → [스케줄러가 돌거나 `layer_drift.recompute_all_in_progress()`를 수동 호출] →
+     [결재 현황 목록에서 그 문서 행의 목적 칸에 "변경 감지" 배지가 뜨는지 확인 → 클릭 → 모달에
+     "XXXXXX" 섹션이 추가로 보이고 STEP/구분/저장된 값/현재 값이 표로 뜨는지 확인.]
+  2. [같은 문서를 다시 상신(재상신)한 뒤 배지가 사라지는지, 그 시점의 `PhotoStepS{N}Cd` 값으로
+     스냅샷이 다시 캡처됐는지(재상신 직후에는 XXXXXX 변경이 없어야 정상) 확인.]
+  3. [J-layer/O-layer는 그대로 두고 XXXXXX만 바꿨을 때도 배지가 뜨는지 확인 — 세 그룹 중
+     하나만 바뀌어도 배지가 뜬다는 것의 확인.]
+
+### 기능 개선 (2026-09-18 — '변경 감지' 모달을 J-layer/O-layer/XXXXXX 탭으로 구분)
+
+- **요청**: XXXXXX 추가로 모달에 3개 목록(J-layer/O-layer/XXXXXX)이 한 번에 쌓여 보이게 됐다 —
+  탭으로 구분해서 보고 싶다는 요청.
+- **구현**(`frontend/src/pages/ApprovalPage.tsx`만 수정, 새 CSS 없음):
+  - 변경 현황(`ChangeStatusPage.tsx`)의 필터 탭과 동일한 `filter-tabs`/`filter-tab`/`filter-tab
+    active` 클래스를 재사용해 모달 상단에 탭 3개(J-layer/O-layer/XXXXXX)를 렌더링.
+  - `driftTab` 상태로 선택된 탭 하나의 그룹만 표시. `openLayerDrift()`가 데이터 로드 직후
+    jayer→oayer→extra 순서로 변경 내역이 있는 첫 탭을 기본 선택한다(전부 비어 있으면 'jayer') —
+    클릭 없이도 실제 변경이 있는 탭을 바로 보게 하기 위함.
+  - `driftLayerSection()`은 그대로 재사용하되, 탭 라벨과 섹션 제목이 중복 표시되지 않도록
+    `title` 인자를 빈 문자열로 넘기면 제목 줄 자체를 렌더링하지 않도록 수정(`{title && ...}`).
+  - 선택된 탭이 비어 있으면(해당 그룹에 변경 없음) 그 탭 안에서 `change_status.no_data`를
+    보여준다 — 기존엔 3개 모두 비어야만 전체 안내 문구가 떴지만, 탭 구조에서는 개별 탭 단위로
+    "이 탭엔 변경 없음"을 알려주는 게 맞다고 판단해 로직을 그렇게 바꿨다.
+  - 새 i18n 키는 추가하지 않았다(기존 `approval.layer_drift_*_title`/`change_status.no_data`
+    재사용).
+- **주의**: `t(tab.titleKey)`처럼 동적 문자열을 i18n 키로 넘기면 프로젝트의 엄격한 i18n 키
+  타입 체크(`GuidePage.tsx`의 기존 4번째 tsc 에러와 같은 종류)에 걸린다 — `DRIFT_TABS`의
+  `titleKey` 타입을 `string`이 아니라 3개 키의 리터럴 유니온으로 좁혀서 해결했다.
+- **영향 파일**: `frontend/src/pages/ApprovalPage.tsx`.
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일). `CI=true npx react-scripts test
+  --watchAll=false` — 11 suites / **294건 전부 통과**(회귀 없음). 백엔드는 이번 변경 대상이
+  아니라 재실행하지 않았다.
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [J-layer/O-layer/XXXXXX 중 최소 2곳에 변경이 있는 문서의 "변경 감지" 배지 클릭] →
+     [모달 상단에 탭 3개(J-layer/O-layer/XXXXXX)가 보이고, 변경이 있는 탭 중 하나가 처음부터
+     선택된 상태(파란 강조)로 그 내용이 바로 보이는지 확인.]
+  2. [변경이 없는 탭을 클릭] → [그 탭으로 전환되고 "표시할 변경 이력이 없습니다" 문구가 보이는지
+     확인 → 변경이 있는 탭으로 다시 클릭해 표가 다시 보이는지 확인.]
+  3. [세 그룹 모두 변경이 없는 상태에서(이론상 배지 자체가 안 뜨지만, 만약 뜬 상태라면) 모달을
+     열었을 때 기본 탭('J-layer')이 선택되고 "표시할 변경 이력이 없습니다" 문구가 보이는지 확인.]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
