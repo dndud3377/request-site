@@ -421,6 +421,8 @@
     "prodc_process_selection": "조합법 선택",
     "prodc_partid": "제품 이름 선택",
     "mshot_change_status": "X표시 변경 여부",
+    "map_table_cc_exists": "CC 존재",
+    "map_table_cc_not_exists": "CC 미존재",
     "mshot_none": "없음",
     "mshot_add": "추가",
     "mshot_edit": "수정",

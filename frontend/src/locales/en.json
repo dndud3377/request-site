@@ -421,6 +421,8 @@
     "prodc_process_selection": "Combination",
     "prodc_partid": "Product Name",
     "mshot_change_status": "X Mark Change",
+    "map_table_cc_exists": "CC Exists",
+    "map_table_cc_not_exists": "CC Not Found",
     "mshot_none": "None",
     "mshot_add": "Add",
     "mshot_edit": "Edit",
