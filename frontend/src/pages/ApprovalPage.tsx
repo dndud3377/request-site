@@ -2489,6 +2489,7 @@ export default function ApprovalPage(): React.ReactElement {
           title={t('approval.layer_drift_modal_title')}
           size="md"
           topLevel
+          draggable
         >
           {layerDriftLoading || !layerDriftData ? (
             <p>{t('common.loading')}</p>
