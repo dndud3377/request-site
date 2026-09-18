@@ -2121,10 +2121,25 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {/* CLONE/EXISTING — X표시 변경 여부도 잠긴 기본값이므로 회색 "없음"으로 대체한다. */}
+          {/* CLONE/EXISTING — X표시 변경 여부 칸은 그대로 "없음"이지만, 원본 위치·원본 제품 기준으로
+              api_maptable 을 자동 매칭한 CC 존재/미존재를 이어서 표시한다(서버가 조회 시점마다 계산).
+              원본 위치·제품이 없어 매칭 자체가 불가능하면(map_table_cc_exists == null) "없음"만 표시. */}
           {isMapRegisteredDetail && (isR || isO || isP) && (
             <div style={rowStyle}>
-              <PlaceholderChip label={t('request.mshot_change_status')} />
+              <div style={chipBase}>
+                <div style={fieldLabel}>{t('request.mshot_change_status')}</div>
+                <div style={fieldValue}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>{t('request.value_none')}</span>
+                  {doc.map_table_cc_exists != null && (
+                    <>
+                      {' / '}
+                      {doc.map_table_cc_exists
+                        ? <span style={{ color: '#15803d' }}>{t('request.map_table_cc_exists')}</span>
+                        : <span style={{ color: 'var(--text-muted)' }}>{t('request.map_table_cc_not_exists')}</span>}
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
