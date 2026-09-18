@@ -3984,6 +3984,48 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   3. [자동채움으로 채운 행이 있는 문서는 이번 변경 이후에도 기존과 동일하게 마스터 DB 값이
      바뀌면 정상적으로 감지되는지(회귀 없음) 함께 확인.]
 
+### 기능 개선 (2026-09-18 — '변경 감지'에서 ADI CD 변경은 XXXXXX만 비교)
+
+- **요청**: ADI CD 변경 요청서도 Only MAP·MAP 삭제처럼 J-layer/O-layer 표를 채우지 않는다.
+  이 경우 XXXXXX(CD)만 비교해서 배지·모달에 보여지도록 해달라는 요청. 추가로 J/O를 채우지
+  않는 다른 요청 목적이 더 있는지도 함께 조사해달라는 요청.
+- **조사 결과**: 프론트가 J-layer/O-layer 표를 강제로 비우는 요청 목적은
+  `RequestPage/index.tsx`의 `applyMapOnlyScope` 호출 조건(`target === ONLY_MAP_PURPOSE ||
+  MAP_DELETE_EDIT_PURPOSE || ADI_CD_CHANGE_PURPOSE`) 기준 정확히 3가지뿐임을 확인했다 —
+  `Only MAP`, `MAP 삭제`, `ADI CD 변경`. 이 중 `Only MAP`·`MAP 삭제`는 이전 작업에서 이미
+  전체 제외(XXXXXX 포함 검토 자체를 하지 않음) 처리돼 있어, 이번에 새로 다룰 대상은
+  `ADI CD 변경` 하나였다 — 사용자에게 확인해 두 목적은 기존(전체 제외) 그대로 유지하고
+  `ADI CD 변경`만 "XXXXXX만 비교"로 새로 적용하기로 결정.
+- **수정**(`backend/api/layer_drift.py` `compute_document_layer_drift()`): `document.is_adi_cd_change()`
+  가 참이면 `get_job_file_layer_rows()`/`get_ovl_layer_rows()` 조회와 jayer/oayer 비교를
+  건너뛰고 빈 diff를 채우되, extra(XXXXXX)는 line/process_id 기준으로 기존과 동일하게
+  계산·비교한다. `Only MAP`·`MAP 삭제` 분기(함수 맨 앞, 전체 제외)는 그대로 두었다 — 이 두
+  분기가 먼저 걸리므로 `is_adi_cd_change()` 분기와 서로 겹치지 않는다.
+- **프론트엔드 변경 없음**: 배지 노출(`isLayerDriftVisible`, `frontend/src/utils/approvalTable.ts`)과
+  diff 모달의 탭별 표시가 이미 `layer_drift_detected`·그룹별 데이터 유무만으로 동작하고
+  요청 목적을 따로 분기하지 않는다 — 빈 그룹인 탭은 이미 "변경 없음" 문구만 보여주므로,
+  백엔드만 고쳐도 ADI CD 변경 문서에 XXXXXX 탭만 자연스럽게 채워진다(코드 확인 완료, 별도
+  수정 불필요).
+- **영향 파일**: `backend/api/layer_drift.py`, `backend/api/tests.py`.
+- **검증**: CLAUDE.md §1-1 절차(sqlite, 원격 세션)로 `manage.py test api` — **553건 전부 통과**
+  (회귀 없음). `backend/api/tests.py`에 `LayerDriftAdiCdChangeScopeTest`(3건, 프로젝트 테스트에
+  영구 포함) 신규 추가 — ① ADI CD 변경 문서는 jayer 표에 자동채움 행이 남아 있어도 jayer/oayer는
+  항상 빈 diff이고 XXXXXX만 감지되는지 ② (회귀 확인) `Only MAP`·`MAP 삭제`는 이번 변경과
+  무관하게 XXXXXX 포함 전부 빈 diff로 남는지 ③ (회귀 확인) 일반 목적 문서는 jayer 비교가
+  정상 동작하는지 — 실행 출력까지 확인, 전부 통과.
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [요청 목적 `ADI CD 변경`으로 상신된 결재 진행중 문서 하나를 골라, Django shell 등으로 그
+     문서가 참조하는 `PhotoStepS{N}Cd` 값을 바꿔둔다] → [스케줄러 재계산 후(또는
+     `layer_drift.recompute_all_in_progress()` 수동 호출) 결재 현황 목록에서 그 문서에 "변경
+     감지" 배지가 뜨는지 확인.]
+  2. [배지 클릭 → 모달에서 "XXXXXX" 탭에만 변경 내용이 보이고, "J-layer"/"O-layer" 탭은 "변경
+     없음"으로 보이는지 확인 — J-layer/O-layer는 애초에 표 자체가 비어 있어 비교되지 않는다.]
+  3. [같은 문서가 참조하는 `PhotoStepS{N}`(PMAINF, J-layer 원본)을 바꿔도 배지·모달의
+     J-layer 탭에는 아무 변화가 없는지 확인 — ADI CD 변경은 J-layer를 아예 비교하지 않음을
+     재확인.]
+  4. [대조군으로 `Only MAP`·`MAP 삭제` 문서에 동일하게 마스터 DB 값을 바꿔도 배지 자체가 뜨지
+     않는지 확인 — 이번 변경이 두 목적의 기존(전체 제외) 동작에 영향을 주지 않았음을 확인.]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
