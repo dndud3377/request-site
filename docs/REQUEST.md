@@ -404,6 +404,30 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   기존 회귀 테스트가 이번 변경으로 깨지지 않는지만 확인). 백엔드 코드는 변경하지 않아 백엔드
   테스트는 실행하지 않았다.
 
+### 버그 수정 (2026-09-20 — CC 판정: 매칭 행이 여러 개일 때 id 첫 행만 보던 문제)
+
+- **증상**: `compute_map_table_cc_status()`(`utils.py`)가 `line`/`partid` 조건에 맞는 행을
+  전부 찾아놓고도 `.order_by('id').first()`로 **id가 가장 작은 행 하나만** 보고 판정했다.
+  같은 `line`/`partid`로 매칭되는 행이 여러 개(예: 1~1000개) 있을 수 있는데, 그중 CC_MARK
+  (`'777'`)를 가진 행이 있어도 그게 첫 번째 행이 아니면 `'not_exists'`로 잘못 판정됐다.
+- **원인**: MapName(ox/oy/sr, AAA1~3 참고 정보)이 쓰는 "id 기준 첫 행만 본다"는 방식을
+  그대로 가져다 썼다. MapName 쪽은 애초에 "여러 행이 매칭되면 첫 행만 쓴다"는 가정을
+  그대로 유지하기로 결정했으므로 **그쪽은 그대로 둔다** — 이번 수정은 `MapTable`(CC 판정)
+  에만 적용한다.
+- **수정**: `.first()`로 행 하나를 뽑아 그 행의 `m`만 보는 대신, 매칭되는 행 전체 중
+  **하나라도 `m == MapTable.CC_MARK`인 행이 있으면 `exists`**로 판정하도록 변경
+  (`matched.filter(m=MapTable.CC_MARK).exists()`).
+- **영향 파일**: `backend/api/utils.py`(`compute_map_table_cc_status`만 수정,
+  `form_options_map_info`의 MapName 조회 로직은 변경 없음).
+- **검증**:
+  - `manage.py test api` — **553건 전부 통과**(회귀 없음).
+  - 재현 테스트(개발 DB, 실제 함수 호출): 같은 `line`/`partid`로 매칭되는 행 6개를 만들고
+    **id가 가장 큰(마지막) 행에만** `m='777'`을 심은 뒤 `compute_map_table_cc_status('라인1',
+    '12345678')` 호출 → 수정 전이었다면 `not_exists`가 나왔을 상황에서 **`exists`가 정확히
+    나옴**을 실행 출력으로 확인. 매칭 행 전부가 `m≠'777'`인 경우, 매칭 자체가 없는 경우,
+    `line`/`partid` 미입력인 경우도 각각 `not_exists`/`not_exists`/`''`로 기존과 동일하게
+    나오는 것까지 함께 확인.
+
 ### 기능 추가 (2026-09-20 — CC 상태를 기존 "이력 확인" 기능에 편입)
 
 - **요청**: 위(2026-09-18) CC 존재/미존재 표시는 상신 후 `api_maptable` 동기화로 값이 바뀌어도
