@@ -460,6 +460,11 @@ export interface DetailFormState {
   other_purpose: string[];
   source_line: string;
   source_partid: string;
+  // 원본 위치·원본 제품 기준 api_maptable CC 상태 — 폼 편집 중 실시간 조회 결과를 그대로
+  // 저장해 둔다(AAA1~3 참고 정보와 달리 상신 데이터에 포함). 의뢰 상세 'MAP 정보' 탭에서
+  // 상신 시점 값(이 값) vs 조회 시점 실시간 값(map_table_cc_exists)을 비교해 '이력 확인'을
+  // 띄우는 데 쓴다.
+  map_table_cc_status?: MapTableCcStatus;
   change_purpose_note: string;
   flow_chart: FlowChartRow[];
 
@@ -856,10 +861,15 @@ export interface StepInfo {
 }
 
 /** 원본 위치(source_line) + 원본 제품(source_partid) 참고 정보 (MAP 목적 CLONE/EXISTING 전용, 작성 화면 참고용) */
+/** CLONE/EXISTING 원본 위치·원본 제품 기준 api_maptable CC 상태 — '' 는 해당없음(원본 위치/제품 미입력). */
+export type MapTableCcStatus = '' | 'exists' | 'not_exists';
+
 export interface MapInfo {
   AAA1: string | null;
   AAA2: string | null;
   AAA3: string | null;
+  /** AAA1~3 와 달리 detail.map_table_cc_status 에 그대로 저장된다 — 상신 시점 값 기록용. */
+  cc_status: MapTableCcStatus;
 }
 
 // ===== Guide =====

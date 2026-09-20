@@ -109,6 +109,37 @@ LINE_TO_LINEID_MAP = {
 }
 
 
+def compute_map_table_cc_status(line: str, partid: str) -> str:
+    """원본 위치(라인명) + 원본 제품 코드로 MapTable(api_maptable)을 조회해 CC 상태를 판정한다.
+
+    lineid 변환·partid 매칭 조건(정확히 같거나 `{partid}_`로 시작)은 MapName(ox/oy/sr)과
+    동일하지만, **여러 행이 매칭될 때의 판정 기준은 다르다** — MapName 쪽(`form_options_map_info`
+    의 AAA1~3 조회)은 여전히 id 기준 첫 번째 행 하나만 보지만, 이 함수는 매칭되는 행이 여러
+    개(예: 같은 line/partid로 1~1000까지 있는 경우)일 수 있어 **그중 하나라도 CC_MARK 이면
+    존재로 판정**한다 — 특정 행 하나만 보면 나머지에 CC_MARK 행이 있어도 놓치기 때문이다.
+
+    - line/partid 중 하나라도 비어 있거나 lineid 변환에 실패하면 '' (해당없음)
+    - 매칭되는 행이 하나도 없으면 'not_exists'
+    - 매칭되는 행 중 하나라도 m 값이 MapTable.CC_MARK 와 같으면 'exists', 전부 다르면 'not_exists'
+
+    `form_options_map_info`(작성 화면 실시간 조회)와 `RequestDocumentSerializer.
+    get_map_table_cc_exists`(의뢰 상세 조회) 양쪽에서 공유한다 — 판정 기준이 어긋나지
+    않도록 이 함수 하나만 고치면 된다.
+    """
+    from django.db.models import Q
+    from .models import MapTable
+
+    if not line or not partid:
+        return ''
+    lineid = LINE_TO_LINEID_MAP.get(line)
+    if not lineid:
+        return ''
+    matched = MapTable.objects.filter(lineid=lineid).filter(
+        Q(partid=partid) | Q(partid__startswith=f'{partid}_')
+    )
+    return 'exists' if matched.filter(m=MapTable.CC_MARK).exists() else 'not_exists'
+
+
 def cq_login(dcq_id, dcq_password):
     """
     DCQ(DataCenter Query) 로그인 수행

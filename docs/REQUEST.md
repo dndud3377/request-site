@@ -404,6 +404,93 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   기존 회귀 테스트가 이번 변경으로 깨지지 않는지만 확인). 백엔드 코드는 변경하지 않아 백엔드
   테스트는 실행하지 않았다.
 
+### 버그 수정 (2026-09-20 — CC 판정: 매칭 행이 여러 개일 때 id 첫 행만 보던 문제)
+
+- **증상**: `compute_map_table_cc_status()`(`utils.py`)가 `line`/`partid` 조건에 맞는 행을
+  전부 찾아놓고도 `.order_by('id').first()`로 **id가 가장 작은 행 하나만** 보고 판정했다.
+  같은 `line`/`partid`로 매칭되는 행이 여러 개(예: 1~1000개) 있을 수 있는데, 그중 CC_MARK
+  (`'777'`)를 가진 행이 있어도 그게 첫 번째 행이 아니면 `'not_exists'`로 잘못 판정됐다.
+- **원인**: MapName(ox/oy/sr, AAA1~3 참고 정보)이 쓰는 "id 기준 첫 행만 본다"는 방식을
+  그대로 가져다 썼다. MapName 쪽은 애초에 "여러 행이 매칭되면 첫 행만 쓴다"는 가정을
+  그대로 유지하기로 결정했으므로 **그쪽은 그대로 둔다** — 이번 수정은 `MapTable`(CC 판정)
+  에만 적용한다.
+- **수정**: `.first()`로 행 하나를 뽑아 그 행의 `m`만 보는 대신, 매칭되는 행 전체 중
+  **하나라도 `m == MapTable.CC_MARK`인 행이 있으면 `exists`**로 판정하도록 변경
+  (`matched.filter(m=MapTable.CC_MARK).exists()`).
+- **영향 파일**: `backend/api/utils.py`(`compute_map_table_cc_status`만 수정,
+  `form_options_map_info`의 MapName 조회 로직은 변경 없음).
+- **검증**:
+  - `manage.py test api` — **553건 전부 통과**(회귀 없음).
+  - 재현 테스트(개발 DB, 실제 함수 호출): 같은 `line`/`partid`로 매칭되는 행 6개를 만들고
+    **id가 가장 큰(마지막) 행에만** `m='777'`을 심은 뒤 `compute_map_table_cc_status('라인1',
+    '12345678')` 호출 → 수정 전이었다면 `not_exists`가 나왔을 상황에서 **`exists`가 정확히
+    나옴**을 실행 출력으로 확인. 매칭 행 전부가 `m≠'777'`인 경우, 매칭 자체가 없는 경우,
+    `line`/`partid` 미입력인 경우도 각각 `not_exists`/`not_exists`/`''`로 기존과 동일하게
+    나오는 것까지 함께 확인.
+
+### 기능 추가 (2026-09-20 — CC 상태를 기존 "이력 확인" 기능에 편입)
+
+- **요청**: 위(2026-09-18) CC 존재/미존재 표시는 상신 후 `api_maptable` 동기화로 값이 바뀌어도
+  화면에 아무 표시가 없었다. `map_change`/`mshot_change` 등 다른 필드가 이미 쓰는 "이력
+  확인"(빨간 테두리 + 우측 상단 버튼 → 변경 전/후 비교 모달, 이력조회에선 회차별 표)에 CC 상태도
+  똑같이 편입한다.
+- **왜 layer_drift(변경 감지 배지) 대신 이 방식인가**: 처음엔 J/O-layer가 쓰는
+  `layer_drift_detected`(스케줄러 재계산 + 배지 + 별도 diff 모달) 패턴으로 미리보기를 만들어
+  봤으나, 사용자가 다른 필드와 **완전히 같은 UI/UX**(이력 확인 버튼 + 표)를 요구해 방향을
+  바꿨다. 실제 화면 스크린샷으로 두 방식을 각각 보여주고 확인받은 뒤 진행했다.
+- **핵심 난제와 해법**: 다른 필드의 "이력 확인"은 재상신마다 저장되는 `detail` 스냅샷끼리
+  비교한다(`computeDetailDiff`). 그런데 CC 상태는 `detail`에 없는, 서버가 매번 새로 계산하는
+  값이라 이 비교를 그대로 쓸 수 없다. 그래서 **CC 상태를 실제로 `detail.map_table_cc_status`
+  필드로 편입**시켰다:
+  - 작성 화면(`StepMap.tsx`)이 원본 위치·제품 변경 시 실시간 조회하는 AAA1~3(`form_options_map_info`)
+    응답에 `cc_status`(`'exists'`/`'not_exists'`/`''`)를 함께 실어 보낸다(백엔드 `utils.
+    compute_map_table_cc_status()` 신설 — `RequestDocumentSerializer.get_map_table_cc_exists`와
+    매칭 로직을 공유).
+  - AAA1~3와 달리 `cc_status`는 **`detail.map_table_cc_status`에 그대로 저장**한다
+    (`RequestPage/index.tsx`의 해당 useEffect, `handleDetailSet`이 아니라 `setDetail`을 직접
+    써서 "편집 중 로드" 가드에 영향 주지 않음). 즉 상신할 때마다 "그 순간 실시간으로 조회한
+    CC 상태"가 자동으로 `detail`에 함께 저장되고, 재상신 시 기존 `history` 메커니즘이 이 값도
+    회차 스냅샷에 그대로 담아준다 — **새 저장 경로를 안 만들고 기존 것에 값 하나만 얹었다.**
+  - `PagedDetailView.tsx`는 "상신 시점 저장값"(`detail.map_table_cc_status`, 해당 회차의 값)과
+    "조회 시점 실시간값"(`doc.map_table_cc_exists`, 서버가 매 조회마다 재계산)을 비교해
+    다르면 "이력 확인" 버튼을 띄운다. **다른 필드와 다른 점**: 다른 필드는 "현재" 값도 저장된
+    `detail`에서 오지만, CC는 "현재" 값이 항상 **실시간** 값이다(재상신 없이도 DCQ 동기화만으로
+    바뀌기 때문) — 그래서 범용 `Chip`/`FieldHistoryModal`을 그대로 재사용하지 못하고,
+    같은 시각 스타일을 쓰는 전용 블록을 만들었다(결재 진행 중: `FieldGroupHistoryModal` 재사용,
+    이력조회: 회차별 표를 직접 구성 — 마지막 "현재" 행만 실시간 값).
+- **결재 로직에는 영향 없음**: `MAP_INFO_FIELDS`(R 생략 판정)에는 이 필드를 넣지 않았다 —
+  CC 드리프트는 사용자가 답을 바꾼 게 아니라 외부 데이터가 바뀐 것이라, 결재 경로 판정에
+  끼어들면 안 된다(범위 밖 부작용 방지).
+- **영향 파일**: `backend/api/utils.py`(`compute_map_table_cc_status` 신설),
+  `backend/api/serializers.py`(중복 로직 제거, 공용 함수 호출로 교체),
+  `backend/api/views.py`(`form_options_map_info` 응답에 `cc_status` 추가),
+  `frontend/src/types/index.ts`(`MapTableCcStatus`, `MapInfo.cc_status`,
+  `DetailFormState.map_table_cc_status`), `frontend/src/pages/RequestPage/constants.ts`
+  (`INITIAL_DETAIL`/`mapInfoDefaults()`), `frontend/src/pages/RequestPage/index.tsx`
+  (mapInfo useEffect), `frontend/src/components/PagedDetailView.tsx`.
+- **검증**:
+  - 백엔드: `manage.py test api` — **553건 전부 통과**(회귀 없음).
+  - 프론트: `tsc --noEmit` 신규 에러 0(기존 4건과 동일), `react-scripts test` — **11 suites /
+    294건 전부 통과**.
+  - 실제 렌더링(개발 서버, 실제 `MapTable`/`RequestDocument` 데이터):
+    - 결재 진행 중 문서(상신 시점 `map_table_cc_status='not_exists'`, 현재 `api_maptable`에
+      `m='777'` 매칭 추가) → "X표시 변경 여부" 칸에 빨간 테두리 + "이력 확인" 버튼 노출,
+      클릭 시 [항목/변경 전/변경 후] 표에 "CC 미존재 → CC 존재" 정확히 표시.
+    - 이력조회 문서(1차 제출: 값 없음 `-`, 2차 제출: CC 미존재, 현재: CC 존재) → 회차별 표에
+      3행 모두 정확히 표시되고 마지막 행(현재)에만 변경 표시(●).
+    - 검증에 쓴 임시 라우트·컴포넌트는 확인 후 전부 제거, 저장소에는 최종 기능 코드만 남음.
+- **수동 검증 시나리오**:
+  1. [개발 DB `api_maptable`에 매칭 없는 상태로 CLONE 문서 상신(원본 위치/제품 지정) → 결재
+     대기 중 `api_maptable`에 매칭 행(`m='777'`) 추가 → 결재현황에서 그 문서 상세보기 → 'MAP
+     정보' 탭] → [기대 결과: "X표시 변경 여부" 칸에 빨간 테두리 + "이력 확인" 버튼이 뜨고,
+     클릭하면 "CC 미존재 → CC 존재" 비교가 보인다.]
+  2. [1의 문서가 반려되어 재상신됨 → 이력조회에서 다시 열람] → [기대 결과: 회차별 표에 각
+     회차 상신 시점의 CC 상태와 마지막 "현재(최신)" 행의 실시간 값이 순서대로 나온다.]
+  3. [NEW 문서 확인] → [기대 결과: CC 관련 문구·버튼이 전혀 보이지 않고 기존 X표시 변경 여부
+     실값만 그대로 나온다.]
+  4. [작성 화면에서 CLONE 선택 후 원본 위치/제품 입력] → [기대 결과: 눈에 보이는 변화는 없지만
+     (AAA1~3 참고 카드만 뜸), 이 상태로 상신하면 그 순간의 CC 상태가 자동으로 함께 저장된다.]
+
 ### 기능 추가 (2026-09-18 — 의뢰 상세 MAP 정보: X표시 변경 여부 칸에 CC 존재/미존재 자동 매칭 표시)
 
 - **요청**: MAP 목적이 `CLONE`(차용)·`EXISTING`(기등록)일 때 "X표시 변경 여부" 칸(원래 항상 잠긴

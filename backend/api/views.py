@@ -34,7 +34,7 @@ from .models import (
     DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot, LayerFilterSet,
     PersonalMarkCategory, PersonalDocumentMark,
 )
-from .utils import LINE_TO_LINEID_MAP, resolve_employee_by_loginid
+from .utils import LINE_TO_LINEID_MAP, resolve_employee_by_loginid, compute_map_table_cc_status
 from . import mailer
 from . import doc_permissions
 from . import design_rule_stats
@@ -4023,12 +4023,19 @@ def form_options_mapname(request):
 
 @require_GET
 def form_options_map_info(request):
-    """원본 위치(라인명) + 원본 제품 코드(8자리) → AAA1/AAA2/AAA3 참고 정보 반환.
-    (2026-09 추가 — CLONE/EXISTING 작성 화면 참고용, 상신 데이터에는 포함되지 않는다)"""
+    """원본 위치(라인명) + 원본 제품 코드(8자리) → AAA1/AAA2/AAA3 참고 정보 + CC 상태 반환.
+    (2026-09 추가 — CLONE/EXISTING 작성 화면 참고용)
+
+    AAA1~3 는 참고용일 뿐 상신 데이터에는 포함되지 않는다(작성 화면에만 표시).
+    cc_status('exists'/'not_exists'/'')는 반대로 프론트가 detail.map_table_cc_status 에
+    그대로 저장한다 — 의뢰 상세 'MAP 정보' 탭의 '이력 확인'(상신 시점 값 vs 현재 값 비교)이
+    이 값을 기준으로 판정하기 때문이다. 매 조회마다 최신 api_maptable 기준으로 다시 계산한다.
+    """
     line = request.GET.get('line', '')
     partid = request.GET.get('partid', '')
     lineid = LINE_TO_LINEID_MAP.get(line)
-    empty = {'AAA1': None, 'AAA2': None, 'AAA3': None}
+    cc_status = compute_map_table_cc_status(line, partid)
+    empty = {'AAA1': None, 'AAA2': None, 'AAA3': None, 'cc_status': cc_status}
     if not lineid or not partid:
         return JsonResponse(empty)
 
@@ -4041,7 +4048,7 @@ def form_options_map_info(request):
     if not entry:
         return JsonResponse(empty)
 
-    return JsonResponse({'AAA1': entry.AAA1, 'AAA2': entry.AAA2, 'AAA3': entry.AAA3})
+    return JsonResponse({'AAA1': entry.AAA1, 'AAA2': entry.AAA2, 'AAA3': entry.AAA3, 'cc_status': cc_status})
 
 
 # 변경 현황 화면이 한 번에 그룹핑 대상으로 읽어올 최대 변경 이력 행 수. 이 이상 쌓여 있으면

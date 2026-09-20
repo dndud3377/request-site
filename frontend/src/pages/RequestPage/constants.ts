@@ -294,6 +294,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   other_purpose: [],
   source_line: '',
   source_partid: '',
+  map_table_cc_status: '',
   change_purpose_note: '',
   flow_chart: [makeRow()],
   process_id: '',
@@ -378,6 +379,7 @@ export const INITIAL_DETAIL: DetailFormState = {
 export const mapInfoDefaults = (): Partial<DetailFormState> => ({
   source_line: INITIAL_DETAIL.source_line,
   source_partid: INITIAL_DETAIL.source_partid,
+  map_table_cc_status: INITIAL_DETAIL.map_table_cc_status,
   map_type: INITIAL_DETAIL.map_type,
   map_change: INITIAL_DETAIL.map_change,
   map_value_x: INITIAL_DETAIL.map_value_x,

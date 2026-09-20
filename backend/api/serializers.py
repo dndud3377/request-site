@@ -1,13 +1,12 @@
 import re
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from django.db.models import Q
 from .models import (
     RequestDocument, ApprovalStep, VOC, VocComment, Line, AdminNotice, VocHistory, Guide, UserGroup, AddressBook,
     ProcessDesignRuleOverride, DocumentDesignRuleOverride, DocumentReviewItem, DocumentReviewItemReviewer,
-    RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet, PersonalMarkCategory, MapTable,
+    RejectionSnapshot, ADDRESS_BOOK_MAIL_DOMAIN, LayerFilterSet, PersonalMarkCategory,
 )
-from .utils import LINE_TO_LINEID_MAP
+from .utils import compute_map_table_cc_status
 from . import doc_permissions
 from . import design_rule_stats
 
@@ -304,14 +303,13 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
         """의뢰 상세 'MAP 정보' 탭의 X표시 변경 여부 칸에서 CC 존재/미존재를 표시하기 위한 자동 매칭.
 
         detail.source_line/source_partid(원본 위치/원본 제품, CLONE·EXISTING 전용) 기준으로
-        `MapName` 참고 정보(ox/oy/sr)와 동일한 로직으로 `MapTable`(api_maptable)을 조회한다 —
-        LINE_TO_LINEID_MAP 으로 lineid 변환 후, partid 가 정확히 같거나 `partid_` 로 시작하는
-        첫 번째 행(id 기준)을 찾는다. 조회 시점의 최신 api_maptable 데이터로 매번 다시 계산하므로
-        이력 조회에서 과거 문서를 열어도 스냅샷이 아니라 실시간 값이 나온다(ox/oy/sr 과 동일 원칙).
+        `compute_map_table_cc_status()`(utils.py — MapName ox/oy/sr 과 동일한 매칭 로직을
+        `form_options_map_info` 뷰와 공유)를 그대로 호출한다. 조회 시점의 최신 api_maptable
+        데이터로 매번 다시 계산하므로, 이력 조회에서 과거 문서를 열어도 스냅샷이 아니라
+        실시간 값이 나온다(ox/oy/sr 과 동일 원칙).
 
         반환값: 원본 위치/제품이 아직 없으면 None(해당없음) — CLONE/EXISTING 여부는 프론트가
         이 칸 자체를 그릴지 말지로 이미 판정하므로 여기서는 따로 보지 않는다.
-        매칭 행이 없거나 m 값이 `MapTable.CC_MARK` 가 아니면 False, 같으면 True.
         """
         import json
         try:
@@ -320,22 +318,10 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
         except Exception:
             return None
 
-        line = detail.get('source_line')
-        partid = detail.get('source_partid')
-        if not line or not partid:
+        status = compute_map_table_cc_status(detail.get('source_line'), detail.get('source_partid'))
+        if status == '':
             return None
-
-        lineid = LINE_TO_LINEID_MAP.get(line)
-        if not lineid:
-            return None
-
-        entry = (
-            MapTable.objects.filter(lineid=lineid)
-            .filter(Q(partid=partid) | Q(partid__startswith=f'{partid}_'))
-            .order_by('id')
-            .first()
-        )
-        return bool(entry and entry.m == MapTable.CC_MARK)
+        return status == 'exists'
 
     def update(self, instance, validated_data):
         # 의뢰자 표시 정보는 최초 작성자로 고정한다.

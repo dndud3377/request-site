@@ -633,18 +633,31 @@ export default function RequestPage(): React.ReactElement {
   }, [detail.source_line]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 원본 위치+원본 제품 참고 정보(AAA1~3) 조회 — CLONE/EXISTING 이고 둘 다 선택됐을 때만.
-  // 참고용일 뿐 상신 데이터에 포함되지 않으므로 detail 에는 저장하지 않는다.
+  // AAA1~3 는 참고용일 뿐 상신 데이터에 포함되지 않으므로 detail 에는 저장하지 않지만,
+  // 같은 응답의 cc_status 는 detail.map_table_cc_status 에 그대로 저장한다 — 의뢰 상세
+  // 'MAP 정보' 탭이 "상신 시점 값 vs 조회 시점 실시간 값"을 비교해 '이력 확인'을 띄우는 데 쓴다.
   useEffect(() => {
+    // 시스템이 자동으로 채우는 값이라 handleDetailSet(사용자 편집 취급, 로드 가드 해제)이 아니라
+    // setDetail을 직접 써서 "편집 중 로드" 가드(isLoadingEditRef)에 영향을 주지 않는다.
     if (!isMapRegisteredType(detail.map_type) || !detail.source_line || !detail.source_partid) {
       setMapInfo(null);
+      setDetail((prev) => (prev.map_table_cc_status ? { ...prev, map_table_cc_status: '' } : prev));
       return;
     }
     const seq = (optionReqSeq.current['map-info'] ?? 0) + 1;
     optionReqSeq.current['map-info'] = seq;
     setMapInfoLoading(true);
     formOptionsAPI.getMapInfo(detail.source_line, detail.source_partid)
-      .then((info) => { if (optionReqSeq.current['map-info'] === seq) setMapInfo(info); })
-      .catch(() => { if (optionReqSeq.current['map-info'] === seq) setMapInfo(null); })
+      .then((info) => {
+        if (optionReqSeq.current['map-info'] !== seq) return;
+        setMapInfo(info);
+        setDetail((prev) => ({ ...prev, map_table_cc_status: info.cc_status }));
+      })
+      .catch(() => {
+        if (optionReqSeq.current['map-info'] !== seq) return;
+        setMapInfo(null);
+        setDetail((prev) => (prev.map_table_cc_status ? { ...prev, map_table_cc_status: '' } : prev));
+      })
       .finally(() => { if (optionReqSeq.current['map-info'] === seq) setMapInfoLoading(false); });
   }, [detail.map_type, detail.source_line, detail.source_partid]); // eslint-disable-line react-hooks/exhaustive-deps
 
