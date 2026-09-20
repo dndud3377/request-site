@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0044_requestdocument_layer_drift"),
+        ("api", "0045_requestdocument_extra_layer_snapshot"),
     ]
 
     operations = [
