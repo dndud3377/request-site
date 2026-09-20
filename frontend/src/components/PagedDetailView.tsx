@@ -2552,6 +2552,19 @@ type Page = { label: string; content: React.ReactNode };
                   <button onClick={exportOayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
                 </div>
               </div>
+              {doc.layer_drift_detected && onOpenLayerDrift && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <button
+                    type="button"
+                    className="badge badge-layer-drift"
+                    style={{ cursor: 'pointer' }}
+                    title={t('approval.layer_drift_badge_tooltip')}
+                    onClick={onOpenLayerDrift}
+                  >
+                    {t('approval.layer_drift_badge')}
+                  </button>
+                </div>
+              )}
               {/* 탭 버튼 */}
               <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderBottom: '2px solid var(--border)' }}>
                 {([

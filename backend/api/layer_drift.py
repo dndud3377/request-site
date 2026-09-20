@@ -1,4 +1,4 @@
-"""J-layer/O-layer 자동 채움 값의 '변경 감지' — 마스터 DB(PhotoStepS*) 드리프트 계산.
+"""J-layer/O-layer/XXXXXX 자동 채움 값의 '변경 감지' — 마스터 DB(PhotoStepS*) 드리프트 계산.
 
 배경: 요청서 작성 화면은 라인+조리법(process_id)을 고르면 `PhotoStepS{1,3,4,5}`(eqptype='PMAINF')/
 `PhotoStepS{1,3,4,5}Ov`(eqptype='POVLAY')를 조회해 J-layer/O-layer 표의 sp(STEPSEQ)/sd(설명)/
@@ -9,6 +9,11 @@ pp(레시피ID)/layerid(Layer)를 자동으로 채운다(`views.py` form_options
 문서의 저장값과 현재 마스터 DB 값을 stepseq(sp) 기준으로 비교해 값 변경/행 삭제/신규 행 추가를
 감지하고, 결과를 RequestDocument.layer_drift_* 필드에 캐시한다(스케줄러 10분 주기 갱신 —
 `scheduler.py` sync_rtdb_options() 끝에서 호출, docs/CHANGE_STATUS.md 와 같은 "지연 허용" 철학).
+
+XXXXXX(`PhotoStepS{1,3,4,5}Cd`, eqptype 임시값)는 Jayer/Oayer와 달리 요청서에 사용자가 편집하는
+표가 없어 "저장값"이 없다. 대신 상신 계열 액션(submit/resubmit/requester-resubmit/peer-submit)
+시점에 마스터 DB 값을 `RequestDocument.extra_layer_snapshot`에 스냅샷으로 캡처해두고, 그 값을
+저장값 대용으로 삼아 동일하게 비교한다(`capture_extra_layer_snapshot`/`reset_document_drift` 참고).
 """
 import json
 import logging
@@ -18,6 +23,7 @@ from django.utils import timezone
 from .models import (
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5,
     PhotoStepS1Ov, PhotoStepS3Ov, PhotoStepS4Ov, PhotoStepS5Ov,
+    PhotoStepS1Cd, PhotoStepS3Cd, PhotoStepS4Cd, PhotoStepS5Cd,
     RequestDocument,
 )
 
@@ -29,6 +35,12 @@ JOB_FILE_MODEL_MAP = {
 }
 OVL_MODEL_MAP = {
     'line1': PhotoStepS1Ov, 'line3': PhotoStepS3Ov, 'line4': PhotoStepS4Ov, 'line5': PhotoStepS5Ov,
+}
+# XXXXXX(임시값, STEP_EXTRA_EQPTYPE) 전용 — Jayer/Oayer와 달리 요청서에 사용자가 편집하는 표가
+# 없어 "저장값"이 없다. 대신 상신 시점에 이 맵으로 조회한 결과를 RequestDocument.extra_layer_snapshot
+# 에 캡처해두고, 그 스냅샷을 저장값 대용으로 삼아 드리프트를 비교한다(capture_extra_layer_snapshot 참고).
+EXTRA_MODEL_MAP = {
+    'line1': PhotoStepS1Cd, 'line3': PhotoStepS3Cd, 'line4': PhotoStepS4Cd, 'line5': PhotoStepS5Cd,
 }
 
 # 결재 진행중으로 보는 상태 — 완료(approved)·반려(rejected)·임시저장(draft)은 대상에서 뺀다.
@@ -67,6 +79,22 @@ def get_ovl_layer_rows(line, process):
     return [_row_dict(item, line, process) for item in queryset]
 
 
+def get_extra_layer_rows(line, process):
+    """views.py form_options_extra_layer 와 동일한 조회(eqptype=XXXXXX 임시값, stepseq 오름차순).
+
+    eqptype 값은 scheduler.STEP_EXTRA_EQPTYPE(TODO: 실제 값 확정 전 임시값)을 그대로 재사용한다.
+    scheduler.py 가 모듈 최상단에서 `from . import layer_drift` 를 하므로, 여기서 scheduler를
+    모듈 최상단에서 import하면 순환 import가 된다 — 호출 시점에만 필요한 상수라 함수 내부에서
+    지연 import한다.
+    """
+    from .scheduler import STEP_EXTRA_EQPTYPE
+    model = EXTRA_MODEL_MAP.get(line)
+    if not model:
+        return []
+    queryset = model.objects.filter(eqptype=STEP_EXTRA_EQPTYPE, processid=process).order_by('stepseq')
+    return [_row_dict(item, line, process) for item in queryset]
+
+
 def _saved_entry(stepseq, saved):
     """저장된 J/O-layer 행(sp/sd/pp/layerid)을 변경 현황(PhotoStepChangeRow)과 같은 모양으로 변환.
 
@@ -82,7 +110,7 @@ def _live_entry(live):
 
 
 def _diff_rows(saved_rows, live_rows):
-    """저장된 행(loaded=true 만)과 현재 마스터 DB 행을 stepseq(sp) 기준으로 비교해
+    """저장된 행 전체(자동채움 + 수동입력)와 현재 마스터 DB 행을 stepseq(sp) 기준으로 비교해
     `docs/CHANGE_STATUS.md`(변경 현황) 화면과 같은 {removed, added} 모양으로 반환한다.
 
     행 삭제(저장에는 있는데 DB에 없음)·신규 행 추가(DB에는 있는데 저장에 없음)는 각각 그대로
@@ -113,56 +141,110 @@ def _diff_rows(saved_rows, live_rows):
     return {'removed': removed, 'added': added}
 
 
-def _is_loaded(row):
-    """이 행이 DB 자동채움 출처인지 — `loaded` 필드만으로는 부족하다.
+def _diff_snapshot_rows(saved_rows, live_rows):
+    """상신 시점 스냅샷(saved_rows)과 현재 마스터 DB 값(live_rows)을 stepseq 기준으로 비교한다.
 
-    프론트(`RequestPage/index.tsx` 문서 로드부, `const loaded = r.loaded ?? !!r.updated?.trim()`)와
-    동일한 보정을 백엔드에서도 적용한다: `loaded` 필드 자체가 없던 옛 문서도 `updated`(자동채움
-    함수 2곳에서만 채워지고 수동 행은 항상 빈 문자열)가 있으면 자동채움 행으로 본다. 이 보정이
-    없으면 `loaded`가 누락된 옛 문서의 정상 행이 전부 '신규 행 추가'로 오탐된다(2026-09 발견).
+    XXXXXX(CD) 전용 — Jayer/Oayer의 `_diff_rows()`와 달리 saved_rows도 이미 `_row_dict()`와 같은
+    포맷(stepseq/descript/recipeid/areaname/layerid)이라 `_saved_entry()` 같은 포맷 변환이 필요
+    없다. 비교 값은 Jayer/Oayer와 동일하게 descript/recipeid/layerid 세 컬럼만 쓴다.
     """
-    return bool(row.get('loaded')) or bool((row.get('updated') or '').strip())
+    saved_by_seq = {row['stepseq']: row for row in saved_rows if row.get('stepseq')}
+    live_by_seq = {row['stepseq']: row for row in live_rows if row.get('stepseq')}
+
+    removed = []
+    added = []
+    for stepseq, saved in saved_by_seq.items():
+        live = live_by_seq.get(stepseq)
+        saved_entry = _live_entry(saved)
+        if live is None:
+            removed.append(saved_entry)
+            continue
+        live_entry = _live_entry(live)
+        if (saved_entry['descript'], saved_entry['recipeid'], saved_entry['layerid']) \
+                != (live_entry['descript'], live_entry['recipeid'], live_entry['layerid']):
+            removed.append(saved_entry)
+            added.append(live_entry)
+
+    for stepseq, live in live_by_seq.items():
+        if stepseq not in saved_by_seq:
+            added.append(_live_entry(live))
+
+    return {'removed': removed, 'added': added}
 
 
-def compute_document_layer_drift(document, job_file_rows=None, ovl_rows=None):
-    """문서 하나의 J-layer/O-layer diff 를 계산한다. line/process_id 가 없으면 빈 결과.
+def compute_document_layer_drift(document, job_file_rows=None, ovl_rows=None, extra_rows=None):
+    """문서 하나의 J-layer/O-layer/XXXXXX diff 를 계산한다. line/process_id 가 없으면 빈 결과.
 
-    job_file_rows/ovl_rows 를 넘기면(배치 조회 결과) DB 를 다시 조회하지 않고 그대로 쓴다
-    — recompute_all_in_progress 의 라인당 배치 조회 결과를 문서별로 재사용하기 위함.
+    job_file_rows/ovl_rows/extra_rows 를 넘기면(배치 조회 결과) DB 를 다시 조회하지 않고 그대로
+    쓴다 — recompute_all_in_progress 의 라인당 배치 조회 결과를 문서별로 재사용하기 위함.
     None 이면(단일 문서 호출부는 그대로) 기존처럼 문서 하나 기준으로 직접 조회한다.
+
+    Only MAP·MAP 삭제 요청서는 검토 대상에서 제외한다 — 프론트가 이 두 목적에서는 J-layer/
+    O-layer 표를 강제로 비우지만(작성 화면에 그 표 자체가 없다) line/process_id 는 그대로
+    남아 있어, XXXXXX(CD) 구분만으로도 이 문서들에 '변경 감지' 배지가 뜰 수 있었다(2026-09).
+
+    ADI CD 변경 요청서도 J-layer/O-layer 표가 없어(작성 화면에 렌더되지 않는다) 그 두 구분은
+    비교하지 않고 XXXXXX(CD)만 비교한다(2026-09) — Only MAP·MAP 삭제(검토 자체를 제외)와 달리
+    이 목적은 P·J 결재 단계가 실제로 존재하므로 XXXXXX 변경 감지는 계속 의미가 있다.
     """
+    empty_group = {'removed': [], 'added': []}
+    if document.is_only_map() or document.is_map_delete_edit():
+        return {'jayer': dict(empty_group), 'oayer': dict(empty_group), 'extra': dict(empty_group)}
+
     data = document.get_detail()
     detail = data.get('detail', {}) or {}
     line = detail.get('line') or ''
     process = detail.get('process_id') or ''
-    empty_group = {'removed': [], 'added': []}
     if not line or not process:
-        return {'jayer': dict(empty_group), 'oayer': dict(empty_group)}
+        return {'jayer': dict(empty_group), 'oayer': dict(empty_group), 'extra': dict(empty_group)}
 
-    jayer_saved = [row for row in (data.get('jayerRows') or []) if _is_loaded(row)]
-    oayer_saved = [row for row in (data.get('oayerRows') or []) if _is_loaded(row)]
+    skip_jayer_oayer = document.is_adi_cd_change()
 
-    if job_file_rows is None:
-        job_file_rows = get_job_file_layer_rows(line, process)
-    if ovl_rows is None:
-        ovl_rows = get_ovl_layer_rows(line, process)
+    if skip_jayer_oayer:
+        jayer_diff = dict(empty_group)
+        oayer_diff = dict(empty_group)
+    else:
+        # 자동채움(loaded=true) 행뿐 아니라 수동 입력 행(loaded=false)도 비교 대상에 포함한다(2026-09).
+        jayer_saved = data.get('jayerRows') or []
+        oayer_saved = data.get('oayerRows') or []
+        if job_file_rows is None:
+            job_file_rows = get_job_file_layer_rows(line, process)
+        if ovl_rows is None:
+            ovl_rows = get_ovl_layer_rows(line, process)
+        jayer_diff = _diff_rows(jayer_saved, job_file_rows)
+        oayer_diff = _diff_rows(oayer_saved, ovl_rows)
 
-    return {
-        'jayer': _diff_rows(jayer_saved, job_file_rows),
-        'oayer': _diff_rows(oayer_saved, ovl_rows),
-    }
+    if extra_rows is None:
+        extra_rows = get_extra_layer_rows(line, process)
+
+    if document.extra_layer_snapshot:
+        try:
+            extra_saved = json.loads(document.extra_layer_snapshot)
+        except (json.JSONDecodeError, TypeError):
+            extra_saved = []
+        extra_diff = _diff_snapshot_rows(extra_saved, extra_rows)
+    else:
+        # 스냅샷을 한 번도 캡처한 적 없는 문서(이 기능이 생기기 전에 이미 상신된 문서) — 빈
+        # 문자열은 "캡처했는데 0건이었다"(그 경우엔 capture_extra_layer_snapshot이 `'[]'`를
+        # 저장하므로 non-empty 문자열이 된다)와 구분되는, "비교 기준 자체가 없다"는 뜻이다.
+        # 비교 기준이 없는 상태에서 그냥 빈 리스트로 취급해 비교하면 현재 마스터 DB에 있는
+        # XXXXXX 행이 전부 '신규 추가'로 오탐된다 — 대신 비교 자체를 하지 않는다. 다음
+        # 상신 계열 액션(reset_document_drift)이 스냅샷을 캡처하면 그때부터 정상 비교된다.
+        extra_diff = dict(empty_group)
+
+    return {'jayer': jayer_diff, 'oayer': oayer_diff, 'extra': extra_diff}
 
 
-def recompute_document(document, job_file_rows=None, ovl_rows=None):
+def recompute_document(document, job_file_rows=None, ovl_rows=None, extra_rows=None):
     """문서 하나의 drift 를 다시 계산해 캐시 필드를 채운다(저장은 호출부 책임). 감지 여부(bool) 반환.
 
-    job_file_rows/ovl_rows 는 compute_document_layer_drift 와 동일 — 배치 조회 결과 재사용용.
-    단일 문서 호출부(예: 온디맨드 API)는 그대로 두 인자 없이 호출하면 되고, 이 함수가 바로
-    save 까지 한다(하위 호환). recompute_all_in_progress 는 저장을 bulk_update 로 묶으므로
+    job_file_rows/ovl_rows/extra_rows 는 compute_document_layer_drift 와 동일 — 배치 조회 결과
+    재사용용. 단일 문서 호출부(예: 온디맨드 API)는 그대로 인자 없이 호출하면 되고, 이 함수가
+    바로 save 까지 한다(하위 호환). recompute_all_in_progress 는 저장을 bulk_update 로 묶으므로
     이 함수를 직접 쓰지 않고 compute_document_layer_drift 를 쓴다.
     """
-    diff = compute_document_layer_drift(document, job_file_rows=job_file_rows, ovl_rows=ovl_rows)
-    detected = any(diff[layer][kind] for layer in ('jayer', 'oayer') for kind in ('removed', 'added'))
+    diff = compute_document_layer_drift(document, job_file_rows=job_file_rows, ovl_rows=ovl_rows, extra_rows=extra_rows)
+    detected = any(diff[layer][kind] for layer in ('jayer', 'oayer', 'extra') for kind in ('removed', 'added'))
     document.layer_drift_detected = detected
     document.layer_drift_detail = json.dumps(diff, ensure_ascii=False) if detected else ''
     document.layer_drift_checked_at = timezone.now()
@@ -171,11 +253,14 @@ def recompute_document(document, job_file_rows=None, ovl_rows=None):
 
 
 def _batch_fetch_layer_rows(lines_and_processes):
-    """(line, process) 조합 집합을 받아 라인당 1쿼리(processid__in)로 job_file/ovl 행을 미리 조회한다.
+    """(line, process) 조합 집합을 받아 라인당 1쿼리(processid__in)로 job_file/ovl/extra 행을
+    미리 조회한다.
 
-    반환: (job_file_cache, ovl_cache) — 각각 {(line, process): [row, ...]} 딕셔너리.
+    반환: (job_file_cache, ovl_cache, extra_cache) — 각각 {(line, process): [row, ...]} 딕셔너리.
     문서 수(N)에 비례하지 않고 실제 등장하는 라인 수(최대 4개)에만 비례한 쿼리를 낸다.
     """
+    from .scheduler import STEP_EXTRA_EQPTYPE
+
     lines = {line for line, _process in lines_and_processes}
 
     def _build_cache(model_map, eqptype):
@@ -196,7 +281,8 @@ def _batch_fetch_layer_rows(lines_and_processes):
 
     job_file_cache = _build_cache(JOB_FILE_MODEL_MAP, 'PMAINF')
     ovl_cache = _build_cache(OVL_MODEL_MAP, 'POVLAY')
-    return job_file_cache, ovl_cache
+    extra_cache = _build_cache(EXTRA_MODEL_MAP, STEP_EXTRA_EQPTYPE)
+    return job_file_cache, ovl_cache, extra_cache
 
 
 def recompute_all_in_progress():
@@ -219,7 +305,7 @@ def recompute_all_in_progress():
         if line and process:
             doc_lines_processes.append((line, process))
 
-    job_file_cache, ovl_cache = _batch_fetch_layer_rows(doc_lines_processes)
+    job_file_cache, ovl_cache, extra_cache = _batch_fetch_layer_rows(doc_lines_processes)
 
     to_update = []
     for document in documents:
@@ -229,8 +315,11 @@ def recompute_all_in_progress():
             process = detail.get('process_id') or ''
             job_rows = job_file_cache.get((line, process), [])
             ovl_rows = ovl_cache.get((line, process), [])
-            diff = compute_document_layer_drift(document, job_file_rows=job_rows, ovl_rows=ovl_rows)
-            detected = any(diff[layer][kind] for layer in ('jayer', 'oayer') for kind in ('removed', 'added'))
+            extra_rows = extra_cache.get((line, process), [])
+            diff = compute_document_layer_drift(
+                document, job_file_rows=job_rows, ovl_rows=ovl_rows, extra_rows=extra_rows,
+            )
+            detected = any(diff[layer][kind] for layer in ('jayer', 'oayer', 'extra') for kind in ('removed', 'added'))
             document.layer_drift_detected = detected
             document.layer_drift_detail = json.dumps(diff, ensure_ascii=False) if detected else ''
             document.layer_drift_checked_at = timezone.now()
@@ -244,9 +333,29 @@ def recompute_all_in_progress():
         )
 
 
+def capture_extra_layer_snapshot(document):
+    """상신 시점 XXXXXX(CD) 마스터 DB 값을 스냅샷으로 캡처해 인스턴스 필드에 채운다(저장은
+    호출부 책임 — reset_document_drift 가 다른 필드와 함께 한 번에 save 한다).
+
+    Jayer/Oayer는 요청서 작성 화면에 사용자가 편집하는 표가 있어 그 저장값을 드리프트 비교의
+    기준으로 쓰지만, XXXXXX는 그런 입력 화면이 없다. 대신 이 시점(상신 계열 액션)의 마스터 DB
+    값을 그대로 스냅샷으로 캡처해 다음 비교의 기준점(저장값 대용)으로 삼는다.
+    """
+    detail = (document.get_detail().get('detail') or {})
+    line = detail.get('line') or ''
+    process = detail.get('process_id') or ''
+    rows = get_extra_layer_rows(line, process) if line and process else []
+    document.extra_layer_snapshot = json.dumps(rows, ensure_ascii=False)
+
+
 def reset_document_drift(document):
-    """재상신 시점에 배지를 무조건 초기화한다(재계산이 아니라 리셋 — 다음 스케줄러 주기부터 다시 감지 대상)."""
+    """재상신 시점에 배지를 무조건 초기화하고(재계산이 아니라 리셋 — 다음 스케줄러 주기부터 다시
+    감지 대상) XXXXXX 스냅샷도 이 시점 값으로 새로 캡처한다.
+    """
+    capture_extra_layer_snapshot(document)
     document.layer_drift_detected = False
     document.layer_drift_detail = ''
     document.layer_drift_checked_at = timezone.now()
-    document.save(update_fields=['layer_drift_detected', 'layer_drift_detail', 'layer_drift_checked_at'])
+    document.save(update_fields=[
+        'extra_layer_snapshot', 'layer_drift_detected', 'layer_drift_detail', 'layer_drift_checked_at',
+    ])

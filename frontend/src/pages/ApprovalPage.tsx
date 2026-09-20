@@ -1490,6 +1490,15 @@ export default function ApprovalPage(): React.ReactElement {
   const [layerDriftDoc, setLayerDriftDoc] = useState<RequestDocument | null>(null);
   const [layerDriftData, setLayerDriftData] = useState<LayerDriftResponse | null>(null);
   const [layerDriftLoading, setLayerDriftLoading] = useState(false);
+  const [driftTab, setDriftTab] = useState<'jayer' | 'oayer' | 'extra'>('jayer');
+  const DRIFT_TABS: Array<{
+    key: 'jayer' | 'oayer' | 'extra';
+    titleKey: 'approval.layer_drift_jayer_title' | 'approval.layer_drift_oayer_title' | 'approval.layer_drift_extra_title';
+  }> = [
+    { key: 'jayer', titleKey: 'approval.layer_drift_jayer_title' },
+    { key: 'oayer', titleKey: 'approval.layer_drift_oayer_title' },
+    { key: 'extra', titleKey: 'approval.layer_drift_extra_title' },
+  ];
 
   const openLayerDrift = async (doc: RequestDocument) => {
     setLayerDriftDoc(doc);
@@ -1498,6 +1507,9 @@ export default function ApprovalPage(): React.ReactElement {
     try {
       const data = await documentsAPI.getLayerDrift(doc.id);
       setLayerDriftData(data);
+      // 실제 변경이 있는 첫 탭을 기본 선택 — 클릭 없이도 변경 내용을 바로 보게 한다.
+      const firstChanged = DRIFT_TABS.find((tab) => !isDriftGroupEmpty(data[tab.key]));
+      setDriftTab(firstChanged ? firstChanged.key : 'jayer');
     } catch {
       addToast(t('common.load_error'), 'error');
       setLayerDriftDoc(null);
@@ -1552,7 +1564,7 @@ export default function ApprovalPage(): React.ReactElement {
     if (isDriftGroupEmpty(group)) return null;
     return (
       <div style={{ marginBottom: 24 }}>
-        <div style={{ fontWeight: 800, fontSize: '0.95rem', marginBottom: 12 }}>{title}</div>
+        {title && <div style={{ fontWeight: 800, fontSize: '0.95rem', marginBottom: 12 }}>{title}</div>}
         {driftDetailTable(group!.removed, 'removed')}
         {driftDetailTable(group!.added, 'added')}
       </div>
@@ -2477,6 +2489,7 @@ export default function ApprovalPage(): React.ReactElement {
           title={t('approval.layer_drift_modal_title')}
           size="md"
           topLevel
+          draggable
         >
           {layerDriftLoading || !layerDriftData ? (
             <p>{t('common.loading')}</p>
@@ -2490,10 +2503,22 @@ export default function ApprovalPage(): React.ReactElement {
                   })}
                 </p>
               )}
-              {driftLayerSection(t('approval.layer_drift_jayer_title'), layerDriftData.jayer)}
-              {driftLayerSection(t('approval.layer_drift_oayer_title'), layerDriftData.oayer)}
-              {isDriftGroupEmpty(layerDriftData.jayer) && isDriftGroupEmpty(layerDriftData.oayer) && (
+              <div className="filter-tabs" style={{ marginBottom: 16 }}>
+                {DRIFT_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    className={`filter-tab ${driftTab === tab.key ? 'active' : ''}`}
+                    onClick={() => setDriftTab(tab.key)}
+                  >
+                    {t(tab.titleKey)}
+                  </button>
+                ))}
+              </div>
+              {isDriftGroupEmpty(layerDriftData[driftTab]) ? (
                 <p>{t('change_status.no_data')}</p>
+              ) : (
+                driftLayerSection('', layerDriftData[driftTab])
               )}
             </>
           )}

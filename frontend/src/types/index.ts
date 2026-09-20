@@ -250,6 +250,7 @@ export interface LayerDriftResponse {
   checked_at: string | null;
   jayer: LayerDriftGroup;
   oayer: LayerDriftGroup;
+  extra: LayerDriftGroup;
 }
 
 /**

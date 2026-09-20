@@ -7288,6 +7288,267 @@ class LayerFilterSetTest(TestCase):
         self.assertEqual(r.status_code, 400, r.content)
 
 
+class LayerDriftPurposeExclusionTest(TestCase):
+    """Only MAP·MAP 삭제 요청서는 layer_drift('변경 감지') 대상에서 제외되는지 검증(2026-09).
+
+    두 목적은 프론트가 J-layer/O-layer 표를 강제로 비우지만 line/process_id 는 그대로
+    남아 있어, XXXXXX(CD) 구분만으로도 배지가 잘못 뜰 수 있었다 — compute_document_layer_drift()
+    의 is_only_map()/is_map_delete_edit() 가드를 검증한다.
+    """
+
+    def setUp(self):
+        import json
+        self._json = json
+        self.requester = UserProfile.objects.create(loginid='ld_req', mail='ld_req@company.com', role='NONE')
+
+    def _make_doc(self, request_purpose=None, status='under_review'):
+        # layer_drift.EXTRA_MODEL_MAP 등은 'line1' 형식 키를 쓴다(자세한 배경은 아래 발견 보고 참고).
+        detail = {'line': 'line1', 'process_id': 'P1'}
+        if request_purpose:
+            detail['request_purpose'] = request_purpose
+        return RequestDocument.objects.create(
+            title='ld-doc', requester=self.requester, requester_name='요청자',
+            requester_email='ld_req@company.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps({'detail': detail, 'jayerRows': [], 'oayerRows': []}),
+        )
+
+    def _seed_extra_master(self):
+        """XXXXXX(CD) 마스터 DB 에 1건을 심어, 캡처된 스냅샷(빈 배열)과 어긋나게 만든다 —
+        일반 목적 문서라면 이 상태에서 '신규 추가'로 감지돼야 정상이다."""
+        from .models import PhotoStepS1Cd
+        from .scheduler import STEP_EXTRA_EQPTYPE
+        PhotoStepS1Cd.objects.create(
+            processid='P1', stepseq='10', descript='D1', recipeid='R1',
+            areaname='A1', eqptype=STEP_EXTRA_EQPTYPE, layerid='L1', updated='U1',
+        )
+
+    def _set_empty_snapshot(self, doc):
+        doc.extra_layer_snapshot = '[]'
+        doc.save(update_fields=['extra_layer_snapshot'])
+
+    def test_only_map_document_is_never_flagged(self):
+        from . import layer_drift
+        self._seed_extra_master()
+        doc = self._make_doc(RequestDocument.ONLY_MAP_PURPOSE)
+        self._set_empty_snapshot(doc)
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+        self.assertEqual(diff, {
+            'jayer': {'removed': [], 'added': []},
+            'oayer': {'removed': [], 'added': []},
+            'extra': {'removed': [], 'added': []},
+        })
+
+    def test_map_delete_edit_document_is_never_flagged(self):
+        from . import layer_drift
+        self._seed_extra_master()
+        doc = self._make_doc(RequestDocument.MAP_DELETE_EDIT_PURPOSE)
+        self._set_empty_snapshot(doc)
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+        self.assertEqual(diff, {
+            'jayer': {'removed': [], 'added': []},
+            'oayer': {'removed': [], 'added': []},
+            'extra': {'removed': [], 'added': []},
+        })
+
+    def test_general_purpose_document_is_still_flagged_as_control(self):
+        """대조군: 일반 목적 문서는 그대로 감지돼야 한다(이번 변경이 전체를 막은 게 아님을 확인)."""
+        from . import layer_drift
+        self._seed_extra_master()
+        doc = self._make_doc(request_purpose=None)
+        self._set_empty_snapshot(doc)
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+        self.assertEqual([row['stepseq'] for row in diff['extra']['added']], ['10'])
+
+    def test_recompute_all_in_progress_clears_stale_badge_for_only_map(self):
+        """스케줄러 재계산 시 이전에 잘못 켜져 있던 배지도 자동으로 꺼지는지 확인."""
+        from . import layer_drift
+        self._seed_extra_master()
+        doc = self._make_doc(RequestDocument.ONLY_MAP_PURPOSE)
+        doc.extra_layer_snapshot = '[]'
+        doc.layer_drift_detected = True
+        doc.layer_drift_detail = '{"stale": true}'
+        doc.save(update_fields=['extra_layer_snapshot', 'layer_drift_detected', 'layer_drift_detail'])
+
+        layer_drift.recompute_all_in_progress()
+
+        doc.refresh_from_db()
+        self.assertFalse(doc.layer_drift_detected)
+        self.assertEqual(doc.layer_drift_detail, '')
+
+
+class LayerDriftManualRowInclusionTest(TestCase):
+    """수동 입력(loaded=False) J-layer/O-layer 행도 '변경 감지' 비교 대상에 포함되는지 검증(2026-09).
+
+    이전에는 `_is_loaded()` 필터가 자동채움 행만 비교 대상으로 삼고 수동 입력 행은 아예
+    saved_by_seq 에서 빠졌다 — 이번 변경으로 그 필터를 제거했다.
+    """
+
+    def setUp(self):
+        import json
+        self._json = json
+        self.requester = UserProfile.objects.create(loginid='ldm_req', mail='ldm_req@company.com', role='NONE')
+
+    def _make_doc(self, jayer_rows, status='under_review'):
+        detail = {'line': 'line1', 'process_id': 'P1'}
+        return RequestDocument.objects.create(
+            title='ldm-doc', requester=self.requester, requester_name='요청자',
+            requester_email='ldm_req@company.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps({'detail': detail, 'jayerRows': jayer_rows, 'oayerRows': []}),
+        )
+
+    def _manual_row(self, **overrides):
+        row = {'sp': 'M1', 'sd': '수동설명', 'pp': 'RM1', 'layerid': 'LM1', 'loaded': False, 'updated': ''}
+        row.update(overrides)
+        return row
+
+    def test_manual_row_without_matching_master_is_flagged_removed(self):
+        """마스터 DB에 없는 stepseq를 수동으로 적어 넣으면 '삭제'로 잡힌다(이전엔 애초에 비교 대상이 아니었음)."""
+        from . import layer_drift
+        doc = self._make_doc([self._manual_row()])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual([row['stepseq'] for row in diff['jayer']['removed']], ['M1'])
+        self.assertEqual(diff['jayer']['added'], [])
+
+    def test_manual_row_matching_master_with_different_content_is_flagged_changed(self):
+        """수동 입력 행의 stepseq가 마스터 DB에 실제로 존재하지만 내용이 다르면 값 변경으로 잡힌다."""
+        from . import layer_drift
+        from .models import PhotoStepS1
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='M2', descript='새설명', recipeid='RNEW',
+            areaname='A1', eqptype='PMAINF', layerid='LNEW', updated='U1',
+        )
+        doc = self._make_doc([self._manual_row(sp='M2', sd='옛설명', pp='ROLD', layerid='LOLD')])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual([row['descript'] for row in diff['jayer']['removed']], ['옛설명'])
+        self.assertEqual([row['descript'] for row in diff['jayer']['added']], ['새설명'])
+
+    def test_manual_row_matching_master_with_same_content_is_not_flagged(self):
+        """내용이 마스터 DB와 완전히 같으면(우연히 일치) 변경 없음으로 처리된다."""
+        from . import layer_drift
+        from .models import PhotoStepS1
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='M3', descript='설명', recipeid='R1',
+            areaname='A1', eqptype='PMAINF', layerid='L1', updated='U1',
+        )
+        doc = self._make_doc([self._manual_row(sp='M3', sd='설명', pp='R1', layerid='L1')])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual(diff['jayer'], {'removed': [], 'added': []})
+
+    def test_auto_filled_row_still_compared_alongside_manual_row(self):
+        """자동채움 행(loaded=True)은 기존과 동일하게 계속 비교되는지 회귀 확인."""
+        from . import layer_drift
+        from .models import PhotoStepS1
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='A1', descript='자동설명변경', recipeid='RA',
+            areaname='A1', eqptype='PMAINF', layerid='LA', updated='U1',
+        )
+        auto_row = {'sp': 'A1', 'sd': '자동설명', 'pp': 'RA_OLD', 'layerid': 'LA', 'loaded': True, 'updated': 'U0'}
+        doc = self._make_doc([auto_row, self._manual_row()])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        removed_stepseqs = {row['stepseq'] for row in diff['jayer']['removed']}
+        self.assertIn('A1', removed_stepseqs)  # 자동채움 행도 여전히 감지(회귀 없음)
+        self.assertIn('M1', removed_stepseqs)  # 수동 입력 행도 감지(이번 변경의 핵심)
+
+
+class LayerDriftAdiCdChangeScopeTest(TestCase):
+    """ADI CD 변경 요청서는 J-layer/O-layer는 비교하지 않고 XXXXXX(CD)만 비교되는지 검증(2026-09).
+
+    Only MAP·MAP 삭제(검토 자체를 전체 제외)와 달리, ADI CD 변경은 XXXXXX만 선택적으로 비교한다.
+    """
+
+    def setUp(self):
+        import json
+        self._json = json
+        self.requester = UserProfile.objects.create(loginid='adi_req', mail='adi_req@company.com', role='NONE')
+
+    def _make_doc(self, request_purpose, jayer_rows=None, status='under_review'):
+        detail = {'line': 'line1', 'process_id': 'P1'}
+        if request_purpose:
+            detail['request_purpose'] = request_purpose
+        return RequestDocument.objects.create(
+            title='adi-doc', requester=self.requester, requester_name='요청자',
+            requester_email='adi_req@company.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps({
+                'detail': detail, 'jayerRows': jayer_rows or [], 'oayerRows': [],
+            }),
+        )
+
+    def _seed_extra_master(self):
+        from .models import PhotoStepS1Cd
+        from .scheduler import STEP_EXTRA_EQPTYPE
+        PhotoStepS1Cd.objects.create(
+            processid='P1', stepseq='10', descript='D1', recipeid='R1',
+            areaname='A1', eqptype=STEP_EXTRA_EQPTYPE, layerid='L1', updated='U1',
+        )
+
+    def test_adi_cd_change_skips_jayer_oayer_but_still_detects_extra(self):
+        from . import layer_drift
+        from .models import PhotoStepS1
+        # jayer 표에 (다른 목적에서 전환되며 남은) 자동채움 행이 있어도 비교 대상에서 제외돼야 한다.
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='J1', descript='다른내용', recipeid='RX',
+            areaname='A1', eqptype='PMAINF', layerid='LX', updated='U1',
+        )
+        jayer_rows = [{'sp': 'J1', 'sd': '옛설명', 'pp': 'ROLD', 'layerid': 'LOLD', 'loaded': True, 'updated': 'U0'}]
+        self._seed_extra_master()
+        doc = self._make_doc(RequestDocument.ADI_CD_CHANGE_PURPOSE, jayer_rows=jayer_rows)
+        doc.extra_layer_snapshot = '[]'
+        doc.save(update_fields=['extra_layer_snapshot'])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual(diff['jayer'], {'removed': [], 'added': []})
+        self.assertEqual(diff['oayer'], {'removed': [], 'added': []})
+        self.assertEqual([row['stepseq'] for row in diff['extra']['added']], ['10'])
+
+    def test_only_map_and_map_delete_remain_fully_excluded(self):
+        """회귀 확인: Only MAP·MAP 삭제는 이번 변경과 무관하게 XXXXXX 포함 전부 제외된 채로 남는다."""
+        from . import layer_drift
+        self._seed_extra_master()
+        for purpose in (RequestDocument.ONLY_MAP_PURPOSE, RequestDocument.MAP_DELETE_EDIT_PURPOSE):
+            doc = self._make_doc(purpose)
+            doc.extra_layer_snapshot = '[]'
+            doc.save(update_fields=['extra_layer_snapshot'])
+
+            diff = layer_drift.compute_document_layer_drift(doc)
+
+            self.assertEqual(diff, {
+                'jayer': {'removed': [], 'added': []},
+                'oayer': {'removed': [], 'added': []},
+                'extra': {'removed': [], 'added': []},
+            }, msg=f'purpose={purpose}')
+
+    def test_general_purpose_document_still_compares_jayer_normally(self):
+        """회귀 확인: 일반 목적 문서는 이번 분기 추가와 무관하게 jayer 비교가 정상 동작한다."""
+        from . import layer_drift
+        from .models import PhotoStepS1
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='J1', descript='새설명', recipeid='RNEW',
+            areaname='A1', eqptype='PMAINF', layerid='LNEW', updated='U1',
+        )
+        jayer_rows = [{'sp': 'J1', 'sd': '옛설명', 'pp': 'ROLD', 'layerid': 'LOLD', 'loaded': True, 'updated': 'U0'}]
+        doc = self._make_doc(request_purpose=None, jayer_rows=jayer_rows)
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual([row['descript'] for row in diff['jayer']['removed']], ['옛설명'])
+        self.assertEqual([row['descript'] for row in diff['jayer']['added']], ['새설명'])
+
+
 class MapCompletionMailMatchTest(TestCase):
     """pop3_mail.match_map_completion_mail() 단위 테스트 (POP3 접속 없이 순수 DB 로직만 검증)."""
 

@@ -3821,6 +3821,318 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   재계산이 다음 주기에 캐시를 다시 계산하므로 별도 데이터 마이그레이션은 불필요 — 이미 잘못
   캐시된 `layer_drift_detail`도 다음 10분 주기에 자동으로 정정된다).
 
+### 기능 추가 (2026-09-17 — '변경 감지'에 XXXXXX(CD, eqptype 임시값) 구분 추가)
+
+- **요청**: 기존 '변경 감지'는 J-layer/O-layer(PMAINF/POVLAY) 두 구분만 비교했다. XXXXXX(CD,
+  `PhotoStepS{1,3,4,5}Cd`) 구분도 같은 방식으로 비교되길 원하는 요청 — 단 XXXXXX는 요청서
+  작성 화면에 사용자가 편집하는 표가 없어(Jayer/Oayer와 달리) "저장값"이라는 비교 기준점이
+  아예 없다는 제약이 있었다.
+- **선택한 방식(가장 보수적 + 통일성 우선, 화면은 신설하지 않음)**: 사용자 입력 화면을 만드는
+  대신, 상신 계열 액션(`submit`/`resubmit`/`requester-resubmit`/`peer-submit`) 시점에 서버가
+  XXXXXX 마스터 DB 값을 자동으로 스냅샷 캡처해 저장값 대용으로 삼는다. 이후 그 스냅샷과 현재
+  마스터 DB 값을 Jayer/Oayer와 동일한 기준(`descript`/`recipeid`/`layerid`, stepseq 매칭)으로
+  비교한다. 새 화면(작성/조회 UI)은 만들지 않되, 기존 배지(`layer_drift_detected`)에는 반영하고
+  기존 diff 모달에는 섹션 한 줄만 추가했다(배지만 뜨고 모달엔 안 보이는 불일치를 피하기 위함).
+- **백엔드**:
+  - `backend/api/layer_drift.py`:
+    - `EXTRA_MODEL_MAP`(`PhotoStepS1Cd`/`S3Cd`/`S4Cd`/`S5Cd`) 추가.
+    - `get_extra_layer_rows(line, process)` 신설 — `get_job_file_layer_rows`/`get_ovl_layer_rows`와
+      동일 패턴(eqptype 필터, stepseq 오름차순). eqptype 값은 `scheduler.STEP_EXTRA_EQPTYPE`
+      (TODO: 실제 값 미확정 임시값 `'XXXXXX'`)을 함수 내부에서 지연 import해 재사용한다 —
+      `scheduler.py`가 모듈 최상단에서 `from . import layer_drift`를 하므로 최상단 import는
+      순환 import가 된다.
+    - `capture_extra_layer_snapshot(document)` 신설 — 문서의 line/process 기준으로 XXXXXX
+      마스터 DB 값을 조회해 인스턴스 필드에만 채운다(저장은 호출부 책임).
+    - `reset_document_drift()`가 이제 `capture_extra_layer_snapshot()`을 먼저 호출한 뒤
+      `extra_layer_snapshot` 필드까지 포함해 한 번에 save한다 — 호출부(위 4개 액션)를 개별
+      수정하지 않고 기존 호출 지점 그대로 스냅샷 캡처가 함께 이뤄진다.
+    - `_diff_snapshot_rows(saved_rows, live_rows)` 신설 — XXXXXX 전용 비교 함수. Jayer/Oayer의
+      `_diff_rows()`는 저장값이 사용자 입력 포맷(`sp`/`sd`/`pp`)이라 별도 변환(`_saved_entry`)이
+      필요하지만, XXXXXX 스냅샷은 이미 `_row_dict()`와 같은 포맷이라 `_live_entry()`만으로 양쪽을
+      바로 비교한다.
+    - `compute_document_layer_drift`/`recompute_document`/`recompute_all_in_progress`가 `extra`
+      그룹을 포함하도록 확장(`detected` 판정은 jayer/oayer/extra 세 그룹 중 하나라도 있으면 true).
+    - `_batch_fetch_layer_rows()`가 `extra_cache`도 함께 반환하도록 확장 — 문서 수가 아니라
+      실제 등장하는 라인 수에만 비례하는 배치 조회 원칙을 XXXXXX에도 동일하게 적용(기존
+      `recompute_all_in_progress`의 쿼리 수 최적화가 깨지지 않도록).
+  - `backend/api/models.py`: `RequestDocument.extra_layer_snapshot`(TextField, blank=True) 추가
+    (`migrations/0045_requestdocument_extra_layer_snapshot.py`).
+  - `backend/api/views.py`:
+    - `layer_drift_detail` 액션 응답에 `extra` 키 추가.
+    - `form_options_extra_layer` 뷰 신설 — `form_options_job_file_layer`/`form_options_ovl_layer`와
+      대칭적인 조회 API(통일성 목적). **현재 프론트에서 호출하는 곳은 없다** — XXXXXX 조회는
+      `layer_drift.get_extra_layer_rows()`를 통해 스냅샷 캡처 시 내부적으로만 쓰인다.
+  - `backend/api/urls.py`: `GET /api/form-options/extra-layer/` 라우트 추가.
+- **프론트(최소 반영만, 새 화면 없음)**:
+  - `types/index.ts`: `LayerDriftResponse`에 `extra: LayerDriftGroup` 필드 추가.
+  - `ApprovalPage.tsx`: diff 모달에 `driftLayerSection(t('approval.layer_drift_extra_title'),
+    layerDriftData.extra)` 한 줄 추가, 빈 상태 판정에도 `extra` 그룹 포함.
+  - `locales/ko.json`/`en.json`: `approval.layer_drift_extra_title`("XXXXXX") 키 동시 추가,
+    `layer_drift_badge_tooltip` 문구에 XXXXXX 언급 추가(배지가 XXXXXX 변경만으로도 뜰 수 있으므로
+    기존 "J-layer/O-layer만 언급"하던 문구가 부정확해지는 것을 막기 위함).
+  - 배지 자체(`badge-layer-drift`)는 `layer_drift_detected` 하나로 이미 동작하므로 배지 렌더링
+    코드 자체는 변경 없음.
+- **XXXXXX가 아직 임시값인 점에 대한 영향**: `STEP_EXTRA_EQPTYPE`이 실제 값으로 교체돼도 이
+  기능은 상수 참조만 쓰므로 코드 변경이 필요 없다(`scheduler.py`의 상수 하나만 바뀌면 자동 반영).
+- **검증**: CLAUDE.md §1-1 절차(sqlite, 원격 세션)로 `manage.py test api` — **551건 전부 통과**
+  (기존 542건 + 신규 재현 테스트 9건, 회귀 없음). 신규 재현 테스트는 프로젝트 밖
+  (`$SP/stubs/verify_layer_drift_extra.py`)에 두고 eqptype/process 필터링, 스냅샷 직후 무변화,
+  값 변경/행 삭제/행 추가 각각의 diff, `layer_drift_detected`가 XXXXXX 단독으로도 true가 되는지,
+  `recompute_all_in_progress`의 배치 캐시가 같은 line/process를 공유하는 문서 여러 건에 모두
+  적용되는지, 진행중이 아닌 문서는 스킵되는지 — 실행 출력까지 확인, 전부 통과. 프론트:
+  `npx tsc --noEmit` 신규 에러 0(기존 4건 — `Set` es5 순회 3건 + `GuidePage.tsx` i18n strict 키
+  1건 — 과 동일, 이번 변경 파일과 무관). `CI=true npx react-scripts test --watchAll=false` —
+  11 suites / **294건 전부 통과**(1회차에 `adiCdUnregisteredAndVs.test.tsx`에서 `window.scrollTo`
+  관련 플레이키 실패가 1건 있었으나 재실행 시 통과 — 이번 변경과 무관한 파일이라 원인 아님).
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [결재 진행중인 문서 하나를 상신한 뒤, Django shell 등으로 그 문서가 참조하는
+     `PhotoStepS{N}Cd` 행을 새로 추가하거나 기존 행의 `descript`/`recipeid`/`layerid` 값을
+     바꿔둔다] → [스케줄러가 돌거나 `layer_drift.recompute_all_in_progress()`를 수동 호출] →
+     [결재 현황 목록에서 그 문서 행의 목적 칸에 "변경 감지" 배지가 뜨는지 확인 → 클릭 → 모달에
+     "XXXXXX" 섹션이 추가로 보이고 STEP/구분/저장된 값/현재 값이 표로 뜨는지 확인.]
+  2. [같은 문서를 다시 상신(재상신)한 뒤 배지가 사라지는지, 그 시점의 `PhotoStepS{N}Cd` 값으로
+     스냅샷이 다시 캡처됐는지(재상신 직후에는 XXXXXX 변경이 없어야 정상) 확인.]
+  3. [J-layer/O-layer는 그대로 두고 XXXXXX만 바꿨을 때도 배지가 뜨는지 확인 — 세 그룹 중
+     하나만 바뀌어도 배지가 뜬다는 것의 확인.]
+
+### 기능 개선 (2026-09-18 — '변경 감지' 모달을 J-layer/O-layer/XXXXXX 탭으로 구분)
+
+- **요청**: XXXXXX 추가로 모달에 3개 목록(J-layer/O-layer/XXXXXX)이 한 번에 쌓여 보이게 됐다 —
+  탭으로 구분해서 보고 싶다는 요청.
+- **구현**(`frontend/src/pages/ApprovalPage.tsx`만 수정, 새 CSS 없음):
+  - 변경 현황(`ChangeStatusPage.tsx`)의 필터 탭과 동일한 `filter-tabs`/`filter-tab`/`filter-tab
+    active` 클래스를 재사용해 모달 상단에 탭 3개(J-layer/O-layer/XXXXXX)를 렌더링.
+  - `driftTab` 상태로 선택된 탭 하나의 그룹만 표시. `openLayerDrift()`가 데이터 로드 직후
+    jayer→oayer→extra 순서로 변경 내역이 있는 첫 탭을 기본 선택한다(전부 비어 있으면 'jayer') —
+    클릭 없이도 실제 변경이 있는 탭을 바로 보게 하기 위함.
+  - `driftLayerSection()`은 그대로 재사용하되, 탭 라벨과 섹션 제목이 중복 표시되지 않도록
+    `title` 인자를 빈 문자열로 넘기면 제목 줄 자체를 렌더링하지 않도록 수정(`{title && ...}`).
+  - 선택된 탭이 비어 있으면(해당 그룹에 변경 없음) 그 탭 안에서 `change_status.no_data`를
+    보여준다 — 기존엔 3개 모두 비어야만 전체 안내 문구가 떴지만, 탭 구조에서는 개별 탭 단위로
+    "이 탭엔 변경 없음"을 알려주는 게 맞다고 판단해 로직을 그렇게 바꿨다.
+  - 새 i18n 키는 추가하지 않았다(기존 `approval.layer_drift_*_title`/`change_status.no_data`
+    재사용).
+- **주의**: `t(tab.titleKey)`처럼 동적 문자열을 i18n 키로 넘기면 프로젝트의 엄격한 i18n 키
+  타입 체크(`GuidePage.tsx`의 기존 4번째 tsc 에러와 같은 종류)에 걸린다 — `DRIFT_TABS`의
+  `titleKey` 타입을 `string`이 아니라 3개 키의 리터럴 유니온으로 좁혀서 해결했다.
+- **영향 파일**: `frontend/src/pages/ApprovalPage.tsx`.
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일). `CI=true npx react-scripts test
+  --watchAll=false` — 11 suites / **294건 전부 통과**(회귀 없음). 백엔드는 이번 변경 대상이
+  아니라 재실행하지 않았다.
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [J-layer/O-layer/XXXXXX 중 최소 2곳에 변경이 있는 문서의 "변경 감지" 배지 클릭] →
+     [모달 상단에 탭 3개(J-layer/O-layer/XXXXXX)가 보이고, 변경이 있는 탭 중 하나가 처음부터
+     선택된 상태(파란 강조)로 그 내용이 바로 보이는지 확인.]
+  2. [변경이 없는 탭을 클릭] → [그 탭으로 전환되고 "표시할 변경 이력이 없습니다" 문구가 보이는지
+     확인 → 변경이 있는 탭으로 다시 클릭해 표가 다시 보이는지 확인.]
+  3. [세 그룹 모두 변경이 없는 상태에서(이론상 배지 자체가 안 뜨지만, 만약 뜬 상태라면) 모달을
+     열었을 때 기본 탭('J-layer')이 선택되고 "표시할 변경 이력이 없습니다" 문구가 보이는지 확인.]
+
+### 버그 수정 (2026-09-18 — XXXXXX 배포 전에 이미 상신된 문서가 전부 '변경 감지'로 오탐)
+
+- **증상**(사용자 재현): XXXXXX 구분 추가 배포 이후, 그 이전부터 결재 진행중이던 요청서에
+  전부 "변경 감지" 배지가 떴다.
+- **원인**: `layer_drift.compute_document_layer_drift()`가 `document.extra_layer_snapshot`이
+  빈 문자열일 때 무조건 `extra_saved = []`로 취급하고 현재 마스터 DB 값과 비교했다. 그런데
+  빈 문자열은 두 가지 서로 다른 상태를 구분하지 못한 채 뭉뚱그린 것이었다 — ①
+  `capture_extra_layer_snapshot()`이 실제로 캡처했는데 그 시점에 XXXXXX 행이 0건이었던 경우
+  (이땐 `json.dumps([])` = `'[]'`라는 non-empty 문자열이 저장된다) ② 이 기능이 생기기 전에 이미
+  상신되어 스냅샷을 **한 번도 캡처한 적이 없는** 경우(필드 기본값 `''` 그대로). 기존 코드는 이
+  둘을 구분하지 않아, ②에 해당하는 모든 기존 문서가 "저장에는 없는데 마스터 DB에는 있는" 것으로
+  보여 XXXXXX 행이 전부 '신규 추가'로 오탐됐다.
+- **수정**(`backend/api/layer_drift.py` `compute_document_layer_drift()`): `extra_layer_snapshot`이
+  빈 문자열이면(한 번도 캡처된 적 없음) `_diff_snapshot_rows()`를 아예 호출하지 않고 빈 결과를
+  반환하도록 분기 추가. 데이터 마이그레이션은 쓰지 않았다 — 그 문서가 다음에 submit/resubmit/
+  requester-resubmit/peer-submit 중 하나로 상신되면 `reset_document_drift()`가 그 시점 스냅샷을
+  캡처하고, 그 다음부터 정상적으로 비교된다(사용자가 원한 "기존 것엔 뜨지 않게"와 정확히 일치).
+- **기존에 이미 잘못 캐시된 배지는 별도 조치 불필요**: 스케줄러(`recompute_all_in_progress()`,
+  10분 주기)가 상태를 매번 다시 계산해 캐시를 덮어쓰므로, 배포 후 다음 주기에 자동으로
+  정정된다 — 이 기능의 기존 "몇 분 지연 허용" 철학 그대로(이전 `_is_loaded` 버그 수정 때와
+  동일한 자연 치유 방식).
+- **검토했지만 채택하지 않은 대안**: 배포 시점에 결재 진행중 문서 전체의 스냅샷을 미리 채워
+  넣는 데이터 마이그레이션(선례: `migrations/0041_photostep_pmainf_only`). 배포 즉시 기존
+  문서도 XXXXXX 감지가 살아난다는 장점은 있지만, 마이그레이션이 다른 모델(PhotoStepS*Cd)을
+  조회해 값을 계산하는 로직을 떠안아 더 무겁고 위험하다고 판단해 채택하지 않았다.
+- **영향 파일**: `backend/api/layer_drift.py`.
+- **검증**: CLAUDE.md §1-1 절차(sqlite, 원격 세션)로 `manage.py test api verify_layer_drift_extra`
+  — **555건 전부 통과**(기존 542건 + 재현 테스트 13건, 회귀 없음). 재현 테스트는 프로젝트 밖
+  (`$SP/stubs/verify_layer_drift_extra.py`)에 4건 추가 — ① 스냅샷 없음 + 마스터 DB에 XXXXXX
+  행 존재 → drift 감지 안 됨(이번 수정의 핵심) ② `recompute_document()`로도 배지가 안 뜨는지
+  ③ 캡처는 했지만 당시 0건이었던 경우(`'[]'`)는 "한 번도 캡처 안 됨"과 구분되어 이후 행이
+  생기면 정상적으로 '추가'로 감지되는지(대조군) ④ 재상신으로 스냅샷이 캡처된 뒤부터는 정상
+  비교가 시작되는지 — 실행 출력까지 확인, 전부 통과.
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [이 기능 배포 전부터 결재 진행중이던(또는 `extra_layer_snapshot`이 빈 문자열인) 문서를
+     결재 현황 목록에서 확인] → [XXXXXX 관련 변경이 실제로는 없는데도 배지가 떠 있었다면,
+     배포 후 다음 스케줄러 주기(최대 10분) 뒤 새로고침 시 배지가 사라지는지 확인.]
+  2. [같은 문서를 상신(재상신)한 뒤, Django shell 등으로 그 문서가 참조하는 `PhotoStepS{N}Cd`
+     값을 바꿔둔다] → [스케줄러 주기 후 배지가 다시 정상적으로(이번엔 진짜 변경이므로) 뜨는지
+     확인 — 수정이 "XXXXXX 비교를 영구히 끈 것"이 아니라 "캡처 전까지만 건너뛴 것"임을 확인.]
+
+### 기능 개선 (2026-09-18 — '변경 감지'에서 Only MAP·MAP 삭제 요청서 제외)
+
+- **요청**: `layer_drift`(변경 감지) 기능이 요청 목적 `Only MAP`·`MAP 삭제` 문서는 검토하지
+  않도록 한다.
+- **배경**: 이 두 목적은 프론트가 J-layer/O-layer 표를 강제로 비우지만(작성 화면에 그 표 자체가
+  없다 — `applyMapOnlyScope`) `line`/`process_id`는 그대로 유지된다. 그런데 XXXXXX(CD) 비교는
+  저장된 표가 아니라 `line`/`process_id`만으로 마스터 DB를 조회하므로, 이 두 목적 문서에서도
+  XXXXXX 구분만으로 '변경 감지' 배지가 뜰 수 있었다 — 애초에 P/J/O/E 검토 단계 자체가 없는
+  문서에 검토용 배지가 뜨는 것은 의미가 없다.
+- **수정**(`backend/api/layer_drift.py` `compute_document_layer_drift()`): 함수 맨 앞에
+  `document.is_only_map()` / `document.is_map_delete_edit()` 가드를 추가해, 두 목적이면
+  line/process 조회·비교 자체를 하지 않고 곧바로 빈 diff(jayer/oayer/extra 모두 없음)를
+  반환한다. `recompute_all_in_progress()`/`recompute_document()` 양쪽 호출부가 모두 이 함수를
+  거치므로 한 곳만 고치면 된다.
+- **기존에 이미 잘못 캐시된 배지는 별도 조치 불필요**: `recompute_all_in_progress()`(스케줄러
+  10분 주기)가 매번 다시 계산해 `bulk_update`로 캐시를 덮어쓰므로, 배포 후 다음 주기에 이 두
+  목적 문서의 `layer_drift_detected`가 자동으로 `False`로 정정된다(이전 XXXXXX 오탐 수정 때와
+  동일한 자연 치유 방식 — 별도 데이터 마이그레이션 없음).
+- **영향 파일**: `backend/api/layer_drift.py`, `backend/api/tests.py`.
+- **검증**: CLAUDE.md §1-1 절차(sqlite, 원격 세션)로 `manage.py test api` — **546건 전부 통과**
+  (회귀 없음). `backend/api/tests.py`에 `LayerDriftPurposeExclusionTest`(4건, 프로젝트 테스트에
+  영구 포함) 신규 추가 — ① `Only MAP` 문서는 XXXXXX 마스터 DB가 스냅샷과 달라도 감지 안 됨
+  ② `MAP 삭제`도 동일 ③ 대조군(일반 목적 문서)은 그대로 감지됨(이번 변경이 전체를 막은 게
+  아님을 확인) ④ `recompute_all_in_progress()` 재계산 시 `Only MAP` 문서의 기존 스테일 배지가
+  자동으로 꺼지는지 — 실행 출력까지 확인, 전부 통과.
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [요청 목적 `Only MAP`(또는 `MAP 삭제`)으로 상신된 결재 진행중 문서 하나를 골라, Django
+     shell 등으로 그 문서가 참조하는 `PhotoStepS{N}Cd`(또는 `_Ov`/PMAINF) 값을 실제로 바꿔둔다]
+     → [스케줄러가 돌거나 `layer_drift.recompute_all_in_progress()`를 수동 호출] → [결재 현황
+     목록에서 그 문서 행에 "변경 감지" 배지가 뜨지 않는지 확인 — 마스터 DB 값이 달라졌음에도
+     계속 배지가 없어야 정상.]
+  2. [같은 문서의 상세보기(결재상세)에서도 배지가 뜨지 않는지 확인.]
+  3. [일반 목적 문서 하나를 골라 동일하게 마스터 DB 값을 바꾼 뒤] → [스케줄러 재계산 후 배지가
+     정상적으로 뜨는지 확인 — 이번 변경이 Only MAP·MAP 삭제 두 목적에만 한정됨을 함께 확인.]
+- **발견했지만 이번 작업 범위 밖으로 남긴 사항**: 회귀 테스트 작성 중, `layer_drift.py`의
+  `JOB_FILE_MODEL_MAP`/`OVL_MODEL_MAP`/`EXTRA_MODEL_MAP`(및 `views.py`의
+  `form_options_bb_external`/`form_options_layer_ids` 로컬 `model_map`)이 라인 키를
+  `'line1'`/`'line3'`/`'line4'`/`'line5'`(영문)로 정의하는 반면, 프론트(`OPTION_LINE`)·`Line`
+  마스터(`seed_lines.py`)·나머지 라인 조회(`api_processproduct` 등)는 전부 한글(`'라인1'` 등)을
+  쓴다는 점을 확인했다 — 실제 운영 데이터로는 이 다섯 API(J-layer/O-layer/XXXXXX 자동채움,
+  Backbone 외부데이터, Layer ID 목록, 그리고 '변경 감지' 자체)가 라인1/3/4/5에서 항상 빈 결과만
+  낼 가능성이 있다. 이번 작업과 무관한 별도 버그 가능성이라 손대지 않았다(사용자 확인 대기 —
+  본 채팅 로그의 발견 보고 참고).
+
+### 기능 개선 (2026-09-18 — '변경 감지'에 수동 입력(loaded=false) 행도 비교 대상 포함)
+
+- **요청**: 변경 감지 비교에서 사용자가 수동으로 입력한 J-layer/O-layer 행(`loaded=false`)은
+  비교하지 않던 것을, 이것도 비교 대상에 넣어달라는 요청.
+- **배경**: `compute_document_layer_drift()`가 저장된 행을 `saved_by_seq`에 넣기 전에
+  `_is_loaded(row)`(`bool(row.get('loaded')) or bool((row.get('updated') or '').strip())`)로
+  걸러, 자동채움 행만 비교 대상으로 삼고 수동 입력 행은 애초에 비교 자체가 되지 않았다.
+- **수정**(`backend/api/layer_drift.py`): `jayer_saved`/`oayer_saved`를 만들 때 걸던
+  `_is_loaded()` 필터를 제거해 저장된 행 전체(자동채움 + 수동입력)를 비교 대상으로 삼는다.
+  더 이상 쓰이지 않는 `_is_loaded()` 헬퍼는 삭제하고, `_diff_rows()`의 "저장된 행(loaded=true
+  만)" docstring 문구도 "저장된 행 전체(자동채움 + 수동입력)"로 고쳤다.
+- **동작 변화(사용자에게 미리 안내하고 진행)**: 수동 입력 행의 stepseq(`sp`)가 현재 마스터
+  DB에 아예 없는 값이면(자동채움 없이 임의로 STEP을 적어넣은 경우), 그 행은 마스터 DB와 절대
+  매칭되지 않으므로 사용자가 값을 고치거나 행을 지우기 전까지 매 스케줄러 주기마다 계속
+  '삭제'로 표시된다 — 이번 요청의 자연스러운 결과로 판단해 별도 예외 처리는 하지 않았다.
+- **영향 파일**: `backend/api/layer_drift.py`, `backend/api/tests.py`.
+- **검증**: CLAUDE.md §1-1 절차(sqlite, 원격 세션)로 `manage.py test api` — **550건 전부 통과**
+  (회귀 없음). `backend/api/tests.py`에 `LayerDriftManualRowInclusionTest`(4건, 프로젝트
+  테스트에 영구 포함) 신규 추가 — ① 마스터 DB에 없는 stepseq를 수동 입력하면 '삭제'로 잡히는지
+  ② 마스터 DB에 있는 stepseq인데 내용이 다르면 값 변경(삭제+추가 쌍)으로 잡히는지 ③ 내용까지
+  완전히 같으면 변경 없음으로 처리되는지 ④ 같은 문서에 자동채움 행이 섞여 있어도 기존처럼
+  계속 감지되는지(회귀 확인) — 실행 출력까지 확인, 전부 통과.
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [요청서 작성 화면에서 J-layer 또는 O-layer 표에 자동채움 버튼을 쓰지 않고 STEP/내용/
+     Recipe ID/Layer 값을 직접 입력해 행을 하나 추가한 뒤 상신] → [스케줄러 재계산 후(또는
+     `layer_drift.recompute_all_in_progress()` 수동 호출) 결재 현황 목록에서 그 문서에 "변경
+     감지" 배지가 뜨는지 확인 — 이전에는 수동 입력 행이라 배지가 뜨지 않았지만, 이제는 마스터
+     DB에 같은 STEP이 없으므로 '삭제'로 잡혀 배지가 떠야 정상.]
+  2. [배지 클릭 → 모달에서 그 수동 입력 행이 "삭제" 항목으로 표시되는지 확인.]
+  3. [자동채움으로 채운 행이 있는 문서는 이번 변경 이후에도 기존과 동일하게 마스터 DB 값이
+     바뀌면 정상적으로 감지되는지(회귀 없음) 함께 확인.]
+
+### 기능 개선 (2026-09-18 — '변경 감지'에서 ADI CD 변경은 XXXXXX만 비교)
+
+- **요청**: ADI CD 변경 요청서도 Only MAP·MAP 삭제처럼 J-layer/O-layer 표를 채우지 않는다.
+  이 경우 XXXXXX(CD)만 비교해서 배지·모달에 보여지도록 해달라는 요청. 추가로 J/O를 채우지
+  않는 다른 요청 목적이 더 있는지도 함께 조사해달라는 요청.
+- **조사 결과**: 프론트가 J-layer/O-layer 표를 강제로 비우는 요청 목적은
+  `RequestPage/index.tsx`의 `applyMapOnlyScope` 호출 조건(`target === ONLY_MAP_PURPOSE ||
+  MAP_DELETE_EDIT_PURPOSE || ADI_CD_CHANGE_PURPOSE`) 기준 정확히 3가지뿐임을 확인했다 —
+  `Only MAP`, `MAP 삭제`, `ADI CD 변경`. 이 중 `Only MAP`·`MAP 삭제`는 이전 작업에서 이미
+  전체 제외(XXXXXX 포함 검토 자체를 하지 않음) 처리돼 있어, 이번에 새로 다룰 대상은
+  `ADI CD 변경` 하나였다 — 사용자에게 확인해 두 목적은 기존(전체 제외) 그대로 유지하고
+  `ADI CD 변경`만 "XXXXXX만 비교"로 새로 적용하기로 결정.
+- **수정**(`backend/api/layer_drift.py` `compute_document_layer_drift()`): `document.is_adi_cd_change()`
+  가 참이면 `get_job_file_layer_rows()`/`get_ovl_layer_rows()` 조회와 jayer/oayer 비교를
+  건너뛰고 빈 diff를 채우되, extra(XXXXXX)는 line/process_id 기준으로 기존과 동일하게
+  계산·비교한다. `Only MAP`·`MAP 삭제` 분기(함수 맨 앞, 전체 제외)는 그대로 두었다 — 이 두
+  분기가 먼저 걸리므로 `is_adi_cd_change()` 분기와 서로 겹치지 않는다.
+- **프론트엔드 변경 없음**: 배지 노출(`isLayerDriftVisible`, `frontend/src/utils/approvalTable.ts`)과
+  diff 모달의 탭별 표시가 이미 `layer_drift_detected`·그룹별 데이터 유무만으로 동작하고
+  요청 목적을 따로 분기하지 않는다 — 빈 그룹인 탭은 이미 "변경 없음" 문구만 보여주므로,
+  백엔드만 고쳐도 ADI CD 변경 문서에 XXXXXX 탭만 자연스럽게 채워진다(코드 확인 완료, 별도
+  수정 불필요).
+- **영향 파일**: `backend/api/layer_drift.py`, `backend/api/tests.py`.
+- **검증**: CLAUDE.md §1-1 절차(sqlite, 원격 세션)로 `manage.py test api` — **553건 전부 통과**
+  (회귀 없음). `backend/api/tests.py`에 `LayerDriftAdiCdChangeScopeTest`(3건, 프로젝트 테스트에
+  영구 포함) 신규 추가 — ① ADI CD 변경 문서는 jayer 표에 자동채움 행이 남아 있어도 jayer/oayer는
+  항상 빈 diff이고 XXXXXX만 감지되는지 ② (회귀 확인) `Only MAP`·`MAP 삭제`는 이번 변경과
+  무관하게 XXXXXX 포함 전부 빈 diff로 남는지 ③ (회귀 확인) 일반 목적 문서는 jayer 비교가
+  정상 동작하는지 — 실행 출력까지 확인, 전부 통과.
+- **수동 검증 시나리오** (원격 세션이라 브라우저 확인은 못 했다 — 아래가 검증의 핵심):
+  1. [요청 목적 `ADI CD 변경`으로 상신된 결재 진행중 문서 하나를 골라, Django shell 등으로 그
+     문서가 참조하는 `PhotoStepS{N}Cd` 값을 바꿔둔다] → [스케줄러 재계산 후(또는
+     `layer_drift.recompute_all_in_progress()` 수동 호출) 결재 현황 목록에서 그 문서에 "변경
+     감지" 배지가 뜨는지 확인.]
+  2. [배지 클릭 → 모달에서 "XXXXXX" 탭에만 변경 내용이 보이고, "J-layer"/"O-layer" 탭은 "변경
+     없음"으로 보이는지 확인 — J-layer/O-layer는 애초에 표 자체가 비어 있어 비교되지 않는다.]
+  3. [같은 문서가 참조하는 `PhotoStepS{N}`(PMAINF, J-layer 원본)을 바꿔도 배지·모달의
+     J-layer 탭에는 아무 변화가 없는지 확인 — ADI CD 변경은 J-layer를 아예 비교하지 않음을
+     재확인.]
+  4. [대조군으로 `Only MAP`·`MAP 삭제` 문서에 동일하게 마스터 DB 값을 바꿔도 배지 자체가 뜨지
+     않는지 확인 — 이번 변경이 두 목적의 기존(전체 제외) 동작에 영향을 주지 않았음을 확인.]
+
+### 기능 개선 (2026-09-18 — 의뢰 상세 Oayer에도 '변경 감지' 배지 노출 + 배지 모달 드래그 이동)
+
+- **요청**: 의뢰 상세(`PagedDetailView`)에서 '변경 감지' 배지가 J-layer 영역에만 보이던 것을
+  O-layer 영역에도 보이도록 하고, 배지 클릭 시 뜨는 모달을 자유롭게 드래그해 옮길 수 있게
+  해달라는 요청.
+- **수정 1 — Oayer 배지 노출**(`frontend/src/components/PagedDetailView.tsx`): O-layer 페이지
+  헤더(제목/건수/export 버튼) 바로 아래에 J-layer와 동일한 배지 마크업(`doc.layer_drift_detected
+  && onOpenLayerDrift`, 같은 className·문구·onClick)을 추가했다. 새 prop 없이 기존
+  `onOpenLayerDrift`(호출부인 `ApprovalPage`가 이미 넘겨주던 콜백)를 그대로 재사용해, 배지 노출
+  조건·클릭 동작이 J-layer와 완전히 동일하다.
+- **수정 2 — 모달 드래그 이동**(`frontend/src/components/Modal.tsx`): 공용 `Modal` 컴포넌트에
+  `draggable?: boolean`(기본 false) prop을 추가했다. `true`면 `.modal-header`에 `onMouseDown`을
+  걸어 드래그 시작점을 기록하고, `window`의 `mousemove`/`mouseup`으로 이동량을 계산해
+  `.modal`에 `transform: translate(x, y)`를 입힌다. 헤더 안 버튼(전체화면·닫기) 클릭은
+  `closest('button')` 판정으로 드래그 시작에서 제외했고, 전체화면 상태에서는 드래그를 아예
+  비활성화했다(화면을 꽉 채운 상태라 이동이 의미 없음). 기본값이 `false`라 이 prop을 넘기지
+  않는 기존 모든 `Modal` 사용처는 동작 변화가 없다.
+- **수정 3 — 적용 범위**(`frontend/src/pages/ApprovalPage.tsx`): '변경 감지' 배지 클릭 시 뜨는
+  모달(`layerDriftDoc` Modal) 하나에만 `draggable`을 넘겼다. 다른 모달(상세보기·철회·결재 등)은
+  그대로 고정된 채 유지된다.
+- **영향 파일**: `frontend/src/components/PagedDetailView.tsx`,
+  `frontend/src/components/Modal.tsx`, `frontend/src/pages/ApprovalPage.tsx`.
+- **검증**: `cd frontend && npx tsc --noEmit` — 신규 에러 0(기존 4건 — `Set` es5 순회 3건 +
+  `GuidePage.tsx` i18n strict 키 1건 — 과 동일, 이번 변경 파일과 무관). `CI=true npx
+  react-scripts test --watchAll=false` — 11 suites / **294건 전부 통과**(1회차에
+  `adiCdUnregisteredAndVs.test.tsx`에서 jsdom `scrollTo` 관련 플레이키 실패가 1건 있었으나
+  재실행 시 전부 통과 — 이번 변경 파일과 무관). 이번 변경에 대한 신규 자동 테스트는 추가하지
+  않았다(순수 UI 동작이라 기존 회귀 테스트로 커버되지 않고, 드래그·배지 노출 여부는 아래 수동
+  시나리오가 검증의 핵심).
+- **수동 검증 시나리오** (원격 세션이라 브라우저로 직접 확인하지 못했다 — 아래가 검증의 핵심):
+  1. [변경 감지가 감지된 문서를 결재 현황 또는 이력조회에서 열어 상세보기 진입] → [J-layer
+     탭으로 이동 → 기존처럼 Validation System 줄 옆에 "변경 감지" 배지가 보이는지 확인] →
+     [O-layer 탭으로 이동 → 제목/건수/export 버튼 줄 바로 아래에도 동일한 "변경 감지" 배지가
+     보이는지 확인.]
+  2. [O-layer 탭의 배지를 클릭 → J-layer 탭에서 클릭했을 때와 같은 diff 모달이 뜨는지, 탭
+     구성(J-layer/O-layer/XXXXXX)과 내용이 동일한지 확인.]
+  3. [모달이 뜬 상태에서 제목이 적힌 헤더 부분을 마우스로 누른 채 끌어보기] → [모달 박스 전체가
+     마우스를 따라 자유롭게 이동하는지 확인 → 마우스를 놓으면 그 위치에 멈추는지 확인.]
+  4. [헤더의 "⛶ 전체화면"·"✕ 닫기" 버튼을 클릭] → [버튼 클릭이 드래그로 오인되지 않고 정상
+     동작(전체화면 전환/모달 닫기)하는지 확인.]
+  5. [전체화면으로 전환한 상태에서 헤더를 눌러 끌어보기] → [화면을 꽉 채운 상태라 이동하지
+     않는지(의도된 동작) 확인 → 전체화면 해제 후 다시 끌면 정상적으로 이동하는지 확인.]
+  6. [이 모달이 아닌 다른 모달(예: 상세보기 모달, 철회 확인 모달)을 열어 헤더를 끌어보기] →
+     [이번 변경 대상이 아니므로 움직이지 않는지(기존 그대로) 확인 — 다른 모달까지 드래그되면
+     회귀.]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
