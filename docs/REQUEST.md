@@ -404,6 +404,67 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   기존 회귀 테스트가 이번 변경으로 깨지지 않는지만 확인). 백엔드 코드는 변경하지 않아 백엔드
   테스트는 실행하지 않았다.
 
+### 기능 추가 (2026-09-18 — 의뢰 상세 MAP 정보: X표시 변경 여부 칸에 CC 존재/미존재 자동 매칭 표시)
+
+- **요청**: MAP 목적이 `CLONE`(차용)·`EXISTING`(기등록)일 때 "X표시 변경 여부" 칸(원래 항상 잠긴
+  기본값 "없음"만 표시)에, 원본 위치·원본 제품(`source_line`/`source_partid`) 기준으로
+  `MapTable`(`api_maptable`, DCQ 스케줄러 동기화 캐시)을 자동 매칭한 결과를 함께 보여준다.
+  사용자가 따로 선택하는 값이 아니라 **문서를 조회할 때마다 서버가 자동으로 계산**한다.
+  `NEW`(신규)에는 영향이 없다 — 기존처럼 실제 `mshot_change` 값만 그대로 표시된다.
+- **매칭 로직**은 `MapName`의 원본 위치/제품 참고 정보(ox/oy/sr, AAA1~3)와 완전히 동일하다 —
+  `LINE_TO_LINEID_MAP`으로 `lineid` 변환 후, `MapTable`에서 `partid`가 `source_partid`와 정확히
+  같거나 `{source_partid}_`로 시작하는 첫 행(id 기준)을 찾는다. 다만 **호출 방식은 다르다**:
+  ox/oy/sr은 StepMap(작성 중인 폼)에서 프론트가 실시간 API를 호출하지만, 이번 건은 이미 저장된
+  문서를 "보여주기만" 하는 화면(`PagedDetailView.tsx`)이 대상이라 프론트에서 별도로 fetch하지
+  않는다 — `PagedDetailView.tsx`는 "API를 직접 호출하지 않는 순수 표시 컴포넌트"라는 기존
+  원칙(J/O-layer 공유 필터 관련 주석 참고)을 그대로 따라, 문서 조회 응답 자체에 매칭 결과를
+  실어 보낸다.
+- **존재 판정**: 매칭된 행이 없으면 "CC 미존재". 매칭된 행이 있으면 그 행의 `m` 값이
+  `MapTable.CC_MARK`(`'777'`, `backend/api/models.py`)와 같을 때만 "CC 존재", 다르면
+  "CC 미존재"로 판정한다.
+- **백엔드**: `RequestDocumentSerializer`(`serializers.py`)에 `map_table_cc_exists`
+  (`SerializerMethodField`) 추가. `additional_notes`에서 `detail.source_line`/`source_partid`를
+  파싱해 위 매칭을 수행하고, 원본 위치/제품이 하나라도 없으면 `None`(해당없음)을 반환한다.
+  **조회 시점마다 매번 다시 계산**하므로(스냅샷 아님) 이력조회에서 과거 문서를 열어도 그 순간의
+  최신 `api_maptable` 값이 나온다(ox/oy/sr과 동일 원칙). `map_type`이 CLONE/EXISTING인지는 여기서
+  따로 보지 않는다 — 그 칸 자체를 그릴지 말지는 프론트의 `isMapRegisteredDetail` 판정에 맡긴다.
+- **프론트엔드**: `PagedDetailView.tsx`의 CLONE/EXISTING 분기(기존 `PlaceholderChip`으로 항상
+  "없음"만 표시하던 자리)를 `chipBase` 스타일의 일반 칩으로 바꾸고, 값 표시를
+  `{없음}` 또는 `{없음} / {CC 존재 or CC 미존재}`(값이 `null`이면 "없음"만)로 렌더링한다.
+  `doc.map_table_cc_exists`를 그대로 읽기만 하며 별도 API 호출은 없다.
+  `types/index.ts`의 `RequestDocument`에 `map_table_cc_exists?: boolean | null` 필드 추가.
+- **i18n**: `request.map_table_cc_exists`="CC 존재", `request.map_table_cc_not_exists`="CC 미존재"
+  (ko/en 동시 추가). "CC"는 `MapName`의 `AAA1`~`AAA3`, `MapTable`의 `m`/`s`처럼 실제 명칭이
+  확정되지 않은 임시 표기다.
+- **영향 파일**: `backend/api/models.py`(`MapTable.CC_MARK` 상수), `backend/api/serializers.py`,
+  `frontend/src/types/index.ts`, `frontend/src/components/PagedDetailView.tsx`,
+  `frontend/src/locales/ko.json`, `frontend/src/locales/en.json`.
+- **검증**:
+  - 백엔드: CLAUDE.md §1-1 절차(sqlite, `AUTH_MODE=dev`)로 `manage.py test api` —
+    **542건 전부 통과**(회귀 없음). 실제 개발 서버 + `MapTable`/`RequestDocument` 실데이터로
+    `GET /api/documents/{id}/`를 직접 호출해 `map_table_cc_exists`가 매칭 있음(`m='777'`)→`true`,
+    매칭 있음(`m`≠`'777'`)/매칭 없음→`false`, `source_partid` 없음(NEW)→`null`로 정확히
+    나오는 것을 응답 원문으로 확인.
+  - 프론트: `npx tsc --noEmit` — 신규 에러 0(기존 4건은 전부 무관한 `Set` es5 순회 3건 +
+    `GuidePage.tsx` i18n strict 키 1건). `CI=true npx react-scripts test --watchAll=false` —
+    **11 suites / 294건 전부 통과**(신규 테스트는 추가하지 않음 — 기존 회귀 테스트가 이번
+    변경으로 깨지지 않는지만 확인).
+  - 실제 렌더링: 개발 서버(백엔드 8000 + 프론트 3000, `REACT_APP_AUTH_MODE=dev`)를 띄우고
+    `PagedDetailView`를 실제 문서 3건(CC 존재/CC 미존재/NEW)으로 렌더링해 스크린샷으로 확인.
+    검증에 쓴 임시 라우트·컴포넌트는 확인 후 전부 제거했고, 저장소에는 최종 기능 코드만 남아있다.
+- **수동 검증 시나리오**:
+  1. [개발 DB에 `api_maptable` 행 추가(`lineid`=해당 라인, `partid`=원본 제품 코드, `m`='777') →
+     `/request`에서 MAP 목적 `CLONE` 선택, 원본 위치·원본 제품을 그 값으로 입력 → 상신 →
+     결재현황에서 해당 문서 상세보기 → 'MAP 정보' 탭] → [기대 결과: "X표시 변경 여부" 칸에
+     "없음 / CC 존재"가 초록색으로 표시된다.]
+  2. [1과 동일하되 `api_maptable`에 매칭되는 행이 없거나 `m`이 '777'이 아닌 경우] →
+     [기대 결과: "없음 / CC 미존재"가 회색으로 표시된다.]
+  3. [MAP 목적 `NEW`인 문서의 같은 탭 확인] → [기대 결과: 기존과 동일하게 실제 X표시 변경 여부
+     값만 나오고 CC 관련 문구는 전혀 보이지 않는다.]
+  4. [1~2를 이력조회 화면에서도 확인] → [기대 결과: 결재현황과 동일하게 나오며, 그 사이
+     `api_maptable` 데이터가 바뀌었다면 이력조회에서도 최신 값 기준으로 다시 계산되어 보인다
+     (스냅샷이 아니라 실시간 조회이므로).]
+
 ### 기능 개선 (2026-09-14 — 상세보기 MAP 정보: '변경 있음'으로 값을 입력한 경우에만 지도 편차·예외 구역 숫자를 빨갛게 강조)
 
 - **요청**: `PagedDetailView.tsx` "MAP 정보" 탭에서 지도 편차 변경/예외 구역 변경 칩의 실제
