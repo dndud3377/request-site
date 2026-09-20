@@ -4026,6 +4026,52 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   4. [대조군으로 `Only MAP`·`MAP 삭제` 문서에 동일하게 마스터 DB 값을 바꿔도 배지 자체가 뜨지
      않는지 확인 — 이번 변경이 두 목적의 기존(전체 제외) 동작에 영향을 주지 않았음을 확인.]
 
+### 기능 개선 (2026-09-18 — 의뢰 상세 Oayer에도 '변경 감지' 배지 노출 + 배지 모달 드래그 이동)
+
+- **요청**: 의뢰 상세(`PagedDetailView`)에서 '변경 감지' 배지가 J-layer 영역에만 보이던 것을
+  O-layer 영역에도 보이도록 하고, 배지 클릭 시 뜨는 모달을 자유롭게 드래그해 옮길 수 있게
+  해달라는 요청.
+- **수정 1 — Oayer 배지 노출**(`frontend/src/components/PagedDetailView.tsx`): O-layer 페이지
+  헤더(제목/건수/export 버튼) 바로 아래에 J-layer와 동일한 배지 마크업(`doc.layer_drift_detected
+  && onOpenLayerDrift`, 같은 className·문구·onClick)을 추가했다. 새 prop 없이 기존
+  `onOpenLayerDrift`(호출부인 `ApprovalPage`가 이미 넘겨주던 콜백)를 그대로 재사용해, 배지 노출
+  조건·클릭 동작이 J-layer와 완전히 동일하다.
+- **수정 2 — 모달 드래그 이동**(`frontend/src/components/Modal.tsx`): 공용 `Modal` 컴포넌트에
+  `draggable?: boolean`(기본 false) prop을 추가했다. `true`면 `.modal-header`에 `onMouseDown`을
+  걸어 드래그 시작점을 기록하고, `window`의 `mousemove`/`mouseup`으로 이동량을 계산해
+  `.modal`에 `transform: translate(x, y)`를 입힌다. 헤더 안 버튼(전체화면·닫기) 클릭은
+  `closest('button')` 판정으로 드래그 시작에서 제외했고, 전체화면 상태에서는 드래그를 아예
+  비활성화했다(화면을 꽉 채운 상태라 이동이 의미 없음). 기본값이 `false`라 이 prop을 넘기지
+  않는 기존 모든 `Modal` 사용처는 동작 변화가 없다.
+- **수정 3 — 적용 범위**(`frontend/src/pages/ApprovalPage.tsx`): '변경 감지' 배지 클릭 시 뜨는
+  모달(`layerDriftDoc` Modal) 하나에만 `draggable`을 넘겼다. 다른 모달(상세보기·철회·결재 등)은
+  그대로 고정된 채 유지된다.
+- **영향 파일**: `frontend/src/components/PagedDetailView.tsx`,
+  `frontend/src/components/Modal.tsx`, `frontend/src/pages/ApprovalPage.tsx`.
+- **검증**: `cd frontend && npx tsc --noEmit` — 신규 에러 0(기존 4건 — `Set` es5 순회 3건 +
+  `GuidePage.tsx` i18n strict 키 1건 — 과 동일, 이번 변경 파일과 무관). `CI=true npx
+  react-scripts test --watchAll=false` — 11 suites / **294건 전부 통과**(1회차에
+  `adiCdUnregisteredAndVs.test.tsx`에서 jsdom `scrollTo` 관련 플레이키 실패가 1건 있었으나
+  재실행 시 전부 통과 — 이번 변경 파일과 무관). 이번 변경에 대한 신규 자동 테스트는 추가하지
+  않았다(순수 UI 동작이라 기존 회귀 테스트로 커버되지 않고, 드래그·배지 노출 여부는 아래 수동
+  시나리오가 검증의 핵심).
+- **수동 검증 시나리오** (원격 세션이라 브라우저로 직접 확인하지 못했다 — 아래가 검증의 핵심):
+  1. [변경 감지가 감지된 문서를 결재 현황 또는 이력조회에서 열어 상세보기 진입] → [J-layer
+     탭으로 이동 → 기존처럼 Validation System 줄 옆에 "변경 감지" 배지가 보이는지 확인] →
+     [O-layer 탭으로 이동 → 제목/건수/export 버튼 줄 바로 아래에도 동일한 "변경 감지" 배지가
+     보이는지 확인.]
+  2. [O-layer 탭의 배지를 클릭 → J-layer 탭에서 클릭했을 때와 같은 diff 모달이 뜨는지, 탭
+     구성(J-layer/O-layer/XXXXXX)과 내용이 동일한지 확인.]
+  3. [모달이 뜬 상태에서 제목이 적힌 헤더 부분을 마우스로 누른 채 끌어보기] → [모달 박스 전체가
+     마우스를 따라 자유롭게 이동하는지 확인 → 마우스를 놓으면 그 위치에 멈추는지 확인.]
+  4. [헤더의 "⛶ 전체화면"·"✕ 닫기" 버튼을 클릭] → [버튼 클릭이 드래그로 오인되지 않고 정상
+     동작(전체화면 전환/모달 닫기)하는지 확인.]
+  5. [전체화면으로 전환한 상태에서 헤더를 눌러 끌어보기] → [화면을 꽉 채운 상태라 이동하지
+     않는지(의도된 동작) 확인 → 전체화면 해제 후 다시 끌면 정상적으로 이동하는지 확인.]
+  6. [이 모달이 아닌 다른 모달(예: 상세보기 모달, 철회 확인 모달)을 열어 헤더를 끌어보기] →
+     [이번 변경 대상이 아니므로 움직이지 않는지(기존 그대로) 확인 — 다른 모달까지 드래그되면
+     회귀.]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
