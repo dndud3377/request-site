@@ -4367,6 +4367,71 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
      [이번 변경 대상이 아니므로 움직이지 않는지(기존 그대로) 확인 — 다른 모달까지 드래그되면
      회귀.]
 
+### 기능 개선 (2026-09-21 — Step1 제품이름 ↔ 조리법 상호 좁힘: 조합법만으로 조리법 broad 조회 + 조리법 먼저 선택 지원)
+
+- **요청**: 기존에는 라인 → 조합법 → 제품이름 → 조리법 순서로만 진행됐다(제품이름을 골라야
+  조리법 옵션이 나옴). 조합법을 고르면 제품이름뿐 아니라 조리법도 함께(넓은 범위로) 바로
+  조회되도록 하고, 조리법을 먼저 골라도 그에 맞는 제품이름으로 좁혀지도록 해달라는 요청.
+  기존 "제품이름 선택 → 조리법 좁힘" 기능은 그대로 유지.
+- **배경 조사**: `ProductProcessId`(제품이름→조리법 캐시) 테이블에는 조합법 컬럼이 없고
+  `line`+`product_name`+`process_id`만 있다. 조합법만으로 조리법 목록을 구하려면
+  `ProcessProduct`(line+process→product_name)를 거쳐 `product_name`으로 조인해야 한다.
+- **백엔드**(`backend/api/views.py`):
+  - `form_options_products`에 선택적 `process_id` 파라미터 추가 — 있으면 그 조리법을 가진
+    제품이름만 좁힌다(`ProductProcessId`에서 `process_id`로 `product_name` 목록을 구해
+    `ProcessProduct` 쿼리를 `product_name__in`으로 필터).
+  - `form_options_process_id`에 `product` 없이 `process`(조합법)만 와도 동작하는 분기 추가 —
+    `ProcessProduct(line, process)`의 `product_name` 목록을 거쳐 `ProductProcessId`에서 조리법
+    전체 목록을 구한다. 기존 `product` 단독 호출은 그대로 동작(하위호환).
+- **프론트엔드**(`frontend/src/api/client.ts`): `getProducts(line, process?, processId?)`,
+  `getProcessId(line, product?, process?)`로 시그니처를 확장했다. 기존 호출부(흐름도·뼈찜·
+  ADI CD 대상·C가문 리전 — 모두 `getProducts(line, process)`/`getProcessId(line, product)` 2개
+  인자 호출)는 위치 인자 수가 그대로라 영향 없다.
+- **프론트엔드**(`frontend/src/pages/RequestPage/index.tsx`) — Step1 캐스케이드 effect 3개 재구성:
+  - 조합법 변경 effect: 기존과 동일하게 제품이름을 조회하고 하위값을 초기화한다(변경 없음).
+  - 제품이름 변경 effect(기존 유지): 제품이름이 채워지면 조리법을 그 제품 기준으로 좁힌다.
+    **제품이름이 비면**(신규) 조리법 옵션을 조합법 범위 전체로 복원한다 — 조리법을 먼저 고를
+    수 있게 하는 핵심.
+  - 조리법 변경 effect(신규, 위와 대칭): 조리법이 채워지면 제품이름을 그 조리법 기준으로
+    좁힌다. 조리법이 비면 제품이름 옵션을 조합법 범위 전체로 복원한다.
+  - 두 effect 모두, 이미 선택된 반대쪽 값이 새로 좁혀진 목록에 없을 때만(예: 제품이름을 바꿨는데
+    이전 조리법이 새 제품엔 없음) 그 값을 비운다 — "제품이름 선택 후 그 조리법 목록에서 고르면
+    제품이름이 유지돼야 한다"는 요구를 만족하려면 무조건 초기화하면 안 되기 때문(둘 다 이미
+    서로 호환되는 값이면 그대로 둔다).
+  - **되먹임 루프 방지**: 위 두 effect는 서로의 옵션 state(`productOptions`/`processIdOptions`)를
+    갱신하며 서로를 재트리거할 수 있다. 매번 새 배열 참조로 `setState`하면 내용이 같아도
+    무한히 재트리거될 위험이 있어, 내용이 같으면 이전 참조를 그대로 반환하는
+    `setProductOptionsStable`/`setProcessIdOptionsStable`(얕은 배열 비교)을 도입해 두 effect가
+    안정 상태에 도달하면(보통 1~2회 안에) 재실행이 멈추도록 했다.
+- **영향 파일**: `backend/api/views.py`, `backend/api/tests.py`, `frontend/src/api/client.ts`,
+  `frontend/src/pages/RequestPage/index.tsx`,
+  `frontend/src/pages/RequestPage/lineProcessCrossFilter.test.tsx`(신규).
+- **검증**: CLAUDE.md §1-1 절차(sqlite, 원격 세션)로 `manage.py test api` — **563건 전부 통과**
+  (신규 `FormOptionsLineProcessProductProcessIdTest` 6건 포함, 회귀 없음). `cd frontend && npx tsc
+  --noEmit` — 신규 에러 0(기존 4건 — `Set` es5 순회 3건 + `GuidePage.tsx` i18n strict 키 1건 —
+  과 동일, 이번 변경과 무관, 변경 전/후 동일 스택 대조 확인). `CI=true npx react-scripts test
+  --watchAll=false` — 12 suites / **302건 전부 통과**(신규 `lineProcessCrossFilter.test.tsx` 4건
+  포함). 신규 프론트 테스트는 Step1을 실제로 구동해 ① 조합법만으로 조리법 broad 조회 ②
+  조리법을 먼저 골라 제품이름이 좁혀지고 그 목록에서 고른 값이 정상 반영되는지 ③(회귀) 제품
+  이름 먼저 선택 시 조리법 좁힘 유지 ④(회귀) 제품이름 선택 후 그 조리법을 고르면 제품이름이
+  지워지지 않는지(되먹임 버그 방지)를 확인했다.
+- **수동 검증 시나리오** (원격 세션이라 브라우저로 직접 확인하지 못했다 — 아래가 검증의 핵심):
+  1. [`/request` 새 문서 → 라인 선택 → 조합법 입력/선택] → [기대 결과: 제품 이름뿐 아니라
+     조리법 입력칸에도 곧바로(제품 이름을 고르기 전에) 해당 조합법의 조리법 후보가 나타나는지
+     확인(자동완성 목록 열어서 확인) — 이전엔 제품 이름을 채우기 전까진 조리법 후보가 비어
+     있었다.]
+  2. [1번 이어서, 제품 이름은 비워둔 채 조리법 칸에 값을 하나 선택] → [기대 결과: 정상 선택되고
+     에러가 뜨지 않는지, 이어서 제품 이름 칸의 자동완성 후보가 그 조리법을 가진 제품들로
+     좁혀졌는지 확인.]
+  3. [2번 이어서, 좁혀진 후보 중 하나를 제품 이름으로 선택] → [기대 결과: 방금 고른 조리법 값이
+     그대로 유지되는지(사라지지 않는지) 확인.]
+  4. [새 문서에서 이번엔 순서대로 라인 → 조합법 → 제품 이름을 먼저 선택] → [기대 결과: 기존과
+     동일하게 조리법 후보가 그 제품 기준으로 좁혀지는지 확인(회귀 없음).]
+  5. [4번 이어서, 좁혀진 조리법 후보 중 하나를 선택] → [기대 결과: 제품 이름이 그대로 유지되는지
+     확인 — 만약 제품 이름이 지워지면 회귀.]
+  6. [조합법 또는 라인을 다른 값으로 바꾸기] → [기대 결과: 제품 이름·조리법이 모두 초기화되고,
+     새 조합법 기준의 넓은 후보로 다시 채워지는지 확인(기존 동작 유지).]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
