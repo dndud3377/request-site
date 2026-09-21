@@ -4023,13 +4023,13 @@ def form_options_mapname(request):
 
 @require_GET
 def form_options_map_info(request):
-    """원본 위치(라인명) + 원본 제품 코드(8자리) → AAA1/AAA2/AAA3 참고 정보 + CC 상태 반환.
+    """원본 위치(라인명) + 원본 제품 코드(8자리) → AAA1/AAA2/AAA3 참고 정보 + CC 참고값(oc) 반환.
     (2026-09 추가 — CLONE/EXISTING 작성 화면 참고용)
 
-    AAA1~3 는 참고용일 뿐 상신 데이터에는 포함되지 않는다(작성 화면에만 표시).
-    cc_status('exists'/'not_exists'/'')는 반대로 프론트가 detail.map_table_cc_status 에
-    그대로 저장한다 — 의뢰 상세 'MAP 정보' 탭의 '이력 확인'(상신 시점 값 vs 현재 값 비교)이
-    이 값을 기준으로 판정하기 때문이다. 매 조회마다 최신 api_maptable 기준으로 다시 계산한다.
+    AAA1~3(ox/oy/sr)과 cc_status(oc) 전부 참고용일 뿐 상신 데이터에는 포함되지 않는다
+    (작성 화면에만 표시). CC 존재/미존재 자체는 이 값을 참고해 사용자가 mshot_change_cc 에
+    직접 선택한 값만 상신 데이터에 저장된다 — 이 함수 응답이 자동으로 반영되지 않는다.
+    매 조회마다 최신 api_maptable 기준으로 다시 계산한다.
     """
     line = request.GET.get('line', '')
     partid = request.GET.get('partid', '')

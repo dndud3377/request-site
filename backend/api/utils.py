@@ -122,9 +122,10 @@ def compute_map_table_cc_status(line: str, partid: str) -> str:
     - 매칭되는 행이 하나도 없으면 'not_exists'
     - 매칭되는 행 중 하나라도 m 값이 MapTable.CC_MARK 와 같으면 'exists', 전부 다르면 'not_exists'
 
-    `form_options_map_info`(작성 화면 실시간 조회)와 `RequestDocumentSerializer.
-    get_map_table_cc_exists`(의뢰 상세 조회) 양쪽에서 공유한다 — 판정 기준이 어긋나지
-    않도록 이 함수 하나만 고치면 된다.
+    `form_options_map_info`(작성 화면 실시간 조회, `oc` 참고값)가 호출한다. 결재 상세 화면은
+    더 이상 이 값을 실시간으로 재조회하지 않는다 — CC 존재/미존재는 상신 시점에 사용자가
+    직접 선택한 `mshot_change_cc` 값을 그대로 저장·표시한다(2026-09 실시간 드리프트 감지
+    기능 폐지).
     """
     from django.db.models import Q
     from .models import MapTable
