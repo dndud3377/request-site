@@ -113,9 +113,10 @@ REVIEWER_AGENTS = ('RV', 'PV', 'EV')
 # PL 은 별도 규칙(미합의 지정 PL 포함)을 따르므로 여기서 제외한다.
 # Only MAP 의뢰서는 P/O/E/J 없이 R 까지만 진행하고 후결자(RA)로 종단한다.
 ROUTE_AGENTS_ONLY_MAP = ('SA', 'R', 'RV', 'RA')
-# 'MAP 삭제' 의뢰서는 PL 합의 후 P·R·J·O 를 병렬로 진행한다.
+# 'MAP 삭제' 의뢰서는 PL 합의 후 2구역(P·J·O)을 병렬로 진행하고, 셋 다 합의하면
+# 3구역(R)이 열려 마지막으로 진행한다(R은 병렬 구성원이 아니라 2구역 다음 단독 관문).
 # E(MASK)·EV 와 후결자(RA)는 생성하지 않으므로 경로에서도 빠진다(고정 후결자도 없는 유일한 경로).
-ROUTE_AGENTS_MAP_DELETE_EDIT = ('SA', 'P', 'PV', 'R', 'RV', 'J', 'O')
+ROUTE_AGENTS_MAP_DELETE_EDIT = ('SA', 'P', 'PV', 'J', 'O', 'R', 'RV')
 # 'ADI CD 변경' 의뢰서는 PL 합의 후 R·O 없이 P·J 만 병렬로 진행한다.
 # E(MASK)·EV 와 후결자(RA)도 생성되지 않으므로 경로에서 빠진다.
 ROUTE_AGENTS_ADI_CD = ('SA', 'P', 'PV', 'J')

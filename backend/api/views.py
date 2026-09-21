@@ -1284,21 +1284,27 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 나머지를 자동 'skip' 처리하던 동작을 없앴다. 남은 검토자는 pending 상태로 남아
         # 각자 직접 합의해야 한다. 'skip' 값 자체는 그 이전(OR 시절) 문서의 이력으로만 남는다.
 
-        # 'MAP 삭제' 은 P·R·J·O 가 모두 병렬 구성원이라, 넷 중 무엇이 마지막이 되든
-        # 여기서 최종 승인을 판정해야 한다. 아래 일반 경로 분기는 P·R 합의로는 승인 판정을
-        # 하지 않으므로(P 는 J 생성만 함), 이 분기가 없으면 네 단계가 다 합의돼도 문서가 멈춘다.
+        # 'MAP 삭제' 은 2구역(P·J·O)이 모두 병렬로 합의된 뒤에야 3구역(R)이 열리고, R 합의로
+        # 최종 승인된다. R/RV 합의는 곧바로 최종 판정으로, 그 외(P/PV/J/O) 합의는 2구역 완료
+        # 여부만 확인해 R 단계 생성으로 이어진다.
         if document.is_map_delete_edit():
-            if agent == 'R':
-                # 담당자 합의 → 검토자(RV)가 있으면 그 차례를 알린다(단계는 아직 미완료).
-                rv_step = ApprovalStep.objects.filter(
-                    document=document, agent='RV', action='pending', round=current_round
-                ).first()
-                if rv_step:
-                    mailer.enqueue_stage_arrival(document, 'RV', rv_step, recipient_name=rv_step.assignee_name)
-            elif agent == 'P' and self._stage_reviewers_complete(document, 'P', current_round):
-                # J 는 이미 병렬로 존재하므로 생성하지 않고, 완료 통보만 일반 경로와 동일하게 보낸다.
-                mailer.enqueue_notify_p_completed(document)
-            new_status = 'approved' if self._map_delete_edit_all_approved(document, current_round) else 'under_review'
+            if agent in ('R', 'RV'):
+                if agent == 'R':
+                    # 담당자 합의 → 검토자(RV)가 있으면 그 차례를 알린다(단계는 아직 미완료).
+                    rv_step = ApprovalStep.objects.filter(
+                        document=document, agent='RV', action='pending', round=current_round
+                    ).first()
+                    if rv_step:
+                        mailer.enqueue_stage_arrival(document, 'RV', rv_step, recipient_name=rv_step.assignee_name)
+                new_status = 'approved' if self._is_r_zone_complete(document, current_round) else 'under_review'
+            else:
+                # P/PV/J/O — 2구역 단계. R은 아직 존재하지 않으므로 승인 판정은 대상이 아니다.
+                if agent == 'P' and self._stage_reviewers_complete(document, 'P', current_round):
+                    # J 는 이미 병렬로 존재하므로 생성하지 않고, 완료 통보만 일반 경로와 동일하게 보낸다.
+                    mailer.enqueue_notify_p_completed(document)
+                if self._map_delete_edit_zone2_complete(document, current_round):
+                    self._create_map_delete_edit_r_stage(document, current_round)
+                new_status = 'under_review'
 
         elif agent == 'R':
             # 담당자 합의 → 검토자(RV)가 있으면 대기(검토자 차례 — 지금 메일 발송), 없으면 병렬 단계로 전환
@@ -2396,22 +2402,23 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         mailer.enqueue_notify_p_completed(document)
 
     def _create_map_delete_edit_parallel(self, document, round_no):
-        """'MAP 삭제': PL 합의 직후 P·R·J·O 를 병렬로 생성한다.
+        """'MAP 삭제': PL 합의 직후 2구역(P·J·O)을 병렬로 생성한다.
 
         기존 일반 경로와 다른 점 — 기존 코드는 건드리지 않고 이 분기만 새로 탄다.
-        - R 이 병렬을 여는 관문이 아니라 병렬 구성원 중 하나다.
+        - R 은 이 시점에 만들지 않는다 — 2구역(P·J·O) 전원 합의 후에만 3구역으로 열린다
+          (`_create_map_delete_edit_r_stage` 참고).
         - J 가 P 완료를 기다리지 않고 처음부터 존재한다.
         - E(MASK)와 후결자(RA)는 만들지 않는다 — 고정 후결자도 붙지 않는 유일한 경로다.
-        검토자(PV/RV)는 기존과 동일하게 각 담당자가 지정하며, 단계 완료 판정도 그대로 쓴다.
+        검토자(PV)는 기존과 동일하게 담당자가 지정하며, 단계 완료 판정도 그대로 쓴다.
         """
         from .utils import calculate_business_due_date
         import datetime
         if ApprovalStep.objects.filter(
-            document=document, agent__in=('P', 'R', 'J', 'O'), round=round_no
+            document=document, agent__in=('P', 'J', 'O'), round=round_no
         ).exists():
             return  # 동시 합의 중복 생성 방지
         due = calculate_business_due_date(datetime.date.today(), 6)
-        for agent in ('P', 'R', 'J', 'O'):
+        for agent in ('P', 'J', 'O'):
             created = ApprovalStep.objects.create(
                 document=document, agent=agent, action='pending',
                 is_parallel=True, round=round_no, due_date=due,
@@ -2422,21 +2429,38 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # (2026-08) TE_J 참고 통보(notify_p_arrival)는 폐지했다 — 이 경로는 J 가 처음부터
         # 병렬이라 TE_J 가 위 stage_arrival(J) 결재 요청 메일을 이미 받는다(일반 경로와 동일).
 
-    def _map_delete_edit_all_approved(self, document, round_no):
-        """'MAP 삭제' 최종 승인 판정 — P·R·J·O 네 단계가 모두 완료됐는가.
+    def _map_delete_edit_zone2_complete(self, document, round_no):
+        """'MAP 삭제' 2구역(P·J·O) 전원 합의 여부 — 3구역(R) 생성 조건.
 
-        각 단계는 담당자 + 지정된 검토자(PV/RV) 전원 합의로 완료된다
-        (검토자가 없으면 담당자 합의만으로 완료 — _stage_reviewers_complete 와 동일 규칙).
+        P는 담당자 + 지정된 검토자(PV) 전원 합의, J·O는 검토자 없이 담당자 1인 합의로
+        완료된다(_stage_reviewers_complete 와 동일 규칙).
         """
-        for agent in ('P', 'R', 'J', 'O'):
+        for agent in ('P', 'J', 'O'):
             main = ApprovalStep.objects.select_for_update().filter(
                 document=document, agent=agent, round=round_no,
             ).first()
             if not main or main.action != 'approved':
                 return False
-            if agent in ('P', 'R') and not self._stage_reviewers_complete(document, agent, round_no):
+            if agent == 'P' and not self._stage_reviewers_complete(document, 'P', round_no):
                 return False
         return True
+
+    def _create_map_delete_edit_r_stage(self, document, round_no):
+        """'MAP 삭제' 3구역: 2구역(P·J·O) 전원 합의 후 R을 마지막 단계로 연다.
+
+        R은 더 이상 2구역 병렬 구성원이 아니라, 2구역 완료 후에만 열리는 단독 관문이다.
+        검토자(RV)는 기존과 동일하게 R 담당자가 지정하며, 최종 승인 판정은
+        `_is_r_zone_complete`(R 담당자 + RV 전원 합의)를 그대로 쓴다.
+        """
+        from .utils import calculate_business_due_date
+        import datetime
+        if ApprovalStep.objects.filter(document=document, agent='R', round=round_no).exists():
+            return  # 동시 합의 중복 생성 방지
+        due = calculate_business_due_date(datetime.date.today(), 6)
+        r_step = ApprovalStep.objects.create(
+            document=document, agent='R', action='pending', round=round_no, due_date=due,
+        )
+        mailer.enqueue_stage_arrival(document, 'R', r_step)
 
     def _create_adi_cd_parallel(self, document, round_no):
         """'ADI CD 변경': PL 합의 직후 R·O 없이 P·J 만 병렬로 생성한다.

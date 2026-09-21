@@ -2562,7 +2562,8 @@ class EvReviewerManagementTest(PEStageReviewerFlowTest):
 
 @override_settings(POST_APPROVER_LOGINID='fixedpa')
 class MapDeleteEditRouteTest(TestCase):
-    """'MAP 삭제' 전용 결재 경로 — PL 합의 후 P·R·J·O 병렬, E·RA 미생성.
+    """'MAP 삭제' 전용 결재 경로 — PL 합의 후 2구역(P·J·O) 병렬, 셋 다 합의하면 3구역(R)이
+    열리고 R 합의로 최종 승인된다. E·RA 미생성.
 
     기존 일반 경로/Only MAP 경로는 건드리지 않고 새 분기만 탄다는 것을 함께 확인한다.
     """
@@ -2618,15 +2619,34 @@ class MapDeleteEditRouteTest(TestCase):
         doc.refresh_from_db()
         return r
 
-    def test_pl_approval_creates_four_parallel_steps(self):
-        """PL 합의 직후 P·R·J·O 가 한꺼번에 병렬로 생성된다(J 가 P 를 기다리지 않는다)."""
+    def test_pl_approval_creates_zone2_without_r(self):
+        """PL 합의 직후 2구역(P·J·O)만 병렬로 생성된다 — R은 아직 없다(J 가 P 를 기다리지 않는다)."""
         doc = self._submit_and_pl_approve(self._make_doc())
         agents = set(ApprovalStep.objects.filter(document=doc, round=1)
                      .exclude(agent='PL').values_list('agent', flat=True))
-        self.assertEqual(agents, {'P', 'R', 'J', 'O'}, f'실제 생성된 단계: {agents}')
-        for a in ('P', 'R', 'J', 'O'):
+        self.assertEqual(agents, {'P', 'J', 'O'}, f'실제 생성된 단계: {agents}')
+        for a in ('P', 'J', 'O'):
             st = ApprovalStep.objects.get(document=doc, agent=a, round=1)
             self.assertTrue(st.is_parallel, f'{a} 는 병렬 단계여야 한다')
+
+    def test_r_created_only_after_zone2_all_approved(self):
+        """R(3구역)은 2구역(P·J·O)이 모두 합의되기 전까지 생성되지 않는다."""
+        doc = self._submit_and_pl_approve(self._make_doc())
+        self._assign_and_approve(doc, 'P', self.p_user)
+        self._assign_and_approve(doc, 'J', self.j_user)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists(),
+                          'O 가 남아 있으면 R 이 생기면 안 된다')
+        self._assign_and_approve(doc, 'O', self.o_user)
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists(),
+                         'P·J·O 전원 합의 후에는 R 이 생겨야 한다')
+        self.assertEqual(doc.status, 'under_review', 'R 이 막 생겼을 뿐 아직 합의 전이라 승인되면 안 된다')
+
+    def test_r_created_regardless_of_zone2_completion_order(self):
+        """2구역 합의 순서(J→O→P 등)와 무관하게 셋 다 끝나면 R 이 생성된다."""
+        doc = self._submit_and_pl_approve(self._make_doc())
+        for agent, user in (('J', self.j_user), ('O', self.o_user), ('P', self.p_user)):
+            self._assign_and_approve(doc, agent, user)
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists())
 
     def test_no_e_and_no_post_approver_steps(self):
         """E(MASK)와 후결자(RA)는 생성하지 않는다 — 고정 후결자도 붙지 않는다."""
@@ -2636,28 +2656,19 @@ class MapDeleteEditRouteTest(TestCase):
         self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='RA', round=1).exists(),
                          '고정 후결자가 설정돼 있어도 RA 를 만들지 않는다')
 
-    def test_approved_when_p_is_last(self):
-        """P 가 마지막 합의자여도 최종 승인된다(일반 경로는 P 로 승인 판정을 하지 않는다)."""
-        doc = self._submit_and_pl_approve(self._make_doc())
-        for agent, user in (('R', self.r_user), ('J', self.j_user), ('O', self.o_user)):
-            self._assign_and_approve(doc, agent, user)
-        self.assertEqual(doc.status, 'under_review', '아직 P 가 남아 승인되면 안 된다')
-        self._assign_and_approve(doc, 'P', self.p_user)
-        self.assertEqual(doc.status, 'approved', 'P 합의로 네 단계가 모두 끝나면 승인돼야 한다')
-
-    def test_approved_when_r_is_last(self):
-        """R 이 마지막 합의자여도 최종 승인된다(R 은 관문이 아니라 병렬 구성원이다)."""
+    def test_approved_after_zone2_then_r_approved(self):
+        """2구역(P·J·O) 전원 합의로 R 이 열리고, R 합의로 최종 승인된다(R 이 마지막 관문)."""
         doc = self._submit_and_pl_approve(self._make_doc())
         for agent, user in (('P', self.p_user), ('J', self.j_user), ('O', self.o_user)):
             self._assign_and_approve(doc, agent, user)
-        self.assertEqual(doc.status, 'under_review', '아직 R 이 남아 승인되면 안 된다')
+        self.assertEqual(doc.status, 'under_review', '2구역만 끝났을 뿐 R 이 남아 승인되면 안 된다')
         self._assign_and_approve(doc, 'R', self.r_user)
-        self.assertEqual(doc.status, 'approved', 'R 합의로 네 단계가 모두 끝나면 승인돼야 한다')
+        self.assertEqual(doc.status, 'approved', 'R 합의로 최종 승인돼야 한다')
 
-    def test_p_reviewer_blocks_final_approval(self):
-        """P 검토자(PV)가 지정돼 있으면 그 합의까지 끝나야 승인된다(검토자 기능 유지)."""
+    def test_p_reviewer_blocks_zone2_completion_and_r_creation(self):
+        """P 검토자(PV)가 지정돼 있으면 그 합의까지 끝나야 2구역이 완료되어 R 이 열린다."""
         doc = self._submit_and_pl_approve(self._make_doc())
-        for agent, user in (('R', self.r_user), ('J', self.j_user), ('O', self.o_user)):
+        for agent, user in (('J', self.j_user), ('O', self.o_user)):
             self._assign_and_approve(doc, agent, user)
         self.client.force_authenticate(user=self.p_user)
         r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
@@ -2668,14 +2679,20 @@ class MapDeleteEditRouteTest(TestCase):
         }, format='json')
         self.assertEqual(r.status_code, 200, r.content)
         doc.refresh_from_db()
-        self.assertEqual(doc.status, 'under_review', 'PV 가 남아 있으면 아직 승인되면 안 된다')
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists(),
+                          'PV 가 남아 있으면 2구역 미완료라 R 이 생기면 안 된다')
 
         self.client.force_authenticate(user=self.p_reviewer)
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/',
                              {'agent': 'PV', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
         doc.refresh_from_db()
-        self.assertEqual(doc.status, 'approved', 'PV 합의로 P 단계가 끝나면 승인돼야 한다')
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists(),
+                         'PV 합의로 2구역이 끝나면 R 이 열려야 한다')
+        self.assertEqual(doc.status, 'under_review', 'R 이 아직 남아 승인되면 안 된다')
+
+        self._assign_and_approve(doc, 'R', self.r_user)
+        self.assertEqual(doc.status, 'approved', 'R 합의로 최종 승인돼야 한다')
 
     def test_route_agents_exclude_e_and_ra(self):
         """메일 경로 카드·반려 수신자용 결재선에 E/EV/RA 가 포함되지 않는다."""
@@ -4537,7 +4554,7 @@ class ReviewItemSyncTest(TestCase):
     - 삭제 전파는 이미 확인한 검토자가 있는 문서를 건너뛴다.
     - 재상신하면 항목·검토자는 남고 확인 상태만 초기화되며, 새 J 단계에서 마스터를 따라잡는다.
 
-    결재 경로는 'MAP 삭제'(PL 합의 직후 P·R·J·O 병렬 생성)을 쓴다 — J 단계에
+    결재 경로는 'MAP 삭제'(PL 합의 직후 2구역 P·J·O 병렬 생성)을 쓴다 — J 단계에
     가장 짧게 도달하는 실제 경로다.
     """
 
@@ -4556,7 +4573,7 @@ class ReviewItemSyncTest(TestCase):
 
     # ----- 흐름 헬퍼 -----
     def _doc_at_j(self, title='ri'):
-        """'MAP 삭제' 문서를 만들어 상신 → PL 합의까지 진행(= J 단계 pending 생성)."""
+        """'MAP 삭제' 문서를 만들어 상신 → PL 합의까지 진행(= 2구역 J 단계 pending 생성)."""
         doc = RequestDocument.objects.create(
             title=title, requester=self.requester, requester_name='요청자',
             requester_email='rireq@c.com', requester_department='dept',
@@ -4586,18 +4603,21 @@ class ReviewItemSyncTest(TestCase):
         self.assertEqual(r.status_code, 200, r.content)
 
     def _finish(self, doc):
-        """P·R·J·O 를 모두 합의시켜 문서를 완료(approved) 상태로 만든다."""
-        for agent, user in (('R', self.r_user), ('J', self.j_user), ('O', self.o_user), ('P', self.p_user)):
+        """2구역(P·J·O)을 모두 합의시켜 3구역(R)을 연 뒤, R까지 합의시켜 문서를 완료(approved)
+        상태로 만든다 — R은 2구역이 끝나야 생성되므로 반드시 마지막에 처리해야 한다."""
+        for agent, user in (('J', self.j_user), ('O', self.o_user), ('P', self.p_user)):
             self.client.force_authenticate(user=user)
-            if agent == 'R':
-                self.client.post(f'/api/documents/{doc.id}/assign-step/', {
-                    'agent': agent, 'assignee_loginid': user.loginid, 'assignee_name': user.loginid,
-                }, format='json')
-            else:
-                self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': agent}, format='json')
+            self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': agent}, format='json')
             r = self.client.post(f'/api/documents/{doc.id}/approve-step/',
                                  {'agent': agent, 'comment': ''}, format='json')
             self.assertEqual(r.status_code, 200, r.content)
+        self.client.force_authenticate(user=self.r_user)
+        self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+        }, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/',
+                             {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'approved')
         return doc
@@ -5681,7 +5701,7 @@ class RequesterResubmitTest(TestCase):
         self.assertEqual(res.status_code, 403, res.content)
 
     def test_blocked_once_map_delete_edit_parallel_steps_exist(self):
-        """'MAP 삭제' 등 경로는 R 이 아니라 P·R·J·O 를 한꺼번에 만든다 — 그 뒤에도 차단돼야 한다
+        """'MAP 삭제' 등 경로는 R 이 아니라 2구역(P·J·O)을 먼저 만든다 — 그 뒤에도 차단돼야 한다
         (agent='R' 존재 여부만으로 판정하면 이 경로에서 구멍이 생긴다)."""
         doc = self._make_doc(purpose=RequestDocument.MAP_DELETE_EDIT_PURPOSE)
         self.assertEqual(self._submit(doc).status_code, 200)
