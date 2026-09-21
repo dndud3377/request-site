@@ -632,16 +632,12 @@ export default function RequestPage(): React.ReactElement {
       .catch(() => setSourcePartIdOptions([]));
   }, [detail.source_line]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 원본 위치+원본 제품 참고 정보(AAA1~3) 조회 — CLONE/EXISTING 이고 둘 다 선택됐을 때만.
-  // AAA1~3 는 참고용일 뿐 상신 데이터에 포함되지 않으므로 detail 에는 저장하지 않지만,
-  // 같은 응답의 cc_status 는 detail.map_table_cc_status 에 그대로 저장한다 — 의뢰 상세
-  // 'MAP 정보' 탭이 "상신 시점 값 vs 조회 시점 실시간 값"을 비교해 '이력 확인'을 띄우는 데 쓴다.
+  // 원본 위치+원본 제품 참고 정보(AAA1~3, oc) 조회 — CLONE/EXISTING 이고 둘 다 선택됐을 때만.
+  // 전부 참고용일 뿐 상신 데이터에 포함되지 않으므로 detail 에는 저장하지 않는다 — CC 존재/미존재
+  // 자체는 mshot_change_cc 로 사용자가 직접 선택해 저장한다(자동 반영 없음).
   useEffect(() => {
-    // 시스템이 자동으로 채우는 값이라 handleDetailSet(사용자 편집 취급, 로드 가드 해제)이 아니라
-    // setDetail을 직접 써서 "편집 중 로드" 가드(isLoadingEditRef)에 영향을 주지 않는다.
     if (!isMapRegisteredType(detail.map_type) || !detail.source_line || !detail.source_partid) {
       setMapInfo(null);
-      setDetail((prev) => (prev.map_table_cc_status ? { ...prev, map_table_cc_status: '' } : prev));
       return;
     }
     const seq = (optionReqSeq.current['map-info'] ?? 0) + 1;
@@ -651,12 +647,10 @@ export default function RequestPage(): React.ReactElement {
       .then((info) => {
         if (optionReqSeq.current['map-info'] !== seq) return;
         setMapInfo(info);
-        setDetail((prev) => ({ ...prev, map_table_cc_status: info.cc_status }));
       })
       .catch(() => {
         if (optionReqSeq.current['map-info'] !== seq) return;
         setMapInfo(null);
-        setDetail((prev) => (prev.map_table_cc_status ? { ...prev, map_table_cc_status: '' } : prev));
       })
       .finally(() => { if (optionReqSeq.current['map-info'] === seq) setMapInfoLoading(false); });
   }, [detail.map_type, detail.source_line, detail.source_partid]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -3814,6 +3808,12 @@ export default function RequestPage(): React.ReactElement {
           newErrors['source_partid'] = t('request.required');
           errorMessages.push('원본 Part ID: 필수 입력 항목입니다.');
         }
+      }
+      // CC 존재/미존재(mshot_change_cc)는 map_type 과 무관하게 항상 필수 선택이다 —
+      // oc(참고용 자동매칭값)와 달리 사용자가 직접 골라야 상신 데이터에 남는다.
+      if (!detail.mshot_change_cc?.trim()) {
+        newErrors['mshot_change_cc'] = t('request.required');
+        errorMessages.push('CC 존재 여부: 필수 선택 항목입니다.');
       }
       // Final 은 map_type 과 무관한 독립 항목이지만, C가문(only_prodc=YES) 일 때는
       // 최소 1건 등록을 강제한다(CLONE/EXISTING 잠금과도 무관 — Final 입력칸 자체가 잠기지 않는다).

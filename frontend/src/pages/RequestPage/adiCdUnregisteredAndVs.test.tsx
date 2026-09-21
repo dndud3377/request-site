@@ -522,6 +522,7 @@ const vsFixtureDoc = (detailOver: Record<string, unknown> = {}) => ({
       line: LINE, process_selection: PROCESS, partid_selection: PRODUCT, process_id: PROCESS_ID,
       customer_name: '고객사A', customer_requirement: '요구사항',
       other_purpose: [], map_type: 'NEW',
+      mshot_change_cc: 'not_exists',
       bb_zone: '존재', bb_entries: [],
       flow_chart: [], notifiers: [],
       adi_cd_before: [], adi_cd_after: [],

@@ -404,6 +404,80 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   기존 회귀 테스트가 이번 변경으로 깨지지 않는지만 확인). 백엔드 코드는 변경하지 않아 백엔드
   테스트는 실행하지 않았다.
 
+### 기능 변경 (2026-09-21 — CC 존재/미존재: 실시간 자동 감지 폐지, 작성 화면에서 직접 선택하도록 변경)
+
+- **요청 배경**: 2026-09-18/20에 만든 "CC 존재/미존재 자동 매칭 + 실시간 드리프트 감지"는
+  원래 의도(결재 현황에서만 참고로 보여주기)를 넘어, 값이 상신 후에도 `api_maptable` 동기화로
+  계속 바뀌는 형태가 됐다. 이제는 반대로 **의뢰서 작성 시 사용자가 직접 선택한 값을 상신 시점에
+  고정**하고, 재조회로 값이 달라져도 결재 현황에는 반영하지 않기로 방향을 바꿨다.
+- **oc(참고값)와 mshot_change_cc(선택값)의 분리**:
+  - **`oc`**: 기존 자동 매칭 로직(`compute_map_table_cc_status()`)이 계산한 값을 작성 화면에서
+    AAA1~3(`ox`/`oy`/`sr`) 옆에 4번째 참고 칸으로 그대로 보여준다. `map_type`이
+    `CLONE`/`EXISTING`이고 `source_line`/`source_partid`가 모두 입력됐을 때만 노출되며,
+    AAA1~3와 동일하게 읽기 전용·상신 데이터 미포함이다(`StepMap.tsx`).
+  - **`mshot_change_cc`**: "X표시 변경 여부"(`mshot_change`) 라벨 옆에 새로 추가한 `<select>`
+    (존재/미존재, `<option>` placeholder 포함) — `map_type`과 무관하게 항상 노출되는 **필수
+    입력** 필드다. `oc`와 달리 자동 기본값이 없다(값이 바뀌어도 자동으로 덮어쓰지 않음) —
+    사용자가 `oc` 참고값을 보고 매번 직접 선택해야 하며, 그 값이 그대로 `detail.mshot_change_cc`
+    로 상신 데이터에 저장된다. 마우스 오버 시 `title` 속성으로 설명 툴팁이 뜬다.
+  - 기존에 자동으로 채워지던 `detail.map_table_cc_status` 필드(및 이를 채우던
+    `RequestPage/index.tsx`의 `useEffect`)는 완전히 제거했다 — `mapInfo` 조회 결과는 이제
+    `oc` 표시에만 쓰이고 `detail`에 반영되지 않는다.
+- **결재 현황(상세화면) 단순화**: `PagedDetailView.tsx`에서 `api_maptable`을 조회 시점마다
+  재계산해 "상신 시점 값 vs 실시간 값"을 비교하던 드리프트 감지 블록(빨간 테두리, 전용
+  "이력 확인" 버튼·모달, `ccHistOpen` 상태)을 전부 제거했다. 이제 CC 값은 다른 MAP 필드와
+  동일하게 `detail.mshot_change_cc`를 `buildMshotItems`(기존 "X표시 변경 여부" 이력 비교
+  그룹)에 포함시켜, **회차별 상신 값끼리만** 비교한다(`computeDetailDiff`가 `detail` 전체를
+  범용 비교하므로 별도 코드 없이 자동으로 동작). 화면 표시는 기존과 동일하게 "X표시 변경
+  여부" 한 칸에 "없음 / CC 존재" 형식으로 묶어서 보여준다.
+- **백엔드**: `RequestDocumentSerializer.map_table_cc_exists`(`SerializerMethodField`)와
+  `get_map_table_cc_exists()`를 제거했다 — 더 이상 조회 시점 실시간 재계산이 필요 없다.
+  `compute_map_table_cc_status()`(`utils.py`)와 `form_options_map_info`(`views.py`)는 그대로
+  유지된다 — `oc` 참고값 조회에 계속 쓰인다.
+- **필수값 검증**: `RequestPage/index.tsx`의 `validate()`(2단계)에 `mshot_change_cc`가
+  비어있으면 막는 required 체크를 추가했다(`isMapReasonMode`일 때는 이 섹션 자체가 숨겨지므로
+  검증도 함께 건너뛴다).
+- **i18n**: `request.oc`="CC"(ox/oy/sr과 동일한 네이밍 스타일), `request.mshot_change_cc_label`
+  ="CC 존재 여부", `request.mshot_change_cc_tooltip`=설명 문구 (ko/en 동시 추가). 기존
+  `request.map_table_cc_exists`="CC 존재"/`request.map_table_cc_not_exists`="CC 미존재"는
+  select 옵션·값 표시에 그대로 재사용한다.
+- **영향 파일**: `frontend/src/types/index.ts`(`mshot_change_cc` 필드 추가,
+  `map_table_cc_status`/`RequestDocument.map_table_cc_exists` 제거),
+  `frontend/src/pages/RequestPage/constants.ts`(`INITIAL_DETAIL`/`mapInfoDefaults()`),
+  `frontend/src/pages/RequestPage/index.tsx`(자동 저장 `useEffect` 제거, 필수값 검증 추가),
+  `frontend/src/pages/RequestPage/components/StepMap.tsx`(`oc` 참고 칸,
+  `mshot_change_cc` select 추가), `frontend/src/components/PagedDetailView.tsx`(드리프트 감지
+  제거, `buildMshotItems` 편입), `backend/api/serializers.py`(`map_table_cc_exists` 제거),
+  `backend/api/utils.py`/`backend/api/views.py`(docstring 갱신), `ko.json`/`en.json`.
+- **검증**:
+  - 백엔드: `manage.py test api` — **553건 전부 통과**(회귀 없음).
+  - 프론트: `npx tsc --noEmit` — 신규 에러 0(기존 4건과 동일, 이번 변경 파일과 무관).
+    `CI=true npm test -- --watchAll=false` — **11 suites / 294건 전부 통과**(연속 5회 재실행
+    모두 통과 확인). 기존 3개 테스트(`pauseResumeDisabledRows`, `adiCdUnregisteredAndVs`,
+    `requesterResubmitHistory`)는 새 필수 필드(`mshot_change_cc`) 때문에 상신이 막혀 실패했던
+    것을 픽스처에 값을 채워 수정했고, `requesterResubmitHistory`의 한 케이스는 검증 추가로
+    타이밍이 미묘하게 늦어져 간헐적으로 실패하던 것을 `waitFor`로 안정화했다.
+  - 실제 웹 화면 수동 검증은 원격 세션 제약(개발 서버·DB 미기동)으로 수행하지 못했다 —
+    아래 수동 검증 시나리오로 대체한다.
+- **수동 검증 시나리오**:
+  1. [`/request`에서 MAP 목적 `CLONE` 또는 `EXISTING` 선택 → 원본 위치/원본 제품 입력] →
+     [기대 결과: AAA1~3 옆에 "CC" 참고 칸(`oc`)이 함께 뜨고, 매칭 결과에 따라 "CC 존재"/"CC
+     미존재"/"-" 가 표시된다(읽기 전용, 클릭해도 값이 바뀌지 않는다).]
+  2. [같은 화면에서 "X표시 변경 여부" 라벨 옆의 새 "CC 존재 여부" select에 마우스를 올림] →
+     [기대 결과: 설명 툴팁이 뜬다.] → [아무 값도 선택하지 않고 '다음'/상신 시도] →
+     [기대 결과: 필수 입력 에러로 진행이 막힌다.] → [존재/미존재 중 하나를 선택 후 재시도] →
+     [기대 결과: 정상적으로 다음 단계로 진행된다.]
+  3. [MAP 목적 `NEW`로 문서 작성] → [기대 결과: `oc` 참고 칸은 보이지 않지만, "CC 존재 여부"
+     select는 그대로 보이고 여전히 필수다.]
+  4. [CLONE/EXISTING 문서를 "CC 미존재"로 선택해 상신 → 결재 대기 중 `api_maptable`에 매칭
+     행(`m='777'`) 추가 → 결재현황에서 해당 문서 상세보기 → 'MAP 정보' 탭] → [기대 결과:
+     "X표시 변경 여부" 칸에 상신 시점 값인 "없음 / CC 미존재"가 그대로 표시되고, 빨간
+     테두리·이력 확인 버튼 등 실시간 재조회로 인한 강조는 전혀 나타나지 않는다(이전과 달리
+     `api_maptable`이 바뀌어도 상세화면 표시는 변하지 않아야 한다).]
+  5. [4의 문서가 반려되어 재상신되며 이번엔 "CC 존재"를 선택 → 이력조회에서 열람] → [기대
+     결과: 다른 MAP 필드와 동일하게 회차 간 값이 다르면 빨간 테두리 + "이력 확인" 버튼이
+     뜨고, 클릭 시 회차별 표에 "CC 미존재 → CC 존재"가 정확히 표시된다.]
+
 ### 버그 수정 (2026-09-20 — CC 판정: 매칭 행이 여러 개일 때 id 첫 행만 보던 문제)
 
 - **증상**: `compute_map_table_cc_status()`(`utils.py`)가 `line`/`partid` 조건에 맞는 행을

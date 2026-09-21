@@ -90,6 +90,7 @@ const fixtureDetail = {
   customer_requirement: '요구사항 텍스트',
   flow_chart: [],
   map_type: 'NEW',
+  mshot_change_cc: 'not_exists',
   map_change_reason: '<p>MAP 삭제 이유</p>',
   notifiers: [],
   post_approvers: [],
@@ -160,8 +161,11 @@ describe('의뢰자 재상신 — 수정 전 스냅샷이 history 에 기록되�
     if (!nextBtn) throw new Error('다음 버튼을 찾지 못했다');
     await act(async () => { nextBtn.click(); });
 
-    const submitBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('📤'));
-    if (!submitBtn) throw new Error('상신 버튼을 찾지 못했다');
+    // mshot_change_cc(필수) 추가로 검증 이후 다음 화면 렌더까지 한 틱 더 걸릴 수 있어 waitFor 로 기다린다.
+    await waitFor(() => {
+      expect(Array.from(document.querySelectorAll('button')).some((b) => b.textContent?.includes('📤'))).toBe(true);
+    });
+    const submitBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('📤')) as HTMLButtonElement;
     await act(async () => { submitBtn.click(); });
 
     // 편집 진입 시 프리필된 지정 PL이 모달에도 그대로 남아 있어야 한다(재선택 불필요) —
@@ -209,8 +213,11 @@ describe('의뢰자 재상신 — 수정 전 스냅샷이 history 에 기록되�
     if (!nextBtn) throw new Error('다음 버튼을 찾지 못했다');
     await act(async () => { nextBtn.click(); });
 
-    const submitBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('📤'));
-    if (!submitBtn) throw new Error('상신 버튼을 찾지 못했다');
+    // mshot_change_cc(필수) 추가로 검증 이후 다음 화면 렌더까지 한 틱 더 걸릴 수 있어 waitFor 로 기다린다.
+    await waitFor(() => {
+      expect(Array.from(document.querySelectorAll('button')).some((b) => b.textContent?.includes('📤'))).toBe(true);
+    });
+    const submitBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('📤')) as HTMLButtonElement;
     await act(async () => { submitBtn.click(); });
 
     await waitFor(() => expect(screen.getByText('PL담당자')).toBeDefined());

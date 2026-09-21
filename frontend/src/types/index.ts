@@ -199,9 +199,6 @@ export interface RequestDocument {
   designated_pl_name?: string;
   approval_steps?: ApprovalStepFrontend[];
   notifier_mails?: Record<string, string>; // 통보처 loginid → 이메일 (결재 경로 탭 표시용)
-  // MAP 정보 탭 'X표시 변경 여부' 칸 — CLONE/EXISTING 원본 위치·제품 기준 api_maptable 자동 매칭 결과.
-  // 원본 위치/제품이 없으면 null(해당없음). 서버가 조회 시점마다 다시 계산해 내려준다(스냅샷 아님).
-  map_table_cc_exists?: boolean | null;
   // 임시저장 공유 그룹 — 작성자가 지정한 그룹 1개. 변경은 set-shared-group 액션으로만 한다(읽기 전용).
   shared_group?: number | null;
   shared_group_name?: string | null;
@@ -460,11 +457,6 @@ export interface DetailFormState {
   other_purpose: string[];
   source_line: string;
   source_partid: string;
-  // 원본 위치·원본 제품 기준 api_maptable CC 상태 — 폼 편집 중 실시간 조회 결과를 그대로
-  // 저장해 둔다(AAA1~3 참고 정보와 달리 상신 데이터에 포함). 의뢰 상세 'MAP 정보' 탭에서
-  // 상신 시점 값(이 값) vs 조회 시점 실시간 값(map_table_cc_exists)을 비교해 '이력 확인'을
-  // 띄우는 데 쓴다.
-  map_table_cc_status?: MapTableCcStatus;
   change_purpose_note: string;
   flow_chart: FlowChartRow[];
 
@@ -522,6 +514,9 @@ export interface DetailFormState {
   map_value_y_bottom: string;
 
   mshot_change: string;
+  // X표시 변경 여부 옆의 CC 존재/미존재 선택(필수). oc(MapInfo.cc_status, 참고용 자동매칭값)와
+  // 달리 사용자가 직접 선택해 그대로 상신 데이터에 저장되는 값 — 이후 재계산되지 않는다.
+  mshot_change_cc: MapTableCcStatus;
   mshot_image_copy: string;       // C가문 No일 때 단일 이미지
   mshot_image_copy_top: string;   // C가문 Yes일 때 북쪽 이미지
   mshot_image_copy_bottom: string; // C가문 Yes일 때 남쪽 이미지
@@ -868,7 +863,7 @@ export interface MapInfo {
   AAA1: string | null;
   AAA2: string | null;
   AAA3: string | null;
-  /** AAA1~3 와 달리 detail.map_table_cc_status 에 그대로 저장된다 — 상신 시점 값 기록용. */
+  /** oc — AAA1~3 와 동일하게 참고용일 뿐 상신 데이터에는 포함되지 않는다(detail 에 저장 안 함). */
   cc_status: MapTableCcStatus;
 }
 
