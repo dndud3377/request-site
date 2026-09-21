@@ -13,7 +13,7 @@ from . import design_rule_stats
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
     Line, PauseRequest, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup,
-    UserProfile, WithdrawRequest, LayerFilterSet,
+    UserProfile, WithdrawRequest, LayerFilterSet, ProcessProduct, ProductProcessId,
 )
 
 
@@ -7941,3 +7941,61 @@ class MapInfoLockedFieldCoverageTest(TestCase):
         doc = self._make_locked_doc(base)
         res = self._patch_detail(doc, base, {'customer_requirement': 'AFTER'})
         self.assertEqual(res.status_code, 200, res.content)
+
+
+class FormOptionsLineProcessProductProcessIdTest(TestCase):
+    """의뢰서 작성 Step1 의 라인/조합법/제품이름/조리법 옵션 API.
+
+    조합법만으로도 조리법 전체 목록을 가져오고, 조리법으로도 제품이름을 좁힐 수 있어야 한다
+    (제품이름으로 조리법을 좁히는 기존 방향과 대칭).
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+        # 라인1/조합법A 아래 제품 P1, P2 / 라인1/조합법B 아래 제품 P3
+        ProcessProduct.objects.create(line='라인1', process='조합법A', product_name='P1')
+        ProcessProduct.objects.create(line='라인1', process='조합법A', product_name='P2')
+        ProcessProduct.objects.create(line='라인1', process='조합법B', product_name='P3')
+        # P1 은 조리법 X/Y, P2 는 조리법 X, P3 는 조리법 Z
+        ProductProcessId.objects.create(line='라인1', product_name='P1', process_id='X')
+        ProductProcessId.objects.create(line='라인1', product_name='P1', process_id='Y')
+        ProductProcessId.objects.create(line='라인1', product_name='P2', process_id='X')
+        ProductProcessId.objects.create(line='라인1', product_name='P3', process_id='Z')
+
+    def test_process_id_by_product_unchanged(self):
+        """기존 동작: product 로 조회하면 그 제품의 조리법만 나온다."""
+        res = self.client.get('/api/form-options/process-id/?line=라인1&product=P1')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(sorted(self._json.loads(res.content)['options']), ['X', 'Y'])
+
+    def test_process_id_by_process_without_product(self):
+        """신규: product 없이 process(조합법)만 줘도 그 조합법 아래 전체 조리법이 나온다."""
+        res = self.client.get('/api/form-options/process-id/?line=라인1&process=조합법A')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(sorted(self._json.loads(res.content)['options']), ['X', 'Y'])
+
+    def test_process_id_neither_product_nor_process_is_empty(self):
+        res = self.client.get('/api/form-options/process-id/?line=라인1')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(self._json.loads(res.content)['options'], [])
+
+    def test_products_by_process_unchanged(self):
+        """기존 동작: process(조합법)로 조회하면 그 조합법의 제품만 나온다."""
+        res = self.client.get('/api/form-options/products/?line=라인1&process=조합법A')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(sorted(self._json.loads(res.content)['options']), ['P1', 'P2'])
+
+    def test_products_narrowed_by_process_id(self):
+        """신규: process_id(조리법)를 함께 주면 그 조리법을 가진 제품만 좁혀진다."""
+        res = self.client.get('/api/form-options/products/?line=라인1&process=조합법A&process_id=Y')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(self._json.loads(res.content)['options'], ['P1'])
+
+    def test_products_narrowed_by_process_id_excludes_other_process(self):
+        """조합법B 의 P3 는 조리법 Z 를 갖지만, 조회 범위가 조합법A 라 제외돼야 한다."""
+        res = self.client.get('/api/form-options/products/?line=라인1&process=조합법A&process_id=Z')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(self._json.loads(res.content)['options'], [])

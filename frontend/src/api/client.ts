@@ -1088,16 +1088,27 @@ export const formOptionsAPI = {
   getProcesses: (line: string): Promise<string[]> =>
     getOptions(`/form-options/processes/?line=${encodeURIComponent(line)}`),
 
-  getProducts: (line: string, process?: string): Promise<string[]> => {
+  getProducts: (line: string, process?: string, processId?: string): Promise<string[]> => {
     const params = new URLSearchParams({ line });
     if (process) {
       params.append('process', process);
     }
+    if (processId) {
+      params.append('process_id', processId);
+    }
     return getOptions(`/form-options/products/?${params.toString()}`);
   },
 
-  getProcessId: (line: string, product: string): Promise<string[]> =>
-    getOptions(`/form-options/process-id/?line=${encodeURIComponent(line)}&product=${encodeURIComponent(product)}`),
+  getProcessId: (line: string, product?: string, process?: string): Promise<string[]> => {
+    const params = new URLSearchParams({ line });
+    if (product) {
+      params.append('product', product);
+    }
+    if (process) {
+      params.append('process', process);
+    }
+    return getOptions(`/form-options/process-id/?${params.toString()}`);
+  },
 
   getJobFileLayer: (line: string, process: string): Promise<StepInfo[]> =>
     getStepOptions(`/form-options/job-file-layer/?line=${encodeURIComponent(line)}&process=${encodeURIComponent(process)}`),
