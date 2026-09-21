@@ -3667,17 +3667,26 @@ def form_options_process(request):
 
 @require_GET
 def form_options_products(request):
-    """{{request.line}} + {{request.process_selection}} → {{request.partid_selection}} 목록 (process 은 선택 사항)"""
+    """{{request.line}} + {{request.process_selection}} → {{request.partid_selection}} 목록
+    (process 는 선택 사항, process_id 도 선택 사항 — {{request.process_id}} 를 먼저 골랐을 때 그에 맞는 제품이름만 좁힌다)
+    """
     line = request.GET.get('line', '')
     process = request.GET.get('process', None)  # None 으로 설정하여 파라미터 유무 확인
+    process_id = request.GET.get('process_id', None)
     if not line:
         return JsonResponse({'options': []})
-    
+
     # process 파라미터가 있으면 필터링, 없으면 {{request.line}} 에 해당하는 모든 제품 반환
     queryset = ProcessProduct.objects.filter(line=line)
     if process is not None and process != '':
         queryset = queryset.filter(process=process)
-    
+    if process_id is not None and process_id != '':
+        # ProductProcessId 에는 process(조합법) 컬럼이 없어 product_name 으로만 연결된다.
+        matching_products = ProductProcessId.objects.filter(
+            line=line, process_id=process_id
+        ).values_list('product_name', flat=True)
+        queryset = queryset.filter(product_name__in=matching_products)
+
     options = list(
         queryset
         .values_list('product_name', flat=True)
@@ -3688,14 +3697,28 @@ def form_options_products(request):
 
 @require_GET
 def form_options_process_id(request):
-    """{{request.line}} + {{request.partid_selection}} → {{request.process_id}} 목록"""
+    """{{request.line}} + {{request.partid_selection}} → {{request.process_id}} 목록
+    (product 없이 process(조합법)만 와도 동작 — {{request.line}}+{{request.process_selection}} 범위 전체 조리법 목록)
+    """
     line = request.GET.get('line', '')
     product = request.GET.get('product', '')
-    if not line or not product:
+    process = request.GET.get('process', '')
+    if not line:
         return JsonResponse({'options': []})
+
+    if product:
+        queryset = ProductProcessId.objects.filter(line=line, product_name=product)
+    elif process:
+        # ProductProcessId 에는 process(조합법) 컬럼이 없어 ProcessProduct 를 거쳐 product_name 으로 연결한다.
+        matching_products = ProcessProduct.objects.filter(
+            line=line, process=process
+        ).values_list('product_name', flat=True)
+        queryset = ProductProcessId.objects.filter(line=line, product_name__in=matching_products)
+    else:
+        return JsonResponse({'options': []})
+
     options = list(
-        ProductProcessId.objects
-        .filter(line=line, product_name=product)
+        queryset
         .values_list('process_id', flat=True)
         .distinct()
         .order_by('process_id')
