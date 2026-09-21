@@ -720,6 +720,14 @@ const fmtDiffVal = (v: any): string => {
   return String(v);
 };
 
+/** mshot_change_cc('exists'/'not_exists'/'') 표시 텍스트. 상신 시점에 선택된 값을 그대로 보여줄 뿐,
+ * 실시간 재조회는 하지 않는다(2026-09 CC 자동 드리프트 감지 기능 폐지). */
+const fmtCcStatus = (v: any, t: TFunction): string => {
+  if (v === 'exists') return t('request.map_table_cc_exists');
+  if (v === 'not_exists') return t('request.map_table_cc_not_exists');
+  return '';
+};
+
 const fmtPlate = (d: any, prefix: string): string => {
   const line = d?.[`${prefix}_line`] || '-';
   const process = d?.[`${prefix}_process`] || '-';
@@ -786,6 +794,7 @@ const MSHOT_IMAGE_ITEMS: [string, string][] = [
 
 const buildMshotItems: GroupBuilder = (d, t) => [
   { label: t('request.mshot_change_label'), value: fmtDiffVal(d?.mshot_change) },
+  { label: t('request.mshot_change_cc_label'), value: fmtCcStatus(d?.mshot_change_cc, t) },
   ...MSHOT_IMAGE_ITEMS.map(([k, labelKey]) => ({
     label: t(labelKey as never),
     value: fmtDiffVal(d?.[k]),
@@ -1804,7 +1813,6 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   const PLBasicSection = null;
   const [mapHistOpen, setMapHistOpen] = useState(false);
   const [mshotHistOpen, setMshotHistOpen] = useState(false);
-  const [ccHistOpen, setCcHistOpen] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [prodcHistOpen, setProdcHistOpen] = useState(false);
   const [finalHistOpen, setFinalHistOpen] = useState(false);
@@ -2122,115 +2130,12 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {/* CLONE/EXISTING — X표시 변경 여부 칸은 그대로 "없음"이지만, 원본 위치·원본 제품 기준으로
-              api_maptable 을 자동 매칭한 CC 존재/미존재를 이어서 표시한다(서버가 조회 시점마다 계산).
-              상신 시점 값(detail.map_table_cc_status)과 조회 시점 실시간 값(doc.map_table_cc_exists)이
-              다르면 다른 필드(map_change 등)와 동일한 "이력 확인" 버튼 + 모달을 띄운다. */}
-          {isMapRegisteredDetail && (isR || isO || isP) && (() => {
-            const ccStatusText = (s?: string | null): string | null =>
-              s === 'exists' ? t('request.map_table_cc_exists')
-                : s === 'not_exists' ? t('request.map_table_cc_not_exists')
-                  : null;
-            const liveStatus: 'exists' | 'not_exists' | '' =
-              doc.map_table_cc_exists == null ? '' : (doc.map_table_cc_exists ? 'exists' : 'not_exists');
-            const liveText = ccStatusText(liveStatus);
-            const lastStoredStatus = detail.map_table_cc_status || '';
-
-            // 회차별 저장값(그 회차 상신 시점 값) + 현재(조회 시점 실시간 값) 순서로 나열한다.
-            // 다른 필드와 달리 "현재" 행은 detail(상신 시점 저장값)이 아니라 doc.map_table_cc_exists
-            // (실시간 값)를 쓴다 — CC 는 재상신 없이도 DCQ 동기화만으로 바뀌기 때문이다.
-            const ccRounds = [
-              ...history.map((snap, i) => ({
-                label: roundLabel(t, i),
-                timestamp: snap.timestamp,
-                status: (snap.detail as Partial<DetailFormState> | undefined)?.map_table_cc_status || '',
-              })),
-              { label: currentRoundLabel(t), timestamp: null as string | null, status: liveStatus },
-            ];
-            const knownRounds = ccRounds.filter((r) => !!r.status);
-            const ccEverChanged = knownRounds.some((r, i) => i > 0 && r.status !== knownRounds[i - 1].status);
-            const ccChangedNow = !!lastStoredStatus && liveStatus !== '' && liveStatus !== lastStoredStatus;
-            const ccChanged = historyMode ? ccEverChanged : ccChangedNow;
-
-            const ccThStyle: React.CSSProperties = {
-              textAlign: 'left', padding: '6px 10px',
-              borderBottom: '1px solid var(--border)', fontSize: '0.8rem',
-              color: 'var(--text-muted)', fontWeight: 600,
-            };
-            const ccTdStyle: React.CSSProperties = { padding: '6px 10px', fontSize: '0.85rem' };
-
-            return (
-              <div style={rowStyle}>
-                <div style={{ ...chipBase, position: 'relative', ...(ccChanged ? { border: '2px solid #dc3545' } : {}) }}>
-                  {ccChanged && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setCcHistOpen(true); }}
-                      style={{
-                        position: 'absolute', top: 4, right: 6,
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        color: '#dc3545', fontSize: '0.68rem', fontWeight: 700,
-                        padding: 0, lineHeight: 1,
-                      }}
-                    >
-                      {t('request.history_check_btn')}
-                    </button>
-                  )}
-                  <div style={fieldLabel}>{t('request.mshot_change_status')}</div>
-                  <div style={fieldValue}>
-                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>{t('request.value_none')}</span>
-                    {liveText && (
-                      <>
-                        {' / '}
-                        <span style={{ color: doc.map_table_cc_exists ? '#15803d' : 'var(--text-muted)' }}>{liveText}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                {ccHistOpen && (historyMode ? (
-                  <Modal isOpen onClose={() => setCcHistOpen(false)} title={t('request.field_change_history', { label: t('request.mshot_change_status') })}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr>
-                          <th style={ccThStyle}>{t('request.submit_round_col')}</th>
-                          <th style={ccThStyle}>{t('request.time_col')}</th>
-                          <th style={ccThStyle}>{t('request.value_col')}</th>
-                          <th style={{ ...ccThStyle, textAlign: 'center' }}>{t('request.changed_col')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {ccRounds.map((row, i) => {
-                          const prevRow = ccRounds[i - 1];
-                          const isChangedRow = i > 0 && !!row.status && !!prevRow.status && row.status !== prevRow.status;
-                          const isCurrent = i === ccRounds.length - 1;
-                          return (
-                            <tr key={i} style={{ background: isChangedRow ? 'rgba(220,53,69,0.05)' : undefined }}>
-                              <td style={ccTdStyle}>{row.label}</td>
-                              <td style={ccTdStyle}>{row.timestamp ? row.timestamp.slice(0, 16).replace('T', ' ') : '-'}</td>
-                              <td style={{ ...ccTdStyle, fontWeight: isCurrent ? 700 : 400 }}>{ccStatusText(row.status) ?? '-'}</td>
-                              <td style={{ ...ccTdStyle, textAlign: 'center' }}>{isChangedRow ? '●' : ''}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </Modal>
-                ) : (
-                  <FieldGroupHistoryModal
-                    title={t('request.field_change_history', { label: t('request.mshot_change_status') })}
-                    rows={[{
-                      label: t('request.mshot_change_status'),
-                      before: ccStatusText(lastStoredStatus) ?? '-',
-                      after: liveText ?? '-',
-                    }]}
-                    onClose={() => setCcHistOpen(false)}
-                  />
-                ))}
-              </div>
-            );
-          })()}
-
-          {!isMapRegisteredDetail && !isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && detail.mshot_change && (() => {
-            const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy') || changedFields.has('mshot_image_copy_top') || changedFields.has('mshot_image_copy_bottom');
+          {/* X표시 변경 여부 + CC 존재 여부(mshot_change_cc) — 상신 시점에 선택된 값을 그대로 보여준다.
+              (2026-09) 이전에는 CLONE/EXISTING 한정으로 api_maptable 을 실시간 재조회해 드리프트를
+              감지·강조했으나, 이제는 그 기능을 폐지하고 다른 필드(map_change 등)와 동일하게
+              회차별 상신 값만 비교한다(changedFields/buildMshotItems 공용 로직). */}
+          {!isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && detail.mshot_change && (() => {
+            const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_change_cc') || changedFields.has('mshot_image_copy') || changedFields.has('mshot_image_copy_top') || changedFields.has('mshot_image_copy_bottom');
             const imgStyle: React.CSSProperties = { maxWidth: '600px', maxHeight: '420px', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px', cursor: 'zoom-in' };
             const renderMshotImg = (src: string, alt: string) => (
               <div style={{ position: 'relative', display: 'inline-block' }}>
@@ -2266,7 +2171,10 @@ type Page = { label: string; content: React.ReactNode };
                   )}
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
                     <div style={fieldLabel}>{t('request.mshot_change_status')}</div>
-                    <div style={fieldValue}>{detail.mshot_change}</div>
+                    <div style={fieldValue}>
+                      {detail.mshot_change}
+                      {fmtCcStatus(detail.mshot_change_cc, t) && ` / ${fmtCcStatus(detail.mshot_change_cc, t)}`}
+                    </div>
                   </div>
                   {mshotIsDelete && (
                     <div style={{ flex: 1 }}>
