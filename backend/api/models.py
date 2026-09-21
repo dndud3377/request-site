@@ -368,7 +368,7 @@ class RequestDocument(models.Model):
         'prodc_scope', 'prodc_top_line', 'prodc_top_process', 'prodc_top_product',
         'prodc_middle_use', 'prodc_middle_line', 'prodc_middle_process', 'prodc_middle_product',
         'prodc_bottom_line', 'prodc_bottom_process', 'prodc_bottom_product',
-        'mshot_change', 'mshot_image_copy', 'mshot_image_copy_top', 'mshot_image_copy_bottom',
+        'mshot_change', 'mshot_change_cc', 'mshot_image_copy', 'mshot_image_copy_top', 'mshot_image_copy_bottom',
         'photo_backside', 'eds_backside',
         'inter', 'inter_xs', 'inter_ys', 'in_apply', 'inter_select',
         'tsv', 'rf', 'fullchip', 'split', 'st', 'ecc',

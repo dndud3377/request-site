@@ -7881,3 +7881,63 @@ class RSkipStageIntegrationTest(TestCase):
             ApprovalStep.objects.filter(document=doc, agent='R', round=2, action='pending').exists(),
             '내용이 바뀌었으면 2회차 R 이 정상적으로 다시 생성돼야 한다'
         )
+
+
+class MapInfoLockedFieldCoverageTest(TestCase):
+    """R(+RV) 합의 완료 후 중단(pause)된 문서는 MAP_INFO_FIELDS 에 속한 값이 바뀌면 PATCH가
+    400 으로 거부돼야 한다(views.py RequestDocumentViewSet.update, doc_permissions.map_info_locked,
+    RequestDocument.changed_map_info_fields). 이 잠금 자체를 직접 검증하는 테스트가 없었고,
+    실제로 새 필드 mshot_change_cc(2026-09) 가 한동안 MAP_INFO_FIELDS 에서 빠져 있었다 —
+    프론트는 read-only 로 막지만 API 직접 호출로는 잠금을 우회할 수 있는 상태였다. 회귀 방지용.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+        self.author = UserProfile.objects.create(loginid='mlck_a', mail='mlck_a@c.com', role='NONE')
+
+    def _make_locked_doc(self, detail):
+        payload = {'detail': detail, 'jayerRows': [], 'oayerRows': [], 'bbRows': []}
+        doc = RequestDocument.objects.create(
+            title='잠금 테스트', requester=self.author, requester_name='작성자',
+            requester_email='mlck_a@c.com', requester_department='개발팀',
+            product_name='PROD-1', status='pause',
+            additional_notes=self._json.dumps(payload, ensure_ascii=False),
+        )
+        # R 이 이미 합의를 마친 상태여야 map_info_locked() 가 True 다.
+        ApprovalStep.objects.create(document=doc, agent='R', action='approved', round=1)
+        return doc
+
+    def _patch_detail(self, doc, base_detail, overrides):
+        new_detail = {**base_detail, **overrides}
+        payload = {'detail': new_detail, 'jayerRows': [], 'oayerRows': [], 'bbRows': []}
+        self.client.force_authenticate(user=self.author)
+        return self.client.patch(
+            f'/api/documents/{doc.id}/',
+            {'additional_notes': self._json.dumps(payload, ensure_ascii=False)},
+            format='json',
+        )
+
+    def test_mshot_change_is_rejected_when_locked(self):
+        """대조군 — 기존에 MAP_INFO_FIELDS 에 있던 필드는 예전부터 정상적으로 막혀야 한다."""
+        base = {'mshot_change': '없음', 'mshot_change_cc': ''}
+        doc = self._make_locked_doc(base)
+        res = self._patch_detail(doc, base, {'mshot_change': '수정'})
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_mshot_change_cc_is_rejected_when_locked(self):
+        """이 테스트가 실패한다면 MAP_INFO_FIELDS 에서 'mshot_change_cc' 가 다시 빠진 것이다."""
+        base = {'mshot_change': '없음', 'mshot_change_cc': 'not_exists'}
+        doc = self._make_locked_doc(base)
+        res = self._patch_detail(doc, base, {'mshot_change_cc': 'exists'})
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_unrelated_field_change_is_allowed_when_locked(self):
+        """대조군 — MAP_INFO_FIELDS 밖의 필드는 잠금과 무관하게 통과해야 한다(잠금이 전체
+        수정을 막는 게 아니라 changed_map_info_fields() 로만 판단함을 확인)."""
+        base = {'mshot_change': '없음', 'mshot_change_cc': '', 'customer_requirement': 'BEFORE'}
+        doc = self._make_locked_doc(base)
+        res = self._patch_detail(doc, base, {'customer_requirement': 'AFTER'})
+        self.assertEqual(res.status_code, 200, res.content)
