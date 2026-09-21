@@ -723,8 +723,8 @@ const fmtDiffVal = (v: any): string => {
 /** mshot_change_cc('exists'/'not_exists'/'') 표시 텍스트. 상신 시점에 선택된 값을 그대로 보여줄 뿐,
  * 실시간 재조회는 하지 않는다(2026-09 CC 자동 드리프트 감지 기능 폐지). */
 const fmtCcStatus = (v: any, t: TFunction): string => {
-  if (v === 'exists') return t('request.map_table_cc_exists');
-  if (v === 'not_exists') return t('request.map_table_cc_not_exists');
+  if (v === 'exists') return t('request.cc_apply');
+  if (v === 'not_exists') return t('request.cc_not_apply');
   return '';
 };
 
