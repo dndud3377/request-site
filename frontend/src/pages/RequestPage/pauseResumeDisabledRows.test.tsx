@@ -84,6 +84,7 @@ const fixtureDetail = {
   other_purpose: [],
   flow_chart: [{ id: 'flow1', location: '', product_name: '', process_id: '', step_from: '', step_to: '' }],
   map_type: 'NEW',
+  mshot_change_cc: 'not_exists',
   bb_zone: '없음',
   only_prodc: 'No',
   partial_shot: '계측 필요',
