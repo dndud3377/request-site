@@ -404,6 +404,49 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   기존 회귀 테스트가 이번 변경으로 깨지지 않는지만 확인). 백엔드 코드는 변경하지 않아 백엔드
   테스트는 실행하지 않았다.
 
+### 기능 수정 (2026-09-21 후속 — CC 적용 여부: prodc_status(Yes) 전용으로 조건 변경 + 명칭·간격 수정)
+
+바로 아래 항목(같은 날 먼저 한 변경)의 설계를 다음 3가지로 다시 고쳤다. `oc`(참고값)와
+백엔드는 이번 수정과 무관하다.
+
+- **간격**: `StepMap.tsx`의 `mshot_change`+`mshot_change_cc` 두 select가 `.flex-row`/
+  `.flex-col`(각 칸 `flex:1`로 늘어남) 조합 때문에 select 실제 폭(300px)보다 칸이 훨씬 넓어져
+  멀리 떨어져 보였다. 같은 화면의 `prodc_status`(`only_prodc`)/`map_opt_inter` 칸이 쓰는
+  `display:flex, gap:16px` + `width: SELECT_W, flexShrink: 0` 패턴으로 교체해 붙여 놓았다.
+- **노출 조건 변경**: `mshot_change_cc`는 이제 **map_type과 무관하게 항상 노출**이 아니라
+  `only_prodc(prodc_status) === 'Yes'`(C가문)일 때만 노출·필수다. `validate()`의 필수 검증도
+  동일 조건으로 바꿨고, `handleOnlyProdcChange`가 Yes→No로 되돌릴 때 다른 C가문 전용
+  필드(`py_apply`, `final_entries` 등)와 동일하게 `mshot_change_cc`도 함께 비운다(숨겨진 값이
+  다음 상신에 그대로 남는 것을 방지). (참고: 이전에 검토했던 "final_yn=YES일 때만 노출" 조건은
+  실제 코드에 반영된 적이 없어 별도로 제거할 코드는 없었다.)
+- **명칭 변경**: `mshot_change_cc_label`을 "CC 존재 여부" → "CC 적용 여부"로 바꾸고, 선택
+  옵션과 결재 현황 상세화면(`PagedDetailView.tsx`의 `fmtCcStatus`) 표시 문구를 "CC 존재"/"CC
+  미존재"에서 새 키 `request.cc_apply`="CC 적용"/`request.cc_not_apply`="CC 미적용"으로
+  바꿨다. **내부 저장값은 그대로 `'exists'`/`'not_exists'`** 를 유지한다(기존 문서 데이터와
+  호환, 타입 변경 없음) — 바뀐 것은 표시 문구뿐이다. `oc` 참고값의 문구("CC 존재"/"CC
+  미존재")는 이번 요청 범위가 아니라 그대로 뒀다.
+- **영향 파일**: `frontend/src/pages/RequestPage/components/StepMap.tsx`,
+  `frontend/src/pages/RequestPage/index.tsx`(`validate()`, `handleOnlyProdcChange`),
+  `frontend/src/components/PagedDetailView.tsx`(`fmtCcStatus`), `ko.json`/`en.json`.
+- **검증**: `npx tsc --noEmit` 신규 에러 0(기존 4건과 동일). `CI=true npm test -- --watchAll=false`
+  — **11 suites / 294건 전부 통과**(연속 3회 재실행 확인). 백엔드는 변경하지 않았지만
+  회귀 확인 차 `manage.py test api` 재실행 — **553건 전부 통과**. 원격 세션 제약으로 실제
+  브라우저 수동 검증은 수행하지 못했다.
+- **수동 검증 시나리오**:
+  1. [`/request`에서 MAP 목적 아무거나 선택 → "제품 해당 위치"(`prodc_status`/C가문)를
+     `No`로 둔 상태] → [기대 결과: "X표시 변경 여부" 옆에 "CC 적용 여부" select가 보이지
+     않는다.]
+  2. [1에서 `prodc_status`를 `Yes`로 전환] → [기대 결과: "X표시 변경 여부" 바로 옆에 "CC
+     적용 여부" select가 붙어서 나타난다(멀리 떨어지지 않음). 옵션은 "CC 적용"/"CC 미적용".
+     마우스를 올리면 설명 툴팁이 뜬다.] → [값을 선택하지 않고 다음 단계로 진행 시도] →
+     [기대 결과: 필수 입력 에러로 막힌다.]
+  3. [2에서 값을 선택한 뒤 `prodc_status`를 다시 `No`로 전환] → [기대 결과: "CC 적용 여부"
+     칸이 사라진다.] → [다시 `Yes`로 전환] → [기대 결과: 값이 비워진 상태(선택 안 함)로
+     다시 나타난다 — 이전에 골랐던 값이 남아있지 않는다.]
+  4. [`prodc_status=Yes`로 "CC 적용" 선택해 상신 → 결재현황에서 해당 문서 상세보기 → 'MAP
+     정보' 탭] → [기대 결과: "X표시 변경 여부" 칸에 "없음 / CC 적용"으로 표시된다("CC 존재"
+     문구는 더 이상 나오지 않는다).]
+
 ### 기능 변경 (2026-09-21 — CC 존재/미존재: 실시간 자동 감지 폐지, 작성 화면에서 직접 선택하도록 변경)
 
 - **요청 배경**: 2026-09-18/20에 만든 "CC 존재/미존재 자동 매칭 + 실시간 드리프트 감지"는
