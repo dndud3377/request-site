@@ -268,41 +268,70 @@ describe('getDocTableRows — 검토자 단계에서도 단계명이 유지된�
   });
 });
 
-describe('getDocTableRows — MAP 삭제: 고정 후결자 자리에 RFG', () => {
+describe('getDocTableRows — MAP 삭제: 2구역(P·J·O) 그리드 → 3구역(R) 단독 행', () => {
   const mde = (steps: ApprovalStepFrontend[]) => makeMdeDoc([
-    makeStep({ agent: 'P', action: 'pending' }),
-    makeStep({ agent: 'J', action: 'pending' }),
-    makeStep({ agent: 'O', action: 'pending' }),
+    makeStep({ agent: 'P', action: 'approved' }),
+    makeStep({ agent: 'J', action: 'approved' }),
+    makeStep({ agent: 'O', action: 'approved' }),
     ...steps,
   ]);
 
-  it('1열 1행이 후결자가 아니라 RFG 다', () => {
-    const doc = mde([makeStep({ agent: 'R', action: 'pending', assignee_loginid: 'r1', assignee_name: '김철수' })]);
-    expect(cellAt(doc, 'RA_FIXED')).toEqual({
-      slot: 'RA_FIXED', label: 'approval.agent_R', state: 'review', name: '김철수',
-    });
-  });
-
-  it('MASK·추가후결자는 해당없음', () => {
-    const doc = mde([makeStep({ agent: 'R', action: 'pending' })]);
-    expect(cellAt(doc, 'E').state).toBe('na');
+  it('2구역 진행 중에는 그리드로 보여주고, RFG(R) 자리는 후결자가 아니라 항상 해당없음이다', () => {
+    const doc = makeMdeDoc([
+      makeStep({ agent: 'P', action: 'pending', assignee_loginid: 'p1', assignee_name: '박담당' }),
+      makeStep({ agent: 'J', action: 'pending' }),
+      makeStep({ agent: 'O', action: 'pending' }),
+    ]);
+    expect(cellAt(doc, 'RA_FIXED').state).toBe('na');
     expect(cellAt(doc, 'RA_EXTRA').state).toBe('na');
+    expect(cellAt(doc, 'E').state).toBe('na');
+    expect(cellAt(doc, 'P').state).toBe('review');
   });
 
-  it('RV 를 지정해도 RFG 칸 이름은 담당자 그대로 유지된다(다른 칸과 다른 예외 규칙)', () => {
+  it('2구역이 모두 합의되어 R 이 생성되면 그리드가 아니라 R 단독 행으로 전환된다(끝난 2구역은 더 이상 안 보임)', () => {
+    const doc = mde([makeStep({ agent: 'R', action: 'pending', assignee_loginid: 'r1', assignee_name: '김철수' })]);
+    const rows = getDocTableRows(doc, t);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].pathKey).toBe('single');
+    expect(rows[0].stageText).toBe('approval.agent_R(김철수)');
+    expect(rows[0].pathStatus).toBe('under_review');
+  });
+
+  it('R 담당자 미지정이면 대기중(unassigned)으로 표시된다', () => {
+    const doc = mde([makeStep({ agent: 'R', action: 'pending' })]);
+    const rows = getDocTableRows(doc, t);
+    expect(rows[0].pathKey).toBe('single');
+    expect(rows[0].pathStatus).toBe('unassigned');
+  });
+
+  it('R 합의 후 검토자(RV) 가 남으면 RV 단계로 표시된다', () => {
     const doc = mde([
       makeStep({ agent: 'R', action: 'approved', assignee_name: '김철수' }),
       makeStep({ agent: 'RV', action: 'pending', assignee_loginid: 'rv1', assignee_name: '이검토' }),
     ]);
-    const cell = cellAt(doc, 'RA_FIXED');
-    expect(cell.state).toBe('review');
-    expect(cell.name).toBe('김철수');
+    const rows = getDocTableRows(doc, t);
+    expect(rows[0].pathKey).toBe('single');
+    expect(rows[0].stageText).toBe('approval.agent_R(이검토)');
+    expect(rows[0].pathStatus).toBe('under_review');
   });
 
-  it('2구역(P·J·O) 진행 중 R 이 아직 생성되지 않았으면 해당없음이 아니라 대기중이다', () => {
-    const doc = mde([]); // P/J/O 만 pending, R 은 2구역 완료 후에만 생성된다
-    expect(cellAt(doc, 'RA_FIXED').state).toBe('wait');
-    expect(cellAt(doc, 'RA_FIXED').name).toBeUndefined();
+  it('R(+RV) 까지 모두 합의되면 완료로 표시된다', () => {
+    const doc = { ...mde([makeStep({ agent: 'R', action: 'approved' })]), status: 'approved' as const };
+    const rows = getDocTableRows(doc, t);
+    expect(rows[0].pathKey).toBe('single');
+    expect(rows[0].isDone).toBe(true);
+    expect(rows[0].stageText).toBe('common.status_approved');
+  });
+
+  it('3구역(R) 중단(pause)은 R 단독 행으로 PAUSE 표시된다(끝난 2구역 그리드는 안 보임)', () => {
+    const doc = {
+      ...mde([makeStep({ agent: 'R', action: 'pending', assignee_loginid: 'r1', assignee_name: '김철수' })]),
+      status: 'pause' as const,
+    };
+    const rows = getDocTableRows(doc, t);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].pathKey).toBe('single');
+    expect(rows[0].pathStatus).toBe('pause');
   });
 
   it('일반 문서의 1열 1행은 계속 고정 후결자를 가리킨다(회귀 방지)', () => {

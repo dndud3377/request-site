@@ -2916,15 +2916,22 @@ type Page = { label: string; content: React.ReactNode };
       const out: StepDisplayInfo[] = [];
       const rSteps = allSteps.filter((s) => s.agent === 'R' && (s.round ?? 1) === round);
       if (rSteps.length === 0) {
-        // 반려 후 재상신 시 2구역(R)이 생략된 회차는 R step 자체가 없다 — 3구역(P/J/O/E/RA)
-        // step 이 이미 있는데 R 이 없으면 '대기'가 아니라 '해당없음'이다(백엔드 is_r_skipped 와 동일).
-        const zone3Exists = allSteps.some(
-          (s) => (s.round ?? 1) === round && ['P', 'J', 'O', 'E', 'RA'].includes(s.agent)
-        );
-        if (zone3Exists) {
-          out.push({ status: 'na', label: t('approval.step_na') });
-        } else {
+        // 'MAP 삭제'는 R이 2구역(P·J·O) 완료 후에만 열리는 3구역 단독 관문이다 — 2구역
+        // step 이 이미 있어도 R 이 "생략된 것"이 아니라 "아직 순서가 안 된 것"이므로
+        // 아래 일반 경로의 "R 스킵 후 재상신 = 해당없음" 판정을 타면 안 된다(2026-09).
+        if (isMapDeleteEdit) {
           out.push({ status: 'waiting', label: t('approval.step_pending'), roleLabel: t('approval.role_agreer' as any) });
+        } else {
+          // 반려 후 재상신 시 2구역(R)이 생략된 회차는 R step 자체가 없다 — 3구역(P/J/O/E/RA)
+          // step 이 이미 있는데 R 이 없으면 '대기'가 아니라 '해당없음'이다(백엔드 is_r_skipped 와 동일).
+          const zone3Exists = allSteps.some(
+            (s) => (s.round ?? 1) === round && ['P', 'J', 'O', 'E', 'RA'].includes(s.agent)
+          );
+          if (zone3Exists) {
+            out.push({ status: 'na', label: t('approval.step_na') });
+          } else {
+            out.push({ status: 'waiting', label: t('approval.step_pending'), roleLabel: t('approval.role_agreer' as any) });
+          }
         }
       } else {
         rSteps.forEach((s) => out.push({ ...stepToInfo(s), roleLabel: t('approval.role_agreer' as any) }));
@@ -3012,18 +3019,48 @@ type Page = { label: string; content: React.ReactNode };
     fontSize: '0.82rem',
   });
 
-  // 검토자(RV)는 R단계 행에 합의자와 함께 표시(getStepDisplays). 후결자(RA)는 R단계 다음 위치에 표시.
-  const AGENTS: Array<{ key: string; label: string }> = [
-    { key: 'PL', label: t('approval.agent_PL' as any) },
-    // 영업/기술지원 합의자는 PL 검토와 병렬이라 PL 바로 다음 줄에 온다(지정했을 때만 단계가 있다).
-    { key: 'SA', label: t('approval.agent_SA' as any) },
-    { key: 'R', label: t('approval.agent_R') },
-    { key: 'RA', label: t('approval.agent_RA' as any) },
-    { key: 'P', label: t('approval.agent_P') },
-    { key: 'J', label: t('approval.agent_J') },
-    { key: 'O', label: t('approval.agent_O') },
-    { key: 'E', label: t('approval.agent_E') },
+  // 검토자(RV)는 담당 단계 행에 합의자와 함께 표시(getStepDisplays).
+  const AGENT_LABELS: Record<string, string> = {
+    PL: t('approval.agent_PL' as any),
+    SA: t('approval.agent_SA' as any),
+    R: t('approval.agent_R'),
+    RA: t('approval.agent_RA' as any),
+    P: t('approval.agent_P'),
+    J: t('approval.agent_J'),
+    O: t('approval.agent_O'),
+    E: t('approval.agent_E'),
+  };
+
+  // 구역(zone) 구성 — 백엔드 RequestDocument.pause_zones() 와 같은 기준(CLAUDE.md "용어 정리").
+  // (2026-09) 예전엔 PL→SA→R→RA→P→J→O→E 고정 순서였다. 'MAP 삭제'는 R이 2구역(P·J·O)이
+  // 아니라 그 다음 3구역 단독 관문이라, 고정 순서로는 R이 실제보다 앞서 표시됐다. 이제 문서
+  // 타입별 실제 구역 순서를 그대로 따른다 — 일반 문서는 결과적으로 예전과 같은 순서다.
+  const ZONE_AGENT_KEYS: string[][] = isMapDeleteEdit
+    ? [['PL', 'SA'], ['P', 'J', 'O'], ['R']]
+    : isAdiCdChange
+    ? [['PL', 'SA'], ['P', 'J']]
+    : isOnlyMap
+    ? [['PL', 'SA'], ['R'], ['RA']]
+    : [['PL', 'SA'], ['R'], ['P', 'J', 'O', 'E', 'RA']];
+
+  const zonedKeys = new Set(ZONE_AGENT_KEYS.flat());
+  const naGroupKeys = ['PL', 'SA', 'R', 'RA', 'P', 'J', 'O', 'E'].filter((k) => !zonedKeys.has(k));
+
+  // 구역 라벨 없이 순서만 필요한 값이라면 AGENT_GROUPS.flatMap(g => g.agents) 로 펼치면 된다.
+  const AGENT_GROUPS: Array<{ zoneNumber?: number; agents: Array<{ key: string; label: string }> }> = [
+    ...ZONE_AGENT_KEYS.map((keys, i) => ({
+      zoneNumber: i + 1,
+      agents: keys.map((key) => ({ key, label: AGENT_LABELS[key] })),
+    })),
+    ...(naGroupKeys.length > 0
+      ? [{ agents: naGroupKeys.map((key) => ({ key, label: AGENT_LABELS[key] })) }]
+      : []),
   ];
+
+  const zoneHeaderStyle: React.CSSProperties = {
+    fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)',
+    textTransform: 'uppercase', letterSpacing: '.04em', padding: '10px 0 2px',
+  };
 
   pages.push({
     label: t('approval.tab_route'),
@@ -3073,9 +3110,16 @@ type Page = { label: string; content: React.ReactNode };
           </div>
         )}
 
-        {/* 팀별 행 */}
-        {AGENTS.map(({ key, label }) => (
-          <div key={key} style={teamRowStyle}>
+        {/* 팀별 행 — 구역(zone) 단위로 그룹, 그룹 사이에 "N구역" 라벨을 붙인다 */}
+        {AGENT_GROUPS.map((group) => (
+          <React.Fragment key={group.zoneNumber ?? 'na'}>
+            <div style={zoneHeaderStyle}>
+              {group.zoneNumber != null
+                ? t('approval.zone_label', { zone: group.zoneNumber })
+                : t('approval.zone_na_label' as any)}
+            </div>
+            {group.agents.map(({ key, label }) => (
+              <div key={key} style={teamRowStyle}>
             <div style={teamLabelStyle}>{label}</div>
             <div style={historyListStyle}>
               {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) || (isMapDeleteEdit && key === 'RA') || (skipJStage && key === 'J') || (isAdiCdChange && ['R', 'O', 'RA'].includes(key)) ? (
@@ -3119,6 +3163,8 @@ type Page = { label: string; content: React.ReactNode };
               )}
             </div>
           </div>
+            ))}
+          </React.Fragment>
         ))}
 
         {/* 완료 행 */}
