@@ -754,6 +754,7 @@
     "withdraw_need_teams_label": "Teams needed to confirm withdrawal",
     "withdraw_extra_zone_label": "Teams reached in earlier rounds must also confirm",
     "zone_label": "Zone {{zone}}",
+    "zone_na_label": "Not applicable",
     "assign_btn": "Assign",
     "assign_success": "Assignee has been designated.",
     "assign_select_placeholder": "Select assignee",

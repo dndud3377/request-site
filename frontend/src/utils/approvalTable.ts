@@ -215,17 +215,22 @@ export const getFinalCompletionDate = (doc: RequestDocument): string => {
   return formatDate(candidates.reduce((a, b) => (a > b ? a : b)));
 };
 
-/* ===================== 병렬 합의 단계 그리드 (2026-08) =====================
+/* ===================== 병렬 합의 단계 그리드 (2026-08, MAP 삭제 2/3구역 분리는 2026-09) =====
  * 병렬 진입 후에는 경로별로 행을 쪼개지 않고 문서 1건을 표 1행으로 두고,
  * '현재 단계' 칸 안에 3행 2열 고정 그리드를 그린다.
  *
  *   1열                     2열
- *   후결자(고정 RA)         PHPSI(P)   ← MAP 삭제 은 1열이 RFG(R)
+ *   후결자(고정 RA)         PHPSI(P)
  *   JOB(J)                  OVL(O)
  *   MASK(E)                 추가후결자(RA)
  *
  * 6칸은 항상 같은 자리에 있고, 이 문서의 결재 경로에 없는 단계는 '해당없음'으로 남는다.
  * (예전에는 존재하는 경로만 행으로 만들어서, 비대상 단계와 이미 끝난 단계가 화면에서 사라졌다.)
+ *
+ * 'MAP 삭제'는 이 그리드를 2구역(P·J·O)에만 쓴다 — R은 이 그리드의 구성원이 아니라
+ * 2구역 완료 후에만 열리는 3구역 단독 관문이라, `getDocTableRows`가 R 이 생성되는
+ * 순간 그리드 대신 단독 행(pathKey: 'single')으로 전환해 보여준다(끝난 2구역은 더 이상
+ * 표시하지 않는다 — 일반 경로가 R 완료 후 R 을 더 이상 보여주지 않는 것과 대칭).
  * -------------------------------------------------------------------------- */
 
 /** 그리드 칸 상태 — na(경로 밖) / wait(미선점) / review(진행 중) / done(완료) / pause(중단) */
@@ -346,13 +351,18 @@ const buildCell = (spec: CellSpec, pauseTargetIds: number[]): StageCell => {
   return withChip({ slot, label, state: 'review', name: showName ? joinNames(nameSteps) : undefined });
 };
 
-/** 병렬 합의 단계의 6칸을 계산한다. 반환 배열은 항상 GRID_SLOT_ORDER 순서·길이 6. */
+/**
+ * 병렬 합의 단계의 6칸을 계산한다. 반환 배열은 항상 GRID_SLOT_ORDER 순서·길이 6.
+ *
+ * 'MAP 삭제'는 2구역(P·J·O)에만 이 그리드를 쓴다 — R은 2구역 완료 후에 열리는 3구역
+ * 단독 관문이라 이 그리드에는 아예 나타나지 않고, `getDocTableRows`가 별도의 단일 행으로
+ * 보여준다(RA_FIXED는 MDE에 후결자가 없어 자연히 해당없음으로 남는다).
+ */
 const buildParallelGrid = (
   doc: RequestDocument,
   currentSteps: ApprovalStepFrontend[],
   t: TFunction,
 ): StageCell[] => {
-  const isMde = isMapDeleteEditDoc(doc);
   const of = (agent: string) => currentSteps.filter(s => s.agent === agent);
 
   // 고정 후결자(.env POST_APPROVER_LOGINID)와 PL 이 지정한 추가 후결자를 분리한다.
@@ -373,19 +383,13 @@ const buildParallelGrid = (
       slot: 'P', label: t('approval.agent_P' as any),
       main: of('P'), reviewers: of('PV'), showName: true,
     },
-    // MAP 삭제 은 후결자를 아예 만들지 않는 유일한 경로다. 대신 이 경로에서만 R 이
-    // 2구역(P·J·O) 다음 3구역으로 열리므로, 비는 이 자리에 RFG 를 넣는다.
-    RA_FIXED: isMde
-      ? {
-          slot: 'RA_FIXED', label: t('approval.agent_R' as any),
-          main: of('R'), reviewers: of('RV'), showName: true, nameSource: 'main',
-        }
-      : {
-          // 고정 후결자는 .env 로 지정하는 RFG 팀 1명이라 단계명에 RFG 를 담아 `RFG 후결`로 쓴다
-          // (2026-08 도입, 2026-09 부터 실제 RFG(R) 단계 라벨과 구분하기 위해 `RFG 후결`로 변경).
-          slot: 'RA_FIXED', label: t('approval.stage_post_fixed' as any),
-          main: fixedRaSteps, showName: true,
-        },
+    // 고정 후결자는 .env 로 지정하는 RFG 팀 1명이라 단계명에 RFG 를 담아 `RFG 후결`로 쓴다
+    // (2026-08 도입, 2026-09 부터 실제 RFG(R) 단계 라벨과 구분하기 위해 `RFG 후결`로 변경).
+    // MAP 삭제는 후결자를 아예 만들지 않아 fixedRaSteps 가 항상 비어 자연히 해당없음이 된다.
+    RA_FIXED: {
+      slot: 'RA_FIXED', label: t('approval.stage_post_fixed' as any),
+      main: fixedRaSteps, showName: true,
+    },
     // J·O 는 검토중(claim) 방식이라 진행 중 담당자 이름을 노출하지 않는다(기존 규칙 유지).
     J: { slot: 'J', label: t('approval.agent_J' as any), main: of('J'), showName: false },
     E: {
@@ -399,19 +403,7 @@ const buildParallelGrid = (
     },
   };
 
-  const cells = GRID_SLOT_ORDER.map(slot => buildCell(specs[slot as Exclude<StageCellSlot, 'PL' | 'SA'>], pauseTargetIds));
-
-  // 'MAP 삭제': R은 2구역(P·J·O)이 전부 합의되기 전까진 아직 생성되지 않는다 — main 이 비어
-  // buildCell 이 'na'(해당없음)를 돌려주지만, 이 경로엔 R이 반드시 있으므로 '해당없음'이 아니라
-  // '대기중'(순서를 기다리는 중)으로 보여야 한다.
-  if (isMde && of('R').length === 0) {
-    const rIdx = cells.findIndex(c => c.slot === 'RA_FIXED');
-    if (rIdx !== -1) {
-      cells[rIdx] = { slot: 'RA_FIXED', label: t('approval.agent_R' as any), state: 'wait' };
-    }
-  }
-
-  return cells;
+  return GRID_SLOT_ORDER.map(slot => buildCell(specs[slot as Exclude<StageCellSlot, 'PL' | 'SA'>], pauseTargetIds));
 };
 
 /**
@@ -441,11 +433,27 @@ const toPausedGrid = (cells: StageCell[]): StageCell[] =>
 export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow[] => {
   const maxRound = getCurrentRound(doc);
   const currentSteps = (doc.approval_steps ?? []).filter(s => (s.round ?? 1) === maxRound);
-  // 병렬 단계(P/O/E/RA) 시작 여부. MAP 삭제 도 P·O 가 함께 생기므로 이 판정에 걸린다.
-  const parallelPresent = currentSteps.some(s => ['P', 'O', 'E', 'RA'].includes(s.agent));
+  const isMde = isMapDeleteEditDoc(doc);
+  // 'MAP 삭제'는 2구역(P·J·O)이 먼저 병렬로 열리고, 셋 다 합의해야 3구역(R)이 열린다 —
+  // 일반 경로(R이 먼저 열리고 그 다음 병렬)와 순서가 반대라 병렬 진입 판정을 따로 본다.
+  const mdeZone3Open = isMde && currentSteps.some(s => s.agent === 'R');
+  // 병렬 단계(P/O/E/RA) 시작 여부. 일반 경로 기준이며, MAP 삭제는 2구역(P·J·O) 존재로 판정한다
+  // (3구역이 열린 뒤에도 2구역 step 은 currentSteps 에 남아 있으므로 이 값과 별개로 다룬다).
+  const parallelPresent = isMde
+    ? currentSteps.some(s => ['P', 'J', 'O'].includes(s.agent))
+    : currentSteps.some(s => ['P', 'O', 'E', 'RA'].includes(s.agent));
 
   // 중단(PAUSE): 병렬 진입 후면 그리드 전 칸을 PAUSE 로, 그 이전이면 기존 단일 행으로 보여준다.
   if (doc.status === 'pause') {
+    // 'MAP 삭제' 3구역(R) 중단: 2구역은 이미 끝났으므로 R 하나만 PAUSE 로 보여준다
+    // (2구역 그리드를 함께 보여주면 끝난 단계가 다시 나타나 혼란을 준다).
+    if (mdeZone3Open) {
+      const pending = currentSteps.filter(s => (s.agent === 'R' || s.agent === 'RV') && s.action === 'pending');
+      const stageText = pending.length > 0
+        ? pending.map(s => stageLabel(s.agent, t)).join(' / ')
+        : '-';
+      return [{ pathKey: 'single', stageText, isDone: false, pathStatus: 'pause' }];
+    }
     if (parallelPresent) {
       return [{
         pathKey: 'grid',
@@ -495,6 +503,38 @@ export const getDocTableRows = (doc: RequestDocument, t: TFunction): DocTableRow
       cells: buildPlStageGrid(currentSteps, t, pauseTargetIds),
       gridColumns: 1,
       pauseRequested,
+    }];
+  }
+
+  // 'MAP 삭제' 3구역(R): 2구역(P·J·O)이 모두 합의돼 R이 열리면, 이제부터는 R 하나만
+  // 단독 행으로 보여준다 — 끝난 2구역 그리드는 더 이상 보이지 않는다(일반 경로가 R 완료
+  // 후 R을 더 이상 보여주지 않고 3구역 그리드로 넘어가는 것과 대칭되는 전환).
+  if (mdeZone3Open) {
+    const rStep = currentSteps.find(s => s.agent === 'R')!;
+    const rvStep = currentSteps.find(s => s.agent === 'RV');
+    if (rStep.action === 'pending') {
+      return [{
+        pathKey: 'single',
+        stageText: buildStageText(rStep, false, t),
+        isDone: false,
+        pathStatus: rStep.assignee_loginid ? 'under_review' : 'unassigned',
+        pauseRequested,
+      }];
+    }
+    if (rvStep && rvStep.action === 'pending') {
+      return [{
+        pathKey: 'single',
+        stageText: buildStageText(rvStep, false, t),
+        isDone: false,
+        pathStatus: rvStep.assignee_loginid ? 'under_review' : 'unassigned',
+        pauseRequested,
+      }];
+    }
+    return [{
+      pathKey: 'single',
+      stageText: doc.status === 'approved' ? t('common.status_approved') : '-',
+      isDone: true,
+      pathStatus: doc.status,
     }];
   }
 

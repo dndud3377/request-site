@@ -754,6 +754,7 @@
     "withdraw_need_teams_label": "철회 확인 필요 팀",
     "withdraw_extra_zone_label": "이전 회차에서 도달했던 구역도 함께 확인이 필요합니다",
     "zone_label": "{{zone}}구역",
+    "zone_na_label": "해당없음",
     "assign_btn": "지정하기",
     "assign_success": "담당자가 지정되었습니다.",
     "assign_select_placeholder": "담당자 선택",
