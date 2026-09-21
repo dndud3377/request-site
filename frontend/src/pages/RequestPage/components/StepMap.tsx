@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import RichTextEditor from '../../../components/RichTextEditor';
 import { DetailFormState, GuideFeatureKey, MapInfo } from '../../../types';
@@ -31,7 +32,7 @@ const formatMapInfoValue = (field: 'AAA1' | 'AAA2' | 'AAA3', value: string | nul
 };
 
 /** CC 참고값(oc)·선택값(mshot_change_cc) 공용 표시 텍스트. 빈 값이면 '-'. */
-const ccStatusText = (t: (key: string) => string, status: string | null | undefined): string => {
+const ccStatusText = (t: TFunction, status: string | null | undefined): string => {
   if (status === 'exists') return t('request.map_table_cc_exists');
   if (status === 'not_exists') return t('request.map_table_cc_not_exists');
   return '-';
