@@ -2100,6 +2100,9 @@ export default function RequestPage(): React.ReactElement {
       // (C가문을 되돌린 뒤 원하지 않은 X표시 정보가 저장되는 것을 막기 위함).
       mshot_change: INITIAL_DETAIL.mshot_change,
       mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '',
+      // CC 적용 여부(mshot_change_cc)는 C가문 전용 필드라 Yes→No 전환 시 함께 비운다
+      // (숨겨진 값이 그대로 남아 다음 상신에 실리는 것을 막기 위함).
+      mshot_change_cc: INITIAL_DETAIL.mshot_change_cc,
       // 예외 구역이 '변경 없음'이면 기본값도 일반 기준(300)으로 되돌린다(Yes 전환의 반대 동작).
       ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue('No') } : {}),
     }));
@@ -2109,7 +2112,7 @@ export default function RequestPage(): React.ReactElement {
       ...prev,
       only_prodc: '', py_apply: '', prodc_scope: '', prodc_top_line: '', prodc_top_process: '', prodc_bottom_line: '', prodc_bottom_process: '',
       map_value_x_top: '', map_value_y_top: '', map_value_x_bottom: '', map_value_y_bottom: '', map_reason: '',
-      mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '',
+      mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '', mshot_change_cc: '',
     }));
   };
 
@@ -3809,11 +3812,11 @@ export default function RequestPage(): React.ReactElement {
           errorMessages.push('원본 Part ID: 필수 입력 항목입니다.');
         }
       }
-      // CC 존재/미존재(mshot_change_cc)는 map_type 과 무관하게 항상 필수 선택이다 —
-      // oc(참고용 자동매칭값)와 달리 사용자가 직접 골라야 상신 데이터에 남는다.
-      if (!detail.mshot_change_cc?.trim()) {
+      // CC 적용/미적용(mshot_change_cc)은 Final/PY 적용 여부와 동일하게 C가문(only_prodc=Yes)
+      // 일 때만 노출·필수다 — oc(참고용 자동매칭값)와 달리 사용자가 직접 골라야 상신 데이터에 남는다.
+      if (detail.only_prodc === 'Yes' && !detail.mshot_change_cc?.trim()) {
         newErrors['mshot_change_cc'] = t('request.required');
-        errorMessages.push('CC 존재 여부: 필수 선택 항목입니다.');
+        errorMessages.push('CC 적용 여부: 필수 선택 항목입니다.');
       }
       // Final 은 map_type 과 무관한 독립 항목이지만, C가문(only_prodc=YES) 일 때는
       // 최소 1건 등록을 강제한다(CLONE/EXISTING 잠금과도 무관 — Final 입력칸 자체가 잠기지 않는다).
