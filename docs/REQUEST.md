@@ -404,6 +404,36 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   기존 회귀 테스트가 이번 변경으로 깨지지 않는지만 확인). 백엔드 코드는 변경하지 않아 백엔드
   테스트는 실행하지 않았다.
 
+### 버그 수정 (2026-09-21 후속2 — mshot_change_cc 가 백엔드 MAP_INFO_FIELDS 에서 누락됨)
+
+- **발견 경위**: 사용자가 직접 코드를 검토해 발견·보고했다(모델 계약 주석과 실제 코드가
+  어긋난 것을 지적).
+- **증상**: `RequestDocument.MAP_INFO_FIELDS`(`models.py`)는 "StepMap이 소유한 모든
+  DetailFormState 필드 — 프론트 `mapInfoDefaults()`와 반드시 같은 키 목록이어야 한다"는
+  계약 주석이 붙어 있는데, `mshot_change_cc`를 `mapInfoDefaults()`에 추가하면서 이 튜플에는
+  반영하지 못했다. 이 튜플은 `changed_map_info_fields()` → `RequestDocumentViewSet.update()`가
+  R(+RV) 합의 완료 후 중단(pause)된 문서의 MAP 정보 잠금을 검증할 때 쓰는데, 목록에 없는
+  키는 값이 달라져도 감지되지 않는다.
+- **영향**: 프론트는 `mshot_change`처럼 `disabled={isMapRegistered}`로 막지 않고
+  `only_prodc==='Yes'`일 때만 노출하는 정상 UI를 쓰지만(잠금 자체는 다른 메커니즘), 잠긴
+  문서에 대해 API를 직접 PATCH 호출하면 `mshot_change_cc`만 검증을 우회해 바꿀 수 있었다 —
+  같은 그룹의 `mshot_change`는 정상적으로 400 거부되는 것과 대비된다.
+- **수정**: `MAP_INFO_FIELDS` 튜플에서 `'mshot_change'` 바로 뒤에 `'mshot_change_cc'`를 추가.
+- **회귀 테스트 신설**: 이 잠금 경로(`RequestDocumentViewSet.update`의
+  `doc_permissions.map_info_locked` + `changed_map_info_fields` 조합) 자체를 검증하는 테스트가
+  기존에 전혀 없었다. `backend/api/tests.py`에 `MapInfoLockedFieldCoverageTest` 신설:
+  1) 기존 필드(`mshot_change`) 변경 시 400(대조군), 2) `mshot_change_cc` 변경 시 400(이번
+  회귀 케이스), 3) `MAP_INFO_FIELDS` 밖의 필드(`customer_requirement`) 변경 시 200(대조군 —
+  잠금이 전체 수정을 막는 게 아니라 이 튜플 기준으로만 판단함을 확인). 수정 전 코드로
+  되돌려 2)번 테스트가 실제로 실패(200)하는 것을 확인한 뒤 다시 원복했다.
+- **영향 파일**: `backend/api/models.py`(`MAP_INFO_FIELDS`), `backend/api/tests.py`(신규 테스트).
+- **검증**: `manage.py test api` — **556건 전부 통과**(기존 553 + 신규 3).
+- **수동 검증 시나리오**: 원격 세션 제약으로 API 직접 호출 재현은 자동 테스트로 대체했다.
+  (참고용) 개발 서버에서: [C가문 Yes로 CC 적용 여부까지 채워 상신 → R/RV 전원 합의 → 중단
+  요청·확정] → [`PATCH /api/documents/{id}/`로 `mshot_change_cc`만 다른 값으로 직접 호출] →
+  [기대 결과: `400 Bad Request`("MAP 정보 검토(RFG)가 완료된 뒤에는...")로 거부된다 — 수정
+  전에는 `200`으로 통과했다.]
+
 ### 기능 수정 (2026-09-21 후속 — CC 적용 여부: prodc_status(Yes) 전용으로 조건 변경 + 명칭·간격 수정)
 
 바로 아래 항목(같은 날 먼저 한 변경)의 설계를 다음 3가지로 다시 고쳤다. `oc`(참고값)와
