@@ -299,6 +299,12 @@ describe('getDocTableRows — MAP 삭제: 고정 후결자 자리에 RFG', () =>
     expect(cell.name).toBe('김철수');
   });
 
+  it('2구역(P·J·O) 진행 중 R 이 아직 생성되지 않았으면 해당없음이 아니라 대기중이다', () => {
+    const doc = mde([]); // P/J/O 만 pending, R 은 2구역 완료 후에만 생성된다
+    expect(cellAt(doc, 'RA_FIXED').state).toBe('wait');
+    expect(cellAt(doc, 'RA_FIXED').name).toBeUndefined();
+  });
+
   it('일반 문서의 1열 1행은 계속 고정 후결자를 가리킨다(회귀 방지)', () => {
     // 고정 후결자도 라벨이 RFG 라 라벨만으로는 MDE 의 R 담당자와 구분되지 않는다.
     // 이 칸이 실제로 어느 step 을 집는지(담당자 이름)로 확인한다.
@@ -402,6 +408,15 @@ describe('getFinalCompletionDate — 단계별 기한 표시는 없어졌지만 
       makeStep({ agent: 'O', action: 'approved', due_date: '2026-08-14' }),
     ]);
     expect(getFinalCompletionDate(doc)).toBe('2026. 9. 1.');
+  });
+
+  it('MAP 삭제: 2구역(P·J·O) 진행 중(R 미생성)에는 R 없이 2구역 기한만 반영한다', () => {
+    const doc = makeMdeDoc([
+      makeStep({ agent: 'P', action: 'approved', due_date: '2026-08-12' }),
+      makeStep({ agent: 'J', action: 'pending', due_date: '2026-08-17' }),
+      makeStep({ agent: 'O', action: 'pending', due_date: '2026-08-14' }),
+    ]);
+    expect(getFinalCompletionDate(doc)).toBe('2026. 8. 17.');
   });
 
   it('반려 문서는 잔여 pending 의 기한이 남아 있어도 -', () => {
@@ -735,7 +750,7 @@ describe('getDocDetailFields — detail_summary(목록) / additional_notes(상�
       },
     };
     const rows = getDocTableRows(doc, t);
-    // MAP 삭제 경로는 P·R·J·O 병렬이라 항상 1행 그리드로 그린다(additional_notes 로 심었을 때와 동일).
+    // MAP 삭제 경로는 2구역(P·J·O)이 병렬이라 항상 1행 그리드로 그린다(additional_notes 로 심었을 때와 동일).
     expect(rows).toHaveLength(1);
     expect(rows[0].pathKey).toBe('grid');
     expect(rows[0].cells!.some((c) => c.slot === 'O')).toBe(true);

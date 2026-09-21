@@ -200,8 +200,9 @@ class RequestDocument(models.Model):
         """요청 목적이 'MAP 삭제' 인지 여부.
 
         이 의뢰서는 MAP 의 삭제 이유만 담으므로 결재 경로가 다르다 —
-        PL 합의 직후 P·R·J·O 를 병렬로 만들고, 네 단계 전원 합의 시 승인한다.
-        E(MASK)와 후결자(RA)는 생성하지 않는다(고정 후결자도 붙지 않는 유일한 경로).
+        PL 합의 직후 2구역(P·J·O)을 병렬로 만들고, 셋 다 합의하면 3구역(R)을 연다.
+        R 합의로 최종 승인된다. E(MASK)와 후결자(RA)는 생성하지 않는다
+        (고정 후결자도 붙지 않는 유일한 경로).
         """
         inner_detail = self.get_detail().get('detail', {})
         return inner_detail.get('request_purpose') == self.MAP_DELETE_EDIT_PURPOSE
@@ -321,11 +322,12 @@ class RequestDocument(models.Model):
     def pause_zones(self):
         """이 문서의 결재 경로에서 구역별 agent 집합을 순서대로 반환한다.
 
-        'MAP 삭제'는 2구역이 없고 R이 3구역 소속(P·R·J·O 병렬)이며, 'ADI CD 변경'은
-        R 자체가 없어 2구역이 없다(P·J만 병렬). 나머지(일반·Only MAP)는 R이 2구역이다.
+        'MAP 삭제'는 R이 2구역이 아니라 3구역(단독) 소속이다 — 2구역(P·J·O 병렬)이
+        모두 합의된 뒤에야 R이 열린다. 'ADI CD 변경'은 R 자체가 없어 2구역이 없다
+        (P·J만 병렬). 나머지(일반·Only MAP)는 R이 2구역이다.
         """
         if self.is_map_delete_edit():
-            return [self.PAUSE_ZONE_1_AGENTS, ('P', 'PV', 'R', 'RV', 'J', 'O')]
+            return [self.PAUSE_ZONE_1_AGENTS, ('P', 'PV', 'J', 'O'), ('R', 'RV')]
         if self.is_adi_cd_change():
             return [self.PAUSE_ZONE_1_AGENTS, ('P', 'PV', 'J')]
         if self.is_only_map():

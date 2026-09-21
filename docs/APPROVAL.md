@@ -65,10 +65,9 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 [Only MAP 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ R ─(합의)─▶ approved   (P/O/E 단계 없음, 후결자(RA)만 종단)
 
 [MAP 삭제 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ ┌─ P[검토중,+검토자PV] ─┐
-                                                  ├─ R[+검토자RV]        ├─▶ 네 단계 모두 합의 시 approved
-                                                  ├─ J[검토중]           │
+                                                  ├─ J[검토중]           ├─▶(2구역 전원 합의)─▶ R[+검토자RV] ─▶ approved
                                                   └─ O[검토중]           ┘
-                                                  (E·후결자(RA) 없음 — R 은 관문이 아니라 병렬 구성원, 2026-08)
+                                                  (E·후결자(RA) 없음 — R 은 2구역 다음 3구역 단독 관문, 2026-09)
 ```
 
 핵심: **PL → R → (P[→검토자 PV]) ∥ (J) ∥ (O, E[→검토자 EV]) ∥ (RA)**. R 합의 후 네 경로가 **병렬** 진행된다.
@@ -93,9 +92,10 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 > 판정값 `request_purpose`는 `additional_notes` JSON의 `detail` 하위에 저장된다
 > (상수 `RequestDocument.ONLY_MAP_PURPOSE = 'Only MAP'`).
 
-> **예외 — 요청 목적 'MAP 삭제' (2026-08)**: `RequestDocument.is_map_delete_edit()`이
-> 참이면 PL 전원 합의 직후 **P·R·J·O 를 한 번에 병렬 생성**한다(`ROUTE_AGENTS_MAP_DELETE_EDIT`
-> = `P·PV·R·RV·J·O`). E(MASK)와 후결자(RA)는 만들지 않는다 — **모든 문서가 받던 고정 후결자
+> **예외 — 요청 목적 'MAP 삭제' (2026-08, 2구역/3구역 분리는 2026-09)**:
+> `RequestDocument.is_map_delete_edit()`이 참이면 PL 전원 합의 직후 **2구역(P·J·O)을 병렬
+> 생성**하고, 셋 다 합의하면 **3구역(R)** 을 연다(`ROUTE_AGENTS_MAP_DELETE_EDIT` =
+> `P·PV·J·O·R·RV`). E(MASK)와 후결자(RA)는 만들지 않는다 — **모든 문서가 받던 고정 후결자
 > 조차 이 경로에는 붙지 않는 유일한 예외**다. 상세는 아래 **Case O** 참조.
 
 > **예외 — 기타 목적 'Overlay 변경' 단독 (2026-08)**: `RequestDocument.skip_j_stage()`가 참이면
@@ -513,28 +513,37 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 - **검토중(J/O/E) 팀 공동 합의**: 검토중으로 **선점(assignee 존재)** 되면 **같은 팀(역할↔agent) 누구나 합의/반려** 가능(`_can_act_on_step`/`canUserAgree`). 선점 전에는 먼저 검토중 필요. 검토중 버튼은 선점 즉시 숨김(`canUserClaim`=assignee 있으면 false). `approve_step`/`reject_step`에서 J를 assignee 필터 밖으로(회차당 단일), **RA(후결자)만** assignee 필터 유지. ⚠️ 표시되는 담당자명은 **선점자**(검토를 시작한 사람)이며, 다른 팀원이 합의해도 이름은 선점자로 남는다(감사기록은 `acted_at`/comment).
 - **결재경로 검토자 통합**: 상세 '결재 경로' 탭에서 검토자(RV) **별도 행 제거** → **R단계 행에 회차별 `합의자(R) + 검토자(RV, 지정 시)`** 함께 표시(`StepDisplayInfo.roleLabel`, i18n `approval.role_agreer`).
 
-### Case O — 요청 목적 'MAP 삭제': P·R·J·O 병렬 경로 (2026-08)
+### Case O — 요청 목적 'MAP 삭제': 2구역(P·J·O) → 3구역(R) 경로 (2026-08 도입, 2026-09 R 분리)
 
 MAP 정보만 수정/삭제하는 의뢰서 전용 경로. 판정: `RequestDocument.is_map_delete_edit()`
 (`request_purpose == RequestDocument.MAP_DELETE_EDIT_PURPOSE`, 값 `'MAP 삭제'` — 2026-08 에 '수정'이 빠지면서 저장값이 예전 `'MAP 삭제/수정'` 에서 바뀌었다. 프론트 `RequestPage/constants.ts` 의 `MAP_DELETE_EDIT_PURPOSE` 와 같은 값이어야 한다).
 작성 화면은 `docs/REQUEST.md`, 화면·경로 설계 원본은 `docs/map_delete_edit_mockup.html` 참조.
 
+> **(2026-09) R을 2구역에서 3구역으로 분리**: 도입 당시(2026-08)에는 R이 P·J·O와 함께
+> 2구역에 묶여 넷이 동시에 병렬로 열렸다. 이제는 **2구역(P·J·O)이 먼저 병렬로 열리고, 셋 다
+> 합의를 마쳐야 3구역으로 R이 열린다** — R은 더 이상 병렬 구성원이 아니라 2구역 다음의
+> 단독 관문이다. 아래 서술은 이 변경 이후의 동작을 기준으로 한다.
+
 - **상신까지는 동일**: `submit`(지정 PL) → `peer_approve`(PL 전원 합의)까지 다른 경로와 완전히 같다.
-- **PL 전원 합의 직후 4단계 동시 생성**(`_advance_after_pl` → `_create_map_delete_edit_parallel`):
-  **P·R·J·O 를 한 번에 병렬**(`is_parallel=True`, 공통 기한 6영업일)로 만든다. **E(MASK)와
-  후결자(RA)는 만들지 않는다** — 이 경로가 유일하게 **고정 후결자조차 붙지 않는** 문서 유형이다.
-  결재선 상수 `mailer.ROUTE_AGENTS_MAP_DELETE_EDIT = ('P','PV','R','RV','J','O')`
+- **PL 전원 합의 직후 2구역(P·J·O) 병렬 생성**(`_advance_after_pl` → `_open_stage_after_pl` →
+  `_create_map_delete_edit_parallel`): **P·J·O 를 한 번에 병렬**(`is_parallel=True`, 공통 기한
+  6영업일)로 만든다. **R은 이 시점엔 아직 생성하지 않는다.** E(MASK)와 후결자(RA)도 만들지
+  않는다 — 이 경로가 유일하게 **고정 후결자조차 붙지 않는** 문서 유형이다.
+  결재선 상수 `mailer.ROUTE_AGENTS_MAP_DELETE_EDIT = ('SA','P','PV','J','O','R','RV')`
   (`mailer.route_agents_for(document)` 로 세 경로가 공통 판정).
-- **R 이 관문이 아니라 병렬 구성원**: 다른 모든 경로는 R 합의가 있어야 병렬 단계가 열리므로 병렬
-  진입 시점엔 R 이 항상 이미 끝나 있다. 이 경로만 R 이 P·J·O 와 **동시에** pending 이며, 네 단계
-  중 아무 순서로나 끝날 수 있다(`test_approved_when_p_is_last`/`test_approved_when_r_is_last` 로 검증).
+- **2구역 완료 시 3구역(R) 생성**(`approve_step` → `_map_delete_edit_zone2_complete` →
+  `_create_map_delete_edit_r_stage`): P(+PV)·J·O **셋 다** 합의를 마치는 순간(순서 무관)
+  R pending step 을 만든다(기한 6영업일, 도착 메일 발송). 이미 R 이 있으면 중복 생성하지
+  않는다(동시 합의 경쟁 방지).
 - **검토자(PV/RV)는 그대로**: P/R 각각 담당자 합의 시 지정된 검토자까지 전원 합의해야 그 단계가
-  끝난다(`_stage_reviewers_complete`, 기존 로직 재사용). J/O 는 기존과 동일하게 검토중(claim) 방식.
-- **최종 승인 판정**(`approve_step` 최우선 분기, `_map_delete_edit_all_approved`):
-  P·R·J·O **네 단계 모두** 완료(담당자+검토자)일 때만 `approved`. 일반 경로의 최종 판정은
-  `agent in ('J','O','E','EV','RA')` 합의 시에만 돌고 `P`/`R` 합의는 판정을 트리거하지 않으므로
-  (P 는 J 생성만, R 은 병렬 전환만 함), **이 경로 전용으로 판정 분기를 따로 추가**했다 — 없으면
-  네 단계가 다 끝나도 문서가 `under_review` 에 멈춘다.
+  끝난다(`_stage_reviewers_complete`(P) / `_is_r_zone_complete`(R), 기존 로직 재사용). J/O 는
+  기존과 동일하게 검토중(claim) 방식.
+- **최종 승인 판정**(`approve_step` 최우선 분기): agent 가 `R`/`RV` 면 `_is_r_zone_complete`
+  (R 담당자 + RV 전원 합의)로 바로 `approved` 여부를 판정한다. P/PV/J/O 합의는 2구역 완료
+  여부만 확인해 R 단계 생성으로 이어질 뿐, 그 자체로 최종 승인을 트리거하지 않는다 —
+  **R 이 항상 마지막 단계**이므로 일반 경로처럼 여러 agent 를 판정 트리거에 나열할 필요가 없다
+  (2026-08 도입 당시엔 P·R·J·O 가 모두 병렬이라 넷 중 누구든 마지막일 수 있어 전용 판정
+  분기가 필요했으나, 2026-09 R 분리로 이 분기가 단순해졌다).
 - **연구소 제품과는 무관**: `연구소 제품`은 `Only MAP` 전용 기타 목적이라(Case N) 이 경로와는
   동시에 선택될 수 없다 — `MAP 삭제` 문서는 기타 목적 전체가 잠긴다(`docs/REQUEST.md`).
 
@@ -554,6 +563,20 @@ R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전
   이 컴포넌트는 모든 문서에 RA 가 최소 1명(고정) 있다고 전제해 "RA 가 아예 없는 문서"를
   다뤄본 적이 없었다. `isMapDeleteEdit` 판정을 추가해, `E`가 `!hasPlel` 일 때 쓰는 것과 같은
   `해당없음`(na) 분기를 RA 에도 걸었다.
+
+#### (2026-09) R 분리 후 결재현황 그리드의 '해당없음' 오표시 수정
+
+R이 2구역에서 3구역으로 분리되면서, `buildParallelGrid`가 RFG 칸에 쓰던
+`main: of('R')`(R step 존재 여부로 na/wait/review/done 판정)이 2구역(P·J·O) 진행 중
+구간에서 잘못 읽혔다 — 그 구간엔 R step 자체가 아직 없어 `buildCell`이 "이 경로에 없는
+단계"(`해당없음`)로 오판했다. 실제로는 "아직 열리지 않았을 뿐 반드시 있는 단계"라 `대기중`이
+맞는 표시다. `frontend/src/utils/approvalTable.ts`의 `buildParallelGrid`에 `isMde && of('R').length === 0`
+분기를 추가해 이 구간만 `state: 'wait'`로 직접 덮어쓴다(R이 생성된 뒤에는 기존 `buildCell`
+경로가 그대로 담당자/검토자 진행 상태를 그린다). 같은 이유로 `getFinalCompletionDate`의
+'최종 완료예정'도 2구역 진행 중에는 R의 미래 기한을 알 수 없어 2구역까지만 반영한다(알려진
+한계, 2구역 완료 후 R이 생성되면 그 즉시 반영된다). 회귀 테스트:
+`approvalTable.test.ts`의 "2구역(P·J·O) 진행 중 R 이 아직 생성되지 않았으면..." /
+"2구역(P·J·O) 진행 중(R 미생성)에는 R 없이 2구역 기한만 반영한다".
 
 #### 결재 경로 탭 — RA 단계 생성 전 미리 지정된 후결자 이름 표시 (2026-09)
 

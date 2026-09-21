@@ -188,7 +188,9 @@ export const getFinalCompletionDate = (doc: RequestDocument): string => {
   const oStep = currentSteps.find(s => s.agent === 'O');
   const eStep = currentSteps.find(s => s.agent === 'E');
   const raSteps = currentSteps.filter(s => s.agent === 'RA');
-  // MAP 삭제 경로에서는 R 이 관문이 아니라 병렬 구성원이라 P/O 와 동시에 아직 pending 일 수 있다.
+  // MAP 삭제 경로에서는 R 이 2구역(P·J·O) 완료 후에만 생성되는 3구역이라, 2구역 진행 중에는
+  // R 이 아직 없어 path0 후보가 비어 있다(2구역이 끝나 R 이 생성된 뒤에야 후보에 포함된다) —
+  // 이 기간의 '최종 완료예정'은 2구역까지만 반영해 실제보다 이르게 보일 수 있다(알려진 한계).
   // 기존 경로(일반·Only MAP)는 R 합의가 끝나야만 parallelPresent 가 되므로 이 값은 항상 없다(영향 없음).
   const rStep = currentSteps.find(s => s.agent === 'R');
   const rvStep = currentSteps.find(s => s.agent === 'RV');
@@ -372,7 +374,7 @@ const buildParallelGrid = (
       main: of('P'), reviewers: of('PV'), showName: true,
     },
     // MAP 삭제 은 후결자를 아예 만들지 않는 유일한 경로다. 대신 이 경로에서만 R 이
-    // 관문이 아니라 P·J·O 와 동시에 도는 병렬 구성원이라, 비는 이 자리에 RFG 를 넣는다.
+    // 2구역(P·J·O) 다음 3구역으로 열리므로, 비는 이 자리에 RFG 를 넣는다.
     RA_FIXED: isMde
       ? {
           slot: 'RA_FIXED', label: t('approval.agent_R' as any),
@@ -397,7 +399,19 @@ const buildParallelGrid = (
     },
   };
 
-  return GRID_SLOT_ORDER.map(slot => buildCell(specs[slot as Exclude<StageCellSlot, 'PL' | 'SA'>], pauseTargetIds));
+  const cells = GRID_SLOT_ORDER.map(slot => buildCell(specs[slot as Exclude<StageCellSlot, 'PL' | 'SA'>], pauseTargetIds));
+
+  // 'MAP 삭제': R은 2구역(P·J·O)이 전부 합의되기 전까진 아직 생성되지 않는다 — main 이 비어
+  // buildCell 이 'na'(해당없음)를 돌려주지만, 이 경로엔 R이 반드시 있으므로 '해당없음'이 아니라
+  // '대기중'(순서를 기다리는 중)으로 보여야 한다.
+  if (isMde && of('R').length === 0) {
+    const rIdx = cells.findIndex(c => c.slot === 'RA_FIXED');
+    if (rIdx !== -1) {
+      cells[rIdx] = { slot: 'RA_FIXED', label: t('approval.agent_R' as any), state: 'wait' };
+    }
+  }
+
+  return cells;
 };
 
 /**
