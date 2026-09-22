@@ -4525,6 +4525,56 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
      배열 수정으로 처리되는 대칭 경로라 회귀 테스트(`adiCdTargetsCrossFilter.test.tsx`)로 커버,
      이번 수동 검증에서는 재확인하지 않음.
 
+### 버그 수정 (2026-09-22 — 조리법 좁히기가 공유 productOptions를 흔들어 생긴 3건의 회귀: 타이핑 중 입력칸 비활성화/편집 로드 시 좁힘/blur·validate 거짓 오류)
+
+- **배경**: 앞선 "Step1 제품이름 ↔ 조리법 상호 좁힘" 작업이 도입한 "조리법 변경 → 제품이름
+  좁히기" effect가 표시용 `productOptions`를 좁히는데, 이 state를 `handlePartidSelectionBlur`·
+  `validate()`(존재 검증)와 Step1의 제품 이름 입력칸 `disabled` 조건까지 그대로 재사용하고
+  있었다("라인+조합법 전체 목록"이라는 기존 전제에 의존). 사용자가 코드 리뷰로 문제 C(타이핑 중
+  자동완성 비어짐)·D(편집 로드 시 좁혀짐)·E(그로 인한 blur/validate 거짓 오류) 3건을 지적했고,
+  재현 테스트로 실제 확인 후 수정했다.
+- **확인된 사실**(수정 전 재현 테스트 실행 결과):
+  - C: 조합법만 선택한 상태에서 조리법을 `"PROC_X"`(미완성)까지 입력하면 제품 이름 자동완성
+    후보가 `[]`로 비었다. `Step1.tsx`의 `disabled={productOptions.length === 0}` 때문에 이 순간
+    제품 이름 입력칸 자체가 **비활성화**됐다 — 단순 자동완성 문제를 넘어 필드 자체를 못 쓰게 됨.
+  - D: 제품 이름=P1(조리법 PROC_X1)로 저장된 문서를 편집 로드하면, 로드 직후 제품 이름 후보가
+    `["P1"]`뿐이었다(기대: `["P1","P2"]`) — `matchedOrLoading`이 `isLoadingEditRef.current`일 때
+    매치 검사를 우회해 좁히기 effect가 곧바로 narrow-fetch를 실행했기 때문.
+  - E: C·D로 `productOptions`가 비거나 좁아진 상태에서 이미 유효한 `partid_selection`으로
+    blur/상신을 시도하면 `productOptions.includes(value)` 검사가 거짓으로 나와 오류가 났다.
+- **수정**(`frontend/src/pages/RequestPage/index.tsx`, `components/Step1.tsx`):
+  - `productOptionsBroad`(라인+조합법 고정 범위, 안정된 전체 목록) state 신규 추가 — 조합법
+    변경 effect에서만 설정하고, 조리법 좁히기 effect는 이 값을 절대 건드리지 않는다(전용
+    fetchOptions 키 `productBroad`로 분리해 시퀀스 토큰 경합도 피함).
+  - `handlePartidSelectionBlur`·`validate()`·Step1의 제품 이름 입력칸 `disabled` 조건을
+    `productOptions` → `productOptionsBroad`로 교체(C의 필드-비활성화 증상과 E 해결).
+  - "조리법 변경 → 제품이름 좁히기" effect 맨 앞에 `if (isLoadingEditRef.current) return;` 추가
+    — 편집/투어 로드 중엔 절대 좁히지 않는다(D 해결, 이웃 effect들과 동일한 가드 패턴).
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx`, `components/Step1.tsx`,
+  `frontend/src/pages/RequestPage/productOptionsBroadValidity.test.tsx`(신규).
+- **검증**: `cd frontend && npx tsc --noEmit` — 신규 에러 0(기존 4건과 동일). `CI=true npx
+  react-scripts test --watchAll=false` — 14 suites / **309건 전부 통과**(신규 3건 포함), 3회
+  연속 재실행 모두 통과(플레이키 없음 확인). 신규 테스트는 Step1을 실제로 구동해 ① 조리법 부분
+  입력 중 제품 이름 입력칸이 비활성화되지 않는지 ② 편집 로드 후 다른 조리법을 가진 제품(P2)도
+  후보로 뜨는지 ③ 편집 로드 직후 blur해도 거짓 오류가 없는지를 확인했다.
+  - **테스트 작성 시 주의점**: `AutocompleteInput`은 현재 입력값으로 드롭다운을 자체
+    필터링한다. 값이 이미 `'P1'`인 채로 드롭다운을 열면 `productOptions`가 아무리 넓어도
+    `'P2'`는 부분 문자열 불일치로 안 보인다 — 처음 작성한 "필드를 비우고 확인" 방식은 그 자체가
+    또 다른 상호작용(제품이름 변경 effect 연쇄)을 유발해 오히려 재좁힘이 일어났다. 최종적으로는
+    "다른 제품(P2)을 직접 타이핑했을 때 후보로 뜨는지"로 검증해야 실제 밑바탕 옵션 목록의 넓고
+    좁음을 정확히 반영한다.
+- **수동 검증 시나리오** (원격 세션이라 이번 회차는 자동화 테스트로만 확인했다 — 시간이 되면
+  아래를 브라우저로 재확인 권장):
+  1. [`/request` 새 문서 → 라인·조합법 선택 → 조리법 칸에 값을 천천히 타이핑(완성 전)] → [기대
+     결과: 타이핑 도중에도 제품 이름 입력칸이 계속 클릭·입력 가능한지(회색으로 비활성화되지
+     않는지) 확인.]
+  2. [서로 다른 조리법을 가진 제품 두 개가 있는 조합법에서, 제품 이름 A(조리법 X)로 저장된
+     기존 문서를 열어 편집 진입] → [기대 결과: 제품 이름 입력칸에 다른 제품 B(조리법이 다름)를
+     타이핑하면 후보로 뜨는지, 선택 후 정상 반영되는지 확인 — 조리법을 먼저 안 바꿔도 되어야
+     한다.]
+  3. [2번 이어서, 아무것도 안 바꾸고 곧바로 "다음"/"상신" 클릭] → [기대 결과: 제품 이름이
+     "목록에 없는 값" 오류로 막히지 않는지 확인.]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
