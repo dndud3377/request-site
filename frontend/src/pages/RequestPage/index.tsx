@@ -961,7 +961,7 @@ export default function RequestPage(): React.ReactElement {
     } else {
       setAdiCdTargetDraftProcessIdOptionsStable([]);
     }
-  }, [adiCdTargetDraft.partid_selection, adiCdTargetDraftProductOptions, isAdiCdTargetsPanelOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [adiCdTargetDraft.partid_selection, adiCdTargetDraftProductOptions, isAdiCdTargetsPanelOpen, detail.line, detail.process_selection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // draft 조리법 변경 → draft 제품 이름 좁히기(신규, 위 effect 와 대칭). 비면 조합법 범위 전체
   // 제품 이름으로 복원.
@@ -994,7 +994,7 @@ export default function RequestPage(): React.ReactElement {
     } else {
       setAdiCdTargetDraftProductOptionsStable([]);
     }
-  }, [adiCdTargetDraft.process_id, adiCdTargetDraftProcessIdOptions, isAdiCdTargetsPanelOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [adiCdTargetDraft.process_id, adiCdTargetDraftProcessIdOptions, isAdiCdTargetsPanelOpen, detail.line, detail.process_selection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // bb_entries 외부 데이터 로드: 항목별로 제품·조리법이 옵션에 정확히 일치할 때만 조회한다.
   // (항목,값) 조합 캐시로 변경 없는 항목 재조회를 막고, 시퀀스 토큰으로 stale 응답을 버린다.
