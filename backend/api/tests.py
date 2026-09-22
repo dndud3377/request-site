@@ -8141,3 +8141,42 @@ class FormOptionsLineProcessProductProcessIdTest(TestCase):
         res = self.client.get('/api/form-options/products/?line=라인1&process=조합법A&process_id=Z')
         self.assertEqual(res.status_code, 200)
         self.assertEqual(self._json.loads(res.content)['options'], [])
+
+
+class GuideWritePermissionOverseasTest(TestCase):
+    """GuideWritePermission 회귀 테스트 — 가이드 작성 제한은 국내/해외 제품 담당자에게 동일해야 한다.
+
+    2026-09: role != 'PL' 로만 검사해 PL_GL(해외 제품 담당자)이 API 직접 호출로 가이드를
+    작성·수정할 수 있었다(프론트 GuidePage.tsx 의 canWrite=!isPlRole(...) 가드만 우회하면 됨).
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.kr_pl = UserProfile.objects.create(loginid='gw_pl', mail='gwpl@c.com', role='PL')
+        self.gl_pl = UserProfile.objects.create(loginid='gw_gl', mail='gwgl@c.com', role='PL_GL')
+        self.te_j = UserProfile.objects.create(loginid='gw_j', mail='gwj@c.com', role='TE_J')
+
+    def _create_payload(self):
+        return {
+            'guide_type': 'info', 'title': 't', 'content': 'c',
+            'feature_key': None,
+        }
+
+    def test_domestic_pl_cannot_create_guide(self):
+        self.client.force_authenticate(user=self.kr_pl)
+        r = self.client.post('/api/guides/', self._create_payload(), format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+
+    def test_overseas_pl_cannot_create_guide(self):
+        """이 테스트가 실패한다면(200/201 반환) GuideWritePermission 이 다시 role=='PL' 만
+        검사하도록 되돌아간 것이다 — PL_ROLES(PL·PL_GL) 로 검사해야 한다."""
+        self.client.force_authenticate(user=self.gl_pl)
+        r = self.client.post('/api/guides/', self._create_payload(), format='json')
+        self.assertEqual(r.status_code, 403, r.content)
+
+    def test_non_pl_role_can_create_guide(self):
+        """대조군 — PL 계열이 아닌 역할은 종전대로 작성 가능해야 한다(과잉 차단 방지)."""
+        self.client.force_authenticate(user=self.te_j)
+        r = self.client.post('/api/guides/', self._create_payload(), format='json')
+        self.assertEqual(r.status_code, 201, r.content)

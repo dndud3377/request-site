@@ -136,7 +136,10 @@ class GuideWritePermission(BasePermission):
     """가이드 CRUD 인가.
 
     - 읽기(GET): IsAuthenticatedOrMasterDelete 와 동일(운영=인증 필요, 개발=허용) — 조회는 전원 제한 없음.
-    - 작성/수정(POST·PUT·PATCH): 인증 필요 + PL 역할은 불가(가이드는 PL이 참고하는 대상이지 작성 주체가 아님).
+    - 작성/수정(POST·PUT·PATCH): 인증 필요 + 제품 담당자(PL·해외 PL_GL)는 불가
+      (가이드는 PL 이 참고하는 대상이지 작성 주체가 아니며, 이 제한은 국내/해외 구분 없이 동일하다 —
+      GuidePage.tsx 의 canWrite=!isPlRole(...) 와 반드시 같은 규칙이어야 한다. role != 'PL' 로만
+      검사하면 PL_GL 이 통과해 프론트 가드가 API 직접 호출로 우회됐었다, 2026-09).
     - 삭제(DELETE): MASTER만(기존과 동일).
     """
 
@@ -145,7 +148,8 @@ class GuideWritePermission(BasePermission):
             return bool(request.user and request.user.is_authenticated and request.user.role == 'MASTER')
         if request.method in ('POST', 'PUT', 'PATCH'):
             return bool(
-                request.user and request.user.is_authenticated and request.user.role != 'PL'
+                request.user and request.user.is_authenticated
+                and request.user.role not in User.PL_ROLES
             )
         return _is_dev() or bool(request.user and request.user.is_authenticated)
 
