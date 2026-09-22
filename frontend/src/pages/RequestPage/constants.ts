@@ -291,6 +291,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   partid_selection: '',
   customer_name: '',
   customer_requirement: '',
+  product_manager: '',
   other_purpose: [],
   source_line: '',
   source_partid: '',
