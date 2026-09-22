@@ -12,9 +12,15 @@ export interface AdiCdTargetsPanelProps {
   /** 아직 표에 반영하지 않은, 지금 입력 중인 값(상시 노출 입력칸). */
   draftPartidSelection: string;
   draftProcessId: string;
-  /** 제품 이름 옵션 — 이미 선택한 라인+조합법 기준(위쪽 필드와 동일한 목록을 재사용). */
+  /**
+   * 제품 이름 옵션 — 라인+조합법(고정) 범위. draftProcessId 를 먼저 고르면 그에 맞게 좁혀지고,
+   * 비어 있으면 조합법 범위 전체로 돌아온다(제품 이름 대신 조리법부터 골라도 되도록).
+   */
   productOptions: string[];
-  /** 조리법 옵션 — 지금 입력 중인 제품 이름 기준으로 독립 fetch된 값(입력칸 1개분). */
+  /**
+   * 조리법 옵션 — 라인+조합법(고정) 범위. draftPartidSelection 을 먼저 고르면 그에 맞게
+   * 좁혀지고, 비어 있으면 조합법 범위 전체로 돌아온다(위 productOptions 와 대칭).
+   */
   draftProcessIdOptions: string[];
   onDraftChange: (field: 'partid_selection' | 'process_id', value: string) => void;
   /** 입력칸 값을 검증(완전성·중복)해 통과하면 표에 반영하고 입력칸을 비운다. 실패 시 토스트로 막는다. */

@@ -198,6 +198,11 @@ export default function RequestPage(): React.ReactElement {
   const [lineOptions, setLineOptions] = useState<string[]>(OPTION_LINE as unknown as string[]);
   const [processOptions, setProcessOptions] = useState<string[]>([]);
   const [productOptions, setProductOptions] = useState<string[]>([]);
+  // 라인+조합법(고정) 범위의 제품 이름 전체 목록 — 조합법 변경 effect에서만 설정되고, 조리법
+  // 기준 좁히기의 영향을 받지 않는다. 존재 검증(blur/validate)·입력칸 활성화 여부처럼 "이 제품이
+  // 이 조합법 아래 실존하는가"를 판단하는 곳은 이 값을 써야 한다(위 productOptions는 조리법
+  // 좁히기·타이핑 중 매칭 실패로 일시적으로 비거나 좁아질 수 있어 존재 검증에 부적합하다).
+  const [productOptionsBroad, setProductOptionsBroad] = useState<string[]>([]);
   const [processIdOptions, setProcessIdOptions] = useState<string[]>([]);
   const [topProductOptions, setTopProductOptions] = useState<string[]>([]);
   const [middleProductOptions, setMiddleProductOptions] = useState<string[]>([]);
@@ -218,11 +223,13 @@ export default function RequestPage(): React.ReactElement {
 
   // ADI CD 변경 '동일 변경 적용 대상' — 표 안 행은 읽기 전용이고, 아직 표에 반영하지 않은
   // "입력 중인 값"만 이 draft 로 관리한다("추가" 버튼을 눌러야 표(adi_cd_extra_targets)로 옮겨간다).
-  // 제품 이름 옵션은 위쪽 productOptions 를 그대로 재사용하고(라인+조합법 고정), 조리법 옵션만
-  // 지금 입력된 제품 이름 기준으로 fetch한다(입력칸이 하나뿐이라 행 id 캐시 대신 배열 하나로 충분).
+  // 제품 이름·조리법 둘 다 라인+조합법(고정) 범위에서 서로를 좁히는 독립적인 옵션 상태를 쓴다
+  // (위쪽 Step1 필드의 productOptions/processIdOptions 는 그 필드 자체의 조리법 선택으로 좁혀질
+  // 수 있어 여기서 재사용하면 라인+조합법 전체가 아니게 될 수 있다 — 그래서 분리했다).
   const [adiCdTargetDraft, setAdiCdTargetDraft] = useState<{ partid_selection: string; process_id: string }>({
     partid_selection: '', process_id: '',
   });
+  const [adiCdTargetDraftProductOptions, setAdiCdTargetDraftProductOptions] = useState<string[]>([]);
   const [adiCdTargetDraftProcessIdOptions, setAdiCdTargetDraftProcessIdOptions] = useState<string[]>([]);
 
   const [step, setStep] = useState(isTourMode ? initialTourStep : 1);
@@ -518,8 +525,15 @@ export default function RequestPage(): React.ReactElement {
     a.length === b.length && a.every((v, i) => v === b[i]);
   const setProductOptionsStable = (opts: string[]) =>
     setProductOptions((prev) => (sameStrArray(prev, opts) ? prev : opts));
+  const setProductOptionsBroadStable = (opts: string[]) =>
+    setProductOptionsBroad((prev) => (sameStrArray(prev, opts) ? prev : opts));
   const setProcessIdOptionsStable = (opts: string[]) =>
     setProcessIdOptions((prev) => (sameStrArray(prev, opts) ? prev : opts));
+  // ADI CD 변경 '동일 변경 적용 대상' draft 전용 — 같은 되먹임 루프 방지가 필요하다.
+  const setAdiCdTargetDraftProductOptionsStable = (opts: string[]) =>
+    setAdiCdTargetDraftProductOptions((prev) => (sameStrArray(prev, opts) ? prev : opts));
+  const setAdiCdTargetDraftProcessIdOptionsStable = (opts: string[]) =>
+    setAdiCdTargetDraftProcessIdOptions((prev) => (sameStrArray(prev, opts) ? prev : opts));
 
   useEffect(() => {
     linesAPI.list()
@@ -580,7 +594,7 @@ export default function RequestPage(): React.ReactElement {
   // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
   useEffect(() => {
     if (!detail.line) {
-      setProcessOptions([]); setProductOptions([]); setProcessIdOptions([]);
+      setProcessOptions([]); setProductOptions([]); setProductOptionsBroad([]); setProcessIdOptions([]);
       setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
       return;
     }
@@ -589,6 +603,7 @@ export default function RequestPage(): React.ReactElement {
       .catch(() => setProcessOptions([]));
     if (!isLoadingEditRef.current) {
       setProductOptions([]);
+      setProductOptionsBroad([]);
       setProcessIdOptions([]);
       setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
       setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
@@ -712,7 +727,11 @@ export default function RequestPage(): React.ReactElement {
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
   useEffect(() => {
     if (!detail.line || !detail.process_selection) {
-      if (!isLoadingEditRef.current) { setProductOptionsStable([]); setProcessIdOptionsStable([]); }
+      if (!isLoadingEditRef.current) {
+        setProductOptionsStable([]);
+        setProductOptionsBroadStable([]);
+        setProcessIdOptionsStable([]);
+      }
       return;
     }
     // 하위 선택값은 부모 변경 시 즉시 초기화(이전 값과 부모 불일치 방지)
@@ -729,8 +748,12 @@ export default function RequestPage(): React.ReactElement {
     // 제품 조회는 조합법이 옵션에 정확히 존재할 때만(시퀀스 토큰으로 stale 응답 무시)
     if (matchedOrLoading(processOptions, detail.process_selection)) {
       fetchOptions('product', () => formOptionsAPI.getProducts(detail.line, detail.process_selection), setProductOptionsStable);
+      // productOptionsBroad는 조리법 좁히기 effect가 절대 건드리지 않는 전용 키로 별도 조회한다
+      // ('product' 키를 같이 쓰면 좁히기 effect의 요청과 시퀀스 토큰을 다퉈 이 값이 갱신을 놓칠 수 있다).
+      fetchOptions('productBroad', () => formOptionsAPI.getProducts(detail.line, detail.process_selection), setProductOptionsBroadStable);
     } else if (!isLoadingEditRef.current) {
       setProductOptionsStable([]);
+      setProductOptionsBroadStable([]);
     }
   }, [detail.process_selection, processOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -775,17 +798,22 @@ export default function RequestPage(): React.ReactElement {
   // 조리법 변경 → 제품이름 fetch(좁히기, 신규). 위 effect 와 대칭 — 조리법을 먼저 골라도 그에
   // 맞는 제품이름만 보이도록 한다. 조리법이 비면 조합법 범위의 제품이름 전체 목록으로 복원.
   useEffect(() => {
+    // 편집/투어 로드 중엔 절대 좁히지 않는다 — 저장된 조리법이 채워지는 순간 이 effect가 (매치
+    // 검사를 우회하는 matchedOrLoading 때문에) 곧바로 좁혀버리면, 편집 진입 직후부터 제품이름
+    // 후보가 "라인+조합법 전체"가 아니라 그 조리법 하나로 좁아진 채 시작해버린다(다른 제품으로
+    // 바꾸려면 조리법을 먼저 바꿔야 하는 문제). 로드가 끝난 뒤 사용자가 실제로 조리법을 바꿀 때만
+    // 이 effect가 정상적으로 좁힌다(isLoadingEditRef는 ref라 값이 바뀌어도 이 effect가 다시
+    // 실행되진 않지만, 그다음 실제 조리법 변경 시점엔 이미 false라 정상 동작한다).
+    if (isLoadingEditRef.current) return;
     if (!detail.line || !detail.process_id) {
-      if (!isLoadingEditRef.current) {
-        if (detail.process_selection && matchedOrLoading(processOptions, detail.process_selection)) {
-          fetchOptions(
-            'product',
-            () => formOptionsAPI.getProducts(detail.line, detail.process_selection),
-            setProductOptionsStable
-          );
-        } else {
-          setProductOptionsStable([]);
-        }
+      if (detail.process_selection && matchedOrLoading(processOptions, detail.process_selection)) {
+        fetchOptions(
+          'product',
+          () => formOptionsAPI.getProducts(detail.line, detail.process_selection),
+          setProductOptionsStable
+        );
+      } else {
+        setProductOptionsStable([]);
       }
       return;
     }
@@ -805,7 +833,7 @@ export default function RequestPage(): React.ReactElement {
           ));
         }
       });
-    } else if (!isLoadingEditRef.current) {
+    } else {
       setProductOptionsStable([]);
     }
   }, [detail.process_id, processIdOptions]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -930,19 +958,74 @@ export default function RequestPage(): React.ReactElement {
     });
   }, [detail.bb_entries.map(e => `${e.id}|${e.product}`).join(','), BbProductOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ADI CD 변경 '동일 변경 적용 대상' — 지금 입력 중인 제품 이름(draft) 기준으로 조리법을 조회한다.
-  // 제품 이름 옵션은 라인+조합법 고정이라 위쪽 productOptions 를 그대로 쓴다(재조회 없음).
+  // ADI CD 변경 '동일 변경 적용 대상' — 라인+조합법(고정) 범위에서 제품 이름 ↔ 조리법을 서로
+  // 좁힌다(Step1 상단 필드의 캐스케이드와 동일한 구조, 상태만 독립). 패널이 보일 때만 조회한다.
+  const isAdiCdTargetsPanelOpen = detail.request_purpose === ADI_CD_CHANGE_PURPOSE;
+
+  // draft 제품 이름 변경 → draft 조리법 좁히기. 비면 조합법 범위 전체 조리법으로 복원(조리법을
+  // 먼저 고를 수 있도록) — 아래 '조리법 변경 → 제품이름' effect 와 대칭.
   useEffect(() => {
-    if (adiCdTargetDraft.partid_selection && matchedOrLoading(productOptions, adiCdTargetDraft.partid_selection)) {
-      fetchOptions(
-        'adi-cd-target-draft-pid',
-        () => formOptionsAPI.getProcessId(detail.line, adiCdTargetDraft.partid_selection),
-        setAdiCdTargetDraftProcessIdOptions,
-      );
-    } else {
-      setAdiCdTargetDraftProcessIdOptions([]);
+    if (!isAdiCdTargetsPanelOpen) return;
+    if (!detail.line || !adiCdTargetDraft.partid_selection) {
+      if (detail.process_selection) {
+        fetchOptions(
+          'adi-cd-target-draft-pid',
+          () => formOptionsAPI.getProcessId(detail.line, undefined, detail.process_selection),
+          setAdiCdTargetDraftProcessIdOptionsStable
+        );
+      } else {
+        setAdiCdTargetDraftProcessIdOptionsStable([]);
+      }
+      return;
     }
-  }, [adiCdTargetDraft.partid_selection, productOptions]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (matchedOrLoading(adiCdTargetDraftProductOptions, adiCdTargetDraft.partid_selection)) {
+      const line = detail.line;
+      const product = adiCdTargetDraft.partid_selection;
+      fetchOptions('adi-cd-target-draft-pid', () => formOptionsAPI.getProcessId(line, product), (opts) => {
+        setAdiCdTargetDraftProcessIdOptionsStable(opts);
+        setAdiCdTargetDraft((prev) => (
+          prev.partid_selection === product && prev.process_id && !opts.includes(prev.process_id)
+            ? { ...prev, process_id: '' }
+            : prev
+        ));
+      });
+    } else {
+      setAdiCdTargetDraftProcessIdOptionsStable([]);
+    }
+  }, [adiCdTargetDraft.partid_selection, adiCdTargetDraftProductOptions, isAdiCdTargetsPanelOpen, detail.line, detail.process_selection]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // draft 조리법 변경 → draft 제품 이름 좁히기(신규, 위 effect 와 대칭). 비면 조합법 범위 전체
+  // 제품 이름으로 복원.
+  useEffect(() => {
+    if (!isAdiCdTargetsPanelOpen) return;
+    if (!detail.line || !adiCdTargetDraft.process_id) {
+      if (detail.process_selection) {
+        fetchOptions(
+          'adi-cd-target-draft-product',
+          () => formOptionsAPI.getProducts(detail.line, detail.process_selection),
+          setAdiCdTargetDraftProductOptionsStable
+        );
+      } else {
+        setAdiCdTargetDraftProductOptionsStable([]);
+      }
+      return;
+    }
+    if (matchedOrLoading(adiCdTargetDraftProcessIdOptions, adiCdTargetDraft.process_id)) {
+      const line = detail.line;
+      const processSelection = detail.process_selection;
+      const processId = adiCdTargetDraft.process_id;
+      fetchOptions('adi-cd-target-draft-product', () => formOptionsAPI.getProducts(line, processSelection, processId), (opts) => {
+        setAdiCdTargetDraftProductOptionsStable(opts);
+        setAdiCdTargetDraft((prev) => (
+          prev.process_id === processId && prev.partid_selection && !opts.includes(prev.partid_selection)
+            ? { ...prev, partid_selection: '' }
+            : prev
+        ));
+      });
+    } else {
+      setAdiCdTargetDraftProductOptionsStable([]);
+    }
+  }, [adiCdTargetDraft.process_id, adiCdTargetDraftProcessIdOptions, isAdiCdTargetsPanelOpen, detail.line, detail.process_selection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // bb_entries 외부 데이터 로드: 항목별로 제품·조리법이 옵션에 정확히 일치할 때만 조회한다.
   // (항목,값) 조합 캐시로 변경 없는 항목 재조회를 막고, 시퀀스 토큰으로 stale 응답을 버린다.
@@ -2261,7 +2344,10 @@ export default function RequestPage(): React.ReactElement {
   // 제품 이름(partid_selection): 목록에 없는 값이면 에러 표시(문구는 Step1에서 값 존재 시 숨김) + 빨간 에러 토스트
   const handlePartidSelectionBlur = () => {
     const value = detail.partid_selection.trim();
-    if (value && !productOptions.includes(value)) {
+    // 존재 검증은 라인+조합법 전체 목록(productOptionsBroad) 기준이어야 한다 — productOptions는
+    // 조리법 좁히기로 일시적으로 비거나 좁아질 수 있어(예: 조리법 타이핑 도중) 이 값으로 검사하면
+    // 실제로는 유효한 제품에도 거짓 오류가 뜬다.
+    if (value && !productOptionsBroad.includes(value)) {
       setErrors((prev) => ({ ...prev, partid_selection: t('request.partid_not_in_list') }));
       addToast(t('request.partid_not_in_list'), 'error');
     }
@@ -3109,11 +3195,10 @@ export default function RequestPage(): React.ReactElement {
     adiCdSideHasData('before') || adiCdSideHasData('after') || adiCdTargetsHaveData();
 
   // 표 안 행은 읽기 전용이다 — 입력칸(draft) 값은 여기서만 바뀐다.
-  // 제품 이름을 바꾸면 조리법 입력칸은 비운다 — 이전 제품 기준 조리법이 새 제품에는 맞지 않을 수 있다.
+  // 제품 이름·조리법 어느 쪽을 먼저 바꿔도 값 자체는 그대로 반영만 한다 — 반대쪽을 비울지는
+  // (좁혀진 새 후보 목록에 이미 고른 값이 더는 없을 때만) 위의 draft 상호 좁힘 effect 가 판단한다.
   const handleAdiCdTargetDraftChange = (field: 'partid_selection' | 'process_id', value: string) => {
-    setAdiCdTargetDraft((prev) => (
-      field === 'partid_selection' ? { partid_selection: value, process_id: '' } : { ...prev, process_id: value }
-    ));
+    setAdiCdTargetDraft((prev) => ({ ...prev, [field]: value }));
   };
 
   // '추가' 클릭 — 입력칸 값을 검증(완전성·중복)해 통과해야 표에 반영한다. 실패하면 토스트로 막고
@@ -3806,8 +3891,9 @@ export default function RequestPage(): React.ReactElement {
         }
       });
       // 제품 이름(partid_selection)은 목록에 있는 값만 허용 (값은 있으나 목록 밖이면 진행 차단)
+      // productOptionsBroad(라인+조합법 전체) 기준으로 검사한다 — handlePartidSelectionBlur와 동일한 이유.
       const partidVal = detail.partid_selection.trim();
-      if (partidVal && !productOptions.includes(partidVal)) {
+      if (partidVal && !productOptionsBroad.includes(partidVal)) {
         newErrors['partid_selection'] = t('request.partid_not_in_list');
         errorMessages.push(t('request.partid_not_in_list'));
       }
@@ -4753,6 +4839,7 @@ export default function RequestPage(): React.ReactElement {
           lineOptions={lineOptions}
           processOptions={processOptions}
           productOptions={productOptions}
+          productOptionsBroad={productOptionsBroad}
           processIdOptions={processIdOptions}
           FlowProductOptions={FlowProductOptions}
           FlowProcessIdOptions={FlowProcessIdOptions}
@@ -4803,6 +4890,7 @@ export default function RequestPage(): React.ReactElement {
           handleAdiCdPasteRaw={handleAdiCdPasteRaw}
           handleAdiCdToggleUnregistered={handleAdiCdToggleUnregistered}
           adiCdTargetDraft={adiCdTargetDraft}
+          adiCdTargetDraftProductOptions={adiCdTargetDraftProductOptions}
           adiCdTargetDraftProcessIdOptions={adiCdTargetDraftProcessIdOptions}
           handleAdiCdTargetDraftChange={handleAdiCdTargetDraftChange}
           handleAdiCdTargetAdd={handleAdiCdTargetAdd}

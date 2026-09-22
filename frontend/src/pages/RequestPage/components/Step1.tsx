@@ -20,6 +20,8 @@ interface Step1Props {
   lineOptions: string[];
   processOptions: string[];
   productOptions: string[];
+  /** 라인+조합법(고정) 범위의 제품 이름 전체 목록 — 존재 검증·입력칸 활성화 여부 판단용. */
+  productOptionsBroad: string[];
   processIdOptions: string[];
   FlowProductOptions: Record<string, string[]>;
   FlowProcessIdOptions: Record<string, string[]>;
@@ -72,6 +74,8 @@ interface Step1Props {
   handleAdiCdToggleUnregistered: (side: 'before' | 'after', id: string, next: boolean) => void;
   /** '동일 변경 적용 대상' 표 — 표 안 행은 읽기 전용이고, 이 draft(입력 중인 값)만 편집한다. */
   adiCdTargetDraft: { partid_selection: string; process_id: string };
+  /** '동일 변경 적용 대상' draft의 제품 이름 옵션 — 라인+조합법(고정) 범위, 조리법을 먼저 고르면 좁혀짐. */
+  adiCdTargetDraftProductOptions: string[];
   adiCdTargetDraftProcessIdOptions: string[];
   handleAdiCdTargetDraftChange: (field: 'partid_selection' | 'process_id', value: string) => void;
   handleAdiCdTargetAdd: () => void;
@@ -90,6 +94,7 @@ const Step1: React.FC<Step1Props> = ({
   lineOptions,
   processOptions,
   productOptions,
+  productOptionsBroad,
   processIdOptions,
   FlowProductOptions,
   FlowProcessIdOptions,
@@ -140,6 +145,7 @@ const Step1: React.FC<Step1Props> = ({
   handleAdiCdPasteRaw,
   handleAdiCdToggleUnregistered,
   adiCdTargetDraft,
+  adiCdTargetDraftProductOptions,
   adiCdTargetDraftProcessIdOptions,
   handleAdiCdTargetDraftChange,
   handleAdiCdTargetAdd,
@@ -216,7 +222,7 @@ const Step1: React.FC<Step1Props> = ({
             required
             error={errors.partid_selection}
             hideErrorMessage={!!detail.partid_selection.trim()}
-            disabled={productOptions.length === 0}
+            disabled={productOptionsBroad.length === 0}
             style={{ flex: 1 }}
           />
           <AutocompleteInput
@@ -391,7 +397,7 @@ const Step1: React.FC<Step1Props> = ({
                   targets={detail.adi_cd_extra_targets}
                   draftPartidSelection={adiCdTargetDraft.partid_selection}
                   draftProcessId={adiCdTargetDraft.process_id}
-                  productOptions={productOptions}
+                  productOptions={adiCdTargetDraftProductOptions}
                   draftProcessIdOptions={adiCdTargetDraftProcessIdOptions}
                   onDraftChange={handleAdiCdTargetDraftChange}
                   onAdd={handleAdiCdTargetAdd}
