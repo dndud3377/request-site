@@ -432,7 +432,12 @@ describe('ADI CD 변경 — 동일 변경 적용 대상', () => {
     expect(extras[0]).toMatchObject({ partid_selection: '제품B', process_id: 'PROC_B1' });
   });
 
-  it('제품 이름을 바꾸면 조리법 입력칸이 비워진다(추가 전)', async () => {
+  // (2026-09) 이전엔 제품 이름이 바뀌면 조리법을 무조건 비웠다(제품→조리법 단방향 전제).
+  // 이제 제품 이름 ↔ 조리법은 서로 좁히는 양방향 관계라, 값 자체는 그대로 두고 옵션 목록만
+  // 다시 조회한다 — 실제로 비호환이 "확인된" 경우에만 지워진다(아래 별도 테스트,
+  // adiCdTargetsCrossFilter.test.tsx). 이 목(mock)은 인자와 무관하게 항상 같은 단일 제품/조리법만
+  // 돌려주므로(비교 대상이 없음) 자유롭게 타이핑한 값은 매칭 판정 자체가 나지 않아 그대로 남는다.
+  it('제품 이름을 바꿔도(자유 입력) 조리법 입력칸 값은 지워지지 않는다', async () => {
     const { container } = await renderNewDoc();
     await openAdiCdPanel(container);
 
@@ -451,7 +456,7 @@ describe('ADI CD 변경 — 동일 변경 적용 대상', () => {
 
     inputs = draftInputs(container);
     expect(inputs[0].value).toBe('제품C');
-    expect(inputs[1].value).toBe('');
+    expect(inputs[1].value).toBe('PROC_B1');
     expect(targetRows(container)).toHaveLength(1); // 추가 버튼을 누르지 않았으므로 표는 그대로
   });
 
