@@ -72,6 +72,8 @@ interface Step1Props {
   handleAdiCdToggleUnregistered: (side: 'before' | 'after', id: string, next: boolean) => void;
   /** '동일 변경 적용 대상' 표 — 표 안 행은 읽기 전용이고, 이 draft(입력 중인 값)만 편집한다. */
   adiCdTargetDraft: { partid_selection: string; process_id: string };
+  /** '동일 변경 적용 대상' draft의 제품 이름 옵션 — 라인+조합법(고정) 범위, 조리법을 먼저 고르면 좁혀짐. */
+  adiCdTargetDraftProductOptions: string[];
   adiCdTargetDraftProcessIdOptions: string[];
   handleAdiCdTargetDraftChange: (field: 'partid_selection' | 'process_id', value: string) => void;
   handleAdiCdTargetAdd: () => void;
@@ -140,6 +142,7 @@ const Step1: React.FC<Step1Props> = ({
   handleAdiCdPasteRaw,
   handleAdiCdToggleUnregistered,
   adiCdTargetDraft,
+  adiCdTargetDraftProductOptions,
   adiCdTargetDraftProcessIdOptions,
   handleAdiCdTargetDraftChange,
   handleAdiCdTargetAdd,
@@ -391,7 +394,7 @@ const Step1: React.FC<Step1Props> = ({
                   targets={detail.adi_cd_extra_targets}
                   draftPartidSelection={adiCdTargetDraft.partid_selection}
                   draftProcessId={adiCdTargetDraft.process_id}
-                  productOptions={productOptions}
+                  productOptions={adiCdTargetDraftProductOptions}
                   draftProcessIdOptions={adiCdTargetDraftProcessIdOptions}
                   onDraftChange={handleAdiCdTargetDraftChange}
                   onAdd={handleAdiCdTargetAdd}
