@@ -29,9 +29,10 @@ jest.mock('../../contexts/AuthContext', () => ({
   }),
 }));
 jest.mock('../../api/client', () => {
-  // P1은 조리법 X/Y를 갖고, P2는 조리법 X만 갖는다.
-  const productsByProcessId: Record<string, string[]> = { '': ['P1', 'P2'], X: ['P1', 'P2'], Y: ['P1'] };
-  const processIdsByProduct: Record<string, string[]> = { P1: ['X', 'Y'], P2: ['X'] };
+  // 조합법A: P1(조리법 X/Y), P2(조리법 X만). 조합법B: P3(조리법 Z만) — 조합법이 바뀌었을 때
+  // draft 옵션이 새 조합법 기준으로 갱신되는지 확인하는 데 쓴다.
+  const productsByProcess: Record<string, string[]> = { '조합법A': ['P1', 'P2'], '조합법B': ['P3'] };
+  const processIdsByProduct: Record<string, string[]> = { P1: ['X', 'Y'], P2: ['X'], P3: ['Z'] };
   return {
     documentsAPI: {
       get: () => Promise.resolve({ data: null }),
@@ -41,12 +42,19 @@ jest.mock('../../api/client', () => {
     },
     linesAPI: { list: () => Promise.resolve([{ name: '라인1' }]) },
     formOptionsAPI: {
-      getProcesses: () => Promise.resolve(['조합법A']),
-      getProducts: (_line: string, _process?: string, processId?: string) =>
-        Promise.resolve(productsByProcessId[processId ?? ''] ?? []),
+      getProcesses: () => Promise.resolve(['조합법A', '조합법B']),
+      getProducts: (_line: string, process?: string, processId?: string) => {
+        const products = productsByProcess[process ?? ''] ?? [];
+        if (!processId) return Promise.resolve(products);
+        return Promise.resolve(products.filter((p) => (processIdsByProduct[p] || []).includes(processId)));
+      },
       getProcessId: (_line: string, product?: string, process?: string) => {
         if (product) return Promise.resolve(processIdsByProduct[product] ?? []);
-        if (process) return Promise.resolve(['X', 'Y']);
+        if (process) {
+          const ids = new Set<string>();
+          (productsByProcess[process] ?? []).forEach((p) => (processIdsByProduct[p] || []).forEach((id) => ids.add(id)));
+          return Promise.resolve(Array.from(ids));
+        }
         return Promise.resolve([]);
       },
       getLayerIds: () => Promise.resolve([]),
@@ -178,5 +186,24 @@ describe('ADI CD 변경 — 동일 변경 적용 대상 패널 제품이름 ↔ 
     expect(rows).toHaveLength(2);
     expect(rows[1].textContent).toContain('P2');
     expect(rows[1].textContent).toContain('X');
+  });
+
+  it('[회귀 방지] 패널이 열린 채(draft 비어있음) 위쪽 조합법을 바꾸면 후보가 새 조합법 기준으로 갱신된다', async () => {
+    const { container } = await renderNewDoc();
+    await openAdiCdPanelViaProductFirst(container); // 조합법A, 패널 열림, draft는 비어있음
+
+    // 위쪽 조합법을 B로 바꾼다(제품이름·조리법도 함께 리셋된다 — 그 리셋 시점에 draft도 비워짐).
+    await act(async () => { fireEvent.change(getFieldInput(container, '조합법'), { target: { value: '조합법B' } }); });
+    await flushEffects();
+    await act(async () => { fireEvent.change(getFieldInput(container, '제품 이름'), { target: { value: 'P3' } }); });
+    await flushEffects();
+    await act(async () => { fireEvent.change(getFieldInput(container, '조리법'), { target: { value: 'Z' } }); });
+    await flushEffects();
+
+    const productInput = draftInputs(container)[0];
+    await act(async () => { fireEvent.focus(productInput); });
+    await flushEffects();
+    // 새 조합법(B)의 제품(P3)만 보여야 한다 — 이전 조합법(A)의 P1/P2가 남아있으면 stale 회귀.
+    expect(dropdownOptionsOf(productInput)).toEqual(['P3']);
   });
 });
