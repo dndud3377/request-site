@@ -43,6 +43,9 @@ export const MOCK_USERS: MockUser[] = [
   { id: 14, username: 'agent_e3', name: '이E',   role: 'TE_E',   department: ROLE_LABEL['TE_E'],     email: 'agent.e3@company.com' },
   { id: 18, username: 'pl_gl1',   name: '해외RM', role: 'PL_GL',  department: 'GLOBAL PA1',           email: 'pl.gl1@company.com' },
   { id: 19, username: 'pl_gl2',   name: '해외진', role: 'PL_GL',  department: 'GLOBAL PA2',           email: 'pl.gl2@company.com' },
+  { id: 20, username: 'pl_gl3',   name: '해외슈가', role: 'PL_GL', department: 'GLOBAL PA3',          email: 'pl.gl3@company.com' },
+  { id: 21, username: 'pl_gl4',   name: '해외제이홉', role: 'PL_GL', department: 'GLOBAL PA4',        email: 'pl.gl4@company.com' },
+  { id: 22, username: 'pl_gl5',   name: '해외지민', role: 'PL_GL', department: 'GLOBAL YE',           email: 'pl.gl5@company.com' },
   { id: 6,  username: 'master',   name: '관리자', role: 'MASTER', department: '관리팀',               email: 'master@company.com' },
 ];
 
