@@ -197,6 +197,11 @@ export default function RequestPage(): React.ReactElement {
   const [lineOptions, setLineOptions] = useState<string[]>(OPTION_LINE as unknown as string[]);
   const [processOptions, setProcessOptions] = useState<string[]>([]);
   const [productOptions, setProductOptions] = useState<string[]>([]);
+  // 라인+조합법(고정) 범위의 제품 이름 전체 목록 — 조합법 변경 effect에서만 설정되고, 조리법
+  // 기준 좁히기의 영향을 받지 않는다. 존재 검증(blur/validate)·입력칸 활성화 여부처럼 "이 제품이
+  // 이 조합법 아래 실존하는가"를 판단하는 곳은 이 값을 써야 한다(위 productOptions는 조리법
+  // 좁히기·타이핑 중 매칭 실패로 일시적으로 비거나 좁아질 수 있어 존재 검증에 부적합하다).
+  const [productOptionsBroad, setProductOptionsBroad] = useState<string[]>([]);
   const [processIdOptions, setProcessIdOptions] = useState<string[]>([]);
   const [topProductOptions, setTopProductOptions] = useState<string[]>([]);
   const [middleProductOptions, setMiddleProductOptions] = useState<string[]>([]);
@@ -510,6 +515,8 @@ export default function RequestPage(): React.ReactElement {
     a.length === b.length && a.every((v, i) => v === b[i]);
   const setProductOptionsStable = (opts: string[]) =>
     setProductOptions((prev) => (sameStrArray(prev, opts) ? prev : opts));
+  const setProductOptionsBroadStable = (opts: string[]) =>
+    setProductOptionsBroad((prev) => (sameStrArray(prev, opts) ? prev : opts));
   const setProcessIdOptionsStable = (opts: string[]) =>
     setProcessIdOptions((prev) => (sameStrArray(prev, opts) ? prev : opts));
   // ADI CD 변경 '동일 변경 적용 대상' draft 전용 — 같은 되먹임 루프 방지가 필요하다.
@@ -577,7 +584,7 @@ export default function RequestPage(): React.ReactElement {
   // 라인 변경 → 조합법 fetch + 하위 초기화 (C가문 리전 포함)
   useEffect(() => {
     if (!detail.line) {
-      setProcessOptions([]); setProductOptions([]); setProcessIdOptions([]);
+      setProcessOptions([]); setProductOptions([]); setProductOptionsBroad([]); setProcessIdOptions([]);
       setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
       return;
     }
@@ -586,6 +593,7 @@ export default function RequestPage(): React.ReactElement {
       .catch(() => setProcessOptions([]));
     if (!isLoadingEditRef.current) {
       setProductOptions([]);
+      setProductOptionsBroad([]);
       setProcessIdOptions([]);
       setTopProductOptions([]); setMiddleProductOptions([]); setBottomProductOptions([]);
       setTopProcessOptions([]); setMiddleProcessOptions([]); setBottomProcessOptions([]);
@@ -709,7 +717,11 @@ export default function RequestPage(): React.ReactElement {
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
   useEffect(() => {
     if (!detail.line || !detail.process_selection) {
-      if (!isLoadingEditRef.current) { setProductOptionsStable([]); setProcessIdOptionsStable([]); }
+      if (!isLoadingEditRef.current) {
+        setProductOptionsStable([]);
+        setProductOptionsBroadStable([]);
+        setProcessIdOptionsStable([]);
+      }
       return;
     }
     // 하위 선택값은 부모 변경 시 즉시 초기화(이전 값과 부모 불일치 방지)
@@ -726,8 +738,12 @@ export default function RequestPage(): React.ReactElement {
     // 제품 조회는 조합법이 옵션에 정확히 존재할 때만(시퀀스 토큰으로 stale 응답 무시)
     if (matchedOrLoading(processOptions, detail.process_selection)) {
       fetchOptions('product', () => formOptionsAPI.getProducts(detail.line, detail.process_selection), setProductOptionsStable);
+      // productOptionsBroad는 조리법 좁히기 effect가 절대 건드리지 않는 전용 키로 별도 조회한다
+      // ('product' 키를 같이 쓰면 좁히기 effect의 요청과 시퀀스 토큰을 다퉈 이 값이 갱신을 놓칠 수 있다).
+      fetchOptions('productBroad', () => formOptionsAPI.getProducts(detail.line, detail.process_selection), setProductOptionsBroadStable);
     } else if (!isLoadingEditRef.current) {
       setProductOptionsStable([]);
+      setProductOptionsBroadStable([]);
     }
   }, [detail.process_selection, processOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -772,17 +788,22 @@ export default function RequestPage(): React.ReactElement {
   // 조리법 변경 → 제품이름 fetch(좁히기, 신규). 위 effect 와 대칭 — 조리법을 먼저 골라도 그에
   // 맞는 제품이름만 보이도록 한다. 조리법이 비면 조합법 범위의 제품이름 전체 목록으로 복원.
   useEffect(() => {
+    // 편집/투어 로드 중엔 절대 좁히지 않는다 — 저장된 조리법이 채워지는 순간 이 effect가 (매치
+    // 검사를 우회하는 matchedOrLoading 때문에) 곧바로 좁혀버리면, 편집 진입 직후부터 제품이름
+    // 후보가 "라인+조합법 전체"가 아니라 그 조리법 하나로 좁아진 채 시작해버린다(다른 제품으로
+    // 바꾸려면 조리법을 먼저 바꿔야 하는 문제). 로드가 끝난 뒤 사용자가 실제로 조리법을 바꿀 때만
+    // 이 effect가 정상적으로 좁힌다(isLoadingEditRef는 ref라 값이 바뀌어도 이 effect가 다시
+    // 실행되진 않지만, 그다음 실제 조리법 변경 시점엔 이미 false라 정상 동작한다).
+    if (isLoadingEditRef.current) return;
     if (!detail.line || !detail.process_id) {
-      if (!isLoadingEditRef.current) {
-        if (detail.process_selection && matchedOrLoading(processOptions, detail.process_selection)) {
-          fetchOptions(
-            'product',
-            () => formOptionsAPI.getProducts(detail.line, detail.process_selection),
-            setProductOptionsStable
-          );
-        } else {
-          setProductOptionsStable([]);
-        }
+      if (detail.process_selection && matchedOrLoading(processOptions, detail.process_selection)) {
+        fetchOptions(
+          'product',
+          () => formOptionsAPI.getProducts(detail.line, detail.process_selection),
+          setProductOptionsStable
+        );
+      } else {
+        setProductOptionsStable([]);
       }
       return;
     }
@@ -802,7 +823,7 @@ export default function RequestPage(): React.ReactElement {
           ));
         }
       });
-    } else if (!isLoadingEditRef.current) {
+    } else {
       setProductOptionsStable([]);
     }
   }, [detail.process_id, processIdOptions]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2312,7 +2333,10 @@ export default function RequestPage(): React.ReactElement {
   // 제품 이름(partid_selection): 목록에 없는 값이면 에러 표시(문구는 Step1에서 값 존재 시 숨김) + 빨간 에러 토스트
   const handlePartidSelectionBlur = () => {
     const value = detail.partid_selection.trim();
-    if (value && !productOptions.includes(value)) {
+    // 존재 검증은 라인+조합법 전체 목록(productOptionsBroad) 기준이어야 한다 — productOptions는
+    // 조리법 좁히기로 일시적으로 비거나 좁아질 수 있어(예: 조리법 타이핑 도중) 이 값으로 검사하면
+    // 실제로는 유효한 제품에도 거짓 오류가 뜬다.
+    if (value && !productOptionsBroad.includes(value)) {
       setErrors((prev) => ({ ...prev, partid_selection: t('request.partid_not_in_list') }));
       addToast(t('request.partid_not_in_list'), 'error');
     }
@@ -3856,8 +3880,9 @@ export default function RequestPage(): React.ReactElement {
         }
       });
       // 제품 이름(partid_selection)은 목록에 있는 값만 허용 (값은 있으나 목록 밖이면 진행 차단)
+      // productOptionsBroad(라인+조합법 전체) 기준으로 검사한다 — handlePartidSelectionBlur와 동일한 이유.
       const partidVal = detail.partid_selection.trim();
-      if (partidVal && !productOptions.includes(partidVal)) {
+      if (partidVal && !productOptionsBroad.includes(partidVal)) {
         newErrors['partid_selection'] = t('request.partid_not_in_list');
         errorMessages.push(t('request.partid_not_in_list'));
       }
@@ -4802,6 +4827,7 @@ export default function RequestPage(): React.ReactElement {
           lineOptions={lineOptions}
           processOptions={processOptions}
           productOptions={productOptions}
+          productOptionsBroad={productOptionsBroad}
           processIdOptions={processIdOptions}
           FlowProductOptions={FlowProductOptions}
           FlowProcessIdOptions={FlowProcessIdOptions}
