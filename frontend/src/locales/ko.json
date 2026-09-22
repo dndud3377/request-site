@@ -305,6 +305,7 @@
     "customer_name": "고객/업체명",
     "customer_requirement": "요구 사항",
     "production_date": "실제 생산 진행 날짜",
+    "product_manager": "PRODUCT 담당자",
     "line": "라인",
     "process_selection": "조합법",
     "partid_selection": "제품 이름",
