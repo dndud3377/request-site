@@ -1902,7 +1902,7 @@ type Page = { label: string; content: React.ReactNode };
                 <Chip key={item.label} label={item.label} value={item.value} changed={item.changed} fieldKey={item.fieldKey} buildValue={item.buildValue} />
               ))}
             </div>
-            {(detail.customer_name || detail.customer_requirement) && (
+            {(detail.customer_name || detail.customer_requirement || detail.product_manager) && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
                 {detail.customer_name && (
                   <Chip
@@ -1916,6 +1916,9 @@ type Page = { label: string; content: React.ReactNode };
                 )}
                 {detail.customer_requirement && (
                   <Chip label={t('request.customer_requirement')} value={detail.customer_requirement} style={chipWide} changed={changedFields.has('customer_requirement')} fieldKey="customer_requirement" />
+                )}
+                {detail.product_manager && (
+                  <Chip label={t('request.product_manager')} value={detail.product_manager} style={chipWide} changed={changedFields.has('product_manager')} fieldKey="product_manager" />
                 )}
               </div>
             )}
