@@ -20,6 +20,8 @@ interface Step1Props {
   lineOptions: string[];
   processOptions: string[];
   productOptions: string[];
+  /** 라인+조합법(고정) 범위의 제품 이름 전체 목록 — 존재 검증·입력칸 활성화 여부 판단용. */
+  productOptionsBroad: string[];
   processIdOptions: string[];
   FlowProductOptions: Record<string, string[]>;
   FlowProcessIdOptions: Record<string, string[]>;
@@ -92,6 +94,7 @@ const Step1: React.FC<Step1Props> = ({
   lineOptions,
   processOptions,
   productOptions,
+  productOptionsBroad,
   processIdOptions,
   FlowProductOptions,
   FlowProcessIdOptions,
@@ -219,7 +222,7 @@ const Step1: React.FC<Step1Props> = ({
             required
             error={errors.partid_selection}
             hideErrorMessage={!!detail.partid_selection.trim()}
-            disabled={productOptions.length === 0}
+            disabled={productOptionsBroad.length === 0}
             style={{ flex: 1 }}
           />
           <AutocompleteInput
