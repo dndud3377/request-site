@@ -189,9 +189,10 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   - 신규(`NOC_NEW`)만 존재 → `'신규'`
   - 차용(`NOC_BORROW`)만 존재 → `'차용'`
   - 신규 + 차용 둘 다 존재 → `'신규+차용'`
-  - 기등록(`NOC_REGISTERED`)·layer삭제(`NOC_LAYER_DELETE`)만 존재(신규/차용 없음) → `'기타'`
+  - 기등록(`NOC_REGISTERED`)·layer삭제(`NOC_LAYER_DELETE`)·미진행(`NOC_NOT_PROCEEDING`)만 존재(신규/차용
+    없음) → `'기타'`
   - 활성 행이 아예 없음 → `null`(판정 불가 — 검사 자체를 생략, 모달 안 뜸)
-  - 신규/차용에 기등록·layer삭제가 섞여 있어도 기등록·layer삭제는 무시하고 신규/차용 기준으로만 판정한다.
+  - 신규/차용에 기등록·layer삭제·미진행이 섞여 있어도 무시하고 신규/차용 기준으로만 판정한다.
 - 계산된 값과 현재 값이 같으면 모달 없이 그대로 STEP5 로 진행.
 - 다르면 `purposeMismatchConfirm`(계산된 목표 값을 담는 state, `null`=닫힘)에 값을 채워 모달을 띄운다.
   - **'적용'(`handlePurposeMismatchApply`)**: `detail.request_purpose` 를 계산된 값으로 바꾸고 STEP5로 진행.
@@ -319,6 +320,78 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
      [기대 결과: 입력했던 "PRODUCT 담당자" 값이 그대로 남아 있어야 한다.]
   3. [1번 이어서 값을 비운 채로 "다음"/"상신" 진행] → [기대 결과: 선택 항목이므로 값이 없어도
      오류 없이 다음 단계로 진행되어야 한다(필수 표시 `*` 없음).]
+
+### 기능 추가 (2026-09-22 — J/O-ayer col_new_or_copy: "미진행" 선택지 추가)
+
+- **요청**: `col_new_or_copy` 드롭다운(`NEW_OR_COPY_OPTIONS`)에 "미진행" 항목을 추가해 달라는 요청.
+  기존 "기등록"/"layer삭제"와 동일한 '특수값'(`isNocSpecial`)으로 취급하기로 확인:
+  J↔O 동기화 대상에서 제외, 선택 시 `st` 자동 `'X'`, bb 원본 데이터 목록/요청 목적 역산에서도
+  제외(→ 요청 목적은 `'기타'`로 귀결).
+- **전수 조사**: `new_or_copy` 참조 지점을 전부 점검한 결과, 대부분의 판정 로직(J↔O 동기화 판정·전파,
+  붙여넣기 후 자동 `st='X'`, 일괄적용 대상 제외, bb 매핑 대상 제외, Validation System/Backbone 조합
+  영역 필수 판정)은 이미 `isNocSpecial()`을 공용으로 호출하고 있어 `constants.ts` 수정만으로 자동
+  전파된다. 단, `isNocSpecial()`을 거치지 않고 `'기등록'`/`NOC_LAYER_DELETE` 리터럴을 직접 비교하던
+  지점 2곳(`index.tsx`의 `isLayerCellLocked`, `Step2.tsx`/`Step3.tsx`의 `st` `AutocompleteInput`
+  `disabled` prop)은 별도로 고쳤다 — 특히 후자를 고치지 않으면 "미진행" 선택 후 `st`가 자동으로
+  `'X'`가 되더라도 `st` 드롭다운을 직접 클릭해 도로 `'O'`로 되돌릴 수 있어, 기등록/layer삭제와 다르게
+  동작하는 불일치가 생긴다.
+- **구현**:
+  - `constants.ts`: `NOC_NOT_PROCEEDING = '미진행'` 추가, `isNocSpecial()`에 포함.
+  - `Step2.tsx`(J-ayer)·`Step3.tsx`(O-ayer): `NEW_OR_COPY_OPTIONS`에 `'미진행'` 추가. `st`
+    `AutocompleteInput`의 `disabled={isRegistered || isLayerDeleted}`(리터럴 체크)를
+    `disabled={isNocSpecial(row.new_or_copy)}`로 교체 — 오늘 기준 동작은 동일하고 "미진행"도 자동으로
+    포함된다. 더는 쓰이지 않게 된 `isLayerDeleted` 지역 변수·`NOC_LAYER_DELETE` import 제거.
+  - `index.tsx`(`isLayerCellLocked`): `col==='st'` 잠금 조건의 리터럴 체크를 `isNocSpecial()` 호출로
+    교체(행 동작 동일, 확장성 확보). 더는 쓰이지 않게 된 `NOC_LAYER_DELETE` import 제거.
+    관련 주석(J↔O 교차 동기화·붙여넣기·일괄적용 설명)에 "미진행"을 함께 표기하도록 갱신.
+  - `helpers.ts`(`computeExpectedRequestPurpose`): `'기타'` 판정 조건에 `NOC_NOT_PROCEEDING` 포함.
+    관련 JSDoc·주석 갱신.
+  - `backend/api/views.py`(`_validate_bb_mapping`): 프론트 `isNocSpecial`과 동일하게 유지해야 하는
+    `NOC_SPECIAL` 튜플(R-19)에 `'미진행'` 추가.
+- **범위 제한(요청 확인 완료)**: 3-way Merge(`computeLayerMerge`/`isMergePresent`, `baTarget`)는
+  손대지 않았다 — 거기서 `layer삭제`만 "layer가 실제로 지워짐(부재)"이라는 별개 의미로 쓰이는데,
+  "미진행"은 layer 자체가 없어진 게 아니므로 그대로 "존재"로 취급되는 게 맞다고 판단했다.
+  `ko.json`/`en.json`도 추가하지 않았다 — 신규/차용/기등록/layer삭제와 동일하게 이 값들은 원본 데이터
+  문자열로 직접 저장·표시되고 i18n 키를 쓰지 않는 기존 컨벤션을 따른다.
+- **부수 수정**: 작업 중 `types/index.ts`의 `JayerRow.new_or_copy` 주석이 실제 저장값(`신규`/`차용`/
+  `기등록`/`layer삭제`)과 다르게 `// '신규' | '복사' | ''`로 남아 있던 걸 발견해, 사용자 확인 후 함께
+  갱신했다.
+- **영향 파일**: `frontend/src/pages/RequestPage/constants.ts`,
+  `frontend/src/pages/RequestPage/index.tsx`, `frontend/src/pages/RequestPage/helpers.ts`,
+  `frontend/src/pages/RequestPage/helpers.test.ts`,
+  `frontend/src/pages/RequestPage/components/Step2.tsx`,
+  `frontend/src/pages/RequestPage/components/Step3.tsx`, `frontend/src/types/index.ts`,
+  `backend/api/views.py`.
+- **검증**: `npx tsc --noEmit` — 신규 에러 0(기존 4건은 무관한 `Set` es5 순회 3건 + `GuidePage.tsx`
+  i18n strict 키 1건, 베이스라인과 동일). `npx eslint`(변경 파일 대상) — 5건 전부 무관한 기존 경고
+  (신규 0). `CI=true npx react-scripts test --watchAll=false` — **14 suites / 310건 전부 통과**
+  (신규 1건: `computeExpectedRequestPurpose` 미진행 케이스). 백엔드: 원격 세션 sqlite 절차(§1.1.1)로
+  `manage.py test api` — **575건 전부 통과**(`NOC_SPECIAL` 관련 회귀 없음). 결재 경로 판정 로직(경로
+  분기)은 변경하지 않았고 `request_purpose`도 새 값 없이 기존 `'기타'`로 귀결돼, §결재 케이스 러너는
+  실행 대상이 아니라고 판단했다(범위 밖 — 판단 근거는 위 요청 항목 참조). UI 수동 검증은 원격
+  세션이라 브라우저로 직접 확인하지 못했다 — 아래 수동 검증 시나리오 참조.
+- **수동 검증 시나리오** (자동 테스트로 못 돌린 UI 동작 확인용):
+  1. **드롭다운에 "미진행"이 보이는가**: 의뢰서 작성 화면(`http://localhost:10011` → 새 의뢰서 작성)
+     → STEP3(Jayer) 진입 → 아무 행의 `요청 기준`(col_new_or_copy) 셀 클릭.
+     → 기대 결과: 드롭다운 목록에 `신규·차용·기등록·layer삭제` 뒤에 `미진행`이 추가로 보인다.
+     실패 신호: 목록에 `미진행`이 없거나, 클릭해도 선택되지 않음.
+  2. **선택 시 st 자동 'X' + 잠금**: 위 상태에서 "미진행"을 선택.
+     → 기대 결과: 같은 행의 `st`(col_st_j) 셀이 즉시 `X`로 바뀌고, 행 배경이 회색으로 바뀌며, `st`
+     드롭다운을 클릭해도 열리지 않는다(비활성/disabled). `기등록`을 선택했을 때와 동일하게 동작해야
+     한다.
+     실패 신호: `st`가 `X`로 안 바뀌거나, `st` 드롭다운이 여전히 클릭되어 다른 값으로 바뀜.
+  3. **동기화 제외 확인**: `layerid`가 같은 J행·O행 쌍을 만든 뒤(둘 다 신규/O), J행의
+     `요청 기준`을 "미진행"으로 바꿈.
+     → 기대 결과: O행의 `st`/`요청 기준`은 바뀌지 않는다(전파 안 됨) — `기등록`/`layer삭제`를
+     선택했을 때와 동일.
+  4. **요청 목적 확인 모달**: J·O 모든 활성 행의 `요청 기준`을 "미진행"만 남도록 만든 뒤 STEP4→STEP5로
+     이동 시도.
+     → 기대 결과: 현재 `request_purpose`가 `'기타'`가 아니면 확인 모달이 뜨고, 계산된 값으로
+     `'기타'`가 제시된다.
+  5. **상신 시 bb 매핑 제외**: J행의 `요청 기준`을 "미진행"으로 바꾼 뒤 그 행을 bb에 매핑하지 않은
+     채 상신 시도.
+     → 기대 결과: "모든 원본 데이터에 Backbone을 매핑해야 상신할 수 있습니다" 오류에 해당 행이
+     걸리지 않는다(제외됨) — `기등록`/`layer삭제` 행과 동일.
 
 ### 기능 변경 (2026-09-09 — J/O-ayer col_new_or_copy: st='X' 행도 필수화)
 

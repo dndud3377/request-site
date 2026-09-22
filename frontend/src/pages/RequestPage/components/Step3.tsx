@@ -2,12 +2,12 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { OayerRow, FilterSet, DetailFormState, GuideFeatureKey, TbvtlvNoteRow } from '../../../types';
-import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, genId, NOC_LAYER_DELETE, isRowInactive } from '../constants';
+import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, genId, isRowInactive, isNocSpecial } from '../constants';
 import { isValidationKeywordRow } from '../helpers';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
 
 const ST_OPTIONS = ['O', 'O (D)', 'X'];
-const NEW_OR_COPY_OPTIONS = ['신규', '차용', '기등록', 'layer삭제'];
+const NEW_OR_COPY_OPTIONS = ['신규', '차용', '기등록', 'layer삭제', '미진행'];
 
 // TBV/TLV 좌표 표 셀 스타일 (작성 화면·상세 화면 공용 톤)
 const tbvThHeadStyle: React.CSSProperties = {
@@ -235,8 +235,6 @@ const Step3: React.FC<Step3Props> = ({
                   const isRegistered = row.new_or_copy === '기등록';
                   // 회색 처리는 기등록과 동일하게 st==='X' 행에도 적용한다(편집 가능 여부와는 무관 — 그건 각자 다른 조건으로 유지).
                   const greyBg = isRegistered || rowInactive;
-                  // layer삭제 행의 st 는 항상 'X' 로 고정 — 값 편집을 막는다.
-                  const isLayerDeleted = row.new_or_copy === NOC_LAYER_DELETE;
                   const stError = errors[`oayer_stnoc_${row.id}_st`];
                   const nocError = errors[`oayer_stnoc_${row.id}_new_or_copy`];
                   const regBg = '#e5e7eb';
@@ -263,7 +261,8 @@ const Step3: React.FC<Step3Props> = ({
                           value={row.st}
                           onChange={(v) => handleOayerChange(row.id, 'st', v)}
                           options={ST_OPTIONS}
-                          disabled={isRegistered || isLayerDeleted}
+                          // 기등록/layer삭제/미진행 행의 st 는 항상 'X' 로 고정 — 값 편집을 막는다.
+                          disabled={isNocSpecial(row.new_or_copy)}
                           inputStyle={{
                             backgroundColor: greyBg ? regBg : ST_CELL_COLOR[row.st],
                             ...(stError ? { border: '1px solid var(--danger)' } : {}),
