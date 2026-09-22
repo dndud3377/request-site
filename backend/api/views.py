@@ -34,7 +34,7 @@ from .models import (
     DocumentReviewItem, DocumentReviewItemReviewer, RejectionSnapshot, LayerFilterSet,
     PersonalMarkCategory, PersonalDocumentMark,
 )
-from .utils import LINE_TO_LINEID_MAP, resolve_employee_by_loginid
+from .utils import LINE_TO_LINEID_MAP, resolve_employee_by_loginid, compute_map_table_cc_status
 from . import mailer
 from . import doc_permissions
 from . import design_rule_stats
@@ -708,13 +708,14 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='layer-drift')
     def layer_drift_detail(self, request, pk=None):
-        """J-layer/O-layer '변경 감지' 상세 diff.
+        """J-layer/O-layer/XXXXXX '변경 감지' 상세 diff.
 
         `layer_drift.recompute_all_in_progress()`(스케줄러, 10분 주기)가 캐시해 둔
         `layer_drift_detail`을 그대로 반환한다 — 클릭할 때마다 마스터 DB를 다시 조회하지 않는다.
         """
         import json
         document = self.get_object()
+        empty_group = {'removed': [], 'added': []}
         try:
             detail = json.loads(document.layer_drift_detail) if document.layer_drift_detail else {}
         except (json.JSONDecodeError, TypeError):
@@ -722,8 +723,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         return Response({
             'detected': document.layer_drift_detected,
             'checked_at': document.layer_drift_checked_at,
-            'jayer_diffs': detail.get('jayer', []),
-            'oayer_diffs': detail.get('oayer', []),
+            'jayer': detail.get('jayer') or empty_group,
+            'oayer': detail.get('oayer') or empty_group,
+            'extra': detail.get('extra') or empty_group,
         })
 
     @action(detail=True, methods=['post'], url_path='requester-resubmit')
@@ -1302,21 +1304,27 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 나머지를 자동 'skip' 처리하던 동작을 없앴다. 남은 검토자는 pending 상태로 남아
         # 각자 직접 합의해야 한다. 'skip' 값 자체는 그 이전(OR 시절) 문서의 이력으로만 남는다.
 
-        # 'MAP 삭제' 은 P·R·J·O 가 모두 병렬 구성원이라, 넷 중 무엇이 마지막이 되든
-        # 여기서 최종 승인을 판정해야 한다. 아래 일반 경로 분기는 P·R 합의로는 승인 판정을
-        # 하지 않으므로(P 는 J 생성만 함), 이 분기가 없으면 네 단계가 다 합의돼도 문서가 멈춘다.
+        # 'MAP 삭제' 은 2구역(P·J·O)이 모두 병렬로 합의된 뒤에야 3구역(R)이 열리고, R 합의로
+        # 최종 승인된다. R/RV 합의는 곧바로 최종 판정으로, 그 외(P/PV/J/O) 합의는 2구역 완료
+        # 여부만 확인해 R 단계 생성으로 이어진다.
         if document.is_map_delete_edit():
-            if agent == 'R':
-                # 담당자 합의 → 검토자(RV)가 있으면 그 차례를 알린다(단계는 아직 미완료).
-                rv_step = ApprovalStep.objects.filter(
-                    document=document, agent='RV', action='pending', round=current_round
-                ).first()
-                if rv_step:
-                    mailer.enqueue_stage_arrival(document, 'RV', rv_step, recipient_name=rv_step.assignee_name)
-            elif agent == 'P' and self._stage_reviewers_complete(document, 'P', current_round):
-                # J 는 이미 병렬로 존재하므로 생성하지 않고, 완료 통보만 일반 경로와 동일하게 보낸다.
-                mailer.enqueue_notify_p_completed(document)
-            new_status = 'approved' if self._map_delete_edit_all_approved(document, current_round) else 'under_review'
+            if agent in ('R', 'RV'):
+                if agent == 'R':
+                    # 담당자 합의 → 검토자(RV)가 있으면 그 차례를 알린다(단계는 아직 미완료).
+                    rv_step = ApprovalStep.objects.filter(
+                        document=document, agent='RV', action='pending', round=current_round
+                    ).first()
+                    if rv_step:
+                        mailer.enqueue_stage_arrival(document, 'RV', rv_step, recipient_name=rv_step.assignee_name)
+                new_status = 'approved' if self._is_r_zone_complete(document, current_round) else 'under_review'
+            else:
+                # P/PV/J/O — 2구역 단계. R은 아직 존재하지 않으므로 승인 판정은 대상이 아니다.
+                if agent == 'P' and self._stage_reviewers_complete(document, 'P', current_round):
+                    # J 는 이미 병렬로 존재하므로 생성하지 않고, 완료 통보만 일반 경로와 동일하게 보낸다.
+                    mailer.enqueue_notify_p_completed(document)
+                if self._map_delete_edit_zone2_complete(document, current_round):
+                    self._create_map_delete_edit_r_stage(document, current_round)
+                new_status = 'under_review'
 
         elif agent == 'R':
             # 담당자 합의 → 검토자(RV)가 있으면 대기(검토자 차례 — 지금 메일 발송), 없으면 병렬 단계로 전환
@@ -2414,22 +2422,23 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         mailer.enqueue_notify_p_completed(document)
 
     def _create_map_delete_edit_parallel(self, document, round_no):
-        """'MAP 삭제': PL 합의 직후 P·R·J·O 를 병렬로 생성한다.
+        """'MAP 삭제': PL 합의 직후 2구역(P·J·O)을 병렬로 생성한다.
 
         기존 일반 경로와 다른 점 — 기존 코드는 건드리지 않고 이 분기만 새로 탄다.
-        - R 이 병렬을 여는 관문이 아니라 병렬 구성원 중 하나다.
+        - R 은 이 시점에 만들지 않는다 — 2구역(P·J·O) 전원 합의 후에만 3구역으로 열린다
+          (`_create_map_delete_edit_r_stage` 참고).
         - J 가 P 완료를 기다리지 않고 처음부터 존재한다.
         - E(MASK)와 후결자(RA)는 만들지 않는다 — 고정 후결자도 붙지 않는 유일한 경로다.
-        검토자(PV/RV)는 기존과 동일하게 각 담당자가 지정하며, 단계 완료 판정도 그대로 쓴다.
+        검토자(PV)는 기존과 동일하게 담당자가 지정하며, 단계 완료 판정도 그대로 쓴다.
         """
         from .utils import calculate_business_due_date
         import datetime
         if ApprovalStep.objects.filter(
-            document=document, agent__in=('P', 'R', 'J', 'O'), round=round_no
+            document=document, agent__in=('P', 'J', 'O'), round=round_no
         ).exists():
             return  # 동시 합의 중복 생성 방지
         due = calculate_business_due_date(datetime.date.today(), 6)
-        for agent in ('P', 'R', 'J', 'O'):
+        for agent in ('P', 'J', 'O'):
             created = ApprovalStep.objects.create(
                 document=document, agent=agent, action='pending',
                 is_parallel=True, round=round_no, due_date=due,
@@ -2440,21 +2449,38 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # (2026-08) TE_J 참고 통보(notify_p_arrival)는 폐지했다 — 이 경로는 J 가 처음부터
         # 병렬이라 TE_J 가 위 stage_arrival(J) 결재 요청 메일을 이미 받는다(일반 경로와 동일).
 
-    def _map_delete_edit_all_approved(self, document, round_no):
-        """'MAP 삭제' 최종 승인 판정 — P·R·J·O 네 단계가 모두 완료됐는가.
+    def _map_delete_edit_zone2_complete(self, document, round_no):
+        """'MAP 삭제' 2구역(P·J·O) 전원 합의 여부 — 3구역(R) 생성 조건.
 
-        각 단계는 담당자 + 지정된 검토자(PV/RV) 전원 합의로 완료된다
-        (검토자가 없으면 담당자 합의만으로 완료 — _stage_reviewers_complete 와 동일 규칙).
+        P는 담당자 + 지정된 검토자(PV) 전원 합의, J·O는 검토자 없이 담당자 1인 합의로
+        완료된다(_stage_reviewers_complete 와 동일 규칙).
         """
-        for agent in ('P', 'R', 'J', 'O'):
+        for agent in ('P', 'J', 'O'):
             main = ApprovalStep.objects.select_for_update().filter(
                 document=document, agent=agent, round=round_no,
             ).first()
             if not main or main.action != 'approved':
                 return False
-            if agent in ('P', 'R') and not self._stage_reviewers_complete(document, agent, round_no):
+            if agent == 'P' and not self._stage_reviewers_complete(document, 'P', round_no):
                 return False
         return True
+
+    def _create_map_delete_edit_r_stage(self, document, round_no):
+        """'MAP 삭제' 3구역: 2구역(P·J·O) 전원 합의 후 R을 마지막 단계로 연다.
+
+        R은 더 이상 2구역 병렬 구성원이 아니라, 2구역 완료 후에만 열리는 단독 관문이다.
+        검토자(RV)는 기존과 동일하게 R 담당자가 지정하며, 최종 승인 판정은
+        `_is_r_zone_complete`(R 담당자 + RV 전원 합의)를 그대로 쓴다.
+        """
+        from .utils import calculate_business_due_date
+        import datetime
+        if ApprovalStep.objects.filter(document=document, agent='R', round=round_no).exists():
+            return  # 동시 합의 중복 생성 방지
+        due = calculate_business_due_date(datetime.date.today(), 6)
+        r_step = ApprovalStep.objects.create(
+            document=document, agent='R', action='pending', round=round_no, due_date=due,
+        )
+        mailer.enqueue_stage_arrival(document, 'R', r_step)
 
     def _create_adi_cd_parallel(self, document, round_no):
         """'ADI CD 변경': PL 합의 직후 R·O 없이 P·J 만 병렬로 생성한다.
@@ -2742,10 +2768,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not step:
             return Response({'error': '대기 중인 본인 PL 검토 단계가 없습니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        layer_drift.reset_document_drift(document)
         comment = request.data.get('comment', '')
         tagged = f'[수정 후 상신] {comment}'.strip()
         all_done = self._advance_after_pl(document, step, tagged)
+        # _advance_after_pl 성공 후에만 배지를 초기화한다 — 내부 atomic 블록에서 예외가 나면
+        # 여기까지 오지 않으므로 "배지만 초기화되고 결재는 실패"하는 상태가 생기지 않는다.
+        layer_drift.reset_document_drift(document)
         msg = ('수정 후 상신되었습니다. 전원 합의되어 R 단계로 진행합니다.' if all_done
                else '수정 후 상신되었습니다. 다른 지정 PL의 합의를 기다립니다.')
         return Response({'message': msg, 'status': 'under_review'})
@@ -3686,17 +3714,26 @@ def form_options_process(request):
 
 @require_GET
 def form_options_products(request):
-    """{{request.line}} + {{request.process_selection}} → {{request.partid_selection}} 목록 (process 은 선택 사항)"""
+    """{{request.line}} + {{request.process_selection}} → {{request.partid_selection}} 목록
+    (process 는 선택 사항, process_id 도 선택 사항 — {{request.process_id}} 를 먼저 골랐을 때 그에 맞는 제품이름만 좁힌다)
+    """
     line = request.GET.get('line', '')
     process = request.GET.get('process', None)  # None 으로 설정하여 파라미터 유무 확인
+    process_id = request.GET.get('process_id', None)
     if not line:
         return JsonResponse({'options': []})
-    
+
     # process 파라미터가 있으면 필터링, 없으면 {{request.line}} 에 해당하는 모든 제품 반환
     queryset = ProcessProduct.objects.filter(line=line)
     if process is not None and process != '':
         queryset = queryset.filter(process=process)
-    
+    if process_id is not None and process_id != '':
+        # ProductProcessId 에는 process(조합법) 컬럼이 없어 product_name 으로만 연결된다.
+        matching_products = ProductProcessId.objects.filter(
+            line=line, process_id=process_id
+        ).values_list('product_name', flat=True)
+        queryset = queryset.filter(product_name__in=matching_products)
+
     options = list(
         queryset
         .values_list('product_name', flat=True)
@@ -3707,14 +3744,28 @@ def form_options_products(request):
 
 @require_GET
 def form_options_process_id(request):
-    """{{request.line}} + {{request.partid_selection}} → {{request.process_id}} 목록"""
+    """{{request.line}} + {{request.partid_selection}} → {{request.process_id}} 목록
+    (product 없이 process(조합법)만 와도 동작 — {{request.line}}+{{request.process_selection}} 범위 전체 조리법 목록)
+    """
     line = request.GET.get('line', '')
     product = request.GET.get('product', '')
-    if not line or not product:
+    process = request.GET.get('process', '')
+    if not line:
         return JsonResponse({'options': []})
+
+    if product:
+        queryset = ProductProcessId.objects.filter(line=line, product_name=product)
+    elif process:
+        # ProductProcessId 에는 process(조합법) 컬럼이 없어 ProcessProduct 를 거쳐 product_name 으로 연결한다.
+        matching_products = ProcessProduct.objects.filter(
+            line=line, process=process
+        ).values_list('product_name', flat=True)
+        queryset = ProductProcessId.objects.filter(line=line, product_name__in=matching_products)
+    else:
+        return JsonResponse({'options': []})
+
     options = list(
-        ProductProcessId.objects
-        .filter(line=line, product_name=product)
+        queryset
         .values_list('process_id', flat=True)
         .distinct()
         .order_by('process_id')
@@ -3757,7 +3808,7 @@ def form_options_ovl_layer(request):
     """{{request.line}} + {{request.process_id}} → OVL layer 정보 (eqptype='POVLAY')"""
     import logging
     logger = logging.getLogger(__name__)
-    
+
     line = request.GET.get('line', '')
     process = request.GET.get('process', '')
 
@@ -3775,6 +3826,37 @@ def form_options_ovl_layer(request):
 
     except Exception as e:
         logger.error(f"[OVL_LAYER] 조회 실패: {e}")
+        return JsonResponse({'options': [], 'error': str(e)})
+
+
+@require_GET
+def form_options_extra_layer(request):
+    """{{request.line}} + {{request.process_id}} → XXXXXX layer 정보 (eqptype 임시값).
+
+    Job-file/OVL layer 조회 API와 대칭적으로 신설 — 현재 요청서 작성 화면에서 호출하는 곳은
+    없고, layer_drift.capture_extra_layer_snapshot()이 상신 시점 스냅샷 캡처에 내부적으로 쓰는
+    layer_drift.get_extra_layer_rows()와 동일한 조회를 API로도 노출해둔다(통일성 목적).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    line = request.GET.get('line', '')
+    process = request.GET.get('process', '')
+
+    if not line or not process:
+        return JsonResponse({'options': []})
+
+    if line not in layer_drift.EXTRA_MODEL_MAP:
+        logger.warning(f"[EXTRA_LAYER] 알 수 없는 {{request.line}}: {line}")
+        return JsonResponse({'options': []})
+
+    try:
+        options = layer_drift.get_extra_layer_rows(line, process)
+        logger.info(f"[EXTRA_LAYER] {len(options)}건 조회 성공: {line}, {process}")
+        return JsonResponse({'options': options})
+
+    except Exception as e:
+        logger.error(f"[EXTRA_LAYER] 조회 실패: {e}")
         return JsonResponse({'options': [], 'error': str(e)})
 
 
@@ -4035,12 +4117,19 @@ def form_options_mapname(request):
 
 @require_GET
 def form_options_map_info(request):
-    """원본 위치(라인명) + 원본 제품 코드(8자리) → AAA1/AAA2/AAA3 참고 정보 반환.
-    (2026-09 추가 — CLONE/EXISTING 작성 화면 참고용, 상신 데이터에는 포함되지 않는다)"""
+    """원본 위치(라인명) + 원본 제품 코드(8자리) → AAA1/AAA2/AAA3 참고 정보 + CC 참고값(oc) 반환.
+    (2026-09 추가 — CLONE/EXISTING 작성 화면 참고용)
+
+    AAA1~3(ox/oy/sr)과 cc_status(oc) 전부 참고용일 뿐 상신 데이터에는 포함되지 않는다
+    (작성 화면에만 표시). CC 존재/미존재 자체는 이 값을 참고해 사용자가 mshot_change_cc 에
+    직접 선택한 값만 상신 데이터에 저장된다 — 이 함수 응답이 자동으로 반영되지 않는다.
+    매 조회마다 최신 api_maptable 기준으로 다시 계산한다.
+    """
     line = request.GET.get('line', '')
     partid = request.GET.get('partid', '')
     lineid = LINE_TO_LINEID_MAP.get(line)
-    empty = {'AAA1': None, 'AAA2': None, 'AAA3': None}
+    cc_status = compute_map_table_cc_status(line, partid)
+    empty = {'AAA1': None, 'AAA2': None, 'AAA3': None, 'cc_status': cc_status}
     if not lineid or not partid:
         return JsonResponse(empty)
 
@@ -4053,7 +4142,7 @@ def form_options_map_info(request):
     if not entry:
         return JsonResponse(empty)
 
-    return JsonResponse({'AAA1': entry.AAA1, 'AAA2': entry.AAA2, 'AAA3': entry.AAA3})
+    return JsonResponse({'AAA1': entry.AAA1, 'AAA2': entry.AAA2, 'AAA3': entry.AAA3, 'cc_status': cc_status})
 
 
 # 변경 현황 화면이 한 번에 그룹핑 대상으로 읽어올 최대 변경 이력 행 수. 이 이상 쌓여 있으면

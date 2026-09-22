@@ -511,6 +511,15 @@ export default function RequestPage(): React.ReactElement {
       .then((opts) => { if (optionReqSeq.current[key] === seq) apply(opts); })
       .catch(() => { if (optionReqSeq.current[key] === seq) apply([]); });
   };
+  // 제품이름 옵션 ↔ 조리법 옵션은 서로를 좁히는 두 effect 가 있어(아래), 내용이 같은데도
+  // 매번 새 배열 참조로 setState 하면 두 effect 가 서로를 계속 재트리거해 무한 루프가 될 수 있다.
+  // 내용이 같으면 이전 참조를 그대로 반환해 React 가 리렌더를 건너뛰게(=effect 재실행 중단) 한다.
+  const sameStrArray = (a: string[], b: string[]): boolean =>
+    a.length === b.length && a.every((v, i) => v === b[i]);
+  const setProductOptionsStable = (opts: string[]) =>
+    setProductOptions((prev) => (sameStrArray(prev, opts) ? prev : opts));
+  const setProcessIdOptionsStable = (opts: string[]) =>
+    setProcessIdOptions((prev) => (sameStrArray(prev, opts) ? prev : opts));
 
   useEffect(() => {
     linesAPI.list()
@@ -642,8 +651,9 @@ export default function RequestPage(): React.ReactElement {
       .catch(() => setSourcePartIdOptions([]));
   }, [detail.source_line]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 원본 위치+원본 제품 참고 정보(AAA1~3) 조회 — CLONE/EXISTING 이고 둘 다 선택됐을 때만.
-  // 참고용일 뿐 상신 데이터에 포함되지 않으므로 detail 에는 저장하지 않는다.
+  // 원본 위치+원본 제품 참고 정보(AAA1~3, oc) 조회 — CLONE/EXISTING 이고 둘 다 선택됐을 때만.
+  // 전부 참고용일 뿐 상신 데이터에 포함되지 않으므로 detail 에는 저장하지 않는다 — CC 존재/미존재
+  // 자체는 mshot_change_cc 로 사용자가 직접 선택해 저장한다(자동 반영 없음).
   useEffect(() => {
     if (!isMapRegisteredType(detail.map_type) || !detail.source_line || !detail.source_partid) {
       setMapInfo(null);
@@ -653,8 +663,14 @@ export default function RequestPage(): React.ReactElement {
     optionReqSeq.current['map-info'] = seq;
     setMapInfoLoading(true);
     formOptionsAPI.getMapInfo(detail.source_line, detail.source_partid)
-      .then((info) => { if (optionReqSeq.current['map-info'] === seq) setMapInfo(info); })
-      .catch(() => { if (optionReqSeq.current['map-info'] === seq) setMapInfo(null); })
+      .then((info) => {
+        if (optionReqSeq.current['map-info'] !== seq) return;
+        setMapInfo(info);
+      })
+      .catch(() => {
+        if (optionReqSeq.current['map-info'] !== seq) return;
+        setMapInfo(null);
+      })
       .finally(() => { if (optionReqSeq.current['map-info'] === seq) setMapInfoLoading(false); });
   }, [detail.map_type, detail.source_line, detail.source_partid]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -696,12 +712,12 @@ export default function RequestPage(): React.ReactElement {
   // 조합법 변경 → 제품이름 fetch + 하위 초기화
   useEffect(() => {
     if (!detail.line || !detail.process_selection) {
-      if (!isLoadingEditRef.current) { setProductOptions([]); setProcessIdOptions([]); }
+      if (!isLoadingEditRef.current) { setProductOptionsStable([]); setProcessIdOptionsStable([]); }
       return;
     }
     // 하위 선택값은 부모 변경 시 즉시 초기화(이전 값과 부모 불일치 방지)
     if (!isLoadingEditRef.current) {
-      setProcessIdOptions([]);
+      setProcessIdOptionsStable([]);
       // 제품 이름 옵션 자체가 바뀌므로(조합법 기준) '동일 변경 적용 대상' 입력칸·추가 행도 함께 비운다.
       setAdiCdTargetDraft({ partid_selection: '', process_id: '' });
       setDetail((prev) => (
@@ -712,29 +728,87 @@ export default function RequestPage(): React.ReactElement {
     }
     // 제품 조회는 조합법이 옵션에 정확히 존재할 때만(시퀀스 토큰으로 stale 응답 무시)
     if (matchedOrLoading(processOptions, detail.process_selection)) {
-      fetchOptions('product', () => formOptionsAPI.getProducts(detail.line, detail.process_selection), setProductOptions);
+      fetchOptions('product', () => formOptionsAPI.getProducts(detail.line, detail.process_selection), setProductOptionsStable);
     } else if (!isLoadingEditRef.current) {
-      setProductOptions([]);
+      setProductOptionsStable([]);
     }
   }, [detail.process_selection, processOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 제품이름 변경 → 조리법 fetch
+  // 제품이름 변경 → 조리법 fetch(좁히기, 기존 기능).
+  // 제품이름이 비면 조합법 범위의 조리법 전체 목록으로 복원한다 — 아래 '조리법 변경 → 제품이름'
+  // effect 와 대칭으로, 조리법을 먼저 고를 수 있게 하기 위함(신규).
   useEffect(() => {
     if (!detail.line || !detail.partid_selection) {
-      if (!isLoadingEditRef.current) { setProcessIdOptions([]); }
+      if (!isLoadingEditRef.current) {
+        if (detail.process_selection && matchedOrLoading(processOptions, detail.process_selection)) {
+          fetchOptions(
+            'processId',
+            () => formOptionsAPI.getProcessId(detail.line, undefined, detail.process_selection),
+            setProcessIdOptionsStable
+          );
+        } else {
+          setProcessIdOptionsStable([]);
+        }
+      }
       return;
-    }
-    // 하위(process_id) 즉시 초기화
-    if (!isLoadingEditRef.current) {
-      setDetail((prev) => (prev.process_id ? { ...prev, process_id: '' } : prev));
     }
     // 조리법 조회는 제품이 옵션에 정확히 존재할 때만
     if (matchedOrLoading(productOptions, detail.partid_selection)) {
-      fetchOptions('processId', () => formOptionsAPI.getProcessId(detail.line, detail.partid_selection), setProcessIdOptions);
+      const line = detail.line;
+      const product = detail.partid_selection;
+      fetchOptions('processId', () => formOptionsAPI.getProcessId(line, product), (opts) => {
+        setProcessIdOptionsStable(opts);
+        // 지금 선택된 조리법이 새 목록에 없을 때만 비운다(제품이 바뀌어 예전 조리법이 안 맞게 된 경우).
+        if (!isLoadingEditRef.current) {
+          setDetail((prev) => (
+            prev.partid_selection === product && prev.process_id && !opts.includes(prev.process_id)
+              ? { ...prev, process_id: '' }
+              : prev
+          ));
+        }
+      });
     } else if (!isLoadingEditRef.current) {
-      setProcessIdOptions([]);
+      setProcessIdOptionsStable([]);
     }
   }, [detail.partid_selection, productOptions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 조리법 변경 → 제품이름 fetch(좁히기, 신규). 위 effect 와 대칭 — 조리법을 먼저 골라도 그에
+  // 맞는 제품이름만 보이도록 한다. 조리법이 비면 조합법 범위의 제품이름 전체 목록으로 복원.
+  useEffect(() => {
+    if (!detail.line || !detail.process_id) {
+      if (!isLoadingEditRef.current) {
+        if (detail.process_selection && matchedOrLoading(processOptions, detail.process_selection)) {
+          fetchOptions(
+            'product',
+            () => formOptionsAPI.getProducts(detail.line, detail.process_selection),
+            setProductOptionsStable
+          );
+        } else {
+          setProductOptionsStable([]);
+        }
+      }
+      return;
+    }
+    // 제품 조회는 조리법이 옵션에 정확히 존재할 때만
+    if (matchedOrLoading(processIdOptions, detail.process_id)) {
+      const line = detail.line;
+      const processSelection = detail.process_selection;
+      const processId = detail.process_id;
+      fetchOptions('product', () => formOptionsAPI.getProducts(line, processSelection, processId), (opts) => {
+        setProductOptionsStable(opts);
+        // 지금 선택된 제품이름이 새 목록에 없을 때만 비운다(조리법이 바뀌어 예전 제품이 안 맞게 된 경우).
+        if (!isLoadingEditRef.current) {
+          setDetail((prev) => (
+            prev.process_id === processId && prev.partid_selection && !opts.includes(prev.partid_selection)
+              ? { ...prev, partid_selection: '' }
+              : prev
+          ));
+        }
+      });
+    } else if (!isLoadingEditRef.current) {
+      setProductOptionsStable([]);
+    }
+  }, [detail.process_id, processIdOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (isLoadingEditRef.current) return; // 편집/투어 로드 중엔 보존(저장된 J/O/bb 유지)
@@ -2104,6 +2178,9 @@ export default function RequestPage(): React.ReactElement {
       // (C가문을 되돌린 뒤 원하지 않은 X표시 정보가 저장되는 것을 막기 위함).
       mshot_change: INITIAL_DETAIL.mshot_change,
       mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '',
+      // CC 적용 여부(mshot_change_cc)는 C가문 전용 필드라 Yes→No 전환 시 함께 비운다
+      // (숨겨진 값이 그대로 남아 다음 상신에 실리는 것을 막기 위함).
+      mshot_change_cc: INITIAL_DETAIL.mshot_change_cc,
       // 예외 구역이 '변경 없음'이면 기본값도 일반 기준(300)으로 되돌린다(Yes 전환의 반대 동작).
       ...(prev.ea_change === EA_NO_CHANGE ? { ea_value: eaDefaultValue('No') } : {}),
     }));
@@ -2113,7 +2190,7 @@ export default function RequestPage(): React.ReactElement {
       ...prev,
       only_prodc: '', py_apply: '', prodc_scope: '', prodc_top_line: '', prodc_top_process: '', prodc_bottom_line: '', prodc_bottom_process: '',
       map_value_x_top: '', map_value_y_top: '', map_value_x_bottom: '', map_value_y_bottom: '', map_reason: '',
-      mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '',
+      mshot_image_copy: '', mshot_image_copy_top: '', mshot_image_copy_bottom: '', mshot_change_cc: '',
     }));
   };
 
@@ -3812,6 +3889,12 @@ export default function RequestPage(): React.ReactElement {
           newErrors['source_partid'] = t('request.required');
           errorMessages.push('원본 Part ID: 필수 입력 항목입니다.');
         }
+      }
+      // CC 적용/미적용(mshot_change_cc)은 Final/PY 적용 여부와 동일하게 C가문(only_prodc=Yes)
+      // 일 때만 노출·필수다 — oc(참고용 자동매칭값)와 달리 사용자가 직접 골라야 상신 데이터에 남는다.
+      if (detail.only_prodc === 'Yes' && !detail.mshot_change_cc?.trim()) {
+        newErrors['mshot_change_cc'] = t('request.required');
+        errorMessages.push('CC 적용 여부: 필수 선택 항목입니다.');
       }
       // Final 은 map_type 과 무관한 독립 항목이지만, C가문(only_prodc=YES) 일 때는
       // 최소 1건 등록을 강제한다(CLONE/EXISTING 잠금과도 무관 — Final 입력칸 자체가 잠기지 않는다).

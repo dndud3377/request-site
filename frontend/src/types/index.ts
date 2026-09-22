@@ -240,19 +240,31 @@ export interface RequestDocument {
   is_overseas?: boolean;
 }
 
-/** GET /api/documents/{id}/layer-drift/ 응답. 캐시된 diff를 그대로 반환한다(실시간 재계산 아님). */
-export interface LayerDriftRow {
-  type: 'changed' | 'removed' | 'added';
+/**
+ * GET /api/documents/{id}/layer-drift/ 응답. 캐시된 diff를 그대로 반환한다(실시간 재계산 아님).
+ * 값 변경은 옛 값 removed + 새 값 added 한 쌍으로 표현한다(변경 현황 `PhotoStepChangeRow`와 같은 관례,
+ * 화면도 그 상세보기와 동일한 구성을 쓴다 — `ApprovalPage.tsx` 참고). J/O-layer 표에는 areaname 컬럼이
+ * 없어 removed 쪽 areaname은 항상 빈 문자열이다.
+ */
+export interface LayerDriftStepRow {
   stepseq: string;
-  saved: { sp: string; sd: string; pp: string; layerid: string } | null;
-  current: { sp: string; sd: string; pp: string; layerid: string } | null;
+  descript: string;
+  recipeid: string;
+  areaname: string;
+  layerid: string;
+}
+
+export interface LayerDriftGroup {
+  removed: LayerDriftStepRow[];
+  added: LayerDriftStepRow[];
 }
 
 export interface LayerDriftResponse {
   detected: boolean;
   checked_at: string | null;
-  jayer_diffs: LayerDriftRow[];
-  oayer_diffs: LayerDriftRow[];
+  jayer: LayerDriftGroup;
+  oayer: LayerDriftGroup;
+  extra: LayerDriftGroup;
 }
 
 /**
@@ -519,6 +531,9 @@ export interface DetailFormState {
   map_value_y_bottom: string;
 
   mshot_change: string;
+  // X표시 변경 여부 옆의 CC 존재/미존재 선택(필수). oc(MapInfo.cc_status, 참고용 자동매칭값)와
+  // 달리 사용자가 직접 선택해 그대로 상신 데이터에 저장되는 값 — 이후 재계산되지 않는다.
+  mshot_change_cc: MapTableCcStatus;
   mshot_image_copy: string;       // C가문 No일 때 단일 이미지
   mshot_image_copy_top: string;   // C가문 Yes일 때 북쪽 이미지
   mshot_image_copy_bottom: string; // C가문 Yes일 때 남쪽 이미지
@@ -858,10 +873,15 @@ export interface StepInfo {
 }
 
 /** 원본 위치(source_line) + 원본 제품(source_partid) 참고 정보 (MAP 목적 CLONE/EXISTING 전용, 작성 화면 참고용) */
+/** CLONE/EXISTING 원본 위치·원본 제품 기준 api_maptable CC 상태 — '' 는 해당없음(원본 위치/제품 미입력). */
+export type MapTableCcStatus = '' | 'exists' | 'not_exists';
+
 export interface MapInfo {
   AAA1: string | null;
   AAA2: string | null;
   AAA3: string | null;
+  /** oc — AAA1~3 와 동일하게 참고용일 뿐 상신 데이터에는 포함되지 않는다(detail 에 저장 안 함). */
+  cc_status: MapTableCcStatus;
 }
 
 // ===== Guide =====

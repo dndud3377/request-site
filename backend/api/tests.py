@@ -13,7 +13,7 @@ from . import design_rule_stats
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
     Line, PauseRequest, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup,
-    UserProfile, WithdrawRequest, LayerFilterSet,
+    UserProfile, WithdrawRequest, LayerFilterSet, ProcessProduct, ProductProcessId,
 )
 
 
@@ -2562,7 +2562,8 @@ class EvReviewerManagementTest(PEStageReviewerFlowTest):
 
 @override_settings(POST_APPROVER_LOGINID='fixedpa')
 class MapDeleteEditRouteTest(TestCase):
-    """'MAP 삭제' 전용 결재 경로 — PL 합의 후 P·R·J·O 병렬, E·RA 미생성.
+    """'MAP 삭제' 전용 결재 경로 — PL 합의 후 2구역(P·J·O) 병렬, 셋 다 합의하면 3구역(R)이
+    열리고 R 합의로 최종 승인된다. E·RA 미생성.
 
     기존 일반 경로/Only MAP 경로는 건드리지 않고 새 분기만 탄다는 것을 함께 확인한다.
     """
@@ -2618,15 +2619,34 @@ class MapDeleteEditRouteTest(TestCase):
         doc.refresh_from_db()
         return r
 
-    def test_pl_approval_creates_four_parallel_steps(self):
-        """PL 합의 직후 P·R·J·O 가 한꺼번에 병렬로 생성된다(J 가 P 를 기다리지 않는다)."""
+    def test_pl_approval_creates_zone2_without_r(self):
+        """PL 합의 직후 2구역(P·J·O)만 병렬로 생성된다 — R은 아직 없다(J 가 P 를 기다리지 않는다)."""
         doc = self._submit_and_pl_approve(self._make_doc())
         agents = set(ApprovalStep.objects.filter(document=doc, round=1)
                      .exclude(agent='PL').values_list('agent', flat=True))
-        self.assertEqual(agents, {'P', 'R', 'J', 'O'}, f'실제 생성된 단계: {agents}')
-        for a in ('P', 'R', 'J', 'O'):
+        self.assertEqual(agents, {'P', 'J', 'O'}, f'실제 생성된 단계: {agents}')
+        for a in ('P', 'J', 'O'):
             st = ApprovalStep.objects.get(document=doc, agent=a, round=1)
             self.assertTrue(st.is_parallel, f'{a} 는 병렬 단계여야 한다')
+
+    def test_r_created_only_after_zone2_all_approved(self):
+        """R(3구역)은 2구역(P·J·O)이 모두 합의되기 전까지 생성되지 않는다."""
+        doc = self._submit_and_pl_approve(self._make_doc())
+        self._assign_and_approve(doc, 'P', self.p_user)
+        self._assign_and_approve(doc, 'J', self.j_user)
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists(),
+                          'O 가 남아 있으면 R 이 생기면 안 된다')
+        self._assign_and_approve(doc, 'O', self.o_user)
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists(),
+                         'P·J·O 전원 합의 후에는 R 이 생겨야 한다')
+        self.assertEqual(doc.status, 'under_review', 'R 이 막 생겼을 뿐 아직 합의 전이라 승인되면 안 된다')
+
+    def test_r_created_regardless_of_zone2_completion_order(self):
+        """2구역 합의 순서(J→O→P 등)와 무관하게 셋 다 끝나면 R 이 생성된다."""
+        doc = self._submit_and_pl_approve(self._make_doc())
+        for agent, user in (('J', self.j_user), ('O', self.o_user), ('P', self.p_user)):
+            self._assign_and_approve(doc, agent, user)
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists())
 
     def test_no_e_and_no_post_approver_steps(self):
         """E(MASK)와 후결자(RA)는 생성하지 않는다 — 고정 후결자도 붙지 않는다."""
@@ -2636,28 +2656,19 @@ class MapDeleteEditRouteTest(TestCase):
         self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='RA', round=1).exists(),
                          '고정 후결자가 설정돼 있어도 RA 를 만들지 않는다')
 
-    def test_approved_when_p_is_last(self):
-        """P 가 마지막 합의자여도 최종 승인된다(일반 경로는 P 로 승인 판정을 하지 않는다)."""
-        doc = self._submit_and_pl_approve(self._make_doc())
-        for agent, user in (('R', self.r_user), ('J', self.j_user), ('O', self.o_user)):
-            self._assign_and_approve(doc, agent, user)
-        self.assertEqual(doc.status, 'under_review', '아직 P 가 남아 승인되면 안 된다')
-        self._assign_and_approve(doc, 'P', self.p_user)
-        self.assertEqual(doc.status, 'approved', 'P 합의로 네 단계가 모두 끝나면 승인돼야 한다')
-
-    def test_approved_when_r_is_last(self):
-        """R 이 마지막 합의자여도 최종 승인된다(R 은 관문이 아니라 병렬 구성원이다)."""
+    def test_approved_after_zone2_then_r_approved(self):
+        """2구역(P·J·O) 전원 합의로 R 이 열리고, R 합의로 최종 승인된다(R 이 마지막 관문)."""
         doc = self._submit_and_pl_approve(self._make_doc())
         for agent, user in (('P', self.p_user), ('J', self.j_user), ('O', self.o_user)):
             self._assign_and_approve(doc, agent, user)
-        self.assertEqual(doc.status, 'under_review', '아직 R 이 남아 승인되면 안 된다')
+        self.assertEqual(doc.status, 'under_review', '2구역만 끝났을 뿐 R 이 남아 승인되면 안 된다')
         self._assign_and_approve(doc, 'R', self.r_user)
-        self.assertEqual(doc.status, 'approved', 'R 합의로 네 단계가 모두 끝나면 승인돼야 한다')
+        self.assertEqual(doc.status, 'approved', 'R 합의로 최종 승인돼야 한다')
 
-    def test_p_reviewer_blocks_final_approval(self):
-        """P 검토자(PV)가 지정돼 있으면 그 합의까지 끝나야 승인된다(검토자 기능 유지)."""
+    def test_p_reviewer_blocks_zone2_completion_and_r_creation(self):
+        """P 검토자(PV)가 지정돼 있으면 그 합의까지 끝나야 2구역이 완료되어 R 이 열린다."""
         doc = self._submit_and_pl_approve(self._make_doc())
-        for agent, user in (('R', self.r_user), ('J', self.j_user), ('O', self.o_user)):
+        for agent, user in (('J', self.j_user), ('O', self.o_user)):
             self._assign_and_approve(doc, agent, user)
         self.client.force_authenticate(user=self.p_user)
         r = self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': 'P'}, format='json')
@@ -2668,14 +2679,20 @@ class MapDeleteEditRouteTest(TestCase):
         }, format='json')
         self.assertEqual(r.status_code, 200, r.content)
         doc.refresh_from_db()
-        self.assertEqual(doc.status, 'under_review', 'PV 가 남아 있으면 아직 승인되면 안 된다')
+        self.assertFalse(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists(),
+                          'PV 가 남아 있으면 2구역 미완료라 R 이 생기면 안 된다')
 
         self.client.force_authenticate(user=self.p_reviewer)
         r = self.client.post(f'/api/documents/{doc.id}/approve-step/',
                              {'agent': 'PV', 'comment': ''}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
         doc.refresh_from_db()
-        self.assertEqual(doc.status, 'approved', 'PV 합의로 P 단계가 끝나면 승인돼야 한다')
+        self.assertTrue(ApprovalStep.objects.filter(document=doc, agent='R', round=1).exists(),
+                         'PV 합의로 2구역이 끝나면 R 이 열려야 한다')
+        self.assertEqual(doc.status, 'under_review', 'R 이 아직 남아 승인되면 안 된다')
+
+        self._assign_and_approve(doc, 'R', self.r_user)
+        self.assertEqual(doc.status, 'approved', 'R 합의로 최종 승인돼야 한다')
 
     def test_route_agents_exclude_e_and_ra(self):
         """메일 경로 카드·반려 수신자용 결재선에 E/EV/RA 가 포함되지 않는다."""
@@ -4537,7 +4554,7 @@ class ReviewItemSyncTest(TestCase):
     - 삭제 전파는 이미 확인한 검토자가 있는 문서를 건너뛴다.
     - 재상신하면 항목·검토자는 남고 확인 상태만 초기화되며, 새 J 단계에서 마스터를 따라잡는다.
 
-    결재 경로는 'MAP 삭제'(PL 합의 직후 P·R·J·O 병렬 생성)을 쓴다 — J 단계에
+    결재 경로는 'MAP 삭제'(PL 합의 직후 2구역 P·J·O 병렬 생성)을 쓴다 — J 단계에
     가장 짧게 도달하는 실제 경로다.
     """
 
@@ -4556,7 +4573,7 @@ class ReviewItemSyncTest(TestCase):
 
     # ----- 흐름 헬퍼 -----
     def _doc_at_j(self, title='ri'):
-        """'MAP 삭제' 문서를 만들어 상신 → PL 합의까지 진행(= J 단계 pending 생성)."""
+        """'MAP 삭제' 문서를 만들어 상신 → PL 합의까지 진행(= 2구역 J 단계 pending 생성)."""
         doc = RequestDocument.objects.create(
             title=title, requester=self.requester, requester_name='요청자',
             requester_email='rireq@c.com', requester_department='dept',
@@ -4586,18 +4603,21 @@ class ReviewItemSyncTest(TestCase):
         self.assertEqual(r.status_code, 200, r.content)
 
     def _finish(self, doc):
-        """P·R·J·O 를 모두 합의시켜 문서를 완료(approved) 상태로 만든다."""
-        for agent, user in (('R', self.r_user), ('J', self.j_user), ('O', self.o_user), ('P', self.p_user)):
+        """2구역(P·J·O)을 모두 합의시켜 3구역(R)을 연 뒤, R까지 합의시켜 문서를 완료(approved)
+        상태로 만든다 — R은 2구역이 끝나야 생성되므로 반드시 마지막에 처리해야 한다."""
+        for agent, user in (('J', self.j_user), ('O', self.o_user), ('P', self.p_user)):
             self.client.force_authenticate(user=user)
-            if agent == 'R':
-                self.client.post(f'/api/documents/{doc.id}/assign-step/', {
-                    'agent': agent, 'assignee_loginid': user.loginid, 'assignee_name': user.loginid,
-                }, format='json')
-            else:
-                self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': agent}, format='json')
+            self.client.post(f'/api/documents/{doc.id}/claim-step/', {'agent': agent}, format='json')
             r = self.client.post(f'/api/documents/{doc.id}/approve-step/',
                                  {'agent': agent, 'comment': ''}, format='json')
             self.assertEqual(r.status_code, 200, r.content)
+        self.client.force_authenticate(user=self.r_user)
+        self.client.post(f'/api/documents/{doc.id}/assign-step/', {
+            'agent': 'R', 'assignee_loginid': self.r_user.loginid, 'assignee_name': self.r_user.loginid,
+        }, format='json')
+        r = self.client.post(f'/api/documents/{doc.id}/approve-step/',
+                             {'agent': 'R', 'comment': ''}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'approved')
         return doc
@@ -5681,7 +5701,7 @@ class RequesterResubmitTest(TestCase):
         self.assertEqual(res.status_code, 403, res.content)
 
     def test_blocked_once_map_delete_edit_parallel_steps_exist(self):
-        """'MAP 삭제' 등 경로는 R 이 아니라 P·R·J·O 를 한꺼번에 만든다 — 그 뒤에도 차단돼야 한다
+        """'MAP 삭제' 등 경로는 R 이 아니라 2구역(P·J·O)을 먼저 만든다 — 그 뒤에도 차단돼야 한다
         (agent='R' 존재 여부만으로 판정하면 이 경로에서 구멍이 생긴다)."""
         doc = self._make_doc(purpose=RequestDocument.MAP_DELETE_EDIT_PURPOSE)
         self.assertEqual(self._submit(doc).status_code, 200)
@@ -7288,6 +7308,267 @@ class LayerFilterSetTest(TestCase):
         self.assertEqual(r.status_code, 400, r.content)
 
 
+class LayerDriftPurposeExclusionTest(TestCase):
+    """Only MAP·MAP 삭제 요청서는 layer_drift('변경 감지') 대상에서 제외되는지 검증(2026-09).
+
+    두 목적은 프론트가 J-layer/O-layer 표를 강제로 비우지만 line/process_id 는 그대로
+    남아 있어, XXXXXX(CD) 구분만으로도 배지가 잘못 뜰 수 있었다 — compute_document_layer_drift()
+    의 is_only_map()/is_map_delete_edit() 가드를 검증한다.
+    """
+
+    def setUp(self):
+        import json
+        self._json = json
+        self.requester = UserProfile.objects.create(loginid='ld_req', mail='ld_req@company.com', role='NONE')
+
+    def _make_doc(self, request_purpose=None, status='under_review'):
+        # layer_drift.EXTRA_MODEL_MAP 등은 'line1' 형식 키를 쓴다(자세한 배경은 아래 발견 보고 참고).
+        detail = {'line': 'line1', 'process_id': 'P1'}
+        if request_purpose:
+            detail['request_purpose'] = request_purpose
+        return RequestDocument.objects.create(
+            title='ld-doc', requester=self.requester, requester_name='요청자',
+            requester_email='ld_req@company.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps({'detail': detail, 'jayerRows': [], 'oayerRows': []}),
+        )
+
+    def _seed_extra_master(self):
+        """XXXXXX(CD) 마스터 DB 에 1건을 심어, 캡처된 스냅샷(빈 배열)과 어긋나게 만든다 —
+        일반 목적 문서라면 이 상태에서 '신규 추가'로 감지돼야 정상이다."""
+        from .models import PhotoStepS1Cd
+        from .scheduler import STEP_EXTRA_EQPTYPE
+        PhotoStepS1Cd.objects.create(
+            processid='P1', stepseq='10', descript='D1', recipeid='R1',
+            areaname='A1', eqptype=STEP_EXTRA_EQPTYPE, layerid='L1', updated='U1',
+        )
+
+    def _set_empty_snapshot(self, doc):
+        doc.extra_layer_snapshot = '[]'
+        doc.save(update_fields=['extra_layer_snapshot'])
+
+    def test_only_map_document_is_never_flagged(self):
+        from . import layer_drift
+        self._seed_extra_master()
+        doc = self._make_doc(RequestDocument.ONLY_MAP_PURPOSE)
+        self._set_empty_snapshot(doc)
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+        self.assertEqual(diff, {
+            'jayer': {'removed': [], 'added': []},
+            'oayer': {'removed': [], 'added': []},
+            'extra': {'removed': [], 'added': []},
+        })
+
+    def test_map_delete_edit_document_is_never_flagged(self):
+        from . import layer_drift
+        self._seed_extra_master()
+        doc = self._make_doc(RequestDocument.MAP_DELETE_EDIT_PURPOSE)
+        self._set_empty_snapshot(doc)
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+        self.assertEqual(diff, {
+            'jayer': {'removed': [], 'added': []},
+            'oayer': {'removed': [], 'added': []},
+            'extra': {'removed': [], 'added': []},
+        })
+
+    def test_general_purpose_document_is_still_flagged_as_control(self):
+        """대조군: 일반 목적 문서는 그대로 감지돼야 한다(이번 변경이 전체를 막은 게 아님을 확인)."""
+        from . import layer_drift
+        self._seed_extra_master()
+        doc = self._make_doc(request_purpose=None)
+        self._set_empty_snapshot(doc)
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+        self.assertEqual([row['stepseq'] for row in diff['extra']['added']], ['10'])
+
+    def test_recompute_all_in_progress_clears_stale_badge_for_only_map(self):
+        """스케줄러 재계산 시 이전에 잘못 켜져 있던 배지도 자동으로 꺼지는지 확인."""
+        from . import layer_drift
+        self._seed_extra_master()
+        doc = self._make_doc(RequestDocument.ONLY_MAP_PURPOSE)
+        doc.extra_layer_snapshot = '[]'
+        doc.layer_drift_detected = True
+        doc.layer_drift_detail = '{"stale": true}'
+        doc.save(update_fields=['extra_layer_snapshot', 'layer_drift_detected', 'layer_drift_detail'])
+
+        layer_drift.recompute_all_in_progress()
+
+        doc.refresh_from_db()
+        self.assertFalse(doc.layer_drift_detected)
+        self.assertEqual(doc.layer_drift_detail, '')
+
+
+class LayerDriftManualRowInclusionTest(TestCase):
+    """수동 입력(loaded=False) J-layer/O-layer 행도 '변경 감지' 비교 대상에 포함되는지 검증(2026-09).
+
+    이전에는 `_is_loaded()` 필터가 자동채움 행만 비교 대상으로 삼고 수동 입력 행은 아예
+    saved_by_seq 에서 빠졌다 — 이번 변경으로 그 필터를 제거했다.
+    """
+
+    def setUp(self):
+        import json
+        self._json = json
+        self.requester = UserProfile.objects.create(loginid='ldm_req', mail='ldm_req@company.com', role='NONE')
+
+    def _make_doc(self, jayer_rows, status='under_review'):
+        detail = {'line': 'line1', 'process_id': 'P1'}
+        return RequestDocument.objects.create(
+            title='ldm-doc', requester=self.requester, requester_name='요청자',
+            requester_email='ldm_req@company.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps({'detail': detail, 'jayerRows': jayer_rows, 'oayerRows': []}),
+        )
+
+    def _manual_row(self, **overrides):
+        row = {'sp': 'M1', 'sd': '수동설명', 'pp': 'RM1', 'layerid': 'LM1', 'loaded': False, 'updated': ''}
+        row.update(overrides)
+        return row
+
+    def test_manual_row_without_matching_master_is_flagged_removed(self):
+        """마스터 DB에 없는 stepseq를 수동으로 적어 넣으면 '삭제'로 잡힌다(이전엔 애초에 비교 대상이 아니었음)."""
+        from . import layer_drift
+        doc = self._make_doc([self._manual_row()])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual([row['stepseq'] for row in diff['jayer']['removed']], ['M1'])
+        self.assertEqual(diff['jayer']['added'], [])
+
+    def test_manual_row_matching_master_with_different_content_is_flagged_changed(self):
+        """수동 입력 행의 stepseq가 마스터 DB에 실제로 존재하지만 내용이 다르면 값 변경으로 잡힌다."""
+        from . import layer_drift
+        from .models import PhotoStepS1
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='M2', descript='새설명', recipeid='RNEW',
+            areaname='A1', eqptype='PMAINF', layerid='LNEW', updated='U1',
+        )
+        doc = self._make_doc([self._manual_row(sp='M2', sd='옛설명', pp='ROLD', layerid='LOLD')])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual([row['descript'] for row in diff['jayer']['removed']], ['옛설명'])
+        self.assertEqual([row['descript'] for row in diff['jayer']['added']], ['새설명'])
+
+    def test_manual_row_matching_master_with_same_content_is_not_flagged(self):
+        """내용이 마스터 DB와 완전히 같으면(우연히 일치) 변경 없음으로 처리된다."""
+        from . import layer_drift
+        from .models import PhotoStepS1
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='M3', descript='설명', recipeid='R1',
+            areaname='A1', eqptype='PMAINF', layerid='L1', updated='U1',
+        )
+        doc = self._make_doc([self._manual_row(sp='M3', sd='설명', pp='R1', layerid='L1')])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual(diff['jayer'], {'removed': [], 'added': []})
+
+    def test_auto_filled_row_still_compared_alongside_manual_row(self):
+        """자동채움 행(loaded=True)은 기존과 동일하게 계속 비교되는지 회귀 확인."""
+        from . import layer_drift
+        from .models import PhotoStepS1
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='A1', descript='자동설명변경', recipeid='RA',
+            areaname='A1', eqptype='PMAINF', layerid='LA', updated='U1',
+        )
+        auto_row = {'sp': 'A1', 'sd': '자동설명', 'pp': 'RA_OLD', 'layerid': 'LA', 'loaded': True, 'updated': 'U0'}
+        doc = self._make_doc([auto_row, self._manual_row()])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        removed_stepseqs = {row['stepseq'] for row in diff['jayer']['removed']}
+        self.assertIn('A1', removed_stepseqs)  # 자동채움 행도 여전히 감지(회귀 없음)
+        self.assertIn('M1', removed_stepseqs)  # 수동 입력 행도 감지(이번 변경의 핵심)
+
+
+class LayerDriftAdiCdChangeScopeTest(TestCase):
+    """ADI CD 변경 요청서는 J-layer/O-layer는 비교하지 않고 XXXXXX(CD)만 비교되는지 검증(2026-09).
+
+    Only MAP·MAP 삭제(검토 자체를 전체 제외)와 달리, ADI CD 변경은 XXXXXX만 선택적으로 비교한다.
+    """
+
+    def setUp(self):
+        import json
+        self._json = json
+        self.requester = UserProfile.objects.create(loginid='adi_req', mail='adi_req@company.com', role='NONE')
+
+    def _make_doc(self, request_purpose, jayer_rows=None, status='under_review'):
+        detail = {'line': 'line1', 'process_id': 'P1'}
+        if request_purpose:
+            detail['request_purpose'] = request_purpose
+        return RequestDocument.objects.create(
+            title='adi-doc', requester=self.requester, requester_name='요청자',
+            requester_email='adi_req@company.com', requester_department='dept',
+            product_name='PROD-1', status=status,
+            additional_notes=self._json.dumps({
+                'detail': detail, 'jayerRows': jayer_rows or [], 'oayerRows': [],
+            }),
+        )
+
+    def _seed_extra_master(self):
+        from .models import PhotoStepS1Cd
+        from .scheduler import STEP_EXTRA_EQPTYPE
+        PhotoStepS1Cd.objects.create(
+            processid='P1', stepseq='10', descript='D1', recipeid='R1',
+            areaname='A1', eqptype=STEP_EXTRA_EQPTYPE, layerid='L1', updated='U1',
+        )
+
+    def test_adi_cd_change_skips_jayer_oayer_but_still_detects_extra(self):
+        from . import layer_drift
+        from .models import PhotoStepS1
+        # jayer 표에 (다른 목적에서 전환되며 남은) 자동채움 행이 있어도 비교 대상에서 제외돼야 한다.
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='J1', descript='다른내용', recipeid='RX',
+            areaname='A1', eqptype='PMAINF', layerid='LX', updated='U1',
+        )
+        jayer_rows = [{'sp': 'J1', 'sd': '옛설명', 'pp': 'ROLD', 'layerid': 'LOLD', 'loaded': True, 'updated': 'U0'}]
+        self._seed_extra_master()
+        doc = self._make_doc(RequestDocument.ADI_CD_CHANGE_PURPOSE, jayer_rows=jayer_rows)
+        doc.extra_layer_snapshot = '[]'
+        doc.save(update_fields=['extra_layer_snapshot'])
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual(diff['jayer'], {'removed': [], 'added': []})
+        self.assertEqual(diff['oayer'], {'removed': [], 'added': []})
+        self.assertEqual([row['stepseq'] for row in diff['extra']['added']], ['10'])
+
+    def test_only_map_and_map_delete_remain_fully_excluded(self):
+        """회귀 확인: Only MAP·MAP 삭제는 이번 변경과 무관하게 XXXXXX 포함 전부 제외된 채로 남는다."""
+        from . import layer_drift
+        self._seed_extra_master()
+        for purpose in (RequestDocument.ONLY_MAP_PURPOSE, RequestDocument.MAP_DELETE_EDIT_PURPOSE):
+            doc = self._make_doc(purpose)
+            doc.extra_layer_snapshot = '[]'
+            doc.save(update_fields=['extra_layer_snapshot'])
+
+            diff = layer_drift.compute_document_layer_drift(doc)
+
+            self.assertEqual(diff, {
+                'jayer': {'removed': [], 'added': []},
+                'oayer': {'removed': [], 'added': []},
+                'extra': {'removed': [], 'added': []},
+            }, msg=f'purpose={purpose}')
+
+    def test_general_purpose_document_still_compares_jayer_normally(self):
+        """회귀 확인: 일반 목적 문서는 이번 분기 추가와 무관하게 jayer 비교가 정상 동작한다."""
+        from . import layer_drift
+        from .models import PhotoStepS1
+        PhotoStepS1.objects.create(
+            processid='P1', stepseq='J1', descript='새설명', recipeid='RNEW',
+            areaname='A1', eqptype='PMAINF', layerid='LNEW', updated='U1',
+        )
+        jayer_rows = [{'sp': 'J1', 'sd': '옛설명', 'pp': 'ROLD', 'layerid': 'LOLD', 'loaded': True, 'updated': 'U0'}]
+        doc = self._make_doc(request_purpose=None, jayer_rows=jayer_rows)
+
+        diff = layer_drift.compute_document_layer_drift(doc)
+
+        self.assertEqual([row['descript'] for row in diff['jayer']['removed']], ['옛설명'])
+        self.assertEqual([row['descript'] for row in diff['jayer']['added']], ['새설명'])
+
+
 class MapCompletionMailMatchTest(TestCase):
     """pop3_mail.match_map_completion_mail() 단위 테스트 (POP3 접속 없이 순수 DB 로직만 검증)."""
 
@@ -7742,3 +8023,121 @@ class OverseasScopeTest(TestCase):
         self.assertEqual(r.status_code, 200, r.content)
         target.refresh_from_db()
         self.assertEqual(target.role, 'PL_GL')
+
+
+class MapInfoLockedFieldCoverageTest(TestCase):
+    """R(+RV) 합의 완료 후 중단(pause)된 문서는 MAP_INFO_FIELDS 에 속한 값이 바뀌면 PATCH가
+    400 으로 거부돼야 한다(views.py RequestDocumentViewSet.update, doc_permissions.map_info_locked,
+    RequestDocument.changed_map_info_fields). 이 잠금 자체를 직접 검증하는 테스트가 없었고,
+    실제로 새 필드 mshot_change_cc(2026-09) 가 한동안 MAP_INFO_FIELDS 에서 빠져 있었다 —
+    프론트는 read-only 로 막지만 API 직접 호출로는 잠금을 우회할 수 있는 상태였다. 회귀 방지용.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+        self.author = UserProfile.objects.create(loginid='mlck_a', mail='mlck_a@c.com', role='NONE')
+
+    def _make_locked_doc(self, detail):
+        payload = {'detail': detail, 'jayerRows': [], 'oayerRows': [], 'bbRows': []}
+        doc = RequestDocument.objects.create(
+            title='잠금 테스트', requester=self.author, requester_name='작성자',
+            requester_email='mlck_a@c.com', requester_department='개발팀',
+            product_name='PROD-1', status='pause',
+            additional_notes=self._json.dumps(payload, ensure_ascii=False),
+        )
+        # R 이 이미 합의를 마친 상태여야 map_info_locked() 가 True 다.
+        ApprovalStep.objects.create(document=doc, agent='R', action='approved', round=1)
+        return doc
+
+    def _patch_detail(self, doc, base_detail, overrides):
+        new_detail = {**base_detail, **overrides}
+        payload = {'detail': new_detail, 'jayerRows': [], 'oayerRows': [], 'bbRows': []}
+        self.client.force_authenticate(user=self.author)
+        return self.client.patch(
+            f'/api/documents/{doc.id}/',
+            {'additional_notes': self._json.dumps(payload, ensure_ascii=False)},
+            format='json',
+        )
+
+    def test_mshot_change_is_rejected_when_locked(self):
+        """대조군 — 기존에 MAP_INFO_FIELDS 에 있던 필드는 예전부터 정상적으로 막혀야 한다."""
+        base = {'mshot_change': '없음', 'mshot_change_cc': ''}
+        doc = self._make_locked_doc(base)
+        res = self._patch_detail(doc, base, {'mshot_change': '수정'})
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_mshot_change_cc_is_rejected_when_locked(self):
+        """이 테스트가 실패한다면 MAP_INFO_FIELDS 에서 'mshot_change_cc' 가 다시 빠진 것이다."""
+        base = {'mshot_change': '없음', 'mshot_change_cc': 'not_exists'}
+        doc = self._make_locked_doc(base)
+        res = self._patch_detail(doc, base, {'mshot_change_cc': 'exists'})
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_unrelated_field_change_is_allowed_when_locked(self):
+        """대조군 — MAP_INFO_FIELDS 밖의 필드는 잠금과 무관하게 통과해야 한다(잠금이 전체
+        수정을 막는 게 아니라 changed_map_info_fields() 로만 판단함을 확인)."""
+        base = {'mshot_change': '없음', 'mshot_change_cc': '', 'customer_requirement': 'BEFORE'}
+        doc = self._make_locked_doc(base)
+        res = self._patch_detail(doc, base, {'customer_requirement': 'AFTER'})
+        self.assertEqual(res.status_code, 200, res.content)
+
+
+class FormOptionsLineProcessProductProcessIdTest(TestCase):
+    """의뢰서 작성 Step1 의 라인/조합법/제품이름/조리법 옵션 API.
+
+    조합법만으로도 조리법 전체 목록을 가져오고, 조리법으로도 제품이름을 좁힐 수 있어야 한다
+    (제품이름으로 조리법을 좁히는 기존 방향과 대칭).
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+        # 라인1/조합법A 아래 제품 P1, P2 / 라인1/조합법B 아래 제품 P3
+        ProcessProduct.objects.create(line='라인1', process='조합법A', product_name='P1')
+        ProcessProduct.objects.create(line='라인1', process='조합법A', product_name='P2')
+        ProcessProduct.objects.create(line='라인1', process='조합법B', product_name='P3')
+        # P1 은 조리법 X/Y, P2 는 조리법 X, P3 는 조리법 Z
+        ProductProcessId.objects.create(line='라인1', product_name='P1', process_id='X')
+        ProductProcessId.objects.create(line='라인1', product_name='P1', process_id='Y')
+        ProductProcessId.objects.create(line='라인1', product_name='P2', process_id='X')
+        ProductProcessId.objects.create(line='라인1', product_name='P3', process_id='Z')
+
+    def test_process_id_by_product_unchanged(self):
+        """기존 동작: product 로 조회하면 그 제품의 조리법만 나온다."""
+        res = self.client.get('/api/form-options/process-id/?line=라인1&product=P1')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(sorted(self._json.loads(res.content)['options']), ['X', 'Y'])
+
+    def test_process_id_by_process_without_product(self):
+        """신규: product 없이 process(조합법)만 줘도 그 조합법 아래 전체 조리법이 나온다."""
+        res = self.client.get('/api/form-options/process-id/?line=라인1&process=조합법A')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(sorted(self._json.loads(res.content)['options']), ['X', 'Y'])
+
+    def test_process_id_neither_product_nor_process_is_empty(self):
+        res = self.client.get('/api/form-options/process-id/?line=라인1')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(self._json.loads(res.content)['options'], [])
+
+    def test_products_by_process_unchanged(self):
+        """기존 동작: process(조합법)로 조회하면 그 조합법의 제품만 나온다."""
+        res = self.client.get('/api/form-options/products/?line=라인1&process=조합법A')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(sorted(self._json.loads(res.content)['options']), ['P1', 'P2'])
+
+    def test_products_narrowed_by_process_id(self):
+        """신규: process_id(조리법)를 함께 주면 그 조리법을 가진 제품만 좁혀진다."""
+        res = self.client.get('/api/form-options/products/?line=라인1&process=조합법A&process_id=Y')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(self._json.loads(res.content)['options'], ['P1'])
+
+    def test_products_narrowed_by_process_id_excludes_other_process(self):
+        """조합법B 의 P3 는 조리법 Z 를 갖지만, 조회 범위가 조합법A 라 제외돼야 한다."""
+        res = self.client.get('/api/form-options/products/?line=라인1&process=조합법A&process_id=Z')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(self._json.loads(res.content)['options'], [])

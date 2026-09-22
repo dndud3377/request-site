@@ -123,10 +123,9 @@ draft ──(상신)──▶ PL 검토 ──(합의)──▶ R ──(합의)
 [Only MAP 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ R ─(합의)─▶ approved   (P/O/E 단계 없음, 후결자(RA)만 종단)
 
 [MAP 삭제 의뢰서] draft ─▶ PL 검토 ─(합의)─▶ ┌─ P[검토중,+검토자PV] ─┐
-                                                  ├─ R[+검토자RV]        ├─▶ 네 단계 모두 합의 시 approved
-                                                  ├─ J[검토중]           │
+                                                  ├─ J[검토중]           ├─▶(2구역 전원 합의)─▶ R[+검토자RV] ─▶ approved
                                                   └─ O[검토중]           ┘
-                                                  (E·후결자(RA) 없음 — R 은 관문이 아니라 병렬 구성원, 2026-08)
+                                                  (E·후결자(RA) 없음 — R 은 2구역 다음 3구역 단독 관문, 2026-09)
 ```
 
 핵심: **PL → R → (P[→검토자 PV]) ∥ (J) ∥ (O, E[→검토자 EV]) ∥ (RA)**. R 합의 후 네 경로가 **병렬** 진행된다.
@@ -151,9 +150,10 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
 > 판정값 `request_purpose`는 `additional_notes` JSON의 `detail` 하위에 저장된다
 > (상수 `RequestDocument.ONLY_MAP_PURPOSE = 'Only MAP'`).
 
-> **예외 — 요청 목적 'MAP 삭제' (2026-08)**: `RequestDocument.is_map_delete_edit()`이
-> 참이면 PL 전원 합의 직후 **P·R·J·O 를 한 번에 병렬 생성**한다(`ROUTE_AGENTS_MAP_DELETE_EDIT`
-> = `P·PV·R·RV·J·O`). E(MASK)와 후결자(RA)는 만들지 않는다 — **모든 문서가 받던 고정 후결자
+> **예외 — 요청 목적 'MAP 삭제' (2026-08, 2구역/3구역 분리는 2026-09)**:
+> `RequestDocument.is_map_delete_edit()`이 참이면 PL 전원 합의 직후 **2구역(P·J·O)을 병렬
+> 생성**하고, 셋 다 합의하면 **3구역(R)** 을 연다(`ROUTE_AGENTS_MAP_DELETE_EDIT` =
+> `P·PV·J·O·R·RV`). E(MASK)와 후결자(RA)는 만들지 않는다 — **모든 문서가 받던 고정 후결자
 > 조차 이 경로에는 붙지 않는 유일한 예외**다. 상세는 아래 **Case O** 참조.
 
 > **예외 — 기타 목적 'Overlay 변경' 단독 (2026-08)**: `RequestDocument.skip_j_stage()`가 참이면
@@ -571,28 +571,37 @@ RFG(R) 단계를 **담당자(1명) → 검토자(0~1명) → 후결자(병렬)**
 - **검토중(J/O/E) 팀 공동 합의**: 검토중으로 **선점(assignee 존재)** 되면 **같은 팀(역할↔agent) 누구나 합의/반려** 가능(`_can_act_on_step`/`canUserAgree`). 선점 전에는 먼저 검토중 필요. 검토중 버튼은 선점 즉시 숨김(`canUserClaim`=assignee 있으면 false). `approve_step`/`reject_step`에서 J를 assignee 필터 밖으로(회차당 단일), **RA(후결자)만** assignee 필터 유지. ⚠️ 표시되는 담당자명은 **선점자**(검토를 시작한 사람)이며, 다른 팀원이 합의해도 이름은 선점자로 남는다(감사기록은 `acted_at`/comment).
 - **결재경로 검토자 통합**: 상세 '결재 경로' 탭에서 검토자(RV) **별도 행 제거** → **R단계 행에 회차별 `합의자(R) + 검토자(RV, 지정 시)`** 함께 표시(`StepDisplayInfo.roleLabel`, i18n `approval.role_agreer`).
 
-### Case O — 요청 목적 'MAP 삭제': P·R·J·O 병렬 경로 (2026-08)
+### Case O — 요청 목적 'MAP 삭제': 2구역(P·J·O) → 3구역(R) 경로 (2026-08 도입, 2026-09 R 분리)
 
 MAP 정보만 수정/삭제하는 의뢰서 전용 경로. 판정: `RequestDocument.is_map_delete_edit()`
 (`request_purpose == RequestDocument.MAP_DELETE_EDIT_PURPOSE`, 값 `'MAP 삭제'` — 2026-08 에 '수정'이 빠지면서 저장값이 예전 `'MAP 삭제/수정'` 에서 바뀌었다. 프론트 `RequestPage/constants.ts` 의 `MAP_DELETE_EDIT_PURPOSE` 와 같은 값이어야 한다).
 작성 화면은 `docs/REQUEST.md`, 화면·경로 설계 원본은 `docs/map_delete_edit_mockup.html` 참조.
 
+> **(2026-09) R을 2구역에서 3구역으로 분리**: 도입 당시(2026-08)에는 R이 P·J·O와 함께
+> 2구역에 묶여 넷이 동시에 병렬로 열렸다. 이제는 **2구역(P·J·O)이 먼저 병렬로 열리고, 셋 다
+> 합의를 마쳐야 3구역으로 R이 열린다** — R은 더 이상 병렬 구성원이 아니라 2구역 다음의
+> 단독 관문이다. 아래 서술은 이 변경 이후의 동작을 기준으로 한다.
+
 - **상신까지는 동일**: `submit`(지정 PL) → `peer_approve`(PL 전원 합의)까지 다른 경로와 완전히 같다.
-- **PL 전원 합의 직후 4단계 동시 생성**(`_advance_after_pl` → `_create_map_delete_edit_parallel`):
-  **P·R·J·O 를 한 번에 병렬**(`is_parallel=True`, 공통 기한 6영업일)로 만든다. **E(MASK)와
-  후결자(RA)는 만들지 않는다** — 이 경로가 유일하게 **고정 후결자조차 붙지 않는** 문서 유형이다.
-  결재선 상수 `mailer.ROUTE_AGENTS_MAP_DELETE_EDIT = ('P','PV','R','RV','J','O')`
+- **PL 전원 합의 직후 2구역(P·J·O) 병렬 생성**(`_advance_after_pl` → `_open_stage_after_pl` →
+  `_create_map_delete_edit_parallel`): **P·J·O 를 한 번에 병렬**(`is_parallel=True`, 공통 기한
+  6영업일)로 만든다. **R은 이 시점엔 아직 생성하지 않는다.** E(MASK)와 후결자(RA)도 만들지
+  않는다 — 이 경로가 유일하게 **고정 후결자조차 붙지 않는** 문서 유형이다.
+  결재선 상수 `mailer.ROUTE_AGENTS_MAP_DELETE_EDIT = ('SA','P','PV','J','O','R','RV')`
   (`mailer.route_agents_for(document)` 로 세 경로가 공통 판정).
-- **R 이 관문이 아니라 병렬 구성원**: 다른 모든 경로는 R 합의가 있어야 병렬 단계가 열리므로 병렬
-  진입 시점엔 R 이 항상 이미 끝나 있다. 이 경로만 R 이 P·J·O 와 **동시에** pending 이며, 네 단계
-  중 아무 순서로나 끝날 수 있다(`test_approved_when_p_is_last`/`test_approved_when_r_is_last` 로 검증).
+- **2구역 완료 시 3구역(R) 생성**(`approve_step` → `_map_delete_edit_zone2_complete` →
+  `_create_map_delete_edit_r_stage`): P(+PV)·J·O **셋 다** 합의를 마치는 순간(순서 무관)
+  R pending step 을 만든다(기한 6영업일, 도착 메일 발송). 이미 R 이 있으면 중복 생성하지
+  않는다(동시 합의 경쟁 방지).
 - **검토자(PV/RV)는 그대로**: P/R 각각 담당자 합의 시 지정된 검토자까지 전원 합의해야 그 단계가
-  끝난다(`_stage_reviewers_complete`, 기존 로직 재사용). J/O 는 기존과 동일하게 검토중(claim) 방식.
-- **최종 승인 판정**(`approve_step` 최우선 분기, `_map_delete_edit_all_approved`):
-  P·R·J·O **네 단계 모두** 완료(담당자+검토자)일 때만 `approved`. 일반 경로의 최종 판정은
-  `agent in ('J','O','E','EV','RA')` 합의 시에만 돌고 `P`/`R` 합의는 판정을 트리거하지 않으므로
-  (P 는 J 생성만, R 은 병렬 전환만 함), **이 경로 전용으로 판정 분기를 따로 추가**했다 — 없으면
-  네 단계가 다 끝나도 문서가 `under_review` 에 멈춘다.
+  끝난다(`_stage_reviewers_complete`(P) / `_is_r_zone_complete`(R), 기존 로직 재사용). J/O 는
+  기존과 동일하게 검토중(claim) 방식.
+- **최종 승인 판정**(`approve_step` 최우선 분기): agent 가 `R`/`RV` 면 `_is_r_zone_complete`
+  (R 담당자 + RV 전원 합의)로 바로 `approved` 여부를 판정한다. P/PV/J/O 합의는 2구역 완료
+  여부만 확인해 R 단계 생성으로 이어질 뿐, 그 자체로 최종 승인을 트리거하지 않는다 —
+  **R 이 항상 마지막 단계**이므로 일반 경로처럼 여러 agent 를 판정 트리거에 나열할 필요가 없다
+  (2026-08 도입 당시엔 P·R·J·O 가 모두 병렬이라 넷 중 누구든 마지막일 수 있어 전용 판정
+  분기가 필요했으나, 2026-09 R 분리로 이 분기가 단순해졌다).
 - **연구소 제품과는 무관**: `연구소 제품`은 `Only MAP` 전용 기타 목적이라(Case N) 이 경로와는
   동시에 선택될 수 없다 — `MAP 삭제` 문서는 기타 목적 전체가 잠긴다(`docs/REQUEST.md`).
 
@@ -612,6 +621,67 @@ R 이 병렬 구성원으로 남아 있는 상황은 이 경로가 생기기 전
   이 컴포넌트는 모든 문서에 RA 가 최소 1명(고정) 있다고 전제해 "RA 가 아예 없는 문서"를
   다뤄본 적이 없었다. `isMapDeleteEdit` 판정을 추가해, `E`가 `!hasPlel` 일 때 쓰는 것과 같은
   `해당없음`(na) 분기를 RA 에도 걸었다.
+
+#### (2026-09) R 분리 후 결재현황 그리드 재설계 — 2구역 그리드 → 3구역 단독 행
+
+R이 2구역에서 3구역으로 분리된 직후엔 `buildParallelGrid`의 RFG 칸에 `main: of('R')`을
+그대로 넣어 처리했는데, 2구역(P·J·O) 진행 중(R step 자체가 아직 없는 구간)엔 `buildCell`이
+"이 경로에 없는 단계"(해당없음)로 오판했다(1차 수정: 그 구간만 `state:'wait'`로 직접
+덮어쓰는 임시 분기). 이후 **더 근본적인 문제**가 드러났다 — 2구역이 끝나 R이 생성된
+뒤에도 그리드가 계속 P·J·O 6칸을 함께 보여줘, 이미 끝난 2구역이 3구역 진입 후에도 화면에
+남아 있었다(결재현황에는 현재 진행 중인 구역만 보여야 한다는 원칙 위반 — 일반 경로는
+R(2구역) 완료 후 R을 더 이상 보여주지 않고 3구역 그리드로 완전히 전환하는데, MAP 삭제만
+반대로 "끝난 2구역 + R"을 계속 함께 보여준 것).
+
+**재설계**: `buildParallelGrid`에서 R 관련 특수 분기를 전부 제거해 이 그리드는 **2구역
+(P·J·O)에만** 쓰도록 단순화했다(RFG 자리는 다른 문서와 동일하게 후결자 없음 → 항상
+해당없음). 대신 `getDocTableRows`에 `mdeZone3Open`(R step 존재 여부) 분기를 추가해,
+R이 생성되는 순간 그리드 대신 **R 단독 단일 행**(`pathKey: 'single'`)으로 전환한다 —
+일반 경로가 R 완료 후 3구역 그리드로 전환하는 것과 대칭되는 구조다. 중단(pause) 상태도
+같은 기준으로 분기해, 3구역 중단은 R 단독 행에 PAUSE 표시만 하고 끝난 2구역 그리드는
+보여주지 않는다.
+
+`getFinalCompletionDate`의 '최종 완료예정'은 2구역 진행 중에는 R의 미래 기한을 알 수
+없어 2구역까지만 반영한다(알려진 한계, 2구역 완료 후 R이 생성되면 그 즉시 반영된다).
+
+회귀 테스트: `approvalTable.test.ts`의 `getDocTableRows — MAP 삭제: 2구역(P·J·O) 그리드 →
+3구역(R) 단독 행` describe 블록 전체.
+
+#### (2026-09) 결재 상세 '결재 경로' 탭·메일 카드 — 고정 순서를 구역(zone) 순서로 교체
+
+위 그리드 수정과 별개로, 두 화면이 **여전히 "R이 항상 P·J·O보다 먼저"라고 고정 가정하는
+정적 순서**를 쓰고 있었다(그리드 재설계와 달리 이 둘은 순서 문제이지 존재 판정 문제가
+아니라 원인이 다르다).
+
+- **`getStepDisplays('R', round)`(PagedDetailView.tsx) 오판정**: "R step 이 없는데 3구역
+  (P/J/O/E/RA) step 은 있다 = R 스킵(해당없음)"으로 보는 로직(원래 일반 경로의 재상신 시
+  2구역 생략 기능 전용)이 'MAP 삭제'에도 그대로 걸렸다 — 이 경로는 2구역(P·J·O)이 먼저
+  생기고 R이 나중에 생기므로, 2구역 진행 중엔 이 조건에 걸려 "대기중"이어야 할 R 행이
+  "해당없음"으로 표시됐다. `isMapDeleteEdit`이면 이 zone3Exists 판정을 타지 않고 항상
+  대기중으로 고정하도록 분기를 추가했다.
+- **결재 상세 '결재 경로' 탭 고정 순서**(`PagedDetailView.tsx`): `AGENTS` 배열이
+  `PL→SA→R→RA→P→J→O→E` 고정 순서였다 — 'MAP 삭제' 문서도 R이 P·J·O보다 위에 그대로
+  나와, 실제로는 3구역인 R이 화면에서 2구역보다 먼저 보였다. `RequestDocument.pause_zones()`
+  와 같은 기준으로 문서 타입별 구역 구성(`ZONE_AGENT_KEYS`)을 만들어 순서를 결정하고,
+  구역 사이에 `approval.zone_label`("N구역", 철회 배너에서 쓰던 것과 같은 키) 헤더를
+  추가했다. 어떤 문서 타입의 구역에도 속하지 않는 agent(예: ADI CD 변경의 R·O·RA)는
+  구역 헤더 없이 맨 끝 "해당없음"(`approval.zone_na_label`, 신규 키) 그룹으로 모은다.
+  일반 문서는 결과적으로 예전과 같은 순서(PL·SA → R → P·J·O·E·RA)라 화면이 바뀌지 않는다
+  (RA 위치만 예전엔 R 바로 다음이었는데 이제 3구역 안 P·J·O·E 뒤로 옮겨졌다 — RA도 3구역
+  병렬 구성원이므로 실제 구역 순서에 맞춘 것).
+- **메일 '결재 경로' 카드 고정 순서**(`mailer.py`): `ROUTE_DISPLAY_ORDER` 고정 상수가
+  카드 행 순서를 그대로 결정했다 — 앞서 도입한 `ROUTE_AGENTS_MAP_DELETE_EDIT`의 순서
+  재배열은 `_route_rows`가 이를 `set()`으로 바꿔버려 실제로는 아무 효과가 없었다(멤버십
+  판정에만 쓰이고 순서엔 영향을 못 줬다). `_route_display_order(document)`를 추가해
+  `document.pause_zones()` 순서를 먼저 따르고, 어떤 구역에도 없는 나머지 agent(ADI CD
+  변경의 R·O·RA 등)는 `ROUTE_DISPLAY_ORDER` 유니버스에서 뒤에 이어 붙이도록 바꿨다
+  (해당없음 행을 계속 보여주려면 이 유니버스가 필요하다). `_route_rows`의 반복 대상만
+  `ROUTE_DISPLAY_ORDER` → `_route_display_order(document)`로 교체했다. 웹 탭과 마찬가지로
+  일반 문서는 RA 위치만 3구역 끝으로 옮겨진다.
+
+두 화면 모두 기존 na/waiting 판정 로직(멤버십 체크)은 그대로 두고 **반복 순서만** 바꿨다 —
+`_route_rows`의 테스트들은 결과를 dict/membership 으로 비교해 순서에 의존하지 않으므로
+영향이 없었다(전체 스위트 재확인 완료).
 
 #### 결재 경로 탭 — RA 단계 생성 전 미리 지정된 후결자 이름 표시 (2026-09)
 
@@ -1532,27 +1602,56 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 
 ---
 
-## 11. 홈 '나의 의뢰 현황' (2026-08)
+## 11. 홈 '나의 의뢰 현황' (2026-08, 2026-09 갱신)
 
 홈 화면의 **'최근 의뢰 현황'을 '나의 의뢰 현황'으로 개편**했다. 화면: `frontend/src/pages/HomePage.tsx`.
 
 - **위치**: 연간 제품별(디자인룰) 의뢰 현황 차트 **위**로 올렸다(예전엔 차트 아래).
 - **대상 판정**: 결재현황 **MY 탭과 같은 판정**을 쓴다 — `utils/approvalTable.isMyDocument`
   (§3.2 참조. MASTER=전체 / PL=작성자 또는 내 pending 단계 / TE_*=내 pending 단계 또는 미확인 검토 항목).
-  두 화면이 같은 헬퍼를 쓰므로 홈과 결재현황 MY 탭의 목록이 어긋나지 않는다.
+  두 화면이 같은 헬퍼를 쓰므로 홈과 결재현황 MY 탭의 **'전체' 목록**은 어긋나지 않는다(아래 필터 참조).
 - **표시 규칙**: 완료(`approved`)건 제외 → **상신 오래된 순**(`submittedSortKey`, 결재현황 기본 정렬과 동일)
-  → **최대 5건**(`MY_REQUESTS_LIMIT`).
+  → 아래 **전체/상신함/결재함 필터**로 걸러낸 결과에서 **최대 5건**(`MY_REQUESTS_LIMIT`). 필터를 바꾸면
+  그 필터 기준으로 다시 상위 5건을 계산한다(캡을 필터보다 먼저 적용하지 않는다 — 상위 5건 중
+  상신함이 4건뿐이어도 결재함 탭엔 그 필터의 상위 5건이 별도로 뜬다).
+- ✅ **(2026-09) 전체/상신함/결재함 필터** — '전체 보기 →' 버튼 왼쪽에 3개 탭(`filter-tabs`, 결재현황과
+  같은 스타일) 추가. 홈 전용 클라이언트 필터이며 결재현황 MY 탭에는 영향 없다.
+  - **상신함**: 내가 작성자(요청자)인 문서만 — `approvalTable.isSubmittedByMe`(`requester_loginid ===
+    내 loginid`, 역할 무관 서버 값 기준).
+  - **결재함**: 내가 **의뢰자가 아니면서** 담당인 pending 단계가 있거나 미확인 검토 항목이 있는 문서 —
+    `approvalTable.isApprovalTargetForMe`(`isSubmittedByMe`인 문서는 제외 — 예: PL 본인이 자기 의뢰서에
+    후결자로도 지정된 경우는 상신함으로만 잡히고 결재함엔 안 뜬다).
+  - **전체**: 위 두 판정의 합집합(=`isMyDocument`의 '전체' 목록)을 그대로 보여준다.
+  - ⚠️ **MASTER 예외**: `isMyDocument`가 MASTER=항상 true 라 '전체' 탭은 **시스템의 모든 진행중
+    문서**를 그대로 유지한다(기존 동작 변경 없음). '상신함'/'결재함' 탭만 MASTER 본인 기준
+    (`isSubmittedByMe`/`isApprovalTargetForMe`)으로 좁히므로, MASTER가 직접 상신했거나 개인 담당
+    pending 단계가 없으면 두 탭이 비어 보일 수 있다 — 의도된 동작.
+  - ✅ **(2026-09) 필터 탭 옆 건수 표시** — 결재현황 필터 탭(`getTabCount`)과 같은 표기 방식으로
+    각 탭 라벨 뒤에 `(N)`을 붙인다(0건이면 숫자를 안 붙인다). 건수는 **5건 캡을 적용하기 전**
+    `myDocs`(상태 필터 + 정렬만 끝난 전체 목록) 기준이라, 예를 들어 상신함이 7건이어도 표에는
+    최대 5건만 나오지만 탭에는 `상신함(7)`로 뜬다.
 - **표**: '현재 단계' 칸은 결재현황과 동일한 그리드(§3.3, 같은 `getDocTableRows`/`StageGrid`)를 쓴다.
   ✅ **(2026-08 후속)** 나머지 컬럼도 결재현황과 동일하게 라인/목적/MAP 목적/제품(조합법-제품-조리법)/
   요청일로 분리했다(§3.1과 같은 `approvalTable.getDocDetailFields`/`getDocSubmittedDate` 재사용,
-  새 CSS·i18n 키 없이 결재현황에서 만든 것을 그대로 씀). 상세로 이동하는 클릭도 제품(조합법-제품-조리법)
-  칸으로 옮겼다(단, 홈은 상세 모달을 직접 열지 않고 `/approval`로 이동만 한다 — 기존 동작 유지).
+  새 CSS·i18n 키 없이 결재현황에서 만든 것을 그대로 씀).
+  ✅ **(2026-09) 제품(조합법-제품-조리법) 칸 클릭 시 결재현황으로 이동하지 않고 홈 화면 안에서 바로
+  그 의뢰 상세 모달이 뜬다** — `HistoryPage.tsx`가 쓰는 것과 같은 **읽기 전용** 재사용 패턴(문서 재조회
+  → `Modal` + `PagedDetailView`를 홈 화면에 직접 렌더링, `role`만 넘기고 `historyMode`는 안 씀 — 진행
+  중 문서라 이력 조회 표시 방식이 아니다). `PagedDetailView`는 API를 직접 호출하지 않는 순수 표시
+  컴포넌트라 이 최소 props만으로도 동작한다. **결재 액션(합의/반려/담당자 지정)과 Validation
+  System/Partial Shot 수정, J/O-layer 필터, J-ayer 검토 항목 서브탭은 포함하지 않는다** — 그 기능들은
+  전부 `PagedDetailViewProps`의 optional prop(호출부가 상태·핸들러를 직접 소유)이라 결재현황 수준의
+  액션 처리 상태를 홈에 새로 만들지 않았다. 결재 액션이 필요하면 여전히 결재현황(`/approval`)에서
+  진행한다. 모달 크기는 액션 버튼이 없는 이 용도에 맞춰 `size="lg"`(ApprovalPage 는 액션 버튼 때문에
+  `xl`).
   **필터 바·컬럼 헤더 정렬은 홈에는 없다** — 검색·탭·페이지네이션 없이 최대 5건만 보여주는 미리보기
   위젯이라 필요하지 않다고 판단했다.
-- **'전체 보기 →'**: `/approval?filter=my` 로 이동해 **MY 탭이 열린 상태**로 결재현황을 연다.
+- **'전체 보기 →'**: `/approval?filter=my` 로 이동해 **MY 탭이 열린 상태**로 결재현황을 연다(홈에서
+  선택한 상신함/결재함 하위 필터는 넘기지 않는다 — 결재현황 MY 탭엔 그런 하위 구분이 없다).
 - **빈 상태**: 0건이면 섹션을 숨기지 않고 `home.my_requests_empty` 안내를 보여준다.
 - **역할 없는 사용자(`NONE`)**: 섹션 전체를 노출하지 않는다(연간 차트와 동일).
-- i18n: `home.my_requests_title` / `home.my_requests_empty` (`home.recent_title` 은 제거).
+- i18n: `home.my_requests_title` / `home.my_requests_empty` / `home.filter_all` / `home.filter_submitted` /
+  `home.filter_approval` (`home.recent_title` 은 제거).
 
 ---
 

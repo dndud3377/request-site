@@ -189,6 +189,10 @@ class RequestDocument(models.Model):
     layer_drift_detected = models.BooleanField(default=False, verbose_name='레이어 정보 변경 감지 여부')
     layer_drift_detail = models.TextField(blank=True, verbose_name='레이어 정보 변경 상세(JSON)')
     layer_drift_checked_at = models.DateTimeField(null=True, blank=True, verbose_name='레이어 정보 변경 감지 확인 시각')
+    # XXXXXX(CD, eqptype 임시값) 전용 — 요청서에 사용자가 편집하는 표가 없어 "저장값"이 없으므로,
+    # 상신 계열 액션 시점의 마스터 DB 값을 여기 스냅샷으로 캡처해 저장값 대용으로 쓴다
+    # (`layer_drift.capture_extra_layer_snapshot`/`reset_document_drift` 참고).
+    extra_layer_snapshot = models.TextField(blank=True, verbose_name='XXXXXX 레이어 상신 시점 스냅샷(JSON)')
 
     class Meta:
         verbose_name = '의뢰서'
@@ -230,8 +234,9 @@ class RequestDocument(models.Model):
         """요청 목적이 'MAP 삭제' 인지 여부.
 
         이 의뢰서는 MAP 의 삭제 이유만 담으므로 결재 경로가 다르다 —
-        PL 합의 직후 P·R·J·O 를 병렬로 만들고, 네 단계 전원 합의 시 승인한다.
-        E(MASK)와 후결자(RA)는 생성하지 않는다(고정 후결자도 붙지 않는 유일한 경로).
+        PL 합의 직후 2구역(P·J·O)을 병렬로 만들고, 셋 다 합의하면 3구역(R)을 연다.
+        R 합의로 최종 승인된다. E(MASK)와 후결자(RA)는 생성하지 않는다
+        (고정 후결자도 붙지 않는 유일한 경로).
         """
         inner_detail = self.get_detail().get('detail', {})
         return inner_detail.get('request_purpose') == self.MAP_DELETE_EDIT_PURPOSE
@@ -351,11 +356,12 @@ class RequestDocument(models.Model):
     def pause_zones(self):
         """이 문서의 결재 경로에서 구역별 agent 집합을 순서대로 반환한다.
 
-        'MAP 삭제'는 2구역이 없고 R이 3구역 소속(P·R·J·O 병렬)이며, 'ADI CD 변경'은
-        R 자체가 없어 2구역이 없다(P·J만 병렬). 나머지(일반·Only MAP)는 R이 2구역이다.
+        'MAP 삭제'는 R이 2구역이 아니라 3구역(단독) 소속이다 — 2구역(P·J·O 병렬)이
+        모두 합의된 뒤에야 R이 열린다. 'ADI CD 변경'은 R 자체가 없어 2구역이 없다
+        (P·J만 병렬). 나머지(일반·Only MAP)는 R이 2구역이다.
         """
         if self.is_map_delete_edit():
-            return [self.PAUSE_ZONE_1_AGENTS, ('P', 'PV', 'R', 'RV', 'J', 'O')]
+            return [self.PAUSE_ZONE_1_AGENTS, ('P', 'PV', 'J', 'O'), ('R', 'RV')]
         if self.is_adi_cd_change():
             return [self.PAUSE_ZONE_1_AGENTS, ('P', 'PV', 'J')]
         if self.is_only_map():
@@ -396,7 +402,7 @@ class RequestDocument(models.Model):
         'prodc_scope', 'prodc_top_line', 'prodc_top_process', 'prodc_top_product',
         'prodc_middle_use', 'prodc_middle_line', 'prodc_middle_process', 'prodc_middle_product',
         'prodc_bottom_line', 'prodc_bottom_process', 'prodc_bottom_product',
-        'mshot_change', 'mshot_image_copy', 'mshot_image_copy_top', 'mshot_image_copy_bottom',
+        'mshot_change', 'mshot_change_cc', 'mshot_image_copy', 'mshot_image_copy_top', 'mshot_image_copy_bottom',
         'photo_backside', 'eds_backside',
         'inter', 'inter_xs', 'inter_ys', 'in_apply', 'inter_select',
         'tsv', 'rf', 'fullchip', 'split', 'st', 'ecc',
@@ -1227,6 +1233,25 @@ class MapName(models.Model):
         indexes = [
             models.Index(fields=['lineid'], name='api_mapname_lineid_idx'),
         ]
+
+    def __str__(self):
+        return f"{self.lineid} / {self.partid}"
+
+
+class MapTable(models.Model):
+    """외부 DB 에서 1시간마다 동기화되는 MAP 테이블 캐시"""
+    # m 값이 이 값과 같으면 "CC 존재"로 판정한다(의뢰 상세 MAP 정보 탭, 2026-09 추가).
+    CC_MARK = '777'
+
+    lineid = models.CharField(max_length=50, null=True, blank=True, verbose_name='라인 ID')
+    partid = models.CharField(max_length=200, null=True, blank=True, verbose_name='Part ID')
+    m = models.CharField(max_length=200, null=True, blank=True, verbose_name='M')
+    s = models.CharField(max_length=200, null=True, blank=True, verbose_name='S')
+    last_synced = models.DateTimeField(auto_now=True, verbose_name='동기화 시각')
+
+    class Meta:
+        verbose_name = 'MAP 테이블 캐시'
+        verbose_name_plural = 'MAP 테이블 캐시 목록'
 
     def __str__(self):
         return f"{self.lineid} / {self.partid}"

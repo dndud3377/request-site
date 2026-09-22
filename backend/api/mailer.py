@@ -113,9 +113,10 @@ REVIEWER_AGENTS = ('RV', 'PV', 'EV')
 # PL 은 별도 규칙(미합의 지정 PL 포함)을 따르므로 여기서 제외한다.
 # Only MAP 의뢰서는 P/O/E/J 없이 R 까지만 진행하고 후결자(RA)로 종단한다.
 ROUTE_AGENTS_ONLY_MAP = ('SA', 'R', 'RV', 'RA')
-# 'MAP 삭제' 의뢰서는 PL 합의 후 P·R·J·O 를 병렬로 진행한다.
+# 'MAP 삭제' 의뢰서는 PL 합의 후 2구역(P·J·O)을 병렬로 진행하고, 셋 다 합의하면
+# 3구역(R)이 열려 마지막으로 진행한다(R은 병렬 구성원이 아니라 2구역 다음 단독 관문).
 # E(MASK)·EV 와 후결자(RA)는 생성하지 않으므로 경로에서도 빠진다(고정 후결자도 없는 유일한 경로).
-ROUTE_AGENTS_MAP_DELETE_EDIT = ('SA', 'P', 'PV', 'R', 'RV', 'J', 'O')
+ROUTE_AGENTS_MAP_DELETE_EDIT = ('SA', 'P', 'PV', 'J', 'O', 'R', 'RV')
 # 'ADI CD 변경' 의뢰서는 PL 합의 후 R·O 없이 P·J 만 병렬로 진행한다.
 # E(MASK)·EV 와 후결자(RA)도 생성되지 않으므로 경로에서 빠진다.
 ROUTE_AGENTS_ADI_CD = ('SA', 'P', 'PV', 'J')
@@ -139,9 +140,34 @@ def route_agents_for(document):
         return ROUTE_AGENTS_NO_J
     return ROUTE_AGENTS_DEFAULT
 
-# 메일 본문 '결재 경로' 카드의 표시 순서. 웹 '결재 경로' 탭과 같은 순서를 쓴다
-# (검토자 RV/PV/EV 는 담당 단계 바로 뒤, 후결자 RA 는 R 다음).
+# 메일 본문 '결재 경로' 카드에 실릴 수 있는 전체 agent 유니버스. 웹 '결재 경로' 탭과 같은
+# 목록을 쓴다(검토자 RV/PV/EV 는 담당 단계 바로 뒤). 실제 표시 순서는 문서별
+# `_route_display_order()`가 이 유니버스를 `pause_zones()` 구역 순서로 재배열해 정한다 —
+# 예전엔 이 상수 순서를 그대로 썼는데, R 이 항상 P/J/O 보다 먼저라고 고정 가정해
+# 'MAP 삭제'(R 이 2구역이 아니라 P·J·O 다음 3구역)에서 R 이 실제보다 앞서 표시됐다(2026-09).
 ROUTE_DISPLAY_ORDER = ('PL', 'SA', 'R', 'RV', 'RA', 'P', 'PV', 'J', 'O', 'E', 'EV')
+
+
+def _route_display_order(document):
+    """이 문서의 구역(zone) 순서를 따르는 '결재 경로' 카드 행 순서.
+
+    `document.pause_zones()`는 문서 타입별 실제 구역 구성·순서를 담고 있다(이 경로에
+    전혀 없는 agent 는 아예 나열되지 않는다). 여기서는 그 순서를 먼저 따르고, 어떤 경로에도
+    없는 나머지 agent(예: ADI CD 변경의 R·O·RA)는 뒤에 이어 붙인다 — `_route_rows()`가
+    이들도 '해당없음' 행으로 보여줘야 하므로 유니버스(`ROUTE_DISPLAY_ORDER`) 전체가 필요하다.
+    """
+    ordered = []
+    seen = set()
+    for zone in document.pause_zones():
+        for agent in zone:
+            if agent not in seen:
+                ordered.append(agent)
+                seen.add(agent)
+    for agent in ROUTE_DISPLAY_ORDER:
+        if agent not in seen:
+            ordered.append(agent)
+            seen.add(agent)
+    return ordered
 
 # 결재 경로 카드의 상태 표기 — (라벨, 글자색, 배경색). 상태 색은 의미를 담고 있어
 # 이벤트 테마(EVENT_THEME)와 무관하게 고정한다(웹 결재 경로 탭과 동일 팔레트).
@@ -898,7 +924,7 @@ def _route_rows(document):
         steps_by_agent.setdefault(s.agent, []).append(s)
 
     rows = []
-    for agent in ROUTE_DISPLAY_ORDER:
+    for agent in _route_display_order(document):
         label = AGENT_LABEL.get(agent, agent)
         # 검토자(RV/PV/EV)는 지정됐을 때만 생기는 선택 단계라, 경로 밖이어도 '해당없음' 행을
         # 만들지 않는다(지정하지 않은 것과 거치지 않는 것을 구분할 수 없다).

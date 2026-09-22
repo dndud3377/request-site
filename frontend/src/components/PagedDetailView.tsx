@@ -720,6 +720,14 @@ const fmtDiffVal = (v: any): string => {
   return String(v);
 };
 
+/** mshot_change_cc('exists'/'not_exists'/'') 표시 텍스트. 상신 시점에 선택된 값을 그대로 보여줄 뿐,
+ * 실시간 재조회는 하지 않는다(2026-09 CC 자동 드리프트 감지 기능 폐지). */
+const fmtCcStatus = (v: any, t: TFunction): string => {
+  if (v === 'exists') return t('request.cc_apply');
+  if (v === 'not_exists') return t('request.cc_not_apply');
+  return '';
+};
+
 const fmtPlate = (d: any, prefix: string): string => {
   const line = d?.[`${prefix}_line`] || '-';
   const process = d?.[`${prefix}_process`] || '-';
@@ -786,6 +794,7 @@ const MSHOT_IMAGE_ITEMS: [string, string][] = [
 
 const buildMshotItems: GroupBuilder = (d, t) => [
   { label: t('request.mshot_change_label'), value: fmtDiffVal(d?.mshot_change) },
+  { label: t('request.mshot_change_cc_label'), value: fmtCcStatus(d?.mshot_change_cc, t) },
   ...MSHOT_IMAGE_ITEMS.map(([k, labelKey]) => ({
     label: t(labelKey as never),
     value: fmtDiffVal(d?.[k]),
@@ -2121,15 +2130,12 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {/* CLONE/EXISTING — X표시 변경 여부도 잠긴 기본값이므로 회색 "없음"으로 대체한다. */}
-          {isMapRegisteredDetail && (isR || isO || isP) && (
-            <div style={rowStyle}>
-              <PlaceholderChip label={t('request.mshot_change_status')} />
-            </div>
-          )}
-
-          {!isMapRegisteredDetail && !isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && detail.mshot_change && (() => {
-            const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy') || changedFields.has('mshot_image_copy_top') || changedFields.has('mshot_image_copy_bottom');
+          {/* X표시 변경 여부 + CC 존재 여부(mshot_change_cc) — 상신 시점에 선택된 값을 그대로 보여준다.
+              (2026-09) 이전에는 CLONE/EXISTING 한정으로 api_maptable 을 실시간 재조회해 드리프트를
+              감지·강조했으나, 이제는 그 기능을 폐지하고 다른 필드(map_change 등)와 동일하게
+              회차별 상신 값만 비교한다(changedFields/buildMshotItems 공용 로직). */}
+          {!isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && detail.mshot_change && (() => {
+            const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_change_cc') || changedFields.has('mshot_image_copy') || changedFields.has('mshot_image_copy_top') || changedFields.has('mshot_image_copy_bottom');
             const imgStyle: React.CSSProperties = { maxWidth: '600px', maxHeight: '420px', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px', cursor: 'zoom-in' };
             const renderMshotImg = (src: string, alt: string) => (
               <div style={{ position: 'relative', display: 'inline-block' }}>
@@ -2165,7 +2171,10 @@ type Page = { label: string; content: React.ReactNode };
                   )}
                   <div style={{ flex: '0 0 auto', paddingRight: 12, borderRight: '1px solid var(--border)', marginRight: 12 }}>
                     <div style={fieldLabel}>{t('request.mshot_change_status')}</div>
-                    <div style={fieldValue}>{detail.mshot_change}</div>
+                    <div style={fieldValue}>
+                      {detail.mshot_change}
+                      {fmtCcStatus(detail.mshot_change_cc, t) && ` / ${fmtCcStatus(detail.mshot_change_cc, t)}`}
+                    </div>
                   </div>
                   {mshotIsDelete && (
                     <div style={{ flex: 1 }}>
@@ -2537,6 +2546,19 @@ type Page = { label: string; content: React.ReactNode };
                   <button onClick={exportOayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
                 </div>
               </div>
+              {doc.layer_drift_detected && onOpenLayerDrift && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <button
+                    type="button"
+                    className="badge badge-layer-drift"
+                    style={{ cursor: 'pointer' }}
+                    title={t('approval.layer_drift_badge_tooltip')}
+                    onClick={onOpenLayerDrift}
+                  >
+                    {t('approval.layer_drift_badge')}
+                  </button>
+                </div>
+              )}
               {/* 탭 버튼 */}
               <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderBottom: '2px solid var(--border)' }}>
                 {([
@@ -2894,15 +2916,22 @@ type Page = { label: string; content: React.ReactNode };
       const out: StepDisplayInfo[] = [];
       const rSteps = allSteps.filter((s) => s.agent === 'R' && (s.round ?? 1) === round);
       if (rSteps.length === 0) {
-        // 반려 후 재상신 시 2구역(R)이 생략된 회차는 R step 자체가 없다 — 3구역(P/J/O/E/RA)
-        // step 이 이미 있는데 R 이 없으면 '대기'가 아니라 '해당없음'이다(백엔드 is_r_skipped 와 동일).
-        const zone3Exists = allSteps.some(
-          (s) => (s.round ?? 1) === round && ['P', 'J', 'O', 'E', 'RA'].includes(s.agent)
-        );
-        if (zone3Exists) {
-          out.push({ status: 'na', label: t('approval.step_na') });
-        } else {
+        // 'MAP 삭제'는 R이 2구역(P·J·O) 완료 후에만 열리는 3구역 단독 관문이다 — 2구역
+        // step 이 이미 있어도 R 이 "생략된 것"이 아니라 "아직 순서가 안 된 것"이므로
+        // 아래 일반 경로의 "R 스킵 후 재상신 = 해당없음" 판정을 타면 안 된다(2026-09).
+        if (isMapDeleteEdit) {
           out.push({ status: 'waiting', label: t('approval.step_pending'), roleLabel: t('approval.role_agreer' as any) });
+        } else {
+          // 반려 후 재상신 시 2구역(R)이 생략된 회차는 R step 자체가 없다 — 3구역(P/J/O/E/RA)
+          // step 이 이미 있는데 R 이 없으면 '대기'가 아니라 '해당없음'이다(백엔드 is_r_skipped 와 동일).
+          const zone3Exists = allSteps.some(
+            (s) => (s.round ?? 1) === round && ['P', 'J', 'O', 'E', 'RA'].includes(s.agent)
+          );
+          if (zone3Exists) {
+            out.push({ status: 'na', label: t('approval.step_na') });
+          } else {
+            out.push({ status: 'waiting', label: t('approval.step_pending'), roleLabel: t('approval.role_agreer' as any) });
+          }
         }
       } else {
         rSteps.forEach((s) => out.push({ ...stepToInfo(s), roleLabel: t('approval.role_agreer' as any) }));
@@ -2990,18 +3019,48 @@ type Page = { label: string; content: React.ReactNode };
     fontSize: '0.82rem',
   });
 
-  // 검토자(RV)는 R단계 행에 합의자와 함께 표시(getStepDisplays). 후결자(RA)는 R단계 다음 위치에 표시.
-  const AGENTS: Array<{ key: string; label: string }> = [
-    { key: 'PL', label: t('approval.agent_PL' as any) },
-    // 영업/기술지원 합의자는 PL 검토와 병렬이라 PL 바로 다음 줄에 온다(지정했을 때만 단계가 있다).
-    { key: 'SA', label: t('approval.agent_SA' as any) },
-    { key: 'R', label: t('approval.agent_R') },
-    { key: 'RA', label: t('approval.agent_RA' as any) },
-    { key: 'P', label: t('approval.agent_P') },
-    { key: 'J', label: t('approval.agent_J') },
-    { key: 'O', label: t('approval.agent_O') },
-    { key: 'E', label: t('approval.agent_E') },
+  // 검토자(RV)는 담당 단계 행에 합의자와 함께 표시(getStepDisplays).
+  const AGENT_LABELS: Record<string, string> = {
+    PL: t('approval.agent_PL' as any),
+    SA: t('approval.agent_SA' as any),
+    R: t('approval.agent_R'),
+    RA: t('approval.agent_RA' as any),
+    P: t('approval.agent_P'),
+    J: t('approval.agent_J'),
+    O: t('approval.agent_O'),
+    E: t('approval.agent_E'),
+  };
+
+  // 구역(zone) 구성 — 백엔드 RequestDocument.pause_zones() 와 같은 기준(CLAUDE.md "용어 정리").
+  // (2026-09) 예전엔 PL→SA→R→RA→P→J→O→E 고정 순서였다. 'MAP 삭제'는 R이 2구역(P·J·O)이
+  // 아니라 그 다음 3구역 단독 관문이라, 고정 순서로는 R이 실제보다 앞서 표시됐다. 이제 문서
+  // 타입별 실제 구역 순서를 그대로 따른다 — 일반 문서는 결과적으로 예전과 같은 순서다.
+  const ZONE_AGENT_KEYS: string[][] = isMapDeleteEdit
+    ? [['PL', 'SA'], ['P', 'J', 'O'], ['R']]
+    : isAdiCdChange
+    ? [['PL', 'SA'], ['P', 'J']]
+    : isOnlyMap
+    ? [['PL', 'SA'], ['R'], ['RA']]
+    : [['PL', 'SA'], ['R'], ['P', 'J', 'O', 'E', 'RA']];
+
+  const zonedKeys = new Set(ZONE_AGENT_KEYS.flat());
+  const naGroupKeys = ['PL', 'SA', 'R', 'RA', 'P', 'J', 'O', 'E'].filter((k) => !zonedKeys.has(k));
+
+  // 구역 라벨 없이 순서만 필요한 값이라면 AGENT_GROUPS.flatMap(g => g.agents) 로 펼치면 된다.
+  const AGENT_GROUPS: Array<{ zoneNumber?: number; agents: Array<{ key: string; label: string }> }> = [
+    ...ZONE_AGENT_KEYS.map((keys, i) => ({
+      zoneNumber: i + 1,
+      agents: keys.map((key) => ({ key, label: AGENT_LABELS[key] })),
+    })),
+    ...(naGroupKeys.length > 0
+      ? [{ agents: naGroupKeys.map((key) => ({ key, label: AGENT_LABELS[key] })) }]
+      : []),
   ];
+
+  const zoneHeaderStyle: React.CSSProperties = {
+    fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)',
+    textTransform: 'uppercase', letterSpacing: '.04em', padding: '10px 0 2px',
+  };
 
   pages.push({
     label: t('approval.tab_route'),
@@ -3051,9 +3110,16 @@ type Page = { label: string; content: React.ReactNode };
           </div>
         )}
 
-        {/* 팀별 행 */}
-        {AGENTS.map(({ key, label }) => (
-          <div key={key} style={teamRowStyle}>
+        {/* 팀별 행 — 구역(zone) 단위로 그룹, 그룹 사이에 "N구역" 라벨을 붙인다 */}
+        {AGENT_GROUPS.map((group) => (
+          <React.Fragment key={group.zoneNumber ?? 'na'}>
+            <div style={zoneHeaderStyle}>
+              {group.zoneNumber != null
+                ? t('approval.zone_label', { zone: group.zoneNumber })
+                : t('approval.zone_na_label' as any)}
+            </div>
+            {group.agents.map(({ key, label }) => (
+              <div key={key} style={teamRowStyle}>
             <div style={teamLabelStyle}>{label}</div>
             <div style={historyListStyle}>
               {(key === 'E' && !hasPlel) || (isOnlyMap && ['P', 'J', 'O', 'E'].includes(key)) || (isMapDeleteEdit && key === 'RA') || (skipJStage && key === 'J') || (isAdiCdChange && ['R', 'O', 'RA'].includes(key)) ? (
@@ -3097,6 +3163,8 @@ type Page = { label: string; content: React.ReactNode };
               )}
             </div>
           </div>
+            ))}
+          </React.Fragment>
         ))}
 
         {/* 완료 행 */}

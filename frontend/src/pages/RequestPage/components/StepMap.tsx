@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import RichTextEditor from '../../../components/RichTextEditor';
 import { DetailFormState, GuideFeatureKey, MapInfo } from '../../../types';
@@ -28,6 +29,13 @@ const formatMapInfoValue = (field: 'AAA1' | 'AAA2' | 'AAA3', value: string | nul
     if (!Number.isNaN(num)) return String(num / AAA3_DISPLAY_DIVISOR);
   }
   return value;
+};
+
+/** CC 참고값(oc)·선택값(mshot_change_cc) 공용 표시 텍스트. 빈 값이면 '-'. */
+const ccStatusText = (t: TFunction, status: string | null | undefined): string => {
+  if (status === 'exists') return t('request.map_table_cc_exists');
+  if (status === 'not_exists') return t('request.map_table_cc_not_exists');
+  return '-';
 };
 
 interface StepMapProps {
@@ -247,7 +255,7 @@ const StepMap: React.FC<StepMapProps> = ({
                 />
               </div>
 
-              {/* AAA1/AAA2/AAA3 참고 정보 — 읽기 전용, 상신 데이터에는 포함되지 않는다 */}
+              {/* AAA1/AAA2/AAA3(ox/oy/sr) + CC 참고값(oc) — 전부 읽기 전용, 상신 데이터에는 포함되지 않는다 */}
               {detail.source_line && detail.source_partid && (
                 <div className="flex-row" style={{ marginTop: 10 }}>
                   {(['ox', 'oy', 'sr'] as const).map((key, i) => {
@@ -261,6 +269,12 @@ const StepMap: React.FC<StepMapProps> = ({
                       </div>
                     );
                   })}
+                  <div className="form-group flex-col">
+                    <label className="form-label">{t('request.oc')}</label>
+                    <div className="form-control" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)' }}>
+                      {mapInfoLoading ? '...' : ccStatusText(t, mapInfo?.cc_status)}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -550,16 +564,37 @@ const StepMap: React.FC<StepMapProps> = ({
           <div style={{ flex: 3.5 }} />
         </div>
 
-        {/* X표시 변경 여부 */}
+        {/* X표시 변경 여부 + CC 적용 여부(mshot_change_cc, C가문 전용 필수) — prodc_status(only_prodc)
+            가 Yes 일 때만 노출된다. flexShrink:0 고정폭 칸으로 나란히 붙인다(prodc_status/map_opt_inter
+            와 동일 패턴) — flex-col(flex:1)을 쓰면 select 폭(300px)보다 칸이 훨씬 넓어져 두 칸이
+            멀리 떨어져 보인다. */}
         <div className="form-group full-width" data-tour="map-xmark">
-          <label className="form-label">{t('request.mshot_change_status')}<GuideBadge fk="step2_xmark" tk={t('guide.feat.step2_xmark' as never)} /></label>
-          <div style={{ width: SELECT_W }}>
-            <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={(e) => handleMshotChangeChange(e.target.value)} disabled={isMapRegistered}>
-              <option value="없음">{t('request.mshot_none')}</option>
-              <option value="추가">{t('request.mshot_add')}</option>
-              <option value="수정">{t('request.mshot_edit')}</option>
-              <option value="삭제">{t('request.mshot_delete')}</option>
-            </select>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }}>
+              <label className="form-label">{t('request.mshot_change_status')}<GuideBadge fk="step2_xmark" tk={t('guide.feat.step2_xmark' as never)} /></label>
+              <select className="form-control" name="mshot_change" value={detail.mshot_change} onChange={(e) => handleMshotChangeChange(e.target.value)} disabled={isMapRegistered}>
+                <option value="없음">{t('request.mshot_none')}</option>
+                <option value="추가">{t('request.mshot_add')}</option>
+                <option value="수정">{t('request.mshot_edit')}</option>
+                <option value="삭제">{t('request.mshot_delete')}</option>
+              </select>
+            </div>
+            {detail.only_prodc === 'Yes' && (
+              <div className="form-group" style={{ width: SELECT_W, flexShrink: 0, marginBottom: 0 }} title={t('request.mshot_change_cc_tooltip')}>
+                <label className="form-label">{t('request.mshot_change_cc_label')} <span className="required">*</span></label>
+                <select
+                  className={`form-control${errors.mshot_change_cc ? ' error' : ''}`}
+                  name="mshot_change_cc"
+                  value={detail.mshot_change_cc}
+                  onChange={(e) => handleDetailSet('mshot_change_cc', e.target.value)}
+                >
+                  <option value="">{t('request.select_placeholder')}</option>
+                  <option value="exists">{t('request.cc_apply')}</option>
+                  <option value="not_exists">{t('request.cc_not_apply')}</option>
+                </select>
+                {errors.mshot_change_cc && <span className="form-error">{errors.mshot_change_cc}</span>}
+              </div>
+            )}
           </div>
           {mshotDeleteMode && (
             <p style={{ color: 'red', fontWeight: 600, margin: '8px 0 0 0' }}>특정 제품 삭제 필요</p>
