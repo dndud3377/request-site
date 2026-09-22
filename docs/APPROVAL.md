@@ -103,6 +103,18 @@
 - **고정 후결자**(`settings.POST_APPROVER_LOGINID`)는 해외 의뢰서에도 그대로 붙는다.
   국내 소속이어도 단방향 격리라 해외 의뢰서를 볼 수 있어 결재가 막히지 않는다.
 
+### PL 계열 권한은 결재선 밖에도 있다 — 가이드 작성 제한 (2026-09 수정)
+`PL_GL`은 "PL 과 권한이 동일하다"는 원칙에 따라, **결재선과 무관하게 PL 에게 걸린 다른 제한도
+그대로 적용받아야 한다**. 예: `backend/api/views.py GuideWritePermission` — 가이드는 PL(국내·해외)
+이 참고하는 대상이지 작성 주체가 아니라서 작성/수정(POST·PUT·PATCH)이 막힌다.
+
+> ⚠️ 도입 당시 이 게이트가 `role != 'PL'` 로만 검사돼 있어 `PL_GL != 'PL'`이 참이 되는 바람에
+> **해외 담당자가 API 를 직접 호출하면 가이드를 작성·수정할 수 있었다**(프론트 `GuidePage.tsx`
+> 의 `canWrite=!isPlRole(...)` 가드만 우회하면 됨). `role not in UserProfile.PL_ROLES` 로 고쳤다
+> (회귀 테스트: `GuideWritePermissionOverseasTest`). **PL 하나만 검사하는 다른 게이트가 남아있지
+> 않은지** 새 PL 계열 제한을 추가할 때마다 확인할 것 — `grep -n "role.*==.*'PL'\|role.*!=.*'PL'"
+> backend/api/*.py` 로 훑어본다(agent 문자열 'PL'과 혼동하지 않도록 `role` 앞뒤 문맥 확인).
+
 ### 이번 분리의 **범위 밖**
 - 외부 API(`/api/external/v1/documents/`, API Key 인증): 해외 의뢰서도 종전대로 전부 반환한다.
 - VOC, 변경 현황(`photostep-changes`), 디자인룰 매핑(`design-rule-documents`, MASTER 전용).
