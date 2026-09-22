@@ -407,7 +407,7 @@ export interface JayerRow {
   pp: string;
   layerid: string;      // Layer 컬럼
   st: string;           // 'O' | 'X' | ''
-  new_or_copy: string;  // '신규' | '복사' | ''
+  new_or_copy: string;  // '신규' | '차용' | '기등록' | 'layer삭제' | '미진행' | ''
   product_name: string;
   step: string;
   item_id: string;

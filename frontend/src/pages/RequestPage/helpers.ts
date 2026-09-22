@@ -1,6 +1,6 @@
 import { ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet } from '../../types';
 import {
-  VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
+  VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
   MERGE_MANUAL_FIELDS, MERGE_DEFAULT_TABLE,
 } from './constants';
@@ -126,13 +126,13 @@ export const formatMultiItemId = (labels: string[], isFromOptions: boolean[] = [
 /**
  * Jayer/Oayer "요청 기준"(new_or_copy) 값을 근거로 이 요청서에 맞는 요청 목적을 계산한다.
  * 비활성 행은 제외한다. 신규 → '신규' / 차용 → '차용' / 둘 다 → '신규+차용' /
- * 기등록·layer삭제만 있으면 → '기타'. 판정할 활성 행이 아예 없으면 null(판정 불가).
+ * 기등록·layer삭제·미진행만 있으면 → '기타'. 판정할 활성 행이 아예 없으면 null(판정 불가).
  */
 export const computeExpectedRequestPurpose = (
   jayerRows: { new_or_copy: string }[],
   oayerRows: { new_or_copy: string }[]
 ): string | null => {
-  // 구 disabled(수동/필터 비활성) 개념은 폐지됐다 — st==='X' 행(기등록/layer삭제 포함)도
+  // 구 disabled(수동/필터 비활성) 개념은 폐지됐다 — st==='X' 행(기등록/layer삭제/미진행 포함)도
   // new_or_copy 로 '기타' 판정에 그대로 기여해야 하므로 여기서는 아무것도 걸러내지 않는다.
   const activeNoc = [...jayerRows, ...oayerRows].map((r) => r.new_or_copy);
   const hasNew = activeNoc.includes(NOC_NEW);
@@ -140,7 +140,7 @@ export const computeExpectedRequestPurpose = (
   if (hasNew && hasBorrow) return '신규+차용';
   if (hasNew) return NOC_NEW;
   if (hasBorrow) return NOC_BORROW;
-  if (activeNoc.includes(NOC_REGISTERED) || activeNoc.includes(NOC_LAYER_DELETE)) return '기타';
+  if (activeNoc.includes(NOC_REGISTERED) || activeNoc.includes(NOC_LAYER_DELETE) || activeNoc.includes(NOC_NOT_PROCEEDING)) return '기타';
   return null;
 };
 
@@ -154,7 +154,7 @@ export interface LayerSyncRow {
   new_or_copy: string;
 }
 
-/** 동기화 "참여행" — 비활성(st==='X')도 기등록/layer삭제도 아닌 행. */
+/** 동기화 "참여행" — 비활성(st==='X')도 기등록/layer삭제/미진행도 아닌 행. */
 const isSyncParticipant = (r: LayerSyncRow): boolean => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy);
 
 /**

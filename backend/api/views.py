@@ -442,13 +442,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     def _validate_bb_mapping(self, document):
         """J-ayer 행 bb 매핑 검증. 문제 있으면 error 문자열 반환, 없으면 None.
 
-        기등록/layer삭제(new_or_copy) 행은 프론트(isNocSpecial, constants.ts)에서도
+        기등록/layer삭제/미진행(new_or_copy) 행은 프론트(isNocSpecial, constants.ts)에서도
         매핑 대상·검증에서 제외하므로 여기서도 동일하게 제외해야 한다(R-19).
         비활성(st=='X') 행도 함께 저장되므로 프론트 validate() 와 동일하게
         여기서도 매핑 대상에서 제외한다.
         """
         import json
-        NOC_SPECIAL = ('기등록', 'layer삭제')
+        NOC_SPECIAL = ('기등록', 'layer삭제', '미진행')
         try:
             detail = json.loads(document.additional_notes or '{}')
             jayer_rows = detail.get('jayerRows', [])

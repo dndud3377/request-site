@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import AutocompleteInput from '../../../components/AutocompleteInput';
 import { JayerRow, FilterSet, GuideFeatureKey, ValidationSystemValue } from '../../../types';
-import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, NOC_LAYER_DELETE, isRowInactive } from '../constants';
+import { ST_CELL_COLOR, VALIDATION_CELL_COLOR, VS_NA, isRowInactive, isNocSpecial } from '../constants';
 import { isValidationKeywordRow, stripDateBracket, formatMultiItemId } from '../helpers';
 import { ValidationSystemBadge, ValidationSystemToggle } from '../../../components/ValidationSystem';
 import { CellSelectionApi } from '../../../hooks/useCellSelection';
@@ -33,7 +33,7 @@ interface Step2Props {
 }
 
 const ST_OPTIONS = ['O', 'O (D)', 'X'];
-const NEW_OR_COPY_OPTIONS = ['신규', '차용', '기등록', 'layer삭제'];
+const NEW_OR_COPY_OPTIONS = ['신규', '차용', '기등록', 'layer삭제', '미진행'];
 
 const Step2: React.FC<Step2Props> = ({
   jayerRows,
@@ -160,8 +160,6 @@ const Step2: React.FC<Step2Props> = ({
               const isRegistered = row.new_or_copy === '기등록';
               // 회색 처리는 기등록과 동일하게 st==='X' 행에도 적용한다(편집 가능 여부와는 무관 — 그건 각자 다른 조건으로 유지).
               const greyBg = isRegistered || rowInactive;
-              // layer삭제 행의 st 는 항상 'X' 로 고정 — 값 편집을 막는다.
-              const isLayerDeleted = row.new_or_copy === NOC_LAYER_DELETE;
               const stError = errors[`jayer_stnoc_${row.id}_st`];
               const nocError = errors[`jayer_stnoc_${row.id}_new_or_copy`];
               const itemIdError = errors[`jayer_noc_${row.id}_item_id`];
@@ -193,7 +191,8 @@ const Step2: React.FC<Step2Props> = ({
                       value={row.st}
                       onChange={(v) => handleJayerChange(row.id, 'st', v)}
                       options={ST_OPTIONS}
-                      disabled={isRegistered || isLayerDeleted}
+                      // 기등록/layer삭제/미진행 행의 st 는 항상 'X' 로 고정 — 값 편집을 막는다.
+                      disabled={isNocSpecial(row.new_or_copy)}
                       inputStyle={{
                         backgroundColor: greyBg ? regBg : ST_CELL_COLOR[row.st],
                         ...(stError ? { border: '1px solid var(--danger)' } : {}),
