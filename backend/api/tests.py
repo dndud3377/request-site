@@ -7883,6 +7883,148 @@ class RSkipStageIntegrationTest(TestCase):
         )
 
 
+class OverseasScopeTest(TestCase):
+    """해외 제품 담당자(PL_GL)의 조회 격리 — 국내/해외 단방향 분리.
+
+    - 해외 담당자는 해외 의뢰서와 **본인이 올린 문서**만 본다(국내 의뢰서는 목록·상세 모두 불가).
+    - 국내 PL·TE_*·MASTER 의 조회 범위는 종전 그대로다(해외 의뢰서도 보인다).
+    - 문서의 지역은 **의뢰자의 역할**로 최초 상신 시 확정한다.
+    """
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        self._json = json
+        self.client = APIClient()
+
+        self.kr_requester = UserProfile.objects.create(loginid='kr_req', mail='kr@c.com', role='PL')
+        self.kr_pl = UserProfile.objects.create(loginid='kr_pl', mail='krpl@c.com', role='PL')
+        self.gl_requester = UserProfile.objects.create(loginid='gl_req', mail='gl@c.com', role='PL_GL')
+        self.gl_pl = UserProfile.objects.create(loginid='gl_pl', mail='glpl@c.com', role='PL_GL')
+        self.r_user = UserProfile.objects.create(loginid='ov_r', mail='ovr@c.com', role='TE_R')
+        self.master = UserProfile.objects.create(loginid='ov_m', mail='ovm@c.com', role='MASTER')
+
+    def _create_and_submit(self, requester, designated_pl, title):
+        """의뢰자 계정으로 의뢰서를 만들고(API) 상신까지 마친 뒤 문서를 돌려준다."""
+        self.client.force_authenticate(user=requester)
+        r = self.client.post('/api/documents/', {
+            'title': title, 'requester_name': requester.loginid,
+            'requester_email': requester.mail, 'requester_department': 'dept',
+            'product_name': 'PROD-1', 'additional_notes': self._json.dumps({'detail': {}}),
+        }, format='json')
+        self.assertEqual(r.status_code, 201, r.content)
+        doc = RequestDocument.objects.get(id=r.data['id'])
+        r = self.client.post(f'/api/documents/{doc.id}/submit/',
+                             {'designated_pl_loginid': designated_pl.loginid}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        doc.refresh_from_db()
+        return doc
+
+    def _list_ids(self, user):
+        self.client.force_authenticate(user=user)
+        r = self.client.get('/api/documents/')
+        self.assertEqual(r.status_code, 200, r.content)
+        return {d['id'] for d in r.data}
+
+    def test_region_fixed_by_requester_role_on_submit(self):
+        """지역은 의뢰자의 역할로 확정된다 — 해외 담당자의 의뢰서만 is_overseas=True."""
+        kr = self._create_and_submit(self.kr_requester, self.kr_pl, 'kr-doc')
+        gl = self._create_and_submit(self.gl_requester, self.gl_pl, 'gl-doc')
+        self.assertFalse(kr.is_overseas)
+        self.assertTrue(gl.is_overseas)
+
+    def test_overseas_pl_cannot_see_domestic_documents(self):
+        """해외 담당자 목록에는 국내 의뢰서가 없고 해외 의뢰서만 있다."""
+        kr = self._create_and_submit(self.kr_requester, self.kr_pl, 'kr-doc')
+        gl = self._create_and_submit(self.gl_requester, self.gl_pl, 'gl-doc')
+        ids = self._list_ids(self.gl_pl)
+        self.assertIn(gl.id, ids)
+        self.assertNotIn(kr.id, ids, '해외 담당자에게 국내 의뢰서가 보이면 안 된다')
+
+    def test_overseas_pl_cannot_retrieve_domestic_document(self):
+        """목록뿐 아니라 상세 조회(URL 직접 접근)도 막힌다."""
+        kr = self._create_and_submit(self.kr_requester, self.kr_pl, 'kr-doc')
+        self.client.force_authenticate(user=self.gl_pl)
+        r = self.client.get(f'/api/documents/{kr.id}/')
+        self.assertEqual(r.status_code, 404, r.content)
+
+    def test_domestic_and_team_roles_still_see_overseas_documents(self):
+        """격리는 단방향 — 국내 PL·TE_*·MASTER 는 해외 의뢰서를 종전대로 본다."""
+        gl = self._create_and_submit(self.gl_requester, self.gl_pl, 'gl-doc')
+        for user in (self.kr_pl, self.r_user, self.master):
+            self.assertIn(gl.id, self._list_ids(user),
+                          f'{user.role} 은 해외 의뢰서를 볼 수 있어야 한다')
+
+    def test_overseas_pl_still_sees_own_past_domestic_document(self):
+        """국내에서 일하다 해외 역할로 바뀐 사람의 기존 문서는 본인에게 계속 보인다."""
+        mover = UserProfile.objects.create(loginid='mover', mail='mv@c.com', role='PL')
+        doc = self._create_and_submit(mover, self.kr_pl, 'mover-doc')
+        self.assertFalse(doc.is_overseas)
+
+        mover.role = 'PL_GL'
+        mover.save(update_fields=['role'])
+        self.assertIn(doc.id, self._list_ids(mover),
+                      '본인이 올린 문서는 지역과 무관하게 보여야 한다')
+
+    def test_overseas_document_rejects_domestic_designated_pl(self):
+        """해외 의뢰서의 지정 PL 후보는 해외 담당자뿐이다(국내 PL 지정 시 400)."""
+        self.client.force_authenticate(user=self.gl_requester)
+        r = self.client.post('/api/documents/', {
+            'title': 'gl-bad-pl', 'requester_name': 'gl', 'requester_email': 'gl@c.com',
+            'requester_department': 'dept', 'product_name': 'PROD-1',
+            'additional_notes': self._json.dumps({'detail': {}}),
+        }, format='json')
+        self.assertEqual(r.status_code, 201, r.content)
+        doc_id = r.data['id']
+        r = self.client.post(f'/api/documents/{doc_id}/submit/',
+                             {'designated_pl_loginid': self.kr_pl.loginid}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_domestic_document_rejects_overseas_designated_pl(self):
+        """반대로 국내 의뢰서에 해외 담당자를 지정하는 것도 막는다.
+
+        허용하면 지정된 해외 담당자가 자기가 결재할 문서를 조회조차 못 한다.
+        """
+        self.client.force_authenticate(user=self.kr_requester)
+        r = self.client.post('/api/documents/', {
+            'title': 'kr-bad-pl', 'requester_name': 'kr', 'requester_email': 'kr@c.com',
+            'requester_department': 'dept', 'product_name': 'PROD-1',
+            'additional_notes': self._json.dumps({'detail': {}}),
+        }, format='json')
+        self.assertEqual(r.status_code, 201, r.content)
+        doc_id = r.data['id']
+        r = self.client.post(f'/api/documents/{doc_id}/submit/',
+                             {'designated_pl_loginid': self.gl_pl.loginid}, format='json')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_rejection_snapshot_scope_follows_document_region(self):
+        """이력 조회 '반려' 탭도 같은 지역 기준으로 걸린다."""
+        from . import rejection_snapshots
+        kr = self._create_and_submit(self.kr_requester, self.kr_pl, 'kr-rej')
+        gl = self._create_and_submit(self.gl_requester, self.gl_pl, 'gl-rej')
+        for doc in (kr, gl):
+            step = ApprovalStep.objects.filter(document=doc, agent='PL').first()
+            step.action = 'rejected'
+            step.save()
+            rejection_snapshots.create_from_reject(doc, step)
+
+        self.client.force_authenticate(user=self.gl_pl)
+        r = self.client.get('/api/rejection-snapshots/')
+        self.assertEqual(r.status_code, 200, r.content)
+        source_ids = {row['source_document_id'] for row in r.data}
+        self.assertIn(gl.id, source_ids)
+        self.assertNotIn(kr.id, source_ids, '해외 담당자에게 국내 반려 이력이 보이면 안 된다')
+
+    def test_overseas_role_is_assignable(self):
+        """권한 관리에서 PL_GL 역할을 부여할 수 있다(MASTER)."""
+        target = UserProfile.objects.create(loginid='newbie', mail='nb@c.com', role='NONE')
+        self.client.force_authenticate(user=self.master)
+        r = self.client.post(f'/api/users/{target.id}/assign-role/', {'role': 'PL_GL'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        target.refresh_from_db()
+        self.assertEqual(target.role, 'PL_GL')
+
+
 class MapInfoLockedFieldCoverageTest(TestCase):
     """R(+RV) 합의 완료 후 중단(pause)된 문서는 MAP_INFO_FIELDS 에 속한 값이 바뀌면 PATCH가
     400 으로 거부돼야 한다(views.py RequestDocumentViewSet.update, doc_permissions.map_info_locked,

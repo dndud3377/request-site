@@ -12,14 +12,14 @@ import { OPTION_LINE } from './RequestPage/constants';
 
 const PERMISSION_GUIDE_KEY: GuideFeatureKey = 'permission_user_group';
 
-const ALL_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
+const ALL_ROLES: UserRole[] = ['PL', 'PL_GL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
 
 // 라인별 메일 수신 설정('이메일 설정' 컬럼)을 쓰는 역할.
-// 백엔드 UserProfile.MAIL_LINE_FILTER_ROLES 와 같아야 한다 — PL·NONE 은 이 설정을 쓰지 않는다.
+// 백엔드 UserProfile.MAIL_LINE_FILTER_ROLES 와 같아야 한다 — PL·PL_GL·NONE 은 이 설정을 쓰지 않는다.
 const MAIL_LINE_ROLES: UserRole[] = ['TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER'];
 
 // 사용자 추가 시 배정 가능한 실제 역할(NONE 제외) — MASTER 역할 선택 드롭다운에 사용
-const ADD_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER'];
+const ADD_ROLES: UserRole[] = ['PL', 'PL_GL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER'];
 
 
 // ===== Shared styles =====
@@ -48,7 +48,7 @@ const tdStyle: React.CSSProperties = {
 
 // ===== User Table =====
 
-const ASSIGNABLE_ROLES: UserRole[] = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
+const ASSIGNABLE_ROLES: UserRole[] = ['PL', 'PL_GL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE'];
 
 interface UserTableProps {
   users: UserWithRole[];

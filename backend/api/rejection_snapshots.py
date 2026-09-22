@@ -58,6 +58,9 @@ def create_from_reject(document, step, acting_user=None):
         requester_department=document.requester_department,
         requester_loginid=getattr(document.requester, 'loginid', '') or '',
         submitted_at=document.submitted_at,
+        # 이력 조회 '반려' 탭도 결재 현황과 같은 지역 필터를 쓴다
+        # (RejectionSnapshotViewSet.get_queryset) — 원본 문서가 지워져도 남도록 값을 복사한다.
+        is_overseas=document.is_overseas,
         additional_notes=document.additional_notes or '',
         approval_steps=steps_json,
         round=getattr(step, 'round', 1) or 1,

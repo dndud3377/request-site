@@ -16,6 +16,8 @@ interface NavLink {
 const ROLE_PERMISSIONS: Record<string, string[]> = {
   NONE: ['/'],
   PL: ['/', '/request', '/approval', '/change-status', '/history', '/voc', '/guide', '/permissions', '/address-book'],
+  // 해외 제품 담당자 — 접근 가능한 페이지는 PL 과 동일하다(보이는 의뢰서 범위만 다르다).
+  PL_GL: ['/', '/request', '/approval', '/change-status', '/history', '/voc', '/guide', '/permissions', '/address-book'],
   TE_R: ['/', '/request', '/approval', '/change-status', '/history', '/voc', '/guide', '/permissions', '/address-book'],
   TE_P: ['/', '/request', '/approval', '/change-status', '/history', '/voc', '/guide', '/permissions', '/address-book'],
   TE_J: ['/', '/request', '/approval', '/change-status', '/history', '/voc', '/guide', '/permissions', '/address-book'],
@@ -37,7 +39,7 @@ const NAV_LINKS: NavLink[] = [
 ];
 
 // dev 모드 유저 드롭다운에서 역할 표시 순서
-const ROLE_ORDER = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER'] as const;
+const ROLE_ORDER = ['PL', 'PL_GL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER'] as const;
 
 export default function Navbar(): React.ReactElement {
   const { t, i18n } = useTranslation();

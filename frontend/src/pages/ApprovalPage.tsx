@@ -11,7 +11,7 @@ import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '.
 import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { MarkDot, MarkCategorySettingsModal } from '../components/DocumentMark';
-import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet, LayerDriftResponse, LayerDriftGroup, LayerDriftStepRow } from '../types';
+import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet, LayerDriftResponse, LayerDriftGroup, LayerDriftStepRow, isPlRole, plRoleFor } from '../types';
 import { formatDate, formatTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
 import FilterManageModal from './RequestPage/components/FilterManageModal';
@@ -1756,7 +1756,7 @@ export default function ApprovalPage(): React.ReactElement {
     navigate('/request', { state: { editDocId: doc.id } });
   };
 
-  const isPL = currentUser.role === 'PL';
+  const isPL = isPlRole(currentUser.role);
   const isMaster = currentUser.role === 'MASTER';
   const isNone = currentUser.role === 'NONE';
 
@@ -2708,7 +2708,9 @@ export default function ApprovalPage(): React.ReactElement {
                       onClick={async () => {
                         if (!paAddOpen && paCandidates.length === 0) {
                           setLoadingMembers(true);
-                          try { const r = await usersAPI.list('PL'); setPaCandidates(r.data); } catch { setPaCandidates([]); }
+                          // 후보는 로그인한 사람이 아니라 **문서의 지역**으로 고른다 —
+                          // 해외 의뢰서에는 해외 제품 담당자만 후결자로 올린다.
+                          try { const r = await usersAPI.list(plRoleFor(selected?.is_overseas)); setPaCandidates(r.data); } catch { setPaCandidates([]); }
                           setLoadingMembers(false);
                         }
                         setPaAddOpen((o) => !o);
@@ -2947,7 +2949,9 @@ export default function ApprovalPage(): React.ReactElement {
                     setChangingDesigneeOpen(true);
                     setChangingDesigneeUserId('');
                     setLoadingMembers(true);
-                    const members = await usersAPI.list('PL');
+                    // 서버도 같은 규칙으로 검증한다(views._resolve_designated_pls) —
+                    // 지역이 다른 담당자를 지정하면 400 이 된다.
+                    const members = await usersAPI.list(plRoleFor(selected?.is_overseas));
                     setTeamMembers(members.data.filter(u => u.loginid !== currentUser.username));
                     setLoadingMembers(false);
                   }}

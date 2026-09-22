@@ -36,6 +36,7 @@ import {
   MergeTable,
   AdiCdStep,
   MapInfo,
+  plRoleFor,
 } from '../../types';
 import StepGuideTour from '../../components/StepGuideTour';
 import { useStepGuideTour } from './useStepGuideTour';
@@ -360,6 +361,15 @@ export default function RequestPage(): React.ReactElement {
   const isResumeMode = editDocStatus === 'pause';
   // R(+RV) 합의 완료 후 중단된 문서 — StepMap(MAP 정보)을 read-only로 막는다(서버가 계산해 내려줌, 2026-09).
   const [mapInfoLocked, setMapInfoLocked] = useState(false);
+  // 편집 대상 문서의 지역(국내/해외). 결재선 후보(지정 PL·통보자)를 어느 역할로 부를지 정한다.
+  // 새 의뢰서는 아직 문서가 없으므로 작성자 역할로 판정한다 — 공유 그룹 멤버가 남의 임시저장을
+  // 대신 상신할 때 로그인 역할로 판단하면 지역이 어긋나 서버 검증(400)에 걸리므로,
+  // 편집 모드에서는 **문서 값**(doc.is_overseas)을 우선한다.
+  // state 가 아니라 ref 인 이유: 이 값은 상신 모달을 여는 **클릭 핸들러에서만** 읽고 화면에
+  // 그리지 않는다(originalRequesterRef 와 같은 성격). state 로 두면 편집 문서 로드 때
+  // 불필요한 리렌더가 한 번 더 생긴다.
+  const editDocIsOverseasRef = useRef<boolean | null>(null);
+  const plCandidateRole = () => plRoleFor(editDocIsOverseasRef.current ?? currentUser.role === 'PL_GL');
 
   // 이력 바로 등록 (MASTER 전용) — 결재 경로를 타지 않고 상신일·결재 완료일을 직접 지정한다.
   const [directHistoryOpen, setDirectHistoryOpen] = useState(false);
@@ -1019,6 +1029,7 @@ export default function RequestPage(): React.ReactElement {
       const doc = res.data;
       setEditDocStatus(doc.status);
       setMapInfoLocked(Boolean(doc.map_info_locked));
+      editDocIsOverseasRef.current = Boolean(doc.is_overseas);
       try {
         const parsed = JSON.parse(doc.additional_notes ?? '{}');
         prevParsedRef.current = {
@@ -4459,16 +4470,17 @@ export default function RequestPage(): React.ReactElement {
     // peer review 모드가 아닐 때만 PL 목록 로드
     if (!isPeerReviewMode && plUserOptions.length === 0) {
       try {
-        const res = await usersAPI.list('PL');
+        const res = await usersAPI.list(plCandidateRole());
         setPlUserOptions(res.data.filter(u => u.loginid !== currentUser.username));
       } catch {
         setPlUserOptions([]);
       }
     }
     // 통보자 후보(제품담당자 PL) 로드 — 검토자·후결자와 동일하게 PL 만 검색 대상
+    // (해외 의뢰서는 해외 제품 담당자 PL_GL 이 대상이다 — plCandidateRole)
     if (!isPeerReviewMode && notifierUserOptions.length === 0) {
       try {
-        const res = await usersAPI.list('PL');
+        const res = await usersAPI.list(plCandidateRole());
         setNotifierUserOptions(res.data.filter(u => u.loginid !== currentUser.username));
       } catch {
         setNotifierUserOptions([]);

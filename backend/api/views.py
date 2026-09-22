@@ -188,6 +188,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         그 외 상태(상신/반려/완료)는 종전대로 전원에게 노출한다.
         공유 대상은 작성자가 문서마다 고른 **그룹 1개**(shared_group)다. 지정하지 않은
         draft 는 작성자 본인과 MASTER 외에는 보이지 않는다.
+
+        해외 제품 담당자(UserProfile.OVERSEAS_PL_ROLE)만 **지역 필터**를 한 겹 더 받는다 —
+        해외 의뢰서(is_overseas)와 본인이 올린 문서만 보이고 국내 의뢰서는 보이지 않는다.
+        국내 PL·TE_*·MASTER 의 조회 범위는 종전 그대로라 격리는 **단방향**이다
+        (국내 → 해외 문서 조회 가능, 해외 → 국내 불가). 결재 현황·홈·이력 세 화면이 모두
+        이 목록 API 를 쓰므로 필터는 여기 한 곳에만 둔다.
+
+        `Q(requester=user)` 예외가 필요한 이유: 국내에서 일하다 해외 역할로 바뀐 사람의
+        기존 임시저장·의뢰서는 is_overseas=False 로 남아 있어, 이 예외가 없으면 **본인이
+        올린 문서를 본인이 못 보게** 된다.
         """
         qs = super().get_queryset()
         user = self.request.user
@@ -202,6 +212,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         # 비인증(개발 모드 등) 또는 MASTER 는 전체 조회
         if not getattr(user, 'is_authenticated', False) or getattr(user, 'role', None) == 'MASTER':
             return qs
+        if getattr(user, 'role', None) == User.OVERSEAS_PL_ROLE:
+            qs = qs.filter(Q(is_overseas=True) | Q(requester=user))
         my_group_ids = list(user.member_groups.values_list('id', flat=True))
         return qs.filter(
             ~Q(status='draft') | Q(requester=user) | Q(shared_group_id__in=my_group_ids)
@@ -472,6 +484,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
 
         영업/기술지원 합의자는 PL 권한자만 지정할 수 있고, PL 검토 단계와 **병렬**로 진행한다.
         지정이 없으면 빈 리스트를 돌려준다(그 경우 SA 단계를 만들지 않고 화면에 '해당없음'으로 남는다).
+        지정 PL 과 같은 이유로 **문서와 같은 지역의 제품 담당자**만 지정할 수 있다
+        (`document.pl_role()` — _resolve_designated_pls 주석 참고).
         """
         detail = document.get_detail().get('detail', {}) or {}
         loginids, seen = [], set()
@@ -480,10 +494,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             if lid and lid not in seen:
                 seen.add(lid)
                 loginids.append(lid)
+        pl_role = document.pl_role()
         users = []
         for lid in loginids:
             try:
-                users.append(User.objects.get(loginid=lid, role='PL'))
+                users.append(User.objects.get(loginid=lid, role=pl_role))
             except User.DoesNotExist:
                 return None, f'유효하지 않은 영업/기술지원 합의자입니다: {lid}'
         return users, None
@@ -528,7 +543,12 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not self._can_edit(request.user, document):
             return Response({'error': '상신 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
-        pl_users, err = self._resolve_designated_pls(request)
+        # 문서의 지역(국내/해외)을 여기서 **확정**한다 — 상신하는 사람이 아니라 **의뢰자**의
+        # 역할로 판정한다(공유 그룹 멤버가 남의 임시저장을 대신 상신할 수 있기 때문).
+        # 지정 PL 후보 검증이 이 값을 쓰므로 반드시 검증보다 먼저 확정해야 한다.
+        document.is_overseas = RequestDocument.overseas_by_role(document.requester)
+
+        pl_users, err = self._resolve_designated_pls(request, document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -632,7 +652,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not self._can_edit(request.user, document):
             return Response({'error': '재상신 권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
 
-        pl_users, err = self._resolve_designated_pls(request)
+        pl_users, err = self._resolve_designated_pls(request, document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -729,7 +749,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        pl_users, err = self._resolve_designated_pls(request)
+        pl_users, err = self._resolve_designated_pls(request, document)
         if err:
             return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -2562,12 +2582,18 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             mailer.enqueue_stage_arrival(document, 'RA', ra_step, recipient_name=ra_step.assignee_name)
         return 'under_review'
 
-    def _resolve_designated_pls(self, request):
+    def _resolve_designated_pls(self, request, document):
         """요청에서 지정 PL 목록을 파싱·검증해 (User 리스트, error) 를 반환한다.
 
         다중 지정(`designated_pl_loginids` 배열)을 우선하고, 없으면 단일
         (`designated_pl_loginid`) 을 1개 배열로 호환 처리한다. 각 대상은
-        role='PL' 이어야 하고 본인은 지정할 수 없다. error 가 None 이 아니면 실패.
+        **문서와 같은 지역의 제품 담당자 역할**(`document.pl_role()` — 국내 의뢰서는 'PL',
+        해외 의뢰서는 'PL_GL')이어야 하고 본인은 지정할 수 없다.
+        error 가 None 이 아니면 실패.
+
+        지역을 섞지 않는 이유: 해외 의뢰서의 지정 PL 이 국내 담당자면 그 사람은 문서를
+        볼 수 있어도(단방향 격리) 반대로 국내 의뢰서의 지정 PL 이 해외 담당자면 **자기가
+        결재해야 하는 문서를 조회조차 못 하는** 상태가 된다.
         """
         loginids = request.data.get('designated_pl_loginids')
         if not isinstance(loginids, list):
@@ -2582,10 +2608,11 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         if not cleaned:
             return None, '동료 PL을 지정해주세요.'
         caller_loginid = getattr(request.user, 'loginid', '')
+        pl_role = document.pl_role()
         pl_users = []
         for lid in cleaned:
             try:
-                u = User.objects.get(loginid=lid, role='PL')
+                u = User.objects.get(loginid=lid, role=pl_role)
             except User.DoesNotExist:
                 return None, f'유효하지 않은 PL 사용자입니다: {lid}'
             if caller_loginid and lid == caller_loginid:
@@ -2774,7 +2801,8 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             return Response({'error': '새 지정 PL의 loginid를 입력해주세요.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            new_pl_user = User.objects.get(loginid=new_loginid, role='PL')
+            # 지정 PL 과 같은 규칙 — 문서와 같은 지역의 제품 담당자만 새 지정자가 될 수 있다.
+            new_pl_user = User.objects.get(loginid=new_loginid, role=document.pl_role())
         except User.DoesNotExist:
             return Response({'error': '유효하지 않은 PL 사용자입니다.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -3074,7 +3102,13 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         base_title = serializer.validated_data.get('title', '')
         user = self.request.user
         requester = user if getattr(user, 'is_authenticated', False) else None
-        serializer.save(title=self._unique_title(base_title), requester=requester)
+        # 지역은 작성 시 작성자 역할로 **잠정** 기록하고 최초 상신(submit)에서 확정한다.
+        # 임시저장 단계에서도 값이 있어야 해외 담당자가 자기 draft 를 목록에서 볼 수 있다.
+        serializer.save(
+            title=self._unique_title(base_title),
+            requester=requester,
+            is_overseas=RequestDocument.overseas_by_role(requester),
+        )
 
     @action(detail=True, methods=['post'], url_path='set-shared-group')
     def set_shared_group(self, request, pk=None):
@@ -3446,6 +3480,19 @@ class RejectionSnapshotViewSet(mixins.DestroyModelMixin, viewsets.ReadOnlyModelV
     search_fields = ['title', 'product_name', 'requester_name', 'requester_department']
     ordering_fields = ['rejected_at', 'submitted_at']
     ordering = ['-rejected_at']
+
+    def get_queryset(self):
+        """해외 제품 담당자에게는 해외 의뢰서의 반려 이력과 본인이 올린 문서의 이력만 보인다.
+
+        의뢰서 목록(RequestDocumentViewSet.get_queryset)과 같은 기준이어야 이력 조회의
+        '반려' 탭에만 국내 문서가 남는 일이 없다. 원본 문서가 지워지면 document 가 null 이
+        되므로 FK 를 타지 않고 스냅샷에 복사해 둔 `is_overseas`·`requester_loginid` 로 판정한다.
+        """
+        qs = super().get_queryset()
+        user = self.request.user
+        if getattr(user, 'role', None) != User.OVERSEAS_PL_ROLE:
+            return qs
+        return qs.filter(Q(is_overseas=True) | Q(requester_loginid=user.loginid))
 
 
 class ExternalRequestDocumentViewSet(viewsets.ReadOnlyModelViewSet):
@@ -4372,8 +4419,8 @@ class UserViewSet(viewsets.ModelViewSet):
         is_master = request.user.is_authenticated and request.user.role == 'MASTER'
         requester_role = getattr(request.user, 'role', None) if request.user.is_authenticated else None
 
-        all_valid_roles = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE']
-        assignable_roles = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E']
+        all_valid_roles = ['PL', 'PL_GL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E', 'MASTER', 'NONE']
+        assignable_roles = ['PL', 'PL_GL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E']
 
         if role not in all_valid_roles:
             return Response({'error': '유효하지 않은 역할입니다.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -4434,7 +4481,7 @@ class UserViewSet(viewsets.ModelViewSet):
             target_role = getattr(user, 'role', '')
 
             if caller_role != 'MASTER':
-                assignable_roles = ['PL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E']
+                assignable_roles = ['PL', 'PL_GL', 'TE_R', 'TE_P', 'TE_J', 'TE_O', 'TE_E']
                 if caller_role not in assignable_roles:
                     return Response({'error': '권한이 없습니다.'}, status=status.HTTP_403_FORBIDDEN)
                 if caller.id == user.id:

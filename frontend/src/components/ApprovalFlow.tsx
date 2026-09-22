@@ -1,5 +1,5 @@
 // ⚠️ MASKING 처리된 파일. 이 파일에 포함된 비즈니스 용어는 {{ko.json}} 키로 마스킹되어 있습니다. 원래 용어를 확인하려면 다음 파일을 참조하세요: frontend/src/locales/ko.json
-import { ApprovalStepFrontend, UserRole, MockUser, UserRoleWithNull } from '../types';
+import { ApprovalStepFrontend, UserRole, MockUser, UserRoleWithNull, isPlRole } from '../types';
 
 export const ROLE_TO_AGENT: Partial<Record<UserRole, string>> = {
   TE_R: 'R',
@@ -49,7 +49,7 @@ export const canUserUnclaim = (user: { role: UserRoleWithNull; username: string 
 // 합의/반려 가능 여부
 // - MASTER: 항상 가능
 // - J/O/E/P(검토중): 누군가 검토중으로 선점(assignee 존재)하면 같은 팀(역할↔agent) 누구나 합의/반려
-// - PL 역할: agent='PL' 단계에서 본인이 assignee일 때 (검토 처리)
+// - PL 역할(국내 PL·해외 PL_GL 공통): agent='PL' 단계에서 본인이 assignee일 때 (검토 처리)
 // - 나머지(R·RV·PV·EV·RA): 담당자로 지정된 본인
 export const canUserAgree = (user: { role: UserRoleWithNull; username: string } | MockUser, step: ApprovalStepFrontend): boolean => {
   if (user.role === 'MASTER') return true;
@@ -59,7 +59,7 @@ export const canUserAgree = (user: { role: UserRoleWithNull; username: string } 
     if (!step.assignee_loginid) return false;
     return !!user.role && ROLE_TO_AGENT[user.role] === step.agent;
   }
-  if (user.role === 'PL' && step.agent === 'PL') {
+  if (isPlRole(user.role) && step.agent === 'PL') {
     return step.assignee_loginid === user.username;
   }
   return step.assignee_loginid === user.username;
