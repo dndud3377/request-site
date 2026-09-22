@@ -73,7 +73,6 @@ import {
   OAYER_EDITABLE_COLS,
   LOADED_LOCK_COLS,
   isNocSpecial,
-  NOC_LAYER_DELETE,
   ST_X,
   isRowInactive,
   makeTourDetail,
@@ -2484,8 +2483,8 @@ export default function RequestPage(): React.ReactElement {
     if (mappedJayerRowIds.has(id) && isBbMirroredCol(field) && changedRow?.[field] !== value) {
       unmapJayerRows([id]);
     }
-    // 교차 동기화(J→O) 여부: 소스 행이 참여행(활성 && 기등록/layer삭제 아님)이고,
-    // 전파할 값이 특수값(기등록/layer삭제)이 아닐 때만 O-layer로 전파를 검토한다.
+    // 교차 동기화(J→O) 여부: 소스 행이 참여행(활성 && 기등록/layer삭제/미진행 아님)이고,
+    // 전파할 값이 특수값(기등록/layer삭제/미진행)이 아닐 때만 O-layer로 전파를 검토한다.
     // (같은 J-layer 안에서는 layerid가 같아도 서로 다른 값을 가질 수 있어 더 이상 전파하지 않는다.)
     const layerid = changedRow?.layerid?.trim();
     const sourceParticipant = !!changedRow && !isRowInactive(changedRow.st) && !isNocSpecial(changedRow.new_or_copy);
@@ -2513,7 +2512,7 @@ export default function RequestPage(): React.ReactElement {
       }
       if (field === 'new_or_copy') {
         const next = { ...r, new_or_copy: value };
-        // 기등록/layer삭제 선택 시 st를 자동으로 'X'로 설정
+        // 기등록/layer삭제/미진행 선택 시 st를 자동으로 'X'로 설정
         if (isNocSpecial(value)) next.st = 'X';
         return next;
       }
@@ -2591,7 +2590,7 @@ export default function RequestPage(): React.ReactElement {
         setJayerRows((rows) => rows.map((r) => (r.id === rowId ? { ...r, item_id: autoMatchItemId(r, candidates) } : r)));
       }
     });
-    // 기등록/layer삭제를 붙여넣은 행은 st를 자동으로 'X'로 설정
+    // 기등록/layer삭제/미진행을 붙여넣은 행은 st를 자동으로 'X'로 설정
     const nocSpecialPastedIds = new Set(
       changes.filter(c => 'new_or_copy' in c.values && isNocSpecial(c.values.new_or_copy)).map(c => c.rowId)
     );
@@ -2658,7 +2657,7 @@ export default function RequestPage(): React.ReactElement {
         }));
       }
     });
-    // 기등록/layer삭제를 붙여넣은 행은 st를 자동으로 'X'로 설정
+    // 기등록/layer삭제/미진행을 붙여넣은 행은 st를 자동으로 'X'로 설정
     const nocSpecialPastedIds = new Set(
       changes.filter(c => 'new_or_copy' in c.values && isNocSpecial(c.values.new_or_copy)).map(c => c.rowId)
     );
@@ -2734,11 +2733,11 @@ export default function RequestPage(): React.ReactElement {
   // 셀 단위 잠금: 비활성(st==='X')/기등록 행은 전체 잠금, 불러온(loaded) 행은 LOADED_LOCK_COLS만 잠금.
   // st 컬럼은 "비활성에서 되돌리는 유일한 수단"이라 항상 직접 편집 가능하다. new_or_copy 는
   // st==='X' 여부와 무관하게 항상 필수값이라 잠그지 않는다(사용자가 직접 X로 바꾼 행도 계속 입력 가능).
-  // layer삭제 행의 st 는 항상 'X' 로 고정이므로 붙여넣기로도 덮어쓸 수 없다.
+  // layer삭제/미진행 행의 st 는 항상 'X' 로 고정이므로 붙여넣기로도 덮어쓸 수 없다.
   const isLayerCellLocked = (row: { st?: string; new_or_copy?: string; loaded?: boolean }, col: string): boolean => {
     // new_or_copy 는 st==='X' 인 행에서도 필수값이라 잠그지 않는다.
     if (col === 'new_or_copy') return false;
-    if (col === 'st') return row.new_or_copy === '기등록' || row.new_or_copy === NOC_LAYER_DELETE;
+    if (col === 'st') return isNocSpecial(row.new_or_copy);
     return isRowInactive(row.st) || row.new_or_copy === '기등록'
       || (!!row.loaded && (LOADED_LOCK_COLS as readonly string[]).includes(col));
   };
@@ -2751,7 +2750,7 @@ export default function RequestPage(): React.ReactElement {
   const isBulkStOrNocTarget = (r: { st: string; new_or_copy: string }, field: 'st' | 'new_or_copy'): boolean =>
     !isNocSpecial(r.new_or_copy) && (field !== 'new_or_copy' || !isRowInactive(r.st));
 
-  // 참여행(활성 && 기등록/layer삭제 아님) 전체에 같은 값을 일괄 적용한다. 일괄 적용은 J 참여행 전체를
+  // 참여행(활성 && 기등록/layer삭제/미진행 아님) 전체에 같은 값을 일괄 적용한다. 일괄 적용은 J 참여행 전체를
   // 동일 값으로 맞추므로 layerid별 합의는 항상 성립하며, O 참여행이 정확히 1개인 layerid에만 전파한다.
   const handleJayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
     // layerids는 "이 클릭이 반영된 뒤"의 참여 상태 기준으로 계산한다 — 클릭 이전 상태로 계산하면
@@ -2796,7 +2795,7 @@ export default function RequestPage(): React.ReactElement {
   // ===== Oayer Handlers =====
   const handleOayerChange = (id: string, field: keyof Omit<OayerRow, 'id'>, value: string) => {
     const changedRow = oayerRows.find(r => r.id === id);
-    // 교차 동기화(O→J) 여부: 소스 행이 참여행이고, 전파할 값이 특수값(기등록/layer삭제)이 아닐 때만
+    // 교차 동기화(O→J) 여부: 소스 행이 참여행이고, 전파할 값이 특수값(기등록/layer삭제/미진행)이 아닐 때만
     // J-layer로 전파를 검토한다(같은 O-layer 안에서는 더 이상 전파하지 않는다).
     const layerid = changedRow?.layerid?.trim();
     const sourceParticipant = !!changedRow && !isRowInactive(changedRow.st) && !isNocSpecial(changedRow.new_or_copy);
@@ -2816,7 +2815,7 @@ export default function RequestPage(): React.ReactElement {
       }
       if (field === 'new_or_copy') {
         const next = { ...r, new_or_copy: value };
-        // 기등록/layer삭제 선택 시 st를 자동으로 'X'로 설정
+        // 기등록/layer삭제/미진행 선택 시 st를 자동으로 'X'로 설정
         if (isNocSpecial(value)) next.st = 'X';
         return next;
       }
@@ -2862,7 +2861,7 @@ export default function RequestPage(): React.ReactElement {
     }
   };
 
-  // 참여행(활성 && 기등록/layer삭제 아님) 전체에 같은 값을 일괄 적용한다. 일괄 적용은 O 참여행 전체를
+  // 참여행(활성 && 기등록/layer삭제/미진행 아님) 전체에 같은 값을 일괄 적용한다. 일괄 적용은 O 참여행 전체를
   // 동일 값으로 맞추므로 layerid별 합의는 항상 성립하며, J 참여행이 정확히 1개인 layerid에만 전파한다.
   const handleOayerSetAll = (field: 'st' | 'new_or_copy', value: string) => {
     const updatedRows = oayerRows.map((r) => isBulkStOrNocTarget(r, field) ? { ...r, [field]: value } : r);

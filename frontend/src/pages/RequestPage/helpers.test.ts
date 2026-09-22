@@ -185,6 +185,10 @@ describe('computeExpectedRequestPurpose', () => {
     expect(computeExpectedRequestPurpose([row('기등록')], [row('layer삭제')])).toBe('기타');
   });
 
+  it('미진행만 있으면 기타', () => {
+    expect(computeExpectedRequestPurpose([row('미진행')], [])).toBe('기타');
+  });
+
   it('신규 + 기등록이면 기등록은 무시하고 신규', () => {
     expect(computeExpectedRequestPurpose([row('신규'), row('기등록')], [])).toBe('신규');
   });
