@@ -296,6 +296,9 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   (`PagedDetailView.tsx`)·엑셀/PDF 내보내기(`utils/detailExport.ts`)·메일 본문(`mailer.py`)에는
   아직 노출하지 않는다(참고로 `production_date`도 현재 그 화면들에는 나오지 않는다). 필요 시 별도
   요청으로 추가한다.
+  - **(후속, 2026-09-22 같은 날)** 결재 현황·이력 화면 상세보기(`PagedDetailView.tsx`)와 엑셀
+    "의뢰 상세 (텍스트)" 시트에도 추가했다 — `docs/APPROVAL.md` §7 "PRODUCT 담당자 Chip 추가"
+    항목 참조. 메일 본문은 검토 후 대상에서 제외했다(위 사유와 동일).
 - **영향 파일**: `frontend/src/types/index.ts`, `frontend/src/pages/RequestPage/constants.ts`,
   `frontend/src/pages/RequestPage/components/Step1.tsx`, `frontend/src/locales/ko.json`,
   `frontend/src/locales/en.json`.
