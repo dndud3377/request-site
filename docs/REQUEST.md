@@ -4432,6 +4432,53 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   6. [조합법 또는 라인을 다른 값으로 바꾸기] → [기대 결과: 제품 이름·조리법이 모두 초기화되고,
      새 조합법 기준의 넓은 후보로 다시 채워지는지 확인(기존 동작 유지).]
 
+### 버그 수정 (2026-09-22 — ADI CD 대상 패널이 Step1 상단 필드의 좁혀진 productOptions를 재사용하던 회귀 수정 + 패널 자체도 양방향 좁힘)
+
+- **배경**: 바로 위 "Step1 제품이름 ↔ 조리법 상호 좁힘" 작업 직후 발견·보고한 회귀. ADI CD 변경
+  '동일 변경 적용 대상' 패널(`AdiCdTargetsPanel`)의 제품이름 자동완성이 위쪽 Step1 필드의
+  `productOptions`를 그대로 재사용했는데, 그 state가 이제 조리법 선택으로 좁혀질 수 있어
+  라인+조합법의 다른 제품(예: 첫 행 조리법을 안 가진 제품)이 후보에서 사라졌다. 재현 테스트로
+  실제 확인(`P1`→조리법 `Y` 선택 후 패널을 열면 `P2`가 드롭다운에서 빠짐)한 뒤 보고했고,
+  사용자가 이어서 "패널에서도 제품이름·조리법 어느 쪽을 먼저 골라도 서로 좁혀지도록" 요청.
+- **요청**: ADI CD 대상 패널은 라인+조합법 전체 범위에서 제품이름·조리법을 독립적으로 다루고,
+  Step1 상단 필드와 동일하게 어느 쪽을 먼저 골라도 반대쪽이 좁혀지도록 한다.
+- **수정**(`frontend/src/pages/RequestPage/index.tsx`):
+  - `adiCdTargetDraftProductOptions` state 신규 추가(기존 `adiCdTargetDraftProcessIdOptions`와
+    쌍). Step1 상단의 `productOptions`/`processIdOptions`와 완전히 독립.
+  - draft 제품이름 변경 → draft 조리법 좁힘(기존 유지) / draft 조리법 변경 → draft 제품이름
+    좁힘(신규, 대칭) 두 effect로 재구성. 둘 다 `adi_cd 변경`이 선택돼 패널이 열려 있을 때만
+    동작하고, 값이 비면 라인+조합법 범위 전체로 복원한다. 위 Step1 캐스케이드와 동일하게
+    되먹임 루프 방지용 stable setter를 사용한다.
+  - `handleAdiCdTargetDraftChange`가 제품이름이 바뀔 때마다 조리법을 무조건 비우던 것을
+    제거 — 이제 반대쪽 값은 위 effect가 "새로 좁혀진 목록에 없을 때만" 비운다.
+- **영향 파일**: `frontend/src/pages/RequestPage/index.tsx`,
+  `frontend/src/pages/RequestPage/components/Step1.tsx`(prop 전달),
+  `frontend/src/pages/RequestPage/components/AdiCdTargetsPanel.tsx`(주석만),
+  `frontend/src/pages/RequestPage/adiCdTargetsCrossFilter.test.tsx`(신규),
+  `frontend/src/pages/RequestPage/adiCdUnregisteredAndVs.test.tsx`(기존 테스트 1건 갱신).
+- **검증**: `cd frontend && npx tsc --noEmit` — 신규 에러 0(기존 4건과 동일). `CI=true npx
+  react-scripts test --watchAll=false` — 13 suites / **305건 전부 통과**(신규
+  `adiCdTargetsCrossFilter.test.tsx` 3건 포함, 기존 `adiCdUnregisteredAndVs.test.tsx`의
+  "제품 이름을 바꾸면 조리법이 비워진다" 테스트 1건은 새 동작(무조건 비움 폐지)에 맞게 기대값을
+  고쳤고 — 자유 입력값이라 매칭 판정이 나지 않아 값이 유지되는 케이스로 갱신 — 그 파일 28건
+  전부 통과). 신규 테스트는 ① 상단에서 조리법을 골라도 패널의 제품이름 후보가 라인+조합법
+  전체로 보이는지(이번에 고친 회귀의 재현) ② 패널 안에서 제품이름 선택 시 조리법 좁힘 ③
+  조리법을 먼저 선택해도 제품이름이 좁혀지고 표 반영까지 정상인지를 실제 컴포넌트를 구동해
+  확인했다.
+- **수동 검증 시나리오** (원격 세션이라 브라우저로 직접 확인하지 못했다 — 아래가 검증의 핵심):
+  1. [`/request` 새 문서 → 라인·조합법 선택 → 제품 이름에 조리법을 2개 이상 가진 제품(예: P1)을
+     선택 → 조리법 중 하나(그 제품만 갖고 다른 제품은 안 갖는 값)를 선택 → 요청 목적 'ADI CD
+     변경' 선택] → [기대 결과: '동일 변경 적용 대상' 표 아래 제품 이름 입력칸을 클릭했을 때,
+     라인+조합법의 제품 전체가 드롭다운에 보이는지 확인(방금 고른 조리법을 안 가진 다른 제품도
+     보여야 함 — 안 보이면 회귀).]
+  2. [1번 이어서, 입력칸에서 제품 이름을 하나 선택] → [기대 결과: 조리법 입력칸 후보가 그
+     제품이 실제로 가진 조리법으로 좁혀지는지 확인.]
+  3. [입력칸을 지우고 이번엔 조리법을 먼저 선택] → [기대 결과: 제품 이름 입력칸 후보가 그
+     조리법을 가진 제품들로 좁혀지는지 확인 → 그중 하나를 선택하면 방금 고른 조리법이 사라지지
+     않고 그대로 남는지 확인.]
+  4. [2번 또는 3번 이어서 "추가" 버튼 클릭] → [기대 결과: 표에 새 행이 정상적으로 추가되는지
+     확인.]
+
 ## 5. 검증 방법
 ```bash
 # 타입체크 (2026-08-06 실측 24개 = 정상. 작업 직전 실측값과 같으면 신규 0)
