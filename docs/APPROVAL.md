@@ -1334,6 +1334,31 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 
 ## 7. 상세 보기(PagedDetailView) 변경 이력
 
+- **(2026-09-22) "의뢰 상세" 탭에 "PRODUCT 담당자" Chip 추가**: `docs/REQUEST.md`(2026-09-22
+  항목)에서 작성 화면(Step1)에만 추가했던 `product_manager`(자유 텍스트) 필드를, 결재
+  현황·이력 화면이 공유하는 이 컴포넌트에도 노출해 달라는 후속 요청. "고객/업체명 / 요구 사항"
+  Chip 줄에 세 번째 Chip으로 추가했다(`customer_requirement`와 동일한 조건부 렌더링·
+  `changedFields`/`fieldKey` 배선 — 이력 확인 배지도 자동으로 지원됨, 별도 등록 불필요). 같은
+  컴포넌트를 쓰는 `HistoryPage.tsx`에도 자동 반영된다.
+  - **엑셀 export**: `utils/detailExport.ts`의 `addDetailInfoSheet`(의뢰 상세 "(텍스트)" 시트)에도
+    `customer_requirement` 다음 줄로 `product_manager` 블록을 추가했다. "의뢰 상세" 이미지 시트는
+    화면을 그대로 캡처하는 방식이라 이 컴포넌트 변경만으로 자동 반영된다.
+  - **가이드 투어**: `RequestPage/constants.ts`의 `makeTourDetail()`에 `product_manager: '샘플
+    담당자'` 샘플 값을 추가해, 투어에서도 새 Chip이 보이도록 했다(`approvalTourSeed.ts`는 이
+    함수를 그대로 스프레드해서 쓰므로 별도 수정 불필요).
+  - **검토했지만 추가하지 않은 곳**: `backend/api/mailer.py`(결재 알림 메일)는 `customer_name`/
+    `customer_requirement`도 원래 포함하지 않아 기존 패턴과 일관되게 그대로 뒀다.
+    `scripts/approval_cases/payload.py`(E2E 케이스 러너)는 화면 표시와 무관한 테스트 데이터
+    생성 코드라 대상에서 제외했다.
+  - **영향 파일**: `frontend/src/components/PagedDetailView.tsx`,
+    `frontend/src/utils/detailExport.ts`, `frontend/src/pages/RequestPage/constants.ts`.
+  - **검증**: `npx tsc --noEmit` — 신규 에러 0(기존 4건과 동일, `git stash`로 베이스라인 재확인).
+    `CI=true npx react-scripts test --watchAll=false` — 14 suites / 309건 전부 통과(3회 연속
+    재실행, 1회차에 `requesterResubmitHistory.test.tsx` 1건이 `window.scrollTo` 관련 jsdom
+    타이밍 이슈로 실패했으나 단독 실행·재실행 모두 통과해 플레이키로 판단). 백엔드는 변경하지
+    않았지만 §1.1 절차로 `manage.py test api` 실행 — 575건 전부 통과. 원격 세션에서 개발
+    서버(`AUTH_MODE=dev`)를 띄워 결재 현황 상세에서 "PRODUCT Manager" Chip이 정상 노출됨을
+    스크린샷으로 확인했다.
 - **(2026-08) `history[]` 적재 조건에 재개(resume) 추가**: `additional_notes.history[]`는 세 수정 재상신 경로(Case D `peer_submit`/Case I `resubmit`/Case M `resume`) 중 **재상신(`resubmit`)일 때만** 쌓였다. 중단(pause) 후 `/request` 편집에서 내용을 고치고 재개하면 회차도 안 올라가고 이력도 안 남아, 결재자가 뭐가 바뀌었는지 확인할 방법이 없었다(Case M 참조). `RequestPage/index.tsx`의 `shouldAddHistory` 조건을 `isRejected || isPause`로 넓혀 재개 시에도 수정 전 스냅샷을 적재한다.
 - **(2026-08) 레거시 문서 `bb_entries` 이력 오탐 (미수정)**: `RequestPage/index.tsx`가 편집 로드 시 `bb_entries`에 없는 `id`를 백필(`e.id ?? genId()`)하는데, 이 백필된 값이 `history[]`(백필 전 원본)과 비교돼 **내용을 안 건드려도 뼈찜 항목이 "변경됨"으로 오탐**된다(`computeDetailDiff`, `PagedDetailView.tsx`). `id` 필드 도입 이전에 저장된 레거시 문서가 편집·재상신될 때만 발생(신규 문서는 생성 시점부터 `makeBbEntry()`가 항상 id를 부여). 원인 재현 확인만 했고 아직 수정하지 않았다.
 - **(2026-08) 'MAP 삭제' 이유 카드 + RA 행 '해당없음' 처리**: '결재 경로' 탭 위쪽에
