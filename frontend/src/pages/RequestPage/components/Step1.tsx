@@ -625,17 +625,29 @@ const Step1: React.FC<Step1Props> = ({
           </div>
         </div>
 
-        {/* 5. 실제 생산 진행 날짜 */}
-        <div className="form-group full-width">
-          <label className="form-label">{t('request.production_date')}</label>
-          <input
-            type="date"
-            className="form-control"
-            value={productionDate}
-            onChange={(e) => setProductionDate(e.target.value)}
-            disabled={!canSelectPurpose}
-            style={{ maxWidth: '200px' }}
-          />
+        {/* 5. 실제 생산 진행 날짜 / PRODUCT 담당자 */}
+        <div className="full-width flex-row">
+          <div className="form-group flex-col" style={{ flex: 'none' }}>
+            <label className="form-label">{t('request.production_date')}</label>
+            <input
+              type="date"
+              className="form-control"
+              value={productionDate}
+              onChange={(e) => setProductionDate(e.target.value)}
+              disabled={!canSelectPurpose}
+              style={{ maxWidth: '200px' }}
+            />
+          </div>
+          <div className="form-group flex-col" style={{ flex: 1 }}>
+            <label className="form-label">{t('request.product_manager')}</label>
+            <input
+              className="form-control"
+              name="product_manager"
+              value={detail.product_manager}
+              onChange={handleDetailChange}
+              disabled={!canSelectPurpose}
+            />
+          </div>
         </div>
 
       </div>

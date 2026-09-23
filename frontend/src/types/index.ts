@@ -469,6 +469,7 @@ export interface DetailFormState {
   partid_selection: string;
   customer_name: string;
   customer_requirement: string;
+  product_manager: string;
 
   // 복사 선택 시
   other_purpose: string[];

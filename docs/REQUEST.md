@@ -280,6 +280,47 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 추가 (2026-09-22 — 의뢰 상세: 실제 생산 진행 날짜 옆에 "PRODUCT 담당자" 자유 입력칸 추가)
+
+- **요청**: Step1(의뢰 상세)의 "실제 생산 진행 날짜"(`production_date`) 입력칸 오른쪽에, 자유롭게
+  텍스트를 입력하는 "PRODUCT 담당자" 항목을 추가해 달라는 요청.
+- **구현**: `customer_name`/`customer_requirement`와 동일한 방식(자유 입력 텍스트, `DetailFormState`
+  → `additional_notes` JSON에 저장, DB 컬럼·마이그레이션 불필요)으로 `product_manager` 필드를 추가했다.
+  - `types/index.ts`: `DetailFormState.product_manager: string` 추가.
+  - `RequestPage/constants.ts`: `INITIAL_DETAIL.product_manager: ''` 추가.
+  - `RequestPage/components/Step1.tsx`: 기존 "5. 실제 생산 진행 날짜" 한 줄짜리 `full-width` 블록을
+    `flex-row`로 바꿔, 왼쪽엔 기존 날짜 입력칸(`maxWidth: 200px` 유지), 오른쪽엔 `PRODUCT 담당자`
+    텍스트 입력칸(`name="product_manager"`, `handleDetailChange`, `disabled={!canSelectPurpose}`)을
+    배치했다.
+- **필수 여부**: 선택 입력이다 — 상신 검증·결재 흐름에는 영향 없음.
+- **범위 제한**: 이번 작업은 작성 화면(Step1) 입력칸만 대상이다. 결재 화면 상세보기
+  (`PagedDetailView.tsx`)·엑셀/PDF 내보내기(`utils/detailExport.ts`)·메일 본문(`mailer.py`)에는
+  아직 노출하지 않는다(참고로 `production_date`도 현재 그 화면들에는 나오지 않는다). 필요 시 별도
+  요청으로 추가한다.
+  - **(후속, 2026-09-22 같은 날)** 결재 현황·이력 화면 상세보기(`PagedDetailView.tsx`)와 엑셀
+    "의뢰 상세 (텍스트)" 시트에도 추가했다 — `docs/APPROVAL.md` §7 "PRODUCT 담당자 Chip 추가"
+    항목 참조. 메일 본문은 검토 후 대상에서 제외했다(위 사유와 동일).
+- **영향 파일**: `frontend/src/types/index.ts`, `frontend/src/pages/RequestPage/constants.ts`,
+  `frontend/src/pages/RequestPage/components/Step1.tsx`, `frontend/src/locales/ko.json`,
+  `frontend/src/locales/en.json`.
+- **검증**: `npx tsc --noEmit` — 신규 에러 0(기존 2건은 `tsconfig.json`의 `target=ES5`/
+  `moduleResolution=node10` deprecated 경고로 이번 변경과 무관, `git stash`로 베이스라인과 동일함을
+  재확인). `CI=true npx react-scripts test --watchAll=false` — **14 suites / 309건 전부 통과**.
+  백엔드는 변경하지 않았지만 §1.1 절차로 `manage.py test api` 실행 — **575건 전부 통과**.
+  원격 세션에서 백엔드(`AUTH_MODE=dev`, sqlite)와 프론트 개발 서버(`REACT_APP_AUTH_MODE=dev`)를 직접
+  띄워 `pl_user` 계정으로 `/request` 진입 후 화면을 스크린샷으로 확인 — "ACTUAL PRODUCTION DATE"
+  오른쪽에 "PRODUCT MANAGER" 입력칸이 정상 렌더링됨을 확인했다(라인/조합법/제품 마스터 데이터가
+  없는 환경이라 요청 목적 버튼까지는 활성화해 보지 못함 — 아래 수동 검증 시나리오로 마무리 확인
+  필요).
+- **수동 검증 시나리오**:
+  1. [`/request` 새 문서 진입 → 라인·조합법·제품 이름·조리법 선택 → 요청 목적 "신규" 클릭] →
+     [기대 결과: "실제 생산 진행 날짜" 입력칸 오른쪽에 "PRODUCT 담당자" 텍스트 입력칸이 나타나고,
+     자유 텍스트(예: "홍길동")를 입력할 수 있어야 한다.]
+  2. [1번 이어서 값을 입력한 뒤 "임시저장" → 목록에서 같은 문서를 다시 열어 편집 진입] →
+     [기대 결과: 입력했던 "PRODUCT 담당자" 값이 그대로 남아 있어야 한다.]
+  3. [1번 이어서 값을 비운 채로 "다음"/"상신" 진행] → [기대 결과: 선택 항목이므로 값이 없어도
+     오류 없이 다음 단계로 진행되어야 한다(필수 표시 `*` 없음).]
+
 ### 기능 추가 (2026-09-22 — J/O-ayer col_new_or_copy: "미진행" 선택지 추가)
 
 - **요청**: `col_new_or_copy` 드롭다운(`NEW_OR_COPY_OPTIONS`)에 "미진행" 항목을 추가해 달라는 요청.

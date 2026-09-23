@@ -306,6 +306,7 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: strin
   blocks.push({ kind: 'kv', label: t('request.process_id'), value: detail.process_id || '-' });
   if (detail.customer_name) blocks.push({ kind: 'kv', label: t('request.customer_name'), value: detail.customer_name });
   if (detail.customer_requirement) blocks.push({ kind: 'kv', label: t('request.customer_requirement'), value: detail.customer_requirement });
+  if (detail.product_manager) blocks.push({ kind: 'kv', label: t('request.product_manager'), value: detail.product_manager });
 
   if (isAdiCdChange && (detail.adi_cd_extra_targets?.length ?? 0) > 0) {
     const rows = [

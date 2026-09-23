@@ -293,6 +293,7 @@ export const INITIAL_DETAIL: DetailFormState = {
   partid_selection: '',
   customer_name: '',
   customer_requirement: '',
+  product_manager: '',
   other_purpose: [],
   source_line: '',
   source_partid: '',
@@ -462,6 +463,7 @@ export const makeTourDetail = (): DetailFormState => ({
   process_id: 'PROC_X1',
   customer_name: '샘플 고객사',
   customer_requirement: '신규 라인 제품 소개 지도 제작 요청',
+  product_manager: '샘플 담당자',
   map_type: 'NEW',
   // BB 자동채움/매핑 데모용 — 외부 데이터 탭 2개와 1:1로 대응한다.
   bb_entries: [
