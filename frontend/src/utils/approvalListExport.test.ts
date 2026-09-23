@@ -1,4 +1,5 @@
-import { filterDocsForExport, EXPORT_TEAMS } from './approvalListExport';
+import type { TFunction } from 'i18next';
+import { filterDocsForExport, splitStageColumns, EXPORT_TEAMS } from './approvalListExport';
 import { OPTION_LINE } from '../pages/RequestPage/constants';
 import { ApprovalStepFrontend, RequestDocument } from '../types';
 
@@ -46,5 +47,55 @@ describe('filterDocsForExport', () => {
   it('라인·팀 조합이 모두 맞아야 남는다', () => {
     expect(ids(filterDocsForExport(docs, ['라인1'], OPTION_LINE, ['P']))).toEqual([]);
     expect(ids(filterDocsForExport(docs, ['라인1'], OPTION_LINE, ['R', 'P']))).toEqual([1]);
+  });
+});
+
+// 번역 결과의 정확한 문구는 검증 대상이 아니므로 키를 그대로 돌려주는 스텁을 쓴다.
+const t = ((key: string) => key) as unknown as TFunction;
+const withSteps = (status: string, steps: Partial<ApprovalStepFrontend>[]): RequestDocument => ({
+  ...makeDoc(99, '라인1', status),
+  approval_steps: steps.map((s, i) => ({ id: 100 + i, agent: 'R', action: 'pending', acted_at: null, round: 1, ...s })),
+} as RequestDocument);
+
+describe('splitStageColumns', () => {
+  it('3구역 병렬: 대기중/검토중/완료로 나누고 완료에는 합의 끝난 R 을 함께 넣는다', () => {
+    const doc = withSteps('under_review', [
+      { agent: 'PL', action: 'approved' },
+      { agent: 'R', action: 'approved', assignee_name: '김R', assignee_loginid: 'r' },
+      { agent: 'P', action: 'pending' },
+      { agent: 'J', action: 'pending', assignee_name: '박J', assignee_loginid: 'j' },
+      { agent: 'O', action: 'approved', assignee_loginid: 'o' },
+    ]);
+    const cols = splitStageColumns(doc, t);
+    expect(cols.done[0]).toBe('approval.agent_R');
+    expect(cols.done).not.toContain('approval.agent_PL');
+    expect(cols.waiting.join()).toContain('approval.agent_P');
+    expect(cols.reviewing.join()).toContain('approval.agent_J');
+    expect(cols.done.join()).toContain('approval.agent_O');
+  });
+
+  it('R 단계: 미지정이면 대기중, 지정되면 검토중 — 아직 완료 칸은 비어 있다', () => {
+    const waiting = splitStageColumns(withSteps('under_review', [{ agent: 'PL', action: 'approved' }, { agent: 'R' }]), t);
+    expect(waiting).toEqual({ waiting: ['approval.agent_R'], reviewing: [], done: [] });
+    const reviewing = splitStageColumns(withSteps('under_review', [
+      { agent: 'PL', action: 'approved' }, { agent: 'R', assignee_name: '김R', assignee_loginid: 'r' },
+    ]), t);
+    expect(reviewing).toEqual({ waiting: [], reviewing: ['approval.agent_R(김R)'], done: [] });
+  });
+
+  it('반려: 반려된 단계를 검토중 칸에 둔다', () => {
+    const cols = splitStageColumns(withSteps('rejected', [
+      { agent: 'PL', action: 'approved' }, { agent: 'R', action: 'rejected', assignee_name: '김R', assignee_loginid: 'r' },
+    ]), t);
+    expect(cols).toEqual({ waiting: [], reviewing: ['approval.agent_R(김R)'], done: [] });
+  });
+
+  it('중단: PAUSE 로 덮지 않고 원래 단계 상태로 나눈다', () => {
+    const cols = splitStageColumns(withSteps('pause', [
+      { agent: 'PL', action: 'approved' }, { agent: 'R', action: 'approved' }, { agent: 'P' }, { agent: 'O', action: 'approved' },
+    ]), t);
+    expect(cols.waiting.join()).toContain('approval.agent_P');
+    expect(cols.done).toEqual(expect.arrayContaining(['approval.agent_R']));
+    expect(cols.done.join()).toContain('approval.agent_O');
   });
 });
