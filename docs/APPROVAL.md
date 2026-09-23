@@ -1364,6 +1364,22 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 
 ## 7. 상세 보기(PagedDetailView) 변경 이력
 
+- **(2026-09-23 후속) "PRODUCT 담당자" Chip 위치를 "기본 정보" → "상세 정보"로 이동**: product
+  담당자 피드백 — 바로 아래 "PRODUCT 담당자 Chip 추가" 항목에서 "고객/업체명 / 요구 사항" Chip
+  줄(기본 정보 카드, `approval.section_basic`)에 넣었던 것을, 흐름도(`request.flow_chart`)가 아니라
+  **상세 정보 카드**(`approval.section_detail`, 뼈찜 존/변경 목적 메모가 있는 카드)로 옮겨 달라는
+  요청. `customer_name`/`customer_requirement` 조건에서 `product_manager`를 빼고, 상세 정보 카드의
+  `change_purpose_note` 행 다음에 `rowStyle` + `chipWide` 조합의 독립된 행으로 추가했다(다른
+  `fieldKey`/`changed` 배선은 그대로 유지 — 이력 확인 배지 동작 불변). 같은 컴포넌트를 쓰는
+  `HistoryPage.tsx`에도 자동 반영된다.
+  - **검토했지만 손대지 않은 곳**: `utils/detailExport.ts`의 텍스트 export 필드 순서(현재도
+    `customer_requirement` 다음 줄) — 화면 그룹 이동과 export 문구 순서 재정렬은 이번 요청 범위
+    밖이라 그대로 뒀다(불일치 아님, 값 자체는 정확히 나간다).
+  - **영향 파일**: `frontend/src/components/PagedDetailView.tsx`.
+  - **검증**: `npx tsc --noEmit` — 신규 에러 0(기존 2건과 동일). `CI=true npx react-scripts test
+    --watchAll=false` — 15 suites / 314건 전부 통과. 원격 세션에서 실제 프로덕션 빌드를 띄워
+    (`AUTH_MODE=dev`, sqlite) `/approval?embed=tour` 상세 모달을 스크린샷으로 확인 후 사용자 승인을
+    받았다.
 - **(2026-09-22) "의뢰 상세" 탭에 "PRODUCT 담당자" Chip 추가**: `docs/REQUEST.md`(2026-09-22
   항목)에서 작성 화면(Step1)에만 추가했던 `product_manager`(자유 텍스트) 필드를, 결재
   현황·이력 화면이 공유하는 이 컴포넌트에도 노출해 달라는 후속 요청. "고객/업체명 / 요구 사항"
