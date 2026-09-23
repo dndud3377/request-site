@@ -638,7 +638,7 @@ const Step1: React.FC<Step1Props> = ({
               style={{ maxWidth: '200px' }}
             />
           </div>
-          <div className="form-group flex-col" style={{ flex: 1 }}>
+          <div className="form-group flex-col" style={{ flex: 'none', width: '400px' }}>
             <label className="form-label">{t('request.product_manager')}</label>
             <input
               className="form-control"
