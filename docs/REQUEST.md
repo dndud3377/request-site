@@ -280,6 +280,23 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### UI 수정 (2026-09-23 후속 — PRODUCT 담당자 입력칸 폭 축소)
+
+- **요청**: 2026-09-22 추가된 Step1 "PRODUCT 담당자" 입력칸이 `flex: 1`(남은 공간 전부 차지)이라
+  너무 길다는 product 담당자 피드백. "실제 생산 진행 날짜" 입력칸(고정 200px)의 2/3 정도(400px)면
+  충분하다는 요청.
+- **구현**: `RequestPage/components/Step1.tsx`의 `product_manager` 입력칸을 감싼 `div`의
+  `style={{ flex: 1 }}`을 `style={{ flex: 'none', width: '400px' }}`로 변경했다(고정 400px —
+  이전 `600px` 중간안을 거쳐 최종 2/3인 400px로 확정). 200px 고정폭인 `production_date`처럼
+  `flex: 'none'`이라도 명시적 `width`가 없으면 flex 아이템이 콘텐츠 크기로 줄어드는 것을 실측으로
+  확인했다(단순 `maxWidth`만으로는 실제 렌더 폭이 의도한 값에 못 미침).
+- **범위**: 작성 화면(Step1) 입력칸 폭만 대상. 값 저장 방식·검증 로직 변경 없음.
+- **영향 파일**: `frontend/src/pages/RequestPage/components/Step1.tsx`.
+- **검증**: `npx tsc --noEmit` — 신규 에러 0(기존 2건과 동일). `CI=true npx react-scripts test
+  --watchAll=false` — 15 suites / 314건 전부 통과. 원격 세션에서 실제 프로덕션 빌드를 띄워
+  (`AUTH_MODE=dev`, sqlite) `/request?embed=tour&step=1` 화면을 스크린샷으로 확인 후 사용자 승인을
+  받았다.
+
 ### 기능 추가 (2026-09-22 — 의뢰 상세: 실제 생산 진행 날짜 옆에 "PRODUCT 담당자" 자유 입력칸 추가)
 
 - **요청**: Step1(의뢰 상세)의 "실제 생산 진행 날짜"(`production_date`) 입력칸 오른쪽에, 자유롭게
