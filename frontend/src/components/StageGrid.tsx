@@ -9,7 +9,7 @@ interface StageGridProps {
 }
 
 // 칸 상태 → 뱃지 문구. '대기중'·'검토중'·'PAUSE' 는 목록 상태뱃지와 같은 문구를 쓴다.
-const STATE_I18N_KEY: Record<StageCellState, string> = {
+export const STATE_I18N_KEY: Record<StageCellState, string> = {
   na: 'approval.step_na',
   wait: 'approval.step_unassigned',
   review: 'common.status_under_review',

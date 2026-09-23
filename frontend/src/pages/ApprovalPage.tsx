@@ -11,6 +11,7 @@ import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '.
 import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { MarkDot, MarkCategorySettingsModal } from '../components/DocumentMark';
+import ApprovalListExportModal from '../components/ApprovalListExportModal';
 import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet, LayerDriftResponse, LayerDriftGroup, LayerDriftStepRow, isPlRole, plRoleFor } from '../types';
 import { formatDate, formatTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
@@ -208,6 +209,7 @@ export default function ApprovalPage(): React.ReactElement {
   // 개인 마킹 범주 — 다른 사용자와 공유되지 않는 내 전용 데이터. 결재 현황 진입 시 한 번만 받는다.
   const [markCategories, setMarkCategories] = useState<PersonalMarkCategory[]>([]);
   const [markSettingsOpen, setMarkSettingsOpen] = useState(false);
+  const [listExportOpen, setListExportOpen] = useState(false);
 
   useEffect(() => {
     markCategoriesAPI.list().then(setMarkCategories).catch(() => { /* 실패해도 마킹 없이 화면은 그대로 쓸 수 있다 */ });
@@ -2010,6 +2012,12 @@ export default function ApprovalPage(): React.ReactElement {
           ⚙ {t('approval.category_settings_btn')}
         </button>
 
+        {!isTourMode && (
+          <button type="button" className="column-filter-btn" onClick={() => setListExportOpen(true)}>
+            ⬇ {t('approval.export_list_btn')}
+          </button>
+        )}
+
         {hasColumnFilter && (
           <button type="button" className="column-filter-reset" onClick={resetColumnFilters}>
             {t('common.reset')}
@@ -3651,6 +3659,12 @@ export default function ApprovalPage(): React.ReactElement {
         onRenameCommit={handleRenameCategoryCommit}
         onRecolor={handleRecolorCategory}
         onDelete={handleDeleteCategory}
+      />
+
+      <ApprovalListExportModal
+        isOpen={listExportOpen}
+        onClose={() => setListExportOpen(false)}
+        categories={markCategories}
       />
 
       <StepGuideTour

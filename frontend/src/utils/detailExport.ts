@@ -42,7 +42,7 @@ function parseDoc(doc: RequestDocument): ParsedDoc {
   }
 }
 
-function getNowString(): string {
+export function getNowString(): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
@@ -53,7 +53,7 @@ function applyFill(cell: ExcelJS.Cell, hex: string | undefined): void {
   cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${hex.replace('#', '')}` } };
 }
 
-async function downloadWorkbook(wb: ExcelJS.Workbook, filename: string): Promise<void> {
+export async function downloadWorkbook(wb: ExcelJS.Workbook, filename: string): Promise<void> {
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url = URL.createObjectURL(blob);
