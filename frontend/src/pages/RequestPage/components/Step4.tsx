@@ -128,9 +128,9 @@ const Step4: React.FC<Step4Props> = ({
     row.entryId != null ? entryIds.indexOf(row.entryId) : (row.entryIdx ?? -1);
 
   // 자동채움 범위 후보 layer: 원본 목록에 남은(미매핑) 행 기준
-  const remainingLayerOptions = [...new Set(
+  const remainingLayerOptions = Array.from(new Set(
     jayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && !mappedJayerRowIds.has(r.id)).map(r => r.layerid).filter(Boolean)
-  )].sort((a, b) => parseFloat(a) - parseFloat(b));
+  )).sort((a, b) => parseFloat(a) - parseFloat(b));
 
   return (
     <div className="form-section">
