@@ -1281,6 +1281,7 @@
     },
     "title": "가이드 관리",
     "subtitle": "의뢰서 작성 가이드를 등록·관리합니다",
+    "search_placeholder": "제목 또는 내용 검색",
     "write": "+ 가이드 작성",
     "write_title": "가이드 작성",
     "edit_title": "가이드 수정",
