@@ -2056,6 +2056,28 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 
 ---
 
+## 5-5. 빌드 (2026-09-28)
+
+### ✅ B-65 (2026-09-28 수정 완료) 프론트 프로덕션 빌드가 타입 오류 4건으로 실패했다 **재현✅**
+- **증상(수정 전)**: `npm run build`(= `react-scripts build`, 프론트 `Dockerfile` 이 실행) 가
+  `Failed to compile. TS2802 …` 로 **exit 1** — 프론트 이미지를 만들 수 없었다.
+  `npx tsc --noEmit` 오류 4건이 그대로 빌드 실패 원인이다(CRA 는 타입 오류가 있으면 빌드를 중단한다).
+- **원인**
+  1. `tsconfig.json` 의 `target: "es5"` 에서는 `Set` 을 펼치거나(`[...new Set(...)]`) `for...of` 로 순회할 수 없다(TS2802).
+     - `RequestPage/index.tsx` `handleOpenAutoFillPanel` · `RequestPage/components/Step4.tsx` `remainingLayerOptions`
+       — `[...new Set(...)]`
+     - `components/PagedDetailView.tsx` `computeDetailDiff` — `for (const k of keys)`(`keys` 가 `Set`)
+  2. `pages/GuidePage.tsx` 검색창의 `t('guide.search_placeholder')` 키가 `ko.json`·`en.json` 양쪽에 없었다(TS2345).
+     화면에는 키 문자열이 그대로 보였다.
+- **수정**: 세 곳을 `Array.from(new Set(...))` / `Array.from(keys)` 로 바꿨다(순서·결과 동일, 동작 변화 없음).
+  `guide.search_placeholder` 를 `ko.json`("제목 또는 내용 검색")·`en.json`("Search title or content")에 동시 추가했다.
+  `tsconfig.json` 의 `target` 은 바꾸지 않았다(영향 범위가 빌드 전체라 이번 범위 밖).
+- **검증**: `npx tsc --noEmit` 오류 4 → 0, `react-scripts build` exit 1 → 0("Compiled with warnings" — 경고는 기존 ESLint 경고).
+- ⚠️ 재발 방지: 새 코드에서 `Set`/`Map` 을 펼치거나 `for...of` 로 순회하지 말고 `Array.from(...)` 을 쓴다.
+  PR 전에 `npx tsc --noEmit 2>&1 | grep -c "error TS"` 가 0 인지 확인한다(CLAUDE.md 규칙 C).
+
+---
+
 ## 6. 잠재 위험 (아직 버그로 터지지 않았지만 구조적으로 위험한 것)
 
 ### R-01 🔴 `additional_notes` 가 `TextField` — 도메인 데이터 전체가 스키마 없는 문자열
