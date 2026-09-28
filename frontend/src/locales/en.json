@@ -1281,6 +1281,7 @@
     },
     "title": "Guide Management",
     "subtitle": "Manage guides for request form",
+    "search_placeholder": "Search title or content",
     "write": "+ Write Guide",
     "write_title": "Write Guide",
     "edit_title": "Edit Guide",
