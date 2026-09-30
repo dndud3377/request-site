@@ -481,6 +481,16 @@ function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, 
   addInfoSheet(wb, t, sheetName, blocks);
 }
 
+// ===== 기타 텍스트 시트 — R 탭에서 뺀 항목(CC 적용 여부) =====
+
+function addEtcInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, detail: Partial<DetailFormState>): void {
+  const ccText = detail.mshot_change_cc === 'exists' ? t('request.cc_apply')
+    : detail.mshot_change_cc === 'not_exists' ? t('request.cc_not_apply')
+    : t('request.value_none');
+  const blocks: InfoBlock[] = [{ kind: 'kv', label: t('request.mshot_change_cc_label'), value: ccText }];
+  addInfoSheet(wb, t, sheetName, blocks);
+}
+
 function addOvlInfoSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Partial<DetailFormState>): void {
   const blocks: InfoBlock[] = [];
   blocks.push({ kind: 'kv', label: t('request.partial_shot'), value: detail.partial_shot || '-' });
@@ -579,15 +589,25 @@ export async function exportDetailInfoImage(doc: RequestDocument, t: TFunction, 
 export async function exportMapInfoImage(doc: RequestDocument, t: TFunction, screenshot: ScreenshotCapture | null): Promise<void> {
   const { detail } = parseDoc(doc);
   const wb = new ExcelJS.Workbook();
-  const sheetName = t('request.section_map');
+  const sheetName = t('request.section_map_r');
   addScreenshotSheet(wb, sheetName, screenshot, t('request.export_capture_failed'));
   addMapInfoSheet(wb, t, textSheetName(sheetName, t), detail);
+  await downloadWorkbook(wb, `${doc.title}_${sheetName}_${getNowString()}.xlsx`);
+}
+
+export async function exportEtcInfoImage(doc: RequestDocument, t: TFunction, screenshot: ScreenshotCapture | null): Promise<void> {
+  const { detail } = parseDoc(doc);
+  const wb = new ExcelJS.Workbook();
+  const sheetName = t('request.section_etc');
+  addScreenshotSheet(wb, sheetName, screenshot, t('request.export_capture_failed'));
+  addEtcInfoSheet(wb, t, textSheetName(sheetName, t), detail);
   await downloadWorkbook(wb, `${doc.title}_${sheetName}_${getNowString()}.xlsx`);
 }
 
 export interface ExportAllScreenshots {
   detail: ScreenshotCapture | null;
   map: ScreenshotCapture | null;
+  etc: ScreenshotCapture | null;
 }
 
 /**
@@ -613,7 +633,7 @@ export async function exportAll(
   addScreenshotSheet(wb, detailSheetName, screenshots.detail, t('request.export_capture_failed'));
   addDetailInfoSheet(wb, t, textSheetName(detailSheetName, t), doc, detail);
   if (!isAdiCdChange) {
-    const mapSheetName = t('request.section_map');
+    const mapSheetName = t('request.section_map_r');
     addScreenshotSheet(wb, mapSheetName, screenshots.map, t('request.export_capture_failed'));
     addMapInfoSheet(wb, t, textSheetName(mapSheetName, t), detail);
   }
@@ -621,5 +641,10 @@ export async function exportAll(
   addOvlSheet(wb, t, oayer, colorFilters.oayerColorFilterSets, colorFilters.activeOayerColorFilterIds);
   addOvlInfoSheet(wb, t, detail);
   addBbSheet(wb, t, detail, bb);
+  if (!isAdiCdChange) {
+    const etcSheetName = t('request.section_etc');
+    addScreenshotSheet(wb, etcSheetName, screenshots.etc, t('request.export_capture_failed'));
+    addEtcInfoSheet(wb, t, textSheetName(etcSheetName, t), detail);
+  }
   await downloadWorkbook(wb, `${doc.title}_전체_${getNowString()}.xlsx`);
 }
