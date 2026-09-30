@@ -1473,9 +1473,9 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 - **(2026-07) Inter·Map Option 을 각각 별도 섹션 박스로**: `map_opt_inter`(YES 시 Xs/Ys 포함)와 `map_option_title`(옵션 태그) 블록을 map/mshot 등 다른 항목과 동일한 `chipBase` 박스(rowStyle) 로 감싸 **두 개의 독립 섹션**으로 표시한다. 기존에는 맨 div 로 렌더돼 다른 섹션과 디자인이 달랐다. (INTER 표기는 위 항목으로 다시 변경됨)
 - **(2026-07) 고객/업체명 단독 표시 시 전체 폭·가운데 정렬**: '요구 사항'이 비어 있으면 '고객/업체명' Chip 을 전체 폭(`chipFull`) + 텍스트 가운데 정렬로 표시한다(둘 다 있으면 기존 좌측 2열 레이아웃 유지).
 - **(2026-07) 결재 현황 테이블 계산 헬퍼 공용화**: `getDocTableRows`·`getFinalCompletionDate` 등을 `frontend/src/utils/approvalTable.ts` 로 이동해 **홈 화면 '최근 의뢰 현황'과 결재 현황이 동일한 표**를 쓰도록 했다. 홈에서 '검토중'으로 뜨고 결재 현황에서 '대기중'으로 뜨던 불일치를 해소한다. `ApprovalPage`·`HomePage` 가 이 헬퍼를 공유한다. **(2026-08)** 병렬 단계 2행 분기가 3행 2열 그리드로 바뀌고 `getDueDateDisplay` 는 컬럼과 함께 삭제됐다(§3.3.2·§3.5) — 두 화면 모두 같이 적용된다.
-- **(2026-07) 모든 팀 상세 탭 전체 개방**: 역할 게이팅 플래그(`isP/isR/isJ/isO/isE`)를 **모두 `true`로 고정**하여, 모든 역할(PL·TE_R·TE_P·TE_J·TE_O·TE_E·MASTER)이 상세 보기의 **6개 탭 전부**(의뢰 상세 / MAP 정보 / J-ayer / O-ayer / 뼈찜 / 결재 경로)와 탭 내부 섹션을 **동일하게** 볼 수 있다. 이로써 아래 2026-06-13 항목의 "MAP은 순수 TE_J/TE_E 미표시" 제한도 해제된다(상세 내용은 결재 권한과 무관한 표시 영역).
+- **(2026-07) 모든 팀 상세 탭 전체 개방**: 역할 게이팅 플래그(`isP/isR/isJ/isO/isE`)를 **모두 `true`로 고정**하여, 모든 역할(PL·TE_R·TE_P·TE_J·TE_O·TE_E·MASTER)이 상세 보기의 **7개 탭 전부**(의뢰 상세 / R / J-ayer / O-ayer / 뼈찜 / 기타 / 결재 경로 — 2026-09 탭 개편, 아래 항목 참조)와 탭 내부 섹션을 **동일하게** 볼 수 있다. 이로써 아래 2026-06-13 항목의 "MAP은 순수 TE_J/TE_E 미표시" 제한도 해제된다(상세 내용은 결재 권한과 무관한 표시 영역).
 - **(2026-06-13, 위 2026-07 개방으로 상위 완화됨) 원본 라인/Part ID는 MAP 정보 섹션에만 표시**: 기존에는 `source_line`/`source_partid`가 '상세 정보' 섹션(`section_detail`)과 'MAP 정보' 섹션(`section_map`, `map_type === 'CLONE'`) 두 곳에 중복 노출됐다. '상세 정보' 쪽 블록을 제거하여 **MAP 정보 섹션(CLONE)에서만** 보이도록 한다.
-- 각 step에서 작성한 내용은 상세 보기에서 별도 페이지/섹션으로 분리 렌더된다: J-layer→`job_li`, O-layer→`ovl_li`(table/info 탭, info 탭에 `partial_shot`·TBV·TLV), Backbone→`bb`, MAP 변경 내용→`section_map`.
+- 각 step에서 작성한 내용은 상세 보기에서 별도 페이지/섹션으로 분리 렌더된다: J-layer→`job_li`, O-layer→`ovl_li`(table/info 탭, info 탭에 `partial_shot`·TBV·TLV), Backbone→`bb`, MAP 변경 내용→`section_map_r`('R' 탭 — 상세 모달 전용 키, 작성 화면 단계명 `section_map`='MAP 정보'와 분리)·`section_etc`('기타' 탭).
 - **(2026-06-22)** J-ayer `📊 export` 버튼에 `data-tour="export-jayer"`, 결재 경로 탭 카드에 `data-tour="approval-route-tab"`을 부여했다(전체 가이드 투어 강조용, 실제 동작 변경 없음).
 - **(2026-08-24) export 범위 확장 — 상세 정보/MAP 정보 export 추가, O-ayer export 정보 시트 추가, 전체 export 버튼**: 엑셀 시트 생성 로직을 `frontend/src/utils/detailExport.ts` 로 모아 `PagedDetailView`(개별 버튼)와 상세 모달 제목(전체 export)이 공유한다.
   - **상세 정보 / MAP 정보 export**: `section_detail`(기본 정보 카드)·`section_map` 탭 제목 줄에 JOB/OVL/BB와 같은 자리에 `📊 export` 버튼을 추가했다. 각각 화면에 보이는 값을 "항목/값" 2열 시트 하나로 내려받는다(표 형태 항목—흐름도·Merge 결과·ADI CD 표·TBV/TLV—는 같은 시트 안에 작은 표로 이어 붙인다). CLONE/EXISTING 등 화면에서 회색 "없음"으로 잠기는 항목은 시트에도 동일하게 `request.value_none` 문자열로 들어간다. X표시 첨부 이미지 등 이미지 자체는 셀에 넣지 않고 상태 텍스트만 담는다.
@@ -1518,6 +1518,15 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
   - 투어(`open-rowdiff`)는 이 페이지 기준이므로 J-ayer 변경 전/후 모달 시연이 그대로 유지된다.
   - 상세 구현(회차 축 `roundSnaps`, `computeEverChangedFields`/`computeTableEverChanged`, 회차별 모달 3종, 표 행 매칭 규칙)은 `docs/REQUEST.md` 의 2026-08 항목 참조.
   - **(2026-08) BB 재지정 행 이력**: bb 행 매칭에 `sourceJayerRowId` 폴백을 더해, 재지정으로 id 가 바뀐 행도 **이전 지정과 비교**된다. 같은 데이터를 다시 고르면 변경으로 잡히지 않고, 짝이 없는 신규 행은 **`(없음)` → 현재값**으로 열린다. `matchPrevRows` 참조.
+
+- **(2026-09) 상세 모달 탭 개편 — 'MAP 정보' → 'R' + 신규 '기타' 탭**: 이 탭엔 agent_R(RFG)에게 필요한 정보만 두고 나머지는 다른 탭으로 분기하기 위한 첫 단계다. 지금은 `mshot_change_cc`(CC 적용 여부) **하나만** '기타'로 옮겼고, R 탭에는 그 외 기존 MAP 정보 블록이 그대로 남는다.
+  - **탭 구성/순서**: 의뢰 상세 · **R** · J-ayer · O-ayer · 뼈찜 · **기타** · 결재 경로. '기타'는 뼈찜 정보 **다음**(결재 경로 앞)이다. R·기타는 같은 조건(`showMap`: 'ADI CD 변경' 제외)에서만 보인다.
+  - **i18n**: 상세 모달 전용 키 `request.section_map_r`("R")·`request.section_etc`("기타"/"Etc")를 신설했다. **작성 화면(단계 표시줄·가이드 투어·`StepMap` 제목)은 기존 `request.section_map`("MAP 정보")을 그대로 쓴다** — 바뀐 것은 조회 화면뿐이다.
+  - **R 탭 Mshot 블록**: 상태 칸이 `변경 있음 / CC 적용`에서 `변경 있음`으로 바뀌었다. 변경 강조(`mshotChanged`)와 '엠샷 변경 이력'(`buildMshotItems`)에서도 CC 항목을 뺐다.
+  - **기타 탭**: `CC 적용 여부` 칩 1개. 값이 있으면 칩 + (재상신으로 바뀌었으면) 빨간 테두리·'이력 확인'(`Chip`의 `fieldKey`/`buildValue`), 비어 있으면(C가문이 아닌 문서 등) 탭은 유지한 채 회색 '없음'.
+  - **export**: R 탭은 시트명만 'R'로 바뀐다(내용 동일). 기타 탭에 `📊 export` 버튼을 달아 캡처 시트 + `기타 (텍스트)` 시트를 만든다. **전체 export** 는 BB 다음에 기타 시트 2장을 추가한다('ADI CD 변경'이면 건너뜀). `captureAllScreenshots()`/`ExportAllScreenshots` 에 `etc` 가 추가됐다.
+  - **탭 인덱스 의존 코드**: 결재 경로 탭이 5→6번이 되어 `ApprovalPage.tsx` 의 `TOUR_PAGE_IDX.route`(전체 가이드 투어 `page-route`)를 6으로 고쳤다. `PagedDetailView` 의 캡처 인덱스는 push 시점에 기록한 `etcPageIdx` 를 쓴다(하드코딩 아님).
+  - **백엔드 무변경**: 저장 필드·`MAP_INFO_FIELDS`·API 는 그대로다(표시 위치만 변경).
 
 ---
 
