@@ -3083,21 +3083,19 @@ type Page = { label: string; content: React.ReactNode };
     textTransform: 'uppercase', letterSpacing: '.04em', padding: '10px 0 2px',
   };
 
-  // '기타' 탭 — R 탭에서 뺀 항목(현재 CC 적용 여부)을 담는다. R 탭과 같은 조건(ADI CD 변경 제외)에서만 보이며,
-  // 값이 비어 있어도 탭 수가 문서마다 달라지지 않도록 회색 "없음"으로 표시한다.
+  // '기타' 탭 — R 탭에서 뺀 항목을 섹션(카드) 단위로 담는다. 섹션을 늘릴 때는 etcSections 에 항목만 추가한다.
+  // R 탭과 같은 조건(ADI CD 변경 제외)에서만 보이며, 값이 비어 있어도 탭 수가 문서마다 달라지지 않도록
+  // 회색 "없음"으로 표시한다. export 버튼은 첫 카드에만 둔다(캡처·시트는 탭 전체 기준).
   if (showMap) {
     etcPageIdx = pages.length;
     const ccLabel = t('request.mshot_change_cc_label');
     const ccValue = fmtCcStatus(detail.mshot_change_cc, t);
     const etcChipStyle: React.CSSProperties = { maxWidth: ETC_CHIP_MAX_WIDTH };
-    pages.push({
-      label: t('request.section_etc'),
-      content: (
-        <div style={cardStyle} ref={etcTabRef}>
-          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>🗂️ {t('request.section_etc')}</span>
-            <button onClick={exportEtc} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
-          </div>
+    const etcSections: Array<{ key: string; title: string; content: React.ReactNode }> = [
+      {
+        key: 'map',
+        title: t('request.etc_section_map'),
+        content: (
           <div style={rowStyle}>
             {ccValue ? (
               <Chip
@@ -3112,6 +3110,24 @@ type Page = { label: string; content: React.ReactNode };
               <PlaceholderChip label={ccLabel} style={etcChipStyle} />
             )}
           </div>
+        ),
+      },
+    ];
+    pages.push({
+      label: t('request.section_etc'),
+      content: (
+        <div ref={etcTabRef}>
+          {etcSections.map((section, idx) => (
+            <div key={section.key} style={cardStyle}>
+              <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>{section.title}</span>
+                {idx === 0 && (
+                  <button onClick={exportEtc} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+                )}
+              </div>
+              {section.content}
+            </div>
+          ))}
         </div>
       ),
     });
