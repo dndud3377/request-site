@@ -399,6 +399,11 @@ function addDetailInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: strin
 // ===== MAP 정보 텍스트 시트 =====
 
 function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, detail: Partial<DetailFormState>): void {
+  // ADI CD 변경은 MAP 정보를 작성하지 않는다 — 기본값 대신 화면과 같은 안내 문구만 담는다.
+  if (detail.request_purpose === 'ADI CD 변경') {
+    addInfoSheet(wb, t, sheetName, [{ kind: 'kv', label: t('request.section_map_r'), value: t('request.tab_adi_cd_not_applicable') }]);
+    return;
+  }
   const blocks: InfoBlock[] = [];
   const isMapRegisteredDetail = detail.map_type === 'EXISTING' || detail.map_type === 'CLONE';
   const isDeleteType = isMapDeleteEditType(detail.map_type);
@@ -491,6 +496,13 @@ function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, 
 // ===== 기타 텍스트 시트 — R 탭에서 뺀 항목을 섹션(MAP: CC 적용 여부) 단위로 담는다 =====
 
 function addEtcInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, detail: Partial<DetailFormState>): void {
+  if (detail.request_purpose === 'ADI CD 변경') {
+    addInfoSheet(wb, t, sheetName, [
+      { kind: 'section', label: t('request.etc_section_map') },
+      { kind: 'kv', label: t('request.section_etc'), value: t('request.tab_adi_cd_not_applicable') },
+    ]);
+    return;
+  }
   const ccText = detail.mshot_change_cc === 'exists' ? t('request.cc_apply')
     : detail.mshot_change_cc === 'not_exists' ? t('request.cc_not_apply')
     : t('request.value_none');
@@ -637,24 +649,19 @@ export async function exportAll(
   colorFilters: ExportAllColorFilters = {},
 ): Promise<void> {
   const { detail, jayer, oayer, bb } = parseDoc(doc);
-  const isAdiCdChange = detail.request_purpose === 'ADI CD 변경';
   const wb = new ExcelJS.Workbook();
   const detailSheetName = t('request.section_detail');
   addScreenshotSheet(wb, detailSheetName, screenshots.detail, t('request.export_capture_failed'));
   addDetailInfoSheet(wb, t, textSheetName(detailSheetName, t), doc, detail);
-  if (!isAdiCdChange) {
-    const mapSheetName = t('request.section_map_r');
-    addScreenshotSheet(wb, mapSheetName, screenshots.map, t('request.export_capture_failed'));
-    addMapInfoSheet(wb, t, textSheetName(mapSheetName, t), detail);
-  }
+  const mapSheetName = t('request.section_map_r');
+  addScreenshotSheet(wb, mapSheetName, screenshots.map, t('request.export_capture_failed'));
+  addMapInfoSheet(wb, t, textSheetName(mapSheetName, t), detail);
   addJobSheet(wb, t, jayer, colorFilters.jayerColorFilterSets, colorFilters.activeJayerColorFilterIds);
   addOvlSheet(wb, t, oayer, colorFilters.oayerColorFilterSets, colorFilters.activeOayerColorFilterIds);
   addOvlInfoSheet(wb, t, detail);
   addBbSheet(wb, t, detail, bb);
-  if (!isAdiCdChange) {
-    const etcSheetName = t('request.section_etc');
-    addScreenshotSheet(wb, etcSheetName, screenshots.etc, t('request.export_capture_failed'));
-    addEtcInfoSheet(wb, t, textSheetName(etcSheetName, t), detail);
-  }
+  const etcSheetName = t('request.section_etc');
+  addScreenshotSheet(wb, etcSheetName, screenshots.etc, t('request.export_capture_failed'));
+  addEtcInfoSheet(wb, t, textSheetName(etcSheetName, t), detail);
   await downloadWorkbook(wb, `${doc.title}_전체_${getNowString()}.xlsx`);
 }
