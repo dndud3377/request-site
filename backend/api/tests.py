@@ -8250,3 +8250,261 @@ class GuideWritePermissionOverseasTest(TestCase):
         self.client.force_authenticate(user=self.te_j)
         r = self.client.post('/api/guides/', self._create_payload(), format='json')
         self.assertEqual(r.status_code, 201, r.content)
+
+
+# ============================================
+# OIDC 로그인(nonce/state 쿠키, id_token 검증) / 쿠키 JWT 인증
+# ============================================
+import time as _time
+from datetime import datetime as _datetime, timedelta as _timedelta
+from urllib.parse import parse_qs as _parse_qs, urlparse as _urlparse
+
+import jwt as _jwt
+from cryptography.hazmat.primitives import serialization as _serialization
+from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
+from rest_framework.test import APIClient as _APIClient
+
+_OIDC_TEST_CLIENT_ID = 'test-client-id'
+_OIDC_TEST_ISSUER = 'http://adfs.test/adfs/services/trust'
+_OIDC_TEST_SERVICE_SECRET = 'service-jwt-secret-for-tests-0123456789'
+
+
+@override_settings(
+    OIDC_RP_CLIENT_ID=_OIDC_TEST_CLIENT_ID,
+    OIDC_ISSUER=_OIDC_TEST_ISSUER,
+    OIDC_OP_AUTHORIZATION_ENDPOINT='http://adfs.test/authorize',
+    OIDC_CALLBACK_BASE_URL='https://site.test:10010',
+    SERVICE_JWT_SECRET_KEY=_OIDC_TEST_SERVICE_SECRET,
+)
+class OidcLoginSecurityTest(TestCase):
+    """OIDC 콜백: nonce/state 쿠키 검증과 id_token exp/nbf/aud/iss 검증 (fail-closed)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        key = _rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        cls.private_pem = key.private_bytes(
+            _serialization.Encoding.PEM,
+            _serialization.PrivateFormat.PKCS8,
+            _serialization.NoEncryption(),
+        )
+        cls.public_key = key.public_key()
+
+    def setUp(self):
+        self.client = _APIClient()
+        patcher = patch('api.auth_views.get_adfs_public_key', return_value=self.public_key)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _start_login(self):
+        """login_init 호출 → (state, nonce) 반환. 쿠키는 self.client 에 남는다."""
+        r = self.client.get('/api/auth/oidc/login/')
+        self.assertEqual(r.status_code, 200, r.content)
+        q = _parse_qs(_urlparse(r.json()['redirect_url']).query)
+        return r, q['state'][0], q['nonce'][0]
+
+    def _id_token(self, nonce, **overrides):
+        now = int(_time.time())
+        claims = {
+            'iss': _OIDC_TEST_ISSUER, 'aud': _OIDC_TEST_CLIENT_ID,
+            'iat': now, 'exp': now + 300, 'nonce': nonce,
+            'loginid': 'oidc_user', 'mail': 'oidc_user@company.com', 'username': 'OIDC User',
+        }
+        claims.update(overrides)
+        claims = {k: v for k, v in claims.items() if v is not None}
+        return _jwt.encode(claims, self.private_pem, algorithm='RS256')
+
+    def _callback(self, id_token, state):
+        return self.client.post(
+            '/api/auth/oidc/callback/',
+            {'id_token': id_token, 'state': state},
+            format='multipart',
+        )
+
+    # ---- login_init
+    def test_login_init_sets_state_cookie_and_hides_nonce_jwt(self):
+        r, state, nonce = self._start_login()
+        self.assertNotIn('nonce_jwt', r.json())
+        c = r.cookies['oidc_state']
+        self.assertTrue(c['httponly'])
+        self.assertTrue(c['secure'])
+        self.assertEqual(c['samesite'], 'None')
+        payload = _jwt.decode(c.value, options={'verify_signature': False})
+        self.assertEqual(payload['state'], state)
+        self.assertEqual(payload['nonce'], nonce)
+
+    def test_login_init_ignores_stale_access_token_cookie(self):
+        """존재하지 않는 사용자의 유효 서명 토큰이 남아 있어도 로그인을 시작할 수 있어야 한다."""
+        stale = _jwt.encode(
+            {'username': 'ghost', 'exp': _datetime.utcnow() + _timedelta(hours=1)},
+            _OIDC_TEST_SERVICE_SECRET, algorithm='HS256')
+        self.client.cookies['access_token'] = stale
+        r = self.client.get('/api/auth/oidc/login/')
+        self.assertEqual(r.status_code, 200, r.content)
+
+    # ---- callback 성공 / nonce·state
+    def test_callback_success_sets_service_cookies_and_clears_state_cookie(self):
+        _, state, nonce = self._start_login()
+        r = self._callback(self._id_token(nonce), state)
+        self.assertEqual(r.status_code, 302, r.content)
+        self.assertIn('access_token', r.cookies)
+        self.assertIn('refresh_token', r.cookies)
+        self.assertEqual(r.cookies['oidc_state'].value, '')
+        self.assertEqual(r.cookies['oidc_state']['max-age'], 0)
+        self.assertTrue(UserProfile.objects.filter(loginid='oidc_user').exists())
+
+    def test_callback_without_state_cookie_is_rejected(self):
+        """nonce_jwt 를 생략하면 검증이 건너뛰어지던 기존 우회 경로 — 이제 400."""
+        _, state, nonce = self._start_login()
+        self.client.cookies.pop('oidc_state')
+        r = self._callback(self._id_token(nonce), state)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertNotIn('access_token', r.cookies)
+        self.assertFalse(UserProfile.objects.filter(loginid='oidc_user').exists())
+
+    def test_callback_attacker_token_with_victim_cookie_is_rejected(self):
+        """Login CSRF: 피해자 쿠키(nonce A) + 공격자 자신의 id_token(nonce B)."""
+        _, state, _nonce = self._start_login()
+        r = self._callback(self._id_token('attacker-nonce'), state)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertNotIn('access_token', r.cookies)
+
+    def test_callback_state_mismatch_is_rejected(self):
+        _, _state, nonce = self._start_login()
+        r = self._callback(self._id_token(nonce), 'another-state')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_callback_missing_state_is_rejected(self):
+        _, _state, nonce = self._start_login()
+        r = self.client.post('/api/auth/oidc/callback/', {'id_token': self._id_token(nonce)}, format='multipart')
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_callback_id_token_without_nonce_is_rejected(self):
+        _, state, _nonce = self._start_login()
+        r = self._callback(self._id_token(None), state)
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_callback_tampered_state_cookie_is_rejected(self):
+        _, state, nonce = self._start_login()
+        forged = _jwt.encode(
+            {'typ': 'oidc_state', 'nonce': nonce, 'state': state, 'exp': _datetime.utcnow() + _timedelta(minutes=5)},
+            'not-the-django-secret-key-0123456789abcdef', algorithm='HS256')
+        self.client.cookies['oidc_state'] = forged
+        r = self._callback(self._id_token(nonce), state)
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_callback_expired_state_cookie_is_rejected(self):
+        _, state, nonce = self._start_login()
+        from django.conf import settings as dj_settings
+        expired = _jwt.encode(
+            {'typ': 'oidc_state', 'nonce': nonce, 'state': state, 'exp': _datetime.utcnow() - _timedelta(minutes=1)},
+            dj_settings.SECRET_KEY, algorithm='HS256')
+        self.client.cookies['oidc_state'] = expired
+        r = self._callback(self._id_token(nonce), state)
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_state_cookie_is_one_time_use(self):
+        """성공 응답이 쿠키를 지우므로, 같은 id_token 을 쿠키 없이 재전송하면 거부된다(재전송 방어)."""
+        _, state, nonce = self._start_login()
+        token = self._id_token(nonce)
+        self.assertEqual(self._callback(token, state).status_code, 302)
+        self.client.cookies.pop('oidc_state', None)
+        self.client.cookies.pop('access_token', None)
+        self.client.cookies.pop('refresh_token', None)
+        self.assertEqual(self._callback(token, state).status_code, 400)
+
+    # ---- id_token 클레임 검증
+    def _assert_token_rejected(self, **overrides):
+        _, state, nonce = self._start_login()
+        r = self._callback(self._id_token(nonce, **overrides), state)
+        self.assertEqual(r.status_code, 401, r.content)
+        self.assertNotIn('access_token', r.cookies)
+
+    def test_expired_id_token_is_rejected(self):
+        self._assert_token_rejected(exp=int(_time.time()) - 3600)
+
+    def test_id_token_not_yet_valid_is_rejected(self):
+        self._assert_token_rejected(nbf=int(_time.time()) + 3600)
+
+    def test_id_token_wrong_audience_is_rejected(self):
+        self._assert_token_rejected(aud='another-relying-party')
+
+    def test_id_token_wrong_issuer_is_rejected(self):
+        self._assert_token_rejected(iss='http://evil.test/adfs/services/trust')
+
+    def test_id_token_without_exp_is_rejected(self):
+        self._assert_token_rejected(exp=None)
+
+    def test_id_token_within_leeway_is_accepted(self):
+        _, state, nonce = self._start_login()
+        r = self._callback(self._id_token(nonce, exp=int(_time.time()) - 30), state)
+        self.assertEqual(r.status_code, 302, r.content)
+
+    def test_id_token_signed_by_other_key_is_rejected(self):
+        other = _rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = other.private_bytes(
+            _serialization.Encoding.PEM, _serialization.PrivateFormat.PKCS8, _serialization.NoEncryption())
+        _, state, nonce = self._start_login()
+        now = int(_time.time())
+        token = _jwt.encode(
+            {'iss': _OIDC_TEST_ISSUER, 'aud': _OIDC_TEST_CLIENT_ID, 'exp': now + 300, 'nonce': nonce, 'loginid': 'x'},
+            pem, algorithm='RS256')
+        r = self._callback(token, state)
+        self.assertEqual(r.status_code, 401, r.content)
+
+    @override_settings(OIDC_ISSUER='')
+    def test_callback_rejected_when_issuer_not_configured(self):
+        _, state, nonce = self._start_login()
+        r = self._callback(self._id_token(nonce), state)
+        self.assertEqual(r.status_code, 500, r.content)
+        self.assertNotIn('access_token', r.cookies)
+
+    # ---- logout
+    def test_logout_works_with_stale_access_token_cookie(self):
+        stale = _jwt.encode(
+            {'username': 'ghost', 'exp': _datetime.utcnow() + _timedelta(hours=1)},
+            _OIDC_TEST_SERVICE_SECRET, algorithm='HS256')
+        self.client.cookies['access_token'] = stale
+        r = self.client.post('/api/auth/oidc/logout/')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.cookies['access_token'].value, '')
+
+
+@override_settings(SERVICE_JWT_SECRET_KEY=_OIDC_TEST_SERVICE_SECRET)
+class CookieJwtAuthenticationTest(TestCase):
+    """CookieJWTAuthentication: 인증 실패는 401(WWW-Authenticate) 이어야 하고 익명으로 통과하면 안 된다."""
+
+    def setUp(self):
+        self.client = _APIClient()
+        self.user = UserProfile.objects.create(loginid='cookie_user', mail='cookie_user@company.com', role='NONE')
+
+    def _token(self, username, delta):
+        return _jwt.encode(
+            {'username': username, 'exp': _datetime.utcnow() + delta},
+            _OIDC_TEST_SERVICE_SECRET, algorithm='HS256')
+
+    def test_valid_cookie_authenticates(self):
+        self.client.cookies['access_token'] = self._token('cookie_user', _timedelta(hours=1))
+        r = self.client.get('/api/auth/me/')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()['user']['username'], 'cookie_user')
+
+    def test_unknown_user_returns_401(self):
+        self.client.cookies['access_token'] = self._token('ghost', _timedelta(hours=1))
+        r = self.client.get('/api/auth/me/')
+        self.assertEqual(r.status_code, 401, r.content)
+        self.assertIn('Bearer', r.headers.get('WWW-Authenticate', ''))
+
+    def test_expired_cookie_returns_401(self):
+        self.client.cookies['access_token'] = self._token('cookie_user', _timedelta(hours=-1))
+        self.assertEqual(self.client.get('/api/auth/me/').status_code, 401)
+
+    def test_invalid_signature_cookie_returns_401(self):
+        self.client.cookies['access_token'] = _jwt.encode(
+            {'username': 'cookie_user', 'exp': _datetime.utcnow() + _timedelta(hours=1)},
+            'a-different-secret-0123456789abcdef0123', algorithm='HS256')
+        self.assertEqual(self.client.get('/api/auth/me/').status_code, 401)
+
+    def test_no_cookie_returns_401_for_protected_endpoint(self):
+        r = self.client.get('/api/auth/me/')
+        self.assertEqual(r.status_code, 401, r.content)
