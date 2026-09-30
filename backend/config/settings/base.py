@@ -176,6 +176,8 @@ OIDC_OP_JWKS_ENDPOINT = os.environ.get('OIDC_OP_JWKS_ENDPOINT', '')
 OIDC_OP_LOGOUT_ENDPOINT = os.environ.get('OIDC_OP_LOGOUT_ENDPOINT', '')
 
 OIDC_RP_SIGN_ALGORITHM = os.environ.get('OIDC_RP_SIGN_ALGORITHM', 'RS256')
+# id_token 의 iss 검증에 사용 (ADFS Federation Service 식별자). 비어 있으면 OIDC 로그인이 거부된다.
+OIDC_ISSUER = os.environ.get('OIDC_ISSUER', '')
 OIDC_CALLBACK_BASE_URL = os.environ.get('OIDC_CALLBACK_BASE_URL', 'http://localhost:8000')
 
 OIDC_CERT_FILE_PATH = os.environ.get('OIDC_CERT_FILE_PATH', str(BASE_DIR / 'api' / 'certs'))
