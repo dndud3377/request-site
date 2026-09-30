@@ -180,6 +180,12 @@ STEP_EQPTYPE_TARGETS = [
     (STEP_EXTRA_EQPTYPE, STEP_EXTRA_TABLE_MAP, PhotoStepChangeLog.TABLE_TYPE_CD, TARGET_LABEL_STEP_CD),
 ]
 
+# 스텝 동기화에서 제외할 processid 목록을 담은 환경변수 이름(콤마 구분, 예: "A001,B002").
+# 여기에 적힌 processid 행은 RTDB 조회 결과에서 버려 스텝 테이블(12개)에 저장하지 않는다 - 변경 현황
+# 이력에도, 의뢰서 작성 화면의 J/O-layer 조회에도 나타나지 않는다. 값을 추가하려면 `.env` 만 고치고
+# 스케줄러(backend)를 재시작하면 된다(코드 수정 불필요). 비우면 아무것도 제외하지 않는다.
+STEP_EXCLUDED_PROCESSIDS_ENV = 'PHOTOSTEP_EXCLUDED_PROCESSIDS'
+
 # RTDB 조회가 0건/실패일 때 재시도 횟수와 재시도 간격(초). (2026-08 추가 - 불규칙한 RTDB 조회
 # 실패 대응) get_data_from_rtdb() 는 예외도 내부에서 잡아 None 으로 통일해 반환하므로, 여기서는
 # "결과가 None 이거나 0건"이라는 단일 조건으로 예외·빈 결과를 함께 재시도 대상으로 다룬다.
@@ -226,6 +232,20 @@ def _write_if_changed(engine, table, line, df, key_cols, order_cols):
         db_conn.execute(text(f"DELETE FROM {table} WHERE line = :line"), {"line": line})
         df.to_sql(table, db_conn, if_exists='append', index=False)
     return len(df)
+
+
+def _drop_excluded_processids(df):
+    """`PHOTOSTEP_EXCLUDED_PROCESSIDS` 환경변수에 적힌 processid 행을 df 에서 제거해 반환한다.
+
+    콤마로 구분하고 각 값의 앞뒤 공백은 무시하며, 비교는 정확 일치(대소문자 구분)다.
+    환경변수가 비었거나 없으면 df 를 그대로 돌려준다. 호출 시점마다 읽으므로 테스트에서
+    환경변수만 바꿔 검증할 수 있다(운영에서는 프로세스 시작 시점의 값이 쓰인다).
+    """
+    raw = os.environ.get(STEP_EXCLUDED_PROCESSIDS_ENV, '')
+    excluded = {p.strip() for p in raw.split(',') if p.strip()}
+    if not excluded:
+        return df
+    return df[~df['processid'].isin(excluded)]
 
 
 def _by_diff_key(keys, key_cols):
@@ -537,6 +557,7 @@ def sync_rtdb_options():
                                 # RTDB eqptype 필터를 신뢰하되, 혹시 섞여올 수 있는 다른 eqptype 행에
                                 # 대한 안전장치로 한 번 더 걸러서 쓴다.
                                 df_sub = df_sub[df_sub['eqptype'] == eqptype_value]
+                                df_sub = _drop_excluded_processids(df_sub)
                                 count = _write_step_if_changed(
                                     engine, table_name, df_sub, STEP_COLUMNS,
                                     line=line, table_type=table_type,

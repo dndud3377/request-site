@@ -6514,6 +6514,76 @@ class WriteStepChangeLogTest(TestCase):
         self.assertEqual(added.eqptype, 'E1')
 
 
+class DropExcludedProcessidsTest(TestCase):
+    """_drop_excluded_processids() 가 PHOTOSTEP_EXCLUDED_PROCESSIDS 에 적힌 processid 행만
+    걸러내는지 검증한다(스텝 동기화 processid 제외 기능)."""
+
+    ENV_KEY = 'PHOTOSTEP_EXCLUDED_PROCESSIDS'
+
+    def _df(self):
+        import pandas as pd
+        return pd.DataFrame({
+            'processid': ['A001', 'B002', 'B002', 'C003'],
+            'stepseq': ['10', '20', '30', '40'],
+        })
+
+    def test_empty_env_excludes_nothing(self):
+        """환경변수가 없거나 비어 있으면 df 를 그대로 돌려준다."""
+        import os
+        from . import scheduler
+
+        with patch.dict(os.environ, {self.ENV_KEY: ''}):
+            self.assertEqual(len(scheduler._drop_excluded_processids(self._df())), 4)
+        with patch.dict(os.environ, clear=False):
+            os.environ.pop(self.ENV_KEY, None)
+            self.assertEqual(len(scheduler._drop_excluded_processids(self._df())), 4)
+
+    def test_listed_processids_are_dropped(self):
+        """지정한 processid 의 모든 행이 빠지고 나머지는 유지된다."""
+        import os
+        from . import scheduler
+
+        with patch.dict(os.environ, {self.ENV_KEY: 'B002'}):
+            result = scheduler._drop_excluded_processids(self._df())
+        self.assertEqual(list(result['processid']), ['A001', 'C003'])
+
+    def test_spaces_and_empty_items_are_ignored(self):
+        """콤마 주변 공백·빈 항목은 무시하고, 비교는 정확 일치(대소문자 구분)다."""
+        import os
+        from . import scheduler
+
+        with patch.dict(os.environ, {self.ENV_KEY: ' A001 , ,c003,'}):
+            result = scheduler._drop_excluded_processids(self._df())
+        self.assertEqual(list(result['processid']), ['B002', 'B002', 'C003'])
+
+    def test_excluded_processid_is_not_stored_nor_logged(self):
+        """제외된 processid 는 스텝 테이블에도 변경 이력(PhotoStepChangeLog)에도 남지 않는다."""
+        import os
+        import pandas as pd
+        from sqlalchemy import text
+        from . import scheduler
+        from .models import PhotoStepChangeLog
+
+        engine = WriteStepChangeLogTest()._make_engine()
+        df = pd.DataFrame([
+            {'processid': 'KEEP', 'stepseq': '10', 'descript': 'D', 'recipeid': 'R', 'areaname': 'A',
+             'eqptype': 'E1', 'updated': 'U', 'layerid': 'L'},
+            {'processid': 'SKIP', 'stepseq': '10', 'descript': 'D', 'recipeid': 'R', 'areaname': 'A',
+             'eqptype': 'E1', 'updated': 'U', 'layerid': 'L'},
+        ])
+        with patch.dict(os.environ, {self.ENV_KEY: 'SKIP'}):
+            filtered = scheduler._drop_excluded_processids(df)
+        scheduler._write_step_if_changed(
+            engine, 'step_test', filtered, scheduler.STEP_COLUMNS,
+            line='라인1', table_type=PhotoStepChangeLog.TABLE_TYPE_MF,
+        )
+
+        with engine.connect() as conn:
+            stored = [r[0] for r in conn.execute(text("SELECT processid FROM step_test")).fetchall()]
+        self.assertEqual(stored, ['KEEP'])
+        self.assertEqual(list(PhotoStepChangeLog.objects.values_list('processid', flat=True)), ['KEEP'])
+
+
 class PhotoStepChangesApiTest(TestCase):
     """GET /api/photostep-changes/ 가 sync_run_id+processid 로 그룹핑해 반환하는지 검증한다."""
 
