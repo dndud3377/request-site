@@ -144,6 +144,7 @@
     "section_map_r": "R",
     "section_etc": "기타",
     "etc_section_map": "MAP",
+    "tab_adi_cd_not_applicable": "ADI CD 변경 요청은 MAP 정보를 작성하지 않습니다.",
     "export_btn": "export",
     "export_all_btn": "전체 export",
     "export_col_item": "항목",
