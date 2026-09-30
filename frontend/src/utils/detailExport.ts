@@ -184,6 +184,7 @@ function addBbSheet(wb: ExcelJS.Workbook, t: TFunction, detail: Partial<DetailFo
 // ===== 정보(key-value) 시트 공용 빌더 — 상세 정보 / MAP 정보 / O-ayer 정보 =====
 
 type InfoBlock =
+  | { kind: 'section'; label: string }
   | { kind: 'kv'; label: string; value: string }
   | { kind: 'table'; label: string; headers: string[]; rows: string[][] };
 
@@ -198,6 +199,12 @@ function addInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, blo
   head.eachCell((cell) => { cell.font = { bold: true }; applyFill(cell, '#e5e7eb'); });
 
   blocks.forEach((b) => {
+    if (b.kind === 'section') {
+      // 섹션 제목 행 — 화면의 섹션 카드 제목에 대응한다(기타 시트 전용).
+      const sectionRow = ws.addRow([b.label, '']);
+      sectionRow.eachCell({ includeEmpty: true }, (cell) => { cell.font = { bold: true }; applyFill(cell, '#dbe4f3'); });
+      return;
+    }
     if (b.kind === 'kv') {
       const row = ws.addRow([b.label, b.value]);
       row.getCell(1).font = { bold: true };
@@ -481,13 +488,16 @@ function addMapInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, 
   addInfoSheet(wb, t, sheetName, blocks);
 }
 
-// ===== 기타 텍스트 시트 — R 탭에서 뺀 항목(CC 적용 여부) =====
+// ===== 기타 텍스트 시트 — R 탭에서 뺀 항목을 섹션(MAP: CC 적용 여부) 단위로 담는다 =====
 
 function addEtcInfoSheet(wb: ExcelJS.Workbook, t: TFunction, sheetName: string, detail: Partial<DetailFormState>): void {
   const ccText = detail.mshot_change_cc === 'exists' ? t('request.cc_apply')
     : detail.mshot_change_cc === 'not_exists' ? t('request.cc_not_apply')
     : t('request.value_none');
-  const blocks: InfoBlock[] = [{ kind: 'kv', label: t('request.mshot_change_cc_label'), value: ccText }];
+  const blocks: InfoBlock[] = [
+    { kind: 'section', label: t('request.etc_section_map') },
+    { kind: 'kv', label: t('request.mshot_change_cc_label'), value: ccText },
+  ];
   addInfoSheet(wb, t, sheetName, blocks);
 }
 
