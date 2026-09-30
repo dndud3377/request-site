@@ -42,7 +42,8 @@
 **즉시 조치 권고 TOP 5** (전부 재현✅)
 1. **[B-26] 저장형 XSS → MASTER 권한 탈취** — 역할 `NONE` 사용자가 VOC 내용에 임의 HTML/스크립트를 저장할 수 있고,
    그것을 열람한 MASTER의 세션으로 `assign-role` 이 호출되면 **공격자가 MASTER로 승격**된다. sanitizer 의존성 자체가 없다.
-2. **[B-27] OIDC id_token 만료 검증이 꺼져 있다** (`verify_exp: False`) — 한 번 유출된 id_token으로 **기한 없이 로그인** 가능.
+2. ~~**[B-27] OIDC id_token 만료 검증이 꺼져 있다** (`verify_exp: False`) — 한 번 유출된 id_token으로 **기한 없이 로그인** 가능.~~
+   → ✅ **수정 완료**(2026-09-30, `4af0e9a`) — exp/nbf/aud/iss 검증 적용. 상세 `docs/LOGIN.md`.
 3. ~~**[B-01] 의뢰서 삭제 인가 전무**~~ → ✅ **수정 완료**(2026-07-28, `03b2240`) — 인가 적용 + REST DELETE 405 차단.
 4. **[B-06] PAUSE 동결 우회** — 중단(pause) 문서에서 PL 합의/반려가 그대로 동작해 결재가 되살아난다.
 5. **[B-02+B-34] 미인증 업로드 + 무방비 `/media/` 서빙** — 비로그인으로 스크립트 포함 `.svg` 업로드 → 같은 오리진에서 실행.
@@ -1431,6 +1432,8 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
   ①만으로도 기존 저장분은 남으니 **마이그레이션 시 기존 레코드도 재-sanitize** 필요.
 
 ### 🔴 B-27 OIDC `id_token` 만료·audience 검증이 꺼져 있다 **분석🔍**
+> ✅ **수정 완료**(2026-09-30, `4af0e9a`) — `exp`/`iss`/`aud` 필수 + `nbf`/`iat` 검증, leeway 60초, `OIDC_ISSUER` 설정 추가. 아래는 수정 전 기록. 상세 `docs/LOGIN.md`.
+
 - 위치: `auth_views.py:316-323` (`verify_exp` `:320` / `verify_aud` `:321`) — **2026-08-04 미수정 확인**
   ```python
   decoded_id_token = jwt.decode(..., options={
@@ -1449,6 +1452,8 @@ curl -sI https://localhost:10010/ | grep -iE "content-security-policy|x-frame-op
 - 권고: `verify_exp: True`, `verify_aud: True` + `audience=OIDC_RP_CLIENT_ID`, `iss` 검증 추가.
 
 ### 🔴 B-28 nonce 검증을 호출자가 생략할 수 있고, `state`는 검증하지 않는다 **분석🔍**
+> ✅ **수정 완료**(2026-09-30, `4af0e9a`) — nonce/state 를 서명한 HttpOnly 쿠키(`oidc_state`)에 묶고 없거나 불일치하면 400(fail-closed). 아래는 수정 전 기록. 상세 `docs/LOGIN.md`.
+
 - 위치: `auth_views.py:337-356`(nonce — `if nonce_jwt and id_token_nonce:` 는 `:337`, 실패 무시 `:355-356`),
   `auth_views.py:259-260`(state 를 URL 에 붙이기만 함), `:291`(`nonce_jwt` 를 요청 본문에서 받음) — **2026-08-04 미수정 확인**
   ```python
@@ -2129,6 +2134,7 @@ B-13(잘못된 버튼 노출)·X-4·X-5 의 공통 뿌리이며, 통계(`stats`)
 그 과정에서 만료(B-27)·audience(B-27)·nonce(B-28)·state(B-28)·code 교환(B-43) 검증이 모두 빠졌다.
 라이브러리를 쓰지 않기로 했다면 최소한 **검증 항목 체크리스트**를 문서화하고 테스트로 고정해야 한다
 (현재 `tests.py`에 **인증 관련 테스트가 0건**이다).
+→ 2026-09-30: B-27·B-28 은 `OidcLoginSecurityTest`, 401 응답은 `CookieJwtAuthenticationTest` 로 고정했다. code 교환(B-43)은 미적용.
 
 ### R-14 🟠 사용자 삭제가 도메인 상태를 고려하지 않는다 (2차 추가)
 `UserViewSet.destroy`는 "같은 역할끼리 삭제 가능"만 검사하고, 그 사용자가 **진행 중 결재의 담당자인지,
