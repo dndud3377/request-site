@@ -30,6 +30,15 @@ class CookieJWTAuthentication(BaseAuthentication):
             return None  # 인증 안 함
         
         return self.authenticate_token(token)
+
+    def authenticate_header(self, request):
+        """401 응답에 실을 WWW-Authenticate 스킴.
+
+        이 메서드가 없으면 DRF 는 인증 실패를 **403** 으로 낮춰 응답한다
+        (`rest_framework.views.APIView.handle_exception`, 첫 번째 인증 클래스 기준).
+        프론트(`client.ts`)는 401 일 때만 ADFS 로 자동 리다이렉트하므로 401 이어야 한다.
+        """
+        return self.keyword
     
     def authenticate_token(self, token):
         service_jwt_secret = getattr(settings, 'SERVICE_JWT_SECRET_KEY', '')
@@ -62,16 +71,13 @@ class CookieJWTAuthentication(BaseAuthentication):
                 logger.info(f"[Auth] User found: {user.loginid}, id: {user.id}")
             except User.DoesNotExist:
                 logger.error(f"[Auth] User not found: {username}")
-                # 사용자가 없으면 Cookie를 삭제하고 None 반환 (SSO 로그인 시도)
-                from django.http import HttpResponse
-                response = HttpResponse(status=401)
-                response.delete_cookie('access_token')
-                response.delete_cookie('refresh_token')
-                # 인증 실패를 나타내는 special return
-                return None
+                # None 을 반환하면 다음 인증 클래스를 거쳐 익명 사용자로 통과한다 → 인증 실패로 처리
+                raise AuthenticationFailed('사용자를 찾을 수 없습니다.')
             
             return (user, token)
             
+        except AuthenticationFailed:
+            raise
         except ExpiredSignatureError:
             raise AuthenticationFailed('토큰이 만료되었습니다.')
         except InvalidTokenError as e:
