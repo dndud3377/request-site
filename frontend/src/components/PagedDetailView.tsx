@@ -17,6 +17,7 @@ import {
   exportBb as exportBbXlsx,
   exportDetailInfoImage as exportDetailInfoImageXlsx,
   exportMapInfoImage as exportMapInfoImageXlsx,
+  exportEtcInfoImage as exportEtcInfoImageXlsx,
   ScreenshotCapture,
   ExportAllScreenshots,
 } from '../utils/detailExport';
@@ -782,6 +783,9 @@ const buildTbvtlvTable = (entries: any, t: TFunction): DiffTable | null => {
   return rows.length > 0 ? { headers: [t('request.tbvtlv_sd_select'), 'No', 'X', 'Y', t('request.tbvtlv_used')], rows } : null;
 };
 
+/** '기타' 탭 칩 최대 폭(px) — 항목이 하나뿐이라 가로로 늘어나지 않게 제한한다. */
+const ETC_CHIP_MAX_WIDTH = 260;
+
 /**
  * 블록 빌더 3종 — 한 회차(detail) 하나만 받아 항목 목록을 만든다.
  * 변경 전/후 표(진행 중)와 회차별 표(이력 조회)가 같은 함수를 공유해야 값 비교가 성립한다.
@@ -794,7 +798,6 @@ const MSHOT_IMAGE_ITEMS: [string, string][] = [
 
 const buildMshotItems: GroupBuilder = (d, t) => [
   { label: t('request.mshot_change_label'), value: fmtDiffVal(d?.mshot_change) },
-  { label: t('request.mshot_change_cc_label'), value: fmtCcStatus(d?.mshot_change_cc, t) },
   ...MSHOT_IMAGE_ITEMS.map(([k, labelKey]) => ({
     label: t(labelKey as never),
     value: fmtDiffVal(d?.[k]),
@@ -1323,6 +1326,9 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   const { isFullscreen, setIsFullscreen } = useModalFullscreen();
   const detailTabRef = useRef<HTMLDivElement>(null);
   const mapTabRef = useRef<HTMLDivElement>(null);
+  const etcTabRef = useRef<HTMLDivElement>(null);
+  // '기타' 탭의 pages 인덱스 — 뼈찜 정보 뒤에 push 될 때 채워진다(전체 export 캡처용, 없으면 -1).
+  let etcPageIdx = -1;
 
   /** DOM 노드 하나를 화면 그대로 PNG 로 캡처한다(html2canvas). 실패하면 null. */
   const captureNode = async (el: HTMLElement | null): Promise<ScreenshotCapture | null> => {
@@ -1379,6 +1385,10 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   const exportMap = async () => {
     const screenshot = await captureNodeFullscreen(mapTabRef.current);
     await exportMapInfoImageXlsx(doc, t, screenshot);
+  };
+  const exportEtc = async () => {
+    const screenshot = await captureNodeFullscreen(etcTabRef.current);
+    await exportEtcInfoImageXlsx(doc, t, screenshot);
   };
 
   // 판정 키워드(plel) 유무 — E(MASK) 단계가 결재 경로에 포함되는지의 기준(백엔드 has_ppid_plel 과 동일).
@@ -2043,20 +2053,26 @@ type Page = { label: string; content: React.ReactNode };
         mapShot = await captureNode(mapTabRef.current);
       }
 
+      let etcShot: ScreenshotCapture | null = null;
+      if (etcPageIdx >= 0) {
+        flushSync(() => setPageIdx(etcPageIdx));
+        etcShot = await captureNode(etcTabRef.current);
+      }
+
       flushSync(() => setPageIdx(originalPageIdx));
       if (!wasFullscreen) flushSync(() => setIsFullscreen(false));
 
-      return { detail: detailShot, map: mapShot };
+      return { detail: detailShot, map: mapShot, etc: etcShot };
     },
   }));
 
   if (showMap) {
     pages.push({
-      label: t('request.section_map'),
+      label: t('request.section_map_r'),
       content: (
         <div style={cardStyle} ref={mapTabRef}>
           <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>🗺️ {t('request.section_map')}</span>
+            <span>🗺️ {t('request.section_map_r')}</span>
             <button onClick={exportMap} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
           </div>
 
@@ -2135,12 +2151,13 @@ type Page = { label: string; content: React.ReactNode };
             </div>
           )}
 
-          {/* X표시 변경 여부 + CC 존재 여부(mshot_change_cc) — 상신 시점에 선택된 값을 그대로 보여준다.
+          {/* X표시 변경 여부 — 상신 시점에 선택된 값을 그대로 보여준다. CC 적용 여부(mshot_change_cc)는
+              '기타' 탭에서 보여준다.
               (2026-09) 이전에는 CLONE/EXISTING 한정으로 api_maptable 을 실시간 재조회해 드리프트를
               감지·강조했으나, 이제는 그 기능을 폐지하고 다른 필드(map_change 등)와 동일하게
               회차별 상신 값만 비교한다(changedFields/buildMshotItems 공용 로직). */}
           {!isMapDeleteEditType(detail.map_type) && (isR || isO || isP) && detail.mshot_change && (() => {
-            const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_change_cc') || changedFields.has('mshot_image_copy') || changedFields.has('mshot_image_copy_top') || changedFields.has('mshot_image_copy_bottom');
+            const mshotChanged = changedFields.has('mshot_change') || changedFields.has('mshot_image_copy') || changedFields.has('mshot_image_copy_top') || changedFields.has('mshot_image_copy_bottom');
             const imgStyle: React.CSSProperties = { maxWidth: '600px', maxHeight: '420px', borderRadius: '4px', border: '1px solid #ddd', marginTop: '8px', cursor: 'zoom-in' };
             const renderMshotImg = (src: string, alt: string) => (
               <div style={{ position: 'relative', display: 'inline-block' }}>
@@ -2178,7 +2195,6 @@ type Page = { label: string; content: React.ReactNode };
                     <div style={fieldLabel}>{t('request.mshot_change_status')}</div>
                     <div style={fieldValue}>
                       {detail.mshot_change}
-                      {fmtCcStatus(detail.mshot_change_cc, t) && ` / ${fmtCcStatus(detail.mshot_change_cc, t)}`}
                     </div>
                   </div>
                   {mshotIsDelete && (
@@ -3066,6 +3082,40 @@ type Page = { label: string; content: React.ReactNode };
     fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)',
     textTransform: 'uppercase', letterSpacing: '.04em', padding: '10px 0 2px',
   };
+
+  // '기타' 탭 — R 탭에서 뺀 항목(현재 CC 적용 여부)을 담는다. R 탭과 같은 조건(ADI CD 변경 제외)에서만 보이며,
+  // 값이 비어 있어도 탭 수가 문서마다 달라지지 않도록 회색 "없음"으로 표시한다.
+  if (showMap) {
+    etcPageIdx = pages.length;
+    const ccLabel = t('request.mshot_change_cc_label');
+    const ccValue = fmtCcStatus(detail.mshot_change_cc, t);
+    const etcChipStyle: React.CSSProperties = { maxWidth: ETC_CHIP_MAX_WIDTH };
+    pages.push({
+      label: t('request.section_etc'),
+      content: (
+        <div style={cardStyle} ref={etcTabRef}>
+          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>🗂️ {t('request.section_etc')}</span>
+            <button onClick={exportEtc} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+          </div>
+          <div style={rowStyle}>
+            {ccValue ? (
+              <Chip
+                label={ccLabel}
+                value={ccValue}
+                style={etcChipStyle}
+                changed={changedFields.has('mshot_change_cc')}
+                fieldKey="mshot_change_cc"
+                buildValue={(d) => fmtCcStatus(d?.mshot_change_cc, t)}
+              />
+            ) : (
+              <PlaceholderChip label={ccLabel} style={etcChipStyle} />
+            )}
+          </div>
+        </div>
+      ),
+    });
+  }
 
   pages.push({
     label: t('approval.tab_route'),
