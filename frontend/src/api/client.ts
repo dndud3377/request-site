@@ -78,7 +78,6 @@ async function redirectToSSO(): Promise<void> {
     const res = await fetch(`${BASE_URL}/auth/oidc/login/`, { credentials: 'include' });
     if (res.ok) {
       const data = await res.json();
-      if (data.nonce_jwt) localStorage.setItem('oidc_state_jwt', data.nonce_jwt);
       window.location.href = data.redirect_url;
     } else {
       isRedirectingToSSO = false;
@@ -110,12 +109,14 @@ async function request<T>(
 
   if (!res.ok) {
     // SSO 모드에서 401 발생 시 자동 ADFS 리다이렉트
-    // /auth/oidc/ 경로는 제외 (콜백 루프 방지), /auth/dev-login/ 제외 (dev 전용)
+    // /auth/oidc/ 경로는 제외 (콜백 루프 방지), /auth/dev-login/ 제외 (dev 전용),
+    // /auth/me/ 제외 (최초 진입 시 로그인 화면을 보여주고, 쿠키가 저장되지 않는 환경에서 ADFS 왕복 루프 방지)
     if (
       res.status === 401 &&
       !IS_DEV_MODE &&
       !path.startsWith('/auth/oidc/') &&
-      !path.startsWith('/auth/dev-login/')
+      !path.startsWith('/auth/dev-login/') &&
+      !path.startsWith('/auth/me/')
     ) {
       redirectToSSO();
       return new Promise<T>(() => {}); // 리다이렉트 완료까지 resolve 안 함
@@ -155,9 +156,7 @@ export const authAPI = {
   refresh: () =>
     post<{ success: boolean; user: UserInfo }>('/auth/refresh/'),
   oidcLogin: () =>
-    get<{ redirect_url: string; nonce_jwt?: string }>('/auth/oidc/login/'),
-  oidcCallback: (data: { id_token: string; state?: string; nonce_jwt?: string }) =>
-    post<{ success?: boolean; redirect_url?: string; user?: unknown }>('/auth/oidc/callback/', data),
+    get<{ redirect_url: string }>('/auth/oidc/login/'),
   oidcLogout: () =>
     post<{ message: string; logout_url: string }>('/auth/oidc/logout/'),
   devLogin: (username: string) =>
