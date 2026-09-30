@@ -51,8 +51,8 @@ const makeShareGuideDemoDoc = (loginid: string): RequestDocument => ({
 });
 
 // 전체 가이드 상세 모달에서 특정 페이지로 이동하기 위한 페이지 인덱스
-// (MASTER 역할 기준 페이지 순서: 0 상세 · 1 MAP · 2 JOB · 3 OVL · 4 BB · 5 결재 경로)
-const TOUR_PAGE_IDX: Record<string, number> = { jayer: 2, route: 5 };
+// (MASTER 역할 기준 페이지 순서: 0 상세 · 1 R · 2 JOB · 3 OVL · 4 BB · 5 기타 · 6 결재 경로)
+const TOUR_PAGE_IDX: Record<string, number> = { jayer: 2, route: 6 };
 
 const AGENT_TO_ROLE: Record<string, string> = {
   R: 'TE_R',
@@ -2542,7 +2542,7 @@ export default function ApprovalPage(): React.ReactElement {
           <button
             onClick={async () => {
               const screenshots = await pagedDetailViewRef.current?.captureAllScreenshots()
-                ?? { detail: null, map: null };
+                ?? { detail: null, map: null, etc: null };
               await exportAllXlsx(selected, t, screenshots, {
                 jayerColorFilterSets, activeJayerColorFilterIds,
                 oayerColorFilterSets, activeOayerColorFilterIds,
