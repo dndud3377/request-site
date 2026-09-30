@@ -6661,7 +6661,7 @@ class PhotoStepChangesApiTest(TestCase):
         anon_client = APIClient()
         with override_settings(AUTH_MODE='sso'):
             resp = anon_client.get('/api/photostep-changes/')
-        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 401)
 
 
 class SyncRtdbStepCountDropTest(TestCase):
