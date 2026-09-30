@@ -2032,12 +2032,16 @@ type Page = { label: string; content: React.ReactNode; key?: string };
     },
   ];
 
-  // ADI CD 변경은 StepMap 자체를 작성하지 않는다 — map_change/ea_change 등은 기본값(빈 값이
-  // 아닌 '변경 없음' 류)이 그대로 남아 있어 실제로 채운 것처럼 보이므로, 탭 자체를 감춘다.
-  const showMap = (isR || isO || isP) && !isAdiCdChange;
+  // R·기타 탭은 모든 문서에 똑같이 보인다(탭 번호가 문서마다 달라지지 않게). ADI CD 변경은 StepMap 을
+  // 작성하지 않아 map_change/ea_change 등이 기본값('변경 없음' 류)으로 남아 있으므로, 그 값을 보여주지
+  // 않고 두 탭 모두 안내 문구(request.tab_adi_cd_not_applicable)만 보여준다.
+  const showMap = isR || isO || isP;
+  const adiCdNotice = (
+    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{t('request.tab_adi_cd_not_applicable')}</div>
+  );
 
   // 전체 export(부모 컴포넌트의 제목 옆 버튼)가 쓰는 캡처 핸들 — 상세 정보 탭(0번)과
-  // MAP 정보 탭(showMap 이면 1번)을 차례로 전체화면 전환→캡처하고, 호출 전 탭·전체화면
+  // R 탭(1번)을 차례로 전체화면 전환→캡처하고, 호출 전 탭·전체화면
   // 상태로 되돌린다.
   useImperativeHandle(ref, () => ({
     captureAllScreenshots: async (): Promise<ExportAllScreenshots> => {
@@ -2072,7 +2076,15 @@ type Page = { label: string; content: React.ReactNode; key?: string };
   if (showMap) {
     pages.push({
       label: t('request.section_map_r'),
-      content: (
+      content: isAdiCdChange ? (
+        <div style={cardStyle} ref={mapTabRef}>
+          <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>🗺️ {t('request.section_map_r')}</span>
+            <button onClick={exportMap} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 {t('request.export_btn')}</button>
+          </div>
+          {adiCdNotice}
+        </div>
+      ) : (
         <div style={cardStyle} ref={mapTabRef}>
           <div style={{ ...sectionTitle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>🗺️ {t('request.section_map_r')}</span>
@@ -3087,7 +3099,7 @@ type Page = { label: string; content: React.ReactNode; key?: string };
   };
 
   // '기타' 탭 — R 탭에서 뺀 항목을 섹션(카드) 단위로 담는다. 섹션을 늘릴 때는 etcSections 에 항목만 추가한다.
-  // R 탭과 같은 조건(ADI CD 변경 제외)에서만 보이며, 값이 비어 있어도 탭 수가 문서마다 달라지지 않도록
+  // R 탭과 같은 조건에서 보이며(ADI CD 변경은 안내 문구만), 값이 비어 있어도 탭 수가 문서마다 달라지지 않도록
   // 회색 "없음"으로 표시한다. export 버튼은 첫 카드에만 둔다(캡처·시트는 탭 전체 기준).
   if (showMap) {
     const ccLabel = t('request.mshot_change_cc_label');
@@ -3097,7 +3109,7 @@ type Page = { label: string; content: React.ReactNode; key?: string };
       {
         key: 'map',
         title: t('request.etc_section_map'),
-        content: (
+        content: isAdiCdChange ? adiCdNotice : (
           <div style={rowStyle}>
             {ccValue ? (
               <Chip
