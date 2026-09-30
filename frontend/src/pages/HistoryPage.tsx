@@ -508,7 +508,7 @@ export default function HistoryPage(): React.ReactElement {
             <button
               onClick={async () => {
                 const screenshots = await pagedDetailViewRef.current?.captureAllScreenshots()
-                  ?? { detail: null, map: null };
+                  ?? { detail: null, map: null, etc: null };
                 await exportAllXlsx(selected, t, screenshots);
               }}
               className="btn btn-secondary btn-sm"
