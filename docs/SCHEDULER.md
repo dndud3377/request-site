@@ -343,6 +343,26 @@ for eqptype_value, table, table_type, target_label in STEP_EQPTYPE_TARGETS:
   (라인1·3·4·5 기준 스텝만 4회 → 최대 12회/사이클). 과부하로 인한 불완전 응답을 줄이는 것이
   목적이지만, 호출 빈도 자체는 늘어나므로 운영 중 RTDB 부하 추이를 지켜봐야 한다.
 
+### 스텝 동기화에서 특정 processid 제외 (`PHOTOSTEP_EXCLUDED_PROCESSIDS`, 2026-09 추가)
+
+`.env`(개발은 `.env.dev`)의 `PHOTOSTEP_EXCLUDED_PROCESSIDS` 에 적은 processid 행은 스텝 동기화에서
+**받지 않는다.** 콤마로 구분하고(`A001,B002`), 값 앞뒤 공백·빈 항목은 무시하며, 비교는 정확 일치
+(대소문자 구분)다. 비우면 아무것도 제외하지 않는다.
+
+- **적용 위치**: `sync_rtdb_options()` 의 스텝 루프에서 eqptype 안전 필터 직후 `_drop_excluded_processids()`
+  를 거친 뒤 `_write_step_if_changed()` 로 넘긴다. 12개 테이블(MF/OV/CD × 라인 4개) 모두에 적용된다.
+  RTDB 조회 필터가 아니라 **조회 후 pandas 에서 거른다**(RTDB 필터 연산자에 의존하지 않기 위함).
+- **적용 시점**: 환경변수는 프로세스 시작 시 읽히므로 값을 바꾸면 **backend(스케줄러) 재시작이 필요**하다.
+  코드 재배포는 필요 없다. 실제 `.env` 는 AI 가 수정하지 않는다 — 사용자가 직접 편집한다.
+- **범위**: 스텝 테이블만이다. 공정-품목(`api_processproduct`)·품목-공정ID(`api_productprocessid`) 동기화는
+  영향 없다.
+- **이미 저장된 processid 를 제외 목록에 추가하면**: 다음 동기화에서 그 행들이 "없어진 것"으로 판정되어
+  ① 스텝 테이블에서 삭제되고 ② 변경 현황에 **삭제 이력이 1회 생기며** ③ 결재 진행 중 문서가 그 processid
+  를 쓰고 있었다면 J/O-layer '변경 감지' 배지가 뜰 수 있다. 기존 변경 이력 행은 자동으로 지워지지 않는다.
+- **의뢰서 작성 화면 영향**: 저장 자체를 안 하므로 J-layer/O-layer/BB 조회에서도 해당 processid 데이터가
+  조회되지 않는다.
+- **검증**: `DropExcludedProcessidsTest`(`backend/api/tests.py`).
+
 ### 스텝 변경 이력 기록 (`PhotoStepChangeLog`, 2026-09 추가 — 변경 현황 화면용)
 
 `_write_step_if_changed()`는 diff 를 이미 `old_keys`/`new_keys` 두 집합으로 계산하므로, 이 시점에
