@@ -143,6 +143,7 @@
     "section_map": "MAP 정보",
     "section_map_r": "R",
     "section_etc": "기타",
+    "etc_section_map": "MAP",
     "export_btn": "export",
     "export_all_btn": "전체 export",
     "export_col_item": "항목",
