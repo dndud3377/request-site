@@ -91,6 +91,7 @@ function addJobSheet(
     { header: t('request.process_id'), key: 'process_id', width: 14 },
     { header: t('request.col_sp'), key: 'sp', width: 10 },
     { header: t('request.col_sd'), key: 'sd', width: 10 },
+    { header: t('request.col_layer'), key: 'layerid', width: 10 },
     { header: t('request.col_pp'), key: 'pp', width: 14 },
     { header: t('request.col_st_j'), key: 'st', width: 8 },
     { header: t('request.col_new_or_copy'), key: 'new_or_copy', width: 10 },
@@ -101,17 +102,17 @@ function addJobSheet(
   jayer.forEach((r) => {
     const row = ws.addRow({
       updated: r.updated ?? '', process_id: r.process_id, sp: r.sp, sd: r.sd,
-      pp: r.pp, st: r.st, new_or_copy: r.new_or_copy, product_name: r.product_name,
-      step: r.step, item_id: r.item_id,
+      layerid: r.layerid, pp: r.pp, st: r.st, new_or_copy: r.new_or_copy,
+      product_name: r.product_name, step: r.step, item_id: r.item_id,
     });
     const reg = r.new_or_copy === '기등록' || isRowInactive(r.st);
     row.eachCell((cell, col) => {
       if (reg) { applyFill(cell, '#e5e7eb'); return; }
       if (col === 3) applyFill(cell, matchLayerColor(colorFilterSets, activeColorFilterIds, 'sp', r.sp));
       else if (col === 4) applyFill(cell, matchLayerColor(colorFilterSets, activeColorFilterIds, 'sd', r.sd));
-      else if (col === 5) applyFill(cell, isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : matchLayerColor(colorFilterSets, activeColorFilterIds, 'pp', r.pp));
-      else if (col === 6) applyFill(cell, ST_CELL_COLOR[r.st]);
-      else if (col === 7) applyFill(cell, r.new_or_copy === '차용' ? '#eff6ff' : undefined);
+      else if (col === 6) applyFill(cell, isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : matchLayerColor(colorFilterSets, activeColorFilterIds, 'pp', r.pp));
+      else if (col === 7) applyFill(cell, ST_CELL_COLOR[r.st]);
+      else if (col === 8) applyFill(cell, r.new_or_copy === '차용' ? '#eff6ff' : undefined);
     });
   });
 }
