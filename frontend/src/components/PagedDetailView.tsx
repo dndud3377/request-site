@@ -279,8 +279,8 @@ const JAYER_DIFF_FIELDS: DiffFieldDef[] = [
   { key: 'process_id',   labelKey: 'request.process_id' },
   { key: 'sp',           labelKey: 'request.col_sp' },
   { key: 'sd',           labelKey: 'request.col_sd' },
+  { key: 'layerid',      labelKey: 'request.col_layer' },
   { key: 'pp',           labelKey: 'request.col_pp' },
-  { key: 'layerid',      label: 'Layer' },
   { key: 'st',           labelKey: 'request.col_st_j' },
   { key: 'new_or_copy',  labelKey: 'request.col_new_or_copy' },
   { key: 'product_name', labelKey: 'request.col_product_name' },
@@ -874,7 +874,7 @@ function JayerTable({
           <thead>
             <tr>
               {hasPrev && <th style={{ width: 64 }}></th>}
-              <th>{t('request.col_updated_date')}</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st_j')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th>
+              <th>{t('request.col_updated_date')}</th><th>{t('request.process_id')}</th><th>{t('request.col_sp')}</th><th>{t('request.col_sd')}</th><th>{t('request.col_layer')}</th><th>{t('request.col_pp')}</th><th>{t('request.col_st_j')}</th><th>{t('request.col_new_or_copy')}</th><th>{t('request.col_product_name')}</th><th>{t('request.col_step')}</th><th>{t('request.col_item_id')}</th>
             </tr>
           </thead>
           <tbody>
@@ -896,7 +896,7 @@ function JayerTable({
                     const spColor = colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'sp', r.sp) : undefined;
                     const sdColor = colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'sd', r.sd) : undefined;
                     const ppColor = isValidationKeywordRow(r.pp) ? VALIDATION_CELL_COLOR : (colorFilterSets ? matchLayerColor(colorFilterSets, activeColors, 'pp', r.pp) : undefined);
-                    return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: reg ? rb : spColor }}>{r.sp}</td><td style={{ backgroundColor: reg ? rb : sdColor }}>{r.sd}</td><td style={{ backgroundColor: reg ? rb : ppColor }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.item_id}</td></>);
+                    return (<><td style={{ backgroundColor: rb }}>{r.updated || '-'}</td><td style={{ backgroundColor: rb }}>{r.process_id}</td><td style={{ backgroundColor: reg ? rb : spColor }}>{r.sp}</td><td style={{ backgroundColor: reg ? rb : sdColor }}>{r.sd}</td><td style={{ backgroundColor: rb }}>{r.layerid}</td><td style={{ backgroundColor: reg ? rb : ppColor }}>{r.pp}</td><td style={{ backgroundColor: reg ? rb : ST_CELL_COLOR[r.st] }}>{r.st}</td><td style={{ backgroundColor: reg ? rb : r.new_or_copy === '차용' ? '#eff6ff' : undefined }}>{r.new_or_copy}</td><td style={{ backgroundColor: rb }}>{r.product_name}</td><td style={{ backgroundColor: rb }}>{r.step}</td><td style={{ backgroundColor: rb }}>{r.item_id}</td></>);
                   })()}
                 </tr>
               );

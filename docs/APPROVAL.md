@@ -1934,3 +1934,23 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 꺼진 필터 제외, 매칭 없음 시 `undefined`, 값이 비어 있을 때 `undefined`, 필터 목록 순서 우선,
 같은 필터 안 키워드 등록 순서 우선을 검증한다. 백엔드 변경이 없어 `backend/api/tests.py` 추가는
 없다.
+
+## 결재 상세 Jayer 표·엑셀 JOB 시트에 Layer 컬럼 추가 (2026-09-30)
+
+- **요청**: 결재 현황 상세보기의 Jayer 표에 Oayer 처럼 Layer(`request.col_layer`) 컬럼이 보이게 한다.
+  종전엔 `JayerTable` 만 `layerid` 를 렌더하지 않았다(의뢰서 작성 화면 `Step2.tsx` 와 `OayerTable` 에는 있었다).
+- **변경**
+  - `components/PagedDetailView.tsx` `JayerTable`: 헤더·셀에 Layer 를 **SD 다음, PP 앞**에 추가
+    (`OayerTable` 과 같은 위치·같은 스타일 — 기등록/비활성 행은 회색 배경).
+  - `utils/detailExport.ts` `addJobSheet`(JOB 시트 — 개별 J-ayer export·전체 export 공통): 같은 위치에
+    Layer 열 추가. PP/ST/요청기준 열 번호가 1씩 밀려 `applyFill` 의 열 번호(5→6, 6→7, 7→8)도 함께 조정했다.
+  - `PagedDetailView.tsx` `JAYER_DIFF_FIELDS`: Layer 라벨을 하드코딩 `'Layer'` 에서 i18n 키
+    `request.col_layer` 로 바꾸고 순서를 SD 다음·PP 앞으로 맞췄다(이력 모달 컬럼 순서 = 표 순서).
+    변경 판정 대상 필드(`key`) 목록은 그대로라 이력 변경 감지 결과는 달라지지 않는다.
+- **i18n**: 기존 키 `request.col_layer` 재사용 — ko/en 추가 없음.
+- **백엔드/타입 변경 없음**: `JayerRow.layerid` 는 이미 저장·전달되고 있었다.
+- **수동 검증**
+  1. 결재 현황 → 임의 의뢰서 행 클릭 → 상세 모달의 Jayer 페이지 → 기대: 헤더가 `… SD | Layer | PP | ST_J …`
+     순서이고 각 행 Layer 칸에 값이 보인다(Oayer 페이지와 같은 위치).
+  2. 같은 화면의 J-ayer 엑셀 내보내기(또는 전체 export) → JOB 시트 → 기대: SD 다음 열이 Layer 이고 PP·ST 색상이 어긋나지 않는다.
+  3. 회차가 2개 이상인 문서의 Jayer 변경 행 '이력 확인' → 기대: 모달 컬럼 라벨이 언어 설정에 따라 바뀌고 Layer 가 SD 다음에 나온다.
