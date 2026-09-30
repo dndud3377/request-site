@@ -783,6 +783,9 @@ const buildTbvtlvTable = (entries: any, t: TFunction): DiffTable | null => {
   return rows.length > 0 ? { headers: [t('request.tbvtlv_sd_select'), 'No', 'X', 'Y', t('request.tbvtlv_used')], rows } : null;
 };
 
+/** 탭 목록에서 '기타' 탭을 찾는 식별자(전체 export 캡처용). */
+const ETC_PAGE_KEY = 'etc';
+
 /** '기타' 탭 칩 최대 폭(px) — 항목이 하나뿐이라 가로로 늘어나지 않게 제한한다. */
 const ETC_CHIP_MAX_WIDTH = 260;
 
@@ -1327,8 +1330,6 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   const detailTabRef = useRef<HTMLDivElement>(null);
   const mapTabRef = useRef<HTMLDivElement>(null);
   const etcTabRef = useRef<HTMLDivElement>(null);
-  // '기타' 탭의 pages 인덱스 — 뼈찜 정보 뒤에 push 될 때 채워진다(전체 export 캡처용, 없으면 -1).
-  let etcPageIdx = -1;
 
   /** DOM 노드 하나를 화면 그대로 PNG 로 캡처한다(html2canvas). 실패하면 null. */
   const captureNode = async (el: HTMLElement | null): Promise<ScreenshotCapture | null> => {
@@ -1894,7 +1895,7 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
       : <FieldGroupHistoryModal title={title} rows={toDiffRows(prevSnap?.detail, detail, build, t)} onClose={onClose} />;
   };
 
-type Page = { label: string; content: React.ReactNode };
+type Page = { label: string; content: React.ReactNode; key?: string };
   const pages: Page[] = [
     {
       label: t('request.section_detail'),
@@ -2054,8 +2055,10 @@ type Page = { label: string; content: React.ReactNode };
       }
 
       let etcShot: ScreenshotCapture | null = null;
-      if (etcPageIdx >= 0) {
-        flushSync(() => setPageIdx(etcPageIdx));
+      // 기타 탭 위치는 탭 목록에서 key 로 찾는다(탭 순서가 바뀌어도 인덱스를 하드코딩하지 않는다).
+      const etcIdx = pages.findIndex((page) => page.key === ETC_PAGE_KEY);
+      if (etcIdx >= 0) {
+        flushSync(() => setPageIdx(etcIdx));
         etcShot = await captureNode(etcTabRef.current);
       }
 
@@ -3087,7 +3090,6 @@ type Page = { label: string; content: React.ReactNode };
   // R 탭과 같은 조건(ADI CD 변경 제외)에서만 보이며, 값이 비어 있어도 탭 수가 문서마다 달라지지 않도록
   // 회색 "없음"으로 표시한다. export 버튼은 첫 카드에만 둔다(캡처·시트는 탭 전체 기준).
   if (showMap) {
-    etcPageIdx = pages.length;
     const ccLabel = t('request.mshot_change_cc_label');
     const ccValue = fmtCcStatus(detail.mshot_change_cc, t);
     const etcChipStyle: React.CSSProperties = { maxWidth: ETC_CHIP_MAX_WIDTH };
@@ -3114,6 +3116,7 @@ type Page = { label: string; content: React.ReactNode };
       },
     ];
     pages.push({
+      key: ETC_PAGE_KEY,
       label: t('request.section_etc'),
       content: (
         <div ref={etcTabRef}>
