@@ -1523,8 +1523,8 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
   - **탭 구성/순서**: 의뢰 상세 · **R** · J-ayer · O-ayer · 뼈찜 · **기타** · 결재 경로. '기타'는 뼈찜 정보 **다음**(결재 경로 앞)이다. R·기타는 같은 조건(`showMap`: 'ADI CD 변경' 제외)에서만 보인다.
   - **i18n**: 상세 모달 전용 키 `request.section_map_r`("R")·`request.section_etc`("기타"/"Etc")를 신설했다. **작성 화면(단계 표시줄·가이드 투어·`StepMap` 제목)은 기존 `request.section_map`("MAP 정보")을 그대로 쓴다** — 바뀐 것은 조회 화면뿐이다.
   - **R 탭 Mshot 블록**: 상태 칸이 `변경 있음 / CC 적용`에서 `변경 있음`으로 바뀌었다. 변경 강조(`mshotChanged`)와 '엠샷 변경 이력'(`buildMshotItems`)에서도 CC 항목을 뺐다.
-  - **기타 탭**: `CC 적용 여부` 칩 1개. 값이 있으면 칩 + (재상신으로 바뀌었으면) 빨간 테두리·'이력 확인'(`Chip`의 `fieldKey`/`buildValue`), 비어 있으면(C가문이 아닌 문서 등) 탭은 유지한 채 회색 '없음'.
-  - **export**: R 탭은 시트명만 'R'로 바뀐다(내용 동일). 기타 탭에 `📊 export` 버튼을 달아 캡처 시트 + `기타 (텍스트)` 시트를 만든다. **전체 export** 는 BB 다음에 기타 시트 2장을 추가한다('ADI CD 변경'이면 건너뜀). `captureAllScreenshots()`/`ExportAllScreenshots` 에 `etc` 가 추가됐다.
+  - **기타 탭 = 섹션(카드) 단위 구성**: 섹션마다 카드를 따로 그리고 카드 제목이 섹션 이름이다(이모티콘 없음). `📊 export` 버튼은 **첫 카드에만** 둔다(캡처·시트는 탭 전체 기준). 현재 섹션은 **MAP**(`request.etc_section_map`) 하나이고 그 안에 `CC 적용 여부` 칩이 들어 있다. 값이 있으면 칩 + (재상신으로 바뀌었으면) 빨간 테두리·'이력 확인'(`Chip`의 `fieldKey`/`buildValue`), 비어 있으면(C가문이 아닌 문서 등) 섹션·탭은 유지한 채 회색 '없음'. **섹션 추가 방법**: `PagedDetailView.tsx` 의 `etcSections` 배열에 `{ key, title, content }` 를 추가하고, 엑셀 텍스트 시트(`detailExport.ts` 의 `addEtcInfoSheet`)에 같은 섹션의 `{ kind: 'section' }` 행 + 항목 행을 추가한다.
+  - **export**: R 탭은 시트명만 'R'로 바뀐다(내용 동일). 기타 탭에 `📊 export` 버튼을 달아 캡처 시트 + `기타 (텍스트)` 시트를 만든다(섹션 제목 행 `MAP` → 그 아래 `CC 적용 여부` 행. 섹션 제목 행은 `addInfoSheet` 의 신규 `section` 블록 종류, 굵게 + 연한 파란 배경). **전체 export** 는 BB 다음에 기타 시트 2장을 추가한다('ADI CD 변경'이면 건너뜀). `captureAllScreenshots()`/`ExportAllScreenshots` 에 `etc` 가 추가됐다.
   - **탭 인덱스 의존 코드**: 결재 경로 탭이 5→6번이 되어 `ApprovalPage.tsx` 의 `TOUR_PAGE_IDX.route`(전체 가이드 투어 `page-route`)를 6으로 고쳤다. `PagedDetailView` 의 캡처 인덱스는 push 시점에 기록한 `etcPageIdx` 를 쓴다(하드코딩 아님).
   - **백엔드 무변경**: 저장 필드·`MAP_INFO_FIELDS`·API 는 그대로다(표시 위치만 변경).
 
