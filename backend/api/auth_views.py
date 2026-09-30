@@ -3,7 +3,7 @@ from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.http import HttpResponseRedirect, HttpResponse
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
@@ -12,6 +12,7 @@ import logging
 import os
 import jwt
 import json
+import hmac
 import uuid
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from cryptography import x509
@@ -20,6 +21,19 @@ from cryptography.hazmat.backends import default_backend
 User = get_user_model()
 
 logger = logging.getLogger(__name__)
+
+# OIDC 로그인 요청(nonce/state)을 브라우저에 묶어 두는 HttpOnly 쿠키.
+# form_post 는 ADFS 에서 넘어오는 cross-site POST 이므로 SameSite=Lax 쿠키는 전달되지 않는다 → SameSite=None; Secure.
+# 콜백이 nginx 의 /oidc-callback 으로 들어오므로(브라우저가 보는 경로) path 는 '/' 로 둔다.
+OIDC_STATE_COOKIE = 'oidc_state'
+OIDC_STATE_COOKIE_MAX_AGE = 600  # 10분
+OIDC_STATE_TOKEN_TYPE = 'oidc_state'
+OIDC_STATE_ALGORITHM = 'HS256'
+
+# id_token 검증: exp/iss/aud 는 반드시 있어야 하고, nbf/iat 는 있으면 검증한다. 서버 간 시계 오차 허용(초).
+OIDC_ID_TOKEN_ALGORITHMS = ['RS256']
+OIDC_ID_TOKEN_REQUIRED_CLAIMS = ['exp', 'iss', 'aud']
+OIDC_ID_TOKEN_LEEWAY_SECONDS = 60
 
 from .sse import broadcaster as _user_broadcaster
 
@@ -103,6 +117,57 @@ def get_adfs_public_key():
     except Exception as e:
         logger.error(f"[OIDC] Failed to load certificate: {e}")
         return None
+
+
+def _set_oidc_state_cookie(response, value, max_age=OIDC_STATE_COOKIE_MAX_AGE):
+    """oidc_state 쿠키를 설정한다. 삭제는 value='' / max_age=0 (SameSite=None 은 Secure 여야 브라우저가 받는다)."""
+    response.set_cookie(
+        key=OIDC_STATE_COOKIE,
+        value=value,
+        httponly=True,
+        secure=True,
+        samesite='None',
+        max_age=max_age,
+        path='/',
+    )
+
+
+def _is_valid_oidc_state(request, posted_state, id_token_nonce):
+    """
+    oidc_state 쿠키(로그인 시작 시 발급)와 콜백으로 돌아온 state / id_token.nonce 가 모두 일치하는지 확인한다.
+    쿠키·state·nonce 중 하나라도 없거나 다르면 False (fail-closed).
+    """
+    cookie_val = request.COOKIES.get(OIDC_STATE_COOKIE)
+    if not cookie_val:
+        logger.error("[OIDC] oidc_state cookie missing")
+        return False
+
+    try:
+        saved = jwt.decode(
+            cookie_val,
+            settings.SECRET_KEY,
+            algorithms=[OIDC_STATE_ALGORITHM],
+            options={'require': ['exp']},
+        )
+    except InvalidTokenError as e:
+        logger.error(f"[OIDC] oidc_state cookie invalid: {e}")
+        return False
+
+    saved_state = saved.get('state')
+    saved_nonce = saved.get('nonce')
+    if saved.get('typ') != OIDC_STATE_TOKEN_TYPE or not saved_state or not saved_nonce:
+        logger.error("[OIDC] oidc_state cookie payload invalid")
+        return False
+
+    if not posted_state or not hmac.compare_digest(str(posted_state), str(saved_state)):
+        logger.error("[OIDC] state mismatch")
+        return False
+
+    if not id_token_nonce or not hmac.compare_digest(str(id_token_nonce), str(saved_nonce)):
+        logger.error("[OIDC] nonce mismatch or missing in id_token")
+        return False
+
+    return True
 
 
 @api_view(['GET'])
@@ -220,33 +285,34 @@ def refresh_token_view(request):
 # ============================================
 
 @api_view(['GET'])
+@authentication_classes([])  # 만료/잔존 쿠키가 있어도 로그인을 시작할 수 있어야 한다
 @permission_classes([AllowAny])
 def oidc_login_init(request):
     """
     GET /api/auth/oidc/login/
     ADFS로 리다이렉트하기 위한 초기화 엔드포인트
     response_mode=form_post, response_type=code+id_token 사용
-    
-    CSRF 방지를 위해 nonce를 JWT로封装하여 전송
+
+    CSRF(Login CSRF) 방지: nonce/state 를 서명한 HttpOnly 쿠키(oidc_state)로 브라우저에 묶고,
+    콜백에서 id_token.nonce / state 와 대조한다.
     """
-    # nonce 생성 (CSRF 방지)
-    nonce_val = uuid.uuid4().urn
-    nonce_val = nonce_val[9:]  # 'urn:uuid:' 제거
-    
-    # nonce를 JWT로封装 (10분 유효)
-    # 이 JWT는 콜백에서 id_token里面的 nonce와 비교하여 검증
-    nonce_payload = {
+    nonce_val = str(uuid.uuid4())
+    state_val = str(uuid.uuid4())
+
+    state_payload = {
+        'typ': OIDC_STATE_TOKEN_TYPE,
         'nonce': nonce_val,
-        'exp': datetime.utcnow() + timedelta(minutes=10),
+        'state': state_val,
+        'exp': datetime.utcnow() + timedelta(seconds=OIDC_STATE_COOKIE_MAX_AGE),
     }
-    nonce_jwt = jwt.encode(nonce_payload, settings.SECRET_KEY, algorithm='HS256')
+    state_jwt = jwt.encode(state_payload, settings.SECRET_KEY, algorithm=OIDC_STATE_ALGORITHM)
     
     # ADFS 인증 URL 생성
     idp_url = getattr(settings, 'OIDC_OP_AUTHORIZATION_ENDPOINT', '')
     client_id = getattr(settings, 'OIDC_RP_CLIENT_ID', '')
     callback_url = getattr(settings, 'OIDC_CALLBACK_BASE_URL', '')
     
-    # Redirect URI를 프론트엔드 콜백 페이지로 설정 (form_post 모드)
+    # Redirect URI: nginx 가 /oidc-callback 을 백엔드 콜백으로 전달한다 (form_post 모드)
     redirect_uri = f"{callback_url}/oidc-callback"
     
     # OIDC 인증 파라미터
@@ -256,28 +322,34 @@ def oidc_login_init(request):
     auth_param += "&response_type=code+id_token"
     auth_param += "&scope=openid+profile"
     auth_param += f"&nonce={nonce_val}"
-    # state는 간단한 랜덤 값 (CSRF 방지는 nonce로 함)
-    auth_param += f"&state={str(uuid.uuid4())}"
+    auth_param += f"&state={state_val}"
     
     auth_url_with_params = f"{idp_url}{auth_param}"
     
-    logger.info(f"[OIDC] Login init - redirect_uri: {redirect_uri}, nonce: {nonce_val}, nonce_jwt created")
+    logger.info(f"[OIDC] Login init - redirect_uri: {redirect_uri}")
     
-    return Response({
-        'redirect_url': auth_url_with_params,
-        'nonce_jwt': nonce_jwt,  # 프론트엔드에서 콜백 시 필요
-    })
+    response = Response({'redirect_url': auth_url_with_params})
+    _set_oidc_state_cookie(response, state_jwt)
+    return response
 
 
 @api_view(['POST'])
+@authentication_classes([])  # ADFS 에서 넘어오는 요청 — 기존 쿠키로 인증하지 않는다
 @permission_classes([AllowAny])
 @csrf_exempt
 def oidc_callback(request):
     """
     POST /api/auth/oidc/callback/
     ADFS로부터 반환된 인증 처리 (response_mode=form_post)
-    id_token을 직접 검증하여 사용자 인증
+    id_token을 직접 검증하여 사용자 인증. oidc_state 쿠키는 성공/실패와 무관하게 1회용으로 삭제한다.
     """
+    response = _process_oidc_callback(request)
+    _set_oidc_state_cookie(response, '', max_age=0)
+    return response
+
+
+def _process_oidc_callback(request):
+    """oidc_callback 본 처리. 검증 실패 시 Response 를 반환한다."""
     from django.contrib.auth import get_user_model
     import requests
     
@@ -287,8 +359,7 @@ def oidc_callback(request):
     id_token_val = request.POST.get('id_token') or request.data.get('id_token')
     auth_code = request.POST.get('code') or request.data.get('code')
     
-    # nonce_jwt 가져오기 (프론트엔드에서 전달)
-    nonce_jwt = request.POST.get('nonce_jwt') or request.data.get('nonce_jwt')
+    posted_state = request.POST.get('state') or request.data.get('state')
     
     if not id_token_val:
         logger.error("[OIDC] No id_token received")
@@ -298,6 +369,13 @@ def oidc_callback(request):
         )
     
     # ADFS 인증서로 ID 토큰 서명 검증 (먼저 검증하고 nonce 추출)
+    if not getattr(settings, 'OIDC_ISSUER', '') or not getattr(settings, 'OIDC_RP_CLIENT_ID', ''):
+        logger.error("[OIDC] OIDC_ISSUER / OIDC_RP_CLIENT_ID is not configured")
+        return Response(
+            {'error': 'OIDC 설정이 올바르지 않습니다.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
     public_key = get_adfs_public_key()
     
     if not public_key:
@@ -311,15 +389,13 @@ def oidc_callback(request):
     
     try:
         decoded_id_token = jwt.decode(
-            jwt=b_token,
-            key=public_key,
-            verify=True,
-            algorithms=['RS256'],
-            options={
-                'verify_signature': True,
-                'verify_exp': False,  # 만료 검증은 ADFS가 처리하므로 생략
-                'verify_aud': False,
-            }
+            b_token,
+            public_key,
+            algorithms=OIDC_ID_TOKEN_ALGORITHMS,
+            audience=settings.OIDC_RP_CLIENT_ID,
+            issuer=settings.OIDC_ISSUER,
+            leeway=OIDC_ID_TOKEN_LEEWAY_SECONDS,
+            options={'require': OIDC_ID_TOKEN_REQUIRED_CLAIMS},
         )
     except InvalidTokenError as e:
         logger.error(f"[OIDC] Invalid ID token: {e}")
@@ -328,32 +404,12 @@ def oidc_callback(request):
             status=status.HTTP_401_UNAUTHORIZED
         )
     
-    # id_token에서 nonce 추출
-    id_token_nonce = decoded_id_token.get('nonce')
-    logger.info(f"[OIDC] ID token nonce: {id_token_nonce}")
-    
-    # nonce 검증은 선택적으로 수행 (ADFS가 nonce를 포함하지 않을 수 있음)
-    # 현재는 id_token 서명 검증만으로 충분함 (CSRF 방어는 나중에 별도 처리)
-    if nonce_jwt and id_token_nonce:
-        try:
-            decoded_nonce = jwt.decode(
-                nonce_jwt,
-                settings.SECRET_KEY,
-                algorithms=['HS256']
-            )
-            saved_nonce = decoded_nonce.get('nonce')
-            
-            # nonce 검증
-            if id_token_nonce != saved_nonce:
-                logger.error(f"[OIDC] Invalid nonce: {id_token_nonce} != {saved_nonce}")
-                return Response(
-                    {'error': '잘못된 nonce 값입니다. CSRF 공격 가능성이 있습니다.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            logger.info("[OIDC] nonce validation passed")
-        except Exception as e:
-            logger.warning(f"[OIDC] nonce_jwt validation failed: {e}")
-            # nonce_jwt 검증 실패해도 id_token이 유효하면 진행 (호환성)
+    # 로그인 요청과 묶인 nonce/state 검증 (쿠키·state·nonce 중 하나라도 없거나 다르면 거부)
+    if not _is_valid_oidc_state(request, posted_state, decoded_id_token.get('nonce')):
+        return Response(
+            {'error': '잘못된 로그인 요청입니다. 다시 로그인해 주세요.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
     
     # id_token의 decoded 내용을 사용 (이미 위에서 검증됨)
     decoded = decoded_id_token
@@ -525,6 +581,7 @@ def oidc_callback(request):
 
 
 @api_view(['POST'])
+@authentication_classes([])  # 잘못된/만료된 쿠키가 있어도 로그아웃(쿠키 삭제)은 가능해야 함
 @permission_classes([AllowAny])  # AllowAny: 토큰이 없어도 로그아웃은 가능해야 함
 def oidc_logout(request):
     """
