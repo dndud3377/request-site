@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { documentsAPI, usersAPI, userGroupsAPI, layerFilterSetsAPI, markCategoriesAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import StageGrid from '../components/StageGrid';
+import AdiCdTargetsCell from '../components/AdiCdTargetsCell';
 import Modal, { ConfirmModal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
@@ -2102,6 +2103,11 @@ export default function ApprovalPage(): React.ReactElement {
                 const detail = getDocDetailFields(doc);
                 const comboText = [detail.processSelection, detail.partidSelection, detail.processId]
                   .filter(Boolean).join(' · ') || '-';
+                // ADI CD 변경은 '동일 변경 적용 대상' 전체를 조리법 기준으로 묶어 2줄 형태로 보여준다.
+                const hasAdiTargets = detail.isAdiCd && detail.adiTargets.length > 0;
+                const comboContent = hasAdiTargets
+                  ? <AdiCdTargetsCell combo={detail.processSelection} targets={detail.adiTargets} />
+                  : comboText;
                 const isTourTitleCell = isTourMode && doc.id === TOUR_APPROVAL_DETAIL_DOC.id;
                 return (
                   <tr key={doc.id}>
@@ -2140,7 +2146,7 @@ export default function ApprovalPage(): React.ReactElement {
                       )}
                     </td>
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <div style={{ display: 'flex', alignItems: hasAdiTargets ? 'flex-start' : 'center', gap: 4 }}>
                         <MarkDot
                           categories={markCategories}
                           value={doc.my_mark_category ?? null}
@@ -2152,7 +2158,7 @@ export default function ApprovalPage(): React.ReactElement {
                             data-tour={isTourTitleCell ? 'approval-doc-title' : undefined}
                             style={{ fontWeight: 600, fontSize: '0.85rem' }}
                           >
-                            {comboText}
+                            {comboContent}
                           </span>
                         ) : (
                           <button
@@ -2160,11 +2166,10 @@ export default function ApprovalPage(): React.ReactElement {
                             className="product-combo-link"
                             onClick={() => openDetail(doc)}
                           >
-                            {comboText}
+                            {comboContent}
                           </button>
                         )}
                       </div>
-                      {detail.adiExtraCount > 0 && <span className="adi-extra-badge">+{detail.adiExtraCount}</span>}
                       {lastRejection && (
                         <div style={{ marginTop: 4 }}>
                           <span className="rejection-history-chip">

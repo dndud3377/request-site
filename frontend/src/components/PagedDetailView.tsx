@@ -3,10 +3,12 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import html2canvas from 'html2canvas';
-import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, PartialShotValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, AdiCdTarget, LayerFilterSet, ColorFilterSet } from '../types';
+import { RequestDocument, UserRole, DetailFormState, ValidationSystemValue, PartialShotValue, FlowChartRow, JayerRow, OayerRow, BbTableRow, HistorySnapshot, MergePair, MergeRowInfo, AdiCdStep, LayerFilterSet, ColorFilterSet } from '../types';
 import Modal, { useModalFullscreen } from './Modal';
 import { ST_CELL_COLOR } from '../utils/stCellColor';
 import { bbTabColor } from '../utils/bbTabColors';
+import { buildAdiCdTargets } from '../utils/approvalTable';
+import AdiCdTargetsCell from './AdiCdTargetsCell';
 import { VALIDATION_CELL_COLOR, VS_TARGET, VS_NONTARGET, VS_NA, isMapDeleteEditType, OTHER_PURPOSE_OVERLAY, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, isRowInactive } from '../pages/RequestPage/constants';
 import { isValidationKeywordRow, isValidationTarget, deriveMergeKind, balanceAdiCdRows, matchLayerColor } from '../pages/RequestPage/helpers';
 import { ValidationSystemBadge, ValidationSystemToggle, useValidationSystemLabel } from './ValidationSystem';
@@ -166,27 +168,6 @@ function MergePairsTable({ pairs }: { pairs: MergePair[] }) {
                 </span>
               </td>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/**
- * ADI CD 변경 — '동일 변경 적용 대상' 표(읽기 전용). 1행은 위쪽 partid_selection/process_id 필드
- * 값(작성 화면의 읽기 전용 1행과 동일한 값), 2행부터는 detail.adi_cd_extra_targets 저장값이다.
- */
-function AdiCdTargetsTable({ first, extras }: { first: { partid_selection: string; process_id: string }; extras: AdiCdTarget[] }) {
-  const { t } = useTranslation();
-  return (
-    <div style={{ maxWidth: '33%' }}>
-      <table className="table adi-cd-targets-detail-table">
-        <thead><tr><th>{t('request.partid_selection')}</th><th>{t('request.process_id')}</th></tr></thead>
-        <tbody>
-          <tr><td>{first.partid_selection}</td><td>{first.process_id}</td></tr>
-          {extras.map((r) => (
-            <tr key={r.id}><td>{r.partid_selection}</td><td>{r.process_id}</td></tr>
           ))}
         </tbody>
       </table>
@@ -1938,9 +1919,9 @@ type Page = { label: string; content: React.ReactNode; key?: string };
           {isAdiCdChange && (detail.adi_cd_extra_targets ?? []).length > 0 && (
             <div style={cardStyle}>
               <div style={sectionTitle}>{t('request.adi_cd_targets_title')}</div>
-              <AdiCdTargetsTable
-                first={{ partid_selection: detail.partid_selection ?? '', process_id: detail.process_id ?? '' }}
-                extras={detail.adi_cd_extra_targets ?? []}
+              <AdiCdTargetsCell
+                combo={detail.process_selection ?? ''}
+                targets={buildAdiCdTargets(detail)}
               />
             </div>
           )}
