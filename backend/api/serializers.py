@@ -344,6 +344,9 @@ class RequestDocumentListSerializer(ZoneMapMixin, DocPermFieldsMixin, serializer
         프론트 `utils/approvalTable.ts` 의 getDocDetailFields 와 1:1 로 대응해야 한다 —
         other_purpose 를 배열일 때만 싣는 것도 그쪽 판정(Array.isArray)과 같은 규칙이다
         (구버전 문서는 문자열일 수 있고, 그때 목록은 예나 지금이나 빈 목록으로 본다).
+
+        adi_cd_targets 는 ADI CD 변경 문서의 '동일 변경 적용 대상' 전체(첫 대상 + 추가 대상)다
+        (2026-10) — 그 외 문서는 빈 목록이다. adi_cd_extra_count 는 하위 호환으로 그대로 둔다.
         """
         detail = obj.get_detail().get('detail', {}) or {}
         other_purpose = detail.get('other_purpose')
@@ -357,6 +360,8 @@ class RequestDocumentListSerializer(ZoneMapMixin, DocPermFieldsMixin, serializer
             'partid_selection': detail.get('partid_selection') or '',
             'process_id': detail.get('process_id') or '',
             'adi_cd_extra_count': len(extra_targets) if isinstance(extra_targets, list) else 0,
+            # '동일 변경 적용 대상' 전체(첫 대상 + 추가 대상) — 목록 셀이 조리법 기준으로 묶어 보여준다.
+            'adi_cd_targets': RequestDocument.adi_cd_targets_from_detail(detail),
         }
 
     def get_my_mark_category(self, obj):
