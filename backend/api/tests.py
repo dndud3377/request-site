@@ -8359,6 +8359,20 @@ class AdiCdTargetSearchTest(TestCase):
         self.assertNotIn(self.normal.id, found)
         self.assertNotIn(self.lookalike.id, found)
 
+    def test_non_ascii_target_name_is_searchable(self):
+        """한글 제품 이름·조리법: JSON 에 \\uXXXX 로 저장돼 있어도 찾아야 한다(원문 부분일치로 건너뛰면 안 된다)."""
+        import json
+        doc = self._doc(
+            'Line-A(ADI CD 변경)_TLC_KKK-01A_PRC_K1(+1)_요청서_261001', 'KKK-01A',
+            json.dumps({'detail': {
+                'request_purpose': 'ADI CD 변경', 'partid_selection': 'KKK-01A', 'process_id': 'PRC_K1',
+                'adi_cd_extra_targets': [{'id': 'x0', 'partid_selection': '한글제품', 'process_id': '조리법가'}],
+            }}),  # ensure_ascii 기본값 — 한글이 \\uXXXX 로 저장된다
+        )
+        self.assertIn('\\u', doc.additional_notes)
+        self.assertEqual(self._search('한글제품'), {doc.id})
+        self.assertEqual(self._search('조리법가'), {doc.id})
+
     def test_broken_json_is_skipped_not_500(self):
         self.assertEqual(self._search('FFF-01A'), {self.broken.id})  # 제품명 검색은 종전 그대로
         self.assertEqual(self._search('없는검색어'), set())
