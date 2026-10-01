@@ -397,9 +397,17 @@ P는 검토자가 없으면 담당자 합의만으로 완료되지만,
     RA(후결자)는 역할로 묶이는 팀이 없어(개인 지정형) 대신 **이 문서의 현재 후결자 전원**
     (`mailer.post_approver_users` — 고정 후결자 + C가문 추가 후결자) 누구나 확인할 수
     있다(2026-09) — 그 회차에 배정됐던 특정 개인으로 제한하지 않는다.
-  - 상세보기 배너에서 현재 구역 확인 트랙 아래 "이전 회차에서 도달했던 구역도 함께 확인이
-    필요합니다" 섹션으로 구역별(`N구역`)로 묶어 보여준다(`ApprovalPage.tsx`,
-    `getWithdrawNeedItems`). `ApprovalStepSerializer.zone_index` 로 프론트가 구역을 구분한다.
+  - ✅ **(2026-10) 현재 구역/이전 회차 구역 구분 없이 한 목록으로 진행**: 상세보기 배너는 확인 대상
+    팀 전체를 구역별(`N구역`)로만 묶어 한 번에 보여준다(예전의 "이전 회차에서 도달했던 구역도 함께
+    확인이 필요합니다" 별도 섹션 제거, `ApprovalPage.tsx` `getWithdrawNeedItems`). 서버는 처음부터
+    두 구역을 한 `target_step_ids` 로 잡고 확인 순서를 강제하지 않으므로 서버 변경은 없다.
+    `zone_index` 가 없는 단계는 구역 이름 없이 묶는다(`NO_ZONE_INDEX`).
+  - 🐛→✅ **(2026-10) 이전 회차 구역 단계의 '철회 확인' 버튼이 뜨지 않던 버그**: 버튼 후보를
+    `action === 'pending'` 단계로만 찾아, 이전 회차에서 반려된(`rejected`) R 등은 배너에 `대기`로
+    보이는데도 확인 버튼이 없었다(MASTER 도 동일, 철회가 확정되지 않음). 이제 `getWithdrawNeedItems` 의
+    `mine`(현재 구역=`canConfirmPauseStep`, 이전 회차 구역=`canConfirmExtraZoneStep`)으로 찾는다.
+    확인·거부 버튼은 내가 확인할 수 있는 미확인 단계가 하나라도 있으면 노출되고, 한 번 누를 때
+    그 단계 하나만 확인한다(일괄 확인 아님 — 단계가 여러 개면 순서대로 누른다). `ApprovalStepSerializer.zone_index` 로 프론트가 구역을 구분한다.
     (2026-09) 이 값은 문서 직렬화기(`ZoneMapMixin`)가 문서당 1회 계산해 넘긴 `{agent: 구역 인덱스}`
     에서 읽는다. 문서 직렬화기 없이 단독으로 쓰는 경로(`rejection_snapshots.create_from_reject`,
     `ExternalRequestDocumentSerializer`)는 종전대로 `document.pause_zones()` 로 직접 계산한다.
@@ -1054,7 +1062,10 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   정렬은 상신일 오래된 순. 파일명 `결재현황_YYYYMMDD_HHMMSS.xlsx`.
 
 ### 3.2 필터 탭 (`applyClientFilter`, 클라이언트 측)
-- 전체 / 내 차례(my) / agent별(R·P·J·O·E) / 임시저장(draft) / 반려(rejected).
+- 전체 / 내 차례(my) / agent별(R·P·J·O·E) / 중단(pause) / **철회(withdraw)** / 임시저장(draft) / 반려(rejected).
+- ✅ **(2026-10) 철회 탭(`withdraw`)**: 확인 대기 중인 철회 요청이 있는 문서(`withdraw_request != null`,
+  서버는 `state='requested'` 요청만 내려준다)만 보여주고 탭 건수(`getTabCount`)도 같은 기준이다.
+  목록 응답에 이미 `withdraw_request` 가 있어 서버 변경은 없다. i18n 키 `approval.filter_withdraw`.
 - ✅ **(2026-08) '내 차례'·agent별 필터 판정 기준**: 공용 헬퍼 `hasActivePendingStep` 로 통일해
   **진행 중(`under_review`) 문서의 현재 회차 pending 단계만** 대상으로 본다. 예전엔 상태·회차를
   보지 않아 ① 반려 문서의 잔여 pending 단계 ② 재상신으로 회차가 올라간 뒤 남은 **이전 회차**
@@ -1223,7 +1234,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 | 지정자 변경 | PL/MASTER | `changeDesignee` |
 | 후결자 추가/제거 (2026-07) | 작성자/MASTER + under_review + 병렬 진입 후 | `addPostApprover` / `removePostApprover` |
 | 철회 | `can_withdraw` + 철회 요청중이 아닐 때 | 사유 입력 모달 → `withdraw`(진행 중이면 철회 요청, 그 외 즉시 삭제) |
-| 철회 확인 / 거부 | 현재 pending 단계 담당자/팀+MASTER (요청중) | `confirmWithdraw` / `rejectWithdraw` |
+| 철회 확인 / 거부 | 확인 대상 단계(현재 구역 + 이전 회차 도달 구역)를 확인할 수 있는 담당자/팀+MASTER (요청중, 2026-10 이전 회차 구역 포함) | `confirmWithdraw` / `rejectWithdraw` |
 | 철회 요청 취소 | 철회 요청자 본인/MASTER (요청중) | `cancelWithdraw` |
 | 수정 후 재상신 | rejected/draft | `/request`로 이동(editDocId) |
 | 중단 요청 | 작성자·under_review (`can_request_pause`) | 사유 입력 모달 → `requestPause` |
