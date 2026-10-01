@@ -417,6 +417,16 @@ for eqptype_value, table, table_type, target_label in STEP_EQPTYPE_TARGETS:
   `updated`/`eqptype` 만 바뀌면 이력 0건인지, 그래도 저장값은 갱신되는지, `descript` 변경은
   정상 기록되는지 포함), `PhotoStepChangesApiTest`(조회 API 그룹핑/필터 검증).
 
+### 스텝 동기화 직후 '변경 감지' 재계산 + 자동 반려 (2026-10 추가)
+
+`sync_rtdb_options()` 끝에서 `layer_drift.recompute_all_in_progress()` 가 결재 진행 중 문서의 J/O-layer·XXXXXX
+'변경 감지' 배지를 다시 계산한다(기존). 2026-10부터 같은 호출이 **자동 반려**도 수행한다 — `stepseq` 삭제·추가
+또는 `recipeid`·`layerid` 변경이 **직전 주기와 같은 내용으로 2번 연속** 감지된 `under_review`/`pause` 문서를
+`auto_reject_document` 로 반려한다(철회 확인 대기 중 문서 제외). 캐시(배지) 저장이 먼저 끝난 뒤 문서별 별도 트랜잭션으로
+반려하며, 한 문서의 실패가 나머지에 영향을 주지 않는다. 마스터 스텝 테이블이 일시적으로 비정상(급감 등)일 때의
+오탐은 '2번 연속' 조건과 위 "스텝 조회 건수 급감 감지"가 함께 줄인다. 상세는 `docs/REQUEST.md`
+"2026-10-01 — '변경 감지' 자동 반려" 절.
+
 ## RTDB(REST API) 유틸 (`utils.py`)
 
 | 함수 | 설명 |
