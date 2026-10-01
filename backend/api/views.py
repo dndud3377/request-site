@@ -35,6 +35,7 @@ from .models import (
     PersonalMarkCategory, PersonalDocumentMark,
 )
 from .utils import LINE_TO_LINEID_MAP, resolve_employee_by_loginid, compute_map_table_cc_status
+from .search_filters import AdiCdTargetSearchFilter
 from . import mailer
 from . import doc_permissions
 from . import design_rule_stats
@@ -180,7 +181,9 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
     ).all()
     permission_classes = [IsAuthenticatedInProd]
     pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    # AdiCdTargetSearchFilter: 기본 검색 필드에 더해 ADI CD 변경 문서의 '동일 변경 적용 대상'
+    # 전체(제품 이름·조리법)도 검색한다(2026-10, search_filters.py). 결재 현황·이력 조회가 함께 쓴다.
+    filter_backends = [DjangoFilterBackend, AdiCdTargetSearchFilter, filters.OrderingFilter]
     filterset_fields = ['status', 'product_name']
     search_fields = ['title', 'product_name', 'requester_name', 'requester_department']
     ordering_fields = ['created_at', 'submitted_at']
