@@ -889,7 +889,8 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   제품명을 그대로 보여줬다. 지금은 그 문자열을 만드는 원본 값들을 각자 컬럼으로 나눈다:
   **라인 / 목적 / MAP 목적 / 제품(조합법-제품-조리법) / 요청일** / 의뢰자 / **현재 단계** / 최종 완료예정 / 양산일.
   제목·제품명 컬럼은 없앴다(`doc.title`/`doc.product_name` 필드 자체는 그대로 저장되고, 검색창(`search_placeholder`)은
-  여전히 이 두 필드를 대상으로 서버 검색한다 — 화면 표시만 바뀐 것).
+  여전히 이 두 필드(+의뢰자·부서)를 대상으로 서버 검색한다 — 화면 표시만 바뀐 것. ADI CD 변경 문서는
+  2026-10부터 **동일 변경 적용 대상 전체**(제품 이름·조리법)도 검색 대상이다 — 아래 (2026-10) 항목).
   값의 출처는 `detail`(라인/목적/기타 목적/MAP 목적/조합법/제품/조리법)이며, 읽기는
   `approvalTable.getDocDetailFields`가 담당한다(값이 없거나 JSON 파싱 실패 시 빈 값으로 방어).
   ⚠️ **(2026-09 변경)** 목록 응답은 `additional_notes`(상세 폼 전체 JSON)를 **더 이상 싣지 않고**
@@ -906,6 +907,36 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
   시:분(`utils/date.formatTime`, `HH:mm`)을 작은 글씨(회색, `--text-muted`)로 두 줄에 나눠 보여준다.
   홈 화면 '최근 의뢰 현황' 미리보기는 같은 칸을 `utils/date.formatDateTime`으로 한 줄(`YYYY. M. D. HH:mm`)에
   표시한다. 정렬·필터 키(`getDocSubmittedDate`)와 값 자체(`submitted_at`)는 변경되지 않았고, 화면 표시 형식만 바뀌었다.
+- ✅ **(2026-10) ADI CD 변경 '동일 변경 적용 대상' 전체 표시 + 검색** — 예전에는 제품(조합법-제품-조리법) 칸에
+  **첫 대상과 `+N` 배지**만 보였다(나머지는 상세 모달에서만 확인). 지금은 ADI CD 변경 문서에 한해 이 칸이
+  **조합법 머리 줄 + 조리법별 묶음**의 2줄 이상 형태로 모든 대상을 보여준다(공용 컴포넌트
+  `components/AdiCdTargetsCell.tsx`, 결재 현황·홈 '최근 의뢰 현황'·상세 모달 카드가 함께 쓴다).
+  ```
+  TLC [동일 변경 4건]                          ← 조합법(문서당 1개) + 건수 배지(2건 이상일 때만)
+  [PRC_A001] (AB12CD34-01A) (AB12CD34-02B)     ← 조리법 태그 + 제품 이름 칩(입력 순서)
+             (EF56GH78-01A) (EF56GH78-03C)
+  ```
+  - **조리법 기준으로 묶는다**(`approvalTable.groupAdiTargetsByProcessId`) — 조리법이 같고 제품 이름이 다른
+    경우가 흔해서다. 제품 이름이 같고 조리법만 다른 드문 경우는 그 제품이 조리법별 묶음에 한 번씩 나온다
+    (대상은 하나도 빠지지 않는다). 묶음은 조리법이 처음 나온 순서, 제품은 입력 순서(첫 대상 → 추가 대상).
+  - **대상이 1건이어도 같은 2줄 형태**(머리 줄에 조합법만, 배지는 숨김). ADI CD 변경이 아닌 문서는 종전
+    `조합법 · 제품 · 조리법` 1줄 그대로다. 셀 전체가 클릭 영역(상세 모달 열기)이다.
+  - 칸 최대 폭 380px(`.adi-targets`)을 둬서 대상이 많아도 라인·목적·상신일 칸이 밀리지 않게 했다.
+  - 데이터 출처: 목록 응답 `detail_summary.adi_cd_targets`(§3.1.2). 상세·스냅샷 경로는 `additional_notes`에서
+    같은 규약(`approvalTable.buildAdiCdTargets`)으로 만든다. 문서 제목 문자열(`(+N)`)과 엑셀 목록 다운로드는
+    바꾸지 않았다(엑셀은 여전히 첫 대상만).
+  - **검색**: `/api/documents/?search=`는 `search_filters.AdiCdTargetSearchFilter`가 처리한다. 기존 필드
+    (제목·제품명·의뢰자·부서) 조건에 **ADI CD 변경 문서의 모든 대상(첫 대상+추가 대상)의 제품 이름·조리법
+    부분 일치(대소문자 무시)**를 OR로 더한다. 검색어를 공백으로 나누면 각 단어가 문서 어딘가에서 일치해야 하는
+    기존 AND 규칙을 그대로 따른다(단어마다 다른 대상에서 일치해도 통과). 결재 현황과 **이력 조회**가 같은
+    API를 쓰므로 두 화면 모두 해당한다(반려 스냅샷 목록은 별도 API라 대상이 아니다). `get_queryset`의
+    노출 범위(임시저장·해외 문서)를 거친 뒤에 적용되므로 보이는 문서의 범위는 달라지지 않는다.
+    스키마 변경은 없다 — 제목에 `ADI CD 변경`이 든 문서의 `additional_notes` JSON을 요청마다 읽어 비교한다.
+    ASCII 검색어는 원문 바이트 비교로 먼저 걸러 JSON 파싱을 줄인다(한글 검색어는 `\uXXXX` 저장 가능성 때문에
+    건너뛰지 않고 모두 파싱).
+  - **실측**(2026-10, 개발용 sqlite, ADI CD 문서당 notes 평균 6.7KB + 일반 문서 notes ~57KB, 검색 1회 추가 시간):
+    ADI CD 300건 +15~24ms / 1,000건 +40~68ms / 3,000건 +97~110ms(최적화 전 +30 / +90 / +200ms). MySQL에서는
+    측정하지 못했다. ADI CD 문서가 수천 건을 넘어 느려지면 검색용 컬럼을 두는 방안(마이그레이션 필요)을 검토한다.
 - ✅ **(2026-08) 필터 바** — 표 위에 라인/목적/MAP 목적(체크박스 다중 선택) + 요청일(기간 + 최근7일·30일·전체
   프리셋) 필터를 추가했다. 모두 **클라이언트 측**(이미 받아온 `docs`에서 추가로 걸러냄, API 파라미터 없음)이고
   필터 탭(`filter`) 전환 시 정렬과 함께 자동 초기화된다. 활성 필터는 강조색 버튼 + 값 요약 + 개수로 표시하고
@@ -973,7 +1004,8 @@ PL 검토(+SA 합의) 단계에서 의뢰자가 내용을 고치려면 종전에
 | `other_purpose` | `other_purpose` | **배열일 때만** 싣는다(구버전 문자열 값은 빈 목록 — 종전 프론트 판정과 동일) |
 | `map_type` | `map_type` | MAP 목적 컬럼·필터 |
 | `process_selection` / `partid_selection` / `process_id` | 같은 이름 | 제품(조합법-제품-조리법) 컬럼 |
-| `adi_cd_extra_count` | `adi_cd_extra_targets` 의 길이 | 제목 `(+N)` 배지 |
+| `adi_cd_extra_count` | `adi_cd_extra_targets` 의 길이 | 제목 `(+N)` 과 같은 값(하위 호환 — 2026-10부터 화면은 쓰지 않는다) |
+| `adi_cd_targets` | ADI CD 변경: 첫 대상(`partid_selection`/`process_id`) + `adi_cd_extra_targets` 를 `[{partid_selection, process_id}]` 로. 그 외 문서는 `[]` | 제품 칸 '동일 변경 적용 대상' 표시(2026-10). 서버 규약 `RequestDocument.adi_cd_targets_from_detail` ↔ 프론트 `approvalTable.buildAdiCdTargets` |
 
 `additional_notes` 를 쓰는 **다른 경로는 그대로다** — 상세 모달(`PagedDetailView`), 엑셀 내보내기,
 반려 스냅샷(`RejectionSnapshot.additional_notes`), 투어 시드. 그래서 `getDocDetailFields` 는

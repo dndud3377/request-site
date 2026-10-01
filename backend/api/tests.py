@@ -8498,3 +8498,170 @@ class LayerDriftAutoRejectTest(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'rejected')
         self.assertEqual(RejectionSnapshot.objects.filter(document=doc).count(), 2)
+
+
+class AdiCdTargetSearchTest(TestCase):
+    """ADI CD 변경 '동일 변경 적용 대상' 전체 검색 + 목록 detail_summary.adi_cd_targets (2026-10).
+
+    기존 검색(제목·제품명·의뢰자·부서)은 첫 대상만 찾았다. 2번째 이후 대상의 제품 이름/조리법으로도
+    검색되어야 하고, 일반 문서·깨진 JSON·임시저장 노출 범위는 종전 그대로여야 한다.
+    """
+
+    ADI = 'ADI CD 변경'
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.author = UserProfile.objects.create(loginid='adi_author', mail='aa@c.com', role='NONE')
+        self.viewer = UserProfile.objects.create(loginid='adi_viewer', mail='av@c.com', role='NONE')
+
+        # 첫 대상 AAA-01A/PRC_A1 + 추가 대상 2개(제품만 다름 / 같은 제품·조리법만 다름)
+        self.multi = self._doc(
+            'Line-A(ADI CD 변경)_TLC_AAA-01A_PRC_A1(+2)_요청서_261001', 'AAA-01A',
+            self._notes('AAA-01A', 'PRC_A1', [('BBB-02B', 'PRC_A1'), ('AAA-01A', 'PRC_B2')]),
+        )
+        self.single = self._doc(
+            'Line-A(ADI CD 변경)_TLC_CCC-01A_PRC_C1_요청서_261001', 'CCC-01A',
+            self._notes('CCC-01A', 'PRC_C1', []),
+        )
+        # 일반 의뢰서 — 고객 요구 사항 글에 'BBB-02B' 가 들어 있어도 ADI 대상 검색에 걸리면 안 된다.
+        self.normal = self._doc(
+            'Line-A(신규)_MAP(NEW)_TLC_DDD-01A_PRC_D1_요청서_261001', 'DDD-01A',
+            self._notes('DDD-01A', 'PRC_D1', [], purpose='신규', requirement='BBB-02B 참고'),
+        )
+        # 제목만 ADI CD 변경을 닮은 문서 — request_purpose 가 달라 대상으로 보지 않는다.
+        self.lookalike = self._doc(
+            'Line-A(ADI CD 변경)_TLC_EEE-01A_PRC_E1_요청서_261001', 'EEE-01A',
+            self._notes('EEE-01A', 'PRC_E1', [('BBB-02B', 'PRC_E2')], purpose='신규'),
+        )
+        # JSON 이 깨진 ADI 문서 — 검색이 500 으로 죽으면 안 된다.
+        self.broken = self._doc(
+            'Line-A(ADI CD 변경)_TLC_FFF-01A_PRC_F1_요청서_261001', 'FFF-01A', '{"detail": broken',
+        )
+        self.draft = self._doc(
+            'Line-A(ADI CD 변경)_TLC_GGG-01A_PRC_G1(+1)_요청서_261001', 'GGG-01A',
+            self._notes('GGG-01A', 'PRC_G1', [('HHH-09Z', 'PRC_G2')]), status='draft',
+        )
+
+    def _doc(self, title, product_name, notes, status='under_review'):
+        return RequestDocument.objects.create(
+            title=title, requester=self.author, requester_name='의뢰자',
+            requester_email='aa@c.com', requester_department='개발팀',
+            product_name=product_name, additional_notes=notes, status=status,
+        )
+
+    @staticmethod
+    def _notes(partid, process_id, extras, purpose='ADI CD 변경', requirement=''):
+        import json
+        return json.dumps({
+            'jayerRows': [], 'oayerRows': [], 'bbRows': [],
+            'detail': {
+                'request_purpose': purpose, 'line': 'Line-A', 'process_selection': 'TLC',
+                'partid_selection': partid, 'process_id': process_id,
+                'customer_requirement': requirement,
+                'adi_cd_extra_targets': [
+                    {'id': f'x{i}', 'partid_selection': p, 'process_id': r}
+                    for i, (p, r) in enumerate(extras)
+                ],
+            },
+        }, ensure_ascii=False)
+
+    def _search(self, query, user=None):
+        self.client.force_authenticate(user=user or self.viewer)
+        res = self.client.get('/api/documents/', {'search': query})
+        self.assertEqual(res.status_code, 200, res.content)
+        data = res.json()
+        rows = data if isinstance(data, list) else data['results']
+        ids = [d['id'] for d in rows]
+        self.assertEqual(len(ids), len(set(ids)), '검색 결과에 같은 문서가 중복돼 나오면 안 된다')
+        return set(ids)
+
+    def test_second_target_product_is_searchable(self):
+        """회귀: 2번째 이후 대상의 제품 이름은 제목·product_name 에 없어 예전엔 0건이었다."""
+        self.assertEqual(self._search('BBB-02B'), {self.multi.id})
+
+    def test_extra_target_process_id_is_searchable(self):
+        self.assertEqual(self._search('PRC_B2'), {self.multi.id})
+
+    def test_partial_and_case_insensitive(self):
+        self.assertEqual(self._search('bbb-02'), {self.multi.id})
+        self.assertEqual(self._search('prc_b'), {self.multi.id})
+
+    def test_first_target_still_searchable_without_duplicates(self):
+        """첫 대상은 기존 필드로도, ADI 대상으로도 일치한다 — 결과에 한 번만 나와야 한다."""
+        self.assertEqual(self._search('AAA-01A'), {self.multi.id})
+        self.assertEqual(self._search('CCC-01A'), {self.single.id})
+
+    def test_multiple_terms_are_anded(self):
+        self.assertEqual(self._search('BBB-02B PRC_A1'), {self.multi.id})
+        self.assertEqual(self._search('BBB-02B 없는값'), set())
+
+    def test_terms_may_match_different_targets(self):
+        """검색어마다 독립적으로 '문서 어딘가'에서 일치하면 된다(DRF SearchFilter 와 같은 규칙)."""
+        # BBB-02B 는 2번째 대상, PRC_B2 는 3번째 대상에 있다.
+        self.assertEqual(self._search('BBB-02B PRC_B2'), {self.multi.id})
+
+    def test_normal_document_text_does_not_leak_into_target_search(self):
+        """일반 문서의 본문/요구사항에 같은 글자가 있어도, 목적이 다른 문서는 대상으로 안 본다."""
+        found = self._search('BBB-02B')
+        self.assertNotIn(self.normal.id, found)
+        self.assertNotIn(self.lookalike.id, found)
+
+    def test_non_ascii_target_name_is_searchable(self):
+        """한글 제품 이름·조리법: JSON 에 \\uXXXX 로 저장돼 있어도 찾아야 한다(원문 부분일치로 건너뛰면 안 된다)."""
+        import json
+        doc = self._doc(
+            'Line-A(ADI CD 변경)_TLC_KKK-01A_PRC_K1(+1)_요청서_261001', 'KKK-01A',
+            json.dumps({'detail': {
+                'request_purpose': 'ADI CD 변경', 'partid_selection': 'KKK-01A', 'process_id': 'PRC_K1',
+                'adi_cd_extra_targets': [{'id': 'x0', 'partid_selection': '한글제품', 'process_id': '조리법가'}],
+            }}),  # ensure_ascii 기본값 — 한글이 \\uXXXX 로 저장된다
+        )
+        self.assertIn('\\u', doc.additional_notes)
+        self.assertEqual(self._search('한글제품'), {doc.id})
+        self.assertEqual(self._search('조리법가'), {doc.id})
+
+    def test_broken_json_is_skipped_not_500(self):
+        self.assertEqual(self._search('FFF-01A'), {self.broken.id})  # 제품명 검색은 종전 그대로
+        self.assertEqual(self._search('없는검색어'), set())
+
+    def test_existing_field_search_unchanged(self):
+        self.assertEqual(self._search('의뢰자'), {
+            self.multi.id, self.single.id, self.normal.id, self.lookalike.id, self.broken.id,
+        })  # 임시저장(self.draft)은 viewer 에게 안 보인다
+
+    def test_draft_visibility_is_kept(self):
+        """검색 대상에 넣어도 임시저장 노출 범위는 그대로다 — 작성자만 찾고 다른 사람은 못 찾는다."""
+        self.assertEqual(self._search('HHH-09Z', user=self.viewer), set())
+        self.assertEqual(self._search('HHH-09Z', user=self.author), {self.draft.id})
+
+    def test_empty_search_returns_everything_visible(self):
+        self.client.force_authenticate(user=self.viewer)
+        res = self.client.get('/api/documents/')
+        data = res.json()
+        rows = data if isinstance(data, list) else data['results']
+        self.assertEqual(len(rows), 5)  # draft 제외
+
+    def test_list_detail_summary_exposes_all_targets(self):
+        self.client.force_authenticate(user=self.viewer)
+        data = self.client.get('/api/documents/').json()
+        rows = data if isinstance(data, list) else data['results']
+        by_id = {d['id']: d['detail_summary'] for d in rows}
+        self.assertEqual(by_id[self.multi.id]['adi_cd_targets'], [
+            {'partid_selection': 'AAA-01A', 'process_id': 'PRC_A1'},
+            {'partid_selection': 'BBB-02B', 'process_id': 'PRC_A1'},
+            {'partid_selection': 'AAA-01A', 'process_id': 'PRC_B2'},
+        ])
+        self.assertEqual(by_id[self.multi.id]['adi_cd_extra_count'], 2)  # 하위 호환 유지
+        self.assertEqual(by_id[self.single.id]['adi_cd_targets'], [
+            {'partid_selection': 'CCC-01A', 'process_id': 'PRC_C1'},
+        ])
+
+    def test_list_detail_summary_targets_empty_for_non_adi(self):
+        self.client.force_authenticate(user=self.viewer)
+        data = self.client.get('/api/documents/').json()
+        rows = data if isinstance(data, list) else data['results']
+        by_id = {d['id']: d['detail_summary'] for d in rows}
+        self.assertEqual(by_id[self.normal.id]['adi_cd_targets'], [])
+        self.assertEqual(by_id[self.lookalike.id]['adi_cd_targets'], [])
+        self.assertEqual(by_id[self.broken.id]['adi_cd_targets'], [])

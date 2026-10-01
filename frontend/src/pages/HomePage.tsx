@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { documentsAPI, noticesAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import StageGrid from '../components/StageGrid';
+import AdiCdTargetsCell from '../components/AdiCdTargetsCell';
 import Modal, { ConfirmModal } from '../components/Modal';
 import RichTextEditor from '../components/RichTextEditor';
 import GuideTourModal from '../components/GuideTourModal';
@@ -762,6 +763,10 @@ export default function HomePage(): React.ReactElement {
                     const detail = getDocDetailFields(doc);
                     const comboText = [detail.processSelection, detail.partidSelection, detail.processId]
                       .filter(Boolean).join(' · ') || '-';
+                    // ADI CD 변경은 '동일 변경 적용 대상' 전체를 조리법 기준으로 묶어 2줄 형태로 보여준다.
+                    const comboContent = detail.isAdiCd && detail.adiTargets.length > 0
+                      ? <AdiCdTargetsCell combo={detail.processSelection} targets={detail.adiTargets} />
+                      : comboText;
                     return (
                       <tr key={doc.id}>
                         <td><b>{detail.line || '-'}</b></td>
@@ -792,9 +797,8 @@ export default function HomePage(): React.ReactElement {
                             className="product-combo-link"
                             onClick={() => openDetail(doc)}
                           >
-                            {comboText}
+                            {comboContent}
                           </button>
-                          {detail.adiExtraCount > 0 && <span className="adi-extra-badge">+{detail.adiExtraCount}</span>}
                           {lastRejection && (
                             <div style={{ marginTop: 4 }}>
                               <span className="rejection-history-chip">

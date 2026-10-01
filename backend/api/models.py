@@ -252,6 +252,31 @@ class RequestDocument(models.Model):
         inner_detail = self.get_detail().get('detail', {})
         return inner_detail.get('request_purpose') == self.ADI_CD_CHANGE_PURPOSE
 
+    @staticmethod
+    def adi_cd_targets_from_detail(detail):
+        """ADI CD 변경 '동일 변경 적용 대상' 전체를 `[{partid_selection, process_id}]` 로 돌려준다.
+
+        첫 대상은 위쪽 필드(detail.partid_selection / process_id)이고, 2번째부터는
+        detail.adi_cd_extra_targets 에 저장돼 있다(프론트 `AdiCdTargetsPanel`·`approvalTable.ts` 와 같은 규약).
+        목록 응답(detail_summary)과 결재 현황 검색(search_filters)이 같은 값을 읽도록 한 곳에 둔다.
+        요청 목적이 ADI CD 변경이 아니거나 값이 모두 비어 있으면 그 행/목록은 싣지 않는다.
+
+        detail: additional_notes JSON 의 `detail` 하위 dict (이미 꺼낸 값)
+        """
+        if not isinstance(detail, dict):
+            return []
+        if detail.get('request_purpose') != RequestDocument.ADI_CD_CHANGE_PURPOSE:
+            return []
+        extras = detail.get('adi_cd_extra_targets')
+        rows = [detail] + [e for e in (extras if isinstance(extras, list) else []) if isinstance(e, dict)]
+        targets = []
+        for row in rows:
+            partid = row.get('partid_selection') or ''
+            process_id = row.get('process_id') or ''
+            if partid or process_id:
+                targets.append({'partid_selection': partid, 'process_id': process_id})
+        return targets
+
     def is_map_type_new(self):
         """MAP 목적(detail.map_type)이 'NEW' 인지 여부.
 

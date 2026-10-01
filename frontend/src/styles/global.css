@@ -1097,16 +1097,58 @@ select.form-control option {
 .product-combo-link:hover { text-decoration: underline; }
 .combo-dot { color: var(--text-disabled); margin: 0 3px; font-family: var(--font-sans); }
 
-.adi-extra-badge {
+/* ADI CD 변경 '동일 변경 적용 대상' — 결재 현황·홈 목록 칸과 상세 모달 카드 공용(AdiCdTargetsCell).
+   머리 줄(조합법 + 건수 배지) 아래에 조리법 태그 + 제품 이름 칩 묶음이 줄마다 온다.
+   목록 칸은 폭 제한이 없으면 대상이 많을 때 칸이 넓어져 라인·목적·상신일 칸이 줄바꿈되므로 최대 폭을 둔다. */
+.adi-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 380px;
   font-family: var(--font-sans);
-  display: inline-block;
-  margin-left: 4px;
-  font-size: 0.65rem;
+  text-align: left;
+}
+.adi-targets-head { display: flex; align-items: center; gap: 6px; }
+.adi-targets-combo {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  color: #fff;
+  background: var(--accent);
+  padding: 1px 8px;
+  border-radius: 4px;
+}
+.adi-targets-count {
+  font-size: 0.7rem;
   font-weight: 700;
   color: var(--warning);
   background: var(--warning-light);
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: 10px;
+}
+.adi-targets-group { display: flex; align-items: flex-start; gap: 8px; }
+.adi-targets-process {
+  flex: none;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--border-light);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 8px;
+  margin-top: 1px;
+  white-space: nowrap;
+}
+.adi-targets-products { display: flex; flex-wrap: wrap; gap: 3px 4px; }
+.adi-targets-product {
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--accent);
+  background: var(--accent-light);
+  border-radius: 10px;
+  padding: 0 8px;
+  white-space: nowrap;
 }
 
 .map-purpose-na { color: var(--text-disabled); }
@@ -5275,10 +5317,6 @@ select.form-control option {
 }
 .adi-cd-targets-draft { display: flex; gap: 6px; align-items: center; }
 .adi-cd-targets-add { font-size: 0.78rem; padding: 4px 10px; white-space: nowrap; }
-
-/* 상세보기(읽기 전용) 표 — 공용 .table 은 12-16px padding·0.78rem 라 폭만 줄이면 안이 헐렁해 보인다. */
-.adi-cd-targets-detail-table th,
-.adi-cd-targets-detail-table td { padding: 4px 6px; font-size: 0.72rem; }
 
 /* ── ADI CD 컬럼 매핑 모달 ── */
 .adi-cd-map-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }

@@ -280,6 +280,64 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 개선 (2026-10-01 — ADI CD '동일 변경 적용 대상' 목록·모달 전체 표시 + 결재 현황 검색)
+
+- **요청**: ADI CD 의뢰서의 '동일 변경 적용 대상'이 여럿이면 결재 현황 제품 칸에 첫 대상과 `+N`만 보여 어떤 대상이
+  더 있는지 알 수 없고, 2번째 이후 대상의 제품 이름·조리법으로는 검색도 되지 않았다. 모든 대상을 한눈에 보이게 하고
+  검색도 되게 한다. 사용자 결정: ① 조리법은 같고 제품 이름이 다른 경우가 흔하므로 **조리법 기준으로 묶기**
+  ② **ADI CD 문서만** 적용(일반 의뢰서는 1줄 유지) ③ 머리 태그 `조합법 [동일 변경 N건]` + **항상 2줄 이상**
+  ④ **1건이면 배지만 숨김** ⑤ 문서 제목 문자열(`(+N)`)·엑셀 다운로드는 변경하지 않음 ⑥ 홈·상세 모달 카드 포함.
+- **표시**: 공용 컴포넌트 `components/AdiCdTargetsCell.tsx`(신규) — 머리 줄(조합법 + 2건 이상일 때만 건수 배지) 아래에
+  조리법 태그 + 제품 이름 칩 묶음이 줄마다 온다. `ApprovalPage.tsx`·`HomePage.tsx`의 제품 칸(ADI CD 문서만)과
+  `PagedDetailView.tsx`의 '동일 변경 적용 대상' 카드가 같은 컴포넌트를 쓴다. 기존 `AdiCdTargetsTable`(제품/조리법
+  2열 표, 본문 폭 1/3)과 `+N` 배지(`.adi-extra-badge`)·`.adi-cd-targets-detail-table` 스타일은 제거했다.
+  이 변경으로 2026-08-21 항목의 "상세보기 `AdiCdTargetsTable`" 설명은 **더 이상 유효하지 않다**.
+- **데이터**: 백엔드 `RequestDocument.adi_cd_targets_from_detail(detail)`(신규 staticmethod, 마이그레이션 없음)이
+  첫 대상 + 추가 대상을 `[{partid_selection, process_id}]`로 만든다(제품 이름·조리법이 모두 빈 행 제외, ADI CD 변경이
+  아니면 `[]`). 목록 `detail_summary.adi_cd_targets`로 내려가고, 프론트 `approvalTable.buildAdiCdTargets` /
+  `getDocDetailFields().adiTargets`가 같은 규약으로 읽는다(상세·스냅샷은 `additional_notes`에서 계산). 묶는 함수는
+  `groupAdiTargetsByProcessId`. 프론트 `adiExtraCount`는 화면이 더 쓰지 않아 제거했고, 백엔드 `adi_cd_extra_count`는
+  하위 호환으로 남겼다.
+- **검색**(`backend/api/search_filters.py` 신규): `RequestDocumentViewSet`의 검색 백엔드를 `AdiCdTargetSearchFilter`로
+  교체했다(DRF `SearchFilter` + ADI CD 대상 일치 OR). 상세 동작·실측은 `docs/APPROVAL.md` §3.1 (2026-10) 항목.
+  결재 현황과 이력 조회가 같은 API를 쓰므로 **이력 조회 검색도 함께 개선된다**.
+- **영향 파일**: 백엔드 `api/models.py`, `api/serializers.py`, `api/search_filters.py`(신규), `api/views.py`, `api/tests.py`.
+  프론트 `types/index.ts`, `utils/approvalTable.ts`(+`.test.ts`), `components/AdiCdTargetsCell.tsx`(+`.test.tsx`, 신규),
+  `components/PagedDetailView.tsx`, `pages/ApprovalPage.tsx`, `pages/HomePage.tsx`, `styles/global.css`,
+  `locales/{ko,en}.json`(`approval.adi_targets_count`). 문서 `docs/APPROVAL.md`, `docs/REQUEST.md`.
+- **검증(2026-10-01 실행)**: 백엔드 `manage.py test api`(sqlite, CLAUDE.md C-1-1 절차) — 593건 전부 통과(신규
+  `AdiCdTargetSearchTest` 14건; 새 필터 연결을 빼면 6건이 실패함을 확인). 프론트 `CI=true npm test` — 16 suites / 332건
+  전부 통과. `npx tsc --noEmit` — 4건(작업 전과 동일한 기존 4건: `Set` 순회 3건 + `GuidePage` 1건, 신규 0).
+  개발용 sqlite + 실제 개발 서버(`AUTH_MODE=dev`)로 결재 현황·홈·이력 조회·상세 모달을 띄워 스크린샷으로 확인했고,
+  UI 검색창 입력으로 2번째 이후 대상(`EF56GH78-03C`, 대소문자 무시 `prc_b102`, 두 단어 `UV12WX34 PRC_C201`)이 각각
+  해당 문서 1건만 찾아지는 것을 확인했다. 결재 흐름(상신·합의·반려)은 건드리지 않아 케이스 러너(C-1-4)는 실행하지 않았다.
+- **수동 검증 시나리오**(개발환경 `http://localhost:10011`, `AUTH_MODE=dev`):
+  1. [의뢰서 작성 → 요청 목적 `ADI CD 변경` 선택, 라인·조합법·제품 이름·조리법 입력 → "동일 변경 적용 대상"에 같은
+     조리법으로 제품 이름만 다른 대상 3개 추가 → 상신] → [결재 현황] → [기대 결과: 그 문서의 제품 칸이
+     `TLC [동일 변경 4건]` 머리 줄 + `PRC_…` 조리법 태그 한 줄 + 제품 이름 칩 4개로 보인다. 실패 신호: 첫 대상 1줄과
+     `+3` 배지만 보인다.]
+  2. [추가 대상 없이(1건) ADI CD 문서를 상신] → [기대 결과: 머리 줄에 조합법(`TLC`)만 있고 "동일 변경 1건" 배지는
+     없다. 아래 줄에 조리법 태그 + 제품 칩 1개.]
+  3. [같은 제품 이름을 서로 다른 조리법으로 추가해 상신] → [기대 결과: 조리법 묶음이 줄로 나뉘고 그 제품이 각 묶음에
+     한 번씩 나온다. 대상 수(배지 숫자)와 칩 총 개수가 같다.]
+  4. [결재 현황 검색창에 **2번째 이후 대상의 제품 이름 일부**(소문자로도) 입력] → [기대 결과: 그 문서가 목록에 남는다
+     (전에는 0건). 조리법 일부로도 같다. 두 단어(제품+조리법)를 공백으로 넣어도 찾아진다. 없는 단어를 넣으면 0건.]
+  5. [행(제품 칸) 클릭 → 상세 모달 "동일 변경 적용 대상" 카드] → [기대 결과: 목록과 같은 모양(조합법 머리 +
+     조리법 묶음). 모달 제목은 이전처럼 `…_조리법(+3)_요청서_…`. 12건처럼 많아도 "상세 정보" 카드가 버튼에 덜 가려진다.]
+  6. [홈 → "나의 의뢰 현황"] → [기대 결과: 같은 셀. / 이력 조회(MASTER로 이력 바로 등록한 ADI CD 문서 또는 결재 완료
+     문서)에서 2번째 이후 대상 제품 이름으로 검색] → [기대 결과: 그 문서가 찾아지고 모달 카드가 같은 모양.]
+  7. [일반 의뢰서(임시저장 탭 등)의 제품 칸] → [기대 결과: 종전처럼 `TLC · 제품 · 조리법` 1줄로 변화 없음.]
+- **잠재 주의사항**:
+  - **검색 성능**: 검색 요청마다 ADI CD 문서의 `additional_notes`를 읽어 비교한다. sqlite 실측 +15~110ms(ADI 문서 300~3,000건).
+    MySQL에서는 측정하지 못했다. 입력 때마다 요청이 나가는 기존 구조라 느리면 후속으로 검색용 컬럼(마이그레이션 필요)이나
+    입력 지연(debounce)을 검토한다.
+  - **이력 조회 목록의 제목 칸**은 문서 제목 문자열을 그대로 보여주므로 여전히 첫 대상과 `(+N)`만 보인다(전체는 모달).
+  - **엑셀 목록 다운로드**는 여전히 첫 대상만 내보낸다. **검색창 placeholder**("제목, 제품명, 의뢰자로 검색")는 그대로다.
+  - **좁은 화면(1280px)**에서는 제품 칸이 좁아져 칩이 한 줄에 1~2개씩 줄바꿈되고 행이 길어진다(변경 전에도 임시저장 행의
+    넓은 버튼 칸 때문에 라인·목적 칸이 줄바꿈되는 현상이 이미 있었다).
+  - 프론트가 백엔드보다 먼저 배포되면 `adi_cd_targets`가 없어 ADI CD 문서가 종전 1줄 표시(조합법·제품·조리법)로 보인다
+    (`getDocDetailFields`가 빈 배열로 받아 셀을 그리지 않음 — 오류는 없지만 `+N` 배지도 함께 사라지므로 두 쪽은 같이 배포한다).
+
 ### UI 수정 (2026-09-23 후속 — PRODUCT 담당자 입력칸 폭 축소)
 
 - **요청**: 2026-09-22 추가된 Step1 "PRODUCT 담당자" 입력칸이 `flex: 1`(남은 공간 전부 차지)이라
