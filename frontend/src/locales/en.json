@@ -668,6 +668,7 @@
     "filter_agent_O": "OVL",
     "filter_agent_E": "MASK",
     "filter_pause": "Paused",
+    "filter_withdraw": "Withdrawing",
     "filter_draft": "Draft",
     "filter_rejected": "Rejected",
     "peer_submit": "Edit & Submit",
