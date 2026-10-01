@@ -190,6 +190,14 @@ export interface DocDetailSummary {
   process_id: string;
   /** ADI CD 변경의 '동일 변경 적용 대상' 추가 건수(원본 adi_cd_extra_targets 의 길이) */
   adi_cd_extra_count: number;
+  /** ADI CD 변경의 '동일 변경 적용 대상' 전체(첫 대상 + 추가 대상). ADI CD 변경이 아니면 빈 배열 */
+  adi_cd_targets: AdiCdTargetSummary[];
+}
+
+/** 목록 요약에 실리는 '동일 변경 적용 대상' 1건 — AdiCdTarget 에서 편집용 id 를 뺀 값 */
+export interface AdiCdTargetSummary {
+  partid_selection: string;
+  process_id: string;
 }
 
 export interface RequestDocument {
