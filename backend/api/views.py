@@ -1151,6 +1151,16 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
         wr.save(update_fields=['state', 'resolved_at'])
         mailer.enqueue_withdraw_cancelled(document, wr)
 
+        # 철회 확인 대기 중에는 결재가 동결돼 마스터 DB 변경 자동 반려가 보류된다. 동결이 풀린
+        # 지금 바로 재판정한다(다음 스케줄러 주기를 기다리지 않는다). 실패해도 철회 취소는 유지한다.
+        try:
+            if layer_drift.auto_reject_if_confirmed(document):
+                document.refresh_from_db()
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "[layer_drift] 문서 %s 철회 취소 후 자동 반려 판정 실패", document.pk,
+            )
+
         return Response({
             'message': '철회 요청을 취소했습니다.',
             'document': RequestDocumentSerializer(document, context={'request': request}).data,
