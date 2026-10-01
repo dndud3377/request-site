@@ -832,6 +832,7 @@
     "step_done": "✓ 완료",
     "step_unassigned": "대기중",
     "step_na": "해당없음",
+    "adi_targets_count": "동일 변경 {{count}}건",
     "stage_cell_done": "완료",
     "step_skip": "건너뜀",
     "label_requester": "의뢰자",

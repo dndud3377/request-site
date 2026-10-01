@@ -832,6 +832,7 @@
     "step_done": "✓ Done",
     "step_unassigned": "Waiting",
     "step_na": "N/A",
+    "adi_targets_count": "{{count}} same-change targets",
     "stage_cell_done": "Done",
     "step_skip": "Skipped",
     "label_requester": "Requester",
