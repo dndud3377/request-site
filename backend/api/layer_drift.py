@@ -18,13 +18,16 @@ XXXXXX(`PhotoStepS{1,3,4,5}Cd`, eqptype 임시값)는 Jayer/Oayer와 달리 요�
 import json
 import logging
 
+from django.db import transaction
+from django.db.models import Max
 from django.utils import timezone
 
+from . import mailer, rejection_snapshots
 from .models import (
     PhotoStepS1, PhotoStepS3, PhotoStepS4, PhotoStepS5,
     PhotoStepS1Ov, PhotoStepS3Ov, PhotoStepS4Ov, PhotoStepS5Ov,
     PhotoStepS1Cd, PhotoStepS3Cd, PhotoStepS4Cd, PhotoStepS5Cd,
-    RequestDocument,
+    ApprovalStep, PauseRequest, RequestDocument, WithdrawRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,6 +48,20 @@ EXTRA_MODEL_MAP = {
 
 # 결재 진행중으로 보는 상태 — 완료(approved)·반려(rejected)·임시저장(draft)은 대상에서 뺀다.
 IN_PROGRESS_STATUSES = ('submitted', 'under_review', 'pause')
+
+# 자동 반려 대상 상태 — 중단(pause)도 포함한다. 철회 확인 대기 중인 문서는 상태와 무관하게
+# auto_reject_document 에서 제외한다(배지만 띄우고, 철회가 취소되면 바로 재판정).
+AUTO_REJECT_STATUSES = ('under_review', 'pause')
+
+# 자동 반려 단계 의견 머리말은 mailer 가 '자동 반려 문서' 판별(메일 제목·수신자)에도 쓴다.
+AUTO_REJECT_COMMENT_PREFIX = mailer.AUTO_REJECT_COMMENT_PREFIX
+# 반려 이력(RejectionSnapshot)에 남기는 반려자 — (loginid, 이름). 사람이 누른 반려가 아니다.
+SYSTEM_REJECTER = ('system', '시스템(자동반려)')
+
+LAYER_KEYS = ('jayer', 'oayer', 'extra')
+LAYER_LABELS = {'jayer': 'J-layer', 'oayer': 'O-layer', 'extra': 'XXXXXX'}
+# 반려 사유(단계 의견)에 나열하는 변경 건수 상한 — 초과분은 '외 N건' 으로 줄인다.
+AUTO_REJECT_COMMENT_MAX_ITEMS = 5
 
 
 def _row_dict(item, line, process):
@@ -252,6 +269,119 @@ def recompute_document(document, job_file_rows=None, ovl_rows=None, extra_rows=N
     return detected
 
 
+def _critical_changes(diff):
+    """diff 에서 자동 반려 대상인 변경만 뽑아 정렬된 튜플 리스트로 돌려준다.
+
+    대상: stepseq 행 삭제·신규 추가, 같은 stepseq 의 recipeid·layerid 변경. descript(설명)만 바뀐
+    경우는 배지만 띄우고 자동 반려하지 않으므로 여기서 제외된다. 값 변경은 diff 에서 옛 값
+    removed + 새 값 added 한 쌍으로 표현되므로 stepseq 로 묶어서 판정한다.
+
+    튜플: (layer, stepseq, kind, 옛 recipeid, 옛 layerid, 새 recipeid, 새 layerid) — kind 는
+    'removed'/'added'/'changed'. '같은 변경이 연속 감지됐는지' 비교에도 그대로 쓴다.
+    """
+    changes = []
+    for layer in LAYER_KEYS:
+        group = (diff or {}).get(layer) or {}
+        removed = {e.get('stepseq'): e for e in group.get('removed') or []}
+        added = {e.get('stepseq'): e for e in group.get('added') or []}
+        for stepseq in set(removed) | set(added):
+            old = removed.get(stepseq)
+            new = added.get(stepseq)
+            if old is not None and new is not None:
+                if (old.get('recipeid', ''), old.get('layerid', '')) != (new.get('recipeid', ''), new.get('layerid', '')):
+                    changes.append((layer, stepseq, 'changed', old.get('recipeid', ''), old.get('layerid', ''),
+                                    new.get('recipeid', ''), new.get('layerid', '')))
+            elif old is not None:
+                changes.append((layer, stepseq, 'removed', old.get('recipeid', ''), old.get('layerid', ''), '', ''))
+            else:
+                changes.append((layer, stepseq, 'added', '', '', new.get('recipeid', ''), new.get('layerid', '')))
+    return sorted(changes)
+
+
+def _cached_critical_changes(document):
+    """직전 주기에 캐시된 layer_drift_detail 의 자동 반려 대상 변경. 캐시가 없거나 깨졌으면 빈 리스트."""
+    try:
+        cached = json.loads(document.layer_drift_detail) if document.layer_drift_detail else {}
+    except (json.JSONDecodeError, TypeError):
+        cached = {}
+    return _critical_changes(cached)
+
+
+def _auto_reject_comment(changes):
+    """반려 사유(단계 의견). 머리말 + 변경 요약(최대 AUTO_REJECT_COMMENT_MAX_ITEMS건)."""
+    parts = []
+    for layer, stepseq, kind, old_recipe, old_layer, new_recipe, new_layer in changes[:AUTO_REJECT_COMMENT_MAX_ITEMS]:
+        label = f'{LAYER_LABELS[layer]} STEP {stepseq}'
+        if kind == 'removed':
+            parts.append(f'{label} 삭제')
+        elif kind == 'added':
+            parts.append(f'{label} 추가')
+        else:
+            parts.append(f'{label} recipeid {old_recipe}→{new_recipe}, layerid {old_layer}→{new_layer}')
+    extra = len(changes) - AUTO_REJECT_COMMENT_MAX_ITEMS
+    suffix = f' 외 {extra}건' if extra > 0 else ''
+    return f'{AUTO_REJECT_COMMENT_PREFIX} 마스터 DB 변경 감지: ' + '; '.join(parts) + suffix
+
+
+def auto_reject_document(document_id, changes):
+    """마스터 DB 변경이 확정된 문서를 자동 반려한다. 반려했으면 True, 건너뛰면 False.
+
+    기존 반려(`reject_step`)와 같은 경로를 그대로 쓴다 — 단계 rejected 표시 → 문서 rejected →
+    반려 이력(RejectionSnapshot) 적재 → 반려 메일. 반려를 누른 사람이 없으므로 현재 회차의 가장
+    앞선 대기 단계 하나를 반려 단계로 삼고(변경된 레이어와 맞추지 않는다), 단계 의견에
+    `[자동반려]` 머리말과 변경 요약을 남긴다.
+
+    건너뛰는 경우: 이미 상태가 바뀜(under_review/pause 아님) · 철회 확인 대기 중(결재 동결 —
+    철회가 취소되면 cancel_withdraw 가 다시 판정한다) · 대기 단계가 없음.
+    """
+    with transaction.atomic():
+        document = RequestDocument.objects.select_for_update().get(pk=document_id)
+        if document.status not in AUTO_REJECT_STATUSES:
+            return False
+        if WithdrawRequest.objects.filter(document=document, state='requested').exists():
+            return False
+
+        max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max']
+        step = ApprovalStep.objects.select_for_update().filter(
+            document=document, round=max_round, action='pending',
+        ).order_by('id').first()
+        if step is None:
+            logger.warning(f"[layer_drift] 문서 {document_id} 자동 반려 불가 — 현재 회차에 대기 단계가 없다")
+            return False
+
+        step.action = 'rejected'
+        step.acted_at = timezone.now()
+        step.comment = _auto_reject_comment(changes)
+        step.save()
+
+        # 반려로 회차가 종료되면 진행 중이던 중단 요청은 무효 처리한다. 중단(pause) 문서는 확정된
+        # 요청(confirmed)까지 닫아야 재상신 후 새 중단 요청이 막히지 않는다.
+        PauseRequest.objects.filter(
+            document=document, state__in=('requested', 'confirmed'),
+        ).update(state='cancelled')
+
+        document.status = 'rejected'
+        document.save()
+
+        rejection_snapshots.create_from_reject(document, step, actor=SYSTEM_REJECTER)
+        mailer.enqueue_rejected(document)
+    logger.info(f"[layer_drift] 문서 {document_id} 자동 반려 완료 — {len(changes)}건")
+    return True
+
+
+def auto_reject_if_confirmed(document):
+    """문서 하나를 지금 다시 판정해, 직전 주기 캐시와 같은 변경이 계속되면 자동 반려한다.
+
+    철회 요청이 취소된 직후처럼 '다음 스케줄러 주기를 기다리지 않고 바로' 판정해야 할 때 쓴다.
+    스케줄러와 같은 규칙(같은 변경이 2번 연속 감지돼야 반려)을 따르므로, 직전 주기에 아직
+    감지되지 않았던 변경은 반려하지 않고 다음 주기 판정에 맡긴다. 반려했으면 True.
+    """
+    changes = _critical_changes(compute_document_layer_drift(document))
+    if not changes or changes != _cached_critical_changes(document):
+        return False
+    return auto_reject_document(document.pk, changes)
+
+
 def _batch_fetch_layer_rows(lines_and_processes):
     """(line, process) 조합 집합을 받아 라인당 1쿼리(processid__in)로 job_file/ovl/extra 행을
     미리 조회한다.
@@ -308,6 +438,7 @@ def recompute_all_in_progress():
     job_file_cache, ovl_cache, extra_cache = _batch_fetch_layer_rows(doc_lines_processes)
 
     to_update = []
+    to_reject = []
     for document in documents:
         try:
             detail = (document.get_detail().get('detail') or {})
@@ -316,14 +447,20 @@ def recompute_all_in_progress():
             job_rows = job_file_cache.get((line, process), [])
             ovl_rows = ovl_cache.get((line, process), [])
             extra_rows = extra_cache.get((line, process), [])
+            # 직전 주기 캐시는 아래에서 덮어쓰기 전에 읽는다 — 같은 변경이 2번 연속 감지돼야 반려한다.
+            previous_changes = _cached_critical_changes(document)
             diff = compute_document_layer_drift(
                 document, job_file_rows=job_rows, ovl_rows=ovl_rows, extra_rows=extra_rows,
             )
-            detected = any(diff[layer][kind] for layer in ('jayer', 'oayer', 'extra') for kind in ('removed', 'added'))
+            detected = any(diff[layer][kind] for layer in LAYER_KEYS for kind in ('removed', 'added'))
             document.layer_drift_detected = detected
             document.layer_drift_detail = json.dumps(diff, ensure_ascii=False) if detected else ''
             document.layer_drift_checked_at = timezone.now()
             to_update.append(document)
+
+            changes = _critical_changes(diff)
+            if changes and changes == previous_changes:
+                to_reject.append((document.id, changes))
         except Exception as e:
             logger.error(f"[layer_drift] 문서 {document.id} 변경 감지 계산 실패: {e}", exc_info=True)
 
@@ -331,6 +468,13 @@ def recompute_all_in_progress():
         RequestDocument.objects.bulk_update(
             to_update, ['layer_drift_detected', 'layer_drift_detail', 'layer_drift_checked_at'],
         )
+
+    # 캐시(배지)를 먼저 저장한 뒤 반려한다. 문서마다 별도 트랜잭션이라 한 문서가 실패해도 나머지는 계속된다.
+    for document_id, changes in to_reject:
+        try:
+            auto_reject_document(document_id, changes)
+        except Exception as e:
+            logger.error(f"[layer_drift] 문서 {document_id} 자동 반려 실패: {e}", exc_info=True)
 
 
 def capture_extra_layer_snapshot(document):

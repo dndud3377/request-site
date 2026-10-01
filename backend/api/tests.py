@@ -8252,6 +8252,254 @@ class GuideWritePermissionOverseasTest(TestCase):
         self.assertEqual(r.status_code, 201, r.content)
 
 
+class LayerDriftAutoRejectTest(TestCase):
+    """마스터 DB 변경 감지 자동 반려 — stepseq·recipeid·layerid 변경이 같은 변경으로 2번 연속 감지되면
+    기존 반려와 같은 경로(단계 반려·이력 스냅샷·반려 메일)로 반려되는지 검증한다."""
+
+    def setUp(self):
+        import json
+        from rest_framework.test import APIClient
+        from .models import PhotoStepS1
+        self._json = json
+        self.client = APIClient()
+        self.PhotoStepS1 = PhotoStepS1
+
+        self.author = UserProfile.objects.create(
+            loginid='ar_author', mail='ar_a@c.com', role='PL', username='의뢰자',
+        )
+        self.pl = UserProfile.objects.create(loginid='ar_pl', mail='ar_pl@c.com', role='PL', username='지정PL')
+        self.r_user = UserProfile.objects.create(loginid='ar_r', mail='ar_r@c.com', role='TE_R', username='R담당')
+
+    def _master(self, stepseq='S1', recipeid='R1', layerid='L1', descript='D1'):
+        return self.PhotoStepS1.objects.create(
+            processid='P1', stepseq=stepseq, descript=descript, recipeid=recipeid,
+            areaname='A1', eqptype='PMAINF', layerid=layerid, updated='U1',
+        )
+
+    def _doc(self, jayer_rows, status='under_review'):
+        doc = RequestDocument.objects.create(
+            title='ar-doc', requester=self.author, requester_name='의뢰자', requester_email='ar_a@c.com',
+            requester_department='d', product_name='p', status=status, designated_pl=self.pl,
+            additional_notes=self._json.dumps({
+                'detail': {'line': 'line1', 'process_id': 'P1'}, 'jayerRows': jayer_rows, 'oayerRows': [],
+            }),
+        )
+        ApprovalStep.objects.create(document=doc, agent='PL', action='approved', round=1, assignee=self.pl,
+                                    assignee_name='지정PL')
+        self.r_step = ApprovalStep.objects.create(document=doc, agent='R', action='pending', round=1,
+                                                  assignee=self.r_user, assignee_name='R담당')
+        return doc
+
+    def _saved(self, sp='S1', sd='D1', pp='R1', layerid='L1'):
+        return {'sp': sp, 'sd': sd, 'pp': pp, 'layerid': layerid, 'loaded': True, 'updated': 'U0'}
+
+    def _cycle(self, times=1):
+        from . import layer_drift
+        for _ in range(times):
+            layer_drift.recompute_all_in_progress()
+
+    # ----- 반려 조건 -----
+
+    def test_first_detection_only_shows_badge_second_detection_rejects(self):
+        """같은 변경이 2번 연속 감지돼야 반려한다 — 첫 주기에는 배지만 뜬다."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+
+        self._cycle()
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertTrue(doc.layer_drift_detected)
+
+        self._cycle()
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+    def test_auto_reject_uses_existing_reject_path(self):
+        """단계 반려 표시 + [자동반려] 사유 + 이력 스냅샷(시스템 반려자) + 반려 메일."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._cycle(2)
+
+        self.r_step.refresh_from_db()
+        self.assertEqual(self.r_step.action, 'rejected')
+        self.assertTrue(self.r_step.comment.startswith('[자동반려]'))
+        self.assertIn('recipeid ROLD→RNEW', self.r_step.comment)
+
+        snap = RejectionSnapshot.objects.get(document=doc)
+        self.assertEqual(snap.rejected_agent, 'R')
+        self.assertEqual(snap.rejected_by_loginid, 'system')
+        self.assertEqual(snap.rejected_by_name, '시스템(자동반려)')
+        self.assertTrue(snap.reject_comment.startswith('[자동반려]'))
+
+        notis = list(MailNotification.objects.filter(document=doc, event_type='rejected'))
+        self.assertTrue(notis)
+        self.assertTrue(all('[자동반려]' in n.subject and n.subject.startswith('[반려]') for n in notis))
+        recipients = {m for n in notis for m in n.recipients}
+        self.assertIn('ar_a@c.com', recipients)  # 작성자
+        self.assertIn('ar_r@c.com', recipients)  # 반려 표시된 단계의 담당자도 사람이 반려한 게 아니므로 수신
+
+    def test_descript_only_change_never_rejects(self):
+        self._master(descript='설명변경')
+        doc = self._doc([self._saved(sd='설명원본')])
+        self._cycle(3)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertTrue(doc.layer_drift_detected)  # 배지는 그대로 뜬다
+
+    def test_layerid_change_rejects(self):
+        self._master(layerid='LNEW')
+        doc = self._doc([self._saved(layerid='LOLD')])
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+    def test_removed_stepseq_rejects(self):
+        """저장된 행의 stepseq 가 마스터에서 사라졌다."""
+        self._master(stepseq='S1')
+        doc = self._doc([self._saved(sp='S1'), self._saved(sp='S2')])
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+        self.r_step.refresh_from_db()
+        self.assertIn('STEP S2 삭제', self.r_step.comment)
+
+    def test_added_stepseq_rejects(self):
+        """마스터에 저장되지 않은 새 stepseq 가 생겼다."""
+        self._master(stepseq='S1')
+        self._master(stepseq='S2')
+        doc = self._doc([self._saved(sp='S1')])
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+    def test_manual_row_not_in_master_rejects(self):
+        """수동 입력 행도 비교 대상이라, 마스터에 없는 stepseq 는 삭제로 잡혀 반려된다."""
+        self._master(stepseq='S1')
+        manual = {'sp': 'M1', 'sd': '수동', 'pp': 'RM', 'layerid': 'LM', 'loaded': False, 'updated': ''}
+        doc = self._doc([self._saved(sp='S1'), manual])
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+    def test_xxxxxx_snapshot_change_rejects(self):
+        """XXXXXX(CD): 상신 시점 스냅샷 대비 마스터 값이 바뀌면 반려된다."""
+        from . import layer_drift
+        from .models import PhotoStepS1Cd
+        from .scheduler import STEP_EXTRA_EQPTYPE
+        self._master()
+        doc = self._doc([self._saved()])
+        layer_drift.capture_extra_layer_snapshot(doc)
+        doc.save(update_fields=['extra_layer_snapshot'])
+        PhotoStepS1Cd.objects.create(
+            processid='P1', stepseq='C1', descript='cd', recipeid='RC', areaname='A1',
+            eqptype=STEP_EXTRA_EQPTYPE, layerid='LC', updated='U1',
+        )
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+    def test_no_change_never_rejects(self):
+        self._master()
+        doc = self._doc([self._saved()])
+        self._cycle(3)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertFalse(doc.layer_drift_detected)
+
+    def test_different_change_on_second_cycle_resets_confirmation(self):
+        """다른 변경으로 바뀌면 '같은 변경 2번 연속'이 성립하지 않아 한 주기 더 기다린다."""
+        master = self._master(recipeid='RA')
+        doc = self._doc([self._saved(pp='R1')])
+        self._cycle()
+        master.recipeid = 'RB'
+        master.save()
+        self._cycle()
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self._cycle()
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+    # ----- 상태별 처리 -----
+
+    def test_paused_document_is_rejected_and_pause_request_closed(self):
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')], status='pause')
+        pr = PauseRequest.objects.create(
+            document=doc, requester=self.author, requester_name='의뢰자', reason='사유', round=1,
+            state='confirmed', target_step_ids=[self.r_step.id], confirmed_at=timezone.now(),
+        )
+        self._cycle(2)
+        doc.refresh_from_db()
+        pr.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+        self.assertEqual(pr.state, 'cancelled')
+
+    def _request_withdraw(self, doc):
+        self.client.force_authenticate(user=self.author)
+        res = self.client.post(f'/api/documents/{doc.id}/withdraw/', {'reason': '사유'}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_withdraw_pending_document_only_shows_badge(self):
+        """철회 확인 대기 중에는 반려하지 않고 배지만 띄운다."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._request_withdraw(doc)
+        self._cycle(3)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertTrue(doc.layer_drift_detected)
+
+    def test_cancel_withdraw_rejects_immediately_when_change_already_confirmed(self):
+        """철회가 취소되면 다음 스케줄러 주기를 기다리지 않고 바로 반려된다."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._request_withdraw(doc)
+        self._cycle(2)  # 철회 대기 중 — 변경은 두 번 연속 감지됐지만 반려는 보류
+
+        res = self.client.post(f'/api/documents/{doc.id}/cancel-withdraw/', {}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.data['document']['status'], 'rejected')
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+        self.assertTrue(RejectionSnapshot.objects.filter(document=doc).exists())
+        self.assertTrue(MailNotification.objects.filter(document=doc, event_type='rejected').exists())
+        self.assertEqual(WithdrawRequest.objects.get(document=doc).state, 'cancelled')
+
+    def test_cancel_withdraw_does_not_reject_unconfirmed_change(self):
+        """직전 주기에 감지된 적 없는 변경은 철회 취소 시점에도 반려하지 않는다(다음 주기 판정)."""
+        doc = self._doc([self._saved(pp='R1')])
+        self._master(recipeid='RNEW')  # 캐시(미감지) 이후에 마스터가 바뀐 상황
+        self._request_withdraw(doc)
+
+        res = self.client.post(f'/api/documents/{doc.id}/cancel-withdraw/', {}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+
+    def test_resubmit_with_stale_values_is_rejected_again_after_two_cycles(self):
+        """재상신 후에도 저장된 값이 최신 마스터 값과 다르면 같은 사유로 다시 반려된다."""
+        from . import layer_drift
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+        doc.status = 'under_review'
+        doc.save()
+        ApprovalStep.objects.create(document=doc, agent='R', action='pending', round=2,
+                                    assignee=self.r_user, assignee_name='R담당')
+        layer_drift.reset_document_drift(doc)  # 재상신 액션이 하는 초기화
+        self._cycle()
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self._cycle()
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+        self.assertEqual(RejectionSnapshot.objects.filter(document=doc).count(), 2)
+
+
 class AdiCdTargetSearchTest(TestCase):
     """ADI CD 변경 '동일 변경 적용 대상' 전체 검색 + 목록 detail_summary.adi_cd_targets (2026-10).
 

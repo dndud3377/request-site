@@ -97,6 +97,9 @@ PL 이 아닌 사용자도 자기가 참여했던 의뢰서를 볼 수 있다.
 ### 적재 규칙
 - 적재 위치: `backend/api/rejection_snapshots.py` 의 `create_from_reject()`
 - 호출 지점: `POST /api/documents/{id}/reject-step/`(E/EV 포함 — 2026-09 부터 예외 없음), `POST /api/documents/{id}/peer-reject/` (지정 PL 반려)
+  + (2026-10) 마스터 DB 변경 감지 **자동 반려**(`layer_drift.auto_reject_document`, 스케줄러/`cancel-withdraw` 에서 호출)
+  — `create_from_reject(..., actor=('system', '시스템(자동반려)'))` 로 적재해 `rejected_by_loginid='system'`,
+  `reject_comment` 가 `[자동반려] 마스터 DB 변경 감지: …` 인 행이 반려 탭에 쌓인다. 화면·API 변경은 없다.
 - 회차마다 1행씩 누적된다(3번 반려 = 3행). 첫 반려로 문서가 `rejected` 가 되면 이후 결재 액션은
   `_blocked_progress_response` 가 막으므로 같은 회차가 두 번 쌓이지 않는다.
 - 원본 문서가 삭제돼도 이력은 남는다(`document` 는 `SET_NULL`, `source_document_id` 로 추적).

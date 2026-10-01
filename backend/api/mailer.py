@@ -488,6 +488,22 @@ def _current_round(document):
     return ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max']
 
 
+# 마스터 DB 변경 감지 자동 반려(layer_drift.auto_reject_document)가 반려 단계 의견 맨 앞에 붙이는
+# 머리말. 반려 메일 제목·본문 분기와 수신자 판정이 이 머리말로 '자동 반려 문서'를 알아본다.
+AUTO_REJECT_COMMENT_PREFIX = '[자동반려]'
+
+
+def _is_auto_rejected(document):
+    """현재(최종) 회차의 반려 단계가 자동 반려(단계 의견이 AUTO_REJECT_COMMENT_PREFIX 로 시작)인지."""
+    max_round = _current_round(document)
+    if max_round is None:
+        return False
+    return ApprovalStep.objects.filter(
+        document=document, round=max_round, action='rejected',
+        comment__startswith=AUTO_REJECT_COMMENT_PREFIX,
+    ).exists()
+
+
 def _current_round_step_emails(document, action=None):
     """현재(최종) 회차의 결재 단계 중 담당자 배정된 것의 이메일(중복 제거). action 지정 시 그 결과로만 한정."""
     max_round = _current_round(document)
@@ -600,6 +616,14 @@ def resolve_reject_recipients(document):
         )
         rejected_agents = {s.agent for s in rejected_steps}
 
+        # 자동 반려는 반려 단계 담당자가 직접 반려한 게 아니므로 '반려자 본인 제외' 규칙을 적용하지
+        # 않고, 그 담당자에게도 반려 사실을 알린다(개인 수신자에 포함).
+        is_auto = _is_auto_rejected(document)
+        if is_auto:
+            for s in rejected_steps:
+                if s.assignee and s.assignee.mail and s.assignee.mail not in individual_emails:
+                    individual_emails.append(s.assignee.mail)
+
         if 'PL' in rejected_agents:
             pending_pl_qs = ApprovalStep.objects.filter(
                 document=document, round=max_round, agent='PL', action='pending',
@@ -608,7 +632,7 @@ def resolve_reject_recipients(document):
                 if mail not in individual_emails:
                     individual_emails.append(mail)
         elif rejected_agents:
-            rejecter_mails = {
+            rejecter_mails = set() if is_auto else {
                 s.assignee.mail for s in rejected_steps if s.assignee and s.assignee.mail
             }
             for mail in _remaining_stage_individual_emails(document, max_round):
@@ -1121,8 +1145,15 @@ def _build_message(event_type, document, agent=None, recipient_name=None, is_fix
         headline = '후결 요청이 도착했습니다.' if agent == 'RA' else f'{label} 단계 결재가 도착했습니다.'
         stage_value = label
     elif event_type == 'rejected':
-        subject = f'[반려] {document.title}'
-        headline = '요청하신 의뢰서가 반려되었습니다.'
+        if _is_auto_rejected(document):
+            subject = f'[반려] {AUTO_REJECT_COMMENT_PREFIX} {document.title}'
+            headline = (
+                '마스터 DB 변경이 감지되어 의뢰서가 자동 반려되었습니다. '
+                '최신 값으로 수정한 뒤 재상신해 주세요.'
+            )
+        else:
+            subject = f'[반려] {document.title}'
+            headline = '요청하신 의뢰서가 반려되었습니다.'
         stage_value = EVENT_STATUS_LABEL[event_type]
     elif event_type == 'approved':
         subject = f'[승인 완료] {document.title}'

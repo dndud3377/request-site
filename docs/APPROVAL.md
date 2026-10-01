@@ -1995,3 +1995,27 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
      순서이고 각 행 Layer 칸에 값이 보인다(Oayer 페이지와 같은 위치).
   2. 같은 화면의 J-ayer 엑셀 내보내기(또는 전체 export) → JOB 시트 → 기대: SD 다음 열이 Layer 이고 PP·ST 색상이 어긋나지 않는다.
   3. 회차가 2개 이상인 문서의 Jayer 변경 행 '이력 확인' → 기대: 모달 컬럼 라벨이 언어 설정에 따라 바뀌고 Layer 가 SD 다음에 나온다.
+
+---
+
+## 마스터 DB 변경 감지 자동 반려 (2026-10-01)
+
+결재 진행 중인 의뢰서의 J-layer / O-layer / XXXXXX 값에서 `stepseq` 삭제·추가 또는 `recipeid`·`layerid`
+변경이 **같은 내용으로 2번 연속**(스케줄러 10분 주기) 감지되면 시스템이 문서를 **자동 반려**한다.
+`descript` 만 바뀐 경우는 '변경 감지' 배지만 뜬다. 상세 규칙·수동 검증은 `docs/REQUEST.md`
+"2026-10-01 — '변경 감지' 자동 반려" 절 참고.
+
+| 문서 상태 | 동작 |
+|---|---|
+| `under_review` | 자동 반려 |
+| `pause`(중단) | 자동 반려 + 확정된 중단 요청(`confirmed`)도 `cancelled` 로 닫음 |
+| 철회 확인 대기 중(`WithdrawRequest.state='requested'`) | **배지만** 표시(결재 동결). `cancel-withdraw` 가 호출되면 그 자리에서 바로 재판정해 같은 변경이 직전 주기에도 감지돼 있었다면 즉시 반려. `reject-withdraw`(철회 거부)로 풀린 경우는 다음 스케줄러 주기에 판정 |
+| `submitted` / `approved` / `rejected` / `draft` | 대상 아님 |
+
+- 반려 단계: 현재 회차의 **가장 앞선 pending 단계 1개**가 `rejected` 가 된다(변경 레이어와 맞추지 않음).
+  단계 의견은 `[자동반려] 마스터 DB 변경 감지: …`.
+- 이후는 `reject-step` 과 같다 — `status='rejected'`, 이력 조회 '반려' 탭 스냅샷(반려자 `system`),
+  반려 메일(`docs/MAIL.md`). 재상신은 기존 `resubmit` 그대로이며, 값을 최신으로 다시 채우지 않으면 같은
+  사유로 다시 반려된다.
+- 구현: `backend/api/layer_drift.py` `auto_reject_document` / `auto_reject_if_confirmed`,
+  `views.py` `cancel_withdraw`. 테스트: `LayerDriftAutoRejectTest`.
