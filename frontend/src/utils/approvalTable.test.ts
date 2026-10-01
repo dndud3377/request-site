@@ -2,6 +2,7 @@ import type { TFunction } from 'i18next';
 import {
   getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument,
   hasActiveStageStep, getStagePendingEnteredAt, getDocDetailFields, StageCell, StageCellSlot,
+  buildAdiCdTargets, groupAdiTargetsByProcessId,
 } from './approvalTable';
 import { ApprovalStepFrontend, RequestDocument } from '../types';
 
@@ -731,12 +732,21 @@ describe('getDocDetailFields — detail_summary(목록) / additional_notes(상�
         line: 'M1', request_purpose: 'ADI CD 변경', other_purpose: ['Overlay 변경'],
         map_type: '', process_selection: 'PS', partid_selection: 'PA', process_id: 'PID',
         adi_cd_extra_count: 2,
+        adi_cd_targets: [
+          { partid_selection: 'PA', process_id: 'PID' },
+          { partid_selection: 'PB', process_id: 'PID' },
+          { partid_selection: 'PC', process_id: 'PID2' },
+        ],
       },
     };
     expect(getDocDetailFields(doc)).toEqual({
       line: 'M1', purpose: 'ADI CD 변경', otherPurpose: ['Overlay 변경'], mapType: '',
       isAdiCd: true, processSelection: 'PS', partidSelection: 'PA', processId: 'PID',
-      adiExtraCount: 2,
+      adiTargets: [
+        { partid_selection: 'PA', process_id: 'PID' },
+        { partid_selection: 'PB', process_id: 'PID' },
+        { partid_selection: 'PC', process_id: 'PID2' },
+      ],
     });
   });
 
@@ -754,15 +764,48 @@ describe('getDocDetailFields — detail_summary(목록) / additional_notes(상�
     };
     expect(getDocDetailFields(doc)).toEqual({
       line: 'M2', purpose: '신규', otherPurpose: [], mapType: 'NEW', isAdiCd: false,
-      processSelection: 'PS2', partidSelection: 'PA2', processId: 'PID2', adiExtraCount: 1,
+      processSelection: 'PS2', partidSelection: 'PA2', processId: 'PID2', adiTargets: [],
     });
+  });
+
+  it('additional_notes 경로: ADI CD 변경이면 첫 대상 + 추가 대상 전체를 adiTargets 로 만든다', () => {
+    const doc: RequestDocument = {
+      ...makeDoc([]),
+      additional_notes: JSON.stringify({
+        detail: {
+          line: 'M3', request_purpose: 'ADI CD 변경', other_purpose: [], map_type: '',
+          process_selection: 'PS3', partid_selection: 'PA3', process_id: 'PID3',
+          adi_cd_extra_targets: [
+            { id: 'a', partid_selection: 'PB3', process_id: 'PID3' },
+            { id: 'b', partid_selection: 'PC3', process_id: 'PID4' },
+          ],
+        },
+      }),
+    };
+    expect(getDocDetailFields(doc).adiTargets).toEqual([
+      { partid_selection: 'PA3', process_id: 'PID3' },
+      { partid_selection: 'PB3', process_id: 'PID3' },
+      { partid_selection: 'PC3', process_id: 'PID4' },
+    ]);
+  });
+
+  it('detail_summary 에 adi_cd_targets 가 없어도(배포 시차) 빈 배열로 받는다', () => {
+    const doc = {
+      ...makeDoc([]),
+      additional_notes: undefined,
+      detail_summary: {
+        line: 'M1', request_purpose: 'ADI CD 변경', other_purpose: [], map_type: '',
+        process_selection: 'PS', partid_selection: 'PA', process_id: 'PID', adi_cd_extra_count: 0,
+      },
+    } as unknown as RequestDocument;
+    expect(getDocDetailFields(doc).adiTargets).toEqual([]);
   });
 
   it('둘 다 없으면 빈 값(투어 시드·파싱 실패 문서)', () => {
     const doc: RequestDocument = { ...makeDoc([]), additional_notes: undefined };
     expect(getDocDetailFields(doc)).toEqual({
       line: '', purpose: '', otherPurpose: [], mapType: '', isAdiCd: false,
-      processSelection: '', partidSelection: '', processId: '', adiExtraCount: 0,
+      processSelection: '', partidSelection: '', processId: '', adiTargets: [],
     });
   });
 
@@ -776,6 +819,7 @@ describe('getDocDetailFields — detail_summary(목록) / additional_notes(상�
       detail_summary: {
         line: '', request_purpose: 'MAP 삭제', other_purpose: [], map_type: '',
         process_selection: '', partid_selection: '', process_id: '', adi_cd_extra_count: 0,
+        adi_cd_targets: [],
       },
     };
     const rows = getDocTableRows(doc, t);
@@ -783,5 +827,74 @@ describe('getDocDetailFields — detail_summary(목록) / additional_notes(상�
     expect(rows).toHaveLength(1);
     expect(rows[0].pathKey).toBe('grid');
     expect(rows[0].cells!.some((c) => c.slot === 'O')).toBe(true);
+  });
+});
+
+describe('buildAdiCdTargets — 첫 대상 + 추가 대상 (백엔드 adi_cd_targets_from_detail 과 같은 규약)', () => {
+  it('첫 대상 뒤에 추가 대상을 입력 순서대로 붙인다', () => {
+    expect(buildAdiCdTargets({
+      partid_selection: 'A', process_id: 'R1',
+      adi_cd_extra_targets: [{ partid_selection: 'B', process_id: 'R1' }, { partid_selection: 'C', process_id: 'R2' }],
+    })).toEqual([
+      { partid_selection: 'A', process_id: 'R1' },
+      { partid_selection: 'B', process_id: 'R1' },
+      { partid_selection: 'C', process_id: 'R2' },
+    ]);
+  });
+
+  it('추가 대상이 없거나 배열이 아니면 첫 대상만', () => {
+    expect(buildAdiCdTargets({ partid_selection: 'A', process_id: 'R1' }))
+      .toEqual([{ partid_selection: 'A', process_id: 'R1' }]);
+    expect(buildAdiCdTargets({
+      partid_selection: 'A', process_id: 'R1',
+      adi_cd_extra_targets: 'oops' as unknown as undefined,
+    })).toEqual([{ partid_selection: 'A', process_id: 'R1' }]);
+  });
+
+  it('제품 이름·조리법이 모두 빈 행은 싣지 않고, 한쪽만 비면 남긴다', () => {
+    expect(buildAdiCdTargets({
+      partid_selection: '', process_id: '',
+      adi_cd_extra_targets: [{ partid_selection: '', process_id: '' }, { partid_selection: 'B' }, { process_id: 'R2' }],
+    })).toEqual([
+      { partid_selection: 'B', process_id: '' },
+      { partid_selection: '', process_id: 'R2' },
+    ]);
+  });
+});
+
+describe('groupAdiTargetsByProcessId — 조리법 기준 묶음', () => {
+  const T = (partid: string, processId: string) => ({ partid_selection: partid, process_id: processId });
+
+  it('조리법이 같고 제품 이름이 다른 흔한 경우: 조리법 한 묶음에 제품이 입력 순서대로 모인다', () => {
+    expect(groupAdiTargetsByProcessId([T('A', 'R1'), T('B', 'R1'), T('C', 'R1')]))
+      .toEqual([{ processId: 'R1', products: ['A', 'B', 'C'] }]);
+  });
+
+  it('제품 이름이 같고 조리법이 다른 드문 경우: 그 제품이 조리법별 묶음에 각각 나온다(하나도 빠지지 않음)', () => {
+    const groups = groupAdiTargetsByProcessId([T('A', 'R1'), T('B', 'R1'), T('A', 'R2')]);
+    expect(groups).toEqual([
+      { processId: 'R1', products: ['A', 'B'] },
+      { processId: 'R2', products: ['A'] },
+    ]);
+    expect(groups.reduce((n, g) => n + g.products.length, 0)).toBe(3);
+  });
+
+  it('묶음 순서는 조리법이 처음 나온 순서다(뒤에서 다시 나와도 앞 묶음에 합친다)', () => {
+    expect(groupAdiTargetsByProcessId([T('A', 'R2'), T('B', 'R1'), T('C', 'R2')])).toEqual([
+      { processId: 'R2', products: ['A', 'C'] },
+      { processId: 'R1', products: ['B'] },
+    ]);
+  });
+
+  it('전부 조리법이 다르면 대상마다 묶음 하나', () => {
+    expect(groupAdiTargetsByProcessId([T('A', 'R1'), T('B', 'R2')])).toHaveLength(2);
+  });
+
+  it('빈 값은 "-" 로 표시하고, 빈 목록은 빈 목록', () => {
+    expect(groupAdiTargetsByProcessId([T('', 'R1'), T('B', '')])).toEqual([
+      { processId: 'R1', products: ['-'] },
+      { processId: '-', products: ['B'] },
+    ]);
+    expect(groupAdiTargetsByProcessId([])).toEqual([]);
   });
 });
