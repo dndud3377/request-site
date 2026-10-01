@@ -1,6 +1,6 @@
 // 결재 현황 테이블 계산 헬퍼 — ApprovalPage 와 HomePage(최근 의뢰 현황)가 동일한 표를 그리도록 공유한다.
 import type { TFunction } from 'i18next';
-import { RequestDocument, ApprovalStepFrontend, AgentType, isPlRole } from '../types';
+import { RequestDocument, ApprovalStepFrontend, AgentType, AdiCdTargetSummary, isPlRole } from '../types';
 import { formatDate } from './date';
 import { MAP_DELETE_EDIT_PURPOSE, ADI_CD_CHANGE_PURPOSE } from '../pages/RequestPage/constants';
 
@@ -37,13 +37,56 @@ export interface DocDetailFields {
   processSelection: string;
   partidSelection: string;
   processId: string;
-  /** ADI CD 변경의 '동일 변경 적용 대상' 추가 건수(제목의 (+N) 배지와 동일) */
-  adiExtraCount: number;
+  /** ADI CD 변경의 '동일 변경 적용 대상' 전체(첫 대상 + 추가 대상). ADI CD 변경이 아니면 빈 배열 */
+  adiTargets: AdiCdTargetSummary[];
 }
+
+/** 대상의 제품 이름/조리법이 비어 있을 때 그룹 표시에 쓰는 자리표시 */
+const ADI_TARGET_EMPTY_LABEL = '-';
+
+/** buildAdiCdTargets 가 읽는 detail 의 모양 — 상세 조회(DetailFormState)·additional_notes JSON 둘 다 맞는다 */
+interface AdiCdTargetSource {
+  partid_selection?: string;
+  process_id?: string;
+  adi_cd_extra_targets?: Array<{ partid_selection?: string; process_id?: string }>;
+}
+
+/**
+ * '동일 변경 적용 대상' 전체(첫 대상 + 추가 대상) — 백엔드 RequestDocument.adi_cd_targets_from_detail 과
+ * 같은 규약이다(제품 이름·조리법이 모두 빈 행은 싣지 않는다). 요청 목적 판정은 호출하는 쪽이 한다.
+ */
+export const buildAdiCdTargets = (detail: AdiCdTargetSource): AdiCdTargetSummary[] => {
+  const extras = Array.isArray(detail.adi_cd_extra_targets) ? detail.adi_cd_extra_targets : [];
+  return [detail, ...extras]
+    .map((row) => ({ partid_selection: row.partid_selection ?? '', process_id: row.process_id ?? '' }))
+    .filter((row) => row.partid_selection || row.process_id);
+};
+
+export interface AdiCdTargetGroup {
+  processId: string;
+  products: string[];
+}
+
+/**
+ * 대상을 조리법 기준으로 묶는다 — 조리법은 처음 나온 순서, 제품은 입력 순서를 그대로 유지한다.
+ * 조리법이 같고 제품 이름이 다른 경우가 흔하므로 조리법을 묶음 기준으로 둔다. 같은 제품이 다른
+ * 조리법에도 있으면 각 묶음에 한 번씩 나온다(대상은 하나도 빠지지 않는다).
+ */
+export const groupAdiTargetsByProcessId = (targets: AdiCdTargetSummary[]): AdiCdTargetGroup[] => {
+  const groups: AdiCdTargetGroup[] = [];
+  targets.forEach((target) => {
+    const processId = target.process_id || ADI_TARGET_EMPTY_LABEL;
+    const product = target.partid_selection || ADI_TARGET_EMPTY_LABEL;
+    const group = groups.find((g) => g.processId === processId);
+    if (group) group.products.push(product);
+    else groups.push({ processId, products: [product] });
+  });
+  return groups;
+};
 
 const EMPTY_DETAIL_FIELDS: DocDetailFields = {
   line: '', purpose: '', otherPurpose: [], mapType: '', isAdiCd: false,
-  processSelection: '', partidSelection: '', processId: '', adiExtraCount: 0,
+  processSelection: '', partidSelection: '', processId: '', adiTargets: [],
 };
 
 /** 결재 현황 목록의 라인/목적/MAP 목적/제품(조합법-제품-조리법) 컬럼용 값 — JSON 파싱 실패 시 빈 값 */
@@ -60,7 +103,8 @@ export const getDocDetailFields = (doc: RequestDocument): DocDetailFields => {
       processSelection: summary.process_selection,
       partidSelection: summary.partid_selection,
       processId: summary.process_id,
-      adiExtraCount: summary.adi_cd_extra_count,
+      // 백엔드보다 프론트가 먼저 배포된 짧은 구간에는 이 필드가 없을 수 있어 빈 배열로 받는다.
+      adiTargets: summary.adi_cd_targets ?? [],
     };
   }
   // 상세 조회 응답·반려 스냅샷·투어 시드는 종전대로 additional_notes(JSON 전체)를 판다.
@@ -77,7 +121,7 @@ export const getDocDetailFields = (doc: RequestDocument): DocDetailFields => {
       processSelection: d.process_selection ?? '',
       partidSelection: d.partid_selection ?? '',
       processId: d.process_id ?? '',
-      adiExtraCount: Array.isArray(d.adi_cd_extra_targets) ? d.adi_cd_extra_targets.length : 0,
+      adiTargets: purpose === ADI_CD_CHANGE_PURPOSE ? buildAdiCdTargets(d) : [],
     };
   } catch {
     return EMPTY_DETAIL_FIELDS;
