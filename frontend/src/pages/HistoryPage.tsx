@@ -90,6 +90,7 @@ const snapshotToDocument = (snap: RejectionSnapshot): RequestDocument => ({
   submitted_at: snap.submitted_at,
   approval_steps: snap.approval_steps,
   requester_loginid: snap.requester_loginid,
+  layer_drift_detected: snap.layer_drift_detected,
 });
 
 /** 삭제 확인 대상 — 문서와 반려 이력은 지우는 API 가 다르다. */
@@ -533,6 +534,9 @@ export default function HistoryPage(): React.ReactElement {
             reviewItems={reviewItemsReadonly(selected)}
             // 결재가 끝난 문서 — 한 번이라도 바뀐 항목을 회차별로 볼 수 있게 한다.
             historyMode
+            // 반려 이력(status='rejected')만 반려 시점의 '변경 감지' 뱃지를 표시한다(diff 모달 없음).
+            // 결재 완료 문서는 감지값이 남아 있어도 숨긴다(isLayerDriftVisible 과 같은 기준).
+            layerDriftBadgeReadonly={selected.status === 'rejected'}
           />
         </Modal>
       )}
