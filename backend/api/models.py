@@ -1628,6 +1628,9 @@ class RejectionSnapshot(models.Model):
     reject_comment = models.TextField(blank=True, verbose_name='반려 사유')
     # 마스터 DB 변경 감지 자동 반려로 쌓인 이력인지 — 반려 시점의 '변경 감지' 배지를 이력에도 남긴다.
     layer_drift_detected = models.BooleanField(default=False, verbose_name='레이어 정보 변경 감지 여부')
+    # 반려 시점의 변경 감지 diff(JSON: jayer/oayer/extra + checked_at) — 이력 목록의 '변경 감지' 배지를
+    # 눌렀을 때 무엇이 바뀌어 반려됐는지 보여주는 데이터. layer_drift_detected 일 때만 채워진다.
+    layer_drift_detail = models.TextField(blank=True, verbose_name='레이어 정보 변경 상세(JSON)')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='적재일시')
 
     class Meta:
