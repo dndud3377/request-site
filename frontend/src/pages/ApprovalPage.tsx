@@ -133,6 +133,9 @@ const canConfirmExtraZoneStep = (
   return !!step.assignee_loginid && step.assignee_loginid === loginid;
 };
 
+// 어느 구역에도 속하지 않는 단계(zone_index 가 null)를 묶는 그룹 키 — 구역 이름을 붙이지 않는다.
+const NO_ZONE_INDEX = -1;
+
 interface WithdrawNeedItem {
   step: ApprovalStepFrontend;
   isCurrentZone: boolean;
@@ -436,6 +439,7 @@ export default function ApprovalPage(): React.ReactElement {
     if (filter === 'draft') return all.filter(d => d.status === 'draft');
     if (filter === 'rejected') return all.filter(d => d.status === 'rejected');
     if (filter === 'pause') return all.filter(d => d.status === 'pause');
+    if (filter === 'withdraw') return all.filter(d => d.withdraw_request != null);
     // MY 판정은 홈 '나의 의뢰 현황'과 공유한다(utils/approvalTable.isMyDocument).
     if (filter === 'my') return all.filter((d) => isMyDocument(d, currentUser));
     if (filter.startsWith('agent_')) {
@@ -455,6 +459,7 @@ export default function ApprovalPage(): React.ReactElement {
     if (key === 'draft') return base.filter(d => d.status === 'draft').length;
     if (key === 'rejected') return base.filter(d => d.status === 'rejected').length;
     if (key === 'pause') return base.filter(d => d.status === 'pause').length;
+    if (key === 'withdraw') return base.filter(d => d.withdraw_request != null).length;
     if (key === 'my') return base.filter(d => isMyDocument(d, currentUser)).length;
     if (key.startsWith('agent_')) {
       const agent = key.replace('agent_', '');
@@ -755,6 +760,7 @@ export default function ApprovalPage(): React.ReactElement {
     { key: 'agent_O', baseLabel: t('approval.filter_agent_O') },
     { key: 'agent_E', baseLabel: t('approval.filter_agent_E') },
     { key: 'pause', baseLabel: t('approval.filter_pause') },
+    { key: 'withdraw', baseLabel: t('approval.filter_withdraw') },
     { key: 'draft', baseLabel: t('approval.filter_draft') },
     { key: 'rejected', baseLabel: t('approval.filter_rejected') },
   ];
@@ -2649,14 +2655,10 @@ export default function ApprovalPage(): React.ReactElement {
           // 철회 요청 관련 버튼 노출 계산 (확인 인가는 중단 확인과 동일 규칙)
           const wr = selected?.withdraw_request;
           let withdrawConfirmAgent: AgentType | undefined;
-          if (wr) {
-            const target = (selected?.approval_steps ?? []).find(
-              (s) => s.action === 'pending'
-                && wr.target_step_ids.includes(s.id)
-                && !wr.confirmed_step_ids.includes(s.id)
-                && canConfirmPauseStep(currentUser, s)
-            );
-            withdrawConfirmAgent = target?.agent;
+          if (wr && selected) {
+            // 현재 구역·이전 회차 도달 구역 구분 없이, 내가 아직 확인하지 않은 대상 단계 중 첫 번째
+            const target = getWithdrawNeedItems(selected, currentUser).find((item) => item.mine);
+            withdrawConfirmAgent = target?.step.agent;
           }
           // 철회 요청 취소는 '요청한 본인'만 — 작성자가 아니라 요청자 기준(서버와 동일)
           const canCancelWithdraw = !!wr
@@ -3408,15 +3410,13 @@ export default function ApprovalPage(): React.ReactElement {
                   </div>
                   {(() => {
                     const needItems = getWithdrawNeedItems(selected, currentUser);
-                    const currentZoneItems = needItems.filter((item) => item.isCurrentZone);
-                    const extraItems = needItems.filter((item) => !item.isCurrentZone);
-                    const extraByZone = extraItems.reduce<Record<number, WithdrawNeedItem[]>>((acc, item) => {
-                      const zi = item.step.zone_index ?? -1;
+                    const itemsByZone = needItems.reduce<Record<number, WithdrawNeedItem[]>>((acc, item) => {
+                      const zi = item.step.zone_index ?? NO_ZONE_INDEX;
                       acc[zi] = acc[zi] ?? [];
                       acc[zi].push(item);
                       return acc;
                     }, {});
-                    const zoneIndexes = Object.keys(extraByZone).map(Number).sort((a, b) => a - b);
+                    const zoneIndexes = Object.keys(itemsByZone).map(Number).sort((a, b) => a - b);
 
                     const renderChip = (item: WithdrawNeedItem) => (
                       <span key={item.step.id} className={`pause-cf ${item.done ? 'done' : item.mine ? 'mine' : ''}`}>
@@ -3431,18 +3431,14 @@ export default function ApprovalPage(): React.ReactElement {
                         <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 700 }}>
                           {t('approval.withdraw_confirm_status')}
                         </div>
-                        <div className="pause-confirm-track">{currentZoneItems.map(renderChip)}</div>
-                        {zoneIndexes.length > 0 && (
-                          <div className="zone-extra">
-                            <div className="zone-extra-label">{t('approval.withdraw_extra_zone_label')}</div>
-                            {zoneIndexes.map((zi) => (
-                              <div className="zone-group" key={zi}>
-                                <span className="zone-group-name">{t('approval.zone_label', { zone: zi + 1 })}</span>
-                                <div className="pause-confirm-track">{extraByZone[zi].map(renderChip)}</div>
-                              </div>
-                            ))}
+                        {zoneIndexes.map((zi) => (
+                          <div className="zone-group" key={zi}>
+                            {zi !== NO_ZONE_INDEX && (
+                              <span className="zone-group-name">{t('approval.zone_label', { zone: zi + 1 })}</span>
+                            )}
+                            <div className="pause-confirm-track">{itemsByZone[zi].map(renderChip)}</div>
                           </div>
-                        )}
+                        ))}
                       </>
                     );
                   })()}
