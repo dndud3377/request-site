@@ -6,6 +6,7 @@ import StatusBadge from '../components/StatusBadge';
 import StageGrid from '../components/StageGrid';
 import AdiCdTargetsCell from '../components/AdiCdTargetsCell';
 import Modal, { ConfirmModal } from '../components/Modal';
+import LayerDriftModal from '../components/LayerDriftModal';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '../components/PagedDetailView';
@@ -13,7 +14,7 @@ import { ReviewItemsNotice } from '../components/ReviewItems';
 import { canUserAgree, canUserAssign, canUserClaim, canUserUnclaim, REVIEW_AGENT_OF, ROLE_TO_AGENT } from '../components/ApprovalFlow';
 import { MarkDot, MarkCategorySettingsModal } from '../components/DocumentMark';
 import ApprovalListExportModal from '../components/ApprovalListExportModal';
-import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet, LayerDriftResponse, LayerDriftGroup, LayerDriftStepRow, isPlRole, plRoleFor } from '../types';
+import { RequestDocument, AgentType, UserRole, UserWithRole, ApprovalStepFrontend, ValidationSystemValue, PartialShotValue, UserGroup, ReviewItem, LayerFilterSet, PersonalMarkCategory, ColorFilterSet, LayerDriftResponse, isPlRole, plRoleFor } from '../types';
 import { formatDate, formatTime } from '../utils/date';
 import { exportAll as exportAllXlsx } from '../utils/detailExport';
 import FilterManageModal from './RequestPage/components/FilterManageModal';
@@ -1499,15 +1500,6 @@ export default function ApprovalPage(): React.ReactElement {
   const [layerDriftDoc, setLayerDriftDoc] = useState<RequestDocument | null>(null);
   const [layerDriftData, setLayerDriftData] = useState<LayerDriftResponse | null>(null);
   const [layerDriftLoading, setLayerDriftLoading] = useState(false);
-  const [driftTab, setDriftTab] = useState<'jayer' | 'oayer' | 'extra'>('jayer');
-  const DRIFT_TABS: Array<{
-    key: 'jayer' | 'oayer' | 'extra';
-    titleKey: 'approval.layer_drift_jayer_title' | 'approval.layer_drift_oayer_title' | 'approval.layer_drift_extra_title';
-  }> = [
-    { key: 'jayer', titleKey: 'approval.layer_drift_jayer_title' },
-    { key: 'oayer', titleKey: 'approval.layer_drift_oayer_title' },
-    { key: 'extra', titleKey: 'approval.layer_drift_extra_title' },
-  ];
 
   const openLayerDrift = async (doc: RequestDocument) => {
     setLayerDriftDoc(doc);
@@ -1516,68 +1508,12 @@ export default function ApprovalPage(): React.ReactElement {
     try {
       const data = await documentsAPI.getLayerDrift(doc.id);
       setLayerDriftData(data);
-      // 실제 변경이 있는 첫 탭을 기본 선택 — 클릭 없이도 변경 내용을 바로 보게 한다.
-      const firstChanged = DRIFT_TABS.find((tab) => !isDriftGroupEmpty(data[tab.key]));
-      setDriftTab(firstChanged ? firstChanged.key : 'jayer');
     } catch {
       addToast(t('common.load_error'), 'error');
       setLayerDriftDoc(null);
     } finally {
       setLayerDriftLoading(false);
     }
-  };
-
-  // 변경 현황(ChangeStatusPage) 상세보기와 동일한 구성 — 삭제/추가 각각 배지+표(STEP/내용/Recipe ID/영역/레이어).
-  const driftDetailTable = (rows: LayerDriftStepRow[], kind: 'added' | 'removed'): React.ReactElement | null => {
-    if (rows.length === 0) return null;
-    return (
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, marginBottom: 10 }}>
-          <span className={`badge ${kind === 'added' ? 'badge-approved' : 'badge-rejected'}`}>
-            {t(kind === 'added' ? 'change_status.added_label' : 'change_status.removed_label')}
-          </span>
-          {t('change_status.count_unit', { count: rows.length })}
-        </div>
-        <div className="table-wrapper">
-          <table className="table table-compact change-status-detail-table">
-            <thead>
-              <tr>
-                <th>{t('change_status.modal_col_step')}</th>
-                <th>{t('change_status.modal_col_descript')}</th>
-                <th>{t('change_status.modal_col_recipe')}</th>
-                <th>{t('change_status.modal_col_area')}</th>
-                <th>{t('change_status.modal_col_layer')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, idx) => (
-                <tr key={idx}>
-                  <td><span className="cell-clamp-2">{row.stepseq}</span></td>
-                  <td><span className="cell-clamp-2">{row.descript}</span></td>
-                  <td><span className="cell-clamp-2">{row.recipeid}</span></td>
-                  <td><span className="cell-clamp-2">{row.areaname || '-'}</span></td>
-                  <td><span className="cell-clamp-2">{row.layerid || '-'}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  };
-
-  const isDriftGroupEmpty = (group: LayerDriftGroup | undefined): boolean =>
-    !group || (group.removed.length === 0 && group.added.length === 0);
-
-  const driftLayerSection = (title: string, group: LayerDriftGroup | undefined): React.ReactElement | null => {
-    if (isDriftGroupEmpty(group)) return null;
-    return (
-      <div style={{ marginBottom: 24 }}>
-        {title && <div style={{ fontWeight: 800, fontSize: '0.95rem', marginBottom: 12 }}>{title}</div>}
-        {driftDetailTable(group!.removed, 'removed')}
-        {driftDetailTable(group!.added, 'added')}
-      </div>
-    );
   };
 
   // 임시저장 공유 그룹 지정 모달 — 내가 속한 그룹 중 하나를 골라 draft 를 공유한다.
@@ -2502,46 +2438,11 @@ export default function ApprovalPage(): React.ReactElement {
       )}
 
       {layerDriftDoc && (
-        <Modal
-          isOpen
+        <LayerDriftModal
+          data={layerDriftData}
+          loading={layerDriftLoading}
           onClose={() => { setLayerDriftDoc(null); setLayerDriftData(null); }}
-          title={t('approval.layer_drift_modal_title')}
-          size="md"
-          topLevel
-          draggable
-        >
-          {layerDriftLoading || !layerDriftData ? (
-            <p>{t('common.loading')}</p>
-          ) : (
-            <>
-              {layerDriftData.checked_at && (
-                <p style={{ margin: '0 0 16px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                  {t('approval.layer_drift_checked_at', {
-                    date: formatDate(layerDriftData.checked_at),
-                    time: formatTime(layerDriftData.checked_at),
-                  })}
-                </p>
-              )}
-              <div className="filter-tabs" style={{ marginBottom: 16 }}>
-                {DRIFT_TABS.map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    className={`filter-tab ${driftTab === tab.key ? 'active' : ''}`}
-                    onClick={() => setDriftTab(tab.key)}
-                  >
-                    {t(tab.titleKey)}
-                  </button>
-                ))}
-              </div>
-              {isDriftGroupEmpty(layerDriftData[driftTab]) ? (
-                <p>{t('change_status.no_data')}</p>
-              ) : (
-                driftLayerSection('', layerDriftData[driftTab])
-              )}
-            </>
-          )}
-        </Modal>
+        />
       )}
 
       {/* 상세 모달 */}
