@@ -58,6 +58,10 @@ AUTO_REJECT_COMMENT_PREFIX = mailer.AUTO_REJECT_COMMENT_PREFIX
 # 반려 이력(RejectionSnapshot)에 남기는 반려자 — (loginid, 이름). 사람이 누른 반려가 아니다.
 SYSTEM_REJECTER = ('system', '시스템(자동반려)')
 
+# 이 단계들이 현재 회차에서 전부 합의(approved)했으면 자동 반려하지 않고 배지만 띄운다.
+# 문서에 없는 단계(예: ADI CD 변경의 O)는 비교 대상에서 빠진다.
+PJO_AGENTS = ('P', 'PV', 'J', 'O')
+
 LAYER_KEYS = ('jayer', 'oayer', 'extra')
 LAYER_LABELS = {'jayer': 'J-layer', 'oayer': 'O-layer', 'extra': 'XXXXXX'}
 # 반려 사유(단계 의견)에 나열하는 변경 건수 상한 — 초과분은 '외 N건' 으로 줄인다.
@@ -323,6 +327,21 @@ def _auto_reject_comment(changes):
     return f'{AUTO_REJECT_COMMENT_PREFIX} 마스터 DB 변경 감지: ' + '; '.join(parts) + suffix
 
 
+def is_pjo_agreed(document):
+    """현재 회차의 P(PV 포함)·J·O 단계가 하나 이상 있고 전부 합의(approved)했는지.
+
+    합의가 끝난 문서는 마스터 DB 변경이 감지돼도 자동 반려하지 않고 '변경 감지' 배지만 띄운다.
+    E/EV·RA·R/RV 단계는 보지 않는다.
+    """
+    max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max']
+    if max_round is None:
+        return False
+    actions = list(ApprovalStep.objects.filter(
+        document=document, round=max_round, agent__in=PJO_AGENTS,
+    ).values_list('action', flat=True))
+    return bool(actions) and all(action == 'approved' for action in actions)
+
+
 def auto_reject_document(document_id, changes):
     """마스터 DB 변경이 확정된 문서를 자동 반려한다. 반려했으면 True, 건너뛰면 False.
 
@@ -332,13 +351,16 @@ def auto_reject_document(document_id, changes):
     `[자동반려]` 머리말과 변경 요약을 남긴다.
 
     건너뛰는 경우: 이미 상태가 바뀜(under_review/pause 아님) · 철회 확인 대기 중(결재 동결 —
-    철회가 취소되면 cancel_withdraw 가 다시 판정한다) · 대기 단계가 없음.
+    철회가 취소되면 cancel_withdraw 가 다시 판정한다) · P·J·O 합의 완료(배지만 띄운다 —
+    `is_pjo_agreed`) · 대기 단계가 없음.
     """
     with transaction.atomic():
         document = RequestDocument.objects.select_for_update().get(pk=document_id)
         if document.status not in AUTO_REJECT_STATUSES:
             return False
         if WithdrawRequest.objects.filter(document=document, state='requested').exists():
+            return False
+        if is_pjo_agreed(document):
             return False
 
         max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max']
