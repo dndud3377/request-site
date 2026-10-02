@@ -262,6 +262,35 @@ describe('임시저장 왕복 — 불러온 값이 그대로 다시 저장되는
     }
   });
 
+  it('제목: 기준 키와 일치하는 흐름도 행의 Step 이 [..][..] 로 \'요청서\' 자리에 들어간다', async () => {
+    mockState.doc = {
+      ...fixtureDoc,
+      additional_notes: JSON.stringify({
+        ...fixtureNotes,
+        detail: {
+          ...fixtureDetail,
+          flow_chart: [
+            { id: 'flow1', location: LINE, product_name: PRODUCT, process_id: PROCESS_ID, step_from: '10', step_to: '20' },
+            ...fixtureDetail.flow_chart,
+            { id: 'flow3', location: LINE, product_name: PRODUCT, process_id: PROCESS_ID, step_from: '90', step_to: '100' },
+          ],
+        },
+      }),
+    };
+    await renderLoadedPage();
+    await saveDraftAndCapture();
+    const { title } = mockState.captured as { title: string };
+    expect(title).toMatch(new RegExp(`_${PROCESS_ID}_\\[10~20\\]\\[90~100\\]_\\d{6}$`));
+    expect(title).not.toContain('요청서');
+  });
+
+  it('제목: 기준 키와 일치하는 흐름도 행이 없으면 종전처럼 \'요청서\' 를 쓴다', async () => {
+    await renderLoadedPage();  // 픽스처의 흐름도 행은 다른 위치·제품·조리법이라 일치하지 않는다
+    await saveDraftAndCapture();
+    const { title } = mockState.captured as { title: string };
+    expect(title).toMatch(new RegExp(`_${PROCESS_ID}_요청서_\\d{6}$`));
+  });
+
   it('사용자가 원본 위치를 직접 바꾸면 원본 제품은 종전대로 초기화된다', async () => {
     // BEFORE/AFTER 미매핑이 남아 있으면 step 이동이 막히므로, 그 관문이 없는 문서로 바꿔 끼운다.
     mockState.doc = {
