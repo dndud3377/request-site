@@ -1626,6 +1626,8 @@ class RejectionSnapshot(models.Model):
     rejected_by_name = models.CharField(max_length=100, blank=True, verbose_name='반려자 이름')
     rejected_by_loginid = models.CharField(max_length=150, blank=True, verbose_name='반려자 로그인 ID')
     reject_comment = models.TextField(blank=True, verbose_name='반려 사유')
+    # 마스터 DB 변경 감지 자동 반려로 쌓인 이력인지 — 반려 시점의 '변경 감지' 배지를 이력에도 남긴다.
+    layer_drift_detected = models.BooleanField(default=False, verbose_name='레이어 정보 변경 감지 여부')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='적재일시')
 
     class Meta:
