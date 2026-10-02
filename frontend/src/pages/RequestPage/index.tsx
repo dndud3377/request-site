@@ -99,6 +99,7 @@ import {
   makeAdiCdTarget,
   mapInfoDefaults,
   MERGE_MANUAL_FIELDS,
+  TITLE_DEFAULT_LABEL,
 } from './constants';
 import {
   formatUpdatedDate, shouldDisableRow, emptyDraftWords, findNocBorrowViolations, findNocBorrowItemIdViolations, findEmptyStNocViolations,
@@ -106,7 +107,7 @@ import {
   parseClipboardTable, decideAdiCdPaste, buildAdiCdRows, validateAdiCdRows, balanceAdiCdRows, AdiCdHeaderMatch,
   validateAdiCdTargets,
   deriveMergeKind, emptyMergePair, emptyMergeRowInfo, normalizeMergeSide, parseMergePasteRows, validateMergePairs, applyMergePaste,
-  sourceCodeFromPartid, computeExpectedRequestPurpose,
+  sourceCodeFromPartid, computeExpectedRequestPurpose, buildFlowStepTitlePart,
   layeridFieldConsensus, soleParticipantByLayerid, stClearExtra,
 } from './helpers';
 import WizardIndicator from './components/WizardIndicator';
@@ -4219,7 +4220,7 @@ export default function RequestPage(): React.ReactElement {
   };
 
   // ===== API =====
-  // 제목 끝의 `_요청서_YYMMDD`. 기본은 오늘이지만, 이력 바로 등록은 직접 지정한 상신일을 넣는다.
+  // 제목 끝의 `_{Step 또는 요청서}_YYMMDD`. 기본은 오늘이지만, 이력 바로 등록은 직접 지정한 상신일을 넣는다.
   const titleDateStr = (isoDate?: string): string => {
     const d = isoDate ? new Date(`${isoDate}T12:00:00`) : new Date();
     return `${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
@@ -4235,9 +4236,12 @@ export default function RequestPage(): React.ReactElement {
     // ADI CD 변경은 MAP 정보 자체가 없으므로(map_type 미사용) 제목에서 그 구간을 뺀다.
     // '동일 변경 적용 대상' 추가 행이 있으면 제품 이름/조리법 뒤에 (+N) 배지만 붙인다(전체 나열은 안 함).
     const adiCdTargetsBadge = detail.adi_cd_extra_targets.length > 0 ? `(+${detail.adi_cd_extra_targets.length})` : '';
+    // 문서의 라인/제품 이름/조리법과 같은 흐름도 행의 Step 이 있으면 그 값(`[10~20][90~100]`)이 '요청서' 자리를 대신한다.
+    const flowStepPart = buildFlowStepTitlePart(detail.flow_chart, detail.line, detail.partid_selection, detail.process_id)
+      || TITLE_DEFAULT_LABEL;
     const title = isAdiCdChange
-      ? `${detail.line}(${purposePart})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}${adiCdTargetsBadge}_요청서_${dateStr}`
-      : `${detail.line}(${purposePart})_MAP(${detail.map_type})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_요청서_${dateStr}`;
+      ? `${detail.line}(${purposePart})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}${adiCdTargetsBadge}_${flowStepPart}_${dateStr}`
+      : `${detail.line}(${purposePart})_MAP(${detail.map_type})_${detail.process_selection}_${detail.partid_selection}_${detail.process_id}_${flowStepPart}_${dateStr}`;
 
     // 반려된 문서 재상신 시 이전 스냅샷을 history 에 누적
     let history: HistorySnapshot[] = [];
@@ -4627,7 +4631,7 @@ export default function RequestPage(): React.ReactElement {
     isPersistingRef.current = true;
     setSubmitting(true);
     try {
-      // 제목의 `_요청서_YYMMDD` 도 입력한 상신일을 따른다.
+      // 제목의 `_{Step 또는 요청서}_YYMMDD` 도 입력한 상신일을 따른다.
       const enriched = buildEnrichedForm('', false, false, directSubmittedAt);
       let docId = savedId;
       if (!docId) {
