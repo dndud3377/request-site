@@ -8420,6 +8420,83 @@ class LayerDriftAutoRejectTest(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'rejected')
 
+    # ----- P·J·O 합의 완료 문서는 배지만 -----
+
+    def _add_pjo_steps(self, doc, **actions):
+        """현재 회차(round=1)에 P/J/O 단계를 만든다. actions 예: P='approved', J='pending'."""
+        for agent, action in actions.items():
+            ApprovalStep.objects.create(document=doc, agent=agent, action=action, round=1,
+                                        assignee=self.r_user, assignee_name=f'{agent}담당')
+
+    def test_pjo_all_agreed_shows_badge_only(self):
+        """P·J·O 가 모두 합의한 문서는 변경이 계속 감지돼도 반려하지 않고 배지만 띄운다."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._add_pjo_steps(doc, P='approved', J='approved', O='approved')
+        self._cycle(3)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertTrue(doc.layer_drift_detected)
+        self.assertFalse(RejectionSnapshot.objects.filter(document=doc).exists())
+        self.r_step.refresh_from_db()
+        self.assertEqual(self.r_step.action, 'pending')
+
+    def test_pjo_agreed_with_pv_reviewer_still_requires_pv_agreed(self):
+        """PV(P 검토자)도 P 계열이라 하나라도 대기 중이면 합의 완료로 보지 않는다."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._add_pjo_steps(doc, P='approved', PV='pending', J='approved', O='approved')
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+    def test_pjo_partially_agreed_still_rejects(self):
+        """P·J·O 중 하나라도 합의 전이면 기존대로 자동 반려한다."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._add_pjo_steps(doc, P='approved', J='approved', O='pending')
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+    def test_pjo_agreement_ignores_other_agents_and_missing_steps(self):
+        """O 단계가 없는 문서(예: ADI CD 변경)는 있는 P·J 만 보고, E 등 다른 단계는 보지 않는다."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._add_pjo_steps(doc, P='approved', J='approved', E='pending')
+        self._cycle(3)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertTrue(doc.layer_drift_detected)
+
+    def test_pjo_agreement_only_counts_current_round(self):
+        """이전 회차의 합의는 무시한다 — 현재 회차에 P·J·O 단계가 아직 대기면 반려된다."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._add_pjo_steps(doc, P='approved', J='approved', O='approved')  # round 1
+        for agent in ('P', 'J', 'O'):
+            ApprovalStep.objects.create(document=doc, agent=agent, action='pending', round=2,
+                                        assignee=self.r_user, assignee_name=f'{agent}담당')
+        ApprovalStep.objects.create(document=doc, agent='R', action='pending', round=2,
+                                    assignee=self.r_user, assignee_name='R담당')
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+    def test_cancel_withdraw_does_not_reject_when_pjo_agreed(self):
+        """철회 취소 경로도 같은 규칙 — P·J·O 합의 완료 문서는 취소 직후에도 반려하지 않는다."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._add_pjo_steps(doc, P='approved', J='approved', O='approved')
+        self._request_withdraw(doc)
+        self._cycle(2)
+
+        res = self.client.post(f'/api/documents/{doc.id}/cancel-withdraw/', {}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertTrue(doc.layer_drift_detected)
+
     # ----- 상태별 처리 -----
 
     def test_paused_document_is_rejected_and_pause_request_closed(self):
