@@ -800,11 +800,8 @@ select.form-control option {
 .pause-banner.withdraw-banner .pause-banner-title { color: var(--danger); }
 .pause-banner.withdraw-banner .pause-cf.mine { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
 
-/* 철회 — '이전 회차 도달 구역' 확인 UI(2026-09, docs/APPROVAL.md Case J).
-   반려 후 재상신으로 회차가 바뀐 문서를 철회할 때, 과거 회차에서 현재 구역보다 더 깊이
-   도달했던 구역의 팀들도 함께 확인이 필요함을 보여준다. */
-.zone-extra { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--danger); }
-.zone-extra-label { font-size: 0.74rem; color: var(--text-muted); font-weight: 700; margin-bottom: 6px; }
+/* 철회 — 확인 대상 팀을 구역(N구역)별로 묶어 보여준다(docs/APPROVAL.md Case J).
+   현재 구역과 '이전 회차 도달 구역'을 구분하지 않고 한 목록으로 표시한다(2026-10). */
 .zone-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
 .zone-group-name {
   font-size: 0.72rem; font-weight: 700; background: var(--accent-light); color: var(--accent);
