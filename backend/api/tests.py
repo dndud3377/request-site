@@ -4944,6 +4944,7 @@ class RejectionSnapshotTest(TestCase):
         self.assertEqual(snap.rejected_agent, 'R')
         self.assertEqual(snap.rejected_by_loginid, 'r1')
         self.assertEqual(snap.reject_comment, 'R 반려 사유')
+        self.assertFalse(snap.layer_drift_detected)  # 사람이 누른 반려는 변경 감지 뱃지가 없다
         self.assertEqual(snap.round, 1)
         self.assertIsNotNone(snap.rejected_at)
         self.assertEqual(snap.get_detail().get('detail', {}).get('line'), '라인1')
@@ -8330,6 +8331,14 @@ class LayerDriftAutoRejectTest(TestCase):
         self.assertEqual(snap.rejected_by_loginid, 'system')
         self.assertEqual(snap.rejected_by_name, '시스템(자동반려)')
         self.assertTrue(snap.reject_comment.startswith('[자동반려]'))
+        self.assertTrue(snap.layer_drift_detected)
+
+        # 이력 조회 '반려' 탭 API 도 같은 값을 내려준다(뱃지 표시용).
+        self.client.force_authenticate(user=self.author)
+        res = self.client.get('/api/rejection-snapshots/')
+        self.assertEqual(res.status_code, 200, res.content)
+        rows = res.data['data'] if isinstance(res.data, dict) and 'data' in res.data else res.data
+        self.assertTrue(rows[0]['layer_drift_detected'])
 
         notis = list(MailNotification.objects.filter(document=doc, event_type='rejected'))
         self.assertTrue(notis)
