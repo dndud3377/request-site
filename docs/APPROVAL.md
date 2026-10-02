@@ -2010,6 +2010,7 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 | `under_review` | 자동 반려 |
 | `pause`(중단) | 자동 반려 + 확정된 중단 요청(`confirmed`)도 `cancelled` 로 닫음 |
 | 철회 확인 대기 중(`WithdrawRequest.state='requested'`) | **배지만** 표시(결재 동결). `cancel-withdraw` 가 호출되면 그 자리에서 바로 재판정해 같은 변경이 직전 주기에도 감지돼 있었다면 즉시 반려. `reject-withdraw`(철회 거부)로 풀린 경우는 다음 스케줄러 주기에 판정 |
+| 현재 회차의 P(`PV` 포함)·J·O 단계가 전부 합의(`approved`) (2026-10-02) | **배지만** 표시, 자동 반려하지 않음(상태 무관). 문서에 없는 단계는 제외하고 E/EV·R/RV·RA 는 보지 않음 |
 | `submitted` / `approved` / `rejected` / `draft` | 대상 아님 |
 
 - 반려 단계: 현재 회차의 **가장 앞선 pending 단계 1개**가 `rejected` 가 된다(변경 레이어와 맞추지 않음).
