@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { documentsAPI, linesAPI, rejectionSnapshotsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal, { ConfirmModal } from '../components/Modal';
+import LayerDriftModal from '../components/LayerDriftModal';
 import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '../components/PagedDetailView';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
@@ -90,7 +91,6 @@ const snapshotToDocument = (snap: RejectionSnapshot): RequestDocument => ({
   submitted_at: snap.submitted_at,
   approval_steps: snap.approval_steps,
   requester_loginid: snap.requester_loginid,
-  layer_drift_detected: snap.layer_drift_detected,
 });
 
 /** 삭제 확인 대상 — 문서와 반려 이력은 지우는 API 가 다르다. */
@@ -123,6 +123,8 @@ export default function HistoryPage(): React.ReactElement {
   // 전체 export(제목 옆 버튼) — 상세 정보/MAP 정보 탭을 화면 그대로 캡처하는 핸들.
   const pagedDetailViewRef = useRef<PagedDetailViewHandle>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  // 반려 이력 제목 옆 '변경 감지' 배지를 누르면, 반려 시점에 저장된 diff 를 모달로 보여준다.
+  const [layerDriftSnap, setLayerDriftSnap] = useState<RejectionSnapshot | null>(null);
 
   const isRejectedTab = filter === FILTER_REJECTED;
 
@@ -402,7 +404,20 @@ export default function HistoryPage(): React.ReactElement {
                 ? pagedSnapshots.map((snap, index) => (
                   <tr key={snap.id}>
                     <td style={{ color: 'var(--text-muted)' }}>{(listPage - 1) * HISTORY_LIST_PAGE_SIZE + index + 1}</td>
-                    <td>{titleCell(snap.title, () => openSnapshotDetail(snap))}</td>
+                    <td>
+                      {titleCell(snap.title, () => openSnapshotDetail(snap))}
+                      {snap.layer_drift_detected && (
+                        <button
+                          type="button"
+                          className="badge badge-layer-drift"
+                          style={{ cursor: 'pointer', marginLeft: 8 }}
+                          title={t('approval.layer_drift_badge_tooltip')}
+                          onClick={() => setLayerDriftSnap(snap)}
+                        >
+                          {t('approval.layer_drift_badge')}
+                        </button>
+                      )}
+                    </td>
                     <td>{snap.product_name}</td>
                     <td>
                       <div>{snap.requester_name}</div>
@@ -534,11 +549,16 @@ export default function HistoryPage(): React.ReactElement {
             reviewItems={reviewItemsReadonly(selected)}
             // 결재가 끝난 문서 — 한 번이라도 바뀐 항목을 회차별로 볼 수 있게 한다.
             historyMode
-            // 반려 이력(status='rejected')만 반려 시점의 '변경 감지' 뱃지를 표시한다(diff 모달 없음).
-            // 결재 완료 문서는 감지값이 남아 있어도 숨긴다(isLayerDriftVisible 과 같은 기준).
-            layerDriftBadgeReadonly={selected.status === 'rejected'}
           />
         </Modal>
+      )}
+
+      {layerDriftSnap && (
+        <LayerDriftModal
+          data={layerDriftSnap.layer_drift}
+          loading={false}
+          onClose={() => setLayerDriftSnap(null)}
+        />
       )}
 
       <ConfirmModal
