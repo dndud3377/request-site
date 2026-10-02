@@ -1277,8 +1277,6 @@ export interface PagedDetailViewProps {
   onResetOayerColorFilter?: () => void;
   /** '변경 감지' 뱃지 클릭 시 diff 모달을 여는 호출부(ApprovalPage) 핸들러. 넘기지 않으면 뱃지 자체가 뜨지 않는다. */
   onOpenLayerDrift?: () => void;
-  /** true 면 onOpenLayerDrift 없이도 '변경 감지' 뱃지를 클릭 불가 표시용으로 보여준다(반려 이력 화면). */
-  layerDriftBadgeReadonly?: boolean;
 }
 
 /** 전체 export(제목 옆 버튼)가 상세 정보/MAP 정보 탭을 화면 그대로 캡처할 때 쓰는 핸들. */
@@ -1306,25 +1304,9 @@ const PagedDetailView = forwardRef<PagedDetailViewHandle, PagedDetailViewProps>(
   onToggleJayerColorFilter, onToggleOayerColorFilter,
   onOpenJayerColorFilterManage, onOpenOayerColorFilterManage,
   onResetJayerColorFilter, onResetOayerColorFilter,
-  onOpenLayerDrift, layerDriftBadgeReadonly,
+  onOpenLayerDrift,
 }, ref) {
   const { t } = useTranslation();
-  const showLayerDriftBadge = !!doc.layer_drift_detected && (!!onOpenLayerDrift || !!layerDriftBadgeReadonly);
-  const layerDriftBadge = onOpenLayerDrift ? (
-    <button
-      type="button"
-      className="badge badge-layer-drift"
-      style={{ cursor: 'pointer' }}
-      title={t('approval.layer_drift_badge_tooltip')}
-      onClick={onOpenLayerDrift}
-    >
-      {t('approval.layer_drift_badge')}
-    </button>
-  ) : (
-    <span className="badge badge-layer-drift" title={t('approval.layer_drift_badge_tooltip')}>
-      {t('approval.layer_drift_badge')}
-    </span>
-  );
   const { isFullscreen, setIsFullscreen } = useModalFullscreen();
   const detailTabRef = useRef<HTMLDivElement>(null);
   const mapTabRef = useRef<HTMLDivElement>(null);
@@ -2510,7 +2492,17 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                 {t('request.validation_system_changed_by', { name: vsChangedBy, at: vsChangedAt })}
               </span>
             )}
-            {showLayerDriftBadge && layerDriftBadge}
+            {doc.layer_drift_detected && onOpenLayerDrift && (
+              <button
+                type="button"
+                className="badge badge-layer-drift"
+                style={{ cursor: 'pointer' }}
+                title={t('approval.layer_drift_badge_tooltip')}
+                onClick={onOpenLayerDrift}
+              >
+                {t('approval.layer_drift_badge')}
+              </button>
+            )}
           </div>
           {canUseJayerFilter && (
             <div className="wizard-table-toolbar" style={{ marginBottom: 8 }}>
@@ -2571,9 +2563,17 @@ type Page = { label: string; content: React.ReactNode; key?: string };
                   <button onClick={exportOayer} className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '2px 10px' }}>📊 export</button>
                 </div>
               </div>
-              {showLayerDriftBadge && (
+              {doc.layer_drift_detected && onOpenLayerDrift && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  {layerDriftBadge}
+                  <button
+                    type="button"
+                    className="badge badge-layer-drift"
+                    style={{ cursor: 'pointer' }}
+                    title={t('approval.layer_drift_badge_tooltip')}
+                    onClick={onOpenLayerDrift}
+                  >
+                    {t('approval.layer_drift_badge')}
+                  </button>
                 </div>
               )}
               {/* 탭 버튼 */}
