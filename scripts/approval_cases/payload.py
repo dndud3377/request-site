@@ -1,8 +1,10 @@
 """의뢰서 생성 payload 빌더 — 화면(RequestPage)이 만드는 것과 같은 모양으로 만든다.
 
-- 제목: `{line}({목적})_MAP({map_type})_{조합법}_{제품}_{process_id}_요청서_{YYMMDD}`
+- 제목: `{line}({목적})_MAP({map_type})_{조합법}_{제품}_{process_id}_{Step 또는 요청서}_{YYMMDD}`
   (`RequestPage/index.tsx` `buildEnrichedForm` 과 동일 규칙 — 사용자가 화면에서 만든 제목과
-  같은 형태로 목록에 보여야 하므로 테스트 접두사 같은 걸 붙이지 않는다.)
+  같은 형태로 목록에 보여야 하므로 테스트 접두사 같은 걸 붙이지 않는다.
+  `{Step 또는 요청서}` 는 흐름도 중 문서의 라인/제품/조리법과 같은 행의 Step(`[10~20][90~100]`),
+  없으면 '요청서'. 러너는 기본으로 흐름도를 채우지 않으므로 보통 '요청서' 다.)
 - `additional_notes`: `{jayerRows, oayerRows, bbRows, detail}` JSON 문자열.
   결재 라우팅이 실제로 읽는 키만 정확히 채우고, 나머지는 화면 기본값과 같은 형태로 둔다.
 """
@@ -28,6 +30,26 @@ NOC_REGISTERED = '기등록'  # 매핑 검증에서 제외되는 특수 행
 
 MAP_TYPE_NEW = 'NEW'
 
+# 프론트 constants.ts 의 TITLE_DEFAULT_LABEL 과 같은 값 — 제목의 `_{라벨}_YYMMDD` 구간 기본값
+TITLE_DEFAULT_LABEL = '요청서'
+
+
+def _flow_step_part(detail):
+    """흐름도 행 중 문서의 라인/제품/조리법과 같은 행의 Step 을 `[10~20][90~100]` 로 잇는다(없으면 '').
+
+    프론트 `helpers.ts` 의 `buildFlowStepTitlePart` 와 같은 규칙이다.
+    """
+    ref = (detail['line'], detail['partid_selection'], detail['process_id'])
+    parts = []
+    for row in detail.get('flow_chart') or []:
+        if (row.get('location'), row.get('product_name'), row.get('process_id')) != ref:
+            continue
+        step_from, step_to = row.get('step_from') or '', row.get('step_to') or ''
+        step = f'{step_from}~{step_to}' if step_from and step_to else (step_from or step_to)
+        if step:
+            parts.append(f'[{step}]')
+    return ''.join(parts)
+
 
 def _title(detail, when=None):
     d = when or datetime.date.today()
@@ -38,7 +60,7 @@ def _title(detail, when=None):
     date_str = f'{str(d.year)[2:]}{d.month:02d}{d.day:02d}'
     return (f"{detail['line']}({purpose_part})_MAP({detail['map_type']})_"
             f"{detail['process_selection']}_{detail['partid_selection']}_"
-            f"{detail['process_id']}_요청서_{date_str}")
+            f"{detail['process_id']}_{_flow_step_part(detail) or TITLE_DEFAULT_LABEL}_{date_str}")
 
 
 def _jayer_rows(combo, plel_required, row_limit=5):

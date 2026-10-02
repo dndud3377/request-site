@@ -7,10 +7,48 @@ import {
   isMergeSideEmpty, normalizeMergeSide, deriveMergeKind, emptyMergeRowInfo, emptyMergePair,
   parseMergePasteRows, validateMergePairs, applyMergePaste, computeExpectedRequestPurpose,
   isPairAfterInactive, layeridFieldConsensus, soleParticipantByLayerid, LayerSyncRow, stClearExtra,
-  matchLayerColor,
+  matchLayerColor, buildFlowStepTitlePart,
 } from './helpers';
 import { VS_NA, VS_TARGET, NOC_LAYER_DELETE, NOC_NEW, NOC_REGISTERED, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL } from './constants';
-import { AdiCdStep, AdiCdTarget, MergePair, MergeRowInfo, ColorFilterSet } from '../../types';
+import { AdiCdStep, AdiCdTarget, FlowChartRow, MergePair, MergeRowInfo, ColorFilterSet } from '../../types';
+
+describe('buildFlowStepTitlePart', () => {
+  const flow = (id: string, location: string, product_name: string, process_id: string, step_from: string, step_to: string): FlowChartRow =>
+    ({ id, location, product_name, process_id, step_from, step_to });
+
+  it('기준 키와 일치하는 행이 하나면 [시작~끝]', () => {
+    const rows = [flow('1', '라인1', 'P1', 'R1', '10', '20'), flow('2', '라인2', 'P2', 'R2', '30', '40')];
+    expect(buildFlowStepTitlePart(rows, '라인1', 'P1', 'R1')).toBe('[10~20]');
+  });
+
+  it('일치하는 행이 여러 개면 행 순서대로 [..][..] 로 잇는다', () => {
+    const rows = [
+      flow('1', '라인1', 'P1', 'R1', '10', '20'),
+      flow('2', '라인2', 'P2', 'R2', '30', '40'),
+      flow('3', '라인1', 'P1', 'R1', '90', '100'),
+    ];
+    expect(buildFlowStepTitlePart(rows, '라인1', 'P1', 'R1')).toBe('[10~20][90~100]');
+  });
+
+  it('위치·제품 이름·조리법 중 하나라도 다르면 일치가 아니다', () => {
+    const rows = [flow('1', '라인1', 'P1', 'R2', '10', '20'), flow('2', '라인1', 'P2', 'R1', '10', '20'), flow('3', '라인2', 'P1', 'R1', '10', '20')];
+    expect(buildFlowStepTitlePart(rows, '라인1', 'P1', 'R1')).toBe('');
+  });
+
+  it('시작·끝 중 한쪽만 있으면 그 값만 쓰고, 둘 다 비면 건너뛴다', () => {
+    const rows = [
+      flow('1', '라인1', 'P1', 'R1', '10', ''),
+      flow('2', '라인1', 'P1', 'R1', '', '20'),
+      flow('3', '라인1', 'P1', 'R1', '', ''),
+    ];
+    expect(buildFlowStepTitlePart(rows, '라인1', 'P1', 'R1')).toBe('[10][20]');
+  });
+
+  it('흐름도가 비었거나 기준 값이 비어 있으면 빈 문자열', () => {
+    expect(buildFlowStepTitlePart([], '라인1', 'P1', 'R1')).toBe('');
+    expect(buildFlowStepTitlePart([flow('1', '', '', '', '', '')], '', '', '')).toBe('');
+  });
+});
 
 describe('isValidationKeywordRow', () => {
   it('pp 가 판정 키워드를 포함하면 true', () => {

@@ -266,6 +266,14 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   이전 커밋에서도 동일하게 실패하는 pre-existing 이슈다. "CRA 빌드는 통과한다"는 과거 기술은 더 이상 사실이 아니다.
 - 테스트는 통과한다: `npx react-scripts test --watchAll=false` → **2 suites / 67건 전부 통과**
   (`RequestPage/helpers.test.ts` 63건 + `locales/terminology.test.ts` 4건).
+- ⚠️ **(2026-10-02 기록 — 조치 보류) `RequestPage/draftRoundTrip.test.tsx` 가 간헐적으로 실패한다.** 실행할 때마다 실패하는
+  테스트가 다르다 — 같은 날 관측: 변경 후 1회 `저장된 행의 st가 X면 TBV/TLV 항목이 사라진다`(`tbvtlv_entries` 가 `[]` 가
+  아니라 1개), 변경 전 기준 상태 1회 `Only MAP: 잠긴 단계를 클릭해도 이동하지 않는다`, 이후 3회 연속 14건 전부 통과.
+  `docs/APPROVAL.md` 에도 같은 파일의 Only MAP 잠금 테스트가 간헐 실패한다는 기록이 이미 있다.
+  원인은 **추정만 했고 재현·확인하지 않았다**: `renderLoadedPage` 가 `await Promise.resolve()` 를 고정 20회 돌려 effect 완료를
+  기다리므로 effect 가 늦으면 저장 시점에 값이 남는 것으로 보인다(조건 대기 `waitFor` 가 아님). 같은 헬퍼를 쓰는 테스트는
+  모두 같은 위험을 공유한다. 결과가 달라지면 변경 탓으로 단정하지 말고 기준 상태에서 같은 테스트를 먼저 돌려 비교할 것.
+  조사하려면: 반복 실행으로 재현 → 고정 횟수 대기를 조건 `waitFor` 로 교체.
 - 하드코딩 한글 문자열 다수 잔존 — CLAUDE.md 규칙 G(i18n) 위반이나, 분리 시 동작 보존 위해 원문 그대로 이동했다. 추후 `request.*` 키로 일괄 이관 필요. 현존 확인된 예:
 
   | 파일 | 문자열 |
@@ -4860,6 +4868,68 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
      한다.]
   3. [2번 이어서, 아무것도 안 바꾸고 곧바로 "다음"/"상신" 클릭] → [기대 결과: 제품 이름이
      "목록에 없는 값" 오류로 막히지 않는지 확인.]
+
+### 기능 변경 (2026-10-02 — 의뢰서 제목의 '요청서' 자리에 흐름도 Step 삽입 + 기존 문서 변환 커맨드)
+
+**요청**: 자동 제목 끝의 `_요청서_YYMMDD` 에서 '요청서' 대신, 흐름도(`flow_chart`) 중 **문서의 기준 키와 일치하는
+행**의 Step(`flow_progress_layer` 라벨 "Step" 아래 `step_from ~ step_to`)이 들어가게 한다. 기존 문서도 가능하면 변환한다.
+
+- **기준 키 / 일치 판정**: 문서의 `detail.line` / `partid_selection` / `process_id` 와 흐름도 행의
+  `location` / `product_name` / `process_id` 가 **세 값 모두 완전 일치**(공백 정리 없음)하는 행. 결재 현황 상세에서
+  흐름도 표가 굵은 검정으로 보여주는 행(`PagedDetailView.tsx` `flowComboKey`, 2026-09-07)과 같은 규칙이다.
+- **제목 형식**: `{라인}({목적})_MAP({map_type})_{조합법}_{제품}_{process_id}_{Step}_{YYMMDD}`
+  (ADI CD 변경은 `MAP(..)` 구간이 없고 process_id 뒤에 `(+N)` 배지가 붙는 기존 형태 그대로).
+  - `{Step}`: 일치 행의 Step 을 **행 순서대로 `[시작~끝]` 으로 이어 붙인다** — 예 `[10~20][90~100]`.
+    시작·끝 중 한쪽만 있으면 `[10]`, 둘 다 비면 그 행은 건너뛴다(Step 은 공백 없이 `~`).
+  - **일치 행이 없으면**(흐름도 비어 있음 · Only MAP/MAP 삭제처럼 흐름도가 초기화되는 목적 · 기준 키와 다른 행만 있음)
+    종전처럼 `요청서`.
+- **구현**:
+  - `RequestPage/helpers.ts` `buildFlowStepTitlePart(flowChart, line, partid, processId)` — 순수 함수(일치 행이 없으면 `''`).
+  - `RequestPage/constants.ts` `TITLE_DEFAULT_LABEL = '요청서'` — 기본 라벨 상수.
+  - `RequestPage/index.tsx` `buildEnrichedForm` — 일반/ADI CD 두 제목 모두 `${buildFlowStepTitlePart(...) || TITLE_DEFAULT_LABEL}` 사용.
+  - 제목은 저장·상신·수정 때마다 이 함수로 다시 만들어지므로, 흐름도를 고친 뒤 저장하면 제목의 Step 도 따라간다.
+    서버 `_unique_title`(중복 `_N` 접미사·600자 제한)은 그대로다.
+  - `scripts/approval_cases/payload.py` — 케이스 러너의 제목 생성도 같은 규칙으로 맞췄다(러너는 흐름도를 채우지 않아 보통 '요청서').
+- **기존 문서 변환 — `python manage.py backfill_title_flow_step`** (`backend/api/management/commands/`):
+  - 제목을 다시 만들지 않고 끝의 `_요청서_YYMMDD[_N]` 에서 **'요청서'만 치환**한다 — 원래 상신 날짜와 `_N` 접미사가 보존된다.
+  - 같은 규칙으로 `additional_notes.detail.flow_chart` 를 읽는다. 일치 행이 없거나, 제목이 `_요청서_YYMMDD[_N]` 로 끝나지
+    않거나(사용자가 바꾼 제목 등), JSON 이 깨진 문서는 **건드리지 않는다**. 이미 변환된 문서도 건드리지 않으므로 재실행해도 결과가 같다.
+  - 변환 결과가 title 한도(600자)를 넘거나 **다른 문서의 제목과 겹치면 그 문서만 건너뛰고** 사유를 출력한다.
+  - **기본은 미리보기(dry-run)** 다. `--apply` 를 줘야 DB 에 반영한다. `.update()` 를 쓰므로 `updated_at` 은 바뀌지 않는다.
+  - 운영 반영 순서: ① `python manage.py backfill_title_flow_step` 로 전/후 목록 확인 → ② 이상 없으면 `--apply`.
+    (⚠️ 이 커맨드를 운영 DB 에 실행한 기록은 이 문서에 없다 — 실행 전 DB 백업 권장.)
+- **변환되지 않는 곳(의도적으로 그대로 둔 것)**: ① 반려 회차 이력(`RejectionSnapshot.title`) — 그 시점의 제목 기록이다.
+  ② 참조 요청서 Merge 에 쓴 문서의 제목 사본(`detail.merge_ref_doc_label`) — 잠긴 입력칸 표시용 스냅샷이다(참조 관계는 id 로 유지됨).
+  ③ 이미 발송된 알림 메일의 제목. ④ 외부 API(`docs/EXTERNAL_API.md`)는 `title` 을 그대로 내려주므로 값만 바뀐다.
+- **영향 파일**: `frontend/src/pages/RequestPage/{index.tsx,helpers.ts,constants.ts}`, `scripts/approval_cases/payload.py`,
+  `backend/api/management/commands/backfill_title_flow_step.py`(신규).
+- **테스트**: `helpers.test.ts` `buildFlowStepTitlePart`(5건) / `draftRoundTrip.test.tsx` 제목 2건(실제 RequestPage 를 렌더해 저장
+  payload 의 `title` 확인) / `backend/api/tests.py` `BackfillTitleFlowStepTest`(7건 — 치환·날짜/접미사 보존·미리보기·적용·재실행·충돌 건너뛰기).
+- **수동 검증 시나리오**:
+  1. [`/request` → 새 의뢰서 → STEP1 에서 라인/조합법/제품 이름/조리법을 고르고, 흐름도 1행째에 위 라인/제품 이름/조리법과
+     **같은 값** + Step `10`~`20`, 2행째에 **다른 값** 조합, 3행째에 1행과 같은 값 + Step `90`~`100` 입력 후 임시저장]
+     → [결재 현황(임시저장 탭) → 방금 문서] → [기대 결과: 모달 제목과 목록 검색에서 `..._[10~20][90~100]_YYMMDD` 로 보이고,
+     '의뢰 상세' 흐름도 표에서 굵은 검정으로 보이는 행(1·3행)의 Step 과 같다. 제목에 '요청서' 는 없다.]
+  2. [같은 문서에서 3행의 Step 을 `95`~`100` 으로 고쳐 다시 임시저장] → [기대 결과: 제목이 `[10~20][95~100]` 으로 바뀐다.]
+  3. [흐름도를 모두 비우거나 1·3행의 제품 이름을 다른 값으로 바꿔 임시저장] → [기대 결과: 제목이 종전처럼 `..._요청서_YYMMDD`.]
+  4. [Only MAP 으로 새 의뢰서 작성(흐름도 입력칸 잠김)] → [기대 결과: 제목이 `..._요청서_YYMMDD`.]
+  5. [ADI CD 변경으로 새 의뢰서 작성 후 흐름도 일치 행 입력] → [기대 결과: `..._{process_id}(+N)_[10~20]_YYMMDD` — MAP 구간 없음.]
+  6. [기존 문서 변환: `python manage.py backfill_title_flow_step` → 전/후 목록 확인 → `--apply` → `/approval` 새로고침] → [기대 결과: 일치 행이
+     있던 문서만 제목이 바뀌고 날짜(`_261001`)와 `_N` 접미사는 그대로. 다시 실행하면 `0건 변환 예정`.]
+- **알려진 한계 (2026-10-02 기록 — 현재 기능에는 문제가 없어 조치 보류, 필요해지면 그때 결정)**:
+  1. **제목 사본은 기존 문서 변환 대상이 아니다.** 변환 커맨드는 `RequestDocument.title` 만 바꾼다. 따라서 같은 의뢰서의 제목이
+     화면마다 다르게 보일 수 있다 — 이력 조회 '반려' 탭은 반려 당시 사본(`RejectionSnapshot.title`, `HistoryPage.tsx` `snap.title`)을,
+     그 외 화면은 현재 제목을 보여준다. 참조 요청서 Merge 에 쓴 문서의 라벨 사본(`detail.merge_ref_doc_label`, 다른 문서의
+     `additional_notes` JSON 안)은 잠긴 입력칸 표시용이라 옛 제목이 보일 뿐 참조 관계(`merge_ref_doc_id`)는 유지된다.
+     메일 큐(`MailNotification.subject`)는 적재 시점의 제목을 저장하므로 대기·실패 상태의 메일은 옛 제목으로 나간다.
+     (변환하려면 반려 이력은 이력 자체의 `additional_notes` 로 같은 규칙을 적용하는 커맨드 확장이 가능하다. `merge_ref_doc_label` 은
+     다른 문서의 JSON 을 id 로 찾아 고쳐야 해 위험이 크다.)
+  2. **제목의 '요청서' 글자에 기대는 곳은 영향을 받는다.** 변환된 문서·새 문서는 서버 검색(`search_fields` 에 `title` 포함)에서
+     `요청서` 로 찾히지 않는다(`[10~20]` 같은 Step 으로는 찾힌다). 외부 API(`docs/EXTERNAL_API.md`)는 `title` 을 그대로 내려주므로
+     외부 소비자가 제목 문자열을 파싱하거나 매칭한다면 영향을 받는다 — **외부 소비자 존재 여부와 결재 현황 검색창이 서버/클라이언트
+     어느 쪽 검색인지는 확인하지 못했다.** 운영 DB 에 `--apply` 하기 전에 외부 소비자를 확인하는 것을 권장한다.
+- ⚠️ **주의**: 흐름도가 같은 조합의 행을 많이 가지면 제목이 길어진다(`[..]` 가 행마다 추가). 600자를 넘으면 서버가 잘라낸다(`_unique_title`).
+  Step 값에 `[`·`]` 가 들어가면 제목에서 구분이 모호해진다(Step 입력이 `[`·`]` 를 막는지는 확인하지 않았다).
 
 ## 5. 검증 방법
 ```bash

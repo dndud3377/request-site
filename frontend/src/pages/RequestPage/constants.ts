@@ -15,6 +15,11 @@ export const OPTION_REQUEST_PURPOSE = ['신규', '차용', '신규+차용', 'Onl
 export const OPTION_LINE = ['라인1', '라인2', '라인3', '라인4', '라인5', 'nv'] as const;
 export const OPTION_OTHER_PURPOSE = ['Layer 추가/삭제', 'STEPSEQ 변경', '공법 추가/변경', 'Overlay 변경', 'FirstA 변경', '연구소 제품'] as const;
 
+// 의뢰서 자동 제목의 `_{라벨}_YYMMDD` 구간. 기준 키와 일치하는 흐름도 행이 없으면 이 라벨을 쓴다
+// (일치 행이 있으면 그 행들의 Step 이 `[10~20][90~100]` 형태로 대신 들어간다 — buildFlowStepTitlePart).
+// 백엔드 `backfill_title_flow_step` 커맨드의 TITLE_DEFAULT_LABEL 과 같은 값이어야 한다.
+export const TITLE_DEFAULT_LABEL = '요청서';
+
 // 참조 요청서 Merge(+ BEFORE/AFTER 비교)를 쓸 수 있는 기타 목적.
 // 여러 개를 함께 골라도 참조 요청서는 의뢰서당 1건이므로 블록은 하나만 노출한다.
 export const MERGE_ENABLED_PURPOSES = ['Layer 추가/삭제', 'STEPSEQ 변경', 'Overlay 변경'] as const;

@@ -1,4 +1,4 @@
-import { ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet } from '../../types';
+import { FlowChartRow, ValidationSystemValue, MergePair, MergePairKind, MergeRowInfo, MergeTable, MergeUnmatchedRow, AdiCdStep, ColorFilterSet } from '../../types';
 import {
   VALIDATION_KEYWORD, NOC_NEW, NOC_BORROW, NOC_REGISTERED, NOC_LAYER_DELETE, NOC_NOT_PROCEEDING, ST_O, ST_X, isStO, isRowInactive, isNocSpecial, genId, VS_NA, VS_TARGET,
   ADI_CD_HEADER_SCAN_ROWS, ADI_CD_STEP_ID_LABEL, ADI_CD_STEP_DESC_LABEL, makeAdiCdStep,
@@ -38,6 +38,25 @@ export const emptyDraftWords = () => ({ sp: [] as string[], sd: [] as string[], 
  */
 export const sourceCodeFromPartid = (partidSelection: string): string =>
   (partidSelection.split('-')[0] || '').trim().toUpperCase().slice(0, 8);
+
+/**
+ * 의뢰서 제목의 Step 구간 — 흐름도 행 중 문서의 라인/제품 이름/조리법과 같은 행(상세 보기에서 굵은 검정으로
+ * 보이는 행)의 Step 을 `[10~20][90~100]` 처럼 행 순서대로 이어 붙인다. 시작·끝 중 한쪽만 있으면 그 값만 쓰고
+ * (`[10]`), 둘 다 비면 그 행은 건너뛴다. 일치 행이 없으면 빈 문자열 — 호출부가 TITLE_DEFAULT_LABEL 로 대체한다.
+ * 일치 판정은 PagedDetailView 의 흐름도 색 강조(flowComboKey)와 같은 규칙(세 값 완전 일치)이다.
+ */
+export const buildFlowStepTitlePart = (
+  flowChart: FlowChartRow[],
+  line: string,
+  partidSelection: string,
+  processId: string,
+): string =>
+  flowChart
+    .filter((r) => r.location === line && r.product_name === partidSelection && r.process_id === processId)
+    .map((r) => (r.step_from && r.step_to ? `${r.step_from}~${r.step_to}` : (r.step_from || r.step_to || '')))
+    .filter((step) => step !== '')
+    .map((step) => `[${step}]`)
+    .join('');
 
 /** 숫자 전용 입력 필터: 부호(-, 맨 앞 1개만)·소수점(1개만) 외 문자는 제거 (MAP X/Y, 예외구역 값 등) */
 export const sanitizeSignedDecimal = (raw: string): string => {
