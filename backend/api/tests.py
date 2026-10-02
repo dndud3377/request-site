@@ -2,14 +2,18 @@
 
 외부 DXHUB API 호출은 모두 mock 처리한다.
 """
+import json
+from io import StringIO
 from unittest.mock import patch, MagicMock
 
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from . import mailer
 from . import pop3_mail
 from . import design_rule_stats
+from .management.commands import backfill_title_flow_step
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
     Line, PauseRequest, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup,
@@ -8417,3 +8421,105 @@ class AdiCdTargetSearchTest(TestCase):
         self.assertEqual(by_id[self.normal.id]['adi_cd_targets'], [])
         self.assertEqual(by_id[self.lookalike.id]['adi_cd_targets'], [])
         self.assertEqual(by_id[self.broken.id]['adi_cd_targets'], [])
+
+
+class BackfillTitleFlowStepTest(TestCase):
+    """`backfill_title_flow_step` — 기존 제목의 '요청서' 를 흐름도 Step 으로 바꾸는 변환 커맨드."""
+
+    LINE, PRODUCT, PROCESS_ID = '라인1', 'PROD-1', 'RECIPE-1'
+
+    def _flow(self, location, product, process_id, step_from, step_to):
+        return {'id': f'f-{location}-{step_from}', 'location': location, 'product_name': product,
+                'process_id': process_id, 'step_from': step_from, 'step_to': step_to}
+
+    def _doc(self, title, flow_chart, raw_notes=None):
+        notes = raw_notes if raw_notes is not None else json.dumps({'detail': {
+            'line': self.LINE, 'partid_selection': self.PRODUCT, 'process_id': self.PROCESS_ID,
+            'flow_chart': flow_chart,
+        }}, ensure_ascii=False)
+        return RequestDocument.objects.create(
+            title=title, requester_name='요청자', requester_email='req@company.com',
+            requester_department='개발팀', product_name=self.PRODUCT, additional_notes=notes,
+        )
+
+    def _run(self, *args):
+        out = StringIO()
+        call_command('backfill_title_flow_step', *args, stdout=out)
+        return out.getvalue()
+
+    def test_flow_step_label_joins_matching_rows_in_order(self):
+        detail = {'line': self.LINE, 'partid_selection': self.PRODUCT, 'process_id': self.PROCESS_ID, 'flow_chart': [
+            self._flow(self.LINE, self.PRODUCT, self.PROCESS_ID, '10', '20'),
+            self._flow('라인2', 'PROD-2', 'RECIPE-2', '30', '40'),
+            self._flow(self.LINE, self.PRODUCT, self.PROCESS_ID, '90', '100'),
+        ]}
+        self.assertEqual(backfill_title_flow_step.flow_step_label(detail), '[10~20][90~100]')
+
+    def test_flow_step_label_single_sided_and_empty_steps(self):
+        detail = {'line': self.LINE, 'partid_selection': self.PRODUCT, 'process_id': self.PROCESS_ID, 'flow_chart': [
+            self._flow(self.LINE, self.PRODUCT, self.PROCESS_ID, '10', ''),
+            self._flow(self.LINE, self.PRODUCT, self.PROCESS_ID, '', ''),
+        ]}
+        self.assertEqual(backfill_title_flow_step.flow_step_label(detail), '[10]')
+
+    def test_convert_title_keeps_date_and_duplicate_suffix(self):
+        notes = json.dumps({'detail': {'line': self.LINE, 'partid_selection': self.PRODUCT,
+                                       'process_id': self.PROCESS_ID,
+                                       'flow_chart': [self._flow(self.LINE, self.PRODUCT, self.PROCESS_ID, '10', '20')]}})
+        convert = backfill_title_flow_step.convert_title
+        self.assertEqual(convert('라인1(신규)_MAP(NEW)_P_PROD-1_RECIPE-1_요청서_261001', notes),
+                         '라인1(신규)_MAP(NEW)_P_PROD-1_RECIPE-1_[10~20]_261001')
+        self.assertEqual(convert('라인1(신규)_MAP(NEW)_P_PROD-1_RECIPE-1_요청서_261001_3', notes),
+                         '라인1(신규)_MAP(NEW)_P_PROD-1_RECIPE-1_[10~20]_261001_3')
+        # ADI CD 변경(MAP 구간·(+N) 배지 형태)도 같은 규칙
+        self.assertEqual(convert('라인1(ADI CD 변경)_P_PROD-1_RECIPE-1(+2)_요청서_261001', notes),
+                         '라인1(ADI CD 변경)_P_PROD-1_RECIPE-1(+2)_[10~20]_261001')
+
+    def test_convert_title_returns_none_when_nothing_to_change(self):
+        match_notes = json.dumps({'detail': {'line': self.LINE, 'partid_selection': self.PRODUCT,
+                                             'process_id': self.PROCESS_ID,
+                                             'flow_chart': [self._flow(self.LINE, self.PRODUCT, self.PROCESS_ID, '10', '20')]}})
+        no_match_notes = json.dumps({'detail': {'line': self.LINE, 'partid_selection': self.PRODUCT,
+                                                'process_id': self.PROCESS_ID,
+                                                'flow_chart': [self._flow('라인2', 'X', 'Y', '10', '20')]}})
+        convert = backfill_title_flow_step.convert_title
+        self.assertIsNone(convert('A_요청서_261001', no_match_notes))          # 일치 행 없음
+        self.assertIsNone(convert('A_[10~20]_261001', match_notes))            # 이미 변환됨(재실행 안전)
+        self.assertIsNone(convert('사용자가 바꾼 제목', match_notes))           # 형식이 다른 제목
+        self.assertIsNone(convert('A_요청서_261001', '{"detail": broken'))     # 깨진 JSON
+        self.assertIsNone(convert('A_요청서_261001', ''))
+
+    def test_command_dry_run_does_not_change_db(self):
+        doc = self._doc('T_요청서_261001', [self._flow(self.LINE, self.PRODUCT, self.PROCESS_ID, '10', '20')])
+        out = self._run()
+        doc.refresh_from_db()
+        self.assertEqual(doc.title, 'T_요청서_261001')
+        self.assertIn('미리보기: 1건 변환 예정', out)
+
+    def test_command_apply_converts_only_matching_docs_and_is_idempotent(self):
+        match = self._doc('T_요청서_261001', [self._flow(self.LINE, self.PRODUCT, self.PROCESS_ID, '10', '20'),
+                                             self._flow(self.LINE, self.PRODUCT, self.PROCESS_ID, '90', '100')])
+        no_flow = self._doc('U_요청서_261001', [])
+        broken = self._doc('V_요청서_261001', [], raw_notes='{"detail": broken')
+        before_updated = RequestDocument.objects.get(pk=match.pk).updated_at
+
+        self._run('--apply')
+        for doc in (match, no_flow, broken):
+            doc.refresh_from_db()
+        self.assertEqual(match.title, 'T_[10~20][90~100]_261001')
+        self.assertEqual(no_flow.title, 'U_요청서_261001')
+        self.assertEqual(broken.title, 'V_요청서_261001')
+        self.assertEqual(match.updated_at, before_updated)  # .update() 라 updated_at 이 바뀌지 않는다
+
+        out = self._run('--apply')  # 재실행: 변환할 것이 없다
+        match.refresh_from_db()
+        self.assertEqual(match.title, 'T_[10~20][90~100]_261001')
+        self.assertIn('0건 변환', out)
+
+    def test_command_skips_title_collision(self):
+        self._doc('T_[10~20]_261001', [])  # 이미 같은 제목이 있다
+        target = self._doc('T_요청서_261001', [self._flow(self.LINE, self.PRODUCT, self.PROCESS_ID, '10', '20')])
+        out = self._run('--apply')
+        target.refresh_from_db()
+        self.assertEqual(target.title, 'T_요청서_261001')
+        self.assertIn('같은 제목의 다른 문서가 이미 있음', out)
