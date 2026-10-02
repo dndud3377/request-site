@@ -100,7 +100,8 @@ PL 이 아닌 사용자도 자기가 참여했던 의뢰서를 볼 수 있다.
   + (2026-10) 마스터 DB 변경 감지 **자동 반려**(`layer_drift.auto_reject_document`, 스케줄러/`cancel-withdraw` 에서 호출)
   — `create_from_reject(..., actor=('system', '시스템(자동반려)'))` 로 적재해 `rejected_by_loginid='system'`,
   `reject_comment` 가 `[자동반려] 마스터 DB 변경 감지: …` 인 행이 반려 탭에 쌓인다.
-  이 행은 `layer_drift_detected=True` 로 적재돼, 상세의 J-ayer / O-ayer 정보 페이지에 반려 시점의 '변경 감지' 뱃지(표시 전용)가 뜬다.
+  이 행은 `layer_drift_detected=True` + 반려 시점 diff(`layer_drift_detail`)로 적재돼, 반려 탭 목록의 **제목 옆에 '변경 감지' 배지**가 뜨고
+  클릭하면 무엇이 바뀌어 반려됐는지 모달(`LayerDriftModal`)로 보여준다. API 응답에는 `layer_drift` 로 내려간다.
 - 회차마다 1행씩 누적된다(3번 반려 = 3행). 첫 반려로 문서가 `rejected` 가 되면 이후 결재 액션은
   `_blocked_progress_response` 가 막으므로 같은 회차가 두 번 쌓이지 않는다.
 - 원본 문서가 삭제돼도 이력은 남는다(`document` 는 `SET_NULL`, `source_document_id` 로 추적).
@@ -115,7 +116,8 @@ PL 이 아닌 사용자도 자기가 참여했던 의뢰서를 볼 수 있다.
 | `approval_steps` | 반려 시점 결재 단계 전체 JSON (응답에서는 배열로 풀어서 내려간다) |
 | `round` | 반려된 회차 |
 | `rejected_at`, `rejected_agent`, `rejected_by_name`, `rejected_by_loginid`, `reject_comment` | 반려 메타 |
-| `layer_drift_detected` | 마스터 DB 변경 감지 자동 반려로 쌓인 행이면 `true`(기본 `false`, 마이그레이션 0048). 사람이 누른 반려·기존 이력은 `false` |
+| `layer_drift_detected` | 마스터 DB 변경 감지 자동 반려로 쌓인 행이면 `true`(기본 `false`, 마이그레이션 0048). 사람이 누른 반려는 `false` |
+| `layer_drift_detail` | 반려 시점의 변경 감지 diff JSON(`jayer`/`oayer`/`extra` + `checked_at`). `layer_drift_detected` 일 때만 채워진다. 응답에서는 `layer_drift` 객체로 풀려 나간다(아니면 `null`) |
 
 `rejected_by_*` 는 **버튼을 누른 사람**이다(MASTER 는 본인이 담당자가 아닌 단계도 반려할 수 있어
 단계 담당자와 다를 수 있다).
