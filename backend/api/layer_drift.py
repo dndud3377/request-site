@@ -385,7 +385,9 @@ def auto_reject_document(document_id, changes):
         document.status = 'rejected'
         document.save()
 
-        rejection_snapshots.create_from_reject(document, step, actor=SYSTEM_REJECTER)
+        rejection_snapshots.create_from_reject(
+            document, step, actor=SYSTEM_REJECTER, layer_drift_detected=True,
+        )
         mailer.enqueue_rejected(document)
     logger.info(f"[layer_drift] 문서 {document_id} 자동 반려 완료 — {len(changes)}건")
     return True
