@@ -4096,6 +4096,7 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   - `ApprovalPage.tsx`: 목록 행(제품/조합 셀)에 `badge-layer-drift` 뱃지 추가, 클릭 시
     `layer-drift` API를 호출해 모달(J-layer/O-layer 별 STEP/구분/저장된 값/현재 값 표)로 diff를
     보여준다. `isLayerDriftVisible(doc)`가 `layer_drift_detected && status가 진행중`을 함께 검사.
+    (2026-10-02: 이 모달은 `components/LayerDriftModal.tsx` 로 분리돼 이력 조회 반려 탭과 공용으로 쓴다.)
   - `PagedDetailView.tsx`: 상세보기 J-layer 영역(Validation System 표시줄 옆)에 동일 뱃지 —
     `doc.layer_drift_detected`는 이미 갖고 있던 `doc` prop에서 바로 읽고, 클릭 동작은
     `onOpenLayerDrift` 콜백(호출부 소유, 이 컴포넌트는 API를 직접 호출하지 않는 원칙 유지)으로
@@ -4595,12 +4596,16 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   → 반려 메일 순으로 기존 `reject_step` 과 동일하게 진행한다.
 - **재상신**: 작성자가 반려된 문서를 수정해 재상신하는 흐름은 그대로다. J/O-layer 표를 최신 마스터 값으로
   다시 채우지 않고 재상신하면 **다음 주기들에서 같은 사유로 다시 반려**된다(의도된 동작).
-- **반려 이력에도 '변경 감지' 뱃지를 남긴다 (2026-10-02)**: 자동 반려로 쌓인 `RejectionSnapshot` 은
-  `layer_drift_detected=True` 로 적재되고(`create_from_reject(..., layer_drift_detected=True)`, 마이그레이션
-  `0048`), 이력 조회 '반려' 탭 상세의 **J-ayer / O-ayer 정보 페이지**에 반려 시점의 '변경 감지' 뱃지가 뜬다.
-  이력 화면의 뱃지는 **표시 전용**(클릭해도 diff 모달 없음 — `PagedDetailView` `layerDriftBadgeReadonly`)이고,
-  사람이 누른 반려(`reject-step`/`peer-reject`)와 기존(마이그레이션 이전) 이력은 뱃지가 없다.
-  결재 완료 문서(이력 조회 '전체' 계열)는 감지값이 남아 있어도 뱃지를 숨긴다(`status='rejected'` 일 때만 표시).
+- **반려 이력에도 '변경 감지' 뱃지와 변경 내용을 남긴다 (2026-10-02)**: 자동 반려로 쌓인 `RejectionSnapshot` 은
+  `layer_drift_detected=True` + 반려 시점의 diff(`layer_drift_detail`, JSON — 문서에 캐시돼 있던 diff 에
+  `checked_at` 을 더한 것)를 함께 적재한다(`create_from_reject(..., layer_drift_detected=True)`, 마이그레이션
+  `0048`). 이력 조회 '반려' 탭 **목록의 제목 옆**에 결재 현황과 같은 '변경 감지' 배지가 뜨고, **클릭하면
+  반려 시점에 무엇이 바뀌어 반려됐는지**(J-layer / O-layer / XXXXXX 별 삭제·추가 행 표)가 모달로 열린다.
+  - API: `GET /api/rejection-snapshots/` 응답의 `layer_drift`(`{detected, checked_at, jayer, oayer, extra}`,
+    `GET /documents/{id}/layer-drift/` 와 같은 모양, 자동 반려 이력이 아니면 `null`) — 추가 호출 없이 모달을 연다.
+  - 이력의 diff 는 **반려 시점 복사본**이라 재상신으로 원본 문서의 감지값이 초기화돼도 그대로 남는다.
+  - 모달은 `components/LayerDriftModal.tsx` 공용 컴포넌트(결재 현황과 이력 조회가 함께 사용 — 결재 현황 동작은 동일).
+  - 사람이 누른 반려(`reject-step`/`peer-reject`)는 배지가 없다. 이력 상세 모달(J/O-ayer 정보)에는 배지를 두지 않는다.
   반려 사유는 결재 경로 탭의 단계 의견과 이력 조회 반려 탭에 그대로 보인다.
 - **테스트**: `backend/api/tests.py` `LayerDriftAutoRejectTest`(15건, 자동 반려 스냅샷의 뱃지 플래그 검증 포함).
 - **수동 검증 시나리오** (개발환경 — 스케줄러 `run_scheduler` 가 떠 있거나 Django shell 에서
@@ -4612,8 +4617,11 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
      '반려' 탭에 행이 생긴다. 상세 → 결재 경로 탭에서 반려 단계 의견이 `[자동반려] 마스터 DB 변경 감지: …`]
   3. [메일함(개발은 `MAIL_REDIRECT_TO` 주소)] → [기대 결과: 제목 `[반려] [자동반려] {제목}`, 본문에 "마스터 DB
      변경이 감지되어 의뢰서가 자동 반려되었습니다" 문구와 결재 경로 카드의 반려 사유]
-  3-1. [이력 조회 → '반려' 탭 → 위에서 자동 반려된 행 클릭 → 상세 모달에서 'J-ayer 정보' 또는 'O-ayer 정보' 탭]
-     → [기대 결과: 제목 아래 빨간 '변경 감지' 뱃지가 보인다(눌러도 반응 없음). 사람이 반려한 행에는 뱃지가 없다]
+  3-1. [이력 조회 → '반려' 탭 → 위에서 자동 반려된 행] → [기대 결과: 제목 옆에 빨간 '변경 감지' 배지가 보인다.
+     사람이 반려한 행에는 배지가 없다]
+  3-2. [그 배지 클릭] → [기대 결과: '레이어 정보 변경 감지' 모달이 열리고 변경이 있는 탭(J-layer 등)에 삭제/추가 행
+     (바꾼 recipeid·layerid 의 옛 값/새 값)이 보인다. 이후 작성자가 재상신해 결재 현황의 배지가 사라져도 이 모달의
+     내용은 그대로다]
   4. [같은 방식으로 `descript` 만 바꿔 본다] → [기대 결과: 배지만 뜨고 몇 주기가 지나도 반려되지 않는다]
   5. [결재 중 문서에서 작성자가 '철회 요청' → 변경 감지가 2주기 이상 유지된 뒤 '철회 요청 취소' 클릭] →
      [기대 결과: 철회 중에는 반려되지 않다가, 취소 직후 문서가 곧바로 반려된다]
