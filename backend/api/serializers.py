@@ -749,6 +749,7 @@ class RejectionSnapshotSerializer(serializers.ModelSerializer):
             'submitted_at', 'additional_notes', 'approval_steps',
             'round', 'rejected_at', 'rejected_agent',
             'rejected_by_name', 'rejected_by_loginid', 'reject_comment',
+            'layer_drift_detected',
         ]
 
     def get_approval_steps(self, obj):
