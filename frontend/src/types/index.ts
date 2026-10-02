@@ -308,6 +308,7 @@ export interface RejectionSnapshot {
   rejected_by_name: string;
   rejected_by_loginid: string;
   reject_comment: string;
+  layer_drift_detected: boolean;            // 마스터 DB 변경 감지 자동 반려로 쌓인 이력이면 true (뱃지 표시용)
 }
 
 export type CreateDocumentInput = Omit<
