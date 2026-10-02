@@ -308,6 +308,8 @@ export interface RejectionSnapshot {
   rejected_by_name: string;
   rejected_by_loginid: string;
   reject_comment: string;
+  layer_drift_detected: boolean;            // 마스터 DB 변경 감지 자동 반려로 쌓인 이력이면 true (목록 제목 옆 뱃지 표시용)
+  layer_drift: LayerDriftResponse | null;   // 반려 시점의 변경 감지 diff (뱃지 클릭 시 모달). 자동 반려 이력이 아니면 null
 }
 
 export type CreateDocumentInput = Omit<

@@ -2029,5 +2029,7 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
 - 이후는 `reject-step` 과 같다 — `status='rejected'`, 이력 조회 '반려' 탭 스냅샷(반려자 `system`),
   반려 메일(`docs/MAIL.md`). 재상신은 기존 `resubmit` 그대로이며, 값을 최신으로 다시 채우지 않으면 같은
   사유로 다시 반려된다.
+- 반려 이력(`RejectionSnapshot`)에는 `layer_drift_detected=True` 와 반려 시점 diff 가 남아, 이력 조회 반려 탭 목록의 제목 옆에
+  '변경 감지' 배지가 뜨고 클릭하면 변경 내용 모달이 열린다(`docs/HISTORY.md` §4).
 - 구현: `backend/api/layer_drift.py` `auto_reject_document` / `auto_reject_if_confirmed`,
   `views.py` `cancel_withdraw`. 테스트: `LayerDriftAutoRejectTest`.

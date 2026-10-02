@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { documentsAPI, linesAPI, rejectionSnapshotsAPI } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import Modal, { ConfirmModal } from '../components/Modal';
+import LayerDriftModal from '../components/LayerDriftModal';
 import PagedDetailView, { ReviewItemsPanelProps, PagedDetailViewHandle } from '../components/PagedDetailView';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
@@ -122,6 +123,8 @@ export default function HistoryPage(): React.ReactElement {
   // 전체 export(제목 옆 버튼) — 상세 정보/MAP 정보 탭을 화면 그대로 캡처하는 핸들.
   const pagedDetailViewRef = useRef<PagedDetailViewHandle>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  // 반려 이력 제목 옆 '변경 감지' 배지를 누르면, 반려 시점에 저장된 diff 를 모달로 보여준다.
+  const [layerDriftSnap, setLayerDriftSnap] = useState<RejectionSnapshot | null>(null);
 
   const isRejectedTab = filter === FILTER_REJECTED;
 
@@ -401,7 +404,20 @@ export default function HistoryPage(): React.ReactElement {
                 ? pagedSnapshots.map((snap, index) => (
                   <tr key={snap.id}>
                     <td style={{ color: 'var(--text-muted)' }}>{(listPage - 1) * HISTORY_LIST_PAGE_SIZE + index + 1}</td>
-                    <td>{titleCell(snap.title, () => openSnapshotDetail(snap))}</td>
+                    <td>
+                      {titleCell(snap.title, () => openSnapshotDetail(snap))}
+                      {snap.layer_drift_detected && (
+                        <button
+                          type="button"
+                          className="badge badge-layer-drift"
+                          style={{ cursor: 'pointer', marginLeft: 8 }}
+                          title={t('approval.layer_drift_badge_tooltip')}
+                          onClick={() => setLayerDriftSnap(snap)}
+                        >
+                          {t('approval.layer_drift_badge')}
+                        </button>
+                      )}
+                    </td>
                     <td>{snap.product_name}</td>
                     <td>
                       <div>{snap.requester_name}</div>
@@ -535,6 +551,14 @@ export default function HistoryPage(): React.ReactElement {
             historyMode
           />
         </Modal>
+      )}
+
+      {layerDriftSnap && (
+        <LayerDriftModal
+          data={layerDriftSnap.layer_drift}
+          loading={false}
+          onClose={() => setLayerDriftSnap(null)}
+        />
       )}
 
       <ConfirmModal
