@@ -4945,6 +4945,7 @@ class RejectionSnapshotTest(TestCase):
         self.assertEqual(snap.rejected_by_loginid, 'r1')
         self.assertEqual(snap.reject_comment, 'R 반려 사유')
         self.assertFalse(snap.layer_drift_detected)  # 사람이 누른 반려는 변경 감지 뱃지가 없다
+        self.assertEqual(snap.layer_drift_detail, '')
         self.assertEqual(snap.round, 1)
         self.assertIsNotNone(snap.rejected_at)
         self.assertEqual(snap.get_detail().get('detail', {}).get('line'), '라인1')
@@ -8339,6 +8340,22 @@ class LayerDriftAutoRejectTest(TestCase):
         self.assertEqual(res.status_code, 200, res.content)
         rows = res.data['data'] if isinstance(res.data, dict) and 'data' in res.data else res.data
         self.assertTrue(rows[0]['layer_drift_detected'])
+        # 반려 시점의 diff 도 함께 내려간다 — 옛 값(ROLD) removed + 새 값(RNEW) added 한 쌍.
+        drift = rows[0]['layer_drift']
+        self.assertTrue(drift['detected'])
+        self.assertIsNotNone(drift['checked_at'])
+        self.assertEqual([r['recipeid'] for r in drift['jayer']['removed']], ['ROLD'])
+        self.assertEqual([r['recipeid'] for r in drift['jayer']['added']], ['RNEW'])
+        self.assertEqual(drift['oayer'], {'removed': [], 'added': []})
+
+        # 이력에 복사된 diff 는 반려 후 원본 문서가 초기화돼도 그대로다(재상신 시 reset_document_drift).
+        from . import layer_drift
+        doc.refresh_from_db()
+        layer_drift.reset_document_drift(doc)
+        snap.refresh_from_db()
+        self.assertEqual(
+            [r['recipeid'] for r in self._json.loads(snap.layer_drift_detail)['jayer']['added']], ['RNEW'],
+        )
 
         notis = list(MailNotification.objects.filter(document=doc, event_type='rejected'))
         self.assertTrue(notis)
