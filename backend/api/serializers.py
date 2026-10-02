@@ -740,6 +740,7 @@ class RejectionSnapshotSerializer(serializers.ModelSerializer):
     """
 
     approval_steps = serializers.SerializerMethodField()
+    layer_drift = serializers.SerializerMethodField()
 
     class Meta:
         model = RejectionSnapshot
@@ -749,8 +750,31 @@ class RejectionSnapshotSerializer(serializers.ModelSerializer):
             'submitted_at', 'additional_notes', 'approval_steps',
             'round', 'rejected_at', 'rejected_agent',
             'rejected_by_name', 'rejected_by_loginid', 'reject_comment',
-            'layer_drift_detected',
+            'layer_drift_detected', 'layer_drift',
         ]
+
+    def get_layer_drift(self, obj):
+        """반려 시점의 변경 감지 diff — `GET /documents/{id}/layer-drift/` 응답과 같은 모양.
+
+        변경 감지 자동 반려 이력이 아니면 None.
+        """
+        import json
+        if not obj.layer_drift_detected:
+            return None
+        try:
+            detail = json.loads(obj.layer_drift_detail or '{}')
+        except (json.JSONDecodeError, TypeError):
+            detail = {}
+        if not isinstance(detail, dict):
+            detail = {}
+        empty_group = {'removed': [], 'added': []}
+        return {
+            'detected': True,
+            'checked_at': detail.get('checked_at'),
+            'jayer': detail.get('jayer') or empty_group,
+            'oayer': detail.get('oayer') or empty_group,
+            'extra': detail.get('extra') or empty_group,
+        }
 
     def get_approval_steps(self, obj):
         import json
