@@ -17,4 +17,11 @@ class Migration(migrations.Migration):
                 default=False, verbose_name="레이어 정보 변경 감지 여부"
             ),
         ),
+        migrations.AddField(
+            model_name="rejectionsnapshot",
+            name="layer_drift_detail",
+            field=models.TextField(
+                blank=True, verbose_name="레이어 정보 변경 상세(JSON)"
+            ),
+        ),
     ]
