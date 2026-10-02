@@ -387,7 +387,9 @@ python3 -m scripts.approval_cases.run_cases --mail-domain '@other.com'  # 계정
   `fetchJobFileLayerAndPopulateJayer`). E(MASK) 케이스는 **`pp` 에 `plel` 이 든 실제 행**이 있는
   조합을 찾아 쓰고, 없으면 SKIP 한다.
 - 제목도 화면과 같은 규칙으로 만들어진다:
-  `{라인}({목적})_MAP({map_type})_{조합법}_{제품}_{process_id}_요청서_{YYMMDD}`.
+  `{라인}({목적})_MAP({map_type})_{조합법}_{제품}_{process_id}_{Step 또는 요청서}_{YYMMDD}`.
+  (`{Step 또는 요청서}` 는 흐름도 중 문서의 라인/제품/조리법과 같은 행의 Step `[10~20][90~100]`, 없으면 '요청서'.
+  러너는 흐름도를 채우지 않으므로 보통 '요청서'다.)
   **테스트 표식을 붙이지 않으므로** 목록에서 실제 의뢰서와 같은 모습으로 보인다.
 - **생성한 문서는 지우지 않는다** — 화면에서 목록·현재 단계 그리드·결재 경로 탭까지 확인한다.
 
@@ -439,7 +441,7 @@ cd backend && PYTHONPATH=$SP/stubs DJANGO_SETTINGS_MODULE=test_settings \
 러너가 만든 문서를 `http://localhost:10011` 에서 눈으로 확인한다.
 
 1. **제목·목록 표시** — `/approval` 진입 → 러너가 만든 의뢰서 행 확인
-   → **기대**: 제목이 `라인(목적)_MAP(NEW)_조합법_제품_processid_요청서_YYMMDD` 형태로,
+   → **기대**: 제목이 `라인(목적)_MAP(NEW)_조합법_제품_processid_요청서_YYMMDD` 형태로(흐름도를 채운 문서면 '요청서' 자리에 `[10~20]` 같은 Step),
    내가 화면에서 작성했을 때와 **같은 모양**이다. 제품명·의뢰자·양산일 칸이 채워져 있다.
 2. **PL 단계 그리드** — 상신 직후 문서의 '현재 단계' 칸
    → **기대**: 1열 2줄(1줄=지정 PL, 2줄=영업·기술지원 합의자). SA 미지정 문서는 2줄이 `해당없음`.
