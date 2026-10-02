@@ -32,7 +32,7 @@ def _actor_of(step, acting_user):
     )
 
 
-def create_from_reject(document, step, acting_user=None, actor=None):
+def create_from_reject(document, step, acting_user=None, actor=None, layer_drift_detected=False):
     """반려 시점의 의뢰서를 스냅샷 1행으로 적재하고 그 객체를 반환한다.
 
     호출 시점에는 step.action 이 이미 'rejected' 로 저장돼 있어야 한다
@@ -40,6 +40,9 @@ def create_from_reject(document, step, acting_user=None, actor=None):
 
     actor: (loginid, name) — 사람이 누른 반려가 아닌 경우(마스터 DB 변경 자동 반려)에 반려자를
     직접 지정한다. 주어지면 acting_user/단계 담당자보다 우선한다.
+
+    layer_drift_detected: 마스터 DB 변경 감지 자동 반려일 때 True — 반려 시점의 '변경 감지' 배지를
+    이력에도 남긴다. 사람이 누른 반려는 기본값(False)이다.
 
     회차마다 1행씩 쌓이며 중복 방지는 하지 않는다 — 첫 반려로 문서가 rejected 가 되면
     이후 결재 액션은 `_blocked_progress_response` 에서 막히므로 같은 회차가 두 번
@@ -72,4 +75,5 @@ def create_from_reject(document, step, acting_user=None, actor=None):
         rejected_by_name=name,
         rejected_by_loginid=loginid,
         reject_comment=getattr(step, 'comment', '') or '',
+        layer_drift_detected=layer_drift_detected,
     )
