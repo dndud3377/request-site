@@ -4485,66 +4485,6 @@ export default function RequestPage(): React.ReactElement {
 
   const handlePrevStep = () => startStepMove(step - 1);
 
-  const handleReset = () => {
-    setDetail(prev => ({
-      ...prev,
-      map_type: INITIAL_DETAIL.map_type,
-      source_line: INITIAL_DETAIL.source_line,
-      source_partid: INITIAL_DETAIL.source_partid,
-      map_change: INITIAL_DETAIL.map_change,
-      map_value_x: INITIAL_DETAIL.map_value_x,
-      map_value_y: INITIAL_DETAIL.map_value_y,
-      map_reason: INITIAL_DETAIL.map_reason,
-      map_change_top: INITIAL_DETAIL.map_change_top,
-      map_value_x_top: INITIAL_DETAIL.map_value_x_top,
-      map_value_y_top: INITIAL_DETAIL.map_value_y_top,
-      map_change_bottom: INITIAL_DETAIL.map_change_bottom,
-      map_value_x_bottom: INITIAL_DETAIL.map_value_x_bottom,
-      map_value_y_bottom: INITIAL_DETAIL.map_value_y_bottom,
-      ea_change: INITIAL_DETAIL.ea_change,
-      ea_value: INITIAL_DETAIL.ea_value,
-      only_prodc: INITIAL_DETAIL.only_prodc,
-      py_apply: INITIAL_DETAIL.py_apply,
-      prodc_scope: INITIAL_DETAIL.prodc_scope,
-      prodc_top_line: INITIAL_DETAIL.prodc_top_line,
-      prodc_top_process: INITIAL_DETAIL.prodc_top_process,
-      prodc_top_product: INITIAL_DETAIL.prodc_top_product,
-      prodc_middle_use: INITIAL_DETAIL.prodc_middle_use,
-      prodc_middle_line: INITIAL_DETAIL.prodc_middle_line,
-      prodc_middle_process: INITIAL_DETAIL.prodc_middle_process,
-      prodc_middle_product: INITIAL_DETAIL.prodc_middle_product,
-      prodc_bottom_line: INITIAL_DETAIL.prodc_bottom_line,
-      prodc_bottom_process: INITIAL_DETAIL.prodc_bottom_process,
-      prodc_bottom_product: INITIAL_DETAIL.prodc_bottom_product,
-      mshot_change: INITIAL_DETAIL.mshot_change,
-      mshot_image_copy: INITIAL_DETAIL.mshot_image_copy,
-      mshot_image_copy_top: INITIAL_DETAIL.mshot_image_copy_top,
-      mshot_image_copy_bottom: INITIAL_DETAIL.mshot_image_copy_bottom,
-      photo_backside: INITIAL_DETAIL.photo_backside,
-      eds_backside: INITIAL_DETAIL.eds_backside,
-      inter: INITIAL_DETAIL.inter,
-      inter_xs: INITIAL_DETAIL.inter_xs,
-      inter_ys: INITIAL_DETAIL.inter_ys,
-      in_apply: INITIAL_DETAIL.in_apply,
-      inter_select: INITIAL_DETAIL.inter_select,
-      tsv: INITIAL_DETAIL.tsv,
-      rf: INITIAL_DETAIL.rf,
-      fullchip: INITIAL_DETAIL.fullchip,
-      split: INITIAL_DETAIL.split,
-      st: INITIAL_DETAIL.st,
-      ecc: INITIAL_DETAIL.ecc,
-      labelsideshot: INITIAL_DETAIL.labelsideshot,
-      hpkglabelheight: INITIAL_DETAIL.hpkglabelheight,
-      final_yn: INITIAL_DETAIL.final_yn,
-      final_entries: INITIAL_DETAIL.final_entries,
-      partial_shot: INITIAL_DETAIL.partial_shot,
-      tbvtlv_thickness: INITIAL_DETAIL.tbvtlv_thickness,
-      tbvtlv_entries: INITIAL_DETAIL.tbvtlv_entries,
-    }));
-    setErrors({});
-    setFinalGds('');
-  };
-
   const handleSubmitClick = async () => {
     // 마지막 단계의 검증만 돌린다 — 앞 단계들은 전진할 때 이미 통과했다.
     // Only MAP·MAP 삭제 는 2단계가 마지막이므로 5단계(J-ayer↔Backbone 매핑) 검증을 돌리면 안 된다.
@@ -4936,7 +4876,6 @@ export default function RequestPage(): React.ReactElement {
           mshotDeleteMode={mshotDeleteMode}
           mshotEditAddMode={mshotEditAddMode}
           setDetail={setDetail}
-          handleReset={handleReset}
           handleMapTypeSelect={handleMapTypeSelect}
           handleDetailChange={handleDetailChange}
           handleDetailSet={handleDetailSet}
