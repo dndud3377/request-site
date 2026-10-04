@@ -243,6 +243,8 @@ export interface RequestDocument {
   mail_completion_matched?: boolean;
   // J/O-layer 자동 채움 값이 마스터 DB와 달라졌는지 (읽기 전용, 스케줄러 10분 주기 갱신 — docs/REQUEST.md 참고)
   layer_drift_detected?: boolean;
+  // 마스터 DB 변경 감지로 자동 반려된 문서인지 (읽기 전용) — 반려 후에도 결재 현황에 '변경 감지' 배지를 유지한다
+  layer_drift_auto_rejected?: boolean;
   // 해외 의뢰서 여부 (읽기 전용). 의뢰자 역할로 최초 상신 시 서버가 확정한다.
   // 결재선 후보(지정 PL·영업합의자·후결자) 목록을 어느 역할로 부를지 이 값으로 고른다 — plRoleFor.
   is_overseas?: boolean;
