@@ -153,11 +153,9 @@ const StepMap: React.FC<StepMapProps> = ({
 
   return (
     <div className="form-section">
-      <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          🗺️ {t('request.section_map')}
-          {GuideTourBadge}
-        </span>
+      <div className="form-section-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        🗺️ {t('request.section_map')}
+        {GuideTourBadge}
       </div>
       {mapInfoLocked && (
         <p className="form-hint" style={{ color: 'var(--text-muted)', margin: '0 0 12px' }}>
