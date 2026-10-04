@@ -303,7 +303,10 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   ② Step1 의 라인/제품 이름이 바뀌면 잠금이 자동으로 풀린다(갇히지 않음).
   사용자가 EXISTING 버튼을 **직접** 눌러 원본을 비워 둔 경우는 기존처럼 입력 가능하다.
   잠기면 MAP 목적 버튼 4개 + 원본 위치 select + 원본 제품 이름 자동완성이 disabled 된다.
-  (MAP 영역 '초기화' 버튼은 변경하지 않았다 — 초기화하면 map_type 이 비워진다.)
+  - **후속 — MAP 정보 '🔄 초기화' 버튼 삭제 (사용자 결정)**: 잠금 상태에서도 초기화로 `map_type` 을 비워
+    잠금을 우회할 수 있었다. 버튼이 굳이 필요 없다는 결정에 따라 버튼과 전용 핸들러(`index.tsx` 의
+    `handleReset`, `StepMap` 의 `handleReset` prop)를 함께 제거했다. `common.reset` i18n 키는 결재 현황에서
+    계속 쓰므로 남긴다. MAP 값은 MAP 목적 변경 시 확인 모달(`handleMapTypeChangeConfirm`)로 초기화된다.
 - **요청 3 — 지도 편차 값의 '-' 부호도 빨간색**: `PagedDetailView.tsx` 의 `NUMERIC_VALUE_PATTERN` 을
   `/\d+(?:\.\d+)?(?:um|mm)/g` → `/-?\d+(?:\.\d+)?(?:um|mm)/g` 로 변경. 같은 패턴을 쓰는 **예외 구역** 칩에도
   동일 적용(사용자 결정). 강조 조건(`highlightNumbers`)은 그대로.
@@ -322,6 +325,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
      꺼지고(비활성 스타일) 클릭이 안 된다. INTER 를 NO 로 되돌리면 다시 클릭 가능.]
   5. [결재 현황 → X/Y 에 음수(예: -1.5)를 입력해 상신한 문서 클릭 → 'R' 탭] → [기대 결과: 지도 편차 칩의 `-1.5um` 이
      '-' 포함 전체 빨간 굵은 글씨. 예외 구역 음수 값도 동일. '-' 만 검정이면 실패.]
+  6. [`/request` → MAP 정보 단계 진입] → [기대 결과: 섹션 제목 '🗺️ MAP 정보' 오른쪽에 '🔄 초기화' 버튼이 없어야 한다.]
 
 ### 기능 개선 (2026-10-01 — ADI CD '동일 변경 적용 대상' 목록·모달 전체 표시 + 결재 현황 검색)
 
@@ -3513,7 +3517,7 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
   `status == 'pause'` 이고 현재 회차 R(+RV) 가 전원 approved 일 때 참을 반환한다(경로 무관 —
   `RequestDocument.is_r_stage_completed`). 서버는 `RequestDocumentSerializer` 응답에
   `map_info_locked` 를 내려주고, `RequestPage`(`isResumeMode` 편집 로드)가 이를 상태로 저장해
-  `StepMap`(2단계)에 전달한다. `StepMap` 은 잠금 상태면 MAP 정보 섹션 전체(초기화 버튼 포함)를
+  `StepMap`(2단계)에 전달한다. `StepMap` 은 잠금 상태면 MAP 정보 섹션 전체(초기화 버튼 포함 — 버튼은 2026-10-04 삭제)를
   `pointer-events: none` + 흐림 처리로 막고 안내 문구(`request.map_info_locked_notice`, ko/en)를
   보여준다. 프론트 잠금은 UX 용이고, 실제 강제는 백엔드다 — `RequestDocumentViewSet.update` 가
   `RequestDocument.MAP_INFO_FIELDS`(StepMap 소유 필드 전체, `mapInfoDefaults()` 와 같은 키
