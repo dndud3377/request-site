@@ -152,6 +152,34 @@ CI=true npx react-scripts test --watchAll=false --passWithNoTests    # 67건 통
 npx tsc --noEmit 2>&1 | grep -c "error TS"                          # 24 (baseline 47 → 감소)
 ```
 
+#### 1.4.2 마이그레이션 squash (2026-10-04, 1단계 완료)
+
+`api` 앱의 마이그레이션 0001~0048(48개)을 Django `squashmigrations` 로
+`api/migrations/0001_squashed_0048_rejectionsnapshot_layer_drift_detected.py` 하나로 합쳤다
+(연산 99개 → 58개).
+
+- **동작**: squash 파일은 `replaces` 에 기존 48개를 적어 둔다. 기존 파일은 **그대로 남아 있다**.
+  - 0048까지 전부 적용한 DB(운영·개발): `migrate` 할 때 SQL 없이 squash 를 '적용됨'으로만 기록한다.
+  - 일부만 적용한 DB: 기존 개별 파일로 나머지를 적용한다.
+  - 빈 DB(신규 설치·테스트 DB): squash 파일 하나로 스키마를 만든다.
+- **RunPython 3건 제외**: `0016`(MySQL int→bigint 드리프트 보정), `0037`(마크 색상 키→hex),
+  `0041`(ALL→MF 치환)은 squash 에서 뺐다. 빈 DB 에서는 할 일이 없는 데이터/보정 작업이기 때문이다.
+  생성 때 이 3건을 임시로 `elidable=True` 로 바꿔 squash 하고, 원본 파일은 되돌렸다(원본 미수정).
+- **검증**(sqlite, §1.4.1 환경):
+  - 빈 DB → squash 1건 적용. 기존 48개로 만든 스키마와 비교해 컬럼·타입·NULL·기본값·FK·인덱스가
+    모두 같다(테이블 53개, 인덱스 81개). 컬럼 **순서**만 2곳(`api_mailnotification.event_type`,
+    `api_personalmarkcategory.color`) 다르고, 동작에는 영향이 없다.
+  - 0048까지 적용된 DB → `No migrations to apply`, `showmigrations` 에 `[X] 0001_squashed_0048 (48 squashed migrations)`.
+  - 0030까지만 적용된 DB → 기존 파일 0031~0048(19건)로 이어서 적용된다. 최종 스키마도 같다.
+  - `makemigrations --check` → `No changes detected`. `manage.py test api` → 621건 OK.
+  - `migrate api zero` 로 되돌리기도 성공했다.
+- **2단계(미실행)**: **모든 환경**(운영·개발·각자 로컬 DB)이 0048 이후로 migrate 된 것을 확인한 뒤에 한다.
+  1. 기존 0001~0048 파일을 삭제한다.
+  2. squash 파일의 `replaces` 를 제거한다.
+- **이후 새 마이그레이션**: 평소처럼 `makemigrations` 로 만들면 된다. 의존성은 squash 파일
+  (`0001_squashed_0048_...`)로 잡힌다(그래프 leaf 확인). 0048 까지 안 간 DB 에서도 Django 가
+  이 의존성을 기존 0048 로 해석한다.
+
 ### 1.5 실행 결과
 
 #### 2026-10-04 — 프론트 테스트 간헐 실패 (flaky, **미해결 · 재현 시 로그 수집 대기**)

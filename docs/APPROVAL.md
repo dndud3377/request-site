@@ -1605,7 +1605,7 @@ MASK[뱃지]          추가후결자[뱃지]  ← PL 이 상신 모달에서 �
 사용자의 임시저장은 **세 그룹 전원**에게 노출됐다. 이제 작성자가 문서마다 그룹 하나를
 지정해야 하고, 지정하지 않으면 아무에게도 공유되지 않는다.
 
-- 필드: `RequestDocument.shared_group` (FK → `UserGroup`, null 허용, `SET_NULL`, 마이그레이션 `0016`)
+- 필드: `RequestDocument.shared_group` (FK → `UserGroup`, null 허용, `SET_NULL`, 마이그레이션 `0017`)
 - 지정 UI: **결재 현황 → 임시저장 행(또는 상세 모달) → `👥 그룹 지정`** → 내가 속한 그룹 중 1개 선택 / '공유 안 함'
 - 지정 API: `POST /api/documents/{id}/set-shared-group/` body `{"group_id": <id>|null}`
   - 인가: **의뢰자 본인 또는 MASTER 만**. 공유 그룹 멤버는 문서를 수정·상신할 수는 있어도 공유 범위는 못 바꾼다.
