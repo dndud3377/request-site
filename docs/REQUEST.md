@@ -288,6 +288,41 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
 
 ## 4.1 기능 변경 이력 (2026-06)
 
+### 기능 수정 (2026-10-04 — MAP 정보: INTER YES 시 EDS Backside 잠금 / 자동 매칭 EXISTING 잠금 / 지도 편차 '-' 부호 강조)
+
+- **요청 1 — INTER YES 이면 `map_opt_eds_backside` 선택 불가**:
+  `StepMap.tsx` Map Option 버튼 중 `eds_backside` 는 `detail.inter === 'YES'` 일 때 disabled.
+  INTER 를 YES 로 바꾸는 순간 `eds_backside` 를 `INITIAL_DETAIL.eds_backside`('미적용')로 **자동 초기화**한다
+  (잠긴 '적용' 값이 그대로 저장되지 않도록 — 사용자 결정). NO 로 되돌리면 다시 선택 가능.
+- **요청 2 — EXISTING 이면 `map_type`·`source_line`·`source_partid` 수정 불가 (사용자 결정: a안)**:
+  잠금 대상은 **자동 MAP 매칭으로 정해진 EXISTING** 뿐이다. 판정은 상태 플래그가 아니라 값으로 한다
+  (`existingAutoLocked`):
+  `map_type === 'EXISTING'` && `source_line === line` && `source_partid === sourceCodeFromPartid(partid_selection)`
+  — 즉 자동 매칭 effect(`index.tsx`)가 채우는 값과 같을 때. 이 방식이라
+  ① 임시저장·반려 재상신으로 다시 연 문서도 같은 판정을 받고,
+  ② Step1 의 라인/제품 이름이 바뀌면 잠금이 자동으로 풀린다(갇히지 않음).
+  사용자가 EXISTING 버튼을 **직접** 눌러 원본을 비워 둔 경우는 기존처럼 입력 가능하다.
+  잠기면 MAP 목적 버튼 4개 + 원본 위치 select + 원본 제품 이름 자동완성이 disabled 된다.
+  (MAP 영역 '초기화' 버튼은 변경하지 않았다 — 초기화하면 map_type 이 비워진다.)
+- **요청 3 — 지도 편차 값의 '-' 부호도 빨간색**: `PagedDetailView.tsx` 의 `NUMERIC_VALUE_PATTERN` 을
+  `/\d+(?:\.\d+)?(?:um|mm)/g` → `/-?\d+(?:\.\d+)?(?:um|mm)/g` 로 변경. 같은 패턴을 쓰는 **예외 구역** 칩에도
+  동일 적용(사용자 결정). 강조 조건(`highlightNumbers`)은 그대로.
+- **백엔드·저장 형식 변경 없음.** i18n 키 추가 없음.
+- **검증**: `npx tsc --noEmit` 오류 4건(전부 기존, 이번 변경 무관) / 프론트 테스트 339건 통과.
+  로컬 개발 서버 + Playwright 로 수정 전/후 화면을 실제로 조작해 확인 —
+  자동 매칭 EXISTING: 버튼 4개·원본 2칸 disabled / 직접 선택 EXISTING: 모두 enabled /
+  INTER YES 전환 시 EDS Backside 적용→미적용 + disabled / 상세보기 `-1.5um`·`-3um`·`-0.5mm` 가 부호 포함 빨간색.
+- **수동 검증 시나리오**:
+  1. [`/request` → 라인·조합법 선택 → 이미 MAP 이 등록된 제품 이름 선택 → '다음'] → [MAP 정보 단계]
+     → [기대 결과: MAP 목적이 EXISTING 으로 자동 선택되고, MAP 목적 버튼 4개·원본 위치·원본 제품 이름이 모두 회색 잠금.
+     클릭·입력해도 바뀌지 않아야 한다. 바뀌거나 '초기화 확인' 모달이 뜨면 실패.]
+  2. [같은 화면에서 '이전' → Step1 제품 이름을 MAP 미등록 제품으로 변경 → '다음'] → [기대 결과: 잠금이 풀려 MAP 목적을 바꿀 수 있다.]
+  3. [MAP 미등록 제품으로 MAP 정보 진입 → EXISTING 직접 클릭] → [기대 결과: 원본 위치·원본 제품 이름을 정상 입력 가능.]
+  4. [NEW 선택 → Map Option 에서 EDS Backside 켬 → INTER(Map Option 위 드롭다운)를 YES] → [기대 결과: EDS Backside 가
+     꺼지고(비활성 스타일) 클릭이 안 된다. INTER 를 NO 로 되돌리면 다시 클릭 가능.]
+  5. [결재 현황 → X/Y 에 음수(예: -1.5)를 입력해 상신한 문서 클릭 → 'R' 탭] → [기대 결과: 지도 편차 칩의 `-1.5um` 이
+     '-' 포함 전체 빨간 굵은 글씨. 예외 구역 음수 값도 동일. '-' 만 검정이면 실패.]
+
 ### 기능 개선 (2026-10-01 — ADI CD '동일 변경 적용 대상' 목록·모달 전체 표시 + 결재 현황 검색)
 
 - **요청**: ADI CD 의뢰서의 '동일 변경 적용 대상'이 여럿이면 결재 현황 제품 칸에 첫 대상과 `+N`만 보여 어떤 대상이
