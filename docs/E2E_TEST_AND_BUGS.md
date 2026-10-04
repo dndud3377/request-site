@@ -2136,6 +2136,15 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 - 검증: `npx tsc --noEmit` error TS **0건**, 기본 `react-scripts build` **Compiled with warnings(exit 0)**,
   `npm test` 16 suites / 343 tests 통과.
 
+### B-66 🟠 가이드 페이지 검색이 서버에서 무시됐다 — ✅수정완료(2026-10-04)
+- 증상: `GuidePage.tsx` 검색창이 `GET /api/guides/?search=…` 를 보내지만 `GuideViewSet.get_queryset` 이
+  `guide_type`·`feature_key` 만 읽어 **무엇을 입력해도 전체 목록**이 돌아왔다
+  (재현: 가이드 '사과'·'바나나' 생성 후 `?search=사과` → `['바나나', '사과']`).
+- 수정: `GuideViewSet` 에 `filter_backends = [filters.SearchFilter]`, `search_fields = ['title', 'content']`
+  (VOCViewSet 과 같은 방식). `guide_type` 필터와 함께 쓰면 두 조건이 AND 로 적용된다.
+- 주의: `content` 는 리치 에디터 HTML 이라 태그 문자열(`span`, `strong` 등)로 검색해도 걸린다.
+- 회귀 테스트: `api.tests.GuideSearchTest` 4건(수정 전 3건 FAIL → 수정 후 전부 OK). 백엔드 전체 628 tests OK.
+
 ---
 
 ## 6. 잠재 위험 (아직 버그로 터지지 않았지만 구조적으로 위험한 것)
