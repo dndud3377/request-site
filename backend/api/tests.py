@@ -8606,6 +8606,63 @@ class LayerDriftAutoRejectTest(TestCase):
         self.assertEqual(doc.status, 'rejected')
         self.assertEqual(RejectionSnapshot.objects.filter(document=doc).count(), 2)
 
+    # ----- 결재 현황 '변경 감지' 배지 유지 (layer_drift_auto_rejected) -----
+
+    def _list_row(self, doc):
+        """결재 현황 목록 API 에서 문서 한 건의 행을 찾는다."""
+        self.client.force_authenticate(user=self.author)
+        res = self.client.get('/api/documents/')
+        self.assertEqual(res.status_code, 200, res.content)
+        rows = res.data['data'] if isinstance(res.data, dict) and 'data' in res.data else res.data
+        if isinstance(rows, dict) and 'results' in rows:
+            rows = rows['results']
+        return next(row for row in rows if row['id'] == doc.id)
+
+    def test_auto_rejected_document_keeps_badge_flag(self):
+        """자동 반려된 문서는 목록·상세 응답 모두 layer_drift_auto_rejected=True — 반려 후에도 배지 유지."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+
+        self.assertTrue(self._list_row(doc)['layer_drift_auto_rejected'])
+        res = self.client.get(f'/api/documents/{doc.id}/')
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.data['data'] if isinstance(res.data, dict) and 'data' in res.data else res.data
+        self.assertTrue(body['layer_drift_auto_rejected'])
+
+        # 반려 후 다음 스케줄러 주기가 돌아도 반려 문서의 감지값·diff 는 그대로다(진행중 문서만 재계산).
+        self._cycle()
+        self.assertTrue(self._list_row(doc)['layer_drift_auto_rejected'])
+
+    def test_human_reject_while_drift_detected_has_no_badge_flag(self):
+        """감지 중이던 문서라도 사람이 누른 반려면 False — 자동 반려 문서에만 배지를 남긴다."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._cycle()  # 첫 주기: 배지만, 아직 반려 전
+        self.client.force_authenticate(user=self.r_user)
+        res = self.client.post(f'/api/documents/{doc.id}/reject-step/', {'agent': 'R', 'comment': '사람 반려'},
+                               format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'rejected')
+        self.assertTrue(doc.layer_drift_detected)
+
+        self.assertFalse(self._list_row(doc)['layer_drift_auto_rejected'])
+
+    def test_resubmit_clears_badge_flag(self):
+        """재상신하면 감지값이 초기화돼 False 가 된다."""
+        from . import layer_drift
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')])
+        self._cycle(2)
+        doc.refresh_from_db()
+        self.assertTrue(self._list_row(doc)['layer_drift_auto_rejected'])
+
+        layer_drift.reset_document_drift(doc)  # 재상신 액션이 하는 초기화
+        self.assertFalse(self._list_row(doc)['layer_drift_auto_rejected'])
+
 
 class AdiCdTargetSearchTest(TestCase):
     """ADI CD 변경 '동일 변경 적용 대상' 전체 검색 + 목록 detail_summary.adi_cd_targets (2026-10).

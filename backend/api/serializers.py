@@ -8,8 +8,30 @@ from .models import (
 )
 from . import doc_permissions
 from . import design_rule_stats
+from .mailer import AUTO_REJECT_COMMENT_PREFIX
 
 User = get_user_model()
+
+
+
+def is_layer_drift_auto_rejected(document):
+    """마스터 DB 변경 감지로 자동 반려된 문서인지 — 결재 현황에서 반려 후에도 '변경 감지' 배지를 유지할지.
+
+    문서가 반려 상태이고 감지값이 남아 있으며, 최신 회차의 반려 단계 의견이 자동 반려 머리말로
+    시작하면 True. 사람이 누른 반려(감지 중이었어도)는 False 다. 재상신하면 감지값이 초기화되므로
+    (`layer_drift.reset_document_drift`) 자연히 False 가 된다. prefetch 된 approval_steps 만 읽는다.
+    """
+    if document.status != 'rejected' or not document.layer_drift_detected:
+        return False
+    steps = list(document.approval_steps.all())
+    if not steps:
+        return False
+    max_round = max(step.round for step in steps)
+    return any(
+        step.round == max_round and step.action == 'rejected'
+        and (step.comment or '').startswith(AUTO_REJECT_COMMENT_PREFIX)
+        for step in steps
+    )
 
 
 class DocPermFieldsMixin(serializers.Serializer):
@@ -259,6 +281,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
     review_items = DocumentReviewItemSerializer(many=True, read_only=True)
     designated_pl_loginid = serializers.SerializerMethodField()
     notifier_mails = serializers.SerializerMethodField()
+    layer_drift_auto_rejected = serializers.SerializerMethodField()
 
     class Meta:
         model = RequestDocument
@@ -271,7 +294,7 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
             'can_request_pause', 'can_resume', 'can_requester_resubmit', 'pause_request', 'withdraw_request',
             'post_approver_fixed_loginid', 'post_approver_fixed_name', 'map_info_locked', 'mail_completion_matched',
             'shared_group', 'shared_group_name', 'review_items', 'layer_drift_detected',
-            'is_overseas',
+            'layer_drift_auto_rejected', 'is_overseas',
         ]
         # shared_group 은 전체 저장(PUT/PATCH)에 값이 빠져 초기화되는 일이 없도록 read-only 로 두고,
         # 변경은 전용 액션 POST documents/{id}/set-shared-group/ 으로만 한다.
@@ -285,6 +308,9 @@ class RequestDocumentSerializer(DocPermFieldsMixin, serializers.ModelSerializer)
 
     def get_designated_pl_loginid(self, obj):
         return obj.designated_pl.loginid if obj.designated_pl else None
+
+    def get_layer_drift_auto_rejected(self, obj):
+        return is_layer_drift_auto_rejected(obj)
 
     def get_notifier_mails(self, obj):
         """통보처(detail.notifiers) loginid → mail 매핑. 결재 경로 탭에서 이름 옆 이메일 표시용."""
@@ -314,6 +340,7 @@ class RequestDocumentListSerializer(ZoneMapMixin, DocPermFieldsMixin, serializer
     my_pending_review_items = serializers.SerializerMethodField()
     my_mark_category = serializers.SerializerMethodField()
     detail_summary = serializers.SerializerMethodField()
+    layer_drift_auto_rejected = serializers.SerializerMethodField()
 
     class Meta:
         model = RequestDocument
@@ -325,13 +352,16 @@ class RequestDocumentListSerializer(ZoneMapMixin, DocPermFieldsMixin, serializer
             'can_request_pause', 'can_resume', 'can_requester_resubmit', 'pause_request', 'withdraw_request',
             'post_approver_fixed_loginid', 'mail_completion_matched',
             'shared_group', 'shared_group_name', 'my_pending_review_items', 'my_mark_category',
-            'layer_drift_detected', 'is_overseas',
+            'layer_drift_detected', 'layer_drift_auto_rejected', 'is_overseas',
         ]
         read_only_fields = ['shared_group', 'mail_completion_matched', 'layer_drift_detected',
                             'is_overseas']
 
     def get_designated_pl_loginid(self, obj):
         return obj.designated_pl.loginid if obj.designated_pl else None
+
+    def get_layer_drift_auto_rejected(self, obj):
+        return is_layer_drift_auto_rejected(obj)
 
     def get_detail_summary(self, obj):
         """목록 화면이 실제로 쓰는 detail 값만 추린 요약(2026-09, 결재 현황 로딩 속도 개선).

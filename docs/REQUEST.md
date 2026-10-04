@@ -4663,7 +4663,7 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
   1. [결재 진행 중(`under_review`) 의뢰서를 하나 만들고 J-layer 표를 자동 채움 → 마스터 DB `api_photosteps{N}`
      에서 그 `processid`/`stepseq` 행의 `recipeid` 또는 `layerid` 를 바꾼다] → [결재 현황 목록 '목적' 칸에
      "변경 감지" 배지가 뜨고 문서는 아직 결재 중]
-  2. [10분 뒤(또는 `recompute_all_in_progress()` 한 번 더)] → [기대 결과: 문서가 결재 현황에서 사라지고, 이력 조회
+  2. [10분 뒤(또는 `recompute_all_in_progress()` 한 번 더)] → [기대 결과: 문서가 결재 현황 진행중 목록에서 빠져 '반려' 필터로 이동하고, 이력 조회
      '반려' 탭에 행이 생긴다. 상세 → 결재 경로 탭에서 반려 단계 의견이 `[자동반려] 마스터 DB 변경 감지: …`]
   3. [메일함(개발은 `MAIL_REDIRECT_TO` 주소)] → [기대 결과: 제목 `[반려] [자동반려] {제목}`, 본문에 "마스터 DB
      변경이 감지되어 의뢰서가 자동 반려되었습니다" 문구와 결재 경로 카드의 반려 사유]
@@ -4702,6 +4702,43 @@ O"/"초기화"가 걸러낼 대상이 하나도 남지 않는 자기모순이 �
      남아 있고 이력 조회 '반려' 탭에 행이 생기지 않는다. 실패 신호: 반려 탭에 `[자동반려]` 행 생성]
   3. [같은 방식으로 P·J·O 중 하나(예: O)만 합의하지 않은 문서로 반복] → [기대 결과: 기존대로 2주기 뒤 자동
      반려]
+
+### 기능 개선 (2026-10-04 — 결재 현황: '변경 감지' 자동 반려 문서는 반려 후에도 배지 유지)
+
+- **요청**: 변경 감지로 자동 반려된 의뢰서는 결재 현황에서 반려 상태가 돼도 '변경 감지' 배지가 남아 있어야
+  한다 — 왜 반려됐는지 알 수 있도록. 종전에는 이력 조회 '반려' 탭에만 배지가 남고, 결재 현황은
+  `isLayerDriftVisible` 이 진행중 상태(`submitted`/`under_review`/`pause`)만 통과시켜 반려 즉시 배지가 사라졌다.
+- **판정 — `layer_drift_auto_rejected`** (읽기 전용, `serializers.is_layer_drift_auto_rejected`):
+  `status='rejected'` + `layer_drift_detected=True` + **최신 회차의 반려 단계 의견이 `[자동반려]`
+  (`mailer.AUTO_REJECT_COMMENT_PREFIX`)로 시작**하면 `true`. 목록(`RequestDocumentListSerializer`)·상세
+  (`RequestDocumentSerializer`) 응답 모두에 싣는다. 이미 prefetch 된 `approval_steps` 만 읽으므로 추가 쿼리·
+  마이그레이션이 없다.
+  - 감지 중이던 문서라도 **사람이 누른 반려**는 `false` — 배지가 뜨지 않는다.
+  - 반려 이력 스냅샷 플래그가 아니라 단계 의견으로 판정하는 이유: 이력 행은 삭제할 수 있어(`RejectionSnapshotViewSet`
+    Destroy) 지워지면 배지도 사라지기 때문이다.
+  - **재상신**하면 `reset_document_drift` 가 감지값을 초기화하므로 `false` 가 돼 배지가 사라진다(이력 조회 쪽 배지는 그대로).
+- **모달 내용**: 배지 클릭 시 종전과 같은 `GET /documents/{id}/layer-drift/` 를 부른다. 스케줄러는 진행중 문서만
+  다시 계산하고 반려 문서의 `layer_drift_detail` 은 재상신 전까지 바뀌지 않으므로, **반려 시점의 diff**(이력 조회
+  반려 탭 모달과 같은 내용)가 보인다.
+- **프론트**: `utils/approvalTable.ts` `isLayerDriftVisible` = (진행중 + 감지) **또는** `layer_drift_auto_rejected`.
+  결재 현황 목록 '목적' 칸 배지, 상세보기 배지, 요청 목적 필터의 '변경 감지' 옵션이 모두 이 함수를 쓰므로 함께
+  적용된다(필터에 자동 반려 문서도 걸린다). 타입 `RequestDocument.layer_drift_auto_rejected?` 추가. i18n 변경 없음.
+- **영향 파일**: `backend/api/serializers.py`, `backend/api/tests.py`, `frontend/src/types/index.ts`,
+  `frontend/src/utils/approvalTable.ts`, `frontend/src/utils/approvalTable.test.ts`.
+- **테스트**: `LayerDriftAutoRejectTest` 에 3건(자동 반려 → 목록·상세 `true`, 반려 후 다음 주기에도 유지 /
+  감지 중 사람 반려 → `false` / 재상신 초기화 → `false`), `approvalTable.test.ts` `isLayerDriftVisible` 4건.
+- **수동 검증 시나리오** (개발환경 — `run_scheduler` 가동 또는 Django shell 에서
+  `layer_drift.recompute_all_in_progress()` 2번 호출):
+  1. [결재 중(`under_review`, P·J·O 미합의) 의뢰서의 J-layer 를 자동 채움 → 마스터 DB `api_photosteps{N}` 에서 그
+     `processid`/`stepseq` 행의 `recipeid` 를 바꾼다 → 2주기 경과] → [결재 현황 → 상태 필터 '반려'] →
+     [기대 결과: 그 문서 행 '목적' 칸에 빨간 '변경 감지' 배지가 보인다. 실패 신호: 배지 없음]
+  2. [그 배지 클릭] → [기대 결과: '레이어 정보 변경 감지' 모달에 바꾼 recipeid 의 옛 값(삭제)/새 값(추가) 행]
+  3. [행 클릭 → 상세보기] → [기대 결과: 상세 화면에도 '변경 감지' 배지가 있고 클릭 시 같은 모달]
+  4. [요청 목적 필터에서 '변경 감지'만 체크] → [기대 결과: 자동 반려 문서도 목록에 남는다]
+  5. [변경 감지 배지가 떠 있는(1주기만 지난) 다른 문서를 R 담당자로 로그인해 직접 반려] → [결재 현황 '반려'] →
+     [기대 결과: 그 문서에는 배지가 없다]
+  6. [1번 문서를 작성자로 수정 후 재상신] → [기대 결과: 결재 현황 배지가 사라진다. 이력 조회 '반려' 탭의 해당 행
+     배지는 그대로]
 
 ### 기능 개선 (2026-09-21 — Step1 제품이름 ↔ 조리법 상호 좁힘: 조합법만으로 조리법 broad 조회 + 조리법 먼저 선택 지원)
 
