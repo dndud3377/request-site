@@ -2145,6 +2145,14 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 - 주의: `content` 는 리치 에디터 HTML 이라 태그 문자열(`span`, `strong` 등)로 검색해도 걸린다.
 - 회귀 테스트: `api.tests.GuideSearchTest` 4건(수정 전 3건 FAIL → 수정 후 전부 OK). 백엔드 전체 628 tests OK.
 
+### B-67 ⚪ 가이드 메뉴명 키 노출·작성 버튼 '+' 중복 — ✅수정완료(2026-10-04)
+- 증상: ① 상단 메뉴가 `nav.guide` 키 문자열 그대로 보였다(`Navbar.tsx` 가 쓰는 키가 ko/en 에 없음).
+  ② 가이드 작성 버튼이 `+ + 가이드 작성` — `GuidePage.tsx` 가 `+ {t('guide.write')}` 로 '+'를 하드코딩했는데
+  `guide.write` 값에도 이미 '+'가 들어 있었다.
+- 수정: `nav.guide` 를 ko(`가이드`)/en(`Guide`) 에 동시 추가, `GuidePage.tsx` 의 하드코딩 '+'를 제거(번역 값의 '+'만 남김).
+- 검증: 브라우저에서 메뉴 `가이드`/`Guide`, 버튼 `+ 가이드 작성`/`+ Write Guide` 확인.
+  `tsc --noEmit` 0건, `npm test` 343 tests 통과, 기본 빌드 성공.
+
 ---
 
 ## 6. 잠재 위험 (아직 버그로 터지지 않았지만 구조적으로 위험한 것)
