@@ -8,6 +8,7 @@
     "voc": "VOC",
     "permissions": "Permissions",
     "address_book": "Address Book",
+    "guide": "Guide",
     "notice_tooltip": "View notices",
     "dev_user_switch": "Switch test user",
     "current": "Current"
