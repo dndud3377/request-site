@@ -77,7 +77,6 @@ interface StepMapProps {
   mshotDeleteMode: boolean;
   mshotEditAddMode: boolean;
   setDetail: React.Dispatch<React.SetStateAction<DetailFormState>>;
-  handleReset: () => void;
   handleMapTypeSelect: (val: string) => void;
   handleDetailChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
   handleDetailSet: (name: string, value: string) => void;
@@ -126,7 +125,6 @@ const StepMap: React.FC<StepMapProps> = ({
   mshotDeleteMode,
   mshotEditAddMode,
   setDetail,
-  handleReset,
   handleMapTypeSelect,
   handleDetailChange,
   handleDetailSet,
@@ -160,9 +158,6 @@ const StepMap: React.FC<StepMapProps> = ({
           🗺️ {t('request.section_map')}
           {GuideTourBadge}
         </span>
-        <button className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '4px 10px' }} onClick={handleReset} disabled={mapInfoLocked}>
-          🔄 {t('common.reset')}
-        </button>
       </div>
       {mapInfoLocked && (
         <p className="form-hint" style={{ color: 'var(--text-muted)', margin: '0 0 12px' }}>
