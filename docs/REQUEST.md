@@ -307,6 +307,8 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
     잠금을 우회할 수 있었다. 버튼이 굳이 필요 없다는 결정에 따라 버튼과 전용 핸들러(`index.tsx` 의
     `handleReset`, `StepMap` 의 `handleReset` prop)를 함께 제거했다. `common.reset` i18n 키는 결재 현황에서
     계속 쓰므로 남긴다. MAP 값은 MAP 목적 변경 시 확인 모달(`handleMapTypeChangeConfirm`)로 초기화된다.
+    이어서 버튼을 오른쪽 끝으로 밀던 섹션 제목 레이아웃(`justifyContent: 'space-between'` + 안쪽 `<span>`)도
+    Step1 과 같은 `display:flex; alignItems:center; gap:6` 형태로 단순화했다(화면 모양 동일).
 - **요청 3 — 지도 편차 값의 '-' 부호도 빨간색**: `PagedDetailView.tsx` 의 `NUMERIC_VALUE_PATTERN` 을
   `/\d+(?:\.\d+)?(?:um|mm)/g` → `/-?\d+(?:\.\d+)?(?:um|mm)/g` 로 변경. 같은 패턴을 쓰는 **예외 구역** 칩에도
   동일 적용(사용자 결정). 강조 조건(`highlightNumbers`)은 그대로.
@@ -1030,8 +1032,9 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
     EXISTING 에서도 계속 선택 가능.
   - `index.tsx` `validate()` step2: `only_prodc==='Yes' && !py_apply` 면 필수 에러 — Final
     필수 규칙과 같은 자리(`!isMapRegistered` 블록 **밖**)에 둬서 CLONE/EXISTING 에서도 검증된다.
-  - `only_prodc` 를 초기값으로 되돌리는 5곳(`handleOnlyProdcChange` No 분기,
-    `handleMapTypeChangeConfirm`, `handleReset`, 투어 `map-reset` 케이스, `mapInfoDefaults()`)
+  - `only_prodc` 를 초기값으로 되돌리는 4곳(`handleOnlyProdcChange` No 분기,
+    `handleMapTypeChangeConfirm`, 투어 `map-reset` 케이스, `mapInfoDefaults()`
+    — 원래 5곳이었으나 `handleReset` 은 2026-10-04 MAP 초기화 버튼 삭제로 함께 제거됐다)
     모두에 `py_apply` 초기화를 함께 추가 — No 로 되돌리거나 MAP 목적을 바꾸면 값이 사라지고
     다음 Yes 전환 때 다시 선택해야 한다.
   - `PagedDetailView.tsx`(결재상세/이력조회 공용): `prodc_status` 값 박스 옆에 `py_apply` 값
