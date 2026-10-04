@@ -5,10 +5,10 @@ import AutocompleteInput from '../../../components/AutocompleteInput';
 import RichTextEditor from '../../../components/RichTextEditor';
 import { DetailFormState, GuideFeatureKey, MapInfo } from '../../../types';
 import {
-  CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ, isMapRegisteredType,
-  EA_NO_CHANGE, EA_HAS_CHANGE, eaDefaultValue,
+  CRegion, ProdcScope, PRODC_SCOPE_OPTIONS, MAP_TYPE_DELETE_REQ, MAP_TYPE_EXISTING, isMapRegisteredType,
+  EA_NO_CHANGE, EA_HAS_CHANGE, eaDefaultValue, INITIAL_DETAIL,
 } from '../constants';
-import { sanitizeSignedDecimal } from '../helpers';
+import { sanitizeSignedDecimal, sourceCodeFromPartid } from '../helpers';
 import ProdcRow from './ProdcRow';
 import MshotImageUpload from './MshotImageUpload';
 
@@ -146,6 +146,13 @@ const StepMap: React.FC<StepMapProps> = ({
   // CLONE/EXISTING 도 입력칸만 잠길 뿐 이 기본값 자체는 그대로 표시된다.
   const eaDefault = eaDefaultValue(detail.only_prodc);
 
+  // 자동 MAP 매칭으로 정해진 EXISTING — map_type·원본 위치·원본 제품을 잠근다.
+  // 자동 매칭이 채우는 값(Step1 라인 + 제품 코드)과 같을 때만 잠가서, 사용자가 EXISTING 을
+  // 직접 눌러 원본을 비워 둔 경우는 계속 입력할 수 있게 둔다. Step1 이 바뀌면 자동으로 풀린다.
+  const existingAutoLocked = detail.map_type === MAP_TYPE_EXISTING
+    && !!detail.line && detail.source_line === detail.line
+    && !!detail.source_partid && detail.source_partid === sourceCodeFromPartid(detail.partid_selection);
+
   return (
     <div className="form-section">
       <div className="form-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -179,7 +186,7 @@ const StepMap: React.FC<StepMapProps> = ({
             ] as const).map(({ val, labelKey }) => {
               // 삭제는 요청 목적 'MAP 삭제' 전용 — 그 목적일 때만 열리고, 반대로 나머지 3개는 잠긴다.
               const isReasonBtn = val === MAP_TYPE_DELETE_REQ;
-              const disabled = isMapDeleteEdit ? !isReasonBtn : isReasonBtn;
+              const disabled = existingAutoLocked || (isMapDeleteEdit ? !isReasonBtn : isReasonBtn);
               return (
                 <button
                   key={val}
@@ -221,8 +228,8 @@ const StepMap: React.FC<StepMapProps> = ({
                이유 입력칸 하나만 남기는 것이 이 모드의 요구사항이다.
                validate(2) 도 같은 조건으로 이 항목들의 검증을 건너뛴다(짝을 맞춰야 함). ▼▼ */}
         {!isMapReasonMode && (<>
-        {/* 원본 위치/Part ID (CLONE·EXISTING 공용) — EXISTING 은 어느 MAP 을 가리키는지 식별하는 값이라
-            CLONE 과 동일하게 항상 입력 가능하다(isMapRegistered 로 잠그지 않는다). */}
+        {/* 원본 위치/Part ID (CLONE·EXISTING 공용) — isMapRegistered 로 잠그지 않는다.
+            단 자동 MAP 매칭으로 정해진 EXISTING(existingAutoLocked)은 수정할 수 없다. */}
         {isMapRegisteredType(detail.map_type) && (
           <div className="full-width" data-tour="map-source-location">
             <div className="conditional-group">
@@ -237,6 +244,7 @@ const StepMap: React.FC<StepMapProps> = ({
                     name="source_line"
                     value={detail.source_line}
                     onChange={handleDetailChange}
+                    disabled={existingAutoLocked}
                   >
                     <option value="">{t('request.select_placeholder')}</option>
                     {lineOptions.map((v) => <option key={v} value={v}>{v}</option>)}
@@ -252,6 +260,7 @@ const StepMap: React.FC<StepMapProps> = ({
                   style={{ flex: 1 }}
                   uppercase
                   maxLength={8}
+                  disabled={existingAutoLocked}
                 />
               </div>
 
@@ -648,6 +657,8 @@ const StepMap: React.FC<StepMapProps> = ({
               onChange={(e) => {
                 const next = e.target.value;
                 handleDetailSet('inter', next);
+                // INTER YES 에서는 EDS Backside 를 쓸 수 없다 — 켜져 있던 값은 미적용으로 되돌린다.
+                if (next === 'YES') handleDetailSet('eds_backside', INITIAL_DETAIL.eds_backside);
                 if (next === 'NO') {
                   handleDetailSet('inter_xs', '미적용');
                   handleDetailSet('inter_ys', '미적용');
@@ -726,7 +737,7 @@ const StepMap: React.FC<StepMapProps> = ({
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, max-content)', gap: '8px' }}>
                 {mapOptions.map((opt) => {
                   const isActive = detail[opt.name] === opt.activeValue;
-                  const isDisabled = isMapRegistered;
+                  const isDisabled = isMapRegistered || (opt.name === 'eds_backside' && detail.inter === 'YES');
                   return (
                     <button
                       key={opt.name as string}
