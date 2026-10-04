@@ -59,7 +59,7 @@ function buildFlowComboColors(rows: FlowChartRow[], refKey: string): Map<string,
 // ── 흐름도 "조합 강조 색상" 기능 끝 ──────────────────────────────────────
 
 /** 지도 편차·예외 구역 칩 — 값 문자열 안의 숫자(um/mm) 토큰만 진하게 강조할 때 쓰는 패턴과 스타일. */
-const NUMERIC_VALUE_PATTERN = /\d+(?:\.\d+)?(?:um|mm)/g;
+const NUMERIC_VALUE_PATTERN = /-?\d+(?:\.\d+)?(?:um|mm)/g;
 const numberHighlightStyle: React.CSSProperties = { color: '#dc3545', fontWeight: 800 };
 
 function renderWithHighlightedNumbers(value: string): React.ReactNode {
