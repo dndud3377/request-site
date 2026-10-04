@@ -21,9 +21,13 @@ export const LAYER_DRIFT_FILTER_OPTION = '변경 감지';
 /** 결재 진행중 상태 — backend layer_drift.IN_PROGRESS_STATUSES 와 같아야 한다 */
 const LAYER_DRIFT_IN_PROGRESS_STATUSES = ['submitted', 'under_review', 'pause'];
 
-/** '변경 감지' 뱃지를 보여줄지 — 완료(approved)/반려(rejected)로 넘어간 문서는 감지값이 남아 있어도 숨긴다 */
+/**
+ * '변경 감지' 뱃지를 보여줄지 — 완료(approved)/반려(rejected)로 넘어간 문서는 감지값이 남아 있어도 숨긴다.
+ * 단 변경 감지로 자동 반려된 문서는 반려 사유를 알 수 있도록 반려 후에도 보인다(재상신하면 사라진다).
+ */
 export const isLayerDriftVisible = (doc: RequestDocument): boolean =>
-  !!doc.layer_drift_detected && LAYER_DRIFT_IN_PROGRESS_STATUSES.includes(doc.status);
+  (!!doc.layer_drift_detected && LAYER_DRIFT_IN_PROGRESS_STATUSES.includes(doc.status))
+  || !!doc.layer_drift_auto_rejected;
 
 export interface DocDetailFields {
   line: string;
