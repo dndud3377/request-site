@@ -8,6 +8,7 @@
     "voc": "VOC",
     "permissions": "권한 관리",
     "address_book": "주소록 관리",
+    "guide": "가이드",
     "notice_tooltip": "공지사항 보기",
     "dev_user_switch": "테스트 유저 전환",
     "current": "현재"
@@ -1302,6 +1303,7 @@
     "info_title_placeholder": "가이드 제목을 입력하세요",
     "content_label": "내용",
     "editor_placeholder": "가이드 내용을 작성하세요...",
+    "search_placeholder": "가이드 검색...",
     "paste_image_hint": "이미지를 에디터에 직접 Ctrl+V로 붙여넣기할 수 있습니다.",
     "video_too_large": "동영상 크기는 50MB를 초과할 수 없습니다.",
     "video_upload_failed": "동영상 업로드에 실패했습니다.",

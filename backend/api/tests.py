@@ -17,7 +17,7 @@ from .management.commands import backfill_title_flow_step
 from .models import (
     ApprovalStep, DocumentReviewItem, DocumentReviewItemReviewer, MailNotification,
     Line, PauseRequest, RejectionSnapshot, RequestDocument, ReviewItemMaster, UserGroup,
-    UserProfile, WithdrawRequest, LayerFilterSet, ProcessProduct, ProductProcessId,
+    UserProfile, WithdrawRequest, LayerFilterSet, ProcessProduct, ProductProcessId, Guide,
 )
 
 
@@ -8257,6 +8257,40 @@ class GuideWritePermissionOverseasTest(TestCase):
         r = self.client.post('/api/guides/', self._create_payload(), format='json')
         self.assertEqual(r.status_code, 201, r.content)
 
+
+class GuideSearchTest(TestCase):
+    """가이드 목록 검색 회귀 테스트 — GuidePage 검색창이 보내는 ?search= 가 서버에서 적용돼야 한다.
+
+    2026-10: GuideViewSet 이 search 파라미터를 읽지 않아 무엇을 입력해도 전체 목록이 돌아왔다.
+    """
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.user = UserProfile.objects.create(loginid='gs_j', mail='gsj@c.com', role='TE_J')
+        self.client.force_authenticate(user=self.user)
+        Guide.objects.create(guide_type='info', title='사과 가이드', content='내용 A')
+        Guide.objects.create(guide_type='info', title='바나나 가이드', content='사과 언급 B')
+        Guide.objects.create(guide_type='info', title='포도 가이드', content='내용 C')
+
+    def _titles(self, params):
+        r = self.client.get('/api/guides/', params)
+        self.assertEqual(r.status_code, 200, r.content)
+        return sorted(g['title'] for g in r.json())
+
+    def test_search_matches_title_and_content(self):
+        self.assertEqual(self._titles({'search': '사과'}), ['바나나 가이드', '사과 가이드'])
+
+    def test_search_no_match_returns_empty(self):
+        self.assertEqual(self._titles({'search': '없는단어'}), [])
+
+    def test_no_search_returns_all(self):
+        """대조군 — 검색어가 없으면 종전대로 전체 목록이다."""
+        self.assertEqual(len(self._titles({})), 3)
+
+    def test_search_combines_with_guide_type(self):
+        Guide.objects.create(guide_type='feature', title='사과 기능가이드', content='x')
+        self.assertEqual(self._titles({'search': '사과', 'guide_type': 'info'}), ['바나나 가이드', '사과 가이드'])
 
 class LayerDriftAutoRejectTest(TestCase):
     """마스터 DB 변경 감지 자동 반려 — stepseq·recipeid·layerid 변경이 같은 변경으로 2번 연속 감지되면

@@ -219,7 +219,7 @@ export default function GuidePage(): React.ReactElement {
         </div>
         {canWrite && (
           <button className="btn btn-primary" onClick={openWrite}>
-            + {t('guide.write')}
+            {t('guide.write')}
           </button>
         )}
       </div>

@@ -4544,6 +4544,9 @@ class GuideViewSet(viewsets.ModelViewSet):
     serializer_class = GuideSerializer
     permission_classes = [GuideWritePermission]
     pagination_class = None  # 목록 전체 반환(앱 컨벤션). 전역 PAGE_SIZE=20 적용 방지.
+    # GuidePage 검색창이 보내는 ?search= 를 제목·내용으로 거른다(VOCViewSet 과 같은 방식).
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['title', 'content']
 
     def get_queryset(self):
         qs = Guide.objects.all()

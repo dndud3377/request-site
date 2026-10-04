@@ -1082,7 +1082,7 @@ function BbTable({
 function computeDetailDiff(cur: any, prev: any): Set<string> {
   const changed = new Set<string>();
   const keys = new Set([...Object.keys(cur ?? {}), ...Object.keys(prev ?? {})]);
-  for (const k of keys) {
+  for (const k of Array.from(keys)) {
     if (JSON.stringify(cur?.[k]) !== JSON.stringify(prev?.[k])) changed.add(k);
   }
   return changed;

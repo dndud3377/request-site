@@ -8,6 +8,7 @@
     "voc": "VOC",
     "permissions": "Permissions",
     "address_book": "Address Book",
+    "guide": "Guide",
     "notice_tooltip": "View notices",
     "dev_user_switch": "Switch test user",
     "current": "Current"
@@ -1302,6 +1303,7 @@
     "info_title_placeholder": "Enter guide title",
     "content_label": "Content",
     "editor_placeholder": "Write guide content...",
+    "search_placeholder": "Search guides...",
     "paste_image_hint": "You can paste images directly into the editor with Ctrl+V.",
     "video_too_large": "Video size cannot exceed 50MB.",
     "video_upload_failed": "Failed to upload the video.",

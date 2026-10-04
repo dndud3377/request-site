@@ -3496,7 +3496,7 @@ export default function RequestPage(): React.ReactElement {
 
   const handleOpenAutoFillPanel = () => {
     // 원본 데이터 목록에 남은(미매핑) 행 기준으로 기본 범위를 시드한다.
-    const layerIds = [...new Set(jayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && !mappedJayerRowIds.has(r.id)).map(r => r.layerid).filter(Boolean))]
+    const layerIds = Array.from(new Set(jayerRows.filter(r => !isRowInactive(r.st) && !isNocSpecial(r.new_or_copy) && !mappedJayerRowIds.has(r.id)).map(r => r.layerid).filter(Boolean)))
       .sort((a, b) => parseFloat(a) - parseFloat(b));
 
     // 제품이 입력된 첫 bb_entries 항목을 기본 선택값(id)으로 시드한다.

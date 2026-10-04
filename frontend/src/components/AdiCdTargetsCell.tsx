@@ -16,10 +16,18 @@ export interface AdiCdTargetsCellProps {
 /**
  * ADI CD 변경 '동일 변경 적용 대상' 표시 — 결재 현황·홈 목록 칸과 상세 모달 카드가 함께 쓴다.
  *
- *   TLC [동일 변경 4건]                         ← 머리 줄: 조합법 + (2건 이상일 때) 건수 배지
- *   [PRC_A001] (AB12CD34-01A) (AB12CD34-02B)    ← 조리법별 묶음: 조리법 태그 + 제품 이름 칩
+ *   TLC [동일 변경 4건]            ← 머리 줄: 조합법 + (2건 이상일 때) 건수 배지
+ *   ┌──────────┬──────────────┐
+ *   │ 조리법    │ 제품 이름      │  ← 머리 행
+ *   ├──────────┼──────────────┤
+ *   │ PRC_A001 │ AB12CD34-01A │  ← 제품 1개 = 1행, 같은 조리법은 세로로 합친 한 칸
+ *   │          │ AB12CD34-02B │
+ *   ├──────────┼──────────────┤
+ *   │ PRC_B002 │ EF56GH78-01A │
+ *   └──────────┴──────────────┘
  *
- * 대상이 1건이어도 같은 2줄 형태를 쓴다(배지만 숨긴다). 안쪽은 button 안에 들어갈 수 있도록 span 만 쓴다.
+ * 대상이 1건이어도 같은 표 형태를 쓴다(배지만 숨긴다). 목록에서는 button 안에 들어가므로 table 대신
+ * span + CSS grid 로 표를 그린다(button 안에는 phrasing content 만 올 수 있다).
  */
 const AdiCdTargetsCell: React.FC<AdiCdTargetsCellProps> = ({ combo, targets }) => {
   const { t } = useTranslation();
@@ -33,16 +41,25 @@ const AdiCdTargetsCell: React.FC<AdiCdTargetsCellProps> = ({ combo, targets }) =
           <span className="adi-targets-count">{t('approval.adi_targets_count', { count: targets.length })}</span>
         )}
       </span>
-      {groups.map((group) => (
-        <span key={group.processId} className="adi-targets-group">
-          <span className="adi-targets-process">{group.processId}</span>
-          <span className="adi-targets-products">
+      <span className="adi-targets-table">
+        <span className="adi-targets-th">{t('request.process_id')}</span>
+        <span className="adi-targets-th">{t('request.partid_selection')}</span>
+        {groups.map((group) => (
+          <span key={group.processId} className="adi-targets-group">
+            <span className="adi-targets-process" style={{ gridRow: `span ${group.products.length}` }}>
+              {group.processId}
+            </span>
             {group.products.map((product, i) => (
-              <span key={`${product}-${i}`} className="adi-targets-product">{product}</span>
+              <span
+                key={`${product}-${i}`}
+                className={`adi-targets-product${i === 0 ? ' is-group-start' : ''}`}
+              >
+                {product}
+              </span>
             ))}
           </span>
-        </span>
-      ))}
+        ))}
+      </span>
     </span>
   );
 };

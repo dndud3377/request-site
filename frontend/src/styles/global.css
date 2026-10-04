@@ -1095,18 +1095,22 @@ select.form-control option {
 .combo-dot { color: var(--text-disabled); margin: 0 3px; font-family: var(--font-sans); }
 
 /* ADI CD 변경 '동일 변경 적용 대상' — 결재 현황·홈 목록 칸과 상세 모달 카드 공용(AdiCdTargetsCell).
-   머리 줄(조합법 + 건수 배지) 아래에 조리법 태그 + 제품 이름 칩 묶음이 줄마다 온다.
+   머리 줄(조합법 + 건수 배지) 아래에 '조리법 | 제품 이름' 표가 온다. 목록에서는 button 안에 들어가므로
+   table 이 아니라 span + grid 로 그린다: 조리법 칸은 1열에 고정하고 제품 수만큼 grid-row 를 span 해
+   세로로 합치며, 제품 칸은 2열에 한 행씩 쌓인다. 묶음(.adi-targets-group)은 display: contents 라
+   칸들이 바로 표 grid 의 자식처럼 배치된다.
    목록 칸은 폭 제한이 없으면 대상이 많을 때 칸이 넓어져 라인·목적·상신일 칸이 줄바꿈되므로 최대 폭을 둔다. */
 .adi-targets {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   max-width: 380px;
   font-family: var(--font-sans);
   text-align: left;
 }
 .adi-targets-head { display: flex; align-items: center; gap: 6px; }
 .adi-targets-combo {
+  align-self: flex-start;
   font-size: 0.7rem;
   font-weight: 800;
   letter-spacing: 0.3px;
@@ -1123,30 +1127,47 @@ select.form-control option {
   padding: 1px 7px;
   border-radius: 10px;
 }
-.adi-targets-group { display: flex; align-items: flex-start; gap: 8px; }
+.adi-targets-table {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  width: fit-content;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+.adi-targets-th {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--accent-light);
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+.adi-targets-th + .adi-targets-th { border-left: 1px solid var(--border); }
+.adi-targets-group { display: contents; }
 .adi-targets-process {
-  flex: none;
-  font-size: 0.7rem;
+  grid-column: 1;
+  font-size: 0.72rem;
   font-weight: 700;
   color: var(--text-secondary);
   background: var(--border-light);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 8px;
-  margin-top: 1px;
+  border-top: 1px solid var(--border);
+  padding: 2px 10px;
   white-space: nowrap;
 }
-.adi-targets-products { display: flex; flex-wrap: wrap; gap: 3px 4px; }
 .adi-targets-product {
+  grid-column: 2;
   font-size: 0.74rem;
   font-weight: 600;
   line-height: 1.5;
   color: var(--accent);
-  background: var(--accent-light);
-  border-radius: 10px;
-  padding: 0 8px;
+  border-top: 1px solid var(--border-light);
+  border-left: 1px solid var(--border);
+  padding: 1px 10px;
   white-space: nowrap;
 }
+.adi-targets-product.is-group-start { border-top-color: var(--border); }
 
 .map-purpose-na { color: var(--text-disabled); }
 

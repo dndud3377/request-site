@@ -2122,6 +2122,39 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 
 ---
 
+## 5-5. 프론트 타입 체크·프로덕션 빌드 실패 (B-65) — ✅수정완료(2026-10-04)
+
+### B-65 🟠 `npx tsc --noEmit` 에러 4건으로 기본 `react-scripts build` 가 실패했다
+- 증상: `react-scripts build` 가 `Failed to compile. TS2802 …` 로 중단(타입 에러 무시 옵션 없이는 빌드 불가).
+- 원인 4곳:
+  - TS2802(Set 순회 — tsconfig target 이 es2015 미만) 3곳: `PagedDetailView.tsx` `computeDetailDiff` 의
+    `for (const k of keys)`, `Step4.tsx` `remainingLayerOptions`, `RequestPage/index.tsx` `handleOpenAutoFillPanel` 의 `[...new Set(…)]`
+  - TS2345 1곳: `GuidePage.tsx` 검색창의 `t('guide.search_placeholder')` — 키가 `ko.json`/`en.json` 어디에도
+    없어 화면에 키 문자열이 그대로 보였다.
+- 수정: tsconfig 는 그대로 두고 3곳을 `Array.from(…)` 으로 바꿨다(동작 동일). `guide.search_placeholder` 를
+  ko(`가이드 검색...`)/en(`Search guides...`) 에 동시 추가했다.
+- 검증: `npx tsc --noEmit` error TS **0건**, 기본 `react-scripts build` **Compiled with warnings(exit 0)**,
+  `npm test` 16 suites / 343 tests 통과.
+
+### B-66 🟠 가이드 페이지 검색이 서버에서 무시됐다 — ✅수정완료(2026-10-04)
+- 증상: `GuidePage.tsx` 검색창이 `GET /api/guides/?search=…` 를 보내지만 `GuideViewSet.get_queryset` 이
+  `guide_type`·`feature_key` 만 읽어 **무엇을 입력해도 전체 목록**이 돌아왔다
+  (재현: 가이드 '사과'·'바나나' 생성 후 `?search=사과` → `['바나나', '사과']`).
+- 수정: `GuideViewSet` 에 `filter_backends = [filters.SearchFilter]`, `search_fields = ['title', 'content']`
+  (VOCViewSet 과 같은 방식). `guide_type` 필터와 함께 쓰면 두 조건이 AND 로 적용된다.
+- 주의: `content` 는 리치 에디터 HTML 이라 태그 문자열(`span`, `strong` 등)로 검색해도 걸린다.
+- 회귀 테스트: `api.tests.GuideSearchTest` 4건(수정 전 3건 FAIL → 수정 후 전부 OK). 백엔드 전체 628 tests OK.
+
+### B-67 ⚪ 가이드 메뉴명 키 노출·작성 버튼 '+' 중복 — ✅수정완료(2026-10-04)
+- 증상: ① 상단 메뉴가 `nav.guide` 키 문자열 그대로 보였다(`Navbar.tsx` 가 쓰는 키가 ko/en 에 없음).
+  ② 가이드 작성 버튼이 `+ + 가이드 작성` — `GuidePage.tsx` 가 `+ {t('guide.write')}` 로 '+'를 하드코딩했는데
+  `guide.write` 값에도 이미 '+'가 들어 있었다.
+- 수정: `nav.guide` 를 ko(`가이드`)/en(`Guide`) 에 동시 추가, `GuidePage.tsx` 의 하드코딩 '+'를 제거(번역 값의 '+'만 남김).
+- 검증: 브라우저에서 메뉴 `가이드`/`Guide`, 버튼 `+ 가이드 작성`/`+ Write Guide` 확인.
+  `tsc --noEmit` 0건, `npm test` 343 tests 통과, 기본 빌드 성공.
+
+---
+
 ## 6. 잠재 위험 (아직 버그로 터지지 않았지만 구조적으로 위험한 것)
 
 ### R-01 🔴 `additional_notes` 가 `TextField` — 도메인 데이터 전체가 스키마 없는 문자열
