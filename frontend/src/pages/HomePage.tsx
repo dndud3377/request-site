@@ -763,7 +763,7 @@ export default function HomePage(): React.ReactElement {
                     const detail = getDocDetailFields(doc);
                     const comboText = [detail.processSelection, detail.partidSelection, detail.processId]
                       .filter(Boolean).join(' · ') || '-';
-                    // ADI CD 변경은 '동일 변경 적용 대상' 전체를 조리법 기준으로 묶어 2줄 형태로 보여준다.
+                    // ADI CD 변경은 '동일 변경 적용 대상' 전체를 조리법 기준으로 묶어 '조리법 | 제품 이름' 표로 보여준다.
                     const comboContent = detail.isAdiCd && detail.adiTargets.length > 0
                       ? <AdiCdTargetsCell combo={detail.processSelection} targets={detail.adiTargets} />
                       : comboText;
