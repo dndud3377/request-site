@@ -154,6 +154,44 @@ npx tsc --noEmit 2>&1 | grep -c "error TS"                          # 24 (baseli
 
 ### 1.5 실행 결과
 
+#### 2026-10-04 — 프론트 테스트 간헐 실패 (flaky, **미해결 · 재현 시 로그 수집 대기**)
+
+- **증상**: 전체 실행(`npm test -- --watchAll=false`, 339건) 중 아래 2개 파일이 가끔 실패한다.
+  해당 파일만 단독으로 돌리면 매번 통과한다.
+  - `frontend/src/pages/RequestPage/requesterResubmitHistory.test.tsx`
+  - `frontend/src/pages/RequestPage/productOptionsBroadValidity.test.tsx`
+- **실측(같은 원격 세션, CRA 개발 서버를 함께 띄운 부하 상태)**:
+  - MAP 초기화 버튼 삭제 **전** 코드(`f92de51`) 5회 → 2회 실패(1회: 2파일, 1회: `requesterResubmitHistory` 1파일)
+  - 삭제 **후** 코드: 결과가 기록된 11회 중 4회 실패(파일명 확인: `requesterResubmitHistory` 2회, `productOptionsBroadValidity` 1회)
+  - 단독 실행(`requesterResubmitHistory`) 3회 → 3회 통과
+  ⇒ 특정 변경이 원인이 아니라 **이전부터 있던 간헐 실패**다.
+- **추정(확인하지 못함)**: 부하 상태에서 `waitFor` 기본 대기 시간(1초) 안에 렌더가 끝나지 않는 타이밍 문제.
+  실패 메시지 원문을 확보하지 못해 원인은 **확정하지 못했다**.
+- **결정(2026-10-04 사용자)**: 지금은 고치지 않는다. 다음에 재현되면 실패 메시지를 모아 다시 본다.
+- **재현 시 로그 수집 방법** — 출력은 stderr 로 나오므로 리다이렉트 순서에 주의(`> 파일 2>&1`):
+  ```bash
+  cd frontend
+  for i in 1 2 3 4 5; do
+    CI=true npm test -- --watchAll=false > /tmp/jest_$i.log 2>&1
+    grep -E "^FAIL|Tests:" /tmp/jest_$i.log
+  done
+  # 실패한 회차의 메시지 원문(● 블록)만 추출
+  grep -h -A40 "● .* › " /tmp/jest_*.log | grep -v "^\s*at " | less
+  ```
+  얻은 메시지 원문을 이 절에 붙이고 원인·수정 방향을 정한다.
+- **수집된 실패 메시지 #1 (2026-10-04, 정리 작업 검증 중 재현)** — `productOptionsBroadValidity.test.tsx`:
+  ```
+  ● productOptions ↔ productOptionsBroad 분리 › [문제 D 회귀 방지] 편집 로드 시 제품 이름 후보가
+    저장된 조리법 하나로 좁혀지지 않고 라인+조합법 전체로 보인다
+    expect(received).toEqual(expected)
+    - Array [ "P2", ]
+    + Array []
+      > 163 |     expect(options).toEqual(['P2']);
+  ```
+  관찰: 이 단언은 `waitFor` 없이 `flushEffects()`(고정 틱 대기) 직후 한 번만 검사한다(라인 160~163).
+  드롭다운 후보가 **비어 있었다** = 제품 후보(목 API 응답)가 아직 반영되기 전에 검사했을 가능성이 크다(추정).
+  `requesterResubmitHistory.test.tsx` 의 실패 메시지는 **아직 확보하지 못했다.**
+
 #### 2026-08-04 (3차) 실행 결과 — **백엔드·프론트 모두 실행 성공**
 
 > 처음엔 "Django 미설치 → 실행 불가" 로 판단했으나, **§1.4.1 레시피로 전부 돌릴 수 있었다.**

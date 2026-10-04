@@ -105,8 +105,10 @@
 
 ## A-2. Step 2 — MAP (`components/StepMap.tsx`)
 
-#### [F-2.1] 초기화 버튼
-- 위치: `StepMap.tsx:79-81`; `handleReset` `index.tsx:2263-2317`
+#### [F-2.1] 초기화 버튼 — ⛔ 2026-10-04 삭제
+- **삭제됨**: 자동 매칭 EXISTING 잠금을 우회하는 경로였고 필요 없다는 사용자 결정으로 버튼·`handleReset` 을
+  제거했다(`docs/REQUEST.md` 2026-10-04 항목). 아래는 삭제 전 기록이다.
+- 위치(삭제 전): `StepMap.tsx:79-81`; `handleReset` `index.tsx:2263-2317`
 - 동작: StepMap 필드(원본·지도편차·C가문·예외·X표시·MapOption·REV·partial/TBV)만 초기화. Step1 식별정보·Bb는 보존.
 
 #### [F-2.2] MAP 요청 목적 (NEW/CLONE/EXISTING)
