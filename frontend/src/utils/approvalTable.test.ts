@@ -2,7 +2,7 @@ import type { TFunction } from 'i18next';
 import {
   getDocTableRows, getFinalCompletionDate, getLastRejectionInfo, isMyDocument,
   hasActiveStageStep, getStagePendingEnteredAt, getDocDetailFields, StageCell, StageCellSlot,
-  buildAdiCdTargets, groupAdiTargetsByProcessId,
+  buildAdiCdTargets, groupAdiTargetsByProcessId, isLayerDriftVisible,
 } from './approvalTable';
 import { ApprovalStepFrontend, RequestDocument } from '../types';
 
@@ -896,5 +896,29 @@ describe('groupAdiTargetsByProcessId — 조리법 기준 묶음', () => {
       { processId: '-', products: ['B'] },
     ]);
     expect(groupAdiTargetsByProcessId([])).toEqual([]);
+  });
+});
+
+describe('isLayerDriftVisible — 변경 감지 자동 반려 문서는 반려 후에도 배지 유지', () => {
+  const docWith = (overrides: Partial<RequestDocument>): RequestDocument => ({ ...makeDoc([]), ...overrides });
+
+  it('진행중 + 감지됨이면 보인다', () => {
+    expect(isLayerDriftVisible(docWith({ status: 'under_review', layer_drift_detected: true }))).toBe(true);
+  });
+
+  it('자동 반려 문서는 반려 상태여도 보인다', () => {
+    expect(isLayerDriftVisible(docWith({
+      status: 'rejected', layer_drift_detected: true, layer_drift_auto_rejected: true,
+    }))).toBe(true);
+  });
+
+  it('사람이 반려한 문서는 감지값이 남아 있어도 숨긴다', () => {
+    expect(isLayerDriftVisible(docWith({
+      status: 'rejected', layer_drift_detected: true, layer_drift_auto_rejected: false,
+    }))).toBe(false);
+  });
+
+  it('완료 문서는 감지값이 남아 있어도 숨긴다', () => {
+    expect(isLayerDriftVisible(docWith({ status: 'approved', layer_drift_detected: true }))).toBe(false);
   });
 });
