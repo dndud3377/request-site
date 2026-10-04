@@ -8316,8 +8316,8 @@ class LayerDriftAutoRejectTest(TestCase):
             areaname='A1', eqptype='PMAINF', layerid=layerid, updated='U1',
         )
 
-    def _doc(self, jayer_rows, status='under_review', zone=3):
-        """결재 중 문서를 만든다. zone 은 현재 회차가 진행 중인 구역(일반 경로 기준).
+    def _doc(self, jayer_rows, status='under_review', zone=3, purpose=''):
+        """결재 중 문서를 만든다. zone 은 현재 회차가 진행 중인 구역(일반 경로 기준), purpose 는 request_purpose.
 
         1: PL 대기 / 2: PL 합의 + R 대기 / 3(기본): PL·R 합의 + RA 대기(self.zone3_step).
         자동 반려는 3구역 진입 문서에만 적용되므로 기본값을 3구역으로 둔다. 3구역 단계로 RA 를 쓰는 이유는
@@ -8327,7 +8327,8 @@ class LayerDriftAutoRejectTest(TestCase):
             title='ar-doc', requester=self.author, requester_name='의뢰자', requester_email='ar_a@c.com',
             requester_department='d', product_name='p', status=status, designated_pl=self.pl,
             additional_notes=self._json.dumps({
-                'detail': {'line': 'line1', 'process_id': 'P1'}, 'jayerRows': jayer_rows, 'oayerRows': [],
+                'detail': {'line': 'line1', 'process_id': 'P1', 'request_purpose': purpose},
+                'jayerRows': jayer_rows, 'oayerRows': [],
             }),
         )
         ApprovalStep.objects.create(document=doc, agent='PL', action='pending' if zone == 1 else 'approved',
@@ -8623,28 +8624,63 @@ class LayerDriftAutoRejectTest(TestCase):
         self.assertEqual(p_step.action, 'rejected')
         self.assertTrue(p_step.comment.startswith('[자동반려]'))
 
-    def test_map_delete_zone3_rejects(self):
-        """'MAP 삭제' 3구역(PL 합의 후 P·J·O·R 병렬) — R 이 대기 중이어도 P·J·O 가 열렸으므로 반려한다."""
+    def _assert_excluded_from_drift(self, doc, cycles=3):
+        """변경 감지 대상에서 빠진 문서 — 배지도 자동 반려도 없다."""
+        self._cycle(cycles)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, 'under_review')
+        self.assertFalse(doc.layer_drift_detected)
+        self.assertFalse(RejectionSnapshot.objects.filter(document=doc).exists())
+
+    def test_only_map_zone3_never_rejects(self):
+        """'Only MAP' 은 변경 감지 대상이 아니다 — 3구역(RA)까지 가도 배지·자동 반려 모두 없다."""
         self._master(recipeid='RNEW')
-        doc = self._doc([self._saved(pp='ROLD')], zone=1)
+        doc = self._doc([self._saved(pp='ROLD')], purpose=RequestDocument.ONLY_MAP_PURPOSE)
+        self._assert_excluded_from_drift(doc)
+
+    def test_map_delete_zone3_never_rejects(self):
+        """'MAP 삭제' 는 변경 감지 대상이 아니다 — PL 합의 후 P·J·O·R 병렬(3구역)이어도 배지·자동 반려 모두 없다."""
+        self._master(recipeid='RNEW')
+        doc = self._doc([self._saved(pp='ROLD')], zone=1, purpose=RequestDocument.MAP_DELETE_EDIT_PURPOSE)
         ApprovalStep.objects.filter(document=doc, agent='PL').update(action='approved')
         for agent in ('P', 'J', 'O', 'R'):
             ApprovalStep.objects.create(document=doc, agent=agent, action='pending', round=1,
                                         assignee=self.r_user, assignee_name=f'{agent}담당')
-        self._cycle(2)
-        doc.refresh_from_db()
-        self.assertEqual(doc.status, 'rejected')
+        self._assert_excluded_from_drift(doc)
+
+    def _adi_cd_doc_with_xxxxxx_change(self, zone3_open):
+        """'ADI CD 변경' 문서(J/O-layer 는 비교하지 않고 XXXXXX 만 비교) + XXXXXX 마스터 행 추가.
+
+        zone3_open=True 면 PL·SA 합의 후 P·J 병렬(3구역), False 면 PL 대기(1구역).
+        """
+        from . import layer_drift
+        from .models import PhotoStepS1Cd
+        from .scheduler import STEP_EXTRA_EQPTYPE
+        self._master()
+        doc = self._doc([], zone=1, purpose=RequestDocument.ADI_CD_CHANGE_PURPOSE)
+        layer_drift.capture_extra_layer_snapshot(doc)
+        doc.save(update_fields=['extra_layer_snapshot'])
+        PhotoStepS1Cd.objects.create(
+            processid='P1', stepseq='C1', descript='cd', recipeid='RC', areaname='A1',
+            eqptype=STEP_EXTRA_EQPTYPE, layerid='LC', updated='U1',
+        )
+        if zone3_open:
+            ApprovalStep.objects.filter(document=doc, agent='PL').update(action='approved')
+            ApprovalStep.objects.create(document=doc, agent='SA', action='approved', round=1,
+                                        assignee=self.r_user, assignee_name='SA담당')
+            for agent in ('P', 'J'):
+                ApprovalStep.objects.create(document=doc, agent=agent, action='pending', round=1,
+                                            assignee=self.r_user, assignee_name=f'{agent}담당')
+        return doc
+
+    def test_adi_cd_change_zone1_only_shows_badge(self):
+        """'ADI CD 변경' 1구역(PL 대기)은 XXXXXX 변경이 감지돼도 배지만 띄운다."""
+        doc = self._adi_cd_doc_with_xxxxxx_change(zone3_open=False)
+        self._assert_badge_only(doc)
 
     def test_adi_cd_change_zone3_rejects(self):
-        """'ADI CD 변경' 3구역(PL·SA 합의 후 P·J 병렬, R 없음)도 반려한다."""
-        self._master(recipeid='RNEW')
-        doc = self._doc([self._saved(pp='ROLD')], zone=1)
-        ApprovalStep.objects.filter(document=doc, agent='PL').update(action='approved')
-        ApprovalStep.objects.create(document=doc, agent='SA', action='approved', round=1,
-                                    assignee=self.r_user, assignee_name='SA담당')
-        for agent in ('P', 'J'):
-            ApprovalStep.objects.create(document=doc, agent=agent, action='pending', round=1,
-                                        assignee=self.r_user, assignee_name=f'{agent}담당')
+        """'ADI CD 변경' 3구역(PL·SA 합의 후 P·J 병렬, R 없음)은 XXXXXX 변경으로 자동 반려된다."""
+        doc = self._adi_cd_doc_with_xxxxxx_change(zone3_open=True)
         self._cycle(2)
         doc.refresh_from_db()
         self.assertEqual(doc.status, 'rejected')
