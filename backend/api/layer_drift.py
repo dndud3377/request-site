@@ -62,6 +62,12 @@ SYSTEM_REJECTER = ('system', '시스템(자동반려)')
 # 문서에 없는 단계(예: ADI CD 변경의 O)는 비교 대상에서 빠진다.
 PJO_AGENTS = ('P', 'PV', 'J', 'O')
 
+# 3구역(CLAUDE.md "용어 정리") 단계 — 현재 회차에 이 중 하나라도 생성돼 있으면 3구역에 진입한 것이다.
+# 단계는 구역이 열릴 때 만들어지므로 존재 여부로 판정한다. 'MAP 삭제'의 R/RV 는 P·J·O 와 함께
+# 열리므로 여기 넣지 않아도 판정이 같다(일반 경로의 R/RV 는 2구역이라 넣으면 안 된다).
+# 1·2구역 문서는 변경이 감지돼도 자동 반려하지 않고 배지만 띄운다.
+ZONE3_AGENTS = ('P', 'PV', 'J', 'O', 'E', 'EV', 'RA')
+
 LAYER_KEYS = ('jayer', 'oayer', 'extra')
 LAYER_LABELS = {'jayer': 'J-layer', 'oayer': 'O-layer', 'extra': 'XXXXXX'}
 # 반려 사유(단계 의견)에 나열하는 변경 건수 상한 — 초과분은 '외 N건' 으로 줄인다.
@@ -342,6 +348,20 @@ def is_pjo_agreed(document):
     return bool(actions) and all(action == 'approved' for action in actions)
 
 
+def is_in_zone3(document):
+    """현재 회차가 3구역에 진입했는지 — 3구역 단계(ZONE3_AGENTS)가 하나라도 생성돼 있으면 True.
+
+    자동 반려는 3구역 진입 문서에만 적용한다. 1구역(PL·SA)·2구역(R/RV) 진행 중인 문서는
+    '변경 감지' 배지만 띄운다.
+    """
+    max_round = ApprovalStep.objects.filter(document=document).aggregate(Max('round'))['round__max']
+    if max_round is None:
+        return False
+    return ApprovalStep.objects.filter(
+        document=document, round=max_round, agent__in=ZONE3_AGENTS,
+    ).exists()
+
+
 def auto_reject_document(document_id, changes):
     """마스터 DB 변경이 확정된 문서를 자동 반려한다. 반려했으면 True, 건너뛰면 False.
 
@@ -351,14 +371,16 @@ def auto_reject_document(document_id, changes):
     `[자동반려]` 머리말과 변경 요약을 남긴다.
 
     건너뛰는 경우: 이미 상태가 바뀜(under_review/pause 아님) · 철회 확인 대기 중(결재 동결 —
-    철회가 취소되면 cancel_withdraw 가 다시 판정한다) · P·J·O 합의 완료(배지만 띄운다 —
-    `is_pjo_agreed`) · 대기 단계가 없음.
+    철회가 취소되면 cancel_withdraw 가 다시 판정한다) · 3구역 미진입(1·2구역 — 배지만 띄운다 —
+    `is_in_zone3`) · P·J·O 합의 완료(배지만 띄운다 — `is_pjo_agreed`) · 대기 단계가 없음.
     """
     with transaction.atomic():
         document = RequestDocument.objects.select_for_update().get(pk=document_id)
         if document.status not in AUTO_REJECT_STATUSES:
             return False
         if WithdrawRequest.objects.filter(document=document, state='requested').exists():
+            return False
+        if not is_in_zone3(document):
             return False
         if is_pjo_agreed(document):
             return False
