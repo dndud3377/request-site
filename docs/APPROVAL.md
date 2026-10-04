@@ -2031,5 +2031,8 @@ baseline 은 절대 재작성하지 않는다(초기화가 항상 같은 원본�
   사유로 다시 반려된다.
 - 반려 이력(`RejectionSnapshot`)에는 `layer_drift_detected=True` 와 반려 시점 diff 가 남아, 이력 조회 반려 탭 목록의 제목 옆에
   '변경 감지' 배지가 뜨고 클릭하면 변경 내용 모달이 열린다(`docs/HISTORY.md` §4).
+- 결재 현황에서도 자동 반려된 문서는 **반려 후에도 '변경 감지' 배지가 유지**된다(2026-10-04, 응답 필드
+  `layer_drift_auto_rejected`). 사람이 누른 반려는 배지가 없고, 재상신하면 사라진다. `docs/REQUEST.md`
+  "2026-10-04 — 결재 현황: '변경 감지' 자동 반려 문서는 반려 후에도 배지 유지" 절 참고.
 - 구현: `backend/api/layer_drift.py` `auto_reject_document` / `auto_reject_if_confirmed`,
   `views.py` `cancel_withdraw`. 테스트: `LayerDriftAutoRejectTest`.
