@@ -2122,6 +2122,22 @@ BLOCKER 1건 + HIGH 4건만 수정했다(커밋 `e320776`~`152d2df`). 나머지�
 
 ---
 
+## 5-5. 프론트 타입 체크·프로덕션 빌드 실패 (B-65) — ✅수정완료(2026-10-04)
+
+### B-65 🟠 `npx tsc --noEmit` 에러 4건으로 기본 `react-scripts build` 가 실패했다
+- 증상: `react-scripts build` 가 `Failed to compile. TS2802 …` 로 중단(타입 에러 무시 옵션 없이는 빌드 불가).
+- 원인 4곳:
+  - TS2802(Set 순회 — tsconfig target 이 es2015 미만) 3곳: `PagedDetailView.tsx` `computeDetailDiff` 의
+    `for (const k of keys)`, `Step4.tsx` `remainingLayerOptions`, `RequestPage/index.tsx` `handleOpenAutoFillPanel` 의 `[...new Set(…)]`
+  - TS2345 1곳: `GuidePage.tsx` 검색창의 `t('guide.search_placeholder')` — 키가 `ko.json`/`en.json` 어디에도
+    없어 화면에 키 문자열이 그대로 보였다.
+- 수정: tsconfig 는 그대로 두고 3곳을 `Array.from(…)` 으로 바꿨다(동작 동일). `guide.search_placeholder` 를
+  ko(`가이드 검색...`)/en(`Search guides...`) 에 동시 추가했다.
+- 검증: `npx tsc --noEmit` error TS **0건**, 기본 `react-scripts build` **Compiled with warnings(exit 0)**,
+  `npm test` 16 suites / 343 tests 통과.
+
+---
+
 ## 6. 잠재 위험 (아직 버그로 터지지 않았지만 구조적으로 위험한 것)
 
 ### R-01 🔴 `additional_notes` 가 `TextField` — 도메인 데이터 전체가 스키마 없는 문자열
