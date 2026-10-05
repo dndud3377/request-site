@@ -694,6 +694,7 @@
     "route_remove": "Remove",
     "route_undo_remove": "Undo removal",
     "route_locked_stage_done": "The PL review stage is over, so this cannot be changed.",
+    "route_detail_unavailable": "The document details could not be loaded, so this cannot be changed. Please reopen the detail view.",
     "route_no_members": "Nobody is assigned.",
     "route_search_placeholder": "Search by name, ID, email, department to add",
     "route_pl_min": "At least one reviewer (PL) must remain.",
