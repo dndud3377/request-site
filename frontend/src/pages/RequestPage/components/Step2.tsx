@@ -14,6 +14,9 @@ interface Step2Props {
   setJayerSortBySp: React.Dispatch<React.SetStateAction<boolean>>;
   jayerFilterSets: FilterSet[];
   setJayerFilterModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  /** 이 사용자가 J-layer SD-Layer 예외를 관리할 수 있는가 — 버튼 노출 여부 */
+  canManageSdException: boolean;
+  onOpenSdExceptionModal: () => void;
   mappedJayerRowIds: Set<string>;
   jayerBarcodeCache: Record<string, { label: string; spec: string }[]>;
   errors: Partial<Record<string, string>>;
@@ -42,6 +45,8 @@ const Step2: React.FC<Step2Props> = ({
   setJayerSortBySp,
   jayerFilterSets,
   setJayerFilterModalOpen,
+  canManageSdException,
+  onOpenSdExceptionModal,
   mappedJayerRowIds,
   jayerBarcodeCache,
   errors,
@@ -120,6 +125,9 @@ const Step2: React.FC<Step2Props> = ({
               {fs.label}
             </button>
           ))}
+          {canManageSdException && (
+            <button type="button" className="th-header-btn" data-testid="sd-exc-open-btn" title={t('request.sd_layer_exc_btn_hint')} onClick={onOpenSdExceptionModal}>{t('request.sd_layer_exc_btn')}</button>
+          )}
           <button type="button" className="th-header-btn" data-tour="jayer-filter" onClick={() => setJayerFilterModalOpen(true)}>{t('request.btn_add_filter')}</button>
           <GuideBadge fk="step3_jayer_filter" tk={t('guide.feat.step3_jayer_filter' as never)} />
         </div>
@@ -164,6 +172,7 @@ const Step2: React.FC<Step2Props> = ({
               const isRegistered = row.new_or_copy === '기등록';
               // 회색 처리는 기등록과 동일하게 st==='X' 행에도 적용한다(편집 가능 여부와는 무관 — 그건 각자 다른 조건으로 유지).
               const greyBg = isRegistered || rowInactive;
+              const sdLayerError = errors[`jayer_sdlayer_${row.id}`];
               const stError = errors[`jayer_stnoc_${row.id}_st`];
               const nocError = errors[`jayer_stnoc_${row.id}_new_or_copy`];
               const itemIdError = errors[`jayer_noc_${row.id}_item_id`];
@@ -187,8 +196,8 @@ const Step2: React.FC<Step2Props> = ({
                   <td style={{ backgroundColor: greyBg ? regBg : undefined }}><input value={row.updated ?? ''} readOnly style={{ background: greyBg ? regBg : undefined, color: '#666' }} /></td>
                   <td {...cellProps('process_id', greyBg ? regBg : undefined)}><input value={row.process_id} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'process_id', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
                   <td {...cellProps('sp', greyBg ? regBg : undefined)}><input value={row.sp} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sp', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
-                  <td {...cellProps('sd', greyBg ? regBg : undefined)}><input value={row.sd} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
-                  <td {...cellProps('layerid', greyBg ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} style={{ backgroundColor: greyBg ? regBg : undefined }} /></td>
+                  <td {...cellProps('sd', greyBg ? regBg : undefined)}><input value={row.sd} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'sd', e.target.value)} title={sdLayerError} className={sdLayerError ? 'field-error-target' : undefined} style={{ backgroundColor: greyBg ? regBg : undefined, ...(sdLayerError ? { border: '1px solid var(--danger)' } : {}) }} /></td>
+                  <td {...cellProps('layerid', greyBg ? regBg : undefined)}><input value={row.layerid ?? ''} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'layerid', e.target.value)} title={sdLayerError} className={sdLayerError ? 'field-error-target' : undefined} style={{ backgroundColor: greyBg ? regBg : undefined, ...(sdLayerError ? { border: '1px solid var(--danger)' } : {}) }} /></td>
                   <td {...cellProps('pp', greyBg ? regBg : undefined)}><input value={row.pp} readOnly={rowInactive || isRegistered || row.loaded} disabled={rowInactive || isRegistered} onChange={(e) => handleJayerChange(row.id, 'pp', e.target.value)} style={{ backgroundColor: greyBg ? regBg : isValidationKeywordRow(row.pp) ? VALIDATION_CELL_COLOR : undefined }} /></td>
                   <td {...cellProps('st', greyBg ? regBg : undefined)} data-tour="jayer-sync-cols" className={stError ? 'field-error-target' : undefined}>
                     <AutocompleteInput
