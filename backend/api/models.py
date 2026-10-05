@@ -6,6 +6,7 @@
 - frontend/src/locales/ko.json
 """
 import json
+from decimal import Decimal, InvalidOperation
 from django.db import models
 from django.core.validators import RegexValidator
 from django.contrib.auth import get_user_model
@@ -305,22 +306,42 @@ class RequestDocument(models.Model):
             other = [other]
         return self.OTHER_PURPOSE_LAB in other
 
+    def _ea_value_state(self):
+        """예외 구역이 '변경 있음'이고 값이 있을 때 (값이 기본값과 숫자로 같은가)를, 아니면 None 을 돌려준다.
+
+        기본값은 일반 300 / C가문 500. `300`·`300.0`·`0300` 처럼 표기가 달라도 숫자로 같으면 같은 값이다.
+        숫자로 해석할 수 없는 값은 문자열 그대로 비교한다.
+        """
+        inner_detail = self.get_detail().get('detail', {}) or {}
+        if inner_detail.get('ea_change') != self.EA_HAS_CHANGE:
+            return None
+        value = str(inner_detail.get('ea_value', '') or '').strip()
+        if not value:
+            return None
+        default = (self.EA_DEFAULT_PRODC if inner_detail.get('only_prodc') == 'Yes'
+                   else self.EA_DEFAULT_NORMAL)
+        try:
+            return Decimal(value) == Decimal(default)
+        except InvalidOperation:
+            return value == default
+
+    def is_ea_change_with_default_value(self):
+        """예외 구역을 '변경 있음'으로 두고 값은 기본값(일반 300 / C가문 500)과 같게 적었는가.
+
+        '바꿨다'고 선택했는데 값은 그대로라 읽는 사람에게 혼란을 주므로 상신할 수 없다.
+        프론트엔드 `RequestPage/index.tsx` 의 validate(ea_value) 와 같은 기준이어야 한다.
+        """
+        return self._ea_value_state() is True
+
     def requires_sales_agreer(self):
         """상신 시 영업/기술지원 합의자(SA) 지정이 필수인가.
 
         예외 구역을 '변경 있음'으로 두고 값까지 기본값(일반 300 / C가문 500)과 다르게 바꾼
-        의뢰서만 해당한다. '변경 없음'이거나 기본값 그대로면 합의 대상이 아니다.
+        의뢰서만 해당한다. '변경 없음'이거나 기본값 그대로면 합의 대상이 아니다
+        ('변경 있음'+기본값은 `is_ea_change_with_default_value()` 로 상신 자체가 막힌다).
         프론트엔드 `RequestPage/index.tsx` 의 requiresSalesAgreer 와 같은 기준이어야 한다.
         """
-        inner_detail = self.get_detail().get('detail', {}) or {}
-        if inner_detail.get('ea_change') != self.EA_HAS_CHANGE:
-            return False
-        value = str(inner_detail.get('ea_value', '') or '').strip()
-        if not value:
-            return False
-        default = (self.EA_DEFAULT_PRODC if inner_detail.get('only_prodc') == 'Yes'
-                   else self.EA_DEFAULT_NORMAL)
-        return value != default
+        return self._ea_value_state() is False
 
     def skip_j_stage(self):
         """결재 경로에서 J(JOB) 단계를 빼는 의뢰서인가 — 기타 목적이 'Overlay 변경' **하나뿐**일 때.
