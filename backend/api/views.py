@@ -533,6 +533,25 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             )
             mailer.enqueue_stage_arrival(document, 'SA', sa_step, recipient_name=sa_step.assignee_name)
 
+    def _record_sales_agreer_none_reason(self, document, sa_users, round_no):
+        """이번 회차의 합의자 미지정 사유를 `sales_agreer_none_reasons[회차]` 에 기록한다.
+
+        기록 조건은 `requires_sales_agreer()` 이고 지정 합의자가 0명이며 사유가 있을 때뿐이다.
+        그 외(기본값으로 되돌렸는데 사유만 남은 경우, 합의자를 지정한 경우, 사유가 없는 경우)에는
+        그 회차 키를 지운다. 다른 회차 값은 그대로 둔다 — 결재 경로 탭이 회차별로 읽는다.
+        """
+        reason = ''
+        if document.requires_sales_agreer() and not sa_users:
+            detail = document.get_detail().get('detail', {}) or {}
+            reason = str(detail.get('sales_agreer_none_reason', '') or '').strip()
+        reasons = dict(document.sales_agreer_none_reasons or {})
+        if reason:
+            reasons[str(round_no)] = reason
+        else:
+            reasons.pop(str(round_no), None)
+        document.sales_agreer_none_reasons = reasons
+        document.save(update_fields=['sales_agreer_none_reasons'])
+
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
         """상신: draft → under_review, PL 검토 단계 생성 (지정 PL 필수)
@@ -594,6 +613,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 mailer.enqueue_stage_arrival(document, 'PL', pl_step, recipient_name=pl_step.assignee_name)
             # 영업/기술지원 합의자는 PL 검토와 병렬이므로 같은 회차에 함께 만든다.
             self._create_sales_agreer_steps(document, sa_users, 1)
+            self._record_sales_agreer_none_reason(document, sa_users, 1)
             mailer.enqueue_notify_submitted(document)
 
         return Response({
@@ -706,6 +726,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
                 mailer.enqueue_stage_arrival(document, 'PL', pl_step, recipient_name=pl_step.assignee_name)
             # 합의자도 새 회차에 다시 만든다(이전 회차 단계는 이력으로 남는다).
             self._create_sales_agreer_steps(document, sa_users, new_round)
+            self._record_sales_agreer_none_reason(document, sa_users, new_round)
             mailer.enqueue_notify_submitted(document)
 
         return Response({
@@ -794,6 +815,7 @@ class RequestDocumentViewSet(viewsets.ModelViewSet):
             )
             mailer.enqueue_stage_arrival(document, 'PL', pl_step, recipient_name=pl_step.assignee_name)
         self._create_sales_agreer_steps(document, sa_users, new_round)
+        self._record_sales_agreer_none_reason(document, sa_users, new_round)
         mailer.enqueue_notify_submitted(document)
 
         return Response({

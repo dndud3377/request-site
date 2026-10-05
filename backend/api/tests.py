@@ -5602,6 +5602,95 @@ class SalesAgreerStageTests(TestCase):
             ApprovalStep.objects.get(document=doc, agent='SA', round=1).action, 'rejected'
         )
 
+    # ---- 합의자 미지정 사유의 회차별 기록 (sales_agreer_none_reasons) ----
+
+    def _set_detail(self, doc, detail_extra):
+        """저장된 detail 을 통째로 바꾼다(재상신 전에 작성자가 폼을 고친 상황)."""
+        detail = {'request_purpose': '신규'}
+        detail.update(detail_extra)
+        RequestDocument.objects.filter(pk=doc.pk).update(
+            additional_notes=self._json.dumps({'detail': detail, 'jayerRows': []}))
+
+    def _reject_and_resubmit(self, doc):
+        """PL 반려 후 재상신(새 회차)."""
+        self.client.force_authenticate(user=self.pl_user)
+        res = self.client.post(f'/api/documents/{doc.id}/peer-reject/', {'comment': 'x'}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+        self.client.force_authenticate(user=self.requester)
+        res = self.client.post(f'/api/documents/{doc.id}/resubmit/',
+                               {'designated_pl_loginid': self.pl_user.loginid}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_none_reason_recorded_per_round(self):
+        """1회차 사유 → 2회차 기본값(사유 없음) → 3회차 새 사유면 1·3회차만 기록된다."""
+        doc = self._make_doc({
+            'ea_change': '변경 있음', 'ea_value': '350', 'sales_agreer_none_reason': 'XXX',
+        })
+        self.assertEqual(self._submit(doc).status_code, 200)
+        doc.refresh_from_db()
+        self.assertEqual(doc.sales_agreer_none_reasons, {'1': 'XXX'})
+
+        self._set_detail(doc, {'ea_change': '변경 있음', 'ea_value': '300'})
+        self._reject_and_resubmit(doc)
+        doc.refresh_from_db()
+        self.assertEqual(doc.sales_agreer_none_reasons, {'1': 'XXX'}, '2회차는 사유가 없어 키가 없다')
+
+        self._set_detail(doc, {
+            'ea_change': '변경 있음', 'ea_value': '350', 'sales_agreer_none_reason': 'XXXX',
+        })
+        self._reject_and_resubmit(doc)
+        doc.refresh_from_db()
+        self.assertEqual(doc.sales_agreer_none_reasons, {'1': 'XXX', '3': 'XXXX'})
+
+    def test_none_reason_not_recorded_when_value_back_to_default(self):
+        """기본값으로 되돌렸는데 사유만 남아 있으면 기록하지 않는다."""
+        doc = self._make_doc({
+            'ea_change': '변경 있음', 'ea_value': '300', 'sales_agreer_none_reason': '남은 사유',
+        })
+        self.assertEqual(self._submit(doc).status_code, 200)
+        doc.refresh_from_db()
+        self.assertEqual(doc.sales_agreer_none_reasons, {})
+
+    def test_none_reason_not_recorded_when_agreer_designated(self):
+        """합의자를 지정했으면 사유가 남아 있어도 기록하지 않는다."""
+        doc = self._make_doc({
+            'ea_change': '변경 있음', 'ea_value': '350',
+            'sales_agreers': self._agreers(self.sa_user), 'sales_agreer_none_reason': '남은 사유',
+        })
+        self.assertEqual(self._submit(doc).status_code, 200)
+        doc.refresh_from_db()
+        self.assertEqual(doc.sales_agreer_none_reasons, {})
+
+    def test_none_reason_recorded_on_requester_resubmit(self):
+        """의뢰자 재상신(진행 중)도 새 회차 키로 기록한다."""
+        doc = self._make_doc({
+            'ea_change': '변경 있음', 'ea_value': '350', 'sales_agreer_none_reason': 'XXX',
+        })
+        self.assertEqual(self._submit(doc).status_code, 200)
+        self._set_detail(doc, {
+            'ea_change': '변경 있음', 'ea_value': '350', 'sales_agreer_none_reason': 'XXXX',
+        })
+        self.client.force_authenticate(user=self.requester)
+        res = self.client.post(f'/api/documents/{doc.id}/requester-resubmit/',
+                               {'designated_pl_loginids': [self.pl_user.loginid]}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+        doc.refresh_from_db()
+        self.assertEqual(doc.sales_agreer_none_reasons, {'1': 'XXX', '2': 'XXXX'})
+
+    def test_none_reasons_exposed_read_only_in_detail_response(self):
+        """상세 응답에는 내려가지만 PUT 으로는 덮어쓸 수 없다."""
+        doc = self._make_doc({
+            'ea_change': '변경 있음', 'ea_value': '350', 'sales_agreer_none_reason': 'XXX',
+        })
+        self.assertEqual(self._submit(doc).status_code, 200)
+        res = self.client.get(f'/api/documents/{doc.id}/')
+        self.assertEqual(res.json()['sales_agreer_none_reasons'], {'1': 'XXX'})
+
+        self.client.patch(f'/api/documents/{doc.id}/',
+                          {'sales_agreer_none_reasons': {'1': '조작'}}, format='json')
+        doc.refresh_from_db()
+        self.assertEqual(doc.sales_agreer_none_reasons, {'1': 'XXX'})
+
 
 class RequesterResubmitTest(TestCase):
     """의뢰자 재상신(중단요청 없이, `requester_resubmit`) — PL 검토(+SA 합의) 단계 전용.

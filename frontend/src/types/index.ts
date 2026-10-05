@@ -249,6 +249,9 @@ export interface RequestDocument {
   // 해외 의뢰서 여부 (읽기 전용). 의뢰자 역할로 최초 상신 시 서버가 확정한다.
   // 결재선 후보(지정 PL·영업합의자·후결자) 목록을 어느 역할로 부를지 이 값으로 고른다 — plRoleFor.
   is_overseas?: boolean;
+  // 영업/기술지원 합의자 미지정 사유의 회차별 기록 `{"1": "사유"}` (읽기 전용). 결재 경로 탭 SA 행에 표시한다.
+  // 해당 회차에 합의자가 없고 예외 구역 값이 기본값과 달랐을 때만 그 회차 키가 있다.
+  sales_agreer_none_reasons?: Record<string, string>;
 }
 
 /**

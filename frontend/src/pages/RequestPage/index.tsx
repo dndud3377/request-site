@@ -4248,7 +4248,9 @@ export default function RequestPage(): React.ReactElement {
           post_approvers: requiresPostApprover ? postApprovers : [],
           // 합의자는 필수 조건과 무관하게 지정한 그대로 저장한다(선택 지정도 실제 결재 단계가 된다).
           sales_agreers: salesAgreers,
-          sales_agreer_none_reason: salesAgreers.length === 0 ? salesAgreerNoneReason.trim() : '',
+          // 미지정 사유는 합의자가 필수인 경우(예외 구역 값이 기본값과 다를 때)에만 남긴다 —
+          // 기본값으로 되돌렸는데 사유만 남아 오해를 부르지 않도록 그 외에는 비운다.
+          sales_agreer_none_reason: requiresSalesAgreer && salesAgreers.length === 0 ? salesAgreerNoneReason.trim() : '',
           // 상신·재상신 시점의 상신자 판단을 고정 기록한다(임시저장에는 남기지 않는다).
           // 이후 MASK(E)가 detail.validation_system 을 바꿔도 이 값은 유지된다.
           ...(isDraft ? {} : { validation_system_submitted: detail.validation_system }),

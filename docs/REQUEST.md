@@ -2814,6 +2814,13 @@ Jayer·Oayer 표의 "요청 기준"(`new_or_copy`) 값을 근거로 이 요청�
     화면 표시 방식만 바뀌었다.
   - 신규 i18n 키: `request.sales_agreer_none_toggle`(ko/en). 더 이상 쓰이지 않게 된
     `request.sales_agreer_help`는 제거했다(블록이 항상 필수 상태로만 보이므로 비필수용 문구가 불필요해짐).
+- **(2026-10) 미지정 사유 저장 조건**: `index.tsx` 의 `buildEnrichedForm` 이 `detail.sales_agreer_none_reason` 을
+  **`requiresSalesAgreer` 이고 합의자 0명일 때만** 저장한다(그 외 `''`). 사유를 입력했다가 예외 구역 값을
+  기본값으로 되돌려도 사유가 데이터에 남지 않는다. 사유 입력 state(`salesAgreerNoneReason`)는 그대로라
+  값을 다시 바꾸면 입력해 둔 사유가 되살아난다.
+- **(2026-10) 결재 경로 탭 표시**: 사유는 상신 시 서버가 회차별로 따로 기록해
+  (`RequestDocument.sales_agreer_none_reasons`, `docs/APPROVAL.md` Case P) 결재 현황 상세의
+  '결재 경로' 탭 SA 행에 그 회차의 사유로 보인다.
 
 
 ### 추가 변경 이력 (2026-08-11 — 임시저장 재진입 시 `source_partid` 유실 수정 + 왕복 테스트 신설)
