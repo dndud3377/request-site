@@ -200,6 +200,13 @@ npx tsc --noEmit 2>&1 | grep -c "error TS"                          # 24 (baseli
     내용은 모두 squash 파일에 들어 있다. 옛 파일 내용이 필요하면 `git show 65dffcf:backend/api/migrations/<파일명>` 으로 본다.
 - **이후 새 마이그레이션**: 평소처럼 `makemigrations` 로 만들면 된다. 의존성은 squash 파일
   (`0001_squashed_0048_...`)로 잡힌다. 번호는 `0049_` 부터 이어진다(squash 이름의 끝 번호 기준, dry-run 으로 확인).
+  - **현재 순서(2026-10-05 정리)**: `0001_squashed_0048` → `0049_approvalstep_review_started_at` →
+    `0050_requestdocument_sales_agreer_none_reasons` → `0051_mailnotification_route_member_removed`.
+    병렬 브랜치에서 `0049` 가 2개 생겨 리프가 둘이 됐고(`CommandError: Conflicting migrations detected`) 이를 한 줄로 이었다.
+    `0050_requestdocument_…` 는 개발 DB 에 이 이름으로 이미 적용돼 있어 그 이름에 맞췄다
+    (`0049_requestdocument_…`·`0050_mailnotification_…` 이름은 더 이상 없다).
+  - ⚠️ `0051_mailnotification_…` 은 이름이 바뀌었다. 옛 이름(`0050_mailnotification_…`)으로 적용된 DB 는 `0051` 을 미적용으로 보고
+    다시 적용하지만, `choices` 만 바꾸는 `AlterField` 라 SQL 이 나가지 않아 무해하다.
 
 ### 1.5 실행 결과
 
