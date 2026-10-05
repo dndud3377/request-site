@@ -459,6 +459,9 @@ export default function RequestPage(): React.ReactElement {
   // 자동 MAP 매칭이 source_line 을 세팅한 직후 1틱 — "원본 위치 변경 → 원본 제품 초기화" 효과가
   // 방금 채운 source_partid 를 지우지 않도록 이번 한 번만 건너뛰게 하는 플래그.
   const autoMapMatchRef = useRef(false);
+  // 자동 MAP 매칭이 마지막으로 판별한 Step1 키(라인 + 제품 이름) — 라인/제품이 실제로 바뀐 경우와
+  // 요청 목적만 바뀐 경우를 구분한다. 초기값은 첫 렌더의 값이라 마운트 직후엔 '바뀜'으로 보지 않는다.
+  const lastAutoMatchKeyRef = useRef(`${INITIAL_DETAIL.line}\n${INITIAL_DETAIL.partid_selection}`);
 
   const [approvedDocs, setApprovedDocs] = useState<RequestDocument[]>([]);
   const [sourcePartIdOptions, setSourcePartIdOptions] = useState<string[]>([]);
@@ -690,14 +693,24 @@ export default function RequestPage(): React.ReactElement {
   }, [detail.map_type, detail.source_line, detail.source_partid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 라인 + 제품 이름(Step1) → 이미 등록된 MAP 이 있으면 map_type 을 EXISTING 으로 자동 선택.
-  // map_type 이 이미 선택돼 있으면(사용자가 이미 골랐으면) 덮어쓰지 않는다 — 자동 선택은
-  // "아직 아무것도 안 골랐을 때의 기본값"일 뿐, 잠그거나 사용자의 선택을 되돌리지 않는다.
+  // Step1 의 라인/제품이 바뀔 때마다 현재 map_type 과 무관하게 새로 판별한다(사용자 결정):
+  // 먼저 StepMap 값을 전부 초기화(map_type 포함)한 뒤, 매칭되면 EXISTING 을 채운다 — 매칭이 없으면
+  // map_type 은 미선택으로 남는다. 요청 목적만 바뀐 경우는 map_type 이 비어 있을 때만 판별하고
+  // 사용자의 선택을 지우지 않는다. 저장 문서 로드 중(isLoadingEditRef)에는 판별하지 않는다.
   useEffect(() => {
     // MAP 삭제 모드는 map_type 버튼 자체가 다르므로(삭제 전용) 제외한다.
     // ADI CD 변경은 MAP 정보 자체를 작성하지 않으므로(StepMap 비노출) 제외한다.
     // (아래에서 선언되는 isMapDeleteEdit/isAdiCdChange 대신 원본 조건을 그대로 써서 선언 순서 문제를 피한다.)
     if (detail.request_purpose === MAP_DELETE_EDIT_PURPOSE || detail.request_purpose === ADI_CD_CHANGE_PURPOSE) return;
-    if (detail.map_type) return;
+    const step1Key = `${detail.line}\n${detail.partid_selection}`;
+    const step1Changed = step1Key !== lastAutoMatchKeyRef.current;
+    lastAutoMatchKeyRef.current = step1Key;
+    if (isLoadingEditRef.current) return;
+    if (!step1Changed && detail.map_type) return;
+    if (step1Changed) {
+      setFinalGds('');
+      setDetail((prev) => ({ ...prev, ...mapInfoDefaults() }));
+    }
     if (!detail.line || !detail.partid_selection) return;
     const code = sourceCodeFromPartid(detail.partid_selection);
     if (!code) return;
