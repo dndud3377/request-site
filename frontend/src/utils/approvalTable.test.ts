@@ -630,6 +630,30 @@ describe('hasActiveStageStep — 단계별 필터(agent_R/P/J/O/E)는 검토자 
   });
 });
 
+describe('hasActiveStageStep — PL(1구역) 탭은 PL·SA 중 하나라도 pending 이면 잡는다', () => {
+  it('PL 만 pending 이면 잡힌다', () => {
+    const doc = makeDoc([makeStep({ agent: 'PL', action: 'pending' })]);
+    expect(hasActiveStageStep(doc, 'PL')).toBe(true);
+  });
+
+  it('PL 합의 후 SA 만 pending 이어도 잡힌다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'PL', action: 'approved' }),
+      makeStep({ agent: 'SA', action: 'pending' }),
+    ]);
+    expect(hasActiveStageStep(doc, 'PL')).toBe(true);
+  });
+
+  it('PL·SA 모두 합의를 마치고 R 단계로 넘어가면 잡히지 않는다', () => {
+    const doc = makeDoc([
+      makeStep({ agent: 'PL', action: 'approved' }),
+      makeStep({ agent: 'SA', action: 'approved' }),
+      makeStep({ agent: 'R', action: 'pending' }),
+    ]);
+    expect(hasActiveStageStep(doc, 'PL')).toBe(false);
+  });
+});
+
 describe('getStagePendingEnteredAt — 단계별 필터 정렬 키도 검토자 단계를 인식한다', () => {
   it('검토자(RV) 만 pending 이어도 그 시각을 진입 시각으로 쓴다', () => {
     const doc = makeDoc([
