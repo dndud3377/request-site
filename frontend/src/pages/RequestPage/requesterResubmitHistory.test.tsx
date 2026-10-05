@@ -145,7 +145,9 @@ describe('의뢰자 재상신 — 수정 전 스냅샷이 history 에 기록되�
     await waitFor(() => expect(screen.getByDisplayValue('고객사A')).toBeDefined());
     for (let i = 0; i < 20; i += 1) {
       // eslint-disable-next-line no-await-in-loop
-      await act(async () => { await Promise.resolve(); });
+      // 마이크로태스크만 흘리면 waitFor(act 밖) 동안 React 스케줄러(매크로태스크)에 쌓인 렌더·effect 가
+      // 남아 옵션 로드가 끝나기 전에 다음 단계로 넘어가는 간헐 실패가 난다 — setTimeout 0 으로 매크로태스크까지 양보한다.
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
     }
 
     // 실제로 값을 하나 고친다 — "이력확인"에 before/after가 뜨려면 현재값(cur)과
@@ -206,7 +208,9 @@ describe('의뢰자 재상신 — 수정 전 스냅샷이 history 에 기록되�
     await waitFor(() => expect(screen.getByDisplayValue('고객사A')).toBeDefined());
     for (let i = 0; i < 20; i += 1) {
       // eslint-disable-next-line no-await-in-loop
-      await act(async () => { await Promise.resolve(); });
+      // 마이크로태스크만 흘리면 waitFor(act 밖) 동안 React 스케줄러(매크로태스크)에 쌓인 렌더·effect 가
+      // 남아 옵션 로드가 끝나기 전에 다음 단계로 넘어가는 간헐 실패가 난다 — setTimeout 0 으로 매크로태스크까지 양보한다.
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
     }
 
     const nextBtn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('다음'));
