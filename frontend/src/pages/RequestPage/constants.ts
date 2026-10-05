@@ -181,6 +181,15 @@ export const isNocSpecial = (noc?: string): boolean =>
  */
 export const isRowInactive = (st?: string): boolean => (st ?? '').trim() === ST_X;
 
+/**
+ * J/O-layer SD-Layer 검사 예외를 등록·삭제할 수 있는 역할 — 백엔드 `CanManageLayerSdException.TABLE_ROLES` 와
+ * 같아야 한다. J 는 TE_J, O 는 TE_O, P(TE_P)는 J·O 둘 다이고 MASTER 는 둘 다 가능하다.
+ */
+export const SD_EXCEPTION_ROLES: Record<'J' | 'O', readonly string[]> = {
+  J: ['TE_J', 'TE_P', 'MASTER'],
+  O: ['TE_O', 'TE_P', 'MASTER'],
+};
+
 // ===== Shared Types =====
 export type CRegion = 'top' | 'middle' | 'bottom';
 /** C가문 '제품 해당 위치'. '' = 미선택(게이트), 'only_*' = 그 리전 하나만 사용. */
