@@ -145,7 +145,9 @@ async function renderLoadedPage() {
   await waitFor(() => expect(screen.getByDisplayValue('고객사A')).toBeDefined());
   for (let i = 0; i < 20; i += 1) {
     // eslint-disable-next-line no-await-in-loop
-    await act(async () => { await Promise.resolve(); });
+    // 마이크로태스크만 흘리면 waitFor(act 밖) 동안 React 스케줄러(매크로태스크)에 쌓인 렌더·effect 가
+    // 남아 옵션 로드가 끝나기 전에 다음 단계로 넘어가는 간헐 실패가 난다 — setTimeout 0 으로 매크로태스크까지 양보한다.
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
   }
 }
 
@@ -162,7 +164,9 @@ async function clickThroughToLastStep() {
     // eslint-disable-next-line no-await-in-loop
     for (let j = 0; j < 10; j += 1) {
       // eslint-disable-next-line no-await-in-loop
-      await act(async () => { await Promise.resolve(); });
+      // 마이크로태스크만 흘리면 waitFor(act 밖) 동안 React 스케줄러(매크로태스크)에 쌓인 렌더·effect 가
+      // 남아 옵션 로드가 끝나기 전에 다음 단계로 넘어가는 간헐 실패가 난다 — setTimeout 0 으로 매크로태스크까지 양보한다.
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
     }
   }
   throw new Error('마지막 단계(📤 버튼)에 도달하지 못했다');
@@ -187,7 +191,9 @@ describe('중단 후 재개(resume) — 비활성(st===X) J/O-layer 행이 재�
     await act(async () => { submitBtn.click(); });
     for (let i = 0; i < 10; i += 1) {
       // eslint-disable-next-line no-await-in-loop
-      await act(async () => { await Promise.resolve(); });
+      // 마이크로태스크만 흘리면 waitFor(act 밖) 동안 React 스케줄러(매크로태스크)에 쌓인 렌더·effect 가
+      // 남아 옵션 로드가 끝나기 전에 다음 단계로 넘어가는 간헐 실패가 난다 — setTimeout 0 으로 매크로태스크까지 양보한다.
+      await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
     }
 
     // 확인 모달은 포털 없이 인라인으로 렌더되므로, 바깥 위저드의 '📤' 버튼(submitBtn)이 여전히
