@@ -67,7 +67,9 @@ jest.mock('../../api/client', () => ({
 async function flushEffects(times = 15) {
   for (let i = 0; i < times; i += 1) {
     // eslint-disable-next-line no-await-in-loop
-    await act(async () => { await Promise.resolve(); });
+    // 마이크로태스크만 흘리면 waitFor(act 밖) 동안 React 스케줄러(매크로태스크)에 쌓인 렌더·effect 가
+    // 남아 옵션 로드가 끝나기 전에 다음 단계로 넘어가는 간헐 실패가 난다 — setTimeout 0 으로 매크로태스크까지 양보한다.
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
   }
 }
 
