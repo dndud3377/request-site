@@ -211,6 +211,29 @@ describe('CLONE 신규 작성 — 리전별 지도편차는 잠긴 채 변경없
     expect(eaValueInput.disabled).toBe(true);
   });
 
+  it('MAP 목적을 바꾸면(확인 모달) C가문과 함께 CC 적용 여부(mshot_change_cc)도 초기화된다', async () => {
+    const { container } = await renderNewDoc();
+    await advanceToMapStep(container);
+
+    await act(async () => { buttonWith(container, 'NEW').click(); });
+    await flushEffects();
+    const prodcSelect = container.querySelector('select[name="only_prodc"]') as HTMLSelectElement;
+    await act(async () => { fireEvent.change(prodcSelect, { target: { value: 'Yes' } }); });
+    await flushEffects();
+    const ccSelect = container.querySelector('select[name="mshot_change_cc"]') as HTMLSelectElement;
+    await act(async () => { fireEvent.change(ccSelect, { target: { value: 'exists' } }); });
+    await flushEffects();
+
+    await act(async () => { buttonWith(container, 'CLONE').click(); });
+    await flushEffects();
+    await act(async () => { buttonWith(container, '확인').click(); });
+    await flushEffects();
+
+    const detail = await saveDraftAndCaptureDetail();
+    expect(detail.only_prodc).toBe('No');
+    expect(detail.mshot_change_cc).toBe('');
+  });
+
   it('C가문을 Yes → No → Yes로 다시 전환해도 지도편차는 변경없음, ea_value는 최종 상태(Yes→500) 기준이다', async () => {
     const { container } = await renderNewDoc();
     await advanceToMapStep(container);
