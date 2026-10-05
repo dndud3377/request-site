@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0049_approvalstep_review_started_at"),
+        ("api", "0050_requestdocument_sales_agreer_none_reasons"),
     ]
 
     operations = [
